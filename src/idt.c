@@ -39,5 +39,5 @@ void idt_install() {
     //set gate entries
     idt_load();
 
-    printf("* idt install\n");
+    //printf("* idt install\n");
 }

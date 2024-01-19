@@ -82,7 +82,7 @@ void loadProgram(const char* programName) {
         // printf("\n----------------------------------------------\n");
         executeProgram(header->entryPoint);
     } else {
-        printf("Program not found\n");
+        printf("%s not found\n", programName);
     }
 }
 
@@ -105,7 +105,9 @@ void normalize_path(char* input_path, char* normalized_path, const char* current
 }
 
 void main(void) {
+
     initializeHeap();
+    test_memory();
 
     gdt_install();
     idt_install();
@@ -114,7 +116,7 @@ void main(void) {
     __asm__ __volatile__("sti");
     timer_install();
 
-    test_memory();
+
 
     init_fs(); // Initialize the file system
 
@@ -143,36 +145,10 @@ void main(void) {
     // printf("Size of uint32_t: %u bytes\n", sizeof(uint32_t));
 
     while (1) {
-
-        // Manually clear the input buffer at the start of each iteration
-        // for (int i = 0; i < BUFFER_SIZE; i++) {
-        //     input_buffer[i] = '\0';
-        // }
-        // buffer_index = 0;
-
-        // Get the first key press
-        // unsigned char pressed_scancode = get_key_press();
-
-        // Collect characters until Enter key is pressed
-        // while (pressed_scancode != 0x1C) {  // 0x1C is the scancode for Enter key
-        //     pressed_scancode = get_key_press();  // Get the key press
-        //     if (pressed_scancode == BACKSPACE_PRESSED) {
-        //         if (buffer_index > 0) {
-        //             buffer_index--;             // Move back the buffer index
-        //             input_buffer[buffer_index] = '\0';  // Remove the last character
-        //             vga_backspace();            // Handle the backspace in your display (e.g., VGA)
-        //         }
-        //     } else {
-        //         char ascii_char = scancode_to_ascii(pressed_scancode);  // Convert to ASCII
-        //         if (ascii_char && buffer_index < BUFFER_SIZE - 1) {
-        //             input_buffer[buffer_index++] = ascii_char; // Store the character
-        //             vga_write_char(ascii_char);                // Echo the character
-        //         }
-        //     }
-        // }
-
         // Check if Enter key is pressed
         if (enter_pressed) {
+
+            printf("\n");
 
             // Process the command
             process_command(input_buffer);
@@ -198,6 +174,7 @@ void print_prompt() {
 
 // Process the command
 void process_command(char* input_buffer) {
+    
     int arg_count = split_input(input_buffer, command, arguments, sizeof(input_buffer), 10);
 
     if (strcmp(command, "BEEP") == 0) {

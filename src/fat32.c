@@ -385,7 +385,7 @@ void readFileData(unsigned int startCluster, char* buffer, unsigned int size) {
 int openAndLoadFileToBuffer(const char* filename, void* loadAddress) {
     struct FAT32DirEntry* entry = findFileInDirectory(filename);
     if (entry == NULL) {
-        printf("File %s not found for loading into buffer.\n", filename);
+        //printf("File %s not found for loading into buffer.\n", filename);
         return 0; // we return 0 if the file was not found which is the size of the file
     }
     unsigned int fileSize = entry->fileSize;

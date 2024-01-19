@@ -1,9 +1,8 @@
 #include "system.h"
 #include "io.h"
 #include "video.h"
+#include "memory.h"
 
-#include <stddef.h>
-#include <stdarg.h>
 
 // ------------------ Kernel-side code ------------------
 // Define the system call numbers
@@ -17,6 +16,16 @@ void syscall_print(const char* format, va_list args) {
     vprintf(format, args); // this is the function that will be called from the kernel side
 }
 
+// System call to allocate memory
+void* syscall_malloc(size_t size) {
+    return malloc(size);
+}
+// System call to free memory
+void syscall_free(void* ptr) {
+    free(ptr);
+}
+
+
 // Define the system call table
 syscall_func_ptr syscall_table[NUM_SYSCALLS];
 
@@ -26,7 +35,9 @@ void initialize_syscall_table() {
     syscall_func_ptr* syscall_table = (syscall_func_ptr*)0x00100000; // Example address
 
     syscall_table[SYSCALL_PRINT] = (syscall_func_ptr)&syscall_print;
-    // Initialize other system calls...
+    syscall_table[SYSCALL_MALLOC] = (syscall_func_ptr)&syscall_malloc;
+    syscall_table[SYSCALL_FREE] = (syscall_func_ptr)&syscall_free;
+    
 }
 
 // ------------------ User-side code ------------------
@@ -34,11 +45,27 @@ void initialize_syscall_table() {
 // These must match the user-side definitions
 // ------------------------------------------------------
 
+void* smalloc(size_t size) {
+    syscall_func_ptr* syscall_table = (syscall_func_ptr*)0x00100000;
+    syscall_malloc_func_ptr sys_malloc = (syscall_malloc_func_ptr)syscall_table[SYSCALL_MALLOC];
+    
+    void* allocated_memory = sys_malloc(size);
+    return allocated_memory;
+}
+
+void sfree(void* ptr){
+    syscall_func_ptr* syscall_table = (syscall_func_ptr*)0x00100000;
+    syscall_free_func_ptr sys_free = (syscall_free_func_ptr)syscall_table[SYSCALL_FREE];
+
+    sys_free(ptr);
+}
+
+
 // System call to print a string
 // Type for system call function pointers (must match the kernel's definition)
 void sprintf(const char* format, ...) {
     syscall_func_ptr* syscall_table = (syscall_func_ptr*)0x00100000;
-    syscall_print_func_ptr sys_printf = (syscall_print_func_ptr)syscall_table[SYSCALL_PRINT]; // index 0 is the set cursor position syscall
+    syscall_print_func_ptr sys_printf = (syscall_print_func_ptr)syscall_table[SYSCALL_PRINT];
     // Code to handle passing arguments to the system call...
     va_list args;
     va_start(args, format);

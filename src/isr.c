@@ -36,7 +36,7 @@ extern void isr30();
 extern void isr31();
 
 void isr_install() {
-    char* st = "* isr_install\n";
+    //char* st = "* isr_install\n";
 
     idt_set_gate(0, (unsigned long)isr0, 0x08, 0x8E);
     idt_set_gate(1, (unsigned long)isr1, 0x08, 0x8E);
@@ -71,7 +71,7 @@ void isr_install() {
     idt_set_gate(30, (unsigned long)isr30, 0x08, 0x8E);
     idt_set_gate(31, (unsigned long)isr31, 0x08, 0x8E);
 
-    printf(st);
+    //printf(st);
 }
 
 char* exception_messages[] =

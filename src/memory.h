@@ -3,11 +3,11 @@
 
 void initializeHeap();
 
-void* memset(void* ptr, int value, unsigned int num);
 void* malloc(unsigned int size);
-void free(void *ptr);
-void* memcpy(void* dest, const void* src, unsigned int n);
+void free(void* ptr);
 
+void* memset(void* ptr, int value, unsigned int num);
+void* memcpy(void* dest, const void* src, unsigned int n);
 int memcmp(const void* s1, const void* s2, unsigned int n);
 
 int test_memory();

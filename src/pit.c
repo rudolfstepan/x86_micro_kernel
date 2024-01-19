@@ -27,10 +27,10 @@ void timer_handler(struct regs* r) {
 }
 
 void timer_install() {
-	printf("timer install\n");
+	printf("Install Timer...");
 	//timer_phase(500);
 	irq_install_handler(0, timer_handler);
-	printf("timer installed\n");
+	printf("done\n");
 }
 
 void delay(int ticks) {

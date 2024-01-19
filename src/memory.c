@@ -69,6 +69,18 @@ void free(void* ptr) {
     freeList = block;
 }
 
+// void free(void** ptr) {
+//     if (ptr == NULL || *ptr == NULL) {
+//         return;
+//     }
+
+//     Block* block = (Block*)((char*)*ptr - sizeof(Block));
+//     block->next = freeList;
+//     freeList = block;
+
+//     *ptr = NULL; // Clear the original pointer
+// }
+
 int memcmp(const void* s1, const void* s2, size_t n) {
     if (s1 == NULL || s2 == NULL) {
         return -1; // Error handling for NULL pointers
@@ -190,7 +202,7 @@ void* memcpy(void* dest, const void* src, unsigned int n) {
 void TestAllocationWithinBounds() {
     void* ptr = malloc(HEAP_SIZE / 2);
     if (ptr != NULL) {
-        printf("TestAllocationWithinBounds: Passed\n");
+        //printf("TestAllocationWithinBounds: Passed\n");
     } else {
         printf("TestAllocationWithinBounds: Failed\n");
     }
@@ -198,7 +210,7 @@ void TestAllocationWithinBounds() {
 void TestAllocationExceedsBounds() {
     void* ptr = malloc(HEAP_SIZE + 1);
     if (ptr == NULL) {
-        printf("TestAllocationExceedsBounds: Passed\n");
+        //printf("TestAllocationExceedsBounds: Passed\n");
     } else {
         printf("TestAllocationExceedsBounds: Failed\n");
     }
@@ -232,7 +244,7 @@ void TestResetAfterFree() {
     //printf("Second allocation: %p\n", secondPtr);
 
     if (firstPtr == secondPtr) {
-        printf("TestResetAfterFree: Passed\n");
+        //printf("TestResetAfterFree: Passed\n");
     } else {
         printf("TestResetAfterFree: Failed. Expected: %p, Got: %p\n", firstPtr, secondPtr);
     }
@@ -244,7 +256,7 @@ void TestMultipleFrees() {
     void* ptr = malloc(1);
 
     if (ptr != NULL) {
-        printf("TestMultipleFrees: Passed\n");
+        //printf("TestMultipleFrees: Passed\n");
     } else {
         printf("TestMultipleFrees: Failed\n");
     }
@@ -261,7 +273,11 @@ void TestSetMemory() {
         }
     }
 
-    printf("TestSetMemory: %s\n", pass ? "Passed" : "Failed");
+    if(pass) {
+        //printf("TestSetMemory: Passed\n");
+    } else {
+        printf("TestSetMemory: Failed\n");
+    }
 }
 void TestSetZero() {
     char* buffer = (char*)malloc(10);
@@ -275,11 +291,15 @@ void TestSetZero() {
         }
     }
 
-    printf("TestSetZero: %s\n", pass ? "Passed" : "Failed");
+    if(pass) {
+        //printf("TestSetZero: Passed\n");
+    } else {
+        printf("TestSetZero: Failed\n");
+    }
 }
 void TestNullPointerMemset() {
     if (memset(NULL, 0, 10) == NULL) {
-        printf("TestNullPointerMemset: Passed\n");
+        //printf("TestNullPointerMemset: Passed\n");
     } else {
         printf("TestNullPointerMemset: Failed\n");
     }
@@ -297,7 +317,11 @@ void TestCopyNonOverlapping() {
         }
     }
 
-    printf("TestCopyNonOverlapping: %s\n", pass ? "Passed" : "Failed");
+    if(pass) {
+        //printf("TestCopyNonOverlapping: Passed\n");
+    } else {
+        printf("TestCopyNonOverlapping: Failed\n");
+    }
 }
 void TestCopyOverlapping() {
     char buffer[20] = "123456789";
@@ -311,12 +335,16 @@ void TestCopyOverlapping() {
         }
     }
 
-    printf("TestCopyOverlapping: %s\n", pass ? "Passed" : "Failed");
+    if(pass) {
+        //printf("TestCopyOverlapping: Passed\n");
+    } else {
+        printf("TestCopyOverlapping: Failed\n");
+    }
 }
 void TestNullPointerSrc() {
     char dest[10];
     if (memcpy(dest, NULL, 10) == NULL) {
-        printf("TestNullPointerSrc: Passed\n");
+        //printf("TestNullPointerSrc: Passed\n");
     } else {
         printf("TestNullPointerSrc: Failed\n");
     }
@@ -324,14 +352,14 @@ void TestNullPointerSrc() {
 void TestNullPointerDest() {
     char src[10] = "123456789";
     if (memcpy(NULL, src, 10) == NULL) {
-        printf("TestNullPointerDest: Passed\n");
+        //printf("TestNullPointerDest: Passed\n");
     } else {
         printf("TestNullPointerDest: Failed\n");
     }
 }
 
 int test_memory() {
-    // printf("Running memory tests...\n");
+    printf("Testing Memory...");
     // printf("Memory pool starts at: %p\n", (void*)memoryPool);
     // printf("Memory pool ends at: %p\n", (void*)(memoryPool + MEMORY_POOL_SIZE));
     TestResetAfterFree();
@@ -347,7 +375,7 @@ int test_memory() {
     TestCopyOverlapping();
     TestNullPointerSrc();
     TestNullPointerDest();
-
+    printf("done\n");
     return 0;
 }
 
