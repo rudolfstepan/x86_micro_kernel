@@ -74,7 +74,7 @@ int split_input(const char* input, char* command, char arguments[][50], int max_
     }
 
     // Extract command
-    while (input[i] != ' ' && i < max_length) {
+    while (input[i] != ' ' && i <= max_length) {
         command[i] = input[i];
         i++;
     }

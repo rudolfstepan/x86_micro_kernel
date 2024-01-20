@@ -107,7 +107,10 @@ void set_fat32_time(unsigned short* time, unsigned short* date);
 // public functions
 int init_fs(void);
 void read_directory();
+
 bool read_directory_path(const char *path);
+int read_directory_to_buffer(const char *path, char *buffer, unsigned int *size);
+
 bool change_directory(const char* path);
 bool create_directory(const char* dirname);
 bool create_file(const char* filename);

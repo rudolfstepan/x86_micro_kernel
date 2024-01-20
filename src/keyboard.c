@@ -63,7 +63,6 @@ void kb_handler(struct regs* r) {
     // Check if it's a key press event (bit 7 of scan code set)
     if (!(scan & 0x80)) {
         // Key press event
-
         if (scan == 0x2A || scan == 0x36) {
             shift_pressed = 1;
         } else if (scan == 0x0E) { // Backspace key
@@ -73,7 +72,7 @@ void kb_handler(struct regs* r) {
                 vga_backspace();
             }
         } else if (scan == 0x1C) { // Enter key
-            input_buffer[buffer_index] = '\0'; // Null-terminate the string
+            input_buffer[buffer_index++] = '\0'; // Null-terminate the string
             enter_pressed = true;
         } else {
             key = scancode_to_ascii(scan);
@@ -82,10 +81,8 @@ void kb_handler(struct regs* r) {
                 key -= 32; // Convert to uppercase
             }
 
-            if (!enter_pressed && buffer_index < BUFFER_SIZE - 1) {
-                input_buffer[buffer_index++] = key;
-                vga_write_char(key);
-            }
+            input_buffer[buffer_index++] = key;
+            vga_write_char(key);
         }
     } else {
         // Key release event

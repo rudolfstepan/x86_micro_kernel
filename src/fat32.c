@@ -5,8 +5,9 @@
 #include "fat32.h"
 #include "ata.h"
 #include "strings.h"
-#include "memory.h"
-#include "system.h"
+
+#include "stdlib.h"
+#include "stdio.h"
 
 
 struct Fat32BootSector bootSector;
@@ -301,6 +302,47 @@ void read_cluster_dir_entries(unsigned int currentCluster) {
     }
 }
 
+void read_cluster_dir_entries_to_buffer(unsigned int currentCluster, char *buffer, unsigned int *size) {
+    unsigned int sector = cluster_to_sector(&bootSector, currentCluster);
+    struct FAT32DirEntry entries[SECTOR_SIZE * bootSector.sectorsPerCluster / sizeof(struct FAT32DirEntry)];
+
+    for (unsigned int i = 0; i < bootSector.sectorsPerCluster; i++) {
+        read_sector(sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))]);
+    }
+    for (unsigned int j = 0; j < sizeof(entries) / sizeof(struct FAT32DirEntry); j++) {
+        if (entries[j].name[0] == 0x00) { // End of directory
+            break;
+        }
+        // Überspringen von LFN-Einträgen und gelöschten Einträgen
+        if ((entries[j].name[0] == 0xE5) || (entries[j].attr & 0x0F) == 0x0F) {
+            continue;
+        }
+        // Verarbeitung von 8.3-Einträgen
+        char currentName[13]; // 8 characters for name, 3 for extension, 1 for null-terminator, 1 for potential dot
+        formatFilename(currentName, entries[j].name);
+        // Zusätzliche Überprüfung, um sicherzustellen, dass es sich nicht um einen LFN-Eintrag handelt
+        if (entries[j].attr & 0x10) {
+            // Add directory to buffer
+            //printf("[DIR] %s\n", currentName);
+
+            strncat(buffer, "[DIR] ", *size - strlen(buffer) - 1);
+            strncat(buffer, currentName, *size - strlen(buffer) - 1);
+            strncat(buffer, "\n", *size - strlen(buffer) - 1);
+        } else {
+            // Add file to buffer
+            //printf("%s\n", currentName);
+
+            strncat(buffer, currentName, *size - strlen(buffer) - 1);
+            strncat(buffer, "\n", *size - strlen(buffer) - 1);
+        }
+    }
+
+    *size = strlen(buffer); // Update the size with the current length of the buffer
+
+    // printf("Buffer: %s\n", buffer);
+    // printf("Size: %d\n", *size);
+}
+
 void read_directory() {
     read_cluster_dir_entries(bootSector.rootCluster);
 }
@@ -330,6 +372,34 @@ bool read_directory_path(const char* path) {
     }
     // Now currentCluster points to the cluster of the target directory
     read_cluster_dir_entries(currentCluster);
+    return true;
+}
+
+int read_directory_to_buffer(const char *path, char *buffer, unsigned int *size){
+    unsigned int currentCluster = bootSector.rootCluster; // Assuming boot_sector is defined and initialized elsewhere
+    char tempPath[MAX_PATH_LENGTH]; // Temporary path buffer
+    strcpy(tempPath, path);
+    tempPath[sizeof(tempPath) - 1] = '\0'; // Ensure null-termination
+    char* token, * saveptr;
+    // Check for leading '/' and skip it if present
+    char* start = tempPath;
+    if (start[0] == '/') {
+        start++;
+    }
+    token = strtok_r(start, "/", &saveptr);
+    while (token != NULL) {
+        //printf("Searching for directory: %s\n", token);
+        // Find the next directory in the path
+        currentCluster = find_next_cluster(&bootSector, token, currentCluster);
+        if (currentCluster == INVALID_CLUSTER) {
+            //printf("Directory not found: %s\n", token);
+            return false;
+        }
+        token = strtok_r(NULL, "/", &saveptr);
+    }
+    // Now currentCluster points to the cluster of the target directory
+    read_cluster_dir_entries_to_buffer(currentCluster, buffer, size);
+
     return true;
 }
 
@@ -501,6 +571,8 @@ bool change_directory(const char* path) {
 }
 
 bool create_directory(const char* dirname) {
+
+    printf("Creating directory: %s\n", dirname);
     // 1. Find a free cluster
     unsigned int newDirCluster = find_free_cluster(&bootSector);
     if (newDirCluster == INVALID_CLUSTER) {

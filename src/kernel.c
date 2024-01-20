@@ -4,9 +4,15 @@
 #include "keyboard.h"
 #include "fat32.h"
 #include "prg.h"
-#include "memory.h"
 #include "system.h"
 #include "sys.h"
+#include "cmos.h"
+
+#include "stdbool.h"
+
+// custom implementations
+#include "stdio.h"
+#include "stdlib.h"
 
 // Assuming a maximum path length
 #define MAX_PATH_LENGTH 256
@@ -32,21 +38,22 @@ char current_path[MAX_PATH_LENGTH] = "/"; // Initial path
 
 void print_prompt();
 void process_command(char* command);
+void list_directory(const char* path);
 
 void beep(unsigned int freq) {
-    // printf("Beep %u Hz\n", freq);
-    unsigned int divisor = PIT_FREQ / freq;
+    printf("Beep %u Hz\n", freq);
+    // unsigned int divisor = PIT_FREQ / freq;
 
-    // Set PIT to square wave generator mode
-    outb(PIT_CMD_PORT, 0b00110110);
+    // // Set PIT to square wave generator mode
+    // outb(PIT_CMD_PORT, 0b00110110);
 
-    // Send the frequency divisor
-    outb(PIT_CHANNEL_0, (unsigned char)(divisor & 0xFF)); // Send low byte
-    outb(PIT_CHANNEL_0, (unsigned char)(divisor >> 8));   // Send high byte
+    // // Send the frequency divisor
+    // outb(PIT_CHANNEL_0, (unsigned char)(divisor & 0xFF)); // Send low byte
+    // outb(PIT_CHANNEL_0, (unsigned char)(divisor >> 8));   // Send high byte
 
-    // Turn on the speaker
-    unsigned char tmp = inb(SPEAKER_PORT) | 3;
-    outb(SPEAKER_PORT, tmp);
+    // // Turn on the speaker
+    // unsigned char tmp = inb(SPEAKER_PORT) | 3;
+    // outb(SPEAKER_PORT, tmp);
 
     // Duration of beep - implement a delay or use a timer
     printf("Beep delay 5 begin\n");
@@ -54,8 +61,8 @@ void beep(unsigned int freq) {
     delay(5);
 
     // Turn off the speaker
-    tmp = inb(SPEAKER_PORT) & 0xFC;
-    outb(SPEAKER_PORT, tmp);
+    // tmp = inb(SPEAKER_PORT) & 0xFC;
+    // outb(SPEAKER_PORT, tmp);
 
     printf("Beep finished\n");
 
@@ -116,51 +123,38 @@ void main(void) {
     __asm__ __volatile__("sti");
     timer_install();
 
-
-
     init_fs(); // Initialize the file system
 
-    initialize_syscall_table();
+    //initialize_syscall_table();
 
     kb_install();
 
-    printf("+++++++++++++++++++++ Micro Kernel x86 ++++++++++++++++++++++++\n");
-    printf("+                      Version 0.0.1                          +\n");
+    printf("++++++++++++++++++++++++++++ Mini OS ++++++++++++++++++++++++++\n");
+    printf("+                        Version 0.0.1                        +\n");
+    printf("+                        2021-05-01                           +\n");
     printf("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
 
-    printf("\n");
-    printf("Commands: LS, CLS, CD [path], LOAD [Programm], MKDIR [name], RMDIR [name], MKFILE [name], RMFILE [name]\n");
+    printf(" HELP for available commands.\n");
+
+    int year, month, day, hour, minute, second;
+    getDate(&year, &month, &day);
+    getTime(&hour, &minute, &second);
+
+    printf("Date Time: %d-%d-%d %d:%d:%d\n", year, month, day, hour, minute, second);
 
     // show the prompt
     print_prompt();
 
-    // char filesystemType[9]; // One extra byte for null-terminator
-    // copy_and_terminate_string(filesystemType, boot_sector.fileSystemType, 8);
-    // printf("File System Info:\n");
-    // printf("Bytes per Sector: %u\n", boot_sector.bytesPerSector);
-    // printf("Sectors per Cluster: %u\n", boot_sector.sectorsPerCluster);
-    // printf("Filesystem Type: %s\n", filesystemType);
-    // printf("Available Commands: dir\n");
-
-    // printf("Size of uint32_t: %u bytes\n", sizeof(uint32_t));
-
     while (1) {
         // Check if Enter key is pressed
         if (enter_pressed) {
-
-            printf("\n");
-
             // Process the command
             process_command(input_buffer);
             // Clear the flag and reset buffer_index
             enter_pressed = false;
             buffer_index = 0;
-
             // Clear the input buffer
             memset(input_buffer, 0, sizeof(input_buffer));
-
-            // show the prompt
-            print_prompt();
         }
     }
 
@@ -172,10 +166,23 @@ void print_prompt() {
     printf("\n%s>", current_path);
 }
 
+// Split the input string into command and arguments
 // Process the command
+// Print the prompt
 void process_command(char* input_buffer) {
-    
     int arg_count = split_input(input_buffer, command, arguments, sizeof(input_buffer), 10);
+
+    if(input_buffer[0] == 0) {
+        return;
+    }
+
+    printf("\n");
+
+    // printf("Command: %s\n", command);
+    // printf("Arguments: %d\n", arg_count);
+    // for (int i = 0; i < arg_count; i++) {
+    //     printf("Argument %d: %s\n", i, arguments[i]);
+    // }
 
     if (strcmp(command, "BEEP") == 0) {
         beep(5000); //  Hz
@@ -183,9 +190,9 @@ void process_command(char* input_buffer) {
         clear_screen();
     } else if (strcmp(command, "LS") == 0) {
         if (arg_count == 0) {
-            read_directory_path(current_path);
+            list_directory(current_path);
         } else {
-            read_directory_path(arguments[0]);
+            list_directory(arguments[0]);
         }
     } else if (strcmp(command, "CD") == 0) {
         if (arg_count == 0) {
@@ -195,7 +202,7 @@ void process_command(char* input_buffer) {
             // Normalize the input path
             normalize_path(input_path, normalized_path, current_path);
 
-            if (change_directory(normalized_path)) {
+            if (chdir(normalized_path)) {
                 // If directory change is successful, update current_path
                 strncpy(current_path, normalized_path, MAX_PATH_LENGTH);
                 current_path[MAX_PATH_LENGTH - 1] = '\0'; // Ensure null termination
@@ -210,7 +217,7 @@ void process_command(char* input_buffer) {
         if (arg_count == 0) {
             printf("MKDIR command without arguments\n");
         } else if (arg_count == 1 && strlen(arguments[0]) > 0) {
-            create_directory(arguments[0]);
+            mkdir(arguments[0]);
         } else {
             printf("MKDIR command with invalid or too many arguments\n");
         }
@@ -218,7 +225,7 @@ void process_command(char* input_buffer) {
         if (arg_count == 0) {
             printf("MKFILE command without arguments\n");
         } else if (arg_count == 1 && strlen(arguments[0]) > 0) {
-            create_file(arguments[0]);
+            //create_file(arguments[0]);
         } else {
             printf("MKFILE command with invalid or too many arguments\n");
         }
@@ -226,7 +233,7 @@ void process_command(char* input_buffer) {
         if (arg_count == 0) {
             printf("RMFILE command without arguments\n");
         } else if (arg_count == 1 && strlen(arguments[0]) > 0) {
-            delete_file(arguments[0]);
+            //delete_file(arguments[0]);
         } else {
             printf("RMFILE command with invalid or too many arguments\n");
         }
@@ -236,7 +243,7 @@ void process_command(char* input_buffer) {
             printf("RMDIR command without arguments\n");
         } else if (arg_count == 1 && strlen(arguments[0]) > 0) {
             // Handle 'RMDIR'
-            delete_directory(arguments[0]);
+            rmdir(arguments[0]);
         } else {
             // Handle 'RMDIR' with unexpected arguments
             printf("RMDIR command with invalid or too many arguments\n");
@@ -249,7 +256,28 @@ void process_command(char* input_buffer) {
         } else {
             printf("LOAD command with invalid or too many arguments\n");
         }
+    } else if (strcmp(command, "HELP") == 0) {
+            printf("LS, CLS, CD [path], LOAD [Programm], MKDIR [name], RMDIR [name], MKFILE [name], RMFILE [name]\n");
     } else {
         printf("Invalid command: %s\n", command);
     }
+
+    // show the prompt
+    print_prompt();
+}
+
+// List the contents of the specified directory
+void list_directory(const char* path) {
+    printf("Listing directory: %s\n", path);
+
+    unsigned int size = 1024;  // size is now an unsigned int, not a pointer
+    char* buffer = (char*)malloc(size);
+
+    if (readdir(path, buffer, &size) == 0) {  // Pass the address of size
+        printf("Directory not found: %s\n", path);
+    } else {
+        printf("%s\n", buffer);
+    }
+
+    secure_free(buffer, size);  // Clear the buffer
 }

@@ -1,7 +1,6 @@
 #include "io.h"
 #include "sys.h"
-#include "system.h"
-#include "video.h"
+#include "stdio.h"
 
 void timer_phase(int hertz) {
 	int div = 1193180 / hertz;

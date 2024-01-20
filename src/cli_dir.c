@@ -1,17 +1,17 @@
-#include <stdarg.h>
+// #include <stdarg.h>
 
-#include "fat32.h"
-#include "system.h"
+// #include "fat32.h"
+// #include "system.h"
 
 
 int start(void) {
-    init_fs();
+    // init_fs();
 
-    //clear_screen();
+    // //clear_screen();
 
-    sprintf("Directory:\n");
+    // sprintf("Directory:\n");
 
-    read_directory_path("/");
+    // read_directory_path("/");
 
     return 0;
 }
