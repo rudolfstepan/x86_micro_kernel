@@ -78,13 +78,13 @@ void beep(unsigned int freq) {
 }
 
 // execute the program at the specified entry point
-void executeProgram(long entryPoint) {
+void call_program(long entryPoint) {
     void (*program)() = (void (*)())entryPoint;
     program(); // Jump to the program
 }
 
 // load the program into memory
-void loadProgram(const char* programName) {
+void load_and_run_program(const char* programName) {
     // Load the program into the specified memory location
     if (openAndLoadFileToBuffer(programName, (void*)PROGRAM_LOAD_ADDRESS) > 0) {
         ProgramHeader* header = (ProgramHeader*)PROGRAM_LOAD_ADDRESS;
@@ -94,7 +94,17 @@ void loadProgram(const char* programName) {
         // printf("Program size: %d\n", header->programSize);
         // printf("Entry point: %d\n", header->entryPoint);
         // printf("\n----------------------------------------------\n");
-        executeProgram(header->entryPoint);
+        call_program(header->entryPoint);
+    } else {
+        printf("%s not found\n", programName);
+    }
+}
+
+void load_program(const char* programName) {
+    // Load the program into the specified memory location
+    if (openAndLoadFileToBuffer(programName, (void*)PROGRAM_LOAD_ADDRESS) > 0) {
+        ProgramHeader* header = (ProgramHeader*)PROGRAM_LOAD_ADDRESS;
+        printf("entryPoint: %X\n", header->entryPoint);
     } else {
         printf("%s not found\n", programName);
     }
@@ -170,7 +180,7 @@ void main(void) {
 
 // Print the prompt
 void print_prompt() {
-    printf("\n%s>", current_path);
+    printf("%s>", current_path);
 }
 
 // Split the input string into command and arguments
@@ -210,7 +220,6 @@ void process_command(char* input_buffer) {
         } else {
             printf("DUMP command with invalid or too many arguments\n");
         } 
-
     } else if (strcmp(command, "CLS") == 0) {
         clear_screen();
     } else if (strcmp(command, "LS") == 0) {
@@ -273,13 +282,31 @@ void process_command(char* input_buffer) {
             // Handle 'RMDIR' with unexpected arguments
             printf("RMDIR command with invalid or too many arguments\n");
         }
+    } else if (strcmp(command, "RUN") == 0) {
+        if (arg_count == 0) {
+            printf("RUN command without arguments\n");
+        } else if (arg_count == 1 && strlen(arguments[0]) > 0) {
+            load_and_run_program(arguments[0]);
+        } else {
+            printf("RUN command with invalid or too many arguments\n");
+        }
     } else if (strcmp(command, "LOAD") == 0) {
         if (arg_count == 0) {
             printf("LOAD command without arguments\n");
         } else if (arg_count == 1 && strlen(arguments[0]) > 0) {
-            loadProgram(arguments[0]);
+            load_program(arguments[0]);
         } else {
             printf("LOAD command with invalid or too many arguments\n");
+        }
+    } else if (strcmp(command, "SYS") == 0) {
+        if (arg_count == 0) {
+            printf("SYS command without arguments\n");
+        } else if (arg_count == 1 && strlen(arguments[0]) > 0) {
+            // Convert string argument to address
+            long entryPoint = (long)strtoul(arguments[0], NULL, 16);
+            call_program(entryPoint);
+        } else {
+            printf("SYS command with invalid or too many arguments\n");
         }
     } else if (strcmp(command, "OPEN") == 0) {
         if (arg_count == 0) {
@@ -290,7 +317,10 @@ void process_command(char* input_buffer) {
             printf("OPEN command with invalid or too many arguments\n");
         }
     } else if (strcmp(command, "HELP") == 0) {
-            printf("LS, CLS, CD [path], LOAD [Programm], MKDIR [name], RMDIR [name], MKFILE [name], RMFILE [name]\n");
+            printf("LS, CLS, CD [path]\n");
+            printf("MKDIR [name], RMDIR [name]\n");
+            printf("MKFILE [name], RMFILE [name]\n");
+            printf("RUN [Programm], LOAD [Programm], SYS [address], OPEN [file]\n");
     } else {
         printf("Invalid command: %s\n", command);
     }
