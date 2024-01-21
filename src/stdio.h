@@ -11,21 +11,22 @@ int fread(void* buffer, int size, File* fd);
 // int fwrite(void* buffer, int size, int count, int fd);
 // int fseek(int fd, int offset, int whence);
 // int ftell(int fd);
-int fremove(const char* filename);
+int rmfile(const char* path);                                   // remove file
+int mkfile(const char* path);                                   // create file
 
 // Directory Handling Functions
-int mkdir(const char* path);
-int rmdir(const char* path);
-int chdir(const char* path);
+int mkdir(const char* path);                                    // make directory
+int rmdir(const char* path);                                    // remove directory
+int chdir(const char* path);                                    // change directory
 //int getcwd(char* buffer, int size);
-int readdir(const char* path, char* buffer, unsigned int *size);
+int readdir(const char* path, char* buffer, unsigned int *size);// read directory
 
 // Console Functions
-int printf(const char* format, ...);
+int printf(const char* format, ...);                            // print formatted string
 // int scanf(const char* format, ...);
 // int getchar();
 // int putchar(int character);
-// int puts(const char* string);
+// int puts(const char* string)
 // int gets(char* string);
 
 // // Utility Functions

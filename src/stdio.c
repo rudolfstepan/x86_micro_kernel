@@ -26,7 +26,6 @@ int readdir(const char* path, char* buffer, unsigned int *size){
     return read_directory_to_buffer(path, buffer, size);
 }
 
-
 // -----------------------------------------------------------------
 // File Functions
 // -----------------------------------------------------------------
@@ -43,10 +42,13 @@ int fread(void* buffer, int size, File* fd) {
     return read_file(fd, buffer, size);
 }
 
-int fremove(const char* filename) {
-    return delete_file(filename);
+int rmfile(const char* path){
+    return delete_file(path);
 }
 
+int mkfile(const char* path){
+    return create_file(path);
+}
 
 
 

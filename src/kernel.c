@@ -250,7 +250,7 @@ void process_command(char* input_buffer) {
         if (arg_count == 0) {
             printf("MKFILE command without arguments\n");
         } else if (arg_count == 1 && strlen(arguments[0]) > 0) {
-            //create_file(arguments[0]);
+            mkfile(arguments[0]);
         } else {
             printf("MKFILE command with invalid or too many arguments\n");
         }
@@ -258,7 +258,7 @@ void process_command(char* input_buffer) {
         if (arg_count == 0) {
             printf("RMFILE command without arguments\n");
         } else if (arg_count == 1 && strlen(arguments[0]) > 0) {
-            //delete_file(arguments[0]);
+            rmfile(arguments[0]);
         } else {
             printf("RMFILE command with invalid or too many arguments\n");
         }
