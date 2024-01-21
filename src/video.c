@@ -5,10 +5,41 @@
 
 
 unsigned short* vga_buffer = (unsigned short*)VGA_ADDRESS;
-unsigned int cursor_x;
-unsigned int cursor_y;
 
-void update_cursor(int x, int y) {
+// clear the screen
+void clear_screen() {
+    unsigned char color = 0x0F;  // Black background, white foreground
+    for (int y = 0; y < VGA_ROWS; y++) {
+        for (int x = 0; x < VGA_COLS; x++) {
+            const int index = y * VGA_COLS + x;
+            vga_buffer[index] = ' ' | (color << 8);
+        }
+    }
+    int cursor_x = 0;
+    int cursor_y = 0;
+
+    set_cursor_position(cursor_x, cursor_y);
+}
+
+// get the cursor position
+void get_cursor_position(int *x, int *y) {
+    unsigned short position;
+
+    // Read from Cursor Location High Register
+    outb(VGA_CTRL_REGISTER, 0x0E);
+    position = inb(VGA_DATA_REGISTER) << 8; // Shift to high byte
+
+    // Read from Cursor Location Low Register
+    outb(VGA_CTRL_REGISTER, 0x0F);
+    position += inb(VGA_DATA_REGISTER); // Low byte
+
+    // Calculate x and y from position
+    *x = position % 80;
+    *y = position / 80;
+}
+
+// set the cursor position
+void set_cursor_position(int x, int y) {
     // The screen is 80 characters wide...
     unsigned short position = (y * 80) + x;
 
@@ -19,26 +50,22 @@ void update_cursor(int x, int y) {
     // Cursor HIGH port to VGA INDEX register
     outb(VGA_CTRL_REGISTER, 0x0E);
     outb(VGA_DATA_REGISTER, (unsigned char)((position >> 8) & 0xFF));
-
-    cursor_x = x;
-    cursor_y = y;
 }
 
-void clear_screen() {
-    unsigned char color = 0x0F;  // Black background, white foreground
-    for (int y = 0; y < VGA_ROWS; y++) {
-        for (int x = 0; x < VGA_COLS; x++) {
-            const int index = y * VGA_COLS + x;
-            vga_buffer[index] = ' ' | (color << 8);
-        }
-    }
-    cursor_x = 0;
-    cursor_y = 0;
-
-    update_cursor(cursor_x, cursor_y);
-}
-
+// write a character to the screen
 void vga_write_char(char ch) {
+    int cursor_x = 0;
+    int cursor_y = 0;
+
+    // update cursor position from hardware
+    // this is necessary because the cursor position can change without our code knowing
+    // when other code writes to the screen
+    int current_x = cursor_x;
+    int current_y = cursor_y;
+    get_cursor_position(&current_x, &current_y);
+    cursor_x = current_x;
+    cursor_y = current_y;
+
     if (ch == '\n') {
         cursor_x = 0;
         cursor_y++;
@@ -69,34 +96,27 @@ void vga_write_char(char ch) {
         cursor_y = VGA_ROWS - 1;  // Reset cursor to the last line
     }
 
-    update_cursor(cursor_x, cursor_y);
+    // Update hardware cursor to match our cursor position
+    set_cursor_position(cursor_x, cursor_y);
 }
 
+// delete a character from the screen and move the cursor back to the previous position
 void vga_backspace() {
+    int cursor_x, cursor_y;
+    get_cursor_position(&cursor_x, &cursor_y);
+
+    // Move cursor one position to the left
     if (cursor_x == 0 && cursor_y > 0) {
-        cursor_x = VGA_COLS - 1;
         cursor_y--;
+        cursor_x = VGA_COLS - 1; // Move to the end of the previous line
     } else if (cursor_x > 0) {
         cursor_x--;
     }
 
-    // Write a space at the current cursor position
-    vga_write_char(' ');
+    // Update the cursor position
+    set_cursor_position(cursor_x, cursor_y);
 
-    // Move the cursor back to the position where the space was written
-    if (cursor_x == 0 && cursor_y > 0) {
-        cursor_x = VGA_COLS - 1;
-        cursor_y--;
-    } else if (cursor_x > 0) {
-        cursor_x--;
-    }
-
-    update_cursor(cursor_x, cursor_y);
-}
-
-void vga_move_cursor_left() {
-    if (cursor_x > 0) {
-        cursor_x--;
-    }
-    update_cursor(cursor_x, cursor_y);
+    // Erase the character at this new position by writing a space character
+    const unsigned int index = cursor_y * VGA_COLS + cursor_x;
+    vga_buffer[index] = ' ' | (0x0F << 8);  // Assuming 0x0F for white-on-black text
 }

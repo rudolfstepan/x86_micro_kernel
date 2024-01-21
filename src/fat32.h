@@ -2,6 +2,8 @@
 #define FAT32_H
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 
 #define FIRST_CLUSTER_OF_FILE(clusterHigh, clusterLow) (((clusterHigh) << 16) | (clusterLow))
@@ -20,53 +22,66 @@
 
 #pragma pack(push, 1)
 struct FAT32DirEntry {
-    unsigned char name[11];        // Short name (8.3 format)
-    unsigned char attr;            // File attributes
-    unsigned char ntRes;           // Reserved for use by Windows NT
-    unsigned char crtTimeTenth;    // Millisecond stamp at file creation time
-    unsigned short crtTime;        // Time file was created
-    unsigned short crtDate;        // Date file was created
-    unsigned short lastAccessDate; // Last access date
-    unsigned short firstClusterHigh; // High word of the first data cluster number
-    unsigned short wrtTime;        // Time of last write
-    unsigned short wrtDate;        // Date of last write
-    unsigned short firstClusterLow; // Low word of the first data cluster number
-    unsigned int fileSize;         // File size in bytes
+    uint8_t name[11];             // Short name (8.3 format)
+    uint8_t attr;                 // File attributes
+    uint8_t ntRes;                // Reserved for use by Windows NT
+    uint8_t crtTimeTenth;         // Millisecond stamp at file creation time
+    uint16_t crtTime;             // Time file was created
+    uint16_t crtDate;             // Date file was created
+    uint16_t lastAccessDate;      // Last access date
+    uint16_t firstClusterHigh;    // High word of the first data cluster number
+    uint16_t wrtTime;             // Time of last write
+    uint16_t wrtDate;             // Date of last write
+    uint16_t firstClusterLow;     // Low word of the first data cluster number
+    uint32_t fileSize;            // File size in bytes
 };
 #pragma pack(pop)
 
 
 #pragma pack(push, 1)
 struct Fat32BootSector {
-    unsigned char jumpBoot[3];        // Jump instruction to boot code
-    unsigned char OEMName[8];         // OEM Name and version
-    unsigned short bytesPerSector;    // Bytes per sector
-    unsigned char sectorsPerCluster;  // Sectors per cluster
-    unsigned short reservedSectorCount; // Reserved sector count (including boot sector)
-    unsigned char numberOfFATs;       // Number of FATs
-    unsigned short rootEntryCount;    // (Not used in FAT32)
-    unsigned short totalSectors16;    // Total sectors (16-bit), if 0, use totalSectors32
-    unsigned char mediaType;          // Media type
-    unsigned short FATSize16;         // (Not used in FAT32)
-    unsigned short sectorsPerTrack;   // Sectors per track (for media formatting)
-    unsigned short numberOfHeads;     // Number of heads (for media formatting)
-    unsigned int hiddenSectors;       // Hidden sectors (preceding the partition)
-    unsigned int totalSectors32;      // Total sectors (32-bit)
-    unsigned int FATSize32;           // Sectors per FAT
-    unsigned short flags;             // Flags
-    unsigned short version;           // FAT32 version
-    unsigned int rootCluster;         // Root directory start cluster
-    unsigned short FSInfo;            // FSInfo sector
-    unsigned short backupBootSector;  // Backup boot sector
-    unsigned char reserved[12];       // Reserved bytes
-    unsigned char driveNumber;        // Drive number
-    unsigned char reserved1;          // Reserved byte
-    unsigned char bootSignature;      // Boot signature (indicates next three fields are present)
-    unsigned int volumeID;            // Volume ID serial number
-    unsigned char volumeLabel[11];    // Volume label
-    unsigned char fileSystemType[8];  // File system type label
+    uint8_t jumpBoot[3];               // Jump instruction to boot code
+    uint8_t OEMName[8];                // OEM Name and version
+    uint16_t bytesPerSector;           // Bytes per sector
+    uint8_t sectorsPerCluster;         // Sectors per cluster
+    uint16_t reservedSectorCount;      // Reserved sector count (including boot sector)
+    uint8_t numberOfFATs;              // Number of FATs
+    uint16_t rootEntryCount;           // (Not used in FAT32)
+    uint16_t totalSectors16;           // Total sectors (16-bit), if 0, use totalSectors32
+    uint8_t mediaType;                 // Media type
+    uint16_t FATSize16;                // (Not used in FAT32)
+    uint16_t sectorsPerTrack;          // Sectors per track (for media formatting)
+    uint16_t numberOfHeads;            // Number of heads (for media formatting)
+    uint32_t hiddenSectors;            // Hidden sectors (preceding the partition)
+    uint32_t totalSectors32;           // Total sectors (32-bit)
+    uint32_t FATSize32;                // Sectors per FAT
+    uint16_t flags;                    // Flags
+    uint16_t version;                  // FAT32 version
+    uint32_t rootCluster;              // Root directory start cluster
+    uint16_t FSInfo;                   // FSInfo sector
+    uint16_t backupBootSector;         // Backup boot sector
+    uint8_t reserved[12];              // Reserved bytes
+    uint8_t driveNumber;               // Drive number
+    uint8_t reserved1;                 // Reserved byte
+    uint8_t bootSignature;             // Boot signature (indicates next three fields are present)
+    uint32_t volumeID;                 // Volume ID serial number
+    uint8_t volumeLabel[11];           // Volume label
+    uint8_t fileSystemType[8];         // File system type label
 };
 #pragma pack(pop)
+
+typedef struct {
+    unsigned char *base;  // Base address of the file in memory
+    unsigned char *ptr;   // Current read/write position
+    unsigned int startCluster;    // startCluster of the file
+    const char* mode;     // Mode the file was opened with
+    const char* name;     // Name of the file
+
+    size_t size;          // Size of the file
+    size_t position;      // Current position in the file (offset from base)
+} File;
+
+
 
 extern struct Fat32BootSector boot_sector;
 
@@ -116,5 +131,9 @@ bool create_directory(const char* dirname);
 bool create_file(const char* filename);
 bool delete_file(const char* filename);
 bool delete_directory(const char* dirname);
+
+// file operations
+File* open_file(const char* filename, const char* mode);
+int read_file(File* file, void* buffer, size_t size);
 
 #endif

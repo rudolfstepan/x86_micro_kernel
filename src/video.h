@@ -15,10 +15,17 @@
 #define YELLOW 14
 #define WHITE_COLOR 15
 
+
 void vga_backspace();
+
 void vga_write_char(char ch);
+
 void clear_screen();
-void update_cursor(int x, int y);
-void vga_move_cursor_left();
+
+void get_cursor_position(int *x, int *y);
+
+void set_cursor_position(int x, int y);
+
+
 
 #endif /* VIDEO_H */

@@ -26,6 +26,31 @@ int readdir(const char* path, char* buffer, unsigned int *size){
     return read_directory_to_buffer(path, buffer, size);
 }
 
+
+// -----------------------------------------------------------------
+// File Functions
+// -----------------------------------------------------------------
+
+File* fopen(const char* filename, const char* mode) {
+    return open_file(filename, mode);
+}
+
+// int fclose(int fd){
+//     return close_file(fd);
+// }
+
+int fread(void* buffer, int size, File* fd) {
+    return read_file(fd, buffer, size);
+}
+
+int fremove(const char* filename) {
+    return delete_file(filename);
+}
+
+
+
+
+
 // -----------------------------------------------------------------
 // Console Functions
 // -----------------------------------------------------------------

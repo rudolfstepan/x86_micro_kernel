@@ -430,6 +430,7 @@ bool try_directory_path(const char* path) {
     return true;
 }
 
+// Function to read a file's data into a buffer
 void readFileData(unsigned int startCluster, char* buffer, unsigned int size) {
     unsigned int currentCluster = startCluster;
     unsigned int bytesRead = 0;
@@ -942,4 +943,55 @@ bool delete_file(const char* filename) {
         return false;
     }
     return true;
+}
+
+// Function to open a file and return a pointer to the file data
+File* open_file(const char* filename, const char* mode) {
+
+    struct FAT32DirEntry* entry = findFileInDirectory(filename);
+    if (entry == NULL) {
+        printf("File not found.\n");
+        return NULL;
+    }
+
+    unsigned int startCluster = readStartCluster(entry);
+    int fileSize = entry->fileSize;
+    // char* buffer = malloc(fileSize);
+    // if (buffer == NULL) {
+    //     printf("Not enough memory.\n");
+    //     return NULL;
+    // }
+
+    File* file = malloc(sizeof(File));
+    if (file == NULL) {
+        printf("Not enough memory.\n");
+        return NULL;
+    }
+
+    file->position = 0;
+    file->size = fileSize;
+    file->ptr = malloc(fileSize);
+    file->mode = mode;
+    file->name = filename;
+    file->startCluster = startCluster;
+
+    //readFileData(startCluster, buffer, fileSize);
+
+    return file;
+}
+
+// read file
+int read_file(File* file, void* buffer, unsigned int size) {
+    if (strcmp(file->mode, "w") == 0) {
+        printf("Error: File is not open for reading.\n");
+        return 0;
+    }
+
+    if (file->position + size > file->size) {
+        size = file->size - file->position;
+    }
+
+    readFileData(file->startCluster, buffer, size);
+
+    return size;
 }

@@ -1,14 +1,17 @@
 #ifndef STDIO_H
 #define STDIO_H
 
+#include "fat32.h"
+
+
 // File Handling Functions
-// int fopen(const char* filename, const char* mode);
+File* fopen(const char* filename, const char* mode);
 // int fclose(int fd);
-// int fread(void* buffer, int size, int count, int fd);
+int fread(void* buffer, int size, File* fd);
 // int fwrite(void* buffer, int size, int count, int fd);
 // int fseek(int fd, int offset, int whence);
 // int ftell(int fd);
-// int fremove(const char* filename);
+int fremove(const char* filename);
 
 // Directory Handling Functions
 int mkdir(const char* path);

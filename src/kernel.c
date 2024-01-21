@@ -39,6 +39,7 @@ char current_path[MAX_PATH_LENGTH] = "/"; // Initial path
 void print_prompt();
 void process_command(char* command);
 void list_directory(const char* path);
+void openFile(const char* path);
 
 void beep(unsigned int freq) {
     printf("Beep %u Hz\n", freq);
@@ -256,6 +257,14 @@ void process_command(char* input_buffer) {
         } else {
             printf("LOAD command with invalid or too many arguments\n");
         }
+    } else if (strcmp(command, "OPEN") == 0) {
+        if (arg_count == 0) {
+            printf("OPEN command without arguments\n");
+        } else if (arg_count == 1 && strlen(arguments[0]) > 0) {
+            openFile(arguments[0]);
+        } else {
+            printf("OPEN command with invalid or too many arguments\n");
+        }
     } else if (strcmp(command, "HELP") == 0) {
             printf("LS, CLS, CD [path], LOAD [Programm], MKDIR [name], RMDIR [name], MKFILE [name], RMFILE [name]\n");
     } else {
@@ -280,4 +289,38 @@ void list_directory(const char* path) {
     }
 
     secure_free(buffer, size);  // Clear the buffer
+}
+
+// Open the specified file and print its contents
+void openFile(const char* path) {
+    printf("Opening file: %s\n", path);
+
+    File* file = fopen(path, "r");
+    if(file == NULL) {
+        printf("File not found: %s\n", path);
+        return;
+    }
+
+    printf("Name: %s\n", file->name);
+    printf("Size: %d\n", file->size);
+
+    char* buffer = (char*)malloc(sizeof(char) * file->size);
+    if(buffer == NULL) {
+        printf("Failed to allocate memory for file buffer\n");
+        return;
+    }
+
+    // read the file into the buffer
+    int result = fread(buffer, file->size, file);
+
+    if(result == 0) {
+        printf("Failed to read file\n");
+        return;
+    }
+
+    printf("File contents:\n");
+    printf("%s\n", buffer);
+
+
+    secure_free(buffer, sizeof(buffer));  // Clear the buffer
 }
