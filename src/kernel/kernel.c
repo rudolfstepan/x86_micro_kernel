@@ -213,7 +213,7 @@ void process_command(char* input_buffer) {
             uint32_t start_address = (uint32_t)strtoul(arguments[0], NULL, 16);
             uint32_t end_address = 0;
             // Check if there is a second argument
-            if(strlen(arguments[0]) > 0){
+            if(strlen(arguments[1]) > 0){
                 end_address = (uint32_t)strtoul(arguments[1], NULL, 16);
             } 
             // Call memory_dump with the converted addresses
