@@ -1,10 +1,10 @@
-#include "cmos.h"
-#include "stdio.h"
+#include "kernel/rtc.h"
+#include "toolchain/stdio.h"
 
 
 int start(void) {
     //clear_screen(BLACK);
-    printf("Reading Datetime from system:\n");
+    printf("Current Datetime:\n");
 
     int year, month, day, hour, minute, second;
     getDate(&year, &month, &day);
