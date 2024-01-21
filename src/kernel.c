@@ -25,6 +25,10 @@
 #define PIT_CMD_PORT 0x43
 #define PIT_CHANNEL_0 0x40
 
+// for memory dump
+#define BYTES_PER_LINE 16
+#define MAX_LINES 20
+
 char input_path[MAX_PATH_LENGTH];      // This should be set to the user input
 char normalized_path[MAX_PATH_LENGTH]; // This should be set to the normalized path
 char command[50], arguments[10][50];   // Adjust sizes as necessary
@@ -40,6 +44,8 @@ void print_prompt();
 void process_command(char* command);
 void list_directory(const char* path);
 void openFile(const char* path);
+void memory_dump(uint32_t start_address, uint32_t end_address);
+
 
 void beep(unsigned int freq) {
     printf("Beep %u Hz\n", freq);
@@ -48,11 +54,11 @@ void beep(unsigned int freq) {
     // // Set PIT to square wave generator mode
     // outb(PIT_CMD_PORT, 0b00110110);
 
-    // // Send the frequency divisor
-    // outb(PIT_CHANNEL_0, (unsigned char)(divisor & 0xFF)); // Send low byte
-    // outb(PIT_CHANNEL_0, (unsigned char)(divisor >> 8));   // Send high byte
+    // // // Send the frequency divisor
+    // // outb(PIT_CHANNEL_0, (unsigned char)(divisor & 0xFF)); // Send low byte
+    // // outb(PIT_CHANNEL_0, (unsigned char)(divisor >> 8));   // Send high byte
 
-    // // Turn on the speaker
+    // Turn on the speaker
     // unsigned char tmp = inb(SPEAKER_PORT) | 3;
     // outb(SPEAKER_PORT, tmp);
 
@@ -187,6 +193,24 @@ void process_command(char* input_buffer) {
 
     if (strcmp(command, "BEEP") == 0) {
         beep(5000); //  Hz
+    } else if (strcmp(command, "DUMP") == 0) {
+        if (arg_count == 0) {
+            //printf("DUMP command without arguments\n");
+            memory_dump(0x80000000, 0x80000100);
+        } else if (arg_count > 0 && strlen(arguments[0]) > 0) {
+            // Convert string arguments to addresses
+            uint32_t start_address = (uint32_t)strtoul(arguments[0], NULL, 16);
+            uint32_t end_address = 0;
+            // Check if there is a second argument
+            if(strlen(arguments[0]) > 0){
+                end_address = (uint32_t)strtoul(arguments[1], NULL, 16);
+            } 
+            // Call memory_dump with the converted addresses
+            memory_dump(start_address, end_address);
+        } else {
+            printf("DUMP command with invalid or too many arguments\n");
+        } 
+
     } else if (strcmp(command, "CLS") == 0) {
         clear_screen();
     } else if (strcmp(command, "LS") == 0) {
@@ -323,4 +347,56 @@ void openFile(const char* path) {
 
 
     secure_free(buffer, sizeof(buffer));  // Clear the buffer
+}
+
+// Check if a character is printable
+int is_printable(char ch) {
+    return (ch >= 32 && ch < 127);
+}
+
+// Convert a byte to a printable character or '.'
+char to_printable_char(char ch) {
+    return is_printable(ch) ? ch : '.';
+}
+
+// // Simple function to wait for Enter key
+// void wait_for_enter() {
+//     printf("Press Enter to continue...");
+//     while (getchar() != '\n');
+// }
+
+// Memory dump function
+void memory_dump(uint32_t start_address, uint32_t end_address) {
+    if (end_address == 0) {
+        end_address = start_address + (BYTES_PER_LINE * MAX_LINES); // Default length for 20 lines
+    }
+
+    uint8_t* ptr = (uint8_t*)start_address;
+    int line_count = 0;
+
+    while (ptr < (uint8_t*)end_address) {
+        printf("%08X: ", (unsigned int)(uintptr_t)ptr);
+
+        // Print each byte in hex and store ASCII characters
+        char ascii[BYTES_PER_LINE + 1];
+
+        for (int i = 0; i < BYTES_PER_LINE; ++i) {
+            if (ptr + i < (uint8_t*)end_address) {
+                printf("%02X ", ptr[i]);
+                ascii[i] = is_printable(ptr[i]) ? ptr[i] : '.';
+            } else {
+                printf("   ");
+                ascii[i] = ' ';
+            }
+        }
+
+        printf(" |%s|\n", ascii);
+        ptr += BYTES_PER_LINE;
+        line_count++;
+
+        if (line_count >= MAX_LINES) {
+            wait_for_enter(); // Wait for user to press Enter
+            line_count = 0;   // Reset line count
+        }
+    }
 }

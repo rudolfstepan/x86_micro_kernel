@@ -145,52 +145,79 @@ void print_hex(unsigned int value) {
     }
 }
 
-void vprintf(const char* format, va_list args) {
-    while (*format != '\0') {
-        if (*format == '%') {
-            format++;
-            switch (*format) {
-            case 'c': {
-                char c = (char)va_arg(args, int);
-                vga_write_char(c);
-                break;
-            }
-            case 's': {
-                char* s = va_arg(args, char*);
-                while (*s) {
-                    vga_write_char(*s++);
-                }
-                break;
-            }
-            case 'u': {
-                unsigned int u = va_arg(args, unsigned int);
-                print_unsigned(u, 10); // Base 10 for unsigned integer
-                break;
-            }
-            case 'd': {
-                int i = va_arg(args, int);
-                char buffer[32];
-                intToStr(i, buffer, 10);
-                char* s = buffer;
-                while (*s) {
-                    vga_write_char(*s++);
-                }
-                break;
-            }
-            case 'p': {
-                void* p = va_arg(args, void*);
-                print_hex((unsigned int)p); // Assuming 32-bit addresses
-                break;
-            }
-                    // Add more cases for other specifiers
-            }
-        } else {
-            vga_write_char(*format);
-        }
-        format++;
+void print_hex_padded(unsigned int value, int width) {
+    char hex_buffer[33]; // Enough for 32 digits plus a null terminator
+    char *ptr = &hex_buffer[32];
+    *ptr = '\0';
+
+    do {
+        int hex_digit = value & 0xF;
+        *--ptr = (hex_digit < 10) ? (hex_digit + '0') : (hex_digit - 10 + 'A');
+        value >>= 4;
+    } while (value != 0);
+
+    int num_digits = &hex_buffer[32] - ptr;
+    for (int i = 0; i < width - num_digits; ++i) {
+        vga_write_char('0');
     }
 
+    while (*ptr) {
+        vga_write_char(*ptr++);
+    }
 }
+
+// void vprintf(const char* format, va_list args) {
+//     while (*format != '\0') {
+//         if (*format == '%') {
+//             format++;
+
+//             switch (*format) {
+//                 case 'c': {
+//                     char c = (char)va_arg(args, int);
+//                     vga_write_char(c);
+//                     break;
+//                 }
+//                 case 's': {
+//                     char* s = va_arg(args, char*);
+//                     while (*s) {
+//                         vga_write_char(*s++);
+//                     }
+//                     break;
+//                 }
+//                 case 'u': {
+//                     unsigned int u = va_arg(args, unsigned int);
+//                     print_unsigned(u, 10); // Base 10 for unsigned integer
+//                     break;
+//                 }
+//                 case 'd': {
+//                     int i = va_arg(args, int);
+//                     char buffer[32];
+//                     intToStr(i, buffer, 10);
+//                     char* s = buffer;
+//                     while (*s) {
+//                         vga_write_char(*s++);
+//                     }
+//                     break;
+//                 }
+//                 case 'p': {
+//                     void* p = va_arg(args, void*);
+//                     print_hex((unsigned int)p); // Assuming 32-bit addresses
+//                     break;
+//                 }
+//                 case 'x': {
+//                     unsigned int x = va_arg(args, unsigned int);
+//                     print_hex_padded(x, 8); // Pad to 8 characters
+//                     break;
+//                 }
+                           
+//             }
+//         } else {
+//             vga_write_char(*format);
+//         }
+//         format++;
+//     }
+
+// }
 
 int printf(const char* format, ...) {
     va_list args;
@@ -199,40 +226,57 @@ int printf(const char* format, ...) {
     while (*format != '\0') {
         if (*format == '%') {
             format++;
+
+            // Parse width
+            int width = 0;
+            bool width_specified = false;
+            while (*format >= '0' && *format <= '9') {
+                width = width * 10 + (*format - '0');
+                width_specified = true;
+                format++;
+            }
+
             switch (*format) {
-            case 'c': {
-                char c = (char)va_arg(args, int);
-                vga_write_char(c);
-                break;
-            }
-            case 's': {
-                char* s = va_arg(args, char*);
-                while (*s) {
-                    vga_write_char(*s++);
+                case 'c': {
+                    char c = (char)va_arg(args, int);
+                    vga_write_char(c);
+                    break;
                 }
-                break;
-            }
-            case 'u': {
-                unsigned int u = va_arg(args, unsigned int);
-                print_unsigned(u, 10); // Base 10 for unsigned integer
-                break;
-            }
-            case 'd': {
-                int i = va_arg(args, int);
-                char buffer[32];
-                intToStr(i, buffer, 10);
-                char* s = buffer;
-                while (*s) {
-                    vga_write_char(*s++);
+                case 's': {
+                    char* s = va_arg(args, char*);
+                    while (*s) {
+                        vga_write_char(*s++);
+                    }
+                    break;
                 }
-                break;
-            }
-            case 'p': {
-                void* p = va_arg(args, void*);
-                print_hex((unsigned int)p); // Assuming 32-bit addresses
-                break;
-            }
-                    // Add more cases for other specifiers
+                case 'u': {
+                    unsigned int u = va_arg(args, unsigned int);
+                    print_unsigned(u, 10); // Base 10 for unsigned integer
+                    break;
+                }
+                case 'd': {
+                    int i = va_arg(args, int);
+                    char buffer[32];
+                    intToStr(i, buffer, 10);
+                    char* s = buffer;
+                    while (*s) {
+                        vga_write_char(*s++);
+                    }
+                    break;
+                }
+                case 'p': {
+                    void* p = va_arg(args, void*);
+                    print_hex((unsigned int)p); // Assuming 32-bit addresses
+                    break;
+                }
+                case 'X': {
+                    unsigned int x = va_arg(args, unsigned int);
+                    if (!width_specified) {
+                        width = 8; // Default width for %X
+                    }
+                    print_hex_padded(x, width);
+                    break;
+                }
             }
         } else {
             vga_write_char(*format);

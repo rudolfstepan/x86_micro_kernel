@@ -1,6 +1,28 @@
 #include "strings.h"
+#include <limits.h>
 
 
+// Helper function to convert a character to uppercase
+char toupper(char ch) {
+    return (ch >= 'a' && ch <= 'z') ? (ch - 'a' + 'A') : ch;
+}
+
+int isalnum(int c) {
+    // Check if the character is a letter (uppercase or lowercase) or a digit
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+}
+
+int isdigit(int c) {
+    return (c >= '0' && c <= '9');
+}
+
+int isspace(int c) {
+    return (c == ' ' || c == '\t' || c == '\n' || c == '\r');
+}
+
+int isalpha(int c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+}
 
 void strncpy(char* dest, char* src, int num) {
     for (int i = 0; i < num; i++) {
@@ -200,4 +222,58 @@ int snprintf(char* str, size_t size, const char* format, ...) {
     }
 
     return written;
+}
+
+unsigned long strtoul(const char *str, char **endptr, int base) {
+    if (base != 0 && (base < 2 || base > 36)) {
+        if (endptr) *endptr = (char *)str;
+        return 0; // Base out of range
+    }
+
+    int result = 0;
+    int digit;
+    int cutoff = ULONG_MAX / base;
+    int cutlim = ULONG_MAX % base;
+
+    // Skip white spaces
+    while (isspace((unsigned char)*str)) str++;
+
+    // Determine the base if not specified
+    if (base == 0) {
+        if (*str == '0') {
+            str++;
+            if (*str == 'x' || *str == 'X') {
+                base = 16;
+                str++;
+            } else {
+                base = 8;
+            }
+        } else {
+            base = 10;
+        }
+    }
+
+    while (*str) {
+        if (isdigit((unsigned char)*str))
+            digit = *str - '0';
+        else if (isalpha((unsigned char)*str))
+            digit = toupper((unsigned char)*str) - 'A' + 10;
+        else
+            break;
+
+        if (digit >= base) break;
+
+        // Check for overflow
+        if (result > cutoff || (result == cutoff && digit > cutlim)) {
+            result = ULONG_MAX; // Set to maximum value on overflow
+            break;
+        }
+
+        result = result * base + digit;
+        str++;
+    }
+
+    if (endptr) *endptr = (char *)str;
+
+    return result;
 }

@@ -13,15 +13,7 @@
 struct Fat32BootSector bootSector;
 unsigned int current_directory_cluster = 2; // Default root directory cluster for FAT32
 
-// Helper function to convert a character to uppercase
-char to_upper(char ch) {
-    return (ch >= 'a' && ch <= 'z') ? (ch - 'a' + 'A') : ch;
-}
 
-int isalnum(int c) {
-    // Check if the character is a letter (uppercase or lowercase) or a digit
-    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
-}
 
 void formatFilename(char* dest, unsigned char* src) {
     int i, j;
@@ -54,7 +46,7 @@ int compare_names(const char* fatName, const char* regularName) {
             }
         } else {
             // Compare characters (case-insensitive)
-            if (to_upper(fatName[i]) != to_upper(regularName[j])) {
+            if (toupper(fatName[i]) != toupper(regularName[j])) {
                 return -1; // Not a match
             }
             j++;
@@ -75,7 +67,7 @@ int compare_names(const char* fatName, const char* regularName) {
             }
         } else {
             // Compare characters (case-insensitive)
-            if (to_upper(fatName[i]) != to_upper(regularName[j])) {
+            if (toupper(fatName[i]) != toupper(regularName[j])) {
                 return -1; // Not a match
             }
             j++;
@@ -647,7 +639,7 @@ void convert_to_83_format(unsigned char* dest, const char* src) {
     int i = 0, j = 0;
     while (src[i] != '\0' && src[i] != '.' && j < 8) {
         if (isalnum((unsigned char)src[i])) {
-            dest[j++] = to_upper((unsigned char)src[i]);
+            dest[j++] = toupper((unsigned char)src[i]);
         }
         i++;
     }
@@ -663,7 +655,7 @@ void convert_to_83_format(unsigned char* dest, const char* src) {
         j = 8; // Extension starts at the 9th position
         while (src[i] != '\0' && j < 11) {
             if (isalnum((unsigned char)src[i])) {
-                dest[j++] = to_upper((unsigned char)src[i]);
+                dest[j++] = toupper((unsigned char)src[i]);
             }
             i++;
         }
