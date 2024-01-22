@@ -277,3 +277,17 @@ unsigned long strtoul(const char *str, char **endptr, int base) {
 
     return result;
 }
+
+int strncmp(const char *str1, const char *str2, size_t n) {
+    while (n-- && *str1 && (*str1 == *str2)) {
+        str1++;
+        str2++;
+    }
+
+    if (n == (size_t)-1) {
+        return 0;
+    } else {
+        return (unsigned char)*str1 - (unsigned char)*str2;
+    }
+}
+

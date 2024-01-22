@@ -15,6 +15,8 @@
 #include "../toolchain/stdlib.h"
 #include "../toolchain/strings.h"
 
+#define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
+
 // Assuming a maximum path length
 #define MAX_PATH_LENGTH 256
 
@@ -29,6 +31,33 @@
 // for memory dump
 #define BYTES_PER_LINE 16
 #define MAX_LINES 20
+
+
+// Multiboot structure definitions
+typedef struct {
+    uint32_t size;
+    uint64_t base_addr;
+    uint64_t length;
+    uint32_t type;
+} MemoryMapEntry;
+
+typedef struct {
+    uint32_t flags;
+    uint32_t mem_lower;
+    uint32_t mem_upper;
+    uint32_t boot_device;
+    uint32_t cmdline;
+    uint32_t mods_count;
+    uint32_t mods_addr;
+    uint32_t num;
+    uint32_t size;
+    uint32_t addr;
+    uint32_t shndx;
+    uint32_t mmap_length;
+    uint32_t mmap_addr;
+    // ... other Multiboot fields ...
+} MultibootInfo;
+
 
 char input_path[MAX_PATH_LENGTH];      // This should be set to the user input
 char normalized_path[MAX_PATH_LENGTH]; // This should be set to the normalized path
@@ -46,37 +75,41 @@ void process_command(char* command);
 void list_directory(const char* path);
 void openFile(const char* path);
 void memory_dump(uint32_t start_address, uint32_t end_address);
+void print_memory_map(const MultibootInfo* mb_info);
 
 
-void beep(unsigned int freq) {
-    printf("Beep %u Hz\n", freq);
-    // unsigned int divisor = PIT_FREQ / freq;
+// void beep(unsigned int freq) {
+//     printf("Beep %u Hz\n", freq);
+//     // unsigned int divisor = PIT_FREQ / freq;
 
-    // // Set PIT to square wave generator mode
-    // outb(PIT_CMD_PORT, 0b00110110);
+//     // // Set PIT to square wave generator mode
+//     // outb(PIT_CMD_PORT, 0b00110110);
 
-    // // // Send the frequency divisor
-    // // outb(PIT_CHANNEL_0, (unsigned char)(divisor & 0xFF)); // Send low byte
-    // // outb(PIT_CHANNEL_0, (unsigned char)(divisor >> 8));   // Send high byte
+//     // // // Send the frequency divisor
+//     // // outb(PIT_CHANNEL_0, (unsigned char)(divisor & 0xFF)); // Send low byte
+//     // // outb(PIT_CHANNEL_0, (unsigned char)(divisor >> 8));   // Send high byte
 
-    // Turn on the speaker
-    // unsigned char tmp = inb(SPEAKER_PORT) | 3;
-    // outb(SPEAKER_PORT, tmp);
+//     // Turn on the speaker
+//     // unsigned char tmp = inb(SPEAKER_PORT) | 3;
+//     // outb(SPEAKER_PORT, tmp);
 
-    // Duration of beep - implement a delay or use a timer
-    printf("Beep delay 5 begin\n");
+//     // Duration of beep - implement a delay or use a timer
+//     printf("Beep delay 5 begin\n");
 
-    delay(5);
+//     delay(5);
 
-    // Turn off the speaker
-    // tmp = inb(SPEAKER_PORT) & 0xFC;
-    // outb(SPEAKER_PORT, tmp);
+//     // Turn off the speaker
+//     // tmp = inb(SPEAKER_PORT) & 0xFC;
+//     // outb(SPEAKER_PORT, tmp);
 
-    printf("Beep finished\n");
+//     printf("Beep finished\n");
 
-    // int i=5;
-    // vga_write_char(i/0);
-}
+
+
+//     // int i=5;
+//     // vga_write_char(i/0);
+// }
+
 
 // execute the program at the specified entry point
 void call_program(long entryPoint) {
@@ -129,7 +162,11 @@ void normalize_path(char* input_path, char* normalized_path, const char* current
     normalized_path[MAX_PATH_LENGTH - 1] = '\0'; // Ensure null termination
 }
 
-void main(void) {
+MultibootInfo* sys_mb_info;
+
+void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
+
+    sys_mb_info = mb_info;
 
     initializeHeap();
     test_memory();
@@ -147,12 +184,19 @@ void main(void) {
 
     kb_install();
 
+    // Check if the magic number is correct
+    if (multiboot_magic != MULTIBOOT_BOOTLOADER_MAGIC) {
+        printf("Invalid magic number: 0x%x\n", multiboot_magic);
+        return;
+    }
+
     printf("++++++++++++++++++++++++++++ Mini OS ++++++++++++++++++++++++++\n");
     printf("+                        Version 0.0.1                        +\n");
     printf("+                        2021-05-01                           +\n");
     printf("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
 
     printf(" HELP for available commands.\n");
+
 
     int year, month, day, hour, minute, second;
     getDate(&year, &month, &day);
@@ -202,8 +246,9 @@ void process_command(char* input_buffer) {
     //     printf("Argument %d: %s\n", i, arguments[i]);
     // }
 
-    if (strcmp(command, "BEEP") == 0) {
-        beep(5000); //  Hz
+    if (strcmp(command, "MEM") == 0) {
+        //beep(5000); //  Hz
+        print_memory_map(sys_mb_info);
     } else if (strcmp(command, "DUMP") == 0) {
         if (arg_count == 0) {
             //printf("DUMP command without arguments\n");
@@ -429,5 +474,26 @@ void memory_dump(uint32_t start_address, uint32_t end_address) {
             wait_for_enter(); // Wait for user to press Enter
             line_count = 0;   // Reset line count
         }
+    }
+}
+
+// Print the memory map
+void print_memory_map(const MultibootInfo* mb_info) {
+    int line_count = 0;
+    if (mb_info->flags & 1 << 6) {
+        MemoryMapEntry* mmap = (MemoryMapEntry*)mb_info->mmap_addr;
+        while ((unsigned int)mmap < mb_info->mmap_addr + mb_info->mmap_length) {
+            printf("Memory Base: 0x%llx, Length: 0x%llx, Type: %u\n", 
+                   mmap->base_addr, mmap->length, mmap->type);
+            mmap = (MemoryMapEntry*)((unsigned int)mmap + mmap->size + sizeof(mmap->size));
+
+            if (++line_count == 20) {
+                printf("Press Enter to continue...\n");
+                wait_for_enter();
+                line_count = 0;
+            }
+        }
+    } else {
+        printf("Memory map not available.\n");
     }
 }

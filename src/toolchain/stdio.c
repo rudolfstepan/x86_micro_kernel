@@ -1,4 +1,5 @@
 #include "stdio.h"
+#include "strings.h"
 
 #include "../kernel/fat32.h"
 #include "../kernel/system.h"
@@ -168,6 +169,19 @@ void print_hex_padded(unsigned int value, int width) {
     }
 }
 
+void print_hex64(uint64_t value) {
+    char buffer[16]; // 64 bits = 16 hex digits
+    const char* hex_digits = "0123456789ABCDEF";
+    for (int i = 15; i >= 0; i--) {
+        buffer[i] = hex_digits[value & 0xF];
+        value >>= 4;
+    }
+    for (int i = 0; i < 16; i++) {
+        vga_write_char(buffer[i]);
+    }
+}
+
+
 // void vprintf(const char* format, va_list args) {
 //     while (*format != '\0') {
 //         if (*format == '%') {
@@ -238,47 +252,55 @@ int printf(const char* format, ...) {
                 format++;
             }
 
-            switch (*format) {
-                case 'c': {
-                    char c = (char)va_arg(args, int);
-                    vga_write_char(c);
-                    break;
-                }
-                case 's': {
-                    char* s = va_arg(args, char*);
-                    while (*s) {
-                        vga_write_char(*s++);
+            
+            if (strncmp(format, "llx", 3) == 0) {
+                uint64_t llx = va_arg(args, uint64_t);
+                print_hex64(llx);
+                format += 2; // Skip past 'llx'
+            } else {
+                switch (*format) {
+                    case 'c': {
+                        char c = (char)va_arg(args, int);
+                        vga_write_char(c);
+                        break;
                     }
-                    break;
-                }
-                case 'u': {
-                    unsigned int u = va_arg(args, unsigned int);
-                    print_unsigned(u, 10); // Base 10 for unsigned integer
-                    break;
-                }
-                case 'd': {
-                    int i = va_arg(args, int);
-                    char buffer[32];
-                    intToStr(i, buffer, 10);
-                    char* s = buffer;
-                    while (*s) {
-                        vga_write_char(*s++);
+                    case 's': {
+                        char* s = va_arg(args, char*);
+                        while (*s) {
+                            vga_write_char(*s++);
+                        }
+                        break;
                     }
-                    break;
-                }
-                case 'p': {
-                    void* p = va_arg(args, void*);
-                    print_hex((unsigned int)p); // Assuming 32-bit addresses
-                    break;
-                }
-                case 'X': {
-                    unsigned int x = va_arg(args, unsigned int);
-                    if (!width_specified) {
-                        width = 8; // Default width for %X
+                    case 'u': {
+                        unsigned int u = va_arg(args, unsigned int);
+                        print_unsigned(u, 10); // Base 10 for unsigned integer
+                        break;
                     }
-                    print_hex_padded(x, width);
-                    break;
+                    case 'd': {
+                        int i = va_arg(args, int);
+                        char buffer[32];
+                        intToStr(i, buffer, 10);
+                        char* s = buffer;
+                        while (*s) {
+                            vga_write_char(*s++);
+                        }
+                        break;
+                    }
+                    case 'p': {
+                        void* p = va_arg(args, void*);
+                        print_hex((unsigned int)p); // Assuming 32-bit addresses
+                        break;
+                    }
+                    case 'X': {
+                        unsigned int x = va_arg(args, unsigned int);
+                        if (!width_specified) {
+                            width = 8; // Default width for %X
+                        }
+                        print_hex_padded(x, width);
+                        break;
+                    }
                 }
+
             }
         } else {
             vga_write_char(*format);

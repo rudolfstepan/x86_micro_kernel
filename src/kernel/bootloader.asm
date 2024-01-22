@@ -31,9 +31,12 @@ mboot:
     dd start
 
 stublet:
-
-	extern main
-	call main
+    extern main
+    ; Jump to the kernel's main function
+    ; Pass the Multiboot magic number and the Multiboot information structure pointer
+    push ebx              ; ebx contains the pointer to the Multiboot information structure
+    push dword 0x2BADB002 ; Multiboot magic number
+    call main
     jmp $
     
 global gdt_flush     
