@@ -168,6 +168,46 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
 
     sys_mb_info = mb_info;
 
+    // Check if the magic number is correct
+    if (multiboot_magic != MULTIBOOT_BOOTLOADER_MAGIC) {
+        printf("Invalid magic number: 0x%x\n", multiboot_magic);
+        return;
+    }
+
+    set_color(WHITE);
+    
+    printf("===============================================================================\n");
+    printf("|                               MINI X86 SYSTEM                               |\n");
+    printf("===============================================================================\n");
+    printf("| Status: All systems operational                                             |\n");
+    printf("|                                                                             |\n");
+    printf("===============================================================================\n");
+    printf(" HELP for available commands.\n");
+
+    int year, month, day, hour, minute, second;
+    getDate(&year, &month, &day);
+    getTime(&hour, &minute, &second);
+
+    printf("Date Time: %d-%d-%d %d:%d:%d\n", year, month, day, hour, minute, second);
+
+    // test the colors
+    set_color(BLACK); printf("Black ");
+    set_color(BLUE); printf("Blue ");
+    set_color(GREEN); printf("Green ");
+    set_color(CYAN); printf("Cyan ");
+    set_color(RED); printf("Red ");
+    set_color(MAGENTA); printf("Magenta ");
+    set_color(BROWN); printf("Brown ");
+    set_color(LIGHT_GRAY); printf("Light Grey ");
+    set_color(DARK_GRAY); printf("Dark Grey ");
+    set_color(LIGHT_BLUE); printf("Light Blue ");
+    set_color(LIGHT_GREEN); printf("Light Green ");
+    set_color(LIGHT_CYAN); printf("Light Cyan ");
+    set_color(LIGHT_RED); printf("Light Red ");
+    set_color(LIGHT_MAGENTA); printf("Light Magenta ");
+    set_color(YELLOW); printf("Yellow ");
+    set_color(WHITE); printf("White\n");
+
     initializeHeap();
     test_memory();
 
@@ -183,26 +223,6 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
     //initialize_syscall_table();
 
     kb_install();
-
-    // Check if the magic number is correct
-    if (multiboot_magic != MULTIBOOT_BOOTLOADER_MAGIC) {
-        printf("Invalid magic number: 0x%x\n", multiboot_magic);
-        return;
-    }
-
-    printf("++++++++++++++++++++++++++++ Mini OS ++++++++++++++++++++++++++\n");
-    printf("+                        Version 0.0.1                        +\n");
-    printf("+                        2021-05-01                           +\n");
-    printf("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
-
-    printf(" HELP for available commands.\n");
-
-
-    int year, month, day, hour, minute, second;
-    getDate(&year, &month, &day);
-    getTime(&hour, &minute, &second);
-
-    printf("Date Time: %d-%d-%d %d:%d:%d\n", year, month, day, hour, minute, second);
 
     // show the prompt
     print_prompt();

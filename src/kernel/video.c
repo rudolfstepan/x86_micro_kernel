@@ -6,6 +6,13 @@
 
 unsigned short* vga_buffer = (unsigned short*)VGA_ADDRESS;
 
+
+char current_color = 0x0F; // White on black background
+
+void set_color(char color) {
+    current_color = color;
+}
+
 // clear the screen
 void clear_screen() {
     unsigned char color = 0x0F;  // Black background, white foreground
@@ -73,7 +80,7 @@ void vga_write_char(char ch) {
         cursor_x = 0;
     } else {
         const unsigned int index = cursor_y * VGA_COLS + cursor_x;
-        vga_buffer[index] = (unsigned short)ch | (0x0F << 8);  // 0x0F for white-on-black text
+        vga_buffer[index] = (unsigned short)ch | (current_color << 8);  // 0x0F for white-on-black text
         cursor_x++;
         if (cursor_x >= VGA_COLS) {
             cursor_x = 0;
@@ -90,7 +97,7 @@ void vga_write_char(char ch) {
 
         // Clear the last line
         for (int x = 0; x < VGA_COLS; x++) {
-            vga_buffer[(VGA_ROWS - 1) * VGA_COLS + x] = ' ' | (0x0F << 8);
+            vga_buffer[(VGA_ROWS - 1) * VGA_COLS + x] = ' ' | (current_color << 8);
         }
 
         cursor_y = VGA_ROWS - 1;  // Reset cursor to the last line
@@ -118,5 +125,5 @@ void vga_backspace() {
 
     // Erase the character at this new position by writing a space character
     const unsigned int index = cursor_y * VGA_COLS + cursor_x;
-    vga_buffer[index] = ' ' | (0x0F << 8);  // Assuming 0x0F for white-on-black text
+    vga_buffer[index] = ' ' | (current_color << 8);  // Assuming 0x0F for white-on-black text
 }
