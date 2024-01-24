@@ -309,7 +309,7 @@ isr31:
     push byte 0
     push byte 31
     jmp isr_common_stub
-    
+
 extern fault_handler
 
 isr_common_stub:
@@ -464,6 +464,12 @@ irq15:
     push byte 0
     push byte 47
     jmp irq_common_stub
+
+; 0x80: System Call
+; global syscall_table
+; irq_syscall:
+;     cli
+
 
 extern irq_handler
 

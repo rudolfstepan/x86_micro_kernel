@@ -35,6 +35,7 @@ extern void isr29();
 extern void isr30();
 extern void isr31();
 
+
 void isr_install() {
     //char* st = "* isr_install\n";
 
@@ -84,7 +85,6 @@ char* exception_messages[] =
     "Out of Bounds",
     "Invalid Opcode",
     "No Coprocessor",
-
     "Double Fault",
     "Coprocessor Segment Overrun",
     "Bad TSS",
@@ -93,7 +93,6 @@ char* exception_messages[] =
     "General Protection Fault",
     "Page Fault",
     "Unknown Interrupt",
-
     "Coprocessor Fault",
     "Alignment Check",
     "Machine Check",
@@ -102,7 +101,6 @@ char* exception_messages[] =
     "Reserved",
     "Reserved",
     "Reserved",
-
     "Reserved",
     "Reserved",
     "Reserved",

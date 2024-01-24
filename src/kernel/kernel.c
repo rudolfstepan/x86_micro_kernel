@@ -15,48 +15,6 @@
 #include "../toolchain/stdlib.h"
 #include "../toolchain/strings.h"
 
-#define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
-
-// Assuming a maximum path length
-#define MAX_PATH_LENGTH 256
-
-#define PROGRAM_LOAD_ADDRESS 0x10000 // default address where the program will be loaded into memory except in the case of a program header
-#define BUFFER_SIZE 256
-
-#define PIT_FREQ 1193180
-#define SPEAKER_PORT 0x61
-#define PIT_CMD_PORT 0x43
-#define PIT_CHANNEL_0 0x40
-
-// for memory dump
-#define BYTES_PER_LINE 16
-#define MAX_LINES 20
-
-
-// Multiboot structure definitions
-typedef struct {
-    uint32_t size;
-    uint64_t base_addr;
-    uint64_t length;
-    uint32_t type;
-} MemoryMapEntry;
-
-typedef struct {
-    uint32_t flags;
-    uint32_t mem_lower;
-    uint32_t mem_upper;
-    uint32_t boot_device;
-    uint32_t cmdline;
-    uint32_t mods_count;
-    uint32_t mods_addr;
-    uint32_t num;
-    uint32_t size;
-    uint32_t addr;
-    uint32_t shndx;
-    uint32_t mmap_length;
-    uint32_t mmap_addr;
-    // ... other Multiboot fields ...
-} MultibootInfo;
 
 
 char input_path[MAX_PATH_LENGTH];      // This should be set to the user input
@@ -74,8 +32,65 @@ void print_prompt();
 void process_command(char* command);
 void list_directory(const char* path);
 void openFile(const char* path);
-void memory_dump(uint32_t start_address, uint32_t end_address);
-void print_memory_map(const MultibootInfo* mb_info);
+void call_irq(int irq);
+
+// Multiboot structure definitions
+extern MultibootInfo* sys_mb_info;
+
+
+//---------------------------------------------------------------------------------------------
+// syscall table entry points and definitions
+//---------------------------------------------------------------------------------------------
+typedef void (*syscall_func_ptr)(void);
+typedef void (*syscall_sleep_func_ptr)(int);
+// Use a specific section for the syscall table to allow the linker to control the address
+syscall_func_ptr syscall_table[NUM_SYSCALLS] __attribute__((section(".syscall_table")));
+
+void syscall_sleep(int ticks) {
+    if (ticks > 100) {
+        ticks = 1;
+    }
+    // Code to handle passing arguments to the system call...
+    printf("Sleeping for %u ticks...\n", ticks);
+    //delay(ticks);
+    printf("Done sleeping!\n");
+}
+//---------------------------------------------------------------------------------------------
+__attribute__((naked)) void syscall_handler() {
+    __asm__ volatile(
+        "pusha\n"                          // Push all general-purpose registers
+
+        "cmp $0, %%eax\n"                  // Compare EAX with 0
+        "jne not_get_address\n"            // If not equal, jump to other syscall handling
+        "movl syscall_table_address, %%eax\n" // Move the address of the syscall table into EAX
+        "jmp done_handling\n"              // Jump to the end of the handler
+
+        "not_get_address:\n"
+        // Add more comparisons and jumps here for other syscalls
+
+        "done_handling:\n"
+        "popa\n"                           // Pop all general-purpose registers
+        "iret\n"                           // Return from interrupt
+        :
+    :
+        : "memory"
+        );
+}
+
+// This would be your syscall_table_address variable, initialized somewhere in your kernel startup code
+uintptr_t syscall_table_address = (uintptr_t)&syscall_table;
+
+// Initialize the syscall table
+void initialize_syscall_table() {
+    // No need to set the address here; the linker will take care of it
+    syscall_table[SYSCALL_SLEEP] = (syscall_func_ptr)&syscall_sleep;
+
+    irq_install_handler(128, syscall_handler); // Install the system call handler
+    //__asm__ __volatile__("int $0x80"); // Invoke interrupt 0x80
+
+}
+//---------------------------------------------------------------------------------------------
+
 
 
 // void beep(unsigned int freq) {
@@ -144,26 +159,6 @@ void load_program(const char* programName) {
     }
 }
 
-// Function to normalize a file path.
-void normalize_path(char* input_path, char* normalized_path, const char* current_path) {
-    if (input_path[0] == '/') {
-        // Absolute path, copy it directly.
-        strncpy(normalized_path, input_path, MAX_PATH_LENGTH - 1);
-    } else {
-        // Relative path, check if the current path is root "/"
-        if (strcmp(current_path, "/") == 0) {
-            // If current path is root, concatenate without adding an extra slash
-            snprintf(normalized_path, MAX_PATH_LENGTH, "/%s", input_path);
-        } else {
-            // Otherwise, concatenate normally
-            snprintf(normalized_path, MAX_PATH_LENGTH, "%s/%s", current_path, input_path);
-        }
-    }
-    normalized_path[MAX_PATH_LENGTH - 1] = '\0'; // Ensure null termination
-}
-
-MultibootInfo* sys_mb_info;
-
 void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
 
     sys_mb_info = mb_info;
@@ -174,8 +169,27 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
         return;
     }
 
+    initializeHeap();
+    test_memory();
+
+    gdt_install();
+    idt_install();
+    isr_install();
+    irq_install();
+    __asm__ __volatile__("sti");
+    timer_install();
+
+    init_fs(); // Initialize the file system
+
+    // syscall table
+    initialize_syscall_table();
+
+    kb_install();
+
+
     set_color(WHITE);
-    
+
+
     printf("===============================================================================\n");
     printf("|                               MINI X86 SYSTEM                               |\n");
     printf("===============================================================================\n");
@@ -184,11 +198,6 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
     printf("===============================================================================\n");
     printf(" HELP for available commands.\n");
 
-    int year, month, day, hour, minute, second;
-    getDate(&year, &month, &day);
-    getTime(&hour, &minute, &second);
-
-    printf("Date Time: %d-%d-%d %d:%d:%d\n", year, month, day, hour, minute, second);
 
     // test the colors
     set_color(BLACK); printf("Black ");
@@ -208,21 +217,8 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
     set_color(YELLOW); printf("Yellow ");
     set_color(WHITE); printf("White\n");
 
-    initializeHeap();
-    test_memory();
 
-    gdt_install();
-    idt_install();
-    isr_install();
-    irq_install();
-    __asm__ __volatile__("sti");
-    timer_install();
-
-    init_fs(); // Initialize the file system
-
-    //initialize_syscall_table();
-
-    kb_install();
+    set_color(WHITE);
 
     // show the prompt
     print_prompt();
@@ -245,6 +241,15 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
 
 // Print the prompt
 void print_prompt() {
+
+    int year, month, day, hour, minute, second;
+    getDate(&year, &month, &day);
+    getTime(&hour, &minute, &second);
+
+    set_color(LIGHT_GREEN);
+    printf("%d-%d-%d %d:%d:%d", year, month, day, hour, minute, second);
+
+    set_color(WHITE);
     printf("%s>", current_path);
 }
 
@@ -252,19 +257,22 @@ void print_prompt() {
 // Process the command
 // Print the prompt
 void process_command(char* input_buffer) {
-    int arg_count = split_input(input_buffer, command, arguments, sizeof(input_buffer), 10);
 
-    if(input_buffer[0] == 0) {
+    // Split the input string into command and arguments
+    int len = strlen(input_buffer);
+    int arg_count = split_input(input_buffer, command, arguments, len, 10);
+
+    if (input_buffer[0] == 0) {
         return;
     }
 
     printf("\n");
 
-    // printf("Command: %s\n", command);
-    // printf("Arguments: %d\n", arg_count);
-    // for (int i = 0; i < arg_count; i++) {
-    //     printf("Argument %d: %s\n", i, arguments[i]);
-    // }
+    printf("Command: %s\n", command);
+    printf("Arguments: %d\n", arg_count);
+    for (int i = 0; i < arg_count; i++) {
+        printf("Argument %d: %s\n", i, arguments[i]);
+    }
 
     if (strcmp(command, "MEM") == 0) {
         //beep(5000); //  Hz
@@ -278,14 +286,14 @@ void process_command(char* input_buffer) {
             uint32_t start_address = (uint32_t)strtoul(arguments[0], NULL, 16);
             uint32_t end_address = 0;
             // Check if there is a second argument
-            if(strlen(arguments[1]) > 0){
+            if (strlen(arguments[1]) > 0) {
                 end_address = (uint32_t)strtoul(arguments[1], NULL, 16);
-            } 
+            }
             // Call memory_dump with the converted addresses
             memory_dump(start_address, end_address);
         } else {
             printf("DUMP command with invalid or too many arguments\n");
-        } 
+        }
     } else if (strcmp(command, "CLS") == 0) {
         clear_screen();
     } else if (strcmp(command, "LS") == 0) {
@@ -383,16 +391,83 @@ void process_command(char* input_buffer) {
             printf("OPEN command with invalid or too many arguments\n");
         }
     } else if (strcmp(command, "HELP") == 0) {
-            printf("LS, CLS, CD [path]\n");
-            printf("MKDIR [name], RMDIR [name]\n");
-            printf("MKFILE [name], RMFILE [name]\n");
-            printf("RUN [Programm], LOAD [Programm], SYS [address], OPEN [file]\n");
+        printf("LS, CLS, CD [path]\n");
+        printf("MKDIR [name], RMDIR [name]\n");
+        printf("MKFILE [name], RMFILE [name]\n");
+        printf("RUN [Programm], LOAD [Programm], SYS [address], OPEN [file]\n");
+    } else if (strcmp(command, "TIME") == 0) {
+        int hour, minute, second;
+        getTime(&hour, &minute, &second);
+        printf("Time: %d:%d:%d\n", hour, minute, second);
+    } else if (strcmp(command, "DATE") == 0) {
+        int year, month, day;
+        getDate(&year, &month, &day);
+        printf("Date: %d/%d/%d\n", year, month, day);
+    } else if (strcmp(command, "SETTIME") == 0) {
+        if (arg_count == 0) {
+            printf("SETTIME command without arguments\n");
+        } else if (arg_count == 1 && strlen(arguments[0]) > 0) {
+            // Convert string argument to address
+            int hour = (int)strtoul(arguments[0], NULL, 16);
+            int minute = (int)strtoul(arguments[1], NULL, 16);
+            int second = (int)strtoul(arguments[2], NULL, 16);
+            setTime(hour, minute, second);
+        } else {
+            printf("SETTIME command with invalid or too many arguments\n");
+        }
+    } else if (strcmp(command, "SETDATE") == 0) {
+        if (arg_count == 0) {
+            printf("SETDATE command without arguments\n");
+        } else if (arg_count == 1 && strlen(arguments[0]) > 0) {
+            // Convert string argument to address
+            int year = (int)strtoul(arguments[0], NULL, 16);
+            int month = (int)strtoul(arguments[1], NULL, 16);
+            int day = (int)strtoul(arguments[2], NULL, 16);
+            setDate(year, month, day);
+        } else {
+            printf("SETDATE command with invalid or too many arguments\n");
+        }
+    } else if (strcmp(command, "IRQ") == 0) {
+        if(arg_count == 0) {
+            printf("IRQ command without arguments\n");
+        } else if (arg_count == 1 && strlen(arguments[0]) > 0) {
+            // Convert string argument to address
+            int irq = (int)strtoul(arguments[0], NULL, 16);
+            printf("IRQ %d\n", irq);
+            call_irq(irq);
+        } else {
+            printf("IRQ command with invalid or too many arguments\n");
+        }
+
+
     } else {
         printf("Invalid command: %s\n", command);
     }
 
     // show the prompt
     print_prompt();
+}
+
+void call_irq(int irq) {
+    // Map IRQ number to the corresponding interrupt number
+    // Assuming IRQs are mapped starting at interrupt number 0x20
+    int int_number = irq + 0x20;
+
+    switch (int_number) {
+        case 0x20:
+            __asm__ __volatile__("int $0x20");
+            break;
+        case 0x21:
+            __asm__ __volatile__("int $0x21");
+            break;
+        // ... Handle other cases accordingly ...
+        case 0x80:
+            __asm__ __volatile__("int $0x80");
+            break;
+        default:
+            // Handle invalid IRQ numbers
+            break;
+    }
 }
 
 // List the contents of the specified directory
@@ -416,7 +491,7 @@ void openFile(const char* path) {
     printf("Opening file: %s\n", path);
 
     File* file = fopen(path, "r");
-    if(file == NULL) {
+    if (file == NULL) {
         printf("File not found: %s\n", path);
         return;
     }
@@ -425,7 +500,7 @@ void openFile(const char* path) {
     printf("Size: %d\n", file->size);
 
     char* buffer = (char*)malloc(sizeof(char) * file->size);
-    if(buffer == NULL) {
+    if (buffer == NULL) {
         printf("Failed to allocate memory for file buffer\n");
         return;
     }
@@ -433,7 +508,7 @@ void openFile(const char* path) {
     // read the file into the buffer
     int result = fread(buffer, file->size, file);
 
-    if(result == 0) {
+    if (result == 0) {
         printf("Failed to read file\n");
         return;
     }
@@ -443,77 +518,4 @@ void openFile(const char* path) {
 
 
     secure_free(buffer, sizeof(buffer));  // Clear the buffer
-}
-
-// Check if a character is printable
-int is_printable(char ch) {
-    return (ch >= 32 && ch < 127);
-}
-
-// Convert a byte to a printable character or '.'
-char to_printable_char(char ch) {
-    return is_printable(ch) ? ch : '.';
-}
-
-// // Simple function to wait for Enter key
-// void wait_for_enter() {
-//     printf("Press Enter to continue...");
-//     while (getchar() != '\n');
-// }
-
-// Memory dump function
-void memory_dump(uint32_t start_address, uint32_t end_address) {
-    if (end_address == 0) {
-        end_address = start_address + (BYTES_PER_LINE * MAX_LINES); // Default length for 20 lines
-    }
-
-    uint8_t* ptr = (uint8_t*)start_address;
-    int line_count = 0;
-
-    while (ptr < (uint8_t*)end_address) {
-        printf("%08X: ", (unsigned int)(uintptr_t)ptr);
-
-        // Print each byte in hex and store ASCII characters
-        char ascii[BYTES_PER_LINE + 1];
-
-        for (int i = 0; i < BYTES_PER_LINE; ++i) {
-            if (ptr + i < (uint8_t*)end_address) {
-                printf("%02X ", ptr[i]);
-                ascii[i] = is_printable(ptr[i]) ? ptr[i] : '.';
-            } else {
-                printf("   ");
-                ascii[i] = ' ';
-            }
-        }
-
-        printf(" |%s|\n", ascii);
-        ptr += BYTES_PER_LINE;
-        line_count++;
-
-        if (line_count >= MAX_LINES) {
-            wait_for_enter(); // Wait for user to press Enter
-            line_count = 0;   // Reset line count
-        }
-    }
-}
-
-// Print the memory map
-void print_memory_map(const MultibootInfo* mb_info) {
-    int line_count = 0;
-    if (mb_info->flags & 1 << 6) {
-        MemoryMapEntry* mmap = (MemoryMapEntry*)mb_info->mmap_addr;
-        while ((unsigned int)mmap < mb_info->mmap_addr + mb_info->mmap_length) {
-            printf("Memory Base: 0x%llx, Length: 0x%llx, Type: %u\n", 
-                   mmap->base_addr, mmap->length, mmap->type);
-            mmap = (MemoryMapEntry*)((unsigned int)mmap + mmap->size + sizeof(mmap->size));
-
-            if (++line_count == 20) {
-                printf("Press Enter to continue...\n");
-                wait_for_enter();
-                line_count = 0;
-            }
-        }
-    } else {
-        printf("Memory map not available.\n");
-    }
 }

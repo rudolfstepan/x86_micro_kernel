@@ -291,3 +291,20 @@ int strncmp(const char *str1, const char *str2, size_t n) {
     }
 }
 
+// Function to normalize a file path.
+void normalize_path(char* input_path, char* normalized_path, const char* current_path) {
+    if (input_path[0] == '/') {
+        // Absolute path, copy it directly.
+        strncpy(normalized_path, input_path, MAX_PATH_LENGTH - 1);
+    } else {
+        // Relative path, check if the current path is root "/"
+        if (strcmp(current_path, "/") == 0) {
+            // If current path is root, concatenate without adding an extra slash
+            snprintf(normalized_path, MAX_PATH_LENGTH, "/%s", input_path);
+        } else {
+            // Otherwise, concatenate normally
+            snprintf(normalized_path, MAX_PATH_LENGTH, "%s/%s", current_path, input_path);
+        }
+    }
+    normalized_path[MAX_PATH_LENGTH - 1] = '\0'; // Ensure null termination
+}

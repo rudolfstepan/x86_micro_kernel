@@ -4,6 +4,9 @@
 #include <stddef.h>
 #include <stdarg.h>
 
+// Assuming a maximum path length
+#define MAX_PATH_LENGTH 256
+
 
 char toupper(char ch);
 int isalnum(int c);
@@ -27,5 +30,6 @@ int snprintf(char *str, size_t size, const char *format, ...);
 
 unsigned long strtoul(const char *str, char **endptr, int base);
 
+void normalize_path(char* input_path, char* normalized_path, const char* current_path);
 
 #endif /* STRINGS_H */

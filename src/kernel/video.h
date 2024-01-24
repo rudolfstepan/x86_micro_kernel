@@ -1,13 +1,12 @@
 #ifndef VIDEO_H    /* This is an "include guard" */
 #define VIDEO_H    /* prevents the file from being included twice. */
 
-#define VGA_ADDRESS 0xB8000
+#define VGA_ADDRESS 0xB8000         // VGA text mode address
+#define VGA_CTRL_REGISTER 0x3D4     // VGA control register
+#define VGA_DATA_REGISTER 0x3D5     // VGA data register
+
 #define VGA_COLS 80
 #define VGA_ROWS 25
-#define VGA_ATTRIB 0x0F  // White text on black background
-
-#define VGA_CTRL_REGISTER 0x3D4
-#define VGA_DATA_REGISTER 0x3D5
 
 
 // Colors

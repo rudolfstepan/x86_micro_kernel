@@ -23,7 +23,7 @@
 // char scancode_to_ascii(unsigned char scancode);
 
 void kb_install();
-void wait_for_enter();
+extern void wait_for_enter();
 //int getchar();
 
 #endif

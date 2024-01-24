@@ -1,24 +1,30 @@
 OUTPUT_FORMAT(elf32-i386)
 ENTRY(start)
-phys = 0x00100000;
+address = 1M;  /* 0x00100000 */
 SECTIONS
 {
-  .text phys : AT(phys) {
+  .text address : AT(address) {
     code = .;
     *(.text)
     *(.rodata)
     . = ALIGN(4096);
   }
-  .data : AT(phys + (data - code))
+  .data : AT(address + (data - code))
   {
     data = .;
     *(.data)
     . = ALIGN(4096);
   }
-  .bss : AT(phys + (bss - code))
+  .bss : AT(address + (bss - code))
   {
     bss = .;
     *(.bss)
+    . = ALIGN(4096);
+  }
+  .syscall_table : AT(address + (syscall_table - code))
+  {
+    syscall_table = .;
+    *(.syscall_table)
     . = ALIGN(4096);
   }
   end = .;
