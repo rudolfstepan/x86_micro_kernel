@@ -1,9 +1,9 @@
 #ifndef MEMORY_H    /* This is an "include guard" */
 #define MEMORY_H
 
-void initializeHeap();
+void initialize_memory_system();
 
-void* malloc(unsigned int size);
+void* malloc(size_t size);
 void free(void* ptr);
 void secure_free(void *ptr, size_t size);
 

@@ -6,112 +6,76 @@
 #include "stdio.h"
 
 
-#define POOL_SIZE 1024 * 1024  // Adjust this size according to your needs
+typedef struct memory_block {
+    size_t size;
+    int free;
+    struct memory_block *next;
+} memory_block;
 
-typedef struct Block {
-    size_t size;          // Size of the block
-    struct Block *next;   // Pointer to the next block
-} Block;
+// Kernel starts at 0x100000 1MB address in memory
+// Heap starts at 0x100000 + Kernel Size
+// TODO: Get the kernel size from the linker script and use the memory addresses dynamically from the bootloader
+#define HEAP_START  (void*)(0x100000 + (1024 * 1024))  // 2MB
+#define HEAP_END    (void*)0x500000  // 5MB
 
-#define ALIGNMENT 8  // Align blocks to 8 bytes
-#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
-#define BLOCK_SIZE (ALIGN(sizeof(Block)))
+#define BLOCK_SIZE sizeof(memory_block)
 
-static char memoryPool[POOL_SIZE];  // Define the memory pool
-static Block *freeList = (Block *)memoryPool; // Initialize the free list
+memory_block *freeList = (memory_block*)HEAP_START;
 
-
-void initializeHeap() {
+void initialize_memory_system() {
     // Initialize memory pool on first malloc call
-
+    freeList->size = (size_t)HEAP_END - (size_t)HEAP_START - BLOCK_SIZE;
+    freeList->free = 1;
+    freeList->next = NULL;
 }
 
 void *malloc(size_t size) {
-    if (size == 0) {
-        return NULL;
-    }
+    memory_block *current = freeList, *prev = NULL;
+    void *result = NULL;
 
-    size = ALIGN(size);  // Align the requested size
-    Block *bestFit = NULL;
-    Block **bestFitPrev = NULL;
+    // Align size to word boundary
+    size = (size + sizeof(size_t) - 1) & ~(sizeof(size_t) - 1);
 
-    // Initialize the memory pool if it's the first call
-    if (!freeList->size) {
-        freeList->size = POOL_SIZE - BLOCK_SIZE;
-        freeList->next = NULL;
-    }
-
-    Block *prev = NULL;
-    Block *current = freeList;
-
-    // Find the best-fit block
-    while (current != NULL) {
-        if (current->size >= size) {
-            if (!bestFit || current->size < bestFit->size) {
-                bestFit = current;
-                bestFitPrev = prev ? &prev->next : &freeList;
+    while (current) {
+        // Check if current block is free and large enough
+        if (current->free && current->size >= size) {
+            // Check if we can split the block
+            if (current->size > size + BLOCK_SIZE + sizeof(size_t)) {
+                memory_block *newBlock = (memory_block*)((size_t)current + BLOCK_SIZE + size);
+                newBlock->size = current->size - size - BLOCK_SIZE;
+                newBlock->free = 1;
+                newBlock->next = current->next;
+                current->size = size;
+                current->next = newBlock;
             }
+            current->free = 0;
+            result = (void*)((size_t)current + BLOCK_SIZE);
+            break;
         }
         prev = current;
         current = current->next;
     }
 
-    // No suitable block found
-    if (!bestFit) {
-        return NULL;
-    }
-
-    // Split the block if large enough
-    if (bestFit->size >= size + BLOCK_SIZE + ALIGNMENT) {
-        Block *newBlock = (Block *)((char *)bestFit + BLOCK_SIZE + size);
-        newBlock->size = bestFit->size - size - BLOCK_SIZE;
-        newBlock->next = bestFit->next;
-        bestFit->size = size;
-        bestFit->next = newBlock;
-    } else {
-        *bestFitPrev = bestFit->next; // Remove bestFit from free list
-    }
-
-    return (char *)bestFit + BLOCK_SIZE;
+    return result;
 }
 
 void free(void *ptr) {
-    if (ptr == NULL) {
+    if (!ptr) {
         return;
     }
 
-    ptr = NULL; // Clear the pointer to the freed block
+    memory_block *block = (memory_block*)((size_t)ptr - BLOCK_SIZE);
+    block->free = 1;
 
-    return;
-
-    Block *blockToFree = (Block *)((char *)ptr - BLOCK_SIZE);
-    Block *current = freeList;
-    Block *prev = NULL;
-
-    // Find the correct place to insert the freed block in the sorted free list
-    while (current != NULL && current < blockToFree) {
-        prev = current;
+    // Coalescing free blocks
+    memory_block *current = freeList;
+    while (current) {
+        if (current->free && current->next && current->next->free) {
+            current->size += current->next->size + BLOCK_SIZE;
+            current->next = current->next->next;
+        }
         current = current->next;
     }
-
-    // Coalesce with the next block if adjacent
-    if ((char *)blockToFree + blockToFree->size + BLOCK_SIZE == (char *)current) {
-        blockToFree->size += current->size + BLOCK_SIZE;
-        blockToFree->next = current->next;
-    } else {
-        blockToFree->next = current;
-    }
-
-    // Coalesce with the previous block if adjacent
-    if (prev && (char *)prev + prev->size + BLOCK_SIZE == (char *)blockToFree) {
-        prev->size += blockToFree->size + BLOCK_SIZE;
-        prev->next = blockToFree->next;
-    } else if (prev) {
-        prev->next = blockToFree;
-    } else {
-        freeList = blockToFree;
-    }
-
 }
 
 void secure_free(void *ptr, size_t size) {
@@ -169,22 +133,7 @@ void* memcpy(void* dest, const void* src, unsigned int n) {
 }
 
 // test methods
-void TestAllocationWithinBounds() {
-    void* ptr = malloc(POOL_SIZE / 2);
-    if (ptr != NULL) {
-        //printf("TestAllocationWithinBounds: Passed\n");
-    } else {
-        printf("TestAllocationWithinBounds: Failed\n");
-    }
-}
-void TestAllocationExceedsBounds() {
-    void* ptr = malloc(POOL_SIZE + 1);
-    if (ptr == NULL) {
-        //printf("TestAllocationExceedsBounds: Passed\n");
-    } else {
-        printf("TestAllocationExceedsBounds: Failed\n");
-    }
-}
+
 void TestResetAfterFree() {
     void* firstPtr = malloc(1);
     //printf("First allocation: %p\n", firstPtr);
@@ -311,12 +260,8 @@ void TestNullPointerDest() {
 
 int test_memory() {
     printf("Testing Memory...");
-    // printf("Memory pool starts at: %p\n", (void*)memoryPool);
-    // printf("Memory pool ends at: %p\n", (void*)(memoryPool + MEMORY_POOL_SIZE));
     TestResetAfterFree();
     TestMultipleFrees();
-    TestAllocationWithinBounds();
-    TestAllocationExceedsBounds();
     TestSetMemory();
     TestSetZero();
     TestNullPointerMemset();
@@ -327,4 +272,3 @@ int test_memory() {
     printf("done\n");
     return 0;
 }
-

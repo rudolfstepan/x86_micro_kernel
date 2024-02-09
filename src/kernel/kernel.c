@@ -169,7 +169,7 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
         return;
     }
 
-    initializeHeap();
+    initialize_memory_system();
     test_memory();
 
     gdt_install();
