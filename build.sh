@@ -10,7 +10,7 @@ echo "Cleaning up build directory..."
 rm -rf $OUTPUT_DIR/*
 
 # echo "Cleaning up iso directory..."
-# rm -rf $ISO_DIR/*
+rm -rf $ISO_DIR/*
 
 # Create output directory if it doesn't exist
 mkdir -p $OUTPUT_DIR
@@ -21,7 +21,8 @@ mkdir -p $OUTPUT_DIR
 nasm -f elf32 $SOURCE_DIR/kernel/bootloader.asm -o $OUTPUT_DIR/bootloader.o
 
 # compile all .c files
-# Compile each source file
+#Compile each source file
+
 for FILE in $SOURCE_DIR/kernel/*.c; do
     FILENAME=$(basename $FILE)
     OBJECT_NAME="${FILENAME%.*}.o"
@@ -65,18 +66,18 @@ objcopy -O binary $OUTPUT_DIR/cli_date.elf $OUTPUT_DIR/date.prg
 objcopy -O binary $OUTPUT_DIR/cli_dir.elf $OUTPUT_DIR/dir.prg
 objcopy -O binary $OUTPUT_DIR/cli_test.elf $OUTPUT_DIR/test.prg
 
-sudo ./make_image.sh
+#sudo ./make_image.sh
 
-sudo mount ../disk.img /mnt/disk
+#sudo mount ../disk.img /mnt/disk
 sudo cp $OUTPUT_DIR/date.prg /mnt/disk/sys
 sudo cp $OUTPUT_DIR/dir.prg /mnt/disk/sys
 sudo cp $OUTPUT_DIR/test.prg /mnt/disk/sys
 sudo umount /mnt/disk
 
-# Create the iso file for kernel
+#Create the iso file for kernel
 mkdir -p $ISO_DIR/boot/grub
 cp $OUTPUT_DIR/kernel.bin $ISO_DIR/boot/
 cp grub.cfg $ISO_DIR/boot/grub/
 grub-mkrescue -o kernel.iso $ISO_DIR/
 
-#./run.sh
+./run.sh
