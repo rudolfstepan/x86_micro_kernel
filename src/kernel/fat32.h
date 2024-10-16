@@ -121,6 +121,8 @@ void set_fat32_time(unsigned short* time, unsigned short* date);
 
 // public functions
 int init_fs(void);
+
+// directory operations
 void read_directory();
 
 bool read_directory_path(const char *path);

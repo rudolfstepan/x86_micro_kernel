@@ -63,36 +63,8 @@ extern MultibootInfo* sys_mb_info;
 void initialize_syscall_table();
 void syscall_sleep(int ticks);
 
-
+// utility functions
 void memory_dump(uint32_t start_address, uint32_t end_address);
 void print_memory_map(const MultibootInfo* mb_info);
-
-
-
-// Type for system call function pointers (must match the kernel's definition)
-//typedef void (*syscall_func_ptr)(void); // the table of system calls is an array of function pointers
-//typedef void (*syscall_sleep_func_ptr)(unsigned int); // system call function pointer type
-// typedef void (*syscall_print_func_ptr)(const char* format, va_list args); // print system call function pointer type
-// typedef void* (*syscall_malloc_func_ptr)(size_t size); // system call function pointer type
-// typedef void (*syscall_free_func_ptr)(void* ptr); // system call function pointer type
-
-
-//void initialize_syscall_table();
-
-// define the system kernel calls
-//void syscall_sleep(unsigned int ticks);
-// the kernel will call this function to register a system call function
-// void syscall_print(const char* format, va_list args);
-// void* syscall_malloc(size_t size);
-// void syscall_free(void* ptr);
-
-
-// the user code will call this function to make a system call
-//void sleep(unsigned int ticks);
-// void sprintf(const char* format, ...);
-// void vprintf(const char* format, va_list args);
-// void printf(const char* format, ...);
-// void* smalloc(size_t size);
-// void sfree(void* ptr);
 
 #endif

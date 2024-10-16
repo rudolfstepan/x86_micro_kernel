@@ -60,23 +60,30 @@ ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli_test.elf $OUTPUT_DIR/c
     $OUTPUT_DIR/stdlib.o $OUTPUT_DIR/stdio.o $OUTPUT_DIR/strings.o \
     $OUTPUT_DIR/video.o $OUTPUT_DIR/rtc.o $OUTPUT_DIR/io.o $OUTPUT_DIR/ata.o $OUTPUT_DIR/fat32.o 
 
+ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/basic.elf $OUTPUT_DIR/basic.o \
+    $OUTPUT_DIR/stdlib.o $OUTPUT_DIR/stdio.o $OUTPUT_DIR/strings.o \
+    $OUTPUT_DIR/video.o $OUTPUT_DIR/rtc.o $OUTPUT_DIR/io.o $OUTPUT_DIR/ata.o $OUTPUT_DIR/fat32.o 
+
+
 # Convert to binary format
 objcopy -O binary $OUTPUT_DIR/cli_date.elf $OUTPUT_DIR/date.prg
 objcopy -O binary $OUTPUT_DIR/cli_dir.elf $OUTPUT_DIR/dir.prg
 objcopy -O binary $OUTPUT_DIR/cli_test.elf $OUTPUT_DIR/test.prg
+objcopy -O binary $OUTPUT_DIR/basic.elf $OUTPUT_DIR/basic.prg
 
-sudo ./make_image.sh
+./make_image.sh
 
 sudo mount ../disk.img /mnt/disk
 sudo cp $OUTPUT_DIR/date.prg /mnt/disk/sys
 sudo cp $OUTPUT_DIR/dir.prg /mnt/disk/sys
 sudo cp $OUTPUT_DIR/test.prg /mnt/disk/sys
+sudo cp $OUTPUT_DIR/basic.prg /mnt/disk/
 sudo umount /mnt/disk
 
 # Create the iso file for kernel
 mkdir -p $ISO_DIR/boot/grub
 cp $OUTPUT_DIR/kernel.bin $ISO_DIR/boot/
 cp grub.cfg $ISO_DIR/boot/grub/
-grub-mkrescue -o kernel.iso $ISO_DIR/
+sudo grub-mkrescue -o kernel.iso $ISO_DIR/
 
 #./run.sh

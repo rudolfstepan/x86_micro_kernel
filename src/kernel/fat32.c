@@ -13,7 +13,6 @@ struct Fat32BootSector bootSector;
 unsigned int current_directory_cluster = 2; // Default root directory cluster for FAT32
 
 
-
 void formatFilename(char* dest, unsigned char* src) {
     int i, j;
 

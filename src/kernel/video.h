@@ -33,10 +33,7 @@
 #define DARK_GRAY 0x07
 
 
-
-
-
-
+// Function prototypes
 void set_color(char color);
 void vga_backspace();
 void vga_write_char(char ch);
