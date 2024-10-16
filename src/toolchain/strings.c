@@ -1,6 +1,6 @@
 #include "strings.h"
-#include <limits.h>
 
+#define ULONG_MAX 4294967295UL
 
 // Helper function to convert a character to uppercase
 char toupper(char ch) {

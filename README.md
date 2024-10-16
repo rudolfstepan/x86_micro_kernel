@@ -28,6 +28,8 @@ Development environment
 - NASM (Netwide Assembler)
 - QEMU (Quick EMUlator) for running the kernel in a virtualized environment
 
+dont forget to habe grub2 installed on your machine
+
 Custom toolchain
 
 to support development of programs for this kernel a minimalistic c toolchain has been created.
