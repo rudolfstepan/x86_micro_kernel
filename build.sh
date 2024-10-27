@@ -1,16 +1,14 @@
 #!/bin/bash
-
-
 SOURCE_DIR=src
 OUTPUT_DIR=build
 ISO_DIR=iso
 CFLAGS="-m32 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -fno-stack-protector -O2 -Wall -Wextra -g"
 
 echo "Cleaning up build directory..."
-rm -rf $OUTPUT_DIR/*
+sudo rm -rf $OUTPUT_DIR/*
 
-# echo "Cleaning up iso directory..."
-rm -rf $ISO_DIR/*
+echo "Cleaning up iso directory..."
+sudo rm -rf $ISO_DIR/*
 
 # Create output directory if it doesn't exist
 mkdir -p $OUTPUT_DIR
@@ -18,67 +16,70 @@ mkdir -p $OUTPUT_DIR
 # Compile to object file
 
 # bootloader
-nasm -f elf32 $SOURCE_DIR/kernel/bootloader.asm -o $OUTPUT_DIR/bootloader.o
+echo "Compiling bootloader..."
+# Ensure the output directory and its subdirectories exist
+mkdir -p "$OUTPUT_DIR/boot"
+nasm -f elf32 $SOURCE_DIR/boot/bootloader.asm -o $OUTPUT_DIR/boot/bootloader.o
+echo "done"
 
 # compile all .c files
-#Compile each source file
-
-for FILE in $SOURCE_DIR/kernel/*.c; do
-    FILENAME=$(basename $FILE)
-    OBJECT_NAME="${FILENAME%.*}.o"
-    gcc $CFLAGS -o $OUTPUT_DIR/$OBJECT_NAME $FILE
-done
-
-for FILE in $SOURCE_DIR/toolchain/*.c; do
-    FILENAME=$(basename $FILE)
-    OBJECT_NAME="${FILENAME%.*}.o"
-    gcc $CFLAGS -o $OUTPUT_DIR/$OBJECT_NAME $FILE
-done
-
-for FILE in $SOURCE_DIR/*.c; do
-    FILENAME=$(basename $FILE)
-    OBJECT_NAME="${FILENAME%.*}.o"
-    gcc $CFLAGS -o $OUTPUT_DIR/$OBJECT_NAME $FILE
-done
-
-# Link using the linker script
-ld -m elf_i386 -T kernel.ld -nostdlib -o $OUTPUT_DIR/kernel.bin \
-    $OUTPUT_DIR/bootloader.o $OUTPUT_DIR/kernel.o $OUTPUT_DIR/system.o \
-    $OUTPUT_DIR/idt.o $OUTPUT_DIR/isr.o $OUTPUT_DIR/irq.o $OUTPUT_DIR/pit.o $OUTPUT_DIR/gdt.o \
-    $OUTPUT_DIR/video.o $OUTPUT_DIR/keyboard.o $OUTPUT_DIR/rtc.o \
-    $OUTPUT_DIR/io.o $OUTPUT_DIR/ata.o $OUTPUT_DIR/fat32.o \
-    $OUTPUT_DIR/stdlib.o $OUTPUT_DIR/stdio.o $OUTPUT_DIR/strings.o 
-
-ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli_date.elf $OUTPUT_DIR/cli_date.o \
-    $OUTPUT_DIR/stdlib.o $OUTPUT_DIR/stdio.o $OUTPUT_DIR/strings.o \
-    $OUTPUT_DIR/video.o $OUTPUT_DIR/rtc.o $OUTPUT_DIR/io.o $OUTPUT_DIR/ata.o $OUTPUT_DIR/fat32.o
+echo "Compiling sources..."
+for FILE in $(find $SOURCE_DIR -type f -name "*.c"); do
+    # Get the directory structure of the source file relative to $SOURCE_DIR
+    RELATIVE_PATH=${FILE#$SOURCE_DIR/}
+    # Create corresponding directory structure in the output directory
+    mkdir -p "$OUTPUT_DIR/$(dirname $RELATIVE_PATH)"
     
-ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli_dir.elf $OUTPUT_DIR/cli_dir.o \
-    $OUTPUT_DIR/stdlib.o $OUTPUT_DIR/stdio.o $OUTPUT_DIR/strings.o \
-    $OUTPUT_DIR/video.o $OUTPUT_DIR/rtc.o $OUTPUT_DIR/io.o $OUTPUT_DIR/ata.o $OUTPUT_DIR/fat32.o
+    # Extract the base filename and compile it to the corresponding output path
+    OBJECT_NAME="${RELATIVE_PATH%.*}.o"
+    gcc $CFLAGS -o "$OUTPUT_DIR/$OBJECT_NAME" "$FILE"
+done
+echo "done"
 
-ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli_test.elf $OUTPUT_DIR/cli_test.o \
-    $OUTPUT_DIR/stdlib.o $OUTPUT_DIR/stdio.o $OUTPUT_DIR/strings.o \
-    $OUTPUT_DIR/video.o $OUTPUT_DIR/rtc.o $OUTPUT_DIR/io.o $OUTPUT_DIR/ata.o $OUTPUT_DIR/fat32.o 
+#Link using the linker script
+echo "Linking..."
+ld -m elf_i386 -T kernel.ld -nostdlib -o $OUTPUT_DIR/kernel.bin \
+    $OUTPUT_DIR/boot/bootloader.o $OUTPUT_DIR/boot/gdt.o $OUTPUT_DIR/boot/idt.o $OUTPUT_DIR/boot/isr.o \
+    $OUTPUT_DIR/kernel/io.o $OUTPUT_DIR/kernel/irq.o $OUTPUT_DIR/kernel/kernel.o $OUTPUT_DIR/kernel/prg.o $OUTPUT_DIR/kernel/system.o \
+    $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o $OUTPUT_DIR/drivers/keyboard/keyboard.o $OUTPUT_DIR/drivers/pit/pit.o $OUTPUT_DIR/drivers/rtc/rtc.o \
+    $OUTPUT_DIR/filesystem/fat32.o $OUTPUT_DIR/filesystem/fat32_cluster.o $OUTPUT_DIR/filesystem/fat32_dir.o $OUTPUT_DIR/filesystem/fat32_file.o \
+    $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
 
-ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/basic.elf $OUTPUT_DIR/basic.o \
-    $OUTPUT_DIR/stdlib.o $OUTPUT_DIR/stdio.o $OUTPUT_DIR/strings.o \
-    $OUTPUT_DIR/video.o $OUTPUT_DIR/rtc.o $OUTPUT_DIR/io.o $OUTPUT_DIR/ata.o $OUTPUT_DIR/fat32.o 
+# ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_DIR/cli/cli_date.o \
+#     $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o $OUTPUT_DIR/drivers/keyboard/keyboard.o $OUTPUT_DIR/drivers/pit/pit.o $OUTPUT_DIR/drivers/rtc/rtc.o \
+#     $OUTPUT_DIR/filesystem/fat32.o $OUTPUT_DIR/filesystem/fat32_cluster.o $OUTPUT_DIR/filesystem/fat32_dir.o $OUTPUT_DIR/filesystem/fat32_file.o \
+#     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
+    
+# ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_dir.elf $OUTPUT_DIR/cli/cli_dir.o \
+#     $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o $OUTPUT_DIR/drivers/keyboard/keyboard.o $OUTPUT_DIR/drivers/pit/pit.o $OUTPUT_DIR/drivers/rtc/rtc.o \
+#     $OUTPUT_DIR/filesystem/fat32.o $OUTPUT_DIR/filesystem/fat32_cluster.o $OUTPUT_DIR/filesystem/fat32_dir.o $OUTPUT_DIR/filesystem/fat32_file.o \
+#     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
+
+ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_test.elf $OUTPUT_DIR/cli/cli_test.o \
+    # $OUTPUT_DIR/kernel/io.o $OUTPUT_DIR/kernel/prg.o $OUTPUT_DIR/kernel/system.o \
+    # $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o $OUTPUT_DIR/drivers/pit/pit.o $OUTPUT_DIR/drivers/rtc/rtc.o \
+    # $OUTPUT_DIR/filesystem/fat32.o $OUTPUT_DIR/filesystem/fat32_cluster.o $OUTPUT_DIR/filesystem/fat32_dir.o $OUTPUT_DIR/filesystem/fat32_file.o \
+    # $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
+
+# ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/basic.elf $OUTPUT_DIR/basic.o \
+#     $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o $OUTPUT_DIR/drivers/keyboard/keyboard.o $OUTPUT_DIR/drivers/pit/pit.o $OUTPUT_DIR/drivers/rtc/rtc.o \
+#     $OUTPUT_DIR/filesystem/fat32.o $OUTPUT_DIR/filesystem/fat32_cluster.o $OUTPUT_DIR/filesystem/fat32_dir.o $OUTPUT_DIR/filesystem/fat32_file.o \
+#     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
 
 
 # Convert to binary format
-objcopy -O binary $OUTPUT_DIR/cli_date.elf $OUTPUT_DIR/date.prg
-objcopy -O binary $OUTPUT_DIR/cli_dir.elf $OUTPUT_DIR/dir.prg
-objcopy -O binary $OUTPUT_DIR/cli_test.elf $OUTPUT_DIR/test.prg
-objcopy -O binary $OUTPUT_DIR/basic.elf $OUTPUT_DIR/basic.prg
+# objcopy -O binary $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_DIR/cli/date.prg
+# objcopy -O binary $OUTPUT_DIR/cli/cli_dir.elf $OUTPUT_DIR/cli/dir.prg
+objcopy -O binary $OUTPUT_DIR/cli/cli_test.elf $OUTPUT_DIR/cli/test.prg
+# # objcopy -O binary $OUTPUT_DIR/basic.elf $OUTPUT_DIR/basic.prg
 
-./make_image.sh
+#./make_image.sh
 
 sudo mount ../disk.img /mnt/disk
-sudo cp $OUTPUT_DIR/date.prg /mnt/disk/sys
-sudo cp $OUTPUT_DIR/dir.prg /mnt/disk/sys
-sudo cp $OUTPUT_DIR/test.prg /mnt/disk/sys
-sudo cp $OUTPUT_DIR/basic.prg /mnt/disk/
+# sudo cp $OUTPUT_DIR/date.prg /mnt/disk/sys
+# sudo cp $OUTPUT_DIR/dir.prg /mnt/disk/sys
+sudo cp $OUTPUT_DIR/cli/test.prg /mnt/disk/sys
+# sudo cp $OUTPUT_DIR/basic.prg /mnt/disk/
 sudo umount /mnt/disk
 
 #Create the iso file for kernel
@@ -87,4 +88,4 @@ cp $OUTPUT_DIR/kernel.bin $ISO_DIR/boot/
 cp grub.cfg $ISO_DIR/boot/grub/
 sudo grub-mkrescue -o kernel.iso $ISO_DIR/
 
-./run.sh
+# ./run.sh

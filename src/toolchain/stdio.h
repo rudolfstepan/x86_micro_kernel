@@ -1,8 +1,10 @@
 #ifndef STDIO_H
 #define STDIO_H
 
-#include "../kernel/fat32.h"
 
+#include "../filesystem/fat32.h"
+#include "../drivers/video/video.h"
+#include "../kernel/system.h"
 
 // File Handling Functions
 File* fopen(const char* filename, const char* mode);

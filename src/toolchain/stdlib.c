@@ -31,6 +31,9 @@ void initialize_memory_system() {
 
 void *malloc(size_t size) {
     memory_block *current = freeList, *prev = NULL;
+    if(prev == NULL) {
+        
+    }
     void *result = NULL;
 
     // Align size to word boundary

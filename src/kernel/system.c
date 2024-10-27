@@ -1,6 +1,6 @@
 #include "system.h"
 #include "io.h"
-#include "keyboard.h"
+#include "../drivers/keyboard/keyboard.h"
 
 // custom implementation
 #include "../toolchain/stdlib.h"

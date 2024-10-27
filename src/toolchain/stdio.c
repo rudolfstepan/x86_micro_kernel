@@ -1,12 +1,10 @@
 #include "stdio.h"
+
 #include "strings.h"
-
-#include "../kernel/fat32.h"
-#include "../kernel/system.h"
-#include "../kernel/video.h"
-
-// custom implementation
 #include "stdlib.h"
+
+
+
 
 // -----------------------------------------------------------------
 // Directory Handling Functions

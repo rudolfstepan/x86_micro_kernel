@@ -1,3 +1,4 @@
+// General input/output handling
 // io.c
 #include "io.h"
 
