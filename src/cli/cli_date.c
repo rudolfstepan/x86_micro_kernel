@@ -1,14 +1,13 @@
 #include "../drivers/rtc/rtc.h"
 #include "../toolchain/stdio.h"
 
-
 int start(void) {
-    //clear_screen(BLACK);
-    printf("Current Datetime:\n");
+    clear_screen(BLACK);
+    printf("Current date/time:\n");
 
     int year, month, day, hour, minute, second;
-    getDate(&year, &month, &day);
-    getTime(&hour, &minute, &second);
+    read_date(&year, &month, &day);
+    read_time(&hour, &minute, &second);
 
     printf("Date Time: %d-%d-%d %d:%d:%d\n", year, month, day, hour, minute, second);
 

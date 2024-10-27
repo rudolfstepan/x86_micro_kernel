@@ -1,5 +1,5 @@
 #include "rtc.h"
-#include "../../kernel/io.h"
+#include "../io/io.h"
 
 
 #define CMOS_ADDRESS        0x70
@@ -39,7 +39,7 @@ int readFromCMOS(int reg) {
 }
 
 // Function to get the current date
-void getDate(int* year, int* month, int* day) {
+void read_date(int* year, int* month, int* day) {
     // Wait until CMOS is not updating
     while (cmos_update_in_progress());
 
@@ -54,7 +54,7 @@ void getDate(int* year, int* month, int* day) {
 }
 
 // Function to get the current time
-void getTime(int* hours, int* minutes, int* seconds) {
+void read_time(int* hours, int* minutes, int* seconds) {
     // Wait until CMOS is not updating
     while (cmos_update_in_progress());
 
@@ -68,7 +68,7 @@ void getTime(int* hours, int* minutes, int* seconds) {
 
 
 // Function to set the date
-void setDate(int year, int month, int day) {
+void write_date(int year, int month, int day) {
     // Wait until CMOS is not updating
     while (cmos_update_in_progress());
 
@@ -83,7 +83,7 @@ void setDate(int year, int month, int day) {
 }
 
 // Function to set the time
-void setTime(int hours, int minutes, int seconds) {
+void write_time(int hours, int minutes, int seconds) {
     // Wait until CMOS is not updating
     while (cmos_update_in_progress());
 

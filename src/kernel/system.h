@@ -16,8 +16,6 @@
 
 #define SYSCALL_SLEEP 0
 
-
-
 #define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
 #define PROGRAM_LOAD_ADDRESS 0x10000 // default address where the program will be loaded into memory except in the case of a program header
 #define BUFFER_SIZE 256

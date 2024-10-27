@@ -1,7 +1,7 @@
 ﻿
 #include "video.h"
 
-#include "../../kernel/io.h"
+#include "../io/io.h"
 #include "../../toolchain/strings.h"
 
 

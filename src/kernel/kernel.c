@@ -2,9 +2,10 @@
 #include "../drivers/keyboard/keyboard.h"
 #include "../drivers/rtc/rtc.h"
 #include "../drivers/video/video.h"
+#include "../drivers/io/io.h"
+
 #include "../filesystem/fat32.h"
 
-#include "io.h"
 #include "prg.h"
 #include "system.h"
 #include "sys.h"
@@ -88,42 +89,6 @@ void initialize_syscall_table() {
     //__asm__ __volatile__("int $0x80"); // Invoke interrupt 0x80
 
 }
-//---------------------------------------------------------------------------------------------
-
-
-
-// void beep(unsigned int freq) {
-//     printf("Beep %u Hz\n", freq);
-//     // unsigned int divisor = PIT_FREQ / freq;
-
-//     // // Set PIT to square wave generator mode
-//     // outb(PIT_CMD_PORT, 0b00110110);
-
-//     // // // Send the frequency divisor
-//     // // outb(PIT_CHANNEL_0, (unsigned char)(divisor & 0xFF)); // Send low byte
-//     // // outb(PIT_CHANNEL_0, (unsigned char)(divisor >> 8));   // Send high byte
-
-//     // Turn on the speaker
-//     // unsigned char tmp = inb(SPEAKER_PORT) | 3;
-//     // outb(SPEAKER_PORT, tmp);
-
-//     // Duration of beep - implement a delay or use a timer
-//     printf("Beep delay 5 begin\n");
-
-//     delay(5);
-
-//     // Turn off the speaker
-//     // tmp = inb(SPEAKER_PORT) & 0xFC;
-//     // outb(SPEAKER_PORT, tmp);
-
-//     printf("Beep finished\n");
-
-
-
-//     // int i=5;
-//     // vga_write_char(i/0);
-// }
-
 
 // execute the program at the specified entry point
 void call_program(long entryPoint) {
@@ -158,46 +123,37 @@ void load_program(const char* programName) {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// main routine of the kernel
+// This is the entry point of the kernel
+// ---------------------------------------------------------------------------------------------
 void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
-
     sys_mb_info = mb_info;
-
     // Check if the magic number is correct
     if (multiboot_magic != MULTIBOOT_BOOTLOADER_MAGIC) {
         printf("Invalid magic number: 0x%x\n", multiboot_magic);
         return;
     }
-
     initialize_memory_system();
-    test_memory();
-
     gdt_install();
     idt_install();
     isr_install();
     irq_install();
     __asm__ __volatile__("sti");
-    timer_install();
-
+    
     init_fs(); // Initialize the file system
-
     // syscall table
     initialize_syscall_table();
-
     kb_install();
-
-
     set_color(WHITE);
 
-
     printf("===============================================================================\n");
-    printf("|                               MINI X86 SYSTEM                               |\n");
+    printf("|                 x86 Micro Kernel written by Rudolf Stepan 2024              |\n");
     printf("===============================================================================\n");
-    printf("| Status: All systems operational                                             |\n");
-    printf("|                                                                             |\n");
-    printf("===============================================================================\n");
-    printf(" HELP for available commands.\n");
+    printf("Type HELP for command list.\n");
 
-
+    test_memory();
+    timer_install();
     // test the colors
     set_color(BLACK); printf("Black ");
     set_color(BLUE); printf("Blue ");
@@ -215,10 +171,7 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
     set_color(LIGHT_MAGENTA); printf("Light Magenta ");
     set_color(YELLOW); printf("Yellow ");
     set_color(WHITE); printf("White\n");
-
-
     set_color(WHITE);
-
     // show the prompt
     print_prompt();
 
@@ -242,8 +195,8 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
 void print_prompt() {
 
     int year, month, day, hour, minute, second;
-    getDate(&year, &month, &day);
-    getTime(&hour, &minute, &second);
+    read_date(&year, &month, &day);
+    read_time(&hour, &minute, &second);
 
     set_color(LIGHT_GREEN);
     printf("%d-%d-%d %d:%d:%d", year, month, day, hour, minute, second);
@@ -252,9 +205,12 @@ void print_prompt() {
     printf("%s>", current_path);
 }
 
+// ---------------------------------------------------------------------------------------------
+// the command interpreter
 // Split the input string into command and arguments
 // Process the command
 // Print the prompt
+// ---------------------------------------------------------------------------------------------
 void process_command(char* input_buffer) {
 
     // Split the input string into command and arguments
@@ -396,11 +352,11 @@ void process_command(char* input_buffer) {
         printf("RUN [Programm], LOAD [Programm], SYS [address], OPEN [file]\n");
     } else if (strcmp(command, "TIME") == 0) {
         int hour, minute, second;
-        getTime(&hour, &minute, &second);
+        read_time(&hour, &minute, &second);
         printf("Time: %d:%d:%d\n", hour, minute, second);
     } else if (strcmp(command, "DATE") == 0) {
         int year, month, day;
-        getDate(&year, &month, &day);
+        read_date(&year, &month, &day);
         printf("Date: %d/%d/%d\n", year, month, day);
     } else if (strcmp(command, "SETTIME") == 0) {
         if (arg_count == 0) {
@@ -410,7 +366,7 @@ void process_command(char* input_buffer) {
             int hour = (int)strtoul(arguments[0], NULL, 16);
             int minute = (int)strtoul(arguments[1], NULL, 16);
             int second = (int)strtoul(arguments[2], NULL, 16);
-            setTime(hour, minute, second);
+            write_time(hour, minute, second);
         } else {
             printf("SETTIME command with invalid or too many arguments\n");
         }
@@ -422,7 +378,7 @@ void process_command(char* input_buffer) {
             int year = (int)strtoul(arguments[0], NULL, 16);
             int month = (int)strtoul(arguments[1], NULL, 16);
             int day = (int)strtoul(arguments[2], NULL, 16);
-            setDate(year, month, day);
+            write_date(year, month, day);
         } else {
             printf("SETDATE command with invalid or too many arguments\n");
         }

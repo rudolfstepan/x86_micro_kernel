@@ -2,10 +2,10 @@
 #define RTC_H
 
 
-void getDate(int* year, int* month, int* day);
-void getTime(int* hours, int* minutes, int* seconds);
+extern void read_date(int* year, int* month, int* day);
+extern void read_time(int* hours, int* minutes, int* seconds);
 
-void setDate(int year, int month, int day);
-void setTime(int hours, int minutes, int seconds);
+extern void write_date(int year, int month, int day);
+extern void write_time(int hours, int minutes, int seconds);
 
 #endif // RTC_H

@@ -9,8 +9,9 @@
 #include "keyboard.h"
 
 #include <stdbool.h>
+
+#include "../io/io.h"
 #include "../video/video.h"
-#include "../../kernel/io.h"
 #include "../../kernel/system.h"
 #include "../../kernel/sys.h"
 

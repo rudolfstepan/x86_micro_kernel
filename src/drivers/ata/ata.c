@@ -2,7 +2,8 @@
 #include "ata.h"
 
 #include <stddef.h>
-#include "../../kernel/io.h"
+
+#include "../io/io.h"
 
 /*
     * Reads a sector from the ATA drive.

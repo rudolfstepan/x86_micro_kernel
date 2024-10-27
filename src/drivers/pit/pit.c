@@ -1,6 +1,6 @@
 // Programmable Interval Timer (PIT) driver
 // #include "pit.h"
-#include "../../kernel/io.h"
+#include "../../drivers/io/io.h"
 #include "../../kernel/sys.h"
 #include "../../toolchain/stdio.h"
 
