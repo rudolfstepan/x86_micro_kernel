@@ -72,3 +72,18 @@ dump <start_address> <end_address> - Hex dump of a given range in memory
   sudo apt-get install gcc
 - nasm:
   sudo apt-get install nasm
+
+## Create the image and run the emulation
+
+There are some build script available which must be executed
+- **make_image.sh**: creates the harddisk image
+- **build.sh**: compile all sources and creates the binaries and the bootable iso image
+- **run.sh**: start QEMU emulator and load the bootable iso image
+
+Don´t forget also to set the script executable by
+```code
+chmod +x ./make_image.sh
+chmod +x ./build.sh
+chmod +x ./run.sh
+```
+
