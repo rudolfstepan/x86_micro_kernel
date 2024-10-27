@@ -1,4 +1,4 @@
-Bare Metal x86 Kernel
+x86 Micro Kernel
 
 Overview
 
