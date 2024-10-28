@@ -5,9 +5,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../toolchain/strings.h"
-#include "../toolchain/stdlib.h"
-#include "../drivers/ata/ata.h"
+#include "toolchain/strings.h"
+#include "toolchain/stdlib.h"
+
+#include "drivers/ata/ata.h"
 
 #define SECTOR_SIZE 512
 

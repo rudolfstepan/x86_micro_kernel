@@ -1,8 +1,11 @@
 // Programmable Interval Timer (PIT) driver
-// #include "pit.h"
-#include "../../drivers/io/io.h"
-#include "../../kernel/sys.h"
-#include "../../toolchain/stdio.h"
+#include "pit.h"
+
+#include "drivers/io/io.h"
+
+#include "kernel/sys.h"
+
+#include "toolchain/stdio.h"
 
 void timer_phase(int hertz) {
 	int div = 1193180 / hertz;

@@ -1,5 +1,6 @@
 #include "fat32.h"
-#include "../toolchain/stdio.h"
+
+#include "toolchain/stdio.h"
 
 
 // Function to read a file's data into a buffer

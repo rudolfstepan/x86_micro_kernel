@@ -1,5 +1,6 @@
-#include "../kernel/sys.h"
-#include "../toolchain/stdio.h"
+#include "kernel/sys.h"
+
+#include "toolchain/stdio.h"
 
 
 extern void isr0();

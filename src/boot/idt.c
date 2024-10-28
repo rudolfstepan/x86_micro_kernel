@@ -1,6 +1,7 @@
-#include "../kernel/sys.h"
-#include "../kernel/system.h"
-#include "../toolchain/stdlib.h"
+#include "kernel/sys.h"
+#include "kernel/system.h"
+
+#include "toolchain/stdlib.h"
 
 
 struct idt_entry {

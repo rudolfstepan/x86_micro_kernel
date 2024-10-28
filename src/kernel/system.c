@@ -1,11 +1,11 @@
 #include "system.h"
 
-#include "../drivers/io/io.h"
-#include "../drivers/keyboard/keyboard.h"
+#include "drivers/io/io.h"
+#include "drivers/keyboard/keyboard.h"
 
-// custom implementation
-#include "../toolchain/stdlib.h"
-#include "../toolchain/stdio.h"
+#include "toolchain/stdlib.h"
+#include "toolchain/stdio.h"
+
 
 MultibootInfo* sys_mb_info;
 

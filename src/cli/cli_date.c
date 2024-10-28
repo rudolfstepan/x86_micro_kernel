@@ -1,5 +1,7 @@
-#include "../drivers/rtc/rtc.h"
-#include "../toolchain/stdio.h"
+#include "drivers/rtc/rtc.h"
+
+#include "toolchain/stdio.h"
+
 
 int start(void) {
     clear_screen(BLACK);

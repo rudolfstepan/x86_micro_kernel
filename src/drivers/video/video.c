@@ -1,8 +1,8 @@
-﻿
-#include "video.h"
+﻿#include "video.h"
 
-#include "../io/io.h"
-#include "../../toolchain/strings.h"
+#include "drivers/io/io.h"
+
+#include "toolchain/strings.h"
 
 
 unsigned short* vga_buffer = (unsigned short*)VGA_ADDRESS;

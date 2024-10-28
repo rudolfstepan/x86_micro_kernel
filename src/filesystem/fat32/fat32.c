@@ -1,13 +1,13 @@
+#include "fat32.h"
+
+#include "toolchain/stdio.h"
+
 // fat32 file system implementation
 // The file is divided into:
 // fat32.c: Contains the implementation of the FAT32 filesystem functions.
 // fat32_dir.c: Contains the implementation of the FAT32 directory functions.
 // fat32_files.c: Contains the implementation of the FAT32 file functions.
 // fat32_cluster.c: Contains the implementation of the FAT32 I/O functions.
-
-
-#include "fat32.h"
-#include "../toolchain/stdio.h"
 
 unsigned int current_directory_cluster = 2; // Default root directory cluster for FAT32
 struct Fat32BootSector boot_sector = {0};

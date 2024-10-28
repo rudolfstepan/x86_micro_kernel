@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 
-#include "../io/io.h"
+#include "drivers/io/io.h"
 
 /*
     * Reads a sector from the ATA drive.

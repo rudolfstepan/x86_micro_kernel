@@ -1,8 +1,10 @@
 #!/bin/bash
+
+# Define the source directory
 SOURCE_DIR=src
 OUTPUT_DIR=build
 ISO_DIR=iso
-CFLAGS="-m32 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -fno-stack-protector -O2 -Wall -Wextra -g"
+CFLAGS="-Isrc -m32 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -fno-stack-protector -O2 -Wall -Wextra -g"
 
 echo "Cleaning up build directory..."
 sudo rm -rf $OUTPUT_DIR/*
@@ -25,10 +27,10 @@ echo "done"
 # Compile FAT32 sources separately because they need to be linked into a single object file
 echo "Compiling FAT32 sources..."
 mkdir -p "$OUTPUT_DIR/filesystem"
-gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_main.o" "$SOURCE_DIR/filesystem/fat32.c"
-gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_cluster.o" "$SOURCE_DIR/filesystem/fat32_cluster.c"
-gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_files.o" "$SOURCE_DIR/filesystem/fat32_files.c"
-gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_dir.o" "$SOURCE_DIR/filesystem/fat32_dir.c"
+gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_main.o" "$SOURCE_DIR/filesystem/fat32/fat32.c"
+gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_cluster.o" "$SOURCE_DIR/filesystem/fat32/fat32_cluster.c"
+gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_files.o" "$SOURCE_DIR/filesystem/fat32/fat32_files.c"
+gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_dir.o" "$SOURCE_DIR/filesystem/fat32/fat32_dir.c"
 
 # Link into a single fat32.o
 echo "Linking FAT32 object files..."

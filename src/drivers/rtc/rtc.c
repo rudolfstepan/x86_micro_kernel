@@ -1,5 +1,6 @@
 #include "rtc.h"
-#include "../io/io.h"
+
+#include "drivers/io/io.h"
 
 
 #define CMOS_ADDRESS        0x70

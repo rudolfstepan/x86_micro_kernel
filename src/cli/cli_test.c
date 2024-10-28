@@ -1,4 +1,4 @@
-#include "../toolchain/stdio.h"
+#include "toolchain/stdio.h"
 
 
 //extern void sleep(int ticks);

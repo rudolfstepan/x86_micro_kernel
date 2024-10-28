@@ -1,6 +1,8 @@
-// General input/output handling
-// io.c
 #include "io.h"
+
+
+// General input/output handling
+
 
 unsigned char inb(unsigned short port) {
     // Implementation

@@ -1,9 +1,10 @@
+#include "kernel/sys.h"
+
 
 // Global Descriptor Table
 // The GDT is a structure used by the x86 architecture to define memory segments and their access rights.
 // The GDT is loaded into the GDTR register using the LGDT instruction.
 
-#include "../kernel/sys.h"
 
 struct gdt_entry {
     unsigned short limit_low;

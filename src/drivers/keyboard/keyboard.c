@@ -1,22 +1,23 @@
-﻿// --------------------------------------------------
+﻿#include "keyboard.h"
+
+#include <stdbool.h>
+
+#include "drivers/io/io.h"
+#include "drivers/video/video.h"
+
+#include "kernel/system.h"
+#include "kernel/sys.h"
+
+#include "toolchain/stdio.h"
+#include "toolchain/stdlib.h"
+
+
+// --------------------------------------------------
 // Author: Rudolf Stepan
 // Version: 1.0
 // Date: 18.1.2024
 // Brief: Keyboard driver implementation
 // --------------------------------------------------
-
-// Includes
-#include "keyboard.h"
-
-#include <stdbool.h>
-
-#include "../io/io.h"
-#include "../video/video.h"
-#include "../../kernel/system.h"
-#include "../../kernel/sys.h"
-
-#include "../../toolchain/stdio.h"
-#include "../../toolchain/stdlib.h"
 
 const char scancode_to_char[SC_MAX] = {
     0,  0,  '1', '2', '3', '4', '5', '6', '7', '8',  /* 9 */

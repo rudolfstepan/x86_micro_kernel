@@ -1,7 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// custom implementations
 #include "stdlib.h"
 #include "stdio.h"
 

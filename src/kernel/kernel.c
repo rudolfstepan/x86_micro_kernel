@@ -1,21 +1,20 @@
-
-#include "../drivers/keyboard/keyboard.h"
-#include "../drivers/rtc/rtc.h"
-#include "../drivers/video/video.h"
-#include "../drivers/io/io.h"
-
-#include "../filesystem/fat32.h"
+#include <stdbool.h>
 
 #include "prg.h"
 #include "system.h"
 #include "sys.h"
 
-#include <stdbool.h>
+#include "drivers/keyboard/keyboard.h"
+#include "drivers/rtc/rtc.h"
+#include "drivers/video/video.h"
+#include "drivers/io/io.h"
 
-// custom implementations
-#include "../toolchain/stdio.h"
-#include "../toolchain/stdlib.h"
-#include "../toolchain/strings.h"
+#include "filesystem/fat32/fat32.h"
+
+#include "toolchain/stdio.h"
+#include "toolchain/stdlib.h"
+#include "toolchain/strings.h"
+
 
 char input_path[MAX_PATH_LENGTH];      // This should be set to the user input
 char normalized_path[MAX_PATH_LENGTH]; // This should be set to the normalized path
