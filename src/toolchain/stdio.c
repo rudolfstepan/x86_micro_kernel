@@ -5,6 +5,7 @@
 
 // -----------------------------------------------------------------
 // Directory Handling Functions
+// the following functions are defined in the filesystem/fat32/fat32.c file
 // -----------------------------------------------------------------
 int mkdir(const char* path){
     return create_directory(path);

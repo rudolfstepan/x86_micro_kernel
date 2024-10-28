@@ -1,7 +1,5 @@
 #include "fat32.h"
-
 #include "toolchain/stdio.h"
-
 
 void read_directory() {
     read_cluster_dir_entries(boot_sector.rootCluster);

@@ -1,7 +1,5 @@
 #include "fat32.h"
-
 #include "toolchain/stdio.h"
-
 
 // Function to read a file's data into a buffer
 void readFileData(unsigned int startCluster, char* buffer, unsigned int size) {

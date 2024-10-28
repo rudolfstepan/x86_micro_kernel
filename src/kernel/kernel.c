@@ -9,7 +9,7 @@
 #include "drivers/video/video.h"
 #include "drivers/io/io.h"
 
-#include "filesystem/fat32/fat32.h"
+//#include "filesystem/fat32/fat32.h"
 
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"

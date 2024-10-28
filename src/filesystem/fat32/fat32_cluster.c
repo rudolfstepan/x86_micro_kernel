@@ -1,7 +1,5 @@
 #include "fat32.h"
-
 #include "toolchain/stdio.h"
-
 
 // --------------------------------------------------------------------
 // get_entries_per_cluster
@@ -117,19 +115,14 @@ bool write_cluster(struct Fat32BootSector* boot_sector, unsigned int cluster, co
     }
     return true;
 }
-
+// return the start sector of a cluster
 unsigned int cluster_to_sector(struct Fat32BootSector* boot_sector, unsigned int cluster) {
     unsigned int firstDataSector = boot_sector->reservedSectorCount + (boot_sector->numberOfFATs * boot_sector->FATSize32);
     return ((cluster - 2) * boot_sector->sectorsPerCluster) + firstDataSector;
 }
 
-unsigned int clusterStartSector(struct Fat32BootSector* boot_sector, unsigned int clusterNumber) {
-    unsigned int firstDataSector = boot_sector->reservedSectorCount + (boot_sector->numberOfFATs * boot_sector->FATSize32);
-    return ((clusterNumber - 2) * boot_sector->sectorsPerCluster) + firstDataSector;
-}
-
 void read_cluster(struct Fat32BootSector* boot_sector, unsigned int clusterNumber, void* buffer) {
-    unsigned int startSector = clusterStartSector(boot_sector, clusterNumber);
+    unsigned int startSector = cluster_to_sector(boot_sector, clusterNumber);
     for (unsigned int i = 0; i < boot_sector->sectorsPerCluster; ++i) {
         read_sector(startSector + i, buffer + (i * SECTOR_SIZE));
     }
@@ -161,7 +154,7 @@ unsigned int get_next_cluster_in_chain(struct Fat32BootSector* boot_sector, unsi
     return nextCluster;
 }
 
-int isEndOfClusterChain(unsigned int cluster) {
+bool isEndOfClusterChain(unsigned int cluster) {
     return cluster >= FAT32_EOC_MIN && cluster <= FAT32_EOC_MAX;
 }
 
