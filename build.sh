@@ -121,7 +121,7 @@ objcopy -O binary $OUTPUT_DIR/cli/cli_test.elf $OUTPUT_DIR/cli/test.prg
     echo "Creating /mnt/disk directory"
     mkdir -p /mnt/disk
   fi
-sudo mount ../disk.img /mnt/disk
+sudo mount ./disk.img /mnt/disk
 sudo cp $OUTPUT_DIR/cli/date.prg /mnt/disk/sys
 # sudo cp $OUTPUT_DIR/dir.prg /mnt/disk/sys
 sudo cp $OUTPUT_DIR/cli/test.prg /mnt/disk/sys
