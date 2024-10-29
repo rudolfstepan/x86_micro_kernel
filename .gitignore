@@ -1,4 +1,5 @@
 build/*
 iso/*
+.vscode/*
 kernel.iso
 disk.img
