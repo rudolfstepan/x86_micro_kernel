@@ -82,6 +82,7 @@ ld -m elf_i386 -T kernel.ld -nostdlib -o $OUTPUT_DIR/kernel.bin \
     $OUTPUT_DIR/drivers/io/io.o $OUTPUT_DIR/kernel/irq.o $OUTPUT_DIR/kernel/kernel.o $OUTPUT_DIR/kernel/prg.o $OUTPUT_DIR/kernel/system.o \
     $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o $OUTPUT_DIR/drivers/keyboard/keyboard.o $OUTPUT_DIR/drivers/pit/pit.o $OUTPUT_DIR/drivers/rtc/rtc.o \
     $OUTPUT_DIR/filesystem/fat32.o \
+    $OUTPUT_DIR/kernel/command.o \
     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
 
 echo "Linking cli_date..."

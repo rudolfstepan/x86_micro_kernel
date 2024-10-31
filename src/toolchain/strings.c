@@ -87,7 +87,7 @@ char* strncat(char* dest, const char* src, size_t n) {
 }
 
 // Custom function to split input into command and arguments
-int split_input(const char* input, char* command, char arguments[][50], int max_length, int max_args) {
+int split_input(const char* input, char* command, char** arguments, int max_length, int max_args) {
     int i = 0, j = 0, arg_count = 0;
 
     // Skip initial whitespace

@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # Create the floppy image file for kernel
-#dd if=/dev/zero of=floppy.img bs=1024 count=1440
+#dd if=/dev/zero of=fdd.img bs=1024 count=1440
 
 # Format the floppy image file
-#mkfs.vfat floppy.img
+#mkfs.vfat fdd.img
 
 # sudo mkdir /mnt/floppy
-# sudo mount -o loop floppy.img /mnt/floppy
+# sudo mount -o loop fdd.img /mnt/floppy
 
 #create a harddisk image file
 sudo dd if=/dev/zero of=./disk.img bs=1M count=50
