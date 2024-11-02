@@ -8,7 +8,9 @@
 
 #define NUM_COMMANDS (sizeof(command_table) / sizeof(Command))
 
-char current_path[MAX_PATH_LENGTH] = "/"; // Initial path
+
+static char full_path[512] = "/"; // Full path including drive and path
+
 
 // execute the program at the specified entry point
 void call_program(long entryPoint) {
@@ -45,16 +47,15 @@ void load_program(const char* programName) {
 
 // Print the prompt
 void print_prompt() {
-
-    int year, month, day, hour, minute, second;
-    read_date(&year, &month, &day);
-    read_time(&hour, &minute, &second);
-
-    set_color(LIGHT_GREEN);
-    printf("%d-%d-%d %d:%d:%d", year, month, day, hour, minute, second);
-
+    // int year, month, day, hour, minute, second;
+    // read_date(&year, &month, &day);
+    // read_time(&hour, &minute, &second);
+    // set_color(LIGHT_GREEN);
+    // printf("%d-%d-%d %d:%d:%d", year, month, day, hour, minute, second);
     set_color(WHITE);
-    printf("%s>", current_path);
+    
+    //get_full_path(current_path, full_path, sizeof(full_path));
+    printf("%s>", full_path);
 }
 
 void call_irq(int irq) {
@@ -80,15 +81,14 @@ void call_irq(int irq) {
 }
 
 // List the contents of the specified directory
-void list_directory(const char* path) {
-    printf("Listing directory: %s\n", path);
-
+void show_directory_content(const char *path) {
     unsigned int size = 1024;  // size is now an unsigned int, not a pointer
     char* buffer = (char*)malloc(size);
 
     if (readdir(path, buffer, &size) == 0) {  // Pass the address of size
         printf("Directory not found: %s\n", path);
     } else {
+        printf("Listing directory: %s\n", path);
         printf("%s\n", buffer);
     }
 
@@ -147,19 +147,28 @@ void handle_cls(int arg_count, char **arguments) {
 }
 
 void handle_ls(int arg_count, char **arguments) {
-    list_directory(arg_count == 0 ? current_path : arguments[0]);
+    char full_path[512]; // Large enough to hold combined path
+    // Generate the path based on arguments
+    if (arg_count == 0) {
+        snprintf(full_path, sizeof(full_path), "%s%s", current_drive, current_path);
+    } else {
+        snprintf(full_path, sizeof(full_path), "%s%s/%s", current_drive, current_path, arguments[0]);
+    }
+    show_directory_content(full_path);
 }
 
 void handle_cd(int arg_count, char **arguments) {
     if (arg_count == 0) {
         printf("CD command without arguments\n");
     } else {
-        char normalized_path[MAX_PATH_LENGTH];
-        normalize_path(arguments[0], normalized_path, current_path);
-        printf("Try changing directory to: %s\n", normalized_path);
-
-        if (chdir(normalized_path)) {
-            strncpy(current_path, normalized_path, MAX_PATH_LENGTH);
+        printf("Try changing directory to: %s\n", arguments[0]);
+        printf("Current drive: %s\n", current_drive);
+        printf("Current path: %s\n", current_path);
+        snprintf(full_path, sizeof(full_path), "%s%s%s", current_drive, current_path, arguments[0]);
+        printf("Full path: %s\n", full_path);
+        printf("Try changing directory to: %s\n", full_path);
+        if (chdir(arguments[0])) {
+            //strncpy(current_path, normalized_path, MAX_PATH_LENGTH);
         } else {
             printf("Failed to change directory.\n");
         }
@@ -206,7 +215,14 @@ void handle_run(int arg_count, char **arguments) {
     if (arg_count == 0) {
         printf("RUN command without arguments\n");
     } else {
-        load_and_run_program(arguments[0]);
+
+        char full_path[512]; // Large enough to hold combined path
+        // Generate the path based on arguments
+        snprintf(full_path, sizeof(full_path), "%s%s/%s", current_drive, current_path, arguments[0]);
+
+        printf("Try Running program: %s\n", full_path);
+        
+        load_and_run_program(full_path);
     }
 }
 
@@ -332,23 +348,27 @@ Command command_table[] = {
 // ---------------------------------------------------------------------------------------------
 void process_command(char *input_buffer) {
     char command[32];
-    char arguments[][50] = {0};
-    int arg_count = split_input(input_buffer, command, arguments, strlen(input_buffer), 50);
+    char *arguments[10] = {0}; // Adjust size as needed
+    int arg_count = split_input(input_buffer, command, arguments, 10, 50);
 
     if (command[0] == '\0') return;
+
+    //printf("\n arguments address: %p, content: %s\n", (void*)arguments, arguments[0]);
 
     // go to the next line
     printf("\n");
 
-    int i;
+    unsigned int i;
     for (i = 0; i < NUM_COMMANDS; i++) {
         if (strcmp(command, command_table[i].name) == 0) {
-            command_table[i].handler(arg_count, arguments);
+            command_table[i].handler(arg_count, (char **)arguments);
             break;
         }
     }
 
-    if (i == NUM_COMMANDS) {
+    if (change_drive(input_buffer)) {
+        printf("Changed to drive: %s\n", current_drive);
+    } else if (i == NUM_COMMANDS) {
         printf("Invalid command: %s\n", command);
     }
 }

@@ -9,6 +9,7 @@
 
 
 char toupper(char ch);
+char tolower(char ch);
 int isalnum(int c);
 int isdigit(int c);
 int isspace(int c);
@@ -19,8 +20,9 @@ void strcat(char* dest, const char* src);
 char* strncat(char* dest, const char* src, size_t n);
 void strcpy(char* dest, const char* src);
 int strcmp(const char* str1, const char* str2);
-void strncpy(char* dest, char* src, int num);
+void strncpy(char* dest, const char* src, int num);
 int strncmp(const char *str1, const char *str2, size_t n);
+int strncasecmp(const char *str1, const char *str2, size_t n);
 int split_input(const char* input, char* command, char** arguments, int max_length, int max_args);
 
 char* strtok_r(char* str, const char* delim, char** saveptr);

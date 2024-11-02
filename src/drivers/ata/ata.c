@@ -12,7 +12,7 @@
     * @param buffer The buffer to read the sector into.
     * @return True if the sector was read successfully, false otherwise.
 */
-bool read_sector(unsigned int lba, void* buffer) {
+bool ata_read_sector(unsigned int lba, void* buffer) {
     // Wait for the drive to be ready
     while (inb(ATA_STATUS) & 0x80) {}
 
@@ -41,7 +41,7 @@ bool read_sector(unsigned int lba, void* buffer) {
     * @param buffer The buffer to write to the sector.
     * @return True if the sector was written successfully, false otherwise.
 */
-bool write_sector(unsigned int lba, const void* buffer) {
+bool ata_write_sector(unsigned int lba, const void* buffer) {
     if (buffer == NULL) {
         return false; // Error: Buffer is null
     }

@@ -18,7 +18,7 @@
 
 #define SECTOR_SIZE 512
 
-bool read_sector(unsigned int lba, void* buffer);
-bool write_sector(unsigned int lba, const void* buffer);
+bool ata_read_sector(unsigned int lba, void* buffer);
+bool ata_write_sector(unsigned int lba, const void* buffer);
 
 #endif

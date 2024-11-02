@@ -1,8 +1,13 @@
 #include "strings.h"
+#include "stdlib.h"
 
 #define ULONG_MAX 4294967295UL
 
 // Helper function to convert a character to uppercase
+char tolower(char ch) {
+    return (ch >= 'A' && ch <= 'Z') ? (ch - 'A' + 'a') : ch;
+}
+
 char toupper(char ch) {
     return (ch >= 'a' && ch <= 'z') ? (ch - 'a' + 'A') : ch;
 }
@@ -24,7 +29,7 @@ int isalpha(int c) {
     return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 }
 
-void strncpy(char* dest, char* src, int num) {
+void strncpy(char* dest, const char* src, int num) {
     for (int i = 0; i < num; i++) {
         dest[i] = src[i];
     }
@@ -87,7 +92,7 @@ char* strncat(char* dest, const char* src, size_t n) {
 }
 
 // Custom function to split input into command and arguments
-int split_input(const char* input, char* command, char** arguments, int max_length, int max_args) {
+int split_input(const char* input, char* command, char** arguments, int max_args, int max_length) {
     int i = 0, j = 0, arg_count = 0;
 
     // Skip initial whitespace
@@ -96,12 +101,12 @@ int split_input(const char* input, char* command, char** arguments, int max_leng
     }
 
     // Extract command
-    while (input[i] != ' ' && i <= max_length) {
+    while (input[i] != ' ' && input[i] != '\0' && i < max_length) {
         command[i] = input[i];
         i++;
     }
     command[i] = '\0'; // Null-terminate the command
-    i++; // Move past the space after the command
+    if (input[i] != '\0') i++; // Move past the space after the command
 
     // Process arguments
     while (input[i] != '\0' && arg_count < max_args) {
@@ -115,7 +120,16 @@ int split_input(const char* input, char* command, char** arguments, int max_leng
             continue;
         }
 
-        if (j < 49) { // Check to prevent buffer overflow
+        // Allocate memory for the new argument if not done already
+        if (j == 0) {
+            arguments[arg_count] = malloc(max_length);
+            if (arguments[arg_count] == NULL) {
+                // Handle allocation failure if needed
+                return arg_count; // Return the arguments counted so far
+            }
+        }
+
+        if (j < max_length - 1) { // Check to prevent buffer overflow
             arguments[arg_count][j] = input[i];
             j++;
         }
@@ -288,6 +302,19 @@ int strncmp(const char *str1, const char *str2, size_t n) {
         return 0;
     } else {
         return (unsigned char)*str1 - (unsigned char)*str2;
+    }
+}
+
+int strncasecmp(const char *str1, const char *str2, size_t n) {
+    while (n-- && *str1 && (tolower((unsigned char)*str1) == tolower((unsigned char)*str2))) {
+        str1++;
+        str2++;
+    }
+    
+    if (n == (size_t)-1) {
+        return 0;
+    } else {
+        return (unsigned char)tolower((unsigned char)*str1) - (unsigned char)tolower((unsigned char)*str2);
     }
 }
 

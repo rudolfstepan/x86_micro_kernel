@@ -88,14 +88,6 @@ bool try_directory_path(const char* path) {
     return true;
 }
 
-bool change_directory(const char* path) {
-    if (try_directory_path(path)) {
-        return true;
-    }
-
-    return false;
-}
-
 bool create_directory(const char* dirname) {
 
     printf("Creating directory: %s\n", dirname);
@@ -216,7 +208,7 @@ bool is_directory_empty(struct FAT32DirEntry* entry) {
     struct FAT32DirEntry entries[SECTOR_SIZE / sizeof(struct FAT32DirEntry)];
 
     for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-        read_sector(sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))]);
+        ata_read_sector(sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))]);
     }
 
     for (unsigned int j = 0; j < sizeof(entries) / sizeof(struct FAT32DirEntry); j++) {

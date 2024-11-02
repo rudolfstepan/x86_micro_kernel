@@ -4,7 +4,7 @@
 SOURCE_DIR=src
 OUTPUT_DIR=build
 ISO_DIR=iso
-CFLAGS="-Isrc -m32 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -fno-stack-protector -O2 -Wall -Wextra -g"
+CFLAGS="-Isrc -m32 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -fno-stack-protector -O2 -Wall -Wextra -g -Wno-unused-parameter"
 
 echo "Cleaning up build directory..."
 sudo rm -rf $OUTPUT_DIR/*
@@ -25,22 +25,22 @@ nasm -f elf32 $SOURCE_DIR/boot/bootloader.asm -o $OUTPUT_DIR/boot/bootloader.o
 echo "done"
 
 # Compile FAT32 sources separately because they need to be linked into a single object file
-echo "Compiling FAT32 sources..."
+echo "Compiling filesystem sources..."
 mkdir -p "$OUTPUT_DIR/filesystem"
-gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_main.o" "$SOURCE_DIR/filesystem/fat32/fat32.c"
+gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/filesystem.o" "$SOURCE_DIR/filesystem/filesystem.c"
+gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32.o" "$SOURCE_DIR/filesystem/fat32/fat32.c"
 gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_cluster.o" "$SOURCE_DIR/filesystem/fat32/fat32_cluster.c"
 gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_files.o" "$SOURCE_DIR/filesystem/fat32/fat32_files.c"
 gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_dir.o" "$SOURCE_DIR/filesystem/fat32/fat32_dir.c"
 
-# Link into a single fat32.o
-echo "Linking FAT32 object files..."
-ld -m elf_i386 -r -o "$OUTPUT_DIR/filesystem/fat32.o" \
-    "$OUTPUT_DIR/filesystem/fat32_main.o" \
+# Link into a single filesystem.o
+echo "Linking filesystem/FAT32 object files..."
+ld -m elf_i386 -r -o "$OUTPUT_DIR/filesystem/filesystem.o" \
+    "$OUTPUT_DIR/filesystem/fat32.o" \
     "$OUTPUT_DIR/filesystem/fat32_cluster.o" \
     "$OUTPUT_DIR/filesystem/fat32_files.o" \
     "$OUTPUT_DIR/filesystem/fat32_dir.o"
 echo "done"
-
 
 # # compile all .c files
 # echo "Compiling sources..."
@@ -81,7 +81,7 @@ ld -m elf_i386 -T kernel.ld -nostdlib -o $OUTPUT_DIR/kernel.bin \
     $OUTPUT_DIR/boot/bootloader.o $OUTPUT_DIR/boot/gdt.o $OUTPUT_DIR/boot/idt.o $OUTPUT_DIR/boot/isr.o \
     $OUTPUT_DIR/drivers/io/io.o $OUTPUT_DIR/kernel/irq.o $OUTPUT_DIR/kernel/kernel.o $OUTPUT_DIR/kernel/prg.o $OUTPUT_DIR/kernel/system.o \
     $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o $OUTPUT_DIR/drivers/keyboard/keyboard.o $OUTPUT_DIR/drivers/pit/pit.o $OUTPUT_DIR/drivers/rtc/rtc.o \
-    $OUTPUT_DIR/filesystem/fat32.o \
+    $OUTPUT_DIR/filesystem/filesystem.o \
     $OUTPUT_DIR/kernel/command.o \
     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
 
@@ -89,7 +89,7 @@ echo "Linking cli_date..."
 ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_DIR/cli/cli_date.o \
     $OUTPUT_DIR/drivers/rtc/rtc.o $OUTPUT_DIR/drivers/io/io.o $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o \
     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
-    $OUTPUT_DIR/filesystem/fat32.o \
+    $OUTPUT_DIR/filesystem/filesystem.o \
     
     
 # ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_dir.elf $OUTPUT_DIR/cli/cli_dir.o \
@@ -101,7 +101,7 @@ echo "Linking cli_test..."
 ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_test.elf $OUTPUT_DIR/cli/cli_test.o \
     $OUTPUT_DIR/drivers/rtc/rtc.o $OUTPUT_DIR/drivers/io/io.o $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o \
     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
-    $OUTPUT_DIR/filesystem/fat32.o \
+    $OUTPUT_DIR/filesystem/filesystem.o \
 
 # ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/basic.elf $OUTPUT_DIR/basic.o \
 #     $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o $OUTPUT_DIR/drivers/keyboard/keyboard.o $OUTPUT_DIR/drivers/pit/pit.o $OUTPUT_DIR/drivers/rtc/rtc.o \

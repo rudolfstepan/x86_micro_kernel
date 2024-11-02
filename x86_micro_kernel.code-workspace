@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"stdio.h": "c",
+			"stddef.h": "c",
+			"stdarg.h": "c",
+			"vcruntime.h": "c",
+			"stdlib.h": "c"
+		}
+	}
+}

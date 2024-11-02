@@ -14,7 +14,7 @@ struct Fat32BootSector boot_sector = {0};
 
 int init_fs() {
     // Read the first sector (LBA 0) into boot_sector
-    if (!read_sector(0, &boot_sector)) {
+    if (!ata_read_sector(0, &boot_sector)) {
         // Handle error (e.g., log error or halt)
         printf("Error reading boot sector.\n");
 
@@ -153,7 +153,7 @@ unsigned int read_fat_entry(struct Fat32BootSector* boot_sector, unsigned int cl
     // Buffer to read a part of the FAT
     unsigned char buffer[boot_sector->bytesPerSector];
     // Read the sector of the FAT that contains the current cluster's entry
-    if (!read_sector(fatSector, buffer)) {
+    if (!ata_read_sector(fatSector, buffer)) {
         // Handle read error
         printf("Error: Failed to read the sector containing the FAT entry.\n");
         return INVALID_CLUSTER;
@@ -172,7 +172,7 @@ bool write_fat_entry(struct Fat32BootSector* boot_sector, unsigned int cluster, 
     // Buffer to read and modify a part of the FAT
     unsigned char buffer[boot_sector->bytesPerSector];
     // Read the sector of the FAT that contains the current cluster's entry
-    if (!read_sector(fatSector, buffer)) {
+    if (!ata_read_sector(fatSector, buffer)) {
         // Handle read error
         printf("Error: Failed to read the sector containing the FAT entry.\n");
         return false;
@@ -181,7 +181,7 @@ bool write_fat_entry(struct Fat32BootSector* boot_sector, unsigned int cluster, 
     unsigned int* fatEntry = (unsigned int*)&buffer[entOffset];
     *fatEntry = (*fatEntry & 0xF0000000) | (value & 0x0FFFFFFF); // Preserve high 4 bits, modify the rest
     // Write the modified sector back to the FAT
-    if (!write_sector(fatSector, buffer)) {
+    if (!ata_write_sector(fatSector, buffer)) {
         // Handle write error
         printf("Error: Failed to write the modified sector back to the FAT.\n");
         return false;

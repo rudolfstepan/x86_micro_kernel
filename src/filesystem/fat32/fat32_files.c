@@ -9,7 +9,7 @@ void readFileData(unsigned int startCluster, char* buffer, unsigned int size) {
         unsigned int sectorNumber = cluster_to_sector(&boot_sector, currentCluster);
         // Read each sector in the current cluster
         for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-            read_sector(sectorNumber + i, buffer + bytesRead);
+            ata_read_sector(sectorNumber + i, buffer + bytesRead);
             bytesRead += SECTOR_SIZE;
             if (bytesRead >= size) {
                 break;  // Stop if we have read the required size
@@ -44,7 +44,7 @@ int readFileDataToAddress(unsigned int startCluster, void* loadAddress, unsigned
         unsigned int sectorNumber = cluster_to_sector(&boot_sector, currentCluster);
         // Read each sector in the current cluster
         for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-            read_sector(sectorNumber + i, bufferPtr);
+            ata_read_sector(sectorNumber + i, bufferPtr);
             bufferPtr += SECTOR_SIZE;
             bytesRead += SECTOR_SIZE;
 
@@ -96,7 +96,7 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
         return NULL;
     }
     for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-        if (!read_sector(sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))])) {
+        if (!ata_read_sector(sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))])) {
             // Handle read error
             free(entries);
             return NULL;
