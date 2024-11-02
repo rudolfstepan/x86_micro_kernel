@@ -3,9 +3,11 @@
 #include <stddef.h>
 #include "drivers/io/io.h"
 #include "toolchain/stdio.h"
+#include "drivers/fdd/fdd.h"
 
+drive_t* current_drive = {0};  // Current drive (global variable)
 
-ata_drive_t detected_drives[MAX_DRIVES];  // Global array of detected drives
+drive_t detected_drives[MAX_DRIVES];  // Global array of detected drives
 int drive_count = 0;  // Global count of detected drives
 
 /*
@@ -41,7 +43,6 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
 
     return true;
 }
-
 
 /*
     * Writes a sector to the ATA drive.
@@ -81,7 +82,7 @@ bool ata_write_sector(unsigned short base, unsigned int lba, const void* buffer,
     return true;
 }
 
-ata_drive_t* ata_get_drive(unsigned short drive_index) {
+drive_t* ata_get_drive(unsigned short drive_index) {
     if (drive_index >= drive_count) {
         return NULL;  // Return NULL if the index is out of bounds
     }
@@ -96,6 +97,7 @@ void ata_detect_drives() {
 
     drive_count = 0;  // Reset drive count before detection
 
+    // Detect ATA drives
     for (int bus = 0; bus < 2; bus++) {
         for (int drive = 0; drive < 2; drive++) {
             if (drive_count >= MAX_DRIVES) {
@@ -103,31 +105,31 @@ void ata_detect_drives() {
                 return;
             }
 
-            ata_drive_t* drive_info = &detected_drives[drive_count];
-            drive_info->base = bases[bus];
-            drive_info->drive = drive;
-            drive_info->is_master = (drive == 0);  // 0 for master, 1 for slave
+            drive_t* ata_drive_info = &detected_drives[drive_count];
+            ata_drive_info->base = bases[bus];
+            ata_drive_info->is_master = (drive == 0);  // 0 for master, 1 for slave
 
             // Attempt to identify the drive
-            if (ata_identify_drive(bases[bus], drives[drive], drive_info)) {
-                // Assign a unique name like "hdd1", "hdd2", etc.
-                snprintf(drive_info->name, sizeof(drive_info->name), "hdd%d", drive_name_index++);
-                printf("Drive %s detected: %s, Sectors: %u\n", drive_info->name, drive_info->model, drive_info->sectors);
+            if (ata_identify_drive(bases[bus], drives[drive], ata_drive_info)) {
+                ata_drive_info->type = DRIVE_TYPE_ATA;
+                snprintf(ata_drive_info->name, sizeof(ata_drive_info->name), "hdd%d", drive_name_index++);
+                printf("ATA drive %s detected: %s, Sectors: %u\n", ata_drive_info->name, ata_drive_info->model, ata_drive_info->sectors);
 
                 // Initialize the file system for the detected drive
-                //init_fs(drive_info);
+                init_fs(ata_drive_info);
 
                 // Increment the global drive count after successfully adding a drive
                 drive_count++;
-            } else {
-                drive_info->exists = false;
             }
         }
     }
+
+    // Detect floppy drives
+    detect_fdd();
 }
 
 // Function to send the IDENTIFY command and retrieve drive information
-bool ata_identify_drive(uint16_t base, uint8_t drive, ata_drive_t *drive_info) {
+bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info) {
     // Select the drive (master or slave)
     outb(base + 6, drive);
 
@@ -158,25 +160,32 @@ bool ata_identify_drive(uint16_t base, uint8_t drive, ata_drive_t *drive_info) {
 
     // Get the total sector count (LBA28; words 60-61)
     drive_info->sectors = identify_data[60] | (identify_data[61] << 16);
-    drive_info->exists = true;
 
     return true;
 }
 
 // Function to initialize the file system on a given drive
-void init_fs(ata_drive_t* drive) {
-    if (drive->exists) {
-        printf("Init fs on %s: %s with %u sectors\n", drive->name, drive->model, drive->sectors);
-
-        // File system initialization code, including master/slave information
+void init_fs(drive_t* drive) {
+    if (drive->type == DRIVE_TYPE_ATA) {
+        printf("Init fs on ATA drive %s: %s with %u sectors\n", drive->name, drive->model, drive->sectors);
+        // Initialize file system for ATA drive
         fat32_init_fs(drive->base, drive->is_master);
-        
+    } else if (drive->type == DRIVE_TYPE_FDD) {
+        // printf("Init fs on FDD %s with CHS %u/%u/%u\n", drive->name, drive->cylinder, drive->head, drive->sector);
+        // // Initialize file system or handling code for FDD
+        // // Call fat12_init_fs as part of FDD initialization
+        // if (fat12_init_fs()) {
+        //     printf("FAT12 file system initialized successfully.\n");
+        // } else {
+        //     printf("FAT12 initialization failed.\n");
+        // }
+
     } else {
-        printf("Drive does not exist, skipping file system initialization.\n");
+        printf("Unknown drive type, skipping initialization.\n");
     }
 }
 
-ata_drive_t* get_drive_by_name(const char* name) {
+drive_t* get_drive_by_name(const char* name) {
     for (int i = 0; i < drive_count; i++) {
         if (strcmp(detected_drives[i].name, name) == 0) {
             return &detected_drives[i];
@@ -187,7 +196,29 @@ ata_drive_t* get_drive_by_name(const char* name) {
 
 void list_detected_drives() {
     for (int i = 0; i < drive_count; i++) {
-        ata_drive_t* drive = &detected_drives[i];
+        drive_t* drive = &detected_drives[i];
         printf("Drive %s: Model %s, Sectors %u\n", drive->name, drive->model, drive->sectors);
     }
+}
+
+void detect_fdd() {
+    // Turn on the motor for FDD 0 (assumes a single FDD attached)
+    outb(FDD_DOR, 0x1C);  // 0x1C = motor on, select drive 0
+
+    // Wait briefly for the motor to stabilize
+    for (volatile int i = 0; i < 10000; i++);
+
+    // Check the FDD status to confirm if an FDD is present
+    if (inb(FDD_MSR) & 0x80) {  // Bit 7 set if FDC is ready
+        drive_t* drive = &detected_drives[drive_count++];
+        drive->type = DRIVE_TYPE_FDD;
+        snprintf(drive->name, sizeof(drive->name), "fdd%d", 1);
+        drive->cylinder = 80;  // Common for 1.44MB floppies
+        drive->head = 2;
+        drive->sector = 18;
+        printf("Floppy drive detected: %s\n", drive->name);
+    }
+
+    // Turn off the motor
+    outb(FDD_DOR, 0x0C);
 }

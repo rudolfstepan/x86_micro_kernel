@@ -7,7 +7,6 @@
 
 #include "toolchain/strings.h"
 #include "toolchain/stdlib.h"
-
 #include "drivers/ata/ata.h"
 
 #define SECTOR_SIZE 512
@@ -141,7 +140,7 @@ int fat32_init_fs(unsigned short base, bool ata_is_master);
 // directory operations
 void read_directory();
 bool read_directory_path(const char *path);
-int read_directory_to_buffer(const char *path, char *buffer, unsigned int *size);
+int fat32_read_dir(const char *path, char *buffer, unsigned int *size);
 bool create_directory(const char* dirname);
 bool delete_directory(const char* dirname);
 

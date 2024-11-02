@@ -34,11 +34,13 @@ gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32.o" "$SOURCE_DIR/filesystem/fat32/fa
 gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_cluster.o" "$SOURCE_DIR/filesystem/fat32/fat32_cluster.c"
 gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_files.o" "$SOURCE_DIR/filesystem/fat32/fat32_files.c"
 gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_dir.o" "$SOURCE_DIR/filesystem/fat32/fat32_dir.c"
+gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat12.o" "$SOURCE_DIR/filesystem/fat12/fat12.c"
 
 # Link into a single filesystem.o
 echo "Linking filesystem/FAT32 object files..."
 ld -m elf_i386 -r -o "$OUTPUT_DIR/filesystem/filesystem.o" \
     "$OUTPUT_DIR/filesystem/file_system.o" \
+    "$OUTPUT_DIR/filesystem/fat12.o" \
     "$OUTPUT_DIR/filesystem/fat32.o" \
     "$OUTPUT_DIR/filesystem/fat32_cluster.o" \
     "$OUTPUT_DIR/filesystem/fat32_files.o" \
@@ -84,6 +86,7 @@ ld -m elf_i386 -T kernel.ld -nostdlib -o $OUTPUT_DIR/kernel.bin \
     $OUTPUT_DIR/boot/bootloader.o $OUTPUT_DIR/boot/gdt.o $OUTPUT_DIR/boot/idt.o $OUTPUT_DIR/boot/isr.o \
     $OUTPUT_DIR/drivers/io/io.o $OUTPUT_DIR/kernel/irq.o $OUTPUT_DIR/kernel/kernel.o $OUTPUT_DIR/kernel/prg.o $OUTPUT_DIR/kernel/system.o \
     $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o $OUTPUT_DIR/drivers/keyboard/keyboard.o $OUTPUT_DIR/drivers/pit/pit.o $OUTPUT_DIR/drivers/rtc/rtc.o \
+    $OUTPUT_DIR/drivers/fdd/fdd.o \
     $OUTPUT_DIR/filesystem/filesystem.o \
     $OUTPUT_DIR/kernel/command.o \
     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
@@ -91,6 +94,7 @@ ld -m elf_i386 -T kernel.ld -nostdlib -o $OUTPUT_DIR/kernel.bin \
 echo "Linking cli_date..."
 ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_DIR/cli/cli_date.o \
     $OUTPUT_DIR/drivers/rtc/rtc.o $OUTPUT_DIR/drivers/io/io.o $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o \
+    $OUTPUT_DIR/drivers/fdd/fdd.o \
     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
     $OUTPUT_DIR/filesystem/filesystem.o \
     
@@ -103,6 +107,7 @@ ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_D
 echo "Linking cli_test..."
 ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_test.elf $OUTPUT_DIR/cli/cli_test.o \
     $OUTPUT_DIR/drivers/rtc/rtc.o $OUTPUT_DIR/drivers/io/io.o $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o \
+    $OUTPUT_DIR/drivers/fdd/fdd.o \
     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
     $OUTPUT_DIR/filesystem/filesystem.o \
 

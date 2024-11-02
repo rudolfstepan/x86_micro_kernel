@@ -17,11 +17,6 @@
 #include "filesystem/filesystem.h"
 #include "drivers/ata/ata.h"
 
-
-char input_path[MAX_PATH_LENGTH];      // This should be set to the user input
-char normalized_path[MAX_PATH_LENGTH]; // This should be set to the normalized path
-char command[50], arguments[10][50];   // Adjust sizes as necessary
-
 // for the keyboard
 extern char input_buffer[BUFFER_SIZE];
 extern volatile int buffer_index;
@@ -76,7 +71,6 @@ void initialize_syscall_table() {
 
     irq_install_handler(128, syscall_handler); // Install the system call handler
     //__asm__ __volatile__("int $0x80"); // Invoke interrupt 0x80
-
 }
 
 // initialize attaches drives
@@ -85,10 +79,11 @@ void init_drives()
     // detect and initialize attached drives to the system
     ata_detect_drives();
 
-    ata_drive_t *drive_info = ata_get_drive(0);
-    if (drive_info) {
-        printf("Drive %s found: %s, Sectors: %u\n", drive_info->name, drive_info->model, drive_info->sectors);
-        init_fs(drive_info);
+    current_drive = ata_get_drive(0);
+
+    if (current_drive) {
+        printf("Drive %s found: %s, Sectors: %u\n", current_drive->name, current_drive->model, current_drive->sectors);
+        init_fs(current_drive);
     } else {
         printf("Drive not found.\n");
     }
@@ -116,7 +111,6 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
     initialize_syscall_table();
     kb_install();
     set_color(WHITE);
-
 
     init_drives();
 

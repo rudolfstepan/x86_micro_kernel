@@ -1,18 +1,13 @@
 #include "io.h"
 
-
 // General input/output handling
-
-
 unsigned char inb(unsigned short port) {
-    // Implementation
     unsigned char ret;
     asm volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
     return ret;
 }
 
 void outb(unsigned short port, unsigned char val) {
-    // Implementation
     asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
 }
 

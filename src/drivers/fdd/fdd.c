@@ -1,54 +1,77 @@
 #include "fdd.h"
 #include "drivers/io/io.h"
+#include "toolchain/stdio.h"
 
-#define FDD_DOR        0x3F2 // Digital Output Register
-#define FDD_MSR        0x3F4 // Main Status Register
-#define FDD_FIFO       0x3F5 // Data Register
-#define FDD_CTRL       0x3F7 // Control Register
 
-#define FDD_CMD_READ   0xE6  // Read Data command
-#define FDD_CMD_WRITE  0xC5  // Write Data command
+#define TIMEOUT_LIMIT 10000  // Arbitrary timeout limit for waiting loops
 
-#define SECTOR_SIZE    512   // Sector size for FDD
-#define FDD_SECTOR_CNT 1     // Reading/writing 1 sector at a time
-
-// Function to wait until the FDC is ready for commands
-static inline void fdc_wait() {
-    while (!(inb(FDD_MSR) & 0x80)); // Wait until FDC is ready for a new command
+// Function to wait until the FDC is ready for commands, with a timeout
+static inline bool fdc_wait() {
+    int timeout = TIMEOUT_LIMIT;
+    while (!(inb(FDD_MSR) & 0x80) && --timeout > 0);  // Wait until FDC is ready for a new command
+    return timeout > 0;
 }
 
 // Function to send a command to the FDC
-static inline void fdc_send_command(uint8_t command) {
-    fdc_wait();
+static inline bool fdc_send_command(uint8_t command) {
+    if (!fdc_wait()) return false;  // Timeout occurred
     outb(FDD_FIFO, command);
+    return true;
+}
+
+// Function to wait for the motor to spin up (arbitrary delay)
+static inline void fdd_motor_on() {
+    outb(FDD_DOR, 0x1C);  // 0x1C = motor on, drive select
+    for (volatile int i = 0; i < TIMEOUT_LIMIT; i++);  // Delay for motor spin-up
+}
+
+// Function to turn off the FDD motor
+static inline void fdd_motor_off() {
+    outb(FDD_DOR, 0x0C);  // Motor off
+}
+
+// Function to recalibrate the FDD (move head to track 0)
+static bool fdd_recalibrate() {
+    fdd_motor_on();
+    if (!fdc_send_command(0x07)) {  // Recalibrate command
+        return false;
+    }
+    // Wait for interrupt (could add handling here, depends on your environment)
+    return true;
 }
 
 // Reads a sector from the FDD
 bool fdd_read_sector(unsigned int cylinder, unsigned int head, unsigned int sector, void* buffer) {
     if (!buffer) return false;
 
-    // Specify the Digital Output Register to select drive and turn on the motor
-    outb(FDD_DOR, 0x1C);  // 0x1C = motor on, drive select
+    if (!fdd_recalibrate()) {
+        printf("FDC recalibration failed.\n");
+        return false;
+    }
 
-    // Send the Read Data command with CHS addressing
-    fdc_send_command(FDD_CMD_READ);
-    fdc_send_command(head << 2);                // Head and drive number
-    fdc_send_command(cylinder);                 // Cylinder
-    fdc_send_command(head);                     // Head
-    fdc_send_command(sector);                   // Sector
-    fdc_send_command(2);                        // Sector size code (2 for 512 bytes)
-    fdc_send_command(18);                       // Last sector in track
-    fdc_send_command(0x1B);                     // Gap length
-    fdc_send_command(0xFF);                     // Data length (0xFF for default)
+    fdd_motor_on();
 
-    // Wait for the FDC to be ready for data transfer
-    while (!(inb(FDD_MSR) & 0x80)) {}
+    if (!fdc_send_command(FDD_CMD_READ)) return false;
+    fdc_send_command((head << 2) | 0);          
+    fdc_send_command(cylinder);                 
+    fdc_send_command(head);                     
+    fdc_send_command(sector);                   
+    fdc_send_command(2);                        
+    fdc_send_command(18);                       
+    fdc_send_command(0x1B);                     
+    fdc_send_command(0xFF);                     
 
-    // Read the data from the FDD
+    int timeout = TIMEOUT_LIMIT;
+    while (!(inb(FDD_MSR) & 0x80) && --timeout > 0);
+    if (timeout <= 0) {
+        printf("Timeout waiting for FDC to be ready for data transfer.\n");
+        fdd_motor_off();
+        return false;
+    }
+
     insw(FDD_FIFO, buffer, SECTOR_SIZE / 2);
 
-    // Reset Digital Output Register to stop motor
-    outb(FDD_DOR, 0x0C);
+    fdd_motor_off();
 
     return true;
 }
@@ -57,12 +80,23 @@ bool fdd_read_sector(unsigned int cylinder, unsigned int head, unsigned int sect
 bool fdd_write_sector(unsigned int cylinder, unsigned int head, unsigned int sector, const void* buffer) {
     if (!buffer) return false;
 
-    // Specify the Digital Output Register to select drive and turn on the motor
-    outb(FDD_DOR, 0x1C);  // 0x1C = motor on, drive select
+    // Recalibrate the drive to ensure the head is on track 0
+    if (!fdd_recalibrate()) {
+        printf("FDC recalibration failed.\n");
+        return false;
+    }
+
+    // Wait for the motor to spin up
+    fdd_motor_on();
 
     // Send the Write Data command with CHS addressing
-    fdc_send_command(FDD_CMD_WRITE);
-    fdc_send_command(head << 2);                // Head and drive number
+    if (!fdc_send_command(FDD_CMD_WRITE)) {
+        printf("FDC write command failed.\n");
+        fdd_motor_off();
+        return false;
+    }
+    
+    fdc_send_command((head << 2) | 0);          // Head and drive number (0 for first drive)
     fdc_send_command(cylinder);                 // Cylinder
     fdc_send_command(head);                     // Head
     fdc_send_command(sector);                   // Sector
@@ -71,14 +105,20 @@ bool fdd_write_sector(unsigned int cylinder, unsigned int head, unsigned int sec
     fdc_send_command(0x1B);                     // Gap length
     fdc_send_command(0xFF);                     // Data length (0xFF for default)
 
-    // Wait for the FDC to be ready to accept data
-    while (!(inb(FDD_MSR) & 0x80)) {}
+    // Wait for the FDC to be ready to accept data, with timeout
+    int timeout = TIMEOUT_LIMIT;
+    while (!(inb(FDD_MSR) & 0x80) && --timeout > 0);
+    if (timeout <= 0) {
+        printf("Timeout waiting for FDC to be ready to accept data.\n");
+        fdd_motor_off();
+        return false;
+    }
 
     // Write the data to the FDD
     outsw(FDD_FIFO, buffer, SECTOR_SIZE / 2);
 
-    // Reset Digital Output Register to stop motor
-    outb(FDD_DOR, 0x0C);
+    // Turn off the motor
+    fdd_motor_off();
 
     return true;
 }

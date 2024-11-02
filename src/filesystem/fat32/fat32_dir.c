@@ -33,7 +33,7 @@ bool read_directory_path(const char* path) {
     return true;
 }
 
-int read_directory_to_buffer(const char *path, char *buffer, unsigned int *size){
+int fat32_read_dir(const char *path, char *buffer, unsigned int *size){
     unsigned int currentCluster = boot_sector.rootCluster; // Assuming boot_sector is defined and initialized elsewhere
     char tempPath[MAX_PATH_LENGTH]; // Temporary path buffer
     strcpy(tempPath, path);

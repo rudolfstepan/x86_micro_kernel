@@ -35,25 +35,37 @@
 
 #define SECTOR_SIZE 512
 
+typedef enum {
+    DRIVE_TYPE_NONE = 0,
+    DRIVE_TYPE_ATA = 1,
+    DRIVE_TYPE_FDD = 2
+} drive_type_t;
+
 typedef struct {
-    uint16_t base;          // Base I/O port
-    uint8_t drive;          // 0 = Master, 1 = Slave
-    bool exists;            // True if a drive is detected
-    bool is_master;         // True if drive is master, false if slave
-    char model[41];         // Drive model string (from IDENTIFY command)
-    uint32_t sectors;       // Total sectors (from IDENTIFY command)
-    char name[8];           // Drive name (e.g., "hdd1")
-} ata_drive_t;
+    drive_type_t type;      // Type of drive: ATA or FDD
+    uint16_t base;          // Base I/O port (for ATA drives)
+    bool is_master;         // True if master (ATA), false if slave (ATA)
+    char name[8];           // Drive name (e.g., "hdd1", "fdd1")
+    char model[41];         // Drive model string (for ATA drives)
+    uint32_t sectors;       // Total sectors (for ATA drives)
+    unsigned int cylinder;  // Number of cylinders (for FDD)
+    unsigned int head;      // Number of heads (for FDD)
+    unsigned int sector;    // Number of sectors (for FDD)
+} drive_t;
 
+extern drive_t* current_drive;
 
-// Forward declaration of functions
-bool ata_identify_drive(uint16_t base, uint8_t drive, ata_drive_t *drive_info);
-void init_fs(ata_drive_t* drive);
+void detect_fdd();
 
-ata_drive_t* ata_get_drive(unsigned short drive_index);
+bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info);
+void init_fs(drive_t* drive);
+
+drive_t* ata_get_drive(unsigned short drive_index);
+drive_t* get_drive_by_name(const char* name);
+
 void ata_detect_drives();
 void list_detected_drives();
-ata_drive_t* get_drive_by_name(const char* name);
+
 bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master);
 bool ata_write_sector(unsigned short base, unsigned int lba, const void* buffer, bool is_master);
 

@@ -2,40 +2,6 @@
 #include "strings.h"
 #include "stdlib.h"
 
-
-// Default drive and path
-// a full path is a combination of the drive and the path
-// char current_drive[16] = "/hdd0";   // Default drive
-// char current_path[256] = "/";      // Default path
-
-// // Function prototype for drive type checking
-// enum DriveType { ATA_DRIVE, FDD_DRIVE, UNKNOWN_DRIVE };
-// static enum DriveType identify_drive(const char* path);
-
-// // Identifies the drive type based on the path
-// static enum DriveType identify_drive(const char *path) {
-//     // Simple path check (e.g., /hdd/... for ATA and /fdd/... for floppy)
-//     if (path == NULL) return UNKNOWN_DRIVE;
-
-//     if ((uintptr_t)path == 0) {
-//         printf("Path is NULL %s\n", path);
-//         return UNKNOWN_DRIVE;
-//     }
-
-//     if (strncasecmp(path, "/hdd", 4) == 0) {
-//         return ATA_DRIVE;
-//     } else if (strncasecmp(path, "/fdd", 4) == 0) {
-//         return FDD_DRIVE;
-//     }
-
-//     return UNKNOWN_DRIVE;
-// }
-
-// // Returns the full path based on the current drive and path
-// void get_full_path(const char* path, char* full_path, size_t size) {
-//     snprintf(full_path, size, "%s%s", current_drive, path);
-// }
-
 // -----------------------------------------------------------------
 // Directory Handling Functions
 // the following functions are defined in the filesystem/fat32/fat32.c file
@@ -48,30 +14,22 @@ int rmdir(const char* path){
     return delete_directory(path);
 }
 
-int readdir(const char *path, char *buffer, unsigned int *size){
-    // enum DriveType driveType = identify_drive(path);
+int readdir(const char *path, char *buffer, unsigned int *size, drive_type_t driveType) {
 
-    // switch (driveType) {
-    //     case ATA_DRIVE:
-    //         // remove the drive prefix from the path
-    //         path += 4;
+    if(driveType == DRIVE_TYPE_NONE){
+        printf("Invalid drive type\n");
+        return -1;
+    }
 
-    //         // Call ATA-specific read directory function
-             return read_directory_to_buffer(path, buffer, size);
+    if(driveType == DRIVE_TYPE_ATA){
+        return fat32_read_dir(path, buffer, size);
+    }
 
-    //     case FDD_DRIVE:
-    //         // remove the drive prefix from the path
-    //         path += 4;
-    //         // Call FDD-specific read directory function
-    //         //return fdd_read_directory_to_buffer(path, buffer, size);
-    //         printf("FDD drive not yet supported.\n");
-    //         return -1; 
+    if(driveType == DRIVE_TYPE_FDD){
+        return fat12_read_dir(path, buffer, size);
+    }
 
-    //     default:
-    //         // Unknown drive type or invalid path
-    //         printf("Not supported drive or invalid path: %s\n", path);
-             return -1;  // Error: Drive type not recognized
-    // }
+    return -1;
 }
 
 // -----------------------------------------------------------------
@@ -98,7 +56,57 @@ int mkfile(const char* path){
 // Console Functions
 // -----------------------------------------------------------------
 
-void intToStr(int value, char* str, int base) {
+// Helper function to reverse a string
+static void reverse(char *str, int length) {
+    int start = 0;
+    int end = length - 1;
+    while (start < end) {
+        char temp = str[start];
+        str[start] = str[end];
+        str[end] = temp;
+        start++;
+        end--;
+    }
+}
+
+// Helper function to convert an integer to a string
+static int int_to_str(int num, char *str, int base) {
+    int i = 0;
+    bool is_negative = false;
+
+    // Handle 0 explicitly
+    if (num == 0) {
+        str[i++] = '0';
+        str[i] = '\0';
+        return i;
+    }
+
+    // Handle negative numbers for decimal base
+    if (num < 0 && base == 10) {
+        is_negative = true;
+        num = -num;
+    }
+
+    // Process individual digits
+    while (num != 0) {
+        int rem = num % base;
+        str[i++] = (rem > 9) ? (rem - 10) + 'a' : rem + '0';
+        num = num / base;
+    }
+
+    // Append '-' if the number is negative
+    if (is_negative) {
+        str[i++] = '-';
+    }
+
+    str[i] = '\0';  // Null-terminate the string
+
+    // Reverse the string
+    reverse(str, i);
+    return i;
+}
+
+void int_to_str2(int value, char* str, int base) {
     char* digits = "0123456789ABCDEF";
     char temp[32];
     int i = 0;
@@ -264,7 +272,7 @@ int printf(const char* format, ...) {
                     case 'd': {
                         int i = va_arg(args, int);
                         char buffer[32];
-                        intToStr(i, buffer, 10);
+                        int_to_str(i, buffer, 10);
                         char* s = buffer;
                         while (*s) {
                             vga_write_char(*s++);
@@ -297,4 +305,58 @@ int printf(const char* format, ...) {
     va_end(args);
 
     return 0;
+}
+
+// Main sprintf implementation
+int sprintf(char *buffer, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+
+    char *str = buffer;
+    const char *p = format;
+    char temp[20];  // Temporary buffer for integer conversion
+    int written = 0;
+
+    while (*p != '\0') {
+        if (*p == '%') {
+            p++;  // Move past '%'
+
+            if (*p == 's') {  // String
+                char *arg = va_arg(args, char *);
+                while (*arg != '\0') {
+                    *str++ = *arg++;
+                    written++;
+                }
+            } else if (*p == 'd') {  // Signed integer
+                int arg = va_arg(args, int);
+                int len = int_to_str(arg, temp, 10);
+                for (int i = 0; i < len; i++) {
+                    *str++ = temp[i];
+                    written++;
+                }
+            } else if (*p == 'x') {  // Hexadecimal
+                int arg = va_arg(args, int);
+                int len = int_to_str(arg, temp, 16);
+                for (int i = 0; i < len; i++) {
+                    *str++ = temp[i];
+                    written++;
+                }
+            } else {
+                // Unsupported format specifier; copy as-is
+                *str++ = '%';
+                *str++ = *p;
+                written += 2;
+            }
+        } else {
+            // Regular character, copy as-is
+            *str++ = *p;
+            written++;
+        }
+        p++;
+    }
+
+    *str = '\0';  // Null-terminate the resulting string
+
+    va_end(args);
+    return written;
 }

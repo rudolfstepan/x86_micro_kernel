@@ -144,12 +144,34 @@ void handle_mount(int arg_count, char **arguments) {
     } else {
         str_to_lower(arguments[0]);
         printf("Try mount drive: %s\n", arguments[0]);
-        ata_drive_t* drive = get_drive_by_name(arguments[0]);
-        if(drive == NULL){
+        current_drive = get_drive_by_name(arguments[0]);
+        if(current_drive == NULL){
             printf("drive: %s not found\n", arguments[0]);
         }else{
             printf("Mounting drive \n");
-            fat32_init_fs(drive->base, drive->is_master);
+
+            switch (current_drive->type)
+            {
+                case DRIVE_TYPE_ATA:
+                    printf("Init fs on ATA drive %s: %s with %u sectors\n", current_drive->name, current_drive->model, current_drive->sectors);
+                    // Initialize file system for ATA drive
+                    fat32_init_fs(current_drive->base, current_drive->is_master);
+                    break;
+                case DRIVE_TYPE_FDD:
+                    printf("Init fs on FDD %s with CHS %u/%u/%u\n", current_drive->name, current_drive->cylinder, current_drive->head, current_drive->sector);
+                    // Initialize file system or handling code for FDD
+                    // Call fat12_init_fs as part of FDD initialization
+                    if (fat12_init_fs()) {
+                        printf("FAT12 file system initialized successfully.\n");
+                    } else {
+                        printf("FAT12 initialization failed.\n");
+                    }
+                    break;
+
+                default:
+                    break;
+            }
+
             strcpy(current_path, "/");
         }
     }
@@ -166,17 +188,12 @@ void handle_ls(int arg_count, char **arguments) {
         return;
     }
     const char *directory = (arg_count == 0) ? current_path : arguments[0];
-    printf("Listing directory: %s\n", directory);
-    while (readdir(directory, buffer, &size) == -1) {  // Assuming `readdir` function that returns -1 on buffer overflow
-        size *= 2;  // Double the buffer size
-        char *temp = (char *)realloc(buffer, size);
-        if (!temp) {
-            printf("Failed to reallocate memory\n");
-            free(buffer);
-            return;
-        }
-        buffer = temp;
+    if(current_drive == NULL){
+        printf("No drive mounted\n");
+        return;
     }
+    readdir(directory, buffer, &size, current_drive->type);
+
     printf("%s\n", buffer);
     memset(buffer, 0, size);  // Securely clear the buffer
     free(buffer);
@@ -381,10 +398,4 @@ void process_command(char *input_buffer) {
             break;
         }
     }
-
-    // if (change_drive(input_buffer)) {
-    //     printf("Changed to drive: %s\n", current_drive);
-    // } else if (i == NUM_COMMANDS) {
-    //     printf("Invalid command: %s\n", command);
-    // }
 }

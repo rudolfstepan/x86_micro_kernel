@@ -2,6 +2,7 @@
 #define COMMAND_H
 
 #include "system.h"
+#include "drivers/ata/ata.h"
 
 typedef struct {
     const char *name;
