@@ -61,7 +61,7 @@ int read_directory_to_buffer(const char *path, char *buffer, unsigned int *size)
     return true;
 }
 
-bool try_directory_path(const char* path) {
+bool change_directory(const char* path) {
     unsigned int targetCluster = current_directory_cluster; // Start from the current directory
     char tempPath[MAX_PATH_LENGTH]; // Temporary path buffer
     strcpy(tempPath, path);

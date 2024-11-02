@@ -119,7 +119,7 @@ unsigned int find_next_cluster(struct Fat32BootSector* bs, const char *dirName, 
 void read_cluster_dir_entries(unsigned int currentCluster);
 void read_cluster_dir_entries_to_buffer(unsigned int currentCluster, char *buffer, unsigned int *size);
 struct FAT32DirEntry* findFileInDirectory(const char* filename);
-bool try_directory_path(const char *path);
+bool change_directory(const char *path);
 
 // File and Data Management
 void readFileData(unsigned int startCluster, char* buffer, unsigned int size);

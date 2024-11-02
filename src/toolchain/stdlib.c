@@ -61,6 +61,45 @@ void *malloc(size_t size) {
     return result;
 }
 
+void* realloc(void *ptr, size_t new_size) {
+    // If `ptr` is NULL, just allocate new memory like `malloc`
+    if (ptr == NULL) {
+        return malloc(new_size);
+    }
+
+    // If `new_size` is 0, free the memory and return NULL
+    if (new_size == 0) {
+        free(ptr);
+        return NULL;
+    }
+
+    // Get the memory block header by moving back from `ptr`
+    memory_block *block = (memory_block*)((size_t)ptr - BLOCK_SIZE);
+    size_t old_size = block->size;
+
+    // If the new size is the same or smaller, return the original pointer
+    if (new_size <= old_size) {
+        return ptr;
+    }
+
+    // Allocate a new block of memory large enough for the new size
+    void *new_ptr = malloc(new_size);
+    if (!new_ptr) {
+        // If allocation fails, return NULL
+        return NULL;
+    }
+
+    // Copy data from the old memory to the new memory
+    size_t copy_size = (old_size < new_size) ? old_size : new_size;
+    memcpy(new_ptr, ptr, copy_size);
+
+    // Free the old memory block
+    free(ptr);
+
+    // Return the pointer to the new memory block
+    return new_ptr;
+}
+
 void free(void *ptr) {
     if (!ptr) {
         return;
