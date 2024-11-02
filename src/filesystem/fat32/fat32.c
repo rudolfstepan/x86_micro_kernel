@@ -1,5 +1,4 @@
 #include "fat32.h"
-
 #include "toolchain/stdio.h"
 
 // fat32 file system implementation
@@ -12,17 +11,26 @@
 unsigned int current_directory_cluster = 2; // Default root directory cluster for FAT32
 struct Fat32BootSector boot_sector = {0};
 
-int init_fs() {
+unsigned short ata_base_address;
+bool ata_is_master;
+
+int fat32_init_fs(unsigned short base, bool is_master) {
     // Read the first sector (LBA 0) into boot_sector
-    if (!ata_read_sector(0, &boot_sector)) {
+    if (!ata_read_sector(base, 0, &boot_sector, is_master)) {
         // Handle error (e.g., log error or halt)
         printf("Error reading boot sector.\n");
 
-        return SUCCESS;
+        return FAILURE;
     }
+
+    ata_is_master = is_master;
+    ata_base_address = base; // set base address to current drive
+
+    printf("set drive %d base address: %d\n", ata_is_master, ata_base_address);
+
     // Update current directory cluster based on the boot sector
     current_directory_cluster = boot_sector.rootCluster;
-    return FAILURE;
+    return SUCCESS;
 }
 
 // formatFilename function
@@ -153,7 +161,7 @@ unsigned int read_fat_entry(struct Fat32BootSector* boot_sector, unsigned int cl
     // Buffer to read a part of the FAT
     unsigned char buffer[boot_sector->bytesPerSector];
     // Read the sector of the FAT that contains the current cluster's entry
-    if (!ata_read_sector(fatSector, buffer)) {
+    if (!ata_read_sector(ata_base_address, fatSector, buffer, ata_is_master)) {
         // Handle read error
         printf("Error: Failed to read the sector containing the FAT entry.\n");
         return INVALID_CLUSTER;
@@ -172,7 +180,7 @@ bool write_fat_entry(struct Fat32BootSector* boot_sector, unsigned int cluster, 
     // Buffer to read and modify a part of the FAT
     unsigned char buffer[boot_sector->bytesPerSector];
     // Read the sector of the FAT that contains the current cluster's entry
-    if (!ata_read_sector(fatSector, buffer)) {
+    if (!ata_read_sector(ata_base_address, fatSector, buffer, ata_is_master)) {
         // Handle read error
         printf("Error: Failed to read the sector containing the FAT entry.\n");
         return false;
@@ -181,7 +189,7 @@ bool write_fat_entry(struct Fat32BootSector* boot_sector, unsigned int cluster, 
     unsigned int* fatEntry = (unsigned int*)&buffer[entOffset];
     *fatEntry = (*fatEntry & 0xF0000000) | (value & 0x0FFFFFFF); // Preserve high 4 bits, modify the rest
     // Write the modified sector back to the FAT
-    if (!ata_write_sector(fatSector, buffer)) {
+    if (!ata_write_sector(ata_base_address, fatSector, buffer, ata_is_master)) {
         // Handle write error
         printf("Error: Failed to write the modified sector back to the FAT.\n");
         return false;

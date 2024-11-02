@@ -25,6 +25,9 @@ int strncmp(const char *str1, const char *str2, size_t n);
 int strncasecmp(const char *str1, const char *str2, size_t n);
 int split_input(const char* input, char* command, char** arguments, int max_length, int max_args);
 
+void str_to_lower(char* str);
+void str_to_upper(char* str);
+
 char* strtok_r(char* str, const char* delim, char** saveptr);
 size_t strspn(const char* str1, const char* str2);
 size_t strcspn(const char* str1, const char* str2);

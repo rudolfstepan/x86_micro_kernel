@@ -87,6 +87,9 @@ extern struct File file;
 extern struct Fat32BootSector boot_sector;
 extern unsigned int current_directory_cluster; // Default root directory cluster for FAT32
 
+extern unsigned short ata_base_address;
+extern bool ata_is_master;
+
 // private functions
 
 // Cluster and Sector Operations
@@ -133,7 +136,7 @@ int compare_names(const char* fatName, const char* regularName);
 void set_fat32_time(unsigned short* time, unsigned short* date);
 
 // public functions
-int init_fs(void);
+int fat32_init_fs(unsigned short base, bool ata_is_master);
 
 // directory operations
 void read_directory();

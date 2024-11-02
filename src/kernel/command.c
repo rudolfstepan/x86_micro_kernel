@@ -80,21 +80,6 @@ void call_irq(int irq) {
     }
 }
 
-// List the contents of the specified directory
-void show_directory_content(const char *path) {
-    unsigned int size = 1024;  // size is now an unsigned int, not a pointer
-    char* buffer = (char*)malloc(size);
-
-    if (readdir(path, buffer, &size) == 0) {  // Pass the address of size
-        printf("Directory not found: %s\n", path);
-    } else {
-        printf("Listing directory: %s\n", path);
-        printf("%s\n", buffer);
-    }
-
-    secure_free(buffer, size);  // Clear the buffer
-}
-
 // Open the specified file and print its contents
 void openFile(const char* path) {
     printf("Opening file: %s\n", path);
@@ -146,15 +131,50 @@ void handle_cls(int arg_count, char **arguments) {
     clear_screen();
 }
 
-void handle_ls(int arg_count, char **arguments) {
-    char full_path[512]; // Large enough to hold combined path
-    // Generate the path based on arguments
+void handle_drives(int arg_count, char **arguments) {
+    printf("Available drives:\n");
+    list_detected_drives();
+}
+
+/// @brief Mount an attached drive
+/// @param arg_count 
+/// @param arguments 
+void handle_mount(int arg_count, char **arguments) {
     if (arg_count == 0) {
-        snprintf(full_path, sizeof(full_path), "%s%s", current_drive, current_path);
+        printf("Mount command without arguments\n");
     } else {
-        snprintf(full_path, sizeof(full_path), "%s%s/%s", current_drive, current_path, arguments[0]);
+        str_to_lower(arguments[0]);
+
+        printf("Try mount drive: %s\n", arguments[0]);
+        
+        ata_drive_t* drive = get_drive_by_name(arguments[0]);
+
+        if(drive == NULL){
+            printf("drive: %s not found\n", arguments[0]);
+        }else{
+
+            printf("Mounting drive \n");
+
+            fat32_init_fs(drive->base, drive->is_master);
+        }
     }
-    show_directory_content(full_path);
+}
+
+/// @brief List the directory content
+/// @param arg_count 
+/// @param arguments 
+void handle_ls(int arg_count, char **arguments) {
+    unsigned int size = 1024;  // size is now an unsigned int, not a pointer
+    char* buffer = (char*)malloc(size);
+
+    if (readdir(full_path, buffer, &size) == 0) {  // Pass the address of size
+        printf("Directory not found: %s\n", full_path);
+    } else {
+        printf("Listing directory: %s\n", full_path);
+        printf("%s\n", buffer);
+    }
+
+    secure_free(buffer, size);  // Clear the buffer
 }
 
 void handle_cd(int arg_count, char **arguments) {
@@ -162,16 +182,20 @@ void handle_cd(int arg_count, char **arguments) {
         printf("CD command without arguments\n");
     } else {
         printf("Try changing directory to: %s\n", arguments[0]);
-        printf("Current drive: %s\n", current_drive);
-        printf("Current path: %s\n", current_path);
-        snprintf(full_path, sizeof(full_path), "%s%s%s", current_drive, current_path, arguments[0]);
-        printf("Full path: %s\n", full_path);
-        printf("Try changing directory to: %s\n", full_path);
-        if (chdir(arguments[0])) {
-            //strncpy(current_path, normalized_path, MAX_PATH_LENGTH);
-        } else {
-            printf("Failed to change directory.\n");
-        }
+        // printf("Current drive: %s\n", current_drive);
+        // printf("Current path: %s\n", current_path);
+        // snprintf(full_path, sizeof(full_path), "%s%s%s", current_drive, current_path, arguments[0]);
+        // printf("Full path: %s\n", full_path);
+        // printf("Try changing directory to: %s\n", full_path);
+
+        // TODO: 
+
+        // if (chdir(arguments[0])) {
+        //     //strncpy(current_path, normalized_path, MAX_PATH_LENGTH);
+        // } else {
+        //     printf("Failed to change directory.\n");
+        // }
+
     }
 }
 
@@ -215,14 +239,7 @@ void handle_run(int arg_count, char **arguments) {
     if (arg_count == 0) {
         printf("RUN command without arguments\n");
     } else {
-
-        char full_path[512]; // Large enough to hold combined path
-        // Generate the path based on arguments
-        snprintf(full_path, sizeof(full_path), "%s%s/%s", current_drive, current_path, arguments[0]);
-
-        printf("Try Running program: %s\n", full_path);
-        
-        load_and_run_program(full_path);
+        load_and_run_program(arguments[0]);
     }
 }
 
@@ -322,6 +339,8 @@ Command command_table[] = {
     {"CLS", handle_cls},
     {"LS", handle_ls},
     {"CD", handle_cd},
+    {"DRIVES", handle_drives},
+    {"MOUNT", handle_mount},
     {"HELP", handle_help},
     {"DIR", handle_ls},
     {"MKDIR", handle_mkdir},
@@ -366,9 +385,9 @@ void process_command(char *input_buffer) {
         }
     }
 
-    if (change_drive(input_buffer)) {
-        printf("Changed to drive: %s\n", current_drive);
-    } else if (i == NUM_COMMANDS) {
-        printf("Invalid command: %s\n", command);
-    }
+    // if (change_drive(input_buffer)) {
+    //     printf("Changed to drive: %s\n", current_drive);
+    // } else if (i == NUM_COMMANDS) {
+    //     printf("Invalid command: %s\n", command);
+    // }
 }

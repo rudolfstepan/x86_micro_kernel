@@ -5,61 +5,36 @@
 
 // Default drive and path
 // a full path is a combination of the drive and the path
-char current_drive[16] = "/hdd";   // Default drive
-char current_path[256] = "/";      // Default path
+// char current_drive[16] = "/hdd0";   // Default drive
+// char current_path[256] = "/";      // Default path
 
-// Function prototype for drive type checking
-enum DriveType { ATA_DRIVE, FDD_DRIVE, UNKNOWN_DRIVE };
-static enum DriveType identify_drive(const char* path);
+// // Function prototype for drive type checking
+// enum DriveType { ATA_DRIVE, FDD_DRIVE, UNKNOWN_DRIVE };
+// static enum DriveType identify_drive(const char* path);
 
-// Identifies the drive type based on the path
-static enum DriveType identify_drive(const char *path) {
-    // Simple path check (e.g., /hdd/... for ATA and /fdd/... for floppy)
-    if (path == NULL) return UNKNOWN_DRIVE;
+// // Identifies the drive type based on the path
+// static enum DriveType identify_drive(const char *path) {
+//     // Simple path check (e.g., /hdd/... for ATA and /fdd/... for floppy)
+//     if (path == NULL) return UNKNOWN_DRIVE;
 
-    if ((uintptr_t)path == 0) {
-        printf("Path is NULL %s\n", path);
-        return UNKNOWN_DRIVE;
-    }
+//     if ((uintptr_t)path == 0) {
+//         printf("Path is NULL %s\n", path);
+//         return UNKNOWN_DRIVE;
+//     }
 
-    if (strncasecmp(path, "/hdd", 4) == 0) {
-        return ATA_DRIVE;
-    } else if (strncasecmp(path, "/fdd", 4) == 0) {
-        return FDD_DRIVE;
-    }
+//     if (strncasecmp(path, "/hdd", 4) == 0) {
+//         return ATA_DRIVE;
+//     } else if (strncasecmp(path, "/fdd", 4) == 0) {
+//         return FDD_DRIVE;
+//     }
 
-    return UNKNOWN_DRIVE;
-}
+//     return UNKNOWN_DRIVE;
+// }
 
-// Returns the full path based on the current drive and path
-void get_full_path(const char* path, char* full_path, size_t size) {
-    snprintf(full_path, size, "%s%s", current_drive, path);
-}
-
-// Changes the current drive if the input matches a drive name like "/hdd" or "/fdd"
-bool change_drive(const char* input) {
-    if (strncasecmp(input, "/hdd", 4) == 0 || strncasecmp(input, "/fdd", 4) == 0) {
-        strncpy(current_drive, input, sizeof(current_drive) - 1);
-        current_drive[sizeof(current_drive) - 1] = '\0'; // Ensure null-termination
-        strcpy(current_path, "/");  // Reset path to root on drive change
-        return true;
-    }
-    return false; // Drive not recognized
-}
-
-// Example function for changing directories within the current drive
-bool chdir(const char* path) {
-    if (path[0] == '/') {
-        // Absolute path: reset current_path
-        strncpy(current_path, path, sizeof(current_path) - 1);
-    } else {
-        // Relative path: append to current_path
-        strncat(current_path, "/", sizeof(current_path) - strlen(current_path) - 1);
-        strncat(current_path, path, sizeof(current_path) - strlen(current_path) - 1);
-    }
-    current_path[sizeof(current_path) - 1] = '\0'; // Ensure null-termination
-    return true;
-}
+// // Returns the full path based on the current drive and path
+// void get_full_path(const char* path, char* full_path, size_t size) {
+//     snprintf(full_path, size, "%s%s", current_drive, path);
+// }
 
 // -----------------------------------------------------------------
 // Directory Handling Functions
@@ -74,29 +49,29 @@ int rmdir(const char* path){
 }
 
 int readdir(const char *path, char *buffer, unsigned int *size){
-    enum DriveType driveType = identify_drive(path);
+    // enum DriveType driveType = identify_drive(path);
 
-    switch (driveType) {
-        case ATA_DRIVE:
-            // remove the drive prefix from the path
-            path += 4;
+    // switch (driveType) {
+    //     case ATA_DRIVE:
+    //         // remove the drive prefix from the path
+    //         path += 4;
 
-            // Call ATA-specific read directory function
-            return read_directory_to_buffer(path, buffer, size);
+    //         // Call ATA-specific read directory function
+             return read_directory_to_buffer(path, buffer, size);
 
-        case FDD_DRIVE:
-            // remove the drive prefix from the path
-            path += 4;
-            // Call FDD-specific read directory function
-            //return fdd_read_directory_to_buffer(path, buffer, size);
-            printf("FDD drive not yet supported.\n");
-            return -1; 
+    //     case FDD_DRIVE:
+    //         // remove the drive prefix from the path
+    //         path += 4;
+    //         // Call FDD-specific read directory function
+    //         //return fdd_read_directory_to_buffer(path, buffer, size);
+    //         printf("FDD drive not yet supported.\n");
+    //         return -1; 
 
-        default:
-            // Unknown drive type or invalid path
-            printf("Not supported drive or invalid path: %s\n", path);
-            return -1;  // Error: Drive type not recognized
-    }
+    //     default:
+    //         // Unknown drive type or invalid path
+    //         printf("Not supported drive or invalid path: %s\n", path);
+             return -1;  // Error: Drive type not recognized
+    // }
 }
 
 // -----------------------------------------------------------------
@@ -106,10 +81,6 @@ int readdir(const char *path, char *buffer, unsigned int *size){
 File* fopen(const char* filename, const char* mode) {
     return open_file(filename, mode);
 }
-
-// int fclose(int fd){
-//     return close_file(fd);
-// }
 
 int fread(void* buffer, int size, File* fd) {
     return read_file(fd, buffer, size);

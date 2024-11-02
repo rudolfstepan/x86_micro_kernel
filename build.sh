@@ -1,5 +1,7 @@
 #!/bin/bash
 
+clear
+
 # Define the source directory
 SOURCE_DIR=src
 OUTPUT_DIR=build
@@ -27,7 +29,7 @@ echo "done"
 # Compile FAT32 sources separately because they need to be linked into a single object file
 echo "Compiling filesystem sources..."
 mkdir -p "$OUTPUT_DIR/filesystem"
-gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/filesystem.o" "$SOURCE_DIR/filesystem/filesystem.c"
+gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/file_system.o" "$SOURCE_DIR/filesystem/filesystem.c"
 gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32.o" "$SOURCE_DIR/filesystem/fat32/fat32.c"
 gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_cluster.o" "$SOURCE_DIR/filesystem/fat32/fat32_cluster.c"
 gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_files.o" "$SOURCE_DIR/filesystem/fat32/fat32_files.c"
@@ -36,6 +38,7 @@ gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_dir.o" "$SOURCE_DIR/filesystem/fat3
 # Link into a single filesystem.o
 echo "Linking filesystem/FAT32 object files..."
 ld -m elf_i386 -r -o "$OUTPUT_DIR/filesystem/filesystem.o" \
+    "$OUTPUT_DIR/filesystem/file_system.o" \
     "$OUTPUT_DIR/filesystem/fat32.o" \
     "$OUTPUT_DIR/filesystem/fat32_cluster.o" \
     "$OUTPUT_DIR/filesystem/fat32_files.o" \
@@ -122,11 +125,12 @@ objcopy -O binary $OUTPUT_DIR/cli/cli_test.elf $OUTPUT_DIR/cli/test.prg
     echo "Creating /mnt/disk directory"
     mkdir -p /mnt/disk
   fi
+
 sudo mount ./disk.img /mnt/disk
 sudo cp $OUTPUT_DIR/cli/date.prg /mnt/disk/sys
-# sudo cp $OUTPUT_DIR/dir.prg /mnt/disk/sys
+#sudo cp $OUTPUT_DIR/dir.prg /mnt/disk/sys
 sudo cp $OUTPUT_DIR/cli/test.prg /mnt/disk/sys
-# sudo cp $OUTPUT_DIR/basic.prg /mnt/disk/
+#sudo cp $OUTPUT_DIR/basic.prg /mnt/disk/
 sudo umount /mnt/disk
 
 # Create the iso file for kernel

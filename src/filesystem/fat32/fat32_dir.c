@@ -208,7 +208,7 @@ bool is_directory_empty(struct FAT32DirEntry* entry) {
     struct FAT32DirEntry entries[SECTOR_SIZE / sizeof(struct FAT32DirEntry)];
 
     for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-        ata_read_sector(sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))]);
+        ata_read_sector(ata_base_address, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))], ata_is_master);
     }
 
     for (unsigned int j = 0; j < sizeof(entries) / sizeof(struct FAT32DirEntry); j++) {

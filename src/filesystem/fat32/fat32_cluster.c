@@ -63,7 +63,7 @@ bool mark_cluster_in_fat(struct Fat32BootSector* boot_sector, unsigned int clust
     unsigned int entOffset = fatOffset % boot_sector->bytesPerSector;
     // Read the sector containing this FAT entry
     unsigned char buffer[boot_sector->bytesPerSector];
-    if (!ata_read_sector(fatSector, buffer)) {
+    if (!ata_read_sector(ata_base_address, fatSector, buffer, ata_is_master)) {
         printf("Error: Failed to read the sector containing the FAT entry.\n");
         return false; // Error reading sector
     }
@@ -71,7 +71,7 @@ bool mark_cluster_in_fat(struct Fat32BootSector* boot_sector, unsigned int clust
     unsigned int* fatEntry = (unsigned int*)&buffer[entOffset];
     *fatEntry = (*fatEntry & 0xF0000000) | (value & 0x0FFFFFFF); // Preserve high 4 bits, modify the rest
     // Write the modified sector back to the FAT
-    if (!ata_write_sector(fatSector, buffer)) {
+    if (!ata_write_sector(ata_base_address, fatSector, buffer, ata_is_master)) {
         printf("Error: Failed to write the modified sector back to the FAT.\n");
         return false; // Error writing sector
     }
@@ -108,7 +108,7 @@ bool write_cluster(struct Fat32BootSector* boot_sector, unsigned int cluster, co
         // Calculate the pointer to the part of the entries buffer to write
         const void* bufferPtr = ((const unsigned char*)entries) + (i * boot_sector->bytesPerSector);
         // Write the sector
-        if (!ata_write_sector(sectorNumber, bufferPtr)) {
+        if (!ata_write_sector(ata_base_address, sectorNumber, bufferPtr, ata_is_master)) {
             printf("Error: Failed to write to sector %u.\n", sectorNumber);
             return false; // Error writing sector
         }
@@ -124,7 +124,7 @@ unsigned int cluster_to_sector(struct Fat32BootSector* boot_sector, unsigned int
 void read_cluster(struct Fat32BootSector* boot_sector, unsigned int clusterNumber, void* buffer) {
     unsigned int startSector = cluster_to_sector(boot_sector, clusterNumber);
     for (unsigned int i = 0; i < boot_sector->sectorsPerCluster; ++i) {
-        ata_read_sector(startSector + i, buffer + (i * SECTOR_SIZE));
+        ata_read_sector(ata_base_address, startSector + i, buffer + (i * SECTOR_SIZE), ata_is_master);
     }
 }
 
@@ -139,7 +139,7 @@ unsigned int get_next_cluster_in_chain(struct Fat32BootSector* boot_sector, unsi
     // Buffer to read a part of the FAT
     unsigned char buffer[boot_sector->bytesPerSector];
     // Read the sector of the FAT that contains the current cluster's entry
-    if (!ata_read_sector(fatSector, buffer)) {
+    if (!ata_read_sector(ata_base_address, fatSector, buffer, ata_is_master)) {
         // Handle read error
         return INVALID_CLUSTER;
     }
@@ -167,7 +167,7 @@ unsigned int find_next_cluster(struct Fat32BootSector* boot_sector, const char* 
         unsigned int sector = cluster_to_sector(boot_sector, currentCluster);
         for (unsigned int i = 0; i < boot_sector->sectorsPerCluster; i++) {
             // Read the entire sector
-            if (!ata_read_sector(sector + i, entries)) {
+            if (!ata_read_sector(ata_base_address, sector + i, entries, ata_is_master)) {
                 // Handle read error
                 return INVALID_CLUSTER;
             }
@@ -204,7 +204,7 @@ void read_cluster_dir_entries(unsigned int currentCluster) {
     struct FAT32DirEntry entries[SECTOR_SIZE * boot_sector.sectorsPerCluster / sizeof(struct FAT32DirEntry)];
 
     for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-        ata_read_sector(sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))]);
+        ata_read_sector(ata_base_address, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))], ata_is_master);
     }
     for (unsigned int j = 0; j < sizeof(entries) / sizeof(struct FAT32DirEntry); j++) {
         if (entries[j].name[0] == 0x00) { // End of directory
@@ -231,7 +231,7 @@ void read_cluster_dir_entries_to_buffer(unsigned int currentCluster, char *buffe
     struct FAT32DirEntry entries[SECTOR_SIZE * boot_sector.sectorsPerCluster / sizeof(struct FAT32DirEntry)];
 
     for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-        ata_read_sector(sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))]);
+        ata_read_sector(ata_base_address, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))], ata_is_master);
     }
     for (unsigned int j = 0; j < sizeof(entries) / sizeof(struct FAT32DirEntry); j++) {
         if (entries[j].name[0] == 0x00) { // End of directory

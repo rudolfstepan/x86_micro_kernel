@@ -69,6 +69,22 @@ void strcat(char* dest, const char* src) {
     *dest = '\0';
 }
 
+// Converts a string to lowercase
+void str_to_lower(char* str) {
+    if (str == NULL) return;
+    for (size_t i = 0; str[i] != '\0'; i++) {
+        str[i] = tolower(str[i]);
+    }
+}
+
+// Converts a string to uppercase
+void str_to_upper(char* str) {
+    if (str == NULL) return;
+    for (size_t i = 0; str[i] != '\0'; i++) {
+        str[i] = toupper(str[i]);
+    }
+}
+
 /**
  * Custom implementation of strncat for bare-metal environments.
  *
@@ -201,6 +217,9 @@ size_t strcspn(const char* str1, const char* str2) {
 }
 
 // Simple implementation of snprintf
+#include <stdarg.h>
+#include <stddef.h>
+
 int snprintf(char* str, size_t size, const char* format, ...) {
     va_list args;
     va_start(args, format);
@@ -216,8 +235,31 @@ int snprintf(char* str, size_t size, const char* format, ...) {
                 while (*arg != '\0' && written < size) {
                     str[written++] = *arg++;
                 }
+            } else if (*p == 'd') {  // Integer format
+                int num = va_arg(args, int);
+                // Convert integer to string
+                char num_buffer[12];  // Buffer to hold the integer as string (supports up to 32-bit integer range)
+                int num_written = 0;
+
+                if (num < 0) {  // Handle negative numbers
+                    if (written < size) {
+                        str[written++] = '-';
+                    }
+                    num = -num;
+                }
+
+                int temp = num;
+                do {
+                    num_buffer[num_written++] = (temp % 10) + '0';
+                    temp /= 10;
+                } while (temp > 0 && num_written < (int)sizeof(num_buffer));
+
+                // Reverse the number buffer into the main string buffer
+                for (int i = num_written - 1; i >= 0 && written < size; i--) {
+                    str[written++] = num_buffer[i];
+                }
             }
-            // Add other format specifiers as needed (e.g., %d for integers)
+            // Add other format specifiers as needed
         } else {
             str[written++] = *p;
         }

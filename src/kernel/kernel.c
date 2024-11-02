@@ -14,6 +14,9 @@
 #include "toolchain/stdlib.h"
 #include "toolchain/strings.h"
 
+#include "filesystem/filesystem.h"
+#include "drivers/ata/ata.h"
+
 
 char input_path[MAX_PATH_LENGTH];      // This should be set to the user input
 char normalized_path[MAX_PATH_LENGTH]; // This should be set to the normalized path
@@ -76,6 +79,21 @@ void initialize_syscall_table() {
 
 }
 
+// initialize attaches drives
+void init_drives()
+{
+    // detect and initialize attached drives to the system
+    ata_detect_drives();
+
+    ata_drive_t *drive_info = ata_get_drive(0);
+    if (drive_info) {
+        printf("Drive %s found: %s, Sectors: %u\n", drive_info->name, drive_info->model, drive_info->sectors);
+        init_fs(drive_info);
+    } else {
+        printf("Drive not found.\n");
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // main routine of the kernel
 // This is the entry point of the kernel
@@ -94,11 +112,13 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
     irq_install();
     __asm__ __volatile__("sti");
     
-    init_fs(); // Initialize the file system
     // syscall table
     initialize_syscall_table();
     kb_install();
     set_color(WHITE);
+
+
+    init_drives();
 
     printf("===============================================================================\n");
     printf("|                 x86 Micro Kernel written by Rudolf Stepan 2024              |\n");
