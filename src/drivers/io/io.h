@@ -6,7 +6,7 @@
 
 unsigned char inb(unsigned short port);
 void outb(unsigned short port, unsigned char val);
-void insw(unsigned short port, void* buffer, unsigned long count);
+void insw(unsigned short port, void* addr, unsigned long count);
 void outsw(unsigned short port, void* buffer, unsigned long count);
 
 

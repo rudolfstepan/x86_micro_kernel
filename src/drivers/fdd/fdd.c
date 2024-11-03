@@ -3,64 +3,57 @@
 #include "toolchain/stdio.h"
 
 
-#define TIMEOUT_LIMIT 10000  // Arbitrary timeout limit for waiting loops
-
-// Function to wait until the FDC is ready for commands, with a timeout
-static inline bool fdc_wait() {
-    int timeout = TIMEOUT_LIMIT;
-    while (!(inb(FDD_MSR) & 0x80) && --timeout > 0);
-    if (timeout <= 0) {
-        printf("FDC wait timed out.\n");  // Debug message
-        return false;
-    }
-    return true;
+// Wait until the FDC is ready for a new command
+static void fdc_wait() {
+    while (!(inb(FDD_MSR) & 0x80));  // Wait until the FDC is ready
 }
 
-// Function to send a command to the FDC
-static inline bool fdc_send_command(uint8_t command) {
-    if (!fdc_wait()) {
-        printf("Failed to send command: 0x%02X\n", command);  // Debug message
-        return false;
-    }
+// Send a command to the FDC via the Data Register (0x3F5)
+static bool fdc_send_command(uint8_t command) {
+    fdc_wait();  // Wait until FDC is ready
     outb(FDD_FIFO, command);
     return true;
 }
 
-// Function to wait for the motor to spin up (arbitrary delay)
-static inline void fdd_motor_on(int drive) {
-    uint8_t motor_cmd = 0x10 | (1 << drive);  // Enable motor for specific drive
-    outb(FDD_DOR, motor_cmd);
-    for (volatile int i = 0; i < TIMEOUT_LIMIT; i++);  // Delay for motor spin-up
+// Turn on the FDD motor for a specified drive
+static void fdd_motor_on(int drive) {
+    outb(FDD_DOR, 0x1C | drive);  // 0x1C = motor on, drive select
+    for (volatile int i = 0; i < 10000; i++);  // Small delay for motor spin-up
 }
 
-// Function to turn off the FDD motor
-static inline void fdd_motor_off(int drive) {
-    uint8_t motor_cmd = 0x0C & ~(1 << drive);  // Disable motor for specific drive
-    outb(FDD_DOR, motor_cmd);
+// Turn off the FDD motor
+static void fdd_motor_off(int drive) {
+    outb(FDD_DOR, drive & 0xFC);  // Motor off
 }
 
-// Function to recalibrate the FDD (move head to track 0)
+// Recalibrate the FDD to reset the head position to track 0
 static bool fdd_recalibrate(int drive) {
-    fdd_motor_on(drive);
-    if (!fdc_send_command(0x07)) {  // Recalibrate command
+    fdd_motor_on(drive);  // Ensure motor is on
+
+    // Send recalibrate command (0x07) to FDC
+    if (!fdc_send_command(FDD_CMD_RECAL)) {
         printf("Failed to send recalibrate command.\n");
         return false;
     }
 
-    // TODO: Wait for interrupt or confirmation (platform-dependent)
-    // If your environment has a way to check for interrupt, add it here.
-    
-    return true;
-}
-
-// Reads a sector from the FDD
-bool fdd_read_sector(int drive, int head, int track, int sector, uint8_t* buffer) {
-    if (!buffer) {
-        printf("Buffer is NULL.\n");
+    // Send the drive number
+    if (!fdc_send_command(drive)) {
+        printf("Failed to send drive number for recalibration.\n");
         return false;
     }
 
-    // Recalibrate the drive to ensure it's in a known state
+    // Wait for recalibration to complete
+    while (!(inb(FDD_MSR) & 0x10));  // Wait until recalibration is complete
+
+    fdd_motor_off(drive);
+    return true;
+}
+
+// Read a sector from the FDD
+bool fdd_read_sector(int drive, int head, int track, int sector, void* buffer) {
+    if (!buffer) return false;
+
+    // Recalibrate the drive to ensure it’s in a known state
     if (!fdd_recalibrate(drive)) {
         printf("FDC recalibration failed.\n");
         return false;
@@ -69,16 +62,16 @@ bool fdd_read_sector(int drive, int head, int track, int sector, uint8_t* buffer
     // Turn on the motor for the specified drive
     fdd_motor_on(drive);
 
-    // Send the READ command to the FDC
+    // Send the READ command (0xE6) to the FDC
     if (!fdc_send_command(FDD_CMD_READ)) {
         printf("Failed to send READ command.\n");
         fdd_motor_off(drive);
         return false;
     }
-    
-    // Send parameters for the read command
+
+    // Send each parameter to the FDC, in the correct order
     if (!fdc_send_command((head << 2) | (drive & 0x03))) {
-        printf("Failed to send drive/head.\n");
+        printf("Failed to send drive and head.\n");
         fdd_motor_off(drive);
         return false;
     }
@@ -97,54 +90,39 @@ bool fdd_read_sector(int drive, int head, int track, int sector, uint8_t* buffer
         fdd_motor_off(drive);
         return false;
     }
-    if (!fdc_send_command(2)) {  // 512 bytes per sector
+    if (!fdc_send_command(2)) {  // Sector size (2 = 512 bytes for 1.44MB disks)
         printf("Failed to send sector size.\n");
         fdd_motor_off(drive);
         return false;
     }
-    if (!fdc_send_command(18)) {  // Last sector number in track
+    if (!fdc_send_command(18)) {  // Last sector in track
         printf("Failed to send last sector number.\n");
         fdd_motor_off(drive);
         return false;
     }
-    if (!fdc_send_command(0x1B)) {  // Gap length
+    if (!fdc_send_command(0x1B)) {  // Gap length (0x1B is standard for 1.44MB)
         printf("Failed to send gap length.\n");
         fdd_motor_off(drive);
         return false;
     }
-    if (!fdc_send_command(0xFF)) {  // Data length (0xFF when unused)
+    if (!fdc_send_command(0xFF)) {  // Data length (unused, set to 0xFF)
         printf("Failed to send data length.\n");
         fdd_motor_off(drive);
         return false;
     }
 
-    // Wait for the FDC to be ready for data transfer
-    int timeout = TIMEOUT_LIMIT;
-    while (!(inb(FDD_MSR) & 0x80) && --timeout > 0);
-    if (timeout <= 0) {
-        printf("Timeout waiting for FDC to be ready for data transfer.\n");
-        fdd_motor_off(drive);
-        return false;
-    }
+    // Wait for the FDC to signal that data is ready to be read
+    while (!(inb(FDD_MSR) & 0x80));  // Wait until FDC is ready for data transfer
 
-    // Read data from the FDC FIFO into the buffer
+    // Read the data from the FDC FIFO into the buffer
     insw(FDD_FIFO, buffer, SECTOR_SIZE / 2);  // SECTOR_SIZE / 2 for 16-bit transfers
 
-    // Print the data in hexadecimal format for verification
-    printf("Data read from FDD sector:\n");
-    for (int i = 0; i < 16; i++) {
-        printf("%02X ", (unsigned char)buffer[i]);
-        if ((i + 1) % 16 == 0) printf("\n");  // New line every 16 bytes for readability
-    }
-
-    // Turn off the motor after the read is complete
-    fdd_motor_off(drive);
-
+    fdd_motor_off(drive);  // Turn off the motor after the read is complete
     return true;
 }
 
 // Writes a sector to the FDD
-bool fdd_write_sector(int drive, int head, int track, int sector, uint8_t* buffer){
+bool fdd_write_sector(int drive, int head, int track, int sector, void* buffer){
     if (!buffer) return false;
 
     // Recalibrate the drive to ensure the head is on track 0
