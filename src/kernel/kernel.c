@@ -79,14 +79,14 @@ void init_drives()
     // detect and initialize attached drives to the system
     ata_detect_drives();
 
-    current_drive = ata_get_drive(0);
+    // current_drive = ata_get_drive(0);
 
-    if (current_drive) {
-        printf("Drive %s found: %s, Sectors: %u\n", current_drive->name, current_drive->model, current_drive->sectors);
-        init_fs(current_drive);
-    } else {
-        printf("Drive not found.\n");
-    }
+    // if (current_drive) {
+    //     printf("Drive %s found: %s, Sectors: %u\n", current_drive->name, current_drive->model, current_drive->sectors);
+    //     init_fs(current_drive);
+    // } else {
+    //     printf("Drive not found.\n");
+    // }
 
     // detect fdd drives
     fdd_detect_drives();

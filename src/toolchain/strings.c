@@ -377,3 +377,11 @@ void normalize_path(char* input_path, char* normalized_path, const char* current
     }
     normalized_path[MAX_PATH_LENGTH - 1] = '\0'; // Ensure null termination
 }
+
+// Function to trim trailing spaces from a string
+void trim_trailing_spaces(char *str) {
+    int len = strlen(str);
+    while (len > 0 && isspace((unsigned char)str[len - 1])) {
+        str[--len] = '\0';
+    }
+}

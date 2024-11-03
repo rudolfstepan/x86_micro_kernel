@@ -37,4 +37,6 @@ unsigned long strtoul(const char *str, char **endptr, int base);
 
 void normalize_path(char* input_path, char* normalized_path, const char* current_path);
 
+void trim_trailing_spaces(char *str);
+
 #endif /* STRINGS_H */

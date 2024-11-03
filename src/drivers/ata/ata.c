@@ -149,12 +149,16 @@ void ata_detect_drives() {
 
             // Attempt to identify the drive
             if (ata_identify_drive(bases[bus], drives[drive], ata_drive_info)) {
+
+                // Trim trailing spaces from the model name
+                trim_trailing_spaces(ata_drive_info->model);
+
                 ata_drive_info->type = DRIVE_TYPE_ATA;
                 snprintf(ata_drive_info->name, sizeof(ata_drive_info->name), "hdd%d", drive_name_index++);
-                //printf("ATA drive %s detected: %s, Sectors: %u\n", ata_drive_info->name, ata_drive_info->model, ata_drive_info->sectors);
+                printf("ATA drive %s detected: %s, Sectors: %u\n", ata_drive_info->name, ata_drive_info->model, ata_drive_info->sectors);
 
                 // Initialize the file system for the detected drive
-                init_fs(ata_drive_info);
+                //init_fs(ata_drive_info);
 
                 // Increment the global drive count after successfully adding a drive
                 drive_count++;
