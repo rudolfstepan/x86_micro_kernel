@@ -1,20 +1,20 @@
 #ifndef ATA_H
 #define ATA_H
 
+#include "drivers/drives.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 
-#define ATA_READ_SECTORS      0x20             // Read sectors command
-#define ATA_WRITE_SECTORS     0x30             // Write sectors command
-#define ATA_IDENTIFY          0xEC             // Identify command
-
-#define ATA_PRIMARY_IO      0x1F0  // Base I/O port for the primary ATA bus
-#define ATA_SECONDARY_IO    0x170  // Base I/O port for the secondary ATA bus
-#define ATA_MASTER          0xA0  // Master drive selection
-#define ATA_SLAVE           0xB0  // Slave drive selection
-
+#define ATA_READ_SECTORS    0x20               // Read sectors command
+#define ATA_WRITE_SECTORS   0x30               // Write sectors command
+#define ATA_IDENTIFY        0xEC               // Identify command
+#define ATA_PRIMARY_IO      0x1F0              // Base I/O port for the primary ATA bus
+#define ATA_SECONDARY_IO    0x170              // Base I/O port for the secondary ATA bus
+#define ATA_MASTER          0xA0               // Master drive selection
+#define ATA_SLAVE           0xB0               // Slave drive selection
 
 // Macros to access ATA registers, given a base I/O address (e.g., ATA_PRIMARY_IO or ATA_SECONDARY)
 #define ATA_DATA(base)        (base + 0)       // Data register
@@ -32,30 +32,8 @@
 #define ATA_DEV_CTRL(base)    ((base) + 0x206) // Device control register
 
 #define MAX_DRIVES          4      // Max of 4 ATA drives (primary/master, primary/slave, secondary/master, secondary/slave)
-
 #define SECTOR_SIZE 512
 
-typedef enum {
-    DRIVE_TYPE_NONE = 0,
-    DRIVE_TYPE_ATA = 1,
-    DRIVE_TYPE_FDD = 2
-} drive_type_t;
-
-typedef struct {
-    drive_type_t type;      // Type of drive: ATA or FDD
-    uint16_t base;          // Base I/O port (for ATA drives)
-    bool is_master;         // True if master (ATA), false if slave (ATA)
-    char name[8];           // Drive name (e.g., "hdd1", "fdd1")
-    char model[41];         // Drive model string (for ATA drives)
-    uint32_t sectors;       // Total sectors (for ATA drives)
-    unsigned int cylinder;  // Number of cylinders (for FDD)
-    unsigned int head;      // Number of heads (for FDD)
-    unsigned int sector;    // Number of sectors (for FDD)
-} drive_t;
-
-extern drive_t* current_drive;
-
-void detect_fdd();
 
 bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info);
 void init_fs(drive_t* drive);

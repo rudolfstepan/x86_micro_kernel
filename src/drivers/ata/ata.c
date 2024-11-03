@@ -6,10 +6,8 @@
 #include "drivers/fdd/fdd.h"
 
 drive_t* current_drive = {0};  // Current drive (global variable)
-
 drive_t detected_drives[MAX_DRIVES];  // Global array of detected drives
-int drive_count = 0;  // Global count of detected drives
-
+short drive_count = 0;  // Number of detected drives
 /*
     * Reads a sector from the ATA drive.
     * 
@@ -123,9 +121,6 @@ void ata_detect_drives() {
             }
         }
     }
-
-    // Detect floppy drives
-    detect_fdd();
 }
 
 // Function to send the IDENTIFY command and retrieve drive information
@@ -170,19 +165,20 @@ void init_fs(drive_t* drive) {
         printf("Init fs on ATA drive %s: %s with %u sectors\n", drive->name, drive->model, drive->sectors);
         // Initialize file system for ATA drive
         fat32_init_fs(drive->base, drive->is_master);
-    } else if (drive->type == DRIVE_TYPE_FDD) {
-        // printf("Init fs on FDD %s with CHS %u/%u/%u\n", drive->name, drive->cylinder, drive->head, drive->sector);
-        // // Initialize file system or handling code for FDD
-        // // Call fat12_init_fs as part of FDD initialization
-        // if (fat12_init_fs()) {
-        //     printf("FAT12 file system initialized successfully.\n");
-        // } else {
-        //     printf("FAT12 initialization failed.\n");
-        // }
-
-    } else {
-        printf("Unknown drive type, skipping initialization.\n");
     }
+    //  else if (drive->type == DRIVE_TYPE_FDD) {
+    //     // printf("Init fs on FDD %s with CHS %u/%u/%u\n", drive->name, drive->cylinder, drive->head, drive->sector);
+    //     // // Initialize file system or handling code for FDD
+    //     // // Call fat12_init_fs as part of FDD initialization
+    //     // if (fat12_init_fs()) {
+    //     //     printf("FAT12 file system initialized successfully.\n");
+    //     // } else {
+    //     //     printf("FAT12 initialization failed.\n");
+    //     // }
+
+    // } else {
+    //     printf("Unknown drive type, skipping initialization.\n");
+    // }
 }
 
 drive_t* get_drive_by_name(const char* name) {
@@ -199,26 +195,4 @@ void list_detected_drives() {
         drive_t* drive = &detected_drives[i];
         printf("Drive %s: Model %s, Sectors %u\n", drive->name, drive->model, drive->sectors);
     }
-}
-
-void detect_fdd() {
-    // Turn on the motor for FDD 0 (assumes a single FDD attached)
-    outb(FDD_DOR, 0x1C);  // 0x1C = motor on, select drive 0
-
-    // Wait briefly for the motor to stabilize
-    for (volatile int i = 0; i < 10000; i++);
-
-    // Check the FDD status to confirm if an FDD is present
-    if (inb(FDD_MSR) & 0x80) {  // Bit 7 set if FDC is ready
-        drive_t* drive = &detected_drives[drive_count++];
-        drive->type = DRIVE_TYPE_FDD;
-        snprintf(drive->name, sizeof(drive->name), "fdd%d", 1);
-        drive->cylinder = 80;  // Common for 1.44MB floppies
-        drive->head = 2;
-        drive->sector = 18;
-        printf("Floppy drive detected: %s\n", drive->name);
-    }
-
-    // Turn off the motor
-    outb(FDD_DOR, 0x0C);
 }

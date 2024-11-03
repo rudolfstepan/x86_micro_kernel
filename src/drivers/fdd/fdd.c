@@ -132,3 +132,32 @@ bool fdd_write_sector(int drive, int head, int track, int sector, uint8_t* buffe
 
     return true;
 }
+
+void fdd_detect_drives() {
+
+    // Turn on the motor for FDD 0 (assumes a single FDD attached)
+    outb(FDD_DOR, 0x1C);  // 0x1C = motor on, select drive 0
+
+    // Wait briefly for the motor to stabilize
+    for (volatile int i = 0; i < 10000; i++);
+
+    // Check the FDD status to confirm if an FDD is present
+    if (inb(FDD_MSR) & 0x80) {  // Bit 7 set if FDC is ready
+
+        // Initialize the drive structure
+        drive_t* drive = (drive_t*)malloc(sizeof(drive_t));
+
+        drive->type = DRIVE_TYPE_FDD;
+        snprintf(drive->name, sizeof(drive->name), "fdd%d", 1);
+        drive->cylinder = 80;  // Common for 1.44MB floppies
+        drive->head = 2;
+        drive->sector = 18;
+        printf("Floppy drive detected: %s\n", drive->name);
+
+        // add the drive to the global array of detected drives
+        detected_drives[drive_count++] = *drive;
+    }
+
+    // Turn off the motor
+    outb(FDD_DOR, 0x0C);
+}

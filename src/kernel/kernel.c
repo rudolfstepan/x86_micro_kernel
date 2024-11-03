@@ -87,6 +87,9 @@ void init_drives()
     } else {
         printf("Drive not found.\n");
     }
+
+    // detect fdd drives
+    fdd_detect_drives();
 }
 
 // ---------------------------------------------------------------------------------------------
