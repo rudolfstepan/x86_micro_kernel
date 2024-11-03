@@ -115,11 +115,12 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
     kb_install();
     set_color(WHITE);
 
-    init_drives();
-
     printf("===============================================================================\n");
     printf("|                 x86 Micro Kernel written by Rudolf Stepan 2024              |\n");
     printf("===============================================================================\n");
+
+    init_drives();
+
     printf("Type HELP for command list.\n");
 
     test_memory();

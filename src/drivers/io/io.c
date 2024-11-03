@@ -11,11 +11,11 @@ void outb(unsigned short port, unsigned char val) {
     asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
 }
 
-void insw(unsigned short port, const void* addr, unsigned long count) {
-    asm volatile ("rep insw" : "+D" (addr), "+c" (count) : "d" (port) : "memory");
+void insw(unsigned short port, void* buffer, unsigned long count) {
+    asm volatile ("rep insw" : "+D" (buffer), "+c" (count) : "d" (port) : "memory");
 }
 
-void outsw(unsigned short port, const void* buffer, unsigned long count) {
+void outsw(unsigned short port, void* buffer, unsigned long count) {
     const unsigned short* words = (const unsigned short*)buffer;
     for (unsigned long i = 0; i < count; i++) {
         asm volatile ("outsw" : : "d"(port), "S"(words++));

@@ -8,56 +8,54 @@
 #include "toolchain/stdlib.h"
 #include "drivers/fdd/fdd.h"
 
-#pragma pack(push, 1)
+typedef struct {
+    uint8_t  jumpCode[3];         // Jump instruction to the bootstrap code
+    char     oemName[8];          // OEM Name
+    uint16_t bytesPerSector;      // Bytes per sector
+    uint8_t  sectorsPerCluster;   // Sectors per cluster
+    uint16_t reservedSectors;     // Number of reserved sectors
+    uint8_t  fatCount;            // Number of FATs
+    uint16_t rootEntryCount;      // Maximum number of root directory entries
+    uint16_t totalSectors;        // Total sectors (if < 65536)
+    uint8_t  mediaDescriptor;     // Media descriptor
+    uint16_t sectorsPerFAT;       // Sectors per FAT
+    uint16_t sectorsPerTrack;     // Sectors per track (geometry info)
+    uint16_t heads;               // Number of heads (geometry info)
+    uint32_t hiddenSectors;       // Hidden sectors
+    uint32_t totalSectorsLarge;   // Total sectors (if >= 65536)
+    uint8_t  driveNumber;         // Drive number
+    uint8_t  reserved0;           // Reserved
+    uint8_t  bootSignature;       // Boot signature
+    uint32_t volumeID;            // Volume serial number
+    char     volumeLabel[11];     // Volume label
+    char     fsType[8];           // File system type
+    uint8_t  bootCode[448];       // Bootstrap code
+    uint16_t bootSectorSignature; // End of sector signature (should be 0xAA55)
+} __attribute__((packed)) Fat12BootSector;
 
 typedef struct {
-    uint8_t  jumpCode[3];
-    char     oemName[8];
-    uint16_t bytesPerSector;
-    uint8_t  sectorsPerCluster;
-    uint16_t reservedSectors;
-    uint8_t  fatCount;
-    uint16_t rootEntryCount;
-    uint16_t totalSectors;
-    uint8_t  mediaDescriptor;
-    uint16_t sectorsPerFAT;
-    uint16_t sectorsPerTrack;
-    uint16_t heads;
-    uint32_t hiddenSectors;
-    uint32_t totalSectorsLarge;
-    uint8_t  driveNumber;
-    uint8_t  reserved;
-    uint8_t  bootSignature;
-    uint32_t volumeID;
-    char     volumeLabel[11];
-    char     fsType[8];
-} BootSector;
-
-typedef struct {
-    signed char filename[8];  // Define as signed to allow negative values like 0xE5
-    char     extension[3];
-    uint8_t  attributes;
-    uint8_t  reserved;
-    uint8_t  createTimeTenths;
-    uint16_t createTime;
-    uint16_t createDate;
-    uint16_t lastAccessDate;
-    uint16_t firstClusterHigh;
-    uint16_t writeTime;
-    uint16_t writeDate;
-    uint16_t firstClusterLow;
-    uint32_t fileSize;
-} DirectoryEntry;
-
-#pragma pack(pop)
+    unsigned char filename[8];       // 0xE5 indicates deleted file
+    char          extension[3];
+    uint8_t       attributes;        // File attributes
+    uint8_t       reserved;          // Reserved for system use
+    uint8_t       createTimeTenths;  // Creation time in tenths of a second
+    uint16_t      createTime;        // Creation time
+    uint16_t      createDate;        // Creation date
+    uint16_t      lastAccessDate;    // Last access date
+    uint16_t      firstClusterHigh;  // High word of first cluster (FAT16/FAT32)
+    uint16_t      writeTime;         // Last write time
+    uint16_t      writeDate;         // Last write date
+    uint16_t      firstClusterLow;   // Low word of first cluster
+    uint32_t      fileSize;          // File size in bytes
+} __attribute__((packed)) DirectoryEntry;
 
 // FAT12 structure definition
 typedef struct {
-    BootSector bootSector;
-    int fatStart;           // Start sector of the FAT table
+    Fat12BootSector bootSector;
+    int fatStart;           // Start sector of the FAT
     int rootDirStart;       // Start sector of the Root Directory
     int dataStart;          // Start sector of the Data region
-} FAT12;
+} __attribute__((packed)) FAT12;
 
 bool fat12_init_fs();
 bool fat12_read_dir(const char* path, char* buffer, unsigned int* size);

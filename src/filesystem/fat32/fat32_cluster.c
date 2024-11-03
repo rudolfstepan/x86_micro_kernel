@@ -106,7 +106,7 @@ bool write_cluster(struct Fat32BootSector* boot_sector, unsigned int cluster, co
         // Calculate sector number to write to
         unsigned int sectorNumber = firstSectorOfCluster + i;
         // Calculate the pointer to the part of the entries buffer to write
-        const void* bufferPtr = ((const unsigned char*)entries) + (i * boot_sector->bytesPerSector);
+        void* bufferPtr = ((unsigned char*)entries) + (i * boot_sector->bytesPerSector);
         // Write the sector
         if (!ata_write_sector(ata_base_address, sectorNumber, bufferPtr, ata_is_master)) {
             printf("Error: Failed to write to sector %u.\n", sectorNumber);

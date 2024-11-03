@@ -26,8 +26,6 @@ int fat32_init_fs(unsigned short base, bool is_master) {
     ata_is_master = is_master;
     ata_base_address = base; // set base address to current drive
 
-    printf("set drive %d base address: %d\n", ata_is_master, ata_base_address);
-
     // Update current directory cluster based on the boot sector
     current_directory_cluster = boot_sector.rootCluster;
     return SUCCESS;
