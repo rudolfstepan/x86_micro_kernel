@@ -41,43 +41,52 @@ static bool fdd_recalibrate() {
 }
 
 // Reads a sector from the FDD
-bool fdd_read_sector(unsigned int cylinder, unsigned int head, unsigned int sector, void* buffer) {
+bool fdd_read_sector(int drive, int head, int track, int sector, uint8_t* buffer){
     if (!buffer) return false;
 
-    if (!fdd_recalibrate()) {
+    // Recalibrate the drive to ensure it's in a known state
+    if (!fdd_recalibrate(drive)) {
         printf("FDC recalibration failed.\n");
         return false;
     }
 
-    fdd_motor_on();
+    // Turn on the motor for the specified drive
+    fdd_motor_on(drive);
 
+    // Send the READ command to the FDC
     if (!fdc_send_command(FDD_CMD_READ)) return false;
-    fdc_send_command((head << 2) | 0);          
-    fdc_send_command(cylinder);                 
-    fdc_send_command(head);                     
-    fdc_send_command(sector);                   
-    fdc_send_command(2);                        
-    fdc_send_command(18);                       
-    fdc_send_command(0x1B);                     
-    fdc_send_command(0xFF);                     
+    
+    // Send parameters for the read command
+    // The (head << 2) | drive combination specifies both the head and drive number
+    fdc_send_command((head << 2) | (drive & 0x03)); // Specify drive and head
+    fdc_send_command(track);                         // Track number
+    fdc_send_command(head);                          // Head number
+    fdc_send_command(sector);                        // Sector number (1-based)
+    fdc_send_command(2);                             // Bytes per sector (2 = 512 bytes for 1.44MB disks)
+    fdc_send_command(18);                            // Last sector number in track (usually 18 for 1.44MB)
+    fdc_send_command(0x1B);                          // Gap length (0x1B is standard for 1.44MB)
+    fdc_send_command(0xFF);                          // Data length (0xFF when unused)
 
+    // Wait for the FDC to be ready for data transfer
     int timeout = TIMEOUT_LIMIT;
     while (!(inb(FDD_MSR) & 0x80) && --timeout > 0);
     if (timeout <= 0) {
         printf("Timeout waiting for FDC to be ready for data transfer.\n");
-        fdd_motor_off();
+        fdd_motor_off(drive);
         return false;
     }
 
+    // Read data from the FDC FIFO into the buffer
     insw(FDD_FIFO, buffer, SECTOR_SIZE / 2);
 
-    fdd_motor_off();
+    // Turn off the motor after the read is complete
+    fdd_motor_off(drive);
 
     return true;
 }
 
 // Writes a sector to the FDD
-bool fdd_write_sector(unsigned int cylinder, unsigned int head, unsigned int sector, const void* buffer) {
+bool fdd_write_sector(int drive, int head, int track, int sector, uint8_t* buffer){
     if (!buffer) return false;
 
     // Recalibrate the drive to ensure the head is on track 0
@@ -96,14 +105,15 @@ bool fdd_write_sector(unsigned int cylinder, unsigned int head, unsigned int sec
         return false;
     }
     
-    fdc_send_command((head << 2) | 0);          // Head and drive number (0 for first drive)
-    fdc_send_command(cylinder);                 // Cylinder
-    fdc_send_command(head);                     // Head
-    fdc_send_command(sector);                   // Sector
-    fdc_send_command(2);                        // Sector size code (2 for 512 bytes)
-    fdc_send_command(18);                       // Last sector in track
-    fdc_send_command(0x1B);                     // Gap length
-    fdc_send_command(0xFF);                     // Data length (0xFF for default)
+    // The (head << 2) | drive combination specifies both the head and drive number
+    fdc_send_command((head << 2) | (drive & 0x03)); // Specify drive and head
+    fdc_send_command(track);                         // Track number
+    fdc_send_command(head);                          // Head number
+    fdc_send_command(sector);                        // Sector number (1-based)
+    fdc_send_command(2);                             // Bytes per sector (2 = 512 bytes for 1.44MB disks)
+    fdc_send_command(18);                            // Last sector number in track (usually 18 for 1.44MB)
+    fdc_send_command(0x1B);                          // Gap length (0x1B is standard for 1.44MB)
+    fdc_send_command(0xFF);                          // Data length (0xFF when unused)
 
     // Wait for the FDC to be ready to accept data, with timeout
     int timeout = TIMEOUT_LIMIT;

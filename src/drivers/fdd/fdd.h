@@ -17,8 +17,8 @@
 #define FDD_SECTOR_CNT 1     // Reading/writing 1 sector at a time
 
 
-bool fdd_read_sector(unsigned int cylinder, unsigned int head, unsigned int sector, void* buffer);
-bool fdd_write_sector(unsigned int cylinder, unsigned int head, unsigned int sector, const void* buffer);
+bool fdd_read_sector(int drive, int head, int track, int sector, uint8_t* buffer);
+bool fdd_write_sector(int drive, int head, int track, int sector, uint8_t* buffer);
 
 
 #endif // FDD_H

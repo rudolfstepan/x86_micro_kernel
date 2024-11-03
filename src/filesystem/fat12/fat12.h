@@ -8,40 +8,58 @@
 #include "toolchain/stdlib.h"
 #include "drivers/fdd/fdd.h"
 
-#define SECTOR_SIZE 512
+#pragma pack(push, 1)
 
 typedef struct {
-    uint8_t  jmp_boot[3];
-    char     oem_name[8];
-    uint16_t bytes_per_sector;
-    uint8_t  sectors_per_cluster;
-    uint16_t reserved_sectors;
-    uint8_t  num_fats;
-    uint16_t root_entry_count;
-    uint16_t total_sectors_16;
-    uint8_t  media;
-    uint16_t fat_size_16;
-    uint16_t sectors_per_track;
-    uint16_t num_heads;
-    uint32_t hidden_sectors;
-    uint32_t total_sectors_32;
-    uint8_t  drive_number;
+    uint8_t  jumpCode[3];
+    char     oemName[8];
+    uint16_t bytesPerSector;
+    uint8_t  sectorsPerCluster;
+    uint16_t reservedSectors;
+    uint8_t  fatCount;
+    uint16_t rootEntryCount;
+    uint16_t totalSectors;
+    uint8_t  mediaDescriptor;
+    uint16_t sectorsPerFAT;
+    uint16_t sectorsPerTrack;
+    uint16_t heads;
+    uint32_t hiddenSectors;
+    uint32_t totalSectorsLarge;
+    uint8_t  driveNumber;
     uint8_t  reserved;
-    uint8_t  boot_signature;
-    uint32_t volume_id;
-    char     volume_label[11];
-    char     fs_type[8];
-} __attribute__((packed)) fat12_bpb_t;
+    uint8_t  bootSignature;
+    uint32_t volumeID;
+    char     volumeLabel[11];
+    char     fsType[8];
+} BootSector;
 
 typedef struct {
-    fat12_bpb_t bpb;         // BIOS Parameter Block
-    uint16_t fat_start;      // Start sector of the first FAT
-    uint16_t root_dir_start; // Start sector of the root directory
-    uint16_t data_start;     // Start sector of data area
-} fat12_fs_t;
+    signed char filename[8];  // Define as signed to allow negative values like 0xE5
+    char     extension[3];
+    uint8_t  attributes;
+    uint8_t  reserved;
+    uint8_t  createTimeTenths;
+    uint16_t createTime;
+    uint16_t createDate;
+    uint16_t lastAccessDate;
+    uint16_t firstClusterHigh;
+    uint16_t writeTime;
+    uint16_t writeDate;
+    uint16_t firstClusterLow;
+    uint32_t fileSize;
+} DirectoryEntry;
 
+#pragma pack(pop)
+
+// FAT12 structure definition
+typedef struct {
+    BootSector bootSector;
+    int fatStart;           // Start sector of the FAT table
+    int rootDirStart;       // Start sector of the Root Directory
+    int dataStart;          // Start sector of the Data region
+} FAT12;
 
 bool fat12_init_fs();
-int fat12_read_dir(const char* path, char* buffer, unsigned int* size);
+bool fat12_read_dir(const char* path, char* buffer, unsigned int* size);
 
 #endif // FAT12_H

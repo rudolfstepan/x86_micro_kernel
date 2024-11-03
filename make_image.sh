@@ -6,7 +6,6 @@ dd if=/dev/zero of=fdd.img bs=1024 count=1440
 mkfs.vfat -F 12 fdd.img
 sudo mkdir /mnt/floppy
 sudo mount -o loop fdd.img /mnt/floppy
-sudo mount ./disk.img /mnt/floppy
 sudo mkdir /mnt/floppy/abc
 sudo umount /mnt/floppy
 
