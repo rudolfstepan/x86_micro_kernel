@@ -2,6 +2,9 @@
 #include "strings.h"
 #include "stdlib.h"
 
+#include <stdarg.h>
+#include <stddef.h>
+
 // -----------------------------------------------------------------
 // Directory Handling Functions
 // the following functions are defined in the filesystem/fat32/fat32.c file
@@ -236,20 +239,38 @@ int printf(const char* format, ...) {
         if (*format == '%') {
             format++;
 
-            // Parse width
+            // Parse width and padding character
             int width = 0;
             bool width_specified = false;
+            bool zero_padding = false;
+            int precision = -1;  // No precision by default
+
+            // Check for zero padding (e.g., %08d)
+            if (*format == '0') {
+                zero_padding = true;
+                format++;
+            }
+
+            // Parse width value
             while (*format >= '0' && *format <= '9') {
                 width = width * 10 + (*format - '0');
                 width_specified = true;
                 format++;
             }
 
-            
+            // Parse precision if present (e.g., %.11s)
+            if (*format == '.') {
+                format++;
+                precision = 0;
+                while (*format >= '0' && *format <= '9') {
+                    precision = precision * 10 + (*format - '0');
+                }
+            }
+
             if (strncmp(format, "llx", 3) == 0) {
                 uint64_t llx = va_arg(args, uint64_t);
-                print_hex64(llx);
-                format += 2; // Skip past 'llx'
+                print_hex64(llx);  // This assumes print_hex64 handles width.
+                format += 2;       // Skip past 'llx'
             } else {
                 switch (*format) {
                     case 'c': {
@@ -259,20 +280,49 @@ int printf(const char* format, ...) {
                     }
                     case 's': {
                         char* s = va_arg(args, char*);
-                        while (*s) {
-                            vga_write_char(*s++);
+                        int len = strlen(s);
+
+                        // Apply precision limit if specified
+                        if (precision >= 0 && precision < len) {
+                            len = precision;
+                        }
+
+                        // Calculate padding
+                        int pad = (width > len) ? width - len : 0;
+                        if (width_specified && pad > 0) {
+                            for (int i = 0; i < pad; i++) vga_write_char(' ');
+                        }
+
+                        // Print the string up to the specified precision
+                        for (int i = 0; i < len; i++) {
+                            vga_write_char(s[i]);
                         }
                         break;
                     }
                     case 'u': {
                         unsigned int u = va_arg(args, unsigned int);
-                        print_unsigned(u, 10); // Base 10 for unsigned integer
+                        char buffer[32];
+                        int_to_str(u, buffer, 10);
+                        int len = strlen(buffer);
+                        int pad = width - len;
+                        if (width_specified && pad > 0) {
+                            for (int i = 0; i < pad; i++) vga_write_char(zero_padding ? '0' : ' ');
+                        }
+                        char* s = buffer;
+                        while (*s) {
+                            vga_write_char(*s++);
+                        }
                         break;
                     }
                     case 'd': {
                         int i = va_arg(args, int);
                         char buffer[32];
                         int_to_str(i, buffer, 10);
+                        int len = strlen(buffer);
+                        int pad = width - len;
+                        if (width_specified && pad > 0) {
+                            for (int i = 0; i < pad; i++) vga_write_char(zero_padding ? '0' : ' ');
+                        }
                         char* s = buffer;
                         while (*s) {
                             vga_write_char(*s++);
@@ -286,14 +336,15 @@ int printf(const char* format, ...) {
                     }
                     case 'X': {
                         unsigned int x = va_arg(args, unsigned int);
-                        if (!width_specified) {
-                            width = 8; // Default width for %X
+                        char buffer[32];
+                        int_to_hex_str(x, buffer, width, zero_padding); // Adjusted function to handle padding
+                        char* s = buffer;
+                        while (*s) {
+                            vga_write_char(*s++);
                         }
-                        print_hex_padded(x, width);
                         break;
                     }
                 }
-
             }
         } else {
             vga_write_char(*format);
@@ -301,9 +352,7 @@ int printf(const char* format, ...) {
         format++;
     }
 
-    // After printing is done, update cursor position
     va_end(args);
-
     return 0;
 }
 
@@ -359,4 +408,91 @@ int sprintf(char *buffer, const char *format, ...) {
 
     va_end(args);
     return written;
+}
+
+// Simple implementation of snprintf
+int snprintf(char* str, size_t size, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+
+    unsigned int written = 0;
+    const char* p = format;
+
+    while (*p != '\0' && written < size) {
+        if (*p == '%') {
+            p++;  // Skip '%'
+            if (*p == 's') {  // String format
+                const char* arg = va_arg(args, const char*);
+                while (*arg != '\0' && written < size) {
+                    str[written++] = *arg++;
+                }
+            } else if (*p == 'd') {  // Integer format
+                int num = va_arg(args, int);
+                // Convert integer to string
+                char num_buffer[12];  // Buffer to hold the integer as string (supports up to 32-bit integer range)
+                int num_written = 0;
+
+                if (num < 0) {  // Handle negative numbers
+                    if (written < size) {
+                        str[written++] = '-';
+                    }
+                    num = -num;
+                }
+
+                int temp = num;
+                do {
+                    num_buffer[num_written++] = (temp % 10) + '0';
+                    temp /= 10;
+                } while (temp > 0 && num_written < (int)sizeof(num_buffer));
+
+                // Reverse the number buffer into the main string buffer
+                for (int i = num_written - 1; i >= 0 && written < size; i--) {
+                    str[written++] = num_buffer[i];
+                }
+            }
+            // Add other format specifiers as needed
+        } else {
+            str[written++] = *p;
+        }
+        p++;
+    }
+
+    va_end(args);
+
+    // Null-terminate the string
+    if (size > 0) {
+        if (written < size) {
+            str[written] = '\0';
+        } else {
+            str[size - 1] = '\0';
+        }
+    }
+
+    return written;
+}
+
+void hex_dump(const unsigned char* data, size_t size) {
+    for (size_t i = 0; i < size; i += 16) {
+        // Print offset
+        printf("%08X  ", (unsigned int)i);
+
+        // Print hex values
+        for (size_t j = 0; j < 16; j++) {
+            if (i + j < size) {
+                printf("%02X ", data[i + j]);
+            } else {
+                printf("   ");
+            }
+        }
+
+        // Print ASCII characters
+        printf(" ");
+        for (size_t j = 0; j < 16; j++) {
+            if (i + j < size) {
+                unsigned char c = data[i + j];
+                printf("%c", (c >= 32 && c <= 126) ? c : '.');
+            }
+        }
+        printf("\n");
+    }
 }

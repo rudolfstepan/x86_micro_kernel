@@ -25,4 +25,6 @@ int readdir(const char* path, char* buffer, unsigned int *size, drive_type_t dri
 int printf(const char* format, ...);                            // print formatted string
 int sprintf(char *buffer, const char *format, ...);
 
+void hex_dump(const unsigned char* data, size_t size);
+
 #endif // STDIO_H

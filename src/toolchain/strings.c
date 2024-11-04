@@ -1,5 +1,6 @@
 #include "strings.h"
 #include "stdlib.h"
+#include <stdbool.h>
 
 #define ULONG_MAX 4294967295UL
 
@@ -216,70 +217,6 @@ size_t strcspn(const char* str1, const char* str2) {
     return p - str1;
 }
 
-// Simple implementation of snprintf
-#include <stdarg.h>
-#include <stddef.h>
-
-int snprintf(char* str, size_t size, const char* format, ...) {
-    va_list args;
-    va_start(args, format);
-
-    unsigned int written = 0;
-    const char* p = format;
-
-    while (*p != '\0' && written < size) {
-        if (*p == '%') {
-            p++;  // Skip '%'
-            if (*p == 's') {  // String format
-                const char* arg = va_arg(args, const char*);
-                while (*arg != '\0' && written < size) {
-                    str[written++] = *arg++;
-                }
-            } else if (*p == 'd') {  // Integer format
-                int num = va_arg(args, int);
-                // Convert integer to string
-                char num_buffer[12];  // Buffer to hold the integer as string (supports up to 32-bit integer range)
-                int num_written = 0;
-
-                if (num < 0) {  // Handle negative numbers
-                    if (written < size) {
-                        str[written++] = '-';
-                    }
-                    num = -num;
-                }
-
-                int temp = num;
-                do {
-                    num_buffer[num_written++] = (temp % 10) + '0';
-                    temp /= 10;
-                } while (temp > 0 && num_written < (int)sizeof(num_buffer));
-
-                // Reverse the number buffer into the main string buffer
-                for (int i = num_written - 1; i >= 0 && written < size; i--) {
-                    str[written++] = num_buffer[i];
-                }
-            }
-            // Add other format specifiers as needed
-        } else {
-            str[written++] = *p;
-        }
-        p++;
-    }
-
-    va_end(args);
-
-    // Null-terminate the string
-    if (size > 0) {
-        if (written < size) {
-            str[written] = '\0';
-        } else {
-            str[size - 1] = '\0';
-        }
-    }
-
-    return written;
-}
-
 unsigned long strtoul(const char *str, char **endptr, int base) {
     if (base != 0 && (base < 2 || base > 36)) {
         if (endptr) *endptr = (char *)str;
@@ -384,4 +321,51 @@ void trim_trailing_spaces(char *str) {
     while (len > 0 && isspace((unsigned char)str[len - 1])) {
         str[--len] = '\0';
     }
+}
+
+void int_to_hex_str(unsigned int value, char* buffer, int width, bool zero_padding) {
+    const char hex_digits[] = "0123456789ABCDEF";
+    char temp[32];
+    int index = 0;
+
+    // Convert the value to hexadecimal in reverse order
+    do {
+        temp[index++] = hex_digits[value % 16];
+        value /= 16;
+    } while (value > 0);
+
+    // Calculate the required padding
+    int padding = (width > index) ? width - index : 0;
+
+    // Fill in padding at the beginning of the buffer
+    int buffer_index = 0;
+    for (int i = 0; i < padding; i++) {
+        buffer[buffer_index++] = zero_padding ? '0' : ' ';
+    }
+
+    // Reverse the hex string and place it into the buffer
+    while (index > 0) {
+        buffer[buffer_index++] = temp[--index];
+    }
+
+    // Null-terminate the string
+    buffer[buffer_index] = '\0';
+}
+
+void normalize_string(char* dest, const char* src, size_t length) {
+    // Copy up to length characters from src to dest
+    for (size_t i = 0; i < length; i++) {
+        dest[i] = src[i];
+    }
+
+    // Trim trailing spaces
+    for (size_t i = length; i > 0; i--) {
+        if (dest[i - 1] != ' ') {
+            break;
+        }
+        dest[i - 1] = '\0';
+    }
+
+    // Ensure null termination
+    dest[length] = '\0';
 }

@@ -5,6 +5,7 @@ SECTIONS
 {
   .text address : AT(address) {
     code = .;
+    *(.multiboot)            # Place the Multiboot header first
     *(.text)
     *(.rodata)
     . = ALIGN(4096);
@@ -27,5 +28,6 @@ SECTIONS
     *(.syscall_table)
     . = ALIGN(4096);
   }
+
   end = .;
 }

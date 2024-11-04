@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdarg.h>
+#include <stdbool.h>
 
 // Assuming a maximum path length
 #define MAX_PATH_LENGTH 256
@@ -32,11 +33,10 @@ char* strtok_r(char* str, const char* delim, char** saveptr);
 size_t strspn(const char* str1, const char* str2);
 size_t strcspn(const char* str1, const char* str2);
 int snprintf(char *str, size_t size, const char *format, ...);
-
 unsigned long strtoul(const char *str, char **endptr, int base);
-
 void normalize_path(char* input_path, char* normalized_path, const char* current_path);
-
 void trim_trailing_spaces(char *str);
+void int_to_hex_str(unsigned int value, char* buffer, int width, bool zero_padding);
+void normalize_string(char* dest, const char* src, size_t length);
 
 #endif /* STRINGS_H */

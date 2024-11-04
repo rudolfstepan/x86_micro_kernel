@@ -343,6 +343,10 @@ void handle_exit(int arg_count, char **arguments) {
     //exit(0);
 }
 
+void handle_fdd(int arg_count, char **arguments) {
+    debug_read_bootsector();
+}
+
 // ---------------------------------------------------------------------------------------------
 // Command table
 // Add more commands as needed
@@ -371,7 +375,8 @@ Command command_table[] = {
     {"SETDATE", handle_set_date},
     {"IRQ", handle_irq},
     {"SLEEP", handle_sleep},
-    {"EXIT", handle_exit}
+    {"EXIT", handle_exit},
+    {"FDD", handle_fdd}
 };
 
 // ---------------------------------------------------------------------------------------------

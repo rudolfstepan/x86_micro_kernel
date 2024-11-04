@@ -70,7 +70,7 @@ void initialize_syscall_table() {
     syscall_table[SYSCALL_SLEEP] = (syscall_func_ptr)&syscall_sleep;
 
     irq_install_handler(128, syscall_handler); // Install the system call handler
-    //__asm__ __volatile__("int $0x80"); // Invoke interrupt 0x80
+    // __asm__ __volatile__("int $0x26"); // Invoke interrupt
 }
 
 // initialize attaches drives
@@ -79,14 +79,14 @@ void init_drives()
     // detect and initialize attached drives to the system
     ata_detect_drives();
 
-    // current_drive = ata_get_drive(0);
+    current_drive = ata_get_drive(0);
 
-    // if (current_drive) {
-    //     printf("Drive %s found: %s, Sectors: %u\n", current_drive->name, current_drive->model, current_drive->sectors);
-    //     init_fs(current_drive);
-    // } else {
-    //     printf("Drive not found.\n");
-    // }
+    if (current_drive) {
+        printf("Drive %s found: %s, Sectors: %u\n", current_drive->name, current_drive->model, current_drive->sectors);
+        init_fs(current_drive);
+    } else {
+        printf("Drive not found.\n");
+    }
 
     // detect fdd drives
     fdd_detect_drives();
@@ -103,16 +103,25 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
         printf("Invalid magic number: 0x%x\n", multiboot_magic);
         return;
     }
+
     initialize_memory_system();
+
     gdt_install();
     idt_install();
     isr_install();
     irq_install();
-    __asm__ __volatile__("sti");
-    
+
     // syscall table
     initialize_syscall_table();
     kb_install();
+
+    uint8_t mask = inb(0x21);   // Read the current mask on the master PIC
+    mask &= ~(1 << 6);          // Clear the bit for IRQ 6
+    outb(0x21, mask);           // Write the new mask
+
+    fdc_initialize_irq();
+    __asm__ __volatile__("sti"); // enable interrupts
+
     set_color(WHITE);
 
     printf("===============================================================================\n");
@@ -120,11 +129,11 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
     printf("===============================================================================\n");
 
     init_drives();
-
+    
     printf("Type HELP for command list.\n");
 
     test_memory();
-    timer_install();
+    //timer_install();
     // test the colors
     set_color(BLACK); printf("Black ");
     set_color(BLUE); printf("Blue ");

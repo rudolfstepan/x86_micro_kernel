@@ -27,8 +27,8 @@ extern void irq_install_handler(int irq, void (*handler)(struct regs *r));
 void irq_uninstall_handler(int irq);
 
 //pit
-extern void delay(int ticks);
 extern void timer_handler(struct regs *r);
 extern void timer_install();
+
 
 #endif

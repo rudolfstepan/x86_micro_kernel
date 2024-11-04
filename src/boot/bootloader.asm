@@ -467,9 +467,8 @@ irq15:
 
 ; 0x80: System Call
 ; global syscall_table
-; irq_syscall:
-;     cli
-
+irq_syscall:
+    cli
 
 extern irq_handler
 

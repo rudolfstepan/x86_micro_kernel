@@ -1,15 +1,12 @@
 ﻿#include "keyboard.h"
-
-#include <stdbool.h>
-
 #include "drivers/io/io.h"
 #include "drivers/video/video.h"
-
 #include "kernel/system.h"
 #include "kernel/sys.h"
-
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
+
+#include <stdbool.h>
 
 
 // --------------------------------------------------
@@ -95,6 +92,9 @@ void kb_handler(struct regs* r) {
             shift_pressed = 0;
         }
     }
+
+    // Send End of Interrupt (EOI) signal to the PIC
+    outb(0x20, 0x20);  // EOI for master PIC
 }
 
 void kb_install() {

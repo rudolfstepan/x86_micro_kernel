@@ -12,30 +12,21 @@ FAT12 fat12;  // Global instance of FAT12 structure
 
 // Function to read the boot sector
 bool read_boot_sector(int drive) {
-
     uint8_t buffer[SECTOR_SIZE];
-
-
-    fdd_read_sector(drive, 0, 0, 1, buffer);
-
+    fdc_read_sector(drive, 0, 0, 1, buffer);
     // Copy the boot sector into the FAT12 structure
     memcpy(&fat12.bootSector, buffer, sizeof(Fat12BootSector));
-
-    printf("%s", buffer);
-
     // Validate the boot sector signature
     if (fat12.bootSector.bootSectorSignature != 0xAA55) {
         printf("Invalid boot sector signature: 0x%04X\n", fat12.bootSector.bootSectorSignature);
         return false;
     }
 
-
     return true;
 }
 
 // Function to read the boot sector and initialize the FAT12 structure
 bool fat12_init(int drive) {
-
     // Zero-initialize FAT12 structure
     memset(&fat12, 0, sizeof(FAT12));
 
@@ -48,6 +39,10 @@ bool fat12_init(int drive) {
     fat12.fatStart = fat12.bootSector.reservedSectors;
     fat12.rootDirStart = fat12.fatStart + (fat12.bootSector.fatCount * fat12.bootSector.sectorsPerFAT);
     fat12.dataStart = fat12.rootDirStart + ((fat12.bootSector.rootEntryCount * ROOT_ENTRY_SIZE + fat12.bootSector.bytesPerSector - 1) / fat12.bootSector.bytesPerSector);
+
+    fat12.bootSector.oemName[7] = '\0';
+    fat12.bootSector.volumeLabel[10] = '\0';
+    fat12.bootSector.fsType[7] = '\0';
 
     printf("FAT12 Initialization Complete:\n");
     printf("Bytes per Sector: %u\n", fat12.bootSector.bytesPerSector);
@@ -75,7 +70,7 @@ bool fat12_init_fs() {
 // Function to read the Root Directory
 bool read_root_directory(int drive, DirectoryEntry* root_directory) {
     for (int i = 0; i < ROOT_DIR_SECTORS; i++) {
-        if (!fdd_read_sector(drive, 0, 1, fat12.rootDirStart + i, ((void*)root_directory) + i * SECTOR_SIZE)) {
+        if (!fdc_read_sector(drive, 0, 1, fat12.rootDirStart + i, ((void*)root_directory) + i * SECTOR_SIZE)) {
             printf("Error reading Root Directory sector %d\n", i);
             return false;
         }

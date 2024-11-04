@@ -22,8 +22,9 @@
 #define FDD_SECTOR_CNT 1     // Reading/writing 1 sector at a time
 
 void fdd_detect_drives();
-bool fdd_read_sector(int drive, int head, int track, int sector, void* buffer);
-bool fdd_write_sector(int drive, int head, int track, int sector, void* buffer);
-
+void fdc_initialize_irq();
+void debug_read_bootsector();
+bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer);
+bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer);
 
 #endif // FDD_H
