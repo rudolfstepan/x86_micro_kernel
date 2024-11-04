@@ -161,11 +161,47 @@ void dma_prepare_transfer(uint16_t length, bool read) {
     //printf("dma_prepare_transfer done\n");
 }
 
+void fdc_reset_after_read() {
+    // Issue the Sense Interrupt Status command (0x08) to clear any pending states
+    fdc_send_command(0x08);
+    // Read the two bytes of status that the FDC returns for this command
+    inb(0x3F5);  // Dummy read to clear status
+    inb(0x3F5);  // Dummy read to clear status
+}
+void fdc_full_reset() {
+    // Send a reset signal to the FDC (0x3F2 port)
+    outb(0x3F2, 0x00);  // Disable the motor and reset
+    delay(10);          // Small delay for reset to take effect
+    outb(0x3F2, 0x0C);  // Re-enable motor and set drive select to 0
+}
+void fdc_clear_data_register() {
+    while (inb(0x3F4) & 0x80) {
+        inb(0x3F5);  // Read data register until it is cleared
+    }
+}
+void dma_reset_channel() {
+    outb(0x0A, 0x06);  // Mask DMA channel 2
+    outb(0x0A, 0x02);  // Unmask DMA channel 2
+}
+
 bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
+    // Clear any pending IRQs from previous operations
+    fdc_wait_for_irq();
+    
     // Step 1: Reset the FDC and ignore any initial/spurious IRQ
-    fdc_reset();
+    //fdc_reset();
     //printf("FDC reset completed.\n");
+    // Step 1: Perform a full FDC reset
+    fdc_full_reset();
+    printf("FDC full reset completed.\n");
+
     fdc_wait_for_irq();  // Clear any pending IRQ 6
+
+    // Step 2: Clear any residual data from the FDC data register
+    //fdc_clear_data_register();
+
+    // Step 3: Prepare the DMA transfer with a cleared buffer
+    dma_reset_channel();  // Ensure DMA channel is reset
 
     // Step 2: Prepare the DMA transfer with a fresh buffer
     memset(dma_buffer, 0, 512);       // Clear buffer
@@ -174,7 +210,7 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
 
     // Step 3: Start motor and wait for it to stabilize
     fdd_motor_on(drive);
-    delay(500);  // Delay to allow motor to spin up and avoid spurious IRQs
+    delay(1000);  // Delay to allow motor to spin up and avoid spurious IRQs
     //printf("Floppy motor on.\n");
 
     // Step 4: Reset IRQ flag and send the command sequence to FDC
@@ -195,8 +231,8 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
 
     //printf("Waiting for IRQ 6 after issuing READ command...\n");
 
-    // // Step 5: Wait for IRQ 6, indicating the transfer is complete
-    // that does not work and is commented out because the irq has been fired previously!
+    // Step 5: Wait for IRQ 6, indicating the transfer is complete
+    //that does not work and is commented out because the irq has been fired previously!
     // if (!fdc_wait_for_irq()) {
     //     printf("Error: No response from IRQ 6.\n");
     //     fdd_motor_off(drive);
@@ -208,6 +244,13 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
 
     // Step 6: Turn off the motor after the operation
     fdd_motor_off(drive);
+
+    // Step 7: Clear FDC state after read
+    fdc_reset_after_read();
+
+    // Optional: Delay between commands to stabilize FDC for next operation
+    delay(10);
+
     return true;
 }
 
@@ -217,7 +260,7 @@ void debug_read_bootsector() {
     if (fdc_read_sector(0, 0, 0, 1, buffer)) {
         printf("Boot sector read successfully:\n");
         // Print the boot sector content in hexadecimal
-        hex_dump(buffer, 64);
+        hex_dump(buffer, 256);
     } else {
         printf("Failed to read boot sector.\n");
     }

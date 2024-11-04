@@ -95,23 +95,31 @@ void display_root_directory(DirectoryEntry* root_directory, int num_entries) {
     for (int i = 0; i < num_entries; i++) {
         DirectoryEntry* entry = &root_directory[i];
 
-        if ((signed char)root_directory[i].filename[0] == (signed char)0x00) break;  // No more entries
-        if ((signed char)root_directory[i].filename[0] == (signed char)0xE5) continue;  // Deleted entry
+        // Stop if the entry is unused
+        if ((unsigned char)entry->filename[0] == 0x00) {
+            break;  // No more entries
+        }
 
-        // Format filename and extension
-        char filename[9] = {0};
-        char extension[4] = {0};
-        strncpy(filename, (const char*)root_directory[i].filename, 8);
-        strncpy(extension, (const char*)root_directory[i].extension, 3);
+        // Skip deleted entries
+        if ((unsigned char)entry->filename[0] == 0xE5) {
+            continue;
+        }
 
-        // Display file information
+        // Format filename and extension with null-terminators
+        char filename[9] = {0};  // 8 chars + null terminator
+        char extension[4] = {0}; // 3 chars + null terminator
+        strncpy(filename, (const char*)entry->filename, 8);
+        strncpy(extension, (const char*)entry->extension, 3);
+
+        // Display file or directory information
         if (is_directory(entry)) {
-            printf("Directory: %s\n", filename);
+            printf("%-11s <DIR>            \n", filename);
         } else if (is_file(entry)) {
-            printf("File: %.8s.%.3s - Size: %u bytes\n", filename, extension, entry->fileSize);
+            printf("%-8s.%-3s    %10u\n", filename, extension, entry->fileSize);
         }
     }
 }
+
 
 // Function to read the contents of a directory in the FAT12 file system
 bool fat12_read_dir(const char* path, char* buffer, unsigned int* size) {
