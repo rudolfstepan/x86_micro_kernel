@@ -1,3 +1,127 @@
+/*
+ * =============================================================
+ * Floppy Disk Drive (FDD) Controller and DMA Handling Module
+ * =============================================================
+ * 
+ * This module provides low-level functions for interacting with
+ * a floppy disk drive (FDD) and controlling Direct Memory Access (DMA)
+ * operations. It enables basic operations such as reading and writing
+ * sectors, managing the FDD motor, handling IRQs, and configuring the
+ * DMA controller for data transfers.
+ *
+ * This code is designed for use in a bare-metal environment or kernel,
+ * where direct interaction with hardware registers is necessary.
+ *
+ * =============================================================
+ * Key Components and Functionality
+ * =============================================================
+ * 
+ * 1. **Floppy Disk Commands and Registers**:
+ *    - **Digital Output Register (DOR)**: Controls the FDD motor and drive selection.
+ *    - **Main Status Register (MSR)**: Provides the status of the FDD.
+ *    - **FIFO Register**: Used to send commands and data to/from the FDD.
+ * 
+ * 2. **DMA Configuration for FDD**:
+ *    - **DMA Channel Mask and Mode**: Configures the DMA channel for reading/writing.
+ *    - **DMA Address and Count Ports**: Sets the memory address and byte count for data transfer.
+ *    - **Page Register**: Configures the page for addressing memory beyond 64KB.
+ *    - **DMA Clear and Unmask**: Clears and unblocks DMA channels as necessary.
+ *
+ * 3. **FDD Motor Control**:
+ *    - **fdd_motor_on(drive)**: Turns on the FDD motor for the specified drive.
+ *    - **fdd_motor_off(drive)**: Turns off the FDD motor.
+ * 
+ * 4. **IRQ Handling**:
+ *    - **IRQ6**: The FDD interrupt is mapped to IRQ6. The `irq6_handler` function
+ *      handles FDD interrupts, setting a flag (`irq_triggered`) to indicate completion.
+ *    - **mask_irq6()** and **unmask_irq6()**: Manage the IRQ6 line on the Programmable
+ *      Interrupt Controller (PIC) to enable/disable FDD interrupts.
+ * 
+ * 5. **Low-Level FDD Operations**:
+ *    - **fdc_send_command(command)**: Sends a command to the FDD via the FIFO register.
+ *    - **fdc_read_sector(drive, head, track, sector, buffer)**: Reads a sector from the FDD,
+ *      using DMA and handling the motor, command sequence, and IRQ waiting.
+ *    - **fdc_reset()** and **fdc_full_reset()**: Reset the FDD to a known state.
+ * 
+ * =============================================================
+ * Detailed Process for Reading a Sector from the FDD
+ * =============================================================
+ * 
+ * The `fdc_read_sector` function follows these steps to read a sector:
+ * 
+ * 1. **Prepare DMA for Read Operation**:
+ *    - The `dma_prepare_floppy` function configures DMA for the read operation by setting
+ *      the memory address, byte count, and mode register (read mode).
+ * 
+ * 2. **Turn On FDD Motor**:
+ *    - The `fdd_motor_on` function activates the FDD motor and selects the drive.
+ *    - A short delay is used to allow the motor to stabilize.
+ * 
+ * 3. **Clear Previous IRQ State**:
+ *    - The `irq_triggered` flag is reset to ensure the FDD interrupt for this operation is captured.
+ * 
+ * 4. **Send FDD Read Command Sequence**:
+ *    - The `fdc_send_command` function issues a command sequence to the FDD via the FIFO
+ *      register. This includes specifying the head, track, sector, and sector size.
+ * 
+ * 5. **Wait for IRQ Completion**:
+ *    - The `fdc_wait_for_irq` function waits for the IRQ6 interrupt to indicate the
+ *      completion of the read operation. The IRQ handler sets `irq_triggered` when triggered.
+ * 
+ * 6. **Turn Off FDD Motor**:
+ *    - After the read operation, the motor is turned off to save power.
+ * 
+ * =============================================================
+ * DMA Configuration for Floppy Disk Data Transfers
+ * =============================================================
+ * 
+ * The `dma_prepare_floppy` function configures DMA for data transfer to/from the FDD:
+ * 
+ * 1. **Mask DMA Channel**: Masks the DMA channel 2 to prepare for configuration.
+ * 
+ * 2. **Clear Flip-Flop Register**: Clears the internal flip-flop to ensure correct
+ *    byte alignment for address and count registers.
+ * 
+ * 3. **Set Buffer Address and Page**: Configures the low and high bytes of the buffer
+ *    address, as well as the page register for addressing beyond 64KB.
+ * 
+ * 4. **Set Byte Count**: Sets the number of bytes to transfer (length - 1).
+ * 
+ * 5. **Set Mode Register**: Configures the DMA mode register for read or write.
+ * 
+ * 6. **Unmask DMA Channel**: Unmasks the DMA channel, enabling it for data transfer.
+ * 
+ * =============================================================
+ * Example Usage: Reading the Boot Sector
+ * =============================================================
+ * 
+ * The `debug_read_bootsector` function demonstrates how to read the boot sector
+ * from the FDD:
+ * 
+ * 1. **Prepare the Buffer**: Allocates a buffer to hold 512 bytes (one sector).
+ * 
+ * 2. **Issue Read Command**: Calls `fdc_read_sector` to read the specified sector.
+ * 
+ * 3. **Print Data**: If successful, prints the contents of the sector in hex format.
+ * 
+ * =============================================================
+ * Summary of Constants and Macros
+ * =============================================================
+ * - **FDD_CMD_RECALIBRATE**, **FDD_CMD_SEEK**, **FDD_CMD_READ**, **FDD_CMD_WRITE**:
+ *   Commands used to control the FDD.
+ * - **DMA_CHANNEL_MASK**, **DMA_MODE**, **DMA_CLEAR**: DMA configuration constants.
+ * - **PIC_EOI**: End-of-Interrupt command for the PIC.
+ * - **SECTOR_SIZE**: Size of a sector in bytes, typically 512 bytes for FDDs.
+ * 
+ * =============================================================
+ * Dependencies
+ * =============================================================
+ * - `io.h`: Provides low-level I/O functions for port access.
+ * - `stdio.h`: Basic input/output functions for debugging.
+ * - `system.h` and `sys.h`: Kernel system utilities.
+ * 
+ */
+
 #include "fdd.h"
 #include "drivers/io/io.h"
 #include "toolchain/stdio.h"

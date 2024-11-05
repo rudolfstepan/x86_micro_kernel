@@ -10,4 +10,4 @@
 qemu-system-x86_64 -boot d -cdrom ./kernel.iso \
   -drive file=./disk.img,format=raw \
   -drive file=./disk1.img,format=raw \
-  -drive file=./floppy.img,format=raw,if=floppy
+  -drive file=../../msdos_6.22_de_disk1.img,format=raw,if=floppy
