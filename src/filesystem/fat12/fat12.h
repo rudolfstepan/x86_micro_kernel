@@ -8,6 +8,7 @@
 #include "toolchain/stdlib.h"
 #include "drivers/fdd/fdd.h"
 
+#pragma pack(push, 1)
 typedef struct {
     uint8_t  jumpCode[3];         // Jump instruction to the bootstrap code
     char     oemName[8];          // OEM Name
@@ -31,8 +32,10 @@ typedef struct {
     char     fsType[8];           // File system type
     uint8_t  bootCode[448];       // Bootstrap code
     uint16_t bootSectorSignature; // End of sector signature (should be 0xAA55)
-} __attribute__((packed)) Fat12BootSector;
+} Fat12BootSector;
+#pragma pack(pop)
 
+#pragma pack(push, 1)
 typedef struct {
     unsigned char filename[8];       // 0xE5 indicates deleted file
     char          extension[3];
@@ -47,15 +50,18 @@ typedef struct {
     uint16_t      writeDate;         // Last write date
     uint16_t      firstClusterLow;   // Low word of first cluster
     uint32_t      fileSize;          // File size in bytes
-} __attribute__((packed)) DirectoryEntry;
+} DirectoryEntry;
+#pragma pack(pop)
 
 // FAT12 structure definition
+#pragma pack(push, 1)
 typedef struct {
     Fat12BootSector bootSector;
     int fatStart;           // Start sector of the FAT
     int rootDirStart;       // Start sector of the Root Directory
     int dataStart;          // Start sector of the Data region
-} __attribute__((packed)) FAT12;
+} FAT12;
+#pragma pack(pop)
 
 bool fat12_init_fs();
 bool fat12_read_dir(const char* path, char* buffer, unsigned int* size);

@@ -344,7 +344,17 @@ void handle_exit(int arg_count, char **arguments) {
 }
 
 void handle_fdd(int arg_count, char **arguments) {
-    debug_read_bootsector();
+
+    if(arguments[0] == NULL){
+        debug_read_bootsector(1);
+    }else{
+
+        int sector = strtoul(arguments[0], NULL, 10);
+
+        printf("Reading sector %d\n", sector);
+
+        debug_read_bootsector(sector);
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -313,3 +313,10 @@ int test_memory() {
     printf("done\n");
     return 0;
 }
+
+void delay(int milliseconds) {
+    volatile int count = milliseconds * 1000;
+    while (count--) {
+        __asm__ __volatile__("nop"); // No-operation; consumes CPU cycles
+    }
+}

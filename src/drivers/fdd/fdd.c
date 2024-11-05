@@ -17,17 +17,14 @@
 #define PIC_EOI              0x20   // End of Interrupt command
 #define SECTOR_SIZE          512
 
-#define DMA_CHANNEL_2 0x02
-#define DMA_PAGE_REG 0x81
-#define DMA_ADDRESS_REG 0x04
-#define DMA_COUNT_REG 0x05
-#define DMA_MASK_REG 0x0A
-#define DMA_MODE_REG 0x0B
-#define DMA_MODE_READ 0x46
-#define DMA_MODE_WRITE 0x4A
+#define DMA_CHANNEL_MASK 0x0A
+#define DMA_MODE 0x0B
+#define DMA_CLEAR 0x0C
+#define DMA_ADDR_PORT 0x04
+#define DMA_COUNT_PORT 0x05
+#define DMA_PAGE_PORT 0x81
+#define DMA_UNMASK_CHANNEL 0x02
 
-// Static buffer for DMA transfer
-static unsigned char dma_buffer[512] __attribute__((aligned(512)));
 volatile bool irq_triggered = false;
 
 // FDC IRQ handler for IRQ6
@@ -42,13 +39,6 @@ void irq6_handler(struct regs* r) {
     // Setzen einer globalen Variable, um anzuzeigen, dass der IRQ ausgelöst wurde
     irq_triggered = true;
     outb(0x20, 0x20); // Send EOI to PIC
-}
-
-void delay(int milliseconds) {
-    volatile int count = milliseconds * 1000;
-    while (count--) {
-        __asm__ __volatile__("nop"); // No-operation; consumes CPU cycles
-    }
 }
 
 // Unmask IRQ6 (for FDD) on the PIC
@@ -128,37 +118,9 @@ bool fdc_send_command(uint8_t command) {
 void fdc_reset() {
     // Issue the Sense Interrupt Status command to clear any pending IRQs
     fdc_send_command(0x08);  // Sense Interrupt command
-    
     // Read the two bytes of status that the FDC returns for this command
     inb(0x3F5);  // Dummy read to clear status
     inb(0x3F5);  // Dummy read to clear status
-}
-
-void dma_prepare_transfer(uint16_t length, bool read) {
-    // Maskiert DMA-Kanal 2
-    outb(0x0A, 0x06);  // Kanal 2 maskieren
-
-    // DMA-Buffer-Adresse festlegen
-    uint16_t address = (uint32_t)dma_buffer & 0xFFFF;
-    uint8_t page = ((uint32_t)dma_buffer >> 16) & 0xFF;
-
-    outb(0x04, address & 0xFF);        // LSB der Adresse
-    outb(0x04, (address >> 8) & 0xFF); // MSB der Adresse
-    outb(0x81, page);                  // Setzt die Seitenadresse
-
-    // Anzahl der Bytes für Übertragung (count - 1)
-    uint16_t count = length - 1;
-    outb(0x05, count & 0xFF);           // LSB der Anzahl
-    outb(0x05, (count >> 8) & 0xFF);    // MSB der Anzahl
-
-    // Setzt den Modus für Lesen oder Schreiben
-    uint8_t mode = read ? 0x46 : 0x4A;
-    outb(0x0B, mode | 0x02);            // Modus und Kanal
-
-    // Hebt die Maskierung für DMA-Kanal 2 auf
-    outb(0x0A, 0x02);  // Unmask channel 2
-
-    //printf("dma_prepare_transfer done\n");
 }
 
 void fdc_reset_after_read() {
@@ -184,37 +146,48 @@ void dma_reset_channel() {
     outb(0x0A, 0x02);  // Unmask DMA channel 2
 }
 
+void dma_prepare_floppy(uint8_t* buffer, uint16_t length, bool read) {
+    // 1. Kanal 2 maskieren
+    outb(DMA_CHANNEL_MASK, 0x06);  // Maske auf Kanal 2 setzen
+
+    // 2. Clear Flip-Flop Register
+    outb(DMA_CLEAR, 0x00);
+
+    // 3. Adresse des Puffers setzen
+    uint16_t address = (uint32_t)buffer & 0xFFFF;
+    outb(DMA_ADDR_PORT, address & 0xFF);         // Niedriges Byte der Adresse
+    outb(DMA_ADDR_PORT, (address >> 8) & 0xFF);  // Hohes Byte der Adresse
+
+    // 4. Seitenadresse setzen
+    uint8_t page = ((uint32_t)buffer >> 16) & 0xFF;
+    outb(DMA_PAGE_PORT, page);
+
+    // 5. Anzahl der Bytes setzen (Länge - 1)
+    uint16_t count = length - 1;
+    outb(DMA_COUNT_PORT, count & 0xFF);         // Niedriges Byte der Anzahl
+    outb(DMA_COUNT_PORT, (count >> 8) & 0xFF);  // Hohes Byte der Anzahl
+
+    // 6. Modusregister setzen für Lese-/Schreiboperation
+    outb(DMA_MODE, read ? 0x46 : 0x4A);  // 0x46 für Lesen, 0x4A für Schreiben
+
+    // 7. Kanal 2 wieder aktivieren (unmaskieren)
+    outb(DMA_CHANNEL_MASK, DMA_UNMASK_CHANNEL);
+}
+
 bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
+    // clear the buffer before reading
+    memset(buffer, 0, SECTOR_SIZE);  // Clear the buffer before reading
+    // prepare DMA for reading
+    dma_prepare_floppy(buffer, SECTOR_SIZE, true);
     // Clear any pending IRQs from previous operations
-    fdc_wait_for_irq();
-    
-    // Step 1: Reset the FDC and ignore any initial/spurious IRQ
-    //fdc_reset();
-    //printf("FDC reset completed.\n");
-    // Step 1: Perform a full FDC reset
-    fdc_full_reset();
-    printf("FDC full reset completed.\n");
-
-    fdc_wait_for_irq();  // Clear any pending IRQ 6
-
-    // Step 2: Clear any residual data from the FDC data register
-    //fdc_clear_data_register();
-
-    // Step 3: Prepare the DMA transfer with a cleared buffer
-    dma_reset_channel();  // Ensure DMA channel is reset
-
-    // Step 2: Prepare the DMA transfer with a fresh buffer
-    memset(dma_buffer, 0, 512);       // Clear buffer
-    dma_prepare_transfer(512, true);  // Prepare DMA for read
-    //printf("DMA prepare transfer done.\n");
-
-    // Step 3: Start motor and wait for it to stabilize
-    fdd_motor_on(drive);
-    delay(1000);  // Delay to allow motor to spin up and avoid spurious IRQs
-    //printf("Floppy motor on.\n");
-
-    // Step 4: Reset IRQ flag and send the command sequence to FDC
     irq_triggered = false;  // Reset IRQ flag before issuing command
+    fdc_wait_for_irq();
+    // Start motor and wait for it to stabilize
+    fdd_motor_on(drive);
+    delay(5000);  // Delay to allow motor to spin up and avoid spurious IRQs
+
+    // Reset IRQ flag and send the command sequence to FDC
+    //irq_triggered = false;  // Reset IRQ flag before issuing command
     if (!fdc_send_command(FDD_CMD_READ) ||
         !fdc_send_command((head << 2) | (drive & 0x03)) ||
         !fdc_send_command(track) ||
@@ -228,39 +201,23 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
         fdd_motor_off(drive);
         return false;
     }
-
-    //printf("Waiting for IRQ 6 after issuing READ command...\n");
-
-    // Step 5: Wait for IRQ 6, indicating the transfer is complete
-    //that does not work and is commented out because the irq has been fired previously!
-    // if (!fdc_wait_for_irq()) {
-    //     printf("Error: No response from IRQ 6.\n");
-    //     fdd_motor_off(drive);
-    //     return false;
-    // }
-    // printf("IRQ 6 received, FDC read complete.\n");
-
-    memcpy(buffer, dma_buffer, 512);
-
-    // Step 6: Turn off the motor after the operation
+    // Turn off the motor after the operation
     fdd_motor_off(drive);
-
-    // Step 7: Clear FDC state after read
-    fdc_reset_after_read();
-
+    delay(5000);
+    // Clear FDC state after read
+    //fdc_reset_after_read();
     // Optional: Delay between commands to stabilize FDC for next operation
-    delay(10);
-
+    //delay(500);
     return true;
 }
 
-void debug_read_bootsector() {
+void debug_read_bootsector(uint8_t sector) {
     unsigned char buffer[512];
     // Attempt to read the first sector (boot sector) of the floppy disk
-    if (fdc_read_sector(0, 0, 0, 1, buffer)) {
+    if (fdc_read_sector(0, 0, 0, sector, buffer)) {
         printf("Boot sector read successfully:\n");
         // Print the boot sector content in hexadecimal
-        hex_dump(buffer, 256);
+        hex_dump(buffer, 512);
     } else {
         printf("Failed to read boot sector.\n");
     }

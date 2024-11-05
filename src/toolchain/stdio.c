@@ -4,6 +4,7 @@
 
 #include <stdarg.h>
 #include <stddef.h>
+#include "drivers/keyboard/keyboard.h"
 
 // -----------------------------------------------------------------
 // Directory Handling Functions
@@ -472,6 +473,8 @@ int snprintf(char* str, size_t size, const char* format, ...) {
 }
 
 void hex_dump(const unsigned char* data, size_t size) {
+    int line_count = 0;  // Counter to track lines printed
+
     for (size_t i = 0; i < size; i += 16) {
         // Print offset
         printf("%08X  ", (unsigned int)i);
@@ -494,5 +497,13 @@ void hex_dump(const unsigned char* data, size_t size) {
             }
         }
         printf("\n");
+
+        // Increment line count and check if we've printed 20 lines
+        line_count++;
+        if (line_count >= 20) {
+            // Reset the line count
+            line_count = 0;
+            wait_for_enter(); // Wait for key press
+        }
     }
 }
