@@ -30,7 +30,7 @@ int readdir(const char *path, char *buffer, unsigned int *size, drive_type_t dri
     }
 
     if(driveType == DRIVE_TYPE_FDD){
-        return fat12_read_dir(path, buffer, size);
+        return fat12_read_dir(path);
     }
 
     return -1;

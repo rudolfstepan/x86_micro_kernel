@@ -194,9 +194,20 @@ bool fat12_init_fs() {
     if (read_fat12(0, &fat12)) {
         printf("FAT12 filesystem read successfully.\n");
 
-        int num_entries = read_root_directory(0, entries);
-        int max_entries = fat12.bootSector.rootEntryCount;
-        printf("Number of entries to read: %d\n", max_entries);
+        
+
+    } else {
+        printf("Failed to read FAT12 filesystem.\n");
+        return false;
+    }
+    return true;
+}
+
+bool fat12_read_dir(const char* path) {
+
+    int num_entries = read_root_directory(0, entries);
+    int max_entries = fat12.bootSector.rootEntryCount;
+    printf("Number of entries to read: %d\n", max_entries);
 
         if (num_entries > 0) {
             printf("Root directory read successfully.\n\n");
@@ -249,78 +260,8 @@ bool fat12_init_fs() {
             }
         } else {
             printf("Error reading root directory.\n");
+            return false;
         }
 
-    } else {
-        printf("Failed to read FAT12 filesystem.\n");
-        return false;
-    }
     return true;
 }
-
-
-bool fat12_read_dir(const char* path, char* buffer, unsigned int* size) {
-    return false;
-}
-
-// // Function to display the Root Directory
-// void display_root_directory(DirectoryEntry* root_directory, int num_entries) {
-//     printf("Inhaltsverzeichnis der Diskette:\n");
-//     printf("Dateiname    | Erweiterung | Groesse (Bytes)\n");
-//     printf("--------------------------------------------\n");
-
-//     for (int i = 0; i < num_entries; i++) {
-//         DirectoryEntry* entry = &root_directory[i];
-
-//         // Stop if the entry is unused
-//         if ((unsigned char)entry->filename[0] == 0x00) {
-//             break;  // No more entries
-//         }
-
-//         // Skip deleted entries
-//         if ((unsigned char)entry->filename[0] == 0xE5) {
-//             continue;
-//         }
-
-//         // Format filename and extension with null-terminators
-//         char filename[9] = {0};  // 8 chars + null terminator
-//         char extension[4] = {0}; // 3 chars + null terminator
-//         strncpy(filename, (const char*)entry->filename, 8);
-//         strncpy(extension, (const char*)entry->extension, 3);
-
-//         // Ensure the filename and extension do not contain non-printable characters
-//         for (int j = 0; j < 8; j++) if (filename[j] < 32) filename[j] = '\0';
-//         for (int j = 0; j < 3; j++) if (extension[j] < 32) extension[j] = '\0';
-
-//         // Display file or directory information
-//         if (is_directory(entry)) {
-//             printf("%-11s <DIR>            \n", filename);
-//         } else if (is_file(entry)) {
-//             printf("%-8s.%-3s    %10u\n", filename, extension, entry->fileSize);
-//         }
-//     }
-// }
-
-// // Function to read the contents of a directory in the FAT12 file system
-// bool fat12_read_dir(const char* path, char* buffer, unsigned int* size) {
-//     printf("Reading FAT12 directory: %s\n", path);
-//     int drive = 0;  // Drive A:
-
-//     DirectoryEntry* root_directory = (DirectoryEntry*)malloc(sizeof(DirectoryEntry) * fat12.bootSector.rootEntryCount);
-//     if (!root_directory) {
-//         printf("Memory allocation error for root directory.\n");
-//         return false;
-//     }
-
-//     // Read the Root Directory into a local buffer
-//     if (!read_root_directory(drive, root_directory)) {
-//         printf("Error reading the Root Directory.\n");
-//         free(root_directory);
-//         return false;
-//     }
-
-//     // Display the Root Directory
-//     display_root_directory(root_directory, fat12.bootSector.rootEntryCount);
-//     free(root_directory);
-//     return true;
-// }

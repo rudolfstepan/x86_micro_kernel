@@ -52,9 +52,11 @@ void print_prompt() {
     // set_color(LIGHT_GREEN);
     // printf("%d-%d-%d %d:%d:%d", year, month, day, hour, minute, second);
     set_color(WHITE);
-    
-    //get_full_path(current_path, full_path, sizeof(full_path));
-    printf("%s>", current_path);
+
+    // Check if the last character is a slash and remove it
+    str_trim_end(current_path, '/');
+
+    printf("%s%s>", current_drive->name, current_path);
 }
 
 void call_irq(int irq) {

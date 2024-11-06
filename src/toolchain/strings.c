@@ -380,3 +380,14 @@ char* strchr(const char* str, char c) {
     }
     return NULL;  // Return NULL if the character is not found
 }
+
+// Function to trim specified character from the end of a string
+void str_trim_end(char *str, char ch) {
+    size_t len = strlen(str);
+    
+    // Move backwards through the string until a character other than `ch` is found
+    while (len > 0 && str[len - 1] == ch) {
+        str[len - 1] = '\0';  // Set last character to null terminator
+        len--;
+    }
+}

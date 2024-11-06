@@ -64,6 +64,6 @@ typedef struct {
 #pragma pack(pop)
 
 bool fat12_init_fs();
-bool fat12_read_dir(const char* path, char* buffer, unsigned int* size);
+bool fat12_read_dir(const char* path);
 
 #endif // FAT12_H
