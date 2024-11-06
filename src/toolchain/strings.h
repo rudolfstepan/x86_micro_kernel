@@ -38,5 +38,6 @@ void normalize_path(char* input_path, char* normalized_path, const char* current
 void trim_trailing_spaces(char *str);
 void int_to_hex_str(unsigned int value, char* buffer, int width, bool zero_padding);
 void normalize_string(char* dest, const char* src, size_t length);
+char* strchr(const char* str, char c);
 
 #endif /* STRINGS_H */

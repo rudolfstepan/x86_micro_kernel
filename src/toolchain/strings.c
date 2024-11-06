@@ -369,3 +369,14 @@ void normalize_string(char* dest, const char* src, size_t length) {
     // Ensure null termination
     dest[length] = '\0';
 }
+
+// Custom strchr implementation
+char* strchr(const char* str, char c) {
+    while (*str) {
+        if (*str == c) {
+            return (char*)str;  // Return a pointer to the first occurrence
+        }
+        str++;
+    }
+    return NULL;  // Return NULL if the character is not found
+}

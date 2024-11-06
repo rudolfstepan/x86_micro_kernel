@@ -162,7 +162,7 @@ bool read_root_directory(int drive, DirectoryEntry* root_directory) {
         int head = (logical_sector / sectors_per_track) % heads;
         int sector = (logical_sector % sectors_per_track) + 1;  // Sectors are typically 1-based
 
-        printf("Reading Root Directory sector %d (Track: %d, Head: %d, Sector: %d)\n", i, track, head, sector);
+        //printf("Reading Root Directory sector %d (Track: %d, Head: %d, Sector: %d)\n", i, track, head, sector);
 
         if (!fdc_read_sector(drive, head, track, sector, root_buffer + (i * SECTOR_SIZE))) {
             printf("Error reading Root Directory sector %d\n", i);
@@ -176,40 +176,61 @@ bool read_root_directory(int drive, DirectoryEntry* root_directory) {
     return true;
 }
 
-// Function to initialize the FAT12 file system
+bool is_valid_filename_char(char c) {
+    // Checks if the character is a valid ASCII letter, digit, or FAT12 special character
+    return isalnum(c) || strchr("!#$%&'()-@^_`{}~", c);
+}
+
+bool is_valid_filename(const char* filename, size_t length) {
+    for (size_t i = 0; i < length; i++) {
+        if (!is_valid_filename_char(filename[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool fat12_init_fs() {
     if (read_fat12(0, &fat12)) {
         printf("FAT12 filesystem read successfully.\n");
 
         int num_entries = read_root_directory(0, entries);
-
-        // Update to read the maximum expected number of entries
         int max_entries = fat12.bootSector.rootEntryCount;
         printf("Number of entries to read: %d\n", max_entries);
 
         if (num_entries > 0) {
-            printf("Root directory read successfully.\n");
+            printf("Root directory read successfully.\n\n");
+
+            // Print DOS-style header
+            printf("Volume in drive A has no label\n");
+            printf(" Directory of A:\\\n\n");
+            printf("FILENAME   EXT    SIZE       TYPE\n");
+            printf("---------------------------------\n");
 
             for (int i = 0; i < max_entries; i++) {
                 DirectoryEntry* entry = &entries[i];
 
                 // Check for end of directory (unused entry)
                 if ((unsigned char)entry->filename[0] == 0x00) {
-                    printf("End of directory entries.\n");
-                    break;  // Stop only when an unused entry is found
+                    printf("\nEnd of directory entries.\n");
+                    break;  // Stop at unused entries
                 }
 
                 // Skip deleted entries
                 if ((unsigned char)entry->filename[0] == 0xE5) {
-                    continue;  // Ignore deleted entries
+                    continue;
                 }
 
-                // Determine if entry is a directory or file
-                if (entry->attributes & 0x10) {
-                    printf("Directory: ");
-                } else {
-                    printf("File: ");
+                // Additional filter: Check for valid attributes
+                if (!(entry->attributes == 0x10 || entry->attributes == 0x20)) {
+                    continue;  // Skip entries with invalid attributes
                 }
+
+                // Additional filter: Check if filename contains only valid characters
+                // if (!is_valid_filename((const char*)entry->filename, 8) ||
+                //     !is_valid_filename((const char*)entry->extension, 3)) {
+                //     continue;  // Skip entries with invalid characters in filename or extension
+                // }
 
                 // Format filename and extension with null-terminators
                 char filename[9] = {0};  // 8 chars + null terminator
@@ -217,11 +238,13 @@ bool fat12_init_fs() {
                 strncpy(filename, (const char*)entry->filename, 8);
                 strncpy(extension, (const char*)entry->extension, 3);
 
-                printf("Entry %d: %s.%s\n", i, filename, extension);
-
-                if(i == 20){
-                    // wait for user press enter
-                    wait_for_enter();
+                // Format size and type for output
+                if (entry->attributes & 0x10) {
+                    // Directory entry
+                    printf("%-8s   %-3s   <DIR>      Directory\n", filename, extension);
+                } else {
+                    // File entry
+                    printf("%-8s   %-3s   %10u   File\n", filename, extension, entry->fileSize);
                 }
             }
         } else {
@@ -234,6 +257,7 @@ bool fat12_init_fs() {
     }
     return true;
 }
+
 
 bool fat12_read_dir(const char* path, char* buffer, unsigned int* size) {
     return false;

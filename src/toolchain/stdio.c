@@ -240,14 +240,21 @@ int printf(const char* format, ...) {
         if (*format == '%') {
             format++;
 
-            // Parse width and padding character
+            // Parse width, alignment, and padding
             int width = 0;
             bool width_specified = false;
             bool zero_padding = false;
+            bool left_align = false;
             int precision = -1;  // No precision by default
 
-            // Check for zero padding (e.g., %08d)
-            if (*format == '0') {
+            // Check for left alignment flag (e.g., %-8s)
+            if (*format == '-') {
+                left_align = true;
+                format++;
+            }
+
+            // Check for zero padding (e.g., %08d) if not left-aligned
+            if (*format == '0' && !left_align) {
                 zero_padding = true;
                 format++;
             }
@@ -265,6 +272,7 @@ int printf(const char* format, ...) {
                 precision = 0;
                 while (*format >= '0' && *format <= '9') {
                     precision = precision * 10 + (*format - '0');
+                    format++;
                 }
             }
 
@@ -290,13 +298,23 @@ int printf(const char* format, ...) {
 
                         // Calculate padding
                         int pad = (width > len) ? width - len : 0;
-                        if (width_specified && pad > 0) {
-                            for (int i = 0; i < pad; i++) vga_write_char(' ');
-                        }
 
-                        // Print the string up to the specified precision
-                        for (int i = 0; i < len; i++) {
-                            vga_write_char(s[i]);
+                        if (left_align) {
+                            // Print the string first, then padding
+                            for (int i = 0; i < len; i++) {
+                                vga_write_char(s[i]);
+                            }
+                            for (int i = 0; i < pad; i++) {
+                                vga_write_char(' ');
+                            }
+                        } else {
+                            // Print padding first, then the string
+                            for (int i = 0; i < pad; i++) {
+                                vga_write_char(zero_padding ? '0' : ' ');
+                            }
+                            for (int i = 0; i < len; i++) {
+                                vga_write_char(s[i]);
+                            }
                         }
                         break;
                     }
