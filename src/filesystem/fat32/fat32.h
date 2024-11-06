@@ -141,7 +141,7 @@ bool create_directory(const char* dirname);
 bool delete_directory(const char* dirname);
 
 // file operations
-File* open_file(const char* filename, const char* mode);
+File* fat32_open_file(const char* filename, const char* mode);
 int read_file(File* file, void* buffer, size_t size);
 bool create_file(const char* filename);
 bool delete_file(const char* filename);

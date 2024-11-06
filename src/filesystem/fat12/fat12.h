@@ -64,10 +64,26 @@ typedef struct {
 } FAT12;
 #pragma pack(pop)
 
+typedef struct {
+    unsigned char* base;           // Base address of the file data in memory (optional, if preloaded)
+    unsigned char* ptr;            // Current read/write position within the file
+    unsigned int startCluster;     // Start cluster of the file (first cluster in the cluster chain)
+    const char* mode;              // Mode the file was opened with (e.g., "r", "w")
+    unsigned char name[13];                 // Name of the file in 8.3 format (FILENAME.EXT\0)
+    size_t size;                   // Size of the file in bytes
+    size_t position;               // Current position within the file (offset from base)
+    struct FAT12* fat12Instance;   // Pointer to the FAT12 structure (for accessing FAT, boot sector, etc.)
+} Fat12File;
+
+
 bool fat12_init_fs();
 bool fat12_read_dir(const char* path);
 int fat12_read_dir_entries(DirectoryEntry* dir);
 bool fat12_change_directory(const char* relativePath);
 
+// file operations
+Fat12File* fat12_open_file(const char* filename, const char* mode);
+int fat12_read_file(Fat12File* file, void* buffer, size_t size);
+void print_file_content(Fat12File* file);
 
 #endif // FAT12_H

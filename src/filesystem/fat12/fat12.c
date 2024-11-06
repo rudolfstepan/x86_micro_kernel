@@ -88,9 +88,10 @@ void extract_time(uint16_t fat_time, int* hours, int* minutes, int* seconds) {
     *hours = (fat_time >> 11) & 0x1F;
 }
 
-int fat12_read_dir_entries(DirectoryEntry* dir) {
-    int entries_found = 0;
+int entries_found;
 
+int fat12_read_dir_entries(DirectoryEntry* dir) {
+    entries_found = 0;
     // Handle root directory
     if (dir == NULL) {
         for (int i = 0; i < ROOT_DIR_SECTORS && entries_found < MAX_ENTRIES; i++) {
@@ -133,39 +134,6 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
         }
     }
 
-    // Display directory contents in DOS-like format
-    printf(" Volume in drive A has no label\n");
-    printf(" Directory of %s\n\n", dir == NULL ? "\\" : "");
-    printf("FILENAME   EXT    SIZE     DATE       TIME     TYPE\n");
-    printf("----------------------------------------------------\n");
-
-    for (int i = 0; i < entries_found; i++) {
-        DirectoryEntry* entry = &entries[i];
-        if ((unsigned char)entry->filename[0] == 0x00) break;
-        if ((unsigned char)entry->filename[0] == 0xE5) continue;
-        if (!(entry->attributes & (0x10 | 0x20))) continue;
-
-        // Format filename and extension
-        char filename[9] = {0};
-        char extension[4] = {0};
-        strncpy(filename, (const char*)entry->filename, 8);
-        strncpy(extension, (const char*)entry->extension, 3);
-
-        // Extract date and time
-        int day, month, year, hours, minutes, seconds;
-        extract_date(entry->lastWriteDate, &day, &month, &year);
-        extract_time(entry->lastWriteTime, &hours, &minutes, &seconds);
-
-        // Print in DOS-like format
-        if (entry->attributes & 0x10) {  // Directory
-            printf("%-8s   %-3s   <DIR>    %02d-%02d-%04d  %02d:%02d:%02d\n",
-                   filename, extension, day, month, year, hours, minutes, seconds);
-        } else {  // File
-            printf("%-8s   %-3s   %8u  %02d-%02d-%04d  %02d:%02d:%02d\n",
-                   filename, extension, entry->fileSize, day, month, year, hours, minutes, seconds);
-        }
-    }
-
     return entries_found;
 }
 
@@ -202,6 +170,42 @@ bool fat12_change_directory(const char* relativePath) {
     return false;
 }
 
+void print_dir_entries(DirectoryEntry* dir){
+    // Display directory contents in DOS-like format
+    printf(" Volume in drive A has no label\n");
+    printf(" Directory of %s\n\n", dir == NULL ? "\\" : "");
+    printf("FILENAME   EXT    SIZE     DATE       TIME     TYPE\n");
+    printf("----------------------------------------------------\n");
+
+    for (int i = 0; i < entries_found; i++) {
+        DirectoryEntry* entry = &entries[i];
+        if ((unsigned char)entry->filename[0] == 0x00) break;
+        if ((unsigned char)entry->filename[0] == 0xE5) continue;
+        if (!(entry->attributes & (0x10 | 0x20))) continue;
+
+        // Format filename and extension
+        char filename[9] = {0};
+        char extension[4] = {0};
+        strncpy(filename, (const char*)entry->filename, 8);
+        strncpy(extension, (const char*)entry->extension, 3);
+
+        // Extract date and time
+        int day, month, year, hours, minutes, seconds;
+        extract_date(entry->lastWriteDate, &day, &month, &year);
+        extract_time(entry->lastWriteTime, &hours, &minutes, &seconds);
+
+        // Print in DOS-like format
+        if (entry->attributes & 0x10) {  // Directory
+            printf("%-8s   %-3s   <DIR>    %02d-%02d-%04d  %02d:%02d:%02d\n",
+                   filename, extension, day, month, year, hours, minutes, seconds);
+        } else {  // File
+            printf("%-8s   %-3s   %8u  %02d-%02d-%04d  %02d:%02d:%02d\n",
+                   filename, extension, entry->fileSize, day, month, year, hours, minutes, seconds);
+        }
+    }
+    printf("\n");
+}
+
 // Read directory based on the specified path
 bool fat12_read_dir(const char* path) {
     printf("-----Reading directory: %s-----\n", path ? path : "(current directory)");
@@ -213,6 +217,7 @@ bool fat12_read_dir(const char* path) {
             printf("Failed to read current directory contents.\n");
             return false;
         }
+        print_dir_entries(currentDir);
         return true;
     }
 
@@ -259,5 +264,198 @@ bool fat12_read_dir(const char* path) {
         return false;
     }
 
+    print_dir_entries(currentDir);
     return true;
 }
+
+Fat12File* fat12_open_file(const char* filename, const char* mode) {
+    // Find the file in the current directory
+    int num_entries = fat12_read_dir_entries(currentDir);
+    if (num_entries < 0) {
+        printf("Failed to read directory contents.\n");
+        return NULL;
+    }
+
+    DirectoryEntry* file_entry = NULL;
+    for (int i = 0; i < num_entries; i++) {
+        DirectoryEntry* entry = &entries[i];
+        if ((unsigned char)entry->filename[0] == 0x00) break;
+        if ((unsigned char)entry->filename[0] == 0xE5) continue;
+        if (entry->attributes & 0x10) continue; // Skip directories
+
+        char entry_name[9] = {0};
+        char entry_ext[4] = {0};
+        strncpy(entry_name, (const char*)entry->filename, 8);
+        strncpy(entry_ext, (const char*)entry->extension, 3);
+
+        // Normalize the filename
+        char trimmed_name[13] = {0}; // Buffer for 8.3 format (8 + 1 + 3 + null terminator)
+        str_trim_spaces(entry_name, trimmed_name, 8);
+
+        // Append extension if present
+        if (entry_ext[0] != ' ') {
+            strncat(trimmed_name, ".", 1);
+            strncat(trimmed_name, entry_ext, 3);
+        }
+
+        if (strcmp(trimmed_name, filename) == 0) {
+            file_entry = entry;
+            break;
+        }
+    }
+
+    if (file_entry == NULL) {
+        printf("File not found: %s\n", filename);
+        return NULL;
+    }
+
+    // Allocate memory for the file structure
+    Fat12File* file = malloc(sizeof(Fat12File));
+    if (file == NULL) {
+        printf("Failed to allocate memory for file structure.\n");
+        return NULL;
+    }
+
+    // Initialize the file structure
+    file->base = malloc(file_entry->fileSize);
+    if (file->base == NULL) {
+        printf("Failed to allocate memory for file buffer.\n");
+        free(file);
+        return NULL;
+    }
+
+    file->ptr = file->base;
+    file->startCluster = file_entry->firstClusterLow;
+    file->size = file_entry->fileSize;
+    file->position = 0;
+    strncpy((char*)file->name, filename, sizeof(file->name) - 1); // Copy the filename safely
+    file->name[sizeof(file->name) - 1] = '\0'; // Ensure null-termination
+    file->mode = mode;
+
+    printf("File opened: %s, Size: %d bytes\n", file->name, file->size);
+    return file;
+}
+
+/**
+ * Converts a logical sector number to CHS (Cylinder-Head-Sector) format.
+ *
+ * @param logicalSector The logical sector number to convert.
+ * @param sectorsPerTrack The number of sectors per track on the disk.
+ * @param numberOfHeads The number of heads (sides) on the disk.
+ * @param track Pointer to an integer where the calculated track (cylinder) will be stored.
+ * @param head Pointer to an integer where the calculated head (side) will be stored.
+ * @param sector Pointer to an integer where the calculated sector (1-based) will be stored.
+ *
+ * This function calculates the CHS values based on the given logical sector number.
+ * The sector number in CHS is 1-based, so 1 is added after calculating the sector value.
+ */
+void logical_to_chs(int logicalSector, int sectorsPerTrack, int numberOfHeads, int* track, int* head, int* sector) {
+    // Calculate the track (cylinder) by dividing the logical sector by the total number of sectors per cylinder
+    // Total sectors per cylinder = sectorsPerTrack * numberOfHeads
+    *track = logicalSector / (sectorsPerTrack * numberOfHeads);
+
+    // Calculate the head (side) by dividing the logical sector by the number of sectors per track
+    // and taking the remainder when divided by the number of heads
+    *head = (logicalSector / sectorsPerTrack) % numberOfHeads;
+
+    // Calculate the sector within the track by taking the remainder of the logical sector divided by the number of sectors per track
+    // Add 1 because sector numbers in CHS format are typically 1-based
+    *sector = (logicalSector % sectorsPerTrack) + 1;
+}
+
+int fat12_read_file(Fat12File* file, void* buffer, size_t size) {
+    if (file == NULL) {
+        printf("File not found.\n");
+        return 0;
+    }
+
+    if (file->position + size > file->size) {
+        size = file->size - file->position; // Ensure we don't read beyond the end of the file
+    }
+
+    unsigned int bytes_read = 0;
+    unsigned int currentCluster = file->startCluster;
+    unsigned int clusterSize = SECTOR_SIZE * fat12.bootSector.sectorsPerCluster;
+
+    // Adjust starting point if the file's position is not at the beginning
+    unsigned int startOffset = file->position % clusterSize;
+    unsigned char sectorBuffer[SECTOR_SIZE];
+
+    const int sectorsPerTrack = 18; // Typical for 1.44MB floppy disk
+    const int numberOfHeads = 2;    // Double-sided floppy
+
+    while (bytes_read < size && currentCluster >= 0x002 && currentCluster < 0xFF8) {
+        // Calculate the logical sector for the current cluster
+        unsigned int firstSectorOfCluster = fat12.dataStart + (currentCluster - 2) * fat12.bootSector.sectorsPerCluster;
+
+        for (unsigned int i = 0; i < fat12.bootSector.sectorsPerCluster && bytes_read < size; i++) {
+            int logicalSector = firstSectorOfCluster + i;
+            int track, head, sector;
+
+            // Use the new method to convert logical sector to CHS
+            logical_to_chs(logicalSector, sectorsPerTrack, numberOfHeads, &track, &head, &sector);
+
+            // Read the sector into the buffer
+            if (!fdc_read_sector(0, head, track, sector, sectorBuffer)) {
+                printf("Error reading file sector at track %d, head %d, sector %d.\n", track, head, sector);
+                return bytes_read; // Return bytes read so far on failure
+            }
+
+            // Determine the number of bytes to copy from the current sector
+            unsigned int offset = (bytes_read == 0) ? startOffset : 0;
+            unsigned int remaining = SECTOR_SIZE - offset;
+            unsigned int bytes_to_read = (size - bytes_read < remaining) ? size - bytes_read : remaining;
+
+            memcpy((unsigned char*)buffer + bytes_read, sectorBuffer + offset, bytes_to_read);
+            bytes_read += bytes_to_read;
+            file->position += bytes_to_read;
+
+            if (bytes_read >= size) {
+                break;
+            }
+        }
+
+        // Get the next cluster from the FAT
+        currentCluster = get_next_cluster(currentCluster);
+    }
+
+    // Null-terminate the buffer to ensure proper string output if applicable
+    if (bytes_read < size) {
+        ((char*)buffer)[bytes_read] = '\0';
+    } else {
+        ((char*)buffer)[size - 1] = '\0'; // Null-terminate at the end if size limit is reached
+    }
+
+    printf("Completed reading %d bytes from file %s into buffer.\n", bytes_read, file->name);
+
+    return bytes_read;
+}
+
+void print_file_content(Fat12File* file) {
+    if (file == NULL) {
+        printf("Invalid file handle.\n");
+        return;
+    }
+
+    char* buffer = malloc(file->size + 1); // Allocate buffer with space for null terminator
+    // Ensure buffer allocation was successful
+    memset(buffer, 0, file->size + 1);
+    if (buffer == NULL) {
+        printf("Memory allocation failed.\n");
+        return;
+    }
+
+    int bytesRead = fat12_read_file(file, buffer, file->size);
+    if (bytesRead > 0) {
+        printf("File contents:\n%s\n", buffer);
+
+        // Print the file content in hex format
+        hex_dump((unsigned char*)buffer, file->size);
+
+    } else {
+        printf("Failed to read file content.\n");
+    }
+
+    free(buffer);
+}
+

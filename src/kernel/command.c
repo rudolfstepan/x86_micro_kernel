@@ -65,19 +65,19 @@ void call_irq(int irq) {
     int int_number = irq + 0x20;
 
     switch (int_number) {
-        case 0x20:
-            __asm__ __volatile__("int $0x20");
-            break;
-        case 0x21:
-            __asm__ __volatile__("int $0x21");
-            break;
+    case 0x20:
+        __asm__ __volatile__("int $0x20");
+        break;
+    case 0x21:
+        __asm__ __volatile__("int $0x21");
+        break;
         // ... Handle other cases accordingly ...
-        case 0x80:
-            __asm__ __volatile__("int $0x80");
-            break;
-        default:
-            // Handle invalid IRQ numbers
-            break;
+    case 0x80:
+        __asm__ __volatile__("int $0x80");
+        break;
+    default:
+        // Handle invalid IRQ numbers
+        break;
     }
 }
 
@@ -85,54 +85,89 @@ void call_irq(int irq) {
 void openFile(const char* path) {
     printf("Opening file: %s\n", path);
 
-    File* file = fopen(path, "r");
-    if (file == NULL) {
-        printf("File not found: %s\n", path);
-        return;
+    switch (current_drive->type) {
+    case DRIVE_TYPE_ATA:
+
+        File* file = fopen(path, "r");
+        if (file == NULL) {
+            printf("File not found: %s\n", path);
+            return;
+        }
+
+        printf("Name: %s\n", file->name);
+        printf("Size: %d\n", file->size);
+
+        char* buffer = (char*)malloc(sizeof(char) * file->size);
+        if (buffer == NULL) {
+            printf("Failed to allocate memory for file buffer\n");
+            return;
+        }
+
+        // read the file into the buffer
+        int result = read_file(file, buffer, file->size);
+
+        if (result == 0) {
+            printf("Failed to read file\n");
+            return;
+        }
+
+        printf("File contents:\n");
+        printf("%s\n", buffer);
+
+        secure_free(buffer, sizeof(buffer));  // Clear the buffer
+        break;
+
+    case DRIVE_TYPE_FDD:
+    {
+        Fat12File* file = fat12_open_file(path, "r");
+        if (file == NULL) {
+            printf("File not found: %s\n", path);
+            return;
+        }
+
+        // char* buffer = (char*)malloc(sizeof(char) * file->size);
+        // if (buffer == NULL) {
+        //     printf("Failed to allocate memory for file buffer\n");
+        //     return;
+        // }
+
+        // // read the file into the buffer
+        // int result = fat12_read_file(file, buffer, file->size);
+        // if (result == 0) {
+        //     printf("Failed to read file\n");
+        //     return;
+        // }
+
+        printf("File contents:\n");
+        print_file_content(file);
+        // secure_free(buffer, sizeof(buffer));  // Clear the buffer
     }
+    break;
 
-    printf("Name: %s\n", file->name);
-    printf("Size: %d\n", file->size);
-
-    char* buffer = (char*)malloc(sizeof(char) * file->size);
-    if (buffer == NULL) {
-        printf("Failed to allocate memory for file buffer\n");
-        return;
+    default:
+        break;
     }
-
-    // read the file into the buffer
-    int result = fread(buffer, file->size, file);
-
-    if (result == 0) {
-        printf("Failed to read file\n");
-        return;
-    }
-
-    printf("File contents:\n");
-    printf("%s\n", buffer);
-
-    secure_free(buffer, sizeof(buffer));  // Clear the buffer
 }
 
 // ---------------------------------------------------------------------------------------------
 // Command handler functions
 // ---------------------------------------------------------------------------------------------
-void handle_mem(int arg_count, char **arguments) {
+void handle_mem(int arg_count, char** arguments) {
     print_memory_map(sys_mb_info);
 }
 
-void handle_dump(int arg_count, char **arguments) {
+void handle_dump(int arg_count, char** arguments) {
     uint32_t start_address = 0x80000000, end_address = 0x80000100;
     if (arg_count > 0) start_address = (uint32_t)strtoul(arguments[0], NULL, 16);
     if (arg_count > 1) end_address = (uint32_t)strtoul(arguments[1], NULL, 16);
     memory_dump(start_address, end_address);
 }
 
-void handle_cls(int arg_count, char **arguments) {
+void handle_cls(int arg_count, char** arguments) {
     clear_screen();
 }
 
-void handle_drives(int arg_count, char **arguments) {
+void handle_drives(int arg_count, char** arguments) {
     printf("Available drives:\n");
     list_detected_drives();
 }
@@ -140,34 +175,33 @@ void handle_drives(int arg_count, char **arguments) {
 /// @brief Mount an attached drive
 /// @param arg_count 
 /// @param arguments 
-void handle_mount(int arg_count, char **arguments) {
+void handle_mount(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("Mount command without arguments\n");
     } else {
         str_to_lower(arguments[0]);
         printf("Try mount drive: %s\n", arguments[0]);
         current_drive = get_drive_by_name(arguments[0]);
-        if(current_drive == NULL){
+        if (current_drive == NULL) {
             printf("drive: %s not found\n", arguments[0]);
-        }else{
+        } else {
             printf("Mounting drive \n");
 
-            switch (current_drive->type)
-            {
-                case DRIVE_TYPE_ATA:
-                    printf("Init fs on ATA drive %s: %s with %u sectors\n", current_drive->name, current_drive->model, current_drive->sectors);
-                    // Initialize file system for ATA drive
-                    fat32_init_fs(current_drive->base, current_drive->is_master);
-                    break;
-                case DRIVE_TYPE_FDD:
-                    printf("Init fs on FDD %s with CHS %u/%u/%u\n", current_drive->name, current_drive->cylinder, current_drive->head, current_drive->sector);
-                    // Initialize file system or handling code for FDD
-                    // Call fat12_init_fs as part of FDD initialization
-                    fat12_init_fs();
-                    break;
+            switch (current_drive->type) {
+            case DRIVE_TYPE_ATA:
+                printf("Init fs on ATA drive %s: %s with %u sectors\n", current_drive->name, current_drive->model, current_drive->sectors);
+                // Initialize file system for ATA drive
+                fat32_init_fs(current_drive->base, current_drive->is_master);
+                break;
+            case DRIVE_TYPE_FDD:
+                printf("Init fs on FDD %s with CHS %u/%u/%u\n", current_drive->name, current_drive->cylinder, current_drive->head, current_drive->sector);
+                // Initialize file system or handling code for FDD
+                // Call fat12_init_fs as part of FDD initialization
+                fat12_init_fs();
+                break;
 
-                default:
-                    break;
+            default:
+                break;
             }
 
             strcpy(current_path, "/");
@@ -178,27 +212,26 @@ void handle_mount(int arg_count, char **arguments) {
 /// @brief List the directory content
 /// @param arg_count 
 /// @param arguments 
-void handle_ls(int arg_count, char **arguments) {
-    unsigned int size = 1024;  
-    char *buffer = (char *)malloc(size);
-    if (!buffer) {
-        printf("Failed to allocate memory\n");
-        return;
-    }
-    const char *directory = (arg_count == 0) ? current_path : arguments[0];
-    if(current_drive == NULL){
+void handle_ls(int arg_count, char** arguments) {
+    const char* directory = (arg_count == 0) ? current_path : arguments[0];
+    if (current_drive == NULL) {
         printf("No drive mounted\n");
         return;
     }
-    readdir(directory, buffer, &size, current_drive->type);
+    switch (current_drive->type) {
+    case DRIVE_TYPE_ATA:
+        fat32_read_dir(directory);
+        break;
+    case DRIVE_TYPE_FDD:
+        fat12_read_dir(directory);
+        break;
 
-    printf("%s\n", buffer);
-    memset(buffer, 0, size);  // Securely clear the buffer
-    free(buffer);
-    buffer = NULL;
+    default:
+        break;
+    }
 }
 
-void handle_cd(int arg_count, char **arguments) {
+void handle_cd(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("CD command without arguments\n");
     } else {
@@ -206,19 +239,19 @@ void handle_cd(int arg_count, char **arguments) {
         char new_path[256] = "/";
         snprintf(new_path, sizeof(current_path), "%s/%s", current_path, arguments[0]);
 
-        if(current_drive == NULL){
+        if (current_drive == NULL) {
             printf("No drive mounted\n");
             return;
         }
 
-        if(current_drive->type == DRIVE_TYPE_ATA){
-            if(fat32_change_directory(new_path)){
+        if (current_drive->type == DRIVE_TYPE_ATA) {
+            if (fat32_change_directory(new_path)) {
                 strcpy(current_path, new_path);
                 printf("Set directory to: %s\n", arguments[0]);
             }
-        }else if(current_drive->type == DRIVE_TYPE_FDD){
+        } else if (current_drive->type == DRIVE_TYPE_FDD) {
             // notice that the path is relative to the current directory
-            if(fat12_change_directory(new_path)){
+            if (fat12_change_directory(new_path)) {
                 strcpy(current_path, new_path);
                 printf("Set directory to: %s\n", arguments[0]);
             }
@@ -226,11 +259,11 @@ void handle_cd(int arg_count, char **arguments) {
     }
 }
 
-void handle_help(int arg_count, char **arguments) {
+void handle_help(int arg_count, char** arguments) {
     printf("Available commands: MEM, DUMP, CLS, LS, CD, ...\n");
 }
 
-void handle_mkdir(int arg_count, char **arguments) {
+void handle_mkdir(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("MKDIR command without arguments\n");
     } else {
@@ -238,7 +271,7 @@ void handle_mkdir(int arg_count, char **arguments) {
     }
 }
 
-void handle_rmdir(int arg_count, char **arguments) {
+void handle_rmdir(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("RMDIR command without arguments\n");
     } else {
@@ -246,7 +279,7 @@ void handle_rmdir(int arg_count, char **arguments) {
     }
 }
 
-void handle_mkfile(int arg_count, char **arguments) {
+void handle_mkfile(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("MKFILE command without arguments\n");
     } else {
@@ -254,7 +287,7 @@ void handle_mkfile(int arg_count, char **arguments) {
     }
 }
 
-void handle_rmfile(int arg_count, char **arguments) {
+void handle_rmfile(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("RMFILE command without arguments\n");
     } else {
@@ -262,7 +295,7 @@ void handle_rmfile(int arg_count, char **arguments) {
     }
 }
 
-void handle_run(int arg_count, char **arguments) {
+void handle_run(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("RUN command without arguments\n");
     } else {
@@ -270,7 +303,7 @@ void handle_run(int arg_count, char **arguments) {
     }
 }
 
-void handle_load(int arg_count, char **arguments) {
+void handle_load(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("LOAD command without arguments\n");
     } else {
@@ -278,7 +311,7 @@ void handle_load(int arg_count, char **arguments) {
     }
 }
 
-void handle_sys(int arg_count, char **arguments) {
+void handle_sys(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("SYS command without arguments\n");
     } else {
@@ -287,7 +320,7 @@ void handle_sys(int arg_count, char **arguments) {
     }
 }
 
-void handle_open(int arg_count, char **arguments) {
+void handle_open(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("OPEN command without arguments\n");
     } else {
@@ -295,19 +328,19 @@ void handle_open(int arg_count, char **arguments) {
     }
 }
 
-void handle_read_time(int arg_count, char **arguments) {
+void handle_read_time(int arg_count, char** arguments) {
     int hour, minute, second;
     read_time(&hour, &minute, &second);
     printf("Time: %02d:%02d:%02d\n", hour, minute, second);
 }
 
-void handle_read_date(int arg_count, char **arguments) {
+void handle_read_date(int arg_count, char** arguments) {
     int year, month, day;
     read_date(&year, &month, &day);
     printf("Date: %d-%02d-%02d\n", year, month, day);
 }
 
-void handle_set_time(int arg_count, char **arguments) {
+void handle_set_time(int arg_count, char** arguments) {
     if (arg_count < 3) {
         printf("SETTIME command requires hour, minute, and second\n");
     } else {
@@ -318,7 +351,7 @@ void handle_set_time(int arg_count, char **arguments) {
     }
 }
 
-void handle_set_date(int arg_count, char **arguments) {
+void handle_set_date(int arg_count, char** arguments) {
     if (arg_count < 3) {
         printf("SETDATE command requires year, month, and day\n");
     } else {
@@ -329,7 +362,7 @@ void handle_set_date(int arg_count, char **arguments) {
     }
 }
 
-void handle_irq(int arg_count, char **arguments) {
+void handle_irq(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("IRQ command without arguments\n");
     } else {
@@ -340,7 +373,7 @@ void handle_irq(int arg_count, char **arguments) {
 }
 
 // TODO: Implement sleep function
-void handle_sleep(int arg_count, char **arguments) {
+void handle_sleep(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("SLEEP command without arguments\n");
     } else {
@@ -350,16 +383,16 @@ void handle_sleep(int arg_count, char **arguments) {
     }
 }
 // TODO: Implement exit function
-void handle_exit(int arg_count, char **arguments) {
+void handle_exit(int arg_count, char** arguments) {
     printf("Exiting command interpreter\n");
     // Implement necessary cleanup and exit logic for the kernel or environment
     //exit(0);
 }
 
-void handle_fdd(int arg_count, char **arguments) {
-    if(arguments[0] == NULL){
+void handle_fdd(int arg_count, char** arguments) {
+    if (arguments[0] == NULL) {
         debug_read_bootsector(1);
-    }else{
+    } else {
 
         int sector = strtoul(arguments[0], NULL, 10);
 
@@ -406,9 +439,9 @@ Command command_table[] = {
 // Split the input buffer into command and arguments
 // will be called by the kernel when the Enter key is pressed by the user
 // ---------------------------------------------------------------------------------------------
-void process_command(char *input_buffer) {
+void process_command(char* input_buffer) {
     char command[32];
-    char *arguments[10] = {0}; // Adjust size as needed
+    char* arguments[10] = { 0 }; // Adjust size as needed
     int arg_count = split_input(input_buffer, command, arguments, 10, 50);
 
     if (command[0] == '\0') return;
@@ -421,7 +454,7 @@ void process_command(char *input_buffer) {
     unsigned int i;
     for (i = 0; i < NUM_COMMANDS; i++) {
         if (strcmp(command, command_table[i].name) == 0) {
-            command_table[i].handler(arg_count, (char **)arguments);
+            command_table[i].handler(arg_count, (char**)arguments);
             break;
         }
     }

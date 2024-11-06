@@ -10,29 +10,25 @@
 // Directory Handling Functions
 // the following functions are defined in the filesystem/fat32/fat32.c file
 // -----------------------------------------------------------------
-int mkdir(const char* path){
+int mkdir(const char* path) {
     return create_directory(path);
 }
 
-int rmdir(const char* path){
+int rmdir(const char* path) {
     return delete_directory(path);
 }
 
-int readdir(const char *path, char *buffer, unsigned int *size, drive_type_t driveType) {
-
-    if(driveType == DRIVE_TYPE_NONE){
+int readdir(const char* path, char* buffer, unsigned int* size, drive_type_t driveType) {
+    if (driveType == DRIVE_TYPE_NONE) {
         printf("Invalid drive type\n");
         return -1;
     }
-
-    if(driveType == DRIVE_TYPE_ATA){
+    if (driveType == DRIVE_TYPE_ATA) {
         return fat32_read_dir(path);
     }
-
-    if(driveType == DRIVE_TYPE_FDD){
+    if (driveType == DRIVE_TYPE_FDD) {
         return fat12_read_dir(path);
     }
-
     return -1;
 }
 
@@ -41,18 +37,18 @@ int readdir(const char *path, char *buffer, unsigned int *size, drive_type_t dri
 // -----------------------------------------------------------------
 
 File* fopen(const char* filename, const char* mode) {
-    return open_file(filename, mode);
+    return fat32_open_file(filename, mode);
 }
 
 int fread(void* buffer, int size, File* fd) {
     return read_file(fd, buffer, size);
 }
 
-int rmfile(const char* path){
+int rmfile(const char* path) {
     return delete_file(path);
 }
 
-int mkfile(const char* path){
+int mkfile(const char* path) {
     return create_file(path);
 }
 
@@ -61,7 +57,7 @@ int mkfile(const char* path){
 // -----------------------------------------------------------------
 
 // Helper function to reverse a string
-static void reverse(char *str, int length) {
+static void reverse(char* str, int length) {
     int start = 0;
     int end = length - 1;
     while (start < end) {
@@ -74,7 +70,7 @@ static void reverse(char *str, int length) {
 }
 
 // Helper function to convert an integer to a string
-static int int_to_str(int num, char *str, int base) {
+static int int_to_str(int num, char* str, int base) {
     int i = 0;
     bool is_negative = false;
 
@@ -201,7 +197,7 @@ void print_hex(unsigned int value) {
 
 void print_hex_padded(unsigned int value, int width) {
     char hex_buffer[33]; // Enough for 32 digits plus a null terminator
-    char *ptr = &hex_buffer[32];
+    char* ptr = &hex_buffer[32];
     *ptr = '\0';
 
     do {
@@ -282,87 +278,87 @@ int printf(const char* format, ...) {
                 format += 2;       // Skip past 'llx'
             } else {
                 switch (*format) {
-                    case 'c': {
-                        char c = (char)va_arg(args, int);
-                        vga_write_char(c);
-                        break;
-                    }
-                    case 's': {
-                        char* s = va_arg(args, char*);
-                        int len = strlen(s);
+                case 'c': {
+                    char c = (char)va_arg(args, int);
+                    vga_write_char(c);
+                    break;
+                }
+                case 's': {
+                    char* s = va_arg(args, char*);
+                    int len = strlen(s);
 
-                        // Apply precision limit if specified
-                        if (precision >= 0 && precision < len) {
-                            len = precision;
-                        }
+                    // Apply precision limit if specified
+                    if (precision >= 0 && precision < len) {
+                        len = precision;
+                    }
 
-                        // Calculate padding
-                        int pad = (width > len) ? width - len : 0;
+                    // Calculate padding
+                    int pad = (width > len) ? width - len : 0;
 
-                        if (left_align) {
-                            // Print the string first, then padding
-                            for (int i = 0; i < len; i++) {
-                                vga_write_char(s[i]);
-                            }
-                            for (int i = 0; i < pad; i++) {
-                                vga_write_char(' ');
-                            }
-                        } else {
-                            // Print padding first, then the string
-                            for (int i = 0; i < pad; i++) {
-                                vga_write_char(zero_padding ? '0' : ' ');
-                            }
-                            for (int i = 0; i < len; i++) {
-                                vga_write_char(s[i]);
-                            }
+                    if (left_align) {
+                        // Print the string first, then padding
+                        for (int i = 0; i < len; i++) {
+                            vga_write_char(s[i]);
                         }
-                        break;
+                        for (int i = 0; i < pad; i++) {
+                            vga_write_char(' ');
+                        }
+                    } else {
+                        // Print padding first, then the string
+                        for (int i = 0; i < pad; i++) {
+                            vga_write_char(zero_padding ? '0' : ' ');
+                        }
+                        for (int i = 0; i < len; i++) {
+                            vga_write_char(s[i]);
+                        }
                     }
-                    case 'u': {
-                        unsigned int u = va_arg(args, unsigned int);
-                        char buffer[32];
-                        int_to_str(u, buffer, 10);
-                        int len = strlen(buffer);
-                        int pad = width - len;
-                        if (width_specified && pad > 0) {
-                            for (int i = 0; i < pad; i++) vga_write_char(zero_padding ? '0' : ' ');
-                        }
-                        char* s = buffer;
-                        while (*s) {
-                            vga_write_char(*s++);
-                        }
-                        break;
+                    break;
+                }
+                case 'u': {
+                    unsigned int u = va_arg(args, unsigned int);
+                    char buffer[32];
+                    int_to_str(u, buffer, 10);
+                    int len = strlen(buffer);
+                    int pad = width - len;
+                    if (width_specified && pad > 0) {
+                        for (int i = 0; i < pad; i++) vga_write_char(zero_padding ? '0' : ' ');
                     }
-                    case 'd': {
-                        int i = va_arg(args, int);
-                        char buffer[32];
-                        int_to_str(i, buffer, 10);
-                        int len = strlen(buffer);
-                        int pad = width - len;
-                        if (width_specified && pad > 0) {
-                            for (int i = 0; i < pad; i++) vga_write_char(zero_padding ? '0' : ' ');
-                        }
-                        char* s = buffer;
-                        while (*s) {
-                            vga_write_char(*s++);
-                        }
-                        break;
+                    char* s = buffer;
+                    while (*s) {
+                        vga_write_char(*s++);
                     }
-                    case 'p': {
-                        void* p = va_arg(args, void*);
-                        print_hex((unsigned int)p); // Assuming 32-bit addresses
-                        break;
+                    break;
+                }
+                case 'd': {
+                    int i = va_arg(args, int);
+                    char buffer[32];
+                    int_to_str(i, buffer, 10);
+                    int len = strlen(buffer);
+                    int pad = width - len;
+                    if (width_specified && pad > 0) {
+                        for (int i = 0; i < pad; i++) vga_write_char(zero_padding ? '0' : ' ');
                     }
-                    case 'X': {
-                        unsigned int x = va_arg(args, unsigned int);
-                        char buffer[32];
-                        int_to_hex_str(x, buffer, width, zero_padding); // Adjusted function to handle padding
-                        char* s = buffer;
-                        while (*s) {
-                            vga_write_char(*s++);
-                        }
-                        break;
+                    char* s = buffer;
+                    while (*s) {
+                        vga_write_char(*s++);
                     }
+                    break;
+                }
+                case 'p': {
+                    void* p = va_arg(args, void*);
+                    print_hex((unsigned int)p); // Assuming 32-bit addresses
+                    break;
+                }
+                case 'X': {
+                    unsigned int x = va_arg(args, unsigned int);
+                    char buffer[32];
+                    int_to_hex_str(x, buffer, width, zero_padding); // Adjusted function to handle padding
+                    char* s = buffer;
+                    while (*s) {
+                        vga_write_char(*s++);
+                    }
+                    break;
+                }
                 }
             }
         } else {
@@ -376,12 +372,12 @@ int printf(const char* format, ...) {
 }
 
 // Main sprintf implementation
-int sprintf(char *buffer, const char *format, ...) {
+int sprintf(char* buffer, const char* format, ...) {
     va_list args;
     va_start(args, format);
 
-    char *str = buffer;
-    const char *p = format;
+    char* str = buffer;
+    const char* p = format;
     char temp[20];  // Temporary buffer for integer conversion
     int written = 0;
 
@@ -390,7 +386,7 @@ int sprintf(char *buffer, const char *format, ...) {
             p++;  // Move past '%'
 
             if (*p == 's') {  // String
-                char *arg = va_arg(args, char *);
+                char* arg = va_arg(args, char*);
                 while (*arg != '\0') {
                     *str++ = *arg++;
                     written++;

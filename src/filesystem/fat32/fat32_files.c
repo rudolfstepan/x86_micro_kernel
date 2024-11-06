@@ -114,9 +114,6 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
 
         char currentName[13]; // Format the filename
         formatFilename(currentName, entries[j].name);
-
-        printf("+++Found file: %s\n", currentName);
-
         if (strcmp(currentName, filename) == 0) {
             struct FAT32DirEntry* foundEntry = malloc(sizeof(struct FAT32DirEntry));
             if (foundEntry == NULL) {
@@ -177,8 +174,7 @@ bool delete_file(const char* filename) {
 }
 
 // Function to open a file and return a pointer to the file data
-File* open_file(const char* filename, const char* mode) {
-
+File* fat32_open_file(const char* filename, const char* mode) {
     struct FAT32DirEntry* entry = findFileInDirectory(filename);
     if (entry == NULL) {
         printf("File not found.\n");
