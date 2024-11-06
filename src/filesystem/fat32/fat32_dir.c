@@ -61,7 +61,7 @@ int fat32_read_dir(const char *path, char *buffer, unsigned int *size){
     return true;
 }
 
-bool change_directory(const char* path) {
+bool fat32_change_directory(const char* path) {
     unsigned int targetCluster = current_directory_cluster; // Start from the current directory
     char tempPath[MAX_PATH_LENGTH]; // Temporary path buffer
     strcpy(tempPath, path);

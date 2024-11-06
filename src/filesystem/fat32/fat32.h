@@ -14,9 +14,6 @@
 #define DIRECTORY_ENTRY_SIZE 32  // Size of a directory entry in FAT32
 #define ATTR_DIRECTORY 0x10
 
-#define SUCCESS 0
-#define FAILURE -1
-
 #define FAT32_EOC_MIN 0x0FFFFFF8
 #define FAT32_EOC_MAX 0x0FFFFFFF
 #define INVALID_CLUSTER 0xFFFFFFFF
@@ -118,7 +115,7 @@ unsigned int find_next_cluster(struct Fat32BootSector* bs, const char *dirName, 
 void read_cluster_dir_entries(unsigned int currentCluster);
 void read_cluster_dir_entries_to_buffer(unsigned int currentCluster, char *buffer, unsigned int *size);
 struct FAT32DirEntry* findFileInDirectory(const char* filename);
-bool change_directory(const char *path);
+bool fat32_change_directory(const char *path);
 
 // File and Data Management
 void readFileData(unsigned int startCluster, char* buffer, unsigned int size);

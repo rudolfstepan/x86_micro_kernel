@@ -46,8 +46,8 @@ typedef struct {
     uint16_t      createDate;        // Creation date
     uint16_t      lastAccessDate;    // Last access date
     uint16_t      firstClusterHigh;  // High word of first cluster (FAT16/FAT32)
-    uint16_t      writeTime;         // Last write time
-    uint16_t      writeDate;         // Last write date
+    uint16_t      lastWriteTime;     // Last write time
+    uint16_t      lastWriteDate;     // Last write date
     uint16_t      firstClusterLow;   // Low word of first cluster
     uint32_t      fileSize;          // File size in bytes
 } DirectoryEntry;
@@ -60,10 +60,14 @@ typedef struct {
     int fatStart;           // Start sector of the FAT
     int rootDirStart;       // Start sector of the Root Directory
     int dataStart;          // Start sector of the Data region
+    uint8_t* fat;           // Pointer to the FAT table in memory
 } FAT12;
 #pragma pack(pop)
 
 bool fat12_init_fs();
 bool fat12_read_dir(const char* path);
+int fat12_read_dir_entries(DirectoryEntry* dir);
+bool fat12_change_directory(const char* relativePath);
+
 
 #endif // FAT12_H

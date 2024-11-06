@@ -163,11 +163,7 @@ void handle_mount(int arg_count, char **arguments) {
                     printf("Init fs on FDD %s with CHS %u/%u/%u\n", current_drive->name, current_drive->cylinder, current_drive->head, current_drive->sector);
                     // Initialize file system or handling code for FDD
                     // Call fat12_init_fs as part of FDD initialization
-                    if (fat12_init_fs()) {
-                        printf("FAT12 file system initialized successfully.\n");
-                    } else {
-                        printf("FAT12 initialization failed.\n");
-                    }
+                    fat12_init_fs();
                     break;
 
                 default:
@@ -206,11 +202,26 @@ void handle_cd(int arg_count, char **arguments) {
     if (arg_count == 0) {
         printf("CD command without arguments\n");
     } else {
+        str_trim_end(arguments[0], '/');  // Remove trailing slash from the path
         char new_path[256] = "/";
-        snprintf(new_path, sizeof(current_path), "%s%s/", current_path, arguments[0]);
-        if(change_directory(new_path)){
-            strcpy(current_path, new_path);
-            printf("Set directory to: %s\n", arguments[0]);
+        snprintf(new_path, sizeof(current_path), "%s%s", current_path, arguments[0]);
+
+        if(current_drive == NULL){
+            printf("No drive mounted\n");
+            return;
+        }
+
+        if(current_drive->type == DRIVE_TYPE_ATA){
+            if(fat32_change_directory(new_path)){
+                strcpy(current_path, new_path);
+                printf("Set directory to: %s\n", arguments[0]);
+            }
+        }else if(current_drive->type == DRIVE_TYPE_FDD){
+            // notice that the path is relative to the current directory
+            if(fat12_change_directory(new_path)){
+                strcpy(current_path, new_path);
+                printf("Set directory to: %s\n", arguments[0]);
+            }
         }
     }
 }
@@ -346,7 +357,6 @@ void handle_exit(int arg_count, char **arguments) {
 }
 
 void handle_fdd(int arg_count, char **arguments) {
-
     if(arguments[0] == NULL){
         debug_read_bootsector(1);
     }else{

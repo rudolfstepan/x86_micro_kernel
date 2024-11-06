@@ -391,3 +391,51 @@ void str_trim_end(char *str, char ch) {
         len--;
     }
 }
+
+void str_trim_spaces(const char* input, char* output, int max_len) {
+    int j = 0;
+    
+    for (int i = 0; i < max_len; i++) {
+        if (input[i] != ' ' && input[i] != '\0') {
+            output[j] = input[i];
+            j++;
+        }
+    }
+    output[j] = '\0';  // Null-terminate the trimmed output
+}
+
+char* strtok(char* str, const char* delimiters) {
+    static char* last = NULL;  // Holds the last position in the string
+    if (str) {
+        last = str;  // Initialize last if a new string is provided
+    } else if (!last) {
+        return NULL;  // No more tokens
+    }
+
+    // Skip leading delimiters
+    while (*last && strchr(delimiters, *last)) {
+        last++;
+    }
+
+    if (*last == '\0') {
+        last = NULL;  // End of string reached
+        return NULL;
+    }
+
+    // Start of the token
+    char* token_start = last;
+
+    // Move `last` forward until a delimiter or end of string is found
+    while (*last && !strchr(delimiters, *last)) {
+        last++;
+    }
+
+    if (*last) {
+        *last = '\0';  // Null-terminate the token
+        last++;        // Move to the next character after the delimiter
+    } else {
+        last = NULL;   // End of string
+    }
+
+    return token_start;
+}

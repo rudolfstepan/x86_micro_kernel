@@ -36,5 +36,7 @@ void int_to_hex_str(unsigned int value, char* buffer, int width, bool zero_paddi
 void normalize_string(char* dest, const char* src, size_t length);
 char* strchr(const char* str, char c);
 void str_trim_end(char *str, char ch);
+void str_trim_spaces(const char* input, char* output, int max_len);
+char* strtok(char* str, const char* delimiters);
 
 #endif /* STRINGS_H */

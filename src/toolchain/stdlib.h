@@ -1,6 +1,9 @@
 #ifndef MEMORY_H    /* This is an "include guard" */
 #define MEMORY_H
 
+#define SUCCESS 0
+#define FAILURE -1
+
 void initialize_memory_system();
 
 void* malloc(size_t size);

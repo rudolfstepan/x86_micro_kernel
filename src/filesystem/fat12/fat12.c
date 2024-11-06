@@ -1,105 +1,3 @@
-/*
- * FAT12 Disk Reading and Directory Population Process
- *
- * This code implements the process of reading a FAT12 file system from a floppy disk,
- * specifically for a standard 1.44MB disk, and populating the FAT12 structure with 
- * boot sector, FAT table, and root directory information.
- *
- * =============================================================
- * Disk Geometry and Logical to Physical Sector Conversion
- * =============================================================
- * In a 1.44MB floppy disk, the layout typically includes:
- *   - 80 tracks (or cylinders)
- *   - 2 heads (sides), for double-sided disks
- *   - 18 sectors per track
- *
- * To access a specific sector on the disk, we calculate the track, head, and sector
- * values from a logical sector number. This ensures that we read the correct physical
- * location on the disk. The steps are as follows:
- *
- *   1. Calculate Track (Cylinder):
- *      - Formula: track = logical_sector / (sectors_per_track * heads)
- *      - This determines which cylinder (track) the data resides in.
- *
- *   2. Calculate Head:
- *      - Formula: head = (logical_sector / sectors_per_track) % heads
- *      - Dividing by sectors per track gives the position within the current track,
- *        and taking the remainder with the number of heads gives the correct side
- *        of the disk (0 or 1 for double-sided disks).
- *
- *   3. Calculate Sector:
- *      - Formula: sector = (logical_sector % sectors_per_track) + 1
- *      - The sector number within a track is typically 1-based, so after getting the
- *        remainder, we add 1 to match the hardware convention.
- *
- * These values are then passed to `fdc_read_sector` to read a specific sector from 
- * the disk, where:
- *    fdc_read_sector(drive, head, track, sector, buffer)
- *
- * =============================================================
- * FAT12 Initialization Process
- * =============================================================
- * The FAT12 initialization involves the following key steps:
- * 
- *   1. **Read the Boot Sector**:
- *      - The boot sector (first sector on the disk) contains critical information,
- *        such as bytes per sector, sectors per cluster, reserved sectors, FAT count,
- *        root directory entry count, and sectors per FAT.
- *      - This information is stored in the `fat12.bootSector` structure and is used
- *        for calculating the positions of the FAT, root directory, and data regions.
- *
- *   2. **Calculate Key Offsets**:
- *      - Using information from the boot sector, we calculate:
- *          - `fatStart`: Start of the FAT area, which begins after the reserved sectors.
- *          - `rootDirStart`: Start of the root directory, which comes after the FAT area.
- *          - `dataStart`: Start of the data area, which follows the root directory.
- *
- *   3. **Read the FAT Table**:
- *      - The FAT table is located after the reserved sectors. This table maps cluster
- *        chains for files and directories, indicating whether a cluster is free,
- *        in use, or the end of a file.
- *      - We read this table to populate the FAT structure, allowing the file system
- *        to locate files across the clusters.
- *
- *   4. **Read the Root Directory**:
- *      - The root directory is stored in a fixed location immediately after the FAT
- *        table. It consists of a predefined number of 32-byte entries that provide
- *        details for each file or directory, such as name, extension, attributes,
- *        starting cluster, and file size.
- *      - Each entry is processed as follows:
- *          - Entries starting with 0x00 are unused, marking the end of directory entries.
- *          - Entries starting with 0xE5 are deleted entries and are ignored.
- *          - Valid entries are processed, with attributes indicating if they are a
- *            file or a directory.
- *
- * =============================================================
- * Directory Entry Processing
- * =============================================================
- * Each entry in the root directory is processed and displayed. The process for each
- * entry includes:
- * 
- *   - **End of Directory Check**: If the first byte of the filename is 0x00, it 
- *     indicates that no further entries are present. The process stops at this point.
- * 
- *   - **Deleted Entry Check**: If the first byte of the filename is 0xE5, the entry
- *     is marked as deleted and skipped in the processing loop.
- * 
- *   - **Display Information**: For each active entry, the filename, extension,
- *     and attributes are printed, showing whether it is a file or directory.
- *
- * =============================================================
- * Example Directory Output
- * =============================================================
- * After successfully reading the root directory and skipping deleted or unused entries,
- * the program will display each valid entry in the format:
- * 
- *     File: Entry 21: INFO    .TXT
- *     Directory: Entry 12: EXAMPLES   <DIR>
- * 
- * This output provides a basic file listing, similar to a directory listing in MS-DOS.
- *
- */
-
 #include "fat12.h"
 #include "drivers/fdd/fdd.h"
 #include "toolchain/stdio.h"
@@ -107,161 +5,259 @@
 #include "toolchain/strings.h"
 #include "drivers/keyboard/keyboard.h"
 
+// Constants
+#define MAX_PATH_LENGTH 256
+#define MAX_ENTRIES 224
 #define ROOT_ENTRY_SIZE 32
 #define SECTOR_SIZE 512
 #define ROOT_DIR_SECTORS 14
-#define ROOT_DIR_BUFFER_SIZE (SECTOR_SIZE * ROOT_DIR_SECTORS)
 
 // Global structures and buffers
-FAT12 fat12;                                 // Global instance of FAT12 structure
-DirectoryEntry entries[224];                 // Maximum root directory entries for FAT12 (224)
-uint8_t root_buffer[ROOT_DIR_BUFFER_SIZE];   // Buffer to hold the root directory data
-uint8_t boot_sector_buffer[SECTOR_SIZE];     // Buffer to hold the boot sector
+FAT12 fat12;
+DirectoryEntry entries[MAX_ENTRIES];
+DirectoryEntry* currentDir = NULL;
+uint8_t buffer[SECTOR_SIZE];
 
+// Valid filename check
+bool is_valid_filename(const char* filename, size_t length) {
+    const char* valid_chars = "!#$%&'()-@^_`{}~";
+    for (size_t i = 0; i < length; i++) {
+        if (!isalnum(filename[i]) && !strchr(valid_chars, filename[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Read the FAT table and initialize FAT12 structure
 int read_fat12(uint8_t drive, FAT12* fat12) {
-    // Step 1: Read the boot sector (First sector of the disk)
-    if (!fdc_read_sector(drive, 0, 0, 1, boot_sector_buffer)) {
+    if (fat12->bootSector.bootSectorSignature == 0xAA55) {
+        printf("FAT12 already initialized.\n");
+        return true;
+    }
+
+    if (!fdc_read_sector(drive, 0, 0, 1, buffer)) {
         printf("Error reading boot sector.\n");
         return false;
     }
 
-    // Copy boot sector data into FAT12 structure
-    memcpy(&fat12->bootSector, boot_sector_buffer, sizeof(Fat12BootSector));
-
-    // Verify the boot sector signature
+    memcpy(&fat12->bootSector, buffer, sizeof(Fat12BootSector));
     if (fat12->bootSector.bootSectorSignature != 0xAA55) {
         printf("Invalid boot sector signature.\n");
         return false;
     }
 
-    // Calculate the start of the FAT, root directory, and data regions
-    fat12->fatStart = fat12->bootSector.reservedSectors;  // FAT starts after reserved sectors
-    fat12->rootDirStart = fat12->fatStart + (fat12->bootSector.fatCount * fat12->bootSector.sectorsPerFAT);  // Root dir starts after FAT area
-    fat12->dataStart = fat12->rootDirStart + ((fat12->bootSector.rootEntryCount * ROOT_ENTRY_SIZE) / SECTOR_SIZE);  // Data area starts after root directory
+    fat12->fatStart = fat12->bootSector.reservedSectors;
+    fat12->rootDirStart = fat12->fatStart + (fat12->bootSector.fatCount * fat12->bootSector.sectorsPerFAT);
+    fat12->dataStart = fat12->rootDirStart + (fat12->bootSector.rootEntryCount * ROOT_ENTRY_SIZE / SECTOR_SIZE);
 
-    printf("FAT12 initialized:\n");
-    printf("FAT Start Sector: %d\n", fat12->fatStart);
-    printf("Root Directory Start Sector: %d\n", fat12->rootDirStart);
-    printf("Data Region Start Sector: %d\n", fat12->dataStart);
-
-    return true;  // Successfully initialized FAT12 structure
-}
-
-// Function to read the Root Directory into a static global buffer and then parse it
-bool read_root_directory(int drive, DirectoryEntry* root_directory) {
-    // Constants for a standard 1.44MB floppy disk
-    const int sectors_per_track = 18;
-    const int heads = 2;
-
-    // Read each sector of the Root Directory into the global buffer `root_buffer`
-    for (int i = 0; i < ROOT_DIR_SECTORS; i++) {
-        int logical_sector = fat12.rootDirStart + i;
-
-        // Calculate track, head, and sector from logical sector number
-        int track = logical_sector / (sectors_per_track * heads);
-        int head = (logical_sector / sectors_per_track) % heads;
-        int sector = (logical_sector % sectors_per_track) + 1;  // Sectors are typically 1-based
-
-        //printf("Reading Root Directory sector %d (Track: %d, Head: %d, Sector: %d)\n", i, track, head, sector);
-
-        if (!fdc_read_sector(drive, head, track, sector, root_buffer + (i * SECTOR_SIZE))) {
-            printf("Error reading Root Directory sector %d\n", i);
-            return false;
-        }
-    }
-
-    // Copy the data from buffer into the root_directory structure array
-    memcpy(root_directory, root_buffer, ROOT_ENTRY_SIZE * fat12.bootSector.rootEntryCount);
-
+    printf("FAT12 initialized: FAT Start Sector: %d, Root Directory Start Sector: %d, Data Region Start Sector: %d\n", fat12->fatStart, fat12->rootDirStart, fat12->dataStart);
     return true;
 }
 
-bool is_valid_filename_char(char c) {
-    // Checks if the character is a valid ASCII letter, digit, or FAT12 special character
-    return isalnum(c) || strchr("!#$%&'()-@^_`{}~", c);
-}
-
-bool is_valid_filename(const char* filename, size_t length) {
-    for (size_t i = 0; i < length; i++) {
-        if (!is_valid_filename_char(filename[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
+// Initialize FAT12 and load root directory
 bool fat12_init_fs() {
-    if (read_fat12(0, &fat12)) {
-        printf("FAT12 filesystem read successfully.\n");
-
-        
-
-    } else {
-        printf("Failed to read FAT12 filesystem.\n");
+    if (!read_fat12(0, &fat12)) {
+        printf("Failed to initialize FAT12.\n");
         return false;
     }
     return true;
 }
 
-bool fat12_read_dir(const char* path) {
+// Function to calculate and fetch the next cluster in FAT12
+int get_next_cluster(int currentCluster) {
+    int offset = (currentCluster * 3) / 2;
+    uint16_t next_cluster = (offset % 2 == 0)
+        ? (fat12.fat[offset] | (fat12.fat[offset + 1] << 8)) & 0x0FFF
+        : ((fat12.fat[offset] >> 4) | (fat12.fat[offset + 1] << 4)) & 0x0FFF;
 
-    int num_entries = read_root_directory(0, entries);
-    int max_entries = fat12.bootSector.rootEntryCount;
-    printf("Number of entries to read: %d\n", max_entries);
+    return next_cluster >= 0xFF8 ? -1 : next_cluster;
+}
 
-        if (num_entries > 0) {
-            printf("Root directory read successfully.\n\n");
+// Function to extract date from FAT12 format
+void extract_date(uint16_t fat_date, int* day, int* month, int* year) {
+    *day = fat_date & 0x1F;
+    *month = (fat_date >> 5) & 0x0F;
+    *year = ((fat_date >> 9) & 0x7F) + 1980;
+}
 
-            // Print DOS-style header
-            printf("Volume in drive A has no label\n");
-            printf(" Directory of A:\\\n\n");
-            printf("FILENAME   EXT    SIZE       TYPE\n");
-            printf("---------------------------------\n");
+// Function to extract time from FAT12 format
+void extract_time(uint16_t fat_time, int* hours, int* minutes, int* seconds) {
+    *seconds = (fat_time & 0x1F) * 2;
+    *minutes = (fat_time >> 5) & 0x3F;
+    *hours = (fat_time >> 11) & 0x1F;
+}
 
-            for (int i = 0; i < max_entries; i++) {
-                DirectoryEntry* entry = &entries[i];
+int fat12_read_dir_entries(DirectoryEntry* dir) {
+    int entries_found = 0;
 
-                // Check for end of directory (unused entry)
-                if ((unsigned char)entry->filename[0] == 0x00) {
-                    printf("\nEnd of directory entries.\n");
-                    break;  // Stop at unused entries
-                }
+    // Handle root directory
+    if (dir == NULL) {
+        for (int i = 0; i < ROOT_DIR_SECTORS && entries_found < MAX_ENTRIES; i++) {
+            int logical_sector = fat12.rootDirStart + i;
+            int track = logical_sector / (18 * 2);
+            int head = (logical_sector / 18) % 2;
+            int sector = (logical_sector % 18) + 1;
 
-                // Skip deleted entries
-                if ((unsigned char)entry->filename[0] == 0xE5) {
-                    continue;
-                }
-
-                // Additional filter: Check for valid attributes
-                if (!(entry->attributes == 0x10 || entry->attributes == 0x20)) {
-                    continue;  // Skip entries with invalid attributes
-                }
-
-                // Additional filter: Check if filename contains only valid characters
-                // if (!is_valid_filename((const char*)entry->filename, 8) ||
-                //     !is_valid_filename((const char*)entry->extension, 3)) {
-                //     continue;  // Skip entries with invalid characters in filename or extension
-                // }
-
-                // Format filename and extension with null-terminators
-                char filename[9] = {0};  // 8 chars + null terminator
-                char extension[4] = {0}; // 3 chars + null terminator
-                strncpy(filename, (const char*)entry->filename, 8);
-                strncpy(extension, (const char*)entry->extension, 3);
-
-                // Format size and type for output
-                if (entry->attributes & 0x10) {
-                    // Directory entry
-                    printf("%-8s   %-3s   <DIR>      Directory\n", filename, extension);
-                } else {
-                    // File entry
-                    printf("%-8s   %-3s   %10u   File\n", filename, extension, entry->fileSize);
-                }
+            if (!fdc_read_sector(0, head, track, sector, buffer)) {
+                printf("Error reading root directory sector %d.\n", i);
+                return -1;
             }
-        } else {
-            printf("Error reading root directory.\n");
+
+            memcpy(&entries[entries_found], buffer, SECTOR_SIZE);
+            entries_found += SECTOR_SIZE / ROOT_ENTRY_SIZE;
+        }
+    } else {
+        // Handle subdirectory by traversing clusters
+        int cluster = dir->firstClusterLow;
+
+        while (cluster >= 0x002 && cluster < 0xFF8 && entries_found < MAX_ENTRIES) {
+            int start_sector = fat12.dataStart + (cluster - 2) * fat12.bootSector.sectorsPerCluster;
+
+            for (int i = 0; i < fat12.bootSector.sectorsPerCluster && entries_found < MAX_ENTRIES; i++) {
+                int logical_sector = start_sector + i;
+                int track = logical_sector / (18 * 2);
+                int head = (logical_sector / 18) % 2;
+                int sector = (logical_sector % 18) + 1;
+
+                if (!fdc_read_sector(0, head, track, sector, buffer)) {
+                    printf("Error reading directory sector %d.\n", sector);
+                    return -1;
+                }
+
+                memcpy(&entries[entries_found], buffer, SECTOR_SIZE);
+                entries_found += SECTOR_SIZE / ROOT_ENTRY_SIZE;
+            }
+
+            cluster = get_next_cluster(cluster);  // Move to the next cluster in the chain
+        }
+    }
+
+    // Display directory contents in DOS-like format
+    printf(" Volume in drive A has no label\n");
+    printf(" Directory of %s\n\n", dir == NULL ? "\\" : "");
+    printf("FILENAME   EXT    SIZE     DATE       TIME     TYPE\n");
+    printf("----------------------------------------------------\n");
+
+    for (int i = 0; i < entries_found; i++) {
+        DirectoryEntry* entry = &entries[i];
+        if ((unsigned char)entry->filename[0] == 0x00) break;
+        if ((unsigned char)entry->filename[0] == 0xE5) continue;
+        if (!(entry->attributes & (0x10 | 0x20))) continue;
+
+        // Format filename and extension
+        char filename[9] = {0};
+        char extension[4] = {0};
+        strncpy(filename, (const char*)entry->filename, 8);
+        strncpy(extension, (const char*)entry->extension, 3);
+
+        // Extract date and time
+        int day, month, year, hours, minutes, seconds;
+        extract_date(entry->lastWriteDate, &day, &month, &year);
+        extract_time(entry->lastWriteTime, &hours, &minutes, &seconds);
+
+        // Print in DOS-like format
+        if (entry->attributes & 0x10) {  // Directory
+            printf("%-8s   %-3s   <DIR>    %02d-%02d-%04d  %02d:%02d:%02d\n",
+                   filename, extension, day, month, year, hours, minutes, seconds);
+        } else {  // File
+            printf("%-8s   %-3s   %8u  %02d-%02d-%04d  %02d:%02d:%02d\n",
+                   filename, extension, entry->fileSize, day, month, year, hours, minutes, seconds);
+        }
+    }
+
+    return entries_found;
+}
+
+// Change to a new directory if it exists
+bool fat12_change_directory(const char* relativePath) {
+    int num_entries = fat12_read_dir_entries(currentDir);
+    if (num_entries < 0) {
+        printf("Failed to specified read directory.\n");
+        return false;
+    }
+
+    for (int i = 0; i < num_entries; i++) {
+        DirectoryEntry* entry = &entries[i];
+        if ((unsigned char)entry->filename[0] == 0x00) break;
+        if ((unsigned char)entry->filename[0] == 0xE5) continue;
+        if (!(entry->attributes & (0x10 | 0x20))) continue;
+
+        char filename[9] = {0};
+        char extension[4] = {0};
+        strncpy(filename, (const char*)entry->filename, 8);
+        strncpy(extension, (const char*)entry->extension, 3);
+
+        // normalize the filename
+        char trimmed_name[9] = {0};
+        str_trim_spaces(filename, trimmed_name, 8);
+
+        if (strcmp(trimmed_name, relativePath) == 0) {
+            currentDir = entry;
+            printf("Changed directory to %s\n", relativePath);
+            return true;
+        }
+    }
+    printf("Directory not found: %s\n", relativePath);
+    return false;
+}
+
+// Read directory based on the specified path
+bool fat12_read_dir(const char* path) {
+    printf("-----Reading directory: %s-----\n", path ? path : "(current directory)");
+
+    // If path is NULL or an empty string, list the current directory
+    if (path == NULL || path[0] == '\0') {
+        int num_entries = fat12_read_dir_entries(currentDir);
+        if (num_entries < 0) {
+            printf("Failed to read current directory contents.\n");
             return false;
         }
+        return true;
+    }
+
+    char path_copy[MAX_PATH_LENGTH];
+    strncpy(path_copy, path, MAX_PATH_LENGTH);
+    path_copy[MAX_PATH_LENGTH - 1] = '\0'; // Ensure null-termination
+
+    // Determine if path is absolute
+    bool is_absolute_path = (path[0] == '/');
+    DirectoryEntry* previousDir = currentDir; // Save the original directory
+
+    // If the path is absolute, start from the root directory
+    if (is_absolute_path) {
+        currentDir = NULL;  // Set to root
+
+        // Load the root directory explicitly
+        int root_entries = fat12_read_dir_entries(NULL);
+        if (root_entries < 0) {
+            printf("Failed to load root directory.\n");
+            currentDir = previousDir; // Revert to the original directory
+            return false;
+        }
+    }
+
+    // Split the path into components (directories)
+    char* token = strtok(path_copy, "/");
+
+    // Traverse each directory in the path
+    while (token != NULL) {
+        printf("Token: %s\n", token);
+        if (!fat12_change_directory(token)) {
+            printf("Directory not found: %s\n", token);
+            currentDir = previousDir; // Revert to the original directory if path traversal fails
+            return false;
+        }
+        token = strtok(NULL, "/");
+    }
+
+    // Now that we have changed to the specified path, read the directory entries
+    int num_entries = fat12_read_dir_entries(currentDir);
+    if (num_entries < 0) {
+        printf("Failed to read directory contents.\n");
+        currentDir = previousDir; // Revert if reading fails
+        return false;
+    }
 
     return true;
 }
