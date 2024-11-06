@@ -204,7 +204,7 @@ void handle_cd(int arg_count, char **arguments) {
     } else {
         str_trim_end(arguments[0], '/');  // Remove trailing slash from the path
         char new_path[256] = "/";
-        snprintf(new_path, sizeof(current_path), "%s%s", current_path, arguments[0]);
+        snprintf(new_path, sizeof(current_path), "%s/%s", current_path, arguments[0]);
 
         if(current_drive == NULL){
             printf("No drive mounted\n");
