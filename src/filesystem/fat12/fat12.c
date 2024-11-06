@@ -12,6 +12,14 @@
 #define SECTOR_SIZE 512
 #define ROOT_DIR_SECTORS 14
 
+// Constants for floppy disk properties
+#define SECTORS_PER_TRACK 18     // Number of sectors per track (typical for 1.44MB floppy disk)
+#define NUMBER_OF_HEADS 2        // Number of disk heads (sides) for a double-sided floppy
+#define MIN_CLUSTER_VALUE 0x002  // Minimum valid cluster value
+#define MAX_CLUSTER_VALUE 0xFF8  // Maximum valid cluster value before end-of-chain
+#define DRIVE_NUMBER 0           // Drive number (0 for primary drive)
+
+
 // Global structures and buffers
 FAT12 fat12;
 DirectoryEntry entries[MAX_ENTRIES];
@@ -88,6 +96,34 @@ void extract_time(uint16_t fat_time, int* hours, int* minutes, int* seconds) {
     *hours = (fat_time >> 11) & 0x1F;
 }
 
+
+/**
+ * Converts a logical sector number to CHS (Cylinder-Head-Sector) format.
+ *
+ * @param logicalSector The logical sector number to convert.
+ * @param sectorsPerTrack The number of sectors per track on the disk.
+ * @param numberOfHeads The number of heads (sides) on the disk.
+ * @param track Pointer to an integer where the calculated track (cylinder) will be stored.
+ * @param head Pointer to an integer where the calculated head (side) will be stored.
+ * @param sector Pointer to an integer where the calculated sector (1-based) will be stored.
+ *
+ * This function calculates the CHS values based on the given logical sector number.
+ * The sector number in CHS is 1-based, so 1 is added after calculating the sector value.
+ */
+void logical_to_chs(int logicalSector, int sectorsPerTrack, int numberOfHeads, int* track, int* head, int* sector) {
+    // Calculate the track (cylinder) by dividing the logical sector by the total number of sectors per cylinder
+    // Total sectors per cylinder = sectorsPerTrack * numberOfHeads
+    *track = logicalSector / (sectorsPerTrack * numberOfHeads);
+
+    // Calculate the head (side) by dividing the logical sector by the number of sectors per track
+    // and taking the remainder when divided by the number of heads
+    *head = (logicalSector / sectorsPerTrack) % numberOfHeads;
+
+    // Calculate the sector within the track by taking the remainder of the logical sector divided by the number of sectors per track
+    // Add 1 because sector numbers in CHS format are typically 1-based
+    *sector = (logicalSector % sectorsPerTrack) + 1;
+}
+
 int entries_found;
 
 int fat12_read_dir_entries(DirectoryEntry* dir) {
@@ -96,11 +132,13 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
     if (dir == NULL) {
         for (int i = 0; i < ROOT_DIR_SECTORS && entries_found < MAX_ENTRIES; i++) {
             int logical_sector = fat12.rootDirStart + i;
-            int track = logical_sector / (18 * 2);
-            int head = (logical_sector / 18) % 2;
-            int sector = (logical_sector % 18) + 1;
-
-            if (!fdc_read_sector(0, head, track, sector, buffer)) {
+            // int track = logical_sector / (SECTORS_PER_TRACK * NUMBER_OF_HEADS);
+            // int head = (logical_sector / SECTORS_PER_TRACK) % NUMBER_OF_HEADS;
+            // int sector = (logical_sector % SECTORS_PER_TRACK) + 1;  // Sectors are 1-based
+            int track, head, sector;
+            // Use the new method to convert logical sector to CHS
+            logical_to_chs(logical_sector, SECTORS_PER_TRACK, NUMBER_OF_HEADS, &track, &head, &sector);
+            if (!fdc_read_sector(DRIVE_NUMBER, head, track, sector, buffer)) {
                 printf("Error reading root directory sector %d.\n", i);
                 return -1;
             }
@@ -112,16 +150,19 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
         // Handle subdirectory by traversing clusters
         int cluster = dir->firstClusterLow;
 
-        while (cluster >= 0x002 && cluster < 0xFF8 && entries_found < MAX_ENTRIES) {
+        while (cluster >= MIN_CLUSTER_VALUE && cluster < MAX_CLUSTER_VALUE && entries_found < MAX_ENTRIES) {
             int start_sector = fat12.dataStart + (cluster - 2) * fat12.bootSector.sectorsPerCluster;
 
             for (int i = 0; i < fat12.bootSector.sectorsPerCluster && entries_found < MAX_ENTRIES; i++) {
                 int logical_sector = start_sector + i;
-                int track = logical_sector / (18 * 2);
-                int head = (logical_sector / 18) % 2;
-                int sector = (logical_sector % 18) + 1;
+                // int track = logical_sector / (SECTORS_PER_TRACK * NUMBER_OF_HEADS);
+                // int head = (logical_sector / SECTORS_PER_TRACK) % NUMBER_OF_HEADS;
+                // int sector = (logical_sector % SECTORS_PER_TRACK) + 1;  // Sectors are 1-based
+                int track, head, sector;
+                // Use the new method to convert logical sector to CHS
+                logical_to_chs(logical_sector, SECTORS_PER_TRACK, NUMBER_OF_HEADS, &track, &head, &sector);
 
-                if (!fdc_read_sector(0, head, track, sector, buffer)) {
+                if (!fdc_read_sector(DRIVE_NUMBER, head, track, sector, buffer)) {
                     printf("Error reading directory sector %d.\n", sector);
                     return -1;
                 }
@@ -336,33 +377,6 @@ Fat12File* fat12_open_file(const char* filename, const char* mode) {
     return file;
 }
 
-/**
- * Converts a logical sector number to CHS (Cylinder-Head-Sector) format.
- *
- * @param logicalSector The logical sector number to convert.
- * @param sectorsPerTrack The number of sectors per track on the disk.
- * @param numberOfHeads The number of heads (sides) on the disk.
- * @param track Pointer to an integer where the calculated track (cylinder) will be stored.
- * @param head Pointer to an integer where the calculated head (side) will be stored.
- * @param sector Pointer to an integer where the calculated sector (1-based) will be stored.
- *
- * This function calculates the CHS values based on the given logical sector number.
- * The sector number in CHS is 1-based, so 1 is added after calculating the sector value.
- */
-void logical_to_chs(int logicalSector, int sectorsPerTrack, int numberOfHeads, int* track, int* head, int* sector) {
-    // Calculate the track (cylinder) by dividing the logical sector by the total number of sectors per cylinder
-    // Total sectors per cylinder = sectorsPerTrack * numberOfHeads
-    *track = logicalSector / (sectorsPerTrack * numberOfHeads);
-
-    // Calculate the head (side) by dividing the logical sector by the number of sectors per track
-    // and taking the remainder when divided by the number of heads
-    *head = (logicalSector / sectorsPerTrack) % numberOfHeads;
-
-    // Calculate the sector within the track by taking the remainder of the logical sector divided by the number of sectors per track
-    // Add 1 because sector numbers in CHS format are typically 1-based
-    *sector = (logicalSector % sectorsPerTrack) + 1;
-}
-
 int fat12_read_file(Fat12File* file, void* buffer, size_t size) {
     if (file == NULL) {
         printf("File not found.\n");
@@ -381,19 +395,16 @@ int fat12_read_file(Fat12File* file, void* buffer, size_t size) {
     unsigned int startOffset = file->position % clusterSize;
     unsigned char sectorBuffer[SECTOR_SIZE];
 
-    const int sectorsPerTrack = 18; // Typical for 1.44MB floppy disk
-    const int numberOfHeads = 2;    // Double-sided floppy
-
     while (bytes_read < size && currentCluster >= 0x002 && currentCluster < 0xFF8) {
         // Calculate the logical sector for the current cluster
         unsigned int firstSectorOfCluster = fat12.dataStart + (currentCluster - 2) * fat12.bootSector.sectorsPerCluster;
 
         for (unsigned int i = 0; i < fat12.bootSector.sectorsPerCluster && bytes_read < size; i++) {
-            int logicalSector = firstSectorOfCluster + i;
+            int logical_sector = firstSectorOfCluster + i;
             int track, head, sector;
 
             // Use the new method to convert logical sector to CHS
-            logical_to_chs(logicalSector, sectorsPerTrack, numberOfHeads, &track, &head, &sector);
+            logical_to_chs(logical_sector, SECTORS_PER_TRACK, NUMBER_OF_HEADS, &track, &head, &sector);
 
             // Read the sector into the buffer
             if (!fdc_read_sector(0, head, track, sector, sectorBuffer)) {
