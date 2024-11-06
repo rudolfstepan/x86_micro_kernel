@@ -26,7 +26,7 @@ int readdir(const char *path, char *buffer, unsigned int *size, drive_type_t dri
     }
 
     if(driveType == DRIVE_TYPE_ATA){
-        return fat32_read_dir(path, buffer, size);
+        return fat32_read_dir(path);
     }
 
     if(driveType == DRIVE_TYPE_FDD){

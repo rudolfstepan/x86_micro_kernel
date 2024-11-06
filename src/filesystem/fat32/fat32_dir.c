@@ -6,7 +6,7 @@ void read_directory() {
 }
 
 // Function to read a directory path and return if it exists
-bool read_directory_path(const char* path) {
+bool fat32_read_dir(const char* path) {
     unsigned int currentCluster = boot_sector.rootCluster; // Assuming boot_sector is defined and initialized elsewhere
     char tempPath[MAX_PATH_LENGTH]; // Temporary path buffer
     strcpy(tempPath, path);
@@ -30,34 +30,6 @@ bool read_directory_path(const char* path) {
     }
     // Now currentCluster points to the cluster of the target directory
     read_cluster_dir_entries(currentCluster);
-    return true;
-}
-
-int fat32_read_dir(const char *path, char *buffer, unsigned int *size){
-    unsigned int currentCluster = boot_sector.rootCluster; // Assuming boot_sector is defined and initialized elsewhere
-    char tempPath[MAX_PATH_LENGTH]; // Temporary path buffer
-    strcpy(tempPath, path);
-    tempPath[sizeof(tempPath) - 1] = '\0'; // Ensure null-termination
-    char* token, * saveptr;
-    // Check for leading '/' and skip it if present
-    char* start = tempPath;
-    if (start[0] == '/') {
-        start++;
-    }
-    token = strtok_r(start, "/", &saveptr);
-    while (token != NULL) {
-        //printf("Searching for directory: %s\n", token);
-        // Find the next directory in the path
-        currentCluster = find_next_cluster(&boot_sector, token, currentCluster);
-        if (currentCluster == INVALID_CLUSTER) {
-            //printf("Directory not found: %s\n", token);
-            return false;
-        }
-        token = strtok_r(NULL, "/", &saveptr);
-    }
-    // Now currentCluster points to the cluster of the target directory
-    read_cluster_dir_entries_to_buffer(currentCluster, buffer, size);
-
     return true;
 }
 
@@ -143,7 +115,7 @@ void create_directory_entry(struct FAT32DirEntry* entry, const char* name, unsig
     // Implement set_fat32_time to set these values
     set_fat32_time(&entry->crtTime, &entry->crtDate);
     set_fat32_time(NULL, &entry->lastAccessDate); // Assuming set_fat32_time handles NULL time
-    set_fat32_time(&entry->wrtTime, &entry->wrtDate);
+    set_fat32_time(&entry->writeTime, &entry->writeDate);
 }
 
 bool add_entry_to_directory(struct Fat32BootSector* bs, unsigned int parentCluster, const char* dirname, unsigned int newDirCluster, unsigned char attributes) {

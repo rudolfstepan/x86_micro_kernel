@@ -199,72 +199,94 @@ unsigned int find_next_cluster(struct Fat32BootSector* boot_sector, const char* 
     return INVALID_CLUSTER; // Directory not found
 }
 
+// Function to format the filename in the 8.3 format
+void format_filename(char *output, const uint8_t *name) {
+    // Copy the first 8 characters as the filename, trimming trailing spaces
+    char filename[9] = {0};  // 8 characters + null terminator
+    strncpy(filename, (const char *)name, 8);
+    for (int i = 7; i >= 0; i--) {
+        if (filename[i] == ' ') {
+            filename[i] = '\0';  // Trim trailing spaces
+        } else {
+            break;
+        }
+    }
+
+    // Copy the next 3 characters as the extension, trimming trailing spaces
+    char extension[4] = {0};  // 3 characters + null terminator
+    strncpy(extension, (const char *)(name + 8), 3);
+    for (int i = 2; i >= 0; i--) {
+        if (extension[i] == ' ') {
+            extension[i] = '\0';  // Trim trailing spaces
+        } else {
+            break;
+        }
+    }
+
+    // Format the output as 'FILENAME.EXT' or just 'FILENAME' if no extension
+    if (strlen(extension) > 0) {
+        snprintf(output, 13, "%s.%s", filename, extension);
+    } else {
+        snprintf(output, 9, "%s", filename);
+    }
+}
+
+// Function to extract date and time from FAT32 format
+void extract_fat32_date(uint16_t fat_date, int* day, int* month, int* year) {
+    *day = fat_date & 0x1F;
+    *month = (fat_date >> 5) & 0x0F;
+    *year = ((fat_date >> 9) & 0x7F) + 1980;
+}
+
+void extract_fat32_time(uint16_t fat_time, int* hours, int* minutes, int* seconds) {
+    *seconds = (fat_time & 0x1F) * 2;
+    *minutes = (fat_time >> 5) & 0x3F;
+    *hours = (fat_time >> 11) & 0x1F;
+}
+
+// Function to read and print directory entries in a DOS-like format
 void read_cluster_dir_entries(unsigned int currentCluster) {
     unsigned int sector = cluster_to_sector(&boot_sector, currentCluster);
     struct FAT32DirEntry entries[SECTOR_SIZE * boot_sector.sectorsPerCluster / sizeof(struct FAT32DirEntry)];
 
+    // Print DOS-like header
+    printf(" Volume in drive C has no label\n");
+    printf(" Directory of \\\n\n");
+    printf("FILENAME      SIZE     DATE       TIME     TYPE\n");
+    printf("----------------------------------------------------\n");
+
+    // Read directory entries
     for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
         ata_read_sector(ata_base_address, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))], ata_is_master);
     }
+
     for (unsigned int j = 0; j < sizeof(entries) / sizeof(struct FAT32DirEntry); j++) {
         if (entries[j].name[0] == 0x00) { // End of directory
             break;
         }
-        // Überspringen von LFN-Einträgen und gelöschten Einträgen
+
+        // Skip LFN entries and deleted entries
         if ((entries[j].name[0] == 0xE5) || (entries[j].attr & 0x0F) == 0x0F) {
             continue;
         }
-        // Verarbeitung von 8.3-Einträgen
-        char currentName[13]; // 8 characters for name, 3 for extension, 1 for null-terminator, 1 for potential dot
-        formatFilename(currentName, entries[j].name);
-        // Zusätzliche Überprüfung, um sicherzustellen, dass es sich nicht um einen LFN-Eintrag handelt
-        if (entries[j].attr & 0x10) {
-            printf("[DIR] %s\n", currentName);
-        } else {
-            printf("%s\n", currentName);
+
+        // Process 8.3 entries and format the filename
+        char currentName[13]; // Buffer to hold formatted filename
+        format_filename(currentName, entries[j].name);
+
+        int day, month, year, hours, minutes, seconds;
+        extract_fat32_date(entries[j].writeDate, &day, &month, &year);
+        extract_fat32_time(entries[j].writeTime, &hours, &minutes, &seconds);
+
+        // Print directory or file entry in a DOS-like format
+        if (entries[j].attr & 0x10) {  // Directory
+            printf("%-12s   <DIR>          %02d-%02d-%04d  %02d:%02d:%02d\n",
+                   currentName, day, month, year, hours, minutes, seconds);
+        } else {  // File
+            printf("%-12s %10u %02d-%02d-%04d  %02d:%02d:%02d\n",
+                   currentName, entries[j].fileSize, day, month, year, hours, minutes, seconds);
         }
     }
-}
-
-void read_cluster_dir_entries_to_buffer(unsigned int currentCluster, char *buffer, unsigned int *size) {
-    unsigned int sector = cluster_to_sector(&boot_sector, currentCluster);
-    struct FAT32DirEntry entries[SECTOR_SIZE * boot_sector.sectorsPerCluster / sizeof(struct FAT32DirEntry)];
-
-    for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-        ata_read_sector(ata_base_address, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))], ata_is_master);
-    }
-    for (unsigned int j = 0; j < sizeof(entries) / sizeof(struct FAT32DirEntry); j++) {
-        if (entries[j].name[0] == 0x00) { // End of directory
-            break;
-        }
-        // Überspringen von LFN-Einträgen und gelöschten Einträgen
-        if ((entries[j].name[0] == 0xE5) || (entries[j].attr & 0x0F) == 0x0F) {
-            continue;
-        }
-        // Verarbeitung von 8.3-Einträgen
-        char currentName[13]; // 8 characters for name, 3 for extension, 1 for null-terminator, 1 for potential dot
-        formatFilename(currentName, entries[j].name);
-        // Zusätzliche Überprüfung, um sicherzustellen, dass es sich nicht um einen LFN-Eintrag handelt
-        if (entries[j].attr & 0x10) {
-            // Add directory to buffer
-            //printf("[DIR] %s\n", currentName);
-
-            strncat(buffer, "[DIR] ", *size - strlen(buffer) - 1);
-            strncat(buffer, currentName, *size - strlen(buffer) - 1);
-            strncat(buffer, "\n", *size - strlen(buffer) - 1);
-        } else {
-            // Add file to buffer
-            //printf("%s\n", currentName);
-
-            strncat(buffer, currentName, *size - strlen(buffer) - 1);
-            strncat(buffer, "\n", *size - strlen(buffer) - 1);
-        }
-    }
-
-    *size = strlen(buffer); // Update the size with the current length of the buffer
-
-    // printf("Buffer: %s\n", buffer);
-    // printf("Size: %d\n", *size);
 }
 
 unsigned int allocate_new_cluster(struct Fat32BootSector* boot_sector) {

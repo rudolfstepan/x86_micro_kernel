@@ -29,8 +29,8 @@ struct FAT32DirEntry {
     uint16_t crtDate;             // Date file was created
     uint16_t lastAccessDate;      // Last access date
     uint16_t firstClusterHigh;    // High word of the first data cluster number
-    uint16_t wrtTime;             // Time of last write
-    uint16_t wrtDate;             // Date of last write
+    uint16_t writeTime;             // Time of last write
+    uint16_t writeDate;             // Date of last write
     uint16_t firstClusterLow;     // Low word of the first data cluster number
     uint32_t fileSize;            // File size in bytes
 };
@@ -113,7 +113,7 @@ bool add_entry_to_directory(struct Fat32BootSector* bs, unsigned int parentClust
 bool remove_entry_from_directory(struct Fat32BootSector* boot_sector, unsigned int parentCluster, struct FAT32DirEntry* entry);
 unsigned int find_next_cluster(struct Fat32BootSector* bs, const char *dirName, unsigned int currentCluster);
 void read_cluster_dir_entries(unsigned int currentCluster);
-void read_cluster_dir_entries_to_buffer(unsigned int currentCluster, char *buffer, unsigned int *size);
+//void read_cluster_dir_entries_to_buffer(unsigned int currentCluster, char *buffer, unsigned int *size);
 struct FAT32DirEntry* findFileInDirectory(const char* filename);
 bool fat32_change_directory(const char *path);
 
@@ -136,8 +136,7 @@ int fat32_init_fs(unsigned short base, bool ata_is_master);
 
 // directory operations
 void read_directory();
-bool read_directory_path(const char *path);
-int fat32_read_dir(const char *path, char *buffer, unsigned int *size);
+bool fat32_read_dir(const char *path);
 bool create_directory(const char* dirname);
 bool delete_directory(const char* dirname);
 
