@@ -224,7 +224,7 @@ void init_fs(drive_t* drive) {
         // Detect filesystem type by examining the boot sector
         if (strcmp(fs_type, "FAT12   ") == 0) {
             printf("Detected FAT12 filesystem on drive %s.\n", drive->name);
-            fat12_init_fs(drive->base, drive->is_master);
+            //fat12_init_fs(drive->base, drive->is_master);
         } else if (strcmp(fs_type, "FAT16   ") == 0) {
             printf("Detected FAT16 filesystemo n drive %s.\n", drive->name);
             //fat16_init_fs(drive->base, drive->is_master);

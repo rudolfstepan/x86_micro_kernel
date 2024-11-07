@@ -149,6 +149,10 @@
 #define DMA_PAGE_PORT 0x81
 #define DMA_UNMASK_CHANNEL 0x02
 
+#define MAX_FDD_DRIVES 2  // Maximum number of floppy disk drives (A: and B:)
+#define FDD_DRIVE_A 0     // Drive number for A:
+#define FDD_DRIVE_B 1     // Drive number for B:
+
 volatile bool irq_triggered = false;
 
 // FDC IRQ handler for IRQ6
@@ -383,22 +387,31 @@ bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector
     return true;
 }
 
-// Detect and initialize the FDD drive
+// Detect and initialize all FDD drives
 void fdd_detect_drives() {
-    fdd_motor_on(FDD_DRIVE);  // Turn on motor
+    for (uint8_t drive = FDD_DRIVE_A; drive <= FDD_DRIVE_B; drive++) {
+        fdd_motor_on(drive);  // Turn on motor for the current drive
 
-    if (fdc_get_status() & 0x80) {  // Check if FDC is ready
-        drive_t* drive = (drive_t*)malloc(sizeof(drive_t));
-        drive->type = DRIVE_TYPE_FDD;
-        snprintf(drive->name, sizeof(drive->name), "fdd%d", 1);
-        drive->cylinder = 80;
-        drive->head = 2;
-        drive->sector = 18;
-        printf("Floppy drive detected: %s\n", drive->name);
-        detected_drives[drive_count++] = *drive;
-    } else {
-        printf("No floppy drive detected.\n");
+        // Check if the FDC is ready for the current drive
+        if (fdc_get_status(drive) & 0x80) {  // Example condition: modify based on actual status check logic
+            drive_t* detected_drive = (drive_t*)malloc(sizeof(drive_t));
+            detected_drive->type = DRIVE_TYPE_FDD;
+            detected_drive->fdd_drive_no = drive;
+            snprintf(detected_drive->name, sizeof(detected_drive->name), "fdd%d", drive);
+            detected_drive->cylinder = 80;  // Typical number of cylinders for a 3.5" floppy drive
+            detected_drive->head = 2;       // Number of heads (double-sided)
+            detected_drive->sector = 18;    // Typical number of sectors per track for a 1.44 MB disk
+
+            printf("Floppy drive detected: %s\n", detected_drive->name);
+            detected_drives[drive_count++] = *detected_drive;
+        } else {
+            printf("No floppy drive detected at fdd%d.\n", drive);
+        }
+
+        fdd_motor_off(drive);  // Turn off motor for the current drive
     }
 
-    fdd_motor_off(FDD_DRIVE);  // Turn off motor
+    if (drive_count == 0) {
+        printf("No floppy drives detected.\n");
+    }
 }

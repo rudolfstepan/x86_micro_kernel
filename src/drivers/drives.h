@@ -20,6 +20,7 @@ typedef struct {
     unsigned int cylinder;  // Number of cylinders (for FDD)
     unsigned int head;      // Number of heads (for FDD)
     unsigned int sector;    // Number of sectors (for FDD)
+    uint8_t fdd_drive_no;   // Drive number for FDD, 0 for A:, 1 for B:
 } drive_t;
 
 // global definition of the current drive which is being accessed

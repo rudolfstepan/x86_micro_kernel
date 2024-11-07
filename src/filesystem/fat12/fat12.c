@@ -17,13 +17,15 @@
 #define NUMBER_OF_HEADS 2        // Number of disk heads (sides) for a double-sided floppy
 #define MIN_CLUSTER_VALUE 0x002  // Minimum valid cluster value
 #define MAX_CLUSTER_VALUE 0xFF8  // Maximum valid cluster value before end-of-chain
-#define DRIVE_NUMBER 0           // Drive number (0 for primary drive)
+
 
 // Global structures and buffers
 FAT12 fat12;
 DirectoryEntry* entries = NULL;
 DirectoryEntry* currentDir = NULL;
 uint8_t* buffer = NULL;
+
+uint8_t current_fdd_drive = 0;
 
 // Function to calculate CHS from a logical sector number
 void logical_to_chs(int logical_sector, int* track, int* head, int* sector) {
@@ -80,8 +82,12 @@ int read_fat12(uint8_t drive, FAT12* fat12) {
 }
 
 // Initialize FAT12 and load root directory
-bool fat12_init_fs() {
-    if (!read_fat12(DRIVE_NUMBER, &fat12)) {
+bool fat12_init_fs(uint8_t drive) {
+    current_fdd_drive = drive; // Set the current drive
+    // Initialize FAT12 structure
+    memset(&fat12, 0, sizeof(FAT12));
+
+    if (!read_fat12(drive, &fat12)) {
         printf("Failed to initialize FAT12.\n");
         return false;
     }
@@ -135,7 +141,7 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
             int track, head, sector;
             logical_to_chs(logical_sector, &track, &head, &sector);
 
-            if (!fdc_read_sector(DRIVE_NUMBER, head, track, sector, buffer)) {
+            if (!fdc_read_sector(current_fdd_drive, head, track, sector, buffer)) {
                 printf("Error reading root directory sector %d.\n", i);
                 free(entries);
                 free(buffer);
@@ -158,7 +164,7 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
                 int track, head, sector;
                 logical_to_chs(logical_sector, &track, &head, &sector);
 
-                if (!fdc_read_sector(DRIVE_NUMBER, head, track, sector, buffer)) {
+                if (!fdc_read_sector(current_fdd_drive, head, track, sector, buffer)) {
                     printf("Error reading subdirectory sector %d.\n", sector);
                     return -1;
                 }
@@ -395,7 +401,7 @@ int fat12_read_file(Fat12File* file, void* buffer, size_t size) {
             int sector = (logical_sector % SECTORS_PER_TRACK) + 1;  // Sectors are 1-based
 
             // Read the sector into the buffer
-            if (!fdc_read_sector(DRIVE_NUMBER, head, track, sector, sectorBuffer)) {
+            if (!fdc_read_sector(current_fdd_drive, head, track, sector, sectorBuffer)) {
                 printf("Error reading file sector at track %d, head %d, sector %d.\n", track, head, sector);
                 free(sectorBuffer);
                 return bytes_read; // Return bytes read so far on failure

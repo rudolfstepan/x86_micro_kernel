@@ -76,7 +76,7 @@ typedef struct {
 } Fat12File;
 
 
-bool fat12_init_fs();
+bool fat12_init_fs(uint8_t drive);
 bool fat12_read_dir(const char* path);
 int fat12_read_dir_entries(DirectoryEntry* dir);
 bool fat12_change_directory(const char* relativePath);

@@ -192,12 +192,16 @@ void handle_mount(int arg_count, char** arguments) {
                 printf("Init fs on ATA drive %s: %s with %u sectors\n", current_drive->name, current_drive->model, current_drive->sectors);
                 // Initialize file system for ATA drive
                 fat32_init_fs(current_drive->base, current_drive->is_master);
+                strcpy(current_path, "/");
                 break;
             case DRIVE_TYPE_FDD:
                 printf("Init fs on FDD %s with CHS %u/%u/%u\n", current_drive->name, current_drive->cylinder, current_drive->head, current_drive->sector);
                 // Initialize file system or handling code for FDD
                 // Call fat12_init_fs as part of FDD initialization
-                fat12_init_fs();
+                printf("Init fs on FDD drive %s\n", current_drive->name);
+                fat12_init_fs(current_drive->fdd_drive_no);
+                // reset the current path
+                strcpy(current_path, "/");
                 break;
 
             default:
