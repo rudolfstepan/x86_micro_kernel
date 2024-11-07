@@ -320,3 +320,28 @@ void delay(int milliseconds) {
         __asm__ __volatile__("nop"); // No-operation; consumes CPU cycles
     }
 }
+
+void* memmove(void* dest, const void* src, size_t n) {
+    // Cast to unsigned char pointers for byte-wise operations
+    unsigned char* d = (unsigned char*)dest;
+    const unsigned char* s = (const unsigned char*)src;
+
+    if (d == s || n == 0) {
+        // No need to move if source and destination are the same or if size is 0
+        return dest;
+    }
+
+    if (d < s || d >= (s + n)) {
+        // Non-overlapping, safe to copy forward
+        for (size_t i = 0; i < n; i++) {
+            d[i] = s[i];
+        }
+    } else {
+        // Overlapping, copy backward to prevent overwriting source
+        for (size_t i = n; i > 0; i--) {
+            d[i - 1] = s[i - 1];
+        }
+    }
+
+    return dest;
+}

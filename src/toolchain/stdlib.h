@@ -16,5 +16,6 @@ int memcmp(const void* s1, const void* s2, unsigned int n);
 
 int test_memory();
 void delay(int milliseconds);
+void* memmove(void* dest, const void* src, size_t n);
 
 #endif /* MEMORY_H */

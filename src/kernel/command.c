@@ -223,7 +223,9 @@ void handle_ls(int arg_count, char** arguments) {
         fat32_read_dir(directory);
         break;
     case DRIVE_TYPE_FDD:
-        fat12_read_dir(directory);
+        // notice that the path is relative to the current directory
+        // we only need the filename
+        fat12_read_dir(arguments[0]);
         break;
 
     default:
@@ -251,7 +253,12 @@ void handle_cd(int arg_count, char** arguments) {
             }
         } else if (current_drive->type == DRIVE_TYPE_FDD) {
             // notice that the path is relative to the current directory
-            if (fat12_change_directory(new_path)) {
+            // remove the leading slash
+            if (new_path[0] == '/') {
+                memmove(new_path, new_path + 1, strlen(new_path));
+            }
+            // fdd need relative path and a single directory name
+            if (fat12_change_directory(arguments[0])) {
                 strcpy(current_path, new_path);
                 printf("Set directory to: %s\n", arguments[0]);
             }
