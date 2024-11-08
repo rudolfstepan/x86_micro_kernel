@@ -84,18 +84,16 @@ echo "done"
 echo "Linking kernel..."
 ld -m elf_i386 -T kernel.ld -nostdlib -o $OUTPUT_DIR/kernel.bin \
     $OUTPUT_DIR/boot/bootloader.o $OUTPUT_DIR/boot/gdt.o $OUTPUT_DIR/boot/idt.o $OUTPUT_DIR/boot/isr.o \
+    $OUTPUT_DIR/kernel/irq.o $OUTPUT_DIR/kernel/pit.o $OUTPUT_DIR/kernel/kernel.o $OUTPUT_DIR/kernel/prg.o $OUTPUT_DIR/kernel/system.o $OUTPUT_DIR/kernel/command.o \
     $OUTPUT_DIR/drivers/drivers.o \
-    $OUTPUT_DIR/kernel/irq.o $OUTPUT_DIR/kernel/kernel.o $OUTPUT_DIR/kernel/prg.o $OUTPUT_DIR/kernel/system.o $OUTPUT_DIR/kernel/command.o \
     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
     $OUTPUT_DIR/filesystem/filesystem.o
 echo "done"
 
-# echo "Linking cli_date..."
-# ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_DIR/cli/cli_date.o \
-#     $OUTPUT_DIR/drivers/rtc/rtc.o $OUTPUT_DIR/drivers/io/io.o $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o \
-#     $OUTPUT_DIR/drivers/fdd/fdd.o \
-#     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
-#     $OUTPUT_DIR/filesystem/filesystem.o \
+echo "Linking cli_date..."
+ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_DIR/cli/cli_date.o \
+    $OUTPUT_DIR/drivers/drivers.o $OUTPUT_DIR/filesystem/filesystem.o \
+    $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
     
     
 # # ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_dir.elf $OUTPUT_DIR/cli/cli_dir.o \
@@ -116,26 +114,26 @@ echo "done"
 # #     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
 
 
-# # Convert to binary format
-# objcopy -O binary $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_DIR/cli/date.prg
+# Convert to binary format
+objcopy -O binary $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_DIR/cli/date.prg
 # #objcopy -O binary $OUTPUT_DIR/cli/cli_dir.elf $OUTPUT_DIR/cli/dir.prg
 # objcopy -O binary $OUTPUT_DIR/cli/cli_test.elf $OUTPUT_DIR/cli/test.prg
-# # # objcopy -O binary $OUTPUT_DIR/basic.elf $OUTPUT_DIR/basic.prg
+# objcopy -O binary $OUTPUT_DIR/basic.elf $OUTPUT_DIR/basic.prg
 
 # #./make_image.sh
 
-# # Check if directory exists, create it if not
+# Check if directory exists, create it if not
 #   if [ ! -d /mnt/disk ]; then
 #     echo "Creating /mnt/disk directory"
 #     mkdir -p /mnt/disk
 #   fi
 
-# sudo mount ./disk.img /mnt/disk
-# sudo cp $OUTPUT_DIR/cli/date.prg /mnt/disk/sys
+sudo mount ./disk.img /mnt/disk
+sudo cp $OUTPUT_DIR/cli/date.prg /mnt/disk/
 # #sudo cp $OUTPUT_DIR/dir.prg /mnt/disk/sys
-# sudo cp $OUTPUT_DIR/cli/test.prg /mnt/disk/sys
-# #sudo cp $OUTPUT_DIR/basic.prg /mnt/disk/
-# sudo umount /mnt/disk
+# # sudo cp $OUTPUT_DIR/cli/test.prg /mnt/disk/sys
+# # #sudo cp $OUTPUT_DIR/basic.prg /mnt/disk/
+sudo umount /mnt/disk
 
 # Create the iso file for kernel
 mkdir -p $ISO_DIR/boot/grub
@@ -143,4 +141,4 @@ cp $OUTPUT_DIR/kernel.bin $ISO_DIR/boot/
 cp grub.cfg $ISO_DIR/boot/grub/
 sudo grub-mkrescue -o kernel.iso $ISO_DIR/
 
-# ./run.sh
+#./run.sh

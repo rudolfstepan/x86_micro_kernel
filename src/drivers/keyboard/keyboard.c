@@ -7,6 +7,8 @@
 #include "toolchain/stdlib.h"
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 
 // --------------------------------------------------
@@ -54,9 +56,7 @@ char scancode_to_ascii(unsigned char scancode) {
     return scancode_to_char[scancode];
 }
 
-void kb_handler(struct regs* r) {
-    (void)r; // Suppress unused parameter warning
-
+void kb_handler(void* r) {
     unsigned char scan;
     unsigned char key = 0;
 
@@ -101,7 +101,7 @@ void kb_install() {
     // Clear the input buffer
     memset(input_buffer, 0, sizeof(input_buffer));
 
-    irq_install_handler(1, kb_handler);
+    // irq_install_handler(1, kb_handler); is now in kernel.c
 }
 
 void wait_for_enter() {

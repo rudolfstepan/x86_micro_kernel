@@ -17,6 +17,7 @@
 
 #define BUFFER_SIZE 256
 
+extern void kb_handler(void* r);
 
 // unsigned char get_scancode_from_keyboard();
 // unsigned char get_key_press();

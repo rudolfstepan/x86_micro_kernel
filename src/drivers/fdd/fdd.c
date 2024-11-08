@@ -125,8 +125,8 @@
 #include "fdd.h"
 #include "drivers/io/io.h"
 #include "toolchain/stdio.h"
-#include "kernel/system.h"
-#include "kernel/sys.h"
+// #include "kernel/system.h"
+// #include "kernel/sys.h"
 
 #define FDD_CMD_RECALIBRATE  0x07
 #define FDD_CMD_SEEK         0x0F
@@ -156,7 +156,7 @@
 volatile bool irq_triggered = false;
 
 // FDC IRQ handler for IRQ6
-void irq6_handler(struct regs* r) {
+void fdd_irq_handler(uint8_t* r) {
     // Read the FDC main status register to confirm it's a valid interrupt
     uint8_t status = inb(0x3F4);
     if (!(status & 0x10)) {  // Check specific bits indicating valid state
@@ -183,9 +183,9 @@ void mask_irq6() {
     outb(PIC1_DATA, mask);
 }
 
-void fdc_initialize_irq(){
-    irq_install_handler(6, irq6_handler);  // Install IRQ6 handler for FDD
-}
+// void fdc_initialize_irq(){
+//     irq_install_handler(6, irq6_handler);  // Install IRQ6 handler for FDD
+// }
 
 void fdc_initialize() {
     outb(0x3F2, 0x1C);  // Aktiviert den Motor und das Laufwerk A

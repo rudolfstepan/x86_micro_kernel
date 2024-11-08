@@ -24,8 +24,8 @@ extern void irq15();
 void* irq_routines[16] = { 0 };
 
 // Function to install a custom IRQ handler
-void irq_install_handler(int irq, void (*handler)(struct regs* r)) {
-    irq_routines[irq] = handler;
+void irq_install_handler(int irq, void* r) {
+    irq_routines[irq] = r;
 }
 
 // Function to uninstall an IRQ handler
@@ -70,8 +70,9 @@ void irq_install() {
 }
 
 // General IRQ handler that checks for custom routines
-void irq_handler(struct regs* r) {
-    void (*handler)(struct regs* r);
+void irq_handler(void* x) {
+    struct regs* r = (struct regs*)x;
+    void (*handler)(struct regs* x);
     int irq_number = r->int_no - 32;  // Calculate IRQ number (0–15) based on interrupt vector
 
     // Print the IRQ number for debugging

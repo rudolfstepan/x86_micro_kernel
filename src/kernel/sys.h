@@ -22,13 +22,12 @@ extern void isr_install();
 
 //irq
 extern void irq_install();
-extern void irq_handler(struct regs *r);
-extern void irq_install_handler(int irq, void (*handler)(struct regs *r));
+extern void irq_handler(void* r);
+extern void irq_install_handler(int irq, void* r);
 void irq_uninstall_handler(int irq);
 
 //pit
-extern void timer_handler(struct regs *r);
-extern void timer_install();
+//extern void timer_install();
 
 
 #endif

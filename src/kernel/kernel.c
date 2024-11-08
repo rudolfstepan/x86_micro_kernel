@@ -4,8 +4,10 @@
 #include "prg.h"
 #include "system.h"
 #include "sys.h"
+#include "pit.h"
 
 #include "drivers/keyboard/keyboard.h"
+
 #include "drivers/rtc/rtc.h"
 #include "drivers/video/video.h"
 #include "drivers/io/io.h"
@@ -113,13 +115,18 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
 
     // syscall table
     initialize_syscall_table();
-    kb_install();
 
     uint8_t mask = inb(0x21);   // Read the current mask on the master PIC
     mask &= ~(1 << 6);          // Clear the bit for IRQ 6
     outb(0x21, mask);           // Write the new mask
 
-    fdc_initialize_irq();
+    // Install the IRQ handler for the keyboard
+    irq_install_handler(1, kb_handler);
+    // Install the IRQ handler for the FDD
+    irq_install_handler(6, fdd_irq_handler);
+    // Install the IRQ handler for the timer
+    //irq_install_handler(0, timer_irq_handler);
+
     __asm__ __volatile__("sti"); // enable interrupts
 
     set_color(WHITE);
@@ -129,12 +136,12 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
     printf("===============================================================================\n");
 
     init_drives();
-    
+    test_memory();
+    kb_install();
+    // timer_install();
+    // test the colors
     printf("Type HELP for command list.\n");
 
-    test_memory();
-    //timer_install();
-    // test the colors
     set_color(BLACK); printf("Black ");
     set_color(BLUE); printf("Blue ");
     set_color(GREEN); printf("Green ");

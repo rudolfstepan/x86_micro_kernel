@@ -6,7 +6,7 @@
 
 volatile int timer_ticks = 0;
 
-void timer_handler(struct regs* r) {
+void timer_irq_handler(void* r) {
     // Increment a counter each time the timer interrupt fires
     timer_ticks++;
 
@@ -21,6 +21,6 @@ void timer_handler(struct regs* r) {
 
 void timer_install() {
 	printf("Install Timer...");
-	irq_install_handler(0, timer_handler);
-	printf("done\n");
+	// irq_install_handler(0, timer_irq_handler);
+	// printf("done\n");
 }
