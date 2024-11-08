@@ -50,6 +50,8 @@ unsigned long strtoul(const char* str, char** endptr, int base);
 char* strchr(const char* str, int c);
 // Tokenizes a string into smaller substrings using delimiters (not thread-safe).
 char* strtok(char* str, const char* delimiters);
+// locates the first occurrence of the substring needle in the string haystack:
+char* strstr(const char* haystack, const char* needle);
 
 // Custom non-standard functions:
 // Splits an input string into a command and arguments.
@@ -70,37 +72,5 @@ void normalize_string(char* dest, const char* src, size_t length);
 void str_trim_end(char* str, char ch);
 // Trims spaces from the input string and copies the result to the output buffer.
 void str_trim_spaces(const char* input, char* output, int max_len);
-
-
-// char toupper(char ch);
-// char tolower(char ch);
-// int isalnum(int c);
-// int isdigit(int c);
-// int isspace(int c);
-// int isalpha(int c);
-// int strlen(const char* str);
-// void strcat(char* dest, const char* src);
-// char* strncat(char* dest, const char* src, size_t n);
-// void strcpy(char* dest, const char* src);
-// int strcmp(const char* str1, const char* str2);
-// void strncpy(char* dest, const char* src, int num);
-// int strncmp(const char *str1, const char *str2, size_t n);
-// int strncasecmp(const char *str1, const char *str2, size_t n);
-// int split_input(const char* input, char* command, char** arguments, int max_length, int max_args);
-// void str_to_lower(char* str);
-// void str_to_upper(char* str);
-// char* strtok_r(char* str, const char* delim, char** saveptr);
-// size_t strspn(const char* str1, const char* str2);
-// size_t strcspn(const char* str1, const char* str2);
-// int snprintf(char *str, size_t size, const char *format, ...);
-// unsigned long strtoul(const char *str, char **endptr, int base);
-// void normalize_path(char* input_path, char* normalized_path, const char* current_path);
-// void trim_trailing_spaces(char *str);
-// void int_to_hex_str(unsigned int value, char* buffer, int width, bool zero_padding);
-// void normalize_string(char* dest, const char* src, size_t length);
-// char* strchr(const char* str, char c);
-// void str_trim_end(char *str, char ch);
-// void str_trim_spaces(const char* input, char* output, int max_len);
-// char* strtok(char* str, const char* delimiters);
 
 #endif /* STRINGS_H */

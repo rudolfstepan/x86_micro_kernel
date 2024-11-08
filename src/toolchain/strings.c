@@ -417,3 +417,31 @@ char* strtok(char* str, const char* delimiters) {
 
     return token_start;
 }
+
+// POSIX-compliant implementation of strstr
+char* strstr(const char* haystack, const char* needle) {
+    // Return haystack if needle is an empty string
+    if (*needle == '\0') {
+        return (char*)haystack;
+    }
+
+    // Iterate over the haystack string
+    for (const char* h = haystack; *h != '\0'; h++) {
+        const char* h_iter = h;
+        const char* n_iter = needle;
+
+        // Check if the substring matches at this position
+        while (*h_iter != '\0' && *n_iter != '\0' && *h_iter == *n_iter) {
+            h_iter++;
+            n_iter++;
+        }
+
+        // If we reached the end of the needle, we found a match
+        if (*n_iter == '\0') {
+            return (char*)h;
+        }
+    }
+
+    // No match found, return NULL
+    return NULL;
+}

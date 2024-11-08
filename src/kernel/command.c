@@ -338,16 +338,12 @@ void handle_open(int arg_count, char** arguments) {
     }
 }
 
-void handle_read_time(int arg_count, char** arguments) {
-    int hour, minute, second;
+void handle_read_datetime(int arg_count, char** arguments) {
+    int hour, minute, second, year, month, day;
     read_time(&hour, &minute, &second);
-    printf("Time: %02d:%02d:%02d\n", hour, minute, second);
-}
-
-void handle_read_date(int arg_count, char** arguments) {
-    int year, month, day;
     read_date(&year, &month, &day);
-    printf("Date: %d-%02d-%02d\n", year, month, day);
+
+    printf("Current date and time: %d-%02d-%02d %02d:%02d:%02d\n", year, month, day, hour, minute, second);
 }
 
 void handle_set_time(int arg_count, char** arguments) {
@@ -434,8 +430,7 @@ Command command_table[] = {
     {"LOAD", handle_load},
     {"SYS", handle_sys},
     {"OPEN", handle_open},
-    {"TIME", handle_read_time},
-    {"DATE", handle_read_date},
+    {"DATETIME", handle_read_datetime},
     {"SETTIME", handle_set_time},
     {"SETDATE", handle_set_date},
     {"IRQ", handle_irq},
@@ -467,5 +462,13 @@ void process_command(char* input_buffer) {
             command_table[i].handler(arg_count, (char**)arguments);
             break;
         }
+    }
+
+    // if the command is not found
+    if (i == NUM_COMMANDS) {
+        char* program = strcat(command, ".PRG");
+        printf("Search for Program: %s\n", program);
+
+        load_and_run_program(program);
     }
 }

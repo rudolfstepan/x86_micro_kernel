@@ -1,6 +1,6 @@
 #include <stddef.h>
-#include "toolchain/stdio.c"
-#include "toolchain/strings.c"
+//#include "toolchain/stdio.c"
+//#include "toolchain/strings.c"
 
 //////////////////////////////////////////////////////////////////////
 // A bored enby girl writes a BASIC interpreter in C
