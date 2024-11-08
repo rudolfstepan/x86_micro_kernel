@@ -36,7 +36,6 @@
 
 
 bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info);
-void init_fs(drive_t* drive);
 
 drive_t* ata_get_drive(unsigned short drive_index);
 drive_t* get_drive_by_name(const char* name);

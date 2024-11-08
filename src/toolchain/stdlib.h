@@ -1,8 +1,11 @@
-#ifndef MEMORY_H    /* This is an "include guard" */
-#define MEMORY_H
+#ifndef STDLIB_H    /* This is an "include guard" */
+#define STDLIB_H
+
+#include <stddef.h>
 
 #define SUCCESS 0
 #define FAILURE -1
+
 
 void initialize_memory_system();
 
@@ -18,4 +21,4 @@ int test_memory();
 void delay(int milliseconds);
 void* memmove(void* dest, const void* src, size_t n);
 
-#endif /* MEMORY_H */
+#endif /* STDLIB_H */

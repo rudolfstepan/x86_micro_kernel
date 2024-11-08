@@ -12,14 +12,14 @@ int start(void) {
     clear_screen(BLACK);
     printf("Test Program started!\n");
 
-    uintptr_t syscall_table_addr = get_syscall_table_address();
+    //uintptr_t syscall_table_addr = get_syscall_table_address();
 
     // if(syscall_table_addr == 0) {
     //     printf("Failed to get the syscall table address.\n");
     //     return 1;
     // }
     // Cast the address to a function pointer type if needed and use it
-    printf("Syscall table address: %u\n", syscall_table_addr);
+    //printf("Syscall table address: %u\n", syscall_table_addr);
 
     //sleep(1); // Wait for a short period of time (you'd use a timer interrupt in a real kernel)
 

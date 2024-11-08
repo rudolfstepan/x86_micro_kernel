@@ -467,8 +467,6 @@ void process_command(char* input_buffer) {
     // if the command is not found
     if (i == NUM_COMMANDS) {
         char* program = strcat(command, ".PRG");
-        printf("Search for Program: %s\n", program);
-
         load_and_run_program(program);
     }
 }

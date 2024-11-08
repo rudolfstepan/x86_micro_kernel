@@ -105,12 +105,10 @@ ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_D
 # #     $OUTPUT_DIR/filesystem/fat32.o $OUTPUT_DIR/filesystem/fat32_cluster.o $OUTPUT_DIR/filesystem/fat32_dir.o $OUTPUT_DIR/filesystem/fat32_file.o \
 # #     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
 
-# echo "Linking cli_test..."
-# ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_test.elf $OUTPUT_DIR/cli/cli_test.o \
-#     $OUTPUT_DIR/drivers/rtc/rtc.o $OUTPUT_DIR/drivers/io/io.o $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o \
-#     $OUTPUT_DIR/drivers/fdd/fdd.o \
-#     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
-#     $OUTPUT_DIR/filesystem/filesystem.o \
+echo "Linking cli_test..."
+ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_test.elf $OUTPUT_DIR/cli/cli_test.o \
+    $OUTPUT_DIR/drivers/drivers.o $OUTPUT_DIR/filesystem/filesystem.o \
+    $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
 
 # # ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/basic.elf $OUTPUT_DIR/basic.o \
 # #     $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o $OUTPUT_DIR/drivers/keyboard/keyboard.o $OUTPUT_DIR/drivers/pit/pit.o $OUTPUT_DIR/drivers/rtc/rtc.o \
@@ -121,7 +119,7 @@ ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_D
 # Convert to binary format
 objcopy -O binary $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_DIR/cli/date.prg
 # #objcopy -O binary $OUTPUT_DIR/cli/cli_dir.elf $OUTPUT_DIR/cli/dir.prg
-# objcopy -O binary $OUTPUT_DIR/cli/cli_test.elf $OUTPUT_DIR/cli/test.prg
+objcopy -O binary $OUTPUT_DIR/cli/cli_test.elf $OUTPUT_DIR/cli/test.prg
 # objcopy -O binary $OUTPUT_DIR/basic.elf $OUTPUT_DIR/basic.prg
 
 # #./make_image.sh
@@ -135,7 +133,7 @@ objcopy -O binary $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_DIR/cli/date.prg
 sudo mount ./disk.img /mnt/disk
 sudo cp $OUTPUT_DIR/cli/date.prg /mnt/disk/
 # #sudo cp $OUTPUT_DIR/dir.prg /mnt/disk/sys
-# # sudo cp $OUTPUT_DIR/cli/test.prg /mnt/disk/sys
+sudo cp $OUTPUT_DIR/cli/test.prg /mnt/disk/
 # # #sudo cp $OUTPUT_DIR/basic.prg /mnt/disk/
 sudo umount /mnt/disk
 
