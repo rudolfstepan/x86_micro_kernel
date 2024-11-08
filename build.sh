@@ -26,46 +26,46 @@ mkdir -p "$OUTPUT_DIR/boot"
 nasm -f elf32 $SOURCE_DIR/boot/bootloader.asm -o $OUTPUT_DIR/boot/bootloader.o
 echo "done"
 
-# Compile FAT32 sources separately because they need to be linked into a single object file
-echo "Compiling filesystem sources..."
+# Variablen für Quell- und Ausgabeverzeichnisse
+# Erstellen des Ausgabeverzeichnisses
 mkdir -p "$OUTPUT_DIR/filesystem"
-gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/file_system.o" "$SOURCE_DIR/filesystem/filesystem.c"
-gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32.o" "$SOURCE_DIR/filesystem/fat32/fat32.c"
-gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_cluster.o" "$SOURCE_DIR/filesystem/fat32/fat32_cluster.c"
-gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_files.o" "$SOURCE_DIR/filesystem/fat32/fat32_files.c"
-gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat32_dir.o" "$SOURCE_DIR/filesystem/fat32/fat32_dir.c"
-gcc $CFLAGS -o "$OUTPUT_DIR/filesystem/fat12.o" "$SOURCE_DIR/filesystem/fat12/fat12.c"
+SOURCE_DIR0=src/filesystem
+# Kompilieren aller .c-Dateien im SOURCE_DIR und dessen Unterverzeichnissen
+echo "Compiling filesystem sources..."
+for src_file in $(find "$SOURCE_DIR0" -type f -name '*.c'); do
+    # Extrahiere den Basisnamen der Datei ohne Erweiterung und Pfad
+    base_name=$(basename "$src_file" .c)
+    gcc $CFLAGS -c "$src_file" -o "$OUTPUT_DIR/filesystem/_${base_name}.o"
+done
 
-# Link into a single filesystem.o
-echo "Linking filesystem/FAT32 object files..."
-ld -m elf_i386 -r -o "$OUTPUT_DIR/filesystem/filesystem.o" \
-    "$OUTPUT_DIR/filesystem/file_system.o" \
-    "$OUTPUT_DIR/filesystem/fat12.o" \
-    "$OUTPUT_DIR/filesystem/fat32.o" \
-    "$OUTPUT_DIR/filesystem/fat32_cluster.o" \
-    "$OUTPUT_DIR/filesystem/fat32_files.o" \
-    "$OUTPUT_DIR/filesystem/fat32_dir.o"
+# Linken aller generierten Objektdateien zu einer einzigen .o-Datei
+echo "Linking filesystem object files..."
+ld -m elf_i386 -r -o "$OUTPUT_DIR/filesystem/filesystem.o" "$OUTPUT_DIR/filesystem/"_*.o
 echo "done"
 
-# # compile all .c files
-# echo "Compiling sources..."
-# for FILE in $(find $SOURCE_DIR -type f -name "*.c"); do
-#     # Get the directory structure of the source file relative to $SOURCE_DIR
-#     RELATIVE_PATH=${FILE#$SOURCE_DIR/}
-#     # Create corresponding directory structure in the output directory
-#     mkdir -p "$OUTPUT_DIR/$(dirname $RELATIVE_PATH)"
-    
-#     # Extract the base filename and compile it to the corresponding output path
-#     OBJECT_NAME="${RELATIVE_PATH%.*}.o"
-#     gcc $CFLAGS -o "$OUTPUT_DIR/$OBJECT_NAME" "$FILE"
-# done
-# echo "done"
+mkdir -p "$OUTPUT_DIR/drivers"
+SOURCE_DIR1=src/drivers
+# Kompilieren aller .c-Dateien im SOURCE_DIR und dessen Unterverzeichnissen
+echo "Compiling drivers sources..."
+for src_file in $(find "$SOURCE_DIR1" -type f -name '*.c'); do
+    # Extrahiere den Basisnamen der Datei ohne Erweiterung und Pfad
+    base_name=$(basename "$src_file" .c)
+    gcc $CFLAGS -c "$src_file" -o "$OUTPUT_DIR/drivers/_${base_name}.o"
+done
+
+# Linken aller generierten Objektdateien zu einer einzigen .o-Datei
+echo "Linking drivers object files..."
+ld -m elf_i386 -r -o "$OUTPUT_DIR/drivers/drivers.o" "$OUTPUT_DIR/drivers/"_*.o
+echo "done"
 
 # Compile all .c files except in the filesystem directory
 echo "Compiling sources..."
 for FILE in $(find $SOURCE_DIR -type f -name "*.c"); do
-    # Skip files in the filesystem directory
+    # Skip files in the filesystem  and drivers directory
     if [[ "$FILE" == *"/filesystem/"* ]]; then
+        continue
+    fi
+    if [[ "$FILE" == *"/drivers/"* ]]; then
         continue
     fi
     
@@ -84,16 +84,11 @@ echo "done"
 echo "Linking kernel..."
 ld -m elf_i386 -T kernel.ld -nostdlib -o $OUTPUT_DIR/kernel.bin \
     $OUTPUT_DIR/boot/bootloader.o $OUTPUT_DIR/boot/gdt.o $OUTPUT_DIR/boot/idt.o $OUTPUT_DIR/boot/isr.o \
-    $OUTPUT_DIR/drivers/io/io.o $OUTPUT_DIR/kernel/irq.o $OUTPUT_DIR/kernel/kernel.o $OUTPUT_DIR/kernel/prg.o $OUTPUT_DIR/kernel/system.o \
-    $OUTPUT_DIR/drivers/video/video.o \
-    $OUTPUT_DIR/drivers/keyboard/keyboard.o \
-    $OUTPUT_DIR/drivers/pit/pit.o \
-    $OUTPUT_DIR/drivers/rtc/rtc.o \
-    $OUTPUT_DIR/drivers/ata/ata.o \
-    $OUTPUT_DIR/drivers/fdd/fdd.o \
-    $OUTPUT_DIR/filesystem/filesystem.o \
-    $OUTPUT_DIR/kernel/command.o \
+    $OUTPUT_DIR/drivers/drivers.o \
+    $OUTPUT_DIR/kernel/irq.o $OUTPUT_DIR/kernel/kernel.o $OUTPUT_DIR/kernel/prg.o $OUTPUT_DIR/kernel/system.o $OUTPUT_DIR/kernel/command.o \
     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
+    $OUTPUT_DIR/filesystem/filesystem.o
+echo "done"
 
 # echo "Linking cli_date..."
 # ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_DIR/cli/cli_date.o \
@@ -136,7 +131,6 @@ ld -m elf_i386 -T kernel.ld -nostdlib -o $OUTPUT_DIR/kernel.bin \
 #   fi
 
 # sudo mount ./disk.img /mnt/disk
-
 # sudo cp $OUTPUT_DIR/cli/date.prg /mnt/disk/sys
 # #sudo cp $OUTPUT_DIR/dir.prg /mnt/disk/sys
 # sudo cp $OUTPUT_DIR/cli/test.prg /mnt/disk/sys
