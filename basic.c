@@ -1,4 +1,8 @@
-#include <stdio.h>
+#include <stddef.h>
+#include "toolchain/stdio.c"
+#include "toolchain/strings.c"
+
+//////////////////////////////////////////////////////////////////////
 // A bored enby girl writes a BASIC interpreter in C
 //////////////////////////////////////////////////////////////////////
 int slen(const char* s) { int i=0;for (; s[i]; i++); return i; }
@@ -18,17 +22,6 @@ char* strtok(char* s) {
 	for (;*_CURTOK && isspc(*_CURTOK);++_CURTOK); s = _CURTOK;
 	for (;*_CURTOK && !isspc(*_CURTOK);++_CURTOK);
 	if  (!(*_CURTOK)) return NULL;
-	*(_CURTOK++) = 0;
-	return s;
-}
-// variation of strtok that can detect strings
-char* sstrtok(char* s) {
-	int a=0;
-	if  (s != NULL) _CURTOK = s;
-	if  (!(*_CURTOK)) return NULL;
-	for (;*_CURTOK && isspc(*_CURTOK);++_CURTOK); s = _CURTOK;
-	for (;*_CURTOK && (a||!isspc(*_CURTOK));++_CURTOK)
-		if (*_CURTOK=='"') { if(!a) a=1; else break; }
 	*(_CURTOK++) = 0;
 	return s;
 }

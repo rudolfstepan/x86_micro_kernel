@@ -80,6 +80,12 @@ for FILE in $(find $SOURCE_DIR -type f -name "*.c"); do
 done
 echo "done"
 
+# compile basic interpreter
+# echo "Compiling basic interpreter..."
+# gcc $CFLAGS -o $OUTPUT_DIR/basic.o $SOURCE_DIR/basic.c
+# echo "done"
+
+
 #Link using the linker script
 echo "Linking kernel..."
 ld -m elf_i386 -T kernel.ld -nostdlib -o $OUTPUT_DIR/kernel.bin \
