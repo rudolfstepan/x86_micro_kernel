@@ -94,54 +94,19 @@ void init_drives()
     fdd_detect_drives();
 }
 
-// ---------------------------------------------------------------------------------------------
-// main routine of the kernel
-// This is the entry point of the kernel
-// ---------------------------------------------------------------------------------------------
-void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
-    sys_mb_info = mb_info;
-    // Check if the magic number is correct
-    if (multiboot_magic != MULTIBOOT_BOOTLOADER_MAGIC) {
-        printf("Invalid magic number: 0x%x\n", multiboot_magic);
-        return;
-    }
-
-    initialize_memory_system();
-
-    gdt_install();
-    idt_install();
-    isr_install();
-    irq_install();
-
-    // syscall table
-    initialize_syscall_table();
-
-    uint8_t mask = inb(0x21);   // Read the current mask on the master PIC
-    mask &= ~(1 << 6);          // Clear the bit for IRQ 6
-    outb(0x21, mask);           // Write the new mask
-
-    // Install the IRQ handler for the keyboard
-    irq_install_handler(1, kb_handler);
-    // Install the IRQ handler for the FDD
-    irq_install_handler(6, fdd_irq_handler);
-    // Install the IRQ handler for the timer
-    //irq_install_handler(0, timer_irq_handler);
-
-    __asm__ __volatile__("sti"); // enable interrupts
-
+void display_welcome_message() {
+    set_color(LIGHT_MAGENTA);
+    printf("\n");
+    printf("      *------------------------------------------------------------*\n");
+    printf("      |        Welcome to the Rudolf Stepan x86 Micro Kernel       |\n");
+    printf("      |      Type 'HELP' for a list of commands and instructions   |\n");
+    printf("      *------------------------------------------------------------*\n");
+    printf("\n");
     set_color(WHITE);
+}
 
-    printf("===============================================================================\n");
-    printf("|                 x86 Micro Kernel written by Rudolf Stepan 2024              |\n");
-    printf("===============================================================================\n");
-
-    init_drives();
-    test_memory();
-    kb_install();
-    // timer_install();
-    // test the colors
-    printf("Type HELP for command list.\n");
-
+void display_color_test() {
+    printf("\nColor Test: ");
     set_color(BLACK); printf("Black ");
     set_color(BLUE); printf("Blue ");
     set_color(GREEN); printf("Green ");
@@ -157,28 +122,61 @@ void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
     set_color(LIGHT_RED); printf("Light Red ");
     set_color(LIGHT_MAGENTA); printf("Light Magenta ");
     set_color(YELLOW); printf("Yellow ");
-    set_color(WHITE); printf("White\n");
+    set_color(WHITE); printf("White\n\n");
     set_color(WHITE);
-    // show the prompt
-    print_prompt();
+}
+
+void print_fancy_prompt() {
+    set_color(GREEN);
+    str_trim_end(current_path, '/');
+    printf("%s%s>", current_drive->name, current_path);
+    set_color(WHITE);
+}
+
+void main(uint32_t multiboot_magic, MultibootInfo* mb_info) {
+    sys_mb_info = mb_info;
+    // Check if the magic number is correct
+    if (multiboot_magic != MULTIBOOT_BOOTLOADER_MAGIC) {
+        set_color(RED);
+        printf("Invalid magic number: 0x%x\n", multiboot_magic);
+        set_color(WHITE);
+        return;
+    }
+
+    initialize_memory_system();
+    gdt_install();
+    idt_install();
+    isr_install();
+    irq_install();
+    initialize_syscall_table();
+    // Install the IRQ handler for the keyboard
+    irq_install_handler(1, kb_handler);
+    // Install the IRQ handler for the FDD
+    irq_install_handler(6, fdd_irq_handler);
+    // Install the IRQ handler for the timer
+    //irq_install_handler(0, timer_irq_handler);
+
+    __asm__ __volatile__("sti"); // enable interrupts
+
+    // display_kernel_banner();
+    // display_ascii_art();
+    display_welcome_message();
+    init_drives();
+    test_memory();
+    kb_install();
+    printf("Type HELP for command list.\n");
+
+    display_color_test();
+    print_fancy_prompt();
 
     // Main loop
     while (1) {
-        // Check if Enter key is pressed
         if (enter_pressed) {
-
-            // Process the command
             process_command(input_buffer);
-
-            // Clear the flag and reset buffer_index
             enter_pressed = false;
             buffer_index = 0;
-
-            // Clear the input buffer
             memset(input_buffer, 0, sizeof(input_buffer));
-
-            // Show the prompt
-            print_prompt();
+            print_fancy_prompt();
         }
     }
 

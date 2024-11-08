@@ -44,21 +44,6 @@ void load_program(const char* programName) {
     }
 }
 
-// Print the prompt
-void print_prompt() {
-    // int year, month, day, hour, minute, second;
-    // read_date(&year, &month, &day);
-    // read_time(&hour, &minute, &second);
-    // set_color(LIGHT_GREEN);
-    // printf("%d-%d-%d %d:%d:%d", year, month, day, hour, minute, second);
-    set_color(WHITE);
-
-    // Check if the last character is a slash and remove it
-    str_trim_end(current_path, '/');
-
-    printf("%s%s>", current_drive->name, current_path);
-}
-
 void call_irq(int irq) {
     // Map IRQ number to the corresponding interrupt number
     // Assuming IRQs are mapped starting at interrupt number 0x20
