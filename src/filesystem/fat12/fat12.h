@@ -83,7 +83,7 @@ bool fat12_change_directory(const char* relativePath);
 
 // file operations
 Fat12File* fat12_open_file(const char* filename, const char* mode);
-int fat12_read_file(Fat12File* file, void* buffer, size_t size);
+int fat12_read_file(Fat12File* file, void* buffer, unsigned int buffer_size, unsigned int bytesToRead);
 void print_file_content(Fat12File* file);
 
 #endif // FAT12_H

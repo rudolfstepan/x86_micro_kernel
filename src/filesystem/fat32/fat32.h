@@ -70,19 +70,6 @@ struct Fat32BootSector {
 };
 #pragma pack(pop)
 
-// typedef struct {
-//     unsigned char *base;  // Base address of the file in memory
-//     unsigned char *ptr;   // Current read/write position
-//     unsigned int startCluster;    // startCluster of the file
-//     const char* mode;     // Mode the file was opened with
-//     const char* name;     // Name of the file
-//     size_t size;          // Size of the file
-//     size_t position;      // Current position in the file (offset from base)
-// } FILE;
-
-// // Forward declaration of FILE if needed
-//typedef struct FILE FILE;
-
 // external definitions which are defined in fat32.c but used in other files
 //extern struct FILE file;
 extern struct Fat32BootSector boot_sector;
@@ -123,7 +110,6 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename);
 bool fat32_change_directory(const char *path);
 
 // File and Data Management
-void readFileData(unsigned int startCluster, char* buffer, unsigned int size);
 void openAndLoadFile(const char* filename);
 int openAndLoadFileToBuffer(const char* filename, void* loadAddress);
 int readFileDataToAddress(unsigned int startCluster, void* loadAddress, unsigned int fileSize);
@@ -147,7 +133,7 @@ bool delete_directory(const char* dirname);
 
 // file operations
 FILE* fat32_open_file(const char* filename, const char* mode);
-int read_file(FILE* file, void* buffer, size_t size);
+int fat32_read_file(FILE* file, void* buffer, unsigned int buffer_size, unsigned int bytesToRead);
 bool create_file(const char* filename);
 bool delete_file(const char* filename);
 

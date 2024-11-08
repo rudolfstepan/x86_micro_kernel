@@ -53,7 +53,7 @@ FILE* fopen(const char* filename, const char* mode) {
 }
 
 size_t fread(void* buffer, size_t size, size_t count, FILE* stream) {
-    return read_file(stream, buffer, count);
+    return fat32_read_file(stream, buffer, size, count);
 }
 
 int remove(const char* path) {

@@ -2,27 +2,74 @@
 #include "toolchain/stdio.h"
 
 // Function to read a file's data into a buffer
-void readFileData(unsigned int startCluster, char* buffer, unsigned int size) {
+// void readFileData(unsigned int startCluster, char* buffer, unsigned int size) {
+//     unsigned int currentCluster = startCluster;
+//     unsigned int bytesRead = 0;
+//     while (bytesRead < size) {
+//         unsigned int sectorNumber = cluster_to_sector(&boot_sector, currentCluster);
+//         // Read each sector in the current cluster
+//         for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
+//             ata_read_sector(ata_base_address, sectorNumber + i, buffer + bytesRead, ata_is_master);
+//             bytesRead += SECTOR_SIZE;
+//             if (bytesRead >= size) {
+//                 break;  // Stop if we have read the required size
+//             }
+//         }
+//         // Get the next cluster in the chain
+//         currentCluster = get_next_cluster_in_chain(&boot_sector, currentCluster);
+//         // Check if we have reached the end of the file
+//         if (isEndOfClusterChain(currentCluster)) {
+//             break;
+//         }
+//     }
+// }
+
+unsigned int readFileData(unsigned int startCluster, char* buffer, unsigned int bufferSize, unsigned int bytesToRead) {
+    if (buffer == NULL || bufferSize == 0 || bytesToRead == 0) {
+        // Invalid parameters; return 0 to indicate no data read
+        return 0;
+    }
+
     unsigned int currentCluster = startCluster;
-    unsigned int bytesRead = 0;
-    while (bytesRead < size) {
+    unsigned int totalBytesRead = 0;
+
+    while (totalBytesRead < bytesToRead) {
         unsigned int sectorNumber = cluster_to_sector(&boot_sector, currentCluster);
+
         // Read each sector in the current cluster
         for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-            ata_read_sector(ata_base_address, sectorNumber + i, buffer + bytesRead, ata_is_master);
-            bytesRead += SECTOR_SIZE;
-            if (bytesRead >= size) {
-                break;  // Stop if we have read the required size
+            // Calculate the number of bytes to read in this iteration
+            unsigned int bytesRemaining = bytesToRead - totalBytesRead;
+            unsigned int bytesToReadNow = (bytesRemaining < SECTOR_SIZE) ? bytesRemaining : SECTOR_SIZE;
+
+            // Ensure we don't read past the end of the buffer
+            if (totalBytesRead + bytesToReadNow > bufferSize) {
+                bytesToReadNow = bufferSize - totalBytesRead;
+            }
+
+            // Read data into the buffer
+            ata_read_sector(ata_base_address, sectorNumber + i, buffer + totalBytesRead, ata_is_master);
+            totalBytesRead += bytesToReadNow;
+
+            // Break the loop if we have read the requested number of bytes
+            if (totalBytesRead >= bytesToRead) {
+                break;
             }
         }
+
         // Get the next cluster in the chain
         currentCluster = get_next_cluster_in_chain(&boot_sector, currentCluster);
-        // Check if we have reached the end of the file
-        if (isEndOfClusterChain(currentCluster)) {
+
+        // Check if we have reached the end of the file or if an invalid cluster is encountered
+        if (isEndOfClusterChain(currentCluster) || currentCluster == INVALID_CLUSTER) {
             break;
         }
     }
+
+    // Return the total number of bytes read
+    return totalBytesRead;
 }
+
 
 int openAndLoadFileToBuffer(const char* filename, void* loadAddress) {
     struct FAT32DirEntry* entry = findFileInDirectory(filename);
@@ -75,9 +122,9 @@ void openAndLoadFile(const char* filename) {
         printf("Not enough memory.\n");
         return;
     }
-    readFileData(startCluster, buffer, fileSize);
+    readFileData(startCluster, buffer, sizeof(buffer), fileSize);
 
-    // Process the file data in buffer
+    // Process the file data in bufferb
     // for(int i = 0; i < fileSize; i++){
     //     printf("%c", buffer[i]);
     // }
@@ -183,11 +230,6 @@ FILE* fat32_open_file(const char* filename, const char* mode) {
 
     unsigned int startCluster = readStartCluster(entry);
     int fileSize = entry->fileSize;
-    // char* buffer = malloc(fileSize);
-    // if (buffer == NULL) {
-    //     printf("Not enough memory.\n");
-    //     return NULL;
-    // }
 
     FILE* file = malloc(sizeof(FILE));
     if (file == NULL) {
@@ -202,23 +244,19 @@ FILE* fat32_open_file(const char* filename, const char* mode) {
     file->name = filename;
     file->startCluster = startCluster;
 
-    //readFileData(startCluster, buffer, fileSize);
-
     return file;
 }
 
 // read file
-int read_file(FILE* file, void* buffer, unsigned int size) {
+int fat32_read_file(FILE* file, void* buffer, unsigned int buffer_size, unsigned int bytesToRead) {
     if (strcmp(file->mode, "w") == 0) {
         printf("Error: File is not open for reading.\n");
         return 0;
     }
 
-    if (file->position + size > file->size) {
-        size = file->size - file->position;
+    if (file->position + bytesToRead > file->size) {
+        bytesToRead = file->size - file->position;
     }
 
-    readFileData(file->startCluster, buffer, size);
-
-    return size;
+    return readFileData(file->startCluster, buffer, buffer_size, bytesToRead);
 }

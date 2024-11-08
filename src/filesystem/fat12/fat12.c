@@ -17,6 +17,7 @@
 #define NUMBER_OF_HEADS 2        // Number of disk heads (sides) for a double-sided floppy
 #define MIN_CLUSTER_VALUE 0x002  // Minimum valid cluster value
 #define MAX_CLUSTER_VALUE 0xFF8  // Maximum valid cluster value before end-of-chain
+#define INVALID_CLUSTER 0xFFF // Typically used for FAT12; adjust based on your system
 
 
 // Global structures and buffers
@@ -325,17 +326,22 @@ void print_file_content(Fat12File* file) {
         return;
     }
 
-    char* buffer = malloc(file->size + 1);
+    // Calculate the size of the buffer based on the size of the file
+    size_t bufferSize = file->size; // Use the file size as the buffer size directly
+
+    // Allocate the buffer
+    char* buffer = (char*)malloc(sizeof(char) * bufferSize);
+
     if (buffer == NULL) {
         printf("Memory allocation failed.\n");
         return;
     }
-    memset(buffer, 0, file->size + 1);
+    memset(buffer, 0, bufferSize);
 
-    int bytesRead = fat12_read_file(file, buffer, file->size);
+    int bytesRead = fat12_read_file(file, buffer, bufferSize, file->size);
     if (bytesRead > 0) {
         printf("File contents:\n%s\n", buffer);
-        hex_dump((unsigned char*)buffer, file->size);
+        hex_dump((unsigned char*)buffer, bufferSize);
     } else {
         printf("Failed to read file content.\n");
     }
@@ -368,72 +374,82 @@ bool fat12_read_dir(const char* path) {
     return true;
 }
 
-int fat12_read_file(Fat12File* file, void* buffer, size_t size) {
-    if (file == NULL) {
-        printf("Invalid file handle.\n");
+int fat12_read_file(Fat12File* file, void* buffer, unsigned int buffer_size, unsigned int bytesToRead) {
+    if (file == NULL || buffer == NULL) {
+        printf("Invalid file handle or buffer.\n");
         return 0;
     }
 
-    if (file->position + size > file->size) {
-        size = file->size - file->position; // Ensure we don't read beyond the end of the file
+    // Ensure we don't read beyond the end of the file or buffer
+    if (file->position + bytesToRead > file->size) {
+        bytesToRead = file->size - file->position;
+    }
+    if (bytesToRead > buffer_size) {
+        bytesToRead = buffer_size;
     }
 
     unsigned int bytes_read = 0;
     unsigned int currentCluster = file->startCluster;
     unsigned int clusterSize = SECTOR_SIZE * fat12.bootSector.sectorsPerCluster;
 
-    // Adjust starting point if the file's position is not at the beginning
+    // Calculate initial offset within the first cluster if the position is not at the start
     unsigned int startOffset = file->position % clusterSize;
-    unsigned char* sectorBuffer = malloc(SECTOR_SIZE);
+
+    unsigned char* sectorBuffer = (unsigned char*)malloc(SECTOR_SIZE);
     if (sectorBuffer == NULL) {
         printf("Memory allocation failed for sector buffer.\n");
         return 0;
     }
 
-    while (bytes_read < size && currentCluster >= MIN_CLUSTER_VALUE && currentCluster < MAX_CLUSTER_VALUE) {
-        // Calculate the logical sector for the current cluster
+    // Read loop
+    while (bytes_read < bytesToRead && currentCluster >= MIN_CLUSTER_VALUE && currentCluster < MAX_CLUSTER_VALUE) {
+        // Calculate the first sector of the current cluster
         unsigned int firstSectorOfCluster = fat12.dataStart + (currentCluster - 2) * fat12.bootSector.sectorsPerCluster;
 
-        for (unsigned int i = 0; i < fat12.bootSector.sectorsPerCluster && bytes_read < size; i++) {
-            int logical_sector = firstSectorOfCluster + i;
+        // Read each sector in the cluster
+        for (unsigned int i = 0; i < fat12.bootSector.sectorsPerCluster && bytes_read < bytesToRead; i++) {
+            unsigned int logical_sector = firstSectorOfCluster + i;
             int track = logical_sector / (SECTORS_PER_TRACK * NUMBER_OF_HEADS);
             int head = (logical_sector / SECTORS_PER_TRACK) % NUMBER_OF_HEADS;
             int sector = (logical_sector % SECTORS_PER_TRACK) + 1;  // Sectors are 1-based
 
-            // Read the sector into the buffer
+            // Read the sector
             if (!fdc_read_sector(current_fdd_drive, head, track, sector, sectorBuffer)) {
                 printf("Error reading file sector at track %d, head %d, sector %d.\n", track, head, sector);
                 free(sectorBuffer);
                 return bytes_read; // Return bytes read so far on failure
             }
 
-            // Determine the number of bytes to copy from the current sector
+            // Calculate how many bytes to copy from the sector
             unsigned int offset = (bytes_read == 0) ? startOffset : 0;
             unsigned int remaining = SECTOR_SIZE - offset;
-            unsigned int bytes_to_read = (size - bytes_read < remaining) ? size - bytes_read : remaining;
+            unsigned int bytes_to_copy = (bytesToRead - bytes_read < remaining) ? (bytesToRead - bytes_read) : remaining;
 
-            memcpy((unsigned char*)buffer + bytes_read, sectorBuffer + offset, bytes_to_read);
-            bytes_read += bytes_to_read;
-            file->position += bytes_to_read;
+            // Copy the bytes from the sector buffer to the main buffer
+            memcpy((unsigned char*)buffer + bytes_read, sectorBuffer + offset, bytes_to_copy);
+            bytes_read += bytes_to_copy;
+            file->position += bytes_to_copy;
 
-            if (bytes_read >= size) {
+            if (bytes_read >= bytesToRead) {
                 break;
             }
         }
 
-        // Get the next cluster from the FAT
+        // Move to the next cluster in the chain
         currentCluster = get_next_cluster(currentCluster);
+        if (currentCluster == INVALID_CLUSTER) {
+            printf("Invalid cluster detected.\n");
+            break;
+        }
     }
 
-    // Null-terminate the buffer to ensure proper string output if applicable
-    if (bytes_read < size) {
+    // Null-terminate the buffer if applicable (only for text data)
+    if (bytes_read < buffer_size) {
         ((char*)buffer)[bytes_read] = '\0';
-    } else {
-        ((char*)buffer)[size - 1] = '\0'; // Null-terminate at the end if size limit is reached
     }
 
     free(sectorBuffer);
-    printf("Completed reading %d bytes from file %s into buffer.\n", bytes_read, file->name);
+    printf("Completed reading %u bytes from file %s into buffer.\n", bytes_read, file->name);
 
     return bytes_read;
 }

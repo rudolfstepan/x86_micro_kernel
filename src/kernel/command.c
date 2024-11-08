@@ -76,7 +76,7 @@ void openFile(const char* path) {
     switch (current_drive->type) {
     case DRIVE_TYPE_ATA:
 
-        FILE* file = fopen(path, "r");
+        FILE* file = fat32_open_file(path, "r");
         if (file == NULL) {
             printf("File not found: %s\n", path);
             return;
@@ -85,22 +85,27 @@ void openFile(const char* path) {
         printf("Name: %s\n", file->name);
         printf("Size: %d\n", file->size);
 
-        char* buffer = (char*)malloc(sizeof(char) * file->size);
+        // Calculate the size of the buffer based on the size of the file
+        size_t bufferSize = file->size; // Use the file size as the buffer size directly
+
+        // Allocate the buffer
+        char* buffer = (char*)malloc(bufferSize +1);
         if (buffer == NULL) {
             printf("Failed to allocate memory for file buffer\n");
             return;
         }
 
-        // TODO: read the file into the buffer
-        // int result = read_file(file, buffer, file->size);
+        // Read the file into the buffer, passing the correct size
+        int result = fat32_read_file(file, buffer, bufferSize, bufferSize); // Pass bufferSize as the buffer size
+        if (result == 0) {
+            printf("Failed to read file\n");
+            return;
+        }
 
-        // if (result == 0) {
-        //     printf("Failed to read file\n");
-        //     return;
-        // }
+        printf("Result: %d\n", result);
 
-        // printf("File contents:\n");
-        // printf("%s\n", buffer);
+        printf("File contents:\n");
+        printf("%s\n", buffer);
 
         secure_free(buffer, sizeof(buffer));  // Clear the buffer
         break;
@@ -108,28 +113,33 @@ void openFile(const char* path) {
     case DRIVE_TYPE_FDD:
     {
         // TODO: use the gerneric FILE structure to read the file
-        // Fat12File* file = fat12_open_file(path, "r");
-        // if (file == NULL) {
-        //     printf("File not found: %s\n", path);
-        //     return;
-        // }
+        Fat12File* file = fat12_open_file(path, "r");
+        if (file == NULL) {
+            printf("File not found: %s\n", path);
+            return;
+        }
 
-        // char* buffer = (char*)malloc(sizeof(char) * file->size);
-        // if (buffer == NULL) {
-        //     printf("Failed to allocate memory for file buffer\n");
-        //     return;
-        // }
+        // Calculate the size of the buffer based on the size of the file
+        size_t bufferSize = file->size; // Use the file size as the buffer size directly
 
-        // // read the file into the buffer
-        // int result = fat12_read_file(file, buffer, file->size);
-        // if (result == 0) {
-        //     printf("Failed to read file\n");
-        //     return;
-        // }
+        // Allocate the buffer
+        char* buffer = (char*)malloc(sizeof(char) * bufferSize);
+        if (buffer == NULL) {
+            printf("Failed to allocate memory for file buffer\n");
+            return;
+        }
 
-        // printf("File contents:\n");
-        // print_file_content(file);
-        // secure_free(buffer, sizeof(buffer));  // Clear the buffer
+        // Read the file into the buffer, passing the correct size
+        int result = fat12_read_file(file, buffer, bufferSize, file->size); // Pass bufferSize as the buffer size
+        if (result == 0) {
+            printf("Failed to read file\n");
+            return;
+        }
+
+        printf("File contents:\n%s\n", buffer);
+        hex_dump((unsigned char*)buffer, file->size);
+
+        secure_free(buffer, sizeof(buffer));  // Clear the buffer
     }
     break;
 
