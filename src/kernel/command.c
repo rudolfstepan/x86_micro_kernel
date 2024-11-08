@@ -4,7 +4,10 @@
 
 #include "toolchain/strings.h"
 #include "toolchain/stdio.h"
-
+#include "toolchain/stdlib.h"
+#include "drivers/video/video.h"
+#include "filesystem/fat32/fat32.h"
+#include "filesystem/fat12/fat12.h"
 
 #define NUM_COMMANDS (sizeof(command_table) / sizeof(Command))
 
@@ -73,7 +76,7 @@ void openFile(const char* path) {
     switch (current_drive->type) {
     case DRIVE_TYPE_ATA:
 
-        File* file = fopen(path, "r");
+        FILE* file = fopen(path, "r");
         if (file == NULL) {
             printf("File not found: %s\n", path);
             return;
@@ -88,27 +91,28 @@ void openFile(const char* path) {
             return;
         }
 
-        // read the file into the buffer
-        int result = read_file(file, buffer, file->size);
+        // TODO: read the file into the buffer
+        // int result = read_file(file, buffer, file->size);
 
-        if (result == 0) {
-            printf("Failed to read file\n");
-            return;
-        }
+        // if (result == 0) {
+        //     printf("Failed to read file\n");
+        //     return;
+        // }
 
-        printf("File contents:\n");
-        printf("%s\n", buffer);
+        // printf("File contents:\n");
+        // printf("%s\n", buffer);
 
         secure_free(buffer, sizeof(buffer));  // Clear the buffer
         break;
 
     case DRIVE_TYPE_FDD:
     {
-        Fat12File* file = fat12_open_file(path, "r");
-        if (file == NULL) {
-            printf("File not found: %s\n", path);
-            return;
-        }
+        // TODO: use the gerneric FILE structure to read the file
+        // Fat12File* file = fat12_open_file(path, "r");
+        // if (file == NULL) {
+        //     printf("File not found: %s\n", path);
+        //     return;
+        // }
 
         // char* buffer = (char*)malloc(sizeof(char) * file->size);
         // if (buffer == NULL) {
@@ -123,8 +127,8 @@ void openFile(const char* path) {
         //     return;
         // }
 
-        printf("File contents:\n");
-        print_file_content(file);
+        // printf("File contents:\n");
+        // print_file_content(file);
         // secure_free(buffer, sizeof(buffer));  // Clear the buffer
     }
     break;
@@ -263,7 +267,7 @@ void handle_mkdir(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("MKDIR command without arguments\n");
     } else {
-        mkdir(arguments[0]);
+        mkdir(arguments[0], 0);
     }
 }
 
@@ -287,7 +291,7 @@ void handle_rmfile(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("RMFILE command without arguments\n");
     } else {
-        rmfile(arguments[0]);
+        remove(arguments[0]);
     }
 }
 

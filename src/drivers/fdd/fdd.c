@@ -125,8 +125,8 @@
 #include "fdd.h"
 #include "drivers/io/io.h"
 #include "toolchain/stdio.h"
-// #include "kernel/system.h"
-// #include "kernel/sys.h"
+#include "toolchain/stdlib.h"
+
 
 #define FDD_CMD_RECALIBRATE  0x07
 #define FDD_CMD_SEEK         0x0F

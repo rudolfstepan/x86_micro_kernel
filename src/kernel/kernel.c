@@ -18,6 +18,7 @@
 
 #include "filesystem/filesystem.h"
 #include "drivers/ata/ata.h"
+#include "drivers/fdd/fdd.h"
 
 // for the keyboard
 extern char input_buffer[BUFFER_SIZE];

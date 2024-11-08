@@ -10,7 +10,9 @@
 			"stddef.h": "c",
 			"stdarg.h": "c",
 			"vcruntime.h": "c",
-			"stdlib.h": "c"
+			"stdlib.h": "c",
+			"types.h": "c",
+			"stat.h": "c"
 		}
 	}
 }

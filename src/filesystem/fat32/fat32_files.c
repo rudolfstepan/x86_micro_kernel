@@ -174,7 +174,7 @@ bool delete_file(const char* filename) {
 }
 
 // Function to open a file and return a pointer to the file data
-File* fat32_open_file(const char* filename, const char* mode) {
+FILE* fat32_open_file(const char* filename, const char* mode) {
     struct FAT32DirEntry* entry = findFileInDirectory(filename);
     if (entry == NULL) {
         printf("File not found.\n");
@@ -189,7 +189,7 @@ File* fat32_open_file(const char* filename, const char* mode) {
     //     return NULL;
     // }
 
-    File* file = malloc(sizeof(File));
+    FILE* file = malloc(sizeof(FILE));
     if (file == NULL) {
         printf("Not enough memory.\n");
         return NULL;
@@ -208,7 +208,7 @@ File* fat32_open_file(const char* filename, const char* mode) {
 }
 
 // read file
-int read_file(File* file, void* buffer, unsigned int size) {
+int read_file(FILE* file, void* buffer, unsigned int size) {
     if (strcmp(file->mode, "w") == 0) {
         printf("Error: File is not open for reading.\n");
         return 0;

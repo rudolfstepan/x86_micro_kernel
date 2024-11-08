@@ -7,6 +7,7 @@
 
 #include "toolchain/strings.h"
 #include "toolchain/stdlib.h"
+#include "toolchain/definitions.h"
 #include "drivers/ata/ata.h"
 
 #define SECTOR_SIZE 512
@@ -18,6 +19,7 @@
 #define FAT32_EOC_MAX 0x0FFFFFFF
 #define INVALID_CLUSTER 0xFFFFFFFF
 #define MAX_PATH_LENGTH 256
+
 
 #pragma pack(push, 1)
 struct FAT32DirEntry {
@@ -68,18 +70,21 @@ struct Fat32BootSector {
 };
 #pragma pack(pop)
 
-typedef struct {
-    unsigned char *base;  // Base address of the file in memory
-    unsigned char *ptr;   // Current read/write position
-    unsigned int startCluster;    // startCluster of the file
-    const char* mode;     // Mode the file was opened with
-    const char* name;     // Name of the file
-    size_t size;          // Size of the file
-    size_t position;      // Current position in the file (offset from base)
-} File;
+// typedef struct {
+//     unsigned char *base;  // Base address of the file in memory
+//     unsigned char *ptr;   // Current read/write position
+//     unsigned int startCluster;    // startCluster of the file
+//     const char* mode;     // Mode the file was opened with
+//     const char* name;     // Name of the file
+//     size_t size;          // Size of the file
+//     size_t position;      // Current position in the file (offset from base)
+// } FILE;
+
+// // Forward declaration of FILE if needed
+//typedef struct FILE FILE;
 
 // external definitions which are defined in fat32.c but used in other files
-extern struct File file;
+//extern struct FILE file;
 extern struct Fat32BootSector boot_sector;
 extern unsigned int current_directory_cluster; // Default root directory cluster for FAT32
 
@@ -141,8 +146,8 @@ bool create_directory(const char* dirname);
 bool delete_directory(const char* dirname);
 
 // file operations
-File* fat32_open_file(const char* filename, const char* mode);
-int read_file(File* file, void* buffer, size_t size);
+FILE* fat32_open_file(const char* filename, const char* mode);
+int read_file(FILE* file, void* buffer, size_t size);
 bool create_file(const char* filename);
 bool delete_file(const char* filename);
 

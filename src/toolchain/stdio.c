@@ -6,11 +6,17 @@
 #include <stddef.h>
 #include "drivers/keyboard/keyboard.h"
 
+#include "filesystem/filesystem.h"
+#include "filesystem/fat32/fat32.h"
+#include "filesystem/fat12/fat12.h"
+#include "drivers/video/video.h"
+#include "toolchain/stdlib.h"
+
 // -----------------------------------------------------------------
 // Directory Handling Functions
 // the following functions are defined in the filesystem/fat32/fat32.c file
 // -----------------------------------------------------------------
-int mkdir(const char* path) {
+int mkdir(const char* path, mode_t mode) {
     return create_directory(path);
 }
 
@@ -18,7 +24,13 @@ int rmdir(const char* path) {
     return delete_directory(path);
 }
 
-int readdir(const char* path, char* buffer, unsigned int* size, drive_type_t driveType) {
+// struct dirent* readdir(DIR* dirp) {
+//     return fat32_read_directory(dirp);
+// }
+
+int readdir(const char* path, char* buffer, unsigned int* size, uint8_t dt) {
+    drive_type_t driveType = (drive_type_t)dt;
+    
     if (driveType == DRIVE_TYPE_NONE) {
         printf("Invalid drive type\n");
         return -1;
@@ -36,15 +48,15 @@ int readdir(const char* path, char* buffer, unsigned int* size, drive_type_t dri
 // File Functions
 // -----------------------------------------------------------------
 
-File* fopen(const char* filename, const char* mode) {
+FILE* fopen(const char* filename, const char* mode) {
     return fat32_open_file(filename, mode);
 }
 
-int fread(void* buffer, int size, File* fd) {
-    return read_file(fd, buffer, size);
+size_t fread(void* buffer, size_t size, size_t count, FILE* stream) {
+    return read_file(stream, buffer, count);
 }
 
-int rmfile(const char* path) {
+int remove(const char* path) {
     return delete_file(path);
 }
 

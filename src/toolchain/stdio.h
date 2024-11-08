@@ -1,29 +1,40 @@
 #ifndef STDIO_H
 #define STDIO_H
 
-#include "filesystem/filesystem.h"
-#include "filesystem/fat32/fat32.h"
-#include "filesystem/fat12/fat12.h"
-#include "drivers/video/video.h"
-
+#include <stdint.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include "definitions.h"
+//#include <dirent.h>
 
 // File Handling Functions
-File* fopen(const char* filename, const char* mode);
-int fread(void* buffer, int size, File* fd);
-int rmfile(const char* path);                                   // remove file
 int mkfile(const char* path);                                   // create file
 
 // Directory Handling Functions
-int mkdir(const char* path);                                    // make directory
-int rmdir(const char* path);                                    // remove directory
-//bool chdir(const char* path);                                    // change directory
-//bool change_drive(const char* input);
-void get_full_path(const char* path, char* full_path, size_t size);
-int readdir(const char* path, char* buffer, unsigned int *size, drive_type_t driveType);// read directory
+//void get_full_path(const char* path, char* full_path, size_t size);
+//int readdir(const char* path, char* buffer, unsigned int *size, drive_type_t driveType);// read directory
+int readdir(const char* path, char* buffer, unsigned int *size, uint8_t driveType);// read directory
 
 // Console Functions
-int printf(const char* format, ...);                            // print formatted string
 int sprintf(char *buffer, const char *format, ...);
+
+// POSIX File Handling Functions
+FILE* fopen(const char* filename, const char* mode);           // Open a file
+size_t fread(void* buffer, size_t size, size_t count, FILE* stream); // Read from a file
+int remove(const char* path);                                  // Remove a file
+
+// POSIX Directory Handling Functions
+int mkdir(const char* path, mode_t mode);                      // Make a directory
+int rmdir(const char* path);                                   // Remove a directory
+int chdir(const char* path);                                   // Change the current working directory
+//char* realpath(const char* path, char* resolved_path);         // Get the full path
+
+// POSIX Directory Reading Functions
+//struct dirent* readdir(DIR* dirp);                             // Read a directory entry
+
+// POSIX Console Functions
+int printf(const char* format, ...);                           // Print formatted string to standard output
+int snprintf(char* buffer, size_t size, const char* format, ...); // Print formatted string to a buffer safely
 
 void hex_dump(const unsigned char* data, size_t size);
 

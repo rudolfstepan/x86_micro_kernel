@@ -1,5 +1,6 @@
 #include "toolchain/stdio.h"
-
+#include <stdint.h>
+#include "drivers/video/video.h"
 
 //extern void sleep(int ticks);
 

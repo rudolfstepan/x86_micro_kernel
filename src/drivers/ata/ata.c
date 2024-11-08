@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include "drivers/io/io.h"
 #include "toolchain/stdio.h"
+#include "toolchain/strings.h"
+#include "toolchain/stdlib.h"
 #include "drivers/fdd/fdd.h"
 
 
@@ -222,6 +224,7 @@ void init_fs(drive_t* drive) {
         fs_type[8] = '\0';  // Ensure null termination
 
         // Detect filesystem type by examining the boot sector
+        // TODO: move this to a separate function
         if (strcmp(fs_type, "FAT12   ") == 0) {
             printf("Detected FAT12 filesystem on drive %s.\n", drive->name);
             //fat12_init_fs(drive->base, drive->is_master);
@@ -230,7 +233,7 @@ void init_fs(drive_t* drive) {
             //fat16_init_fs(drive->base, drive->is_master);
         } else if (strcmp(fs_type, "FAT32   ") == 0) {
             printf("Detected FAT32 filesystem on drive %s.\n", drive->name);
-            fat32_init_fs(drive->base, drive->is_master);
+            //fat32_init_fs(drive->base, drive->is_master);
         } else if (memcmp(boot_sector->oemName, "NTFS    ", 8) == 0) {
             printf("Detected NTFS filesystem on drive %s.\n", drive->name);
             //ntfs_init_fs(drive->base, drive->is_master);

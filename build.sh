@@ -85,8 +85,6 @@ echo "done"
 # gcc $CFLAGS -o $OUTPUT_DIR/basic.o $SOURCE_DIR/basic.c
 # echo "done"
 
-
-#Link using the linker script
 echo "Linking kernel..."
 ld -m elf_i386 -T kernel.ld -nostdlib -o $OUTPUT_DIR/kernel.bin \
     $OUTPUT_DIR/boot/bootloader.o $OUTPUT_DIR/boot/gdt.o $OUTPUT_DIR/boot/idt.o $OUTPUT_DIR/boot/isr.o \
