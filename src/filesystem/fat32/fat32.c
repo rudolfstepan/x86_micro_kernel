@@ -18,7 +18,7 @@ int fat32_init_fs(unsigned short base, bool is_master) {
     // Read the first sector (LBA 0) into boot_sector
     if (!ata_read_sector(base, 0, &boot_sector, is_master)) {
         // Handle error (e.g., log error or halt)
-        printf("Error reading boot sector.\n");
+        printf("+++ Error reading boot sector +++.\n");
 
         return FAILURE;
     }

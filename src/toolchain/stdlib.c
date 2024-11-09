@@ -321,6 +321,20 @@ void delay(int milliseconds) {
     }
 }
 
+// Simple delay function for bare-metal kernel
+void sleep_ms(unsigned int milliseconds) {
+    // Estimate the number of iterations needed for approximately 1 millisecond
+    // This number is system-dependent and needs to be adjusted based on the CPU clock speed.
+    const unsigned int iterations_per_ms = 1000; // Adjust this value as needed
+
+    for (unsigned int ms = 0; ms < milliseconds; ms++) {
+        for (unsigned int i = 0; i < iterations_per_ms; i++) {
+            // Inline assembly for a no-operation instruction
+            __asm__ __volatile__("nop");
+        }
+    }
+}
+
 void* memmove(void* dest, const void* src, size_t n) {
     // Cast to unsigned char pointers for byte-wise operations
     unsigned char* d = (unsigned char*)dest;

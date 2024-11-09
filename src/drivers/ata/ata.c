@@ -7,13 +7,19 @@
 #include "toolchain/stdlib.h"
 #include "drivers/fdd/fdd.h"
 
-
-
-
-
 drive_t* current_drive = {0};  // Current drive (global variable)
 drive_t detected_drives[MAX_DRIVES];  // Global array of detected drives
 short drive_count = 0;  // Number of detected drives
+
+// bool wait_for_drive_ready(unsigned short base, unsigned char mask, unsigned int timeout_ms) {
+//     unsigned int counter = 0;
+//     while ((inb(ATA_STATUS(base)) & mask) && counter < timeout_ms) {
+//         sleep_ms(1); // Sleep for 1 millisecond (implement sleep_ms or use a similar function)
+//         counter++;
+//     }
+//     return counter < timeout_ms; // Return false if timeout reached
+// }
+
 /*
     * Reads a sector from the ATA drive.
     * 
@@ -31,9 +37,9 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
     outb(ATA_LBA_MID(base), (unsigned char)((lba >> 8) & 0xFF));
     outb(ATA_LBA_HIGH(base), (unsigned char)((lba >> 16) & 0xFF));
 
-    // Set the drive/head register
-    unsigned char drive_head = 0xE0 | ((lba >> 24) & 0x0F);  // LBA mode with upper LBA bits
-    drive_head |= is_master ? 0x00 : 0x10;  // 0x00 for master, 0x10 for slave
+    // Set the drive/head register for LBA mode
+    unsigned char drive_head = 0xE0 | ((lba >> 24) & 0x0F); // LBA mode with upper LBA bits
+    drive_head |= is_master ? 0x00 : 0x10; // 0x00 for master, 0x10 for slave
     outb(ATA_DRIVE_HEAD(base), drive_head);
 
     // Send the read command
@@ -97,7 +103,7 @@ drive_t* ata_get_drive(unsigned short drive_index) {
 void ata_detect_drives() {
     uint16_t bases[2] = { ATA_PRIMARY_IO, ATA_SECONDARY_IO };
     uint8_t drives[2] = { ATA_MASTER, ATA_SLAVE };
-    int drive_name_index = 1;  // For generating names like "hdd1", "hdd2", etc.
+    int drive_name_index = 0;  // For generating names like "hdd1", "hdd2", etc.
 
     drive_count = 0;  // Reset drive count before detection
 
@@ -133,7 +139,6 @@ void ata_detect_drives() {
     }
 }
 
-// Function to send the IDENTIFY command and retrieve drive information
 bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info) {
     // Select the drive (master or slave)
     outb(base + 6, drive);
@@ -156,6 +161,11 @@ bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info) {
     uint16_t identify_data[256];
     insw(base, identify_data, 256);
 
+    // Sanity checks for valid IDENTIFY response
+    if (identify_data[0] == 0 || identify_data[0] == 0xFFFF) {
+        return false;  // Invalid or non-ATA device
+    }
+
     // Extract the model number (bytes 54-93 in IDENTIFY data)
     for (int i = 0; i < 20; i++) {
         drive_info->model[i * 2] = identify_data[27 + i] >> 8;
@@ -163,12 +173,23 @@ bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info) {
     }
     drive_info->model[40] = '\0';
 
+    // Validate the model name (check for printable characters)
+    for (int i = 0; i < 40; i++) {
+        if (drive_info->model[i] != '\0' && (drive_info->model[i] < 32 || drive_info->model[i] > 126)) {
+            return false;  // Invalid model name, likely corrupted data
+        }
+    }
+
     // Get the total sector count (LBA28; words 60-61)
     drive_info->sectors = identify_data[60] | (identify_data[61] << 16);
 
+    // Validate sector count
+    if (drive_info->sectors <= 0) {
+        return false;  // Invalid sector count, likely corrupted data
+    }
+
     return true;
 }
-
 
 drive_t* get_drive_by_name(const char* name) {
     for (int i = 0; i < drive_count; i++) {

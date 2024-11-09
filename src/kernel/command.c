@@ -184,7 +184,7 @@ void handle_mount(int arg_count, char** arguments) {
         if (current_drive == NULL) {
             printf("drive: %s not found\n", arguments[0]);
         } else {
-            printf("Mounting drive \n");
+            printf("Mounting drive\n");
 
             switch (current_drive->type) {
             case DRIVE_TYPE_ATA:
@@ -439,6 +439,18 @@ Command command_table[] = {
     {"FDD", handle_fdd}
 };
 
+
+#define MAX_INPUT_LENGTH 256 // Define a maximum length for the input buffer
+
+bool is_null_terminated(char* buffer, size_t max_length) {
+    for (size_t i = 0; i < max_length; i++) {
+        if (buffer[i] == '\0') {
+            return true; // Found the null terminator
+        }
+    }
+    return false; // No null terminator found within max_length
+}
+
 // ---------------------------------------------------------------------------------------------
 // Command processor
 // Split the input buffer into command and arguments
@@ -447,19 +459,59 @@ Command command_table[] = {
 void process_command(char* input_buffer) {
     char command[32];
     char* arguments[10] = { 0 }; // Adjust size as needed
-    int arg_count = split_input(input_buffer, command, arguments, 10, 50);
+
+    // Check if the input buffer is null-terminated within the allowed length
+    if (!is_null_terminated(input_buffer, MAX_INPUT_LENGTH)) {
+        // Handle error: input buffer is not null-terminated
+        printf("Error: input buffer is not null-terminated.\n");
+        return;
+    }
+
+    // check termination of the input buffer
+    if (input_buffer[0] == '\0') return;
+
+    // Parse command and arguments (simple parsing logic)
+    size_t i = 0;
+    size_t cmd_len = 0;
+
+    // Extract command until space or null terminator is reached
+    while (input_buffer[i] != ' ' && input_buffer[i] != '\0' && cmd_len < sizeof(command) - 1) {
+        command[cmd_len++] = input_buffer[i++];
+    }
+    command[cmd_len] = '\0'; // Null-terminate the command
+
+    // Skip any spaces before arguments
+    while (input_buffer[i] == ' ') {
+        i++;
+    }
+
+    // Process arguments (split by spaces)
+    size_t arg_count = 0;
+    while (input_buffer[i] != '\0' && arg_count < 10) {
+        arguments[arg_count++] = &input_buffer[i];
+        while (input_buffer[i] != ' ' && input_buffer[i] != '\0') {
+            i++;
+        }
+        if (input_buffer[i] == ' ') {
+            input_buffer[i++] = '\0'; // Replace space with null terminator to split arguments
+        }
+    }
+
+    // Print the parsed command and arguments for verification
+    // printf("Command: %s\n", command);
+    // for (size_t j = 0; j < arg_count; j++) {
+    //     printf("Argument %u: %s\n", j, arguments[j]);
+    // }
 
     if (command[0] == '\0') return;
-
-    //printf("\n arguments address: %p, content: %s\n", (void*)arguments, arguments[0]);
 
     // go to the next line
     printf("\n");
 
-    unsigned int i;
-    for (i = 0; i < NUM_COMMANDS; i++) {
-        if (strcmp(command, command_table[i].name) == 0) {
-            command_table[i].handler(arg_count, (char**)arguments);
+    unsigned int ii;
+    for (ii = 0; ii < NUM_COMMANDS; ii++) {
+        if (strcmp(command, command_table[ii].name) == 0) {
+            command_table[ii].handler(arg_count, (char**)arguments);
             break;
         }
     }

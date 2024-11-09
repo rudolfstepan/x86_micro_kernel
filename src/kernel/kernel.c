@@ -202,7 +202,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
         return;
     }
 
-    parse_multiboot_info(multiboot_magic, multiboot_info_ptr);
+    //parse_multiboot_info(multiboot_magic, multiboot_info_ptr);
 
     initialize_memory_system();
     gdt_install();
