@@ -98,6 +98,7 @@ echo "done"
 echo "Linking cli_date..."
 ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_DIR/cli/cli_date.o \
     $OUTPUT_DIR/drivers/drivers.o $OUTPUT_DIR/filesystem/filesystem.o \
+    $OUTPUT_DIR/kernel/pit.o \
     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
     
     
@@ -108,6 +109,7 @@ ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_D
 
 echo "Linking cli_test..."
 ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_test.elf $OUTPUT_DIR/cli/cli_test.o \
+    $OUTPUT_DIR/kernel/pit.o \
     $OUTPUT_DIR/drivers/drivers.o $OUTPUT_DIR/filesystem/filesystem.o \
     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
 

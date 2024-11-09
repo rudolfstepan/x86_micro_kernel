@@ -189,7 +189,7 @@ void mask_irq6() {
 
 void fdc_initialize() {
     outb(0x3F2, 0x1C);  // Aktiviert den Motor und das Laufwerk A
-    delay(500);         // Wartet, bis der Motor läuft
+    sleep_ms(50);         // Wartet, bis der Motor läuft
     mask_irq6();                            // Ensure IRQ6 is unmasked
 }
 
@@ -206,7 +206,7 @@ void print_fdc_status() {
 // Turn on the FDD motor and select the specified drive
 void fdd_motor_on(int drive) {
     outb(FDD_DOR, 0x1C | drive);  // Motor on, drive select
-    delay(5);
+    sleep_ms(50);
 }
 
 // Turn off the FDD motor
@@ -261,7 +261,7 @@ void fdc_reset_after_read() {
 void fdc_full_reset() {
     // Send a reset signal to the FDC (0x3F2 port)
     outb(0x3F2, 0x00);  // Disable the motor and reset
-    delay(10);          // Small delay for reset to take effect
+    sleep_ms(50);          // Small delay for reset to take effect
     outb(0x3F2, 0x0C);  // Re-enable motor and set drive select to 0
 }
 void fdc_clear_data_register() {
@@ -312,7 +312,7 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
     fdc_wait_for_irq();
     // Start motor and wait for it to stabilize
     fdd_motor_on(drive);
-    delay(5000);  // Delay to allow motor to spin up and avoid spurious IRQs
+    sleep_ms(50);  // Delay to allow motor to spin up and avoid spurious IRQs
 
     // Reset IRQ flag and send the command sequence to FDC
     //irq_triggered = false;  // Reset IRQ flag before issuing command
@@ -331,11 +331,11 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
     }
     // Turn off the motor after the operation
     fdd_motor_off(drive);
-    delay(5000);
+    sleep_ms(50);
     // Clear FDC state after read
     //fdc_reset_after_read();
     // Optional: Delay between commands to stabilize FDC for next operation
-    //delay(500);
+    //sleep_ms(500);
     return true;
 }
 

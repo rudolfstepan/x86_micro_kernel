@@ -18,7 +18,6 @@ void* memcpy(void* dest, const void* src, unsigned int n);
 int memcmp(const void* s1, const void* s2, unsigned int n);
 
 int test_memory();
-void delay(int milliseconds);
 void sleep_ms(unsigned int milliseconds);
 void* memmove(void* dest, const void* src, size_t n);
 

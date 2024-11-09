@@ -11,14 +11,32 @@ drive_t* current_drive = {0};  // Current drive (global variable)
 drive_t detected_drives[MAX_DRIVES];  // Global array of detected drives
 short drive_count = 0;  // Number of detected drives
 
-// bool wait_for_drive_ready(unsigned short base, unsigned char mask, unsigned int timeout_ms) {
-//     unsigned int counter = 0;
-//     while ((inb(ATA_STATUS(base)) & mask) && counter < timeout_ms) {
-//         sleep_ms(1); // Sleep for 1 millisecond (implement sleep_ms or use a similar function)
-//         counter++;
-//     }
-//     return counter < timeout_ms; // Return false if timeout reached
-// }
+
+bool wait_for_drive_ready(unsigned short base, unsigned int timeout_ms) {
+    unsigned int elapsed_time = 0;
+    while (inb(ATA_STATUS(base)) & 0x80) {  // Wait while BSY bit is set
+        if (elapsed_time >= timeout_ms) {
+            printf("Timeout: Drive not ready within %u ms.\n", timeout_ms);
+            return false;  // Timeout reached
+        }
+        sleep_ms(1);  // Yield CPU for 1 ms
+        elapsed_time += 1;  // Increment elapsed time by 1 ms
+    }
+    return true;  // Drive is ready
+}
+
+bool wait_for_drive_data_ready(unsigned short base, unsigned int timeout_ms) {
+    unsigned int elapsed_time = 0;
+    while (!(inb(ATA_STATUS(base)) & 0x08)) {  // Wait for DRQ bit to set
+        if (elapsed_time >= timeout_ms) {
+            printf("Timeout: Drive data not ready within %u ms.\n", timeout_ms);
+            return false;  // Timeout reached
+        }
+        sleep_ms(1);  // Yield CPU for 1 ms
+        elapsed_time += 1;  // Increment elapsed time by 1 ms
+    }
+    return true;  // Data is ready
+}
 
 /*
     * Reads a sector from the ATA drive.
@@ -29,7 +47,13 @@ short drive_count = 0;  // Number of detected drives
 */
 bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master) {
     // Wait for the drive to be ready
-    while (inb(ATA_STATUS(base)) & 0x80) {}
+    // while (inb(ATA_STATUS(base)) & 0x80) {
+    //     // Sleep for 1 millisecond
+    //     sleep_ms(1);
+    // }
+    if (!wait_for_drive_ready(base, 1000)) {  // 1000 ms timeout
+        return false;  // Drive not ready within the timeout
+    }
 
     // Set up sector count and LBA
     outb(ATA_SECTOR_CNT(base), 1); // Read 1 sector
@@ -46,7 +70,13 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
     outb(ATA_COMMAND(base), ATA_READ_SECTORS);
 
     // Wait for the drive to be ready to transfer data
-    while (!(inb(ATA_STATUS(base)) & 0x08)) {}
+    // while (!(inb(ATA_STATUS(base)) & 0x08)) {
+    //     // Sleep for 1 millisecond
+    //     sleep_ms(1);
+    // }
+    if (!wait_for_drive_ready(base, 1000)) {  // 1000 ms timeout
+        return false;  // Drive not ready within the timeout
+    }
 
     // Read the data
     insw(ATA_DATA(base), buffer, SECTOR_SIZE / 2);

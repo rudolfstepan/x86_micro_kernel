@@ -191,7 +191,7 @@ void set_graphics_mode() {
         : "ah", "al"
     );
 }
-// uint32_t multiboot_magic, 
+
 void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     //sys_mb_info = multiboot_info_ptr;
     //Check if the magic number is correct
@@ -215,7 +215,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     // Install the IRQ handler for the FDD
     irq_install_handler(6, fdd_irq_handler);
     // Install the IRQ handler for the timer
-    //irq_install_handler(0, timer_irq_handler);
+    irq_install_handler(0, timer_irq_handler);
 
     __asm__ __volatile__("sti"); // enable interrupts
 
@@ -224,10 +224,16 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     // display_kernel_banner();
     // display_ascii_art();
     display_welcome_message();
-    init_drives();
+    
     test_memory();
-    kb_install();
+    timer_install(); // Install the timer first
+    kb_install(); // Install the keyboard
+    init_drives(); // Initialize drives
     //printf("Type HELP for command list.\n");
+    
+    // printf("Delay Test 5 Seconds\n");
+    // sleep_ms(5000);
+    // printf("Delay Test 5 Seconds finished\n");
 
     //display_color_test();
     print_fancy_prompt();
