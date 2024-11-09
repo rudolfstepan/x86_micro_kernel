@@ -8,7 +8,7 @@ SECTIONS
     *(.multiboot)            # Place the Multiboot header first
     *(.text)
     *(.rodata)
-    . = ALIGN(4096);
+    . = ALIGN(8K);
   }
   .data : AT(address + (data - code))
   {
@@ -29,5 +29,5 @@ SECTIONS
     . = ALIGN(4096);
   }
 
-  end = .;
+  end_of_kernel = .;
 }

@@ -1,43 +1,64 @@
+extern stack_start
+extern kernel_main
 
 [BITS 32]
 global start
+
 start:
-    mov esp, sys_stack     ; This points the stack to our new stack area
-    jmp stublet
+    ; ; print `OK` to screen
+    ; mov dword [0xb8000], 0x2f4b2f4f
+    ; hlt
+    cli                     ; Clear interrupts
+    ;mov esp, sys_stack      ; Set up the stack pointer
+    mov esp, stack_start    ; Set up the stack pointer
+    push ebx                ; Push the Multiboot2 information pointer (from GRUB)
+    push dword 0xe85250d6  ; Push the Multiboot2 magic number for verification
+    call kernel_main        ; Call the C kernel main function
+    hlt                     ; Halt the CPU when kernel_main returns
 
-; This part MUST be 4byte aligned, so we solve that issue using 'ALIGN 4'
-ALIGN 4
-mboot:
-    ; Multiboot macros to make a few lines later more readable
-    MULTIBOOT_PAGE_ALIGN	equ 1<<0
-    MULTIBOOT_MEMORY_INFO	equ 1<<1
-    MULTIBOOT_AOUT_KLUDGE	equ 1<<16
-    MULTIBOOT_HEADER_MAGIC	equ 0x1BADB002
-    MULTIBOOT_HEADER_FLAGS	equ MULTIBOOT_PAGE_ALIGN | MULTIBOOT_MEMORY_INFO | MULTIBOOT_AOUT_KLUDGE
-    MULTIBOOT_CHECKSUM	equ -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_HEADER_FLAGS)
-    EXTERN code, bss, end_of_kernel
+;align 8
+section .multiboot_header
+header_start:
+    dd 0xe85250d6            ; Multiboot2 magic number
+    dd 0                      ; Architecture (0 for i386)
+    dd header_end - header_start ; Header length
+    ; checksum
+    dd 0x100000000 - (0xe85250d6 + 0 + (header_end - header_start))
 
-    ; This is the GRUB Multiboot header. A boot signature
-    dd MULTIBOOT_HEADER_MAGIC
-    dd MULTIBOOT_HEADER_FLAGS
-    dd MULTIBOOT_CHECKSUM
-    
-    ; AOUT kludge - must be physical addresses. Make a note of these:
-    ; The linker script fills in the data for these ones!
-    dd mboot
-    dd code
-    dd bss
-    dd end_of_kernel
-    dd start
+    ; Information request tag
+    align 8
+    dw 1                      ; Tag type: Information request
+    dw 0                      ; Flags
+    dd 16                     ; Size of this tag
+    dd 6                      ; Request BIOS memory map
+    dd 5                      ; Request BIOS boot device
 
-stublet:
-    extern kernel_main
-    ; Jump to the kernel's main function
-    ; Pass the Multiboot magic number and the Multiboot information structure pointer
-    push ebx              ; ebx contains the pointer to the Multiboot information structure
-    push dword 0x2BADB002 ; Multiboot magic number
-    call kernel_main
-    jmp $
+    ; Framebuffer tag (optional, for setting video mode)
+    align 8
+    dw 4                      ; Tag type: Framebuffer
+    dw 0                      ; Flags
+    dd 24                     ; Size of this tag
+    dd 1024                   ; Framebuffer width
+    dd 768                    ; Framebuffer height
+    dd 32                     ; Bits per pixel
+
+    ; End tag
+    align 8
+    dw 0                      ; Tag type: End
+    dw 0                      ; Flags
+    dd 8                      ; Size of this tag
+
+header_end:
+
+; section .text
+; stublet:
+;     extern kernel_main
+;     ; Jump to the kernel's main function
+;     ; Pass the Multiboot magic number and the Multiboot information structure pointer
+;     push dword 0xe85250d6 ; Multiboot magic number
+;     push ebx              ; ebx contains the pointer to the Multiboot information structure
+;     call main
+;     jmp $
     
 global gdt_flush     
 extern gp            
@@ -499,6 +520,7 @@ irq_common_stub:
     add esp, 8
     iret
     
-SECTION .bss
-    resb 8192               ; This reserves 8KBytes of memory here
-sys_stack:
+; section .bss
+; align 4
+; sys_stack:
+;     resb 8192               ; Reserve 8 KB for the stack

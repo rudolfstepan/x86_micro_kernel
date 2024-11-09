@@ -23,7 +23,8 @@ mkdir -p $OUTPUT_DIR
 echo "Compiling bootloader..."
 # Ensure the output directory and its subdirectories exist
 mkdir -p "$OUTPUT_DIR/boot"
-nasm -f elf32 $SOURCE_DIR/boot/bootloader.asm -o $OUTPUT_DIR/boot/bootloader.o
+#nasm -f elf32 $SOURCE_DIR/boot/bootloader.asm -o $OUTPUT_DIR/boot/bootloader.o
+nasm -f elf32 $SOURCE_DIR/boot/boot2.asm -o $OUTPUT_DIR/boot/bootloader.o
 echo "done"
 
 # Variablen für Quell- und Ausgabeverzeichnisse
@@ -86,8 +87,8 @@ echo "done"
 # echo "done"
 
 echo "Linking kernel..."
-ld -m elf_i386 -T kernel.ld -nostdlib -o $OUTPUT_DIR/kernel.bin \
-    $OUTPUT_DIR/boot/bootloader.o $OUTPUT_DIR/boot/gdt.o $OUTPUT_DIR/boot/idt.o $OUTPUT_DIR/boot/isr.o \
+ld -m elf_i386 -T klink.ld -nostdlib -o $OUTPUT_DIR/kernel.bin $OUTPUT_DIR/boot/bootloader.o \
+    $OUTPUT_DIR/boot/gdt.o $OUTPUT_DIR/boot/idt.o $OUTPUT_DIR/boot/isr.o \
     $OUTPUT_DIR/kernel/irq.o $OUTPUT_DIR/kernel/pit.o $OUTPUT_DIR/kernel/kernel.o $OUTPUT_DIR/kernel/prg.o $OUTPUT_DIR/kernel/system.o $OUTPUT_DIR/kernel/command.o \
     $OUTPUT_DIR/drivers/drivers.o \
     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
@@ -100,20 +101,20 @@ ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_D
     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
     
     
-# # ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_dir.elf $OUTPUT_DIR/cli/cli_dir.o \
-# #     $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o $OUTPUT_DIR/drivers/keyboard/keyboard.o $OUTPUT_DIR/drivers/pit/pit.o $OUTPUT_DIR/drivers/rtc/rtc.o \
-# #     $OUTPUT_DIR/filesystem/fat32.o $OUTPUT_DIR/filesystem/fat32_cluster.o $OUTPUT_DIR/filesystem/fat32_dir.o $OUTPUT_DIR/filesystem/fat32_file.o \
-# #     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
+# ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_dir.elf $OUTPUT_DIR/cli/cli_dir.o \
+#     $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o $OUTPUT_DIR/drivers/keyboard/keyboard.o $OUTPUT_DIR/drivers/pit/pit.o $OUTPUT_DIR/drivers/rtc/rtc.o \
+#     $OUTPUT_DIR/filesystem/fat32.o $OUTPUT_DIR/filesystem/fat32_cluster.o $OUTPUT_DIR/filesystem/fat32_dir.o $OUTPUT_DIR/filesystem/fat32_file.o \
+#     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
 
 echo "Linking cli_test..."
 ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/cli/cli_test.elf $OUTPUT_DIR/cli/cli_test.o \
     $OUTPUT_DIR/drivers/drivers.o $OUTPUT_DIR/filesystem/filesystem.o \
     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
 
-# # ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/basic.elf $OUTPUT_DIR/basic.o \
-# #     $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o $OUTPUT_DIR/drivers/keyboard/keyboard.o $OUTPUT_DIR/drivers/pit/pit.o $OUTPUT_DIR/drivers/rtc/rtc.o \
-# #     $OUTPUT_DIR/filesystem/fat32.o $OUTPUT_DIR/filesystem/fat32_cluster.o $OUTPUT_DIR/filesystem/fat32_dir.o $OUTPUT_DIR/filesystem/fat32_file.o \
-# #     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
+# ld -m elf_i386 -T linkprg.ld -nostdlib -o $OUTPUT_DIR/basic.elf $OUTPUT_DIR/basic.o \
+#     $OUTPUT_DIR/drivers/video/video.o $OUTPUT_DIR/drivers/ata/ata.o $OUTPUT_DIR/drivers/keyboard/keyboard.o $OUTPUT_DIR/drivers/pit/pit.o $OUTPUT_DIR/drivers/rtc/rtc.o \
+#     $OUTPUT_DIR/filesystem/fat32.o $OUTPUT_DIR/filesystem/fat32_cluster.o $OUTPUT_DIR/filesystem/fat32_dir.o $OUTPUT_DIR/filesystem/fat32_file.o \
+#     $OUTPUT_DIR/toolchain/stdlib.o $OUTPUT_DIR/toolchain/stdio.o $OUTPUT_DIR/toolchain/strings.o \
 
 
 # Convert to binary format
@@ -122,13 +123,13 @@ objcopy -O binary $OUTPUT_DIR/cli/cli_date.elf $OUTPUT_DIR/cli/date.prg
 objcopy -O binary $OUTPUT_DIR/cli/cli_test.elf $OUTPUT_DIR/cli/test.prg
 # objcopy -O binary $OUTPUT_DIR/basic.elf $OUTPUT_DIR/basic.prg
 
-# #./make_image.sh
+#./make_image.sh
 
 # Check if directory exists, create it if not
-#   if [ ! -d /mnt/disk ]; then
-#     echo "Creating /mnt/disk directory"
-#     mkdir -p /mnt/disk
-#   fi
+  if [ ! -d /mnt/disk ]; then
+    echo "Creating /mnt/disk directory"
+    mkdir -p /mnt/disk
+  fi
 
 sudo mount ./disk.img /mnt/disk
 sudo cp $OUTPUT_DIR/cli/date.prg /mnt/disk/
@@ -142,5 +143,6 @@ mkdir -p $ISO_DIR/boot/grub
 cp $OUTPUT_DIR/kernel.bin $ISO_DIR/boot/
 cp grub.cfg $ISO_DIR/boot/grub/
 sudo grub-mkrescue -o kernel.iso $ISO_DIR/
+
 
 #./run.sh
