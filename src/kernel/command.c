@@ -517,7 +517,7 @@ void process_command(char* input_buffer) {
     }
 
     // if the command is not found
-    if (i == NUM_COMMANDS) {
+    if (ii == NUM_COMMANDS) {
         char* program = strcat(command, ".PRG");
         load_and_run_program(program);
     }

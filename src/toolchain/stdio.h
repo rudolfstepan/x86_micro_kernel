@@ -1,11 +1,10 @@
 #ifndef STDIO_H
 #define STDIO_H
 
+#include <stddef.h>
 #include <stdint.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include "definitions.h"
-//#include <dirent.h>
+
 
 // File Handling Functions
 int mkfile(const char* path);                                   // create file
@@ -24,7 +23,7 @@ size_t fread(void* buffer, size_t size, size_t count, FILE* stream); // Read fro
 int remove(const char* path);                                  // Remove a file
 
 // POSIX Directory Handling Functions
-int mkdir(const char* path, mode_t mode);                      // Make a directory
+int mkdir(const char* path, uint8_t mode);                      // Make a directory
 int rmdir(const char* path);                                   // Remove a directory
 int chdir(const char* path);                                   // Change the current working directory
 //char* realpath(const char* path, char* resolved_path);         // Get the full path

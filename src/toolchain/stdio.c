@@ -1,22 +1,24 @@
 #include "stdio.h"
+
 #include "strings.h"
 #include "stdlib.h"
 
 #include <stdarg.h>
 #include <stddef.h>
-#include "drivers/keyboard/keyboard.h"
 
+#include "drivers/keyboard/keyboard.h"
+#include "drivers/video/video.h"
 #include "filesystem/filesystem.h"
 #include "filesystem/fat32/fat32.h"
 #include "filesystem/fat12/fat12.h"
-#include "drivers/video/video.h"
-#include "toolchain/stdlib.h"
+
+
 
 // -----------------------------------------------------------------
 // Directory Handling Functions
 // the following functions are defined in the filesystem/fat32/fat32.c file
 // -----------------------------------------------------------------
-int mkdir(const char* path, mode_t mode) {
+int mkdir(const char* path, uint8_t mode) {
     return create_directory(path);
 }
 
