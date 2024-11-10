@@ -11,8 +11,9 @@
 
 #define NUM_COMMANDS (sizeof(command_table) / sizeof(Command))
 
-
 char current_path[256] = "/";
+
+void handle_help();
 
 // execute the program at the specified entry point
 void call_program(long entryPoint) {
@@ -269,10 +270,6 @@ void handle_cd(int arg_count, char** arguments) {
     }
 }
 
-void handle_help(int arg_count, char** arguments) {
-    printf("Available commands: MEM, DUMP, CLS, LS, CD, ...\n");
-}
-
 void handle_mkdir(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("MKDIR command without arguments\n");
@@ -437,6 +434,7 @@ void handle_wait(int arg_count, char** arguments) {
 // Add more commands as needed
 // ---------------------------------------------------------------------------------------------
 Command command_table[] = {
+    {"HELP", handle_help},
     {"MEM", handle_mem},
     {"DUMP", handle_dump},
     {"CLS", handle_cls},
@@ -444,7 +442,6 @@ Command command_table[] = {
     {"CD", handle_cd},
     {"DRIVES", handle_drives},
     {"MOUNT", handle_mount},
-    {"HELP", handle_help},
     {"DIR", handle_ls},
     {"MKDIR", handle_mkdir},
     {"RMDIR", handle_rmdir},
@@ -465,6 +462,15 @@ Command command_table[] = {
     {"WAIT", handle_wait}
 };
 
+// Function to handle the HELP command
+void handle_help() {
+    int num_commands = sizeof(command_table) / sizeof(command_table[0]);
+    printf("Available commands:\n");
+    for (int i = 0; i < num_commands; i++) {
+        printf(" %s ", command_table[i].name);
+    }
+    printf("\n");
+}
 
 #define MAX_INPUT_LENGTH 256 // Define a maximum length for the input buffer
 
