@@ -17,6 +17,7 @@ CLI_DIR = $(OUTPUT_DIR)/cli
 all: clean prepare compile_bootloader compile_filesystem compile_drivers compile_sources link_kernel link_cli copy_binaries mount iso
 
 clean:
+	clear
 	@echo "Cleaning up build and iso directories..."
 	rm -rf $(OUTPUT_DIR)/*
 	rm -rf $(ISO_DIR)/*

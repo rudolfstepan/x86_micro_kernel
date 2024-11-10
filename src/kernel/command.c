@@ -407,6 +407,12 @@ void handle_fdd(int arg_count, char** arguments) {
     }
 }
 
+void handle_hdd(int arg_count, char** arguments) {
+    if (arguments[0] == NULL) {
+        ata_debug_bootsector(current_drive);
+    } 
+}
+
 void handle_beep(int arg_count, char** arguments) {
     if (arg_count < 2) {
         //printf("BEEP command requires frequency and duration\n");
@@ -457,6 +463,7 @@ Command command_table[] = {
     {"SLEEP", handle_sleep},
     {"EXIT", handle_exit},
     {"FDD", handle_fdd},
+    {"HDD", handle_hdd},
     {"BEEP", handle_beep},
     {"WAIT", handle_wait}
 };

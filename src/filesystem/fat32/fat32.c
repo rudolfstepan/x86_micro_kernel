@@ -216,3 +216,19 @@ bool remove_entry_from_directory(struct Fat32BootSector* boot_sector, unsigned i
 
     return false;
 }
+
+void ata_debug_bootsector(drive_t* drive) {
+
+    // Read the boot sector from the ATA drive
+    if (!ata_read_sector(drive->base, 0, &boot_sector, true)) {
+        // Handle error (e.g., log error or halt)
+        printf("+++ Error reading boot sector +++.\n");
+        return;
+    }
+
+    printf("ATA Debug: Boot Sector\n");
+    printf("Bytes per sector: %u\n", boot_sector.bytesPerSector);
+    printf("Sectors per cluster: %u\n", boot_sector.sectorsPerCluster);
+
+    hex_dump((unsigned char*)&boot_sector, sizeof(struct Fat32BootSector));
+}

@@ -137,4 +137,6 @@ int fat32_read_file(FILE* file, void* buffer, unsigned int buffer_size, unsigned
 bool create_file(const char* filename);
 bool delete_file(const char* filename);
 
+void ata_debug_bootsector(drive_t* drive);
+
 #endif
