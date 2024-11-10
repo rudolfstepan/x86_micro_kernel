@@ -70,8 +70,7 @@ unsigned int readFileData(unsigned int startCluster, char* buffer, unsigned int 
     return totalBytesRead;
 }
 
-
-int openAndLoadFileToBuffer(const char* filename, void* loadAddress) {
+int fat32_load_file(const char* filename, void* loadAddress) {
     struct FAT32DirEntry* entry = findFileInDirectory(filename);
     if (entry == NULL) {
         printf("File %s not found for loading into buffer.\n", filename);

@@ -111,7 +111,7 @@ bool fat32_change_directory(const char *path);
 
 // File and Data Management
 void openAndLoadFile(const char* filename);
-int openAndLoadFileToBuffer(const char* filename, void* loadAddress);
+extern int fat32_load_file(const char* filename, void* loadAddress);
 int readFileDataToAddress(unsigned int startCluster, void* loadAddress, unsigned int fileSize);
 bool write_cluster(struct Fat32BootSector* bs, unsigned int cluster, const struct FAT32DirEntry* entries);
 unsigned int readStartCluster(struct FAT32DirEntry* entry);

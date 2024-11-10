@@ -1,0 +1,92 @@
+#include "process.h"
+#include <stdbool.h>
+
+#include "toolchain/strings.h"
+#include "toolchain/stdio.h"
+#include "toolchain/stdlib.h"
+#include "filesystem/fat32/fat32.h"
+#include "prg.h"
+
+#define PROGRAM_LOAD_ADDRESS 0x10000 // default address where the program will be loaded into memory except in the case of a program header
+
+
+
+Process process_list[MAX_PROGRAMS];
+int next_pid = 1; // PID counter starting at 1
+
+
+
+// execute the program at the specified entry point
+void start_program_execution(long entryPoint) {
+    void (*program)() = (void (*)())entryPoint;
+    program(); // Jump to the program
+}
+
+// load the program into memory
+void load_and_execute_program(const char* programName) {
+    // Load the program into the specified memory location
+    if (fat32_load_file(programName, (void*)PROGRAM_LOAD_ADDRESS) > 0) {
+        ProgramHeader* header = (ProgramHeader*)PROGRAM_LOAD_ADDRESS;
+        // printf("Program Header Details:\n");
+        // printf("Identifier: %s\n", header->identifier);
+        // printf("Version: %u\n", header->version);
+        // printf("Program size: %d\n", header->programSize);
+        // printf("Entry point: %d\n", header->entryPoint);
+        // printf("\n----------------------------------------------\n");
+        start_program_execution(header->entryPoint);
+    } else {
+        printf("%s not found\n", programName);
+    }
+}
+
+void load_program_into_memory(const char* programName) {
+    // Load the program into the specified memory location
+    if (fat32_load_file(programName, (void*)PROGRAM_LOAD_ADDRESS) > 0) {
+        ProgramHeader* header = (ProgramHeader*)PROGRAM_LOAD_ADDRESS;
+        printf("entryPoint: %X\n", header->entryPoint);
+    } else {
+        printf("%s not found\n", programName);
+    }
+}
+
+int create_process(const char *program_name) {
+    // Find an available slot in the process list
+    for (int i = 0; i < MAX_PROGRAMS; i++) {
+        if (!process_list[i].is_running) {
+            process_list[i].pid = next_pid++;
+            strcpy(process_list[i].name, program_name);
+            process_list[i].is_running = true;
+
+            // Load and execute the program here
+            load_program_into_memory(program_name);
+
+            printf(">>>Program '%s' started with PID %d\n", program_name, process_list[i].pid);
+            return process_list[i].pid;
+        }
+    }
+
+    // No available slots
+    printf("Error: Maximum number of running programs reached.\n");
+    return -1;
+}
+
+void list_running_processes() {
+    printf("Running programs:\n");
+    for (int i = 0; i < MAX_PROGRAMS; i++) {
+        if (process_list[i].is_running) {
+            printf("PID %d: %s\n", process_list[i].pid, process_list[i].name);
+        }
+    }
+}
+
+void terminate_process(int pid) {
+    for (int i = 0; i < MAX_PROGRAMS; i++) {
+        if (process_list[i].is_running && process_list[i].pid == pid) {
+            process_list[i].is_running = false;
+            printf("Program '%s' with PID %d terminated.\n", process_list[i].name, pid);
+            return;
+        }
+    }
+
+    printf("Error: PID %d not found.\n", pid);
+}

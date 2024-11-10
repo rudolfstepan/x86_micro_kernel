@@ -64,7 +64,7 @@ compile_sources:
 # Link kernel
 link_kernel:
 	@echo "Linking kernel..."
-	ld $(LD_FLAGS) -T klink.ld -o $(OUTPUT_DIR)/kernel.bin \
+	ld $(LD_FLAGS) -T klink.ld -o $(OUTPUT_DIR)/kernel.bin $(OUTPUT_DIR)/kernel/process.o \
 	$(BOOT_DIR)/bootloader.o \
 	$(OUTPUT_DIR)/boot/gdt.o $(OUTPUT_DIR)/boot/idt.o $(OUTPUT_DIR)/boot/isr.o \
 	$(OUTPUT_DIR)/kernel/irq.o $(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/kernel.o $(OUTPUT_DIR)/kernel/prg.o $(OUTPUT_DIR)/kernel/system.o $(OUTPUT_DIR)/kernel/command.o \

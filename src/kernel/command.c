@@ -1,4 +1,5 @@
 #include "command.h"
+#include "process.h"
 #include "prg.h"
 #include "drivers/rtc/rtc.h"
 
@@ -15,38 +16,6 @@ char current_path[256] = "/";
 
 void handle_help();
 
-// execute the program at the specified entry point
-void call_program(long entryPoint) {
-    void (*program)() = (void (*)())entryPoint;
-    program(); // Jump to the program
-}
-
-// load the program into memory
-void load_and_run_program(const char* programName) {
-    // Load the program into the specified memory location
-    if (openAndLoadFileToBuffer(programName, (void*)PROGRAM_LOAD_ADDRESS) > 0) {
-        ProgramHeader* header = (ProgramHeader*)PROGRAM_LOAD_ADDRESS;
-        // printf("Program Header Details:\n");
-        // printf("Identifier: %s\n", header->identifier);
-        // printf("Version: %u\n", header->version);
-        // printf("Program size: %d\n", header->programSize);
-        // printf("Entry point: %d\n", header->entryPoint);
-        // printf("\n----------------------------------------------\n");
-        call_program(header->entryPoint);
-    } else {
-        printf("%s not found\n", programName);
-    }
-}
-
-void load_program(const char* programName) {
-    // Load the program into the specified memory location
-    if (openAndLoadFileToBuffer(programName, (void*)PROGRAM_LOAD_ADDRESS) > 0) {
-        ProgramHeader* header = (ProgramHeader*)PROGRAM_LOAD_ADDRESS;
-        printf("entryPoint: %X\n", header->entryPoint);
-    } else {
-        printf("%s not found\n", programName);
-    }
-}
 
 void call_irq(int irq) {
     // Map IRQ number to the corresponding interrupt number
@@ -302,19 +271,11 @@ void handle_rmfile(int arg_count, char** arguments) {
     }
 }
 
-void handle_run(int arg_count, char** arguments) {
-    if (arg_count == 0) {
-        printf("RUN command without arguments\n");
-    } else {
-        load_and_run_program(arguments[0]);
-    }
-}
-
 void handle_load(int arg_count, char** arguments) {
     if (arg_count == 0) {
         printf("LOAD command without arguments\n");
     } else {
-        load_program(arguments[0]);
+        create_process(arguments[0]);
     }
 }
 
@@ -323,7 +284,7 @@ void handle_sys(int arg_count, char** arguments) {
         printf("SYS command without arguments\n");
     } else {
         long entryPoint = strtoul(arguments[0], NULL, 16);
-        call_program(entryPoint);
+        start_program_execution(entryPoint);
     }
 }
 
@@ -435,6 +396,19 @@ void handle_wait(int arg_count, char** arguments) {
     }
 }
 
+void handle_run(int arg_count, char** arguments) {
+    if (arg_count == 0) {
+        printf("RUN command without arguments\n");
+        return;
+    }
+    char* program_name = arguments[0];
+    
+    int pid = create_process(program_name);
+    if (pid == -1) {
+        printf("Failed to start program '%s'.\n", program_name);
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Command table
 // Add more commands as needed
@@ -465,7 +439,8 @@ Command command_table[] = {
     {"FDD", handle_fdd},
     {"HDD", handle_hdd},
     {"BEEP", handle_beep},
-    {"WAIT", handle_wait}
+    {"WAIT", handle_wait},
+    {"PID", list_running_processes}
 };
 
 // Function to handle the HELP command
@@ -557,6 +532,6 @@ void process_command(char* input_buffer) {
     // if the command is not found
     if (ii == NUM_COMMANDS) {
         char* program = strcat(command, ".PRG");
-        load_and_run_program(program);
+        load_and_execute_program(program);
     }
 }
