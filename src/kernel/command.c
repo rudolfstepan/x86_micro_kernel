@@ -152,7 +152,7 @@ void openFile(const char* path) {
 // Command handler functions
 // ---------------------------------------------------------------------------------------------
 void handle_mem(int arg_count, char** arguments) {
-    print_memory_map(sys_mb_info);
+    //print_memory_map(sys_mb_info);
 }
 
 void handle_dump(int arg_count, char** arguments) {
@@ -385,14 +385,16 @@ void handle_sleep(int arg_count, char** arguments) {
     } else {
         int seconds = strtoul(arguments[0], NULL, 10);
         printf("Sleeping for %d seconds\n", seconds);
-        //sleep(seconds);
+        sleep_ms(seconds * 1000);
+
+        printf("Sleeping for %d seconds finished.\n", seconds);
     }
 }
 // TODO: Implement exit function
 void handle_exit(int arg_count, char** arguments) {
     printf("Exiting command interpreter\n");
     // Implement necessary cleanup and exit logic for the kernel or environment
-    //exit(0);
+    exit(0);
 }
 
 void handle_fdd(int arg_count, char** arguments) {

@@ -248,18 +248,25 @@ struct multiboot_color
   multiboot_uint8_t blue;
 };
 
-struct multiboot_mmap_entry
-{
-  multiboot_uint32_t size;
-  multiboot_uint64_t addr;
-  multiboot_uint64_t len;
-#define MULTIBOOT_MEMORY_AVAILABLE		1
-#define MULTIBOOT_MEMORY_RESERVED		2
-#define MULTIBOOT_MEMORY_ACPI_RECLAIMABLE       3
-#define MULTIBOOT_MEMORY_NVS                    4
-  multiboot_uint32_t type;
-} __attribute__((packed));
-typedef struct multiboot_mmap_entry multiboot_memory_map_t;
+// struct multiboot_mmap_entry
+// {
+//   multiboot_uint32_t size;
+//   multiboot_uint64_t addr;
+//   multiboot_uint64_t len;
+// #define MULTIBOOT_MEMORY_AVAILABLE		1
+// #define MULTIBOOT_MEMORY_RESERVED		2
+// #define MULTIBOOT_MEMORY_ACPI_RECLAIMABLE       3
+// #define MULTIBOOT_MEMORY_NVS                    4
+//   multiboot_uint32_t type;
+// } __attribute__((packed));
+// typedef struct multiboot_mmap_entry multiboot_memory_map_t;
+
+typedef struct multiboot_mmap_entry {
+    uint64_t addr;
+    uint64_t len;
+    uint32_t type;
+    uint32_t reserved; // Align to 8 bytes
+} __attribute__((packed)) multiboot_mmap_entry_t;
 
 struct multiboot_mod_list
 {
@@ -274,11 +281,6 @@ struct multiboot_mod_list
   multiboot_uint32_t pad;
 };
 typedef struct multiboot_mod_list multiboot_module_t;
-
-
-
-
-#include <stdint.h>
 
 // The generic structure for all Multiboot2 tags
 typedef struct multiboot_tag {
@@ -298,6 +300,15 @@ typedef struct multiboot_tag_framebuffer {
     uint8_t framebuffer_type;    // Framebuffer type (e.g., RGB, indexed color)
     uint16_t reserved;           // Reserved, must be zero
 } multiboot_tag_framebuffer_t;
+
+typedef struct multiboot_tag_mmap {
+    uint32_t type;
+    uint32_t size;
+    uint32_t entry_size;
+    uint32_t entry_version;
+    multiboot_mmap_entry_t entries[0]; // Flexible array member
+} __attribute__((packed)) multiboot_tag_mmap_t;
+
 
 #endif /* ! ASM_FILE */
 

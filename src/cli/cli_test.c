@@ -1,4 +1,5 @@
 #include "toolchain/stdio.h"
+#include "toolchain/stdlib.h"
 #include <stdint.h>
 #include "drivers/video/video.h"
 
@@ -24,6 +25,8 @@ int start(void) {
     //sleep(1); // Wait for a short period of time (you'd use a timer interrupt in a real kernel)
 
     printf("Program will now exit and return to the kernel.\n");
+
+    exit(0);
 
     return 0;
 }

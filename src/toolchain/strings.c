@@ -324,6 +324,27 @@ void trim_trailing_spaces(char* str) {
     }
 }
 
+// Helper function to convert an integer to a hexadecimal string
+int int_to_hex_str2(unsigned int value, char* buffer, bool uppercase) {
+    const char* hex_digits = uppercase ? "0123456789ABCDEF" : "0123456789abcdef";
+    char temp[32];
+    int length = 0;
+
+    // Convert to hex, starting from the least significant digit
+    do {
+        temp[length++] = hex_digits[value % 16];
+        value /= 16;
+    } while (value != 0);
+
+    // Reverse the string into the buffer
+    for (int i = 0; i < length; i++) {
+        buffer[i] = temp[length - 1 - i];
+    }
+    buffer[length] = '\0';
+
+    return length;
+}
+
 // Converts an integer to a hexadecimal string
 void int_to_hex_str(unsigned int value, char* buffer, int width, bool zero_padding) {
     const char hex_digits[] = "0123456789ABCDEF";

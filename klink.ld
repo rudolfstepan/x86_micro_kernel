@@ -4,6 +4,7 @@ ENTRY(start)
 MEMORY
 {
   kernel_ram (rw) : ORIGIN = 0x00100000, LENGTH = 4M  /* Define a memory region for the kernel */
+  user_programs (rw) : ORIGIN = 0x00500000, LENGTH = 8M  /* Define a memory region for user programs */
 }
 
 SECTIONS
@@ -37,6 +38,12 @@ SECTIONS
     . = ALIGN(4096);      /* Align the end of the BSS section */
   } > kernel_ram
 
+  .syscall_table : {
+    syscall_table = .;
+    *(.syscall_table)
+    . = ALIGN(4096);
+  } > kernel_ram
+
   /* Define a section for the stack */
   .stack (NOLOAD) : {
     . = ALIGN(4096);      /* Align the start of the stack section */
@@ -44,6 +51,28 @@ SECTIONS
     . += 8192;            /* Allocate 8KB for the stack */
     stack_end = .;        /* Mark the end of the stack */
   } > kernel_ram
+
+  /* Place user program code in a separate section */
+  .user_text : {
+    user_code = .;        /* Mark the start of the user code section */
+    *(.user_text)         /* Include user code */
+    *(.user_rodata)       /* Include user read-only data */
+    . = ALIGN(4096);      /* Align the end of the user code section */
+  } > user_programs
+
+  /* Place user program data */
+  .user_data : {
+    user_data = .;        /* Mark the start of the user data section */
+    *(.user_data)         /* Include user data */
+    . = ALIGN(4096);      /* Align the end of the user data section */
+  } > user_programs
+
+  /* Place user program BSS */
+  .user_bss : {
+    user_bss = .;         /* Mark the start of the user BSS section */
+    *(.user_bss)          /* Include user uninitialized data */
+    . = ALIGN(4096);      /* Align the end of the user BSS section */
+  } > user_programs
 
   end_of_kernel = .;      /* Mark the end of the kernel */
 }

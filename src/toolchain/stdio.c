@@ -286,7 +286,7 @@ int printf(const char* format, ...) {
                 }
             }
 
-            if (strncmp(format, "llx", 3) == 0) {
+            if (strncmp(format, "llX", 3) == 0) {
                 uint64_t llx = va_arg(args, uint64_t);
                 print_hex64(llx);  // This assumes print_hex64 handles width.
                 format += 2;       // Skip past 'llx'

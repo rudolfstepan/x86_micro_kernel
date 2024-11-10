@@ -7,7 +7,7 @@
 #include "toolchain/stdio.h"
 
 
-MultibootInfo* sys_mb_info;
+//MultibootInfo* sys_mb_info;
 
 
 // Check if a character is printable
@@ -56,24 +56,24 @@ void memory_dump(uint32_t start_address, uint32_t end_address) {
     }
 }
 
-// Print the memory map
-void print_memory_map(const MultibootInfo* mb_info) {
-    int line_count = 0;
-    if (mb_info->flags & 1 << 6) {
-        MemoryMapEntry* mmap = (MemoryMapEntry*)mb_info->mmap_addr;
-        while ((unsigned int)mmap < mb_info->mmap_addr + mb_info->mmap_length) {
-            printf("Memory Base: 0x%llx, Length: 0x%llx, Type: %u\n", 
-                   mmap->base_addr, mmap->length, mmap->type);
-            mmap = (MemoryMapEntry*)((unsigned int)mmap + mmap->size + sizeof(mmap->size));
+// // Print the memory map
+// void print_memory_map(const MultibootInfo* mb_info) {
+//     int line_count = 0;
+//     if (mb_info->flags & 1 << 6) {
+//         MemoryMapEntry* mmap = (MemoryMapEntry*)mb_info->mmap_addr;
+//         while ((unsigned int)mmap < mb_info->mmap_addr + mb_info->mmap_length) {
+//             printf("Memory Base: 0x%llx, Length: 0x%llx, Type: %u\n", 
+//                    mmap->base_addr, mmap->length, mmap->type);
+//             mmap = (MemoryMapEntry*)((unsigned int)mmap + mmap->size + sizeof(mmap->size));
 
-            if (++line_count == 20) {
-                printf("Press Enter to continue...\n");
-                wait_for_enter();
-                line_count = 0;
-            }
-        }
-    } else {
-        printf("Memory map not available.\n");
-    }
-}
+//             if (++line_count == 20) {
+//                 printf("Press Enter to continue...\n");
+//                 wait_for_enter();
+//                 line_count = 0;
+//             }
+//         }
+//     } else {
+//         printf("Memory map not available.\n");
+//     }
+// }
 

@@ -1,23 +1,22 @@
-extern stack_start
-extern kernel_main
-
 [BITS 32]
 global start
+
+extern stack_start
+extern kernel_main
 
 start:
     ; ; print `OK` to screen
     ; mov dword [0xb8000], 0x2f4b2f4f
     ; hlt
     cli                     ; Clear interrupts
-    ;mov esp, sys_stack      ; Set up the stack pointer
     mov esp, stack_start    ; Set up the stack pointer
     push ebx                ; Push the Multiboot2 information pointer (from GRUB)
-    push dword 0xe85250d6  ; Push the Multiboot2 magic number for verification
+    push dword 0x36d76289  ; Push the Multiboot2 magic number for verification
     call kernel_main        ; Call the C kernel main function
     hlt                     ; Halt the CPU when kernel_main returns
 
-;align 8
 section .multiboot_header
+align 8                ; Align the section to an 8-byte boundary
 header_start:
     dd 0xe85250d6            ; Multiboot2 magic number
     dd 0                      ; Architecture (0 for i386)
@@ -50,7 +49,7 @@ header_start:
 
 header_end:
 
-; section .text
+section .text
 ; stublet:
 ;     extern kernel_main
 ;     ; Jump to the kernel's main function
@@ -59,7 +58,6 @@ header_end:
 ;     push ebx              ; ebx contains the pointer to the Multiboot information structure
 ;     call main
 ;     jmp $
-    
 global gdt_flush     
 extern gp            
 gdt_flush:
@@ -520,7 +518,6 @@ irq_common_stub:
     add esp, 8
     iret
     
-; section .bss
-; align 4
-; sys_stack:
-;     resb 8192               ; Reserve 8 KB for the stack
+section .bss
+resb 8192                         ; Reserve 8KB for the stack
+stack_start:

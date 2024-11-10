@@ -2,6 +2,7 @@
 #define STDLIB_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #define SUCCESS 0
 #define FAILURE -1
@@ -20,5 +21,7 @@ int memcmp(const void* s1, const void* s2, unsigned int n);
 int test_memory();
 void sleep_ms(unsigned int milliseconds);
 void* memmove(void* dest, const void* src, size_t n);
+
+void exit(uint8_t status);
 
 #endif /* STDLIB_H */

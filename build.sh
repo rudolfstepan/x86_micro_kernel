@@ -6,7 +6,7 @@ clear
 SOURCE_DIR=src
 OUTPUT_DIR=build
 ISO_DIR=iso
-CFLAGS="-Isrc -m32 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -fno-stack-protector -O2 -Wall -Wextra -g -Wno-unused-parameter"
+CFLAGS="-Isrc -m32 -c -ffreestanding -fno-asynchronous-unwind-tables -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -fno-stack-protector -O2 -Wall -Wextra -g -Wno-unused-parameter"
 
 echo "Cleaning up build directory..."
 sudo rm -rf $OUTPUT_DIR/*

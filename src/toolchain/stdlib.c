@@ -350,3 +350,9 @@ void* memmove(void* dest, const void* src, size_t n) {
 
     return dest;
 }
+
+// Function to halt the CPU
+void exit(uint8_t status) {
+    // Assembly code to halt the CPU
+    //__asm__ __volatile__("cli; hlt");
+}

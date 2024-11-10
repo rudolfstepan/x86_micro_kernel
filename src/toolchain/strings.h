@@ -73,4 +73,6 @@ void str_trim_end(char* str, char ch);
 // Trims spaces from the input string and copies the result to the output buffer.
 void str_trim_spaces(const char* input, char* output, int max_len);
 
+int int_to_hex_str2(unsigned int value, char* buffer, bool uppercase);
+
 #endif /* STRINGS_H */
