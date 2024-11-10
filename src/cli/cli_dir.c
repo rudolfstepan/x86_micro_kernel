@@ -1,3 +1,5 @@
+#include "toolchain/stdio.h"
+
 // #include <stdarg.h>
 
 // #include "fat32.h"
@@ -5,6 +7,8 @@
 
 
 int start(void) {
+
+    printf("Dir command\n");
     // init_fs();
 
     // //clear_screen();

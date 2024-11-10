@@ -442,7 +442,6 @@ Command command_table[] = {
     {"CD", handle_cd},
     {"DRIVES", handle_drives},
     {"MOUNT", handle_mount},
-    {"DIR", handle_ls},
     {"MKDIR", handle_mkdir},
     {"RMDIR", handle_rmdir},
     {"MKFILE", handle_mkfile},

@@ -14,7 +14,7 @@ CLI_DIR = $(OUTPUT_DIR)/cli
 
 .PHONY: all clean prepare compile_bootloader compile_filesystem compile_drivers compile_sources link_kernel link_cli copy_binaries mount iso run
 
-all: clean prepare compile_bootloader compile_filesystem compile_drivers compile_sources link_kernel link_cli copy_binaries iso
+all: clean prepare compile_bootloader compile_filesystem compile_drivers compile_sources link_kernel link_cli copy_binaries mount iso
 
 clean:
 	@echo "Cleaning up build and iso directories..."
@@ -83,12 +83,18 @@ link_cli:
 	$(OUTPUT_DIR)/kernel/pit.o \
 	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
 	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
+	@echo "Linking cli_dir..."
+	ld $(LD_FLAGS) -T linkprg.ld -o $(CLI_DIR)/cli_dir.elf $(CLI_DIR)/cli_dir.o \
+	$(OUTPUT_DIR)/kernel/pit.o \
+	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
+	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
 
 # Copy binaries
 copy_binaries:
 	@echo "Copying binaries..."
 	objcopy -O binary $(CLI_DIR)/cli_date.elf $(CLI_DIR)/date.prg
 	objcopy -O binary $(CLI_DIR)/cli_test.elf $(CLI_DIR)/test.prg
+	objcopy -O binary $(CLI_DIR)/cli_dir.elf $(CLI_DIR)/dir.prg
 
 mount:
 	@echo "Mounting disk image..."
@@ -99,6 +105,7 @@ mount:
 	sudo mount ./disk.img $(MOUNT_DIR)
 	sudo cp $(CLI_DIR)/date.prg $(MOUNT_DIR)/
 	sudo cp $(CLI_DIR)/test.prg $(MOUNT_DIR)/
+	sudo cp $(CLI_DIR)/dir.prg $(MOUNT_DIR)/
 	sudo umount $(MOUNT_DIR)
 
 iso:
