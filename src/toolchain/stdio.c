@@ -11,6 +11,7 @@
 #include "filesystem/filesystem.h"
 #include "filesystem/fat32/fat32.h"
 #include "filesystem/fat12/fat12.h"
+#include "drivers/io/io.h"
 
 
 
@@ -535,3 +536,56 @@ void hex_dump(const unsigned char* data, size_t size) {
         }
     }
 }
+
+
+
+
+
+// PIT I/O port addresses
+#define PIT_CONTROL_PORT 0x43
+#define PIT_CHANNEL_2_PORT 0x42
+#define PC_SPEAKER_PORT 0x61
+
+// Set the PIT to the desired frequency for the beep
+void set_pit_frequency(uint32_t frequency) {
+    uint32_t divisor = 1193180 / frequency; // Calculate the divisor (PIT runs at ~1.19318 MHz)
+    
+    // Send command byte to PIT control port (select channel 2, mode 3, binary mode)
+    outb(PIT_CONTROL_PORT, 0xB6);
+    
+    // Send low byte of divisor
+    outb(PIT_CHANNEL_2_PORT, (uint8_t)(divisor & 0xFF));
+    
+    // Send high byte of divisor
+    outb(PIT_CHANNEL_2_PORT, (uint8_t)((divisor >> 8) & 0xFF));
+}
+
+// Enable the PC speaker
+void enable_pc_speaker() {
+    uint8_t tmp = inb(PC_SPEAKER_PORT);
+    if (!(tmp & 0x03)) { // Check if the speaker is already enabled
+        outb(PC_SPEAKER_PORT, tmp | 0x03); // Turn on the speaker
+    }
+}
+
+// Disable the PC speaker
+void disable_pc_speaker() {
+    uint8_t tmp = inb(PC_SPEAKER_PORT);
+    outb(PC_SPEAKER_PORT, tmp & 0xFC); // Turn off the speaker
+}
+
+// Function to create a beep sound
+void beep(uint32_t frequency, uint32_t duration_ms) {
+    set_pit_frequency(frequency);
+    enable_pc_speaker();
+
+    //printf("Beep at %u Hz for %u ms\n", frequency, duration_ms);
+    
+    // Simple delay loop for the beep duration
+    sleep_ms(duration_ms);
+    
+    disable_pc_speaker();
+
+    //printf("Beep finished\n");
+}
+

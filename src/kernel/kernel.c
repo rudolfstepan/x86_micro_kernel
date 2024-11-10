@@ -28,6 +28,7 @@ extern volatile int buffer_index;
 extern volatile bool enter_pressed;
 
 
+
 // write some diagnostic information to the screen
 // void parse_multiboot_info(uint32_t magic, uint32_t* multiboot_info_ptr) {
 //     uint32_t total_size = *(uint32_t *)multiboot_info_ptr;
@@ -286,6 +287,9 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     // printf("Delay Test 5 Seconds\n");
     // sleep_ms(5000);
     // printf("Delay Test 5 Seconds finished\n");
+
+    // printf("Beep Test\n");
+    //beep(1000, 5000);
 
     //display_color_test();
     print_fancy_prompt();

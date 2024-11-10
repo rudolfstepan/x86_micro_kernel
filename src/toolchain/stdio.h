@@ -37,4 +37,6 @@ int snprintf(char* buffer, size_t size, const char* format, ...); // Print forma
 
 void hex_dump(const unsigned char* data, size_t size);
 
+void beep(uint32_t frequency, uint32_t duration_ms);
+
 #endif // STDIO_H

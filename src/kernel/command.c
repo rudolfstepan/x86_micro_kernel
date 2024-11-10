@@ -410,6 +410,28 @@ void handle_fdd(int arg_count, char** arguments) {
     }
 }
 
+void handle_beep(int arg_count, char** arguments) {
+    if (arg_count < 2) {
+        //printf("BEEP command requires frequency and duration\n");
+        beep(1000, 1000);
+    } else {
+        uint32_t frequency = strtoul(arguments[0], NULL, 10);
+        uint32_t duration = strtoul(arguments[1], NULL, 10);
+        beep(frequency, duration);
+    }
+}
+
+void handle_wait(int arg_count, char** arguments) {
+    if (arg_count == 0) {
+        printf("WAIT command without arguments\n");
+    } else {
+        int ticks = strtoul(arguments[0], NULL, 10);
+        printf("Sleeping for %d ticks...\n", ticks);
+        sleep_ms(ticks);
+        printf("Done sleeping!\n");
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Command table
 // Add more commands as needed
@@ -438,7 +460,9 @@ Command command_table[] = {
     {"IRQ", handle_irq},
     {"SLEEP", handle_sleep},
     {"EXIT", handle_exit},
-    {"FDD", handle_fdd}
+    {"FDD", handle_fdd},
+    {"BEEP", handle_beep},
+    {"WAIT", handle_wait}
 };
 
 
