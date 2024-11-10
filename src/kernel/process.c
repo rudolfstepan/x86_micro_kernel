@@ -58,7 +58,7 @@ int create_process(const char *program_name) {
             process_list[i].is_running = true;
 
             // Load and execute the program here
-            load_program_into_memory(program_name);
+            load_and_execute_program(program_name);
 
             printf(">>>Program '%s' started with PID %d\n", program_name, process_list[i].pid);
             return process_list[i].pid;
