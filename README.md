@@ -76,11 +76,10 @@ dump <start_address> <end_address> - Hex dump of a given range in memory
   apt-get install dosfstools
 
 ## Create the image and run the emulation
+use the attached Makefile to build and run
 
-There are some build script available which must be executed
-- **make_image.sh**: creates the harddisk image
-- **build.sh**: compile all sources and creates the binaries and the bootable iso image
-- **run.sh**: start QEMU emulator and load the bootable iso image
+- **make all** compile all sources and link them together
+- **make run** start QEMU and run the compiled kernel
 
 Don´t forget also to set the script executable by
 ```code
