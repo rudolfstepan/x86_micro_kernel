@@ -5,6 +5,7 @@ qemu-system-x86_64 -boot d -cdrom ./kernel.iso -audiodev id=audio0,driver=pa -ma
   -drive file=./disk.img,format=raw \
   -drive file=./disk1.img,format=raw \
   -drive file=./floppy.img,format=raw,if=floppy \
+  -drive file=./fdd.img,format=raw,if=floppy
   #-display gtk,zoom-to-fit=on,full-screen=on -device VGA,vgamem_mb=32
   #-drive file=./fdd.img,format=raw,if=floppy
 

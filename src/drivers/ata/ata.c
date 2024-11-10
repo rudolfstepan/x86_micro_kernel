@@ -7,7 +7,7 @@
 #include "toolchain/stdlib.h"
 #include "drivers/fdd/fdd.h"
 
-drive_t* current_drive = {0};  // Current drive (global variable)
+drive_t* current_drive = NULL;// = {0};  // Current drive (global variable)
 drive_t detected_drives[MAX_DRIVES];  // Global array of detected drives
 short drive_count = 0;  // Number of detected drives
 

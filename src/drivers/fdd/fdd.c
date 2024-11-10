@@ -153,20 +153,25 @@
 #define FDD_DRIVE_A 0     // Drive number for A:
 #define FDD_DRIVE_B 1     // Drive number for B:
 
-volatile bool irq_triggered = false;
+static volatile bool irq_triggered = false;
 
 // FDC IRQ handler for IRQ6
 void fdd_irq_handler(uint8_t* r) {
-    // Read the FDC main status register to confirm it's a valid interrupt
-    uint8_t status = inb(0x3F4);
-    if (!(status & 0x10)) {  // Check specific bits indicating valid state
-        // Ignore if the interrupt is not valid for current operation
-        return;
+    uint8_t status = inb(FDD_MSR);  // Read the Main Status Register (MSR)
+
+    // Print the status for debugging
+    //printf("ISR invoked. MSR Status: 0x%X\n", status);
+
+    // Check if bit 4 is set (indicating a valid interrupt)
+    if (status & 0x10) {
+        irq_triggered = true;  // Set IRQ flag when valid
+        printf("Valid interrupt detected for FDD.\n");
+    } else {
+        //printf("Unexpected interrupt state. Status: 0x%X\n", status);
     }
-    //printf("IRQ 6 handler invoked\n");
-    // Setzen einer globalen Variable, um anzuzeigen, dass der IRQ ausgelöst wurde
-    irq_triggered = true;
-    outb(0x20, 0x20); // Send EOI to PIC
+
+    // Send EOI to the PIC to acknowledge the interrupt
+    outb(PIC1_COMMAND, PIC_EOI);
 }
 
 // Unmask IRQ6 (for FDD) on the PIC
@@ -183,13 +188,9 @@ void mask_irq6() {
     outb(PIC1_DATA, mask);
 }
 
-// void fdc_initialize_irq(){
-//     irq_install_handler(6, irq6_handler);  // Install IRQ6 handler for FDD
-// }
-
 void fdc_initialize() {
-    outb(0x3F2, 0x1C);  // Aktiviert den Motor und das Laufwerk A
-    sleep_ms(50);         // Wartet, bis der Motor läuft
+    // outb(0x3F2, 0x1C);  // Aktiviert den Motor und das Laufwerk A
+    // sleep_ms(50);         // Wartet, bis der Motor läuft
     mask_irq6();                            // Ensure IRQ6 is unmasked
 }
 
@@ -204,34 +205,54 @@ void print_fdc_status() {
 }
 
 // Turn on the FDD motor and select the specified drive
-void fdd_motor_on(int drive) {
+void fdc_motor_on(int drive) {
     outb(FDD_DOR, 0x1C | drive);  // Motor on, drive select
-    sleep_ms(50);
 }
 
 // Turn off the FDD motor
-void fdd_motor_off(int drive) {
+void fdc_motor_off(int drive) {
     outb(FDD_DOR, drive & 0xFC);  // Motor off
 }
 
 // Wait for FDC to signal readiness
 bool wait_for_fdc_ready() {
-    int timeout = 100000;
-    while (!(fdc_get_status() & 0x80)) {
+    int timeout = 1000;  // Adjusted for a shorter wait period (1000 ms total)
+    while (!(fdc_get_status() & 0x80)) {  // Wait for bit 7 of the MSR to be set
         if (--timeout == 0) {
-            printf("Timeout waiting for FDC.\n");
+            printf("Timeout waiting for FDC ready signal.\n");
             return false;
         }
+        sleep_ms(1);  // Avoid CPU-intensive busy waiting
     }
     return true;
 }
 
 // Wait for FDC interrupt to indicate completion
 bool fdc_wait_for_irq() {
-    irq_triggered = false;  // Reset the IRQ flag before waiting
-    int timeout = 10000;    // Arbitrary timeout value to avoid infinite wait
+    irq_triggered = false;  // Reset IRQ flag before waiting
+    int timeout = 1000;     // 1000 ms timeout for IRQ wait
+
+    printf("Waiting for IRQ...\n");
+
     while (!irq_triggered && timeout-- > 0) {
-        __asm__ __volatile__("pause");  // Reduce CPU load
+        sleep_ms(2);
+
+        // uint8_t msr = inb(FDD_MSR);
+        // if(msr & 0x10){
+        //         irq_triggered = true;
+        //         break;
+        //     }
+
+        // if (timeout % 100 == 0) {  // Print status periodically for debugging
+        //     printf("Waiting... MSR Status: 0x%X\n", msr);
+        // }
+    }
+    
+
+    if (!irq_triggered) {
+        printf("IRQ wait timed out.\n");
+    } else {
+        printf("IRQ detected.\n");
     }
     return irq_triggered;
 }
@@ -302,17 +323,18 @@ void dma_prepare_floppy(uint8_t* buffer, uint16_t length, bool read) {
     outb(DMA_CHANNEL_MASK, DMA_UNMASK_CHANNEL);
 }
 
-bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
+bool _fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
+    printf("Reading sector %d from track %d, head %d, drive %d...\n", sector, track, head, drive);
+
     // clear the buffer before reading
     memset(buffer, 0, SECTOR_SIZE);  // Clear the buffer before reading
+
+    //fdc_wait_for_irq();  // Wait for any pending IRQs to clear
+    sleep_ms(10);  // Small delay before issuing command
     // prepare DMA for reading
     dma_prepare_floppy(buffer, SECTOR_SIZE, true);
-    // Clear any pending IRQs from previous operations
-    irq_triggered = false;  // Reset IRQ flag before issuing command
-    fdc_wait_for_irq();
-    // Start motor and wait for it to stabilize
-    fdd_motor_on(drive);
-    sleep_ms(50);  // Delay to allow motor to spin up and avoid spurious IRQs
+
+    sleep_ms(10);  // Small delay before issuing command
 
     // Reset IRQ flag and send the command sequence to FDC
     //irq_triggered = false;  // Reset IRQ flag before issuing command
@@ -326,29 +348,61 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
         !fdc_send_command(0x1B) || // Gap length
         !fdc_send_command(0xFF)) {  // Unused byte
         printf("Failed to send READ command sequence.\n");
-        fdd_motor_off(drive);
+        fdc_motor_off(drive);
         return false;
     }
-    // Turn off the motor after the operation
-    fdd_motor_off(drive);
-    sleep_ms(50);
-    // Clear FDC state after read
-    //fdc_reset_after_read();
-    // Optional: Delay between commands to stabilize FDC for next operation
-    //sleep_ms(500);
+    return true;
+}
+
+bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
+    fdc_motor_on(drive);  // Turn on the motor
+    sleep_ms(500);        // Wait for the motor to spin up
+
+    bool result = _fdc_read_sector(drive, head, track, sector, buffer);
+
+    fdc_motor_off(drive); // Turn off the motor after the operation
+    return result;
+}
+
+bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track, uint8_t start_sector, uint8_t num_sectors, void* buffer) {
+    fdc_motor_on(drive);  // Turn on the motor
+    sleep_ms(500);        // Wait for the motor to spin up
+
+    for (uint8_t sector = start_sector; sector < start_sector + num_sectors; sector++) {
+        if (!_fdc_read_sector(drive, head, track, sector, buffer)) {
+            printf("Failed to read sector %d.\n", sector);
+            fdc_motor_off(drive);  // Turn off the motor if an error occurs
+            return false;
+        }
+        buffer += SECTOR_SIZE;  // Move to the next buffer location
+    }
+
+    fdc_motor_off(drive); // Turn off the motor after reading all sectors
     return true;
 }
 
 void debug_read_bootsector(uint8_t sector) {
-    unsigned char buffer[512];
+
+    uint8_t* buffer = (uint8_t*)malloc(SECTOR_SIZE);
+    if (!buffer) {
+        printf("Memory allocation failed for sector buffer.\n");
+        return;
+    }
+
+    memset(buffer, 0xff, SECTOR_SIZE);  // Clear the buffer before reading
+
+
     // Attempt to read the first sector (boot sector) of the floppy disk
     if (fdc_read_sector(0, 0, 0, sector, buffer)) {
         printf("Boot sector read successfully:\n");
         // Print the boot sector content in hexadecimal
-        hex_dump(buffer, 512);
+        hex_dump(buffer, SECTOR_SIZE);
     } else {
         printf("Failed to read boot sector.\n");
     }
+
+    free(buffer);  // Free the buffer after use
+
     return;
 }
 
@@ -356,11 +410,11 @@ void debug_read_bootsector(uint8_t sector) {
 bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
     if (!buffer) return false;
 
-    fdd_motor_on(drive);  // Turn on motor
+    fdc_motor_on(drive);  // Turn on motor
 
     if (!wait_for_fdc_ready()) {
         printf("FDC not ready for WRITE command.\n");
-        fdd_motor_off(drive);
+        fdc_motor_off(drive);
         return false;
     }
 
@@ -376,39 +430,118 @@ bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector
         !fdc_send_command(0x1B) || // Gap length
         !fdc_send_command(0xFF)) { // Data length
         printf("Failed to send WRITE command sequence.\n");
-        fdd_motor_off(drive);
+        fdc_motor_off(drive);
         return false;
     }
 
     //fdc_wait();  // Wait until FDC is ready to accept data
     outsw(FDD_FIFO, buffer, SECTOR_SIZE / 2);  // Transfer buffer to FDC FIFO
 
-    fdd_motor_off(drive);  // Turn off motor
+    fdc_motor_off(drive);  // Turn off motor
     return true;
+}
+
+// Helper function to send the drive number (0 for A, 1 for B)
+void fdc_send_drive(uint8_t drive) {
+    // Ensure that the drive number is within the valid range (0 or 1)
+    if (drive > 1) {
+        printf("Invalid drive number: %d. Only 0 (A) or 1 (B) are supported.\n", drive);
+        return;
+    }
+
+    // The drive number should be sent after the recalibration command,
+    // which is part of the command format for recalibrating or selecting drives.
+    uint8_t drive_select = drive == 0 ? 0x00 : 0x01;  // 0x00 for A, 0x01 for B
+
+    // Wait until the controller is ready to accept a command (bit 7 of MSR set)
+    while (!(inb(FDC_BASE + 4) & 0x80)) {
+        // Busy-wait until ready
+        sleep_ms(1);
+    }
+
+    // Send the drive number to the Data Register
+    outb(FDC_BASE + 5, drive_select);
+}
+
+// Helper function to read data from the FDC
+uint8_t fdc_read_data() {
+    // Wait until the controller is ready to provide data (bit 7 of MSR)
+    while (!(inb(FDC_BASE + 4) & 0x80)) {
+        // Busy-wait until the data register is ready to be read
+        sleep_ms(1);
+    }
+
+    // Read from the Data Register (usually located at FDC_BASE + 5)
+    return inb(FDC_BASE + 5);
+}
+
+// Recalibrate the specified drive (0 for A, 1 for B)
+bool fdc_recalibrate(uint8_t drive) {
+    return true;
+
+    if (!fdc_send_command(FDD_CMD_RECALIBRATE)) {
+        printf("Failed to send recalibrate command for drive %d.\n", drive);
+        return false;
+    }
+    fdc_send_drive(drive);
+
+    sleep_ms(100);  // Initial delay to allow recalibration to start
+
+    for (int i = 0; i < 1000; i++) {  // Timeout loop with a total of 1000 ms
+        sleep_ms(1);
+        uint8_t msr = inb(FDC_BASE + 4);
+        if ((msr & 0x10) == 0x10) {  // Check if the drive is ready (bit 4 set)
+            fdc_send_command(FDC_SENSE_INTERRUPT_CMD);
+            uint8_t st0 = fdc_read_data();  // Read ST0 register
+            uint8_t cylinder = fdc_read_data();  // Read current cylinder number
+
+            if ((st0 & 0xC0) == 0 && cylinder == 0) {
+                return true;  // Recalibration successful
+            }
+        }
+    }
+
+    printf("Recalibration timed out for drive %d.\n", drive);
+    return false;
 }
 
 // Detect and initialize all FDD drives
 void fdd_detect_drives() {
     for (uint8_t drive = FDD_DRIVE_A; drive <= FDD_DRIVE_B; drive++) {
-        fdd_motor_on(drive);  // Turn on motor for the current drive
+        fdc_motor_on(drive);  // Turn on motor for the current drive
+        
+        // Issue a recalibrate command to ensure the drive is functioning
+        if (fdc_recalibrate(drive)) {
+            // Check if the FDC is ready and if the drive responds correctly
+            uint8_t status = fdc_get_status(drive);
+            if ((status & 0x80) && !(status & 0x10)) {  // Check ready bit and ensure no error bit is set
+                drive_t* detected_drive = (drive_t*)malloc(sizeof(drive_t));
+                if (detected_drive == NULL) {
+                    printf("Memory allocation failed for detected drive.\n");
+                    fdc_motor_off(drive);
+                    continue;
+                }
 
-        // Check if the FDC is ready for the current drive
-        if (fdc_get_status(drive) & 0x80) {  // Example condition: modify based on actual status check logic
-            drive_t* detected_drive = (drive_t*)malloc(sizeof(drive_t));
-            detected_drive->type = DRIVE_TYPE_FDD;
-            detected_drive->fdd_drive_no = drive;
-            snprintf(detected_drive->name, sizeof(detected_drive->name), "fdd%d", drive);
-            detected_drive->cylinder = 80;  // Typical number of cylinders for a 3.5" floppy drive
-            detected_drive->head = 2;       // Number of heads (double-sided)
-            detected_drive->sector = 18;    // Typical number of sectors per track for a 1.44 MB disk
+                detected_drive->type = DRIVE_TYPE_FDD;
+                detected_drive->fdd_drive_no = drive;
+                snprintf(detected_drive->name, sizeof(detected_drive->name), "fdd%d", drive);
+                detected_drive->cylinder = 80;  // Typical number of cylinders for a 3.5" floppy drive
+                detected_drive->head = 2;       // Number of heads (double-sided)
+                detected_drive->sector = 18;    // Typical number of sectors per track for a 1.44 MB disk
 
-            printf("Floppy drive detected: %s\n", detected_drive->name);
-            detected_drives[drive_count++] = *detected_drive;
+                printf("Floppy drive detected: %s\n", detected_drive->name);
+                detected_drives[drive_count++] = *detected_drive;
+
+                // Free the temporary detected_drive as we already copied its content
+                free(detected_drive);
+            } else {
+                printf("No valid response from floppy drive at fdd%d.\n", drive);
+            }
         } else {
-            printf("No floppy drive detected at fdd%d.\n", drive);
+            printf("Recalibrate failed for fdd%d. No drive detected.\n", drive);
         }
 
-        fdd_motor_off(drive);  // Turn off motor for the current drive
+        fdc_motor_off(drive);  // Turn off motor for the current drive
     }
 
     if (drive_count == 0) {

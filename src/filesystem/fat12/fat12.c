@@ -25,7 +25,6 @@ FAT12 fat12;
 DirectoryEntry* entries = NULL;
 DirectoryEntry* currentDir = NULL;
 uint8_t* buffer = NULL;
-
 uint8_t current_fdd_drive = 0;
 
 // Function to calculate CHS from a logical sector number
@@ -128,7 +127,7 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
         return -1;
     }
 
-    buffer = (uint8_t*)malloc(SECTOR_SIZE);
+    buffer = (uint8_t*)malloc(SECTOR_SIZE * ROOT_DIR_SECTORS);  // Allocate buffer for multiple sectors
     if (!buffer) {
         printf("Memory allocation failed for sector buffer.\n");
         free(entries);
@@ -137,19 +136,22 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
 
     if (dir == NULL) {
         printf("Reading root directory entries.\n");
+
+        int logical_sector = fat12.rootDirStart;
+        int track, head, sector;
+        logical_to_chs(logical_sector, &track, &head, &sector);
+
+        // Read multiple sectors at once
+        if (!fdc_read_sectors(current_fdd_drive, head, track, sector, ROOT_DIR_SECTORS, buffer)) {
+            printf("Error reading root directory sectors.\n");
+            free(entries);
+            free(buffer);
+            return -1;
+        }
+
+        // Copy entries from the buffer
         for (int i = 0; i < ROOT_DIR_SECTORS && entries_found < MAX_ENTRIES; i++) {
-            int logical_sector = fat12.rootDirStart + i;
-            int track, head, sector;
-            logical_to_chs(logical_sector, &track, &head, &sector);
-
-            if (!fdc_read_sector(current_fdd_drive, head, track, sector, buffer)) {
-                printf("Error reading root directory sector %d.\n", i);
-                free(entries);
-                free(buffer);
-                return -1;
-            }
-
-            memcpy(&entries[entries_found], buffer, SECTOR_SIZE);
+            memcpy(&entries[entries_found], buffer + (i * SECTOR_SIZE), SECTOR_SIZE);
             entries_found += SECTOR_SIZE / ROOT_ENTRY_SIZE;
         }
     } else {
@@ -159,25 +161,24 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
 
         while (cluster >= MIN_CLUSTER_VALUE && cluster < MAX_CLUSTER_VALUE && entries_found < MAX_ENTRIES) {
             int start_sector = fat12.dataStart + (cluster - 2) * fat12.bootSector.sectorsPerCluster;
+            int track, head, sector;
+            logical_to_chs(start_sector, &track, &head, &sector);
 
+            // Read multiple sectors for the cluster
+            if (!fdc_read_sectors(current_fdd_drive, head, track, sector, fat12.bootSector.sectorsPerCluster, buffer)) {
+                printf("Error reading subdirectory sectors starting from sector %d.\n", sector);
+                free(entries);
+                free(buffer);
+                return -1;
+            }
+
+            // Copy entries from the buffer
             for (int i = 0; i < fat12.bootSector.sectorsPerCluster && entries_found < MAX_ENTRIES; i++) {
-                int logical_sector = start_sector + i;
-                int track, head, sector;
-                logical_to_chs(logical_sector, &track, &head, &sector);
-
-                if (!fdc_read_sector(current_fdd_drive, head, track, sector, buffer)) {
-                    printf("Error reading subdirectory sector %d.\n", sector);
-                    return -1;
-                }
-
-                // Check buffer content for debugging
-                printf("Sector %d read successfully for subdirectory.\n", sector);
-
-                memcpy(&entries[entries_found], buffer, SECTOR_SIZE);
+                memcpy(&entries[entries_found], buffer + (i * SECTOR_SIZE), SECTOR_SIZE);
                 entries_found += SECTOR_SIZE / ROOT_ENTRY_SIZE;
             }
 
-            cluster = get_next_cluster(cluster); // Move to the next cluster in the chain
+            cluster = get_next_cluster(cluster);  // Move to the next cluster in the chain
             printf("Next cluster: %d\n", cluster);
         }
     }
@@ -187,6 +188,7 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
     free(buffer);
     return entries_found;
 }
+
 
 // Print directory entries in DOS-like format
 void print_dir_entries(DirectoryEntry* dir, int entries_found) {

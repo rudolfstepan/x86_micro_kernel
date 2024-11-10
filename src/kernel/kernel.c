@@ -220,6 +220,14 @@ void display_color_test() {
 void print_fancy_prompt() {
     set_color(GREEN);
     str_trim_end(current_path, '/');
+
+    // check if the current drive is mounted
+    if (current_drive == NULL) {
+        printf(">");
+        set_color(WHITE);
+        return;
+    }
+
     printf("%s%s>", current_drive->name, current_path);
     set_color(WHITE);
 }
@@ -260,12 +268,14 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     isr_install();
     irq_install();
     initialize_syscall_table();
+
+    // Install the IRQ handler for the timer
+    irq_install_handler(0, timer_irq_handler);
     // Install the IRQ handler for the keyboard
     irq_install_handler(1, kb_handler);
     // Install the IRQ handler for the FDD
     irq_install_handler(6, fdd_irq_handler);
-    // Install the IRQ handler for the timer
-    irq_install_handler(0, timer_irq_handler);
+
 
     __asm__ __volatile__("sti"); // enable interrupts
 
@@ -281,8 +291,12 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     test_memory();
     timer_install(); // Install the timer first
     kb_install(); // Install the keyboard
-    init_drives(); // Initialize drives
+    //init_drives(); // Initialize drives
     //printf("Type HELP for command list.\n");
+
+    // detect fdd drives
+    fdd_detect_drives();
+    ata_detect_drives();
     
     // printf("Delay Test 5 Seconds\n");
     // sleep_ms(5000);
