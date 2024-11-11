@@ -3,6 +3,7 @@
 
 #include "stdlib.h"
 #include "stdio.h"
+#include "strings.h"
 
 
 typedef struct memory_block {
@@ -126,52 +127,6 @@ void secure_free(void *ptr, size_t size) {
     }
 }
 
-int memcmp(const void* s1, const void* s2, size_t n) {
-    if (s1 == NULL || s2 == NULL) {
-        return -1; // Error handling for NULL pointers
-    }
-
-    const unsigned char* p1 = (const unsigned char*)s1;
-    const unsigned char* p2 = (const unsigned char*)s2;
-
-    while (n--) {
-        if (*p1 != *p2) {
-            return *p1 - *p2;
-        }
-        p1++;
-        p2++;
-    }
-
-    return 0;
-}
-
-void* memset(void* ptr, int value, unsigned int num) {
-    if (ptr == NULL) {
-        return NULL; // Error handling for NULL pointer
-    }
-
-    unsigned char* p = (unsigned char*)ptr;
-    while (num--) {
-        *p++ = (unsigned char)value;
-    }
-    return ptr;
-}
-
-/// <summary>
-/// Copies the values of num bytes from the location pointed by source directly to the memory block pointed by destination.
-/// </summary>
-void* memcpy(void* dest, const void* src, unsigned int n) {
-    if (dest == NULL || src == NULL) {
-        return NULL; // Error handling for NULL pointers
-    }
-
-    char* d = (char*)dest;
-    const char* s = (const char*)src;
-    while (n--) {
-        *d++ = *s++;
-    }
-    return dest;
-}
 
 // test methods
 

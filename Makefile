@@ -78,17 +78,17 @@ link_kernel:
 # Link CLI programs
 link_cli:
 	@echo "Linking cli_date..."
-	ld $(LD_FLAGS) -T linkprg.ld -o $(CLI_DIR)/cli_date.elf $(CLI_DIR)/cli_date.o \
+	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/date.elf $(CLI_DIR)/date.o \
 	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
 	$(OUTPUT_DIR)/kernel/pit.o \
 	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
 	@echo "Linking cli_test..."
-	ld $(LD_FLAGS) -T linkprg.ld -o $(CLI_DIR)/cli_test.elf $(CLI_DIR)/cli_test.o \
+	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/test.elf $(CLI_DIR)/test.o \
 	$(OUTPUT_DIR)/kernel/pit.o \
 	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
 	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
 	@echo "Linking cli_dir..."
-	ld $(LD_FLAGS) -T linkprg.ld -o $(CLI_DIR)/cli_dir.elf $(CLI_DIR)/cli_dir.o \
+	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.o \
 	$(OUTPUT_DIR)/kernel/pit.o \
 	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
 	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
@@ -96,9 +96,12 @@ link_cli:
 # Copy binaries
 copy_binaries:
 	@echo "Copying binaries..."
-	objcopy -O binary $(CLI_DIR)/cli_date.elf $(CLI_DIR)/date.prg
-	objcopy -O binary $(CLI_DIR)/cli_test.elf $(CLI_DIR)/test.prg
-	objcopy -O binary $(CLI_DIR)/cli_dir.elf $(CLI_DIR)/dir.prg
+	# cp $(CLI_DIR)/date.elf $(CLI_DIR)/date.prg
+	# cp $(CLI_DIR)/test.elf $(CLI_DIR)/test.prg
+	# cp $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.prg
+	objcopy -O binary $(CLI_DIR)/date.elf $(CLI_DIR)/date.prg
+	objcopy -O binary $(CLI_DIR)/test.elf $(CLI_DIR)/test.prg
+	objcopy -O binary $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.prg
 
 mount:
 	@echo "Mounting disk image..."

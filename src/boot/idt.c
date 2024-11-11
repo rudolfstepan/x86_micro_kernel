@@ -2,7 +2,7 @@
 #include "kernel/system.h"
 
 #include "toolchain/stdlib.h"
-
+#include "toolchain/strings.h"
 
 struct idt_entry {
     unsigned short base_lo;

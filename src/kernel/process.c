@@ -33,13 +33,21 @@ void load_and_execute_program(const char* programName) {
         printf("Identifier: %s\n", header->identifier);
         printf("Magic Number: %u\n", header->magic_number);
         printf("Program size: %d\n", header->program_size);
-        printf("Entry point: %d\n", header->entry_point);
-        printf("Base address: %d\n", header->base_address);
+        printf("Entry point: %p\n", header->entry_point);
+        printf("Base address: %p\n", header->base_address);
         printf("Relocation offset: %d\n", header->relocation_offset);
         printf("Relocation size: %d\n", header->relocation_size);
         printf("\n----------------------------------------------\n");
 
-        start_program_execution(header->entry_point);
+        // execute the program
+        void (*program)() = (void (*)())(header->entry_point + PROGRAM_LOAD_ADDRESS);
+        program();
+
+        //start_program_execution(header->entry_point);
+
+        //load_elf((void*)PROGRAM_LOAD_ADDRESS);
+
+
     } else {
         printf("%s not found\n", programName);
     }

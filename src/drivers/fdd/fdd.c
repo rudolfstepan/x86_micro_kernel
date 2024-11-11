@@ -126,6 +126,7 @@
 #include "drivers/io/io.h"
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
+#include "toolchain/strings.h"
 
 
 #define FDD_CMD_RECALIBRATE  0x07
