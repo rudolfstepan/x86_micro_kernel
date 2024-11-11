@@ -26,14 +26,20 @@ void start_program_execution(long entryPoint) {
 void load_and_execute_program(const char* programName) {
     // Load the program into the specified memory location
     if (fat32_load_file(programName, (void*)PROGRAM_LOAD_ADDRESS) > 0) {
-        ProgramHeader* header = (ProgramHeader*)PROGRAM_LOAD_ADDRESS;
-        // printf("Program Header Details:\n");
-        // printf("Identifier: %s\n", header->identifier);
-        // printf("Version: %u\n", header->version);
-        // printf("Program size: %d\n", header->programSize);
-        // printf("Entry point: %d\n", header->entryPoint);
-        // printf("\n----------------------------------------------\n");
-        start_program_execution(header->entryPoint);
+        program_header_t* header = (program_header_t*)PROGRAM_LOAD_ADDRESS;
+
+        // print the program header details
+        printf("Program Header Details:\n");
+        printf("Identifier: %s\n", header->identifier);
+        printf("Magic Number: %u\n", header->magic_number);
+        printf("Program size: %d\n", header->program_size);
+        printf("Entry point: %d\n", header->entry_point);
+        printf("Base address: %d\n", header->base_address);
+        printf("Relocation offset: %d\n", header->relocation_offset);
+        printf("Relocation size: %d\n", header->relocation_size);
+        printf("\n----------------------------------------------\n");
+
+        start_program_execution(header->entry_point);
     } else {
         printf("%s not found\n", programName);
     }
@@ -42,8 +48,8 @@ void load_and_execute_program(const char* programName) {
 void load_program_into_memory(const char* programName) {
     // Load the program into the specified memory location
     if (fat32_load_file(programName, (void*)PROGRAM_LOAD_ADDRESS) > 0) {
-        ProgramHeader* header = (ProgramHeader*)PROGRAM_LOAD_ADDRESS;
-        printf("entryPoint: %X\n", header->entryPoint);
+        program_header_t* header = (program_header_t*)PROGRAM_LOAD_ADDRESS;
+        printf("entryPoint: %X\n", header->entry_point);
     } else {
         printf("%s not found\n", programName);
     }
