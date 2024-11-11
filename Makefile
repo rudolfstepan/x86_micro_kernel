@@ -29,7 +29,10 @@ prepare:
 # Compile bootloader
 compile_bootloader:
 	@echo "Compiling bootloader..."
-	nasm -f elf32 $(SOURCE_DIR)/boot/boot2.asm -o $(BOOT_DIR)/bootloader.o
+	nasm -f elf32 $(SOURCE_DIR)/boot/boot.asm -o $(BOOT_DIR)/bootloader.o
+	nasm -f elf32 $(SOURCE_DIR)/boot/irq.asm -o $(BOOT_DIR)/b_irq.o
+	nasm -f elf32 $(SOURCE_DIR)/boot/isr.asm -o $(BOOT_DIR)/b_isr.o
+
 
 # Compile filesystem sources
 compile_filesystem:
@@ -65,7 +68,7 @@ compile_sources:
 link_kernel:
 	@echo "Linking kernel..."
 	ld $(LD_FLAGS) -T klink.ld -o $(OUTPUT_DIR)/kernel.bin $(OUTPUT_DIR)/kernel/process.o \
-	$(BOOT_DIR)/bootloader.o \
+	$(BOOT_DIR)/bootloader.o $(BOOT_DIR)/b_isr.o $(BOOT_DIR)/b_irq.o \
 	$(OUTPUT_DIR)/boot/gdt.o $(OUTPUT_DIR)/boot/idt.o $(OUTPUT_DIR)/boot/isr.o \
 	$(OUTPUT_DIR)/kernel/irq.o $(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/kernel.o $(OUTPUT_DIR)/kernel/prg.o $(OUTPUT_DIR)/kernel/system.o $(OUTPUT_DIR)/kernel/command.o \
 	$(DRIVERS_DIR)/drivers.o \

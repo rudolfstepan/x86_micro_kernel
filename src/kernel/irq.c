@@ -76,9 +76,9 @@ void irq_handler(void* x) {
     int irq_number = r->int_no - 32;  // Calculate IRQ number (0–15) based on interrupt vector
 
     // Print the IRQ number for debugging
-    // if(irq_number != 0 && irq_number != 1){
-    //     printf("IRQ invoked: %d\n", irq_number);
-    // }
+    if(irq_number != 0 && irq_number != 1){
+        printf("IRQ invoked: %d\n", irq_number);
+    }
 
     // Get the handler for this IRQ from the array
     handler = irq_routines[irq_number];

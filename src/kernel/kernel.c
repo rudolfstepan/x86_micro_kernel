@@ -28,7 +28,6 @@ extern volatile int buffer_index;
 extern volatile bool enter_pressed;
 
 
-
 // write some diagnostic information to the screen
 // void parse_multiboot_info(uint32_t magic, uint32_t* multiboot_info_ptr) {
 //     uint32_t total_size = *(uint32_t *)multiboot_info_ptr;
@@ -307,6 +306,24 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
 
     //display_color_test();
     print_fancy_prompt();
+
+    // sample interrupt
+    Registers regs;
+
+    // Setup to print a character using BIOS interrupt 0x10
+    // Setup for BIOS interrupt 0x10 to clear the screen (scroll up)
+    regs.ax = 0x0600;           // AH = 0x06 (scroll up), AL = 0 (clear entire window)
+    regs.bx = 0x0700;           // BH = text attribute (e.g., 0x07 for white on black)
+    regs.cx = 0x0000;           // CH = top row, CL = left column (top-left corner)
+    regs.dx = 0x184F;           // DH = bottom row (24), DL = right column (79) for 80x25 mode
+    regs.si = 0x0000;           // Not used in this call
+    regs.di = 0x0000;           // Not used in this call
+    regs.es = 0x0000;           // Not used in this call
+    regs.ds = 0x0000;           // Not used in this call
+    regs.interruptNumber = 0x10; // BIOS video interrupt
+
+    // Call the assembly function
+    //trigger_interrupt(&regs);
 
     // Main loop
     while (1) {
