@@ -317,6 +317,10 @@ void handle_irq(int arg_count, char** arguments) {
 
 
     Registers2 regs;
+    // regs.gs = 0x10;    // Example value for the segment register
+    // regs.eax = 0x1234; // Example value for general-purpose register
+    // regs.int_no = 0x20; // Example interrupt number
+    // regs.err_code = 0;  // Example error code
     regs.int_no = irq + 32; // IRQs start at 32
 
     // Call the assembly function

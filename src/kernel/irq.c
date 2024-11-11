@@ -70,30 +70,23 @@ void irq_install() {
 }
 
 // General IRQ handler that checks for custom routines
-void irq_handler(Registers* r) {
+void irq_handler(Registers* regs) {
+    // Check if there is a custom handler for this IRQ
+    if (irq_routines[regs->int_no - 32]) {
+        void (*handler)(Registers* r) = irq_routines[regs->int_no - 32];
 
-    int irq_number = r->int_no - 32; // Calculate IRQ number (0–15)
+        if(handler != NULL) {
+            handler(regs);
 
-    // Check for custom handlers
-    void (*handler)(Registers* r);
-    handler = irq_routines[irq_number];
-
-    // Call the custom handler if one is registered for this IRQ
-    if (handler) {
-        handler(r);
+            if(regs->int_no - 32 > 1) {
+                printf("IRQ %d\n", regs->int_no - 32);
+            }
+        }
     }
 
-    // Debug print to check the interrupt number
-    if (irq_number != 0 && irq_number != 1) {
-        printf("IRQ invoked: %d\n", irq_number); // IRQ number for display
+    // Send End of Interrupt (EOI) to the PICs if necessary
+    if (regs->int_no >= 40) {
+        outb(0xA0, 0x20); // Send EOI to slave PIC
     }
-
-    // Send End of Interrupt (EOI) to the PICs
-    if (irq_number >= 40) {
-        // EOI for slave PIC
-        outb(0xA0, 0x20);
-    }
-
-    // EOI for master PIC
-    outb(0x20, 0x20);
+    outb(0x20, 0x20);     // Send EOI to master PIC
 }

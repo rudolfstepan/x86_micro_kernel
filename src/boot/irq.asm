@@ -18,9 +18,6 @@ global irq14
 global irq15
 
 trigger_interrupt:
-    ; Debug print directly to video memory for testing
-    mov dword [0xb8000], 0x2f4b2f4f  ; Print 'OK' in video memory at the top left
-
     ; Load the address of the Registers2 struct from the stack argument
     mov esi, [esp + 4]      ; ESI points to the struct passed as an argument
 
@@ -33,9 +30,52 @@ trigger_interrupt:
 
     ; Rest of your logic here...
 
-    ;ret                     ; Return from the function
+    ret                     ; Return from the function
 
-    ; jmp irq_syscall
+;     ; jmp irq_syscall
+; trigger_interrupt:
+;     ; Load the address of the Registers struct from the stack argument
+;     mov esi, [esp + 4]      ; ESI points to the struct passed as an argument
+
+;     ; Load register values from the struct into CPU registers
+;     mov eax, [esi + 28]     ; Load EAX
+;     mov ebx, [esi + 24]     ; Load EBX
+;     mov ecx, [esi + 20]     ; Load ECX
+;     mov edx, [esi + 16]     ; Load EDX
+;     mov esi, [esi + 12]     ; Load ESI
+;     mov edi, [esi + 8]      ; Load EDI
+;     mov ebp, [esi + 36]     ; Load EBP (stack frame pointer)
+
+;     ; For segment registers, ensure they are loaded properly
+;     mov ax, [esi]           ; Load GS (offset 0)
+;     mov gs, ax
+;     mov ax, [esi + 4]       ; Load FS (offset 4)
+;     mov fs, ax
+;     mov ax, [esi + 8]       ; Load ES (offset 8)
+;     mov es, ax
+;     mov ax, [esi + 12]      ; Load DS (offset 12)
+;     mov ds, ax
+
+;     ; Load the interrupt number and error code into the correct registers
+;     mov eax, [esi + 40]     ; Load int_no (offset 40)
+;     push eax                ; Push the interrupt number onto the stack
+
+;     mov eax, [esi + 44]     ; Load err_code (offset 44)
+;     push eax                ; Push the error code onto the stack
+
+; ; The rest of the logic for handling the interrupt follows...
+;     ; Ensure the rest of the handler is set up to process the pushed values
+
+;     ; Call the C handler (for demonstration purposes)
+;     push dword [esi + 48]   ; Push eip (offset 48)
+;     push dword [esi + 52]   ; Push cs (offset 52)
+;     push dword [esi + 56]   ; Push eflags (offset 56)
+;     push dword [esi + 60]   ; Push useresp (offset 60)
+;     push dword [esi + 64]   ; Push ss (offset 64)
+
+;     ; Return to caller
+;     ret
+
 
     ; Jump table for IRQs
     cmp al, 0x20           ; IRQ0 - System Timer
@@ -194,27 +234,32 @@ irq_syscall:
 extern irq_handler
 
 irq_common_stub:
-    pusha                   ; Push general-purpose registers
+    pusha                   ; Save all general-purpose registers
     push ds
     push es
     push fs
     push gs
 
-    mov ax, 0x10            ; Set data segments for kernel mode
+    ; Set up the data segment registers
+    mov ax, 0x10            ; Kernel data segment
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
-    mov eax, esp            ; EAX points to the top of the stack (the struct)
-    push eax                ; Push the pointer to the struct onto the stack
-    mov eax, irq_handler    ; Call the C handler
-    call eax
-    add esp, 4              ; Clean up the stack after the call
 
+    ; Load the current stack pointer into EAX to pass as an argument
+    mov eax, esp
+    push eax                ; Push pointer to the registers struct
+    mov eax, irq_handler    ; Address of the C handler function
+    call eax                ; Call the C handler
+    add esp, 4              ; Clean up the argument from the stack
+
+    ; Restore segment registers and general-purpose registers
     pop gs
     pop fs
     pop es
     pop ds
-    popa                    ; Restore general-purpose registers
-    add esp, 8              ; Adjust stack for interrupt number and error code
+    popa                    ; Restore all general-purpose registers
+
+    add esp, 8              ; Clean up stack for int_no and err_code
     iret                    ; Return from the interrupt
