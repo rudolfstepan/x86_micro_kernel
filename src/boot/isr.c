@@ -112,13 +112,12 @@ char* exception_messages[] =
     "Reserved"
 };
 
-void fault_handler(struct regs* r) {
+void fault_handler(Registers* r) {
     char* st = "fault_handler";
     printf(st);
     if (r->int_no < 32) {
         printf(exception_messages[r->int_no]);
-        printf(" Exception. System Halted!\n");
+        printf(" Exception. System Halted! %u %s\n", r->int_no, exception_messages[r->int_no]);
         for (;;);
     }
 }
-

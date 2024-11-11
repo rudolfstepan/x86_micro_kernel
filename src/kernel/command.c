@@ -1,6 +1,7 @@
 #include "command.h"
 #include "process.h"
 #include "prg.h"
+#include "sys.h"
 #include "drivers/rtc/rtc.h"
 
 #include "toolchain/strings.h"
@@ -15,29 +16,6 @@
 char current_path[256] = "/";
 
 void handle_help();
-
-
-void call_irq(int irq) {
-    // Map IRQ number to the corresponding interrupt number
-    // Assuming IRQs are mapped starting at interrupt number 0x20
-    int int_number = irq + 0x20;
-
-    switch (int_number) {
-    case 0x20:
-        __asm__ __volatile__("int $0x20");
-        break;
-    case 0x21:
-        __asm__ __volatile__("int $0x21");
-        break;
-        // ... Handle other cases accordingly ...
-    case 0x80:
-        __asm__ __volatile__("int $0x80");
-        break;
-    default:
-        // Handle invalid IRQ numbers
-        break;
-    }
-}
 
 // Open the specified file and print its contents
 void openFile(const char* path) {
@@ -327,13 +305,22 @@ void handle_set_date(int arg_count, char** arguments) {
 }
 
 void handle_irq(int arg_count, char** arguments) {
-    if (arg_count == 0) {
-        printf("IRQ command without arguments\n");
-    } else {
-        int irq = strtoul(arguments[0], NULL, 10);
-        printf("Handling IRQ %d\n", irq);
-        call_irq(irq);
-    }
+    // if (arg_count == 0) {
+    //     printf("IRQ command without arguments\n");
+    // } else {
+        unsigned int irq = strtoul(arguments[0], NULL, 10);
+    //     printf("Handling IRQ %d\n", irq);
+    //     call_irq(irq);
+    // }
+
+    // Call the assembly function to trigger the interrupt
+
+
+    Registers2 regs;
+    regs.int_no = irq + 32; // IRQs start at 32
+
+    // Call the assembly function
+    trigger_interrupt(&regs);
 }
 
 // TODO: Implement sleep function

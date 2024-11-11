@@ -121,4 +121,4 @@ iso:
 
 run:
 	@echo "Running QEMU..."
-	qemu-system-x86_64 -boot d -cdrom ./kernel.iso -audiodev id=audio0,driver=pa -machine pcspk-audiodev=audio0 -drive file=./disk.img,format=raw -drive file=./disk1.img,format=raw -drive file=./floppy.img,format=raw,if=floppy -drive file=./fdd.img,format=raw,if=floppy \
+	qemu-system-x86_64 -boot d -cdrom ./kernel.iso -audiodev id=audio0,driver=pa -machine pcspk-audiodev=audio0 -drive file=./disk.img,format=raw -drive file=./disk1.img,format=raw -drive file=./floppy.img,format=raw,if=floppy \

@@ -1,69 +1,4 @@
-section .text
 global trigger_interrupt
-
-trigger_interrupt:
-    ; Load the address of the Registers struct from the argument
-    ; mov esi, [esp + 4]     ; ESI points to the struct passed as argument
-
-    ; ; Load register values from the struct into CPU registers
-    ; mov ax, [esi]          ; Load AX
-    ; mov bx, [esi + 2]      ; Load BX
-    ; mov cx, [esi + 4]      ; Load CX
-    ; mov dx, [esi + 6]      ; Load DX
-    ; mov si, [esi + 8]      ; Load SI
-    ; mov di, [esi + 10]     ; Load DI
-    ; mov es, [esi + 12]     ; Load ES
-    ; mov ds, [esi + 14]     ; Load DS
-    ; mov al, [esi + 16]     ; Load the interrupt number into AL
-
-    ; Jump table for known interrupts
-    ; cmp al, 0x10
-    ; je irq10
-    ;je int_10
-;     cmp al, 0x13
-;     je int_13
-;     cmp al, 0x15
-;     je int_15
-;     cmp al, 0x16
-;     je int_16
-;     cmp al, 0x1A
-;     je int_1A
-;     cmp al, 0x1C
-;     je int_1C
-;     ; Add more cases as needed
-;     jmp unknown_interrupt
-    jmp irq_common_stub
-
-
-; int_10:
-;     int 0x10              ; Video services
-;     ret
-
-; int_13:
-;     int 0x13              ; Disk services
-;     ret
-
-; int_15:
-;     int 0x15              ; System services (e.g., memory configuration)
-;     ret
-
-; int_16:
-;     int 0x16              ; Keyboard services
-;     ret
-
-; int_1A:
-;     int 0x1A              ; Real-time clock services
-;     ret
-
-; int_1C:
-;     int 0x1C              ; User timer tick
-;     ret
-
-; unknown_interrupt:
-;     ; Handle unknown or unsupported interrupts
-;     ret
-
-
 
 global irq0
 global irq1
@@ -81,6 +16,63 @@ global irq12
 global irq13
 global irq14
 global irq15
+
+trigger_interrupt:
+    ; Debug print directly to video memory for testing
+    mov dword [0xb8000], 0x2f4b2f4f  ; Print 'OK' in video memory at the top left
+
+    ; Load the address of the Registers2 struct from the stack argument
+    mov esi, [esp + 4]      ; ESI points to the struct passed as an argument
+
+    ; Load the 'int_no' field from the struct into a register
+    mov eax, [esi]          ; Load the 'int_no' field into EAX (only one field in the struct)
+
+    ; Do something with 'int_no' (e.g., print it, use it in logic, etc.)
+    ; Example: Move 'int_no' to AL for further processing
+    mov al, byte [esi]      ; Load the least significant byte of 'int_no' into AL
+
+    ; Rest of your logic here...
+
+    ;ret                     ; Return from the function
+
+    ; jmp irq_syscall
+
+    ; Jump table for IRQs
+    cmp al, 0x20           ; IRQ0 - System Timer
+    je irq0
+    cmp al, 0x21           ; IRQ1 - Keyboard
+    je irq1
+    cmp al, 0x22           ; IRQ2 - Cascade (used for chained PICs)
+    je irq2
+    cmp al, 0x23           ; IRQ3 - COM2 (or COM4)
+    je irq3
+    cmp al, 0x24           ; IRQ4 - COM1 (or COM3)
+    je irq4
+    cmp al, 0x25           ; IRQ5 - LPT2 or sound card (varies by configuration)
+    je irq5
+    cmp al, 0x26           ; IRQ6 - Floppy Disk Controller
+    je irq6
+    cmp al, 0x27           ; IRQ7 - LPT1 or spurious interrupt
+    je irq7
+    cmp al, 0x28           ; IRQ8 - Real Time Clock
+    je irq8
+    cmp al, 0x29           ; IRQ9 - Redirected IRQ2 (used for ACPI and other devices)
+    je irq9
+    cmp al, 0x2A           ; IRQ10 - Reserved for peripherals (e.g., network card)
+    je irq10
+    cmp al, 0x2B           ; IRQ11 - Reserved for peripherals (e.g., SCSI or USB)
+    je irq11
+    cmp al, 0x2C           ; IRQ12 - PS/2 Mouse
+    je irq12
+    cmp al, 0x2D           ; IRQ13 - FPU (Floating Point Unit) / Coprocessor
+    je irq13
+    cmp al, 0x2E           ; IRQ14 - Primary ATA Hard Disk
+    je irq14
+    cmp al, 0x2F           ; IRQ15 - Secondary ATA Hard Disk
+    je irq15
+
+;     ; If the interrupt number is not recognized, return to the caller
+     ret
 
 ; 32: IRQ0
 irq0:
@@ -202,28 +194,27 @@ irq_syscall:
 extern irq_handler
 
 irq_common_stub:
-    pusha
+    pusha                   ; Push general-purpose registers
     push ds
     push es
     push fs
     push gs
 
-    mov ax, 0x10
+    mov ax, 0x10            ; Set data segments for kernel mode
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
-    mov eax, esp
-
-    push eax
-    mov eax, irq_handler
+    mov eax, esp            ; EAX points to the top of the stack (the struct)
+    push eax                ; Push the pointer to the struct onto the stack
+    mov eax, irq_handler    ; Call the C handler
     call eax
-    pop eax
+    add esp, 4              ; Clean up the stack after the call
 
     pop gs
     pop fs
     pop es
     pop ds
-    popa
-    add esp, 8
-    iret
+    popa                    ; Restore general-purpose registers
+    add esp, 8              ; Adjust stack for interrupt number and error code
+    iret                    ; Return from the interrupt

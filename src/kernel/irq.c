@@ -70,17 +70,12 @@ void irq_install() {
 }
 
 // General IRQ handler that checks for custom routines
-void irq_handler(void* x) {
-    struct regs* r = (struct regs*)x;
-    void (*handler)(struct regs* x);
-    int irq_number = r->int_no - 32;  // Calculate IRQ number (0–15) based on interrupt vector
+void irq_handler(Registers* r) {
 
-    // Print the IRQ number for debugging
-    if(irq_number != 0 && irq_number != 1){
-        printf("IRQ invoked: %d\n", irq_number);
-    }
+    int irq_number = r->int_no - 32; // Calculate IRQ number (0–15)
 
-    // Get the handler for this IRQ from the array
+    // Check for custom handlers
+    void (*handler)(Registers* r);
     handler = irq_routines[irq_number];
 
     // Call the custom handler if one is registered for this IRQ
@@ -88,11 +83,17 @@ void irq_handler(void* x) {
         handler(r);
     }
 
-    // Send End of Interrupt (EOI) to the PIC(s)
-    if (r->int_no >= 40) {
+    // Debug print to check the interrupt number
+    if (irq_number != 0 && irq_number != 1) {
+        printf("IRQ invoked: %d\n", irq_number); // IRQ number for display
+    }
+
+    // Send End of Interrupt (EOI) to the PICs
+    if (irq_number >= 40) {
         // EOI for slave PIC
         outb(0xA0, 0x20);
     }
+
     // EOI for master PIC
     outb(0x20, 0x20);
 }

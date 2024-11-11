@@ -3,31 +3,26 @@
 
 #include <stdint.h>
 
-struct regs
+// Structure for the registers
+#pragma pack(push, 1)
+typedef struct
 {
     unsigned int gs, fs, es, ds;      /* pushed the segs last */
     unsigned int edi, esi, ebp, esp, ebx, edx, ecx, eax;  /* pushed by 'pusha' */
     unsigned int int_no, err_code;    /* our 'push byte #' and ecodes do this */
     unsigned int eip, cs, eflags, useresp, ss;   /* pushed by the processor automatically */ 
-};
-
-
-
-// Define a struct to hold register values and the interrupt number
-typedef struct {
-    uint16_t ax;
-    uint16_t bx;
-    uint16_t cx;
-    uint16_t dx;
-    uint16_t si;
-    uint16_t di;
-    uint16_t es;
-    uint16_t ds;
-    uint8_t interruptNumber; // The interrupt number to be called
 } Registers;
-// Prototype for the external assembly function
-extern void trigger_interrupt(Registers *regs);
+#pragma pack(pop)
 
+#pragma pack(push, 1)
+typedef struct
+{
+    unsigned int int_no;    /* our 'push byte #' and ecodes do this */
+} Registers2;
+#pragma pack(pop)
+
+// Prototype for the external assembly function
+extern void trigger_interrupt(void* regs);
 
 //gdt
 extern void gdt_install();
@@ -41,7 +36,7 @@ extern void isr_install();
 
 //irq
 extern void irq_install();
-extern void irq_handler(void* r);
+extern void irq_handler(Registers* r);
 extern void irq_install_handler(int irq, void* r);
 void irq_uninstall_handler(int irq);
 
