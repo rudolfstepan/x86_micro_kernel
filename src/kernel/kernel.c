@@ -23,7 +23,7 @@
 #include "multibootheader.h"
 
 // for the keyboard
-extern char input_buffer[BUFFER_SIZE];
+extern char input_buffer[128];
 extern volatile int buffer_index;
 extern volatile bool enter_pressed;
 
@@ -288,7 +288,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     display_welcome_message();
     
     test_memory();
-    timer_install(); // Install the timer first
+    timer_install(1); // Install the timer first for 1 ms delay
     kb_install(); // Install the keyboard
     //init_drives(); // Initialize drives
     //printf("Type HELP for command list.\n");

@@ -16,14 +16,6 @@
 
 #define SYSCALL_SLEEP 0
 
-
-#define BUFFER_SIZE 256
-
-// #define PIT_FREQ 1193180
-// #define SPEAKER_PORT 0x61
-// #define PIT_CMD_PORT 0x43
-// #define PIT_CHANNEL_0 0x40
-
 // for memory dump
 #define BYTES_PER_LINE 16
 #define MAX_LINES 20
@@ -36,5 +28,10 @@ void syscall_sleep(int ticks);
 // utility functions
 void memory_dump(uint32_t start_address, uint32_t end_address);
 //void print_memory_map(const MultibootInfo* mb_info);
+
+// Function to disable interrupts (implementation may vary by architecture)
+void disable_interrupts();
+// Function to enable interrupts (implementation may vary by architecture)
+void enable_interrupts();
 
 #endif

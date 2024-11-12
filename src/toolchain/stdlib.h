@@ -17,7 +17,7 @@ void secure_free(void *ptr, size_t size);
 
 
 int test_memory();
-void sleep_ms(unsigned int milliseconds);
+void sleep_ms(uint32_t ms);
 void* memmove(void* dest, const void* src, size_t n);
 
 void exit(uint8_t status);

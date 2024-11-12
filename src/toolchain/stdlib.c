@@ -4,6 +4,7 @@
 #include "stdlib.h"
 #include "stdio.h"
 #include "strings.h"
+#include "kernel/pit.h"
 
 
 typedef struct memory_block {
@@ -269,18 +270,6 @@ int test_memory() {
     return 0;
 }
 
-extern volatile int timer_tick_count;
-
-void sleep_ms(unsigned int milliseconds) {
-    unsigned int start_tick = timer_tick_count;
-
-    // Wait until the desired number of milliseconds has passed
-    while ((timer_tick_count - start_tick) < milliseconds) {
-        // Optionally, you can add CPU halt/sleep instructions to save power
-        // __asm__ __volatile__("hlt"); // Only if supported by your architecture
-    }
-}
-
 void* memmove(void* dest, const void* src, size_t n) {
     // Cast to unsigned char pointers for byte-wise operations
     unsigned char* d = (unsigned char*)dest;
@@ -310,4 +299,9 @@ void* memmove(void* dest, const void* src, size_t n) {
 void exit(uint8_t status) {
     // Assembly code to halt the CPU
     //__asm__ __volatile__("cli; hlt");
+}
+
+void sleep_ms(uint32_t ms) {
+    // Delay for a specified number of milliseconds
+    delay(ms);
 }

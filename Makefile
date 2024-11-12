@@ -80,16 +80,16 @@ link_cli:
 	@echo "Linking cli_date..."
 	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/date.elf $(CLI_DIR)/date.o \
 	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
-	$(OUTPUT_DIR)/kernel/pit.o \
+	$(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/system.o \
 	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
 	@echo "Linking cli_test..."
 	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/test.elf $(CLI_DIR)/test.o \
-	$(OUTPUT_DIR)/kernel/pit.o \
+	$(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/system.o \
 	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
 	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
 	@echo "Linking cli_dir..."
 	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.o \
-	$(OUTPUT_DIR)/kernel/pit.o \
+	$(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/system.o \
 	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
 	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
 

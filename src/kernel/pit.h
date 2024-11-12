@@ -1,6 +1,7 @@
 #ifndef PIT_H
 #define PIT_H
 
+#include <stdint.h>
 
 // PIT base frequency in Hz
 #define PIT_FREQUENCY 1193182
@@ -29,9 +30,8 @@
 #define PIT_COMMAND_BYTE (PIT_CMD_CHANNEL_0 | PIT_CMD_LOHI | PIT_CMD_MODE_3 | PIT_CMD_BINARY)
 
 
-extern volatile int timer_tick_count;
-
 extern void timer_irq_handler(void* r);
-void timer_install();
+void timer_install(uint8_t ms);
+void delay(unsigned int milliseconds);
 
 #endif // PIT_H

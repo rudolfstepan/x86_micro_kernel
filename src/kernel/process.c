@@ -39,6 +39,8 @@ void load_and_execute_program(const char* programName) {
         printf("Relocation size: %d\n", header->relocation_size);
         printf("\n----------------------------------------------\n");
 
+        printf("Program address: %p\n", (void*)PROGRAM_LOAD_ADDRESS);
+
         // execute the program
         void (*program)() = (void (*)())(header->entry_point + PROGRAM_LOAD_ADDRESS);
         program();

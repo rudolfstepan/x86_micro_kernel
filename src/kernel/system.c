@@ -9,6 +9,16 @@
 
 //MultibootInfo* sys_mb_info;
 
+// Function to disable interrupts (implementation may vary by architecture)
+void disable_interrupts() {
+    //__asm__("cli"); // x86 example - "cli" clears the interrupt flag
+}
+
+// Function to enable interrupts (implementation may vary by architecture)
+void enable_interrupts() {
+    //__asm__("sti"); // x86 example - "sti" sets the interrupt flag
+}
+
 
 // Check if a character is printable
 int is_printable(char ch) {
