@@ -306,18 +306,24 @@ void handle_set_date(int arg_count, char** arguments) {
 
 void handle_irq(int arg_count, char** arguments) {
 
-    void* result;
+    void* syscall_table[] = {0}; // Array to store the result of the syscall
 
     __asm__ volatile(
-        //"movl $1, %%eax\n"      // Load SYSCALL_GET_SYSCALL_TABLE into EAX
         "int $0x80\n"           // Execute syscall interrupt
-        //"movl %%eax, %0\n"      // Store return value (syscall table address) in result
-        //: "=r"(result)            // Output operand
-        //:                         // No input operands
-        //: "eax"                   // Clobbered register
+        "movl %%eax, %0\n"      // Store return value in result
+        : "=r"(syscall_table)          // Output operand
+        :                       // No input operands
+        : "eax"                 // Clobbered register
     );
 
-    //printf("Syscall table address: %p\n", result);
+    printf("Syscall table address result from irq result: %p\n", syscall_table);  // Should print 0x1234
+    // function pointer
+    void (*syscall_method)(void) = (void (*)(void))syscall_table[0];
+
+    syscall_method();
+
+
+    
 
 
     // // if (arg_count == 0) {

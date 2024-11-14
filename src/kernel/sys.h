@@ -29,7 +29,7 @@ extern void gdt_install();
 
 //idt
 extern void idt_install();
-extern void idt_set_gate(unsigned char num, unsigned long base, unsigned short sel, unsigned char flags);
+extern void set_idt_entry(int vector, uint32_t handler, uint16_t selector, uint8_t flags);
 
 //isr
 extern void isr_install();

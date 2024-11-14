@@ -150,18 +150,29 @@ uintptr_t syscall_table[NUM_SYSCALLS] __attribute__((section(".syscall_table")))
 
 // }
 
+void kernel_hello() {
+    printf("Hello from the kernel. All engines running.\n");
+}
 
+// the syscall handler function called by the interrupt handler in the boot.asm file
+void syscall_handler(void* irq_number) {
+    printf("Kernel Syscall handler invoked %p\n", (int)irq_number);
+
+    // now return a value to the caller which has invoked the syscall 0x80
+    //__asm__ __volatile__("movl $0x1234, %eax"); // Return value 0x1234
+
+    // Return the address of my_function in EAX
+    __asm__ __volatile__("movl %0, %%eax" : : "r" (kernel_hello));
+}
 
 // Initialize the syscall table
 void initialize_syscall_table() {
-    // No need to set the address here; the linker will take care of it
-    //syscall_table[SYSCALL_GET_SYSCALL_TABLE] = {0}; // Placeholder for the syscall table address
+
+    // Initialize the syscall table with the addresses of the syscall functions
     //syscall_table[SYSCALL_SLEEP] = (syscall_func_ptr)&syscall_sleep;
+    syscall_table[0] = (uintptr_t)kernel_hello;
 
-    // printf("Syscall table initialized at address: %p\n", syscall_table);
-
-    //irq_install_handler(0x80, syscall_handler); // Install the system call handler
-    // __asm__ __volatile__("int $0x26"); // Invoke interrupt
+    printf("Syscall table initialized at address: %p\n", syscall_table);
 }
 
 // initialize attaches drives
@@ -311,11 +322,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     //beep(1000, 5000);
 
     printf("Syscall table address: %p\n", syscall_table);
-
     //display_color_test();
     print_fancy_prompt();
-
-
 
     // Main loop
     while (1) {

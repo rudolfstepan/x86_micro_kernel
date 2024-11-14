@@ -51,43 +51,44 @@ void irq_remap(void) {
 
 extern void syscall_handler_asm();
 
-void syscall_handler(int irq_number) {
-    printf("Syscall handler invoked, IRQ number: %d\n", irq_number);
-}
+// void syscall_handler(unsigned int irq_number) {
+//     printf("Syscall handler invoked, IRQ number: %d\n", irq_number);
+// }
 // Wrapper assembly function to call the handler
-__asm__ (
-    ".global syscall_handler_asm\n"
-    "syscall_handler_asm:\n"
-    "    pusha\n"                     // Save all registers
-    "    movl 8(%esp), %eax\n"        // Get the IRQ number from stack
-    "    push %eax\n"                 // Push IRQ number as an argument
-    "    call syscall_handler\n"      // Call the C handler function
-    "    add $4, %esp\n"              // Clean up the stack (remove IRQ number)
-    "    popa\n"                      // Restore registers
-    "    iret\n"                      // Return from interrupt
-);
+// __asm__ (
+//     ".global syscall_handler_asm\n"
+//     "syscall_handler_asm:\n"
+//     "    pusha\n"                     // Save all registers
+//     "    movl 8(%esp), %eax\n"        // Get the IRQ number from stack
+//     "    push %eax\n"                 // Push IRQ number as an argument
+//     "    call syscall_handler\n"      // Call the C handler function
+//     "    add $4, %esp\n"              // Clean up the stack (remove IRQ number)
+//     "    popa\n"                      // Restore registers
+//     "    iret\n"                      // Return from interrupt
+// );
 
 // Installs all IRQs to the IDT
 void irq_install() {
     irq_remap();
 
-    idt_set_gate(0x20, (unsigned)irq0, 0x08, 0x8E);
-    idt_set_gate(0x21, (unsigned)irq1, 0x08, 0x8E);
-    idt_set_gate(0x22, (unsigned)irq2, 0x08, 0x8E);
-    idt_set_gate(0x23, (unsigned)irq3, 0x08, 0x8E);
-    idt_set_gate(0x24, (unsigned)irq4, 0x08, 0x8E);
-    idt_set_gate(0x25, (unsigned)irq5, 0x08, 0x8E);
-    idt_set_gate(0x26, (unsigned)irq6, 0x08, 0x8E); // FDC IRQ
-    idt_set_gate(0x27, (unsigned)irq7, 0x08, 0x8E);
-    idt_set_gate(0x28, (unsigned)irq8, 0x08, 0x8E);
-    idt_set_gate(0x29, (unsigned)irq9, 0x08, 0x8E);
-    idt_set_gate(0x2A, (unsigned)irq10, 0x08, 0x8E);
-    idt_set_gate(0x2B, (unsigned)irq11, 0x08, 0x8E);
-    idt_set_gate(0x2C, (unsigned)irq12, 0x08, 0x8E);
-    idt_set_gate(0x2D, (unsigned)irq13, 0x08, 0x8E);
-    idt_set_gate(0x2E, (unsigned)irq14, 0x08, 0x8E);
-    idt_set_gate(0x2F, (unsigned)irq15, 0x08, 0x8E);
-    idt_set_gate(0x80, (unsigned)syscall_handler_asm, 0x08, 0x8E); // System call gate
+    set_idt_entry(0x20, (uint32_t)irq0, 0x08, 0x8E);
+    set_idt_entry(0x21, (uint32_t)irq1, 0x08, 0x8E);
+    set_idt_entry(0x22, (uint32_t)irq2, 0x08, 0x8E);
+    set_idt_entry(0x23, (uint32_t)irq3, 0x08, 0x8E);
+    set_idt_entry(0x24, (uint32_t)irq4, 0x08, 0x8E);
+    set_idt_entry(0x25, (uint32_t)irq5, 0x08, 0x8E);
+    set_idt_entry(0x26, (uint32_t)irq6, 0x08, 0x8E); // FDC IRQ
+    set_idt_entry(0x27, (uint32_t)irq7, 0x08, 0x8E);
+    set_idt_entry(0x28, (uint32_t)irq8, 0x08, 0x8E);
+    set_idt_entry(0x29, (uint32_t)irq9, 0x08, 0x8E);
+    set_idt_entry(0x2A, (uint32_t)irq10, 0x08, 0x8E);
+    set_idt_entry(0x2B, (uint32_t)irq11, 0x08, 0x8E);
+    set_idt_entry(0x2C, (uint32_t)irq12, 0x08, 0x8E);
+    set_idt_entry(0x2D, (uint32_t)irq13, 0x08, 0x8E);
+    set_idt_entry(0x2E, (uint32_t)irq14, 0x08, 0x8E);
+    set_idt_entry(0x2F, (uint32_t)irq15, 0x08, 0x8E);
+
+    set_idt_entry(0x80, (uint32_t)syscall_handler_asm, 0x08, 0x8E); // System call gate
 }
 
 // General IRQ handler that checks for custom routines
@@ -103,8 +104,6 @@ void irq_handler(Registers* regs) {
         if(handler != NULL) {
             handler(regs);
         }
-
-
     }
 
     // Send End of Interrupt (EOI) to the PICs if necessary

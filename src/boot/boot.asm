@@ -495,35 +495,14 @@ irq15:
     jmp irq_common_stub
 
 ; 0x80: System Call
-; irq_syscall:
-;     cli
-;     push byte 0
-;     push byte 0x80
-;     iret
+section .text
+global syscall_handler_asm
+extern syscall_handler
 
-; Assembly entry point for `int 0x80`
-; [BITS 32]
-; global syscall_handler_asm
-; extern syscall_handler
-
-; section .text
-; syscall_handler_asm:
-;     pusha                   ; Save all general-purpose registers
-;     push ds                 ; Save data segment register
-;     push es                 ; Save extra segment register
-;     push fs                 ; Save fs segment register
-;     push gs                 ; Save gs segment register
-
-
-;     call syscall_handler    ; Call the external C or assembly syscall handler function
-
-;     pop gs                  ; Restore gs segment register
-;     pop fs                  ; Restore fs segment register
-;     pop es                  ; Restore extra segment register
-;     pop ds                  ; Restore data segment register
-;     popa                    ; Restore all general-purpose registers
-
-;     iretd                   ; Return from interrupt, restoring EFLAGS, CS, and EIP
+syscall_handler_asm:
+    ; no need to save registers, as the C handler will do that
+    call syscall_handler    ; Call the actual C handler function
+    iretd                   ; Return from interrupt, restoring EFLAGS, CS, and EIP
 
 extern irq_handler
 
@@ -553,8 +532,6 @@ irq_common_stub:
     popa
     add esp, 8
     iret
-
-
 
 section .syscall_table
 align 4  ; Align to 4 bytes for pointer alignment
