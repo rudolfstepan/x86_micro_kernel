@@ -22,7 +22,7 @@ typedef struct
 #pragma pack(pop)
 
 // Prototype for the external assembly function
-extern void trigger_interrupt(void* regs);
+//extern void trigger_interrupt(void* regs);
 
 //gdt
 extern void gdt_install();

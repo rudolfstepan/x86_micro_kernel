@@ -20,8 +20,10 @@ extern void irq13();
 extern void irq14();
 extern void irq15();
 
+//extern void syscall_handler_asm();
+
 // Array of IRQ handler routines for custom handlers
-void* irq_routines[16] = { 0 };
+void* irq_routines[17] = { 0 };
 
 // Function to install a custom IRQ handler
 void irq_install_handler(int irq, void* r) {
@@ -47,6 +49,24 @@ void irq_remap(void) {
     outb(0xA1, 0x0);  // Unmask all interrupts on PIC2
 }
 
+extern void syscall_handler_asm();
+
+void syscall_handler(int irq_number) {
+    printf("Syscall handler invoked, IRQ number: %d\n", irq_number);
+}
+// Wrapper assembly function to call the handler
+__asm__ (
+    ".global syscall_handler_asm\n"
+    "syscall_handler_asm:\n"
+    "    pusha\n"                     // Save all registers
+    "    movl 8(%esp), %eax\n"        // Get the IRQ number from stack
+    "    push %eax\n"                 // Push IRQ number as an argument
+    "    call syscall_handler\n"      // Call the C handler function
+    "    add $4, %esp\n"              // Clean up the stack (remove IRQ number)
+    "    popa\n"                      // Restore registers
+    "    iret\n"                      // Return from interrupt
+);
+
 // Installs all IRQs to the IDT
 void irq_install() {
     irq_remap();
@@ -67,6 +87,7 @@ void irq_install() {
     idt_set_gate(0x2D, (unsigned)irq13, 0x08, 0x8E);
     idt_set_gate(0x2E, (unsigned)irq14, 0x08, 0x8E);
     idt_set_gate(0x2F, (unsigned)irq15, 0x08, 0x8E);
+    idt_set_gate(0x80, (unsigned)syscall_handler_asm, 0x08, 0x8E); // System call gate
 }
 
 // General IRQ handler that checks for custom routines
@@ -75,13 +96,15 @@ void irq_handler(Registers* regs) {
     if (irq_routines[regs->int_no - 32]) {
         void (*handler)(Registers* r) = irq_routines[regs->int_no - 32];
 
-        if(handler != NULL) {
-            handler(regs);
-
-            if(regs->int_no - 32 > 1) {
+                if(regs->int_no - 32 > 1) {
                 printf("IRQ %d\n", regs->int_no - 32);
             }
+
+        if(handler != NULL) {
+            handler(regs);
         }
+
+
     }
 
     // Send End of Interrupt (EOI) to the PICs if necessary

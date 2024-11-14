@@ -117,51 +117,50 @@ void parse_multiboot_info(uint32_t magic, uint32_t* multiboot_info_ptr) {
 //---------------------------------------------------------------------------------------------
 // syscall table entry points and definitions
 //---------------------------------------------------------------------------------------------
-typedef void (*syscall_func_ptr)(void);
-typedef void (*syscall_sleep_func_ptr)(int);
+// typedef void (*syscall_func_ptr)(void);
+// typedef void (*syscall_sleep_func_ptr)(int);
 // Use a specific section for the syscall table to allow the linker to control the address
-syscall_func_ptr syscall_table[NUM_SYSCALLS] __attribute__((section(".syscall_table")));
+uintptr_t syscall_table[NUM_SYSCALLS] __attribute__((section(".syscall_table")));
 
-void syscall_sleep(int ticks) {
-    if (ticks > 100) {
-        ticks = 1;
-    }
-    // Code to handle passing arguments to the system call...
-    printf("Sleeping for %u ticks...\n", ticks);
-    //delay(ticks);
-    printf("Done sleeping!\n");
-}
-//---------------------------------------------------------------------------------------------
-__attribute__((naked)) void syscall_handler() {
-    __asm__ volatile(
-        "pusha\n"                          // Push all general-purpose registers
+//void syscall_handler();
+//void syscall_handler_1();
 
-        "cmp $0, %%eax\n"                  // Compare EAX with 0
-        "jne not_get_address\n"            // If not equal, jump to other syscall handling
-        "movl syscall_table_address, %%eax\n" // Move the address of the syscall table into EAX
-        "jmp done_handling\n"              // Jump to the end of the handler
-
-        "not_get_address:\n"
-        // Add more comparisons and jumps here for other syscalls
-
-        "done_handling:\n"
-        "popa\n"                           // Pop all general-purpose registers
-        "iret\n"                           // Return from interrupt
-        :
-        :
-        : "memory"
-        );
-}
 
 // This would be your syscall_table_address variable, initialized somewhere in your kernel startup code
-uintptr_t syscall_table_address = (uintptr_t)&syscall_table;
+//uintptr_t syscall_table_address = (uintptr_t)&syscall_table;
+// Declare and initialize the syscall table in the ".syscall_table" section
+// uintptr_t syscall_table[1] __attribute__((section(".syscall_table"))) = {
+//     (uintptr_t)syscall_handler,    // Syscall 0 handler
+//     //(uintptr_t)syscall_handler_1    // Syscall 1 handler
+//     // Add more syscall handlers as needed, or set to 0 if unimplemented
+// };
+
+//---------------------------------------------------------------------------------------------
+//__attribute__((naked))
+// void syscall_handler() {
+//     int irq_number;
+
+//     // Inline assembly to get the IRQ number from the stack
+//     __asm__ __volatile__(
+//         "movl 4(%%esp), %0"       // Load the interrupt number (IRQ number) into the variable
+//         : "=r" (irq_number)       // Output operand: the interrupt number goes into 'irq_number'
+//     );
+
+//     printf("Syscall handler invoked, IRQ number: %d\n", irq_number);
+
+// }
+
+
 
 // Initialize the syscall table
 void initialize_syscall_table() {
     // No need to set the address here; the linker will take care of it
-    syscall_table[SYSCALL_SLEEP] = (syscall_func_ptr)&syscall_sleep;
+    //syscall_table[SYSCALL_GET_SYSCALL_TABLE] = {0}; // Placeholder for the syscall table address
+    //syscall_table[SYSCALL_SLEEP] = (syscall_func_ptr)&syscall_sleep;
 
-    irq_install_handler(128, syscall_handler); // Install the system call handler
+    // printf("Syscall table initialized at address: %p\n", syscall_table);
+
+    //irq_install_handler(0x80, syscall_handler); // Install the system call handler
     // __asm__ __volatile__("int $0x26"); // Invoke interrupt
 }
 
@@ -275,7 +274,6 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     // Install the IRQ handler for the FDD
     irq_install_handler(6, fdd_irq_handler);
 
-
     __asm__ __volatile__("sti"); // enable interrupts
 
     parse_multiboot_info(multiboot_magic, multiboot_info_ptr);
@@ -312,8 +310,12 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     // printf("Beep Test\n");
     //beep(1000, 5000);
 
+    printf("Syscall table address: %p\n", syscall_table);
+
     //display_color_test();
     print_fancy_prompt();
+
+
 
     // Main loop
     while (1) {

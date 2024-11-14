@@ -2,7 +2,7 @@ OUTPUT_FORMAT("elf32-i386")
 ENTRY(start)
 MEMORY
 {
-    MYMEMORY : ORIGIN = 0x10000, LENGTH = 0x1000000
+    MYMEMORY : ORIGIN = 0x00500000, LENGTH = 0x1000000 /* 0x00500000 is defined as user address space */
 }
 
 SECTIONS

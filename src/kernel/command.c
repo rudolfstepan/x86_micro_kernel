@@ -305,26 +305,41 @@ void handle_set_date(int arg_count, char** arguments) {
 }
 
 void handle_irq(int arg_count, char** arguments) {
-    // if (arg_count == 0) {
-    //     printf("IRQ command without arguments\n");
-    // } else {
-        unsigned int irq = strtoul(arguments[0], NULL, 10);
-    //     printf("Handling IRQ %d\n", irq);
-    //     call_irq(irq);
-    // }
 
-    // Call the assembly function to trigger the interrupt
+    void* result;
+
+    __asm__ volatile(
+        //"movl $1, %%eax\n"      // Load SYSCALL_GET_SYSCALL_TABLE into EAX
+        "int $0x80\n"           // Execute syscall interrupt
+        //"movl %%eax, %0\n"      // Store return value (syscall table address) in result
+        //: "=r"(result)            // Output operand
+        //:                         // No input operands
+        //: "eax"                   // Clobbered register
+    );
+
+    //printf("Syscall table address: %p\n", result);
 
 
-    Registers2 regs;
-    // regs.gs = 0x10;    // Example value for the segment register
-    // regs.eax = 0x1234; // Example value for general-purpose register
-    // regs.int_no = 0x20; // Example interrupt number
-    // regs.err_code = 0;  // Example error code
-    regs.int_no = irq + 32; // IRQs start at 32
+    // // if (arg_count == 0) {
+    // //     printf("IRQ command without arguments\n");
+    // // } else {
+    //     unsigned int irq = strtoul(arguments[0], NULL, 10);
+    // //     printf("Handling IRQ %d\n", irq);
+    // //     call_irq(irq);
+    // // }
 
-    // Call the assembly function
-    trigger_interrupt(&regs);
+    // // Call the assembly function to trigger the interrupt
+
+
+    // Registers2 regs;
+    // // regs.gs = 0x10;    // Example value for the segment register
+    // // regs.eax = 0x1234; // Example value for general-purpose register
+    // // regs.int_no = 0x20; // Example interrupt number
+    // // regs.err_code = 0;  // Example error code
+    // regs.int_no = irq + 32; // IRQs start at 32
+
+    // // Call the assembly function
+    // trigger_interrupt(&regs);
 }
 
 // TODO: Implement sleep function

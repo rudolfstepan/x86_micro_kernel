@@ -12,8 +12,8 @@ SECTIONS
   address = 0x00100000;  /* Load address of the kernel */
 
   /* Place the Multiboot2 header first */
-  .multiboot_header address : {
-    *(.multiboot_header)
+  .multiboot address : {
+    *(.multiboot)
   } > kernel_ram
 
   /* Place the code and read-only data sections */
@@ -31,17 +31,19 @@ SECTIONS
     . = ALIGN(4096);      /* Align the end of the data section */
   } > kernel_ram
 
+  /* Place the syscall table section */
+  .syscall_table : {
+    syscall_table_start = .;  /* Mark the start of the syscall table section */
+    *(.syscall_table)         /* Include all items in the .syscall_table section */
+    . = ALIGN(4096);          /* Align the end of the syscall table section */
+    syscall_table_end = .;    /* Mark the end of the syscall table */
+  } > kernel_ram
+
   /* Place the BSS (uninitialized data) section */
   .bss : {
     bss = .;              /* Mark the start of the BSS section */
     *(.bss)
     . = ALIGN(4096);      /* Align the end of the BSS section */
-  } > kernel_ram
-
-  .syscall_table : {
-    syscall_table = .;
-    *(.syscall_table)
-    . = ALIGN(4096);
   } > kernel_ram
 
   /* Define a section for the stack */
@@ -74,5 +76,6 @@ SECTIONS
     . = ALIGN(4096);      /* Align the end of the user BSS section */
   } > user_programs
 
+  /* Mark the end of the kernel */
   end_of_kernel = .;      /* Mark the end of the kernel */
 }

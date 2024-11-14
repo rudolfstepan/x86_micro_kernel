@@ -77,21 +77,21 @@ link_kernel:
 
 # Link CLI programs
 link_cli:
-	@echo "Linking cli_date..."
-	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/date.elf $(CLI_DIR)/date.o \
-	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
-	$(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/system.o \
-	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
-	@echo "Linking cli_test..."
-	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/test.elf $(CLI_DIR)/test.o \
-	$(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/system.o \
-	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
-	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
-	@echo "Linking cli_dir..."
-	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.o \
-	$(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/system.o \
-	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
-	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
+	# @echo "Linking cli_date..."
+	# ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/date.elf $(CLI_DIR)/date.o \
+	# $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
+	# $(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/system.o \
+	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
+	# @echo "Linking cli_test..."
+	# ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/test.elf $(CLI_DIR)/test.o \
+	# $(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/system.o \
+	# $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
+	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
+	# @echo "Linking cli_dir..."
+	# ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.o \
+	# $(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/system.o \
+	# $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
+	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
 
 # Copy binaries
 copy_binaries:
@@ -99,21 +99,21 @@ copy_binaries:
 	# cp $(CLI_DIR)/date.elf $(CLI_DIR)/date.prg
 	# cp $(CLI_DIR)/test.elf $(CLI_DIR)/test.prg
 	# cp $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.prg
-	objcopy -O binary $(CLI_DIR)/date.elf $(CLI_DIR)/date.prg
-	objcopy -O binary $(CLI_DIR)/test.elf $(CLI_DIR)/test.prg
-	objcopy -O binary $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.prg
+	# objcopy -O binary $(CLI_DIR)/date.elf $(CLI_DIR)/date.prg
+	# objcopy -O binary $(CLI_DIR)/test.elf $(CLI_DIR)/test.prg
+	# objcopy -O binary $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.prg
 
 mount:
-	@echo "Mounting disk image..."
-	if [ ! -d $(MOUNT_DIR) ]; then \
-		echo "Creating $(MOUNT_DIR) directory"; \
-		mkdir -p $(MOUNT_DIR); \
-	fi
-	sudo mount ./disk.img $(MOUNT_DIR)
-	sudo cp $(CLI_DIR)/date.prg $(MOUNT_DIR)/
-	sudo cp $(CLI_DIR)/test.prg $(MOUNT_DIR)/
-	sudo cp $(CLI_DIR)/dir.prg $(MOUNT_DIR)/
-	sudo umount $(MOUNT_DIR)
+	# @echo "Mounting disk image..."
+	# if [ ! -d $(MOUNT_DIR) ]; then \
+	# 	echo "Creating $(MOUNT_DIR) directory"; \
+	# 	mkdir -p $(MOUNT_DIR); \
+	# fi
+	# sudo mount ./disk.img $(MOUNT_DIR)
+	# sudo cp $(CLI_DIR)/date.prg $(MOUNT_DIR)/
+	# sudo cp $(CLI_DIR)/test.prg $(MOUNT_DIR)/
+	# sudo cp $(CLI_DIR)/dir.prg $(MOUNT_DIR)/
+	# sudo umount $(MOUNT_DIR)
 
 iso:
 	@echo "Creating ISO image..."
@@ -124,4 +124,6 @@ iso:
 
 run:
 	@echo "Running QEMU..."
-	qemu-system-x86_64 -boot d -cdrom ./kernel.iso -audiodev id=audio0,driver=pa -machine pcspk-audiodev=audio0 -drive file=./disk.img,format=raw -drive file=./disk1.img,format=raw -drive file=./floppy.img,format=raw,if=floppy \
+	qemu-system-x86_64 -kernel ./build/kernel.bin -s -S -display default
+	#qemu-system-x86_64 -boot d -cdrom ./kernel.iso -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy \
+	
