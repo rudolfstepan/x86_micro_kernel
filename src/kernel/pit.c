@@ -38,8 +38,7 @@ void timer_install(uint8_t ms) {
     init_pit(1000 / ms); // Set PIT frequency based on the desired millisecond interval
 }
 
-
-void delay(unsigned int milliseconds) {
+void pit_delay(unsigned int milliseconds) {
     // Enter a critical section to safely read `timer_tick_count`
     disable_interrupts();
     uint32_t start_tick = timer_tick_count;

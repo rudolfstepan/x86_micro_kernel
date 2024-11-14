@@ -4,5 +4,5 @@ extern syscall_handler
 
 section .text
 syscall_handler_asm:
-    call syscall_handler
-    iretd
+    call syscall_handler    ; Call the C handler
+    iretd                   ; Return from interrupt

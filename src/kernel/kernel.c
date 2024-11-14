@@ -28,6 +28,85 @@ extern volatile int buffer_index;
 extern volatile bool enter_pressed;
 
 
+
+//---------------------------------------------------------------------------------------------
+// syscall table entry points and definitions
+//---------------------------------------------------------------------------------------------
+void kernel_hello() {
+    printf("Hello from the kernel. All engines running.\n");
+}
+
+void kernel_print_number(int number) {
+    printf("Kernel received number: %d\n", number);
+}
+
+void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
+    (void*)kernel_hello,        // Syscall 0: No arguments
+    (void*)kernel_print_number, // Syscall 1: One argument
+    // Add more syscalls here
+};
+
+// the syscall handler function called by the interrupt handler in the boot.asm file
+void syscall_handler(void* irq_number) {
+    int syscall_index, arg1, arg2, arg3;
+
+    // Retrieve values from eax, ebx, ecx, edx, and esi into C variables
+    // __asm__ __volatile__(
+    //     "movl %%eax, %0\n\t"  // Move the contents of eax into syscall_index
+    //     "movl %%ebx, %1\n\t"  // Move the contents of ebx into arg1
+    //     "movl %%ecx, %2\n\t"  // Move the contents of ecx into arg2
+    //     "movl %%edx, %3\n\t"  // Move the contents of edx into arg3
+    //     : "=r"(syscall_index), "=r"(arg1), "=r"(arg2), "=r"(arg3)  // Output operands
+    //     :  // No input operands
+    //     : "eax", "ebx", "ecx", "edx"  // Clobbered registers
+    // );
+    __asm__ __volatile__(""  // No actual instructions needed; just retrieve registers
+        : "=a"(syscall_index),  // Load eax into syscall_index
+        "=b"(arg1),           // Load ebx into arg1
+        "=c"(arg2),           // Load ecx into arg2
+        "=d"(arg3)            // Load edx into arg3
+        :                       // No input operands
+    );
+
+
+
+    // Print the values for debugging purposes
+    printf("Syscall index: %d, Arguments: %d, %d, %d\n", syscall_index, arg1, arg2, arg3);
+
+
+    return;
+    // Ensure the index is within bounds
+    if (syscall_index < 0 || syscall_index >= 512 || syscall_table[syscall_index] == 0) {
+        printf("Invalid syscall index: %d\n", syscall_index);
+        return;
+    }
+
+    // Retrieve the function pointer from the table
+    
+    // Call functions based on syscall index, handling arguments conditionally
+    switch (syscall_index) {
+        case 0:  // kernel_hello - No arguments
+            void* func_ptr = (void*)syscall_table[syscall_index];
+            ((void (*)(void))func_ptr)();
+            break;
+
+        case 1:  // kernel_print_number - One argument
+            //int arg1;
+            //__asm__ __volatile__("movl %%ebx, %0" : "=r"(arg1));
+            //((void (*)(int))func_ptr)(arg1);
+            //((void (*)(void))func_ptr)(100);
+            void* func_ptr1 = (void*)syscall_table[syscall_index];
+            ((void (*)(int))func_ptr1)((int)10);
+            break;
+
+        // Add additional cases for syscalls with more arguments
+
+        default:
+            printf("Unknown syscall index: %d\n", syscall_index);
+            break;
+    }
+}
+
 // write some diagnostic information to the screen
 // void parse_multiboot_info(uint32_t magic, uint32_t* multiboot_info_ptr) {
 //     uint32_t total_size = *(uint32_t *)multiboot_info_ptr;
@@ -112,67 +191,6 @@ void parse_multiboot_info(uint32_t magic, uint32_t* multiboot_info_ptr) {
     }
 
     printf("Memory map parsing complete.\n");
-}
-
-//---------------------------------------------------------------------------------------------
-// syscall table entry points and definitions
-//---------------------------------------------------------------------------------------------
-// typedef void (*syscall_func_ptr)(void);
-// typedef void (*syscall_sleep_func_ptr)(int);
-// Use a specific section for the syscall table to allow the linker to control the address
-uintptr_t syscall_table[NUM_SYSCALLS] __attribute__((section(".syscall_table")));
-
-//void syscall_handler();
-//void syscall_handler_1();
-
-
-// This would be your syscall_table_address variable, initialized somewhere in your kernel startup code
-//uintptr_t syscall_table_address = (uintptr_t)&syscall_table;
-// Declare and initialize the syscall table in the ".syscall_table" section
-// uintptr_t syscall_table[1] __attribute__((section(".syscall_table"))) = {
-//     (uintptr_t)syscall_handler,    // Syscall 0 handler
-//     //(uintptr_t)syscall_handler_1    // Syscall 1 handler
-//     // Add more syscall handlers as needed, or set to 0 if unimplemented
-// };
-
-//---------------------------------------------------------------------------------------------
-//__attribute__((naked))
-// void syscall_handler() {
-//     int irq_number;
-
-//     // Inline assembly to get the IRQ number from the stack
-//     __asm__ __volatile__(
-//         "movl 4(%%esp), %0"       // Load the interrupt number (IRQ number) into the variable
-//         : "=r" (irq_number)       // Output operand: the interrupt number goes into 'irq_number'
-//     );
-
-//     printf("Syscall handler invoked, IRQ number: %d\n", irq_number);
-
-// }
-
-void kernel_hello() {
-    printf("Hello from the kernel. All engines running.\n");
-}
-
-// the syscall handler function called by the interrupt handler in the boot.asm file
-void syscall_handler(void* irq_number) {
-    printf("Kernel Syscall handler invoked %p\n", (int)irq_number);
-
-    // now return a value to the caller which has invoked the syscall 0x80
-    //__asm__ __volatile__("movl $0x1234, %eax"); // Return value 0x1234
-
-    // Return the address of my_function in EAX
-    __asm__ __volatile__("movl %0, %%eax" : : "r" (kernel_hello));
-}
-
-// Initialize the syscall table
-void initialize_syscall_table() {
-
-    // Initialize the syscall table with the addresses of the syscall functions
-    //syscall_table[SYSCALL_SLEEP] = (syscall_func_ptr)&syscall_sleep;
-    syscall_table[0] = (uintptr_t)kernel_hello;
-
-    printf("Syscall table initialized at address: %p\n", syscall_table);
 }
 
 // initialize attaches drives
@@ -276,8 +294,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     idt_install();
     isr_install();
     irq_install();
-    initialize_syscall_table();
-
+    
     // Install the IRQ handler for the timer
     irq_install_handler(0, timer_irq_handler);
     // Install the IRQ handler for the keyboard
@@ -289,20 +306,12 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
 
     parse_multiboot_info(multiboot_magic, multiboot_info_ptr);
 
-
-    //set_graphics_mode();
-
-    // display_kernel_banner();
-    // display_ascii_art();
     display_welcome_message();
     
     test_memory();
     timer_install(1); // Install the timer first for 1 ms delay
     kb_install(); // Install the keyboard
-    //init_drives(); // Initialize drives
-    //printf("Type HELP for command list.\n");
 
-    
     ata_detect_drives();
     current_drive = ata_get_drive(0);
     if (current_drive) {

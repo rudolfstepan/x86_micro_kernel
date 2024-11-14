@@ -14,16 +14,6 @@ typedef struct
 } Registers;
 #pragma pack(pop)
 
-#pragma pack(push, 1)
-typedef struct
-{
-    unsigned int int_no;    /* our 'push byte #' and ecodes do this */
-} Registers2;
-#pragma pack(pop)
-
-// Prototype for the external assembly function
-//extern void trigger_interrupt(void* regs);
-
 //gdt
 extern void gdt_install();
 

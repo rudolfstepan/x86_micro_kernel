@@ -305,47 +305,49 @@ void handle_set_date(int arg_count, char** arguments) {
 }
 
 void handle_irq(int arg_count, char** arguments) {
-
-    void* syscall_table[] = {0}; // Array to store the result of the syscall
-
-    __asm__ volatile(
-        "int $0x80\n"           // Execute syscall interrupt
-        "movl %%eax, %0\n"      // Store return value in result
-        : "=r"(syscall_table)          // Output operand
-        :                       // No input operands
-        : "eax"                 // Clobbered register
-    );
-
-    printf("Syscall table address result from irq result: %p\n", syscall_table);  // Should print 0x1234
-    // function pointer
-    void (*syscall_method)(void) = (void (*)(void))syscall_table[0];
-
-    syscall_method();
-
-
     
+    // if (arg_count == 0) {
+    //     printf("IRQ command without arguments\n");
+
+    //     int syscall_index = 0;  // Index of `kernel_hello`
+    //     __asm__ volatile(
+    //         "movl %0, %%eax\n"  // Move syscall index to EAX
+    //         "int $0x80\n"       // Trigger syscall interrupt
+    //         :
+    //         : "r"(syscall_index)
+    //         : "eax"
+    //     );
+
+    // } else {
+    //     int syscall_index = 1; //strtoul(arguments[0], NULL, 10);
+    //     int parameter = 42;     // Argument for syscall
+
+    //     __asm__ volatile(
+    //         "movl %0, %%eax\n"  // Move syscall index to EAX
+    //         "movl %1, %%ebx\n"  // Move parameter to EBX
+    //         "int $0x80\n"       // Trigger syscall interrupt
+    //         :
+    //         : "r"(syscall_index), "r"(parameter)
+    //         : "eax", "ebx"
+    //     );
+
+    // }
+
+       int syscall_index = 1;  // Syscall index
+        int parameter = 10;     // First argument
+        int parameter1 = 20;    // Second argument
+        int parameter2 = 30;    // Third argument
+        int parameter3 = 40;    // Fourth argument
+
+        __asm__ volatile(
+            "int $0x80\n"       // Trigger syscall interrupt
+            :
+            : "a"(syscall_index), "b"(parameter), "c"(parameter1), "d"(parameter2), "e"(parameter3)
+            : "memory"
+        );
 
 
-    // // if (arg_count == 0) {
-    // //     printf("IRQ command without arguments\n");
-    // // } else {
-    //     unsigned int irq = strtoul(arguments[0], NULL, 10);
-    // //     printf("Handling IRQ %d\n", irq);
-    // //     call_irq(irq);
-    // // }
 
-    // // Call the assembly function to trigger the interrupt
-
-
-    // Registers2 regs;
-    // // regs.gs = 0x10;    // Example value for the segment register
-    // // regs.eax = 0x1234; // Example value for general-purpose register
-    // // regs.int_no = 0x20; // Example interrupt number
-    // // regs.err_code = 0;  // Example error code
-    // regs.int_no = irq + 32; // IRQs start at 32
-
-    // // Call the assembly function
-    // trigger_interrupt(&regs);
 }
 
 // TODO: Implement sleep function

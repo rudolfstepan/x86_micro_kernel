@@ -303,5 +303,18 @@ void exit(uint8_t status) {
 
 void sleep_ms(uint32_t ms) {
     // Delay for a specified number of milliseconds
-    delay(ms);
+    //delay(ms);
+
+    pit_delay(ms);
+
+    // int syscall_index = 0;  // Index of `kernel_hello` in this case
+    // __asm__ volatile(
+    //     "movl %0, %%eax\n"  // Move syscall index to EAX
+    //     "int $0x80\n"       // Trigger the syscall interrupt
+    //     :                    // No output operands
+    //     : "r"(syscall_index) // Input operand
+    //     : "eax"              // Clobbered register
+    // );
+
+
 }

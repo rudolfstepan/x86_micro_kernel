@@ -32,6 +32,6 @@
 
 extern void timer_irq_handler(void* r);
 void timer_install(uint8_t ms);
-void delay(unsigned int milliseconds);
+void pit_delay(unsigned int milliseconds);
 
 #endif // PIT_H

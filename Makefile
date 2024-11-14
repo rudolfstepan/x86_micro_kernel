@@ -2,9 +2,11 @@
 SOURCE_DIR = src
 OUTPUT_DIR = build
 ISO_DIR = iso
-CFLAGS = -Isrc -m32 -c -ffreestanding -fno-asynchronous-unwind-tables -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -fno-stack-protector -O2 -Wall -Wextra -g -Wno-unused-parameter
+CFLAGS = -Isrc -m32 -c -ffreestanding -fno-asynchronous-unwind-tables -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -fno-stack-protector -O1 -Wall -Wextra -g -Wno-unused-parameter
 LD_FLAGS = -m elf_i386 -nostdlib
 MOUNT_DIR = /mnt/disk
+
+# -m32 -c -ffreestanding -fno-asynchronous-unwind-tables -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -fno-stack-protector -O0 -Wall -Wextra -g -Wno-unused-parameter
 
 # Directories
 BOOT_DIR = $(OUTPUT_DIR)/boot
