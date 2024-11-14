@@ -305,36 +305,15 @@ void handle_set_date(int arg_count, char** arguments) {
 }
 
 void handle_irq(int arg_count, char** arguments) {
-    
-    // if (arg_count == 0) {
-    //     printf("IRQ command without arguments\n");
+    int syscall_index = 0;  // Index of `kernel_hello`
+    if (arg_count == 0) {
 
-    //     int syscall_index = 0;  // Index of `kernel_hello`
-    //     __asm__ volatile(
-    //         "movl %0, %%eax\n"  // Move syscall index to EAX
-    //         "int $0x80\n"       // Trigger syscall interrupt
-    //         :
-    //         : "r"(syscall_index)
-    //         : "eax"
-    //     );
+    } else {
+        syscall_index = strtoul(arguments[0], NULL, 10);
+    }
 
-    // } else {
-    //     int syscall_index = 1; //strtoul(arguments[0], NULL, 10);
-    //     int parameter = 42;     // Argument for syscall
-
-    //     __asm__ volatile(
-    //         "movl %0, %%eax\n"  // Move syscall index to EAX
-    //         "movl %1, %%ebx\n"  // Move parameter to EBX
-    //         "int $0x80\n"       // Trigger syscall interrupt
-    //         :
-    //         : "r"(syscall_index), "r"(parameter)
-    //         : "eax", "ebx"
-    //     );
-
-    // }
-
-       int syscall_index = 1;  // Syscall index
-        int parameter = 10;     // First argument
+       //int syscall_index = 1;  // Syscall index
+        int parameter = 1000;     // First argument
         int parameter1 = 20;    // Second argument
         int parameter2 = 30;    // Third argument
         int parameter3 = 40;    // Fourth argument
@@ -346,8 +325,7 @@ void handle_irq(int arg_count, char** arguments) {
             : "memory"
         );
 
-
-
+        printf("Do a Syscall index: %d, Arguments: %d, %d, %d\n", syscall_index, parameter, parameter1, parameter2);
 }
 
 // TODO: Implement sleep function

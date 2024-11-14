@@ -43,6 +43,7 @@ void kernel_print_number(int number) {
 void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)kernel_hello,        // Syscall 0: No arguments
     (void*)kernel_print_number, // Syscall 1: One argument
+    (void*)&pit_delay,               // Syscall 2: One argument
     // Add more syscalls here
 };
 
@@ -51,15 +52,7 @@ void syscall_handler(void* irq_number) {
     int syscall_index, arg1, arg2, arg3;
 
     // Retrieve values from eax, ebx, ecx, edx, and esi into C variables
-    // __asm__ __volatile__(
-    //     "movl %%eax, %0\n\t"  // Move the contents of eax into syscall_index
-    //     "movl %%ebx, %1\n\t"  // Move the contents of ebx into arg1
-    //     "movl %%ecx, %2\n\t"  // Move the contents of ecx into arg2
-    //     "movl %%edx, %3\n\t"  // Move the contents of edx into arg3
-    //     : "=r"(syscall_index), "=r"(arg1), "=r"(arg2), "=r"(arg3)  // Output operands
-    //     :  // No input operands
-    //     : "eax", "ebx", "ecx", "edx"  // Clobbered registers
-    // );
+
     __asm__ __volatile__(""  // No actual instructions needed; just retrieve registers
         : "=a"(syscall_index),  // Load eax into syscall_index
         "=b"(arg1),           // Load ebx into arg1
@@ -68,13 +61,9 @@ void syscall_handler(void* irq_number) {
         :                       // No input operands
     );
 
-
-
     // Print the values for debugging purposes
     printf("Syscall index: %d, Arguments: %d, %d, %d\n", syscall_index, arg1, arg2, arg3);
 
-
-    return;
     // Ensure the index is within bounds
     if (syscall_index < 0 || syscall_index >= 512 || syscall_table[syscall_index] == 0) {
         printf("Invalid syscall index: %d\n", syscall_index);
@@ -82,23 +71,18 @@ void syscall_handler(void* irq_number) {
     }
 
     // Retrieve the function pointer from the table
+    void* func_ptr = (void*)syscall_table[syscall_index];
     
     // Call functions based on syscall index, handling arguments conditionally
     switch (syscall_index) {
         case 0:  // kernel_hello - No arguments
-            void* func_ptr = (void*)syscall_table[syscall_index];
             ((void (*)(void))func_ptr)();
             break;
 
         case 1:  // kernel_print_number - One argument
-            //int arg1;
-            //__asm__ __volatile__("movl %%ebx, %0" : "=r"(arg1));
-            //((void (*)(int))func_ptr)(arg1);
-            //((void (*)(void))func_ptr)(100);
-            void* func_ptr1 = (void*)syscall_table[syscall_index];
-            ((void (*)(int))func_ptr1)((int)10);
+        case 2:  // delay - One argument
+            ((void (*)(int))func_ptr)(arg1);
             break;
-
         // Add additional cases for syscalls with more arguments
 
         default:

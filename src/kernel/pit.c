@@ -11,7 +11,7 @@
 
 #define TIMER_MAX UINT32_MAX  // Maximum value for a 32-bit unsigned counter
 
-volatile uint32_t timer_tick_count = 0;  // Use a 32-bit counter
+static volatile uint32_t timer_tick_count = 0;  // Use a 32-bit counter
 
 void timer_irq_handler(void* r) {
     // Increment a counter each time the timer interrupt fires
@@ -39,21 +39,30 @@ void timer_install(uint8_t ms) {
 }
 
 void pit_delay(unsigned int milliseconds) {
-    // Enter a critical section to safely read `timer_tick_count`
-    disable_interrupts();
+    printf("Delay for %d ms\n", milliseconds);
+
+    // Start tick count
     uint32_t start_tick = timer_tick_count;
-    enable_interrupts();
 
     // Calculate the number of ticks to wait
     uint32_t ticks_to_wait = milliseconds;
 
-    // Wait until the required number of ticks has passed
-    while (1) {
-        disable_interrupts();  // Enter critical section
-        uint32_t current_tick = timer_tick_count;
-        enable_interrupts();   // Exit critical section
+    // Set a maximum timeout (in milliseconds) as a failsafe
+    uint32_t failsafe_timeout = 10000; // 10 seconds, for example
+    uint32_t failsafe_start = start_tick;
 
+    // Wait until the required number of ticks has passed or the failsafe is triggered
+    while (1) {
+        uint32_t current_tick = timer_tick_count;
+
+        // Check if the desired delay has passed
         if ((current_tick - start_tick) >= ticks_to_wait) {
+            break;
+        }
+
+        // Check if failsafe timeout has been exceeded
+        if ((current_tick - failsafe_start) >= failsafe_timeout) {
+            printf("Warning: Delay loop timed out\n");
             break;
         }
     }
