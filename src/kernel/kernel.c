@@ -81,7 +81,7 @@ void syscall_handler(void* irq_number) {
 
         case 1:  // kernel_print_number - One argument
         case 2:  // delay - One argument
-            ((void (*)(int))func_ptr)(arg1);
+            ((void (*)(int))func_ptr)((uint32_t)arg1);
             break;
         // Add additional cases for syscalls with more arguments
 

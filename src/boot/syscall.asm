@@ -4,5 +4,7 @@ extern syscall_handler
 
 section .text
 syscall_handler_asm:
-    call syscall_handler    ; Call the C handler
+    sti                     ; Enable interrupts during syscall handler
+    call syscall_handler    ; Call the actual C handler function
+    cli                     ; Disable interrupts before returning
     iretd                   ; Return from interrupt
