@@ -1,10 +1,6 @@
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
 #include <stdint.h>
-#include "drivers/video/video.h"
-#include "drivers/keyboard/keyboard.h"
-#include "kernel/pit.h"
-
 
 // uintptr_t get_syscall_table_address();
 // int calculate(int a, int b);
@@ -29,7 +25,9 @@ int start(void) {
     printf("Testing delay function...\n");
     //wait_for_enter();
 
-    //delay(10); // Sleep for 1 second
+    wait_enter_pressed();
+
+    sleep_ms(1000); // Sleep for 1 second
 
     printf("Delay completed!\n");
 
