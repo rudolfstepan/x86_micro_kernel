@@ -36,6 +36,7 @@ int printf(const char* format, ...);                           // Print formatte
 int snprintf(char* buffer, size_t size, const char* format, ...); // Print formatted string to a buffer safely
 
 void hex_dump(const unsigned char* data, size_t size);
+void memory_dump(uint32_t start_address, uint32_t end_address);
 
 void beep(uint32_t frequency, uint32_t duration_ms);
 

@@ -1,7 +1,6 @@
 ﻿#include "keyboard.h"
 #include "drivers/io/io.h"
 #include "drivers/video/video.h"
-#include "kernel/system.h"
 #include "kernel/sys.h"
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
@@ -48,17 +47,13 @@ volatile bool enter_pressed = false;
 // Helper functions for atomic operations
 bool is_enter_pressed() {
     // Atomically return the state of `enter_pressed`
-    disable_interrupts();
     bool pressed = enter_pressed;
-    enable_interrupts();
     return pressed;
 }
 
 void reset_enter_pressed() {
     // Atomically reset the `enter_pressed` flag
-    disable_interrupts();
     enter_pressed = false;
-    enable_interrupts();
 }
 
 unsigned char get_scancode_from_keyboard() {
@@ -112,7 +107,7 @@ void kb_install() {
     // irq_install_handler(1, kb_handler); // assumed to be set up elsewhere
 }
 
-void wait_for_enter() {
+void kb_wait_enter() {
     printf("Press Enter to continue...\n");
 
     // Reset the enter_pressed flag

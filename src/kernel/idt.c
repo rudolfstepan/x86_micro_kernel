@@ -1,6 +1,4 @@
 #include "kernel/sys.h"
-#include "kernel/system.h"
-
 #include "toolchain/stdlib.h"
 #include "toolchain/strings.h"
 

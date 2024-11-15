@@ -3,7 +3,6 @@
 #include "drivers/io/io.h"
 #include "kernel/sys.h"
 #include "toolchain/stdio.h"
-#include "kernel/system.h"
 
 
 #define PIT_FREQUENCY 1193182  // Standard PIT frequency in Hz

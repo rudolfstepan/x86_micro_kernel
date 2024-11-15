@@ -8,7 +8,7 @@ extern void kb_handler(void* r);
 // char scancode_to_ascii(unsigned char scancode);
 
 void kb_install();
-extern void wait_for_enter();
+extern void kb_wait_enter();
 //int getchar();
 
 #endif

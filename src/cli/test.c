@@ -27,7 +27,7 @@ int start(void) {
     //sleep(1); // Wait for a short period of time (you'd use a timer interrupt in a real kernel)
 
     printf("Testing delay function...\n");
-    wait_for_enter();
+    //wait_for_enter();
 
     //delay(10); // Sleep for 1 second
 

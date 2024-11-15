@@ -76,7 +76,7 @@ link_kernel:
 	ld $(LD_FLAGS) -T klink.ld -o $(OUTPUT_DIR)/kernel.bin \
 	$(BOOT_DIR)/_bootloader.o $(BOOT_DIR)/_multiboot.o $(BOOT_DIR)/_gdt.o $(BOOT_DIR)/_idt.o $(BOOT_DIR)/_isr.o $(BOOT_DIR)/_irq.o $(BOOT_DIR)/_syscall.o $(BOOT_DIR)/_stack.o \
 	$(OUTPUT_DIR)/kernel/gdt.o $(OUTPUT_DIR)/kernel/idt.o $(OUTPUT_DIR)/kernel/isr.o \
-	$(OUTPUT_DIR)/kernel/irq.o $(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/kernel.o $(OUTPUT_DIR)/kernel/prg.o $(OUTPUT_DIR)/kernel/system.o $(OUTPUT_DIR)/kernel/command.o \
+	$(OUTPUT_DIR)/kernel/irq.o $(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/kernel.o $(OUTPUT_DIR)/kernel/prg.o $(OUTPUT_DIR)/kernel/command.o \
 	$(OUTPUT_DIR)/kernel/process.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
 	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o \
 	

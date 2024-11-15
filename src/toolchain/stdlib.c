@@ -18,7 +18,6 @@ typedef struct memory_block {
 // TODO: Get the kernel size from the linker script and use the memory addresses dynamically from the bootloader
 #define HEAP_START  (void*)(0x100000 + (1024 * 1024))  // 2MB
 #define HEAP_END    (void*)0x500000  // 5MB
-
 #define BLOCK_SIZE sizeof(memory_block)
 
 memory_block *freeList = (memory_block*)HEAP_START;
@@ -295,6 +294,15 @@ void* memmove(void* dest, const void* src, size_t n) {
     return dest;
 }
 
+void do_syscall(int syscall_index, int parameter, int parameter1, int parameter2) {
+        __asm__ volatile(
+            "int $0x80\n"       // Trigger syscall interrupt
+            :
+            : "a"(syscall_index), "b"(parameter), "c"(parameter1), "d"(parameter2)
+            : "memory"
+        );
+}
+
 // Function to halt the CPU
 void exit(uint8_t status) {
     // Assembly code to halt the CPU
@@ -302,19 +310,10 @@ void exit(uint8_t status) {
 }
 
 void sleep_ms(uint32_t ms) {
-    // Delay for a specified number of milliseconds
-    //delay(ms);
+    printf("Syscall Sleeping for %d ms\n", ms);
+    do_syscall(SYS_DELAY, ms, 0, 0);
+}
 
-    pit_delay(ms);
-
-    // int syscall_index = 0;  // Index of `kernel_hello` in this case
-    // __asm__ volatile(
-    //     "movl %0, %%eax\n"  // Move syscall index to EAX
-    //     "int $0x80\n"       // Trigger the syscall interrupt
-    //     :                    // No output operands
-    //     : "r"(syscall_index) // Input operand
-    //     : "eax"              // Clobbered register
-    // );
-
-
+void wait_enter_pressed() {
+		do_syscall(SYS_WAIT_ENTER, 0, 0, 0);
 }

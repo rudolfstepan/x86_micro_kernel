@@ -2,7 +2,6 @@
 
 #include "command.h"
 #include "prg.h"
-#include "system.h"
 #include "sys.h"
 #include "pit.h"
 
@@ -43,7 +42,8 @@ void kernel_print_number(int number) {
 void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)kernel_hello,        // Syscall 0: No arguments
     (void*)kernel_print_number, // Syscall 1: One argument
-    (void*)&pit_delay,               // Syscall 2: One argument
+    (void*)&pit_delay,          // Syscall 2: One argument
+    (void*)&kb_wait_enter,      // Syscall 3: No arguments
     // Add more syscalls here
 };
 
@@ -76,6 +76,7 @@ void syscall_handler(void* irq_number) {
     // Call functions based on syscall index, handling arguments conditionally
     switch (syscall_index) {
         case 0:  // kernel_hello - No arguments
+        case 3:  // kb_wait_enter - No arguments
             ((void (*)(void))func_ptr)();
             break;
 

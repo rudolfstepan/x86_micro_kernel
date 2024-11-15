@@ -3,6 +3,7 @@
 #include "prg.h"
 #include "sys.h"
 #include "drivers/rtc/rtc.h"
+#include "drivers/ata/ata.h"
 
 #include "toolchain/strings.h"
 #include "toolchain/stdio.h"
@@ -12,6 +13,12 @@
 #include "filesystem/fat12/fat12.h"
 
 #define NUM_COMMANDS (sizeof(command_table) / sizeof(Command))
+
+typedef struct {
+    const char *name;
+    void (*handler)(int, char**);
+} Command;
+
 
 char current_path[256] = "/";
 
@@ -325,7 +332,7 @@ void handle_irq(int arg_count, char** arguments) {
             : "memory"
         );
 
-        printf("Do a Syscall index: %d, Arguments: %d, %d, %d\n", syscall_index, parameter, parameter1, parameter2);
+        printf("Return from syscall index: %d, Arguments: %d, %d, %d\n", syscall_index, parameter, parameter1, parameter2);
 }
 
 // TODO: Implement sleep function

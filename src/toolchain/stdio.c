@@ -14,6 +14,16 @@
 #include "drivers/io/io.h"
 
 
+// for memory dump
+#define BYTES_PER_LINE 16
+#define MAX_LINES 20
+
+// PIT I/O port addresses
+#define PIT_CONTROL_PORT 0x43
+#define PIT_CHANNEL_2_PORT 0x42
+#define PC_SPEAKER_PORT 0x61
+
+
 
 // -----------------------------------------------------------------
 // Directory Handling Functions
@@ -532,19 +542,56 @@ void hex_dump(const unsigned char* data, size_t size) {
         if (line_count >= 20) {
             // Reset the line count
             line_count = 0;
-            wait_for_enter(); // Wait for key press
+            wait_enter_pressed(); // Wait for key press
         }
     }
 }
 
+// Check if a character is printable
+int is_printable(char ch) {
+    return (ch >= 32 && ch < 127);
+}
 
+// Convert a byte to a printable character or '.'
+char to_printable_char(char ch) {
+    return is_printable(ch) ? ch : '.';
+}
 
+// Memory dump function
+void memory_dump(uint32_t start_address, uint32_t end_address) {
+    if (end_address == 0) {
+        end_address = start_address + (BYTES_PER_LINE * MAX_LINES); // Default length for 20 lines
+    }
 
+    uint8_t* ptr = (uint8_t*)start_address;
+    int line_count = 0;
 
-// PIT I/O port addresses
-#define PIT_CONTROL_PORT 0x43
-#define PIT_CHANNEL_2_PORT 0x42
-#define PC_SPEAKER_PORT 0x61
+    while (ptr < (uint8_t*)end_address) {
+        printf("%08X: ", (unsigned int)(uintptr_t)ptr);
+
+        // Print each byte in hex and store ASCII characters
+        char ascii[BYTES_PER_LINE + 1];
+
+        for (int i = 0; i < BYTES_PER_LINE; ++i) {
+            if (ptr + i < (uint8_t*)end_address) {
+                printf("%02X ", ptr[i]);
+                ascii[i] = is_printable(ptr[i]) ? ptr[i] : '.';
+            } else {
+                printf("   ");
+                ascii[i] = ' ';
+            }
+        }
+
+        printf(" |%s|\n", ascii);
+        ptr += BYTES_PER_LINE;
+        line_count++;
+
+        if (line_count >= MAX_LINES) {
+            wait_enter_pressed(); // Wait for user to press Enter
+            line_count = 0;   // Reset line count
+        }
+    }
+}
 
 // Set the PIT to the desired frequency for the beep
 void set_pit_frequency(uint32_t frequency) {
