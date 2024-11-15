@@ -309,7 +309,6 @@ void exit(uint8_t status) {
 }
 
 void sleep_ms(uint32_t ms) {
-    printf("Syscall Sleeping for %d ms\n", ms);
     sys_call(SYS_DELAY, ms, 0, 0);
 }
 

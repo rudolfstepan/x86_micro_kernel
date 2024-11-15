@@ -71,24 +71,24 @@ extern void syscall_handler_asm();
 void irq_install() {
     irq_remap();
 
-    set_idt_entry(0x20, (uint32_t)irq0, 0x08, 0x8E);
-    set_idt_entry(0x21, (uint32_t)irq1, 0x08, 0x8E);
-    set_idt_entry(0x22, (uint32_t)irq2, 0x08, 0x8E);
-    set_idt_entry(0x23, (uint32_t)irq3, 0x08, 0x8E);
-    set_idt_entry(0x24, (uint32_t)irq4, 0x08, 0x8E);
-    set_idt_entry(0x25, (uint32_t)irq5, 0x08, 0x8E);
-    set_idt_entry(0x26, (uint32_t)irq6, 0x08, 0x8E); // FDC IRQ
-    set_idt_entry(0x27, (uint32_t)irq7, 0x08, 0x8E);
-    set_idt_entry(0x28, (uint32_t)irq8, 0x08, 0x8E);
-    set_idt_entry(0x29, (uint32_t)irq9, 0x08, 0x8E);
-    set_idt_entry(0x2A, (uint32_t)irq10, 0x08, 0x8E);
-    set_idt_entry(0x2B, (uint32_t)irq11, 0x08, 0x8E);
-    set_idt_entry(0x2C, (uint32_t)irq12, 0x08, 0x8E);
-    set_idt_entry(0x2D, (uint32_t)irq13, 0x08, 0x8E);
-    set_idt_entry(0x2E, (uint32_t)irq14, 0x08, 0x8E);
-    set_idt_entry(0x2F, (uint32_t)irq15, 0x08, 0x8E);
+    set_idt_entry(0x20, (uint32_t)irq0 );
+    set_idt_entry(0x21, (uint32_t)irq1);
+    set_idt_entry(0x22, (uint32_t)irq2);
+    set_idt_entry(0x23, (uint32_t)irq3);
+    set_idt_entry(0x24, (uint32_t)irq4);
+    set_idt_entry(0x25, (uint32_t)irq5);
+    set_idt_entry(0x26, (uint32_t)irq6); // FDC IRQ
+    set_idt_entry(0x27, (uint32_t)irq7);
+    set_idt_entry(0x28, (uint32_t)irq8);
+    set_idt_entry(0x29, (uint32_t)irq9);
+    set_idt_entry(0x2A, (uint32_t)irq10);
+    set_idt_entry(0x2B, (uint32_t)irq11);
+    set_idt_entry(0x2C, (uint32_t)irq12);
+    set_idt_entry(0x2D, (uint32_t)irq13);
+    set_idt_entry(0x2E, (uint32_t)irq14);
+    set_idt_entry(0x2F, (uint32_t)irq15);
 
-    set_idt_entry(0x80, (uint32_t)syscall_handler_asm, 0x08, 0x8E); // System call gate
+    set_idt_entry(0x80, (uint32_t)syscall_handler_asm); // System call gate
 }
 
 // General IRQ handler that checks for custom routines

@@ -1,7 +1,6 @@
 #include "toolchain/stdio.h"
 
 // #include <stdarg.h>
-
 // #include "fat32.h"
 // #include "system.h"
 

@@ -61,7 +61,7 @@ void syscall_handler(void* irq_number) {
     );
 
     // Print the values for debugging purposes
-    printf("Syscall index: %d, Arguments: %d, %d, %d\n", syscall_index, arg1, arg2, arg3);
+    //printf("Syscall index: %d, Arguments: %d, %d, %d\n", syscall_index, arg1, arg2, arg3);
 
     // Ensure the index is within bounds
     if (syscall_index < 0 || syscall_index >= 512 || syscall_table[syscall_index] == 0) {

@@ -19,7 +19,7 @@ extern void gdt_install();
 
 //idt
 extern void idt_install();
-extern void set_idt_entry(int vector, uint32_t handler, uint16_t selector, uint8_t flags);
+extern void set_idt_entry(int vector, uint32_t handler);
 
 //isr
 extern void isr_install();
@@ -29,9 +29,5 @@ extern void irq_install();
 extern void irq_handler(Registers* r);
 extern void irq_install_handler(int irq, void* r);
 void irq_uninstall_handler(int irq);
-
-//pit
-//extern void timer_install();
-
 
 #endif

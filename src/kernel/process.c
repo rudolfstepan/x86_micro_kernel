@@ -29,17 +29,17 @@ void load_and_execute_program(const char* programName) {
         program_header_t* header = (program_header_t*)PROGRAM_LOAD_ADDRESS;
 
         // print the program header details
-        printf("Program Header Details:\n");
-        printf("Identifier: %s\n", header->identifier);
-        printf("Magic Number: %u\n", header->magic_number);
-        printf("Program size: %d\n", header->program_size);
-        printf("Entry point: %p\n", header->entry_point);
-        printf("Base address: %p\n", header->base_address);
-        printf("Relocation offset: %d\n", header->relocation_offset);
-        printf("Relocation size: %d\n", header->relocation_size);
-        printf("\n----------------------------------------------\n");
+        // printf("Program Header Details:\n");
+        // printf("Identifier: %s\n", header->identifier);
+        // printf("Magic Number: %u\n", header->magic_number);
+        // printf("Program size: %d\n", header->program_size);
+        // printf("Entry point: %p\n", header->entry_point);
+        // printf("Base address: %p\n", header->base_address);
+        // printf("Relocation offset: %d\n", header->relocation_offset);
+        // printf("Relocation size: %d\n", header->relocation_size);
+        // printf("\n----------------------------------------------\n");
 
-        printf("Program address: %p\n", (void*)PROGRAM_LOAD_ADDRESS);
+        // printf("Program address: %p\n", (void*)PROGRAM_LOAD_ADDRESS);
 
         // execute the program
         void (*program)() = (void (*)())(header->entry_point + PROGRAM_LOAD_ADDRESS);
