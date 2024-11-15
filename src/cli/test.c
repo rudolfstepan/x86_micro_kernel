@@ -44,6 +44,10 @@ int start(void) {
 
     printf("Result: %d\n", x);
 
+    printf("%d\n", 12345);             // Prints: 12345
+    printf("%d\n", -12345);            // Prints: -12345
+    printf("%u\n", (unsigned int)-1);  // Prints: 4294967295
+
     printf("Test Program Finished\n");
 
     // addTask(blinkLED, NULL);

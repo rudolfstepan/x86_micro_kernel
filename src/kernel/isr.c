@@ -1,8 +1,7 @@
 #include "kernel/sys.h"
-
 #include "toolchain/stdio.h"
 
-
+// methods defined in the assembly file
 extern void isr0();
 extern void isr1();
 extern void isr2();
@@ -36,45 +35,6 @@ extern void isr29();
 extern void isr30();
 extern void isr31();
 
-
-void isr_install() {
-    //char* st = "* isr_install\n";
-
-    set_idt_entry(0,  (uint32_t)isr0);
-    set_idt_entry(1,  (uint32_t)isr1);
-    set_idt_entry(2,  (uint32_t)isr2);
-    set_idt_entry(3,  (uint32_t)isr3);
-    set_idt_entry(4,  (uint32_t)isr4);
-    set_idt_entry(5,  (uint32_t)isr5);
-    set_idt_entry(6,  (uint32_t)isr6);
-    set_idt_entry(7,  (uint32_t)isr7);
-    set_idt_entry(8,  (uint32_t)isr8);
-    set_idt_entry(9,  (uint32_t)isr9);
-    set_idt_entry(10, (uint32_t)isr10);
-    set_idt_entry(11, (uint32_t)isr11);
-    set_idt_entry(12, (uint32_t)isr12);
-    set_idt_entry(13, (uint32_t)isr13);
-    set_idt_entry(14, (uint32_t)isr14);
-    set_idt_entry(15, (uint32_t)isr15);
-    set_idt_entry(16, (uint32_t)isr16);
-    set_idt_entry(17, (uint32_t)isr17);
-    set_idt_entry(18, (uint32_t)isr18);
-    set_idt_entry(19, (uint32_t)isr19);
-    set_idt_entry(20, (uint32_t)isr20);
-    set_idt_entry(21, (uint32_t)isr21);
-    set_idt_entry(22, (uint32_t)isr22);
-    set_idt_entry(23, (uint32_t)isr23);
-    set_idt_entry(24, (uint32_t)isr24);
-    set_idt_entry(25, (uint32_t)isr25);
-    set_idt_entry(26, (uint32_t)isr26);
-    set_idt_entry(27, (uint32_t)isr27);
-    set_idt_entry(28, (uint32_t)isr28);
-    set_idt_entry(29, (uint32_t)isr29);
-    set_idt_entry(30, (uint32_t)isr30);
-    set_idt_entry(31, (uint32_t)isr31);
-
-    //printf(st);
-}
 
 char* exception_messages[] =
 {
@@ -113,11 +73,155 @@ char* exception_messages[] =
 };
 
 void fault_handler(Registers* r) {
-    char* st = "fault_handler";
-    printf(st);
-    if (r->int_no < 32) {
-        printf(exception_messages[r->int_no]);
-        printf(" Exception. System Halted! %u %s\n", r->int_no, exception_messages[r->int_no]);
+    if (r->irq_number < 32) {
+        // Display the exception message
+        printf("Exception: %s\n\n", exception_messages[r->irq_number]);
+
+        // Print registers in a compact table to fit 80 characters width
+        printf("Registers:\n");
+        printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+        printf("|   gs   |   fs   |   es   |   ds   |   edi  |   esi  |   ebp  |   esp  |\n");
+        printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+        printf("| 0x%04X | 0x%04X | 0x%04X | 0x%04X | 0x%08X | 0x%08X | 0x%08X | 0x%08X |\n",
+               r->gs, r->fs, r->es, r->ds, r->edi, r->esi, r->ebp, r->esp);
+        printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+
+        printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+        printf("|   ebx  |   edx  |   ecx  |   eax  |  irq   |        |        |        |\n");
+        printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+        printf("| 0x%08X | 0x%08X | 0x%08X | 0x%08X |   %04d   |        |        |        |\n",
+               r->ebx, r->edx, r->ecx, r->eax, r->irq_number);
+        printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+
+        // Display system halted message
+        printf("\nException. System Halted! IRQ Number: %d\n", r->irq_number);
+
+        // Halt the system
         for (;;);
     }
+}
+
+// Define the type for exception handlers
+typedef void (*ExceptionHandler)(Registers*);
+
+// Declare an array to store handlers for each exception
+ExceptionHandler exception_handlers[32];
+
+void print_registers(Registers* r) {
+    // Print registers in a compact table to fit 80 characters width
+    printf("Registers:\n");
+    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+    printf("|   gs   |   fs   |   es   |   ds   |   edi  |   esi  |   ebp  |   esp  |\n");
+    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+    printf("| 0x%04X | 0x%04X | 0x%04X | 0x%04X | 0x%08X | 0x%08X | 0x%08X | 0x%08X |\n",
+           r->gs, r->fs, r->es, r->ds, r->edi, r->esi, r->ebp, r->esp);
+    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+    printf("|   ebx  |   edx  |   ecx  |   eax  |  irq   |        |        |        |\n");
+    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+    printf("| 0x%08X | 0x%08X | 0x%08X | 0x%08X |   %04d   |        |        |        |\n",
+           r->ebx, r->edx, r->ecx, r->eax, r->irq_number);
+    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+}
+
+void guru_meditation_error(Registers* r) {
+    // Print an Amiga-style Guru Meditation message
+    printf("\n*** GURU MEDITATION ERROR ***\n\n");
+
+    // Print the error message and compact register table to fit 80 characters width
+    printf("An exception has occurred.\n\n");
+
+    printf("Registers:\n");
+    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+    printf("|   gs   |   fs   |   es   |   ds   |   edi  |   esi  |   ebp  |   esp  |\n");
+    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+    printf("| 0x%04X | 0x%04X | 0x%04X | 0x%04X | 0x%08X | 0x%08X | 0x%08X | 0x%08X |\n",
+           r->gs, r->fs, r->es, r->ds, r->edi, r->esi, r->ebp, r->esp);
+    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+
+    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+    printf("|   ebx  |   edx  |   ecx  |   eax  |  irq   |        |        |        |\n");
+    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+    printf("| 0x%08X | 0x%08X | 0x%08X | 0x%08X |   %04d   |        |        |        |\n",
+           r->ebx, r->edx, r->ecx, r->eax, r->irq_number);
+    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+
+    // Print the iconic Amiga error footer
+    printf("\nSYSTEM HALTED\n");
+    printf("Please restart or contact technical support.\n");
+}
+
+// Generic exception handler
+void generic_exception_handler(Registers* r) {
+    // Display system halted message
+    printf("\nException. System Halted! IRQ Number: %d\n", r->irq_number);
+    while (1);
+}
+
+// Divide by zero handler (specific override)
+void divide_by_zero_handler(Registers* r) {
+    printf("Exception: Divide by Zero\n");
+    printf("Exception. System Halted! IRQ Number: %d\n", r->irq_number);
+
+    guru_meditation_error(r);
+    while (1); // Halt the system or recover
+}
+
+// Set up the exception handlers
+void setup_exceptions() {
+    // Set all entries to the generic exception handler
+    for (int i = 0; i < 32; i++) {
+        exception_handlers[i] = generic_exception_handler;
+    }
+
+    // Override specific handlers
+    exception_handlers[0] = divide_by_zero_handler;  // Divide by zero
+}
+
+void exception_dispatcher(Registers* state) {
+    // Look up the handler based on the IRQ number
+    if (state->irq_number < 32) {
+        exception_handlers[state->irq_number](state);  // Call the appropriate handler
+    } else {
+        // If the IRQ number is out of range, use a fallback
+        generic_exception_handler(state);
+    }
+}
+
+void isr_install() {
+    // set the IDT entries defined in the assembly file
+    set_idt_entry(0, (uint32_t)isr0);
+    set_idt_entry(1, (uint32_t)isr1);
+    set_idt_entry(2, (uint32_t)isr2);
+    set_idt_entry(3, (uint32_t)isr3);
+    set_idt_entry(4, (uint32_t)isr4);
+    set_idt_entry(5, (uint32_t)isr5);
+    set_idt_entry(6, (uint32_t)isr6);
+    set_idt_entry(7, (uint32_t)isr7);
+    set_idt_entry(8, (uint32_t)isr8);
+    set_idt_entry(9, (uint32_t)isr9);
+    set_idt_entry(10, (uint32_t)isr10);
+    set_idt_entry(11, (uint32_t)isr11);
+    set_idt_entry(12, (uint32_t)isr12);
+    set_idt_entry(13, (uint32_t)isr13);
+    set_idt_entry(14, (uint32_t)isr14);
+    set_idt_entry(15, (uint32_t)isr15);
+    set_idt_entry(16, (uint32_t)isr16);
+    set_idt_entry(17, (uint32_t)isr17);
+    set_idt_entry(18, (uint32_t)isr18);
+    set_idt_entry(19, (uint32_t)isr19);
+    set_idt_entry(20, (uint32_t)isr20);
+    set_idt_entry(21, (uint32_t)isr21);
+    set_idt_entry(22, (uint32_t)isr22);
+    set_idt_entry(23, (uint32_t)isr23);
+    set_idt_entry(24, (uint32_t)isr24);
+    set_idt_entry(25, (uint32_t)isr25);
+    set_idt_entry(26, (uint32_t)isr26);
+    set_idt_entry(27, (uint32_t)isr27);
+    set_idt_entry(28, (uint32_t)isr28);
+    set_idt_entry(29, (uint32_t)isr29);
+    set_idt_entry(30, (uint32_t)isr30);
+    set_idt_entry(31, (uint32_t)isr31);
+
+    setup_exceptions();
 }

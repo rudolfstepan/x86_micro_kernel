@@ -129,6 +129,34 @@ static int int_to_str(int num, char* str, int base) {
     return i;
 }
 
+void unsigned_int_to_str(unsigned int value, char* buffer, int base) {
+    int i = 0;
+    if (value == 0) {
+        buffer[i++] = '0';
+        buffer[i] = '\0';
+        return;
+    }
+
+    while (value > 0) {
+        int digit = value % base;
+        buffer[i++] = (digit > 9) ? (digit - 10) + 'a' : digit + '0';
+        value /= base;
+    }
+
+    buffer[i] = '\0';
+
+    // Reverse the buffer
+    int start = 0;
+    int end = i - 1;
+    while (start < end) {
+        char temp = buffer[start];
+        buffer[start] = buffer[end];
+        buffer[end] = temp;
+        start++;
+        end--;
+    }
+}
+
 void int_to_str2(int value, char* str, int base) {
     char* digits = "0123456789ABCDEF";
     char temp[32];
@@ -354,7 +382,7 @@ int printf(const char* format, ...) {
                 case 'u': {
                     unsigned int u = va_arg(args, unsigned int);
                     char buffer[32];
-                    int_to_str(u, buffer, 10);
+                    unsigned_int_to_str(u, buffer, 10);
                     int len = strlen(buffer);
                     int pad = width - len;
                     if (width_specified && pad > 0) {
@@ -368,6 +396,11 @@ int printf(const char* format, ...) {
                 }
                 case 'd': {
                     int i = va_arg(args, int);
+                    if (i < 0) {
+                        put_char('-');
+                        i = -i;
+                    }
+
                     char buffer[32];
                     int_to_str(i, buffer, 10);
                     int len = strlen(buffer);

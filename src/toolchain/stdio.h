@@ -5,6 +5,15 @@
 #include <stdint.h>
 #include "definitions.h"
 
+// Define INT_MAX and INT_MIN if not provided by the standard library
+#ifndef INT_MAX
+#define INT_MAX 2147483647
+#endif
+
+#ifndef INT_MIN
+#define INT_MIN (-2147483648)
+#endif
+
 
 // File Handling Functions
 int mkfile(const char* path);                                   // create file

@@ -51,22 +51,6 @@ void irq_remap(void) {
 
 extern void syscall_handler_asm();
 
-// void syscall_handler(unsigned int irq_number) {
-//     printf("Syscall handler invoked, IRQ number: %d\n", irq_number);
-// }
-// Wrapper assembly function to call the handler
-// __asm__ (
-//     ".global syscall_handler_asm\n"
-//     "syscall_handler_asm:\n"
-//     "    pusha\n"                     // Save all registers
-//     "    movl 8(%esp), %eax\n"        // Get the IRQ number from stack
-//     "    push %eax\n"                 // Push IRQ number as an argument
-//     "    call syscall_handler\n"      // Call the C handler function
-//     "    add $4, %esp\n"              // Clean up the stack (remove IRQ number)
-//     "    popa\n"                      // Restore registers
-//     "    iret\n"                      // Return from interrupt
-// );
-
 // Installs all IRQs to the IDT
 void irq_install() {
     irq_remap();
@@ -94,11 +78,11 @@ void irq_install() {
 // General IRQ handler that checks for custom routines
 void irq_handler(Registers* regs) {
     // Check if there is a custom handler for this IRQ
-    if (irq_routines[regs->int_no - 32]) {
-        void (*handler)(Registers* r) = irq_routines[regs->int_no - 32];
+    if (irq_routines[regs->irq_number - 32]) {
+        void (*handler)(Registers* r) = irq_routines[regs->irq_number - 32];
 
-                if(regs->int_no - 32 > 1) {
-                printf("IRQ %d\n", regs->int_no - 32);
+                if(regs->irq_number - 32 > 1) {
+                printf("IRQ %d\n", regs->irq_number - 32);
             }
 
         if(handler != NULL) {
@@ -107,7 +91,7 @@ void irq_handler(Registers* regs) {
     }
 
     // Send End of Interrupt (EOI) to the PICs if necessary
-    if (regs->int_no >= 40) {
+    if (regs->irq_number >= 40) {
         outb(0xA0, 0x20); // Send EOI to slave PIC
     }
     outb(0x20, 0x20);     // Send EOI to master PIC

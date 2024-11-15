@@ -7,10 +7,11 @@
 #pragma pack(push, 1)
 typedef struct
 {
-    unsigned int gs, fs, es, ds;      /* pushed the segs last */
-    unsigned int edi, esi, ebp, esp, ebx, edx, ecx, eax;  /* pushed by 'pusha' */
-    unsigned int int_no, err_code;    /* our 'push byte #' and ecodes do this */
-    unsigned int eip, cs, eflags, useresp, ss;   /* pushed by the processor automatically */ 
+    uint32_t gs, fs, es, ds;  // Segment registers
+    uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;  // General-purpose registers
+    uint32_t irq_number;      // Pushed by ISR
+    uint32_t error_code;      // Pushed by ISR or CPU
+    uint32_t eip, cs, eflags, useresp, ss; // Automatically pushed by CPU
 } Registers;
 #pragma pack(pop)
 
