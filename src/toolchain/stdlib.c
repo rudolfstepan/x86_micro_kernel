@@ -4,7 +4,6 @@
 #include "stdlib.h"
 #include "stdio.h"
 #include "strings.h"
-#include "kernel/pit.h"
 
 
 typedef struct memory_block {
@@ -294,13 +293,13 @@ void* memmove(void* dest, const void* src, size_t n) {
     return dest;
 }
 
-void do_syscall(int syscall_index, int parameter, int parameter1, int parameter2) {
-        __asm__ volatile(
-            "int $0x80\n"       // Trigger syscall interrupt
-            :
-            : "a"(syscall_index), "b"(parameter), "c"(parameter1), "d"(parameter2)
-            : "memory"
-        );
+void sys_call(int syscall_index, int parameter1, int parameter2, int parameter3) {
+    __asm__ volatile(
+        "int $0x80\n"       // Trigger syscall interrupt
+        : // No output
+        : "a"(syscall_index), "b"(parameter1), "c"(parameter2), "d"(parameter3)
+        : "memory"
+    );
 }
 
 // Function to halt the CPU
@@ -311,9 +310,9 @@ void exit(uint8_t status) {
 
 void sleep_ms(uint32_t ms) {
     printf("Syscall Sleeping for %d ms\n", ms);
-    do_syscall(SYS_DELAY, ms, 0, 0);
+    sys_call(SYS_DELAY, ms, 0, 0);
 }
 
 void wait_enter_pressed() {
-		do_syscall(SYS_WAIT_ENTER, 0, 0, 0);
+	sys_call(SYS_WAIT_ENTER, 0, 0, 0);
 }

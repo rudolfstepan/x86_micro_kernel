@@ -8,7 +8,7 @@
 #define FAILURE -1
 
 // define syscall indexes
-#define SYS_EXIT 0
+#define SYS_TERMINAL_PUTCHAR 0 // One argument syscall
 #define SYS_PRINT 1
 #define SYS_DELAY 2
 #define SYS_WAIT_ENTER 3
@@ -25,6 +25,7 @@ void* memmove(void* dest, const void* src, size_t n);
 
 int test_memory();
 
+void sys_call(int syscall_index, int parameter1, int parameter2, int parameter3);
 // wrapper functions for system calls
 void sleep_ms(uint32_t ms);
 void wait_enter_pressed();

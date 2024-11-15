@@ -1,12 +1,11 @@
-#include <stdbool.h>
 
+#include <stdbool.h>
 #include "command.h"
 #include "prg.h"
 #include "sys.h"
 #include "pit.h"
 
 #include "drivers/keyboard/keyboard.h"
-
 #include "drivers/rtc/rtc.h"
 #include "drivers/video/video.h"
 #include "drivers/io/io.h"
@@ -40,8 +39,8 @@ void kernel_print_number(int number) {
 }
 
 void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
-    (void*)kernel_hello,        // Syscall 0: No arguments
-    (void*)kernel_print_number, // Syscall 1: One argument
+    (void*)&vga_write_char,      // Syscall 0: One arguments
+    (void*)&kernel_print_number, // Syscall 1: One argument
     (void*)&pit_delay,          // Syscall 2: One argument
     (void*)&kb_wait_enter,      // Syscall 3: No arguments
     // Add more syscalls here

@@ -1,17 +1,16 @@
 #include "stdio.h"
-
 #include "strings.h"
 #include "stdlib.h"
 
 #include <stdarg.h>
 #include <stddef.h>
 
-#include "drivers/keyboard/keyboard.h"
-#include "drivers/video/video.h"
 #include "filesystem/filesystem.h"
 #include "filesystem/fat32/fat32.h"
 #include "filesystem/fat12/fat12.h"
 #include "drivers/io/io.h"
+
+#include "drivers/video/video.h"
 
 
 // for memory dump
@@ -22,7 +21,6 @@
 #define PIT_CONTROL_PORT 0x43
 #define PIT_CHANNEL_2_PORT 0x42
 #define PC_SPEAKER_PORT 0x61
-
 
 
 // -----------------------------------------------------------------
@@ -178,6 +176,20 @@ void int_to_str2(int value, char* str, int base) {
     str[i] = '\0';
 }
 
+static inline int is_kernel_context() {
+    unsigned short cs;
+    asm volatile ("mov %%cs, %0" : "=r" (cs));
+    return (cs & 3) == 0; // CPL (Current Privilege Level) 0 means kernel mode
+}
+
+void put_char(char c) {
+    if (is_kernel_context()) {
+        vga_write_char(c);
+    } else {
+        sys_call(SYS_TERMINAL_PUTCHAR, c, 0, 0);
+    }
+}
+
 // Function to print an unsigned integer
 void print_unsigned(unsigned int value, unsigned int base) {
     char buffer[32]; // Enough for base-2 representation of 32-bit integer
@@ -185,7 +197,7 @@ void print_unsigned(unsigned int value, unsigned int base) {
 
     // Handle 0 explicitly, otherwise it will be printed as an empty string
     if (value == 0) {
-        vga_write_char('0');
+        sys_call(SYS_TERMINAL_PUTCHAR, '0', 0, 0);
         return;
     }
 
@@ -194,7 +206,7 @@ void print_unsigned(unsigned int value, unsigned int base) {
     }
 
     for (i++; i < 31; i++) {
-        vga_write_char(buffer[i]);
+        sys_call(SYS_TERMINAL_PUTCHAR, buffer[i], 0, 0);
     }
 }
 
@@ -211,12 +223,12 @@ void print_hex(unsigned int value) {
     char prefix[] = "0x";
     char* s = prefix;
     while (*s) {
-        vga_write_char(*s++);
+        put_char(*s++);
     }
 
     s = hexString;
     while (*s) {
-        vga_write_char(*s++);
+        put_char(*s++);
     }
 }
 
@@ -233,11 +245,11 @@ void print_hex_padded(unsigned int value, int width) {
 
     int num_digits = &hex_buffer[32] - ptr;
     for (int i = 0; i < width - num_digits; ++i) {
-        vga_write_char('0');
+        put_char('0');
     }
 
     while (*ptr) {
-        vga_write_char(*ptr++);
+        put_char(*ptr++);
     }
 }
 
@@ -249,7 +261,7 @@ void print_hex64(uint64_t value) {
         value >>= 4;
     }
     for (int i = 0; i < 16; i++) {
-        vga_write_char(buffer[i]);
+        put_char(buffer[i]);
     }
 }
 
@@ -305,7 +317,7 @@ int printf(const char* format, ...) {
                 switch (*format) {
                 case 'c': {
                     char c = (char)va_arg(args, int);
-                    vga_write_char(c);
+                    put_char(c);
                     break;
                 }
                 case 's': {
@@ -323,18 +335,18 @@ int printf(const char* format, ...) {
                     if (left_align) {
                         // Print the string first, then padding
                         for (int i = 0; i < len; i++) {
-                            vga_write_char(s[i]);
+                            put_char(s[i]);
                         }
                         for (int i = 0; i < pad; i++) {
-                            vga_write_char(' ');
+                            put_char(' ');
                         }
                     } else {
                         // Print padding first, then the string
                         for (int i = 0; i < pad; i++) {
-                            vga_write_char(zero_padding ? '0' : ' ');
+                            put_char(zero_padding ? '0' : ' ');
                         }
                         for (int i = 0; i < len; i++) {
-                            vga_write_char(s[i]);
+                            put_char(s[i]);
                         }
                     }
                     break;
@@ -346,11 +358,11 @@ int printf(const char* format, ...) {
                     int len = strlen(buffer);
                     int pad = width - len;
                     if (width_specified && pad > 0) {
-                        for (int i = 0; i < pad; i++) vga_write_char(zero_padding ? '0' : ' ');
+                        for (int i = 0; i < pad; i++) put_char(zero_padding ? '0' : ' ');
                     }
                     char* s = buffer;
                     while (*s) {
-                        vga_write_char(*s++);
+                        put_char(*s++);
                     }
                     break;
                 }
@@ -361,11 +373,11 @@ int printf(const char* format, ...) {
                     int len = strlen(buffer);
                     int pad = width - len;
                     if (width_specified && pad > 0) {
-                        for (int i = 0; i < pad; i++) vga_write_char(zero_padding ? '0' : ' ');
+                        for (int i = 0; i < pad; i++) put_char(zero_padding ? '0' : ' ');
                     }
                     char* s = buffer;
                     while (*s) {
-                        vga_write_char(*s++);
+                        put_char(*s++);
                     }
                     break;
                 }
@@ -380,14 +392,14 @@ int printf(const char* format, ...) {
                     int_to_hex_str(x, buffer, width, zero_padding); // Adjusted function to handle padding
                     char* s = buffer;
                     while (*s) {
-                        vga_write_char(*s++);
+                        put_char(*s++);
                     }
                     break;
                 }
                 }
             }
         } else {
-            vga_write_char(*format);
+            put_char(*format);
         }
         format++;
     }

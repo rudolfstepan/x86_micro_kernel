@@ -89,7 +89,7 @@ void kb_handler(void* r) {
                 key -= 32; // Convert to uppercase
             }
             input_buffer[buffer_index++] = key;
-            vga_write_char(key);
+            put_char(key);
         }
     } else {
         // Key release event
