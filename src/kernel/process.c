@@ -7,7 +7,7 @@
 #include "filesystem/fat32/fat32.h"
 #include "prg.h"
 
-#define PROGRAM_LOAD_ADDRESS 0x00500000 // default address where the program will be loaded into memory except in the case of a program header
+#define PROGRAM_LOAD_ADDRESS 0x00100000 // default address where the program will be loaded into memory except in the case of a program header
 
 
 

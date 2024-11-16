@@ -12,6 +12,8 @@
 #define SYS_PRINT 1
 #define SYS_DELAY 2
 #define SYS_WAIT_ENTER 3
+#define SYS_MALLOC 4
+#define SYS_FREE 5
 
 // Macros for try-catch handling
 #define try(ctx) if (setjmp(&(ctx)) == 0)
@@ -49,7 +51,7 @@ void* memmove(void* dest, const void* src, size_t n);
 
 int test_memory();
 
-void sys_call(int syscall_index, int parameter1, int parameter2, int parameter3);
+void* syscall(int syscall_index, int parameter1, int parameter2, int parameter3);
 // wrapper functions for system calls
 void sleep_ms(uint32_t ms);
 void wait_enter_pressed();

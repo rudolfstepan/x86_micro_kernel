@@ -5,60 +5,21 @@
 #include "stdio.h"
 #include "strings.h"
 
+
 TryContext* current_try_context = NULL;
 
 
-typedef struct memory_block {
-    size_t size;
-    int free;
-    struct memory_block *next;
-} memory_block;
-
-extern char _kernel_end;  // Defined by the linker script
-
-#define HEAP_START  ((void*)(&_kernel_end))
-#define HEAP_END    (void*)0x500000  // End of heap (5MB)
-#define ALIGN_UP(addr, align) (((addr) + ((align)-1)) & ~((align)-1))
-#define HEAP_START_ALIGNED ALIGN_UP((size_t)HEAP_START, 16)
-#define BLOCK_SIZE sizeof(memory_block)
-
-memory_block *freeList = (memory_block*)HEAP_START;
-
-void initialize_memory_system() {
-    freeList = (memory_block*)HEAP_START_ALIGNED;
-    freeList->size = (size_t)HEAP_END - (size_t)HEAP_START_ALIGNED - BLOCK_SIZE;
-    freeList->free = 1;
-    freeList->next = NULL;
-
-    printf("Aligned HEAP_START: 0x%p\n", freeList);
-}
 
 void* malloc(size_t size) {
-    memory_block *current = freeList;
-
-    while (current) {
-        if (current->free && current->size >= size) {
-            // Split the block if it's larger than required
-            if (current->size > size + BLOCK_SIZE) {
-                memory_block *newBlock = (memory_block*)((size_t)current + BLOCK_SIZE + size);
-                newBlock->size = current->size - size - BLOCK_SIZE;
-                newBlock->free = 1;
-                newBlock->next = current->next;
-
-                current->size = size;
-                current->next = newBlock;
-            }
-
-            current->free = 0;  // Mark as allocated
-            return (void*)((size_t)current + BLOCK_SIZE);
-        }
-
-        current = current->next;
+    // perform a syscall to allocate memory
+    void* allocated_memory = syscall(SYS_MALLOC, size, 0, 0); // Allocate 1024 bytes
+    if (allocated_memory) {
+        //printf("Memory allocated at: %p\n", allocated_memory);
+    } else {
+        printf("Memory allocation failed.\n");
     }
 
-    // Out of memory
-    printf("malloc: Out of memory\n");
-    return NULL;
+    return allocated_memory;
 }
 
 void* realloc(void *ptr, size_t new_size) {
@@ -73,48 +34,39 @@ void* realloc(void *ptr, size_t new_size) {
         return NULL;
     }
 
-    // Get the memory block header by moving back from `ptr`
-    memory_block *block = (memory_block*)((size_t)ptr - BLOCK_SIZE);
-    size_t old_size = block->size;
+    // // Get the memory block header by moving back from `ptr`
+    // memory_block *block = (memory_block*)((size_t)ptr - BLOCK_SIZE);
+    // size_t old_size = block->size;
 
-    // If the new size is the same or smaller, return the original pointer
-    if (new_size <= old_size) {
-        return ptr;
-    }
+    // // If the new size is the same or smaller, return the original pointer
+    // if (new_size <= old_size) {
+    //     return ptr;
+    // }
 
-    // Allocate a new block of memory large enough for the new size
-    void *new_ptr = malloc(new_size);
-    if (!new_ptr) {
-        // If allocation fails, return NULL
-        return NULL;
-    }
+    // // Allocate a new block of memory large enough for the new size
+    // void *new_ptr = malloc(new_size);
+    // if (!new_ptr) {
+    //     // If allocation fails, return NULL
+    //     return NULL;
+    // }
 
-    // Copy data from the old memory to the new memory
-    size_t copy_size = (old_size < new_size) ? old_size : new_size;
-    memcpy(new_ptr, ptr, copy_size);
+    // // Copy data from the old memory to the new memory
+    // size_t copy_size = (old_size < new_size) ? old_size : new_size;
+    // memcpy(new_ptr, ptr, copy_size);
 
-    // Free the old memory block
-    free(ptr);
+    // // Free the old memory block
+    // free(ptr);
 
-    // Return the pointer to the new memory block
-    return new_ptr;
+    // // Return the pointer to the new memory block
+    // return new_ptr;
+
+    return NULL;
 }
 
 void free(void* ptr) {
     if (!ptr) return;
 
-    memory_block *block = (memory_block*)((size_t)ptr - BLOCK_SIZE);
-    block->free = 1;
-
-    // Coalesce adjacent free blocks
-    memory_block *current = freeList;
-    while (current) {
-        if (current->free && current->next && current->next->free) {
-            current->size += current->next->size + BLOCK_SIZE;
-            current->next = current->next->next;
-        }
-        current = current->next;
-    }
+    syscall(SYS_FREE, ptr, 0, 0);
 }
 
 void secure_free(void *ptr, size_t size) {
@@ -290,13 +242,15 @@ void* memmove(void* dest, const void* src, size_t n) {
     return dest;
 }
 
-void sys_call(int syscall_index, int parameter1, int parameter2, int parameter3) {
+void* syscall(int syscall_index, int parameter1, int parameter2, int parameter3) {
+    void* return_value;
     __asm__ volatile(
         "int $0x80\n"       // Trigger syscall interrupt
-        : // No output
-        : "a"(syscall_index), "b"(parameter1), "c"(parameter2), "d"(parameter3)
-        : "memory"
+        : "=a"(return_value) // Output: Get return value from EAX
+        : "a"(syscall_index), "b"(parameter1), "c"(parameter2), "d"(parameter3) // Inputs
+        : "memory"          // Clobbers
     );
+    return return_value;     // Return the value in EAX
 }
 
 // Function to halt the CPU
@@ -306,11 +260,11 @@ void exit(uint8_t status) {
 }
 
 void sleep_ms(uint32_t ms) {
-    sys_call(SYS_DELAY, ms, 0, 0);
+    syscall(SYS_DELAY, ms, 0, 0);
 }
 
 void wait_enter_pressed() {
-	sys_call(SYS_WAIT_ENTER, 0, 0, 0);
+	syscall(SYS_WAIT_ENTER, 0, 0, 0);
 }
 
 // Throw an exception

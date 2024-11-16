@@ -20,6 +20,90 @@
 
 #include "multibootheader.h"
 
+
+
+extern char _kernel_end;  // Defined by the linker script
+
+
+#define HEAP_START  ((void*)(&_kernel_end))
+#define HEAP_END    (void*)0x500000  // End of heap (5MB)
+#define ALIGN_UP(addr, align) (((addr) + ((align)-1)) & ~((align)-1))
+#define HEAP_START_ALIGNED ALIGN_UP((size_t)HEAP_START, 16)
+#define BLOCK_SIZE sizeof(memory_block)
+
+typedef struct memory_block {
+    size_t size;
+    int free;
+    struct memory_block *next;
+} memory_block;
+
+memory_block *freeList = (memory_block*)HEAP_START;
+
+void initialize_memory_system() {
+    freeList = (memory_block*)HEAP_START_ALIGNED;
+    freeList->size = (size_t)HEAP_END - (size_t)HEAP_START_ALIGNED - BLOCK_SIZE;
+    freeList->free = 1;
+    freeList->next = NULL;
+
+    printf("Aligned HEAP_START: 0x%p\n", freeList);
+}
+
+void k_free(void* ptr) {
+    if (!ptr) return;
+
+    memory_block *block = (memory_block*)((size_t)ptr - BLOCK_SIZE);
+    block->free = 1;
+
+    // Coalesce adjacent free blocks
+    memory_block *current = freeList;
+    while (current) {
+        if (current->free && current->next && current->next->free) {
+            current->size += current->next->size + BLOCK_SIZE;
+            current->next = current->next->next;
+        }
+        current = current->next;
+    }
+}
+
+void* k_malloc(size_t size) {
+    memory_block *current = freeList;
+
+    while (current) {
+        if (current->free && current->size >= size) {
+            // Split the block if it's larger than required
+            if (current->size > size + BLOCK_SIZE) {
+                memory_block *newBlock = (memory_block*)((size_t)current + BLOCK_SIZE + size);
+                newBlock->size = current->size - size - BLOCK_SIZE;
+                newBlock->free = 1;
+                newBlock->next = current->next;
+
+                current->size = size;
+                current->next = newBlock;
+            }
+
+            current->free = 0;  // Mark as allocated
+            return (void*)((size_t)current + BLOCK_SIZE);
+        }
+
+        current = current->next;
+    }
+
+    // Out of memory
+    printf("malloc: Out of memory\n");
+    return NULL;
+}
+
+
+
+
+
+
+
+
+
+
+
+
 // for the keyboard
 extern char input_buffer[128];
 extern volatile int buffer_index;
@@ -43,6 +127,8 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&kernel_print_number, // Syscall 1: One argument
     (void*)&pit_delay,          // Syscall 2: One argument
     (void*)&kb_wait_enter,      // Syscall 3: No arguments
+    (void*)&k_malloc,           // Syscall 4: One argument
+    (void*)&k_free,             // Syscall 5: One argument
     // Add more syscalls here
 };
 
@@ -76,11 +162,13 @@ void syscall_handler(void* irq_number) {
     switch (syscall_index) {
         case 0:  // kernel_hello - No arguments
         case 3:  // kb_wait_enter - No arguments
+        case SYS_FREE:  // k_free - No argument
             ((void (*)(void))func_ptr)();
             break;
 
         case 1:  // kernel_print_number - One argument
         case 2:  // delay - One argument
+        case SYS_MALLOC:  // k_malloc - One argument
             ((void (*)(int))func_ptr)((uint32_t)arg1);
             break;
         // Add additional cases for syscalls with more arguments
@@ -254,23 +342,23 @@ void set_graphics_mode() {
     );
 }
 
-extern char _kernel_start[];
-extern char _kernel_text_end[];
-extern char _kernel_data_start[];
-extern char _kernel_data_end[];
-extern char _kernel_bss_start[];
-extern char _kernel_bss_end[];
-extern char _kernel_end[];
+// extern char _kernel_start[];
+// extern char _kernel_text_end[];
+// extern char _kernel_data_start[];
+// extern char _kernel_data_end[];
+// extern char _kernel_bss_start[];
+// extern char _kernel_bss_end[];
+// extern char _kernel_end[];
 
 void print_kernel_sections() {
     printf("Kernel Sections:\n");
-    printf("  Start:         0x%p\n", _kernel_start);
-    printf("  Text End:      0x%p\n", _kernel_text_end);
-    printf("  Data Start:    0x%p\n", _kernel_data_start);
-    printf("  Data End:      0x%p\n", _kernel_data_end);
-    printf("  BSS Start:     0x%p\n", _kernel_bss_start);
-    printf("  BSS End:       0x%p\n", _kernel_bss_end);
-    printf("  Kernel End:    0x%p\n", _kernel_end);
+    // printf("  Start:         0x%p\n", _kernel_start);
+    // printf("  Text End:      0x%p\n", _kernel_text_end);
+    // printf("  Data Start:    0x%p\n", _kernel_data_start);
+    // printf("  Data End:      0x%p\n", _kernel_data_end);
+    // printf("  BSS Start:     0x%p\n", _kernel_bss_start);
+    // printf("  BSS End:       0x%p\n", _kernel_bss_end);
+    // printf("  Kernel End:    0x%p\n", _kernel_end);
 }
 
 
