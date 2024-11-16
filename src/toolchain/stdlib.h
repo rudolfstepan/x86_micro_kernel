@@ -51,12 +51,10 @@ void* memmove(void* dest, const void* src, size_t n);
 
 int test_memory();
 
-void* syscall(int syscall_index, int parameter1, int parameter2, int parameter3);
+void* syscall(int syscall_index, void* parameter1, void* parameter2, void* parameter3);
 // wrapper functions for system calls
 void sleep_ms(uint32_t ms);
 void wait_enter_pressed();
-
-
 
 void exit(uint8_t status);
 

@@ -12,7 +12,7 @@ TryContext* current_try_context = NULL;
 
 void* malloc(size_t size) {
     // perform a syscall to allocate memory
-    void* allocated_memory = syscall(SYS_MALLOC, size, 0, 0); // Allocate 1024 bytes
+    void* allocated_memory = syscall(SYS_MALLOC, (void*)size, NULL, NULL); // Allocate 1024 bytes
     if (allocated_memory) {
         //printf("Memory allocated at: %p\n", allocated_memory);
     } else {
@@ -242,7 +242,7 @@ void* memmove(void* dest, const void* src, size_t n) {
     return dest;
 }
 
-void* syscall(int syscall_index, int parameter1, int parameter2, int parameter3) {
+void* syscall(int syscall_index, void* parameter1, void* parameter2, void* parameter3) {
     void* return_value;
     __asm__ volatile(
         "int $0x80\n"       // Trigger syscall interrupt
@@ -260,11 +260,11 @@ void exit(uint8_t status) {
 }
 
 void sleep_ms(uint32_t ms) {
-    syscall(SYS_DELAY, ms, 0, 0);
+    syscall(SYS_DELAY, (void*)ms, NULL, NULL);
 }
 
 void wait_enter_pressed() {
-	syscall(SYS_WAIT_ENTER, 0, 0, 0);
+	syscall(SYS_WAIT_ENTER, NULL, NULL, NULL);
 }
 
 // Throw an exception

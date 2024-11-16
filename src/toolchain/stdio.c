@@ -214,7 +214,7 @@ void put_char(char c) {
     if (is_kernel_context()) {
         vga_write_char(c);
     } else {
-        syscall(SYS_TERMINAL_PUTCHAR, c, 0, 0);
+        syscall(SYS_TERMINAL_PUTCHAR, (void*)(uintptr_t)c, NULL, NULL);
     }
 }
 
@@ -225,7 +225,7 @@ void print_unsigned(unsigned int value, unsigned int base) {
 
     // Handle 0 explicitly, otherwise it will be printed as an empty string
     if (value == 0) {
-        syscall(SYS_TERMINAL_PUTCHAR, '0', 0, 0);
+        syscall(SYS_TERMINAL_PUTCHAR, (void*)'0', NULL, NULL);
         return;
     }
 
@@ -234,7 +234,7 @@ void print_unsigned(unsigned int value, unsigned int base) {
     }
 
     for (i++; i < 31; i++) {
-        syscall(SYS_TERMINAL_PUTCHAR, buffer[i], 0, 0);
+        syscall(SYS_TERMINAL_PUTCHAR, (void*)(uintptr_t)buffer[i], NULL, NULL);
     }
 }
 
