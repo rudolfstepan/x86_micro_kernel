@@ -1,13 +1,13 @@
-#include "toolchain/stdio.h"
+//#include "toolchain/stdio.h"
 
 // #include <stdarg.h>
 // #include "fat32.h"
 // #include "system.h"
 
 
-int main() {
+void main() {
 
-    printf("Dir command\n");
+    //printf("Dir command\n");
     // init_fs();
 
     // //clear_screen();
@@ -16,5 +16,4 @@ int main() {
 
     // read_directory_path("/");
 
-    return 0;
 }

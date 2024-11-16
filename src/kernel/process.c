@@ -7,14 +7,11 @@
 #include "filesystem/fat32/fat32.h"
 #include "prg.h"
 
-#define PROGRAM_LOAD_ADDRESS 0x00100000 // default address where the program will be loaded into memory except in the case of a program header
-
+#define PROGRAM_LOAD_ADDRESS 0x10000 // default address where the program will be loaded into memory except in the case of a program header
 
 
 Process process_list[MAX_PROGRAMS];
 int next_pid = 1; // PID counter starting at 1
-
-
 
 // execute the program at the specified entry point
 void start_program_execution(long entryPoint) {
@@ -37,8 +34,6 @@ void load_and_execute_program(const char* programName) {
         // printf("Base address: %p\n", header->base_address);
         // printf("Relocation offset: %d\n", header->relocation_offset);
         // printf("Relocation size: %d\n", header->relocation_size);
-        // printf("\n----------------------------------------------\n");
-
         // printf("Program address: %p\n", (void*)PROGRAM_LOAD_ADDRESS);
 
         // execute the program

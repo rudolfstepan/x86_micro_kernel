@@ -12,7 +12,6 @@
 
 #include "drivers/video/video.h"
 
-
 // for memory dump
 #define BYTES_PER_LINE 16
 #define MAX_LINES 20

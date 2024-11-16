@@ -20,10 +20,7 @@
 
 #include "multibootheader.h"
 
-
-
 extern char _kernel_end;  // Defined by the linker script
-
 
 #define HEAP_START  ((void*)(&_kernel_end))
 #define HEAP_END    (void*)0x500000  // End of heap (5MB)
@@ -51,28 +48,37 @@ void initialize_memory_system() {
 void k_free(void* ptr) {
     if (!ptr) return;
 
-    memory_block *block = (memory_block*)((size_t)ptr - BLOCK_SIZE);
+    memory_block* block = (memory_block*)((char*)ptr - BLOCK_SIZE);
     block->free = 1;
 
-    // Coalesce adjacent free blocks
-    memory_block *current = freeList;
+    // Merge with next block if it's free
+    if (block->next && block->next->free) {
+        block->size += block->next->size + BLOCK_SIZE;
+        block->next = block->next->next;
+    }
+
+    // Merge with previous block if it's free
+    memory_block* current = freeList;
     while (current) {
-        if (current->free && current->next && current->next->free) {
-            current->size += current->next->size + BLOCK_SIZE;
-            current->next = current->next->next;
+        if (current->next == block && current->free) {
+            current->size += block->size + BLOCK_SIZE;
+            current->next = block->next;
+            break;
         }
         current = current->next;
     }
 }
 
 void* k_malloc(size_t size) {
-    memory_block *current = freeList;
+    memory_block* current = freeList;
 
     while (current) {
         if (current->free && current->size >= size) {
-            // Split the block if it's larger than required
+            current->free = 0; // Mark as allocated
+
+            // Optionally split the block if it's larger than needed
             if (current->size > size + BLOCK_SIZE) {
-                memory_block *newBlock = (memory_block*)((size_t)current + BLOCK_SIZE + size);
+                memory_block* newBlock = (memory_block*)((char*)current + BLOCK_SIZE + size);
                 newBlock->size = current->size - size - BLOCK_SIZE;
                 newBlock->free = 1;
                 newBlock->next = current->next;
@@ -81,35 +87,214 @@ void* k_malloc(size_t size) {
                 current->next = newBlock;
             }
 
-            current->free = 0;  // Mark as allocated
-            return (void*)((size_t)current + BLOCK_SIZE);
+            return (void*)((char*)current + BLOCK_SIZE); // Return usable memory
         }
-
         current = current->next;
     }
 
     // Out of memory
-    printf("malloc: Out of memory\n");
     return NULL;
 }
 
+void* k_realloc(void *ptr, size_t new_size) {
+    // If `ptr` is NULL, behave like `malloc`
+    if (ptr == NULL) {
+        return k_malloc(new_size);
+    }
+
+    // If `new_size` is 0, behave like `free` and return NULL
+    if (new_size == 0) {
+        k_free(ptr);
+        return NULL;
+    }
+
+    // Get the memory block header
+    memory_block *block = (memory_block*)((char*)ptr - BLOCK_SIZE);
+    size_t old_size = block->size;
+
+    // If the new size is the same or smaller, reuse the existing block
+    if (new_size <= old_size) {
+        return ptr; // No need to reallocate
+    }
+
+    // Allocate a new memory block large enough for the new size
+    void *new_ptr = k_malloc(new_size);
+    if (!new_ptr) {
+        // If allocation fails, return NULL without affecting the old block
+        return NULL;
+    }
+
+    // Copy data from the old block to the new block
+    size_t copy_size = (old_size < new_size) ? old_size : new_size;
+    memmove(new_ptr, ptr, copy_size); // Use `memmove` to handle overlapping regions
+
+    // Free the old memory block
+    k_free(ptr);
+
+    // Return the pointer to the new memory block
+    return new_ptr;
+}
 
 
+//---------------------------------------------------------------------------------------------
+
+// test methods
+void test_realloc() {
+    void* ptr = k_malloc(10);
+    printf("Allocated: %p\n", ptr);
+
+    ptr = k_realloc(ptr, 20);
+    printf("Reallocated (larger): %p\n", ptr);
+
+    ptr = k_realloc(ptr, 5);
+    printf("Reallocated (smaller): %p\n", ptr);
+
+    k_free(ptr);
+    printf("Memory freed.\n");
+}
+void TestResetAfterFree() {
+    void* firstPtr = k_malloc(1);
+    printf("First allocation: %p\n", firstPtr);
+    k_free(firstPtr); // This should store the initial alignment padding
+    void* secondPtr = k_malloc(1);
+    printf("Second allocation: %p\n", secondPtr);
+    if (firstPtr == secondPtr) {
+        printf("TestResetAfterFree: Passed\n");
+    } else {
+        printf("TestResetAfterFree: Failed. Expected: %p, Got: %p\n", firstPtr, secondPtr);
+    }
+}
+void TestMultipleFrees() {
+    k_free(NULL);
+    k_free(NULL);
+    void* ptr = k_malloc(1);
+
+    if (ptr != NULL) {
+        //printf("TestMultipleFrees: Passed\n");
+    } else {
+        printf("TestMultipleFrees: Failed\n");
+    }
+}
+void TestSetMemory() {
+    char* buffer = (char*)k_malloc(10);
+    memset(buffer, 'A', 10);
+
+    int pass = 1;
+    for (int i = 0; i < 10; i++) {
+        if (buffer[i] != 'A') {
+            pass = 0;
+            break;
+        }
+    }
+
+    if(pass) {
+        //printf("TestSetMemory: Passed\n");
+    } else {
+        printf("TestSetMemory: Failed\n");
+    }
+}
+void TestSetZero() {
+    char* buffer = (char*)k_malloc(10);
+    memset(buffer, 0, 10);
+
+    int pass = 1;
+    for (int i = 0; i < 10; i++) {
+        if (buffer[i] != 0) {
+            pass = 0;
+            break;
+        }
+    }
+
+    if(pass) {
+        //printf("TestSetZero: Passed\n");
+    } else {
+        printf("TestSetZero: Failed\n");
+    }
+}
+void TestNullPointerMemset() {
+    if (memset(NULL, 0, 10) == NULL) {
+        //printf("TestNullPointerMemset: Passed\n");
+    } else {
+        printf("TestNullPointerMemset: Failed\n");
+    }
+}
+void TestCopyNonOverlapping() {
+    char src[10] = "123456789";
+    char dest[10];
+    memcpy(dest, src, 10);
+
+    int pass = 1;
+    for (int i = 0; i < 10; i++) {
+        if (dest[i] != src[i]) {
+            pass = 0;
+            break;
+        }
+    }
+
+    if(pass) {
+        //printf("TestCopyNonOverlapping: Passed\n");
+    } else {
+        printf("TestCopyNonOverlapping: Failed\n");
+    }
+}
+void TestCopyOverlapping() {
+    char buffer[20] = "123456789";
+    memcpy(buffer + 4, buffer, 10);
+
+    int pass = 1;
+    for (int i = 0; i < 10; i++) {
+        if (buffer[i + 4] != buffer[i]) {
+            pass = 0;
+            break;
+        }
+    }
+
+    if(pass) {
+        //printf("TestCopyOverlapping: Passed\n");
+    } else {
+        printf("TestCopyOverlapping: Failed\n");
+    }
+}
+void TestNullPointerSrc() {
+    char dest[10];
+    if (memcpy(dest, NULL, 10) == NULL) {
+        //printf("TestNullPointerSrc: Passed\n");
+    } else {
+        printf("TestNullPointerSrc: Failed\n");
+    }
+}
+void TestNullPointerDest() {
+    char src[10] = "123456789";
+    if (memcpy(NULL, src, 10) == NULL) {
+        //printf("TestNullPointerDest: Passed\n");
+    } else {
+        printf("TestNullPointerDest: Failed\n");
+    }
+}
+
+int test_memory() {
+    printf("Testing Memory...\n");
+    test_realloc();
+    TestResetAfterFree();
+    TestMultipleFrees();
+    TestSetMemory();
+    TestSetZero();
+    TestNullPointerMemset();
+    TestCopyNonOverlapping();
+    TestCopyOverlapping();
+    TestNullPointerSrc();
+    TestNullPointerDest();
+    printf("done\n");
+    return 0;
+}
 
 
-
-
-
-
-
-
+//---------------------------------------------------------------------------------------------
 
 // for the keyboard
 extern char input_buffer[128];
 extern volatile int buffer_index;
 extern volatile bool enter_pressed;
-
-
 
 //---------------------------------------------------------------------------------------------
 // syscall table entry points and definitions
@@ -129,15 +314,14 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&kb_wait_enter,      // Syscall 3: No arguments
     (void*)&k_malloc,           // Syscall 4: One argument
     (void*)&k_free,             // Syscall 5: One argument
+    (void*)&k_realloc,          // Syscall 6: 2 arguments
     // Add more syscalls here
 };
 
 // the syscall handler function called by the interrupt handler in the boot.asm file
 void syscall_handler(void* irq_number) {
     int syscall_index, arg1, arg2, arg3;
-
     // Retrieve values from eax, ebx, ecx, edx, and esi into C variables
-
     __asm__ __volatile__(""  // No actual instructions needed; just retrieve registers
         : "=a"(syscall_index),  // Load eax into syscall_index
         "=b"(arg1),           // Load ebx into arg1
@@ -145,19 +329,15 @@ void syscall_handler(void* irq_number) {
         "=d"(arg3)            // Load edx into arg3
         :                       // No input operands
     );
-
     // Print the values for debugging purposes
     //printf("Syscall index: %d, Arguments: %d, %d, %d\n", syscall_index, arg1, arg2, arg3);
-
     // Ensure the index is within bounds
     if (syscall_index < 0 || syscall_index >= 512 || syscall_table[syscall_index] == 0) {
         printf("Invalid syscall index: %d\n", syscall_index);
         return;
     }
-
     // Retrieve the function pointer from the table
     void* func_ptr = (void*)syscall_table[syscall_index];
-    
     // Call functions based on syscall index, handling arguments conditionally
     switch (syscall_index) {
         case 0:  // kernel_hello - No arguments
@@ -171,7 +351,11 @@ void syscall_handler(void* irq_number) {
         case SYS_MALLOC:  // k_malloc - One argument
             ((void (*)(int))func_ptr)((uint32_t)arg1);
             break;
+
         // Add additional cases for syscalls with more arguments
+        case SYS_REALLOC:  // k_realloc - Two arguments
+            ((void* (*)(void*, size_t))func_ptr)((void*)arg1, (size_t)arg2);
+            break;
 
         default:
             printf("Unknown syscall index: %d\n", syscall_index);

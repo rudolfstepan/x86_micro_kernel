@@ -14,6 +14,7 @@
 #define SYS_WAIT_ENTER 3
 #define SYS_MALLOC 4
 #define SYS_FREE 5
+#define SYS_REALLOC 6
 
 // Macros for try-catch handling
 #define try(ctx) if (setjmp(&(ctx)) == 0)
@@ -48,9 +49,6 @@ void* realloc(void *ptr, size_t new_size);
 void free(void* ptr);
 void secure_free(void *ptr, size_t size);
 void* memmove(void* dest, const void* src, size_t n);
-
-int test_memory();
-
 void* syscall(int syscall_index, void* parameter1, void* parameter2, void* parameter3);
 // wrapper functions for system calls
 void sleep_ms(uint32_t ms);
