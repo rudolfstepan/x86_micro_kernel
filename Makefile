@@ -113,6 +113,9 @@ mount:
 	sudo cp $(CLI_DIR)/test.prg $(MOUNT_DIR)/
 	sudo umount $(MOUNT_DIR)
 
+	@echo "Converting disk image to VMDK format..."
+	qemu-img convert -f raw -O vmdk ./disk.img ./disk.vmdk
+
 iso:
 	@echo "Creating ISO image..."
 	mkdir -p $(ISO_DIR)/boot/grub
