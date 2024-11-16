@@ -526,26 +526,6 @@ void set_graphics_mode() {
     );
 }
 
-// extern char _kernel_start[];
-// extern char _kernel_text_end[];
-// extern char _kernel_data_start[];
-// extern char _kernel_data_end[];
-// extern char _kernel_bss_start[];
-// extern char _kernel_bss_end[];
-// extern char _kernel_end[];
-
-void print_kernel_sections() {
-    printf("Kernel Sections:\n");
-    // printf("  Start:         0x%p\n", _kernel_start);
-    // printf("  Text End:      0x%p\n", _kernel_text_end);
-    // printf("  Data Start:    0x%p\n", _kernel_data_start);
-    // printf("  Data End:      0x%p\n", _kernel_data_end);
-    // printf("  BSS Start:     0x%p\n", _kernel_bss_start);
-    // printf("  BSS End:       0x%p\n", _kernel_bss_end);
-    // printf("  Kernel End:    0x%p\n", _kernel_end);
-}
-
-
 //---------------------------------------------------------------------------------------------
 // kernel_main is the main entry point of the kernel
 // It is called by the bootloader after setting up the environment
@@ -566,8 +546,6 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     // }
 
     initialize_memory_system();
-
-    print_kernel_sections();
 
     gdt_install();
     idt_install();
@@ -602,13 +580,6 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     // detect fdd drives
     fdd_detect_drives();
     
-    // printf("Delay Test 5 Seconds\n");
-    // sleep_ms(5000);
-    // printf("Delay Test 5 Seconds finished\n");
-
-    // printf("Beep Test\n");
-    //beep(1000, 5000);
-
     printf("Syscall table address: %p\n", syscall_table);
     //display_color_test();
     print_fancy_prompt();

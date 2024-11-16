@@ -9,6 +9,7 @@
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
 #include "drivers/video/video.h"
+#include "filesystem/filesystem.h"
 #include "filesystem/fat32/fat32.h"
 #include "filesystem/fat12/fat12.h"
 
@@ -143,10 +144,14 @@ void handle_mount(int arg_count, char** arguments) {
 
             switch (current_drive->type) {
             case DRIVE_TYPE_ATA:
-                printf("Init fs on ATA drive %s: %s with %u sectors\n", current_drive->name, current_drive->model, current_drive->sectors);
+                //printf("Init fs on ATA drive %s: %s with %u sectors\n", current_drive->name, current_drive->model, current_drive->sectors);
                 // Initialize file system for ATA drive
-                fat32_init_fs(current_drive->base, current_drive->is_master);
-                strcpy(current_path, "/");
+
+                init_fs(current_drive);
+
+
+                // fat32_init_fs(current_drive->base, current_drive->is_master);
+                // strcpy(current_path, "/");
                 break;
             case DRIVE_TYPE_FDD:
                 printf("Init fs on FDD %s with CHS %u/%u/%u\n", current_drive->name, current_drive->cylinder, current_drive->head, current_drive->sector);
