@@ -281,9 +281,9 @@ void handle_sys(int arg_count, char** arguments) {
 
     current_try_context = &ctx; // Set the global context pointer
 
-    printf("Set context in user program: 0x%p\n", (void*)current_try_context);
-    printf("Current ESP: 0x%X, ", get_esp());
-    printf("EBP: 0x%X\n", get_ebp());
+    // printf("Set context in user program: 0x%p\n", (void*)current_try_context);
+    // printf("Current ESP: 0x%X, ", get_esp());
+    // printf("EBP: 0x%X\n", get_ebp());
 
     if (setjmp(&ctx) == 0) {
         int x = 10;

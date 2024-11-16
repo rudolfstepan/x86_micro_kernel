@@ -22,14 +22,13 @@
 
 
 typedef struct TryContext {
-    uint32_t padding1;  // Padding to detect overwrites
+    //uint32_t padding1;  // Padding before the structure
     uint32_t esp;
     uint32_t ebp;
     uint32_t eip;
     int exception_code;
-    uint32_t padding2;  // Padding to detect overwrites
+    //uint32_t padding2;  // Padding after the structure
 } TryContext;
-
 
 extern TryContext* current_try_context;
 
@@ -38,7 +37,7 @@ uint32_t get_ebp();
 
 // Declare setjmp and longjmp
 extern int setjmp(TryContext* ctx);
-extern void longjmp(TryContext* ctx);
+extern void longjmp(TryContext* ctx, int exception_code);
 
 void throw(TryContext* ctx, int exception_code);
 

@@ -95,11 +95,11 @@ void throw(TryContext* ctx, int exception_code) {
         ctx->exception_code = exception_code;
 
         // Debugging: Print the context before jumping
-        printf("Throwing exception with code: %d\n", exception_code);
-        printf("Current throw context: ESP=0x%X, EBP=0x%X, EIP=0x%X\n",
-               ctx->esp, ctx->ebp, ctx->eip);
+        // printf("Throwing exception with code: %d\n", exception_code);
+        // printf("Current throw context: ESP=0x%X, EBP=0x%X, EIP=0x%X\n",
+        //        ctx->esp, ctx->ebp, ctx->eip);
 
-        longjmp(ctx); // Call longjmp to restore context
+        longjmp(ctx, exception_code); // Call longjmp to restore context
     }
 }
 

@@ -76,26 +76,26 @@ char* exception_messages[] =
 void fault_handler(Registers* r) {
     if (r->irq_number < 32) {
         // Display the exception message
-        printf("Exception: %s\n\n", exception_messages[r->irq_number]);
+        printf("System Exception: %s\n\n", exception_messages[(int)r->irq_number]);
 
         // Print registers in a compact table to fit 80 characters width
-        printf("Registers:\n");
-        printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-        printf("|   gs   |   fs   |   es   |   ds   |   edi  |   esi  |   ebp  |   esp  |\n");
-        printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-        printf("| 0x%04X | 0x%04X | 0x%04X | 0x%04X | 0x%08X | 0x%08X | 0x%08X | 0x%08X |\n",
-               r->gs, r->fs, r->es, r->ds, r->edi, r->esi, r->ebp, r->esp);
-        printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+        // printf("Registers:\n");
+        // printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+        // printf("|   gs   |   fs   |   es   |   ds   |   edi  |   esi  |   ebp  |   esp  |\n");
+        // printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+        // printf("| 0x%04X | 0x%04X | 0x%04X | 0x%04X | 0x%08X | 0x%08X | 0x%08X | 0x%08X |\n",
+        //        r->gs, r->fs, r->es, r->ds, r->edi, r->esi, r->ebp, r->esp);
+        // printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
 
-        printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-        printf("|   ebx  |   edx  |   ecx  |   eax  |  irq   |        |        |        |\n");
-        printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-        printf("| 0x%08X | 0x%08X | 0x%08X | 0x%08X |   %04d   |        |        |        |\n",
-               r->ebx, r->edx, r->ecx, r->eax, r->irq_number);
-        printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+        // printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+        // printf("|   ebx  |   edx  |   ecx  |   eax  |  irq   |        |        |        |\n");
+        // printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+        // printf("| 0x%08X | 0x%08X | 0x%08X | 0x%08X |   %04d   |        |        |        |\n",
+        //        r->ebx, r->edx, r->ecx, r->eax, r->irq_number);
+        // printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
 
         // Display system halted message
-        printf("\nException. System Halted! IRQ Number: %d\n", r->irq_number);
+        //printf("System Halted! IRQ Number: %d\n", r->irq_number);
 
         // Halt the system
         for (;;);
@@ -108,68 +108,68 @@ typedef void (*ExceptionHandler)(Registers*);
 // Declare an array to store handlers for each exception
 ExceptionHandler exception_handlers[32];
 
-void print_registers(Registers* r) {
-    // Print registers in a compact table to fit 80 characters width
-    printf("Registers:\n");
-    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-    printf("|   gs   |   fs   |   es   |   ds   |   edi  |   esi  |   ebp  |   esp  |\n");
-    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-    printf("| 0x%04X | 0x%04X | 0x%04X | 0x%04X | 0x%08X | 0x%08X | 0x%08X | 0x%08X |\n",
-           r->gs, r->fs, r->es, r->ds, r->edi, r->esi, r->ebp, r->esp);
-    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-    printf("|   ebx  |   edx  |   ecx  |   eax  |  irq   |        |        |        |\n");
-    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-    printf("| 0x%08X | 0x%08X | 0x%08X | 0x%08X |   %04d   |        |        |        |\n",
-           r->ebx, r->edx, r->ecx, r->eax, r->irq_number);
-    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-}
+// void print_registers(Registers* r) {
+//     // Print registers in a compact table to fit 80 characters width
+//     printf("Registers:\n");
+//     printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+//     printf("|   gs   |   fs   |   es   |   ds   |   edi  |   esi  |   ebp  |   esp  |\n");
+//     printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+//     printf("| 0x%04X | 0x%04X | 0x%04X | 0x%04X | 0x%08X | 0x%08X | 0x%08X | 0x%08X |\n",
+//            r->gs, r->fs, r->es, r->ds, r->edi, r->esi, r->ebp, r->esp);
+//     printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+//     printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+//     printf("|   ebx  |   edx  |   ecx  |   eax  |  irq   |        |        |        |\n");
+//     printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+//     printf("| 0x%08X | 0x%08X | 0x%08X | 0x%08X |   %04d   |        |        |        |\n",
+//            r->ebx, r->edx, r->ecx, r->eax, r->irq_number);
+//     printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+// }
 
-void guru_meditation_error(Registers* r) {
-    // Print an Amiga-style Guru Meditation message
-    printf("\n*** GURU MEDITATION ERROR ***\n\n");
+// void guru_meditation_error(Registers* r) {
+//     // Print an Amiga-style Guru Meditation message
+//     printf("\n*** GURU MEDITATION ERROR ***\n\n");
 
-    // Print the error message and compact register table to fit 80 characters width
-    printf("An exception has occurred.\n\n");
+//     // Print the error message and compact register table to fit 80 characters width
+//     printf("An exception has occurred.\n\n");
 
-    printf("Registers:\n");
-    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-    printf("|   gs   |   fs   |   es   |   ds   |   edi  |   esi  |   ebp  |   esp  |\n");
-    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-    printf("| 0x%04X | 0x%04X | 0x%04X | 0x%04X | 0x%08X | 0x%08X | 0x%08X | 0x%08X |\n",
-           r->gs, r->fs, r->es, r->ds, r->edi, r->esi, r->ebp, r->esp);
-    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+//     printf("Registers:\n");
+//     printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+//     printf("|   gs   |   fs   |   es   |   ds   |   edi  |   esi  |   ebp  |   esp  |\n");
+//     printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+//     printf("| 0x%04X | 0x%04X | 0x%04X | 0x%04X | 0x%08X | 0x%08X | 0x%08X | 0x%08X |\n",
+//            r->gs, r->fs, r->es, r->ds, r->edi, r->esi, r->ebp, r->esp);
+//     printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
 
-    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-    printf("|   ebx  |   edx  |   ecx  |   eax  |  irq   |        |        |        |\n");
-    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-    printf("| 0x%08X | 0x%08X | 0x%08X | 0x%08X |   %04d   |        |        |        |\n",
-           r->ebx, r->edx, r->ecx, r->eax, r->irq_number);
-    printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+//     printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+//     printf("|   ebx  |   edx  |   ecx  |   eax  |  irq   |        |        |        |\n");
+//     printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
+//     printf("| 0x%08X | 0x%08X | 0x%08X | 0x%08X |   %04d   |        |        |        |\n",
+//            r->ebx, r->edx, r->ecx, r->eax, r->irq_number);
+//     printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
 
-    // Print the iconic Amiga error footer
-    printf("\nSYSTEM HALTED\n");
-    printf("Please restart or contact technical support.\n");
-}
+//     // Print the iconic Amiga error footer
+//     printf("\nSYSTEM HALTED\n");
+//     printf("Please restart or contact technical support.\n");
+// }
 
 // Generic exception handler
 void generic_exception_handler(Registers* r) {
     // Display system halted message
-    printf("\nException. System Halted! IRQ Number: %d\n", r->irq_number);
+    printf("System Exception occured: %s\n\n", exception_messages[(int)r->irq_number]);
     while (1);
 }
 
 // Divide by zero handler (specific override)
 void divide_by_zero_handler(Registers* r) {
-    printf("Divide by zero exception caught!\n");
-    printf("Current context in handler: %p\n", (void*)current_try_context);
+    //printf("Divide by zero exception caught!\n");
+    // printf("Current context in handler: %p\n", (void*)current_try_context);
 
     if (current_try_context) {
-        printf("current_try_context: ESP=0x%X, EBP=0x%X, EIP=0x%X\n",
-               current_try_context->esp, current_try_context->ebp, current_try_context->eip);
+        // printf("current_try_context: ESP=0x%X, EBP=0x%X, EIP=0x%X\n",
+        //        current_try_context->esp, current_try_context->ebp, current_try_context->eip);
         throw(current_try_context, 1); // Throw the exception
     } else {
-        printf("No valid context. Halting.\n");
+        //printf("No valid context. Halting.\n");
         while (1); // Halt the system
     }
 }
@@ -177,7 +177,7 @@ void divide_by_zero_handler(Registers* r) {
 // Set up the exception handlers
 void setup_exceptions() {
     // Set all entries to the generic exception handler
-    for (int i = 0; i < 32; i++) {
+    for (int i = 1; i < 32; i++) {
         exception_handlers[i] = generic_exception_handler;
     }
 
