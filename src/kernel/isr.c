@@ -1,5 +1,6 @@
 #include "kernel/sys.h"
 #include "toolchain/stdio.h"
+#include "toolchain/stdlib.h"
 
 // methods defined in the assembly file
 extern void isr0();
@@ -160,11 +161,13 @@ void generic_exception_handler(Registers* r) {
 
 // Divide by zero handler (specific override)
 void divide_by_zero_handler(Registers* r) {
-    printf("Exception: Divide by Zero\n");
-    printf("Exception. System Halted! IRQ Number: %d\n", r->irq_number);
-
-    guru_meditation_error(r);
-    while (1); // Halt the system or recover
+    // Assume we have a global pointer to the current try context
+    if (current_try_context) {
+        throw(current_try_context, 1);  // Exception code 1 for divide-by-zero
+    } else {
+         printf("Unhandled divide by zero error\n");
+        while (1);  // Halt if there's no handler
+    }
 }
 
 // Set up the exception handlers

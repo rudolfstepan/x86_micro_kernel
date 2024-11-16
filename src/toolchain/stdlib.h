@@ -13,7 +13,21 @@
 #define SYS_DELAY 2
 #define SYS_WAIT_ENTER 3
 
+// Macros for try-catch handling
+#define try(ctx) if (setjmp(&(ctx)) == 0)
+#define catch(ctx, ex) else if ((ctx).exception_code == (ex))
 
+typedef struct TryContext {
+    uint32_t esp, ebp, eip; // Registers for the context
+    int exception_code;     // To store any exception code
+} TryContext;
+
+extern TryContext* current_try_context;
+
+extern int setjmp(TryContext* ctx);
+extern void longjmp(TryContext* ctx);
+
+void throw(TryContext* ctx, int exception_code);
 
 void initialize_memory_system();
 
@@ -29,7 +43,6 @@ void sys_call(int syscall_index, int parameter1, int parameter2, int parameter3)
 // wrapper functions for system calls
 void sleep_ms(uint32_t ms);
 void wait_enter_pressed();
-
 
 void exit(uint8_t status);
 

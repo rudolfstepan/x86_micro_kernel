@@ -5,7 +5,7 @@
 // #include "system.h"
 
 
-int start(void) {
+int main() {
 
     printf("Dir command\n");
     // init_fs();

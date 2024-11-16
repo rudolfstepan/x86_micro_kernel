@@ -5,6 +5,7 @@
 #include <stdbool.h>
 
 
+
 // Task states
 typedef enum {
     TASK_READY,
@@ -33,34 +34,32 @@ void schedulerTick(void);
 void blinkLED(void* data);
 void monitorSensor(void* data);
 
+TryContext ctx;
+//TryContext* current_try_context = NULL;
 
-// Main function
-int start(void) {
+int test_divide_by_zero() {
+    int x = 10;
+    int y = 0;
+    int z = x / y; // Trigger a divide-by-zero exception
+    x = z+1;
+    return z;
+}
 
-    printf("Starting Test Program...\n");
+int _main() {
+    current_try_context = &ctx; // Set the global context pointer
 
-    // Intentionally trigger divide by zero
-    int x = 1 / 0;
+    if (setjmp(&ctx) == 0) {
+        test_divide_by_zero();
+        printf("Try block executed successfully\n");
+    } else {
+        printf("Caught divide-by-zero exception\n");
+    }
 
-    printf("Result: %d\n", x);
-
-    printf("%d\n", 12345);             // Prints: 12345
-    printf("%d\n", -12345);            // Prints: -12345
-    printf("%u\n", (unsigned int)-1);  // Prints: 4294967295
-
-    printf("Test Program Finished\n");
-
-    // addTask(blinkLED, NULL);
-    // addTask(monitorSensor, NULL);
-
-    // // Simulated kernel main loop
-    // while (1) {
-    //     schedulerTick(); // Call scheduler on every tick
-    // }
+    current_try_context = NULL; // Clear the context pointer
+    printf("Program execution continues...\n");
 
     return 0;
 }
-
 // Add a new task to the scheduler
 bool addTask(void (*function)(void*), void* data) {
     if (taskCount >= MAX_TASKS) {
@@ -115,4 +114,11 @@ void monitorSensor(void* data) {
     static uint32_t counter = 0;
     printf("Task 2: Monitoring sensor (counter = %u)\n", ++counter);
     taskDelay(3); // Delay for 3 ticks
+}
+
+
+void main() __attribute__((section(".text.main")));
+void main() {
+    // Main program logic
+    _main();
 }

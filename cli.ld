@@ -1,5 +1,5 @@
 OUTPUT_FORMAT("elf32-i386")
-ENTRY(start)
+ENTRY(main)
 MEMORY
 {
     MYMEMORY : ORIGIN = 0x00500000, LENGTH = 0x1000000 /* 0x00500000 is defined as user address space */
@@ -23,9 +23,12 @@ SECTIONS
 
     .text : {
         _text_start = .;                      
-        *(.text)                              
+        KEEP(*(.entry))    /* Keep any entry-specific symbols */  
+        *(.text.main)      /* Explicitly include main first */
+        *(.text*)          /* Include all other .text sections */
         _text_end = .;                        
     } > MYMEMORY
+
 
     .relocation : {
         _relocation_offset = .;

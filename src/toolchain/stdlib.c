@@ -5,6 +5,8 @@
 #include "stdio.h"
 #include "strings.h"
 
+TryContext* current_try_context = NULL;
+
 
 typedef struct memory_block {
     size_t size;
@@ -314,4 +316,10 @@ void sleep_ms(uint32_t ms) {
 
 void wait_enter_pressed() {
 	sys_call(SYS_WAIT_ENTER, 0, 0, 0);
+}
+
+// Throw an exception
+void throw(TryContext* ctx, int exception_code) {
+    ctx->exception_code = exception_code; // Set the exception code in the context
+    longjmp(ctx); // Call the custom longjmp with one argument
 }

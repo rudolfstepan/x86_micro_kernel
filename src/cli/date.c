@@ -1,7 +1,7 @@
 #include "drivers/rtc/rtc.h"
 #include "toolchain/stdio.h"
 
-int start(void) {
+int main() {
     //lear_screen(BLACK);
     printf("Current date/time:\n");
 
@@ -10,6 +10,8 @@ int start(void) {
     read_time(&hour, &minute, &second);
 
     printf("Date Time: %d-%d-%d %d:%d:%d\n", year, month, day, hour, minute, second);
+
+    
 
     return 0;
 }

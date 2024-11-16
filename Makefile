@@ -39,6 +39,7 @@ compile_bootloader:
 	nasm -f elf32 $(SOURCE_DIR)/boot/irq.asm -o $(BOOT_DIR)/_irq.o
 	nasm -f elf32 $(SOURCE_DIR)/boot/syscall.asm -o $(BOOT_DIR)/_syscall.o
 	nasm -f elf32 $(SOURCE_DIR)/boot/stack.asm -o $(BOOT_DIR)/_stack.o
+	nasm -f elf32 $(SOURCE_DIR)/toolchain/trycatch.asm -o $(OUTPUT_DIR)/trycatch.o
 
 # Compile filesystem sources
 compile_filesystem:
@@ -78,26 +79,28 @@ link_kernel:
 	$(OUTPUT_DIR)/kernel/gdt.o $(OUTPUT_DIR)/kernel/idt.o $(OUTPUT_DIR)/kernel/isr.o \
 	$(OUTPUT_DIR)/kernel/irq.o $(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/kernel.o $(OUTPUT_DIR)/kernel/prg.o $(OUTPUT_DIR)/kernel/command.o \
 	$(OUTPUT_DIR)/kernel/process.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
-	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o \
+	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o $(OUTPUT_DIR)/trycatch.o \
 	
 # Link CLI programs
 link_cli:
 	@echo "Linking cli_date..."
-	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/date.elf $(CLI_DIR)/date.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o $(OUTPUT_DIR)/kernel/pit.o \
-	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
-	@echo "Linking cli_test..."
-	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/test.elf $(CLI_DIR)/test.o $(OUTPUT_DIR)/kernel/pit.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
-	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
+	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/date.elf $(CLI_DIR)/date.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
+	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o $(OUTPUT_DIR)/trycatch.o
+	
 	@echo "Linking cli_dir..."
-	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.o $(OUTPUT_DIR)/kernel/pit.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
-	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
+	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
+	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o $(OUTPUT_DIR)/trycatch.o
+
+	@echo "Linking cli_test..."
+	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/test.elf $(CLI_DIR)/test.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
+	$(OUTPUT_DIR)/trycatch.o $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
 
 # Copy binaries
 copy_binaries:
 	@echo "Copying binaries..."
 	objcopy -O binary $(CLI_DIR)/date.elf $(CLI_DIR)/date.prg
-	objcopy -O binary $(CLI_DIR)/test.elf $(CLI_DIR)/test.prg
 	objcopy -O binary $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.prg
+	objcopy -O binary $(CLI_DIR)/test.elf $(CLI_DIR)/test.prg
 
 mount:
 	@echo "Mounting disk image..."
@@ -107,8 +110,8 @@ mount:
 	fi
 	sudo mount ./disk.img $(MOUNT_DIR)
 	sudo cp $(CLI_DIR)/date.prg $(MOUNT_DIR)/
-	sudo cp $(CLI_DIR)/test.prg $(MOUNT_DIR)/
 	sudo cp $(CLI_DIR)/dir.prg $(MOUNT_DIR)/
+	sudo cp $(CLI_DIR)/test.prg $(MOUNT_DIR)/
 	sudo umount $(MOUNT_DIR)
 
 iso:
