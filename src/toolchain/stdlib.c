@@ -321,5 +321,5 @@ void wait_enter_pressed() {
 // Throw an exception
 void throw(TryContext* ctx, int exception_code) {
     ctx->exception_code = exception_code; // Set the exception code in the context
-    longjmp(ctx); // Call the custom longjmp with one argument
+    longjmp(ctx, exception_code); // Call the custom longjmp with one argument
 }

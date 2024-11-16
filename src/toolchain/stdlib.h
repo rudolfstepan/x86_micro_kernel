@@ -17,15 +17,20 @@
 #define try(ctx) if (setjmp(&(ctx)) == 0)
 #define catch(ctx, ex) else if ((ctx).exception_code == (ex))
 
+#pragma pack(push, 1)
 typedef struct TryContext {
-    uint32_t esp, ebp, eip; // Registers for the context
-    int exception_code;     // To store any exception code
+    uint32_t esp;    // Saved ESP
+    uint32_t ebp;    // Saved EBP
+    uint32_t eip;    // Saved EIP (return address)
+    int exception_code; // Exception code
 } TryContext;
+#pragma pack(pop)
 
 extern TryContext* current_try_context;
 
+// Declare setjmp and longjmp
 extern int setjmp(TryContext* ctx);
-extern void longjmp(TryContext* ctx);
+extern void longjmp(TryContext* ctx, int exception_code);
 
 void throw(TryContext* ctx, int exception_code);
 
