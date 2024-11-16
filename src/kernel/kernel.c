@@ -197,13 +197,13 @@ void init_drives()
 }
 
 void display_welcome_message() {
-    set_color(LIGHT_MAGENTA);
-    printf("\n");
-    printf("      *------------------------------------------------------------*\n");
-    printf("      |        Welcome to the Rudolf Stepan x86 Micro Kernel       |\n");
-    printf("      |      Type 'HELP' for a list of commands and instructions   |\n");
-    printf("      *------------------------------------------------------------*\n");
-    printf("\n");
+    // set_color(LIGHT_MAGENTA);
+    // printf("\n");
+    // printf("      *------------------------------------------------------------*\n");
+    // printf("      |        Welcome to the Rudolf Stepan x86 Micro Kernel       |\n");
+    // printf("      |      Type 'HELP' for a list of commands and instructions   |\n");
+    // printf("      *------------------------------------------------------------*\n");
+    // printf("\n");
     set_color(WHITE);
 }
 
@@ -254,6 +254,26 @@ void set_graphics_mode() {
     );
 }
 
+extern char _kernel_start[];
+extern char _kernel_text_end[];
+extern char _kernel_data_start[];
+extern char _kernel_data_end[];
+extern char _kernel_bss_start[];
+extern char _kernel_bss_end[];
+extern char _kernel_end[];
+
+void print_kernel_sections() {
+    printf("Kernel Sections:\n");
+    printf("  Start:         0x%p\n", _kernel_start);
+    printf("  Text End:      0x%p\n", _kernel_text_end);
+    printf("  Data Start:    0x%p\n", _kernel_data_start);
+    printf("  Data End:      0x%p\n", _kernel_data_end);
+    printf("  BSS Start:     0x%p\n", _kernel_bss_start);
+    printf("  BSS End:       0x%p\n", _kernel_bss_end);
+    printf("  Kernel End:    0x%p\n", _kernel_end);
+}
+
+
 //---------------------------------------------------------------------------------------------
 // kernel_main is the main entry point of the kernel
 // It is called by the bootloader after setting up the environment
@@ -274,6 +294,9 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     // }
 
     initialize_memory_system();
+
+    print_kernel_sections();
+
     gdt_install();
     idt_install();
     isr_install();

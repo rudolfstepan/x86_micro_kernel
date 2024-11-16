@@ -17,20 +17,25 @@
 #define try(ctx) if (setjmp(&(ctx)) == 0)
 #define catch(ctx, ex) else if ((ctx).exception_code == (ex))
 
-#pragma pack(push, 1)
+
 typedef struct TryContext {
-    uint32_t esp;    // Saved ESP
-    uint32_t ebp;    // Saved EBP
-    uint32_t eip;    // Saved EIP (return address)
-    int exception_code; // Exception code
+    uint32_t padding1;  // Padding to detect overwrites
+    uint32_t esp;
+    uint32_t ebp;
+    uint32_t eip;
+    int exception_code;
+    uint32_t padding2;  // Padding to detect overwrites
 } TryContext;
-#pragma pack(pop)
+
 
 extern TryContext* current_try_context;
 
+uint32_t get_esp();
+uint32_t get_ebp();
+
 // Declare setjmp and longjmp
 extern int setjmp(TryContext* ctx);
-extern void longjmp(TryContext* ctx, int exception_code);
+extern void longjmp(TryContext* ctx);
 
 void throw(TryContext* ctx, int exception_code);
 
@@ -48,6 +53,8 @@ void sys_call(int syscall_index, int parameter1, int parameter2, int parameter3)
 // wrapper functions for system calls
 void sleep_ms(uint32_t ms);
 void wait_enter_pressed();
+
+
 
 void exit(uint8_t status);
 

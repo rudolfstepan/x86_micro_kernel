@@ -18,17 +18,19 @@ SECTIONS
 
   /* Place the code and read-only data sections */
   .text : {
-    code = .;             /* Mark the start of the code section */
-    *(.text)
-    *(.rodata)
+    _kernel_start = .;    /* Mark the start of the kernel */
+    *(.text)              /* Kernel code */
+    *(.rodata)            /* Read-only data */
     . = ALIGN(4096);      /* Align the end of the text section */
+    _kernel_text_end = .; /* Mark the end of the text section */
   } > kernel_ram
 
   /* Place the initialized data section */
   .data : {
-    data = .;             /* Mark the start of the data section */
-    *(.data)
-    . = ALIGN(4096);      /* Align the end of the data section */
+    _kernel_data_start = .; /* Mark the start of the data section */
+    *(.data)                /* Initialized data */
+    . = ALIGN(4096);        /* Align the end of the data section */
+    _kernel_data_end = .;   /* Mark the end of the data section */
   } > kernel_ram
 
   /* Place the syscall table section */
@@ -41,9 +43,10 @@ SECTIONS
 
   /* Place the BSS (uninitialized data) section */
   .bss : {
-    bss = .;              /* Mark the start of the BSS section */
-    *(.bss)
-    . = ALIGN(4096);      /* Align the end of the BSS section */
+    _kernel_bss_start = .; /* Mark the start of the BSS section */
+    *(.bss)                /* Uninitialized data */
+    . = ALIGN(4096);       /* Align the end of the BSS section */
+    _kernel_bss_end = .;   /* Mark the end of the BSS section */
   } > kernel_ram
 
   /* Define a section for the stack */
@@ -77,5 +80,5 @@ SECTIONS
   } > user_programs
 
   /* Mark the end of the kernel */
-  end_of_kernel = .;      /* Mark the end of the kernel */
+  _kernel_end = .;        /* Mark the end of the kernel */
 }

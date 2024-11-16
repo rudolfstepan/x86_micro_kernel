@@ -14,53 +14,51 @@ typedef struct memory_block {
     struct memory_block *next;
 } memory_block;
 
-// Kernel starts at 0x100000 1MB address in memory
-// Heap starts at 0x100000 + Kernel Size
-// TODO: Get the kernel size from the linker script and use the memory addresses dynamically from the bootloader
-#define HEAP_START  (void*)(0x100000 + (1024 * 1024))  // 2MB
-#define HEAP_END    (void*)0x500000  // 5MB
+extern char _kernel_end;  // Defined by the linker script
+
+#define HEAP_START  ((void*)(&_kernel_end))
+#define HEAP_END    (void*)0x500000  // End of heap (5MB)
+#define ALIGN_UP(addr, align) (((addr) + ((align)-1)) & ~((align)-1))
+#define HEAP_START_ALIGNED ALIGN_UP((size_t)HEAP_START, 16)
 #define BLOCK_SIZE sizeof(memory_block)
 
 memory_block *freeList = (memory_block*)HEAP_START;
 
 void initialize_memory_system() {
-    // Initialize memory pool on first malloc call
-    freeList->size = (size_t)HEAP_END - (size_t)HEAP_START - BLOCK_SIZE;
+    freeList = (memory_block*)HEAP_START_ALIGNED;
+    freeList->size = (size_t)HEAP_END - (size_t)HEAP_START_ALIGNED - BLOCK_SIZE;
     freeList->free = 1;
     freeList->next = NULL;
+
+    printf("Aligned HEAP_START: 0x%p\n", freeList);
 }
 
-void *malloc(size_t size) {
-    memory_block *current = freeList, *prev = NULL;
-    if(prev == NULL) {
-        
-    }
-    void *result = NULL;
-
-    // Align size to word boundary
-    size = (size + sizeof(size_t) - 1) & ~(sizeof(size_t) - 1);
+void* malloc(size_t size) {
+    memory_block *current = freeList;
 
     while (current) {
-        // Check if current block is free and large enough
         if (current->free && current->size >= size) {
-            // Check if we can split the block
-            if (current->size > size + BLOCK_SIZE + sizeof(size_t)) {
+            // Split the block if it's larger than required
+            if (current->size > size + BLOCK_SIZE) {
                 memory_block *newBlock = (memory_block*)((size_t)current + BLOCK_SIZE + size);
                 newBlock->size = current->size - size - BLOCK_SIZE;
                 newBlock->free = 1;
                 newBlock->next = current->next;
+
                 current->size = size;
                 current->next = newBlock;
             }
-            current->free = 0;
-            result = (void*)((size_t)current + BLOCK_SIZE);
-            break;
+
+            current->free = 0;  // Mark as allocated
+            return (void*)((size_t)current + BLOCK_SIZE);
         }
-        prev = current;
+
         current = current->next;
     }
 
-    return result;
+    // Out of memory
+    printf("malloc: Out of memory\n");
+    return NULL;
 }
 
 void* realloc(void *ptr, size_t new_size) {
@@ -102,15 +100,13 @@ void* realloc(void *ptr, size_t new_size) {
     return new_ptr;
 }
 
-void free(void *ptr) {
-    if (!ptr) {
-        return;
-    }
+void free(void* ptr) {
+    if (!ptr) return;
 
     memory_block *block = (memory_block*)((size_t)ptr - BLOCK_SIZE);
     block->free = 1;
 
-    // Coalescing free blocks
+    // Coalesce adjacent free blocks
     memory_block *current = freeList;
     while (current) {
         if (current->free && current->next && current->next->free) {
@@ -127,7 +123,6 @@ void secure_free(void *ptr, size_t size) {
         free(ptr);
     }
 }
-
 
 // test methods
 
@@ -320,6 +315,26 @@ void wait_enter_pressed() {
 
 // Throw an exception
 void throw(TryContext* ctx, int exception_code) {
-    ctx->exception_code = exception_code; // Set the exception code in the context
-    longjmp(ctx, exception_code); // Call the custom longjmp with one argument
+    if (ctx) {
+        ctx->exception_code = exception_code;
+
+        // Debugging: Print the context before jumping
+        printf("Throwing exception with code: %d\n", exception_code);
+        printf("Current throw context: ESP=0x%X, EBP=0x%X, EIP=0x%X\n",
+               ctx->esp, ctx->ebp, ctx->eip);
+
+        longjmp(ctx); // Call longjmp to restore context
+    }
+}
+
+uint32_t get_esp() {
+    uint32_t esp;
+    __asm__ volatile("mov %%esp, %0" : "=r"(esp));
+    return esp;
+}
+
+uint32_t get_ebp() {
+    uint32_t ebp;
+    __asm__ volatile("mov %%ebp, %0" : "=r"(ebp));
+    return ebp;
 }

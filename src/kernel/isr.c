@@ -162,20 +162,11 @@ void generic_exception_handler(Registers* r) {
 // Divide by zero handler (specific override)
 void divide_by_zero_handler(Registers* r) {
     printf("Divide by zero exception caught!\n");
-    printf("Current context in handler: 0x%p\n", (void*)current_try_context);
-    printf("Updated current_try_context: ESP=0x%X, EBP=0x%X, EIP=0x%X\n",
-       current_try_context->esp, current_try_context->ebp, current_try_context->eip);
-
+    printf("Current context in handler: %p\n", (void*)current_try_context);
 
     if (current_try_context) {
-        // Update current_try_context with valid interrupt register values
-        current_try_context->esp = r->esp;
-        current_try_context->ebp = r->ebp;
-        current_try_context->eip = r->eip;
-
-        printf("Updated current_try_context: ESP=0x%X, EBP=0x%X, EIP=0x%X\n",
+        printf("current_try_context: ESP=0x%X, EBP=0x%X, EIP=0x%X\n",
                current_try_context->esp, current_try_context->ebp, current_try_context->eip);
-
         throw(current_try_context, 1); // Throw the exception
     } else {
         printf("No valid context. Halting.\n");

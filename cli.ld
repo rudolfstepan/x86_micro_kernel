@@ -23,12 +23,10 @@ SECTIONS
 
     .text : {
         _text_start = .;                      
-        KEEP(*(.entry))    /* Keep any entry-specific symbols */  
         *(.text.main)      /* Explicitly include main first */
         *(.text*)          /* Include all other .text sections */
         _text_end = .;                        
     } > MYMEMORY
-
 
     .relocation : {
         _relocation_offset = .;
