@@ -126,5 +126,5 @@ iso:
 run:
 	@echo "Running QEMU..."
 	#qemu-system-x86_64 -kernel ./build/kernel.bin -s -S -display default
-	qemu-system-x86_64 -boot d -cdrom ./kernel.iso -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy \
+	qemu-system-x86_64 -boot d -cdrom ./kernel.iso -vga std -nodefaults -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy \
 	

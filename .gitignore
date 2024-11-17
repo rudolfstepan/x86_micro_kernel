@@ -4,3 +4,4 @@ iso/*
 kernel.iso
 *.img
 *.vmdk
+disk.vmdk
