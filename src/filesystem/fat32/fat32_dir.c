@@ -1,10 +1,6 @@
 #include "fat32.h"
 #include "toolchain/stdio.h"
 
-void read_directory() {
-    read_cluster_dir_entries(boot_sector.rootCluster);
-}
-
 // Function to read a directory path and return if it exists
 bool fat32_read_dir(const char* path) {
     unsigned int currentCluster = boot_sector.rootCluster; // Assuming boot_sector is defined and initialized elsewhere
@@ -60,7 +56,7 @@ bool fat32_change_directory(const char* path) {
     return true;
 }
 
-bool create_directory(const char* dirname) {
+bool fat32_create_dir(const char* dirname) {
 
     printf("Creating directory: %s\n", dirname);
     // 1. Find a free cluster
@@ -146,7 +142,7 @@ bool add_entry_to_directory(struct Fat32BootSector* bs, unsigned int parentClust
         }
 
         currentCluster = get_next_cluster_in_chain(bs, currentCluster);
-        if (isEndOfClusterChain(currentCluster)) {
+        if (is_end_of_cluster_chain(currentCluster)) {
             currentCluster = allocate_new_cluster(bs);
             if (currentCluster == INVALID_CLUSTER) {
                 printf("Debug: Failed to allocate new cluster\n");
@@ -175,7 +171,7 @@ bool add_entry_to_directory(struct Fat32BootSector* bs, unsigned int parentClust
 }
 
 bool is_directory_empty(struct FAT32DirEntry* entry) {
-    unsigned int cluster = readStartCluster(entry);
+    unsigned int cluster = read_start_cluster(entry);
     unsigned int sector = cluster_to_sector(&boot_sector, cluster);
     struct FAT32DirEntry entries[SECTOR_SIZE / sizeof(struct FAT32DirEntry)];
 
@@ -199,7 +195,7 @@ bool is_directory_empty(struct FAT32DirEntry* entry) {
     return true; // Directory is empty
 }
 
-bool delete_directory(const char* dirname) {
+bool fat32_delete_dir(const char* dirname) {
     // 1. Find the directory entry for the directory to delete
     struct FAT32DirEntry* entry = findFileInDirectory(dirname);
     if (entry == NULL) {
@@ -212,7 +208,7 @@ bool delete_directory(const char* dirname) {
         return false;
     }
     // 3. Free the directory's cluster chain in the FAT
-    if (!free_cluster_chain(&boot_sector, readStartCluster(entry))) {
+    if (!free_cluster_chain(&boot_sector, read_start_cluster(entry))) {
         printf("Failed to free the directory's cluster chain.\n");
         return false;
     }

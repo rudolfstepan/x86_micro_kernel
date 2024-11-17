@@ -16,30 +16,30 @@
 #define SYS_FREE 5
 #define SYS_REALLOC 6
 
-// Macros for try-catch handling
-#define try(ctx) if (setjmp(&(ctx)) == 0)
-#define catch(ctx, ex) else if ((ctx).exception_code == (ex))
+// // Macros for try-catch handling
+// #define try(ctx) if (setjmp(&(ctx)) == 0)
+// #define catch(ctx, ex) else if ((ctx).exception_code == (ex))
 
 
-typedef struct TryContext {
-    //uint32_t padding1;  // Padding before the structure
-    uint32_t esp;
-    uint32_t ebp;
-    uint32_t eip;
-    int exception_code;
-    //uint32_t padding2;  // Padding after the structure
-} TryContext;
+// typedef struct TryContext {
+//     //uint32_t padding1;  // Padding before the structure
+//     uint32_t esp;
+//     uint32_t ebp;
+//     uint32_t eip;
+//     int exception_code;
+//     //uint32_t padding2;  // Padding after the structure
+// } TryContext;
 
-extern TryContext* current_try_context;
+// extern TryContext* current_try_context;
 
 uint32_t get_esp();
 uint32_t get_ebp();
 
 // Declare setjmp and longjmp
-extern int setjmp(TryContext* ctx);
-extern void longjmp(TryContext* ctx, int exception_code);
+// extern int setjmp(TryContext* ctx);
+// extern void longjmp(TryContext* ctx, int exception_code);
 
-void throw(TryContext* ctx, int exception_code);
+// void throw(TryContext* ctx, int exception_code);
 
 void initialize_memory_system();
 
@@ -48,7 +48,7 @@ void* realloc(void *ptr, size_t new_size);
 void free(void* ptr);
 void secure_free(void *ptr, size_t size);
 void* memmove(void* dest, const void* src, size_t n);
-void* syscall(int syscall_index, void* parameter1, void* parameter2, void* parameter3);
+
 // wrapper functions for system calls
 void sleep_ms(uint32_t ms);
 void wait_enter_pressed();

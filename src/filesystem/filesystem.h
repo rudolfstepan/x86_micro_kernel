@@ -75,4 +75,10 @@ typedef struct {
 
 void init_fs(drive_t* drive);
 
+// int create_directory(const char* path);
+// int delete_directory(const char* path);
+// int create_file(const char* path);
+// int delete_file(const char* path);
+
+
 #endif // FILESYSTEM_H

@@ -128,7 +128,7 @@ void read_cluster(struct Fat32BootSector* boot_sector, unsigned int clusterNumbe
     }
 }
 
-unsigned int readStartCluster(struct FAT32DirEntry* entry) {
+unsigned int read_start_cluster(struct FAT32DirEntry* entry) {
     return ((unsigned int)entry->firstClusterHigh << 16) | entry->firstClusterLow;
 }
 
@@ -154,7 +154,7 @@ unsigned int get_next_cluster_in_chain(struct Fat32BootSector* boot_sector, unsi
     return nextCluster;
 }
 
-bool isEndOfClusterChain(unsigned int cluster) {
+bool is_end_of_cluster_chain(unsigned int cluster) {
     return cluster >= FAT32_EOC_MIN && cluster <= FAT32_EOC_MAX;
 }
 

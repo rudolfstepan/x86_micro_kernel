@@ -56,7 +56,7 @@ void init_pit(uint32_t frequency) {
 }
 
 void timer_install(uint8_t ms) {
-    printf("Install Timer and set an interval for %d ms\n", ms);
+    //printf("Install Timer and set an interval for %d ms\n", ms);
     init_pit(1000 / ms); // Set PIT frequency based on the desired millisecond interval
 }
 

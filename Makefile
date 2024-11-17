@@ -39,7 +39,7 @@ compile_bootloader:
 	nasm -f elf32 $(SOURCE_DIR)/boot/irq.asm -o $(BOOT_DIR)/_irq.o
 	nasm -f elf32 $(SOURCE_DIR)/boot/syscall.asm -o $(BOOT_DIR)/_syscall.o
 	nasm -f elf32 $(SOURCE_DIR)/boot/stack.asm -o $(BOOT_DIR)/_stack.o
-	nasm -f elf32 $(SOURCE_DIR)/toolchain/trycatch.asm -o $(OUTPUT_DIR)/trycatch.o
+	#nasm -f elf32 $(SOURCE_DIR)/toolchain/trycatch.asm -o $(OUTPUT_DIR)/trycatch.o
 
 # Compile filesystem sources
 compile_filesystem:
@@ -76,45 +76,44 @@ link_kernel:
 	@echo "Linking kernel..."
 	ld $(LD_FLAGS) -T klink.ld -o $(OUTPUT_DIR)/kernel.bin $(OUTPUT_DIR)/kernel/memory.o \
 	$(BOOT_DIR)/_bootloader.o $(BOOT_DIR)/_multiboot.o $(BOOT_DIR)/_gdt.o $(BOOT_DIR)/_idt.o $(BOOT_DIR)/_isr.o $(BOOT_DIR)/_irq.o $(BOOT_DIR)/_syscall.o $(BOOT_DIR)/_stack.o \
-	$(OUTPUT_DIR)/kernel/gdt.o $(OUTPUT_DIR)/kernel/idt.o $(OUTPUT_DIR)/trycatch.o $(OUTPUT_DIR)/kernel/isr.o $(OUTPUT_DIR)/kernel/irq.o $(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/kernel.o $(OUTPUT_DIR)/kernel/prg.o $(OUTPUT_DIR)/kernel/command.o \
+	$(OUTPUT_DIR)/kernel/gdt.o $(OUTPUT_DIR)/kernel/idt.o $(OUTPUT_DIR)/kernel/isr.o $(OUTPUT_DIR)/kernel/irq.o $(OUTPUT_DIR)/kernel/pit.o $(OUTPUT_DIR)/kernel/kernel.o $(OUTPUT_DIR)/kernel/prg.o $(OUTPUT_DIR)/kernel/command.o \
 	$(OUTPUT_DIR)/kernel/process.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
 	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
 	
 # Link CLI programs
 link_cli:
-	@echo "Linking cli_date..."
-	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/date.elf $(CLI_DIR)/date.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
-	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o $(OUTPUT_DIR)/trycatch.o
+	# @echo "Linking cli_date..."
+	# ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/date.elf $(CLI_DIR)/date.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
+	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o $(OUTPUT_DIR)/trycatch.o
 	
-	@echo "Linking cli_dir..."
-	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
-	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o $(OUTPUT_DIR)/trycatch.o
+	# @echo "Linking cli_dir..."
+	# ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
+	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o $(OUTPUT_DIR)/trycatch.o
 
 	@echo "Linking cli_test..."
-	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/test.elf $(CLI_DIR)/test.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
-	$(OUTPUT_DIR)/trycatch.o $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
+	#ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/test.elf $(CLI_DIR)/test.o $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
 
 # Copy binaries
 copy_binaries:
 	@echo "Copying binaries..."
-	objcopy -O binary $(CLI_DIR)/date.elf $(CLI_DIR)/date.prg
-	objcopy -O binary $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.prg
-	objcopy -O binary $(CLI_DIR)/test.elf $(CLI_DIR)/test.prg
+	# objcopy -O binary $(CLI_DIR)/date.elf $(CLI_DIR)/date.prg
+	# objcopy -O binary $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.prg
+	# objcopy -O binary $(CLI_DIR)/test.elf $(CLI_DIR)/test.prg
 
 mount:
-	@echo "Mounting disk image..."
-	if [ ! -d $(MOUNT_DIR) ]; then \
-		echo "Creating $(MOUNT_DIR) directory"; \
-		mkdir -p $(MOUNT_DIR); \
-	fi
-	sudo mount ./disk.img $(MOUNT_DIR)
-	sudo cp $(CLI_DIR)/date.prg $(MOUNT_DIR)/
-	sudo cp $(CLI_DIR)/dir.prg $(MOUNT_DIR)/
-	sudo cp $(CLI_DIR)/test.prg $(MOUNT_DIR)/
-	sudo umount $(MOUNT_DIR)
+	# @echo "Mounting disk image..."
+	# if [ ! -d $(MOUNT_DIR) ]; then \
+	# 	echo "Creating $(MOUNT_DIR) directory"; \
+	# 	mkdir -p $(MOUNT_DIR); \
+	# fi
+	# sudo mount ./disk.img $(MOUNT_DIR)
+	# sudo cp $(CLI_DIR)/date.prg $(MOUNT_DIR)/
+	# sudo cp $(CLI_DIR)/dir.prg $(MOUNT_DIR)/
+	# sudo cp $(CLI_DIR)/test.prg $(MOUNT_DIR)/
+	# sudo umount $(MOUNT_DIR)
 
-	@echo "Converting disk image to VMDK format..."
-	qemu-img convert -f raw -O vmdk ./disk.img ./disk.vmdk
+	# @echo "Converting disk image to VMDK format..."
+	# qemu-img convert -f raw -O vmdk ./disk.img ./disk.vmdk
 
 iso:
 	@echo "Creating ISO image..."

@@ -8,6 +8,27 @@
 #include <stddef.h>
 
 
+
+// int create_directory(const char* path) {
+
+//     return -1;
+// }
+// int delete_directory(const char* path) {
+
+//     return -1;
+// }
+// int create_file(const char* path) {
+
+//     return -1;
+// }
+// int delete_file(const char* path) {
+
+//     return -1;
+// }
+
+
+
+
 void print_raw_boot_sector(uint16_t* data, size_t length) {
     printf("Boot sector raw data:\n");
     for (size_t i = 0; i < length; i++) {

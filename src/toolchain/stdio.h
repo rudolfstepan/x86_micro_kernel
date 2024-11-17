@@ -14,6 +14,7 @@
 #define INT_MIN (-2147483648)
 #endif
 
+void* syscall(int syscall_index, void* parameter1, void* parameter2, void* parameter3);
 
 // File Handling Functions
 int mkfile(const char* path);                                   // create file

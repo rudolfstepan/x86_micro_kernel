@@ -5,12 +5,13 @@
 #include <stdarg.h>
 #include <stddef.h>
 
+
 #include "filesystem/filesystem.h"
 #include "filesystem/fat32/fat32.h"
 #include "filesystem/fat12/fat12.h"
 #include "drivers/io/io.h"
-
 #include "drivers/video/video.h"
+
 
 // for memory dump
 #define BYTES_PER_LINE 16
@@ -21,17 +22,39 @@
 #define PIT_CHANNEL_2_PORT 0x42
 #define PC_SPEAKER_PORT 0x61
 
+static inline int is_kernel_context() {
+    unsigned short cs;
+    asm volatile ("mov %%cs, %0" : "=r" (cs));
+    return (cs & 3) == 0; // CPL (Current Privilege Level) 0 means kernel mode
+}
+
+void* syscall(int syscall_index, void* parameter1, void* parameter2, void* parameter3) {
+    void* return_value;
+    __asm__ volatile(
+        "int $0x80\n"       // Trigger syscall interrupt
+        : "=a"(return_value) // Output: Get return value from EAX
+        : "a"(syscall_index), "b"(parameter1), "c"(parameter2), "d"(parameter3) // Inputs
+        : "memory"          // Clobbers
+    );
+    return return_value;     // Return the value in EAX
+}
 
 // -----------------------------------------------------------------
 // Directory Handling Functions
 // the following functions are defined in the filesystem/fat32/fat32.c file
 // -----------------------------------------------------------------
 int mkdir(const char* path, uint8_t mode) {
-    return create_directory(path);
+    if(is_kernel_context()) {
+        return fat32_create_dir(path);
+    }
+    return -1;
 }
 
 int rmdir(const char* path) {
-    return delete_directory(path);
+    if(is_kernel_context()) {
+        return fat32_delete_dir(path);
+    }
+    return -1;
 }
 
 // struct dirent* readdir(DIR* dirp) {
@@ -39,18 +62,21 @@ int rmdir(const char* path) {
 // }
 
 int readdir(const char* path, char* buffer, unsigned int* size, uint8_t dt) {
-    drive_type_t driveType = (drive_type_t)dt;
-    
-    if (driveType == DRIVE_TYPE_NONE) {
-        printf("Invalid drive type\n");
-        return -1;
+    if(is_kernel_context()) {
+        drive_type_t driveType = (drive_type_t)dt;
+        
+        if (driveType == DRIVE_TYPE_NONE) {
+            printf("Invalid drive type\n");
+            return -1;
+        }
+        if (driveType == DRIVE_TYPE_ATA) {
+            return fat32_read_dir(path);
+        }
+        if (driveType == DRIVE_TYPE_FDD) {
+            return fat12_read_dir(path);
+        }
     }
-    if (driveType == DRIVE_TYPE_ATA) {
-        return fat32_read_dir(path);
-    }
-    if (driveType == DRIVE_TYPE_FDD) {
-        return fat12_read_dir(path);
-    }
+
     return -1;
 }
 
@@ -59,19 +85,31 @@ int readdir(const char* path, char* buffer, unsigned int* size, uint8_t dt) {
 // -----------------------------------------------------------------
 
 FILE* fopen(const char* filename, const char* mode) {
-    return fat32_open_file(filename, mode);
+    if(is_kernel_context()) {
+        return fat32_open_file(filename, mode);
+    }
+    return NULL;
 }
 
 size_t fread(void* buffer, size_t size, size_t count, FILE* stream) {
-    return fat32_read_file(stream, buffer, size, count);
+    if(is_kernel_context()) {
+        return fat32_read_file(stream, buffer, size, count);
+    }
+    return 0;
 }
 
 int remove(const char* path) {
-    return delete_file(path);
+    if(is_kernel_context()) {
+        return fat32_delete_file(path);
+    }
+    return -1;
 }
 
 int mkfile(const char* path) {
-    return create_file(path);
+    if(is_kernel_context()) {
+        return fat32_create_file(path);
+    }
+    return -1;
 }
 
 // -----------------------------------------------------------------
@@ -203,17 +241,11 @@ void int_to_str2(int value, char* str, int base) {
     str[i] = '\0';
 }
 
-static inline int is_kernel_context() {
-    unsigned short cs;
-    asm volatile ("mov %%cs, %0" : "=r" (cs));
-    return (cs & 3) == 0; // CPL (Current Privilege Level) 0 means kernel mode
-}
-
 void putchar(char c) {
     if (is_kernel_context()) {
         vga_write_char(c);
     } else {
-        syscall(SYS_TERMINAL_PUTCHAR, (void*)(uintptr_t)c, NULL, NULL);
+         syscall(SYS_TERMINAL_PUTCHAR, (void*)(uintptr_t)c, NULL, NULL);
     }
 }
 
@@ -650,6 +682,8 @@ void memory_dump(uint32_t start_address, uint32_t end_address) {
 
 // Set the PIT to the desired frequency for the beep
 void set_pit_frequency(uint32_t frequency) {
+#ifdef __kernel__
+
     uint32_t divisor = 1193180 / frequency; // Calculate the divisor (PIT runs at ~1.19318 MHz)
     
     // Send command byte to PIT control port (select channel 2, mode 3, binary mode)
@@ -660,24 +694,31 @@ void set_pit_frequency(uint32_t frequency) {
     
     // Send high byte of divisor
     outb(PIT_CHANNEL_2_PORT, (uint8_t)((divisor >> 8) & 0xFF));
+#endif
+
 }
 
 // Enable the PC speaker
 void enable_pc_speaker() {
+    #ifdef __kernel__
     uint8_t tmp = inb(PC_SPEAKER_PORT);
     if (!(tmp & 0x03)) { // Check if the speaker is already enabled
         outb(PC_SPEAKER_PORT, tmp | 0x03); // Turn on the speaker
     }
+    #endif
 }
 
 // Disable the PC speaker
 void disable_pc_speaker() {
+    #ifdef __kernel__
     uint8_t tmp = inb(PC_SPEAKER_PORT);
     outb(PC_SPEAKER_PORT, tmp & 0xFC); // Turn off the speaker
+    #endif
 }
 
 // Function to create a beep sound
 void beep(uint32_t frequency, uint32_t duration_ms) {
+    #ifdef __kernel__
     set_pit_frequency(frequency);
     enable_pc_speaker();
 
@@ -688,6 +729,6 @@ void beep(uint32_t frequency, uint32_t duration_ms) {
     
     disable_pc_speaker();
 
-    //printf("Beep finished\n");
+    #endif
 }
 

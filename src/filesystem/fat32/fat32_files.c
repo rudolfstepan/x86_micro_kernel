@@ -61,25 +61,13 @@ unsigned int readFileData(unsigned int startCluster, char* buffer, unsigned int 
         currentCluster = get_next_cluster_in_chain(&boot_sector, currentCluster);
 
         // Check if we have reached the end of the file or if an invalid cluster is encountered
-        if (isEndOfClusterChain(currentCluster) || currentCluster == INVALID_CLUSTER) {
+        if (is_end_of_cluster_chain(currentCluster) || currentCluster == INVALID_CLUSTER) {
             break;
         }
     }
 
     // Return the total number of bytes read
     return totalBytesRead;
-}
-
-int fat32_load_file(const char* filename, void* loadAddress) {
-    struct FAT32DirEntry* entry = findFileInDirectory(filename);
-    if (entry == NULL) {
-        printf("File %s not found for loading into buffer.\n", filename);
-        return 0; // we return 0 if the file was not found which is the size of the file
-    }
-    unsigned int fileSize = entry->fileSize;
-    unsigned int startCluster = readStartCluster(entry);
-    // Assuming readFileData is modified to take a pointer to the load address
-    return readFileDataToAddress(startCluster, loadAddress, fileSize);
 }
 
 int readFileDataToAddress(unsigned int startCluster, void* loadAddress, unsigned int fileSize) {
@@ -101,35 +89,47 @@ int readFileDataToAddress(unsigned int startCluster, void* loadAddress, unsigned
         // Get the next cluster in the chain
         currentCluster = get_next_cluster_in_chain(&boot_sector, currentCluster);
         // Check if we have reached the end of the file
-        if (isEndOfClusterChain(currentCluster)) {
+        if (is_end_of_cluster_chain(currentCluster)) {
             break;
         }
     }
     return fileSize;
 }
 
-void openAndLoadFile(const char* filename) {
+int fat32_load_file(const char* filename, void* loadAddress) {
     struct FAT32DirEntry* entry = findFileInDirectory(filename);
     if (entry == NULL) {
-        printf("File not found.\n");
-        return;
+        printf("File %s not found for loading into buffer.\n", filename);
+        return 0; // we return 0 if the file was not found which is the size of the file
     }
-    unsigned int startCluster = readStartCluster(entry);
-    int fileSize = entry->fileSize;
-    char* buffer = malloc(fileSize);
-    if (buffer == NULL) {
-        printf("Not enough memory.\n");
-        return;
-    }
-    readFileData(startCluster, buffer, sizeof(buffer), fileSize);
-
-    // Process the file data in bufferb
-    // for(int i = 0; i < fileSize; i++){
-    //     printf("%c", buffer[i]);
-    // }
-    free(entry); // Free the memory after use
-    free(buffer); // Free the memory after use
+    unsigned int fileSize = entry->fileSize;
+    unsigned int startCluster = read_start_cluster(entry);
+    // Assuming readFileData is modified to take a pointer to the load address
+    return readFileDataToAddress(startCluster, loadAddress, fileSize);
 }
+
+// void openAndLoadFile(const char* filename) {
+//     struct FAT32DirEntry* entry = findFileInDirectory(filename);
+//     if (entry == NULL) {
+//         printf("File not found.\n");
+//         return;
+//     }
+//     unsigned int startCluster = read_start_cluster(entry);
+//     int fileSize = entry->fileSize;
+//     char* buffer = malloc(fileSize);
+//     if (buffer == NULL) {
+//         printf("Not enough memory.\n");
+//         return;
+//     }
+//     readFileData(startCluster, buffer, sizeof(buffer), fileSize);
+
+//     // Process the file data in bufferb
+//     // for(int i = 0; i < fileSize; i++){
+//     //     printf("%c", buffer[i]);
+//     // }
+//     free(entry); // Free the memory after use
+//     free(buffer); // Free the memory after use
+// }
 
 // Function to find a file in the current directory
 struct FAT32DirEntry* findFileInDirectory(const char* filename) {
@@ -179,7 +179,7 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
     return NULL; // File not found
 }
 
-bool create_file(const char* filename) {
+bool fat32_create_file(const char* filename) {
     // 1. Find a free cluster for the new file
     unsigned int newFileCluster = find_free_cluster(&boot_sector);
     if (newFileCluster == INVALID_CLUSTER) {
@@ -199,7 +199,7 @@ bool create_file(const char* filename) {
     return true;
 }
 
-bool delete_file(const char* filename) {
+bool fat32_delete_file(const char* filename) {
     // 1. Find the directory entry for the file to delete
     struct FAT32DirEntry* entry = findFileInDirectory(filename);
     if (entry == NULL) {
@@ -207,7 +207,7 @@ bool delete_file(const char* filename) {
         return false;
     }
     // 2. Free the file's cluster chain in the FAT
-    if (!free_cluster_chain(&boot_sector, readStartCluster(entry))) {
+    if (!free_cluster_chain(&boot_sector, read_start_cluster(entry))) {
         printf("Failed to free the file's cluster chain.\n");
         return false;
     }
@@ -227,7 +227,7 @@ FILE* fat32_open_file(const char* filename, const char* mode) {
         return NULL;
     }
 
-    unsigned int startCluster = readStartCluster(entry);
+    unsigned int startCluster = read_start_cluster(entry);
     int fileSize = entry->fileSize;
 
     FILE* file = malloc(sizeof(FILE));

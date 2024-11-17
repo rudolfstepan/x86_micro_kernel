@@ -164,14 +164,14 @@ void divide_by_zero_handler(Registers* r) {
     printf("Divide by zero exception caught!\n");
     // printf("Current context in handler: %p\n", (void*)current_try_context);
 
-    if (current_try_context) {
-        // printf("current_try_context: ESP=0x%X, EBP=0x%X, EIP=0x%X\n",
-        //        current_try_context->esp, current_try_context->ebp, current_try_context->eip);
-        throw(current_try_context, 1); // Throw the exception
-    } else {
-        //printf("No valid context. Halting.\n");
-        while (1); // Halt the system
-    }
+    // if (current_try_context) {
+    //     // printf("current_try_context: ESP=0x%X, EBP=0x%X, EIP=0x%X\n",
+    //     //        current_try_context->esp, current_try_context->ebp, current_try_context->eip);
+    //     throw(current_try_context, 1); // Throw the exception
+    // } else {
+    //     //printf("No valid context. Halting.\n");
+         while (1); // Halt the system
+    // }
 }
 
 // Set up the exception handlers

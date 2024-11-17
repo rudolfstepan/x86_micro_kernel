@@ -71,14 +71,10 @@ struct Fat32BootSector {
 #pragma pack(pop)
 
 // external definitions which are defined in fat32.c but used in other files
-//extern struct FILE file;
 extern struct Fat32BootSector boot_sector;
 extern unsigned int current_directory_cluster; // Default root directory cluster for FAT32
-
 extern unsigned short ata_base_address;
 extern bool ata_is_master;
-
-// private functions
 
 // Cluster and Sector Operations
 void read_cluster(struct Fat32BootSector* bs, unsigned int cluster_number, void* buffer);
@@ -96,7 +92,7 @@ bool free_cluster_chain(struct Fat32BootSector* boot_sector, unsigned int startC
 unsigned int find_free_cluster(struct Fat32BootSector* bs);
 unsigned int allocate_new_cluster(struct Fat32BootSector* boot_sector);
 unsigned int get_next_cluster_in_chain(struct Fat32BootSector* bs, unsigned int currentCluster);
-bool isEndOfClusterChain(unsigned int cluster);
+bool is_end_of_cluster_chain(unsigned int cluster);
 
 // Directory and Entry Management
 void initialize_new_directory_entries(struct FAT32DirEntry* entries, unsigned int newDirCluster, unsigned int parentCluster);
@@ -105,16 +101,13 @@ bool add_entry_to_directory(struct Fat32BootSector* bs, unsigned int parentClust
 bool remove_entry_from_directory(struct Fat32BootSector* boot_sector, unsigned int parentCluster, struct FAT32DirEntry* entry);
 unsigned int find_next_cluster(struct Fat32BootSector* bs, const char *dirName, unsigned int currentCluster);
 void read_cluster_dir_entries(unsigned int currentCluster);
-//void read_cluster_dir_entries_to_buffer(unsigned int currentCluster, char *buffer, unsigned int *size);
+bool write_cluster(struct Fat32BootSector* bs, unsigned int cluster, const struct FAT32DirEntry* entries);
+unsigned int read_start_cluster(struct FAT32DirEntry* entry);
 struct FAT32DirEntry* findFileInDirectory(const char* filename);
 bool fat32_change_directory(const char *path);
 
 // File and Data Management
-void openAndLoadFile(const char* filename);
-extern int fat32_load_file(const char* filename, void* loadAddress);
-int readFileDataToAddress(unsigned int startCluster, void* loadAddress, unsigned int fileSize);
-bool write_cluster(struct Fat32BootSector* bs, unsigned int cluster, const struct FAT32DirEntry* entries);
-unsigned int readStartCluster(struct FAT32DirEntry* entry);
+int fat32_load_file(const char* filename, void* loadAddress);
 
 // Formatting and Utility Functions
 void formatFilename(char* dest, unsigned char* src);
@@ -126,16 +119,15 @@ void set_fat32_time(unsigned short* time, unsigned short* date);
 int fat32_init_fs(unsigned short base, bool ata_is_master);
 
 // directory operations
-void read_directory();
 bool fat32_read_dir(const char *path);
-bool create_directory(const char* dirname);
-bool delete_directory(const char* dirname);
+bool fat32_create_dir(const char* dirname);
+bool fat32_delete_dir(const char* dirname);
 
 // file operations
 FILE* fat32_open_file(const char* filename, const char* mode);
 int fat32_read_file(FILE* file, void* buffer, unsigned int buffer_size, unsigned int bytesToRead);
-bool create_file(const char* filename);
-bool delete_file(const char* filename);
+bool fat32_create_file(const char* filename);
+bool fat32_delete_file(const char* filename);
 
 void ata_debug_bootsector(drive_t* drive);
 

@@ -14,7 +14,10 @@
 			"types.h": "c",
 			"stat.h": "c",
 			"stdbool.h": "c",
-			"string.h": "c"
+			"string.h": "c",
+			"filesystem.h": "c",
+			"fat12.h": "c",
+			"fat32.h": "c"
 		}
 	}
 }

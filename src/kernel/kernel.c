@@ -1,3 +1,5 @@
+#define __kernel_context__
+
 
 #include <stdbool.h>
 #include "command.h"
@@ -203,7 +205,7 @@ void parse_multiboot_info(multiboot_info_t *mb_info) {
 // multiboot_info_ptr: a pointer to the multiboot information structure
 //---------------------------------------------------------------------------------------------
 void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info) {
-    parse_multiboot_info(multiboot_info);
+    //parse_multiboot_info(multiboot_info);
     initialize_memory_system();
 
     gdt_install();
