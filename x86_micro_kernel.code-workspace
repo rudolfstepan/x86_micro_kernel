@@ -17,7 +17,8 @@
 			"string.h": "c",
 			"filesystem.h": "c",
 			"fat12.h": "c",
-			"fat32.h": "c"
+			"fat32.h": "c",
+			"ata.h": "c"
 		}
 	}
 }

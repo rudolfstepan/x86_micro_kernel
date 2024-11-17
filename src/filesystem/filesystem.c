@@ -8,37 +8,59 @@
 #include <stddef.h>
 
 
+// initialize the fat32 filesystem class
+fat32_class_t fat32;
 
-// int create_directory(const char* path) {
+void ctor_fat32_class(fat32_class_t* fat32) {
+    // Cluster and Sector Operations
+    fat32->read_cluster = read_cluster;
+    fat32->cluster_to_sector = cluster_to_sector;
+    fat32->get_entries_per_cluster = get_entries_per_cluster;
+    fat32->get_total_clusters = get_total_clusters;
+    fat32->get_first_data_sector = get_first_data_sector;
 
-//     return -1;
-// }
-// int delete_directory(const char* path) {
+    // FAT Table Operations
+    fat32->read_fat_entry = read_fat_entry;
+    fat32->write_fat_entry = write_fat_entry;
+    fat32->mark_cluster_in_fat = mark_cluster_in_fat;
+    fat32->link_cluster_to_chain = link_cluster_to_chain;
+    fat32->free_cluster_chain = free_cluster_chain;
+    fat32->find_free_cluster = find_free_cluster;
+    fat32->allocate_new_cluster = allocate_new_cluster;
+    fat32->get_next_cluster_in_chain = get_next_cluster_in_chain;
+    fat32->is_end_of_cluster_chain = is_end_of_cluster_chain;
 
-//     return -1;
-// }
-// int create_file(const char* path) {
+    // Directory and Entry Management
+    fat32->initialize_new_directory_entries = initialize_new_directory_entries;
+    fat32->create_directory_entry = create_directory_entry;
+    fat32->add_entry_to_directory = add_entry_to_directory;
+    fat32->remove_entry_from_directory = remove_entry_from_directory;
+    fat32->find_next_cluster = find_next_cluster;
+    fat32->read_cluster_dir_entries = read_cluster_dir_entries;
+    fat32->write_cluster = write_cluster;
+    fat32->read_start_cluster = read_start_cluster;
+    fat32->findFileInDirectory = findFileInDirectory;
+    fat32->fat32_change_directory = fat32_change_directory;
 
-//     return -1;
-// }
-// int delete_file(const char* path) {
+    // File and Data Management
+    fat32->fat32_load_file = fat32_load_file;
 
-//     return -1;
-// }
+    // Formatting and Utility Functions
+    fat32->formatFilename = formatFilename;
+    fat32->convert_to_83_format = convert_to_83_format;
+    fat32->compare_names = compare_names;
+    fat32->set_fat32_time = set_fat32_time;
 
+    // Public functions
+    fat32->fat32_init_fs = fat32_init_fs;
 
-
-
-void print_raw_boot_sector(uint16_t* data, size_t length) {
-    printf("Boot sector raw data:\n");
-    for (size_t i = 0; i < length; i++) {
-        printf("%04X ", data[i]);
-        if ((i + 1) % 16 == 0) {
-            printf("\n");
-        }
-    }
-    printf("\n");
+    // Directory operations
+    fat32->fat32_read_dir = fat32_read_dir;
+    fat32->fat32_create_dir = fat32_create_dir;
+    fat32->fat32_delete_dir = fat32_delete_dir;
 }
+
+
 
 // Function to initialize the file system on a given drive
 void init_fs(drive_t* drive) {
@@ -68,7 +90,7 @@ void init_fs(drive_t* drive) {
         memcpy(fs_type, boot_sector->file_system_type, 8);
         fs_type[8] = '\0';  // Ensure null termination
 
-        printf("Filesystem type: %s\n", fs_type);
+        //printf("Filesystem type: %s\n", fs_type);
 
         // Detect filesystem type by examining the boot sector
         if (strcmp(fs_type, "FAT12   ") == 0) {
@@ -79,7 +101,15 @@ void init_fs(drive_t* drive) {
             //fat16_init_fs(drive->base, drive->is_master);
         } else if (strcmp(fs_type, "FAT32   ") == 0) {
             printf("Detected FAT32 filesystem on drive %s.\n", drive->name);
-            fat32_init_fs(drive->base, drive->is_master);
+            //fat32_init_fs(drive->base, drive->is_master);
+
+            // initialize the fat32 class
+            if(fat32.add_entry_to_directory == NULL) {
+                ctor_fat32_class(&fat32);
+            }
+            // initialize the fat32 filesystem
+            fat32.fat32_init_fs(drive->base, drive->is_master);
+
         } else if (memcmp(boot_sector->oem_name, "NTFS    ", 8) == 0) {
             printf("Detected NTFS filesystem on drive %s.\n", drive->name);
             //ntfs_init_fs(drive->base, drive->is_master);
@@ -93,3 +123,13 @@ void init_fs(drive_t* drive) {
 
 }
 
+void print_raw_boot_sector(uint16_t* data, size_t length) {
+    printf("Boot sector raw data:\n");
+    for (size_t i = 0; i < length; i++) {
+        printf("%04X ", data[i]);
+        if ((i + 1) % 16 == 0) {
+            printf("\n");
+        }
+    }
+    printf("\n");
+}
