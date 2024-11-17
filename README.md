@@ -72,8 +72,8 @@ dump <start_address> <end_address> - Hex dump of a given range in memory
   sudo apt-get install gcc
 - nasm:
   sudo apt-get install nasm
-- mkfs
-  apt-get install dosfstools
+- mkfs:
+  sudo apt-get install dosfstools
 
 ## Create the image and run the emulation
 use the attached Makefile to build and run
