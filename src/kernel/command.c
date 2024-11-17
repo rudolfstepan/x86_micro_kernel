@@ -148,11 +148,7 @@ void handle_mount(int arg_count, char** arguments) {
             case DRIVE_TYPE_ATA:
                 //printf("Init fs on ATA drive %s: %s with %u sectors\n", current_drive->name, current_drive->model, current_drive->sectors);
                 // Initialize file system for ATA drive
-
                 init_fs(current_drive);
-
-
-                // fat32_init_fs(current_drive->base, current_drive->is_master);
                 // strcpy(current_path, "/");
                 break;
             case DRIVE_TYPE_FDD:

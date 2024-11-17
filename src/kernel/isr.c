@@ -161,7 +161,7 @@ void generic_exception_handler(Registers* r) {
 
 // Divide by zero handler (specific override)
 void divide_by_zero_handler(Registers* r) {
-    //printf("Divide by zero exception caught!\n");
+    printf("Divide by zero exception caught!\n");
     // printf("Current context in handler: %p\n", (void*)current_try_context);
 
     if (current_try_context) {
