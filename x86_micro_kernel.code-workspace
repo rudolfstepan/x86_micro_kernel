@@ -12,7 +12,9 @@
 			"vcruntime.h": "c",
 			"stdlib.h": "c",
 			"types.h": "c",
-			"stat.h": "c"
+			"stat.h": "c",
+			"stdbool.h": "c",
+			"string.h": "c"
 		}
 	}
 }

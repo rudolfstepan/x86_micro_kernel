@@ -3,7 +3,6 @@
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
 #include "toolchain/strings.h"
-#include "drivers/keyboard/keyboard.h"
 
 // Constants
 #define MAX_PATH_LENGTH 256

@@ -108,6 +108,8 @@ void openFile(const char* path) {
 // Command handler functions
 // ---------------------------------------------------------------------------------------------
 void handle_mem(int arg_count, char** arguments) {
+    // print the current memory map
+    // get the memory map from the bootloader
     //print_memory_map(sys_mb_info);
 }
 

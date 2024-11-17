@@ -5,7 +5,7 @@
 #include "sys.h"
 #include "pit.h"
 
-#include "drivers/keyboard/keyboard.h"
+#include "drivers/kb/kb.h"
 #include "drivers/rtc/rtc.h"
 #include "drivers/video/video.h"
 #include "drivers/io/io.h"
@@ -18,275 +18,8 @@
 #include "drivers/ata/ata.h"
 #include "drivers/fdd/fdd.h"
 
-#include "multibootheader.h"
-
-extern char _kernel_end;  // Defined by the linker script
-
-#define HEAP_START  ((void*)(&_kernel_end))
-#define HEAP_END    (void*)0x500000  // End of heap (5MB)
-#define ALIGN_UP(addr, align) (((addr) + ((align)-1)) & ~((align)-1))
-#define HEAP_START_ALIGNED ALIGN_UP((size_t)HEAP_START, 16)
-#define BLOCK_SIZE sizeof(memory_block)
-
-typedef struct memory_block {
-    size_t size;
-    int free;
-    struct memory_block *next;
-} memory_block;
-
-memory_block *freeList = (memory_block*)HEAP_START;
-
-void initialize_memory_system() {
-    freeList = (memory_block*)HEAP_START_ALIGNED;
-    freeList->size = (size_t)HEAP_END - (size_t)HEAP_START_ALIGNED - BLOCK_SIZE;
-    freeList->free = 1;
-    freeList->next = NULL;
-
-    printf("Aligned HEAP_START: 0x%p\n", freeList);
-}
-
-void k_free(void* ptr) {
-    if (!ptr) return;
-
-    memory_block* block = (memory_block*)((char*)ptr - BLOCK_SIZE);
-    block->free = 1;
-
-    // Merge with next block if it's free
-    if (block->next && block->next->free) {
-        block->size += block->next->size + BLOCK_SIZE;
-        block->next = block->next->next;
-    }
-
-    // Merge with previous block if it's free
-    memory_block* current = freeList;
-    while (current) {
-        if (current->next == block && current->free) {
-            current->size += block->size + BLOCK_SIZE;
-            current->next = block->next;
-            break;
-        }
-        current = current->next;
-    }
-}
-
-void* k_malloc(size_t size) {
-    memory_block* current = freeList;
-
-    while (current) {
-        if (current->free && current->size >= size) {
-            current->free = 0; // Mark as allocated
-
-            // Optionally split the block if it's larger than needed
-            if (current->size > size + BLOCK_SIZE) {
-                memory_block* newBlock = (memory_block*)((char*)current + BLOCK_SIZE + size);
-                newBlock->size = current->size - size - BLOCK_SIZE;
-                newBlock->free = 1;
-                newBlock->next = current->next;
-
-                current->size = size;
-                current->next = newBlock;
-            }
-
-            return (void*)((char*)current + BLOCK_SIZE); // Return usable memory
-        }
-        current = current->next;
-    }
-
-    // Out of memory
-    return NULL;
-}
-
-void* k_realloc(void *ptr, size_t new_size) {
-    // If `ptr` is NULL, behave like `malloc`
-    if (ptr == NULL) {
-        return k_malloc(new_size);
-    }
-
-    // If `new_size` is 0, behave like `free` and return NULL
-    if (new_size == 0) {
-        k_free(ptr);
-        return NULL;
-    }
-
-    // Get the memory block header
-    memory_block *block = (memory_block*)((char*)ptr - BLOCK_SIZE);
-    size_t old_size = block->size;
-
-    // If the new size is the same or smaller, reuse the existing block
-    if (new_size <= old_size) {
-        return ptr; // No need to reallocate
-    }
-
-    // Allocate a new memory block large enough for the new size
-    void *new_ptr = k_malloc(new_size);
-    if (!new_ptr) {
-        // If allocation fails, return NULL without affecting the old block
-        return NULL;
-    }
-
-    // Copy data from the old block to the new block
-    size_t copy_size = (old_size < new_size) ? old_size : new_size;
-    memmove(new_ptr, ptr, copy_size); // Use `memmove` to handle overlapping regions
-
-    // Free the old memory block
-    k_free(ptr);
-
-    // Return the pointer to the new memory block
-    return new_ptr;
-}
-
-
-//---------------------------------------------------------------------------------------------
-
-// test methods
-void test_realloc() {
-    void* ptr = k_malloc(10);
-    printf("Allocated: %p\n", ptr);
-
-    ptr = k_realloc(ptr, 20);
-    printf("Reallocated (larger): %p\n", ptr);
-
-    ptr = k_realloc(ptr, 5);
-    printf("Reallocated (smaller): %p\n", ptr);
-
-    k_free(ptr);
-    printf("Memory freed.\n");
-}
-void TestResetAfterFree() {
-    void* firstPtr = k_malloc(1);
-    printf("First allocation: %p\n", firstPtr);
-    k_free(firstPtr); // This should store the initial alignment padding
-    void* secondPtr = k_malloc(1);
-    printf("Second allocation: %p\n", secondPtr);
-    if (firstPtr == secondPtr) {
-        printf("TestResetAfterFree: Passed\n");
-    } else {
-        printf("TestResetAfterFree: Failed. Expected: %p, Got: %p\n", firstPtr, secondPtr);
-    }
-}
-void TestMultipleFrees() {
-    k_free(NULL);
-    k_free(NULL);
-    void* ptr = k_malloc(1);
-
-    if (ptr != NULL) {
-        //printf("TestMultipleFrees: Passed\n");
-    } else {
-        printf("TestMultipleFrees: Failed\n");
-    }
-}
-void TestSetMemory() {
-    char* buffer = (char*)k_malloc(10);
-    memset(buffer, 'A', 10);
-
-    int pass = 1;
-    for (int i = 0; i < 10; i++) {
-        if (buffer[i] != 'A') {
-            pass = 0;
-            break;
-        }
-    }
-
-    if(pass) {
-        //printf("TestSetMemory: Passed\n");
-    } else {
-        printf("TestSetMemory: Failed\n");
-    }
-}
-void TestSetZero() {
-    char* buffer = (char*)k_malloc(10);
-    memset(buffer, 0, 10);
-
-    int pass = 1;
-    for (int i = 0; i < 10; i++) {
-        if (buffer[i] != 0) {
-            pass = 0;
-            break;
-        }
-    }
-
-    if(pass) {
-        //printf("TestSetZero: Passed\n");
-    } else {
-        printf("TestSetZero: Failed\n");
-    }
-}
-void TestNullPointerMemset() {
-    if (memset(NULL, 0, 10) == NULL) {
-        //printf("TestNullPointerMemset: Passed\n");
-    } else {
-        printf("TestNullPointerMemset: Failed\n");
-    }
-}
-void TestCopyNonOverlapping() {
-    char src[10] = "123456789";
-    char dest[10];
-    memcpy(dest, src, 10);
-
-    int pass = 1;
-    for (int i = 0; i < 10; i++) {
-        if (dest[i] != src[i]) {
-            pass = 0;
-            break;
-        }
-    }
-
-    if(pass) {
-        //printf("TestCopyNonOverlapping: Passed\n");
-    } else {
-        printf("TestCopyNonOverlapping: Failed\n");
-    }
-}
-void TestCopyOverlapping() {
-    char buffer[20] = "123456789";
-    memcpy(buffer + 4, buffer, 10);
-
-    int pass = 1;
-    for (int i = 0; i < 10; i++) {
-        if (buffer[i + 4] != buffer[i]) {
-            pass = 0;
-            break;
-        }
-    }
-
-    if(pass) {
-        //printf("TestCopyOverlapping: Passed\n");
-    } else {
-        printf("TestCopyOverlapping: Failed\n");
-    }
-}
-void TestNullPointerSrc() {
-    char dest[10];
-    if (memcpy(dest, NULL, 10) == NULL) {
-        //printf("TestNullPointerSrc: Passed\n");
-    } else {
-        printf("TestNullPointerSrc: Failed\n");
-    }
-}
-void TestNullPointerDest() {
-    char src[10] = "123456789";
-    if (memcpy(NULL, src, 10) == NULL) {
-        //printf("TestNullPointerDest: Passed\n");
-    } else {
-        printf("TestNullPointerDest: Failed\n");
-    }
-}
-
-int test_memory() {
-    printf("Testing Memory...\n");
-    test_realloc();
-    TestResetAfterFree();
-    TestMultipleFrees();
-    TestSetMemory();
-    TestSetZero();
-    TestNullPointerMemset();
-    TestCopyNonOverlapping();
-    TestCopyOverlapping();
-    TestNullPointerSrc();
-    TestNullPointerDest();
-    printf("done\n");
-    return 0;
-}
+#include "mbheader.h"
+#include "memory.h"
 
 
 //---------------------------------------------------------------------------------------------
@@ -419,35 +152,35 @@ void syscall_handler(void* irq_number) {
 // }
 
 
-void parse_multiboot_info(uint32_t magic, uint32_t* multiboot_info_ptr) {
-    if (magic != MULTIBOOT2_BOOTLOADER_MAGIC) {
-        printf("Invalid magic number: 0x%X\n", magic);
-        return;
-    }
+// void parse_multiboot_info(uint32_t magic, uint32_t* multiboot_info_ptr) {
+//     if (magic != MULTIBOOT2_BOOTLOADER_MAGIC) {
+//         printf("Invalid magic number: 0x%X\n", magic);
+//         return;
+//     }
 
-    uint32_t total_size = *(uint32_t *)multiboot_info_ptr;
-    multiboot_tag_t *tag = (multiboot_tag_t *)(multiboot_info_ptr + 2); // Skip total size and reserved fields
+//     uint32_t total_size = *(uint32_t *)multiboot_info_ptr;
+//     multiboot_tag_t *tag = (multiboot_tag_t *)(multiboot_info_ptr + 2); // Skip total size and reserved fields
 
-    while ((uint8_t *)tag < (uint8_t *)multiboot_info_ptr + total_size) {
-        if (tag->type == MULTIBOOT_TAG_TYPE_MMAP) {
-            multiboot_tag_mmap_t *mmap_tag = (multiboot_tag_mmap_t *)tag;
-            printf("Memory Map:\n");
+//     while ((uint8_t *)tag < (uint8_t *)multiboot_info_ptr + total_size) {
+//         if (tag->type == MULTIBOOT_TAG_TYPE_MMAP) {
+//             multiboot_tag_mmap_t *mmap_tag = (multiboot_tag_mmap_t *)tag;
+//             printf("Memory Map:\n");
 
-            multiboot_mmap_entry_t *entry = mmap_tag->entries;
-            while ((uint8_t *)entry < (uint8_t *)mmap_tag + mmap_tag->size) {
-                printf("  Address: 0x%llX, Length: 0x%llX, Type: %u\n", entry->addr, entry->len, entry->type);
+//             multiboot_mmap_entry_t *entry = mmap_tag->entries;
+//             while ((uint8_t *)entry < (uint8_t *)mmap_tag + mmap_tag->size) {
+//                 printf("  Address: 0x%llX, Length: 0x%llX, Type: %u\n", entry->addr, entry->len, entry->type);
 
-                // Move to the next entry
-                entry = (multiboot_mmap_entry_t *)((uint8_t *)entry + mmap_tag->entry_size);
-            }
-        }
+//                 // Move to the next entry
+//                 entry = (multiboot_mmap_entry_t *)((uint8_t *)entry + mmap_tag->entry_size);
+//             }
+//         }
 
-        // Move to the next tag; align to 8 bytes
-        tag = (multiboot_tag_t *)((uint8_t *)tag + ((tag->size + 7) & ~7));
-    }
+//         // Move to the next tag; align to 8 bytes
+//         tag = (multiboot_tag_t *)((uint8_t *)tag + ((tag->size + 7) & ~7));
+//     }
 
-    printf("Memory map parsing complete.\n");
-}
+//     printf("Memory map parsing complete.\n");
+// }
 
 // initialize attaches drives
 void init_drives()
@@ -526,6 +259,46 @@ void set_graphics_mode() {
     );
 }
 
+void parse_multiboot_info(multiboot_info_t *mb_info) {
+    if (mb_info->flags & MULTIBOOT_FLAG_MEM) {
+        // Memory info available
+        uint32_t mem_lower_kb = mb_info->mem_lower;
+        uint32_t mem_upper_kb = mb_info->mem_upper;
+        printf("Memory: Lower = %u KB, Upper = %u KB\n", mem_lower_kb, mem_upper_kb);
+    }
+
+    if (mb_info->flags & MULTIBOOT_FLAG_BOOT_DEVICE) {
+        // Boot device info available
+        printf("Boot device: 0x%x\n", mb_info->boot_device);
+    }
+
+    if (mb_info->flags & MULTIBOOT_FLAG_CMDLINE) {
+        // Kernel command line available
+        printf("Command line: %s\n", mb_info->cmdline);
+    }
+
+    if (mb_info->flags & MULTIBOOT_FLAG_MODS) {
+        // Modules info available
+        printf("Modules count: %u\n", mb_info->mods_count);
+        for (uint32_t i = 0; i < mb_info->mods_count; i++) {
+            multiboot_module_t *mod = &mb_info->mods_addr[i];
+            printf("Module %u: Start = 0x%x, End = 0x%x, String = %s\n",
+                   i, mod->mod_start, mod->mod_end, mod->string);
+        }
+    }
+
+    if (mb_info->flags & (1 << 6)) { // Bit 6 indicates memory map availability
+        printf("Memory map available:\n");
+        multiboot_mmap_entry_t *mmap = mb_info->mmap_addr;
+        for (uint32_t i = 0; i < mb_info->mmap_length / sizeof(multiboot_mmap_entry_t); i++) {
+            printf("Base Addr = 0x%x%x, Length = 0x%x%x, Type = %u\n",
+                   mmap[i].base_addr_high, mmap[i].base_addr_low,
+                   mmap[i].length_high, mmap[i].length_low,
+                   mmap[i].type);
+        }
+    }
+}
+
 //---------------------------------------------------------------------------------------------
 // kernel_main is the main entry point of the kernel
 // It is called by the bootloader after setting up the environment
@@ -534,8 +307,12 @@ void set_graphics_mode() {
 // multiboot_magic: the magic number passed by the bootloader
 // multiboot_info_ptr: a pointer to the multiboot information structure
 //---------------------------------------------------------------------------------------------
-void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
+void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info) {
     //sys_mb_info = multiboot_info_ptr;
+
+    printf("Parsing multiboot info...\n");
+
+    parse_multiboot_info(multiboot_info);
 
     // //Check if the magic number is correct
     // if (multiboot_magic != MULTIBOOT2_HEADER_MAGIC) {
@@ -560,8 +337,6 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info_ptr) {
     irq_install_handler(6, fdd_irq_handler);
 
     __asm__ __volatile__("sti"); // enable interrupts
-
-    parse_multiboot_info(multiboot_magic, multiboot_info_ptr);
 
     display_welcome_message();
     

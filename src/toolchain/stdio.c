@@ -292,6 +292,11 @@ void print_hex64(uint64_t value) {
     }
 }
 
+/*
+    * printf() implementation
+    * Supports %c, %s, %d, %u, %p, %X format specifiers
+    * Supports width, precision, and padding
+*/
 int printf(const char* format, ...) {
     va_list args;
     va_start(args, format);
@@ -319,11 +324,17 @@ int printf(const char* format, ...) {
                 format++;
             }
 
-            // Parse width value
-            while (*format >= '0' && *format <= '9') {
-                width = width * 10 + (*format - '0');
+            // Parse width: either a numeric value or '*' for dynamic width
+            if (*format == '*') {
+                width = va_arg(args, int);
                 width_specified = true;
                 format++;
+            } else {
+                while (*format >= '0' && *format <= '9') {
+                    width = width * 10 + (*format - '0');
+                    width_specified = true;
+                    format++;
+                }
             }
 
             // Parse precision if present (e.g., %.11s)
@@ -339,7 +350,7 @@ int printf(const char* format, ...) {
             if (strncmp(format, "llX", 3) == 0) {
                 uint64_t llx = va_arg(args, uint64_t);
                 print_hex64(llx);  // This assumes print_hex64 handles width.
-                format += 2;       // Skip past 'llx'
+                format += 2;       // Skip past 'llX'
             } else {
                 switch (*format) {
                 case 'c': {
