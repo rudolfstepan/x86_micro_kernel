@@ -3,3 +3,4 @@ iso/*
 .vscode/*
 kernel.iso
 *.img
+*.vmdk
