@@ -209,7 +209,7 @@ static inline int is_kernel_context() {
     return (cs & 3) == 0; // CPL (Current Privilege Level) 0 means kernel mode
 }
 
-void put_char(char c) {
+void putchar(char c) {
     if (is_kernel_context()) {
         vga_write_char(c);
     } else {
@@ -250,12 +250,12 @@ void print_hex(unsigned int value) {
     char prefix[] = "0x";
     char* s = prefix;
     while (*s) {
-        put_char(*s++);
+        putchar(*s++);
     }
 
     s = hexString;
     while (*s) {
-        put_char(*s++);
+        putchar(*s++);
     }
 }
 
@@ -272,11 +272,11 @@ void print_hex_padded(unsigned int value, int width) {
 
     int num_digits = &hex_buffer[32] - ptr;
     for (int i = 0; i < width - num_digits; ++i) {
-        put_char('0');
+        putchar('0');
     }
 
     while (*ptr) {
-        put_char(*ptr++);
+        putchar(*ptr++);
     }
 }
 
@@ -288,7 +288,7 @@ void print_hex64(uint64_t value) {
         value >>= 4;
     }
     for (int i = 0; i < 16; i++) {
-        put_char(buffer[i]);
+        putchar(buffer[i]);
     }
 }
 
@@ -355,7 +355,7 @@ int printf(const char* format, ...) {
                 switch (*format) {
                 case 'c': {
                     char c = (char)va_arg(args, int);
-                    put_char(c);
+                    putchar(c);
                     break;
                 }
                 case 's': {
@@ -373,18 +373,18 @@ int printf(const char* format, ...) {
                     if (left_align) {
                         // Print the string first, then padding
                         for (int i = 0; i < len; i++) {
-                            put_char(s[i]);
+                            putchar(s[i]);
                         }
                         for (int i = 0; i < pad; i++) {
-                            put_char(' ');
+                            putchar(' ');
                         }
                     } else {
                         // Print padding first, then the string
                         for (int i = 0; i < pad; i++) {
-                            put_char(zero_padding ? '0' : ' ');
+                            putchar(zero_padding ? '0' : ' ');
                         }
                         for (int i = 0; i < len; i++) {
-                            put_char(s[i]);
+                            putchar(s[i]);
                         }
                     }
                     break;
@@ -396,18 +396,18 @@ int printf(const char* format, ...) {
                     int len = strlen(buffer);
                     int pad = width - len;
                     if (width_specified && pad > 0) {
-                        for (int i = 0; i < pad; i++) put_char(zero_padding ? '0' : ' ');
+                        for (int i = 0; i < pad; i++) putchar(zero_padding ? '0' : ' ');
                     }
                     char* s = buffer;
                     while (*s) {
-                        put_char(*s++);
+                        putchar(*s++);
                     }
                     break;
                 }
                 case 'd': {
                     int i = va_arg(args, int);
                     if (i < 0) {
-                        put_char('-');
+                        putchar('-');
                         i = -i;
                     }
 
@@ -416,11 +416,11 @@ int printf(const char* format, ...) {
                     int len = strlen(buffer);
                     int pad = width - len;
                     if (width_specified && pad > 0) {
-                        for (int i = 0; i < pad; i++) put_char(zero_padding ? '0' : ' ');
+                        for (int i = 0; i < pad; i++) putchar(zero_padding ? '0' : ' ');
                     }
                     char* s = buffer;
                     while (*s) {
-                        put_char(*s++);
+                        putchar(*s++);
                     }
                     break;
                 }
@@ -435,14 +435,14 @@ int printf(const char* format, ...) {
                     int_to_hex_str(x, buffer, width, zero_padding); // Adjusted function to handle padding
                     char* s = buffer;
                     while (*s) {
-                        put_char(*s++);
+                        putchar(*s++);
                     }
                     break;
                 }
                 }
             }
         } else {
-            put_char(*format);
+            putchar(*format);
         }
         format++;
     }

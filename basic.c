@@ -1,6 +1,8 @@
 #include <stddef.h>
-//#include "toolchain/stdio.c"
-//#include "toolchain/strings.c"
+#include "src/toolchain/stdio.c"
+#include "src/toolchain/strings.c"
+
+void* stdin = NULL;
 
 //////////////////////////////////////////////////////////////////////
 // A bored enby girl writes a BASIC interpreter in C
@@ -16,13 +18,13 @@ int isspc(char c) { return c == ' ' || c == '\n' || c == '\t'; }
 int isdg(char c) { return c >= '0' && c <= '9'; }
 int atoi(const char* s) { int i=0; for(;*s && isdg(*s);s++) i=i*10+(*s-'0'); return i; }
 char* _CURTOK = NULL;
-char* strtok(char* s) {
-	if  (s != NULL) _CURTOK = s;
-	if  (!(*_CURTOK)) return NULL;
-	for (;*_CURTOK && isspc(*_CURTOK);++_CURTOK); s = _CURTOK;
-	for (;*_CURTOK && !isspc(*_CURTOK);++_CURTOK);
-	if  (!(*_CURTOK)) return NULL;
-	*(_CURTOK++) = 0;
+char* sstrtok(char* s) {
+// 	if  (s != NULL) _CURTOK = s;
+// 	if  (!(*_CURTOK)) return NULL;
+// 	for (;*_CURTOK && isspc(*_CURTOK);++_CURTOK); s = _CURTOK;
+// 	for (;*_CURTOK && !isspc(*_CURTOK);++_CURTOK);
+// 	if  (!(*_CURTOK)) return NULL;
+// 	*(_CURTOK++) = 0;
 	return s;
 }
 //////////////////////////////////////////////////////////////////////
@@ -59,7 +61,7 @@ void lnpush(int v) { _linestack[_linestackpos++] = v; }
 int  lnpop()    { return _linestack[--_linestackpos]; }
 //// data
 // error
-void exit(int);
+//void exit(int);
 void berror(int linenum, const char* e) {
 	if (linenum == -1)
 		printf("ERROR: %s\n", e);
@@ -90,33 +92,33 @@ int cprint(int ln, char* s) {
 	return ln;
 }
 int cinput(int ln, char* s) {
-	char vs[16], vn[16]; scpy(vn, strtok(s));
+	char vs[16], vn[16]; scpy(vn, sstrtok(s));
 	if (!vn) berror(ln, "INVALID ARGS");
 	printf("%s? ", vn); fgets(vs, 15, stdin);
 	setvar(vn, atoi(vs));
 	return ln;
 }
 int cvar(int ln, char *s) {
-	char *tok = strtok(s);
+	char *tok = sstrtok(s);
 	if (!tok) berror(ln, "INVALID ARGS");
 	char vn[16]; scpy(vn, tok);
-	tok = strtok(NULL);
+	tok = sstrtok(NULL);
 	if (!tok) berror(ln, "INVALID ARGS");
 	setvar(vn, emath(tok));
 	return ln;
 }
 int runcmd(int,char*);
 int cif(int ln, char* s) {
-	char *tok = strtok(s);
+	char *tok = sstrtok(s);
 	if (!tok || !*_CURTOK) berror(ln, "INVALID IF STATEMENT");
 	return emath(tok) ? runcmd(ln, _CURTOK) : ln;
 }
 int cgoto(int ln, char* s) {
-	char *tok = strtok(s); if (!tok) berror(ln, "INVALID GOTO");
+	char *tok = sstrtok(s); if (!tok) berror(ln, "INVALID GOTO");
 	return emath(tok)-1;
 }
 int cgosub(int ln, char* s) {
-	char *tok = strtok(s); if (!tok) berror(ln, "INVALID GOSUB");
+	char *tok = sstrtok(s); if (!tok) berror(ln, "INVALID GOSUB");
 	int c=emath(tok); lnpush(ln); return c-1;
 }
 int cret(int ln, char* s) { return lnpop(); }
@@ -171,7 +173,7 @@ void read_program(FILE* stream)
 		if (!*bptr || *bptr == '#') continue;
 		if (!isdg(*bptr)) berror(ln, "PARSER: MISSING NUMBER");
 
-		token = strtok(bptr);
+		token = sstrtok(bptr);
 		pln = atoi(token);
 		scpy(prgm[pln], _CURTOK);
 	}

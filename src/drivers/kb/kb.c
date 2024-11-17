@@ -89,7 +89,7 @@ void kb_handler(void* r) {
                 key -= 32; // Convert to uppercase
             }
             input_buffer[buffer_index++] = key;
-            put_char(key);
+            putchar(key);
         }
     } else {
         // Key release event

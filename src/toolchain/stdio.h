@@ -24,7 +24,7 @@ int mkfile(const char* path);                                   // create file
 int readdir(const char* path, char* buffer, unsigned int *size, uint8_t driveType);// read directory
 
 // Console Functions
-void put_char(char c);
+void putchar(char c);
 int sprintf(char *buffer, const char *format, ...);
 
 // POSIX File Handling Functions
