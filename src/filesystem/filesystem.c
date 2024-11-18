@@ -60,8 +60,6 @@ void ctor_fat32_class(fat32_class_t* fat32) {
     fat32->fat32_delete_dir = fat32_delete_dir;
 }
 
-
-
 // Function to initialize the file system on a given drive
 void init_fs(drive_t* drive) {
     if (drive->type == DRIVE_TYPE_ATA) {
@@ -103,13 +101,9 @@ void init_fs(drive_t* drive) {
             printf("Detected FAT32 filesystem on drive %s.\n", drive->name);
             //fat32_init_fs(drive->base, drive->is_master);
 
-            // initialize the fat32 class
-            if(fat32.add_entry_to_directory == NULL) {
-                ctor_fat32_class(&fat32);
-            }
             // initialize the fat32 filesystem
             fat32.fat32_init_fs(drive->base, drive->is_master);
-
+            
         } else if (memcmp(boot_sector->oem_name, "NTFS    ", 8) == 0) {
             printf("Detected NTFS filesystem on drive %s.\n", drive->name);
             //ntfs_init_fs(drive->base, drive->is_master);

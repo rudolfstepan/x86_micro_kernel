@@ -17,6 +17,7 @@
 #include "toolchain/strings.h"
 
 #include "filesystem/filesystem.h"
+#include "filesystem/fat32/fat32.h"
 #include "drivers/ata/ata.h"
 #include "drivers/fdd/fdd.h"
 
@@ -196,6 +197,7 @@ void parse_multiboot_info(multiboot_info_t *mb_info) {
     }
 }
 
+extern fat32_class_t fat32;
 //---------------------------------------------------------------------------------------------
 // kernel_main is the main entry point of the kernel
 // It is called by the bootloader after setting up the environment
@@ -231,7 +233,9 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info) {
     ata_detect_drives();
     current_drive = ata_get_drive(0);
     if (current_drive) {
-        printf("Drive %s found: %s, Sectors: %u\n", current_drive->name, current_drive->model, current_drive->sectors);
+        // Initialize the FAT32 file system
+        ctor_fat32_class(&fat32);
+
         init_fs(current_drive);
     } else {
         printf("Drive not found.\n");

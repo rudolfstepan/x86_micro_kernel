@@ -181,7 +181,11 @@ void handle_ls(int arg_count, char** arguments) {
     }
     switch (current_drive->type) {
     case DRIVE_TYPE_ATA:
-        fat32_read_dir(directory);
+
+        extern fat32_class_t fat32;
+        ctor_fat32_class(&fat32);
+        fat32.fat32_read_dir(directory);
+
         break;
     case DRIVE_TYPE_FDD:
         // notice that the path is relative to the current directory
