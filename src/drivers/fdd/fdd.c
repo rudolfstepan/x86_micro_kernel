@@ -325,7 +325,7 @@ void dma_prepare_floppy(uint8_t* buffer, uint16_t length, bool read) {
 }
 
 bool _fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
-    printf("Reading sector %d from track %d, head %d, drive %d...\n", sector, track, head, drive);
+    //printf("Reading sector %d from track %d, head %d, drive %d...\n", sector, track, head, drive);
 
     // clear the buffer before reading
     memset(buffer, 0, SECTOR_SIZE);  // Clear the buffer before reading

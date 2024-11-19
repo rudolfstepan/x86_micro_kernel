@@ -56,4 +56,10 @@ void wait_enter_pressed();
 
 void exit(uint8_t status);
 
+// Disable interrupts
+void disable_interrupts();
+
+// Enable interrupts
+void enable_interrupts();
+
 #endif /* STDLIB_H */

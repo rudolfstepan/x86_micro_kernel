@@ -74,35 +74,35 @@ void list_running_processes(int cnt, const char **args);
 
 // Command table
 command_t command_table[MAX_COMMANDS] = {
-    {"HELP", cmd_help},
-    {"CLEAR", cmd_clear},
-    {"ECHO", cmd_echo},
-    {"MEM", cmd_mem},
-    {"DUMP", cmd_dump},
-    {"CLS", cmd_cls},
-    {"LS", cmd_ls},
-    {"CD", cmd_cd},
-    {"DRIVES", cmd_drives},
-    {"MOUNT", cmd_mount},
-    {"MKDIR", cmd_mkdir},
-    {"RMDIR", cmd_rmdir},
-    {"MKFILE", cmd_mkfile},
-    {"RMFILE", cmd_rmfile},
-    {"RUN", cmd_run},
-    {"LOAD", cmd_load},
-    {"SYS", cmd_sys},
-    {"OPEN", cmd_open},
-    {"DATETIME", cmd_read_datetime},
-    {"SETTIME", cmd_set_time},
-    {"SETDATE", cmd_set_date},
-    {"IRQ", cmd_irq},
-    {"SLEEP", cmd_sleep},
-    {"EXIT", cmd_exit},
-    {"FDD", cmd_fdd},
-    {"HDD", cmd_hdd},
-    {"BEEP", cmd_beep},
-    {"WAIT", cmd_wait},
-    {"PID", list_running_processes},
+       {"help", cmd_help},
+    {"clear", cmd_clear},
+    {"echo", cmd_echo},
+    {"mem", cmd_mem},
+    {"dump", cmd_dump},
+    {"cls", cmd_cls},
+    {"ls", cmd_ls},
+    {"cd", cmd_cd},
+    {"drives", cmd_drives},
+    {"mount", cmd_mount},
+    {"mkdir", cmd_mkdir},
+    {"rmdir", cmd_rmdir},
+    {"mkfile", cmd_mkfile},
+    {"rmfile", cmd_rmfile},
+    {"run", cmd_run},
+    {"load", cmd_load},
+    {"sys", cmd_sys},
+    {"open", cmd_open},
+    {"datetime", cmd_read_datetime},
+    {"settime", cmd_set_time},
+    {"setdate", cmd_set_date},
+    {"irq", cmd_irq},
+    {"sleep", cmd_sleep},
+    {"exit", cmd_exit},
+    {"fdd", cmd_fdd},
+    {"hdd", cmd_hdd},
+    {"beep", cmd_beep},
+    {"wait", cmd_wait},
+    {"pid", list_running_processes},
     {NULL, NULL} // End marker
 };
 
@@ -125,28 +125,13 @@ void command_loop() {
     while (1) {
         printf("> "); // Command prompt
         get_input_line(input_line, MAX_LINE_LENGTH);
-
-        if(!is_null_terminated(input_line, MAX_LINE_LENGTH)) {
-            printf("Input line is not null-terminated\n");
-
-            //terminate string
-            input_line[MAX_LINE_LENGTH - 1] = '\0';
-        }
-
-        //str_to_lower(input_line); // Convert input to lowercase
-
         int arg_cnt = split_input(input_line, command, arguments, 10, 128);
-
-        // printf("Arguement count: %d\n", arg_cnt);
-        // for (int i = 0; i < arg_cnt; i++) {
-        //     printf("Arguement %d: %s\n", i, arguments[i]);
-        // }
-
-        
 
         if (!command) {
             continue; // Empty input
         }
+
+        printf("\n");
 
         // Match command
         int found = 0;
@@ -232,10 +217,12 @@ void cmd_clear(int arg_count, const char **args) {
 }
 
 void cmd_echo(int arg_count, const char **args) {
-    if (args) {
-
-        printf("%s\n", args);
+    if(arg_count == 0) {
+        printf("Echo command without arguments\n");
     } else {
+        for (int i = 0; i < arg_count; i++) {
+            printf("%s ", args[i]);
+        }
         printf("\n");
     }
 }

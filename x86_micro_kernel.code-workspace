@@ -18,7 +18,8 @@
 			"filesystem.h": "c",
 			"fat12.h": "c",
 			"fat32.h": "c",
-			"ata.h": "c"
+			"ata.h": "c",
+			"io.h": "c"
 		}
 	}
 }

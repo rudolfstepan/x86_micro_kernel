@@ -1,68 +1,74 @@
 #include "memory.h"
-
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
 #include "toolchain/strings.h"
-#include <stdbool.h>
 #include "drivers/video/video.h"
+#include "drivers/io/io.h"
+#include <stdbool.h>
+#include <stdint.h>
 
-
-extern char _kernel_end;  // Defined by the linker script
+extern char _kernel_end; // Defined by the linker script
 
 size_t total_memory = 0;
 
-#define HEAP_START  ((void*)(&_kernel_end))
-#define HEAP_END    (void*)0x500000  // End of heap (5MB)
+#define HEAP_START ((void*)(&_kernel_end))
+#define HEAP_END ((void*)(0x500000)) // End of heap (5MB)
 #define ALIGN_UP(addr, align) (((addr) + ((align)-1)) & ~((align)-1))
 #define HEAP_START_ALIGNED ALIGN_UP((size_t)HEAP_START, 16)
 #define BLOCK_SIZE sizeof(memory_block)
 
-#include <stdint.h>
-#include "drivers/io/io.h"
-
 #define E820_BUFFER_SIZE 128
-#define E820_ADDRESS 0x500  // Buffer in low memory for E820 entries
+#define FRAME_SIZE 4096 // 4KB
+#define MAX_FRAMES (512 * 1024 * 1024 / FRAME_SIZE) // For 512MB RAM
+
+uint8_t* frame_bitmap; // Dynamically allocate based on total_memory
 
 typedef struct {
-    uint64_t base_addr;  // Base address of the memory region
-    uint64_t length;     // Length of the memory region
-    uint32_t type;       // Type of the memory region
-    uint32_t acpi;       // ACPI attributes
+    uint64_t base_addr; // Base address of the memory region
+    uint64_t length;    // Length of the memory region
+    uint32_t type;      // Type of the memory region
+    uint32_t acpi;      // ACPI attributes
 } __attribute__((packed)) e820_entry_t;
 
 typedef struct memory_block {
     size_t size;
     int free;
-    struct memory_block *next;
+    struct memory_block* next;
 } memory_block;
 
-memory_block *freeList = (memory_block*)HEAP_START;
+memory_block* freeList = NULL;
+
+
 
 void print_memory_size(uint64_t total_memory) {
     uint64_t total_kb = total_memory / (uint64_t)1024;
     uint64_t total_mb = total_kb / (uint64_t)1024;
 
-    printf("**********Total System Memory**********: %d MB\n", total_mb);
+    printf("**********Total System Memory**********: %d MB\n", (int)total_mb);
 }
 
 void initialize_memory_system() {
+    if (total_memory == 0) {
+        printf("Error: total_memory not initialized.\n");
+        return;
+    }
 
     void* heap_start = (void*)ALIGN_UP((size_t)&_kernel_end, 16);
-    void* heap_end = (void*)total_memory; // Use full available memory
+    void* heap_end = (void*)HEAP_END;
 
     freeList = (memory_block*)heap_start;
     freeList->size = (size_t)heap_end - (size_t)heap_start - BLOCK_SIZE;
     freeList->free = 1;
     freeList->next = NULL;
 
+    // Dynamically allocate the frame bitmap
+    size_t bitmap_size = (total_memory / FRAME_SIZE + 7) / 8; // Rounded up
+    frame_bitmap = (uint8_t*)heap_start;
+    memset(frame_bitmap, 0, bitmap_size);
+
     print_memory_size(total_memory);
     printf("Heap Range: 0x%p - 0x%p\n", heap_start, heap_end);
 }
-
-#define FRAME_SIZE 4096  // 4KB
-#define MAX_FRAMES (512 * 1024 * 1024 / FRAME_SIZE) // For 512MB RAM
-
-uint8_t frame_bitmap[MAX_FRAMES / 8]; // Bitmap to track frames
 
 void set_frame(size_t frame) {
     frame_bitmap[frame / 8] |= (1 << (frame % 8));
@@ -77,7 +83,7 @@ int test_frame(size_t frame) {
 }
 
 size_t allocate_frame() {
-    for (size_t i = 0; i < MAX_FRAMES; i++) {
+    for (size_t i = 0; i < total_memory / FRAME_SIZE; i++) {
         if (!test_frame(i)) {
             set_frame(i);
             return i * FRAME_SIZE;
@@ -91,30 +97,6 @@ void free_frame(size_t addr) {
     clear_frame(frame);
 }
 
-void k_free(void* ptr) {
-    if (!ptr) return;
-
-    memory_block* block = (memory_block*)((char*)ptr - BLOCK_SIZE);
-    block->free = 1;
-
-    // Merge with next block if it's free
-    if (block->next && block->next->free) {
-        block->size += block->next->size + BLOCK_SIZE;
-        block->next = block->next->next;
-    }
-
-    // Merge with previous block if it's free
-    memory_block* current = freeList;
-    while (current) {
-        if (current->next == block && current->free) {
-            current->size += block->size + BLOCK_SIZE;
-            current->next = block->next;
-            break;
-        }
-        current = current->next;
-    }
-}
-
 void* k_malloc(size_t size) {
     memory_block* current = freeList;
 
@@ -122,7 +104,6 @@ void* k_malloc(size_t size) {
         if (current->free && current->size >= size) {
             current->free = 0;
 
-            // Optionally split the block if it's larger than needed
             if (current->size > size + BLOCK_SIZE) {
                 memory_block* newBlock = (memory_block*)((char*)current + BLOCK_SIZE + size);
                 newBlock->size = current->size - size - BLOCK_SIZE;
@@ -132,13 +113,11 @@ void* k_malloc(size_t size) {
                 current->size = size;
                 current->next = newBlock;
             }
-
             return (void*)((char*)current + BLOCK_SIZE);
         }
         current = current->next;
     }
 
-    // Expand the heap if no suitable block is found
     void* new_heap_block = (void*)allocate_frame();
     if (!new_heap_block) {
         printf("Out of memory\n");
@@ -150,56 +129,66 @@ void* k_malloc(size_t size) {
     current->free = 1;
     current->next = NULL;
 
-    // Add the new block to the free list
     memory_block* last = freeList;
     while (last->next) {
         last = last->next;
     }
     last->next = current;
 
-    return k_malloc(size); // Retry allocation
+    return k_malloc(size);
 }
 
+void k_free(void* ptr) {
+    if (!ptr) return;
 
-void* k_realloc(void *ptr, size_t new_size) {
-    // If `ptr` is NULL, behave like `malloc`
+    memory_block* block = (memory_block*)((char*)ptr - BLOCK_SIZE);
+    block->free = 1;
+
+    if (block->next && block->next->free) {
+        block->size += block->next->size + BLOCK_SIZE;
+        block->next = block->next->next;
+    }
+
+    memory_block* current = freeList;
+    while (current) {
+        if (current->next == block && current->free) {
+            current->size += block->size + BLOCK_SIZE;
+            current->next = block->next;
+            break;
+        }
+        current = current->next;
+    }
+}
+
+void* k_realloc(void* ptr, size_t new_size) {
     if (ptr == NULL) {
         return k_malloc(new_size);
     }
 
-    // If `new_size` is 0, behave like `free` and return NULL
     if (new_size == 0) {
         k_free(ptr);
         return NULL;
     }
 
-    // Get the memory block header
-    memory_block *block = (memory_block*)((char*)ptr - BLOCK_SIZE);
+    memory_block* block = (memory_block*)((char*)ptr - BLOCK_SIZE);
     size_t old_size = block->size;
 
-    // If the new size is the same or smaller, reuse the existing block
     if (new_size <= old_size) {
-        return ptr; // No need to reallocate
+        return ptr;
     }
 
-    // Allocate a new memory block large enough for the new size
-    void *new_ptr = k_malloc(new_size);
+    void* new_ptr = k_malloc(new_size);
     if (!new_ptr) {
-        // If allocation fails, return NULL without affecting the old block
         return NULL;
     }
 
-    // Copy data from the old block to the new block
     size_t copy_size = (old_size < new_size) ? old_size : new_size;
-    memmove(new_ptr, ptr, copy_size); // Use `memmove` to handle overlapping regions
+    memmove(new_ptr, ptr, copy_size);
 
-    // Free the old memory block
     k_free(ptr);
 
-    // Return the pointer to the new memory block
     return new_ptr;
 }
-
 
 //---------------------------------------------------------------------------------------------
 #define LINE_WIDTH 80
@@ -323,7 +312,18 @@ bool TestNullPointerDest() {
     return memcpy(NULL, src, 10) == NULL;
 }
 
+void test_malloc() {
+    // Add test cases and debugging information
+    void* ptr1 = k_malloc(1024);
+    void* ptr2 = k_malloc(2048);
+    k_free(ptr1);
+    void* ptr3 = k_malloc(512);
+    printf("Tests complete: ptr1=%p, ptr2=%p, ptr3=%p\n", ptr1, ptr2, ptr3);
+}
+
+
 void test_memory() {
+    test_malloc();
     print_test_result("Test realloc", test_realloc());
     print_test_result("Test Reset After Free", TestResetAfterFree());
     print_test_result("Test Multiple Frees", TestMultipleFrees());

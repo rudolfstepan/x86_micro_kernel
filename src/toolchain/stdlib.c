@@ -12,8 +12,7 @@ void* malloc(size_t size) {
     // perform a syscall to allocate memory
     void* allocated_memory = syscall(SYS_MALLOC, (void*)size, NULL, NULL); // Allocate 1024 bytes
     if (allocated_memory) {
-        
-        printf("Memory allocated at: %p\n", allocated_memory);
+        //printf("Memory allocated at: %p\n", allocated_memory);
     } else {
         set_color(RED);
         printf("Memory allocation failed.\n");
@@ -103,4 +102,15 @@ uint32_t get_ebp() {
     uint32_t ebp;
     __asm__ volatile("mov %%ebp, %0" : "=r"(ebp));
     return ebp;
+}
+
+
+// Disable interrupts
+void disable_interrupts() {
+    __asm__ volatile ("cli");
+}
+
+// Enable interrupts
+void enable_interrupts() {
+    __asm__ volatile ("sti");
 }
