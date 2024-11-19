@@ -11,6 +11,7 @@
 #include "filesystem/fat12/fat12.h"
 #include "drivers/io/io.h"
 #include "drivers/video/video.h"
+#include "drivers/kb/kb.h"
 
 
 // for memory dump
@@ -731,4 +732,3 @@ void beep(uint32_t frequency, uint32_t duration_ms) {
 
     #endif
 }
-

@@ -78,18 +78,18 @@ void kb_handler(void* r) {
             if (buffer_index > 0) {
                 buffer_index--;
                 input_buffer[buffer_index] = '\0';
-                vga_backspace();
+                //vga_backspace();
             }
         } else if (scan == 0x1C) { // Enter key
-            input_buffer[buffer_index++] = '\0'; // Null-terminate
-            enter_pressed = true;
+            input_buffer[buffer_index++] = '\n'; //'\0'; // Null-terminate
+            //enter_pressed = true;
         } else {
             char key = scancode_to_ascii(scan);
             if (shift_pressed && key >= 'a' && key <= 'z') {
                 key -= 32; // Convert to uppercase
             }
             input_buffer[buffer_index++] = key;
-            putchar(key);
+            //putchar(key);
         }
     } else {
         // Key release event
@@ -122,4 +122,55 @@ void kb_wait_enter() {
     // Clear the input buffer after Enter is pressed
     buffer_index = 0;
     input_buffer[0] = '\0';
+}
+
+// Get a character from the input buffer
+// This function is blocking and waits for a character to be available
+char getchar() {
+    // Wait for a character to be entered in the input buffer
+    while (buffer_index == 0) {
+        // Add a small delay to avoid busy-waiting completely
+        sleep_ms(10);
+    }
+
+    // Retrieve the first character from the buffer
+    char ch = input_buffer[0];
+
+    // Shift the buffer contents to remove the consumed character
+    // for (int i = 1; i < buffer_index; i++) {
+    //     input_buffer[i - 1] = input_buffer[i];
+    // }
+
+    // Decrement the buffer index
+    buffer_index--;
+
+    return ch;
+}
+
+#define MAX_INPUT_LINE 128
+
+void get_input_line(char *buffer, int max_len) {
+    int index = 0;
+
+    while (1) {
+        char ch = getchar();
+
+        if (ch == '\n') {
+            buffer[index] = '\0'; // Null-terminate the string
+
+            // Echo the newline character
+            vga_write_char('\n');
+
+            return;
+        } else if (ch == '\b') { // Handle backspace
+            if (index > 0) {
+                index--;
+                buffer[index] = '\0';
+                vga_backspace();
+            }
+        } else if (index < max_len - 1) {
+            buffer[index++] = ch;
+            vga_write_char(ch); // Echo the character
+        }
+    }
 }

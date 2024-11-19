@@ -15,6 +15,7 @@
 #define SYS_MALLOC 4
 #define SYS_FREE 5
 #define SYS_REALLOC 6
+#define SYS_TERMINAL_GETCHAR 7
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

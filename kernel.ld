@@ -5,7 +5,7 @@ SECTIONS
 {
   .text address : AT(address) {
     code = .;
-    *(.multiboot)            # Place the Multiboot header first
+    *(.multiboot)
     *(.text)
     *(.rodata)
     . = ALIGN(8K);

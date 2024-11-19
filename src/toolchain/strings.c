@@ -148,54 +148,6 @@ void str_to_upper(char* str) {
     }
 }
 
-// Splits an input string into a command and arguments
-int split_input(const char* input, char* command, char** arguments, int max_args, int max_length) {
-    int i = 0, j = 0, arg_count = 0;
-
-    while (input[i] == ' ' && input[i] != '\0') {
-        i++;
-    }
-
-    while (input[i] != ' ' && input[i] != '\0' && i < max_length) {
-        command[i] = input[i];
-        i++;
-    }
-    command[i] = '\0';
-    if (input[i] != '\0') i++;
-
-    while (input[i] != '\0' && arg_count < max_args) {
-        if (input[i] == ' ') {
-            if (j != 0) {
-                arguments[arg_count][j] = '\0';
-                arg_count++;
-                j = 0;
-            }
-            i++;
-            continue;
-        }
-
-        if (j == 0) {
-            arguments[arg_count] = malloc(max_length);
-            if (arguments[arg_count] == NULL) {
-                return arg_count;
-            }
-        }
-
-        if (j < max_length - 1) {
-            arguments[arg_count][j] = input[i];
-            j++;
-        }
-        i++;
-    }
-
-    if (j != 0) {
-        arguments[arg_count][j] = '\0';
-        arg_count++;
-    }
-
-    return arg_count;
-}
-
 // Tokenizes a string using a delimiter (reentrant version)
 char* strtok_r(char* str, const char* delim, char** saveptr) {
     if (str == NULL) {

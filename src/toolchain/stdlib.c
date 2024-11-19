@@ -4,6 +4,7 @@
 #include "stdlib.h"
 #include "stdio.h"
 #include "strings.h"
+#include "drivers/video/video.h"
 
 //TryContext* current_try_context = NULL;
 
@@ -11,9 +12,12 @@ void* malloc(size_t size) {
     // perform a syscall to allocate memory
     void* allocated_memory = syscall(SYS_MALLOC, (void*)size, NULL, NULL); // Allocate 1024 bytes
     if (allocated_memory) {
-        //printf("Memory allocated at: %p\n", allocated_memory);
+        
+        printf("Memory allocated at: %p\n", allocated_memory);
     } else {
+        set_color(RED);
         printf("Memory allocation failed.\n");
+        set_color(WHITE);
     }
 
     return allocated_memory;

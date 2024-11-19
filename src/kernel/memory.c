@@ -4,15 +4,31 @@
 #include "toolchain/stdlib.h"
 #include "toolchain/strings.h"
 #include <stdbool.h>
+#include "drivers/video/video.h"
 
 
 extern char _kernel_end;  // Defined by the linker script
+
+size_t total_memory = 0;
 
 #define HEAP_START  ((void*)(&_kernel_end))
 #define HEAP_END    (void*)0x500000  // End of heap (5MB)
 #define ALIGN_UP(addr, align) (((addr) + ((align)-1)) & ~((align)-1))
 #define HEAP_START_ALIGNED ALIGN_UP((size_t)HEAP_START, 16)
 #define BLOCK_SIZE sizeof(memory_block)
+
+#include <stdint.h>
+#include "drivers/io/io.h"
+
+#define E820_BUFFER_SIZE 128
+#define E820_ADDRESS 0x500  // Buffer in low memory for E820 entries
+
+typedef struct {
+    uint64_t base_addr;  // Base address of the memory region
+    uint64_t length;     // Length of the memory region
+    uint32_t type;       // Type of the memory region
+    uint32_t acpi;       // ACPI attributes
+} __attribute__((packed)) e820_entry_t;
 
 typedef struct memory_block {
     size_t size;
@@ -22,13 +38,57 @@ typedef struct memory_block {
 
 memory_block *freeList = (memory_block*)HEAP_START;
 
+void print_memory_size(uint64_t total_memory) {
+    uint64_t total_kb = total_memory / (uint64_t)1024;
+    uint64_t total_mb = total_kb / (uint64_t)1024;
+
+    printf("**********Total System Memory**********: %d MB\n", total_mb);
+}
+
 void initialize_memory_system() {
-    freeList = (memory_block*)HEAP_START_ALIGNED;
-    freeList->size = (size_t)HEAP_END - (size_t)HEAP_START_ALIGNED - BLOCK_SIZE;
+
+    void* heap_start = (void*)ALIGN_UP((size_t)&_kernel_end, 16);
+    void* heap_end = (void*)total_memory; // Use full available memory
+
+    freeList = (memory_block*)heap_start;
+    freeList->size = (size_t)heap_end - (size_t)heap_start - BLOCK_SIZE;
     freeList->free = 1;
     freeList->next = NULL;
 
-    //printf("Aligned HEAP_START: 0x%p\n", freeList);
+    print_memory_size(total_memory);
+    printf("Heap Range: 0x%p - 0x%p\n", heap_start, heap_end);
+}
+
+#define FRAME_SIZE 4096  // 4KB
+#define MAX_FRAMES (512 * 1024 * 1024 / FRAME_SIZE) // For 512MB RAM
+
+uint8_t frame_bitmap[MAX_FRAMES / 8]; // Bitmap to track frames
+
+void set_frame(size_t frame) {
+    frame_bitmap[frame / 8] |= (1 << (frame % 8));
+}
+
+void clear_frame(size_t frame) {
+    frame_bitmap[frame / 8] &= ~(1 << (frame % 8));
+}
+
+int test_frame(size_t frame) {
+    return frame_bitmap[frame / 8] & (1 << (frame % 8));
+}
+
+size_t allocate_frame() {
+    for (size_t i = 0; i < MAX_FRAMES; i++) {
+        if (!test_frame(i)) {
+            set_frame(i);
+            return i * FRAME_SIZE;
+        }
+    }
+    return 0; // No free frame
+}
+
+void free_frame(size_t addr) {
+    size_t frame = addr / FRAME_SIZE;
+    clear_frame(frame);
 }
 
 void k_free(void* ptr) {
@@ -60,7 +120,7 @@ void* k_malloc(size_t size) {
 
     while (current) {
         if (current->free && current->size >= size) {
-            current->free = 0; // Mark as allocated
+            current->free = 0;
 
             // Optionally split the block if it's larger than needed
             if (current->size > size + BLOCK_SIZE) {
@@ -73,14 +133,33 @@ void* k_malloc(size_t size) {
                 current->next = newBlock;
             }
 
-            return (void*)((char*)current + BLOCK_SIZE); // Return usable memory
+            return (void*)((char*)current + BLOCK_SIZE);
         }
         current = current->next;
     }
 
-    // Out of memory
-    return NULL;
+    // Expand the heap if no suitable block is found
+    void* new_heap_block = (void*)allocate_frame();
+    if (!new_heap_block) {
+        printf("Out of memory\n");
+        return NULL;
+    }
+
+    current = (memory_block*)new_heap_block;
+    current->size = FRAME_SIZE - BLOCK_SIZE;
+    current->free = 1;
+    current->next = NULL;
+
+    // Add the new block to the free list
+    memory_block* last = freeList;
+    while (last->next) {
+        last = last->next;
+    }
+    last->next = current;
+
+    return k_malloc(size); // Retry allocation
 }
+
 
 void* k_realloc(void *ptr, size_t new_size) {
     // If `ptr` is NULL, behave like `malloc`
@@ -128,7 +207,17 @@ void* k_realloc(void *ptr, size_t new_size) {
 void print_test_result(const char *test_name, bool passed) {
     int name_length = strlen(test_name);
     int padding = LINE_WIDTH - name_length - 7; // 7 for " [ OK ]" or " [FAILED]"
+
+
+    if(passed){
+        set_color(GREEN);
+    }else{
+        set_color(RED);
+    }
+
     printf("%s%*s\n", test_name, padding, passed ? "[ OK ]" : "[FAILED]");
+
+    set_color(WHITE);
 }
 
 // Test methods with boolean return value
@@ -235,7 +324,6 @@ bool TestNullPointerDest() {
 }
 
 void test_memory() {
-    printf("Testing Memory...\n");
     print_test_result("Test realloc", test_realloc());
     print_test_result("Test Reset After Free", TestResetAfterFree());
     print_test_result("Test Multiple Frees", TestMultipleFrees());
@@ -246,5 +334,4 @@ void test_memory() {
     print_test_result("Test Copy Overlapping", TestCopyOverlapping());
     print_test_result("Test Null Pointer Src", TestNullPointerSrc());
     print_test_result("Test Null Pointer Dest", TestNullPointerDest());
-    printf("Testing Complete.\n");
 }

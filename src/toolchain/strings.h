@@ -54,8 +54,6 @@ char* strtok(char* str, const char* delimiters);
 char* strstr(const char* haystack, const char* needle);
 
 // Custom non-standard functions:
-// Splits an input string into a command and arguments.
-int split_input(const char* input, char* command, char** arguments, int max_length, int max_args);
 // Converts a string to lowercase in place.
 void str_to_lower(char* str);
 // Converts a string to uppercase in place.

@@ -1,6 +1,3 @@
-#define __kernel_context__
-
-
 #include <stdbool.h>
 #include "command.h"
 #include "prg.h"
@@ -26,13 +23,6 @@
 
 
 //---------------------------------------------------------------------------------------------
-
-// for the keyboard
-extern char input_buffer[128];
-extern volatile int buffer_index;
-extern volatile bool enter_pressed;
-
-//---------------------------------------------------------------------------------------------
 // syscall table entry points and definitions
 //---------------------------------------------------------------------------------------------
 void kernel_hello() {
@@ -51,6 +41,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&k_malloc,           // Syscall 4: One argument
     (void*)&k_free,             // Syscall 5: One argument
     (void*)&k_realloc,          // Syscall 6: 2 arguments
+    (void*)&getchar,         // Syscall 7: No arguments
     // Add more syscalls here
 };
 
@@ -93,6 +84,10 @@ void syscall_handler(void* irq_number) {
             ((void* (*)(void*, size_t))func_ptr)((void*)arg1, (size_t)arg2);
             break;
 
+        case SYS_TERMINAL_GETCHAR:  // kb_getchar - No arguments
+            ((void* (*)(void))func_ptr)();
+            break;
+
         default:
             printf("Unknown syscall index: %d\n", syscall_index);
             break;
@@ -133,7 +128,7 @@ void display_color_test() {
 
 void print_fancy_prompt() {
     set_color(GREEN);
-    str_trim_end(current_path, '/');
+    //str_trim_end(current_path, '/');
 
     // check if the current drive is mounted
     if (current_drive == NULL) {
@@ -142,7 +137,9 @@ void print_fancy_prompt() {
         return;
     }
 
-    printf("%s%s>", current_drive->name, current_path);
+    //printf("%s%s>", current_drive->name, current_path);
+    printf(">");
+
     set_color(WHITE);
 }
 
@@ -157,44 +154,189 @@ void set_graphics_mode() {
     );
 }
 
-void parse_multiboot_info(multiboot_info_t *mb_info) {
-    if (mb_info->flags & MULTIBOOT_FLAG_MEM) {
-        // Memory info available
-        uint32_t mem_lower_kb = mb_info->mem_lower;
-        uint32_t mem_upper_kb = mb_info->mem_upper;
-        printf("Memory: Lower = %u KB, Upper = %u KB\n", mem_lower_kb, mem_upper_kb);
+// Function to Print EFI Memory Map
+void print_efi_memory_map(const multiboot2_info_t *mb_info) {
+    const multiboot2_tag_t *tag = mb_info->tags;
+
+    // Iterate through all Multiboot2 tags
+    while (tag->type != MULTIBOOT2_INFO_TAG_END) {
+        if (tag->type == MULTIBOOT2_INFO_TAG_EFI_MMAP) {
+    const multiboot2_tag_efi_mmap_t *efi_mmap_tag = (const multiboot2_tag_efi_mmap_t *)tag;
+    const efi_memory_descriptor_t *desc = (const efi_memory_descriptor_t *)efi_mmap_tag->efi_memory_map;
+    uint8_t *end = (uint8_t *)efi_mmap_tag + efi_mmap_tag->size;
+
+    printf("EFI Memory Map:\n");
+    printf("-------------------------------------------------------------\n");
+    printf("| Type | Physical Start | Number of Pages | Attributes      |\n");
+    printf("-------------------------------------------------------------\n");
+
+    // Iterate over the descriptors
+    while ((uint8_t *)desc + efi_mmap_tag->descriptor_size <= end) {
+        // Print the current descriptor
+        printf("| %4u | 0x%013llx | %15llu | 0x%016llx |\n",
+               desc->type,
+               desc->physical_start,
+               desc->num_pages,
+               desc->attribute);
+
+        // Advance to the next descriptor
+        desc = (const efi_memory_descriptor_t *)((uint8_t *)desc + efi_mmap_tag->descriptor_size);
     }
 
-    if (mb_info->flags & MULTIBOOT_FLAG_BOOT_DEVICE) {
-        // Boot device info available
-        printf("Boot device: 0x%x\n", mb_info->boot_device);
+    printf("-------------------------------------------------------------\n");
+
+    // Debugging: Print the total tag size and descriptor size
+    printf("Debug: EFI MMap tag size: %u, Descriptor size: %u\n",
+           efi_mmap_tag->size, efi_mmap_tag->descriptor_size);
+}
+
+
+        // Move to the next tag
+        tag = (const multiboot2_tag_t *)((uint8_t *)tag + tag->size);
+    }
+}
+
+void parse_multiboot2_info(const multiboot2_info_t *mb_info) {
+    multiboot2_tag_t *tag = (multiboot2_tag_t *)(mb_info->tags);
+
+    while (tag->type != MULTIBOOT2_INFO_TAG_END) {
+        switch (tag->type) {
+            case MULTIBOOT2_INFO_TAG_CMDLINE:
+                printf("Command Line: %s\n", ((multiboot2_tag_cmdline_t *)tag)->cmdline);
+                break;
+            case MULTIBOOT2_INFO_TAG_BOOT_LOADER_NAME:
+                printf("Bootloader Name: %s\n", ((multiboot2_tag_boot_loader_name_t *)tag)->name);
+                break;
+            case MULTIBOOT2_INFO_TAG_BASIC_MEMINFO:
+                printf("Basic Memory Info: Lower = %u KB, Upper = %u KB\n",
+                       ((multiboot2_tag_basic_meminfo_t *)tag)->mem_lower,
+                       ((multiboot2_tag_basic_meminfo_t *)tag)->mem_upper);
+                break;
+            case MULTIBOOT2_INFO_TAG_MMAP:
+                printf("Memory Map available\n");
+                break;
+            case MULTIBOOT2_INFO_TAG_MODULE:
+                printf("Module available\n");
+                break;
+            case MULTIBOOT2_INFO_TAG_EFI_MMAP:
+                print_efi_memory_map(mb_info);
+                break;
+            default:
+                printf("Unknown tag type: %u\n", tag->type);
+                break;
+        }
+        tag = (multiboot2_tag_t *)((uint8_t *)tag + tag->size);
+    }
+}
+
+// Function to compute the total usable memory from the Multiboot2 memory map
+uint64_t compute_total_memory(const multiboot2_info_t *mb_info) {
+    uint64_t total_memory = 0;
+
+    // Start parsing the tags
+    const multiboot2_tag_t *tag = (const multiboot2_tag_t *)(mb_info->tags);
+    while (tag->type != MULTIBOOT2_INFO_TAG_END) {
+        if (tag->type == MULTIBOOT2_INFO_TAG_MMAP) {
+            const multiboot2_tag_mmap_t *mmap_tag = (const multiboot2_tag_mmap_t *)tag;
+            const multiboot2_mmap_entry_t *mmap_entry = mmap_tag->entries;
+
+            printf("Memory map available:\n");
+            printf("Entry size: %u\n", mmap_tag->entry_size);
+
+            // Iterate over all memory map entries
+            while ((uint8_t *)mmap_entry < (uint8_t *)mmap_tag + mmap_tag->size) {
+                if (mmap_entry->type == 1) { // Usable memory
+                    total_memory += mmap_entry->length;
+                }
+                mmap_entry = (const multiboot2_mmap_entry_t *)((uint8_t *)mmap_entry + mmap_tag->entry_size);
+            }
+        }
+
+        // Move to the next tag
+        tag = (const multiboot2_tag_t *)((uint8_t *)tag + tag->size);
     }
 
-    if (mb_info->flags & MULTIBOOT_FLAG_CMDLINE) {
-        // Kernel command line available
-        printf("Command line: %s\n", mb_info->cmdline);
+    return total_memory;
+}
+
+void parse_multiboot1_info(const multiboot1_info_t *mb_info) {
+    printf("Parsing Multiboot1 Information...\n");
+
+    // Check flags for available fields
+    if (mb_info->flags & MULTIBOOT1_FLAG_MEM) {
+        printf("Memory Information: ");
+        printf("  Lower Memory: %u KB, ", mb_info->mem_lower);
+        printf("  Upper Memory: %u KB\n", mb_info->mem_upper);
     }
 
-    if (mb_info->flags & MULTIBOOT_FLAG_MODS) {
-        // Modules info available
-        printf("Modules count: %u\n", mb_info->mods_count);
+    if (mb_info->flags & MULTIBOOT1_FLAG_BOOT_DEVICE) {
+        printf("Boot Device: %p\n", mb_info->boot_device);
+    }
+
+    if (mb_info->flags & MULTIBOOT1_FLAG_CMDLINE) {
+        const char *cmdline = (const char *)mb_info->cmdline;
+        printf("Command Line: %s\n", cmdline);
+    }
+
+    if (mb_info->flags & MULTIBOOT1_FLAG_MODS) {
+        printf("Modules:\n");
+        const multiboot1_module_t *mods = (const multiboot1_module_t *)mb_info->mods_addr;
         for (uint32_t i = 0; i < mb_info->mods_count; i++) {
-            multiboot_module_t *mod = &mb_info->mods_addr[i];
-            printf("Module %u: Start = 0x%x, End = 0x%x, String = %s\n",
-                   i, mod->mod_start, mod->mod_end, mod->string);
+            printf("  Module %u:\n", i + 1);
+            printf("    Start Address: 0x%x\n", mods[i].mod_start);
+            printf("    End Address: 0x%x\n", mods[i].mod_end);
+            const char *mod_cmdline = (const char *)mods[i].string;
+            printf("    Command Line: %s\n", mod_cmdline ? mod_cmdline : "(none)");
         }
     }
 
-    if (mb_info->flags & (1 << 6)) { // Bit 6 indicates memory map availability
-        printf("Memory map available:\n");
-        multiboot_mmap_entry_t *mmap = mb_info->mmap_addr;
-        for (uint32_t i = 0; i < mb_info->mmap_length / sizeof(multiboot_mmap_entry_t); i++) {
-            printf("Base Addr = 0x%x%x, Length = 0x%x%x, Type = %u\n",
-                   mmap[i].base_addr_high, mmap[i].base_addr_low,
-                   mmap[i].length_high, mmap[i].length_low,
-                   mmap[i].type);
+    if (mb_info->flags & MULTIBOOT1_FLAG_MMAP) {
+        printf("Memory Map:\n");
+        const multiboot1_mmap_entry_t *mmap = (const multiboot1_mmap_entry_t *)mb_info->mmap_addr;
+        const uint8_t *mmap_end = (const uint8_t *)mb_info->mmap_addr + mb_info->mmap_length;
+
+        printf("------------------------------------------------------------\n");
+        printf("| Base Address    | Length         | Type (1=Usable)       |\n");
+        printf("------------------------------------------------------------\n");
+
+        while ((uint8_t *)mmap < mmap_end) {
+            //printf("| %p | %u | %u |\n", mmap->base_addr, mmap->length, mmap->type);
+
+            printf("| %-12p | ", mmap->base_addr, mmap->length, mmap->type);
+            printf("%-13u | ", mmap->length);
+            printf("%-21u |\n", mmap->type);
+
+            // calculate total memory
+            total_memory += mmap->length;
+
+            // Advance to the next entry
+            mmap = (const multiboot1_mmap_entry_t *)((uint8_t *)mmap + mmap->size + sizeof(mmap->size));
         }
+
+        printf("------------------------------------------------------------\n");
+
     }
+
+    if (mb_info->flags & MULTIBOOT1_FLAG_BOOTLOADER) {
+        const char *bootloader_name = (const char *)mb_info->boot_loader_name;
+        printf("Bootloader Name: %s\n", bootloader_name);
+    }
+
+    if (mb_info->flags & MULTIBOOT1_FLAG_VBE) {
+        printf("VBE Information:\n");
+        printf("Control Info: %p ", mb_info->vbe_control_info);
+        printf("Mode Info: %p ", mb_info->vbe_mode_info);
+        printf("Mode: %p\n", mb_info->vbe_mode);
+        printf("Interface Segment: %p ", mb_info->vbe_interface_seg);
+        printf("Offset: %p ", mb_info->vbe_interface_off);
+        printf("Length: %u\n", mb_info->vbe_interface_len);
+    }
+
+    if (mb_info->flags & MULTIBOOT1_FLAG_APM) {
+        printf("APM Table Address: 0x%x\n", mb_info->apm_table);
+    }
+
+    printf("Parsing Complete.\n");
 }
 
 extern fat32_class_t fat32;
@@ -206,7 +348,26 @@ extern fat32_class_t fat32;
 // multiboot_magic: the magic number passed by the bootloader
 // multiboot_info_ptr: a pointer to the multiboot information structure
 //---------------------------------------------------------------------------------------------
-void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info) {
+void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
+
+    // Validate Multiboot2 magic number
+    if (multiboot_magic != 0x36d76289) {
+        printf("Error: Invalid Multiboot2 magic number: 0x%x\n", multiboot_magic);
+        while (1) { asm volatile("hlt"); }
+    }
+
+    // Check if multiboot_info is valid
+    if (multiboot_info == NULL) {
+        printf("Error: Multiboot information structure is NULL.\n");
+        while (1) { asm volatile("hlt"); }
+    }
+
+    parse_multiboot1_info(multiboot_info);
+
+    // parse_multiboot2_info(multiboot_info);
+    // long total_memory = compute_total_memory(multiboot_info);
+    // printf("Total usable memory: %u bytes\n", total_memory);
+
     //parse_multiboot_info(multiboot_info);
     initialize_memory_system();
 
@@ -224,12 +385,16 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info) {
 
     __asm__ __volatile__("sti"); // enable interrupts
 
-    display_welcome_message();
-    
-    test_memory();
+    //display_welcome_message();
+
     timer_install(1); // Install the timer first for 1 ms delay
     kb_install(); // Install the keyboard
 
+    printf("Press any key to continue...\n");
+    getchar();
+    
+    test_memory();
+    
     ata_detect_drives();
     current_drive = ata_get_drive(0);
     if (current_drive) {
@@ -243,20 +408,6 @@ void kernel_main(uint32_t multiboot_magic, uint32_t* multiboot_info) {
     // detect fdd drives
     fdd_detect_drives();
     
-    //printf("Syscall table address: %p\n", syscall_table);
-    //display_color_test();
-    print_fancy_prompt();
-
-    // Main loop
-    while (1) {
-        if (enter_pressed) {
-            process_command(input_buffer);
-            enter_pressed = false;
-            buffer_index = 0;
-            memset(input_buffer, 0, sizeof(input_buffer));
-            print_fancy_prompt();
-        }
-    }
-
-    return;
+    // Start the command interpreter
+    command_loop();
 }
