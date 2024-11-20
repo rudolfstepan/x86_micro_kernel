@@ -94,14 +94,21 @@ void syscall_handler(void* irq_number) {
     }
 }
 
-void display_welcome_message() {
-    // set_color(LIGHT_MAGENTA);
-    // printf("\n");
-    // printf("      *------------------------------------------------------------*\n");
-    // printf("      |        Welcome to the Rudolf Stepan x86 Micro Kernel       |\n");
-    // printf("      |      Type 'HELP' for a list of commands and instructions   |\n");
-    // printf("      *------------------------------------------------------------*\n");
-    // printf("\n");
+void print_welcome_message() {
+    set_color(WHITE);
+    printf("\n");
+    printf("      *------------------------------------------------------------*\n");
+    printf("      |        Welcome to the Rudolf Stepan x86 Micro Kernel       |\n");
+    printf("      |      Type 'HELP' for a list of commands and instructions   |\n");
+    printf("      *------------------------------------------------------------*\n");
+    printf("        Total Memory: %d MB\n", total_memory/1024/1024);
+    printf("        Detected Drives (%d): ", drive_count);
+    for(int i=0; i<drive_count; i++){
+        char* drive_type = detected_drives[i].type == DRIVE_TYPE_ATA ? "ATA" : "FDD";
+        printf(" %s: %s ", drive_type, detected_drives[i].name);
+    }
+
+    printf("\n\n    Enter a Command or help for a complete list of supported commands.\n");
     set_color(WHITE);
 }
 
@@ -375,25 +382,22 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
     idt_install();
     isr_install();
     irq_install();
-    
-    // Install the IRQ handler for the timer
-    irq_install_handler(0, timer_irq_handler);
-    // Install the IRQ handler for the keyboard
-    irq_install_handler(1, kb_handler);
-    // Install the IRQ handler for the FDD
-    irq_install_handler(6, fdd_irq_handler);
-
+    timer_install(1); // Install the timer first for 1 ms delay
+    kb_install(); // Install the keyboard
     __asm__ __volatile__("sti"); // enable interrupts
 
     //display_welcome_message();
 
-    timer_install(1); // Install the timer first for 1 ms delay
-    kb_install(); // Install the keyboard
+    // Install the IRQ handler for the FDD
+    fdc_initialize();
 
     printf("Press any key to continue...\n");
     getchar();
     
     test_memory();
+
+    printf("Press any key to continue...\n");
+    getchar();
     
     ata_detect_drives();
     current_drive = ata_get_drive(0);
@@ -407,6 +411,14 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
     }
     // detect fdd drives
     fdd_detect_drives();
+
+    printf("Press any key to continue...\n");
+    getchar();
+
+    clear_screen();
+
+    print_welcome_message();
+
     
     // Start the command interpreter
     command_loop();

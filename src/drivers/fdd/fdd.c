@@ -161,17 +161,12 @@ static volatile bool irq_ready_triggered = false; // IRQ6 ready flag 0x80
 void fdd_irq_handler(uint8_t* r) {
     uint8_t status = inb(FDD_MSR);  // Read the Main Status Register (MSR)
 
-    // Print the status for debugging
-    //printf("ISR invoked. MSR Status: 0x%X\n", status);
-
     // Check if bit 4 is set (indicating a valid interrupt)
     if (status & 0x10) {
         irq_triggered = true;  // Set IRQ flag when valid
-        //printf("Valid interrupt 0x10 detected for FDD.\n");
-    } 
-    if(status & 0x80){
-        //printf("Unexpected interrupt state. Status: 0x%X\n", status);
-        //printf("Valid interrupt 0x80 detected for FDD.\n");
+        printf("Valid interrupt 0x10 detected for FDD.\n");
+    } else if(status & 0x80){
+        printf("Valid interrupt 0x80 detected for FDD.\n");
         irq_ready_triggered = true;
     }
 
@@ -194,9 +189,7 @@ void mask_irq6() {
 }
 
 void fdc_initialize() {
-    // outb(0x3F2, 0x1C);  // Aktiviert den Motor und das Laufwerk A
-    // sleep_ms(50);         // Wartet, bis der Motor läuft
-    mask_irq6();                            // Ensure IRQ6 is unmasked
+    irq_install_handler(6, fdd_irq_handler);
 }
 
 // Get the FDC status
@@ -584,14 +577,11 @@ void debug_read_bootsector(uint8_t sector) {
         return;
     }
 
-    memset(buffer, 0xff, SECTOR_SIZE);  // Clear the buffer before reading
-
-
     // Attempt to read the first sector (boot sector) of the floppy disk
     if (fdc_read_sector_no_dma(0, 0, 0, sector, buffer)) {
         printf("Boot sector read successfully:\n");
         // Print the boot sector content in hexadecimal
-        hex_dump(buffer, SECTOR_SIZE);
+        hex_dump(buffer, 256);
     } else {
         printf("Failed to read boot sector.\n");
     }
@@ -754,3 +744,5 @@ void fdd_detect_drives() {
         printf("No floppy drives detected.\n");
     }
 }
+
+

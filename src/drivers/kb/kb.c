@@ -158,6 +158,9 @@ void get_input_line(char* buffer, int max_len) {
 }
 
 void kb_install() {
+    // Install the IRQ handler for the keyboard
+    irq_install_handler(1, kb_handler);
+    
     memset(input_buffer, 0, sizeof(input_buffer));
     // irq_install_handler(1, kb_handler); // assumed to be set up elsewhere
 }

@@ -13,6 +13,8 @@
 #include "drivers/video/video.h"
 #include "drivers/kb/kb.h"
 
+#define __kernel__
+
 
 // for memory dump
 #define BYTES_PER_LINE 16
