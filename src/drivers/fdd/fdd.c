@@ -154,7 +154,8 @@
 #define FDD_DRIVE_A 0     // Drive number for A:
 #define FDD_DRIVE_B 1     // Drive number for B:
 
-static volatile bool irq_triggered = false;
+static volatile bool irq_triggered = false; // IRQ6 flag for FDD 0x10
+static volatile bool irq_ready_triggered = false; // IRQ6 ready flag 0x80
 
 // FDC IRQ handler for IRQ6
 void fdd_irq_handler(uint8_t* r) {
@@ -166,9 +167,12 @@ void fdd_irq_handler(uint8_t* r) {
     // Check if bit 4 is set (indicating a valid interrupt)
     if (status & 0x10) {
         irq_triggered = true;  // Set IRQ flag when valid
-        //printf("Valid interrupt detected for FDD.\n");
-    } else {
+        //printf("Valid interrupt 0x10 detected for FDD.\n");
+    } 
+    if(status & 0x80){
         //printf("Unexpected interrupt state. Status: 0x%X\n", status);
+        //printf("Valid interrupt 0x80 detected for FDD.\n");
+        irq_ready_triggered = true;
     }
 
     // Send EOI to the PIC to acknowledge the interrupt
@@ -217,29 +221,83 @@ void fdc_motor_off(int drive) {
 
 // Wait for FDC to signal readiness
 bool wait_for_fdc_ready() {
-    int timeout = 1000;  // Adjusted for a shorter wait period (1000 ms total)
-    while (!(fdc_get_status() & 0x80)) {  // Wait for bit 7 of the MSR to be set
-        if (--timeout == 0) {
-            printf("Timeout waiting for FDC ready signal.\n");
-            return false;
+    // int timeout = 1000000;  // Adjusted for a shorter wait period (1000 ms total)
+    // while (!(fdc_get_status() & 0x80)) {  // Wait for bit 7 of the MSR to be set
+    //     if (--timeout == 0) {
+    //         printf("Timeout waiting for FDC ready signal.\n");
+    //         return false;
+    //     }
+    //     //sleep_ms(1);  // Avoid CPU-intensive busy waiting
+    // }
+    // return true;
+
+    //irq_ready_triggered = false;  // Reset IRQ flag before waiting
+    int timeout = 100000;     // 1000 ms timeout for IRQ wait
+
+    //printf("Waiting for irq_ready_triggered...\n");
+
+    while (!irq_ready_triggered && timeout-- > 0) {
+        //sleep_ms(1);
+
+        // loop wait for specific time
+        for(int i=0; i++; i<timeout){
+             for(int i=0; i++; i<timeout){
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+
+                if(irq_ready_triggered) break;
+            }
         }
-        sleep_ms(1);  // Avoid CPU-intensive busy waiting
-    }
-    return true;
-}
-
-// Wait for FDC interrupt to indicate completion
-bool fdc_wait_for_irq() {
-    irq_triggered = false;  // Reset IRQ flag before waiting
-    int timeout = 1000;     // 1000 ms timeout for IRQ wait
-
-    printf("Waiting for IRQ...\n");
-
-    while (!irq_triggered && timeout-- > 0) {
-        sleep_ms(2);
-
         // uint8_t msr = inb(FDD_MSR);
-        // if(msr & 0x10){
+        // if(msr & 0x80){
         //         irq_triggered = true;
         //         break;
         //     }
@@ -250,17 +308,96 @@ bool fdc_wait_for_irq() {
     }
     
 
-    if (!irq_triggered) {
-        printf("IRQ wait timed out.\n");
-    } else {
-        printf("IRQ detected.\n");
+    // if (!irq_ready_triggered) {
+    //     printf("irq_ready_triggered wait timed out.\n");
+    // } else {
+    //     printf("irq_ready_triggered detected.\n");
+    // }
+    return irq_ready_triggered;
+}
+
+// Wait for FDC interrupt to indicate completion
+bool fdc_wait_for_irq() {
+    //irq_triggered = false;  // Reset IRQ flag before waiting
+    int timeout = 100000;     // 1000 ms timeout for IRQ wait
+
+    //printf("Waiting for irq_triggered...\n");
+
+    while (!irq_triggered && timeout-- > 0) {
+        //sleep_ms(1);
+
+        for(int i=0; i++; i<timeout){
+             for(int i=0; i++; i<timeout){
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+                __asm__ volatile("nop");
+
+                if(irq_triggered) break;
+            }
+        }
     }
+    
+    // if (!irq_triggered) {
+    //     printf("irq_triggered wait timed out.\n");
+    // } else {
+    //     printf("irq_triggered detected.\n");
+    // }
     return irq_triggered;
 }
 
 // Send a command to the FDC via the FIFO
 bool fdc_send_command(uint8_t command) {
-    if (!wait_for_fdc_ready()) return false;
+    if (!wait_for_fdc_ready()) {
+        printf("FDC not ready for command: 0x%X\n", command);
+        return false;
+    }
     outb(FDD_FIFO, command);
     return true;
 }
@@ -327,15 +464,19 @@ void dma_prepare_floppy(uint8_t* buffer, uint16_t length, bool read) {
 bool _fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
     //printf("Reading sector %d from track %d, head %d, drive %d...\n", sector, track, head, drive);
 
+    if (!wait_for_fdc_ready()) {
+        printf("FDC not ready to read sector.\n");
+        return false;
+    }
     // clear the buffer before reading
-    memset(buffer, 0, SECTOR_SIZE);  // Clear the buffer before reading
+    //memset(buffer, 0, SECTOR_SIZE);  // Clear the buffer before reading
 
     //fdc_wait_for_irq();  // Wait for any pending IRQs to clear
-    sleep_ms(10);  // Small delay before issuing command
+    //sleep_ms(10);  // Small delay before issuing command
     // prepare DMA for reading
     dma_prepare_floppy(buffer, SECTOR_SIZE, true);
 
-    sleep_ms(10);  // Small delay before issuing command
+    //sleep_ms(10);  // Small delay before issuing command
 
     // Reset IRQ flag and send the command sequence to FDC
     //irq_triggered = false;  // Reset IRQ flag before issuing command
@@ -382,6 +523,59 @@ bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track, uint8_t start_
     return true;
 }
 
+bool fdc_read_sector_no_dma(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
+    printf("Reading sector %d from track %d, head %d, drive %d (no DMA)...\n", sector, track, head, drive);
+
+    // Turn on the motor
+    fdc_motor_on(drive);
+    sleep_ms(500);  // Wait for the motor to spin up
+
+    if (!wait_for_fdc_ready()) {
+        printf("FDC not ready for READ command.\n");
+        fdc_motor_off(drive);
+        return false;
+    }
+
+    // Send the read command sequence
+    if (!fdc_send_command(FDD_CMD_READ) ||
+        !fdc_send_command((head << 2) | (drive & 0x03)) ||
+        !fdc_send_command(track) ||
+        !fdc_send_command(head) ||
+        !fdc_send_command(sector) ||
+        !fdc_send_command(2) ||  // Sector size
+        !fdc_send_command(18) || // Last sector
+        !fdc_send_command(0x1B) || // Gap length
+        !fdc_send_command(0xFF)) {  // Unused byte
+        printf("Failed to send READ command sequence (no DMA).\n");
+        fdc_motor_off(drive);
+        return false;
+    }
+
+    // Wait for IRQ to signal operation completion
+    if (!fdc_wait_for_irq()) {
+        printf("Read operation failed: IRQ timeout (no DMA).\n");
+        fdc_motor_off(drive);
+        return false;
+    }
+
+    // Read sector data byte-by-byte from the FIFO register
+    uint8_t* buf = (uint8_t*)buffer;
+    for (int i = 0; i < SECTOR_SIZE; i++) {
+        if (!wait_for_fdc_ready()) {  // Ensure FDC is ready before reading each byte
+            printf("FDC not ready while reading data (no DMA).\n");
+            fdc_motor_off(drive);
+            return false;
+        }
+        buf[i] = inb(FDD_FIFO);  // Read a byte from the FIFO register
+    }
+
+    // Turn off the motor
+    fdc_motor_off(drive);
+
+    printf("Sector read successfully (no DMA).\n");
+    return true;
+}
+
 void debug_read_bootsector(uint8_t sector) {
 
     uint8_t* buffer = (uint8_t*)malloc(SECTOR_SIZE);
@@ -394,7 +588,7 @@ void debug_read_bootsector(uint8_t sector) {
 
 
     // Attempt to read the first sector (boot sector) of the floppy disk
-    if (fdc_read_sector(0, 0, 0, sector, buffer)) {
+    if (fdc_read_sector_no_dma(0, 0, 0, sector, buffer)) {
         printf("Boot sector read successfully:\n");
         // Print the boot sector content in hexadecimal
         hex_dump(buffer, SECTOR_SIZE);
@@ -437,6 +631,11 @@ bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector
 
     //fdc_wait();  // Wait until FDC is ready to accept data
     outsw(FDD_FIFO, buffer, SECTOR_SIZE / 2);  // Transfer buffer to FDC FIFO
+
+     if (!fdc_wait_for_irq()) {
+        printf("Write operation failed: IRQ timeout.\n");
+        return false;
+    }
 
     fdc_motor_off(drive);  // Turn off motor
     return true;
@@ -510,6 +709,12 @@ bool fdc_recalibrate(uint8_t drive) {
 void fdd_detect_drives() {
     for (uint8_t drive = FDD_DRIVE_A; drive <= FDD_DRIVE_B; drive++) {
         fdc_motor_on(drive);  // Turn on motor for the current drive
+
+        if (!wait_for_fdc_ready()) {
+            printf("FDC not ready for drive detection: fdd%d\n", drive);
+            fdc_motor_off(drive);
+            continue;
+        }
         
         // Issue a recalibrate command to ensure the drive is functioning
         if (fdc_recalibrate(drive)) {

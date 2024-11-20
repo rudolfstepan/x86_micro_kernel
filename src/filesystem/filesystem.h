@@ -43,7 +43,4 @@ typedef struct {
 void init_fs(drive_t* drive);
 
 
-
-
-
 #endif // FILESYSTEM_H

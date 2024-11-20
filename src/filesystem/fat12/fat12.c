@@ -20,7 +20,7 @@
 
 
 // Global structures and buffers
-FAT12 fat12;
+FAT12* fat12;
 DirectoryEntry* entries = NULL;
 DirectoryEntry* currentDir = NULL;
 uint8_t* buffer = NULL;
@@ -84,9 +84,14 @@ int read_fat12(uint8_t drive, FAT12* fat12) {
 bool fat12_init_fs(uint8_t drive) {
     current_fdd_drive = drive; // Set the current drive
     // Initialize FAT12 structure
-    memset(&fat12, 0, sizeof(FAT12));
+    fat12 = (FAT12*)malloc(sizeof(FAT12));
+    if (!fat12) {
+        printf("Memory allocation failed for FAT12 structure.\n");
+        return false;
+    }
+    //memset(&fat12, 0, sizeof(FAT12));
 
-    if (!read_fat12(drive, &fat12)) {
+    if (!read_fat12(drive, fat12)) {
         printf("Failed to initialize FAT12.\n");
         return false;
     }
@@ -97,8 +102,8 @@ bool fat12_init_fs(uint8_t drive) {
 int get_next_cluster(int currentCluster) {
     int offset = (currentCluster * 3) / 2;
     uint16_t next_cluster = (offset % 2 == 0)
-        ? (fat12.fat[offset] | (fat12.fat[offset + 1] << 8)) & 0x0FFF
-        : ((fat12.fat[offset] >> 4) | (fat12.fat[offset + 1] << 4)) & 0x0FFF;
+        ? (fat12->fat[offset] | (fat12->fat[offset + 1] << 8)) & 0x0FFF
+        : ((fat12->fat[offset] >> 4) | (fat12->fat[offset + 1] << 4)) & 0x0FFF;
 
     return next_cluster >= 0xFF8 ? -1 : next_cluster;
 }
@@ -136,7 +141,7 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
     if (dir == NULL) {
         printf("Reading root directory entries.\n");
 
-        int logical_sector = fat12.rootDirStart;
+        int logical_sector = fat12->rootDirStart;
         int track, head, sector;
         logical_to_chs(logical_sector, &track, &head, &sector);
 
@@ -159,12 +164,12 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
         printf("Reading subdirectory. Start cluster: %d\n", cluster);
 
         while (cluster >= MIN_CLUSTER_VALUE && cluster < MAX_CLUSTER_VALUE && entries_found < MAX_ENTRIES) {
-            int start_sector = fat12.dataStart + (cluster - 2) * fat12.bootSector.sectorsPerCluster;
+            int start_sector = fat12->dataStart + (cluster - 2) * fat12->bootSector.sectorsPerCluster;
             int track, head, sector;
             logical_to_chs(start_sector, &track, &head, &sector);
 
             // Read multiple sectors for the cluster
-            if (!fdc_read_sectors(current_fdd_drive, head, track, sector, fat12.bootSector.sectorsPerCluster, buffer)) {
+            if (!fdc_read_sectors(current_fdd_drive, head, track, sector, fat12->bootSector.sectorsPerCluster, buffer)) {
                 printf("Error reading subdirectory sectors starting from sector %d.\n", sector);
                 free(entries);
                 free(buffer);
@@ -172,7 +177,7 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
             }
 
             // Copy entries from the buffer
-            for (int i = 0; i < fat12.bootSector.sectorsPerCluster && entries_found < MAX_ENTRIES; i++) {
+            for (int i = 0; i < fat12->bootSector.sectorsPerCluster && entries_found < MAX_ENTRIES; i++) {
                 memcpy(&entries[entries_found], buffer + (i * SECTOR_SIZE), SECTOR_SIZE);
                 entries_found += SECTOR_SIZE / ROOT_ENTRY_SIZE;
             }
@@ -391,7 +396,7 @@ int fat12_read_file(Fat12File* file, void* buffer, unsigned int buffer_size, uns
 
     unsigned int bytes_read = 0;
     unsigned int currentCluster = file->startCluster;
-    unsigned int clusterSize = SECTOR_SIZE * fat12.bootSector.sectorsPerCluster;
+    unsigned int clusterSize = SECTOR_SIZE * fat12->bootSector.sectorsPerCluster;
 
     // Calculate initial offset within the first cluster if the position is not at the start
     unsigned int startOffset = file->position % clusterSize;
@@ -405,10 +410,10 @@ int fat12_read_file(Fat12File* file, void* buffer, unsigned int buffer_size, uns
     // Read loop
     while (bytes_read < bytesToRead && currentCluster >= MIN_CLUSTER_VALUE && currentCluster < MAX_CLUSTER_VALUE) {
         // Calculate the first sector of the current cluster
-        unsigned int firstSectorOfCluster = fat12.dataStart + (currentCluster - 2) * fat12.bootSector.sectorsPerCluster;
+        unsigned int firstSectorOfCluster = fat12->dataStart + (currentCluster - 2) * fat12->bootSector.sectorsPerCluster;
 
         // Read each sector in the cluster
-        for (unsigned int i = 0; i < fat12.bootSector.sectorsPerCluster && bytes_read < bytesToRead; i++) {
+        for (unsigned int i = 0; i < fat12->bootSector.sectorsPerCluster && bytes_read < bytesToRead; i++) {
             unsigned int logical_sector = firstSectorOfCluster + i;
             int track = logical_sector / (SECTORS_PER_TRACK * NUMBER_OF_HEADS);
             int head = (logical_sector / SECTORS_PER_TRACK) % NUMBER_OF_HEADS;

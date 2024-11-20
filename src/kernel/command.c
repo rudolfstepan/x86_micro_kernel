@@ -276,13 +276,13 @@ void cmd_mount(int arg_count, const char** arguments) {
                 // strcpy(current_path, "/");
                 break;
             case DRIVE_TYPE_FDD:
-                printf("Init fs on FDD %s with CHS %u/%u/%u\n", current_drive->name, current_drive->cylinder, current_drive->head, current_drive->sector);
+                //printf("Init fs on FDD %s with CHS %u/%u/%u\n", current_drive->name, current_drive->cylinder, current_drive->head, current_drive->sector);
                 // Initialize file system or handling code for FDD
                 // Call fat12_init_fs as part of FDD initialization
                 printf("Init fs on FDD drive %s\n", current_drive->name);
                 fat12_init_fs(current_drive->fdd_drive_no);
                 // reset the current path
-                strcpy(current_path, "/");
+                //strcpy(current_path, "/");
                 break;
 
             default:
@@ -507,7 +507,7 @@ void cmd_exit(int arg_count, const char** arguments) {
 }
 
 void cmd_fdd(int arg_count, const char** arguments) {
-    if (arguments[0] == NULL) {
+    if (arg_count == 0) {
         debug_read_bootsector(1);
     } else {
 

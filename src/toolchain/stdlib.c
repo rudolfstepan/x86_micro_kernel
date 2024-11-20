@@ -10,7 +10,10 @@
 
 void* malloc(size_t size) {
     // perform a syscall to allocate memory
-    void* allocated_memory = syscall(SYS_MALLOC, (void*)size, NULL, NULL); // Allocate 1024 bytes
+    //void* allocated_memory = syscall(SYS_MALLOC, (void*)size, NULL, NULL); // Allocate 1024 bytes
+
+    void* allocated_memory = k_malloc(size);
+
     if (allocated_memory) {
         //printf("Memory allocated at: %p\n", allocated_memory);
     } else {
@@ -23,13 +26,15 @@ void* malloc(size_t size) {
 }
 
 void* realloc(void *ptr, size_t new_size) {
-    return syscall(SYS_REALLOC, ptr, (void*)(uintptr_t)new_size, 0);
+    //return syscall(SYS_REALLOC, ptr, (void*)(uintptr_t)new_size, 0);
+    return k_realloc(ptr, new_size);
 }
 
 void free(void* ptr) {
     if (!ptr) return;
 
-    syscall(SYS_FREE, ptr, 0, 0);
+    //syscall(SYS_FREE, ptr, 0, 0);
+    k_free(ptr);
 }
 
 void secure_free(void *ptr, size_t size) {
