@@ -123,10 +123,15 @@
  */
 
 #include "fdd.h"
+#include "kernel/sys.h"
 #include "drivers/io/io.h"
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
 #include "toolchain/strings.h"
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
 
 
 #define FDD_CMD_RECALIBRATE  0x07
@@ -214,175 +219,30 @@ void fdc_motor_off(int drive) {
 
 // Wait for FDC to signal readiness
 bool wait_for_fdc_ready() {
-    // int timeout = 1000000;  // Adjusted for a shorter wait period (1000 ms total)
-    // while (!(fdc_get_status() & 0x80)) {  // Wait for bit 7 of the MSR to be set
-    //     if (--timeout == 0) {
-    //         printf("Timeout waiting for FDC ready signal.\n");
-    //         return false;
-    //     }
-    //     //sleep_ms(1);  // Avoid CPU-intensive busy waiting
-    // }
-    // return true;
-
-    //irq_ready_triggered = false;  // Reset IRQ flag before waiting
-    int timeout = 100000;     // 1000 ms timeout for IRQ wait
-
-    //printf("Waiting for irq_ready_triggered...\n");
-
-    while (!irq_ready_triggered && timeout-- > 0) {
-        //sleep_ms(1);
-
-        // loop wait for specific time
-        for(int i=0; i++; i<timeout){
-             for(int i=0; i++; i<timeout){
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-
-                if(irq_ready_triggered) break;
-            }
+    int timeout = 1000;  // Adjusted for a shorter wait period (1000 ms total)
+    while (!irq_ready_triggered) {  // Wait for bit 7 of the MSR to be set
+        if (--timeout == 0) {
+            printf("Timeout waiting for FDC ready signal.\n");
+            return false;
         }
-        // uint8_t msr = inb(FDD_MSR);
-        // if(msr & 0x80){
-        //         irq_triggered = true;
-        //         break;
-        //     }
 
-        // if (timeout % 100 == 0) {  // Print status periodically for debugging
-        //     printf("Waiting... MSR Status: 0x%X\n", msr);
-        // }
+        sleep_ms(1);  // Avoid CPU-intensive busy waiting
     }
-    
-
-    // if (!irq_ready_triggered) {
-    //     printf("irq_ready_triggered wait timed out.\n");
-    // } else {
-    //     printf("irq_ready_triggered detected.\n");
-    // }
-    return irq_ready_triggered;
+    return true;
 }
 
 // Wait for FDC interrupt to indicate completion
 bool fdc_wait_for_irq() {
-    //irq_triggered = false;  // Reset IRQ flag before waiting
-    int timeout = 100000;     // 1000 ms timeout for IRQ wait
-
-    //printf("Waiting for irq_triggered...\n");
-
-    while (!irq_triggered && timeout-- > 0) {
-        //sleep_ms(1);
-
-        for(int i=0; i++; i<timeout){
-             for(int i=0; i++; i<timeout){
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-                __asm__ volatile("nop");
-
-                if(irq_triggered) break;
-            }
+    int timeout = 1000;  // Adjusted for a shorter wait period (1000 ms total)
+    while (!irq_triggered) {  // Wait for bit 7 of the MSR to be set
+        if (--timeout == 0) {
+            printf("Timeout waiting for FDC ready signal.\n");
+            return false;
         }
+
+        sleep_ms(1);  // Avoid CPU-intensive busy waiting
     }
-    
-    // if (!irq_triggered) {
-    //     printf("irq_triggered wait timed out.\n");
-    // } else {
-    //     printf("irq_triggered detected.\n");
-    // }
-    return irq_triggered;
+    return true;
 }
 
 // Send a command to the FDC via the FIFO
@@ -744,5 +604,3 @@ void fdd_detect_drives() {
         printf("No floppy drives detected.\n");
     }
 }
-
-

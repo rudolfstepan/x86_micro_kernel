@@ -31,4 +31,7 @@ extern void irq_handler(Registers* r);
 extern void irq_install_handler(int irq, void* r);
 void irq_uninstall_handler(int irq);
 
+extern volatile uint64_t cpu_frequency; // Global CPU frequency
+
+
 #endif

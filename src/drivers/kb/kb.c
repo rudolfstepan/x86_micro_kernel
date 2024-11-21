@@ -70,6 +70,23 @@ char scancode_to_ascii(unsigned char scancode, bool shift, bool caps_lock) {
     return key;
 }
 
+void clear_input_buffer() {
+    memset(input_buffer, 0, sizeof(input_buffer));
+    buffer_index = 0;
+}
+
+void reset_enter_pressed() {
+    // Atomically reset the `enter_pressed` flag
+    enter_pressed = false;
+}
+
+// Helper functions for atomic operations
+bool is_enter_pressed() {
+    // Atomically return the state of `enter_pressed`
+    bool pressed = enter_pressed;
+    return pressed;
+}
+
 void kb_handler(void* r) {
     unsigned char scan = get_scancode_from_keyboard();
 
@@ -136,8 +153,6 @@ char getchar() {
 }
 
 void get_input_line(char* buffer, int max_len) {
-    int index = 0;
-
     // Reset the enter_pressed flag
     enter_pressed = false;
 
@@ -163,23 +178,6 @@ void kb_install() {
     
     memset(input_buffer, 0, sizeof(input_buffer));
     // irq_install_handler(1, kb_handler); // assumed to be set up elsewhere
-}
-
-void clear_input_buffer() {
-    memset(input_buffer, 0, sizeof(input_buffer));
-    buffer_index = 0;
-}
-
-void reset_enter_pressed() {
-    // Atomically reset the `enter_pressed` flag
-    enter_pressed = false;
-}
-
-// Helper functions for atomic operations
-bool is_enter_pressed() {
-    // Atomically return the state of `enter_pressed`
-    bool pressed = enter_pressed;
-    return pressed;
 }
 
 void kb_wait_enter() {

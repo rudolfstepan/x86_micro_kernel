@@ -26,6 +26,7 @@
 
 extern void fdd_irq_handler(uint8_t* r);
 
+void fdc_initialize();
 void fdd_detect_drives();
 void debug_read_bootsector(uint8_t sector);
 bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer);

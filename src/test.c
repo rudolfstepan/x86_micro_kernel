@@ -1,23 +1,23 @@
-#include <stdio.h>
+// #include <stdio.h>
 
-int calculate(int a, int b);
+// int calculate(int a, int b);
 
-int main() {
-    printf("Hello, World!\n");
+// int main() {
+//     printf("Hello, World!\n");
 
-    printf("Enter a value: ");
+//     printf("Enter a value: ");
 
-    int intput = getchar();
+//     int intput = getchar();
 
-    printf("You entered: %c\n", intput);
+//     printf("You entered: %c\n", intput);
 
-    int result = calculate(5, 10);
+//     int result = calculate(5, 10);
 
-    printf("Result: %d\n", result);
+//     printf("Result: %d\n", result);
 
-    return 0;
-}
+//     return 0;
+// }
 
-int calculate(int a, int b) {
-    return a + b;
-}
+// int calculate(int a, int b) {
+//     return a + b;
+// }

@@ -21,6 +21,13 @@
 #include "mbheader.h"
 #include "memory.h"
 
+volatile uint64_t cpu_frequency = 0; // Global CPU frequency
+
+static inline uint64_t read_cpu_cycle_counter() {
+    uint32_t high, low;
+    __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
+    return ((uint64_t)high << 32) | low;
+}
 
 //---------------------------------------------------------------------------------------------
 // syscall table entry points and definitions
@@ -391,14 +398,21 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
     // Install the IRQ handler for the FDD
     fdc_initialize();
 
-    printf("Press any key to continue...\n");
-    getchar();
+    // printf("Press any key to continue...\n");
+    // getchar();
     
     test_memory();
 
-    printf("Press any key to continue...\n");
-    getchar();
-    
+    // printf("Press any key to continue...\n");
+    // getchar();
+
+    // calc the cpu speed
+    volatile uint64_t start_cycles, end_cycles;
+    start_cycles = read_cpu_cycle_counter();
+    pit_delay(1000); // Hardware timer-based delay
+    end_cycles = read_cpu_cycle_counter();
+    cpu_frequency = end_cycles - start_cycles; // Cycles per second (Hz)
+
     ata_detect_drives();
     current_drive = ata_get_drive(0);
     if (current_drive) {
@@ -412,10 +426,10 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
     // detect fdd drives
     fdd_detect_drives();
 
-    printf("Press any key to continue...\n");
-    getchar();
+    // printf("Press any key to continue...\n");
+    // getchar();
 
-    clear_screen();
+    //clear_screen();
 
     print_welcome_message();
 
