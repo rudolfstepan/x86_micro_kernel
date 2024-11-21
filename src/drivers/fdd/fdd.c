@@ -194,7 +194,7 @@ void mask_irq6() {
 }
 
 void fdc_initialize() {
-    irq_install_handler(6, fdd_irq_handler);
+    syscall(SYS_INSTALL_IRQ, 6, fdd_irq_handler, 0);
 }
 
 // Get the FDC status

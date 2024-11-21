@@ -41,14 +41,15 @@ void kernel_print_number(int number) {
 }
 
 void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
-    (void*)&vga_write_char,      // Syscall 0: One arguments
-    (void*)&kernel_print_number, // Syscall 1: One argument
+    (void*)&vga_write_char,     // Syscall 0: One arguments
+    (void*)&kernel_print_number,// Syscall 1: One argument
     (void*)&pit_delay,          // Syscall 2: One argument
     (void*)&kb_wait_enter,      // Syscall 3: No arguments
     (void*)&k_malloc,           // Syscall 4: One argument
     (void*)&k_free,             // Syscall 5: One argument
     (void*)&k_realloc,          // Syscall 6: 2 arguments
-    (void*)&getchar,         // Syscall 7: No arguments
+    (void*)&getchar,            // Syscall 7: No arguments
+    (void*)&irq_install_handler,// Syscall 8: 2 arguments
     // Add more syscalls here
 };
 
@@ -93,6 +94,10 @@ void syscall_handler(void* irq_number) {
 
         case SYS_TERMINAL_GETCHAR:  // kb_getchar - No arguments
             ((void* (*)(void))func_ptr)();
+            break;
+
+        case SYS_INSTALL_IRQ:  // kb_install - 2 arguments
+            ((void (*)(int, void*))func_ptr)(arg1, (void*)arg2);
             break;
 
         default:
@@ -391,13 +396,11 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
     irq_install();
     timer_install(1); // Install the timer first for 1 ms delay
     kb_install(); // Install the keyboard
+    fdc_initialize();
+
     __asm__ __volatile__("sti"); // enable interrupts
 
     //display_welcome_message();
-
-    // Install the IRQ handler for the FDD
-    fdc_initialize();
-
     // printf("Press any key to continue...\n");
     // getchar();
     

@@ -7,7 +7,7 @@
 
 void main() {
 
-    //printf("Dir command\n");
+    printf("Dir command\n");
     // init_fs();
 
     // //clear_screen();

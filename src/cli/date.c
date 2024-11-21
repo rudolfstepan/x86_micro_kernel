@@ -1,8 +1,8 @@
-#include "drivers/rtc/rtc.h"
-#include "toolchain/stdio.h"
+// #include "drivers/rtc/rtc.h"
+//#include "toolchain/stdio.h"
 
 int main() {
-    //lear_screen(BLACK);
+    //clear_screen(BLACK);
     printf("Current date/time:\n");
 
     int year, month, day, hour, minute, second;
