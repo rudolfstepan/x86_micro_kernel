@@ -7,7 +7,7 @@
 #include "filesystem/fat32/fat32.h"
 #include "prg.h"
 
-#define PROGRAM_LOAD_ADDRESS 0x10000 // default address where the program will be loaded into memory except in the case of a program header
+#define PROGRAM_LOAD_ADDRESS 0x01100000 // default address where the program will be loaded into memory except in the case of a program header
 
 
 Process process_list[MAX_PROGRAMS];
@@ -35,6 +35,15 @@ void load_and_execute_program(const char* programName) {
         // printf("Relocation offset: %d\n", header->relocation_offset);
         // printf("Relocation size: %d\n", header->relocation_size);
         // printf("Program address: %p\n", (void*)PROGRAM_LOAD_ADDRESS);
+
+        // get the address of the userspace
+        uint32_t* relocation_table = (uint32_t*)(PROGRAM_LOAD_ADDRESS + header->relocation_offset);
+        uint32_t relocation_count = header->relocation_size / sizeof(uint32_t);
+
+        // apply the relocation
+        apply_relocation(relocation_table, relocation_count, PROGRAM_LOAD_ADDRESS);
+
+        printf("Start prg at address: %p\n", header->entry_point + PROGRAM_LOAD_ADDRESS);
 
         // execute the program
         void (*program)() = (void (*)())(header->entry_point + PROGRAM_LOAD_ADDRESS);

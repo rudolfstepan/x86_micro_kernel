@@ -1,5 +1,5 @@
-// #include "drivers/rtc/rtc.h"
-//#include "toolchain/stdio.h"
+#include "drivers/rtc/rtc.h"
+#include "toolchain/stdio.h"
 
 int main() {
     //clear_screen(BLACK);
@@ -10,8 +10,6 @@ int main() {
     read_time(&hour, &minute, &second);
 
     printf("Date Time: %d-%d-%d %d:%d:%d\n", year, month, day, hour, minute, second);
-
-    
 
     return 0;
 }

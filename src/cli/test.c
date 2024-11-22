@@ -3,8 +3,16 @@
 
 //TryContext ctx;
 
-//void main() __attribute__((section(".text.main")));
-void main() {
+void sub() {
+    int x = 10;
+    int y = 2;
+    int z = x / y; // Trigger divide-by-zero exception
+    printf("z = %d\n", z);
+}
+
+void main() __attribute__((section(".text.main"))); // Set the entry point to the main function
+void main()
+ {
     //current_try_context = &ctx; // Set the global context pointer
 
     // printf("Set ctx in user program: 0x%p\n", &ctx);
@@ -23,5 +31,9 @@ void main() {
     // }
 
     // current_try_context = NULL; // Clear the context pointer
+
+    sub();
+
+
     printf("Program execution continues...\n");
 }

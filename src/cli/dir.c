@@ -1,4 +1,4 @@
-//#include "toolchain/stdio.h"
+#include "toolchain/stdio.h"
 
 // #include <stdarg.h>
 // #include "fat32.h"

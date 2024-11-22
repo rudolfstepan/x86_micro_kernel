@@ -120,6 +120,8 @@ void print_welcome_message() {
         printf(" %s: %s ", drive_type, detected_drives[i].name);
     }
 
+    //printf("\nUser memory address: %p\n", USER_MEMORY_ADDRESS);
+
     printf("\n\n    Enter a Command or help for a complete list of supported commands.\n");
     set_color(WHITE);
 }
@@ -208,8 +210,6 @@ void print_efi_memory_map(const multiboot2_info_t *mb_info) {
     printf("Debug: EFI MMap tag size: %u, Descriptor size: %u\n",
            efi_mmap_tag->size, efi_mmap_tag->descriptor_size);
 }
-
-
         // Move to the next tag
         tag = (const multiboot2_tag_t *)((uint8_t *)tag + tag->size);
     }
@@ -401,8 +401,8 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
     __asm__ __volatile__("sti"); // enable interrupts
 
     //display_welcome_message();
-    // printf("Press any key to continue...\n");
-    // getchar();
+    printf("Press any key to continue...\n");
+    getchar();
     
     test_memory();
 
