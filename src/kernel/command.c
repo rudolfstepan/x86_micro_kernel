@@ -127,7 +127,8 @@ void command_loop() {
         get_input_line(input_line, MAX_LINE_LENGTH);
         int arg_cnt = split_input(input_line, command, arguments, 10, 128);
 
-        if (!command) {
+        // Check if the command is empty
+        if (command[0] == '\0') {
             continue; // Empty input
         }
 
@@ -137,7 +138,7 @@ void command_loop() {
         int found = 0;
         for (int i = 0; command_table[i].name != NULL; i++) {
             if (strcmp(command, command_table[i].name) == 0) {
-                command_table[i].execute(arg_cnt, arguments);
+                command_table[i].execute(arg_cnt, (const char**)arguments);
                 found = 1;
                 break;
             }
@@ -326,7 +327,7 @@ void cmd_cd(int arg_count, const char** arguments) {
     if (arg_count == 0) {
         printf("CD command without arguments\n");
     } else {
-        str_trim_end(arguments[0], '/');  // Remove trailing slash from the path
+        str_trim_end((char*)arguments[0], '/');  // Remove trailing slash from the path
         char new_path[256] = "/";
         snprintf(new_path, sizeof(current_path), "%s/%s", current_path, arguments[0]);
 
@@ -552,7 +553,7 @@ void cmd_run(int arg_count, const char** arguments) {
         printf("RUN command without arguments\n");
         return;
     }
-    char* program_name = arguments[0];
+    char* program_name = (char*)arguments[0];
     
     int pid = create_process(program_name);
     if (pid == -1) {
