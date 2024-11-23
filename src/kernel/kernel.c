@@ -4,6 +4,7 @@
 #include "sys.h"
 #include "pit.h"
 #include "hpet.h"
+#include "apic.h"
 
 #include "drivers/kb/kb.h"
 #include "drivers/rtc/rtc.h"
@@ -402,18 +403,14 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
     test_memory();
 
     // Initialize the HPET timer
-    hpet_init();
+    //hpet_init(); // hpet not working
+    initialize_apic_timer();
 
     __asm__ __volatile__("sti"); // enable interrupts
-
-
 
     //display_welcome_message();
     // printf("Press any key to continue...\n");
     // getchar();
-    
-    
-
     // printf("Press any key to continue...\n");
     // getchar();
 
@@ -439,16 +436,13 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
 
     // printf("Press any key to continue...\n");
     // getchar();
-
     //clear_screen();
-
     print_welcome_message();
 
-    test_hpet_main_counter();
+    //test_hpet_main_counter();
+    //initialize_hpet_periodic_callback(100000000); // 1 ms interval
+    apic_timer_set_periodic(10000000); // 1 ms interval
 
-    //initialize_hpet_periodic_callback(1000000000); // 1 ms interval
-
-    
     // Start the command interpreter
     command_loop();
 }

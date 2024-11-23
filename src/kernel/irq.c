@@ -55,7 +55,7 @@ extern void syscall_handler_asm();
 void irq_install() {
     irq_remap();
 
-    set_idt_entry(0x20, (uint32_t)irq0 );
+    set_idt_entry(0x20, (uint32_t)irq0);
     set_idt_entry(0x21, (uint32_t)irq1);
     set_idt_entry(0x22, (uint32_t)irq2);
     set_idt_entry(0x23, (uint32_t)irq3);
@@ -81,7 +81,7 @@ void irq_handler(Registers* regs) {
     if (irq_routines[regs->irq_number - 32]) {
         void (*handler)(Registers* r) = irq_routines[regs->irq_number - 32];
 
-            //     if(regs->irq_number - 32 > 1) {
+            // if(regs->irq_number - 32 > 1) {
             //     printf("IRQ %d\n", regs->irq_number - 32);
             // }
 

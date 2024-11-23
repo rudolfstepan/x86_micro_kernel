@@ -78,7 +78,6 @@ uint16_t read_pit_counter() {
 
 void pit_delay(uint32_t milliseconds) {
     //printf("Delay for %d ms\n", milliseconds);
-
     uint32_t start_tick = timer_tick_count;
     uint32_t ticks_to_wait = milliseconds;
     uint32_t failsafe_timeout = 10000; // 10 seconds

@@ -6,14 +6,10 @@
 #include <stddef.h>
 #include "sys.h"
 
-//#define HPET_IRQ 2           // Example IRQ line; check ACPI for the actual IRQ
-#define HPET_INTERRUPT_VECTOR 0x20 //(0x20 + HPET_IRQ)
-
 #define HPET_BASE_ADDRESS  0xFED00000  // Example; get this from ACPI HPET table
 #define HPET_REG_SIZE      0x400       // HPET register space size
 
 volatile uint64_t* hpet_base = (volatile uint64_t*)HPET_BASE_ADDRESS;
-uint8_t HPET_IRQ = 0;
 
 // Access HPET registers using offsets
 #define HPET_CAPABILITIES      0x00 // General Capabilities Register
@@ -123,50 +119,6 @@ int get_hpet_irq_from_madt(uint8_t* irq) {
     return -1;
 }
 
-int get_hpet_base_and_irq(uint64_t* base_address, uint8_t* irq) {
-    RSDPDescriptor* rsdp = find_rsdp();
-    if (!rsdp) {
-        printf("RSDP not found\n");
-        return -1;
-    }
-
-    ACPITableHeader* rsdt = map_physical_memory(rsdp->rsdt_address, sizeof(ACPITableHeader));
-    if (memcmp(rsdt->signature, "RSDT", 4) != 0) {
-        printf("RSDT not found\n");
-        return -1;
-    }
-
-    uint32_t* entries = (uint32_t*)((uintptr_t)rsdt + sizeof(ACPITableHeader));
-    int entry_count = (rsdt->length - sizeof(ACPITableHeader)) / sizeof(uint32_t);
-
-    for (int i = 0; i < entry_count; i++) {
-        ACPITableHeader* header = map_physical_memory(entries[i], sizeof(ACPITableHeader));
-
-        if (memcmp(header->signature, HPET_SIGNATURE, 4) == 0) {
-            // HPET table found
-            HPETTable* hpet_table = (HPETTable*)header;
-
-            // Extract base address
-            memcpy(base_address, &hpet_table->base_address[4], sizeof(uint64_t));
-
-            // IRQ (for most implementations, IRQ is fixed or tied to IOAPIC routing)
-            //*irq = hpet_table->attributes & 0x1 ? 2 : 0; // Example: 2 for legacy routing, or 0 if not specified
-
-            if (hpet_table->attributes & 0x1) {
-                *irq = 2; // Legacy routing typically uses IRQ 2
-            } else {
-                *irq = 10; // Use a fallback IRQ for modern systems
-            }
-
-            printf("HPET base address: %llX, IRQ: %u\n", *base_address, *irq);
-            return 0;
-        }
-    }
-
-    printf("HPET table not found\n");
-    return -1;
-}
-
 // Locate the RSDP
 RSDPDescriptor* find_rsdp() {
     for (uint8_t* addr = (uint8_t*)0x000E0000; addr < (uint8_t*)0x00100000; addr += 16) {
@@ -179,27 +131,15 @@ RSDPDescriptor* find_rsdp() {
 
 volatile uint64_t hpet_interrupt_count = 0;
 
-// User-defined callback function
-void periodic_timer_callback() {
-    printf("Periodic timer callback triggered: %u\n", hpet_interrupt_count);
-}
-
-void hpet_timer_isr() {
+void hpet_timer_isr(void* r) {
     hpet_interrupt_count++;
-
-    // Call the user-defined callback
-    periodic_timer_callback();
 
     //Acknowledge the interrupt by updating the comparator
     uint64_t current_counter = hpet_base[HPET_MAIN_COUNTER / 8];
     uint64_t ticks = hpet_base[HPET_TIMER_COMPARATOR(0) / 8];
     hpet_base[HPET_TIMER_COMPARATOR(0) / 8] = current_counter + ticks;
-}
 
-void setup_hpet_interrupt() {
-    set_idt_entry(HPET_INTERRUPT_VECTOR + HPET_IRQ, (uint32_t)hpet_timer_isr); // Map ISR to IDT vector
-
-    //syscall(SYS_INSTALL_IRQ, (void*)HPET_INTERRUPT_VECTOR, hpet_timer_isr, 0); // Install IRQ handler
+    printf("Periodic timer callback triggered: %u\n", hpet_interrupt_count);
 }
 
 // Check for HPET
@@ -300,24 +240,18 @@ void* get_hpet_base_from_acpi() {
 
 void initialize_hpet() {
     // Validate and set HPET base address from ACPI
-    // void* base = get_hpet_base_from_acpi();
-    // if (!base) {
-    //     printf("HPET base address not found\n");
-    //     return;
-    // }
+    void* base = get_hpet_base_from_acpi();
+    if (!base) {
+        printf("HPET base address not found\n");
+        return;
+    }
 
-    // hpet_base = (volatile uint64_t*)base;
+    hpet_base = (volatile uint64_t*)base;
 
-    get_hpet_base_and_irq((uint64_t*)&hpet_base, &HPET_IRQ);
-
-    printf("HPET base address: %p, IRQ: %u\n", hpet_base, HPET_IRQ);
+    printf("HPET base address: %p\n", hpet_base);
 
     // Enable HPET globally and main counter
     enable_hpet();
-
-    // Configure periodic timer
-    uint64_t interval_ns = 1000000; // 1 ms
-    set_hpet_timer(0, interval_ns, 1); // Use timer 0, periodic mode
 }
 
 void test_hpet_main_counter() {
@@ -367,30 +301,17 @@ void initialize_hpet_periodic_callback(uint64_t interval_ns) {
 
     // Configure periodic timer (e.g., Timer 0)
     hpet_set_periodic_timer(0, interval_ns);
-
-    // Setup interrupt handling
-    setup_hpet_interrupt();
 }
 
 void hpet_init() {
     if (check_hpet()) {
         printf("HPET is supported\n");
 
-        // Setup HPET interrupt
-        //setup_hpet_interrupt();
-
         // Initialize HPET
         initialize_hpet();
 
-        // Get HPET IRQ from MADT
-        uint8_t irq = 0;
-
-        get_hpet_irq_from_madt(&irq);
-
-        printf("HPET IRQ from MADT: %u\n", irq);
-
-        //initialize_hpet_periodic_callback(1000000000); // 1 ms interval
-
+         // Setup HPET interrupt
+        irq_install_handler(2, hpet_timer_isr);
     } else {
         printf("HPET is not supported\n");
     }
