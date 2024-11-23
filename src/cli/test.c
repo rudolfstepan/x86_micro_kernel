@@ -1,5 +1,5 @@
 #include "toolchain/stdio.h"
-// #include "toolchain/stdlib.h"
+#include "toolchain/stdlib.h"
 
 //TryContext ctx;
 
@@ -33,6 +33,14 @@ void main()
     // current_try_context = NULL; // Clear the context pointer
 
     sub();
+
+    while (1)
+    {
+        sleep_ms(1000);
+
+        printf("Hello, World!\n");
+    }
+    
 
 
     printf("Program execution continues...\n");

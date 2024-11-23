@@ -120,3 +120,57 @@ void disable_interrupts() {
 void enable_interrupts() {
     __asm__ volatile ("sti");
 }
+
+uint64_t __udivdi3(uint64_t dividend, uint64_t divisor) {
+    if (divisor == 0) {
+        // Handle division by zero (could be kernel panic or error handling)
+        while (1) {} // Infinite loop to halt execution
+    }
+
+    if (dividend < divisor) {
+        return 0; // Result is 0 if divisor > dividend
+    }
+
+    uint64_t quotient = 0;
+    uint64_t remainder = 0;
+
+    // Perform the division using bit manipulation
+    for (int i = 63; i >= 0; i--) {
+        remainder = (remainder << 1) | ((dividend >> i) & 1); // Shift in next bit
+        if (remainder >= divisor) {
+            remainder -= divisor;
+            quotient |= (1ULL << i); // Set the corresponding bit in the quotient
+        }
+    }
+
+    return quotient;
+}
+
+uint64_t __umoddi3(uint64_t dividend, uint64_t divisor) {
+    if (divisor == 0) {
+        // Division by zero is undefined; handle appropriately.
+        // For example, halt the system or return 0.
+        while (1); // Infinite loop to signal an error
+    }
+
+    // If the divisor is greater than the dividend, the result is the dividend
+    if (dividend < divisor) {
+        return dividend;
+    }
+
+    // Perform manual division to calculate the remainder
+    uint64_t remainder = 0;
+
+    // Iterate over each bit of the dividend (64 bits)
+    for (int i = 63; i >= 0; i--) {
+        // Shift the remainder left by 1 and bring down the next bit from the dividend
+        remainder = (remainder << 1) | ((dividend >> i) & 1);
+
+        // Subtract the divisor if the remainder is greater or equal to the divisor
+        if (remainder >= divisor) {
+            remainder -= divisor;
+        }
+    }
+
+    return remainder;
+}

@@ -327,6 +327,35 @@ void print_hex64(uint64_t value) {
     }
 }
 
+void uint64_t_to_str(uint64_t value, char* buffer, int base) {
+    if (base < 2 || base > 16) {
+        // Unsupported base
+        buffer[0] = '\0';
+        return;
+    }
+
+    char temp[64]; // Temporary buffer for the conversion
+    int i = 0;
+
+    // Handle zero explicitly
+    if (value == 0) {
+        temp[i++] = '0';
+    } else {
+        // Convert value to the specified base
+        while (value > 0) {
+            temp[i++] = "0123456789ABCDEF"[value % base];
+            value /= base;
+        }
+    }
+
+    // Reverse the string into the output buffer
+    int j = 0;
+    while (i > 0) {
+        buffer[j++] = temp[--i];
+    }
+    buffer[j] = '\0';
+}
+
 /*
     * printf() implementation
     * Supports %c, %s, %d, %u, %p, %X format specifiers
@@ -386,6 +415,36 @@ int printf(const char* format, ...) {
                 uint64_t llx = va_arg(args, uint64_t);
                 print_hex64(llx);  // This assumes print_hex64 handles width.
                 format += 2;       // Skip past 'llX'
+            }else if(strncmp(format, "llu", 3) == 0){
+                format += 2;
+
+                // Handle %llu (unsigned 64-bit integer)
+                    uint64_t value = va_arg(args, uint64_t);
+
+                    // Convert uint64_t to string
+                    char buffer[32];
+                    uint64_t_to_str(value, buffer, 10); // Base 10 conversion utility
+
+                    int len = strlen(buffer);
+                    int pad = width - len;
+
+                    // Apply width and padding
+                    if (!left_align && width_specified && pad > 0) {
+                        for (int i = 0; i < pad; i++) {
+                            putchar(zero_padding ? '0' : ' ');
+                        }
+                    }
+                    for (int i = 0; buffer[i] != '\0'; i++) {
+                        putchar(buffer[i]);
+                    }
+                    if (left_align && width_specified && pad > 0) {
+                        for (int i = 0; i < pad; i++) {
+                            putchar(' ');
+                        }
+                    }
+                    continue; // Move to the next character
+
+
             } else {
                 switch (*format) {
                 case 'c': {

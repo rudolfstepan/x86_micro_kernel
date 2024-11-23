@@ -63,4 +63,7 @@ void disable_interrupts();
 // Enable interrupts
 void enable_interrupts();
 
+uint64_t __udivdi3(uint64_t dividend, uint64_t divisor);
+uint64_t __umoddi3(uint64_t dividend, uint64_t divisor);
+
 #endif /* STDLIB_H */

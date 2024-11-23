@@ -3,6 +3,7 @@
 #include "prg.h"
 #include "sys.h"
 #include "pit.h"
+#include "hpet.h"
 
 #include "drivers/kb/kb.h"
 #include "drivers/rtc/rtc.h"
@@ -398,18 +399,25 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
     kb_install(); // Install the keyboard
     fdc_initialize();
 
+    test_memory();
+
+    // Initialize the HPET timer
+    hpet_init();
+
     __asm__ __volatile__("sti"); // enable interrupts
 
+
+
     //display_welcome_message();
-    printf("Press any key to continue...\n");
-    getchar();
+    // printf("Press any key to continue...\n");
+    // getchar();
     
-    test_memory();
+    
 
     // printf("Press any key to continue...\n");
     // getchar();
 
-    // calc the cpu speed
+    //calc the cpu speed
     volatile uint64_t start_cycles, end_cycles;
     start_cycles = read_cpu_cycle_counter();
     pit_delay(1000); // Hardware timer-based delay
@@ -435,6 +443,10 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
     //clear_screen();
 
     print_welcome_message();
+
+    test_hpet_main_counter();
+
+    //initialize_hpet_periodic_callback(1000000000); // 1 ms interval
 
     
     // Start the command interpreter
