@@ -39,7 +39,7 @@ compile_bootloader:
 	nasm -f elf32 $(SOURCE_DIR)/boot/irq.asm -o $(BOOT_DIR)/_irq.o
 	nasm -f elf32 $(SOURCE_DIR)/boot/syscall.asm -o $(BOOT_DIR)/_syscall.o
 	nasm -f elf32 $(SOURCE_DIR)/boot/stack.asm -o $(BOOT_DIR)/_stack.o
-	#nasm -f elf32 $(SOURCE_DIR)/toolchain/trycatch.asm -o $(OUTPUT_DIR)/trycatch.o
+	
 
 # Compile filesystem sources
 compile_filesystem:
@@ -71,10 +71,14 @@ compile_sources:
 		gcc $(CFLAGS) -o $(OUTPUT_DIR)/$$OBJECT_NAME $$FILE; \
 	done
 
+	nasm -f elf32 $(SOURCE_DIR)/kernel/context_switch.asm -o $(OUTPUT_DIR)/kernel/context_switch.o
+
 # Link kernel
 link_kernel:
 	@echo "Linking kernel..."
-	ld $(LD_FLAGS) -T klink.ld -o $(OUTPUT_DIR)/kernel.bin $(OUTPUT_DIR)/kernel/kernel.o $(OUTPUT_DIR)/kernel/memory.o \
+	ld $(LD_FLAGS) -T klink.ld -o $(OUTPUT_DIR)/kernel.bin $(OUTPUT_DIR)/kernel/kernel.o \
+	$(OUTPUT_DIR)/kernel/context_switch.o $(OUTPUT_DIR)/kernel/scheduler.o \
+	$(OUTPUT_DIR)/kernel/memory.o \
 	$(BOOT_DIR)/_multiboot.o $(BOOT_DIR)/_bootloader.o $(BOOT_DIR)/_gdt.o $(BOOT_DIR)/_idt.o $(BOOT_DIR)/_isr.o \
 	$(BOOT_DIR)/_irq.o $(BOOT_DIR)/_syscall.o $(BOOT_DIR)/_stack.o $(OUTPUT_DIR)/kernel/gdt.o \
 	$(OUTPUT_DIR)/kernel/idt.o $(OUTPUT_DIR)/kernel/isr.o $(OUTPUT_DIR)/kernel/irq.o $(OUTPUT_DIR)/kernel/pit.o \

@@ -1,19 +1,14 @@
 #include "toolchain/stdio.h"
-
-// #include <stdarg.h>
-// #include "fat32.h"
-// #include "system.h"
-
+#include "toolchain/stdlib.h"
 
 void main() {
 
-    printf("Dir command\n");
-    // init_fs();
+    int counter = 0;
 
-    // //clear_screen();
+    while (1)
+    {
+         printf("DIR CLI running %d\n", counter++);
 
-    // sprintf("Directory:\n");
-
-    // read_directory_path("/");
-
+         sleep_ms(500);
+    }
 }

@@ -17,8 +17,9 @@
 
 extern volatile uint32_t* apic;
 
+void init_apic_timer(uint32_t ticks);
 void initialize_apic_timer();
-void apic_timer_set_periodic(uint32_t interval);
+//void apic_timer_set_periodic(uint32_t interval);
 
 
 #endif // APIC_H

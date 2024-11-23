@@ -32,16 +32,14 @@ void main()
 
     // current_try_context = NULL; // Clear the context pointer
 
-    sub();
+    //sub();
 
-    while (1)
+    int counter = 0;
+
+    while (1==1)
     {
-        sleep_ms(1000);
+        sleep_ms(500);
 
-        printf("Hello, World!\n");
+        printf("TEST CLI running %d\n", counter++);
     }
-    
-
-
-    printf("Program execution continues...\n");
 }

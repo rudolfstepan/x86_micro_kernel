@@ -59,11 +59,11 @@ void load_and_execute_program(const char* programName) {
     }
 }
 
-void load_program_into_memory(const char* programName) {
+void load_program_into_memory(const char* programName, uint32_t address) {
     // Load the program into the specified memory location
-    if (fat32_load_file(programName, (void*)PROGRAM_LOAD_ADDRESS) > 0) {
-        program_header_t* header = (program_header_t*)PROGRAM_LOAD_ADDRESS;
-        printf("entryPoint: %X\n", header->entry_point);
+    if (fat32_load_file(programName, (void*)address) > 0) {
+        program_header_t* header = (program_header_t*)address;
+        printf("entryPoint: %p\n", address + header->entry_point);
     } else {
         printf("%s not found\n", programName);
     }

@@ -1,5 +1,6 @@
 #include "apic.h"
 #include "sys.h"
+#include "scheduler.h"
 
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
@@ -7,28 +8,15 @@
 #include <stdint.h>
 #include <stddef.h>
 
-
 volatile uint32_t* apic = (volatile uint32_t*)APIC_BASE_ADDR;
 volatile uint32_t apic_interrupt_count = 0;
 
 void apic_timer_isr(void* r) {
-    apic_interrupt_count++;
-    apic[0xB0 / 4] = 0; // End of interrupt (EOI)
-    // Perform periodic tasks
-    //printf("APIC Timer Interrupt Triggered!\n");
+    // Acknowledge the APIC interrupt
+    apic[0xB0 / 4] = 0;  // End of interrupt (EOI)
 
-    // TODO: Implement a scheduler to switch tasks
-}
-
-void apic_timer_set_periodic(uint32_t interval) {
-    // Step 1: Set the timer divisor (divide by 16 in this example)
-    apic[APIC_TIMER_DIVIDE / 4] = 0x03; // Divide by 16
-
-    // Step 2: Set the timer mode to periodic
-    apic[APIC_LVT_TIMER / 4] = TIMER_PERIODIC_MODE | APIC_VECTOR_BASE;
-
-    // Step 3: Set the initial count value
-    apic[APIC_TIMER_INIT_CNT / 4] = interval;
+    // Invoke the scheduler
+    //schedule();
 }
 
 void apic_timer_stop() {
@@ -52,6 +40,28 @@ void enable_apic() {
     uint64_t apic_base = read_msr(IA32_APIC_BASE_MSR);
     apic_base |= APIC_BASE_ENABLE; // Enable the APIC
     write_msr(IA32_APIC_BASE_MSR, apic_base);
+}
+
+// void apic_timer_set_periodic(uint32_t interval) {
+//     //Step 1: Set the timer divisor (divide by 16 in this example)
+//     apic[APIC_TIMER_DIVIDE / 4] = 0x03; // Divide by 16
+
+//     // Step 2: Set the timer mode to periodic
+//     apic[APIC_LVT_TIMER / 4] = TIMER_PERIODIC_MODE | APIC_VECTOR_BASE;
+
+//     // Step 3: Set the initial count value
+//     apic[APIC_TIMER_INIT_CNT / 4] = interval;
+// }
+
+void init_apic_timer(uint32_t ticks) {
+    // Set the divide configuration (divide by 16)
+    apic[0x3E0 / 4] = 0x3;
+
+    // Set the initial timer count
+    apic[0x380 / 4] = ticks;
+
+    // Set the timer mode to periodic and assign the interrupt vector
+    apic[0x320 / 4] = 0x20000 | 0x22; //32;  // Periodic mode, interrupt vector 32
 }
 
 void initialize_apic_timer() {

@@ -5,6 +5,8 @@
 #include "pit.h"
 #include "hpet.h"
 #include "apic.h"
+#include "scheduler.h"
+#include "process.h"
 
 #include "drivers/kb/kb.h"
 #include "drivers/rtc/rtc.h"
@@ -360,6 +362,21 @@ void parse_multiboot1_info(const multiboot1_info_t *mb_info) {
     printf("Parsing Complete.\n");
 }
 
+// static uint32_t stack1[1024] = {0};
+// static uint32_t stack2[1024] = {0};
+
+// void task1() {
+//     while (1) {
+//        // printf("Task 1 running...\n");
+//     }
+// }
+
+// void task2() {
+//     while (1) {
+//         //printf("Task 2 running...\n");
+//     }
+// }
+
 extern fat32_class_t fat32;
 //---------------------------------------------------------------------------------------------
 // kernel_main is the main entry point of the kernel
@@ -439,9 +456,23 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
     //clear_screen();
     print_welcome_message();
 
-    //test_hpet_main_counter();
-    //initialize_hpet_periodic_callback(100000000); // 1 ms interval
-    apic_timer_set_periodic(10000000); // 1 ms interval
+
+
+    // load_program_into_memory("DIR.PRG", 0x01100000);
+    // program_header_t* header = (program_header_t*)0x01100000;
+    // create_task(0x01100000 + header->entry_point, stack1, sizeof(stack1));
+
+    // load_program_into_memory("TEST.PRG", 0x01200000);
+    // header = (program_header_t*)0x01200000;
+    // create_task(0x01200000 + header->entry_point, stack2, sizeof(stack2));
+
+    // create_task(task1, stack1, sizeof(stack1));
+    // create_task(task2, stack2, sizeof(stack2));
+
+    
+    // Initialize the APIC timer
+    init_apic_timer(10000000);  // Set timer ticks
+
 
     // Start the command interpreter
     command_loop();
