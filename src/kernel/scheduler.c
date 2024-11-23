@@ -8,12 +8,51 @@ volatile task_t tasks[MAX_TASKS] = {0};
 volatile uint8_t current_task = 0; // ID des aktuellen Tasks
 uint8_t num_tasks = 0;    // Anzahl der registrierten Tasks
 
+// Save and restore task context
+void scheduler_save_context(task_t *task) {
+    // Save registers and stack pointer
+
+    // save the stack pointer
+    __asm__ __volatile__("mov %%esp, %0" : "=r"(task->stack_pointer));
+}
+
+void scheduler_restore_context(task_t *task) {
+    // Restore registers and stack pointer
+
+    // restore the stack pointer
+    __asm__ __volatile__("mov %0, %%esp" : : "r"(task->stack_pointer));
+}
+
+// Scheduler
+void scheduler_interrupt_handler(void* r) {
+    // Save the current task's state (registers, stack pointer, etc.)
+    if (tasks[current_task].status == TASK_RUNNING) {
+        tasks[current_task].status = TASK_READY;
+        // Save the current task's context
+        scheduler_save_context(&tasks[current_task]);
+    }
+
+    // Select the next task (e.g., round-robin scheduling)
+    current_task = (current_task + 1) % num_tasks;
+
+    // Resume the next task
+    if (tasks[current_task].status != TASK_RUNNING) {
+        tasks[current_task].status = TASK_RUNNING;
+        start_program_execution(tasks[current_task].entry_point);
+    } else {
+        // Restore the next task's context
+        scheduler_restore_context(&tasks[current_task]);
+    }
+
+    // Return from the interrupt
+}
+
 // create a new task
 void create_task(void (*entry_point)(void), uint32_t* stack, size_t stack_size) {
     uint32_t* stack_top = stack + stack_size / sizeof(uint32_t);
 
     // Push a "fake" return address (this will return to `schedule()`)
-    *(--stack_top) = (uint32_t)schedule;
+    *(--stack_top) = (uint32_t)scheduler_interrupt_handler;
 
     // Set up the initial stack frame for the task
     *(--stack_top) = 0;             // EBP
@@ -30,63 +69,4 @@ void create_task(void (*entry_point)(void), uint32_t* stack, size_t stack_size) 
 
     printf("Task %d created with stack pointer: %p\n", num_tasks, stack_top);
     num_tasks++;
-}
-
-extern void context_switch(uint32_t** old_sp, uint32_t* new_sp);
-
-void context_switch_debug(uint32_t** old_sp, uint32_t* new_sp) {
-    printf("Switching context:\n");
-
-    if (old_sp) {
-        printf("Saving old stack pointer: %p\n", *old_sp);
-    } else {
-        printf("Old stack pointer is NULL, skipping save.\n");
-    }
-
-    if (new_sp) {
-        printf("Loading new stack pointer: %p\n", new_sp);
-    } else {
-        printf("New stack pointer is NULL, skipping load.\n");
-    }
-
-    context_switch(old_sp, new_sp);
-
-    printf("Context switch complete.\n");
-}
-
-// Hilfsfunktion für den Scheduler
-void schedule() {
-    printf("Scheduler called\n");
-
-    if(num_tasks == 0) {
-        printf("No tasks to run\n");
-        return;
-    }
-
-    // Save the current task's state
-    if (tasks[current_task].status == TASK_RUNNING) {
-        tasks[current_task].status = TASK_READY;
-
-        // Save the current stack pointer
-        context_switch_debug(&tasks[current_task].stack_pointer, NULL);
-    }
-
-    // Select the next task in a round-robin fashion
-    current_task = (current_task + 1) % num_tasks;
-
-    // Start or resume the next task
-    if (tasks[current_task].status != TASK_RUNNING) {
-        tasks[current_task].status = TASK_RUNNING;
-
-        // Start the task for the first time
-        start_program_execution(tasks[current_task].entry_point);
-
-        printf("Task %d started\n", current_task);
-    } else {
-        // Resume the task
-        context_switch_debug(NULL, tasks[current_task].stack_pointer);
-    }
-
-    // This point is never reached during normal operation because the scheduler
-    // transfers control to the task or another context.
 }

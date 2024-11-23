@@ -26,4 +26,6 @@ typedef struct {
 void schedule();
 void create_task(void (*entry_point)(void), uint32_t* stack, size_t stack_size);
 
+void scheduler_interrupt_handler();
+
 #endif // SCHEDULER_H

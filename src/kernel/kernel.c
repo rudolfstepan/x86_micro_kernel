@@ -335,9 +335,7 @@ void parse_multiboot1_info(const multiboot1_info_t *mb_info) {
             // Advance to the next entry
             mmap = (const multiboot1_mmap_entry_t *)((uint8_t *)mmap + mmap->size + sizeof(mmap->size));
         }
-
         printf("------------------------------------------------------------\n");
-
     }
 
     if (mb_info->flags & MULTIBOOT1_FLAG_BOOTLOADER) {
@@ -362,20 +360,30 @@ void parse_multiboot1_info(const multiboot1_info_t *mb_info) {
     printf("Parsing Complete.\n");
 }
 
-// static uint32_t stack1[1024] = {0};
-// static uint32_t stack2[1024] = {0};
+static uint32_t stack1[1024] = {0};
+static uint32_t stack2[1024] = {0};
 
-// void task1() {
-//     while (1) {
-//        // printf("Task 1 running...\n");
-//     }
-// }
+void task1() {
+    while (1) {
+       printf("Task 1 running...\n");
 
-// void task2() {
-//     while (1) {
-//         //printf("Task 2 running...\n");
-//     }
-// }
+       sleep_ms(1000);
+
+       // give the context back to the scheduler
+       __asm__ __volatile__("int $0x29");
+    }
+}
+
+void task2() {
+    while (1) {
+        printf("Task 2 running...\n");
+
+        sleep_ms(1000);
+
+        // give the context back to the scheduler
+       __asm__ __volatile__("int $0x29");
+    }
+}
 
 extern fat32_class_t fat32;
 //---------------------------------------------------------------------------------------------
@@ -421,7 +429,9 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
 
     // Initialize the HPET timer
     //hpet_init(); // hpet not working
-    initialize_apic_timer();
+    //initialize_apic_timer();
+
+    irq_install_handler(9, scheduler_interrupt_handler);
 
     __asm__ __volatile__("sti"); // enable interrupts
 
@@ -466,12 +476,18 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
     // header = (program_header_t*)0x01200000;
     // create_task(0x01200000 + header->entry_point, stack2, sizeof(stack2));
 
-    // create_task(task1, stack1, sizeof(stack1));
-    // create_task(task2, stack2, sizeof(stack2));
+    create_task(task1, stack1, sizeof(stack1));
+    create_task(task2, stack2, sizeof(stack2));
+
+    __asm__ __volatile__("int $0x29"); //start the scheduler
+
+    // start the tasks
+    // start_program_execution(task1);
+    // start_program_execution(task2);
 
     
     // Initialize the APIC timer
-    init_apic_timer(10000000);  // Set timer ticks
+    //init_apic_timer(10000000);  // Set timer ticks
 
 
     // Start the command interpreter
