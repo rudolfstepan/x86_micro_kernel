@@ -13,6 +13,15 @@ volatile uint32_t apic_interrupt_count = 0;
 
 void apic_timer_isr(void* r) {
     // Acknowledge the APIC interrupt
+    //apic[0xB0 / 4] = 0;  // End of interrupt (EOI)
+
+    //printf("APIC Timer interrupt %u\n", apic_interrupt_count++);
+
+    scheduler_interrupt_handler();
+
+    // Acknowledge the interrupt (APIC End-of-Interrupt)
+    //outb(0x22, 0x22); // Send EOI to the APIC
+
     apic[0xB0 / 4] = 0;  // End of interrupt (EOI)
 }
 

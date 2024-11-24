@@ -12,7 +12,7 @@ extern char _kernel_end; // Defined by the linker script
 size_t total_memory = 0;
 
 #define HEAP_START ((void*)(&_kernel_end))
-#define HEAP_END ((void*)(0x500000)) // End of heap (5MB)
+#define HEAP_END ((void*)(0x0f000000)) // End of heap (5MB)
 #define ALIGN_UP(addr, align) (((addr) + ((align)-1)) & ~((align)-1))
 #define HEAP_START_ALIGNED ALIGN_UP((size_t)HEAP_START, 16)
 #define BLOCK_SIZE sizeof(memory_block)
@@ -39,7 +39,6 @@ typedef struct memory_block {
 memory_block* freeList = NULL;
 
 
-
 void print_memory_size(uint64_t total_memory) {
     uint64_t total_kb = total_memory / (uint64_t)1024;
     uint64_t total_mb = total_kb / (uint64_t)1024;
@@ -53,6 +52,30 @@ void initialize_memory_system() {
         return;
     }
 
+    // uintptr_t memory_end = 0x00500000; //0x1FDFFFFF; // 511MB
+    // printf("Memory End: 0x%p\n", memory_end);
+
+    // // setup the stack
+    // uint32_t stack_size = 1024 * 16;
+    // uint32_t stack_start = memory_end - stack_size;
+    // uint32_t stack_end = HEAP_END;
+
+    // if ((uintptr_t)stack_start < 0x00100000 || (uintptr_t)stack_start > 0x1FDFFFFF) {
+    //     printf("Error: stack_start is outside usable memory range\n");
+    //     while (1); // Halt execution for debugging
+    // }
+
+    // stack_start = (void *)((uintptr_t)stack_start & ~0xF);
+
+    // printf("Setting stack pointer to: %p\n", stack_start);
+    // asm volatile("cli");
+    // //asm volatile("mov %0, %%esp" :: "r"(stack_start));
+    // asm volatile("sti");
+    // printf("Stack pointer successfully set\n");
+
+
+    // Initialize the heap
+
     void* heap_start = (void*)ALIGN_UP((size_t)&_kernel_end, 16);
     void* heap_end = (void*)HEAP_END;
 
@@ -64,10 +87,10 @@ void initialize_memory_system() {
     // Dynamically allocate the frame bitmap
     size_t bitmap_size = (total_memory / FRAME_SIZE + 7) / 8; // Rounded up
     frame_bitmap = (uint8_t*)heap_start;
-    memset(frame_bitmap, 0, bitmap_size);
+    //memset(frame_bitmap, 0, bitmap_size);
 
     print_memory_size(total_memory);
-    printf("Heap Range: 0x%p - 0x%p\n", heap_start, heap_end);
+    printf("Heap Range: %p - %p\n", heap_start, heap_end);
 }
 
 void set_frame(size_t frame) {

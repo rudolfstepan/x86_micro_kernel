@@ -25,6 +25,10 @@
 #include "mbheader.h"
 #include "memory.h"
 
+extern char _stack_start;  // Start address of the stack
+extern char _stack_end;    // End address of the stack
+
+
 volatile uint64_t cpu_frequency = 0; // Global CPU frequency
 
 static inline uint64_t read_cpu_cycle_counter() {
@@ -319,15 +323,16 @@ void parse_multiboot1_info(const multiboot1_info_t *mb_info) {
         const uint8_t *mmap_end = (const uint8_t *)mb_info->mmap_addr + mb_info->mmap_length;
 
         printf("------------------------------------------------------------\n");
-        printf("| Base Address    | Length         | Type (1=Usable)       |\n");
+        printf("| Address                 | Length        | Type (1=Usable)|\n");
         printf("------------------------------------------------------------\n");
 
         while ((uint8_t *)mmap < mmap_end) {
             //printf("| %p | %u | %u |\n", mmap->base_addr, mmap->length, mmap->type);
 
-            printf("| %-12p | ", mmap->base_addr, mmap->length, mmap->type);
+            printf("| %-12p ", mmap->base_addr);
+            printf("| %-12p | ", mmap->base_addr + mmap->length -1);
             printf("%-13u | ", mmap->length);
-            printf("%-21u |\n", mmap->type);
+            printf("%-14u |\n", mmap->type);
 
             // calculate total memory
             total_memory += mmap->length;
@@ -360,28 +365,32 @@ void parse_multiboot1_info(const multiboot1_info_t *mb_info) {
     printf("Parsing Complete.\n");
 }
 
-static uint32_t stack1[1024] = {0};
-static uint32_t stack2[1024] = {0};
 
 void task1() {
+    int counter = 0;
+    printf("+++Task 1 started\n");
     while (1) {
-       printf("Task 1 running...\n");
+       //printf("Task 1 running...\n");
+       counter++;
 
-       sleep_ms(1000);
-
-       // give the context back to the scheduler
-       __asm__ __volatile__("int $0x29");
+       if(counter == 10){
+           counter = 0;
+           asm volatile("int $0x29"); // Trigger a timer interrupt
+       }
     }
 }
 
 void task2() {
+    int counter = 0;
+    printf("+++Task 2 started\n");
     while (1) {
-        printf("Task 2 running...\n");
+       //printf("Task 2 running...\n");
+       counter++;
 
-        sleep_ms(1000);
-
-        // give the context back to the scheduler
-       __asm__ __volatile__("int $0x29");
+       if(counter == 10){
+           counter = 0;
+           asm volatile("int $0x29"); // Trigger a timer interrupt
+       }
     }
 }
 
@@ -429,9 +438,9 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
 
     // Initialize the HPET timer
     //hpet_init(); // hpet not working
-    //initialize_apic_timer();
+    initialize_apic_timer();
 
-    irq_install_handler(9, scheduler_interrupt_handler);
+    //irq_install_handler(9, scheduler_interrupt_handler);
 
     __asm__ __volatile__("sti"); // enable interrupts
 
@@ -461,10 +470,10 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
     // detect fdd drives
     fdd_detect_drives();
 
-    // printf("Press any key to continue...\n");
-    // getchar();
-    //clear_screen();
-    print_welcome_message();
+    // // printf("Press any key to continue...\n");
+    // // getchar();
+    // //clear_screen();
+    // print_welcome_message();
 
 
 
@@ -476,20 +485,36 @@ void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
     // header = (program_header_t*)0x01200000;
     // create_task(0x01200000 + header->entry_point, stack2, sizeof(stack2));
 
-    create_task(task1, stack1, sizeof(stack1));
-    create_task(task2, stack2, sizeof(stack2));
+    // uintptr_t stack_start = (uintptr_t)&_stack_start;
+    // uintptr_t stack_end = (uintptr_t)&_stack_end;
 
-    __asm__ __volatile__("int $0x29"); //start the scheduler
+    // printf("Stack Start: 0x%08X, ", stack_start);
+    // printf("End:   0x%08X, ", stack_end);
+    // printf("Size:  %d bytes\n", stack_end - stack_start);
 
-    // start the tasks
-    // start_program_execution(task1);
-    // start_program_execution(task2);
+    // create_task(task1, stack_start);
+    // create_task(task2, stack_start);
 
-    
+    // asm volatile("int $0x29"); // Trigger a timer interrupt
+
     // Initialize the APIC timer
     //init_apic_timer(10000000);  // Set timer ticks
 
+    //start_task(0);
+    // start_task(1);
 
+
+    // start the tasks
+   
+    // start_program_execution(command_loop);
+
+    // printf("will start task1\n");
+
+    // start_program_execution(task1);
+
+    // printf("Kernel Main Loop\n");
+
+   
     // Start the command interpreter
     command_loop();
 }

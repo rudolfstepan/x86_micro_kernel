@@ -2,6 +2,8 @@
 #include "process.h"
 #include "prg.h"
 #include "sys.h"
+#include "scheduler.h"
+
 #include "drivers/rtc/rtc.h"
 #include "drivers/ata/ata.h"
 
@@ -70,11 +72,12 @@ void cmd_hdd(int cnt, const char **args);
 void cmd_beep(int cnt, const char **args);
 void cmd_wait(int cnt, const char **args);
 void list_running_processes(int cnt, const char **args);
+void cmd_start_task(int cnt, const char **args);
 
 
 // Command table
 command_t command_table[MAX_COMMANDS] = {
-       {"help", cmd_help},
+    {"help", cmd_help},
     {"clear", cmd_clear},
     {"echo", cmd_echo},
     {"mem", cmd_mem},
@@ -102,7 +105,8 @@ command_t command_table[MAX_COMMANDS] = {
     {"hdd", cmd_hdd},
     {"beep", cmd_beep},
     {"wait", cmd_wait},
-    {"pid", list_running_processes},
+    {"pid", list_tasks},
+    {"rtask", cmd_start_task},
     {NULL, NULL} // End marker
 };
 
@@ -110,7 +114,6 @@ command_t command_table[MAX_COMMANDS] = {
 #define MAX_LENGTH 64
 
 void command_loop() {
-
     // // if the command is not found
     // if (ii == NUM_COMMANDS) {
     //     char* program = strcat(command, ".PRG");
@@ -123,6 +126,9 @@ void command_loop() {
     
 
     while (1) {
+
+        asm volatile("int $0x29"); // Trigger a timer interrupt
+
         printf("> "); // Command prompt
         get_input_line(input_line, MAX_LINE_LENGTH);
         int arg_cnt = split_input(input_line, command, arguments, 10, 128);
@@ -639,4 +645,19 @@ void openFile(const char* path) {
     default:
         break;
     }
+}
+
+void cmd_start_task(int arg_count, const char** arguments) {
+    if (arg_count == 0) {
+        printf("RTASK command without arguments\n");
+        return;
+    }
+
+    int taskId = strtoul(arguments[0], NULL, 10);
+    if (taskId < 0 || taskId >= MAX_TASKS) {
+        printf("Invalid task ID: %d\n", taskId);
+        return;
+    }
+
+    start_task(taskId);
 }

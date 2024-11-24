@@ -71,14 +71,13 @@ compile_sources:
 		gcc $(CFLAGS) -o $(OUTPUT_DIR)/$$OBJECT_NAME $$FILE; \
 	done
 
-	nasm -f elf32 $(SOURCE_DIR)/kernel/context_switch.asm -o $(OUTPUT_DIR)/kernel/context_switch.o
+	nasm -f elf32 $(SOURCE_DIR)/kernel/switch.asm -o $(OUTPUT_DIR)/kernel/switch.o
 
 # Link kernel
 link_kernel:
 	@echo "Linking kernel..."
 	ld $(LD_FLAGS) -T klink.ld -o $(OUTPUT_DIR)/kernel.bin $(OUTPUT_DIR)/kernel/kernel.o \
-	$(OUTPUT_DIR)/kernel/context_switch.o $(OUTPUT_DIR)/kernel/scheduler.o \
-	$(OUTPUT_DIR)/kernel/memory.o \
+	$(OUTPUT_DIR)/kernel/switch.o $(OUTPUT_DIR)/kernel/scheduler.o $(OUTPUT_DIR)/kernel/memory.o \
 	$(BOOT_DIR)/_multiboot.o $(BOOT_DIR)/_bootloader.o $(BOOT_DIR)/_gdt.o $(BOOT_DIR)/_idt.o $(BOOT_DIR)/_isr.o \
 	$(BOOT_DIR)/_irq.o $(BOOT_DIR)/_syscall.o $(BOOT_DIR)/_stack.o $(OUTPUT_DIR)/kernel/gdt.o \
 	$(OUTPUT_DIR)/kernel/idt.o $(OUTPUT_DIR)/kernel/isr.o $(OUTPUT_DIR)/kernel/irq.o $(OUTPUT_DIR)/kernel/pit.o \
@@ -135,5 +134,5 @@ run:
 	@echo "Running QEMU..."
 	#qemu-system-x86_64 -bios OVMF.fd -kernel ./build/kernel.bin
 	#qemu-system-x86_64 -kernel ./build/kernel.bin -s -S -display default
-	qemu-system-x86_64 -m 64M -boot d -cdrom ./kernel.iso -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy \
+	qemu-system-x86_64 -m 512M -boot d -cdrom ./kernel.iso -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy \
 	
