@@ -7,8 +7,8 @@ extern kernel_main
 
 section .text
 start:
-    ; Initialize stack pointer
-    mov esp, 0x1FDFFFFF - (1024 * 8) ;_stack_start + 8192
+    ; Initialize stack pointer hadcoded to 0x1FDFFFFF which is the end of the 512MB memory
+    mov esp, _stack_start + 8192
     ; Call the kernel main function
     push ebx
     push dword 0x36d76289

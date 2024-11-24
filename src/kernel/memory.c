@@ -52,27 +52,19 @@ void initialize_memory_system() {
         return;
     }
 
-    // uintptr_t memory_end = 0x00500000; //0x1FDFFFFF; // 511MB
-    // printf("Memory End: 0x%p\n", memory_end);
+    uintptr_t memory_end = 0x1FDFFFFF; //0x1FDFFFFF; // 511MB
+    // setup the stack
+    uint32_t stack_size = 1024 * 8;
+    uint32_t* stack_start = &_kernel_end - stack_size;
+    uint32_t stack_end = HEAP_END;
 
-    // // setup the stack
-    // uint32_t stack_size = 1024 * 16;
-    // uint32_t stack_start = memory_end - stack_size;
-    // uint32_t stack_end = HEAP_END;
+    printf("Kennel end: %p\n", &_kernel_end);
 
-    // if ((uintptr_t)stack_start < 0x00100000 || (uintptr_t)stack_start > 0x1FDFFFFF) {
-    //     printf("Error: stack_start is outside usable memory range\n");
-    //     while (1); // Halt execution for debugging
-    // }
-
-    // stack_start = (void *)((uintptr_t)stack_start & ~0xF);
-
-    // printf("Setting stack pointer to: %p\n", stack_start);
+    printf("Setting stack pointer to: %p\n", stack_start);
     // asm volatile("cli");
-    // //asm volatile("mov %0, %%esp" :: "r"(stack_start));
+    // asm volatile("mov %0, %%esp" :: "r"(stack_start));
     // asm volatile("sti");
-    // printf("Stack pointer successfully set\n");
-
+    
 
     // Initialize the heap
 
