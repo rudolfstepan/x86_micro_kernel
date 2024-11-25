@@ -64,7 +64,7 @@ void initialize_apic_timer() {
     enable_apic();
 
     // Register the interrupt handler for the APIC Timer
-    irq_install_handler(2, apic_timer_isr);
+    irq_install_handler(2, (void*)apic_timer_isr);
 
     printf("APIC Timer configured in periodic mode on vector %u\n", APIC_VECTOR_BASE);
 }

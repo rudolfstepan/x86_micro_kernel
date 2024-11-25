@@ -1,0 +1,143 @@
+# Variables
+SOURCE_DIR = src
+OUTPUT_DIR = build
+ISO_DIR = iso
+CFLAGS = -Isrc -m32 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -O1 -Wall -Wextra -g -Wno-unused-parameter -Wwrite-strings
+LD_FLAGS = -m elf_i386 -nostdlib
+MOUNT_DIR = /mnt/disk
+
+# Directories
+BOOT_DIR = $(OUTPUT_DIR)/boot
+FILESYSTEM_DIR = $(OUTPUT_DIR)/filesystem
+DRIVERS_DIR = $(OUTPUT_DIR)/drivers
+CLI_DIR = $(OUTPUT_DIR)/cli
+
+.PHONY: all clean prepare compile_bootloader compile_filesystem compile_drivers compile_sources link_kernel link_cli copy_binaries mount iso run
+
+all: clean prepare compile_bootloader compile_filesystem compile_drivers compile_sources link_kernel link_cli copy_binaries mount iso
+
+clean:
+	clear
+	@echo "Cleaning up build and iso directories..."
+	rm -rf $(OUTPUT_DIR)/*
+	rm -rf $(ISO_DIR)/*
+
+prepare:
+	@echo "Preparing directories..."
+	#mkdir -p $(BOOT_DIR) $(FILESYSTEM_DIR) $(DRIVERS_DIR) $(CLI_DIR)
+
+# Compile bootloader
+compile_bootloader:
+	@echo "Compiling bootloader..."
+	nasm -f elf32 $(SOURCE_DIR)/boot/bootloader.asm -o $(OUTPUT_DIR)/boot_bootloader.o
+	nasm -f elf32 $(SOURCE_DIR)/boot/multiboot.asm -o $(OUTPUT_DIR)/boot_multiboot.o
+	nasm -f elf32 $(SOURCE_DIR)/boot/gdt.asm -o $(OUTPUT_DIR)/boot_gdt.o
+	nasm -f elf32 $(SOURCE_DIR)/boot/idt.asm -o $(OUTPUT_DIR)/boot_idt.o
+	nasm -f elf32 $(SOURCE_DIR)/boot/isr.asm -o $(OUTPUT_DIR)/boot_isr.o
+	nasm -f elf32 $(SOURCE_DIR)/boot/irq.asm -o $(OUTPUT_DIR)/boot_irq.o
+	nasm -f elf32 $(SOURCE_DIR)/boot/syscall.asm -o $(OUTPUT_DIR)/boot_syscall.o
+	nasm -f elf32 $(SOURCE_DIR)/boot/stack.asm -o $(OUTPUT_DIR)/boot_stack.o
+
+# Compile filesystem sources
+compile_filesystem:
+	@echo "Compiling filesystem sources..."
+	for src_file in $(shell find $(SOURCE_DIR)/filesystem -type f -name '*.c'); do \
+		base_name=$$(basename $$src_file .c); \
+		gcc $(CFLAGS) -c $$src_file -o $(OUTPUT_DIR)/$${base_name}.o; \
+	done
+	#@echo "Linking filesystem object files..."
+	#ld -m elf_i386 -r -o $(FILESYSTEM_DIR)/filesystem.o $(FILESYSTEM_DIR)/_*.o
+
+	#g++ -m32 -o $(FILESYSTEM_DIR)/filesystem.o $(FILESYSTEM_DIR)/_filesystem.o $(FILESYSTEM_DIR)/_fat12.o $(FILESYSTEM_DIR)/_fat32.o \
+	#$(FILESYSTEM_DIR)/_fat32_cluster.o $(FILESYSTEM_DIR)/_fat32_dir.o $(FILESYSTEM_DIR)/_fat32_files.o
+
+# Compile drivers sources
+compile_drivers:
+	@echo "Compiling drivers sources..."
+	for src_file in $(shell find $(SOURCE_DIR)/drivers -type f -name '*.c'); do \
+		base_name=$$(basename $$src_file .c); \
+		gcc $(CFLAGS) -c $$src_file -o $(OUTPUT_DIR)/$${base_name}.o; \
+	done
+	#@echo "Linking drivers object files..."
+	#ld -m elf_i386 -r -o $(DRIVERS_DIR)/drivers.o $(DRIVERS_DIR)/_*.o
+
+# Compile all .c files except in filesystem and drivers directories
+compile_sources:
+	@echo "Compiling sources..."
+	for FILE in $(shell find $(SOURCE_DIR) -type f -name '*.c' ! -path '$(SOURCE_DIR)/cli/*' ! -path '$(SOURCE_DIR)/filesystem/*' ! -path '$(SOURCE_DIR)/drivers/*'); do \
+		BASENAME=$$(basename $$FILE .c); \
+		OBJECT_NAME=$${BASENAME}.o; \
+		g++ $(CFLAGS) -c $$FILE -o $(OUTPUT_DIR)/$$OBJECT_NAME; \
+	done
+
+	# for FILE in $(shell find $(SOURCE_DIR) -type f -name '*.c' ! -path '$(SOURCE_DIR)/filesystem/*' ! -path '$(SOURCE_DIR)/drivers/*'); do \
+	# 	RELATIVE_PATH=$${FILE#$(SOURCE_DIR)/}; \
+	# 	#mkdir -p $(OUTPUT_DIR)/$$(dirname $$RELATIVE_PATH); \
+	# 	OBJECT_NAME=$${RELATIVE_PATH%.*}.o; \
+	# 	#g++ $(CFLAGS) -o $(OUTPUT_DIR)/$$OBJECT_NAME $$FILE; \
+	# 	g++ $(CFLAGS) -o $(OUTPUT_DIR)/$$FILE; \
+	# done
+
+	#nasm -f elf32 $(SOURCE_DIR)/kernel/switch.asm -o $(OUTPUT_DIR)/kernel/switch.o
+
+# Link kernel
+link_kernel:
+	@echo "Linking kernel..."
+	gcc -m32 -ffreestanding -nostdlib -T klink.ld -o $(OUTPUT_DIR)/kernel.bin $(OUTPUT_DIR)/*.o
+
+
+	#ld $(LD_FLAGS) -T klink.ld -o
+	# g++ -T klink.ld -o $(OUTPUT_DIR)/kernel.bin $(OUTPUT_DIR)/kernel/kernel.o \
+	# $(OUTPUT_DIR)/kernel/scheduler.o $(OUTPUT_DIR)/kernel/memory.o \
+	# $(BOOT_DIR)/_multiboot.o $(BOOT_DIR)/_bootloader.o $(BOOT_DIR)/_gdt.o $(BOOT_DIR)/_idt.o $(BOOT_DIR)/_isr.o \
+	# $(BOOT_DIR)/_irq.o $(BOOT_DIR)/_syscall.o $(BOOT_DIR)/_stack.o $(OUTPUT_DIR)/kernel/gdt.o \
+	# $(OUTPUT_DIR)/kernel/idt.o $(OUTPUT_DIR)/kernel/isr.o $(OUTPUT_DIR)/kernel/irq.o $(OUTPUT_DIR)/kernel/pit.o \
+	# $(OUTPUT_DIR)/kernel/hpet.o $(OUTPUT_DIR)/kernel/apic.o \
+	# $(OUTPUT_DIR)/kernel/prg.o $(OUTPUT_DIR)/kernel/command.o \
+	# $(OUTPUT_DIR)/kernel/process.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
+	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
+
+# Link CLI programs
+link_cli:
+	# @echo "Linking CLI programs..."
+	# ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/date.elf $(CLI_DIR)/date.o \
+	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o
+
+	# ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.o \
+	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o
+
+	# ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/test.elf $(CLI_DIR)/test.o \
+	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o
+
+# Copy binaries
+copy_binaries:
+	@echo "Copying binaries..."
+	# objcopy -O binary $(CLI_DIR)/date.elf $(CLI_DIR)/date.prg
+	# objcopy -O binary $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.prg
+	# objcopy -O binary $(CLI_DIR)/test.elf $(CLI_DIR)/test.prg
+
+mount:
+	# @echo "Mounting disk image..."
+	# if [ ! -d $(MOUNT_DIR) ]; then \
+	# 	echo "Creating $(MOUNT_DIR) directory"; \
+	# 	mkdir -p $(MOUNT_DIR); \
+	# fi
+	# sudo mount ./disk.img $(MOUNT_DIR)
+	# sudo cp $(CLI_DIR)/date.prg $(MOUNT_DIR)/
+	# sudo cp $(CLI_DIR)/dir.prg $(MOUNT_DIR)/
+	# sudo cp $(CLI_DIR)/test.prg $(MOUNT_DIR)/
+	# sudo umount $(MOUNT_DIR)
+
+	# @echo "Converting disk image to VMDK format..."
+	# qemu-img convert -f raw -O vmdk ./disk.img ./disk.vmdk
+
+iso:
+	@echo "Creating ISO image..."
+	mkdir -p $(ISO_DIR)/boot/grub
+	cp $(OUTPUT_DIR)/kernel.bin $(ISO_DIR)/boot/
+	cp grub.cfg $(ISO_DIR)/boot/grub/
+	sudo grub-mkrescue -o kernel.iso $(ISO_DIR)
+
+run:
+	@echo "Running QEMU..."
+	qemu-system-x86_64 -m 512M -boot d -cdrom ./kernel.iso -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy

@@ -79,7 +79,7 @@ void irq_install() {
 void irq_handler(Registers* regs) {
     // Check if there is a custom handler for this IRQ
     if (irq_routines[regs->irq_number - 32]) {
-        void (*handler)(Registers* r) = irq_routines[regs->irq_number - 32];
+        void (*handler)(Registers* r) = (void (*)(Registers*))(irq_routines[regs->irq_number - 32]);
 
             // if(regs->irq_number - 32 > 0) {
             //     printf("registered RQ %d\n", regs->irq_number - 32);

@@ -86,12 +86,12 @@ int get_hpet_irq_from_madt(uint8_t* irq) {
         return -1;
     }
 
-    ACPITableHeader* rsdt = map_physical_memory(rsdp->rsdt_address, sizeof(ACPITableHeader));
+    ACPITableHeader* rsdt = (ACPITableHeader*)map_physical_memory(rsdp->rsdt_address, sizeof(ACPITableHeader));
     uint32_t* entries = (uint32_t*)((uintptr_t)rsdt + sizeof(ACPITableHeader));
     int entry_count = (rsdt->length - sizeof(ACPITableHeader)) / sizeof(uint32_t);
 
     for (int i = 0; i < entry_count; i++) {
-        ACPITableHeader* header = map_physical_memory(entries[i], sizeof(ACPITableHeader));
+        ACPITableHeader* header = (ACPITableHeader*)map_physical_memory(entries[i], sizeof(ACPITableHeader));
         if (memcmp(header->signature, APIC_SIGNATURE, 4) == 0) {
             MADT* madt = (MADT*)header;
 
@@ -311,7 +311,7 @@ void hpet_init() {
         initialize_hpet();
 
          // Setup HPET interrupt
-        irq_install_handler(2, hpet_timer_isr);
+        irq_install_handler(2, (void*)hpet_timer_isr);
     } else {
         printf("HPET is not supported\n");
     }

@@ -72,7 +72,7 @@ typedef struct {
     unsigned char name[13];                 // Name of the file in 8.3 format (FILENAME.EXT\0)
     size_t size;                   // Size of the file in bytes
     size_t position;               // Current position within the file (offset from base)
-    struct FAT12* fat12Instance;   // Pointer to the FAT12 structure (for accessing FAT, boot sector, etc.)
+    FAT12* fat12Instance;          // Pointer to the FAT12 structure (for accessing FAT, boot sector, etc.)
 } Fat12File;
 
 

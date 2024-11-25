@@ -57,7 +57,7 @@ void init_pit(uint32_t frequency) {
 
 void timer_install(uint8_t ms) {
     // Install the IRQ handler for the timer
-    irq_install_handler(0, timer_irq_handler);
+    irq_install_handler(0, (void*)timer_irq_handler);
     //printf("Install Timer and set an interval for %d ms\n", ms);
     init_pit(1000 / ms); // Set PIT frequency based on the desired millisecond interval
 }

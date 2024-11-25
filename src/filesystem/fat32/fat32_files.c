@@ -134,7 +134,7 @@ int fat32_load_file(const char* filename, void* loadAddress) {
 // Function to find a file in the current directory
 struct FAT32DirEntry* findFileInDirectory(const char* filename) {
     unsigned int sector = cluster_to_sector(&boot_sector, current_directory_cluster);
-    struct FAT32DirEntry* entries = malloc(SECTOR_SIZE * boot_sector.sectorsPerCluster / sizeof(struct FAT32DirEntry));
+    struct FAT32DirEntry* entries = (struct FAT32DirEntry*)malloc(SECTOR_SIZE * boot_sector.sectorsPerCluster / sizeof(struct FAT32DirEntry));
 
     if (entries == NULL) {
         // Handle memory allocation failure
@@ -161,7 +161,7 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
         char currentName[13]; // Format the filename
         formatFilename(currentName, entries[j].name);
         if (strcmp(currentName, filename) == 0) {
-            struct FAT32DirEntry* foundEntry = malloc(sizeof(struct FAT32DirEntry));
+            struct FAT32DirEntry* foundEntry = (struct FAT32DirEntry*)malloc(sizeof(struct FAT32DirEntry));
             if (foundEntry == NULL) {
                 // Handle memory allocation failure
                 printf("Error: Failed to allocate memory for directory entry.\n");
@@ -230,7 +230,7 @@ FILE* fat32_open_file(const char* filename, const char* mode) {
     unsigned int startCluster = read_start_cluster(entry);
     int fileSize = entry->fileSize;
 
-    FILE* file = malloc(sizeof(FILE));
+    FILE* file = (FILE*)malloc(sizeof(FILE));
     if (file == NULL) {
         printf("Not enough memory.\n");
         return NULL;
@@ -238,7 +238,7 @@ FILE* fat32_open_file(const char* filename, const char* mode) {
 
     file->position = 0;
     file->size = fileSize;
-    file->ptr = malloc(fileSize);
+    file->ptr = (unsigned char*)malloc(fileSize);
     file->mode = mode;
     file->name = filename;
     file->startCluster = startCluster;
@@ -257,5 +257,5 @@ int fat32_read_file(FILE* file, void* buffer, unsigned int buffer_size, unsigned
         bytesToRead = file->size - file->position;
     }
 
-    return readFileData(file->startCluster, buffer, buffer_size, bytesToRead);
+    return readFileData(file->startCluster, (char*)buffer, buffer_size, bytesToRead);
 }

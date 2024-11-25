@@ -105,7 +105,7 @@ command_t command_table[MAX_COMMANDS] = {
     {"hdd", cmd_hdd},
     {"beep", cmd_beep},
     {"wait", cmd_wait},
-    {"pid", list_tasks},
+    {"pid", (command_func)list_tasks},
     {"rtask", cmd_start_task},
     {NULL, NULL} // End marker
 };
@@ -572,9 +572,9 @@ void cmd_run(int arg_count, const char** arguments) {
 void openFile(const char* path) {
     printf("Opening file: %s\n", path);
 
-    switch (current_drive->type) {
+    switch ((drive_type_t)current_drive->type) {
     case DRIVE_TYPE_ATA:
-
+{
         FILE* file = fat32_open_file(path, "r");
         if (file == NULL) {
             printf("File not found: %s\n", path);
@@ -608,7 +608,7 @@ void openFile(const char* path) {
 
         secure_free(buffer, sizeof(buffer));  // Clear the buffer
         break;
-
+}
     case DRIVE_TYPE_FDD:
     {
         // TODO: use the gerneric FILE structure to read the file

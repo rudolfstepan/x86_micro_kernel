@@ -37,7 +37,7 @@ extern void isr30();
 extern void isr31();
 
 
-char* exception_messages[] =
+const char* exception_messages[] =
 {
     "Division By Zero",
     "Debug",

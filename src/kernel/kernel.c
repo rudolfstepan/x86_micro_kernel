@@ -124,7 +124,7 @@ void print_welcome_message() {
     printf("        Total Memory: %d MB\n", total_memory/1024/1024);
     printf("        Detected Drives (%d): ", drive_count);
     for(int i=0; i<drive_count; i++){
-        char* drive_type = detected_drives[i].type == DRIVE_TYPE_ATA ? "ATA" : "FDD";
+        const char* drive_type = (const char*)(detected_drives[i].type == DRIVE_TYPE_ATA ? "ATA" : "FDD");
         printf(" %s: %s ", drive_type, detected_drives[i].name);
     }
 
@@ -403,7 +403,7 @@ extern fat32_class_t fat32;
 // multiboot_magic: the magic number passed by the bootloader
 // multiboot_info_ptr: a pointer to the multiboot information structure
 //---------------------------------------------------------------------------------------------
-void kernel_main(uint32_t multiboot_magic, const void *multiboot_info){
+void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_info){
 
     // Validate Multiboot2 magic number
     if (multiboot_magic != 0x36d76289) {

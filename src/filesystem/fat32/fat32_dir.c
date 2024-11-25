@@ -1,5 +1,8 @@
 #include "fat32.h"
 #include "toolchain/stdio.h"
+#include "toolchain/stdlib.h"
+#include "toolchain/strings.h"
+
 
 // Function to read a directory path and return if it exists
 bool fat32_read_dir(const char* path) {

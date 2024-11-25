@@ -3,10 +3,10 @@
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
 
-extern void swtch(context_t *old, context_t *new);
+//extern void swtch(context_t *old, context_t *new);
 
 // Task-Liste
-task_t tasks[MAX_TASKS] = {0};
+task_t tasks[MAX_TASKS];
 volatile uint8_t current_task = 0; // ID des aktuellen Tasks
 uint8_t num_tasks = 0;    // Anzahl der registrierten Tasks
 

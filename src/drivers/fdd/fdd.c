@@ -194,7 +194,7 @@ void mask_irq6() {
 }
 
 void fdc_initialize() {
-    syscall(SYS_INSTALL_IRQ, (void*)6, fdd_irq_handler, 0);
+    syscall(SYS_INSTALL_IRQ, (void*)6, (uint8_t*)fdd_irq_handler, 0);
 }
 
 // Get the FDC status
@@ -327,7 +327,7 @@ bool _fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector
     //fdc_wait_for_irq();  // Wait for any pending IRQs to clear
     //sleep_ms(10);  // Small delay before issuing command
     // prepare DMA for reading
-    dma_prepare_floppy(buffer, SECTOR_SIZE, true);
+    dma_prepare_floppy((uint8_t*)buffer, SECTOR_SIZE, true);
 
     //sleep_ms(10);  // Small delay before issuing command
 
@@ -569,7 +569,7 @@ void fdd_detect_drives() {
         // Issue a recalibrate command to ensure the drive is functioning
         if (fdc_recalibrate(drive)) {
             // Check if the FDC is ready and if the drive responds correctly
-            uint8_t status = fdc_get_status(drive);
+            uint8_t status = fdc_get_status();
             if ((status & 0x80) && !(status & 0x10)) {  // Check ready bit and ensure no error bit is set
                 drive_t* detected_drive = (drive_t*)malloc(sizeof(drive_t));
                 if (detected_drive == NULL) {

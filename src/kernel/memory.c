@@ -11,8 +11,8 @@ extern char _kernel_end; // Defined by the linker script
 
 size_t total_memory = 0;
 
-#define HEAP_START ((void*)(&_kernel_end))
-#define HEAP_END ((void*)(0x0f000000)) // End of heap (5MB)
+#define HEAP_START ((uint32_t)(&_kernel_end))
+#define HEAP_END ((uint32_t)(0x0f000000)) // End of heap (5MB)
 #define ALIGN_UP(addr, align) (((addr) + ((align)-1)) & ~((align)-1))
 #define HEAP_START_ALIGNED ALIGN_UP((size_t)HEAP_START, 16)
 #define BLOCK_SIZE sizeof(memory_block)
@@ -55,7 +55,7 @@ void initialize_memory_system() {
     uintptr_t memory_end = 0x1FDFFFFF; //0x1FDFFFFF; // 511MB
     // setup the stack
     uint32_t stack_size = 1024 * 8;
-    uint32_t* stack_start = &_kernel_end - stack_size;
+    uint32_t* stack_start = (uint32_t*)(&_kernel_end - stack_size);
     uint32_t stack_end = HEAP_END;
 
     printf("Kennel end: %p\n", &_kernel_end);

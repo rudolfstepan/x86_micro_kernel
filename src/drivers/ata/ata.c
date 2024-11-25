@@ -1,11 +1,14 @@
 // ATA driver
 #include "ata.h"
-#include <stddef.h>
 #include "drivers/io/io.h"
 #include "toolchain/stdio.h"
 #include "toolchain/strings.h"
 #include "toolchain/stdlib.h"
 #include "drivers/fdd/fdd.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
+
 
 drive_t* current_drive = NULL;// = {0};  // Current drive (global variable)
 drive_t detected_drives[MAX_DRIVES];  // Global array of detected drives

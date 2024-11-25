@@ -300,13 +300,13 @@ Fat12File* fat12_open_file(const char* filename, const char* mode) {
         return NULL;
     }
 
-    Fat12File* file = malloc(sizeof(Fat12File));
+    Fat12File* file = (Fat12File*)malloc(sizeof(Fat12File));
     if (file == NULL) {
         printf("Failed to allocate memory for file structure.\n");
         return NULL;
     }
 
-    file->base = malloc(file_entry->fileSize);
+    file->base = (unsigned char*)malloc(file_entry->fileSize);
     if (file->base == NULL) {
         printf("Failed to allocate memory for file buffer.\n");
         free(file);

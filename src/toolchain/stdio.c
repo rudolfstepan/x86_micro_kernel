@@ -13,8 +13,6 @@
 #include "drivers/video/video.h"
 #include "drivers/kb/kb.h"
 
-#define __kernel__
-
 
 // for memory dump
 #define BYTES_PER_LINE 16
@@ -198,7 +196,7 @@ void unsigned_int_to_str(unsigned int value, char* buffer, int base) {
 }
 
 void int_to_str2(int value, char* str, int base) {
-    char* digits = "0123456789ABCDEF";
+    const char* digits = "0123456789ABCDEF";
     char temp[32];
     int i = 0;
     int isNegative = 0;
@@ -274,7 +272,7 @@ void print_unsigned(unsigned int value, unsigned int base) {
 
 void print_hex(unsigned int value) {
     char hexString[9]; // 8 characters for 32-bit address + 1 for null-terminator
-    char* hexChars = "0123456789ABCDEF";
+    const char* hexChars = "0123456789ABCDEF";
     hexString[8] = '\0';
 
     for (int i = 7; i >= 0; i--) {

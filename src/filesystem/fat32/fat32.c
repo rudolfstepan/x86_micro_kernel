@@ -9,7 +9,7 @@
 // fat32_cluster.c: Contains the implementation of the FAT32 I/O functions.
 
 unsigned int current_directory_cluster = 2; // Default root directory cluster for FAT32
-struct Fat32BootSector boot_sector = {0};
+struct Fat32BootSector boot_sector;
 
 unsigned short ata_base_address;
 bool ata_is_master;
