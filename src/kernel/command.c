@@ -171,6 +171,8 @@ void command_loop() {
                 input[buffer_index-1] = '\0';
                 buffer_index = 0;
 
+                printf("\n");
+
                 // call the command interpreter
                 process_command(input);
 
