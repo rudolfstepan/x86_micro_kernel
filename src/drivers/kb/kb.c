@@ -93,6 +93,18 @@ char input_queue_pop() {
     return ch;
 }
 
+char input_queue_get_last() {
+    if (input_queue_head == input_queue_tail) {
+        return '\0'; // Warteschlange ist leer
+    }
+
+    // Berechne die vorherige Position von input_queue_tail
+    int prev_tail = (input_queue_tail - 1 + INPUT_QUEUE_SIZE) % INPUT_QUEUE_SIZE;
+
+    // Gib das letzte Zeichen zurück
+    return input_queue[prev_tail];
+}
+
 // Funktion: Entfernt das letzte Zeichen aus der Warteschlange
 char input_queue_remove_last() {
     if (input_queue_head == input_queue_tail) {
@@ -179,7 +191,7 @@ char getchar() {
     disable_interrupts();
 
     // Retrieve the first character from the buffer
-    char ch = input_queue_pop(); //input_buffer[0];
+    char ch = input_queue_get_last();
 
     // Re-enable interrupts
     enable_interrupts();
