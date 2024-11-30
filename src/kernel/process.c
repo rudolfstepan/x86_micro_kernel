@@ -6,6 +6,7 @@
 #include "toolchain/stdlib.h"
 #include "filesystem/fat32/fat32.h"
 #include "prg.h"
+#include "scheduler.h"
 
 #define PROGRAM_LOAD_ADDRESS 0x01100000 // default address where the program will be loaded into memory except in the case of a program header
 
@@ -69,18 +70,27 @@ void load_program_into_memory(const char* programName, uint32_t address) {
     }
 }
 
-int create_process(const char *program_name) {
+int create_process(const char *filename) {
     // Find an available slot in the process list
     for (int i = 0; i < MAX_PROGRAMS; i++) {
         if (!process_list[i].is_running) {
             process_list[i].pid = next_pid++;
-            strcpy(process_list[i].name, program_name);
+            strcpy(process_list[i].name, filename);
             process_list[i].is_running = true;
 
             // Load and execute the program here
-            load_and_execute_program(program_name);
+            //load_and_execute_program(program_name);
 
-            printf(">>>Program '%s' started with PID %d\n", program_name, process_list[i].pid);
+            load_program_into_memory(filename, PROGRAM_LOAD_ADDRESS);
+
+            program_header_t* header = (program_header_t*)PROGRAM_LOAD_ADDRESS;
+
+            //printf("Start prg at address: %p\n", header->entry_point + PROGRAM_LOAD_ADDRESS);
+
+            // Create a new task for the program
+            create_task((void (*)())(header->entry_point + PROGRAM_LOAD_ADDRESS), (uint32_t*)k_malloc(STACK_SIZE));
+
+            //printf(">>>Program '%s' started with PID %d\n", filename, process_list[i].pid);
             return process_list[i].pid;
         }
     }

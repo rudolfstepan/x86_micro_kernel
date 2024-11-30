@@ -36,10 +36,12 @@ void main()
 
     int counter = 0;
 
-    while (1==1)
+    while (1)
     {
-        sleep_ms(500);
+        sleep_ms(1000);
 
         printf("TEST CLI running %d\n", counter++);
+
+        asm volatile("int $0x29"); // Trigger a timer interrupt
     }
 }

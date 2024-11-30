@@ -58,7 +58,7 @@ void cmd_rmdir(int cnt, const char **args);
 void cmd_mkfile(int cnt, const char **args);
 void cmd_rmfile(int cnt, const char **args);
 void cmd_run(int cnt, const char **args);
-void cmd_load(int cnt, const char **args);
+void cmd_exec(int cnt, const char **args);
 void cmd_sys(int cnt, const char **args);
 void cmd_open(int cnt, const char **args);
 void cmd_read_datetime(int cnt, const char **args);
@@ -92,7 +92,7 @@ command_t command_table[MAX_COMMANDS] = {
     {"mkfile", cmd_mkfile},
     {"rmfile", cmd_rmfile},
     {"run", cmd_run},
-    {"load", cmd_load},
+    {"exec", cmd_exec},
     {"sys", cmd_sys},
     {"open", cmd_open},
     {"datetime", cmd_read_datetime},
@@ -127,6 +127,9 @@ void process_command(char *input_buffer) {
     // Match command
     int found = 0;
     for (int i = 0; command_table[i].name != NULL; i++) {
+
+        str_to_upper(command_table[i].name);
+
         if (strcmp(command, command_table[i].name) == 0) {
             command_table[i].execute(arg_cnt, (const char**)arguments);
             found = 1;
@@ -135,7 +138,7 @@ void process_command(char *input_buffer) {
     }
 
     if (!found) {
-        printf("Unknown command: %s\n", command);
+        printf("\nUnknown command: %s\n", command);
     }
 
     asm volatile("int $0x29"); // Trigger a timer interrupt
@@ -160,6 +163,9 @@ void command_loop() {
             input[buffer_index++] = ch;
 
             if(ch == '\n'){
+                // upper case the input
+                str_to_upper(input);
+
                 input[buffer_index-1] = '\0';
                 buffer_index = 0;
 
@@ -173,7 +179,6 @@ void command_loop() {
         asm volatile("int $0x29"); // Trigger a timer interrupt
     }
 }
-
 
 // Splits an input string into a command and arguments
 int split_input(const char* input, char* command, char** arguments, int max_args, int max_length) {
@@ -413,9 +418,9 @@ void cmd_rmfile(int arg_count, const char** arguments) {
     }
 }
 
-void cmd_load(int arg_count, const char** arguments) {
+void cmd_exec(int arg_count, const char** arguments) {
     if (arg_count == 0) {
-        printf("LOAD command without arguments\n");
+        printf("EXEC command without arguments\n");
     } else {
         create_process(arguments[0]);
     }

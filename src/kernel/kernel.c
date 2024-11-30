@@ -493,19 +493,17 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 
     void* stack1 = k_malloc(STACK_SIZE);
     void* stack2 = k_malloc(STACK_SIZE);
-    void* stack3 = k_malloc(STACK_SIZE);
+    // void* stack3 = k_malloc(STACK_SIZE);
 
-    
     create_task(task1, stack2);
-    create_task(task2, stack3);
+    // create_task(task2, stack3);
     create_task(command_loop, stack1);
     
-
     // Initialize the APIC timer
     init_apic_timer(1000000);  // Set timer ticks
 
     while (1) {
-        printf("Kernel Main Loop\n");
+        //printf("Kernel Main Loop\n");
         sleep_ms(100);
         asm volatile("int $0x29"); // Trigger a timer interrupt
     }   

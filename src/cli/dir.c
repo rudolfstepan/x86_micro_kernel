@@ -9,6 +9,8 @@ void main() {
     {
          printf("DIR CLI running %d\n", counter++);
 
-         sleep_ms(500);
+         sleep_ms(1000);
+
+         asm volatile("int $0x29"); // Trigger a timer interrupt
     }
 }

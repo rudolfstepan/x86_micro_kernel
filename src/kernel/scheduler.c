@@ -11,27 +11,7 @@ task_t tasks[MAX_TASKS];
 volatile uint8_t current_task = 0; // ID des aktuellen Tasks
 uint8_t num_tasks = 0;             // Anzahl der registrierten Tasks
 
-// void task_exit() {
-//     printf("Task %d finished execution.\n", current_task);
 
-//     // Markiere den aktuellen Task als beendet
-//     tasks[current_task].status = TASK_FINISHED;
-
-//     // Suche den nächsten Task, der ausgeführt werden kann
-//     while (tasks[current_task].status == TASK_FINISHED) {
-//         current_task = (current_task + 1) % num_tasks;
-//     }
-
-//     // Wechsle zum nächsten Task
-//     task_t *next = &tasks[current_task];
-//     printf("Switching to task %d\n", current_task);
-
-//     swtch(NULL, &next->context);
-
-//     // Falls der Scheduler hierhin zurückkommt, ist etwas schiefgelaufen
-//     printf("ERROR: Returned to a finished task!\n");
-//     while (1); // Endlos hängen bleiben
-// }
 void task_exit() {
     printf("Task %d finished execution.\n", current_task);
 
@@ -62,33 +42,7 @@ void task_exit() {
     while (1);
 }
 
-
 // Scheduler
-// void scheduler_interrupt_handler() {
-//     asm volatile("cli");
-
-//     // Save the current task's context
-//     task_t *current = &tasks[current_task];
-//     current_task = (current_task + 1) % num_tasks; // Wähle den nächsten Task
-//     task_t *next = &tasks[current_task];
-
-//     if (!next->is_started) {
-//         // Initialisiere neuen Task, falls noch nicht gestartet
-//         next->is_started = 1;
-//         next->status = TASK_RUNNING;
-
-//         // Setze den Stack und starte die Ausführung
-//         uint32_t *stack_top = (uint32_t *)(next->kernel_stack + STACK_SIZE);
-//         *(--stack_top) = (uint32_t)task_exit;       // Rücksprungadresse: Task-Ende
-//         *(--stack_top) = (uint32_t)next->context.eip; // Startadresse
-//         next->context.esp = (uint32_t)stack_top;    // Aktualisiere ESP
-//     }
-
-//     //printf("Switching from task %d to task %d\n", current_task, (current_task + 1) % num_tasks);
-//     swtch(&current->context, &next->context);
-
-//     asm volatile("sti");
-// }
 void scheduler_interrupt_handler() {
     asm volatile("cli");
 
@@ -118,16 +72,6 @@ void scheduler_interrupt_handler() {
     asm volatile("sti");
 }
 
-
-// Erstellt einen neuen Task
-// void create_task(void (*entry_point)(void), uint32_t *stack) {
-//     task_t *task = &tasks[num_tasks++];
-//     task->kernel_stack = stack;         // Stack-Zuweisung
-//     task->context.eip = (uint32_t)entry_point;
-//     task->context.esp = (uint32_t)(stack + STACK_SIZE); // Stack-Ende
-//     task->status = TASK_READY;
-//     task->is_started = 0;               // Noch nicht gestartet
-// }
 void create_task(void (*entry_point)(void), uint32_t *stack) {
     if (num_tasks >= MAX_TASKS) {
         printf("Error: Maximum number of tasks reached!\n");
@@ -143,7 +87,6 @@ void create_task(void (*entry_point)(void), uint32_t *stack) {
     task->status = TASK_READY;
     task->is_started = 0;
 }
-
 
 void list_tasks() {
     printf("Task list:\n");
