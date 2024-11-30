@@ -70,6 +70,35 @@ char scancode_to_ascii(unsigned char scancode, bool shift, bool caps_lock) {
     return key;
 }
 
+#define INPUT_QUEUE_SIZE 256
+char input_queue[INPUT_QUEUE_SIZE];
+int input_queue_head = 0;
+int input_queue_tail = 0;
+
+// Funktion: Einfügen eines Zeichens in die Warteschlange
+void input_queue_push(char ch) {
+    int next_tail = (input_queue_tail + 1) % INPUT_QUEUE_SIZE;
+    if (next_tail != input_queue_head) { // Überlauf vermeiden
+        input_queue[input_queue_tail] = ch;
+        input_queue_tail = next_tail;
+    }
+}
+
+// Funktion: Entfernen eines Zeichens aus der Warteschlange
+char input_queue_pop() {
+    if (input_queue_head == input_queue_tail) {
+        return '\0'; // Warteschlange ist leer
+    }
+    char ch = input_queue[input_queue_head];
+    input_queue_head = (input_queue_head + 1) % INPUT_QUEUE_SIZE;
+    return ch;
+}
+
+// Funktion: Prüfen, ob die Warteschlange leer ist
+bool input_queue_empty() {
+    return input_queue_head == input_queue_tail;
+}
+
 void clear_input_buffer() {
     memset(input_buffer, 0, sizeof(input_buffer));
     buffer_index = 0;
@@ -89,7 +118,6 @@ bool is_enter_pressed() {
 
 void kb_handler(void* r) {
     unsigned char scan = get_scancode_from_keyboard();
-
     // Key press event
     if (!(scan & 0x80)) {
         if (scan == LEFT_SHIFT_PRESSED || scan == RIGHT_SHIFT_PRESSED) {
@@ -103,14 +131,12 @@ void kb_handler(void* r) {
                 vga_backspace(); // Clear character on the screen (if implemented)
             }
         } else if (scan == ENTER_PRESSED) { // Handle Enter key
-            //input_buffer[buffer_index++] = '\n'; // Add newline character
-            input_buffer[buffer_index] = '\0';   // Null-terminate
+            input_queue_push('\n');
             enter_pressed = true;               // Set Enter flag
         } else if (buffer_index < BUFFER_SIZE - 1) { // Regular key
             char key = scancode_to_ascii(scan, shift_pressed, caps_lock_active);
             if (key) {
-                input_buffer[buffer_index++] = key;
-                input_buffer[buffer_index] = '\0'; // Null-terminate buffer
+                input_queue_push(key);
                 putchar(key); // Echo the character
             }
         }
@@ -153,22 +179,23 @@ char getchar() {
 }
 
 void get_input_line(char* buffer, int max_len) {
-    // Reset the enter_pressed flag
-    enter_pressed = false;
+    int index = 0;
 
     while (1) {
-        if (enter_pressed) {
-            enter_pressed = false; // Reset for next input
-            memcpy(buffer, input_buffer, buffer_index);
+        if (!input_queue_empty()) {
+            char ch = input_queue_pop();
 
-            // Null-terminate the buffer
-            buffer[buffer_index] = '\0';
+            if (ch == '\n') {
+                buffer[index] = '\0'; // Null-terminieren
+                return;
+            }
 
-            // Clear the input buffer
-            clear_input_buffer();
-
-            return;
+            if (index < max_len - 1) {
+                buffer[index++] = ch;
+            }
         }
+        // Task-Yield aufrufen, um andere Tasks auszuführen
+        asm volatile("int $0x20"); // Timer-Interrupt auslösen
     }
 }
 

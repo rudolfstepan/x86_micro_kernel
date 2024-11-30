@@ -3,73 +3,152 @@
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
 
-//extern void swtch(context_t *old, context_t *new);
+// Deklaration der Assembly-Funktion für den Kontextwechsel
+extern void swtch(context_t *old, context_t *new);
 
 // Task-Liste
 task_t tasks[MAX_TASKS];
 volatile uint8_t current_task = 0; // ID des aktuellen Tasks
-uint8_t num_tasks = 0;    // Anzahl der registrierten Tasks
+uint8_t num_tasks = 0;             // Anzahl der registrierten Tasks
+
+// void task_exit() {
+//     printf("Task %d finished execution.\n", current_task);
+
+//     // Markiere den aktuellen Task als beendet
+//     tasks[current_task].status = TASK_FINISHED;
+
+//     // Suche den nächsten Task, der ausgeführt werden kann
+//     while (tasks[current_task].status == TASK_FINISHED) {
+//         current_task = (current_task + 1) % num_tasks;
+//     }
+
+//     // Wechsle zum nächsten Task
+//     task_t *next = &tasks[current_task];
+//     printf("Switching to task %d\n", current_task);
+
+//     swtch(NULL, &next->context);
+
+//     // Falls der Scheduler hierhin zurückkommt, ist etwas schiefgelaufen
+//     printf("ERROR: Returned to a finished task!\n");
+//     while (1); // Endlos hängen bleiben
+// }
+void task_exit() {
+    printf("Task %d finished execution.\n", current_task);
+
+    tasks[current_task].status = TASK_FINISHED;
+
+    // Suche den nächsten Task
+    int active_tasks = 0;
+    for (int i = 0; i < num_tasks; i++) {
+        if (tasks[i].status != TASK_FINISHED) {
+            active_tasks++;
+        }
+    }
+
+    if (active_tasks == 0) {
+        printf("All tasks are finished. Halting system.\n");
+        while (1); // System anhalten
+    }
+
+    // Finde den nächsten Task
+    while (tasks[current_task].status == TASK_FINISHED) {
+        current_task = (current_task + 1) % num_tasks;
+    }
+
+    task_t *next = &tasks[current_task];
+    swtch(NULL, &next->context);
+
+    printf("ERROR: Returned to a finished task!\n");
+    while (1);
+}
+
 
 // Scheduler
+// void scheduler_interrupt_handler() {
+//     asm volatile("cli");
+
+//     // Save the current task's context
+//     task_t *current = &tasks[current_task];
+//     current_task = (current_task + 1) % num_tasks; // Wähle den nächsten Task
+//     task_t *next = &tasks[current_task];
+
+//     if (!next->is_started) {
+//         // Initialisiere neuen Task, falls noch nicht gestartet
+//         next->is_started = 1;
+//         next->status = TASK_RUNNING;
+
+//         // Setze den Stack und starte die Ausführung
+//         uint32_t *stack_top = (uint32_t *)(next->kernel_stack + STACK_SIZE);
+//         *(--stack_top) = (uint32_t)task_exit;       // Rücksprungadresse: Task-Ende
+//         *(--stack_top) = (uint32_t)next->context.eip; // Startadresse
+//         next->context.esp = (uint32_t)stack_top;    // Aktualisiere ESP
+//     }
+
+//     //printf("Switching from task %d to task %d\n", current_task, (current_task + 1) % num_tasks);
+//     swtch(&current->context, &next->context);
+
+//     asm volatile("sti");
+// }
 void scheduler_interrupt_handler() {
     asm volatile("cli");
-    // Save the current task's context
-    //printf("Scheduler interrupt\n");
+
     task_t *current = &tasks[current_task];
-    task_t *next;
 
-    // Select the next task to run
-    current_task = (current_task + 1) % num_tasks;
-    next = &tasks[current_task];
+    // Wähle den nächsten Task, der nicht beendet ist
+    do {
+        current_task = (current_task + 1) % num_tasks;
+    } while (tasks[current_task].status == TASK_FINISHED);
 
-    if(tasks[current_task].status != TASK_RUNNING){
-        tasks[current_task].status = TASK_RUNNING;
+    task_t *next = &tasks[current_task];
 
-        if(!tasks[current_task].is_started){
-            tasks[current_task].is_started = 1;
-            start_task(current_task);
-        }
-    }else{
-        printf("Switching from task %d to task %d\n", current_task, (current_task + 1) % num_tasks);
-    
-        tasks[current_task].status = TASK_SLEEPING;
+    if (!next->is_started) {
+        // Initialisiere neuen Task
+        next->is_started = 1;
+        next->status = TASK_RUNNING;
 
-        // Perform the context switch
-        printf("Change context from %p to %p\n", &current->context, &next->context);
-        
-        //swtch(&current->context, &next->context);
-        
+        uint32_t *stack_top = (uint32_t *)(next->kernel_stack + STACK_SIZE);
+        *(--stack_top) = (uint32_t)task_exit;        // Rücksprungadresse
+        *(--stack_top) = (uint32_t)next->context.eip; // Startadresse
+        next->context.esp = (uint32_t)stack_top;     // Stack-Pointer setzen
     }
+
+    // Führe den Kontextwechsel durch
+    swtch(&current->context, &next->context);
+
     asm volatile("sti");
 }
 
-#define STACK_SIZE 64
 
-// create a new task
+// Erstellt einen neuen Task
+// void create_task(void (*entry_point)(void), uint32_t *stack) {
+//     task_t *task = &tasks[num_tasks++];
+//     task->kernel_stack = stack;         // Stack-Zuweisung
+//     task->context.eip = (uint32_t)entry_point;
+//     task->context.esp = (uint32_t)(stack + STACK_SIZE); // Stack-Ende
+//     task->status = TASK_READY;
+//     task->is_started = 0;               // Noch nicht gestartet
+// }
 void create_task(void (*entry_point)(void), uint32_t *stack) {
+    if (num_tasks >= MAX_TASKS) {
+        printf("Error: Maximum number of tasks reached!\n");
+        return;
+    }
+
     task_t *task = &tasks[num_tasks++];
-    // Initialize the kernel stack
+    memset(task, 0, sizeof(task_t)); // Setze alle Felder auf 0
+
     task->kernel_stack = stack;
-    task->context.eip = (uint32_t)entry_point; // Set the entry point
-    task->context.ebp = 0;                    // Clear EBP 
-    task->status = TASK_READY;                // Mark as ready
+    task->context.eip = (uint32_t)entry_point;
+    task->context.esp = (uint32_t)(stack + STACK_SIZE); // Stack-Ende
+    task->status = TASK_READY;
+    task->is_started = 0;
 }
 
-void start_task(int task_id) {
-    tasks[task_id].status = TASK_RUNNING;
-
-    printf("Starting task %d with EIP=%p\n", task_id, tasks[task_id].context.eip);
-    start_program_execution(tasks[task_id].context.eip);
-}
 
 void list_tasks() {
     printf("Task list:\n");
-    // for (int i = 0; i < num_tasks; i++) {
-    //     printf("Task %d: Name=%s, EIP=%p, ESP=%p, EBP=%p, Status=%s\n", i, tasks[i].name, tasks[i].eip, tasks[i].esp, tasks[i].ebp, tasks[i].status == TASK_RUNNING ? "Running" : "Ready");
-    // }
-
     for (int i = 0; i < num_tasks; i++) {
-        printf("Task %d: EIP=%p, EBP=%p, Status=%s\n", i, tasks[i].context.eip, tasks[i].context.ebp,
-         tasks[i].status == TASK_RUNNING ? "Running" : "Ready");
+        printf("Task %d: EIP=%p, ESP=%p, Status=%s\n", i, tasks[i].context.eip, tasks[i].context.esp,
+               tasks[i].status == TASK_RUNNING ? "Running" : "Ready");
     }
 }

@@ -370,13 +370,13 @@ void task1() {
     int counter = 0;
     printf("+++Task 1 started\n");
     while (1) {
-       //printf("Task 1 running...\n");
        counter++;
-
-       if(counter == 10){
+       //sleep_ms(1000);
+       //if(counter == 1000){
+           //printf("Task 1 running...\n");
            counter = 0;
            asm volatile("int $0x29"); // Trigger a timer interrupt
-       }
+       //}
     }
 }
 
@@ -384,13 +384,13 @@ void task2() {
     int counter = 0;
     printf("+++Task 2 started\n");
     while (1) {
-       //printf("Task 2 running...\n");
        counter++;
-
-       if(counter == 10){
+       //sleep_ms(1000);
+       //if(counter == 1000){
+           //printf("Task 2 running...\n");
            counter = 0;
            asm volatile("int $0x29"); // Trigger a timer interrupt
-       }
+       //}
     }
 }
 
@@ -440,7 +440,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     //hpet_init(); // hpet not working
     initialize_apic_timer();
 
-    //irq_install_handler(9, scheduler_interrupt_handler);
+    irq_install_handler(9, scheduler_interrupt_handler);
 
     __asm__ __volatile__("sti"); // enable interrupts
 
@@ -476,7 +476,6 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     // print_welcome_message();
 
 
-
     // load_program_into_memory("DIR.PRG", 0x01100000);
     // program_header_t* header = (program_header_t*)0x01100000;
     // create_task(0x01100000 + header->entry_point, stack1, sizeof(stack1));
@@ -485,36 +484,30 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     // header = (program_header_t*)0x01200000;
     // create_task(0x01200000 + header->entry_point, stack2, sizeof(stack2));
 
-    // uintptr_t stack_start = (uintptr_t)&_stack_start;
+    //uintptr_t stack_start = (uintptr_t)&_stack_start;
     // uintptr_t stack_end = (uintptr_t)&_stack_end;
 
     // printf("Stack Start: 0x%08X, ", stack_start);
     // printf("End:   0x%08X, ", stack_end);
     // printf("Size:  %d bytes\n", stack_end - stack_start);
 
-    // create_task(task1, stack_start);
-    // create_task(task2, stack_start);
+    void* stack1 = k_malloc(STACK_SIZE);
+    void* stack2 = k_malloc(STACK_SIZE);
+    void* stack3 = k_malloc(STACK_SIZE);
 
-    // asm volatile("int $0x29"); // Trigger a timer interrupt
+    
+    create_task(task1, stack2);
+    create_task(task2, stack3);
+    create_task(command_loop, stack1);
+    
 
     // Initialize the APIC timer
-    //init_apic_timer(10000000);  // Set timer ticks
+    init_apic_timer(1000000);  // Set timer ticks
 
-    //start_task(0);
-    // start_task(1);
+    while (1) {
+        printf("Kernel Main Loop\n");
+        sleep_ms(100);
+        asm volatile("int $0x29"); // Trigger a timer interrupt
+    }   
 
-
-    // start the tasks
-   
-    // start_program_execution(command_loop);
-
-    // printf("will start task1\n");
-
-    // start_program_execution(task1);
-
-    // printf("Kernel Main Loop\n");
-
-   
-    // Start the command interpreter
-    command_loop();
 }

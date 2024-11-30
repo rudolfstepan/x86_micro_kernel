@@ -113,46 +113,64 @@ command_t command_table[MAX_COMMANDS] = {
 #define MAX_ARGS 10
 #define MAX_LENGTH 64
 
-void command_loop() {
-    // // if the command is not found
-    // if (ii == NUM_COMMANDS) {
-    //     char* program = strcat(command, ".PRG");
-    //     load_and_execute_program(program);
-    // }
 
-    char input_line[MAX_LINE_LENGTH];
+void process_command(char *input_buffer) {
     char command[MAX_LENGTH];
     char* arguments[MAX_ARGS];
-    
+    int arg_cnt = split_input(input_buffer, command, arguments, MAX_LENGTH, MAX_ARGS);
+
+    // Check if the command is empty
+    if (command[0] == '\0') {
+        return; // Empty input
+    }
+
+    // Match command
+    int found = 0;
+    for (int i = 0; command_table[i].name != NULL; i++) {
+        if (strcmp(command, command_table[i].name) == 0) {
+            command_table[i].execute(arg_cnt, (const char**)arguments);
+            found = 1;
+            break;
+        }
+    }
+
+    if (!found) {
+        printf("Unknown command: %s\n", command);
+    }
+
+    asm volatile("int $0x29"); // Trigger a timer interrupt
+}
+
+void command_loop() {
+    int counter = 0;
+    printf("+++command_loop started\n");
+    printf("> ");
+
+    char* input = (char*)k_malloc(128);
+    if(input == NULL){
+        printf("Failed to allocate memory for input buffer\n");
+        return;
+    }
+    int buffer_index = 0;
 
     while (1) {
+        // get keyboard input
+        char ch = input_queue_pop();
+        if(ch != 0){
+            input[buffer_index++] = ch;
 
-        asm volatile("int $0x29"); // Trigger a timer interrupt
+            if(ch == '\n'){
+                input[buffer_index-1] = '\0';
+                buffer_index = 0;
 
-        printf("> "); // Command prompt
-        get_input_line(input_line, MAX_LINE_LENGTH);
-        int arg_cnt = split_input(input_line, command, arguments, 10, 128);
+                // call the command interpreter
+                process_command(input);
 
-        // Check if the command is empty
-        if (command[0] == '\0') {
-            continue; // Empty input
-        }
-
-        printf("\n");
-
-        // Match command
-        int found = 0;
-        for (int i = 0; command_table[i].name != NULL; i++) {
-            if (strcmp(command, command_table[i].name) == 0) {
-                command_table[i].execute(arg_cnt, (const char**)arguments);
-                found = 1;
-                break;
+                printf("> ");
             }
         }
 
-        if (!found) {
-            printf("Unknown command: %s\n", command);
-        }
+        asm volatile("int $0x29"); // Trigger a timer interrupt
     }
 }
 
@@ -313,9 +331,10 @@ void cmd_ls(int arg_count, const char** arguments) {
     switch (current_drive->type) {
     case DRIVE_TYPE_ATA:
 
-        extern fat32_class_t fat32;
-        ctor_fat32_class(&fat32);
-        fat32.fat32_read_dir(directory);
+        // extern fat32_class_t fat32;
+        // ctor_fat32_class(&fat32);
+        // fat32.fat32_read_dir(directory);
+        fat32_read_dir(directory);
 
         break;
     case DRIVE_TYPE_FDD:
@@ -659,5 +678,5 @@ void cmd_start_task(int arg_count, const char** arguments) {
         return;
     }
 
-    start_task(taskId);
+    //start_task(taskId);
 }
