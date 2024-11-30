@@ -5,11 +5,13 @@ void main() {
 
     int counter = 0;
 
+    printf("DIR CLI started\n");
+
     while (1)
     {
-         printf("DIR CLI running %d\n", counter++);
+         //printf("DIR CLI running %d\n", counter++);
 
-         sleep_ms(1000);
+         //sleep_ms(3000);
 
          asm volatile("int $0x29"); // Trigger a timer interrupt
     }

@@ -70,7 +70,7 @@ void load_program_into_memory(const char* programName, uint32_t address) {
     }
 }
 
-int create_process(const char *filename) {
+int create_process_for_file(const char *filename) {
     // Find an available slot in the process list
     for (int i = 0; i < MAX_PROGRAMS; i++) {
         if (!process_list[i].is_running) {
@@ -78,17 +78,35 @@ int create_process(const char *filename) {
             strcpy(process_list[i].name, filename);
             process_list[i].is_running = true;
 
-            // Load and execute the program here
-            //load_and_execute_program(program_name);
-
             load_program_into_memory(filename, PROGRAM_LOAD_ADDRESS);
 
             program_header_t* header = (program_header_t*)PROGRAM_LOAD_ADDRESS;
-
-            //printf("Start prg at address: %p\n", header->entry_point + PROGRAM_LOAD_ADDRESS);
+            Process* process = &process_list[i];
 
             // Create a new task for the program
-            create_task((void (*)())(header->entry_point + PROGRAM_LOAD_ADDRESS), (uint32_t*)k_malloc(STACK_SIZE));
+            create_task((void (*)())(header->entry_point + PROGRAM_LOAD_ADDRESS), (uint32_t*)k_malloc(STACK_SIZE), process);
+
+            return process_list[i].pid;
+        }
+    }
+
+    // No available slots
+    printf("Error: Maximum number of running programs reached.\n");
+    return -1;
+}
+
+int create_process(void* entry_point) {
+    // Find an available slot in the process list
+    for (int i = 0; i < MAX_PROGRAMS; i++) {
+        if (!process_list[i].is_running) {
+            process_list[i].pid = next_pid++;
+            strcpy(process_list[i].name, "Unknown");
+            process_list[i].is_running = true;
+
+            Process* process = &process_list[i];
+
+            // Create a new task for the program
+            create_task((void (*)())(entry_point), (uint32_t*)k_malloc(STACK_SIZE), process);
 
             //printf(">>>Program '%s' started with PID %d\n", filename, process_list[i].pid);
             return process_list[i].pid;
@@ -113,6 +131,10 @@ void terminate_process(int pid) {
     for (int i = 0; i < MAX_PROGRAMS; i++) {
         if (process_list[i].is_running && process_list[i].pid == pid) {
             process_list[i].is_running = false;
+
+            // Terminate the task associated with the process
+            tasks[i].status = TASK_FINISHED;
+
             printf("Program '%s' with PID %d terminated.\n", process_list[i].name, pid);
             return;
         }

@@ -491,13 +491,16 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     // printf("End:   0x%08X, ", stack_end);
     // printf("Size:  %d bytes\n", stack_end - stack_start);
 
-    void* stack1 = k_malloc(STACK_SIZE);
-    void* stack2 = k_malloc(STACK_SIZE);
-    // void* stack3 = k_malloc(STACK_SIZE);
+    // void* stack1 = k_malloc(STACK_SIZE);
+    // void* stack2 = k_malloc(STACK_SIZE);
+    // // void* stack3 = k_malloc(STACK_SIZE);
 
-    create_task(task1, stack2);
-    // create_task(task2, stack3);
-    create_task(command_loop, stack1);
+    // create_task(task1, stack2);
+    // // create_task(task2, stack3);
+    // create_task(command_loop, stack1);
+
+    create_process(task1);
+    create_process(command_loop);
     
     // Initialize the APIC timer
     init_apic_timer(1000000);  // Set timer ticks

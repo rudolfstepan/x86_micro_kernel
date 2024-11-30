@@ -59,6 +59,7 @@ void cmd_mkfile(int cnt, const char **args);
 void cmd_rmfile(int cnt, const char **args);
 void cmd_run(int cnt, const char **args);
 void cmd_exec(int cnt, const char **args);
+void cmd_kill(int cnt, const char **args);
 void cmd_sys(int cnt, const char **args);
 void cmd_open(int cnt, const char **args);
 void cmd_read_datetime(int cnt, const char **args);
@@ -93,6 +94,7 @@ command_t command_table[MAX_COMMANDS] = {
     {"rmfile", cmd_rmfile},
     {"run", cmd_run},
     {"exec", cmd_exec},
+    {"kill", cmd_kill},
     {"sys", cmd_sys},
     {"open", cmd_open},
     {"datetime", cmd_read_datetime},
@@ -105,7 +107,7 @@ command_t command_table[MAX_COMMANDS] = {
     {"hdd", cmd_hdd},
     {"beep", cmd_beep},
     {"wait", cmd_wait},
-    {"pid", (command_func)list_tasks},
+    {"pid", (command_func)list_running_processes},
     {"rtask", cmd_start_task},
     {NULL, NULL} // End marker
 };
@@ -422,9 +424,19 @@ void cmd_exec(int arg_count, const char** arguments) {
     if (arg_count == 0) {
         printf("EXEC command without arguments\n");
     } else {
-        create_process(arguments[0]);
+        create_process_for_file(arguments[0]);
     }
 }
+
+void cmd_kill(int arg_count, const char** arguments) {
+    if (arg_count == 0) {
+        printf("KILL command without arguments\n");
+    } else {
+        int pid = strtoul(arguments[0], NULL, 10);
+        terminate_process(pid);
+    }
+}
+
 
 //TryContext ctx;
 

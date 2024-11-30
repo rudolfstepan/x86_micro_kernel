@@ -2,6 +2,8 @@
 #include "process.h"
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
+#include "toolchain/strings.h"
+
 
 // Deklaration der Assembly-Funktion für den Kontextwechsel
 extern void swtch(context_t *old, context_t *new);
@@ -72,7 +74,7 @@ void scheduler_interrupt_handler() {
     asm volatile("sti");
 }
 
-void create_task(void (*entry_point)(void), uint32_t *stack) {
+void create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
     if (num_tasks >= MAX_TASKS) {
         printf("Error: Maximum number of tasks reached!\n");
         return;
@@ -86,6 +88,7 @@ void create_task(void (*entry_point)(void), uint32_t *stack) {
     task->context.esp = (uint32_t)(stack + STACK_SIZE); // Stack-Ende
     task->status = TASK_READY;
     task->is_started = 0;
+    task->process = process;
 }
 
 void list_tasks() {

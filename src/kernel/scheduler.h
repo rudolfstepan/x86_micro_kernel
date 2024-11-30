@@ -6,6 +6,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include "process.h"
+
 // Maximale Anzahl von Tasks
 #define MAX_TASKS 8
 
@@ -30,12 +32,12 @@ typedef struct task {
     context_t context;      // Context for the task
     int status;             // Task status (e.g., TASK_READY, TASK_RUNNING)
     int is_started;         // Task started flag
+    Process *process;       // Process associated with the task
 } task_t;
 
 extern task_t tasks[];
 
-void create_task(void (*entry_point)(void), uint32_t *stack);
-void start_task(int task_id);
+void create_task(void (*entry_point)(void), uint32_t *stack, Process *process);
 void scheduler_interrupt_handler();
 void list_tasks();
 

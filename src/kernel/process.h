@@ -15,7 +15,8 @@ typedef struct {
 } Process;
 
 
-int create_process(const char *program_name);
+int create_process(void* entry_point);
+int create_process_for_file(const char *filename);
 void list_running_processes();
 void terminate_process(int pid);
 
