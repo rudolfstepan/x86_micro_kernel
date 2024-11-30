@@ -43,7 +43,6 @@ const char scancode_to_char_shift[SC_MAX] = {
     'M', '<', '>', '?', 0,   '*', 0,   ' ', 0         /* 58 */
 };
 
-char input_buffer[BUFFER_SIZE];
 int shift_pressed = 0;
 int caps_lock_active = 0;
 int buffer_index = 0;
@@ -71,7 +70,7 @@ char scancode_to_ascii(unsigned char scancode, bool shift, bool caps_lock) {
 }
 
 #define INPUT_QUEUE_SIZE 256
-char input_queue[INPUT_QUEUE_SIZE];
+volatile char input_queue[INPUT_QUEUE_SIZE];
 int input_queue_head = 0;
 int input_queue_tail = 0;
 
@@ -94,14 +93,29 @@ char input_queue_pop() {
     return ch;
 }
 
+// Funktion: Entfernt das letzte Zeichen aus der Warteschlange
+char input_queue_remove_last() {
+    if (input_queue_head == input_queue_tail) {
+        return '\0'; // Warteschlange ist leer
+    }
+
+    // Berechne die vorherige Position von input_queue_tail
+    int prev_tail = (input_queue_tail - 1 + INPUT_QUEUE_SIZE) % INPUT_QUEUE_SIZE;
+
+    // Speichere das letzte Zeichen zur Rückgabe
+    char last_char = input_queue[prev_tail];
+
+    // Aktualisiere den Tail-Zeiger
+    input_queue_tail = prev_tail;
+
+    printf("input_queue_remove_last: %c\n", last_char);
+
+    return last_char; // Gib das entfernte Zeichen zurück
+}
+
 // Funktion: Prüfen, ob die Warteschlange leer ist
 bool input_queue_empty() {
     return input_queue_head == input_queue_tail;
-}
-
-void clear_input_buffer() {
-    memset(input_buffer, 0, sizeof(input_buffer));
-    buffer_index = 0;
 }
 
 void reset_enter_pressed() {
@@ -127,17 +141,19 @@ void kb_handler(void* r) {
         } else if (scan == BACKSPACE_PRESSED) { // Handle Backspace
             if (buffer_index > 0) {
                 buffer_index--;
-                input_buffer[buffer_index] = '\0';
-                vga_backspace(); // Clear character on the screen (if implemented)
+
+                input_queue_push('\b'); // Add backspace to the queue
             }
         } else if (scan == ENTER_PRESSED) { // Handle Enter key
             input_queue_push('\n');
+            buffer_index = 0;
             enter_pressed = true;               // Set Enter flag
         } else if (buffer_index < BUFFER_SIZE - 1) { // Regular key
             char key = scancode_to_ascii(scan, shift_pressed, caps_lock_active);
             if (key) {
+                buffer_index++;
                 input_queue_push(key);
-                putchar(key); // Echo the character
+                //putchar(key); // Echo the character
             }
         }
     } else {
@@ -163,14 +179,7 @@ char getchar() {
     disable_interrupts();
 
     // Retrieve the first character from the buffer
-    char ch = input_buffer[0];
-
-    // Shift the buffer to remove the consumed character
-    for (int i = 1; i < buffer_index; i++) {
-        input_buffer[i - 1] = input_buffer[i];
-    }
-
-    buffer_index--;
+    char ch = input_queue_pop(); //input_buffer[0];
 
     // Re-enable interrupts
     enable_interrupts();
@@ -202,7 +211,7 @@ void get_input_line(char* buffer, int max_len) {
 void kb_install() {
     // Install the IRQ handler for the keyboard
     syscall(SYS_INSTALL_IRQ, (void*)1, (void*)kb_handler, 0);
-    memset(input_buffer, 0, sizeof(input_buffer));
+    //memset(input_buffer, 0, sizeof(input_buffer));
 }
 
 void kb_wait_enter() {
@@ -219,5 +228,4 @@ void kb_wait_enter() {
 
     // Clear the input buffer after Enter is pressed
     buffer_index = 0;
-    input_buffer[0] = '\0';
 }

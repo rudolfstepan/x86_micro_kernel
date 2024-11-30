@@ -152,31 +152,35 @@ void command_loop() {
     printf("> ");
 
     char* input = (char*)k_malloc(128);
-    if(input == NULL){
+    if (input == NULL) {
         printf("Failed to allocate memory for input buffer\n");
         return;
     }
+
     int buffer_index = 0;
 
     while (1) {
-        // get keyboard input
+        // Get keyboard input
         char ch = input_queue_pop();
-        if(ch != 0){
-            input[buffer_index++] = ch;
-
-            if(ch == '\n'){
-                // upper case the input
+        if (ch != 0) {
+            if (ch == '\n') {
+                // Uppercase the input
+                input[buffer_index] = '\0'; // Null-terminate
                 str_to_upper(input);
-
-                input[buffer_index-1] = '\0';
                 buffer_index = 0;
-
                 printf("\n");
-
-                // call the command interpreter
+                // Call the command interpreter
                 process_command(input);
-
                 printf("> ");
+            }else if (ch == '\b') {
+                if (buffer_index > 0) {
+                    buffer_index--;
+                    vga_backspace();
+                }
+            } else {
+                // Regular character handling
+                input[buffer_index++] = ch;
+                putchar(ch); // Echo the character to the screen
             }
         }
 
