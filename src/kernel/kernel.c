@@ -24,12 +24,37 @@
 
 #include "mbheader.h"
 #include "memory.h"
+//#include "paging.h"
+
 
 extern char _stack_start;  // Start address of the stack
 extern char _stack_end;    // End address of the stack
 
-
 volatile uint64_t cpu_frequency = 0; // Global CPU frequency
+
+
+
+// Helper: Load CR3 (Page Directory Base Register)
+static inline void load_cr3(uint32_t address) {
+    asm volatile("mov %0, %%cr3" : : "r"(address));
+}
+
+// Helper: Read CR0
+static inline uint32_t read_cr0() {
+    uint32_t cr0;
+    asm volatile("mov %%cr0, %0" : "=r"(cr0));
+    return cr0;
+}
+
+// Helper: Write CR0
+static inline void write_cr0(uint32_t cr0) {
+    asm volatile("mov %0, %%cr0" : : "r"(cr0));
+}
+
+// Helper: Flush TLB
+static inline void flush_tlb() {
+    asm volatile("mov %%cr3, %%eax; mov %%eax, %%cr3" ::: "eax");
+}
 
 static inline uint64_t read_cpu_cycle_counter() {
     uint32_t high, low;
@@ -405,6 +430,11 @@ extern fat32_class_t fat32;
 //---------------------------------------------------------------------------------------------
 void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_info){
 
+    // if (!(read_cr0() & CR0_PE)) {
+    //     printf("Error: Protected mode is not enabled.\n");
+    //     while (1);
+    // }
+
     // Validate Multiboot2 magic number
     if (multiboot_magic != 0x36d76289) {
         printf("Error: Invalid Multiboot2 magic number: 0x%x\n", multiboot_magic);
@@ -419,13 +449,13 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 
     parse_multiboot1_info(multiboot_info);
 
-    // parse_multiboot2_info(multiboot_info);
-    // long total_memory = compute_total_memory(multiboot_info);
-    // printf("Total usable memory: %u bytes\n", total_memory);
-
-    //parse_multiboot_info(multiboot_info);
     initialize_memory_system();
 
+    //init_paging();
+    //test_paging();
+
+
+    
     gdt_install();
     idt_install();
     isr_install();
@@ -435,6 +465,8 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     fdc_initialize();
 
     test_memory();
+
+
 
     // Initialize the HPET timer
     //hpet_init(); // hpet not working
@@ -501,9 +533,9 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 
     create_process(task1);
     create_process(command_loop);
-    
+
     // Initialize the APIC timer
-    init_apic_timer(1000000);  // Set timer ticks
+    //init_apic_timer(1000000);  // Set timer ticks
 
     while (1) {
         //printf("Kernel Main Loop\n");

@@ -36,6 +36,9 @@ extern void isr29();
 extern void isr30();
 extern void isr31();
 
+extern void page_fault_handler_asm(); // Declare assembly wrapper
+
+
 
 const char* exception_messages[] =
 {
@@ -174,6 +177,19 @@ void divide_by_zero_handler(Registers* r) {
     // }
 }
 
+void page_fault_handler() {
+    uint32_t faulting_address;
+
+    // Read the faulting address from CR2
+    asm volatile("mov %%cr2, %0" : "=r"(faulting_address));
+
+    printf("Page fault at address: 0x%x\n", faulting_address);
+
+    // Halt the system
+    printf("System halted due to page fault.\n");
+    while (1);
+}
+
 // Set up the exception handlers
 void setup_exceptions() {
     // Set all entries to the generic exception handler
@@ -183,6 +199,8 @@ void setup_exceptions() {
 
     // Override specific handlers
     exception_handlers[0] = divide_by_zero_handler;  // Divide by zero
+
+    //exception_handlers[14] = page_fault_handler;  // Page fault
 }
 
 void exception_dispatcher(Registers* state) {
@@ -229,6 +247,10 @@ void isr_install() {
     set_idt_entry(29, (uint32_t)isr29);
     set_idt_entry(30, (uint32_t)isr30);
     set_idt_entry(31, (uint32_t)isr31);
+
+    // Set up the exception handlers
+
+    set_idt_entry(14, (uint32_t)page_fault_handler_asm); // Kernel code segment (selector 0x08)
 
     setup_exceptions();
 }

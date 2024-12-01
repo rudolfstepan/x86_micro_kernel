@@ -7,6 +7,7 @@
 #include <stdbool.h>
 
 #include "process.h"
+//#include "paging.h"
 
 // Maximale Anzahl von Tasks
 #define MAX_TASKS 8
@@ -17,6 +18,7 @@
 #define TASK_FINISHED 3
 
 #define STACK_SIZE 1024*8 // 8 KB
+
 
 typedef struct {
     uint32_t esp;  // Stack-Pointer
@@ -33,6 +35,7 @@ typedef struct task {
     int status;             // Task status (e.g., TASK_READY, TASK_RUNNING)
     int is_started;         // Task started flag
     Process *process;       // Process associated with the task
+    //page_directory_t *page_directory; // Pointer to the task's page directory
 } task_t;
 
 extern task_t tasks[];

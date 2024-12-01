@@ -16,6 +16,7 @@
 #include "filesystem/fat32/fat32.h"
 #include "filesystem/fat12/fat12.h"
 
+
 char current_path[256] = "/";
 
 // Splits an input string into a command and arguments.
@@ -298,7 +299,7 @@ void cmd_mount(int arg_count, const char** arguments) {
     if (arg_count == 0) {
         printf("Mount command without arguments\n");
     } else {
-        str_to_lower(arguments[0]);
+        str_to_lower((char *)arguments[0]);
         printf("Try mount drive: %s\n", arguments[0]);
         current_drive = get_drive_by_name(arguments[0]);
         if (current_drive == NULL) {
