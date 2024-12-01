@@ -16,6 +16,7 @@
 #include "filesystem/filesystem.h"
 #include "filesystem/fat32/fat32.h"
 #include "filesystem/fat12/fat12.h"
+#include "drivers/rtl8139.h"
 
 
 char current_path[256] = "/";
@@ -76,6 +77,7 @@ void cmd_beep(int cnt, const char **args);
 void cmd_wait(int cnt, const char **args);
 void list_running_processes(int cnt, const char **args);
 void cmd_start_task(int cnt, const char **args);
+void cmd_net(int cnt, const char **args);
 
 
 // Command table
@@ -111,6 +113,7 @@ command_t command_table[MAX_COMMANDS] = {
     {"wait", cmd_wait},
     {"pid", (command_func)list_running_processes},
     {"rtask", cmd_start_task},
+    {"net", cmd_net},
     {NULL, NULL} // End marker
 };
 
@@ -704,4 +707,33 @@ void cmd_start_task(int arg_count, const char** arguments) {
     }
 
     //start_task(taskId);
+}
+
+void cmd_net(int arg_count, const char** arguments) {
+    if (arg_count == 0) {
+        printf("NET command without arguments\n");
+        return;
+    }
+
+    if (strcmp(arguments[0], "LIST") == 0) {
+        // List network interfaces
+        //list_network_interfaces();
+    } else if (strcmp(arguments[0], "INFO") == 0) {
+        // Get network interface information
+        //get_network_interface_info();
+    } else if(strcmp(arguments[0], "SEND") == 0) {
+        // Send a packet
+        //send_packet();
+
+        test_loopback();
+
+
+    } else if(strcmp(arguments[0], "RECV") == 0) {
+        // Receive a packet
+        //receive_packet();
+    }
+    
+    else {
+        printf("Unknown NET command: %s\n", arguments[0]);
+    }
 }

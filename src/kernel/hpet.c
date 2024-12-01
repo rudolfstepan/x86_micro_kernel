@@ -311,7 +311,7 @@ void hpet_init() {
         initialize_hpet();
 
          // Setup HPET interrupt
-        irq_install_handler(2, (void*)hpet_timer_isr);
+        register_interrupt_handler(2, (void*)hpet_timer_isr);
     } else {
         printf("HPET is not supported\n");
     }

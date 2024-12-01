@@ -25,6 +25,7 @@
 #include "mbheader.h"
 #include "memory.h"
 //#include "paging.h"
+#include "drivers/rtl8139.h"
 
 
 extern char _stack_start;  // Start address of the stack
@@ -82,7 +83,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&k_free,             // Syscall 5: One argument
     (void*)&k_realloc,          // Syscall 6: 2 arguments
     (void*)&getchar,            // Syscall 7: No arguments
-    (void*)&irq_install_handler,// Syscall 8: 2 arguments
+    (void*)&register_interrupt_handler,// Syscall 8: 2 arguments
     // Add more syscalls here
 };
 
@@ -472,7 +473,34 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     //hpet_init(); // hpet not working
     initialize_apic_timer();
 
-    irq_install_handler(9, scheduler_interrupt_handler);
+    register_interrupt_handler(9, scheduler_interrupt_handler);
+
+    // PCI-Scanning: Suche die RTL8139 Netzwerkkarte
+    printf("Suche nach RTL8139 Netzwerkkarte...\n");
+    uint8_t found = 0;
+    for (uint16_t bus = 0; bus < 256; ++bus) {
+        for (uint8_t device = 0; device < 32; ++device) {
+            uint32_t id = pci_read(bus, device, 0, 0);
+            uint16_t vendor_id = id & 0xFFFF;
+            uint16_t device_id = (id >> 16) & 0xFFFF;
+
+            if (vendor_id == 0x10EC && device_id == 0x8139) { // RTL8139 Vendor/Device ID
+                printf("RTL8139 gefunden: Bus %u, Gerät %u\n", bus, device);
+
+                // Initialisiere die Netzwerkkarte
+                initialize_rtl8139(bus, device, 0);
+                found = 1;
+                break;
+            }
+        }
+        if (found) break;
+    }
+
+    if (!found) {
+        printf("RTL8139 Netzwerkkarte nicht gefunden.\n");
+    } else {
+        printf("Netzwerkkarte erfolgreich initialisiert.\n");
+    }
 
     __asm__ __volatile__("sti"); // enable interrupts
 
@@ -535,7 +563,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     create_process(command_loop);
 
     // Initialize the APIC timer
-    //init_apic_timer(1000000);  // Set timer ticks
+    init_apic_timer(1000000);  // Set timer ticks
 
     while (1) {
         //printf("Kernel Main Loop\n");

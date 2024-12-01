@@ -26,7 +26,7 @@ extern void irq15();
 void* irq_routines[17] = { 0 };
 
 // Function to install a custom IRQ handler
-void irq_install_handler(int irq, void* r) {
+void register_interrupt_handler(int irq, void* r) {
     irq_routines[irq] = r;
 }
 

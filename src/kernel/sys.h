@@ -28,7 +28,7 @@ extern void isr_install();
 //irq
 extern void irq_install();
 extern void irq_handler(Registers* r);
-extern void irq_install_handler(int irq, void* r);
+extern void register_interrupt_handler(int irq, void* r);
 void irq_uninstall_handler(int irq);
 
 extern volatile uint64_t cpu_frequency; // Global CPU frequency
