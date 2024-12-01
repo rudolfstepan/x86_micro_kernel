@@ -81,9 +81,11 @@ void irq_handler(Registers* regs) {
     if (irq_routines[regs->irq_number - 32]) {
         void (*handler)(Registers* r) = (void (*)(Registers*))(irq_routines[regs->irq_number - 32]);
 
-            // if(regs->irq_number - 32 > 0) {
-            //     printf("registered RQ %d\n", regs->irq_number - 32);
-            // }
+        int irq = regs->irq_number - 32;
+
+            if(irq > 1 && irq != 9) {
+                printf("registered RQ %d\n", regs->irq_number - 32);
+            }
 
         if(handler != NULL) {
             handler(regs);

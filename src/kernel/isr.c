@@ -213,6 +213,11 @@ void exception_dispatcher(Registers* state) {
     }
 }
 
+void rtl8139_handler(Registers* r) {
+    printf("+++RTL8139+++ Interrupt\n");
+    //rtl8139_interrupt_handler();
+}
+
 void isr_install() {
     // set the IDT entries defined in the assembly file
     set_idt_entry(0, (uint32_t)isr0);
@@ -229,7 +234,7 @@ void isr_install() {
     set_idt_entry(11, (uint32_t)isr11);
     set_idt_entry(12, (uint32_t)isr12);
     set_idt_entry(13, (uint32_t)isr13);
-    set_idt_entry(14, (uint32_t)isr14);
+    //set_idt_entry(14, (uint32_t)isr14);
     set_idt_entry(15, (uint32_t)isr15);
     set_idt_entry(16, (uint32_t)isr16);
     set_idt_entry(17, (uint32_t)isr17);

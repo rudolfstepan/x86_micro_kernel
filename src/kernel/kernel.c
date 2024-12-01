@@ -467,8 +467,6 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 
     test_memory();
 
-
-
     // Initialize the HPET timer
     //hpet_init(); // hpet not working
     initialize_apic_timer();
