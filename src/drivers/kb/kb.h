@@ -10,6 +10,7 @@ extern void kb_handler(void* r);
 void kb_install();
 void kb_wait_enter();
 char getchar();
+char input_queue_pop();
 void get_input_line(char *buffer, int max_len);
 
 #endif

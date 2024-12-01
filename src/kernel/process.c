@@ -1,6 +1,7 @@
 #include "process.h"
 #include <stdbool.h>
 
+#include "memory.h"
 #include "toolchain/strings.h"
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"

@@ -3,6 +3,7 @@
 #include "prg.h"
 #include "sys.h"
 #include "scheduler.h"
+#include "memory.h"
 
 #include "drivers/rtc/rtc.h"
 #include "drivers/ata/ata.h"
@@ -39,7 +40,7 @@ typedef void (*command_func)(int cnt, const char **args);
 
 // Command structure
 typedef struct {
-    const char *name;
+    char *name;
     command_func execute;
 } command_t;
 

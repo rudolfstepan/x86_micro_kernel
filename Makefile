@@ -2,7 +2,7 @@
 SOURCE_DIR = src
 OUTPUT_DIR = build
 ISO_DIR = iso
-CFLAGS = -Isrc -m32 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -O1 -Wall -Wextra -g -Wno-unused-parameter
+CFLAGS = -Isrc -m32 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -O1 -Wall -Wextra -g -Wno-unused-parameter -Wno-unused-variable
 LD_FLAGS = -m elf_i386 -nostdlib
 MOUNT_DIR = /mnt/disk
 
