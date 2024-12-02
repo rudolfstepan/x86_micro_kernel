@@ -22,7 +22,7 @@ bool wait_for_drive_ready(unsigned short base, unsigned int timeout_ms) {
             printf("Timeout: Drive not ready within %u ms.\n", timeout_ms);
             return false;  // Timeout reached
         }
-        sleep_ms(1);  // Yield CPU for 1 ms
+        delay_ms(1);  // Yield CPU for 1 ms
         elapsed_time += 1;  // Increment elapsed time by 1 ms
     }
     return true;  // Drive is ready
@@ -35,7 +35,7 @@ bool wait_for_drive_data_ready(unsigned short base, unsigned int timeout_ms) {
             printf("Timeout: Drive data not ready within %u ms.\n", timeout_ms);
             return false;  // Timeout reached
         }
-        sleep_ms(1);  // Yield CPU for 1 ms
+        delay_ms(1);  // Yield CPU for 1 ms
         elapsed_time += 1;  // Increment elapsed time by 1 ms
     }
     return true;  // Data is ready
@@ -52,7 +52,7 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
     // Wait for the drive to be ready
     // while (inb(ATA_STATUS(base)) & 0x80) {
     //     // Sleep for 1 millisecond
-    //     sleep_ms(1);
+    //     delay_ms(1);
     // }
     if (!wait_for_drive_ready(base, 1000)) {  // 1000 ms timeout
         return false;  // Drive not ready within the timeout
@@ -75,7 +75,7 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
     // Wait for the drive to be ready to transfer data
     // while (!(inb(ATA_STATUS(base)) & 0x08)) {
     //     // Sleep for 1 millisecond
-    //     sleep_ms(1);
+    //     delay_ms(1);
     // }
     if (!wait_for_drive_ready(base, 1000)) {  // 1000 ms timeout
         return false;  // Drive not ready within the timeout

@@ -38,7 +38,7 @@ void main()
 
     while (1)
     {
-        sleep_ms(1000);
+        delay_ms(1000);
 
         printf("TEST CLI running %d\n", counter++);
 

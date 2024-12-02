@@ -226,7 +226,7 @@ bool wait_for_fdc_ready() {
             return false;
         }
 
-        sleep_ms(1);  // Avoid CPU-intensive busy waiting
+        delay_ms(1);  // Avoid CPU-intensive busy waiting
     }
     return true;
 }
@@ -240,7 +240,7 @@ bool fdc_wait_for_irq() {
             return false;
         }
 
-        sleep_ms(1);  // Avoid CPU-intensive busy waiting
+        delay_ms(1);  // Avoid CPU-intensive busy waiting
     }
     return true;
 }
@@ -273,7 +273,7 @@ void fdc_reset_after_read() {
 void fdc_full_reset() {
     // Send a reset signal to the FDC (0x3F2 port)
     outb(0x3F2, 0x00);  // Disable the motor and reset
-    sleep_ms(50);          // Small delay for reset to take effect
+    delay_ms(50);          // Small delay for reset to take effect
     outb(0x3F2, 0x0C);  // Re-enable motor and set drive select to 0
 }
 void fdc_clear_data_register() {
@@ -325,11 +325,11 @@ bool _fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector
     //memset(buffer, 0, SECTOR_SIZE);  // Clear the buffer before reading
 
     //fdc_wait_for_irq();  // Wait for any pending IRQs to clear
-    //sleep_ms(10);  // Small delay before issuing command
+    //delay_ms(10);  // Small delay before issuing command
     // prepare DMA for reading
     dma_prepare_floppy((uint8_t*)buffer, SECTOR_SIZE, true);
 
-    //sleep_ms(10);  // Small delay before issuing command
+    //delay_ms(10);  // Small delay before issuing command
 
     // Reset IRQ flag and send the command sequence to FDC
     //irq_triggered = false;  // Reset IRQ flag before issuing command
@@ -351,7 +351,7 @@ bool _fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector
 
 bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
     fdc_motor_on(drive);  // Turn on the motor
-    sleep_ms(500);        // Wait for the motor to spin up
+    delay_ms(500);        // Wait for the motor to spin up
 
     bool result = _fdc_read_sector(drive, head, track, sector, buffer);
 
@@ -361,7 +361,7 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
 
 bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track, uint8_t start_sector, uint8_t num_sectors, void* buffer) {
     fdc_motor_on(drive);  // Turn on the motor
-    sleep_ms(500);        // Wait for the motor to spin up
+    delay_ms(500);        // Wait for the motor to spin up
 
     for (uint8_t sector = start_sector; sector < start_sector + num_sectors; sector++) {
         if (!_fdc_read_sector(drive, head, track, sector, buffer)) {
@@ -381,7 +381,7 @@ bool fdc_read_sector_no_dma(uint8_t drive, uint8_t head, uint8_t track, uint8_t 
 
     // Turn on the motor
     fdc_motor_on(drive);
-    sleep_ms(500);  // Wait for the motor to spin up
+    delay_ms(500);  // Wait for the motor to spin up
 
     if (!wait_for_fdc_ready()) {
         printf("FDC not ready for READ command.\n");
@@ -506,7 +506,7 @@ void fdc_send_drive(uint8_t drive) {
     // Wait until the controller is ready to accept a command (bit 7 of MSR set)
     while (!(inb(FDC_BASE + 4) & 0x80)) {
         // Busy-wait until ready
-        sleep_ms(1);
+        delay_ms(1);
     }
 
     // Send the drive number to the Data Register
@@ -518,7 +518,7 @@ uint8_t fdc_read_data() {
     // Wait until the controller is ready to provide data (bit 7 of MSR)
     while (!(inb(FDC_BASE + 4) & 0x80)) {
         // Busy-wait until the data register is ready to be read
-        sleep_ms(1);
+        delay_ms(1);
     }
 
     // Read from the Data Register (usually located at FDC_BASE + 5)
@@ -535,10 +535,10 @@ bool fdc_recalibrate(uint8_t drive) {
     }
     fdc_send_drive(drive);
 
-    sleep_ms(100);  // Initial delay to allow recalibration to start
+    delay_ms(100);  // Initial delay to allow recalibration to start
 
     for (int i = 0; i < 1000; i++) {  // Timeout loop with a total of 1000 ms
-        sleep_ms(1);
+        delay_ms(1);
         uint8_t msr = inb(FDC_BASE + 4);
         if ((msr & 0x10) == 0x10) {  // Check if the drive is ready (bit 4 set)
             fdc_send_command(FDC_SENSE_INTERRUPT_CMD);

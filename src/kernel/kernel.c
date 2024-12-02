@@ -397,7 +397,7 @@ void task1() {
     printf("+++Task 1 started\n");
     while (1) {
        counter++;
-       //sleep_ms(1000);
+       //delay_ms(1000);
        //if(counter == 1000){
            //printf("Task 1 running...\n");
            counter = 0;
@@ -411,7 +411,7 @@ void task2() {
     printf("+++Task 2 started\n");
     while (1) {
        counter++;
-       //sleep_ms(1000);
+       //delay_ms(1000);
        //if(counter == 1000){
            //printf("Task 2 running...\n");
            counter = 0;
@@ -550,7 +550,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 
     while (1) {
         //printf("Kernel Main Loop\n");
-        sleep_ms(100);
+        delay_ms(100);
         asm volatile("int $0x29"); // Trigger a timer interrupt
     }   
 

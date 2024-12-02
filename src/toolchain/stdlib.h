@@ -53,7 +53,7 @@ void secure_free(void *ptr, size_t size);
 void* memmove(void* dest, const void* src, size_t n);
 
 // wrapper functions for system calls
-void sleep_ms(uint32_t ms);
+void delay_ms(uint32_t ms);
 void wait_enter_pressed();
 
 void exit(uint8_t status);

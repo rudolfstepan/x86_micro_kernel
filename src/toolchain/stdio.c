@@ -785,7 +785,7 @@ void beep(uint32_t frequency, uint32_t duration_ms) {
     //printf("Beep at %u Hz for %u ms\n", frequency, duration_ms);
     
     // Simple delay loop for the beep duration
-    sleep_ms(duration_ms);
+    delay_ms(duration_ms);
     
     disable_pc_speaker();
 

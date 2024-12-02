@@ -7,6 +7,7 @@
 #include "kernel/sys.h"
 #include <stddef.h>
 
+#define CR_WRITABLE_MASK (CR_RECEIVER_ENABLE | CR_TRANSMITTER_ENABLE)
 
 // PCI-Konstanten
 #define PCI_CONFIG_ADDRESS 0xCF8
@@ -35,6 +36,9 @@
 #define REG_TRANSMIT_ADDR0 0x20
 #define REG_RECEIVE_BUFFER 0x30
 #define REG_COMMAND 0x37
+#define CR_RECEIVER_ENABLE (1 << 3)
+#define CR_TRANSMITTER_ENABLE (1 << 2)
+#define CR_WRITABLE_MASK (CR_RECEIVER_ENABLE | CR_TRANSMITTER_ENABLE)
 #define REG_CUR_READ_ADDR 0x38
 #define REG_INTERRUPT_MASK 0x3C
 #define REG_INTERRUPT_STATUS 0x3E
@@ -90,6 +94,59 @@ uint8_t* rx_buffer = NULL;
 #define MAX_DMA_ADDRESS 0xFFFFFFFF
 
 
+void enable_rx_tx(uint32_t base) {
+    uint8_t command_value = CR_RECEIVER_ENABLE | CR_TRANSMITTER_ENABLE;
+    write_and_verify_register_b(base, REG_COMMAND, command_value & CR_WRITABLE_MASK);
+}
+
+void write_and_verify_register(uint32_t base, uint32_t offset, uint32_t value) {
+    // Write the value to the register
+    outl(base + offset, value);
+
+    // Read the value back
+    uint32_t read_value = inl(base + offset);
+
+    // Compare written and read values
+    if (read_value != value) {
+        printf("Warning: Register write mismatch at offset 0x%X. Written: 0x%08X, Read: 0x%08X\n",
+               offset, value, read_value);
+    } else {
+        printf("Register write verified at offset 0x%X. Value: 0x%08X\n", offset, value);
+    }
+}
+
+void write_and_verify_register_b(uint32_t base, uint8_t offset, uint8_t value) {
+
+    outb(base + offset, value);
+
+    uint8_t read_value = inb(base + offset);
+
+    printf("Command Register: Written = 0x%02X, Read = 0x%02X (Writable Mask Applied: 0x%02X)\n",
+           value, read_value, value & CR_WRITABLE_MASK);
+
+    if ((read_value & CR_WRITABLE_MASK) != (value & CR_WRITABLE_MASK)) {
+        printf("Warning: Command register mismatch. Expected: 0x%02X, Actual: 0x%02X\n",
+               value & CR_WRITABLE_MASK, read_value & CR_WRITABLE_MASK);
+    }
+}
+
+void write_and_verify_register_w(uint32_t base, uint32_t offset, uint32_t value) {
+    // Write the value to the register
+    outw(base + offset, value);
+
+    // Read the value back
+    uint32_t read_value = inw(base + offset);
+
+    // Compare written and read values
+    if (read_value != value) {
+        printf("Warning: Register write mismatch at offset 0x%X. Written: 0x%08X, Read: 0x%08X\n",
+               offset, value, read_value);
+    } else {
+        printf("Register write verified at offset 0x%X. Value: 0x%08X\n", offset, value);
+    }
+}
+
+
 /**
  * Wandelt einen 16-Bit-Wert von Host Byte Order (Little-Endian) 
  * in Network Byte Order (Big-Endian) um.
@@ -119,18 +176,14 @@ void check_buffer_addresses(void* rx_buffer, uint8_t** tx_buffers, int tx_buffer
 
     // RX-Puffer überprüfen
     if (!is_address_valid(rx_address)) {
-        printf("Fehler: RX-Puffer-Adresse (0x%016lX) liegt außerhalb des gültigen Bereichs.\n", rx_address);
-    } else {
-        printf("RX-Puffer-Adresse ist gültig: 0x%016lX\n", rx_address);
-    }
+        printf("Fehler: RX-Puffer-Adresse (0x%016lX) liegt außerhalb des erlaubten Bereichs.\n", rx_address);
+    } 
 
     // TX-Puffer überprüfen
     for (int i = 0; i < tx_buffer_count; ++i) {
         uintptr_t tx_address = (uintptr_t)tx_buffers[i];
         if (!is_address_valid(tx_address)) {
-            printf("Fehler: TX-Puffer %d-Adresse (0x%016lX) liegt außerhalb des gültigen Bereichs.\n", i, tx_address);
-        } else {
-            printf("TX-Puffer %d-Adresse ist gültig: 0x%016lX\n", i, tx_address);
+            printf("Fehler: TX-Puffer %d-Adresse (0x%016lX) liegt außerhalb des erlaubten Bereichs.\n", i, tx_address);
         }
     }
 }
@@ -222,25 +275,6 @@ void enable_bus_master(uint8_t bus, uint8_t slot) {
     }
 }
 
-// Initialisiert den RX-Puffer
-// void initialize_rx_buffer() {
-//     // Allokiere den RX-Puffer
-//     rx_buffer = (uint8_t*)malloc(RX_BUFFER_SIZE);
-//     if (!rx_buffer) {
-//         printf("Fehler: RX-Puffer konnte nicht allokiert werden.\n");
-//         return;
-//     }
-
-//     // empty the buffer
-//     memset(rx_buffer, 0, RX_BUFFER_SIZE);
-
-//     // RX-Puffer debuggen
-//     printf("RX-Puffer initialisiert: Virtuell = %p, Größe = %d Bytes\n", rx_buffer, RX_BUFFER_SIZE);
-
-//     // Schreibe die physische Adresse des RX-Puffers in das RBSTART-Register
-//     outl((unsigned short)(rtl8139_io_base + REG_RECEIVE_BUFFER), (uintptr_t)rx_buffer);
-// }
-
 #define RX_BUFFER_SIZE (64 * 1024)  // 64 KB
 #define REG_RBSTART 0x30           // Register für RX-Puffer-Startadresse
 
@@ -252,6 +286,9 @@ void initialize_rx_buffer() {
         return;
     }
 
+    // RX-Puffer mit Nullen initialisieren
+    memset(rx_buffer, 0, RX_BUFFER_SIZE);
+
     // Schreibe die physische Adresse des RX-Puffers in das RBSTART-Register
     uintptr_t phys_address = (uintptr_t)rx_buffer;
     if (phys_address > 0xFFFFFFFF) {
@@ -260,9 +297,9 @@ void initialize_rx_buffer() {
         return;
     }
 
-    outl(rtl8139_io_base + REG_RBSTART, (uint32_t)phys_address);
-    printf("RX-Puffer initialisiert: Virtuelle Adresse = %p, Physische Adresse = 0x%08X\n",
-           rx_buffer, (uint32_t)phys_address);
+    write_and_verify_register(rtl8139_io_base, REG_RBSTART, (uint32_t)phys_address);
+
+    //printf("RX-Puffer initialisiert: Virtuelle Adresse = %p, Physische Adresse = 0x%08X\n", rx_buffer, (uint32_t)phys_address);
 }
 
 uint32_t get_io_base(uint8_t bus, uint8_t device, uint8_t function) {
@@ -282,8 +319,6 @@ void initialize_tx_buffers() {
         tx_buffers[i] = (uint8_t*)malloc(TX_BUFFER_SIZE);
         if (!tx_buffers[i]) {
             printf("Fehler: Speicherzuweisung für TX-Puffer %d fehlgeschlagen.\n", i);
-        } else {
-            printf("TX-Puffer %d initialisiert: %p\n", i, tx_buffers[i]);
         }
     }
 }
@@ -303,17 +338,44 @@ void rtl8139_init() {
     printf("Initialisiere RTL8139 Netzwerkkarte...\n");
     printf("PCI-Konfiguration: IO-Base-Adresse = 0x%04X\n", rtl8139_io_base);
 
-    outb((unsigned short)(rtl8139_io_base + 0x37), 0x10); // Reset Command
-    while (inb((unsigned short)(rtl8139_io_base + 0x37)) & 0x10); // Warten auf Reset
+    enable_rx_tx(rtl8139_io_base);
+
+    outb(rtl8139_io_base + REG_COMMAND, CR_RESET);
+    while (inb(rtl8139_io_base + REG_COMMAND) & CR_RESET);
 
     initialize_rx_buffer();
     initialize_tx_buffers();
 
-    check_buffer_addresses(rx_buffer, tx_buffers, MAX_TX_BUFFERS);
+    //check_buffer_addresses(rx_buffer, tx_buffers, MAX_TX_BUFFERS);
 
-    outl((unsigned short)(rtl8139_io_base + 0x44), 0xf | (1 << 7)); // Akzeptiere alle Pakete
-    outw((unsigned short)(rtl8139_io_base + 0x3C), 0x0005);   // Interrupts aktivieren
-    outb((unsigned short)(rtl8139_io_base + 0x37), 0x0C);     // RX und TX aktivieren
+    write_and_verify_register(rtl8139_io_base, REG_RECEIVE_CONFIGURATION,
+                          0x0000000F | // Accept all packets
+                          (1 << 7) |   // Wrap around buffer
+                          (7 << 8));   // Maximum DMA burst size
+
+
+    //outw((rtl8139_io_base + 0x3C), 0x0005);   // Interrupts aktivieren
+    //outb((rtl8139_io_base + 0x37), 0x0C);     // RX und TX aktivieren
+
+    write_and_verify_register_w(rtl8139_io_base, REG_INTERRUPT_MASK, 0x0005); // Enable RX and TX interrupts
+    //write_and_verify_register_b(rtl8139_io_base, REG_COMMAND, CR_RECEIVER_ENABLE | CR_TRANSMITTER_ENABLE); // Enable RX and TX
+
+
+    uint8_t command_value = CR_RECEIVER_ENABLE | CR_TRANSMITTER_ENABLE;
+    write_and_verify_register_b(rtl8139_io_base, REG_COMMAND, command_value & CR_WRITABLE_MASK);
+
+    // outw(rtl8139_io_base + REG_INTERRUPT_MASK, 0x0005); // Enable RX and TX interrupts
+    // // Read the value back
+    // uint32_t read_value = inw(rtl8139_io_base + REG_INTERRUPT_MASK);
+    // printf("Interrupt mask: 0x%04X\n", read_value);
+
+    // outb(rtl8139_io_base + REG_COMMAND, CR_RECEIVER_ENABLE | CR_TRANSMITTER_ENABLE); // Enable RX and TX
+    // read_value = inb(rtl8139_io_base + REG_COMMAND);
+    // printf("Command register: 0x%02X\n", read_value);
+
+    // Setze Loopback-Modus
+    uint32_t tcr_value = 0x00060000;// & (0x00030000 | 0x00000700); // Mask writable bits
+    write_and_verify_register(rtl8139_io_base, REG_TRANSMIT_CONFIGURATION, tcr_value);
 
     printf("RTL8139 initialisiert.\n");
 }
@@ -334,6 +396,13 @@ void rtl8139_send_packet(void* data, uint16_t len) {
     // Kopiere die Daten in den dynamischen TX-Puffer
     memcpy(tx_buffers[current_tx_buffer], data, len);
 
+    printf("TX Buffer %d Data (first 16 bytes): ", current_tx_buffer);
+    for (int i = 0; i < 16; i++) {
+        printf("%02X ", tx_buffers[current_tx_buffer][i]);
+    }
+    printf("\n");
+
+
     // Schreibe die Adresse des TX-Puffers in das RTL8139-Register
     uint32_t tx_buffer_addr = (uintptr_t)tx_buffers[current_tx_buffer];
     outl((unsigned short)(rtl8139_io_base + 0x20 + (current_tx_buffer * 4)), tx_buffer_addr);
@@ -351,34 +420,66 @@ void rtl8139_send_packet(void* data, uint16_t len) {
 void rtl8139_receive_packet() {
     static uint16_t rx_offset = 0;
 
-    while (!(inb((unsigned short)(rtl8139_io_base + 0x37)) & 0x01)) {
+    while (!(inb(rtl8139_io_base + REG_COMMAND) & 0x01)) { // Check RX buffer empty
         uint16_t status = *(volatile uint16_t*)(rx_buffer + rx_offset);
         uint16_t length = *(volatile uint16_t*)(rx_buffer + rx_offset + 2);
-        if (!(status & 0x01)) {
-            printf("Ungültiges Paket. Status: 0x%04X\n", status);
+
+        printf("RX Offset: %u, Status: 0x%04X, Length: %u\n", rx_offset, status, length);
+
+        if (status == 0 || length == 0) {
+            printf("No valid packets in RX buffer at offset %u.\n", rx_offset);
+            return;
+        }
+
+
+        if (!(status & 0x01)) { // Check "Packet OK" bit
+            printf("Invalid packet received. Status: 0x%04X\n", status);
             break;
         }
+
+        if (length == 0 || length > 1500) { // Ensure length is within bounds
+            printf("Error: Invalid packet length: %u\n", length);
+            break;
+        }
+
+        // Dump packet data for debugging
         uint8_t* packet = rx_buffer + rx_offset + 4;
+        printf("Packet Data (first 16 bytes): ");
+        for (int i = 0; i < 16; i++) {
+            printf("%02X ", packet[i]);
+        }
+        printf("\n");
+
+        // Process the packet
         handle_ethernet_frame(packet, length);
-        rx_offset = (rx_offset + length + 4 + 3) & ~3;
-        outw((unsigned short)(rtl8139_io_base + 0x38), rx_offset - 16);
+
+        // Update RX offset (4-byte aligned)
+        rx_offset = (rx_offset + length + 4 + 3) & ~3; // 4-byte alignment
+        if (rx_offset >= RX_BUFFER_SIZE) {
+            rx_offset -= RX_BUFFER_SIZE; // Wrap around
+        }
+        outw(rtl8139_io_base + 0x38, rx_offset - 16); // Update CURR register
     }
 
-    hex_dump(rx_buffer, 64);
+    hex_dump(rx_buffer, RX_BUFFER_SIZE);
 }
 
 // Interrupt-Handler
 void rtl8139_interrupt_handler() {
-    uint16_t status = inw(rtl8139_io_base + 0x3e);
-	outw(rtl8139_io_base + 0x3E, 0x05);
-	if(status & 0x04) {
-		// Sent
-        printf("TX OK: Paket gesendet.\n");
-	}
-	if (status & 0x01) {
-		// Received
-		rtl8139_receive_packet();
-	}
+    uint16_t isr = inw(rtl8139_io_base + REG_INTERRUPT_STATUS);
+    printf("Interrupt Status: 0x%04X\n", isr);
+
+    if (isr & 0x01) { // RX OK
+        printf("RX OK: Packet received interrupt triggered.\n");
+        rtl8139_receive_packet();
+    }
+
+    if (isr & 0x04) { // TX OK
+        printf("TX OK: Packet sent interrupt triggered.\n");
+    }
+
+    // Clear the handled interrupts
+    outw(rtl8139_io_base + REG_INTERRUPT_STATUS, isr);
 }
 
 void rtl8139_get_mac_address(uint8_t* mac) {
@@ -481,19 +582,33 @@ void send_test_packet(uint8_t* dest_mac, uint8_t* src_mac, const uint8_t* data, 
 }
 
 void test_loopback() {
-    char test_packet[64] = "Loopback Test Packet";
-    printf("Sende Loopback-Paket: %s\n", test_packet);
+    //char test_packet[64] = "Loopback Test Packet";
+    //printf("Sende Loopback-Paket: %s\n", test_packet);
 
-    uint8_t mac[6];
-    rtl8139_get_mac_address(mac);
+    // uint8_t mac[6];
+    // rtl8139_get_mac_address(mac);
+
+
+    uintptr_t phys_address = (uintptr_t)rx_buffer;
+    if (phys_address > 0xFFFFFFFF) {
+        printf("Error: RX buffer physical address out of range.\n");
+        return;
+    }
 
     //send_test_packet(mac, mac, (const uint8_t*)test_packet, sizeof(test_packet));
 
-    // Setze Loopback-Modus
-    outl((unsigned short)(rtl8139_io_base + 0x40), 0x00060000);
-
+    // Sende ein Testpaket an die eigene MAC-Adresse
+    uint8_t test_packet[] = {
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Ziel-MAC-Adresse
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Quell-MAC-Adresse
+        0x88, 0xB5,                         // Ethertype (Testdaten)
+        0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x57, 0x6F, // Nutzdaten
+        0x72, 0x6C, 0x64, 0x21
+    };
+    
     // Sende das Paket
     rtl8139_send_packet(test_packet, sizeof(test_packet));
+
 
     //free_tx_buffers();
 

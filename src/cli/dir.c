@@ -11,7 +11,7 @@ void main() {
     {
          //printf("DIR CLI running %d\n", counter++);
 
-         //sleep_ms(3000);
+         //delay_ms(3000);
 
          asm volatile("int $0x29"); // Trigger a timer interrupt
     }

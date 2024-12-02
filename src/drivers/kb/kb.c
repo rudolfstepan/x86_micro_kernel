@@ -184,7 +184,7 @@ void kb_handler(void* r) {
 char getchar() {
     while (buffer_index == 0) {
         // Add a small delay to avoid busy-waiting completely
-        sleep_ms(10);
+        delay_ms(10);
     }
 
     // Disable interrupts to safely access the buffer
@@ -235,7 +235,7 @@ void kb_wait_enter() {
     // Wait until the Enter key is pressed
     while (!is_enter_pressed()) {
         // Small delay to avoid busy-waiting and CPU overuse
-        sleep_ms(10);
+        delay_ms(10);
     }
 
     // Clear the input buffer after Enter is pressed

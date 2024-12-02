@@ -548,7 +548,7 @@ void cmd_sleep(int arg_count, const char** arguments) {
     } else {
         int seconds = strtoul(arguments[0], NULL, 10);
         printf("Sleeping for %d seconds\n", seconds);
-        sleep_ms(seconds * 1000);
+        delay_ms(seconds * 1000);
 
         printf("Sleeping for %d seconds finished.\n", seconds);
     }
@@ -596,7 +596,7 @@ void cmd_wait(int arg_count, const char** arguments) {
     } else {
         int ticks = strtoul(arguments[0], NULL, 10);
         printf("Sleeping for %d ticks...\n", ticks);
-        sleep_ms(ticks);
+        delay_ms(ticks);
         printf("Done sleeping!\n");
     }
 }

@@ -130,7 +130,7 @@ void exit(uint8_t status) {
     //__asm__ __volatile__("cli; hlt");
 }
 
-void sleep_ms(uint32_t ms) {
+void delay_ms(uint32_t ms) {
     syscall(SYS_DELAY, (void*)ms, NULL, NULL);
 }
 
