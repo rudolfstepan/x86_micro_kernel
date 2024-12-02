@@ -19,7 +19,6 @@
 #define RTL8139_TSD0    0x10 // Transmit Status of descriptor 0
 
 
-
 // Ethernet Frame Header Struktur
 typedef struct {
     uint8_t dest_mac[6];     // Ziel-MAC-Adresse
@@ -27,9 +26,6 @@ typedef struct {
     uint16_t ethertype;      // Protokolltyp (z. B. IPv4, ARP)
 } ethernet_header_t;
 
-// Unterstützte Ethernet-Typen
-#define ETHERTYPE_IPV4 0x0800
-#define ETHERTYPE_ARP  0x0806
 
 
 void initialize_rtl8139(uint8_t bus, uint8_t device, uint8_t function);
@@ -37,5 +33,7 @@ uint32_t pci_read(uint8_t bus, uint8_t device, uint8_t function, uint8_t offset)
 void rtl8139_send_packet(void* data, uint16_t len);
 void rtl8139_receive_packet();
 void test_loopback();
+void rtl8139_init();
+int find_rtl8139();
 
 #endif  // RTL8139_H

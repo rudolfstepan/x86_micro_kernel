@@ -475,28 +475,13 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 
     // PCI-Scanning: Suche die RTL8139 Netzwerkkarte
     printf("Suche nach RTL8139 Netzwerkkarte...\n");
-    uint8_t found = 0;
-    for (uint16_t bus = 0; bus < 256; ++bus) {
-        for (uint8_t device = 0; device < 32; ++device) {
-            uint32_t id = pci_read(bus, device, 0, 0);
-            uint16_t vendor_id = id & 0xFFFF;
-            uint16_t device_id = (id >> 16) & 0xFFFF;
-
-            if (vendor_id == 0x10EC && device_id == 0x8139) { // RTL8139 Vendor/Device ID
-                printf("RTL8139 gefunden: Bus %u, Gerät %u\n", bus, device);
-
-                // Initialisiere die Netzwerkkarte
-                initialize_rtl8139(bus, device, 0);
-                found = 1;
-                break;
-            }
-        }
-        if (found) break;
-    }
-
-    if (!found) {
+    
+    int found = find_rtl8139();
+    
+    if (found == -1) {
         printf("RTL8139 Netzwerkkarte nicht gefunden.\n");
     } else {
+        rtl8139_init();
         printf("Netzwerkkarte erfolgreich initialisiert.\n");
     }
 
