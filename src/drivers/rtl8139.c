@@ -5,10 +5,8 @@
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
 #include "kernel/sys.h"
+#include <stddef.h>
 
-// Globale Variablen
-volatile uint32_t rtl8139_io_base = 0; // IO-Base-Adresse
-volatile void* rx_buffer; // Empfangspuffer
 
 // PCI-Konstanten
 #define PCI_CONFIG_ADDRESS 0xCF8
@@ -24,14 +22,106 @@ volatile void* rx_buffer; // Empfangspuffer
 #define PCI_COMMAND 0x04
 #define PCI_COMMAND_BUS_MASTER 0x04
 
+#define PCI_CONFIG_ADDRESS 0xCF8
+#define PCI_CONFIG_DATA    0xCFC
+
 // RTL8139-spezifische Konstanten
-#define RTL8139_VENDOR_ID 0x10EC
-#define RTL8139_DEVICE_ID 0x8139
-#define RTL8139_IO_BASE   0x10
+#define RTL8139_VENDOR_ID  0x10EC
+#define RTL8139_DEVICE_ID  0x8139
+
+#define REG_ID0 0x00
+#define REG_ID4 0x04
+#define REG_TRANSMIT_STATUS0 0x10
+#define REG_TRANSMIT_ADDR0 0x20
+#define REG_RECEIVE_BUFFER 0x30
+#define REG_COMMAND 0x37
+#define REG_CUR_READ_ADDR 0x38
+#define REG_INTERRUPT_MASK 0x3C
+#define REG_INTERRUPT_STATUS 0x3E
+#define REG_TRANSMIT_CONFIGURATION 0x40
+#define REG_RECEIVE_CONFIGURATION 0x44
+// Werte für die Register // Kontrollregister
+
+#define CR_RESET (1 << 4)
+#define CR_RECEIVER_ENABLE (1 << 3)
+#define CR_TRANSMITTER_ENABLE (1 << 2)
+#define CR_BUFFER_IS_EMPTY (1 << 0)
+// Transmitter-Konfiguration
+
+#define TCR_IFG_STANDARD (3 << 24)
+#define TCR_MXDMA_512 (5 << 8)
+#define TCR_MXDMA_1024 (6 << 8)
+#define TCR_MXDMA_2048 (7 << 8)
+// Receiver-Konfiguration
+
+#define RCR_MXDMA_512 (5 << 8)
+#define RCR_MXDMA_1024 (6 << 8)
+#define RCR_MXDMA_UNLIMITED (7 << 8)
+#define RCR_ACCEPT_BROADCAST (1 << 3)
+#define RCR_ACCEPT_MULTICAST (1 << 2)
+#define RCR_ACCEPT_PHYS_MATCH (1 << 1)
+// Interrupt-Statusregister
+
+#define ISR_RECEIVE_BUFFER_OVERFLOW (1 << 4)
+#define ISR_TRANSMIT_OK (1 << 2)
+#define ISR_RECEIVE_OK (1 << 0)
 
 // Ethernet-Protokolltypen
 #define ETHERTYPE_IPV4 0x0800
 #define ETHERTYPE_ARP  0x0806
+
+#define MAX_TX_BUFFERS 4
+#define TX_BUFFER_SIZE 2048 // Dynamische Größe für jeden TX-Puffer
+
+static uint8_t* tx_buffers[MAX_TX_BUFFERS] = {NULL}; // Dynamische TX-Puffer
+static uint8_t current_tx_buffer = 0;               // Aktueller TX-Puffer
+
+
+// Globale Variablen
+volatile uint32_t rtl8139_io_base = 0; // IO-Base-Adresse
+
+#define RX_BUFFER_SIZE (64 * 1024) // 64 KB für den RX-Puffer
+#define REG_RECEIVE_BUFFER 0x30    // Offset für RBSTART-Register
+
+uint8_t* rx_buffer = NULL;
+
+
+// Gültiger Bereich für RTL8139 (32-Bit-Adressraum)
+#define MAX_DMA_ADDRESS 0xFFFFFFFF
+
+/**
+ * Prüft, ob die Adresse im gültigen Bereich für die RTL8139 liegt.
+ *
+ * @param address Die zu prüfende Adresse.
+ * @return 1, wenn die Adresse gültig ist, sonst 0.
+ */
+int is_address_valid(uintptr_t address) {
+    return (address <= MAX_DMA_ADDRESS);
+}
+
+/**
+ * Überprüft die RX- und TX-Pufferadressen und gibt Fehler aus, wenn sie ungültig sind.
+ */
+void check_buffer_addresses(void* rx_buffer, uint8_t** tx_buffers, int tx_buffer_count) {
+    uintptr_t rx_address = (uintptr_t)rx_buffer;
+
+    // RX-Puffer überprüfen
+    if (!is_address_valid(rx_address)) {
+        printf("Fehler: RX-Puffer-Adresse (0x%016lX) liegt außerhalb des gültigen Bereichs.\n", rx_address);
+    } else {
+        printf("RX-Puffer-Adresse ist gültig: 0x%016lX\n", rx_address);
+    }
+
+    // TX-Puffer überprüfen
+    for (int i = 0; i < tx_buffer_count; ++i) {
+        uintptr_t tx_address = (uintptr_t)tx_buffers[i];
+        if (!is_address_valid(tx_address)) {
+            printf("Fehler: TX-Puffer %d-Adresse (0x%016lX) liegt außerhalb des gültigen Bereichs.\n", i, tx_address);
+        } else {
+            printf("TX-Puffer %d-Adresse ist gültig: 0x%016lX\n", i, tx_address);
+        }
+    }
+}
 
 void handle_ethernet_frame(const uint8_t* frame, uint16_t length) {
     if (length < sizeof(ethernet_header_t)) {
@@ -111,36 +201,80 @@ void pci_write(uint8_t bus, uint8_t slot, uint8_t offset, uint8_t size, uint32_t
 
 // Aktiviert Bus-Mastering
 void enable_bus_master(uint8_t bus, uint8_t slot) {
+    printf("Aktiviere Bus-Mastering für Gerät %u:%u\n", bus, slot);
     uint16_t command = pci_read(bus, slot, PCI_COMMAND, 2);
     if (!(command & PCI_COMMAND_BUS_MASTER)) {
         command |= PCI_COMMAND_BUS_MASTER;
         pci_write(bus, slot, PCI_COMMAND, 2, command);
-        printf("Bus Mastering aktiviert.\n");
+        printf("++++Bus Mastering aktiviert.++++\n");
     }
 }
 
 // Initialisiert den RX-Puffer
 void initialize_rx_buffer() {
-    rx_buffer = (void*)malloc((8192*8)+16+1500);
+    // Allokiere den RX-Puffer
+    rx_buffer = (uint8_t*)malloc(RX_BUFFER_SIZE);
     if (!rx_buffer) {
         printf("Fehler: RX-Puffer konnte nicht allokiert werden.\n");
         return;
     }
 
-    // lösche den Puffer
-    memset(rx_buffer, 0, (8192*8)+16+1500);
+    // empty the buffer
+    memset(rx_buffer, 0, RX_BUFFER_SIZE);
 
-    // Schreibe die physische Adresse des RX-Puffers in RBSTART
-    outl((unsigned short)(rtl8139_io_base + 0x30), rx_buffer);
-    printf("RX-Puffer initialisiert: Virtuell = %p, Physisch = 0x%08X\n", rx_buffer, (uint32_t)rx_buffer);
+    // RX-Puffer debuggen
+    printf("RX-Puffer initialisiert: Virtuell = %p, Größe = %d Bytes\n", rx_buffer, RX_BUFFER_SIZE);
+
+    // Schreibe die physische Adresse des RX-Puffers in das RBSTART-Register
+    outl((unsigned short)(rtl8139_io_base + REG_RECEIVE_BUFFER), (uintptr_t)rx_buffer);
+}
+
+uint32_t get_io_base(uint8_t bus, uint8_t device, uint8_t function) {
+    uint32_t bar0 = pci_read(bus, device, function, 0x10); // BAR0 auslesen
+
+    // Prüfen, ob die Adresse für I/O oder Memory ist
+    if (bar0 & 0x01) { // I/O-Bit gesetzt
+        return bar0 & ~0x3; // Entferne die unteren Bits für Alignment
+    } else {
+        printf("Fehler: BAR0 zeigt auf eine Memory-Adresse, keine I/O-Adresse.\n");
+        return 0; // Fehler
+    }
+}
+
+void initialize_tx_buffers() {
+    for (int i = 0; i < MAX_TX_BUFFERS; ++i) {
+        tx_buffers[i] = (uint8_t*)malloc(TX_BUFFER_SIZE);
+        if (!tx_buffers[i]) {
+            printf("Fehler: Speicherzuweisung für TX-Puffer %d fehlgeschlagen.\n", i);
+        } else {
+            printf("TX-Puffer %d initialisiert: %p\n", i, tx_buffers[i]);
+        }
+    }
+}
+
+void free_tx_buffers() {
+    for (int i = 0; i < MAX_TX_BUFFERS; ++i) {
+        if (tx_buffers[i]) {
+            free(tx_buffers[i]);
+            tx_buffers[i] = NULL;
+            printf("TX-Puffer %d freigegeben.\n", i);
+        }
+    }
 }
 
 // Initialisiert die RTL8139-Netzwerkkarte
 void rtl8139_init() {
     printf("Initialisiere RTL8139 Netzwerkkarte...\n");
+    printf("PCI-Konfiguration: IO-Base-Adresse = 0x%04X\n", rtl8139_io_base);
+
     outb((unsigned short)(rtl8139_io_base + 0x37), 0x10); // Reset Command
     while (inb((unsigned short)(rtl8139_io_base + 0x37)) & 0x10); // Warten auf Reset
+
     initialize_rx_buffer();
+    initialize_tx_buffers();
+
+    check_buffer_addresses(rx_buffer, tx_buffers, MAX_TX_BUFFERS);
+
     outl((unsigned short)(rtl8139_io_base + 0x44), 0xf | (1 << 7)); // Akzeptiere alle Pakete
     outw((unsigned short)(rtl8139_io_base + 0x3C), 0x0005);   // Interrupts aktivieren
     outb((unsigned short)(rtl8139_io_base + 0x37), 0x0C);     // RX und TX aktivieren
@@ -148,22 +282,35 @@ void rtl8139_init() {
     printf("RTL8139 initialisiert.\n");
 }
 
-// Sendet ein Ethernet-Paket
+
+
 void rtl8139_send_packet(void* data, uint16_t len) {
-    static uint8_t current_tx_buffer = 0;
-    if (len > 1500) {
-        printf("Fehler: Paket zu groß (%u Bytes).\n", len);
+    if (len > TX_BUFFER_SIZE) {
+        printf("Fehler: Paket zu groß (%u Bytes, max %u Bytes).\n", len, TX_BUFFER_SIZE);
         return;
     }
+
+    // Prüfen, ob der aktuelle TX-Puffer frei ist
     uint32_t tsd_status = inl((unsigned short)(rtl8139_io_base + 0x10 + (current_tx_buffer * 4)));
     if (tsd_status & 0x8000) {
         printf("Sendepuffer %u ist noch nicht frei.\n", current_tx_buffer);
         return;
     }
-    memcpy((void*)(rtl8139_io_base + 0x20 + (current_tx_buffer * 4)), data, len);
+
+    // Kopiere die Daten in den dynamischen TX-Puffer
+    memcpy(tx_buffers[current_tx_buffer], data, len);
+
+    // Schreibe die Adresse des TX-Puffers in das RTL8139-Register
+    uint32_t tx_buffer_addr = (uintptr_t)tx_buffers[current_tx_buffer];
+    outl((unsigned short)(rtl8139_io_base + 0x20 + (current_tx_buffer * 4)), tx_buffer_addr);
+
+    // Schreibe die Länge des Pakets und starte die Übertragung
     outl((unsigned short)(rtl8139_io_base + 0x10 + (current_tx_buffer * 4)), len);
-    current_tx_buffer = (current_tx_buffer + 1) % 4;
-    printf("Paket gesendet über Puffer %u.\n", (current_tx_buffer + 3) % 4);
+
+    // Zum nächsten Puffer wechseln
+    current_tx_buffer = (current_tx_buffer + 1) % MAX_TX_BUFFERS;
+
+    printf("Paket mit %u Bytes gesendet über Puffer %u.\n", len, (current_tx_buffer + MAX_TX_BUFFERS - 1) % MAX_TX_BUFFERS);
 }
 
 // Empfängt ein Ethernet-Paket
@@ -187,10 +334,7 @@ void rtl8139_receive_packet() {
 }
 
 // Interrupt-Handler
-void rtl8139_interrupt_handler(uint8_t isr, uint64_t error, uint64_t irq) {
-
-    printf("RTL8139 Interrupt: ISR = 0x%02X, Error = 0x%X, IRQ = %u\n", isr, error, irq);
-
+void rtl8139_interrupt_handler() {
     uint16_t status = inw(rtl8139_io_base + 0x3e);
 	outw(rtl8139_io_base + 0x3E, 0x05);
 	if(status & 0x04) {
@@ -221,35 +365,52 @@ void print_mac_address() {
 int find_rtl8139() {
     for (uint16_t bus = 0; bus < 256; ++bus) {
         for (uint8_t device = 0; device < 32; ++device) {
+            // Prüfen, ob das Gerät existiert
             uint32_t id = pci_read(bus, device, 0, 0);
-            if ((id & 0xFFFF) == RTL8139_VENDOR_ID && ((id >> 16) & 0xFFFF) == RTL8139_DEVICE_ID) {
-                uint32_t bar0 = pci_read(bus, device, 0, RTL8139_IO_BASE);
-                rtl8139_io_base = (volatile uintptr_t)(bar0 & ~0x3);
+            if ((id & 0xFFFF) == 0xFFFF) { // Kein Gerät vorhanden
+                continue;
+            }
 
-                // IRQ-Nummer auslesen
-                uint32_t irq_pin = pci_read(bus, device, 0, 0x3D) >> 8;
-                uint32_t irq_line = pci_read(bus, device, 0, 0x3D) & 0xFF;
-                printf("RTL8139 gefunden: Bus %u, Gerät %u, IRQ %u\n", bus, device, irq_line);
+            // Prüfen, ob das Gerät mehrere Funktionen unterstützt
+            uint32_t header_type = pci_read(bus, device, 0, 0x0C) >> 16;
+            uint8_t multifunction = (header_type & 0x80) != 0;
 
-                // IRQ-Nummer einstellen
-                // outb((unsigned short)(PIC1_DATA), 0xFF & ~(1 << irq_line));
-                // outb((unsigned short)(PIC2_DATA), 0xFF);
-                enable_bus_master(bus, device);
+            // Über alle Funktionen iterieren
+            for (uint8_t function = 0; function < (multifunction ? 8 : 1); ++function) {
+                // PCI-Geräte-ID und Vendor-ID auslesen
+                id = pci_read(bus, device, function, 0);
+                if ((id & 0xFFFF) == RTL8139_VENDOR_ID && ((id >> 16) & 0xFFFF) == RTL8139_DEVICE_ID) {
+                    // BAR0 (I/O Base) auslesen
+                    uint32_t bar0 = pci_read(bus, device, function, 0x10);
+                    rtl8139_io_base = bar0 & ~0x3; // Nur I/O-Bits verwenden
 
-                // register interrupt handler
-                register_interrupt_handler(irq_line, rtl8139_interrupt_handler);
+                    // IRQ-Nummer auslesen
+                    uint32_t irq_line = pci_read(bus, device, function, 0x3C) & 0xFF;
+                    printf("RTL8139 gefunden: Bus %u, Device %u, Funktion %u, IRQ %u\n",
+                           bus, device, function, irq_line);
 
-                print_mac_address();
+                    // Bus Mastering aktivieren
+                    uint16_t command = pci_read(bus, device, function, PCI_COMMAND);
+                    command |= PCI_COMMAND_BUS_MASTER;
+                    pci_write(bus, device, function, PCI_COMMAND, command);
 
-                return 0;
+                    // Interrupt-Handler registrieren
+                    register_interrupt_handler(irq_line, rtl8139_interrupt_handler);
+                    unmask_irq(irq_line);
+
+                    // MAC-Adresse ausgeben
+                    print_mac_address();
+
+                    return 0;
+                }
             }
         }
     }
-    return -1;
+    return -1; // Keine RTL8139-Karte gefunden
 }
 
-
 void test_loopback() {
+
 
     char test_packet[64] = "Loopback Test Packet";
     printf("Sende Loopback-Paket: %s\n", test_packet);
@@ -259,6 +420,8 @@ void test_loopback() {
 
     // Sende das Paket
     rtl8139_send_packet(test_packet, sizeof(test_packet));
+
+    //free_tx_buffers();
 
     // printf("Loopback-Test fehlgeschlagen: Kein Paket empfangen.\n");
 }
