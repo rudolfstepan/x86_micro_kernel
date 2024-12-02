@@ -25,7 +25,8 @@
 #include "mbheader.h"
 #include "memory.h"
 //#include "paging.h"
-#include "drivers/rtl8139.h"
+#include "drivers/network/rtl8139.h"
+#include "drivers/network/e1000.h"
 
 
 extern char _stack_start;  // Start address of the stack
@@ -474,16 +475,8 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     register_interrupt_handler(9, scheduler_interrupt_handler);
 
     // PCI-Scanning: Suche die RTL8139 Netzwerkkarte
-    printf("Suche nach RTL8139 Netzwerkkarte...\n");
-    
-    int found = find_rtl8139();
-    
-    if (found == -1) {
-        printf("RTL8139 Netzwerkkarte nicht gefunden.\n");
-    } else {
-        rtl8139_init();
-        printf("Netzwerkkarte erfolgreich initialisiert.\n");
-    }
+    rtl8139_detect();
+    e1000_detect();
 
     __asm__ __volatile__("sti"); // enable interrupts
 

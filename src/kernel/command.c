@@ -16,7 +16,8 @@
 #include "filesystem/filesystem.h"
 #include "filesystem/fat32/fat32.h"
 #include "filesystem/fat12/fat12.h"
-#include "drivers/rtl8139.h"
+#include "drivers/network/rtl8139.h"
+#include "drivers/network/e1000.h"
 
 
 char current_path[256] = "/";
@@ -726,6 +727,7 @@ void cmd_net(int arg_count, const char** arguments) {
         //send_packet();
 
         test_loopback();
+        e1000_send_test_packet();
 
 
     } else if(strcmp(arguments[0], "RECV") == 0) {

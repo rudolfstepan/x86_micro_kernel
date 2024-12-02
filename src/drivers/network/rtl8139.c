@@ -6,12 +6,10 @@
 #include "toolchain/stdlib.h"
 #include "kernel/sys.h"
 #include <stddef.h>
+#include "drivers/pci.h"
 
 #define CR_WRITABLE_MASK (CR_RECEIVER_ENABLE | CR_TRANSMITTER_ENABLE)
 
-// PCI-Konstanten
-#define PCI_CONFIG_ADDRESS 0xCF8
-#define PCI_CONFIG_DATA 0xCFC
 
 // PIC-Konstanten
 #define PIC1_COMMAND 0x20
@@ -19,12 +17,6 @@
 #define PIC2_COMMAND 0xA0
 #define PIC2_DATA    0xA1
 
-// PCI-Befehlsregister-Flags
-#define PCI_COMMAND 0x04
-#define PCI_COMMAND_BUS_MASTER 0x04
-
-#define PCI_CONFIG_ADDRESS 0xCF8
-#define PCI_CONFIG_DATA    0xCFC
 
 // RTL8139-spezifische Konstanten
 #define RTL8139_VENDOR_ID  0x10EC
@@ -108,10 +100,8 @@ void write_and_verify_register(uint32_t base, uint32_t offset, uint32_t value) {
 
     // Compare written and read values
     if (read_value != value) {
-        printf("Warning: Register write mismatch at offset 0x%X. Written: 0x%08X, Read: 0x%08X\n",
+        printf("(!)Register write mismatch @ 0x%X. Written: 0x%08X, Read: 0x%08X\n",
                offset, value, read_value);
-    } else {
-        printf("Register write verified at offset 0x%X. Value: 0x%08X\n", offset, value);
     }
 }
 
@@ -120,9 +110,6 @@ void write_and_verify_register_b(uint32_t base, uint8_t offset, uint8_t value) {
     outb(base + offset, value);
 
     uint8_t read_value = inb(base + offset);
-
-    printf("Command Register: Written = 0x%02X, Read = 0x%02X (Writable Mask Applied: 0x%02X)\n",
-           value, read_value, value & CR_WRITABLE_MASK);
 
     if ((read_value & CR_WRITABLE_MASK) != (value & CR_WRITABLE_MASK)) {
         printf("Warning: Command register mismatch. Expected: 0x%02X, Actual: 0x%02X\n",
@@ -141,8 +128,6 @@ void write_and_verify_register_w(uint32_t base, uint32_t offset, uint32_t value)
     if (read_value != value) {
         printf("Warning: Register write mismatch at offset 0x%X. Written: 0x%08X, Read: 0x%08X\n",
                offset, value, read_value);
-    } else {
-        printf("Register write verified at offset 0x%X. Value: 0x%08X\n", offset, value);
     }
 }
 
@@ -613,4 +598,13 @@ void test_loopback() {
     //free_tx_buffers();
 
     // printf("Loopback-Test fehlgeschlagen: Kein Paket empfangen.\n");
+}
+
+void rtl8139_detect() {
+    printf("Suche nach RTL8139 Netzwerkkarte...\n");
+    if (find_rtl8139() == 0) {
+        rtl8139_init();
+    } else {
+        printf("RTL8139 NIC nicht gefunden.\n");
+    }
 }

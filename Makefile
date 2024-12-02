@@ -134,5 +134,5 @@ run:
 	@echo "Running QEMU..."
 	#qemu-system-x86_64 -bios OVMF.fd -kernel ./build/kernel.bin
 	#qemu-system-x86_64 -kernel ./build/kernel.bin -s -S -display default
-	qemu-system-x86_64 -m 512M -boot d -cdrom ./kernel.iso -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy -device rtl8139,netdev=mynet0 -netdev user,id=mynet0 -monitor stdio \
+	qemu-system-x86_64 -m 512M -boot d -cdrom ./kernel.iso -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy -netdev user,id=mynet0 -device e1000,netdev=mynet0 -device rtl8139,netdev=mynet1 -netdev user,id=mynet1 -monitor stdio \
 	
