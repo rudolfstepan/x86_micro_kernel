@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include <string.h>
+#include "toolchain/strings.h"
 #include "toolchain/stdio.h"
 
 // Global variables

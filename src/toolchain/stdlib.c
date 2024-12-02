@@ -26,6 +26,60 @@ void* malloc(size_t size) {
     return allocated_memory;
 }
 
+/**
+ * Allokiert Speicher mit der angegebenen Ausrichtung.
+ *
+ * @param alignment Die gewünschte Speicher-Ausrichtung (muss eine Zweierpotenz sein).
+ * @param size Die gewünschte Größe des Speichers in Bytes.
+ * @return Ein Zeiger auf den ausgerichteten Speicher oder NULL bei Fehler.
+ */
+void* aligned_alloc(size_t alignment, size_t size) {
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+        // Alignment ist keine Zweierpotenz
+        return NULL;
+    }
+
+    // Allokiere zusätzlichen Speicher für Alignment und Speicheradresse
+    size_t total_size = size + alignment - 1 + sizeof(void*);
+    void* raw_memory = malloc(total_size);
+    if (!raw_memory) {
+        return NULL; // Speicher konnte nicht allokiert werden
+    }
+
+    // Berechne die ausgerichtete Adresse
+    uintptr_t raw_address = (uintptr_t)raw_memory + sizeof(void*);
+    uintptr_t aligned_address = (raw_address + alignment - 1) & ~(alignment - 1);
+
+    // Speichere den Originalzeiger vor der ausgerichteten Adresse
+    ((void**)aligned_address)[-1] = raw_memory;
+
+    return (void*)aligned_address;
+}
+
+/**
+ * Gibt den von aligned_alloc zugewiesenen Speicher frei.
+ *
+ * @param ptr Ein Zeiger, der von aligned_alloc zurückgegeben wurde.
+ */
+void aligned_free(void* ptr) {
+    if (ptr) {
+        // Hole den Originalzeiger und gib den Speicher frei
+        free(((void**)ptr)[-1]);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 void* realloc(void *ptr, size_t new_size) {
     return syscall(SYS_REALLOC, ptr, (void*)(uintptr_t)new_size, 0);
     //return k_realloc(ptr, new_size);

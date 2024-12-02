@@ -89,6 +89,18 @@ uint8_t* rx_buffer = NULL;
 // Gültiger Bereich für RTL8139 (32-Bit-Adressraum)
 #define MAX_DMA_ADDRESS 0xFFFFFFFF
 
+
+/**
+ * Wandelt einen 16-Bit-Wert von Host Byte Order (Little-Endian) 
+ * in Network Byte Order (Big-Endian) um.
+ *
+ * @param hostshort Der 16-Bit-Wert im Host Byte Order.
+ * @return Der umgewandelte Wert im Network Byte Order.
+ */
+uint16_t htons(uint16_t hostshort) {
+    return (hostshort >> 8) | (hostshort << 8);
+}
+
 /**
  * Prüft, ob die Adresse im gültigen Bereich für die RTL8139 liegt.
  *
@@ -211,22 +223,46 @@ void enable_bus_master(uint8_t bus, uint8_t slot) {
 }
 
 // Initialisiert den RX-Puffer
+// void initialize_rx_buffer() {
+//     // Allokiere den RX-Puffer
+//     rx_buffer = (uint8_t*)malloc(RX_BUFFER_SIZE);
+//     if (!rx_buffer) {
+//         printf("Fehler: RX-Puffer konnte nicht allokiert werden.\n");
+//         return;
+//     }
+
+//     // empty the buffer
+//     memset(rx_buffer, 0, RX_BUFFER_SIZE);
+
+//     // RX-Puffer debuggen
+//     printf("RX-Puffer initialisiert: Virtuell = %p, Größe = %d Bytes\n", rx_buffer, RX_BUFFER_SIZE);
+
+//     // Schreibe die physische Adresse des RX-Puffers in das RBSTART-Register
+//     outl((unsigned short)(rtl8139_io_base + REG_RECEIVE_BUFFER), (uintptr_t)rx_buffer);
+// }
+
+#define RX_BUFFER_SIZE (64 * 1024)  // 64 KB
+#define REG_RBSTART 0x30           // Register für RX-Puffer-Startadresse
+
 void initialize_rx_buffer() {
-    // Allokiere den RX-Puffer
-    rx_buffer = (uint8_t*)malloc(RX_BUFFER_SIZE);
+    // Allokiere Speicher für den RX-Puffer
+    rx_buffer = (uint8_t*)aligned_alloc(4096, RX_BUFFER_SIZE); // 4-KB-Ausrichtung
     if (!rx_buffer) {
         printf("Fehler: RX-Puffer konnte nicht allokiert werden.\n");
         return;
     }
 
-    // empty the buffer
-    memset(rx_buffer, 0, RX_BUFFER_SIZE);
-
-    // RX-Puffer debuggen
-    printf("RX-Puffer initialisiert: Virtuell = %p, Größe = %d Bytes\n", rx_buffer, RX_BUFFER_SIZE);
-
     // Schreibe die physische Adresse des RX-Puffers in das RBSTART-Register
-    outl((unsigned short)(rtl8139_io_base + REG_RECEIVE_BUFFER), (uintptr_t)rx_buffer);
+    uintptr_t phys_address = (uintptr_t)rx_buffer;
+    if (phys_address > 0xFFFFFFFF) {
+        printf("Fehler: RX-Puffer-Adresse liegt außerhalb des 32-Bit-Adressraums.\n");
+        free(rx_buffer);
+        return;
+    }
+
+    outl(rtl8139_io_base + REG_RBSTART, (uint32_t)phys_address);
+    printf("RX-Puffer initialisiert: Virtuelle Adresse = %p, Physische Adresse = 0x%08X\n",
+           rx_buffer, (uint32_t)phys_address);
 }
 
 uint32_t get_io_base(uint8_t bus, uint8_t device, uint8_t function) {
@@ -281,8 +317,6 @@ void rtl8139_init() {
 
     printf("RTL8139 initialisiert.\n");
 }
-
-
 
 void rtl8139_send_packet(void* data, uint16_t len) {
     if (len > TX_BUFFER_SIZE) {
@@ -409,11 +443,51 @@ int find_rtl8139() {
     return -1; // Keine RTL8139-Karte gefunden
 }
 
+/**
+ * Sendet ein Ethernet-Frame mit Testdaten an eine Ziel-MAC-Adresse.
+ *
+ * @param dest_mac  Ziel-MAC-Adresse (6 Bytes)
+ * @param src_mac   Quell-MAC-Adresse (6 Bytes)
+ * @param data      Nutzdaten
+ * @param data_len  Länge der Nutzdaten
+ */
+void send_test_packet(uint8_t* dest_mac, uint8_t* src_mac, const uint8_t* data, uint16_t data_len) {
+    if (data_len > (MAX_PACKET_SIZE - sizeof(ethernet_header_t))) {
+        printf("Fehler: Nutzdaten zu groß (%u Bytes, max %u Bytes).\n", data_len, MAX_PACKET_SIZE - sizeof(ethernet_header_t));
+        return;
+    }
+
+    // Allokiere Speicher für das vollständige Ethernet-Frame
+    uint8_t packet[MAX_PACKET_SIZE];
+    memset(packet, 0, MAX_PACKET_SIZE);
+
+    // Erstelle den Ethernet-Header
+    ethernet_header_t* eth_header = (ethernet_header_t*)packet;
+    memcpy(eth_header->dest_mac, dest_mac, 6);       // Ziel-MAC-Adresse setzen
+    memcpy(eth_header->src_mac, src_mac, 6);        // Quell-MAC-Adresse setzen
+    eth_header->ethertype = htons(ETHERTYPE_TEST);  // Ethertype (im Network-Byte-Order)
+
+    // Kopiere die Nutzdaten in das Frame
+    memcpy((packet + sizeof(ethernet_header_t)), data, data_len);
+
+    // Berechne die Gesamtlänge des Frames
+    uint16_t frame_len = sizeof(ethernet_header_t) + data_len;
+
+    // Sende das Ethernet-Frame
+    rtl8139_send_packet(packet, frame_len);
+
+    printf("Test-Paket gesendet: Ziel-MAC %02X:%02X:%02X:%02X:%02X:%02X, Länge %u Bytes.\n",
+            dest_mac[0], dest_mac[1], dest_mac[2], dest_mac[3], dest_mac[4], dest_mac[5], frame_len);
+}
+
 void test_loopback() {
-
-
     char test_packet[64] = "Loopback Test Packet";
     printf("Sende Loopback-Paket: %s\n", test_packet);
+
+    uint8_t mac[6];
+    rtl8139_get_mac_address(mac);
+
+    //send_test_packet(mac, mac, (const uint8_t*)test_packet, sizeof(test_packet));
 
     // Setze Loopback-Modus
     outl((unsigned short)(rtl8139_io_base + 0x40), 0x00060000);

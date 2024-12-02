@@ -422,7 +422,7 @@ char* strstr(const char* haystack, const char* needle) {
 /// <summary>
 /// Copies the values of num bytes from the location pointed by source directly to the memory block pointed by destination.
 /// </summary>
-void* memcpy(void* dest, const void* src, unsigned int n) {
+void* memcpy(void* dest, const void* src, uint16_t n) {
     if (dest == NULL || src == NULL) {
         return NULL; // Error handling for NULL pointers
     }

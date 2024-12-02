@@ -2,7 +2,7 @@
 SOURCE_DIR = src
 OUTPUT_DIR = build
 ISO_DIR = iso
-CFLAGS = -Isrc -m32 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -O1 -Wall -Wextra -g -Wno-unused-parameter -Wno-unused-variable
+CFLAGS = -Isrc -m32 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -O1 -Wall -Wextra -g -Wno-unused-parameter -Wno-unused-variable -U_FORTIFY_SOURCE
 LD_FLAGS = -m elf_i386 -nostdlib
 MOUNT_DIR = /mnt/disk
 
@@ -134,5 +134,5 @@ run:
 	@echo "Running QEMU..."
 	#qemu-system-x86_64 -bios OVMF.fd -kernel ./build/kernel.bin
 	#qemu-system-x86_64 -kernel ./build/kernel.bin -s -S -display default
-	qemu-system-x86_64 -m 512M -boot d -cdrom ./kernel.iso -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy -net nic,model=rtl8139 -net user  \
+	qemu-system-x86_64 -m 512M -boot d -cdrom ./kernel.iso -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy -device rtl8139,netdev=mynet0 -netdev user,id=mynet0 -monitor stdio \
 	
