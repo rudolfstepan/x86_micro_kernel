@@ -7,16 +7,9 @@
 #include "kernel/sys.h"
 #include <stddef.h>
 #include "drivers/pci.h"
+#include "drivers/network/ethernet.h"
 
 #define CR_WRITABLE_MASK (CR_RECEIVER_ENABLE | CR_TRANSMITTER_ENABLE)
-
-
-// PIC-Konstanten
-#define PIC1_COMMAND 0x20
-#define PIC1_DATA    0x21
-#define PIC2_COMMAND 0xA0
-#define PIC2_DATA    0xA1
-
 
 // RTL8139-spezifische Konstanten
 #define RTL8139_VENDOR_ID  0x10EC
@@ -62,34 +55,24 @@
 #define ISR_TRANSMIT_OK (1 << 2)
 #define ISR_RECEIVE_OK (1 << 0)
 
-// Ethernet-Protokolltypen
-#define ETHERTYPE_IPV4 0x0800
-#define ETHERTYPE_ARP  0x0806
+
 
 #define MAX_TX_BUFFERS 4
 #define TX_BUFFER_SIZE 2048 // Dynamische Größe für jeden TX-Puffer
 
-static uint8_t* tx_buffers[MAX_TX_BUFFERS] = {NULL}; // Dynamische TX-Puffer
-static uint8_t current_tx_buffer = 0;               // Aktueller TX-Puffer
-
-
-// Globale Variablen
-volatile uint32_t rtl8139_io_base = 0; // IO-Base-Adresse
-
 #define RX_BUFFER_SIZE (64 * 1024) // 64 KB für den RX-Puffer
 #define REG_RECEIVE_BUFFER 0x30    // Offset für RBSTART-Register
-
-uint8_t* rx_buffer = NULL;
-
 
 // Gültiger Bereich für RTL8139 (32-Bit-Adressraum)
 #define MAX_DMA_ADDRESS 0xFFFFFFFF
 
 
-void enable_rx_tx(uint32_t base) {
-    uint8_t command_value = CR_RECEIVER_ENABLE | CR_TRANSMITTER_ENABLE;
-    write_and_verify_register_b(base, REG_COMMAND, command_value & CR_WRITABLE_MASK);
-}
+static uint8_t* tx_buffers[MAX_TX_BUFFERS] = {NULL}; // Dynamische TX-Puffer
+static uint8_t current_tx_buffer = 0;               // Aktueller TX-Puffer
+
+// Globale Variablen
+volatile uint32_t rtl8139_io_base = 0; // IO-Base-Adresse
+uint8_t* rx_buffer = NULL;
 
 void write_and_verify_register(uint32_t base, uint32_t offset, uint32_t value) {
     // Write the value to the register
@@ -106,7 +89,6 @@ void write_and_verify_register(uint32_t base, uint32_t offset, uint32_t value) {
 }
 
 void write_and_verify_register_b(uint32_t base, uint8_t offset, uint8_t value) {
-
     outb(base + offset, value);
 
     uint8_t read_value = inb(base + offset);
@@ -131,16 +113,9 @@ void write_and_verify_register_w(uint32_t base, uint32_t offset, uint32_t value)
     }
 }
 
-
-/**
- * Wandelt einen 16-Bit-Wert von Host Byte Order (Little-Endian) 
- * in Network Byte Order (Big-Endian) um.
- *
- * @param hostshort Der 16-Bit-Wert im Host Byte Order.
- * @return Der umgewandelte Wert im Network Byte Order.
- */
-uint16_t htons(uint16_t hostshort) {
-    return (hostshort >> 8) | (hostshort << 8);
+void enable_rx_tx(uint32_t base) {
+    uint8_t command_value = CR_RECEIVER_ENABLE | CR_TRANSMITTER_ENABLE;
+    write_and_verify_register_b(base, REG_COMMAND, command_value & CR_WRITABLE_MASK);
 }
 
 /**
@@ -173,95 +148,13 @@ void check_buffer_addresses(void* rx_buffer, uint8_t** tx_buffers, int tx_buffer
     }
 }
 
-void handle_ethernet_frame(const uint8_t* frame, uint16_t length) {
-    if (length < sizeof(ethernet_header_t)) {
-        printf("Fehler: Frame zu klein (%u Bytes).\n", length);
-        return;
-    }
-
-    // Ethernet-Header extrahieren
-    const ethernet_header_t* header = (const ethernet_header_t*)frame;
-
-    // Konvertiere Ethertype aus Network Byte Order
-    uint16_t ethertype = (header->ethertype << 8) | (header->ethertype >> 8);
-
-    // Ausgabe der MAC-Adressen
-    printf("Ethernet Frame empfangen:\n");
-    printf("  Ziel-MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
-           header->dest_mac[0], header->dest_mac[1], header->dest_mac[2],
-           header->dest_mac[3], header->dest_mac[4], header->dest_mac[5]);
-    printf("  Quell-MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
-           header->src_mac[0], header->src_mac[1], header->src_mac[2],
-           header->src_mac[3], header->src_mac[4], header->src_mac[5]);
-    printf("  Ethertype: 0x%04X\n", ethertype);
-
-    // Protokolltyp behandeln
-    switch (ethertype) {
-        case ETHERTYPE_IPV4:
-            printf("  IPv4-Paket erkannt. Übergabe an den IPv4-Stack...\n");
-            // IPv4-Frame an den Netzwerkstack übergeben (falls vorhanden)
-            // handle_ipv4(frame + sizeof(ethernet_header_t), length - sizeof(ethernet_header_t));
-            break;
-
-        case ETHERTYPE_ARP:
-            printf("  ARP-Paket erkannt. Verarbeitung des ARP-Frames...\n");
-            // ARP-Frame verarbeiten (falls ARP implementiert ist)
-            // handle_arp(frame + sizeof(ethernet_header_t), length - sizeof(ethernet_header_t));
-            break;
-
-        default:
-            printf("  Unbekannter Protokolltyp: 0x%04X. Frame wird ignoriert.\n", ethertype);
-            break;
-    }
-}
-
 // Hilfsfunktion: Unmaskiert einen IRQ
-void unmask_irq(uint8_t irq) {
-    uint16_t port = (irq < 8) ? PIC1_DATA : PIC2_DATA;
-    uint8_t value = inb(port);
-    value &= ~(1 << (irq % 8));
-    outb(port, value);
-}
-
-// Liest aus dem PCI-Konfigurationsraum
-uint32_t pci_read(uint8_t bus, uint8_t device, uint8_t function, uint8_t offset) {
-    uint32_t address = (1 << 31) |
-                       ((uint32_t)bus << 16) |
-                       ((uint32_t)device << 11) |
-                       ((uint32_t)function << 8) |
-                       (offset & 0xFC);
-    outl(PCI_CONFIG_ADDRESS, address);
-    return inl(PCI_CONFIG_DATA);
-}
-
-// Schreibt in den PCI-Konfigurationsraum
-void pci_write(uint8_t bus, uint8_t slot, uint8_t offset, uint8_t size, uint32_t value) {
-    uint32_t address = (1U << 31) |
-                       ((uint32_t)bus << 16) |
-                       ((uint32_t)slot << 11) |
-                       ((uint32_t)(offset & 0xFC));
-    outl(PCI_CONFIG_ADDRESS, address);
-    switch (size) {
-        case 1: outb(PCI_CONFIG_DATA + (offset & 3), (uint8_t)value); break;
-        case 2: outw(PCI_CONFIG_DATA + (offset & 2), (uint16_t)value); break;
-        case 4: outl(PCI_CONFIG_DATA, value); break;
-        default: printf("Fehler: Ungültige Schreibgröße (%d)\n", size); break;
-    }
-}
-
-// Aktiviert Bus-Mastering
-void enable_bus_master(uint8_t bus, uint8_t slot) {
-    printf("Aktiviere Bus-Mastering für Gerät %u:%u\n", bus, slot);
-    uint16_t command = pci_read(bus, slot, PCI_COMMAND, 2);
-    if (!(command & PCI_COMMAND_BUS_MASTER)) {
-        command |= PCI_COMMAND_BUS_MASTER;
-        pci_write(bus, slot, PCI_COMMAND, 2, command);
-        printf("++++Bus Mastering aktiviert.++++\n");
-    }
-}
-
-#define RX_BUFFER_SIZE (64 * 1024)  // 64 KB
-#define REG_RBSTART 0x30           // Register für RX-Puffer-Startadresse
+// void unmask_irq(uint8_t irq) {
+//     uint16_t port = (irq < 8) ? PIC1_DATA : PIC2_DATA;
+//     uint8_t value = inb(port);
+//     value &= ~(1 << (irq % 8));
+//     outb(port, value);
+// }
 
 void initialize_rx_buffer() {
     // Allokiere Speicher für den RX-Puffer
@@ -282,21 +175,9 @@ void initialize_rx_buffer() {
         return;
     }
 
-    write_and_verify_register(rtl8139_io_base, REG_RBSTART, (uint32_t)phys_address);
+    write_and_verify_register(rtl8139_io_base, REG_RECEIVE_BUFFER, (uint32_t)phys_address);
 
     //printf("RX-Puffer initialisiert: Virtuelle Adresse = %p, Physische Adresse = 0x%08X\n", rx_buffer, (uint32_t)phys_address);
-}
-
-uint32_t get_io_base(uint8_t bus, uint8_t device, uint8_t function) {
-    uint32_t bar0 = pci_read(bus, device, function, 0x10); // BAR0 auslesen
-
-    // Prüfen, ob die Adresse für I/O oder Memory ist
-    if (bar0 & 0x01) { // I/O-Bit gesetzt
-        return bar0 & ~0x3; // Entferne die unteren Bits für Alignment
-    } else {
-        printf("Fehler: BAR0 zeigt auf eine Memory-Adresse, keine I/O-Adresse.\n");
-        return 0; // Fehler
-    }
 }
 
 void initialize_tx_buffers() {
@@ -323,44 +204,21 @@ void rtl8139_init() {
     printf("Initialisiere RTL8139 Netzwerkkarte...\n");
     printf("PCI-Konfiguration: IO-Base-Adresse = 0x%04X\n", rtl8139_io_base);
 
-    enable_rx_tx(rtl8139_io_base);
-
     outb(rtl8139_io_base + REG_COMMAND, CR_RESET);
     while (inb(rtl8139_io_base + REG_COMMAND) & CR_RESET);
 
     initialize_rx_buffer();
     initialize_tx_buffers();
 
-    //check_buffer_addresses(rx_buffer, tx_buffers, MAX_TX_BUFFERS);
+    check_buffer_addresses(rx_buffer, tx_buffers, MAX_TX_BUFFERS);
 
     write_and_verify_register(rtl8139_io_base, REG_RECEIVE_CONFIGURATION,
                           0x0000000F | // Accept all packets
                           (1 << 7) |   // Wrap around buffer
                           (7 << 8));   // Maximum DMA burst size
 
-
-    //outw((rtl8139_io_base + 0x3C), 0x0005);   // Interrupts aktivieren
-    //outb((rtl8139_io_base + 0x37), 0x0C);     // RX und TX aktivieren
-
     write_and_verify_register_w(rtl8139_io_base, REG_INTERRUPT_MASK, 0x0005); // Enable RX and TX interrupts
-    //write_and_verify_register_b(rtl8139_io_base, REG_COMMAND, CR_RECEIVER_ENABLE | CR_TRANSMITTER_ENABLE); // Enable RX and TX
-
-
-    uint8_t command_value = CR_RECEIVER_ENABLE | CR_TRANSMITTER_ENABLE;
-    write_and_verify_register_b(rtl8139_io_base, REG_COMMAND, command_value & CR_WRITABLE_MASK);
-
-    // outw(rtl8139_io_base + REG_INTERRUPT_MASK, 0x0005); // Enable RX and TX interrupts
-    // // Read the value back
-    // uint32_t read_value = inw(rtl8139_io_base + REG_INTERRUPT_MASK);
-    // printf("Interrupt mask: 0x%04X\n", read_value);
-
-    // outb(rtl8139_io_base + REG_COMMAND, CR_RECEIVER_ENABLE | CR_TRANSMITTER_ENABLE); // Enable RX and TX
-    // read_value = inb(rtl8139_io_base + REG_COMMAND);
-    // printf("Command register: 0x%02X\n", read_value);
-
-    // Setze Loopback-Modus
-    uint32_t tcr_value = 0x00060000;// & (0x00030000 | 0x00000700); // Mask writable bits
-    write_and_verify_register(rtl8139_io_base, REG_TRANSMIT_CONFIGURATION, tcr_value);
+    enable_rx_tx(rtl8139_io_base);
 
     printf("RTL8139 initialisiert.\n");
 }
@@ -403,7 +261,7 @@ void rtl8139_send_packet(void* data, uint16_t len) {
 
 // Empfängt ein Ethernet-Paket
 void rtl8139_receive_packet() {
-    static uint16_t rx_offset = 0;
+    static uint32_t rx_offset = 0;
 
     while (!(inb(rtl8139_io_base + REG_COMMAND) & 0x01)) { // Check RX buffer empty
         uint16_t status = *(volatile uint16_t*)(rx_buffer + rx_offset);
@@ -452,7 +310,7 @@ void rtl8139_receive_packet() {
 // Interrupt-Handler
 void rtl8139_interrupt_handler() {
     uint16_t isr = inw(rtl8139_io_base + REG_INTERRUPT_STATUS);
-    printf("Interrupt Status: 0x%04X\n", isr);
+    printf("+++++++ rtl8139 Interrupt Status: 0x%04X\n", isr);
 
     if (isr & 0x01) { // RX OK
         printf("RX OK: Packet received interrupt triggered.\n");
@@ -504,19 +362,18 @@ int find_rtl8139() {
                     uint32_t bar0 = pci_read(bus, device, function, 0x10);
                     rtl8139_io_base = bar0 & ~0x3; // Nur I/O-Bits verwenden
 
+                    //pci_set_irq(bus, device, function, 11);
+
                     // IRQ-Nummer auslesen
                     uint32_t irq_line = pci_read(bus, device, function, 0x3C) & 0xFF;
-                    printf("RTL8139 gefunden: Bus %u, Device %u, Funktion %u, IRQ %u\n",
-                           bus, device, function, irq_line);
+                    printf("RTL8139 gefunden: Bus %u, Device %u, Funktion %u, IRQ %u\n", bus, device, function, irq_line);
 
                     // Bus Mastering aktivieren
-                    uint16_t command = pci_read(bus, device, function, PCI_COMMAND);
-                    command |= PCI_COMMAND_BUS_MASTER;
-                    pci_write(bus, device, function, PCI_COMMAND, command);
+                    enable_bus_master(bus, device);
 
                     // Interrupt-Handler registrieren
                     register_interrupt_handler(irq_line, rtl8139_interrupt_handler);
-                    unmask_irq(irq_line);
+                    //unmask_irq(irq_line);
 
                     // MAC-Adresse ausgeben
                     print_mac_address();
@@ -573,6 +430,10 @@ void test_loopback() {
     // uint8_t mac[6];
     // rtl8139_get_mac_address(mac);
 
+    // Setze Loopback-Modus
+    uint32_t tcr_value = 0x00060000;// & (0x00030000 | 0x00000700); // Mask writable bits
+    write_and_verify_register(rtl8139_io_base, REG_TRANSMIT_CONFIGURATION, tcr_value);
+
 
     uintptr_t phys_address = (uintptr_t)rx_buffer;
     if (phys_address > 0xFFFFFFFF) {
@@ -583,16 +444,34 @@ void test_loopback() {
     //send_test_packet(mac, mac, (const uint8_t*)test_packet, sizeof(test_packet));
 
     // Sende ein Testpaket an die eigene MAC-Adresse
-    uint8_t test_packet[] = {
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Ziel-MAC-Adresse
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Quell-MAC-Adresse
-        0x88, 0xB5,                         // Ethertype (Testdaten)
-        0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x57, 0x6F, // Nutzdaten
-        0x72, 0x6C, 0x64, 0x21
-    };
+    // uint8_t test_packet[] = {
+    //     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Ziel-MAC-Adresse
+    //     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Quell-MAC-Adresse
+    //     0x88, 0xB5,                         // Ethertype (Testdaten)
+    //     0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x57, 0x6F, // Nutzdaten
+    //     0x72, 0x6C, 0x64, 0x21
+    // };
+
+    // uint8_t src_mac[6] = {0x52,0x54,0x00,0x12,0x34,0x57};
+    // uint8_t dest_mac[6] = {0x40,0x00,0x83,0x00,0x88,0x00};
+
+    // // create an ethernet frame
+    // uint8_t data[] = {
+    //     // Destination MAC
+    //     dest_mac[0], dest_mac[1], dest_mac[2], dest_mac[3], dest_mac[4], dest_mac[5],
+    //     // Source MAC
+    //     src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5],
+    //     // EtherType (IPv4)
+    //     0x08, 0x00,
+    //     // Payload (ICMP Echo Request)
+    //     0x45, 0x00, 0x00, 0x54, 0x00, 0x00, 0x40, 0x00, 0x40, 0x01, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x01,
+    //     0x0A, 0x00, 0x00, 0x02, 0x08, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02};
+
+    uint8_t data[] = {0x52,0x54,0x00,0x12,0x34,0x57};
+
     
     // Sende das Paket
-    rtl8139_send_packet(test_packet, sizeof(test_packet));
+    rtl8139_send_packet(data, sizeof(data));
 
 
     //free_tx_buffers();

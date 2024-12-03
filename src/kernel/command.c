@@ -519,27 +519,33 @@ void cmd_set_date(int arg_count, const char** arguments) {
 }
 
 void cmd_irq(int arg_count, const char** arguments) {
-    int syscall_index = 0;  // Index of `kernel_hello`
+    //int syscall_index = 0;  // Index of `kernel_hello`
     if (arg_count == 0) {
+        printf("IRQ command without arguments\n");
 
     } else {
-        syscall_index = strtoul(arguments[0], NULL, 10);
+        //syscall_index = strtoul(arguments[0], NULL, 10);
+
+        // send irq
+        int irq = strtoul(arguments[0], NULL, 10);
+        __asm__ volatile("int $0x2b\n" : : "a"(irq) : "memory");
+
     }
 
-       //int syscall_index = 1;  // Syscall index
-        int parameter = 1000;     // First argument
-        int parameter1 = 20;    // Second argument
-        int parameter2 = 30;    // Third argument
-        int parameter3 = 40;    // Fourth argument
+    //    //int syscall_index = 1;  // Syscall index
+    //     int parameter = 1000;     // First argument
+    //     int parameter1 = 20;    // Second argument
+    //     int parameter2 = 30;    // Third argument
+    //     int parameter3 = 40;    // Fourth argument
 
-        __asm__ volatile(
-            "int $0x80\n"       // Trigger syscall interrupt
-            :
-            : "a"(syscall_index), "b"(parameter), "c"(parameter1), "d"(parameter2), "e"(parameter3)
-            : "memory"
-        );
+    //     __asm__ volatile(
+    //         "int $0x80\n"       // Trigger syscall interrupt
+    //         :
+    //         : "a"(syscall_index), "b"(parameter), "c"(parameter1), "d"(parameter2), "e"(parameter3)
+    //         : "memory"
+    //     );
 
-        printf("Return from syscall index: %d, Arguments: %d, %d, %d\n", syscall_index, parameter, parameter1, parameter2);
+    //     printf("Return from syscall index: %d, Arguments: %d, %d, %d\n", syscall_index, parameter, parameter1, parameter2);
 }
 
 // TODO: Implement sleep function
@@ -727,7 +733,7 @@ void cmd_net(int arg_count, const char** arguments) {
         //send_packet();
 
         test_loopback();
-        e1000_send_test_packet();
+        //e1000_send_test_packet();
 
 
     } else if(strcmp(arguments[0], "RECV") == 0) {

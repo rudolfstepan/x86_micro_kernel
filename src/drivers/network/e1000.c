@@ -1,7 +1,17 @@
 #include "e1000.h"
 #include "toolchain/stdio.h"
+#include "toolchain/stdlib.h"
+#include "toolchain/strings.h"
 #include "drivers/pci.h"
+#include "drivers/io/io.h"
+#include "kernel/sys.h"
 
+
+// PIC-Konstanten
+#define PIC1_COMMAND 0x20
+#define PIC1_DATA    0x21
+#define PIC2_COMMAND 0xA0
+#define PIC2_DATA    0xA1
 
 #define TRANSMIT_RING_SIZE 64
 #define RECEIVE_RING_SIZE 64
@@ -9,45 +19,139 @@
 struct e1000_tx_desc transmit_ring[TRANSMIT_RING_SIZE] __attribute__((aligned(16)));
 struct e1000_rx_desc receive_ring[RECEIVE_RING_SIZE] __attribute__((aligned(16)));
 
-
 uint8_t tx_buffers[TRANSMIT_RING_SIZE][2048] __attribute__((aligned(16)));
 uint8_t rx_buffers[RECEIVE_RING_SIZE][2048] __attribute__((aligned(16)));
 
 uint32_t *e1000_mmio = NULL;
 
-#define E1000_REG_IMS 0x00D0
-#define E1000_REG_ICR 0x00C0
+// #define E1000_REG_IMS 0x00D0
+// #define E1000_REG_ICR 0x00C0
 
-uint8_t device_irq = 0;
+uint8_t device_irq = 11;
 
+
+
+
+// MMIO base address of the E1000 device (to be set up via PCI configuration)
+#define E1000_MMIO_BASE 0xF0000000
+
+// Register offsets (consult the E1000 datasheet)
+#define E1000_CTRL      0x00000  // Device Control Register
+#define E1000_STATUS    0x00008  // Device Status Register
+#define E1000_RCTL      0x00100  // Receive Control Register
+#define E1000_TCTL      0x00400  // Transmit Control Register
+#define E1000_ICR       0x000C0  // Interrupt Cause Read
+#define E1000_IMS       0x000D0  // Interrupt Mask Set/Read
+#define E1000_ICS       0x000C8  // Interrupt Cause Set
+#define E1000_RDBAL     0x02800  // Receive Descriptor Base Low
+#define E1000_RDBAH     0x02804  // Receive Descriptor Base High
+#define E1000_RDLEN     0x02808  // Receive Descriptor Length
+#define E1000_TDBAL     0x03800  // Transmit Descriptor Base Low
+#define E1000_TDBAH     0x03804  // Transmit Descriptor Base High
+#define E1000_TDLEN     0x03808  // Transmit Descriptor Length
+
+// RCTL Register Bits
+#define E1000_RCTL_EN       0x00000002  // Receiver Enable
+#define E1000_RCTL_LBM_MAC  0x00000040  // Loopback Mode
+
+// TCTL Register Bits
+#define E1000_TCTL_EN       0x00000002  // Transmitter Enable
+
+// IMS Register Bits
+#define E1000_IMS_RXT0      0x00000080  // Receive Timer Interrupt
+
+// Read a 32-bit register
+static inline uint32_t e1000_read_reg(uint32_t offset) {
+    return e1000_mmio[offset / 4];
+}
+
+// Write a 32-bit register
+static inline void e1000_write_reg(uint32_t offset, uint32_t value) {
+    e1000_mmio[offset / 4] = value;
+}
+
+void e1000_enable_interrupts() {
+    // Enable Receive Timer Interrupt
+    e1000_write_reg(E1000_IMS, E1000_IMS_RXT0);
+}
+
+void e1000_enable_loopback() {
+    // Enable Receiver with MAC Loopback Mode
+    uint32_t rctl = e1000_read_reg(E1000_RCTL);
+    rctl |= E1000_RCTL_EN | E1000_RCTL_LBM_MAC;
+    e1000_write_reg(E1000_RCTL, rctl);
+
+    // Enable Transmitter
+    uint32_t tctl = e1000_read_reg(E1000_TCTL);
+    tctl |= E1000_TCTL_EN;
+    e1000_write_reg(E1000_TCTL, tctl);
+}
+
+
+
+
+
+
+
+
+
+
+
+void check_received_packet() {
+    static uint32_t current_tail = 0;
+
+    // Check the status of the current tail descriptor
+    if (receive_ring[current_tail].status & 0x1) { // DD (Descriptor Done) bit
+        // The descriptor contains a valid packet
+        char *received_data = (char *)rx_buffers[current_tail];
+        uint16_t received_length = receive_ring[current_tail].length;
+
+        // Print the received packet for debugging
+        printf("Received packet: %.*s\n", received_length, received_data);
+
+        // Clear the status of the descriptor for reuse
+        receive_ring[current_tail].status = 0;
+
+        // Update the RDT register to indicate the descriptor is ready for reuse
+        current_tail = (current_tail + 1) % RECEIVE_RING_SIZE;
+        e1000_mmio[E1000_REG_RDT / 4] = current_tail;
+    } else {
+        // No packet is available in the current descriptor
+        //printf("No packet received.\n");
+    }
+}
 
 void e1000_isr() {
-    printf("E1000 ISR triggered.\n");
+    //printf("E1000 ISR triggered.\n");
     // Read the Interrupt Cause Register (ICR) to determine the cause
-    uint32_t icr = e1000_mmio[E1000_REG_ICR / 4];
+    //uint32_t icr = e1000_mmio[E1000_REG_ICR / 4];
+
+    printf("E1000 Interrupt Cause Register\n");
 
     // Check for RX interrupt
-    if (icr & (1 << 7)) { // RXDMT
-        printf("Receive interrupt triggered.\n");
-        check_received_packet(); // Process received packets
-    }
+    // if (icr & (1 << 7)) { // RXDMT
+    //     printf("Receive interrupt triggered.\n");
+    //     check_received_packet(); // Process received packets
+    // }
 
-    // Check for TX interrupt
-    if (icr & (1 << 1)) { // TXDW
-        printf("Transmit interrupt triggered.\n");
-        // TX cleanup logic (if needed)
-    }
+    // // Check for TX interrupt
+    // if (icr & (1 << 1)) { // TXDW
+    //     printf("Transmit interrupt triggered.\n");
+    //     // TX cleanup logic (if needed)
+    // }
 
-    // Check for RX Overrun or Errors
-    if (icr & (1 << 6)) { // RXO
-        printf("Receiver overrun occurred.\n");
-        // Error handling logic
-    }
+    // // Check for RX Overrun or Errors
+    // if (icr & (1 << 6)) { // RXO
+    //     printf("Receiver overrun occurred.\n");
+    //     // Error handling logic
+    // }
 
     // Add handling for other interrupts as needed
     // clear the interrupt
-    e1000_mmio[E1000_REG_ICR / 4] = icr;
-    
+    //e1000_mmio[E1000_REG_ICR / 4] = icr;
+
+    // Acknowledge the interrupt
+    //outb(PIC1_COMMAND, 0x20);
 }
 
 
@@ -57,31 +161,31 @@ void e1000_isr() {
 #define PIC2_COMMAND 0xA0
 #define PIC2_DATA    0xA1
 
-void enable_irq(uint8_t irq) {
-    uint16_t port;
-    uint8_t mask;
+// void enable_irq(uint8_t irq) {
+//     uint16_t port;
+//     uint8_t mask;
 
-    if (irq < 8) {
-        // IRQ is handled by the primary PIC
-        port = PIC1_DATA;
-    } else {
-        // IRQ is handled by the secondary PIC
-        irq -= 8;
-        port = PIC2_DATA;
-    }
+//     if (irq < 8) {
+//         // IRQ is handled by the primary PIC
+//         port = PIC1_DATA;
+//     } else {
+//         // IRQ is handled by the secondary PIC
+//         irq -= 8;
+//         port = PIC2_DATA;
+//     }
 
-    // Read the current IRQ mask and clear the bit for the given IRQ
-    mask = inb(port) & ~(1 << irq);
-    outb(port, mask);
-}
+//     // Read the current IRQ mask and clear the bit for the given IRQ
+//     mask = inb(port) & ~(1 << irq);
+//     outb(port, mask);
+// }
 
-void setup_interrupts() {
-    // Map the ISR to the appropriate IRQ vector
-    register_interrupt_handler(device_irq, e1000_isr);
+// void setup_interrupts() {
+//     // Map the ISR to the appropriate IRQ vector
+//     register_interrupt_handler(device_irq, e1000_isr);
 
-    // Enable the IRQ in the PIC (Programmable Interrupt Controller)
-    enable_irq(device_irq);
-}
+//     // Enable the IRQ in the PIC (Programmable Interrupt Controller)
+//     //enable_irq(device_irq);
+// }
 
 
 void setup_transmit_ring() {
@@ -101,6 +205,28 @@ void setup_receive_ring() {
 void process_packet(void *packet, size_t length) {
     // Process the packet here
     printf("Received packet: %.*s\n", length, (char *)packet);
+}
+
+// Transmit Ring Initialization
+void e1000_init_transmit() {
+    // Map the transmit ring to a contiguous memory area
+    memset(transmit_ring, 0, sizeof(transmit_ring));
+
+    // Set the base address and length of the transmit descriptor ring
+    e1000_mmio[E1000_REG_TDBAL / 4] = (uint32_t)(uintptr_t)transmit_ring; // Low 32 bits
+    e1000_mmio[E1000_REG_TDBAH / 4] = 0; // High 32 bits (for 64-bit addressing)
+    e1000_mmio[E1000_REG_TDLEN / 4] = sizeof(transmit_ring);
+
+    // Initialize the Transmit Descriptor Head and Tail
+    e1000_mmio[E1000_REG_TDH / 4] = 0;
+    e1000_mmio[E1000_REG_TDT / 4] = 0;
+
+    // Enable Transmit in the TCTL register
+    uint32_t tctl = e1000_mmio[E1000_REG_TCTL / 4];
+    tctl |= (1 << 1); // Transmit Enable
+    tctl |= (1 << 3); // Pad Short Packets
+    tctl |= (1 << 8); // Collision Threshold
+    e1000_mmio[E1000_REG_TCTL / 4] = tctl;
 }
 
 void enable_e1000_interrupts() {
@@ -140,18 +266,18 @@ void e1000_init(uint8_t bus, uint8_t device, uint8_t function) {
     // Enable Receive
     e1000_mmio[E1000_REG_RCTL / 4] = 0x40000; // Promiscuous mode (for testing)
 
-    // Enable interrupts
-    setup_interrupts();
-    enable_e1000_interrupts();
-}
+    e1000_init_transmit();
 
-void e1000_send_packet(void *packet, size_t length) {
-    uint32_t tail = e1000_mmio[E1000_REG_TDT / 4];
-    struct e1000_tx_desc *desc = &transmit_ring[tail];
-    desc->buffer_addr = (uint64_t)packet;
-    desc->length = length;
-    desc->cmd = 0x8 | 0x1; // RS and EOP
-    e1000_mmio[E1000_REG_TDT / 4] = (tail + 1) % TRANSMIT_RING_SIZE;
+    // Map the ISR to the appropriate IRQ vector
+    register_interrupt_handler(device_irq, e1000_isr);
+
+    e1000_enable_interrupts();
+    e1000_enable_loopback();
+
+    // Clear any pending interrupts
+    e1000_write_reg(E1000_ICR, 0xFFFFFFFF);
+
+    printf("E1000 initialized.\n");
 }
 
 void e1000_receive_packet() {
@@ -195,12 +321,13 @@ void e1000_detect(){
                 id = pci_read(bus, device, function, 0);
                 if ((id & 0xFFFF) == E1000_VENDOR_ID && ((id >> 16) & 0xFFFF) == E1000_DEVICE_ID) {
 
-                    pci_set_irq(bus, device, function, 10);
+                    //pci_set_irq(bus, device, function, 10);
 
                     // IRQ für das Gerät auslesen
                     device_irq = pci_get_irq(bus, device, function);
+                    printf("E1000 found: Bus %u, Device %u, IRQ %u, Function %u\n", bus, device, device_irq, function);
+
                     e1000_init(bus, device, function);
-                    printf("E1000 found: Bus %u, Device %u, Function %u\n", bus, device, function);
                     get_mac_address();
 
                     return;
@@ -210,76 +337,48 @@ void e1000_detect(){
     }
 }
 
+void e1000_send_packet(void *packet, size_t length) {
+    // Get the tail index
+    uint32_t tail = e1000_mmio[E1000_REG_TDT / 4];
 
-void check_received_packet() {
-    static uint32_t current_tail = 0;
+    // Get the descriptor at the current tail
+    struct e1000_tx_desc *desc = &transmit_ring[tail];
 
-    // Check the status of the current tail descriptor
-    if (receive_ring[current_tail].status & 0x1) { // DD (Descriptor Done) bit
-        // The descriptor contains a valid packet
-        char *received_data = (char *)rx_buffers[current_tail];
-        uint16_t received_length = receive_ring[current_tail].length;
+    // Configure the descriptor
+    desc->buffer_addr = (uint64_t)packet; // Physical address
+    desc->length = length;
+    desc->cmd = 0x8 | 0x1; // RS (Report Status) | EOP (End of Packet)
+    desc->status = 0;      // Clear status
 
-        // Print the received packet for debugging
-        printf("Received packet: %.*s\n", received_length, received_data);
+    // Update the tail to the next descriptor
+    e1000_mmio[E1000_REG_TDT / 4] = (tail + 1) % TRANSMIT_RING_SIZE;
 
-        // Clear the status of the descriptor for reuse
-        receive_ring[current_tail].status = 0;
-
-        // Update the RDT register to indicate the descriptor is ready for reuse
-        current_tail = (current_tail + 1) % RECEIVE_RING_SIZE;
-        e1000_mmio[E1000_REG_RDT / 4] = current_tail;
-    } else {
-        // No packet is available in the current descriptor
-        //printf("No packet received.\n");
-    }
-}
-
-void prepare_packet(const char *data) {
-    static uint32_t current_tail = 0;
-
-    // Ensure the data length does not exceed the buffer size
-    size_t data_length = strlen(data) + 1; // +1 for null terminator
-    if (data_length > 2048) {
-        printf("Error: Packet data too large\n");
-        return;
-    }
-
-    // Copy the data into the current transmit buffer
-    memcpy(tx_buffers[current_tail], data, data_length);
-
-    // Set up the transmit descriptor
-    transmit_ring[current_tail].buffer_addr = (uint64_t)tx_buffers[current_tail];
-    transmit_ring[current_tail].length = (uint16_t)data_length;
-    transmit_ring[current_tail].cmd = 0x8 | 0x1; // RS (Report Status) | EOP (End of Packet)
-    transmit_ring[current_tail].status = 0;      // Clear status for the NIC to use it
-
-    // Update the TDT register to inform the NIC of the new descriptor
-    current_tail = (current_tail + 1) % TRANSMIT_RING_SIZE;
-    e1000_mmio[E1000_REG_TDT / 4] = current_tail;
-
-    printf("Packet prepared and sent: %s\n", data);
+    printf("Packet sent: %u Bytes\n", length);
 }
 
 void e1000_send_test_packet() {
-    // uint8_t dest_mac[6] = {0x00, 0x0C, 0x29, 0x4A, 0x4D, 0x4E};
-    // uint8_t src_mac[6] = {0x00, 0x0C, 0x29, 0x4A, 0x4D, 0x4F};
-    // uint8_t data[] = "Hello, World!";
-    // e1000_send_packet(data, sizeof(data));
 
     // Enable loopback mode
-    e1000_mmio[E1000_REG_RCTL / 4] |= (1 << 6);
+    //e1000_mmio[E1000_REG_RCTL / 4] |= (1 << 6);
 
-    char data[] = "Hello, World!";
+    uint8_t dest_mac[6] = {0x52,0x54,0x00,0x12,0x34,0x57};
+    uint8_t src_mac[6] = {0x40,0x00,0x83,0x00,0x88,0x00};
+    //uint8_t dest_mac[6] ={0x40,0x00,0x83,0x00,0x88,0x00};
 
-    // Prepare and send a packet
-    prepare_packet(data);
+    // create an ethernet frame
+    uint8_t data[] = {
+        // Destination MAC
+        dest_mac[0], dest_mac[1], dest_mac[2], dest_mac[3], dest_mac[4], dest_mac[5],
+        // Source MAC
+        src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5],
+        // EtherType (IPv4)
+        0x08, 0x00,
+        // Payload (ICMP Echo Request)
+        0x45, 0x00, 0x00, 0x54, 0x00, 0x00, 0x40, 0x00, 0x40, 0x01, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x01,
+        0x0A, 0x00, 0x00, 0x02, 0x08, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02};
 
-    // Wait for the packet to loop back
-    for (int i = 0; i < 1000; i++) {
-        check_received_packet();
-        // Add a small delay to simulate polling
-    }
+
+    e1000_send_packet(data, sizeof(data));
 }
 
 void loopback_test() {

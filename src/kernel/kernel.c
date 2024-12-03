@@ -476,7 +476,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 
     // PCI-Scanning: Suche die RTL8139 Netzwerkkarte
     rtl8139_detect();
-    e1000_detect();
+    //e1000_detect();
 
     __asm__ __volatile__("sti"); // enable interrupts
 
