@@ -41,57 +41,17 @@ void e1000_enable_interrupts() {
 }
 
 void e1000_enable_loopback() {
+    // uint32_t rctl = e1000_read_reg(E1000_RCTL);
+    // rctl |= E1000_RCTL_EN;          // Enable receiver
+    // rctl |= E1000_RCTL_LBM_MAC;     // Enable loopback mode
+    // rctl |= E1000_RCTL_UPE;         // Unicast Promiscuous Enable
+    // rctl |= E1000_RCTL_MPE;         // Multicast Promiscuous Enable
+    // e1000_write_reg(E1000_RCTL, rctl);
     uint32_t rctl = e1000_read_reg(E1000_RCTL);
-    rctl |= E1000_RCTL_EN;          // Enable receiver
-    rctl |= E1000_RCTL_LBM_MAC;     // Enable loopback mode
-    rctl |= E1000_RCTL_UPE;         // Unicast Promiscuous Enable
-    rctl |= E1000_RCTL_MPE;         // Multicast Promiscuous Enable
+    printf("RCTL before: 0x%x\n", rctl);
+    rctl |= E1000_RCTL_EN | E1000_RCTL_LBM_MAC; // Enable receiver and loopback
     e1000_write_reg(E1000_RCTL, rctl);
-}
-
-// Method to enable/reset E1000 network card
-void e1000_power_on_and_reset(uint8_t bus, uint8_t device) {
-    // Step 1: Enable Bus Mastering in the PCI configuration space
-    uint16_t command = pci_read(bus, device, PCI_COMMAND, 2);
-    if (!(command & PCI_COMMAND_BUS_MASTER)) {
-        command |= PCI_COMMAND_BUS_MASTER;
-        pci_write(bus, device, PCI_COMMAND, 2, command);
-        printf("Bus mastering enabled.\n");
-    } else {
-        printf("Bus mastering already enabled.\n");
-    }
-
-    // Step 2: Perform a device reset
-    printf("Performing E1000 hardware reset...\n");
-
-    // Write to the CTRL register to initiate a device reset
-    uint32_t ctrl = e1000_read_reg(E1000_CTRL);
-    ctrl |= E1000_CTRL_RST; // Set the RST bit
-    e1000_write_reg(E1000_CTRL, ctrl);
-
-    // Wait for the reset to complete (the RST bit clears when done)
-    delay_ms(10); // 10ms delay to allow reset to complete
-
-    ctrl = e1000_read_reg(E1000_CTRL);
-    if (ctrl & E1000_CTRL_RST) {
-        printf("Error: E1000 reset did not complete.\n");
-        return;
-    }
-    printf("E1000 reset complete.\n");
-
-    // Step 3: Ensure the device is powered on and enabled
-    printf("Ensuring device is enabled and powered on...\n");
-    ctrl = e1000_read_reg(E1000_CTRL);
-    ctrl &= ~E1000_CTRL_PHY_RST; // Clear PHY_RST to power on the device
-    e1000_write_reg(E1000_CTRL, ctrl);
-
-    // Step 4: Verify the device is ready
-    uint32_t status = e1000_read_reg(E1000_STATUS);
-    if (!(status & 0x1)) { // Check if the device is not ready
-        printf("Error: E1000 device not ready.\n");
-        return;
-    }
-    printf("E1000 device is ready and powered on.\n");
+    printf("RCTL after: 0x%x\n", e1000_read_reg(E1000_RCTL));
 }
 
 void check_received_packet() {
@@ -102,6 +62,8 @@ void check_received_packet() {
 
 void e1000_isr() {
     uint32_t icr = e1000_read_reg(E1000_ICR);
+    printf("ICR after TX interrupt: 0x%x\n", icr);
+    e1000_write_reg(E1000_ICR, icr); // Acknowledge interrupt
 
     if (icr & (1 << 7)) { // RXDMT (Receive Descriptor Minimum Threshold Reached)
         check_received_packet();
@@ -111,15 +73,16 @@ void e1000_isr() {
         printf("Transmit interrupt triggered.\n");
 
         // Debugging only: Manually update the status
-        tx_descs[old_cur].status = 0xFF;
+        //tx_descs[old_cur].status = 0xFF;
+
+        uint32_t tpt = e1000_read_reg(E1000_TPT);
+        printf("Total Packets Transmitted: %u\n", tpt);
+
     }
 
     if (icr & (1 << 6)) { // RXO (Receiver Overrun)
         printf("Receiver overrun occurred.\n");
     }
-
-    // Acknowledge the interrupt
-    e1000_write_reg(E1000_ICR, icr);
 }
 
 // Function to initialize rings and buffers
@@ -167,15 +130,58 @@ void e1000_init(uint8_t bus, uint8_t device, uint8_t function) {
     uint32_t bar0 = pci_read(bus, device, function, 0x10) & ~0xF;
     e1000_mmio = (uint32_t *)bar0;
 
-    initialize_rings_and_buffers();
+    // IRQ für das Gerät auslesen
+    device_irq = pci_get_irq(bus, device, function);
+    printf("E1000 found: Bus %u, Device %u, IRQ %u, Function %u\n", bus, device, device_irq, function);
 
     // Enable bus mastering
     pci_set_bus_master(bus, device, 1);
 
+    // Step 2: Perform a device reset
+    printf("Performing E1000 hardware reset...\n");
+
+    // Write to the CTRL register to initiate a device reset
+    uint32_t ctrl = e1000_read_reg(E1000_CTRL);
+    ctrl |= E1000_CTRL_RST; // Set the RST bit
+    e1000_write_reg(E1000_CTRL, ctrl);
+
+    // Wait for the reset to complete (the RST bit clears when done)
+    delay_ms(10); // 10ms delay to allow reset to complete
+
+    ctrl = e1000_read_reg(E1000_CTRL);
+    if (ctrl & E1000_CTRL_RST) {
+        printf("Error: E1000 reset did not complete.\n");
+        return;
+    }
+    printf("E1000 reset complete.\n");
+
+    // Step 3: Ensure the device is powered on and enabled
+    printf("Ensuring device is enabled and powered on...\n");
+    ctrl = e1000_read_reg(E1000_CTRL);
+    ctrl &= ~E1000_CTRL_PHY_RST; // Clear PHY_RST to power on the device
+    e1000_write_reg(E1000_CTRL, ctrl);
+
+    // Step 4: Verify the device is ready
+    uint32_t status = e1000_read_reg(E1000_STATUS);
+    if (!(status & 0x1)) { // Check if the device is not ready
+        printf("Error: E1000 device not ready.\n");
+        return;
+    }
+    printf("E1000 device is ready and powered on.\n");
+
+    initialize_rings_and_buffers();
     e1000_enable_interrupts();
     register_interrupt_handler(device_irq, e1000_isr);
-    // setup_receive_ring();
-    // setup_transmit_ring();
+
+    // 1. Verify Transmit Engine Configuration
+    uint32_t tctl = e1000_read_reg(REG_TCTRL);
+    if (!(tctl & TCTL_EN)) {
+        printf("Error: Transmit engine not enabled. Enabling now...\n");
+        tctl |= TCTL_EN | TCTL_PSP | (15 << TCTL_CT_SHIFT) | (64 << TCTL_COLD_SHIFT);
+        e1000_write_reg(REG_TCTRL, tctl);
+    }
+
+    e1000_write_reg(E1000_REG_TIPG, 0x0060200A); // Typical default for gigabit Ethernet
 
     printf("E1000 initialized.\n");
 }
@@ -230,12 +236,6 @@ void e1000_detect(){
                 if ((id & 0xFFFF) == E1000_VENDOR_ID && ((id >> 16) & 0xFFFF) == E1000_DEVICE_ID) {
 
                     //pci_set_irq(bus, device, function, 10);
-
-                    // IRQ für das Gerät auslesen
-                    device_irq = pci_get_irq(bus, device, function);
-                    printf("E1000 found: Bus %u, Device %u, IRQ %u, Function %u\n", bus, device, device_irq, function);
-
-                    e1000_power_on_and_reset(bus, device);
                     e1000_init(bus, device, function);
                     get_mac_address();
 
@@ -248,16 +248,6 @@ void e1000_detect(){
 
 void e1000_send_packet(void *packet, size_t length) {
     printf("Sending packet of length %u...\n", length);
-
-    // 1. Verify Transmit Engine Configuration
-    uint32_t tctl = e1000_read_reg(REG_TCTRL);
-    printf("TCTRL: 0x%x\n", tctl);
-
-    if (!(tctl & TCTL_EN)) {
-        printf("Error: Transmit engine not enabled. Enabling now...\n");
-        tctl |= TCTL_EN | TCTL_PSP | (15 << TCTL_CT_SHIFT) | (64 << TCTL_COLD_SHIFT);
-        e1000_write_reg(REG_TCTRL, tctl);
-    }
 
     // 2. Inspect Descriptor Tail Update
     printf("TX Tail before send: %d\n", e1000_read_reg(REG_TXDESCTAIL));
@@ -274,12 +264,11 @@ void e1000_send_packet(void *packet, size_t length) {
 
     printf("TX Head: %d, TX Tail: %d\n", head, tail);
 
-
     // 5. Check Transmit Command (TCTL) Configuration
     e1000_write_reg(REG_TCTRL, TCTL_EN | TCTL_PSP | (15 << TCTL_CT_SHIFT) | (64 << TCTL_COLD_SHIFT));
 
     // 6. Ensure Loopback Configuration (If Enabled)
-    e1000_enable_loopback();
+    //e1000_enable_loopback();
 
     // Check alignment
     if ((uint64_t)tx_descs % 16 != 0) {
@@ -313,6 +302,9 @@ void e1000_send_packet(void *packet, size_t length) {
         }
         delay_ms(10); // Prevent tight busy-looping
     }
+
+    uint32_t tpt = e1000_read_reg(E1000_TPT);
+    printf("Total Packets Transmitted: %u\n", tpt);
 
 
     // Debug successful transmission

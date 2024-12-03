@@ -28,6 +28,8 @@
 #define E1000_REG_RDT      0x2818
 #define E1000_REG_IMS      0x00D0
 
+#define E1000_TPT      0x040D4	/* Total Packets TX - R/clr */
+
 #define	E1000_TXD_CMD_EOP   0x01000000 /* End of Packet */
 #define	E1000_TXD_CMD_IFCS  0x02000000 /* Insert FCS (Ethernet CRC) */
 #define	E1000_TXD_CMD_IC   0x04000000 /* Insert Checksum */
