@@ -330,7 +330,79 @@ void e1000_detect(){
     }
 }
 
+
+void e1000_test_registers() {
+    printf("Testing E1000 register configurations...\n");
+
+    // Device Control and Status
+    uint32_t ctrl = e1000_read_reg(E1000_REG_CTRL);
+    uint32_t status = e1000_read_reg(E1000_REG_STATUS);
+    printf("CTRL: 0x%08X | STATUS: 0x%08X\n", ctrl, status);
+
+    // Receive Control
+    uint32_t rctl = e1000_read_reg(E1000_REG_RCTL);
+    printf("RCTL: 0x%08X\n", rctl);
+
+    // Transmit Control
+    uint32_t tctl = e1000_read_reg(E1000_REG_TCTL);
+    uint32_t tipg = e1000_read_reg(E1000_REG_TIPG);
+    printf("TCTL: 0x%08X | TIPG: 0x%08X\n", tctl, tipg);
+
+    // Descriptor Ring Base Addresses
+    uint32_t rdbal = e1000_read_reg(E1000_REG_RDBAL);
+    uint32_t rdbah = e1000_read_reg(E1000_REG_RDBAH);
+    uint32_t rdlen = e1000_read_reg(E1000_REG_RDLEN);
+    uint32_t tdbal = e1000_read_reg(E1000_REG_TDBAL);
+    uint32_t tdbah = e1000_read_reg(E1000_REG_TDBAH);
+    uint32_t tdlen = e1000_read_reg(E1000_REG_TDLEN);
+    printf("RDBAL: 0x%08X | RDBAH: 0x%08X | RDLEN: 0x%08X\n", rdbal, rdbah, rdlen);
+    printf("TDBAL: 0x%08X | TDBAH: 0x%08X | TDLEN: 0x%08X\n", tdbal, tdbah, tdlen);
+
+    // Descriptor Head and Tail
+    uint32_t rdh = e1000_read_reg(E1000_REG_RDH);
+    uint32_t rdt = e1000_read_reg(E1000_REG_RDT);
+    uint32_t tdh = e1000_read_reg(E1000_REG_TDH);
+    uint32_t tdt = e1000_read_reg(E1000_REG_TDT);
+    printf("RDH: 0x%08X | RDT: 0x%08X\n", rdh, rdt);
+    printf("TDH: 0x%08X | TDT: 0x%08X\n", tdh, tdt);
+
+    // Interrupt Mask and Cause Registers
+    uint32_t ims = e1000_read_reg(E1000_REG_IMS);
+    uint32_t icr = e1000_read_reg(E1000_REG_ICR);
+    printf("IMS: 0x%08X | ICR: 0x%08X\n", ims, icr);
+
+    // Link and PHY Status
+    if (status & E1000_STATUS_LINK_UP) {
+        printf("Link is up.\n");
+    } else {
+        printf("Link is down.\n");
+    }
+
+    // Verify Descriptor Alignment
+    if ((uint64_t)rx_descs % 16 != 0 || (uint64_t)tx_descs % 16 != 0) {
+        printf("Error: Descriptors are not aligned to 16-byte boundaries!\n");
+    } else {
+        printf("Descriptors are correctly aligned.\n");
+    }
+
+    // Additional Debugging for Transmit and Receive Buffers
+    for (int i = 0; i < E1000_NUM_RX_DESC; i++) {
+        printf("RX Desc %d: Buffer Addr: %p, Status: %u\n", i, rx_descs[i].buffer_addr, rx_descs[i].status);
+    }
+
+    for (int i = 0; i < E1000_NUM_TX_DESC; i++) {
+        printf("TX Desc %d: Buffer Addr: %p, Length: %u, Status: %u\n", i, tx_descs[i].buffer_addr, tx_descs[i].length, tx_descs[i].status);
+    }
+
+    printf("E1000 register configuration test complete.\n");
+}
+
 void e1000_send_packet(void *packet, size_t length) {
+
+    e1000_test_registers();
+
+    wait_enter_pressed();
+
     printf("Sending packet of length %u...\n", length);
 
     // 2. Inspect Descriptor Tail Update
