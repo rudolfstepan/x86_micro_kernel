@@ -68,13 +68,30 @@ void pci_write(uint8_t bus, uint8_t slot, uint8_t offset, uint8_t size, uint32_t
 }
 
 // Aktiviert Bus-Mastering
-void enable_bus_master(uint8_t bus, uint8_t slot) {
-    printf("Aktiviere Bus-Mastering für Gerät %u:%u\n", bus, slot);
+void pci_set_bus_master(uint8_t bus, uint8_t slot, uint8_t enable) {
+    printf("Setting Bus-Mastering for device %u:%u\n", bus, slot);
+
+    // Read the current value of the PCI Command register
     uint16_t command = pci_read(bus, slot, PCI_COMMAND, 2);
-    if (!(command & PCI_COMMAND_BUS_MASTER)) {
-        command |= PCI_COMMAND_BUS_MASTER;
-        pci_write(bus, slot, PCI_COMMAND, 2, command);
-        printf("++++Bus Mastering aktiviert.++++\n");
+
+    if (enable) {
+        // Enable Bus Mastering if not already enabled
+        if (!(command & PCI_COMMAND_BUS_MASTER)) {
+            command |= PCI_COMMAND_BUS_MASTER;
+            pci_write(bus, slot, PCI_COMMAND, 2, command);
+            printf("++++ Bus Mastering Enabled ++++\n");
+        } else {
+            printf("Bus Mastering already enabled.\n");
+        }
+    } else {
+        // Disable Bus Mastering if currently enabled
+        if (command & PCI_COMMAND_BUS_MASTER) {
+            command &= ~PCI_COMMAND_BUS_MASTER;
+            pci_write(bus, slot, PCI_COMMAND, 2, command);
+            printf("---- Bus Mastering Disabled ----\n");
+        } else {
+            printf("Bus Mastering already disabled.\n");
+        }
     }
 }
 

@@ -369,7 +369,7 @@ int find_rtl8139() {
                     printf("RTL8139 gefunden: Bus %u, Device %u, Funktion %u, IRQ %u\n", bus, device, function, irq_line);
 
                     // Bus Mastering aktivieren
-                    enable_bus_master(bus, device);
+                    pci_set_bus_master(bus, device, 1);
 
                     // Interrupt-Handler registrieren
                     register_interrupt_handler(irq_line, rtl8139_interrupt_handler);

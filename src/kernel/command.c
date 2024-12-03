@@ -732,8 +732,8 @@ void cmd_net(int arg_count, const char** arguments) {
         // Send a packet
         //send_packet();
 
-        test_loopback();
-        //e1000_send_test_packet();
+        //test_loopback();
+        e1000_send_test_packet();
 
 
     } else if(strcmp(arguments[0], "RECV") == 0) {
