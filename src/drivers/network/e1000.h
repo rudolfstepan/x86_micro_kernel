@@ -38,6 +38,48 @@
 
 
 
+// PIC-Konstanten
+#define PIC1_COMMAND 0x20
+#define PIC1_DATA    0x21
+#define PIC2_COMMAND 0xA0
+#define PIC2_DATA    0xA1
+
+
+// MMIO base address of the E1000 device (to be set up via PCI configuration)
+#define E1000_MMIO_BASE 0xF0000000
+
+// Register offsets (consult the E1000 datasheet)
+#define E1000_CTRL      0x00000  // Device Control Register
+#define E1000_STATUS    0x00008  // Device Status Register
+#define E1000_RCTL      0x00100  // Receive Control Register
+#define E1000_TCTL      0x00400  // Transmit Control Register
+#define E1000_ICR       0x000C0  // Interrupt Cause Read
+#define E1000_IMS       0x000D0  // Interrupt Mask Set/Read
+#define E1000_ICS       0x000C8  // Interrupt Cause Set
+#define E1000_RDBAL     0x02800  // Receive Descriptor Base Low
+#define E1000_RDBAH     0x02804  // Receive Descriptor Base High
+#define E1000_RDLEN     0x02808  // Receive Descriptor Length
+#define E1000_TDBAL     0x03800  // Transmit Descriptor Base Low
+#define E1000_TDBAH     0x03804  // Transmit Descriptor Base High
+#define E1000_TDLEN     0x03808  // Transmit Descriptor Length
+
+// RCTL Register Bits
+#define E1000_RCTL_EN       0x00000002  // Receiver Enable
+#define E1000_RCTL_LBM_MAC  0x00000040  // Loopback Mode
+
+// TCTL Register Bits
+#define E1000_TCTL_EN       0x00000002  // Transmitter Enable
+
+// IMS Register Bits
+#define E1000_IMS_RXT0      0x00000080  // Receive Timer Interrupt
+
+#define E1000_CTRL_RST 0x04000000 // Device Reset
+#define E1000_CTRL_PHY_RST 0x80000000 // PHY Reset
+
+#define E1000_NUM_RX_DESC 32
+#define E1000_NUM_TX_DESC 8
+
+#define REG_RCTRL       0x0100
 
 #define REG_CTRL        0x0000
 #define REG_STATUS      0x0008
@@ -133,16 +175,9 @@
 #define TSTA_LC                         (1 << 2)    // Late Collision
 #define LSTA_TU                         (1 << 3)    // Transmit Underrun
 
-
-
-
-
-
-
-
 // Define the size of the transmit and receive rings
 struct e1000_tx_desc {
-    volatile uint32_t buffer_addr; // Address of the data buffer
+    volatile uint64_t buffer_addr; // Address of the data buffer
     volatile uint16_t length;      // Length of the data buffer
     volatile uint8_t  cso;         // Checksum offset
     volatile uint8_t  cmd;         // Command field (RS, IC, EOP, etc.)
@@ -152,7 +187,7 @@ struct e1000_tx_desc {
 } __attribute__((packed));
 
 struct e1000_rx_desc {
-    volatile uint32_t buffer_addr; // Address of the data buffer
+    volatile uint64_t buffer_addr; // Address of the data buffer
     volatile uint16_t length;      // Length of the received data
     volatile uint16_t checksum;    // Packet checksum
     volatile uint8_t  status;      // Descriptor status (DD, EOP bits)

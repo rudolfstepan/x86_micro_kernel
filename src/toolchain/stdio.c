@@ -117,6 +117,11 @@ int mkfile(const char* path) {
 // Console Functions
 // -----------------------------------------------------------------
 
+int isprint(int c) {
+    // Check if c is a printable ASCII character (32 to 126)
+    return (c >= 32 && c <= 126);
+}
+
 // Helper function to reverse a string
 static void reverse(char* str, int length) {
     int start = 0;
@@ -658,19 +663,22 @@ int snprintf(char* str, size_t size, const char* format, ...) {
     return written;
 }
 
-void hex_dump(const unsigned char* data, size_t size) {
-    int line_count = 0;  // Counter to track lines printed
+void hex_dump(const void* data, size_t size) {
+    const uint8_t* byte_data = (const uint8_t*)data; // Treat data as byte array
+    size_t line_count = 0;                           // Counter to track lines printed
+    size_t lines_per_page = 20;
+    size_t offset = 0;
 
     for (size_t i = 0; i < size; i += 16) {
-        // Print offset
-        printf("%08X  ", (unsigned int)i);
+        // Print the offset for the current line
+        printf("%08X  ", (unsigned int)(offset + i));
 
-        // Print hex values
+        // Print the hex values (16 per line)
         for (size_t j = 0; j < 16; j++) {
             if (i + j < size) {
-                printf("%02X ", data[i + j]);
+                printf("%02X ", byte_data[i + j]);
             } else {
-                printf("   ");
+                printf("   "); // Print spaces for padding
             }
         }
 
@@ -678,18 +686,17 @@ void hex_dump(const unsigned char* data, size_t size) {
         printf(" ");
         for (size_t j = 0; j < 16; j++) {
             if (i + j < size) {
-                unsigned char c = data[i + j];
-                printf("%c", (c >= 32 && c <= 126) ? c : '.');
+                unsigned char c = byte_data[i + j];
+                printf("%c", (isprint(c) ? c : '.')); // Print printable characters or '.'
             }
         }
         printf("\n");
 
-        // Increment line count and check if we've printed 20 lines
+        // Increment line count and check if we've reached the limit for the page
         line_count++;
-        if (line_count >= 20) {
-            // Reset the line count
-            line_count = 0;
-            wait_enter_pressed(); // Wait for key press
+        if (lines_per_page > 0 && line_count >= lines_per_page) {
+            line_count = 0; // Reset line count
+            wait_enter_pressed(); // Wait for user input before continuing
         }
     }
 }

@@ -43,10 +43,11 @@ int chdir(const char* path);                                   // Change the cur
 //struct dirent* readdir(DIR* dirp);                             // Read a directory entry
 
 // POSIX Console Functions
+int isprint(int c);
 int printf(const char* format, ...);                           // Print formatted string to standard output
 int snprintf(char* buffer, size_t size, const char* format, ...); // Print formatted string to a buffer safely
 
-void hex_dump(const unsigned char* data, size_t size);
+void hex_dump(const void* data, size_t size);
 void memory_dump(uint32_t start_address, uint32_t end_address);
 
 void beep(uint32_t frequency, uint32_t duration_ms);
