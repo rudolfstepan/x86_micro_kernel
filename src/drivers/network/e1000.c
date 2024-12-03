@@ -7,10 +7,96 @@
 #include "kernel/sys.h"
 #include "kernel/memory.h"
 
-uint32_t *e1000_mmio = NULL;
-uint8_t device_irq = 11;
+
+// PCI Configuration Constants
+#define PCI_CONFIG_ADDRESS              0xCF8
+#define PCI_CONFIG_DATA                 0xCFC
+
+// E1000 PCI Device IDs
+#define E1000_VENDOR_ID                 0x8086
+#define E1000_DEVICE_ID                 0x100E
+
+// E1000 MMIO Base Address (to be set via PCI configuration)
+#define E1000_MMIO_BASE                 0xF0000000
+
+// E1000 Register Offsets
+#define E1000_REG_CTRL                  0x0000      // Device Control
+#define E1000_REG_STATUS                0x0008      // Device Status
+#define E1000_REG_RCTL                  0x0100      // Receive Control
+#define E1000_REG_TCTL                  0x0400      // Transmit Control
+#define E1000_REG_TIPG                  0x0410      // Transmit Inter-Packet Gap
+#define E1000_REG_RDBAL                 0x2800      // Receive Descriptor Base Low
+#define E1000_REG_RDBAH                 0x2804      // Receive Descriptor Base High
+#define E1000_REG_RDLEN                 0x2808      // Receive Descriptor Length
+#define E1000_REG_RDH                   0x2810      // Receive Descriptor Head
+#define E1000_REG_RDT                   0x2818      // Receive Descriptor Tail
+#define E1000_REG_TDBAL                 0x3800      // Transmit Descriptor Base Low
+#define E1000_REG_TDBAH                 0x3804      // Transmit Descriptor Base High
+#define E1000_REG_TDLEN                 0x3808      // Transmit Descriptor Length
+#define E1000_REG_TDH                   0x3810      // Transmit Descriptor Head
+#define E1000_REG_TDT                   0x3818      // Transmit Descriptor Tail
+#define E1000_REG_ICR                   0x00C0      // Interrupt Cause Read
+#define E1000_REG_IMS                   0x00D0      // Interrupt Mask Set
+#define E1000_REG_ICS                   0x00C8      // Interrupt Cause Set
+#define E1000_REG_TPT                   0x040D4     // Total Packets Transmitted
+
+// Control Register Bits
+#define E1000_CTRL_RST                  (1 << 26)   // Device Reset
+#define E1000_CTRL_PHY_RST              (1 << 31)   // PHY Reset
+
+// Status Register Bits
+#define E1000_STATUS_LINK_UP            (1 << 1)    // Link Up
+
+// Receive Control (RCTL) Bits
+#define E1000_RCTL_EN                   (1 << 1)    // Receiver Enable
+#define E1000_RCTL_SBP                  (1 << 2)    // Store Bad Packets
+#define E1000_RCTL_UPE                  (1 << 3)    // Unicast Promiscuous Enable
+#define E1000_RCTL_MPE                  (1 << 4)    // Multicast Promiscuous Enable
+#define E1000_RCTL_LBM_NONE             (0 << 6)    // No Loopback
+#define E1000_RCTL_LBM_MAC              (1 << 6)    // MAC Loopback
+#define E1000_RCTL_BAM                  (1 << 15)   // Broadcast Accept Mode
+#define E1000_RCTL_BSIZE_2048           (0 << 16)   // Buffer Size: 2048 Bytes
+#define E1000_RCTL_BSIZE_4096           ((3 << 16) | (1 << 25)) // 4096 Bytes
+#define E1000_RCTL_BSIZE_8192           ((2 << 16) | (1 << 25)) // 8192 Bytes
+#define E1000_RCTL_BSIZE_16384          ((1 << 16) | (1 << 25)) // 16384 Bytes
+#define E1000_RCTL_SECRC                (1 << 26)   // Strip Ethernet CRC
+
+// Transmit Control (TCTL) Bits
+#define E1000_TCTL_EN                   (1 << 1)    // Transmitter Enable
+#define E1000_TCTL_PSP                  (1 << 3)    // Pad Short Packets
+#define E1000_TCTL_CT_SHIFT             4           // Collision Threshold Shift
+#define E1000_TCTL_COLD_SHIFT           12          // Collision Distance Shift
+#define E1000_TCTL_RTLC                 (1 << 24)   // Retransmit on Late Collision
+
+// Transmit Descriptor Command Bits
+#define E1000_TXD_CMD_EOP               (1 << 0)    // End of Packet
+#define E1000_TXD_CMD_IFCS              (1 << 1)    // Insert Frame Check Sequence
+#define E1000_TXD_CMD_RS                (1 << 3)    // Report Status
+#define E1000_TXD_CMD_RPS               (1 << 4)    // Report Packet Sent
+
+// Transmit Descriptor Status Bits
+#define E1000_TXD_STAT_DD               (1 << 0)    // Descriptor Done
+
+// Interrupt Mask Bits
+#define E1000_IMS_RXT0                  (1 << 7)    // Receive Timer Interrupt
+
+// Descriptor Ring Sizes
+#define E1000_NUM_RX_DESC               32          // Number of RX Descriptors
+#define E1000_NUM_TX_DESC               8           // Number of TX Descriptors
+
+// PIC Constants
+#define PIC1_COMMAND                    0x20
+#define PIC1_DATA                       0x21
+#define PIC2_COMMAND                    0xA0
+#define PIC2_DATA                       0xA1
+
 
 #define RX_BUFFER_SIZE 8192   // Size of each RX buffer
+
+
+
+uint32_t *e1000_mmio = NULL;
+uint8_t device_irq = 11;
 
 struct e1000_rx_desc rx_descs[E1000_NUM_RX_DESC]; // Receive Descriptor Buffers
 struct e1000_tx_desc tx_descs[E1000_NUM_TX_DESC]; // Transmit Descriptor Buffers
@@ -35,23 +121,20 @@ static inline void e1000_write_reg(uint32_t offset, uint32_t value) {
 }
 
 void e1000_enable_interrupts() {
-    e1000_write_reg(REG_IMASK ,0x1F6DC);
-    e1000_write_reg(REG_IMASK ,0xff & ~4);
+    e1000_write_reg(E1000_REG_IMS ,0x1F6DC);
+    e1000_write_reg(E1000_REG_IMS ,0xff & ~4);
     e1000_read_reg(0xc0);
 }
 
 void e1000_enable_loopback() {
-    // uint32_t rctl = e1000_read_reg(E1000_RCTL);
-    // rctl |= E1000_RCTL_EN;          // Enable receiver
-    // rctl |= E1000_RCTL_LBM_MAC;     // Enable loopback mode
-    // rctl |= E1000_RCTL_UPE;         // Unicast Promiscuous Enable
-    // rctl |= E1000_RCTL_MPE;         // Multicast Promiscuous Enable
-    // e1000_write_reg(E1000_RCTL, rctl);
-    uint32_t rctl = e1000_read_reg(E1000_RCTL);
-    printf("RCTL before: 0x%x\n", rctl);
-    rctl |= E1000_RCTL_EN | E1000_RCTL_LBM_MAC; // Enable receiver and loopback
-    e1000_write_reg(E1000_RCTL, rctl);
-    printf("RCTL after: 0x%x\n", e1000_read_reg(E1000_RCTL));
+    uint32_t rctl = 0;
+    rctl |= E1000_RCTL_EN;           // Enable receiver
+    rctl |= E1000_RCTL_LBM_MAC; // Enable MAC loopback mode
+    rctl |= E1000_RCTL_BAM;          // Accept broadcast packets
+    rctl |= E1000_RCTL_UPE;         // Unicast Promiscuous Enable
+    rctl |= E1000_RCTL_MPE;         // Multicast Promiscuous Enable
+    rctl |= E1000_RCTL_BSIZE_8192;   // Set buffer size to 8192 bytes
+    e1000_write_reg(E1000_REG_RCTL, rctl);
 }
 
 void check_received_packet() {
@@ -61,9 +144,9 @@ void check_received_packet() {
 }
 
 void e1000_isr() {
-    uint32_t icr = e1000_read_reg(E1000_ICR);
+    uint32_t icr = e1000_read_reg(E1000_REG_ICR);
     printf("ICR after TX interrupt: 0x%x\n", icr);
-    e1000_write_reg(E1000_ICR, icr); // Acknowledge interrupt
+    e1000_write_reg(E1000_REG_ICR, icr); // Acknowledge interrupt
 
     if (icr & (1 << 7)) { // RXDMT (Receive Descriptor Minimum Threshold Reached)
         check_received_packet();
@@ -74,10 +157,6 @@ void e1000_isr() {
 
         // Debugging only: Manually update the status
         //tx_descs[old_cur].status = 0xFF;
-
-        uint32_t tpt = e1000_read_reg(E1000_TPT);
-        printf("Total Packets Transmitted: %u\n", tpt);
-
     }
 
     if (icr & (1 << 6)) { // RXO (Receiver Overrun)
@@ -141,14 +220,14 @@ void e1000_init(uint8_t bus, uint8_t device, uint8_t function) {
     printf("Performing E1000 hardware reset...\n");
 
     // Write to the CTRL register to initiate a device reset
-    uint32_t ctrl = e1000_read_reg(E1000_CTRL);
+    uint32_t ctrl = e1000_read_reg(E1000_REG_CTRL);
     ctrl |= E1000_CTRL_RST; // Set the RST bit
-    e1000_write_reg(E1000_CTRL, ctrl);
+    e1000_write_reg(E1000_REG_CTRL, ctrl);
 
     // Wait for the reset to complete (the RST bit clears when done)
     delay_ms(10); // 10ms delay to allow reset to complete
 
-    ctrl = e1000_read_reg(E1000_CTRL);
+    ctrl = e1000_read_reg(E1000_REG_CTRL);
     if (ctrl & E1000_CTRL_RST) {
         printf("Error: E1000 reset did not complete.\n");
         return;
@@ -157,12 +236,12 @@ void e1000_init(uint8_t bus, uint8_t device, uint8_t function) {
 
     // Step 3: Ensure the device is powered on and enabled
     printf("Ensuring device is enabled and powered on...\n");
-    ctrl = e1000_read_reg(E1000_CTRL);
+    ctrl = e1000_read_reg(E1000_REG_CTRL);
     ctrl &= ~E1000_CTRL_PHY_RST; // Clear PHY_RST to power on the device
-    e1000_write_reg(E1000_CTRL, ctrl);
+    e1000_write_reg(E1000_REG_CTRL, ctrl);
 
     // Step 4: Verify the device is ready
-    uint32_t status = e1000_read_reg(E1000_STATUS);
+    uint32_t status = e1000_read_reg(E1000_REG_STATUS);
     if (!(status & 0x1)) { // Check if the device is not ready
         printf("Error: E1000 device not ready.\n");
         return;
@@ -174,14 +253,19 @@ void e1000_init(uint8_t bus, uint8_t device, uint8_t function) {
     register_interrupt_handler(device_irq, e1000_isr);
 
     // 1. Verify Transmit Engine Configuration
-    uint32_t tctl = e1000_read_reg(REG_TCTRL);
-    if (!(tctl & TCTL_EN)) {
+    uint32_t tctl = e1000_read_reg(E1000_REG_TCTL);
+    if (!(tctl & E1000_TCTL_EN)) {
         printf("Error: Transmit engine not enabled. Enabling now...\n");
-        tctl |= TCTL_EN | TCTL_PSP | (15 << TCTL_CT_SHIFT) | (64 << TCTL_COLD_SHIFT);
-        e1000_write_reg(REG_TCTRL, tctl);
+        uint32_t tctl = 0;
+        tctl |= E1000_TCTL_EN;           // Enable transmitter
+        tctl |= E1000_TCTL_PSP;          // Pad short packets
+        tctl |= (15 << E1000_TCTL_CT_SHIFT);  // Collision threshold
+        tctl |= (64 << E1000_TCTL_COLD_SHIFT); // Collision distance
+        e1000_write_reg(E1000_REG_TCTL, tctl);
     }
 
-    e1000_write_reg(E1000_REG_TIPG, 0x0060200A); // Typical default for gigabit Ethernet
+    e1000_write_reg(E1000_REG_TCTL, 0b0110000000000111111000011111010);
+    //e1000_write_reg(E1000_REG_TIPG, 0x0060200A); // Typical default for gigabit Ethernet
 
     printf("E1000 initialized.\n");
 }
@@ -250,7 +334,7 @@ void e1000_send_packet(void *packet, size_t length) {
     printf("Sending packet of length %u...\n", length);
 
     // 2. Inspect Descriptor Tail Update
-    printf("TX Tail before send: %d\n", e1000_read_reg(REG_TXDESCTAIL));
+    printf("TX Tail before send: %d\n", e1000_read_reg(E1000_REG_TDT));
     
 
     // 3. Check Transmit Descriptor Ring Initialization
@@ -259,16 +343,16 @@ void e1000_send_packet(void *packet, size_t length) {
     }
 
     // 4. Inspect Head Pointer Progress
-    uint32_t head = e1000_read_reg(REG_TXDESCHEAD);
-    uint32_t tail = e1000_read_reg(REG_TXDESCTAIL);
+    uint32_t head = e1000_read_reg(E1000_REG_TDH);
+    uint32_t tail = e1000_read_reg(E1000_REG_TDT);
 
     printf("TX Head: %d, TX Tail: %d\n", head, tail);
 
     // 5. Check Transmit Command (TCTL) Configuration
-    e1000_write_reg(REG_TCTRL, TCTL_EN | TCTL_PSP | (15 << TCTL_CT_SHIFT) | (64 << TCTL_COLD_SHIFT));
+    e1000_write_reg(E1000_REG_TCTL, E1000_TCTL_EN | E1000_TCTL_PSP | (15 << E1000_TCTL_CT_SHIFT) | (64 << E1000_TCTL_COLD_SHIFT));
 
     // 6. Ensure Loopback Configuration (If Enabled)
-    //e1000_enable_loopback();
+    e1000_enable_loopback();
 
     // Check alignment
     if ((uint64_t)tx_descs % 16 != 0) {
@@ -279,7 +363,7 @@ void e1000_send_packet(void *packet, size_t length) {
     // Set up descriptor
     tx_descs[tx_cur].buffer_addr = (uint64_t)packet;
     tx_descs[tx_cur].length = (uint16_t)length;
-    tx_descs[tx_cur].cmd = CMD_EOP | CMD_IFCS | CMD_RS;
+    tx_descs[tx_cur].cmd = E1000_TXD_CMD_EOP | E1000_TXD_CMD_IFCS | E1000_TXD_CMD_RS;
     tx_descs[tx_cur].status = 0;
 
     // Debug the descriptor
@@ -288,22 +372,22 @@ void e1000_send_packet(void *packet, size_t length) {
     // Update the tail register to signal the hardware
     old_cur = tx_cur;
     tx_cur = (tx_cur + 1) % E1000_NUM_TX_DESC;
-    e1000_write_reg(REG_TXDESCTAIL, tx_cur);
+    e1000_write_reg(E1000_REG_TDT, tx_cur);
 
-    printf("TX Tail after send: %d\n", e1000_read_reg(REG_TXDESCTAIL));
+    printf("TX Tail after send: %d\n", e1000_read_reg(E1000_REG_TDT));
 
     // Wait for transmission completion with timeout
     int timeout = 1000;
     while (!(tx_descs[old_cur].status & 0xff)) {
         if (--timeout == 0) {
             printf("Timeout! Descriptor %d status: 0x%x\n", old_cur, tx_descs[old_cur].status);
-            printf("TX Head: %d, TX Tail: %d\n", e1000_read_reg(REG_TXDESCHEAD), e1000_read_reg(REG_TXDESCTAIL));
+            printf("TX Head: %d, TX Tail: %d\n", e1000_read_reg(E1000_REG_TDH), e1000_read_reg(E1000_REG_TDT));
             return;
         }
         delay_ms(10); // Prevent tight busy-looping
     }
 
-    uint32_t tpt = e1000_read_reg(E1000_TPT);
+    uint32_t tpt = e1000_read_reg(E1000_REG_TPT);
     printf("Total Packets Transmitted: %u\n", tpt);
 
 
