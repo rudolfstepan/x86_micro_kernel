@@ -19,6 +19,7 @@
 #include "drivers/network/rtl8139.h"
 #include "drivers/network/e1000.h"
 #include "drivers/network/ne2000.h"
+#include "drivers/network/vmxnet3.h"
 
 
 char current_path[256] = "/";
@@ -735,8 +736,8 @@ void cmd_net(int arg_count, const char** arguments) {
 
         //test_loopback();
         //e1000_send_test_packet();
-
-        ne2000_test_send();
+        //ne2000_test_send();
+        test_vmxnet3();
 
 
     } else if(strcmp(arguments[0], "RECV") == 0) {

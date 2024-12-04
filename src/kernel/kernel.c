@@ -7,6 +7,7 @@
 #include "apic.h"
 #include "scheduler.h"
 #include "process.h"
+#include "drivers/pci.h"
 
 #include "drivers/kb/kb.h"
 #include "drivers/rtc/rtc.h"
@@ -28,6 +29,7 @@
 #include "drivers/network/rtl8139.h"
 #include "drivers/network/e1000.h"
 #include "drivers/network/ne2000.h"
+#include "drivers/network/vmxnet3.h"
 
 
 extern char _stack_start;  // Start address of the stack
@@ -457,8 +459,6 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     //init_paging();
     //test_paging();
 
-
-    
     gdt_install();
     idt_install();
     isr_install();
@@ -473,12 +473,17 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     //hpet_init(); // hpet not working
     initialize_apic_timer();
 
+    // Initialize PCI subsystem
+    pci_init();
+
     register_interrupt_handler(9, scheduler_interrupt_handler);
+
 
     // PCI-Scanning: Suche die RTL8139 Netzwerkkarte
     // rtl8139_detect();
     //e1000_detect();
-    ne2000_detect();
+    //ne2000_detect();
+    vmxnet3_setup();
 
     __asm__ __volatile__("sti"); // enable interrupts
 
