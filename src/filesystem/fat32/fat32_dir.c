@@ -1,7 +1,7 @@
 #include "fat32.h"
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
-#include "toolchain/strings.h"
+#include "toolchain/string.h"
 
 
 // Function to read a directory path and return if it exists

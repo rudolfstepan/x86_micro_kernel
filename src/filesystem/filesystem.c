@@ -1,7 +1,7 @@
 #include "filesystem.h"
 #include "drivers/ata/ata.h"
 #include "toolchain/stdlib.h"
-#include "toolchain/strings.h"
+#include "toolchain/string.h"
 #include "toolchain/stdio.h"
 #include "filesystem/fat32/fat32.h"
 #include "drivers/io/io.h"

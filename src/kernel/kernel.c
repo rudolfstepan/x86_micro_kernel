@@ -15,7 +15,7 @@
 
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
-#include "toolchain/strings.h"
+#include "toolchain/string.h"
 
 #include "filesystem/filesystem.h"
 #include "filesystem/fat32/fat32.h"
@@ -27,6 +27,7 @@
 //#include "paging.h"
 #include "drivers/network/rtl8139.h"
 #include "drivers/network/e1000.h"
+#include "drivers/network/ne2000.h"
 
 
 extern char _stack_start;  // Start address of the stack
@@ -475,8 +476,9 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     register_interrupt_handler(9, scheduler_interrupt_handler);
 
     // PCI-Scanning: Suche die RTL8139 Netzwerkkarte
-    rtl8139_detect();
+    // rtl8139_detect();
     //e1000_detect();
+    ne2000_detect();
 
     __asm__ __volatile__("sti"); // enable interrupts
 

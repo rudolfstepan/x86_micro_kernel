@@ -1,7 +1,7 @@
 #include "hpet.h"
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
-#include "toolchain/strings.h"
+#include "toolchain/string.h"
 #include <stdint.h>
 #include <stddef.h>
 #include "sys.h"

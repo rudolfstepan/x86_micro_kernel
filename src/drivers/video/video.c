@@ -1,6 +1,6 @@
 ﻿#include "video.h"
 #include "drivers/io/io.h"
-#include "toolchain/strings.h"
+#include "toolchain/string.h"
 
 unsigned short* vga_buffer = (unsigned short*)VGA_ADDRESS;
 char current_color = 0x0F; // White on black background

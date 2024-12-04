@@ -81,25 +81,24 @@ link_kernel:
 	$(BOOT_DIR)/_multiboot.o $(BOOT_DIR)/_bootloader.o $(BOOT_DIR)/_gdt.o $(BOOT_DIR)/_idt.o $(BOOT_DIR)/_isr.o \
 	$(BOOT_DIR)/_irq.o $(BOOT_DIR)/_syscall.o $(BOOT_DIR)/_stack.o $(OUTPUT_DIR)/kernel/gdt.o \
 	$(OUTPUT_DIR)/kernel/idt.o $(OUTPUT_DIR)/kernel/isr.o $(OUTPUT_DIR)/kernel/irq.o $(OUTPUT_DIR)/kernel/pit.o \
-	$(OUTPUT_DIR)/kernel/hpet.o $(OUTPUT_DIR)/kernel/apic.o \
-	$(OUTPUT_DIR)/kernel/prg.o $(OUTPUT_DIR)/kernel/command.o \
+	$(OUTPUT_DIR)/kernel/hpet.o $(OUTPUT_DIR)/kernel/apic.o $(OUTPUT_DIR)/kernel/prg.o $(OUTPUT_DIR)/kernel/command.o \
 	$(OUTPUT_DIR)/kernel/process.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o \
-	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o
+	$(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/string.o
 	
 # Link CLI programs
 link_cli:
 
 	# # @echo "Linking cli_date..."
 	# ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/date.elf $(CLI_DIR)/date.o \
-	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o
+	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/string.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o
 
 	# # @echo "Linking cli_dir..."
 	# ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.o \
-	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o
+	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/string.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o
 
 	# @echo "Linking cli_test..."
 	# ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/test.elf $(CLI_DIR)/test.o \
-	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/strings.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o
+	# $(OUTPUT_DIR)/toolchain/stdlib.o $(OUTPUT_DIR)/toolchain/stdio.o $(OUTPUT_DIR)/toolchain/string.o $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o
 
 # Copy binaries
 copy_binaries:
@@ -135,6 +134,8 @@ run:
 	#qemu-system-x86_64 -bios OVMF.fd -kernel ./build/kernel.bin
 	#qemu-system-x86_64 -kernel ./build/kernel.bin -s -S -display default
 	qemu-system-x86_64 -m 512M -boot d -cdrom ./kernel.iso -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy \
-	-netdev user,id=mynet0 -device e1000,netdev=mynet0 -object filter-dump,id=f1,netdev=mynet0,file=dump.dat
-	#-device rtl8139,netdev=mynet1 -netdev user,id=mynet1 -monitor stdio 
+	-device ne2k_pci,netdev=net0 -netdev user,id=net0
+	#-netdev user,id=mynet0 -device e1000,netdev=mynet0 \
+	#-device rtl8139,netdev=mynet1 -netdev user,id=mynet1 -monitor stdio \
+	#-object filter-dump,id=f1,netdev=mynet0,file=dump.dat
 	

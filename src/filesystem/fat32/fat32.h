@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "toolchain/strings.h"
+#include "toolchain/string.h"
 #include "toolchain/stdlib.h"
 #include "toolchain/definitions.h"
 #include "drivers/ata/ata.h"

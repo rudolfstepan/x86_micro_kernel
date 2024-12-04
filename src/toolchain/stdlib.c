@@ -3,7 +3,7 @@
 
 #include "stdlib.h"
 #include "stdio.h"
-#include "strings.h"
+#include "string.h"
 #include "drivers/video/video.h"
 #include "kernel/pit.h"
 

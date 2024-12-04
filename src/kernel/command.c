@@ -8,7 +8,7 @@
 #include "drivers/rtc/rtc.h"
 #include "drivers/ata/ata.h"
 
-#include "toolchain/strings.h"
+#include "toolchain/string.h"
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
 #include "drivers/video/video.h"
@@ -18,6 +18,7 @@
 #include "filesystem/fat12/fat12.h"
 #include "drivers/network/rtl8139.h"
 #include "drivers/network/e1000.h"
+#include "drivers/network/ne2000.h"
 
 
 char current_path[256] = "/";
@@ -732,8 +733,10 @@ void cmd_net(int arg_count, const char** arguments) {
         // Send a packet
         //send_packet();
 
-        test_loopback();
+        //test_loopback();
         //e1000_send_test_packet();
+
+        ne2000_test_send();
 
 
     } else if(strcmp(arguments[0], "RECV") == 0) {

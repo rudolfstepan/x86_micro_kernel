@@ -2,7 +2,7 @@
 #include <stdbool.h>
 
 #include "memory.h"
-#include "toolchain/strings.h"
+#include "toolchain/string.h"
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
 #include "filesystem/fat32/fat32.h"

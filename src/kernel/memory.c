@@ -1,7 +1,7 @@
 #include "memory.h"
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
-#include "toolchain/strings.h"
+#include "toolchain/string.h"
 #include "drivers/video/video.h"
 #include "drivers/io/io.h"
 #include <stdbool.h>

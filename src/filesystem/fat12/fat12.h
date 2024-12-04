@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "toolchain/strings.h"
+#include "toolchain/string.h"
 #include "toolchain/stdlib.h"
 #include "drivers/fdd/fdd.h"
 

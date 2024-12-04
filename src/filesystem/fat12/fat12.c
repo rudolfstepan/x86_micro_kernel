@@ -2,7 +2,7 @@
 #include "drivers/fdd/fdd.h"
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
-#include "toolchain/strings.h"
+#include "toolchain/string.h"
 
 // Constants
 #define MAX_PATH_LENGTH 256

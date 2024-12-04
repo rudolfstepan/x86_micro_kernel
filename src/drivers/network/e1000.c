@@ -1,7 +1,7 @@
 #include "e1000.h"
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
-#include "toolchain/strings.h"
+#include "toolchain/string.h"
 #include "drivers/pci.h"
 #include "drivers/io/io.h"
 #include "kernel/sys.h"

@@ -1,6 +1,6 @@
 #include "kernel/sys.h"
 #include "toolchain/stdlib.h"
-#include "toolchain/strings.h"
+#include "toolchain/string.h"
 
 
 // Structure for an IDT entry

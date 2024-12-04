@@ -74,7 +74,7 @@ void str_trim_spaces(const char* input, char* output, int max_len);
 
 int int_to_hex_str2(unsigned int value, char* buffer, bool uppercase);
 
-void* memcpy(void* dest, const void* src, uint16_t n);
+void* memcpy(void *dest, const void *src, uint16_t n);
 int memcmp(const void* s1, const void* s2, unsigned int n);
 void* memset(void* ptr, int value, unsigned int num);
 
