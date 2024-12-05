@@ -26,10 +26,10 @@
 #include "mbheader.h"
 #include "memory.h"
 //#include "paging.h"
-#include "drivers/network/rtl8139.h"
-#include "drivers/network/e1000.h"
+// #include "drivers/network/rtl8139.h"
+// #include "drivers/network/e1000.h"
 #include "drivers/network/ne2000.h"
-#include "drivers/network/vmxnet3.h"
+// #include "drivers/network/vmxnet3.h"
 
 
 extern char _stack_start;  // Start address of the stack

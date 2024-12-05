@@ -16,10 +16,10 @@
 #include "filesystem/filesystem.h"
 #include "filesystem/fat32/fat32.h"
 #include "filesystem/fat12/fat12.h"
-#include "drivers/network/rtl8139.h"
-#include "drivers/network/e1000.h"
+// #include "drivers/network/rtl8139.h"
+// #include "drivers/network/e1000.h"
 #include "drivers/network/ne2000.h"
-#include "drivers/network/vmxnet3.h"
+// #include "drivers/network/vmxnet3.h"
 
 
 char current_path[256] = "/";

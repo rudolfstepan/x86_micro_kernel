@@ -134,10 +134,8 @@ run:
 	#qemu-system-x86_64 -bios OVMF.fd -kernel ./build/kernel.bin
 	#qemu-system-x86_64 -kernel ./build/kernel.bin -s -S -display default
 	qemu-system-x86_64 -m 512M -boot d -cdrom ./kernel.iso -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy \
-	-device ne2k_pci,netdev=net0 -netdev user,id=net0 -object filter-dump,id=f1,netdev=net0,file=dump.dat
-	
+	-device ne2k_pci,netdev=net0 -netdev user,id=net0 -object filter-dump,id=f1,netdev=net0,file=dump.dat -monitor stdio
 	#-device rtl8139,netdev=net1 -netdev user,id=net1 -object filter-dump,id=f1,netdev=net1,file=dump.dat
-	
 	#-device e1000,netdev=net0 -netdev user,id=net0 -monitor stdio \
 	#-netdev user,id=mynet0 -device e1000,netdev=mynet0 \
 	#-device rtl8139,netdev=mynet1 -netdev user,id=mynet1 -monitor stdio \

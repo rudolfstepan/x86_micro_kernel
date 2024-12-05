@@ -237,7 +237,8 @@ uint32_t pci_read_bar(pci_device_t *dev, uint8_t bar_index) {
 // Stub for mapping physical memory (platform-specific implementation required)
 volatile uint32_t *map_mmio(uint64_t physical_address) {
     // Replace with actual memory mapping mechanism for your system.
-    return (volatile uint32_t *)(physical_address | 0xFFFF800000000000); // Simplified example
+    //return (volatile uint32_t *)(physical_address | 0xFFFF800000000000); // Simplified example
+    return (volatile uint32_t *)physical_address;
 }
 
 uint8_t pci_configure_irq(pci_device_t *dev) {
