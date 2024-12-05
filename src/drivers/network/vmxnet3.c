@@ -77,7 +77,12 @@ void vmxnet3_handle_irq() {
 }
 
 int vmxnet3_probe(pci_device_t *pci_dev) {
+
+    printf("Probing VMXNET3 device\n");
+
     if (pci_dev->vendor_id == VMXNET3_VENDOR_ID && pci_dev->device_id == VMXNET3_DEVICE_ID) {
+
+        printf("Detected VMXNET3 device\n");
         // Enable the device
         pci_enable_device(pci_dev);
 
@@ -99,6 +104,8 @@ int vmxnet3_probe(pci_device_t *pci_dev) {
 
         return 0;
     }
+
+    printf("VMXNET3 device not found\n");
     return -1;
 }
 
@@ -107,13 +114,12 @@ void vmxnet3_register_driver() {
 }
 
 void vmxnet3_setup() {
+    //printf("Detecting VMXNET3 Network Card\n");
     // Register the VMXNET3 driver
     vmxnet3_register_driver();
 
     // Enable interrupts
     //enable_interrupts();
-
-    
 }
 
 void vmxnet3_transmit_packet(vmxnet3_device_t *dev, const uint8_t *data, uint16_t length) {
@@ -182,8 +188,6 @@ void vmxnet3_get_mac_address(vmxnet3_device_t *dev, uint8_t *mac) {
 }
 
 void test_vmxnet3() {
-
-
     uint8_t mac[6];
     vmxnet3_get_mac_address(&vmxnet3_device, mac);
 

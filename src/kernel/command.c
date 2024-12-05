@@ -736,8 +736,9 @@ void cmd_net(int arg_count, const char** arguments) {
 
         //test_loopback();
         //e1000_send_test_packet();
-        //ne2000_test_send();
-        test_vmxnet3();
+        ne2000_test_send();
+        //test_vmxnet3();
+        //rtl8139_send_test_packet();
 
 
     } else if(strcmp(arguments[0], "RECV") == 0) {

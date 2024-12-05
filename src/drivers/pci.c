@@ -215,11 +215,11 @@ void pci_init() {
     pci_scan_bus(0);
 
     // Print the detected devices
-    for (size_t i = 0; i < pci_device_count; i++) {
-        pci_device_t *dev = &pci_devices[i];
-        printf("PCI Device %u: Vendor ID=0x%04X, Device ID=0x%04X, Class=0x%02X, Subclass=0x%02X\n",
-               i, dev->vendor_id, dev->device_id, dev->class_code, dev->subclass_code);
-    }
+    // for (size_t i = 0; i < pci_device_count; i++) {
+    //     pci_device_t *dev = &pci_devices[i];
+    //     printf("PCI Device %u: Vendor ID=0x%04X, Device ID=0x%04X, Class=0x%02X, Subclass=0x%02X\n",
+    //            i, dev->vendor_id, dev->device_id, dev->class_code, dev->subclass_code);
+    // }
 }
 
 void pci_enable_device(pci_device_t *dev) {

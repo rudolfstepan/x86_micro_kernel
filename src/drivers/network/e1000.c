@@ -93,10 +93,17 @@
 
 #define RX_BUFFER_SIZE 8192   // Size of each RX buffer
 
+typedef struct {
+    uint32_t tx_buffers[RX_BUFFER_SIZE];
+    uint32_t rx_buffers[RX_BUFFER_SIZE];
+    volatile uint32_t *mmio_base;     // MMIO base address
+    uint32_t irq;                     // IRQ number
+    uint32_t tx_producer;             // TX producer index
+    uint32_t rx_producer;             // RX producer index
+} e1000_device_t;
 
 
-uint32_t *e1000_mmio = NULL;
-uint8_t device_irq = 11;
+e1000_device_t e1000_device = {0};
 
 struct e1000_rx_desc rx_descs[E1000_NUM_RX_DESC]; // Receive Descriptor Buffers
 struct e1000_tx_desc tx_descs[E1000_NUM_TX_DESC]; // Transmit Descriptor Buffers
@@ -108,16 +115,14 @@ uint8_t old_cur;
 // Buffers for RX and TX
 void *rx_buffers[E1000_NUM_RX_DESC]; // Array to hold RX buffer addresses
 
-
-
 // Read a 32-bit register
 static inline uint32_t e1000_read_reg(uint32_t offset) {
-    return e1000_mmio[offset / 4];
+    return e1000_device.mmio_base[offset / 4];
 }
 
 // Write a 32-bit register
 static inline void e1000_write_reg(uint32_t offset, uint32_t value) {
-    e1000_mmio[offset / 4] = value;
+    e1000_device.mmio_base[offset / 4] = value;
 }
 
 void e1000_enable_interrupts() {
@@ -204,71 +209,71 @@ void process_packet(void *packet, size_t length) {
     printf("Received packet: %.*s\n", length, (char *)packet);
 }
 
-void e1000_init(uint8_t bus, uint8_t device, uint8_t function) {
-    // Get BAR0 (Base Address Register 0)
-    uint32_t bar0 = pci_read(bus, device, function, 0x10) & ~0xF;
-    e1000_mmio = (uint32_t *)bar0;
+// void e1000_init(uint8_t bus, uint8_t device, uint8_t function) {
+//     // Get BAR0 (Base Address Register 0)
+//     uint32_t bar0 = pci_read(bus, device, function, 0x10) & ~0xF;
+//     e1000_mmio = (uint32_t *)bar0;
 
-    // IRQ für das Gerät auslesen
-    device_irq = pci_get_irq(bus, device, function);
-    printf("E1000 found: Bus %u, Device %u, IRQ %u, Function %u\n", bus, device, device_irq, function);
+//     // IRQ für das Gerät auslesen
+//     device_irq = pci_get_irq(bus, device, function);
+//     printf("E1000 found: Bus %u, Device %u, IRQ %u, Function %u\n", bus, device, device_irq, function);
 
-    // Enable bus mastering
-    pci_set_bus_master(bus, device, 1);
+//     // Enable bus mastering
+//     pci_set_bus_master(bus, device, 1);
 
-    // Step 2: Perform a device reset
-    printf("Performing E1000 hardware reset...\n");
+//     // Step 2: Perform a device reset
+//     printf("Performing E1000 hardware reset...\n");
 
-    // Write to the CTRL register to initiate a device reset
-    uint32_t ctrl = e1000_read_reg(E1000_REG_CTRL);
-    ctrl |= E1000_CTRL_RST; // Set the RST bit
-    e1000_write_reg(E1000_REG_CTRL, ctrl);
+//     // Write to the CTRL register to initiate a device reset
+//     uint32_t ctrl = e1000_read_reg(E1000_REG_CTRL);
+//     ctrl |= E1000_CTRL_RST; // Set the RST bit
+//     e1000_write_reg(E1000_REG_CTRL, ctrl);
 
-    // Wait for the reset to complete (the RST bit clears when done)
-    delay_ms(10); // 10ms delay to allow reset to complete
+//     // Wait for the reset to complete (the RST bit clears when done)
+//     delay_ms(10); // 10ms delay to allow reset to complete
 
-    ctrl = e1000_read_reg(E1000_REG_CTRL);
-    if (ctrl & E1000_CTRL_RST) {
-        printf("Error: E1000 reset did not complete.\n");
-        return;
-    }
-    printf("E1000 reset complete.\n");
+//     ctrl = e1000_read_reg(E1000_REG_CTRL);
+//     if (ctrl & E1000_CTRL_RST) {
+//         printf("Error: E1000 reset did not complete.\n");
+//         return;
+//     }
+//     printf("E1000 reset complete.\n");
 
-    // Step 3: Ensure the device is powered on and enabled
-    printf("Ensuring device is enabled and powered on...\n");
-    ctrl = e1000_read_reg(E1000_REG_CTRL);
-    ctrl &= ~E1000_CTRL_PHY_RST; // Clear PHY_RST to power on the device
-    e1000_write_reg(E1000_REG_CTRL, ctrl);
+//     // Step 3: Ensure the device is powered on and enabled
+//     printf("Ensuring device is enabled and powered on...\n");
+//     ctrl = e1000_read_reg(E1000_REG_CTRL);
+//     ctrl &= ~E1000_CTRL_PHY_RST; // Clear PHY_RST to power on the device
+//     e1000_write_reg(E1000_REG_CTRL, ctrl);
 
-    // Step 4: Verify the device is ready
-    uint32_t status = e1000_read_reg(E1000_REG_STATUS);
-    if (!(status & 0x1)) { // Check if the device is not ready
-        printf("Error: E1000 device not ready.\n");
-        return;
-    }
-    printf("E1000 device is ready and powered on.\n");
+//     // Step 4: Verify the device is ready
+//     uint32_t status = e1000_read_reg(E1000_REG_STATUS);
+//     if (!(status & 0x1)) { // Check if the device is not ready
+//         printf("Error: E1000 device not ready.\n");
+//         return;
+//     }
+//     printf("E1000 device is ready and powered on.\n");
 
-    initialize_rings_and_buffers();
-    e1000_enable_interrupts();
-    register_interrupt_handler(device_irq, e1000_isr);
+//     initialize_rings_and_buffers();
+//     e1000_enable_interrupts();
+//     register_interrupt_handler(device_irq, e1000_isr);
 
-    // 1. Verify Transmit Engine Configuration
-    uint32_t tctl = e1000_read_reg(E1000_REG_TCTL);
-    if (!(tctl & E1000_TCTL_EN)) {
-        printf("Error: Transmit engine not enabled. Enabling now...\n");
-        uint32_t tctl = 0;
-        tctl |= E1000_TCTL_EN;           // Enable transmitter
-        tctl |= E1000_TCTL_PSP;          // Pad short packets
-        tctl |= (15 << E1000_TCTL_CT_SHIFT);  // Collision threshold
-        tctl |= (64 << E1000_TCTL_COLD_SHIFT); // Collision distance
-        e1000_write_reg(E1000_REG_TCTL, tctl);
-    }
+//     // 1. Verify Transmit Engine Configuration
+//     uint32_t tctl = e1000_read_reg(E1000_REG_TCTL);
+//     if (!(tctl & E1000_TCTL_EN)) {
+//         printf("Error: Transmit engine not enabled. Enabling now...\n");
+//         uint32_t tctl = 0;
+//         tctl |= E1000_TCTL_EN;           // Enable transmitter
+//         tctl |= E1000_TCTL_PSP;          // Pad short packets
+//         tctl |= (15 << E1000_TCTL_CT_SHIFT);  // Collision threshold
+//         tctl |= (64 << E1000_TCTL_COLD_SHIFT); // Collision distance
+//         e1000_write_reg(E1000_REG_TCTL, tctl);
+//     }
 
-    e1000_write_reg(E1000_REG_TCTL, 0b0110000000000111111000011111010);
-    //e1000_write_reg(E1000_REG_TIPG, 0x0060200A); // Typical default for gigabit Ethernet
+//     e1000_write_reg(E1000_REG_TCTL, 0b0110000000000111111000011111010);
+//     //e1000_write_reg(E1000_REG_TIPG, 0x0060200A); // Typical default for gigabit Ethernet
 
-    printf("E1000 initialized.\n");
-}
+//     printf("E1000 initialized.\n");
+// }
 
 void e1000_receive_packet() {
     uint32_t tail = e1000_read_reg(E1000_REG_RDT);
@@ -290,44 +295,129 @@ void e1000_receive_packet() {
     }
 }
 
-void get_mac_address() {
-    uint8_t mac[6];
+void e1000_get_mac_address(uint8_t *mac[6]) {
     for (int i = 0; i < 6; i++) {
-        mac[i] = e1000_mmio[i];
+        mac[i] = e1000_device.mmio_base[i];
     }
-    printf("MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
-           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+void reset_e1000() {
+    // Step 2: Perform a device reset
+    printf("Performing E1000 hardware reset...\n");
+
+    // Write to the CTRL register to initiate a device reset
+    uint32_t ctrl = e1000_read_reg(E1000_REG_CTRL);
+    ctrl |= E1000_CTRL_RST; // Set the RST bit
+    e1000_write_reg(E1000_REG_CTRL, ctrl);
+
+    // Wait for the reset to complete (the RST bit clears when done)
+    //delay_ms(10); // 10ms delay to allow reset to complete
+
+    ctrl = e1000_read_reg(E1000_REG_CTRL);
+    if (ctrl & E1000_CTRL_RST) {
+        printf("Error: E1000 reset did not complete.\n");
+        return;
+    }
+    printf("E1000 reset complete.\n");
+
+    // Step 3: Ensure the device is powered on and enabled
+    printf("Ensuring device is enabled and powered on...\n");
+    ctrl = e1000_read_reg(E1000_REG_CTRL);
+    ctrl &= ~E1000_CTRL_PHY_RST; // Clear PHY_RST to power on the device
+    e1000_write_reg(E1000_REG_CTRL, ctrl);
+}   
+
+void e1000_init(e1000_device_t *dev) {
+    // Reset the device
+    reset_e1000();
+
+    // Verify the device is ready
+    uint32_t status = e1000_read_reg(E1000_REG_STATUS);
+    if (!(status & 0x1)) { // Check if the device is not ready
+        printf("Error: E1000 device not ready.\n");
+        return;
+    }
+    printf("E1000 device is ready and powered on.\n");
+
+    // Verify Transmit Engine Configuration
+    uint32_t tctl = e1000_read_reg(E1000_REG_TCTL);
+    if (!(tctl & E1000_TCTL_EN)) {
+        printf("Error: Transmit engine not enabled. Enabling now...\n");
+        uint32_t tctl = 0;
+        tctl |= E1000_TCTL_EN;           // Enable transmitter
+        tctl |= E1000_TCTL_PSP;          // Pad short packets
+        tctl |= (15 << E1000_TCTL_CT_SHIFT);  // Collision threshold
+        tctl |= (64 << E1000_TCTL_COLD_SHIFT);
+    };
+}
+
+int e1000_probe(pci_device_t *pci_dev) {
+    if (pci_dev->vendor_id == E1000_VENDOR_ID && pci_dev->device_id == E1000_DEVICE_ID) {
+
+        //printf("Detected e1000 device\n");
+        // Enable the device
+        pci_enable_device(pci_dev);
+
+        // Map MMIO region
+        uint64_t bar0 = pci_read_bar(pci_dev, 0);
+        e1000_device.mmio_base = (volatile uint32_t *)map_mmio(bar0);
+
+        //printf("MMIO base: 0x%08X\n", *e1000_device.mmio_base);
+
+        // Configure IRQ
+        e1000_device.irq = pci_configure_irq(pci_dev);
+
+        //printf("IRQ: %u\n", e1000_device.irq);
+
+        // Initialize the device
+        e1000_init(&e1000_device);
+
+        uint8_t mac[6];
+        e1000_get_mac_address(&mac);
+
+        printf("E1000 MAC: %02X:%02X:%02X:%02X:%02X:%02X, ", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        printf("IO Base: 0x%08X, IRQ: %u\n", e1000_device.mmio_base, e1000_device.irq);
+
+        return 0;
+    }
+
+    //printf("e1000 device not found\n");
+    return -1;
 }
 
 void e1000_detect(){
     printf("Detecting E1000 network card...\n");
-    for (uint16_t bus = 0; bus < 256; ++bus) {
-        for (uint8_t device = 0; device < 32; ++device) {
-            // Prüfen, ob das Gerät existiert
-            uint32_t id = pci_read(bus, device, 0, 0);
-            if ((id & 0xFFFF) == 0xFFFF) { // Kein Gerät vorhanden
-                continue;
-            }
 
-            // Prüfen, ob das Gerät mehrere Funktionen unterstützt
-            uint32_t header_type = pci_read(bus, device, 0, 0x0C) >> 16;
-            uint8_t multifunction = (header_type & 0x80) != 0;
+    pci_register_driver(E1000_VENDOR_ID, E1000_DEVICE_ID, e1000_probe);
 
-            // Über alle Funktionen iterieren
-            for (uint8_t function = 0; function < (multifunction ? 8 : 1); ++function) {
-                // PCI-Geräte-ID und Vendor-ID auslesen
-                id = pci_read(bus, device, function, 0);
-                if ((id & 0xFFFF) == E1000_VENDOR_ID && ((id >> 16) & 0xFFFF) == E1000_DEVICE_ID) {
 
-                    //pci_set_irq(bus, device, function, 10);
-                    e1000_init(bus, device, function);
-                    get_mac_address();
+    // for (uint16_t bus = 0; bus < 256; ++bus) {
+    //     for (uint8_t device = 0; device < 32; ++device) {
+    //         // Prüfen, ob das Gerät existiert
+    //         uint32_t id = pci_read(bus, device, 0, 0);
+    //         if ((id & 0xFFFF) == 0xFFFF) { // Kein Gerät vorhanden
+    //             continue;
+    //         }
 
-                    return;
-                }
-            }
-        }
-    }
+    //         // Prüfen, ob das Gerät mehrere Funktionen unterstützt
+    //         uint32_t header_type = pci_read(bus, device, 0, 0x0C) >> 16;
+    //         uint8_t multifunction = (header_type & 0x80) != 0;
+
+    //         // Über alle Funktionen iterieren
+    //         for (uint8_t function = 0; function < (multifunction ? 8 : 1); ++function) {
+    //             // PCI-Geräte-ID und Vendor-ID auslesen
+    //             id = pci_read(bus, device, function, 0);
+    //             if ((id & 0xFFFF) == E1000_VENDOR_ID && ((id >> 16) & 0xFFFF) == E1000_DEVICE_ID) {
+
+    //                 //pci_set_irq(bus, device, function, 10);
+    //                 e1000_init(bus, device, function);
+    //                 get_mac_address();
+
+    //                 return;
+    //             }
+    //         }
+    //     }
+    //}
 }
 
 
