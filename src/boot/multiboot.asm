@@ -1,28 +1,6 @@
 section .multiboot
 align 8
 multiboot_header:
-;     dd 0xe85250d6                ; Magic number for Multiboot2
-;     dd 0                         ; Architecture (0 = i386)
-;     dd header_end - multiboot_header ; Total header length
-;     dd -(0xe85250d6 + 0 + (header_end - multiboot_header)) ; Checksum
-
-;     ; Information request tag (request memory map and other info)
-;     align 8
-;     dw 1                          ; Tag type (information request)
-;     dw 0                          ; Flags
-;     dd info_request_end - info_request ; Size of the tag
-; info_request:
-;     dd 6                          ; Request memory map
-;     dd 4                          ; Request boot loader name
-;     align 8
-; info_request_end:
-
-;     ; End tag
-;     align 8
-;     dw 0                          ; Tag type (end tag)
-;     dw 0
-;     dd 8                          ; Size of the end tag
-
 
 MODULEALIGN equ 1<<0
 MEMINFO equ 1<<1
@@ -37,3 +15,30 @@ CHECKSUM equ -(MAGIC + FLAGS)
 
 
 header_end:
+
+; Flags
+    ; - Bit 0: Align modules on page boundaries
+    ; - Bit 1: Request memory information
+    ; - Bit 2: Request framebuffer information
+
+; MODULEALIGN equ (1 << 0)
+; MEMINFO equ (1 << 1)
+; FRAMEBUFFER equ (1 << 2)
+; FLAGS equ (MODULEALIGN | MEMINFO | FRAMEBUFFER)
+; CHECKSUM  equ -(0x1BADB002 + FLAGS)
+
+; section .multiboot
+; align 8
+; multiboot_header:
+
+;     dd 0x1BADB002                ; Multiboot magic number
+;     dd FLAGS                    ; Flags (request framebuffer and memory info)
+;     dd CHECKSUM                 ; Checksum (MAGIC + FLAGS + CHECKSUM = 0)
+
+;     ; Optional fields for framebuffer request
+; align 4
+;     dd 1024                     ; Desired framebuffer width
+;     dd 768                     ; Desired framebuffer height
+;     dd 24                       ; Desired bits per pixel
+
+; header_end:
