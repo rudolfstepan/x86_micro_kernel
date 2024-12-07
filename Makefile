@@ -39,7 +39,6 @@ compile_bootloader:
 	nasm -f elf32 $(SOURCE_DIR)/boot/irq.asm -o $(BOOT_DIR)/_irq.o
 	nasm -f elf32 $(SOURCE_DIR)/boot/syscall.asm -o $(BOOT_DIR)/_syscall.o
 	nasm -f elf32 $(SOURCE_DIR)/boot/stack.asm -o $(BOOT_DIR)/_stack.o
-	
 
 # Compile filesystem sources
 compile_filesystem:
@@ -77,7 +76,7 @@ compile_sources:
 link_kernel:
 	@echo "Linking kernel..."
 	ld $(LD_FLAGS) -T klink.ld -o $(OUTPUT_DIR)/kernel.bin $(OUTPUT_DIR)/kernel/kernel.o \
-	$(OUTPUT_DIR)/kernel/switch.o $(OUTPUT_DIR)/kernel/scheduler.o $(OUTPUT_DIR)/kernel/memory.o \
+	$(OUTPUT_DIR)/kernel/switch.o $(OUTPUT_DIR)/kernel/scheduler.o $(OUTPUT_DIR)/kernel/memory.o $(OUTPUT_DIR)/kernel/multiboot.o  \
 	$(BOOT_DIR)/_multiboot.o $(BOOT_DIR)/_bootloader.o $(BOOT_DIR)/_gdt.o $(BOOT_DIR)/_idt.o $(BOOT_DIR)/_isr.o \
 	$(BOOT_DIR)/_irq.o $(BOOT_DIR)/_syscall.o $(BOOT_DIR)/_stack.o $(OUTPUT_DIR)/kernel/gdt.o \
 	$(OUTPUT_DIR)/kernel/idt.o $(OUTPUT_DIR)/kernel/isr.o $(OUTPUT_DIR)/kernel/irq.o $(OUTPUT_DIR)/kernel/pit.o \
@@ -131,8 +130,9 @@ iso:
 
 run:
 	@echo "Running QEMU..."
-	qemu-system-x86_64 -m 512M -boot d -cdrom ./kernel.iso -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy \
-	-device ne2k_pci,netdev=net0 -netdev user,id=net0 -monitor stdio -vga vmware
+	qemu-system-x86_64 -cdrom kernel.iso -m 512M -vga std
+	# -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy \
+	#-device ne2k_pci,netdev=net0 -netdev user,id=net0 -monitor stdio -vga vmware
 	
 	#-device rtl8139,netdev=net1 -netdev user,id=net1 -object filter-dump,id=f1,netdev=net1,file=dump.dat
 	#-device e1000,netdev=net0 -netdev user,id=net0 -monitor stdio \

@@ -35,27 +35,34 @@ typedef struct {
 
 // Multiboot1 Information Structure
 typedef struct {
-    uint32_t flags;             // Flags indicating which fields are valid
-    uint32_t mem_lower;         // Amount of lower memory (in KB)
-    uint32_t mem_upper;         // Amount of upper memory (in KB)
-    uint32_t boot_device;       // Boot device ID
-    uint32_t cmdline;           // Address of the command-line string
-    uint32_t mods_count;        // Number of modules
-    uint32_t mods_addr;         // Address of the module structure array
-    uint32_t syms[4];           // Symbols (ELF or a.out specifics)
-    uint32_t mmap_length;       // Length of the memory map
-    uint32_t mmap_addr;         // Address of the memory map
-    uint32_t drives_length;     // Length of the drives structure
-    uint32_t drives_addr;       // Address of the drives structure
-    uint32_t config_table;      // Address of the ROM configuration table
-    uint32_t boot_loader_name;  // Address of the bootloader name
-    uint32_t apm_table;         // Address of the APM table
-    uint32_t vbe_control_info;  // Address of VBE control information
-    uint32_t vbe_mode_info;     // Address of VBE mode information
-    uint16_t vbe_mode;          // Current VBE mode
-    uint16_t vbe_interface_seg; // VBE interface segment
-    uint16_t vbe_interface_off; // VBE interface offset
-    uint16_t vbe_interface_len; // VBE interface length
+    uint32_t flags;
+    uint32_t mem_lower;
+    uint32_t mem_upper;
+    uint32_t boot_device;
+    uint32_t cmdline;
+    uint32_t mods_count;
+    uint32_t mods_addr;
+    uint32_t syms[4];             // Symbols (ELF or a.out specifics)
+    uint32_t mmap_length;
+    uint32_t mmap_addr;
+    uint32_t drives_length;
+    uint32_t drives_addr;
+    uint32_t config_table;
+    uint32_t boot_loader_name;
+    uint32_t apm_table;
+    uint32_t vbe_control_info;
+    uint32_t vbe_mode_info;
+    uint16_t vbe_mode;
+    uint16_t vbe_interface_seg;
+    uint16_t vbe_interface_off;
+    uint16_t vbe_interface_len;
+    uint32_t framebuffer_addr;    // Physical address of the framebuffer
+    uint32_t framebuffer_pitch;   // Bytes per line
+    uint32_t framebuffer_width;   // Framebuffer width
+    uint32_t framebuffer_height;  // Framebuffer height
+    uint8_t framebuffer_bpp;      // Bits per pixel
+    uint8_t framebuffer_type;     // 0 = indexed, 1 = RGB, 2 = EGA
+    uint8_t reserved;
 } __attribute__((packed)) multiboot1_info_t;
 
 // Multiboot1 Module Structure

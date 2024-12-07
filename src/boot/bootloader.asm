@@ -12,9 +12,11 @@ start:
     ; Call the kernel main function
     push ebx
     push dword 0x36d76289
+
     call kernel_main
     ; Halt the system if kernel_main returns
     cli
+
 .halt:
     hlt
     jmp .halt
