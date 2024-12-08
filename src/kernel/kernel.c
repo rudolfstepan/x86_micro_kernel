@@ -245,57 +245,7 @@ extern fat32_class_t fat32;
 //---------------------------------------------------------------------------------------------
 void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
 
-    // if (!(read_cr0() & CR0_PE)) {
-    //     printf("Error: Protected mode is not enabled.\n");
-    //     while (1);
-    // }
-
-    //Validate Multiboot2 magic number
-    // if (multiboot_magic != 0x36d76289) {
-    //     printf("Error: Invalid Multiboot2 magic number: 0x%x\n", multiboot_magic);
-    //     while (1) { asm volatile("hlt"); }
-    // }
-
-    // // Check if multiboot_info is valid
-    // if (multiboot_info == NULL) {
-    //     printf("Error: Multiboot information structure is NULL.\n");
-    //     while (1) { asm volatile("hlt"); }
-    // }
-
     enumerate_multiboot2_tags(multiboot_info);
-
-    // draw_string(10, 10, "Hello, World!", 0xFFFFFF); // White text
-    // draw_string(10, 30, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 0xFF0000); // Red text
-    // draw_string(10, 50, "0123456789", 0x00FF00); // Green text
-
-    // if (!(multiboot_info->flags & MULTIBOOT1_FLAG_VBE)) {
-    //     printf("VBE info not available.\n");
-    //     while (1);
-    // }
-
-    // // Setup graphics mode
-    // setup_graphics(multiboot_info);
-
-
-    // uint32_t *vbe_info = (uint32_t *)multiboot_info->vbe_mode_info;
-
-    // // Read framebuffer info from VBE mode info structure
-    // uint32_t framebuffer_addr = *((uint32_t *)(vbe_info + 0x28)); // Framebuffer address offset
-    // uint16_t width = *((uint16_t *)(vbe_info + 0x12));           // Width offset
-    // uint16_t height = *((uint16_t *)(vbe_info + 0x14));          // Height offset
-    // uint8_t bpp = *((uint8_t *)(vbe_info + 0x19));               // BPP offset
-
-    // printf("Framebuffer Address: 0x%x, Width: %u, Height: %u, BPP: %u\n",
-    //    framebuffer_addr, width, height, bpp);
-    // // Fill screen with a solid color (e.g., red)
-    // uint32_t* framebuffer = (uint32_t*)framebuffer_addr;
-    // for (uint32_t y = 0; y < height; y++) {
-    //     for (uint32_t x = 0; x < width; x++) {
-    //         framebuffer[y * width + x] = 0xFF0000; // Red
-    //     }
-    // }
-
-    //while (1); // Halt
 
     initialize_memory_system();
 
@@ -321,8 +271,6 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
 
     register_interrupt_handler(9, scheduler_interrupt_handler);
 
-
-    // PCI-Scanning: Suche die RTL8139 Netzwerkkarte
     //rtl8139_detect();
     //e1000_detect();
     ne2000_detect();

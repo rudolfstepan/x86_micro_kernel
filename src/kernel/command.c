@@ -82,6 +82,7 @@ void cmd_wait(int cnt, const char **args);
 void list_running_processes(int cnt, const char **args);
 void cmd_start_task(int cnt, const char **args);
 void cmd_net(int cnt, const char **args);
+void cmd_show(int cnt, const char **args);
 
 
 // Command table
@@ -118,6 +119,7 @@ command_t command_table[MAX_COMMANDS] = {
     {"pid", (command_func)list_running_processes},
     {"rtask", cmd_start_task},
     {"net", cmd_net},
+    {"show", cmd_show},
     {NULL, NULL} // End marker
 };
 
@@ -750,4 +752,28 @@ void cmd_net(int arg_count, const char** arguments) {
     else {
         printf("Unknown NET command: %s\n", arguments[0]);
     }
+}
+
+void cmd_show(int arg_count, const char** arguments) {
+    if (arg_count == 0) {
+        printf("SHOW command without arguments\n");
+        return;
+    }
+
+    char* filename = (char*)arguments[0];
+
+    
+    uint32_t filesize = 0;
+    // load the file into memory
+    if ((filesize = fat32_load_file(filename, (void*)0x01000000)) > 0) {
+        printf("File loaded into memory: %s\n", filename);
+        // print the file content
+        char* buffer = (char*)0x01000000;
+        printf("%s, size: %u\n", buffer, filesize);
+
+
+    } else {
+        printf("File not found: %s\n", filename);
+    }
+
 }
