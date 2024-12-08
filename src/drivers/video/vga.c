@@ -1,4 +1,5 @@
-﻿#include "video.h"
+﻿#include "vga.h"
+
 #include "drivers/io/io.h"
 #include "toolchain/string.h"
 
@@ -10,7 +11,7 @@ void set_color(char color) {
 }
 
 // clear the screen
-void clear_screen() {
+void vga_clear_screen() {
     unsigned char color = 0x0F;  // Black background, white foreground
     for (int y = 0; y < VGA_ROWS; y++) {
         for (int x = 0; x < VGA_COLS; x++) {

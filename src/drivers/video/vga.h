@@ -1,5 +1,5 @@
-#ifndef VIDEO_H    /* This is an "include guard" */
-#define VIDEO_H    /* prevents the file from being included twice. */
+#ifndef VGA_H    /* This is an "include guard" */
+#define VGA_H    /* prevents the file from being included twice. */
 
 #define VGA_ADDRESS 0xB8000         // VGA text mode address
 #define VGA_CTRL_REGISTER 0x3D4     // VGA control register
@@ -37,9 +37,9 @@
 extern void set_color(char color);
 extern void vga_backspace();
 extern void vga_write_char(char ch);
-extern void clear_screen();
+extern void vga_clear_screen();
 extern void get_cursor_position(int *x, int *y);
 extern void set_cursor_position(int x, int y);
 
 
-#endif /* VIDEO_H */
+#endif /* VGA_H */

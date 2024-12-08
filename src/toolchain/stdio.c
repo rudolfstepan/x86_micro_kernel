@@ -10,7 +10,8 @@
 #include "filesystem/fat32/fat32.h"
 #include "filesystem/fat12/fat12.h"
 #include "drivers/io/io.h"
-#include "drivers/video/video.h"
+#include "drivers/video/vga.h"
+#include "drivers/video/framebuffer.h"
 #include "drivers/kb/kb.h"
 
 
@@ -249,7 +250,8 @@ void int_to_str2(int value, char* str, int base) {
 
 void putchar(char c) {
     if (is_kernel_context()) {
-        vga_write_char(c);
+        //vga_write_char(c);
+        fb_write_char(c);
     } else {
          syscall(SYS_TERMINAL_PUTCHAR, (void*)(uintptr_t)c, NULL, NULL);
     }

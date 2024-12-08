@@ -130,10 +130,13 @@ iso:
 
 run:
 	@echo "Running QEMU..."
-	qemu-system-x86_64 -cdrom kernel.iso -m 512M -vga std
-	# -drive file=./disk.img,format=raw -drive file=./floppy.img,format=raw,if=floppy \
-	#-device ne2k_pci,netdev=net0 -netdev user,id=net0 -monitor stdio -vga vmware
+	qemu-system-x86_64 -cdrom kernel.iso -boot d -m 512M -vga std -drive file=disk.img,format=raw -drive file=floppy.img,format=raw,if=floppy \
+	-device ne2k_pci,netdev=net0 -netdev user,id=net0 -monitor stdio
 	
+	# -drive file=./disk.img,format=raw \
+	# -drive file=./floppy.img,format=raw,if=floppy \
+	# -device ne2k_pci,netdev=net0 -netdev user,id=net0 -monitor stdio
+
 	#-device rtl8139,netdev=net1 -netdev user,id=net1 -object filter-dump,id=f1,netdev=net1,file=dump.dat
 	#-device e1000,netdev=net0 -netdev user,id=net0 -monitor stdio \
 	#-netdev user,id=mynet0 -device e1000,netdev=mynet0 \

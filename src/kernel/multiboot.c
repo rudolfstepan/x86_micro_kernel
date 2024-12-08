@@ -1,5 +1,10 @@
 #include "multiboot.h"
 
+#include <stdint.h>
+#include <stddef.h>
+#include "toolchain/stdio.h"
+#include "drivers/video/framebuffer.h"
+
 extern uint32_t total_memory; // Total memory size detected by the bootloader and defined in kernel.c
 
 void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {

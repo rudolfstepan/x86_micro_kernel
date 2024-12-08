@@ -1,7 +1,12 @@
 #include "framebuffer.h"
 #include "kernel/multiboot.h"
 #include "vga_font.h"
+#include "toolchain/stdio.h"
 
+
+uint32_t cursor_x = 0;
+uint32_t cursor_y = 0;
+uint32_t line_height = 20; // Height of a single text line (e.g., 8x16 font)
 
 framebuffer_info_t fb_info;
 
@@ -24,6 +29,25 @@ void parse_framebuffer(multiboot2_tag_framebuffer_t *fb) {
     printf("  Pitch: %u bytes per scanline\n", fb_info.pitch);
 }
 
+void draw_char(uint32_t x, uint32_t y, char c, uint32_t color) {
+    uint32_t *framebuffer = (uint32_t *)fb_info.address;
+
+    for (uint8_t row = 0; row < 16; row++) {
+        uint8_t row_data = font[(uint8_t)c + 2][row];
+        for (uint8_t col = 0; col < 8; col++) {
+            if (row_data & (1 << (7 - col))) {
+                framebuffer[((y + row) * fb_info.pitch / 4) + (x + col)] = color;
+            }
+        }
+    }
+}
+
+void draw_string(const char *str, uint32_t color, uint32_t bg_color) {
+    while (*str) {
+        put_char(*str++, color, bg_color);
+    }
+}
+
 void draw_pixel(uint32_t x, uint32_t y, uint32_t color) {
     if (x >= fb_info.width || y >= fb_info.height) {
         return; // Out of bounds
@@ -43,6 +67,19 @@ void render_gradient() {
     }
 }
 
+void clear_screen() {
+    uint32_t color = 0x000000; // Black
+    uint32_t *framebuffer = (uint32_t *)fb_info.address;
+    for (uint32_t y = 0; y < fb_info.height; y++) {
+        for (uint32_t x = 0; x < fb_info.width; x++) {
+            framebuffer[(y * fb_info.pitch / 4) + x] = color;
+        }
+    }
+    // Reset cursor position
+    cursor_x = 0;
+    cursor_y = 0;
+}
+
 void fill_screen(uint32_t color) {
     for (uint32_t y = 0; y < fb_info.height; y++) {
         for (uint32_t x = 0; x < fb_info.width; x++) {
@@ -51,43 +88,72 @@ void fill_screen(uint32_t color) {
     }
 }
 
-void put_char(char c, uint32_t x, uint32_t y, uint32_t color) {
-    // Shift index if the font starts at 0x20 (space)
-    if (c < 0x20 || c > 0x7E) {
-        c = '?'; // Default to '?' for unsupported characters
+void put_char(char c, uint32_t color, uint32_t bg_color) {
+    if (c == '\n') {
+        // Move to the next line
+        cursor_x = 0;
+        cursor_y += line_height;
+
+        // Scroll if at the bottom of the screen
+        if (cursor_y >= fb_info.height) {
+            scroll_screen(bg_color);
+            cursor_y -= line_height; // Adjust for scrolled line
+        }
+        return;
     }
 
-    uint8_t *char_bitmap = vga_font[c + 2]; // Adjust for font array starting at 0x20
+    if (cursor_x >= fb_info.width) {
+        // Move to the next line if at the end of the screen
+        cursor_x = 0;
+        cursor_y += line_height;
+
+        // Scroll if at the bottom of the screen
+        if (cursor_y >= fb_info.height) {
+            scroll_screen(bg_color);
+            cursor_y -= line_height; // Adjust for scrolled line
+        }
+    }
+
+    // Draw the character at the current position
+    draw_char(cursor_x, cursor_y, c, color);
+
+    // Advance cursor
+    cursor_x += 8; // Font width is 8 pixels
+}
+
+void fb_write_char(char ch) {
+    put_char(ch, 0xFFFFFF, 0x000000); // White text
+}
+
+void clear_line(uint32_t y, uint32_t color) {
     uint32_t *framebuffer = (uint32_t *)fb_info.address;
-
-    for (uint8_t row = 0; row < 16; row++) { // Font height is 16
-        uint8_t row_data = char_bitmap[row];
-        for (uint8_t col = 0; col < 8; col++) { // Font width is 8
-            if (row_data & (1 << (7 - col))) { // Foreground pixel
-                uint32_t pixel_x = x + col;
-                uint32_t pixel_y = y + row;
-
-                if (pixel_x < fb_info.width && pixel_y < fb_info.height) {
-                    framebuffer[(pixel_y * fb_info.pitch / 4) + pixel_x] = color;
-                }
-            }
+    for (uint32_t row = 0; row < line_height; row++) {
+        for (uint32_t x = 0; x < fb_info.width; x++) {
+            framebuffer[((y + row) * fb_info.pitch / 4) + x] = color;
         }
     }
 }
 
-void draw_string(uint32_t x, uint32_t y, const char *str, uint32_t color) {
-    uint32_t original_x = x; // Save the starting x-coordinate
+void scroll_screen(uint32_t bg_color) {
+    uint32_t *framebuffer = (uint32_t *)fb_info.address;
+    uint32_t screen_width = fb_info.width;
+    uint32_t screen_height = fb_info.height;
+    uint32_t pitch_in_pixels = fb_info.pitch / 4; // Convert pitch from bytes to pixels
 
-    while (*str) {
-        if (*str == '\n') {
-            // Handle newline: Reset x to original position and move y down
-            x = original_x;
-            y += 16; // Advance by the font height (16 pixels for an 8x16 font)
-        } else {
-            // Draw the character and move to the next position
-            put_char(*str, x, y, color);
-            x += 8; // Advance by the font width (8 pixels for an 8x16 font)
+    // Calculate the number of pixels in one line
+    uint32_t line_size = line_height * pitch_in_pixels;
+
+    // Copy lines from bottom to top to avoid overlap
+    for (uint32_t y = line_height; y < screen_height; y++) {
+        for (uint32_t x = 0; x < screen_width; x++) {
+            framebuffer[((y - line_height) * pitch_in_pixels) + x] =
+                framebuffer[(y * pitch_in_pixels) + x];
         }
-        str++;
+    }
+
+    // Clear the last full visible line
+    uint32_t start_of_last_line = (screen_height - line_height) * pitch_in_pixels;
+    for (uint32_t i = 0; i < line_size; i++) {
+        framebuffer[start_of_last_line + i] = bg_color;
     }
 }

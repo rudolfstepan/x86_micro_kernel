@@ -13,7 +13,7 @@
 
 #include "drivers/kb/kb.h"
 #include "drivers/rtc/rtc.h"
-#include "drivers/video/video.h"
+#include "drivers/video/vga.h"
 #include "drivers/io/io.h"
 
 #include "toolchain/stdio.h"
@@ -82,7 +82,8 @@ void kernel_print_number(int number) {
 }
 
 void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
-    (void*)&vga_write_char,     // Syscall 0: One arguments
+    //(void*)&vga_write_char,     // Syscall 0: One arguments
+    (void*)&fb_write_char,       // Syscall 0: No arguments
     (void*)&kernel_print_number,// Syscall 1: One argument
     (void*)&pit_delay,          // Syscall 2: One argument
     (void*)&kb_wait_enter,      // Syscall 3: No arguments
@@ -263,9 +264,9 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
 
     enumerate_multiboot2_tags(multiboot_info);
 
-    draw_string(10, 10, "Hello, World!", 0xFFFFFF); // White text
-    draw_string(10, 30, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 0xFF0000); // Red text
-    draw_string(10, 50, "0123456789", 0x00FF00); // Green text
+    // draw_string(10, 10, "Hello, World!", 0xFFFFFF); // White text
+    // draw_string(10, 30, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 0xFF0000); // Red text
+    // draw_string(10, 50, "0123456789", 0x00FF00); // Green text
 
     // if (!(multiboot_info->flags & MULTIBOOT1_FLAG_VBE)) {
     //     printf("VBE info not available.\n");
