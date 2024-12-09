@@ -22,7 +22,7 @@ void vga_clear_screen() {
     int cursor_x = 0;
     int cursor_y = 0;
 
-    set_cursor_position(cursor_x, cursor_y);
+    vga_set_cursor_position(cursor_x, cursor_y);
 }
 
 // get the cursor position
@@ -101,7 +101,7 @@ void vga_write_char(char ch) {
     }
 
     // Update hardware cursor to match our cursor position
-    set_cursor_position(cursor_x, cursor_y);
+    vga_set_cursor_position(cursor_x, cursor_y);
 }
 
 // delete a character from the screen and move the cursor back to the previous position
@@ -118,7 +118,7 @@ void vga_backspace() {
     }
 
     // Update the cursor position
-    set_cursor_position(cursor_x, cursor_y);
+    vga_set_cursor_position(cursor_x, cursor_y);
 
     // Erase the character at this new position by writing a space character
     const unsigned int index = cursor_y * VGA_COLS + cursor_x;

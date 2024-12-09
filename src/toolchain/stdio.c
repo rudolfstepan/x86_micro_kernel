@@ -24,7 +24,7 @@
 #define PIT_CHANNEL_2_PORT 0x42
 #define PC_SPEAKER_PORT 0x61
 
-static inline int is_kernel_context() {
+int is_kernel_context() {
     unsigned short cs;
     asm volatile ("mov %%cs, %0" : "=r" (cs));
     return (cs & 3) == 0; // CPL (Current Privilege Level) 0 means kernel mode

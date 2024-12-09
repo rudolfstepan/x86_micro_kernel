@@ -14,6 +14,8 @@
 #define INT_MIN (-2147483648)
 #endif
 
+int is_kernel_context();
+
 void* syscall(int syscall_index, void* parameter1, void* parameter2, void* parameter3);
 
 // File Handling Functions

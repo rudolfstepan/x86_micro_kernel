@@ -1,32 +1,13 @@
 #include "fat32.h"
 #include "toolchain/stdio.h"
 
-// Function to read a file's data into a buffer
-// void readFileData(unsigned int startCluster, char* buffer, unsigned int size) {
-//     unsigned int currentCluster = startCluster;
-//     unsigned int bytesRead = 0;
-//     while (bytesRead < size) {
-//         unsigned int sectorNumber = cluster_to_sector(&boot_sector, currentCluster);
-//         // Read each sector in the current cluster
-//         for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-//             ata_read_sector(ata_base_address, sectorNumber + i, buffer + bytesRead, ata_is_master);
-//             bytesRead += SECTOR_SIZE;
-//             if (bytesRead >= size) {
-//                 break;  // Stop if we have read the required size
-//             }
-//         }
-//         // Get the next cluster in the chain
-//         currentCluster = get_next_cluster_in_chain(&boot_sector, currentCluster);
-//         // Check if we have reached the end of the file
-//         if (isEndOfClusterChain(currentCluster)) {
-//             break;
-//         }
-//     }
-// }
 
 unsigned int readFileData(unsigned int startCluster, char* buffer, unsigned int bufferSize, unsigned int bytesToRead) {
     if (buffer == NULL || bufferSize == 0 || bytesToRead == 0) {
         // Invalid parameters; return 0 to indicate no data read
+
+        printf("Error: Invalid parameters for reading file data.\n");
+
         return 0;
     }
 
@@ -107,29 +88,6 @@ int fat32_load_file(const char* filename, void* loadAddress) {
     // Assuming readFileData is modified to take a pointer to the load address
     return readFileDataToAddress(startCluster, loadAddress, fileSize);
 }
-
-// void openAndLoadFile(const char* filename) {
-//     struct FAT32DirEntry* entry = findFileInDirectory(filename);
-//     if (entry == NULL) {
-//         printf("File not found.\n");
-//         return;
-//     }
-//     unsigned int startCluster = read_start_cluster(entry);
-//     int fileSize = entry->fileSize;
-//     char* buffer = malloc(fileSize);
-//     if (buffer == NULL) {
-//         printf("Not enough memory.\n");
-//         return;
-//     }
-//     readFileData(startCluster, buffer, sizeof(buffer), fileSize);
-
-//     // Process the file data in bufferb
-//     // for(int i = 0; i < fileSize; i++){
-//     //     printf("%c", buffer[i]);
-//     // }
-//     free(entry); // Free the memory after use
-//     free(buffer); // Free the memory after use
-// }
 
 // Function to find a file in the current directory
 struct FAT32DirEntry* findFileInDirectory(const char* filename) {
@@ -238,7 +196,6 @@ FILE* fat32_open_file(const char* filename, const char* mode) {
 
     file->position = 0;
     file->size = fileSize;
-    file->ptr = (unsigned char*)malloc(fileSize);
     file->mode = mode;
     file->name = filename;
     file->startCluster = startCluster;

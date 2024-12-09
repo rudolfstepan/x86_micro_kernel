@@ -3,7 +3,7 @@
 
 typedef struct {
     unsigned char *base;  // Base address of the file in memory
-    unsigned char *ptr;   // Current read/write position
+    //unsigned char *ptr;   // Current read/write position
     unsigned int startCluster;    // startCluster of the file
     const char* mode;     // Mode the file was opened with
     const char* name;     // Name of the file

@@ -7,10 +7,26 @@
 // #include "drivers/video/vga.h"
 #include "drivers/video/framebuffer.h"
 #include "kernel/pit.h"
+#include "kernel/memory.h"
 
 //TryContext* current_try_context = NULL;
 
 void* malloc(size_t size) {
+
+    if(is_kernel_context()) {
+        void* allocated_memory = k_malloc(size);
+
+        if (allocated_memory) {
+            printf("Memory allocated at: %p, size: %u\n", allocated_memory, size);
+        } else {
+            //set_color(RED);
+            printf("Memory allocation failed.\n");
+            //set_color(WHITE);
+        }
+
+        return allocated_memory;
+    }
+
     // perform a syscall to allocate memory
     void* allocated_memory = syscall(SYS_MALLOC, (void*)size, NULL, NULL); // Allocate 1024 bytes
 
@@ -19,9 +35,9 @@ void* malloc(size_t size) {
     if (allocated_memory) {
         //printf("Memory allocated at: %p\n", allocated_memory);
     } else {
-        set_color(RED);
+        //set_color(RED);
         printf("Memory allocation failed.\n");
-        set_color(WHITE);
+        //set_color(WHITE);
     }
 
     return allocated_memory;
@@ -68,18 +84,6 @@ void aligned_free(void* ptr) {
         free(((void**)ptr)[-1]);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 void* realloc(void *ptr, size_t new_size) {
     return syscall(SYS_REALLOC, ptr, (void*)(uintptr_t)new_size, 0);

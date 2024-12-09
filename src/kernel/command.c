@@ -770,16 +770,30 @@ void cmd_show(int arg_count, const char** arguments) {
         return;
     }
 
-    uint32_t filesize = 0;
-    // load the file into memory
-    if ((filesize = fat32_load_file(filename, (void*)0x01000000)) > 0) {
-        printf("File loaded into memory: %s\n", filename);
-        // print the file content
-        char* buffer = (char*)0x01000000;
-        printf("%s, size: %u\n", buffer, filesize);
-
-
-    } else {
+    FILE* file = fat32_open_file(filename, "r");
+    if (file == NULL) {
         printf("File not found: %s\n", filename);
+        return;
     }
+
+    printf("Name: %s, %u\n", file->name, file->size);
+
+    // Calculate the size of the buffer based on the size of the file
+    size_t bufferSize = file->size; // Use the file size as the buffer size directly
+    char* buffer = (char*)malloc(bufferSize + 1);
+
+    if (buffer == NULL) {
+        printf("Failed to allocate memory for file buffer\n");
+        return;
+    }
+
+    // Read the file into the buffer, passing the correct size
+    int result = fat32_read_file(file, buffer, bufferSize, bufferSize); // Pass bufferSize as the buffer size
+
+    hex_dump((unsigned char*)buffer, 512);
+
+    secure_free(buffer, sizeof(buffer));  // Clear the buffer
+
+    printf("Result: %d\n", result);
+
 }
