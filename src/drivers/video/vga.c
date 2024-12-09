@@ -43,7 +43,7 @@ void get_cursor_position(int *x, int *y) {
 }
 
 // set the cursor position
-void set_cursor_position(int x, int y) {
+void vga_set_cursor_position(int x, int y) {
     // The screen is 80 characters wide...
     unsigned short position = (y * 80) + x;
 

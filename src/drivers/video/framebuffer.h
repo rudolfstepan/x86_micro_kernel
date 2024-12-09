@@ -49,5 +49,7 @@ void draw_string(const char *str, uint32_t color, uint32_t bg_color);
 void put_char(char c, uint32_t color, uint32_t bg_color);
 void fb_write_char(char ch);
 void set_color(uint32_t color);
+void set_bg_color(uint32_t color);
+void set_cursor_position(uint32_t x, uint32_t y);
 
 #endif // FRAMEBUFFER_H

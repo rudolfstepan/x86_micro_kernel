@@ -16,6 +16,15 @@ void set_color(uint32_t color) {
     txt_color = color;
 }
 
+void set_bg_color(uint32_t color) {
+    bg_color = color;
+}
+
+void set_cursor_position(uint32_t x, uint32_t y) {
+    cursor_x = x;
+    cursor_y = y;
+}
+
 void parse_framebuffer(multiboot2_tag_framebuffer_t *fb) {
     if (fb == NULL) {
         printf("Framebuffer tag not found.\n");
@@ -28,11 +37,13 @@ void parse_framebuffer(multiboot2_tag_framebuffer_t *fb) {
     fb_info.height = fb->framebuffer_height;
     fb_info.bpp = fb->framebuffer_bpp;
 
+    set_color(BLUE);
     printf("Framebuffer Info:\n");
     printf("  Address: 0x%lx\n", fb_info.address);
     printf("  Resolution: %ux%u\n", fb_info.width, fb_info.height);
     printf("  Bits Per Pixel: %u\n", fb_info.bpp);
     printf("  Pitch: %u bytes per scanline\n", fb_info.pitch);
+    set_color(WHITE);
 }
 
 void draw_char(uint32_t x, uint32_t y, char c, uint32_t font_color) {
