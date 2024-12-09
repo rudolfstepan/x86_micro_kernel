@@ -33,7 +33,7 @@
 //#include "paging.h"
 // #include "drivers/network/rtl8139.h"
 // #include "drivers/network/e1000.h"
-#include "drivers/network/ne2000.h"
+//#include "drivers/network/ne2000.h"
 // #include "drivers/network/vmxnet3.h"
 
 extern char _stack_start;  // Start address of the stack
@@ -205,33 +205,33 @@ void print_fancy_prompt() {
     set_color(WHITE);
 }
 
-void task1() {
-    int counter = 0;
-    printf("+++Task 1 started\n");
-    while (1) {
-       counter++;
-       //delay_ms(1000);
-       //if(counter == 1000){
-           //printf("Task 1 running...\n");
-           counter = 0;
-           asm volatile("int $0x29"); // Trigger a timer interrupt
-       //}
-    }
-}
+// void task1() {
+//     int counter = 0;
+//     printf("+++Task 1 started\n");
+//     while (1) {
+//        counter++;
+//        //delay_ms(1000);
+//        //if(counter == 1000){
+//            //printf("Task 1 running...\n");
+//            counter = 0;
+//            asm volatile("int $0x29"); // Trigger a timer interrupt
+//        //}
+//     }
+// }
 
-void task2() {
-    int counter = 0;
-    printf("+++Task 2 started\n");
-    while (1) {
-       counter++;
-       //delay_ms(1000);
-       //if(counter == 1000){
-           //printf("Task 2 running...\n");
-           counter = 0;
-           asm volatile("int $0x29"); // Trigger a timer interrupt
-       //}
-    }
-}
+// void task2() {
+//     int counter = 0;
+//     printf("+++Task 2 started\n");
+//     while (1) {
+//        counter++;
+//        //delay_ms(1000);
+//        //if(counter == 1000){
+//            //printf("Task 2 running...\n");
+//            counter = 0;
+//            asm volatile("int $0x29"); // Trigger a timer interrupt
+//        //}
+//     }
+// }
 
 extern fat32_class_t fat32;
 //---------------------------------------------------------------------------------------------
@@ -268,11 +268,11 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
     // Initialize PCI subsystem
     pci_init();
 
-    register_interrupt_handler(9, scheduler_interrupt_handler);
+    register_interrupt_handler(9, (void *)scheduler_interrupt_handler);
 
     //rtl8139_detect();
     //e1000_detect();
-    ne2000_detect();
+    //ne2000_detect();
     //vmxnet3_setup();
     
     pci_probe_drivers();
@@ -310,7 +310,6 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
     // //clear_screen();
     // print_welcome_message();
 
-
     // load_program_into_memory("DIR.PRG", 0x01100000);
     // program_header_t* header = (program_header_t*)0x01100000;
     // create_task(0x01100000 + header->entry_point, stack1, sizeof(stack1));
@@ -334,18 +333,17 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
     // // create_task(task2, stack3);
     // create_task(command_loop, stack1);
 
-    create_process(task1);
-    create_process(command_loop);
+    // create_process(task1);
+    // create_process(command_loop);
 
-    // Initialize the APIC timer
-    init_apic_timer(1000000);  // Set timer ticks
+    // // Initialize the APIC timer
+    // init_apic_timer(1000000);  // Set timer ticks
 
-    
+    command_loop();
 
-    while (1) {
-        //printf("Kernel Main Loop\n");
-        delay_ms(100);
-        asm volatile("int $0x29"); // Trigger a timer interrupt
-    }   
-
+    // while (1) {
+    //     //printf("Kernel Main Loop\n");
+    //     delay_ms(100);
+    //     asm volatile("int $0x29"); // Trigger a timer interrupt
+    // }   
 }

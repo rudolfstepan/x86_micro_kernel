@@ -10,7 +10,6 @@
 #include "toolchain/definitions.h"
 #include "drivers/ata/ata.h"
 
-#define SECTOR_SIZE 512
 #define FIRST_CLUSTER_OF_FILE(clusterHigh, clusterLow) (((clusterHigh) << 16) | (clusterLow))
 #define DIRECTORY_ENTRY_SIZE 32  // Size of a directory entry in FAT32
 #define ATTR_DIRECTORY 0x10

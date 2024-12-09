@@ -87,7 +87,7 @@ static inline void flush_tlb() {
 }
 
 page_directory_t* create_page_directory() {
-    page_directory_t* pd = allocate_page(); // Allocate one page for the directory
+    page_directory_t* pd = (page_directory_t *)allocate_page(); // Allocate one page for the directory
     if (!pd) {
         printf("Failed to allocate page directory.\n");
         return NULL;

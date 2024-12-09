@@ -58,7 +58,7 @@ uint32_t pci_read_config_dword(uint8_t bus, uint8_t slot, uint8_t function, uint
 
 void pci_enable_device(pci_device_t *dev);
 uint32_t pci_read_bar(pci_device_t *dev, uint8_t bar_index);
-volatile uint32_t *map_mmio(uint64_t physical_address);
+volatile uint32_t *map_mmio(uint32_t physical_address);
 uint8_t pci_configure_irq(pci_device_t *dev);
 void pci_register_driver(uint16_t vendor_id, uint16_t device_id, int (*probe)(pci_device_t *));
 void pci_probe_drivers();

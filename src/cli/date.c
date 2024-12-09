@@ -1,5 +1,6 @@
 #include "drivers/rtc/rtc.h"
 #include "toolchain/stdio.h"
+#include "drivers/video/framebuffer.h"
 // #include "drivers/video/vga.h"
 
 #define SCREEN_WIDTH 80  // Assuming 80x25 screen

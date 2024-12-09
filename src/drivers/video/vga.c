@@ -26,7 +26,7 @@ void vga_clear_screen() {
 }
 
 // get the cursor position
-void get_cursor_position(int *x, int *y) {
+void vga_get_cursor_position(int *x, int *y) {
     unsigned short position;
 
     // Read from Cursor Location High Register
@@ -66,7 +66,7 @@ void vga_write_char(char ch) {
     // when other code writes to the screen
     int current_x = cursor_x;
     int current_y = cursor_y;
-    get_cursor_position(&current_x, &current_y);
+    vga_get_cursor_position(&current_x, &current_y);
     cursor_x = current_x;
     cursor_y = current_y;
 
@@ -107,7 +107,7 @@ void vga_write_char(char ch) {
 // delete a character from the screen and move the cursor back to the previous position
 void vga_backspace() {
     int cursor_x, cursor_y;
-    get_cursor_position(&cursor_x, &cursor_y);
+    vga_get_cursor_position(&cursor_x, &cursor_y);
 
     // Move cursor one position to the left
     if (cursor_x == 0 && cursor_y > 0) {

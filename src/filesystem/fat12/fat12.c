@@ -8,8 +8,8 @@
 #define MAX_PATH_LENGTH 256
 #define MAX_ENTRIES 224
 #define ROOT_ENTRY_SIZE 32
-#define SECTOR_SIZE 512
 #define ROOT_DIR_SECTORS 14
+#define SECTOR_SIZE 512
 
 // Constants for floppy disk properties
 #define SECTORS_PER_TRACK 18     // Number of sectors per track (typical for 1.44MB floppy disk)

@@ -25,6 +25,11 @@ void set_cursor_position(uint32_t x, uint32_t y) {
     cursor_y = y;
 }
 
+void get_cursor_position(int *x, int *y) {
+    *x = cursor_x;
+    *y = cursor_y;
+}
+
 void parse_framebuffer(multiboot2_tag_framebuffer_t *fb) {
     if (fb == NULL) {
         printf("Framebuffer tag not found.\n");

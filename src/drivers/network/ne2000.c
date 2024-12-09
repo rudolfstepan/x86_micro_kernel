@@ -83,7 +83,7 @@ static inline void ne2000_write(uint8_t reg, uint8_t value) {
 static inline uint8_t ne2000_read(uint8_t reg) {
      if(io_base == 0) {
         printf("IO base address not set\n");
-        return;
+        return 0;
     }
     return inb(io_base + reg);
 }

@@ -124,7 +124,7 @@ unsigned int cluster_to_sector(struct Fat32BootSector* boot_sector, unsigned int
 void read_cluster(struct Fat32BootSector* boot_sector, unsigned int clusterNumber, void* buffer) {
     unsigned int startSector = cluster_to_sector(boot_sector, clusterNumber);
     for (unsigned int i = 0; i < boot_sector->sectorsPerCluster; ++i) {
-        ata_read_sector(ata_base_address, startSector + i, buffer + (i * SECTOR_SIZE), ata_is_master);
+        ata_read_sector(ata_base_address, startSector + i, (uint8_t *)buffer + (i * SECTOR_SIZE), ata_is_master);
     }
 }
 

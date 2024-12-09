@@ -19,7 +19,7 @@
 #include "filesystem/fat12/fat12.h"
 // #include "drivers/network/rtl8139.h"
 // #include "drivers/network/e1000.h"
-#include "drivers/network/ne2000.h"
+//#include "drivers/network/ne2000.h"
 // #include "drivers/network/vmxnet3.h"
 
 
@@ -45,7 +45,7 @@ typedef void (*command_func)(int cnt, const char **args);
 
 // Command structure
 typedef struct {
-    char *name;
+    const char *name;
     command_func execute;
 } command_t;
 
@@ -141,7 +141,7 @@ void process_command(char *input_buffer) {
     int found = 0;
     for (int i = 0; command_table[i].name != NULL; i++) {
 
-        str_to_upper(command_table[i].name);
+        str_to_upper((char*)command_table[i].name);
 
         if (strcmp(command, command_table[i].name) == 0) {
             command_table[i].execute(arg_cnt, (const char**)arguments);
@@ -196,7 +196,7 @@ void command_loop() {
             }
         }
 
-        asm volatile("int $0x29"); // Trigger a timer interrupt
+        //asm volatile("int $0x29"); // Trigger a timer interrupt
     }
 }
 
@@ -645,28 +645,37 @@ void openFile(const char* path) {
         printf("Size: %d\n", file->size);
 
         // Calculate the size of the buffer based on the size of the file
-        size_t bufferSize = file->size; // Use the file size as the buffer size directly
+        //size_t bufferSize = file->size; // Use the file size as the buffer size directly
 
         // Allocate the buffer
-        char* buffer = (char*)malloc(bufferSize +1);
+        char* buffer = (char*)malloc(64);
         if (buffer == NULL) {
             printf("Failed to allocate memory for file buffer\n");
             return;
         }
 
+        // clear the buffer
+        memset(buffer, 0, 64);
+
         // Read the file into the buffer, passing the correct size
-        int result = fat32_read_file(file, buffer, bufferSize, bufferSize); // Pass bufferSize as the buffer size
+        int result = fat32_read_file(file, buffer, 64, 64); // Pass bufferSize as the buffer size
         if (result == 0) {
             printf("Failed to read file\n");
             return;
         }
 
-        printf("Result: %d\n", result);
+        // printf("Result: %d\n", result);
+
+        // printf("File contents:\n");
+        // printf("%s\n", buffer);
+
+        hex_dump(buffer, 64);
 
         printf("File contents:\n");
-        printf("%s\n", buffer);
 
-        secure_free(buffer, sizeof(buffer));  // Clear the buffer
+        free(buffer);  // Clear the buffer
+
+
         break;
 }
     case DRIVE_TYPE_FDD:
@@ -740,7 +749,7 @@ void cmd_net(int arg_count, const char** arguments) {
 
         //test_loopback();
         //e1000_send_test_packet();
-        ne2000_test_send();
+        //ne2000_test_send();
         //test_vmxnet3();
         //rtl8139_send_test_packet();
 

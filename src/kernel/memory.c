@@ -55,7 +55,7 @@ void initialize_memory_system() {
 
     uintptr_t memory_end = 0x1FDFFFFF; //0x1FDFFFFF; // 511MB
     // setup the stack
-    uint32_t stack_size = 1024 * 8;
+    uint32_t stack_size = 1024 * 16;
     uint32_t* stack_start = (uint32_t*)(&_kernel_end - stack_size);
     uint32_t stack_end = HEAP_END;
 
@@ -80,7 +80,7 @@ void initialize_memory_system() {
     // Dynamically allocate the frame bitmap
     size_t bitmap_size = (total_memory / FRAME_SIZE + 7) / 8; // Rounded up
     frame_bitmap = (uint8_t*)heap_start;
-    //memset(frame_bitmap, 0, bitmap_size);
+    memset(frame_bitmap, 0, bitmap_size);
 
     print_memory_size(total_memory);
     printf("Heap Range: %p - %p\n", heap_start, heap_end);

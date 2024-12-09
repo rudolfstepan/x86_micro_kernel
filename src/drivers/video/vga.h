@@ -38,7 +38,7 @@ void vga_set_color(char color);
 void vga_backspace();
 void vga_write_char(char ch);
 void vga_clear_screen();
-void get_cursor_position(int *x, int *y);
+void vga_get_cursor_position(int *x, int *y);
 void vga_set_cursor_position(int x, int y);
 
 

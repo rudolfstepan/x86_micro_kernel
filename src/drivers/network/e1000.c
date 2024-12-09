@@ -113,7 +113,7 @@ uint16_t tx_cur = 0;      // Current Transmit Descriptor Buffer
 uint8_t old_cur;
 
 // Buffers for RX and TX
-void *rx_buffers[E1000_NUM_RX_DESC]; // Array to hold RX buffer addresses
+char *rx_buffers[E1000_NUM_RX_DESC]; // Array to hold RX buffer addresses
 
 // Read a 32-bit register
 static inline uint32_t e1000_read_reg(uint32_t offset) {
@@ -174,14 +174,14 @@ void initialize_rings_and_buffers() {
     // Initialize RX descriptors and buffers
     for (int i = 0; i < E1000_NUM_RX_DESC; i++) {
         // Allocate RX buffer with proper alignment
-        rx_buffers[i] = aligned_alloc(16, RX_BUFFER_SIZE);
+        rx_buffers[i] = (char *)aligned_alloc(16, RX_BUFFER_SIZE);
         if (!rx_buffers[i]) {
             printf("Failed to allocate RX buffer %d\n", i);
             exit(1); // Handle allocation failure
         }
 
         // Initialize RX descriptor
-        rx_descs[i].buffer_addr = (uint64_t)rx_buffers[i];
+        rx_descs[i].buffer_addr = (uint32_t)rx_buffers[i];
         rx_descs[i].length = 0;
         rx_descs[i].status = 0; // Descriptor not yet ready
         rx_descs[i].errors = 0;
@@ -295,9 +295,9 @@ void e1000_receive_packet() {
     }
 }
 
-void e1000_get_mac_address(uint8_t *mac[6]) {
+void e1000_get_mac_address(uint8_t **mac) {
     for (int i = 0; i < 6; i++) {
-        mac[i] = e1000_device.mmio_base[i];
+        (*mac)[i] = ((uint8_t *)&e1000_device.mmio_base[i / 4])[i % 4];
     }
 }
 
@@ -372,7 +372,7 @@ int e1000_probe(pci_device_t *pci_dev) {
         // Initialize the device
         e1000_init(&e1000_device);
 
-        uint8_t mac[6];
+        uint8_t *mac = (uint8_t *)malloc(6);
         e1000_get_mac_address(&mac);
 
         printf("E1000 MAC: %02X:%02X:%02X:%02X:%02X:%02X, ", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);

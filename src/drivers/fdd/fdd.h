@@ -18,10 +18,8 @@
 #define FDC_RECALIBRATE_CMD  0x07   // Recalibrate command
 #define FDC_SENSE_INTERRUPT_CMD 0x08  // Command to sense interrupt status
 
-#define SECTOR_SIZE    512    // Sector size for FDD
 #define TIMEOUT_LIMIT  10000  // Arbitrary timeout limit for waiting loops
 
-#define SECTOR_SIZE    512    // Sector size for FDD
 #define FDD_SECTOR_CNT 1     // Reading/writing 1 sector at a time
 
 extern void fdd_irq_handler(uint8_t* r);

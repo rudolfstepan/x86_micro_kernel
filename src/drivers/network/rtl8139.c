@@ -69,7 +69,7 @@
 typedef struct {
     uint32_t tx_buffers[TX_BUFFER_SIZE];
     uint32_t rx_buffers[RX_BUFFER_SIZE];
-    volatile uint32_t *mmio_base;     // MMIO base address
+    uint32_t *mmio_base;     // MMIO base address
     uint32_t irq;                     // IRQ number
     uint32_t tx_producer;             // TX producer index
     uint32_t rx_producer;             // RX producer index

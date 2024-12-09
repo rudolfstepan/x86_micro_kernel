@@ -145,7 +145,6 @@
 #define PIC1_COMMAND         0x20   // Primary PIC command port
 #define PIC1_DATA            0x21   // PIC data port
 #define PIC_EOI              0x20   // End of Interrupt command
-#define SECTOR_SIZE          512
 
 #define DMA_CHANNEL_MASK 0x0A
 #define DMA_MODE 0x0B
@@ -159,8 +158,11 @@
 #define FDD_DRIVE_A 0     // Drive number for A:
 #define FDD_DRIVE_B 1     // Drive number for B:
 
+
 static volatile bool irq_triggered = false; // IRQ6 flag for FDD 0x10
 static volatile bool irq_ready_triggered = false; // IRQ6 ready flag 0x80
+
+uint8_t sector_size = (uint8_t)512;  // Size of a sector in bytes
 
 // FDC IRQ handler for IRQ6
 void fdd_irq_handler(uint8_t* r) {
@@ -327,7 +329,7 @@ bool _fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector
     //fdc_wait_for_irq();  // Wait for any pending IRQs to clear
     //delay_ms(10);  // Small delay before issuing command
     // prepare DMA for reading
-    dma_prepare_floppy((uint8_t*)buffer, SECTOR_SIZE, true);
+    dma_prepare_floppy((uint8_t*)buffer, sector_size, true);
 
     //delay_ms(10);  // Small delay before issuing command
 
@@ -369,7 +371,10 @@ bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track, uint8_t start_
             fdc_motor_off(drive);  // Turn off the motor if an error occurs
             return false;
         }
-        buffer += SECTOR_SIZE;  // Move to the next buffer location
+
+        uint8_t *ptr = (uint8_t *)buffer;
+        ptr += sector_size;  // Move to the next buffer location
+        buffer = ptr;        // Update the original buffer pointer if necessary
     }
 
     fdc_motor_off(drive); // Turn off the motor after reading all sectors
@@ -413,7 +418,7 @@ bool fdc_read_sector_no_dma(uint8_t drive, uint8_t head, uint8_t track, uint8_t 
 
     // Read sector data byte-by-byte from the FIFO register
     uint8_t* buf = (uint8_t*)buffer;
-    for (int i = 0; i < SECTOR_SIZE; i++) {
+    for (int i = 0; i < sector_size; i++) {
         if (!wait_for_fdc_ready()) {  // Ensure FDC is ready before reading each byte
             printf("FDC not ready while reading data (no DMA).\n");
             fdc_motor_off(drive);
@@ -431,7 +436,7 @@ bool fdc_read_sector_no_dma(uint8_t drive, uint8_t head, uint8_t track, uint8_t 
 
 void debug_read_bootsector(uint8_t sector) {
 
-    uint8_t* buffer = (uint8_t*)malloc(SECTOR_SIZE);
+    uint8_t* buffer = (uint8_t*)malloc(sector_size);
     if (!buffer) {
         printf("Memory allocation failed for sector buffer.\n");
         return;
@@ -480,7 +485,7 @@ bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector
     }
 
     //fdc_wait();  // Wait until FDC is ready to accept data
-    outsw(FDD_FIFO, buffer, SECTOR_SIZE / 2);  // Transfer buffer to FDC FIFO
+    outsw(FDD_FIFO, buffer, sector_size / 2);  // Transfer buffer to FDC FIFO
 
      if (!fdc_wait_for_irq()) {
         printf("Write operation failed: IRQ timeout.\n");

@@ -7,12 +7,12 @@
 
 
 // Deklaration der Assembly-Funktion für den Kontextwechsel
-extern void swtch(context_t *old, context_t *new);
+extern void swtch(context_t *old_context, context_t *new_context);
 
 // Task-Liste
 task_t tasks[MAX_TASKS];
 volatile uint8_t current_task = 0; // ID des aktuellen Tasks
-uint8_t num_tasks = 0;             // Anzahl der registrierten Tasks
+volatile static uint8_t num_tasks = 0;             // Anzahl der registrierten Tasks
 
 
 // // Helper: Load CR3 (Page Directory Base Register)
@@ -174,8 +174,10 @@ void scheduler_interrupt_handler() {
 
 
 void create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
+
+    printf("Task Nr. %d: Creating task with entry point %p\n", num_tasks, entry_point);
     if (num_tasks >= MAX_TASKS) {
-        printf("Error: Maximum number of tasks reached!\n");
+        printf("Task Nr. %d: Error: Maximum number of tasks reached!\n", num_tasks);
         return;
     }
 

@@ -17,7 +17,7 @@ struct e1000_tx_desc {
 } __attribute__((packed));
 
 struct e1000_rx_desc {
-    volatile uint64_t buffer_addr; // Address of the data buffer
+    volatile uint32_t buffer_addr; // Address of the data buffer
     volatile uint16_t length;      // Length of the received data
     volatile uint16_t checksum;    // Packet checksum
     volatile uint8_t  status;      // Descriptor status (DD, EOP bits)
