@@ -763,7 +763,13 @@ void cmd_show(int arg_count, const char** arguments) {
 
     char* filename = (char*)arguments[0];
 
-    
+    // color test
+    if(strcmp(filename, "COLOR") == 0) {
+        fb_color_test();
+        
+        return;
+    }
+
     uint32_t filesize = 0;
     // load the file into memory
     if ((filesize = fat32_load_file(filename, (void*)0x01000000)) > 0) {
@@ -776,5 +782,4 @@ void cmd_show(int arg_count, const char** arguments) {
     } else {
         printf("File not found: %s\n", filename);
     }
-
 }

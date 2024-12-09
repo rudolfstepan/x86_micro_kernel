@@ -188,4 +188,55 @@ void fb_backspace() {
             draw_pixel(cursor_x + col, cursor_y + row, bg_color);
         }
     }
-}   
+}  
+
+void fb_color_test() {
+    uint32_t *framebuffer = (uint32_t *)fb_info.address;
+    uint32_t width = fb_info.width;
+    uint32_t height = fb_info.height;
+    uint32_t pitch_in_pixels = fb_info.pitch / 4;
+
+    // Test 1: Vertical Gradient (RGB)
+    for (uint32_t y = 0; y < height / 3; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            uint32_t color = (y * 255 / (height / 3)) << 16; // Red gradient
+            framebuffer[y * pitch_in_pixels + x] = color;
+        }
+    }
+
+    for (uint32_t y = height / 3; y < (2 * height) / 3; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            uint32_t color = ((y - height / 3) * 255 / (height / 3)) << 8; // Green gradient
+            framebuffer[y * pitch_in_pixels + x] = color;
+        }
+    }
+
+    for (uint32_t y = (2 * height) / 3; y < height; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            uint32_t color = ((y - (2 * height) / 3) * 255 / (height / 3)); // Blue gradient
+            framebuffer[y * pitch_in_pixels + x] = color;
+        }
+    }
+
+    // Test 2: Horizontal Gradient (Brightness)
+    for (uint32_t y = 0; y < height / 3; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            uint32_t brightness = (x * 255 / width);
+            uint32_t color = (brightness << 16) | (brightness << 8) | brightness; // Gray gradient
+            framebuffer[(height / 3 + y) * pitch_in_pixels + x] = color;
+        }
+    }
+
+    // Test 3: Color Blocks
+    uint32_t block_size = width / 8;
+    uint32_t colors[] = { 0xFF0000, 0x00FF00, 0x0000FF, 0xFFFF00, 0xFF00FF, 0x00FFFF, 0x808080, 0xFFFFFF };
+
+    for (uint32_t i = 0; i < 8; i++) {
+        for (uint32_t y = (2 * height) / 3; y < height; y++) {
+            for (uint32_t x = i * block_size; x < (i + 1) * block_size; x++) {
+                framebuffer[y * pitch_in_pixels + x] = colors[i];
+            }
+        }
+    }
+}
+
