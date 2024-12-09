@@ -1,6 +1,6 @@
 #include "drivers/rtc/rtc.h"
 #include "toolchain/stdio.h"
-#include "drivers/video/vga.h"
+// #include "drivers/video/vga.h"
 
 #define SCREEN_WIDTH 80  // Assuming 80x25 screen
 #define TIME_ROW 0       // Row to display the time

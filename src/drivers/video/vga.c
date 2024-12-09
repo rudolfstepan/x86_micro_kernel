@@ -6,7 +6,7 @@
 unsigned short* vga_buffer = (unsigned short*)VGA_ADDRESS;
 char current_color = 0x0F; // White on black background
 
-void set_color(char color) {
+void vga_set_color(char color) {
     current_color = color;
 }
 

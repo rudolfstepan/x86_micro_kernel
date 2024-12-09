@@ -11,7 +11,7 @@
 #include "toolchain/string.h"
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
-#include "drivers/video/vga.h"
+// #include "drivers/video/vga.h"
 #include "drivers/video/framebuffer.h"
 #include "drivers/kb/kb.h"
 #include "filesystem/filesystem.h"

@@ -34,12 +34,12 @@
 
 
 // Function prototypes
-extern void set_color(char color);
-extern void vga_backspace();
-extern void vga_write_char(char ch);
-extern void vga_clear_screen();
-extern void get_cursor_position(int *x, int *y);
-extern void set_cursor_position(int x, int y);
+void vga_set_color(char color);
+void vga_backspace();
+void vga_write_char(char ch);
+void vga_clear_screen();
+void get_cursor_position(int *x, int *y);
+void set_cursor_position(int x, int y);
 
 
 #endif /* VGA_H */

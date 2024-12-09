@@ -10,7 +10,7 @@
 #include "filesystem/fat32/fat32.h"
 #include "filesystem/fat12/fat12.h"
 #include "drivers/io/io.h"
-#include "drivers/video/vga.h"
+// #include "drivers/video/vga.h"
 #include "drivers/video/framebuffer.h"
 #include "drivers/kb/kb.h"
 

@@ -8,7 +8,13 @@ uint32_t cursor_x = 0;
 uint32_t cursor_y = 0;
 uint32_t line_height = 20; // Height of a single text line (e.g., 8x16 font)
 
-framebuffer_info_t fb_info;
+static uint32_t txt_color = WHITE;
+static uint32_t bg_color = BLACK;
+static framebuffer_info_t fb_info;
+
+void set_color(uint32_t color) {
+    txt_color = color;
+}
 
 void parse_framebuffer(multiboot2_tag_framebuffer_t *fb) {
     if (fb == NULL) {
@@ -29,32 +35,32 @@ void parse_framebuffer(multiboot2_tag_framebuffer_t *fb) {
     printf("  Pitch: %u bytes per scanline\n", fb_info.pitch);
 }
 
-void draw_char(uint32_t x, uint32_t y, char c, uint32_t color) {
+void draw_char(uint32_t x, uint32_t y, char c, uint32_t font_color) {
     uint32_t *framebuffer = (uint32_t *)fb_info.address;
 
     for (uint8_t row = 0; row < 16; row++) {
         uint8_t row_data = font[(uint8_t)c + 2][row];
         for (uint8_t col = 0; col < 8; col++) {
             if (row_data & (1 << (7 - col))) {
-                framebuffer[((y + row) * fb_info.pitch / 4) + (x + col)] = color;
+                framebuffer[((y + row) * fb_info.pitch / 4) + (x + col)] = font_color;
             }
         }
     }
 }
 
-void draw_string(const char *str, uint32_t color, uint32_t bg_color) {
+void draw_string(const char *str, uint32_t font_color, uint32_t bg_color) {
     while (*str) {
-        put_char(*str++, color, bg_color);
+        put_char(*str++, font_color, bg_color);
     }
 }
 
-void draw_pixel(uint32_t x, uint32_t y, uint32_t color) {
+void draw_pixel(uint32_t x, uint32_t y, uint32_t font_color) {
     if (x >= fb_info.width || y >= fb_info.height) {
         return; // Out of bounds
     }
 
     uint32_t *framebuffer = (uint32_t *)fb_info.address;
-    framebuffer[(y * fb_info.pitch / 4) + x] = color;
+    framebuffer[(y * fb_info.pitch / 4) + x] = font_color;
 }
 
 void render_gradient() {
@@ -68,11 +74,10 @@ void render_gradient() {
 }
 
 void clear_screen() {
-    uint32_t color = 0x000000; // Black
     uint32_t *framebuffer = (uint32_t *)fb_info.address;
     for (uint32_t y = 0; y < fb_info.height; y++) {
         for (uint32_t x = 0; x < fb_info.width; x++) {
-            framebuffer[(y * fb_info.pitch / 4) + x] = color;
+            framebuffer[(y * fb_info.pitch / 4) + x] = bg_color;
         }
     }
     // Reset cursor position
@@ -80,49 +85,12 @@ void clear_screen() {
     cursor_y = 0;
 }
 
-void fill_screen(uint32_t color) {
+void fill_screen(uint32_t bg_color) {
     for (uint32_t y = 0; y < fb_info.height; y++) {
         for (uint32_t x = 0; x < fb_info.width; x++) {
-            draw_pixel(x, y, color);
+            draw_pixel(x, y, bg_color);
         }
     }
-}
-
-void put_char(char c, uint32_t color, uint32_t bg_color) {
-    if (c == '\n') {
-        // Move to the next line
-        cursor_x = 0;
-        cursor_y += line_height;
-
-        // Scroll if at the bottom of the screen
-        if (cursor_y >= fb_info.height) {
-            scroll_screen(bg_color);
-            cursor_y -= line_height; // Adjust for scrolled line
-        }
-        return;
-    }
-
-    if (cursor_x >= fb_info.width) {
-        // Move to the next line if at the end of the screen
-        cursor_x = 0;
-        cursor_y += line_height;
-
-        // Scroll if at the bottom of the screen
-        if (cursor_y >= fb_info.height) {
-            scroll_screen(bg_color);
-            cursor_y -= line_height; // Adjust for scrolled line
-        }
-    }
-
-    // Draw the character at the current position
-    draw_char(cursor_x, cursor_y, c, color);
-
-    // Advance cursor
-    cursor_x += 8; // Font width is 8 pixels
-}
-
-void fb_write_char(char ch) {
-    put_char(ch, 0xFFFFFF, 0x000000); // White text
 }
 
 void clear_line(uint32_t y, uint32_t color) {
@@ -156,4 +124,41 @@ void scroll_screen(uint32_t bg_color) {
     for (uint32_t i = 0; i < line_size; i++) {
         framebuffer[start_of_last_line + i] = bg_color;
     }
+}
+
+void put_char(char c, uint32_t font_color, uint32_t bg_color) {
+    if (c == '\n') {
+        // Move to the next line
+        cursor_x = 0;
+        cursor_y += line_height;
+
+        // Scroll if at the bottom of the screen
+        if (cursor_y >= fb_info.height) {
+            scroll_screen(bg_color);
+            cursor_y -= line_height; // Adjust for scrolled line
+        }
+        return;
+    }
+
+    if (cursor_x >= fb_info.width) {
+        // Move to the next line if at the end of the screen
+        cursor_x = 0;
+        cursor_y += line_height;
+
+        // Scroll if at the bottom of the screen
+        if (cursor_y >= fb_info.height) {
+            scroll_screen(bg_color);
+            cursor_y -= line_height; // Adjust for scrolled line
+        }
+    }
+
+    // Draw the character at the current position
+    draw_char(cursor_x, cursor_y, c, font_color);
+
+    // Advance cursor
+    cursor_x += 8; // Font width is 8 pixels
+}
+
+void fb_write_char(char ch) {
+    put_char(ch, txt_color, bg_color);
 }

@@ -1,6 +1,6 @@
 ﻿#include "kb.h"
 #include "drivers/io/io.h"
-#include "drivers/video/vga.h"
+// #include "drivers/video/vga.h"
 #include "kernel/sys.h"
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"

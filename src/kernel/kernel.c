@@ -13,7 +13,7 @@
 
 #include "drivers/kb/kb.h"
 #include "drivers/rtc/rtc.h"
-#include "drivers/video/vga.h"
+// #include "drivers/video/vga.h"
 #include "drivers/io/io.h"
 
 #include "toolchain/stdio.h"
@@ -178,7 +178,6 @@ void display_color_test() {
     set_color(MAGENTA); printf("Magenta ");
     set_color(BROWN); printf("Brown ");
     set_color(LIGHT_GRAY); printf("Light Grey ");
-    set_color(DARK_GRAY); printf("Dark Grey ");
     set_color(LIGHT_BLUE); printf("Light Blue ");
     set_color(LIGHT_GREEN); printf("Light Green ");
     set_color(LIGHT_CYAN); printf("Light Cyan ");

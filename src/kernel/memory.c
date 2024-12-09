@@ -2,7 +2,8 @@
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
 #include "toolchain/string.h"
-#include "drivers/video/vga.h"
+// #include "drivers/video/vga.h"
+#include "drivers/video/framebuffer.h"
 #include "drivers/io/io.h"
 #include <stdbool.h>
 #include <stdint.h>

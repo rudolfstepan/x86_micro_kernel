@@ -4,7 +4,8 @@
 #include "stdlib.h"
 #include "stdio.h"
 #include "string.h"
-#include "drivers/video/vga.h"
+// #include "drivers/video/vga.h"
+#include "drivers/video/framebuffer.h"
 #include "kernel/pit.h"
 
 //TryContext* current_try_context = NULL;
