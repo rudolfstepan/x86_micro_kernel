@@ -52,4 +52,6 @@ void set_color(uint32_t color);
 void set_bg_color(uint32_t color);
 void set_cursor_position(uint32_t x, uint32_t y);
 
+void fb_backspace();
+
 #endif // FRAMEBUFFER_H

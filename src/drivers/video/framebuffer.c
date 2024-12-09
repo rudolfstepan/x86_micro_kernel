@@ -173,3 +173,19 @@ void put_char(char c, uint32_t font_color, uint32_t bg_color) {
 void fb_write_char(char ch) {
     put_char(ch, txt_color, bg_color);
 }
+
+void fb_backspace() {
+    if (cursor_x == 0 && cursor_y > 0) {
+        cursor_y -= line_height;
+        cursor_x = fb_info.width - 8; // Move to the end of the previous line
+    } else if (cursor_x > 0) {
+        cursor_x -= 8;
+    }
+
+    // Clear the character at the current position
+    for (uint8_t row = 0; row < 16; row++) {
+        for (uint8_t col = 0; col < 8; col++) {
+            draw_pixel(cursor_x + col, cursor_y + row, bg_color);
+        }
+    }
+}   

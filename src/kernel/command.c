@@ -186,7 +186,8 @@ void command_loop() {
             }else if (ch == '\b') {
                 if (buffer_index > 0) {
                     buffer_index--;
-                    vga_backspace();
+                    //vga_backspace();
+                    fb_backspace();
                 }
             } else {
                 // Regular character handling
