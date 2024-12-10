@@ -205,19 +205,19 @@ void print_fancy_prompt() {
     set_color(WHITE);
 }
 
-// void task1() {
-//     int counter = 0;
-//     printf("+++Task 1 started\n");
-//     while (1) {
-//        counter++;
-//        //delay_ms(1000);
-//        //if(counter == 1000){
-//            //printf("Task 1 running...\n");
-//            counter = 0;
-//            asm volatile("int $0x29"); // Trigger a timer interrupt
-//        //}
-//     }
-// }
+void task1() {
+    int counter = 0;
+    printf("+++Task 1 started\n");
+    while (1) {
+       counter++;
+       //delay_ms(1000);
+       //if(counter == 1000){
+           //printf("Task 1 running...\n");
+           counter = 0;
+           asm volatile("int $0x29"); // Trigger a timer interrupt
+       //}
+    }
+}
 
 // void task2() {
 //     int counter = 0;
@@ -242,9 +242,15 @@ extern fat32_class_t fat32;
 // multiboot_magic: the magic number passed by the bootloader
 // multiboot_info_ptr: a pointer to the multiboot information structure
 //---------------------------------------------------------------------------------------------
-void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
 
-    enumerate_multiboot2_tags(multiboot_info);
+void kernel_main(uint32_t magic, multiboot2_info_t *addr) {
+
+    if (magic != 0x36d76289) {
+        printf("Invalid magic number: 0x%x\n", magic);
+        return;
+    }
+
+    enumerate_multiboot2_tags(addr);
 
     initialize_memory_system();
 
@@ -329,17 +335,14 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
     // void* stack2 = k_malloc(STACK_SIZE);
     // // void* stack3 = k_malloc(STACK_SIZE);
 
-    // create_task(task1, stack2);
-    // // create_task(task2, stack3);
-    // create_task(command_loop, stack1);
 
     // create_process(task1);
     // create_process(command_loop);
 
+    command_loop();
+
     // // Initialize the APIC timer
     // init_apic_timer(1000000);  // Set timer ticks
-
-    command_loop();
 
     // while (1) {
     //     //printf("Kernel Main Loop\n");

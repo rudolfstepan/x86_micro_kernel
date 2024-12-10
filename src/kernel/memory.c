@@ -8,17 +8,17 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-extern char _kernel_end; // Defined by the linker script
+extern char __heap_start;   // Definiert im Linker-Skript
+extern char __heap_end;     // Definiert im Linker-Skript
+extern char __stack_top;    // Definiert im Linker-Skript
 
-size_t total_memory = 0;
+extern uint32_t total_memory;
 
-#define HEAP_START ((uint32_t)(&_kernel_end))
-#define HEAP_END ((uint32_t)(0x0f000000)) // End of heap (5MB)
+#define HEAP_START ((uintptr_t)&__heap_start)
+#define HEAP_END ((uintptr_t)&__heap_end)
 #define ALIGN_UP(addr, align) (((addr) + ((align)-1)) & ~((align)-1))
-#define HEAP_START_ALIGNED ALIGN_UP((size_t)HEAP_START, 16)
 #define BLOCK_SIZE sizeof(memory_block)
 
-#define E820_BUFFER_SIZE 128
 #define FRAME_SIZE 4096 // 4KB
 #define MAX_FRAMES (512 * 1024 * 1024 / FRAME_SIZE) // For 512MB RAM
 
@@ -44,36 +44,19 @@ void print_memory_size(uint64_t total_memory) {
     uint64_t total_kb = total_memory / (uint64_t)1024;
     uint64_t total_mb = total_kb / (uint64_t)1024;
 
-    printf("**********Total System Memory**********: %d MB\n", (int)total_mb);
+    printf("+++Total System Memory*+++ %d MB\n", total_mb);
 }
 
 void initialize_memory_system() {
-    if (total_memory == 0) {
-        printf("Error: total_memory not initialized.\n");
-        return;
-    }
+    uintptr_t heap_start = (uintptr_t)&__heap_start;
+    uintptr_t heap_end = (uintptr_t)&__heap_end;
 
-    uintptr_t memory_end = 0x1FDFFFFF; //0x1FDFFFFF; // 511MB
-    // setup the stack
-    uint32_t stack_size = 1024 * 16;
-    uint32_t* stack_start = (uint32_t*)(&_kernel_end - stack_size);
-    uint32_t stack_end = HEAP_END;
-
-    printf("Kennel end: %p\n", &_kernel_end);
-
-    printf("Setting stack pointer to: %p\n", stack_start);
-    // asm volatile("cli");
-    // asm volatile("mov %0, %%esp" :: "r"(stack_start));
-    // asm volatile("sti");
-    
+    printf("Heap Start: %p, Heap End: %p\n", (void*)heap_start, (void*)heap_end);
+    printf("Stack Top: %p\n", (void*)&__stack_top);
 
     // Initialize the heap
-
-    void* heap_start = (void*)ALIGN_UP((size_t)&_kernel_end, 16);
-    void* heap_end = (void*)HEAP_END;
-
     freeList = (memory_block*)heap_start;
-    freeList->size = (size_t)heap_end - (size_t)heap_start - BLOCK_SIZE;
+    freeList->size = heap_end - heap_start - BLOCK_SIZE;
     freeList->free = 1;
     freeList->next = NULL;
 
@@ -83,7 +66,6 @@ void initialize_memory_system() {
     memset(frame_bitmap, 0, bitmap_size);
 
     print_memory_size(total_memory);
-    printf("Heap Range: %p - %p\n", heap_start, heap_end);
 }
 
 void set_frame(size_t frame) {
@@ -207,12 +189,12 @@ void* k_realloc(void* ptr, size_t new_size) {
 }
 
 //---------------------------------------------------------------------------------------------
-#define LINE_WIDTH 80
+extern uint8_t fb_screen_rows;
+extern uint8_t fb_screen_cols;
 
 void print_test_result(const char *test_name, bool passed) {
     int name_length = strlen(test_name);
-    int padding = LINE_WIDTH - name_length - 7; // 7 for " [ OK ]" or " [FAILED]"
-
+    int padding = fb_screen_cols - name_length - 7; // 7 for " [ OK ]" or " [FAILED]"
 
     if(passed){
         set_color(GREEN);
@@ -220,7 +202,9 @@ void print_test_result(const char *test_name, bool passed) {
         set_color(RED);
     }
 
-    printf("%s%*s\n", test_name, padding, passed ? "[ OK ]" : "[FAILED]");
+    //printf("%s%*s\n", test_name, padding, passed ? "[ OK ]" : "[FAILED]");
+
+    printf("[%s %s", test_name, passed ? " OK] " : " FAILED] ");
 
     set_color(WHITE);
 }
@@ -337,7 +321,6 @@ void test_malloc() {
     printf("Tests complete: ptr1=%p, ptr2=%p, ptr3=%p\n", ptr1, ptr2, ptr3);
 }
 
-
 void test_memory() {
     test_malloc();
     print_test_result("Test realloc", test_realloc());
@@ -350,4 +333,6 @@ void test_memory() {
     print_test_result("Test Copy Overlapping", TestCopyOverlapping());
     print_test_result("Test Null Pointer Src", TestNullPointerSrc());
     print_test_result("Test Null Pointer Dest", TestNullPointerDest());
+
+    printf("\n");
 }

@@ -1,33 +1,3 @@
-; section .multiboot
-; align 8
-; multiboot_header:
-
-; MODULEALIGN equ 1<<0
-; MEMINFO equ 1<<1
-; FLAGS equ MODULEALIGN | MEMINFO
-; MAGIC equ 0x1BADB002
-; CHECKSUM equ -(MAGIC + FLAGS)
-
-
-;   dd MAGIC
-;   dd FLAGS
-;   dd CHECKSUM
-
-; header_end:
-
-; Flags
-;     - Bit 0: Align modules on page boundaries
-;     - Bit 1: Request memory information
-;     - Bit 2: Request framebuffer information
-
-; MODULEALIGN equ (1 << 0)
-; MEMINFO equ (1 << 1)
-; FRAMEBUFFER equ (1 << 2)
-; FLAGS equ (MODULEALIGN | MEMINFO | FRAMEBUFFER)
-; CHECKSUM  equ -(0x1BADB002 + FLAGS)
-
-global start
-
 section .multiboot
 align 8
 header_start:
@@ -37,27 +7,62 @@ header_start:
     dd header_end - header_start ; Total header length
     dd -(0xe85250d6 + 0 + (header_end - header_start)) ; Checksum
 
-    ; Information Request Tag
-    ; align 8
-    ; dw 1                      ; Tag type: Information request
-    ; dw 0                      ; Reserved (must be zero)
-    ; dd 16                     ; Size of this tag (16 bytes total)
-    ; dd 6                      ; Request memory map
-    ; dd 5                      ; Request boot device
+mb2_tag_info_start:
+        dw 1                                    ; multiboot information request
+        dw 0
+        dd mb2_tag_info_end - mb2_tag_info_start
+        dd 1
+        ;dd 5
+        dd 6
+mb2_tag_info_end:
 
-    ; Framebuffer Tag
-    align 8
-    dw 5                      ; Tag type: Framebuffer
-    dw 0                      ; Reserved (must be zero)
-    dd 24                     ; Size of this tag (24 bytes total)
-    dd 800                   ; Desired framebuffer width
-    dd 600                    ; Desired framebuffer height
-    dd 32                     ; Desired bits per pixel
+;         align 8
+; mb2_tag_console_start:
+;         dw 4                                    ; console flags
+;         dw 0
+;         dd mb2_tag_console_end - mb2_tag_console_start
+;         dd 0x3
+; mb2_tag_console_end:
 
-    ; End Tag
-    align 8
-    dw 0                      ; Tag type: End
-    dw 0                      ; Reserved (must be zero)
-    dd 8                      ; Size of this tag (8 bytes total)
+        align 8
+mb2_tag_fb_start:
+        dw 5                                    ; framebuffer settings
+        dw 1
+        dd mb2_tag_fb_end - mb2_tag_fb_start
+        dd 800
+        dd 600
+        dd 32
+mb2_tag_fb_end:
+
+        align 8
+mb2_tag_end_start:
+        dw 0                                    ; last tag
+        dw 0
+        dd mb2_tag_end_end - mb2_tag_end_start
+mb2_tag_end_end:
 
 header_end:
+
+[BITS 32]
+global start
+global interrupt
+
+extern __stack_top
+extern kernel_main
+
+section .text
+start:
+    ; Initialize stack pointer hadcoded to 0x1FDFFFFF which is the end of the 512MB memory
+    mov esp, __stack_top
+
+    ; Call the kernel main function
+    push ebx
+    push dword 0x36d76289
+
+    call kernel_main
+    ; Halt the system if kernel_main returns
+    cli
+
+.halt:
+    hlt
+    jmp .halt

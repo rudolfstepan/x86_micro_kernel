@@ -43,7 +43,7 @@ uint32_t get_ebp();
 
 // void throw(TryContext* ctx, int exception_code);
 
-void initialize_memory_system();
+//void initialize_memory_system();
 
 void* malloc(size_t size);
 void* aligned_alloc(size_t alignment, size_t size);

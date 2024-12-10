@@ -154,7 +154,7 @@ void process_command(char *input_buffer) {
         printf("\nUnknown command: %s\n", command);
     }
 
-    asm volatile("int $0x29"); // Trigger a timer interrupt
+    //asm volatile("int $0x29"); // Trigger a timer interrupt
 }
 
 void command_loop() {

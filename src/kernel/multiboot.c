@@ -5,13 +5,18 @@
 #include "toolchain/stdio.h"
 #include "drivers/video/framebuffer.h"
 
-extern uint32_t total_memory; // Total memory size detected by the bootloader and defined in kernel.c
+uint32_t total_memory; // Total memory size detected by the bootloader and defined in kernel.c
+
+// prototypes
+void handle_acpi_old(multiboot2_tag_t *tag);
 
 void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
     uint8_t *tags = (uint8_t *)mb_info + sizeof(multiboot2_info_t); // Skip total_size and reserved
     uint32_t total_size = mb_info->total_size;
 
     printf("Multiboot 2 Information:\n");
+
+    set_color(YELLOW);
 
     while (tags < (uint8_t *)mb_info + total_size) {
         multiboot2_tag_t *tag = (multiboot2_tag_t *)tags;
@@ -20,6 +25,7 @@ void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
 
         switch (tag->type) {
             case MULTIBOOT2_TAG_TYPE_END:
+            
                 printf("End of tags.\n");
                 return;
 
@@ -37,7 +43,7 @@ void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
 
             case MULTIBOOT2_TAG_TYPE_BASIC_MEMINFO: {
                 multiboot2_tag_basic_meminfo_t *meminfo = (multiboot2_tag_basic_meminfo_t *)tag;
-                printf("Memory Info: Lower = %u KB, Upper = %u KB\n", meminfo->mem_lower, meminfo->mem_upper);
+                printf("+++ Memory Info: Lower = %u KB, Upper = %u KB +++\n", meminfo->mem_lower, meminfo->mem_upper);
 
                 // Store the total memory size
                 total_memory = meminfo->mem_lower + meminfo->mem_upper;
@@ -69,12 +75,6 @@ void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
 
                 parse_framebuffer(fb);
 
-                //  // Example: Fill the screen with red
-                //fill_screen(0xFF0000);
-
-                // // Example: Render a gradient
-                //render_gradient();
-
                 break;
             }
 
@@ -96,14 +96,53 @@ void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
                 break;
             }
 
+            case MULTIBOOT2_TAG_TYPE_MMAP: {
+                multiboot2_tag_mmap_t *mmap = (multiboot2_tag_mmap_t *)tag;
+                printf("Memory Map:\n");
+
+                uint8_t *entry = (uint8_t *)mmap->entries;
+                while (entry < (uint8_t *)tag + tag->size) {
+                    uint64_t base_addr = *(uint64_t *)entry;
+                    uint64_t length = *(uint64_t *)(entry + 8);
+                    uint32_t type = *(uint32_t *)(entry + 16);
+
+                    printf("  Base = 0x%lx, Length = 0x%lx, Type = %u\n", base_addr, length, type);
+
+                    entry += mmap->entry_size;
+                }
+                break;
+            }
+
+            case MULTIBOOT2_TAG_TYPE_ACPI_OLD: {
+                handle_acpi_old(tag);
+                break;
+            }
+
             default:
+                set_color(RED);
                 printf("Unknown Tag: Type = %u, Size = %u\n", tag->type, tag->size);
+                set_color(YELLOW);
                 break;
         }
 
         // Move to the next tag (aligned to 8 bytes)
-        tags += (tag->size + 7) & ~7;
+        tags += (tag->size + 7) & ~7;  // Align to 8 bytes
     }
+
+    set_color(WHITE);
+}
+
+void handle_acpi_old(multiboot2_tag_t *tag) {
+    // Handle ACPI data if needed
+    printf("ACPI Old Tag: Type = %u, Size = %u\n", tag->type, tag->size);
+
+    // Example: Parse the ACPI data
+    acpi_rsdp_t *rsdp = (acpi_rsdp_t *)((uint8_t *)tag + sizeof(multiboot2_tag_t));
+    printf("ACPI RSDP: Signature = %c%c%c%c%c%c%c%c, Revision = %u\n",
+           rsdp->signature[0], rsdp->signature[1], rsdp->signature[2], rsdp->signature[3],
+           rsdp->signature[4], rsdp->signature[5], rsdp->signature[6], rsdp->signature[7],
+           rsdp->revision);
+
 }
 
 

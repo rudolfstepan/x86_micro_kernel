@@ -9,9 +9,12 @@
 
 
 // initialize the fat32 filesystem class
-fat32_class_t fat32;
+fat32_class_t *fat32;
 
-void ctor_fat32_class(fat32_class_t* fat32) {
+void ctor_fat32_class() {
+
+    fat32 = (fat32_class_t*)malloc(sizeof(fat32_class_t));
+
     // Cluster and Sector Operations
     fat32->read_cluster = read_cluster;
     fat32->cluster_to_sector = cluster_to_sector;
@@ -102,7 +105,7 @@ void init_fs(drive_t* drive) {
             //fat32_init_fs(drive->base, drive->is_master);
 
             // initialize the fat32 filesystem
-            fat32.fat32_init_fs(drive->base, drive->is_master);
+            fat32->fat32_init_fs(drive->base, drive->is_master);
             
         } else if (memcmp(boot_sector->oem_name, "NTFS    ", 8) == 0) {
             printf("Detected NTFS filesystem on drive %s.\n", drive->name);

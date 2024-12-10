@@ -14,10 +14,23 @@
 #define MULTIBOOT2_TAG_TYPE_BASIC_MEMINFO   4
 #define MULTIBOOT2_TAG_TYPE_BOOTDEV         5
 #define MULTIBOOT2_TAG_TYPE_MMAP            6
+#define MULTIBOOT2_TAG_TYPE_VBE             7
 #define MULTIBOOT2_TAG_TYPE_FRAMEBUFFER     8
 #define MULTIBOOT2_TAG_TYPE_ELF_SECTIONS    9
 #define MULTIBOOT2_TAG_TYPE_APM             10
-#define MULTIBOOT2_TAG_TYPE_EFI_MMAP        21
+#define MULTIBOOT2_TAG_TYPE_EFI_32          11
+#define MULTIBOOT2_TAG_TYPE_EFI_64          12
+#define MULTIBOOT2_TAG_TYPE_SMBIOS          13
+#define MULTIBOOT2_TAG_TYPE_ACPI_OLD        14
+#define MULTIBOOT2_TAG_TYPE_ACPI_NEW        15
+#define MULTIBOOT2_TAG_TYPE_NETWORK         16
+#define MULTIBOOT2_TAG_TYPE_EFI_MMAP        17
+#define MULTIBOOT2_TAG_TYPE_EFI_BOOT_SERVICES_NOT_TERMINATED 18
+#define MULTIBOOT2_TAG_TYPE_EFI_32_IMAGE    19
+#define MULTIBOOT2_TAG_TYPE_EFI_64_IMAGE    20
+#define MULTIBOOT2_TAG_TYPE_EFI_SYSTEM_TABLES 21
+#define MULTIBOOT2_TAG_TYPE_LOAD_BASE_ADDR  22
+
 
 // Multiboot 2 information structure passed by the bootloader
 typedef struct {
@@ -91,6 +104,15 @@ typedef struct {
 
 
 void enumerate_multiboot2_tags(multiboot2_info_t *mb_info);
+
+
+typedef struct {
+    char signature[8];
+    uint8_t checksum;
+    char oem_id[6];
+    uint8_t revision;
+    uint32_t rsdt_address;
+} __attribute__((packed)) acpi_rsdp_t;
 
 
 #endif // MULTIBOOT_H

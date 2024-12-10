@@ -1,70 +1,42 @@
 OUTPUT_FORMAT(elf32-i386)
 ENTRY(start)
+SECTIONS {
+    /* Multiboot Header */
+    . = 0x00008000;
+    .multiboot : {
+        *(.multiboot)
+    }
 
-MEMORY
-{
-  kernel_ram (rw) : ORIGIN = 0x00100000, LENGTH = 24M  /* Kernel memory region, 16 MB */
-  user_programs (rw) : ORIGIN = 0x01100000, LENGTH = 8M  /* User programs memory region, 8 MB */
-}
+    /* Kernel Text Section */
+    . = 0x00100000;
+    .text : {
+        *(.text)
+    }
 
-SECTIONS
-{
-  /* Multiboot header (must be within the first 8 KB of the kernel binary) */
-  .multiboot 0x00100000 : ALIGN(8) {
-    *(.multiboot)
-  } > kernel_ram
+    /* Kernel Data Section */
+    .data : {
+        *(.data)
+    }
 
-  /* Kernel code and read-only data */
-  .text ALIGN(4096) : {
-    _kernel_start = .;
-    *(.text)
-    *(.rodata)
-    _kernel_text_end = .;
-  } > kernel_ram
+    /* Kernel BSS Section */
+    .bss : {
+        *(.bss)
+        *(COMMON)
+    }
 
-  /* Kernel initialized data */
-  .data ALIGN(4096) : {
-    _kernel_data_start = .;
-    *(.data)
-    _kernel_data_end = .;
-  } > kernel_ram
+    /* Kernel Stack */
+    . = ALIGN(16); /* Stelle sicher, dass die Adresse 16-Byte-aligned ist */
+    .stack : {
+        __stack_bottom = .; /* Markiere den Beginn des Stacks */
+        . += 0x10000;       /* 64 KB Stack */
+        __stack_top = .;    /* Markiere das Ende des Stacks */
+    }
 
-  /* Kernel uninitialized data (BSS) */
-  .bss ALIGN(4096) : {
-    _kernel_bss_start = .;
-    *(.bss)
-    *(COMMON)
-    _kernel_bss_end = .;
-  } > kernel_ram
-
-  /* Stack section (8 KB) */
-  .stack ALIGN(4096) (NOLOAD) : {
-    _stack_start = .;
-    . += 8192;  /* Allocate 8 KB for the stack */
-    _stack_end = .;
-  } > kernel_ram
-
-  /* User program code */
-  .user_text ALIGN(4096) : {
-    user_code = .;
-    *(.user_text)
-    *(.user_rodata)
-  } > user_programs
-
-  /* User program initialized data */
-  .user_data ALIGN(4096) : {
-    user_data = .;
-    *(.user_data)
-  } > user_programs
-
-  /* User program uninitialized data (BSS) */
-  .user_bss ALIGN(4096) : {
-    user_bss = .;
-    *(.user_bss)
-  } > user_programs
-
-  _kernel_end = .;
-
-  /* Ensure kernel fits within kernel_ram */
-  ASSERT(_kernel_end <= ORIGIN(kernel_ram) + LENGTH(kernel_ram), "Kernel exceeds kernel_ram region!")
+    /* Kernel Heap */
+    . = ALIGN(16);
+    .heap : {
+        __heap_start = .;   /* Start des Heaps */
+        . += 0x1F00000;     /* 31 MB Heap */
+        __heap_end = .;     /* Ende des Heaps */
+    }
 }

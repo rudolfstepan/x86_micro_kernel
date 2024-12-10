@@ -12,7 +12,7 @@ extern void swtch(context_t *old_context, context_t *new_context);
 // Task-Liste
 task_t tasks[MAX_TASKS];
 volatile uint8_t current_task = 0; // ID des aktuellen Tasks
-volatile static uint8_t num_tasks = 0;             // Anzahl der registrierten Tasks
+static volatile uint8_t num_tasks = 0;             // Anzahl der registrierten Tasks
 
 
 // // Helper: Load CR3 (Page Directory Base Register)
@@ -99,6 +99,12 @@ void task_exit() {
 
 // Scheduler
 void scheduler_interrupt_handler() {
+
+    printf("Scheduler interrupt\n");
+
+    return;
+
+
     asm volatile("cli");
 
     task_t *current = &tasks[current_task];

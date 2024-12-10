@@ -8,9 +8,14 @@ uint32_t cursor_x = 0;
 uint32_t cursor_y = 0;
 uint32_t line_height = 20; // Height of a single text line (e.g., 8x16 font)
 
+uint8_t fb_screen_rows = 25;
+uint8_t fb_screen_cols = 80;
+
 static uint32_t txt_color = WHITE;
 static uint32_t bg_color = BLACK;
 static framebuffer_info_t fb_info;
+
+
 
 void set_color(uint32_t color) {
     txt_color = color;
@@ -42,13 +47,17 @@ void parse_framebuffer(multiboot2_tag_framebuffer_t *fb) {
     fb_info.height = fb->framebuffer_height;
     fb_info.bpp = fb->framebuffer_bpp;
 
-    set_color(BLUE);
+    set_color(GREEN);
     printf("Framebuffer Info:\n");
-    printf("  Address: 0x%lx\n", fb_info.address);
-    printf("  Resolution: %ux%u\n", fb_info.width, fb_info.height);
-    printf("  Bits Per Pixel: %u\n", fb_info.bpp);
+    printf("  Address: 0x%X", fb->framebuffer_addr);
+    printf("  Resolution: %ux%u", fb_info.width, fb_info.height);
+    printf("  Bits Per Pixel: %u", fb_info.bpp);
     printf("  Pitch: %u bytes per scanline\n", fb_info.pitch);
     set_color(WHITE);
+
+    // Calculate the number of rows and columns for text mode
+    fb_screen_cols = fb_info.width / 8;
+    fb_screen_rows = fb_info.height / line_height;
 }
 
 void draw_char(uint32_t x, uint32_t y, char c, uint32_t font_color) {

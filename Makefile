@@ -4,7 +4,7 @@ OUTPUT_DIR = build
 ISO_DIR = iso
 CXXFLAGS = -Isrc -m32 -nostartfiles -nodefaultlibs -fno-builtin -O1 -Wall -Wextra -g \
            -Wno-unused-parameter -Wno-unused-variable -U_FORTIFY_SOURCE -fno-exceptions -U_FORTIFY_SOURCE -fno-stack-protector
-LD_FLAGS = -m elf_i386 -L/usr/lib/gcc/x86_64-linux-gnu/11/32/libgcc.a
+LD_FLAGS = -m elf_i386 -g -L/usr/lib/gcc/x86_64-linux-gnu/11/32/libgcc.a
 MOUNT_DIR = /mnt/disk
 
 CC = i686-linux-gnu-gcc
@@ -60,5 +60,5 @@ iso:
 run:
 	@echo "Running QEMU..."
 	qemu-system-x86_64 -cdrom kernel.iso -boot d -m 512M -vga std -drive file=disk.img,format=raw -drive file=floppy.img,format=raw,if=floppy \
-	-device ne2k_pci,netdev=net0 -netdev user,id=net0
+	#-device ne2k_pci,netdev=net0 -netdev user,id=net0
 	

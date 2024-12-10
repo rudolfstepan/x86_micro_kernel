@@ -133,10 +133,8 @@ typedef struct {
     bool (*fat32_delete_file)(const char* filename);
 } fat32_class_t;
 
-// a global instance of the fat32 class
-extern fat32_class_t fat32;
-void ctor_fat32_class(fat32_class_t* fat32);
 
+void ctor_fat32_class();
 
 // Cluster and Sector Operations
 void read_cluster(struct Fat32BootSector* bs, unsigned int cluster_number, void* buffer);
