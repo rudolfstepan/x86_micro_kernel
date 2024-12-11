@@ -2,6 +2,7 @@ build/*
 iso/*
 .vscode/*
 kernel.iso
+kernel.bin
 *.img
 *.vmdk
 disk.vmdk
