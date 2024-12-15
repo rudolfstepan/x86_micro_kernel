@@ -38,9 +38,8 @@
 
 extern char _stack_start;  // Start address of the stack
 extern char _stack_end;    // End address of the stack
-
+extern volatile size_t total_memory;
 volatile uint64_t cpu_frequency = 0; // Global CPU frequency
-
 
 // Helper: Load CR3 (Page Directory Base Register)
 static inline void load_cr3(uint32_t address) {
@@ -272,7 +271,7 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
 
     //rtl8139_detect();
     //e1000_detect();
-    ne2000_detect();
+    //ne2000_detect();
     //vmxnet3_setup();
     
     pci_probe_drivers();
@@ -284,6 +283,8 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
     // getchar();
     // printf("Press any key to continue...\n");
     // getchar();
+
+    wait_enter_pressed();
 
     //calc the cpu speed
     volatile uint64_t start_cycles, end_cycles;

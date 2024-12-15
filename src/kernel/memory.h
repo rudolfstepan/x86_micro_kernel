@@ -3,7 +3,6 @@
 
 #include <stddef.h>
 
-extern size_t total_memory;
 
 void k_free(void* ptr);
 void* k_malloc(size_t size);

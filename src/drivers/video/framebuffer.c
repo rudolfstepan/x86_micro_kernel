@@ -37,12 +37,12 @@ void parse_framebuffer(multiboot2_tag_framebuffer_t *fb) {
     fb_info.height = fb->framebuffer_height;
     fb_info.bpp = fb->framebuffer_bpp;
 
-    set_color(BLUE);
-    printf("Framebuffer Info:\n");
-    printf("  Address: 0x%lx\n", fb_info.address);
-    printf("  Resolution: %ux%u\n", fb_info.width, fb_info.height);
-    printf("  Bits Per Pixel: %u\n", fb_info.bpp);
-    printf("  Pitch: %u bytes per scanline\n", fb_info.pitch);
+    set_color(YELLOW);
+    printf("Fb Info: ");
+    printf("Address: 0x%X ", fb_info.address);
+    printf("Res: %ux%u ", fb_info.width, fb_info.height);
+    printf("BPP: %u ", fb_info.bpp);
+    printf("Pitch: %u bytes\n", fb_info.pitch);
     set_color(WHITE);
 }
 

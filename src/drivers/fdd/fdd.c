@@ -169,9 +169,9 @@ void fdd_irq_handler(uint8_t* r) {
     // Check if bit 4 is set (indicating a valid interrupt)
     if (status & 0x10) {
         irq_triggered = true;  // Set IRQ flag when valid
-        printf("Valid interrupt 0x10 detected for FDD.\n");
+        //printf("Valid interrupt 0x10 detected for FDD.\n");
     } else if(status & 0x80){
-        printf("Valid interrupt 0x80 detected for FDD.\n");
+        //printf("Valid interrupt 0x80 detected for FDD.\n");
         irq_ready_triggered = true;
     }
 

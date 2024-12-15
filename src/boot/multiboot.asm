@@ -38,12 +38,12 @@ header_start:
     dd -(0xe85250d6 + 0 + (header_end - header_start)) ; Checksum
 
     ; Information Request Tag
-    ; align 8
-    ; dw 1                      ; Tag type: Information request
-    ; dw 0                      ; Reserved (must be zero)
-    ; dd 16                     ; Size of this tag (16 bytes total)
-    ; dd 6                      ; Request memory map
-    ; dd 5                      ; Request boot device
+    align 8
+    dw 1                      ; Tag type: Information request
+    dw 0                      ; Reserved (must be zero)
+    dd 16                     ; Size of this tag (16 bytes total)
+    dd 6                      ; Request memory map
+    dd 5                      ; Request boot device
 
     ; Framebuffer Tag
     align 8

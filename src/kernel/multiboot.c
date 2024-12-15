@@ -5,9 +5,32 @@
 #include "toolchain/stdio.h"
 #include "drivers/video/framebuffer.h"
 
-extern uint32_t total_memory; // Total memory size detected by the bootloader and defined in kernel.c
+extern volatile size_t total_memory; // Total memory size detected by the bootloader and defined in kernel.c
+
+void find_framebuffer_tag(multiboot2_info_t *mb_info) {
+    uint8_t *tags = (uint8_t *)mb_info + sizeof(multiboot2_info_t); // Skip total_size and reserved
+    uint32_t total_size = mb_info->total_size;
+
+    while (tags < (uint8_t *)mb_info + total_size) {
+        multiboot2_tag_t *tag = (multiboot2_tag_t *)tags;
+
+        if (tag->type == MULTIBOOT2_TAG_TYPE_FRAMEBUFFER) {
+            multiboot2_tag_framebuffer_t *fb = (multiboot2_tag_framebuffer_t *)tag;
+            parse_framebuffer(fb);
+            return;
+        }
+
+        // Move to the next tag (aligned to 8 bytes)
+        tags += (tag->size + 7) & ~7;
+    }
+
+    printf("Framebuffer tag not found.\n");
+}
 
 void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
+
+    find_framebuffer_tag(mb_info);
+
     uint8_t *tags = (uint8_t *)mb_info + sizeof(multiboot2_info_t); // Skip total_size and reserved
     uint32_t total_size = mb_info->total_size;
 
@@ -16,7 +39,7 @@ void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
     while (tags < (uint8_t *)mb_info + total_size) {
         multiboot2_tag_t *tag = (multiboot2_tag_t *)tags;
 
-        printf("Tag: Type = %u, Size = %u\n", tag->type, tag->size);
+        //printf("Tag: Type = %u, Size = %u\n", tag->type, tag->size);
 
         switch (tag->type) {
             case MULTIBOOT2_TAG_TYPE_END:
@@ -40,7 +63,7 @@ void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
                 printf("Memory Info: Lower = %u KB, Upper = %u KB\n", meminfo->mem_lower, meminfo->mem_upper);
 
                 // Store the total memory size
-                total_memory = meminfo->mem_lower + meminfo->mem_upper;
+                total_memory = meminfo->mem_lower *1024 + meminfo->mem_upper *1024; // Convert to bytes
 
                 break;
             }
@@ -61,13 +84,13 @@ void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
 
             case MULTIBOOT2_TAG_TYPE_FRAMEBUFFER: {
                 multiboot2_tag_framebuffer_t *fb = (multiboot2_tag_framebuffer_t *)tag;
-                printf("Framebuffer Info:\n");
-                printf("  Address = 0x%lx\n", fb->framebuffer_addr);
-                printf("  Resolution = %ux%u\n", fb->framebuffer_width, fb->framebuffer_height);
+                printf("Framebuffer Info: ");
+                printf("  Address = 0x%X ", fb->framebuffer_addr);
+                printf("  Resolution = %ux%u ", fb->framebuffer_width, fb->framebuffer_height);
                 printf("  BPP = %u\n", fb->framebuffer_bpp);
-                printf("  Pitch = %u bytes per scanline\n", fb->framebuffer_pitch);
+                printf("  Pitch = %u bytes per scanline ", fb->framebuffer_pitch);
 
-                parse_framebuffer(fb);
+                //parse_framebuffer(fb);
 
                 //  // Example: Fill the screen with red
                 //fill_screen(0xFF0000);

@@ -17,7 +17,7 @@ void* malloc(size_t size) {
         void* allocated_memory = k_malloc(size);
 
         if (allocated_memory) {
-            printf("Memory allocated at: %p, size: %u\n", allocated_memory, size);
+            //printf("Memory allocated at: %p, size: %u\n", allocated_memory, size);
         } else {
             //set_color(RED);
             printf("Memory allocation failed.\n");

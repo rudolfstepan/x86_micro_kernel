@@ -1,4 +1,5 @@
 #include "memory.h"
+
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
 #include "toolchain/string.h"
@@ -10,7 +11,7 @@
 
 extern char _kernel_end; // Defined by the linker script
 
-size_t total_memory = 0;
+volatile size_t total_memory;
 
 #define HEAP_START ((uint32_t)(&_kernel_end))
 #define HEAP_END ((uint32_t)(0x0f000000)) // End of heap (5MB)
@@ -39,13 +40,6 @@ typedef struct memory_block {
 
 memory_block* freeList = NULL;
 
-
-void print_memory_size(uint64_t total_memory) {
-    uint64_t total_kb = total_memory / (uint64_t)1024;
-    uint64_t total_mb = total_kb / (uint64_t)1024;
-
-    printf("**********Total System Memory**********: %d MB\n", (int)total_mb);
-}
 
 void initialize_memory_system() {
     if (total_memory == 0) {
@@ -82,7 +76,8 @@ void initialize_memory_system() {
     frame_bitmap = (uint8_t*)heap_start;
     //memset(frame_bitmap, 0, bitmap_size);
 
-    print_memory_size(total_memory);
+    printf("System Memory: %d MB\n", total_memory / 1024 / 1024);
+
     printf("Heap Range: %p - %p\n", heap_start, heap_end);
 }
 
