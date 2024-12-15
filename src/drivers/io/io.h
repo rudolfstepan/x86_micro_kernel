@@ -25,4 +25,6 @@ void outsw(unsigned short port, const void* buffer, unsigned long count);
 // Blockweises Lesen/Schreiben von Bytes (8-Bit)
 void insb(unsigned short port, void* addr, unsigned long count);
 void outsb(unsigned short port, const void* buffer, unsigned long count);
+
+
 #endif // IO_H

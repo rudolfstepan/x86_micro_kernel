@@ -47,6 +47,8 @@ unsigned int readFileData(unsigned int startCluster, char* buffer, unsigned int 
         }
     }
 
+    printf("Read %d bytes from file.\n", totalBytesRead);
+
     // Return the total number of bytes read
     return totalBytesRead;
 }
@@ -185,34 +187,55 @@ FILE* fat32_open_file(const char* filename, const char* mode) {
         return NULL;
     }
 
+    // Read file details
     unsigned int startCluster = read_start_cluster(entry);
-    int fileSize = entry->fileSize;
+    size_t fileSize = (size_t)entry->fileSize;
 
+    // Allocate memory for the FILE structure
     FILE* file = (FILE*)malloc(sizeof(FILE));
     if (file == NULL) {
-        printf("Not enough memory.\n");
+        printf("Not enough memory for file structure.\n");
         return NULL;
     }
 
+    // Allocate memory for the file content
+    file->base = (unsigned char*)malloc(fileSize);
+    if (file->base == NULL) {
+        printf("Not enough memory for file content.\n");
+        free(file);  // Free the FILE structure before returning
+        return NULL;
+    }
+
+    // Load file content into memory
+    // if (readFileData(startCluster, file->base, fileSize, fileSize) != 0) {
+    //     printf("Failed to load file content into memory.\n");
+    //     free(file->base);
+    //     free(file);
+    //     return NULL;
+    // }
+
+    // Initialize FILE structure fields
     file->position = 0;
     file->size = fileSize;
-    file->mode = mode;
-    file->name = filename;
     file->startCluster = startCluster;
+    file->mode = strdup(mode);  // Duplicate the mode string
+    file->name = strdup(filename);  // Duplicate the filename string
+
+    printf("Allocated file handler with %u bytes and loaded content.\n", sizeof(FILE) + fileSize);
 
     return file;
 }
 
 // read file
-int fat32_read_file(FILE* file, void* buffer, unsigned int buffer_size, unsigned int bytesToRead) {
+int fat32_read_file(FILE* file, char* buffer, unsigned int buffer_size, unsigned int bytesToRead) {
     if (strcmp(file->mode, "w") == 0) {
         printf("Error: File is not open for reading.\n");
         return 0;
     }
 
-    if (file->position + bytesToRead > file->size) {
-        bytesToRead = file->size - file->position;
-    }
+    // if (file->position + bytesToRead > file->size) {
+    //     bytesToRead = file->size - file->position;
+    // }
 
-    return readFileData(file->startCluster, (char*)buffer, buffer_size, bytesToRead);
+    return readFileData(file->startCluster, buffer, buffer_size, bytesToRead);
 }

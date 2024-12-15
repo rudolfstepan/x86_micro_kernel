@@ -47,7 +47,8 @@ void parse_framebuffer(multiboot2_tag_framebuffer_t *fb) {
 }
 
 void draw_char(uint32_t x, uint32_t y, char c, uint32_t font_color) {
-    uint32_t *framebuffer = (uint32_t *)fb_info.address;
+    uint64_t framebuffer_address = fb_info.address;
+    uint32_t *framebuffer = (uint32_t *)(uintptr_t)framebuffer_address;
 
     for (uint8_t row = 0; row < 16; row++) {
         uint8_t row_data = font[(uint8_t)c + 2][row];
@@ -70,7 +71,8 @@ void draw_pixel(uint32_t x, uint32_t y, uint32_t font_color) {
         return; // Out of bounds
     }
 
-    uint32_t *framebuffer = (uint32_t *)fb_info.address;
+    uint64_t framebuffer_address = fb_info.address;
+    uint32_t *framebuffer = (uint32_t *)(uintptr_t)framebuffer_address;
     framebuffer[(y * fb_info.pitch / 4) + x] = font_color;
 }
 
@@ -85,7 +87,8 @@ void render_gradient() {
 }
 
 void clear_screen() {
-    uint32_t *framebuffer = (uint32_t *)fb_info.address;
+    uint64_t framebuffer_address = fb_info.address;
+    uint32_t *framebuffer = (uint32_t *)(uintptr_t)framebuffer_address;
     for (uint32_t y = 0; y < fb_info.height; y++) {
         for (uint32_t x = 0; x < fb_info.width; x++) {
             framebuffer[(y * fb_info.pitch / 4) + x] = bg_color;
@@ -105,7 +108,8 @@ void fill_screen(uint32_t bg_color) {
 }
 
 void clear_line(uint32_t y, uint32_t color) {
-    uint32_t *framebuffer = (uint32_t *)fb_info.address;
+    uint64_t framebuffer_address = fb_info.address;
+    uint32_t *framebuffer = (uint32_t *)(uintptr_t)framebuffer_address;
     for (uint32_t row = 0; row < line_height; row++) {
         for (uint32_t x = 0; x < fb_info.width; x++) {
             framebuffer[((y + row) * fb_info.pitch / 4) + x] = color;
@@ -114,7 +118,8 @@ void clear_line(uint32_t y, uint32_t color) {
 }
 
 void scroll_screen(uint32_t bg_color) {
-    uint32_t *framebuffer = (uint32_t *)fb_info.address;
+    uint64_t framebuffer_address = fb_info.address;
+    uint32_t *framebuffer = (uint32_t *)(uintptr_t)framebuffer_address;
     uint32_t screen_width = fb_info.width;
     uint32_t screen_height = fb_info.height;
     uint32_t pitch_in_pixels = fb_info.pitch / 4; // Convert pitch from bytes to pixels
@@ -191,7 +196,8 @@ void fb_backspace() {
 }  
 
 void fb_color_test() {
-    uint32_t *framebuffer = (uint32_t *)fb_info.address;
+    uint64_t framebuffer_address = fb_info.address;
+    uint32_t *framebuffer = (uint32_t *)(uintptr_t)framebuffer_address;
     uint32_t width = fb_info.width;
     uint32_t height = fb_info.height;
     uint32_t pitch_in_pixels = fb_info.pitch / 4;

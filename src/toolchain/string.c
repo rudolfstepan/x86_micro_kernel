@@ -465,3 +465,23 @@ void* memset(void* ptr, int value, unsigned int num) {
     }
     return ptr;
 }
+
+char* strdup(const char* src) {
+    if (src == NULL) {
+        return NULL; // Handle NULL input
+    }
+
+    size_t len = strlen(src); // Get the length of the source string
+    char* dest = (char*)malloc(len + 1); // Allocate memory for the string (+1 for null terminator)
+
+    if (dest == NULL) {
+        return NULL; // Handle memory allocation failure
+    }
+
+    // Copy the string
+    for (size_t i = 0; i <= len; i++) {
+        dest[i] = src[i];
+    }
+
+    return dest; // Return pointer to the duplicated string
+}

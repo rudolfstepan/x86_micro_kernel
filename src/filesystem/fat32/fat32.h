@@ -188,7 +188,7 @@ bool fat32_delete_dir(const char* dirname);
 
 // file operations
 FILE* fat32_open_file(const char* filename, const char* mode);
-int fat32_read_file(FILE* file, void* buffer, unsigned int buffer_size, unsigned int bytesToRead);
+int fat32_read_file(FILE* file, char* buffer, unsigned int buffer_size, unsigned int bytesToRead);
 bool fat32_create_file(const char* filename);
 bool fat32_delete_file(const char* filename);
 

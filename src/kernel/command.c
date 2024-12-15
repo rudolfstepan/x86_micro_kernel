@@ -770,6 +770,12 @@ void cmd_show(int arg_count, const char** arguments) {
         return;
     }
 
+    if(strcmp(filename, "MEM") == 0) {
+        show_memory_map();
+
+        return;
+    }
+
     FILE* file = fat32_open_file(filename, "r");
     if (file == NULL) {
         printf("File not found: %s\n", filename);
@@ -780,7 +786,7 @@ void cmd_show(int arg_count, const char** arguments) {
 
     // Calculate the size of the buffer based on the size of the file
     size_t bufferSize = file->size; // Use the file size as the buffer size directly
-    char* buffer = (char*)malloc(bufferSize + 1);
+    char* buffer = (char*)malloc(bufferSize);
 
     if (buffer == NULL) {
         printf("Failed to allocate memory for file buffer\n");
@@ -788,12 +794,14 @@ void cmd_show(int arg_count, const char** arguments) {
     }
 
     // Read the file into the buffer, passing the correct size
-    int result = fat32_read_file(file, buffer, bufferSize, bufferSize); // Pass bufferSize as the buffer size
+    fat32_read_file(file, buffer, bufferSize, bufferSize); // Pass bufferSize as the buffer size
 
-    hex_dump((unsigned char*)buffer, 512);
+    //hex_dump((unsigned char*)buffer, 64);
 
-    secure_free(buffer, sizeof(buffer));  // Clear the buffer
+    //secure_free(buffer, bufferSize);  // Clear the buffer
 
-    printf("Result: %d\n", result);
+    free(buffer);
+
+    //printf("Result: %d\n", result);
 
 }
