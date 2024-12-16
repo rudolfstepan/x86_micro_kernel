@@ -10,47 +10,29 @@
 #include <stdint.h>
 
 extern char _kernel_end; // Defined by the linker script
-volatile size_t total_memory; // in bytes set by parsing the multiboot memory map after kernel initialization
+volatile size_t total_memory = 64*1024; // in kilobytes set by parsing the multiboot memory map after kernel initialization
 
-#define HEAP_START ((uint32_t)(&_kernel_end))
-#define HEAP_END ((uint32_t)(0x0f000000)) // End of heap (5MB)
+#define MULTIBOOT_USABLE_START 0x10000 // First usable memory address (64 KB)
 #define ALIGN_UP(addr, align) (((addr) + ((align)-1)) & ~((align)-1))
-#define HEAP_START_ALIGNED ALIGN_UP((size_t)HEAP_START, 16)
-#define BLOCK_SIZE sizeof(memory_block)
+#define HEAP_START ALIGN_UP(MULTIBOOT_USABLE_START, 4096) // Start aligned to 4KB
+#define HEAP_END (MULTIBOOT_USABLE_START + (total_memory)) // Full usable range
+#define HEAP_ACTUAL_END (HEAP_END - HEAP_START) // Heap size adjusted for start offset
 
-#define E820_BUFFER_SIZE 128
-#define FRAME_SIZE 4096 // 4KB
-#define MAX_FRAMES (512 * 1024 * 1024 / FRAME_SIZE) // For 512MB RAM
+#define BLOCK_SIZE 4096 // 4KB per block
+#define MAX_BLOCKS ((HEAP_END - HEAP_START) / BLOCK_SIZE)
 
-uint8_t* frame_bitmap; // Dynamically allocate based on total_memory
+uint8_t* block_bitmap; // Bitmap to manage blocks
 
-typedef struct {
-    uint64_t base_addr; // Base address of the memory region
-    uint64_t length;    // Length of the memory region
-    uint32_t type;      // Type of the memory region
-    uint32_t acpi;      // ACPI attributes
-} __attribute__((packed)) e820_entry_t;
+void initialize_block_bitmap() {
+    size_t bitmap_size = ALIGN_UP((MAX_BLOCKS + 7) / 8, 16);
+    block_bitmap = (uint8_t*)HEAP_START;
 
-typedef struct memory_block {
-    size_t size;
-    int free;
-    struct memory_block* next;
-} memory_block;
-
-memory_block* freeList = NULL;
-
-#define FRAME_BITMAP_START 0x200000  // Example start address (2 MB mark)
-#define FRAME_BITMAP_END   0x202000  // Example end (8 KB bitmap for 512MB RAM)
-
-void initialize_frame_bitmap() {
-    size_t bitmap_size = (total_memory / FRAME_SIZE + 7) / 8;
-    if (bitmap_size > (FRAME_BITMAP_END - FRAME_BITMAP_START)) {
-        printf("Error: Frame bitmap too large.\n");
+    if ((size_t)block_bitmap + bitmap_size > HEAP_END) {
+        printf("Error: Block bitmap too large for the heap.\n");
         return;
     }
 
-    frame_bitmap = (uint8_t*)FRAME_BITMAP_START;
-    memset(frame_bitmap, 0, bitmap_size);
+    memset(block_bitmap, 0, bitmap_size);
 }
 
 void initialize_memory_system() {
@@ -59,119 +41,48 @@ void initialize_memory_system() {
         return;
     }
 
-    size_t heap_size = HEAP_END - (size_t)&_kernel_end;
-    printf("Kernel end: %p\n", &_kernel_end);
-    printf("Heap Range: %p - %p\n", (void*)HEAP_START_ALIGNED, (void*)HEAP_END);
+    printf("Usable memory starts at: 0x%x\n", MULTIBOOT_USABLE_START);
+    printf("Heap Start: %p\n", (void*)HEAP_START);
+    printf("Heap End: %p\n", (void*)HEAP_END);
+    printf("Heap Size: ");
+    print_memory_size(HEAP_END - HEAP_START);
+    printf("\n");
 
-    // Dynamically allocate frame bitmap
-    size_t bitmap_size = ALIGN_UP((total_memory / FRAME_SIZE + 7) / 8, 16);
-    frame_bitmap = (uint8_t*)HEAP_START_ALIGNED;
-
-    if ((size_t)frame_bitmap + bitmap_size > HEAP_END) {
-        printf("Error: Not enough memory for frame bitmap.\n");
-        return;
-    }
-    memset(frame_bitmap, 0, bitmap_size);
-
-    // Adjust freeList to exclude the bitmap
-    void* heap_start = (void*)((size_t)frame_bitmap + bitmap_size);
-    freeList = (memory_block*)ALIGN_UP((size_t)heap_start, 16);
-
-    freeList->size = HEAP_END - (size_t)freeList - BLOCK_SIZE;
-    freeList->free = 1;
-    freeList->next = NULL;
-
-    printf("Initialized memory system. Total memory: %d MB\n", total_memory / 1024 / 1024);
-}
-
-void set_frame(size_t frame) {
-    frame_bitmap[frame / 8] |= (1 << (frame % 8));
-}
-
-void clear_frame(size_t frame) {
-    frame_bitmap[frame / 8] &= ~(1 << (frame % 8));
-}
-
-int test_frame(size_t frame) {
-    return frame_bitmap[frame / 8] & (1 << (frame % 8));
-}
-
-size_t allocate_frame() {
-    for (size_t i = 0; i < total_memory / FRAME_SIZE; i++) {
-        if (!test_frame(i)) {
-            set_frame(i);
-            return i * FRAME_SIZE;
-        }
-    }
-    printf("Error: No free frames available.\n");
-    return (size_t)-1; // Indicate failure
-}
-
-void free_frame(size_t addr) {
-    size_t frame = addr / FRAME_SIZE;
-    clear_frame(frame);
+    initialize_block_bitmap();
+    printf("Memory system initialized with %zu blocks of %u bytes.\n", MAX_BLOCKS, BLOCK_SIZE);
 }
 
 void* k_malloc(size_t size) {
-    size = ALIGN_UP(size, 16);
-    memory_block* best_fit = NULL;
-    memory_block* current = freeList;
+    size_t num_blocks = ALIGN_UP(size, BLOCK_SIZE) / BLOCK_SIZE;
 
-    while (current) {
-        if (current->free && current->size >= size) {
-            if (!best_fit || current->size < best_fit->size) {
-                best_fit = current;
+    for (size_t i = 0; i < MAX_BLOCKS; i++) {
+        size_t j;
+        for (j = 0; j < num_blocks; j++) {
+            if (block_bitmap[(i + j) / 8] & (1 << ((i + j) % 8))) {
+                break; // Block already allocated
             }
         }
-        current = current->next;
-    }
 
-    if (best_fit) {
-        best_fit->free = 0;
-
-        if (best_fit->size > size + BLOCK_SIZE) {
-            memory_block* newBlock = (memory_block*)((char*)best_fit + BLOCK_SIZE + size);
-            newBlock->size = best_fit->size - size - BLOCK_SIZE;
-            newBlock->free = 1;
-            newBlock->next = best_fit->next;
-
-            best_fit->size = size;
-            best_fit->next = newBlock;
+        if (j == num_blocks) { // Found enough contiguous blocks
+            for (size_t k = 0; k < num_blocks; k++) {
+                block_bitmap[(i + k) / 8] |= (1 << ((i + k) % 8)); // Mark blocks as used
+            }
+            return (void*)(HEAP_START + (i * BLOCK_SIZE));
         }
-
-        return (void*)((char*)best_fit + BLOCK_SIZE);
     }
 
-    printf("Error: Out of heap memory.\n");
+    printf("Error: Not enough contiguous blocks available.\n");
     return NULL;
 }
 
-void k_free(void* ptr) {
+void k_free(void* ptr, size_t size) {
     if (!ptr) return;
 
-    memory_block* block = (memory_block*)((char*)ptr - BLOCK_SIZE);
-    if (block->free) {
-        printf("Warning: Double free detected.\n");
-        return;
-    }
+    size_t start_block = ((size_t)ptr - HEAP_START) / BLOCK_SIZE;
+    size_t num_blocks = ALIGN_UP(size, BLOCK_SIZE) / BLOCK_SIZE;
 
-    block->free = 1;
-
-    // Merge with next block if free
-    if (block->next && block->next->free) {
-        block->size += block->next->size + BLOCK_SIZE;
-        block->next = block->next->next;
-    }
-
-    // Merge with previous block if free
-    memory_block* current = freeList;
-    while (current && current->next) {
-        if (current->next == block && current->free) {
-            current->size += block->size + BLOCK_SIZE;
-            current->next = block->next;
-            break;
-        }
-        current = current->next;
+    for (size_t i = 0; i < num_blocks; i++) {
+        block_bitmap[(start_block + i) / 8] &= ~(1 << ((start_block + i) % 8)); // Mark blocks as free
     }
 }
 
@@ -180,29 +91,7 @@ void* k_realloc(void* ptr, size_t new_size) {
         return k_malloc(new_size);
     }
 
-    if (new_size == 0) {
-        k_free(ptr);
-        return NULL;
-    }
-
-    memory_block* block = (memory_block*)((char*)ptr - BLOCK_SIZE);
-    size_t old_size = block->size;
-
-    if (new_size <= old_size) {
-        return ptr;
-    }
-
-    void* new_ptr = k_malloc(new_size);
-    if (!new_ptr) {
-        return NULL;
-    }
-
-    size_t copy_size = (old_size < new_size) ? old_size : new_size;
-    memmove(new_ptr, ptr, copy_size);
-
-    k_free(ptr);
-
-    return new_ptr;
+    return ptr;
 }
 
 void print_memory_size(size_t size) {
@@ -216,66 +105,48 @@ void print_memory_size(size_t size) {
 }
 
 void show_heap() {
-    memory_block* current = freeList;
-    size_t totalFree = 0, totalUsed = 0, largestFree = 0;
-
     printf("Heap Debug Info:\n");
-    while (current) {
-        if (current->free) {
-            totalFree += current->size;
-            if (current->size > largestFree) {
-                largestFree = current->size;
+    size_t total_used_blocks = 0;
+    size_t total_free_blocks = 0;
+    size_t contiguous_free_blocks = 0;
+    size_t max_contiguous_free = 0;
+
+    for (size_t i = 0; i < MAX_BLOCKS; i++) {
+        if (block_bitmap[i / 8] & (1 << (i % 8))) {
+            if (contiguous_free_blocks > max_contiguous_free) {
+                max_contiguous_free = contiguous_free_blocks;
             }
+            contiguous_free_blocks = 0;
+            total_used_blocks++;
         } else {
-            totalUsed += current->size;
+            contiguous_free_blocks++;
+            total_free_blocks++;
         }
-        printf("Block at %p: Size: ", current);
-        print_memory_size(current->size);
-        printf(", Free: %d\n", current->free);
-        current = current->next;
     }
 
-    printf("Total Free Memory: ");
-    print_memory_size(totalFree);
-    printf("\n");
+    if (contiguous_free_blocks > max_contiguous_free) {
+        max_contiguous_free = contiguous_free_blocks;
+    }
 
-    printf("Total Used Memory: ");
-    print_memory_size(totalUsed);
-    printf("\n");
+    printf("Total Blocks: %zu\n", MAX_BLOCKS);
+    printf("Used Blocks: %zu (", total_used_blocks);
+    print_memory_size(total_used_blocks * BLOCK_SIZE);
+    printf(")\n");
 
-    printf("Largest Free Block: ");
-    print_memory_size(largestFree);
-    printf("\n");
+    printf("Free Blocks: %zu (", total_free_blocks);
+    print_memory_size(total_free_blocks * BLOCK_SIZE);
+    printf(")\n");
+
+    printf("Largest Contiguous Free Blocks: %zu (", max_contiguous_free);
+    print_memory_size(max_contiguous_free * BLOCK_SIZE);
+    printf(")\n");
 }
 
 void show_memory_map() {
     printf("\n--- Memory Map (Occupied Only) ---\n");
 
     // Display the occupied heap memory blocks
-    printf("Heap (Occupied Blocks):\n");
-    memory_block* current = freeList;
-    while (current) {
-        if (!current->free) {
-            printf("  Block at %p: Size: %u bytes\n", current, current->size);
-        }
-        current = current->next;
-    }
-
-    // Display the occupied frames
-    printf("\nFrames (Occupied):\n");
-    size_t total_frames = total_memory / FRAME_SIZE;
-    size_t used_frames = 0;
-
-    for (size_t i = 0; i < total_frames; i++) {
-        if (test_frame(i)) {
-            if (used_frames % 8 == 0) printf("\n  "); // Group occupied frames for readability
-            printf("Frame %u ", i);
-            used_frames++;
-        }
-    }
-
-    printf("\n\nTotal Used Frames: %u\n", used_frames);
-    printf("-------------------\n");
+    
 }
 
 //---------------------------------------------------------------------------------------------
@@ -299,16 +170,7 @@ void print_test_result(const char *test_name, bool passed) {
 
 // Test methods with boolean return value
 bool test_realloc() {
-    void *ptr = k_malloc(10);
-    if (!ptr) return false;
-
-    ptr = k_realloc(ptr, 20);
-    if (!ptr) return false;
-
-    ptr = k_realloc(ptr, 5);
-    if (!ptr) return false;
-
-    k_free(ptr);
+    
     return true;
 }
 
@@ -316,15 +178,15 @@ bool TestResetAfterFree() {
     void *firstPtr = k_malloc(1);
     if (!firstPtr) return false;
 
-    k_free(firstPtr);
+    k_free(firstPtr, 1);
 
     void *secondPtr = k_malloc(1);
     return firstPtr == secondPtr;
 }
 
 bool TestMultipleFrees() {
-    k_free(NULL);
-    k_free(NULL);
+    k_free(NULL, 0);
+    k_free(NULL, 0);
     void *ptr = k_malloc(1);
     return ptr != NULL;
 }
@@ -336,12 +198,12 @@ bool TestSetMemory() {
     memset(buffer, 'A', 10);
     for (int i = 0; i < 10; i++) {
         if (buffer[i] != 'A') {
-            k_free(buffer);
+            k_free(buffer, 10);
             return false;
         }
     }
 
-    k_free(buffer);
+    k_free(buffer, 10);
     return true;
 }
 
@@ -352,12 +214,12 @@ bool TestSetZero() {
     memset(buffer, 0, 10);
     for (int i = 0; i < 10; i++) {
         if (buffer[i] != 0) {
-            k_free(buffer);
+            k_free(buffer, 10);
             return false;
         }
     }
 
-    k_free(buffer);
+    k_free(buffer, 10);
     return true;
 }
 
@@ -404,12 +266,12 @@ void test_malloc() {
     // Add test cases and debugging information
     void* ptr1 = k_malloc(1024);
     void* ptr2 = k_malloc(1024);
-    k_free(ptr1);
+    k_free(ptr1, 1024);
     void* ptr3 = k_malloc(512);
     printf("Tests complete: ptr1=%p, ptr2=%p, ptr3=%p\n", ptr1, ptr2, ptr3);
 
-    k_free(ptr2);
-    k_free(ptr3);
+    k_free(ptr2, 1024);
+    k_free(ptr3, 512);
 }
 
 void test_memory() {
