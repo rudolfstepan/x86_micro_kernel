@@ -73,21 +73,23 @@ typedef struct {
     uint16_t reserved;
 } __attribute__((packed)) multiboot2_tag_framebuffer_t;
 
-// Memory map entry (for mmap tag)
+// Memory map entry structure
 typedef struct {
-    uint64_t base_addr;   // Base address
-    uint64_t length;      // Length of the memory region
-    uint32_t type;        // Type (1 = available, others = reserved)
-    uint32_t reserved;
-} __attribute__((packed)) multiboot2_mmap_entry_t;
+    uint64_t base_addr; // Region base address
+    uint64_t length;    // Region length
+    uint32_t type;      // Region type
+    uint32_t reserved;  // Reserved, must be zero
+} multiboot_mmap_entry_t;
 
+// Memory map tag structure
 typedef struct {
-    uint32_t type;
-    uint32_t size;
-    uint32_t entry_size;
+    uint32_t type;         // Tag type (should be MULTIBOOT_TAG_TYPE_MMAP)
+    uint32_t size;         // Total size, including all entries
+    uint32_t entry_size;   // Size of each memory map entry (24 bytes)
     uint32_t entry_version;
-    multiboot2_mmap_entry_t entries[];
-} __attribute__((packed)) multiboot2_tag_mmap_t;
+    multiboot_mmap_entry_t entries[];
+} multiboot2_tag_mmap_t;
+
 
 
 void enumerate_multiboot2_tags(multiboot2_info_t *mb_info);

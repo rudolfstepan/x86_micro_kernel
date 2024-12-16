@@ -785,22 +785,24 @@ void cmd_show(int arg_count, const char** arguments) {
     printf("Name: %s, %u\n", file->name, file->size);
 
     // Calculate the size of the buffer based on the size of the file
-    size_t bufferSize = file->size; // Use the file size as the buffer size directly
-    char* buffer = (char*)malloc(bufferSize);
+    // size_t bufferSize = file->size; // Use the file size as the buffer size directly
+    // char* buffer = (char*)malloc(bufferSize);
 
-    if (buffer == NULL) {
-        printf("Failed to allocate memory for file buffer\n");
-        return;
-    }
+    // if (buffer == NULL) {
+    //     printf("Failed to allocate memory for file buffer\n");
+    //     return;
+    // }
+
+    memset(file->base, 0, file->size);
 
     // Read the file into the buffer, passing the correct size
-    fat32_read_file(file, buffer, bufferSize, bufferSize); // Pass bufferSize as the buffer size
+    //fat32_read_file(file, buffer, bufferSize, bufferSize); // Pass bufferSize as the buffer size
 
-    //hex_dump((unsigned char*)buffer, 64);
+    hex_dump(file->base, 256);
 
     //secure_free(buffer, bufferSize);  // Clear the buffer
 
-    free(buffer);
+    free(file);
 
     //printf("Result: %d\n", result);
 

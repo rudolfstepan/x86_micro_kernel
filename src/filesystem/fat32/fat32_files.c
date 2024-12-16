@@ -206,6 +206,9 @@ FILE* fat32_open_file(const char* filename, const char* mode) {
         return NULL;
     }
 
+    // clear the buffer
+    //memset(file->base, 0, fileSize);
+
     // Load file content into memory
     // if (readFileData(startCluster, file->base, fileSize, fileSize) != 0) {
     //     printf("Failed to load file content into memory.\n");

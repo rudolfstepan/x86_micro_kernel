@@ -15,6 +15,8 @@
 #include "drivers/kb/kb.h"
 
 
+#define BUFFER_SIZE 128
+
 // for memory dump
 #define BYTES_PER_LINE 16
 #define MAX_LINES 20
@@ -361,187 +363,171 @@ void uint64_t_to_str(uint64_t value, char* buffer, int base) {
     buffer[j] = '\0';
 }
 
+void print_number(uint64_t num, int base, bool is_signed, bool uppercase, bool alt_form, int width, int precision, bool zero_pad, bool left_align, bool always_sign) {
+    char buffer[BUFFER_SIZE];
+    const char *digits = uppercase ? "0123456789ABCDEF" : "0123456789abcdef";
+    int index = BUFFER_SIZE - 1;
+    buffer[index] = '\0';
+
+    // Generate digits in reverse order
+    do {
+        buffer[--index] = digits[num % base];
+        num /= base;
+    } while (num > 0);
+
+    // Add prefix for alternate form
+    if (alt_form && base == 16) {
+        buffer[--index] = uppercase ? 'X' : 'x';
+        buffer[--index] = '0';
+    }
+
+    // Print padding and number
+    int len = BUFFER_SIZE - 1 - index;
+    if (!left_align) while (width-- > len) putchar(zero_pad ? '0' : ' ');
+    print_string(&buffer[index]);
+    if (left_align) while (width-- > len) putchar(' ');
+}
+
+
+void print_char(char c) {
+    putchar(c);
+}
+
+void print_string(const char *str) {
+    while (*str) {
+        putchar(*str++);
+    }
+}
+
+
+
+// Helper to convert integer to string and print
+void print_formatted_number(uint64_t num, int base, bool is_signed, bool uppercase, bool alt_form, int width, int precision, bool zero_pad, bool left_align, bool always_sign) {
+    print_number(num, base, is_signed, uppercase, alt_form, width, precision, zero_pad, left_align, always_sign);
+}
+
+
+
+
+
+
 /*
     * printf() implementation
     * Supports %c, %s, %d, %u, %p, %X format specifiers
     * Supports width, precision, and padding
 */
-int printf(const char* format, ...) {
+int printf(const char *format, ...) {
     va_list args;
     va_start(args, format);
 
-    while (*format != '\0') {
+    while (*format) {
         if (*format == '%') {
-            format++;
+            format++;  // Skip '%'
 
-            // Parse width, alignment, and padding
+            // Flags
+            bool left_align = false, zero_pad = false, always_sign = false, space_pad = false, alt_form = false;
+
+            // Parse flags
+            while (*format == '-' || *format == '0' || *format == '+' || *format == ' ' || *format == '#') {
+                switch (*format) {
+                    case '-': left_align = true; break;
+                    case '0': zero_pad = true; break;
+                    case '+': always_sign = true; break;
+                    case ' ': space_pad = true; break;
+                    case '#': alt_form = true; break;
+                }
+                format++;
+            }
+
+            // Parse width
             int width = 0;
-            bool width_specified = false;
-            bool zero_padding = false;
-            bool left_align = false;
-            int precision = -1;  // No precision by default
-
-            // Check for left alignment flag (e.g., %-8s)
-            if (*format == '-') {
-                left_align = true;
-                format++;
-            }
-
-            // Check for zero padding (e.g., %08d) if not left-aligned
-            if (*format == '0' && !left_align) {
-                zero_padding = true;
-                format++;
-            }
-
-            // Parse width: either a numeric value or '*' for dynamic width
             if (*format == '*') {
                 width = va_arg(args, int);
-                width_specified = true;
                 format++;
             } else {
                 while (*format >= '0' && *format <= '9') {
                     width = width * 10 + (*format - '0');
-                    width_specified = true;
                     format++;
                 }
             }
 
-            // Parse precision if present (e.g., %.11s)
+            // Parse precision
+            int precision = -1; // Default is -1 (no precision)
             if (*format == '.') {
-                format++;
                 precision = 0;
-                while (*format >= '0' && *format <= '9') {
-                    precision = precision * 10 + (*format - '0');
+                format++;
+                if (*format == '*') {
+                    precision = va_arg(args, int);
                     format++;
+                } else {
+                    while (*format >= '0' && *format <= '9') {
+                        precision = precision * 10 + (*format - '0');
+                        format++;
+                    }
                 }
             }
 
-            if (strncmp(format, "llX", 3) == 0) {
-                uint64_t llx = va_arg(args, uint64_t);
-                print_hex64(llx);  // This assumes print_hex64 handles width.
-                format += 2;       // Skip past 'llX'
-            }else if(strncmp(format, "llu", 3) == 0){
-                format += 2;
+            // Length modifier
+            bool is_long = false, is_long_long = false;
+            if (*format == 'l') {
+                format++;
+                if (*format == 'l') {
+                    is_long_long = true;
+                    format++;
+                } else {
+                    is_long = true;
+                }
+            }
 
-                // Handle %llu (unsigned 64-bit integer)
-                    uint64_t value = va_arg(args, uint64_t);
-
-                    // Convert uint64_t to string
-                    char buffer[32];
-                    uint64_t_to_str(value, buffer, 10); // Base 10 conversion utility
-
-                    int len = strlen(buffer);
-                    int pad = width - len;
-
-                    // Apply width and padding
-                    if (!left_align && width_specified && pad > 0) {
-                        for (int i = 0; i < pad; i++) {
-                            putchar(zero_padding ? '0' : ' ');
-                        }
-                    }
-                    for (int i = 0; buffer[i] != '\0'; i++) {
-                        putchar(buffer[i]);
-                    }
-                    if (left_align && width_specified && pad > 0) {
-                        for (int i = 0; i < pad; i++) {
-                            putchar(' ');
-                        }
-                    }
-                    continue; // Move to the next character
-
-
-            } else {
-                switch (*format) {
-                case 'c': {
+            // Format specifier
+            switch (*format) {
+                case 'd': case 'i': { // Signed integers
+                    int64_t value = is_long_long ? va_arg(args, int64_t) :
+                                    is_long ? va_arg(args, long) :
+                                    va_arg(args, int);
+                    print_formatted_number(value, 10, true, false, false, width, precision, zero_pad, left_align, always_sign);
+                    break;
+                }
+                case 'u': { // Unsigned integers
+                    uint64_t value = is_long_long ? va_arg(args, uint64_t) :
+                                     is_long ? va_arg(args, unsigned long) :
+                                     va_arg(args, unsigned int);
+                    print_formatted_number(value, 10, false, false, false, width, precision, zero_pad, left_align, false);
+                    break;
+                }
+                case 'x': case 'X': { // Hexadecimal
+                    uint64_t value = is_long_long ? va_arg(args, uint64_t) :
+                                     is_long ? va_arg(args, unsigned long) :
+                                     va_arg(args, unsigned int);
+                    print_formatted_number(value, 16, false, (*format == 'X'), alt_form, width, precision, zero_pad, left_align, false);
+                    break;
+                }
+                case 'p': { // Pointers
+                    uintptr_t ptr = va_arg(args, uintptr_t);
+                    print_string("0x");
+                    print_formatted_number(ptr, 16, false, false, false, width, precision, true, left_align, false);
+                    break;
+                }
+                case 'c': { // Characters
                     char c = (char)va_arg(args, int);
-                    putchar(c);
+                    print_char(c);
                     break;
                 }
-                case 's': {
-                    char* s = va_arg(args, char*);
-                    int len = strlen(s);
-
-                    // Apply precision limit if specified
-                    if (precision >= 0 && precision < len) {
-                        len = precision;
-                    }
-
-                    // Calculate padding
-                    int pad = (width > len) ? width - len : 0;
-
-                    if (left_align) {
-                        // Print the string first, then padding
-                        for (int i = 0; i < len; i++) {
-                            putchar(s[i]);
-                        }
-                        for (int i = 0; i < pad; i++) {
-                            putchar(' ');
-                        }
-                    } else {
-                        // Print padding first, then the string
-                        for (int i = 0; i < pad; i++) {
-                            putchar(zero_padding ? '0' : ' ');
-                        }
-                        for (int i = 0; i < len; i++) {
-                            putchar(s[i]);
-                        }
-                    }
+                case 's': { // Strings
+                    const char *str = va_arg(args, const char *);
+                    print_string(str);
                     break;
                 }
-                case 'u': {
-                    unsigned int u = va_arg(args, unsigned int);
-                    char buffer[32];
-                    unsigned_int_to_str(u, buffer, 10);
-                    int len = strlen(buffer);
-                    int pad = width - len;
-                    if (width_specified && pad > 0) {
-                        for (int i = 0; i < pad; i++) putchar(zero_padding ? '0' : ' ');
-                    }
-                    char* s = buffer;
-                    while (*s) {
-                        putchar(*s++);
-                    }
+                case '%': { // Literal '%'
+                    putchar('%');
                     break;
                 }
-                case 'd': {
-                    int i = va_arg(args, int);
-                    if (i < 0) {
-                        putchar('-');
-                        i = -i;
-                    }
-
-                    char buffer[32];
-                    int_to_str(i, buffer, 10);
-                    int len = strlen(buffer);
-                    int pad = width - len;
-                    if (width_specified && pad > 0) {
-                        for (int i = 0; i < pad; i++) putchar(zero_padding ? '0' : ' ');
-                    }
-                    char* s = buffer;
-                    while (*s) {
-                        putchar(*s++);
-                    }
+                default:
+                    putchar(*format); // Print unknown specifier
                     break;
-                }
-                case 'p': {
-                    void* p = va_arg(args, void*);
-                    print_hex((unsigned int)p); // Assuming 32-bit addresses
-                    break;
-                }
-                case 'X': {
-                    unsigned int x = va_arg(args, unsigned int);
-                    char buffer[32];
-                    int_to_hex_str(x, buffer, width, zero_padding); // Adjusted function to handle padding
-                    char* s = buffer;
-                    while (*s) {
-                        putchar(*s++);
-                    }
-                    break;
-                }
-                }
             }
         } else {
-            putchar(*format);
+            putchar(*format); // Print non-format character
         }
         format++;
     }
@@ -549,6 +535,7 @@ int printf(const char* format, ...) {
     va_end(args);
     return 0;
 }
+
 
 // Main sprintf implementation
 int sprintf(char* buffer, const char* format, ...) {

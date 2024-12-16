@@ -7,25 +7,10 @@
 
 extern volatile size_t total_memory; // Total memory size detected by the bootloader and defined in kernel.c
 
-void find_framebuffer_tag(multiboot2_info_t *mb_info) {
-    uint8_t *tags = (uint8_t *)mb_info + sizeof(multiboot2_info_t); // Skip total_size and reserved
-    uint32_t total_size = mb_info->total_size;
+// prptptypes
+void print_memory_map(multiboot2_tag_mmap_t *mmap);
+void find_framebuffer_tag(multiboot2_info_t *mb_info);
 
-    while (tags < (uint8_t *)mb_info + total_size) {
-        multiboot2_tag_t *tag = (multiboot2_tag_t *)tags;
-
-        if (tag->type == MULTIBOOT2_TAG_TYPE_FRAMEBUFFER) {
-            multiboot2_tag_framebuffer_t *fb = (multiboot2_tag_framebuffer_t *)tag;
-            parse_framebuffer(fb);
-            return;
-        }
-
-        // Move to the next tag (aligned to 8 bytes)
-        tags += (tag->size + 7) & ~7;
-    }
-
-    printf("Framebuffer tag not found.\n");
-}
 
 void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
 
@@ -34,7 +19,7 @@ void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
     uint8_t *tags = (uint8_t *)mb_info + sizeof(multiboot2_info_t); // Skip total_size and reserved
     uint32_t total_size = mb_info->total_size;
 
-    printf("Multiboot 2 Information:\n");
+    //printf("Multiboot 2 Information:\n");
 
     while (tags < (uint8_t *)mb_info + total_size) {
         multiboot2_tag_t *tag = (multiboot2_tag_t *)tags;
@@ -58,9 +43,16 @@ void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
                 break;
             }
 
+            case MULTIBOOT2_TAG_TYPE_MODULE: {
+                multiboot2_tag_module_t *module = (multiboot2_tag_module_t *)tag;
+                printf("Module: Start = 0x%lx, Length = 0x%lx, Name = %s\n",
+                       module->addr, module->length, module->string);
+                break;
+            }
+
             case MULTIBOOT2_TAG_TYPE_BASIC_MEMINFO: {
                 multiboot2_tag_basic_meminfo_t *meminfo = (multiboot2_tag_basic_meminfo_t *)tag;
-                printf("Memory Info: Lower = %u KB, Upper = %u KB\n", meminfo->mem_lower, meminfo->mem_upper);
+                printf("Multiboot Basic Memory Info: Lower = %u KB, Upper = %u KB\n", meminfo->mem_lower, meminfo->mem_upper);
 
                 // Store the total memory size
                 total_memory = meminfo->mem_lower *1024 + meminfo->mem_upper *1024; // Convert to bytes
@@ -75,10 +67,13 @@ void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
                 break;
             }
 
-            case MULTIBOOT2_TAG_TYPE_MODULE: {
-                multiboot2_tag_module_t *module = (multiboot2_tag_module_t *)tag;
-                printf("Module: Start = 0x%lx, Length = 0x%lx, Name = %s\n",
-                       module->addr, module->length, module->string);
+            case MULTIBOOT2_TAG_TYPE_MMAP: {
+                multiboot2_tag_mmap_t *mmap = (multiboot2_tag_mmap_t *)tag;
+                printf("Memory Map: Length = %u\n", mmap->size);
+
+                // Example parsing memory map
+                print_memory_map(mmap);
+
                 break;
             }
 
@@ -129,8 +124,51 @@ void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
     }
 }
 
+void find_framebuffer_tag(multiboot2_info_t *mb_info) {
+    uint8_t *tags = (uint8_t *)mb_info + sizeof(multiboot2_info_t); // Skip total_size and reserved
+    uint32_t total_size = mb_info->total_size;
 
-// // Function to Print EFI Memory Map
+    while (tags < (uint8_t *)mb_info + total_size) {
+        multiboot2_tag_t *tag = (multiboot2_tag_t *)tags;
+
+        if (tag->type == MULTIBOOT2_TAG_TYPE_FRAMEBUFFER) {
+            multiboot2_tag_framebuffer_t *fb = (multiboot2_tag_framebuffer_t *)tag;
+            parse_framebuffer(fb);
+            return;
+        }
+
+        // Move to the next tag (aligned to 8 bytes)
+        tags += (tag->size + 7) & ~7;
+    }
+
+    printf("Framebuffer tag not found.\n");
+}
+
+void print_memory_map(multiboot2_tag_mmap_t *mmap) {
+    if (!mmap) {
+        printf("Memory map is NULL.\n");
+        return;
+    }
+
+    printf("Memory Map Entries:\n");
+
+    // Calculate the number of entries
+    uint32_t offset = 16; // Skip the first 16 bytes (header fields)
+    uint32_t tag_size = mmap->size;
+
+    while (offset < tag_size) {
+        multiboot_mmap_entry_t *entry = (multiboot_mmap_entry_t *)((uint8_t *)mmap + offset);
+
+        printf("Base Address: 0x%016llx | Length: %016llu | Type: %u\n",
+               (unsigned long long)entry->base_addr,
+               (unsigned long long)entry->length,
+               entry->type);
+
+        offset += mmap->entry_size; // Increment offset by entry size
+    }
+}
+
+// Function to Print EFI Memory Map
 // void print_efi_memory_map(const multiboot2_info_t *mb_info) {
 //     const multiboot2_tag_t *tag = mb_info->tags;
 

@@ -19,9 +19,9 @@ void* malloc(size_t size) {
         if (allocated_memory) {
             //printf("Memory allocated at: %p, size: %u\n", allocated_memory, size);
         } else {
-            //set_color(RED);
+            set_color(RED);
             printf("Memory allocation failed.\n");
-            //set_color(WHITE);
+            set_color(WHITE);
         }
 
         return allocated_memory;
@@ -35,9 +35,9 @@ void* malloc(size_t size) {
     if (allocated_memory) {
         //printf("Memory allocated at: %p\n", allocated_memory);
     } else {
-        //set_color(RED);
+        set_color(RED);
         printf("Memory allocation failed.\n");
-        //set_color(WHITE);
+        set_color(WHITE);
     }
 
     return allocated_memory;
