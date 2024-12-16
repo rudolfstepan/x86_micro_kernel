@@ -446,7 +446,7 @@ void debug_read_bootsector(uint8_t sector) {
         printf("Failed to read boot sector.\n");
     }
 
-    free(buffer);  // Free the buffer after use
+    free(buffer, SECTOR_SIZE);  // Free the buffer after use
 
     return;
 }
@@ -589,7 +589,7 @@ void fdd_detect_drives() {
                 detected_drives[drive_count++] = *detected_drive;
 
                 // Free the temporary detected_drive as we already copied its content
-                free(detected_drive);
+                free(detected_drive, sizeof(drive_t));
             } else {
                 printf("No valid response from floppy drive at fdd%d.\n", drive);
             }

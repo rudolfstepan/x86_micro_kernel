@@ -250,7 +250,7 @@ int split_input(const char* input, char* command, char** arguments, int max_args
 // Free arguments array
 void free_arguments(char** arguments, int arg_count) {
     for (int i = 0; i < arg_count; i++) {
-        free(arguments[i]);
+        free(arguments[i], 0);
     }
 }
 
@@ -781,7 +781,7 @@ void cmd_show(int arg_count, const char** arguments) {
         return;
     }
 
-    FILE* file = fat32_open_file(filename, "r");
+    FILE* file = fat32_open_file(filename, "r+");
     if (file == NULL) {
         printf("File not found: %s\n", filename);
         return;
@@ -799,13 +799,13 @@ void cmd_show(int arg_count, const char** arguments) {
     // }
 
     // Read the file into the buffer, passing the correct size
-    fat32_read_file(file, file->base, file->size, file->size); // Pass bufferSize as the buffer size
+    //fat32_read_file(file, file->base, file->size, file->size); // Pass bufferSize as the buffer size
 
     hex_dump(file->base, 256);
 
     //secure_free(buffer, bufferSize);  // Clear the buffer
 
-    free(file);
+    free(file, sizeof(FILE));  // Free the FILE structure
 
     //printf("Result: %d\n", result);
 

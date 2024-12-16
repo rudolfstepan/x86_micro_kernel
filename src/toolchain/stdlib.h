@@ -48,7 +48,7 @@ void initialize_memory_system();
 void* malloc(size_t size);
 void* aligned_alloc(size_t alignment, size_t size);
 void* realloc(void *ptr, size_t new_size);
-void free(void* ptr);
+void free(void* ptr, size_t size);
 void secure_free(void *ptr, size_t size);
 void* memmove(void* dest, const void* src, size_t n);
 

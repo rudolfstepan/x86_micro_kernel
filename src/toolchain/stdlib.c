@@ -81,7 +81,7 @@ void* aligned_alloc(size_t alignment, size_t size) {
 void aligned_free(void* ptr) {
     if (ptr) {
         // Hole den Originalzeiger und gib den Speicher frei
-        free(((void**)ptr)[-1]);
+        free(((void**)ptr)[-1], 0);
     }
 }
 
@@ -90,8 +90,13 @@ void* realloc(void *ptr, size_t new_size) {
     //return k_realloc(ptr, new_size);
 }
 
-void free(void* ptr) {
+void free(void* ptr, size_t size) {
     if (!ptr) return;
+
+    if(is_kernel_context()) {
+        k_free(ptr, size);
+        return;
+    }
 
     syscall(SYS_FREE, ptr, 0, 0);
     //k_free(ptr);
@@ -100,7 +105,7 @@ void free(void* ptr) {
 void secure_free(void *ptr, size_t size) {
     if (ptr != NULL) {
         memset(ptr, 0, size);
-        free(ptr);
+        free(ptr, size);
     }
 }
 

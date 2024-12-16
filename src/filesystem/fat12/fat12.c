@@ -59,12 +59,12 @@ int read_fat12(uint8_t drive, FAT12* fat12) {
 
     if (!fdc_read_sector(drive, 0, 0, 1, buffer)) {
         printf("Error reading boot sector.\n");
-        free(buffer);
+        free(buffer, SECTOR_SIZE);
         return false;
     }
 
     memcpy(&fat12->bootSector, buffer, sizeof(Fat12BootSector));
-    free(buffer);
+    free(buffer, SECTOR_SIZE);
 
     if (fat12->bootSector.bootSectorSignature != 0xAA55) {
         printf("Invalid boot sector signature.\n");
@@ -134,7 +134,7 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
     buffer = (uint8_t*)malloc(SECTOR_SIZE * ROOT_DIR_SECTORS);  // Allocate buffer for multiple sectors
     if (!buffer) {
         printf("Memory allocation failed for sector buffer.\n");
-        free(entries);
+        free(entries, MAX_ENTRIES * sizeof(DirectoryEntry));
         return -1;
     }
 
@@ -148,8 +148,8 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
         // Read multiple sectors at once
         if (!fdc_read_sectors(current_fdd_drive, head, track, sector, ROOT_DIR_SECTORS, buffer)) {
             printf("Error reading root directory sectors.\n");
-            free(entries);
-            free(buffer);
+            free(entries, MAX_ENTRIES * sizeof(DirectoryEntry));
+            free(buffer, SECTOR_SIZE * ROOT_DIR_SECTORS);
             return -1;
         }
 
@@ -171,8 +171,8 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
             // Read multiple sectors for the cluster
             if (!fdc_read_sectors(current_fdd_drive, head, track, sector, fat12->bootSector.sectorsPerCluster, buffer)) {
                 printf("Error reading subdirectory sectors starting from sector %d.\n", sector);
-                free(entries);
-                free(buffer);
+                free(entries, MAX_ENTRIES * sizeof(DirectoryEntry));
+                free(buffer, SECTOR_SIZE * ROOT_DIR_SECTORS);
                 return -1;
             }
 
@@ -189,7 +189,7 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
 
     printf("Entries found: %d\n", entries_found);
 
-    free(buffer);
+    free(buffer, SECTOR_SIZE * ROOT_DIR_SECTORS);
     return entries_found;
 }
 
@@ -309,7 +309,7 @@ Fat12File* fat12_open_file(const char* filename, const char* mode) {
     file->base = (unsigned char*)malloc(file_entry->fileSize);
     if (file->base == NULL) {
         printf("Failed to allocate memory for file buffer.\n");
-        free(file);
+        free(file, sizeof(Fat12File));
         return NULL;
     }
 
@@ -352,7 +352,7 @@ void print_file_content(Fat12File* file) {
         printf("Failed to read file content.\n");
     }
 
-    free(buffer);
+    free(buffer, bufferSize);
 }
 
 // Read directory based on the specified path
@@ -422,7 +422,7 @@ int fat12_read_file(Fat12File* file, void* buffer, unsigned int buffer_size, uns
             // Read the sector
             if (!fdc_read_sector(current_fdd_drive, head, track, sector, sectorBuffer)) {
                 printf("Error reading file sector at track %d, head %d, sector %d.\n", track, head, sector);
-                free(sectorBuffer);
+                free(sectorBuffer, SECTOR_SIZE);
                 return bytes_read; // Return bytes read so far on failure
             }
 
@@ -454,7 +454,7 @@ int fat12_read_file(Fat12File* file, void* buffer, unsigned int buffer_size, uns
         ((char*)buffer)[bytes_read] = '\0';
     }
 
-    free(sectorBuffer);
+    free(sectorBuffer, SECTOR_SIZE);
     printf("Completed reading %u bytes from file %s into buffer.\n", bytes_read, file->name);
 
     return bytes_read;

@@ -113,7 +113,7 @@ int fat32_load_file(const char* filename, void* loadAddress) {
     unsigned int fileSize = entry->fileSize;
     unsigned int startCluster = read_start_cluster(entry);
 
-    free(entry);
+    free(entry, sizeof(struct FAT32DirEntry));
 
     return readFileDataToAddress(startCluster, loadAddress, fileSize);
 }
@@ -137,7 +137,7 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
     for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
         if (!ata_read_sector(ata_base_address, sector + i, (void*)(entries + i * entriesPerSector), ata_is_master)) {
             printf("Error: Failed to read directory sector %u.\n", sector + i);
-            free(entries);
+            free(entries, SECTOR_SIZE * boot_sector.sectorsPerCluster);
             return NULL;
         }
     }
@@ -159,17 +159,17 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
 
             if (!foundEntry) {
                 printf("Error: Failed to allocate memory for directory entry.\n");
-                free(entries);
+                free(entries, SECTOR_SIZE * boot_sector.sectorsPerCluster);
                 return NULL;
             }
 
             memcpy(foundEntry, &entries[j], sizeof(struct FAT32DirEntry));
-            free(entries);
+            free(entries, SECTOR_SIZE * boot_sector.sectorsPerCluster);
             return foundEntry;
         }
     }
 
-    free(entries);
+    free(entries, SECTOR_SIZE * boot_sector.sectorsPerCluster);
     return NULL;
 }
 
@@ -237,7 +237,7 @@ FILE* fat32_open_file(const char* filename, const char* mode) {
     file->base = (unsigned char*)malloc(fileSize);
     if (file->base == NULL) {
         printf("Not enough memory for file content.\n");
-        free(file);  // Free the FILE structure before returning
+        free(file, sizeof(FILE));  // Free the FILE structure before returning
         return NULL;
     }
 
@@ -247,8 +247,8 @@ FILE* fat32_open_file(const char* filename, const char* mode) {
     if (strcmp(mode, "r+") == 0) { // Fully load into memory
         if (readFileData(startCluster, file->base, fileSize, fileSize) != fileSize) {
             printf("Failed to load file content into memory.\n");
-            free(file->base);
-            free(file);
+            free(file->base, fileSize);  // Free the file content
+            free(file, sizeof(FILE));  // Free the FILE structure before returning
             return NULL;
         }
     }
