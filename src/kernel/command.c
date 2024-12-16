@@ -776,6 +776,11 @@ void cmd_show(int arg_count, const char** arguments) {
         return;
     }
 
+    if(strcmp(filename, "HEAP") == 0) {
+        show_heap();
+        return;
+    }
+
     FILE* file = fat32_open_file(filename, "r");
     if (file == NULL) {
         printf("File not found: %s\n", filename);
@@ -793,10 +798,8 @@ void cmd_show(int arg_count, const char** arguments) {
     //     return;
     // }
 
-    memset(file->base, 0, file->size);
-
     // Read the file into the buffer, passing the correct size
-    //fat32_read_file(file, buffer, bufferSize, bufferSize); // Pass bufferSize as the buffer size
+    fat32_read_file(file, file->base, file->size, file->size); // Pass bufferSize as the buffer size
 
     hex_dump(file->base, 256);
 

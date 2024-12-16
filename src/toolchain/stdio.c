@@ -363,6 +363,16 @@ void uint64_t_to_str(uint64_t value, char* buffer, int base) {
     buffer[j] = '\0';
 }
 
+void print_char(char c) {
+    putchar(c);
+}
+
+void print_string(const char *str) {
+    while (*str) {
+        putchar(*str++);
+    }
+}
+
 void print_number(uint64_t num, int base, bool is_signed, bool uppercase, bool alt_form, int width, int precision, bool zero_pad, bool left_align, bool always_sign) {
     char buffer[BUFFER_SIZE];
     const char *digits = uppercase ? "0123456789ABCDEF" : "0123456789abcdef";
@@ -388,34 +398,13 @@ void print_number(uint64_t num, int base, bool is_signed, bool uppercase, bool a
     if (left_align) while (width-- > len) putchar(' ');
 }
 
-
-void print_char(char c) {
-    putchar(c);
-}
-
-void print_string(const char *str) {
-    while (*str) {
-        putchar(*str++);
-    }
-}
-
-
-
 // Helper to convert integer to string and print
 void print_formatted_number(uint64_t num, int base, bool is_signed, bool uppercase, bool alt_form, int width, int precision, bool zero_pad, bool left_align, bool always_sign) {
     print_number(num, base, is_signed, uppercase, alt_form, width, precision, zero_pad, left_align, always_sign);
 }
 
+void print_float(double value, int precision, int width, bool left_align, bool always_sign);
 
-
-
-
-
-/*
-    * printf() implementation
-    * Supports %c, %s, %d, %u, %p, %X format specifiers
-    * Supports width, precision, and padding
-*/
 int printf(const char *format, ...) {
     va_list args;
     va_start(args, format);
@@ -502,6 +491,20 @@ int printf(const char *format, ...) {
                     print_formatted_number(value, 16, false, (*format == 'X'), alt_form, width, precision, zero_pad, left_align, false);
                     break;
                 }
+                case 'f': { // Floating-point numbers
+                    double value = va_arg(args, double); // Retrieve as double
+                    if (precision == -1) precision = 6; // Default precision is 6
+                    print_float(value, precision, width, left_align, always_sign);
+                    break;
+                }
+                case 'z': { // 'z' modifier for size_t
+                    format++; // Skip 'z'
+                    if (*format == 'u') { // Handle %zu
+                        size_t value = va_arg(args, size_t);
+                        print_formatted_number(value, 10, false, false, false, width, precision, zero_pad, left_align, false);
+                    }
+                    break;
+                }
                 case 'p': { // Pointers
                     uintptr_t ptr = va_arg(args, uintptr_t);
                     print_string("0x");
@@ -519,15 +522,15 @@ int printf(const char *format, ...) {
                     break;
                 }
                 case '%': { // Literal '%'
-                    putchar('%');
+                    print_char('%');
                     break;
                 }
                 default:
-                    putchar(*format); // Print unknown specifier
+                    print_char(*format); // Print unknown specifier
                     break;
             }
         } else {
-            putchar(*format); // Print non-format character
+            print_char(*format); // Print non-format character
         }
         format++;
     }
@@ -536,6 +539,37 @@ int printf(const char *format, ...) {
     return 0;
 }
 
+// Helper function for printing floats
+void print_float(double value, int precision, int width, bool left_align, bool always_sign) {
+    char buffer[64];
+    int len = 0;
+
+    // Format the float to a string
+    if (always_sign && value >= 0.0) {
+        snprintf(buffer, sizeof(buffer), "+%.*f", precision, value);
+    } else {
+        snprintf(buffer, sizeof(buffer), "%.*f", precision, value);
+    }
+
+    len = strlen(buffer);
+
+    // Handle right alignment
+    if (!left_align && len < width) {
+        for (int i = 0; i < width - len; i++) {
+            print_char(' ');
+        }
+    }
+
+    // Print the float string
+    print_string(buffer);
+
+    // Handle left alignment
+    if (left_align && len < width) {
+        for (int i = 0; i < width - len; i++) {
+            print_char(' ');
+        }
+    }
+}
 
 // Main sprintf implementation
 int sprintf(char* buffer, const char* format, ...) {
@@ -591,6 +625,50 @@ int sprintf(char* buffer, const char* format, ...) {
     return written;
 }
 
+void format_float(double value, int precision, char* buffer, size_t size) {
+    if (size == 0) return;
+
+    int integer_part = (int)value;  // Extract integer part
+    double fractional_part = value - (double)integer_part;  // Extract fractional part
+
+    // Handle negative numbers
+    int pos = 0;
+    if (value < 0) {
+        buffer[pos++] = '-';
+        integer_part = -integer_part;
+        fractional_part = -fractional_part;
+    }
+
+    // Convert integer part
+    char temp[32];
+    int temp_pos = 0;
+    do {
+        temp[temp_pos++] = '0' + (integer_part % 10);
+        integer_part /= 10;
+    } while (integer_part > 0);
+
+    // Reverse the integer part into the buffer
+    while (temp_pos > 0 && pos < size - 1) {
+        buffer[pos++] = temp[--temp_pos];
+    }
+
+    // Add the decimal point
+    if (pos < size - 1) buffer[pos++] = '.';
+
+    // Convert fractional part
+    for (int i = 0; i < precision; i++) {
+        fractional_part *= 10;
+        int digit = (int)fractional_part;
+        if (pos < size - 1) {
+            buffer[pos++] = '0' + digit;
+        }
+        fractional_part -= digit;
+    }
+
+    // Null-terminate the buffer
+    buffer[pos] = '\0';
+}
+
 // Simple implementation of snprintf
 int snprintf(char* str, size_t size, const char* format, ...) {
     va_list args;
@@ -599,41 +677,65 @@ int snprintf(char* str, size_t size, const char* format, ...) {
     unsigned int written = 0;
     const char* p = format;
 
-    while (*p != '\0' && written < size) {
+    while (*p != '\0' && written < size - 1) { // Reserve space for null terminator
         if (*p == '%') {
             p++;  // Skip '%'
+
+            int precision = 6;  // Default precision for floats
+            if (*p == '.') {    // Precision parsing
+                p++;
+                if (*p == '*') {
+                    precision = va_arg(args, int);
+                    p++;
+                } else {
+                    precision = 0;
+                    while (*p >= '0' && *p <= '9') {
+                        precision = precision * 10 + (*p - '0');
+                        p++;
+                    }
+                }
+            }
+
             if (*p == 's') {  // String format
                 const char* arg = va_arg(args, const char*);
-                while (*arg != '\0' && written < size) {
+                while (*arg != '\0' && written < size - 1) {
                     str[written++] = *arg++;
                 }
             } else if (*p == 'd') {  // Integer format
                 int num = va_arg(args, int);
-                // Convert integer to string
-                char num_buffer[12];  // Buffer to hold the integer as string (supports up to 32-bit integer range)
+                char num_buffer[12];  // Buffer to hold the integer as string
                 int num_written = 0;
 
-                if (num < 0) {  // Handle negative numbers
-                    if (written < size) {
-                        str[written++] = '-';
-                    }
+                if (num < 0) {
+                    if (written < size - 1) str[written++] = '-';
                     num = -num;
                 }
 
-                int temp = num;
                 do {
-                    num_buffer[num_written++] = (temp % 10) + '0';
-                    temp /= 10;
-                } while (temp > 0 && num_written < (int)sizeof(num_buffer));
+                    num_buffer[num_written++] = (num % 10) + '0';
+                    num /= 10;
+                } while (num > 0 && num_written < (int)sizeof(num_buffer));
 
-                // Reverse the number buffer into the main string buffer
-                for (int i = num_written - 1; i >= 0 && written < size; i--) {
+                for (int i = num_written - 1; i >= 0 && written < size - 1; i--) {
                     str[written++] = num_buffer[i];
                 }
+            } else if (*p == 'f') {  // Floating-point format
+                double value = va_arg(args, double);
+                char float_buffer[64];
+                format_float(value, precision, float_buffer, sizeof(float_buffer));
+
+                for (int i = 0; float_buffer[i] != '\0' && written < size - 1; i++) {
+                    str[written++] = float_buffer[i];
+                }
             }
-            // Add other format specifiers as needed
+            else if (*p == '%') {  // Literal '%'
+                if (written < size - 1) str[written++] = '%';
+            } else {  // Unsupported specifier
+                if (written < size - 1) str[written++] = '%';
+                if (written < size - 1) str[written++] = *p;
+            }
         } else {
-            str[written++] = *p;
+            if (written < size - 1) str[written++] = *p;
         }
         p++;
     }
@@ -642,15 +744,12 @@ int snprintf(char* str, size_t size, const char* format, ...) {
 
     // Null-terminate the string
     if (size > 0) {
-        if (written < size) {
-            str[written] = '\0';
-        } else {
-            str[size - 1] = '\0';
-        }
+        str[written] = '\0';
     }
 
     return written;
 }
+
 
 void hex_dump(const void* data, size_t size) {
     const uint8_t* byte_data = (const uint8_t*)data; // Treat data as byte array

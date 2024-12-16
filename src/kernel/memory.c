@@ -10,7 +10,6 @@
 #include <stdint.h>
 
 extern char _kernel_end; // Defined by the linker script
-
 volatile size_t total_memory; // in bytes set by parsing the multiboot memory map after kernel initialization
 
 #define HEAP_START ((uint32_t)(&_kernel_end))
@@ -40,6 +39,19 @@ typedef struct memory_block {
 
 memory_block* freeList = NULL;
 
+#define FRAME_BITMAP_START 0x200000  // Example start address (2 MB mark)
+#define FRAME_BITMAP_END   0x202000  // Example end (8 KB bitmap for 512MB RAM)
+
+void initialize_frame_bitmap() {
+    size_t bitmap_size = (total_memory / FRAME_SIZE + 7) / 8;
+    if (bitmap_size > (FRAME_BITMAP_END - FRAME_BITMAP_START)) {
+        printf("Error: Frame bitmap too large.\n");
+        return;
+    }
+
+    frame_bitmap = (uint8_t*)FRAME_BITMAP_START;
+    memset(frame_bitmap, 0, bitmap_size);
+}
 
 void initialize_memory_system() {
     if (total_memory == 0) {
@@ -101,25 +113,33 @@ void free_frame(size_t addr) {
 }
 
 void* k_malloc(size_t size) {
-    size = ALIGN_UP(size, 16); // Ensure alignment
+    size = ALIGN_UP(size, 16);
+    memory_block* best_fit = NULL;
     memory_block* current = freeList;
 
     while (current) {
         if (current->free && current->size >= size) {
-            current->free = 0;
-
-            if (current->size > size + BLOCK_SIZE) {
-                memory_block* newBlock = (memory_block*)((char*)current + BLOCK_SIZE + size);
-                newBlock->size = current->size - size - BLOCK_SIZE;
-                newBlock->free = 1;
-                newBlock->next = current->next;
-
-                current->size = size;
-                current->next = newBlock;
+            if (!best_fit || current->size < best_fit->size) {
+                best_fit = current;
             }
-            return (void*)((char*)current + BLOCK_SIZE);
         }
         current = current->next;
+    }
+
+    if (best_fit) {
+        best_fit->free = 0;
+
+        if (best_fit->size > size + BLOCK_SIZE) {
+            memory_block* newBlock = (memory_block*)((char*)best_fit + BLOCK_SIZE + size);
+            newBlock->size = best_fit->size - size - BLOCK_SIZE;
+            newBlock->free = 1;
+            newBlock->next = best_fit->next;
+
+            best_fit->size = size;
+            best_fit->next = newBlock;
+        }
+
+        return (void*)((char*)best_fit + BLOCK_SIZE);
     }
 
     printf("Error: Out of heap memory.\n");
@@ -137,15 +157,15 @@ void k_free(void* ptr) {
 
     block->free = 1;
 
-    // Merge with the next block if free
+    // Merge with next block if free
     if (block->next && block->next->free) {
         block->size += block->next->size + BLOCK_SIZE;
         block->next = block->next->next;
     }
 
-    // Merge with the previous block if free
+    // Merge with previous block if free
     memory_block* current = freeList;
-    while (current) {
+    while (current && current->next) {
         if (current->next == block && current->free) {
             current->size += block->size + BLOCK_SIZE;
             current->next = block->next;
@@ -183,6 +203,49 @@ void* k_realloc(void* ptr, size_t new_size) {
     k_free(ptr);
 
     return new_ptr;
+}
+
+void print_memory_size(size_t size) {
+    if (size >= 1024 * 1024) {
+        printf("%.2f MB", (double)size / (1024 * 1024));
+    } else if (size >= 1024) {
+        printf("%.2f KB", (double)size / 1024);
+    } else {
+        printf("%zu bytes", size);
+    }
+}
+
+void show_heap() {
+    memory_block* current = freeList;
+    size_t totalFree = 0, totalUsed = 0, largestFree = 0;
+
+    printf("Heap Debug Info:\n");
+    while (current) {
+        if (current->free) {
+            totalFree += current->size;
+            if (current->size > largestFree) {
+                largestFree = current->size;
+            }
+        } else {
+            totalUsed += current->size;
+        }
+        printf("Block at %p: Size: ", current);
+        print_memory_size(current->size);
+        printf(", Free: %d\n", current->free);
+        current = current->next;
+    }
+
+    printf("Total Free Memory: ");
+    print_memory_size(totalFree);
+    printf("\n");
+
+    printf("Total Used Memory: ");
+    print_memory_size(totalUsed);
+    printf("\n");
+
+    printf("Largest Free Block: ");
+    print_memory_size(largestFree);
+    printf("\n");
 }
 
 void show_memory_map() {

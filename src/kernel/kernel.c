@@ -306,42 +306,13 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
     // detect fdd drives
     fdd_detect_drives();
 
-    // // printf("Press any key to continue...\n");
-    // // getchar();
-    // //clear_screen();
-    // print_welcome_message();
+    // create_process(task1);
+    // create_process(command_loop);
 
+    // // Initialize the APIC timer
+    // init_apic_timer(1000000);  // Set timer ticks
 
-    // load_program_into_memory("DIR.PRG", 0x01100000);
-    // program_header_t* header = (program_header_t*)0x01100000;
-    // create_task(0x01100000 + header->entry_point, stack1, sizeof(stack1));
-
-    // load_program_into_memory("TEST.PRG", 0x01200000);
-    // header = (program_header_t*)0x01200000;
-    // create_task(0x01200000 + header->entry_point, stack2, sizeof(stack2));
-
-    //uintptr_t stack_start = (uintptr_t)&_stack_start;
-    // uintptr_t stack_end = (uintptr_t)&_stack_end;
-
-    // printf("Stack Start: 0x%08X, ", stack_start);
-    // printf("End:   0x%08X, ", stack_end);
-    // printf("Size:  %d bytes\n", stack_end - stack_start);
-
-    // void* stack1 = k_malloc(STACK_SIZE);
-    // void* stack2 = k_malloc(STACK_SIZE);
-    // // void* stack3 = k_malloc(STACK_SIZE);
-
-    // create_task(task1, stack2);
-    // // create_task(task2, stack3);
-    // create_task(command_loop, stack1);
-
-    create_process(task1);
-    create_process(command_loop);
-
-    // Initialize the APIC timer
-    init_apic_timer(1000000);  // Set timer ticks
-
-    
+    command_loop();
 
     while (1) {
         //printf("Kernel Main Loop\n");
