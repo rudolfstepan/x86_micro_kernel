@@ -769,7 +769,13 @@ void cmd_show(int arg_count, const char** arguments) {
         return;
     }
 
-    FILE* file = fat32_open_file(filename, "r+");
+    FILE* file0 = fat32_open_file(filename, "r");
+
+
+    // Open the file in read mode
+    FILE* file = load_file_content(filename, file0->startCluster, file0->size);
+
+
     if (file == NULL) {
         printf("File not found: %s\n", filename);
         return;

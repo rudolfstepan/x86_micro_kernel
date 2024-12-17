@@ -40,6 +40,16 @@ void initialize_block_bitmap() {
     printf("Block bitmap initialized at %p, size: %zu bytes\n", block_bitmap, bitmap_size);
 }
 
+void print_memory_size(size_t size) {
+    if (size >= 1024 * 1024) {
+        printf("%.2f MB", (double)size / (1024 * 1024));
+    } else if (size >= 1024) {
+        printf("%.2f KB", (double)size / 1024);
+    } else {
+        printf("%zu bytes", size);
+    }
+}
+
 void initialize_memory_system() {
     if (total_memory == 0) {
         printf("Error: total_memory not initialized.\n");
@@ -75,7 +85,13 @@ void* k_malloc(size_t size) {
             for (size_t k = 0; k < num_blocks; k++) {
                 block_bitmap[(i + k) / 8] |= (1 << ((i + k) % 8)); // Mark blocks as used
             }
-            return (void*)(HEAP_START + (i * BLOCK_SIZE));
+
+            void* ptr = (void*)(HEAP_START + (i * BLOCK_SIZE));
+            if ((size_t)ptr + size > HEAP_END) {
+                printf("Error: Allocation exceeds heap boundary.\n");
+                return NULL;
+            }
+            return ptr;
         }
     }
 
@@ -106,16 +122,6 @@ void* k_realloc(void* ptr, size_t new_size) {
     }
 
     return ptr;
-}
-
-void print_memory_size(size_t size) {
-    if (size >= 1024 * 1024) {
-        printf("%.2f MB", (double)size / (1024 * 1024));
-    } else if (size >= 1024) {
-        printf("%.2f KB", (double)size / 1024);
-    } else {
-        printf("%zu bytes", size);
-    }
 }
 
 void show_heap() {

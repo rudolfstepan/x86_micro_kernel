@@ -194,7 +194,7 @@ bool fat32_delete_file(const char* filename);
 
 void ata_debug_bootsector(drive_t* drive);
 
-
+FILE* load_file_content(const char* filename, unsigned int startCluster, size_t fileSize);
 
 
 #endif

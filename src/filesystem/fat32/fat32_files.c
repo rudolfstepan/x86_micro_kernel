@@ -238,7 +238,7 @@ FILE* fat32_open_file(const char* filename, const char* mode) {
     if (strcmp(mode, "r+") == 0) { // Fully load into memory
 
         // Allocate memory for the file content
-        file->base = (unsigned char*)malloc(fileSize);
+        file->base = (char*)malloc(fileSize);
         if (file->base == NULL) {
             printf("Not enough memory for file content.\n");
             free(file, sizeof(FILE));  // Free the FILE structure before returning
@@ -272,6 +272,8 @@ FILE* fat32_open_file(const char* filename, const char* mode) {
 
     printf("Allocated file handler with %u bytes and loaded content.\n", sizeof(FILE) + fileSize);
 
+    free(entry, sizeof(struct FAT32DirEntry));
+
     return file;
 }
 
@@ -289,4 +291,59 @@ int fat32_read_file(FILE* file, char* buffer, unsigned int buffer_size, unsigned
     unsigned int bytesRead = readFileData(file->startCluster, buffer, buffer_size, bytesToRead);
     file->position += bytesRead;  // Update the file pointer
     return bytesRead;
+}
+
+
+FILE* load_file_content(const char* filename, unsigned int startCluster, size_t fileSize) {
+    FILE* file = (FILE*)malloc(sizeof(FILE));
+    if (!file) {
+        printf("Error: Failed to allocate memory for file handler.\n");
+        return NULL;
+    }
+
+    file->base = (char*)malloc(fileSize);
+    if (!file->base) {
+        printf("Error: Failed to allocate memory for file content.\n");
+        free(file, sizeof(FILE));
+        return NULL;
+    }
+
+    printf("Allocated file handler with %zu bytes.\n", sizeof(FILE));
+    printf("Allocated file content with %zu bytes.\n", fileSize);
+
+    size_t totalBytesRead = 0;
+    char chunkBuffer[512]; // Temporary buffer for reading chunks
+    char* bufferPtr = file->base;
+
+    while (totalBytesRead < fileSize) {
+        size_t bytesToRead = (fileSize - totalBytesRead > 512) ? 512 : (fileSize - totalBytesRead);
+        
+        // Read data into the chunk buffer
+        size_t bytesRead = readFileData(startCluster, chunkBuffer, sizeof(chunkBuffer), bytesToRead);
+        if (bytesRead != bytesToRead) {
+            printf("Error: Failed to read file data.\n");
+            free(file->base, fileSize);
+            free(file, sizeof(FILE));
+            return NULL;
+        }
+
+        // Validate buffer boundary
+        if ((size_t)(bufferPtr + bytesToRead) > (size_t)(file->base + fileSize)) {
+            printf("Error: File read exceeds allocated buffer size.\n");
+            free(file->base, fileSize);
+            free(file, sizeof(FILE));
+            return NULL;
+        }
+
+        // Copy chunk to the allocated buffer
+        memcpy(bufferPtr, chunkBuffer, bytesToRead);
+        bufferPtr += bytesToRead;
+        totalBytesRead += bytesToRead;
+    }
+
+    file->position = 0;
+    file->size = fileSize;
+
+    printf("Successfully loaded file content: %zu bytes\n", totalBytesRead);
+    return file;
 }

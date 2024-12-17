@@ -180,7 +180,7 @@ void initialize_rx_buffer() {
     uintptr_t phys_address = (uintptr_t)rtl8139_device.rx_buffers;
     if (phys_address > 0xFFFFFFFF) {
         printf("Fehler: RX-Puffer-Adresse liegt außerhalb des 32-Bit-Adressraums.\n");
-        free(rtl8139_device.rx_buffers);
+        free(rtl8139_device.rx_buffers, RX_BUFFER_SIZE);
         return;
     }
 
