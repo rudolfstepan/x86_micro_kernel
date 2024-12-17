@@ -55,7 +55,8 @@ void enumerate_multiboot2_tags(multiboot2_info_t *mb_info) {
                 printf("Multiboot Basic Memory Info: Lower = %u KB, Upper = %u KB\n", meminfo->mem_lower, meminfo->mem_upper);
 
                 // Store the total memory size
-                total_memory = meminfo->mem_lower *1024 + meminfo->mem_upper *1024; // Convert to bytes
+                //total_memory = meminfo->mem_lower *1024 + meminfo->mem_upper *1024; // Convert to bytes
+                total_memory = meminfo->mem_upper * 1024; // Convert to bytes
 
                 break;
             }

@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 extern char _kernel_end; // Defined by the linker script
-volatile size_t total_memory; // in kilobytes set by parsing the multiboot memory map after kernel initialization
+volatile size_t total_memory; // in bytes set by parsing the multiboot memory map after kernel initialization
 
 #define MULTIBOOT_USABLE_START 0x10000 // First usable memory address (64 KB)
 #define ALIGN_UP(addr, align) (((addr) + ((align)-1)) & ~((align)-1))
@@ -18,8 +18,8 @@ volatile size_t total_memory; // in kilobytes set by parsing the multiboot memor
 #define HEAP_START ALIGN_UP(MULTIBOOT_USABLE_START, 4096)
 
 size_t HEAP_END = 0;  // HEAP_END to be calculated during runtime
-uint8_t* block_bitmap = NULL; // Pointer to the block bitmap
 #define BLOCK_SIZE 4096 // 4KB per block
+uint8_t* block_bitmap = NULL; // Pointer to the block bitmap
 
 size_t calculate_heap_end() {
     size_t potential_end = HEAP_START + total_memory; // HEAP_START + total_memory in bytes
