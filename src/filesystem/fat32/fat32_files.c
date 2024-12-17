@@ -52,7 +52,7 @@ unsigned int readFileData(unsigned int startCluster, char* buffer, unsigned int 
         }
     }
 
-    printf("Read %u bytes from file.\n", totalBytesRead);
+    //printf("Read %u bytes from file.\n", totalBytesRead);
     return totalBytesRead;
 }
 
@@ -233,23 +233,33 @@ FILE* fat32_open_file(const char* filename, const char* mode) {
         return NULL;
     }
 
-    // Allocate memory for the file content
-    file->base = (unsigned char*)malloc(fileSize);
-    if (file->base == NULL) {
-        printf("Not enough memory for file content.\n");
-        free(file, sizeof(FILE));  // Free the FILE structure before returning
-        return NULL;
-    }
-
-    // clear the buffer
-    memset(file->base, 0, fileSize);
+    printf("Allocated file handler with %u bytes.\n", sizeof(FILE));
 
     if (strcmp(mode, "r+") == 0) { // Fully load into memory
-        if (readFileData(startCluster, file->base, fileSize, fileSize) != fileSize) {
-            printf("Failed to load file content into memory.\n");
-            free(file->base, fileSize);  // Free the file content
+
+        // Allocate memory for the file content
+        file->base = (unsigned char*)malloc(fileSize);
+        if (file->base == NULL) {
+            printf("Not enough memory for file content.\n");
             free(file, sizeof(FILE));  // Free the FILE structure before returning
             return NULL;
+        }
+
+        printf("Allocated file content with %u bytes.\n", fileSize);
+
+        size_t totalBytesRead = 0;
+        char chunkBuffer[512];
+
+        while (totalBytesRead < fileSize) {
+            size_t bytesToRead = (fileSize - totalBytesRead < 512) ? (fileSize - totalBytesRead) : 512;
+            if (readFileData(startCluster, chunkBuffer, sizeof(chunkBuffer), bytesToRead) != bytesToRead) {
+                printf("Error reading file data.\n");
+                free(file->base, fileSize);  // Free the file content
+                free(file, sizeof(FILE));  // Free the FILE structure before returning
+                return NULL;
+            }
+            memcpy(file->base + totalBytesRead, chunkBuffer, bytesToRead);
+            totalBytesRead += bytesToRead;
         }
     }
 

@@ -10,29 +10,34 @@
 #include <stdint.h>
 
 extern char _kernel_end; // Defined by the linker script
-volatile size_t total_memory = 64*1024; // in kilobytes set by parsing the multiboot memory map after kernel initialization
+volatile size_t total_memory; // in kilobytes set by parsing the multiboot memory map after kernel initialization
 
 #define MULTIBOOT_USABLE_START 0x10000 // First usable memory address (64 KB)
 #define ALIGN_UP(addr, align) (((addr) + ((align)-1)) & ~((align)-1))
-#define HEAP_START ALIGN_UP(MULTIBOOT_USABLE_START, 4096) // Start aligned to 4KB
-#define HEAP_END (MULTIBOOT_USABLE_START + (total_memory)) // Full usable range
-#define HEAP_ACTUAL_END (HEAP_END - HEAP_START) // Heap size adjusted for start offset
+#define FRAMEBUFFER_START 0xFD000000   // Start address of the framebuffer (example)
+#define HEAP_START ALIGN_UP(MULTIBOOT_USABLE_START, 4096)
 
+size_t HEAP_END = 0;  // HEAP_END to be calculated during runtime
+uint8_t* block_bitmap = NULL; // Pointer to the block bitmap
 #define BLOCK_SIZE 4096 // 4KB per block
-#define MAX_BLOCKS ((HEAP_END - HEAP_START) / BLOCK_SIZE)
 
-uint8_t* block_bitmap; // Bitmap to manage blocks
+size_t calculate_heap_end() {
+    size_t potential_end = HEAP_START + total_memory; // HEAP_START + total_memory in bytes
+    return (FRAMEBUFFER_START > potential_end) ? potential_end : (FRAMEBUFFER_START - 1);
+}
 
 void initialize_block_bitmap() {
-    size_t bitmap_size = ALIGN_UP((MAX_BLOCKS + 7) / 8, 16);
-    block_bitmap = (uint8_t*)HEAP_START;
+    size_t max_blocks = (HEAP_END - HEAP_START) / BLOCK_SIZE;
+    size_t bitmap_size = ALIGN_UP((max_blocks + 7) / 8, 16); // Bitmap size in bytes
 
+    block_bitmap = (uint8_t*)HEAP_START;
     if ((size_t)block_bitmap + bitmap_size > HEAP_END) {
-        printf("Error: Block bitmap too large for the heap.\n");
+        printf("Error: Not enough memory for block bitmap.\n");
         return;
     }
 
     memset(block_bitmap, 0, bitmap_size);
+    printf("Block bitmap initialized at %p, size: %zu bytes\n", block_bitmap, bitmap_size);
 }
 
 void initialize_memory_system() {
@@ -40,6 +45,8 @@ void initialize_memory_system() {
         printf("Error: total_memory not initialized.\n");
         return;
     }
+
+    HEAP_END = calculate_heap_end(); // Dynamically calculate HEAP_END
 
     printf("Usable memory starts at: 0x%x\n", MULTIBOOT_USABLE_START);
     printf("Heap Start: %p\n", (void*)HEAP_START);
@@ -49,13 +56,14 @@ void initialize_memory_system() {
     printf("\n");
 
     initialize_block_bitmap();
-    printf("Memory system initialized with %zu blocks of %u bytes.\n", MAX_BLOCKS, BLOCK_SIZE);
+    printf("Memory system initialized with %zu blocks of %u bytes.\n", (HEAP_END - HEAP_START) / BLOCK_SIZE, BLOCK_SIZE);
 }
 
 void* k_malloc(size_t size) {
     size_t num_blocks = ALIGN_UP(size, BLOCK_SIZE) / BLOCK_SIZE;
+    size_t max_blocks = (HEAP_END - HEAP_START) / BLOCK_SIZE; // Dynamically calculate MAX_BLOCKS
 
-    for (size_t i = 0; i < MAX_BLOCKS; i++) {
+    for (size_t i = 0; i < max_blocks; i++) {
         size_t j;
         for (j = 0; j < num_blocks; j++) {
             if (block_bitmap[(i + j) / 8] & (1 << ((i + j) % 8))) {
@@ -80,6 +88,12 @@ void k_free(void* ptr, size_t size) {
 
     size_t start_block = ((size_t)ptr - HEAP_START) / BLOCK_SIZE;
     size_t num_blocks = ALIGN_UP(size, BLOCK_SIZE) / BLOCK_SIZE;
+    size_t max_blocks = (HEAP_END - HEAP_START) / BLOCK_SIZE; // Dynamically calculate MAX_BLOCKS
+
+    if (start_block + num_blocks > max_blocks) {
+        printf("Error: Free request out of heap bounds.\n");
+        return;
+    }
 
     for (size_t i = 0; i < num_blocks; i++) {
         block_bitmap[(start_block + i) / 8] &= ~(1 << ((start_block + i) % 8)); // Mark blocks as free
@@ -106,40 +120,38 @@ void print_memory_size(size_t size) {
 
 void show_heap() {
     printf("Heap Debug Info:\n");
-    size_t total_used_blocks = 0;
-    size_t total_free_blocks = 0;
-    size_t contiguous_free_blocks = 0;
-    size_t max_contiguous_free = 0;
 
-    for (size_t i = 0; i < MAX_BLOCKS; i++) {
+    size_t max_blocks = (HEAP_END - HEAP_START) / BLOCK_SIZE;
+    size_t used_blocks = 0;
+    size_t free_blocks = 0;
+    size_t largest_free_contiguous = 0;
+    size_t current_free_contiguous = 0;
+
+    for (size_t i = 0; i < max_blocks; i++) {
         if (block_bitmap[i / 8] & (1 << (i % 8))) {
-            if (contiguous_free_blocks > max_contiguous_free) {
-                max_contiguous_free = contiguous_free_blocks;
+            // Block is used
+            used_blocks++;
+            if (current_free_contiguous > largest_free_contiguous) {
+                largest_free_contiguous = current_free_contiguous;
             }
-            contiguous_free_blocks = 0;
-            total_used_blocks++;
+            current_free_contiguous = 0;
         } else {
-            contiguous_free_blocks++;
-            total_free_blocks++;
+            // Block is free
+            free_blocks++;
+            current_free_contiguous++;
         }
     }
 
-    if (contiguous_free_blocks > max_contiguous_free) {
-        max_contiguous_free = contiguous_free_blocks;
+    // Final check for largest contiguous free blocks
+    if (current_free_contiguous > largest_free_contiguous) {
+        largest_free_contiguous = current_free_contiguous;
     }
 
-    printf("Total Blocks: %zu\n", MAX_BLOCKS);
-    printf("Used Blocks: %zu (", total_used_blocks);
-    print_memory_size(total_used_blocks * BLOCK_SIZE);
-    printf(")\n");
-
-    printf("Free Blocks: %zu (", total_free_blocks);
-    print_memory_size(total_free_blocks * BLOCK_SIZE);
-    printf(")\n");
-
-    printf("Largest Contiguous Free Blocks: %zu (", max_contiguous_free);
-    print_memory_size(max_contiguous_free * BLOCK_SIZE);
-    printf(")\n");
+    printf("Total Blocks: %zu\n", max_blocks);
+    printf("Used Blocks: %zu\n", used_blocks);
+    printf("Free Blocks: %zu\n", free_blocks);
+    printf("Largest Contiguous Free Blocks: %zu (%zu bytes)\n",
+           largest_free_contiguous, largest_free_contiguous * BLOCK_SIZE);
 }
 
 void show_memory_map() {

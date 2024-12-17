@@ -53,7 +53,6 @@ typedef struct {
 void cmd_help(int cnt, const char **args);
 void cmd_clear(int cnt, const char **args);
 void cmd_echo(int cnt, const char **args);
-void cmd_mem(int cnt, const char **args);
 void cmd_dump(int cnt, const char **args);
 void cmd_cls(int cnt, const char **args);
 void cmd_ls(int cnt, const char **args);
@@ -90,7 +89,6 @@ command_t command_table[MAX_COMMANDS] = {
     {"help", cmd_help},
     {"clear", cmd_clear},
     {"echo", cmd_echo},
-    {"mem", cmd_mem},
     {"dump", cmd_dump},
     {"cls", cmd_cls},
     {"ls", cmd_ls},
@@ -275,16 +273,6 @@ void cmd_echo(int arg_count, const char **args) {
         }
         printf("\n");
     }
-}
-
-void cmd_mem(int arg_count, const char **args) {
-    // print the current memory map
-    // get the memory map from the bootloader
-    //print_memory_map(sys_mb_info);
-
-    printf("Enter a value: ");
-    int intput = getchar();
-    printf("You entered: %c\n", intput);
 }
 
 void cmd_dump(int arg_count, const char** arguments) {
@@ -787,26 +775,8 @@ void cmd_show(int arg_count, const char** arguments) {
         return;
     }
 
-    printf("Name: %s, %u\n", file->name, file->size);
-
-    // Calculate the size of the buffer based on the size of the file
-    // size_t bufferSize = file->size; // Use the file size as the buffer size directly
-    // char* buffer = (char*)malloc(bufferSize);
-
-    // if (buffer == NULL) {
-    //     printf("Failed to allocate memory for file buffer\n");
-    //     return;
-    // }
-
-    // Read the file into the buffer, passing the correct size
-    //fat32_read_file(file, file->base, file->size, file->size); // Pass bufferSize as the buffer size
-
     hex_dump(file->base, 256);
 
-    //secure_free(buffer, bufferSize);  // Clear the buffer
-
+    free(file->base, file->size);  // Free the file content
     free(file, sizeof(FILE));  // Free the FILE structure
-
-    //printf("Result: %d\n", result);
-
 }
