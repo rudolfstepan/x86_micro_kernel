@@ -456,13 +456,29 @@ int memcmp(const void* s1, const void* s2, size_t n) {
 
 void* memset(void* ptr, int value, unsigned int num) {
     if (ptr == NULL) {
-        return NULL; // Error handling for NULL pointer
+        return NULL; // Handle NULL pointer
     }
 
+    // Cast to appropriate pointer types
     unsigned char* p = (unsigned char*)ptr;
-    while (num--) {
-        *p++ = (unsigned char)value;
-    }
+    uint32_t val32 = (unsigned char)value; // Single byte value
+    val32 |= val32 << 8 | val32 << 16 | val32 << 24; // Extend to 32-bit
+
+    __asm__ volatile (
+        "cld\n"                    // Clear direction flag (forward direction)
+        "mov %0, %%edi\n"          // Set destination pointer (EDI)
+        "mov %1, %%eax\n"          // Set 32-bit value in EAX
+        "mov %2, %%ecx\n"          // Set byte count in ECX
+        "shr $2, %%ecx\n"          // Divide count by 4 for 32-bit chunks
+        "rep stosl\n"              // Store 32-bit value (EAX) to memory
+        "mov %3, %%ecx\n"          // Remainder byte count
+        "and $3, %%ecx\n"          // Mask out upper bits to get remaining bytes
+        "rep stosb\n"              // Store remaining bytes
+        : /* no output */
+        : "r"(p), "r"(val32), "r"(num), "r"(num) // Input values
+        : "memory", "edi", "eax", "ecx"         // Clobbered registers
+    );
+
     return ptr;
 }
 

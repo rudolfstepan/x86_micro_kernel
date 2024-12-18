@@ -102,6 +102,8 @@ void* k_malloc(size_t size) {
 
             void* ptr = (void*)(HEAP_START + (i * BLOCK_SIZE));
             //printf("Allocated at: %p\n", ptr);
+
+            memset(ptr, 0, ALIGN_UP(size, BLOCK_SIZE)); // Clear the memory
             return ptr;
         }
     }
