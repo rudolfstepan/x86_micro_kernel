@@ -4,7 +4,7 @@
 #include <stddef.h>
 
 void initialize_memory_system();
-void show_memory_map();
+void draw_memory_map();
 void show_heap();
 void k_free(void* ptr, size_t size);
 void* k_malloc(size_t size);

@@ -14,7 +14,6 @@ volatile size_t total_memory; // in bytes set by parsing the multiboot memory ma
 
 #define MULTIBOOT_USABLE_START 0x10000 // First usable memory address (64 KB)
 #define ALIGN_UP(addr, align) (((addr) + ((align)-1)) & ~((align)-1))
-#define FRAMEBUFFER_START 0xFD000000   // Start address of the framebuffer (example)
 #define HEAP_START ALIGN_UP(MULTIBOOT_USABLE_START, 4096)
 
 size_t HEAP_END = 0;  // HEAP_END to be calculated during runtime
@@ -23,7 +22,7 @@ uint8_t* block_bitmap = NULL; // Pointer to the block bitmap
 
 size_t calculate_heap_end() {
     size_t potential_end = HEAP_START + total_memory; // HEAP_START + total_memory in bytes
-    return (FRAMEBUFFER_START > potential_end) ? potential_end : (FRAMEBUFFER_START - 1);
+    return (FRAMEBUFFER > potential_end) ? potential_end : (FRAMEBUFFER - 1);
 }
 
 void initialize_block_bitmap() {
@@ -160,11 +159,40 @@ void show_heap() {
            largest_free_contiguous, largest_free_contiguous * BLOCK_SIZE);
 }
 
-void show_memory_map() {
-    printf("\n--- Memory Map (Occupied Only) ---\n");
+void draw_memory_map() {
+    size_t max_blocks = (HEAP_END - HEAP_START) / BLOCK_SIZE;
+    size_t blocks_per_row = SCREEN_WIDTH / PIXEL_SIZE;
+    size_t rows = SCREEN_HEIGHT / PIXEL_SIZE;
 
-    // Display the occupied heap memory blocks
-    
+    printf("Rendering Memory Map...\n");
+
+    // Background
+    draw_rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0x000000); // Black background
+
+    for (size_t block = 0; block < max_blocks; block++) {
+        size_t row = block / blocks_per_row;
+        size_t col = block % blocks_per_row;
+
+        if (row >= rows) break; // Stop if screen cannot fit more rows
+
+        // Determine the color for used/free memory
+        uint32_t color = (block_bitmap[block / 8] & (1 << (block % 8))) ? RED : BLACK; // White = used, Grey = free
+
+        // Draw the block
+        draw_rect(col * PIXEL_SIZE, row * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, color);
+    }
+
+    set_cursor_position(0,0);
+
+    //Draw X and Y axes with memory addresses
+    // for (int i = 0; i < SCREEN_WIDTH; i += 100) {
+    //     printf("0x%08x ", HEAP_START + ((size_t)i / PIXEL_SIZE) * BLOCK_SIZE);
+    // }
+    // printf("\n");
+
+    // for (int j = 0; j < SCREEN_HEIGHT; j += 50) {
+    //     printf("0x%08x\n", HEAP_START + ((size_t)j / PIXEL_SIZE) * (BLOCK_SIZE * (SCREEN_WIDTH / PIXEL_SIZE)));
+    // }
 }
 
 //---------------------------------------------------------------------------------------------

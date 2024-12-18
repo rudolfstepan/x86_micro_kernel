@@ -4,6 +4,11 @@
 #include <stdint.h>
 #include "kernel/multiboot.h"
 
+#define SCREEN_WIDTH 800
+#define SCREEN_HEIGHT 600
+#define PIXEL_SIZE 2 // Size of each pixel block in bytes/pages
+#define FRAMEBUFFER ((volatile uint32_t*)0xFD000000) // Framebuffer address
+
 // Colors (0xRRGGBB format)
 #define BLACK        0x000000  // Black
 #define BLUE         0x0000FF  // Blue
@@ -43,8 +48,9 @@ void fill_screen(uint32_t color);
 
 void clear_line(uint32_t y, uint32_t color);
 void draw_pixel(uint32_t x, uint32_t y, uint32_t color);
+void draw_rect(int x, int y, int width, int height, uint32_t color);
 void draw_char(uint32_t x, uint32_t y, char c, uint32_t color);
-void draw_string(const char *str, uint32_t color, uint32_t bg_color);
+//void draw_string(const char *str, uint32_t color, uint32_t bg_color);
 
 void put_char(char c, uint32_t color, uint32_t bg_color);
 void fb_write_char(char ch);

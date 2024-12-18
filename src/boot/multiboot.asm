@@ -50,7 +50,7 @@ header_start:
     dw 5                      ; Tag type: Framebuffer
     dw 0                      ; Reserved (must be zero)
     dd 24                     ; Size of this tag (24 bytes total)
-    dd 800                   ; Desired framebuffer width
+    dd 800                    ; Desired framebuffer width
     dd 600                    ; Desired framebuffer height
     dd 32                     ; Desired bits per pixel
 

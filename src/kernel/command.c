@@ -759,7 +759,7 @@ void cmd_show(int arg_count, const char** arguments) {
     }
 
     if(strcmp(filename, "MEM") == 0) {
-        show_memory_map();
+        draw_memory_map();
 
         return;
     }
@@ -769,20 +769,23 @@ void cmd_show(int arg_count, const char** arguments) {
         return;
     }
 
-    FILE* file0 = fat32_open_file(filename, "r");
+    FILE* file = fat32_open_file(filename, "r");
 
 
-    // Open the file in read mode
-    FILE* file = load_file_content(filename, file0->startCluster, file0->size);
+    // // Open the file in read mode
+    // FILE* file = load_file_content(filename, file0->startCluster, file0->size);
 
-
-    if (file == NULL) {
-        printf("File not found: %s\n", filename);
+    char* buffer = (char*)malloc(file->size);
+    if (buffer == NULL) {
+        printf("Failed to allocate memory for file buffer\n");
         return;
     }
+    memset(buffer, 0, file->size);
 
-    hex_dump(file->base, 256);
+    //fat32_load_file(filename, 0x10000);
 
-    free(file->base, file->size);  // Free the file content
+    hex_dump(buffer, 256);
+
+    free(buffer, file->size);  // Free the file content
     free(file, sizeof(FILE));  // Free the FILE structure
 }
