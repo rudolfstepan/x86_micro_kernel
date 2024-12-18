@@ -769,23 +769,21 @@ void cmd_show(int arg_count, const char** arguments) {
         return;
     }
 
-    FILE* file = fat32_open_file(filename, "r");
+    // create a buffer of 10MB
+    // size_t size = 1024*1024*10;
+    // void* ptr = k_malloc(size);
+    // if(ptr == NULL) {
+    //     printf("Failed to allocate memory\n");
+    //     return;
+    // }
+
+    // printf("Allocated %u MB buffer at: %p\n", size/1024/1024, ptr);
 
 
-    // // Open the file in read mode
-    // FILE* file = load_file_content(filename, file0->startCluster, file0->size);
+    FILE* file = fat32_open_file(filename, "r+");
 
-    char* buffer = (char*)malloc(file->size);
-    if (buffer == NULL) {
-        printf("Failed to allocate memory for file buffer\n");
-        return;
-    }
-    memset(buffer, 0, file->size);
+    hex_dump(file->base, 256);
 
-    //fat32_load_file(filename, 0x10000);
-
-    hex_dump(buffer, 256);
-
-    free(buffer, file->size);  // Free the file content
+    free(file->base, file->size);  // Free the file content
     free(file, sizeof(FILE));  // Free the FILE structure
 }

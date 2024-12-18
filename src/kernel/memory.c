@@ -35,7 +35,7 @@ void initialize_block_bitmap() {
         return;
     }
 
-    memset(block_bitmap, 0, bitmap_size);
+    //memset(block_bitmap, 0, bitmap_size);
     printf("Block bitmap initialized at %p, size: %zu bytes\n", block_bitmap, bitmap_size);
 }
 
@@ -70,9 +70,24 @@ void initialize_memory_system() {
 
 void* k_malloc(size_t size) {
     size_t num_blocks = ALIGN_UP(size, BLOCK_SIZE) / BLOCK_SIZE;
-    size_t max_blocks = (HEAP_END - HEAP_START) / BLOCK_SIZE; // Dynamically calculate MAX_BLOCKS
+    size_t max_blocks = (HEAP_END - HEAP_START) / BLOCK_SIZE;
 
-    for (size_t i = 0; i < max_blocks; i++) {
+    // Print debug info
+    // printf("Heap Start: %p\n", (void*)HEAP_START);
+    // printf("Heap End: %p\n", (void*)HEAP_END);
+    // printf("Heap Size: ");
+    // print_memory_size(HEAP_END - HEAP_START);
+    // printf("\n");
+
+    if (num_blocks > max_blocks) {
+        printf("Error: Requested allocation exceeds available memory.\n");
+        printf("Allocating %zu bytes (%zu blocks)...\n", size, num_blocks);
+        printf("Max Blocks: %zu\n", max_blocks);
+        return NULL;
+    }
+
+    // Search for free contiguous blocks
+    for (size_t i = 0; i <= max_blocks - num_blocks; i++) {
         size_t j;
         for (j = 0; j < num_blocks; j++) {
             if (block_bitmap[(i + j) / 8] & (1 << ((i + j) % 8))) {
@@ -86,10 +101,7 @@ void* k_malloc(size_t size) {
             }
 
             void* ptr = (void*)(HEAP_START + (i * BLOCK_SIZE));
-            if ((size_t)ptr + size > HEAP_END) {
-                printf("Error: Allocation exceeds heap boundary.\n");
-                return NULL;
-            }
+            //printf("Allocated at: %p\n", ptr);
             return ptr;
         }
     }
