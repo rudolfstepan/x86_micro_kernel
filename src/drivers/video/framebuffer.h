@@ -51,6 +51,7 @@ void draw_pixel(uint32_t x, uint32_t y, uint32_t color);
 void draw_rect(int x, int y, int width, int height, uint32_t color);
 void draw_char(uint32_t x, uint32_t y, char c, uint32_t color);
 //void draw_string(const char *str, uint32_t color, uint32_t bg_color);
+void display_bmp(void* buffer, uint32_t screen_x, uint32_t screen_y);
 
 void put_char(char c, uint32_t color, uint32_t bg_color);
 void fb_write_char(char ch);

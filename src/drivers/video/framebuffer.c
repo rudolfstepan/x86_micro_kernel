@@ -3,6 +3,10 @@
 #include "vga_font.h"
 #include "toolchain/stdio.h"
 
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+
 
 uint32_t cursor_x = 0;
 uint32_t cursor_y = 0;
@@ -246,3 +250,72 @@ void fb_color_test() {
     }
 }
 
+#pragma pack(push, 1) // Ensure structures are tightly packed
+typedef struct {
+    uint16_t signature;        // "BM" signature
+    uint32_t file_size;        // Size of the BMP file
+    uint32_t reserved;         // Reserved (unused)
+    uint32_t pixel_data_offset; // Offset to the pixel data
+} BMPFileHeader;
+
+typedef struct {
+    uint32_t header_size;      // Size of the DIB header
+    int32_t width;             // Image width
+    int32_t height;            // Image height
+    uint16_t planes;           // Number of color planes
+    uint16_t bpp;              // Bits per pixel
+    uint32_t compression;      // Compression method
+    uint32_t image_size;       // Size of the pixel data
+    int32_t x_resolution;      // Horizontal resolution (unused)
+    int32_t y_resolution;      // Vertical resolution (unused)
+    uint32_t colors_used;      // Number of colors used (0 = all)
+    uint32_t important_colors; // Important colors (0 = all)
+} BMPDIBHeader;
+#pragma pack(pop)
+
+void display_bmp(void* buffer, uint32_t screen_x, uint32_t screen_y) {
+    BMPFileHeader* file_header = (BMPFileHeader*)buffer;
+    BMPDIBHeader* dib_header = (BMPDIBHeader*)(buffer + sizeof(BMPFileHeader));
+
+    // Validate BMP signature
+    if (file_header->signature != 0x4D42) { // 'BM'
+        printf("Error: Invalid BMP file signature.\n");
+        return;
+    }
+
+    // Extract image properties
+    int32_t width = dib_header->width;
+    int32_t height = dib_header->height;
+    uint16_t bpp = dib_header->bpp;
+
+    if (bpp != 24) { // Only support 24-bit BMP files
+        printf("Error: Unsupported BMP format (only 24 BPP supported).\n");
+        return;
+    }
+
+    // Row size aligned to a 4-byte boundary
+    uint8_t* pixel_data = (uint8_t*)buffer + file_header->pixel_data_offset;
+    uint32_t row_size = (width * 3 + 3) & ~3;
+
+    // Debug output
+    printf("BMP Info: Width=%d, Height=%d, BPP=%d, Row Size=%d bytes\n", width, height, bpp, row_size);
+
+    // Draw the BMP pixel data (convert 24-bit BGR to 32-bit)
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            // Read BMP pixel (BGR format, row_size accounts for padding)
+            uint8_t blue = pixel_data[y * row_size + x * 3];
+            uint8_t green = pixel_data[y * row_size + x * 3 + 1];
+            uint8_t red = pixel_data[y * row_size + x * 3 + 2];
+
+            // Flip BMP row vertically: BMP stores pixels bottom-up
+            int fb_x = screen_x + x;
+            int fb_y = screen_y + (height - 1 - y);
+
+            // Draw pixel using the draw_pixel method
+            draw_pixel(fb_x, fb_y, (red << 16) | (green << 8) | blue);
+        }
+    }
+
+    printf("BMP displayed successfully at (%u, %u).\n", screen_x, screen_y);
+}

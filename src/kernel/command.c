@@ -782,8 +782,10 @@ void cmd_show(int arg_count, const char** arguments) {
 
     FILE* file = fat32_open_file(filename, "r+");
 
-    hex_dump(file->base, 256);
+    //hex_dump(file->base, 256);
 
-    free(file->base, file->size);  // Free the file content
-    free(file, sizeof(FILE));  // Free the FILE structure
+    display_bmp((void*)file->base, 50, 50);
+
+    // free(file->base, file->size);  // Free the file content
+    // free(file, sizeof(FILE));  // Free the FILE structure
 }
