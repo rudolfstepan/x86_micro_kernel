@@ -7,6 +7,7 @@
 uint32_t cursor_x = 0;
 uint32_t cursor_y = 0;
 uint32_t line_height = 16; // Height of a single text line (e.g., 8x16 font)
+uint32_t left_padding = 8; // Padding on the left border
 
 static uint32_t txt_color = WHITE;
 static uint32_t bg_color = BLACK;
@@ -21,7 +22,7 @@ void set_bg_color(uint32_t color) {
 }
 
 void set_cursor_position(uint32_t x, uint32_t y) {
-    cursor_x = x;
+    cursor_x = x + left_padding;
     cursor_y = y;
 }
 
@@ -139,7 +140,7 @@ void scroll_screen(uint32_t bg_color) {
 
 void put_char(char c, uint32_t font_color, uint32_t bg_color) {
     if (c == '\n') {
-        cursor_x = 0;
+        cursor_x = left_padding;
         cursor_y += line_height;
 
         // Scroll if at the bottom of the screen
@@ -151,7 +152,7 @@ void put_char(char c, uint32_t font_color, uint32_t bg_color) {
     }
 
     if (cursor_x >= fb_info.width) {
-        cursor_x = 0;
+        cursor_x = left_padding;
         cursor_y += line_height;
 
         if (cursor_y >= fb_info.height - line_height) {
