@@ -127,19 +127,31 @@ void scroll_screen(uint32_t bg_color) {
     uint32_t screen_height = fb_info.height;
     uint32_t pitch_in_pixels = fb_info.pitch / 4; // Convert pitch from bytes to pixels
 
-    // Copy each line up by one
-    for (uint32_t y = 0; y < screen_height - line_height; y++) {
-        for (uint32_t x = 0; x < screen_width; x++) {
-            framebuffer[y * pitch_in_pixels + x] = framebuffer[(y + line_height) * pitch_in_pixels + x];
-        }
-    }
+    uint32_t total_pixels_to_move = (screen_height - line_height) * pitch_in_pixels; // Total pixels to move
+    uint32_t start_of_clear_area = (screen_height - line_height) * pitch_in_pixels;  // Start of the lines to clear
+    uint32_t pixels_per_line = screen_width; // Pixels per line
 
-    // Clear the last line
-    for (uint32_t y = screen_height - line_height; y < screen_height; y++) {
-        for (uint32_t x = 0; x < screen_width; x++) {
-            framebuffer[y * pitch_in_pixels + x] = bg_color;
-        }
-    }
+    // Move lines up (forward direction to handle overlap safely)
+    __asm__ volatile (
+        "cld\n"                     // Clear Direction Flag (forward direction)
+        "rep movsd\n"               // Move double words (4 bytes)
+        :
+        : "D"(framebuffer),         // Destination (start of the screen)
+          "S"(framebuffer + line_height * pitch_in_pixels), // Source (start of the lines to scroll up)
+          "c"(total_pixels_to_move) // Number of double words to move
+        : "memory"                  // Mark memory as clobbered
+    );
+
+    // Clear the last lines
+    __asm__ volatile (
+        "cld\n"                     // Clear Direction Flag (forward direction)
+        "rep stosl\n"               // Store double words (4 bytes)
+        :
+        : "D"(framebuffer + start_of_clear_area), // Destination address (start of last lines)
+          "a"(bg_color),            // Value to fill (background color)
+          "c"(line_height * pitch_in_pixels) // Number of double words to store
+        : "memory"                  // Mark memory as clobbered
+    );
 }
 
 void put_char(char c, uint32_t font_color, uint32_t bg_color) {
