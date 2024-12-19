@@ -780,12 +780,37 @@ void cmd_show(int arg_count, const char** arguments) {
     // printf("Allocated %u MB buffer at: %p\n", size/1024/1024, ptr);
 
 
-    FILE* file = fat32_open_file(filename, "r+");
+    FILE* file = fat32_open_file(filename, "r");
+
+    if (file == NULL) {
+        printf("File not found: %s\n", filename);
+        return;
+    }
+
+    printf("Name: %s\n", file->name);
+
+    // Calculate the size of the buffer based on the size of the file
+    size_t bufferSize = file->size; // Use the file size as the buffer size directly
+
+    // Allocate the buffer
+    char* buffer = (char*)malloc(bufferSize);
+    if (buffer == NULL) {
+        printf("Failed to allocate memory for file buffer\n");
+        return;
+    }
+
+    // Read the file into the buffer, passing the correct size
+    int result = fat32_read_file(file, buffer, bufferSize, bufferSize); // Pass bufferSize as the buffer size
+
+    if (result == 0) {
+        printf("Failed to read file\n");
+        return;
+    }
 
     //hex_dump(file->base, 256);
 
-    display_bmp((void*)file->base, 50, 50);
+    display_bmp(buffer, 50, 50);
 
-    // free(file->base, file->size);  // Free the file content
-    // free(file, sizeof(FILE));  // Free the FILE structure
+    free(file->base, file->size);  // Free the file content
+    free(file, sizeof(FILE));  // Free the FILE structure
 }

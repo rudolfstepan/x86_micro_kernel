@@ -130,7 +130,7 @@ iso:
 
 run:
 	@echo "Running QEMU..."
-	qemu-system-x86_64 -cdrom kernel.iso -boot d -m 64M -vga std -drive file=disk.img,format=raw -drive file=floppy.img,format=raw,if=floppy \
+	qemu-system-x86_64 -cdrom kernel.iso -boot d -m 512M -vga std -drive file=disk.img,format=raw -drive file=floppy.img,format=raw,if=floppy \
 	-device ne2k_pci,netdev=net0 -netdev user,id=net0
 	
 	# -drive file=./disk.img,format=raw \
