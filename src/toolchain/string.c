@@ -422,16 +422,32 @@ char* strstr(const char* haystack, const char* needle) {
 /// <summary>
 /// Copies the values of num bytes from the location pointed by source directly to the memory block pointed by destination.
 /// </summary>
+// void* memcpy(void* dest, const void* src, uint16_t n) {
+//     if (dest == NULL || src == NULL) {
+//         return NULL; // Error handling for NULL pointers
+//     }
+
+//     char* d = (char*)dest;
+//     const char* s = (const char*)src;
+//     while (n--) {
+//         *d++ = *s++;
+//     }
+//     return dest;
+// }
+
 void* memcpy(void* dest, const void* src, uint16_t n) {
     if (dest == NULL || src == NULL) {
-        return NULL; // Error handling for NULL pointers
+        return NULL; // Handle NULL pointers
     }
 
-    char* d = (char*)dest;
-    const char* s = (const char*)src;
-    while (n--) {
-        *d++ = *s++;
-    }
+    __asm__ volatile (
+        "cld\n"                  // Clear the direction flag (forward copy)
+        "rep movsb"              // Move bytes from src to dest
+        : "+D"(dest), "+S"(src), "+c"(n) // Outputs and updated inputs
+        : /* No additional inputs */
+        : "memory"               // Clobbers memory to ensure no reordering
+    );
+
     return dest;
 }
 
