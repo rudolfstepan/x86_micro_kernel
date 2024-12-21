@@ -820,10 +820,9 @@ void cmd_show(int arg_count, const char** arguments) {
         printf("Failed to read file\n");
         return;
     }
-
     //hex_dump(file->base, 256);
 
-    display_bmp(buffer, 50, 50);
+    display_bmp(buffer, 0, 0);
 
     free(file->base, file->size);  // Free the file content
     free(file, sizeof(FILE));  // Free the FILE structure
