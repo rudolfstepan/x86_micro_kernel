@@ -73,26 +73,58 @@ void load_program_into_memory(const char* programName, uint32_t address) {
 
 int create_process_for_file(const char *filename) {
     // Find an available slot in the process list
-    for (int i = 0; i < MAX_PROGRAMS; i++) {
-        if (!process_list[i].is_running) {
-            process_list[i].pid = next_pid++;
-            strcpy(process_list[i].name, filename);
-            process_list[i].is_running = true;
+    // for (int i = 0; i < MAX_PROGRAMS; i++) {
+    //     if (!process_list[i].is_running) {
+    //         process_list[i].pid = next_pid++;
+    //         strcpy(process_list[i].name, filename);
+    //         process_list[i].is_running = true;
 
+            // Load the program into memory
             load_program_into_memory(filename, PROGRAM_LOAD_ADDRESS);
 
             program_header_t* header = (program_header_t*)PROGRAM_LOAD_ADDRESS;
-            Process* process = &process_list[i];
+
+            printf("Program '%s' loaded at address: %p\n", filename, PROGRAM_LOAD_ADDRESS);
+
+            // print the program header details
+            // printf("Program Header Details:\n");
+            // printf("Identifier: %s\n", header->identifier);
+            // printf("Magic Number: %u\n", header->magic_number);
+            // printf("Program size: %d\n", header->program_size);
+            // printf("Entry point: %p\n", header->entry_point);
+            // printf("Base address: %p\n", header->base_address);
+            // printf("Relocation offset: %d\n", header->relocation_offset);
+            // printf("Relocation size: %d\n", header->relocation_size);
+
+            // get the address of the userspace
+            // uint32_t* relocation_table = (uint32_t*)(program + header->relocation_offset);
+            // uint32_t relocation_count = header->relocation_size / sizeof(uint32_t);
+
+            // // apply the relocation
+            // apply_relocation(relocation_table, relocation_count, program);
+
+            printf("Start prg at address: %p\n", header->entry_point + PROGRAM_LOAD_ADDRESS);
+
+            // execute the program
+            void (*prg)() = (void (*)())(header->entry_point + PROGRAM_LOAD_ADDRESS);
+            prg();
+
+
+            // start the program execution
+            //start_program_execution(program + header->entry_point);
+
+            //Process* process = &process_list[i];
 
             // Create a new task for the program
-            create_task((void (*)())(header->entry_point + PROGRAM_LOAD_ADDRESS), (uint32_t*)k_malloc(STACK_SIZE), process);
+            //create_task((void (*)())(header->entry_point + PROGRAM_LOAD_ADDRESS), (uint32_t*)k_malloc(STACK_SIZE), process);
 
-            return process_list[i].pid;
-        }
-    }
+            //return process_list[i].pid;
+            //k_free(program, 1024*1024); // Free the program memory
+    //     }
+    // }
 
     // No available slots
-    printf("Error: Maximum number of running programs reached.\n");
+    //printf("Error: Maximum number of running programs reached.\n");
     return -1;
 }
 

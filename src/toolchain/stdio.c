@@ -1,11 +1,8 @@
 #include "stdio.h"
 #include "string.h"
 #include "stdlib.h"
-
 #include <stdarg.h>
 #include <stddef.h>
-
-
 #include "filesystem/filesystem.h"
 #include "filesystem/fat32/fat32.h"
 #include "filesystem/fat12/fat12.h"
@@ -26,11 +23,19 @@
 #define PIT_CHANNEL_2_PORT 0x42
 #define PC_SPEAKER_PORT 0x61
 
+
+#ifdef __KERNEL__ // Kernel mode (Ring 0) implementation, gcc will define this macro
 int is_kernel_context() {
-    unsigned short cs;
-    asm volatile ("mov %%cs, %0" : "=r" (cs));
-    return (cs & 3) == 0; // CPL (Current Privilege Level) 0 means kernel mode
+    return 1; // Immer Kernel-Kontext im Kernel selbst
 }
+#else
+int is_kernel_context() {
+    return 0; // Immer User-Kontext im User-Modus
+    // unsigned short cs;
+    // asm volatile ("mov %%cs, %0" : "=r" (cs));
+    // return (cs & 3) == 0; // CPL prüfen
+}
+#endif
 
 void* syscall(int syscall_index, void* parameter1, void* parameter2, void* parameter3) {
     void* return_value;

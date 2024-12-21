@@ -9,7 +9,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-extern char _kernel_end; // Defined by the linker script
+extern uint32_t _kernel_end; // Defined by the linker script
 volatile size_t total_memory; // in bytes set by parsing the multiboot memory map after kernel initialization
 
 #define MULTIBOOT_USABLE_START 0x10000 // First usable memory address (64 KB)

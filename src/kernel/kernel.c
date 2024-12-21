@@ -284,7 +284,7 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
     // printf("Press any key to continue...\n");
     // getchar();
 
-    wait_enter_pressed();
+    //wait_enter_pressed();
 
     //calc the cpu speed
     volatile uint64_t start_cycles, end_cycles;
@@ -297,7 +297,7 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
     current_drive = ata_get_drive(0);
     if (current_drive) {
         // Initialize the FAT32 file system
-        ctor_fat32_class(&fat32);
+        //ctor_fat32_class(&fat32);
 
         init_fs(current_drive);
     } else {

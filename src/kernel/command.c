@@ -194,7 +194,7 @@ void command_loop() {
             }
         }
 
-        asm volatile("int $0x29"); // Trigger a timer interrupt
+        //asm volatile("int $0x29"); // Trigger a timer interrupt
     }
 }
 
@@ -276,9 +276,25 @@ void cmd_echo(int arg_count, const char **args) {
 }
 
 void cmd_dump(int arg_count, const char** arguments) {
-    uint32_t start_address = 0x80000000, end_address = 0x80000100;
-    if (arg_count > 0) start_address = (uint32_t)strtoul(arguments[0], NULL, 16);
-    if (arg_count > 1) end_address = (uint32_t)strtoul(arguments[1], NULL, 16);
+    uint32_t start_address = 0x80000000;
+    uint32_t end_address = 0x80000100;
+
+    // Parse arguments if provided
+    if (arg_count > 0) {
+        start_address = (uint32_t)strtoul(arguments[0], NULL, 16);
+    }
+    if (arg_count > 1) {
+        end_address = (uint32_t)strtoul(arguments[1], NULL, 16);
+    }
+
+    // Ensure the dump size is limited to 512 bytes
+    if ((end_address - start_address) > 512) {
+        end_address = start_address + 512;
+    }
+
+    printf("Dumping memory from 0x%08X to 0x%08X\n", start_address, end_address);
+
+    // Perform the memory dump
     memory_dump(start_address, end_address);
 }
 
@@ -311,7 +327,6 @@ void cmd_mount(int arg_count, const char** arguments) {
                 //printf("Init fs on ATA drive %s: %s with %u sectors\n", current_drive->name, current_drive->model, current_drive->sectors);
                 // Initialize file system for ATA drive
                 init_fs(current_drive);
-                // strcpy(current_path, "/");
                 break;
             case DRIVE_TYPE_FDD:
                 //printf("Init fs on FDD %s with CHS %u/%u/%u\n", current_drive->name, current_drive->cylinder, current_drive->head, current_drive->sector);
@@ -320,7 +335,6 @@ void cmd_mount(int arg_count, const char** arguments) {
                 printf("Init fs on FDD drive %s\n", current_drive->name);
                 fat12_init_fs(current_drive->fdd_drive_no);
                 // reset the current path
-                //strcpy(current_path, "/");
                 break;
 
             default:

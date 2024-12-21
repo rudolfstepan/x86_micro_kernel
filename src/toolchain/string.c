@@ -206,16 +206,17 @@ size_t strcspn(const char* str1, const char* str2) {
 unsigned long strtoul(const char* str, char** endptr, int base) {
     if (base != 0 && (base < 2 || base > 36)) {
         if (endptr) *endptr = (char*)str;
-        return 0;
+        return 0; // Invalid base
     }
 
-    int result = 0;
-    int digit;
-    int cutoff = ULONG_MAX / base;
-    int cutlim = ULONG_MAX % base;
+    unsigned long result = 0;
+    unsigned long digit;
+    unsigned long cutoff, cutlim;
 
+    // Skip leading whitespaces
     while (isspace((unsigned char)*str)) str++;
 
+    // Determine the base if not specified
     if (base == 0) {
         if (*str == '0') {
             str++;
@@ -223,13 +224,23 @@ unsigned long strtoul(const char* str, char** endptr, int base) {
                 base = 16;
                 str++;
             } else {
-                base = 8;
+                base = 8; // Leading zero implies octal
             }
         } else {
-            base = 10;
+            base = 10; // Default to decimal
         }
     }
 
+    // If base is still 0 after determination, default to decimal
+    if (base == 0) {
+        base = 10;
+    }
+
+    // Calculate cutoff and cutlim
+    cutoff = ULONG_MAX / base;
+    cutlim = ULONG_MAX % base;
+
+    // Convert the string
     while (*str) {
         if (isdigit((unsigned char)*str))
             digit = *str - '0';
@@ -240,8 +251,10 @@ unsigned long strtoul(const char* str, char** endptr, int base) {
 
         if (digit >= base) break;
 
+        // Check for overflow
         if (result > cutoff || (result == cutoff && digit > cutlim)) {
             result = ULONG_MAX;
+           
             break;
         }
 

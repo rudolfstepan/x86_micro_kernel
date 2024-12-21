@@ -203,7 +203,8 @@ void ne2000_init() {
     ne2000_write(NE2000_BNRY, RX_START_PAGE);
 
     // set irq handler
-    register_interrupt_handler(11, ne2000_irq_handler);
+    // TODO: Implement IRQ handler in kernel.c
+    //register_interrupt_handler(11, ne2000_irq_handler);
 
     printf("NE2000 initialization complete.\n");
 }
