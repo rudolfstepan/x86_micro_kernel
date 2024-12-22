@@ -1,5 +1,6 @@
 #include "drivers/rtc/rtc.h"
 #include "toolchain/stdio.h"
+#include "drivers/video/framebuffer.h"
 // #include "drivers/video/vga.h"
 
 #define SCREEN_WIDTH 80  // Assuming 80x25 screen
@@ -10,14 +11,18 @@ int main() {
     printf("Current date/time:\n");
 
     // Store the initial cursor position
-    int initial_x, initial_y;
+    uint32_t initial_x = 0;
+    uint32_t initial_y = 0;
 
     // Variables to store previous and current time
     int prev_hour = -1, prev_minute = -1, prev_second = -1;
     int year, month, day, hour, minute, second;
 
-    while (1) {
-        get_cursor_position(&initial_x, &initial_y);
+    //while (1) {
+        //fb_get_cursor_position(&initial_x, &initial_y);
+
+        // printf("Cursor position x: %u ", initial_x);
+        // printf(" y: %u\n", initial_y);
 
         // Read the current date and time
         read_date(&year, &month, &day);
@@ -35,16 +40,16 @@ int main() {
             snprintf(time_str, sizeof(time_str), "%d:%d:%d", hour, minute, second);
 
             // Display the time in the top-right corner
-            set_cursor_position(TIME_COL, TIME_ROW);
-            printf("%s", time_str);
+            //fb_set_cursor_position(TIME_COL, TIME_ROW);
+            printf("%s\n", time_str);
 
             // Restore the original cursor position
-            set_cursor_position(initial_x, initial_y);
+            //fb_set_cursor_position(initial_x, initial_y);
         }
 
         // Trigger a timer interrupt (non-blocking, allows context switching)
         asm volatile("int $0x29");
-    }
+    //}
 
     return 0;
 }

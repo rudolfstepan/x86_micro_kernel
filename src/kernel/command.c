@@ -194,7 +194,7 @@ void command_loop() {
             }
         }
 
-        //asm volatile("int $0x29"); // Trigger a timer interrupt
+        asm volatile("int $0x29"); // Trigger a timer interrupt
     }
 }
 
@@ -623,12 +623,11 @@ void cmd_run(int arg_count, const char** arguments) {
     }
     char* program_name = (char*)arguments[0];
     
-    int pid = create_process(program_name);
+    int pid = create_process(program_name, program_name);
     if (pid == -1) {
         printf("Failed to start program '%s'.\n", program_name);
     }
 }
-
 
 // Open the specified file and print its contents
 void openFile(const char* path) {

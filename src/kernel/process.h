@@ -5,8 +5,6 @@
 #include <stdint.h>
 
 
-#define MAX_PROGRAMS 256 // Maximum number of running programs
-
 typedef struct {
     int pid;
     char name[32];
@@ -15,13 +13,13 @@ typedef struct {
 } Process;
 
 
-int create_process(void* entry_point);
+int create_process(void* entry_point, const char* filename);
 int create_process_for_file(const char *filename);
 void list_running_processes();
 void terminate_process(int pid);
 
 void start_program_execution(long entryPoint);
-void load_and_execute_program(const char* programName);
+//void load_and_execute_program(const char* programName);
 void load_program_into_memory(const char* programName, uint32_t address);
 
 #endif // PROCESS_H

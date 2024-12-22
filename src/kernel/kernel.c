@@ -306,13 +306,13 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
     // detect fdd drives
     fdd_detect_drives();
 
-    // create_process(task1);
-    // create_process(command_loop);
+    create_process(task1, "Task 1");
+    create_process(command_loop, "Command Loop");
 
-    // // Initialize the APIC timer
-    // init_apic_timer(1000000);  // Set timer ticks
+    // Initialize the APIC timer
+    init_apic_timer(1000000);  // Set timer ticks
 
-    command_loop();
+    //command_loop();
 
     while (1) {
         //printf("Kernel Main Loop\n");

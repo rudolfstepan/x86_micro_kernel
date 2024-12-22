@@ -8,10 +8,10 @@
 #include <stdbool.h>
 
 
-uint32_t cursor_x = 0;
-uint32_t cursor_y = 0;
-uint32_t line_height = 16; // Height of a single text line (e.g., 8x16 font)
-uint32_t left_padding = 8; // Padding on the left border
+static uint32_t cursor_x = 0;
+static uint32_t cursor_y = 0;
+static uint32_t line_height = 16; // Height of a single text line (e.g., 8x16 font)
+static uint32_t left_padding = 8; // Padding on the left border
 
 static uint32_t txt_color = WHITE;
 static uint32_t bg_color = BLACK;
@@ -25,9 +25,14 @@ void set_bg_color(uint32_t color) {
     bg_color = color;
 }
 
-void set_cursor_position(uint32_t x, uint32_t y) {
-    cursor_x = x + left_padding;
+void fb_set_cursor_position(uint32_t x, uint32_t y) {
+    cursor_x = x;
     cursor_y = y;
+}
+
+void fb_get_cursor_position(uint32_t *x, uint32_t *y) {
+    *x = cursor_x;
+    *y = cursor_y;
 }
 
 void parse_framebuffer(multiboot2_tag_framebuffer_t *fb) {
@@ -158,11 +163,9 @@ void put_char(char c, uint32_t font_color, uint32_t bg_color) {
     if (c == '\n') {
         cursor_x = left_padding;
         cursor_y += line_height;
-
-        // Scroll if at the bottom of the screen
         if (cursor_y >= fb_info.height - line_height) {
             scroll_screen(bg_color);
-            cursor_y = fb_info.height - line_height; // Reset to the last visible line
+            cursor_y = fb_info.height - line_height;
         }
         return;
     }
@@ -170,13 +173,14 @@ void put_char(char c, uint32_t font_color, uint32_t bg_color) {
     if (cursor_x >= fb_info.width) {
         cursor_x = left_padding;
         cursor_y += line_height;
-
         if (cursor_y >= fb_info.height - line_height) {
             scroll_screen(bg_color);
-            cursor_y = fb_info.height - line_height; // Reset to the last visible line
+            cursor_y = fb_info.height - line_height;
         }
     }
 
+    // Log before drawing
+    //printf("Drawing character '%c' at X=%u, Y=%u\n", c, cursor_x, cursor_y);
     draw_char(cursor_x, cursor_y, c, font_color);
     cursor_x += 8; // Advance cursor by font width
 }
@@ -330,4 +334,38 @@ void display_bmp(void* buffer, uint32_t screen_x, uint32_t screen_y) {
     }
 
     printf("BMP displayed successfully at (%u, %u).\n", screen_x, screen_y);
+}
+
+void fb_print_string(const char *str, uint32_t x, uint32_t y, uint32_t font_color, uint32_t bg_color) {
+    uint32_t cursor_x = x;
+    uint32_t cursor_y = y;
+
+    while (*str) {
+        char c = *str++;
+        if (c == '\n') {
+            // Handle newline
+            cursor_x = x; // Reset to initial x position
+            cursor_y += line_height;
+            // Scroll if necessary
+            if (cursor_y >= fb_info.height - line_height) {
+                scroll_screen(bg_color);
+                cursor_y = fb_info.height - line_height;
+            }
+        } else {
+            if (cursor_x >= fb_info.width) {
+                // Wrap to next line if reaching the screen width
+                cursor_x = x;
+                cursor_y += line_height;
+
+                if (cursor_y >= fb_info.height - line_height) {
+                    scroll_screen(bg_color);
+                    cursor_y = fb_info.height - line_height;
+                }
+            }
+
+            // Draw character at the specified position
+            draw_char(cursor_x, cursor_y, c, font_color);
+            cursor_x += 8; // Advance by character width
+        }
+    }
 }

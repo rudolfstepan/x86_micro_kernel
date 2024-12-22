@@ -46,8 +46,7 @@ void task_exit() {
 
 // Scheduler
 void scheduler_interrupt_handler() {
-
-    return;
+    //return;
     asm volatile("cli");
 
     task_t *current = &tasks[current_task];

@@ -8,10 +8,10 @@ void main() {
 
     printf("++++++++++++++++DIR CLI started++++++++++++++++++\n");
 
-    int is_kernel = is_kernel_context();
-    char kernel = is_kernel ? 'Y' : 'N';
+    // int is_kernel = is_kernel_context();
+    // char kernel = is_kernel ? 'Y' : 'N';
 
-    syscall(SYS_TERMINAL_PUTCHAR, (void*)(uintptr_t)kernel, NULL, NULL);
+    //syscall(SYS_TERMINAL_PUTCHAR, (void*)(uintptr_t)kernel, NULL, NULL);
 
     // while (1)
     // {

@@ -196,7 +196,7 @@ void draw_memory_map() {
         draw_rect(col * PIXEL_SIZE, row * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, color);
     }
 
-    set_cursor_position(0,0);
+    fb_set_cursor_position(0,0);
 
     //Draw X and Y axes with memory addresses
     // for (int i = 0; i < SCREEN_WIDTH; i += 100) {
