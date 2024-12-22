@@ -755,7 +755,6 @@ int snprintf(char* str, size_t size, const char* format, ...) {
     return written;
 }
 
-
 void hex_dump(const void* data, size_t size) {
     const uint8_t* byte_data = (const uint8_t*)data; // Treat data as byte array
     size_t line_count = 0;                           // Counter to track lines printed
@@ -842,7 +841,7 @@ void memory_dump(uint32_t start_address, uint32_t end_address) {
 
 // Set the PIT to the desired frequency for the beep
 void set_pit_frequency(uint32_t frequency) {
-#ifdef __kernel__
+#ifdef __KERNEL__
 
     uint32_t divisor = 1193180 / frequency; // Calculate the divisor (PIT runs at ~1.19318 MHz)
     
@@ -860,7 +859,7 @@ void set_pit_frequency(uint32_t frequency) {
 
 // Enable the PC speaker
 void enable_pc_speaker() {
-    #ifdef __kernel__
+    #ifdef __KERNEL__
     uint8_t tmp = inb(PC_SPEAKER_PORT);
     if (!(tmp & 0x03)) { // Check if the speaker is already enabled
         outb(PC_SPEAKER_PORT, tmp | 0x03); // Turn on the speaker
@@ -870,7 +869,7 @@ void enable_pc_speaker() {
 
 // Disable the PC speaker
 void disable_pc_speaker() {
-    #ifdef __kernel__
+    #ifdef __KERNEL__
     uint8_t tmp = inb(PC_SPEAKER_PORT);
     outb(PC_SPEAKER_PORT, tmp & 0xFC); // Turn off the speaker
     #endif
@@ -878,7 +877,7 @@ void disable_pc_speaker() {
 
 // Function to create a beep sound
 void beep(uint32_t frequency, uint32_t duration_ms) {
-    #ifdef __kernel__
+    #ifdef __KERNEL__
     set_pit_frequency(frequency);
     enable_pc_speaker();
 
