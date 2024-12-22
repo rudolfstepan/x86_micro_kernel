@@ -63,7 +63,7 @@ compile_drivers:
 # Compile all .c files except in filesystem and drivers directories
 compile_sources:
 	@echo "Compiling sources..."
-	for FILE in $(shell find $(SOURCE_DIR) -type f -name '*.c' ! -path '$(SOURCE_DIR)/filesystem/*' ! -path '$(SOURCE_DIR)/drivers/*'); do \
+	for FILE in $(shell find $(SOURCE_DIR) -type f -name '*.c' ! -path '$(SOURCE_DIR)/filesystem/*' ! -path '$(SOURCE_DIR)/drivers/*' ! -path '$(SOURCE_DIR)/cli/*'); do \
 		RELATIVE_PATH=$${FILE#$(SOURCE_DIR)/}; \
 		mkdir -p $(OUTPUT_DIR)/$$(dirname $$RELATIVE_PATH); \
 		OBJECT_NAME=$${RELATIVE_PATH%.*}.o; \
@@ -76,6 +76,13 @@ compile_sources:
 	gcc $(CFLAGS) -o $(OUTPUT_DIR)/toolchain/u_stdlib.o $(SOURCE_DIR)/toolchain/stdlib.c
 	gcc $(CFLAGS) -o $(OUTPUT_DIR)/toolchain/u_stdio.o $(SOURCE_DIR)/toolchain/stdio.c
 	gcc $(CFLAGS) -o $(OUTPUT_DIR)/toolchain/u_string.o $(SOURCE_DIR)/toolchain/string.c
+
+
+	g++ -Itoolchain -m32 -fno-rtti -fno-exceptions -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -O1 -Wall -Wextra -g \
+	-Wno-unused-parameter -Wno-unused-variable -U_FORTIFY_SOURCE -T cli.ld -o $(OUTPUT_DIR)/cli/dir.elf $(SOURCE_DIR)/cli/dir.cpp \
+	$(OUTPUT_DIR)/toolchain/u_stdlib.o $(OUTPUT_DIR)/toolchain/u_stdio.o $(OUTPUT_DIR)/toolchain/u_string.o \
+	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o $(OUTPUT_DIR)/kernel/memory.o
+
 	
 # Link kernel
 link_kernel:
@@ -92,27 +99,27 @@ link_kernel:
 # Link CLI programs
 link_cli:
 
-	@echo "Linking cli_date..."
-	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/date.elf $(CLI_DIR)/date.o \
-	$(OUTPUT_DIR)/toolchain/u_stdlib.o $(OUTPUT_DIR)/toolchain/u_stdio.o $(OUTPUT_DIR)/toolchain/u_string.o \
-	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o $(OUTPUT_DIR)/kernel/memory.o
+	# @echo "Linking cli_date..."
+	# ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/date.elf $(CLI_DIR)/date.o \
+	# $(OUTPUT_DIR)/toolchain/u_stdlib.o $(OUTPUT_DIR)/toolchain/u_stdio.o $(OUTPUT_DIR)/toolchain/u_string.o \
+	# $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o $(OUTPUT_DIR)/kernel/memory.o
 
-	@echo "Linking cli_dir..."
-	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.o \
-	$(OUTPUT_DIR)/toolchain/u_stdlib.o $(OUTPUT_DIR)/toolchain/u_stdio.o $(OUTPUT_DIR)/toolchain/u_string.o \
-	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o $(OUTPUT_DIR)/kernel/memory.o
+	#@echo "Linking cli_dir..."
+	#ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.o \
+	# $(OUTPUT_DIR)/toolchain/u_stdlib.o $(OUTPUT_DIR)/toolchain/u_stdio.o $(OUTPUT_DIR)/toolchain/u_string.o \
+	# $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o $(OUTPUT_DIR)/kernel/memory.o
 
-	@echo "Linking cli_test..."
-	ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/test.elf $(CLI_DIR)/test.o \
-	$(OUTPUT_DIR)/toolchain/u_stdlib.o $(OUTPUT_DIR)/toolchain/u_stdio.o $(OUTPUT_DIR)/toolchain/u_string.o \
-	$(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o $(OUTPUT_DIR)/kernel/memory.o
+	# @echo "Linking cli_test..."
+	# ld $(LD_FLAGS) -T cli.ld -o $(CLI_DIR)/test.elf $(CLI_DIR)/test.o \
+	# $(OUTPUT_DIR)/toolchain/u_stdlib.o $(OUTPUT_DIR)/toolchain/u_stdio.o $(OUTPUT_DIR)/toolchain/u_string.o \
+	# $(DRIVERS_DIR)/drivers.o $(FILESYSTEM_DIR)/filesystem.o $(OUTPUT_DIR)/kernel/memory.o
 
 # Copy binaries
 copy_binaries:
 	@echo "Copying binaries..."
-	objcopy -O binary $(CLI_DIR)/date.elf $(CLI_DIR)/date.prg
+	# objcopy -O binary $(CLI_DIR)/date.elf $(CLI_DIR)/date.prg
 	objcopy -O binary $(CLI_DIR)/dir.elf $(CLI_DIR)/dir.prg
-	objcopy -O binary $(CLI_DIR)/test.elf $(CLI_DIR)/test.prg
+	# objcopy -O binary $(CLI_DIR)/test.elf $(CLI_DIR)/test.prg
 
 mount:
 	@echo "Mounting disk image..."
@@ -121,9 +128,9 @@ mount:
 		mkdir -p $(MOUNT_DIR); \
 	fi
 	sudo mount ./disk.img $(MOUNT_DIR)
-	sudo cp $(CLI_DIR)/date.prg $(MOUNT_DIR)/
+	# sudo cp $(CLI_DIR)/date.prg $(MOUNT_DIR)/
 	sudo cp $(CLI_DIR)/dir.prg $(MOUNT_DIR)/
-	sudo cp $(CLI_DIR)/test.prg $(MOUNT_DIR)/
+	# sudo cp $(CLI_DIR)/test.prg $(MOUNT_DIR)/
 
 	sudo cp ./w311.bmp $(MOUNT_DIR)/
 	sudo cp ./rst.bmp $(MOUNT_DIR)/

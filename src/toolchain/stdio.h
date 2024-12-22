@@ -1,6 +1,11 @@
 #ifndef STDIO_H
 #define STDIO_H
 
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include "definitions.h"
@@ -53,5 +58,10 @@ void hex_dump(const void* data, size_t size);
 void memory_dump(uint32_t start_address, uint32_t end_address);
 
 void beep(uint32_t frequency, uint32_t duration_ms);
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // STDIO_H
