@@ -1,5 +1,4 @@
 #include "kernel.h"
-
 #include <stdbool.h>
 #include "command.h"
 #include "prg.h"
@@ -10,25 +9,18 @@
 #include "scheduler.h"
 #include "process.h"
 #include "drivers/pci.h"
-
 #include "drivers/kb/kb.h"
 #include "drivers/rtc/rtc.h"
-// #include "drivers/video/vga.h"
 #include "drivers/io/io.h"
-
 #include "toolchain/stdio.h"
 #include "toolchain/stdlib.h"
 #include "toolchain/string.h"
-
 #include "filesystem/filesystem.h"
 #include "filesystem/fat32/fat32.h"
 #include "drivers/ata/ata.h"
 #include "drivers/fdd/fdd.h"
-
 #include "drivers/video/framebuffer.h"
 #include "multiboot.h"
-
-//#include "mbheader.h"
 #include "memory.h"
 //#include "paging.h"
 // #include "drivers/network/rtl8139.h"
@@ -271,7 +263,11 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
 
     //rtl8139_detect();
     //e1000_detect();
-    //ne2000_detect();
+    if(ne2000_detect() == 0){
+        printf("NE2000 irq handler installed\n");
+        register_interrupt_handler(11, ne2000_irq_handler);
+    } 
+
     //vmxnet3_setup();
     
     pci_probe_drivers();
@@ -284,7 +280,7 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
     // printf("Press any key to continue...\n");
     // getchar();
 
-    //wait_enter_pressed();
+    wait_enter_pressed();
 
     //calc the cpu speed
     volatile uint64_t start_cycles, end_cycles;

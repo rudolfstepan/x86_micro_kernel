@@ -325,7 +325,7 @@ void ne2000_print_mac_address() {
            mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
 }
 
-void ne2000_detect() {
+int ne2000_detect() {
     printf("Detecting NE2000 network card...\n");
     for (uint16_t bus = 0; bus < 256; ++bus) {
         for (uint8_t device = 0; device < 32; ++device) {
@@ -350,7 +350,7 @@ void ne2000_detect() {
                     io_base = get_io_base(bus, device, function);
                     if (io_base == 0) {
                         printf("Failed to get IO base address\n");
-                        return;
+                        return -1;
                     }
 
                     printf("NE2000 IO base address: 0x%04X\n", io_base);
@@ -358,7 +358,7 @@ void ne2000_detect() {
                     ne2000_validate_init();
                     ne2000_print_mac_address();
 
-                    return;
+                    return 0;
                 }
             }
         }
