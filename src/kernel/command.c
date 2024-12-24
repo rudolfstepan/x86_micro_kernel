@@ -821,7 +821,23 @@ void cmd_show(int arg_count, const char** arguments) {
     }
     //hex_dump(file->base, 256);
 
-    display_bmp(buffer, 0, 0);
+    // get filename extension
+    char* ext = strrchr(filename, '.');
+    if(ext == NULL) {
+        printf("Unknown file type\n");
+        return;
+    }
+
+    ext++; // skip the dot
+
+    if(strcmp(ext, "BMP") == 0) {
+        display_bmp(buffer, 0, 0);
+    }
+
+    if(strcmp(ext, "JPG") == 0) {
+        // show jpeg image
+        display_jpeg(buffer, 0, 0);
+    }
 
     free(file->base, file->size);  // Free the file content
     free(file, sizeof(FILE));  // Free the FILE structure

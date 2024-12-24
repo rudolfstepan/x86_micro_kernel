@@ -369,3 +369,11 @@ void fb_print_string(const char *str, uint32_t x, uint32_t y, uint32_t font_colo
         }
     }
 }
+
+void display_jpeg(void* buffer, uint32_t screen_x, uint32_t screen_y) {
+    // Display the JPEG image using the framebuffer
+    // (e.g., convert the YUV420P image to RGB24 and display it)
+    // ...
+    printf("Displaying JPEG image at (%u, %u).\n", screen_x, screen_y);
+
+}

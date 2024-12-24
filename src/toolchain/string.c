@@ -530,3 +530,30 @@ char* strdup(const char* src) {
 
     return dest; // Return pointer to the duplicated string
 }
+
+/**
+ * Custom implementation of strrchr.
+ * Finds the last occurrence of a character in a string.
+ *
+ * @param str Pointer to the null-terminated string to search.
+ * @param c Character to locate (cast to an unsigned char).
+ * @return Pointer to the last occurrence of c in str, or NULL if not found.
+ */
+char* strrchr(const char* str, int c) {
+    char* last_occurrence = NULL;
+
+    // Iterate through the string
+    while (*str) {
+        if (*str == (char)c) {
+            last_occurrence = (char*)str; // Update last occurrence
+        }
+        str++;
+    }
+
+    // Check the null terminator
+    if (c == '\0') {
+        return (char*)str;
+    }
+
+    return last_occurrence;
+}

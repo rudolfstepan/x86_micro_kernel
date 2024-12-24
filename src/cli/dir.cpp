@@ -2,6 +2,7 @@ extern "C" {
 #include "../toolchain/stdio.h"
 #include "../toolchain/stdlib.h"
 #include "../drivers/video/framebuffer.h"
+
 }
 
 class DirCLI {
@@ -24,6 +25,7 @@ int main() {
     DirCLI dirCLI;
 
     dirCLI.run();
-    
+
+
     return 0;
 }

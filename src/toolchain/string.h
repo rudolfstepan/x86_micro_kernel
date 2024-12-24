@@ -54,6 +54,8 @@ char* strtok(char* str, const char* delimiters);
 // locates the first occurrence of the substring needle in the string haystack:
 char* strstr(const char* haystack, const char* needle);
 
+char* strrchr(const char* str, int c);
+
 // Custom non-standard functions:
 // Converts a string to lowercase in place.
 void str_to_lower(char* str);
