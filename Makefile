@@ -154,7 +154,9 @@ run:
     -boot d \
     -netdev user,id=net0,hostfwd=tcp::2222-:22 \
     -device ne2k_pci,netdev=net0 \
-	-drive file=./disk.img,format=raw -monitor stdio
+    -drive file=./disk.img,format=raw \
+    -machine pc \
+    -monitor stdio
 
 	#-cdrom kernel.iso -boot d -m 512M -vga std -drive file=./disk.img,format=raw -drive file=floppy.img,format=raw,if=floppy \
 	#-device ne2k_pci,netdev=net0 -netdev user,id=net0,hostfwd=tcp::10022-:22 -monitor stdio

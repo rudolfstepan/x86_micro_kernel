@@ -28,6 +28,8 @@
 #include "drivers/network/ne2000.h"
 // #include "drivers/network/vmxnet3.h"
 
+#include "drivers/mouse/mouse.h"
+
 extern char _stack_start;  // Start address of the stack
 extern char _stack_end;    // End address of the stack
 extern volatile size_t total_memory;
@@ -261,6 +263,7 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
 
     register_interrupt_handler(9, scheduler_interrupt_handler);
 
+
     //rtl8139_detect();
     //e1000_detect();
     if(ne2000_detect() == 0){
@@ -272,6 +275,11 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
     
     pci_probe_drivers();
 
+    ps2_mouse_init();
+    register_interrupt_handler(12, ps2_mouse_interrupt);
+
+    
+
     __asm__ __volatile__("sti"); // enable interrupts
 
     //display_welcome_message();
@@ -280,7 +288,7 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
     // printf("Press any key to continue...\n");
     // getchar();
 
-    wait_enter_pressed();
+    //wait_enter_pressed();
 
     //calc the cpu speed
     volatile uint64_t start_cycles, end_cycles;

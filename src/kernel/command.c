@@ -536,7 +536,9 @@ void cmd_irq(int arg_count, const char** arguments) {
 
         // send irq
         int irq = strtoul(arguments[0], NULL, 10);
-        __asm__ volatile("int $0x2b\n" : : "a"(irq) : "memory");
+        //__asm__ volatile("int $0x2b\n" : : "a"(irq) : "memory");
+
+        asm volatile("int $0x2c"); // Trigger interrupt
 
     }
 

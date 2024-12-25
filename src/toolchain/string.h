@@ -46,7 +46,7 @@ size_t strcspn(const char* str1, const char* str2);
 // Writes formatted data to a string, limiting the output to 'size' characters.
 int snprintf(char* str, size_t size, const char* format, ...);
 // Converts the initial part of a string to an unsigned long integer based on the given base.
-unsigned long strtoul(const char* str, char** endptr, int base);
+unsigned long strtoul(const char* str, char** endptr, unsigned long base);
 // Searches for the first occurrence of the character 'c' in the string 'str'.
 char* strchr(const char* str, int c);
 // Tokenizes a string into smaller substrings using delimiters (not thread-safe).

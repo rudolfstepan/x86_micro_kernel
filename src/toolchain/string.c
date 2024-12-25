@@ -203,7 +203,7 @@ size_t strcspn(const char* str1, const char* str2) {
 }
 
 // Converts a string to an unsigned long integer
-unsigned long strtoul(const char* str, char** endptr, int base) {
+unsigned long strtoul(const char* str, char** endptr, unsigned long base) {
     if (base != 0 && (base < 2 || base > 36)) {
         if (endptr) *endptr = (char*)str;
         return 0; // Invalid base
