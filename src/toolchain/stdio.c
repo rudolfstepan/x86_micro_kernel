@@ -372,17 +372,49 @@ void print_char(char c) {
     putchar(c);
 }
 
-void print_string(const char *str) {
+void print_string(const char *str, int width, bool left_align) {
+    int len = 0;
+    const char *temp = str;
+
+    // Calculate the length of the string
+    while (*temp++) len++;
+
+    // Handle padding for right alignment
+    if (!left_align) {
+        while (width-- > len) {
+            putchar(' ');
+        }
+    }
+
+    // Print the string
     while (*str) {
         putchar(*str++);
     }
+
+    // Handle padding for left alignment
+    if (left_align) {
+        while (width-- > len) {
+            putchar(' ');
+        }
+    }
 }
 
-void print_number(uint64_t num, int base, bool is_signed, bool uppercase, bool alt_form, int width, int precision, bool zero_pad, bool left_align, bool always_sign) {
+void print_number(uint64_t num, int base, bool is_signed, bool uppercase, bool alt_form, int width, int precision, bool zero_pad, bool left_align, bool always_sign, bool space_pad) {
     char buffer[BUFFER_SIZE];
     const char *digits = uppercase ? "0123456789ABCDEF" : "0123456789abcdef";
     int index = BUFFER_SIZE - 1;
     buffer[index] = '\0';
+
+    bool is_negative = false;
+
+    // Handle signed numbers
+    if (is_signed) {
+        int64_t signed_num = (int64_t)num; // Interpret as signed
+        if (signed_num < 0) {
+            is_negative = true;
+            num = -signed_num;
+        }
+    }
 
     // Generate digits in reverse order
     do {
@@ -396,16 +428,35 @@ void print_number(uint64_t num, int base, bool is_signed, bool uppercase, bool a
         buffer[--index] = '0';
     }
 
-    // Print padding and number
+    // Handle sign or space padding
+    if (is_negative) {
+        buffer[--index] = '-';
+    } else if (always_sign) {
+        buffer[--index] = '+';
+    } else if (space_pad) {
+        buffer[--index] = ' ';
+    }
+
+    // Calculate length of formatted number
     int len = BUFFER_SIZE - 1 - index;
-    if (!left_align) while (width-- > len) putchar(zero_pad ? '0' : ' ');
-    print_string(&buffer[index]);
-    if (left_align) while (width-- > len) putchar(' ');
+
+    // Handle padding and alignment
+    if (!left_align) {
+        while (width-- > len) {
+            putchar(zero_pad ? '0' : ' ');
+        }
+    }
+    print_string(&buffer[index], 0, false);
+    if (left_align) {
+        while (width-- > len) {
+            putchar(' ');
+        }
+    }
 }
 
 // Helper to convert integer to string and print
-void print_formatted_number(uint64_t num, int base, bool is_signed, bool uppercase, bool alt_form, int width, int precision, bool zero_pad, bool left_align, bool always_sign) {
-    print_number(num, base, is_signed, uppercase, alt_form, width, precision, zero_pad, left_align, always_sign);
+void print_formatted_number(uint64_t num, int base, bool is_signed, bool uppercase, bool alt_form, int width, int precision, bool zero_pad, bool left_align, bool always_sign, bool space_pad) {
+    print_number(num, base, is_signed, uppercase, alt_form, width, precision, zero_pad, left_align, always_sign, space_pad);
 }
 
 void print_float(double value, int precision, int width, bool left_align, bool always_sign);
@@ -479,21 +530,25 @@ int printf(const char *format, ...) {
                     int64_t value = is_long_long ? va_arg(args, int64_t) :
                                     is_long ? va_arg(args, long) :
                                     va_arg(args, int);
-                    print_formatted_number(value, 10, true, false, false, width, precision, zero_pad, left_align, always_sign);
+
+                    // If value is positive and always_sign is false, handle space_pad
+                    bool prepend_space = space_pad && !always_sign && value >= 0;
+
+                    print_formatted_number(value, 10, true, false, prepend_space, width, precision, zero_pad, left_align, always_sign, space_pad);
                     break;
                 }
                 case 'u': { // Unsigned integers
                     uint64_t value = is_long_long ? va_arg(args, uint64_t) :
                                      is_long ? va_arg(args, unsigned long) :
                                      va_arg(args, unsigned int);
-                    print_formatted_number(value, 10, false, false, false, width, precision, zero_pad, left_align, false);
+                    print_formatted_number(value, 10, false, false, false, width, precision, zero_pad, left_align, false, space_pad);
                     break;
                 }
                 case 'x': case 'X': { // Hexadecimal
                     uint64_t value = is_long_long ? va_arg(args, uint64_t) :
                                      is_long ? va_arg(args, unsigned long) :
                                      va_arg(args, unsigned int);
-                    print_formatted_number(value, 16, false, (*format == 'X'), alt_form, width, precision, zero_pad, left_align, false);
+                    print_formatted_number(value, 16, false, (*format == 'X'), alt_form, width, precision, zero_pad, left_align, false, space_pad);
                     break;
                 }
                 case 'f': { // Floating-point numbers
@@ -506,14 +561,14 @@ int printf(const char *format, ...) {
                     format++; // Skip 'z'
                     if (*format == 'u') { // Handle %zu
                         size_t value = va_arg(args, size_t);
-                        print_formatted_number(value, 10, false, false, false, width, precision, zero_pad, left_align, false);
+                        print_formatted_number(value, 10, false, false, false, width, precision, zero_pad, left_align, false, space_pad);
                     }
                     break;
                 }
                 case 'p': { // Pointers
                     uintptr_t ptr = va_arg(args, uintptr_t);
-                    print_string("0x");
-                    print_formatted_number(ptr, 16, false, false, false, width, precision, true, left_align, false);
+                    //print_string("0x");
+                    print_formatted_number(ptr, 16, false, false, false, width, precision, true, left_align, false, space_pad);
                     break;
                 }
                 case 'c': { // Characters
@@ -523,7 +578,8 @@ int printf(const char *format, ...) {
                 }
                 case 's': { // Strings
                     const char *str = va_arg(args, const char *);
-                    print_string(str);
+                    print_string(str, width, left_align);
+                    //print_string(str);
                     break;
                 }
                 case '%': { // Literal '%'
@@ -566,7 +622,7 @@ void print_float(double value, int precision, int width, bool left_align, bool a
     }
 
     // Print the float string
-    print_string(buffer);
+    print_string(buffer, len, false);
 
     // Handle left alignment
     if (left_align && len < width) {

@@ -275,8 +275,8 @@ void kernel_main(uint32_t *multiboot_magic, multiboot2_info_t *multiboot_info) {
     
     pci_probe_drivers();
 
-    ps2_mouse_init();
-    register_interrupt_handler(12, ps2_mouse_interrupt);
+    // ps2_mouse_init();
+    // register_interrupt_handler(12, ps2_mouse_interrupt);
 
     
 
