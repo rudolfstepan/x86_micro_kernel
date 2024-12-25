@@ -53,17 +53,23 @@
 #define RCR_MON 0x20  // Monitor Mode
 
 // Define NE2000 TCR bits
-#define TCR_LB0         0x02  // Loopback Mode 0 (internal)
-#define TCR_LB1         0x04  // Loopback Mode 1 (external)
+#define TCR_LB0 0x02  // Loopback Mode 0 (internal)
+#define TCR_LB1 0x04  // Loopback Mode 1 (external)
 
 // Define buffer pages
 #define RX_START_PAGE 0x40
 #define RX_STOP_PAGE  0x80
 #define TX_START_PAGE 0x20
 
-// I/O base address (to be set during runtime)
-uint16_t io_base = 0xc000;// = 0x300;
+#define CR_RD0  0x08  // Remote Read DMA
+#define CR_RD1  0x10  // Remote Write DMA
+#define CR_RD2  0x18  // Send Packet Command (Remote Read/Write Off)
 
+
+#define DEBUG_PRINT(fmt, ...) printf("DEBUG: " fmt "\n", ##__VA_ARGS__)
+
+// I/O base address (to be set during runtime)
+uint16_t io_base = 0xc0ff;// = 0x300;
 uint8_t mac_address[MAC_ADDRESS_LENGTH] = {0};
 
 // prototypes
@@ -72,7 +78,7 @@ void print_packet(const uint8_t *packet, uint16_t length);
 
 // Function to write to a NE2000 register
 static inline void ne2000_write(uint8_t reg, uint8_t value) {
-    if(io_base == 0) {
+    if (io_base == 0) {
         printf("IO base address not set\n");
         return;
     }
@@ -81,9 +87,9 @@ static inline void ne2000_write(uint8_t reg, uint8_t value) {
 
 // Function to read from a NE2000 register
 static inline uint8_t ne2000_read(uint8_t reg) {
-     if(io_base == 0) {
+    if (io_base == 0) {
         printf("IO base address not set\n");
-        return;
+        return 0xFF;
     }
     return inb(io_base + reg);
 }
@@ -108,105 +114,72 @@ void ne2000_disable_loopback(uint16_t io_base) {
 
 // Function to reset the NE2000 card
 void ne2000_reset() {
-    // Perform a software reset
-    printf("Resetting NE2000 network card...\n");
+    DEBUG_PRINT("Resetting NE2000 network card...");
+    ne2000_write(0x1F, ne2000_read(0x1F));  // Trigger software reset
 
-    //ne2000_write(NE2000_CR, CR_STP | CR_RD2);
-    // write the value of RESET into the RESET register
-    ne2000_write(0x1F, ne2000_read(0x1F));
-
-    // wait for the RESET to complete
-    while (!(ne2000_read(NE2000_ISR) & 0x80));
-
-    // mask interrupts
-    ne2000_write(NE2000_ISR, 0xFF);
-
-    printf("NE2000 reset complete.\n");
+    while (!(ne2000_read(NE2000_ISR) & 0x80)) {
+        // Wait for reset complete
+    }
+    ne2000_write(NE2000_ISR, 0xFF);  // Clear all ISR flags
+    DEBUG_PRINT("NE2000 reset complete.");
 }
 
+// Improved IRQ handler
 void ne2000_irq_handler() {
-    printf("NE2000 IRQ handler\n");
+    DEBUG_PRINT("NE2000 IRQ triggered.");
     uint8_t isr = ne2000_read(NE2000_ISR);
-    printf("NE2000 ISR: 0x%02X\n", isr);
+    DEBUG_PRINT("ISR: 0x%02X", isr);
 
     if (isr & 0x01) {  // Packet received
         uint8_t packet[1500];
         int length = ne2000_receive_packet(packet, sizeof(packet));
         if (length > 0) {
-            printf("Received packet: %d bytes\n", length);
+            printf("Packet received (%d bytes):\n", length);
             print_packet(packet, length);
         }
     }
 
-    // Clear ISR flags
-    ne2000_write(NE2000_ISR, isr);
-}   
+    if (isr & 0x02) {  // Packet transmitted
+        DEBUG_PRINT("Packet transmitted.");
+    }
 
-// Function to initialize the NE2000 card
+    ne2000_write(NE2000_ISR, isr);  // Clear handled ISR flags
+}
+
+// Improved initialization function
 void ne2000_init() {
-    printf("Initializing NE2000 network card...\n");
-    printf("IO base address: 0x%04X\n", io_base);
+    DEBUG_PRINT("Initializing NE2000...");
+    DEBUG_PRINT("IO base address: 0x%04X", io_base);
 
     // Reset the card
     ne2000_reset();
 
-    outb(io_base, (1 << 5) | 1);	// page 0, no DMA, stop
-    outb(io_base + 0x0E, 0x49);		// set word-wide access
-    outb(io_base + 0x0A, 0);		// clear the count regs
-    outb(io_base + 0x0B, 0);
-    outb(io_base + 0x0F, 0);		// mask completion IRQ
-    outb(io_base + 0x07, 0xFF);
-    outb(io_base + 0x0C, 0x20);		// set to monitor
-    outb(io_base + 0x0D, 0x02);		// and loopback mode.
-    outb(io_base + 0x0A, 32);		// reading 32 bytes
-    outb(io_base + 0x0B, 0);		// count high
-    outb(io_base + 0x08, 0);		// start DMA at 0
-    outb(io_base + 0x09, 0);		// start DMA high
-    outb(io_base, 0x0A);		// start the read
-
-    // Switch to Page 1
-    ne2000_write(NE2000_CR, NE2000_CR_PAGE1);
-
-    // Read MAC address from Physical Address Registers (PAR0 to PAR5)
-    for (int i = 0; i < MAC_ADDRESS_LENGTH; i++) {
-        mac_address[i] = ne2000_read(io_base + 0x10);
-    }
-
-    // Switch back to Page 0
-    ne2000_write(NE2000_CR, NE2000_CR_PAGE0);
-
-    // program the PAR0..PAR5 registers to listen for packets to our MAC address!		
-    for (int i=0; i<6; i++) {
-        ne2000_write(0x01 + i, mac_address[i]);
-    };
-
-    // Set the Receive Configuration Register (RCR) to accept all packets
-    //ne2000_write(NE2000_RCR, 0x0F);
-    ne2000_write(NE2000_RCR, 0x04);  // Accept broadcast packets
-
-    // Set the Transmit Configuration Register (TCR) to loopback mode
-    ne2000_write(NE2000_TCR, TCR_LB0);
-
-    // Set the Data Configuration Register (DCR) to word mode
-    ne2000_write(NE2000_DCR, DCR_WTS);
-
-    // Set the Interrupt Mask Register (IMR) to enable interrupts
-    ne2000_write(NE2000_IMR, 0x01);
-
-    // Set the Page Start Register (PSTART) to the start of the RX buffer
+    // Program RX buffer boundaries
     ne2000_write(NE2000_PSTART, RX_START_PAGE);
-
-    // Set the Page Stop Register (PSTOP) to the end of the RX buffer
     ne2000_write(NE2000_PSTOP, RX_STOP_PAGE);
-
-    // Set the Boundary Register (BNRY) to the start of the RX buffer
     ne2000_write(NE2000_BNRY, RX_START_PAGE);
 
-    // set irq handler
-    // TODO: Implement IRQ handler in kernel.c
-    //register_interrupt_handler(11, ne2000_irq_handler);
+    // Set RX configuration to accept broadcast and physical packets
+    ne2000_write(NE2000_RCR, 0x0F);  // Accept all packets
 
-    printf("NE2000 initialization complete.\n");
+    // Set TX configuration to enable loopback (internal)
+    ne2000_write(NE2000_TCR, TCR_LB0);
+
+    // Set data configuration (word transfer)
+    ne2000_write(NE2000_DCR, DCR_WTS);
+
+    // Enable RX interrupts
+    ne2000_write(NE2000_IMR, 0x01);
+
+    // Read and store MAC address
+    ne2000_write(NE2000_CR, NE2000_CR_PAGE1);  // Switch to page 1
+    for (int i = 0; i < MAC_ADDRESS_LENGTH; i++) {
+        mac_address[i] = ne2000_read(0x10);
+    }
+    ne2000_write(NE2000_CR, NE2000_CR_PAGE0);  // Switch back to page 0
+
+    DEBUG_PRINT("NE2000 initialized successfully.");
+    ne2000_print_mac_address();
 }
 
 void ne2000_send_packet(const uint8_t *data, uint16_t length) {
@@ -270,59 +243,88 @@ void ne2000_send_packet(const uint8_t *data, uint16_t length) {
     printf("Packet sent successfully, length: %d bytes\n", length);
 }
 
+// Improved receive function
 int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
-    // Switch to Page 1 to read CURR register
-    ne2000_write(NE2000_CR, 0x62);
-    uint8_t current_page = ne2000_read(NE2000_CURR);
-    ne2000_write(NE2000_CR, 0x22);  // Return to normal operation
+    // Step 1: Switch to Page 1 to get CURR pointer
+    ne2000_write(NE2000_CR, NE2000_CR_PAGE1);
+    uint8_t curr_page = ne2000_read(NE2000_CURR); // Current RX page
+    ne2000_write(NE2000_CR, NE2000_CR_PAGE0);     // Switch back to Page 0
 
     uint8_t boundary = ne2000_read(NE2000_BNRY);
 
-    // If no new packets, return
-    if (boundary == current_page) {
-        return 0;
+    // Log boundary and current page
+    printf("Boundary=0x%02X, CurrentPage=0x%02X\n", boundary, curr_page);
+
+    // Step 2: Check if new packets are available
+    if (boundary == curr_page) {
+        return 0;  // No new packets
     }
 
-    // Calculate start of packet in RX buffer
+    // Step 3: Calculate packet start address
     uint16_t packet_start = boundary * 256;
 
-    // Read packet header (4 bytes)
+    // Step 4: Read RX header via DMA
+    ne2000_write(NE2000_RSAR0, packet_start & 0xFF);
+    ne2000_write(NE2000_RSAR1, (packet_start >> 8));
+    ne2000_write(NE2000_RBCR0, 4);  // Request 4 bytes (RX header)
+    ne2000_write(NE2000_RBCR1, 0);
+    ne2000_write(NE2000_CR, CR_STA | CR_RD0);  // Start DMA
+
     uint8_t header[4];
     for (int i = 0; i < 4; i++) {
         header[i] = inb(io_base + NE2000_DATA);
     }
 
+    // Parse RX header
+    uint8_t rx_status = header[0];
+    uint8_t next_page = header[1];
     uint16_t packet_length = header[2] | (header[3] << 8);
 
-    if (packet_length > buffer_size) {
-        printf("Received packet too large: %d bytes\n", packet_length);
+    printf("RX Header: Status=0x%02X, NextPage=0x%02X, Length=%d\n",
+           rx_status, next_page, packet_length);
+
+    // Step 5: Validate packet length
+    if (packet_length > buffer_size || packet_length < 6) {
+        printf("Invalid packet length: %d\n", packet_length);
         return -1;
     }
 
-    // Read packet data
-    for (uint16_t i = 0; i < packet_length; i++) {
-        buffer[i] = inb(io_base + NE2000_DATA);
+    // Step 6: Set up DMA for payload
+    uint16_t payload_start = packet_start + 4;
+    ne2000_write(NE2000_RSAR0, payload_start & 0xFF);
+    ne2000_write(NE2000_RSAR1, (payload_start >> 8));
+    ne2000_write(NE2000_RBCR0, packet_length & 0xFF);
+    ne2000_write(NE2000_RBCR1, (packet_length >> 8));
+    ne2000_write(NE2000_CR, CR_STA | CR_RD0);  // Start DMA
+
+    // Step 7: Read packet payload in words
+    uint16_t i = 0;
+    for (; i + 1 < packet_length; i += 2) {
+        uint16_t word = inw(io_base + NE2000_DATA);  // Read 16-bit word
+        buffer[i] = word & 0xFF;                    // Lower byte
+        buffer[i + 1] = (word >> 8);                // Higher byte
     }
 
-    // Update Boundary Register
-    ne2000_write(NE2000_BNRY, header[1] - 1);
+    // Step 8: Read the last byte if the packet length is odd
+    if (i < packet_length) {
+        buffer[i] = inb(io_base + NE2000_DATA);  // Read single byte
+    }
 
-    printf("Packet received, length: %d bytes\n", packet_length);
-    
+    // Step 9: Update boundary
+    uint8_t new_boundary = (next_page == RX_START_PAGE) ? RX_STOP_PAGE - 1 : next_page - 1;
+    ne2000_write(NE2000_BNRY, new_boundary);
+
+    // Step 10: Clear RDC flag
+    ne2000_write(NE2000_ISR, ISR_RDC);
+
     return packet_length;
 }
 
-void ne2000_validate_init() {
-    printf("PSTART: 0x%02X\n", ne2000_read(NE2000_PSTART));
-    printf("PSTOP:  0x%02X\n", ne2000_read(NE2000_PSTOP));
-    printf("BNRY:   0x%02X\n", ne2000_read(NE2000_BNRY));
-    printf("TPSR:   0x%02X\n", ne2000_read(NE2000_TPSR));
-}
-
+// Utility: Print MAC address
 void ne2000_print_mac_address() {
-    // Print MAC address
-    printf("NE2000 MAC address: %02X:%02X:%02X:%02X:%02X:%02X\n",
-           mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
+    printf("MAC address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+           mac_address[0], mac_address[1], mac_address[2],
+           mac_address[3], mac_address[4], mac_address[5]);
 }
 
 int ne2000_detect() {
@@ -355,7 +357,6 @@ int ne2000_detect() {
 
                     printf("NE2000 IO base address: 0x%04X\n", io_base);
                     ne2000_init();
-                    ne2000_validate_init();
                     ne2000_print_mac_address();
 
                     return 0;
@@ -376,14 +377,13 @@ void print_packet(const uint8_t *packet, uint16_t length) {
 void test_ne2000_loopback(uint16_t io_base) {
     uint8_t test_packet[] = {
         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,  // Destination MAC (Broadcast)
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05,  // Source MAC
-        0x08, 0x00,                          // EtherType (IPv4)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // Source MAC (will be replaced with NE2000 MAC)
         0x45, 0x00, 0x00, 0x54,              // Payload
-        0x00, 0x01, 0xDE, 0xAD, 0xBE, 0xEF
+        0x00, 0x01, 0xEE, 0xCE, 0xDE, 0xFE
     };
 
     // Enable loopback mode
-    ne2000_enable_loopback(io_base);
+    //ne2000_enable_loopback(io_base);
 
     // Send the packet
     ne2000_send_packet(test_packet, sizeof(test_packet));
@@ -392,6 +392,8 @@ void test_ne2000_loopback(uint16_t io_base) {
     uint8_t received_packet[1500];
     int received_length = ne2000_receive_packet(received_packet, sizeof(received_packet));
 
+    hex_dump(received_packet, 256);
+
     if (received_length > 0) {
         printf("Loopback test successful, received %d bytes.\n", received_length);
     } else {
@@ -399,27 +401,10 @@ void test_ne2000_loopback(uint16_t io_base) {
     }
 
     // Disable loopback mode
-    ne2000_disable_loopback(io_base);
+    //ne2000_disable_loopback(io_base);
 }
 
 void ne2000_test_send() {
 
     test_ne2000_loopback(io_base);
-
-
-    // Test sending a packet
-    // uint8_t test_packet[] = {
-    //     // Destination MAC
-    //     0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    //     // Source MAC (use NE2000 MAC)
-    //     mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5],
-    //     // EtherType (0x0800 = IPv4)
-    //     0x08, 0x00,
-    //     // Payload (dummy data)
-    //     0xDE, 0xAD, 0xBE, 0xEF
-    // };
-
-    // ne2000_send_packet(test_packet, sizeof(test_packet));
 }
-
-
