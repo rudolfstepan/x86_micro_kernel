@@ -151,7 +151,6 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
 
     for (unsigned int j = 0; j < boot_sector.sectorsPerCluster * (SECTOR_SIZE / sizeof(struct FAT32DirEntry)); j++) {
         if (entries[j].name[0] == 0x00) { // End of directory
-            printf("  End of directory at entry %u\n", j);
             break;
         }
 
@@ -165,11 +164,9 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
             debugName[k] = entries[j].name[k];
         }
         debugName[11] = '\0';
-        printf("  Comparing FAT32 name '%.11s' with '%s'\n", debugName, filename);
         
         // Use the proper compare_names function that handles FAT32 8.3 format correctly
         if (compare_names((const char*)entries[j].name, filename) == 0) {
-            printf("  MATCH FOUND!\n");
             struct FAT32DirEntry* foundEntry = (struct FAT32DirEntry*)malloc(sizeof(struct FAT32DirEntry));
             if (foundEntry == NULL) {
                 // Handle memory allocation failure
@@ -184,7 +181,6 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
         }
     }
 
-    printf("  File '%s' not found in directory\n", filename);
     free(entries); // Free the allocated memory
     return NULL; // File not found
 }
