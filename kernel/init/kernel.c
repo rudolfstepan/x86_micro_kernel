@@ -11,8 +11,12 @@
 
 #include "drivers/char/kb.h"
 #include "drivers/char/rtc.h"
-#include "drivers/video/video.h"
+#include "drivers/video/display.h"
 #include "drivers/char/io.h"
+
+#ifdef USE_FRAMEBUFFER
+#include "drivers/video/framebuffer.h"
+#endif
 
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
@@ -79,7 +83,7 @@ void kernel_print_number(int number) {
 }
 
 void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
-    (void*)&vga_write_char,     // Syscall 0: One arguments
+    (void*)&display_putchar,    // Syscall 0: One argument
     (void*)&kernel_print_number,// Syscall 1: One argument
     (void*)&pit_delay,          // Syscall 2: One argument
     (void*)&kb_wait_enter,      // Syscall 3: No arguments
@@ -145,7 +149,7 @@ void syscall_handler(void* irq_number) {
 }
 
 void print_welcome_message() {
-    set_color(WHITE);
+    display_set_color(WHITE);
     printf("\n");
     printf("      *------------------------------------------------------------*\n");
     printf("      |        Welcome to the Rudolf Stepan x86 Micro Kernel       |\n");
@@ -161,45 +165,45 @@ void print_welcome_message() {
     //printf("\nUser memory address: %p\n", USER_MEMORY_ADDRESS);
 
     printf("\n\n    Enter a Command or help for a complete list of supported commands.\n");
-    set_color(WHITE);
+    display_set_color(WHITE);
 }
 
 void display_color_test() {
     printf("\nColor Test: ");
-    set_color(BLACK); printf("Black ");
-    set_color(BLUE); printf("Blue ");
-    set_color(GREEN); printf("Green ");
-    set_color(CYAN); printf("Cyan ");
-    set_color(RED); printf("Red ");
-    set_color(MAGENTA); printf("Magenta ");
-    set_color(BROWN); printf("Brown ");
-    set_color(LIGHT_GRAY); printf("Light Grey ");
-    set_color(DARK_GRAY); printf("Dark Grey ");
-    set_color(LIGHT_BLUE); printf("Light Blue ");
-    set_color(LIGHT_GREEN); printf("Light Green ");
-    set_color(LIGHT_CYAN); printf("Light Cyan ");
-    set_color(LIGHT_RED); printf("Light Red ");
-    set_color(LIGHT_MAGENTA); printf("Light Magenta ");
-    set_color(YELLOW); printf("Yellow ");
-    set_color(WHITE); printf("White\n\n");
-    set_color(WHITE);
+    display_set_color(BLACK); printf("Black ");
+    display_set_color(BLUE); printf("Blue ");
+    display_set_color(GREEN); printf("Green ");
+    display_set_color(CYAN); printf("Cyan ");
+    display_set_color(RED); printf("Red ");
+    display_set_color(MAGENTA); printf("Magenta ");
+    display_set_color(BROWN); printf("Brown ");
+    display_set_color(LIGHT_GRAY); printf("Light Grey ");
+    display_set_color(DARK_GRAY); printf("Dark Grey ");
+    display_set_color(LIGHT_BLUE); printf("Light Blue ");
+    display_set_color(LIGHT_GREEN); printf("Light Green ");
+    display_set_color(LIGHT_CYAN); printf("Light Cyan ");
+    display_set_color(LIGHT_RED); printf("Light Red ");
+    display_set_color(LIGHT_MAGENTA); printf("Light Magenta ");
+    display_set_color(YELLOW); printf("Yellow ");
+    display_set_color(WHITE); printf("White\n\n");
+    display_set_color(WHITE);
 }
 
 void print_fancy_prompt() {
-    set_color(GREEN);
+    display_set_color(GREEN);
     //str_trim_end(current_path, '/');
 
     // check if the current drive is mounted
     if (current_drive == NULL) {
         printf(">");
-        set_color(WHITE);
+        display_set_color(WHITE);
         return;
     }
 
     //printf("%s%s>", current_drive->name, current_path);
     printf(">");
 
-    set_color(WHITE);
+    display_set_color(WHITE);
 }
 
 void set_graphics_mode() {
@@ -453,6 +457,30 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     }
 
     parse_multiboot1_info(multiboot_info);
+
+#ifdef USE_FRAMEBUFFER
+    // Initialize framebuffer if available
+    if (multiboot_info->framebuffer_addr != 0) {
+        multiboot_framebuffer_info_t fb_info = {
+            .framebuffer_addr = (uint32_t)multiboot_info->framebuffer_addr,
+            .framebuffer_pitch = multiboot_info->framebuffer_pitch,
+            .framebuffer_width = multiboot_info->framebuffer_width,
+            .framebuffer_height = multiboot_info->framebuffer_height,
+            .framebuffer_bpp = multiboot_info->framebuffer_bpp,
+            .framebuffer_type = multiboot_info->framebuffer_type
+        };
+        framebuffer_init(&fb_info);
+        display_init();  // Initialize display abstraction layer
+        printf("Framebuffer initialized: %ux%ux%u at 0x%x\n",
+               fb_info.framebuffer_width, fb_info.framebuffer_height,
+               fb_info.framebuffer_bpp, fb_info.framebuffer_addr);
+    } else {
+        printf("Warning: Framebuffer not available, falling back to VGA text mode\n");
+    }
+#else
+    // Initialize VGA text mode display
+    display_init();
+#endif
 
     initialize_memory_system();
 

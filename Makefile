@@ -40,6 +40,10 @@ OBJCOPY := objcopy
 # Override with: make TARGET=real_hw
 TARGET ?= qemu
 
+# Video mode selection (default: vga)
+# Override with: make VIDEO=framebuffer
+VIDEO ?= vga
+
 # Target-specific defines
 ifeq ($(TARGET),real_hw)
     TARGET_DEFINES := -DREAL_HARDWARE -DATA_STRICT_TIMING -DFAT32_STRICT_VALIDATION
@@ -49,12 +53,25 @@ else
     $(error Invalid TARGET=$(TARGET). Use 'qemu' or 'real_hw')
 endif
 
+# Video mode defines
+ifeq ($(VIDEO),framebuffer)
+    VIDEO_DEFINES := -DUSE_FRAMEBUFFER
+else ifeq ($(VIDEO),vga)
+    VIDEO_DEFINES := -DUSE_VGA_TEXT
+else
+    $(error Invalid VIDEO=$(VIDEO). Use 'vga' or 'framebuffer')
+endif
+
 # Compiler flags
 ASFLAGS := -f elf32
+ifeq ($(VIDEO),framebuffer)
+    ASFLAGS += -DUSE_FRAMEBUFFER
+endif
+
 CFLAGS := -m32 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin \
           -O1 -Wall -Wextra -g -Wno-unused-parameter -Wno-unused-variable -U_FORTIFY_SOURCE \
           -I. -I$(ARCH_DIR) -I$(ARCH_DIR)/include -I$(LIB_DIR)/libc \
-          $(TARGET_DEFINES)
+          $(TARGET_DEFINES) $(VIDEO_DEFINES)
 
 LDFLAGS := -m elf_i386 -nostdlib
 KERNEL_LDSCRIPT := $(CONFIG_DIR)/klink.ld
@@ -171,6 +188,14 @@ build-qemu:
 	@$(MAKE) all TARGET=qemu
 	@echo "✓ QEMU build complete: kernel.iso"
 	@echo "  Run with: make run"
+
+# Build for QEMU with framebuffer
+build-qemu-fb:
+	@echo "Building kernel for QEMU with framebuffer..."
+	@$(MAKE) clean
+	@$(MAKE) all TARGET=qemu VIDEO=framebuffer
+	@echo "✓ QEMU framebuffer build complete: kernel.iso"
+	@echo "  Run with: make run-fb"
 
 # Build specifically for real hardware (strict timing)
 build-real-hw:
@@ -434,6 +459,21 @@ run: iso
 		-drive file=./floppy.img,format=raw,if=floppy \
 		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
 		-monitor stdio -vga vmware
+
+# Run with framebuffer mode
+run-fb: iso
+	@echo "Starting QEMU with framebuffer..."
+	@echo "  - Booting from kernel.iso"
+	@echo "  - Video mode: 1024x768x32 framebuffer"
+	@echo "  - Primary Master (hdd0): disk.img (FAT32)"
+	@echo "  - Primary Slave (hdd1): disk1.img (FAT32)"
+	@echo "  - Floppy (fd0): floppy.img (FAT12)"
+	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
+		-monitor stdio -vga std
 
 # Run with debugging enabled
 run-debug: iso

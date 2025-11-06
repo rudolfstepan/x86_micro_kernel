@@ -56,6 +56,13 @@ typedef struct {
     uint16_t vbe_interface_seg; // VBE interface segment
     uint16_t vbe_interface_off; // VBE interface offset
     uint16_t vbe_interface_len; // VBE interface length
+    uint64_t framebuffer_addr;  // Framebuffer physical address
+    uint32_t framebuffer_pitch; // Framebuffer pitch (bytes per line)
+    uint32_t framebuffer_width; // Framebuffer width in pixels
+    uint32_t framebuffer_height;// Framebuffer height in pixels
+    uint8_t  framebuffer_bpp;   // Bits per pixel
+    uint8_t  framebuffer_type;  // Framebuffer type (0=indexed, 1=RGB, 2=text)
+    uint8_t  color_info[6];     // Color type info
 } __attribute__((packed)) multiboot1_info_t;
 
 // Multiboot1 Module Structure
