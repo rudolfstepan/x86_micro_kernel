@@ -35,9 +35,17 @@ bool wait_for_drive_ready(unsigned short base, unsigned int timeout_ms) {
     unsigned int elapsed_time = 0;
     
 #ifdef QEMU_BUILD
-    // QEMU: More relaxed checking
-    while (inb(ATA_STATUS(base)) & 0x80) {  // Wait while BSY bit is set
+    // QEMU: Wait for BSY to clear AND RDY to be set
+    while (1) {
+        uint8_t status = inb(ATA_STATUS(base));
+        
+        // Check if BSY is clear AND RDY is set
+        if (!(status & 0x80) && (status & 0x40)) {
+            break;  // Drive is ready (BSY clear, RDY set)
+        }
+        
         if (elapsed_time >= timeout_ms) {
+            printf("Timeout: Drive not ready (status=0x%02X) after %u ms\n", status, elapsed_time);
             return false;  // Timeout reached
         }
         pit_delay(ATA_POLL_DELAY_MS);

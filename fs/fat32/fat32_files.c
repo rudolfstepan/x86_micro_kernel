@@ -25,19 +25,27 @@
 // }
 
 unsigned int readFileData(unsigned int startCluster, char* buffer, unsigned int bufferSize, unsigned int bytesToRead) {
+    printf("readFileData: startCluster=%u, bufferSize=%u, bytesToRead=%u\n", startCluster, bufferSize, bytesToRead);
+    printf("  Using: base=0x%X, is_master=%d\n", ata_base_address, ata_is_master);
+    
     if (buffer == NULL || bufferSize == 0 || bytesToRead == 0) {
         // Invalid parameters; return 0 to indicate no data read
+        printf("readFileData: Invalid parameters\n");
         return 0;
     }
 
     unsigned int currentCluster = startCluster;
     unsigned int totalBytesRead = 0;
 
+    printf("readFileData: Starting read loop\n");
     while (totalBytesRead < bytesToRead) {
+        printf("readFileData: currentCluster=%u, totalBytesRead=%u\n", currentCluster, totalBytesRead);
         unsigned int sectorNumber = cluster_to_sector(&boot_sector, currentCluster);
+        printf("readFileData: sectorNumber=%u, sectorsPerCluster=%u\n", sectorNumber, boot_sector.sectorsPerCluster);
 
         // Read each sector in the current cluster
         for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
+            printf("readFileData: Reading sector %u of cluster\n", i);
             // Calculate the number of bytes to read in this iteration
             unsigned int bytesRemaining = bytesToRead - totalBytesRead;
             unsigned int bytesToReadNow = (bytesRemaining < SECTOR_SIZE) ? bytesRemaining : SECTOR_SIZE;
@@ -47,25 +55,32 @@ unsigned int readFileData(unsigned int startCluster, char* buffer, unsigned int 
                 bytesToReadNow = bufferSize - totalBytesRead;
             }
 
+            printf("readFileData: About to call ata_read_sector\n");
             // Read data into the buffer
             ata_read_sector(ata_base_address, sectorNumber + i, buffer + totalBytesRead, ata_is_master);
+            printf("readFileData: ata_read_sector returned\n");
             totalBytesRead += bytesToReadNow;
 
             // Break the loop if we have read the requested number of bytes
             if (totalBytesRead >= bytesToRead) {
+                printf("readFileData: Reached bytesToRead, breaking\n");
                 break;
             }
         }
 
+        printf("readFileData: Getting next cluster\n");
         // Get the next cluster in the chain
         currentCluster = get_next_cluster_in_chain(&boot_sector, currentCluster);
+        printf("readFileData: Next cluster = %u\n", currentCluster);
 
         // Check if we have reached the end of the file or if an invalid cluster is encountered
         if (is_end_of_cluster_chain(currentCluster) || currentCluster == INVALID_CLUSTER) {
+            printf("readFileData: End of cluster chain\n");
             break;
         }
     }
 
+    printf("readFileData: Finished, totalBytesRead=%u\n", totalBytesRead);
     // Return the total number of bytes read
     return totalBytesRead;
 }
@@ -134,8 +149,11 @@ int fat32_load_file(const char* filename, void* loadAddress) {
 // Function to find a file in the current directory
 struct FAT32DirEntry* findFileInDirectory(const char* filename) {
     printf("findFileInDirectory: Looking for '%s'\n", filename);
+    printf("  Using: base=0x%X, is_master=%d, cluster=%u\n", 
+           ata_base_address, ata_is_master, current_directory_cluster);
     
     unsigned int sector = cluster_to_sector(&boot_sector, current_directory_cluster);
+    printf("  Calculated sector: %u\n", sector);
     struct FAT32DirEntry* entries = (struct FAT32DirEntry*)malloc(SECTOR_SIZE * boot_sector.sectorsPerCluster / sizeof(struct FAT32DirEntry));
 
     if (entries == NULL) {
@@ -161,29 +179,16 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
             continue;
         }
 
-        char currentName[13]; // Format the filename
-        formatFilename(currentName, entries[j].name);
-        
-        // Case-insensitive comparison: convert both to uppercase
-        char upperCurrent[13];
-        char upperFilename[13];
-        
-        int k;
-        for (k = 0; currentName[k] != '\0' && k < 12; k++) {
-            upperCurrent[k] = (currentName[k] >= 'a' && currentName[k] <= 'z') 
-                              ? (currentName[k] - 32) : currentName[k];
+        // Debug: show the raw FAT32 name
+        char debugName[12];
+        for (int k = 0; k < 11; k++) {
+            debugName[k] = entries[j].name[k];
         }
-        upperCurrent[k] = '\0';
+        debugName[11] = '\0';
+        printf("  Comparing FAT32 name '%.11s' with '%s'\n", debugName, filename);
         
-        for (k = 0; filename[k] != '\0' && k < 12; k++) {
-            upperFilename[k] = (filename[k] >= 'a' && filename[k] <= 'z') 
-                               ? (filename[k] - 32) : filename[k];
-        }
-        upperFilename[k] = '\0';
-        
-        printf("  After conversion: '%s' vs '%s'\n", upperCurrent, upperFilename);
-        
-        if (strcmp(upperCurrent, upperFilename) == 0) {
+        // Use the proper compare_names function that handles FAT32 8.3 format correctly
+        if (compare_names((const char*)entries[j].name, filename) == 0) {
             printf("  MATCH FOUND!\n");
             struct FAT32DirEntry* foundEntry = (struct FAT32DirEntry*)malloc(sizeof(struct FAT32DirEntry));
             if (foundEntry == NULL) {

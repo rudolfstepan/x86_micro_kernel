@@ -132,8 +132,12 @@ void process_command(char *input_buffer) {
 
     // Check if the command is empty
     if (command[0] == '\0') {
+        free_arguments(arguments, arg_cnt);  // Free allocated arguments
         return; // Empty input
     }
+
+    // Convert only the command to uppercase (not the arguments!)
+    str_to_upper(command);
 
     // Match command
     int found = 0;
@@ -151,6 +155,9 @@ void process_command(char *input_buffer) {
     if (!found) {
         printf("\nUnknown command: %s\n", command);
     }
+
+    // Free allocated arguments after command execution
+    free_arguments(arguments, arg_cnt);
 
     asm volatile("int $0x29"); // Trigger a timer interrupt
 }
@@ -173,12 +180,10 @@ void command_loop() {
         char ch = input_queue_pop();
         if (ch != 0) {
             if (ch == '\n') {
-                // Uppercase the input
-                input[buffer_index] = '\0'; // Null-terminate
-                str_to_upper(input);
+                // Null-terminate the input (don't uppercase here!)
+                input[buffer_index] = '\0';
                 buffer_index = 0;
                 printf("\n");
-                // Call the command interpreter
                 process_command(input);
                 printf("> ");
             }else if (ch == '\b') {
@@ -198,7 +203,7 @@ void command_loop() {
 }
 
 // Splits an input string into a command and arguments
-int split_input(const char* input, char* command, char** arguments, int max_args, int max_length) {
+int split_input(const char* input, char* command, char** arguments, int max_length, int max_args) {
     int i = 0, j = 0, arg_count = 0;
 
     // Skip leading spaces
@@ -671,6 +676,9 @@ void openFile(const char* path) {
         int result = fat32_read_file(file, buffer, bufferSize, bufferSize); // Pass bufferSize as the buffer size
         if (result == 0) {
             printf("Failed to read file\n");
+            free(buffer);  // Free buffer before returning
+            if (file->ptr) free(file->ptr);  // Free file data buffer
+            free(file);  // Free file structure
             return;
         }
 
@@ -679,7 +687,12 @@ void openFile(const char* path) {
         printf("File contents:\n");
         printf("%s\n", buffer);
 
-        secure_free(buffer, sizeof(buffer));  // Clear the buffer
+        // Free all allocated memory
+        secure_free(buffer, bufferSize);  // Clear the buffer with correct size
+        if (file->ptr) {
+            free(file->ptr);  // Free the file's internal buffer
+        }
+        free(file);  // Free the FILE structure
         break;
 }
     case DRIVE_TYPE_FDD:
