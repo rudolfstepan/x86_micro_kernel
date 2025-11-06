@@ -30,6 +30,9 @@ drive_t* current_drive = NULL;// = {0};  // Current drive (global variable)
 drive_t detected_drives[MAX_DRIVES];  // Global array of detected drives
 short drive_count = 0;  // Number of detected drives
 
+// Track consecutive failures to prevent infinite loops
+static unsigned int consecutive_read_failures = 0;
+#define MAX_CONSECUTIVE_FAILURES 5
 
 bool wait_for_drive_ready(unsigned short base, unsigned int timeout_ms) {
     unsigned int elapsed_time = 0;
@@ -166,25 +169,47 @@ bool wait_for_drive_data_ready(unsigned short base, unsigned int timeout_ms) {
 bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master) {
     printf("ata_read_sector: base=0x%X, lba=%u, is_master=%d\n", base, lba, is_master);
     
+    // Check for excessive consecutive failures
+    if (consecutive_read_failures >= MAX_CONSECUTIVE_FAILURES) {
+        printf("  ERROR: Too many consecutive failures (%u), aborting to prevent infinite loop\n", 
+               consecutive_read_failures);
+        return false;
+    }
+    
     // Wait for the drive to be ready
     printf("  Step 1: Waiting for drive ready...\n");
     if (!wait_for_drive_ready(base, 1000)) {  // 1000 ms timeout
         printf("  ERROR: Drive not ready (timeout)\n");
+        consecutive_read_failures++;
         return false;  // Drive not ready within the timeout
     }
     printf("  Step 1: Drive ready OK\n");
 
-    // Set up sector count and LBA
+    // Set the drive/head register for LBA mode FIRST (before other registers)
+    unsigned char drive_head = 0xE0 | ((lba >> 24) & 0x0F); // LBA mode with upper LBA bits
+    drive_head |= is_master ? 0x00 : 0x10; // 0x00 for master, 0x10 for slave
+    printf("  Step 2: Selecting drive (drive_head=0x%02X, is_master=%d)...\n", drive_head, is_master);
+    outb(ATA_DRIVE_HEAD(base), drive_head);
+    
+    // Wait 400ns after drive selection (ATA spec requirement)
+    for (volatile int i = 0; i < 4; i++) {
+        inb(ATA_ALT_STATUS(base));  // Read alternate status 4 times for 400ns delay
+    }
+    
+    // Wait for drive to acknowledge selection
+    printf("  Step 2: Waiting for drive to acknowledge selection...\n");
+    if (!wait_for_drive_ready(base, 1000)) {
+        printf("  ERROR: Drive not ready after selection\n");
+        consecutive_read_failures++;
+        return false;
+    }
+    
+    // Set up sector count and LBA registers
     printf("  Step 2: Setting up LBA registers...\n");
     outb(ATA_SECTOR_CNT(base), 1); // Read 1 sector
     outb(ATA_LBA_LOW(base), (unsigned char)(lba & 0xFF));
     outb(ATA_LBA_MID(base), (unsigned char)((lba >> 8) & 0xFF));
     outb(ATA_LBA_HIGH(base), (unsigned char)((lba >> 16) & 0xFF));
-
-    // Set the drive/head register for LBA mode
-    unsigned char drive_head = 0xE0 | ((lba >> 24) & 0x0F); // LBA mode with upper LBA bits
-    drive_head |= is_master ? 0x00 : 0x10; // 0x00 for master, 0x10 for slave
-    outb(ATA_DRIVE_HEAD(base), drive_head);
     printf("  Step 2: LBA registers set OK\n");
 
     // Send the read command
@@ -202,6 +227,11 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
     printf("  Step 4: Waiting for data ready...\n");
     if (!wait_for_drive_data_ready(base, ATA_WAIT_TIMEOUT_MS)) {
         printf("  ERROR: Data not ready (timeout)\n");
+        consecutive_read_failures++;
+        printf("  Consecutive failures: %u/%u\n", consecutive_read_failures, MAX_CONSECUTIVE_FAILURES);
+        
+        // Add delay before returning to prevent rapid retry loops
+        pit_delay(100);  // 100ms delay on failure
         return false;  // Drive data not ready within the timeout
     }
     printf("  Step 4: Data ready OK\n");
@@ -214,12 +244,22 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
 #ifdef REAL_HARDWARE
     // Real hardware: Wait for command completion
     if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
+        consecutive_read_failures++;
         return false;
     }
 #endif
 
+    // Success - reset failure counter
+    consecutive_read_failures = 0;
+    
     printf("ata_read_sector: SUCCESS\n");
     return true;
+}
+
+// Reset the consecutive failure counter (useful after system idle or manual intervention)
+void ata_reset_error_counter() {
+    printf("ata_reset_error_counter: Resetting failure counter (was %u)\n", consecutive_read_failures);
+    consecutive_read_failures = 0;
 }
 
 /*

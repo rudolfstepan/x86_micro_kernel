@@ -46,6 +46,7 @@ drive_t* get_drive_by_name(const char* name);
 
 void ata_detect_drives();
 void list_detected_drives();
+void ata_reset_error_counter();  // Reset consecutive failure counter
 
 bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master);
 bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master);
