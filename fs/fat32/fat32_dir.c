@@ -3,11 +3,14 @@
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
+#include "drivers/block/ata.h"
 
 
 // Function to read a directory path and return if it exists
 bool fat32_read_dir(const char* path) {
+    printf("fat32_read_dir: path='%s'\n", path);
     unsigned int currentCluster = boot_sector.rootCluster; // Assuming boot_sector is defined and initialized elsewhere
+    printf("  Starting at root cluster %u\n", currentCluster);
     char tempPath[MAX_PATH_LENGTH]; // Temporary path buffer
     strcpy(tempPath, path);
     tempPath[sizeof(tempPath) - 1] = '\0'; // Ensure null-termination
@@ -15,26 +18,31 @@ bool fat32_read_dir(const char* path) {
     // Check for leading '/' and skip it if present
     char* start = tempPath;
     if (start[0] == '/') {
+        printf("  Absolute path detected, skipping leading '/'\n");
         start++;
     }
     token = strtok_r(start, "/", &saveptr);
     while (token != NULL) {
-        //printf("Searching for directory: %s\n", token);
+        printf("  Searching for directory: %s\n", token);
         // Find the next directory in the path
         currentCluster = find_next_cluster(&boot_sector, token, currentCluster);
         if (currentCluster == INVALID_CLUSTER) {
-            printf("Directory not found: %s\n", token);
+            printf("  Directory not found: %s\n", token);
             return false;
         }
+        printf("  Found, cluster=%u\n", currentCluster);
         token = strtok_r(NULL, "/", &saveptr);
     }
     // Now currentCluster points to the cluster of the target directory
+    printf("  Reading directory entries from cluster %u\n", currentCluster);
     read_cluster_dir_entries(currentCluster);
     return true;
 }
 
 bool fat32_change_directory(const char* path) {
+    printf("fat32_change_directory: path='%s'\n", path);
     unsigned int targetCluster = current_directory_cluster; // Start from the current directory
+    printf("  Current directory cluster: %u\n", targetCluster);
     char tempPath[MAX_PATH_LENGTH]; // Temporary path buffer
     strcpy(tempPath, path);
     tempPath[sizeof(tempPath) - 1] = '\0'; // Ensure null-termination
@@ -42,21 +50,26 @@ bool fat32_change_directory(const char* path) {
     // Check for leading '/' and skip it if present
     char* start = tempPath;
     if (start[0] == '/') {
+        printf("  Absolute path, starting from root\n");
         start++;
         targetCluster = boot_sector.rootCluster; // Absolute path, start from root
     }
     token = strtok_r(start, "/", &saveptr);
     while (token != NULL) {
+        printf("  Finding next directory: %s\n", token);
         // Find the next directory in the path
         targetCluster = find_next_cluster(&boot_sector, token, targetCluster);
         if (targetCluster == INVALID_CLUSTER) {
-            printf("Directory not found: %s\n", token);
+            printf("  Directory not found: %s\n", token);
             return false;
         }
+        printf("  Found, cluster=%u\n", targetCluster);
         token = strtok_r(NULL, "/", &saveptr);
     }
     // Update current_directory_cluster on successful path change
+    printf("  Updating current directory cluster to %u\n", targetCluster);
     current_directory_cluster = targetCluster;
+    printf("  Directory changed successfully\n");
     return true;
 }
 

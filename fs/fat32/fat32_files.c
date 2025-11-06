@@ -3,6 +3,8 @@
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
 #include "lib/libc/stdlib.h"
+#include "drivers/block/ata.h"
+#include "kernel/time/pit.h"
 
 // Function to read a file's data into a buffer
 // void readFileData(unsigned int startCluster, char* buffer, unsigned int size) {
@@ -28,19 +30,28 @@
 // }
 
 unsigned int readFileData(unsigned int startCluster, char* buffer, unsigned int bufferSize, unsigned int bytesToRead) {
+    printf("readFileData: startCluster=%u, bufferSize=%u, bytesToRead=%u\n", startCluster, bufferSize, bytesToRead);
+    printf("  Using: base=0x%X, is_master=%d\n", ata_base_address, ata_is_master);
+    
     if (buffer == NULL || bufferSize == 0 || bytesToRead == 0) {
         // Invalid parameters; return 0 to indicate no data read
+        printf("readFileData: Invalid parameters\n");
         return 0;
     }
 
     unsigned int currentCluster = startCluster;
     unsigned int totalBytesRead = 0;
 
+    printf("readFileData: Starting read loop\n");
     while (totalBytesRead < bytesToRead) {
+        printf("readFileData: currentCluster=%u, totalBytesRead=%u\n", currentCluster, totalBytesRead);
         unsigned int sectorNumber = cluster_to_sector(&boot_sector, currentCluster);
+        printf("readFileData: sectorNumber=%u, sectorsPerCluster=%u\n", sectorNumber, boot_sector.sectorsPerCluster);
 
         // Read each sector in the current cluster
         for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
+            printf("readFileData: Reading sector %u of cluster\n", i);
+            
             // Calculate the number of bytes to read in this iteration
             unsigned int bytesRemaining = bytesToRead - totalBytesRead;
             unsigned int bytesToReadNow = (bytesRemaining < SECTOR_SIZE) ? bytesRemaining : SECTOR_SIZE;
@@ -50,25 +61,33 @@ unsigned int readFileData(unsigned int startCluster, char* buffer, unsigned int 
                 bytesToReadNow = bufferSize - totalBytesRead;
             }
 
+            printf("readFileData: About to call ata_read_sector\n");
             // Read data into the buffer
             ata_read_sector(ata_base_address, sectorNumber + i, buffer + totalBytesRead, ata_is_master);
+            printf("readFileData: ata_read_sector returned\n");
+            
             totalBytesRead += bytesToReadNow;
 
             // Break the loop if we have read the requested number of bytes
             if (totalBytesRead >= bytesToRead) {
+                printf("readFileData: Reached bytesToRead, breaking\n");
                 break;
             }
         }
 
+        printf("readFileData: Getting next cluster\n");
         // Get the next cluster in the chain
         currentCluster = get_next_cluster_in_chain(&boot_sector, currentCluster);
+        printf("readFileData: Next cluster = %u\n", currentCluster);
 
         // Check if we have reached the end of the file or if an invalid cluster is encountered
         if (is_end_of_cluster_chain(currentCluster) || currentCluster == INVALID_CLUSTER) {
+            printf("readFileData: End of cluster chain\n");
             break;
         }
     }
 
+    printf("readFileData: Finished, totalBytesRead=%u\n", totalBytesRead);
     // Return the total number of bytes read
     return totalBytesRead;
 }
@@ -136,28 +155,46 @@ int fat32_load_file(const char* filename, void* loadAddress) {
 
 // Function to find a file in the current directory
 struct FAT32DirEntry* findFileInDirectory(const char* filename) {
+    printf("findFileInDirectory: Looking for '%s'\n", filename);
+    printf("  Using: base=0x%X, is_master=%d, cluster=%u\n", 
+           ata_base_address, ata_is_master, current_directory_cluster);
+    
     unsigned int sector = cluster_to_sector(&boot_sector, current_directory_cluster);
+    printf("  Calculated sector: %u\n", sector);
     struct FAT32DirEntry* entries = (struct FAT32DirEntry*)malloc(SECTOR_SIZE * boot_sector.sectorsPerCluster / sizeof(struct FAT32DirEntry));
 
     if (entries == NULL) {
         // Handle memory allocation failure
-        printf("Error: Failed to allocate memory for directory entries.\n");
+        printf("  ERROR: Failed to allocate memory for directory entries.\n");
         return NULL;
     }
+    printf("  Allocated buffer for %u entries\n", 
+           SECTOR_SIZE * boot_sector.sectorsPerCluster / sizeof(struct FAT32DirEntry));
+    
+    printf("  Reading %u sectors from cluster...\n", boot_sector.sectorsPerCluster);
     for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
+        printf("    Reading sector %u/%u (absolute sector %u)\n", 
+               i + 1, boot_sector.sectorsPerCluster, sector + i);
+        printf("    About to call ata_read_sector...\n");
         if (!ata_read_sector(ata_base_address, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))], ata_is_master)) {
+            printf("    ERROR: ata_read_sector failed\n");
             // Handle read error
             free(entries);
             return NULL;
         }
+        printf("    ata_read_sector returned successfully\n");
     }
 
+    printf("  Scanning %u entries for filename match...\n", 
+           boot_sector.sectorsPerCluster * (SECTOR_SIZE / sizeof(struct FAT32DirEntry)));
     for (unsigned int j = 0; j < boot_sector.sectorsPerCluster * (SECTOR_SIZE / sizeof(struct FAT32DirEntry)); j++) {
         if (entries[j].name[0] == 0x00) { // End of directory
+            printf("  End of directory marker reached at entry %u\n", j);
             break;
         }
 
         if (entries[j].name[0] == 0xE5 || (entries[j].attr & 0x0F) == 0x0F) { // Deleted or LFN entry
+            // Silently skip deleted and LFN entries
             continue;
         }
 
@@ -167,23 +204,29 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
             debugName[k] = entries[j].name[k];
         }
         debugName[11] = '\0';
+        printf("  Entry %u: raw='%s'", j, debugName);
         
         // Use the proper compare_names function that handles FAT32 8.3 format correctly
+        printf(", comparing with '%s'...", filename);
         if (compare_names((const char*)entries[j].name, filename) == 0) {
+            printf(" MATCH!\n");
             struct FAT32DirEntry* foundEntry = (struct FAT32DirEntry*)malloc(sizeof(struct FAT32DirEntry));
             if (foundEntry == NULL) {
                 // Handle memory allocation failure
-                printf("Error: Failed to allocate memory for directory entry.\n");
+                printf("  ERROR: Failed to allocate memory for directory entry.\n");
                 free(entries);
                 return NULL;
             }
 
+            printf("  Found file, copying entry and returning\n");
             memcpy(foundEntry, &entries[j], sizeof(struct FAT32DirEntry));
             free(entries); // Free the allocated memory
             return foundEntry; // File found
         }
+        printf(" no match\n");
     }
 
+    printf("  File '%s' not found in directory\n", filename);
     free(entries); // Free the allocated memory
     return NULL; // File not found
 }

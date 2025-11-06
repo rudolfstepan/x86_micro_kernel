@@ -1,6 +1,7 @@
 #include "fat32.h"
 #include "fat32_internal.h"
 #include "lib/libc/stdio.h"
+#include "lib/libc/string.h"
 #include "drivers/block/ata.h"
 
 // --------------------------------------------------------------------
@@ -124,10 +125,17 @@ unsigned int cluster_to_sector(struct Fat32BootSector* boot_sector, unsigned int
 }
 
 void read_cluster(struct Fat32BootSector* boot_sector, unsigned int clusterNumber, void* buffer) {
+    printf("read_cluster: cluster=%u\n", clusterNumber);
     unsigned int startSector = cluster_to_sector(boot_sector, clusterNumber);
+    printf("  Start sector: %u, sectors per cluster: %u\n", 
+           startSector, boot_sector->sectorsPerCluster);
     for (unsigned int i = 0; i < boot_sector->sectorsPerCluster; ++i) {
+        printf("  Reading sector %u/%u (absolute %u)\n", 
+               i + 1, boot_sector->sectorsPerCluster, startSector + i);
         ata_read_sector(ata_base_address, startSector + i, buffer + (i * SECTOR_SIZE), ata_is_master);
+        printf("  Sector read complete\n");
     }
+    printf("read_cluster: complete\n");
 }
 
 unsigned int read_start_cluster(struct FAT32DirEntry* entry) {
@@ -135,24 +143,34 @@ unsigned int read_start_cluster(struct FAT32DirEntry* entry) {
 }
 
 unsigned int get_next_cluster_in_chain(struct Fat32BootSector* boot_sector, unsigned int currentCluster) {
+    printf("get_next_cluster_in_chain: current=%u\n", currentCluster);
     unsigned int fatOffset = currentCluster * 4; // 4 bytes per FAT32 entry
     unsigned int fatSector = boot_sector->reservedSectorCount + (fatOffset / boot_sector->bytesPerSector);
     unsigned int entOffset = fatOffset % boot_sector->bytesPerSector;
+    printf("  FAT offset=%u, sector=%u, entry offset=%u\n", 
+           fatOffset, fatSector, entOffset);
     // Buffer to read a part of the FAT
     unsigned char buffer[boot_sector->bytesPerSector];
     // Read the sector of the FAT that contains the current cluster's entry
+    printf("  Reading FAT sector...\n");
     if (!ata_read_sector(ata_base_address, fatSector, buffer, ata_is_master)) {
+        printf("  ERROR: Failed to read FAT sector\n");
         // Handle read error
         return INVALID_CLUSTER;
     }
+    printf("  FAT sector read successful\n");
     // Read the 4 bytes of the current cluster's entry from the buffer
     unsigned int nextCluster = *(unsigned int*)&buffer[entOffset];
     // Mask out the high 4 bits (reserved for FAT32)
     nextCluster &= FAT32_EOC_MAX;
+    printf("  Raw entry: 0x%08X, masked: 0x%08X\n", 
+           *(unsigned int*)&buffer[entOffset], nextCluster);
     // Check for end of chain markers
     if (nextCluster >= FAT32_EOC_MIN) {
+        printf("  End of cluster chain detected\n");
         return INVALID_CLUSTER; // End of chain
     }
+    printf("  Next cluster: %u\n", nextCluster);
     return nextCluster;
 }
 
@@ -162,10 +180,13 @@ bool is_end_of_cluster_chain(unsigned int cluster) {
 
 // Function to find the next cluster given a directory name and a starting cluster
 unsigned int find_next_cluster(struct Fat32BootSector* boot_sector, const char* dirName, unsigned int currentCluster) {
+    printf("find_next_cluster: Looking for '%s' starting at cluster %u\n", 
+           dirName, currentCluster);
     struct FAT32DirEntry entries[SECTOR_SIZE / sizeof(struct FAT32DirEntry)];
     unsigned int nextCluster = INVALID_CLUSTER;
 
     do {
+        printf("  Checking cluster %u\n", currentCluster);
         unsigned int sector = cluster_to_sector(boot_sector, currentCluster);
         for (unsigned int i = 0; i < boot_sector->sectorsPerCluster; i++) {
             // Read the entire sector

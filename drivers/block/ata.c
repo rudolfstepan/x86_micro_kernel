@@ -28,7 +28,10 @@
 
 drive_t* current_drive = NULL;// = {0};  // Current drive (global variable)
 drive_t detected_drives[MAX_DRIVES];  // Global array of detected drives
-short drive_count = 0;  // Number of detected drives
+short drive_count = 0;  // Number of detected drives (short to match header)
+
+// Track last operation to ensure minimum delay between commands
+static bool first_operation = true;
 
 
 bool wait_for_drive_ready(unsigned short base, unsigned int timeout_ms) {
@@ -85,26 +88,40 @@ bool wait_for_drive_data_ready(unsigned short base, unsigned int timeout_ms) {
     
 #ifdef QEMU_BUILD
     // QEMU: First wait for BSY to clear, then wait for DRQ
+    printf("      wait_for_drive_data_ready: Step A - waiting for BSY clear\n");
     // Step 1: Wait for BSY to clear
     while (inb(ATA_STATUS(base)) & 0x80) {  // Wait while BSY bit is set
         if (elapsed_time >= timeout_ms) {
-            printf("ERROR: BSY still set after %u ms\n", elapsed_time);
+            printf("      ERROR: BSY still set after %u ms\n", elapsed_time);
             return false;
         }
         pit_delay(ATA_POLL_DELAY_MS);
         elapsed_time += ATA_POLL_DELAY_MS;
+        
+        if (elapsed_time % 50 == 0) {  // Debug every 50ms
+            uint8_t status = inb(ATA_STATUS(base));
+            printf("      [%u ms] status=0x%02X (BSY still set)\n", elapsed_time, status);
+        }
     }
+    printf("      wait_for_drive_data_ready: Step A OK - BSY cleared after %u ms\n", elapsed_time);
     
     // Step 2: Wait for DRQ to be set
+    printf("      wait_for_drive_data_ready: Step B - waiting for DRQ set\n");
     while (!(inb(ATA_STATUS(base)) & 0x08)) {  // Wait for DRQ bit to set
         if (elapsed_time >= timeout_ms) {
             uint8_t status = inb(ATA_STATUS(base));
-            printf("ERROR: DRQ not set. Final status=0x%02X after %u ms\n", status, elapsed_time);
+            printf("      ERROR: DRQ not set. Final status=0x%02X after %u ms\n", status, elapsed_time);
             return false;
         }
         pit_delay(ATA_POLL_DELAY_MS);
         elapsed_time += ATA_POLL_DELAY_MS;
+        
+        if (elapsed_time % 50 == 0) {  // Debug every 50ms
+            uint8_t status = inb(ATA_STATUS(base));
+            printf("      [%u ms] status=0x%02X (waiting for DRQ)\n", elapsed_time, status);
+        }
     }
+    printf("      wait_for_drive_data_ready: Step B OK - DRQ set after %u ms\n", elapsed_time);
     
     return true;  // Data is ready
 #else
@@ -150,13 +167,26 @@ bool wait_for_drive_data_ready(unsigned short base, unsigned int timeout_ms) {
     * @return True if the sector was read successfully, false otherwise.
 */
 bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master) {
+    printf("ata_read_sector: base=0x%X, lba=%u, is_master=%d\n", base, lba, is_master);
+    
+    // Add delay between consecutive sector reads to let drive settle
+    if (!first_operation) {
+        printf("  Inter-command delay: waiting 10ms...\n");
+        pit_delay(10);  // 10ms between commands
+        printf("  Inter-command delay: complete\n");
+    }
+    first_operation = false;
+    
     // Wait for the drive to be ready
+    printf("  Step 1: Waiting for drive ready...\n");
     if (!wait_for_drive_ready(base, 1000)) {  // 1000 ms timeout
-        printf("ERROR: Drive not ready (timeout)\n");
+        printf("  ERROR: Drive not ready (timeout)\n");
         return false;  // Drive not ready within the timeout
     }
+    printf("  Step 1: Drive ready OK\n");
 
     // Set up sector count and LBA
+    printf("  Step 2: Setting up LBA registers...\n");
     outb(ATA_SECTOR_CNT(base), 1); // Read 1 sector
     outb(ATA_LBA_LOW(base), (unsigned char)(lba & 0xFF));
     outb(ATA_LBA_MID(base), (unsigned char)((lba >> 8) & 0xFF));
@@ -166,23 +196,31 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
     unsigned char drive_head = 0xE0 | ((lba >> 24) & 0x0F); // LBA mode with upper LBA bits
     drive_head |= is_master ? 0x00 : 0x10; // 0x00 for master, 0x10 for slave
     outb(ATA_DRIVE_HEAD(base), drive_head);
+    printf("  Step 2: LBA registers set OK\n");
 
     // Send the read command
+    printf("  Step 3: Sending READ command...\n");
     outb(ATA_COMMAND(base), ATA_READ_SECTORS);
     
     // Small delay after sending command (required by ATA spec)
+    printf("  Step 3: Delay after command...\n");
     for (volatile int i = 0; i < 4; i++) {
         inb(ATA_ALT_STATUS(base));  // Read alternate status 4 times for 400ns delay
     }
+    printf("  Step 3: Command sent OK\n");
 
     // Wait for the drive to be ready to transfer data
+    printf("  Step 4: Waiting for data ready...\n");
     if (!wait_for_drive_data_ready(base, ATA_WAIT_TIMEOUT_MS)) {
-        printf("ERROR: Data not ready (timeout)\n");
+        printf("  ERROR: Data not ready (timeout)\n");
         return false;  // Drive data not ready within the timeout
     }
+    printf("  Step 4: Data ready OK\n");
 
     // Read the data
+    printf("  Step 5: Reading data...\n");
     insw(ATA_DATA(base), buffer, SECTOR_SIZE / 2);
+    printf("  Step 5: Data read OK\n");
 
 #ifdef REAL_HARDWARE
     // Real hardware: Wait for command completion
@@ -191,6 +229,7 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
     }
 #endif
 
+    printf("ata_read_sector: SUCCESS\n");
     return true;
 }
 
