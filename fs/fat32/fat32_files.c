@@ -25,27 +25,19 @@
 // }
 
 unsigned int readFileData(unsigned int startCluster, char* buffer, unsigned int bufferSize, unsigned int bytesToRead) {
-    printf("readFileData: startCluster=%u, bufferSize=%u, bytesToRead=%u\n", startCluster, bufferSize, bytesToRead);
-    printf("  Using: base=0x%X, is_master=%d\n", ata_base_address, ata_is_master);
-    
     if (buffer == NULL || bufferSize == 0 || bytesToRead == 0) {
         // Invalid parameters; return 0 to indicate no data read
-        printf("readFileData: Invalid parameters\n");
         return 0;
     }
 
     unsigned int currentCluster = startCluster;
     unsigned int totalBytesRead = 0;
 
-    printf("readFileData: Starting read loop\n");
     while (totalBytesRead < bytesToRead) {
-        printf("readFileData: currentCluster=%u, totalBytesRead=%u\n", currentCluster, totalBytesRead);
         unsigned int sectorNumber = cluster_to_sector(&boot_sector, currentCluster);
-        printf("readFileData: sectorNumber=%u, sectorsPerCluster=%u\n", sectorNumber, boot_sector.sectorsPerCluster);
 
         // Read each sector in the current cluster
         for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-            printf("readFileData: Reading sector %u of cluster\n", i);
             // Calculate the number of bytes to read in this iteration
             unsigned int bytesRemaining = bytesToRead - totalBytesRead;
             unsigned int bytesToReadNow = (bytesRemaining < SECTOR_SIZE) ? bytesRemaining : SECTOR_SIZE;
@@ -55,10 +47,8 @@ unsigned int readFileData(unsigned int startCluster, char* buffer, unsigned int 
                 bytesToReadNow = bufferSize - totalBytesRead;
             }
 
-            printf("readFileData: About to call ata_read_sector\n");
             // Read data into the buffer
             ata_read_sector(ata_base_address, sectorNumber + i, buffer + totalBytesRead, ata_is_master);
-            printf("readFileData: ata_read_sector returned\n");
             totalBytesRead += bytesToReadNow;
 
             // Break the loop if we have read the requested number of bytes
