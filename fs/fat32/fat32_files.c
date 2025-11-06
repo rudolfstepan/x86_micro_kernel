@@ -53,24 +53,19 @@ unsigned int readFileData(unsigned int startCluster, char* buffer, unsigned int 
 
             // Break the loop if we have read the requested number of bytes
             if (totalBytesRead >= bytesToRead) {
-                printf("readFileData: Reached bytesToRead, breaking\n");
                 break;
             }
         }
 
-        printf("readFileData: Getting next cluster\n");
         // Get the next cluster in the chain
         currentCluster = get_next_cluster_in_chain(&boot_sector, currentCluster);
-        printf("readFileData: Next cluster = %u\n", currentCluster);
 
         // Check if we have reached the end of the file or if an invalid cluster is encountered
         if (is_end_of_cluster_chain(currentCluster) || currentCluster == INVALID_CLUSTER) {
-            printf("readFileData: End of cluster chain\n");
             break;
         }
     }
 
-    printf("readFileData: Finished, totalBytesRead=%u\n", totalBytesRead);
     // Return the total number of bytes read
     return totalBytesRead;
 }
@@ -138,12 +133,7 @@ int fat32_load_file(const char* filename, void* loadAddress) {
 
 // Function to find a file in the current directory
 struct FAT32DirEntry* findFileInDirectory(const char* filename) {
-    printf("findFileInDirectory: Looking for '%s'\n", filename);
-    printf("  Using: base=0x%X, is_master=%d, cluster=%u\n", 
-           ata_base_address, ata_is_master, current_directory_cluster);
-    
     unsigned int sector = cluster_to_sector(&boot_sector, current_directory_cluster);
-    printf("  Calculated sector: %u\n", sector);
     struct FAT32DirEntry* entries = (struct FAT32DirEntry*)malloc(SECTOR_SIZE * boot_sector.sectorsPerCluster / sizeof(struct FAT32DirEntry));
 
     if (entries == NULL) {
