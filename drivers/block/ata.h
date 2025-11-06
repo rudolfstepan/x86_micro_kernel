@@ -34,10 +34,14 @@
 #define MAX_DRIVES          4      // Max of 4 ATA drives (primary/master, primary/slave, secondary/master, secondary/slave)
 #define SECTOR_SIZE 512
 
+// External declarations
+extern short drive_count;
+extern drive_t detected_drives[MAX_DRIVES];
 
 bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info);
 
 drive_t* ata_get_drive(unsigned short drive_index);
+drive_t* ata_get_first_hdd();
 drive_t* get_drive_by_name(const char* name);
 
 void ata_detect_drives();

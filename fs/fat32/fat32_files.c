@@ -133,6 +133,8 @@ int fat32_load_file(const char* filename, void* loadAddress) {
 
 // Function to find a file in the current directory
 struct FAT32DirEntry* findFileInDirectory(const char* filename) {
+    printf("findFileInDirectory: Looking for '%s'\n", filename);
+    
     unsigned int sector = cluster_to_sector(&boot_sector, current_directory_cluster);
     struct FAT32DirEntry* entries = (struct FAT32DirEntry*)malloc(SECTOR_SIZE * boot_sector.sectorsPerCluster / sizeof(struct FAT32DirEntry));
 
@@ -151,6 +153,7 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
 
     for (unsigned int j = 0; j < boot_sector.sectorsPerCluster * (SECTOR_SIZE / sizeof(struct FAT32DirEntry)); j++) {
         if (entries[j].name[0] == 0x00) { // End of directory
+            printf("  End of directory at entry %u\n", j);
             break;
         }
 
@@ -160,7 +163,28 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
 
         char currentName[13]; // Format the filename
         formatFilename(currentName, entries[j].name);
-        if (strcmp(currentName, filename) == 0) {
+        
+        // Case-insensitive comparison: convert both to uppercase
+        char upperCurrent[13];
+        char upperFilename[13];
+        
+        int k;
+        for (k = 0; currentName[k] != '\0' && k < 12; k++) {
+            upperCurrent[k] = (currentName[k] >= 'a' && currentName[k] <= 'z') 
+                              ? (currentName[k] - 32) : currentName[k];
+        }
+        upperCurrent[k] = '\0';
+        
+        for (k = 0; filename[k] != '\0' && k < 12; k++) {
+            upperFilename[k] = (filename[k] >= 'a' && filename[k] <= 'z') 
+                               ? (filename[k] - 32) : filename[k];
+        }
+        upperFilename[k] = '\0';
+        
+        printf("  After conversion: '%s' vs '%s'\n", upperCurrent, upperFilename);
+        
+        if (strcmp(upperCurrent, upperFilename) == 0) {
+            printf("  MATCH FOUND!\n");
             struct FAT32DirEntry* foundEntry = (struct FAT32DirEntry*)malloc(sizeof(struct FAT32DirEntry));
             if (foundEntry == NULL) {
                 // Handle memory allocation failure
@@ -175,6 +199,7 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
         }
     }
 
+    printf("  File '%s' not found in directory\n", filename);
     free(entries); // Free the allocated memory
     return NULL; // File not found
 }

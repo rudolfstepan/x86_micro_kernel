@@ -7,6 +7,7 @@
 
 #include "drivers/char/rtc.h"
 #include "drivers/block/ata.h"
+#include "drivers/bus/drives.h"
 
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
@@ -305,14 +306,22 @@ void cmd_drives(int arg_count, const char** arguments) {
 void cmd_mount(int arg_count, const char** arguments) {
     if (arg_count == 0) {
         printf("Mount command without arguments\n");
+        printf("Available drives:\n");
+        list_detected_drives();
     } else {
         str_to_lower((char *)arguments[0]);
         printf("Try mount drive: %s\n", arguments[0]);
+        
+        // Debug: show what drives are available
+        printf("Searching in %d detected drives...\n", drive_count);
+        
         current_drive = get_drive_by_name(arguments[0]);
         if (current_drive == NULL) {
             printf("drive: %s not found\n", arguments[0]);
+            printf("Available drives:\n");
+            list_detected_drives();
         } else {
-            printf("Mounting drive\n");
+            printf("Mounting drive %s...\n", current_drive->name);
 
             switch (current_drive->type) {
             case DRIVE_TYPE_ATA:
@@ -583,9 +592,17 @@ void cmd_fdd(int arg_count, const char** arguments) {
 }
 
 void cmd_hdd(int arg_count, const char** arguments) {
-    if (arguments[0] == NULL) {
+
+    printf("HDD debug command\n");
+
+    // check if current drive is set
+    if (current_drive == NULL) {
+        printf("No current drive set\n");
+    } else {
+        // print debug info about current drive
+        printf("Current drive: %s\n", current_drive->name);
         ata_debug_bootsector(current_drive);
-    } 
+    }
 }
 
 void cmd_beep(int arg_count, const char** arguments) {

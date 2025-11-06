@@ -503,17 +503,30 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     cpu_frequency = end_cycles - start_cycles; // Cycles per second (Hz)
 
     ata_detect_drives();
-    current_drive = ata_get_drive(0);
-    if (current_drive) {
-        // Initialize the FAT32 file system
-        ctor_fat32_class(&fat32);
-
-        init_fs(current_drive);
-    } else {
-        printf("Drive not found.\n");
-    }
-    // detect fdd drives
+    
+    // Detect floppy drives BEFORE trying to mount anything
     fdd_detect_drives();
+    
+    printf("\n=== All drives detected ===\n");
+    printf("Total drive_count: %d\n", drive_count);
+    list_detected_drives();
+    printf("===========================\n\n");
+    
+    // Automatically find and set the first HDD as current_drive
+    printf("Looking for first HDD...\n");
+    current_drive = ata_get_first_hdd();
+    if (current_drive) {
+        printf("First HDD found: %s\n", current_drive->name);
+        printf("Will be set as current_drive (use MOUNT command to initialize filesystem)\n");
+    } else {
+        printf("No HDD found - trying first detected drive...\n");
+        current_drive = ata_get_drive(0);
+        if (current_drive) {
+            printf("First drive set as current: %s\n", current_drive->name);
+        } else {
+            printf("No drives found.\n");
+        }
+    }
 
     // // printf("Press any key to continue...\n");
     // // getchar();

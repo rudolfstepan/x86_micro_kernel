@@ -64,45 +64,81 @@ void ctor_fat32_class(fat32_class_t* fat32) {
 void init_fs(drive_t* drive) {
     if (drive->type == DRIVE_TYPE_ATA) {
         printf("Try to Init fs on ATA drive %s: %s with %u sectors\n", drive->name, drive->model, drive->sectors);
-        // Initialize file system for ATA drive
-        // Read the boot sector
-        // boot_sector_t* boot_sector = (boot_sector_t*)malloc(sizeof(boot_sector_t));
-        // if (boot_sector == NULL) {
-        //     // Handle allocation failure (e.g., print an error and exit)
-        //     printf("BootSector Memory allocation failed.\n");
-        //     return;
-        // }
-
-        void* buffer[512];
+        printf("  ATA base: 0x%X, is_master: %d\n", drive->base, drive->is_master);
+        
+        // Allocate 512 bytes for boot sector (not 512 pointers!)
+        uint8_t buffer[512];
         boot_sector_t* boot_sector = (boot_sector_t*)buffer;
 
-        if (!ata_read_sector(drive->base, 0, &buffer, drive->is_master)) {
+        printf("Reading boot sector from LBA 0...\n");
+        if (!ata_read_sector(drive->base, 0, buffer, drive->is_master)) {
             printf("Failed to read boot sector.\n");
             return;
         }
+        
+        printf("Boot sector read successful.\n");
 
-        //hex_dump(&boot_sector, 512);
+        // Debug: Show first 32 bytes
+        printf("First 32 bytes of boot sector:\n");
+        for (int i = 0; i < 32; i++) {
+            printf("%02X ", buffer[i]);
+            if ((i + 1) % 16 == 0) printf("\n");
+        }
+        printf("\n");
 
         // Create a local, null-terminated copy of fsType
         char fs_type[9] = {0};  // 8 bytes + 1 for null terminator
         memcpy(fs_type, boot_sector->file_system_type, 8);
         fs_type[8] = '\0';  // Ensure null termination
 
-        //printf("Filesystem type: %s\n", fs_type);
+        printf("Filesystem type (raw): '%s'\n", fs_type);
+        
+        // Trim trailing spaces from fs_type
+        int len = 8;
+        while (len > 0 && fs_type[len - 1] == ' ') {
+            fs_type[len - 1] = '\0';
+            len--;
+        }
+        
+        printf("Filesystem type (trimmed): '%s'\n", fs_type);
 
         // Detect filesystem type by examining the boot sector
-        if (strcmp(fs_type, "FAT12   ") == 0) {
+        // Use strncmp to compare only the significant characters
+        if (strcmp(fs_type, "FAT12") == 0) {
             printf("Detected FAT12 filesystem on drive %s.\n", drive->name);
             //fat12_init_fs(drive->base, drive->is_master);
-        } else if (strcmp(fs_type, "FAT16   ") == 0) {
-            printf("Detected FAT16 filesystemo n drive %s.\n", drive->name);
+        } else if (strcmp(fs_type, "FAT16") == 0) {
+            printf("Detected FAT16 filesystem on drive %s.\n", drive->name);
             //fat16_init_fs(drive->base, drive->is_master);
-        } else if (strcmp(fs_type, "FAT32   ") == 0) {
+        } else if (strcmp(fs_type, "FAT32") == 0) {
             printf("Detected FAT32 filesystem on drive %s.\n", drive->name);
-            //fat32_init_fs(drive->base, drive->is_master);
 
-            // initialize the fat32 filesystem
-            fat32.fat32_init_fs(drive->base, drive->is_master);
+            // Initialize the fat32 class structure (only needed once)
+            static bool fat32_class_initialized = false;
+            if (!fat32_class_initialized) {
+                printf("Initializing FAT32 class...\n");
+                ctor_fat32_class(&fat32);
+                fat32_class_initialized = true;
+            }
+            
+            // Copy the already-read boot sector to fat32's global variable
+            printf("Copying boot sector to FAT32 module (drive: %s)...\n", drive->name);
+            extern struct Fat32BootSector boot_sector;
+            memcpy(&boot_sector, buffer, 512);
+            
+            // Set FAT32 globals directly (avoid re-reading boot sector)
+            extern unsigned short ata_base_address;
+            extern bool ata_is_master;
+            extern unsigned int current_directory_cluster;
+            
+            printf("Setting FAT32 globals: base=0x%X, is_master=%d, rootCluster=%u\n",
+                   drive->base, drive->is_master, boot_sector.rootCluster);
+            
+            ata_base_address = drive->base;
+            ata_is_master = drive->is_master;
+            current_directory_cluster = boot_sector.rootCluster;
+            
+            printf("FAT32 initialized for drive %s\n", drive->name);
             
         } else if (memcmp(boot_sector->oem_name, "NTFS    ", 8) == 0) {
             printf("Detected NTFS filesystem on drive %s.\n", drive->name);

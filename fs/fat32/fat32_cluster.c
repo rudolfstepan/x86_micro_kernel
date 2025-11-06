@@ -255,9 +255,13 @@ void read_cluster_dir_entries(unsigned int currentCluster) {
     printf("FILENAME      SIZE     DATE       TIME     TYPE\n");
     printf("----------------------------------------------------\n");
 
-    // Read directory entries
+    // Read directory entries - read entire cluster
     for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-        ata_read_sector(ata_base_address, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))], ata_is_master);
+        void* buffer_offset = (void*)((uint8_t*)entries + (i * SECTOR_SIZE));
+        if (!ata_read_sector(ata_base_address, sector + i, buffer_offset, ata_is_master)) {
+            printf("Error reading sector %u\n", sector + i);
+            return;
+        }
     }
 
     for (unsigned int j = 0; j < sizeof(entries) / sizeof(struct FAT32DirEntry); j++) {

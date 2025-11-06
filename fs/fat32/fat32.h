@@ -67,6 +67,8 @@ struct Fat32BootSector {
     uint32_t volumeID;                 // Volume ID serial number
     uint8_t volumeLabel[11];           // Volume label
     uint8_t fileSystemType[8];         // File system type label
+    uint8_t bootCode[420];             // Boot code (padded to make structure exactly 512 bytes)
+    uint16_t bootSectorSignature;      // 0xAA55 at offset 510-511
 };
 #pragma pack(pop)
 
