@@ -25,8 +25,9 @@
 
 char current_path[256] = "/";
 
-// Splits an input string into a command and arguments.
+// Function declarations
 int split_input(const char* input, char* command, char** arguments, int max_length, int max_args);
+void free_arguments(char** arguments, int arg_count);
 void openFile(const char* path);
 
 bool is_null_terminated(char* buffer, size_t max_length) {

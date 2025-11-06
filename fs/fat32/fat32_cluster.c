@@ -1,5 +1,7 @@
 #include "fat32.h"
+#include "fat32_internal.h"
 #include "lib/libc/stdio.h"
+#include "drivers/block/ata.h"
 
 // --------------------------------------------------------------------
 // get_entries_per_cluster

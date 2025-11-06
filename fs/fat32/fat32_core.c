@@ -1,18 +1,19 @@
 #include "fat32.h"
+#include "fat32_internal.h"
 #include "lib/libc/stdio.h"
+#include "lib/libc/string.h"
+#include "lib/libc/stdlib.h"
+#include "drivers/block/ata.h"
 
 // fat32 file system implementation
 // The file is divided into:
-// fat32.c: Contains the implementation of the FAT32 filesystem functions.
+// fat32_core.c: Contains the core implementation of the FAT32 filesystem functions.
 // fat32_dir.c: Contains the implementation of the FAT32 directory functions.
 // fat32_files.c: Contains the implementation of the FAT32 file functions.
-// fat32_cluster.c: Contains the implementation of the FAT32 I/O functions.
+// fat32_cluster.c: Contains the implementation of the FAT32 cluster operations.
+// fat32_context.c: Contains the global state management.
 
-unsigned int current_directory_cluster = 2; // Default root directory cluster for FAT32
-struct Fat32BootSector boot_sector;
-
-unsigned short ata_base_address;
-bool ata_is_master;
+// Note: Global variables are now in fat32_context.c
 
 int fat32_init_fs(unsigned short base, bool is_master) {
     // Read the first sector (LBA 0) into boot_sector

@@ -1,4 +1,5 @@
 #include "fat32.h"
+#include "fat32_internal.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"

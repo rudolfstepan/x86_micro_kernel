@@ -4,6 +4,7 @@
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
 #include "fs/fat32/fat32.h"
+#include "fs/fat32/fat32_internal.h"  // For ctor_fat32_class internal functions
 #include "drivers/char/io.h"
 #include <stddef.h>
 
