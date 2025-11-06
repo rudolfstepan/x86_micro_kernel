@@ -43,9 +43,10 @@ const char scancode_to_char_shift[SC_MAX] = {
     'M', '<', '>', '?', 0,   '*', 0,   ' ', 0         /* 58 */
 };
 
-int shift_pressed = 0;
-int caps_lock_active = 0;
-int buffer_index = 0;
+// Volatile keyword for variables shared between ISR and main code
+volatile int shift_pressed = 0;
+volatile int caps_lock_active = 0;
+volatile int buffer_index = 0;
 volatile bool enter_pressed = false;
 
 // Helper functions for atomic operations
@@ -71,8 +72,8 @@ char scancode_to_ascii(unsigned char scancode, bool shift, bool caps_lock) {
 
 #define INPUT_QUEUE_SIZE 256
 volatile char input_queue[INPUT_QUEUE_SIZE];
-int input_queue_head = 0;
-int input_queue_tail = 0;
+volatile int input_queue_head = 0;
+volatile int input_queue_tail = 0;
 
 // Funktion: Einfügen eines Zeichens in die Warteschlange
 void input_queue_push(char ch) {

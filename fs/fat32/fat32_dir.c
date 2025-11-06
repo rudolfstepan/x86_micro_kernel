@@ -8,8 +8,11 @@
 bool fat32_read_dir(const char* path) {
     unsigned int currentCluster = boot_sector.rootCluster; // Assuming boot_sector is defined and initialized elsewhere
     char tempPath[MAX_PATH_LENGTH]; // Temporary path buffer
-    strcpy(tempPath, path);
-    tempPath[sizeof(tempPath) - 1] = '\0'; // Ensure null-termination
+    
+    // Safe string copy with bounds checking
+    strncpy(tempPath, path, MAX_PATH_LENGTH - 1);
+    tempPath[MAX_PATH_LENGTH - 1] = '\0'; // Ensure null-termination
+    
     char* token, * saveptr;
     // Check for leading '/' and skip it if present
     char* start = tempPath;
@@ -35,8 +38,11 @@ bool fat32_read_dir(const char* path) {
 bool fat32_change_directory(const char* path) {
     unsigned int targetCluster = current_directory_cluster; // Start from the current directory
     char tempPath[MAX_PATH_LENGTH]; // Temporary path buffer
-    strcpy(tempPath, path);
-    tempPath[sizeof(tempPath) - 1] = '\0'; // Ensure null-termination
+    
+    // Safe string copy with bounds checking
+    strncpy(tempPath, path, MAX_PATH_LENGTH - 1);
+    tempPath[MAX_PATH_LENGTH - 1] = '\0'; // Ensure null-termination
+    
     char* token, * saveptr;
     // Check for leading '/' and skip it if present
     char* start = tempPath;

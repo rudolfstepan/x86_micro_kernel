@@ -127,8 +127,14 @@ command_t command_table[MAX_COMMANDS] = {
 
 void process_command(char *input_buffer) {
     char command[MAX_LENGTH];
-    char* arguments[MAX_ARGS];
+    char* arguments[MAX_ARGS] = {NULL};  // Initialize all pointers to NULL
     int arg_cnt = split_input(input_buffer, command, arguments, MAX_LENGTH, MAX_ARGS);
+
+    // Check for memory allocation failure
+    if (arg_cnt < 0) {
+        printf("Error: Failed to parse command arguments\n");
+        return;
+    }
 
     // Check if the command is empty
     if (command[0] == '\0') {
@@ -229,8 +235,13 @@ int split_input(const char* input, char* command, char** arguments, int max_leng
         // Allocate memory for the argument
         arguments[arg_count] = (char*)malloc(max_length);
         if (arguments[arg_count] == NULL) {
-            // Return the number of successfully parsed arguments
-            return arg_count;
+            // Malloc failed - free previously allocated arguments
+            printf("Error: Memory allocation failed for argument %d\n", arg_count);
+            for (int k = 0; k < arg_count; k++) {
+                free(arguments[k]);
+                arguments[k] = NULL;
+            }
+            return -1;  // Return -1 to indicate error
         }
 
         // Parse the argument
@@ -251,8 +262,13 @@ int split_input(const char* input, char* command, char** arguments, int max_leng
 
 // Free arguments array
 void free_arguments(char** arguments, int arg_count) {
+    if (arguments == NULL) return;
+    
     for (int i = 0; i < arg_count; i++) {
-        free(arguments[i]);
+        if (arguments[i] != NULL) {
+            free(arguments[i]);
+            arguments[i] = NULL;
+        }
     }
 }
 
@@ -349,7 +365,9 @@ void cmd_mount(int arg_count, const char** arguments) {
                 break;
             }
 
-            strcpy(current_path, "/");
+            // Safe string copy with bounds checking
+            strncpy(current_path, "/", sizeof(current_path) - 1);
+            current_path[sizeof(current_path) - 1] = '\0';
         }
     }
 }
@@ -389,7 +407,7 @@ void cmd_cd(int arg_count, const char** arguments) {
     } else {
         str_trim_end((char*)arguments[0], '/');  // Remove trailing slash from the path
         char new_path[256] = "/";
-        snprintf(new_path, sizeof(current_path), "%s/%s", current_path, arguments[0]);
+        snprintf(new_path, sizeof(new_path), "%s/%s", current_path, arguments[0]);
 
         if (current_drive == NULL) {
             printf("No drive mounted\n");
@@ -398,7 +416,9 @@ void cmd_cd(int arg_count, const char** arguments) {
 
         if (current_drive->type == DRIVE_TYPE_ATA) {
             if (fat32_change_directory(new_path)) {
-                strcpy(current_path, new_path);
+                // Safe string copy with bounds checking
+                strncpy(current_path, new_path, sizeof(current_path) - 1);
+                current_path[sizeof(current_path) - 1] = '\0';
                 printf("Set directory to: %s\n", arguments[0]);
             }
         } else if (current_drive->type == DRIVE_TYPE_FDD) {
@@ -409,7 +429,9 @@ void cmd_cd(int arg_count, const char** arguments) {
             }
             // fdd need relative path and a single directory name
             if (fat12_change_directory(arguments[0])) {
-                strcpy(current_path, new_path);
+                // Safe string copy with bounds checking
+                strncpy(current_path, new_path, sizeof(current_path) - 1);
+                current_path[sizeof(current_path) - 1] = '\0';
                 printf("Set directory to: %s\n", arguments[0]);
             }
         }

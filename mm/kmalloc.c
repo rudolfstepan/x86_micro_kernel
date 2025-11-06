@@ -71,18 +71,26 @@ void initialize_memory_system() {
     void* heap_start = (void*)ALIGN_UP((size_t)&_kernel_end, 16);
     void* heap_end = (void*)HEAP_END;
 
-    freeList = (memory_block*)heap_start;
-    freeList->size = (size_t)heap_end - (size_t)heap_start - BLOCK_SIZE;
+    // Calculate frame bitmap size
+    size_t bitmap_size = (total_memory / FRAME_SIZE + 7) / 8; // Rounded up
+    
+    // Align bitmap size to 16 bytes
+    bitmap_size = ALIGN_UP(bitmap_size, 16);
+    
+    // Place frame bitmap at the start of heap
+    frame_bitmap = (uint8_t*)heap_start;
+    memset(frame_bitmap, 0, bitmap_size);
+    
+    // Place freeList AFTER the frame bitmap
+    void* freelist_start = (void*)((size_t)heap_start + bitmap_size);
+    freeList = (memory_block*)freelist_start;
+    freeList->size = (size_t)heap_end - (size_t)freelist_start - BLOCK_SIZE;
     freeList->free = 1;
     freeList->next = NULL;
 
-    // Dynamically allocate the frame bitmap
-    size_t bitmap_size = (total_memory / FRAME_SIZE + 7) / 8; // Rounded up
-    frame_bitmap = (uint8_t*)heap_start;
-    //memset(frame_bitmap, 0, bitmap_size);
-
     print_memory_size(total_memory);
-    printf("Heap Range: %p - %p\n", heap_start, heap_end);
+    printf("Frame bitmap: %p - %p (%u bytes)\n", frame_bitmap, (void*)((size_t)frame_bitmap + bitmap_size), (unsigned int)bitmap_size);
+    printf("Heap Range: %p - %p\n", freelist_start, heap_end);
 }
 
 void set_frame(size_t frame) {
@@ -157,6 +165,13 @@ void k_free(void* ptr) {
     if (!ptr) return;
 
     memory_block* block = (memory_block*)((char*)ptr - BLOCK_SIZE);
+    
+    // Double-free detection
+    if (block->free) {
+        printf("Warning: Double free detected at %p\n", ptr);
+        return;
+    }
+    
     block->free = 1;
 
     if (block->next && block->next->free) {
