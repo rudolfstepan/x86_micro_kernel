@@ -20,8 +20,8 @@ int create_process_for_file(const char *filename);
 void list_running_processes();
 void terminate_process(int pid);
 
-void start_program_execution(long entryPoint);
-void load_and_execute_program(const char* programName);
-void load_program_into_memory(const char* programName, uint32_t address);
+void start_program_execution(long entry_point);
+void load_and_execute_program(const char* program_name);
+void load_program_into_memory(const char* program_name, uint32_t address);
 
 #endif // PROCESS_H

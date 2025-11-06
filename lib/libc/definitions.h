@@ -4,7 +4,7 @@
 typedef struct {
     unsigned char *base;  // Base address of the file in memory
     unsigned char *ptr;   // Current read/write position
-    unsigned int startCluster;    // startCluster of the file
+    unsigned int start_cluster;    // start_cluster of the file
     const char* mode;     // Mode the file was opened with
     const char* name;     // Name of the file
     size_t size;          // Size of the file

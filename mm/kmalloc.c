@@ -36,7 +36,7 @@ typedef struct memory_block {
     struct memory_block* next;
 } memory_block;
 
-memory_block* freeList = NULL;
+memory_block* free_list = NULL;
 
 
 void print_memory_size(uint64_t total_memory) {
@@ -81,12 +81,12 @@ void initialize_memory_system() {
     frame_bitmap = (uint8_t*)heap_start;
     memset(frame_bitmap, 0, bitmap_size);
     
-    // Place freeList AFTER the frame bitmap
+    // Place free_list AFTER the frame bitmap
     void* freelist_start = (void*)((size_t)heap_start + bitmap_size);
-    freeList = (memory_block*)freelist_start;
-    freeList->size = (size_t)heap_end - (size_t)freelist_start - BLOCK_SIZE;
-    freeList->free = 1;
-    freeList->next = NULL;
+    free_list = (memory_block*)freelist_start;
+    free_list->size = (size_t)heap_end - (size_t)freelist_start - BLOCK_SIZE;
+    free_list->free = 1;
+    free_list->next = NULL;
 
     print_memory_size(total_memory);
     printf("Frame bitmap: %p - %p (%u bytes)\n", frame_bitmap, (void*)((size_t)frame_bitmap + bitmap_size), (unsigned int)bitmap_size);
@@ -121,20 +121,20 @@ void free_frame(size_t addr) {
 }
 
 void* k_malloc(size_t size) {
-    memory_block* current = freeList;
+    memory_block* current = free_list;
 
     while (current) {
         if (current->free && current->size >= size) {
             current->free = 0;
 
             if (current->size > size + BLOCK_SIZE) {
-                memory_block* newBlock = (memory_block*)((char*)current + BLOCK_SIZE + size);
-                newBlock->size = current->size - size - BLOCK_SIZE;
-                newBlock->free = 1;
-                newBlock->next = current->next;
+                memory_block* new_block = (memory_block*)((char*)current + BLOCK_SIZE + size);
+                new_block->size = current->size - size - BLOCK_SIZE;
+                new_block->free = 1;
+                new_block->next = current->next;
 
                 current->size = size;
-                current->next = newBlock;
+                current->next = new_block;
             }
             return (void*)((char*)current + BLOCK_SIZE);
         }
@@ -152,7 +152,7 @@ void* k_malloc(size_t size) {
     current->free = 1;
     current->next = NULL;
 
-    memory_block* last = freeList;
+    memory_block* last = free_list;
     while (last->next) {
         last = last->next;
     }
@@ -179,7 +179,7 @@ void k_free(void* ptr) {
         block->next = block->next->next;
     }
 
-    memory_block* current = freeList;
+    memory_block* current = free_list;
     while (current) {
         if (current->next == block && current->free) {
             current->size += block->size + BLOCK_SIZE;
@@ -254,24 +254,24 @@ bool test_realloc() {
     return true;
 }
 
-bool TestResetAfterFree() {
-    void *firstPtr = k_malloc(1);
-    if (!firstPtr) return false;
+bool test_reset_after_free() {
+    void *first_ptr = k_malloc(1);
+    if (!first_ptr) return false;
 
-    k_free(firstPtr);
+    k_free(first_ptr);
 
-    void *secondPtr = k_malloc(1);
-    return firstPtr == secondPtr;
+    void *second_ptr = k_malloc(1);
+    return first_ptr == second_ptr;
 }
 
-bool TestMultipleFrees() {
+bool test_multiple_frees() {
     k_free(NULL);
     k_free(NULL);
     void *ptr = k_malloc(1);
     return ptr != NULL;
 }
 
-bool TestSetMemory() {
+bool test_set_memory() {
     char *buffer = (char *)k_malloc(10);
     if (!buffer) return false;
 
@@ -287,7 +287,7 @@ bool TestSetMemory() {
     return true;
 }
 
-bool TestSetZero() {
+bool test_set_zero() {
     char *buffer = (char *)k_malloc(10);
     if (!buffer) return false;
 
@@ -303,11 +303,11 @@ bool TestSetZero() {
     return true;
 }
 
-bool TestNullPointerMemset() {
+bool test_null_pointer_memset() {
     return memset(NULL, 0, 10) == NULL;
 }
 
-bool TestCopyNonOverlapping() {
+bool test_copy_non_overlapping() {
     char src[10] = "123456789";
     char dest[10];
     memcpy(dest, src, 10);
@@ -320,7 +320,7 @@ bool TestCopyNonOverlapping() {
     return true;
 }
 
-bool TestCopyOverlapping() {
+bool test_copy_overlapping() {
     char buffer[20] = "123456789";
     memcpy(buffer + 4, buffer, 10);
 
@@ -332,12 +332,12 @@ bool TestCopyOverlapping() {
     return true;
 }
 
-bool TestNullPointerSrc() {
+bool test_null_pointer_src() {
     char dest[10];
     return memcpy(dest, NULL, 10) == NULL;
 }
 
-bool TestNullPointerDest() {
+bool test_null_pointer_dest() {
     char src[10] = "123456789";
     return memcpy(NULL, src, 10) == NULL;
 }
@@ -355,13 +355,13 @@ void test_malloc() {
 void test_memory() {
     test_malloc();
     print_test_result("Test realloc", test_realloc());
-    print_test_result("Test Reset After Free", TestResetAfterFree());
-    print_test_result("Test Multiple Frees", TestMultipleFrees());
-    print_test_result("Test Set Memory", TestSetMemory());
-    print_test_result("Test Set Zero", TestSetZero());
-    print_test_result("Test Null Pointer Memset", TestNullPointerMemset());
-    print_test_result("Test Copy Non-Overlapping", TestCopyNonOverlapping());
-    print_test_result("Test Copy Overlapping", TestCopyOverlapping());
-    print_test_result("Test Null Pointer Src", TestNullPointerSrc());
-    print_test_result("Test Null Pointer Dest", TestNullPointerDest());
+    print_test_result("Test Reset After Free", test_reset_after_free());
+    print_test_result("Test Multiple Frees", test_multiple_frees());
+    print_test_result("Test Set Memory", test_set_memory());
+    print_test_result("Test Set Zero", test_set_zero());
+    print_test_result("Test Null Pointer Memset", test_null_pointer_memset());
+    print_test_result("Test Copy Non-Overlapping", test_copy_non_overlapping());
+    print_test_result("Test Copy Overlapping", test_copy_overlapping());
+    print_test_result("Test Null Pointer Src", test_null_pointer_src());
+    print_test_result("Test Null Pointer Dest", test_null_pointer_dest());
 }

@@ -2,144 +2,144 @@
 #include "lib/libc/stdio.h"
 
 // Function to read a file's data into a buffer
-// void readFileData(unsigned int startCluster, char* buffer, unsigned int size) {
-//     unsigned int currentCluster = startCluster;
-//     unsigned int bytesRead = 0;
-//     while (bytesRead < size) {
-//         unsigned int sectorNumber = cluster_to_sector(&boot_sector, currentCluster);
+// void read_file_data(unsigned int start_cluster, char* buffer, unsigned int size) {
+//     unsigned int current_cluster = start_cluster;
+//     unsigned int bytes_read = 0;
+//     while (bytes_read < size) {
+//         unsigned int sector_number = cluster_to_sector(&boot_sector, current_cluster);
 //         // Read each sector in the current cluster
-//         for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-//             ata_read_sector(ata_base_address, sectorNumber + i, buffer + bytesRead, ata_is_master);
-//             bytesRead += SECTOR_SIZE;
-//             if (bytesRead >= size) {
+//         for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
+//             ata_read_sector(ata_base_address, sector_number + i, buffer + bytes_read, ata_is_master);
+//             bytes_read += SECTOR_SIZE;
+//             if (bytes_read >= size) {
 //                 break;  // Stop if we have read the required size
 //             }
 //         }
 //         // Get the next cluster in the chain
-//         currentCluster = get_next_cluster_in_chain(&boot_sector, currentCluster);
+//         current_cluster = get_next_cluster_in_chain(&boot_sector, current_cluster);
 //         // Check if we have reached the end of the file
-//         if (isEndOfClusterChain(currentCluster)) {
+//         if (is_end_of_cluster_chain(current_cluster)) {
 //             break;
 //         }
 //     }
 // }
 
-unsigned int readFileData(unsigned int startCluster, char* buffer, unsigned int bufferSize, unsigned int bytesToRead) {
-    printf("readFileData: startCluster=%u, bufferSize=%u, bytesToRead=%u\n", startCluster, bufferSize, bytesToRead);
+unsigned int read_file_data(unsigned int start_cluster, char* buffer, unsigned int buffer_size, unsigned int bytes_to_read) {
+    printf("read_file_data: start_cluster=%u, buffer_size=%u, bytes_to_read=%u\n", start_cluster, buffer_size, bytes_to_read);
     printf("  Using: base=0x%X, is_master=%d\n", ata_base_address, ata_is_master);
     
-    if (buffer == NULL || bufferSize == 0 || bytesToRead == 0) {
+    if (buffer == NULL || buffer_size == 0 || bytes_to_read == 0) {
         // Invalid parameters; return 0 to indicate no data read
-        printf("readFileData: Invalid parameters\n");
+        printf("read_file_data: Invalid parameters\n");
         return 0;
     }
 
-    unsigned int currentCluster = startCluster;
-    unsigned int totalBytesRead = 0;
+    unsigned int current_cluster = start_cluster;
+    unsigned int total_bytes_read = 0;
 
-    printf("readFileData: Starting read loop\n");
-    while (totalBytesRead < bytesToRead) {
-        printf("readFileData: currentCluster=%u, totalBytesRead=%u\n", currentCluster, totalBytesRead);
-        unsigned int sectorNumber = cluster_to_sector(&boot_sector, currentCluster);
-        printf("readFileData: sectorNumber=%u, sectorsPerCluster=%u\n", sectorNumber, boot_sector.sectorsPerCluster);
+    printf("read_file_data: Starting read loop\n");
+    while (total_bytes_read < bytes_to_read) {
+        printf("read_file_data: current_cluster=%u, total_bytes_read=%u\n", current_cluster, total_bytes_read);
+        unsigned int sector_number = cluster_to_sector(&boot_sector, current_cluster);
+        printf("read_file_data: sector_number=%u, sectorsPerCluster=%u\n", sector_number, boot_sector.sectors_per_cluster);
 
         // Read each sector in the current cluster
-        for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-            printf("readFileData: Reading sector %u of cluster\n", i);
+        for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
+            printf("read_file_data: Reading sector %u of cluster\n", i);
             // Calculate the number of bytes to read in this iteration
-            unsigned int bytesRemaining = bytesToRead - totalBytesRead;
-            unsigned int bytesToReadNow = (bytesRemaining < SECTOR_SIZE) ? bytesRemaining : SECTOR_SIZE;
+            unsigned int bytes_remaining = bytes_to_read - total_bytes_read;
+            unsigned int bytes_to_read_now = (bytes_remaining < SECTOR_SIZE) ? bytes_remaining : SECTOR_SIZE;
 
             // Ensure we don't read past the end of the buffer
-            if (totalBytesRead + bytesToReadNow > bufferSize) {
-                bytesToReadNow = bufferSize - totalBytesRead;
+            if (total_bytes_read + bytes_to_read_now > buffer_size) {
+                bytes_to_read_now = buffer_size - total_bytes_read;
             }
 
-            printf("readFileData: About to call ata_read_sector\n");
+            printf("read_file_data: About to call ata_read_sector\n");
             // Read data into the buffer
-            ata_read_sector(ata_base_address, sectorNumber + i, buffer + totalBytesRead, ata_is_master);
-            printf("readFileData: ata_read_sector returned\n");
-            totalBytesRead += bytesToReadNow;
+            ata_read_sector(ata_base_address, sector_number + i, buffer + total_bytes_read, ata_is_master);
+            printf("read_file_data: ata_read_sector returned\n");
+            total_bytes_read += bytes_to_read_now;
 
             // Break the loop if we have read the requested number of bytes
-            if (totalBytesRead >= bytesToRead) {
-                printf("readFileData: Reached bytesToRead, breaking\n");
+            if (total_bytes_read >= bytes_to_read) {
+                printf("read_file_data: Reached bytes_to_read, breaking\n");
                 break;
             }
         }
 
-        printf("readFileData: Getting next cluster\n");
+        printf("read_file_data: Getting next cluster\n");
         // Get the next cluster in the chain
-        currentCluster = get_next_cluster_in_chain(&boot_sector, currentCluster);
-        printf("readFileData: Next cluster = %u\n", currentCluster);
+        current_cluster = get_next_cluster_in_chain(&boot_sector, current_cluster);
+        printf("read_file_data: Next cluster = %u\n", current_cluster);
 
         // Check if we have reached the end of the file or if an invalid cluster is encountered
-        if (is_end_of_cluster_chain(currentCluster) || currentCluster == INVALID_CLUSTER) {
-            printf("readFileData: End of cluster chain\n");
+        if (is_end_of_cluster_chain(current_cluster) || current_cluster == INVALID_CLUSTER) {
+            printf("read_file_data: End of cluster chain\n");
             break;
         }
     }
 
-    printf("readFileData: Finished, totalBytesRead=%u\n", totalBytesRead);
+    printf("read_file_data: Finished, total_bytes_read=%u\n", total_bytes_read);
     // Return the total number of bytes read
-    return totalBytesRead;
+    return total_bytes_read;
 }
 
-int readFileDataToAddress(unsigned int startCluster, void* loadAddress, unsigned int fileSize) {
-    unsigned int currentCluster = startCluster;
-    unsigned int bytesRead = 0;
-    unsigned char* bufferPtr = (unsigned char*)loadAddress;
-    while (bytesRead < fileSize) {
-        unsigned int sectorNumber = cluster_to_sector(&boot_sector, currentCluster);
+int read_file_data_to_address(unsigned int start_cluster, void* load_address, unsigned int file_size) {
+    unsigned int current_cluster = start_cluster;
+    unsigned int bytes_read = 0;
+    unsigned char* buffer_ptr = (unsigned char*)load_address;
+    while (bytes_read < file_size) {
+        unsigned int sector_number = cluster_to_sector(&boot_sector, current_cluster);
         // Read each sector in the current cluster
-        for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-            ata_read_sector(ata_base_address, sectorNumber + i, bufferPtr, ata_is_master);
-            bufferPtr += SECTOR_SIZE;
-            bytesRead += SECTOR_SIZE;
+        for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
+            ata_read_sector(ata_base_address, sector_number + i, buffer_ptr, ata_is_master);
+            buffer_ptr += SECTOR_SIZE;
+            bytes_read += SECTOR_SIZE;
 
-            if (bytesRead >= fileSize) {
+            if (bytes_read >= file_size) {
                 break; // Stop if we have read the entire file
             }
         }
         // Get the next cluster in the chain
-        currentCluster = get_next_cluster_in_chain(&boot_sector, currentCluster);
+        current_cluster = get_next_cluster_in_chain(&boot_sector, current_cluster);
         // Check if we have reached the end of the file
-        if (is_end_of_cluster_chain(currentCluster)) {
+        if (is_end_of_cluster_chain(current_cluster)) {
             break;
         }
     }
-    return fileSize;
+    return file_size;
 }
 
-int fat32_load_file(const char* filename, void* loadAddress) {
-    struct FAT32DirEntry* entry = findFileInDirectory(filename);
+int fat32_load_file(const char* filename, void* load_address) {
+    struct fat32_dir_entry* entry = find_file_in_directory(filename);
     if (entry == NULL) {
         printf("File %s not found for loading into buffer.\n", filename);
         return 0; // we return 0 if the file was not found which is the size of the file
     }
-    unsigned int fileSize = entry->fileSize;
-    unsigned int startCluster = read_start_cluster(entry);
-    // Assuming readFileData is modified to take a pointer to the load address
-    return readFileDataToAddress(startCluster, loadAddress, fileSize);
+    unsigned int file_size = entry->file_size;
+    unsigned int start_cluster = read_start_cluster(entry);
+    // Assuming read_file_data is modified to take a pointer to the load address
+    return read_file_data_to_address(start_cluster, load_address, file_size);
 }
 
 // void openAndLoadFile(const char* filename) {
-//     struct FAT32DirEntry* entry = findFileInDirectory(filename);
+//     struct fat32_dir_entry* entry = find_file_in_directory(filename);
 //     if (entry == NULL) {
 //         printf("File not found.\n");
 //         return;
 //     }
-//     unsigned int startCluster = read_start_cluster(entry);
-//     int fileSize = entry->fileSize;
-//     char* buffer = malloc(fileSize);
+//     unsigned int start_cluster = read_start_cluster(entry);
+//     int file_size = entry->file_size;
+//     char* buffer = malloc(file_size);
 //     if (buffer == NULL) {
 //         printf("Not enough memory.\n");
 //         return;
 //     }
-//     readFileData(startCluster, buffer, sizeof(buffer), fileSize);
+//     read_file_data(start_cluster, buffer, sizeof(buffer), file_size);
 
 //     // Process the file data in bufferb
-//     // for(int i = 0; i < fileSize; i++){
+//     // for(int i = 0; i < file_size; i++){
 //     //     printf("%c", buffer[i]);
 //     // }
 //     free(entry); // Free the memory after use
@@ -147,29 +147,29 @@ int fat32_load_file(const char* filename, void* loadAddress) {
 // }
 
 // Function to find a file in the current directory
-struct FAT32DirEntry* findFileInDirectory(const char* filename) {
-    printf("findFileInDirectory: Looking for '%s'\n", filename);
+struct fat32_dir_entry* find_file_in_directory(const char* filename) {
+    printf("find_file_in_directory: Looking for '%s'\n", filename);
     printf("  Using: base=0x%X, is_master=%d, cluster=%u\n", 
            ata_base_address, ata_is_master, current_directory_cluster);
     
     unsigned int sector = cluster_to_sector(&boot_sector, current_directory_cluster);
     printf("  Calculated sector: %u\n", sector);
-    struct FAT32DirEntry* entries = (struct FAT32DirEntry*)malloc(SECTOR_SIZE * boot_sector.sectorsPerCluster / sizeof(struct FAT32DirEntry));
+    struct fat32_dir_entry* entries = (struct fat32_dir_entry*)malloc(SECTOR_SIZE * boot_sector.sectors_per_cluster / sizeof(struct fat32_dir_entry));
 
     if (entries == NULL) {
         // Handle memory allocation failure
         printf("Error: Failed to allocate memory for directory entries.\n");
         return NULL;
     }
-    for (unsigned int i = 0; i < boot_sector.sectorsPerCluster; i++) {
-        if (!ata_read_sector(ata_base_address, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct FAT32DirEntry))], ata_is_master)) {
+    for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
+        if (!ata_read_sector(ata_base_address, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct fat32_dir_entry))], ata_is_master)) {
             // Handle read error
             free(entries);
             return NULL;
         }
     }
 
-    for (unsigned int j = 0; j < boot_sector.sectorsPerCluster * (SECTOR_SIZE / sizeof(struct FAT32DirEntry)); j++) {
+    for (unsigned int j = 0; j < boot_sector.sectors_per_cluster * (SECTOR_SIZE / sizeof(struct fat32_dir_entry)); j++) {
         if (entries[j].name[0] == 0x00) { // End of directory
             printf("  End of directory at entry %u\n", j);
             break;
@@ -180,27 +180,27 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
         }
 
         // Debug: show the raw FAT32 name
-        char debugName[12];
+        char debug_name[12];
         for (int k = 0; k < 11; k++) {
-            debugName[k] = entries[j].name[k];
+            debug_name[k] = entries[j].name[k];
         }
-        debugName[11] = '\0';
-        printf("  Comparing FAT32 name '%.11s' with '%s'\n", debugName, filename);
+        debug_name[11] = '\0';
+        printf("  Comparing FAT32 name '%.11s' with '%s'\n", debug_name, filename);
         
         // Use the proper compare_names function that handles FAT32 8.3 format correctly
         if (compare_names((const char*)entries[j].name, filename) == 0) {
             printf("  MATCH FOUND!\n");
-            struct FAT32DirEntry* foundEntry = (struct FAT32DirEntry*)malloc(sizeof(struct FAT32DirEntry));
-            if (foundEntry == NULL) {
+            struct fat32_dir_entry* found_entry = (struct fat32_dir_entry*)malloc(sizeof(struct fat32_dir_entry));
+            if (found_entry == NULL) {
                 // Handle memory allocation failure
                 printf("Error: Failed to allocate memory for directory entry.\n");
                 free(entries);
                 return NULL;
             }
 
-            memcpy(foundEntry, &entries[j], sizeof(struct FAT32DirEntry));
+            memcpy(found_entry, &entries[j], sizeof(struct fat32_dir_entry));
             free(entries); // Free the allocated memory
-            return foundEntry; // File found
+            return found_entry; // File found
         }
     }
 
@@ -211,18 +211,18 @@ struct FAT32DirEntry* findFileInDirectory(const char* filename) {
 
 bool fat32_create_file(const char* filename) {
     // 1. Find a free cluster for the new file
-    unsigned int newFileCluster = find_free_cluster(&boot_sector);
-    if (newFileCluster == INVALID_CLUSTER) {
+    unsigned int new_file_cluster = find_free_cluster(&boot_sector);
+    if (new_file_cluster == INVALID_CLUSTER) {
         printf("Failed to allocate a new cluster for the file.\n");
         return false;
     }
     // 2. Update the FAT for the new file cluster
-    if (!mark_cluster_in_fat(&boot_sector, newFileCluster, FAT32_EOC_MAX)) {
+    if (!mark_cluster_in_fat(&boot_sector, new_file_cluster, FAT32_EOC_MAX)) {
         printf("Failed to update the FAT for the new file cluster.\n");
         return false;
     }
     // 3. Add a directory entry for the new file in the current directory
-    if (!add_entry_to_directory(&boot_sector, current_directory_cluster, filename, newFileCluster, 0)) { // 0 for normal file attributes
+    if (!add_entry_to_directory(&boot_sector, current_directory_cluster, filename, new_file_cluster, 0)) { // 0 for normal file attributes
         printf("Failed to add a directory entry for the new file.\n");
         return false;
     }
@@ -231,7 +231,7 @@ bool fat32_create_file(const char* filename) {
 
 bool fat32_delete_file(const char* filename) {
     // 1. Find the directory entry for the file to delete
-    struct FAT32DirEntry* entry = findFileInDirectory(filename);
+    struct fat32_dir_entry* entry = find_file_in_directory(filename);
     if (entry == NULL) {
         printf("File not found.\n");
         return false;
@@ -251,14 +251,14 @@ bool fat32_delete_file(const char* filename) {
 
 // Function to open a file and return a pointer to the file data
 FILE* fat32_open_file(const char* filename, const char* mode) {
-    struct FAT32DirEntry* entry = findFileInDirectory(filename);
+    struct fat32_dir_entry* entry = find_file_in_directory(filename);
     if (entry == NULL) {
         printf("File not found.\n");
         return NULL;
     }
 
-    unsigned int startCluster = read_start_cluster(entry);
-    int fileSize = entry->fileSize;
+    unsigned int start_cluster = read_start_cluster(entry);
+    int file_size = entry->file_size;
 
     FILE* file = (FILE*)malloc(sizeof(FILE));
     if (file == NULL) {
@@ -267,25 +267,25 @@ FILE* fat32_open_file(const char* filename, const char* mode) {
     }
 
     file->position = 0;
-    file->size = fileSize;
-    file->ptr = (unsigned char*)malloc(fileSize);
+    file->size = file_size;
+    file->ptr = (unsigned char*)malloc(file_size);
     file->mode = mode;
     file->name = filename;
-    file->startCluster = startCluster;
+    file->start_cluster = start_cluster;
 
     return file;
 }
 
 // read file
-int fat32_read_file(FILE* file, void* buffer, unsigned int buffer_size, unsigned int bytesToRead) {
+int fat32_read_file(FILE* file, void* buffer, unsigned int buffer_size, unsigned int bytes_to_read) {
     if (strcmp(file->mode, "w") == 0) {
         printf("Error: File is not open for reading.\n");
         return 0;
     }
 
-    if (file->position + bytesToRead > file->size) {
-        bytesToRead = file->size - file->position;
+    if (file->position + bytes_to_read > file->size) {
+        bytes_to_read = file->size - file->position;
     }
 
-    return readFileData(file->startCluster, (char*)buffer, buffer_size, bytesToRead);
+    return read_file_data(file->start_cluster, (char*)buffer, buffer_size, bytes_to_read);
 }

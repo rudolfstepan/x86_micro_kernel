@@ -16,13 +16,13 @@
 #define NUMBER_OF_HEADS 2        // Number of disk heads (sides) for a double-sided floppy
 #define MIN_CLUSTER_VALUE 0x002  // Minimum valid cluster value
 #define MAX_CLUSTER_VALUE 0xFF8  // Maximum valid cluster value before end-of-chain
-#define INVALID_CLUSTER 0xFFF // Typically used for FAT12; adjust based on your system
+#define INVALID_CLUSTER 0xFFF // Typically used for fat12; adjust based on your system
 
 
 // Global structures and buffers
-FAT12* fat12;
-DirectoryEntry* entries = NULL;
-DirectoryEntry* currentDir = NULL;
+fat12_t* fat12 = NULL;
+directory_entry* entries = NULL;
+directory_entry* current_dir = NULL;
 uint8_t* buffer = NULL;
 uint8_t current_fdd_drive = 0;
 
@@ -44,10 +44,10 @@ bool is_valid_filename(const char* filename, size_t length) {
     return true;
 }
 
-// Read the FAT table and initialize FAT12 structure
-int read_fat12(uint8_t drive, FAT12* fat12) {
-    if (fat12->bootSector.bootSectorSignature == 0xAA55) {
-        printf("FAT12 already initialized.\n");
+// Read the FAT table and initialize fat12 structure
+int read_fat12(uint8_t drive, fat12_t* fat12) {
+    if (fat12->boot_sector.boot_sector_signature == 0xAA55) {
+        printf("fat12 already initialized.\n");
         return true;
     }
 
@@ -63,44 +63,59 @@ int read_fat12(uint8_t drive, FAT12* fat12) {
         return false;
     }
 
-    memcpy(&fat12->bootSector, buffer, sizeof(Fat12BootSector));
+    memcpy(&fat12->boot_sector, buffer, sizeof(fat12_boot_sector));
     free(buffer);
 
-    if (fat12->bootSector.bootSectorSignature != 0xAA55) {
+    if (fat12->boot_sector.boot_sector_signature != 0xAA55) {
         printf("Invalid boot sector signature.\n");
         return false;
     }
 
-    fat12->fatStart = fat12->bootSector.reservedSectors;
-    fat12->rootDirStart = fat12->fatStart + (fat12->bootSector.fatCount * fat12->bootSector.sectorsPerFAT);
-    fat12->dataStart = fat12->rootDirStart + (fat12->bootSector.rootEntryCount * ROOT_ENTRY_SIZE / SECTOR_SIZE);
+    fat12->fat_start = fat12->boot_sector.reserved_sectors;
+    fat12->root_dir_start = fat12->fat_start + (fat12->boot_sector.fat_count * fat12->boot_sector.sectors_per_fat);
+    fat12->data_start = fat12->root_dir_start + (fat12->boot_sector.root_entry_count * ROOT_ENTRY_SIZE / SECTOR_SIZE);
+    fat12->fat = NULL;  // Initialize FAT pointer (not loaded in current implementation)
 
-    printf("FAT12 initialized: FAT Start Sector: %d, Root Directory Start Sector: %d, Data Region Start Sector: %d\n", 
-           fat12->fatStart, fat12->rootDirStart, fat12->dataStart);
+    printf("fat12 initialized: FAT Start Sector: %d, Root Directory Start Sector: %d, Data Region Start Sector: %d\n", 
+           fat12->fat_start, fat12->root_dir_start, fat12->data_start);
     return true;
 }
 
-// Initialize FAT12 and load root directory
+// Initialize fat12 and load root directory
 bool fat12_init_fs(uint8_t drive) {
     current_fdd_drive = drive; // Set the current drive
-    // Initialize FAT12 structure
-    fat12 = (FAT12*)malloc(sizeof(FAT12));
+    
+    printf("fat12_init_fs: Attempting to allocate %d bytes for fat12_t\n", sizeof(fat12_t));
+    
+    // Free existing allocation if any
+    if (fat12 != NULL) {
+        printf("Freeing existing fat12 structure at %p\n", fat12);
+        free(fat12);
+        fat12 = NULL;
+    }
+    
+    // Initialize fat12 structure
+    fat12 = (fat12_t*)malloc(sizeof(fat12_t));
     if (!fat12) {
-        printf("Memory allocation failed for FAT12 structure.\n");
+        printf("Memory allocation failed for fat12 structure.\n");
+        printf("Requested size: %d bytes\n", sizeof(fat12_t));
         return false;
     }
-    //memset(&fat12, 0, sizeof(FAT12));
+    printf("fat12 structure allocated at %p\n", fat12);
+    //memset(&fat12, 0, sizeof(fat12_t));
 
     if (!read_fat12(drive, fat12)) {
-        printf("Failed to initialize FAT12.\n");
+        printf("Failed to initialize fat12.\n");
+        free(fat12);
+        fat12 = NULL;
         return false;
     }
     return true;
 }
 
-// Function to calculate and fetch the next cluster in FAT12
-int get_next_cluster(int currentCluster) {
-    int offset = (currentCluster * 3) / 2;
+// Function to calculate and fetch the next cluster in fat12
+int get_next_cluster(int current_cluster) {
+    int offset = (current_cluster * 3) / 2;
     uint16_t next_cluster = (offset % 2 == 0)
         ? (fat12->fat[offset] | (fat12->fat[offset + 1] << 8)) & 0x0FFF
         : ((fat12->fat[offset] >> 4) | (fat12->fat[offset + 1] << 4)) & 0x0FFF;
@@ -108,14 +123,14 @@ int get_next_cluster(int currentCluster) {
     return next_cluster >= 0xFF8 ? -1 : next_cluster;
 }
 
-// Function to extract date from FAT12 format
+// Function to extract date from fat12 format
 void extract_date(uint16_t fat_date, int* day, int* month, int* year) {
     *day = fat_date & 0x1F;
     *month = (fat_date >> 5) & 0x0F;
     *year = ((fat_date >> 9) & 0x7F) + 1980;
 }
 
-// Function to extract time from FAT12 format
+// Function to extract time from fat12 format
 void extract_time(uint16_t fat_time, int* hours, int* minutes, int* seconds) {
     *seconds = (fat_time & 0x1F) * 2;
     *minutes = (fat_time >> 5) & 0x3F;
@@ -123,9 +138,20 @@ void extract_time(uint16_t fat_time, int* hours, int* minutes, int* seconds) {
 }
 
 // Read directory entries (root or subdirectory)
-int fat12_read_dir_entries(DirectoryEntry* dir) {
+int fat12_read_dir_entries(directory_entry* dir) {
     int entries_found = 0;
-    entries = (DirectoryEntry*)malloc(MAX_ENTRIES * sizeof(DirectoryEntry));
+    
+    // Free existing allocations if any
+    if (entries != NULL) {
+        free(entries);
+        entries = NULL;
+    }
+    if (buffer != NULL) {
+        free(buffer);
+        buffer = NULL;
+    }
+    
+    entries = (directory_entry*)malloc(MAX_ENTRIES * sizeof(directory_entry));
     if (!entries) {
         printf("Memory allocation failed for directory entries.\n");
         return -1;
@@ -135,13 +161,14 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
     if (!buffer) {
         printf("Memory allocation failed for sector buffer.\n");
         free(entries);
+        entries = NULL;
         return -1;
     }
 
     if (dir == NULL) {
         printf("Reading root directory entries.\n");
 
-        int logical_sector = fat12->rootDirStart;
+        int logical_sector = fat12->root_dir_start;
         int track, head, sector;
         logical_to_chs(logical_sector, &track, &head, &sector);
 
@@ -160,16 +187,16 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
         }
     } else {
         // Read subdirectory starting from its cluster
-        int cluster = dir->firstClusterLow;
+        int cluster = dir->first_cluster_low;
         printf("Reading subdirectory. Start cluster: %d\n", cluster);
 
         while (cluster >= MIN_CLUSTER_VALUE && cluster < MAX_CLUSTER_VALUE && entries_found < MAX_ENTRIES) {
-            int start_sector = fat12->dataStart + (cluster - 2) * fat12->bootSector.sectorsPerCluster;
+            int start_sector = fat12->data_start + (cluster - 2) * fat12->boot_sector.sectors_per_cluster;
             int track, head, sector;
             logical_to_chs(start_sector, &track, &head, &sector);
 
             // Read multiple sectors for the cluster
-            if (!fdc_read_sectors(current_fdd_drive, head, track, sector, fat12->bootSector.sectorsPerCluster, buffer)) {
+            if (!fdc_read_sectors(current_fdd_drive, head, track, sector, fat12->boot_sector.sectors_per_cluster, buffer)) {
                 printf("Error reading subdirectory sectors starting from sector %d.\n", sector);
                 free(entries);
                 free(buffer);
@@ -177,7 +204,7 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
             }
 
             // Copy entries from the buffer
-            for (int i = 0; i < fat12->bootSector.sectorsPerCluster && entries_found < MAX_ENTRIES; i++) {
+            for (int i = 0; i < fat12->boot_sector.sectors_per_cluster && entries_found < MAX_ENTRIES; i++) {
                 memcpy(&entries[entries_found], buffer + (i * SECTOR_SIZE), SECTOR_SIZE);
                 entries_found += SECTOR_SIZE / ROOT_ENTRY_SIZE;
             }
@@ -195,14 +222,14 @@ int fat12_read_dir_entries(DirectoryEntry* dir) {
 
 
 // Print directory entries in DOS-like format
-void print_dir_entries(DirectoryEntry* dir, int entries_found) {
+void print_dir_entries(directory_entry* dir, int entries_found) {
     printf(" Volume in drive A has no label\n");
     printf(" Directory of %s\n\n", dir == NULL ? "\\" : *dir->filename == 0 ? "\\" : (char*)dir->filename);
     printf("FILENAME   EXT    SIZE     DATE       TIME     TYPE\n");
     printf("----------------------------------------------------\n");
 
     for (int i = 0; i < entries_found; i++) {
-        DirectoryEntry* entry = &entries[i];
+        directory_entry* entry = &entries[i];
         if ((unsigned char)entry->filename[0] == 0x00) break;
         if ((unsigned char)entry->filename[0] == 0xE5) continue;
         if (!(entry->attributes & (0x10 | 0x20))) continue;
@@ -213,30 +240,30 @@ void print_dir_entries(DirectoryEntry* dir, int entries_found) {
         strncpy(extension, (const char*)entry->extension, 3);
 
         int day, month, year, hours, minutes, seconds;
-        extract_date(entry->lastWriteDate, &day, &month, &year);
-        extract_time(entry->lastWriteTime, &hours, &minutes, &seconds);
+        extract_date(entry->last_write_date, &day, &month, &year);
+        extract_time(entry->last_write_time, &hours, &minutes, &seconds);
 
         if (entry->attributes & 0x10) {  // Directory
             printf("%-8s   %-3s   <DIR>    %02d-%02d-%04d  %02d:%02d:%02d\n",
                    filename, extension, day, month, year, hours, minutes, seconds);
         } else {  // File
             printf("%-8s   %-3s   %8u  %02d-%02d-%04d  %02d:%02d:%02d\n",
-                   filename, extension, entry->fileSize, day, month, year, hours, minutes, seconds);
+                   filename, extension, entry->file_size, day, month, year, hours, minutes, seconds);
         }
     }
     printf("\n");
 }
 
 // Change to a new directory if it exists
-bool fat12_change_directory(const char* relativePath) {
-    int num_entries = fat12_read_dir_entries(currentDir);
+bool fat12_change_directory(const char* relative_path) {
+    int num_entries = fat12_read_dir_entries(current_dir);
     if (num_entries < 0) {
         printf("Failed to read directory.\n");
         return false;
     }
 
     for (int i = 0; i < num_entries; i++) {
-        DirectoryEntry* entry = &entries[i];
+        directory_entry* entry = &entries[i];
         if ((unsigned char)entry->filename[0] == 0x00) break;
         if ((unsigned char)entry->filename[0] == 0xE5) continue;
         if (!(entry->attributes & 0x10)) continue;  // Only directories
@@ -248,30 +275,30 @@ bool fat12_change_directory(const char* relativePath) {
         char trimmed_name[9] = {0};
         str_trim_spaces(entry_name, trimmed_name, 8);
 
-        if (strcmp(trimmed_name, relativePath) == 0) {
+        if (strcmp(trimmed_name, relative_path) == 0) {
             // set trimmed_name to entry 
             str_trim_spaces(trimmed_name, (char*)entry->filename, 8);
 
-            currentDir = entry;
-            printf("Changed directory to %s\n", relativePath);
+            current_dir = entry;
+            printf("Changed directory to %s\n", relative_path);
             return true;
         }
     }
-    printf("Directory not found: %s\n", relativePath);
+    printf("Directory not found: %s\n", relative_path);
     return false;
 }
 
 // Open a file in the current directory
-Fat12File* fat12_open_file(const char* filename, const char* mode) {
-    int num_entries = fat12_read_dir_entries(currentDir);
+fat12_file* fat12_open_file(const char* filename, const char* mode) {
+    int num_entries = fat12_read_dir_entries(current_dir);
     if (num_entries < 0) {
         printf("Failed to read directory contents.\n");
         return NULL;
     }
 
-    DirectoryEntry* file_entry = NULL;
+    directory_entry* file_entry = NULL;
     for (int i = 0; i < num_entries; i++) {
-        DirectoryEntry* entry = &entries[i];
+        directory_entry* entry = &entries[i];
         if ((unsigned char)entry->filename[0] == 0x00) break;
         if ((unsigned char)entry->filename[0] == 0xE5) continue;
         if (entry->attributes & 0x10) continue;  // Skip directories
@@ -300,13 +327,13 @@ Fat12File* fat12_open_file(const char* filename, const char* mode) {
         return NULL;
     }
 
-    Fat12File* file = (Fat12File*)malloc(sizeof(Fat12File));
+    fat12_file* file = (fat12_file*)malloc(sizeof(fat12_file));
     if (file == NULL) {
         printf("Failed to allocate memory for file structure.\n");
         return NULL;
     }
 
-    file->base = (unsigned char*)malloc(file_entry->fileSize);
+    file->base = (unsigned char*)malloc(file_entry->file_size);
     if (file->base == NULL) {
         printf("Failed to allocate memory for file buffer.\n");
         free(file);
@@ -314,8 +341,8 @@ Fat12File* fat12_open_file(const char* filename, const char* mode) {
     }
 
     file->ptr = file->base;
-    file->startCluster = file_entry->firstClusterLow;
-    file->size = file_entry->fileSize;
+    file->start_cluster = file_entry->first_cluster_low;
+    file->size = file_entry->file_size;
     file->position = 0;
     strncpy((char*)file->name, filename, sizeof(file->name) - 1);
     file->name[sizeof(file->name) - 1] = '\0';
@@ -326,28 +353,28 @@ Fat12File* fat12_open_file(const char* filename, const char* mode) {
 }
 
 // Print the contents of a file
-void print_file_content(Fat12File* file) {
+void print_file_content(fat12_file* file) {
     if (file == NULL) {
         printf("Invalid file handle.\n");
         return;
     }
 
     // Calculate the size of the buffer based on the size of the file
-    size_t bufferSize = file->size; // Use the file size as the buffer size directly
+    size_t buffer_size = file->size; // Use the file size as the buffer size directly
 
     // Allocate the buffer
-    char* buffer = (char*)malloc(sizeof(char) * bufferSize);
+    char* buffer = (char*)malloc(sizeof(char) * buffer_size);
 
     if (buffer == NULL) {
         printf("Memory allocation failed.\n");
         return;
     }
-    memset(buffer, 0, bufferSize);
+    memset(buffer, 0, buffer_size);
 
-    int bytesRead = fat12_read_file(file, buffer, bufferSize, file->size);
-    if (bytesRead > 0) {
+    int bytes_read = fat12_read_file(file, buffer, buffer_size, file->size);
+    if (bytes_read > 0) {
         printf("File contents:\n%s\n", buffer);
-        hex_dump((unsigned char*)buffer, bufferSize);
+        hex_dump((unsigned char*)buffer, buffer_size);
     } else {
         printf("Failed to read file content.\n");
     }
@@ -360,7 +387,7 @@ bool fat12_read_dir(const char* path) {
     printf("-----Reading directory: %s-----\n", path ? path : "(current directory)");
 
     int num_entries = 0;
-    if(currentDir == NULL) {
+    if(current_dir == NULL) {
         // read root directory
         num_entries = fat12_read_dir_entries(NULL);
         if (num_entries < 0) {
@@ -369,34 +396,34 @@ bool fat12_read_dir(const char* path) {
         }
     }else {
         // read subdirectory
-        num_entries = fat12_read_dir_entries(currentDir);
+        num_entries = fat12_read_dir_entries(current_dir);
         if (num_entries < 0) {
             printf("Failed to load subdirectory.\n");
             return false;
         }
     }
 
-    print_dir_entries(currentDir, num_entries);
+    print_dir_entries(current_dir, num_entries);
     return true;
 }
 
-int fat12_read_file(Fat12File* file, void* buffer, unsigned int buffer_size, unsigned int bytesToRead) {
+int fat12_read_file(fat12_file* file, void* buffer, unsigned int buffer_size, unsigned int bytes_to_read) {
     if (file == NULL || buffer == NULL) {
         printf("Invalid file handle or buffer.\n");
         return 0;
     }
 
     // Ensure we don't read beyond the end of the file or buffer
-    if (file->position + bytesToRead > file->size) {
-        bytesToRead = file->size - file->position;
+    if (file->position + bytes_to_read > file->size) {
+        bytes_to_read = file->size - file->position;
     }
-    if (bytesToRead > buffer_size) {
-        bytesToRead = buffer_size;
+    if (bytes_to_read > buffer_size) {
+        bytes_to_read = buffer_size;
     }
 
     unsigned int bytes_read = 0;
-    unsigned int currentCluster = file->startCluster;
-    unsigned int clusterSize = SECTOR_SIZE * fat12->bootSector.sectorsPerCluster;
+    unsigned int current_cluster = file->start_cluster;
+    unsigned int clusterSize = SECTOR_SIZE * fat12->boot_sector.sectors_per_cluster;
 
     // Calculate initial offset within the first cluster if the position is not at the start
     unsigned int startOffset = file->position % clusterSize;
@@ -408,12 +435,12 @@ int fat12_read_file(Fat12File* file, void* buffer, unsigned int buffer_size, uns
     }
 
     // Read loop
-    while (bytes_read < bytesToRead && currentCluster >= MIN_CLUSTER_VALUE && currentCluster < MAX_CLUSTER_VALUE) {
+    while (bytes_read < bytes_to_read && current_cluster >= MIN_CLUSTER_VALUE && current_cluster < MAX_CLUSTER_VALUE) {
         // Calculate the first sector of the current cluster
-        unsigned int firstSectorOfCluster = fat12->dataStart + (currentCluster - 2) * fat12->bootSector.sectorsPerCluster;
+        unsigned int firstSectorOfCluster = fat12->data_start + (current_cluster - 2) * fat12->boot_sector.sectors_per_cluster;
 
         // Read each sector in the cluster
-        for (unsigned int i = 0; i < fat12->bootSector.sectorsPerCluster && bytes_read < bytesToRead; i++) {
+        for (unsigned int i = 0; i < fat12->boot_sector.sectors_per_cluster && bytes_read < bytes_to_read; i++) {
             unsigned int logical_sector = firstSectorOfCluster + i;
             int track = logical_sector / (SECTORS_PER_TRACK * NUMBER_OF_HEADS);
             int head = (logical_sector / SECTORS_PER_TRACK) % NUMBER_OF_HEADS;
@@ -429,21 +456,21 @@ int fat12_read_file(Fat12File* file, void* buffer, unsigned int buffer_size, uns
             // Calculate how many bytes to copy from the sector
             unsigned int offset = (bytes_read == 0) ? startOffset : 0;
             unsigned int remaining = SECTOR_SIZE - offset;
-            unsigned int bytes_to_copy = (bytesToRead - bytes_read < remaining) ? (bytesToRead - bytes_read) : remaining;
+            unsigned int bytes_to_copy = (bytes_to_read - bytes_read < remaining) ? (bytes_to_read - bytes_read) : remaining;
 
             // Copy the bytes from the sector buffer to the main buffer
             memcpy((unsigned char*)buffer + bytes_read, sectorBuffer + offset, bytes_to_copy);
             bytes_read += bytes_to_copy;
             file->position += bytes_to_copy;
 
-            if (bytes_read >= bytesToRead) {
+            if (bytes_read >= bytes_to_read) {
                 break;
             }
         }
 
         // Move to the next cluster in the chain
-        currentCluster = get_next_cluster(currentCluster);
-        if (currentCluster == INVALID_CLUSTER) {
+        current_cluster = get_next_cluster(current_cluster);
+        if (current_cluster == INVALID_CLUSTER) {
             printf("Invalid cluster detected.\n");
             break;
         }

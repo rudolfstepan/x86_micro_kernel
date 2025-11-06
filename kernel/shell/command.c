@@ -25,9 +25,10 @@
 
 char current_path[256] = "/";
 
-// Splits an input string into a command and arguments.
+// Forward declarations
 int split_input(const char* input, char* command, char** arguments, int max_length, int max_args);
-void openFile(const char* path);
+void open_file(const char* path);
+void free_arguments(char** arguments, int arg_count);
 
 bool is_null_terminated(char* buffer, size_t max_length) {
     for (size_t i = 0; i < max_length; i++) {
@@ -522,7 +523,7 @@ void cmd_open(int arg_count, const char** arguments) {
     if (arg_count == 0) {
         printf("OPEN command without arguments\n");
     } else {
-        openFile(arguments[0]);
+        open_file(arguments[0]);
     }
 }
 
@@ -669,7 +670,7 @@ void cmd_run(int arg_count, const char** arguments) {
 
 
 // Open the specified file and print its contents
-void openFile(const char* path) {
+void open_file(const char* path) {
     printf("Opening file: %s\n", path);
 
     switch ((drive_type_t)current_drive->type) {
@@ -685,17 +686,17 @@ void openFile(const char* path) {
         printf("Size: %d\n", file->size);
 
         // Calculate the size of the buffer based on the size of the file
-        size_t bufferSize = file->size; // Use the file size as the buffer size directly
+        size_t buffer_size = file->size; // Use the file size as the buffer size directly
 
         // Allocate the buffer
-        char* buffer = (char*)malloc(bufferSize +1);
+        char* buffer = (char*)malloc(buffer_size +1);
         if (buffer == NULL) {
             printf("Failed to allocate memory for file buffer\n");
             return;
         }
 
         // Read the file into the buffer, passing the correct size
-        int result = fat32_read_file(file, buffer, bufferSize, bufferSize); // Pass bufferSize as the buffer size
+        int result = fat32_read_file(file, buffer, buffer_size, buffer_size); // Pass buffer_size as the buffer size
         if (result == 0) {
             printf("Failed to read file\n");
             free(buffer);  // Free buffer before returning
@@ -710,7 +711,7 @@ void openFile(const char* path) {
         printf("%s\n", buffer);
 
         // Free all allocated memory
-        secure_free(buffer, bufferSize);  // Clear the buffer with correct size
+        secure_free(buffer, buffer_size);  // Clear the buffer with correct size
         if (file->ptr) {
             free(file->ptr);  // Free the file's internal buffer
         }
@@ -720,24 +721,24 @@ void openFile(const char* path) {
     case DRIVE_TYPE_FDD:
     {
         // TODO: use the gerneric FILE structure to read the file
-        Fat12File* file = fat12_open_file(path, "r");
+        fat12_file* file = fat12_open_file(path, "r");
         if (file == NULL) {
             printf("File not found: %s\n", path);
             return;
         }
 
         // Calculate the size of the buffer based on the size of the file
-        size_t bufferSize = file->size; // Use the file size as the buffer size directly
+        size_t buffer_size = file->size; // Use the file size as the buffer size directly
 
         // Allocate the buffer
-        char* buffer = (char*)malloc(sizeof(char) * bufferSize);
+        char* buffer = (char*)malloc(sizeof(char) * buffer_size);
         if (buffer == NULL) {
             printf("Failed to allocate memory for file buffer\n");
             return;
         }
 
         // Read the file into the buffer, passing the correct size
-        int result = fat12_read_file(file, buffer, bufferSize, file->size); // Pass bufferSize as the buffer size
+        int result = fat12_read_file(file, buffer, buffer_size, file->size); // Pass buffer_size as the buffer size
         if (result == 0) {
             printf("Failed to read file\n");
             return;
@@ -761,13 +762,13 @@ void cmd_start_task(int arg_count, const char** arguments) {
         return;
     }
 
-    int taskId = strtoul(arguments[0], NULL, 10);
-    if (taskId < 0 || taskId >= MAX_TASKS) {
-        printf("Invalid task ID: %d\n", taskId);
+    int task_id = strtoul(arguments[0], NULL, 10);
+    if (task_id < 0 || task_id >= MAX_TASKS) {
+        printf("Invalid task ID: %d\n", task_id);
         return;
     }
 
-    //start_task(taskId);
+    //start_task(task_id);
 }
 
 void cmd_net(int arg_count, const char** arguments) {

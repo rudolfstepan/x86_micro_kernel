@@ -22,58 +22,58 @@
 
 
 #pragma pack(push, 1)
-struct FAT32DirEntry {
+struct fat32_dir_entry {
     uint8_t name[11];             // Short name (8.3 format)
     uint8_t attr;                 // File attributes
-    uint8_t ntRes;                // Reserved for use by Windows NT
-    uint8_t crtTimeTenth;         // Millisecond stamp at file creation time
-    uint16_t crtTime;             // Time file was created
-    uint16_t crtDate;             // Date file was created
-    uint16_t lastAccessDate;      // Last access date
-    uint16_t firstClusterHigh;    // High word of the first data cluster number
-    uint16_t writeTime;             // Time of last write
-    uint16_t writeDate;             // Date of last write
-    uint16_t firstClusterLow;     // Low word of the first data cluster number
-    uint32_t fileSize;            // File size in bytes
+    uint8_t nt_res;               // Reserved for use by Windows NT
+    uint8_t crt_time_tenth;       // Millisecond stamp at file creation time
+    uint16_t crt_time;            // Time file was created
+    uint16_t crt_date;            // Date file was created
+    uint16_t last_access_date;    // Last access date
+    uint16_t first_cluster_high;  // High word of the first data cluster number
+    uint16_t write_time;          // Time of last write
+    uint16_t write_date;          // Date of last write
+    uint16_t first_cluster_low;   // Low word of the first data cluster number
+    uint32_t file_size;           // File size in bytes
 };
 #pragma pack(pop)
 
 #pragma pack(push, 1)
-struct Fat32BootSector {
-    uint8_t jumpBoot[3];               // Jump instruction to boot code
-    uint8_t OEMName[8];                // OEM Name and version
-    uint16_t bytesPerSector;           // Bytes per sector
-    uint8_t sectorsPerCluster;         // Sectors per cluster
-    uint16_t reservedSectorCount;      // Reserved sector count (including boot sector)
-    uint8_t numberOfFATs;              // Number of FATs
-    uint16_t rootEntryCount;           // (Not used in FAT32)
-    uint16_t totalSectors16;           // Total sectors (16-bit), if 0, use totalSectors32
-    uint8_t mediaType;                 // Media type
-    uint16_t FATSize16;                // (Not used in FAT32)
-    uint16_t sectorsPerTrack;          // Sectors per track (for media formatting)
-    uint16_t numberOfHeads;            // Number of heads (for media formatting)
-    uint32_t hiddenSectors;            // Hidden sectors (preceding the partition)
-    uint32_t totalSectors32;           // Total sectors (32-bit)
-    uint32_t FATSize32;                // Sectors per FAT
+struct fat32_boot_sector {
+    uint8_t jump_boot[3];              // Jump instruction to boot code
+    uint8_t oem_name[8];               // OEM Name and version
+    uint16_t bytes_per_sector;         // Bytes per sector
+    uint8_t sectors_per_cluster;       // Sectors per cluster
+    uint16_t reserved_sector_count;    // Reserved sector count (including boot sector)
+    uint8_t number_of_fats;            // Number of FATs
+    uint16_t root_entry_count;         // (Not used in FAT32)
+    uint16_t total_sectors_16;         // Total sectors (16-bit), if 0, use total_sectors_32
+    uint8_t media_type;                // Media type
+    uint16_t fat_size_16;              // (Not used in FAT32)
+    uint16_t sectors_per_track;        // Sectors per track (for media formatting)
+    uint16_t number_of_heads;          // Number of heads (for media formatting)
+    uint32_t hidden_sectors;           // Hidden sectors (preceding the partition)
+    uint32_t total_sectors_32;         // Total sectors (32-bit)
+    uint32_t fat_size_32;              // Sectors per FAT
     uint16_t flags;                    // Flags
     uint16_t version;                  // FAT32 version
-    uint32_t rootCluster;              // Root directory start cluster
-    uint16_t FSInfo;                   // FSInfo sector
-    uint16_t backupBootSector;         // Backup boot sector
+    uint32_t root_cluster;             // Root directory start cluster
+    uint16_t fs_info;                  // FSInfo sector
+    uint16_t backup_boot_sector;       // Backup boot sector
     uint8_t reserved[12];              // Reserved bytes
-    uint8_t driveNumber;               // Drive number
+    uint8_t drive_number;              // Drive number
     uint8_t reserved1;                 // Reserved byte
-    uint8_t bootSignature;             // Boot signature (indicates next three fields are present)
-    uint32_t volumeID;                 // Volume ID serial number
-    uint8_t volumeLabel[11];           // Volume label
-    uint8_t fileSystemType[8];         // File system type label
-    uint8_t bootCode[420];             // Boot code (padded to make structure exactly 512 bytes)
-    uint16_t bootSectorSignature;      // 0xAA55 at offset 510-511
+    uint8_t boot_signature;            // Boot signature (indicates next three fields are present)
+    uint32_t volume_id;                // Volume ID serial number
+    uint8_t volume_label[11];          // Volume label
+    uint8_t file_system_type[8];       // File system type label
+    uint8_t boot_code[420];            // Boot code (padded to make structure exactly 512 bytes)
+    uint16_t boot_sector_signature;    // 0xAA55 at offset 510-511
 };
 #pragma pack(pop)
 
 // external definitions which are defined in fat32.c but used in other files
-extern struct Fat32BootSector boot_sector;
+extern struct fat32_boot_sector boot_sector;
 extern unsigned int current_directory_cluster; // Default root directory cluster for FAT32
 extern unsigned short ata_base_address;
 extern bool ata_is_master;
@@ -83,42 +83,42 @@ extern bool ata_is_master;
 // a class to hold the fat32 filesystem functions
 typedef struct {
     // Cluster and Sector Operations
-    void (*read_cluster)(struct Fat32BootSector* bs, unsigned int cluster_number, void* buffer);
-    unsigned int (*cluster_to_sector)(struct Fat32BootSector* bs, unsigned int cluster);
-    unsigned int (*get_entries_per_cluster)(struct Fat32BootSector* bs);
-    unsigned int (*get_total_clusters)(struct Fat32BootSector* bs);
-    unsigned int (*get_first_data_sector)(struct Fat32BootSector* bs);
+    void (*read_cluster)(struct fat32_boot_sector* bs, unsigned int cluster_number, void* buffer);
+    unsigned int (*cluster_to_sector)(struct fat32_boot_sector* bs, unsigned int cluster);
+    unsigned int (*get_entries_per_cluster)(struct fat32_boot_sector* bs);
+    unsigned int (*get_total_clusters)(struct fat32_boot_sector* bs);
+    unsigned int (*get_first_data_sector)(struct fat32_boot_sector* bs);
 
     // FAT Table Operations
-    unsigned int (*read_fat_entry)(struct Fat32BootSector* bs, unsigned int cluster);
-    bool (*write_fat_entry)(struct Fat32BootSector* bs, unsigned int cluster, unsigned int value);
-    bool (*mark_cluster_in_fat)(struct Fat32BootSector* bs, unsigned int cluster, unsigned int value);
-    bool (*link_cluster_to_chain)(struct Fat32BootSector* bs, unsigned int parentCluster, unsigned int newCluster);
-    bool (*free_cluster_chain)(struct Fat32BootSector* boot_sector, unsigned int startCluster);
-    unsigned int (*find_free_cluster)(struct Fat32BootSector* bs);
-    unsigned int (*allocate_new_cluster)(struct Fat32BootSector* boot_sector);
-    unsigned int (*get_next_cluster_in_chain)(struct Fat32BootSector* bs, unsigned int currentCluster);
+    unsigned int (*read_fat_entry)(struct fat32_boot_sector* bs, unsigned int cluster);
+    bool (*write_fat_entry)(struct fat32_boot_sector* bs, unsigned int cluster, unsigned int value);
+    bool (*mark_cluster_in_fat)(struct fat32_boot_sector* bs, unsigned int cluster, unsigned int value);
+    bool (*link_cluster_to_chain)(struct fat32_boot_sector* bs, unsigned int parent_cluster, unsigned int new_cluster);
+    bool (*free_cluster_chain)(struct fat32_boot_sector* boot_sector, unsigned int start_cluster);
+    unsigned int (*find_free_cluster)(struct fat32_boot_sector* bs);
+    unsigned int (*allocate_new_cluster)(struct fat32_boot_sector* boot_sector);
+    unsigned int (*get_next_cluster_in_chain)(struct fat32_boot_sector* bs, unsigned int current_cluster);
     bool (*is_end_of_cluster_chain)(unsigned int cluster);
 
     // Directory and Entry Management
-    void (*initialize_new_directory_entries)(struct FAT32DirEntry* entries, unsigned int newDirCluster, unsigned int parentCluster);
-    void (*create_directory_entry)(struct FAT32DirEntry* entry, const char* name, unsigned int cluster, unsigned char attributes);
-    bool (*add_entry_to_directory)(struct Fat32BootSector* bs, unsigned int parentCluster, const char* name, unsigned int newDirCluster, unsigned char attributes);
-    bool (*remove_entry_from_directory)(struct Fat32BootSector* boot_sector, unsigned int parentCluster, struct FAT32DirEntry* entry);
-    unsigned int (*find_next_cluster)(struct Fat32BootSector* bs, const char* dirName, unsigned int currentCluster);
-    void (*read_cluster_dir_entries)(unsigned int currentCluster);
-    bool (*write_cluster)(struct Fat32BootSector* bs, unsigned int cluster, const struct FAT32DirEntry* entries);
-    unsigned int (*read_start_cluster)(struct FAT32DirEntry* entry);
-    struct FAT32DirEntry* (*findFileInDirectory)(const char* filename);
+    void (*initialize_new_directory_entries)(struct fat32_dir_entry* entries, unsigned int new_dir_cluster, unsigned int parent_cluster);
+    void (*create_directory_entry)(struct fat32_dir_entry* entry, const char* name, unsigned int cluster, unsigned char attributes);
+    bool (*add_entry_to_directory)(struct fat32_boot_sector* bs, unsigned int parent_cluster, const char* name, unsigned int new_dir_cluster, unsigned char attributes);
+    bool (*remove_entry_from_directory)(struct fat32_boot_sector* boot_sector, unsigned int parent_cluster, struct fat32_dir_entry* entry);
+    unsigned int (*find_next_cluster)(struct fat32_boot_sector* bs, const char* dir_name, unsigned int current_cluster);
+    void (*read_cluster_dir_entries)(unsigned int current_cluster);
+    bool (*write_cluster)(struct fat32_boot_sector* bs, unsigned int cluster, const struct fat32_dir_entry* entries);
+    unsigned int (*read_start_cluster)(struct fat32_dir_entry* entry);
+    struct fat32_dir_entry* (*find_file_in_directory)(const char* filename);
     bool (*fat32_change_directory)(const char* path);
 
     // File and Data Management
-    int (*fat32_load_file)(const char* filename, void* loadAddress);
+    int (*fat32_load_file)(const char* filename, void* load_address);
 
     // Formatting and Utility Functions
-    void (*formatFilename)(char* dest, unsigned char* src);
+    void (*format_filename)(char* dest, unsigned char* src);
     void (*convert_to_83_format)(unsigned char* dest, const char* src);
-    int (*compare_names)(const char* fatName, const char* regularName);
+    int (*compare_names)(const char* fat_name, const char* regular_name);
     void (*set_fat32_time)(unsigned short* time, unsigned short* date);
 
     // Public functions
@@ -131,7 +131,7 @@ typedef struct {
 
     // File operations
     FILE* (*fat32_open_file)(const char* filename, const char* mode);
-    int (*fat32_read_file)(FILE* file, void* buffer, unsigned int buffer_size, unsigned int bytesToRead);
+    int (*fat32_read_file)(FILE* file, void* buffer, unsigned int buffer_size, unsigned int bytes_to_read);
     bool (*fat32_create_file)(const char* filename);
     bool (*fat32_delete_file)(const char* filename);
 } fat32_class_t;
@@ -142,42 +142,42 @@ void ctor_fat32_class(fat32_class_t* fat32);
 
 
 // Cluster and Sector Operations
-void read_cluster(struct Fat32BootSector* bs, unsigned int cluster_number, void* buffer);
-unsigned int cluster_to_sector(struct Fat32BootSector* bs, unsigned int cluster);
-unsigned int get_entries_per_cluster(struct Fat32BootSector* bs);
-unsigned int get_total_clusters(struct Fat32BootSector* bs);
-unsigned int get_first_data_sector(struct Fat32BootSector* bs);
+void read_cluster(struct fat32_boot_sector* bs, unsigned int cluster_number, void* buffer);
+unsigned int cluster_to_sector(struct fat32_boot_sector* bs, unsigned int cluster);
+unsigned int get_entries_per_cluster(struct fat32_boot_sector* bs);
+unsigned int get_total_clusters(struct fat32_boot_sector* bs);
+unsigned int get_first_data_sector(struct fat32_boot_sector* bs);
 
 // FAT Table Operations
-unsigned int read_fat_entry(struct Fat32BootSector* bs, unsigned int cluster);
-bool write_fat_entry(struct Fat32BootSector* bs, unsigned int cluster, unsigned int value);
-bool mark_cluster_in_fat(struct Fat32BootSector* bs, unsigned int cluster, unsigned int value);
-bool link_cluster_to_chain(struct Fat32BootSector* bs, unsigned int parentCluster, unsigned int newCluster);
-bool free_cluster_chain(struct Fat32BootSector* boot_sector, unsigned int startCluster);
-unsigned int find_free_cluster(struct Fat32BootSector* bs);
-unsigned int allocate_new_cluster(struct Fat32BootSector* boot_sector);
-unsigned int get_next_cluster_in_chain(struct Fat32BootSector* bs, unsigned int currentCluster);
+unsigned int read_fat_entry(struct fat32_boot_sector* bs, unsigned int cluster);
+bool write_fat_entry(struct fat32_boot_sector* bs, unsigned int cluster, unsigned int value);
+bool mark_cluster_in_fat(struct fat32_boot_sector* bs, unsigned int cluster, unsigned int value);
+bool link_cluster_to_chain(struct fat32_boot_sector* bs, unsigned int parent_cluster, unsigned int new_cluster);
+bool free_cluster_chain(struct fat32_boot_sector* boot_sector, unsigned int start_cluster);
+unsigned int find_free_cluster(struct fat32_boot_sector* bs);
+unsigned int allocate_new_cluster(struct fat32_boot_sector* boot_sector);
+unsigned int get_next_cluster_in_chain(struct fat32_boot_sector* bs, unsigned int current_cluster);
 bool is_end_of_cluster_chain(unsigned int cluster);
 
 // Directory and Entry Management
-void initialize_new_directory_entries(struct FAT32DirEntry* entries, unsigned int newDirCluster, unsigned int parentCluster);
-void create_directory_entry(struct FAT32DirEntry* entry, const char* name, unsigned int cluster, unsigned char attributes);
-bool add_entry_to_directory(struct Fat32BootSector* bs, unsigned int parentCluster, const char* name, unsigned int newDirCluster, unsigned char attributes);
-bool remove_entry_from_directory(struct Fat32BootSector* boot_sector, unsigned int parentCluster, struct FAT32DirEntry* entry);
-unsigned int find_next_cluster(struct Fat32BootSector* bs, const char *dirName, unsigned int currentCluster);
-void read_cluster_dir_entries(unsigned int currentCluster);
-bool write_cluster(struct Fat32BootSector* bs, unsigned int cluster, const struct FAT32DirEntry* entries);
-unsigned int read_start_cluster(struct FAT32DirEntry* entry);
-struct FAT32DirEntry* findFileInDirectory(const char* filename);
+void initialize_new_directory_entries(struct fat32_dir_entry* entries, unsigned int new_dir_cluster, unsigned int parent_cluster);
+void create_directory_entry(struct fat32_dir_entry* entry, const char* name, unsigned int cluster, unsigned char attributes);
+bool add_entry_to_directory(struct fat32_boot_sector* bs, unsigned int parent_cluster, const char* name, unsigned int new_dir_cluster, unsigned char attributes);
+bool remove_entry_from_directory(struct fat32_boot_sector* boot_sector, unsigned int parent_cluster, struct fat32_dir_entry* entry);
+unsigned int find_next_cluster(struct fat32_boot_sector* bs, const char *dir_name, unsigned int current_cluster);
+void read_cluster_dir_entries(unsigned int current_cluster);
+bool write_cluster(struct fat32_boot_sector* bs, unsigned int cluster, const struct fat32_dir_entry* entries);
+unsigned int read_start_cluster(struct fat32_dir_entry* entry);
+struct fat32_dir_entry* find_file_in_directory(const char* filename);
 bool fat32_change_directory(const char *path);
 
 // File and Data Management
-int fat32_load_file(const char* filename, void* loadAddress);
+int fat32_load_file(const char* filename, void* load_address);
 
 // Formatting and Utility Functions
-void formatFilename(char* dest, unsigned char* src);
+void format_filename(char* dest, unsigned char* src);
 void convert_to_83_format(unsigned char* dest, const char* src);
-int compare_names(const char* fatName, const char* regularName);
+int compare_names(const char* fat_name, const char* regular_name);
 void set_fat32_time(unsigned short* time, unsigned short* date);
 
 // public functions
@@ -190,7 +190,7 @@ bool fat32_delete_dir(const char* dirname);
 
 // file operations
 FILE* fat32_open_file(const char* filename, const char* mode);
-int fat32_read_file(FILE* file, void* buffer, unsigned int buffer_size, unsigned int bytesToRead);
+int fat32_read_file(FILE* file, void* buffer, unsigned int buffer_size, unsigned int bytes_to_read);
 bool fat32_create_file(const char* filename);
 bool fat32_delete_file(const char* filename);
 

@@ -3,7 +3,7 @@
 #include "lib/libc/stdio.h"
 
 
-program_header_t myHeader = {
+program_header_t my_header = {
     .identifier = "",  // Placeholder, to be filled by the linker
     .magic_number = 0,     // Placeholder, to be filled by the linker
     .entry_point = 0,      // Placeholder, to be filled by the linker

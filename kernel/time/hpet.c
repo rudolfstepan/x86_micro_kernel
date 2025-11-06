@@ -39,10 +39,10 @@ typedef struct {
     uint32_t oem_revision;
     uint32_t creator_id;
     uint32_t creator_revision;
-} __attribute__((packed)) ACPITableHeader;
+} __attribute__((packed)) acpi_table_header;
 
 typedef struct {
-    ACPITableHeader header;
+    acpi_table_header header;
     uint32_t event_timer_block_id;
     uint8_t base_address[12]; // ACPI Generic Address Structure
     uint8_t hpet_number;
@@ -56,7 +56,7 @@ RSDPDescriptor* find_rsdp();
 #define APIC_SIGNATURE "APIC"
 
 typedef struct {
-    ACPITableHeader header;
+    acpi_table_header header;
     uint32_t lapic_address;
     uint32_t flags;
     uint8_t entries[];
@@ -65,14 +65,14 @@ typedef struct {
 typedef struct {
     uint8_t type;
     uint8_t length;
-} __attribute__((packed)) MADTEntryHeader;
+} __attribute__((packed)) madt_entry_header;
 
 typedef struct {
-    MADTEntryHeader header;
+    madt_entry_header header;
     uint8_t source_irq;
     uint32_t global_system_interrupt;
     uint16_t flags;
-} __attribute__((packed)) MADTInterruptSourceOverride;
+} __attribute__((packed)) madt_interrupt_source_override;
 
 void* map_physical_memory(uintptr_t physical_address, size_t size) {
     // In systems without paging, physical memory can be directly accessed
@@ -86,12 +86,12 @@ int get_hpet_irq_from_madt(uint8_t* irq) {
         return -1;
     }
 
-    ACPITableHeader* rsdt = (ACPITableHeader*)map_physical_memory(rsdp->rsdt_address, sizeof(ACPITableHeader));
-    uint32_t* entries = (uint32_t*)((uintptr_t)rsdt + sizeof(ACPITableHeader));
-    int entry_count = (rsdt->length - sizeof(ACPITableHeader)) / sizeof(uint32_t);
+    acpi_table_header* rsdt = (acpi_table_header*)map_physical_memory(rsdp->rsdt_address, sizeof(acpi_table_header));
+    uint32_t* entries = (uint32_t*)((uintptr_t)rsdt + sizeof(acpi_table_header));
+    int entry_count = (rsdt->length - sizeof(acpi_table_header)) / sizeof(uint32_t);
 
     for (int i = 0; i < entry_count; i++) {
-        ACPITableHeader* header = (ACPITableHeader*)map_physical_memory(entries[i], sizeof(ACPITableHeader));
+        acpi_table_header* header = (acpi_table_header*)map_physical_memory(entries[i], sizeof(acpi_table_header));
         if (memcmp(header->signature, APIC_SIGNATURE, 4) == 0) {
             MADT* madt = (MADT*)header;
 
@@ -99,10 +99,10 @@ int get_hpet_irq_from_madt(uint8_t* irq) {
             uint8_t* end = (uint8_t*)madt + madt->header.length;
 
             while (ptr < end) {
-                MADTEntryHeader* entry = (MADTEntryHeader*)ptr;
+                madt_entry_header* entry = (madt_entry_header*)ptr;
 
                 if (entry->type == 2) { // Type 2: Interrupt Source Override
-                    MADTInterruptSourceOverride* iso = (MADTInterruptSourceOverride*)entry;
+                    madt_interrupt_source_override* iso = (madt_interrupt_source_override*)entry;
                     if (iso->source_irq == 0) { // Check if it overrides IRQ 0
                         *irq = iso->global_system_interrupt;
                         printf("HPET IRQ from MADT: %u\n", *irq);
@@ -147,12 +147,12 @@ int check_hpet() {
     RSDPDescriptor* rsdp = find_rsdp();
     if (!rsdp) return 0;
 
-    ACPITableHeader* rsdt = (ACPITableHeader*)(uintptr_t)rsdp->rsdt_address;
-    uint32_t* entries = (uint32_t*)((uintptr_t)rsdt + sizeof(ACPITableHeader));
-    int entry_count = (rsdt->length - sizeof(ACPITableHeader)) / sizeof(uint32_t);
+    acpi_table_header* rsdt = (acpi_table_header*)(uintptr_t)rsdp->rsdt_address;
+    uint32_t* entries = (uint32_t*)((uintptr_t)rsdt + sizeof(acpi_table_header));
+    int entry_count = (rsdt->length - sizeof(acpi_table_header)) / sizeof(uint32_t);
 
     for (int i = 0; i < entry_count; i++) {
-        ACPITableHeader* header = (ACPITableHeader*)(uintptr_t)entries[i];
+        acpi_table_header* header = (acpi_table_header*)(uintptr_t)entries[i];
         if (memcmp(header->signature, HPET_SIGNATURE, 4) == 0) {
             return 1; // HPET is supported
         }
@@ -211,17 +211,17 @@ void* get_hpet_base_from_acpi() {
         return NULL;
     }
 
-    ACPITableHeader* rsdt = (ACPITableHeader*)(uintptr_t)rsdp->rsdt_address;
+    acpi_table_header* rsdt = (acpi_table_header*)(uintptr_t)rsdp->rsdt_address;
     if (memcmp(rsdt->signature, "RSDT", 4) != 0) {
         printf("RSDT not found\n");
         return NULL;
     }
 
-    uint32_t* entries = (uint32_t*)((uintptr_t)rsdt + sizeof(ACPITableHeader));
-    int entry_count = (rsdt->length - sizeof(ACPITableHeader)) / sizeof(uint32_t);
+    uint32_t* entries = (uint32_t*)((uintptr_t)rsdt + sizeof(acpi_table_header));
+    int entry_count = (rsdt->length - sizeof(acpi_table_header)) / sizeof(uint32_t);
 
     for (int i = 0; i < entry_count; i++) {
-        ACPITableHeader* header = (ACPITableHeader*)(uintptr_t)entries[i];
+        acpi_table_header* header = (acpi_table_header*)(uintptr_t)entries[i];
         if (memcmp(header->signature, "HPET", 4) == 0) {
             // HPET table found
             uint8_t* hpet_table = (uint8_t*)header;

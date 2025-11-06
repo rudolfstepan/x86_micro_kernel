@@ -9,7 +9,7 @@
 // fat32_cluster.c: Contains the implementation of the FAT32 I/O functions.
 
 unsigned int current_directory_cluster = 2; // Default root directory cluster for FAT32
-struct Fat32BootSector boot_sector;
+struct fat32_boot_sector boot_sector;
 
 unsigned short ata_base_address;
 bool ata_is_master;
@@ -32,14 +32,14 @@ int fat32_init_fs(unsigned short base, bool is_master) {
     
     // Debug: Show parsed values
     printf("Parsed boot sector:\n");
-    printf("  bytesPerSector: %u (offset 11-12)\n", boot_sector.bytesPerSector);
-    printf("  sectorsPerCluster: %u (offset 13)\n", boot_sector.sectorsPerCluster);
-    printf("  reservedSectorCount: %u (offset 14-15)\n", boot_sector.reservedSectorCount);
-    printf("  numberOfFATs: %u (offset 16)\n", boot_sector.numberOfFATs);
-    printf("  rootEntryCount: %u (offset 17-18)\n", boot_sector.rootEntryCount);
-    printf("  FATSize32: %u (offset 36-39)\n", boot_sector.FATSize32);
-    printf("  rootCluster: %u (offset 44-47)\n", boot_sector.rootCluster);
-    printf("  bootSignature: 0x%02X (offset 66)\n", boot_sector.bootSignature);
+    printf("  bytesPerSector: %u (offset 11-12)\n", boot_sector.bytes_per_sector);
+    printf("  sectorsPerCluster: %u (offset 13)\n", boot_sector.sectors_per_cluster);
+    printf("  reservedSectorCount: %u (offset 14-15)\n", boot_sector.reserved_sector_count);
+    printf("  numberOfFATs: %u (offset 16)\n", boot_sector.number_of_fats);
+    printf("  rootEntryCount: %u (offset 17-18)\n", boot_sector.root_entry_count);
+    printf("  FATSize32: %u (offset 36-39)\n", boot_sector.fat_size_32);
+    printf("  rootCluster: %u (offset 44-47)\n", boot_sector.root_cluster);
+    printf("  bootSignature: 0x%02X (offset 66)\n", boot_sector.boot_signature);
     
     // Check boot signature at offset 510-511
     uint8_t* sector_end = bs_bytes + 510;
@@ -47,79 +47,60 @@ int fat32_init_fs(unsigned short base, bool is_master) {
 
 #ifdef FAT32_STRICT_VALIDATION
     // Real hardware: Strict validation
-    if (boot_sector.bootSignature != 0xAA55) {
-        printf("+++ Invalid boot signature: 0x%04X +++\n", boot_sector.bootSignature);
+    if (boot_sector.boot_signature != 0xAA55) {
+        printf("+++ Invalid boot signature: 0x%04X +++\n", boot_sector.boot_signature);
         return FAILURE;
     }
     
-    if (boot_sector.bytesPerSector != 512 && boot_sector.bytesPerSector != 1024 &&
-        boot_sector.bytesPerSector != 2048 && boot_sector.bytesPerSector != 4096) {
-        printf("+++ Invalid bytes per sector: %u +++\n", boot_sector.bytesPerSector);
+    if (boot_sector.bytes_per_sector != 512 && boot_sector.bytes_per_sector != 1024 &&
+        boot_sector.bytes_per_sector != 2048 && boot_sector.bytes_per_sector != 4096) {
+        printf("+++ Invalid bytes per sector: %u +++\n", boot_sector.bytes_per_sector);
         return FAILURE;
     }
     
-    if (boot_sector.sectorsPerCluster == 0 || 
-        (boot_sector.sectorsPerCluster & (boot_sector.sectorsPerCluster - 1)) != 0) {
-        printf("+++ Invalid sectors per cluster: %u +++\n", boot_sector.sectorsPerCluster);
+    if (boot_sector.sectors_per_cluster == 0 || 
+        (boot_sector.sectors_per_cluster & (boot_sector.sectors_per_cluster - 1)) != 0) {
+        printf("+++ Invalid sectors per cluster: %u +++\n", boot_sector.sectors_per_cluster);
         return FAILURE;
     }
     
-    if (boot_sector.rootCluster < 2) {
-        printf("+++ Invalid root cluster: %u +++\n", boot_sector.rootCluster);
+    if (boot_sector.root_cluster < 2) {
+        printf("+++ Invalid root cluster: %u +++\n", boot_sector.root_cluster);
         return FAILURE;
     }
     
     printf("FAT32 (strict): root=%u, bps=%u, spc=%u\n",
-           boot_sector.rootCluster, boot_sector.bytesPerSector, boot_sector.sectorsPerCluster);
+           boot_sector.root_cluster, boot_sector.bytes_per_sector, boot_sector.sectors_per_cluster);
 #else
     // QEMU: Basic validation only
-    printf("FAT32 (relaxed): root=%u\n", boot_sector.rootCluster);
+    printf("FAT32 (relaxed): root=%u\n", boot_sector.root_cluster);
 #endif
 
     ata_is_master = is_master;
     ata_base_address = base;
-    current_directory_cluster = boot_sector.rootCluster;
+    current_directory_cluster = boot_sector.root_cluster;
     
     printf("FAT32 init complete, returning SUCCESS\n");
     return SUCCESS;
-}
-
-// formatFilename function
-void formatFilename(char* dest, unsigned char* src) {
-    int i, j;
-
-    // Copy filename (up to 8 characters, stop at space)
-    for (i = 0, j = 0; i < 8 && src[i] != ' '; i++, j++) {
-        dest[j] = src[i];
-    }
-
-    // If there's an extension, add a dot and copy the extension
-    if (src[8] != ' ') {
-        dest[j++] = '.';
-        for (i = 8; i < 11 && src[i] != ' '; i++, j++) {
-            dest[j] = src[i];
-        }
-    }
-    dest[j] = '\0'; // Null-terminate the string
 }
 
 // ------------------------------------------------------------------
 // Compares a FAT32 8.3 formatted name with a regular string
 // Returns 0 if the names match, -1 otherwise
 // ------------------------------------------------------------------
-int compare_names(const char* fatName, const char* regularName) {
+int compare_names(const char* fat_name, const char* regular_name) {
     int i, j;
 
     // Compare the name part (first 8 characters)
     for (i = 0, j = 0; i < 8; i++) {
-        if (regularName[j] == '\0' || regularName[j] == '.') {
-            // If we reached the end of the regular name or a dot, the rest of the fatName should be spaces
-            if (fatName[i] != ' ') {
+        if (regular_name[j] == '\0' || regular_name[j] == '.') {
+            // If we reached the end of the regular name or a dot, the rest of the fat_name should be spaces
+            if (fat_name[i] != ' ') {
                 return -1; // Not a match
             }
         } else {
             // Compare characters (case-insensitive)
-            if (toupper(fatName[i]) != toupper(regularName[j])) {
+            if (toupper(fat_name[i]) != toupper(regular_name[j])) {
                 return -1; // Not a match
             }
             j++;
@@ -127,20 +108,20 @@ int compare_names(const char* fatName, const char* regularName) {
     }
 
     // If the regular name has a dot for the extension, skip it
-    if (regularName[j] == '.') {
+    if (regular_name[j] == '.') {
         j++;
     }
 
     // Compare the extension part (last 3 characters)
     for (i = 8; i < 11; i++) {
-        if (regularName[j] == '\0') {
-            // If we reached the end of the regular name, the rest of the fatName should be spaces
-            if (fatName[i] != ' ') {
+        if (regular_name[j] == '\0') {
+            // If we reached the end of the regular name, the rest of the fat_name should be spaces
+            if (fat_name[i] != ' ') {
                 return -1; // Not a match
             }
         } else {
             // Compare characters (case-insensitive)
-            if (toupper(fatName[i]) != toupper(regularName[j])) {
+            if (toupper(fat_name[i]) != toupper(regular_name[j])) {
                 return -1; // Not a match
             }
             j++;
@@ -148,7 +129,7 @@ int compare_names(const char* fatName, const char* regularName) {
     }
 
     // If we reached the end of both strings without a mismatch, it's a match
-    return (regularName[j] == '\0') ? 0 : -1;
+    return (regular_name[j] == '\0') ? 0 : -1;
 }
 
 void convert_to_83_format(unsigned char* dest, const char* src) {
@@ -205,42 +186,42 @@ void set_fat32_time(unsigned short* time, unsigned short* date) {
     }
 }
 
-unsigned int read_fat_entry(struct Fat32BootSector* boot_sector, unsigned int cluster) {
-    unsigned int fatOffset = cluster * 4; // Each FAT32 entry is 4 bytes
-    unsigned int fatSector = boot_sector->reservedSectorCount + (fatOffset / boot_sector->bytesPerSector);
-    unsigned int entOffset = fatOffset % boot_sector->bytesPerSector;
+unsigned int read_fat_entry(struct fat32_boot_sector* boot_sector, unsigned int cluster) {
+    unsigned int fat_offset = cluster * 4; // Each FAT32 entry is 4 bytes
+    unsigned int fat_sector = boot_sector->reserved_sector_count + (fat_offset / boot_sector->bytes_per_sector);
+    unsigned int ent_offset = fat_offset % boot_sector->bytes_per_sector;
     // Buffer to read a part of the FAT
-    unsigned char buffer[boot_sector->bytesPerSector];
+    unsigned char buffer[boot_sector->bytes_per_sector];
     // Read the sector of the FAT that contains the current cluster's entry
-    if (!ata_read_sector(ata_base_address, fatSector, buffer, ata_is_master)) {
+    if (!ata_read_sector(ata_base_address, fat_sector, buffer, ata_is_master)) {
         // Handle read error
         printf("Error: Failed to read the sector containing the FAT entry.\n");
         return INVALID_CLUSTER;
     }
     // Read the 4 bytes of the current cluster's entry from the buffer
-    unsigned int nextCluster = *(unsigned int*)&buffer[entOffset];
+    unsigned int next_cluster = *(unsigned int*)&buffer[ent_offset];
     // Mask out the high 4 bits (reserved for FAT32)
-    nextCluster &= 0x0FFFFFFF;
-    return nextCluster;
+    next_cluster &= 0x0FFFFFFF;
+    return next_cluster;
 }
 
-bool write_fat_entry(struct Fat32BootSector* boot_sector, unsigned int cluster, unsigned int value) {
-    unsigned int fatOffset = cluster * 4; // Each FAT32 entry is 4 bytes
-    unsigned int fatSector = boot_sector->reservedSectorCount + (fatOffset / boot_sector->bytesPerSector);
-    unsigned int entOffset = fatOffset % boot_sector->bytesPerSector;
+bool write_fat_entry(struct fat32_boot_sector* boot_sector, unsigned int cluster, unsigned int value) {
+    unsigned int fat_offset = cluster * 4; // Each FAT32 entry is 4 bytes
+    unsigned int fat_sector = boot_sector->reserved_sector_count + (fat_offset / boot_sector->bytes_per_sector);
+    unsigned int ent_offset = fat_offset % boot_sector->bytes_per_sector;
     // Buffer to read and modify a part of the FAT
-    unsigned char buffer[boot_sector->bytesPerSector];
+    unsigned char buffer[boot_sector->bytes_per_sector];
     // Read the sector of the FAT that contains the current cluster's entry
-    if (!ata_read_sector(ata_base_address, fatSector, buffer, ata_is_master)) {
+    if (!ata_read_sector(ata_base_address, fat_sector, buffer, ata_is_master)) {
         // Handle read error
         printf("Error: Failed to read the sector containing the FAT entry.\n");
         return false;
     }
     // Modify the FAT entry in the buffer
-    unsigned int* fatEntry = (unsigned int*)&buffer[entOffset];
-    *fatEntry = (*fatEntry & 0xF0000000) | (value & 0x0FFFFFFF); // Preserve high 4 bits, modify the rest
+    unsigned int* fat_entry = (unsigned int*)&buffer[ent_offset];
+    *fat_entry = (*fat_entry & 0xF0000000) | (value & 0x0FFFFFFF); // Preserve high 4 bits, modify the rest
     // Write the modified sector back to the FAT
-    if (!ata_write_sector(ata_base_address, fatSector, buffer, ata_is_master)) {
+    if (!ata_write_sector(ata_base_address, fat_sector, buffer, ata_is_master)) {
         // Handle write error
         printf("Error: Failed to write the modified sector back to the FAT.\n");
         return false;
@@ -248,23 +229,23 @@ bool write_fat_entry(struct Fat32BootSector* boot_sector, unsigned int cluster, 
     return true;
 }
 
-bool remove_entry_from_directory(struct Fat32BootSector* boot_sector, unsigned int parentCluster, struct FAT32DirEntry* entry) {
-    unsigned int entriesPerCluster = get_entries_per_cluster(boot_sector);
-    struct FAT32DirEntry entries[entriesPerCluster];
-    unsigned int currentCluster = parentCluster;
+bool remove_entry_from_directory(struct fat32_boot_sector* boot_sector, unsigned int parent_cluster, struct fat32_dir_entry* entry) {
+    unsigned int entries_per_cluster = get_entries_per_cluster(boot_sector);
+    struct fat32_dir_entry entries[entries_per_cluster];
+    unsigned int current_cluster = parent_cluster;
 
-    while (currentCluster < FAT32_EOC_MIN) {
-        read_cluster(boot_sector, currentCluster, entries);
+    while (current_cluster < FAT32_EOC_MIN) {
+        read_cluster(boot_sector, current_cluster, entries);
 
-        for (unsigned int i = 0; i < entriesPerCluster; ++i) {
-            if (memcmp(&entries[i], entry, sizeof(struct FAT32DirEntry)) == 0) {
-                memset(&entries[i], 0, sizeof(struct FAT32DirEntry));
-                write_cluster(boot_sector, currentCluster, entries);
+        for (unsigned int i = 0; i < entries_per_cluster; ++i) {
+            if (memcmp(&entries[i], entry, sizeof(struct fat32_dir_entry)) == 0) {
+                memset(&entries[i], 0, sizeof(struct fat32_dir_entry));
+                write_cluster(boot_sector, current_cluster, entries);
                 return true;
             }
         }
 
-        currentCluster = get_next_cluster_in_chain(boot_sector, currentCluster);
+        current_cluster = get_next_cluster_in_chain(boot_sector, current_cluster);
     }
 
     return false;
@@ -282,14 +263,14 @@ void ata_debug_bootsector(drive_t* drive) {
     }
 
     printf("\nBoot sector read successful!\n");
-    printf("Bytes per sector: %u\n", boot_sector.bytesPerSector);
-    printf("Sectors per cluster: %u\n", boot_sector.sectorsPerCluster);
-    printf("Reserved sectors: %u\n", boot_sector.reservedSectorCount);
-    printf("Number of FATs: %u\n", boot_sector.numberOfFATs);
-    printf("Root entry count: %u\n", boot_sector.rootEntryCount);
-    printf("FAT size (32-bit): %u\n", boot_sector.FATSize32);
-    printf("Root cluster: %u\n", boot_sector.rootCluster);
-    printf("Boot signature: 0x%02X\n", boot_sector.bootSignature);
+    printf("Bytes per sector: %u\n", boot_sector.bytes_per_sector);
+    printf("Sectors per cluster: %u\n", boot_sector.sectors_per_cluster);
+    printf("Reserved sectors: %u\n", boot_sector.reserved_sector_count);
+    printf("Number of FATs: %u\n", boot_sector.number_of_fats);
+    printf("Root entry count: %u\n", boot_sector.root_entry_count);
+    printf("FAT size (32-bit): %u\n", boot_sector.fat_size_32);
+    printf("Root cluster: %u\n", boot_sector.root_cluster);
+    printf("Boot signature: 0x%02X\n", boot_sector.boot_signature);
     
     // Check signature at offset 510-511
     uint8_t* bs_bytes = (uint8_t*)&boot_sector;

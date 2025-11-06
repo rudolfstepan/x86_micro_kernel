@@ -39,14 +39,14 @@ void ctor_fat32_class(fat32_class_t* fat32) {
     fat32->read_cluster_dir_entries = read_cluster_dir_entries;
     fat32->write_cluster = write_cluster;
     fat32->read_start_cluster = read_start_cluster;
-    fat32->findFileInDirectory = findFileInDirectory;
+    fat32->find_file_in_directory = find_file_in_directory;
     fat32->fat32_change_directory = fat32_change_directory;
 
     // File and Data Management
     fat32->fat32_load_file = fat32_load_file;
 
     // Formatting and Utility Functions
-    fat32->formatFilename = formatFilename;
+    fat32->format_filename = format_filename;
     fat32->convert_to_83_format = convert_to_83_format;
     fat32->compare_names = compare_names;
     fat32->set_fat32_time = set_fat32_time;
@@ -123,7 +123,7 @@ void init_fs(drive_t* drive) {
             
             // Copy the already-read boot sector to fat32's global variable
             printf("Copying boot sector to FAT32 module (drive: %s)...\n", drive->name);
-            extern struct Fat32BootSector boot_sector;
+            extern struct fat32_boot_sector boot_sector;
             memcpy(&boot_sector, buffer, 512);
             
             // Set FAT32 globals directly (avoid re-reading boot sector)
@@ -132,11 +132,11 @@ void init_fs(drive_t* drive) {
             extern unsigned int current_directory_cluster;
             
             printf("Setting FAT32 globals: base=0x%X, is_master=%d, rootCluster=%u\n",
-                   drive->base, drive->is_master, boot_sector.rootCluster);
+                   drive->base, drive->is_master, boot_sector.root_cluster);
             
             ata_base_address = drive->base;
             ata_is_master = drive->is_master;
-            current_directory_cluster = boot_sector.rootCluster;
+            current_directory_cluster = boot_sector.root_cluster;
             
             printf("FAT32 initialized for drive %s\n", drive->name);
             

@@ -16,15 +16,15 @@ Process process_list[MAX_PROGRAMS];
 int next_pid = 1; // PID counter starting at 1
 
 // execute the program at the specified entry point
-void start_program_execution(long entryPoint) {
-    void (*program)() = (void (*)())entryPoint;
+void start_program_execution(long entry_point) {
+    void (*program)() = (void (*)())entry_point;
     program(); // Jump to the program
 }
 
 // load the program into memory
-void load_and_execute_program(const char* programName) {
+void load_and_execute_program(const char* program_name) {
     // Load the program into the specified memory location
-    if (fat32_load_file(programName, (void*)PROGRAM_LOAD_ADDRESS) > 0) {
+    if (fat32_load_file(program_name, (void*)PROGRAM_LOAD_ADDRESS) > 0) {
         program_header_t* header = (program_header_t*)PROGRAM_LOAD_ADDRESS;
 
         // print the program header details
@@ -57,17 +57,17 @@ void load_and_execute_program(const char* programName) {
 
 
     } else {
-        printf("%s not found\n", programName);
+        printf("%s not found\n", program_name);
     }
 }
 
-void load_program_into_memory(const char* programName, uint32_t address) {
+void load_program_into_memory(const char* program_name, uint32_t address) {
     // Load the program into the specified memory location
-    if (fat32_load_file(programName, (void*)address) > 0) {
+    if (fat32_load_file(program_name, (void*)address) > 0) {
         program_header_t* header = (program_header_t*)address;
-        printf("entryPoint: %p\n", address + header->entry_point);
+        printf("entry_point: %p\n", address + header->entry_point);
     } else {
-        printf("%s not found\n", programName);
+        printf("%s not found\n", program_name);
     }
 }
 

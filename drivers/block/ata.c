@@ -90,16 +90,41 @@ bool wait_for_drive_data_ready(unsigned short base, unsigned int timeout_ms) {
     // QEMU: First wait for BSY to clear, then wait for DRQ
     printf("      wait_for_drive_data_ready: Step A - waiting for BSY clear\n");
     // Step 1: Wait for BSY to clear
-    while (inb(ATA_STATUS(base)) & 0x80) {  // Wait while BSY bit is set
+    while (1) {
+        uint8_t status = inb(ATA_STATUS(base));
+        
+        // Immediate debug on first read
+        if (elapsed_time == 0) {
+            printf("      Initial status=0x%02X (BSY=%d, DRQ=%d, ERR=%d)\n",
+                   status, !!(status & 0x80), !!(status & 0x08), !!(status & 0x01));
+        }
+        
+        // Check for floating bus (0xFF means no drive)
+        if (status == 0xFF) {
+            printf("      ERROR: Drive not present (status=0xFF)\n");
+            return false;
+        }
+        
+        // Check for error
+        if (status & 0x01) {
+            uint8_t error = inb(ATA_ERROR(base));
+            printf("      ERROR: Drive returned error status (ERR=0x%02X)\n", error);
+            return false;
+        }
+        
+        // Check if BSY cleared
+        if (!(status & 0x80)) {
+            break;  // BSY cleared
+        }
+        
         if (elapsed_time >= timeout_ms) {
-            printf("      ERROR: BSY still set after %u ms\n", elapsed_time);
+            printf("      ERROR: BSY still set after %u ms (final status=0x%02X)\n", elapsed_time, status);
             return false;
         }
         pit_delay(ATA_POLL_DELAY_MS);
         elapsed_time += ATA_POLL_DELAY_MS;
         
         if (elapsed_time % 50 == 0) {  // Debug every 50ms
-            uint8_t status = inb(ATA_STATUS(base));
             printf("      [%u ms] status=0x%02X (BSY still set)\n", elapsed_time, status);
         }
     }
