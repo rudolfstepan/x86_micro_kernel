@@ -773,33 +773,116 @@ void cmd_start_task(int arg_count, const char** arguments) {
 
 void cmd_net(int arg_count, const char** arguments) {
     if (arg_count == 0) {
-        printf("NET command without arguments\n");
+        printf("NET command - Network interface management\n");
+        printf("Usage:\n");
+        printf("  NET STATUS  - Show network interface status\n");
+        printf("  NET SEND    - Send test packet\n");
+        printf("  NET INFO    - Show detailed network information\n");
+        printf("  NET LISTEN [n] - Listen for incoming packets (n=count, default 10)\n");
+        printf("  NET RECV    - Try to receive one packet\n");
         return;
     }
 
-    if (strcmp(arguments[0], "LIST") == 0) {
-        // List network interfaces
-        //list_network_interfaces();
-    } else if (strcmp(arguments[0], "INFO") == 0) {
-        // Get network interface information
-        //get_network_interface_info();
-    } else if(strcmp(arguments[0], "SEND") == 0) {
-        // Send a packet
-        //send_packet();
-
-        //test_loopback();
-        //e1000_send_test_packet();
+    if (strcmp(arguments[0], "STATUS") == 0 || strcmp(arguments[0], "status") == 0) {
+        // Show network status
+        if (ne2000_is_initialized()) {
+            printf("Network card: NE2000 (initialized)\n");
+            ne2000_print_mac_address();
+        } else {
+            printf("No network card initialized\n");
+        }
+    } else if (strcmp(arguments[0], "INFO") == 0 || strcmp(arguments[0], "info") == 0) {
+        // Get detailed network interface information
+        ne2000_print_status();
+    } else if(strcmp(arguments[0], "SEND") == 0 || strcmp(arguments[0], "send") == 0) {
+        // Send a test packet
+        if (!ne2000_is_initialized()) {
+            printf("Network card not initialized. Cannot send packet.\n");
+            return;
+        }
+        printf("Sending test packet via NE2000...\n");
         ne2000_test_send();
-        //test_vmxnet3();
-        //rtl8139_send_test_packet();
-
-
-    } else if(strcmp(arguments[0], "RECV") == 0) {
-        // Receive a packet
-        //receive_packet();
-    }
-    
-    else {
+    } else if(strcmp(arguments[0], "LISTEN") == 0 || strcmp(arguments[0], "listen") == 0) {
+        // Listen for incoming packets
+        if (!ne2000_is_initialized()) {
+            printf("Network card not initialized.\n");
+            return;
+        }
+        
+        int max_packets = 10;  // Default
+        if (arg_count > 1) {
+            max_packets = atoi(arguments[1]);
+            if (max_packets <= 0 || max_packets > 100) {
+                printf("Invalid packet count. Using default (10).\n");
+                max_packets = 10;
+            }
+        }
+        
+        printf("Listening for up to %d packets... (Press Ctrl+C to stop)\n", max_packets);
+        printf("Waiting for network traffic...\n");
+        
+        uint8_t buffer[1500];
+        int packets_received = 0;
+        
+        for (int i = 0; i < max_packets * 100000; i++) {
+            int len = ne2000_receive_packet(buffer, sizeof(buffer));
+            if (len > 0) {
+                packets_received++;
+                printf("\n[Packet %d] Received %d bytes:\n", packets_received, len);
+                
+                // Print packet header info
+                if (len >= 14) {
+                    printf("  Dst MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                           buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5]);
+                    printf("  Src MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                           buffer[6], buffer[7], buffer[8], buffer[9], buffer[10], buffer[11]);
+                    printf("  EtherType: 0x%04X\n", (buffer[12] << 8) | buffer[13]);
+                }
+                
+                // Print first 64 bytes of payload
+                printf("  Data: ");
+                int print_len = len < 64 ? len : 64;
+                for (int j = 0; j < print_len; j++) {
+                    printf("%02X ", buffer[j]);
+                    if ((j + 1) % 16 == 0) printf("\n        ");
+                }
+                printf("\n");
+                
+                if (packets_received >= max_packets) {
+                    break;
+                }
+            }
+            
+            // Small delay between checks
+            if (i % 10000 == 0) {
+                printf(".");  // Progress indicator
+            }
+        }
+        
+        printf("\n%d packet(s) received.\n", packets_received);
+        
+    } else if(strcmp(arguments[0], "RECV") == 0 || strcmp(arguments[0], "recv") == 0) {
+        // Try to receive one packet
+        if (!ne2000_is_initialized()) {
+            printf("Network card not initialized.\n");
+            return;
+        }
+        
+        uint8_t buffer[1500];
+        int len = ne2000_receive_packet(buffer, sizeof(buffer));
+        
+        if (len > 0) {
+            printf("Received %d bytes:\n", len);
+            for (int i = 0; i < len && i < 128; i++) {
+                printf("%02X ", buffer[i]);
+                if ((i + 1) % 16 == 0) printf("\n");
+            }
+            printf("\n");
+        } else {
+            printf("No packet available.\n");
+        }
+    } else {
         printf("Unknown NET command: %s\n", arguments[0]);
+        printf("Type 'NET' without arguments for help\n");
     }
 }

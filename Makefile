@@ -485,6 +485,80 @@ run-debug: iso
 		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
 		-s -S -monitor stdio -vga vmware
 
+# Run with socket multicast network (for loopback testing)
+run-net-test: iso
+	@echo "Starting QEMU with socket multicast network (for loopback testing)..."
+	@echo "  - This allows packets to potentially loop back"
+	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device ne2k_pci,netdev=net0 -netdev socket,id=net0,mcast=230.0.0.1:1234 \
+		-monitor stdio -vga vmware
+
+# Run with network packet dumping (creates ne2000-dump.pcap)
+run-net-dump: iso
+	@echo "Starting QEMU with network packet dumping..."
+	@echo "  - Packets will be logged to ne2000-dump.pcap"
+	@echo "  - Use Wireshark to analyze: wireshark ne2000-dump.pcap"
+	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device ne2k_pci,netdev=net0 \
+		-netdev user,id=net0 \
+		-object filter-dump,id=dump0,netdev=net0,file=ne2000-dump.pcap \
+		-monitor stdio -vga vmware
+
+# Run with TAP networking (requires sudo and TAP interface setup)
+run-net-tap: iso
+	@echo "Starting QEMU with TAP networking (bridged to LAN)..."
+	@echo "  - This requires sudo access and a configured TAP interface"
+	@echo "  - Run 'make setup-tap' first to create the TAP interface"
+	@echo "  - Or use 'sudo make run-net-tap-sudo' to setup automatically"
+	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device ne2k_pci,netdev=net0,mac=52:54:00:12:34:56 \
+		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
+		-monitor stdio -vga vmware
+
+# Run with TAP networking using sudo (auto-setup)
+run-net-tap-sudo: iso
+	@echo "Starting QEMU with TAP networking (with sudo auto-setup)..."
+	@echo "  - Setting up TAP interface..."
+	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
+	@sudo ip link set tap0 up
+	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
+	@echo "  - TAP interface ready (10.0.2.1/24)"
+	@echo "  - Your kernel will need to configure IP (e.g., 10.0.2.15)"
+	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device ne2k_pci,netdev=net0,mac=52:54:00:12:34:56 \
+		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
+		-monitor stdio -vga vmware
+
+# Setup TAP interface (run once, requires sudo)
+setup-tap:
+	@echo "Setting up TAP network interface..."
+	@echo "  - This requires sudo access"
+	sudo ip tuntap add dev tap0 mode tap user $(USER)
+	sudo ip link set tap0 up
+	sudo ip addr add 10.0.2.1/24 dev tap0
+	@echo "  - TAP interface 'tap0' created at 10.0.2.1/24"
+	@echo "  - Your kernel can use IPs in 10.0.2.0/24 range"
+	@echo "  - Run 'make run-net-tap' to start QEMU"
+
+# Cleanup TAP interface
+cleanup-tap:
+	@echo "Removing TAP network interface..."
+	sudo ip link set tap0 down 2>/dev/null || true
+	sudo ip tuntap del dev tap0 mode tap 2>/dev/null || true
+	@echo "  - TAP interface removed"
+
 # ============================================================================
 # DEBUGGING INFO
 # ============================================================================

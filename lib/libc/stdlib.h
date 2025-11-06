@@ -52,6 +52,9 @@ void free(void* ptr);
 void secure_free(void *ptr, size_t size);
 void* memmove(void* dest, const void* src, size_t n);
 
+// String conversion functions
+int atoi(const char* str);
+
 // wrapper functions for system calls
 void delay_ms(uint32_t ms);
 void wait_enter_pressed();
