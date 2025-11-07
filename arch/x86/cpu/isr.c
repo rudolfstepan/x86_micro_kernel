@@ -1,4 +1,6 @@
 #include "arch/x86/sys.h"
+#include "arch/x86/include/interrupt.h"
+#include "include/kernel/panic.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 
@@ -78,30 +80,31 @@ const char* exception_messages[] =
 
 void fault_handler(Registers* r) {
     if (r->irq_number < 32) {
-        // Display the exception message
-        printf("System Exception: %s\n\n", exception_messages[(int)r->irq_number]);
-
-        // Print registers in a compact table to fit 80 characters width
-        // printf("Registers:\n");
-        // printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-        // printf("|   gs   |   fs   |   es   |   ds   |   edi  |   esi  |   ebp  |   esp  |\n");
-        // printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-        // printf("| 0x%04X | 0x%04X | 0x%04X | 0x%04X | 0x%08X | 0x%08X | 0x%08X | 0x%08X |\n",
-        //        r->gs, r->fs, r->es, r->ds, r->edi, r->esi, r->ebp, r->esp);
-        // printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-
-        // printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-        // printf("|   ebx  |   edx  |   ecx  |   eax  |  irq   |        |        |        |\n");
-        // printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-        // printf("| 0x%08X | 0x%08X | 0x%08X | 0x%08X |   %04d   |        |        |        |\n",
-        //        r->ebx, r->edx, r->ecx, r->eax, r->irq_number);
-        // printf("+--------+--------+--------+--------+--------+--------+--------+--------+\n");
-
-        // Display system halted message
-        //printf("System Halted! IRQ Number: %d\n", r->irq_number);
-
-        // Halt the system
-        for (;;);
+        // Check privilege level
+        uint16_t cpl = r->cs & 0x3;
+        
+        if (cpl == 0) {
+            // Kernel exception - unrecoverable
+            char panic_msg[128];
+            snprintf(panic_msg, sizeof(panic_msg),
+                     "Kernel exception: %s (IRQ %d) at EIP=0x%08X",
+                     exception_messages[r->irq_number],
+                     r->irq_number,
+                     r->eip);
+            panic(panic_msg);
+        } else {
+            // User mode exception
+            printf("\n*** USER PROCESS EXCEPTION ***\n");
+            printf("Exception: %s (IRQ %d)\n",
+                   exception_messages[r->irq_number],
+                   r->irq_number);
+            printf("EIP: 0x%08X, CS: 0x%04X (Ring %d)\n", r->eip, r->cs, cpl);
+            printf("Process terminated.\n\n");
+            
+            // TODO: Terminate process
+            printf("Warning: Process termination not implemented yet.\n");
+            while (1);
+        }
     }
 }
 
@@ -157,37 +160,103 @@ ExceptionHandler exception_handlers[32];
 
 // Generic exception handler
 void generic_exception_handler(Registers* r) {
-    // Display system halted message
-    printf("System Exception occured: %s\n\n", exception_messages[(int)r->irq_number]);
-    while (1);
+    // Check privilege level from CS register
+    // CS & 0x3 gives Current Privilege Level (CPL)
+    // 0 = Ring 0 (kernel), 3 = Ring 3 (user)
+    uint16_t cpl = r->cs & 0x3;
+    
+    if (cpl == 0) {
+        // Kernel exception - unrecoverable
+        char panic_msg[128];
+        snprintf(panic_msg, sizeof(panic_msg), 
+                 "Kernel exception: %s (IRQ %d) at EIP=0x%08X",
+                 exception_messages[r->irq_number], 
+                 r->irq_number, 
+                 r->eip);
+        panic(panic_msg);
+    } else {
+        // User mode exception - terminate process
+        printf("\n*** USER PROCESS EXCEPTION ***\n");
+        printf("Exception: %s (IRQ %d)\n", 
+               exception_messages[r->irq_number], 
+               r->irq_number);
+        printf("EIP: 0x%08X, CS: 0x%04X (Ring %d)\n", r->eip, r->cs, cpl);
+        printf("Process terminated.\n\n");
+        
+        // TODO: When we have process management, terminate the process here
+        // For now, just return to kernel shell
+        // In future: kill_current_process();
+        
+        // For now, halt (will be replaced with process termination)
+        printf("Warning: Process termination not implemented yet.\n");
+        while (1);
+    }
 }
 
 // Divide by zero handler (specific override)
 void divide_by_zero_handler(Registers* r) {
-    printf("Divide by zero exception caught!\n");
-    // printf("Current context in handler: %p\n", (void*)current_try_context);
-
-    // if (current_try_context) {
-    //     // printf("current_try_context: ESP=0x%X, EBP=0x%X, EIP=0x%X\n",
-    //     //        current_try_context->esp, current_try_context->ebp, current_try_context->eip);
-    //     throw(current_try_context, 1); // Throw the exception
-    // } else {
-    //     //printf("No valid context. Halting.\n");
-         while (1); // Halt the system
-    // }
+    uint16_t cpl = r->cs & 0x3;
+    
+    if (cpl == 0) {
+        // Kernel divide by zero - unrecoverable
+        char panic_msg[128];
+        snprintf(panic_msg, sizeof(panic_msg),
+                 "Kernel divide by zero at EIP=0x%08X", r->eip);
+        panic(panic_msg);
+    } else {
+        // User mode divide by zero
+        printf("\n*** USER PROCESS ERROR ***\n");
+        printf("Divide by zero exception at EIP=0x%08X\n", r->eip);
+        printf("Process terminated.\n\n");
+        
+        // TODO: Terminate process when process management implemented
+        printf("Warning: Process termination not implemented yet.\n");
+        while (1);
+    }
 }
 
 void page_fault_handler() {
     uint32_t faulting_address;
-
+    uint32_t error_code;
+    
     // Read the faulting address from CR2
     asm volatile("mov %%cr2, %0" : "=r"(faulting_address));
-
-    printf("Page fault at address: 0x%x\n", faulting_address);
-
-    // Halt the system
-    printf("System halted due to page fault.\n");
-    while (1);
+    
+    // Get error code from stack (pushed by CPU)
+    asm volatile("mov 4(%%ebp), %0" : "=r"(error_code));
+    
+    // Check privilege level
+    // Note: Page fault handler gets called from assembly, CS should be on stack
+    uint16_t cs;
+    asm volatile("mov %%cs, %0" : "=r"(cs));
+    uint16_t cpl = cs & 0x3;
+    
+    if (cpl == 0) {
+        // Kernel page fault - unrecoverable
+        char panic_msg[128];
+        snprintf(panic_msg, sizeof(panic_msg),
+                 "Kernel page fault at address 0x%08X (error code: 0x%X)",
+                 faulting_address, error_code);
+        panic(panic_msg);
+    } else {
+        // User mode page fault
+        printf("\n*** USER PROCESS PAGE FAULT ***\n");
+        printf("Faulting address: 0x%08X\n", faulting_address);
+        printf("Error code: 0x%X ", error_code);
+        
+        // Decode error code
+        printf("(");
+        if (error_code & 0x1) printf("protection violation"); else printf("page not present");
+        if (error_code & 0x2) printf(", write"); else printf(", read");
+        if (error_code & 0x4) printf(", user mode"); else printf(", kernel mode");
+        printf(")\n");
+        
+        printf("Process terminated.\n\n");
+        
+        // TODO: Terminate process
+        printf("Warning: Process termination not implemented yet.\n");
+        while (1);
+    }
 }
 
 // Set up the exception handlers
