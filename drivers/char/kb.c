@@ -2,6 +2,8 @@
 #include "drivers/char/io.h"
 #include "drivers/video/video.h"
 #include "arch/x86/sys.h"
+#include "arch/x86/include/interrupt.h"
+#include "include/lib/spinlock.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
@@ -105,6 +107,7 @@ static volatile kbd_state_t kbd_state = {
 static volatile char input_queue[INPUT_QUEUE_SIZE];
 static volatile int input_queue_head = 0;
 static volatile int input_queue_tail = 0;
+static spinlock_t input_queue_lock = SPINLOCK_INIT;  // Protect queue access
 
 // Buffer management
 static volatile int buffer_index = 0;
@@ -142,35 +145,45 @@ static inline void memory_barrier(void) {
 /**
  * Push character to input queue
  * Returns: true on success, false if queue full
+ * 
+ * Thread-safe: Uses spinlock with IRQ disable (called from IRQ handler)
  */
 static bool input_queue_push(char ch) {
+    uint32_t flags = spinlock_acquire_irq(&input_queue_lock);
+    
     int next_tail = (input_queue_tail + 1) % INPUT_QUEUE_SIZE;
     
     // Check for overflow
     if (next_tail == input_queue_head) {
+        spinlock_release_irq(&input_queue_lock, flags);
         return false;  // Queue full
     }
     
     input_queue[input_queue_tail] = ch;
-    memory_barrier();  // Ensure write completes before updating tail
     input_queue_tail = next_tail;
     
+    spinlock_release_irq(&input_queue_lock, flags);
     return true;
 }
 
 /**
  * Pop character from input queue
  * Returns: character or '\0' if queue empty
+ * 
+ * Thread-safe: Uses spinlock with IRQ disable (prevents race with IRQ handler)
  */
 char input_queue_pop(void) {
+    uint32_t flags = spinlock_acquire_irq(&input_queue_lock);
+    
     if (input_queue_head == input_queue_tail) {
+        spinlock_release_irq(&input_queue_lock, flags);
         return '\0';  // Queue empty
     }
     
     char ch = input_queue[input_queue_head];
-    memory_barrier();  // Ensure read completes before updating head
     input_queue_head = (input_queue_head + 1) % INPUT_QUEUE_SIZE;
     
+    spinlock_release_irq(&input_queue_lock, flags);
     return ch;
 }
 

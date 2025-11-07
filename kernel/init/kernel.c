@@ -18,6 +18,8 @@
 #include "arch/x86/sys.h"
 #include "arch/x86/mbheader.h"
 #include "arch/x86/boot/multiboot_parser.h"
+#include "arch/x86/include/interrupt.h"
+#include "arch/x86/include/tss.h"
 #include "kernel/init/banner.h"
 #include "kernel/shell/command.h"
 #include "mm/kmalloc.h"
@@ -89,10 +91,20 @@ static inline uint64_t read_cpu_cycle_counter(void) {
 /**
  * Early initialization - CPU tables and basic hardware
  * Sets up protected mode, interrupts, and basic timing
+ * 
+ * CRITICAL: Interrupts are disabled during this phase to prevent
+ * race conditions and ensure atomic setup of all data structures.
  */
 static void early_init(void) {
-    // CPU setup
-    gdt_install();  // Global Descriptor Table
+    // CRITICAL: Disable interrupts during initialization
+    irq_disable();
+    
+    // CPU setup - TSS must be initialized before GDT
+    extern char _stack_end;  // From linker script (klink.ld)
+    uint32_t kernel_stack = (uint32_t)&_stack_end;
+    tss_init(kernel_stack, 0x10);  // ESP0 = kernel stack, SS0 = kernel data (0x10)
+    
+    gdt_install();  // Global Descriptor Table (includes TSS descriptor)
     idt_install();  // Interrupt Descriptor Table
     isr_install();  // CPU exception handlers (0-31)
     irq_install();  // Hardware interrupt handlers (32-47)
@@ -102,7 +114,11 @@ static void early_init(void) {
     kb_install();      // Keyboard driver
     fdc_initialize();  // Floppy disk controller
     
-    printf("Early initialization complete\n");
+    // Re-enable interrupts now that everything is set up
+    irq_enable();
+    
+    printf("Early initialization complete (interrupts enabled)\n");
+    printf("TSS initialized with kernel stack at 0x%08X\n", kernel_stack);
 }
 
 /**

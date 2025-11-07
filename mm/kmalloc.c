@@ -1,4 +1,6 @@
 #include "mm/kmalloc.h"
+#include "arch/x86/include/interrupt.h"
+#include "include/lib/spinlock.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
@@ -37,6 +39,7 @@ typedef struct memory_block {
 } memory_block;
 
 memory_block* free_list = NULL;
+static spinlock_t heap_lock = SPINLOCK_INIT;  // Protect heap operations
 
 
 void print_memory_size(uint64_t total_memory) {
@@ -121,6 +124,8 @@ void free_frame(size_t addr) {
 }
 
 void* k_malloc(size_t size) {
+    uint32_t flags = spinlock_acquire_irq(&heap_lock);
+    
     memory_block* current = free_list;
 
     while (current) {
@@ -136,6 +141,8 @@ void* k_malloc(size_t size) {
                 current->size = size;
                 current->next = new_block;
             }
+            
+            spinlock_release_irq(&heap_lock, flags);
             return (void*)((char*)current + BLOCK_SIZE);
         }
         current = current->next;
@@ -144,6 +151,7 @@ void* k_malloc(size_t size) {
     void* new_heap_block = (void*)allocate_frame();
     if (!new_heap_block) {
         printf("Out of memory\n");
+        spinlock_release_irq(&heap_lock, flags);
         return NULL;
     }
 
@@ -158,17 +166,23 @@ void* k_malloc(size_t size) {
     }
     last->next = current;
 
+    spinlock_release_irq(&heap_lock, flags);
+    
+    // Recursive call - will acquire lock again
     return k_malloc(size);
 }
 
 void k_free(void* ptr) {
     if (!ptr) return;
 
+    uint32_t flags = spinlock_acquire_irq(&heap_lock);
+    
     memory_block* block = (memory_block*)((char*)ptr - BLOCK_SIZE);
     
     // Double-free detection
     if (block->free) {
         printf("Warning: Double free detected at %p\n", ptr);
+        spinlock_release_irq(&heap_lock, flags);
         return;
     }
     
@@ -188,6 +202,8 @@ void k_free(void* ptr) {
         }
         current = current->next;
     }
+    
+    spinlock_release_irq(&heap_lock, flags);
 }
 
 void* k_realloc(void* ptr, size_t new_size) {
