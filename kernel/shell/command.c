@@ -88,6 +88,7 @@ void cmd_ifconfig(int cnt, const char **args);
 void cmd_ping(int cnt, const char **args);
 void cmd_arp(int cnt, const char **args);
 void cmd_history(int cnt, const char **args);
+void cmd_basic(int cnt, const char **args);
 
 
 // Command table
@@ -128,6 +129,7 @@ command_t command_table[MAX_COMMANDS] = {
     {"ping", cmd_ping},
     {"arp", cmd_arp},
     {"history", cmd_history},
+    {"basic", cmd_basic},
     {NULL, NULL} // End marker
 };
 
@@ -1503,4 +1505,16 @@ void cmd_arp(int arg_count, const char** arguments) {
  */
 void cmd_history(int arg_count, const char** arguments) {
     history_list();
+}
+
+/**
+ * Launch BASIC interpreter
+ */
+#include "userspace/bin/basic.c"
+
+void cmd_basic(int arg_count, const char** arguments) {
+    printf("Starting BASIC interpreter...\n");
+    printf("Type 'EXIT' to return to shell\n\n");
+    basic_interpreter(); // Call BASIC interpreter
+    printf("\nBASIC interpreter exited.\n");
 }

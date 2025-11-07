@@ -270,6 +270,17 @@ gdb build/kernel.bin
 (gdb) continue
 ```
 
+## Documentation
+
+Comprehensive documentation is available in the `docs/` directory:
+
+- **[Documentation Index](docs/README.md)** - Complete documentation overview
+- **[BASIC Interpreter](docs/features/BASIC_INTERPRETER.md)** - Built-in BASIC programming
+- **[Architecture Guide](docs/architecture/)** - System design and improvements
+- **[Networking](docs/networking/)** - Network stack and TAP setup
+- **[Hardware Support](docs/hardware/)** - Keyboard, VMware, and device drivers
+- **[Development](docs/development/)** - Build modes, debugging, and project status
+
 ## Future Enhancements
 
 ### Potential Additions
