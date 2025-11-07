@@ -17,7 +17,8 @@
 #define NE2000_PSTART  0x01  // Page Start Register
 #define NE2000_PSTOP   0x02  // Page Stop Register
 #define NE2000_BNRY    0x03  // Boundary Pointer
-#define NE2000_TPSR    0x04  // Transmit Page Start Register
+#define NE2000_TSR     0x04  // Transmit Status Register (Read)
+#define NE2000_TPSR    0x04  // Transmit Page Start Register (Write)
 #define NE2000_TBCR0   0x05  // Transmit Byte Count Register 0
 #define NE2000_TBCR1   0x06  // Transmit Byte Count Register 1
 #define NE2000_ISR     0x07  // Interrupt Status Register
@@ -129,6 +130,9 @@ void ne2000_reset() {
     printf("NE2000 reset complete.\n");
 }
 
+// Forward declarations
+void ne2000_send_arp_reply(uint8_t *request_packet);
+
 void ne2000_irq_handler() {
     uint8_t isr = ne2000_read(NE2000_ISR);
     
@@ -186,6 +190,14 @@ void ne2000_irq_handler() {
                                packet[28], packet[29], packet[30], packet[31]);
                         printf("    Target IP: %d.%d.%d.%d\n",
                                packet[38], packet[39], packet[40], packet[41]);
+                        
+                        // If this is an ARP request for our IP (10.0.2.15), send a reply
+                        if (ar_op == 1 &&  // ARP Request
+                            packet[38] == 10 && packet[39] == 0 && 
+                            packet[40] == 2 && packet[41] == 15) {
+                            printf("    -> ARP request for our IP! Sending reply...\n");
+                            ne2000_send_arp_reply(packet);
+                        }
                     }
                 } else if (ethertype == 0x0800) {
                     printf("(IPv4)\n");
@@ -227,9 +239,10 @@ void ne2000_init() {
     // 1. Stop the NIC (CR = 0x21: Page 0, Stop, NoDMA)
     ne2000_write(NE2000_CR, 0x21);
     
-    // 2. Set Data Configuration Register (DCR) - BYTE mode, loopback disabled
-    // DCR bits: WTS=0 (byte mode), BOS=0, LAS=0, LS=0, ARM=1, FT=01
-    ne2000_write(NE2000_DCR, 0x48);  // Byte mode instead of word mode
+    // 2. Set Data Configuration Register (DCR) - word mode for proper QEMU emulation
+    // DCR bits: WTS=1 (word mode), BOS=0, LAS=0, LS=0, ARM=1, FT=01
+    // NOTE: QEMU's NE2000 emulation works better in word mode
+    ne2000_write(NE2000_DCR, 0x49);  // Word mode
     
     // 3. Clear Remote Byte Count Registers
     ne2000_write(NE2000_RBCR0, 0);
@@ -253,23 +266,34 @@ void ne2000_init() {
     ne2000_write(NE2000_IMR, 0x0F);  // Enable RX, TX, RX error, TX error interrupts
     
     // 9. Read MAC address from PROM using Remote DMA
-    // The NE2000 stores MAC in PROM at address 0x0000, word-wide (6 bytes = 3 words)
-    // But the PROM stores each byte twice (word format), so we read 12 bytes
+    // In byte mode (DCR=0x48), we need to read 32 bytes and extract every other byte
+    // The PROM stores each MAC byte twice in word format
     ne2000_write(NE2000_CR, 0x21);      // Page 0, Stop, NoDMA
-    ne2000_write(NE2000_RBCR0, 12);     // Read 12 bytes (MAC is doubled in PROM)
+    ne2000_write(NE2000_RBCR0, 32);     // Read 32 bytes to get 6-byte MAC with doubling
     ne2000_write(NE2000_RBCR1, 0);
     ne2000_write(NE2000_RSAR0, 0);      // Start at PROM address 0
     ne2000_write(NE2000_RSAR1, 0);
     ne2000_write(NE2000_CR, 0x0A);      // Start Remote DMA Read
     
-    // Read MAC address from data port (every other byte in word mode)
+    // Read MAC address from data port - in byte mode, skip every other byte
     for (int i = 0; i < MAC_ADDRESS_LENGTH; i++) {
         mac_address[i] = inb(io_base + NE2000_DATA);
-        inb(io_base + NE2000_DATA);  // Dummy read (PROM stores each byte twice)
+        inb(io_base + NE2000_DATA);  // Skip duplicate byte (PROM stores each byte twice)
     }
     
-    // Wait for Remote DMA to complete
-    while (!(ne2000_read(NE2000_ISR) & ISR_RDC));
+    // Wait for Remote DMA to complete with timeout
+    int mac_timeout = 10000;
+    while (!(ne2000_read(NE2000_ISR) & ISR_RDC) && mac_timeout-- > 0);
+    if (mac_timeout <= 0) {
+        printf("[WARN] Timeout reading MAC address, using default\n");
+        // Use default MAC if read fails
+        mac_address[0] = 0x52;
+        mac_address[1] = 0x54;
+        mac_address[2] = 0x00;
+        mac_address[3] = 0x12;
+        mac_address[4] = 0x34;
+        mac_address[5] = 0x56;
+    }
     ne2000_write(NE2000_ISR, ISR_RDC);  // Clear RDC flag
     
     // 10. Switch to Page 1 to set Physical Address and Multicast
@@ -369,20 +393,18 @@ void ne2000_send_packet(uint8_t *data, uint16_t length) {
     // 5. Set COMMAND register to "start" and "remote write DMA" (0x12)
     ne2000_write(NE2000_CR, 0x12);
 
-    // 6. Write packet data to the "data port" (register 0x10)
-    uint16_t i = 0;
-    for (; i + 1 < length; i += 2) {
-        uint16_t word = (data[i + 1] << 8) | data[i];  // Combine two bytes into a 16-bit word
-        outw(io_base + NE2000_DATA, word);            // Write the 16-bit word
+    // 6. Write packet data to the "data port" in word mode (16-bit transfers)
+    for (uint16_t i = 0; i + 1 < length; i += 2) {
+        uint16_t word = data[i] | (data[i + 1] << 8);  // Little endian
+        outw(io_base + NE2000_DATA, word);
     }
-    // Write the last byte if the length is odd
-    if (i < length) {
-        outb(io_base + NE2000_DATA, data[i]);
+    // Write last byte if length is odd
+    if (length & 1) {
+        outw(io_base + NE2000_DATA, data[length - 1]);
     }
     // Pad with zeros if necessary
-    while (i < send_length) {
-        outb(io_base + NE2000_DATA, 0);
-        i++;
+    for (uint16_t i = length; i < send_length; i += 2) {
+        outw(io_base + NE2000_DATA, 0);
     }
 
     // 7. Poll ISR register until bit 6 ("Remote DMA completed") is set
@@ -403,7 +425,9 @@ void ne2000_send_packet(uint8_t *data, uint16_t length) {
     ne2000_write(NE2000_TPSR, tx_page_start);    // Set Transmit Page Start
     ne2000_write(NE2000_TBCR0, send_length & 0xFF);  // Set Transmit Byte Count (low byte)
     ne2000_write(NE2000_TBCR1, (send_length >> 8));  // Set Transmit Byte Count (high byte)
-    ne2000_write(NE2000_CR, 0x26);              // Start transmission (CR = 0x26)
+    
+    printf("[TX] Starting transmission: page=0x%02X, length=%d\n", tx_page_start, send_length);
+    ne2000_write(NE2000_CR, 0x26);              // Start transmission (CR = 0x26 = Page 0, Start, TXP)
 
     // Wait for transmission complete (ISR_PTX = 0x02)
     timeout = 100000;  // Longer timeout for actual transmission
@@ -413,13 +437,93 @@ void ne2000_send_packet(uint8_t *data, uint16_t length) {
 
     if (timeout <= 0) {
         printf("[TX] Timeout waiting for packet transmission\n");
+        // Check for errors
+        uint8_t isr = ne2000_read(NE2000_ISR);
+        printf("[TX] ISR at timeout: 0x%02X\n", isr);
         return;
     }
 
     // Clear transmission complete flag
     ne2000_write(NE2000_ISR, ISR_PTX);
+    
+    uint8_t tsr = ne2000_read(NE2000_TSR);  // Read Transmit Status Register
+    printf("[TX] Transmission complete - TSR: 0x%02X\n", tsr);
 
     printf("Packet sent successfully, length: %d bytes\n", length);
+}
+
+// Send ARP reply
+void ne2000_send_arp_reply(uint8_t *request_packet) {
+    uint8_t arp_reply[60];  // Minimum ethernet frame size
+    
+    // Build ethernet header
+    // Destination MAC: sender's MAC from the request (bytes 6-11 of request)
+    for (int i = 0; i < 6; i++) {
+        arp_reply[i] = request_packet[6 + i];  // Copy sender MAC to destination
+    }
+    
+    // Source MAC: our MAC address (use the actual MAC we read from PROM)
+    for (int i = 0; i < 6; i++) {
+        arp_reply[6 + i] = mac_address[i];
+    }
+    
+    // EtherType: ARP (0x0806)
+    arp_reply[12] = 0x08;
+    arp_reply[13] = 0x06;
+    
+    // ARP packet structure
+    // Hardware type: Ethernet (0x0001)
+    arp_reply[14] = 0x00;
+    arp_reply[15] = 0x01;
+    
+    // Protocol type: IPv4 (0x0800)
+    arp_reply[16] = 0x08;
+    arp_reply[17] = 0x00;
+    
+    // Hardware address length: 6
+    arp_reply[18] = 0x06;
+    
+    // Protocol address length: 4
+    arp_reply[19] = 0x04;
+    
+    // Operation: Reply (0x0002)
+    arp_reply[20] = 0x00;
+    arp_reply[21] = 0x02;
+    
+    // Sender hardware address (our MAC)
+    for (int i = 0; i < 6; i++) {
+        arp_reply[22 + i] = mac_address[i];
+    }
+    
+    // Sender protocol address (our IP: 10.0.2.15)
+    arp_reply[28] = 10;
+    arp_reply[29] = 0;
+    arp_reply[30] = 2;
+    arp_reply[31] = 15;
+    
+    // Target hardware address (requester's MAC from bytes 22-27 of request)
+    for (int i = 0; i < 6; i++) {
+        arp_reply[32 + i] = request_packet[22 + i];
+    }
+    
+    // Target protocol address (requester's IP from bytes 28-31 of request)
+    for (int i = 0; i < 4; i++) {
+        arp_reply[38 + i] = request_packet[28 + i];
+    }
+    
+    // Pad to minimum frame size
+    for (int i = 42; i < 60; i++) {
+        arp_reply[i] = 0;
+    }
+    
+    printf("Sending ARP reply to %d.%d.%d.%d (MAC: %02X:%02X:%02X:%02X:%02X:%02X)\n",
+           arp_reply[38], arp_reply[39], arp_reply[40], arp_reply[41],
+           arp_reply[0], arp_reply[1], arp_reply[2], arp_reply[3], arp_reply[4], arp_reply[5]);
+    
+    // Show what we're sending
+    print_hex_dump("[TX] ARP Reply", arp_reply, 60);
+    
+    ne2000_send_packet(arp_reply, 60);
 }
 
 int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
@@ -459,9 +563,12 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
         ne2000_write(NE2000_CR, 0x0A);
         
         uint8_t test_header[4];
-        for (int i = 0; i < 4; i++) {
-            test_header[i] = inb(io_base + NE2000_DATA);
-        }
+        uint16_t w1 = inw(io_base + NE2000_DATA);
+        uint16_t w2 = inw(io_base + NE2000_DATA);
+        test_header[0] = w1 & 0xFF;
+        test_header[1] = (w1 >> 8) & 0xFF;
+        test_header[2] = w2 & 0xFF;
+        test_header[3] = (w2 >> 8) & 0xFF;
         
         int timeout = 10000;
         while (!(ne2000_read(NE2000_ISR) & ISR_RDC) && timeout-- > 0);
@@ -498,11 +605,14 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
     ne2000_write(NE2000_RSAR1, next_packet_page); // Page number
     ne2000_write(NE2000_CR, 0x0A);              // Page 0, Start, Remote Read
 
-    // Read packet header (4 bytes)
+    // Read packet header (4 bytes) in word mode
     uint8_t header[4];
-    for (int i = 0; i < 4; i++) {
-        header[i] = inb(io_base + NE2000_DATA);
-    }
+    uint16_t word1 = inw(io_base + NE2000_DATA);
+    uint16_t word2 = inw(io_base + NE2000_DATA);
+    header[0] = word1 & 0xFF;
+    header[1] = (word1 >> 8) & 0xFF;
+    header[2] = word2 & 0xFF;
+    header[3] = (word2 >> 8) & 0xFF;
 
     // Wait for Remote DMA to complete with timeout
     int timeout = 10000;
@@ -587,8 +697,14 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
         ne2000_write(NE2000_RSAR1, next_packet_page);
         ne2000_write(NE2000_CR, 0x0A);
         
-        for (uint16_t i = 0; i < recovery_length; i++) {
-            buffer[i] = inb(io_base + NE2000_DATA);
+        for (uint16_t i = 0; i + 1 < recovery_length; i += 2) {
+            uint16_t word = inw(io_base + NE2000_DATA);
+            buffer[i] = word & 0xFF;
+            buffer[i + 1] = (word >> 8) & 0xFF;
+        }
+        if (recovery_length & 1) {
+            uint16_t word = inw(io_base + NE2000_DATA);
+            buffer[recovery_length - 1] = word & 0xFF;
         }
         
         int timeout = 10000;
@@ -665,9 +781,16 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
     ne2000_write(NE2000_RSAR1, next_packet_page);
     ne2000_write(NE2000_CR, 0x0A);              // Page 0, Start, Remote Read
 
-    // Read packet data
-    for (uint16_t i = 0; i < data_length; i++) {
-        buffer[i] = inb(io_base + NE2000_DATA);
+    // Read packet data in word mode (16-bit transfers)
+    for (uint16_t i = 0; i + 1 < data_length; i += 2) {
+        uint16_t word = inw(io_base + NE2000_DATA);
+        buffer[i] = word & 0xFF;
+        buffer[i + 1] = (word >> 8) & 0xFF;
+    }
+    // Read last byte if length is odd
+    if (data_length & 1) {
+        uint16_t word = inw(io_base + NE2000_DATA);
+        buffer[data_length - 1] = word & 0xFF;
     }
 
     // Wait for Remote DMA to complete with timeout
