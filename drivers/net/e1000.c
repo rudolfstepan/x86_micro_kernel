@@ -339,9 +339,11 @@ void e1000_init(e1000_device_t *dev) {
 }
 
 int e1000_probe(pci_device_t *pci_dev) {
+    printf("E1000: Probe called for device %04X:%04X\n", pci_dev->vendor_id, pci_dev->device_id);
+    
     if (pci_dev->vendor_id == E1000_VENDOR_ID && pci_dev->device_id == E1000_DEVICE_ID) {
 
-        //printf("Detected e1000 device\n");
+        printf("E1000: Device matched, initializing...\n");
         // Enable the device
         pci_enable_device(pci_dev);
 
@@ -349,12 +351,12 @@ int e1000_probe(pci_device_t *pci_dev) {
         uint64_t bar0 = pci_read_bar(pci_dev, 0);
         e1000_device.mmio_base = (volatile uint32_t *)map_mmio(bar0);
 
-        //printf("MMIO base: 0x%08X\n", *e1000_device.mmio_base);
+        printf("E1000: MMIO base mapped to 0x%08X\n", (uint32_t)e1000_device.mmio_base);
 
         // Configure IRQ
         e1000_device.irq = pci_configure_irq(pci_dev);
 
-        //printf("IRQ: %u\n", e1000_device.irq);
+        printf("E1000: IRQ configured to %u\n", e1000_device.irq);
 
         // Initialize the device
         e1000_init(&e1000_device);
@@ -362,20 +364,24 @@ int e1000_probe(pci_device_t *pci_dev) {
         uint8_t mac[6];
         e1000_get_mac_address(&mac);
 
+        printf("E1000: Initialized successfully\n");
         printf("E1000 MAC: %02X:%02X:%02X:%02X:%02X:%02X, ", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
         printf("IO Base: 0x%08X, IRQ: %u\n", e1000_device.mmio_base, e1000_device.irq);
 
         return 0;
     }
 
-    //printf("e1000 device not found\n");
+    printf("E1000: Device not matched\n");
     return -1;
 }
 
 void e1000_detect(){
-    printf("Detecting E1000 network card...\n");
+    printf("E1000: Registering driver for vendor 0x%04X, device 0x%04X\n", 
+           E1000_VENDOR_ID, E1000_DEVICE_ID);
 
     pci_register_driver(E1000_VENDOR_ID, E1000_DEVICE_ID, e1000_probe);
+    
+    printf("E1000: Driver registered successfully\n");
 }
 
 bool e1000_is_initialized() {

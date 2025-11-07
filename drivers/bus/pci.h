@@ -62,6 +62,7 @@ volatile uint32_t *map_mmio(uint64_t physical_address);
 uint8_t pci_configure_irq(pci_device_t *dev);
 void pci_register_driver(uint16_t vendor_id, uint16_t device_id, int (*probe)(pci_device_t *));
 void pci_probe_drivers();
+int pci_device_exists(uint16_t vendor_id, uint16_t device_id);
 
 
 #endif // PCI_H

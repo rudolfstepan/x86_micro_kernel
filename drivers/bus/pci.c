@@ -270,3 +270,19 @@ void pci_probe_drivers() {
         }
     }
 }
+
+/**
+ * Check if a PCI device with specific vendor and device ID exists
+ * @param vendor_id PCI vendor ID
+ * @param device_id PCI device ID
+ * @return 1 if device exists, 0 otherwise
+ */
+int pci_device_exists(uint16_t vendor_id, uint16_t device_id) {
+    for (size_t i = 0; i < pci_device_count; i++) {
+        if (pci_devices[i].vendor_id == vendor_id &&
+            pci_devices[i].device_id == device_id) {
+            return 1;
+        }
+    }
+    return 0;
+}

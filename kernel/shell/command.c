@@ -20,7 +20,7 @@
 #include "fs/fat12/fat12.h"
 // #include "drivers/net/rtl8139.h"
 #include "drivers/net/e1000.h"
-// #include "drivers/net/ne2000.h"
+#include "drivers/net/ne2000.h"
 // #include "drivers/net/vmxnet3.h"
 
 
@@ -1191,28 +1191,86 @@ void cmd_net(int arg_count, const char** arguments) {
     }
 
     if (strcmp(arguments[0], "STATUS") == 0 || strcmp(arguments[0], "status") == 0) {
-        // Show network status
+        // Show network status for all network cards
+        bool has_network = false;
+        
         if (e1000_is_initialized()) {
             printf("Network card: Intel E1000 (initialized)\n");
-            // TODO: Add E1000 MAC address printing
-        } else {
+            uint8_t mac[6];
+            e1000_get_mac_address(mac);
+            printf("  MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            has_network = true;
+        }
+        
+        if (ne2000_is_initialized()) {
+            printf("Network card: NE2000 compatible (initialized)\n");
+            uint8_t mac[6];
+            ne2000_get_mac_address(mac);
+            printf("  MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            has_network = true;
+        }
+        
+        if (!has_network) {
             printf("No network card initialized\n");
         }
     } else if (strcmp(arguments[0], "INFO") == 0 || strcmp(arguments[0], "info") == 0) {
         // Get detailed network interface information
-        printf("E1000 Network Adapter Info:\n");
-        // TODO: Add E1000 detailed status
+        bool has_info = false;
+        
+        if (e1000_is_initialized()) {
+            printf("E1000 Network Adapter Info:\n");
+            uint8_t mac[6];
+            e1000_get_mac_address(mac);
+            printf("  MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            printf("  Status: Initialized and ready\n");
+            printf("  Driver: Intel E1000 (PCI 8086:100E)\n");
+            has_info = true;
+        }
+        
+        if (ne2000_is_initialized()) {
+            if (has_info) printf("\n");  // Separator if both adapters present
+            printf("NE2000 Network Adapter Info:\n");
+            uint8_t mac[6];
+            ne2000_get_mac_address(mac);
+            printf("  MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            printf("  Status: Initialized and ready\n");
+            printf("  Driver: NE2000 compatible (PCI 10EC:8029)\n");
+            has_info = true;
+        }
+        
+        if (!has_info) {
+            printf("No network card initialized\n");
+        }
     } else if(strcmp(arguments[0], "SEND") == 0 || strcmp(arguments[0], "send") == 0) {
         // Send a test packet
-        if (!e1000_is_initialized()) {
+        if (e1000_is_initialized()) {
+            printf("Sending test packet via E1000...\n");
+            e1000_send_test_packet();
+            printf("Test packet sent.\n");
+        } else if (ne2000_is_initialized()) {
+            printf("Sending test packet via NE2000...\n");
+            ne2000_test_send();
+            printf("Test packet sent.\n");
+        } else {
             printf("Network card not initialized. Cannot send packet.\n");
             return;
         }
-        printf("Sending test packet via E1000...\n");
-        e1000_send_test_packet();
     } else if(strcmp(arguments[0], "LISTEN") == 0 || strcmp(arguments[0], "listen") == 0) {
         // Listen for incoming packets
-        if (!e1000_is_initialized()) {
+        bool has_adapter = false;
+        if (e1000_is_initialized()) {
+            has_adapter = true;
+            printf("Using E1000 adapter\n");
+        } else if (ne2000_is_initialized()) {
+            has_adapter = true;
+            printf("Using NE2000 adapter\n");
+        }
+        
+        if (!has_adapter) {
             printf("Network card not initialized.\n");
             return;
         }
@@ -1233,7 +1291,12 @@ void cmd_net(int arg_count, const char** arguments) {
         int packets_received = 0;
         
         for (int i = 0; i < max_packets * 100000; i++) {
-            int len = e1000_receive_packet(buffer, sizeof(buffer));
+            int len = 0;
+            if (e1000_is_initialized()) {
+                len = e1000_receive_packet(buffer, sizeof(buffer));
+            } else if (ne2000_is_initialized()) {
+                len = ne2000_receive_packet(buffer, sizeof(buffer));
+            }
             if (len > 0) {
                 packets_received++;
                 printf("\n[Packet %d] Received %d bytes:\n", packets_received, len);
@@ -1275,13 +1338,17 @@ void cmd_net(int arg_count, const char** arguments) {
         
     } else if(strcmp(arguments[0], "RECV") == 0 || strcmp(arguments[0], "recv") == 0) {
         // Try to receive one packet
-        if (!e1000_is_initialized()) {
+        uint8_t buffer[1500];
+        int len = 0;
+        
+        if (e1000_is_initialized()) {
+            len = e1000_receive_packet(buffer, sizeof(buffer));
+        } else if (ne2000_is_initialized()) {
+            len = ne2000_receive_packet(buffer, sizeof(buffer));
+        } else {
             printf("Network card not initialized.\n");
             return;
         }
-        
-        uint8_t buffer[1500];
-        int len = e1000_receive_packet(buffer, sizeof(buffer));
         
         if (len > 0) {
             printf("Received %d bytes:\n", len);

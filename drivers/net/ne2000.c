@@ -70,6 +70,8 @@ static bool ne2000_initialized = false;
 // prototypes
 int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size);
 void print_packet(const uint8_t *packet, uint16_t length);
+void print_hex_dump(const char* label, const uint8_t *data, uint16_t length);
+void ne2000_dump_page(uint8_t page_num, uint16_t length);
 
 // Function to write to a NE2000 register
 static inline void ne2000_write(uint8_t reg, uint8_t value) {
@@ -128,21 +130,57 @@ void ne2000_reset() {
 }
 
 void ne2000_irq_handler() {
-    printf("NE2000 IRQ handler\n");
     uint8_t isr = ne2000_read(NE2000_ISR);
-    printf("NE2000 ISR: 0x%02X\n", isr);
+    
+    // Silently ignore spurious interrupts
+    if (isr == 0) {
+        return;
+    }
+    
+    printf("NE2000 IRQ - ISR: 0x%02X\n", isr);
 
-    if (isr & 0x01) {  // Packet received
+    // Handle buffer overrun first (most critical)
+    if (isr & 0x10) {  // Overwrite warning
+        printf("[WARNING] RX buffer overrun - resetting receive buffer\n");
+        // Stop NIC
+        ne2000_write(NE2000_CR, 0x21);  // Stop
+        // Clear Remote DMA
+        ne2000_write(NE2000_RBCR0, 0);
+        ne2000_write(NE2000_RBCR1, 0);
+        // Reset receive buffer pointers
+        ne2000_write(NE2000_BNRY, RX_START_PAGE);
+        ne2000_write(NE2000_CR, 0x62);  // Page 1
+        ne2000_write(NE2000_CURR, RX_START_PAGE + 1);
+        ne2000_write(NE2000_CR, 0x22);  // Page 0, Start
+        // Clear overwrite flag
+        ne2000_write(NE2000_ISR, 0x10);
+    }
+
+    // Process up to 5 packets per interrupt to avoid getting stuck
+    int packets_processed = 0;
+    const int max_packets_per_irq = 5;
+    
+    while ((isr & 0x01) && packets_processed < max_packets_per_irq) {  // Packet received
         uint8_t packet[1500];
         int length = ne2000_receive_packet(packet, sizeof(packet));
         if (length > 0) {
             printf("Received packet: %d bytes\n", length);
             print_packet(packet, length);
+            packets_processed++;
+        } else if (length < 0) {
+            // Error occurred, stop processing
+            break;
+        } else {
+            // No more packets
+            break;
         }
+        
+        // Check if more packets arrived
+        isr = ne2000_read(NE2000_ISR);
     }
 
-    // Clear ISR flags
-    ne2000_write(NE2000_ISR, isr);
+    // Clear all ISR flags
+    ne2000_write(NE2000_ISR, 0xFF);
 }   
 
 // Function to initialize the NE2000 card
@@ -316,8 +354,14 @@ void ne2000_send_packet(uint8_t *data, uint16_t length) {
     }
 
     // 7. Poll ISR register until bit 6 ("Remote DMA completed") is set
-    while (!(ne2000_read(NE2000_ISR) & ISR_RDC)) {
+    int timeout = 10000;
+    while (!(ne2000_read(NE2000_ISR) & ISR_RDC) && timeout-- > 0) {
         // Wait for Remote DMA to complete
+    }
+    
+    if (timeout <= 0) {
+        printf("[TX] Timeout waiting for Remote DMA complete\n");
+        return;
     }
 
     // Clear "Remote DMA complete" bit
@@ -330,8 +374,14 @@ void ne2000_send_packet(uint8_t *data, uint16_t length) {
     ne2000_write(NE2000_CR, 0x26);              // Start transmission (CR = 0x26)
 
     // Wait for transmission complete (ISR_PTX = 0x02)
-    while (!(ne2000_read(NE2000_ISR) & ISR_PTX)) {
+    timeout = 100000;  // Longer timeout for actual transmission
+    while (!(ne2000_read(NE2000_ISR) & ISR_PTX) && timeout-- > 0) {
         // Wait for Packet Transmitted
+    }
+
+    if (timeout <= 0) {
+        printf("[TX] Timeout waiting for packet transmission\n");
+        return;
     }
 
     // Clear transmission complete flag
@@ -349,7 +399,7 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
     uint8_t boundary = ne2000_read(NE2000_BNRY);
     
     printf("[RX] CURR=0x%02X, BNRY=0x%02X\n", current_page, boundary);
-
+    
     // Check if buffer is empty (CURR == next read position)
     // Packets are stored from BNRY+1 to CURR-1
     uint8_t next_read = boundary + 1;
@@ -357,13 +407,15 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
         next_read = RX_START_PAGE;
     }
     
-    printf("[RX] Next read page: 0x%02X\n", next_read);
+    printf("[RX] Next read should be at page: 0x%02X\n", next_read);
     
-    // If no new packets, return
+    // If no new packets, return silently
     if (next_read == current_page) {
-        printf("[RX] Buffer empty (next_read == CURR)\n");
+        printf("[RX] Buffer appears empty (next_read == CURR)\n");
         return 0;  // Buffer empty
     }
+    
+    printf("[RX] Packet available: pages 0x%02X to 0x%02X\n", next_read, current_page - 1);
 
     // Move to next page after boundary
     uint8_t next_packet_page = boundary + 1;
@@ -385,19 +437,123 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
         header[i] = inb(io_base + NE2000_DATA);
     }
 
-    // Wait for Remote DMA to complete
-    while (!(ne2000_read(NE2000_ISR) & ISR_RDC));
+    // Wait for Remote DMA to complete with timeout
+    int timeout = 10000;
+    while (!(ne2000_read(NE2000_ISR) & ISR_RDC) && timeout-- > 0);
+    if (timeout <= 0) {
+        printf("[RX] Timeout waiting for DMA (header)\n");
+        return -1;
+    }
     ne2000_write(NE2000_ISR, ISR_RDC);  // Clear RDC flag
 
     uint8_t status = header[0];
     uint8_t next_page = header[1];
     uint16_t packet_length = header[2] | (header[3] << 8);
 
-    // Validate packet
+    printf("[RX] Header: status=0x%02X, next=0x%02X, len=%d\n", status, next_page, packet_length);
+    print_hex_dump("[RX] Raw header", header, 4);
+    
+    // Also dump what's at CURR - 1 (where latest packet should be)
+    if (current_page > RX_START_PAGE) {
+        printf("[DIAG] Checking page before CURR (0x%02X):\n", current_page - 1);
+        ne2000_dump_page(current_page - 1, 64);
+    }
+
+    // Check status byte for errors
+    // Bit 0 (0x01) should be set for valid packet
+    if (!(status & 0x01)) {
+        printf("Packet status error: 0x%02X (not marked as received)\n", status);
+        printf("[DIAG] CURR=0x%02X, BNRY=0x%02X, next_packet_page=0x%02X\n", 
+               current_page, boundary, next_packet_page);
+        
+        // Check if this page is completely empty (all zeros)
+        bool page_empty = true;
+        for (int i = 0; i < 4; i++) {
+            if (header[i] != 0) {
+                page_empty = false;
+                break;
+            }
+        }
+        
+        if (page_empty) {
+            printf("[RX] Page 0x%02X is empty - skipping to next page\n", next_packet_page);
+            // Dump the page we tried to read from
+            ne2000_dump_page(next_packet_page, 64);
+            
+            // Skip this empty page - advance BNRY by one page
+            uint8_t skip_boundary = next_packet_page;
+            if (skip_boundary >= RX_STOP_PAGE - 1) {
+                skip_boundary = RX_START_PAGE;
+            }
+            printf("[RX] Writing BNRY = 0x%02X (was 0x%02X)\n", skip_boundary, boundary);
+            ne2000_write(NE2000_BNRY, skip_boundary);
+            
+            // Verify it was written
+            uint8_t verify_bnry = ne2000_read(NE2000_BNRY);
+            printf("[RX] Verified BNRY = 0x%02X\n", verify_bnry);
+            
+            // Don't return 0 - that makes IRQ handler think we're done
+            // Instead, return -1 to indicate we should stop this IRQ cycle
+            // and wait for the next one
+            return -1;
+        }
+        
+        // Page has data but status is bad
+        // Dump the page we tried to read from
+        ne2000_dump_page(next_packet_page, 64);
+        
+        // Try to advance past bad packet if we have valid next_page
+        if (next_page >= RX_START_PAGE && next_page < RX_STOP_PAGE) {
+            uint8_t new_boundary = next_page - 1;
+            if (new_boundary < RX_START_PAGE) {
+                new_boundary = RX_STOP_PAGE - 1;
+            }
+            ne2000_write(NE2000_BNRY, new_boundary);
+        } else {
+            // Both status and next_page are bad - full reset
+            goto reset_buffer;
+        }
+        return -1;
+    }
+
+    // Validate next_page pointer
+    if (next_page < RX_START_PAGE || next_page >= RX_STOP_PAGE) {
+        printf("Invalid next_page pointer: 0x%02X (expected 0x%02X-0x%02X)\n", 
+               next_page, RX_START_PAGE, RX_STOP_PAGE - 1);
+reset_buffer:
+        // Reset the receive buffer to recover
+        printf("Resetting receive buffer...\n");
+        
+        // Stop the NIC
+        ne2000_write(NE2000_CR, 0x21);  // Stop
+        
+        // Clear Remote DMA
+        ne2000_write(NE2000_RBCR0, 0);
+        ne2000_write(NE2000_RBCR1, 0);
+        
+        // Clear ISR
+        ne2000_write(NE2000_ISR, 0xFF);
+        
+        // Reset receive buffer pointers
+        ne2000_write(NE2000_BNRY, RX_START_PAGE);
+        ne2000_write(NE2000_CR, 0x62);  // Page 1, Stop
+        ne2000_write(NE2000_CURR, RX_START_PAGE + 1);
+        
+        // Restart the NIC
+        ne2000_write(NE2000_CR, 0x22);  // Page 0, Start
+        
+        return -1;
+    }
+
+    // Validate packet length
     if (packet_length < 60 || packet_length > 1518) {
-        printf("Invalid packet length: %d bytes\n", packet_length);
-        // Update boundary anyway to skip bad packet
-        ne2000_write(NE2000_BNRY, next_page - 1);
+        printf("Invalid packet length: %d bytes (status=0x%02X)\n", packet_length, status);
+        // Advance boundary to next_page - 1 to skip bad packet
+        uint8_t new_boundary = next_page - 1;
+        if (new_boundary < RX_START_PAGE) {
+            new_boundary = RX_STOP_PAGE - 1;
+        }
+        ne2000_write(NE2000_BNRY, new_boundary);
         return -1;
     }
 
@@ -421,8 +577,13 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
         buffer[i] = inb(io_base + NE2000_DATA);
     }
 
-    // Wait for Remote DMA to complete
-    while (!(ne2000_read(NE2000_ISR) & ISR_RDC));
+    // Wait for Remote DMA to complete with timeout
+    timeout = 10000;
+    while (!(ne2000_read(NE2000_ISR) & ISR_RDC) && timeout-- > 0);
+    if (timeout <= 0) {
+        printf("[RX] Timeout waiting for DMA (data)\n");
+        return -1;
+    }
     ne2000_write(NE2000_ISR, ISR_RDC);  // Clear RDC flag
 
     // Update Boundary Register to next_page - 1
@@ -433,6 +594,7 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
     ne2000_write(NE2000_BNRY, new_boundary);
 
     printf("Packet received, length: %d bytes (header status: 0x%02X)\n", data_length, status);
+    print_hex_dump("[RX] Packet data", buffer, data_length > 64 ? 64 : data_length);
     
     return data_length;
 }
@@ -494,6 +656,67 @@ void ne2000_detect() {
             }
         }
     }
+}
+
+void print_hex_dump(const char* label, const uint8_t *data, uint16_t length) {
+    printf("%s (%d bytes):\n", label, length);
+    
+    for (uint16_t i = 0; i < length; i += 16) {
+        // Print offset
+        printf("  %04X: ", i);
+        
+        // Print hex values
+        for (uint16_t j = 0; j < 16; j++) {
+            if (i + j < length) {
+                printf("%02X ", data[i + j]);
+            } else {
+                printf("   ");
+            }
+            // Extra space in the middle
+            if (j == 7) printf(" ");
+        }
+        
+        printf(" | ");
+        
+        // Print ASCII values
+        for (uint16_t j = 0; j < 16 && i + j < length; j++) {
+            uint8_t c = data[i + j];
+            if (c >= 32 && c <= 126) {
+                printf("%c", c);
+            } else {
+                printf(".");
+            }
+        }
+        
+        printf("\n");
+    }
+}
+
+void ne2000_dump_page(uint8_t page_num, uint16_t length) {
+    printf("[DIAG] Dumping NE2000 page 0x%02X (%d bytes):\n", page_num, length);
+    
+    uint8_t buffer[256];
+    if (length > 256) length = 256;
+    
+    // Setup Remote DMA to read from page
+    ne2000_write(NE2000_CR, 0x22);              // Page 0, Start, NoDMA
+    ne2000_write(NE2000_RBCR0, length & 0xFF);
+    ne2000_write(NE2000_RBCR1, (length >> 8) & 0xFF);
+    ne2000_write(NE2000_RSAR0, 0);              // Start at offset 0
+    ne2000_write(NE2000_RSAR1, page_num);       // Page number
+    ne2000_write(NE2000_CR, 0x0A);              // Start Remote Read
+    
+    // Read data
+    for (uint16_t i = 0; i < length; i++) {
+        buffer[i] = inb(io_base + NE2000_DATA);
+    }
+    
+    // Wait for DMA complete
+    int timeout = 10000;
+    while (!(ne2000_read(NE2000_ISR) & ISR_RDC) && timeout-- > 0);
+    ne2000_write(NE2000_ISR, ISR_RDC);
+    
+    print_hex_dump("Page content", buffer, length);
 }
 
 void print_packet(const uint8_t *packet, uint16_t length) {
@@ -587,23 +810,25 @@ void test_ne2000_loopback(uint16_t io_base) {
 }
 
 void ne2000_test_send() {
+    // Send a simple test packet (broadcast)
+    uint8_t test_packet[] = {
+        // Destination MAC (broadcast)
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        // Source MAC (use NE2000 MAC)
+        mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5],
+        // EtherType (0x0800 = IPv4)
+        0x08, 0x00,
+        // Payload (dummy data - "TEST" in hex)
+        0x54, 0x45, 0x53, 0x54, 0xDE, 0xAD, 0xBE, 0xEF
+    };
 
-    test_ne2000_loopback(io_base);
-
-
-    // Test sending a packet
-    // uint8_t test_packet[] = {
-    //     // Destination MAC
-    //     0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    //     // Source MAC (use NE2000 MAC)
-    //     mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5],
-    //     // EtherType (0x0800 = IPv4)
-    //     0x08, 0x00,
-    //     // Payload (dummy data)
-    //     0xDE, 0xAD, 0xBE, 0xEF
-    // };
-
-    // ne2000_send_packet(test_packet, sizeof(test_packet));
+    printf("Sending test packet (%d bytes)...\n", sizeof(test_packet));
+    ne2000_send_packet(test_packet, sizeof(test_packet));
+    
+    // Brief delay to allow transmission
+    for (volatile int i = 0; i < 100000; i++);
+    
+    printf("Packet sent successfully\n");
 }
 
 

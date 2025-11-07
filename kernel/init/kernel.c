@@ -52,6 +52,7 @@
 
 // Network subsystem
 #include "drivers/net/e1000.h"
+#include "drivers/net/ne2000.h"
 #include "drivers/net/netstack.h"
 
 // Filesystems
@@ -144,7 +145,24 @@ static void hardware_init(void) {
  * Driver initialization - Block devices and network adapters
  */
 static void driver_init(void) {
-    // Probe all PCI devices and initialize drivers
+    // IMPORTANT: Register network drivers ONLY for detected devices
+    // Check PCI bus for network cards and register appropriate drivers
+    printf("Detecting network hardware...\n");
+    
+    // Intel E1000 (vendor: 0x8086, device: 0x100E)
+    if (pci_device_exists(0x8086, 0x100E)) {
+        printf("  - Intel E1000 detected, registering driver\n");
+        e1000_detect();  // Register E1000 driver
+    }
+    
+    // NE2000 compatible (vendor: 0x10EC, device: 0x8029)
+    if (pci_device_exists(0x10EC, 0x8029)) {
+        printf("  - NE2000 compatible detected, registering driver\n");
+        ne2000_detect(); // Register NE2000 driver
+    }
+    
+    // Probe PCI devices and initialize registered drivers
+    printf("Initializing network drivers...\n");
     pci_probe_drivers();
     
     // Enable hardware interrupts
@@ -158,7 +176,10 @@ static void driver_init(void) {
     
     // Detect storage devices
     ata_detect_drives();  // IDE/SATA hard drives
-    
+
+    // Detect floppy drives
+    fdd_detect_drives();  // Floppy disk drives
+
     printf("Driver initialization complete\n");
 }
 
