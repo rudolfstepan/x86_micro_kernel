@@ -189,6 +189,42 @@ Once VM is running:
    sudo tcpdump -i vmnet8 -XX
    ```
 
+## Troubleshooting
+
+### Keyboard Not Working
+
+**Problem**: Keyboard input not recognized in VMware
+
+**Solution**: The kernel now includes VMware-specific keyboard controller initialization:
+- Enables keyboard controller (command 0xAE)
+- Enables keyboard scanning (command 0xF4)
+- Waits for proper acknowledgment
+
+If keyboard still doesn't work:
+1. Click inside VM window to ensure it has focus
+2. Check VMware Tools is NOT installed (can interfere)
+3. Verify "Grab keyboard and mouse on focus" is enabled in VM settings
+4. Try disconnecting/reconnecting keyboard in VM menu
+
+### ATA Drive Detection
+
+**Problem**: Drives not detected or timeout errors
+
+**Solution**: VMware build uses relaxed timing (3s timeouts vs 30s)
+- Use `make build-vmware` for proper timing
+- Check boot messages for drive detection
+- Verify IDE controller (not SCSI) in VM settings
+
+### Network Not Working
+
+**Problem**: E1000 adapter not detected
+
+**Solution**:
+1. Verify network adapter is "Intel E1000" in VM settings
+2. Check kernel boot message: "Intel E1000 detected"
+3. Use `net status` to verify adapter state
+4. Ensure bridge/NAT is configured correctly
+
 ## Notes
 
 - VMware Workstation 16.x or later recommended

@@ -574,6 +574,23 @@ void get_input_line(char* buffer, int max_len) {
  * Install keyboard driver (register IRQ1 handler)
  */
 void kb_install(void) {
+    // Initialize keyboard controller (important for VMware)
+    // Wait for input buffer to be clear
+    while (inb(KEYBOARD_STATUS_PORT) & 0x02);
+    
+    // Send command to controller: enable keyboard
+    outb(KEYBOARD_STATUS_PORT, 0xAE);
+    
+    // Wait for input buffer to be clear
+    while (inb(KEYBOARD_STATUS_PORT) & 0x02);
+    
+    // Send command to keyboard: enable scanning
+    outb(KEYBOARD_DATA_PORT, 0xF4);
+    
+    // Wait for acknowledgment
+    while (!(inb(KEYBOARD_STATUS_PORT) & 0x01));
+    inb(KEYBOARD_DATA_PORT); // Read ACK (should be 0xFA)
+    
     // Register IRQ1 handler via syscall
     syscall(SYS_INSTALL_IRQ, (void*)1, (void*)kb_handler, 0);
     
@@ -582,6 +599,7 @@ void kb_install(void) {
     printf("  - Ctrl/Alt tracking: YES\n");
     printf("  - Arrow keys: YES\n");
     printf("  - Function keys: YES\n");
+    printf("  - VMware compatible: YES\n");
 }
 
 /**
