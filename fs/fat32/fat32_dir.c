@@ -132,12 +132,14 @@ void create_directory_entry(struct fat32_dir_entry* entry, const char* name, uns
 
     // Set attributes (e.g., directory attribute)
     entry->attr = attributes;
-    // Set creation, last access, and last write time
-    // For simplicity, these could be set to a fixed value or the current time
-    // Implement set_fat32_time to set these values
+    
+    // Set creation, last access, and last write time using real RTC values
     set_fat32_time(&entry->crt_time, &entry->crt_date);
-    set_fat32_time(NULL, &entry->last_access_date); // Assuming set_fat32_time handles NULL time
+    set_fat32_time(NULL, &entry->last_access_date); // Date only for last access
     set_fat32_time(&entry->write_time, &entry->write_date);
+    
+    // Set creation time tenths (0-199 for 0.0-1.9 seconds, we'll use 0 for simplicity)
+    entry->crt_time_tenth = 0;
 }
 
 bool add_entry_to_directory(struct fat32_boot_sector* bs, unsigned int parent_cluster, const char* dirname, unsigned int new_dir_cluster, unsigned char attributes) {

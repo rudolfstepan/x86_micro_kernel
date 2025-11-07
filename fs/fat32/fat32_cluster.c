@@ -127,6 +127,19 @@ bool mark_cluster_in_fat(struct fat32_boot_sector* boot_sector, unsigned int clu
             printf("Error: Failed to write to FAT copy %u at sector %u\n", fat_num, current_fat_sector);
             return false; // Error writing sector
         }
+        
+        // Verify the write by reading back the sector
+        unsigned char verify_buffer[boot_sector->bytes_per_sector];
+        if (!ata_read_sector(ata_base_address, current_fat_sector, verify_buffer, ata_is_master)) {
+            printf("Error: Failed to read back FAT copy %u for verification\n", fat_num);
+            return false;
+        }
+        
+        // Compare the written data
+        if (memcmp(buffer, verify_buffer, boot_sector->bytes_per_sector) != 0) {
+            printf("Error: Write verification failed for FAT copy %u\n", fat_num);
+            return false;
+        }
     }
     
     // Update FSInfo if cluster allocation changed
@@ -171,10 +184,25 @@ bool write_cluster(struct fat32_boot_sector* boot_sector, unsigned int cluster, 
         unsigned int sector_number = first_sector_of_cluster + i;
         // Calculate the pointer to the part of the entries buffer to write
         void* buffer_ptr = ((unsigned char*)entries) + (i * boot_sector->bytes_per_sector);
+        
         // Write the sector
         if (!ata_write_sector(ata_base_address, sector_number, buffer_ptr, ata_is_master)) {
             printf("Error: Failed to write to sector %u.\n", sector_number);
             return false; // Error writing sector
+        }
+        
+        // Verify the write by reading back the sector
+        unsigned char verify_buffer[boot_sector->bytes_per_sector];
+        if (!ata_read_sector(ata_base_address, sector_number, verify_buffer, ata_is_master)) {
+            printf("Error: Failed to read back sector %u for verification\n", sector_number);
+            return false;
+        }
+        
+        // Compare the written data
+        if (memcmp(buffer_ptr, verify_buffer, boot_sector->bytes_per_sector) != 0) {
+            printf("Error: Write verification failed for directory cluster sector %u\n", sector_number);
+            printf("       Possible disk write failure detected\n");
+            return false;
         }
     }
     return true;

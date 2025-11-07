@@ -142,7 +142,24 @@ bool write_fsinfo(void) {
         return false;
     }
     
-    printf("FSInfo updated: free_clusters=%u, next_free=%u\n", 
+    // Verify the write by reading back the FSInfo sector
+    struct fat32_fsinfo verify_fsinfo;
+    if (!ata_read_sector(ata_base_address, fsinfo_sector, &verify_fsinfo, ata_is_master)) {
+        printf("Error: Failed to read back FSInfo sector for verification\n");
+        return false;
+    }
+    
+    // Verify critical fields (signatures and counters)
+    if (verify_fsinfo.lead_signature != fsinfo.lead_signature ||
+        verify_fsinfo.struct_signature != fsinfo.struct_signature ||
+        verify_fsinfo.trail_signature != fsinfo.trail_signature ||
+        verify_fsinfo.free_cluster_count != fsinfo.free_cluster_count ||
+        verify_fsinfo.next_free_cluster != fsinfo.next_free_cluster) {
+        printf("Error: FSInfo write verification failed - data mismatch\n");
+        return false;
+    }
+    
+    printf("FSInfo updated and verified: free_clusters=%u, next_free=%u\n", 
            fsinfo.free_cluster_count, fsinfo.next_free_cluster);
     return true;
 }
@@ -259,15 +276,29 @@ void convert_to_83_format(unsigned char* dest, const char* src) {
 }
 
 void set_fat32_time(unsigned short* time, unsigned short* date) {
-    // Fixed date and time for testing
-    // Let's set the date to 2024-01-11 and time to 12:00:00
-    // Year = 2024 - 1980, Month = 1, Day = 11
-    // Hour = 12, Minute = 0, Second = 0
+    // Read current date and time from RTC
+    int year, month, day;
+    int hours, minutes, seconds;
+    
+    extern void read_date(int* year, int* month, int* day);
+    extern void read_time(int* hours, int* minutes, int* seconds);
+    
+    read_date(&year, &month, &day);
+    read_time(&hours, &minutes, &seconds);
+    
+    // Set FAT32 time format: bits 15-11=hours, 10-5=minutes, 4-0=seconds/2
     if (time) {
-        *time = (12 << 11) | (0 << 5) | (0 / 2);
+        *time = (hours << 11) | (minutes << 5) | (seconds / 2);
     }
+    
+    // Set FAT32 date format: bits 15-9=year-1980, 8-5=month, 4-0=day
     if (date) {
-        *date = ((2024 - 1980) << 9) | (1 << 5) | 11;
+        // Ensure year is within valid range (1980-2107)
+        int fat_year = year - 1980;
+        if (fat_year < 0) fat_year = 0;
+        if (fat_year > 127) fat_year = 127;
+        
+        *date = (fat_year << 9) | (month << 5) | day;
     }
 }
 
@@ -321,9 +352,23 @@ bool write_fat_entry(struct fat32_boot_sector* boot_sector, unsigned int cluster
             printf("Error: Failed to write to FAT copy %u at sector %u\n", fat_num, current_fat_sector);
             return false;
         }
+        
+        // Verify the write by reading back the sector
+        unsigned char verify_buffer[boot_sector->bytes_per_sector];
+        if (!ata_read_sector(ata_base_address, current_fat_sector, verify_buffer, ata_is_master)) {
+            printf("Error: Failed to read back FAT copy %u for verification\n", fat_num);
+            return false;
+        }
+        
+        // Compare the written data with what we intended to write
+        if (memcmp(buffer, verify_buffer, boot_sector->bytes_per_sector) != 0) {
+            printf("Error: Write verification failed for FAT copy %u at sector %u\n", fat_num, current_fat_sector);
+            printf("       Data mismatch detected - possible disk failure\n");
+            return false;
+        }
     }
     
-    printf("FAT entry %u updated in all %u FAT copies\n", cluster, boot_sector->number_of_fats);
+    printf("FAT entry %u updated and verified in all %u FAT copies\n", cluster, boot_sector->number_of_fats);
     return true;
 }
 
