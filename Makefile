@@ -37,7 +37,7 @@ LD := ld
 OBJCOPY := objcopy
 
 # Build target selection (default: qemu)
-# Override with: make TARGET=real_hw
+# Override with: make TARGET=real_hw or TARGET=vmware
 TARGET ?= qemu
 
 # Video mode selection (default: vga)
@@ -49,8 +49,10 @@ ifeq ($(TARGET),real_hw)
     TARGET_DEFINES := -DREAL_HARDWARE -DATA_STRICT_TIMING -DFAT32_STRICT_VALIDATION
 else ifeq ($(TARGET),qemu)
     TARGET_DEFINES := -DQEMU_BUILD -DATA_RELAXED_TIMING
+else ifeq ($(TARGET),vmware)
+    TARGET_DEFINES := -DVMWARE_BUILD -DATA_MODERATE_TIMING
 else
-    $(error Invalid TARGET=$(TARGET). Use 'qemu' or 'real_hw')
+    $(error Invalid TARGET=$(TARGET). Use 'qemu', 'vmware', or 'real_hw')
 endif
 
 # Video mode defines
@@ -86,6 +88,7 @@ MOUNT_DIR := /mnt/disk
 
 # Architecture sources (x86)
 ARCH_BOOT_ASM := $(wildcard $(ARCH_DIR)/boot/*.asm)
+ARCH_BOOT_C := $(wildcard $(ARCH_DIR)/boot/*.c)
 ARCH_CPU_ASM := $(wildcard $(ARCH_DIR)/cpu/*.asm)
 ARCH_CPU_C := $(wildcard $(ARCH_DIR)/cpu/*.c)
 ARCH_MM_C := $(wildcard $(ARCH_DIR)/mm/*.c)
@@ -127,7 +130,8 @@ USERSPACE_C := $(wildcard $(USERSPACE_DIR)/bin/*.c)
 # ============================================================================
 
 # Architecture objects
-ARCH_BOOT_OBJ := $(patsubst $(ARCH_DIR)/boot/%.asm,$(BUILD_ARCH_DIR)/boot/%.o,$(ARCH_BOOT_ASM))
+ARCH_BOOT_ASM_OBJ := $(patsubst $(ARCH_DIR)/boot/%.asm,$(BUILD_ARCH_DIR)/boot/%.o,$(ARCH_BOOT_ASM))
+ARCH_BOOT_C_OBJ := $(patsubst $(ARCH_DIR)/boot/%.c,$(BUILD_ARCH_DIR)/boot/%.o,$(ARCH_BOOT_C))
 ARCH_CPU_ASM_OBJ := $(patsubst $(ARCH_DIR)/cpu/%.asm,$(BUILD_ARCH_DIR)/cpu/%_asm.o,$(ARCH_CPU_ASM))
 ARCH_CPU_C_OBJ := $(patsubst $(ARCH_DIR)/cpu/%.c,$(BUILD_ARCH_DIR)/cpu/%.o,$(ARCH_CPU_C))
 ARCH_MM_OBJ := $(patsubst $(ARCH_DIR)/mm/%.c,$(BUILD_ARCH_DIR)/mm/%.o,$(ARCH_MM_C))
@@ -162,7 +166,7 @@ LIB_LIBC_ASM_OBJ := $(patsubst $(LIB_DIR)/libc/%.asm,$(BUILD_LIB_DIR)/libc/%.o,$
 LIB_LIBK_OBJ := $(patsubst $(LIB_DIR)/libk/%.c,$(BUILD_LIB_DIR)/libk/%.o,$(LIB_LIBK_C))
 
 # Aggregate objects for linking
-ARCH_OBJ := $(ARCH_BOOT_OBJ) $(ARCH_CPU_ASM_OBJ) $(ARCH_CPU_C_OBJ) $(ARCH_MM_OBJ)
+ARCH_OBJ := $(ARCH_BOOT_ASM_OBJ) $(ARCH_BOOT_C_OBJ) $(ARCH_CPU_ASM_OBJ) $(ARCH_CPU_C_OBJ) $(ARCH_MM_OBJ)
 KERNEL_OBJ := $(KERNEL_INIT_OBJ) $(KERNEL_SYSCALL_OBJ) $(KERNEL_PROC_OBJ) \
               $(KERNEL_SCHED_C_OBJ) $(KERNEL_SCHED_ASM_OBJ) $(KERNEL_TIME_OBJ) \
               $(KERNEL_SHELL_OBJ)
@@ -177,7 +181,7 @@ ALL_OBJ := $(ARCH_OBJ) $(KERNEL_OBJ) $(MM_OBJ) $(FS_OBJ) $(DRIVERS_OBJ) $(LIB_OB
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel iso run help format-disks test test-images test-verbose test-bash test-quick run-debug print-vars build-qemu build-real-hw clean-all
+.PHONY: all clean prepare kernel iso run help format-disks test test-images test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: prepare kernel iso
 
@@ -196,6 +200,23 @@ build-qemu-fb:
 	@$(MAKE) all TARGET=qemu VIDEO=framebuffer
 	@echo "✓ QEMU framebuffer build complete: kernel.iso"
 	@echo "  Run with: make run-fb"
+
+# Build specifically for VMware Workstation
+build-vmware:
+	@echo "Building kernel for VMware Workstation..."
+	@echo "  - Intel E1000 network adapter enabled"
+	@echo "  - VMware-optimized timing configuration"
+	@$(MAKE) clean
+	@$(MAKE) all TARGET=vmware
+	@echo "✓ VMware build complete: kernel.iso"
+	@echo ""
+	@echo "VMware Configuration Instructions:"
+	@echo "  1. Create New VM → Custom (advanced)"
+	@echo "  2. Guest OS: Other → Other (32-bit)"
+	@echo "  3. Memory: 64 MB"
+	@echo "  4. Network Adapter → Advanced → Intel E1000"
+	@echo "  5. CD/DVD: Use ISO image → kernel.iso"
+	@echo "  6. Boot and enjoy!"
 
 # Build specifically for real hardware (strict timing)
 build-real-hw:
@@ -216,6 +237,8 @@ help:
 	@echo "Build Targets:"
 	@echo "  all          - Build kernel and create ISO (default, TARGET=$(TARGET))"
 	@echo "  build-qemu   - Build specifically for QEMU (relaxed ATA timing)"
+	@echo "  build-qemu-fb - Build for QEMU with framebuffer support"
+	@echo "  build-vmware - Build for VMware Workstation (E1000 network)"
 	@echo "  build-real-hw - Build for real hardware (strict ATA timing)"
 	@echo "  kernel       - Build kernel binary only"
 	@echo "  iso          - Create bootable ISO image"
@@ -278,6 +301,11 @@ prepare:
 $(BUILD_ARCH_DIR)/boot/%.o: $(ARCH_DIR)/boot/%.asm
 	@echo "  AS    $<"
 	@$(AS) $(ASFLAGS) $< -o $@
+
+# Architecture - Boot C
+$(BUILD_ARCH_DIR)/boot/%.o: $(ARCH_DIR)/boot/%.c
+	@echo "  CC    $<"
+	@$(CC) $(CFLAGS) $< -o $@
 
 # Architecture - CPU assembly (renamed to avoid conflicts with C files)
 $(BUILD_ARCH_DIR)/cpu/%_asm.o: $(ARCH_DIR)/cpu/%.asm

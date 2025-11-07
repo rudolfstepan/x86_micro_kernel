@@ -267,7 +267,7 @@ void ne2000_print_status() {
     printf("==================================\n\n");
 }
 
-void ne2000_send_packet(const uint8_t *data, uint16_t length) {
+void ne2000_send_packet(uint8_t *data, uint16_t length) {
     if (length > 1500) {
         printf("Packet too large to send: %d bytes\n", length);
         return;
@@ -448,6 +448,12 @@ void ne2000_print_mac_address() {
     // Print MAC address
     printf("NE2000 MAC address: %02X:%02X:%02X:%02X:%02X:%02X\n",
            mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
+}
+
+void ne2000_get_mac_address(uint8_t *mac) {
+    for (int i = 0; i < 6; i++) {
+        mac[i] = mac_address[i];
+    }
 }
 
 void ne2000_detect() {

@@ -14,12 +14,13 @@
 #include "lib/libc/stdlib.h"
 #include "drivers/video/video.h"
 #include "drivers/char/kb.h"
+#include "kernel/time/pit.h"
 #include "fs/vfs/filesystem.h"
 #include "fs/fat32/fat32.h"
 #include "fs/fat12/fat12.h"
 // #include "drivers/net/rtl8139.h"
-// #include "drivers/net/e1000.h"
-#include "drivers/net/ne2000.h"
+#include "drivers/net/e1000.h"
+// #include "drivers/net/ne2000.h"
 // #include "drivers/net/vmxnet3.h"
 
 
@@ -83,6 +84,9 @@ void cmd_wait(int cnt, const char **args);
 void list_running_processes(int cnt, const char **args);
 void cmd_start_task(int cnt, const char **args);
 void cmd_net(int cnt, const char **args);
+void cmd_ifconfig(int cnt, const char **args);
+void cmd_ping(int cnt, const char **args);
+void cmd_arp(int cnt, const char **args);
 
 
 // Command table
@@ -119,6 +123,9 @@ command_t command_table[MAX_COMMANDS] = {
     {"pid", (command_func)list_running_processes},
     {"rtask", cmd_start_task},
     {"net", cmd_net},
+    {"ifconfig", cmd_ifconfig},
+    {"ping", cmd_ping},
+    {"arp", cmd_arp},
     {NULL, NULL} // End marker
 };
 
@@ -166,7 +173,8 @@ void process_command(char *input_buffer) {
     // Free allocated arguments after command execution
     free_arguments(arguments, arg_cnt);
 
-    asm volatile("int $0x29"); // Trigger a timer interrupt
+    // Don't trigger timer interrupts manually in single-threaded mode
+    // asm volatile("int $0x29"); // Trigger a timer interrupt
 }
 
 void command_loop() {
@@ -200,12 +208,17 @@ void command_loop() {
                 }
             } else {
                 // Regular character handling
-                input[buffer_index++] = ch;
-                putchar(ch); // Echo the character to the screen
+                if (buffer_index < 127) {  // Prevent buffer overflow
+                    input[buffer_index++] = ch;
+                    putchar(ch); // Echo the character to the screen
+                }
             }
+        } else {
+            // Use HLT instruction to wait for next interrupt
+            // This is much more efficient than busy-waiting
+            // and guarantees that keyboard interrupts are processed
+            __asm__ __volatile__("hlt");
         }
-
-        asm volatile("int $0x29"); // Trigger a timer interrupt
     }
 }
 
@@ -785,26 +798,27 @@ void cmd_net(int arg_count, const char** arguments) {
 
     if (strcmp(arguments[0], "STATUS") == 0 || strcmp(arguments[0], "status") == 0) {
         // Show network status
-        if (ne2000_is_initialized()) {
-            printf("Network card: NE2000 (initialized)\n");
-            ne2000_print_mac_address();
+        if (e1000_is_initialized()) {
+            printf("Network card: Intel E1000 (initialized)\n");
+            // TODO: Add E1000 MAC address printing
         } else {
             printf("No network card initialized\n");
         }
     } else if (strcmp(arguments[0], "INFO") == 0 || strcmp(arguments[0], "info") == 0) {
         // Get detailed network interface information
-        ne2000_print_status();
+        printf("E1000 Network Adapter Info:\n");
+        // TODO: Add E1000 detailed status
     } else if(strcmp(arguments[0], "SEND") == 0 || strcmp(arguments[0], "send") == 0) {
         // Send a test packet
-        if (!ne2000_is_initialized()) {
+        if (!e1000_is_initialized()) {
             printf("Network card not initialized. Cannot send packet.\n");
             return;
         }
-        printf("Sending test packet via NE2000...\n");
-        ne2000_test_send();
+        printf("Sending test packet via E1000...\n");
+        e1000_send_test_packet();
     } else if(strcmp(arguments[0], "LISTEN") == 0 || strcmp(arguments[0], "listen") == 0) {
         // Listen for incoming packets
-        if (!ne2000_is_initialized()) {
+        if (!e1000_is_initialized()) {
             printf("Network card not initialized.\n");
             return;
         }
@@ -825,10 +839,14 @@ void cmd_net(int arg_count, const char** arguments) {
         int packets_received = 0;
         
         for (int i = 0; i < max_packets * 100000; i++) {
-            int len = ne2000_receive_packet(buffer, sizeof(buffer));
+            int len = e1000_receive_packet(buffer, sizeof(buffer));
             if (len > 0) {
                 packets_received++;
                 printf("\n[Packet %d] Received %d bytes:\n", packets_received, len);
+                
+                // Process packet through network stack
+                extern void netstack_process_packet(uint8_t *packet, uint16_t length);
+                netstack_process_packet(buffer, len);
                 
                 // Print packet header info
                 if (len >= 14) {
@@ -863,13 +881,13 @@ void cmd_net(int arg_count, const char** arguments) {
         
     } else if(strcmp(arguments[0], "RECV") == 0 || strcmp(arguments[0], "recv") == 0) {
         // Try to receive one packet
-        if (!ne2000_is_initialized()) {
+        if (!e1000_is_initialized()) {
             printf("Network card not initialized.\n");
             return;
         }
         
         uint8_t buffer[1500];
-        int len = ne2000_receive_packet(buffer, sizeof(buffer));
+        int len = e1000_receive_packet(buffer, sizeof(buffer));
         
         if (len > 0) {
             printf("Received %d bytes:\n", len);
@@ -886,3 +904,79 @@ void cmd_net(int arg_count, const char** arguments) {
         printf("Type 'NET' without arguments for help\n");
     }
 }
+
+// Network stack commands
+extern void netstack_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway);
+extern uint32_t parse_ipv4(const char *ip_string);
+extern void netstack_process_packet(uint8_t *packet, uint16_t length);
+extern void arp_send_request(uint32_t target_ip);
+
+void cmd_ifconfig(int arg_count, const char** arguments) {
+    if (arg_count == 0) {
+        printf("IFCONFIG - Configure network interface\n");
+        printf("Usage: ifconfig <ip> <netmask> <gateway>\n");
+        printf("Example: ifconfig 10.0.2.15 255.255.255.0 10.0.2.1\n");
+        return;
+    }
+    
+    if (arg_count < 3) {
+        printf("Error: Requires 3 arguments (IP, netmask, gateway)\n");
+        return;
+    }
+    
+    uint32_t ip = parse_ipv4(arguments[0]);
+    uint32_t netmask = parse_ipv4(arguments[1]);
+    uint32_t gateway = parse_ipv4(arguments[2]);
+    
+    if (ip == 0 || netmask == 0 || gateway == 0) {
+        printf("Error: Invalid IP address format\n");
+        return;
+    }
+    
+    netstack_set_config(ip, netmask, gateway);
+    printf("Network interface configured successfully\n");
+}
+
+void cmd_ping(int arg_count, const char** arguments) {
+    if (arg_count == 0) {
+        printf("PING - Send ICMP echo request\n");
+        printf("Usage: ping <ip_address>\n");
+        printf("Example: ping 10.0.2.1\n");
+        return;
+    }
+    
+    uint32_t target_ip = parse_ipv4(arguments[0]);
+    if (target_ip == 0) {
+        printf("Error: Invalid IP address\n");
+        return;
+    }
+    
+    printf("PING %s...\n", arguments[0]);
+    printf("Note: ICMP echo request not yet fully implemented\n");
+    printf("Sending ARP request first...\n");
+    arp_send_request(target_ip);
+}
+
+void cmd_arp(int arg_count, const char** arguments) {
+    printf("ARP - Address Resolution Protocol\n");
+    printf("Commands:\n");
+    printf("  arp scan <ip> - Send ARP request to IP\n");
+    printf("  arp cache     - Show ARP cache (not yet implemented)\n");
+    
+    if (arg_count > 0 && strcmp(arguments[0], "scan") == 0) {
+        if (arg_count < 2) {
+            printf("Usage: arp scan <ip_address>\n");
+            return;
+        }
+        
+        uint32_t target_ip = parse_ipv4(arguments[1]);
+        if (target_ip == 0) {
+            printf("Error: Invalid IP address\n");
+            return;
+        }
+        
+        printf("Sending ARP request to %s...\n", arguments[1]);
+        arp_send_request(target_ip);
+    }
+}
+

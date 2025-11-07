@@ -15,6 +15,10 @@
     #define ATA_WAIT_TIMEOUT_MS 500      // QEMU is fast, shorter timeout
     #define ATA_POLL_DELAY_MS 1          // QEMU: poll every 1ms
     #define ATA_DETECTION_TIMEOUT_MS 100 // QEMU detection is quick
+#elif defined(VMWARE_BUILD)
+    #define ATA_WAIT_TIMEOUT_MS 5000     // VMware: use same as real hardware
+    #define ATA_POLL_DELAY_MS 10         // VMware: longer polling interval
+    #define ATA_DETECTION_TIMEOUT_MS 2000 // VMware needs much longer detection
 #elif defined(REAL_HARDWARE)
     #define ATA_WAIT_TIMEOUT_MS 5000     // Real hardware needs more time
     #define ATA_POLL_DELAY_MS 10         // Real HW: poll every 10ms to avoid bus hogging
@@ -37,8 +41,8 @@ static unsigned int consecutive_read_failures = 0;
 bool wait_for_drive_ready(unsigned short base, unsigned int timeout_ms) {
     unsigned int elapsed_time = 0;
     
-#ifdef QEMU_BUILD
-    // QEMU: Wait for BSY to clear AND RDY to be set
+#if defined(QEMU_BUILD) || defined(VMWARE_BUILD)
+    // QEMU/VMware: Wait for BSY to clear AND RDY to be set
     while (1) {
         uint8_t status = inb(ATA_STATUS(base));
         
@@ -203,7 +207,7 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
     
     // Wait for the drive to be ready
     printf("  Step 1: Waiting for drive ready...\n");
-    if (!wait_for_drive_ready(base, 1000)) {  // 1000 ms timeout
+    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
         printf("  ERROR: Drive not ready (timeout)\n");
         consecutive_read_failures++;
         return false;  // Drive not ready within the timeout
@@ -221,9 +225,14 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
         inb(ATA_ALT_STATUS(base));  // Read alternate status 4 times for 400ns delay
     }
     
+#ifdef VMWARE_BUILD
+    // VMware needs extra time after drive selection
+    pit_delay(50);  // 50ms delay for VMware (increased from 10ms)
+#endif
+    
     // Wait for drive to acknowledge selection
     printf("  Step 2: Waiting for drive to acknowledge selection...\n");
-    if (!wait_for_drive_ready(base, 1000)) {
+    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
         printf("  ERROR: Drive not ready after selection\n");
         consecutive_read_failures++;
         return false;

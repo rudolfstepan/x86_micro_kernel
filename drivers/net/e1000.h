@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 
 // Define the size of the transmit and receive rings
@@ -26,6 +27,10 @@ struct e1000_rx_desc {
 } __attribute__((packed));
 
 void e1000_detect();
+bool e1000_is_initialized();
+void e1000_get_mac_address(uint8_t *mac);
+void e1000_send_packet(void *packet, size_t length);
+int e1000_receive_packet(uint8_t *buffer, size_t buffer_size);
 void e1000_send_test_packet();
 
 #endif // E1000_H

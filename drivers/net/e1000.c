@@ -275,29 +275,16 @@ void process_packet(void *packet, size_t length) {
 //     printf("E1000 initialized.\n");
 // }
 
-void e1000_receive_packet() {
-    uint32_t tail = e1000_read_reg(E1000_REG_RDT);
-
-    while (true) {
-        uint32_t head = e1000_read_reg(E1000_REG_RDH);
-        if (head == tail) {
-            break; // No more packets
-        }
-
-        // struct e1000_rx_desc *desc = &receive_ring[head];
-        // if (desc->status & 0x1) { // Descriptor Done
-        //     process_packet((void *)desc->buffer_addr, desc->length);
-        //     desc->status = 0;
-        // }
-
-        // tail = (tail + 1) % RECEIVE_RING_SIZE;
-        // e1000_write_reg(E1000_REG_RDT, tail);
-    }
+int e1000_receive_packet(uint8_t *buffer, size_t buffer_size) {
+    // TODO: Implement actual packet reception from E1000 RX ring
+    // For now, return 0 (no packet received)
+    return 0;
 }
 
-void e1000_get_mac_address(uint8_t *mac[6]) {
+void e1000_get_mac_address(uint8_t *mac) {
+    // Read MAC address from MMIO registers
     for (int i = 0; i < 6; i++) {
-        mac[i] = e1000_device.mmio_base[i];
+        mac[i] = ((uint8_t*)e1000_device.mmio_base)[i];
     }
 }
 
@@ -389,37 +376,11 @@ void e1000_detect(){
     printf("Detecting E1000 network card...\n");
 
     pci_register_driver(E1000_VENDOR_ID, E1000_DEVICE_ID, e1000_probe);
-
-
-    // for (uint16_t bus = 0; bus < 256; ++bus) {
-    //     for (uint8_t device = 0; device < 32; ++device) {
-    //         // Prüfen, ob das Gerät existiert
-    //         uint32_t id = pci_read(bus, device, 0, 0);
-    //         if ((id & 0xFFFF) == 0xFFFF) { // Kein Gerät vorhanden
-    //             continue;
-    //         }
-
-    //         // Prüfen, ob das Gerät mehrere Funktionen unterstützt
-    //         uint32_t header_type = pci_read(bus, device, 0, 0x0C) >> 16;
-    //         uint8_t multifunction = (header_type & 0x80) != 0;
-
-    //         // Über alle Funktionen iterieren
-    //         for (uint8_t function = 0; function < (multifunction ? 8 : 1); ++function) {
-    //             // PCI-Geräte-ID und Vendor-ID auslesen
-    //             id = pci_read(bus, device, function, 0);
-    //             if ((id & 0xFFFF) == E1000_VENDOR_ID && ((id >> 16) & 0xFFFF) == E1000_DEVICE_ID) {
-
-    //                 //pci_set_irq(bus, device, function, 10);
-    //                 e1000_init(bus, device, function);
-    //                 get_mac_address();
-
-    //                 return;
-    //             }
-    //         }
-    //     }
-    //}
 }
 
+bool e1000_is_initialized() {
+    return e1000_device.mmio_base != NULL;
+}
 
 void e1000_test_registers() {
     printf("Testing E1000 register configurations...\n");
