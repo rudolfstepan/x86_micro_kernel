@@ -70,10 +70,37 @@ void init_fs(drive_t* drive) {
         uint8_t buffer[512];
         boot_sector_t* boot_sector = (boot_sector_t*)buffer;
 
-        printf("Reading boot sector from LBA 0...\n");
+        printf("Reading MBR/boot sector from LBA 0...\n");
         if (!ata_read_sector(drive->base, 0, buffer, drive->is_master)) {
             printf("Failed to read boot sector.\n");
             return;
+        }
+        
+        // Check for MBR signature (0x55AA at offset 510)
+        if (buffer[510] == 0x55 && buffer[511] == 0xAA) {
+            // Check if this is an MBR (has partition table) or just a boot sector
+            // MBR partition entries start at offset 446
+            uint8_t* partition_entry = &buffer[446];
+            uint8_t status = partition_entry[0];
+            uint8_t partition_type = partition_entry[4];
+            
+            // If we have a valid partition type, this is an MBR
+            if (partition_type != 0x00) {
+                printf("Detected MBR with partition table.\n");
+                printf("  Partition 1 type: 0x%02X (0x0B/0x0C = FAT32)\n", partition_type);
+                
+                // Get LBA start of first partition (little-endian, 4 bytes at offset 8)
+                uint32_t partition_lba = *(uint32_t*)&partition_entry[8];
+                printf("  Partition 1 starts at LBA %u\n", partition_lba);
+                
+                // Read the actual filesystem boot sector from the partition
+                printf("Reading FAT32 boot sector from partition at LBA %u...\n", partition_lba);
+                if (!ata_read_sector(drive->base, partition_lba, buffer, drive->is_master)) {
+                    printf("Failed to read partition boot sector.\n");
+                    return;
+                }
+                printf("Partition boot sector read successful.\n");
+            }
         }
         
         printf("Boot sector read successful.\n");

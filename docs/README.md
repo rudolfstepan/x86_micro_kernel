@@ -28,6 +28,7 @@
 
 ## Development
 - [Project Status](development/PROJECT_STATUS.md) - Current state and roadmap
+- [Bootable Disk Image](development/BOOTABLE_DISK.md) - Create bootable hard disk (alternative to ISO)
 - [Debugging Boot Sector](development/DEBUGGING_BOOT_SECTOR.md) - Boot troubleshooting
 - [Diagnostic Report](development/DIAGNOSTIC_REPORT.md) - System diagnostics
 - [Fixes: Interrupt Management](development/FIXES_ISSUE_1_INTERRUPT_MANAGEMENT.md) - IRQ fixes

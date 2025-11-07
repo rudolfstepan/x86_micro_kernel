@@ -30,6 +30,7 @@
 // Control registers
 #define ATA_ALT_STATUS(base)  ((base) + 0x206) // Alternate status register
 #define ATA_DEV_CTRL(base)    ((base) + 0x206) // Device control register
+#define ATA_CONTROL(base)     ((base) + 0x206) // Device control register (alias)
 
 #define MAX_DRIVES          4      // Max of 4 ATA drives (primary/master, primary/slave, secondary/master, secondary/slave)
 #define SECTOR_SIZE 512

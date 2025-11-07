@@ -188,6 +188,44 @@ bool wait_for_drive_data_ready(unsigned short base, unsigned int timeout_ms) {
 #endif
 }
 
+// Software reset for ATA controller
+static void ata_soft_reset(unsigned short base, bool is_master) {
+    printf("  Performing ATA software reset (base=0x%X, master=%d)...\n", base, is_master);
+    
+    // First, try to select the drive
+    uint8_t drive_select = is_master ? 0xA0 : 0xB0;
+    outb(ATA_DRIVE_HEAD(base), drive_select);
+    
+    // Wait 400ns for drive selection
+    for (volatile int i = 0; i < 4; i++) {
+        inb(ATA_ALT_STATUS(base));
+    }
+    pit_delay(10);  // Extra delay for drive selection
+    
+    // Set SRST (Software Reset) bit in Device Control register
+    outb(ATA_CONTROL(base), 0x04);
+    pit_delay(10);  // Wait 10ms (increased)
+    
+    // Clear SRST bit (enable interrupts again)
+    outb(ATA_CONTROL(base), 0x00);
+    pit_delay(5);  // Wait 5ms for reset to complete
+    
+    // Poll for drive ready (don't use wait_for_drive_ready as it may timeout)
+    printf("  Polling for drive ready after reset...\n");
+    for (int i = 0; i < 100; i++) {
+        uint8_t status = inb(ATA_STATUS(base));
+        printf("    Poll %d: status=0x%02X\n", i, status);
+        
+        if (status != 0x00 && status != 0xFF && !(status & 0x80)) {
+            printf("  Reset complete, drive ready (status=0x%02X)\n", status);
+            return;
+        }
+        pit_delay(10);
+    }
+    
+    printf("  Warning: Drive may not be ready after reset\n");
+}
+
 /*
     * Reads a sector from the ATA drive.
     * 
@@ -197,6 +235,19 @@ bool wait_for_drive_data_ready(unsigned short base, unsigned int timeout_ms) {
 */
 bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master) {
     //printf("ata_read_sector: base=0x%X, lba=%u, is_master=%d\n", base, lba, is_master);
+    
+    // On first read attempt, try a soft reset if drive isn't responding
+    static bool first_read_attempted[2] = {false, false};  // Track per controller
+    int controller_idx = (base == ATA_PRIMARY_IO) ? 0 : 1;
+    
+    if (!first_read_attempted[controller_idx]) {
+        uint8_t status = inb(ATA_STATUS(base));
+        if (status == 0x00 || status == 0xFF) {
+            printf("  Drive status invalid (0x%02X), attempting soft reset...\n", status);
+            ata_soft_reset(base, is_master);
+        }
+        first_read_attempted[controller_idx] = true;
+    }
     
     // Check for excessive consecutive failures
     if (consecutive_read_failures >= MAX_CONSECUTIVE_FAILURES) {
@@ -251,7 +302,7 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
     outb(ATA_COMMAND(base), ATA_READ_SECTORS);
     
     // Small delay after sending command (required by ATA spec)
-    printf("  Step 3: Delay after command...\n");
+    //printf("  Step 3: Delay after command...\n");
     for (volatile int i = 0; i < 4; i++) {
         inb(ATA_ALT_STATUS(base));  // Read alternate status 4 times for 400ns delay
     }

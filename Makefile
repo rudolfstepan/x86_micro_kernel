@@ -242,10 +242,12 @@ help:
 	@echo "  build-real-hw - Build for real hardware (strict ATA timing)"
 	@echo "  kernel       - Build kernel binary only"
 	@echo "  iso          - Create bootable ISO image"
+	@echo "  bootdisk     - Create bootable hard disk image (GRUB installed)"
 	@echo "  clean        - Remove all build artifacts"
 	@echo ""
 	@echo "Run Targets:"
-	@echo "  run          - Build and run in QEMU"
+	@echo "  run          - Build and run in QEMU (from ISO)"
+	@echo "  run-disk     - Build and run in QEMU (from bootable disk)"
 	@echo "  run-debug    - Build and run in QEMU with GDB debugging"
 	@echo ""
 	@echo "Network Adapter Targets:"
@@ -448,6 +450,15 @@ iso: kernel
 	@echo "ISO created: kernel.iso"
 
 # ============================================================================
+# BOOTABLE DISK IMAGE
+# ============================================================================
+
+bootdisk: kernel
+	@echo "Creating bootable disk image..."
+	@./scripts/create_bootable_disk.sh
+	@echo "Bootable disk created: boot_disk.img"
+
+# ============================================================================
 # TESTING
 # ============================================================================
 
@@ -495,6 +506,32 @@ run: iso
 		-drive file=./floppy.img,format=raw,if=floppy \
 		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
 		-monitor stdio -vga vmware
+
+# Run from bootable disk (no ISO/CD-ROM needed)
+# run-disk: bootdisk
+# 	@echo "Starting QEMU from bootable disk..."
+# 	@echo "  - Booting from boot_disk.img (GRUB installed)"
+# 	@echo "  - Data disk (hdd1): disk.img (FAT32)"
+# 	@echo "  - Data disk (hdd2): disk1.img (FAT32)"
+# 	@echo "  - Floppy (fd0): floppy.img (FAT12)"
+# 	@qemu-system-i386 -m 512M -boot c \
+# 		-drive file=./boot_disk.img,format=raw,if=ide,index=0 \
+# 		-drive file=./disk.img,format=raw,if=ide,index=1 \
+# 		-drive file=./disk1.img,format=raw,if=ide,index=2 \
+# 		-drive file=./floppy.img,format=raw,if=floppy \
+# 		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
+# 		-monitor stdio -vga vmware
+
+run-disk: bootdisk
+	@echo "Starting QEMU from bootable disk..."
+	@echo "  - Primary Master (hdd0): boot_disk.img (GRUB + FAT32 data)"
+	@echo "  - Floppy (fd0): floppy.img (FAT12)"
+	@qemu-system-i386 -m 512M -boot c \
+		-drive file=./boot_disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
+		-nographic
 
 # Run with framebuffer mode
 run-fb: iso
