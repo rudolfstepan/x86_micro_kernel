@@ -123,3 +123,126 @@ void vga_backspace() {
     const unsigned int index = cursor_y * VGA_COLS + cursor_x;
     vga_buffer[index] = ' ' | (current_color << 8);  // Assuming 0x0F for white-on-black text
 }
+
+//=============================================================================
+// Advanced Line Editing Functions
+//=============================================================================
+
+// Saved cursor position for restoration
+static int saved_cursor_x = 0;
+static int saved_cursor_y = 0;
+
+/**
+ * Save current cursor position
+ */
+void vga_save_cursor() {
+    get_cursor_position(&saved_cursor_x, &saved_cursor_y);
+}
+
+/**
+ * Restore saved cursor position
+ */
+void vga_restore_cursor() {
+    set_cursor_position(saved_cursor_x, saved_cursor_y);
+}
+
+/**
+ * Clear entire current line
+ */
+void vga_clear_line() {
+    int cursor_x, cursor_y;
+    get_cursor_position(&cursor_x, &cursor_y);
+    
+    // Clear from start of line to end
+    for (int x = 0; x < VGA_COLS; x++) {
+        const int index = cursor_y * VGA_COLS + x;
+        vga_buffer[index] = ' ' | (current_color << 8);
+    }
+    
+    // Move cursor to start of line
+    set_cursor_position(0, cursor_y);
+}
+
+/**
+ * Clear from cursor to end of line
+ */
+void vga_clear_from_cursor() {
+    int cursor_x, cursor_y;
+    get_cursor_position(&cursor_x, &cursor_y);
+    
+    // Clear from cursor to end of line
+    for (int x = cursor_x; x < VGA_COLS; x++) {
+        const int index = cursor_y * VGA_COLS + x;
+        vga_buffer[index] = ' ' | (current_color << 8);
+    }
+}
+
+/**
+ * Move cursor one position left (without deleting)
+ */
+void vga_move_cursor_left() {
+    int cursor_x, cursor_y;
+    get_cursor_position(&cursor_x, &cursor_y);
+    
+    if (cursor_x > 0) {
+        cursor_x--;
+        set_cursor_position(cursor_x, cursor_y);
+    }
+}
+
+/**
+ * Move cursor one position right (without deleting)
+ */
+void vga_move_cursor_right() {
+    int cursor_x, cursor_y;
+    get_cursor_position(&cursor_x, &cursor_y);
+    
+    if (cursor_x < VGA_COLS - 1) {
+        cursor_x++;
+        set_cursor_position(cursor_x, cursor_y);
+    }
+}
+
+/**
+ * Insert character at cursor position, shifting rest of line right
+ */
+void vga_insert_char_at_cursor(char ch) {
+    int cursor_x, cursor_y;
+    get_cursor_position(&cursor_x, &cursor_y);
+    
+    // Shift characters to the right
+    for (int x = VGA_COLS - 1; x > cursor_x; x--) {
+        const int src_index = cursor_y * VGA_COLS + x - 1;
+        const int dst_index = cursor_y * VGA_COLS + x;
+        vga_buffer[dst_index] = vga_buffer[src_index];
+    }
+    
+    // Insert new character
+    const int index = cursor_y * VGA_COLS + cursor_x;
+    vga_buffer[index] = (unsigned short)ch | (current_color << 8);
+    
+    // Move cursor right
+    if (cursor_x < VGA_COLS - 1) {
+        cursor_x++;
+        set_cursor_position(cursor_x, cursor_y);
+    }
+}
+
+/**
+ * Delete character at cursor position, shifting rest of line left
+ */
+void vga_delete_char_at_cursor() {
+    int cursor_x, cursor_y;
+    get_cursor_position(&cursor_x, &cursor_y);
+    
+    // Shift characters to the left
+    for (int x = cursor_x; x < VGA_COLS - 1; x++) {
+        const int src_index = cursor_y * VGA_COLS + x + 1;
+        const int dst_index = cursor_y * VGA_COLS + x;
+        vga_buffer[dst_index] = vga_buffer[src_index];
+    }
+    
+    // Clear last character on line
+    const int last_index = cursor_y * VGA_COLS + VGA_COLS - 1;
+    vga_buffer[last_index] = ' ' | (current_color << 8);
+}

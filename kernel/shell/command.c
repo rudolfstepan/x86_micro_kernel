@@ -87,6 +87,7 @@ void cmd_net(int cnt, const char **args);
 void cmd_ifconfig(int cnt, const char **args);
 void cmd_ping(int cnt, const char **args);
 void cmd_arp(int cnt, const char **args);
+void cmd_history(int cnt, const char **args);
 
 
 // Command table
@@ -126,6 +127,7 @@ command_t command_table[MAX_COMMANDS] = {
     {"ifconfig", cmd_ifconfig},
     {"ping", cmd_ping},
     {"arp", cmd_arp},
+    {"history", cmd_history},
     {NULL, NULL} // End marker
 };
 
@@ -177,46 +179,334 @@ void process_command(char *input_buffer) {
     // asm volatile("int $0x29"); // Trigger a timer interrupt
 }
 
+//=============================================================================
+// COMMAND HISTORY
+//=============================================================================
+
+#define HISTORY_SIZE 50
+#define HISTORY_LINE_MAX 256
+
+static char history_buffer[HISTORY_SIZE][HISTORY_LINE_MAX];
+static int history_count = 0;
+static int history_index = 0;
+static int history_current = -1;  // -1 means not browsing history
+
+/**
+ * Add command to history (avoid duplicates of last command)
+ */
+void history_add(const char *cmd) {
+    // Don't add empty commands
+    if (cmd == NULL || cmd[0] == '\0') {
+        return;
+    }
+    
+    // Don't add if same as last command
+    if (history_count > 0) {
+        int last_idx = (history_index - 1 + HISTORY_SIZE) % HISTORY_SIZE;
+        if (strcmp(history_buffer[last_idx], cmd) == 0) {
+            return;
+        }
+    }
+    
+    // Add to history
+    strncpy(history_buffer[history_index], cmd, HISTORY_LINE_MAX - 1);
+    history_buffer[history_index][HISTORY_LINE_MAX - 1] = '\0';
+    
+    history_index = (history_index + 1) % HISTORY_SIZE;
+    if (history_count < HISTORY_SIZE) {
+        history_count++;
+    }
+    
+    // Reset browsing position
+    history_current = -1;
+}
+
+/**
+ * Get previous command in history
+ */
+const char* history_get_prev(void) {
+    if (history_count == 0) {
+        return NULL;
+    }
+    
+    if (history_current == -1) {
+        // Start from most recent
+        history_current = (history_index - 1 + HISTORY_SIZE) % HISTORY_SIZE;
+    } else {
+        // Go back one more
+        int prev = (history_current - 1 + HISTORY_SIZE) % HISTORY_SIZE;
+        
+        // Check if we've reached the oldest command
+        int oldest = (history_index - history_count + HISTORY_SIZE) % HISTORY_SIZE;
+        if (history_current == oldest) {
+            return NULL;  // Already at oldest
+        }
+        
+        history_current = prev;
+    }
+    
+    return history_buffer[history_current];
+}
+
+/**
+ * Get next command in history (towards newer)
+ */
+const char* history_get_next(void) {
+    if (history_current == -1 || history_count == 0) {
+        return NULL;  // Not browsing or no history
+    }
+    
+    int newest = (history_index - 1 + HISTORY_SIZE) % HISTORY_SIZE;
+    if (history_current == newest) {
+        // At newest, return to empty line
+        history_current = -1;
+        return "";
+    }
+    
+    history_current = (history_current + 1) % HISTORY_SIZE;
+    return history_buffer[history_current];
+}
+
+/**
+ * Reset history browsing to newest
+ */
+void history_reset(void) {
+    history_current = -1;
+}
+
+/**
+ * List all commands in history
+ */
+void history_list(void) {
+    if (history_count == 0) {
+        printf("No command history.\n");
+        return;
+    }
+    
+    printf("Command History (%d commands):\n", history_count);
+    
+    int start = (history_index - history_count + HISTORY_SIZE) % HISTORY_SIZE;
+    for (int i = 0; i < history_count; i++) {
+        int idx = (start + i) % HISTORY_SIZE;
+        printf("  %3d: %s\n", i + 1, history_buffer[idx]);
+    }
+}
+
+//=============================================================================
+// LINE EDITOR
+//=============================================================================
+
+/**
+ * Replace current line with new content
+ */
+static void replace_current_line(char *buffer, const char *new_content, int *cursor_pos) {
+    // Save cursor position
+    vga_save_cursor();
+    
+    // Clear current line
+    vga_clear_line();
+    
+    // Print prompt
+    printf("> ");
+    
+    // Copy new content
+    int len = strlen(new_content);
+    if (len >= 127) len = 127;
+    
+    strncpy(buffer, new_content, len);
+    buffer[len] = '\0';
+    
+    // Display new content
+    for (int i = 0; i < len; i++) {
+        putchar(buffer[i]);
+    }
+    
+    *cursor_pos = len;
+}
+
+/**
+ * Handle arrow keys and special sequences
+ */
+static bool handle_escape_sequence(char *buffer, int *buffer_index) {
+    // Read next character
+    char seq1 = input_queue_pop();
+    if (seq1 == '\0') return false;
+    
+    if (seq1 != '[') {
+        // Not a recognized sequence
+        return false;
+    }
+    
+    // Read key code
+    char key_code = input_queue_pop();
+    if (key_code == '\0') return false;
+    
+    switch (key_code) {
+        case KEY_UP: {
+            // Previous command in history
+            const char *prev = history_get_prev();
+            if (prev != NULL) {
+                replace_current_line(buffer, prev, buffer_index);
+            }
+            return true;
+        }
+        
+        case KEY_DOWN: {
+            // Next command in history
+            const char *next = history_get_next();
+            if (next != NULL) {
+                replace_current_line(buffer, next, buffer_index);
+            }
+            return true;
+        }
+        
+        case KEY_LEFT:
+            // TODO: Move cursor left within line
+            return true;
+            
+        case KEY_RIGHT:
+            // TODO: Move cursor right within line
+            return true;
+            
+        case KEY_HOME:
+            // Jump to start of line
+            return true;
+            
+        case KEY_END:
+            // Jump to end of line
+            return true;
+            
+        case KEY_DELETE:
+            // Delete character at cursor
+            vga_delete_char_at_cursor();
+            return true;
+            
+        default:
+            return false;
+    }
+}
+
+/**
+ * Handle Ctrl+key combinations
+ */
+static bool handle_ctrl_key(char ch, char *buffer, int *buffer_index) {
+    switch (ch) {
+        case 0x03:  // Ctrl+C
+            printf("^C\n");
+            buffer[0] = '\0';
+            *buffer_index = 0;
+            history_reset();
+            printf("> ");
+            return true;
+            
+        case 0x04:  // Ctrl+D (EOF)
+            if (*buffer_index == 0) {
+                printf("^D\n(Ctrl+D pressed - use 'exit' to quit)\n");
+                printf("> ");
+                return true;
+            }
+            return false;
+            
+        case 0x0C:  // Ctrl+L (clear screen)
+            clear_screen();
+            printf("> ");
+            // Redisplay current buffer
+            for (int i = 0; i < *buffer_index; i++) {
+                putchar(buffer[i]);
+            }
+            return true;
+            
+        case 0x15:  // Ctrl+U (clear line)
+            vga_clear_line();
+            printf("> ");
+            buffer[0] = '\0';
+            *buffer_index = 0;
+            return true;
+            
+        case 0x0B:  // Ctrl+K (kill to end of line)
+            vga_clear_from_cursor();
+            buffer[*buffer_index] = '\0';
+            return true;
+            
+        default:
+            return false;
+    }
+}
+
+//=============================================================================
+// ENHANCED COMMAND LOOP
+//=============================================================================
+
 void command_loop() {
-    int counter = 0;
-    printf("+++command_loop started\n");
+    printf("+++Enhanced shell with line editing and history started\n");
     printf("> ");
 
-    char* input = (char*)k_malloc(128);
+    char* input = (char*)k_malloc(256);
     if (input == NULL) {
         printf("Failed to allocate memory for input buffer\n");
         return;
     }
 
     int buffer_index = 0;
+    input[0] = '\0';
 
     while (1) {
         // Get keyboard input
         char ch = input_queue_pop();
+        
         if (ch != 0) {
-            if (ch == '\n') {
-                // Null-terminate the input (don't uppercase here!)
+            // Check for escape sequences (arrow keys, etc.)
+            if (ch == '\x1B') {  // ESC
+                if (handle_escape_sequence(input, &buffer_index)) {
+                    continue;
+                }
+            }
+            // Check for Ctrl+key combinations
+            else if (ch < 0x20 && ch != '\n' && ch != '\t' && ch != '\b') {
+                if (handle_ctrl_key(ch, input, &buffer_index)) {
+                    continue;
+                }
+            }
+            // Handle Enter key
+            else if (ch == '\n') {
                 input[buffer_index] = '\0';
-                buffer_index = 0;
                 printf("\n");
-                process_command(input);
+                
+                // Add to history if not empty
+                if (buffer_index > 0) {
+                    history_add(input);
+                    process_command(input);
+                }
+                
+                // Reset for next command
+                buffer_index = 0;
+                input[0] = '\0';
+                history_reset();
                 printf("> ");
-            }else if (ch == '\b') {
+            }
+            // Handle Backspace
+            else if (ch == '\b') {
                 if (buffer_index > 0) {
                     buffer_index--;
+                    input[buffer_index] = '\0';
                     vga_backspace();
                 }
-            } else {
-                // Regular character handling
-                if (buffer_index < 127) {  // Prevent buffer overflow
+            }
+            // Handle Tab (could be used for autocomplete later)
+            else if (ch == '\t') {
+                // For now, ignore or insert spaces
+                // TODO: Implement command/filename autocomplete
+            }
+            // Regular character
+            else if (ch >= 0x20 && ch < 0x7F) {
+                if (buffer_index < 255) {
                     input[buffer_index++] = ch;
-                    putchar(ch); // Echo the character to the screen
+                    input[buffer_index] = '\0';
+                    putchar(ch);
                 }
             }
         } else {
-            // Use HLT instruction to wait for next interrupt
-            // This is much more efficient than busy-waiting
-            // and guarantees that keyboard interrupts are processed
+            // No input available - use HLT to wait efficiently
             __asm__ __volatile__("hlt");
         }
     }
@@ -288,10 +578,25 @@ void free_arguments(char** arguments, int arg_count) {
 
 // Command implementations
 void cmd_help(int arg_count, const char **args) {
-    printf("Available commands:\n");
+    printf("\n=== Rudolf Stepan x86 Microkernel Shell ===\n\n");
+    printf("Enhanced shell with line editing and command history\n");
+    printf("\nKeyboard Shortcuts:\n");
+    printf("  Up Arrow    - Previous command in history\n");
+    printf("  Down Arrow  - Next command in history\n");
+    printf("  Ctrl+C      - Cancel current line\n");
+    printf("  Ctrl+L      - Clear screen\n");
+    printf("  Ctrl+U      - Clear entire line\n");
+    printf("  Ctrl+K      - Clear from cursor to end of line\n");
+    printf("  Backspace   - Delete character before cursor\n");
+    printf("  Delete      - Delete character at cursor\n");
+    
+    printf("\nAvailable Commands:\n");
     for (int i = 0; command_table[i].name != NULL; i++) {
-        printf(" - %s\n", command_table[i].name);
+        printf("  %s\n", command_table[i].name);
     }
+    
+    printf("\nTip: Use 'history' to see previous commands\n");
+    printf("     Use arrow keys to navigate through history\n\n");
 }
 
 void cmd_clear(int arg_count, const char **args) {
@@ -980,3 +1285,9 @@ void cmd_arp(int arg_count, const char** arguments) {
     }
 }
 
+/**
+ * Display command history
+ */
+void cmd_history(int arg_count, const char** arguments) {
+    history_list();
+}

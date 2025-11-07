@@ -41,5 +41,14 @@ extern void clear_screen();
 extern void get_cursor_position(int *x, int *y);
 extern void set_cursor_position(int x, int y);
 
+// Advanced line editing functions
+extern void vga_clear_line();
+extern void vga_clear_from_cursor();
+extern void vga_move_cursor_left();
+extern void vga_move_cursor_right();
+extern void vga_insert_char_at_cursor(char ch);
+extern void vga_delete_char_at_cursor();
+extern void vga_save_cursor();
+extern void vga_restore_cursor();
 
 #endif /* VIDEO_H */
