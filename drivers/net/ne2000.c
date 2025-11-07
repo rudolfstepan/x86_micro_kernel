@@ -398,32 +398,67 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
 
     uint8_t boundary = ne2000_read(NE2000_BNRY);
     
-    printf("[RX] CURR=0x%02X, BNRY=0x%02X\n", current_page, boundary);
-    
     // Check if buffer is empty (CURR == next read position)
-    // Packets are stored from BNRY+1 to CURR-1
     uint8_t next_read = boundary + 1;
     if (next_read >= RX_STOP_PAGE) {
         next_read = RX_START_PAGE;
     }
     
-    printf("[RX] Next read should be at page: 0x%02X\n", next_read);
+    printf("[RX] CURR=0x%02X, BNRY=0x%02X, scanning pages 0x%02X-0x%02X\n", 
+           current_page, boundary, next_read, current_page - 1);
     
     // If no new packets, return silently
     if (next_read == current_page) {
-        printf("[RX] Buffer appears empty (next_read == CURR)\n");
         return 0;  // Buffer empty
     }
-    
-    printf("[RX] Packet available: pages 0x%02X to 0x%02X\n", next_read, current_page - 1);
 
-    // Move to next page after boundary
-    uint8_t next_packet_page = boundary + 1;
-    if (next_packet_page >= RX_STOP_PAGE) {
-        next_packet_page = RX_START_PAGE;
+    // Scan forward to find first non-empty page (skip up to 5 empty pages)
+    uint8_t next_packet_page = next_read;
+    int empty_pages_skipped = 0;
+    const int max_empty_pages = 5;
+    
+    while (empty_pages_skipped < max_empty_pages && next_packet_page != current_page) {
+        // Try to read header from this page
+        ne2000_write(NE2000_CR, 0x22);
+        ne2000_write(NE2000_RBCR0, 4);
+        ne2000_write(NE2000_RBCR1, 0);
+        ne2000_write(NE2000_RSAR0, 0);
+        ne2000_write(NE2000_RSAR1, next_packet_page);
+        ne2000_write(NE2000_CR, 0x0A);
+        
+        uint8_t test_header[4];
+        for (int i = 0; i < 4; i++) {
+            test_header[i] = inb(io_base + NE2000_DATA);
+        }
+        
+        int timeout = 10000;
+        while (!(ne2000_read(NE2000_ISR) & ISR_RDC) && timeout-- > 0);
+        ne2000_write(NE2000_ISR, ISR_RDC);
+        
+        // Check if page is empty (all zeros)
+        if (test_header[0] == 0 && test_header[1] == 0 && 
+            test_header[2] == 0 && test_header[3] == 0) {
+            empty_pages_skipped++;
+            next_packet_page++;
+            if (next_packet_page >= RX_STOP_PAGE) {
+                next_packet_page = RX_START_PAGE;
+            }
+            continue;
+        }
+        
+        // Found non-empty page!
+        if (empty_pages_skipped > 0) {
+            printf("[RX] Skipped %d empty pages, found data at 0x%02X\n", 
+                   empty_pages_skipped, next_packet_page);
+        }
+        break;
+    }
+    
+    if (next_packet_page == current_page) {
+        return 0;
     }
 
-    // Setup Remote DMA to read packet header (4 bytes)
+    // Now read the actual packet header from the non-empty page
     ne2000_write(NE2000_CR, 0x22);              // Page 0, Start, NoDMA
     ne2000_write(NE2000_RBCR0, 4);              // Read 4 bytes (header)
     ne2000_write(NE2000_RBCR1, 0);
@@ -450,58 +485,13 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
     uint8_t next_page = header[1];
     uint16_t packet_length = header[2] | (header[3] << 8);
 
-    printf("[RX] Header: status=0x%02X, next=0x%02X, len=%d\n", status, next_page, packet_length);
-    print_hex_dump("[RX] Raw header", header, 4);
-    
-    // Also dump what's at CURR - 1 (where latest packet should be)
-    if (current_page > RX_START_PAGE) {
-        printf("[DIAG] Checking page before CURR (0x%02X):\n", current_page - 1);
-        ne2000_dump_page(current_page - 1, 64);
-    }
+    printf("[RX] Page 0x%02X: status=0x%02X, next=0x%02X, len=%d\n", 
+           next_packet_page, status, next_page, packet_length);
 
     // Check status byte for errors
     // Bit 0 (0x01) should be set for valid packet
     if (!(status & 0x01)) {
-        printf("Packet status error: 0x%02X (not marked as received)\n", status);
-        printf("[DIAG] CURR=0x%02X, BNRY=0x%02X, next_packet_page=0x%02X\n", 
-               current_page, boundary, next_packet_page);
-        
-        // Check if this page is completely empty (all zeros)
-        bool page_empty = true;
-        for (int i = 0; i < 4; i++) {
-            if (header[i] != 0) {
-                page_empty = false;
-                break;
-            }
-        }
-        
-        if (page_empty) {
-            printf("[RX] Page 0x%02X is empty - skipping to next page\n", next_packet_page);
-            // Dump the page we tried to read from
-            ne2000_dump_page(next_packet_page, 64);
-            
-            // Skip this empty page - advance BNRY by one page
-            uint8_t skip_boundary = next_packet_page;
-            if (skip_boundary >= RX_STOP_PAGE - 1) {
-                skip_boundary = RX_START_PAGE;
-            }
-            printf("[RX] Writing BNRY = 0x%02X (was 0x%02X)\n", skip_boundary, boundary);
-            ne2000_write(NE2000_BNRY, skip_boundary);
-            
-            // Verify it was written
-            uint8_t verify_bnry = ne2000_read(NE2000_BNRY);
-            printf("[RX] Verified BNRY = 0x%02X\n", verify_bnry);
-            
-            // Don't return 0 - that makes IRQ handler think we're done
-            // Instead, return -1 to indicate we should stop this IRQ cycle
-            // and wait for the next one
-            return -1;
-        }
-        
-        // Page has data but status is bad
-        // Dump the page we tried to read from
-        ne2000_dump_page(next_packet_page, 64);
-        
+        printf("[RX] Bad status, skipping page\n");
         // Try to advance past bad packet if we have valid next_page
         if (next_page >= RX_START_PAGE && next_page < RX_STOP_PAGE) {
             uint8_t new_boundary = next_page - 1;
@@ -510,50 +500,39 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
             }
             ne2000_write(NE2000_BNRY, new_boundary);
         } else {
-            // Both status and next_page are bad - full reset
-            goto reset_buffer;
+            // Both status and next_page are bad - manual advance
+            ne2000_write(NE2000_BNRY, next_packet_page);
         }
         return -1;
     }
 
     // Validate next_page pointer
     if (next_page < RX_START_PAGE || next_page >= RX_STOP_PAGE) {
-        printf("Invalid next_page pointer: 0x%02X (expected 0x%02X-0x%02X)\n", 
-               next_page, RX_START_PAGE, RX_STOP_PAGE - 1);
-reset_buffer:
-        // Reset the receive buffer to recover
-        printf("Resetting receive buffer...\n");
-        
-        // Stop the NIC
-        ne2000_write(NE2000_CR, 0x21);  // Stop
-        
-        // Clear Remote DMA
-        ne2000_write(NE2000_RBCR0, 0);
-        ne2000_write(NE2000_RBCR1, 0);
-        
-        // Clear ISR
-        ne2000_write(NE2000_ISR, 0xFF);
-        
-        // Reset receive buffer pointers
-        ne2000_write(NE2000_BNRY, RX_START_PAGE);
-        ne2000_write(NE2000_CR, 0x62);  // Page 1, Stop
-        ne2000_write(NE2000_CURR, RX_START_PAGE + 1);
-        
-        // Restart the NIC
-        ne2000_write(NE2000_CR, 0x22);  // Page 0, Start
-        
+        printf("[RX] Invalid next_page: 0x%02X - advancing manually\n", next_page);
+        // Manually advance to next page since next_page is corrupt
+        uint8_t manual_next = next_packet_page + 1;
+        if (manual_next >= RX_STOP_PAGE) {
+            manual_next = RX_START_PAGE;
+        }
+        ne2000_write(NE2000_BNRY, next_packet_page);
         return -1;
     }
 
     // Validate packet length
     if (packet_length < 60 || packet_length > 1518) {
-        printf("Invalid packet length: %d bytes (status=0x%02X)\n", packet_length, status);
-        // Advance boundary to next_page - 1 to skip bad packet
-        uint8_t new_boundary = next_page - 1;
-        if (new_boundary < RX_START_PAGE) {
-            new_boundary = RX_STOP_PAGE - 1;
+        printf("[RX] Invalid length: %d - advancing manually\n", packet_length);
+        // Packet length is corrupt, but we can still try to skip this page
+        // Use next_page if it seems valid, otherwise advance manually
+        if (next_page >= RX_START_PAGE && next_page < RX_STOP_PAGE && next_page != next_packet_page) {
+            uint8_t new_boundary = next_page - 1;
+            if (new_boundary < RX_START_PAGE) {
+                new_boundary = RX_STOP_PAGE - 1;
+            }
+            ne2000_write(NE2000_BNRY, new_boundary);
+        } else {
+            // next_page is also bad, just skip this single page
+            ne2000_write(NE2000_BNRY, next_packet_page);
         }
-        ne2000_write(NE2000_BNRY, new_boundary);
         return -1;
     }
 

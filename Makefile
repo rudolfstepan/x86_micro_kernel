@@ -578,6 +578,35 @@ setup-tap:
 	sudo ip addr add 10.0.2.1/24 dev tap0
 	@echo "  - TAP interface 'tap0' created at 10.0.2.1/24"
 	@echo "  - Your kernel can use IPs in 10.0.2.0/24 range"
+
+# Run in terminal mode (no GUI window, uses curses)
+run-term: iso
+	@echo "Starting QEMU in terminal mode (curses)..."
+	@echo "  - VGA output redirected to terminal"
+	@echo "  - Press Ctrl+A then X to quit"
+	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
+		-display curses
+
+# Run in terminal mode with TAP networking
+run-net-tap-term: iso
+	@echo "Starting QEMU with TAP networking in terminal mode..."
+	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
+	@sudo ip link set tap0 up
+	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
+	@echo "  - TAP interface ready (10.0.2.1/24)"
+	@echo "  - Running in terminal mode (curses)"
+	@echo "  - Press Ctrl+A then X to quit"
+	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device ne2k_pci,netdev=net0,mac=52:54:00:12:34:56 \
+		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
+		-display curses
 	@echo "  - Run 'make run-net-tap' to start QEMU"
 
 # Cleanup TAP interface
