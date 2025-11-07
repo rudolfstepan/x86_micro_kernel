@@ -55,6 +55,7 @@ extern void kb_handler(void* r);
 void kb_install(void);
 void kb_wait_enter(void);
 char getchar(void);
+char getchar_nonblocking(void);
 char input_queue_pop(void);
 void get_input_line(char *buffer, int max_len);
 

@@ -36,6 +36,7 @@
 #include "drivers/char/kb.h"
 #include "drivers/char/rtc.h"
 #include "drivers/char/io.h"
+#include "drivers/char/serial.h"
 
 // Video subsystem
 #include "drivers/video/display.h"
@@ -100,6 +101,9 @@ static inline uint64_t read_cpu_cycle_counter(void) {
 static void early_init(void) {
     // CRITICAL: Disable interrupts during initialization
     irq_disable();
+    
+    // Initialize serial port early (for debugging and nographic mode)
+    serial_init_default();  // Initialize COM1 at 115200 baud
     
     // CPU setup - TSS must be initialized before GDT
     extern char _stack_end;  // From linker script (klink.ld)

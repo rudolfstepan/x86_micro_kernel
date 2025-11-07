@@ -248,6 +248,14 @@ help:
 	@echo "  run          - Build and run in QEMU"
 	@echo "  run-debug    - Build and run in QEMU with GDB debugging"
 	@echo ""
+	@echo "Network Adapter Targets:"
+	@echo "  run-rtl8139      - Run with RTL8139 (Realtek, best QEMU support)"
+	@echo "  run-rtl8139-tap  - Run RTL8139 with TAP networking"
+	@echo "  run-e1000        - Run with E1000 (Intel Gigabit)"
+	@echo "  run-e1000-tap    - Run E1000 with TAP networking"
+	@echo "  run-ne2000       - Run with NE2000 (legacy)"
+	@echo "  run-ne2000-tap   - Run NE2000 with TAP networking"
+	@echo ""
 	@echo "Test Targets:"
 	@echo "  test         - Run unit tests for disk images (Python)"
 	@echo "  test-verbose - Run disk image tests with detailed output"
@@ -649,6 +657,94 @@ cleanup-tap:
 	sudo ip link set tap0 down 2>/dev/null || true
 	sudo ip tuntap del dev tap0 mode tap 2>/dev/null || true
 	@echo "  - TAP interface removed"
+
+# ============================================================================
+# NETWORK ADAPTER SPECIFIC TARGETS
+# ============================================================================
+
+# Run with RTL8139 (Realtek - best QEMU support)
+run-rtl8139: iso
+	@echo "=== Starting QEMU with RTL8139 (Realtek) ==="
+	@echo "  Network: User-mode (no TAP needed)"
+	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
+		-netdev user,id=net0 \
+		-monitor stdio
+
+# Run with RTL8139 + TAP networking
+run-rtl8139-tap: iso
+	@echo "=== Starting QEMU with RTL8139 + TAP networking ==="
+	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
+	@sudo ip link set tap0 up
+	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
+	@echo "  - TAP interface ready (10.0.2.1/24)"
+	@echo "  - Press Ctrl+A then X to quit"
+	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
+		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
+		-nographic
+
+# Run with E1000 (Intel Gigabit)
+run-e1000: iso
+	@echo "=== Starting QEMU with E1000 (Intel Gigabit) ==="
+	@echo "  Network: User-mode (no TAP needed)"
+	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device e1000,netdev=net0,mac=52:54:00:12:34:56 \
+		-netdev user,id=net0 \
+		-monitor stdio
+
+# Run with E1000 + TAP networking
+run-e1000-tap: iso
+	@echo "=== Starting QEMU with E1000 + TAP networking ==="
+	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
+	@sudo ip link set tap0 up
+	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
+	@echo "  - TAP interface ready (10.0.2.1/24)"
+	@echo "  - Press Ctrl+A then X to quit"
+	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device e1000,netdev=net0,mac=52:54:00:12:34:56 \
+		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
+		-nographic
+
+# Run with NE2000 (legacy compatibility)
+run-ne2000: iso
+	@echo "=== Starting QEMU with NE2000 (legacy) ==="
+	@echo "  Network: User-mode (no TAP needed)"
+	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device ne2k_pci,netdev=net0 \
+		-netdev user,id=net0 \
+		-monitor stdio
+
+# Run with NE2000 + TAP networking
+run-ne2000-tap: iso
+	@echo "=== Starting QEMU with NE2000 + TAP networking ==="
+	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
+	@sudo ip link set tap0 up
+	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
+	@echo "  - TAP interface ready (10.0.2.1/24)"
+	@echo "  - Press Ctrl+A then X to quit"
+	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device ne2k_pci,netdev=net0 \
+		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
+		-nographic
 
 # ============================================================================
 # DEBUGGING INFO

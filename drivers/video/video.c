@@ -1,5 +1,6 @@
 #include "video.h"
 #include "drivers/char/io.h"
+#include "drivers/char/serial.h"
 #include "lib/libc/string.h"
 
 unsigned short* vga_buffer = (unsigned short*)VGA_ADDRESS;
@@ -57,6 +58,9 @@ void set_cursor_position(int x, int y) {
 
 // write a character to the screen
 void vga_write_char(char ch) {
+    // Write to serial console first (for nographic mode)
+    serial_write_char(SERIAL_COM1, ch);
+    
     int cursor_x = 0;
     int cursor_y = 0;
 

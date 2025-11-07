@@ -1,5 +1,6 @@
 #include "kb.h"
 #include "drivers/char/io.h"
+#include "drivers/char/serial.h"
 #include "drivers/video/video.h"
 #include "arch/x86/sys.h"
 #include "arch/x86/include/interrupt.h"
@@ -464,15 +465,53 @@ void kb_handler(void* r) {
  */
 /**
  * Blocking read of single character
- * Waits until a character is available in the queue
+ * Waits until a character is available in the queue or serial port
  */
 char getchar(void) {
-    // Wait for input using HLT instead of busy-waiting
-    while (input_queue_empty()) {
-        __asm__ __volatile__("hlt");  // Efficient waiting for interrupt
+    while (1) {
+        // Check serial port first (for nographic mode)
+        char serial_ch = serial_read_char(SERIAL_COM1);
+        if (serial_ch != 0) {
+            // Handle special serial characters
+            if (serial_ch == '\r') {
+                return '\n';  // Convert CR to LF
+            }
+            return serial_ch;
+        }
+        
+        // Check keyboard input queue
+        if (!input_queue_empty()) {
+            return input_queue_pop();
+        }
+        
+        // Wait for input using HLT instead of busy-waiting
+        __asm__ __volatile__("hlt");
+    }
+}
+
+/**
+ * Non-blocking read of single character
+ * Returns 0 if no input available (checks both serial and keyboard)
+ */
+char getchar_nonblocking(void) {
+    // Check serial port first (for nographic mode)
+    char serial_ch = serial_read_char(SERIAL_COM1);
+    if (serial_ch != 0) {
+        // Handle special serial characters
+        if (serial_ch == '\r') {
+            serial_ch = '\n';  // Convert CR to LF
+        }
+        // Don't echo here - let the caller handle echoing
+        return serial_ch;
     }
     
-    return input_queue_pop();
+    // Check keyboard input queue
+    if (!input_queue_empty()) {
+        return input_queue_pop();
+    }
+    
+    // No input available
+    return 0;
 }
 
 /**
@@ -482,6 +521,36 @@ void get_input_line(char* buffer, int max_len) {
     int index = 0;
 
     while (1) {
+        // Check serial port first (for nographic mode)
+        char serial_ch = serial_read_char(SERIAL_COM1);
+        if (serial_ch != 0) {
+            char ch = serial_ch;
+            
+            // Handle CR (Enter key on serial)
+            if (ch == '\r' || ch == '\n') {
+                buffer[index] = '\0';  // Null-terminate
+                vga_write_char('\n');  // Echo newline
+                return;
+            }
+            
+            // Handle backspace
+            if (ch == 0x7F || ch == 0x08) {
+                if (index > 0) {
+                    index--;
+                    vga_write_char(0x08);  // Echo backspace
+                }
+                continue;
+            }
+            
+            // Regular character
+            if (index < max_len - 1 && ch >= 32 && ch < 127) {
+                buffer[index++] = ch;
+                vga_write_char(ch);  // Echo character
+            }
+            continue;
+        }
+        
+        // Check keyboard input queue
         if (!input_queue_empty()) {
             char ch = input_queue_pop();
 
@@ -493,6 +562,7 @@ void get_input_line(char* buffer, int max_len) {
             if (index < max_len - 1) {
                 buffer[index++] = ch;
             }
+            continue;
         }
         
         // Yield to other tasks (if multitasking enabled)

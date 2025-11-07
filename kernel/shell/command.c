@@ -497,8 +497,8 @@ void command_loop() {
     input[0] = '\0';
 
     while (1) {
-        // Get keyboard input
-        char ch = input_queue_pop();
+        // Get keyboard or serial input (non-blocking, checks both sources)
+        char ch = getchar_nonblocking();
         
         if (ch != 0) {
             // Check for escape sequences (arrow keys, etc.)

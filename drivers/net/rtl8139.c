@@ -244,13 +244,25 @@ void rtl8139_send_packet(void* data, uint16_t len) {
     // Copy data to TX buffer
     memcpy((void*)rtl8139_device.tx_buffers, data, len);
 
-    // Write TX buffer physical address to TSD register
+    printf("RTL8139: Sending via TX buffer %u\n", current_tx_buffer);
+    printf("  Buffer addr: 0x%08X, Length: %u bytes\n", (uint32_t)rtl8139_device.tx_buffers, len);
+    printf("  IO base: 0x%08X\n", io_base);
+    
+    // Write TX buffer physical address to TSAD register
     uint32_t tx_buffer_phys = (uint32_t)rtl8139_device.tx_buffers;
     outl(io_base + REG_TRANSMIT_ADDR0 + (current_tx_buffer * 4), tx_buffer_phys);
     
-    // Write packet length and trigger transmission (clears OWN bit)
-    // Bit 13: OWN (set by hardware when complete)
+    // Write packet length and trigger transmission
     outl(io_base + REG_TRANSMIT_STATUS0 + (current_tx_buffer * 4), len & 0x1FFF);
+    
+    // Wait a bit and check status
+    for (volatile int i = 0; i < 10000; i++);
+    
+    uint32_t status = inl(io_base + REG_TRANSMIT_STATUS0 + (current_tx_buffer * 4));
+    printf("  TX Status after send: 0x%08X\n", status);
+    if (status & (1 << 15)) printf("    TOK: Transmit OK\n");
+    if (status & (1 << 14)) printf("    TUN: Transmit FIFO Underrun\n");
+    if (status & (1 << 13)) printf("    OWN: Owned by NIC\n");
     
     printf("RTL8139: Packet sent via buffer %u (%u bytes)\n", current_tx_buffer, len);
     
