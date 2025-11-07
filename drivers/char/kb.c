@@ -10,196 +10,461 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Constants and global variables
-#define SC_MAX 59
-#define BUFFER_SIZE 128
-#define KEYBOARD_PORT 0x60
+//=============================================================================
+// CONSTANTS AND CONFIGURATION
+//=============================================================================
 
-#define KEY_RELEASED_PREFIX 0xF0
+#define KEYBOARD_DATA_PORT      0x60
+#define KEYBOARD_STATUS_PORT    0x64
 
-#define LEFT_SHIFT_PRESSED 0x2A
-#define LEFT_SHIFT_RELEASED 0xAA
-#define RIGHT_SHIFT_PRESSED 0x36
-#define RIGHT_SHIFT_RELEASED 0xB6
-#define CAPS_LOCK_PRESSED 0x3A
-#define ENTER_PRESSED 0x1C
-#define BACKSPACE_PRESSED 0x0E
+#define SC_MAX                  89  // Extended to cover more scancodes
+#define INPUT_QUEUE_SIZE        256
+#define BUFFER_SIZE             128
 
+// Scancode prefixes
+#define SC_EXTENDED_PREFIX      0xE0  // Extended keys (arrows, etc.)
+#define SC_PAUSE_PREFIX         0xE1  // Pause key (rarely used)
+#define SC_RELEASE_MASK         0x80  // Bit 7 set means key released
+
+// Special scancodes (Set 1)
+#define SC_LEFT_SHIFT           0x2A
+#define SC_RIGHT_SHIFT          0x36
+#define SC_LEFT_CTRL            0x1D
+#define SC_LEFT_ALT             0x38
+#define SC_CAPS_LOCK            0x3A
+#define SC_NUM_LOCK             0x45
+#define SC_SCROLL_LOCK          0x46
+#define SC_BACKSPACE            0x0E
+#define SC_TAB                  0x0F
+#define SC_ENTER                0x1C
+#define SC_ESCAPE               0x01
+
+// Extended scancodes (with E0 prefix)
+#define SC_EXT_RIGHT_CTRL       0x1D
+#define SC_EXT_RIGHT_ALT        0x38
+#define SC_EXT_UP               0x48
+#define SC_EXT_DOWN             0x50
+#define SC_EXT_LEFT             0x4B
+#define SC_EXT_RIGHT            0x4D
+#define SC_EXT_HOME             0x47
+#define SC_EXT_END              0x4F
+#define SC_EXT_PAGE_UP          0x49
+#define SC_EXT_PAGE_DOWN        0x51
+#define SC_EXT_INSERT           0x52
+#define SC_EXT_DELETE           0x53
+
+//=============================================================================
+// SCANCODE TO ASCII TRANSLATION TABLES
+//=============================================================================
+
+// Normal mode (no shift)
 const char scancode_to_char[SC_MAX] = {
-    0,  0,  '1', '2', '3', '4', '5', '6', '7', '8',  /* 9 */
-    '9', '0', '-', '=', 0,   0,  'q', 'w', 'e', 'r', /* 19 */
-    't', 'y', 'u', 'i', 'o', 'p', '[', ']', 0,   0,  /* 29 */
-    'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', /* 39 */
-    '\'', '`', 0,  '\\', 'z', 'x', 'c', 'v', 'b', 'n', /* 49 */
-    'm', ',', '.', '/', 0,   '*', 0,   ' ', 0         /* 58 */
+    0,    0,    '1',  '2',  '3',  '4',  '5',  '6',  '7',  '8',  // 0-9
+    '9',  '0',  '-',  '=',  0x08, 0x09, 'q',  'w',  'e',  'r',  // 10-19
+    't',  'y',  'u',  'i',  'o',  'p',  '[',  ']',  0x0A, 0,    // 20-29
+    'a',  's',  'd',  'f',  'g',  'h',  'j',  'k',  'l',  ';',  // 30-39
+    '\'', '`',  0,    '\\', 'z',  'x',  'c',  'v',  'b',  'n',  // 40-49
+    'm',  ',',  '.',  '/',  0,    '*',  0,    ' ',  0,    0,    // 50-59 (F1 at 59)
+    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    // 60-69 (F2-F10)
+    0,    0,    '7',  '8',  '9',  '-',  '4',  '5',  '6',  '+',  // 70-79 (numpad)
+    '1',  '2',  '3',  '0',  '.',  0,    0,    0,    0            // 80-88
 };
 
+// Shift mode
 const char scancode_to_char_shift[SC_MAX] = {
-    0,  0,  '!', '@', '#', '$', '%', '^', '&', '*',  /* 9 */
-    '(', ')', '_', '+', 0,   0,  'Q', 'W', 'E', 'R', /* 19 */
-    'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', 0,   0,  /* 29 */
-    'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', /* 39 */
-    '"', '~', 0,  '|', 'Z', 'X', 'C', 'V', 'B', 'N', /* 49 */
-    'M', '<', '>', '?', 0,   '*', 0,   ' ', 0         /* 58 */
+    0,    0,    '!',  '@',  '#',  '$',  '%',  '^',  '&',  '*',  // 0-9
+    '(',  ')',  '_',  '+',  0x08, 0x09, 'Q',  'W',  'E',  'R',  // 10-19
+    'T',  'Y',  'U',  'I',  'O',  'P',  '{',  '}',  0x0A, 0,    // 20-29
+    'A',  'S',  'D',  'F',  'G',  'H',  'J',  'K',  'L',  ':',  // 30-39
+    '"',  '~',  0,    '|',  'Z',  'X',  'C',  'V',  'B',  'N',  // 40-49
+    'M',  '<',  '>',  '?',  0,    '*',  0,    ' ',  0,    0,    // 50-59
+    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    // 60-69
+    0,    0,    '7',  '8',  '9',  '-',  '4',  '5',  '6',  '+',  // 70-79
+    '1',  '2',  '3',  '0',  '.',  0,    0,    0,    0            // 80-88
 };
 
-// Volatile keyword for variables shared between ISR and main code
-volatile int shift_pressed = 0;
-volatile int caps_lock_active = 0;
-volatile int buffer_index = 0;
-volatile bool enter_pressed = false;
+//=============================================================================
+// GLOBAL STATE
+//=============================================================================
 
-// Helper functions for atomic operations
-unsigned char get_scancode_from_keyboard() {
-    return inb(KEYBOARD_PORT);
+// Keyboard state (all modifier keys and flags)
+static volatile kbd_state_t kbd_state = {
+    .shift_left = false,
+    .shift_right = false,
+    .ctrl_left = false,
+    .ctrl_right = false,
+    .alt_left = false,
+    .alt_right = false,
+    .caps_lock = false,
+    .num_lock = false,
+    .scroll_lock = false,
+    .extended = false
+};
+
+// Input queue (circular buffer)
+static volatile char input_queue[INPUT_QUEUE_SIZE];
+static volatile int input_queue_head = 0;
+static volatile int input_queue_tail = 0;
+
+// Buffer management
+static volatile int buffer_index = 0;
+static volatile bool enter_pressed = false;
+
+//=============================================================================
+// ATOMIC HELPER FUNCTIONS
+//=============================================================================
+
+/**
+ * Atomic increment with x86 LOCK prefix
+ */
+static inline void atomic_inc(volatile int *val) {
+    __asm__ __volatile__("lock incl %0" : "+m"(*val) : : "memory");
 }
 
-char scancode_to_ascii(unsigned char scancode, bool shift, bool caps_lock) {
+/**
+ * Atomic decrement with x86 LOCK prefix
+ */
+static inline void atomic_dec(volatile int *val) {
+    __asm__ __volatile__("lock decl %0" : "+m"(*val) : : "memory");
+}
+
+/**
+ * Memory barrier to prevent compiler reordering
+ */
+static inline void memory_barrier(void) {
+    __asm__ __volatile__("" : : : "memory");
+}
+
+//=============================================================================
+// INPUT QUEUE OPERATIONS (Thread-Safe)
+//=============================================================================
+
+/**
+ * Push character to input queue
+ * Returns: true on success, false if queue full
+ */
+static bool input_queue_push(char ch) {
+    int next_tail = (input_queue_tail + 1) % INPUT_QUEUE_SIZE;
+    
+    // Check for overflow
+    if (next_tail == input_queue_head) {
+        return false;  // Queue full
+    }
+    
+    input_queue[input_queue_tail] = ch;
+    memory_barrier();  // Ensure write completes before updating tail
+    input_queue_tail = next_tail;
+    
+    return true;
+}
+
+/**
+ * Pop character from input queue
+ * Returns: character or '\0' if queue empty
+ */
+char input_queue_pop(void) {
+    if (input_queue_head == input_queue_tail) {
+        return '\0';  // Queue empty
+    }
+    
+    char ch = input_queue[input_queue_head];
+    memory_barrier();  // Ensure read completes before updating head
+    input_queue_head = (input_queue_head + 1) % INPUT_QUEUE_SIZE;
+    
+    return ch;
+}
+
+/**
+ * Get last character in queue without removing it
+ */
+static char input_queue_get_last(void) {
+    if (input_queue_head == input_queue_tail) {
+        return '\0';  // Queue empty
+    }
+    
+    int prev_tail = (input_queue_tail - 1 + INPUT_QUEUE_SIZE) % INPUT_QUEUE_SIZE;
+    return input_queue[prev_tail];
+}
+
+/**
+ * Remove last character from queue
+ */
+static char input_queue_remove_last(void) {
+    if (input_queue_head == input_queue_tail) {
+        return '\0';  // Queue empty
+    }
+    
+    int prev_tail = (input_queue_tail - 1 + INPUT_QUEUE_SIZE) % INPUT_QUEUE_SIZE;
+    char last_char = input_queue[prev_tail];
+    
+    memory_barrier();
+    input_queue_tail = prev_tail;
+    
+    return last_char;
+}
+
+/**
+ * Check if queue is empty
+ */
+static bool input_queue_empty(void) {
+    return input_queue_head == input_queue_tail;
+}
+
+//=============================================================================
+// KEYBOARD STATE QUERY FUNCTIONS
+//=============================================================================
+
+/**
+ * Check if any Ctrl key is pressed
+ */
+bool kb_is_ctrl_pressed(void) {
+    return kbd_state.ctrl_left || kbd_state.ctrl_right;
+}
+
+/**
+ * Check if any Alt key is pressed
+ */
+bool kb_is_alt_pressed(void) {
+    return kbd_state.alt_left || kbd_state.alt_right;
+}
+
+/**
+ * Check if any Shift key is pressed
+ */
+bool kb_is_shift_pressed(void) {
+    return kbd_state.shift_left || kbd_state.shift_right;
+}
+
+/**
+ * Get full keyboard state
+ */
+kbd_state_t kb_get_state(void) {
+    return kbd_state;
+}
+
+//=============================================================================
+// SCANCODE PROCESSING
+//=============================================================================
+
+/**
+ * Convert scancode to ASCII with modifier support
+ */
+static char scancode_to_ascii(uint8_t scancode, bool shift, bool caps_lock) {
     if (scancode >= SC_MAX) {
-        return 0; // Scancode out of range
+        return 0;  // Out of range
     }
 
     char key = shift ? scancode_to_char_shift[scancode] : scancode_to_char[scancode];
 
+    // Apply caps lock to letters only
     if (caps_lock && key >= 'a' && key <= 'z') {
-        key -= 32; // Convert lowercase to uppercase
+        key -= 32;  // Convert to uppercase
     } else if (caps_lock && key >= 'A' && key <= 'Z' && !shift) {
-        key += 32; // Convert uppercase to lowercase
+        key += 32;  // Convert to lowercase (caps + shift)
     }
 
     return key;
 }
 
-#define INPUT_QUEUE_SIZE 256
-volatile char input_queue[INPUT_QUEUE_SIZE];
-volatile int input_queue_head = 0;
-volatile int input_queue_tail = 0;
+/**
+ * Handle extended keys (E0 prefix)
+ * Returns special key code or 0 if not handled
+ */
+static char handle_extended_key(uint8_t scancode, bool released) {
+    // Modifier keys
+    if (scancode == SC_EXT_RIGHT_CTRL) {
+        kbd_state.ctrl_right = !released;
+        return 0;
+    }
+    
+    if (scancode == SC_EXT_RIGHT_ALT) {
+        kbd_state.alt_right = !released;
+        return 0;
+    }
 
-// Funktion: Einfügen eines Zeichens in die Warteschlange
-void input_queue_push(char ch) {
-    int next_tail = (input_queue_tail + 1) % INPUT_QUEUE_SIZE;
-    if (next_tail != input_queue_head) { // Überlauf vermeiden
-        input_queue[input_queue_tail] = ch;
-        input_queue_tail = next_tail;
+    // Only process key presses, not releases for special keys
+    if (released) {
+        return 0;
+    }
+
+    // Arrow keys - return special codes
+    switch (scancode) {
+        case SC_EXT_UP:        return KEY_UP;
+        case SC_EXT_DOWN:      return KEY_DOWN;
+        case SC_EXT_LEFT:      return KEY_LEFT;
+        case SC_EXT_RIGHT:     return KEY_RIGHT;
+        case SC_EXT_HOME:      return KEY_HOME;
+        case SC_EXT_END:       return KEY_END;
+        case SC_EXT_PAGE_UP:   return KEY_PAGE_UP;
+        case SC_EXT_PAGE_DOWN: return KEY_PAGE_DOWN;
+        case SC_EXT_INSERT:    return KEY_INSERT;
+        case SC_EXT_DELETE:    return KEY_DELETE;
+        default:               return 0;
     }
 }
 
-// Funktion: Entfernen eines Zeichens aus der Warteschlange
-char input_queue_pop() {
-    if (input_queue_head == input_queue_tail) {
-        return '\0'; // Warteschlange ist leer
+/**
+ * Process Ctrl+key combinations
+ */
+static char process_ctrl_combination(char ch) {
+    // Ctrl+A through Ctrl+Z map to ASCII 1-26
+    if (ch >= 'a' && ch <= 'z') {
+        return ch - 'a' + 1;  // Ctrl+C = 0x03, etc.
     }
-    char ch = input_queue[input_queue_head];
-    input_queue_head = (input_queue_head + 1) % INPUT_QUEUE_SIZE;
-    return ch;
-}
-
-char input_queue_get_last() {
-    if (input_queue_head == input_queue_tail) {
-        return '\0'; // Warteschlange ist leer
+    if (ch >= 'A' && ch <= 'Z') {
+        return ch - 'A' + 1;
     }
-
-    // Berechne die vorherige Position von input_queue_tail
-    int prev_tail = (input_queue_tail - 1 + INPUT_QUEUE_SIZE) % INPUT_QUEUE_SIZE;
-
-    // Gib das letzte Zeichen zurück
-    return input_queue[prev_tail];
+    return ch;  // Other keys unchanged
 }
 
-// Funktion: Entfernt das letzte Zeichen aus der Warteschlange
-char input_queue_remove_last() {
-    if (input_queue_head == input_queue_tail) {
-        return '\0'; // Warteschlange ist leer
-    }
+//=============================================================================
+// KEYBOARD INTERRUPT HANDLER
+//=============================================================================
 
-    // Berechne die vorherige Position von input_queue_tail
-    int prev_tail = (input_queue_tail - 1 + INPUT_QUEUE_SIZE) % INPUT_QUEUE_SIZE;
-
-    // Speichere das letzte Zeichen zur Rückgabe
-    char last_char = input_queue[prev_tail];
-
-    // Aktualisiere den Tail-Zeiger
-    input_queue_tail = prev_tail;
-
-    printf("input_queue_remove_last: %c\n", last_char);
-
-    return last_char; // Gib das entfernte Zeichen zurück
-}
-
-// Funktion: Prüfen, ob die Warteschlange leer ist
-bool input_queue_empty() {
-    return input_queue_head == input_queue_tail;
-}
-
-void reset_enter_pressed() {
-    // Atomically reset the `enter_pressed` flag
-    enter_pressed = false;
-}
-
-// Helper functions for atomic operations
-bool is_enter_pressed() {
-    // Atomically return the state of `enter_pressed`
-    bool pressed = enter_pressed;
-    return pressed;
-}
-
+/**
+ * IRQ1 keyboard interrupt handler
+ * Called on every key press and release
+ */
 void kb_handler(void* r) {
-    unsigned char scan = get_scancode_from_keyboard();
-    // Key press event
-    if (!(scan & 0x80)) {
-        if (scan == LEFT_SHIFT_PRESSED || scan == RIGHT_SHIFT_PRESSED) {
-            shift_pressed = 1;
-        } else if (scan == CAPS_LOCK_PRESSED) {
-            caps_lock_active = !caps_lock_active; // Toggle Caps Lock
-        } else if (scan == BACKSPACE_PRESSED) { // Handle Backspace
-            if (buffer_index > 0) {
-                buffer_index--;
-
-                input_queue_push('\b'); // Add backspace to the queue
-            }
-        } else if (scan == ENTER_PRESSED) { // Handle Enter key
-            input_queue_push('\n');
-            buffer_index = 0;
-            enter_pressed = true;               // Set Enter flag
-        } else if (buffer_index < BUFFER_SIZE - 1) { // Regular key
-            char key = scancode_to_ascii(scan, shift_pressed, caps_lock_active);
-            if (key) {
-                buffer_index++;
-                input_queue_push(key);
-                //putchar(key); // Echo the character
-            }
+    uint8_t scancode = inb(KEYBOARD_DATA_PORT);
+    
+    // Handle extended scancode prefix (E0)
+    if (scancode == SC_EXTENDED_PREFIX) {
+        kbd_state.extended = true;
+        outb(0x20, 0x20);  // Send EOI
+        return;
+    }
+    
+    // Handle Pause key prefix (E1) - just ignore for now
+    if (scancode == SC_PAUSE_PREFIX) {
+        kbd_state.extended = false;  // Reset state
+        outb(0x20, 0x20);  // Send EOI
+        return;
+    }
+    
+    // Determine if this is a key release
+    bool released = (scancode & SC_RELEASE_MASK) != 0;
+    uint8_t base_scancode = scancode & ~SC_RELEASE_MASK;
+    
+    // Handle extended keys (E0 prefix)
+    if (kbd_state.extended) {
+        kbd_state.extended = false;  // Clear flag
+        char special_key = handle_extended_key(base_scancode, released);
+        
+        if (special_key != 0 && !released) {
+            // Queue special key with escape sequence
+            // Use ANSI-like sequence: ESC [ key
+            input_queue_push('\x1B');  // ESC
+            input_queue_push('[');
+            input_queue_push(special_key);
+        }
+        
+        outb(0x20, 0x20);  // Send EOI
+        return;
+    }
+    
+    // Handle regular modifier keys
+    if (!released) {
+        // Key press events
+        switch (base_scancode) {
+            case SC_LEFT_SHIFT:
+                kbd_state.shift_left = true;
+                break;
+            case SC_RIGHT_SHIFT:
+                kbd_state.shift_right = true;
+                break;
+            case SC_LEFT_CTRL:
+                kbd_state.ctrl_left = true;
+                break;
+            case SC_LEFT_ALT:
+                kbd_state.alt_left = true;
+                break;
+            case SC_CAPS_LOCK:
+                kbd_state.caps_lock = !kbd_state.caps_lock;  // Toggle
+                // TODO: Update keyboard LED
+                break;
+            case SC_NUM_LOCK:
+                kbd_state.num_lock = !kbd_state.num_lock;  // Toggle
+                break;
+            case SC_SCROLL_LOCK:
+                kbd_state.scroll_lock = !kbd_state.scroll_lock;  // Toggle
+                break;
+            case SC_BACKSPACE:
+                if (buffer_index > 0) {
+                    atomic_dec((volatile int*)&buffer_index);
+                    input_queue_push('\b');
+                }
+                break;
+            case SC_ENTER:
+                input_queue_push('\n');
+                buffer_index = 0;
+                enter_pressed = true;
+                break;
+            default:
+                // Regular key press
+                if (buffer_index < BUFFER_SIZE - 1) {
+                    char key = scancode_to_ascii(base_scancode, 
+                                                kb_is_shift_pressed(), 
+                                                kbd_state.caps_lock);
+                    
+                    if (key != 0) {
+                        // Handle Ctrl+key combinations
+                        if (kb_is_ctrl_pressed()) {
+                            key = process_ctrl_combination(key);
+                        }
+                        
+                        atomic_inc((volatile int*)&buffer_index);
+                        input_queue_push(key);
+                    }
+                }
+                break;
         }
     } else {
-        // Key release event
-        if (scan == LEFT_SHIFT_RELEASED || scan == RIGHT_SHIFT_RELEASED) {
-            shift_pressed = 0;
+        // Key release events
+        switch (base_scancode) {
+            case SC_LEFT_SHIFT:
+                kbd_state.shift_left = false;
+                break;
+            case SC_RIGHT_SHIFT:
+                kbd_state.shift_right = false;
+                break;
+            case SC_LEFT_CTRL:
+                kbd_state.ctrl_left = false;
+                break;
+            case SC_LEFT_ALT:
+                kbd_state.alt_left = false;
+                break;
         }
     }
-
-    // Send End of Interrupt (EOI) signal to the PIC
+    
+    // Send End of Interrupt (EOI) to PIC
     outb(0x20, 0x20);
 }
 
-// Get a character from the input buffer
-// This function is blocking and waits for a character to be available
-char getchar() {
-    while (buffer_index == 0) {
-        // Add a small delay to avoid busy-waiting completely
-        delay_ms(10);
+//=============================================================================
+// PUBLIC API FUNCTIONS
+//=============================================================================
+
+/**
+ * Blocking read of single character
+ * Waits until a character is available in the queue
+ */
+/**
+ * Blocking read of single character
+ * Waits until a character is available in the queue
+ */
+char getchar(void) {
+    // Wait for input using HLT instead of busy-waiting
+    while (input_queue_empty()) {
+        __asm__ __volatile__("hlt");  // Efficient waiting for interrupt
     }
-
-    // Disable interrupts to safely access the buffer
-    disable_interrupts();
-
-    // Retrieve the first character from the buffer
-    char ch = input_queue_get_last();
-
-    // Re-enable interrupts
-    enable_interrupts();
-
-    return ch;
+    
+    return input_queue_pop();
 }
 
+/**
+ * Read a full line of input (blocks until Enter pressed)
+ */
 void get_input_line(char* buffer, int max_len) {
     int index = 0;
 
@@ -208,7 +473,7 @@ void get_input_line(char* buffer, int max_len) {
             char ch = input_queue_pop();
 
             if (ch == '\n') {
-                buffer[index] = '\0'; // Null-terminieren
+                buffer[index] = '\0';  // Null-terminate
                 return;
             }
 
@@ -216,29 +481,41 @@ void get_input_line(char* buffer, int max_len) {
                 buffer[index++] = ch;
             }
         }
-        // Task-Yield aufrufen, um andere Tasks auszuführen
-        asm volatile("int $0x20"); // Timer-Interrupt auslösen
+        
+        // Yield to other tasks (if multitasking enabled)
+        __asm__ __volatile__("hlt");
     }
 }
 
-void kb_install() {
-    // Install the IRQ handler for the keyboard
+/**
+ * Install keyboard driver (register IRQ1 handler)
+ */
+void kb_install(void) {
+    // Register IRQ1 handler via syscall
     syscall(SYS_INSTALL_IRQ, (void*)1, (void*)kb_handler, 0);
-    //memset(input_buffer, 0, sizeof(input_buffer));
+    
+    printf("Keyboard driver installed (enhanced mode)\n");
+    printf("  - Extended scancode support: YES\n");
+    printf("  - Ctrl/Alt tracking: YES\n");
+    printf("  - Arrow keys: YES\n");
+    printf("  - Function keys: YES\n");
 }
 
-void kb_wait_enter() {
+/**
+ * Wait for Enter key (blocking)
+ */
+void kb_wait_enter(void) {
     printf("Press Enter to continue...\n");
 
-    // Reset the enter_pressed flag
-    reset_enter_pressed();
+    // Reset enter flag
+    enter_pressed = false;
+    memory_barrier();
 
-    // Wait until the Enter key is pressed
-    while (!is_enter_pressed()) {
-        // Small delay to avoid busy-waiting and CPU overuse
-        delay_ms(10);
+    // Wait for Enter key
+    while (!enter_pressed) {
+        __asm__ __volatile__("hlt");
     }
 
-    // Clear the input buffer after Enter is pressed
+    // Clear input buffer
     buffer_index = 0;
 }
