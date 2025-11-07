@@ -165,7 +165,38 @@ void ne2000_irq_handler() {
         int length = ne2000_receive_packet(packet, sizeof(packet));
         if (length > 0) {
             printf("Received packet: %d bytes\n", length);
-            print_packet(packet, length);
+            
+            // Parse and display ethernet frame
+            if (length >= 14) {  // Minimum ethernet frame has 14-byte header
+                printf("  Dst MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                       packet[0], packet[1], packet[2], packet[3], packet[4], packet[5]);
+                printf("  Src MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                       packet[6], packet[7], packet[8], packet[9], packet[10], packet[11]);
+                uint16_t ethertype = (packet[12] << 8) | packet[13];
+                printf("  EtherType: 0x%04X ", ethertype);
+                
+                if (ethertype == 0x0806) {
+                    printf("(ARP)\n");
+                    // Show ARP details if enough data
+                    if (length >= 42) {
+                        uint16_t ar_op = (packet[20] << 8) | packet[21];
+                        printf("    ARP Operation: %d %s\n", ar_op, 
+                               ar_op == 1 ? "(Request)" : ar_op == 2 ? "(Reply)" : "");
+                        printf("    Sender IP: %d.%d.%d.%d\n",
+                               packet[28], packet[29], packet[30], packet[31]);
+                        printf("    Target IP: %d.%d.%d.%d\n",
+                               packet[38], packet[39], packet[40], packet[41]);
+                    }
+                } else if (ethertype == 0x0800) {
+                    printf("(IPv4)\n");
+                } else if (ethertype == 0x86DD) {
+                    printf("(IPv6)\n");
+                } else {
+                    printf("(Unknown)\n");
+                }
+            }
+            
+            print_packet(packet, length > 64 ? 64 : length);
             packets_processed++;
         } else if (length < 0) {
             // Error occurred, stop processing
@@ -196,8 +227,9 @@ void ne2000_init() {
     // 1. Stop the NIC (CR = 0x21: Page 0, Stop, NoDMA)
     ne2000_write(NE2000_CR, 0x21);
     
-    // 2. Set Data Configuration Register (DCR) - word mode, loopback disabled initially
-    ne2000_write(NE2000_DCR, 0x49);  // WTS=1 (word), BOS=0, LAS=0, LS=0, ARM=1, FT=01
+    // 2. Set Data Configuration Register (DCR) - BYTE mode, loopback disabled
+    // DCR bits: WTS=0 (byte mode), BOS=0, LAS=0, LS=0, ARM=1, FT=01
+    ne2000_write(NE2000_DCR, 0x48);  // Byte mode instead of word mode
     
     // 3. Clear Remote Byte Count Registers
     ne2000_write(NE2000_RBCR0, 0);
@@ -488,6 +520,24 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
     printf("[RX] Page 0x%02X: status=0x%02X, next=0x%02X, len=%d\n", 
            next_packet_page, status, next_page, packet_length);
 
+    // Show first 64 bytes of page for diagnosis
+    if (packet_length > 1518) {
+        uint8_t page_data[64];
+        ne2000_write(NE2000_CR, 0x22);
+        ne2000_write(NE2000_RBCR0, 64);
+        ne2000_write(NE2000_RBCR1, 0);
+        ne2000_write(NE2000_RSAR0, 0);
+        ne2000_write(NE2000_RSAR1, next_packet_page);
+        ne2000_write(NE2000_CR, 0x0A);
+        for (int i = 0; i < 64; i++) {
+            page_data[i] = inb(io_base + NE2000_DATA);
+        }
+        int timeout = 10000;
+        while (!(ne2000_read(NE2000_ISR) & ISR_RDC) && timeout-- > 0);
+        ne2000_write(NE2000_ISR, ISR_RDC);
+        print_hex_dump("[RX] Page content", page_data, 64);
+    }
+
     // Check status byte for errors
     // Bit 0 (0x01) should be set for valid packet
     if (!(status & 0x01)) {
@@ -498,9 +548,12 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
             if (new_boundary < RX_START_PAGE) {
                 new_boundary = RX_STOP_PAGE - 1;
             }
+            // CRITICAL: Switch to Page 0 before writing BNRY!
+            ne2000_write(NE2000_CR, 0x22);  // Page 0, Start, NoDMA
             ne2000_write(NE2000_BNRY, new_boundary);
         } else {
             // Both status and next_page are bad - manual advance
+            ne2000_write(NE2000_CR, 0x22);  // Page 0, Start, NoDMA
             ne2000_write(NE2000_BNRY, next_packet_page);
         }
         return -1;
@@ -514,30 +567,91 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
         if (manual_next >= RX_STOP_PAGE) {
             manual_next = RX_START_PAGE;
         }
+        ne2000_write(NE2000_CR, 0x22);  // Page 0, Start, NoDMA
         ne2000_write(NE2000_BNRY, next_packet_page);
         return -1;
     }
 
     // Validate packet length
     if (packet_length < 60 || packet_length > 1518) {
-        printf("[RX] Invalid length: %d - advancing manually\n", packet_length);
-        // Packet length is corrupt, but we can still try to skip this page
-        // Use next_page if it seems valid, otherwise advance manually
-        if (next_page >= RX_START_PAGE && next_page < RX_STOP_PAGE && next_page != next_packet_page) {
-            uint8_t new_boundary = next_page - 1;
-            if (new_boundary < RX_START_PAGE) {
-                new_boundary = RX_STOP_PAGE - 1;
-            }
-            ne2000_write(NE2000_BNRY, new_boundary);
-        } else {
-            // next_page is also bad, just skip this single page
-            ne2000_write(NE2000_BNRY, next_packet_page);
+        printf("[RX] Invalid length: %d - trying to recover packet\n", packet_length);
+        
+        // Header is corrupt, but there might be valid data after it
+        // Try reading 64 bytes starting from offset 0 (include the corrupt header)
+        uint16_t recovery_length = 64;
+        
+        ne2000_write(NE2000_CR, 0x22);
+        ne2000_write(NE2000_RBCR0, recovery_length & 0xFF);
+        ne2000_write(NE2000_RBCR1, (recovery_length >> 8) & 0xFF);
+        ne2000_write(NE2000_RSAR0, 0);  // Start at offset 0 (include header)
+        ne2000_write(NE2000_RSAR1, next_packet_page);
+        ne2000_write(NE2000_CR, 0x0A);
+        
+        for (uint16_t i = 0; i < recovery_length; i++) {
+            buffer[i] = inb(io_base + NE2000_DATA);
         }
+        
+        int timeout = 10000;
+        while (!(ne2000_read(NE2000_ISR) & ISR_RDC) && timeout-- > 0);
+        ne2000_write(NE2000_ISR, ISR_RDC);
+        
+        printf("[RX] Recovered %d bytes, analyzing...\n", recovery_length);
+        print_hex_dump("[RX] Recovered data", buffer, recovery_length);
+        
+        // Look for common EtherType values anywhere in the first part of the packet
+        // 0x0800 = IP, 0x0806 = ARP, 0x86DD = IPv6
+        int found_offset = -1;
+        for (int i = 0; i < 20 && i + 1 < recovery_length; i++) {
+            uint16_t val = (buffer[i] << 8) | buffer[i + 1];
+            if (val == 0x0800 || val == 0x0806 || val == 0x86DD) {
+                // Found potential EtherType - it should be at offset 12 from frame start
+                // So frame start would be at (i - 12)
+                int frame_start = i - 12;
+                printf("[RX] Found EtherType 0x%04X at byte %d (frame would start at byte %d)\n", 
+                       val, i, frame_start);
+                
+                // Accept frame start between -4 and +4 (since header might be 4 bytes)
+                if (frame_start >= -4 && frame_start < 10) {
+                    // Adjust for NE2000 header
+                    if (frame_start < 0) {
+                        printf("[RX] Frame seems to be missing %d bytes at start (NE2000 header issue)\n", -frame_start);
+                        found_offset = 4;  // Start after 4-byte NE2000 header
+                    } else {
+                        found_offset = frame_start;
+                    }
+                    printf("[RX] Using offset %d as frame start\n", found_offset);
+                    break;
+                }
+            }
+        }
+        
+        if (found_offset >= 0) {
+            printf("[RX] Extracting packet starting at offset %d!\n", found_offset);
+            
+            // Shift data to start of buffer if needed
+            if (found_offset > 0) {
+                for (int i = 0; i < recovery_length - found_offset; i++) {
+                    buffer[i] = buffer[i + found_offset];
+                }
+                printf("[RX] Shifted packet data by %d bytes\n", found_offset);
+                print_hex_dump("[RX] Aligned packet", buffer, 60);
+            }
+            
+            // Advance BNRY and return the recovered data
+            ne2000_write(NE2000_CR, 0x22);
+            ne2000_write(NE2000_BNRY, next_packet_page);
+            return recovery_length - found_offset;
+        }
+        
+        printf("[RX] No valid ethernet frame found\n");
+        ne2000_write(NE2000_CR, 0x22);
+        ne2000_write(NE2000_BNRY, next_packet_page);
         return -1;
     }
 
     if (packet_length - 4 > buffer_size) {  // Subtract 4 byte CRC
         printf("Received packet too large: %d bytes (buffer: %d)\n", packet_length - 4, buffer_size);
+        ne2000_write(NE2000_CR, 0x22);  // Page 0, Start, NoDMA
         ne2000_write(NE2000_BNRY, next_page - 1);
         return -1;
     }
@@ -570,6 +684,8 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
     if (new_boundary < RX_START_PAGE) {
         new_boundary = RX_STOP_PAGE - 1;
     }
+    // CRITICAL: Switch to Page 0 before writing BNRY!
+    ne2000_write(NE2000_CR, 0x22);  // Page 0, Start, NoDMA
     ne2000_write(NE2000_BNRY, new_boundary);
 
     printf("Packet received, length: %d bytes (header status: 0x%02X)\n", data_length, status);
