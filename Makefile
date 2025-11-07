@@ -604,10 +604,44 @@ run-net-tap-term: iso
 		-drive file=./disk.img,format=raw,if=ide,index=0 \
 		-drive file=./disk1.img,format=raw,if=ide,index=1 \
 		-drive file=./floppy.img,format=raw,if=floppy \
-		-device ne2k_pci,netdev=net0,mac=52:54:00:12:34:56 \
+		-device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
 		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
 		-display curses
 	@echo "  - Run 'make run-net-tap' to start QEMU"
+
+# Run with TAP networking and no graphics (serial console only)
+run-net-tap-nographic: iso
+	@echo "Starting QEMU with TAP networking (no graphics, serial console)..."
+	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
+	@sudo ip link set tap0 up
+	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
+	@echo "  - TAP interface ready (10.0.2.1/24)"
+	@echo "  - Serial console mode (full scrollback)"
+	@echo "  - Press Ctrl+A then X to quit"
+	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
+		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
+		-nographic
+
+# Run with E1000 debug tracing
+run-net-debug: iso
+	@echo "Starting QEMU with E1000 debug tracing..."
+	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
+	@sudo ip link set tap0 up
+	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
+	@echo "  - Running with -d guest_errors,unimp -trace 'e1000*'"
+	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
+		-drive file=./disk.img,format=raw,if=ide,index=0 \
+		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./floppy.img,format=raw,if=floppy \
+		-device e1000,netdev=net0,mac=52:54:00:12:34:56 \
+		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
+		-d guest_errors,unimp \
+		-D qemu-debug.log \
+		-nographic
 
 # Cleanup TAP interface
 cleanup-tap:

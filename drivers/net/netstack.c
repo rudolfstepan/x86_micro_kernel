@@ -93,8 +93,18 @@ void format_ipv4(uint32_t ip, char *buffer) {
 }
 
 void format_mac(uint8_t *mac, char *buffer) {
-    sprintf(buffer, "%02X:%02X:%02X:%02X:%02X:%02X",
-            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    // Manually format MAC address since sprintf doesn't handle %02X properly
+    const char hex[] = "0123456789ABCDEF";
+    int pos = 0;
+    
+    for (int i = 0; i < 6; i++) {
+        buffer[pos++] = hex[(mac[i] >> 4) & 0x0F];  // High nibble
+        buffer[pos++] = hex[mac[i] & 0x0F];         // Low nibble
+        if (i < 5) {
+            buffer[pos++] = ':';
+        }
+    }
+    buffer[pos] = '\0';
 }
 
 // =============================================================================
@@ -118,11 +128,11 @@ void netstack_init(void) {
     net_config.gateway = 0;
     net_config.dns_server = 0;
     
-    printf("Network stack initialized.\n");
-    printf("MAC: ");
-    char mac_str[18];
-    format_mac(net_config.mac_address, mac_str);
-    printf("%s\n", mac_str);
+    //printf("Network stack initialized.\n");    net debug
+    // printf("MAC: ");
+    // char mac_str[18];
+    // format_mac(net_config.mac_address, mac_str);
+    // printf("%s\n", mac_str);
 }
 
 void netstack_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway) {

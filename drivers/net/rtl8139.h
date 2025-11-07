@@ -13,5 +13,6 @@ void rtl8139_init();
 int find_rtl8139();
 void rtl8139_detect();
 void rtl8139_send_test_packet();
+int rtl8139_is_initialized();
 
 #endif  // RTL8139_H

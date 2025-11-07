@@ -92,27 +92,27 @@ bool wait_for_drive_data_ready(unsigned short base, unsigned int timeout_ms) {
     
 #ifdef QEMU_BUILD
     // QEMU: First wait for BSY to clear, then wait for DRQ
-    printf("      wait_for_drive_data_ready: Step A - waiting for BSY clear\n");
+    //printf("      wait_for_drive_data_ready: Step A - waiting for BSY clear\n");
     // Step 1: Wait for BSY to clear
     while (1) {
         uint8_t status = inb(ATA_STATUS(base));
         
         // Immediate debug on first read
         if (elapsed_time == 0) {
-            printf("      Initial status=0x%02X (BSY=%d, DRQ=%d, ERR=%d)\n",
-                   status, !!(status & 0x80), !!(status & 0x08), !!(status & 0x01));
+            //printf("      Initial status=0x%02X (BSY=%d, DRQ=%d, ERR=%d)\n",
+            //       status, !!(status & 0x80), !!(status & 0x08), !!(status & 0x01));
         }
         
         // Check for floating bus (0xFF means no drive)
         if (status == 0xFF) {
-            printf("      ERROR: Drive not present (status=0xFF)\n");
+            //printf("      ERROR: Drive not present (status=0xFF)\n");
             return false;
         }
         
         // Check for error
         if (status & 0x01) {
             uint8_t error = inb(ATA_ERROR(base));
-            printf("      ERROR: Drive returned error status (ERR=0x%02X)\n", error);
+            //printf("      ERROR: Drive returned error status (ERR=0x%02X)\n", error);
             return false;
         }
         
@@ -122,24 +122,24 @@ bool wait_for_drive_data_ready(unsigned short base, unsigned int timeout_ms) {
         }
         
         if (elapsed_time >= timeout_ms) {
-            printf("      ERROR: BSY still set after %u ms (final status=0x%02X)\n", elapsed_time, status);
+            //printf("      ERROR: BSY still set after %u ms (final status=0x%02X)\n", elapsed_time, status);
             return false;
         }
         pit_delay(ATA_POLL_DELAY_MS);
         elapsed_time += ATA_POLL_DELAY_MS;
         
         if (elapsed_time % 50 == 0) {  // Debug every 50ms
-            printf("      [%u ms] status=0x%02X (BSY still set)\n", elapsed_time, status);
+            //printf("      [%u ms] status=0x%02X (BSY still set)\n", elapsed_time, status);
         }
     }
-    printf("      wait_for_drive_data_ready: Step A OK - BSY cleared after %u ms\n", elapsed_time);
+    //printf("      wait_for_drive_data_ready: Step A OK - BSY cleared after %u ms\n", elapsed_time);
     
     // Step 2: Wait for DRQ to be set
-    printf("      wait_for_drive_data_ready: Step B - waiting for DRQ set\n");
+    //printf("      wait_for_drive_data_ready: Step B - waiting for DRQ set\n");
     while (!(inb(ATA_STATUS(base)) & 0x08)) {  // Wait for DRQ bit to set
         if (elapsed_time >= timeout_ms) {
             uint8_t status = inb(ATA_STATUS(base));
-            printf("      ERROR: DRQ not set. Final status=0x%02X after %u ms\n", status, elapsed_time);
+            //printf("      ERROR: DRQ not set. Final status=0x%02X after %u ms\n", status, elapsed_time);
             return false;
         }
         pit_delay(ATA_POLL_DELAY_MS);
@@ -147,11 +147,11 @@ bool wait_for_drive_data_ready(unsigned short base, unsigned int timeout_ms) {
         
         if (elapsed_time % 50 == 0) {  // Debug every 50ms
             uint8_t status = inb(ATA_STATUS(base));
-            printf("      [%u ms] status=0x%02X (waiting for DRQ)\n", elapsed_time, status);
+            //printf("      [%u ms] status=0x%02X (waiting for DRQ)\n", elapsed_time, status);
         }
     }
-    printf("      wait_for_drive_data_ready: Step B OK - DRQ set after %u ms\n", elapsed_time);
-    
+    //printf("      wait_for_drive_data_ready: Step B OK - DRQ set after %u ms\n", elapsed_time);
+
     return true;  // Data is ready
 #else
     // Real hardware: Strict DRQ and error checking
@@ -196,28 +196,28 @@ bool wait_for_drive_data_ready(unsigned short base, unsigned int timeout_ms) {
     * @return True if the sector was read successfully, false otherwise.
 */
 bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master) {
-    printf("ata_read_sector: base=0x%X, lba=%u, is_master=%d\n", base, lba, is_master);
+    //printf("ata_read_sector: base=0x%X, lba=%u, is_master=%d\n", base, lba, is_master);
     
     // Check for excessive consecutive failures
     if (consecutive_read_failures >= MAX_CONSECUTIVE_FAILURES) {
-        printf("  ERROR: Too many consecutive failures (%u), aborting to prevent infinite loop\n", 
-               consecutive_read_failures);
+        //printf("  ERROR: Too many consecutive failures (%u), aborting to prevent infinite loop\n",
+        //       consecutive_read_failures);
         return false;
     }
     
     // Wait for the drive to be ready
-    printf("  Step 1: Waiting for drive ready...\n");
+    //printf("  Step 1: Waiting for drive ready...\n");
     if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
-        printf("  ERROR: Drive not ready (timeout)\n");
+        //printf("  ERROR: Drive not ready (timeout)\n");
         consecutive_read_failures++;
         return false;  // Drive not ready within the timeout
     }
-    printf("  Step 1: Drive ready OK\n");
+    //printf("  Step 1: Drive ready OK\n");
 
     // Set the drive/head register for LBA mode FIRST (before other registers)
     unsigned char drive_head = 0xE0 | ((lba >> 24) & 0x0F); // LBA mode with upper LBA bits
     drive_head |= is_master ? 0x00 : 0x10; // 0x00 for master, 0x10 for slave
-    printf("  Step 2: Selecting drive (drive_head=0x%02X, is_master=%d)...\n", drive_head, is_master);
+    //printf("  Step 2: Selecting drive (drive_head=0x%02X, is_master=%d)...\n", drive_head, is_master);
     outb(ATA_DRIVE_HEAD(base), drive_head);
     
     // Wait 400ns after drive selection (ATA spec requirement)
@@ -231,23 +231,23 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
 #endif
     
     // Wait for drive to acknowledge selection
-    printf("  Step 2: Waiting for drive to acknowledge selection...\n");
+    //printf("  Step 2: Waiting for drive to acknowledge selection...\n");
     if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
-        printf("  ERROR: Drive not ready after selection\n");
+        //printf("  ERROR: Drive not ready after selection\n");
         consecutive_read_failures++;
         return false;
     }
     
     // Set up sector count and LBA registers
-    printf("  Step 2: Setting up LBA registers...\n");
+    //printf("  Step 2: Setting up LBA registers...\n");
     outb(ATA_SECTOR_CNT(base), 1); // Read 1 sector
     outb(ATA_LBA_LOW(base), (unsigned char)(lba & 0xFF));
     outb(ATA_LBA_MID(base), (unsigned char)((lba >> 8) & 0xFF));
     outb(ATA_LBA_HIGH(base), (unsigned char)((lba >> 16) & 0xFF));
-    printf("  Step 2: LBA registers set OK\n");
+    //printf("  Step 2: LBA registers set OK\n");
 
     // Send the read command
-    printf("  Step 3: Sending READ command...\n");
+    //printf("  Step 3: Sending READ command...\n");
     outb(ATA_COMMAND(base), ATA_READ_SECTORS);
     
     // Small delay after sending command (required by ATA spec)
@@ -255,25 +255,25 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
     for (volatile int i = 0; i < 4; i++) {
         inb(ATA_ALT_STATUS(base));  // Read alternate status 4 times for 400ns delay
     }
-    printf("  Step 3: Command sent OK\n");
+    //printf("  Step 3: Command sent OK\n");
 
     // Wait for the drive to be ready to transfer data
-    printf("  Step 4: Waiting for data ready...\n");
+    //printf("  Step 4: Waiting for data ready...\n");
     if (!wait_for_drive_data_ready(base, ATA_WAIT_TIMEOUT_MS)) {
-        printf("  ERROR: Data not ready (timeout)\n");
+        //printf("  ERROR: Data not ready (timeout)\n");
         consecutive_read_failures++;
-        printf("  Consecutive failures: %u/%u\n", consecutive_read_failures, MAX_CONSECUTIVE_FAILURES);
-        
+        //printf("  Consecutive failures: %u/%u\n", consecutive_read_failures, MAX_CONSECUTIVE_FAILURES);
+
         // Add delay before returning to prevent rapid retry loops
         pit_delay(100);  // 100ms delay on failure
         return false;  // Drive data not ready within the timeout
     }
-    printf("  Step 4: Data ready OK\n");
+    //printf("  Step 4: Data ready OK\n");
 
     // Read the data
-    printf("  Step 5: Reading data...\n");
+    //printf("  Step 5: Reading data...\n");
     insw(ATA_DATA(base), buffer, SECTOR_SIZE / 2);
-    printf("  Step 5: Data read OK\n");
+    //printf("  Step 5: Data read OK\n");
 
 #ifdef REAL_HARDWARE
     // Real hardware: Wait for command completion
@@ -285,14 +285,14 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
 
     // Success - reset failure counter
     consecutive_read_failures = 0;
-    
-    printf("ata_read_sector: SUCCESS\n");
+
+    //printf("ata_read_sector: SUCCESS\n");
     return true;
 }
 
 // Reset the consecutive failure counter (useful after system idle or manual intervention)
 void ata_reset_error_counter() {
-    printf("ata_reset_error_counter: Resetting failure counter (was %u)\n", consecutive_read_failures);
+    //printf("ata_reset_error_counter: Resetting failure counter (was %u)\n", consecutive_read_failures);
     consecutive_read_failures = 0;
 }
 
@@ -360,27 +360,27 @@ drive_t* ata_get_drive(unsigned short drive_index) {
 
 // Function to get the first ATA HDD (automatically finds first HDD)
 drive_t* ata_get_first_hdd() {
-    printf("ata_get_first_hdd: searching for first HDD...\n");
-    printf("  drive_count: %d\n", drive_count);
-    
+    //printf("ata_get_first_hdd: searching for first HDD...\n");
+    //printf("  drive_count: %d\n", drive_count);
+
     if (drive_count <= 0 || drive_count > MAX_DRIVES) {
-        printf("  ERROR: Invalid drive_count: %d\n", drive_count);
+        //printf("  ERROR: Invalid drive_count: %d\n", drive_count);
         return NULL;
     }
     
     // Search for first ATA drive
     for (int i = 0; i < drive_count; i++) {
-        printf("  Checking drive[%d]: name='%s', type=%d\n", 
-               i, detected_drives[i].name, detected_drives[i].type);
+        //printf("  Checking drive[%d]: name='%s', type=%d\n", 
+         //      i, detected_drives[i].name, detected_drives[i].type);
         
         if (detected_drives[i].type == DRIVE_TYPE_ATA) {
-            printf("  FOUND: First HDD is '%s' at index %d\n", 
-                   detected_drives[i].name, i);
+            //printf("  FOUND: First HDD is '%s' at index %d\n", 
+            //       detected_drives[i].name, i);
             return &detected_drives[i];
         }
     }
-    
-    printf("  NOT FOUND: No ATA HDD in detected drives\n");
+
+    //printf("  NOT FOUND: No ATA HDD in detected drives\n");
     return NULL;
 }
 
@@ -392,13 +392,13 @@ void ata_detect_drives() {
 
     drive_count = 0;  // Reset drive count before detection
     
-    printf("Starting ATA drive detection...\n");
+    //printf("Starting ATA drive detection...\n");
 
     // Detect ATA drives
     for (int bus = 0; bus < 2; bus++) {
         for (int drive = 0; drive < 2; drive++) {
             if (drive_count >= MAX_DRIVES) {
-                printf("Maximum number of drives reached.\n");
+               // printf("Maximum number of drives reached.\n");
                 return;
             }
 
@@ -414,7 +414,7 @@ void ata_detect_drives() {
 
                 ata_drive_info->type = DRIVE_TYPE_ATA;
                 snprintf(ata_drive_info->name, sizeof(ata_drive_info->name), "hdd%d", drive_name_index++);
-                printf("ATA drive %s detected: %s, Sectors: %u\n", ata_drive_info->name, ata_drive_info->model, ata_drive_info->sectors);
+                //printf("ATA drive %s detected: %s, Sectors: %u\n", ata_drive_info->name, ata_drive_info->model, ata_drive_info->sectors);
 
                 // Initialize the file system for the detected drive
                 //init_fs(ata_drive_info);
@@ -424,8 +424,8 @@ void ata_detect_drives() {
             }
         }
     }
-    
-    printf("ATA detection complete. Total ATA drives: %d\n", drive_count);
+
+    //printf("ATA detection complete. Total ATA drives: %d\n", drive_count);
 }
 
 bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info) {
@@ -484,24 +484,24 @@ bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info) {
 }
 
 drive_t* get_drive_by_name(const char* name) {
-    printf("get_drive_by_name: searching for '%s'\n", name);
-    printf("  drive_count address: %p, value: %d\n", &drive_count, drive_count);
-    printf("  detected_drives address: %p\n", detected_drives);
-    
+    //printf("get_drive_by_name: searching for '%s'\n", name);
+    //printf("  drive_count address: %p, value: %d\n", &drive_count, drive_count);
+    //printf("  detected_drives address: %p\n", detected_drives);
+
     if (drive_count < 0 || drive_count > MAX_DRIVES) {
-        printf("  ERROR: Invalid drive_count value: %d\n", drive_count);
+        //printf("  ERROR: Invalid drive_count value: %d\n", drive_count);
         return NULL;
     }
     
     for (int i = 0; i < drive_count; i++) {
-        printf("  Checking drive[%d]: '%s' vs '%s'\n", i, detected_drives[i].name, name);
+        //printf("  Checking drive[%d]: '%s' vs '%s'\n", i, detected_drives[i].name, name);
         if (strcmp(detected_drives[i].name, name) == 0) {
-            printf("  FOUND: drive '%s' at index %d\n", name, i);
+            //printf("  FOUND: drive '%s' at index %d\n", name, i);
             return &detected_drives[i];
         }
     }
-    
-    printf("  NOT FOUND: drive '%s' not in list\n", name);
+
+    //printf("  NOT FOUND: drive '%s' not in list\n", name);
     return NULL;  // Return NULL if no drive with the specified name is found
 }
 

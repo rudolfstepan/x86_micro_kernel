@@ -234,39 +234,28 @@ void rtl8139_init(rtl8139_device_t *device) {
 
 void rtl8139_send_packet(void* data, uint16_t len) {
     if (len > TX_BUFFER_SIZE) {
-        printf("Fehler: Paket zu groß (%u Bytes, max %u Bytes).\n", len, TX_BUFFER_SIZE);
+        printf("Error: Packet too large (%u bytes, max %u bytes).\n", len, TX_BUFFER_SIZE);
         return;
     }
 
-    // Prüfen, ob der aktuelle TX-Puffer frei ist
-    // uint32_t tsd_status = inl((unsigned short)(rtl8139_device.mmio_base + 0x10 + (current_tx_buffer * 4)));
-    // if (tsd_status & 0x8000) {
-    //     printf("Sendepuffer %u ist noch nicht frei.\n", current_tx_buffer);
-    //     return;
-    // }
+    uint32_t io_base = (uint32_t)rtl8139_device.mmio_base;
+    static uint8_t current_tx_buffer = 0;
+    
+    // Copy data to TX buffer
+    memcpy((void*)rtl8139_device.tx_buffers, data, len);
 
-    // Kopiere die Daten in den dynamischen TX-Puffer
-    memcpy(rtl8139_device.tx_buffers, data, len);
-
-    //printf("TX Buffer %d Data (first 16 bytes): ", current_tx_buffer);
-    for (int i = 0; i < 16; i++) {
-        printf("%02X ", rtl8139_device.tx_buffers[i]);
-    }
-    printf("\n");
-
-
-    // Schreibe die Adresse des TX-Puffers in das RTL8139-Register
-    // uint32_t tx_buffer_addr = (uintptr_t)rtl8139_device.rx_buffers;
-    // outl((unsigned short)(rtl8139_device.mmio_base + 0x20 + (current_tx_buffer * 4)), tx_buffer_addr);
-
-    // Schreibe die Länge des Pakets und starte die Übertragung
-    // outl((unsigned short)(rtl8139_device.mmio_base + 0x10 + (rtl8139_device.rx_buffers), len);
-
-    // // Zum nächsten Puffer wechseln
-    // current_tx_buffer = (current_tx_buffer + 1) % MAX_TX_BUFFERS;
-
-    printf("Paket gesendet: %u Bytes\n", len);
-
+    // Write TX buffer physical address to TSD register
+    uint32_t tx_buffer_phys = (uint32_t)rtl8139_device.tx_buffers;
+    outl(io_base + REG_TRANSMIT_ADDR0 + (current_tx_buffer * 4), tx_buffer_phys);
+    
+    // Write packet length and trigger transmission (clears OWN bit)
+    // Bit 13: OWN (set by hardware when complete)
+    outl(io_base + REG_TRANSMIT_STATUS0 + (current_tx_buffer * 4), len & 0x1FFF);
+    
+    printf("RTL8139: Packet sent via buffer %u (%u bytes)\n", current_tx_buffer, len);
+    
+    // Move to next TX buffer (RTL8139 has 4 TX descriptors)
+    current_tx_buffer = (current_tx_buffer + 1) % 4;
 }
 
 // Empfängt ein Ethernet-Paket
@@ -419,36 +408,67 @@ void rtl8139_detect() {
     pci_register_driver(RTL8139_VENDOR_ID, RTL8139_DEVICE_ID, rtl8139_probe);
 }
 
+int rtl8139_is_initialized() {
+    return (rtl8139_device.mmio_base != 0);
+}
+
 
 void rtl8139_send_test_packet() {
-
-    // MAC-Adresse des Zielrechners
-    uint8_t dest_mac[6] = {0x52, 0x54, 0x00, 0x12, 0x34, 0x56};
-
-    // MAC-Adresse des Senders
-    uint8_t src_mac[6];
-    rtl8139_get_mac_address(src_mac);
-
-    // Testdaten
-    uint8_t data[] = "Hello, World!";
-    uint16_t data_len = strlen((char*)data);
-
-    // Allokiere Speicher für das vollständige Ethernet-Frame
-    uint8_t packet[MAX_PACKET_SIZE];
-    memset(packet, 0, MAX_PACKET_SIZE);
-
-    // Erstelle den Ethernet-Header
-    ethernet_header_t* eth_header = (ethernet_header_t*)packet;
-    memcpy(eth_header->dest_mac, dest_mac, 6);       // Ziel-MAC-Adresse setzen
-    memcpy(eth_header->src_mac, src_mac, 6);        // Quell-MAC-Adresse setzen
-    eth_header->ethertype = htons(ETHERTYPE_TEST);  // Ethertype (im Network-Byte-Order)
-
-    // Kopiere die Nutzdaten in das Frame
-    memcpy((packet + sizeof(ethernet_header_t)), data, data_len);
-
-    // Berechne die Gesamtlänge des Frames
-    uint16_t frame_len = sizeof(ethernet_header_t) + data_len;
-
-    // Sende das Ethernet-Frame
-    rtl8139_send_packet(packet, frame_len);
+    printf("RTL8139: Sending broadcast ARP packet...\n");
+    
+    // Get our MAC address
+    uint8_t our_mac[6];
+    rtl8139_get_mac_address(our_mac);
+    
+    printf("RTL8139: Our MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+           our_mac[0], our_mac[1], our_mac[2], our_mac[3], our_mac[4], our_mac[5]);
+    
+    // Create broadcast ARP request packet
+    uint8_t packet[60];  // Minimum ethernet frame size
+    memset(packet, 0, 60);
+    
+    // Ethernet header
+    // Destination: Broadcast
+    packet[0] = 0xFF; packet[1] = 0xFF; packet[2] = 0xFF;
+    packet[3] = 0xFF; packet[4] = 0xFF; packet[5] = 0xFF;
+    
+    // Source: Our MAC
+    packet[6] = our_mac[0]; packet[7] = our_mac[1]; packet[8] = our_mac[2];
+    packet[9] = our_mac[3]; packet[10] = our_mac[4]; packet[11] = our_mac[5];
+    
+    // EtherType: ARP (0x0806)
+    packet[12] = 0x08; packet[13] = 0x06;
+    
+    // ARP packet
+    packet[14] = 0x00; packet[15] = 0x01; // Hardware type: Ethernet
+    packet[16] = 0x08; packet[17] = 0x00; // Protocol type: IPv4
+    packet[18] = 0x06; // Hardware size: 6
+    packet[19] = 0x04; // Protocol size: 4
+    packet[20] = 0x00; packet[21] = 0x01; // Operation: Request
+    
+    // Sender MAC
+    packet[22] = our_mac[0]; packet[23] = our_mac[1]; packet[24] = our_mac[2];
+    packet[25] = our_mac[3]; packet[26] = our_mac[4]; packet[27] = our_mac[5];
+    
+    // Sender IP: 10.0.2.15
+    packet[28] = 10; packet[29] = 0; packet[30] = 2; packet[31] = 15;
+    
+    // Target MAC: 00:00:00:00:00:00
+    packet[32] = 0x00; packet[33] = 0x00; packet[34] = 0x00;
+    packet[35] = 0x00; packet[36] = 0x00; packet[37] = 0x00;
+    
+    // Target IP: 10.0.2.1 (gateway)
+    packet[38] = 10; packet[39] = 0; packet[40] = 2; packet[41] = 1;
+    
+    printf("RTL8139: Sending ARP request for 10.0.2.1 (gateway)\n");
+    printf("RTL8139: Packet data (first 42 bytes):\n");
+    for (int i = 0; i < 42; i++) {
+        if (i % 16 == 0) printf("  %04X: ", i);
+        printf("%02X ", packet[i]);
+        if ((i + 1) % 16 == 0) printf("\n");
+    }
+    printf("\n");
+    
+    rtl8139_send_packet(packet, 60);
+    printf("RTL8139: ARP packet sent (60 bytes)\n");
 }

@@ -18,7 +18,7 @@
 #include "fs/vfs/filesystem.h"
 #include "fs/fat32/fat32.h"
 #include "fs/fat12/fat12.h"
-// #include "drivers/net/rtl8139.h"
+#include "drivers/net/rtl8139.h"
 #include "drivers/net/e1000.h"
 #include "drivers/net/ne2000.h"
 // #include "drivers/net/vmxnet3.h"
@@ -1185,6 +1185,7 @@ void cmd_net(int arg_count, const char** arguments) {
         printf("  NET STATUS  - Show network interface status\n");
         printf("  NET SEND    - Send test packet\n");
         printf("  NET INFO    - Show detailed network information\n");
+        printf("  NET DEBUG   - Show E1000 register dump\n");
         printf("  NET LISTEN [n] - Listen for incoming packets (n=count, default 10)\n");
         printf("  NET RECV    - Try to receive one packet\n");
         return;
@@ -1193,6 +1194,15 @@ void cmd_net(int arg_count, const char** arguments) {
     if (strcmp(arguments[0], "STATUS") == 0 || strcmp(arguments[0], "status") == 0) {
         // Show network status for all network cards
         bool has_network = false;
+        
+        if (rtl8139_is_initialized()) {
+            printf("Network card: Realtek RTL8139 (initialized)\n");
+            uint8_t mac[6];
+            rtl8139_get_mac_address(mac);
+            printf("  MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            has_network = true;
+        }
         
         if (e1000_is_initialized()) {
             printf("Network card: Intel E1000 (initialized)\n");
@@ -1219,7 +1229,19 @@ void cmd_net(int arg_count, const char** arguments) {
         // Get detailed network interface information
         bool has_info = false;
         
+        if (rtl8139_is_initialized()) {
+            printf("RTL8139 Network Adapter Info:\n");
+            uint8_t mac[6];
+            rtl8139_get_mac_address(mac);
+            printf("  MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            printf("  Status: Initialized and ready\n");
+            printf("  Driver: Realtek RTL8139 (PCI 10EC:8139)\n");
+            has_info = true;
+        }
+        
         if (e1000_is_initialized()) {
+            if (has_info) printf("\n");  // Separator if both adapters present
             printf("E1000 Network Adapter Info:\n");
             uint8_t mac[6];
             e1000_get_mac_address(mac);
@@ -1245,9 +1267,44 @@ void cmd_net(int arg_count, const char** arguments) {
         if (!has_info) {
             printf("No network card initialized\n");
         }
+    } else if (strcmp(arguments[0], "DEBUG") == 0 || strcmp(arguments[0], "debug") == 0) {
+        // Show network debug info
+        if (rtl8139_is_initialized()) {
+            printf("RTL8139 Debug Info:\n");
+            uint8_t mac[6];
+            rtl8139_get_mac_address(mac);
+            printf("  MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            printf("  (Register dump not yet implemented for RTL8139)\n");
+        } else if (e1000_is_initialized()) {
+            e1000_debug_registers();
+            
+            // Try to manually check for packets
+            printf("\nManually checking for packets...\n");
+            uint8_t buffer[2048];
+            int len = e1000_receive_packet(buffer, sizeof(buffer));
+            if (len > 0) {
+                printf("Found packet! Length: %d bytes\n", len);
+                // Print first 64 bytes
+                printf("Data: ");
+                for (int i = 0; i < (len < 64 ? len : 64); i++) {
+                    printf("%02X ", buffer[i]);
+                    if ((i + 1) % 16 == 0) printf("\n      ");
+                }
+                printf("\n");
+            } else {
+                printf("No packets in RX ring\n");
+            }
+        } else {
+            printf("E1000 not initialized\n");
+        }
     } else if(strcmp(arguments[0], "SEND") == 0 || strcmp(arguments[0], "send") == 0) {
         // Send a test packet
-        if (e1000_is_initialized()) {
+        if (rtl8139_is_initialized()) {
+            printf("Sending test packet via RTL8139...\n");
+            rtl8139_send_test_packet();
+            printf("Test packet sent.\n");
+        } else if (e1000_is_initialized()) {
             printf("Sending test packet via E1000...\n");
             e1000_send_test_packet();
             printf("Test packet sent.\n");

@@ -53,6 +53,7 @@
 // Network subsystem
 #include "drivers/net/e1000.h"
 #include "drivers/net/ne2000.h"
+#include "drivers/net/rtl8139.h"
 #include "drivers/net/netstack.h"
 
 // Filesystems
@@ -155,6 +156,12 @@ static void driver_init(void) {
         e1000_detect();  // Register E1000 driver
     }
     
+    // Realtek RTL8139 (vendor: 0x10EC, device: 0x8139)
+    if (pci_device_exists(0x10EC, 0x8139)) {
+        printf("  - Realtek RTL8139 detected, registering driver\n");
+        rtl8139_detect(); // Register RTL8139 driver
+    }
+    
     // NE2000 compatible (vendor: 0x10EC, device: 0x8029)
     if (pci_device_exists(0x10EC, 0x8029)) {
         printf("  - NE2000 compatible detected, registering driver\n");
@@ -162,7 +169,7 @@ static void driver_init(void) {
     }
     
     // Probe PCI devices and initialize registered drivers
-    printf("Initializing network drivers...\n");
+    //printf("Initializing network drivers...\n");
     pci_probe_drivers();
     
     // Enable hardware interrupts
@@ -180,7 +187,7 @@ static void driver_init(void) {
     // Detect floppy drives
     fdd_detect_drives();  // Floppy disk drives
 
-    printf("Driver initialization complete\n");
+    //printf("Driver initialization complete\n");
 }
 
 /**
