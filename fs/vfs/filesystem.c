@@ -70,6 +70,8 @@ void init_fs(drive_t* drive) {
         uint8_t buffer[512];
         boot_sector_t* boot_sector = (boot_sector_t*)buffer;
 
+        uint32_t partition_lba = 0;  // Track partition offset
+        
         printf("Reading MBR/boot sector from LBA 0...\n");
         if (!ata_read_sector(drive->base, 0, buffer, drive->is_master)) {
             printf("Failed to read boot sector.\n");
@@ -90,7 +92,7 @@ void init_fs(drive_t* drive) {
                 printf("  Partition 1 type: 0x%02X (0x0B/0x0C = FAT32)\n", partition_type);
                 
                 // Get LBA start of first partition (little-endian, 4 bytes at offset 8)
-                uint32_t partition_lba = *(uint32_t*)&partition_entry[8];
+                partition_lba = *(uint32_t*)&partition_entry[8];
                 printf("  Partition 1 starts at LBA %u\n", partition_lba);
                 
                 // Read the actual filesystem boot sector from the partition
@@ -157,13 +159,15 @@ void init_fs(drive_t* drive) {
             extern unsigned short ata_base_address;
             extern bool ata_is_master;
             extern unsigned int current_directory_cluster;
+            extern unsigned int partition_lba_offset;
             
-            printf("Setting FAT32 globals: base=0x%X, is_master=%d, rootCluster=%u\n",
-                   drive->base, drive->is_master, boot_sector.root_cluster);
+            printf("Setting FAT32 globals: base=0x%X, is_master=%d, rootCluster=%u, partitionOffset=%u\n",
+                   drive->base, drive->is_master, boot_sector.root_cluster, partition_lba);
             
             ata_base_address = drive->base;
             ata_is_master = drive->is_master;
             current_directory_cluster = boot_sector.root_cluster;
+            partition_lba_offset = partition_lba;  // Set the partition offset!
             
             printf("FAT32 initialized for drive %s\n", drive->name);
             

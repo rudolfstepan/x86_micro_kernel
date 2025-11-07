@@ -74,11 +74,14 @@ bool fat32_create_dir(const char* dirname) {
         printf("Error: Failed to allocate a new cluster for the directory.\n");
         return false;
     }
+    
     // 2. Update the FAT for the new cluster
     if (!mark_cluster_in_fat(&boot_sector, new_dir_cluster, FAT32_EOC_MAX)) {
         printf("Error: Failed to update the FAT.\n");
+        // Rollback not needed - cluster is still marked as free
         return false;
     }
+    
     // 3. Initialize the new directory's cluster
     struct fat32_dir_entry dir_entries[get_entries_per_cluster(&boot_sector)];
     memset(dir_entries, 0, sizeof(dir_entries));
@@ -86,13 +89,27 @@ bool fat32_create_dir(const char* dirname) {
 
     if (!write_cluster(&boot_sector, new_dir_cluster, dir_entries)) {
         printf("Error: Failed to write the initialized entries to the new cluster.\n");
+        // ROLLBACK: Free the allocated cluster
+        printf("Rolling back: Freeing allocated cluster %u\n", new_dir_cluster);
+        mark_cluster_in_fat(&boot_sector, new_dir_cluster, 0);  // Mark as free
         return false;
     }
+    
     // 4. Update the parent directory
     if (!add_entry_to_directory(&boot_sector, current_directory_cluster, dirname, new_dir_cluster, ATTR_DIRECTORY)) {
         printf("Error: Failed to update the parent directory.\n");
+        // ROLLBACK: Free the allocated cluster (directory data is orphaned but cluster is freed)
+        printf("Rolling back: Freeing allocated cluster %u\n", new_dir_cluster);
+        mark_cluster_in_fat(&boot_sector, new_dir_cluster, 0);  // Mark as free
         return false;
     }
+    
+    printf("Directory '%s' created successfully at cluster %u\n", dirname, new_dir_cluster);
+    
+    // Sync FSInfo after directory creation
+    extern bool write_fsinfo(void);
+    write_fsinfo();
+    
     return true;
 }
 
@@ -226,5 +243,10 @@ bool fat32_delete_dir(const char* dirname) {
         printf("Failed to remove the directory entry from the parent directory.\n");
         return false;
     }
+    
+    // Sync FSInfo after directory deletion
+    extern bool write_fsinfo(void);
+    write_fsinfo();
+    
     return true;
 }

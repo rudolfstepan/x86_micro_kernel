@@ -72,11 +72,26 @@ struct fat32_boot_sector {
 };
 #pragma pack(pop)
 
+// FSInfo sector structure (typically at sector 1)
+#pragma pack(push, 1)
+struct fat32_fsinfo {
+    uint32_t lead_signature;           // 0x41615252 ("RRaA")
+    uint8_t reserved1[480];            // Reserved (should be zero)
+    uint32_t struct_signature;         // 0x61417272 ("rrAa")
+    uint32_t free_cluster_count;       // Number of free clusters (0xFFFFFFFF if unknown)
+    uint32_t next_free_cluster;        // Hint for next free cluster (0xFFFFFFFF if unknown)
+    uint8_t reserved2[12];             // Reserved (should be zero)
+    uint32_t trail_signature;          // 0xAA550000
+};
+#pragma pack(pop)
+
 // external definitions which are defined in fat32.c but used in other files
 extern struct fat32_boot_sector boot_sector;
+extern struct fat32_fsinfo fsinfo;
 extern unsigned int current_directory_cluster; // Default root directory cluster for FAT32
 extern unsigned short ata_base_address;
 extern bool ata_is_master;
+extern unsigned int partition_lba_offset; // LBA offset for partitioned disks
 
 
 

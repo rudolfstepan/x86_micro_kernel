@@ -216,16 +216,29 @@ bool fat32_create_file(const char* filename) {
         printf("Failed to allocate a new cluster for the file.\n");
         return false;
     }
+    
     // 2. Update the FAT for the new file cluster
     if (!mark_cluster_in_fat(&boot_sector, new_file_cluster, FAT32_EOC_MAX)) {
         printf("Failed to update the FAT for the new file cluster.\n");
+        // Rollback not needed - cluster is still marked as free
         return false;
     }
+    
     // 3. Add a directory entry for the new file in the current directory
     if (!add_entry_to_directory(&boot_sector, current_directory_cluster, filename, new_file_cluster, 0)) { // 0 for normal file attributes
         printf("Failed to add a directory entry for the new file.\n");
+        // ROLLBACK: Free the cluster we just allocated
+        printf("Rolling back: Freeing allocated cluster %u\n", new_file_cluster);
+        mark_cluster_in_fat(&boot_sector, new_file_cluster, 0);  // Mark as free
         return false;
     }
+    
+    printf("File '%s' created successfully at cluster %u\n", filename, new_file_cluster);
+    
+    // Sync FSInfo after file creation
+    extern bool write_fsinfo(void);
+    write_fsinfo();
+    
     return true;
 }
 
@@ -236,16 +249,29 @@ bool fat32_delete_file(const char* filename) {
         printf("File not found.\n");
         return false;
     }
+    
+    // Save cluster info before freeing entry
+    unsigned int start_cluster = read_start_cluster(entry);
+    
     // 2. Free the file's cluster chain in the FAT
-    if (!free_cluster_chain(&boot_sector, read_start_cluster(entry))) {
+    if (!free_cluster_chain(&boot_sector, start_cluster)) {
         printf("Failed to free the file's cluster chain.\n");
+        free(entry);  // Free allocated memory
         return false;
     }
     // 3. Remove the directory entry from the parent directory
     if (!remove_entry_from_directory(&boot_sector, current_directory_cluster, entry)) {
         printf("Failed to remove the directory entry from the parent directory.\n");
+        free(entry);  // Free allocated memory
         return false;
     }
+    
+    free(entry);  // Free allocated memory
+    
+    // Sync FSInfo after file deletion
+    extern bool write_fsinfo(void);
+    write_fsinfo();
+    
     return true;
 }
 

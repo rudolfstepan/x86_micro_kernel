@@ -2,6 +2,23 @@
 #include "lib/libc/stdio.h"
 
 // --------------------------------------------------------------------
+// is_valid_cluster
+// Validates that a cluster number is within valid range
+// --------------------------------------------------------------------
+bool is_valid_cluster(struct fat32_boot_sector* boot_sector, unsigned int cluster) {
+    if (cluster < 2) {
+        return false; // Clusters 0 and 1 are reserved
+    }
+    if (cluster >= FAT32_EOC_MIN) {
+        return true; // End-of-chain marker is valid in context
+    }
+    if (cluster >= get_total_clusters(boot_sector)) {
+        return false; // Beyond filesystem boundary
+    }
+    return true;
+}
+
+// --------------------------------------------------------------------
 // get_entries_per_cluster
 // Calculates the number of directory entries that can fit in a cluster
 // --------------------------------------------------------------------
@@ -33,19 +50,47 @@ unsigned int get_total_clusters(struct fat32_boot_sector* boot_sector) {
 // find_free_cluster
 // Finds the first free cluster in the filesystem
 // Returns the cluster number if found, or INVALID_CLUSTER if not found
+// Uses FSInfo hint if available for faster allocation
 // --------------------------------------------------------------------
 unsigned int find_free_cluster(struct fat32_boot_sector* boot_sector) {
-    // Calculate the total number of clusters in the filesystem
+    extern struct fat32_fsinfo fsinfo;
+    extern bool fsinfo_valid;
+    
     unsigned int total_clusters = get_total_clusters(boot_sector);
-
-    for (unsigned int cluster = 2; cluster < total_clusters; cluster++) {
+    unsigned int start_cluster = 2;
+    
+    // Use FSInfo hint if available
+    if (fsinfo_valid && fsinfo.next_free_cluster != 0xFFFFFFFF && 
+        fsinfo.next_free_cluster >= 2 && fsinfo.next_free_cluster < total_clusters) {
+        start_cluster = fsinfo.next_free_cluster;
+        printf("Using FSInfo hint: starting search at cluster %u\n", start_cluster);
+    }
+    
+    // Search from hint to end
+    for (unsigned int cluster = start_cluster; cluster < total_clusters; cluster++) {
         if (read_fat_entry(boot_sector, cluster) == 0) {
-            // Found a free cluster
+            // Found a free cluster - update FSInfo hint
+            if (fsinfo_valid) {
+                fsinfo.next_free_cluster = cluster + 1;
+            }
             return cluster;
         }
     }
+    
+    // Wrap around: search from beginning to hint
+    if (start_cluster > 2) {
+        for (unsigned int cluster = 2; cluster < start_cluster; cluster++) {
+            if (read_fat_entry(boot_sector, cluster) == 0) {
+                // Found a free cluster - update FSInfo hint
+                if (fsinfo_valid) {
+                    fsinfo.next_free_cluster = cluster + 1;
+                }
+                return cluster;
+            }
+        }
+    }
 
-    return INVALID_CLUSTER; // Indicate failure (no free cluster found)
+    return INVALID_CLUSTER; // No free cluster found
 }
 
 // --------------------------------------------------------------------
@@ -59,7 +104,7 @@ bool mark_cluster_in_fat(struct fat32_boot_sector* boot_sector, unsigned int clu
     }
     // Calculate the FAT entry's position
     unsigned int fat_offset = cluster * 4; // Each FAT32 entry is 4 bytes
-    unsigned int fat_sector = boot_sector->reserved_sector_count + (fat_offset / boot_sector->bytes_per_sector);
+    unsigned int fat_sector = partition_lba_offset + boot_sector->reserved_sector_count + (fat_offset / boot_sector->bytes_per_sector);
     unsigned int ent_offset = fat_offset % boot_sector->bytes_per_sector;
     // Read the sector containing this FAT entry
     unsigned char buffer[boot_sector->bytes_per_sector];
@@ -67,14 +112,33 @@ bool mark_cluster_in_fat(struct fat32_boot_sector* boot_sector, unsigned int clu
         printf("Error: Failed to read the sector containing the FAT entry.\n");
         return false; // Error reading sector
     }
+    
     // Modify the FAT entry in the buffer
-    unsigned int* fat_entry = (unsigned int*)&buffer[ent_offset];
-    *fat_entry = (*fat_entry & 0xF0000000) | (value & 0x0FFFFFFF); // Preserve high 4 bits, modify the rest
-    // Write the modified sector back to the FAT
-    if (!ata_write_sector(ata_base_address, fat_sector, buffer, ata_is_master)) {
-        printf("Error: Failed to write the modified sector back to the FAT.\n");
-        return false; // Error writing sector
+    unsigned int* fat_entry_ptr = (unsigned int*)&buffer[ent_offset];
+    unsigned int old_value = *fat_entry_ptr & 0x0FFFFFFF;
+    *fat_entry_ptr = (*fat_entry_ptr & 0xF0000000) | (value & 0x0FFFFFFF); // Preserve high 4 bits, modify the rest
+    
+    // Write the modified sector back to ALL FAT copies (mirroring for redundancy)
+    for (unsigned int fat_num = 0; fat_num < boot_sector->number_of_fats; fat_num++) {
+        unsigned int fat_sector_offset = fat_num * boot_sector->fat_size_32;
+        unsigned int current_fat_sector = partition_lba_offset + boot_sector->reserved_sector_count + fat_sector_offset + (fat_offset / boot_sector->bytes_per_sector);
+        
+        if (!ata_write_sector(ata_base_address, current_fat_sector, buffer, ata_is_master)) {
+            printf("Error: Failed to write to FAT copy %u at sector %u\n", fat_num, current_fat_sector);
+            return false; // Error writing sector
+        }
     }
+    
+    // Update FSInfo if cluster allocation changed
+    extern void update_fsinfo_free_count(int delta);
+    if (old_value == 0 && value != 0) {
+        // Cluster was allocated
+        update_fsinfo_free_count(-1);
+    } else if (old_value != 0 && value == 0) {
+        // Cluster was freed
+        update_fsinfo_free_count(1);
+    }
+    
     return true;
 }
 
@@ -84,7 +148,7 @@ bool mark_cluster_in_fat(struct fat32_boot_sector* boot_sector, unsigned int clu
 // --------------------------------------------------------------------
 unsigned int get_first_data_sector(struct fat32_boot_sector* boot_sector) {
     unsigned int root_dir_sectors = ((boot_sector->root_entry_count * 32) + (boot_sector->bytes_per_sector - 1)) / boot_sector->bytes_per_sector;
-    unsigned int first_data_sector = boot_sector->reserved_sector_count + (boot_sector->number_of_fats * boot_sector->fat_size_32) + root_dir_sectors;
+    unsigned int first_data_sector = partition_lba_offset + boot_sector->reserved_sector_count + (boot_sector->number_of_fats * boot_sector->fat_size_32) + root_dir_sectors;
 
     return first_data_sector;
 }
@@ -117,12 +181,28 @@ bool write_cluster(struct fat32_boot_sector* boot_sector, unsigned int cluster, 
 }
 // return the start sector of a cluster
 unsigned int cluster_to_sector(struct fat32_boot_sector* boot_sector, unsigned int cluster) {
+    // Validate cluster number
+    if (!is_valid_cluster(boot_sector, cluster)) {
+        printf("Error: Invalid cluster number %u\n", cluster);
+        return 0; // Return invalid sector
+    }
+    
     unsigned int first_data_sector = boot_sector->reserved_sector_count + (boot_sector->number_of_fats * boot_sector->fat_size_32);
-    return ((cluster - 2) * boot_sector->sectors_per_cluster) + first_data_sector;
+    return partition_lba_offset + ((cluster - 2) * boot_sector->sectors_per_cluster) + first_data_sector;
 }
 
 void read_cluster(struct fat32_boot_sector* boot_sector, unsigned int cluster_number, void* buffer) {
+    if (!is_valid_cluster(boot_sector, cluster_number)) {
+        printf("Error: Cannot read invalid cluster %u\n", cluster_number);
+        return;
+    }
+    
     unsigned int startSector = cluster_to_sector(boot_sector, cluster_number);
+    if (startSector == 0) {
+        printf("Error: Invalid sector for cluster %u\n", cluster_number);
+        return;
+    }
+    
     for (unsigned int i = 0; i < boot_sector->sectors_per_cluster; ++i) {
         ata_read_sector(ata_base_address, startSector + i, buffer + (i * SECTOR_SIZE), ata_is_master);
     }
@@ -134,7 +214,7 @@ unsigned int read_start_cluster(struct fat32_dir_entry* entry) {
 
 unsigned int get_next_cluster_in_chain(struct fat32_boot_sector* boot_sector, unsigned int current_cluster) {
     unsigned int fat_offset = current_cluster * 4; // 4 bytes per FAT32 entry
-    unsigned int fat_sector = boot_sector->reserved_sector_count + (fat_offset / boot_sector->bytes_per_sector);
+    unsigned int fat_sector = partition_lba_offset + boot_sector->reserved_sector_count + (fat_offset / boot_sector->bytes_per_sector);
     unsigned int ent_offset = fat_offset % boot_sector->bytes_per_sector;
     // Buffer to read a part of the FAT
     unsigned char buffer[boot_sector->bytes_per_sector];

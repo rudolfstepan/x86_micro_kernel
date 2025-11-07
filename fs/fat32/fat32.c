@@ -10,9 +10,16 @@
 
 unsigned int current_directory_cluster = 2; // Default root directory cluster for FAT32
 struct fat32_boot_sector boot_sector;
+struct fat32_fsinfo fsinfo;
 
 unsigned short ata_base_address;
 bool ata_is_master;
+unsigned int partition_lba_offset = 0; // LBA offset for partitioned disks (0 for whole disk)
+bool fsinfo_valid = false; // Track if FSInfo is loaded and valid
+
+// Forward declarations
+bool read_fsinfo(void);
+bool write_fsinfo(void);
 
 int fat32_init_fs(unsigned short base, bool is_master) {
     // Read the first sector (LBA 0) into boot_sector
@@ -80,8 +87,86 @@ int fat32_init_fs(unsigned short base, bool is_master) {
     ata_base_address = base;
     current_directory_cluster = boot_sector.root_cluster;
     
+    // Load FSInfo sector if available
+    if (boot_sector.fs_info != 0 && boot_sector.fs_info != 0xFFFF) {
+        printf("Loading FSInfo from sector %u...\n", boot_sector.fs_info);
+        if (!read_fsinfo()) {
+            printf("Warning: FSInfo sector invalid or corrupt, continuing without it\n");
+        }
+    }
+    
     printf("FAT32 init complete, returning SUCCESS\n");
     return SUCCESS;
+}
+
+// ------------------------------------------------------------------
+// read_fsinfo
+// Reads the FSInfo sector and validates it
+// ------------------------------------------------------------------
+bool read_fsinfo(void) {
+    uint32_t fsinfo_sector = partition_lba_offset + boot_sector.fs_info;
+    
+    if (!ata_read_sector(ata_base_address, fsinfo_sector, &fsinfo, ata_is_master)) {
+        printf("Error: Failed to read FSInfo sector\n");
+        return false;
+    }
+    
+    // Validate signatures
+    if (fsinfo.lead_signature != 0x41615252 || 
+        fsinfo.struct_signature != 0x61417272 || 
+        fsinfo.trail_signature != 0xAA550000) {
+        printf("Error: Invalid FSInfo signatures (lead=0x%08X, struct=0x%08X, trail=0x%08X)\n",
+               fsinfo.lead_signature, fsinfo.struct_signature, fsinfo.trail_signature);
+        return false;
+    }
+    
+    fsinfo_valid = true;
+    printf("FSInfo loaded: free_clusters=%u, next_free=%u\n", 
+           fsinfo.free_cluster_count, fsinfo.next_free_cluster);
+    return true;
+}
+
+// ------------------------------------------------------------------
+// write_fsinfo
+// Writes the FSInfo sector back to disk
+// ------------------------------------------------------------------
+bool write_fsinfo(void) {
+    if (!fsinfo_valid) {
+        return false; // Don't write if FSInfo wasn't loaded successfully
+    }
+    
+    uint32_t fsinfo_sector = partition_lba_offset + boot_sector.fs_info;
+    
+    if (!ata_write_sector(ata_base_address, fsinfo_sector, &fsinfo, ata_is_master)) {
+        printf("Error: Failed to write FSInfo sector\n");
+        return false;
+    }
+    
+    printf("FSInfo updated: free_clusters=%u, next_free=%u\n", 
+           fsinfo.free_cluster_count, fsinfo.next_free_cluster);
+    return true;
+}
+
+// ------------------------------------------------------------------
+// update_fsinfo_free_count
+// Updates the free cluster count (call after alloc/free operations)
+// ------------------------------------------------------------------
+void update_fsinfo_free_count(int delta) {
+    if (!fsinfo_valid) {
+        return; // FSInfo not available
+    }
+    
+    // If count is unknown, don't update
+    if (fsinfo.free_cluster_count == 0xFFFFFFFF) {
+        return;
+    }
+    
+    // Update count
+    if (delta < 0 && fsinfo.free_cluster_count < (unsigned int)(-delta)) {
+        fsinfo.free_cluster_count = 0; // Underflow protection
+    } else {
+        fsinfo.free_cluster_count = (unsigned int)((int)fsinfo.free_cluster_count + delta);
+    }
 }
 
 // ------------------------------------------------------------------
@@ -187,8 +272,14 @@ void set_fat32_time(unsigned short* time, unsigned short* date) {
 }
 
 unsigned int read_fat_entry(struct fat32_boot_sector* boot_sector, unsigned int cluster) {
+    // Validate cluster number
+    if (cluster < 2 || cluster >= get_total_clusters(boot_sector)) {
+        printf("Error: Invalid cluster %u in read_fat_entry\n", cluster);
+        return INVALID_CLUSTER;
+    }
+    
     unsigned int fat_offset = cluster * 4; // Each FAT32 entry is 4 bytes
-    unsigned int fat_sector = boot_sector->reserved_sector_count + (fat_offset / boot_sector->bytes_per_sector);
+    unsigned int fat_sector = partition_lba_offset + boot_sector->reserved_sector_count + (fat_offset / boot_sector->bytes_per_sector);
     unsigned int ent_offset = fat_offset % boot_sector->bytes_per_sector;
     // Buffer to read a part of the FAT
     unsigned char buffer[boot_sector->bytes_per_sector];
@@ -207,7 +298,7 @@ unsigned int read_fat_entry(struct fat32_boot_sector* boot_sector, unsigned int 
 
 bool write_fat_entry(struct fat32_boot_sector* boot_sector, unsigned int cluster, unsigned int value) {
     unsigned int fat_offset = cluster * 4; // Each FAT32 entry is 4 bytes
-    unsigned int fat_sector = boot_sector->reserved_sector_count + (fat_offset / boot_sector->bytes_per_sector);
+    unsigned int fat_sector = partition_lba_offset + boot_sector->reserved_sector_count + (fat_offset / boot_sector->bytes_per_sector);
     unsigned int ent_offset = fat_offset % boot_sector->bytes_per_sector;
     // Buffer to read and modify a part of the FAT
     unsigned char buffer[boot_sector->bytes_per_sector];
@@ -220,12 +311,19 @@ bool write_fat_entry(struct fat32_boot_sector* boot_sector, unsigned int cluster
     // Modify the FAT entry in the buffer
     unsigned int* fat_entry = (unsigned int*)&buffer[ent_offset];
     *fat_entry = (*fat_entry & 0xF0000000) | (value & 0x0FFFFFFF); // Preserve high 4 bits, modify the rest
-    // Write the modified sector back to the FAT
-    if (!ata_write_sector(ata_base_address, fat_sector, buffer, ata_is_master)) {
-        // Handle write error
-        printf("Error: Failed to write the modified sector back to the FAT.\n");
-        return false;
+    
+    // Write the modified sector back to ALL FAT copies (mirroring for redundancy)
+    for (unsigned int fat_num = 0; fat_num < boot_sector->number_of_fats; fat_num++) {
+        unsigned int fat_sector_offset = fat_num * boot_sector->fat_size_32;
+        unsigned int current_fat_sector = partition_lba_offset + boot_sector->reserved_sector_count + fat_sector_offset + (fat_offset / boot_sector->bytes_per_sector);
+        
+        if (!ata_write_sector(ata_base_address, current_fat_sector, buffer, ata_is_master)) {
+            printf("Error: Failed to write to FAT copy %u at sector %u\n", fat_num, current_fat_sector);
+            return false;
+        }
     }
+    
+    printf("FAT entry %u updated in all %u FAT copies\n", cluster, boot_sector->number_of_fats);
     return true;
 }
 

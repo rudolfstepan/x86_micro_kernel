@@ -386,18 +386,18 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer, bool 
     // Write the data
     outsw(ATA_DATA(base), buffer, SECTOR_SIZE / 2);
 
-#ifdef REAL_HARDWARE
-    // Real hardware: Wait for write completion and flush
+    // Wait for write completion
     if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
         return false;
     }
     
-    // Flush cache to ensure data is written
+    // Flush cache to ensure data is written (critical for filesystem integrity)
+    // This prevents data loss on power failure or disk removal
     outb(ATA_COMMAND(base), 0xE7);  // FLUSH CACHE command
     if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
         printf("Warning: Cache flush timeout\n");
+        // Continue anyway - the write was successful
     }
-#endif
 
     return true;
 }
