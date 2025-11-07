@@ -664,9 +664,41 @@ Keyboard Shortcuts:
 
 ## Next Steps (Priority 3)
 
-### Planned Features
+### Completed Features ✅
 
-#### 1. Cursor Positioning (High Priority)
+#### 1. Cursor Positioning (Priority 3.1) ✅ **COMPLETED**
+**Goal**: Allow editing in middle of line with left/right arrows
+
+**Implementation**:
+- Track cursor position in buffer (separate from buffer end)
+- Handle KEY_LEFT/KEY_RIGHT to move cursor within line
+- Mid-line character insertion (shift right)
+- Backspace/Delete at any cursor position
+- Home/End keys for fast navigation
+- Ctrl+K kills from cursor position
+- Ctrl+L preserves cursor position after clear
+
+**Status**: ✅ **COMPLETE**  
+**Effort**: ~2 hours  
+**Lines Added**: +80  
+**Testing**: ✅ Verified in QEMU
+
+**Features Working**:
+- ✅ Left/Right arrows move cursor
+- ✅ Home jumps to start, End jumps to end
+- ✅ Insert character at any position (shifts right)
+- ✅ Backspace deletes before cursor (shifts left)
+- ✅ Delete removes at cursor (shifts left)
+- ✅ Ctrl+K kills from cursor to end
+- ✅ Ctrl+L clears screen, restores cursor position
+
+**Documentation**: See `PRIORITY3_CURSOR_POSITIONING.md`
+
+---
+
+### Planned Features ⏳
+
+#### 2. Tab Autocomplete (High Priority)
 **Goal**: Allow editing in middle of line with left/right arrows
 
 **Implementation**:

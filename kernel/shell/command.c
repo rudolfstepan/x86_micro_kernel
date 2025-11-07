@@ -299,7 +299,7 @@ void history_list(void) {
 /**
  * Replace current line with new content
  */
-static void replace_current_line(char *buffer, const char *new_content, int *cursor_pos) {
+static void replace_current_line(char *buffer, const char *new_content, int *cursor_pos, int *buffer_index) {
     // Save cursor position
     vga_save_cursor();
     
@@ -322,12 +322,13 @@ static void replace_current_line(char *buffer, const char *new_content, int *cur
     }
     
     *cursor_pos = len;
+    *buffer_index = len;
 }
 
 /**
  * Handle arrow keys and special sequences
  */
-static bool handle_escape_sequence(char *buffer, int *buffer_index) {
+static bool handle_escape_sequence(char *buffer, int *buffer_index, int *cursor_pos) {
     // Read next character
     char seq1 = input_queue_pop();
     if (seq1 == '\0') return false;
@@ -346,7 +347,7 @@ static bool handle_escape_sequence(char *buffer, int *buffer_index) {
             // Previous command in history
             const char *prev = history_get_prev();
             if (prev != NULL) {
-                replace_current_line(buffer, prev, buffer_index);
+                replace_current_line(buffer, prev, cursor_pos, buffer_index);
             }
             return true;
         }
@@ -355,30 +356,65 @@ static bool handle_escape_sequence(char *buffer, int *buffer_index) {
             // Next command in history
             const char *next = history_get_next();
             if (next != NULL) {
-                replace_current_line(buffer, next, buffer_index);
+                replace_current_line(buffer, next, cursor_pos, buffer_index);
             }
             return true;
         }
         
         case KEY_LEFT:
-            // TODO: Move cursor left within line
+            // Move cursor left within line
+            if (*cursor_pos > 0) {
+                (*cursor_pos)--;
+                vga_move_cursor_left();
+            }
             return true;
             
         case KEY_RIGHT:
-            // TODO: Move cursor right within line
+            // Move cursor right within line
+            if (*cursor_pos < *buffer_index) {
+                (*cursor_pos)++;
+                vga_move_cursor_right();
+            }
             return true;
             
         case KEY_HOME:
-            // Jump to start of line
+            // Jump to start of line (after prompt)
+            while (*cursor_pos > 0) {
+                (*cursor_pos)--;
+                vga_move_cursor_left();
+            }
             return true;
             
         case KEY_END:
             // Jump to end of line
+            while (*cursor_pos < *buffer_index) {
+                (*cursor_pos)++;
+                vga_move_cursor_right();
+            }
             return true;
             
         case KEY_DELETE:
             // Delete character at cursor
-            vga_delete_char_at_cursor();
+            if (*cursor_pos < *buffer_index) {
+                // Shift characters left
+                for (int i = *cursor_pos; i < *buffer_index - 1; i++) {
+                    buffer[i] = buffer[i + 1];
+                }
+                (*buffer_index)--;
+                buffer[*buffer_index] = '\0';
+                
+                // Update display
+                for (int i = *cursor_pos; i < *buffer_index; i++) {
+                    putchar(buffer[i]);
+                }
+                putchar(' ');  // Clear last character
+                
+                // Move cursor back to position
+                int moves_back = *buffer_index - *cursor_pos + 1;
+                for (int i = 0; i < moves_back; i++) {
+                    vga_move_cursor_left();
+                }
+            }
             return true;
             
         default:
@@ -389,12 +425,13 @@ static bool handle_escape_sequence(char *buffer, int *buffer_index) {
 /**
  * Handle Ctrl+key combinations
  */
-static bool handle_ctrl_key(char ch, char *buffer, int *buffer_index) {
+static bool handle_ctrl_key(char ch, char *buffer, int *buffer_index, int *cursor_pos) {
     switch (ch) {
         case 0x03:  // Ctrl+C
             printf("^C\n");
             buffer[0] = '\0';
             *buffer_index = 0;
+            *cursor_pos = 0;
             history_reset();
             printf("> ");
             return true;
@@ -414,6 +451,11 @@ static bool handle_ctrl_key(char ch, char *buffer, int *buffer_index) {
             for (int i = 0; i < *buffer_index; i++) {
                 putchar(buffer[i]);
             }
+            // Restore cursor position
+            int moves_back = *buffer_index - *cursor_pos;
+            for (int i = 0; i < moves_back; i++) {
+                vga_move_cursor_left();
+            }
             return true;
             
         case 0x15:  // Ctrl+U (clear line)
@@ -421,11 +463,14 @@ static bool handle_ctrl_key(char ch, char *buffer, int *buffer_index) {
             printf("> ");
             buffer[0] = '\0';
             *buffer_index = 0;
+            *cursor_pos = 0;
             return true;
             
         case 0x0B:  // Ctrl+K (kill to end of line)
+            // Kill from cursor to end
+            buffer[*cursor_pos] = '\0';
+            *buffer_index = *cursor_pos;
             vga_clear_from_cursor();
-            buffer[*buffer_index] = '\0';
             return true;
             
         default:
@@ -447,7 +492,8 @@ void command_loop() {
         return;
     }
 
-    int buffer_index = 0;
+    int buffer_index = 0;  // End of text in buffer
+    int cursor_pos = 0;     // Current cursor position (0 to buffer_index)
     input[0] = '\0';
 
     while (1) {
@@ -457,13 +503,13 @@ void command_loop() {
         if (ch != 0) {
             // Check for escape sequences (arrow keys, etc.)
             if (ch == '\x1B') {  // ESC
-                if (handle_escape_sequence(input, &buffer_index)) {
+                if (handle_escape_sequence(input, &buffer_index, &cursor_pos)) {
                     continue;
                 }
             }
             // Check for Ctrl+key combinations
             else if (ch < 0x20 && ch != '\n' && ch != '\t' && ch != '\b') {
-                if (handle_ctrl_key(ch, input, &buffer_index)) {
+                if (handle_ctrl_key(ch, input, &buffer_index, &cursor_pos)) {
                     continue;
                 }
             }
@@ -480,16 +526,34 @@ void command_loop() {
                 
                 // Reset for next command
                 buffer_index = 0;
+                cursor_pos = 0;
                 input[0] = '\0';
                 history_reset();
                 printf("> ");
             }
             // Handle Backspace
             else if (ch == '\b') {
-                if (buffer_index > 0) {
+                if (cursor_pos > 0) {
+                    // Delete character before cursor
+                    for (int i = cursor_pos - 1; i < buffer_index; i++) {
+                        input[i] = input[i + 1];
+                    }
                     buffer_index--;
+                    cursor_pos--;
                     input[buffer_index] = '\0';
+                    
+                    // Update display: move cursor left, reprint from cursor, clear last char
                     vga_backspace();
+                    for (int i = cursor_pos; i < buffer_index; i++) {
+                        putchar(input[i]);
+                    }
+                    putchar(' ');  // Clear last character
+                    
+                    // Move cursor back to correct position
+                    int moves_back = buffer_index - cursor_pos + 1;
+                    for (int i = 0; i < moves_back; i++) {
+                        vga_move_cursor_left();
+                    }
                 }
             }
             // Handle Tab (could be used for autocomplete later)
@@ -500,9 +564,34 @@ void command_loop() {
             // Regular character
             else if (ch >= 0x20 && ch < 0x7F) {
                 if (buffer_index < 255) {
-                    input[buffer_index++] = ch;
+                    // Insert character at cursor position
+                    if (cursor_pos < buffer_index) {
+                        // Shift characters right
+                        for (int i = buffer_index; i > cursor_pos; i--) {
+                            input[i] = input[i - 1];
+                        }
+                    }
+                    
+                    input[cursor_pos] = ch;
+                    buffer_index++;
+                    cursor_pos++;
                     input[buffer_index] = '\0';
-                    putchar(ch);
+                    
+                    // Update display
+                    if (cursor_pos == buffer_index) {
+                        // Cursor at end, simple append
+                        putchar(ch);
+                    } else {
+                        // Mid-line insert: reprint from cursor
+                        for (int i = cursor_pos - 1; i < buffer_index; i++) {
+                            putchar(input[i]);
+                        }
+                        // Move cursor back to correct position
+                        int moves_back = buffer_index - cursor_pos;
+                        for (int i = 0; i < moves_back; i++) {
+                            vga_move_cursor_left();
+                        }
+                    }
                 }
             }
         } else {
