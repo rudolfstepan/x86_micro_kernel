@@ -86,14 +86,37 @@ unsigned int read_file_data(unsigned int start_cluster, char* buffer, unsigned i
 }
 
 int read_file_data_to_address(unsigned int start_cluster, void* load_address, unsigned int file_size) {
+    // Safety checks
+    if (file_size == 0) {
+        return 0; // Empty file
+    }
+    
+    if (boot_sector.sectors_per_cluster == 0) {
+        printf("Error: sectors_per_cluster is zero\n");
+        return 0;
+    }
+    
     unsigned int current_cluster = start_cluster;
     unsigned int bytes_read = 0;
     unsigned char* buffer_ptr = (unsigned char*)load_address;
+    
     while (bytes_read < file_size) {
+        // Validate cluster before using it
+        extern bool is_valid_cluster(struct fat32_boot_sector* bs, unsigned int cluster);
+        if (!is_valid_cluster(&boot_sector, current_cluster)) {
+            printf("Error: Invalid cluster %u during file read\n", current_cluster);
+            break;
+        }
+        
         unsigned int sector_number = cluster_to_sector(&boot_sector, current_cluster);
+        
         // Read each sector in the current cluster
         for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
-            ata_read_sector(ata_base_address, sector_number + i, buffer_ptr, ata_is_master);
+            if (!ata_read_sector(ata_base_address, sector_number + i, buffer_ptr, ata_is_master)) {
+                printf("Error: Failed to read sector %u\n", sector_number + i);
+                return bytes_read;
+            }
+            
             buffer_ptr += SECTOR_SIZE;
             bytes_read += SECTOR_SIZE;
 
@@ -101,26 +124,49 @@ int read_file_data_to_address(unsigned int start_cluster, void* load_address, un
                 break; // Stop if we have read the entire file
             }
         }
+        
         // Get the next cluster in the chain
         current_cluster = get_next_cluster_in_chain(&boot_sector, current_cluster);
+        
         // Check if we have reached the end of the file
         if (is_end_of_cluster_chain(current_cluster)) {
             break;
         }
     }
-    return file_size;
+    
+    return bytes_read;
 }
 
 int fat32_load_file(const char* filename, void* load_address) {
+    // Safety check: ensure boot sector is initialized
+    if (boot_sector.bytes_per_sector == 0 || boot_sector.sectors_per_cluster == 0) {
+        printf("Error: Filesystem not properly initialized\n");
+        return 0;
+    }
+    
     struct fat32_dir_entry* entry = find_file_in_directory(filename);
     if (entry == NULL) {
         printf("File %s not found for loading into buffer.\n", filename);
         return 0; // we return 0 if the file was not found which is the size of the file
     }
+    
     unsigned int file_size = entry->file_size;
     unsigned int start_cluster = read_start_cluster(entry);
-    // Assuming read_file_data is modified to take a pointer to the load address
-    return read_file_data_to_address(start_cluster, load_address, file_size);
+    
+    // Safety check: validate cluster number
+    if (start_cluster < 2) {
+        printf("Error: Invalid start cluster %u\n", start_cluster);
+        free(entry);
+        return 0;
+    }
+    
+    // Load the file
+    int result = read_file_data_to_address(start_cluster, load_address, file_size);
+    
+    // Free the directory entry
+    free(entry);
+    
+    return result;
 }
 
 // void openAndLoadFile(const char* filename) {

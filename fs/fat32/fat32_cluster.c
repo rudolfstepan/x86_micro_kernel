@@ -23,6 +23,13 @@ bool is_valid_cluster(struct fat32_boot_sector* boot_sector, unsigned int cluste
 // Calculates the number of directory entries that can fit in a cluster
 // --------------------------------------------------------------------
 unsigned int get_entries_per_cluster(struct fat32_boot_sector* boot_sector) {
+    // Safety check to prevent divide by zero
+    if (boot_sector->bytes_per_sector == 0 || boot_sector->sectors_per_cluster == 0) {
+        printf("Error: Invalid boot sector values (bytes_per_sector=%u, sectors_per_cluster=%u)\n",
+               boot_sector->bytes_per_sector, boot_sector->sectors_per_cluster);
+        return 1; // Return minimum safe value
+    }
+    
     unsigned int cluster_size = boot_sector->bytes_per_sector * boot_sector->sectors_per_cluster;
     unsigned int entries_per_cluster = cluster_size / DIRECTORY_ENTRY_SIZE;
 
@@ -34,6 +41,12 @@ unsigned int get_entries_per_cluster(struct fat32_boot_sector* boot_sector) {
 // Calculates the total number of clusters in the filesystem
 // --------------------------------------------------------------------
 unsigned int get_total_clusters(struct fat32_boot_sector* boot_sector) {
+    // Safety check to prevent divide by zero
+    if (boot_sector->sectors_per_cluster == 0) {
+        printf("Error: sectors_per_cluster is zero in get_total_clusters\n");
+        return 2; // Return minimum safe value (clusters start at 2)
+    }
+    
     // Assuming you have a global or accessible boot_sector structure
     // and the structure has fields: totalSectors32, reservedSectorCount,
     // numberOfFATs, FATsizeFAT32, and sectorsPerCluster

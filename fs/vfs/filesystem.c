@@ -194,3 +194,35 @@ void print_raw_boot_sector(uint16_t* data, size_t length) {
     }
     printf("\n");
 }
+
+/**
+ * Auto-mount the first available hard drive
+ * Called during system initialization to ensure filesystem is always available
+ */
+void auto_mount_first_drive(void) {
+    extern drive_t detected_drives[];
+    extern short drive_count;
+    extern drive_t* current_drive;  // Shell needs this set
+    
+    if (drive_count == 0) {
+        printf("Auto-mount: No drives detected\n");
+        return;
+    }
+    
+    // Find first ATA hard drive
+    for (int i = 0; i < drive_count; i++) {
+        if (detected_drives[i].type == DRIVE_TYPE_ATA) {
+            printf("Auto-mounting %s (%s)...\n", 
+                   detected_drives[i].name, detected_drives[i].model);
+            
+            // Set current_drive so shell commands work
+            current_drive = &detected_drives[i];
+            
+            init_fs(current_drive);
+            printf("Auto-mount successful: %s is ready\n", current_drive->name);
+            return;
+        }
+    }
+    
+    printf("Auto-mount: No hard drives found\n");
+}

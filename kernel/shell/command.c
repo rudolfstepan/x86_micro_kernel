@@ -1513,8 +1513,18 @@ void cmd_history(int arg_count, const char** arguments) {
 #include "userspace/bin/basic.c"
 
 void cmd_basic(int arg_count, const char** arguments) {
-    printf("Starting BASIC interpreter...\n");
-    printf("Type 'EXIT' to return to shell\n\n");
+    printf("\n=== BASIC Interpreter v1.2 ===\n");
+    printf("Commands (case-insensitive):\n");
+    printf("  RUN        - Execute the program\n");
+    printf("  LIST       - Display program listing\n");
+    printf("  NEW        - Clear program and variables\n");
+    printf("  LOAD file  - Load .BAS file from filesystem\n");
+    printf("  SAVE file  - Save program to .BAS file\n");
+    printf("  HELP       - Show help\n");
+    printf("  EXIT       - Return to shell\n");
+    printf("\nEnter program lines with line numbers (0-99)\n");
+    printf("Example: 10 PRINT \"HELLO\"\n\n");
+    
     basic_interpreter(); // Call BASIC interpreter
-    printf("\nBASIC interpreter exited.\n");
+    printf("\nReturned to shell.\n");
 }
