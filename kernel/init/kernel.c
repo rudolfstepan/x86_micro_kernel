@@ -48,8 +48,9 @@
 #include "drivers/block/ata.h"
 #include "drivers/block/fdd.h"
 
-// Bus enumeration
-#include "drivers/bus/pci.h"
+ // Bus enumeration
+ #include "drivers/bus/pci.h"
+ void usb_init(void);
 
 // Network subsystem
 #include "drivers/net/e1000.h"
@@ -139,6 +140,7 @@ static void hardware_init(void) {
     
     // Bus enumeration
     pci_init();  // PCI bus scanning
+    usb_init();  // Initialize USB subsystem (probe PCI for HCI)
     
     // Scheduler interrupt (currently disabled)
     register_interrupt_handler(9, scheduler_interrupt_handler);
