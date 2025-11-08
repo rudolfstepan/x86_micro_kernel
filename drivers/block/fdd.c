@@ -162,9 +162,13 @@
 
 static volatile bool irq_triggered = false; // IRQ6 flag for FDD 0x10
 static volatile bool irq_ready_triggered = false; // IRQ6 ready flag 0x80
+static bool fdc_controller_initialized = false; // Track if FDC controller has been initialized
+static bool fdc_drive_ready[4] = {false, false, false, false}; // Track which drives are calibrated
 
 // Forward declarations
 uint8_t fdc_read_data();
+void fdc_full_reset();
+bool fdc_specify();
 
 // FDC IRQ handler for IRQ6
 void fdd_irq_handler(uint8_t* r) {
@@ -370,9 +374,127 @@ bool _fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector
     return true;
 }
 
+bool fdc_init_controller() {
+    printf("Initializing FDC controller...\n");
+    
+    // Reset the FDC by toggling the reset bit
+    outb(FDD_DOR, 0x00);  // Disable motor and reset
+    delay_ms(10);
+    outb(FDD_DOR, 0x0C);  // Re-enable FDC (motor off initially)
+    delay_ms(10);
+    
+    // After reset, FDC generates 4 interrupts (one per drive), clear them
+    for (int i = 0; i < 4; i++) {
+        irq_triggered = false;
+        delay_ms(10);
+        
+        // Send SENSE INTERRUPT STATUS to clear the interrupt
+        if (wait_for_fdc_ready()) {
+            fdc_send_command(0x08);  // SENSE INTERRUPT STATUS
+            delay_ms(5);
+            if (wait_for_fdc_ready()) {
+                fdc_read_data();  // ST0
+                fdc_read_data();  // Cylinder
+            }
+        }
+    }
+    
+    printf("Reset interrupts cleared.\n");
+    
+    // Send SPECIFY command (0x03) to set drive parameters
+    if (!wait_for_fdc_ready() ||
+        !fdc_send_command(0x03) ||
+        !fdc_send_command(0xDF) ||  // SRT=3ms, HUT=240ms
+        !fdc_send_command(0x02)) {  // HLT=4ms, non-DMA=0
+        printf("Failed to send SPECIFY command.\n");
+        return false;
+    }
+    
+    printf("FDC controller initialized.\n");
+    return true;
+}
+
+bool fdc_calibrate_drive(uint8_t drive) {
+    printf("Calibrating drive %d...\n", drive);
+    
+    // Turn on motor
+    fdc_motor_on(drive);
+    delay_ms(500);
+    
+    // Recalibrate (move head to track 0)
+    irq_triggered = false;
+    
+    if (!wait_for_fdc_ready() ||
+        !fdc_send_command(FDD_CMD_RECALIBRATE) ||
+        !fdc_send_command(drive)) {
+        printf("Failed to send RECALIBRATE command.\n");
+        fdc_motor_off(drive);
+        return false;
+    }
+    
+    // Wait for the recalibration interrupt
+    delay_ms(100);
+    if (!fdc_wait_for_irq()) {
+        printf("Timeout waiting for recalibration IRQ.\n");
+        fdc_motor_off(drive);
+        return false;
+    }
+    
+    // Get the result with SENSE INTERRUPT STATUS
+    if (!wait_for_fdc_ready() || !fdc_send_command(0x08)) {
+        printf("Failed to send SENSE INTERRUPT STATUS.\n");
+        fdc_motor_off(drive);
+        return false;
+    }
+    
+    delay_ms(5);
+    if (!wait_for_fdc_ready()) {
+        printf("FDC not ready to read sense data.\n");
+        fdc_motor_off(drive);
+        return false;
+    }
+    
+    uint8_t st0 = fdc_read_data();
+    uint8_t cylinder = fdc_read_data();
+    
+    printf("Calibrate result: ST0=0x%x, cylinder=%d\n", st0, cylinder);
+    
+    if ((st0 & 0x20) != 0x20) {  // Check if seek ended successfully
+        printf("Calibration failed.\n");
+        fdc_motor_off(drive);
+        return false;
+    }
+    
+    if (cylinder != 0) {
+        printf("Warning: Not at cylinder 0 after calibration.\n");
+    }
+    
+    fdc_motor_off(drive);
+    printf("Drive %d calibrated successfully.\n", drive);
+    return true;
+}
+
 bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
+    // Initialize FDC controller on first use
+    if (!fdc_controller_initialized) {
+        if (!fdc_init_controller()) {
+            printf("Failed to initialize FDC controller.\n");
+            return false;
+        }
+        fdc_controller_initialized = true;
+    }
+    
+    // Calibrate this specific drive if not done yet
+    if (!fdc_drive_ready[drive]) {
+        if (!fdc_calibrate_drive(drive)) {
+            printf("Failed to calibrate drive %d.\n", drive);
+            return false;
+        }
+        fdc_drive_ready[drive] = true;
+    }
+    
     fdc_motor_on(drive);  // Turn on the motor
-    delay_ms(500);        // Wait for the motor to spin up
+    delay_ms(300);        // Wait for the motor to spin up
 
     bool result = _fdc_read_sector(drive, head, track, sector, buffer);
 

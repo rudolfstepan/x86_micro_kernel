@@ -2,6 +2,7 @@
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
+#include "drivers/bus/drives.h"
 
 
 // Function to read a directory path and return if it exists
@@ -204,7 +205,7 @@ bool is_directory_empty(struct fat32_dir_entry* entry) {
     struct fat32_dir_entry entries[SECTOR_SIZE / sizeof(struct fat32_dir_entry)];
 
     for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
-        ata_read_sector(ata_base_address, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct fat32_dir_entry))], ata_is_master);
+        ata_read_sector(current_drive->base, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct fat32_dir_entry))], current_drive->is_master);
     }
 
     for (unsigned int j = 0; j < sizeof(entries) / sizeof(struct fat32_dir_entry); j++) {

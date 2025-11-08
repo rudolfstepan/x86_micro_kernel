@@ -1,5 +1,6 @@
 #include "fat32.h"
 #include "lib/libc/stdio.h"
+#include "drivers/bus/drives.h"
 
 // --------------------------------------------------------------------
 // is_valid_cluster
@@ -121,7 +122,7 @@ bool mark_cluster_in_fat(struct fat32_boot_sector* boot_sector, unsigned int clu
     unsigned int ent_offset = fat_offset % boot_sector->bytes_per_sector;
     // Read the sector containing this FAT entry
     unsigned char buffer[boot_sector->bytes_per_sector];
-    if (!ata_read_sector(ata_base_address, fat_sector, buffer, ata_is_master)) {
+    if (!ata_read_sector(current_drive->base, fat_sector, buffer, current_drive->is_master)) {
         printf("Error: Failed to read the sector containing the FAT entry.\n");
         return false; // Error reading sector
     }
@@ -136,14 +137,14 @@ bool mark_cluster_in_fat(struct fat32_boot_sector* boot_sector, unsigned int clu
         unsigned int fat_sector_offset = fat_num * boot_sector->fat_size_32;
         unsigned int current_fat_sector = partition_lba_offset + boot_sector->reserved_sector_count + fat_sector_offset + (fat_offset / boot_sector->bytes_per_sector);
         
-        if (!ata_write_sector(ata_base_address, current_fat_sector, buffer, ata_is_master)) {
+        if (!ata_write_sector(ata_base_address, current_fat_sector, buffer, current_drive->is_master)) {
             printf("Error: Failed to write to FAT copy %u at sector %u\n", fat_num, current_fat_sector);
             return false; // Error writing sector
         }
         
         // Verify the write by reading back the sector
         unsigned char verify_buffer[boot_sector->bytes_per_sector];
-        if (!ata_read_sector(ata_base_address, current_fat_sector, verify_buffer, ata_is_master)) {
+        if (!ata_read_sector(current_drive->base, current_fat_sector, verify_buffer, current_drive->is_master)) {
             printf("Error: Failed to read back FAT copy %u for verification\n", fat_num);
             return false;
         }
@@ -199,14 +200,14 @@ bool write_cluster(struct fat32_boot_sector* boot_sector, unsigned int cluster, 
         void* buffer_ptr = ((unsigned char*)entries) + (i * boot_sector->bytes_per_sector);
         
         // Write the sector
-        if (!ata_write_sector(ata_base_address, sector_number, buffer_ptr, ata_is_master)) {
+        if (!ata_write_sector(ata_base_address, sector_number, buffer_ptr, current_drive->is_master)) {
             printf("Error: Failed to write to sector %u.\n", sector_number);
             return false; // Error writing sector
         }
         
         // Verify the write by reading back the sector
         unsigned char verify_buffer[boot_sector->bytes_per_sector];
-        if (!ata_read_sector(ata_base_address, sector_number, verify_buffer, ata_is_master)) {
+        if (!ata_read_sector(current_drive->base, sector_number, verify_buffer, current_drive->is_master)) {
             printf("Error: Failed to read back sector %u for verification\n", sector_number);
             return false;
         }
@@ -245,7 +246,7 @@ void read_cluster(struct fat32_boot_sector* boot_sector, unsigned int cluster_nu
     }
     
     for (unsigned int i = 0; i < boot_sector->sectors_per_cluster; ++i) {
-        ata_read_sector(ata_base_address, startSector + i, buffer + (i * SECTOR_SIZE), ata_is_master);
+        ata_read_sector(current_drive->base, startSector + i, buffer + (i * SECTOR_SIZE), current_drive->is_master);
     }
 }
 
@@ -260,7 +261,7 @@ unsigned int get_next_cluster_in_chain(struct fat32_boot_sector* boot_sector, un
     // Buffer to read a part of the FAT
     unsigned char buffer[boot_sector->bytes_per_sector];
     // Read the sector of the FAT that contains the current cluster's entry
-    if (!ata_read_sector(ata_base_address, fat_sector, buffer, ata_is_master)) {
+    if (!ata_read_sector(current_drive->base, fat_sector, buffer, current_drive->is_master)) {
         // Handle read error
         return INVALID_CLUSTER;
     }
@@ -288,7 +289,7 @@ unsigned int find_next_cluster(struct fat32_boot_sector* boot_sector, const char
         unsigned int sector = cluster_to_sector(boot_sector, current_cluster);
         for (unsigned int i = 0; i < boot_sector->sectors_per_cluster; i++) {
             // Read the entire sector
-            if (!ata_read_sector(ata_base_address, sector + i, entries, ata_is_master)) {
+            if (!ata_read_sector(current_drive->base, sector + i, entries, current_drive->is_master)) {
                 // Handle read error
                 return INVALID_CLUSTER;
             }
@@ -379,7 +380,7 @@ void read_cluster_dir_entries(unsigned int current_cluster) {
     // Read directory entries - read entire cluster
     for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
         void* buffer_offset = (void*)((uint8_t*)entries + (i * SECTOR_SIZE));
-        if (!ata_read_sector(ata_base_address, sector + i, buffer_offset, ata_is_master)) {
+        if (!ata_read_sector(current_drive->base, sector + i, buffer_offset, current_drive->is_master)) {
             printf("Error reading sector %u\n", sector + i);
             return;
         }

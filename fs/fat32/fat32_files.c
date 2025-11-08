@@ -9,7 +9,7 @@
 //         unsigned int sector_number = cluster_to_sector(&boot_sector, current_cluster);
 //         // Read each sector in the current cluster
 //         for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
-//             ata_read_sector(ata_base_address, sector_number + i, buffer + bytes_read, ata_is_master);
+//             ata_read_sector(current_drive->base, sector_number + i, buffer + bytes_read, current_drive->is_master);
 //             bytes_read += SECTOR_SIZE;
 //             if (bytes_read >= size) {
 //                 break;  // Stop if we have read the required size
@@ -25,8 +25,10 @@
 // }
 
 unsigned int read_file_data(unsigned int start_cluster, char* buffer, unsigned int buffer_size, unsigned int bytes_to_read) {
+    extern drive_t* current_drive;
+    
     printf("read_file_data: start_cluster=%u, buffer_size=%u, bytes_to_read=%u\n", start_cluster, buffer_size, bytes_to_read);
-    printf("  Using: base=0x%X, is_master=%d\n", ata_base_address, ata_is_master);
+    printf("  Using: base=0x%X, is_master=%d, drive=%s\n", current_drive->base, current_drive->is_master, current_drive->name);
     
     if (buffer == NULL || buffer_size == 0 || bytes_to_read == 0) {
         // Invalid parameters; return 0 to indicate no data read
@@ -57,7 +59,7 @@ unsigned int read_file_data(unsigned int start_cluster, char* buffer, unsigned i
 
             printf("read_file_data: About to call ata_read_sector\n");
             // Read data into the buffer
-            ata_read_sector(ata_base_address, sector_number + i, buffer + total_bytes_read, ata_is_master);
+            ata_read_sector(current_drive->base, sector_number + i, buffer + total_bytes_read, current_drive->is_master);
             printf("read_file_data: ata_read_sector returned\n");
             total_bytes_read += bytes_to_read_now;
 
@@ -112,7 +114,7 @@ int read_file_data_to_address(unsigned int start_cluster, void* load_address, un
         
         // Read each sector in the current cluster
         for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
-            if (!ata_read_sector(ata_base_address, sector_number + i, buffer_ptr, ata_is_master)) {
+            if (!ata_read_sector(current_drive->base, sector_number + i, buffer_ptr, current_drive->is_master)) {
                 printf("Error: Failed to read sector %u\n", sector_number + i);
                 return bytes_read;
             }
@@ -194,9 +196,11 @@ int fat32_load_file(const char* filename, void* load_address) {
 
 // Function to find a file in the current directory
 struct fat32_dir_entry* find_file_in_directory(const char* filename) {
+    extern drive_t* current_drive;
+    
     printf("find_file_in_directory: Looking for '%s'\n", filename);
-    printf("  Using: base=0x%X, is_master=%d, cluster=%u\n", 
-           ata_base_address, ata_is_master, current_directory_cluster);
+    printf("  Using: base=0x%X, is_master=%d, cluster=%u, drive=%s\n", 
+           current_drive->base, current_drive->is_master, current_directory_cluster, current_drive->name);
     
     unsigned int sector = cluster_to_sector(&boot_sector, current_directory_cluster);
     printf("  Calculated sector: %u\n", sector);
@@ -208,7 +212,7 @@ struct fat32_dir_entry* find_file_in_directory(const char* filename) {
         return NULL;
     }
     for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
-        if (!ata_read_sector(ata_base_address, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct fat32_dir_entry))], ata_is_master)) {
+        if (!ata_read_sector(current_drive->base, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct fat32_dir_entry))], current_drive->is_master)) {
             // Handle read error
             free(entries);
             return NULL;

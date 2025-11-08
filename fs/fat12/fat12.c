@@ -131,11 +131,21 @@ int read_fat12(uint8_t drive, fat12_t* fat12) {
         return false;
     }
 
+    printf("Attempting to read boot sector from drive %d (H:0, C:0, S:1)...\n", drive);
     if (!fdc_read_sector(drive, 0, 0, 1, buffer)) {
-        printf("Error reading boot sector.\n");
+        printf("Error reading boot sector from FDC.\n");
         free(buffer);
         return false;
     }
+
+    printf("Boot sector read successful. First 16 bytes:\n");
+    for (int i = 0; i < 16; i++) {
+        printf("%02X ", buffer[i]);
+    }
+    printf("\n");
+    
+    printf("Boot signature bytes at offset 510-511: 0x%02X%02X\n", 
+           buffer[510], buffer[511]);
 
     memcpy(&fat12->boot_sector, buffer, sizeof(fat12_boot_sector));
     free(buffer);
@@ -207,6 +217,10 @@ bool fat12_init_fs(uint8_t drive) {
     // Free existing allocation if any
     if (fat12 != NULL) {
         printf("Freeing existing fat12 structure at %p\n", fat12);
+        if (fat12->fat != NULL) {
+            free(fat12->fat);
+            fat12->fat = NULL;
+        }
         free(fat12);
         fat12 = NULL;
     }
@@ -219,10 +233,10 @@ bool fat12_init_fs(uint8_t drive) {
         return false;
     }
     printf("fat12 structure allocated at %p\n", fat12);
-    //memset(&fat12, 0, sizeof(fat12_t));
+    memset(fat12, 0, sizeof(fat12_t));
 
     if (!read_fat12(drive, fat12)) {
-        printf("Failed to initialize fat12.\n");
+        printf("Failed to read boot sector for FAT12.\n");
         free(fat12);
         fat12 = NULL;
         return false;
