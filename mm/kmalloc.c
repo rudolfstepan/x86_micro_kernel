@@ -49,6 +49,19 @@ void print_memory_size(uint64_t total_memory) {
     printf("**********Total System Memory**********: %d MB\n", (int)total_mb);
 }
 
+// Frame management functions (must be before initialize_memory_system)
+void set_frame(size_t frame) {
+    frame_bitmap[frame / 8] |= (1 << (frame % 8));
+}
+
+void clear_frame(size_t frame) {
+    frame_bitmap[frame / 8] &= ~(1 << (frame % 8));
+}
+
+int test_frame(size_t frame) {
+    return frame_bitmap[frame / 8] & (1 << (frame % 8));
+}
+
 void initialize_memory_system() {
     if (total_memory == 0) {
         printf("Error: total_memory not initialized.\n");
@@ -84,6 +97,9 @@ void initialize_memory_system() {
     frame_bitmap = (uint8_t*)heap_start;
     memset(frame_bitmap, 0, bitmap_size);
     
+    // Mark frame 0 as used (NULL pointer protection - contains IVT and BIOS data)
+    set_frame(0);
+    
     // Place free_list AFTER the frame bitmap
     void* freelist_start = (void*)((size_t)heap_start + bitmap_size);
     free_list = (memory_block*)freelist_start;
@@ -96,23 +112,13 @@ void initialize_memory_system() {
     printf("Heap Range: %p - %p\n", freelist_start, heap_end);
 }
 
-void set_frame(size_t frame) {
-    frame_bitmap[frame / 8] |= (1 << (frame % 8));
-}
-
-void clear_frame(size_t frame) {
-    frame_bitmap[frame / 8] &= ~(1 << (frame % 8));
-}
-
-int test_frame(size_t frame) {
-    return frame_bitmap[frame / 8] & (1 << (frame % 8));
-}
-
 size_t allocate_frame() {
     size_t max_frames = total_memory / FRAME_SIZE;
     size_t used_frames = 0;
     
-    for (size_t i = 0; i < max_frames; i++) {
+    // Start from frame 1 to avoid returning NULL (frame 0 = address 0x0)
+    // Frame 0 contains real-mode IVT and BIOS data area, should never be used
+    for (size_t i = 1; i < max_frames; i++) {
         if (!test_frame(i)) {
             set_frame(i);
             return i * FRAME_SIZE;
@@ -121,7 +127,7 @@ size_t allocate_frame() {
     }
     
     // No free frame - print diagnostics
-    printf("Frame allocation failed: %u/%u frames used (%u KB / %u KB)\n",
+    printf("[CRITICAL] Frame allocation failed: %u/%u frames used (%u KB / %u KB)\n",
            used_frames, max_frames, 
            (used_frames * FRAME_SIZE) / 1024, 
            (max_frames * FRAME_SIZE) / 1024);
