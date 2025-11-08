@@ -8,6 +8,51 @@
 #include "lib/libc/stdlib.h"
 #include "drivers/block/fdd.h"
 
+// FAT12 Constants
+#define FAT12_SECTOR_SIZE           512
+#define FAT12_ROOT_ENTRY_SIZE       32
+#define FAT12_MAX_ROOT_ENTRIES      224
+#define FAT12_ROOT_DIR_SECTORS      14
+
+// FAT12 Cluster Markers
+#define FAT12_MIN_CLUSTER           0x002
+#define FAT12_MAX_CLUSTER           0xFF7
+#define FAT12_BAD_CLUSTER           0xFF7
+#define FAT12_EOC_MIN               0xFF8  // End of chain minimum
+#define FAT12_EOC_MAX               0xFFF  // End of chain maximum
+#define FAT12_FREE_CLUSTER          0x000
+#define FAT12_RESERVED_CLUSTER      0x001
+
+// File Attributes
+#define FILE_ATTR_READONLY          0x01
+#define FILE_ATTR_HIDDEN            0x02
+#define FILE_ATTR_SYSTEM            0x04
+#define FILE_ATTR_VOLUME_LABEL      0x08
+#define FILE_ATTR_DIRECTORY         0x10
+#define FILE_ATTR_ARCHIVE           0x20
+#define FILE_ATTR_LONG_NAME         0x0F
+
+// Boot Sector Signature
+#define FAT12_BOOT_SIGNATURE        0xAA55
+
+// Floppy Disk Geometry (Standard 1.44MB)
+#define FAT12_DEFAULT_SPT           18    // Sectors per track
+#define FAT12_DEFAULT_HEADS         2     // Number of heads
+#define FAT12_DEFAULT_BPS           512   // Bytes per sector
+
+// Error codes
+typedef enum {
+    FAT12_SUCCESS = 0,
+    FAT12_ERROR_NOT_INITIALIZED,
+    FAT12_ERROR_INVALID_PARAMETER,
+    FAT12_ERROR_IO_FAILURE,
+    FAT12_ERROR_OUT_OF_MEMORY,
+    FAT12_ERROR_NOT_FOUND,
+    FAT12_ERROR_CORRUPT_FILESYSTEM,
+    FAT12_ERROR_INVALID_CLUSTER,
+    FAT12_ERROR_INVALID_BOOT_SECTOR
+} fat12_error_t;
+
 #pragma pack(push, 1)
 typedef struct {
     uint8_t  jump_code[3];            // Jump instruction to the bootstrap code
@@ -76,14 +121,23 @@ typedef struct {
 } fat12_file;
 
 
+// Initialization and cleanup
 bool fat12_init_fs(uint8_t drive);
+void fat12_cleanup(void);
+
+// Directory operations
 bool fat12_read_dir(const char* path);
 int fat12_read_dir_entries(directory_entry* dir);
 bool fat12_change_directory(const char* relative_path);
 
-// file operations
+// File operations
 fat12_file* fat12_open_file(const char* filename, const char* mode);
 int fat12_read_file(fat12_file* file, void* buffer, unsigned int buffer_size, unsigned int bytes_to_read);
+void fat12_close_file(fat12_file* file);
 void print_file_content(fat12_file* file);
+
+// Validation and utility functions
+bool is_valid_cluster_fat12(int cluster);
+bool validate_fat12_boot_sector(fat12_boot_sector* bs);
 
 #endif // FAT12_H

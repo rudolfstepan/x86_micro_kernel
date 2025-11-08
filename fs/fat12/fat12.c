@@ -4,19 +4,8 @@
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
 
-// Constants
+// Additional constants
 #define MAX_PATH_LENGTH 256
-#define MAX_ENTRIES 224
-#define ROOT_ENTRY_SIZE 32
-#define SECTOR_SIZE 512
-#define ROOT_DIR_SECTORS 14
-
-// Constants for floppy disk properties
-#define SECTORS_PER_TRACK 18     // Number of sectors per track (typical for 1.44MB floppy disk)
-#define NUMBER_OF_HEADS 2        // Number of disk heads (sides) for a double-sided floppy
-#define MIN_CLUSTER_VALUE 0x002  // Minimum valid cluster value
-#define MAX_CLUSTER_VALUE 0xFF8  // Maximum valid cluster value before end-of-chain
-#define INVALID_CLUSTER 0xFFF // Typically used for fat12; adjust based on your system
 
 
 // Global structures and buffers
@@ -26,11 +15,96 @@ directory_entry* current_dir = NULL;
 uint8_t* buffer = NULL;
 uint8_t current_fdd_drive = 0;
 
-// Function to calculate CHS from a logical sector number
+// Function to calculate CHS from a logical sector number using boot sector geometry
 void logical_to_chs(int logical_sector, int* track, int* head, int* sector) {
-    *track = logical_sector / (SECTORS_PER_TRACK * NUMBER_OF_HEADS);
-    *head = (logical_sector / SECTORS_PER_TRACK) % NUMBER_OF_HEADS;
-    *sector = (logical_sector % SECTORS_PER_TRACK) + 1;  // Sectors are 1-based
+    uint16_t spt = FAT12_DEFAULT_SPT;
+    uint16_t heads = FAT12_DEFAULT_HEADS;
+    
+    // Use boot sector values if available
+    if (fat12 && fat12->boot_sector.sectors_per_track > 0 && fat12->boot_sector.heads > 0) {
+        spt = fat12->boot_sector.sectors_per_track;
+        heads = fat12->boot_sector.heads;
+    }
+    
+    *track = logical_sector / (spt * heads);
+    *head = (logical_sector / spt) % heads;
+    *sector = (logical_sector % spt) + 1;  // Sectors are 1-based
+    
+    // Validate calculated values
+    if (*sector < 1 || *sector > spt) {
+        printf("WARNING: Invalid sector calculated: %d (max %d)\n", *sector, spt);
+    }
+}
+
+// Validate cluster number is in valid FAT12 range
+bool is_valid_cluster_fat12(int cluster) {
+    return cluster >= FAT12_MIN_CLUSTER && cluster <= FAT12_MAX_CLUSTER;
+}
+
+// Check if cluster marks end of chain
+bool is_end_of_chain_fat12(int cluster) {
+    return cluster >= FAT12_EOC_MIN && cluster <= FAT12_EOC_MAX;
+}
+
+// Validate FAT12 boot sector
+bool validate_fat12_boot_sector(fat12_boot_sector* bs) {
+    if (!bs) {
+        printf("ERROR: NULL boot sector pointer\n");
+        return false;
+    }
+    
+    // Check boot signature
+    if (bs->boot_sector_signature != FAT12_BOOT_SIGNATURE) {
+        printf("ERROR: Invalid boot signature: 0x%04X (expected 0x%04X)\n", 
+               bs->boot_sector_signature, FAT12_BOOT_SIGNATURE);
+        return false;
+    }
+    
+    // Validate bytes per sector
+    if (bs->bytes_per_sector != 512 && bs->bytes_per_sector != 1024 && 
+        bs->bytes_per_sector != 2048 && bs->bytes_per_sector != 4096) {
+        printf("ERROR: Invalid bytes_per_sector: %d\n", bs->bytes_per_sector);
+        return false;
+    }
+    
+    // Validate sectors per cluster (must be power of 2, max 128)
+    if (bs->sectors_per_cluster == 0 || bs->sectors_per_cluster > 128 ||
+        (bs->sectors_per_cluster & (bs->sectors_per_cluster - 1)) != 0) {
+        printf("ERROR: Invalid sectors_per_cluster: %d\n", bs->sectors_per_cluster);
+        return false;
+    }
+    
+    // Validate FAT count
+    if (bs->fat_count < 1 || bs->fat_count > 2) {
+        printf("ERROR: Invalid FAT count: %d\n", bs->fat_count);
+        return false;
+    }
+    
+    // Validate root entry count
+    if (bs->root_entry_count == 0) {
+        printf("ERROR: Root entry count is zero\n");
+        return false;
+    }
+    
+    // Calculate total clusters to verify it's FAT12
+    uint32_t total_sectors = bs->total_sectors ? bs->total_sectors : bs->total_sectors_large;
+    uint32_t root_dir_sectors = ((bs->root_entry_count * 32) + (bs->bytes_per_sector - 1)) / bs->bytes_per_sector;
+    uint32_t data_sectors = total_sectors - (bs->reserved_sectors + 
+                           (bs->fat_count * bs->sectors_per_fat) + root_dir_sectors);
+    uint32_t total_clusters = data_sectors / bs->sectors_per_cluster;
+    
+    if (total_clusters >= 4085) {
+        printf("ERROR: Too many clusters for FAT12: %u (max 4084)\n", total_clusters);
+        return false;
+    }
+    
+    if (total_clusters < 2) {
+        printf("ERROR: Too few clusters: %u\n", total_clusters);
+        return false;
+    }
+    
+    printf("FAT12 validation passed: %u clusters\n", total_clusters);
+    return true;
 }
 
 // Valid filename check
@@ -51,7 +125,7 @@ int read_fat12(uint8_t drive, fat12_t* fat12) {
         return true;
     }
 
-    buffer = (uint8_t*)malloc(SECTOR_SIZE);
+    buffer = (uint8_t*)malloc(FAT12_SECTOR_SIZE);
     if (!buffer) {
         printf("Memory allocation failed for boot sector buffer.\n");
         return false;
@@ -66,15 +140,43 @@ int read_fat12(uint8_t drive, fat12_t* fat12) {
     memcpy(&fat12->boot_sector, buffer, sizeof(fat12_boot_sector));
     free(buffer);
 
-    if (fat12->boot_sector.boot_sector_signature != 0xAA55) {
-        printf("Invalid boot sector signature.\n");
+    // Validate boot sector
+    if (!validate_fat12_boot_sector(&fat12->boot_sector)) {
+        printf("Boot sector validation failed.\n");
         return false;
     }
 
     fat12->fat_start = fat12->boot_sector.reserved_sectors;
     fat12->root_dir_start = fat12->fat_start + (fat12->boot_sector.fat_count * fat12->boot_sector.sectors_per_fat);
-    fat12->data_start = fat12->root_dir_start + (fat12->boot_sector.root_entry_count * ROOT_ENTRY_SIZE / SECTOR_SIZE);
-    fat12->fat = NULL;  // Initialize FAT pointer (not loaded in current implementation)
+    fat12->data_start = fat12->root_dir_start + (fat12->boot_sector.root_entry_count * FAT12_ROOT_ENTRY_SIZE / FAT12_SECTOR_SIZE);
+    
+    // Allocate and load FAT table into memory
+    uint32_t fat_size = fat12->boot_sector.sectors_per_fat * FAT12_SECTOR_SIZE;
+    fat12->fat = (uint8_t*)malloc(fat_size);
+    if (!fat12->fat) {
+        printf("ERROR: Failed to allocate memory for FAT table (%u bytes)\n", fat_size);
+        return false;
+    }
+    
+    // Read FAT table sectors
+    printf("Loading FAT table (%u sectors, %u bytes)...\n", 
+           fat12->boot_sector.sectors_per_fat, fat_size);
+    
+    for (int i = 0; i < fat12->boot_sector.sectors_per_fat; i++) {
+        int logical_sector = fat12->fat_start + i;
+        int track, head, sector;
+        logical_to_chs(logical_sector, &track, &head, &sector);
+        
+        uint8_t* fat_buffer = fat12->fat + (i * FAT12_SECTOR_SIZE);
+        if (!fdc_read_sector(drive, head, track, sector, fat_buffer)) {
+            printf("ERROR: Failed to read FAT sector %d\n", i);
+            free(fat12->fat);
+            fat12->fat = NULL;
+            return false;
+        }
+    }
+    
+    printf("FAT table loaded successfully\n");
 
     printf("fat12 initialized: FAT Start Sector: %d, Root Directory Start Sector: %d, Data Region Start Sector: %d\n", 
            fat12->fat_start, fat12->root_dir_start, fat12->data_start);
@@ -115,12 +217,58 @@ bool fat12_init_fs(uint8_t drive) {
 
 // Function to calculate and fetch the next cluster in fat12
 int get_next_cluster(int current_cluster) {
+    // Validate inputs
+    if (!fat12) {
+        printf("ERROR: FAT12 not initialized\n");
+        return -1;
+    }
+    
+    if (!fat12->fat) {
+        printf("ERROR: FAT table not loaded\n");
+        return -1;
+    }
+    
+    if (!is_valid_cluster_fat12(current_cluster)) {
+        printf("ERROR: Invalid cluster number: %d\n", current_cluster);
+        return -1;
+    }
+    
+    // Calculate offset in FAT table (FAT12 uses 12 bits per entry)
     int offset = (current_cluster * 3) / 2;
-    uint16_t next_cluster = (offset % 2 == 0)
-        ? (fat12->fat[offset] | (fat12->fat[offset + 1] << 8)) & 0x0FFF
-        : ((fat12->fat[offset] >> 4) | (fat12->fat[offset + 1] << 4)) & 0x0FFF;
-
-    return next_cluster >= 0xFF8 ? -1 : next_cluster;
+    
+    // Bounds check
+    uint32_t fat_size = fat12->boot_sector.sectors_per_fat * FAT12_SECTOR_SIZE;
+    if (offset + 1 >= fat_size) {
+        printf("ERROR: FAT offset out of bounds: %d (max %u)\n", offset, fat_size);
+        return -1;
+    }
+    
+    // Read 12-bit FAT entry (even/odd cluster handling)
+    uint16_t next_cluster;
+    if (offset % 2 == 0) {
+        // Even cluster: use low 12 bits
+        next_cluster = (fat12->fat[offset] | (fat12->fat[offset + 1] << 8)) & 0x0FFF;
+    } else {
+        // Odd cluster: use high 12 bits
+        next_cluster = ((fat12->fat[offset] >> 4) | (fat12->fat[offset + 1] << 4)) & 0x0FFF;
+    }
+    
+    // Check for end of chain or bad cluster
+    if (is_end_of_chain_fat12(next_cluster)) {
+        return -1;  // End of cluster chain
+    }
+    
+    if (next_cluster == FAT12_BAD_CLUSTER) {
+        printf("ERROR: Bad cluster encountered: 0x%03X\n", next_cluster);
+        return -1;
+    }
+    
+    if (next_cluster == FAT12_FREE_CLUSTER || next_cluster == FAT12_RESERVED_CLUSTER) {
+        printf("ERROR: Invalid cluster in chain: 0x%03X\n", next_cluster);
+        return -1;
+    }
+    
+    return next_cluster;
 }
 
 // Function to extract date from fat12 format
@@ -151,13 +299,13 @@ int fat12_read_dir_entries(directory_entry* dir) {
         buffer = NULL;
     }
     
-    entries = (directory_entry*)malloc(MAX_ENTRIES * sizeof(directory_entry));
+    entries = (directory_entry*)malloc(FAT12_MAX_ROOT_ENTRIES * sizeof(directory_entry));
     if (!entries) {
         printf("Memory allocation failed for directory entries.\n");
         return -1;
     }
 
-    buffer = (uint8_t*)malloc(SECTOR_SIZE * ROOT_DIR_SECTORS);  // Allocate buffer for multiple sectors
+    buffer = (uint8_t*)malloc(FAT12_SECTOR_SIZE * FAT12_ROOT_DIR_SECTORS);  // Allocate buffer for multiple sectors
     if (!buffer) {
         printf("Memory allocation failed for sector buffer.\n");
         free(entries);
@@ -173,7 +321,7 @@ int fat12_read_dir_entries(directory_entry* dir) {
         logical_to_chs(logical_sector, &track, &head, &sector);
 
         // Read multiple sectors at once
-        if (!fdc_read_sectors(current_fdd_drive, head, track, sector, ROOT_DIR_SECTORS, buffer)) {
+        if (!fdc_read_sectors(current_fdd_drive, head, track, sector, FAT12_ROOT_DIR_SECTORS, buffer)) {
             printf("Error reading root directory sectors.\n");
             free(entries);
             free(buffer);
@@ -181,16 +329,16 @@ int fat12_read_dir_entries(directory_entry* dir) {
         }
 
         // Copy entries from the buffer
-        for (int i = 0; i < ROOT_DIR_SECTORS && entries_found < MAX_ENTRIES; i++) {
-            memcpy(&entries[entries_found], buffer + (i * SECTOR_SIZE), SECTOR_SIZE);
-            entries_found += SECTOR_SIZE / ROOT_ENTRY_SIZE;
+        for (int i = 0; i < FAT12_ROOT_DIR_SECTORS && entries_found < FAT12_MAX_ROOT_ENTRIES; i++) {
+            memcpy(&entries[entries_found], buffer + (i * FAT12_SECTOR_SIZE), FAT12_SECTOR_SIZE);
+            entries_found += FAT12_SECTOR_SIZE / FAT12_ROOT_ENTRY_SIZE;
         }
     } else {
         // Read subdirectory starting from its cluster
         int cluster = dir->first_cluster_low;
         printf("Reading subdirectory. Start cluster: %d\n", cluster);
 
-        while (cluster >= MIN_CLUSTER_VALUE && cluster < MAX_CLUSTER_VALUE && entries_found < MAX_ENTRIES) {
+        while (cluster >= FAT12_MIN_CLUSTER && cluster < FAT12_MAX_CLUSTER && entries_found < FAT12_MAX_ROOT_ENTRIES) {
             int start_sector = fat12->data_start + (cluster - 2) * fat12->boot_sector.sectors_per_cluster;
             int track, head, sector;
             logical_to_chs(start_sector, &track, &head, &sector);
@@ -204,9 +352,9 @@ int fat12_read_dir_entries(directory_entry* dir) {
             }
 
             // Copy entries from the buffer
-            for (int i = 0; i < fat12->boot_sector.sectors_per_cluster && entries_found < MAX_ENTRIES; i++) {
-                memcpy(&entries[entries_found], buffer + (i * SECTOR_SIZE), SECTOR_SIZE);
-                entries_found += SECTOR_SIZE / ROOT_ENTRY_SIZE;
+            for (int i = 0; i < fat12->boot_sector.sectors_per_cluster && entries_found < FAT12_MAX_ROOT_ENTRIES; i++) {
+                memcpy(&entries[entries_found], buffer + (i * FAT12_SECTOR_SIZE), FAT12_SECTOR_SIZE);
+                entries_found += FAT12_SECTOR_SIZE / FAT12_ROOT_ENTRY_SIZE;
             }
 
             cluster = get_next_cluster(cluster);  // Move to the next cluster in the chain
@@ -290,6 +438,24 @@ bool fat12_change_directory(const char* relative_path) {
 
 // Open a file in the current directory
 fat12_file* fat12_open_file(const char* filename, const char* mode) {
+    // Validate inputs
+    if (!filename || !mode) {
+        printf("ERROR: NULL filename or mode\n");
+        return NULL;
+    }
+    
+    if (!fat12 || !fat12->fat) {
+        printf("ERROR: FAT12 not initialized\n");
+        return NULL;
+    }
+    
+    // Validate filename length
+    size_t filename_len = strlen(filename);
+    if (filename_len == 0 || filename_len > 12) {  // 8.3 format max
+        printf("ERROR: Invalid filename length: %zu\n", filename_len);
+        return NULL;
+    }
+    
     int num_entries = fat12_read_dir_entries(current_dir);
     if (num_entries < 0) {
         printf("Failed to read directory contents.\n");
@@ -326,14 +492,27 @@ fat12_file* fat12_open_file(const char* filename, const char* mode) {
         printf("File not found: %s\n", filename);
         return NULL;
     }
+    
+    // Validate file entry
+    if (!is_valid_cluster_fat12(file_entry->first_cluster_low)) {
+        printf("ERROR: File has invalid cluster: %u\n", file_entry->first_cluster_low);
+        return NULL;
+    }
+    
+    if (file_entry->file_size == 0) {
+        printf("WARNING: File size is zero: %s\n", filename);
+    }
 
     fat12_file* file = (fat12_file*)malloc(sizeof(fat12_file));
     if (file == NULL) {
         printf("Failed to allocate memory for file structure.\n");
         return NULL;
     }
+    
+    // Initialize all fields
+    memset(file, 0, sizeof(fat12_file));
 
-    file->base = (unsigned char*)malloc(file_entry->file_size);
+    file->base = (unsigned char*)malloc(file_entry->file_size > 0 ? file_entry->file_size : 1);
     if (file->base == NULL) {
         printf("Failed to allocate memory for file buffer.\n");
         free(file);
@@ -408,8 +587,23 @@ bool fat12_read_dir(const char* path) {
 }
 
 int fat12_read_file(fat12_file* file, void* buffer, unsigned int buffer_size, unsigned int bytes_to_read) {
+    // Validate inputs
     if (file == NULL || buffer == NULL) {
-        printf("Invalid file handle or buffer.\n");
+        printf("ERROR: Invalid file handle or buffer.\n");
+        return 0;
+    }
+    
+    if (!fat12 || !fat12->fat) {
+        printf("ERROR: FAT12 not initialized or FAT table not loaded.\n");
+        return 0;
+    }
+    
+    if (buffer_size == 0 || bytes_to_read == 0) {
+        return 0;
+    }
+    
+    if (!is_valid_cluster_fat12(file->start_cluster)) {
+        printf("ERROR: File has invalid start cluster: %u\n", file->start_cluster);
         return 0;
     }
 
@@ -420,31 +614,35 @@ int fat12_read_file(fat12_file* file, void* buffer, unsigned int buffer_size, un
     if (bytes_to_read > buffer_size) {
         bytes_to_read = buffer_size;
     }
+    
+    if (bytes_to_read == 0) {
+        return 0;  // Nothing to read
+    }
 
     unsigned int bytes_read = 0;
     unsigned int current_cluster = file->start_cluster;
-    unsigned int clusterSize = SECTOR_SIZE * fat12->boot_sector.sectors_per_cluster;
+    unsigned int clusterSize = FAT12_SECTOR_SIZE * fat12->boot_sector.sectors_per_cluster;
 
     // Calculate initial offset within the first cluster if the position is not at the start
     unsigned int startOffset = file->position % clusterSize;
 
-    unsigned char* sectorBuffer = (unsigned char*)malloc(SECTOR_SIZE);
+    unsigned char* sectorBuffer = (unsigned char*)malloc(FAT12_SECTOR_SIZE);
     if (sectorBuffer == NULL) {
         printf("Memory allocation failed for sector buffer.\n");
         return 0;
     }
 
     // Read loop
-    while (bytes_read < bytes_to_read && current_cluster >= MIN_CLUSTER_VALUE && current_cluster < MAX_CLUSTER_VALUE) {
+    while (bytes_read < bytes_to_read && current_cluster >= FAT12_MIN_CLUSTER && current_cluster < FAT12_MAX_CLUSTER) {
         // Calculate the first sector of the current cluster
         unsigned int firstSectorOfCluster = fat12->data_start + (current_cluster - 2) * fat12->boot_sector.sectors_per_cluster;
 
         // Read each sector in the cluster
         for (unsigned int i = 0; i < fat12->boot_sector.sectors_per_cluster && bytes_read < bytes_to_read; i++) {
             unsigned int logical_sector = firstSectorOfCluster + i;
-            int track = logical_sector / (SECTORS_PER_TRACK * NUMBER_OF_HEADS);
-            int head = (logical_sector / SECTORS_PER_TRACK) % NUMBER_OF_HEADS;
-            int sector = (logical_sector % SECTORS_PER_TRACK) + 1;  // Sectors are 1-based
+            int track = logical_sector / (FAT12_DEFAULT_SPT * FAT12_DEFAULT_HEADS);
+            int head = (logical_sector / FAT12_DEFAULT_SPT) % FAT12_DEFAULT_HEADS;
+            int sector = (logical_sector % FAT12_DEFAULT_SPT) + 1;  // Sectors are 1-based
 
             // Read the sector
             if (!fdc_read_sector(current_fdd_drive, head, track, sector, sectorBuffer)) {
@@ -455,7 +653,7 @@ int fat12_read_file(fat12_file* file, void* buffer, unsigned int buffer_size, un
 
             // Calculate how many bytes to copy from the sector
             unsigned int offset = (bytes_read == 0) ? startOffset : 0;
-            unsigned int remaining = SECTOR_SIZE - offset;
+            unsigned int remaining = FAT12_SECTOR_SIZE - offset;
             unsigned int bytes_to_copy = (bytes_to_read - bytes_read < remaining) ? (bytes_to_read - bytes_read) : remaining;
 
             // Copy the bytes from the sector buffer to the main buffer
@@ -470,7 +668,7 @@ int fat12_read_file(fat12_file* file, void* buffer, unsigned int buffer_size, un
 
         // Move to the next cluster in the chain
         current_cluster = get_next_cluster(current_cluster);
-        if (current_cluster == INVALID_CLUSTER) {
+        if (current_cluster == FAT12_EOC_MAX) {
             printf("Invalid cluster detected.\n");
             break;
         }
@@ -485,4 +683,40 @@ int fat12_read_file(fat12_file* file, void* buffer, unsigned int buffer_size, un
     printf("Completed reading %u bytes from file %s into buffer.\n", bytes_read, file->name);
 
     return bytes_read;
+}
+
+// Close a file and free its resources
+void fat12_close_file(fat12_file* file) {
+    if (file) {
+        if (file->base) {
+            free(file->base);
+            file->base = NULL;
+        }
+        free(file);
+    }
+}
+
+// Cleanup FAT12 filesystem and free all resources
+void fat12_cleanup(void) {
+    if (fat12) {
+        if (fat12->fat) {
+            free(fat12->fat);
+            fat12->fat = NULL;
+        }
+        free(fat12);
+        fat12 = NULL;
+    }
+    
+    if (entries) {
+        free(entries);
+        entries = NULL;
+    }
+    
+    if (buffer) {
+        free(buffer);
+        buffer = NULL;
+    }
+    
+    current_dir = NULL;
+    printf("FAT12 cleanup complete\n");
 }
