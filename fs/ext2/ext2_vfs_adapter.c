@@ -204,22 +204,29 @@ static int ext2_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size, cons
 
 static int ext2_vfs_readdir(vfs_node_t* node, uint32_t index, vfs_dir_entry_t* entry) {
     if (!node || !node->fs || !node->fs->fs_data || !entry) {
+        printf("EXT2_VFS: readdir - invalid parameters\n");
         return VFS_ERR_INVALID;
     }
     
     if (node->type != VFS_DIRECTORY) {
+        printf("EXT2_VFS: readdir - not a directory\n");
         return VFS_ERR_NOT_DIR;
     }
     
     ext2_fs_t* ext2_fs = (ext2_fs_t*)node->fs->fs_data;
+    
+    printf("EXT2_VFS: readdir - reading inode %u, index %u\n", node->inode, index);
     
     // Read directory entries
     ext2_dir_entry_t ext2_entries[64];
     uint32_t ext2_count = 0;
     
     if (!ext2_read_dir(ext2_fs, node->inode, ext2_entries, 64, &ext2_count)) {
+        printf("EXT2_VFS: readdir - ext2_read_dir failed\n");
         return VFS_ERR_IO;
     }
+    
+    printf("EXT2_VFS: readdir - found %u entries\n", ext2_count);
     
     // Find entry at index (skip deleted/null entries)
     uint32_t current_index = 0;

@@ -32,16 +32,21 @@ bool ext2_init(ext2_fs_t* fs, uint16_t base, bool is_master) {
     
     printf("\x1B[36mEXT2: Initializing filesystem (base=0x%X, master=%d)\x1B[0m\n", base, is_master);
     
+    // Store ATA parameters in filesystem structure
+    fs->ata_base = base;
+    fs->ata_is_master = is_master;
+    
+    // Also set globals for compatibility (will be removed later)
     ext2_ata_base = base;
     ext2_ata_is_master = is_master;
     
     // Read superblock (starts at byte 1024, sector 2)
     uint8_t buffer[1024];
-    if (!ext2_read_sector(2, buffer)) {
+    if (!ata_read_sector(fs->ata_base, 2, buffer, fs->ata_is_master)) {
         printf("\x1B[31mEXT2: Failed to read superblock (sector 2)\x1B[0m\n");
         return false;
     }
-    if (!ext2_read_sector(3, buffer + 512)) {
+    if (!ata_read_sector(fs->ata_base, 3, buffer + 512, fs->ata_is_master)) {
         printf("EXT2: Failed to read superblock (sector 3)\n");
         return false;
     }
@@ -92,6 +97,7 @@ bool ext2_init(ext2_fs_t* fs, uint16_t base, bool is_master) {
     uint32_t gdt_block = fs->superblock.s_first_data_block + 1;
     uint32_t gdt_size = fs->num_block_groups * sizeof(ext2_group_desc_t);
     printf("EXT2: Allocating %u bytes for group descriptor table\n", gdt_size);
+    printf("EXT2: gdt_block=%u, s_first_data_block=%u\n", gdt_block, fs->superblock.s_first_data_block);
     
     fs->group_desc_table = (ext2_group_desc_t*)malloc(gdt_size);
     if (!fs->group_desc_table) {
@@ -102,7 +108,9 @@ bool ext2_init(ext2_fs_t* fs, uint16_t base, bool is_master) {
     
     // Read group descriptor table blocks
     uint32_t gdt_blocks = (gdt_size + fs->block_size - 1) / fs->block_size;
+    printf("EXT2: Reading %u GDT blocks starting at block %u\n", gdt_blocks, gdt_block);
     for (uint32_t i = 0; i < gdt_blocks; i++) {
+        printf("EXT2: Reading GDT block %u (absolute block %u)\n", i, gdt_block + i);
         if (!ext2_read_block(fs, gdt_block + i, (uint8_t*)fs->group_desc_table + (i * fs->block_size))) {
             printf("EXT2: Failed to read group descriptor block %u\n", i);
             free(fs->group_desc_table);
@@ -153,6 +161,7 @@ uint32_t ext2_get_block_size(ext2_fs_t* fs) {
 
 bool ext2_read_block(ext2_fs_t* fs, uint32_t block_num, void* buffer) {
     if (!fs || !buffer) {
+        printf("EXT2: read_block - invalid params\n");
         return false;
     }
     
@@ -160,9 +169,13 @@ bool ext2_read_block(ext2_fs_t* fs, uint32_t block_num, void* buffer) {
     uint32_t sectors_per_block = fs->block_size / 512;
     uint32_t start_sector = block_num * sectors_per_block;
     
-    // Read all sectors in this block
+    printf("EXT2: read_block - block=%u, sector=%u, count=%u, base=0x%X, master=%d\n",
+           block_num, start_sector, sectors_per_block, fs->ata_base, fs->ata_is_master);
+    
+    // Read all sectors in this block using THIS filesystem's ATA parameters
     for (uint32_t i = 0; i < sectors_per_block; i++) {
-        if (!ext2_read_sector(start_sector + i, (uint8_t*)buffer + (i * 512))) {
+        if (!ata_read_sector(fs->ata_base, start_sector + i, (uint8_t*)buffer + (i * 512), fs->ata_is_master)) {
+            printf("EXT2: read_block - failed to read sector %u\n", start_sector + i);
             return false;
         }
     }
@@ -179,9 +192,9 @@ bool ext2_write_block(ext2_fs_t* fs, uint32_t block_num, const void* buffer) {
     uint32_t sectors_per_block = fs->block_size / 512;
     uint32_t start_sector = block_num * sectors_per_block;
     
-    // Write all sectors in this block
+    // Write all sectors in this block using THIS filesystem's ATA parameters
     for (uint32_t i = 0; i < sectors_per_block; i++) {
-        if (!ext2_write_sector(start_sector + i, (uint8_t*)buffer + (i * 512))) {
+        if (!ata_write_sector(fs->ata_base, start_sector + i, (uint8_t*)buffer + (i * 512), fs->ata_is_master)) {
             return false;
         }
     }
@@ -203,12 +216,18 @@ uint32_t ext2_get_inode_table_index(ext2_fs_t* fs, uint32_t inode_num) {
 
 bool ext2_read_inode(ext2_fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
     if (!fs || !inode || inode_num == 0) {
+        printf("EXT2: read_inode - invalid params (fs=%p, inode=%p, num=%u)\n", fs, inode, inode_num);
         return false;
     }
+    
+    printf("EXT2: read_inode - reading inode %u\n", inode_num);
     
     // Get block group and index
     uint32_t block_group = ext2_get_inode_block_group(fs, inode_num);
     uint32_t index = ext2_get_inode_table_index(fs, inode_num);
+    
+    printf("EXT2: read_inode - block_group=%u, index=%u, num_groups=%u\n", 
+           block_group, index, fs->num_block_groups);
     
     if (block_group >= fs->num_block_groups) {
         printf("EXT2: Invalid block group %u for inode %u\n", block_group, inode_num);
@@ -347,14 +366,20 @@ bool ext2_read_dir(ext2_fs_t* fs, uint32_t inode_num, ext2_dir_entry_t* entries,
         return false;
     }
     
+    printf("EXT2: read_dir - reading inode %u\n", inode_num);
+    
     // Read directory inode
     ext2_inode_t inode;
     if (!ext2_read_inode(fs, inode_num, &inode)) {
+        printf("EXT2: read_dir - failed to read inode %u\n", inode_num);
         return false;
     }
     
+    printf("EXT2: read_dir - inode mode=0x%X, size=%u\n", inode.i_mode, inode.i_size);
+    
     // Check if it's a directory
     if ((inode.i_mode & EXT2_S_IFDIR) != EXT2_S_IFDIR) {
+        printf("EXT2: read_dir - inode %u is not a directory (mode=0x%X)\n", inode_num, inode.i_mode);
         return false;
     }
     

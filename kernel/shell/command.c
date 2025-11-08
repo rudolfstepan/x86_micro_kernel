@@ -861,27 +861,79 @@ void cmd_mount(int arg_count, const char** arguments) {
             printf("Available drives:\n");
             list_detected_drives();
         } else {
+            // Check if already mounted
+            if (current_drive->mount_point[0] != '\0') {
+                printf("Drive %s already mounted at %s\n", 
+                       current_drive->name, current_drive->mount_point);
+                strncpy(current_path, "/", sizeof(current_path) - 1);
+                current_path[sizeof(current_path) - 1] = '\0';
+                return;
+            }
+            
             printf("Mounting drive %s...\n", current_drive->name);
 
+            const char* fs_type = "fat32";  // Default
+            char mount_path[64];
+            int result;
+            
             switch (current_drive->type) {
-            case DRIVE_TYPE_ATA:
-                //printf("Init fs on ATA drive %s: %s with %u sectors\n", current_drive->name, current_drive->model, current_drive->sectors);
-                // Initialize file system for ATA drive
-                init_fs(current_drive);
-                // strcpy(current_path, "/");
+            case DRIVE_TYPE_ATA: {
+                // Detect filesystem type
+                uint8_t buffer[512];
+                if (!ata_read_sector(current_drive->base, 0, buffer, current_drive->is_master)) {
+                    printf("Failed to read boot sector from %s\n", current_drive->name);
+                    return;
+                }
+                
+                // Check for EXT2 (magic at byte 1080 = sector 2, offset 56)
+                uint8_t ext2_buffer[1024];
+                if (ata_read_sector(current_drive->base, 2, ext2_buffer, current_drive->is_master)) {
+                    if (ata_read_sector(current_drive->base, 3, ext2_buffer + 512, current_drive->is_master)) {
+                        uint16_t magic = *(uint16_t*)(ext2_buffer + 56);
+                        if (magic == 0xEF53) {
+                            fs_type = "ext2";
+                            printf("Detected EXT2 filesystem\n");
+                        } else {
+                            printf("Detected FAT32 filesystem\n");
+                        }
+                    }
+                }
+                
+                // Create mount path
+                snprintf(mount_path, sizeof(mount_path), "/mnt/%s", current_drive->name);
+                
+                // Mount using VFS
+                result = vfs_mount(current_drive, fs_type, mount_path);
+                if (result == VFS_OK) {
+                    strncpy(current_drive->mount_point, mount_path, sizeof(current_drive->mount_point) - 1);
+                    current_drive->mount_point[sizeof(current_drive->mount_point) - 1] = '\0';
+                    printf("Successfully mounted %s at %s (%s)\n", 
+                           current_drive->name, mount_path, fs_type);
+                } else {
+                    printf("Failed to mount %s (VFS error %d)\n", current_drive->name, result);
+                    return;
+                }
                 break;
+            }
             case DRIVE_TYPE_FDD:
-                //printf("Init fs on FDD %s with CHS %u/%u/%u\n", current_drive->name, current_drive->cylinder, current_drive->head, current_drive->sector);
-                // Initialize file system or handling code for FDD
-                // Call fat12_init_fs as part of FDD initialization
-                printf("Init fs on FDD drive %s\n", current_drive->name);
-                fat12_init_fs(current_drive->fdd_drive_no);
-                // reset the current path
-                //strcpy(current_path, "/");
+                printf("Mounting floppy drive %s\n", current_drive->name);
+                snprintf(mount_path, sizeof(mount_path), "/mnt/%s", current_drive->name);
+                
+                result = vfs_mount(current_drive, "fat12", mount_path);
+                if (result == VFS_OK) {
+                    strncpy(current_drive->mount_point, mount_path, sizeof(current_drive->mount_point) - 1);
+                    current_drive->mount_point[sizeof(current_drive->mount_point) - 1] = '\0';
+                    printf("Successfully mounted %s at %s (FAT12)\n", 
+                           current_drive->name, mount_path);
+                } else {
+                    printf("Failed to mount %s (VFS error %d)\n", current_drive->name, result);
+                    return;
+                }
                 break;
 
             default:
-                break;
+                printf("Unsupported drive type\n");
+                return;
             }
 
             // Safe string copy with bounds checking
@@ -948,6 +1000,8 @@ void cmd_ls(int arg_count, const char** arguments) {
     
     // Use VFS for all filesystems
     printf("\nDirectory of %s (vfs: %s)\n", directory, vfs_path);
+    printf("[DEBUG] current_drive=%s, mount_point='%s'\n", 
+           current_drive->name, current_drive->mount_point);
     printf("%-40s %-10s %-8s\n", "FILENAME", "SIZE", "TYPE");
     printf("--------------------------------------------------------------------------------\n");
     
@@ -955,6 +1009,7 @@ void cmd_ls(int arg_count, const char** arguments) {
     vfs_dir_entry_t entry;
     int result;
     
+    printf("[DEBUG] Calling vfs_readdir with path='%s', index=%u\n", vfs_path, index);
     while ((result = vfs_readdir(vfs_path, index, &entry)) == VFS_OK) {
         // Format type
         const char* type_str = "";

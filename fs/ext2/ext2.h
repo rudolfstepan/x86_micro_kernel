@@ -165,6 +165,8 @@ typedef struct {
     uint32_t inodes_per_block;
     uint32_t current_dir_inode;     // Current directory inode
     void* block_buffer;              // Temporary buffer for block operations
+    uint16_t ata_base;               // ATA base port for this filesystem
+    bool ata_is_master;              // ATA master/slave flag for this filesystem
 } ext2_fs_t;
 
 // ===========================================================================
