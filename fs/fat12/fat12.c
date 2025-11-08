@@ -15,6 +15,19 @@ directory_entry* current_dir = NULL;
 uint8_t* buffer = NULL;
 uint8_t current_fdd_drive = 0;
 
+// Helper: read a single sector using DMA first, then fall back to no-DMA path
+static bool fdc_read_with_fallback(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* out_buf) {
+    if (fdc_read_sector(drive, head, track, sector, out_buf)) {
+        return true;
+    }
+    printf("fdc_read_with_fallback: DMA read failed for %d/%d/%d, trying no-DMA fallback\n", track, head, sector);
+    if (fdc_read_sector_no_dma(drive, head, track, sector, out_buf)) {
+        return true;
+    }
+    printf("fdc_read_with_fallback: no-DMA fallback also failed for %d/%d/%d\n", track, head, sector);
+    return false;
+}
+
 // Function to calculate CHS from a logical sector number using boot sector geometry
 void logical_to_chs(int logical_sector, int* track, int* head, int* sector) {
     uint16_t spt = FAT12_DEFAULT_SPT;
@@ -132,8 +145,8 @@ int read_fat12(uint8_t drive, fat12_t* fat12) {
     }
 
     printf("Attempting to read boot sector from drive %d (H:0, C:0, S:1)...\n", drive);
-    if (!fdc_read_sector(drive, 0, 0, 1, buffer)) {
-        printf("Error reading boot sector from FDC.\n");
+    if (!fdc_read_with_fallback(drive, 0, 0, 1, buffer)) {
+        printf("Error reading boot sector from FDC (both DMA and no-DMA failed).\n");
         free(buffer);
         return false;
     }
@@ -187,14 +200,14 @@ int read_fat12(uint8_t drive, fat12_t* fat12) {
     printf("Loading FAT table (%u sectors, %u bytes)...\n", 
            fat12->boot_sector.sectors_per_fat, fat_size);
     
-    for (int i = 0; i < fat12->boot_sector.sectors_per_fat; i++) {
+        for (int i = 0; i < fat12->boot_sector.sectors_per_fat; i++) {
         int logical_sector = fat12->fat_start + i;
         int track, head, sector;
         logical_to_chs(logical_sector, &track, &head, &sector);
         
         uint8_t* fat_buffer = fat12->fat + (i * FAT12_SECTOR_SIZE);
-        if (!fdc_read_sector(drive, head, track, sector, fat_buffer)) {
-            printf("ERROR: Failed to read FAT sector %d\n", i);
+        if (!fdc_read_with_fallback(drive, head, track, sector, fat_buffer)) {
+            printf("ERROR: Failed to read FAT sector %d (both DMA and no-DMA)\n", i);
             free(fat12->fat);
             fat12->fat = NULL;
             return false;
@@ -346,12 +359,18 @@ int fat12_read_dir_entries(directory_entry* dir) {
         int track, head, sector;
         logical_to_chs(logical_sector, &track, &head, &sector);
 
-        // Read multiple sectors at once
-        if (!fdc_read_sectors(current_fdd_drive, head, track, sector, FAT12_ROOT_DIR_SECTORS, local_buffer)) {
-            printf("Error reading root directory sectors.\n");
-            free(entries);
-            free(local_buffer);
-            return -1;
+        // Read multiple sectors at once (use per-sector fallback)
+        for (int si = 0; si < FAT12_ROOT_DIR_SECTORS; si++) {
+            int ls = logical_sector + si;
+            int t, h, s;
+            logical_to_chs(ls, &t, &h, &s);
+            uint8_t* dest = local_buffer + (si * FAT12_SECTOR_SIZE);
+            if (!fdc_read_with_fallback(current_fdd_drive, h, t, s, dest)) {
+                printf("Error reading root directory sector %d (logical %d).\n", si, ls);
+                free(entries);
+                free(local_buffer);
+                return -1;
+            }
         }
 
         // Copy entries from the buffer
@@ -370,11 +389,18 @@ int fat12_read_dir_entries(directory_entry* dir) {
             logical_to_chs(start_sector, &track, &head, &sector);
 
             // Read multiple sectors for the cluster
-            if (!fdc_read_sectors(current_fdd_drive, head, track, sector, fat12->boot_sector.sectors_per_cluster, local_buffer)) {
-                printf("Error reading subdirectory sectors starting from sector %d.\n", sector);
-                free(entries);
-                free(local_buffer);
-                return -1;
+            // Read each sector of the cluster with fallback
+            for (int si = 0; si < fat12->boot_sector.sectors_per_cluster; si++) {
+                int ls = (fat12->data_start + (cluster - 2) * fat12->boot_sector.sectors_per_cluster) + si;
+                int t, h, s;
+                logical_to_chs(ls, &t, &h, &s);
+                uint8_t* dest = local_buffer + (si * FAT12_SECTOR_SIZE);
+                if (!fdc_read_with_fallback(current_fdd_drive, h, t, s, dest)) {
+                    printf("Error reading subdirectory sector %d (logical %d).\n", si, ls);
+                    free(entries);
+                    free(local_buffer);
+                    return -1;
+                }
             }
 
             // Copy entries from the buffer
@@ -666,13 +692,12 @@ int fat12_read_file(fat12_file* file, void* buffer, unsigned int buffer_size, un
         // Read each sector in the cluster
         for (unsigned int i = 0; i < fat12->boot_sector.sectors_per_cluster && bytes_read < bytes_to_read; i++) {
             unsigned int logical_sector = firstSectorOfCluster + i;
-            int track = logical_sector / (FAT12_DEFAULT_SPT * FAT12_DEFAULT_HEADS);
-            int head = (logical_sector / FAT12_DEFAULT_SPT) % FAT12_DEFAULT_HEADS;
-            int sector = (logical_sector % FAT12_DEFAULT_SPT) + 1;  // Sectors are 1-based
+            int track, head, sector;
+            logical_to_chs(logical_sector, &track, &head, &sector);
 
             // Read the sector
-            if (!fdc_read_sector(current_fdd_drive, head, track, sector, sectorBuffer)) {
-                printf("Error reading file sector at track %d, head %d, sector %d.\n", track, head, sector);
+            if (!fdc_read_with_fallback(current_fdd_drive, head, track, sector, sectorBuffer)) {
+                printf("Error reading file sector at track %d, head %d, sector %d (both DMA and no-DMA failed).\n", track, head, sector);
                 free(sectorBuffer);
                 return bytes_read; // Return bytes read so far on failure
             }
@@ -693,10 +718,13 @@ int fat12_read_file(fat12_file* file, void* buffer, unsigned int buffer_size, un
         }
 
         // Move to the next cluster in the chain
-        current_cluster = get_next_cluster(current_cluster);
-        if (current_cluster == FAT12_EOC_MAX) {
-            printf("Invalid cluster detected.\n");
-            break;
+        {
+            int next = get_next_cluster((int)current_cluster);
+            if (next < 0) {
+                // end of chain or error
+                break;
+            }
+            current_cluster = (unsigned int)next;
         }
     }
 

@@ -162,6 +162,8 @@
 
 static volatile bool irq_triggered = false; // IRQ6 flag for FDD 0x10
 static volatile bool irq_ready_triggered = false; // IRQ6 ready flag 0x80
+static volatile int irq_count = 0;         // Counter for normal IRQs (0x10)
+static volatile int irq_ready_count = 0;   // Counter for ready IRQs (0x80)
 static bool fdc_controller_initialized = false; // Track if FDC controller has been initialized
 static bool fdc_drive_ready[4] = {false, false, false, false}; // Track which drives are calibrated
 
@@ -174,13 +176,17 @@ bool fdc_specify();
 void fdd_irq_handler(uint8_t* r) {
     uint8_t status = inb(FDD_MSR);  // Read the Main Status Register (MSR)
 
-    // Check if bit 4 is set (indicating a valid interrupt)
+    // Check if bit 4 is set (indicating a normal completion IRQ)
     if (status & 0x10) {
         irq_triggered = true;  // Set IRQ flag when valid
-        printf("Valid interrupt 0x10 detected for FDD.\n");
-    } else if(status & 0x80){
-        printf("Valid interrupt 0x80 detected for FDD.\n");
+        irq_count++;
+        printf("FDD IRQ: normal (0x10) detected. MSR=0x%02X, count=%d\n", status, irq_count);
+    } else if (status & 0x80) {
         irq_ready_triggered = true;
+        irq_ready_count++;
+        printf("FDD IRQ: ready (0x80) detected. MSR=0x%02X, ready_count=%d\n", status, irq_ready_count);
+    } else {
+        printf("FDD IRQ: unknown status 0x%02X\n", status);
     }
 
     // Send EOI to the PIC to acknowledge the interrupt
@@ -227,28 +233,32 @@ void fdc_motor_off(int drive) {
 
 // Wait for FDC to signal readiness
 bool wait_for_fdc_ready() {
-    int timeout = 1000;  // Adjusted for a shorter wait period (1000 ms total)
+    int timeout = 3000;  // Increased timeout (3000 ms)
+    int waited = 0;
     while (!irq_ready_triggered) {  // Wait for bit 7 of the MSR to be set
         if (--timeout == 0) {
-            printf("Timeout waiting for FDC ready signal.\n");
+            printf("Timeout waiting for FDC ready signal after %d ms.\n", waited);
             return false;
         }
 
         delay_ms(1);  // Avoid CPU-intensive busy waiting
+        waited++;
     }
     return true;
 }
 
 // Wait for FDC interrupt to indicate completion
 bool fdc_wait_for_irq() {
-    int timeout = 1000;  // Adjusted for a shorter wait period (1000 ms total)
-    while (!irq_triggered) {  // Wait for bit 7 of the MSR to be set
+    int timeout = 3000;  // Increased timeout (3000 ms)
+    int waited = 0;
+    while (!irq_triggered) {  // Wait for IRQ flag to be set
         if (--timeout == 0) {
-            printf("Timeout waiting for FDC ready signal.\n");
+            printf("Timeout waiting for FDC IRQ after %d ms.\n", waited);
             return false;
         }
 
         delay_ms(1);  // Avoid CPU-intensive busy waiting
+        waited++;
     }
     return true;
 }
@@ -256,10 +266,11 @@ bool fdc_wait_for_irq() {
 // Send a command to the FDC via the FIFO
 bool fdc_send_command(uint8_t command) {
     if (!wait_for_fdc_ready()) {
-        printf("FDC not ready for command: 0x%X\n", command);
+        printf("FDC not ready for command: 0x%02X\n", command);
         return false;
     }
     outb(FDD_FIFO, command);
+    printf("FDC: command 0x%02X written, MSR=0x%02X\n", command, fdc_get_status());
     return true;
 }
 
@@ -415,63 +426,81 @@ bool fdc_init_controller() {
 }
 
 bool fdc_calibrate_drive(uint8_t drive) {
-    printf("Calibrating drive %d...\n", drive);
-    
-    // Turn on motor
-    fdc_motor_on(drive);
-    delay_ms(500);
-    
-    // Recalibrate (move head to track 0)
-    irq_triggered = false;
-    
-    if (!wait_for_fdc_ready() ||
-        !fdc_send_command(FDD_CMD_RECALIBRATE) ||
-        !fdc_send_command(drive)) {
-        printf("Failed to send RECALIBRATE command.\n");
+    printf("Calibrating drive %d (with retries)...\n", drive);
+
+    const int max_retries = 3;
+    for (int attempt = 1; attempt <= max_retries; attempt++) {
+        printf("Calibration attempt %d/%d for drive %d\n", attempt, max_retries, drive);
+
+        // Turn on motor and allow longer spin-up
+        fdc_motor_on(drive);
+        delay_ms(1000);
+
+        // Clear IRQ flag
+        irq_triggered = false;
+
+        // Send recalibrate command
+        if (!wait_for_fdc_ready() ||
+            !fdc_send_command(FDD_CMD_RECALIBRATE) ||
+            !fdc_send_command(drive)) {
+            printf("Failed to send RECALIBRATE command on attempt %d.\n", attempt);
+            fdc_motor_off(drive);
+            // Try a full controller reset before next attempt
+            fdc_full_reset();
+            delay_ms(100);
+            continue;
+        }
+
+        // Wait for the recalibration interrupt (with generous wait)
+        if (!fdc_wait_for_irq()) {
+            printf("Timeout waiting for recalibration IRQ on attempt %d.\n", attempt);
+            fdc_motor_off(drive);
+            fdc_full_reset();
+            delay_ms(100);
+            continue;
+        }
+
+        // Sense Interrupt Status to get result
+        if (!wait_for_fdc_ready() || !fdc_send_command(0x08)) {
+            printf("Failed to send SENSE INTERRUPT STATUS on attempt %d.\n", attempt);
+            fdc_motor_off(drive);
+            fdc_full_reset();
+            delay_ms(100);
+            continue;
+        }
+
+        delay_ms(5);
+        if (!wait_for_fdc_ready()) {
+            printf("FDC not ready to read sense data on attempt %d.\n", attempt);
+            fdc_motor_off(drive);
+            fdc_full_reset();
+            delay_ms(100);
+            continue;
+        }
+
+        uint8_t st0 = fdc_read_data();
+        uint8_t cylinder = fdc_read_data();
+
+        printf("Calibrate result (attempt %d): ST0=0x%x, cylinder=%d\n", attempt, st0, cylinder);
+
+        // ST0 bit 5 (0x20) indicates successful seek completion
+        if ((st0 & 0x20) == 0x20) {
+            if (cylinder != 0) {
+                printf("Warning: Not at cylinder 0 after calibration (cylinder=%d).\n", cylinder);
+            }
+            fdc_motor_off(drive);
+            printf("Drive %d calibrated successfully on attempt %d.\n", drive, attempt);
+            return true;
+        }
+
+        printf("Calibration did not report successful seek on attempt %d.\n", attempt);
         fdc_motor_off(drive);
-        return false;
+        fdc_full_reset();
+        delay_ms(100);
     }
-    
-    // Wait for the recalibration interrupt
-    delay_ms(100);
-    if (!fdc_wait_for_irq()) {
-        printf("Timeout waiting for recalibration IRQ.\n");
-        fdc_motor_off(drive);
-        return false;
-    }
-    
-    // Get the result with SENSE INTERRUPT STATUS
-    if (!wait_for_fdc_ready() || !fdc_send_command(0x08)) {
-        printf("Failed to send SENSE INTERRUPT STATUS.\n");
-        fdc_motor_off(drive);
-        return false;
-    }
-    
-    delay_ms(5);
-    if (!wait_for_fdc_ready()) {
-        printf("FDC not ready to read sense data.\n");
-        fdc_motor_off(drive);
-        return false;
-    }
-    
-    uint8_t st0 = fdc_read_data();
-    uint8_t cylinder = fdc_read_data();
-    
-    printf("Calibrate result: ST0=0x%x, cylinder=%d\n", st0, cylinder);
-    
-    if ((st0 & 0x20) != 0x20) {  // Check if seek ended successfully
-        printf("Calibration failed.\n");
-        fdc_motor_off(drive);
-        return false;
-    }
-    
-    if (cylinder != 0) {
-        printf("Warning: Not at cylinder 0 after calibration.\n");
-    }
-    
-    fdc_motor_off(drive);
-    printf("Drive %d calibrated successfully.\n", drive);
-    return true;
+
+    printf("Calibration failed for drive %d after %d attempts.\n", drive, max_retries);
+    return false;
 }
 
 bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
