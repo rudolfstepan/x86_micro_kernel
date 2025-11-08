@@ -41,7 +41,7 @@ typedef struct {
 
 
 void init_fs(drive_t* drive);
-void auto_mount_first_drive(void);
+void auto_mount_all_drives(void);
 
 
 #endif // FILESYSTEM_H

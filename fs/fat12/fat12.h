@@ -121,6 +121,9 @@ typedef struct {
 } fat12_file;
 
 
+// Forward declaration for FAT12
+extern bool fat12_init_fs(uint8_t drive);
+
 // Initialization and cleanup
 bool fat12_init_fs(uint8_t drive);
 void fat12_cleanup(void);

@@ -51,6 +51,9 @@ typedef struct {
     command_func execute;
 } command_t;
 
+// Forward declarations
+void show_prompt(void);
+
 // Command prototypes
 void cmd_help(int cnt, const char **args);
 void cmd_clear(int cnt, const char **args);
@@ -137,6 +140,92 @@ command_t command_table[MAX_COMMANDS] = {
 #define MAX_LENGTH 64
 
 
+/**
+ * Parse path for drive prefix (e.g., /hdd0/dir or hdd0:/dir)
+ * Returns drive name if found, NULL otherwise
+ * Also modifies path_out to point to remainder after drive prefix
+ */
+const char* extract_drive_from_path(const char* path, char** path_out) {
+    static char drive_name[16];
+    
+    if (!path || !path_out) {
+        return NULL;
+    }
+    
+    *path_out = (char*)path;  // Default: no modification
+    
+    // Check for /drivename/path format (e.g., /hdd0/dir/file)
+    if (path[0] == '/') {
+        const char* next_slash = strchr(path + 1, '/');
+        size_t drive_len = next_slash ? (next_slash - path - 1) : strlen(path + 1);
+        
+        // Check if it's a valid drive name length and pattern
+        if (drive_len == 4 && (strncmp(path + 1, "hdd", 3) == 0 || strncmp(path + 1, "fdd", 3) == 0)) {
+            strncpy(drive_name, path + 1, 4);
+            drive_name[4] = '\0';
+            str_to_lower(drive_name);
+            
+            // Point to remainder of path (or "/" if nothing after drive)
+            *path_out = next_slash ? (char*)next_slash : (char*)"/";
+            return drive_name;
+        }
+    }
+    
+    // Check for drivename:/path format (e.g., hdd0:/dir/file)
+    if (strlen(path) >= 5 && path[4] == ':' && 
+        (strncmp(path, "hdd", 3) == 0 || strncmp(path, "fdd", 3) == 0)) {
+        strncpy(drive_name, path, 4);
+        drive_name[4] = '\0';
+        str_to_lower(drive_name);
+        
+        // Point to remainder of path (skip the colon)
+        *path_out = (char*)(path + 5);
+        if (*path_out[0] == '\0') {
+            *path_out = (char*)"/";  // Empty path after colon = root
+        }
+        return drive_name;
+    }
+    
+    return NULL;  // No drive prefix found
+}
+
+/**
+ * Try to switch to a drive by name (hdd0, hdd1, fdd0, etc.)
+ * Returns true if successful, false if not a drive name
+ */
+bool try_switch_drive(const char* name) {
+    extern drive_t* current_drive;
+    
+    // Convert to lowercase for comparison
+    char drive_name[16];
+    strncpy(drive_name, name, sizeof(drive_name) - 1);
+    drive_name[sizeof(drive_name) - 1] = '\0';
+    str_to_lower(drive_name);
+    
+    // Check if it matches drive name pattern (hdd0-9, fdd0-9)
+    if ((strncmp(drive_name, "hdd", 3) == 0 || strncmp(drive_name, "fdd", 3) == 0) &&
+        strlen(drive_name) == 4 && drive_name[3] >= '0' && drive_name[3] <= '9') {
+        
+        // Try to find and switch to this drive
+        drive_t* drive = get_drive_by_name(drive_name);
+        if (drive) {
+            current_drive = drive;
+            printf("Switched to drive %s\n", drive->name);
+            
+            // Reset path to root when switching drives
+            strncpy(current_path, "/", sizeof(current_path) - 1);
+            current_path[sizeof(current_path) - 1] = '\0';
+            
+            return true;
+        } else {
+            printf("Drive %s not found or not mounted\n", drive_name);
+            return true;  // Still consumed the input, just wasn't successful
+        }
+    }
+    
+    return false;  // Not a drive name
+}
+
 void process_command(char *input_buffer) {
     char command[MAX_LENGTH];
     char* arguments[MAX_ARGS] = {NULL};  // Initialize all pointers to NULL
@@ -152,6 +241,12 @@ void process_command(char *input_buffer) {
     if (command[0] == '\0') {
         free_arguments(arguments, arg_cnt);  // Free allocated arguments
         return; // Empty input
+    }
+    
+    // Check if input is a drive name (hdd0, hdd1, fdd0, etc.)
+    if (try_switch_drive(command)) {
+        free_arguments(arguments, arg_cnt);
+        return;
     }
 
     // Convert only the command to uppercase (not the arguments!)
@@ -309,7 +404,7 @@ static void replace_current_line(char *buffer, const char *new_content, int *cur
     vga_clear_line();
     
     // Print prompt
-    printf("> ");
+    show_prompt();
     
     // Copy new content
     int len = strlen(new_content);
@@ -435,20 +530,20 @@ static bool handle_ctrl_key(char ch, char *buffer, int *buffer_index, int *curso
             *buffer_index = 0;
             *cursor_pos = 0;
             history_reset();
-            printf("> ");
+            show_prompt();
             return true;
             
         case 0x04:  // Ctrl+D (EOF)
             if (*buffer_index == 0) {
                 printf("^D\n(Ctrl+D pressed - use 'exit' to quit)\n");
-                printf("> ");
+                show_prompt();
                 return true;
             }
             return false;
             
         case 0x0C:  // Ctrl+L (clear screen)
             clear_screen();
-            printf("> ");
+            show_prompt();
             // Redisplay current buffer
             for (int i = 0; i < *buffer_index; i++) {
                 putchar(buffer[i]);
@@ -462,7 +557,7 @@ static bool handle_ctrl_key(char ch, char *buffer, int *buffer_index, int *curso
             
         case 0x15:  // Ctrl+U (clear line)
             vga_clear_line();
-            printf("> ");
+            show_prompt();
             buffer[0] = '\0';
             *buffer_index = 0;
             *cursor_pos = 0;
@@ -484,9 +579,22 @@ static bool handle_ctrl_key(char ch, char *buffer, int *buffer_index, int *curso
 // ENHANCED COMMAND LOOP
 //=============================================================================
 
+/**
+ * Display shell prompt with current drive name
+ */
+void show_prompt(void) {
+    extern drive_t* current_drive;
+    
+    if (current_drive && current_drive->name[0]) {
+        printf("%s> ", current_drive->name);
+    } else {
+        show_prompt();
+    }
+}
+
 void command_loop() {
     printf("+++Enhanced shell with line editing and history started\n");
-    printf("> ");
+    show_prompt();
 
     char* input = (char*)k_malloc(256);
     if (input == NULL) {
@@ -531,7 +639,7 @@ void command_loop() {
                 cursor_pos = 0;
                 input[0] = '\0';
                 history_reset();
-                printf("> ");
+                show_prompt();
             }
             // Handle Backspace
             else if (ch == '\b') {
@@ -786,43 +894,70 @@ void cmd_mount(int arg_count, const char** arguments) {
 /// @param arg_count 
 /// @param arguments 
 void cmd_ls(int arg_count, const char** arguments) {
+    extern drive_t* current_drive;
     const char* directory = (arg_count == 0) ? current_path : arguments[0];
+    
+    // Check for drive prefix in path
+    if (arg_count > 0) {
+        char* path_remainder = NULL;
+        const char* drive_name = extract_drive_from_path(arguments[0], &path_remainder);
+        
+        if (drive_name) {
+            // Switch to specified drive temporarily
+            drive_t* original_drive = current_drive;
+            if (try_switch_drive(drive_name)) {
+                directory = path_remainder;
+            } else {
+                return;  // Drive switch failed, error already printed
+            }
+        }
+    }
+    
     if (current_drive == NULL) {
         printf("No drive mounted\n");
         return;
     }
+    
     switch (current_drive->type) {
     case DRIVE_TYPE_ATA:
-
-        // extern fat32_class_t fat32;
-        // ctor_fat32_class(&fat32);
-        // fat32.fat32_read_dir(directory);
         fat32_read_dir(directory);
-
         break;
     case DRIVE_TYPE_FDD:
-        // notice that the path is relative to the current directory
-        // we only need the filename
-        fat12_read_dir(arguments[0]);
+        fat12_read_dir(directory);
         break;
-
     default:
         break;
     }
 }
 
 void cmd_cd(int arg_count, const char** arguments) {
+    extern drive_t* current_drive;
+    
     if (arg_count == 0) {
         printf("CD command without arguments\n");
     } else {
-        str_trim_end((char*)arguments[0], '/');  // Remove trailing slash from the path
-        char new_path[256] = "/";
-        snprintf(new_path, sizeof(new_path), "%s/%s", current_path, arguments[0]);
-
+        const char* target_path = arguments[0];
+        
+        // Check for drive prefix in path
+        char* path_remainder = NULL;
+        const char* drive_name = extract_drive_from_path(arguments[0], &path_remainder);
+        
+        if (drive_name) {
+            // Permanently switch to specified drive
+            if (!try_switch_drive(drive_name)) {
+                return;  // Drive switch failed
+            }
+            target_path = path_remainder;
+        }
+        
         if (current_drive == NULL) {
             printf("No drive mounted\n");
             return;
         }
+        
+        str_trim_end((char*)target_path, '/');  // Remove trailing slash from the path
+        char new_path[256] = "/";
+        snprintf(new_path, sizeof(new_path), "%s/%s", current_path, target_path);
 
         if (current_drive->type == DRIVE_TYPE_ATA) {
             if (fat32_change_directory(new_path)) {

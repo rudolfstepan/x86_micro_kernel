@@ -163,6 +163,9 @@
 static volatile bool irq_triggered = false; // IRQ6 flag for FDD 0x10
 static volatile bool irq_ready_triggered = false; // IRQ6 ready flag 0x80
 
+// Forward declarations
+uint8_t fdc_read_data();
+
 // FDC IRQ handler for IRQ6
 void fdd_irq_handler(uint8_t* r) {
     uint8_t status = inb(FDD_MSR);  // Read the Main Status Register (MSR)
@@ -322,31 +325,48 @@ bool _fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector
         printf("FDC not ready to read sector.\n");
         return false;
     }
-    // clear the buffer before reading
-    //memset(buffer, 0, SECTOR_SIZE);  // Clear the buffer before reading
-
-    //fdc_wait_for_irq();  // Wait for any pending IRQs to clear
-    //delay_ms(10);  // Small delay before issuing command
-    // prepare DMA for reading
+    
+    // Prepare DMA for reading
     dma_prepare_floppy((uint8_t*)buffer, SECTOR_SIZE, true);
 
-    //delay_ms(10);  // Small delay before issuing command
-
-    // Reset IRQ flag and send the command sequence to FDC
-    //irq_triggered = false;  // Reset IRQ flag before issuing command
+    // Reset IRQ flag before issuing command
+    irq_triggered = false;
+    
+    // Send the READ command sequence to FDC
     if (!fdc_send_command(FDD_CMD_READ) ||
         !fdc_send_command((head << 2) | (drive & 0x03)) ||
         !fdc_send_command(track) ||
         !fdc_send_command(head) ||
         !fdc_send_command(sector) ||
-        !fdc_send_command(2) ||  // Sector size
+        !fdc_send_command(2) ||  // Sector size (2 = 512 bytes)
         !fdc_send_command(18) || // Last sector
         !fdc_send_command(0x1B) || // Gap length
         !fdc_send_command(0xFF)) {  // Unused byte
         printf("Failed to send READ command sequence.\n");
-        fdc_motor_off(drive);
         return false;
     }
+    
+    // Wait for the operation to complete (IRQ6)
+    if (!fdc_wait_for_irq()) {
+        printf("Timeout waiting for FDC read completion.\n");
+        return false;
+    }
+    
+    // Read the 7 result bytes
+    uint8_t st0 = fdc_read_data();    // Status Register 0
+    uint8_t st1 = fdc_read_data();    // Status Register 1
+    uint8_t st2 = fdc_read_data();    // Status Register 2
+    fdc_read_data();                  // Cylinder (ignored)
+    fdc_read_data();                  // Head (ignored)
+    fdc_read_data();                  // Sector (ignored)
+    fdc_read_data();                  // Sector size (ignored)
+    
+    // Check for errors in ST0, ST1, ST2
+    if ((st0 & 0xC0) != 0) {  // Bits 7-6: IC (Interrupt Code) should be 0 for success
+        printf("FDC read error: ST0=0x%x, ST1=0x%x, ST2=0x%x\n", st0, st1, st2);
+        return false;
+    }
+    
     return true;
 }
 

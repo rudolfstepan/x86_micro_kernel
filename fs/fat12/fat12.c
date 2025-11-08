@@ -146,9 +146,24 @@ int read_fat12(uint8_t drive, fat12_t* fat12) {
         return false;
     }
 
+    // Debug: Show boot sector geometry
+    printf("Boot sector geometry:\n");
+    printf("  bytes_per_sector: %u\n", fat12->boot_sector.bytes_per_sector);
+    printf("  sectors_per_track: %u\n", fat12->boot_sector.sectors_per_track);
+    printf("  heads: %u\n", fat12->boot_sector.heads);
+    printf("  reserved_sectors: %u\n", fat12->boot_sector.reserved_sectors);
+    printf("  fat_count: %u\n", fat12->boot_sector.fat_count);
+    printf("  sectors_per_fat: %u\n", fat12->boot_sector.sectors_per_fat);
+    printf("  root_entry_count: %u\n", fat12->boot_sector.root_entry_count);
+    
     fat12->fat_start = fat12->boot_sector.reserved_sectors;
     fat12->root_dir_start = fat12->fat_start + (fat12->boot_sector.fat_count * fat12->boot_sector.sectors_per_fat);
     fat12->data_start = fat12->root_dir_start + (fat12->boot_sector.root_entry_count * FAT12_ROOT_ENTRY_SIZE / FAT12_SECTOR_SIZE);
+    
+    printf("Calculated sectors:\n");
+    printf("  fat_start: %d\n", fat12->fat_start);
+    printf("  root_dir_start: %d\n", fat12->root_dir_start);
+    printf("  data_start: %d\n", fat12->data_start);
     
     // Allocate and load FAT table into memory
     uint32_t fat_size = fat12->boot_sector.sectors_per_fat * FAT12_SECTOR_SIZE;
@@ -288,15 +303,12 @@ void extract_time(uint16_t fat_time, int* hours, int* minutes, int* seconds) {
 // Read directory entries (root or subdirectory)
 int fat12_read_dir_entries(directory_entry* dir) {
     int entries_found = 0;
+    uint8_t* local_buffer = NULL;  // Use local buffer instead of global
     
-    // Free existing allocations if any
+    // Free existing entries allocation if any
     if (entries != NULL) {
         free(entries);
         entries = NULL;
-    }
-    if (buffer != NULL) {
-        free(buffer);
-        buffer = NULL;
     }
     
     entries = (directory_entry*)malloc(FAT12_MAX_ROOT_ENTRIES * sizeof(directory_entry));
@@ -305,8 +317,8 @@ int fat12_read_dir_entries(directory_entry* dir) {
         return -1;
     }
 
-    buffer = (uint8_t*)malloc(FAT12_SECTOR_SIZE * FAT12_ROOT_DIR_SECTORS);  // Allocate buffer for multiple sectors
-    if (!buffer) {
+    local_buffer = (uint8_t*)malloc(FAT12_SECTOR_SIZE * FAT12_ROOT_DIR_SECTORS);  // Allocate buffer for multiple sectors
+    if (!local_buffer) {
         printf("Memory allocation failed for sector buffer.\n");
         free(entries);
         entries = NULL;
@@ -321,16 +333,16 @@ int fat12_read_dir_entries(directory_entry* dir) {
         logical_to_chs(logical_sector, &track, &head, &sector);
 
         // Read multiple sectors at once
-        if (!fdc_read_sectors(current_fdd_drive, head, track, sector, FAT12_ROOT_DIR_SECTORS, buffer)) {
+        if (!fdc_read_sectors(current_fdd_drive, head, track, sector, FAT12_ROOT_DIR_SECTORS, local_buffer)) {
             printf("Error reading root directory sectors.\n");
             free(entries);
-            free(buffer);
+            free(local_buffer);
             return -1;
         }
 
         // Copy entries from the buffer
         for (int i = 0; i < FAT12_ROOT_DIR_SECTORS && entries_found < FAT12_MAX_ROOT_ENTRIES; i++) {
-            memcpy(&entries[entries_found], buffer + (i * FAT12_SECTOR_SIZE), FAT12_SECTOR_SIZE);
+            memcpy(&entries[entries_found], local_buffer + (i * FAT12_SECTOR_SIZE), FAT12_SECTOR_SIZE);
             entries_found += FAT12_SECTOR_SIZE / FAT12_ROOT_ENTRY_SIZE;
         }
     } else {
@@ -344,16 +356,16 @@ int fat12_read_dir_entries(directory_entry* dir) {
             logical_to_chs(start_sector, &track, &head, &sector);
 
             // Read multiple sectors for the cluster
-            if (!fdc_read_sectors(current_fdd_drive, head, track, sector, fat12->boot_sector.sectors_per_cluster, buffer)) {
+            if (!fdc_read_sectors(current_fdd_drive, head, track, sector, fat12->boot_sector.sectors_per_cluster, local_buffer)) {
                 printf("Error reading subdirectory sectors starting from sector %d.\n", sector);
                 free(entries);
-                free(buffer);
+                free(local_buffer);
                 return -1;
             }
 
             // Copy entries from the buffer
             for (int i = 0; i < fat12->boot_sector.sectors_per_cluster && entries_found < FAT12_MAX_ROOT_ENTRIES; i++) {
-                memcpy(&entries[entries_found], buffer + (i * FAT12_SECTOR_SIZE), FAT12_SECTOR_SIZE);
+                memcpy(&entries[entries_found], local_buffer + (i * FAT12_SECTOR_SIZE), FAT12_SECTOR_SIZE);
                 entries_found += FAT12_SECTOR_SIZE / FAT12_ROOT_ENTRY_SIZE;
             }
 
@@ -364,7 +376,7 @@ int fat12_read_dir_entries(directory_entry* dir) {
 
     printf("Entries found: %d\n", entries_found);
 
-    free(buffer);
+    free(local_buffer);
     return entries_found;
 }
 

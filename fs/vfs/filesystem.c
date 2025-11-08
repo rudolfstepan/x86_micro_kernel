@@ -4,6 +4,7 @@
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
 #include "fs/fat32/fat32.h"
+#include "fs/fat12/fat12.h"
 #include "drivers/char/io.h"
 #include <stddef.h>
 
@@ -196,10 +197,10 @@ void print_raw_boot_sector(uint16_t* data, size_t length) {
 }
 
 /**
- * Auto-mount the first available hard drive
- * Called during system initialization to ensure filesystem is always available
+ * Auto-mount all detected drives
+ * Called during system initialization to ensure filesystems are ready
  */
-void auto_mount_first_drive(void) {
+void auto_mount_all_drives(void) {
     extern drive_t detected_drives[];
     extern short drive_count;
     extern drive_t* current_drive;  // Shell needs this set
@@ -209,20 +210,56 @@ void auto_mount_first_drive(void) {
         return;
     }
     
-    // Find first ATA hard drive
+    printf("\n=== Auto-mounting detected drives ===\n");
+    
+    int mounted_count = 0;
+    bool first_drive_set = false;
+    
+    // Mount all detected drives
     for (int i = 0; i < drive_count; i++) {
-        if (detected_drives[i].type == DRIVE_TYPE_ATA) {
-            printf("Auto-mounting %s (%s)...\n", 
-                   detected_drives[i].name, detected_drives[i].model);
+        drive_t* drive = &detected_drives[i];
+        
+        if (drive->type == DRIVE_TYPE_ATA) {
+            printf("Mounting %s (%s)...\n", drive->name, drive->model);
             
-            // Set current_drive so shell commands work
-            current_drive = &detected_drives[i];
+            // Initialize filesystem on this drive
+            init_fs(drive);
             
-            init_fs(current_drive);
-            printf("Auto-mount successful: %s is ready\n", current_drive->name);
-            return;
+            // Set first mounted drive as current
+            if (!first_drive_set) {
+                current_drive = drive;
+                first_drive_set = true;
+                printf("  -> Set as default drive\n");
+            }
+            
+            mounted_count++;
+        }
+        else if (drive->type == DRIVE_TYPE_FDD) {
+            printf("Mounting %s (Floppy Drive %d)...\n", 
+                   drive->name, drive->fdd_drive_no);
+            
+            // Initialize FAT12 filesystem
+            if (fat12_init_fs(drive->fdd_drive_no)) {
+                printf("  -> FAT12 filesystem ready\n");
+                
+                // Set first mounted drive as current if no HDD
+                if (!first_drive_set) {
+                    current_drive = drive;
+                    first_drive_set = true;
+                    printf("  -> Set as default drive\n");
+                }
+                
+                mounted_count++;
+            } else {
+                printf("  -> Failed to mount\n");
+            }
         }
     }
     
-    printf("Auto-mount: No hard drives found\n");
+    printf("=== Auto-mount complete: %d/%d drives mounted ===\n\n", 
+           mounted_count, drive_count);
+    
+    if (current_drive) {
+        printf("Active drive: %s\n", current_drive->name);
+    }
 }

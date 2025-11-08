@@ -191,9 +191,9 @@ static void driver_init(void) {
     // Detect floppy drives
     fdd_detect_drives();  // Floppy disk drives
 
-    // Auto-mount first hard drive for convenience
-    extern void auto_mount_first_drive(void);
-    auto_mount_first_drive();
+    // Auto-mount all detected drives
+    extern void auto_mount_all_drives(void);
+    auto_mount_all_drives();
 
     //printf("Driver initialization complete\n");
 }

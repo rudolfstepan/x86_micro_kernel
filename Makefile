@@ -770,7 +770,8 @@ run-ne2000: iso
 # Run with NE2000 + TAP networking
 run-ne2000-tap: iso
 	@echo "=== Starting QEMU with NE2000 + TAP networking ==="
-	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
+	@sudo ip tuntap del dev tap0 mode tap 2>/dev/null || true
+	@sudo ip tuntap add dev tap0 mode tap user $(USER)
 	@sudo ip link set tap0 up
 	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
 	@echo "  - TAP interface ready (10.0.2.1/24)"
@@ -782,6 +783,7 @@ run-ne2000-tap: iso
 		-device ne2k_pci,netdev=net0 \
 		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
 		-nographic
+	@sudo ip tuntap del dev tap0 mode tap 2>/dev/null || true
 
 # ============================================================================
 # DEBUGGING INFO
