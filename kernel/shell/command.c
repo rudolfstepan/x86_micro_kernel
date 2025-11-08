@@ -919,8 +919,35 @@ void cmd_ls(int arg_count, const char** arguments) {
         return;
     }
     
+    // Build full VFS path based on current drive's mount point
+    char vfs_path[256];
+    if (current_drive->mount_point && strlen(current_drive->mount_point) > 0) {
+        // Drive has explicit mount point
+        if (strcmp(current_drive->mount_point, "/") == 0) {
+            // Mounted at root
+            strncpy(vfs_path, directory, sizeof(vfs_path) - 1);
+        } else {
+            // Mounted at /mnt/<name> or similar
+            if (strcmp(directory, "/") == 0) {
+                strncpy(vfs_path, current_drive->mount_point, sizeof(vfs_path) - 1);
+            } else {
+                snprintf(vfs_path, sizeof(vfs_path), "%s%s", 
+                         current_drive->mount_point, directory);
+            }
+        }
+        vfs_path[sizeof(vfs_path) - 1] = '\0';
+    } else {
+        // Fallback: assume mounted at /mnt/<drive_name>
+        if (strcmp(directory, "/") == 0) {
+            snprintf(vfs_path, sizeof(vfs_path), "/mnt/%s", current_drive->name);
+        } else {
+            snprintf(vfs_path, sizeof(vfs_path), "/mnt/%s%s", 
+                     current_drive->name, directory);
+        }
+    }
+    
     // Use VFS for all filesystems
-    printf("\nDirectory of %s\n", directory);
+    printf("\nDirectory of %s (vfs: %s)\n", directory, vfs_path);
     printf("%-40s %-10s %-8s\n", "FILENAME", "SIZE", "TYPE");
     printf("--------------------------------------------------------------------------------\n");
     
@@ -928,7 +955,7 @@ void cmd_ls(int arg_count, const char** arguments) {
     vfs_dir_entry_t entry;
     int result;
     
-    while ((result = vfs_readdir(directory, index, &entry)) == VFS_OK) {
+    while ((result = vfs_readdir(vfs_path, index, &entry)) == VFS_OK) {
         // Format type
         const char* type_str = "";
         switch (entry.type) {

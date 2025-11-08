@@ -727,6 +727,7 @@ void fdd_detect_drives() {
                 detected_drive->cylinder = 80;  // Typical number of cylinders for a 3.5" floppy drive
                 detected_drive->head = 2;       // Number of heads (double-sided)
                 detected_drive->sector = 18;    // Typical number of sectors per track for a 1.44 MB disk
+                detected_drive->mount_point[0] = '\0';  // Initialize mount point to empty
 
                 printf("Floppy drive detected: %s\n", detected_drive->name);
                 detected_drives[drive_count++] = *detected_drive;

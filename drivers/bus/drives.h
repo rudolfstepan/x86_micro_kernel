@@ -21,6 +21,7 @@ typedef struct {
     unsigned int head;      // Number of heads (for FDD)
     unsigned int sector;    // Number of sectors (for FDD)
     uint8_t fdd_drive_no;   // Drive number for FDD, 0 for A:, 1 for B:
+    char mount_point[64];   // VFS mount point (e.g., "/", "/mnt/hdd1")
 } drive_t;
 
 // global definition of the current drive which is being accessed

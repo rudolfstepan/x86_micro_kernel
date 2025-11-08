@@ -269,6 +269,10 @@ void auto_mount_all_drives(void) {
             // Mount using VFS
             result = vfs_mount(drive, fs_type, mount_path);
             if (result == VFS_OK) {
+                // Store mount point in drive structure
+                strncpy(drive->mount_point, mount_path, sizeof(drive->mount_point) - 1);
+                drive->mount_point[sizeof(drive->mount_point) - 1] = '\0';
+                
                 printf("  %-6s %-20s %s\n", drive->name, drive->model, fs_type);
                 
                 // Set first mounted drive as current
@@ -294,6 +298,10 @@ void auto_mount_all_drives(void) {
             // Mount FAT12 using VFS
             result = vfs_mount(drive, "fat12", mount_path);
             if (result == VFS_OK) {
+                // Store mount point in drive structure
+                strncpy(drive->mount_point, mount_path, sizeof(drive->mount_point) - 1);
+                drive->mount_point[sizeof(drive->mount_point) - 1] = '\0';
+                
                 printf("  %-6s Floppy Drive %-7d %s\n", drive->name, drive->fdd_drive_no, "fat12");
                 
                 // Set first mounted drive as current if no HDD

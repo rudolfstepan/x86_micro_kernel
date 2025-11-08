@@ -453,22 +453,27 @@ void ata_detect_drives() {
                 return;
             }
 
-            drive_t* ata_drive_info = &detected_drives[drive_count];
-            ata_drive_info->base = bases[bus];
-            ata_drive_info->is_master = (drive == 0);  // 0 for master, 1 for slave
+            // Use a temporary structure to avoid corrupting detected_drives on failure
+            drive_t temp_drive;
+            temp_drive.base = bases[bus];
+            temp_drive.is_master = (drive == 0);  // 0 for master, 1 for slave
 
             // Attempt to identify the drive
-            if (ata_identify_drive(bases[bus], drives[drive], ata_drive_info)) {
+            if (ata_identify_drive(bases[bus], drives[drive], &temp_drive)) {
 
                 // Trim trailing spaces from the model name
-                trim_trailing_spaces(ata_drive_info->model);
+                trim_trailing_spaces(temp_drive.model);
 
-                ata_drive_info->type = DRIVE_TYPE_ATA;
-                snprintf(ata_drive_info->name, sizeof(ata_drive_info->name), "hdd%d", drive_name_index++);
-                //printf("ATA drive %s detected: %s, Sectors: %u\n", ata_drive_info->name, ata_drive_info->model, ata_drive_info->sectors);
+                temp_drive.type = DRIVE_TYPE_ATA;
+                snprintf(temp_drive.name, sizeof(temp_drive.name), "hdd%d", drive_name_index++);
+                
+                // Initialize mount_point to empty
+                temp_drive.mount_point[0] = '\0';
+                
+                //printf("ATA drive %s detected: %s, Sectors: %u\n", temp_drive.name, temp_drive.model, temp_drive.sectors);
 
-                // Initialize the file system for the detected drive
-                //init_fs(ata_drive_info);
+                // Copy the successfully identified drive to the detected_drives array
+                detected_drives[drive_count] = temp_drive;
 
                 // Increment the global drive count after successfully adding a drive
                 drive_count++;
