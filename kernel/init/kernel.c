@@ -141,7 +141,6 @@ static void hardware_init(void) {
     // Bus enumeration
     pci_init();  // PCI bus scanning
     usb_init();  // Initialize USB subsystem (probe PCI for HCI)
-    
     // Scheduler interrupt (currently disabled)
     register_interrupt_handler(9, scheduler_interrupt_handler);
     
