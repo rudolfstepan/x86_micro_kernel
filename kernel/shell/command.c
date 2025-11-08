@@ -16,6 +16,7 @@
 #include "drivers/char/kb.h"
 #include "kernel/time/pit.h"
 #include "fs/vfs/filesystem.h"
+#include "fs/vfs/vfs.h"
 #include "fs/fat32/fat32.h"
 #include "fs/fat12/fat12.h"
 #include "drivers/net/rtl8139.h"
@@ -918,16 +919,36 @@ void cmd_ls(int arg_count, const char** arguments) {
         return;
     }
     
-    switch (current_drive->type) {
-    case DRIVE_TYPE_ATA:
-        fat32_read_dir(directory);
-        break;
-    case DRIVE_TYPE_FDD:
-        fat12_read_dir(directory);
-        break;
-    default:
-        break;
+    // Use VFS for all filesystems
+    printf("\nDirectory of %s\n", directory);
+    printf("%-40s %-10s %-8s\n", "FILENAME", "SIZE", "TYPE");
+    printf("--------------------------------------------------------------------------------\n");
+    
+    uint32_t index = 0;
+    vfs_dir_entry_t entry;
+    int result;
+    
+    while ((result = vfs_readdir(directory, index, &entry)) == VFS_OK) {
+        // Format type
+        const char* type_str = "";
+        switch (entry.type) {
+            case VFS_FILE: type_str = "FILE"; break;
+            case VFS_DIRECTORY: type_str = "<DIR>"; break;
+            case VFS_SYMLINK: type_str = "<LNK>"; break;
+            default: type_str = "????"; break;
+        }
+        
+        printf("%-40s %10u %-8s\n",
+               entry.name, entry.size, type_str);
+        
+        index++;
     }
+    
+    if (index == 0) {
+        printf("(empty directory)\n");
+    }
+    
+    printf("\n");
 }
 
 void cmd_cd(int arg_count, const char** arguments) {

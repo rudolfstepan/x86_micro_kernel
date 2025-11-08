@@ -109,6 +109,7 @@ MM_C := $(wildcard $(MM_DIR)/*.c)
 FS_VFS_C := $(wildcard $(FS_DIR)/vfs/*.c)
 FS_FAT12_C := $(wildcard $(FS_DIR)/fat12/*.c)
 FS_FAT32_C := $(wildcard $(FS_DIR)/fat32/*.c)
+FS_EXT2_C := $(wildcard $(FS_DIR)/ext2/*.c)
 
 # Driver sources
 DRIVERS_BLOCK_C := $(wildcard $(DRIVERS_DIR)/block/*.c)
@@ -152,6 +153,7 @@ MM_OBJ := $(patsubst $(MM_DIR)/%.c,$(BUILD_MM_DIR)/%.o,$(MM_C))
 FS_VFS_OBJ := $(patsubst $(FS_DIR)/vfs/%.c,$(BUILD_FS_DIR)/vfs/%.o,$(FS_VFS_C))
 FS_FAT12_OBJ := $(patsubst $(FS_DIR)/fat12/%.c,$(BUILD_FS_DIR)/fat12/%.o,$(FS_FAT12_C))
 FS_FAT32_OBJ := $(patsubst $(FS_DIR)/fat32/%.c,$(BUILD_FS_DIR)/fat32/%.o,$(FS_FAT32_C))
+FS_EXT2_OBJ := $(patsubst $(FS_DIR)/ext2/%.c,$(BUILD_FS_DIR)/ext2/%.o,$(FS_EXT2_C))
 
 # Driver objects
 DRIVERS_BLOCK_OBJ := $(patsubst $(DRIVERS_DIR)/block/%.c,$(BUILD_DRIVERS_DIR)/block/%.o,$(DRIVERS_BLOCK_C))
@@ -170,7 +172,7 @@ ARCH_OBJ := $(ARCH_BOOT_ASM_OBJ) $(ARCH_BOOT_C_OBJ) $(ARCH_CPU_ASM_OBJ) $(ARCH_C
 KERNEL_OBJ := $(KERNEL_INIT_OBJ) $(KERNEL_SYSCALL_OBJ) $(KERNEL_PROC_OBJ) \
               $(KERNEL_SCHED_C_OBJ) $(KERNEL_SCHED_ASM_OBJ) $(KERNEL_TIME_OBJ) \
               $(KERNEL_SHELL_OBJ)
-FS_OBJ := $(FS_VFS_OBJ) $(FS_FAT12_OBJ) $(FS_FAT32_OBJ)
+FS_OBJ := $(FS_VFS_OBJ) $(FS_FAT12_OBJ) $(FS_FAT32_OBJ) $(FS_EXT2_OBJ)
 DRIVERS_OBJ := $(DRIVERS_BLOCK_OBJ) $(DRIVERS_CHAR_OBJ) $(DRIVERS_VIDEO_OBJ) \
                $(DRIVERS_NET_OBJ) $(DRIVERS_BUS_OBJ)
 LIB_OBJ := $(LIB_LIBC_C_OBJ) $(LIB_LIBC_ASM_OBJ) $(LIB_LIBK_OBJ)
@@ -297,7 +299,7 @@ prepare:
 	@mkdir -p $(BUILD_KERNEL_DIR)/init $(BUILD_KERNEL_DIR)/syscall $(BUILD_KERNEL_DIR)/proc
 	@mkdir -p $(BUILD_KERNEL_DIR)/sched $(BUILD_KERNEL_DIR)/time $(BUILD_KERNEL_DIR)/shell
 	@mkdir -p $(BUILD_MM_DIR)
-	@mkdir -p $(BUILD_FS_DIR)/vfs $(BUILD_FS_DIR)/fat12 $(BUILD_FS_DIR)/fat32
+	@mkdir -p $(BUILD_FS_DIR)/vfs $(BUILD_FS_DIR)/fat12 $(BUILD_FS_DIR)/fat32 $(BUILD_FS_DIR)/ext2
 	@mkdir -p $(BUILD_DRIVERS_DIR)/block $(BUILD_DRIVERS_DIR)/char $(BUILD_DRIVERS_DIR)/video
 	@mkdir -p $(BUILD_DRIVERS_DIR)/net $(BUILD_DRIVERS_DIR)/bus
 	@mkdir -p $(BUILD_LIB_DIR)/libc $(BUILD_LIB_DIR)/libk
@@ -384,6 +386,11 @@ $(BUILD_FS_DIR)/fat12/%.o: $(FS_DIR)/fat12/%.c
 
 # Filesystem - FAT32
 $(BUILD_FS_DIR)/fat32/%.o: $(FS_DIR)/fat32/%.c
+	@echo "  CC    $<"
+	@$(CC) $(CFLAGS) $< -o $@
+
+# Filesystem - EXT2
+$(BUILD_FS_DIR)/ext2/%.o: $(FS_DIR)/ext2/%.c
 	@echo "  CC    $<"
 	@$(CC) $(CFLAGS) $< -o $@
 
@@ -498,11 +505,11 @@ run: iso
 	@echo "Starting QEMU..."
 	@echo "  - Booting from kernel.iso"
 	@echo "  - Primary Master (hdd0): disk.img (FAT32)"
-	@echo "  - Primary Slave (hdd1): disk1.img (FAT32)"
+	@echo "  - Primary Slave (hdd1): ext2_disk.img (EXT2)"
 	@echo "  - Floppy (fd0): floppy.img (FAT12)"
 	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
 		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./ext2_disk.img,format=raw,if=ide,index=1 \
 		-drive file=./floppy.img,format=raw,if=floppy \
 		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
 		-monitor stdio -vga vmware
@@ -540,10 +547,12 @@ run-fb: iso
 	@echo "  - Video mode: 1024x768x32 framebuffer"
 	@echo "  - Primary Master (hdd0): disk.img (FAT32)"
 	@echo "  - Primary Slave (hdd1): disk1.img (FAT32)"
+	@echo "  - Secondary Slave (hdd3): ext2_disk.img (EXT2)"
 	@echo "  - Floppy (fd0): floppy.img (FAT12)"
 	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
 		-drive file=./disk.img,format=raw,if=ide,index=0 \
 		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
 		-drive file=./floppy.img,format=raw,if=floppy \
 		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
 		-monitor stdio -vga std
@@ -554,6 +563,7 @@ run-debug: iso
 	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
 		-drive file=./disk.img,format=raw,if=ide,index=0 \
 		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
 		-drive file=./floppy.img,format=raw,if=floppy \
 		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
 		-s -S -monitor stdio -vga vmware
@@ -565,6 +575,7 @@ run-net-test: iso
 	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
 		-drive file=./disk.img,format=raw,if=ide,index=0 \
 		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
 		-drive file=./floppy.img,format=raw,if=floppy \
 		-device ne2k_pci,netdev=net0 -netdev socket,id=net0,mcast=230.0.0.1:1234 \
 		-monitor stdio -vga vmware
@@ -577,6 +588,7 @@ run-net-dump: iso
 	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
 		-drive file=./disk.img,format=raw,if=ide,index=0 \
 		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
 		-drive file=./floppy.img,format=raw,if=floppy \
 		-device ne2k_pci,netdev=net0 \
 		-netdev user,id=net0 \
@@ -592,6 +604,7 @@ run-net-tap: iso
 	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
 		-drive file=./disk.img,format=raw,if=ide,index=0 \
 		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
 		-drive file=./floppy.img,format=raw,if=floppy \
 		-device ne2k_pci,netdev=net0,mac=52:54:00:12:34:56 \
 		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
@@ -607,8 +620,8 @@ run-net-tap-sudo: iso
 	@echo "  - TAP interface ready (10.0.2.1/24)"
 	@echo "  - Your kernel will need to configure IP (e.g., 10.0.2.15)"
 	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./disk.img,format=raw,if=ide,index=1 \
+		-drive file=./ext2_disk.img,format=raw,if=ide,index=0 \
 		-drive file=./floppy.img,format=raw,if=floppy \
 		-device ne2k_pci,netdev=net0,mac=52:54:00:12:34:56 \
 		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
@@ -632,6 +645,7 @@ run-term: iso
 	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
 		-drive file=./disk.img,format=raw,if=ide,index=0 \
 		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
 		-drive file=./floppy.img,format=raw,if=floppy \
 		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
 		-display curses
@@ -648,6 +662,7 @@ run-net-tap-term: iso
 	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
 		-drive file=./disk.img,format=raw,if=ide,index=0 \
 		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
 		-drive file=./floppy.img,format=raw,if=floppy \
 		-device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
 		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
@@ -665,7 +680,7 @@ run-net-tap-nographic: iso
 	@echo "  - Press Ctrl+A then X to quit"
 	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
 		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./ext2_disk.img,format=raw,if=ide,index=1 \
 		-drive file=./floppy.img,format=raw,if=floppy \
 		-device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
 		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
@@ -681,6 +696,7 @@ run-net-debug: iso
 	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
 		-drive file=./disk.img,format=raw,if=ide,index=0 \
 		-drive file=./disk1.img,format=raw,if=ide,index=1 \
+		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
 		-drive file=./floppy.img,format=raw,if=floppy \
 		-device e1000,netdev=net0,mac=52:54:00:12:34:56 \
 		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \

@@ -74,13 +74,9 @@ static int fat32_vfs_mount(vfs_filesystem_t* fs, drive_t* drive) {
         return VFS_ERR_INVALID;
     }
     
-    printf("FAT32: Mounting drive %s (base=0x%X, master=%d)\n", 
-           drive->name, drive->base, drive->is_master);
-    
     // Call existing FAT32 initialization
     int result = fat32_init_fs(drive->base, drive->is_master);
     if (result != SUCCESS) {
-        printf("FAT32: Mount failed (init returned %d)\n", result);
         return VFS_ERR_IO;
     }
     
@@ -109,7 +105,6 @@ static int fat32_vfs_mount(vfs_filesystem_t* fs, drive_t* drive) {
     
     fs->root = root;
     
-    printf("FAT32: Successfully mounted (root cluster=%u)\n", boot_sector.root_cluster);
     return VFS_OK;
 }
 
@@ -117,8 +112,6 @@ static int fat32_vfs_unmount(vfs_filesystem_t* fs) {
     if (!fs) {
         return VFS_ERR_INVALID;
     }
-    
-    printf("FAT32: Unmounting filesystem\n");
     
     if (fs->fs_data) {
         free(fs->fs_data);

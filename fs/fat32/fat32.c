@@ -25,33 +25,10 @@ bool write_fsinfo(void);
 int fat32_init_fs(unsigned short base, bool is_master) {
     // Read the first sector (LBA 0) into boot_sector
     if (!ata_read_sector(base, 0, &boot_sector, is_master)) {
-        printf("+++ Error reading boot sector +++.\n");
         return FAILURE;
     }
 
-    // Debug: Dump first 32 bytes of boot sector
-    printf("Boot sector first 32 bytes:\n");
     uint8_t* bs_bytes = (uint8_t*)&boot_sector;
-    for (int i = 0; i < 32; i++) {
-        printf("%02X ", bs_bytes[i]);
-        if ((i + 1) % 16 == 0) printf("\n");
-    }
-    printf("\n");
-    
-    // Debug: Show parsed values
-    printf("Parsed boot sector:\n");
-    printf("  bytesPerSector: %u (offset 11-12)\n", boot_sector.bytes_per_sector);
-    printf("  sectorsPerCluster: %u (offset 13)\n", boot_sector.sectors_per_cluster);
-    printf("  reservedSectorCount: %u (offset 14-15)\n", boot_sector.reserved_sector_count);
-    printf("  numberOfFATs: %u (offset 16)\n", boot_sector.number_of_fats);
-    printf("  rootEntryCount: %u (offset 17-18)\n", boot_sector.root_entry_count);
-    printf("  FATSize32: %u (offset 36-39)\n", boot_sector.fat_size_32);
-    printf("  rootCluster: %u (offset 44-47)\n", boot_sector.root_cluster);
-    printf("  bootSignature: 0x%02X (offset 66)\n", boot_sector.boot_signature);
-    
-    // Check boot signature at offset 510-511
-    uint8_t* sector_end = bs_bytes + 510;
-    printf("  Sector signature at 510-511: 0x%02X%02X\n", sector_end[1], sector_end[0]);
 
 #ifdef FAT32_STRICT_VALIDATION
     // Real hardware: Strict validation
@@ -77,26 +54,18 @@ int fat32_init_fs(unsigned short base, bool is_master) {
         return FAILURE;
     }
     
-    printf("FAT32 (strict): root=%u, bps=%u, spc=%u\n",
-           boot_sector.root_cluster, boot_sector.bytes_per_sector, boot_sector.sectors_per_cluster);
-#else
-    // QEMU: Basic validation only
-    printf("FAT32 (relaxed): root=%u\n", boot_sector.root_cluster);
+    // Validation complete - suppress verbose output
 #endif
 
     ata_is_master = is_master;
     ata_base_address = base;
     current_directory_cluster = boot_sector.root_cluster;
     
-    // Load FSInfo sector if available
+    // Load FSInfo sector if available (suppress output)
     if (boot_sector.fs_info != 0 && boot_sector.fs_info != 0xFFFF) {
-        printf("Loading FSInfo from sector %u...\n", boot_sector.fs_info);
-        if (!read_fsinfo()) {
-            printf("Warning: FSInfo sector invalid or corrupt, continuing without it\n");
-        }
+        read_fsinfo();  // Ignore errors - non-critical
     }
     
-    printf("FAT32 init complete, returning SUCCESS\n");
     return SUCCESS;
 }
 

@@ -87,8 +87,6 @@ int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path) {
         return VFS_ERR_INVALID;
     }
     
-    printf("VFS: Mounting drive %s as %s at %s\n", drive->name, fs_type, mount_path);
-    
     // Find registered filesystem
     vfs_filesystem_ops_t* ops = NULL;
     for (int i = 0; i < MAX_FILESYSTEMS; i++) {
@@ -100,14 +98,12 @@ int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path) {
     }
     
     if (!ops) {
-        printf("VFS: Filesystem type '%s' not registered.\n", fs_type);
         return VFS_ERR_UNSUPPORTED;
     }
     
     // Allocate filesystem structure
     vfs_filesystem_t* fs = (vfs_filesystem_t*)malloc(sizeof(vfs_filesystem_t));
     if (!fs) {
-        printf("VFS: Failed to allocate filesystem structure.\n");
         return VFS_ERR_NO_MEMORY;
     }
     
@@ -121,7 +117,6 @@ int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path) {
     // Call filesystem-specific mount
     int result = ops->mount(fs, drive);
     if (result != VFS_OK) {
-        printf("VFS: Failed to mount filesystem (error %d).\n", result);
         free(fs);
         return result;
     }

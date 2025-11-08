@@ -6,8 +6,36 @@
 unsigned short* vga_buffer = (unsigned short*)VGA_ADDRESS;
 char current_color = 0x0F; // White on black background
 
+// ANSI escape sequence state
+static int ansi_state = 0;  // 0 = normal, 1 = saw ESC, 2 = saw [
+static char ansi_params[16];
+static int ansi_param_idx = 0;
+
 void set_color(char color) {
     current_color = color;
+}
+
+// Map ANSI color codes to VGA colors
+static char ansi_to_vga_color(int ansi_code) {
+    switch (ansi_code) {
+        case 30: return 0x00; // Black
+        case 31: return 0x04; // Red
+        case 32: return 0x02; // Green
+        case 33: return 0x06; // Yellow/Brown
+        case 34: return 0x01; // Blue
+        case 35: return 0x05; // Magenta
+        case 36: return 0x03; // Cyan
+        case 37: return 0x07; // White/Light Gray
+        case 90: return 0x08; // Bright Black (Dark Gray)
+        case 91: return 0x0C; // Bright Red
+        case 92: return 0x0A; // Bright Green
+        case 93: return 0x0E; // Bright Yellow
+        case 94: return 0x09; // Bright Blue
+        case 95: return 0x0D; // Bright Magenta
+        case 96: return 0x0B; // Bright Cyan
+        case 97: return 0x0F; // Bright White
+        default: return current_color & 0x0F;
+    }
 }
 
 // clear the screen
@@ -60,6 +88,56 @@ void set_cursor_position(int x, int y) {
 void vga_write_char(char ch) {
     // Write to serial console first (for nographic mode)
     serial_write_char(SERIAL_COM1, ch);
+    
+    // Handle ANSI escape sequences
+    if (ansi_state == 0 && ch == '\x1B') {  // ESC character
+        ansi_state = 1;
+        return;
+    } else if (ansi_state == 1) {
+        if (ch == '[') {
+            ansi_state = 2;
+            ansi_param_idx = 0;
+            ansi_params[0] = '\0';
+            return;
+        } else {
+            ansi_state = 0;  // Invalid sequence, reset
+        }
+    } else if (ansi_state == 2) {
+        if (ch >= '0' && ch <= '9') {
+            if (ansi_param_idx < 15) {
+                ansi_params[ansi_param_idx++] = ch;
+                ansi_params[ansi_param_idx] = '\0';
+            }
+            return;
+        } else if (ch == ';') {
+            // Multiple parameters - not supported yet, just continue
+            return;
+        } else if (ch == 'm') {
+            // Color change command
+            ansi_state = 0;
+            int code = 0;
+            for (int i = 0; i < ansi_param_idx; i++) {
+                code = code * 10 + (ansi_params[i] - '0');
+            }
+            if (code == 0) {
+                // Reset to default
+                current_color = 0x0F;
+            } else if (code >= 30 && code <= 37) {
+                // Foreground color
+                char fg = ansi_to_vga_color(code);
+                current_color = (current_color & 0xF0) | fg;
+            } else if (code >= 90 && code <= 97) {
+                // Bright foreground color
+                char fg = ansi_to_vga_color(code);
+                current_color = (current_color & 0xF0) | fg;
+            }
+            return;
+        } else {
+            // Unknown command, reset
+            ansi_state = 0;
+            return;
+        }
+    }
     
     int cursor_x = 0;
     int cursor_y = 0;

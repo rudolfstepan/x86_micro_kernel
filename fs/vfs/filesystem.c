@@ -12,6 +12,7 @@
 // Forward declarations for VFS registration
 extern void fat32_register_vfs(void);
 extern void fat12_register_vfs(void);
+extern bool ext2_register_vfs(void);
 
 // initialize the fat32 filesystem class (legacy)
 fat32_class_t fat32;
@@ -220,11 +221,11 @@ void auto_mount_all_drives(void) {
     // Register filesystems
     fat32_register_vfs();
     fat12_register_vfs();
-    printf("VFS: FAT32 and FAT12 filesystems registered\n\n");
-    
-    printf("=== Auto-mounting detected drives ===\n");
+    ext2_register_vfs();
+    printf("VFS: FAT32, FAT12, and EXT2 filesystems registered\n");
     
     int mounted_count = 0;
+    int failed_count = 0;
     bool first_drive_set = false;
     
     // Mount all detected drives using VFS
@@ -234,43 +235,55 @@ void auto_mount_all_drives(void) {
         int result;
         
         if (drive->type == DRIVE_TYPE_ATA) {
-            printf("Mounting %s (%s)...\n", drive->name, drive->model);
-            
             // Determine filesystem type by reading boot sector
             uint8_t buffer[512];
-            if (ata_read_sector(drive->base, 0, buffer, drive->is_master)) {
-                // Check for MBR or direct FAT32
-                const char* fs_type = "fat32";  // Default to FAT32 for HDDs
-                
-                // Create mount path: first drive at /, others at /mnt/<name>
-                if (!first_drive_set) {
-                    strcpy(mount_path, "/");
-                } else {
-                    snprintf(mount_path, sizeof(mount_path), "/mnt/%s", drive->name);
-                }
-                
-                // Mount using VFS
-                result = vfs_mount(drive, fs_type, mount_path);
-                if (result == VFS_OK) {
-                    printf("  -> Mounted at %s\n", mount_path);
-                    
-                    // Set first mounted drive as current
-                    if (!first_drive_set) {
-                        current_drive = drive;
-                        first_drive_set = true;
-                        printf("  -> Set as default drive\n");
+            const char* fs_type = "fat32";  // Default to FAT32
+            bool is_ext2 = false;
+            
+            if (!ata_read_sector(drive->base, 0, buffer, drive->is_master)) {
+                failed_count++;
+                continue;
+            }
+            
+            // Check for EXT2 filesystem (magic at byte 1080 = sector 2, offset 56)
+            uint8_t ext2_buffer[1024];
+            pit_delay(5);
+            if (ata_read_sector(drive->base, 2, ext2_buffer, drive->is_master)) {
+                pit_delay(5);
+                if (ata_read_sector(drive->base, 3, ext2_buffer + 512, drive->is_master)) {
+                    uint16_t magic = *(uint16_t*)(ext2_buffer + 56);
+                    if (magic == 0xEF53) {
+                        fs_type = "ext2";
+                        is_ext2 = true;
                     }
-                    
-                    mounted_count++;
-                } else {
-                    printf("  -> Failed to mount (error %d)\n", result);
                 }
+            }
+            
+            // Create mount path: first drive at /, others at /mnt/<name>
+            if (!first_drive_set) {
+                strcpy(mount_path, "/");
+            } else {
+                snprintf(mount_path, sizeof(mount_path), "/mnt/%s", drive->name);
+            }
+            
+            // Mount using VFS
+            result = vfs_mount(drive, fs_type, mount_path);
+            if (result == VFS_OK) {
+                printf("  %-6s %-20s %s\n", drive->name, drive->model, fs_type);
+                
+                // Set first mounted drive as current
+                if (!first_drive_set) {
+                    current_drive = drive;
+                    first_drive_set = true;
+                    printf("  -> Set as default drive\n");
+                }
+                
+                mounted_count++;
+            } else {
+                failed_count++;
             }
         }
         else if (drive->type == DRIVE_TYPE_FDD) {
-            printf("Mounting %s (Floppy Drive %d)...\n", 
-                   drive->name, drive->fdd_drive_no);
-            
             // Create mount path
             if (!first_drive_set) {
                 strcpy(mount_path, "/");
@@ -281,26 +294,36 @@ void auto_mount_all_drives(void) {
             // Mount FAT12 using VFS
             result = vfs_mount(drive, "fat12", mount_path);
             if (result == VFS_OK) {
-                printf("  -> Mounted at %s\n", mount_path);
+                printf("  %-6s Floppy Drive %-7d %s\n", drive->name, drive->fdd_drive_no, "fat12");
                 
                 // Set first mounted drive as current if no HDD
                 if (!first_drive_set) {
                     current_drive = drive;
                     first_drive_set = true;
-                    printf("  -> Set as default drive\n");
                 }
                 
                 mounted_count++;
             } else {
-                printf("  -> Failed to mount (error %d)\n", result);
+                failed_count++;
             }
         }
     }
     
-    printf("=== Auto-mount complete: %d/%d drives mounted ===\n\n", 
-           mounted_count, drive_count);
+    printf("\n\x1B[32mFilesystem Status:\x1B[0m %d/%d drives mounted", mounted_count, drive_count);
+    if (failed_count > 0) {
+        printf(" \x1B[31m(%d failed)\x1B[0m", failed_count);
+    }
+    printf("\n");
     
-    if (current_drive) {
+    // If no drives were mounted, set current_drive to NULL explicitly
+    if (mounted_count == 0) {
+        printf("Warning: No drives were successfully mounted!\n");
+        current_drive = NULL;
+    }
+    
+    if (current_drive != NULL) {
         printf("Active drive: %s\n", current_drive->name);
+    } else {
+        printf("Active drive: (none - no drives mounted)\n");
     }
 }

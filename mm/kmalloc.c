@@ -109,12 +109,23 @@ int test_frame(size_t frame) {
 }
 
 size_t allocate_frame() {
-    for (size_t i = 0; i < total_memory / FRAME_SIZE; i++) {
+    size_t max_frames = total_memory / FRAME_SIZE;
+    size_t used_frames = 0;
+    
+    for (size_t i = 0; i < max_frames; i++) {
         if (!test_frame(i)) {
             set_frame(i);
             return i * FRAME_SIZE;
         }
+        used_frames++;
     }
+    
+    // No free frame - print diagnostics
+    printf("Frame allocation failed: %u/%u frames used (%u KB / %u KB)\n",
+           used_frames, max_frames, 
+           (used_frames * FRAME_SIZE) / 1024, 
+           (max_frames * FRAME_SIZE) / 1024);
+    
     return 0; // No free frame
 }
 
@@ -150,7 +161,7 @@ void* k_malloc(size_t size) {
 
     void* new_heap_block = (void*)allocate_frame();
     if (!new_heap_block) {
-        printf("Out of memory\n");
+        printf("Out of memory (failed to allocate frame for %u bytes)\n", size);
         spinlock_release_irq(&heap_lock, flags);
         return NULL;
     }
@@ -240,19 +251,12 @@ void* k_realloc(void* ptr, size_t new_size) {
 #define LINE_WIDTH 80
 
 void print_test_result(const char *test_name, bool passed) {
-    int name_length = strlen(test_name);
-    int padding = LINE_WIDTH - name_length - 7; // 7 for " [ OK ]" or " [FAILED]"
-
-
-    if(passed){
-        set_color(GREEN);
-    }else{
-        set_color(RED);
+    // Use ANSI codes for serial console + VGA colors
+    if (passed) {
+        printf("  \x1B[32m✓\x1B[0m %s\n", test_name);  // Green checkmark
+    } else {
+        printf("  \x1B[31m✗\x1B[0m %s\n", test_name);  // Red X
     }
-
-    printf("%s%*s\n", test_name, padding, passed ? "[ OK ]" : "[FAILED]");
-
-    set_color(WHITE);
 }
 
 // Test methods with boolean return value
@@ -359,25 +363,66 @@ bool test_null_pointer_dest() {
 }
 
 void test_malloc() {
-    // Add test cases and debugging information
+    // Basic allocation test (silent)
     void* ptr1 = k_malloc(1024);
     void* ptr2 = k_malloc(2048);
     k_free(ptr1);
     void* ptr3 = k_malloc(512);
-    printf("Tests complete: ptr1=%p, ptr2=%p, ptr3=%p\n", ptr1, ptr2, ptr3);
+    // Silent - tests will report via test_memory()
 }
 
 
 void test_memory() {
-    test_malloc();
-    print_test_result("Test realloc", test_realloc());
-    print_test_result("Test Reset After Free", test_reset_after_free());
-    print_test_result("Test Multiple Frees", test_multiple_frees());
-    print_test_result("Test Set Memory", test_set_memory());
-    print_test_result("Test Set Zero", test_set_zero());
-    print_test_result("Test Null Pointer Memset", test_null_pointer_memset());
-    print_test_result("Test Copy Non-Overlapping", test_copy_non_overlapping());
-    print_test_result("Test Copy Overlapping", test_copy_overlapping());
-    print_test_result("Test Null Pointer Src", test_null_pointer_src());
-    print_test_result("Test Null Pointer Dest", test_null_pointer_dest());
+    printf("Memory Tests:\n");
+    
+    int passed = 0;
+    int total = 10;
+    
+    bool result;
+    
+    result = test_realloc();
+    print_test_result("Realloc", result);
+    if (result) passed++;
+    
+    result = test_reset_after_free();
+    print_test_result("Reset After Free", result);
+    if (result) passed++;
+    
+    result = test_multiple_frees();
+    print_test_result("Multiple Frees", result);
+    if (result) passed++;
+    
+    result = test_set_memory();
+    print_test_result("Set Memory", result);
+    if (result) passed++;
+    
+    result = test_set_zero();
+    print_test_result("Set Zero", result);
+    if (result) passed++;
+    
+    result = test_null_pointer_memset();
+    print_test_result("Null Pointer Memset", result);
+    if (result) passed++;
+    
+    result = test_copy_non_overlapping();
+    print_test_result("Copy Non-Overlapping", result);
+    if (result) passed++;
+    
+    result = test_copy_overlapping();
+    print_test_result("Copy Overlapping", result);
+    if (result) passed++;
+    
+    result = test_null_pointer_src();
+    print_test_result("Null Pointer Src", result);
+    if (result) passed++;
+    
+    result = test_null_pointer_dest();
+    print_test_result("Null Pointer Dest", result);
+    if (result) passed++;
+    
+    if (passed == total) {
+        printf("\x1B[32mAll tests passed (%d/%d)\x1B[0m\n\n", passed, total);
+    } else {
+        printf("\x1B[31mSome tests failed (%d/%d passed)\x1B[0m\n\n", passed, total);
+    }
 }

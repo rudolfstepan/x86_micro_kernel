@@ -211,11 +211,11 @@ static void ata_soft_reset(unsigned short base, bool is_master) {
     pit_delay(5);  // Wait 5ms for reset to complete
     
     // Poll for drive ready (don't use wait_for_drive_ready as it may timeout)
-    printf("  Polling for drive ready after reset...\n");
+    //printf("  Polling for drive ready after reset...\n");
     for (int i = 0; i < 100; i++) {
         uint8_t status = inb(ATA_STATUS(base));
-        printf("    Poll %d: status=0x%02X\n", i, status);
-        
+        //printf("    Poll %d: status=0x%02X\n", i, status);
+
         if (status != 0x00 && status != 0xFF && !(status & 0x80)) {
             printf("  Reset complete, drive ready (status=0x%02X)\n", status);
             return;
