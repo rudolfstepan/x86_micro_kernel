@@ -45,30 +45,45 @@ unsigned int read_file_data(unsigned int start_cluster, char* buffer, unsigned i
         unsigned int sector_number = cluster_to_sector(&boot_sector, current_cluster);
         printf("read_file_data: sector_number=%u, sectorsPerCluster=%u\n", sector_number, boot_sector.sectors_per_cluster);
 
-        // Read each sector in the current cluster
-        for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
-            printf("read_file_data: Reading sector %u of cluster\n", i);
-            // Calculate the number of bytes to read in this iteration
-            unsigned int bytes_remaining = bytes_to_read - total_bytes_read;
-            unsigned int bytes_to_read_now = (bytes_remaining < SECTOR_SIZE) ? bytes_remaining : SECTOR_SIZE;
+    // Read each sector in the current cluster (safe, partial-sector aware)
+    for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
+        printf("read_file_data: Reading sector %u of cluster\n", i);
+        // Calculate the number of bytes to read in this iteration
+        unsigned int bytes_remaining = bytes_to_read - total_bytes_read;
+        unsigned int bytes_to_read_now = (bytes_remaining < SECTOR_SIZE) ? bytes_remaining : SECTOR_SIZE;
 
-            // Ensure we don't read past the end of the buffer
-            if (total_bytes_read + bytes_to_read_now > buffer_size) {
-                bytes_to_read_now = buffer_size - total_bytes_read;
-            }
-
-            printf("read_file_data: About to call ata_read_sector\n");
-            // Read data into the buffer
-            ata_read_sector(current_drive->base, sector_number + i, buffer + total_bytes_read, current_drive->is_master);
-            printf("read_file_data: ata_read_sector returned\n");
-            total_bytes_read += bytes_to_read_now;
-
-            // Break the loop if we have read the requested number of bytes
-            if (total_bytes_read >= bytes_to_read) {
-                printf("read_file_data: Reached bytes_to_read, breaking\n");
+        // Ensure we don't read past the end of the buffer
+        if (total_bytes_read + bytes_to_read_now > buffer_size) {
+            if (buffer_size <= total_bytes_read) {
+                // No space left in destination buffer
                 break;
             }
+            bytes_to_read_now = buffer_size - total_bytes_read;
         }
+
+        if (bytes_to_read_now == 0) {
+            break;
+        }
+
+        // Read the entire sector into a temporary buffer, then copy only the requested bytes.
+        uint8_t sector_buffer[SECTOR_SIZE];
+        printf("read_file_data: About to call ata_read_sector (safe read)\n");
+        if (!ata_read_sector(current_drive->base, sector_number + i, sector_buffer, current_drive->is_master)) {
+            printf("read_file_data: ata_read_sector failed for sector %u\n", sector_number + i);
+            return total_bytes_read;
+        }
+        printf("read_file_data: ata_read_sector returned\n");
+
+        // Copy only the requested bytes (handles partial final sector safely)
+        memcpy(buffer + total_bytes_read, sector_buffer, bytes_to_read_now);
+        total_bytes_read += bytes_to_read_now;
+
+        // Break the loop if we have read the requested number of bytes
+        if (total_bytes_read >= bytes_to_read) {
+            printf("read_file_data: Reached bytes_to_read, breaking\n");
+            break;
+        }
+    }
 
         printf("read_file_data: Getting next cluster\n");
         // Get the next cluster in the chain
@@ -204,15 +219,21 @@ struct fat32_dir_entry* find_file_in_directory(const char* filename) {
     
     unsigned int sector = cluster_to_sector(&boot_sector, current_directory_cluster);
     printf("  Calculated sector: %u\n", sector);
-    struct fat32_dir_entry* entries = (struct fat32_dir_entry*)malloc(SECTOR_SIZE * boot_sector.sectors_per_cluster / sizeof(struct fat32_dir_entry));
+
+    // Allocate bytes for the full cluster (sectors_per_cluster * SECTOR_SIZE)
+    size_t cluster_bytes = SECTOR_SIZE * boot_sector.sectors_per_cluster;
+    struct fat32_dir_entry* entries = (struct fat32_dir_entry*)malloc(cluster_bytes);
 
     if (entries == NULL) {
         // Handle memory allocation failure
         printf("Error: Failed to allocate memory for directory entries.\n");
         return NULL;
     }
+
+    // Read each sector into the allocated cluster buffer using byte offsets
     for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
-        if (!ata_read_sector(current_drive->base, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct fat32_dir_entry))], current_drive->is_master)) {
+        void* dest = (void*)((uint8_t*)entries + (i * SECTOR_SIZE));
+        if (!ata_read_sector(current_drive->base, sector + i, dest, current_drive->is_master)) {
             // Handle read error
             free(entries);
             return NULL;
@@ -235,11 +256,11 @@ struct fat32_dir_entry* find_file_in_directory(const char* filename) {
             debug_name[k] = entries[j].name[k];
         }
         debug_name[11] = '\0';
-        printf("  Comparing FAT32 name '%.11s' with '%s'\n", debug_name, filename);
+        //printf("  Comparing FAT32 name '%.11s' with '%s'\n", debug_name, filename);
         
         // Use the proper compare_names function that handles FAT32 8.3 format correctly
         if (compare_names((const char*)entries[j].name, filename) == 0) {
-            printf("  MATCH FOUND!\n");
+            //printf("  MATCH FOUND!\n");
             struct fat32_dir_entry* found_entry = (struct fat32_dir_entry*)malloc(sizeof(struct fat32_dir_entry));
             if (found_entry == NULL) {
                 // Handle memory allocation failure

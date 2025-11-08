@@ -134,7 +134,7 @@ static int fat32_vfs_open(vfs_filesystem_t* fs, const char* path, vfs_node_t** n
     extern drive_t* current_drive;
     current_drive = fs->drive;  // Set current drive for FAT32 functions
     
-    printf("FAT32: Opening '%s'\n", path);
+    //printf("FAT32: Opening '%s'\n", path);
     
     // Handle root directory
     if (strcmp(path, "/") == 0) {

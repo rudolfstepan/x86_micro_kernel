@@ -452,16 +452,38 @@ bool link_cluster_to_chain(struct fat32_boot_sector* boot_sector, unsigned int p
 }
 
 bool free_cluster_chain(struct fat32_boot_sector* boot_sector, unsigned int start_cluster) {
-    unsigned int current_cluster = start_cluster;
-    unsigned int nextCluster = get_next_cluster_in_chain(boot_sector, current_cluster);
+    // Validate start cluster
+    if (!is_valid_cluster(boot_sector, start_cluster)) {
+        printf("Error: Invalid start cluster %u for free_cluster_chain\n", start_cluster);
+        return false;
+    }
 
-    while (nextCluster < FAT32_EOC_MIN) {
+    unsigned int current_cluster = start_cluster;
+
+    while (1) {
+        // Read next cluster in chain (may return INVALID_CLUSTER on EOC or error)
+        unsigned int next_cluster = get_next_cluster_in_chain(boot_sector, current_cluster);
+
+        // Free the current cluster's FAT entry
         if (!mark_cluster_in_fat(boot_sector, current_cluster, 0)) {
             printf("Error: Failed to free cluster %u\n", current_cluster);
             return false;
         }
-        current_cluster = nextCluster;
-        nextCluster = get_next_cluster_in_chain(boot_sector, current_cluster);
+
+        // If next_cluster indicates end-of-chain or an error, stop
+        if (next_cluster == INVALID_CLUSTER || is_end_of_cluster_chain(next_cluster)) {
+            break;
+        }
+
+        // If the next cluster is invalid for the filesystem boundaries, stop to avoid loops
+        if (!is_valid_cluster(boot_sector, next_cluster)) {
+            printf("Warning: Next cluster %u is invalid, stopping free operation\n", next_cluster);
+            break;
+        }
+
+        // Continue with the next cluster
+        current_cluster = next_cluster;
     }
+
     return true;
 }
