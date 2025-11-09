@@ -1,8 +1,8 @@
 #include "fat12.h"
-#include "drivers/block/fdd.h"
-#include "lib/libc/stdio.h"
-#include "lib/libc/stdlib.h"
-#include "lib/libc/string.h"
+#include "../../drivers/block/fdd.h"
+#include "../../lib/libc/stdio.h"
+#include "../../lib/libc/stdlib.h"
+#include "../../lib/libc/string.h"
 
 // Additional constants
 #define MAX_PATH_LENGTH 256
@@ -21,10 +21,10 @@ static bool fdc_read_with_fallback(uint8_t drive, uint8_t head, uint8_t track, u
         return true;
     }
     printf("fdc_read_with_fallback: DMA read failed for %d/%d/%d, trying no-DMA fallback\n", track, head, sector);
-    if (fdc_read_sector_no_dma(drive, head, track, sector, out_buf)) {
-        return true;
-    }
-    printf("fdc_read_with_fallback: no-DMA fallback also failed for %d/%d/%d\n", track, head, sector);
+    // if (fdc_read_sector_no_dma(drive, head, track, sector, out_buf)) {
+    //     return true;
+    // }
+    // printf("fdc_read_with_fallback: no-DMA fallback also failed for %d/%d/%d\n", track, head, sector);
     return false;
 }
 
@@ -32,6 +32,9 @@ static bool fdc_read_with_fallback(uint8_t drive, uint8_t head, uint8_t track, u
 void logical_to_chs(int logical_sector, int* track, int* head, int* sector) {
     uint16_t spt = FAT12_DEFAULT_SPT;
     uint16_t heads = FAT12_DEFAULT_HEADS;
+
+    // Debug: Log input logical sector
+    printf("logical_to_chs: Converting logical sector %d\n", logical_sector);
     
     // Use boot sector values if available
     if (fat12 && fat12->boot_sector.sectors_per_track > 0 && fat12->boot_sector.heads > 0) {
@@ -145,13 +148,22 @@ int read_fat12(uint8_t drive, fat12_t* fat12) {
     }
 
     printf("Attempting to read boot sector from drive %d (H:0, C:0, S:1)...\n", drive);
+
+    // Debug: Verify drive state before reading
+    printf("Drive state before boot sector read: Drive=%d\n", drive);
     if (!fdc_read_with_fallback(drive, 0, 0, 1, buffer)) {
         printf("Error reading boot sector from FDC (both DMA and no-DMA failed).\n");
+
+        // Debug: Log failure details
+        printf("Failed to read boot sector at H:0, C:0, S:1\n");
         free(buffer);
         return false;
     }
 
     printf("Boot sector read successful. First 16 bytes:\n");
+
+    // Debug: Log boot sector content
+    hex_dump(buffer, 16);
     for (int i = 0; i < 16; i++) {
         printf("%02X ", buffer[i]);
     }

@@ -1,6 +1,6 @@
 // ATA driver
 #include "ata.h"
-#include "drivers/char/io.h"
+#include "../char/io.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
 #include "lib/libc/stdlib.h"

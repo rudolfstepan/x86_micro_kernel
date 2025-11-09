@@ -119,7 +119,7 @@ static void early_init(void) {
     // Basic hardware
     timer_install(1);  // PIT timer with 1ms ticks
     kb_install();      // Keyboard driver
-    fdc_initialize();  // Floppy disk controller
+    fdc_init_controller();  // Floppy disk controller
     
     // Re-enable interrupts now that everything is set up
     irq_enable();

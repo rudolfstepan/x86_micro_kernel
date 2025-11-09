@@ -1,7 +1,7 @@
 #ifndef ATA_H
 #define ATA_H
 
-#include "drivers/bus/drives.h"
+#include "../bus/drives.h"
 
 #include <stdbool.h>
 #include <stddef.h>

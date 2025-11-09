@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <lib/libc/definitions.h>
+#include "definitions.h"
 
 // Define INT_MAX and INT_MIN if not provided by the standard library
 #ifndef INT_MAX

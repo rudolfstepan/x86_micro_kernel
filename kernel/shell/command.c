@@ -1273,11 +1273,11 @@ void cmd_fdd(int arg_count, const char** arguments) {
         debug_read_bootsector(1);
     } else {
 
-        int sector = strtoul(arguments[0], NULL, 10);
+        // int sector = strtoul(arguments[0], NULL, 10);
 
-        printf("Reading sector %d\n", sector);
+        // printf("Reading sector %d\n", sector);
 
-        debug_read_bootsector(sector);
+        // debug_read_bootsector(sector);
     }
 }
 

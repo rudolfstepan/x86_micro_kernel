@@ -4,9 +4,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "lib/libc/string.h"
-#include "lib/libc/stdlib.h"
-#include "drivers/block/fdd.h"
+#include "../../lib/libc/string.h"
+#include "../../lib/libc/stdlib.h"
+#include "../../drivers/block/fdd.h"
 
 // FAT12 Constants
 #define FAT12_SECTOR_SIZE           512

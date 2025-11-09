@@ -72,7 +72,7 @@ endif
 
 CFLAGS := -m32 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin \
           -O1 -Wall -Wextra -g -Wno-unused-parameter -Wno-unused-variable -U_FORTIFY_SOURCE \
-          -I. -I$(ARCH_DIR) -I$(ARCH_DIR)/include -I$(LIB_DIR)/libc -I$(KERNEL_DIR)/shell \
+          -I$(OUTPUT_DIR) -I. -I$(ARCH_DIR) -I$(ARCH_DIR)/include -I$(LIB_DIR)/libc -I$(KERNEL_DIR)/shell \
           $(TARGET_DEFINES) $(VIDEO_DEFINES)
 
 LDFLAGS := -m elf_i386 -nostdlib

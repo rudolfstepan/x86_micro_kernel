@@ -28,10 +28,9 @@ extern void fdd_irq_handler(uint8_t* r);
 
 void fdc_initialize();
 void fdd_detect_drives();
-void debug_read_bootsector(uint8_t sector);
-bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer);
-bool fdc_read_sector_no_dma(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer); // added fallback API
-bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track, uint8_t start_sector, uint8_t num_sectors, void* buffer);
+
+
+void debug_read_bootsector();
 bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer);
 
 void fdc_motor_on(int drive);

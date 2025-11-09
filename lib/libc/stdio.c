@@ -1,14 +1,15 @@
-#include <lib/libc/stdio.h>
-#include <lib/libc/string.h>
-#include <lib/libc/stdlib.h>
+#include "stdio.h"
+#include "string.h"
+#include "stdlib.h"
 
 #include <stdarg.h>
 #include <stddef.h>
 
 
-#include "fs/vfs/filesystem.h"
-#include "fs/fat32/fat32.h"
-#include "fs/fat12/fat12.h"
+#include "../../fs/vfs/filesystem.h"
+#include "../../drivers/bus/drives.h"
+#include "../../fs/fat32/fat32.h"
+#include "../../fs/fat12/fat12.h"
 #include "drivers/char/io.h"
 #include "drivers/video/display.h"
 #include "drivers/char/kb.h"

@@ -1,9 +1,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <lib/libc/stdlib.h>
-#include <lib/libc/stdio.h>
-#include <lib/libc/string.h>
+#include "stdlib.h"
+#include "stdio.h"
+#include "string.h"
 #include "drivers/video/video.h"
 #include "kernel/time/pit.h"
 
