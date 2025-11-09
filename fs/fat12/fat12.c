@@ -33,6 +33,12 @@ void logical_to_chs(int logical_sector, int* track, int* head, int* sector) {
     uint16_t spt = FAT12_DEFAULT_SPT;
     uint16_t heads = FAT12_DEFAULT_HEADS;
 
+    if (logical_sector < 0) {
+        printf("ERROR: logical_to_chs called with negative sector %d\n", logical_sector);
+        *track = *head = *sector = 0;
+        return;
+    }
+
     // Debug: Log input logical sector
     printf("logical_to_chs: Converting logical sector %d\n", logical_sector);
     
@@ -175,11 +181,66 @@ int read_fat12(uint8_t drive, fat12_t* fat12) {
     memcpy(&fat12->boot_sector, buffer, sizeof(fat12_boot_sector));
     free(buffer);
 
-    // Validate boot sector
+        // Validate boot sector
     if (!validate_fat12_boot_sector(&fat12->boot_sector)) {
         printf("Boot sector validation failed.\n");
         return false;
     }
+
+    // Geometry and layout from BPB (no hard-coded sector sizes/macros)
+    const uint16_t bps   = fat12->boot_sector.bytes_per_sector;
+    const uint16_t spt   = fat12->boot_sector.sectors_per_track;
+    const uint16_t heads = fat12->boot_sector.heads;
+    const uint16_t rsvd  = fat12->boot_sector.reserved_sectors;
+    const uint8_t  fats  = fat12->boot_sector.fat_count;
+    const uint16_t spf   = fat12->boot_sector.sectors_per_fat;
+    const uint16_t root_entries = fat12->boot_sector.root_entry_count;
+
+    // Number of sectors occupied by the root directory
+    const uint32_t root_dir_sectors = ((root_entries * 32u) + (bps - 1u)) / bps;
+
+    // Compute region starts in logical sectors (LBA, from start of volume)
+    fat12->fat_start     = rsvd;                             // first FAT
+    fat12->root_dir_start= fat12->fat_start + (fats * spf);  // root dir starts after all FATs
+    fat12->data_start    = fat12->root_dir_start + root_dir_sectors;
+
+    printf("Boot sector geometry:\n");
+    printf("  BPS=%u, SPT=%u, Heads=%u\n", bps, spt, heads);
+    printf("  Reserved=%u, FATs=%u, SPF=%u, RootEntries=%u\n", rsvd, fats, spf, root_entries);
+
+    printf("Calculated sectors:\n");
+    printf("  fat_start: %u\n", fat12->fat_start);
+    printf("  root_dir_start: %u\n", fat12->root_dir_start);
+    printf("  data_start: %u\n", fat12->data_start);
+
+    // Allocate and load FAT table into memory
+    uint32_t fat_size_bytes = (uint32_t)spf * bps;
+    fat12->fat = (uint8_t*)malloc(fat_size_bytes);
+    if (!fat12->fat) {
+        printf("ERROR: Failed to allocate memory for FAT table (%u bytes)\n", fat_size_bytes);
+        return false;
+    }
+
+    printf("Loading FAT table (%u sectors, %u bytes)...\n", spf, fat_size_bytes);
+    for (uint32_t i = 0; i < spf; i++) {
+        int logical_sector = (int)fat12->fat_start + (int)i;
+        int track, head, sector;
+        logical_to_chs(logical_sector, &track, &head, &sector);
+
+        uint8_t* fat_buffer = fat12->fat + (i * bps);
+        if (!fdc_read_with_fallback(drive, head, track, sector, fat_buffer)) {
+            printf("ERROR: Failed to read FAT sector %u\n", i);
+            free(fat12->fat);
+            fat12->fat = NULL;
+            return false;
+        }
+    }
+
+    printf("FAT table loaded successfully\n");
+    printf("fat12 initialized: FAT Start Sector: %u, Root Directory Start Sector: %u, Data Region Start Sector: %u\n",
+           fat12->fat_start, fat12->root_dir_start, fat12->data_start);
+    return true;
+
 
     // Debug: Show boot sector geometry
     printf("Boot sector geometry:\n");
@@ -342,96 +403,140 @@ void extract_time(uint16_t fat_time, int* hours, int* minutes, int* seconds) {
 // Read directory entries (root or subdirectory)
 int fat12_read_dir_entries(directory_entry* dir) {
     int entries_found = 0;
-    uint8_t* local_buffer = NULL;  // Use local buffer instead of global
-    
+    uint8_t* local_buffer = NULL;
+
     // Free existing entries allocation if any
     if (entries != NULL) {
         free(entries);
         entries = NULL;
     }
-    
+
     entries = (directory_entry*)malloc(FAT12_MAX_ROOT_ENTRIES * sizeof(directory_entry));
     if (!entries) {
         printf("Memory allocation failed for directory entries.\n");
         return -1;
     }
 
-    local_buffer = (uint8_t*)malloc(FAT12_SECTOR_SIZE * FAT12_ROOT_DIR_SECTORS);  // Allocate buffer for multiple sectors
-    if (!local_buffer) {
-        printf("Memory allocation failed for sector buffer.\n");
-        free(entries);
-        entries = NULL;
-        return -1;
-    }
+    const uint16_t bps = fat12->boot_sector.bytes_per_sector;
+    const uint16_t spc = fat12->boot_sector.sectors_per_cluster;
+    const uint16_t root_entries = fat12->boot_sector.root_entry_count;
+    const uint32_t root_dir_sectors = ((root_entries * 32u) + (bps - 1u)) / bps;
 
     if (dir == NULL) {
+        // --- ROOT DIRECTORY ---
         printf("Reading root directory entries.\n");
 
-        int logical_sector = fat12->root_dir_start;
-        int track, head, sector;
-        logical_to_chs(logical_sector, &track, &head, &sector);
+        // Read all root dir sectors into a contiguous buffer
+        const uint32_t root_bytes = root_dir_sectors * bps;
+        local_buffer = (uint8_t*)malloc(root_bytes);
+        if (!local_buffer) {
+            printf("Memory allocation failed for root dir buffer.\n");
+            free(entries); entries = NULL;
+            return -1;
+        }
 
-        // Read multiple sectors at once (use per-sector fallback)
-        for (int si = 0; si < FAT12_ROOT_DIR_SECTORS; si++) {
-            int ls = logical_sector + si;
+        for (uint32_t si = 0; si < root_dir_sectors; si++) {
+            int ls = (int)fat12->root_dir_start + (int)si;
             int t, h, s;
             logical_to_chs(ls, &t, &h, &s);
-            uint8_t* dest = local_buffer + (si * FAT12_SECTOR_SIZE);
-            if (!fdc_read_with_fallback(current_fdd_drive, h, t, s, dest)) {
-                printf("Error reading root directory sector %d (logical %d).\n", si, ls);
-                free(entries);
+            if (!fdc_read_with_fallback(current_fdd_drive, h, t, s, local_buffer + si * bps)) {
+                printf("Error reading root directory sector %u (logical %d).\n", si, ls);
+                free(entries); entries = NULL;
                 free(local_buffer);
                 return -1;
             }
         }
 
-        // Copy entries from the buffer
-        for (int i = 0; i < FAT12_ROOT_DIR_SECTORS && entries_found < FAT12_MAX_ROOT_ENTRIES; i++) {
-            memcpy(&entries[entries_found], local_buffer + (i * FAT12_SECTOR_SIZE), FAT12_SECTOR_SIZE);
-            entries_found += FAT12_SECTOR_SIZE / FAT12_ROOT_ENTRY_SIZE;
+        // Parse 32-byte entries
+        const uint32_t total_entries = root_bytes / sizeof(directory_entry);
+        for (uint32_t i = 0; i < total_entries && entries_found < FAT12_MAX_ROOT_ENTRIES; i++) {
+            directory_entry* e = (directory_entry*)(local_buffer + i * sizeof(directory_entry));
+
+            uint8_t first = (uint8_t)e->filename[0];
+            if (first == 0x00) break;            // no more entries
+            if (first == 0xE5) continue;         // deleted entry
+            if ((e->attributes & 0x0F) == 0x0F)  // LFN entry
+                continue;
+
+            entries[entries_found++] = *e;
         }
     } else {
-        // Read subdirectory starting from its cluster
+        // --- SUBDIRECTORY from its cluster ---
         int cluster = dir->first_cluster_low;
+
+        // Root directory in FAT12 has cluster number = 0 (not used)
+        if (cluster == 0) {
+            printf("Detected root directory entry (cluster=0), switching to root read mode.\n");
+            free(entries);
+            entries = NULL;
+            return fat12_read_dir_entries(NULL); // Redirect to root reader
+        }
+
+        if (!is_valid_cluster_fat12(cluster)) {
+            printf("ERROR: Invalid subdirectory cluster: %d (not in valid FAT12 range)\n", cluster);
+            free(entries);
+            entries = NULL;
+            return -1;
+        }
+
         printf("Reading subdirectory. Start cluster: %d\n", cluster);
 
-        while (cluster >= FAT12_MIN_CLUSTER && cluster < FAT12_MAX_CLUSTER && entries_found < FAT12_MAX_ROOT_ENTRIES) {
-            int start_sector = fat12->data_start + (cluster - 2) * fat12->boot_sector.sectors_per_cluster;
-            int track, head, sector;
-            logical_to_chs(start_sector, &track, &head, &sector);
+        const uint16_t bps = fat12->boot_sector.bytes_per_sector;
+        const uint16_t spc = fat12->boot_sector.sectors_per_cluster;
+        const uint32_t cluster_bytes = (uint32_t)spc * bps;
 
-            // Read multiple sectors for the cluster
-            // Read each sector of the cluster with fallback
-            for (int si = 0; si < fat12->boot_sector.sectors_per_cluster; si++) {
-                int ls = (fat12->data_start + (cluster - 2) * fat12->boot_sector.sectors_per_cluster) + si;
+        uint8_t* local_buffer = (uint8_t*)malloc(cluster_bytes);
+        if (!local_buffer) {
+            printf("Memory allocation failed for subdir buffer.\n");
+            free(entries);
+            entries = NULL;
+            return -1;
+        }
+
+        while (is_valid_cluster_fat12(cluster) && entries_found < FAT12_MAX_ROOT_ENTRIES) {
+            // Read the whole cluster (sector by sector)
+            for (uint16_t si = 0; si < spc; si++) {
+                int ls = (int)fat12->data_start + (int)((cluster - 2) * spc) + (int)si;
                 int t, h, s;
                 logical_to_chs(ls, &t, &h, &s);
-                uint8_t* dest = local_buffer + (si * FAT12_SECTOR_SIZE);
-                if (!fdc_read_with_fallback(current_fdd_drive, h, t, s, dest)) {
-                    printf("Error reading subdirectory sector %d (logical %d).\n", si, ls);
-                    free(entries);
+                if (!fdc_read_with_fallback(current_fdd_drive, h, t, s, local_buffer + si * bps)) {
+                    printf("Error reading subdirectory sector %u of cluster %d (logical %d).\n", si, cluster, ls);
+                    free(entries); entries = NULL;
                     free(local_buffer);
                     return -1;
                 }
             }
 
-            // Copy entries from the buffer
-            for (int i = 0; i < fat12->boot_sector.sectors_per_cluster && entries_found < FAT12_MAX_ROOT_ENTRIES; i++) {
-                memcpy(&entries[entries_found], local_buffer + (i * FAT12_SECTOR_SIZE), FAT12_SECTOR_SIZE);
-                entries_found += FAT12_SECTOR_SIZE / FAT12_ROOT_ENTRY_SIZE;
+            // Parse 32-byte entries from this cluster
+            const uint32_t total_entries = cluster_bytes / sizeof(directory_entry);
+            for (uint32_t i = 0; i < total_entries && entries_found < FAT12_MAX_ROOT_ENTRIES; i++) {
+                directory_entry* e = (directory_entry*)(local_buffer + i * sizeof(directory_entry));
+
+                uint8_t first = (uint8_t)e->filename[0];
+                if (first == 0x00) { // end of dir in this cluster
+                    // could still have further clusters; FAT says 0x00 can appear before EOC,
+                    // but commonly signals end—safe to stop cluster loop as well
+                    cluster = -1;
+                    break;
+                }
+                if (first == 0xE5) continue;         // deleted
+                if ((e->attributes & 0x0F) == 0x0F)  // LFN
+                    continue;
+
+                entries[entries_found++] = *e;
             }
 
-            cluster = get_next_cluster(cluster);  // Move to the next cluster in the chain
-            printf("Next cluster: %d\n", cluster);
+            if (cluster < 0) break;
+
+            cluster = get_next_cluster(cluster);  // next in chain
+            if (cluster < 0) break;               // EOC or error
         }
     }
 
     printf("Entries found: %d\n", entries_found);
-
-    free(local_buffer);
+    if (local_buffer) free(local_buffer);
     return entries_found;
 }
-
 
 // Print directory entries in DOS-like format
 void print_dir_entries(directory_entry* dir, int entries_found) {
