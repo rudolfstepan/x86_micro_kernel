@@ -676,14 +676,15 @@ run-net-tap-term: iso
 		-display curses
 	@echo "  - Run 'make run-net-tap' to start QEMU"
 
-# Run with TAP networking and no graphics (serial console only)
+# Run with TAP networking and no graphics (serial console only) with USB passthrough/devices
 run-net-tap-nographic: iso
-	@echo "Starting QEMU with TAP networking (no graphics, serial console)..."
+	@echo "Starting QEMU with TAP networking (no graphics, serial console) and USB support..."
 	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
 	@sudo ip link set tap0 up
 	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
 	@echo "  - TAP interface ready (10.0.2.1/24)"
 	@echo "  - Serial console mode (full scrollback)"
+	@echo "  - USB: qemu-xhci + usb-kbd + usb-tablet added"
 	@echo "  - Press Ctrl+A then X to quit"
 	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
 		-drive file=./disk.img,format=raw,if=ide,index=0 \
@@ -691,6 +692,9 @@ run-net-tap-nographic: iso
 		-drive file=./floppy.img,format=raw,if=floppy \
 		-device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
 		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
+		-device qemu-xhci \
+		-device usb-kbd \
+		-device usb-tablet \
 		-nographic
 
 # Run with E1000 debug tracing
