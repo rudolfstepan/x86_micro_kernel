@@ -25,7 +25,6 @@
 #include "drivers/net/ne2000.h"
 // #include "drivers/net/vmxnet3.h"
 
-
 char current_path[256] = "/";
 extern pci_device_t pci_devices[];
 extern size_t pci_device_count;
@@ -98,7 +97,6 @@ void cmd_arp(int cnt, const char **args);
 void cmd_history(int cnt, const char **args);
 void cmd_basic(int cnt, const char **args);
 
-
 // Command table
 command_t command_table[MAX_COMMANDS] = {
     {"help", cmd_help},
@@ -144,7 +142,6 @@ command_t command_table[MAX_COMMANDS] = {
 
 #define MAX_ARGS 10
 #define MAX_LENGTH 64
-
 
 /**
  * Parse path for drive prefix (e.g., /hdd0/dir or hdd0:/dir)
@@ -618,7 +615,7 @@ void command_loop() {
         
         if (ch != 0) {
             // Check for escape sequences (arrow keys, etc.)
-            if (ch == '\x1B') {  // ESC
+            if (ch == '\0') {  // ESC
                 if (handle_escape_sequence(input, &buffer_index, &cursor_pos)) {
                     continue;
                 }
@@ -796,8 +793,22 @@ void cmd_help(int arg_count, const char **args) {
     printf("  Delete      - Delete character at cursor\n");
     
     printf("\nAvailable Commands:\n");
-    for (int i = 0; command_table[i].name != NULL; i++) {
-        printf("  %s\n", command_table[i].name);
+    /* Print commands in multiple columns (1-3) depending on how many commands exist */
+    int cmd_count = 0;
+    while (command_table[cmd_count].name != NULL) cmd_count++;
+    int cols = 3;
+    if (cmd_count < 6) cols = 1;
+    else if (cmd_count < 20) cols = 2;
+    int rows = (cmd_count + cols - 1) / cols;
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            int idx = c * rows + r;
+            if (idx < cmd_count) {
+                /* Two leading spaces then a left-aligned column of width 20 */
+                printf("  %-20s", command_table[idx].name);
+            }
+        }
+        printf("\n");
     }
     
     printf("\nTip: Use 'history' to see previous commands\n");
@@ -1140,7 +1151,6 @@ void cmd_kill(int arg_count, const char** arguments) {
     }
 }
 
-
 //TryContext ctx;
 
 void cmd_sys(int arg_count, const char** arguments) {
@@ -1320,7 +1330,6 @@ void cmd_run(int arg_count, const char** arguments) {
     }
 }
 
-
 // Open the specified file and print its contents
 void open_file(const char* path) {
     printf("Opening file: %s\n", path);
@@ -1335,7 +1344,7 @@ void open_file(const char* path) {
         }
 
         printf("Name: %s\n", file->name);
-        printf("Size: %d\n", file->size);
+        printf("Size: %zu\n", file->size);
 
         // Calculate the size of the buffer based on the size of the file
         size_t buffer_size = file->size; // Use the file size as the buffer size directly
