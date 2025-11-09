@@ -8,6 +8,7 @@
 #include "drivers/char/rtc.h"
 #include "drivers/block/ata.h"
 #include "drivers/bus/drives.h"
+#include "drivers/bus/pci.h"
 
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
@@ -26,6 +27,8 @@
 
 
 char current_path[256] = "/";
+extern pci_device_t pci_devices[];
+extern size_t pci_device_count;
 
 // Forward declarations
 int split_input(const char* input, char* command, char** arguments, int max_length, int max_args);
@@ -65,6 +68,7 @@ void cmd_cls(int cnt, const char **args);
 void cmd_ls(int cnt, const char **args);
 void cmd_cd(int cnt, const char **args);
 void cmd_drives(int cnt, const char **args);
+void cmd_pci(int cnt, const char **args);
 void cmd_mount(int cnt, const char **args);
 void cmd_mkdir(int cnt, const char **args);
 void cmd_rmdir(int cnt, const char **args);
@@ -134,6 +138,7 @@ command_t command_table[MAX_COMMANDS] = {
     {"arp", cmd_arp},
     {"history", cmd_history},
     {"basic", cmd_basic},
+    {"pci", cmd_pci},
     {NULL, NULL} // End marker
 };
 
@@ -1748,6 +1753,32 @@ void cmd_history(int arg_count, const char** arguments) {
 /**
  * Launch BASIC interpreter
  */
+void cmd_pci(int arg_count, const char **args) {
+    if (pci_device_count == 0) {
+        printf("No PCI devices detected\n");
+        return;
+    }
+
+    printf("\nDetected PCI devices: %u\n", (unsigned)pci_device_count);
+    for (size_t i = 0; i < pci_device_count; i++) {
+        pci_device_t *d = &pci_devices[i];
+        printf("[%02u] Bus %u Slot %u Func %u  Vendor:0x%04X Device:0x%04X\n",
+               (unsigned)i, d->bus, d->slot, d->function,
+               (unsigned)d->vendor_id, (unsigned)d->device_id);
+        printf("     Class: 0x%02X Subclass: 0x%02X ProgIF: 0x%02X Rev: 0x%02X Header: 0x%02X IRQ: %u\n",
+               (unsigned)d->class_code, (unsigned)d->subclass_code,
+               (unsigned)d->prog_if, (unsigned)d->revision_id,
+               (unsigned)d->header_type, (unsigned)d->irq_line);
+
+        for (int b = 0; b < 6; b++) {
+            if (d->bar[b] != 0) {
+                printf("     BAR%-1d: 0x%08X\n", b, (unsigned)d->bar[b]);
+            }
+        }
+        printf("\n");
+    }
+}
+
 #include "userspace/bin/basic.c"
 
 void cmd_basic(int arg_count, const char** arguments) {

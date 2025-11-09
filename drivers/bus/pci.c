@@ -168,6 +168,11 @@ void pci_scan_function(uint8_t bus, uint8_t slot, uint8_t function) {
         return;
     }
 
+    // Store PCI location so callers can report bus/slot/function
+    dev.bus = bus;
+    dev.slot = slot;
+    dev.function = function;
+
     // Populate the device information
     dev.device_id = pci_read_config_word(bus, slot, function, 0x02);
     dev.class_code = pci_read_config_byte(bus, slot, function, 0x0B);
