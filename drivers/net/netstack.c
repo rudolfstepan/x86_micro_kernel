@@ -398,7 +398,13 @@ void arp_send_request(uint32_t target_ip) {
     format_ipv4(target_ip, ip_str);
     printf("[ARP] Sending request for %s\n", ip_str);
     
-    e1000_send_packet(packet, sizeof(packet));
+    if (ne2000_is_initialized()) {
+        ne2000_send_packet(packet, sizeof(packet));
+    } else if (e1000_is_initialized()) {
+        e1000_send_packet(packet, sizeof(packet));
+    } else if (rtl8139_is_initialized()) {
+        rtl8139_send_packet(packet, sizeof(packet));
+    }
 }
 
 void arp_send_reply(uint32_t target_ip, uint8_t *target_mac) {
@@ -427,7 +433,13 @@ void arp_send_reply(uint32_t target_ip, uint8_t *target_mac) {
     format_ipv4(target_ip, ip_str);
     printf("[ARP] Sending reply to %s\n", ip_str);
     
-    e1000_send_packet(packet, sizeof(packet));
+    if (ne2000_is_initialized()) {
+        ne2000_send_packet(packet, sizeof(packet));
+    } else if (e1000_is_initialized()) {
+        e1000_send_packet(packet, sizeof(packet));
+    } else if (rtl8139_is_initialized()) {
+        rtl8139_send_packet(packet, sizeof(packet));
+    }
 }
 
 static void handle_arp_packet(uint8_t *packet, uint16_t length) {
