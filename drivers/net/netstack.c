@@ -107,7 +107,191 @@ void format_mac(uint8_t *mac, char *buffer) {
 }
 
 // Getter for current IP address
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+#include <string.h>
+
+// Minimal DHCP definitions
+#define DHCP_CLIENT_PORT 68
+#define DHCP_SERVER_PORT 67
+#define DHCP_DISCOVER 1
+#define DHCP_OFFER 2
+#define DHCP_REQUEST 3
+#define DHCP_ACK 5
+
+#define DHCP_MAGIC_COOKIE 0x63825363
+
+struct dhcp_packet {
+    uint8_t op;
+    uint8_t htype;
+    uint8_t hlen;
+    uint8_t hops;
+    uint32_t xid;
+    uint16_t secs;
+    uint16_t flags;
+    uint32_t ciaddr;
+    uint32_t yiaddr;
+    uint32_t siaddr;
+    uint32_t giaddr;
+    uint8_t chaddr[16];
+    uint8_t sname[64];
+    uint8_t file[128];
+    uint8_t options[312];
+} __attribute__((packed));
+
+#include "drivers/net/rtl8139.h"
+#include "drivers/net/ne2000.h"
+#include "drivers/net/e1000.h"
+
+int netstack_send_udp(uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, const void *data, size_t len) {
+    // Build Ethernet + IPv4 + UDP headers
+    uint8_t packet[1514] = {0};
+    uint8_t *ptr = packet;
+
+    // Ethernet header
+    uint8_t dst_mac[6];
+    if (!arp_lookup(dst_ip, dst_mac)) {
+        printf("[UDP] No ARP entry for destination, sending ARP request\n");
+        arp_send_request(dst_ip);
+        return -1;
+    }
+    memcpy(ptr, dst_mac, 6); ptr += 6;
+    memcpy(ptr, net_config.mac_address, 6); ptr += 6;
+    *(uint16_t*)ptr = htons(0x0800); ptr += 2; // EtherType IPv4
+
+    // IPv4 header
+    ip_header_t *ip = (ip_header_t*)ptr;
+    ip->version_ihl = 0x45;
+    ip->tos = 0;
+    ip->total_length = htons(sizeof(ip_header_t) + sizeof(udp_header_t) + len);
+    ip->identification = htons(ip_identification++);
+    ip->flags_fragment = 0;
+    ip->ttl = 64;
+    ip->protocol = IP_PROTOCOL_UDP;
+    ip->src_ip = htonl(net_config.ip_address);
+    ip->dst_ip = htonl(dst_ip);
+    ip->header_checksum = 0;
+    ip->header_checksum = ip_checksum(ip, sizeof(ip_header_t));
+    ptr += sizeof(ip_header_t);
+
+    // UDP header
+    udp_header_t *udp = (udp_header_t*)ptr;
+    udp->src_port = htons(src_port);
+    udp->dst_port = htons(dst_port);
+    udp->length = htons(sizeof(udp_header_t) + len);
+    udp->checksum = 0; // Optional for IPv4
+    ptr += sizeof(udp_header_t);
+
+    // Payload
+    memcpy(ptr, data, len);
+    ptr += len;
+
+    size_t total_len = ptr - packet;
+
+    // Send using available NIC
+    if (ne2000_is_initialized()) {
+        ne2000_send_packet(packet, total_len);
+        return 0;
+    } else if (e1000_is_initialized()) {
+        e1000_send_packet(packet, total_len);
+        return 0;
+    } else if (rtl8139_is_initialized()) {
+        rtl8139_send_packet(packet, total_len);
+        return 0;
+    } else {
+        printf("[UDP] No supported NIC initialized\n");
+        return -1;
+    }
+}
+int netstack_receive_udp(uint16_t port, void *buffer, size_t buflen, uint32_t *src_ip, uint16_t *src_port) {
+    uint8_t pkt[1514];
+    int len = -1;
+
+    // Try each NIC for a received packet
+    if (ne2000_is_initialized()) {
+        len = ne2000_receive_packet(pkt, sizeof(pkt));
+    } else if (e1000_is_initialized()) {
+        len = e1000_receive_packet(pkt, sizeof(pkt));
+    } else if (rtl8139_is_initialized()) {
+        // No direct receive function, skip for now
+        return -1;
+    } else {
+        return -1;
+    }
+
+    if (len < 42) return -1; // Minimum Ethernet+IP+UDP
+
+    // Parse Ethernet header
+    uint16_t ethertype = (pkt[12] << 8) | pkt[13];
+    if (ethertype != 0x0800) return -1; // Not IPv4
+
+    // Parse IP header
+    ip_header_t *ip = (ip_header_t *)(pkt + 14);
+    if (ip->protocol != IP_PROTOCOL_UDP) return -1;
+
+    int ip_header_len = (ip->version_ihl & 0x0F) * 4;
+    udp_header_t *udp = (udp_header_t *)(pkt + 14 + ip_header_len);
+
+    if (ntohs(udp->dst_port) != port) return -1;
+
+    int udp_len = ntohs(udp->length) - sizeof(udp_header_t);
+    if (udp_len > 0 && udp_len <= (len - 14 - ip_header_len - sizeof(udp_header_t))) {
+        if (src_ip) *src_ip = ntohl(ip->src_ip);
+        if (src_port) *src_port = ntohs(udp->src_port);
+        memcpy(buffer, pkt + 14 + ip_header_len + sizeof(udp_header_t), udp_len < buflen ? udp_len : buflen);
+        return udp_len < buflen ? udp_len : buflen;
+    }
+    return -1;
+}
+// Forward declarations for sending/receiving raw UDP packets
+extern int netstack_send_udp(uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, const void *data, size_t len);
+extern int netstack_receive_udp(uint16_t port, void *buffer, size_t buflen, uint32_t *src_ip, uint16_t *src_port);
+
+// Minimal random function for xid
+static uint32_t dhcp_random_xid(void) {
+    static uint32_t seed = 0x12345678;
+    seed = seed * 1664525 + 1013904223;
+    return seed;
+}
+
+// Send DHCPDISCOVER and wait for DHCPOFFER
+static uint32_t dhcp_request_ip(uint8_t *mac) {
+    struct dhcp_packet discover;
+    memset(&discover, 0, sizeof(discover));
+    discover.op = 1; // BOOTREQUEST
+    discover.htype = 1; // Ethernet
+    discover.hlen = 6;
+    discover.xid = dhcp_random_xid();
+    memcpy(discover.chaddr, mac, 6);
+    uint8_t *opt = discover.options;
+    *(uint32_t*)opt = __builtin_bswap32(DHCP_MAGIC_COOKIE); opt += 4;
+    *opt++ = 53; *opt++ = 1; *opt++ = DHCP_DISCOVER; // DHCP Message Type
+    *opt++ = 55; *opt++ = 1; *opt++ = 1; // Parameter Request List: Subnet Mask
+    *opt++ = 255; // End
+
+    netstack_send_udp(0xFFFFFFFF, DHCP_CLIENT_PORT, DHCP_SERVER_PORT, &discover, sizeof(discover));
+
+    // Wait for DHCPOFFER (very simple, not robust)
+    struct dhcp_packet offer;
+    uint32_t src_ip;
+    uint16_t src_port;
+    int r = netstack_receive_udp(DHCP_CLIENT_PORT, &offer, sizeof(offer), &src_ip, &src_port);
+    if (r > 0 && offer.op == 2 && offer.xid == discover.xid) {
+        // Find offered IP
+        return offer.yiaddr;
+    }
+    return 0;
+}
+
 uint32_t netstack_get_ip_address(void) {
+    if (net_config.ip_address == 0) {
+        // Try to get IP from DHCP
+        uint32_t ip = dhcp_request_ip(net_config.mac_address);
+        if (ip != 0) {
+            net_config.ip_address = ip;
+        }
+    }
     return net_config.ip_address;
 }
 
