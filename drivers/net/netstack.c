@@ -404,8 +404,11 @@ void arp_send_request(uint32_t target_ip) {
         e1000_send_packet(packet, sizeof(packet));
     } else if (rtl8139_is_initialized()) {
         rtl8139_send_packet(packet, sizeof(packet));
+    } else {
+        printf("[ARP] No supported NIC initialized\n");
     }
 }
+
 
 void arp_send_reply(uint32_t target_ip, uint8_t *target_mac) {
     uint8_t packet[sizeof(eth_header_t) + sizeof(arp_packet_t)];
@@ -439,6 +442,8 @@ void arp_send_reply(uint32_t target_ip, uint8_t *target_mac) {
         e1000_send_packet(packet, sizeof(packet));
     } else if (rtl8139_is_initialized()) {
         rtl8139_send_packet(packet, sizeof(packet));
+    }else {
+        printf("[ARP] No supported NIC initialized\n");
     }
 }
 
@@ -542,7 +547,11 @@ static void handle_icmp_packet(uint8_t *packet, uint16_t length, uint32_t src_ip
                ip_str, ntohs(icmp->identifier), ntohs(icmp->sequence));
         
         // Send echo reply
-        icmp_send_echo_reply(src_ip, icmp->identifier, icmp->sequence, data, data_len);
+        if (ne2000_is_initialized()) {
+            icmp_send_echo_reply(src_ip, icmp->identifier, icmp->sequence, data, data_len);
+        } else {
+            printf("[ICMP] NE2000 not initialized, skipping echo reply\n");
+        }
     }
 }
 
