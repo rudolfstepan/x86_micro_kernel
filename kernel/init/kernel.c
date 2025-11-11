@@ -209,7 +209,7 @@ static void system_ready(void) {
     printf("Drives Detected: %d\n", drive_count);
     
     // Network stack initialization (optional)
-    if (e1000_is_initialized()) {
+    if (ne2000_is_initialized()) {
         netstack_init();
         printf("Network stack initialized\n");
     }

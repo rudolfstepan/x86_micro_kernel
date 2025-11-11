@@ -1,4 +1,6 @@
-// netstack.c – NE2000-focused improved stack (header-aligned)
+// drivers/net/netstack.c
+// NE2000-focused improved stack (header-aligned)
+
 #include "drivers/net/netstack.h"
 #include "drivers/net/ne2000.h"
 #include "lib/libc/string.h"
@@ -9,16 +11,31 @@
 #include <stdbool.h>
 #include <string.h>
 
+// =============================================================================
+// GLOBAL STATE
+// =============================================================================
+static network_config_t net_config;
+static arp_cache_entry_t arp_cache[ARP_CACHE_SIZE];
+static uint16_t ip_identification = 0;
 
-// ==== IPv4 Parser (definition matching prototype in netstack.h) ====
-// Robust: prüft exakt 4 Oktette, 0..255, keine leeren Teile.
+// =============================================================================
+// Byte order: nur Deklarationen verwenden (Implementierung z.B. in ethernet.c)
+// =============================================================================
+extern uint16_t htons(uint16_t host_short);
+extern uint16_t ntohs(uint16_t net_short);
+extern uint32_t htonl(uint32_t host_long);
+extern uint32_t ntohl(uint32_t net_long);
+
+// =============================================================================
+// IPv4-Parser (von command.c genutzt)
+// =============================================================================
 uint32_t parse_ipv4(const char *ip) {
     if (!ip) return 0;
     uint32_t out = 0;
-    int part = -1;    // -1 = noch nicht gestartet, sonst 0..255
+    int part = -1;  // -1 = noch nicht gestartet, sonst 0..255
     int dots = 0;
 
-    for (const char *p = ip; ; ++p) {
+    for (const char *p = ip;; ++p) {
         char c = *p;
         if (c >= '0' && c <= '9') {
             int d = c - '0';
@@ -40,73 +57,46 @@ uint32_t parse_ipv4(const char *ip) {
             return 0; // ungültiges Zeichen
         }
     }
-    if (dots != 3) return 0; // genau 3 Punkte nötig
+    if (dots != 3) return 0;
     return out; // Host-Order: a.b.c.d -> 0xAABBCCDD
 }
 
+// =============================================================================
+/* Hilfsfunktionen zur Darstellung */
+// =============================================================================
+#include <stdint.h>
 
-// =============================================================================
-// GLOBAL STATE
-// =============================================================================
-static network_config_t net_config;
-static arp_cache_entry_t arp_cache[ARP_CACHE_SIZE];
-static uint16_t ip_identification = 0;
-
-// =============================================================================
-// Byte order helpers (declared in header; implementations provided elsewhere)
-// =============================================================================
-extern uint16_t htons(uint16_t host_short);
-extern uint16_t ntohs(uint16_t net_short);
-extern uint32_t htonl(uint32_t host_long);
-extern uint32_t ntohl(uint32_t net_long);
-
-// =============================================================================
-// DHCP minimal definitions
-// =============================================================================
-#define DHCP_CLIENT_PORT 68
-#define DHCP_SERVER_PORT 67
-#define DHCP_DISCOVER    1
-#define DHCP_OFFER       2
-#define DHCP_REQUEST     3
-#define DHCP_DECLINE     4
-#define DHCP_ACK         5
-#define DHCP_NAK         6
-
-#define DHCP_MAGIC_COOKIE 0x63825363u
-
-// DHCP options
-#define DHO_MSG_TYPE     53
-#define DHO_PARAM_REQ    55
-#define DHO_SERVER_ID    54
-#define DHO_REQ_IP       50
-#define DHO_SUBNET       1
-#define DHO_ROUTER       3
-#define DHO_DNS          6
-#define DHO_LEASE_TIME   51
-#define DHO_END          255
-
-struct dhcp_packet {
-    uint8_t  op, htype, hlen, hops;
-    uint32_t xid;
-    uint16_t secs, flags;
-    uint32_t ciaddr, yiaddr, siaddr, giaddr;
-    uint8_t  chaddr[16];
-    uint8_t  sname[64];
-    uint8_t  file[128];
-    uint8_t  options[312];
-} __attribute__((packed));
-
-// =============================================================================
-// Public helpers required by header (match signatures)
-// =============================================================================
-void format_ipv4(uint32_t ip, char *buffer) {
-    // ip is host order here
-    sprintf(buffer, "%u.%u.%u.%u",
-            (ip >> 24) & 0xFF,
-            (ip >> 16) & 0xFF,
-            (ip >> 8)  & 0xFF,
-            ip & 0xFF);
+// Hilfsfunktion: 0..255 als Dezimal ohne sprintf ausgeben
+static inline char* u8_to_dec(uint8_t v, char* out) {
+    if (v >= 100) {
+        *out++ = (char)('0' + v / 100);
+        v %= 100;
+        *out++ = (char)('0' + v / 10);
+        *out++ = (char)('0' + v % 10);
+    } else if (v >= 10) {
+        *out++ = (char)('0' + v / 10);
+        *out++ = (char)('0' + v % 10);
+    } else {
+        *out++ = (char)('0' + v);
+    }
+    return out;
 }
+
+void format_ipv4(uint32_t ip, char *buffer) {
+    // ip ist Host-Order: A.B.C.D = (ip>>24).(ip>>16&0xFF).(ip>>8&0xFF).(ip&0xFF)
+    uint8_t a = (uint8_t)((ip >> 24) & 0xFF);
+    uint8_t b = (uint8_t)((ip >> 16) & 0xFF);
+    uint8_t c = (uint8_t)((ip >>  8) & 0xFF);
+    uint8_t d = (uint8_t)( ip        & 0xFF);
+
+    char *p = buffer;
+    p = u8_to_dec(a, p); *p++ = '.';
+    p = u8_to_dec(b, p); *p++ = '.';
+    p = u8_to_dec(c, p); *p++ = '.';
+    p = u8_to_dec(d, p);
+    *p = '\0';
+}
+
 
 void format_mac(uint8_t *mac, char *buffer) {
     static const char hex[] = "0123456789ABCDEF";
@@ -119,7 +109,9 @@ void format_mac(uint8_t *mac, char *buffer) {
     buffer[pos] = 0;
 }
 
-// ---- Checksummen (öffentliche Signatur aus Header) --------------------------
+// =============================================================================
+// Checksummen
+// =============================================================================
 static uint32_t checksum_accumulate(const void *data, size_t len, uint32_t sum) {
     const uint8_t *p = (const uint8_t*)data;
     while (len > 1) {
@@ -128,7 +120,7 @@ static uint32_t checksum_accumulate(const void *data, size_t len, uint32_t sum) 
         p += 2; len -= 2;
     }
     if (len > 0) {
-        // letztes ungerades Byte als High-Byte des 16-bit Wortes
+        // letztes Byte als High-Byte addieren
         sum += ((uint16_t)p[0]) << 8;
     }
     return sum;
@@ -141,7 +133,6 @@ uint16_t ip_checksum(void *data, uint16_t length) {
     return fold_checksum(checksum_accumulate(data, length, 0));
 }
 
-// Optional UDP checksum (IPv4 erlaubt 0)
 static uint16_t udp_checksum(const ip_header_t* ip, const udp_header_t* udp, const uint8_t* payload, size_t len) {
     struct pseudo {
         uint32_t src, dst;
@@ -159,7 +150,7 @@ static uint16_t udp_checksum(const ip_header_t* ip, const udp_header_t* udp, con
 }
 
 // =============================================================================
-// NIC dispatch (NE2000 only right now)
+// NIC-Wrapper (NE2000 only)
 // =============================================================================
 static inline bool nic_send(uint8_t *p, size_t n) {
     if (ne2000_is_initialized()) { ne2000_send_packet(p, (uint16_t)n); return true; }
@@ -172,7 +163,7 @@ static inline int nic_recv(uint8_t *buf, size_t cap) {
 }
 
 // =============================================================================
-// ARP cache & protocol  (öffentliche Signaturen aus Header)
+// ARP (öffentliche Signaturen aus Header)
 // =============================================================================
 void arp_add_entry(uint32_t ip, uint8_t *mac) {
     int slot = -1;
@@ -180,11 +171,11 @@ void arp_add_entry(uint32_t ip, uint8_t *mac) {
         if (arp_cache[i].valid && arp_cache[i].ip == ip) { slot = i; break; }
         if (!arp_cache[i].valid && slot < 0) slot = i;
     }
-    if (slot < 0) slot = 0; // FIFO/simplest
+    if (slot < 0) slot = 0;
     arp_cache[slot].ip = ip;
     memcpy(arp_cache[slot].mac, mac, ETH_ADDR_LEN);
     arp_cache[slot].valid = true;
-    arp_cache[slot].timestamp = 0; // TODO: aging
+    arp_cache[slot].timestamp = 0;
     char ip_s[16], mac_s[18];
     format_ipv4(ip, ip_s); format_mac(mac, mac_s);
     printf("[ARP] Add %s -> %s\n", ip_s, mac_s);
@@ -205,7 +196,7 @@ void arp_send_request(uint32_t target_ip) {
     eth_header_t *eth = (eth_header_t *)packet;
     arp_packet_t *arp = (arp_packet_t *)(packet + sizeof(eth_header_t));
 
-    // Ethernet header (broadcast)
+    // Ethernet header (Broadcast)
     memset(eth->dst_mac, 0xFF, ETH_ADDR_LEN);
     memcpy(eth->src_mac, net_config.mac_address, ETH_ADDR_LEN);
     eth->ethertype = htons(ETHERTYPE_ARP);
@@ -218,7 +209,7 @@ void arp_send_request(uint32_t target_ip) {
     arp->operation         = htons(ARP_REQUEST);
 
     memcpy(arp->sender_mac, net_config.mac_address, ETH_ADDR_LEN);
-    uint32_t sip = net_config.ip_address ? net_config.ip_address : 0; // 0.0.0.0 before DHCP
+    uint32_t sip = net_config.ip_address ? net_config.ip_address : 0;
     arp->sender_ip = htonl(sip);
     memset(arp->target_mac, 0, ETH_ADDR_LEN);
     arp->target_ip = htonl(target_ip);
@@ -257,7 +248,6 @@ static void handle_arp_packet(uint8_t *packet, uint16_t length) {
     if (length < sizeof(arp_packet_t)) return;
     arp_packet_t *arp = (arp_packet_t *)packet;
 
-    // Basic validity
     if (ntohs(arp->hardware_type) != ARP_HARDWARE_ETHERNET ||
         ntohs(arp->protocol_type) != ARP_PROTOCOL_IPV4 ||
         arp->hardware_addr_len   != ETH_ADDR_LEN ||
@@ -284,10 +274,9 @@ void icmp_send_echo_reply(uint32_t dst_ip, uint16_t id, uint16_t seq, uint8_t *d
     uint8_t packet[1514] = {0};
     eth_header_t  *eth  = (eth_header_t *)packet;
     ip_header_t   *ip   = (ip_header_t  *)(packet + sizeof(eth_header_t));
-    icmp_header_t *icmp = (icmp_header_t*)(packet + sizeof(eth_header_t) + sizeof(ip_header_t));
+    icmp_header_t *icmp = (icmp_header_t *)(packet + sizeof(eth_header_t) + sizeof(ip_header_t));
     uint8_t       *payload = packet + sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(icmp_header_t);
 
-    // Next hop (same subnet or gateway)
     uint32_t next_hop = (((dst_ip & net_config.netmask) == (net_config.ip_address & net_config.netmask)) || dst_ip==0xFFFFFFFFu)
                         ? dst_ip : net_config.gateway;
 
@@ -300,12 +289,10 @@ void icmp_send_echo_reply(uint32_t dst_ip, uint16_t id, uint16_t seq, uint8_t *d
         return;
     }
 
-    // Ethernet
     memcpy(eth->dst_mac, dst_mac, ETH_ADDR_LEN);
     memcpy(eth->src_mac, net_config.mac_address, ETH_ADDR_LEN);
     eth->ethertype = htons(ETHERTYPE_IPV4);
 
-    // IP
     ip->version_ihl      = 0x45;
     ip->tos              = 0;
     ip->total_length     = htons((uint16_t)(sizeof(ip_header_t) + sizeof(icmp_header_t) + data_len));
@@ -318,7 +305,6 @@ void icmp_send_echo_reply(uint32_t dst_ip, uint16_t id, uint16_t seq, uint8_t *d
     ip->header_checksum  = 0;
     ip->header_checksum  = ip_checksum(ip, sizeof(ip_header_t));
 
-    // ICMP
     icmp->type       = ICMP_ECHO_REPLY;
     icmp->code       = 0;
     icmp->identifier = htons(id);
@@ -348,7 +334,7 @@ static void handle_icmp_packet(uint8_t *packet, uint16_t length, uint32_t src_ip
 }
 
 // =============================================================================
-// UDP (send/recv low-level) – sufficient for DHCP
+// UDP low-level (für DHCP ausreichend)
 // =============================================================================
 static int netstack_send_udp_low(uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, void *data, size_t len, bool with_checksum) {
     if (sizeof(eth_header_t)+sizeof(ip_header_t)+sizeof(udp_header_t)+len > 1514) return -1;
@@ -356,14 +342,12 @@ static int netstack_send_udp_low(uint32_t dst_ip, uint16_t src_port, uint16_t ds
     uint8_t packet[1514] = {0};
     uint8_t *ptr = packet;
 
-    // choose next hop
     uint32_t next_hop = (((dst_ip & net_config.netmask) == (net_config.ip_address & net_config.netmask)) || dst_ip==0xFFFFFFFFu)
                         ? dst_ip : net_config.gateway;
 
-    // Ethernet header
     uint8_t dst_mac[6];
     if (dst_ip == 0xFFFFFFFFu) {
-        memset(dst_mac, 0xFF, 6); // broadcast
+        memset(dst_mac, 0xFF, 6); // Broadcast
     } else if (!arp_lookup(next_hop, dst_mac)) {
         printf("[UDP] No ARP for next-hop; send ARP\n");
         arp_send_request(next_hop);
@@ -395,7 +379,7 @@ static int netstack_send_udp_low(uint32_t dst_ip, uint16_t src_port, uint16_t ds
     udp->src_port = htons(src_port);
     udp->dst_port = htons(dst_port);
     udp->length   = htons((uint16_t)(sizeof(udp_header_t) + len));
-    udp->checksum = 0; // may remain 0 on IPv4
+    udp->checksum = 0; // IPv4: optional
     ptr += sizeof(udp_header_t);
 
     memcpy(ptr, data, len);
@@ -415,17 +399,14 @@ static int netstack_receive_udp_low(uint16_t port, void *buffer, size_t buflen, 
         if (len <= 0) continue;
         if (len < 42) continue; // min eth+ip+udp
 
-        // Ethernet
         uint16_t ethertype = (uint16_t)(pkt[12] << 8 | pkt[13]);
         if (ethertype != 0x0800) continue; // IPv4 only
 
-        // IP
         ip_header_t *ip = (ip_header_t *)(pkt + 14);
         int ihl_bytes = (IP_IHL(ip)) * 4;
         if (ihl_bytes < (int)sizeof(ip_header_t) || (14 + ihl_bytes) > len) continue;
         if (ip->protocol != IP_PROTOCOL_UDP) continue;
 
-        // verify IP checksum over IHL
         uint16_t saved = ip->header_checksum;
         ip->header_checksum = 0;
         uint16_t calc = ip_checksum(ip, (uint16_t)ihl_bytes);
@@ -450,14 +431,42 @@ static int netstack_receive_udp_low(uint16_t port, void *buffer, size_t buflen, 
 }
 
 // =============================================================================
-// DHCP minimal client (blocking, simple timeouts via polls)
+// Minimaler DHCP-Client (DISCOVER->OFFER->REQUEST->ACK)
 // =============================================================================
+#define DHCP_CLIENT_PORT 68
+#define DHCP_SERVER_PORT 67
+#define DHCP_DISCOVER    1
+#define DHCP_OFFER       2
+#define DHCP_REQUEST     3
+#define DHCP_ACK         5
+#define DHCP_MAGIC_COOKIE 0x63825363u
+
+#define DHO_MSG_TYPE   53
+#define DHO_PARAM_REQ  55
+#define DHO_SERVER_ID  54
+#define DHO_REQ_IP     50
+#define DHO_SUBNET     1
+#define DHO_ROUTER     3
+#define DHO_DNS        6
+#define DHO_LEASE_TIME 51
+#define DHO_END        255
+
+struct dhcp_packet {
+    uint8_t  op, htype, hlen, hops;
+    uint32_t xid;
+    uint16_t secs, flags;
+    uint32_t ciaddr, yiaddr, siaddr, giaddr;
+    uint8_t  chaddr[16];
+    uint8_t  sname[64];
+    uint8_t  file[128];
+    uint8_t  options[312];
+} __attribute__((packed));
+
 static uint32_t rng32(void) {
     static uint32_t seed = 0x12345678u;
     seed = seed * 1664525u + 1013904223u;
     return seed;
 }
-
 static uint8_t* dhcp_opt_put_u8(uint8_t *opt, uint8_t code, uint8_t v) {
     *opt++ = code; *opt++ = 1; *opt++ = v; return opt;
 }
@@ -470,10 +479,8 @@ static uint8_t* dhcp_opt_put_u32(uint8_t *opt, uint8_t code, uint32_t v_host) {
 static uint8_t* dhcp_opt_put_list(uint8_t *opt, uint8_t code, const uint8_t *lst, uint8_t n) {
     *opt++ = code; *opt++ = n; memcpy(opt, lst, n); opt += n; return opt;
 }
-
 static bool dhcp_parse_opts(const struct dhcp_packet *pkt, uint32_t *server_id_n, uint32_t *subnet_n, uint32_t *router_n, uint32_t *dns_n, uint8_t *msgtype) {
     const uint8_t *opt = pkt->options;
-    // magic cookie
     uint32_t mc; memcpy(&mc, opt, 4); opt += 4;
     if (ntohl(mc) != DHCP_MAGIC_COOKIE) return false;
     while (opt < pkt->options + sizeof(pkt->options)) {
@@ -498,36 +505,28 @@ static bool dhcp_parse_opts(const struct dhcp_packet *pkt, uint32_t *server_id_n
 
 static bool dhcp_discover_request(uint32_t *out_ip, uint32_t *out_subnet, uint32_t *out_router, uint32_t *out_dns) {
     struct dhcp_packet pkt; memset(&pkt, 0, sizeof(pkt));
-    pkt.op    = 1; // BOOTREQUEST
-    pkt.htype = 1; // Ethernet
-    pkt.hlen  = 6;
-    pkt.hops  = 0;
+    pkt.op    = 1; pkt.htype = 1; pkt.hlen = 6; pkt.hops = 0;
     pkt.xid   = rng32();
     pkt.secs  = 0;
-    pkt.flags = htons(0x8000); // broadcast reply
+    pkt.flags = htons(0x8000); // Broadcast-Antwort erwünscht
     memcpy(pkt.chaddr, net_config.mac_address, 6);
 
-    // options
     uint8_t *opt = pkt.options;
     uint32_t mc = htonl(DHCP_MAGIC_COOKIE);
     memcpy(opt, &mc, 4); opt += 4;
-    // Message Type: DISCOVER
     opt = dhcp_opt_put_u8(opt, DHO_MSG_TYPE, DHCP_DISCOVER);
-    // Parameter Request List
     const uint8_t req[] = { DHO_SUBNET, DHO_ROUTER, DHO_DNS, DHO_LEASE_TIME, DHO_SERVER_ID };
     opt = dhcp_opt_put_list(opt, DHO_PARAM_REQ, req, sizeof(req));
     *opt++ = DHO_END;
 
-    // Send DISCOVER to 255.255.255.255:67 from 0.0.0.0:68 (broadcast L2)
     printf("[DHCP] DISCOVER xid=0x%08x\n", (unsigned)pkt.xid);
     if (netstack_send_udp_low(0xFFFFFFFFu, DHCP_CLIENT_PORT, DHCP_SERVER_PORT, &pkt, sizeof(pkt), false) != 0) {
         printf("[DHCP] send DISCOVER failed\n");
         return false;
     }
 
-    // Wait for OFFER
     struct dhcp_packet offer; uint32_t sip = 0; uint16_t sport = 0;
-    int r = netstack_receive_udp_low(DHCP_CLIENT_PORT, &offer, sizeof(offer), &sip, &sport, /*polls*/ 512);
+    int r = netstack_receive_udp_low(DHCP_CLIENT_PORT, &offer, sizeof(offer), &sip, &sport, 512);
     if (r <= 0) { printf("[DHCP] no OFFER\n"); return false; }
     if (offer.op != 2 || offer.xid != pkt.xid) { printf("[DHCP] OFFER mismatch\n"); return false; }
 
@@ -538,14 +537,12 @@ static bool dhcp_discover_request(uint32_t *out_ip, uint32_t *out_subnet, uint32
     uint32_t yi = offer.yiaddr; // network order
     printf("[DHCP] OFFER yiaddr=%u.%u.%u.%u\n", ((uint8_t*)&yi)[0],((uint8_t*)&yi)[1],((uint8_t*)&yi)[2],((uint8_t*)&yi)[3]);
 
-    // Build REQUEST
     struct dhcp_packet reqpkt; memset(&reqpkt, 0, sizeof(reqpkt));
     reqpkt.op=1; reqpkt.htype=1; reqpkt.hlen=6; reqpkt.xid=pkt.xid; reqpkt.flags=htons(0x8000);
     memcpy(reqpkt.chaddr, net_config.mac_address, 6);
     opt = reqpkt.options;
     memcpy(opt, &mc, 4); opt += 4;
     opt = dhcp_opt_put_u8 (opt, DHO_MSG_TYPE, DHCP_REQUEST);
-    // Requested IP / Server ID from offer
     {
         uint32_t yi_h = ntohl(yi);
         uint32_t sid_h= ntohl(sid_n);
@@ -560,7 +557,6 @@ static bool dhcp_discover_request(uint32_t *out_ip, uint32_t *out_subnet, uint32
         return false;
     }
 
-    // Wait for ACK
     struct dhcp_packet ack; r = netstack_receive_udp_low(DHCP_CLIENT_PORT, &ack, sizeof(ack), &sip, &sport, 512);
     if (r <= 0 || ack.xid != pkt.xid) { printf("[DHCP] no ACK\n"); return false; }
     mtype = 0; sid_n=mask_n=gw_n=dns_n=0;
@@ -576,7 +572,7 @@ static bool dhcp_discover_request(uint32_t *out_ip, uint32_t *out_subnet, uint32
 }
 
 // =============================================================================
-// IP dispatch
+// IP/ETH Demux
 // =============================================================================
 static void handle_ip_packet(uint8_t *packet, uint16_t length) {
     if (length < sizeof(ip_header_t)) return;
@@ -585,7 +581,6 @@ static void handle_ip_packet(uint8_t *packet, uint16_t length) {
     int ihl_bytes = (IP_IHL(ip)) * 4;
     if (ihl_bytes < (int)sizeof(ip_header_t) || ihl_bytes > (int)length) return;
 
-    // verify checksum over IHL
     uint16_t saved = ip->header_checksum;
     ip->header_checksum = 0;
     uint16_t calc = ip_checksum(ip, (uint16_t)ihl_bytes);
@@ -595,7 +590,6 @@ static void handle_ip_packet(uint8_t *packet, uint16_t length) {
     uint32_t dst = ntohl(ip->dst_ip);
     if (dst != net_config.ip_address && dst != 0xFFFFFFFFu) return;
 
-    // drop fragments (no reassembly)
     uint16_t ff = ntohs(ip->flags_fragment);
     if (ff & 0x3FFF) { printf("[IP] fragment -> drop\n"); return; }
 
@@ -615,9 +609,6 @@ static void handle_ip_packet(uint8_t *packet, uint16_t length) {
     }
 }
 
-// =============================================================================
-// ETH dispatch
-// =============================================================================
 void netstack_process_packet(uint8_t *packet, uint16_t length) {
     if (length < sizeof(eth_header_t)) return;
     eth_header_t *eth = (eth_header_t *)packet;
@@ -625,11 +616,11 @@ void netstack_process_packet(uint8_t *packet, uint16_t length) {
     uint8_t *payload = packet + sizeof(eth_header_t);
     uint16_t plen = length - sizeof(eth_header_t);
 
-    // Optional: filter destination MAC (own/broadcast)
+    // nur für uns / Broadcast
     bool is_bcast = true;
     for (int i=0;i<6;++i) if (eth->dst_mac[i] != 0xFF) { is_bcast=false; break; }
     if (!is_bcast && memcmp(eth->dst_mac, net_config.mac_address, ETH_ADDR_LEN)!=0) {
-        return; // not for us
+        return;
     }
 
     switch (type) {
@@ -640,7 +631,7 @@ void netstack_process_packet(uint8_t *packet, uint16_t length) {
 }
 
 // =============================================================================
-// Public API
+// Öffentliche API
 // =============================================================================
 void netstack_init(void) {
     printf("[NET] init...\n");
@@ -687,14 +678,13 @@ uint32_t netstack_get_ip_address(void) {
     return net_config.ip_address;
 }
 
-// ICMP echo request (manual ping)
 void icmp_send_echo_request(uint32_t dst_ip, uint16_t id, uint16_t seq) {
     uint8_t data[4] = {'p','i','n','g'};
     uint8_t packet[1514] = {0};
 
     eth_header_t  *eth  = (eth_header_t *)packet;
     ip_header_t   *ip   = (ip_header_t  *)(packet + sizeof(eth_header_t));
-    icmp_header_t *icmp = (icmp_header_t*)(packet + sizeof(eth_header_t) + sizeof(ip_header_t));
+    icmp_header_t *icmp = (icmp_header_t *)(packet + sizeof(eth_header_t) + sizeof(ip_header_t));
     uint8_t       *payload = packet + sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(icmp_header_t);
 
     uint32_t next_hop = (((dst_ip & net_config.netmask) == (net_config.ip_address & net_config.netmask)) || dst_ip==0xFFFFFFFFu)
@@ -735,8 +725,7 @@ void icmp_send_echo_request(uint32_t dst_ip, uint16_t id, uint16_t seq) {
     nic_send(packet, total_len);
 }
 
-// Simple UDP API (send only, uses ARP/gateway/broadcast handling)
-// Match header signature: data is non-const
+// UDP-Send API (Header-Signatur: data non-const)
 int udp_send(uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, uint8_t *data, uint16_t length) {
     return netstack_send_udp_low(dst_ip, src_port, dst_port, data, length, /*with_checksum*/false);
 }
@@ -746,9 +735,8 @@ void udp_bind(uint16_t port, udp_callback_t cb) {
     printf("[UDP] bind not implemented\n");
 }
 
-// TCP stubs (match header signatures)
+// TCP Stubs
 int  tcp_connect(uint32_t dst_ip, uint16_t dst_port){ (void)dst_ip;(void)dst_port; printf("[TCP] connect n/i\n"); return -1; }
 int  tcp_send(int socket, uint8_t *data, uint16_t length){ (void)socket;(void)data;(void)length; printf("[TCP] send n/i\n"); return -1; }
 int  tcp_recv(int socket, uint8_t *buffer, uint16_t max_length){ (void)socket;(void)buffer;(void)max_length; printf("[TCP] recv n/i\n"); return -1; }
 void tcp_close(int socket){ (void)socket; printf("[TCP] close n/i\n"); }
-

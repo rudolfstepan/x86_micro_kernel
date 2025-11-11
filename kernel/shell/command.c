@@ -1808,11 +1808,15 @@ void cmd_pci(int arg_count, const char **args) {
 #include "userspace/bin/basic.c"
 
 // Print the current IP address
-void cmd_get_ip(int arg_count, const char **args) {
+void cmd_get_ip(int argc, const char **argv) {
+    (void)argc; (void)argv;
+
     uint32_t ip = netstack_get_ip_address();
     char ip_str[16];
     format_ipv4(ip, ip_str);
-    printf("Current IP address: %s\n", ip_str);
+
+    for (const char *p = ip_str; *p; ++p) putchar(*p);
+    putchar('\n');
 }
 
 void cmd_basic(int arg_count, const char** arguments) {
