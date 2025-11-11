@@ -3,17 +3,23 @@
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 
-
-/**
- * Wandelt einen 16-Bit-Wert von Host Byte Order (Little-Endian) 
- * in Network Byte Order (Big-Endian) um.
- *
- * @param hostshort Der 16-Bit-Wert im Host Byte Order.
- * @return Der umgewandelte Wert im Network Byte Order.
- */
-uint16_t htons(uint16_t hostshort) {
-    return (hostshort >> 8) | (hostshort << 8);
+// ==== Byteorder (definitions matching prototypes in netstack.h) ====
+uint16_t htons(uint16_t x) {
+    return (uint16_t)((x << 8) | (x >> 8));
 }
+uint16_t ntohs(uint16_t x) {
+    return htons(x);
+}
+uint32_t htonl(uint32_t x) {
+    return ((x & 0x000000FFu) << 24) |
+           ((x & 0x0000FF00u) << 8)  |
+           ((x & 0x00FF0000u) >> 8)  |
+           ((x & 0xFF000000u) >> 24);
+}
+uint32_t ntohl(uint32_t x) {
+    return htonl(x);
+}
+
 
 void handle_ethernet_frame(const uint8_t* frame, uint16_t length) {
     if (length < sizeof(ethernet_header_t)) {
