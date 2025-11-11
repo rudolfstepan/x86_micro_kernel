@@ -96,7 +96,6 @@ void format_mac(uint8_t *mac, char *buffer) {
     // Manually format MAC address since sprintf doesn't handle %02X properly
     const char hex[] = "0123456789ABCDEF";
     int pos = 0;
-    
     for (int i = 0; i < 6; i++) {
         buffer[pos++] = hex[(mac[i] >> 4) & 0x0F];  // High nibble
         buffer[pos++] = hex[mac[i] & 0x0F];         // Low nibble
@@ -105,6 +104,11 @@ void format_mac(uint8_t *mac, char *buffer) {
         }
     }
     buffer[pos] = '\0';
+}
+
+// Getter for current IP address
+uint32_t netstack_get_ip_address(void) {
+    return net_config.ip_address;
 }
 
 // =============================================================================

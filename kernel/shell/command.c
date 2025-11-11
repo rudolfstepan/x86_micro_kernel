@@ -23,6 +23,7 @@
 #include "drivers/net/rtl8139.h"
 #include "drivers/net/e1000.h"
 #include "drivers/net/ne2000.h"
+#include "drivers/net/netstack.h"
 // #include "drivers/net/vmxnet3.h"
 
 char current_path[256] = "/";
@@ -96,6 +97,7 @@ void cmd_ping(int cnt, const char **args);
 void cmd_arp(int cnt, const char **args);
 void cmd_history(int cnt, const char **args);
 void cmd_basic(int cnt, const char **args);
+void cmd_get_ip(int cnt, const char **args);
 
 // Command table
 command_t command_table[MAX_COMMANDS] = {
@@ -137,6 +139,7 @@ command_t command_table[MAX_COMMANDS] = {
     {"history", cmd_history},
     {"basic", cmd_basic},
     {"pci", cmd_pci},
+    {"getip", cmd_get_ip},
     {NULL, NULL} // End marker
 };
 
@@ -1803,6 +1806,14 @@ void cmd_pci(int arg_count, const char **args) {
 }
 
 #include "userspace/bin/basic.c"
+
+// Print the current IP address
+void cmd_get_ip(int arg_count, const char **args) {
+    uint32_t ip = netstack_get_ip_address();
+    char ip_str[16];
+    format_ipv4(ip, ip_str);
+    printf("Current IP address: %s\n", ip_str);
+}
 
 void cmd_basic(int arg_count, const char** arguments) {
     printf("\n=== BASIC Interpreter v1.2 ===\n");
