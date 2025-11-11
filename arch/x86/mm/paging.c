@@ -1,5 +1,4 @@
-#include "arch/x86/paging.h"
-
+#include "arch/x86/mm/paging.h"
 #include <stdint.h>
 #include <stddef.h>
 #include "lib/libc/string.h"

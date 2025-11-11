@@ -4,7 +4,7 @@
 #include "lib/libc/string.h"
 #include <stdint.h>
 #include <stddef.h>
-#include "arch/x86/sys.h"
+#include "arch/x86/include/sys.h"
 
 #define HPET_BASE_ADDRESS  0xFED00000  // Example; get this from ACPI HPET table
 #define HPET_REG_SIZE      0x400       // HPET register space size

@@ -1,4 +1,4 @@
-#include "arch/x86/sys.h"
+#include "arch/x86/include/sys.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
 

@@ -7,7 +7,7 @@
 #define MULTIBOOT_H
 
 #include <stdint.h>
-#include "arch/x86/mbheader.h"
+#include "arch/x86/include/mbheader.h"
 
 // Multiboot 1 parsing
 void parse_multiboot1_info(const multiboot1_info_t *mb_info);

@@ -1,4 +1,4 @@
-#include "arch/x86/sys.h"
+#include "arch/x86/include/sys.h"
 #include "arch/x86/include/interrupt.h"
 #include "include/kernel/panic.h"
 #include "lib/libc/stdio.h"

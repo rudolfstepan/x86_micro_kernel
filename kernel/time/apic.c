@@ -1,5 +1,5 @@
 #include "kernel/time/apic.h"
-#include "arch/x86/sys.h"
+#include "arch/x86/include/sys.h"
 #include "kernel/sched/scheduler.h"
 
 #include "lib/libc/stdio.h"

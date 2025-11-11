@@ -8,7 +8,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "arch/x86/mbheader.h"
+#include "../arch/x86/include/mbheader.h"
 #include "lib/libc/stdio.h"
 
 extern uint64_t total_memory;  // Global memory counter

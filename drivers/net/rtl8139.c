@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
-#include "arch/x86/sys.h"
+#include "arch/x86/include/sys.h"
 #include <stddef.h>
 #include "drivers/bus/pci.h"
 #include "drivers/net/ethernet.h"

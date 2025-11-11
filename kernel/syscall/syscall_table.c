@@ -7,7 +7,7 @@
  */
 
 #include <stdbool.h>
-#include "arch/x86/sys.h"
+#include "arch/x86/include/sys.h"
 #include "drivers/video/display.h"
 #include "drivers/char/kb.h"
 #include "kernel/time/pit.h"

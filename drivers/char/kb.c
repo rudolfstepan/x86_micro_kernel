@@ -2,7 +2,7 @@
 #include "drivers/char/io.h"
 #include "drivers/char/serial.h"
 #include "drivers/video/video.h"
-#include "arch/x86/sys.h"
+#include "arch/x86/include/sys.h"
 #include "arch/x86/include/interrupt.h"
 #include "include/lib/spinlock.h"
 #include "lib/libc/stdio.h"

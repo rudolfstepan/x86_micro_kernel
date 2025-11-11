@@ -15,8 +15,8 @@
 #include <stdint.h>
 
 // Core kernel headers
-#include "arch/x86/sys.h"
-#include "arch/x86/mbheader.h"
+#include "arch/x86/include/sys.h"
+#include "arch/x86/include/mbheader.h"
 #include "arch/x86/boot/multiboot_parser.h"
 #include "arch/x86/include/interrupt.h"
 #include "arch/x86/include/tss.h"

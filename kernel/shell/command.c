@@ -1,7 +1,7 @@
 #include "kernel/shell/command.h"
 #include "kernel/proc/process.h"
 #include "kernel/init/prg.h"
-#include "arch/x86/sys.h"
+#include "arch/x86/include/sys.h"
 #include "kernel/sched/scheduler.h"
 #include "mm/kmalloc.h"
 

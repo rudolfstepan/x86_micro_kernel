@@ -4,7 +4,7 @@
 #include "lib/libc/string.h"
 #include "drivers/bus/pci.h"
 #include "drivers/char/io.h"
-#include "arch/x86/sys.h"
+#include "arch/x86/include/sys.h"
 #include "mm/kmalloc.h"
 #include "kernel/time/pit.h"
 

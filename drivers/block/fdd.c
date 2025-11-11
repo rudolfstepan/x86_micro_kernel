@@ -1,6 +1,6 @@
 #include "fdd.h"
 #include "ata.h"
-#include "arch/x86/sys.h"
+#include "arch/x86/include/sys.h"
 #include "drivers/char/io.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"

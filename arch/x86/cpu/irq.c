@@ -1,5 +1,5 @@
 #include "drivers/char/io.h"
-#include "arch/x86/sys.h"
+#include "arch/x86/include/sys.h"
 #include "lib/libc/stdio.h"
 
 // External IRQ handlers defined in assembly or elsewhere

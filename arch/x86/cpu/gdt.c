@@ -1,4 +1,4 @@
-#include "arch/x86/sys.h"
+#include "../arch/x86/include/sys.h"
 #include "arch/x86/include/tss.h"
 
 

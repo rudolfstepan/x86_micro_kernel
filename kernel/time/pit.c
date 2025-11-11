@@ -1,7 +1,7 @@
 // Programmable Interval Timer (PIT) driver
 #include "kernel/time/pit.h"
 #include "drivers/char/io.h"
-#include "arch/x86/sys.h"
+#include "arch/x86/include/sys.h"
 #include "lib/libc/stdio.h"
 
 
