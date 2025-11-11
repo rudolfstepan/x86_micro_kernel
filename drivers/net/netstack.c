@@ -432,8 +432,68 @@ void netstack_process_packet(uint8_t *packet, uint16_t length) {
 // STUB FUNCTIONS (TO BE IMPLEMENTED)
 // =============================================================================
 
+#include "drivers/net/ne2000.h"
+#include "drivers/net/e1000.h"
+
 void icmp_send_echo_request(uint32_t dst_ip, uint16_t id, uint16_t seq) {
-    printf("[ICMP] Send echo request - not yet implemented\n");
+    uint8_t data[32] = "ping"; // Simple payload
+    uint16_t data_len = 4;
+
+    uint16_t total_len = sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(icmp_header_t) + data_len;
+    uint8_t packet[1514] = {0};
+
+    eth_header_t *eth = (eth_header_t *)packet;
+    ip_header_t *ip = (ip_header_t *)(packet + sizeof(eth_header_t));
+    icmp_header_t *icmp = (icmp_header_t *)(packet + sizeof(eth_header_t) + sizeof(ip_header_t));
+    uint8_t *payload = packet + sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(icmp_header_t);
+
+    // Lookup destination MAC
+    uint8_t dst_mac[ETH_ADDR_LEN];
+    if (!arp_lookup(dst_ip, dst_mac)) {
+        printf("[ICMP] No ARP entry for destination, sending ARP request\n");
+        arp_send_request(dst_ip);
+        return;
+    }
+
+    // Ethernet header
+    memcpy(eth->dst_mac, dst_mac, ETH_ADDR_LEN);
+    memcpy(eth->src_mac, net_config.mac_address, ETH_ADDR_LEN);
+    eth->ethertype = htons(ETHERTYPE_IPV4);
+
+    // IP header
+    ip->version_ihl = 0x45;
+    ip->tos = 0;
+    ip->total_length = htons(sizeof(ip_header_t) + sizeof(icmp_header_t) + data_len);
+    ip->identification = htons(ip_identification++);
+    ip->flags_fragment = 0;
+    ip->ttl = 64;
+    ip->protocol = IP_PROTOCOL_ICMP;
+    ip->src_ip = htonl(net_config.ip_address);
+    ip->dst_ip = htonl(dst_ip);
+    ip->header_checksum = 0;
+    ip->header_checksum = ip_checksum(ip, sizeof(ip_header_t));
+
+    // ICMP header
+    icmp->type = ICMP_ECHO_REQUEST;
+    icmp->code = 0;
+    icmp->identifier = id;
+    icmp->sequence = seq;
+    icmp->checksum = 0;
+
+    memcpy(payload, data, data_len);
+
+    icmp->checksum = ip_checksum(icmp, sizeof(icmp_header_t) + data_len);
+
+    printf("[ICMP] Sending echo request (id=%d, seq=%d)\n", ntohs(id), ntohs(seq));
+
+    // Use correct NIC send function
+    if (ne2000_is_initialized()) {
+        ne2000_send_packet(packet, total_len);
+    } else if (e1000_is_initialized()) {
+        e1000_send_packet(packet, total_len);
+    } else {
+        printf("[ICMP] No network card initialized for sending\n");
+    }
 }
 
 int udp_send(uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, uint8_t *data, uint16_t length) {

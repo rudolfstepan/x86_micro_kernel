@@ -1709,6 +1709,8 @@ void cmd_ifconfig(int arg_count, const char** arguments) {
     printf("Network interface configured successfully\n");
 }
 
+extern void icmp_send_echo_request(uint32_t dst_ip, uint16_t id, uint16_t seq);
+
 void cmd_ping(int arg_count, const char** arguments) {
     if (arg_count == 0) {
         printf("PING - Send ICMP echo request\n");
@@ -1716,17 +1718,29 @@ void cmd_ping(int arg_count, const char** arguments) {
         printf("Example: ping 10.0.2.1\n");
         return;
     }
-    
+
     uint32_t target_ip = parse_ipv4(arguments[0]);
     if (target_ip == 0) {
         printf("Error: Invalid IP address\n");
         return;
     }
-    
-    printf("PING %s...\n", arguments[0]);
-    printf("Note: ICMP echo request not yet fully implemented\n");
-    printf("Sending ARP request first...\n");
-    arp_send_request(target_ip);
+
+    static uint16_t ping_id = 0x1234;
+    static uint16_t seq = 1;
+
+    printf("PING %s (id=0x%04X, seq=%d)...\n", arguments[0], ping_id, seq);
+
+    // Try to resolve ARP first
+    uint8_t mac[6];
+    if (!arp_lookup(target_ip, mac)) {
+        printf("No ARP entry for %s, sending ARP request...\n", arguments[0]);
+        arp_send_request(target_ip);
+        printf("Try again after ARP reply is received.\n");
+        return;
+    }
+
+    icmp_send_echo_request(target_ip, htons(ping_id), htons(seq));
+    seq++;
 }
 
 void cmd_arp(int arg_count, const char** arguments) {
