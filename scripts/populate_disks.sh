@@ -30,7 +30,16 @@ mount_and_populate() {
         echo "Hello from $disk_name!" > "$MOUNT_DIR/README.TXT"
         echo "Test file in TEST directory" > "$MOUNT_DIR/TEST/TEST.TXT"
         echo "Documentation file" > "$MOUNT_DIR/DOCS/MANUAL.TXT"
-        
+
+        # create a basic interpreter script
+        cat > "$MOUNT_DIR/COUNT.BAS" << 'EOF'
+10 VAR X 0
+20 PRINT "COUNT: " X
+30 VAR X X+1
+40 IF X<10 GOTO 20
+50 END
+EOF
+
         # List contents
         echo "Contents of $disk_name:"
         ls -la "$MOUNT_DIR"
