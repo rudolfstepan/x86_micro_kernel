@@ -13,9 +13,9 @@
  * - END - exit program
  */
 
-#include "lib/libc/stdio.h"
-#include "lib/libc/stdlib.h"
-#include "lib/libc/string.h"
+#include "../../lib/libc/stdio.h"
+#include "../../lib/libc/stdlib.h"
+#include "../../lib/libc/string.h"
 
 // Simplified implementations for kernel environment
 int slen(const char* s) { 
@@ -34,10 +34,7 @@ char to_upper(char c) {
 
 // Case-sensitive string comparison
 int scmp(const char* s1, const char* s2) {
-    if (slen(s1) != slen(s2)) return 0;
-    for (int i = 0; s1[i]; i++)
-        if (s1[i] != s2[i]) return 0;
-    return 1;
+    return scmp_nocase(s1, s2);
 }
 
 // Case-insensitive string comparison
@@ -134,7 +131,7 @@ void initvars() {
 
 int getvar(const char* s) {
     for (int i = 0; i < 64; ++i)
-        if (scmp(s, varnames[i]))
+        if (scmp_nocase(s, varnames[i]))
             return varcontent[i];
     return 0;
 }
@@ -142,7 +139,7 @@ int getvar(const char* s) {
 int setvar(const char* s, int v) {
     // Check if variable exists
     for (int i = 0; i < 64; ++i) {
-        if (scmp(s, varnames[i])) {
+        if (scmp_nocase(s, varnames[i])) {
             varcontent[i] = v;
             return 1;
         }
@@ -208,7 +205,7 @@ const char* bcmds[] = {
 
 int getbcmd(const char* s) {
     for (int i = 0; i <= END; ++i)
-        if (scmp(s, bcmds[i]))
+        if (scmp_nocase(s, bcmds[i]))
             return i;
     return -1;
 }
