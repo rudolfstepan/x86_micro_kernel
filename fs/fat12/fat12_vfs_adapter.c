@@ -1,271 +1,270 @@
 #include "fs/vfs/vfs.h"
 #include "fat12.h"
-#include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
 #include "lib/libc/stdlib.h"
 #include "drivers/bus/drives.h"
 
-// ===========================================================================
-// FAT12 VFS Adapter
-// Wraps existing FAT12 implementation to work with VFS layer
-// ===========================================================================
+#define FAT12_VFS_PATH_MAX 256
 
-extern bool fat12_init_fs(uint8_t drive);
 extern fat12_t* fat12;
+extern directory_entry* entries;
 
-// ===========================================================================
-// VFS Operations Implementation
-// ===========================================================================
+/* The legacy core owns one global FAT and directory buffer.  A second live
+   mount would redirect operations of the first mount to another floppy. */
+static vfs_filesystem_t* mounted_fat12_fs = NULL;
+
+static void fat12_entry_name(const directory_entry* entry, char name[13]) {
+    uint32_t length = 0;
+    for (uint32_t i = 0; i < 8 && entry->filename[i] != ' '; i++)
+        name[length++] = (char)entry->filename[i];
+    uint32_t extension_length = 0;
+    while (extension_length < 3 && entry->extension[extension_length] != ' ')
+        extension_length++;
+    if (extension_length != 0) {
+        name[length++] = '.';
+        for (uint32_t i = 0; i < extension_length; i++)
+            name[length++] = entry->extension[i];
+    }
+    name[length] = '\0';
+}
+
+static bool fat12_names_equal(const char* first, const char* second) {
+    size_t first_length = strlen(first);
+    size_t second_length = strlen(second);
+    return first_length == second_length &&
+           strncasecmp(first, second, first_length) == 0;
+}
+
+static int fat12_find_in_directory(uint32_t directory_cluster,
+                                   const char* name,
+                                   directory_entry* result) {
+    if (!name || !result) return VFS_ERR_INVALID;
+    directory_entry directory;
+    directory_entry* directory_ptr = NULL;
+    if (directory_cluster != 0) {
+        memset(&directory, 0, sizeof(directory));
+        directory.first_cluster_low = (uint16_t)directory_cluster;
+        directory.attributes = FILE_ATTR_DIRECTORY;
+        directory_ptr = &directory;
+    }
+    int count = fat12_read_dir_entries(directory_ptr);
+    if (count < 0) return VFS_ERR_IO;
+    for (int i = 0; i < count; i++) {
+        char formatted[13];
+        fat12_entry_name(&entries[i], formatted);
+        if (fat12_names_equal(formatted, name)) {
+            *result = entries[i];
+            return VFS_OK;
+        }
+    }
+    return VFS_ERR_NOT_FOUND;
+}
+
+static int fat12_resolve(const char* path, directory_entry* result) {
+    if (!path || !result || strlen(path) >= FAT12_VFS_PATH_MAX)
+        return VFS_ERR_INVALID;
+    char copy[FAT12_VFS_PATH_MAX];
+    strcpy(copy, path);
+    char* cursor = copy;
+    while (*cursor == '/') cursor++;
+    if (*cursor == '\0') return VFS_ERR_IS_DIR;
+
+    uint32_t directory = 0;
+    char* save = NULL;
+    char* token = strtok_r(cursor, "/", &save);
+    while (token) {
+        char* next = strtok_r(NULL, "/", &save);
+        directory_entry found;
+        int status = fat12_find_in_directory(directory, token, &found);
+        if (status != VFS_OK) return status;
+        if (!next) {
+            *result = found;
+            return VFS_OK;
+        }
+        if (!(found.attributes & FILE_ATTR_DIRECTORY))
+            return VFS_ERR_NOT_DIR;
+        directory = found.first_cluster_low;
+        token = next;
+    }
+    return VFS_ERR_NOT_FOUND;
+}
+
+static vfs_node_t* fat12_make_node(vfs_filesystem_t* fs,
+                                   const directory_entry* entry) {
+    vfs_node_t* node = (vfs_node_t*)malloc(sizeof(vfs_node_t));
+    if (!node) return NULL;
+    memset(node, 0, sizeof(*node));
+    char name[13];
+    fat12_entry_name(entry, name);
+    strcpy(node->name, name);
+    node->type = (entry->attributes & FILE_ATTR_DIRECTORY) ?
+                 VFS_DIRECTORY : VFS_FILE;
+    node->inode = entry->first_cluster_low;
+    node->size = entry->file_size;
+    node->fs = fs;
+
+    if (node->type == VFS_FILE) {
+        fat12_file* file = (fat12_file*)malloc(sizeof(fat12_file));
+        if (!file) {
+            free(node);
+            return NULL;
+        }
+        memset(file, 0, sizeof(*file));
+        file->start_cluster = entry->first_cluster_low;
+        file->size = entry->file_size;
+        strcpy(file->mode, "r");
+        file->fat12_instance = fat12;
+        strcpy((char*)file->name, name);
+        node->fs_specific = file;
+    }
+    return node;
+}
+
+static void fat12_fill_stat(const directory_entry* source,
+                            vfs_dir_entry_t* target) {
+    memset(target, 0, sizeof(*target));
+    fat12_entry_name(source, target->name);
+    target->type = (source->attributes & FILE_ATTR_DIRECTORY) ?
+                   VFS_DIRECTORY : VFS_FILE;
+    target->size = source->file_size;
+    target->inode = source->first_cluster_low;
+    target->attributes = source->attributes;
+}
 
 static int fat12_vfs_mount(vfs_filesystem_t* fs, drive_t* drive) {
-    if (!fs || !drive) {
-        return VFS_ERR_INVALID;
-    }
-    
-    printf("FAT12: Mounting drive %s (fdd_drive_no=%d)\n", 
-           drive->name, drive->fdd_drive_no);
-    
-    // Call existing FAT12 initialization
-    if (!fat12_init_fs(drive->fdd_drive_no)) {
-        printf("FAT12: Mount failed\n");
-        return VFS_ERR_IO;
-    }
-    
-    // Store FAT12 structure as filesystem data
+    if (!fs || !drive) return VFS_ERR_INVALID;
+    if (mounted_fat12_fs) return VFS_ERR_BUSY;
+    if (!fat12_init_fs(drive->fdd_drive_no)) return VFS_ERR_IO;
     fs->fs_data = fat12;
-    
-    // Create root node
+
     vfs_node_t* root = (vfs_node_t*)malloc(sizeof(vfs_node_t));
     if (!root) {
+        fat12_cleanup();
+        fs->fs_data = NULL;
         return VFS_ERR_NO_MEMORY;
     }
-    
+    memset(root, 0, sizeof(*root));
     strcpy(root->name, "/");
     root->type = VFS_DIRECTORY;
-    root->inode = 0;  // Root directory has no cluster in FAT12
-    root->size = 0;
-    root->flags = 0;
     root->fs = fs;
-    root->fs_specific = NULL;
-    
     fs->root = root;
-    
-    printf("FAT12: Successfully mounted\n");
+    mounted_fat12_fs = fs;
     return VFS_OK;
 }
 
 static int fat12_vfs_unmount(vfs_filesystem_t* fs) {
-    if (!fs) {
-        return VFS_ERR_INVALID;
-    }
-    
-    printf("FAT12: Unmounting filesystem\n");
-    
-    // FAT12 structure is global, don't free it
+    if (!fs) return VFS_ERR_INVALID;
+    if (fs->root) free(fs->root);
+    fs->root = NULL;
+    fat12_cleanup();
     fs->fs_data = NULL;
-    
-    if (fs->root) {
-        free(fs->root);
-        fs->root = NULL;
-    }
-    
+    if (mounted_fat12_fs == fs) mounted_fat12_fs = NULL;
     return VFS_OK;
 }
 
-static int fat12_vfs_open(vfs_filesystem_t* fs, const char* path, vfs_node_t** node) {
-    if (!fs || !path || !node) {
-        return VFS_ERR_INVALID;
-    }
-    
-    printf("FAT12: Opening '%s'\n", path);
-    
-    // Handle root directory
-    if (strcmp(path, "/") == 0) {
+static int fat12_vfs_open(vfs_filesystem_t* fs, const char* path,
+                          vfs_node_t** node) {
+    if (!fs || !path || !node) return VFS_ERR_INVALID;
+    *node = NULL;
+    if (strcmp(path, "/") == 0 || path[0] == '\0') {
         *node = fs->root;
-        return VFS_OK;
+        return fs->root ? VFS_OK : VFS_ERR_INVALID;
     }
-    
-    // Remove leading slash
-    const char* filename = path;
-    if (*filename == '/') {
-        filename++;
-    }
-    
-    // Open file using existing FAT12 function
-    fat12_file* file = fat12_open_file(filename, "r");
-    if (!file) {
-        return VFS_ERR_NOT_FOUND;
-    }
-    
-    // Create VFS node
-    vfs_node_t* new_node = (vfs_node_t*)malloc(sizeof(vfs_node_t));
-    if (!new_node) {
-        fat12_close_file(file);
-        return VFS_ERR_NO_MEMORY;
-    }
-    
-    strncpy(new_node->name, filename, 255);
-    new_node->name[255] = '\0';
-    new_node->type = VFS_FILE;  // Assume file for now
-    new_node->inode = file->start_cluster;
-    new_node->size = file->size;
-    new_node->flags = 0;
-    new_node->fs = fs;
-    new_node->fs_specific = file;  // Store FAT12 file structure
-    
-    *node = new_node;
-    return VFS_OK;
+    directory_entry entry;
+    int status = fat12_resolve(path, &entry);
+    if (status != VFS_OK) return status;
+    *node = fat12_make_node(fs, &entry);
+    return *node ? VFS_OK : VFS_ERR_NO_MEMORY;
 }
 
 static int fat12_vfs_close(vfs_node_t* node) {
-    if (!node) {
-        return VFS_ERR_INVALID;
-    }
-    
-    // Don't free root node
-    if (node == node->fs->root) {
-        return VFS_OK;
-    }
-    
-    if (node->fs_specific) {
-        fat12_close_file((fat12_file*)node->fs_specific);
-    }
+    if (!node || !node->fs) return VFS_ERR_INVALID;
+    if (node == node->fs->root) return VFS_OK;
+    if (node->fs_specific) fat12_close_file((fat12_file*)node->fs_specific);
     free(node);
-    
     return VFS_OK;
 }
 
-static int fat12_vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
-    if (!node || !buffer) {
-        return VFS_ERR_INVALID;
-    }
-    
-    if (node->type != VFS_FILE) {
-        return VFS_ERR_IS_DIR;
-    }
-    
+static int fat12_vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size,
+                          uint8_t* buffer) {
+    if (!node || (!buffer && size != 0)) return VFS_ERR_INVALID;
+    if (node->type != VFS_FILE) return VFS_ERR_IS_DIR;
     fat12_file* file = (fat12_file*)node->fs_specific;
-    if (!file) {
-        return VFS_ERR_INVALID;
-    }
-    
-    // For now, only support reading from start (offset must be 0)
-    if (offset != 0) {
-        printf("FAT12: Warning - offset %u not supported, reading from start\n", offset);
-    }
-    
-    uint32_t bytes_to_read = (size < node->size) ? size : node->size;
-    int bytes_read = fat12_read_file(file, buffer, size, bytes_to_read);
-    
-    if (bytes_read < 0) {
-        return VFS_ERR_IO;
-    }
-    
-    return bytes_read;
+    if (!file) return VFS_ERR_INVALID;
+    if (offset >= node->size || size == 0) return 0;
+    file->position = offset;
+    uint32_t available = node->size - offset;
+    uint32_t amount = size < available ? size : available;
+    return fat12_read_file(file, buffer, size, amount);
 }
 
-static int fat12_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
-    // Write not implemented yet
-    return VFS_ERR_UNSUPPORTED;
+static int fat12_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
+                           const uint8_t* buffer) {
+    return VFS_ERR_READ_ONLY;
 }
 
-static int fat12_vfs_readdir(vfs_node_t* node, uint32_t index, vfs_dir_entry_t* entry) {
-    if (!node || !entry) {
-        return VFS_ERR_INVALID;
+static int fat12_vfs_readdir(vfs_node_t* node, uint32_t index,
+                             vfs_dir_entry_t* entry) {
+    if (!node || !entry) return VFS_ERR_INVALID;
+    if (node->type != VFS_DIRECTORY) return VFS_ERR_NOT_DIR;
+    directory_entry directory;
+    directory_entry* directory_ptr = NULL;
+    if (node->inode != 0) {
+        memset(&directory, 0, sizeof(directory));
+        directory.first_cluster_low = (uint16_t)node->inode;
+        directory.attributes = FILE_ATTR_DIRECTORY;
+        directory_ptr = &directory;
     }
-    
-    if (node->type != VFS_DIRECTORY) {
-        return VFS_ERR_NOT_DIR;
-    }
-    
-    // Read directory entries using existing FAT12 function
-    directory_entry dir_entry;
-    int result = fat12_read_dir_entries(&dir_entry);
-    
-    if (result < 0) {
-        return VFS_ERR_IO;
-    }
-    
-    // For now, we can only return one entry at a time
-    // TODO: Improve this to support multiple entries properly
-    if (index > 0) {
-        return VFS_ERR_NOT_FOUND;
-    }
-    
-    // Convert FAT12 entry to VFS entry
-    directory_entry* fat_entry = &dir_entry;
-    
-    // Copy name (convert from 8.3 format)
-    char name[13];
-    int name_idx = 0;
-    
-    for (int i = 0; i < 8 && fat_entry->filename[i] != ' '; i++) {
-        name[name_idx++] = fat_entry->filename[i];
-    }
-    
-    if (fat_entry->extension[0] != ' ') {
-        name[name_idx++] = '.';
-        for (int i = 0; i < 3 && fat_entry->extension[i] != ' '; i++) {
-            name[name_idx++] = fat_entry->extension[i];
-        }
-    }
-    name[name_idx] = '\0';
-    
-    strncpy(entry->name, name, 255);
-    entry->name[255] = '\0';
-    
-    entry->type = (fat_entry->attributes & FILE_ATTR_DIRECTORY) ? VFS_DIRECTORY : VFS_FILE;
-    entry->size = fat_entry->file_size;
-    entry->inode = fat_entry->first_cluster_low;
-    entry->attributes = fat_entry->attributes;
-    entry->create_time = 0;  // TODO: Convert FAT date/time
-    entry->modify_time = 0;
-    entry->access_time = 0;
-    
+    int count = fat12_read_dir_entries(directory_ptr);
+    if (count < 0) return VFS_ERR_IO;
+    if (!entries || index >= (uint32_t)count) return VFS_ERR_NOT_FOUND;
+    fat12_fill_stat(&entries[index], entry);
     return VFS_OK;
 }
 
-static int fat12_vfs_finddir(vfs_node_t* node, const char* name, vfs_node_t** child) {
-    return VFS_ERR_UNSUPPORTED;  // TODO: Implement
+static int fat12_vfs_finddir(vfs_node_t* node, const char* name,
+                             vfs_node_t** child) {
+    if (!node || !name || !child) return VFS_ERR_INVALID;
+    if (node->type != VFS_DIRECTORY) return VFS_ERR_NOT_DIR;
+    *child = NULL;
+    directory_entry entry;
+    int status = fat12_find_in_directory(node->inode, name, &entry);
+    if (status != VFS_OK) return status;
+    *child = fat12_make_node(node->fs, &entry);
+    return *child ? VFS_OK : VFS_ERR_NO_MEMORY;
 }
 
 static int fat12_vfs_mkdir(vfs_filesystem_t* fs, const char* path) {
-    return VFS_ERR_UNSUPPORTED;  // TODO: Implement
+    return VFS_ERR_READ_ONLY;
 }
 
 static int fat12_vfs_rmdir(vfs_filesystem_t* fs, const char* path) {
-    return VFS_ERR_UNSUPPORTED;  // TODO: Implement
+    return VFS_ERR_READ_ONLY;
 }
 
 static int fat12_vfs_create(vfs_filesystem_t* fs, const char* path) {
-    return VFS_ERR_UNSUPPORTED;  // TODO: Implement
+    return VFS_ERR_READ_ONLY;
 }
 
 static int fat12_vfs_delete(vfs_filesystem_t* fs, const char* path) {
-    return VFS_ERR_UNSUPPORTED;  // TODO: Implement
+    return VFS_ERR_READ_ONLY;
 }
 
-static int fat12_vfs_stat(vfs_filesystem_t* fs, const char* path, vfs_dir_entry_t* stat) {
-    // Open file and get info
-    vfs_node_t* node;
-    int result = fat12_vfs_open(fs, path, &node);
-    if (result != VFS_OK) {
-        return result;
+static int fat12_vfs_stat(vfs_filesystem_t* fs, const char* path,
+                          vfs_dir_entry_t* stat) {
+    if (!fs || !path || !stat) return VFS_ERR_INVALID;
+    if (strcmp(path, "/") == 0 || path[0] == '\0') {
+        memset(stat, 0, sizeof(*stat));
+        strcpy(stat->name, "/");
+        stat->type = VFS_DIRECTORY;
+        return VFS_OK;
     }
-    
-    strncpy(stat->name, node->name, 255);
-    stat->name[255] = '\0';
-    stat->type = node->type;
-    stat->size = node->size;
-    stat->inode = node->inode;
-    
-    fat12_vfs_close(node);
+    directory_entry entry;
+    int status = fat12_resolve(path, &entry);
+    if (status != VFS_OK) return status;
+    fat12_fill_stat(&entry, stat);
     return VFS_OK;
 }
-
-// ===========================================================================
-// VFS Operations Table
-// ===========================================================================
 
 vfs_filesystem_ops_t fat12_vfs_ops = {
     .mount = fat12_vfs_mount,
@@ -283,10 +282,6 @@ vfs_filesystem_ops_t fat12_vfs_ops = {
     .stat = fat12_vfs_stat
 };
 
-// ===========================================================================
-// Registration Function
-// ===========================================================================
-
 void fat12_register_vfs(void) {
-    vfs_register_filesystem("fat12", &fat12_vfs_ops);
+    (void)vfs_register_filesystem("fat12", &fat12_vfs_ops);
 }

@@ -6,7 +6,8 @@
 
 
 // Function to read a directory path and return if it exists
-bool fat32_read_dir(const char* path) {
+static bool fat32_read_dir_unlocked(const char* path) {
+    if (!path || strlen(path) >= MAX_PATH_LENGTH) return false;
     unsigned int current_cluster = boot_sector.root_cluster; // Assuming boot_sector is defined and initialized elsewhere
     char temp_path[MAX_PATH_LENGTH]; // Temporary path buffer
     
@@ -36,7 +37,8 @@ bool fat32_read_dir(const char* path) {
     return true;
 }
 
-bool fat32_change_directory(const char* path) {
+static bool fat32_change_directory_unlocked(const char* path) {
+    if (!path || strlen(path) >= MAX_PATH_LENGTH) return false;
     unsigned int target_cluster = current_directory_cluster; // Start from the current directory
     char temp_path[MAX_PATH_LENGTH]; // Temporary path buffer
     
@@ -66,26 +68,37 @@ bool fat32_change_directory(const char* path) {
     return true;
 }
 
-bool fat32_create_dir(const char* dirname) {
+static bool fat32_create_dir_unlocked(const char* dirname) {
 
-    printf("Creating directory: %s\n", dirname);
-    // 1. Find a free cluster
-    unsigned int new_dir_cluster = find_free_cluster(&boot_sector);
+    if (!dirname) return false;
+
+    if (!fat32_is_valid_short_name(dirname) ||
+        strcmp(dirname, ".") == 0 || strcmp(dirname, "..") == 0) {
+        return false;
+    }
+    struct fat32_dir_entry existing;
+    if (fat32_lookup_entry_in_directory(current_directory_cluster, dirname,
+                                        &existing) !=
+            FAT32_LOOKUP_NOT_FOUND) {
+        return false;
+    }
+    // 1. Allocate and publish ownership of a new cluster.
+    unsigned int new_dir_cluster = allocate_new_cluster(&boot_sector);
     if (new_dir_cluster == INVALID_CLUSTER) {
         printf("Error: Failed to allocate a new cluster for the directory.\n");
         return false;
     }
     
-    // 2. Update the FAT for the new cluster
-    if (!mark_cluster_in_fat(&boot_sector, new_dir_cluster, FAT32_EOC_MAX)) {
-        printf("Error: Failed to update the FAT.\n");
-        // Rollback not needed - cluster is still marked as free
+    // 3. Initialize the new directory's cluster
+    unsigned int entries_per_cluster = get_entries_per_cluster(&boot_sector);
+    size_t entries_size = entries_per_cluster * sizeof(struct fat32_dir_entry);
+    struct fat32_dir_entry* dir_entries =
+        (struct fat32_dir_entry*)malloc(entries_size);
+    if (!dir_entries) {
+        mark_cluster_in_fat(&boot_sector, new_dir_cluster, 0);
         return false;
     }
-    
-    // 3. Initialize the new directory's cluster
-    struct fat32_dir_entry dir_entries[get_entries_per_cluster(&boot_sector)];
-    memset(dir_entries, 0, sizeof(dir_entries));
+    memset(dir_entries, 0, entries_size);
     initialize_new_directory_entries(dir_entries, new_dir_cluster, current_directory_cluster);
 
     if (!write_cluster(&boot_sector, new_dir_cluster, dir_entries)) {
@@ -93,19 +106,36 @@ bool fat32_create_dir(const char* dirname) {
         // ROLLBACK: Free the allocated cluster
         printf("Rolling back: Freeing allocated cluster %u\n", new_dir_cluster);
         mark_cluster_in_fat(&boot_sector, new_dir_cluster, 0);  // Mark as free
+        free(dir_entries);
         return false;
     }
+    free(dir_entries);
     
     // 4. Update the parent directory
-    if (!add_entry_to_directory(&boot_sector, current_directory_cluster, dirname, new_dir_cluster, ATTR_DIRECTORY)) {
+    bool safe_to_reclaim_target = true;
+    if (!add_entry_to_directory_checked(
+            &boot_sector, current_directory_cluster, dirname,
+            new_dir_cluster, ATTR_DIRECTORY, &safe_to_reclaim_target)) {
         printf("Error: Failed to update the parent directory.\n");
-        // ROLLBACK: Free the allocated cluster (directory data is orphaned but cluster is freed)
-        printf("Rolling back: Freeing allocated cluster %u\n", new_dir_cluster);
-        mark_cluster_in_fat(&boot_sector, new_dir_cluster, 0);  // Mark as free
-        return false;
+        struct fat32_dir_entry observed;
+        fat32_lookup_result_t observed_result =
+            fat32_lookup_entry_in_directory(current_directory_cluster,
+                                            dirname, &observed);
+        if (observed_result == FAT32_LOOKUP_FOUND &&
+            read_start_cluster(&observed) == new_dir_cluster &&
+            (observed.attr & ATTR_DIRECTORY)) {
+            /* The parent write committed but its immediate verification was
+             * inconclusive. Ownership is established by the re-read. */
+        } else if (observed_result == FAT32_LOOKUP_NOT_FOUND &&
+                   safe_to_reclaim_target) {
+            (void)mark_cluster_in_fat(&boot_sector, new_dir_cluster, 0);
+            return false;
+        } else {
+            printf("Warning: preserving ambiguous directory cluster %u\n",
+                   new_dir_cluster);
+            return false;
+        }
     }
-    
-    printf("Directory '%s' created successfully at cluster %u\n", dirname, new_dir_cluster);
     
     // Sync FSInfo after directory creation
     extern bool write_fsinfo(void);
@@ -143,113 +173,256 @@ void create_directory_entry(struct fat32_dir_entry* entry, const char* name, uns
     entry->crt_time_tenth = 0;
 }
 
-bool add_entry_to_directory(struct fat32_boot_sector* bs, unsigned int parent_cluster, const char* dirname, unsigned int new_dir_cluster, unsigned char attributes) {
+bool add_entry_to_directory_checked(struct fat32_boot_sector* bs,
+                                    unsigned int parent_cluster,
+                                    const char* dirname,
+                                    unsigned int new_dir_cluster,
+                                    unsigned char attributes,
+                                    bool* safe_to_reclaim_target) {
+    if (safe_to_reclaim_target) *safe_to_reclaim_target = true;
+    if (!bs || !fat32_is_valid_short_name(dirname) ||
+        !is_valid_cluster(bs, parent_cluster) ||
+        (new_dir_cluster != 0 && !is_valid_cluster(bs, new_dir_cluster))) {
+        return false;
+    }
+
+    struct fat32_dir_entry duplicate;
+    fat32_lookup_result_t duplicate_result =
+        fat32_lookup_entry_in_directory(parent_cluster, dirname, &duplicate);
+    if (duplicate_result != FAT32_LOOKUP_NOT_FOUND) {
+        return false;
+    }
+
     struct fat32_dir_entry new_entry;
     memset(&new_entry, 0, sizeof(new_entry));  // Initialize new entry to zero
     // Create the new directory entry for 'dirname'
     create_directory_entry(&new_entry, dirname, new_dir_cluster, attributes);
 
     unsigned int entries_per_cluster = get_entries_per_cluster(bs);
-    struct fat32_dir_entry entries[entries_per_cluster];
-    bool entry_added = false;
+    size_t entries_size = entries_per_cluster * sizeof(struct fat32_dir_entry);
+    struct fat32_dir_entry* entries =
+        (struct fat32_dir_entry*)malloc(entries_size);
+    if (!entries) {
+        return false;
+    }
     unsigned int current_cluster = parent_cluster;
+    unsigned int traversed = 0;
+    unsigned int cluster_limit = get_total_clusters(bs);
 
-    while (current_cluster < FAT32_EOC_MIN) {
-        read_cluster(bs, current_cluster, entries);
+    while (is_valid_cluster(bs, current_cluster) &&
+           traversed++ < cluster_limit) {
+        if (!read_cluster(bs, current_cluster, entries)) {
+            free(entries);
+            return false;
+        }
 
         for (unsigned int i = 0; i < entries_per_cluster; ++i) {
             if (entries[i].name[0] == 0 || entries[i].name[0] == 0xE5) {
+                struct fat32_dir_entry original = entries[i];
                 entries[i] = new_entry;
-                write_cluster(bs, current_cluster, entries);
-                entry_added = true;
-                break;
+                bool ok = write_cluster(bs, current_cluster, entries);
+                if (!ok) {
+                    if (read_cluster(bs, current_cluster, entries)) {
+                        if (memcmp(&entries[i], &new_entry,
+                                   sizeof(new_entry)) == 0) {
+                            ok = true;
+                        } else if (memcmp(&entries[i], &original,
+                                          sizeof(original)) != 0 &&
+                                   safe_to_reclaim_target) {
+                            *safe_to_reclaim_target = false;
+                        }
+                    } else if (safe_to_reclaim_target) {
+                        *safe_to_reclaim_target = false;
+                    }
+                }
+                free(entries);
+                return ok;
             }
         }
 
-        if (entry_added) {
-            break;
+        unsigned int next = get_next_cluster_in_chain(bs, current_cluster);
+        if (next == INVALID_CLUSTER) {
+            free(entries);
+            return false;
         }
-
-        current_cluster = get_next_cluster_in_chain(bs, current_cluster);
-        if (is_end_of_cluster_chain(current_cluster)) {
-            current_cluster = allocate_new_cluster(bs);
-            if (current_cluster == INVALID_CLUSTER) {
-                printf("Debug: Failed to allocate new cluster\n");
+        if (is_end_of_cluster_chain(next)) {
+            unsigned int new_cluster = allocate_new_cluster(bs);
+            if (new_cluster == INVALID_CLUSTER) {
+                free(entries);
                 return false;
             }
 
-            // Link the new cluster to the end of the chain
-            if (!mark_cluster_in_fat(bs, parent_cluster, current_cluster)) {
-                printf("Debug: Failed to link new cluster in FAT\n");
-                return false;
-            }
-
-            memset(entries, 0, sizeof(entries)); // Initialize the new cluster's entries
+            memset(entries, 0, entries_size);
             entries[0] = new_entry;
-            write_cluster(bs, current_cluster, entries); // Write the new cluster
-            entry_added = true;
+            if (!write_cluster(bs, new_cluster, entries)) {
+                mark_cluster_in_fat(bs, new_cluster, 0);
+                free(entries);
+                return false;
+            }
+            if (!mark_cluster_in_fat(bs, current_cluster, new_cluster)) {
+                uint32_t observed =
+                    get_next_cluster_in_chain(bs, current_cluster);
+                if (observed != new_cluster) {
+                    if (is_end_of_cluster_chain(observed)) {
+                        (void)mark_cluster_in_fat(bs, new_cluster, 0);
+                    } else {
+                        if (safe_to_reclaim_target) {
+                            *safe_to_reclaim_target = false;
+                        }
+                        printf("Warning: preserving ambiguous directory extension %u\n",
+                               new_cluster);
+                    }
+                    free(entries);
+                    return false;
+                }
+            }
+            free(entries);
+            return true;
         }
+        current_cluster = next;
     }
 
-    if (entry_added) {
-    } else {
-        printf("Failed to add entry. No space available.\n");
-    }
+    free(entries);
+    return false;
+}
 
-    return entry_added;
+bool add_entry_to_directory(struct fat32_boot_sector* bs,
+                            unsigned int parent_cluster,
+                            const char* dirname,
+                            unsigned int new_dir_cluster,
+                            unsigned char attributes) {
+    bool safe_to_reclaim_target = true;
+    return add_entry_to_directory_checked(
+        bs, parent_cluster, dirname, new_dir_cluster, attributes,
+        &safe_to_reclaim_target);
 }
 
 bool is_directory_empty(struct fat32_dir_entry* entry) {
+    if (!entry || !(entry->attr & ATTR_DIRECTORY)) {
+        return false;
+    }
+
     unsigned int cluster = read_start_cluster(entry);
-    unsigned int sector = cluster_to_sector(&boot_sector, cluster);
-    struct fat32_dir_entry entries[SECTOR_SIZE / sizeof(struct fat32_dir_entry)];
-
-    for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
-        ata_read_sector(current_drive->base, sector + i, &entries[i * (SECTOR_SIZE / sizeof(struct fat32_dir_entry))], current_drive->is_master);
+    if (!is_valid_cluster(&boot_sector, cluster)) {
+        return false;
     }
 
-    for (unsigned int j = 0; j < sizeof(entries) / sizeof(struct fat32_dir_entry); j++) {
-        if (entries[j].name[0] == 0x00) { // End of directory
-            break;
-        }
-        if (entries[j].name[0] == 0xE5
-            || (entries[j].attr & 0x0F) == 0x0F
-            || entries[j].name[0] == '.'
-            || entries[j].name[1] == '.') { // Deleted or LFN entry
-            continue;
+    unsigned int entries_per_cluster = get_entries_per_cluster(&boot_sector);
+    size_t entries_size = entries_per_cluster * sizeof(struct fat32_dir_entry);
+    struct fat32_dir_entry* entries =
+        (struct fat32_dir_entry*)malloc(entries_size);
+    if (!entries) {
+        return false;
+    }
+
+    uint32_t traversed = 0;
+    uint32_t limit = get_total_clusters(&boot_sector);
+    while (is_valid_cluster(&boot_sector, cluster) && traversed++ < limit) {
+        if (!read_cluster(&boot_sector, cluster, entries)) {
+            free(entries);
+            return false;
         }
 
-        return false; // Directory is not empty
+        for (unsigned int j = 0; j < entries_per_cluster; j++) {
+            if (entries[j].name[0] == 0x00) {
+                free(entries);
+                return true;
+            }
+            bool dot = entries[j].name[0] == '.' && entries[j].name[1] == ' ';
+            bool dotdot = entries[j].name[0] == '.' &&
+                          entries[j].name[1] == '.' &&
+                          entries[j].name[2] == ' ';
+            if (entries[j].name[0] == 0xE5 ||
+                (entries[j].attr & 0x0F) == 0x0F || dot || dotdot) {
+                continue;
+            }
+            free(entries);
+            return false;
+        }
+
+        uint32_t next = get_next_cluster_in_chain(&boot_sector, cluster);
+        if (next == INVALID_CLUSTER) {
+            free(entries);
+            return false;
+        }
+        if (is_end_of_cluster_chain(next)) {
+            free(entries);
+            return true;
+        }
+        cluster = next;
     }
-    return true; // Directory is empty
+    free(entries);
+    return false;
 }
 
-bool fat32_delete_dir(const char* dirname) {
+static bool fat32_delete_dir_unlocked(const char* dirname) {
+    if (!dirname || !fat32_is_valid_short_name(dirname) ||
+        strcmp(dirname, ".") == 0 || strcmp(dirname, "..") == 0) {
+        return false;
+    }
     // 1. Find the directory entry for the directory to delete
     struct fat32_dir_entry* entry = find_file_in_directory(dirname);
     if (entry == NULL) {
         printf("Directory not found.\n");
         return false;
     }
+    if (!(entry->attr & ATTR_DIRECTORY) || (entry->attr & ATTR_READ_ONLY)) {
+        free(entry);
+        return false;
+    }
     // 2. Check if the directory is empty
     if (!is_directory_empty(entry)) {
         printf("Directory is not empty.\n");
+        free(entry);
         return false;
     }
-    // 3. Free the directory's cluster chain in the FAT
-    if (!free_cluster_chain(&boot_sector, read_start_cluster(entry))) {
-        printf("Failed to free the directory's cluster chain.\n");
-        return false;
-    }
-    // 4. Remove the directory entry from the parent directory
-    if (!remove_entry_from_directory(&boot_sector, current_directory_cluster, entry)) {
+    unsigned int start_cluster = read_start_cluster(entry);
+    // Remove the name before freeing its storage, avoiding a visible dangling
+    // entry if a later FAT update fails.
+    if (!remove_entry_from_directory(&boot_sector, current_directory_cluster,
+                                     entry)) {
         printf("Failed to remove the directory entry from the parent directory.\n");
+        free(entry);
         return false;
     }
+    if (!free_cluster_chain(&boot_sector, start_cluster)) {
+        printf("Failed to free the directory's cluster chain.\n");
+        free(entry);
+        return false;
+    }
+    free(entry);
     
     // Sync FSInfo after directory deletion
     extern bool write_fsinfo(void);
     write_fsinfo();
     
     return true;
+}
+
+bool fat32_read_dir(const char* path) {
+    uint32_t flags = fat32_operation_begin();
+    bool result = fat32_read_dir_unlocked(path);
+    fat32_operation_end(flags);
+    return result;
+}
+
+bool fat32_change_directory(const char* path) {
+    uint32_t flags = fat32_operation_begin();
+    bool result = fat32_change_directory_unlocked(path);
+    fat32_operation_end(flags);
+    return result;
+}
+
+bool fat32_create_dir(const char* dirname) {
+    uint32_t flags = fat32_operation_begin();
+    bool result = fat32_create_dir_unlocked(dirname);
+    fat32_operation_end(flags);
+    return result;
+}
+
+bool fat32_delete_dir(const char* dirname) {
+    uint32_t flags = fat32_operation_begin();
+    bool result = fat32_delete_dir_unlocked(dirname);
+    fat32_operation_end(flags);
+    return result;
 }

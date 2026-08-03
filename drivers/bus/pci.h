@@ -2,6 +2,8 @@
 #define PCI_H
 
 #include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
 
 
 // PCI-Konstanten
@@ -10,7 +12,11 @@
 
 // PCI-Befehlsregister-Flags
 #define PCI_COMMAND 0x04
+#define PCI_COMMAND_IO 0x01
+#define PCI_COMMAND_MEMORY 0x02
 #define PCI_COMMAND_BUS_MASTER 0x04
+#define PCI_IRQ_INVALID 0xFF
+#define PCI_LEGACY_IRQ_COUNT 16
 
 // PCI-Konfigurationsregister-Offsets
 #pragma pack(push, 1)
@@ -38,19 +44,22 @@ typedef struct {
     int (*probe)(pci_device_t *dev);
 } pci_driver_t;
 
+extern pci_device_t pci_devices[];
+extern size_t pci_device_count;
+
 
 uint8_t pci_get_irq(uint8_t bus, uint8_t device, uint8_t function);
 void pci_set_irq(uint8_t bus, uint8_t device, uint8_t function, uint8_t irq);
 uint32_t pci_read(uint8_t bus, uint8_t device, uint8_t function, uint8_t offset);
-void pci_write(uint8_t bus, uint8_t slot, uint8_t offset, uint8_t size, uint32_t value);
-void pci_set_bus_master(uint8_t bus, uint8_t slot, uint8_t enable);
+void pci_write(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset,
+               uint8_t size, uint32_t value);
+void pci_set_bus_master(uint8_t bus, uint8_t slot, uint8_t function, uint8_t enable);
 uint32_t get_io_base(uint8_t bus, uint8_t device, uint8_t function);
 
-void pci_init();
+void pci_init(void);
 void pci_scan_bus(uint8_t bus);
 void pci_scan_function(uint8_t bus, uint8_t slot, uint8_t function);
 void pci_scan_slot(uint8_t bus, uint8_t slot);
-void pci_scan_function(uint8_t bus, uint8_t slot, uint8_t function);
 void pci_write_config_word(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset, uint16_t value);
 uint8_t pci_read_config_byte(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset);
 uint16_t pci_read_config_word(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset);
@@ -60,8 +69,9 @@ void pci_enable_device(pci_device_t *dev);
 uint32_t pci_read_bar(pci_device_t *dev, uint8_t bar_index);
 volatile uint32_t *map_mmio(uint64_t physical_address);
 uint8_t pci_configure_irq(pci_device_t *dev);
+bool pci_irq_is_valid(uint8_t irq);
 void pci_register_driver(uint16_t vendor_id, uint16_t device_id, int (*probe)(pci_device_t *));
-void pci_probe_drivers();
+void pci_probe_drivers(void);
 int pci_device_exists(uint16_t vendor_id, uint16_t device_id);
 
 

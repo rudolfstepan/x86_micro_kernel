@@ -1,5 +1,10 @@
 # Keyboard Input Handling Analysis
 
+> **Historischer Audit:** Der Tastaturtreiber und die Zuständigkeit für den
+> Shellpuffer wurden danach geändert. Aktuell sind ANSI-artige Sondertasten,
+> Verlauf, Home/End/Delete und Ctrl-Bearbeitung implementiert. Maßgeblich ist
+> [`../features/KEYBOARD_SHORTCUTS.md`](../features/KEYBOARD_SHORTCUTS.md).
+
 ## Current Implementation Review
 
 ### Architecture Overview

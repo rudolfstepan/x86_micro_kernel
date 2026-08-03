@@ -1,246 +1,140 @@
-# Quick Start Guide - Reorganized x86 Microkernel
+# Quickstart
 
-## What Changed?
+Diese Anleitung beschreibt den bevorzugten, vollständig nativen Windows-Weg.
+WSL, GRUB und ein Cross-GCC sind dafür nicht nötig.
 
-Your x86 microkernel has been reorganized from a flat structure into a professional, hierarchical operating system architecture. **No code functionality was changed** - only the organization.
+## Voraussetzungen
 
-## New Structure at a Glance
+- Windows 10 oder 11 mit PowerShell
+- GNU Make
+- NASM
+- Zig
+- Python 3
+- MSYS2 mit `sh.exe` und den grundlegenden Unix-Werkzeugen
+- VMware Workstation zum Starten der fertigen VM
+- optional QEMU für den Raw-Image-Test
 
-```
-┌─ arch/x86/          → x86-specific (boot, CPU, paging)
-├─ kernel/            → Core kernel (init, syscall, scheduler, process, shell)
-├─ mm/                → Memory management (kmalloc)
-├─ fs/                → Filesystems (VFS, FAT12, FAT32)
-├─ drivers/           → Device drivers (block, char, video, net, bus)
-├─ lib/libc/          → User C library
-├─ userspace/bin/     → User programs
-├─ config/            → Linker scripts, GRUB config
-└─ scripts/           → Build scripts
-```
+`scripts/build-windows.ps1` sucht Werkzeuge zunächst im `PATH`. Unterstützte
+Fallbackpfade stehen direkt am Anfang des Skripts. Fehlende Werkzeuge werden
+mit ihrem Programmnamen gemeldet; es findet keine automatische Installation
+statt.
 
-## Building the Kernel
+## Kernel, Tests und VMware-Paket bauen
 
-### Prerequisites (unchanged)
-- Linux or WSL2
-- GCC, NASM, GRUB, QEMU
+Im Projektstamm:
 
-### Build Commands
-```bash
-make clean      # Clean build artifacts
-make all        # Build kernel + ISO
-make run        # Build and run in QEMU
-make help       # Show all targets
+```powershell
+.\scripts\build-windows.ps1 -Target vmware -RunTests
 ```
 
-### What Happens During Build
-1. Architecture code compiles → `build/arch/`
-2. Kernel code compiles → `build/kernel/`
-3. Memory, FS, drivers compile → `build/mm/`, `build/fs/`, `build/drivers/`
-4. Libraries compile → `build/lib/`
-5. Everything links into `build/kernel.bin`
-6. ISO created with GRUB → `kernel.iso`
+Der Build räumt zunächst die gemeinsamen Objektdateien auf, kompiliert den
+Kernel als freestanding i386-ELF, assembliert beide BIOS-Stufen, baut
+`HELLO.PRG`, erzeugt das Raw-Image und verpackt die VMware-VM.
 
-## Key Files and Their New Locations
+Wichtige Ergebnisse:
 
-### Finding Specific Code
-
-| What you're looking for | New location |
-|------------------------|--------------|
-| **Kernel entry point** | `kernel/init/kernel.c` |
-| **Boot sequence** | `arch/x86/boot/multiboot.asm` |
-| **GDT/IDT setup** | `arch/x86/cpu/gdt.{asm,c}`, `arch/x86/cpu/idt.{asm,c}` |
-| **Interrupt handlers** | `arch/x86/cpu/isr.{asm,c}`, `arch/x86/cpu/irq.{asm,c}` |
-| **System calls** | `arch/x86/cpu/syscall.asm`, `kernel/init/kernel.c` |
-| **Process management** | `kernel/proc/process.{c,h}` |
-| **Scheduler** | `kernel/sched/scheduler.{c,h}` |
-| **Memory allocator** | `mm/kmalloc.{c,h}` |
-| **Paging** | `arch/x86/mm/paging.{c,h}` |
-| **Shell/commands** | `kernel/shell/command.{c,h}` |
-| **FAT32 filesystem** | `fs/fat32/fat32.{c,h}` |
-| **ATA driver** | `drivers/block/ata.{c,h}` |
-| **Keyboard driver** | `drivers/char/kb.{c,h}` |
-| **VGA driver** | `drivers/video/video.{c,h}` |
-| **Network drivers** | `drivers/net/{ne2000,e1000,rtl8139}.{c,h}` |
-| **C library** | `lib/libc/{stdio,stdlib,string}.{c,h}` |
-| **User programs** | `userspace/bin/{date,dir,test}.c` |
-
-## Adding New Code
-
-### New Device Driver
-```bash
-# 1. Create driver file
-# For block device:
-drivers/block/my_disk.c
-drivers/block/my_disk.h
-
-# For char device:
-drivers/char/my_serial.c
-drivers/char/my_serial.h
-
-# 2. Write driver code
-# 3. Makefile automatically detects and compiles it
-make all
+```text
+build/kernel.bin
+build/stage1_mbr.bin
+build/stage2_bios.bin
+build/x86-microkernel.img
+build/programs/HELLO.PRG
+build/vmware/x86-microkernel/x86-microkernel.vmx
+build/vmware/x86-microkernel/START-VMWARE.cmd
 ```
 
-### New Kernel Module
-```bash
-# 1. Create module directory
-mkdir kernel/mymodule
+## Starten
 
-# 2. Add source files
-kernel/mymodule/mymodule.c
-kernel/mymodule/mymodule.h
+VMware:
 
-# 3. Update Makefile to include it (add to KERNEL_* variables)
-# 4. Build
-make all
+```powershell
+.\build\vmware\x86-microkernel\START-VMWARE.cmd
 ```
 
-### New System Call
-```c
-// 1. Add function in appropriate module (e.g., kernel/proc/process.c)
-void my_syscall(int arg) {
-    // implementation
-}
+QEMU mit bereits gebautem Raw-Image:
 
-// 2. Add to syscall table in kernel/init/kernel.c
-void* syscall_table[512] = {
-    // ...
-    (void*)&my_syscall,  // Syscall 9
-};
-
-// 3. Add constant in arch/x86/include/sys.h
-#define SYS_MY_SYSCALL 9
-
-// 4. Add handler case in syscall_handler()
-case SYS_MY_SYSCALL:
-    ((void (*)(int))func_ptr)(arg1);
-    break;
+```powershell
+.\scripts\run-windows.ps1 -NoBuild
 ```
 
-### New Shell Command
-```c
-// 1. Add handler in kernel/shell/command.c
-void cmd_mycommand(int cnt, const char **args) {
-    printf("My command executed!\n");
-}
+Ein Headless-QEMU-Start zeigt die Bootloader-Diagnose, stellt aber keine
+interaktive VGA-Shell auf der Konsole bereit:
 
-// 2. Add to command table
-command_t command_table[] = {
-    // ...
-    {"mycommand", cmd_mycommand},
-};
+```powershell
+.\scripts\run-windows.ps1 -NoBuild -Headless
 ```
 
-## Include Paths in Your Code
+## Erster Funktionstest
 
-When writing code, use these include patterns:
+Nach dem Boot sollte der Prompt `C:\>` erscheinen. Danach:
 
-```c
-// Architecture-specific
-#include "arch/x86/sys.h"
-#include "arch/x86/mbheader.h"
-
-// Kernel modules
-#include "kernel/init/prg.h"
-#include "kernel/proc/process.h"
-#include "kernel/sched/scheduler.h"
-#include "kernel/shell/command.h"
-
-// Memory management
-#include "mm/kmalloc.h"
-
-// Filesystem
-#include "fs/vfs/filesystem.h"
-#include "fs/fat32/fat32.h"
-
-// Drivers
-#include "drivers/block/ata.h"
-#include "drivers/char/kb.h"
-#include "drivers/video/video.h"
-
-// Libraries
-#include "lib/libc/stdio.h"
-#include "lib/libc/stdlib.h"
+```text
+C:\> DIR
+C:\> TYPE README.TXT
+C:\> RUN HELLO.PRG
+C:\> GETIP
+C:\> NET STATUS
 ```
 
-## Troubleshooting
+`HELLO.PRG` meldet bei Erfolg `USERSPACE-E2E-OK`. Bei einer gebridgten
+VMware-Verbindung zeigt `GETIP` die per DHCP bezogene LAN-Adresse.
 
-### Build Fails with "file not found"
-**Problem**: Include path incorrect
-**Solution**: Check include statement uses correct path from project root
+## Eigenes Programm
 
-### Linker Errors
-**Problem**: Object file not being compiled
-**Solution**: Check Makefile includes your source directory in `*_C` or `*_ASM` variables
-
-### "Multiboot header not found" Error
-**Problem**: Linker script issue
-**Solution**: Ensure `config/klink.ld` is being used and multiboot section is first
-
-## Documentation
-
-- **README-NEW.md** - Complete architecture documentation
-- **REORGANIZATION.md** - Details of what was changed
-- **.github/copilot-instructions.md** - AI agent instructions
-- **README.md** - Original README (preserved)
-
-## Safety: Rollback if Needed
-
-Your original code is preserved:
-- Original source: `src/` directory (untouched)
-- Original Makefile: `Makefile.old`
-- Original scripts: In `scripts/` with originals in root
-
-To rollback:
-```bash
-cp Makefile.old Makefile
-# Build from src/ using old structure
+```powershell
+.\scripts\build-windows.ps1 -Target vmware -RunTests `
+  -ProgramSource C:\Projekte\meinprog.c `
+  -ProgramName MEINPRG.PRG
 ```
 
-## Testing Your Changes
+Der Name im Image muss ein eindeutiger ASCII-8.3-Name mit der Endung `.PRG`
+sein. Mehrere Quellen werden als PowerShell-Array übergeben:
+
+```powershell
+.\scripts\build-windows.ps1 -Target vmware `
+  -ProgramSource .\app.c,.\math.c,.\helper.S `
+  -ProgramName APP.PRG
+```
+
+Nur das mitgelieferte SDK ist die öffentliche Programmierschnittstelle. Siehe
+[USER_PROGRAM_TOOLCHAIN.md](USER_PROGRAM_TOOLCHAIN.md).
+
+## Direkte Make-Ziele
+
+Auf Linux/macOS oder in einer entsprechend eingerichteten Shell:
 
 ```bash
-# 1. Clean build
-make clean
-
-# 2. Build kernel
-make all
-
-# 3. Run in QEMU
-make run
-
-# 4. Test in QEMU shell
-help          # List commands
-ls /          # Test filesystem
-mem           # Check memory
+make kernel TARGET=qemu VIDEO=vga
+make user-program
+make native-image TARGET=real_hw VIDEO=vga
+make run-native TARGET=qemu VIDEO=vga
+make test-unit
 ```
 
-## Summary
+`make all`, `make run` und `make iso` verwenden weiterhin den historischen
+GRUB-/ISO-Weg. Sie sind nicht der Standard für das native Windows-/VMware-
+Paket.
 
-✅ **Code unchanged** - Only organization improved  
-✅ **Original preserved** - Can rollback anytime  
-✅ **Build system updated** - Works with new structure  
-✅ **Fully documented** - READMEs and comments  
-✅ **Professional structure** - Follows OS standards  
+## Häufige Fehler
 
-## Questions?
+### Werkzeug nicht gefunden
 
-Check these files:
-- `README-NEW.md` - Architecture details
-- `REORGANIZATION.md` - What changed
-- `Makefile` - Build system (`make help`)
-- `.github/copilot-instructions.md` - Development guide
+Das gemeldete Programm installieren oder in den `PATH` aufnehmen. Bei
+portablen Paketen kann der Fallbackpfad in `build-windows.ps1` ergänzt werden.
 
-## Next Steps
+### VMware-VM läuft beim Neubau
 
-1. **Test the build**: `make clean && make all`
-2. **Run in QEMU**: `make run`
-3. **Review structure**: Explore new directories
-4. **Continue development**: Use new organized structure
-5. **Contribute**: Structure makes collaboration easier!
+Die VM sauber herunterfahren. Das Buildskript verweigert das Überschreiben
+einer laufenden paketierten VM.
 
----
+### Kein LAN
 
-*Reorganized on October 31, 2025*
-*All original files preserved for safety*
+Im VMware Virtual Network Editor `VMnet0` dem richtigen Hostadapter zuordnen.
+WLAN-Client-Isolation kann gebridgte Gäste blockieren. Danach `NET DHCP` und
+`GETIP` verwenden.
+
+### Programm wird abgelehnt
+
+Den Packer verwenden und keine fremde ELF-Datei nur in `.PRG` umbenennen. Der
+Loader akzeptiert ausschließlich geprüfte MYPR-Images für Basisadresse
+`0x02100000` und maximal 8 MiB.

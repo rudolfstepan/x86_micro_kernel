@@ -5,29 +5,10 @@ global page_fault_handler_asm
 extern exception_handlers       ; Declare the handlers array
 extern setup_exceptions         ; Declare setup function
 extern exception_dispatcher     ; Declare the C function dispatcher
-extern page_fault_handler       ; Declare the C page fault handler
 
 section .text
 page_fault_handler_asm:
-    pusha                  ; Save all general-purpose registers
-    push ds                ; Save data segment register
-    push es                ; Save extra segment register
-    push fs
-    push gs
-
-    mov ax, 0x10           ; Load kernel data segment selector
-    mov ds, ax
-    mov es, ax
-
-    call page_fault_handler ; Call the C handler
-
-    pop gs                 ; Restore segment registers
-    pop fs
-    pop es
-    pop ds
-    popa                   ; Restore general-purpose registers
-    add esp, 4             ; Skip error code (already handled in C handler)
-    iret                   ; Return from interrupt
+    jmp isr14              ; Compatibility alias; isr14 builds a full Registers frame
 
 ;  0: Divide By Zero Exception
 isr0:
@@ -170,10 +151,9 @@ isr20:
     push byte 20
     jmp isr_common_stub
 
-; 21: Reserved
+; 21: Control Protection Exception (With Error Code!)
 isr21:
     cli
-    push byte 0
     push byte 21
     jmp isr_common_stub
 
@@ -226,17 +206,15 @@ isr28:
     push byte 28
     jmp isr_common_stub
 
-; 29: Reserved
+; 29: VMM Communication Exception (With Error Code!)
 isr29:
     cli
-    push byte 0
     push byte 29
     jmp isr_common_stub
 
-; 30: Reserved
+; 30: Security Exception (With Error Code!)
 isr30:
     cli
-    push byte 0
     push byte 30
     jmp isr_common_stub
 
@@ -258,13 +236,16 @@ isr_common_stub:
     mov es, ax
     mov fs, ax
     mov gs, ax
-    mov eax, esp               ; Pass stack pointer to C function
-    push eax                   ; Push pointer to Registers structure
+    cld
+    mov ebx, esp               ; Preserve the Registers frame across the C call
+    and esp, 0xfffffff0
+    sub esp, 12
+    push ebx                   ; Pass pointer with ABI-compliant call alignment
 
     ; Call the exception dispatcher
     call exception_dispatcher
-    
-    add esp, 4                 ; Clean up stack (remove the pushed pointer)
+
+    mov esp, ebx               ; Restore the exact interrupt frame
     pop gs
     pop fs
     pop es

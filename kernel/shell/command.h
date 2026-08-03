@@ -6,5 +6,6 @@
 // Function prototypes
 void process_command(char *input_buffer);
 void show_prompt(void);
+void command_loop(void);
 
 #endif // KERNEL_SHELL_COMMAND_H

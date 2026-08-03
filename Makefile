@@ -35,6 +35,10 @@ AS := nasm
 CC := gcc
 LD := ld
 OBJCOPY := objcopy
+PYTHON ?= python3
+ZIG ?= zig
+USER_PROGRAM_SOURCE ?= examples/userspace/hello.c
+USER_PROGRAM_OUTPUT ?= $(OUTPUT_DIR)/programs/HELLO.PRG
 
 # Build target selection (default: qemu)
 # Override with: make TARGET=real_hw or TARGET=vmware
@@ -70,8 +74,12 @@ ifeq ($(VIDEO),framebuffer)
     ASFLAGS += -DUSE_FRAMEBUFFER
 endif
 
-CFLAGS := -m32 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -fno-builtin \
+CFLAGS := -m32 -std=gnu11 -c -MMD -MP -ffreestanding -nostdlib -nostartfiles -nodefaultlibs \
+          -fno-builtin -fno-pic -fno-pie -fno-stack-protector \
+          -fno-asynchronous-unwind-tables -fno-unwind-tables -mno-sse -mno-sse2 -mno-mmx \
           -O1 -Wall -Wextra -g -Wno-unused-parameter -Wno-unused-variable -U_FORTIFY_SOURCE \
+          -Werror=implicit-function-declaration -Werror=incompatible-pointer-types \
+          -Werror=int-conversion -Werror=return-type \
           -I$(OUTPUT_DIR) -I. -I$(ARCH_DIR) -I$(ARCH_DIR)/include -I$(LIB_DIR)/libc -I$(KERNEL_DIR)/shell \
           $(TARGET_DEFINES) $(VIDEO_DEFINES)
 
@@ -124,8 +132,12 @@ LIB_LIBC_C := $(wildcard $(LIB_DIR)/libc/*.c)
 LIB_LIBC_ASM := $(wildcard $(LIB_DIR)/libc/*.asm)
 LIB_LIBK_C := $(wildcard $(LIB_DIR)/libk/*.c)
 
-# Userspace programs
-USERSPACE_C := $(wildcard $(USERSPACE_DIR)/bin/*.c)
+# The BASIC interpreter currently runs as a kernel-shell component.  Other
+# userspace programs have their own linker format and must not be folded into
+# the kernel image.
+BASIC_C := $(USERSPACE_DIR)/bin/basic.c
+BASIC_OBJ := $(BUILD_USERSPACE_DIR)/bin/basic.o
+CONFIG_STAMP := $(OUTPUT_DIR)/.config-$(TARGET)-$(VIDEO)
 
 # ============================================================================
 # OBJECT FILES
@@ -179,15 +191,29 @@ DRIVERS_OBJ := $(DRIVERS_BLOCK_OBJ) $(DRIVERS_CHAR_OBJ) $(DRIVERS_VIDEO_OBJ) \
                $(DRIVERS_NET_OBJ) $(DRIVERS_USB_OBJ) $(DRIVERS_BUS_OBJ)
 LIB_OBJ := $(LIB_LIBC_C_OBJ) $(LIB_LIBC_ASM_OBJ) $(LIB_LIBK_OBJ)
 
-ALL_OBJ := $(ARCH_OBJ) $(KERNEL_OBJ) $(MM_OBJ) $(FS_OBJ) $(DRIVERS_OBJ) $(LIB_OBJ)
+ALL_OBJ := $(ARCH_OBJ) $(KERNEL_OBJ) $(MM_OBJ) $(FS_OBJ) $(DRIVERS_OBJ) $(LIB_OBJ) $(BASIC_OBJ)
+DEPS := $(ALL_OBJ:.o=.d)
+
+# Ensure the generated directory tree exists before any object is built.
+# This also makes direct and parallel `make kernel` invocations reliable.
+$(ALL_OBJ): $(CONFIG_STAMP) | prepare
+
+# Object paths are shared across configurations.  A target/video switch must
+# therefore invalidate all objects even when no source timestamp changed.
+$(CONFIG_STAMP):
+	@mkdir -p $(OUTPUT_DIR)
+	@rm -f $(OUTPUT_DIR)/.config-*
+	@touch $@
+
+-include $(DEPS)
 
 # ============================================================================
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel iso run help format-disks test test-images test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel user-program iso bootdisk native-image bootdisk-grub run run-disk run-native run-fb help format-disks test test-unit test-all test-images test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
-all: prepare kernel iso
+all: iso
 
 # Build specifically for QEMU (relaxed timing)
 build-qemu:
@@ -245,8 +271,10 @@ help:
 	@echo "  build-vmware - Build for VMware Workstation (E1000 network)"
 	@echo "  build-real-hw - Build for real hardware (strict ATA timing)"
 	@echo "  kernel       - Build kernel binary only"
+	@echo "  user-program - Compile USER_PROGRAM_SOURCE into a loadable MYPR file"
 	@echo "  iso          - Create bootable ISO image"
-	@echo "  bootdisk     - Create bootable hard disk image (GRUB installed)"
+	@echo "  bootdisk     - Create native BIOS disk image (no GRUB)"
+	@echo "  bootdisk-grub - Create the legacy GRUB disk image (Linux/root tools)"
 	@echo "  clean        - Remove all build artifacts"
 	@echo ""
 	@echo "Run Targets:"
@@ -263,8 +291,10 @@ help:
 	@echo "  run-ne2000-tap   - Run NE2000 with TAP networking"
 	@echo ""
 	@echo "Test Targets:"
-	@echo "  test         - Run unit tests for disk images (Python)"
-	@echo "  test-verbose - Run disk image tests with detailed output"
+	@echo "  test         - Run fixture-independent host regression tests"
+	@echo "  test-all     - Run unit tests plus generated-image integration tests"
+	@echo "  test-images  - Validate generated disk images"
+	@echo "  test-verbose - Validate disk images with detailed output"
 	@echo "  test-bash    - Run disk image tests (Bash, no Python required)"
 	@echo "  test-quick   - Quick check if disk images exist"
 	@echo ""
@@ -371,6 +401,11 @@ $(BUILD_KERNEL_DIR)/shell/%.o: $(KERNEL_DIR)/shell/%.c
 	@echo "  CC    $<"
 	@$(CC) $(CFLAGS) $< -o $@
 
+# BASIC interpreter (linked into the kernel shell)
+$(BASIC_OBJ): $(BASIC_C)
+	@echo "  CC    $<"
+	@$(CC) $(CFLAGS) $< -o $@
+
 # Memory management
 $(BUILD_MM_DIR)/%.o: $(MM_DIR)/%.c
 	@echo "  CC    $<"
@@ -467,26 +502,56 @@ iso: kernel
 # BOOTABLE DISK IMAGE
 # ============================================================================
 
-bootdisk: kernel
-	@echo "Creating bootable disk image..."
+bootdisk: native-image
+
+user-program:
+	@echo "Building external user program $(USER_PROGRAM_SOURCE)..."
+	@mkdir -p $(dir $(USER_PROGRAM_OUTPUT))
+	@$(PYTHON) scripts/build_user_program.py $(USER_PROGRAM_SOURCE) \
+		--output $(USER_PROGRAM_OUTPUT) --zig $(ZIG)
+
+native-image: kernel user-program
+	@echo "Creating native GRUB-free BIOS disk image..."
+	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage1_mbr.asm -o $(OUTPUT_DIR)/stage1_mbr.bin
+	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage2_bios.asm -o $(OUTPUT_DIR)/stage2_bios.bin
+	@$(PYTHON) scripts/create_native_boot_image.py \
+		--stage1 $(OUTPUT_DIR)/stage1_mbr.bin \
+		--stage2 $(OUTPUT_DIR)/stage2_bios.bin \
+		--kernel $(OUTPUT_DIR)/kernel.bin \
+		--output $(OUTPUT_DIR)/x86-microkernel.img \
+		--vmdk $(OUTPUT_DIR)/x86-microkernel.vmdk \
+		--vmware-dir $(OUTPUT_DIR)/vmware/x86-microkernel \
+		--data-file HELLO.PRG=$(USER_PROGRAM_OUTPUT)
+	@echo "Native BIOS image created: $(OUTPUT_DIR)/x86-microkernel.img"
+	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
+
+bootdisk-grub: kernel
+	@echo "Creating legacy GRUB disk image..."
 	@./scripts/create_bootable_disk.sh
-	@echo "Bootable disk created: boot_disk.img"
+	@echo "Legacy GRUB disk created: boot_disk.img"
 
 # ============================================================================
 # TESTING
 # ============================================================================
 
-# Run disk image tests (Python version - more detailed)
-test: test-images
+# Fast, fixture-independent regression tests.
+test: test-unit
+
+test-unit:
+	@echo "Running host-side unit tests..."
+	@$(PYTHON) -m unittest discover -s test -p "test_*.py" -v
+
+# Full integration tests additionally require generated disk images.
+test-all: test-unit test-images
 
 test-images:
 	@echo "Running disk image unit tests..."
-	@python3 scripts/test_disk_images.py
+	@$(PYTHON) scripts/test_disk_images.py
 
 # Run disk image tests with verbose output
 test-verbose:
 	@echo "Running disk image unit tests (verbose)..."
-	@python3 scripts/test_disk_images.py -v
+	@$(PYTHON) scripts/test_disk_images.py -v
 
 # Run disk image tests (Bash version - no Python dependency)
 test-bash:
@@ -536,19 +601,19 @@ run: iso
 # 		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
 # 		-monitor stdio -vga vmware
 
-run-disk: bootdisk
-	@echo "Starting QEMU from bootable disk..."
-	@echo "  - Primary Master (hdd0): boot_disk.img (GRUB + FAT32 data)"
-	@echo "  - Floppy (fd0): floppy.img (FAT12)"
-	@qemu-system-i386 -m 512M -boot c \
-		-drive file=./boot_disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk.img,format=raw,if=ide,index=1 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
-		-nographic
+run-disk: run-native
 
-# Run with framebuffer mode
-run-fb: iso
+run-native: native-image
+	@echo "Starting QEMU through the native BIOS/MBR path (no GRUB)..."
+	@qemu-system-i386 -m 512M -boot c \
+		-drive file=$(OUTPUT_DIR)/x86-microkernel.img,format=raw,if=ide,index=0 \
+		-device rtl8139,netdev=net0 -netdev user,id=net0 \
+		-vga std -no-reboot -no-shutdown
+
+# Run with framebuffer mode.  Use a sub-make so the parse-time VIDEO
+# conditionals are evaluated with the framebuffer configuration.
+run-fb:
+	@$(MAKE) iso TARGET=qemu VIDEO=framebuffer
 	@echo "Starting QEMU with framebuffer..."
 	@echo "  - Booting from kernel.iso"
 	@echo "  - Video mode: 1024x768x32 framebuffer"

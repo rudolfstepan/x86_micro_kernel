@@ -38,9 +38,6 @@ static volatile uint32_t timer_tick_count = 0;  // Use a 32-bit counter
 void timer_irq_handler(void* r) {
     // Increment a counter each time the timer interrupt fires
     timer_tick_count++;
-
-    // Send End of Interrupt (EOI) signal to the PIC
-    outb(0x20, 0x20);  // EOI for master PIC
 }
 
 // Function to initialize the PIT with a given frequency

@@ -21,6 +21,7 @@ extern void gdt_install();
 //idt
 extern void idt_install();
 extern void set_idt_entry(int vector, uint32_t handler);
+extern void set_idt_entry_flags(int vector, uint32_t handler, uint8_t type_attr);
 
 //isr
 extern void isr_install();
@@ -28,7 +29,7 @@ extern void isr_install();
 //irq
 extern void irq_install();
 extern void irq_handler(Registers* r);
-extern void register_interrupt_handler(int irq, void* r);
+extern int register_interrupt_handler(int irq, void* r);
 void irq_uninstall_handler(int irq);
 
 extern volatile uint64_t cpu_frequency; // Global CPU frequency

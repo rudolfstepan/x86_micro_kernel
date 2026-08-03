@@ -6,6 +6,6 @@
 
 /* Forward declarations */
 int xhci_probe(pci_device_t *dev);
-static void usb_init(void);
+void usb_init(void);
 
 #endif /* USB_CORE_H */

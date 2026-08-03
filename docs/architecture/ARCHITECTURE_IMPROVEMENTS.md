@@ -1,5 +1,12 @@
 # OS Architecture Analysis & Professional Improvements
 
+> **Historischer Audit (7. November 2025):** Dies ist keine aktuelle
+> Fehlerliste. Interruptinitialisierung, TSS/GDT, Exceptionpfade, Paging,
+> Allocator und Loader wurden danach verändert. Der aktuelle Überblick steht
+> in [`ARCHITECTURE_DEEP_DIVE.md`](ARCHITECTURE_DEEP_DIVE.md) und der
+> verifizierte Stand in
+> [`../development/PROJECT_STATUS.md`](../development/PROJECT_STATUS.md).
+
 **Analysis Date**: 2025-11-07  
 **Status**: Several critical issues found - requires professional improvements  
 **Priority**: HIGH - Stability and correctness issues detected  

@@ -1,5 +1,10 @@
 # USB Core Recommendations
 
+> **Historische Entwurfsnotiz:** Ein Teil der vorgeschlagenen Skeletons und
+> PCI-Integration existiert inzwischen, vollständige Enumeration, HID- und
+> Mass-Storage-Verifikation sind aber weiterhin experimentell. Der aktuelle
+> Status steht in [`../../docs/hardware/USB_DESIGN.md`](../../docs/hardware/USB_DESIGN.md).
+
 ## File: drivers/usb/usb_core.c
 
 ### General Structure

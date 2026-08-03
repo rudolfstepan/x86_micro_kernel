@@ -20,6 +20,7 @@
 #define EXT2_S_IFDIR    0x4000
 #define EXT2_S_IFCHR    0x2000
 #define EXT2_S_IFIFO    0x1000
+#define EXT2_S_IFMT     0xF000
 
 // File permissions
 #define EXT2_S_IRUSR    0x0100
@@ -149,7 +150,7 @@ typedef struct {
     uint16_t rec_len;               // Directory entry length
     uint8_t  name_len;              // Name length
     uint8_t  file_type;             // File type
-    char     name[EXT2_NAME_LEN];   // File name
+    char     name[EXT2_NAME_LEN + 1]; // File name plus local NUL terminator
 } ext2_dir_entry_t;
 #pragma pack(pop)
 
@@ -167,6 +168,8 @@ typedef struct {
     void* block_buffer;              // Temporary buffer for block operations
     uint16_t ata_base;               // ATA base port for this filesystem
     bool ata_is_master;              // ATA master/slave flag for this filesystem
+    uint32_t partition_lba;          // First sector of the EXT2 volume
+    uint32_t volume_sectors;         // Volume length, or zero if unknown
 } ext2_fs_t;
 
 // ===========================================================================
@@ -175,6 +178,10 @@ typedef struct {
 
 // Initialization
 bool ext2_init(ext2_fs_t* fs, uint16_t base, bool is_master);
+bool ext2_init_at(ext2_fs_t* fs, uint16_t base, bool is_master,
+                  uint32_t partition_lba);
+bool ext2_init_volume(ext2_fs_t* fs, uint16_t base, bool is_master,
+                      uint32_t partition_lba, uint32_t volume_sectors);
 void ext2_cleanup(ext2_fs_t* fs);
 
 // Block operations
@@ -188,6 +195,10 @@ bool ext2_write_inode(ext2_fs_t* fs, uint32_t inode_num, const ext2_inode_t* ino
 // Directory operations
 bool ext2_read_dir(ext2_fs_t* fs, uint32_t inode_num, ext2_dir_entry_t* entries, uint32_t max_entries, uint32_t* count);
 bool ext2_find_entry(ext2_fs_t* fs, uint32_t dir_inode, const char* name, ext2_dir_entry_t* entry);
+int ext2_find_entry_status(ext2_fs_t* fs, uint32_t dir_inode,
+                           const char* name, ext2_dir_entry_t* entry);
+int ext2_get_dir_entry(ext2_fs_t* fs, uint32_t dir_inode, uint32_t index,
+                       ext2_dir_entry_t* entry);
 
 // File operations
 int ext2_read_file(ext2_fs_t* fs, ext2_inode_t* inode, uint32_t offset, uint32_t size, void* buffer);

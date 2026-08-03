@@ -1,4 +1,11 @@
 # Kernel Source Code Diagnostic Report
+
+> **Historischer Audit (6. November 2025):** Die 28 Befunde wurden an einem
+> älteren Stand erhoben und sind nicht ungeprüft als heutige Schwachstellen zu
+> verstehen. Viele betroffene Bereiche wurden überarbeitet. Aktuelle Aussagen
+> stehen in [`PROJECT_STATUS.md`](PROJECT_STATUS.md); verbleibende Risiken
+> müssen am jetzigen Diff und mit reproduzierbaren Tests neu bewertet werden.
+
 **Date:** November 6, 2025  
 **Kernel:** x86_micro_kernel  
 **Analysis:** Comprehensive security, memory safety, and bug audit

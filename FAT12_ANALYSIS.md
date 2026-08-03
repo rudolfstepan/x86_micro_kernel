@@ -1,5 +1,11 @@
 # FAT12 Implementation Analysis
 
+> **Historischer Audit (November 2025):** Die Bewertung bezieht sich auf einen
+> älteren Quellstand. Mehrere hier genannte Fehler wurden seitdem korrigiert
+> und durch Hosttests abgedeckt. Für den aktuellen Status gilt
+> [`FAT12_IMPROVEMENTS.md`](FAT12_IMPROVEMENTS.md); offene Punkte müssen vor
+> einer erneuten Einstufung am heutigen Code reproduziert werden.
+
 ## Executive Summary
 
 **Overall Assessment: ⚠️ NEEDS IMPROVEMENT**

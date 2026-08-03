@@ -8,10 +8,9 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "../arch/x86/include/mbheader.h"
+#include "arch/x86/include/mbheader.h"
 #include "lib/libc/stdio.h"
-
-extern uint64_t total_memory;  // Global memory counter
+#include "mm/kmalloc.h"
 
 //---------------------------------------------------------------------------------------------
 // Multiboot 1 Parsing
@@ -25,6 +24,8 @@ extern uint64_t total_memory;  // Global memory counter
  */
 void parse_multiboot1_info(const multiboot1_info_t *mb_info) {
     printf("Parsing Multiboot1 Information...\n");
+    memory_map_reset();
+    memory_reserve_region((uint32_t)(uintptr_t)mb_info, sizeof(*mb_info));
 
     // Check flags for available fields
     if (mb_info->flags & MULTIBOOT1_FLAG_MEM) {
@@ -34,64 +35,110 @@ void parse_multiboot1_info(const multiboot1_info_t *mb_info) {
     }
 
     if (mb_info->flags & MULTIBOOT1_FLAG_BOOT_DEVICE) {
-        printf("Boot Device: %p\n", mb_info->boot_device);
+        printf("Boot Device: 0x%08X\n", mb_info->boot_device);
     }
 
-    if (mb_info->flags & MULTIBOOT1_FLAG_CMDLINE) {
-        const char *cmdline = (const char *)mb_info->cmdline;
+    if ((mb_info->flags & MULTIBOOT1_FLAG_CMDLINE) && mb_info->cmdline != 0) {
+        const char *cmdline = (const char *)(uintptr_t)mb_info->cmdline;
         printf("Command Line: %s\n", cmdline);
     }
 
-    if (mb_info->flags & MULTIBOOT1_FLAG_MODS) {
+    if ((mb_info->flags & MULTIBOOT1_FLAG_MODS) && mb_info->mods_addr != 0) {
         printf("Modules:\n");
-        const multiboot1_module_t *mods = (const multiboot1_module_t *)mb_info->mods_addr;
+        const multiboot1_module_t *mods =
+            (const multiboot1_module_t *)(uintptr_t)mb_info->mods_addr;
         for (uint32_t i = 0; i < mb_info->mods_count; i++) {
             printf("  Module %u:\n", i + 1);
             printf("    Start Address: 0x%x\n", mods[i].mod_start);
             printf("    End Address: 0x%x\n", mods[i].mod_end);
-            const char *mod_cmdline = (const char *)mods[i].string;
+            const char *mod_cmdline = (const char *)(uintptr_t)mods[i].string;
             printf("    Command Line: %s\n", mod_cmdline ? mod_cmdline : "(none)");
         }
     }
 
-    if (mb_info->flags & MULTIBOOT1_FLAG_MMAP) {
+    bool valid_mmap = (mb_info->flags & MULTIBOOT1_FLAG_MMAP) &&
+                      mb_info->mmap_addr != 0 && mb_info->mmap_length != 0 &&
+                      mb_info->mmap_length <= UINTPTR_MAX - mb_info->mmap_addr;
+    if (valid_mmap) {
         printf("Memory Map:\n");
-        const multiboot1_mmap_entry_t *mmap = (const multiboot1_mmap_entry_t *)mb_info->mmap_addr;
-        const uint8_t *mmap_end = (const uint8_t *)mb_info->mmap_addr + mb_info->mmap_length;
+        const uint8_t *cursor = (const uint8_t *)(uintptr_t)mb_info->mmap_addr;
+        const uint8_t *mmap_end = cursor + mb_info->mmap_length;
+        memory_reserve_region(mb_info->mmap_addr, mb_info->mmap_length);
 
         printf("------------------------------------------------------------\n");
         printf("| Address                 | Length        | Type (1=Usable)|\n");
         printf("------------------------------------------------------------\n");
 
-        while ((uint8_t *)mmap < mmap_end) {
-            printf("| %-12p ", mmap->base_addr);
-            printf("| %-12p | ", mmap->base_addr + mmap->length - 1);
-            printf("%-13u | ", mmap->length);
+        while ((size_t)(mmap_end - cursor) >= sizeof(uint32_t)) {
+            const multiboot1_mmap_entry_t *mmap =
+                (const multiboot1_mmap_entry_t*)cursor;
+            size_t remaining = (size_t)(mmap_end - cursor);
+            if (mmap->size < sizeof(multiboot1_mmap_entry_t) - sizeof(mmap->size) ||
+                (size_t)mmap->size > remaining - sizeof(mmap->size)) {
+                printf("Warning: malformed Multiboot memory-map entry.\n");
+                break;
+            }
+            size_t entry_size = (size_t)mmap->size + sizeof(mmap->size);
+
+            printf("| %016llX ", mmap->base_addr);
+            uint64_t region_end = mmap->length == 0 ? mmap->base_addr :
+                (mmap->length - 1U > UINT64_MAX - mmap->base_addr
+                    ? UINT64_MAX : mmap->base_addr + mmap->length - 1U);
+            printf("| %016llX | ", region_end);
+            printf("%-13llu | ", mmap->length);
             printf("%-14u |\n", mmap->type);
 
-            // Only count usable memory (type == 1)
             if (mmap->type == 1) {
-                total_memory += mmap->length;
+                if (memory_add_usable_region(mmap->base_addr, mmap->length) != 0) {
+                    printf("Warning: too many usable memory-map regions.\n");
+                }
             }
 
-            // Advance to the next entry
-            mmap = (const multiboot1_mmap_entry_t *)((uint8_t *)mmap + mmap->size + sizeof(mmap->size));
+            cursor += entry_size;
         }
         printf("------------------------------------------------------------\n");
+    } else if (mb_info->flags & MULTIBOOT1_FLAG_MEM) {
+        /* Multiboot's basic memory fields are a conservative fallback only. */
+        memory_add_usable_region(0, (uint64_t)mb_info->mem_lower * 1024U);
+        memory_add_usable_region(0x100000U,
+                                 (uint64_t)mb_info->mem_upper * 1024U);
     }
 
-    if (mb_info->flags & MULTIBOOT1_FLAG_BOOTLOADER) {
-        const char *bootloader_name = (const char *)mb_info->boot_loader_name;
+    if (total_memory == 0 && (mb_info->flags & MULTIBOOT1_FLAG_MEM)) {
+        printf("Warning: memory map contained no usable regions; using basic memory info.\n");
+        memory_add_usable_region(0, (uint64_t)mb_info->mem_lower * 1024U);
+        memory_add_usable_region(0x100000U,
+                                 (uint64_t)mb_info->mem_upper * 1024U);
+    }
+
+    if ((mb_info->flags & MULTIBOOT1_FLAG_MODS) && mb_info->mods_addr != 0) {
+        memory_reserve_region(mb_info->mods_addr,
+                              (uint64_t)mb_info->mods_count *
+                                  sizeof(multiboot1_module_t));
+        const multiboot1_module_t *mods =
+            (const multiboot1_module_t *)(uintptr_t)mb_info->mods_addr;
+        for (uint32_t i = 0; i < mb_info->mods_count; ++i) {
+            if (mods[i].mod_end > mods[i].mod_start) {
+                memory_reserve_region(mods[i].mod_start,
+                                      mods[i].mod_end - mods[i].mod_start);
+            }
+        }
+    }
+
+    if ((mb_info->flags & MULTIBOOT1_FLAG_BOOTLOADER) &&
+        mb_info->boot_loader_name != 0) {
+        const char *bootloader_name =
+            (const char *)(uintptr_t)mb_info->boot_loader_name;
         printf("Bootloader Name: %s\n", bootloader_name);
     }
 
     if (mb_info->flags & MULTIBOOT1_FLAG_VBE) {
         printf("VBE Information:\n");
-        printf("Control Info: %p ", mb_info->vbe_control_info);
-        printf("Mode Info: %p ", mb_info->vbe_mode_info);
-        printf("Mode: %p\n", mb_info->vbe_mode);
-        printf("Interface Segment: %p ", mb_info->vbe_interface_seg);
-        printf("Offset: %p ", mb_info->vbe_interface_off);
+        printf("Control Info: 0x%08X ", mb_info->vbe_control_info);
+        printf("Mode Info: 0x%08X ", mb_info->vbe_mode_info);
+        printf("Mode: 0x%04X\n", mb_info->vbe_mode);
+        printf("Interface Segment: 0x%04X ", mb_info->vbe_interface_seg);
+        printf("Offset: 0x%04X ", mb_info->vbe_interface_off);
         printf("Length: %u\n", mb_info->vbe_interface_len);
     }
 

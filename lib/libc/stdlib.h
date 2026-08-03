@@ -16,7 +16,8 @@
 #define SYS_FREE 5
 #define SYS_REALLOC 6
 #define SYS_TERMINAL_GETCHAR 7
-#define SYS_INSTALL_IRQ 8
+#define SYS_INSTALL_IRQ 8 /* Reserved: always rejected by the kernel. */
+#define SYS_EXIT 9
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)
@@ -43,10 +44,11 @@ uint32_t get_ebp();
 
 // void throw(TryContext* ctx, int exception_code);
 
-void initialize_memory_system();
+int initialize_memory_system(void);
 
 void* malloc(size_t size);
 void* aligned_alloc(size_t alignment, size_t size);
+void aligned_free(void* ptr);
 void* realloc(void *ptr, size_t new_size);
 void free(void* ptr);
 void secure_free(void *ptr, size_t size);
@@ -59,7 +61,7 @@ int atoi(const char* str);
 void delay_ms(uint32_t ms);
 void wait_enter_pressed();
 
-void exit(uint8_t status);
+void exit(int status) __attribute__((noreturn));
 
 // Disable interrupts
 void disable_interrupts();

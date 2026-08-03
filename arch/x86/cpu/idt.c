@@ -26,12 +26,20 @@ struct idt_entry idt[256];
 extern void idt_load(); // defined in boot.asm
 
 // Function to set an IDT entry
-void set_idt_entry(int vector, uint32_t handler) {
+void set_idt_entry_flags(int vector, uint32_t handler, uint8_t type_attr) {
+    if (vector < 0 || vector >= NUM_IDT_ENTRIES) {
+        return;
+    }
+
     idt[vector].offset_low = handler & 0xFFFF;
     idt[vector].selector = 0x08; // Code segment
     idt[vector].zero = 0;
-    idt[vector].type_attr = 0x8E; // Interrupt gate
+    idt[vector].type_attr = type_attr;
     idt[vector].offset_high = (handler >> 16) & 0xFFFF;
+}
+
+void set_idt_entry(int vector, uint32_t handler) {
+    set_idt_entry_flags(vector, handler, 0x8E); // Ring-0 interrupt gate
 }
 
 void idt_install() {

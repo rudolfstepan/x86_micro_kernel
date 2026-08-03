@@ -2,6 +2,9 @@
 #include "arch/x86/include/sys.h"
 #include "lib/libc/stdio.h"
 
+extern char _kernel_start;
+extern char _kernel_text_end;
+
 // External IRQ handlers defined in assembly or elsewhere
 extern void irq0();
 extern void irq1();
@@ -19,20 +22,41 @@ extern void irq12();
 extern void irq13();
 extern void irq14();
 extern void irq15();
+extern void apic_spurious_interrupt();
 
 //extern void syscall_handler_asm();
 
 // Array of IRQ handler routines for custom handlers
-void* irq_routines[17] = { 0 };
+#define IRQ_ROUTINE_COUNT 16
+#define IRQ_HANDLERS_PER_LINE 4
+static void* irq_routines[IRQ_ROUTINE_COUNT][IRQ_HANDLERS_PER_LINE] = {{0}};
 
 // Function to install a custom IRQ handler
-void register_interrupt_handler(int irq, void* r) {
-    irq_routines[irq] = r;
+int register_interrupt_handler(int irq, void* r) {
+    uintptr_t handler = (uintptr_t)r;
+    if (irq < 0 || irq >= IRQ_ROUTINE_COUNT ||
+        handler < (uintptr_t)&_kernel_start ||
+        handler >= (uintptr_t)&_kernel_text_end) {
+        return -1;
+    }
+    for (int slot = 0; slot < IRQ_HANDLERS_PER_LINE; ++slot) {
+        if (irq_routines[irq][slot] == r) return 0;
+        if (irq_routines[irq][slot] == NULL) {
+            irq_routines[irq][slot] = r;
+            return 0;
+        }
+    }
+    return -1;
 }
 
 // Function to uninstall an IRQ handler
 void irq_uninstall_handler(int irq) {
-    irq_routines[irq] = 0;
+    if (irq < 0 || irq >= IRQ_ROUTINE_COUNT) {
+        return;
+    }
+    for (int slot = 0; slot < IRQ_HANDLERS_PER_LINE; ++slot) {
+        irq_routines[irq][slot] = NULL;
+    }
 }
 
 // Remaps IRQs 0-15 to interrupt vectors 0x20-0x2F
@@ -72,24 +96,24 @@ void irq_install() {
     set_idt_entry(0x2E, (uint32_t)irq14); // Primary ATA Hard Disk
     set_idt_entry(0x2F, (uint32_t)irq15); // Secondary ATA Hard Disk
 
-    set_idt_entry(0x80, (uint32_t)syscall_handler_asm); // System call gate
+    // DPL=3 permits INT 0x80 from user mode; the handler still executes in Ring 0.
+    set_idt_entry_flags(0x80, (uint32_t)syscall_handler_asm, 0xEE);
+    set_idt_entry(0xFF, (uint32_t)apic_spurious_interrupt);
 }
 
 // General IRQ handler that checks for custom routines
 void irq_handler(Registers* regs) {
-    // Check if there is a custom handler for this IRQ
-    if (irq_routines[regs->irq_number - 32]) {
-        void (*handler)(Registers* r) = (void (*)(Registers*))(irq_routines[regs->irq_number - 32]);
+    if (regs == NULL || regs->irq_number < 32 || regs->irq_number >= 48) {
+        return;
+    }
 
-        int irq = regs->irq_number - 32;
-
-            // if(irq > 1 && irq != 9) {
-            //     printf("registered IRQ %d\n", regs->irq_number - 32);
-            // }
-
-        if(handler != NULL) {
-            handler(regs);
-        }
+    uint32_t irq = regs->irq_number - 32;
+    // Legacy PCI lines may be shared.  Every registered handler must inspect
+    // its device status and return when the interrupt does not belong to it.
+    for (int slot = 0; slot < IRQ_HANDLERS_PER_LINE; ++slot) {
+        void (*handler)(Registers* r) =
+            (void (*)(Registers*))(irq_routines[irq][slot]);
+        if (handler != NULL) handler(regs);
     }
 
     // Send End of Interrupt (EOI) to the PICs if necessary

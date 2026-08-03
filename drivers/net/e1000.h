@@ -29,7 +29,7 @@ struct e1000_rx_desc {
 void e1000_detect();
 bool e1000_is_initialized();
 void e1000_get_mac_address(uint8_t *mac);
-void e1000_send_packet(void *packet, size_t length);
+bool e1000_send_packet(void *packet, size_t length);
 int e1000_receive_packet(uint8_t *buffer, size_t buffer_size);
 void e1000_send_test_packet();
 void e1000_debug_registers();

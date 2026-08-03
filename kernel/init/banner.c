@@ -12,7 +12,6 @@
 #include "mm/kmalloc.h"
 
 // External global variables
-extern size_t total_memory;         // From kmalloc.h
 extern short drive_count;            // From drives.h
 extern drive_t detected_drives[];    // From drives.h
 extern drive_t* current_drive;       // From drives.h
@@ -28,7 +27,7 @@ void print_welcome_message(void) {
     printf("      |        Welcome to the Rudolf Stepan x86 Micro Kernel       |\n");
     printf("      |      Type 'HELP' for a list of commands and instructions   |\n");
     printf("      *------------------------------------------------------------*\n");
-    printf("        Total Memory: %d MB\n", total_memory/1024/1024);
+    printf("        Total Memory: %llu MB\n", total_memory/1024/1024);
     printf("        Detected Drives (%d): ", drive_count);
     
     for(int i = 0; i < drive_count; i++) {

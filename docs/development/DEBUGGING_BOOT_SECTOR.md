@@ -1,5 +1,11 @@
 # Boot Sector Debugging Guide
 
+> **Historische Fehlersuchanleitung:** Sie betrifft den früheren
+> GRUB-/separaten-Datenträgerweg und manuelles `MOUNT HDD0`. Der aktuelle
+> native Loader, das kombinierte FAT32-Image und die heutigen Prüfungen sind
+> in [`BOOTABLE_DISK.md`](BOOTABLE_DISK.md) dokumentiert. Alte Kommandos unten
+> nur zur Analyse älterer Images verwenden.
+
 ## Problem
 Drives (HDD/FDD) werden erkannt, können aber nicht gemountet werden.
 

@@ -11,6 +11,7 @@
 #include "drivers/video/display.h"
 #include "drivers/char/kb.h"
 #include "kernel/time/pit.h"
+#include "kernel/sched/scheduler.h"
 #include "mm/kmalloc.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"  // For SYS_MALLOC, SYS_FREE, SYS_REALLOC, etc.
@@ -50,7 +51,8 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&k_free,                     // Syscall 5: Free memory
     (void*)&k_realloc,                  // Syscall 6: Reallocate memory
     (void*)&getchar,                    // Syscall 7: Read character from keyboard
-    (void*)&register_interrupt_handler, // Syscall 8: Register IRQ handler
+    NULL,                               // Syscall 8: reserved (IRQ registration is privileged)
+    (void*)&task_exit,                  // Syscall 9: Terminate current task
     // Add more syscalls here as needed
 };
 
@@ -67,62 +69,53 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
  * - ECX: argument 2
  * - EDX: argument 3
  * 
- * @param irq_number Unused, for compatibility with IRQ handler signature
+ * @param regs Saved register frame built by syscall_handler_asm
  */
-void syscall_handler(void* irq_number) {
-    int syscall_index, arg1, arg2, arg3;
-    
-    // Retrieve register values into C variables
-    __asm__ __volatile__(
-        "" // No instructions needed, just read registers
-        : "=a"(syscall_index),  // EAX -> syscall_index
-          "=b"(arg1),           // EBX -> arg1
-          "=c"(arg2),           // ECX -> arg2
-          "=d"(arg3)            // EDX -> arg3
-        :                       // No input operands
-    );
+void syscall_handler(Registers* regs) {
+    const uint32_t syscall_index = regs->eax;
+    const uint32_t arg1 = regs->ebx;
+    const uint32_t arg2 = regs->ecx;
+    uint32_t result = 0;
 
     // Validate syscall index
-    if (syscall_index < 0 || syscall_index >= 512 || syscall_table[syscall_index] == 0) {
-        printf("Invalid syscall index: %d\n", syscall_index);
+    if (syscall_index >= 512 || syscall_table[syscall_index] == 0) {
+        printf("Invalid syscall index: %u\n", syscall_index);
+        regs->eax = (uint32_t)-1;
         return;
     }
 
-    // Retrieve function pointer from table
-    void* func_ptr = (void*)syscall_table[syscall_index];
-
-    // Dispatch based on syscall number and argument count
     switch (syscall_index) {
-        // No-argument syscalls
-        case 0:  // kernel_hello
-        case 3:  // kb_wait_enter
-        case SYS_FREE:  // k_free
-            ((void (*)(void))func_ptr)();
+        case SYS_TERMINAL_PUTCHAR:
+            display_putchar((char)arg1);
             break;
-
-        // Single-argument syscalls
-        case 1:  // kernel_print_number
-        case 2:  // pit_delay
-        case SYS_MALLOC:  // k_malloc
-            ((void (*)(int))func_ptr)((uint32_t)arg1);
+        case SYS_PRINT:
+            kernel_print_number((int)arg1);
             break;
-
-        // Two-argument syscalls
-        case SYS_REALLOC:  // k_realloc
-            ((void* (*)(void*, size_t))func_ptr)((void*)arg1, (size_t)arg2);
+        case SYS_DELAY:
+            pit_delay(arg1);
             break;
-
-        case SYS_INSTALL_IRQ:  // register_interrupt_handler
-            ((void (*)(int, void*))func_ptr)(arg1, (void*)arg2);
+        case SYS_WAIT_ENTER:
+            kb_wait_enter();
             break;
-
-        // Syscalls with return values
-        case SYS_TERMINAL_GETCHAR:  // getchar
-            ((void* (*)(void))func_ptr)();
+        case SYS_MALLOC:
+            result = (uint32_t)(uintptr_t)k_malloc((size_t)arg1);
             break;
-
+        case SYS_FREE:
+            k_free((void*)(uintptr_t)arg1);
+            break;
+        case SYS_REALLOC:
+            result = (uint32_t)(uintptr_t)k_realloc((void*)(uintptr_t)arg1,
+                                                    (size_t)arg2);
+            break;
+        case SYS_TERMINAL_GETCHAR:
+            result = (uint32_t)(uint8_t)getchar();
+            break;
+        case SYS_EXIT:
+            task_exit();
         default:
-            printf("Unknown syscall index: %d\n", syscall_index);
+            result = (uint32_t)-1;
             break;
     }
+
+    regs->eax = result;
 }

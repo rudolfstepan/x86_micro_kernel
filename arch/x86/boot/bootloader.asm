@@ -7,14 +7,53 @@ extern kernel_main
 
 section .text
 start:
-    ; Initialize stack pointer hadcoded to 0x1FDFFFFF which is the end of the 512MB memory
+    cli
+    cld
+    ; Use the stack reserved by the kernel linker script.
     mov esp, _stack_start + 8192
+    and esp, 0xfffffff0
+    sub esp, 8                 ; Keep the i386 ABI's 16-byte call alignment
+    ; Debug markers used by the native BIOS smoke tests. E9 is consumed by
+    ; QEMU/Bochs; COM1 is captured by the generated headless VMware machine.
+    ; Preserve the Multiboot handoff registers below.
+    push eax
+    push ecx
+    push edx
+    mov dx, 0x00E9
+    mov al, 'K'
+    out dx, al
+    mov al, 10
+    out dx, al
+    mov al, 'K'
+    call serial_write_byte
+    mov al, 10
+    call serial_write_byte
+    pop edx
+    pop ecx
+    pop eax
     ; Call the kernel main function
     push ebx
-    push dword 0x36d76289
+    push eax
     call kernel_main
     ; Halt the system if kernel_main returns
     cli
 .halt:
     hlt
     jmp .halt
+
+; Stage 2 has already configured COM1. Bound the poll so this marker can never
+; stall a physical boot when no conventional UART is present.
+serial_write_byte:
+    mov ah, al
+    mov dx, 0x03FD
+    mov ecx, 0x0000FFFF
+.wait:
+    in al, dx
+    test al, 0x20
+    jnz .ready
+    loop .wait
+.ready:
+    mov al, ah
+    mov dx, 0x03F8
+    out dx, al
+    ret

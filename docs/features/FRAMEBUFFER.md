@@ -1,107 +1,50 @@
-# Framebuffer Support
+# Anzeige: VGA und Framebuffer
 
-The x86 Microkernel now supports two video modes:
+Der verifizierte Standardweg verwendet VGA-Textmodus. Ein optionaler linearer
+RGB-Framebuffer ist vorhanden, bleibt aber experimentell.
 
-1. **VGA Text Mode** (default) - 80x25 character display
-2. **Framebuffer Mode** - 1024x768x32 graphical display with text rendering
+## Buildauswahl
 
-## Building
-
-### VGA Text Mode (Default)
 ```bash
-make build-qemu
-```
-
-### Framebuffer Mode
-```bash
-make build-qemu-fb
-```
-
-## Running
-
-### VGA Text Mode
-```bash
-make run
-```
-
-### Framebuffer Mode
-```bash
+make kernel TARGET=qemu VIDEO=vga
+make kernel TARGET=qemu VIDEO=framebuffer
 make run-fb
 ```
 
-## Implementation Details
+`scripts/build-windows.ps1` setzt derzeit fest `VIDEO=vga`, damit das native
+VMware-Paket den robusten Textpfad verwendet.
 
-### Compiler Flags
-- `USE_VGA_TEXT` - VGA text mode (80x25 characters)
-- `USE_FRAMEBUFFER` - Graphical framebuffer mode
+## Abstraktionsschicht
 
-### Files Added
-- `drivers/video/framebuffer.h` - Framebuffer driver header
-- `drivers/video/framebuffer.c` - Framebuffer implementation with 8x16 font
-- `drivers/video/display.h` - Display abstraction layer
-- `drivers/video/display.c` - Unified display interface
+`drivers/video/display.c` stellt die gemeinsame Textausgabe bereit. Bei einem
+Framebuffer-Build wird der Framebuffer verwendet, wenn der Bootloader gültige
+Metadaten liefert; andernfalls fällt die Anzeige auf VGA-Text zurück.
 
-### Multiboot Configuration
-The multiboot header (`arch/x86/boot/multiboot.asm`) now requests:
-- **VGA mode**: Standard text mode (no special requests)
-- **Framebuffer mode**: 1024x768x32 linear framebuffer
+Der Framebuffertreiber prüft unter anderem:
 
-### Display Abstraction
-Both modes use the same API through `display.h`:
-- `display_init()` - Initialize display
-- `display_clear()` - Clear screen
-- `display_putchar(c)` - Write character
-- `display_write(str)` - Write string
-- `display_set_color(color)` - Set color
-- `display_backspace()` - Handle backspace
+- vorhandene physische Adresse
+- RGB-Typ
+- Breite, Höhe und Pitch
+- 8, 16, 24 oder 32 Bit pro Pixel
+- gültige Position und Größe der RGB-Kanäle
+- Überlauf und Adressbereich unterhalb von 4 GiB
 
-### Terminal Dimensions
-- **VGA Text**: 80 columns × 25 rows
-- **Framebuffer**: 128 columns × 48 rows (calculated from 1024x768 with 8x16 font)
+Er unterstützt Löschen, Zeichenausgabe, Scrollen, Cursorposition und
+Vorder-/Hintergrundfarbe.
 
-### Font
-The framebuffer mode includes a built-in 8x16 bitmap font with:
-- Basic ASCII characters (0x20-0x7E)
-- Numbers, letters, and common symbols
-- Extensible font array for additional glyphs
+## Bootloaderbezug
 
-## Switching Modes
+Beim Legacy-GRUB-Weg kann das Multiboot-Framebufferfeld von GRUB kommen. Der
+eigene native BIOS-Loader bootet standardmäßig in VGA-Textmodus und fordert
+derzeit keinen VBE-Grafikmodus an. Deshalb ist `VIDEO=framebuffer` im nativen
+VMware-Paket nicht der Referenzweg.
 
-To switch from VGA to framebuffer or vice versa:
+## Grenzen
 
-1. Clean the build:
-   ```bash
-   make clean
-   ```
+- keine Hardwarebeschleunigung
+- keine Benutzer-Grafik-API
+- keine dynamische Modusumschaltung
+- keine garantierte VBE-Einrichtung durch den nativen Loader
+- Schrift und Shelllayout sind primär für Textausgabe ausgelegt
 
-2. Build for the desired mode:
-   ```bash
-   make build-qemu-fb    # For framebuffer
-   # or
-   make build-qemu       # For VGA text mode
-   ```
-
-3. Run with the appropriate target:
-   ```bash
-   make run-fb           # For framebuffer
-   # or
-   make run              # For VGA text mode
-   ```
-
-## Future Enhancements
-
-Possible improvements:
-- [ ] Mouse cursor support in framebuffer mode
-- [ ] Additional font sizes (8x8, 16x16)
-- [ ] Unicode/UTF-8 support
-- [ ] Hardware acceleration via VBE/VESA
-- [ ] Multiple resolution options
-- [ ] Graphical UI elements (windows, buttons)
-- [ ] Image/logo display support
-
-## Notes
-
-- The framebuffer mode requires GRUB to set up the video mode
-- QEMU's `-vga std` provides better framebuffer support than `-vga vmware`
-- Colors are mapped from VGA palette to 32-bit ARGB for compatibility
-- The display abstraction allows code to work in both modes without changes
+Für Kernel-, Shell- und VMware-Fehlersuche sollte VGA verwendet werden.

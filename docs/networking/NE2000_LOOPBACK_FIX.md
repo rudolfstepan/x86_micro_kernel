@@ -1,5 +1,10 @@
 # NE2000 Loopback Reception Fix
 
+> **Historischer NE2000-Fehlerbericht:** Der aktuelle VMware-Referenzweg nutzt
+> E1000 über die gemeinsame `netdev`-Schicht und DHCP. Für den heutigen
+> Funktionsstand und aktuelle Befehle siehe [`NETWORK.md`](NETWORK.md). Die
+> Details unten bleiben für die Wartung des Legacy-NE2000-Treibers erhalten.
+
 ## Problem
 The NE2000 driver was successfully sending packets in loopback mode (24 bytes transmitted), but packet reception was failing with "Packet received, length: 0 bytes" and "Loopback test failed, no packet received."
 

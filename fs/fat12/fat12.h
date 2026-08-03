@@ -16,7 +16,7 @@
 
 // FAT12 Cluster Markers
 #define FAT12_MIN_CLUSTER           0x002
-#define FAT12_MAX_CLUSTER           0xFF7
+#define FAT12_MAX_CLUSTER           0xFEF
 #define FAT12_BAD_CLUSTER           0xFF7
 #define FAT12_EOC_MIN               0xFF8  // End of chain minimum
 #define FAT12_EOC_MAX               0xFFF  // End of chain maximum
@@ -113,7 +113,7 @@ typedef struct {
     unsigned char* base;             // Base address of the file data in memory (optional, if preloaded)
     unsigned char* ptr;              // Current read/write position within the file
     unsigned int start_cluster;      // Start cluster of the file (first cluster in the cluster chain)
-    const char* mode;                // Mode the file was opened with (e.g., "r", "w")
+    char mode[4];                    // Stable open-mode copy (e.g., "r", "w")
     unsigned char name[13];          // Name of the file in 8.3 format (FILENAME.EXT\0)
     size_t size;                     // Size of the file in bytes
     size_t position;                 // Current position within the file (offset from base)

@@ -5,6 +5,7 @@
 
 // Multiboot1 header magic value defined by the specification
 #define MULTIBOOT1_MAGIC 0x1BADB002
+#define MULTIBOOT1_BOOTLOADER_MAGIC 0x2BADB002
 
 // Multiboot1 information flags
 #define MULTIBOOT1_FLAG_MEM         0x001  // Indicates mem_lower and mem_upper are valid
@@ -19,6 +20,7 @@
 #define MULTIBOOT1_FLAG_BOOTLOADER  0x200  // Indicates boot_loader_name is valid
 #define MULTIBOOT1_FLAG_APM         0x400  // Indicates apm_table is valid
 #define MULTIBOOT1_FLAG_VBE         0x800  // Indicates VBE info is valid
+#define MULTIBOOT1_FLAG_FRAMEBUFFER 0x1000 // Indicates framebuffer fields are valid
 
 
 // Multiboot1 Header Structure

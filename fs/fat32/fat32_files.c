@@ -24,82 +24,85 @@
 //     }
 // }
 
-unsigned int read_file_data(unsigned int start_cluster, char* buffer, unsigned int buffer_size, unsigned int bytes_to_read) {
-    extern drive_t* current_drive;
-    
-    printf("read_file_data: start_cluster=%u, buffer_size=%u, bytes_to_read=%u\n", start_cluster, buffer_size, bytes_to_read);
-    printf("  Using: base=0x%X, is_master=%d, drive=%s\n", current_drive->base, current_drive->is_master, current_drive->name);
-    
-    if (buffer == NULL || buffer_size == 0 || bytes_to_read == 0) {
-        // Invalid parameters; return 0 to indicate no data read
-        printf("read_file_data: Invalid parameters\n");
+unsigned int read_file_data_at(unsigned int start_cluster, unsigned int offset,
+                               char* buffer, unsigned int buffer_size,
+                               unsigned int bytes_to_read) {
+    if (!buffer || buffer_size == 0 || bytes_to_read == 0 ||
+        boot_sector.sectors_per_cluster == 0 ||
+        !is_valid_cluster(&boot_sector, start_cluster)) {
         return 0;
     }
 
-    unsigned int current_cluster = start_cluster;
-    unsigned int total_bytes_read = 0;
+    if (bytes_to_read > buffer_size) {
+        bytes_to_read = buffer_size;
+    }
 
-    printf("read_file_data: Starting read loop\n");
-    while (total_bytes_read < bytes_to_read) {
-        printf("read_file_data: current_cluster=%u, total_bytes_read=%u\n", current_cluster, total_bytes_read);
-        unsigned int sector_number = cluster_to_sector(&boot_sector, current_cluster);
-        printf("read_file_data: sector_number=%u, sectorsPerCluster=%u\n", sector_number, boot_sector.sectors_per_cluster);
+    uint32_t cluster_size = SECTOR_SIZE * boot_sector.sectors_per_cluster;
+    uint32_t clusters_to_skip = offset / cluster_size;
+    uint32_t offset_in_cluster = offset % cluster_size;
+    uint32_t current_cluster = start_cluster;
+    uint32_t cluster_limit = get_total_clusters(&boot_sector);
+    if (clusters_to_skip >= cluster_limit) return 0;
 
-    // Read each sector in the current cluster (safe, partial-sector aware)
-    for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
-        printf("read_file_data: Reading sector %u of cluster\n", i);
-        // Calculate the number of bytes to read in this iteration
-        unsigned int bytes_remaining = bytes_to_read - total_bytes_read;
-        unsigned int bytes_to_read_now = (bytes_remaining < SECTOR_SIZE) ? bytes_remaining : SECTOR_SIZE;
+    for (uint32_t i = 0; i < clusters_to_skip; i++) {
+        uint32_t next = get_next_cluster_in_chain(&boot_sector, current_cluster);
+        if (next == INVALID_CLUSTER || is_end_of_cluster_chain(next) ||
+            !is_valid_cluster(&boot_sector, next)) {
+            return 0;
+        }
+        current_cluster = next;
+    }
 
-        // Ensure we don't read past the end of the buffer
-        if (total_bytes_read + bytes_to_read_now > buffer_size) {
-            if (buffer_size <= total_bytes_read) {
-                // No space left in destination buffer
-                break;
+    uint32_t total = 0;
+    uint32_t traversed = clusters_to_skip;
+    uint8_t sector_buffer[SECTOR_SIZE];
+    while (total < bytes_to_read && traversed++ < cluster_limit &&
+           is_valid_cluster(&boot_sector, current_cluster)) {
+        uint32_t first_sector = cluster_to_sector(&boot_sector, current_cluster);
+        if (first_sector == INVALID_CLUSTER) {
+            break;
+        }
+
+        uint32_t sector_index = offset_in_cluster / SECTOR_SIZE;
+        uint32_t sector_offset = offset_in_cluster % SECTOR_SIZE;
+        for (uint32_t i = sector_index;
+             i < boot_sector.sectors_per_cluster && total < bytes_to_read;
+             i++) {
+            if (!ata_read_sector(ata_base_address, first_sector + i,
+                                 sector_buffer, ata_is_master)) {
+                return total;
             }
-            bytes_to_read_now = buffer_size - total_bytes_read;
+
+            uint32_t available = SECTOR_SIZE - sector_offset;
+            uint32_t amount = bytes_to_read - total;
+            if (amount > available) {
+                amount = available;
+            }
+            memcpy(buffer + total, sector_buffer + sector_offset, amount);
+            total += amount;
+            sector_offset = 0;
         }
 
-        if (bytes_to_read_now == 0) {
+        if (total >= bytes_to_read) {
             break;
         }
 
-        // Read the entire sector into a temporary buffer, then copy only the requested bytes.
-        uint8_t sector_buffer[SECTOR_SIZE];
-        printf("read_file_data: About to call ata_read_sector (safe read)\n");
-        if (!ata_read_sector(current_drive->base, sector_number + i, sector_buffer, current_drive->is_master)) {
-            printf("read_file_data: ata_read_sector failed for sector %u\n", sector_number + i);
-            return total_bytes_read;
-        }
-        printf("read_file_data: ata_read_sector returned\n");
-
-        // Copy only the requested bytes (handles partial final sector safely)
-        memcpy(buffer + total_bytes_read, sector_buffer, bytes_to_read_now);
-        total_bytes_read += bytes_to_read_now;
-
-        // Break the loop if we have read the requested number of bytes
-        if (total_bytes_read >= bytes_to_read) {
-            printf("read_file_data: Reached bytes_to_read, breaking\n");
+        uint32_t next = get_next_cluster_in_chain(&boot_sector, current_cluster);
+        if (next == INVALID_CLUSTER || is_end_of_cluster_chain(next) ||
+            !is_valid_cluster(&boot_sector, next)) {
             break;
         }
+        current_cluster = next;
+        offset_in_cluster = 0;
     }
+    return total;
+}
 
-        printf("read_file_data: Getting next cluster\n");
-        // Get the next cluster in the chain
-        current_cluster = get_next_cluster_in_chain(&boot_sector, current_cluster);
-        printf("read_file_data: Next cluster = %u\n", current_cluster);
-
-        // Check if we have reached the end of the file or if an invalid cluster is encountered
-        if (is_end_of_cluster_chain(current_cluster) || current_cluster == INVALID_CLUSTER) {
-            printf("read_file_data: End of cluster chain\n");
-            break;
-        }
-    }
-
-    printf("read_file_data: Finished, total_bytes_read=%u\n", total_bytes_read);
-    // Return the total number of bytes read
-    return total_bytes_read;
+unsigned int read_file_data(unsigned int start_cluster, char* buffer,
+                            unsigned int buffer_size,
+                            unsigned int bytes_to_read) {
+    return read_file_data_at(start_cluster, 0, buffer, buffer_size,
+                             bytes_to_read);
 }
 
 int read_file_data_to_address(unsigned int start_cluster, void* load_address, unsigned int file_size) {
@@ -113,48 +116,17 @@ int read_file_data_to_address(unsigned int start_cluster, void* load_address, un
         return 0;
     }
     
-    unsigned int current_cluster = start_cluster;
-    unsigned int bytes_read = 0;
-    unsigned char* buffer_ptr = (unsigned char*)load_address;
-    
-    while (bytes_read < file_size) {
-        // Validate cluster before using it
-        extern bool is_valid_cluster(struct fat32_boot_sector* bs, unsigned int cluster);
-        if (!is_valid_cluster(&boot_sector, current_cluster)) {
-            printf("Error: Invalid cluster %u during file read\n", current_cluster);
-            break;
-        }
-        
-        unsigned int sector_number = cluster_to_sector(&boot_sector, current_cluster);
-        
-        // Read each sector in the current cluster
-        for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
-            if (!ata_read_sector(current_drive->base, sector_number + i, buffer_ptr, current_drive->is_master)) {
-                printf("Error: Failed to read sector %u\n", sector_number + i);
-                return bytes_read;
-            }
-            
-            buffer_ptr += SECTOR_SIZE;
-            bytes_read += SECTOR_SIZE;
-
-            if (bytes_read >= file_size) {
-                break; // Stop if we have read the entire file
-            }
-        }
-        
-        // Get the next cluster in the chain
-        current_cluster = get_next_cluster_in_chain(&boot_sector, current_cluster);
-        
-        // Check if we have reached the end of the file
-        if (is_end_of_cluster_chain(current_cluster)) {
-            break;
-        }
+    if (!load_address) {
+        return 0;
     }
-    
-    return bytes_read;
+
+    // Use the partial-sector-aware reader so the final ATA sector cannot
+    // overwrite memory beyond the caller's file-sized destination.
+    return (int)read_file_data_at(start_cluster, 0, (char*)load_address,
+                                  file_size, file_size);
 }
 
-int fat32_load_file(const char* filename, void* load_address) {
+static int fat32_load_file_unlocked(const char* filename, void* load_address) {
     // Safety check: ensure boot sector is initialized
     if (boot_sector.bytes_per_sector == 0 || boot_sector.sectors_per_cluster == 0) {
         printf("Error: Filesystem not properly initialized\n");
@@ -186,6 +158,38 @@ int fat32_load_file(const char* filename, void* load_address) {
     return result;
 }
 
+static int fat32_get_file_size_unlocked(const char* filename, uint32_t* size) {
+    if (!filename || !size) return -1;
+    struct fat32_dir_entry* entry = find_file_in_directory(filename);
+    if (!entry || (entry->attr & ATTR_DIRECTORY)) {
+        if (entry) free(entry);
+        return -1;
+    }
+    *size = entry->file_size;
+    free(entry);
+    return 0;
+}
+
+static int fat32_load_file_sized_unlocked(const char* filename,
+                                           void* load_address,
+                                           uint32_t capacity) {
+    if (!filename || (!load_address && capacity != 0)) return -1;
+    struct fat32_dir_entry* entry = find_file_in_directory(filename);
+    if (!entry || (entry->attr & ATTR_DIRECTORY)) {
+        if (entry) free(entry);
+        return -1;
+    }
+    uint32_t size = entry->file_size;
+    uint32_t cluster = read_start_cluster(entry);
+    free(entry);
+    if (size > capacity || size > 0x7FFFFFFFu) return -1;
+    if (size == 0) return 0;
+    if (!is_valid_cluster(&boot_sector, cluster)) return -1;
+    uint32_t read = read_file_data_at(cluster, 0, (char*)load_address,
+                                      capacity, size);
+    return read == size ? (int)read : -1;
+}
+
 // void openAndLoadFile(const char* filename) {
 //     struct fat32_dir_entry* entry = find_file_in_directory(filename);
 //     if (entry == NULL) {
@@ -209,131 +213,344 @@ int fat32_load_file(const char* filename, void* load_address) {
 //     free(buffer); // Free the memory after use
 // }
 
-// Function to find a file in the current directory
-struct fat32_dir_entry* find_file_in_directory(const char* filename) {
-    extern drive_t* current_drive;
-    
-    printf("find_file_in_directory: Looking for '%s'\n", filename);
-    printf("  Using: base=0x%X, is_master=%d, cluster=%u, drive=%s\n", 
-           current_drive->base, current_drive->is_master, current_directory_cluster, current_drive->name);
-    
-    unsigned int sector = cluster_to_sector(&boot_sector, current_directory_cluster);
-    printf("  Calculated sector: %u\n", sector);
-
-    // Allocate bytes for the full cluster (sectors_per_cluster * SECTOR_SIZE)
-    size_t cluster_bytes = SECTOR_SIZE * boot_sector.sectors_per_cluster;
-    struct fat32_dir_entry* entries = (struct fat32_dir_entry*)malloc(cluster_bytes);
-
-    if (entries == NULL) {
-        // Handle memory allocation failure
-        printf("Error: Failed to allocate memory for directory entries.\n");
-        return NULL;
+fat32_lookup_result_t fat32_lookup_entry_in_directory(
+        unsigned int dir_cluster, const char* filename,
+        struct fat32_dir_entry* found) {
+    if (!filename || !is_valid_cluster(&boot_sector, dir_cluster)) {
+        return FAT32_LOOKUP_ERROR;
     }
 
-    // Read each sector into the allocated cluster buffer using byte offsets
-    for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
-        void* dest = (void*)((uint8_t*)entries + (i * SECTOR_SIZE));
-        if (!ata_read_sector(current_drive->base, sector + i, dest, current_drive->is_master)) {
-            // Handle read error
-            free(entries);
-            return NULL;
-        }
-    }
+    struct fat32_dir_entry sector_entries[SECTOR_SIZE / sizeof(struct fat32_dir_entry)];
+    uint32_t current_cluster = dir_cluster;
+    uint32_t traversed = 0;
+    uint32_t cluster_limit = get_total_clusters(&boot_sector);
 
-    for (unsigned int j = 0; j < boot_sector.sectors_per_cluster * (SECTOR_SIZE / sizeof(struct fat32_dir_entry)); j++) {
-        if (entries[j].name[0] == 0x00) { // End of directory
-            printf("  End of directory at entry %u\n", j);
-            break;
+    while (is_valid_cluster(&boot_sector, current_cluster) &&
+           traversed++ < cluster_limit) {
+        uint32_t sector = cluster_to_sector(&boot_sector, current_cluster);
+        if (sector == INVALID_CLUSTER) {
+            return FAT32_LOOKUP_ERROR;
         }
 
-        if (entries[j].name[0] == 0xE5 || (entries[j].attr & 0x0F) == 0x0F) { // Deleted or LFN entry
-            continue;
-        }
-
-        // Debug: show the raw FAT32 name
-        char debug_name[12];
-        for (int k = 0; k < 11; k++) {
-            debug_name[k] = entries[j].name[k];
-        }
-        debug_name[11] = '\0';
-        //printf("  Comparing FAT32 name '%.11s' with '%s'\n", debug_name, filename);
-        
-        // Use the proper compare_names function that handles FAT32 8.3 format correctly
-        if (compare_names((const char*)entries[j].name, filename) == 0) {
-            //printf("  MATCH FOUND!\n");
-            struct fat32_dir_entry* found_entry = (struct fat32_dir_entry*)malloc(sizeof(struct fat32_dir_entry));
-            if (found_entry == NULL) {
-                // Handle memory allocation failure
-                printf("Error: Failed to allocate memory for directory entry.\n");
-                free(entries);
-                return NULL;
+        for (uint32_t i = 0; i < boot_sector.sectors_per_cluster; i++) {
+            if (!ata_read_sector(ata_base_address, sector + i,
+                                 sector_entries, ata_is_master)) {
+                return FAT32_LOOKUP_ERROR;
             }
 
-            memcpy(found_entry, &entries[j], sizeof(struct fat32_dir_entry));
-            free(entries); // Free the allocated memory
-            return found_entry; // File found
+            for (uint32_t j = 0;
+                 j < SECTOR_SIZE / sizeof(struct fat32_dir_entry); j++) {
+                struct fat32_dir_entry* candidate = &sector_entries[j];
+                if (candidate->name[0] == 0x00) {
+                    return FAT32_LOOKUP_NOT_FOUND;
+                }
+                if (candidate->name[0] == 0xE5 ||
+                    (candidate->attr & 0x0F) == 0x0F ||
+                    (candidate->attr & 0x08)) {
+                    continue;
+                }
+
+                if (compare_names((const char*)candidate->name, filename) == 0) {
+                    if (found) *found = *candidate;
+                    return FAT32_LOOKUP_FOUND;
+                }
+            }
         }
+
+        uint32_t next = get_next_cluster_in_chain(&boot_sector, current_cluster);
+        if (next == INVALID_CLUSTER) return FAT32_LOOKUP_ERROR;
+        if (is_end_of_cluster_chain(next)) return FAT32_LOOKUP_NOT_FOUND;
+        current_cluster = next;
     }
 
-    printf("  File '%s' not found in directory\n", filename);
-    free(entries); // Free the allocated memory
-    return NULL; // File not found
+    /* Falling out of the guarded traversal means the directory chain is
+     * invalid or cyclic.  It must not be treated as a safe insertion point. */
+    return FAT32_LOOKUP_ERROR;
 }
 
-bool fat32_create_file(const char* filename) {
-    // 1. Find a free cluster for the new file
-    unsigned int new_file_cluster = find_free_cluster(&boot_sector);
-    if (new_file_cluster == INVALID_CLUSTER) {
-        printf("Failed to allocate a new cluster for the file.\n");
+struct fat32_dir_entry* find_file_in_directory_cluster(unsigned int dir_cluster,
+                                                        const char* filename) {
+    struct fat32_dir_entry entry;
+    if (fat32_lookup_entry_in_directory(dir_cluster, filename, &entry) !=
+        FAT32_LOOKUP_FOUND) {
+        return NULL;
+    }
+    struct fat32_dir_entry* found = malloc(sizeof(*found));
+    if (!found) return NULL;
+    *found = entry;
+    return found;
+}
+
+// Function to find a file in the current directory
+struct fat32_dir_entry* find_file_in_directory(const char* filename) {
+    return find_file_in_directory_cluster(current_directory_cluster, filename);
+}
+
+static bool clear_data_cluster(uint32_t cluster) {
+    uint8_t zero_sector[SECTOR_SIZE];
+    memset(zero_sector, 0, sizeof(zero_sector));
+    uint32_t first_sector = cluster_to_sector(&boot_sector, cluster);
+    if (first_sector == INVALID_CLUSTER) {
         return false;
     }
-    
-    // 2. Update the FAT for the new file cluster
-    if (!mark_cluster_in_fat(&boot_sector, new_file_cluster, FAT32_EOC_MAX)) {
-        printf("Failed to update the FAT for the new file cluster.\n");
-        // Rollback not needed - cluster is still marked as free
-        return false;
+
+    for (uint32_t i = 0; i < boot_sector.sectors_per_cluster; i++) {
+        if (!ata_write_sector(ata_base_address, first_sector + i, zero_sector,
+                              ata_is_master)) {
+            return false;
+        }
     }
-    
-    // 3. Add a directory entry for the new file in the current directory
-    if (!add_entry_to_directory(&boot_sector, current_directory_cluster, filename, new_file_cluster, 0)) { // 0 for normal file attributes
-        printf("Failed to add a directory entry for the new file.\n");
-        // ROLLBACK: Free the cluster we just allocated
-        printf("Rolling back: Freeing allocated cluster %u\n", new_file_cluster);
-        mark_cluster_in_fat(&boot_sector, new_file_cluster, 0);  // Mark as free
-        return false;
-    }
-    
-    printf("File '%s' created successfully at cluster %u\n", filename, new_file_cluster);
-    
-    // Sync FSInfo after file creation
-    extern bool write_fsinfo(void);
-    write_fsinfo();
-    
     return true;
 }
 
-bool fat32_delete_file(const char* filename) {
+static uint32_t ensure_file_cluster(uint32_t* start_cluster,
+                                    uint32_t cluster_index,
+                                    bool* chain_reclaim_safe) {
+    if (!start_cluster ||
+        cluster_index >= get_total_clusters(&boot_sector)) {
+        return INVALID_CLUSTER;
+    }
+
+    if (!is_valid_cluster(&boot_sector, *start_cluster)) {
+        uint32_t first = allocate_new_cluster(&boot_sector);
+        if (first == INVALID_CLUSTER || !clear_data_cluster(first)) {
+            if (first != INVALID_CLUSTER) {
+                mark_cluster_in_fat(&boot_sector, first, 0);
+            }
+            return INVALID_CLUSTER;
+        }
+        *start_cluster = first;
+    }
+
+    uint32_t current = *start_cluster;
+    for (uint32_t i = 0; i < cluster_index; i++) {
+        uint32_t next = get_next_cluster_in_chain(&boot_sector, current);
+        if (next == INVALID_CLUSTER) {
+            return INVALID_CLUSTER;
+        }
+        if (is_end_of_cluster_chain(next)) {
+            uint32_t allocated = allocate_new_cluster(&boot_sector);
+            if (allocated == INVALID_CLUSTER || !clear_data_cluster(allocated)) {
+                if (allocated != INVALID_CLUSTER) {
+                    mark_cluster_in_fat(&boot_sector, allocated, 0);
+                }
+                return INVALID_CLUSTER;
+            }
+            if (!mark_cluster_in_fat(&boot_sector, current, allocated)) {
+                uint32_t observed =
+                    get_next_cluster_in_chain(&boot_sector, current);
+                if (observed == allocated) {
+                    next = allocated;
+                } else {
+                    /* Only reclaim after confirming that no directory/file
+                     * chain points at the candidate. */
+                    if (is_end_of_cluster_chain(observed)) {
+                        (void)mark_cluster_in_fat(&boot_sector, allocated, 0);
+                    } else {
+                        if (chain_reclaim_safe) *chain_reclaim_safe = false;
+                        printf("Warning: preserving ambiguous FAT32 link candidate %u\n",
+                               allocated);
+                    }
+                    return INVALID_CLUSTER;
+                }
+            } else {
+                next = allocated;
+            }
+        }
+        if (!is_valid_cluster(&boot_sector, next)) {
+            return INVALID_CLUSTER;
+        }
+        current = next;
+    }
+    return current;
+}
+
+int write_file_data_at_checked(unsigned int* start_cluster,
+                               unsigned int offset, const void* buffer,
+                               unsigned int bytes_to_write,
+                               bool* chain_reclaim_safe) {
+    if (!start_cluster || (!buffer && bytes_to_write != 0) ||
+        boot_sector.sectors_per_cluster == 0 || bytes_to_write > INT_MAX) {
+        return -1;
+    }
+    if (bytes_to_write == 0) {
+        return 0;
+    }
+    if (offset > UINT32_MAX - bytes_to_write) {
+        return -1;
+    }
+
+    uint32_t cluster_size = SECTOR_SIZE * boot_sector.sectors_per_cluster;
+    uint32_t written = 0;
+    uint8_t sector_buffer[SECTOR_SIZE];
+    uint8_t verify_buffer[SECTOR_SIZE];
+
+    while (written < bytes_to_write) {
+        uint32_t file_offset = offset + written;
+        uint32_t cluster_index = file_offset / cluster_size;
+        uint32_t offset_in_cluster = file_offset % cluster_size;
+        uint32_t cluster = ensure_file_cluster(start_cluster, cluster_index,
+                                               chain_reclaim_safe);
+        if (cluster == INVALID_CLUSTER) {
+            return written ? (int)written : -1;
+        }
+
+        uint32_t sector_index = offset_in_cluster / SECTOR_SIZE;
+        uint32_t sector_offset = offset_in_cluster % SECTOR_SIZE;
+        uint32_t first_sector = cluster_to_sector(&boot_sector, cluster);
+        if (first_sector == INVALID_CLUSTER) {
+            return written ? (int)written : -1;
+        }
+        uint32_t sector = first_sector + sector_index;
+        uint32_t amount = bytes_to_write - written;
+        if (amount > SECTOR_SIZE - sector_offset) {
+            amount = SECTOR_SIZE - sector_offset;
+        }
+
+        if (sector_offset != 0 || amount != SECTOR_SIZE) {
+            if (!ata_read_sector(ata_base_address, sector, sector_buffer,
+                                 ata_is_master)) {
+                return written ? (int)written : -1;
+            }
+        }
+        memcpy(sector_buffer + sector_offset,
+               (const uint8_t*)buffer + written, amount);
+        if (!ata_write_sector(ata_base_address, sector, sector_buffer,
+                              ata_is_master) ||
+            !ata_read_sector(ata_base_address, sector, verify_buffer,
+                             ata_is_master) ||
+            memcmp(sector_buffer, verify_buffer, SECTOR_SIZE) != 0) {
+            return written ? (int)written : -1;
+        }
+        written += amount;
+    }
+    return (int)written;
+}
+
+int write_file_data_at(unsigned int* start_cluster, unsigned int offset,
+                       const void* buffer, unsigned int bytes_to_write) {
+    bool chain_reclaim_safe = true;
+    return write_file_data_at_checked(start_cluster, offset, buffer,
+                                      bytes_to_write, &chain_reclaim_safe);
+}
+
+bool update_directory_entry(unsigned int parent_cluster,
+                            const unsigned char name[11],
+                            const struct fat32_dir_entry* updated_entry) {
+    if (!name || !updated_entry ||
+        !is_valid_cluster(&boot_sector, parent_cluster)) {
+        return false;
+    }
+
+    struct fat32_dir_entry entries[SECTOR_SIZE / sizeof(struct fat32_dir_entry)];
+    struct fat32_dir_entry verify[SECTOR_SIZE / sizeof(struct fat32_dir_entry)];
+    uint32_t current = parent_cluster;
+    uint32_t traversed = 0;
+    uint32_t limit = get_total_clusters(&boot_sector);
+    while (is_valid_cluster(&boot_sector, current) && traversed++ < limit) {
+        uint32_t first_sector = cluster_to_sector(&boot_sector, current);
+        if (first_sector == INVALID_CLUSTER) return false;
+        for (uint32_t sector_index = 0;
+             sector_index < boot_sector.sectors_per_cluster; sector_index++) {
+            uint32_t sector = first_sector + sector_index;
+            if (!ata_read_sector(ata_base_address, sector, entries,
+                                 ata_is_master)) {
+                return false;
+            }
+            for (uint32_t i = 0;
+                 i < SECTOR_SIZE / sizeof(struct fat32_dir_entry); i++) {
+                if (entries[i].name[0] == 0x00) {
+                    return false;
+                }
+                if (entries[i].name[0] != 0xE5 &&
+                    (entries[i].attr & 0x08u) == 0 &&
+                    (entries[i].attr & 0x0Fu) != 0x0Fu &&
+                    memcmp(entries[i].name, name, 11) == 0) {
+                    entries[i] = *updated_entry;
+                    if (!ata_write_sector(ata_base_address, sector, entries,
+                                          ata_is_master) ||
+                        !ata_read_sector(ata_base_address, sector, verify,
+                                         ata_is_master) ||
+                        memcmp(entries, verify, SECTOR_SIZE) != 0) {
+                        return false;
+                    }
+                    return true;
+                }
+            }
+        }
+
+        uint32_t next = get_next_cluster_in_chain(&boot_sector, current);
+        if (next == INVALID_CLUSTER || is_end_of_cluster_chain(next)) {
+            break;
+        }
+        current = next;
+    }
+    return false;
+}
+
+static bool fat32_create_file_unlocked(const char* filename) {
+    if (!fat32_is_valid_short_name(filename) ||
+        strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
+        return false;
+    }
+
+    struct fat32_dir_entry existing;
+    if (fat32_lookup_entry_in_directory(current_directory_cluster, filename,
+                                        &existing) != FAT32_LOOKUP_NOT_FOUND) {
+        return false;
+    }
+
+    // Empty FAT files conventionally have start cluster 0.  Allocate their
+    // first cluster only when data is actually written.
+    if (!add_entry_to_directory(&boot_sector, current_directory_cluster,
+                                filename, 0, 0x20)) {
+        struct fat32_dir_entry observed;
+        if (fat32_lookup_entry_in_directory(current_directory_cluster,
+                                            filename, &observed) !=
+                FAT32_LOOKUP_FOUND ||
+            read_start_cluster(&observed) != 0 || observed.file_size != 0 ||
+            observed.attr != ATTR_ARCHIVE) {
+            printf("Failed to add a directory entry for the new file.\n");
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool fat32_delete_file_unlocked(const char* filename) {
+    if (!filename || !fat32_is_valid_short_name(filename) ||
+        strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
+        return false;
+    }
     // 1. Find the directory entry for the file to delete
     struct fat32_dir_entry* entry = find_file_in_directory(filename);
     if (entry == NULL) {
         printf("File not found.\n");
         return false;
     }
+
+    if (entry->attr & (ATTR_DIRECTORY | ATTR_READ_ONLY)) {
+        free(entry);
+        return false;
+    }
     
     // Save cluster info before freeing entry
     unsigned int start_cluster = read_start_cluster(entry);
     
-    // 2. Free the file's cluster chain in the FAT
-    if (!free_cluster_chain(&boot_sector, start_cluster)) {
-        printf("Failed to free the file's cluster chain.\n");
-        free(entry);  // Free allocated memory
+    // Remove the name first.  If freeing later fails, the result is a leaked
+    // chain rather than a visible directory entry pointing at reusable data.
+    if (!remove_entry_from_directory(&boot_sector, current_directory_cluster,
+                                     entry)) {
+        printf("Failed to remove the directory entry from the parent directory.\n");
+        free(entry);
         return false;
     }
-    // 3. Remove the directory entry from the parent directory
-    if (!remove_entry_from_directory(&boot_sector, current_directory_cluster, entry)) {
-        printf("Failed to remove the directory entry from the parent directory.\n");
-        free(entry);  // Free allocated memory
+
+    if (start_cluster >= 2 &&
+        !free_cluster_chain(&boot_sector, start_cluster)) {
+        printf("Failed to free the file's cluster chain.\n");
+        free(entry);
         return false;
     }
     
@@ -347,42 +564,470 @@ bool fat32_delete_file(const char* filename) {
 }
 
 // Function to open a file and return a pointer to the file data
-FILE* fat32_open_file(const char* filename, const char* mode) {
+static FILE* fat32_open_file_unlocked(const char* filename, const char* mode) {
+    if (!filename || !mode ||
+        (mode[0] != 'r' && mode[0] != 'w' && mode[0] != 'a') ||
+        mode[1] != '\0') {
+        return NULL;
+    }
     struct fat32_dir_entry* entry = find_file_in_directory(filename);
-    if (entry == NULL) {
+    if (entry == NULL || (entry->attr & ATTR_DIRECTORY) ||
+        (mode[0] != 'r' && (entry->attr & ATTR_READ_ONLY))) {
         printf("File not found.\n");
+        if (entry) free(entry);
         return NULL;
     }
 
     unsigned int start_cluster = read_start_cluster(entry);
-    int file_size = entry->file_size;
+    uint32_t file_size = entry->file_size;
 
     FILE* file = (FILE*)malloc(sizeof(FILE));
     if (file == NULL) {
         printf("Not enough memory.\n");
+        free(entry);
         return NULL;
     }
 
-    file->position = 0;
+    if (mode[0] == 'w') {
+        struct fat32_dir_entry truncated = *entry;
+        truncated.first_cluster_high = 0;
+        truncated.first_cluster_low = 0;
+        truncated.file_size = 0;
+        set_fat32_time(&truncated.write_time, &truncated.write_date);
+        if (!update_directory_entry(current_directory_cluster,
+                                    entry->name, &truncated)) {
+            /* The sector write may have succeeded even if its verification
+             * read failed.  Re-read before deciding whether the old chain is
+             * still owned by the directory entry. */
+            struct fat32_dir_entry observed;
+            fat32_lookup_result_t observed_result =
+                fat32_lookup_entry_in_directory(current_directory_cluster,
+                                                filename, &observed);
+            if (observed_result != FAT32_LOOKUP_FOUND ||
+                memcmp(&observed, &truncated, sizeof(truncated)) != 0) {
+                free(entry);
+                free(file);
+                return NULL;
+            }
+        }
+        if (is_valid_cluster(&boot_sector, start_cluster) &&
+            !free_cluster_chain(&boot_sector, start_cluster)) {
+            printf("Warning: FAT32 truncation left an unreachable cluster chain\n");
+        }
+        *entry = truncated;
+        start_cluster = 0;
+        file_size = 0;
+        (void)write_fsinfo();
+    }
+
+    file->position = mode[0] == 'a' ? file_size : 0;
     file->size = file_size;
-    file->ptr = (unsigned char*)malloc(file_size);
-    file->mode = mode;
-    file->name = filename;
+    file->base = NULL;
+    file->ptr = NULL;
+    strncpy(file->mode, mode, sizeof(file->mode) - 1);
+    file->mode[sizeof(file->mode) - 1] = '\0';
+    strncpy(file->name, filename, sizeof(file->name) - 1);
+    file->name[sizeof(file->name) - 1] = '\0';
+    file->parent_cluster = current_directory_cluster;
+    file->partition_lba = partition_lba_offset;
+    file->device_base = ata_base_address;
+    file->device_master = ata_is_master ? 1u : 0u;
     file->start_cluster = start_cluster;
+
+    free(entry);
 
     return file;
 }
 
+static bool fat32_activate_file_volume(const FILE* file) {
+    if (!file) return false;
+    if (ata_base_address == file->device_base &&
+        ata_is_master == (file->device_master != 0) &&
+        partition_lba_offset == file->partition_lba) {
+        return true;
+    }
+    return fat32_init_fs_at(file->device_base, file->device_master != 0,
+                            file->partition_lba) == SUCCESS;
+}
+
+typedef struct {
+    struct fat32_boot_sector boot;
+    struct fat32_fsinfo info;
+    bool info_valid;
+    unsigned int directory_cluster;
+    unsigned short base;
+    bool master;
+    unsigned int partition;
+    drive_t* drive;
+} fat32_saved_context_t;
+
+static bool fat32_file_volume_differs(const FILE* file) {
+    return file && (ata_base_address != file->device_base ||
+        ata_is_master != (file->device_master != 0) ||
+        partition_lba_offset != file->partition_lba);
+}
+
+static void fat32_save_global_context(fat32_saved_context_t* saved) {
+    saved->boot = boot_sector;
+    saved->info = fsinfo;
+    saved->info_valid = fsinfo_valid;
+    saved->directory_cluster = current_directory_cluster;
+    saved->base = ata_base_address;
+    saved->master = ata_is_master;
+    saved->partition = partition_lba_offset;
+    saved->drive = current_drive;
+}
+
+static void fat32_restore_global_context(const fat32_saved_context_t* saved) {
+    boot_sector = saved->boot;
+    fsinfo = saved->info;
+    fsinfo_valid = saved->info_valid;
+    current_directory_cluster = saved->directory_cluster;
+    ata_base_address = saved->base;
+    ata_is_master = saved->master;
+    partition_lba_offset = saved->partition;
+    current_drive = saved->drive;
+}
+
 // read file
-int fat32_read_file(FILE* file, void* buffer, unsigned int buffer_size, unsigned int bytes_to_read) {
-    if (strcmp(file->mode, "w") == 0) {
+static int fat32_read_file_unlocked(FILE* file, void* buffer,
+                                    unsigned int buffer_size,
+                                    unsigned int bytes_to_read) {
+    if (!file || !buffer || file->mode[0] == 'w') {
         printf("Error: File is not open for reading.\n");
         return 0;
     }
+    if (!fat32_activate_file_volume(file)) return 0;
 
-    if (file->position + bytes_to_read > file->size) {
+    struct fat32_dir_entry current;
+    if (fat32_lookup_entry_in_directory(file->parent_cluster,
+                                        file->name, &current) !=
+            FAT32_LOOKUP_FOUND ||
+        (current.attr & ATTR_DIRECTORY)) {
+        return 0;
+    }
+    file->start_cluster = read_start_cluster(&current);
+    file->size = current.file_size;
+
+    if (file->position >= file->size) {
+        return 0;
+    }
+    if (bytes_to_read > file->size - file->position) {
         bytes_to_read = file->size - file->position;
     }
+    if (bytes_to_read > INT_MAX) bytes_to_read = INT_MAX;
 
-    return read_file_data(file->start_cluster, (char*)buffer, buffer_size, bytes_to_read);
+    unsigned int result = read_file_data_at(file->start_cluster,
+                                            (unsigned int)file->position,
+                                            (char*)buffer, buffer_size,
+                                            bytes_to_read);
+    file->position += result;
+    return (int)result;
+}
+
+static int fat32_write_file_unlocked(FILE* file, const void* buffer,
+                                     unsigned int buffer_size,
+                                     unsigned int bytes_to_write) {
+    if (!file || !buffer || file->mode[0] == 'r') {
+        return -1;
+    }
+    if (!fat32_activate_file_volume(file)) return -1;
+    if (bytes_to_write > INT_MAX) return -1;
+    if (bytes_to_write > buffer_size) {
+        bytes_to_write = buffer_size;
+    }
+    if (file->position > UINT32_MAX - bytes_to_write) {
+        return -1;
+    }
+
+    struct fat32_dir_entry current;
+    if (fat32_lookup_entry_in_directory(file->parent_cluster, file->name,
+                                        &current) != FAT32_LOOKUP_FOUND ||
+        (current.attr & (ATTR_DIRECTORY | ATTR_READ_ONLY))) {
+        return -1;
+    }
+    struct fat32_dir_entry* entry = &current;
+    const struct fat32_dir_entry original = current;
+
+    uint32_t original_start_cluster = read_start_cluster(entry);
+    uint32_t start_cluster = original_start_cluster;
+    uint32_t original_tail = INVALID_CLUSTER;
+    if (is_valid_cluster(&boot_sector, original_start_cluster) &&
+        !fat32_get_chain_tail(&boot_sector, original_start_cluster,
+                              &original_tail)) {
+        return -1;
+    }
+    bool chain_reclaim_safe = true;
+    file->start_cluster = start_cluster;
+    file->size = entry->file_size;
+    if (file->mode[0] == 'a') file->position = file->size;
+    uint8_t zeroes[SECTOR_SIZE];
+    memset(zeroes, 0, sizeof(zeroes));
+    uint32_t gap_pos = (uint32_t)file->size;
+    while (gap_pos < file->position) {
+        uint32_t amount = (uint32_t)file->position - gap_pos;
+        if (amount > sizeof(zeroes)) amount = sizeof(zeroes);
+        int zeroed = write_file_data_at_checked(&start_cluster, gap_pos,
+                                                zeroes, amount,
+                                                &chain_reclaim_safe);
+        if (zeroed != (int)amount) {
+            if (chain_reclaim_safe) {
+                if (is_valid_cluster(&boot_sector, original_start_cluster)) {
+                    (void)fat32_reclaim_chain_suffix(&boot_sector,
+                                                     original_tail);
+                } else if (is_valid_cluster(&boot_sector, start_cluster)) {
+                    (void)free_cluster_chain(&boot_sector, start_cluster);
+                }
+                (void)write_fsinfo();
+            }
+            return -1;
+        }
+        gap_pos += amount;
+    }
+
+    int written = write_file_data_at_checked(
+        &start_cluster, (uint32_t)file->position, buffer, bytes_to_write,
+        &chain_reclaim_safe);
+    if (written < 0 || !chain_reclaim_safe) {
+        if (chain_reclaim_safe) {
+            if (is_valid_cluster(&boot_sector, original_start_cluster)) {
+                (void)fat32_reclaim_chain_suffix(&boot_sector,
+                                                 original_tail);
+            } else if (is_valid_cluster(&boot_sector, start_cluster)) {
+                (void)free_cluster_chain(&boot_sector, start_cluster);
+            }
+            (void)write_fsinfo();
+        }
+        return -1;
+    }
+
+    entry->first_cluster_high = (uint16_t)(start_cluster >> 16);
+    entry->first_cluster_low = (uint16_t)start_cluster;
+    uint32_t end = (uint32_t)file->position + (uint32_t)written;
+    if (end > entry->file_size) {
+        entry->file_size = end;
+    }
+    set_fat32_time(&entry->write_time, &entry->write_date);
+    bool metadata_ok = update_directory_entry(file->parent_cluster,
+                                              entry->name, entry);
+    if (!metadata_ok) {
+        struct fat32_dir_entry observed;
+        fat32_lookup_result_t observed_result =
+            fat32_lookup_entry_in_directory(file->parent_cluster, file->name,
+                                            &observed);
+        if (observed_result == FAT32_LOOKUP_FOUND &&
+            memcmp(&observed, entry, sizeof(*entry)) == 0) {
+            metadata_ok = true;
+        } else {
+            if (observed_result == FAT32_LOOKUP_FOUND &&
+                memcmp(&observed, &original, sizeof(original)) == 0 &&
+                chain_reclaim_safe) {
+                if (is_valid_cluster(&boot_sector, original_start_cluster)) {
+                    (void)fat32_reclaim_chain_suffix(&boot_sector,
+                                                     original_tail);
+                } else if (is_valid_cluster(&boot_sector, start_cluster)) {
+                    (void)free_cluster_chain(&boot_sector, start_cluster);
+                }
+                (void)write_fsinfo();
+            }
+            return -1;
+        }
+    }
+    file->start_cluster = start_cluster;
+    file->position = end;
+    file->size = entry->file_size;
+    (void)write_fsinfo();
+    return written;
+}
+
+static bool fat32_replace_file_unlocked(const char* filename,
+                                        const void* buffer, uint32_t size) {
+    if (!filename || (size > 0 && !buffer) ||
+        size > 0x7FFFFFFFu ||
+        !fat32_is_valid_short_name(filename) ||
+        strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
+        return false;
+    }
+
+    struct fat32_dir_entry previous;
+    fat32_lookup_result_t lookup = fat32_lookup_entry_in_directory(
+        current_directory_cluster, filename, &previous);
+    if (lookup == FAT32_LOOKUP_ERROR) return false;
+
+    bool created_target = false;
+    if (lookup == FAT32_LOOKUP_NOT_FOUND) {
+        bool create_reported_success = add_entry_to_directory(
+            &boot_sector, current_directory_cluster, filename, 0,
+            ATTR_ARCHIVE);
+        if (create_reported_success) {
+            lookup = FAT32_LOOKUP_ERROR;
+            for (unsigned int attempt = 0; attempt < 3 &&
+                 lookup == FAT32_LOOKUP_ERROR; ++attempt) {
+                lookup = fat32_lookup_entry_in_directory(
+                    current_directory_cluster, filename, &previous);
+            }
+            if (lookup != FAT32_LOOKUP_FOUND ||
+                read_start_cluster(&previous) != 0 ||
+                previous.file_size != 0 || previous.attr != ATTR_ARCHIVE) {
+                return false;
+            }
+        } else {
+            lookup = fat32_lookup_entry_in_directory(
+                current_directory_cluster, filename, &previous);
+            if (lookup != FAT32_LOOKUP_FOUND ||
+                read_start_cluster(&previous) != 0 ||
+                previous.file_size != 0 || previous.attr != ATTR_ARCHIVE) {
+                return false;
+            }
+        }
+        created_target = true;
+    }
+    if (previous.attr & (ATTR_DIRECTORY | ATTR_READ_ONLY)) return false;
+
+    uint32_t previous_cluster = read_start_cluster(&previous);
+    uint32_t new_cluster = 0;
+    bool chain_reclaim_safe = true;
+    int written = size == 0 ? 0 :
+        write_file_data_at_checked(&new_cluster, 0, buffer, size,
+                                   &chain_reclaim_safe);
+    if (written < 0 || (uint32_t)written != size) {
+        if (chain_reclaim_safe &&
+            is_valid_cluster(&boot_sector, new_cluster) &&
+            !free_cluster_chain(&boot_sector, new_cluster)) {
+            printf("Warning: FAT32 failed to reclaim an incomplete replacement\n");
+        }
+        if (created_target) (void)fat32_delete_file(filename);
+        (void)write_fsinfo();
+        return false;
+    }
+
+    struct fat32_dir_entry committed = previous;
+    committed.first_cluster_high = (uint16_t)(new_cluster >> 16);
+    committed.first_cluster_low = (uint16_t)new_cluster;
+    committed.file_size = size;
+    set_fat32_time(&committed.write_time, &committed.write_date);
+
+    bool committed_ok = update_directory_entry(current_directory_cluster,
+                                               previous.name, &committed);
+    if (!committed_ok) {
+        /* A failed verify read is ambiguous: the sector write may still have
+         * committed.  Resolve ownership by reading the entry again before
+         * deciding whether the new chain can be reclaimed. */
+        struct fat32_dir_entry observed;
+        fat32_lookup_result_t observed_result =
+            fat32_lookup_entry_in_directory(current_directory_cluster,
+                                            filename, &observed);
+        if (observed_result == FAT32_LOOKUP_FOUND &&
+            memcmp(&observed, &committed, sizeof(committed)) == 0) {
+            committed_ok = true;
+        } else if (observed_result == FAT32_LOOKUP_FOUND &&
+                   memcmp(&observed, &previous, sizeof(previous)) == 0) {
+            if (chain_reclaim_safe &&
+                is_valid_cluster(&boot_sector, new_cluster) &&
+                !free_cluster_chain(&boot_sector, new_cluster)) {
+                printf("Warning: FAT32 failed to reclaim a rejected replacement\n");
+            }
+            if (created_target) (void)fat32_delete_file(filename);
+            (void)write_fsinfo();
+            return false;
+        } else {
+            /* Do not free either chain when ownership cannot be established;
+             * leaking space is safer than leaving a directory entry dangling. */
+            printf("FAT32 replacement status is ambiguous; preserving both chains\n");
+            return false;
+        }
+    }
+
+    if (committed_ok && is_valid_cluster(&boot_sector, previous_cluster) &&
+        previous_cluster != new_cluster &&
+        !free_cluster_chain(&boot_sector, previous_cluster)) {
+        printf("Warning: FAT32 replacement committed but old space was not reclaimed\n");
+    }
+    (void)write_fsinfo();
+    return committed_ok;
+}
+
+int fat32_load_file(const char* filename, void* load_address) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_load_file_unlocked(filename, load_address);
+    fat32_operation_end(flags);
+    return result;
+}
+
+int fat32_get_file_size(const char* filename, uint32_t* size) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_get_file_size_unlocked(filename, size);
+    fat32_operation_end(flags);
+    return result;
+}
+
+int fat32_load_file_sized(const char* filename, void* load_address,
+                          uint32_t capacity) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_load_file_sized_unlocked(filename, load_address,
+                                                 capacity);
+    fat32_operation_end(flags);
+    return result;
+}
+
+bool fat32_create_file(const char* filename) {
+    uint32_t flags = fat32_operation_begin();
+    bool result = fat32_create_file_unlocked(filename);
+    fat32_operation_end(flags);
+    return result;
+}
+
+bool fat32_delete_file(const char* filename) {
+    uint32_t flags = fat32_operation_begin();
+    bool result = fat32_delete_file_unlocked(filename);
+    fat32_operation_end(flags);
+    return result;
+}
+
+FILE* fat32_open_file(const char* filename, const char* mode) {
+    uint32_t flags = fat32_operation_begin();
+    FILE* result = fat32_open_file_unlocked(filename, mode);
+    fat32_operation_end(flags);
+    return result;
+}
+
+int fat32_read_file(FILE* file, void* buffer, unsigned int buffer_size,
+                    unsigned int bytes_to_read) {
+    uint32_t flags = fat32_operation_begin();
+    bool restore_context = fat32_file_volume_differs(file);
+    fat32_saved_context_t saved;
+    if (restore_context) fat32_save_global_context(&saved);
+    int result = fat32_read_file_unlocked(file, buffer, buffer_size,
+                                           bytes_to_read);
+    if (restore_context && fat32_context_sync_hook) {
+        fat32_context_sync_hook();
+    }
+    if (restore_context) fat32_restore_global_context(&saved);
+    fat32_operation_end(flags);
+    return result;
+}
+
+int fat32_write_file(FILE* file, const void* buffer,
+                     unsigned int buffer_size,
+                     unsigned int bytes_to_write) {
+    uint32_t flags = fat32_operation_begin();
+    bool restore_context = fat32_file_volume_differs(file);
+    fat32_saved_context_t saved;
+    if (restore_context) fat32_save_global_context(&saved);
+    int result = fat32_write_file_unlocked(file, buffer, buffer_size,
+                                            bytes_to_write);
+    if (restore_context && fat32_context_sync_hook) {
+        fat32_context_sync_hook();
+    }
+    if (restore_context) fat32_restore_global_context(&saved);
+    fat32_operation_end(flags);
+    return result;
+}
+
+bool fat32_replace_file(const char* filename, const void* buffer,
+                        uint32_t size) {
+    uint32_t flags = fat32_operation_begin();
+    bool result = fat32_replace_file_unlocked(filename, buffer, size);
+    fat32_operation_end(flags);
+    return result;
 }

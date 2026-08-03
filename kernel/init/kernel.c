@@ -57,6 +57,7 @@
 #include "drivers/net/ne2000.h"
 #include "drivers/net/rtl8139.h"
 #include "drivers/net/netstack.h"
+#include "drivers/net/netdev.h"
 
 // Filesystems
 #include "fs/vfs/filesystem.h"
@@ -115,13 +116,17 @@ static void early_init(void) {
     idt_install();  // Interrupt Descriptor Table
     isr_install();  // CPU exception handlers (0-31)
     irq_install();  // Hardware interrupt handlers (32-47)
+    if (!serial_install_rx_irq()) {
+        printf("COM1 RX IRQ registration failed; using polling fallback\n");
+    }
     
     // Basic hardware
     timer_install(1);  // PIT timer with 1ms ticks
     kb_install();      // Keyboard driver
-    fdc_init_controller();  // Floppy disk controller
-    
-    // Re-enable interrupts now that everything is set up
+
+    // PIT-based delays used by the remaining hardware probes require IRQ
+    // delivery.  Floppy detection runs later and skips the controller cleanly
+    // when the BIOS reports that no drive is configured.
     irq_enable();
     
     printf("Early initialization complete (interrupts enabled)\n");
@@ -141,9 +146,6 @@ static void hardware_init(void) {
     // Bus enumeration
     pci_init();  // PCI bus scanning
     usb_init();  // Initialize USB subsystem (probe PCI for HCI)
-    // Scheduler interrupt (currently disabled)
-    register_interrupt_handler(9, scheduler_interrupt_handler);
-    
     printf("Hardware initialization complete\n");
 }
 
@@ -155,8 +157,9 @@ static void driver_init(void) {
     // Check PCI bus for network cards and register appropriate drivers
     printf("Detecting network hardware...\n");
     
-    // Intel E1000 (vendor: 0x8086, device: 0x100E)
-    if (pci_device_exists(0x8086, 0x100E)) {
+    // Intel E1000: QEMU 82540EM (100E), VMware 82545EM (100F)
+    if (pci_device_exists(0x8086, 0x100E) ||
+        pci_device_exists(0x8086, 0x100F)) {
         printf("  - Intel E1000 detected, registering driver\n");
         e1000_detect();  // Register E1000 driver
     }
@@ -209,9 +212,13 @@ static void system_ready(void) {
     printf("Drives Detected: %d\n", drive_count);
     
     // Network stack initialization (optional)
-    if (ne2000_is_initialized()) {
+    if (netdev_available()) {
         netstack_init();
-        printf("Network stack initialized\n");
+        printf("Network stack initialized on %s\n", netdev_backend_name());
+        printf("Requesting LAN configuration via DHCP...\n");
+        if (netstack_get_ip_address() == 0) {
+            printf("Network link is ready without an IP; use 'getip' to retry\n");
+        }
     }
     
     printf("====================\n\n");
@@ -228,13 +235,13 @@ static void system_ready(void) {
  * Validates Multiboot information, initializes all subsystems,
  * and enters the interactive shell command loop.
  * 
- * @param multiboot_magic Magic number from bootloader (must be 0x36d76289 for MB1)
+ * @param multiboot_magic Multiboot 1 bootloader handoff magic
  * @param multiboot_info Pointer to Multiboot1 info structure
  */
 void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_info) {
     
     // Validate Multiboot magic number
-    if (multiboot_magic != 0x36d76289) {
+    if (multiboot_magic != MULTIBOOT1_BOOTLOADER_MAGIC) {
         printf("Error: Invalid Multiboot magic number: 0x%x\n", multiboot_magic);
         while (1) { asm volatile("hlt"); }
     }
@@ -250,21 +257,34 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 
 #ifdef USE_FRAMEBUFFER
     // Initialize framebuffer if available (for graphical boot)
-    if (multiboot_info->framebuffer_addr != 0) {
+    if ((multiboot_info->flags & MULTIBOOT1_FLAG_FRAMEBUFFER) != 0 &&
+        multiboot_info->framebuffer_addr != 0) {
         multiboot_framebuffer_info_t fb_info = {
-            .framebuffer_addr = (uint32_t)multiboot_info->framebuffer_addr,
+            .framebuffer_addr = multiboot_info->framebuffer_addr,
             .framebuffer_pitch = multiboot_info->framebuffer_pitch,
             .framebuffer_width = multiboot_info->framebuffer_width,
             .framebuffer_height = multiboot_info->framebuffer_height,
             .framebuffer_bpp = multiboot_info->framebuffer_bpp,
-            .framebuffer_type = multiboot_info->framebuffer_type
+            .framebuffer_type = multiboot_info->framebuffer_type,
+            .red_field_position = multiboot_info->color_info[0],
+            .red_mask_size = multiboot_info->color_info[1],
+            .green_field_position = multiboot_info->color_info[2],
+            .green_mask_size = multiboot_info->color_info[3],
+            .blue_field_position = multiboot_info->color_info[4],
+            .blue_mask_size = multiboot_info->color_info[5]
         };
         framebuffer_init(&fb_info);
         display_init();
-        printf("Framebuffer initialized: %ux%ux%u at 0x%x\n",
-               fb_info.framebuffer_width, fb_info.framebuffer_height,
-               fb_info.framebuffer_bpp, fb_info.framebuffer_addr);
+        if (framebuffer_available()) {
+            printf("Framebuffer initialized: %ux%ux%u at 0x%x\n",
+                   fb_info.framebuffer_width, fb_info.framebuffer_height,
+                   fb_info.framebuffer_bpp,
+                   (uint32_t)fb_info.framebuffer_addr);
+        } else {
+            printf("Warning: Unsupported framebuffer, using VGA text mode\n");
+        }
     } else {
+        display_init();
         printf("Warning: Framebuffer not available, using VGA text mode\n");
     }
 #else
@@ -273,7 +293,10 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 #endif
 
     // Initialize kernel memory allocator
-    initialize_memory_system();
+    if (initialize_memory_system() != 0) {
+        printf("Fatal: kernel memory initialization failed.\n");
+        while (1) { asm volatile("hlt"); }
+    }
 
     // Stage 1: Early initialization
     early_init();

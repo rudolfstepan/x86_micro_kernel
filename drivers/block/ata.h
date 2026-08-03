@@ -32,7 +32,10 @@
 #define ATA_DEV_CTRL(base)    ((base) + 0x206) // Device control register
 #define ATA_CONTROL(base)     ((base) + 0x206) // Device control register (alias)
 
-#define MAX_DRIVES          4      // Max of 4 ATA drives (primary/master, primary/slave, secondary/master, secondary/slave)
+#define MAX_ATA_DRIVES      4      // primary/secondary, master/slave
+#define MAX_FDD_DRIVES      2
+#define MAX_DRIVES          (MAX_ATA_DRIVES + MAX_FDD_DRIVES)
+#define ATA_LBA28_LIMIT     0x10000000u
 #define SECTOR_SIZE 512
 
 // External declarations

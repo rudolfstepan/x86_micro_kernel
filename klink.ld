@@ -3,8 +3,8 @@ ENTRY(start)
 
 MEMORY
 {
-  kernel_ram (rw) : ORIGIN = 0x00100000, LENGTH = 16M  /* Kernel memory region, 16 MB */
-  user_programs (rw) : ORIGIN = 0x01100000, LENGTH = 8M  /* User programs memory region, 8 MB */
+  kernel_ram (rw) : ORIGIN = 0x00100000, LENGTH = 32M  /* Kernel memory region, 32 MB */
+  user_programs (rw) : ORIGIN = 0x02100000, LENGTH = 8M  /* User programs memory region, 8 MB */
 }
 
 SECTIONS

@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 
-// The program header is a 12-byte structure that is stored at the beginning of a binary, executable file.
+// The packed 28-byte header stored at the beginning of every MYPR executable.
 #pragma pack(push, 1)
 typedef struct {
     char identifier[4];         // 4-byte string identifier, e.g., "MYPR"
@@ -55,7 +55,9 @@ typedef struct {
 extern uint32_t _text_start, _text_end;
 extern uint32_t _relocation_offset, _relocation_end;
 
-void apply_relocation(uint32_t* relocation_table, uint32_t relocation_count, uint32_t offset);
+int apply_relocation(uint32_t *relocation_table, uint32_t relocation_count,
+                     uint32_t original_base, uint32_t load_base,
+                     uint32_t image_size);
 void load_and_relocate_program(void* program_src, void* target_address);
 int load_elf(void *elf_data);
 

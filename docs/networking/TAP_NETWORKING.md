@@ -1,113 +1,92 @@
-# TAP Networking Setup for NE2000 Testing
+# Optionales TAP-Netzwerk unter Linux/QEMU
 
-## Quick Start
+TAP ist ein zusätzlicher Entwicklungsweg für QEMU unter Linux. Er wird für
+den nativen Windows-/VMware-Build nicht benötigt. Die VMware-Referenzmaschine
+greift über E1000 und `VMnet0` direkt auf das LAN zu.
 
-### Option 1: Automatic Setup (Recommended)
+## Voraussetzungen und Sicherheitswirkung
+
+TAP-Erstellung und Host-Netzkonfiguration benötigen Rootrechte. Die
+Makefile-Ziele verändern `tap0` und weisen ihm `10.0.2.1/24` zu. Vor dem
+Ausführen sollte geprüft werden, dass kein gleichnamiges produktives Interface
+existiert und dieses Netz nicht mit der Hostkonfiguration kollidiert.
+
+## Automatischer Testweg
+
 ```bash
 sudo make run-net-tap-sudo
 ```
-This will:
-- Create TAP interface `tap0`
-- Assign host IP: `10.0.2.1/24`
-- Start QEMU with NE2000 connected to TAP
-- Your kernel MAC: `52:54:00:12:34:56`
 
-### Option 2: Manual Setup
+Dieses Ziel erzeugt `tap0`, setzt die Hostadresse und startet QEMU mit NE2000.
+Für aktuelle Treibertests sind die adapterbezogenen Ziele meist klarer:
+
 ```bash
-# 1. Create TAP interface (run once)
-make setup-tap
+make run-e1000-tap
+make run-rtl8139-tap
+make run-ne2000-tap
+```
 
-# 2. Run QEMU (no sudo needed after setup)
+Die Rezepte setzen voraus, dass QEMU, `ip`, `sudo` und die nötigen
+Kernel-TUN/TAP-Funktionen installiert sind.
+
+## Manuelle Vorbereitung
+
+```bash
+make setup-tap
 make run-net-tap
 ```
 
-## Testing Network Communication
+Die aktuelle Makefile-Konfiguration verwendet:
 
-### In the Kernel Shell:
+```text
+Interface: tap0
+Host-IP:   10.0.2.1/24
+Gastnetz:  10.0.2.0/24
+```
 
-1. **Check Network Status:**
-   ```
-   net status
-   ```
-   Should show: `NE2000 MAC address: 52:54:00:12:34:56`
+Ein TAP-Interface allein stellt noch keinen DHCP-Server, kein NAT und keine
+Bridge zum physischen LAN bereit. Für DHCP muss ein Hostdienst vorhanden sein;
+alternativ wird der Gast statisch konfiguriert:
 
-2. **Send a Packet:**
-   ```
-   net send
-   ```
-   Sends broadcast packet to LAN
+```text
+C:\> IFCONFIG 10.0.2.2 255.255.255.0 10.0.2.1
+C:\> PING 10.0.2.1
+```
 
-3. **Listen for Incoming Packets:**
-   ```
-   net listen 10
-   ```
-   Monitors for up to 10 packets
+## Beobachtung
 
-4. **Receive Single Packet:**
-   ```
-   net recv
-   ```
-   Try to receive one packet
+```bash
+ip link show tap0
+ip addr show tap0
+sudo tcpdump -i tap0 -e -n
+```
 
-### From Host Machine:
+In der Gastshell:
 
-1. **Ping the TAP interface (host side):**
-   ```bash
-   ping 10.0.2.1
-   ```
+```text
+NET STATUS
+NET INFO
+ARP
+PING 10.0.2.1
+```
 
-2. **Send packets to kernel:**
-   ```bash
-   # Send ARP request to kernel's MAC
-   sudo arping -I tap0 -c 1 52:54:00:12:34:56
-   
-   # Or broadcast ping (if kernel implements ICMP)
-   ping -b 10.0.2.255
-   ```
-
-3. **Monitor traffic with tcpdump:**
-   ```bash
-   sudo tcpdump -i tap0 -XX
-   ```
-
-4. **Send raw ethernet frame:**
-   ```bash
-   # Install if needed: sudo apt-get install packeth
-   sudo packeth
-   ```
-
-## Network Configuration
-
-- **Host (TAP) IP:** `10.0.2.1`
-- **Network:** `10.0.2.0/24`
-- **Kernel MAC:** `52:54:00:12:34:56`
-- **Available IPs for kernel:** `10.0.2.2` - `10.0.2.254`
-
-## Cleanup
+## Aufräumen
 
 ```bash
 make cleanup-tap
 ```
 
-## Troubleshooting
+Das entfernt nur das vom Makefile erwartete Interface `tap0`. Selbst angelegte
+Bridges, Firewallregeln, DHCP- oder NAT-Konfigurationen müssen separat und
+gezielt zurückgenommen werden.
 
-### No packets received:
-1. Check if TAP is up: `ip link show tap0`
-2. Check host firewall: `sudo iptables -L`
-3. Enable promiscuous mode: `net info` (check RCR register)
+## Fehlerdiagnose
 
-### Permission denied:
-- TAP operations require sudo
-- Use `sudo make run-net-tap-sudo`
+- **Permission denied:** TAP-Verwaltung benötigt Rootrechte.
+- **Keine Pakete:** Linkstatus, `tcpdump`, Gast-IP und Netzmaske prüfen.
+- **DHCP bleibt ohne Antwort:** Ein nacktes TAP besitzt keinen DHCP-Server.
+- **Host erreichbar, LAN nicht:** Routing/Forwarding oder eine Bridge fehlt.
+- **Falscher Treiber:** QEMU-Gerät und gewähltes `run-*-tap`-Ziel abgleichen.
 
-### Packets sent but not captured:
-- Run `sudo tcpdump -i tap0` on host
-- Verify MAC address matches in both directions
-
-## Next Steps
-
-1. Implement ARP protocol in kernel
-2. Add IP stack (IPv4)
-3. Implement ICMP (ping response)
-4. Add UDP/TCP support
-
+Der vollständige Protokoll- und VMware-Stand ist in [NETWORK.md](NETWORK.md)
+dokumentiert.

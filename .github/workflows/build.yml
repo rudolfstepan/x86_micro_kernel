@@ -1,0 +1,28 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Install freestanding x86 build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc-multilib nasm grub-pc-bin grub-common xorriso mtools python3
+
+      - name: Run fixture-independent tests
+        run: make test
+
+      - name: Build kernel and bootable ISO
+        run: make all TARGET=qemu VIDEO=vga

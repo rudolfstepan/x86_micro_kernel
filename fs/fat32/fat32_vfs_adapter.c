@@ -17,6 +17,224 @@ extern unsigned int current_directory_cluster;
 extern struct fat32_dir_entry* find_file_in_directory(const char* filename);
 extern unsigned int read_file_data(unsigned int start_cluster, char* buffer, unsigned int buffer_size, unsigned int bytes_to_read);
 extern bool fat32_read_dir(const char* path);
+extern struct fat32_fsinfo fsinfo;
+extern bool fsinfo_valid;
+extern unsigned short ata_base_address;
+extern bool ata_is_master;
+extern unsigned int partition_lba_offset;
+extern drive_t* current_drive;
+
+typedef struct {
+    struct fat32_boot_sector boot;
+    struct fat32_fsinfo fsinfo;
+    bool fsinfo_valid;
+    uint32_t current_directory_cluster;
+    uint32_t partition_lba;
+    uint16_t ata_base;
+    bool ata_master;
+} fat32_vfs_context_t;
+
+#define FAT32_CONTEXT_REGISTRY_SIZE 10
+static fat32_vfs_context_t*
+    fat32_context_registry[FAT32_CONTEXT_REGISTRY_SIZE];
+
+static void fat32_sync_registered_contexts(void) {
+    for (unsigned int i = 0; i < FAT32_CONTEXT_REGISTRY_SIZE; ++i) {
+        fat32_vfs_context_t* context = fat32_context_registry[i];
+        if (context && context->ata_base == ata_base_address &&
+            context->ata_master == ata_is_master &&
+            context->partition_lba == partition_lba_offset) {
+            context->boot = boot_sector;
+            context->fsinfo = fsinfo;
+            context->fsinfo_valid = fsinfo_valid;
+        }
+    }
+}
+
+static bool fat32_register_context(fat32_vfs_context_t* context) {
+    for (unsigned int i = 0; i < FAT32_CONTEXT_REGISTRY_SIZE; ++i) {
+        if (!fat32_context_registry[i]) {
+            fat32_context_registry[i] = context;
+            fat32_context_sync_hook = fat32_sync_registered_contexts;
+            return true;
+        }
+    }
+    return false;
+}
+
+static void fat32_unregister_context(fat32_vfs_context_t* context) {
+    bool any = false;
+    for (unsigned int i = 0; i < FAT32_CONTEXT_REGISTRY_SIZE; ++i) {
+        if (fat32_context_registry[i] == context) {
+            fat32_context_registry[i] = NULL;
+        }
+        if (fat32_context_registry[i]) any = true;
+    }
+    if (!any && fat32_context_sync_hook == fat32_sync_registered_contexts) {
+        fat32_context_sync_hook = NULL;
+    }
+}
+
+typedef struct {
+    struct fat32_dir_entry entry;
+    uint32_t parent_cluster;
+} fat32_vfs_handle_t;
+
+static void fat32_activate(vfs_filesystem_t* fs) {
+    fat32_vfs_context_t* context = (fat32_vfs_context_t*)fs->fs_data;
+    boot_sector = context->boot;
+    fsinfo = context->fsinfo;
+    fsinfo_valid = context->fsinfo_valid;
+    current_directory_cluster = context->current_directory_cluster;
+    partition_lba_offset = context->partition_lba;
+    ata_base_address = context->ata_base;
+    ata_is_master = context->ata_master;
+    current_drive = fs->drive;
+}
+
+static void fat32_sync(vfs_filesystem_t* fs) {
+    fat32_vfs_context_t* context = (fat32_vfs_context_t*)fs->fs_data;
+    context->boot = boot_sector;
+    context->fsinfo = fsinfo;
+    context->fsinfo_valid = fsinfo_valid;
+    context->current_directory_cluster = current_directory_cluster;
+    context->partition_lba = partition_lba_offset;
+    context->ata_base = ata_base_address;
+    context->ata_master = ata_is_master;
+}
+
+static bool fat32_bpb_candidate(const uint8_t sector[SECTOR_SIZE]) {
+    const struct fat32_boot_sector* candidate =
+        (const struct fat32_boot_sector*)sector;
+    return candidate->boot_sector_signature == 0xAA55 &&
+           candidate->bytes_per_sector == SECTOR_SIZE &&
+           candidate->sectors_per_cluster != 0 &&
+           candidate->reserved_sector_count != 0 &&
+           candidate->fat_size_16 == 0 && candidate->fat_size_32 != 0 &&
+           candidate->root_entry_count == 0 &&
+           candidate->root_cluster >= 2;
+}
+
+static bool fat32_find_volume(drive_t* drive, uint32_t* partition_lba) {
+    uint8_t sector[SECTOR_SIZE];
+    if (!ata_read_sector(drive->base, 0, sector, drive->is_master)) {
+        return false;
+    }
+    if (fat32_bpb_candidate(sector) &&
+        (drive->sectors == 0 ||
+         ((const struct fat32_boot_sector*)sector)->total_sectors_32 <=
+            drive->sectors)) {
+        *partition_lba = 0;
+        return true;
+    }
+    if (sector[510] != 0x55 || sector[511] != 0xAA) {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < 4; i++) {
+        const uint8_t* part = sector + 446 + i * 16;
+        uint8_t type = part[4];
+        if (type != 0x0B && type != 0x0C && type != 0x1B && type != 0x1C) {
+            continue;
+        }
+        uint32_t lba = (uint32_t)part[8] |
+                       ((uint32_t)part[9] << 8) |
+                       ((uint32_t)part[10] << 16) |
+                       ((uint32_t)part[11] << 24);
+        uint32_t partition_sectors = (uint32_t)part[12] |
+                       ((uint32_t)part[13] << 8) |
+                       ((uint32_t)part[14] << 16) |
+                       ((uint32_t)part[15] << 24);
+        if (lba != 0 && partition_sectors != 0 &&
+            (uint64_t)lba + partition_sectors <=
+                (uint64_t)UINT32_MAX + 1u &&
+            (drive->sectors == 0 ||
+             (uint64_t)lba + partition_sectors <= drive->sectors) &&
+            ata_read_sector(drive->base, lba, sector, drive->is_master) &&
+            fat32_bpb_candidate(sector) &&
+            ((const struct fat32_boot_sector*)sector)->total_sectors_32 <=
+                partition_sectors) {
+            *partition_lba = lba;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool fat32_resolve_entry(vfs_filesystem_t* fs, const char* path,
+                                struct fat32_dir_entry* result,
+                                uint32_t* parent_cluster) {
+    if (!fs || !path || !result || !parent_cluster || strlen(path) >= MAX_PATH_LENGTH) {
+        return false;
+    }
+
+    char copy[MAX_PATH_LENGTH];
+    strcpy(copy, path);
+    char* cursor = copy;
+    while (*cursor == '/') cursor++;
+    if (*cursor == '\0') return false;
+
+    uint32_t directory = ((fat32_vfs_context_t*)fs->fs_data)->boot.root_cluster;
+    char* save = NULL;
+    char* token = strtok_r(cursor, "/", &save);
+    while (token) {
+        char* next_token = strtok_r(NULL, "/", &save);
+        struct fat32_dir_entry* found =
+            find_file_in_directory_cluster(directory, token);
+        if (!found) return false;
+        if (!next_token) {
+            *result = *found;
+            *parent_cluster = directory;
+            free(found);
+            return true;
+        }
+        if (!(found->attr & ATTR_DIRECTORY)) {
+            free(found);
+            return false;
+        }
+        directory = read_start_cluster(found);
+        free(found);
+        token = next_token;
+    }
+    return false;
+}
+
+static bool fat32_resolve_parent(vfs_filesystem_t* fs, const char* path,
+                                 uint32_t* parent_cluster, char leaf[13]) {
+    if (!fs || !path || !parent_cluster || !leaf || strlen(path) >= MAX_PATH_LENGTH) {
+        return false;
+    }
+    char copy[MAX_PATH_LENGTH];
+    strcpy(copy, path);
+    char* cursor = copy;
+    while (*cursor == '/') cursor++;
+    if (*cursor == '\0') return false;
+
+    uint32_t directory = ((fat32_vfs_context_t*)fs->fs_data)->boot.root_cluster;
+    char* save = NULL;
+    char* token = strtok_r(cursor, "/", &save);
+    while (token) {
+        char* next_token = strtok_r(NULL, "/", &save);
+        if (!next_token) {
+            if (!fat32_is_valid_short_name(token) ||
+                strcmp(token, ".") == 0 || strcmp(token, "..") == 0)
+                return false;
+            strcpy(leaf, token);
+            *parent_cluster = directory;
+            return true;
+        }
+        struct fat32_dir_entry* found =
+            find_file_in_directory_cluster(directory, token);
+        if (!found || !(found->attr & ATTR_DIRECTORY)) {
+            if (found) free(found);
+            return false;
+        }
+        directory = read_start_cluster(found);
+        free(found);
+        token = next_token;
+    }
+    return false;
+}
 
 // ===========================================================================
 // Helper Functions
@@ -44,8 +262,7 @@ static void fat32_entry_to_vfs_entry(struct fat32_dir_entry* fat_entry, vfs_dir_
     }
     name[name_idx] = '\0';
     
-    strncpy(vfs_entry->name, name, 255);
-    vfs_entry->name[255] = '\0';
+    strcpy(vfs_entry->name, name);
     
     // Set type
     if (fat_entry->attr & 0x10) {
@@ -65,36 +282,149 @@ static void fat32_entry_to_vfs_entry(struct fat32_dir_entry* fat_entry, vfs_dir_
     vfs_entry->access_time = 0;
 }
 
+static vfs_node_t* fat32_make_node(vfs_filesystem_t* fs,
+                                   const struct fat32_dir_entry* entry,
+                                   uint32_t parent_cluster) {
+    vfs_node_t* node = (vfs_node_t*)malloc(sizeof(vfs_node_t));
+    fat32_vfs_handle_t* handle =
+        (fat32_vfs_handle_t*)malloc(sizeof(fat32_vfs_handle_t));
+    if (!node || !handle) {
+        if (node) free(node);
+        if (handle) free(handle);
+        return NULL;
+    }
+
+    memset(node, 0, sizeof(*node));
+    handle->entry = *entry;
+    handle->parent_cluster = parent_cluster;
+
+    vfs_dir_entry_t converted;
+    memset(&converted, 0, sizeof(converted));
+    fat32_entry_to_vfs_entry(&handle->entry, &converted);
+    strcpy(node->name, converted.name);
+    node->type = converted.type;
+    node->inode = converted.inode;
+    node->size = converted.size;
+    node->fs = fs;
+    node->fs_specific = handle;
+    return node;
+}
+
+static void fat32_flush_context(vfs_filesystem_t* fs) {
+    if (fsinfo_valid) {
+        (void)write_fsinfo();
+    }
+    fat32_sync(fs);
+}
+
+static bool fat32_commit_node_data(vfs_node_t* node, uint32_t start_cluster,
+                                   uint32_t file_size,
+                                   uint32_t original_tail,
+                                   bool chain_reclaim_safe) {
+    fat32_vfs_handle_t* handle = (fat32_vfs_handle_t*)node->fs_specific;
+    const struct fat32_dir_entry original = handle->entry;
+    struct fat32_dir_entry committed = original;
+    committed.first_cluster_high = (uint16_t)(start_cluster >> 16);
+    committed.first_cluster_low = (uint16_t)start_cluster;
+    committed.file_size = file_size;
+    set_fat32_time(&committed.write_time, &committed.write_date);
+    if (!update_directory_entry(handle->parent_cluster, committed.name,
+                                &committed)) {
+        char filename[13];
+        struct fat32_dir_entry observed;
+        format_filename(filename, committed.name);
+        if (fat32_lookup_entry_in_directory(handle->parent_cluster, filename,
+                                            &observed) !=
+                FAT32_LOOKUP_FOUND) {
+            return false;
+        }
+        if (memcmp(&observed, &committed, sizeof(observed)) == 0) {
+            committed = observed;
+        } else if (memcmp(&observed, &original, sizeof(observed)) == 0) {
+            uint32_t old_cluster = read_start_cluster(
+                (struct fat32_dir_entry*)&original);
+            if (chain_reclaim_safe) {
+                if (is_valid_cluster(&boot_sector, old_cluster)) {
+                    (void)fat32_reclaim_chain_suffix(&boot_sector,
+                                                     original_tail);
+                } else if (is_valid_cluster(&boot_sector, start_cluster)) {
+                    (void)free_cluster_chain(&boot_sector, start_cluster);
+                }
+                fat32_flush_context(node->fs);
+            }
+            return false;
+        } else {
+            return false;
+        }
+    }
+    handle->entry = committed;
+    node->inode = start_cluster;
+    node->size = file_size;
+    fat32_flush_context(node->fs);
+    return true;
+}
+
+static int fat32_refresh_file_node(vfs_node_t* node) {
+    if (!node || !node->fs_specific) return VFS_ERR_INVALID;
+    fat32_vfs_handle_t* handle = (fat32_vfs_handle_t*)node->fs_specific;
+    char filename[13];
+    format_filename(filename, handle->entry.name);
+    struct fat32_dir_entry current;
+    fat32_lookup_result_t result = fat32_lookup_entry_in_directory(
+        handle->parent_cluster, filename, &current);
+    if (result == FAT32_LOOKUP_NOT_FOUND) return VFS_ERR_NOT_FOUND;
+    if (result != FAT32_LOOKUP_FOUND || (current.attr & ATTR_DIRECTORY)) {
+        return VFS_ERR_IO;
+    }
+    handle->entry = current;
+    node->inode = read_start_cluster(&current);
+    node->size = current.file_size;
+    return VFS_OK;
+}
+
 // ===========================================================================
 // VFS Operations Implementation
 // ===========================================================================
 
-static int fat32_vfs_mount(vfs_filesystem_t* fs, drive_t* drive) {
+static int fat32_vfs_mount_unlocked(vfs_filesystem_t* fs, drive_t* drive) {
     if (!fs || !drive) {
         return VFS_ERR_INVALID;
     }
     
-    // Call existing FAT32 initialization
-    int result = fat32_init_fs(drive->base, drive->is_master);
-    if (result != SUCCESS) {
-        return VFS_ERR_IO;
+    uint32_t volume_lba;
+    if (!fat32_find_volume(drive, &volume_lba)) {
+        return VFS_ERR_INVALID;
     }
-    
-    // Store boot sector as filesystem data
-    struct fat32_boot_sector* bs = (struct fat32_boot_sector*)malloc(sizeof(struct fat32_boot_sector));
-    if (!bs) {
+
+    current_drive = drive;
+    int result = fat32_init_fs_at(drive->base, drive->is_master, volume_lba);
+    if (result != SUCCESS) {
+        return VFS_ERR_INVALID;
+    }
+
+    fat32_vfs_context_t* context =
+        (fat32_vfs_context_t*)malloc(sizeof(fat32_vfs_context_t));
+    if (!context) {
         return VFS_ERR_NO_MEMORY;
     }
-    memcpy(bs, &boot_sector, sizeof(struct fat32_boot_sector));
-    fs->fs_data = bs;
+    context->boot = boot_sector;
+    context->fsinfo = fsinfo;
+    context->fsinfo_valid = fsinfo_valid;
+    context->current_directory_cluster = boot_sector.root_cluster;
+    context->partition_lba = partition_lba_offset;
+    context->ata_base = ata_base_address;
+    context->ata_master = ata_is_master;
+    fs->fs_data = context;
     
     // Create root node
     vfs_node_t* root = (vfs_node_t*)malloc(sizeof(vfs_node_t));
     if (!root) {
-        free(bs);
+        free(context);
+        fs->fs_data = NULL;
         return VFS_ERR_NO_MEMORY;
     }
-    
+
+    memset(root, 0, sizeof(*root));
     strcpy(root->name, "/");
     root->type = VFS_DIRECTORY;
     root->inode = boot_sector.root_cluster;
@@ -104,16 +434,24 @@ static int fat32_vfs_mount(vfs_filesystem_t* fs, drive_t* drive) {
     root->fs_specific = NULL;
     
     fs->root = root;
+    if (!fat32_register_context(context)) {
+        free(root);
+        free(context);
+        fs->root = NULL;
+        fs->fs_data = NULL;
+        return VFS_ERR_NO_MEMORY;
+    }
     
     return VFS_OK;
 }
 
-static int fat32_vfs_unmount(vfs_filesystem_t* fs) {
+static int fat32_vfs_unmount_unlocked(vfs_filesystem_t* fs) {
     if (!fs) {
         return VFS_ERR_INVALID;
     }
     
     if (fs->fs_data) {
+        fat32_unregister_context((fat32_vfs_context_t*)fs->fs_data);
         free(fs->fs_data);
         fs->fs_data = NULL;
     }
@@ -126,15 +464,14 @@ static int fat32_vfs_unmount(vfs_filesystem_t* fs) {
     return VFS_OK;
 }
 
-static int fat32_vfs_open(vfs_filesystem_t* fs, const char* path, vfs_node_t** node) {
+static int fat32_vfs_open_unlocked(vfs_filesystem_t* fs, const char* path,
+                                   vfs_node_t** node) {
     if (!fs || !path || !node) {
         return VFS_ERR_INVALID;
     }
     
-    extern drive_t* current_drive;
-    current_drive = fs->drive;  // Set current drive for FAT32 functions
-    
-    //printf("FAT32: Opening '%s'\n", path);
+    *node = NULL;
+    fat32_activate(fs);
     
     // Handle root directory
     if (strcmp(path, "/") == 0) {
@@ -142,53 +479,22 @@ static int fat32_vfs_open(vfs_filesystem_t* fs, const char* path, vfs_node_t** n
         return VFS_OK;
     }
     
-    // Remove leading slash
-    const char* filename = path;
-    if (*filename == '/') {
-        filename++;
-    }
-    
-    // Find file in current directory (simplified - assumes flat structure for now)
-    struct fat32_dir_entry* fat_entry = find_file_in_directory(filename);
-    if (!fat_entry) {
+    struct fat32_dir_entry fat_entry;
+    uint32_t parent_cluster;
+    if (!fat32_resolve_entry(fs, path, &fat_entry, &parent_cluster)) {
         return VFS_ERR_NOT_FOUND;
     }
-    
-    // Create VFS node
-    vfs_node_t* new_node = (vfs_node_t*)malloc(sizeof(vfs_node_t));
+
+    vfs_node_t* new_node = fat32_make_node(fs, &fat_entry, parent_cluster);
     if (!new_node) {
-        free(fat_entry);
         return VFS_ERR_NO_MEMORY;
     }
-    
-    // Convert filename
-    char name[13];
-    int name_idx = 0;
-    for (int i = 0; i < 8 && fat_entry->name[i] != ' '; i++) {
-        name[name_idx++] = fat_entry->name[i];
-    }
-    if (fat_entry->name[8] != ' ') {
-        name[name_idx++] = '.';
-        for (int i = 8; i < 11 && fat_entry->name[i] != ' '; i++) {
-            name[name_idx++] = fat_entry->name[i];
-        }
-    }
-    name[name_idx] = '\0';
-    
-    strncpy(new_node->name, name, 255);
-    new_node->name[255] = '\0';
-    new_node->type = (fat_entry->attr & 0x10) ? VFS_DIRECTORY : VFS_FILE;
-    new_node->inode = ((uint32_t)fat_entry->first_cluster_high << 16) | fat_entry->first_cluster_low;
-    new_node->size = fat_entry->file_size;
-    new_node->flags = 0;
-    new_node->fs = fs;
-    new_node->fs_specific = fat_entry;  // Store FAT entry
-    
+
     *node = new_node;
     return VFS_OK;
 }
 
-static int fat32_vfs_close(vfs_node_t* node) {
+static int fat32_vfs_close_unlocked(vfs_node_t* node) {
     if (!node) {
         return VFS_ERR_INVALID;
     }
@@ -206,7 +512,8 @@ static int fat32_vfs_close(vfs_node_t* node) {
     return VFS_OK;
 }
 
-static int fat32_vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+static int fat32_vfs_read_unlocked(vfs_node_t* node, uint32_t offset,
+                                   uint32_t size, uint8_t* buffer) {
     if (!node || !buffer) {
         return VFS_ERR_INVALID;
     }
@@ -215,26 +522,113 @@ static int fat32_vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size, uint
         return VFS_ERR_IS_DIR;
     }
     
-    extern drive_t* current_drive;
-    current_drive = node->fs->drive;  // Set current drive
-    
-    // For now, only support reading from start (offset must be 0)
-    if (offset != 0) {
-        printf("FAT32: Warning - offset %u not supported, reading from start\n", offset);
+    fat32_activate(node->fs);
+    int refresh = fat32_refresh_file_node(node);
+    if (refresh != VFS_OK) return refresh;
+    if (offset >= node->size || size == 0) return 0;
+    uint32_t available = node->size - offset;
+    uint32_t bytes_to_read = size < available ? size : available;
+    if (bytes_to_read > INT_MAX) bytes_to_read = INT_MAX;
+    return (int)read_file_data_at(node->inode, offset, (char*)buffer,
+                                  size, bytes_to_read);
+}
+
+static int fat32_vfs_write_unlocked(vfs_node_t* node, uint32_t offset,
+                                    uint32_t size,
+                                    const uint8_t* buffer) {
+    if (!node || (!buffer && size != 0) || !node->fs) return VFS_ERR_INVALID;
+    if (node->type != VFS_FILE) return VFS_ERR_IS_DIR;
+    if (size == 0) return 0;
+    if (size > INT_MAX) return VFS_ERR_INVALID;
+    if (offset > UINT32_MAX - size || !node->fs_specific) return VFS_ERR_INVALID;
+
+    fat32_activate(node->fs);
+    int refresh = fat32_refresh_file_node(node);
+    if (refresh != VFS_OK) return refresh;
+    fat32_vfs_handle_t* handle = (fat32_vfs_handle_t*)node->fs_specific;
+    if (handle->entry.attr & ATTR_READ_ONLY) return VFS_ERR_READ_ONLY;
+    uint32_t start_cluster = node->inode;
+    uint32_t durable_size = node->size;
+    uint32_t original_tail = INVALID_CLUSTER;
+    if (is_valid_cluster(&boot_sector, node->inode) &&
+        !fat32_get_chain_tail(&boot_sector, node->inode, &original_tail)) {
+        return VFS_ERR_IO;
     }
-    
-    uint32_t bytes_to_read = (size < node->size) ? size : node->size;
-    unsigned int bytes_read = read_file_data(node->inode, (char*)buffer, size, bytes_to_read);
-    
-    return bytes_read;
+    bool chain_reclaim_safe = true;
+
+    if (offset > node->size) {
+        uint8_t zeroes[SECTOR_SIZE];
+        memset(zeroes, 0, sizeof(zeroes));
+        uint32_t position = node->size;
+        while (position < offset) {
+            uint32_t amount = offset - position;
+            if (amount > sizeof(zeroes)) amount = sizeof(zeroes);
+            int written = write_file_data_at_checked(
+                &start_cluster, position, zeroes, amount,
+                &chain_reclaim_safe);
+            if (written > 0) {
+                position += (uint32_t)written;
+                durable_size = position;
+            }
+            if (!chain_reclaim_safe) return VFS_ERR_IO;
+            if (written != (int)amount) {
+                if (written < 0 && durable_size == node->size) {
+                    if (is_valid_cluster(&boot_sector, node->inode)) {
+                        (void)fat32_reclaim_chain_suffix(&boot_sector,
+                                                         original_tail);
+                    } else if (is_valid_cluster(&boot_sector,
+                                                start_cluster)) {
+                        (void)free_cluster_chain(&boot_sector,
+                                                 start_cluster);
+                    }
+                    fat32_flush_context(node->fs);
+                    return VFS_ERR_IO;
+                }
+                if ((durable_size != node->size || start_cluster != node->inode) &&
+                    !fat32_commit_node_data(node, start_cluster, durable_size,
+                                            original_tail,
+                                            chain_reclaim_safe)) {
+                    return VFS_ERR_IO;
+                }
+                return VFS_ERR_IO;
+            }
+        }
+        durable_size = offset;
+    }
+
+    int written = write_file_data_at_checked(&start_cluster, offset, buffer,
+                                             size, &chain_reclaim_safe);
+    if (!chain_reclaim_safe) return VFS_ERR_IO;
+    if (written < 0) {
+        if (durable_size == node->size) {
+            if (is_valid_cluster(&boot_sector, node->inode)) {
+                (void)fat32_reclaim_chain_suffix(&boot_sector,
+                                                 original_tail);
+            } else if (is_valid_cluster(&boot_sector, start_cluster)) {
+                (void)free_cluster_chain(&boot_sector, start_cluster);
+            }
+            fat32_flush_context(node->fs);
+            return VFS_ERR_IO;
+        }
+        if ((durable_size != node->size || start_cluster != node->inode) &&
+            !fat32_commit_node_data(node, start_cluster, durable_size,
+                                    original_tail, chain_reclaim_safe)) {
+            return VFS_ERR_IO;
+        }
+        return VFS_ERR_IO;
+    }
+
+    uint32_t end = offset + (uint32_t)written;
+    if (end < durable_size) end = durable_size;
+    if (!fat32_commit_node_data(node, start_cluster, end, original_tail,
+                                chain_reclaim_safe)) {
+        return VFS_ERR_IO;
+    }
+    return written;
 }
 
-static int fat32_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
-    // Write not implemented yet
-    return VFS_ERR_UNSUPPORTED;
-}
-
-static int fat32_vfs_readdir(vfs_node_t* node, uint32_t index, vfs_dir_entry_t* entry) {
+static int fat32_vfs_readdir_unlocked(vfs_node_t* node, uint32_t index,
+                                      vfs_dir_entry_t* entry) {
     if (!node || !entry) {
         return VFS_ERR_INVALID;
     }
@@ -243,97 +637,269 @@ static int fat32_vfs_readdir(vfs_node_t* node, uint32_t index, vfs_dir_entry_t* 
         return VFS_ERR_NOT_DIR;
     }
     
-    extern drive_t* current_drive;
-    current_drive = node->fs->drive;  // Set current drive
-    
-    // Read directory entries
-    unsigned int sector = cluster_to_sector(&boot_sector, node->inode);
-    struct fat32_dir_entry* entries = (struct fat32_dir_entry*)malloc(SECTOR_SIZE * boot_sector.sectors_per_cluster);
-    
-    if (!entries) {
-        return VFS_ERR_NO_MEMORY;
+    fat32_activate(node->fs);
+    uint32_t cluster = node->inode;
+    uint32_t visible_index = 0;
+    uint32_t clusters_left = get_total_clusters(&boot_sector);
+    uint8_t sector_buffer[SECTOR_SIZE];
+
+    while (is_valid_cluster(&boot_sector, cluster) && clusters_left-- != 0) {
+        uint32_t sector = cluster_to_sector(&boot_sector, cluster);
+        if (sector == INVALID_CLUSTER) return VFS_ERR_IO;
+        for (uint32_t s = 0; s < boot_sector.sectors_per_cluster; s++) {
+            if (!ata_read_sector(ata_base_address, sector + s, sector_buffer,
+                                 ata_is_master)) {
+                return VFS_ERR_IO;
+            }
+            struct fat32_dir_entry* entries =
+                (struct fat32_dir_entry*)sector_buffer;
+            for (uint32_t i = 0; i < SECTOR_SIZE / sizeof(*entries); i++) {
+                if (entries[i].name[0] == 0x00) return VFS_ERR_NOT_FOUND;
+                if (entries[i].name[0] == 0xE5 || entries[i].attr == 0x0F ||
+                    (entries[i].attr & 0x08)) {
+                    continue;
+                }
+                if (visible_index++ == index) {
+                    memset(entry, 0, sizeof(*entry));
+                    fat32_entry_to_vfs_entry(&entries[i], entry);
+                    return VFS_OK;
+                }
+            }
+        }
+
+        uint32_t next = get_next_cluster_in_chain(&boot_sector, cluster);
+        if (is_end_of_cluster_chain(next)) return VFS_ERR_NOT_FOUND;
+        if (!is_valid_cluster(&boot_sector, next)) return VFS_ERR_IO;
+        cluster = next;
     }
-    
-    // Read all sectors in cluster
-    for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
-        if (!ata_read_sector(current_drive->base, sector + i, 
-                            &entries[i * (SECTOR_SIZE / sizeof(struct fat32_dir_entry))], 
-                            current_drive->is_master)) {
-            free(entries);
-            return VFS_ERR_IO;
-        }
-    }
-    
-    // Find the entry at the requested index (skip deleted/special entries)
-    uint32_t current_index = 0;
-    uint32_t max_entries = boot_sector.sectors_per_cluster * (SECTOR_SIZE / sizeof(struct fat32_dir_entry));
-    
-    for (uint32_t i = 0; i < max_entries; i++) {
-        // Skip deleted entries and volume labels
-        if (entries[i].name[0] == 0x00) {
-            break;  // End of directory
-        }
-        if (entries[i].name[0] == 0xE5) {
-            continue;  // Deleted entry
-        }
-        if (entries[i].attr == 0x0F) {
-            continue;  // Long filename entry
-        }
-        if (entries[i].attr & 0x08) {
-            continue;  // Volume label
-        }
-        
-        if (current_index == index) {
-            fat32_entry_to_vfs_entry(&entries[i], entry);
-            free(entries);
-            return VFS_OK;
-        }
-        current_index++;
-    }
-    
-    free(entries);
-    return VFS_ERR_NOT_FOUND;  // Index out of range
+    return VFS_ERR_IO;
 }
 
-static int fat32_vfs_finddir(vfs_node_t* node, const char* name, vfs_node_t** child) {
-    // Use existing find_file_in_directory
-    return VFS_ERR_UNSUPPORTED;  // TODO: Implement
+static int fat32_vfs_finddir_unlocked(vfs_node_t* node, const char* name,
+                                      vfs_node_t** child) {
+    if (!node || !name || !child || !node->fs) return VFS_ERR_INVALID;
+    if (node->type != VFS_DIRECTORY) return VFS_ERR_NOT_DIR;
+    *child = NULL;
+    fat32_activate(node->fs);
+    struct fat32_dir_entry* entry =
+        find_file_in_directory_cluster(node->inode, name);
+    if (!entry) return VFS_ERR_NOT_FOUND;
+    *child = fat32_make_node(node->fs, entry, node->inode);
+    free(entry);
+    return *child ? VFS_OK : VFS_ERR_NO_MEMORY;
+}
+
+static int fat32_vfs_mkdir_unlocked(vfs_filesystem_t* fs, const char* path) {
+    if (!fs || !path) return VFS_ERR_INVALID;
+    fat32_activate(fs);
+    uint32_t parent;
+    char leaf[13];
+    if (!fat32_resolve_parent(fs, path, &parent, leaf)) return VFS_ERR_INVALID;
+    struct fat32_dir_entry* existing =
+        find_file_in_directory_cluster(parent, leaf);
+    if (existing) {
+        free(existing);
+        return VFS_ERR_EXISTS;
+    }
+    current_directory_cluster = parent;
+    if (!fat32_create_dir(leaf)) return VFS_ERR_IO;
+    fat32_flush_context(fs);
+    return VFS_OK;
+}
+
+static int fat32_vfs_rmdir_unlocked(vfs_filesystem_t* fs, const char* path) {
+    if (!fs || !path) return VFS_ERR_INVALID;
+    fat32_activate(fs);
+    uint32_t parent;
+    char leaf[13];
+    if (!fat32_resolve_parent(fs, path, &parent, leaf)) return VFS_ERR_INVALID;
+    struct fat32_dir_entry* existing =
+        find_file_in_directory_cluster(parent, leaf);
+    if (!existing) return VFS_ERR_NOT_FOUND;
+    bool is_dir = (existing->attr & ATTR_DIRECTORY) != 0;
+    bool read_only = (existing->attr & ATTR_READ_ONLY) != 0;
+    free(existing);
+    if (!is_dir) return VFS_ERR_NOT_DIR;
+    if (read_only) return VFS_ERR_READ_ONLY;
+    current_directory_cluster = parent;
+    if (!fat32_delete_dir(leaf)) return VFS_ERR_IO;
+    fat32_flush_context(fs);
+    return VFS_OK;
+}
+
+static int fat32_vfs_create_unlocked(vfs_filesystem_t* fs, const char* path) {
+    if (!fs || !path) return VFS_ERR_INVALID;
+    fat32_activate(fs);
+    uint32_t parent;
+    char leaf[13];
+    if (!fat32_resolve_parent(fs, path, &parent, leaf)) return VFS_ERR_INVALID;
+    struct fat32_dir_entry* existing =
+        find_file_in_directory_cluster(parent, leaf);
+    if (existing) {
+        free(existing);
+        return VFS_ERR_EXISTS;
+    }
+    current_directory_cluster = parent;
+    if (!fat32_create_file(leaf)) return VFS_ERR_IO;
+    fat32_flush_context(fs);
+    return VFS_OK;
+}
+
+static int fat32_vfs_delete_unlocked(vfs_filesystem_t* fs, const char* path) {
+    if (!fs || !path) return VFS_ERR_INVALID;
+    fat32_activate(fs);
+    uint32_t parent;
+    char leaf[13];
+    if (!fat32_resolve_parent(fs, path, &parent, leaf)) return VFS_ERR_INVALID;
+    struct fat32_dir_entry* existing =
+        find_file_in_directory_cluster(parent, leaf);
+    if (!existing) return VFS_ERR_NOT_FOUND;
+    bool is_dir = (existing->attr & ATTR_DIRECTORY) != 0;
+    bool read_only = (existing->attr & ATTR_READ_ONLY) != 0;
+    free(existing);
+    if (is_dir) return VFS_ERR_IS_DIR;
+    if (read_only) return VFS_ERR_READ_ONLY;
+    current_directory_cluster = parent;
+    if (!fat32_delete_file(leaf)) return VFS_ERR_IO;
+    fat32_flush_context(fs);
+    return VFS_OK;
+}
+
+static int fat32_vfs_stat_unlocked(vfs_filesystem_t* fs, const char* path,
+                                   vfs_dir_entry_t* stat) {
+    if (!fs || !path || !stat) return VFS_ERR_INVALID;
+    memset(stat, 0, sizeof(*stat));
+
+    if (strcmp(path, "/") == 0 || path[0] == '\0') {
+        strcpy(stat->name, "/");
+        stat->type = VFS_DIRECTORY;
+        stat->inode = ((fat32_vfs_context_t*)fs->fs_data)->boot.root_cluster;
+        return VFS_OK;
+    }
+
+    fat32_activate(fs);
+    struct fat32_dir_entry fat_entry;
+    uint32_t parent_cluster;
+    if (!fat32_resolve_entry(fs, path, &fat_entry, &parent_cluster))
+        return VFS_ERR_NOT_FOUND;
+    (void)parent_cluster;
+    fat32_entry_to_vfs_entry(&fat_entry, stat);
+    return VFS_OK;
+}
+
+static int fat32_vfs_mount(vfs_filesystem_t* fs, drive_t* drive) {
+    uint32_t flags = fat32_operation_begin();
+    struct fat32_boot_sector saved_boot = boot_sector;
+    struct fat32_fsinfo saved_fsinfo = fsinfo;
+    bool saved_fsinfo_valid = fsinfo_valid;
+    uint32_t saved_directory = current_directory_cluster;
+    uint32_t saved_partition = partition_lba_offset;
+    uint16_t saved_base = ata_base_address;
+    bool saved_master = ata_is_master;
+    drive_t* saved_drive = current_drive;
+    int result = fat32_vfs_mount_unlocked(fs, drive);
+    if (result != VFS_OK) {
+        boot_sector = saved_boot;
+        fsinfo = saved_fsinfo;
+        fsinfo_valid = saved_fsinfo_valid;
+        current_directory_cluster = saved_directory;
+        partition_lba_offset = saved_partition;
+        ata_base_address = saved_base;
+        ata_is_master = saved_master;
+        current_drive = saved_drive;
+    }
+    fat32_operation_end(flags);
+    return result;
+}
+
+static int fat32_vfs_unmount(vfs_filesystem_t* fs) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_unmount_unlocked(fs);
+    fat32_operation_end(flags);
+    return result;
+}
+
+static int fat32_vfs_open(vfs_filesystem_t* fs, const char* path,
+                          vfs_node_t** node) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_open_unlocked(fs, path, node);
+    fat32_operation_end(flags);
+    return result;
+}
+
+static int fat32_vfs_close(vfs_node_t* node) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_close_unlocked(node);
+    fat32_operation_end(flags);
+    return result;
+}
+
+static int fat32_vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size,
+                          uint8_t* buffer) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_read_unlocked(node, offset, size, buffer);
+    fat32_operation_end(flags);
+    return result;
+}
+
+static int fat32_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
+                           const uint8_t* buffer) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_write_unlocked(node, offset, size, buffer);
+    fat32_operation_end(flags);
+    return result;
+}
+
+static int fat32_vfs_readdir(vfs_node_t* node, uint32_t index,
+                             vfs_dir_entry_t* entry) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_readdir_unlocked(node, index, entry);
+    fat32_operation_end(flags);
+    return result;
+}
+
+static int fat32_vfs_finddir(vfs_node_t* node, const char* name,
+                             vfs_node_t** child) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_finddir_unlocked(node, name, child);
+    fat32_operation_end(flags);
+    return result;
 }
 
 static int fat32_vfs_mkdir(vfs_filesystem_t* fs, const char* path) {
-    // Use existing fat32_create_dir
-    return VFS_ERR_UNSUPPORTED;  // TODO: Implement
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_mkdir_unlocked(fs, path);
+    fat32_operation_end(flags);
+    return result;
 }
 
 static int fat32_vfs_rmdir(vfs_filesystem_t* fs, const char* path) {
-    // Use existing fat32_delete_dir
-    return VFS_ERR_UNSUPPORTED;  // TODO: Implement
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_rmdir_unlocked(fs, path);
+    fat32_operation_end(flags);
+    return result;
 }
 
 static int fat32_vfs_create(vfs_filesystem_t* fs, const char* path) {
-    return VFS_ERR_UNSUPPORTED;  // TODO: Implement
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_create_unlocked(fs, path);
+    fat32_operation_end(flags);
+    return result;
 }
 
 static int fat32_vfs_delete(vfs_filesystem_t* fs, const char* path) {
-    return VFS_ERR_UNSUPPORTED;  // TODO: Implement
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_delete_unlocked(fs, path);
+    fat32_operation_end(flags);
+    return result;
 }
 
-static int fat32_vfs_stat(vfs_filesystem_t* fs, const char* path, vfs_dir_entry_t* stat) {
-    // Open file and get info
-    vfs_node_t* node;
-    int result = fat32_vfs_open(fs, path, &node);
-    if (result != VFS_OK) {
-        return result;
-    }
-    
-    strncpy(stat->name, node->name, 255);
-    stat->name[255] = '\0';
-    stat->type = node->type;
-    stat->size = node->size;
-    stat->inode = node->inode;
-    
-    fat32_vfs_close(node);
-    return VFS_OK;
+static int fat32_vfs_stat(vfs_filesystem_t* fs, const char* path,
+                          vfs_dir_entry_t* stat) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_stat_unlocked(fs, path, stat);
+    fat32_operation_end(flags);
+    return result;
 }
 
 // ===========================================================================

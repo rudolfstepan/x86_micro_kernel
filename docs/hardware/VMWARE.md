@@ -1,241 +1,125 @@
-# VMware Workstation Setup Guide
+# VMware Workstation
 
-## Quick Start
+Der native Windows-Build erzeugt eine vollständige VM, die direkt geöffnet
+und gestartet werden kann. Eine manuelle VM-Erstellung, ein ISO und GRUB sind
+nicht erforderlich.
 
-Build the kernel for VMware:
-```bash
-make build-vmware
+## Erzeugen und starten
+
+```powershell
+.\scripts\build-windows.ps1 -Target vmware -RunTests
+.\build\vmware\x86-microkernel\START-VMWARE.cmd
 ```
 
-This creates `kernel.iso` optimized for VMware Workstation with:
-- Intel E1000 network driver enabled
-- VMware-specific ATA timing (3s timeouts, longer delays)
-- Proper drive selection delays for VMware's IDE emulation
+Alternativ wird diese Datei in VMware Workstation geöffnet:
 
-## VMware VM Configuration
-
-### 1. Create New Virtual Machine
-- Select: **Custom (advanced)**
-- Hardware compatibility: Workstation 16.x or later
-
-### 2. Install Operating System
-- Select: **I will install the operating system later**
-
-### 3. Select Guest Operating System
-- Guest OS: **Other**
-- Version: **Other (32-bit)** ← Important!
-
-### 4. Name and Location
-- VM name: `x86_microkernel`
-- Location: Choose your preferred directory
-
-### 5. Processor Configuration
-- Number of processors: **1**
-- Number of cores per processor: **1**
-
-### 6. Memory
-- Memory for this VM: **64 MB** (sufficient for microkernel)
-- Or use **128 MB** for more headroom
-
-### 7. Network Type
-- Select: **Use bridged networking** (for LAN access)
-- Or: **Use NAT** (for internet through host)
-
-### 8. I/O Controller
-- Select: **LSI Logic** (recommended)
-
-### 9. Virtual Disk Type
-- Select: **IDE** (required - kernel uses ATA driver)
-
-### 10. Disk
-- **Create a new virtual disk** (or use existing if you have one)
-- Disk size: 512 MB - 1 GB is sufficient
-- Split disk into multiple files: Optional
-
-### 11. CRITICAL: Configure Network Adapter
-After creating the VM:
-1. Go to **VM Settings** → **Network Adapter**
-2. Click **Advanced**
-3. **Adapter Type**: Select **Intel E1000** ← MUST DO THIS!
-4. Click OK
-
-### 12. Mount ISO
-1. **VM Settings** → **CD/DVD (IDE)**
-2. Select **Use ISO image**
-3. Browse to: `kernel.iso`
-4. Check **Connect at power on**
-
-### 13. Boot Order (Optional)
-1. **VM Settings** → **Options** → **Boot Options**
-2. Ensure CD-ROM is first in boot order
-
-## Network Configuration
-
-Your kernel includes Intel E1000 driver which VMware emulates perfectly.
-
-### In the Kernel Shell:
-```bash
-# Configure network interface
-ifconfig 10.0.2.15 255.255.255.0 10.0.2.1
-
-# Check network status
-net status
-
-# Listen for packets
-net listen 10
-
-# Send test packet
-net send
+```text
+build/vmware/x86-microkernel/x86-microkernel.vmx
 ```
 
-### From Host (if using bridged networking):
-```bash
-# Ping the kernel (if ICMP reply is implemented)
-ping 10.0.2.15
+Die VM muss vor einem erneuten Build ausgeschaltet sein. Das Buildskript
+erkennt eine über `vmrun` laufende paketierte VM und bricht ab, bevor deren
+Festplatte überschrieben werden könnte.
 
-# Check ARP
-arp -a | grep 10.0.2.15
+## Mitgelieferte Konfiguration
 
-# Monitor traffic
-sudo tcpdump -i vmnet0 host 10.0.2.15
+| Einstellung | Wert |
+|---|---|
+| Firmware | Legacy BIOS |
+| Bootreihenfolge | erste IDE-Festplatte |
+| Hardwareversion | 20 |
+| CPU | 1 vCPU, 1 Kern pro Socket |
+| RAM | 512 MiB |
+| Grafik | VMware SVGA, 3D deaktiviert, Kernel standardmäßig VGA-Text |
+| Festplatte | persistente monolithic-flat IDE-VMDK |
+| Netzwerk | Intel E1000, Custom `VMnet0`, beim Start verbunden |
+| Seriell | COM1 in `vmware-serial.log` |
+| Nicht benötigt | Diskette, Audio, USB, VMware Tools |
+
+Descriptor-VMDK, `-flat.vmdk` und VMX müssen im selben Paketordner bleiben.
+Das Raw-Image enthält den eigenen MBR-/Stage-2-Bootloader und eine mountbare
+FAT32-Datenpartition.
+
+## LAN-Zugriff
+
+`VMnet0` ist eine VMware-Bridge. Die VM besitzt eine eigene virtuelle MAC und
+bezieht beim Boot automatisch eine IPv4-Konfiguration vom DHCP-Server des
+lokalen Netzes.
+
+```text
+C:\> GETIP
+C:\> NET STATUS
+C:\> NET DHCP
+C:\> PING 192.168.1.1
 ```
 
-## Troubleshooting
+Die Gatewayadresse kann vom Beispiel abweichen und wird in der DHCP-Ausgabe
+angezeigt. Der Gast unterstützt derzeit Ethernet, ARP, IPv4, ICMP und DHCP.
+Ein Ping vom Host zum Gast hängt zusätzlich von Host-Firewall, Access Point
+und deren ICMP-Regeln ab.
 
-### Network Not Working
-1. **Check E1000**: Verify network adapter is Intel E1000 (not E1000e or other)
-2. **Driver Init**: In kernel, check for "E1000 network card detected" message
-3. **Network Mode**: Try switching between Bridged and NAT
+Wenn mehrere physische Hostadapter existieren, im **Virtual Network Editor**
+`VMnet0` fest dem gewünschten Ethernet- oder WLAN-Adapter zuordnen. Manche
+WLANs erlauben keine zusätzliche MAC-Adresse oder aktivieren
+Client-Isolation. In diesem Fall ist kabelgebundenes Ethernet der verlässlichste
+Bridge-Test.
 
-### Kernel Won't Boot
-1. **Check Guest OS**: Must be "Other (32-bit)"
-2. **Check ISO**: Rebuild with `make build-vmware`
-3. **Memory**: Increase to 128 MB if crashes
+## Shell- und Programmtest
 
-### Display Issues
-1. Remove 3D acceleration (VM Settings → Display)
-2. Use standard VGA
-3. Try rebuilding with framebuffer: `make build-qemu-fb`
-
-### Keyboard Not Responding
-1. Click inside VM window to capture keyboard
-2. Press Ctrl+G to release mouse/keyboard from VM
-3. Check command loop is running (should see `>` prompt)
-
-## Disk Images
-
-To use the existing FAT32 disk images in VMware:
-
-1. **VM Settings** → **Hard Disk** → **Remove** (default disk)
-2. **Add** → **Hard Disk** → **Use an existing virtual disk**
-3. Browse to: `disk.img` from the project
-4. Select **IDE** as controller type
-
-The kernel will auto-detect and mount the disk.
-
-## Comparison: QEMU vs VMware
-
-| Feature | QEMU | VMware |
-|---------|------|--------|
-| Boot Speed | Fast | Slower |
-| Network | NE2000/E1000 | E1000 (better) |
-| Debugging | GDB support | VMware debugger |
-| Performance | Good | Excellent |
-| Hardware Accuracy | Approximate | Very accurate |
-| USB Support | Limited | Full support |
-
-## Build Targets
-
-```bash
-# Build for VMware (current target)
-make build-vmware
-
-# Build for QEMU
-make build-qemu
-
-# Build for real hardware
-make build-real-hw
-
-# Show all options
-make help
+```text
+C:\> DIR
+C:\> TYPE README.TXT
+C:\> RUN HELLO.PRG
 ```
 
-## Testing Network Stack
+`DIR` und `TYPE` müssen dieselbe Datei über den gemeinsamen VFS-Pfad sehen.
+Das Beispielprogramm meldet `USERSPACE-E2E-OK`.
 
-Once VM is running:
+## Serielles Protokoll
 
-1. **Configure IP**:
-   ```
-   ifconfig 10.0.2.15 255.255.255.0 10.0.2.1
-   ```
+Der VMware-Ordner enthält nach dem Start `vmware-serial.log`. Es protokolliert
+die COM1-Ausgabe und ist die erste Anlaufstelle bei frühem Bootfehler,
+Kernelpanic oder fehlender VGA-Ausgabe. Das Bootloader-Debugport-Protokoll und
+die spätere COM1-Ausgabe sind nicht mit einer interaktiven VMware-Konsole zu
+verwechseln.
 
-2. **Check Status**:
-   ```
-   net status
-   net info
-   ```
+## Fehlerdiagnose
 
-3. **Test Connectivity** (from host):
-   ```bash
-   # ARP scan
-   sudo arping -I vmnet8 10.0.2.15
-   
-   # Ping (if implemented)
-   ping 10.0.2.15
-   ```
+### VM startet nicht
 
-4. **Packet Capture** (from host):
-   ```bash
-   sudo tcpdump -i vmnet8 -XX
-   ```
+- VMware Workstation muss `vmrun.exe` enthalten; andernfalls die VMX manuell öffnen.
+- BIOS statt UEFI verwenden.
+- VMDK nicht von ihrem `-flat.vmdk`-Extent trennen.
+- Prüfen, ob die VM noch läuft oder gesperrte `.lck`-Verzeichnisse besitzt.
 
-## Troubleshooting
+### Kein Prompt
 
-### Keyboard Not Working
+- `vmware-serial.log` auf Bootloader- oder Kernelmeldungen prüfen.
+- VM-Konfiguration unverändert mit einer IDE-Platte starten.
+- 3D-Beschleunigung deaktiviert lassen.
+- Das Paket mit `-RunTests` neu bauen.
 
-**Problem**: Keyboard input not recognized in VMware
+### Keine Tastatur
 
-**Solution**: The kernel now includes VMware-specific keyboard controller initialization:
-- Enables keyboard controller (command 0xAE)
-- Enables keyboard scanning (command 0xF4)
-- Waits for proper acknowledgment
+- In das VM-Fenster klicken, damit VMware die Eingabe einfängt.
+- PS/2-Standardkonfiguration beibehalten; VMware Tools werden nicht benötigt.
+- Die Shell muss bereits den Prompt anzeigen.
 
-If keyboard still doesn't work:
-1. Click inside VM window to ensure it has focus
-2. Check VMware Tools is NOT installed (can interfere)
-3. Verify "Grab keyboard and mouse on focus" is enabled in VM settings
-4. Try disconnecting/reconnecting keyboard in VM menu
+### Kein Netzwerk
 
-### ATA Drive Detection
+- In der VMX muss `ethernet0.virtualDev = "e1000"` stehen.
+- Adapter muss verbunden und `VMnet0` dem richtigen Hostadapter zugeordnet sein.
+- `NET DHCP`, danach `GETIP` ausführen.
+- Bei WLAN-Problemen Ethernet oder testweise eine andere VMware-Netzart verwenden.
 
-**Problem**: Drives not detected or timeout errors
+## Manuelle Ersatzkonfiguration
 
-**Solution**: VMware build uses relaxed timing (3s timeouts vs 30s)
-- Use `make build-vmware` for proper timing
-- Check boot messages for drive detection
-- Verify IDE controller (not SCSI) in VM settings
+Falls das Paket bewusst neu angelegt werden soll:
 
-### Network Not Working
+1. Gasttyp **Other / Other 32-bit** wählen.
+2. Legacy BIOS, eine vCPU und mindestens 512 MiB RAM einstellen.
+3. `build/x86-microkernel.vmdk` als vorhandene IDE-Platte einbinden.
+4. Intel E1000 an `VMnet0` konfigurieren.
+5. Festplatte als erstes Bootgerät wählen.
 
-**Problem**: E1000 adapter not detected
-
-**Solution**:
-1. Verify network adapter is "Intel E1000" in VM settings
-2. Check kernel boot message: "Intel E1000 detected"
-3. Use `net status` to verify adapter state
-4. Ensure bridge/NAT is configured correctly
-
-## Notes
-
-- VMware Workstation 16.x or later recommended
-- Intel E1000 driver is production-ready and well-tested
-- The kernel uses VGA text mode by default (80x25)
-- Framebuffer support available with `build-qemu-fb` target
-- Network stack supports: ARP, IP, ICMP (TCP/UDP in development)
-
-## Resources
-
-- Project README: `README.md`
-- QEMU Setup: `QUICKSTART.md`
-- Network Stack: `TAP_NETWORKING.md`
-- Build System: `make help`
+Die generierte VMX bleibt jedoch die Referenzkonfiguration.

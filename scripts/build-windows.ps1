@@ -1,0 +1,148 @@
+[CmdletBinding()]
+param(
+    [ValidateSet('qemu', 'vmware', 'real_hw')]
+    [string]$Target = 'real_hw',
+    [switch]$RunTests,
+    [string[]]$ProgramSource = @('examples/userspace/hello.c'),
+    [ValidatePattern('^[A-Za-z0-9_]{1,8}\.PRG$')]
+    [string]$ProgramName = 'HELLO.PRG'
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+
+function Resolve-NativeTool {
+    param(
+        [Parameter(Mandatory)] [string]$Name,
+        [Parameter(Mandatory)] [string[]]$Fallbacks
+    )
+    $command = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+    foreach ($candidate in $Fallbacks) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    throw "Required native Windows tool '$Name' was not found."
+}
+
+function To-MakePath([string]$Path) {
+    return $Path.Replace('\', '/')
+}
+
+$Make = Resolve-NativeTool 'make' @('C:\ProgramData\chocolatey\bin\make.exe')
+$Nasm = Resolve-NativeTool 'nasm' @(
+    'C:\tmp\nasm-3.02-portable\nasm-3.02\nasm.exe'
+)
+$Zig = Resolve-NativeTool 'zig' @(
+    'C:\tmp\zig-0.16.0-portable\zig-x86_64-windows-0.16.0\zig.exe'
+)
+$Python = Resolve-NativeTool 'python' @(
+    'C:\Python314\python.exe',
+    'C:\Python313\python.exe'
+)
+$MsysShell = Resolve-NativeTool 'sh' @('C:\msys64\usr\bin\sh.exe')
+$MsysBin = Split-Path -Parent $MsysShell
+
+$BuildDir = Join-Path $RepoRoot 'build'
+$Stage1 = Join-Path $BuildDir 'stage1_mbr.bin'
+$Stage2 = Join-Path $BuildDir 'stage2_bios.bin'
+$Kernel = Join-Path $BuildDir 'kernel.bin'
+$RawImage = Join-Path $BuildDir 'x86-microkernel.img'
+$Vmdk = Join-Path $BuildDir 'x86-microkernel.vmdk'
+$Vmx = Join-Path $BuildDir 'x86-microkernel.vmx'
+$VmwareDir = Join-Path $BuildDir 'vmware\x86-microkernel'
+$PackagedVmx = Join-Path $VmwareDir 'x86-microkernel.vmx'
+$UserProgramDir = Join-Path $BuildDir 'programs'
+$UserPrg = Join-Path $UserProgramDir $ProgramName.ToUpperInvariant()
+
+New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+Push-Location $RepoRoot
+try {
+    # GNU Make may execute simple recipe commands directly instead of through
+    # SHELL, so the native MSYS2 mkdir/rm/touch/cp tools must also be on PATH.
+    $env:Path = "$MsysBin;$env:Path"
+    # Object paths are shared by all compiler frontends.  A clean native build
+    # prevents same-target objects from an earlier GCC/WSL invocation being
+    # silently reused with Zig on Windows.
+    $VmrunCommand = Get-Command 'vmrun' -ErrorAction SilentlyContinue
+    $Vmrun = @(
+        $(if ($VmrunCommand) { $VmrunCommand.Source }),
+        'C:\Program Files\VMware\VMware Workstation\vmrun.exe',
+        'C:\Program Files (x86)\VMware\VMware Workstation\vmrun.exe'
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
+        Select-Object -First 1
+    if ($Vmrun) {
+        $runningVms = & $Vmrun -T ws list 2>$null
+        if ($runningVms | Select-String -SimpleMatch $PackagedVmx -Quiet) {
+            throw "The generated VMware VM is still running. Shut it down before rebuilding: $PackagedVmx"
+        }
+    }
+    & $Make 'clean' "SHELL=$(To-MakePath $MsysShell)"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Build cleanup failed with exit code $LASTEXITCODE."
+    }
+    $makeArguments = @(
+        'kernel',
+        "TARGET=$Target",
+        'VIDEO=vga',
+        "SHELL=$(To-MakePath $MsysShell)",
+        "AS=$(To-MakePath $Nasm)",
+        "CC=$(To-MakePath $Zig) cc -target x86-freestanding -Wno-unused-command-line-argument",
+        "LD=$(To-MakePath $Zig) ld.lld"
+    )
+    & $Make @makeArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Kernel build failed with exit code $LASTEXITCODE."
+    }
+
+    & $Nasm -f bin 'arch/x86/boot/bios/stage1_mbr.asm' -o $Stage1
+    if ($LASTEXITCODE -ne 0) { throw 'Stage 1 assembly failed.' }
+    & $Nasm -f bin 'arch/x86/boot/bios/stage2_bios.asm' -o $Stage2
+    if ($LASTEXITCODE -ne 0) { throw 'Stage 2 assembly failed.' }
+
+    New-Item -ItemType Directory -Force -Path $UserProgramDir | Out-Null
+    $programBuildArguments = @(
+        'scripts/build_user_program.py'
+    ) + $ProgramSource + @('--output', $UserPrg, '--zig', $Zig)
+    & $Python @programBuildArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Example user program build failed with exit code $LASTEXITCODE."
+    }
+
+    & $Python 'scripts/create_native_boot_image.py' `
+        --stage1 $Stage1 `
+        --stage2 $Stage2 `
+        --kernel $Kernel `
+        --output $RawImage `
+        --vmdk $Vmdk `
+        --vmware-dir $VmwareDir `
+        --data-file "$ProgramName=$UserPrg"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Native image creation failed with exit code $LASTEXITCODE."
+    }
+
+    if ($RunTests) {
+        & $Make 'test-unit' "PYTHON=$(To-MakePath $Python)" `
+            "SHELL=$(To-MakePath $MsysShell)"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Host tests failed with exit code $LASTEXITCODE."
+        }
+    }
+}
+finally {
+    Pop-Location
+}
+
+Write-Host ''
+Write-Host 'Native GRUB-free boot artifacts:' -ForegroundColor Green
+Write-Host "  Raw BIOS disk: $RawImage"
+Write-Host "  VMware disk:   $Vmdk"
+Write-Host "  VMware VM:     $Vmx"
+Write-Host "  Complete VM:   $PackagedVmx" -ForegroundColor Cyan
+Write-Host "  User PRG:      $UserPrg"
+Write-Host "  Double-click:  $(Join-Path $VmwareDir 'START-VMWARE.cmd')"

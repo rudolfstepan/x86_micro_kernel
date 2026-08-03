@@ -40,13 +40,58 @@ void load_and_relocate_program(void* program_src, void* target_address) {
 }
 
 /* Apply relocations based on the offset between the program's compiled address and loaded address */
-void apply_relocation(uint32_t* relocation_table, uint32_t relocation_count, uint32_t offset) {
-    for (uint32_t i = 0; i < relocation_count; i++) {
-        uint32_t* address = (uint32_t*)((uint8_t*)relocation_table[i]);
-        
-        // Adjust the address by the offset to account for the new base address
-        *address += offset;
+int apply_relocation(uint32_t *relocation_table, uint32_t relocation_count,
+                     uint32_t original_base, uint32_t load_base,
+                     uint32_t image_size) {
+    if (relocation_count == 0) {
+        return 0;
     }
+    if (relocation_table == NULL || image_size < sizeof(uint32_t) ||
+        original_base > UINT32_MAX - image_size ||
+        load_base > UINT32_MAX - image_size) {
+        return -1;
+    }
+
+    uintptr_t table_address = (uintptr_t)relocation_table;
+    uint64_t table_size = (uint64_t)relocation_count * sizeof(uint32_t);
+    if (table_address < load_base || table_address - load_base > image_size ||
+        table_size > image_size - (table_address - load_base)) {
+        return -1;
+    }
+    uint32_t table_offset = (uint32_t)(table_address - load_base);
+
+    uint32_t original_end = original_base + image_size;
+    int64_t delta = (int64_t)(uint64_t)load_base -
+                    (int64_t)(uint64_t)original_base;
+    for (uint32_t i = 0; i < relocation_count; ++i) {
+        uint32_t original_location = relocation_table[i];
+        if (original_location < original_base ||
+            original_location > original_end - sizeof(uint32_t)) {
+            return -1;
+        }
+
+        uint32_t target_offset = original_location - original_base;
+        if (target_offset < sizeof(program_header_t) ||
+            (target_offset < table_offset + table_size &&
+             table_offset < target_offset + sizeof(uint32_t))) {
+            return -1;
+        }
+        uint32_t *target =
+            (uint32_t*)(uintptr_t)(load_base + target_offset);
+        int64_t relocated_value = (int64_t)(uint64_t)(*target) + delta;
+        if (relocated_value < 0 || relocated_value > UINT32_MAX) {
+            return -1;
+        }
+    }
+
+    /* Apply only after the complete table has passed validation. */
+    for (uint32_t i = 0; i < relocation_count; ++i) {
+        uint32_t target_offset = relocation_table[i] - original_base;
+        uint32_t *target =
+            (uint32_t*)(uintptr_t)(load_base + target_offset);
+        *target = (uint32_t)((int64_t)(uint64_t)(*target) + delta);
+    }
+    return 0;
 }
 
 // Function to load an ELF binary from memory

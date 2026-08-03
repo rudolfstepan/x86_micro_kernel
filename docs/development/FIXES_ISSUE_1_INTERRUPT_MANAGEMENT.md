@@ -1,5 +1,11 @@
 # Issue 1 Fix: CLI/STI Interrupt Management
 
+> **Historischer Implementierungsbericht:** Die enthaltenen ISO-/QEMU-
+> Verifikationsbefehle sind nicht der heutige Referenzweg. Für den aktuellen
+> Initialisierungs- und IRQ-Aufbau siehe
+> [`../architecture/ARCHITECTURE_DEEP_DIVE.md`](../architecture/ARCHITECTURE_DEEP_DIVE.md)
+> und für den Build [`QUICKSTART.md`](QUICKSTART.md).
+
 ## Date: 2025-01-XX
 ## Status: ✅ COMPLETE
 

@@ -36,7 +36,7 @@ void* syscall(int syscall_index, void* parameter1, void* parameter2, void* param
         "int $0x80\n"       // Trigger syscall interrupt
         : "=a"(return_value) // Output: Get return value from EAX
         : "a"(syscall_index), "b"(parameter1), "c"(parameter2), "d"(parameter3) // Inputs
-        : "memory"          // Clobbers
+        : "memory", "cc"    // Clobbers
     );
     return return_value;     // Return the value in EAX
 }
@@ -121,56 +121,6 @@ int mkfile(const char* path) {
 int isprint(int c) {
     // Check if c is a printable ASCII character (32 to 126)
     return (c >= 32 && c <= 126);
-}
-
-// Helper function to reverse a string
-static void reverse(char* str, int length) {
-    int start = 0;
-    int end = length - 1;
-    while (start < end) {
-        char temp = str[start];
-        str[start] = str[end];
-        str[end] = temp;
-        start++;
-        end--;
-    }
-}
-
-// Helper function to convert an integer to a string
-static int int_to_str(int num, char* str, int base) {
-    int i = 0;
-    bool is_negative = false;
-
-    // Handle 0 explicitly
-    if (num == 0) {
-        str[i++] = '0';
-        str[i] = '\0';
-        return i;
-    }
-
-    // Handle negative numbers for decimal base
-    if (num < 0 && base == 10) {
-        is_negative = true;
-        num = -num;
-    }
-
-    // Process individual digits
-    while (num != 0) {
-        int rem = num % base;
-        str[i++] = (rem > 9) ? (rem - 10) + 'a' : rem + '0';
-        num = num / base;
-    }
-
-    // Append '-' if the number is negative
-    if (is_negative) {
-        str[i++] = '-';
-    }
-
-    str[i] = '\0';  // Null-terminate the string
-
-    // Reverse the string
-    reverse(str, i);
-    return i;
 }
 
 void unsigned_int_to_str(unsigned int value, char* buffer, int base) {
@@ -374,288 +324,265 @@ void uint64_t_to_str(uint64_t value, char* buffer, int base) {
 // putchar, print_hex64, uint64_t_to_str, unsigned_int_to_str, int_to_str,
 // int_to_hex_str (deine Varianten)
 
-static void pad_out(int count, bool zero) {
-    while (count-- > 0) putchar(zero ? '0' : ' ');
+typedef enum {
+    FORMAT_LENGTH_DEFAULT,
+    FORMAT_LENGTH_LONG,
+    FORMAT_LENGTH_LONG_LONG,
+    FORMAT_LENGTH_SIZE
+} format_length_t;
+
+typedef struct {
+    char *buffer;
+    size_t capacity;
+    size_t count;
+    bool console;
+} format_output_t;
+
+static void format_emit(format_output_t *output, char value) {
+    if (output->console) {
+        putchar(value);
+    } else if (output->buffer != NULL && output->capacity > 0 &&
+               output->count < output->capacity - 1U) {
+        output->buffer[output->count] = value;
+    }
+    if (output->count != SIZE_MAX) {
+        output->count++;
+    }
 }
 
-int printf(const char* format, ...) {
-    va_list args;
-    va_start(args, format);
+static void format_repeat(format_output_t *output, char value, int count) {
+    while (count-- > 0) {
+        format_emit(output, value);
+    }
+}
 
-    while (*format) {
-        if (*format != '%') { putchar(*format++); continue; }
-        format++; // überspringt '%'
+static size_t format_unsigned_value(unsigned long long value, unsigned int base,
+                                    bool uppercase, char buffer[65]) {
+    const char *digits = uppercase ? "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                   : "0123456789abcdefghijklmnopqrstuvwxyz";
+    char reverse[65];
+    size_t length = 0;
+    do {
+        reverse[length++] = digits[value % base];
+        value /= base;
+    } while (value != 0);
 
-        // Flags / Width / Precision
+    for (size_t i = 0; i < length; ++i) {
+        buffer[i] = reverse[length - i - 1U];
+    }
+    buffer[length] = '\0';
+    return length;
+}
+
+static void format_number(format_output_t *output, unsigned long long value,
+                          bool negative, unsigned int base, bool uppercase,
+                          int width, int precision, bool left_align,
+                          bool zero_padding) {
+    char digits[65];
+    size_t digit_count = format_unsigned_value(value, base, uppercase, digits);
+    if (precision == 0 && value == 0) {
+        digit_count = 0;
+    }
+
+    int leading_zeroes = 0;
+    if (precision > (int)digit_count) {
+        leading_zeroes = precision - (int)digit_count;
+    }
+    int content_width = (negative ? 1 : 0) + leading_zeroes + (int)digit_count;
+    int padding = width > content_width ? width - content_width : 0;
+
+    if (!left_align && zero_padding && precision < 0) {
+        leading_zeroes += padding;
+        padding = 0;
+    }
+    if (!left_align) {
+        format_repeat(output, ' ', padding);
+    }
+    if (negative) {
+        format_emit(output, '-');
+    }
+    format_repeat(output, '0', leading_zeroes);
+    for (size_t i = 0; i < digit_count; ++i) {
+        format_emit(output, digits[i]);
+    }
+    if (left_align) {
+        format_repeat(output, ' ', padding);
+    }
+}
+
+static int format_v(format_output_t *output, const char *format, va_list args) {
+    if (format == NULL) {
+        return -1;
+    }
+
+    while (*format != '\0') {
+        if (*format != '%') {
+            format_emit(output, *format++);
+            continue;
+        }
+        format++;
+
         bool left_align = false;
         bool zero_padding = false;
-        bool width_specified = false;
-        int  width = 0;
-        int  precision = -1;
+        bool parsing_flags = true;
+        while (parsing_flags) {
+            switch (*format) {
+                case '-': left_align = true; format++; break;
+                case '0': zero_padding = true; format++; break;
+                default: parsing_flags = false; break;
+            }
+        }
 
-        // '-' Flag
-        if (*format == '-') { left_align = true; format++; }
-        // '0' Flag (nur wenn nicht linksbündig)
-        if (*format == '0' && !left_align) { zero_padding = true; format++; }
-
-        // Breite
+        int width = 0;
         if (*format == '*') {
             width = va_arg(args, int);
-            width_specified = true;
             format++;
+            if (width < 0) {
+                left_align = true;
+                width = width == INT_MIN ? INT_MAX : -width;
+            }
         } else {
             while (*format >= '0' && *format <= '9') {
-                width = width * 10 + (*format - '0');
-                width_specified = true;
+                int digit = *format - '0';
+                width = width > (INT_MAX - digit) / 10
+                    ? INT_MAX : width * 10 + digit;
                 format++;
             }
         }
 
-        // Präzision
+        int precision = -1;
         if (*format == '.') {
             format++;
             precision = 0;
-            while (*format >= '0' && *format <= '9') {
-                precision = precision * 10 + (*format - '0');
+            if (*format == '*') {
+                precision = va_arg(args, int);
                 format++;
-            }
-        }
-
-        // Längenmodifikator (nur ll, minimal-invasiv)
-        bool is_ll = false;
-        if (format[0] == 'l' && format[1] == 'l') {
-            is_ll = true;
-            format += 2;
-        }
-
-        // Spezialfall: %%
-        if (*format == '%') { putchar('%'); format++; continue; }
-
-        // Spezifizierer
-        switch (*format) {
-            case 'c': {
-                int c = va_arg(args, int);
-                // Padding links (Breite 1)
-                if (!left_align && width_specified && width > 1)
-                    pad_out(width - 1, zero_padding);
-                putchar((char)c);
-                // Padding rechts
-                if (left_align && width_specified && width > 1)
-                    pad_out(width - 1, false);
-                break;
-            }
-            case 's': {
-                const char* s = va_arg(args, const char*);
-                if (!s) s = "(null)";
-                int len = (int)strlen(s);
-                if (precision >= 0 && precision < len) len = precision;
-                int pad = (width_specified && width > len) ? (width - len) : 0;
-                if (!left_align) pad_out(pad, zero_padding);
-                for (int i = 0; i < len; ++i) putchar(s[i]);
-                if (left_align) pad_out(pad, false);
-                break;
-            }
-            case 'd': {
-                int v = va_arg(args, int);
-                bool neg = (v < 0);
-                unsigned int uv = (unsigned int)(neg ? -v : v);
-
-                char buf[32];
-                int_to_str((int)uv, buf, 10);
-                int len = (int)strlen(buf) + (neg ? 1 : 0);
-                int pad = (width_specified && width > len) ? (width - len) : 0;
-
-                if (!left_align) pad_out(pad, zero_padding && !neg); // bei '-' kein 0 Padding vor Minus
-                if (neg) putchar('-');
-                if (zero_padding && !left_align && pad > 0 && neg) pad_out(pad, true); // Nullen nach Minus
-                const char* p = buf; while (*p) putchar(*p++);
-                if (left_align) pad_out(pad, false);
-                break;
-            }
-            case 'u': {
-                unsigned int u = va_arg(args, unsigned int);
-                char buf[32];
-                unsigned_int_to_str(u, buf, 10);
-                int len = (int)strlen(buf);
-                int pad = (width_specified && width > len) ? (width - len) : 0;
-                if (!left_align) pad_out(pad, zero_padding);
-                const char* p = buf; while (*p) putchar(*p++);
-                if (left_align) pad_out(pad, false);
-                break;
-            }
-            case 'X': {
-                // 32-bit Hex
-                unsigned int x = va_arg(args, unsigned int);
-                char buf[32];
-                int_to_hex_str(x, buf, width_specified ? width : 0, zero_padding);
-                // int_to_hex_str kümmert sich um Padding; ansonsten wie bei %u:
-                const char* p = buf; while (*p) putchar(*p++);
-                break;
-            }
-            case 'p': {
-                // 32-bit Pointerausgabe
-                uintptr_t pv = (uintptr_t)va_arg(args, void*);
-                char buf[32];
-                int_to_hex_str((unsigned int)pv, buf, width_specified ? width : 0, zero_padding);
-                const char* p = buf; while (*p) putchar(*p++);
-                break;
-            }
-            default: {
-                // Falls "ll" gesetzt war, unterstützen wir %llX / %llu:
-                if (is_ll && *format == 'X') {
-                    uint64_t v = va_arg(args, uint64_t);
-                    // Einfach: in 64-bit Helfer wandeln – Padding simpel nachziehen
-                    char tmp[32];
-                    uint64_t_to_str(v, tmp, 16); // hex ohne 0x, klein/bzw. groß? (deine Helper)
-                    // in Großbuchstaben wandeln (falls Helper klein liefert)
-                    for (char* p = tmp; *p; ++p) if (*p >= 'a' && *p <= 'f') *p = (char)(*p - 'a' + 'A');
-                    int len = (int)strlen(tmp);
-                    int pad = (width_specified && width > len) ? (width - len) : 0;
-                    if (!left_align) pad_out(pad, zero_padding);
-                    for (int i = 0; i < len; ++i) putchar(tmp[i]);
-                    if (left_align) pad_out(pad, false);
-                    break;
-                }
-                if (is_ll && *format == 'u') {
-                    uint64_t v = va_arg(args, uint64_t);
-                    char buf[32];
-                    uint64_t_to_str(v, buf, 10);
-                    int len = (int)strlen(buf);
-                    int pad = (width_specified && width > len) ? (width - len) : 0;
-                    if (!left_align) pad_out(pad, zero_padding);
-                    const char* p = buf; while (*p) putchar(*p++);
-                    if (left_align) pad_out(pad, false);
-                    break;
-                }
-
-                // Unbekannter Specifier – gebe ihn wörtlich aus
-                putchar('%');
-                if (is_ll) { putchar('l'); putchar('l'); }
-                if (*format) putchar(*format);
-                break;
-            }
-        }
-
-        format++; // NÄCHSTES Zeichen nach Specifier (wichtig – kein 'continue' dazwischen!)
-    }
-
-    va_end(args);
-    return 0;
-}
-
-// Main sprintf implementation
-int sprintf(char* buffer, const char* format, ...) {
-    va_list args;
-    va_start(args, format);
-
-    char* str = buffer;
-    const char* p = format;
-    char temp[20];  // Temporary buffer for integer conversion
-    int written = 0;
-
-    while (*p != '\0') {
-        if (*p == '%') {
-            p++;  // Move past '%'
-
-            if (*p == 's') {  // String
-                char* arg = va_arg(args, char*);
-                while (*arg != '\0') {
-                    *str++ = *arg++;
-                    written++;
-                }
-            } else if (*p == 'd') {  // Signed integer
-                int arg = va_arg(args, int);
-                int len = int_to_str(arg, temp, 10);
-                for (int i = 0; i < len; i++) {
-                    *str++ = temp[i];
-                    written++;
-                }
-            } else if (*p == 'x') {  // Hexadecimal
-                int arg = va_arg(args, int);
-                int len = int_to_str(arg, temp, 16);
-                for (int i = 0; i < len; i++) {
-                    *str++ = temp[i];
-                    written++;
-                }
+                if (precision < 0) precision = -1;
             } else {
-                // Unsupported format specifier; copy as-is
-                *str++ = '%';
-                *str++ = *p;
-                written += 2;
+                while (*format >= '0' && *format <= '9') {
+                    int digit = *format - '0';
+                    precision = precision > (INT_MAX - digit) / 10
+                        ? INT_MAX : precision * 10 + digit;
+                    format++;
+                }
             }
-        } else {
-            // Regular character, copy as-is
-            *str++ = *p;
-            written++;
         }
-        p++;
+
+        format_length_t length = FORMAT_LENGTH_DEFAULT;
+        if (*format == 'l') {
+            format++;
+            length = FORMAT_LENGTH_LONG;
+            if (*format == 'l') {
+                format++;
+                length = FORMAT_LENGTH_LONG_LONG;
+            }
+        } else if (*format == 'z') {
+            format++;
+            length = FORMAT_LENGTH_SIZE;
+        }
+
+        char specifier = *format;
+        if (specifier == '\0') {
+            format_emit(output, '%');
+            break;
+        }
+        format++;
+
+        if (specifier == '%') {
+            format_emit(output, '%');
+        } else if (specifier == 'c') {
+            int padding = width > 1 ? width - 1 : 0;
+            if (!left_align) format_repeat(output, ' ', padding);
+            format_emit(output, (char)va_arg(args, int));
+            if (left_align) format_repeat(output, ' ', padding);
+        } else if (specifier == 's') {
+            const char *value = va_arg(args, const char*);
+            if (value == NULL) value = "(null)";
+            size_t length_value = strlen(value);
+            if (precision >= 0 && length_value > (size_t)precision) {
+                length_value = (size_t)precision;
+            }
+            int padding = width > (int)length_value ? width - (int)length_value : 0;
+            if (!left_align) format_repeat(output, ' ', padding);
+            for (size_t i = 0; i < length_value; ++i) format_emit(output, value[i]);
+            if (left_align) format_repeat(output, ' ', padding);
+        } else if (specifier == 'd' || specifier == 'i') {
+            long long value;
+            if (length == FORMAT_LENGTH_LONG_LONG) value = va_arg(args, long long);
+            else if (length == FORMAT_LENGTH_LONG) value = va_arg(args, long);
+            else if (length == FORMAT_LENGTH_SIZE) value = va_arg(args, ptrdiff_t);
+            else value = va_arg(args, int);
+
+            bool negative = value < 0;
+            unsigned long long magnitude = negative
+                ? 0ULL - (unsigned long long)value
+                : (unsigned long long)value;
+            format_number(output, magnitude, negative, 10, false, width,
+                          precision, left_align, zero_padding);
+        } else if (specifier == 'u' || specifier == 'x' ||
+                   specifier == 'X' || specifier == 'o') {
+            unsigned long long value;
+            if (length == FORMAT_LENGTH_LONG_LONG)
+                value = va_arg(args, unsigned long long);
+            else if (length == FORMAT_LENGTH_LONG)
+                value = va_arg(args, unsigned long);
+            else if (length == FORMAT_LENGTH_SIZE)
+                value = va_arg(args, size_t);
+            else
+                value = va_arg(args, unsigned int);
+
+            unsigned int base = specifier == 'u' ? 10U :
+                                (specifier == 'o' ? 8U : 16U);
+            format_number(output, value, false, base, specifier == 'X', width,
+                          precision, left_align, zero_padding);
+        } else if (specifier == 'p') {
+            uintptr_t value = (uintptr_t)va_arg(args, void*);
+            format_number(output, value, false, 16, true, width, precision,
+                          left_align, zero_padding);
+        } else {
+            format_emit(output, '%');
+            format_emit(output, specifier);
+        }
     }
 
-    *str = '\0';  // Null-terminate the resulting string
-
-    va_end(args);
-    return written;
+    if (!output->console && output->buffer != NULL && output->capacity > 0) {
+        size_t end = output->count < output->capacity
+            ? output->count : output->capacity - 1U;
+        output->buffer[end] = '\0';
+    }
+    return output->count > (size_t)INT_MAX ? INT_MAX : (int)output->count;
 }
 
-// Simple implementation of snprintf
-int snprintf(char* str, size_t size, const char* format, ...) {
+int printf(const char *format, ...) {
+    format_output_t output = { .buffer = NULL, .capacity = 0,
+                               .count = 0, .console = true };
     va_list args;
     va_start(args, format);
-
-    unsigned int written = 0;
-    const char* p = format;
-
-    while (*p != '\0' && written < size) {
-        if (*p == '%') {
-            p++;  // Skip '%'
-            if (*p == 's') {  // String format
-                const char* arg = va_arg(args, const char*);
-                while (*arg != '\0' && written < size) {
-                    str[written++] = *arg++;
-                }
-            } else if (*p == 'd') {  // Integer format
-                int num = va_arg(args, int);
-                // Convert integer to string
-                char num_buffer[12];  // Buffer to hold the integer as string (supports up to 32-bit integer range)
-                int num_written = 0;
-
-                if (num < 0) {  // Handle negative numbers
-                    if (written < size) {
-                        str[written++] = '-';
-                    }
-                    num = -num;
-                }
-
-                int temp = num;
-                do {
-                    num_buffer[num_written++] = (temp % 10) + '0';
-                    temp /= 10;
-                } while (temp > 0 && num_written < (int)sizeof(num_buffer));
-
-                // Reverse the number buffer into the main string buffer
-                for (int i = num_written - 1; i >= 0 && written < size; i--) {
-                    str[written++] = num_buffer[i];
-                }
-            }
-            // Add other format specifiers as needed
-        } else {
-            str[written++] = *p;
-        }
-        p++;
-    }
-
+    int result = format_v(&output, format, args);
     va_end(args);
+    return result;
+}
 
-    // Null-terminate the string
-    if (size > 0) {
-        if (written < size) {
-            str[written] = '\0';
-        } else {
-            str[size - 1] = '\0';
-        }
-    }
+int sprintf(char *buffer, const char *format, ...) {
+    if (buffer == NULL) return -1;
+    format_output_t output = { .buffer = buffer, .capacity = SIZE_MAX,
+                               .count = 0, .console = false };
+    va_list args;
+    va_start(args, format);
+    int result = format_v(&output, format, args);
+    va_end(args);
+    return result;
+}
 
-    return written;
+int snprintf(char *buffer, size_t size, const char *format, ...) {
+    if (buffer == NULL && size != 0) return -1;
+    format_output_t output = { .buffer = buffer, .capacity = size,
+                               .count = 0, .console = false };
+    va_list args;
+    va_start(args, format);
+    int result = format_v(&output, format, args);
+    va_end(args);
+    return result;
 }
 
 void hex_dump(const void* data, size_t size) {

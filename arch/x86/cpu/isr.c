@@ -1,6 +1,7 @@
 #include "arch/x86/include/sys.h"
 #include "arch/x86/include/interrupt.h"
 #include "include/kernel/panic.h"
+#include "kernel/sched/scheduler.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 
@@ -38,10 +39,6 @@ extern void isr29();
 extern void isr30();
 extern void isr31();
 
-extern void page_fault_handler_asm(); // Declare assembly wrapper
-
-
-
 const char* exception_messages[] =
 {
     "Division By Zero",
@@ -63,6 +60,9 @@ const char* exception_messages[] =
     "Coprocessor Fault",
     "Alignment Check",
     "Machine Check",
+    "SIMD Floating-Point Exception",
+    "Virtualization Exception",
+    "Control Protection Exception",
     "Reserved",
     "Reserved",
     "Reserved",
@@ -70,43 +70,13 @@ const char* exception_messages[] =
     "Reserved",
     "Reserved",
     "Reserved",
-    "Reserved",
-    "Reserved",
-    "Reserved",
-    "Reserved",
-    "Reserved",
+    "VMM Communication Exception",
+    "Security Exception",
     "Reserved"
 };
 
-void fault_handler(Registers* r) {
-    if (r->irq_number < 32) {
-        // Check privilege level
-        uint16_t cpl = r->cs & 0x3;
-        
-        if (cpl == 0) {
-            // Kernel exception - unrecoverable
-            char panic_msg[128];
-            snprintf(panic_msg, sizeof(panic_msg),
-                     "Kernel exception: %s (IRQ %d) at EIP=0x%08X",
-                     exception_messages[r->irq_number],
-                     r->irq_number,
-                     r->eip);
-            panic(panic_msg);
-        } else {
-            // User mode exception
-            printf("\n*** USER PROCESS EXCEPTION ***\n");
-            printf("Exception: %s (IRQ %d)\n",
-                   exception_messages[r->irq_number],
-                   r->irq_number);
-            printf("EIP: 0x%08X, CS: 0x%04X (Ring %d)\n", r->eip, r->cs, cpl);
-            printf("Process terminated.\n\n");
-            
-            // TODO: Terminate process
-            printf("Warning: Process termination not implemented yet.\n");
-            while (1);
-        }
-    }
-}
+_Static_assert(sizeof(exception_messages) / sizeof(exception_messages[0]) == 32,
+               "exception message table must cover vectors 0 through 31");
 
 // Define the type for exception handlers
 typedef void (*ExceptionHandler)(Registers*);
@@ -183,13 +153,7 @@ void generic_exception_handler(Registers* r) {
         printf("EIP: 0x%08X, CS: 0x%04X (Ring %d)\n", r->eip, r->cs, cpl);
         printf("Process terminated.\n\n");
         
-        // TODO: When we have process management, terminate the process here
-        // For now, just return to kernel shell
-        // In future: kill_current_process();
-        
-        // For now, halt (will be replaced with process termination)
-        printf("Warning: Process termination not implemented yet.\n");
-        while (1);
+        scheduler_kill_current();
     }
 }
 
@@ -209,27 +173,19 @@ void divide_by_zero_handler(Registers* r) {
         printf("Divide by zero exception at EIP=0x%08X\n", r->eip);
         printf("Process terminated.\n\n");
         
-        // TODO: Terminate process when process management implemented
-        printf("Warning: Process termination not implemented yet.\n");
-        while (1);
+        scheduler_kill_current();
     }
 }
 
-void page_fault_handler() {
+void page_fault_handler(Registers* r) {
     uint32_t faulting_address;
-    uint32_t error_code;
+    uint32_t error_code = r->error_code;
     
     // Read the faulting address from CR2
     asm volatile("mov %%cr2, %0" : "=r"(faulting_address));
     
-    // Get error code from stack (pushed by CPU)
-    asm volatile("mov 4(%%ebp), %0" : "=r"(error_code));
-    
-    // Check privilege level
-    // Note: Page fault handler gets called from assembly, CS should be on stack
-    uint16_t cs;
-    asm volatile("mov %%cs, %0" : "=r"(cs));
-    uint16_t cpl = cs & 0x3;
+    // The saved CS describes the faulting context; the current CS is Ring 0.
+    uint16_t cpl = r->cs & 0x3;
     
     if (cpl == 0) {
         // Kernel page fault - unrecoverable
@@ -253,9 +209,7 @@ void page_fault_handler() {
         
         printf("Process terminated.\n\n");
         
-        // TODO: Terminate process
-        printf("Warning: Process termination not implemented yet.\n");
-        while (1);
+        scheduler_kill_current();
     }
 }
 
@@ -268,18 +222,15 @@ void setup_exceptions() {
 
     // Override specific handlers
     exception_handlers[0] = divide_by_zero_handler;  // Divide by zero
-
-    //exception_handlers[14] = page_fault_handler;  // Page fault
+    exception_handlers[14] = page_fault_handler;
 }
 
 void exception_dispatcher(Registers* state) {
-    // Look up the handler based on the IRQ number
-    if (state->irq_number < 32) {
-        exception_handlers[state->irq_number](state);  // Call the appropriate handler
-    } else {
-        // If the IRQ number is out of range, use a fallback
-        generic_exception_handler(state);
+    if (state == NULL || state->irq_number >= 32 ||
+        exception_handlers[state->irq_number] == NULL) {
+        panic("Invalid CPU exception frame");
     }
+    exception_handlers[state->irq_number](state);
 }
 
 void rtl8139_handler(Registers* r) {
@@ -303,7 +254,7 @@ void isr_install() {
     set_idt_entry(11, (uint32_t)isr11);
     set_idt_entry(12, (uint32_t)isr12);
     set_idt_entry(13, (uint32_t)isr13);
-    //set_idt_entry(14, (uint32_t)isr14);
+    set_idt_entry(14, (uint32_t)isr14);
     set_idt_entry(15, (uint32_t)isr15);
     set_idt_entry(16, (uint32_t)isr16);
     set_idt_entry(17, (uint32_t)isr17);
@@ -323,8 +274,6 @@ void isr_install() {
     set_idt_entry(31, (uint32_t)isr31);
 
     // Set up the exception handlers
-
-    set_idt_entry(14, (uint32_t)page_fault_handler_asm); // Kernel code segment (selector 0x08)
 
     setup_exceptions();
 }

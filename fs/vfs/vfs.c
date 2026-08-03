@@ -19,6 +19,23 @@ typedef struct {
 static fs_registration_t registered_filesystems[MAX_FILESYSTEMS];
 static vfs_mount_t* mount_list = NULL;
 static int fs_count = 0;
+static int mount_count = 0;
+
+static bool vfs_valid_absolute_path(const char* path) {
+    if (!path || path[0] != '/') return false;
+    size_t length = strlen(path);
+    if (length == 0 || length > 255) return false;
+    for (size_t i = 1; i < length; i++) {
+        if (path[i] == '/' && path[i - 1] == '/') return false;
+        if (path[i - 1] == '/' && path[i] == '.' &&
+            (path[i + 1] == '\0' || path[i + 1] == '/' ||
+             (path[i + 1] == '.' &&
+              (path[i + 2] == '\0' || path[i + 2] == '/')))) {
+            return false;
+        }
+    }
+    return true;
+}
 
 // ===========================================================================
 // VFS Initialization
@@ -26,6 +43,11 @@ static int fs_count = 0;
 
 void vfs_init(void) {
     printf("VFS: Initializing Virtual File System...\n");
+
+    if (mount_list != NULL) {
+        printf("VFS: Already initialized with active mounts.\n");
+        return;
+    }
     
     // Clear registration table
     for (int i = 0; i < MAX_FILESYSTEMS; i++) {
@@ -34,6 +56,7 @@ void vfs_init(void) {
     
     mount_list = NULL;
     fs_count = 0;
+    mount_count = 0;
     
     printf("VFS: Initialization complete.\n");
 }
@@ -48,7 +71,7 @@ int vfs_register_filesystem(const char* name, vfs_filesystem_ops_t* ops) {
         return VFS_ERR_NO_MEMORY;
     }
     
-    if (!name || !ops) {
+    if (!name || !ops || name[0] == '\0' || strlen(name) > 31) {
         printf("VFS: Error - invalid parameters.\n");
         return VFS_ERR_INVALID;
     }
@@ -87,6 +110,24 @@ int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path) {
         return VFS_ERR_INVALID;
     }
     
+    size_t mount_path_length = strlen(mount_path);
+    if (!vfs_valid_absolute_path(mount_path) ||
+        (mount_path_length > 1 && mount_path[mount_path_length - 1] == '/')) {
+        return VFS_ERR_INVALID;
+    }
+
+    if (mount_count >= MAX_MOUNTS) {
+        return VFS_ERR_NO_MEMORY;
+    }
+
+    // A path can identify at most one mount.  Silently shadowing an existing
+    // mount leaks state and makes unmount order-dependent.
+    for (vfs_mount_t* current = mount_list; current; current = current->next) {
+        if (strcmp(current->path, mount_path) == 0) {
+            return VFS_ERR_EXISTS;
+        }
+    }
+
     // Find registered filesystem
     vfs_filesystem_ops_t* ops = NULL;
     for (int i = 0; i < MAX_FILESYSTEMS; i++) {
@@ -97,7 +138,7 @@ int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path) {
         }
     }
     
-    if (!ops) {
+    if (!ops || !ops->mount) {
         return VFS_ERR_UNSUPPORTED;
     }
     
@@ -113,20 +154,22 @@ int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path) {
     fs->ops = ops;
     fs->fs_data = NULL;
     fs->root = NULL;
+    fs->open_nodes = 0;
+
+    // Allocate the mount record before activating the filesystem so every
+    // allocation failure is still side-effect free.
+    vfs_mount_t* mount = (vfs_mount_t*)malloc(sizeof(vfs_mount_t));
+    if (!mount) {
+        free(fs);
+        return VFS_ERR_NO_MEMORY;
+    }
     
     // Call filesystem-specific mount
     int result = ops->mount(fs, drive);
     if (result != VFS_OK) {
+        free(mount);
         free(fs);
         return result;
-    }
-    
-    // Create mount point
-    vfs_mount_t* mount = (vfs_mount_t*)malloc(sizeof(vfs_mount_t));
-    if (!mount) {
-        ops->unmount(fs);
-        free(fs);
-        return VFS_ERR_NO_MEMORY;
     }
     
     strncpy(mount->path, mount_path, 255);
@@ -134,6 +177,7 @@ int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path) {
     mount->fs = fs;
     mount->next = mount_list;
     mount_list = mount;
+    mount_count++;
     
     printf("VFS: Successfully mounted %s at %s\n", drive->name, mount_path);
     return VFS_OK;
@@ -148,16 +192,24 @@ int vfs_unmount(const char* mount_path) {
     while (*current) {
         if (strcmp((*current)->path, mount_path) == 0) {
             vfs_mount_t* to_remove = *current;
+
+            if (to_remove->fs->open_nodes != 0) {
+                return VFS_ERR_BUSY;
+            }
             
             // Unmount filesystem
             if (to_remove->fs->ops->unmount) {
-                to_remove->fs->ops->unmount(to_remove->fs);
+                int result = to_remove->fs->ops->unmount(to_remove->fs);
+                if (result != VFS_OK) {
+                    return result;
+                }
             }
             
             // Remove from list
             *current = to_remove->next;
             free(to_remove->fs);
             free(to_remove);
+            mount_count--;
             
             printf("VFS: Unmounted %s\n", mount_path);
             return VFS_OK;
@@ -173,18 +225,24 @@ int vfs_unmount(const char* mount_path) {
 // ===========================================================================
 
 vfs_filesystem_t* vfs_get_filesystem(const char* path) {
-    if (!path || path[0] != '/') {
+    if (!vfs_valid_absolute_path(path)) {
         return NULL;
     }
     
     // Find longest matching mount point
     vfs_mount_t* best_match = NULL;
     size_t best_match_len = 0;
+    size_t path_len = strlen(path);
     
     vfs_mount_t* current = mount_list;
     while (current) {
         size_t mount_len = strlen(current->path);
-        if (strncmp(path, current->path, mount_len) == 0) {
+        bool is_root_mount = (mount_len == 1 && current->path[0] == '/');
+        bool segment_boundary = mount_len <= path_len &&
+                                (path[mount_len] == '\0' || path[mount_len] == '/');
+        if (mount_len <= path_len &&
+            strncmp(path, current->path, mount_len) == 0 &&
+            (is_root_mount || segment_boundary)) {
             if (mount_len > best_match_len) {
                 best_match = current;
                 best_match_len = mount_len;
@@ -236,7 +294,26 @@ int vfs_open(const char* path, vfs_node_t** node) {
         return VFS_ERR_UNSUPPORTED;
     }
     
-    return fs->ops->open(fs, relative_path, node);
+    *node = NULL;
+    int result = fs->ops->open(fs, relative_path, node);
+    if (result != VFS_OK) {
+        return result;
+    }
+    if (!*node || (*node)->fs != fs) {
+        if (*node && fs->ops->close) {
+            fs->ops->close(*node);
+        }
+        *node = NULL;
+        return VFS_ERR_IO;
+    }
+
+    if (fs->open_nodes == UINT32_MAX) {
+        if (fs->ops->close) fs->ops->close(*node);
+        *node = NULL;
+        return VFS_ERR_BUSY;
+    }
+    fs->open_nodes++;
+    return VFS_OK;
 }
 
 int vfs_close(vfs_node_t* node) {
@@ -244,11 +321,16 @@ int vfs_close(vfs_node_t* node) {
         return VFS_ERR_INVALID;
     }
     
-    if (!node->fs->ops->close) {
+    vfs_filesystem_t* fs = node->fs;
+    if (!fs->ops->close) {
         return VFS_ERR_UNSUPPORTED;
     }
     
-    return node->fs->ops->close(node);
+    int result = fs->ops->close(node);
+    if (result == VFS_OK && fs->open_nodes > 0) {
+        fs->open_nodes--;
+    }
+    return result;
 }
 
 int vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {

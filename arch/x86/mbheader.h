@@ -1,1 +1,6 @@
-/home/rudolf/repos/x86_micro_kernel/arch/x86/include/mbheader.h
+#ifndef ARCH_X86_MBHEADER_FORWARD_H
+#define ARCH_X86_MBHEADER_FORWARD_H
+
+#include "include/mbheader.h"
+
+#endif

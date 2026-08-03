@@ -40,7 +40,14 @@ void* aligned_alloc(size_t alignment, size_t size) {
     }
 
     // Allokiere zusätzlichen Speicher für Alignment und Speicheradresse
-    size_t total_size = size + alignment - 1 + sizeof(void*);
+    if (alignment - 1U > SIZE_MAX - sizeof(void*)) {
+        return NULL;
+    }
+    size_t overhead = alignment - 1U + sizeof(void*);
+    if (size > SIZE_MAX - overhead) {
+        return NULL;
+    }
+    size_t total_size = size + overhead;
     void* raw_memory = malloc(total_size);
     if (!raw_memory) {
         return NULL; // Speicher konnte nicht allokiert werden
@@ -125,9 +132,11 @@ void* memmove(void* dest, const void* src, size_t n) {
 }
 
 // Function to halt the CPU
-void exit(uint8_t status) {
-    // Assembly code to halt the CPU
-    //__asm__ __volatile__("cli; hlt");
+void exit(int status) {
+    syscall(SYS_EXIT, (void*)(uintptr_t)status, NULL, NULL);
+    for (;;) {
+        /* SYS_EXIT is noreturn; remain safe if a broken kernel returns. */
+    }
 }
 
 void delay_ms(uint32_t ms) {

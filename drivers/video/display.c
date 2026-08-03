@@ -2,9 +2,8 @@
 
 #ifdef USE_FRAMEBUFFER
 #include "framebuffer.h"
-#else
-#include "video.h"
 #endif
+#include "video.h"
 
 // VGA color to framebuffer color mapping
 #ifdef USE_FRAMEBUFFER
@@ -37,6 +36,8 @@ void display_init() {
     // For now, just clear if available
     if (framebuffer_available()) {
         framebuffer_clear();
+    } else {
+        clear_screen();
     }
 #else
     // VGA text mode
@@ -46,7 +47,8 @@ void display_init() {
 
 void display_clear() {
 #ifdef USE_FRAMEBUFFER
-    framebuffer_clear();
+    if (framebuffer_available()) framebuffer_clear();
+    else clear_screen();
 #else
     clear_screen();
 #endif
@@ -54,7 +56,8 @@ void display_clear() {
 
 void display_putchar(char c) {
 #ifdef USE_FRAMEBUFFER
-    framebuffer_putchar(c);
+    if (framebuffer_available()) framebuffer_putchar(c);
+    else vga_write_char(c);
 #else
     vga_write_char(c);
 #endif
@@ -62,7 +65,8 @@ void display_putchar(char c) {
 
 void display_write(const char* str) {
 #ifdef USE_FRAMEBUFFER
-    framebuffer_write_string(str);
+    if (framebuffer_available()) framebuffer_write_string(str);
+    else while (*str) vga_write_char(*str++);
 #else
     while (*str) {
         vga_write_char(*str++);
@@ -72,7 +76,8 @@ void display_write(const char* str) {
 
 void display_get_cursor(int* x, int* y) {
 #ifdef USE_FRAMEBUFFER
-    framebuffer_get_cursor(x, y);
+    if (framebuffer_available()) framebuffer_get_cursor(x, y);
+    else get_cursor_position(x, y);
 #else
     get_cursor_position(x, y);
 #endif
@@ -80,7 +85,8 @@ void display_get_cursor(int* x, int* y) {
 
 void display_set_cursor(int x, int y) {
 #ifdef USE_FRAMEBUFFER
-    framebuffer_set_cursor(x, y);
+    if (framebuffer_available()) framebuffer_set_cursor(x, y);
+    else set_cursor_position(x, y);
 #else
     set_cursor_position(x, y);
 #endif
@@ -88,7 +94,8 @@ void display_set_cursor(int x, int y) {
 
 void display_backspace() {
 #ifdef USE_FRAMEBUFFER
-    framebuffer_putchar('\b');
+    if (framebuffer_available()) framebuffer_putchar('\b');
+    else vga_backspace();
 #else
     vga_backspace();
 #endif
@@ -96,9 +103,13 @@ void display_backspace() {
 
 void display_set_color(char color) {
 #ifdef USE_FRAMEBUFFER
-    uint32_t fg = vga_to_fb_color(color & 0x0F);
-    uint32_t bg = vga_to_fb_color((color >> 4) & 0x0F);
-    framebuffer_set_color(fg, bg);
+    if (framebuffer_available()) {
+        uint32_t fg = vga_to_fb_color(color & 0x0F);
+        uint32_t bg = vga_to_fb_color((color >> 4) & 0x0F);
+        framebuffer_set_color(fg, bg);
+    } else {
+        set_color(color);
+    }
 #else
     set_color(color);
 #endif

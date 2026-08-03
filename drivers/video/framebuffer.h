@@ -11,21 +11,23 @@
 
 // Multiboot framebuffer info structure
 typedef struct {
-    uint32_t framebuffer_addr;
+    uint64_t framebuffer_addr;
     uint32_t framebuffer_pitch;
     uint32_t framebuffer_width;
     uint32_t framebuffer_height;
     uint8_t framebuffer_bpp;
     uint8_t framebuffer_type;
+    uint8_t red_field_position;
+    uint8_t red_mask_size;
+    uint8_t green_field_position;
+    uint8_t green_mask_size;
+    uint8_t blue_field_position;
+    uint8_t blue_mask_size;
 } multiboot_framebuffer_info_t;
 
 // Font dimensions
 #define FONT_WIDTH 8
 #define FONT_HEIGHT 16
-
-// Terminal dimensions based on framebuffer and font
-#define TERM_COLS (FB_WIDTH / FONT_WIDTH)
-#define TERM_ROWS (FB_HEIGHT / FONT_HEIGHT)
 
 // Color definitions (32-bit ARGB)
 #define FB_COLOR_BLACK      0xFF000000

@@ -6,7 +6,9 @@
 #include "lib/libc/stdio.h"
 #include "fs/fat32/fat32.h"
 #include "fs/fat12/fat12.h"
+#include "fs/ext2/ext2.h"
 #include "drivers/char/io.h"
+#include "kernel/time/pit.h"
 #include <stddef.h>
 
 // Forward declarations for VFS registration
@@ -89,7 +91,6 @@ void init_fs(drive_t* drive) {
             // Check if this is an MBR (has partition table) or just a boot sector
             // MBR partition entries start at offset 446
             uint8_t* partition_entry = &buffer[446];
-            uint8_t status = partition_entry[0];
             uint8_t partition_type = partition_entry[4];
             
             // If we have a valid partition type, this is an MBR
@@ -238,7 +239,6 @@ void auto_mount_all_drives(void) {
             // Determine filesystem type by reading boot sector
             uint8_t buffer[512];
             const char* fs_type = "fat32";  // Default to FAT32
-            bool is_ext2 = false;
             
             if (!ata_read_sector(drive->base, 0, buffer, drive->is_master)) {
                 failed_count++;
@@ -254,7 +254,27 @@ void auto_mount_all_drives(void) {
                     uint16_t magic = *(uint16_t*)(ext2_buffer + 56);
                     if (magic == 0xEF53) {
                         fs_type = "ext2";
-                        is_ext2 = true;
+                    }
+                }
+            }
+
+            // If LBA 0 is an MBR, also probe Linux partitions for EXT2.
+            if (strcmp(fs_type, "ext2") != 0 &&
+                buffer[510] == 0x55 && buffer[511] == 0xAA) {
+                for (uint32_t partition = 0; partition < 4; partition++) {
+                    const uint8_t* entry = buffer + 446 + partition * 16;
+                    if (entry[4] != 0x83) continue;
+                    uint32_t lba = (uint32_t)entry[8] |
+                                   ((uint32_t)entry[9] << 8) |
+                                   ((uint32_t)entry[10] << 16) |
+                                   ((uint32_t)entry[11] << 24);
+                    if (lba == 0 || lba > UINT32_MAX - 2) continue;
+                    pit_delay(5);
+                    if (ata_read_sector(drive->base, lba + 2, ext2_buffer,
+                                        drive->is_master) &&
+                        *(uint16_t*)(ext2_buffer + 56) == EXT2_SIGNATURE) {
+                        fs_type = "ext2";
+                        break;
                     }
                 }
             }
@@ -270,8 +290,7 @@ void auto_mount_all_drives(void) {
             result = vfs_mount(drive, fs_type, mount_path);
             if (result == VFS_OK) {
                 // Store mount point in drive structure
-                strncpy(drive->mount_point, mount_path, sizeof(drive->mount_point) - 1);
-                drive->mount_point[sizeof(drive->mount_point) - 1] = '\0';
+                strcpy(drive->mount_point, mount_path);
                 
                 printf("  %-6s %-20s %s\n", drive->name, drive->model, fs_type);
                 
@@ -299,8 +318,7 @@ void auto_mount_all_drives(void) {
             result = vfs_mount(drive, "fat12", mount_path);
             if (result == VFS_OK) {
                 // Store mount point in drive structure
-                strncpy(drive->mount_point, mount_path, sizeof(drive->mount_point) - 1);
-                drive->mount_point[sizeof(drive->mount_point) - 1] = '\0';
+                strcpy(drive->mount_point, mount_path);
                 
                 printf("  %-6s Floppy Drive %-7d %s\n", drive->name, drive->fdd_drive_no, "fat12");
                 

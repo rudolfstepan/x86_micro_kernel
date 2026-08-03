@@ -1,19 +1,124 @@
 #include "kernel/proc/process.h"
+#include "kernel/proc/program_image.h"
 #include <stdbool.h>
 
+#include "arch/x86/include/interrupt.h"
 #include "mm/kmalloc.h"
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
-#include "fs/fat32/fat32.h"
+#include "fs/vfs/vfs.h"
 #include "kernel/init/prg.h"
 #include "kernel/sched/scheduler.h"
 
-#define PROGRAM_LOAD_ADDRESS 0x01100000 // default address where the program will be loaded into memory except in the case of a program header
+#define PROGRAM_LOAD_ADDRESS KERNEL_PROGRAM_REGION_START
+#define PROGRAM_REGION_SIZE  KERNEL_PROGRAM_REGION_SIZE
+static int load_program_file(const char *program_name, uint32_t address) {
+    if (!memory_region_is_usable(address, PROGRAM_REGION_SIZE)) {
+        printf("Program image region is not backed by usable RAM.\n");
+        return -1;
+    }
+
+    vfs_node_t* node = NULL;
+    int result = vfs_open(program_name, &node);
+    if (result != VFS_OK || !node) {
+        return -1;
+    }
+    if (node->type != VFS_FILE || node->size < sizeof(program_header_t) ||
+        node->size > PROGRAM_REGION_SIZE) {
+        (void)vfs_close(node);
+        return -1;
+    }
+
+    uint32_t loaded_size = node->size;
+    memset((void*)(uintptr_t)address, 0, loaded_size);
+    uint32_t offset = 0;
+    while (offset < loaded_size) {
+        uint32_t amount = loaded_size - offset;
+        if (amount > 4096U) amount = 4096U;
+        result = vfs_read(node, offset, amount,
+                          (uint8_t*)(uintptr_t)(address + offset));
+        if (result <= 0 || (uint32_t)result > amount) {
+            (void)vfs_close(node);
+            return -1;
+        }
+        offset += (uint32_t)result;
+    }
+    if (vfs_close(node) != VFS_OK ||
+        program_image_validate((const void*)(uintptr_t)address, loaded_size,
+                               PROGRAM_REGION_SIZE) != 0) {
+        return -1;
+    }
+    return (int)loaded_size;
+}
 
 
 Process process_list[MAX_PROGRAMS];
 int next_pid = 1; // PID counter starting at 1
+
+static int allocate_pid_locked(void) {
+    for (int attempt = 0; attempt <= MAX_PROGRAMS; ++attempt) {
+        int candidate = next_pid;
+        next_pid = next_pid == INT_MAX ? 1 : next_pid + 1;
+
+        bool in_use = false;
+        for (int i = 0; i < MAX_PROGRAMS; ++i) {
+            if (process_list[i].is_running && process_list[i].pid == candidate) {
+                in_use = true;
+                break;
+            }
+        }
+        if (!in_use) {
+            return candidate;
+        }
+    }
+    return -1;
+}
+
+static void release_process_slot(Process *process) {
+    uint32_t flags = irq_save();
+    process->is_running = false;
+    process->uses_shared_program_image = false;
+    process->task_id = -1;
+    irq_restore(flags);
+}
+
+/* Reserve list state atomically, but do slow file/heap work with IRQs enabled. */
+static int claim_process_slot(const char *name, bool shared_image) {
+    uint32_t flags = irq_save();
+
+    if (shared_image) {
+        for (int i = 0; i < MAX_PROGRAMS; ++i) {
+            if (process_list[i].is_running &&
+                process_list[i].uses_shared_program_image) {
+                irq_restore(flags);
+                return -2;
+            }
+        }
+    }
+
+    for (int i = 0; i < MAX_PROGRAMS; ++i) {
+        if (!process_list[i].is_running) {
+            Process *process = &process_list[i];
+            int pid = allocate_pid_locked();
+            if (pid < 0) {
+                irq_restore(flags);
+                return -1;
+            }
+            process->pid = pid;
+            process->task_id = -1;
+            process->uses_shared_program_image = shared_image;
+            strncpy(process->name, name, sizeof(process->name) - 1U);
+            process->name[sizeof(process->name) - 1U] = '\0';
+            process->is_running = true;
+            irq_restore(flags);
+            return i;
+        }
+    }
+
+    irq_restore(flags);
+    return -1;
+}
 
 // execute the program at the specified entry point
 void start_program_execution(long entry_point) {
@@ -23,123 +128,111 @@ void start_program_execution(long entry_point) {
 
 // load the program into memory
 void load_and_execute_program(const char* program_name) {
-    // Load the program into the specified memory location
-    if (fat32_load_file(program_name, (void*)PROGRAM_LOAD_ADDRESS) > 0) {
-        program_header_t* header = (program_header_t*)PROGRAM_LOAD_ADDRESS;
-
-        // print the program header details
-        // printf("Program Header Details:\n");
-        // printf("Identifier: %s\n", header->identifier);
-        // printf("Magic Number: %u\n", header->magic_number);
-        // printf("Program size: %d\n", header->program_size);
-        // printf("Entry point: %p\n", header->entry_point);
-        // printf("Base address: %p\n", header->base_address);
-        // printf("Relocation offset: %d\n", header->relocation_offset);
-        // printf("Relocation size: %d\n", header->relocation_size);
-        // printf("Program address: %p\n", (void*)PROGRAM_LOAD_ADDRESS);
-
-        // get the address of the userspace
-        uint32_t* relocation_table = (uint32_t*)(PROGRAM_LOAD_ADDRESS + header->relocation_offset);
-        uint32_t relocation_count = header->relocation_size / sizeof(uint32_t);
-
-        // apply the relocation
-        apply_relocation(relocation_table, relocation_count, PROGRAM_LOAD_ADDRESS);
-
-        printf("Start prg at address: %p\n", header->entry_point + PROGRAM_LOAD_ADDRESS);
-
-        // execute the program
-        void (*program)() = (void (*)())(header->entry_point + PROGRAM_LOAD_ADDRESS);
-        program();
-
-        //start_program_execution(header->entry_point);
-
-        //load_elf((void*)PROGRAM_LOAD_ADDRESS);
-
-
-    } else {
-        printf("%s not found\n", program_name);
+    if (create_process_for_file(program_name) < 0) {
+        printf("Unable to load valid program '%s'\n", program_name);
     }
 }
 
-void load_program_into_memory(const char* program_name, uint32_t address) {
+int load_program_into_memory(const char* program_name, uint32_t address) {
     // Load the program into the specified memory location
-    if (fat32_load_file(program_name, (void*)address) > 0) {
-        program_header_t* header = (program_header_t*)address;
-        printf("entry_point: %p\n", address + header->entry_point);
+    int loaded_size = load_program_file(program_name, address);
+    if (loaded_size > 0) {
+        return loaded_size;
     } else {
-        printf("%s not found\n", program_name);
+        printf("Unable to load valid program '%s'\n", program_name);
+        return -1;
     }
 }
 
 int create_process_for_file(const char *filename) {
-    // Find an available slot in the process list
-    for (int i = 0; i < MAX_PROGRAMS; i++) {
-        if (!process_list[i].is_running) {
-            process_list[i].pid = next_pid++;
-            // Safe string copy with bounds checking
-            strncpy(process_list[i].name, filename, sizeof(process_list[i].name) - 1);
-            process_list[i].name[sizeof(process_list[i].name) - 1] = '\0';
-            process_list[i].is_running = true;
-
-            load_program_into_memory(filename, PROGRAM_LOAD_ADDRESS);
-
-            program_header_t* header = (program_header_t*)PROGRAM_LOAD_ADDRESS;
-            Process* process = &process_list[i];
-
-            // Allocate stack with NULL check
-            uint32_t* stack = (uint32_t*)k_malloc(STACK_SIZE);
-            if (stack == NULL) {
-                printf("Error: Failed to allocate stack for process\n");
-                process_list[i].is_running = false;
-                return -1;
-            }
-
-            // Create a new task for the program
-            create_task((void (*)())(header->entry_point + PROGRAM_LOAD_ADDRESS), stack, process);
-
-            return process_list[i].pid;
-        }
+    if (filename == NULL || *filename == '\0') {
+        return -1;
     }
 
-    // No available slots
-    printf("Error: Maximum number of running programs reached.\n");
-    return -1;
+    int slot = claim_process_slot(filename, true);
+    if (slot == -2) {
+        printf("A file-backed program already uses the shared image region.\n");
+        return -1;
+    }
+    if (slot < 0) {
+        printf("Error: Maximum number of running programs reached.\n");
+        return -1;
+    }
+
+    Process *process = &process_list[slot];
+    int pid = process->pid;
+    int loaded_size = load_program_into_memory(filename, PROGRAM_LOAD_ADDRESS);
+    if (loaded_size < 0) {
+        release_process_slot(process);
+        return -1;
+    }
+
+    program_header_t* header = (program_header_t*)PROGRAM_LOAD_ADDRESS;
+    if (header->relocation_size == 0 &&
+        header->base_address != PROGRAM_LOAD_ADDRESS) {
+        printf("Program '%s' was linked for the wrong load address.\n",
+               filename);
+        release_process_slot(process);
+        return -1;
+    }
+    uint32_t *relocation_table = (uint32_t*)(
+        PROGRAM_LOAD_ADDRESS + header->relocation_offset);
+    if (apply_relocation(relocation_table,
+                         header->relocation_size / sizeof(uint32_t),
+                         header->base_address, PROGRAM_LOAD_ADDRESS,
+                         (uint32_t)loaded_size) != 0) {
+        printf("Invalid relocation table in '%s'.\n", filename);
+        release_process_slot(process);
+        return -1;
+    }
+
+    uint32_t* stack = (uint32_t*)k_malloc(STACK_SIZE);
+    if (stack == NULL) {
+        printf("Error: Failed to allocate stack for process\n");
+        release_process_slot(process);
+        return -1;
+    }
+
+    int task_id = create_task(
+        (void (*)())(header->entry_point + PROGRAM_LOAD_ADDRESS), stack, process);
+    if (task_id < 0) {
+        k_free(stack);
+        release_process_slot(process);
+        return -1;
+    }
+    return pid;
 }
 
 int create_process(void* entry_point) {
-    // Find an available slot in the process list
-    for (int i = 0; i < MAX_PROGRAMS; i++) {
-        if (!process_list[i].is_running) {
-            process_list[i].pid = next_pid++;
-            // Safe string copy with bounds checking
-            strncpy(process_list[i].name, "Unknown", sizeof(process_list[i].name) - 1);
-            process_list[i].name[sizeof(process_list[i].name) - 1] = '\0';
-            process_list[i].is_running = true;
-
-            Process* process = &process_list[i];
-
-            // Allocate stack with NULL check
-            uint32_t* stack = (uint32_t*)k_malloc(STACK_SIZE);
-            if (stack == NULL) {
-                printf("Error: Failed to allocate stack for process\n");
-                process_list[i].is_running = false;
-                return -1;
-            }
-
-            // Create a new task for the program
-            create_task((void (*)())(entry_point), stack, process);
-
-            //printf(">>>Program '%s' started with PID %d\n", filename, process_list[i].pid);
-            return process_list[i].pid;
-        }
+    if (entry_point == NULL) {
+        return -1;
     }
 
-    // No available slots
-    printf("Error: Maximum number of running programs reached.\n");
-    return -1;
+    int slot = claim_process_slot("Unknown", false);
+    if (slot < 0) {
+        printf("Error: Maximum number of running programs reached.\n");
+        return -1;
+    }
+    Process *process = &process_list[slot];
+    int pid = process->pid;
+
+    uint32_t* stack = (uint32_t*)k_malloc(STACK_SIZE);
+    if (stack == NULL) {
+        printf("Error: Failed to allocate stack for process\n");
+        release_process_slot(process);
+        return -1;
+    }
+
+    int task_id = create_task((void (*)())entry_point, stack, process);
+    if (task_id < 0) {
+        k_free(stack);
+        release_process_slot(process);
+        return -1;
+    }
+    return pid;
 }
 
-void list_running_processes() {
+void list_running_processes(void) {
     printf("Running programs:\n");
     for (int i = 0; i < MAX_PROGRAMS; i++) {
         if (process_list[i].is_running) {
@@ -149,17 +242,30 @@ void list_running_processes() {
 }
 
 void terminate_process(int pid) {
+    uint32_t flags = irq_save();
     for (int i = 0; i < MAX_PROGRAMS; i++) {
         if (process_list[i].is_running && process_list[i].pid == pid) {
-            process_list[i].is_running = false;
+            if (process_list[i].task_id < 0) {
+                irq_restore(flags);
+                printf("Program with PID %d is still loading.\n", pid);
+                return;
+            }
 
             // Terminate the task associated with the process
-            tasks[i].status = TASK_FINISHED;
+            scheduler_terminate_task(process_list[i].task_id);
+            process_list[i].is_running = false;
+            process_list[i].task_id = -1;
+            process_list[i].uses_shared_program_image = false;
 
-            printf("Program '%s' with PID %d terminated.\n", process_list[i].name, pid);
+            char name[sizeof(process_list[i].name)];
+            strncpy(name, process_list[i].name, sizeof(name));
+            name[sizeof(name) - 1U] = '\0';
+            irq_restore(flags);
+            printf("Program '%s' with PID %d terminated.\n", name, pid);
             return;
         }
     }
 
+    irq_restore(flags);
     printf("Error: PID %d not found.\n", pid);
 }

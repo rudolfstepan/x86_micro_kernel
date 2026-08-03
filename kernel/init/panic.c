@@ -14,8 +14,10 @@ static int panic_in_progress = 0;
 /**
  * Halt the CPU forever
  */
+static void halt(void) __attribute__((noreturn));
 static void halt(void) {
     cpu_halt_forever();
+    __builtin_unreachable();
 }
 
 /**

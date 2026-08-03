@@ -1,5 +1,11 @@
 # Codebase Reorganization Summary
 
+> **Historisches Migrationsprotokoll (31. Oktober 2025):** Beschreibungen von
+> `src/`, Sicherungsdateien, ISO-/GRUB-Standardbefehlen und damaligen
+> Dateizahlen sind keine aktuelle Projektanleitung. Aktuelle Struktur und
+> Befehle stehen in [`../../README.md`](../../README.md) und
+> [`QUICKSTART.md`](QUICKSTART.md).
+
 ## Date: October 31, 2025
 
 ## Overview

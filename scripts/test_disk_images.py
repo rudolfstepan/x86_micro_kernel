@@ -7,6 +7,8 @@ Tests image structure, boot sector, and file contents without booting kernel
 import sys
 import struct
 import subprocess
+import os
+import shutil
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, List, Tuple
@@ -29,6 +31,7 @@ class FAT32BootSector:
     num_fats: int
     root_entries: int  # 0 for FAT32
     total_sectors_16: int  # 0 for FAT32
+    total_sectors_32: int
     media_descriptor: int
     sectors_per_fat_16: int  # 0 for FAT32
     sectors_per_fat_32: int
@@ -37,30 +40,73 @@ class FAT32BootSector:
     backup_boot_sector: int
     volume_label: str
     fs_type: str
+
+    @property
+    def total_sectors(self) -> int:
+        return self.total_sectors_16 or self.total_sectors_32
+
+    @property
+    def declared_size(self) -> int:
+        return self.total_sectors * self.bytes_per_sector
+
+    def fits_image_size(self, image_size: int) -> bool:
+        return self.declared_size > 0 and self.declared_size <= image_size
+
+    @property
+    def cluster_count(self) -> Optional[int]:
+        """Derive the FAT type from BPB geometry, as required by the FAT spec."""
+        if (
+            self.bytes_per_sector not in [512, 1024, 2048, 4096]
+            or self.sectors_per_cluster not in [1, 2, 4, 8, 16, 32, 64, 128]
+            or self.reserved_sectors == 0
+            or self.num_fats not in [1, 2]
+        ):
+            return None
+
+        total_sectors = self.total_sectors
+        sectors_per_fat = self.sectors_per_fat_16 or self.sectors_per_fat_32
+        if total_sectors == 0 or sectors_per_fat == 0:
+            return None
+
+        root_dir_sectors = (
+            self.root_entries * 32 + self.bytes_per_sector - 1
+        ) // self.bytes_per_sector
+        non_data_sectors = (
+            self.reserved_sectors
+            + self.num_fats * sectors_per_fat
+            + root_dir_sectors
+        )
+        if total_sectors <= non_data_sectors:
+            return None
+        return (total_sectors - non_data_sectors) // self.sectors_per_cluster
     
     @property
     def is_valid_fat32(self) -> bool:
         """Check if this is a valid FAT32 boot sector"""
+        clusters = self.cluster_count
         return (
-            self.bytes_per_sector in [512, 1024, 2048, 4096] and
-            self.sectors_per_cluster in [1, 2, 4, 8, 16, 32, 64, 128] and
-            self.num_fats in [1, 2] and
+            clusters is not None and
+            clusters >= 65525 and
+            (self.sectors_per_fat_32 * self.bytes_per_sector) // 4 >=
+                clusters + 2 and
             self.root_entries == 0 and  # FAT32 specific
             self.total_sectors_16 == 0 and  # FAT32 specific
             self.sectors_per_fat_16 == 0 and  # FAT32 specific
-            self.root_cluster >= 2 and
-            self.fs_type.strip() in ['FAT32', 'FAT32   ']
+            self.sectors_per_fat_32 > 0 and
+            2 <= self.root_cluster < clusters + 2
         )
     
     @property
     def is_valid_fat12(self) -> bool:
         """Check if this is a valid FAT12 boot sector"""
+        clusters = self.cluster_count
         return (
-            self.bytes_per_sector in [512, 1024, 2048, 4096] and
-            self.sectors_per_cluster in [1, 2, 4, 8, 16, 32, 64, 128] and
-            self.num_fats in [1, 2] and
+            clusters is not None and
+            0 < clusters < 4085 and
+            (self.sectors_per_fat_16 * self.bytes_per_sector * 8) // 12 >=
+                clusters + 2 and
             self.root_entries > 0 and  # FAT12/16 specific
-            'FAT12' in self.fs_type.strip() or 'FAT' in self.fs_type.strip()
+            self.sectors_per_fat_16 > 0
         )
 
 class DiskImageTester:
@@ -70,25 +116,33 @@ class DiskImageTester:
         self.verbose = verbose
         self.tests_passed = 0
         self.tests_failed = 0
+        self.tests_skipped = 0
         
     def log(self, message: str, level: str = 'INFO'):
         """Log message with color coding"""
         if level == 'PASS':
-            print(f"{Color.GREEN}✓{Color.RESET} {message}")
+            print(f"{Color.GREEN}[PASS]{Color.RESET} {message}")
             self.tests_passed += 1
         elif level == 'FAIL':
-            print(f"{Color.RED}✗{Color.RESET} {message}")
+            print(f"{Color.RED}[FAIL]{Color.RESET} {message}")
             self.tests_failed += 1
         elif level == 'WARN':
-            print(f"{Color.YELLOW}⚠{Color.RESET} {message}")
+            print(f"{Color.YELLOW}[WARN]{Color.RESET} {message}")
+        elif level == 'SKIP':
+            print(f"{Color.YELLOW}[SKIP]{Color.RESET} {message}")
+            self.tests_skipped += 1
         elif level == 'INFO' and self.verbose:
-            print(f"{Color.BLUE}ℹ{Color.RESET} {message}")
+            print(f"{Color.BLUE}[INFO]{Color.RESET} {message}")
     
     def read_boot_sector(self, image_path: Path) -> Optional[FAT32BootSector]:
         """Read and parse FAT32/FAT12 boot sector"""
         try:
             with open(image_path, 'rb') as f:
                 data = f.read(512)
+
+            if len(data) != 512:
+                self.log(f"Boot sector in {image_path} is only {len(data)} bytes", 'FAIL')
+                return None
                 
             # Parse common BPB fields (FAT12/16/32)
             bytes_per_sector = struct.unpack('<H', data[11:13])[0]
@@ -97,6 +151,7 @@ class DiskImageTester:
             num_fats = data[16]
             root_entries = struct.unpack('<H', data[17:19])[0]
             total_sectors_16 = struct.unpack('<H', data[19:21])[0]
+            total_sectors_32 = struct.unpack('<I', data[32:36])[0]
             media_descriptor = data[21]
             sectors_per_fat_16 = struct.unpack('<H', data[22:24])[0]
             
@@ -125,6 +180,7 @@ class DiskImageTester:
                 num_fats=num_fats,
                 root_entries=root_entries,
                 total_sectors_16=total_sectors_16,
+                total_sectors_32=total_sectors_32,
                 media_descriptor=media_descriptor,
                 sectors_per_fat_16=sectors_per_fat_16,
                 sectors_per_fat_32=sectors_per_fat_32,
@@ -183,6 +239,14 @@ class DiskImageTester:
                 self.log(f"Invalid FAT12 boot sector in {image_path.name}", 'FAIL')
                 return False
             self.log(f"Valid FAT12 boot sector: {image_path.name}", 'PASS')
+
+        if not boot_sector.fits_image_size(image_path.stat().st_size):
+            self.log(
+                f"Declared filesystem size ({boot_sector.declared_size} bytes) "
+                f"exceeds image size ({image_path.stat().st_size} bytes)",
+                'FAIL',
+            )
+            return False
         
         # Additional checks
         if boot_sector.bytes_per_sector != 512:
@@ -196,6 +260,10 @@ class DiskImageTester:
     def test_mount_and_files(self, image_path: Path, expected_files: List[str]) -> bool:
         """Test mounting image and checking for expected files"""
         mount_point = Path('/tmp/test_mount_kernel')
+
+        if os.name != 'posix' or shutil.which('mount') is None or shutil.which('sudo') is None:
+            self.log('Mount test requires a POSIX host with mount and sudo', 'SKIP')
+            return True
         
         try:
             # Create mount point
@@ -203,7 +271,7 @@ class DiskImageTester:
             
             # Mount image
             result = subprocess.run(
-                ['sudo', 'mount', '-o', 'loop', str(image_path), str(mount_point)],
+                ['sudo', '-n', 'mount', '-o', 'loop', str(image_path), str(mount_point)],
                 capture_output=True,
                 text=True
             )
@@ -238,14 +306,14 @@ class DiskImageTester:
                         self.log(f"  {rel_path}", 'INFO')
             
             # Unmount
-            subprocess.run(['sudo', 'umount', str(mount_point)], check=True, capture_output=True)
+            subprocess.run(['sudo', '-n', 'umount', str(mount_point)], check=True, capture_output=True)
             
             return all_found
             
         except Exception as e:
             self.log(f"Mount test failed: {e}", 'FAIL')
             # Try to unmount if mounted
-            subprocess.run(['sudo', 'umount', str(mount_point)], capture_output=True)
+            subprocess.run(['sudo', '-n', 'umount', str(mount_point)], capture_output=True)
             return False
     
     def test_signature(self, image_path: Path) -> bool:
@@ -319,6 +387,7 @@ class DiskImageTester:
         print(f"Total tests: {total}")
         print(f"{Color.GREEN}Passed: {self.tests_passed}{Color.RESET}")
         print(f"{Color.RED}Failed: {self.tests_failed}{Color.RESET}")
+        print(f"{Color.YELLOW}Skipped: {self.tests_skipped}{Color.RESET}")
         print(f"Pass rate: {pass_rate:.1f}%\n")
         
         return self.tests_failed == 0

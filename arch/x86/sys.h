@@ -1,1 +1,6 @@
-/home/rudolf/repos/x86_micro_kernel/arch/x86/include/sys.h
+#ifndef ARCH_X86_SYS_FORWARD_H
+#define ARCH_X86_SYS_FORWARD_H
+
+#include "include/sys.h"
+
+#endif

@@ -14,14 +14,9 @@ multiboot_header:
     dd MAGIC
     dd FLAGS
     dd CHECKSUM
-    
-    ; Header address fields (not used, set to 0)
-    dd 0  ; header_addr
-    dd 0  ; load_addr
-    dd 0  ; load_end_addr
-    dd 0  ; bss_end_addr
-    dd 0  ; entry_addr
-    
+
+    ; Address fields exist only when header flag bit 16 is set.  FLAGS does
+    ; not request them, so the video fields must immediately follow checksum.
     ; Video mode fields
     dd 0            ; mode_type (0 = linear framebuffer)
     dd 1024         ; width

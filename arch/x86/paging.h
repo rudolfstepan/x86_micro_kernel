@@ -1,1 +1,6 @@
-/home/rudolf/repos/x86_micro_kernel/arch/x86/mm/paging.h
+#ifndef ARCH_X86_PAGING_FORWARD_H
+#define ARCH_X86_PAGING_FORWARD_H
+
+#include "mm/paging.h"
+
+#endif

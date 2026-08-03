@@ -86,6 +86,7 @@ typedef struct vfs_filesystem {
     vfs_filesystem_ops_t* ops;        // Operations table
     void* fs_data;                    // Filesystem-specific data (boot sector, etc.)
     vfs_node_t* root;                 // Root directory node
+    uint32_t open_nodes;              // Nodes currently owned by VFS callers
 } vfs_filesystem_t;
 
 // ===========================================================================
@@ -111,6 +112,7 @@ typedef struct vfs_mount {
 #define VFS_ERR_NO_SPACE    -8
 #define VFS_ERR_READ_ONLY   -9
 #define VFS_ERR_UNSUPPORTED -10
+#define VFS_ERR_BUSY        -11
 
 // ===========================================================================
 // VFS Public API

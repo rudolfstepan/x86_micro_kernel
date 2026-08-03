@@ -5,3 +5,5 @@ kernel.iso
 *.img
 *.vmdk
 disk.vmdk
+__pycache__/
+*.py[cod]

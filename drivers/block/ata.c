@@ -90,8 +90,10 @@ bool wait_for_drive_ready(unsigned short base, unsigned int timeout_ms) {
 bool wait_for_drive_data_ready(unsigned short base, unsigned int timeout_ms) {
     unsigned int elapsed_time = 0;
     
-#ifdef QEMU_BUILD
-    // QEMU: First wait for BSY to clear, then wait for DRQ
+#if defined(QEMU_BUILD) || defined(VMWARE_BUILD)
+    // Emulated IDE: first wait for BSY to clear, then wait for DRQ.  Missing
+    // slots return ERR during IDENTIFY and are a normal negative probe, so
+    // leave user-facing error reporting to actual read/write operations.
     //printf("      wait_for_drive_data_ready: Step A - waiting for BSY clear\n");
     // Step 1: Wait for BSY to clear
     while (1) {
@@ -234,6 +236,10 @@ static void ata_soft_reset(unsigned short base, bool is_master) {
     * @return True if the sector was read successfully, false otherwise.
 */
 bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master) {
+    if (buffer == NULL || lba >= ATA_LBA28_LIMIT ||
+        (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) {
+        return false;
+    }
     //printf("ata_read_sector: base=0x%X, lba=%u, is_master=%d\n", base, lba, is_master);
     
     // On first read attempt, try a soft reset if drive isn't responding
@@ -247,13 +253,6 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
             ata_soft_reset(base, is_master);
         }
         first_read_attempted[controller_idx] = true;
-    }
-    
-    // Check for excessive consecutive failures
-    if (consecutive_read_failures >= MAX_CONSECUTIVE_FAILURES) {
-        //printf("  ERROR: Too many consecutive failures (%u), aborting to prevent infinite loop\n",
-        //       consecutive_read_failures);
-        return false;
     }
     
     // Wait for the drive to be ready
@@ -355,7 +354,8 @@ void ata_reset_error_counter() {
     * @return True if the sector was written successfully, false otherwise.
 */
 bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master) {
-    if (buffer == NULL) {
+    if (buffer == NULL || lba >= ATA_LBA28_LIMIT ||
+        (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) {
         return false; // Error: Buffer is null
     }
 
@@ -364,16 +364,18 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer, bool 
         return false;  // Drive not ready within the timeout
     }
 
-    // Set up the sector count, LBA (Logical Block Addressing), and drive/head
+    // Select the target before programming its task-file registers.
+    unsigned char drive_head = 0xE0 | ((lba >> 24) & 0x0F);  // LBA mode with upper LBA bits
+    drive_head |= is_master ? 0x00 : 0x10;  // 0x00 for master, 0x10 for slave
+    outb(ATA_DRIVE_HEAD(base), drive_head);
+    for (volatile int i = 0; i < 4; ++i) inb(ATA_ALT_STATUS(base));
+    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
+
+    // Program the selected device's task-file registers.
     outb(ATA_SECTOR_CNT(base), 1); // Write 1 sector
     outb(ATA_LBA_LOW(base), (unsigned char)(lba & 0xFF));
     outb(ATA_LBA_MID(base), (unsigned char)((lba >> 8) & 0xFF));
     outb(ATA_LBA_HIGH(base), (unsigned char)((lba >> 16) & 0xFF));
-
-    // Set the drive/head register
-    unsigned char drive_head = 0xE0 | ((lba >> 24) & 0x0F);  // LBA mode with upper LBA bits
-    drive_head |= is_master ? 0x00 : 0x10;  // 0x00 for master, 0x10 for slave
-    outb(ATA_DRIVE_HEAD(base), drive_head);
 
     // Send the write command
     outb(ATA_COMMAND(base), ATA_WRITE_SECTORS);
@@ -448,7 +450,7 @@ void ata_detect_drives() {
     // Detect ATA drives
     for (int bus = 0; bus < 2; bus++) {
         for (int drive = 0; drive < 2; drive++) {
-            if (drive_count >= MAX_DRIVES) {
+            if (drive_count >= MAX_ATA_DRIVES) {
                // printf("Maximum number of drives reached.\n");
                 return;
             }
@@ -485,8 +487,17 @@ void ata_detect_drives() {
 }
 
 bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info) {
+    if (!drive_info || (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) return false;
+
     // Select the drive (master or slave)
     outb(base + 6, drive);
+    for (volatile int i = 0; i < 4; ++i) inb(ATA_ALT_STATUS(base));
+
+    // IDENTIFY requires the task-file address/count registers to be zero.
+    outb(ATA_SECTOR_CNT(base), 0);
+    outb(ATA_LBA_LOW(base), 0);
+    outb(ATA_LBA_MID(base), 0);
+    outb(ATA_LBA_HIGH(base), 0);
 
     // Send the IDENTIFY command
     outb(base + 7, ATA_IDENTIFY);

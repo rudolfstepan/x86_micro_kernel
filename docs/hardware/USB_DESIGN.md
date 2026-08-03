@@ -1,105 +1,74 @@
-# USB Support Design for x86_micro_kernel
+# USB-/xHCI-Status und Design
 
-Purpose
-- Provide a compact technical plan to add USB host support (enumeration, HID keyboard, then mass storage) compatible with the project's PCI layer and VFS.
+USB ist im aktuellen Kernel ein experimenteller Entwicklungsbereich. Der
+Build nimmt die Quellen unter `drivers/usb/` auf und `kernel_main()` ruft
+`usb_init()` nach der PCI-Erkennung auf. Die generierte VMware-Referenzmaschine
+deaktiviert USB bewusst und verwendet PS/2-Tastatur sowie IDE-Datenträger.
 
-Summary
-- Add USB core + Host Controller Driver (HCD) for xHCI (preferred).
-- Add hub support and class drivers: HID keyboard (first) and USB Mass Storage (to mount FAT32).
-- Integrate with existing PCI helpers and kernel IRQ infrastructure.
+## Vorhandene Bausteine
 
-High-level layers
-1. PCI probe
-   - Detect USB controllers via PCI class/subclass/prog-if or specific vendor/device IDs.
-   - Enable device, read BARs, map MMIO.
-2. USB core
-   - Device, configuration, endpoint, transfer (control/bulk/interrupt) abstractions.
-   - Synchronous control-transfer helper (GET_DESCRIPTOR, SET_ADDRESS, SET_CONFIGURATION).
-   - URB-like structure for transfers (start with synchronous).
-3. Host Controller Driver (HCD)
-   - xHCI HCD initial subset:
-     - Map MMIO (BAR), init command/event rings, basic doorbell usage.
-     - Support port reset, port status, submit control/bulk/interrupt transfers.
-     - Use IRQs for event ring notifications; fallback to polling for early debug.
-   - Later: EHCI/OHCI/UHCI if needed for older hardware.
-4. Hub driver
-   - Reset ports, read port status, enumerate root ports, handle hub interrupts.
-5. Class drivers
-   - HID keyboard: subscribe to interrupt IN endpoints; translate HID reports to key events forwarded to existing kb driver.
-   - Mass Storage (Bulk-Only Transport): implement SCSI command wrap, read/write blocks, integrate with VFS as a block device exposing FAT32 mounting.
+- USB-Core-Strukturen und Initialisierung
+- PCI-Probing für USB-Hostcontroller
+- xHCI-Quellen und MMIO-/Controllergrundlagen
+- Hub- und HID-Tastaturquellen
+- Einbindung aller `drivers/usb/*.c` in den Kernelbuild
 
-Repository mapping (proposed files)
-- drivers/usb/
-  - core.c, core.h
-  - xhci.c, xhci.h
-  - hub.c, hub.h
-  - hid_kb.c
-  - mass_storage.c
-- include/usb/
-  - usb.h (descriptor structs, constants), usb_core.h
-- docs/hardware/
-  - USB_DESIGN.md (this file)
-- build changes
-  - Add drivers/usb/* to Makefile and gpp_Makefile
+Diese Existenz ist nicht mit einem vollständig verifizierten USB-Stack
+gleichzusetzen. Insbesondere werden Mass Storage, beliebige Hubs,
+Fehlererholung und eine breite Controller-/Gerätematrix nicht als fertig
+dokumentiert.
 
-Concrete incremental plan (MVP → iterative)
-- Step 0 — Prep (1–2 hrs)
-  - Add files and build rules (skeletons).
-  - Add debug logging macros under drivers/usb for controlled verbosity.
-- Step 1 — PCI integration + detection (half day)
-  - Extend pci_probe to allow driver registration by class/subclass/prog-if or add helper:
-    - Detect class 0x0C (Serial Bus Controller), subclass 0x03 (USB controller).
-    - Match prog-if 0x30 for xHCI.
-  - In probe callback: pci_enable_device(); read BAR (MMIO); pci_set_bus_master(...).
-- Step 2 — Minimal USB core (1 day)
-  - Implement USB descriptors parsing and a blocking control transfer helper using MMIO HCD ops.
-  - Implement simple device structure and endpoint representation.
-- Step 3 — xHCI HCD skeleton + port reset (2–4 days)
-  - Map MMIO from BAR, initialize command/event rings (basic), implement port reset and read port status.
-  - Implement minimal Transfer submission for control transfers to get device descriptor and set address.
-- Step 4 — Enumeration + hub (1–2 days)
-  - Reset root ports, run enumeration flow: GET_DESCRIPTOR, SET_ADDRESS, GET_CONFIGURATION, bind class drivers.
-  - Implement simple hub handling for multiple ports.
-- Step 5 — HID keyboard class (1–2 days)
-  - Implement descriptor parsing to find interrupt IN endpoint and schedule polling/IRQ handling.
-  - Translate reports to existing keyboard input pipeline.
-- Step 6 — Mass storage class + VFS glue (2–4 days)
-  - Implement Bulk-Only Transport with SCSI READ/WRITE commands; wrap as a block device and mount FAT32.
-- Step 7 — Robustness, power, DMA, performance (ongoing)
-  - Proper memory allocation for xHCI structures (aligned, physically contiguous), IRQ handling, timeouts, retries, hub power management.
+## Zielarchitektur
 
-Example: PCI detection sketch
-```c
-// C
-// Check class/subclass/prog_if fields in pci_device_t
-if (dev->class_code == 0x0C && dev->subclass_code == 0x03 && dev->prog_if == 0x30) {
-    // xHCI controller
-    probe_xhci(dev);
-}
+```text
+PCI-Erkennung
+   -> Host Controller Driver (zunächst xHCI)
+      -> USB-Core: Geräte, Endpunkte und Transfers
+         -> Root-/externe Hubs
+            -> Klassentreiber
+               -> HID-Tastatur
+               -> Mass Storage / Blockgerät / VFS
 ```
 
-Key low-level considerations
-- xHCI requires 64-byte alignment for many structures; use page-aligned allocations and ensure physical address mapping.
-- Use pci_set_bus_master to enable DMA.
-- Port reset requires specific delays (per spec) and status polling; implement timeouts and retries.
-- Event ring / TRB semantics are intricate — start with minimal control transfers and small event handling.
-- VM testing: QEMU/VMware support xHCI; use `-device qemu-xhci` or `-device usb-ehci` options for testing.
+## Technische Anforderungen
 
-Testing plan
-- Add verbose USB debug channel.
-- QEMU smoke tests:
-  - Boot kernel with virtual xHCI device and a passed-through USB keyboard → verify key events.
-  - Attach a USB mass storage image → verify mount under /mnt/usb and file read.
-- Real hardware:
-  - Boot from ISO/USB on a test machine; verify keyboard and USB stick mount.
-- Add scripted tests (QEMU + serial log checks) to `scripts/` for automation.
+- MMIO-BAR korrekt aktivieren und mappen
+- PCI Bus Mastering für DMA setzen
+- xHCI-Strukturen physisch zusammenhängend und korrekt ausrichten
+- Command-, Transfer- und Event-Ringe mit Cycle Bits verwalten
+- Controller- und Transfer-Timeouts statt unendlicher Pollschleifen
+- Port Reset, Address Device und Deskriptorabfragen spezifikationsgemäß
+- Interruptpfad sowie kontrollierter Polling-Fallback
+- USB-Fehler nicht als ungebremste VGA-Ausgabe in die Shell schreiben
 
-Risks & mitigations
-- Complexity of xHCI: mitigate by implementing only the minimal subset necessary for enumeration and control transfers first.
-- DMA/physical memory mapping: reuse existing mm/paging helpers; ensure physical addresses are exposed to HCD.
-- Interrupt handling correctness: provide polling fallback for early bring-up to debug without IRQs.
+## Verifikationsstufen
 
-Next concrete actions I can take (pick one)
-- Create skeleton files under `drivers/usb/` and update Makefile.
-- Implement PCI detection hook and a stub xhci probe that logs BAR and IRQ.
-- Implement minimal USB core control transfer helper and a test that enumerates a single device in QEMU.
+1. PCI-Controller mit BAR und IRQ eindeutig erkennen.
+2. Controllerreset und Ringinitialisierung mit Timeouts testen.
+3. Root-Port-Status und Geräteanschluss erkennen.
+4. Device-/Configuration-Deskriptor lesen und Adresse setzen.
+5. HID-Bootkeyboard in die bestehende Eingabequeue einspeisen.
+6. Bulk-Only-/SCSI-Mass-Storage als Blockgerät anbinden.
+7. FAT über VFS mounten und Fehler-/Abziehpfade testen.
+
+Jede Stufe benötigt reproduzierbare serielle Logs und nach Möglichkeit einen
+hostseitigen Test für parser- oder datenstrukturbezogene Teile.
+
+## QEMU-Entwicklung
+
+Für gezielte Tests kann QEMU um einen xHCI-Controller und passende Geräte
+erweitert werden. Diese Optionen sind derzeit nicht Bestandteil des nativen
+Windows-Startskripts oder des fertigen VMware-Pakets. Änderungen an der
+Referenz-VM sollten USB erst aktivieren, wenn Boot und Eingabe mit den
+gewählten virtuellen Geräten reproduzierbar getestet sind.
+
+## Offene Grenzen
+
+- kein als stabil freigegebener xHCI-End-to-End-Pfad
+- kein dokumentierter USB-Mass-Storage-Mount
+- kein Hotplug-/Disconnect-Lebenszyklus
+- keine IOMMU- oder DMA-Isolation
+- keine EHCI/OHCI/UHCI-Kompatibilitätszusage
+
+Die Datei `drivers/usb/usb_recommendations.md` ist eine historische
+Entwurfsnotiz. Für den normalen VMware-Betrieb ist USB nicht erforderlich.

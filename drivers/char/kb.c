@@ -22,7 +22,6 @@
 
 #define SC_MAX                  89  // Extended to cover more scancodes
 #define INPUT_QUEUE_SIZE        256
-#define BUFFER_SIZE             128
 
 // Scancode prefixes
 #define SC_EXTENDED_PREFIX      0xE0  // Extended keys (arrows, etc.)
@@ -109,34 +108,31 @@ static volatile char input_queue[INPUT_QUEUE_SIZE];
 static volatile int input_queue_head = 0;
 static volatile int input_queue_tail = 0;
 static spinlock_t input_queue_lock = SPINLOCK_INIT;  // Protect queue access
+static bool serial_swallow_line_feed = false;
 
-// Buffer management
-static volatile int buffer_index = 0;
-static volatile bool enter_pressed = false;
-
-//=============================================================================
-// ATOMIC HELPER FUNCTIONS
-//=============================================================================
-
-/**
- * Atomic increment with x86 LOCK prefix
- */
-static inline void atomic_inc(volatile int *val) {
-    __asm__ __volatile__("lock incl %0" : "+m"(*val) : : "memory");
+static char normalize_serial_input(char ch) {
+    if (ch == '\r') {
+        serial_swallow_line_feed = true;
+        return '\n';
+    }
+    if (ch == '\n' && serial_swallow_line_feed) {
+        serial_swallow_line_feed = false;
+        return 0;
+    }
+    serial_swallow_line_feed = false;
+    return ch == 0x7F ? '\b' : ch;
 }
 
-/**
- * Atomic decrement with x86 LOCK prefix
- */
-static inline void atomic_dec(volatile int *val) {
-    __asm__ __volatile__("lock decl %0" : "+m"(*val) : : "memory");
-}
-
-/**
- * Memory barrier to prevent compiler reordering
- */
-static inline void memory_barrier(void) {
-    __asm__ __volatile__("" : : : "memory");
+/* A swallowed LF from a CRLF pair is not the same as an empty UART.  Keep
+ * draining so a following byte already buffered by the IRQ handler is not
+ * delayed behind network polling or HLT. */
+static char read_normalized_serial(void) {
+    char raw;
+    while ((raw = serial_read_char(SERIAL_COM1)) != 0) {
+        char normalized = normalize_serial_input(raw);
+        if (normalized != 0) return normalized;
+    }
+    return 0;
 }
 
 //=============================================================================
@@ -149,22 +145,29 @@ static inline void memory_barrier(void) {
  * 
  * Thread-safe: Uses spinlock with IRQ disable (called from IRQ handler)
  */
-static bool input_queue_push(char ch) {
+static bool input_queue_push_sequence(const char* sequence, size_t length) {
+    if (!sequence || length == 0 || length >= INPUT_QUEUE_SIZE) return false;
     uint32_t flags = spinlock_acquire_irq(&input_queue_lock);
-    
-    int next_tail = (input_queue_tail + 1) % INPUT_QUEUE_SIZE;
-    
-    // Check for overflow
-    if (next_tail == input_queue_head) {
-        spinlock_release_irq(&input_queue_lock, flags);
-        return false;  // Queue full
+
+    int next_tail = input_queue_tail;
+    for (size_t i = 0; i < length; i++) {
+        next_tail = (next_tail + 1) % INPUT_QUEUE_SIZE;
+        if (next_tail == input_queue_head) {
+            spinlock_release_irq(&input_queue_lock, flags);
+            return false;
+        }
     }
-    
-    input_queue[input_queue_tail] = ch;
-    input_queue_tail = next_tail;
-    
+
+    for (size_t i = 0; i < length; i++) {
+        input_queue[input_queue_tail] = sequence[i];
+        input_queue_tail = (input_queue_tail + 1) % INPUT_QUEUE_SIZE;
+    }
     spinlock_release_irq(&input_queue_lock, flags);
     return true;
+}
+
+static bool input_queue_push(char ch) {
+    return input_queue_push_sequence(&ch, 1);
 }
 
 /**
@@ -186,35 +189,6 @@ char input_queue_pop(void) {
     
     spinlock_release_irq(&input_queue_lock, flags);
     return ch;
-}
-
-/**
- * Get last character in queue without removing it
- */
-static char input_queue_get_last(void) {
-    if (input_queue_head == input_queue_tail) {
-        return '\0';  // Queue empty
-    }
-    
-    int prev_tail = (input_queue_tail - 1 + INPUT_QUEUE_SIZE) % INPUT_QUEUE_SIZE;
-    return input_queue[prev_tail];
-}
-
-/**
- * Remove last character from queue
- */
-static char input_queue_remove_last(void) {
-    if (input_queue_head == input_queue_tail) {
-        return '\0';  // Queue empty
-    }
-    
-    int prev_tail = (input_queue_tail - 1 + INPUT_QUEUE_SIZE) % INPUT_QUEUE_SIZE;
-    char last_char = input_queue[prev_tail];
-    
-    memory_barrier();
-    input_queue_tail = prev_tail;
-    
-    return last_char;
 }
 
 /**
@@ -273,7 +247,7 @@ static char scancode_to_ascii(uint8_t scancode, bool shift, bool caps_lock) {
     // Apply caps lock to letters only
     if (caps_lock && key >= 'a' && key <= 'z') {
         key -= 32;  // Convert to uppercase
-    } else if (caps_lock && key >= 'A' && key <= 'Z' && !shift) {
+    } else if (caps_lock && key >= 'A' && key <= 'Z') {
         key += 32;  // Convert to lowercase (caps + shift)
     }
 
@@ -317,6 +291,8 @@ static char handle_extended_key(uint8_t scancode, bool released) {
     }
 }
 
+static void queue_extended_key(char key);
+
 /**
  * Process Ctrl+key combinations
  */
@@ -345,14 +321,12 @@ void kb_handler(void* r) {
     // Handle extended scancode prefix (E0)
     if (scancode == SC_EXTENDED_PREFIX) {
         kbd_state.extended = true;
-        outb(0x20, 0x20);  // Send EOI
         return;
     }
     
     // Handle Pause key prefix (E1) - just ignore for now
     if (scancode == SC_PAUSE_PREFIX) {
         kbd_state.extended = false;  // Reset state
-        outb(0x20, 0x20);  // Send EOI
         return;
     }
     
@@ -366,14 +340,9 @@ void kb_handler(void* r) {
         char special_key = handle_extended_key(base_scancode, released);
         
         if (special_key != 0 && !released) {
-            // Queue special key with escape sequence
-            // Use ANSI-like sequence: ESC [ key
-            input_queue_push('\x1B');  // ESC
-            input_queue_push('[');
-            input_queue_push(special_key);
+            queue_extended_key(special_key);
         }
         
-        outb(0x20, 0x20);  // Send EOI
         return;
     }
     
@@ -403,20 +372,18 @@ void kb_handler(void* r) {
             case SC_SCROLL_LOCK:
                 kbd_state.scroll_lock = !kbd_state.scroll_lock;  // Toggle
                 break;
+            case SC_ESCAPE:
+                (void)input_queue_push('\x1B');
+                break;
             case SC_BACKSPACE:
-                if (buffer_index > 0) {
-                    atomic_dec((volatile int*)&buffer_index);
-                    input_queue_push('\b');
-                }
+                (void)input_queue_push('\b');
                 break;
             case SC_ENTER:
-                input_queue_push('\n');
-                buffer_index = 0;
-                enter_pressed = true;
+                (void)input_queue_push('\n');
                 break;
             default:
                 // Regular key press
-                if (buffer_index < BUFFER_SIZE - 1) {
+                {
                     char key = scancode_to_ascii(base_scancode, 
                                                 kb_is_shift_pressed(), 
                                                 kbd_state.caps_lock);
@@ -427,8 +394,7 @@ void kb_handler(void* r) {
                             key = process_ctrl_combination(key);
                         }
                         
-                        atomic_inc((volatile int*)&buffer_index);
-                        input_queue_push(key);
+                        (void)input_queue_push(key);
                     }
                 }
                 break;
@@ -451,8 +417,32 @@ void kb_handler(void* r) {
         }
     }
     
-    // Send End of Interrupt (EOI) to PIC
-    outb(0x20, 0x20);
+}
+
+/* Queue standard ANSI sequences so PS/2 and serial terminals share one
+ * unambiguous decoder (raw Set-1 codes collide with ANSI Home/End). */
+static void queue_extended_key(char key) {
+    char sequence[4] = {'\x1B', '[', 0, 0};
+    size_t length = 3;
+
+    switch (key) {
+        case KEY_UP: sequence[2] = 'A'; break;
+        case KEY_DOWN: sequence[2] = 'B'; break;
+        case KEY_RIGHT: sequence[2] = 'C'; break;
+        case KEY_LEFT: sequence[2] = 'D'; break;
+        case KEY_HOME: sequence[2] = 'H'; break;
+        case KEY_END: sequence[2] = 'F'; break;
+        case KEY_INSERT:
+            sequence[2] = '2'; sequence[3] = '~'; length = 4; break;
+        case KEY_DELETE:
+            sequence[2] = '3'; sequence[3] = '~'; length = 4; break;
+        case KEY_PAGE_UP:
+            sequence[2] = '5'; sequence[3] = '~'; length = 4; break;
+        case KEY_PAGE_DOWN:
+            sequence[2] = '6'; sequence[3] = '~'; length = 4; break;
+        default: return;
+    }
+    (void)input_queue_push_sequence(sequence, length);
 }
 
 //=============================================================================
@@ -470,14 +460,8 @@ void kb_handler(void* r) {
 char getchar(void) {
     while (1) {
         // Check serial port first (for nographic mode)
-        char serial_ch = serial_read_char(SERIAL_COM1);
-        if (serial_ch != 0) {
-            // Handle special serial characters
-            if (serial_ch == '\r') {
-                return '\n';  // Convert CR to LF
-            }
-            return serial_ch;
-        }
+        char serial_ch = read_normalized_serial();
+        if (serial_ch != 0) return serial_ch;
         
         // Check keyboard input queue
         if (!input_queue_empty()) {
@@ -495,15 +479,8 @@ char getchar(void) {
  */
 char getchar_nonblocking(void) {
     // Check serial port first (for nographic mode)
-    char serial_ch = serial_read_char(SERIAL_COM1);
-    if (serial_ch != 0) {
-        // Handle special serial characters
-        if (serial_ch == '\r') {
-            serial_ch = '\n';  // Convert CR to LF
-        }
-        // Don't echo here - let the caller handle echoing
-        return serial_ch;
-    }
+    char serial_ch = read_normalized_serial();
+    if (serial_ch != 0) return serial_ch;
     
     // Check keyboard input queue
     if (!input_queue_empty()) {
@@ -522,9 +499,8 @@ void get_input_line(char* buffer, int max_len) {
 
     while (1) {
         // Check serial port first (for nographic mode)
-        char serial_ch = serial_read_char(SERIAL_COM1);
-        if (serial_ch != 0) {
-            char ch = serial_ch;
+        char ch = read_normalized_serial();
+        if (ch != 0) {
             
             // Handle CR (Enter key on serial)
             if (ch == '\r' || ch == '\n') {
@@ -559,7 +535,29 @@ void get_input_line(char* buffer, int max_len) {
                 return;
             }
 
-            if (index < max_len - 1) {
+            if (ch == '\b') {
+                if (index > 0) {
+                    index--;
+                    vga_write_char('\b');
+                }
+                continue;
+            }
+
+            // get_input_line has no cursor editor; consume special-key ANSI
+            // sequences instead of returning them as program input.
+            if (ch == '\x1B') {
+                if (!input_queue_empty() && input_queue_pop() == '[' &&
+                    !input_queue_empty()) {
+                    char code = input_queue_pop();
+                    if (code >= '0' && code <= '9' &&
+                        !input_queue_empty()) {
+                        (void)input_queue_pop();
+                    }
+                }
+                continue;
+            }
+
+            if (index < max_len - 1 && ch >= 32 && ch < 127) {
                 buffer[index++] = ch;
             }
             continue;
@@ -591,8 +589,12 @@ void kb_install(void) {
     while (!(inb(KEYBOARD_STATUS_PORT) & 0x01));
     inb(KEYBOARD_DATA_PORT); // Read ACK (should be 0xFA)
     
-    // Register IRQ1 handler via syscall
-    syscall(SYS_INSTALL_IRQ, (void*)1, (void*)kb_handler, 0);
+    // Kernel drivers register their handlers directly; userspace must never
+    // be allowed to install arbitrary Ring-0 interrupt callbacks.
+    if (register_interrupt_handler(1, (void*)kb_handler) != 0) {
+        printf("Keyboard IRQ registration failed\n");
+        return;
+    }
     
     printf("Keyboard driver installed (enhanced mode)\n");
     printf("  - Extended scancode support: YES\n");
@@ -607,16 +609,5 @@ void kb_install(void) {
  */
 void kb_wait_enter(void) {
     printf("Press Enter to continue...\n");
-
-    // Reset enter flag
-    enter_pressed = false;
-    memory_barrier();
-
-    // Wait for Enter key
-    while (!enter_pressed) {
-        __asm__ __volatile__("hlt");
-    }
-
-    // Clear input buffer
-    buffer_index = 0;
+    while (getchar() != '\n') {}
 }

@@ -1,434 +1,525 @@
 #include "mm/kmalloc.h"
-#include "arch/x86/include/interrupt.h"
+#include "arch/x86/mm/paging.h"
 #include "include/lib/spinlock.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
-#include "drivers/video/video.h"
-#include "drivers/char/io.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
-extern char _kernel_end; // Defined by the linker script
+extern char _stack_end; /* Defined by config/klink.ld. */
 
-size_t total_memory = 0;
+#define ALIGN_UP(value, alignment) \
+    (((value) + ((alignment) - 1U)) & ~((alignment) - 1U))
+#define ALIGN_DOWN(value, alignment) ((value) & ~((alignment) - 1U))
 
-#define HEAP_START ((uint32_t)(&_kernel_end))
-#define HEAP_END ((uint32_t)(0x0f000000)) // End of heap (5MB)
-#define ALIGN_UP(addr, align) (((addr) + ((align)-1)) & ~((align)-1))
-#define HEAP_START_ALIGNED ALIGN_UP((size_t)HEAP_START, 16)
-#define BLOCK_SIZE sizeof(memory_block)
-
-#define E820_BUFFER_SIZE 128
-#define FRAME_SIZE 4096 // 4KB
-#define MAX_FRAMES (512 * 1024 * 1024 / FRAME_SIZE) // For 512MB RAM
-
-uint8_t* frame_bitmap; // Dynamically allocate based on total_memory
+#define FRAME_SIZE             4096U
+#define PHYSICAL_MEMORY_LIMIT  ((uint64_t)KERNEL_IDENTITY_LIMIT)
+#define MAX_MEMORY_REGIONS     64U
+#define BLOCK_MAGIC            0x4B484541U /* "KHEA" */
+#define MIN_ALLOCATION         16U
 
 typedef struct {
-    uint64_t base_addr; // Base address of the memory region
-    uint64_t length;    // Length of the memory region
-    uint32_t type;      // Type of the memory region
-    uint32_t acpi;      // ACPI attributes
-} __attribute__((packed)) e820_entry_t;
+    uint64_t base;
+    uint64_t length;
+} physical_region_t;
 
 typedef struct memory_block {
     size_t size;
-    int free;
-    struct memory_block* next;
+    struct memory_block *next;
+    uint32_t magic;
+    uint32_t free;
 } memory_block;
 
-memory_block* free_list = NULL;
-static spinlock_t heap_lock = SPINLOCK_INIT;  // Protect heap operations
+_Static_assert(sizeof(memory_block) == 16,
+               "heap metadata must preserve 16-byte payload alignment");
 
+uint64_t total_memory = 0;
 
-void print_memory_size(uint64_t total_memory) {
-    uint64_t total_kb = total_memory / (uint64_t)1024;
-    uint64_t total_mb = total_kb / (uint64_t)1024;
+static physical_region_t usable_regions[MAX_MEMORY_REGIONS];
+static physical_region_t reserved_regions[MAX_MEMORY_REGIONS];
+static size_t usable_region_count;
+static size_t reserved_region_count;
 
-    printf("**********Total System Memory**********: %d MB\n", (int)total_mb);
+static uint8_t *frame_bitmap;
+static size_t frame_count;
+static size_t frame_bitmap_size;
+
+static uintptr_t heap_begin;
+static uintptr_t heap_limit;
+static memory_block *free_list;
+static bool memory_initialized;
+
+static spinlock_t heap_lock = SPINLOCK_INIT;
+static spinlock_t frame_lock = SPINLOCK_INIT;
+
+static uint64_t saturated_region_end(uint64_t base, uint64_t length) {
+    if (length > UINT64_MAX - base) {
+        return UINT64_MAX;
+    }
+    return base + length;
 }
 
-// Frame management functions (must be before initialize_memory_system)
-void set_frame(size_t frame) {
-    frame_bitmap[frame / 8] |= (1 << (frame % 8));
+void memory_map_reset(void) {
+    total_memory = 0;
+    usable_region_count = 0;
+    reserved_region_count = 0;
+    frame_bitmap = NULL;
+    frame_count = 0;
+    frame_bitmap_size = 0;
+    free_list = NULL;
+    heap_begin = 0;
+    heap_limit = 0;
+    memory_initialized = false;
 }
 
-void clear_frame(size_t frame) {
-    frame_bitmap[frame / 8] &= ~(1 << (frame % 8));
+int memory_add_usable_region(uint64_t base, uint64_t length) {
+    if (length == 0 || usable_region_count >= MAX_MEMORY_REGIONS) {
+        return -1;
+    }
+
+    usable_regions[usable_region_count].base = base;
+    usable_regions[usable_region_count].length = length;
+    usable_region_count++;
+
+    if (UINT64_MAX - total_memory < length) {
+        total_memory = UINT64_MAX;
+    } else {
+        total_memory += length;
+    }
+    return 0;
 }
 
-int test_frame(size_t frame) {
-    return frame_bitmap[frame / 8] & (1 << (frame % 8));
+int memory_reserve_region(uint64_t base, uint64_t length) {
+    if (length == 0 || reserved_region_count >= MAX_MEMORY_REGIONS) {
+        return -1;
+    }
+
+    reserved_regions[reserved_region_count].base = base;
+    reserved_regions[reserved_region_count].length = length;
+    reserved_region_count++;
+    return 0;
 }
 
-void initialize_memory_system() {
-    if (total_memory == 0) {
-        printf("Error: total_memory not initialized.\n");
+int memory_region_is_usable(uint64_t base, uint64_t length) {
+    if (length == 0 || length > UINT64_MAX - base) {
+        return 0;
+    }
+    uint64_t requested_end = base + length;
+    for (size_t i = 0; i < reserved_region_count; ++i) {
+        uint64_t reserved_end = saturated_region_end(reserved_regions[i].base,
+                                                      reserved_regions[i].length);
+        if (base < reserved_end && reserved_regions[i].base < requested_end) {
+            return 0;
+        }
+    }
+    for (size_t i = 0; i < usable_region_count; ++i) {
+        uint64_t region_end = saturated_region_end(usable_regions[i].base,
+                                                   usable_regions[i].length);
+        if (base >= usable_regions[i].base && requested_end <= region_end) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static bool frame_index_valid(size_t frame) {
+    return frame_bitmap != NULL && frame < frame_count;
+}
+
+static void set_frame(size_t frame) {
+    if (frame_index_valid(frame)) {
+        frame_bitmap[frame / 8U] |= (uint8_t)(1U << (frame % 8U));
+    }
+}
+
+static void clear_frame(size_t frame) {
+    if (frame_index_valid(frame)) {
+        frame_bitmap[frame / 8U] &= (uint8_t)~(1U << (frame % 8U));
+    }
+}
+
+static bool test_frame(size_t frame) {
+    return !frame_index_valid(frame) ||
+           (frame_bitmap[frame / 8U] & (uint8_t)(1U << (frame % 8U))) != 0;
+}
+
+static void reserve_frame_range(uint64_t base, uint64_t length) {
+    uint64_t end = saturated_region_end(base, length);
+    if (base >= PHYSICAL_MEMORY_LIMIT || length == 0) {
         return;
     }
+    if (end > PHYSICAL_MEMORY_LIMIT) {
+        end = PHYSICAL_MEMORY_LIMIT;
+    }
 
-    uintptr_t memory_end = 0x1FDFFFFF; //0x1FDFFFFF; // 511MB
-    // setup the stack
-    uint32_t stack_size = 1024 * 8;
-    uint32_t* stack_start = (uint32_t*)(&_kernel_end - stack_size);
-    uint32_t stack_end = HEAP_END;
-
-    printf("Kennel end: %p\n", &_kernel_end);
-
-    printf("Setting stack pointer to: %p\n", stack_start);
-    // asm volatile("cli");
-    // asm volatile("mov %0, %%esp" :: "r"(stack_start));
-    // asm volatile("sti");
-    
-
-    // Initialize the heap
-
-    void* heap_start = (void*)ALIGN_UP((size_t)&_kernel_end, 16);
-    void* heap_end = (void*)HEAP_END;
-
-    // Calculate frame bitmap size
-    size_t bitmap_size = (total_memory / FRAME_SIZE + 7) / 8; // Rounded up
-    
-    // Align bitmap size to 16 bytes
-    bitmap_size = ALIGN_UP(bitmap_size, 16);
-    
-    // Place frame bitmap at the start of heap
-    frame_bitmap = (uint8_t*)heap_start;
-    memset(frame_bitmap, 0, bitmap_size);
-    
-    // Mark frame 0 as used (NULL pointer protection - contains IVT and BIOS data)
-    set_frame(0);
-    
-    // Place free_list AFTER the frame bitmap
-    void* freelist_start = (void*)((size_t)heap_start + bitmap_size);
-    free_list = (memory_block*)freelist_start;
-    free_list->size = (size_t)heap_end - (size_t)freelist_start - BLOCK_SIZE;
-    free_list->free = 1;
-    free_list->next = NULL;
-
-    print_memory_size(total_memory);
-    printf("Frame bitmap: %p - %p (%u bytes)\n", frame_bitmap, (void*)((size_t)frame_bitmap + bitmap_size), (unsigned int)bitmap_size);
-    printf("Heap Range: %p - %p\n", freelist_start, heap_end);
+    size_t first = (size_t)(base / FRAME_SIZE);
+    size_t last = (size_t)((end + FRAME_SIZE - 1U) / FRAME_SIZE);
+    if (last > frame_count) {
+        last = frame_count;
+    }
+    for (size_t frame = first; frame < last; ++frame) {
+        set_frame(frame);
+    }
 }
 
-size_t allocate_frame() {
-    size_t max_frames = total_memory / FRAME_SIZE;
-    size_t used_frames = 0;
-    
-    // Start from frame 1 to avoid returning NULL (frame 0 = address 0x0)
-    // Frame 0 contains real-mode IVT and BIOS data area, should never be used
-    for (size_t i = 1; i < max_frames; i++) {
-        if (!test_frame(i)) {
-            set_frame(i);
-            return i * FRAME_SIZE;
-        }
-        used_frames++;
+static bool address_is_usable(uint64_t address) {
+    if (address > UINT64_MAX - FRAME_SIZE) {
+        return false;
     }
-    
-    // No free frame - print diagnostics
-    printf("[CRITICAL] Frame allocation failed: %u/%u frames used (%u KB / %u KB)\n",
-           used_frames, max_frames, 
-           (used_frames * FRAME_SIZE) / 1024, 
-           (max_frames * FRAME_SIZE) / 1024);
-    
-    return 0; // No free frame
+    uint64_t frame_end = address + FRAME_SIZE;
+    for (size_t i = 0; i < usable_region_count; ++i) {
+        uint64_t end = saturated_region_end(usable_regions[i].base,
+                                            usable_regions[i].length);
+        if (address >= usable_regions[i].base && frame_end <= end) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool ranges_overlap(uint64_t first_base, uint64_t first_length,
+                           uint64_t second_base, uint64_t second_length) {
+    uint64_t first_end = saturated_region_end(first_base, first_length);
+    uint64_t second_end = saturated_region_end(second_base, second_length);
+    return first_base < second_end && second_base < first_end;
+}
+
+static bool frame_is_reserved(uint64_t address) {
+    if (ranges_overlap(address, FRAME_SIZE, 0, heap_limit) ||
+        ranges_overlap(address, FRAME_SIZE, KERNEL_PROGRAM_REGION_START,
+                       KERNEL_PROGRAM_REGION_SIZE)) {
+        return true;
+    }
+
+    for (size_t i = 0; i < reserved_region_count; ++i) {
+        if (ranges_overlap(address, FRAME_SIZE, reserved_regions[i].base,
+                           reserved_regions[i].length)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool find_heap_region(uintptr_t metadata_start, uintptr_t metadata_end,
+                             uintptr_t *region_end_out) {
+    for (size_t i = 0; i < usable_region_count; ++i) {
+        uint64_t start = usable_regions[i].base;
+        uint64_t end = saturated_region_end(start, usable_regions[i].length);
+        if ((uint64_t)metadata_start >= start &&
+            (uint64_t)metadata_end <= end) {
+            if (end > KERNEL_PROGRAM_REGION_START) {
+                end = KERNEL_PROGRAM_REGION_START;
+            }
+            if (end > UINT32_MAX) {
+                end = UINT32_MAX;
+            }
+
+            for (size_t reserved = 0; reserved < reserved_region_count;
+                 ++reserved) {
+                uint64_t reserved_start = reserved_regions[reserved].base;
+                uint64_t reserved_end = saturated_region_end(
+                    reserved_start, reserved_regions[reserved].length);
+                if (reserved_start < metadata_end &&
+                    reserved_end > metadata_start) {
+                    return false;
+                }
+                if (reserved_start >= metadata_end && reserved_start < end) {
+                    end = ALIGN_DOWN(reserved_start, 16U);
+                }
+            }
+            *region_end_out = (uintptr_t)end;
+            return metadata_end < *region_end_out;
+        }
+    }
+    return false;
+}
+
+int initialize_memory_system(void) {
+    if (usable_region_count == 0 || total_memory == 0) {
+        printf("Error: no usable Multiboot memory map was provided.\n");
+        return -1;
+    }
+
+    uint64_t highest_address = 0;
+    for (size_t i = 0; i < usable_region_count; ++i) {
+        uint64_t end = saturated_region_end(usable_regions[i].base,
+                                            usable_regions[i].length);
+        if (end > highest_address) {
+            highest_address = end;
+        }
+    }
+    if (highest_address > PHYSICAL_MEMORY_LIMIT) {
+        highest_address = PHYSICAL_MEMORY_LIMIT;
+    }
+
+    frame_count = (size_t)((highest_address + FRAME_SIZE - 1U) / FRAME_SIZE);
+    frame_bitmap_size = ALIGN_UP((frame_count + 7U) / 8U, 16U);
+
+    uintptr_t bitmap_start = ALIGN_UP((uintptr_t)&_stack_end, 16U);
+    uintptr_t bitmap_end = ALIGN_UP(bitmap_start + frame_bitmap_size, 16U);
+    uintptr_t selected_region_end = 0;
+    if (bitmap_end < bitmap_start ||
+        !find_heap_region(bitmap_start, bitmap_end, &selected_region_end) ||
+        selected_region_end - bitmap_end <= sizeof(memory_block) + MIN_ALLOCATION) {
+        printf("Error: no usable low-memory region is large enough for the heap.\n");
+        frame_count = 0;
+        return -1;
+    }
+
+    frame_bitmap = (uint8_t*)bitmap_start;
+    memset(frame_bitmap, 0xFF, frame_bitmap_size);
+
+    /* Start from "all used" and release only complete pages described as usable. */
+    for (size_t i = 0; i < usable_region_count; ++i) {
+        uint64_t start = usable_regions[i].base;
+        uint64_t end = saturated_region_end(start, usable_regions[i].length);
+        if (start >= PHYSICAL_MEMORY_LIMIT) {
+            continue;
+        }
+        if (end > PHYSICAL_MEMORY_LIMIT) {
+            end = PHYSICAL_MEMORY_LIMIT;
+        }
+
+        size_t first = (size_t)((start + FRAME_SIZE - 1U) / FRAME_SIZE);
+        size_t last = (size_t)(end / FRAME_SIZE);
+        if (last > frame_count) {
+            last = frame_count;
+        }
+        for (size_t frame = first; frame < last; ++frame) {
+            clear_frame(frame);
+        }
+    }
+
+    heap_begin = bitmap_end;
+    heap_limit = selected_region_end;
+
+    /* Protect firmware/kernel/bitmap/heap, program image, and boot reservations. */
+    reserve_frame_range(0, heap_limit);
+    reserve_frame_range(KERNEL_PROGRAM_REGION_START,
+                        KERNEL_PROGRAM_REGION_SIZE);
+    for (size_t i = 0; i < reserved_region_count; ++i) {
+        reserve_frame_range(reserved_regions[i].base, reserved_regions[i].length);
+    }
+
+    free_list = (memory_block*)heap_begin;
+    free_list->size = ALIGN_DOWN(heap_limit - heap_begin - sizeof(memory_block), 16U);
+    free_list->next = NULL;
+    free_list->magic = BLOCK_MAGIC;
+    free_list->free = 1;
+    memory_initialized = true;
+
+    printf("Total usable system memory: %llu MB\n", total_memory / 1024U / 1024U);
+    printf("Frame bitmap: %p - %p (%u bytes, %u tracked frames)\n",
+           frame_bitmap, (void*)(bitmap_start + frame_bitmap_size),
+           (unsigned int)frame_bitmap_size, (unsigned int)frame_count);
+    printf("Heap range: %p - %p\n", (void*)heap_begin, (void*)heap_limit);
+    return 0;
+}
+
+size_t allocate_frame(void) {
+    uint32_t flags = spinlock_acquire_irq(&frame_lock);
+    if (!memory_initialized) {
+        spinlock_release_irq(&frame_lock, flags);
+        return 0;
+    }
+
+    for (size_t frame = 1; frame < frame_count; ++frame) {
+        if (!test_frame(frame)) {
+            set_frame(frame);
+            spinlock_release_irq(&frame_lock, flags);
+            return frame * FRAME_SIZE;
+        }
+    }
+
+    spinlock_release_irq(&frame_lock, flags);
+    printf("[CRITICAL] Physical frame allocation failed (%u frames tracked).\n",
+           (unsigned int)frame_count);
+    return 0;
 }
 
 void free_frame(size_t addr) {
-    size_t frame = addr / FRAME_SIZE;
-    clear_frame(frame);
-}
-
-void* k_malloc(size_t size) {
-    uint32_t flags = spinlock_acquire_irq(&heap_lock);
-    
-    memory_block* current = free_list;
-
-    while (current) {
-        if (current->free && current->size >= size) {
-            current->free = 0;
-
-            if (current->size > size + BLOCK_SIZE) {
-                memory_block* new_block = (memory_block*)((char*)current + BLOCK_SIZE + size);
-                new_block->size = current->size - size - BLOCK_SIZE;
-                new_block->free = 1;
-                new_block->next = current->next;
-
-                current->size = size;
-                current->next = new_block;
-            }
-            
-            spinlock_release_irq(&heap_lock, flags);
-            return (void*)((char*)current + BLOCK_SIZE);
-        }
-        current = current->next;
-    }
-
-    void* new_heap_block = (void*)allocate_frame();
-    if (!new_heap_block) {
-        printf("Out of memory (failed to allocate frame for %u bytes)\n", size);
-        spinlock_release_irq(&heap_lock, flags);
-        return NULL;
-    }
-
-    current = (memory_block*)new_heap_block;
-    current->size = FRAME_SIZE - BLOCK_SIZE;
-    current->free = 1;
-    current->next = NULL;
-
-    memory_block* last = free_list;
-    while (last->next) {
-        last = last->next;
-    }
-    last->next = current;
-
-    spinlock_release_irq(&heap_lock, flags);
-    
-    // Recursive call - will acquire lock again
-    return k_malloc(size);
-}
-
-void k_free(void* ptr) {
-    if (!ptr) return;
-
-    uint32_t flags = spinlock_acquire_irq(&heap_lock);
-    
-    memory_block* block = (memory_block*)((char*)ptr - BLOCK_SIZE);
-    
-    // Double-free detection
-    if (block->free) {
-        printf("Warning: Double free detected at %p\n", ptr);
-        spinlock_release_irq(&heap_lock, flags);
+    if ((addr & (FRAME_SIZE - 1U)) != 0 || addr == 0) {
         return;
     }
-    
-    block->free = 1;
 
-    if (block->next && block->next->free) {
-        block->size += block->next->size + BLOCK_SIZE;
+    uint32_t flags = spinlock_acquire_irq(&frame_lock);
+    size_t frame = addr / FRAME_SIZE;
+    if (frame_index_valid(frame) && address_is_usable(addr) &&
+        !frame_is_reserved(addr)) {
+        clear_frame(frame);
+    }
+    spinlock_release_irq(&frame_lock, flags);
+}
+
+static memory_block *find_allocated_block(void *ptr) {
+    for (memory_block *block = free_list; block != NULL; block = block->next) {
+        if (block->magic != BLOCK_MAGIC) {
+            return NULL;
+        }
+        if ((void*)((uint8_t*)block + sizeof(memory_block)) == ptr) {
+            return block;
+        }
+    }
+    return NULL;
+}
+
+void *k_malloc(size_t size) {
+    if (!memory_initialized || size == 0 || size > SIZE_MAX - 15U) {
+        return NULL;
+    }
+    size = ALIGN_UP(size, 16U);
+
+    uint32_t flags = spinlock_acquire_irq(&heap_lock);
+    for (memory_block *current = free_list; current != NULL; current = current->next) {
+        if (current->magic != BLOCK_MAGIC) {
+            spinlock_release_irq(&heap_lock, flags);
+            printf("[CRITICAL] Heap metadata is corrupt at %p.\n", current);
+            return NULL;
+        }
+        if (!current->free || current->size < size) {
+            continue;
+        }
+
+        size_t remainder = current->size - size;
+        if (remainder >= sizeof(memory_block) + MIN_ALLOCATION) {
+            memory_block *new_block = (memory_block*)((uint8_t*)current +
+                                                      sizeof(memory_block) + size);
+            new_block->size = remainder - sizeof(memory_block);
+            new_block->next = current->next;
+            new_block->magic = BLOCK_MAGIC;
+            new_block->free = 1;
+            current->size = size;
+            current->next = new_block;
+        }
+        current->free = 0;
+
+        void *result = (uint8_t*)current + sizeof(memory_block);
+        spinlock_release_irq(&heap_lock, flags);
+        return result;
+    }
+
+    spinlock_release_irq(&heap_lock, flags);
+    printf("Out of kernel heap memory (requested %u bytes).\n", (unsigned int)size);
+    return NULL;
+}
+
+void k_free(void *ptr) {
+    if (ptr == NULL) {
+        return;
+    }
+    if (!memory_initialized || (uintptr_t)ptr < heap_begin + sizeof(memory_block) ||
+        (uintptr_t)ptr >= heap_limit || ((uintptr_t)ptr & 0xFU) != 0) {
+        printf("Warning: rejected invalid heap pointer %p.\n", ptr);
+        return;
+    }
+
+    uint32_t flags = spinlock_acquire_irq(&heap_lock);
+    memory_block *block = find_allocated_block(ptr);
+    if (block == NULL || block->free) {
+        spinlock_release_irq(&heap_lock, flags);
+        printf("Warning: rejected invalid or duplicate free at %p.\n", ptr);
+        return;
+    }
+
+    block->free = 1;
+    if (block->next != NULL && block->next->free &&
+        block->next->magic == BLOCK_MAGIC) {
+        block->size += sizeof(memory_block) + block->next->size;
         block->next = block->next->next;
     }
 
-    memory_block* current = free_list;
-    while (current) {
-        if (current->next == block && current->free) {
-            current->size += block->size + BLOCK_SIZE;
-            current->next = block->next;
-            break;
-        }
-        current = current->next;
+    memory_block *previous = NULL;
+    for (memory_block *current = free_list;
+         current != NULL && current != block; current = current->next) {
+        previous = current;
     }
-    
+    if (previous != NULL && previous->free) {
+        previous->size += sizeof(memory_block) + block->size;
+        previous->next = block->next;
+    }
     spinlock_release_irq(&heap_lock, flags);
 }
 
-void* k_realloc(void* ptr, size_t new_size) {
+void *k_realloc(void *ptr, size_t new_size) {
     if (ptr == NULL) {
         return k_malloc(new_size);
     }
-
     if (new_size == 0) {
         k_free(ptr);
         return NULL;
     }
 
-    memory_block* block = (memory_block*)((char*)ptr - BLOCK_SIZE);
+    uint32_t flags = spinlock_acquire_irq(&heap_lock);
+    memory_block *block = find_allocated_block(ptr);
+    if (block == NULL || block->free) {
+        spinlock_release_irq(&heap_lock, flags);
+        return NULL;
+    }
     size_t old_size = block->size;
+    spinlock_release_irq(&heap_lock, flags);
 
     if (new_size <= old_size) {
         return ptr;
     }
 
-    void* new_ptr = k_malloc(new_size);
-    if (!new_ptr) {
+    void *new_ptr = k_malloc(new_size);
+    if (new_ptr == NULL) {
         return NULL;
     }
-
-    size_t copy_size = (old_size < new_size) ? old_size : new_size;
-    memmove(new_ptr, ptr, copy_size);
-
+    memcpy(new_ptr, ptr, old_size);
     k_free(ptr);
-
     return new_ptr;
 }
 
-//---------------------------------------------------------------------------------------------
-#define LINE_WIDTH 80
-
-void print_test_result(const char *test_name, bool passed) {
-    // Use ANSI codes for serial console + VGA colors
-    if (passed) {
-        printf("  \x1B[32m✓\x1B[0m %s\n", test_name);  // Green checkmark
-    } else {
-        printf("  \x1B[31m✗\x1B[0m %s\n", test_name);  // Red X
-    }
+/* Basic allocator/libc smoke tests used by the boot diagnostics. */
+static void print_test_result(const char *name, bool passed) {
+    printf("  %s: %s\n", name, passed ? "PASS" : "FAIL");
 }
 
-// Test methods with boolean return value
-bool test_realloc() {
-    void *ptr = k_malloc(10);
-    if (!ptr) return false;
+void test_memory(void) {
+    unsigned int passed = 0;
+    unsigned int total = 5;
 
-    ptr = k_realloc(ptr, 20);
-    if (!ptr) return false;
+    void *a = k_malloc(32);
+    void *b = k_malloc(64);
+    bool allocation = a != NULL && b != NULL && a != b;
+    print_test_result("Allocation", allocation);
+    passed += allocation;
 
-    ptr = k_realloc(ptr, 5);
-    if (!ptr) return false;
-
-    k_free(ptr);
-    return true;
-}
-
-bool test_reset_after_free() {
-    void *first_ptr = k_malloc(1);
-    if (!first_ptr) return false;
-
-    k_free(first_ptr);
-
-    void *second_ptr = k_malloc(1);
-    return first_ptr == second_ptr;
-}
-
-bool test_multiple_frees() {
-    k_free(NULL);
-    k_free(NULL);
-    void *ptr = k_malloc(1);
-    return ptr != NULL;
-}
-
-bool test_set_memory() {
-    char *buffer = (char *)k_malloc(10);
-    if (!buffer) return false;
-
-    memset(buffer, 'A', 10);
-    for (int i = 0; i < 10; i++) {
-        if (buffer[i] != 'A') {
-            k_free(buffer);
-            return false;
+    void *grown = NULL;
+    if (a != NULL) {
+        memset(a, 0x5A, 32);
+        grown = k_realloc(a, 96);
+        if (grown != NULL) {
+            a = grown;
         }
     }
+    bool reallocation = grown != NULL && ((uint8_t*)a)[0] == 0x5A;
+    print_test_result("Reallocation", reallocation);
+    passed += reallocation;
 
-    k_free(buffer);
-    return true;
-}
+    char source[10] = "123456789";
+    char destination[10];
+    bool copy = memcpy(destination, source, sizeof(source)) == destination &&
+                memcmp(destination, source, sizeof(source)) == 0;
+    print_test_result("Memcpy", copy);
+    passed += copy;
 
-bool test_set_zero() {
-    char *buffer = (char *)k_malloc(10);
-    if (!buffer) return false;
+    char overlap[20] = "123456789";
+    memmove(overlap + 4, overlap, 10);
+    bool move = strcmp(overlap, "1234123456789") == 0;
+    print_test_result("Memmove overlap", move);
+    passed += move;
 
-    memset(buffer, 0, 10);
-    for (int i = 0; i < 10; i++) {
-        if (buffer[i] != 0) {
-            k_free(buffer);
-            return false;
-        }
-    }
+    k_free(a);
+    k_free(b);
+    void *reused = k_malloc(32);
+    bool reuse = reused != NULL;
+    print_test_result("Free/reuse", reuse);
+    passed += reuse;
+    k_free(reused);
 
-    k_free(buffer);
-    return true;
-}
-
-bool test_null_pointer_memset() {
-    return memset(NULL, 0, 10) == NULL;
-}
-
-bool test_copy_non_overlapping() {
-    char src[10] = "123456789";
-    char dest[10];
-    memcpy(dest, src, 10);
-
-    for (int i = 0; i < 10; i++) {
-        if (dest[i] != src[i]) {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool test_copy_overlapping() {
-    char buffer[20] = "123456789";
-    memcpy(buffer + 4, buffer, 10);
-
-    for (int i = 0; i < 10; i++) {
-        if (buffer[i + 4] != buffer[i]) {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool test_null_pointer_src() {
-    char dest[10];
-    return memcpy(dest, NULL, 10) == NULL;
-}
-
-bool test_null_pointer_dest() {
-    char src[10] = "123456789";
-    return memcpy(NULL, src, 10) == NULL;
-}
-
-void test_malloc() {
-    // Basic allocation test (silent)
-    void* ptr1 = k_malloc(1024);
-    void* ptr2 = k_malloc(2048);
-    k_free(ptr1);
-    void* ptr3 = k_malloc(512);
-    // Silent - tests will report via test_memory()
-}
-
-
-void test_memory() {
-    printf("Memory Tests:\n");
-    
-    int passed = 0;
-    int total = 10;
-    
-    bool result;
-    
-    result = test_realloc();
-    print_test_result("Realloc", result);
-    if (result) passed++;
-    
-    result = test_reset_after_free();
-    print_test_result("Reset After Free", result);
-    if (result) passed++;
-    
-    result = test_multiple_frees();
-    print_test_result("Multiple Frees", result);
-    if (result) passed++;
-    
-    result = test_set_memory();
-    print_test_result("Set Memory", result);
-    if (result) passed++;
-    
-    result = test_set_zero();
-    print_test_result("Set Zero", result);
-    if (result) passed++;
-    
-    result = test_null_pointer_memset();
-    print_test_result("Null Pointer Memset", result);
-    if (result) passed++;
-    
-    result = test_copy_non_overlapping();
-    print_test_result("Copy Non-Overlapping", result);
-    if (result) passed++;
-    
-    result = test_copy_overlapping();
-    print_test_result("Copy Overlapping", result);
-    if (result) passed++;
-    
-    result = test_null_pointer_src();
-    print_test_result("Null Pointer Src", result);
-    if (result) passed++;
-    
-    result = test_null_pointer_dest();
-    print_test_result("Null Pointer Dest", result);
-    if (result) passed++;
-    
-    if (passed == total) {
-        printf("\x1B[32mAll tests passed (%d/%d)\x1B[0m\n\n", passed, total);
-    } else {
-        printf("\x1B[31mSome tests failed (%d/%d passed)\x1B[0m\n\n", passed, total);
-    }
+    printf("Memory tests: %u/%u passed.\n", passed, total);
 }

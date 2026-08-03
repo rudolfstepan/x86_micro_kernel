@@ -17,7 +17,7 @@
 #define TASK_SLEEPING 2
 #define TASK_FINISHED 3
 
-#define STACK_SIZE 1024*8 // 8 KB
+#define STACK_SIZE (8U * 1024U)
 
 
 typedef struct {
@@ -39,9 +39,16 @@ typedef struct task {
 } task_t;
 
 extern task_t tasks[];
+extern volatile int current_task;
+extern uint8_t num_tasks;
 
-void create_task(void (*entry_point)(void), uint32_t *stack, Process *process);
-void scheduler_interrupt_handler();
-void list_tasks();
+int create_task(void (*entry_point)(void), uint32_t *stack, Process *process);
+void scheduler_interrupt_handler(void);
+void scheduler_preempt_disable(void);
+void scheduler_preempt_enable(void);
+void scheduler_terminate_task(int task_id);
+void task_exit(void) __attribute__((noreturn));
+void scheduler_kill_current(void) __attribute__((noreturn));
+void list_tasks(void);
 
 #endif // SCHEDULER_H

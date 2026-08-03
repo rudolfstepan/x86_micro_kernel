@@ -13,10 +13,14 @@
 #define SECTOR_SIZE 512
 #define FIRST_CLUSTER_OF_FILE(clusterHigh, clusterLow) (((clusterHigh) << 16) | (clusterLow))
 #define DIRECTORY_ENTRY_SIZE 32  // Size of a directory entry in FAT32
+#define ATTR_READ_ONLY 0x01
 #define ATTR_DIRECTORY 0x10
+#define ATTR_ARCHIVE 0x20
 
 #define FAT32_EOC_MIN 0x0FFFFFF8
 #define FAT32_EOC_MAX 0x0FFFFFFF
+#define FAT32_RESERVED_MIN 0x0FFFFFF0
+#define FAT32_BAD_CLUSTER 0x0FFFFFF7
 #define INVALID_CLUSTER 0xFFFFFFFF
 #define MAX_PATH_LENGTH 256
 
@@ -37,6 +41,12 @@ struct fat32_dir_entry {
     uint32_t file_size;           // File size in bytes
 };
 #pragma pack(pop)
+
+typedef enum {
+    FAT32_LOOKUP_ERROR = -1,
+    FAT32_LOOKUP_NOT_FOUND = 0,
+    FAT32_LOOKUP_FOUND = 1
+} fat32_lookup_result_t;
 
 #pragma pack(push, 1)
 struct fat32_boot_sector {
@@ -88,17 +98,25 @@ struct fat32_fsinfo {
 // external definitions which are defined in fat32.c but used in other files
 extern struct fat32_boot_sector boot_sector;
 extern struct fat32_fsinfo fsinfo;
+extern bool fsinfo_valid;
 extern unsigned int current_directory_cluster; // Default root directory cluster for FAT32
 extern unsigned short ata_base_address;
 extern bool ata_is_master;
 extern unsigned int partition_lba_offset; // LBA offset for partitioned disks
+
+/* The current implementation is uniprocessor.  These guards prevent timer
+ * preemption while a FAT transaction owns the global volume context. */
+uint32_t fat32_operation_begin(void);
+void fat32_operation_end(uint32_t interrupt_flags);
+typedef void (*fat32_context_sync_hook_t)(void);
+extern fat32_context_sync_hook_t fat32_context_sync_hook;
 
 
 
 // a class to hold the fat32 filesystem functions
 typedef struct {
     // Cluster and Sector Operations
-    void (*read_cluster)(struct fat32_boot_sector* bs, unsigned int cluster_number, void* buffer);
+    bool (*read_cluster)(struct fat32_boot_sector* bs, unsigned int cluster_number, void* buffer);
     unsigned int (*cluster_to_sector)(struct fat32_boot_sector* bs, unsigned int cluster);
     unsigned int (*get_entries_per_cluster)(struct fat32_boot_sector* bs);
     unsigned int (*get_total_clusters)(struct fat32_boot_sector* bs);
@@ -157,7 +175,8 @@ void ctor_fat32_class(fat32_class_t* fat32);
 
 
 // Cluster and Sector Operations
-void read_cluster(struct fat32_boot_sector* bs, unsigned int cluster_number, void* buffer);
+bool is_valid_cluster(struct fat32_boot_sector* bs, unsigned int cluster);
+bool read_cluster(struct fat32_boot_sector* bs, unsigned int cluster_number, void* buffer);
 unsigned int cluster_to_sector(struct fat32_boot_sector* bs, unsigned int cluster);
 unsigned int get_entries_per_cluster(struct fat32_boot_sector* bs);
 unsigned int get_total_clusters(struct fat32_boot_sector* bs);
@@ -165,10 +184,17 @@ unsigned int get_first_data_sector(struct fat32_boot_sector* bs);
 
 // FAT Table Operations
 unsigned int read_fat_entry(struct fat32_boot_sector* bs, unsigned int cluster);
+unsigned int fat32_active_fat_index(const struct fat32_boot_sector* bs);
+bool fat32_fat_is_mirrored(const struct fat32_boot_sector* bs);
 bool write_fat_entry(struct fat32_boot_sector* bs, unsigned int cluster, unsigned int value);
 bool mark_cluster_in_fat(struct fat32_boot_sector* bs, unsigned int cluster, unsigned int value);
 bool link_cluster_to_chain(struct fat32_boot_sector* bs, unsigned int parent_cluster, unsigned int new_cluster);
 bool free_cluster_chain(struct fat32_boot_sector* boot_sector, unsigned int start_cluster);
+bool fat32_get_chain_tail(struct fat32_boot_sector* bs,
+                          unsigned int start_cluster,
+                          unsigned int* tail_cluster);
+bool fat32_reclaim_chain_suffix(struct fat32_boot_sector* bs,
+                                unsigned int original_tail);
 unsigned int find_free_cluster(struct fat32_boot_sector* bs);
 unsigned int allocate_new_cluster(struct fat32_boot_sector* boot_sector);
 unsigned int get_next_cluster_in_chain(struct fat32_boot_sector* bs, unsigned int current_cluster);
@@ -178,25 +204,43 @@ bool is_end_of_cluster_chain(unsigned int cluster);
 void initialize_new_directory_entries(struct fat32_dir_entry* entries, unsigned int new_dir_cluster, unsigned int parent_cluster);
 void create_directory_entry(struct fat32_dir_entry* entry, const char* name, unsigned int cluster, unsigned char attributes);
 bool add_entry_to_directory(struct fat32_boot_sector* bs, unsigned int parent_cluster, const char* name, unsigned int new_dir_cluster, unsigned char attributes);
+bool add_entry_to_directory_checked(struct fat32_boot_sector* bs,
+                                    unsigned int parent_cluster,
+                                    const char* name,
+                                    unsigned int new_dir_cluster,
+                                    unsigned char attributes,
+                                    bool* safe_to_reclaim_target);
 bool remove_entry_from_directory(struct fat32_boot_sector* boot_sector, unsigned int parent_cluster, struct fat32_dir_entry* entry);
 unsigned int find_next_cluster(struct fat32_boot_sector* bs, const char *dir_name, unsigned int current_cluster);
 void read_cluster_dir_entries(unsigned int current_cluster);
 bool write_cluster(struct fat32_boot_sector* bs, unsigned int cluster, const struct fat32_dir_entry* entries);
 unsigned int read_start_cluster(struct fat32_dir_entry* entry);
 struct fat32_dir_entry* find_file_in_directory(const char* filename);
+struct fat32_dir_entry* find_file_in_directory_cluster(unsigned int dir_cluster,
+                                                        const char* filename);
+fat32_lookup_result_t fat32_lookup_entry_in_directory(
+    unsigned int dir_cluster, const char* filename,
+    struct fat32_dir_entry* found);
 bool fat32_change_directory(const char *path);
 
 // File and Data Management
 int fat32_load_file(const char* filename, void* load_address);
+int fat32_get_file_size(const char* filename, uint32_t* size);
+int fat32_load_file_sized(const char* filename, void* load_address,
+                          uint32_t capacity);
 
 // Formatting and Utility Functions
 void format_filename(char* dest, unsigned char* src);
 void convert_to_83_format(unsigned char* dest, const char* src);
 int compare_names(const char* fat_name, const char* regular_name);
+bool fat32_is_valid_short_name(const char* name);
 void set_fat32_time(unsigned short* time, unsigned short* date);
 
 // public functions
 int fat32_init_fs(unsigned short base, bool ata_is_master);
+int fat32_init_fs_at(unsigned short base, bool ata_is_master,
+                     uint32_t partition_lba);
+bool write_fsinfo(void);
 
 // directory operations
 bool fat32_read_dir(const char *path);
@@ -206,10 +250,30 @@ bool fat32_delete_dir(const char* dirname);
 // file operations
 FILE* fat32_open_file(const char* filename, const char* mode);
 int fat32_read_file(FILE* file, void* buffer, unsigned int buffer_size, unsigned int bytes_to_read);
+int fat32_write_file(FILE* file, const void* buffer, unsigned int buffer_size,
+                     unsigned int bytes_to_write);
+bool fat32_replace_file(const char* filename, const void* buffer,
+                        uint32_t size);
 bool fat32_create_file(const char* filename);
 bool fat32_delete_file(const char* filename);
 
+unsigned int read_file_data_at(unsigned int start_cluster, unsigned int offset,
+                               char* buffer, unsigned int buffer_size,
+                               unsigned int bytes_to_read);
+int write_file_data_at(unsigned int* start_cluster, unsigned int offset,
+                       const void* buffer, unsigned int bytes_to_write);
+int write_file_data_at_checked(unsigned int* start_cluster,
+                               unsigned int offset, const void* buffer,
+                               unsigned int bytes_to_write,
+                               bool* chain_reclaim_safe);
+bool update_directory_entry(unsigned int parent_cluster,
+                            const unsigned char name[11],
+                            const struct fat32_dir_entry* updated_entry);
+
 void ata_debug_bootsector(drive_t* drive);
+
+/* Register the FAT32 adapter with the virtual filesystem. */
+void fat32_register_vfs(void);
 
 
 

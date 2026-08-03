@@ -27,4 +27,8 @@ bool serial_is_transmit_empty(uint16_t port);
 // Helper to initialize COM1 (default)
 void serial_init_default(void);
 
+// Install buffered COM1 receive handling on legacy PIC IRQ4.  Call this only
+// after irq_install() has initialized the IRQ dispatcher.
+bool serial_install_rx_irq(void);
+
 #endif // SERIAL_H

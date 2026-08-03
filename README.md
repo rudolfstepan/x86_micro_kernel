@@ -1,298 +1,171 @@
-# x86 Microkernel - Reorganized Structure
+# x86 Microkernel
 
-## Overview
-This document describes the reorganized codebase structure following standard operating system design patterns.
+Ein freestanding 32-Bit-x86-Betriebssystem mit eigenem BIOS-Bootloader,
+Kernel-Shell, VFS, FAT-Dateisystemen, Netzwerkstack und einer kleinen
+Toolchain für externe Programme. Der bevorzugte Entwicklungsweg läuft nativ
+unter Windows: ohne WSL, ohne GRUB und ohne ISO.
 
-## Directory Structure
+Stand dieser Dokumentation: 3. August 2026.
 
-```
-x86_micro_kernel/
-├── arch/                    # Architecture-specific code
-│   └── x86/                 # x86 (32-bit) implementation
-│       ├── boot/            # Boot sequence and initialization
-│       │   ├── multiboot.asm    # Multiboot header and entry
-│       │   ├── bootloader.asm   # Early boot code
-│       │   └── stack.asm        # Stack setup
-│       ├── cpu/             # CPU management
-│       │   ├── gdt.{asm,c}      # Global Descriptor Table
-│       │   ├── idt.{asm,c}      # Interrupt Descriptor Table
-│       │   ├── isr.{asm,c}      # Interrupt Service Routines
-│       │   ├── irq.{asm,c}      # Hardware Interrupt Requests
-│       │   └── syscall.asm      # System call entry point
-│       ├── mm/              # Architecture-specific memory management
-│       │   └── paging.{c,h}     # x86 paging implementation
-│       └── include/         # x86-specific headers
-│           ├── sys.h            # System structures (Registers, etc.)
-│           └── mbheader.h       # Multiboot structures
-│
-├── kernel/                  # Core kernel functionality
-│   ├── init/                # Kernel initialization
-│   │   ├── kernel.c             # Main kernel entry and setup
-│   │   └── prg.{c,h}            # PRG executable loader
-│   ├── syscall/             # System call handling
-│   │   ├── syscall.c            # Syscall dispatcher
-│   │   └── syscall_table.c      # Syscall table definitions
-│   ├── proc/                # Process management
-│   │   └── process.{c,h}        # Process creation/destruction
-│   ├── sched/               # Scheduler
-│   │   ├── scheduler.{c,h}      # Task scheduling
-│   │   └── switch.asm           # Context switching
-│   ├── time/                # Timers and timing
-│   │   ├── pit.{c,h}            # Programmable Interval Timer
-│   │   ├── hpet.{c,h}           # High Precision Event Timer
-│   │   └── apic.{c,h}           # Advanced PIC
-│   └── shell/               # Built-in command shell
-│       └── command.{c,h}        # Command parser and handlers
-│
-├── mm/                      # Memory management (arch-independent)
-│   └── kmalloc.{c,h}        # Kernel memory allocator (malloc/free)
-│
-├── fs/                      # Filesystem layer
-│   ├── vfs/                 # Virtual Filesystem (abstraction layer)
-│   │   └── filesystem.{c,h}     # VFS interface
-│   ├── fat12/               # FAT12 implementation
-│   │   └── fat12.{c,h}          # FAT12 driver
-│   └── fat32/               # FAT32 implementation
-│       ├── fat32.{c,h}          # FAT32 core
-│       ├── fat32_cluster.c      # Cluster chain management
-│       ├── fat32_dir.c          # Directory operations
-│       └── fat32_files.c        # File operations
-│
-├── drivers/                 # Device drivers
-│   ├── block/               # Block devices
-│   │   ├── ata.{c,h}            # ATA/IDE hard disk driver
-│   │   └── fdd.{c,h}            # Floppy disk driver
-│   ├── char/                # Character devices
-│   │   ├── kb.{c,h}             # Keyboard driver
-│   │   ├── rtc.{c,h}            # Real-Time Clock
-│   │   └── io.{c,h}             # Port I/O utilities
-│   ├── video/               # Video drivers
-│   │   └── video.{c,h}          # VGA text mode driver
-│   ├── net/                 # Network drivers
-│   │   ├── ne2000.{c,h}         # NE2000 network card
-│   │   ├── rtl8139.{c,h}        # Realtek RTL8139
-│   │   ├── e1000.{c,h}          # Intel E1000
-│   │   ├── vmxnet3.{c,h}        # VMware vmxnet3
-│   │   └── ethernet.{c,h}       # Ethernet protocol
-│   └── bus/                 # Bus drivers
-│       ├── pci.{c,h}            # PCI bus enumeration
-│       └── drives.h             # Drive management structures
-│
-├── lib/                     # Libraries
-│   ├── libc/                # C standard library (for userspace)
-│   │   ├── stdio.{c,h}          # Standard I/O (printf, etc.)
-│   │   ├── stdlib.{c,h}         # Standard library (malloc, etc.)
-│   │   ├── string.{c,h}         # String functions
-│   │   ├── definitions.h        # Common type definitions
-│   │   └── trycatch.asm         # Exception handling
-│   └── libk/                # Kernel utility library
-│       └── (kernel-only utilities)
-│
-├── include/                 # Public header files (mirrors source structure)
-│   ├── arch/x86/            # Architecture headers
-│   ├── kernel/              # Kernel headers
-│   ├── mm/                  # Memory management headers
-│   ├── fs/                  # Filesystem headers
-│   ├── drivers/             # Driver headers
-│   └── lib/                 # Library headers
-│
-├── userspace/               # User programs
-│   ├── bin/                 # User binaries
-│   │   ├── date.c               # Date display program
-│   │   ├── dir.c                # Directory listing program
-│   │   └── test.c               # Test program
-│   └── include/             # Userspace application headers
-│
-├── scripts/                 # Build and utility scripts
-│   ├── reorganize.ps1           # File reorganization script
-│   ├── update_includes.ps1      # Include path updater
-│   ├── update_includes_phase2.ps1
-│   ├── create_includes.ps1      # Include directory generator
-│   ├── make_image.sh            # Disk image creation
-│   ├── build.sh                 # Build script
-│   └── run.sh                   # QEMU launcher
-│
-├── config/                  # Configuration files
-│   ├── klink.ld             # Kernel linker script
-│   ├── cli.ld               # User program linker script
-│   └── grub.cfg             # GRUB bootloader configuration
-│
-├── build/                   # Build output (generated)
-│   ├── arch/                # Architecture object files
-│   ├── kernel/              # Kernel object files
-│   ├── mm/                  # Memory management objects
-│   ├── fs/                  # Filesystem objects
-│   ├── drivers/             # Driver objects
-│   ├── lib/                 # Library objects
-│   └── kernel.bin           # Final kernel binary
-│
-├── iso/                     # ISO build directory (generated)
-│   └── boot/                # Bootable ISO contents
-│
-├── Makefile                 # Build system
-├── Makefile.old             # Original Makefile (backup)
-├── README.md                # This file
-└── README-ORIGINAL.md       # Original README
+## Schnellstart unter Windows
 
+Benötigt werden GNU Make, NASM, Zig, Python und eine MSYS2-Shell. Das
+Buildskript sucht die Programme zuerst im `PATH` und kennt zusätzlich die im
+Skript dokumentierten portablen Verzeichnisse unter `C:\tmp`.
+
+```powershell
+.\scripts\build-windows.ps1 -Target vmware -RunTests
 ```
 
-## Build System
+Das erzeugt unter anderem:
 
-### Quick Start
-```bash
-make clean      # Clean build artifacts
-make all        # Build kernel and create ISO
-make run        # Build and run in QEMU
-make help       # Show available targets
+- `build/x86-microkernel.img`: bootfähiges 64-MiB-Raw-Image
+- `build/x86-microkernel.vmdk` und `.vmx`: VMware-Artefakte
+- `build/vmware/x86-microkernel/`: vollständig startbare VMware-VM
+- `build/programs/HELLO.PRG`: extern gebautes Beispielprogramm
+
+Die fertige VM startet über
+`build\vmware\x86-microkernel\START-VMWARE.cmd`. Alternativ kann die dortige
+`x86-microkernel.vmx` direkt in VMware Workstation geöffnet werden.
+
+## Eigenen Quelltext mitliefern
+
+Eine oder mehrere C-/Assembly-Quellen können direkt in das System-Image
+aufgenommen werden:
+
+```powershell
+.\scripts\build-windows.ps1 -Target vmware -RunTests `
+  -ProgramSource C:\Projekte\app.c,C:\Projekte\helper.S `
+  -ProgramName APP.PRG
 ```
 
-### Build Process
-1. **Architecture Layer**: Bootloader, CPU management (GDT/IDT/ISR/IRQ), syscall interface
-2. **Kernel Core**: Initialization, process/scheduler, timers, shell
-3. **Memory Management**: Physical/virtual memory, kernel allocator
-4. **Filesystem**: VFS interface, FAT12/FAT32 implementations
-5. **Drivers**: Block, character, video, network, bus drivers
-6. **Libraries**: libc (userspace), libk (kernel utilities)
-7. **Linking**: All objects linked into single kernel binary
-8. **ISO Creation**: Kernel packaged with GRUB bootloader
+Ein minimales Programm verwendet das mitgelieferte SDK:
 
-### Compiler Flags
-- `-m32`: 32-bit x86 target
-- `-ffreestanding`: Bare-metal, no standard library
-- `-nostdlib -nodefaultlibs`: Disable all standard libraries
-- `-fno-builtin`: Prevent GCC intrinsics
-- `-I.`: Search current directory for headers
-- `-Iarch/x86/include`: Architecture headers
-- `-Iinclude`: Public headers
-- `-Ilib/libc`: C library headers
-
-## Design Principles
-
-### Separation of Concerns
-- **Architecture-specific code**: Isolated in `arch/x86/`, easy to port
-- **Kernel core**: Platform-independent logic in `kernel/`
-- **Device drivers**: Categorized by type (block/char/video/net/bus)
-- **Filesystem**: VFS abstraction separates implementation from interface
-
-### Modularity
-Each directory represents a logical component with clear responsibilities:
-- `arch/` → Hardware abstraction
-- `kernel/` → Core OS functionality
-- `mm/` → Memory management
-- `fs/` → Filesystem operations
-- `drivers/` → Hardware device support
-- `lib/` → Reusable libraries
-
-### Scalability
-- Easy to add new architectures: Create `arch/<new_arch>/`
-- Easy to add new filesystems: Add to `fs/<fs_name>/`
-- Easy to add new drivers: Add to appropriate `drivers/<type>/`
-- Easy to extend syscalls: Add to `kernel/syscall/`
-
-## Include Path Strategy
-
-### Source Files Include Paths
-All source files use relative paths from project root:
 ```c
-#include "arch/x86/sys.h"           // Architecture headers
-#include "kernel/init/prg.h"        // Kernel headers
-#include "mm/kmalloc.h"             // Memory management
-#include "fs/fat32/fat32.h"         // Filesystem headers
-#include "drivers/block/ata.h"      // Driver headers
-#include "lib/libc/stdio.h"         // Library headers
+#include "x86os.h"
+
+int main(void) {
+    x86os_puts("Hallo vom eigenen Programm!\n");
+    return 0;
+}
 ```
 
-### Compiler Include Paths
-Makefile configures compiler with:
-- `-I.` → Project root (all relative paths work)
-- `-Iarch/x86/include` → Architecture-specific headers
-- `-Iinclude` → Public API headers
-- `-Ilib/libc` → C library headers
+In der Kernel-Shell:
 
-## Migration from Old Structure
+```text
+C:\> DIR
+C:\> TYPE README.TXT
+C:\> RUN APP.PRG
+```
 
-### What Changed
-1. **Flat `src/` removed**: All code now in logical hierarchy
-2. **`src/boot/` → `arch/x86/boot/` and `arch/x86/cpu/`**: Boot and CPU management
-3. **`src/kernel/` split**: Core functionality distributed:
-   - Init code → `kernel/init/`
-   - Syscalls → `kernel/syscall/`
-   - Processes → `kernel/proc/`
-   - Scheduler → `kernel/sched/`
-   - Timers → `kernel/time/`
-   - Commands → `kernel/shell/`
-   - Memory → `mm/`
-4. **`src/filesystem/` → `fs/`**: Renamed for brevity
-5. **`src/drivers/` reorganized**: Grouped by driver type
-6. **`src/toolchain/` → `lib/libc/`**: Clarifies purpose
-7. **`src/cli/` → `userspace/bin/`**: Standard userspace location
+Details zu ABI, Linker, Dateiformat und Sicherheitsgrenze stehen in
+[Externe Programme bauen](docs/development/USER_PROGRAM_TOOLCHAIN.md).
 
-### Backward Compatibility
-- Original files preserved in `src/` (not removed)
-- Old Makefile saved as `Makefile.old`
-- Original README saved as `README-ORIGINAL.md`
+## Boot- und Datenträgeraufbau
 
-## Development Workflow
+Der native Standardweg ist:
 
-### Adding a New Driver
-1. Create `drivers/<type>/<driver_name>.{c,h}`
-2. Implement driver interface
-3. Copy header to `include/drivers/<type>/`
-4. Makefile automatically detects and compiles
+```text
+BIOS
+  -> MBR Stage 1
+  -> Manifest und Stage 2
+  -> ELF32-Kernel laden und prüfen
+  -> Protected Mode / Multiboot-1-Handoff
+  -> Kernelinitialisierung
+  -> FAT32 als Laufwerk C:
+  -> DOS-artige Shell
+```
 
-### Adding a New Syscall
-1. Add function to appropriate kernel module
-2. Add entry to `kernel/syscall/syscall_table.c`
-3. Add case in `kernel/syscall/syscall.c` dispatcher
-4. Define constant in `arch/x86/include/sys.h`
+Das Image enthält eine kleine RAW-Bootpartition und eine FAT32-Datenpartition.
+Der Kernel wird über CRC32 und seine ELF32-Struktur geprüft. `README.TXT` und
+das gebaute `.PRG` liegen auf der Datenpartition. Der GRUB-/ISO-Weg bleibt nur
+als Legacy-Entwicklungsoption erhalten.
 
-### Adding a Kernel Module
-1. Create directory in `kernel/<module_name>/`
-2. Implement functionality
-3. Update Makefile if non-standard pattern
-4. Add headers to `include/kernel/<module_name>/`
+## Shell
 
-## Testing
+Die Shell verwendet einen gemeinsamen kanonischen Pfadauflöser für alle
+Dateioperationen. Unterstützt werden DOS- und VFS-Schreibweisen, relative und
+absolute Pfade, `.` und `..` sowie getrennte aktuelle Verzeichnisse pro
+Laufwerk.
 
-### Run in QEMU
+Wichtige Befehle:
+
+| Bereich | Befehle |
+|---|---|
+| Navigation | `DIR`, `LS`, `CD`, `CHDIR`, `DRIVES`, `MOUNT` |
+| Dateien | `TYPE`, `OPEN`, `COPY`, `DEL`, `ERASE`, `MKFILE` |
+| Verzeichnisse | `MD`, `MKDIR`, `RD`, `RMDIR` |
+| Programme | `RUN`, `EXEC`, `PID`, `KILL`, `BASIC` |
+| Netzwerk | `GETIP`, `IFCONFIG`, `PING`, `ARP`, `NET` |
+| System | `HELP`, `CLS`, `MEM`, `PCI`, `IRQ`, `DATETIME` |
+
+Beispiele und die genaue Pfadsemantik stehen in
+[Shell und Pfade](docs/features/SHELL_ENHANCEMENTS.md).
+
+## Netzwerk und VMware
+
+Die bereitgestellte VMware-VM verwendet einen Intel-E1000-Adapter an
+`VMnet0` im Bridge-Modus. Beim Boot fordert der Kernel automatisch eine
+IPv4-Konfiguration per DHCP an. Der aktuelle Stack umfasst Ethernet, ARP,
+IPv4, ICMP und DHCP. DNS, TCP und Anwendungen wie HTTP oder SMB sind noch
+nicht vorhanden.
+
+```text
+C:\> GETIP
+C:\> NET DHCP
+C:\> PING 192.168.1.1
+```
+
+Siehe [VMware](docs/hardware/VMWARE.md) und
+[Netzwerk](docs/networking/NETWORK.md).
+
+## Build- und Testbefehle
+
+Der native Windows-Build ist der dokumentierte Referenzweg. Auf Systemen mit
+passender ELF32-/GRUB-Toolchain bleiben Make-Ziele verfügbar:
+
 ```bash
-make run
+make kernel TARGET=qemu VIDEO=vga
+make native-image TARGET=real_hw VIDEO=vga
+make run-native TARGET=qemu VIDEO=vga
+make test-unit
 ```
 
-### Debug with GDB
-```bash
-# Terminal 1
-qemu-system-x86_64 -cdrom kernel.iso -s -S
+Der vollständige Windows-Build mit `-RunTests` führt die hostseitigen
+Regressionstests aus. Sie prüfen unter anderem Bootimage, FAT12/FAT32, EXT2,
+VFS, Shell-Pfade, PRG-Validierung und die externe C-/Assembly-Toolchain.
 
-# Terminal 2
-gdb build/kernel.bin
-(gdb) target remote :1234
-(gdb) continue
+## Quellbaum
+
+```text
+arch/x86/          BIOS-Boot, CPU, Interrupts und Paging
+kernel/            Initialisierung, Prozesse, Scheduler, Shell und Syscalls
+mm/                Kernel-Allocator
+fs/                VFS sowie FAT12, FAT32 und EXT2
+drivers/           Block-, Eingabe-, Video-, PCI-, USB- und Netzwerktreiber
+lib/               freestanding libc/libk
+userspace/sdk/     öffentliche API und Startup-Code für externe Programme
+examples/userspace Beispielquellen
+scripts/           Windows-, Image-, Test- und Legacy-Buildwerkzeuge
+test/              hostseitige Regressionstests
+docs/              aktuelle Anleitungen und historische Arbeitsberichte
 ```
 
-## Documentation
+Neue `.c`-Dateien in den durch Wildcards erfassten Kernel-/Treiberordnern
+werden vom Makefile automatisch aufgenommen. Neue Assembly- oder besondere
+Buildschritte müssen explizit ergänzt werden.
 
-Comprehensive documentation is available in the `docs/` directory:
+## Aktuelle Grenzen
 
-- **[Documentation Index](docs/README.md)** - Complete documentation overview
-- **[BASIC Interpreter](docs/features/BASIC_INTERPRETER.md)** - Built-in BASIC programming
-- **[Architecture Guide](docs/architecture/)** - System design and improvements
-- **[Networking](docs/networking/)** - Network stack and TAP setup
-- **[Hardware Support](docs/hardware/)** - Keyboard, VMware, and device drivers
-- **[Development](docs/development/)** - Build modes, debugging, and project status
+- Externe `.PRG`-Programme sind vertrauenswürdige Ring-0-Tasks und noch nicht
+  durch Ring 3 oder eigene Adressräume isoliert.
+- Das erzeugte FAT32-Image verwendet für eingebettete Dateien ASCII-8.3-Namen.
+- Der Netzwerkstack besitzt noch kein DNS, TCP, UDP-Socket-API oder IPv6.
+- Der native Bootpfad ist BIOS/MBR-basiert; UEFI ist nicht implementiert.
+- USB/xHCI und Framebuffer sind experimenteller als der VGA-/PS/2-Standardweg.
 
-## Future Enhancements
+## Dokumentation
 
-### Potential Additions
-- `include/uapi/`: User-kernel API headers
-- `kernel/ipc/`: Inter-process communication
-- `kernel/vfs/`: Move VFS from fs/ to kernel/
-- `arch/x86_64/`: 64-bit x86 support
-- `lib/libk/`: Kernel-only utility functions
-- `tools/`: Build tools and utilities
-
-## References
-- Linux kernel source tree structure
-- BSD operating system layout
-- Microkernel design patterns
-- Original project README: `README-ORIGINAL.md`
+Der vollständige, nach Aktualität geordnete Einstieg befindet sich im
+[Dokumentationsindex](docs/README.md). Historische Analyse- und
+Implementierungsberichte sind dort ausdrücklich als solche gekennzeichnet.

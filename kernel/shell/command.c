@@ -3,6 +3,7 @@
 #include "kernel/init/prg.h"
 #include "arch/x86/include/sys.h"
 #include "kernel/sched/scheduler.h"
+#include "kernel/shell/path_resolver.h"
 #include "mm/kmalloc.h"
 
 #include "drivers/char/rtc.h"
@@ -24,9 +25,12 @@
 #include "drivers/net/e1000.h"
 #include "drivers/net/ne2000.h"
 #include "drivers/net/netstack.h"
+#include "drivers/net/netdev.h"
 // #include "drivers/net/vmxnet3.h"
 
 char current_path[256] = "/";
+static char shell_drive_paths[MAX_DRIVES][SHELL_PATH_MAX];
+static bool shell_drive_path_initialized[MAX_DRIVES];
 extern pci_device_t pci_devices[];
 extern size_t pci_device_count;
 
@@ -45,13 +49,13 @@ bool is_null_terminated(char* buffer, size_t max_length) {
 }
 
 #define MAX_COMMANDS 100
-#define MAX_LINE_LENGTH 128
+#define MAX_LINE_LENGTH 256
 
 typedef void (*command_func)(int cnt, const char **args);
 
 // Command structure
 typedef struct {
-    char *name;
+    const char *name;
     command_func execute;
 } command_t;
 
@@ -74,6 +78,7 @@ void cmd_mkdir(int cnt, const char **args);
 void cmd_rmdir(int cnt, const char **args);
 void cmd_mkfile(int cnt, const char **args);
 void cmd_rmfile(int cnt, const char **args);
+void cmd_copy(int cnt, const char **args);
 void cmd_run(int cnt, const char **args);
 void cmd_exec(int cnt, const char **args);
 void cmd_kill(int cnt, const char **args);
@@ -89,7 +94,7 @@ void cmd_fdd(int cnt, const char **args);
 void cmd_hdd(int cnt, const char **args);
 void cmd_beep(int cnt, const char **args);
 void cmd_wait(int cnt, const char **args);
-void list_running_processes(int cnt, const char **args);
+void cmd_list_processes(int cnt, const char **args);
 void cmd_start_task(int cnt, const char **args);
 void cmd_net(int cnt, const char **args);
 void cmd_ifconfig(int cnt, const char **args);
@@ -100,136 +105,278 @@ void cmd_basic(int cnt, const char **args);
 void cmd_get_ip(int cnt, const char **args);
 
 // Command table
-command_t command_table[MAX_COMMANDS] = {
-    {"help", cmd_help},
-    {"clear", cmd_clear},
-    {"echo", cmd_echo},
-    {"mem", cmd_mem},
-    {"dump", cmd_dump},
-    {"cls", cmd_cls},
-    {"ls", cmd_ls},
-    {"cd", cmd_cd},
-    {"drives", cmd_drives},
-    {"mount", cmd_mount},
-    {"mkdir", cmd_mkdir},
-    {"rmdir", cmd_rmdir},
-    {"mkfile", cmd_mkfile},
-    {"rmfile", cmd_rmfile},
-    {"run", cmd_run},
-    {"exec", cmd_exec},
-    {"kill", cmd_kill},
-    {"sys", cmd_sys},
-    {"open", cmd_open},
-    {"datetime", cmd_read_datetime},
-    {"settime", cmd_set_time},
-    {"setdate", cmd_set_date},
-    {"irq", cmd_irq},
-    {"sleep", cmd_sleep},
-    {"exit", cmd_exit},
-    {"fdd", cmd_fdd},
-    {"hdd", cmd_hdd},
-    {"beep", cmd_beep},
-    {"wait", cmd_wait},
-    {"pid", (command_func)list_running_processes},
-    {"rtask", cmd_start_task},
-    {"net", cmd_net},
-    {"ifconfig", cmd_ifconfig},
-    {"ping", cmd_ping},
-    {"arp", cmd_arp},
-    {"history", cmd_history},
-    {"basic", cmd_basic},
-    {"pci", cmd_pci},
-    {"getip", cmd_get_ip},
+static const command_t command_table[MAX_COMMANDS] = {
+    {"HELP", cmd_help},
+    {"CLEAR", cmd_clear},
+    {"CLS", cmd_cls},
+    {"ECHO", cmd_echo},
+    {"MEM", cmd_mem},
+    {"DUMP", cmd_dump},
+    {"LS", cmd_ls},
+    {"DIR", cmd_ls},
+    {"CD", cmd_cd},
+    {"CHDIR", cmd_cd},
+    {"DRIVES", cmd_drives},
+    {"MOUNT", cmd_mount},
+    {"MKDIR", cmd_mkdir},
+    {"MD", cmd_mkdir},
+    {"RMDIR", cmd_rmdir},
+    {"RD", cmd_rmdir},
+    {"MKFILE", cmd_mkfile},
+    {"RMFILE", cmd_rmfile},
+    {"DEL", cmd_rmfile},
+    {"ERASE", cmd_rmfile},
+    {"COPY", cmd_copy},
+    {"RUN", cmd_run},
+    {"EXEC", cmd_exec},
+    {"KILL", cmd_kill},
+    {"SYS", cmd_sys},
+    {"OPEN", cmd_open},
+    {"TYPE", cmd_open},
+    {"DATETIME", cmd_read_datetime},
+    {"SETTIME", cmd_set_time},
+    {"SETDATE", cmd_set_date},
+    {"IRQ", cmd_irq},
+    {"SLEEP", cmd_sleep},
+    {"EXIT", cmd_exit},
+    {"QUIT", cmd_exit},
+    {"FDD", cmd_fdd},
+    {"HDD", cmd_hdd},
+    {"BEEP", cmd_beep},
+    {"WAIT", cmd_wait},
+    {"PID", cmd_list_processes},
+    {"RTASK", cmd_start_task},
+    {"NET", cmd_net},
+    {"IFCONFIG", cmd_ifconfig},
+    {"PING", cmd_ping},
+    {"ARP", cmd_arp},
+    {"HISTORY", cmd_history},
+    {"BASIC", cmd_basic},
+    {"PCI", cmd_pci},
+    {"GETIP", cmd_get_ip},
     {NULL, NULL} // End marker
 };
 
-#define MAX_ARGS 10
-#define MAX_LENGTH 64
+#define MAX_ARGS 16
+#define MAX_LENGTH MAX_LINE_LENGTH
 
-/**
- * Parse path for drive prefix (e.g., /hdd0/dir or hdd0:/dir)
- * Returns drive name if found, NULL otherwise
- * Also modifies path_out to point to remainder after drive prefix
- */
-const char* extract_drive_from_path(const char* path, char** path_out) {
-    static char drive_name[16];
-    
-    if (!path || !path_out) {
-        return NULL;
-    }
-    
-    *path_out = (char*)path;  // Default: no modification
-    
-    // Check for /drivename/path format (e.g., /hdd0/dir/file)
-    if (path[0] == '/') {
-        const char* next_slash = strchr(path + 1, '/');
-        size_t drive_len = next_slash ? (next_slash - path - 1) : strlen(path + 1);
-        
-        // Check if it's a valid drive name length and pattern
-        if (drive_len == 4 && (strncmp(path + 1, "hdd", 3) == 0 || strncmp(path + 1, "fdd", 3) == 0)) {
-            strncpy(drive_name, path + 1, 4);
-            drive_name[4] = '\0';
-            str_to_lower(drive_name);
-            
-            // Point to remainder of path (or "/" if nothing after drive)
-            *path_out = next_slash ? (char*)next_slash : (char*)"/";
-            return drive_name;
-        }
-    }
-    
-    // Check for drivename:/path format (e.g., hdd0:/dir/file)
-    if (strlen(path) >= 5 && path[4] == ':' && 
-        (strncmp(path, "hdd", 3) == 0 || strncmp(path, "fdd", 3) == 0)) {
-        strncpy(drive_name, path, 4);
-        drive_name[4] = '\0';
-        str_to_lower(drive_name);
-        
-        // Point to remainder of path (skip the colon)
-        *path_out = (char*)(path + 5);
-        if (*path_out[0] == '\0') {
-            *path_out = (char*)"/";  // Empty path after colon = root
-        }
-        return drive_name;
-    }
-    
-    return NULL;  // No drive prefix found
+typedef struct {
+    drive_t* drive;
+    char drive_path[SHELL_PATH_MAX];
+    char vfs_path[SHELL_PATH_MAX];
+    bool explicit_drive;
+} shell_resolved_path_t;
+
+static bool shell_native_drive_name(const char* value) {
+    if (!value || strlen(value) != 4) return false;
+    return ((tolower((unsigned char)value[0]) == 'h' &&
+             tolower((unsigned char)value[1]) == 'd' &&
+             tolower((unsigned char)value[2]) == 'd') ||
+            (tolower((unsigned char)value[0]) == 'f' &&
+             tolower((unsigned char)value[1]) == 'd' &&
+             tolower((unsigned char)value[2]) == 'd')) &&
+           value[3] >= '0' && value[3] <= '9';
 }
 
-/**
- * Try to switch to a drive by name (hdd0, hdd1, fdd0, etc.)
- * Returns true if successful, false if not a drive name
- */
-bool try_switch_drive(const char* name) {
-    extern drive_t* current_drive;
-    
-    // Convert to lowercase for comparison
-    char drive_name[16];
-    strncpy(drive_name, name, sizeof(drive_name) - 1);
-    drive_name[sizeof(drive_name) - 1] = '\0';
-    str_to_lower(drive_name);
-    
-    // Check if it matches drive name pattern (hdd0-9, fdd0-9)
-    if ((strncmp(drive_name, "hdd", 3) == 0 || strncmp(drive_name, "fdd", 3) == 0) &&
-        strlen(drive_name) == 4 && drive_name[3] >= '0' && drive_name[3] <= '9') {
-        
-        // Try to find and switch to this drive
-        drive_t* drive = get_drive_by_name(drive_name);
-        if (drive) {
-            current_drive = drive;
-            printf("Switched to drive %s\n", drive->name);
-            
-            // Reset path to root when switching drives
-            strncpy(current_path, "/", sizeof(current_path) - 1);
-            current_path[sizeof(current_path) - 1] = '\0';
-            
-            return true;
-        } else {
-            printf("Drive %s not found or not mounted\n", drive_name);
-            return true;  // Still consumed the input, just wasn't successful
-        }
+static bool shell_drive_token(const char* value) {
+    if (!value) return false;
+    size_t length = strlen(value);
+    if (length == 2 && isalpha((unsigned char)value[0]) &&
+        value[1] == ':') return true;
+    if (length == 5 && value[4] == ':') {
+        char native[5];
+        memcpy(native, value, 4);
+        native[4] = '\0';
+        return shell_native_drive_name(native);
     }
-    
-    return false;  // Not a drive name
+    return shell_native_drive_name(value);
+}
+
+static drive_t* shell_find_drive(const char* selector) {
+    if (!selector || selector[0] == '\0') return current_drive;
+
+    char drive_name[8];
+    size_t length = strlen(selector);
+    if (length == 1 && isalpha((unsigned char)selector[0])) {
+        char letter = (char)toupper((unsigned char)selector[0]);
+        if (letter == 'A' || letter == 'B') {
+            snprintf(drive_name, sizeof(drive_name), "fdd%c",
+                     (char)('0' + (letter - 'A')));
+        } else if (letter >= 'C' && letter <= 'L') {
+            snprintf(drive_name, sizeof(drive_name), "hdd%c",
+                     (char)('0' + (letter - 'C')));
+        } else {
+            return NULL;
+        }
+    } else if (shell_native_drive_name(selector)) {
+        for (size_t i = 0; i < 4; ++i) {
+            drive_name[i] = (char)tolower((unsigned char)selector[i]);
+        }
+        drive_name[4] = '\0';
+    } else {
+        return NULL;
+    }
+    return get_drive_by_name(drive_name);
+}
+
+static int shell_drive_index(const drive_t* drive) {
+    if (!drive || drive_count <= 0) return -1;
+    int count = drive_count < MAX_DRIVES ? drive_count : MAX_DRIVES;
+    for (int i = 0; i < count; i++) {
+        if (&detected_drives[i] == drive) return i;
+    }
+    return -1;
+}
+
+static const char* shell_saved_drive_path(drive_t* drive) {
+    int index = shell_drive_index(drive);
+    if (index < 0) return "/";
+    if (!shell_drive_path_initialized[index]) {
+        strcpy(shell_drive_paths[index], "/");
+        shell_drive_path_initialized[index] = true;
+    }
+    return shell_drive_paths[index];
+}
+
+static void shell_save_drive_path(drive_t* drive, const char* path) {
+    int index = shell_drive_index(drive);
+    if (index < 0 || !path) return;
+    strncpy(shell_drive_paths[index], path, SHELL_PATH_MAX - 1);
+    shell_drive_paths[index][SHELL_PATH_MAX - 1] = '\0';
+    shell_drive_path_initialized[index] = true;
+}
+
+static void shell_drive_label(const drive_t* drive, char output[8]) {
+    if (!drive || !output) return;
+    if (strlen(drive->name) == 4 &&
+        strncasecmp(drive->name, "hdd", 3) == 0 &&
+        drive->name[3] >= '0' && drive->name[3] <= '9') {
+        output[0] = (char)('C' + (drive->name[3] - '0'));
+        output[1] = '\0';
+        return;
+    }
+    if (strlen(drive->name) == 4 &&
+        strncasecmp(drive->name, "fdd", 3) == 0 &&
+        drive->name[3] >= '0' && drive->name[3] <= '9') {
+        output[0] = (char)('A' + (drive->name[3] - '0'));
+        output[1] = '\0';
+        return;
+    }
+    strncpy(output, drive->name, 7);
+    output[7] = '\0';
+    str_to_upper(output);
+}
+
+static const char* shell_vfs_error(int result) {
+    switch (result) {
+        case VFS_ERR_NOT_FOUND: return "not found";
+        case VFS_ERR_NO_MEMORY: return "not enough memory";
+        case VFS_ERR_INVALID: return "invalid path or name";
+        case VFS_ERR_IO: return "I/O error";
+        case VFS_ERR_EXISTS: return "already exists";
+        case VFS_ERR_NOT_DIR: return "not a directory";
+        case VFS_ERR_IS_DIR: return "is a directory";
+        case VFS_ERR_NO_SPACE: return "disk full";
+        case VFS_ERR_READ_ONLY: return "read-only filesystem";
+        case VFS_ERR_UNSUPPORTED: return "operation not supported";
+        case VFS_ERR_BUSY: return "resource busy";
+        default: return "filesystem error";
+    }
+}
+
+static void shell_print_vfs_error(const char* operation, const char* path,
+                                  int result) {
+    printf("%s: %s", operation, shell_vfs_error(result));
+    if (path && path[0] != '\0') printf(" - %s", path);
+    printf("\n");
+}
+
+static bool shell_resolve_path(const char* input,
+                               shell_resolved_path_t* resolved) {
+    if (!input || !resolved) return false;
+
+    char selector[SHELL_DRIVE_SELECTOR_MAX];
+    const char* remainder = NULL;
+    shell_path_result_t result = shell_path_split_drive(
+        input, selector, &remainder);
+    if (result != SHELL_PATH_OK) {
+        printf("Invalid path: %s\n", input);
+        return false;
+    }
+
+    resolved->explicit_drive = selector[0] != '\0';
+    if (!resolved->explicit_drive && !current_drive) {
+        printf("No active drive. Use DRIVES to list available drives.\n");
+        return false;
+    }
+    resolved->drive = resolved->explicit_drive
+        ? shell_find_drive(selector) : current_drive;
+    if (!resolved->drive) {
+        printf("Drive not found: %s\n", selector);
+        return false;
+    }
+    if (resolved->drive->mount_point[0] == '\0') {
+        printf("Drive is not mounted: %s\n", resolved->drive->name);
+        return false;
+    }
+
+    const char* base = resolved->drive == current_drive
+        ? current_path : shell_saved_drive_path(resolved->drive);
+    result = shell_path_normalize(base, remainder, resolved->drive_path);
+    if (result != SHELL_PATH_OK) {
+        printf("Path is invalid or too long: %s\n", input);
+        return false;
+    }
+    result = shell_path_join_mount(resolved->drive->mount_point,
+                                   resolved->drive_path,
+                                   resolved->vfs_path);
+    if (result != SHELL_PATH_OK) {
+        printf("Path is invalid or too long: %s\n", input);
+        return false;
+    }
+    return true;
+}
+
+static void shell_restore_drive(drive_t* saved_drive) {
+    current_drive = saved_drive;
+}
+
+static bool shell_path_is_active_or_ancestor(
+    const shell_resolved_path_t* resolved) {
+    if (!resolved || resolved->drive != current_drive) return false;
+    size_t length = strlen(resolved->drive_path);
+    size_t current_length = strlen(current_path);
+    if (length == 0 || length > current_length ||
+        strncasecmp(resolved->drive_path, current_path, length) != 0) {
+        return false;
+    }
+    return length == 1 || length == current_length ||
+           current_path[length] == '/';
+}
+
+bool try_switch_drive(const char* name) {
+    if (!shell_drive_token(name)) return false;
+
+    char selector[SHELL_DRIVE_SELECTOR_MAX];
+    size_t length = strlen(name);
+    if (length > 0 && name[length - 1] == ':') --length;
+    if (length >= sizeof(selector)) return false;
+    memcpy(selector, name, length);
+    selector[length] = '\0';
+
+    drive_t* drive = shell_find_drive(selector);
+    if (!drive) {
+        printf("Drive not found: %s\n", name);
+        return false;
+    }
+    if (drive->mount_point[0] == '\0') {
+        printf("Drive is not mounted: %s\n", drive->name);
+        return false;
+    }
+    shell_save_drive_path(current_drive, current_path);
+    current_drive = drive;
+    strcpy(current_path, shell_saved_drive_path(drive));
+    return true;
 }
 
 void process_command(char *input_buffer) {
@@ -237,9 +384,8 @@ void process_command(char *input_buffer) {
     char* arguments[MAX_ARGS] = {NULL};  // Initialize all pointers to NULL
     int arg_cnt = split_input(input_buffer, command, arguments, MAX_LENGTH, MAX_ARGS);
 
-    // Check for memory allocation failure
+    // split_input already prints the specific syntax/allocation error.
     if (arg_cnt < 0) {
-        printf("Error: Failed to parse command arguments\n");
         return;
     }
 
@@ -249,8 +395,13 @@ void process_command(char *input_buffer) {
         return; // Empty input
     }
     
-    // Check if input is a drive name (hdd0, hdd1, fdd0, etc.)
-    if (try_switch_drive(command)) {
+    // A DOS/native drive token is a complete command (C:, hdd0:, hdd0).
+    if (shell_drive_token(command)) {
+        if (arg_cnt != 0) {
+            printf("Syntax error: a drive change takes no arguments.\n");
+        } else {
+            (void)try_switch_drive(command);
+        }
         free_arguments(arguments, arg_cnt);
         return;
     }
@@ -261,9 +412,6 @@ void process_command(char *input_buffer) {
     // Match command
     int found = 0;
     for (int i = 0; command_table[i].name != NULL; i++) {
-
-        str_to_upper(command_table[i].name);
-
         if (strcmp(command, command_table[i].name) == 0) {
             command_table[i].execute(arg_cnt, (const char**)arguments);
             found = 1;
@@ -272,7 +420,7 @@ void process_command(char *input_buffer) {
     }
 
     if (!found) {
-        printf("\nUnknown command: %s\n", command);
+        printf("Unknown command: %s\n", command);
     }
 
     // Free allocated arguments after command execution
@@ -293,6 +441,7 @@ static char history_buffer[HISTORY_SIZE][HISTORY_LINE_MAX];
 static int history_count = 0;
 static int history_index = 0;
 static int history_current = -1;  // -1 means not browsing history
+static char history_draft[HISTORY_LINE_MAX];
 
 /**
  * Add command to history (avoid duplicates of last command)
@@ -361,9 +510,9 @@ const char* history_get_next(void) {
     
     int newest = (history_index - 1 + HISTORY_SIZE) % HISTORY_SIZE;
     if (history_current == newest) {
-        // At newest, return to empty line
+        // At newest, restore the line that existed before history browsing.
         history_current = -1;
-        return "";
+        return history_draft;
     }
     
     history_current = (history_current + 1) % HISTORY_SIZE;
@@ -375,6 +524,7 @@ const char* history_get_next(void) {
  */
 void history_reset(void) {
     history_current = -1;
+    history_draft[0] = '\0';
 }
 
 /**
@@ -414,7 +564,7 @@ static void replace_current_line(char *buffer, const char *new_content, int *cur
     
     // Copy new content
     int len = strlen(new_content);
-    if (len >= 127) len = 127;
+    if (len >= MAX_LINE_LENGTH) len = MAX_LINE_LENGTH - 1;
     
     strncpy(buffer, new_content, len);
     buffer[len] = '\0';
@@ -429,25 +579,19 @@ static void replace_current_line(char *buffer, const char *new_content, int *cur
 }
 
 /**
- * Handle arrow keys and special sequences
+ * Apply an already decoded ANSI cursor/history key.  Decoding is deliberately
+ * stateful in command_loop(): bytes from a real serial terminal do not arrive
+ * atomically, unlike the ANSI sequences queued by the PS/2 driver.
  */
-static bool handle_escape_sequence(char *buffer, int *buffer_index, int *cursor_pos) {
-    // Read next character
-    char seq1 = input_queue_pop();
-    if (seq1 == '\0') return false;
-    
-    if (seq1 != '[') {
-        // Not a recognized sequence
-        return false;
-    }
-    
-    // Read key code
-    char key_code = input_queue_pop();
-    if (key_code == '\0') return false;
-    
+static bool handle_escape_key(char key_code, char *buffer,
+                              int *buffer_index, int *cursor_pos) {
     switch (key_code) {
-        case KEY_UP: {
+        case 'A': {
             // Previous command in history
+            if (history_current == -1) {
+                strncpy(history_draft, buffer, sizeof(history_draft) - 1);
+                history_draft[sizeof(history_draft) - 1] = '\0';
+            }
             const char *prev = history_get_prev();
             if (prev != NULL) {
                 replace_current_line(buffer, prev, cursor_pos, buffer_index);
@@ -455,7 +599,7 @@ static bool handle_escape_sequence(char *buffer, int *buffer_index, int *cursor_
             return true;
         }
         
-        case KEY_DOWN: {
+        case 'B': {
             // Next command in history
             const char *next = history_get_next();
             if (next != NULL) {
@@ -464,7 +608,7 @@ static bool handle_escape_sequence(char *buffer, int *buffer_index, int *cursor_
             return true;
         }
         
-        case KEY_LEFT:
+        case 'D':
             // Move cursor left within line
             if (*cursor_pos > 0) {
                 (*cursor_pos)--;
@@ -472,7 +616,7 @@ static bool handle_escape_sequence(char *buffer, int *buffer_index, int *cursor_
             }
             return true;
             
-        case KEY_RIGHT:
+        case 'C':
             // Move cursor right within line
             if (*cursor_pos < *buffer_index) {
                 (*cursor_pos)++;
@@ -480,7 +624,7 @@ static bool handle_escape_sequence(char *buffer, int *buffer_index, int *cursor_
             }
             return true;
             
-        case KEY_HOME:
+        case 'H':
             // Jump to start of line (after prompt)
             while (*cursor_pos > 0) {
                 (*cursor_pos)--;
@@ -488,7 +632,7 @@ static bool handle_escape_sequence(char *buffer, int *buffer_index, int *cursor_
             }
             return true;
             
-        case KEY_END:
+        case 'F':
             // Jump to end of line
             while (*cursor_pos < *buffer_index) {
                 (*cursor_pos)++;
@@ -496,7 +640,7 @@ static bool handle_escape_sequence(char *buffer, int *buffer_index, int *cursor_
             }
             return true;
             
-        case KEY_DELETE:
+        case '3':
             // Delete character at cursor
             if (*cursor_pos < *buffer_index) {
                 // Shift characters left
@@ -590,19 +734,31 @@ static bool handle_ctrl_key(char ch, char *buffer, int *buffer_index, int *curso
  */
 void show_prompt(void) {
     extern drive_t* current_drive;
-    
+
     if (current_drive && current_drive->name[0]) {
-        printf("%s> ", current_drive->name);
+        char drive_label[8];
+        char dos_path[SHELL_PATH_MAX];
+        shell_drive_label(current_drive, drive_label);
+        if (shell_path_to_dos(current_path, dos_path) != SHELL_PATH_OK) {
+            strcpy(dos_path, "\\");
+        }
+        printf("%s:%s> ", drive_label, dos_path);
     } else {
-        show_prompt();
+        printf("> ");
     }
 }
 
-void command_loop() {
-    printf("+++Enhanced shell with line editing and history started\n");
+typedef enum {
+    SHELL_ESCAPE_GROUND = 0,
+    SHELL_ESCAPE_SEEN,
+    SHELL_ESCAPE_CSI,
+    SHELL_ESCAPE_SS3
+} shell_escape_state_t;
+
+void command_loop(void) {
     show_prompt();
 
-    char* input = (char*)k_malloc(256);
+    char* input = (char*)k_malloc(MAX_LINE_LENGTH);
     if (input == NULL) {
         printf("Failed to allocate memory for input buffer\n");
         return;
@@ -610,22 +766,107 @@ void command_loop() {
 
     int buffer_index = 0;  // End of text in buffer
     int cursor_pos = 0;     // Current cursor position (0 to buffer_index)
+    shell_escape_state_t escape_state = SHELL_ESCAPE_GROUND;
+    unsigned int escape_parameter = 0;
+    unsigned int escape_digits = 0;
+    unsigned int escape_length = 0;
     input[0] = '\0';
 
     while (1) {
-        // Get keyboard or serial input (non-blocking, checks both sources)
+        /* Drain pending keyboard/COM1 input before doing network work.  This
+         * keeps the IRQ-backed input queues responsive even when a network
+         * backend needs a comparatively expensive polling pass. */
         char ch = getchar_nonblocking();
+        if (ch == 0) {
+            netdev_poll();
+            /* Network processing may take long enough for input to arrive. */
+            ch = getchar_nonblocking();
+        }
         
         if (ch != 0) {
-            // Check for escape sequences (arrow keys, etc.)
-            if (ch == '\0') {  // ESC
-                if (handle_escape_sequence(input, &buffer_index, &cursor_pos)) {
+process_input_byte:
+            /* ANSI sequences must be decoded across loop iterations.  Serial
+             * terminals commonly deliver ESC, '[', and the final byte in
+             * separate UART interrupts. */
+            if (escape_state == SHELL_ESCAPE_SEEN) {
+                if (ch == '[') {
+                    escape_state = SHELL_ESCAPE_CSI;
+                    escape_parameter = 0;
+                    escape_digits = 0;
+                    escape_length = 0;
                     continue;
                 }
+                if (ch == 'O') {
+                    escape_state = SHELL_ESCAPE_SS3;
+                    escape_length = 0;
+                    continue;
+                }
+                escape_state = SHELL_ESCAPE_GROUND;
+                goto process_input_byte;
+            }
+            if (escape_state == SHELL_ESCAPE_SS3) {
+                escape_state = SHELL_ESCAPE_GROUND;
+                if (ch == 'A' || ch == 'B' || ch == 'C' || ch == 'D' ||
+                    ch == 'H' || ch == 'F') {
+                    (void)handle_escape_key(ch, input, &buffer_index,
+                                            &cursor_pos);
+                    continue;
+                }
+                goto process_input_byte;
+            }
+            if (escape_state == SHELL_ESCAPE_CSI) {
+                escape_length++;
+                if (escape_length > 8) {
+                    escape_state = SHELL_ESCAPE_GROUND;
+                    goto process_input_byte;
+                }
+                if (ch >= '0' && ch <= '9') {
+                    if (escape_digits >= 3) {
+                        escape_state = SHELL_ESCAPE_GROUND;
+                        goto process_input_byte;
+                    }
+                    escape_parameter = escape_parameter * 10U +
+                                       (unsigned int)(ch - '0');
+                    escape_digits++;
+                    continue;
+                }
+                if (ch == '~' && escape_digits != 0) {
+                    char decoded_key = '\0';
+                    if (escape_parameter == 1 || escape_parameter == 7) {
+                        decoded_key = 'H';
+                    } else if (escape_parameter == 3) {
+                        decoded_key = '3';
+                    } else if (escape_parameter == 4 || escape_parameter == 8) {
+                        decoded_key = 'F';
+                    }
+                    escape_state = SHELL_ESCAPE_GROUND;
+                    if (decoded_key != '\0') {
+                        (void)handle_escape_key(decoded_key, input,
+                                                &buffer_index, &cursor_pos);
+                    }
+                    continue;
+                }
+                if (escape_digits == 0 &&
+                    (ch == 'A' || ch == 'B' || ch == 'C' || ch == 'D' ||
+                     ch == 'H' || ch == 'F')) {
+                    escape_state = SHELL_ESCAPE_GROUND;
+                    (void)handle_escape_key(ch, input, &buffer_index,
+                                            &cursor_pos);
+                    continue;
+                }
+                escape_state = SHELL_ESCAPE_GROUND;
+                goto process_input_byte;
+            }
+
+            // Start an ANSI/VT escape sequence.
+            if (ch == '\x1B') {
+                escape_state = SHELL_ESCAPE_SEEN;
+                continue;
             }
             // Check for Ctrl+key combinations
             else if (ch < 0x20 && ch != '\n' && ch != '\t' && ch != '\b') {
                 if (handle_ctrl_key(ch, input, &buffer_index, &cursor_pos)) {
+                    escape_state = SHELL_ESCAPE_GROUND;
                     continue;
                 }
             }
@@ -645,6 +886,7 @@ void command_loop() {
                 cursor_pos = 0;
                 input[0] = '\0';
                 history_reset();
+                escape_state = SHELL_ESCAPE_GROUND;
                 show_prompt();
             }
             // Handle Backspace
@@ -679,7 +921,7 @@ void command_loop() {
             }
             // Regular character
             else if (ch >= 0x20 && ch < 0x7F) {
-                if (buffer_index < 255) {
+                if (buffer_index < MAX_LINE_LENGTH - 1) {
                     // Insert character at cursor position
                     if (cursor_pos < buffer_index) {
                         // Shift characters right
@@ -718,54 +960,71 @@ void command_loop() {
 }
 
 // Splits an input string into a command and arguments
-int split_input(const char* input, char* command, char** arguments, int max_length, int max_args) {
-    int i = 0, j = 0, arg_count = 0;
-
-    // Skip leading spaces
-    while (input[i] == ' ' && input[i] != '\0') {
-        i++;
+int split_input(const char* input, char* command, char** arguments,
+                int max_length, int max_args) {
+    int i = 0;
+    int j = 0;
+    int arg_count = 0;
+    if (!input || !command || !arguments || max_length < 2 || max_args < 1) {
+        return -1;
     }
 
-    // Extract the command
-    while (input[i] != ' ' && input[i] != '\0' && j < max_length - 1) {
+    while (input[i] != '\0' && isspace((unsigned char)input[i])) i++;
+    while (input[i] != '\0' && !isspace((unsigned char)input[i])) {
+        if (j >= max_length - 1) {
+            printf("Command name is too long.\n");
+            return -1;
+        }
         command[j++] = input[i++];
     }
-    command[j] = '\0';  // Null-terminate the command
+    command[j] = '\0';
 
-    // Skip spaces after the command
-    while (input[i] == ' ' && input[i] != '\0') {
-        i++;
-    }
+    while (input[i] != '\0') {
+        while (input[i] != '\0' && isspace((unsigned char)input[i])) i++;
+        if (input[i] == '\0') break;
+        if (arg_count >= max_args) {
+            printf("Too many command arguments (maximum %d).\n", max_args);
+            free_arguments(arguments, arg_count);
+            return -1;
+        }
 
-    // Extract arguments
-    while (input[i] != '\0' && arg_count < max_args) {
+        arguments[arg_count] = (char*)malloc(MAX_LINE_LENGTH);
+        if (!arguments[arg_count]) {
+            printf("Not enough memory to parse the command.\n");
+            free_arguments(arguments, arg_count);
+            return -1;
+        }
+
+        bool quoted = false;
         j = 0;
-
-        // Allocate memory for the argument
-        arguments[arg_count] = (char*)malloc(max_length);
-        if (arguments[arg_count] == NULL) {
-            // Malloc failed - free previously allocated arguments
-            printf("Error: Memory allocation failed for argument %d\n", arg_count);
-            for (int k = 0; k < arg_count; k++) {
-                free(arguments[k]);
-                arguments[k] = NULL;
+        while (input[i] != '\0') {
+            char value = input[i];
+            if (value == '"') {
+                quoted = !quoted;
+                i++;
+                continue;
             }
-            return -1;  // Return -1 to indicate error
-        }
-
-        // Parse the argument
-        while (input[i] != ' ' && input[i] != '\0' && j < max_length - 1) {
-            arguments[arg_count][j++] = input[i++];
-        }
-        arguments[arg_count][j] = '\0';  // Null-terminate the argument
-        arg_count++;
-
-        // Skip spaces between arguments
-        while (input[i] == ' ' && input[i] != '\0') {
+            if (!quoted && isspace((unsigned char)value)) break;
+            if (j >= MAX_LINE_LENGTH - 1) {
+                printf("Command argument is too long.\n");
+                free(arguments[arg_count]);
+                arguments[arg_count] = NULL;
+                free_arguments(arguments, arg_count);
+                return -1;
+            }
+            arguments[arg_count][j++] = value;
             i++;
         }
+        if (quoted) {
+            printf("Missing closing quote.\n");
+            free(arguments[arg_count]);
+            arguments[arg_count] = NULL;
+            free_arguments(arguments, arg_count);
+            return -1;
+        }
+        arguments[arg_count][j] = '\0';
+        arg_count++;
     }
-
     return arg_count;
 }
 
@@ -783,39 +1042,26 @@ void free_arguments(char** arguments, int arg_count) {
 
 // Command implementations
 void cmd_help(int arg_count, const char **args) {
-    printf("\n=== Rudolf Stepan x86 Microkernel Shell ===\n\n");
-    printf("Enhanced shell with line editing and command history\n");
-    printf("\nKeyboard Shortcuts:\n");
-    printf("  Up Arrow    - Previous command in history\n");
-    printf("  Down Arrow  - Next command in history\n");
-    printf("  Ctrl+C      - Cancel current line\n");
-    printf("  Ctrl+L      - Clear screen\n");
-    printf("  Ctrl+U      - Clear entire line\n");
-    printf("  Ctrl+K      - Clear from cursor to end of line\n");
-    printf("  Backspace   - Delete character before cursor\n");
-    printf("  Delete      - Delete character at cursor\n");
-    
-    printf("\nAvailable Commands:\n");
-    /* Print commands in multiple columns (1-3) depending on how many commands exist */
-    int cmd_count = 0;
-    while (command_table[cmd_count].name != NULL) cmd_count++;
-    int cols = 3;
-    if (cmd_count < 6) cols = 1;
-    else if (cmd_count < 20) cols = 2;
-    int rows = (cmd_count + cols - 1) / cols;
-    for (int r = 0; r < rows; r++) {
-        for (int c = 0; c < cols; c++) {
-            int idx = c * rows + r;
-            if (idx < cmd_count) {
-                /* Two leading spaces then a left-aligned column of width 20 */
-                printf("  %-20s", command_table[idx].name);
-            }
-        }
-        printf("\n");
-    }
-    
-    printf("\nTip: Use 'history' to see previous commands\n");
-    printf("     Use arrow keys to navigate through history\n\n");
+    (void)arg_count;
+    (void)args;
+    printf("\nDOS-compatible file commands:\n");
+    printf("  DIR [path]       List files and directories\n");
+    printf("  CD [path]        Show or change the current directory\n");
+    printf("  TYPE <file>      Display a text file (alias: OPEN)\n");
+    printf("  MD <directory>   Create a directory (alias: MKDIR)\n");
+    printf("  RD <directory>   Remove a directory (alias: RMDIR)\n");
+    printf("  DEL <file>       Delete a file (aliases: ERASE, RMFILE)\n");
+    printf("  COPY <src> <dst> Copy a file; existing destinations are protected\n");
+    printf("  MKFILE <file>    Create an empty file\n");
+    printf("  CLS              Clear the screen\n");
+    printf("  ECHO [text]      Display text\n");
+    printf("  C: / HDD0:       Change drive\n");
+    printf("\nSystem commands:\n");
+    printf("  DRIVES  MOUNT  MEM  DUMP  PCI  IRQ  DATETIME\n");
+    printf("  RUN     EXEC   PID  KILL  BASIC  HISTORY\n");
+    printf("  NET     IFCONFIG  PING  ARP  GETIP\n");
+    printf("\nPaths accept both \\ and /, plus the . and .. components.\n");
+    printf("Use arrow keys for history/editing and Ctrl+L to clear.\n\n");
 }
 
 void cmd_clear(int arg_count, const char **args) {
@@ -824,10 +1070,11 @@ void cmd_clear(int arg_count, const char **args) {
 
 void cmd_echo(int arg_count, const char **args) {
     if(arg_count == 0) {
-        printf("Echo command without arguments\n");
+        printf("ECHO is on.\n");
     } else {
         for (int i = 0; i < arg_count; i++) {
-            printf("%s ", args[i]);
+            if (i != 0) putchar(' ');
+            printf("%s", args[i]);
         }
         printf("\n");
     }
@@ -855,294 +1102,386 @@ void cmd_cls(int arg_count, const char** arguments) {
 }
 
 void cmd_drives(int arg_count, const char** arguments) {
-    printf("Available drives:\n");
-    list_detected_drives();
+    (void)arg_count;
+    (void)arguments;
+    if (drive_count <= 0) {
+        printf("No drives detected.\n");
+        return;
+    }
+
+    printf("\nDrive  Device  Type   Mount point\n");
+    printf("---------------------------------------------\n");
+    for (int i = 0; i < drive_count; i++) {
+        drive_t* drive = &detected_drives[i];
+        char label[8];
+        shell_drive_label(drive, label);
+        const char* type = drive->type == DRIVE_TYPE_ATA ? "HDD" :
+                           drive->type == DRIVE_TYPE_FDD ? "FDD" : "?";
+        const char* mount = drive->mount_point[0] != '\0'
+            ? drive->mount_point : "(not mounted)";
+        printf("%c%-5s %-7s %-6s %s\n",
+               drive == current_drive ? '*' : ' ', label,
+               drive->name, type, mount);
+    }
+    printf("\n* current drive\n");
 }
 
 /// @brief Mount an attached drive
 /// @param arg_count 
 /// @param arguments 
 void cmd_mount(int arg_count, const char** arguments) {
-    if (arg_count == 0) {
-        printf("Mount command without arguments\n");
-        printf("Available drives:\n");
-        list_detected_drives();
-    } else {
-        str_to_lower((char *)arguments[0]);
-        printf("Try mount drive: %s\n", arguments[0]);
-        
-        // Debug: show what drives are available
-        printf("Searching in %d detected drives...\n", drive_count);
-        
-        current_drive = get_drive_by_name(arguments[0]);
-        if (current_drive == NULL) {
-            printf("drive: %s not found\n", arguments[0]);
-            printf("Available drives:\n");
-            list_detected_drives();
-        } else {
-            // Check if already mounted
-            if (current_drive->mount_point[0] != '\0') {
-                printf("Drive %s already mounted at %s\n", 
-                       current_drive->name, current_drive->mount_point);
-                strncpy(current_path, "/", sizeof(current_path) - 1);
-                current_path[sizeof(current_path) - 1] = '\0';
-                return;
-            }
-            
-            printf("Mounting drive %s...\n", current_drive->name);
-
-            const char* fs_type = "fat32";  // Default
-            char mount_path[64];
-            int result;
-            
-            switch (current_drive->type) {
-            case DRIVE_TYPE_ATA: {
-                // Detect filesystem type
-                uint8_t buffer[512];
-                if (!ata_read_sector(current_drive->base, 0, buffer, current_drive->is_master)) {
-                    printf("Failed to read boot sector from %s\n", current_drive->name);
-                    return;
-                }
-                
-                // Check for EXT2 (magic at byte 1080 = sector 2, offset 56)
-                uint8_t ext2_buffer[1024];
-                if (ata_read_sector(current_drive->base, 2, ext2_buffer, current_drive->is_master)) {
-                    if (ata_read_sector(current_drive->base, 3, ext2_buffer + 512, current_drive->is_master)) {
-                        uint16_t magic = *(uint16_t*)(ext2_buffer + 56);
-                        if (magic == 0xEF53) {
-                            fs_type = "ext2";
-                            printf("Detected EXT2 filesystem\n");
-                        } else {
-                            printf("Detected FAT32 filesystem\n");
-                        }
-                    }
-                }
-                
-                // Create mount path
-                snprintf(mount_path, sizeof(mount_path), "/mnt/%s", current_drive->name);
-                
-                // Mount using VFS
-                result = vfs_mount(current_drive, fs_type, mount_path);
-                if (result == VFS_OK) {
-                    strncpy(current_drive->mount_point, mount_path, sizeof(current_drive->mount_point) - 1);
-                    current_drive->mount_point[sizeof(current_drive->mount_point) - 1] = '\0';
-                    printf("Successfully mounted %s at %s (%s)\n", 
-                           current_drive->name, mount_path, fs_type);
-                } else {
-                    printf("Failed to mount %s (VFS error %d)\n", current_drive->name, result);
-                    return;
-                }
-                break;
-            }
-            case DRIVE_TYPE_FDD:
-                printf("Mounting floppy drive %s\n", current_drive->name);
-                snprintf(mount_path, sizeof(mount_path), "/mnt/%s", current_drive->name);
-                
-                result = vfs_mount(current_drive, "fat12", mount_path);
-                if (result == VFS_OK) {
-                    strncpy(current_drive->mount_point, mount_path, sizeof(current_drive->mount_point) - 1);
-                    current_drive->mount_point[sizeof(current_drive->mount_point) - 1] = '\0';
-                    printf("Successfully mounted %s at %s (FAT12)\n", 
-                           current_drive->name, mount_path);
-                } else {
-                    printf("Failed to mount %s (VFS error %d)\n", current_drive->name, result);
-                    return;
-                }
-                break;
-
-            default:
-                printf("Unsupported drive type\n");
-                return;
-            }
-
-            // Safe string copy with bounds checking
-            strncpy(current_path, "/", sizeof(current_path) - 1);
-            current_path[sizeof(current_path) - 1] = '\0';
-        }
+    if (arg_count != 1) {
+        printf("Usage: MOUNT <drive>\n");
+        cmd_drives(0, NULL);
+        return;
     }
+
+    char selector[SHELL_DRIVE_SELECTOR_MAX];
+    size_t length = strlen(arguments[0]);
+    if (length > 0 && arguments[0][length - 1] == ':') length--;
+    if (length == 0 || length >= sizeof(selector)) {
+        printf("MOUNT: invalid drive - %s\n", arguments[0]);
+        return;
+    }
+    memcpy(selector, arguments[0], length);
+    selector[length] = '\0';
+
+    drive_t* target = shell_find_drive(selector);
+    if (!target) {
+        printf("MOUNT: drive not found - %s\n", arguments[0]);
+        return;
+    }
+    if (target->mount_point[0] != '\0') {
+        printf("Drive %s is already mounted at %s.\n",
+               target->name, target->mount_point);
+        return;
+    }
+
+    const char* fs_type = target->type == DRIVE_TYPE_FDD ? "fat12" : "fat32";
+    if (target->type == DRIVE_TYPE_ATA) {
+        uint8_t ext2_buffer[1024];
+        if (ata_read_sector(target->base, 2, ext2_buffer,
+                            target->is_master) &&
+            ata_read_sector(target->base, 3, ext2_buffer + 512,
+                            target->is_master) &&
+            *(uint16_t*)(ext2_buffer + 56) == 0xEF53) {
+            fs_type = "ext2";
+        }
+    } else if (target->type != DRIVE_TYPE_FDD) {
+        printf("MOUNT: unsupported drive type - %s\n", target->name);
+        return;
+    }
+
+    char mount_path[64];
+    snprintf(mount_path, sizeof(mount_path), "/mnt/%s", target->name);
+    drive_t* saved_drive = current_drive;
+    int result = vfs_mount(target, fs_type, mount_path);
+    current_drive = saved_drive;
+    if (result != VFS_OK) {
+        shell_print_vfs_error("MOUNT", arguments[0], result);
+        return;
+    }
+
+    strncpy(target->mount_point, mount_path, sizeof(target->mount_point) - 1);
+    target->mount_point[sizeof(target->mount_point) - 1] = '\0';
+    printf("Mounted %s at %s (%s).\n", target->name, mount_path, fs_type);
 }
 
 /// @brief List the directory content
 /// @param arg_count 
 /// @param arguments 
 void cmd_ls(int arg_count, const char** arguments) {
-    extern drive_t* current_drive;
-    const char* directory = (arg_count == 0) ? current_path : arguments[0];
-    
-    // Check for drive prefix in path
-    if (arg_count > 0) {
-        char* path_remainder = NULL;
-        const char* drive_name = extract_drive_from_path(arguments[0], &path_remainder);
-        
-        if (drive_name) {
-            // Switch to specified drive temporarily
-            drive_t* original_drive = current_drive;
-            if (try_switch_drive(drive_name)) {
-                directory = path_remainder;
-            } else {
-                return;  // Drive switch failed, error already printed
-            }
-        }
-    }
-    
-    if (current_drive == NULL) {
-        printf("No drive mounted\n");
+    if (arg_count > 1) {
+        printf("Usage: DIR [path]\n");
         return;
     }
-    
-    // Build full VFS path based on current drive's mount point
-    char vfs_path[256];
-    if (current_drive->mount_point && strlen(current_drive->mount_point) > 0) {
-        // Drive has explicit mount point
-        if (strcmp(current_drive->mount_point, "/") == 0) {
-            // Mounted at root
-            strncpy(vfs_path, directory, sizeof(vfs_path) - 1);
-        } else {
-            // Mounted at /mnt/<name> or similar
-            if (strcmp(directory, "/") == 0) {
-                strncpy(vfs_path, current_drive->mount_point, sizeof(vfs_path) - 1);
-            } else {
-                snprintf(vfs_path, sizeof(vfs_path), "%s%s", 
-                         current_drive->mount_point, directory);
-            }
+    const char* requested = arg_count == 0 ? "" : arguments[0];
+    shell_resolved_path_t resolved;
+    if (!shell_resolve_path(requested, &resolved)) return;
+
+    drive_t* saved_drive = current_drive;
+    vfs_dir_entry_t directory_stat;
+    int result = vfs_stat(resolved.vfs_path, &directory_stat);
+    if (result != VFS_OK) {
+        shell_restore_drive(saved_drive);
+        shell_print_vfs_error("DIR", requested, result);
+        return;
+    }
+
+    char drive_label[8];
+    char dos_path[SHELL_PATH_MAX];
+    shell_drive_label(resolved.drive, drive_label);
+    (void)shell_path_to_dos(resolved.drive_path, dos_path);
+
+    printf("\n Volume in drive %s is %s\n", drive_label,
+           resolved.drive->name);
+    printf(" Directory of %s:%s\n\n", drive_label, dos_path);
+    printf("%-40s %12s\n", "NAME", "SIZE");
+    printf("-----------------------------------------------------\n");
+
+    uint32_t file_count = 0;
+    uint32_t directory_count = 0;
+    uint64_t total_bytes = 0;
+
+    if (directory_stat.type != VFS_DIRECTORY) {
+        const char* type = directory_stat.type == VFS_FILE ? "" : "<OTHER>";
+        printf("%-40s %12u %s\n", directory_stat.name,
+               directory_stat.size, type);
+        if (directory_stat.type == VFS_FILE) {
+            file_count = 1;
+            total_bytes = directory_stat.size;
         }
-        vfs_path[sizeof(vfs_path) - 1] = '\0';
     } else {
-        // Fallback: assume mounted at /mnt/<drive_name>
-        if (strcmp(directory, "/") == 0) {
-            snprintf(vfs_path, sizeof(vfs_path), "/mnt/%s", current_drive->name);
-        } else {
-            snprintf(vfs_path, sizeof(vfs_path), "/mnt/%s%s", 
-                     current_drive->name, directory);
+        uint32_t index = 0;
+        vfs_dir_entry_t entry;
+        while ((result = vfs_readdir(resolved.vfs_path, index, &entry)) ==
+               VFS_OK) {
+            if (entry.type == VFS_DIRECTORY) {
+                printf("%-40s %12s\n", entry.name, "<DIR>");
+                directory_count++;
+            } else {
+                printf("%-40s %12u\n", entry.name, entry.size);
+                file_count++;
+                total_bytes += entry.size;
+            }
+            index++;
+        }
+        if (result != VFS_ERR_NOT_FOUND) {
+            shell_restore_drive(saved_drive);
+            shell_print_vfs_error("DIR", requested, result);
+            return;
         }
     }
-    
-    // Use VFS for all filesystems
-    printf("\nDirectory of %s (vfs: %s)\n", directory, vfs_path);
-    printf("[DEBUG] current_drive=%s, mount_point='%s'\n", 
-           current_drive->name, current_drive->mount_point);
-    printf("%-40s %-10s %-8s\n", "FILENAME", "SIZE", "TYPE");
-    printf("--------------------------------------------------------------------------------\n");
-    
-    uint32_t index = 0;
-    vfs_dir_entry_t entry;
-    int result;
-    
-    printf("[DEBUG] Calling vfs_readdir with path='%s', index=%u\n", vfs_path, index);
-    while ((result = vfs_readdir(vfs_path, index, &entry)) == VFS_OK) {
-        // Format type
-        const char* type_str = "";
-        switch (entry.type) {
-            case VFS_FILE: type_str = "FILE"; break;
-            case VFS_DIRECTORY: type_str = "<DIR>"; break;
-            case VFS_SYMLINK: type_str = "<LNK>"; break;
-            default: type_str = "????"; break;
-        }
-        
-        printf("%-40s %10u %-8s\n",
-               entry.name, entry.size, type_str);
-        
-        index++;
-    }
-    
-    if (index == 0) {
-        printf("(empty directory)\n");
-    }
-    
-    printf("\n");
+
+    shell_restore_drive(saved_drive);
+    printf("%10u File(s) %llu bytes\n", file_count,
+           (unsigned long long)total_bytes);
+    printf("%10u Dir(s)\n\n", directory_count);
 }
 
 void cmd_cd(int arg_count, const char** arguments) {
-    extern drive_t* current_drive;
-    
+    if (arg_count > 1) {
+        printf("Usage: CD [path]\n");
+        return;
+    }
     if (arg_count == 0) {
-        printf("CD command without arguments\n");
-    } else {
-        const char* target_path = arguments[0];
-        
-        // Check for drive prefix in path
-        char* path_remainder = NULL;
-        const char* drive_name = extract_drive_from_path(arguments[0], &path_remainder);
-        
-        if (drive_name) {
-            // Permanently switch to specified drive
-            if (!try_switch_drive(drive_name)) {
-                return;  // Drive switch failed
-            }
-            target_path = path_remainder;
-        }
-        
-        if (current_drive == NULL) {
-            printf("No drive mounted\n");
+        if (!current_drive) {
+            printf("No active drive.\n");
             return;
         }
-        
-        str_trim_end((char*)target_path, '/');  // Remove trailing slash from the path
-        char new_path[256] = "/";
-        snprintf(new_path, sizeof(new_path), "%s/%s", current_path, target_path);
-
-        if (current_drive->type == DRIVE_TYPE_ATA) {
-            if (fat32_change_directory(new_path)) {
-                // Safe string copy with bounds checking
-                strncpy(current_path, new_path, sizeof(current_path) - 1);
-                current_path[sizeof(current_path) - 1] = '\0';
-                printf("Set directory to: %s\n", arguments[0]);
-            }
-        } else if (current_drive->type == DRIVE_TYPE_FDD) {
-            // notice that the path is relative to the current directory
-            // remove the leading slash
-            if (new_path[0] == '/') {
-                memmove(new_path, new_path + 1, strlen(new_path));
-            }
-            // fdd need relative path and a single directory name
-            if (fat12_change_directory(arguments[0])) {
-                // Safe string copy with bounds checking
-                strncpy(current_path, new_path, sizeof(current_path) - 1);
-                current_path[sizeof(current_path) - 1] = '\0';
-                printf("Set directory to: %s\n", arguments[0]);
-            }
-        }
+        char drive_label[8];
+        char dos_path[SHELL_PATH_MAX];
+        shell_drive_label(current_drive, drive_label);
+        (void)shell_path_to_dos(current_path, dos_path);
+        printf("%s:%s\n", drive_label, dos_path);
+        return;
     }
+
+    shell_resolved_path_t resolved;
+    if (!shell_resolve_path(arguments[0], &resolved)) return;
+
+    drive_t* saved_drive = current_drive;
+    vfs_dir_entry_t entry;
+    int result = vfs_stat(resolved.vfs_path, &entry);
+    if (result != VFS_OK) {
+        shell_restore_drive(saved_drive);
+        shell_print_vfs_error("CD", arguments[0], result);
+        return;
+    }
+    if (entry.type != VFS_DIRECTORY) {
+        shell_restore_drive(saved_drive);
+        shell_print_vfs_error("CD", arguments[0], VFS_ERR_NOT_DIR);
+        return;
+    }
+
+    shell_save_drive_path(current_drive, current_path);
+    current_drive = resolved.drive;
+    strcpy(current_path, resolved.drive_path);
+    shell_save_drive_path(current_drive, current_path);
 }
 
 void cmd_mkdir(int arg_count, const char** arguments) {
-    if (arg_count == 0) {
-        printf("MKDIR command without arguments\n");
-    } else {
-        mkdir(arguments[0], 0);
+    if (arg_count != 1) {
+        printf("Usage: MD <directory>\n");
+        return;
     }
+    shell_resolved_path_t resolved;
+    if (!shell_resolve_path(arguments[0], &resolved)) return;
+    drive_t* saved_drive = current_drive;
+    int result = vfs_mkdir(resolved.vfs_path);
+    shell_restore_drive(saved_drive);
+    if (result != VFS_OK) shell_print_vfs_error("MD", arguments[0], result);
 }
 
 void cmd_rmdir(int arg_count, const char** arguments) {
-    if (arg_count == 0) {
-        printf("RMDIR command without arguments\n");
-    } else {
-        rmdir(arguments[0]);
+    if (arg_count != 1) {
+        printf("Usage: RD <directory>\n");
+        return;
     }
+    shell_resolved_path_t resolved;
+    if (!shell_resolve_path(arguments[0], &resolved)) return;
+    if (shell_path_is_active_or_ancestor(&resolved)) {
+        printf("RD: cannot remove the current directory or its parent.\n");
+        return;
+    }
+    drive_t* saved_drive = current_drive;
+    int result = vfs_rmdir(resolved.vfs_path);
+    shell_restore_drive(saved_drive);
+    if (result != VFS_OK) shell_print_vfs_error("RD", arguments[0], result);
 }
 
 void cmd_mkfile(int arg_count, const char** arguments) {
-    if (arg_count == 0) {
-        printf("MKFILE command without arguments\n");
-    } else {
-        mkfile(arguments[0]);
+    if (arg_count != 1) {
+        printf("Usage: MKFILE <file>\n");
+        return;
+    }
+    shell_resolved_path_t resolved;
+    if (!shell_resolve_path(arguments[0], &resolved)) return;
+    drive_t* saved_drive = current_drive;
+    int result = vfs_create(resolved.vfs_path);
+    shell_restore_drive(saved_drive);
+    if (result != VFS_OK) {
+        shell_print_vfs_error("MKFILE", arguments[0], result);
     }
 }
 
 void cmd_rmfile(int arg_count, const char** arguments) {
-    if (arg_count == 0) {
-        printf("RMFILE command without arguments\n");
-    } else {
-        remove(arguments[0]);
+    if (arg_count != 1) {
+        printf("Usage: DEL <file>\n");
+        return;
     }
+    shell_resolved_path_t resolved;
+    if (!shell_resolve_path(arguments[0], &resolved)) return;
+    drive_t* saved_drive = current_drive;
+    int result = vfs_delete(resolved.vfs_path);
+    shell_restore_drive(saved_drive);
+    if (result != VFS_OK) shell_print_vfs_error("DEL", arguments[0], result);
+}
+
+void cmd_copy(int arg_count, const char** arguments) {
+    if (arg_count != 2) {
+        printf("Usage: COPY <source> <destination>\n");
+        return;
+    }
+
+    shell_resolved_path_t source;
+    shell_resolved_path_t destination;
+    if (!shell_resolve_path(arguments[0], &source) ||
+        !shell_resolve_path(arguments[1], &destination)) {
+        return;
+    }
+
+    drive_t* saved_drive = current_drive;
+    vfs_node_t* source_node = NULL;
+    vfs_node_t* destination_node = NULL;
+    bool destination_created = false;
+    int result = vfs_open(source.vfs_path, &source_node);
+    if (result != VFS_OK || !source_node) {
+        shell_restore_drive(saved_drive);
+        shell_print_vfs_error("COPY", arguments[0], result);
+        return;
+    }
+    if (source_node->type != VFS_FILE) {
+        (void)vfs_close(source_node);
+        shell_restore_drive(saved_drive);
+        shell_print_vfs_error("COPY", arguments[0], VFS_ERR_IS_DIR);
+        return;
+    }
+
+    vfs_dir_entry_t destination_stat;
+    result = vfs_stat(destination.vfs_path, &destination_stat);
+    if (result == VFS_OK && destination_stat.type == VFS_DIRECTORY) {
+        char appended[SHELL_PATH_MAX];
+        if (shell_path_normalize(destination.drive_path, source_node->name,
+                                 appended) != SHELL_PATH_OK ||
+            shell_path_join_mount(destination.drive->mount_point, appended,
+                                  destination.vfs_path) != SHELL_PATH_OK) {
+            (void)vfs_close(source_node);
+            shell_restore_drive(saved_drive);
+            printf("COPY: destination path is too long.\n");
+            return;
+        }
+        strcpy(destination.drive_path, appended);
+        result = vfs_stat(destination.vfs_path, &destination_stat);
+    }
+    if (result == VFS_OK) {
+        (void)vfs_close(source_node);
+        shell_restore_drive(saved_drive);
+        printf("COPY: destination already exists - %s\n", arguments[1]);
+        return;
+    }
+    if (result != VFS_ERR_NOT_FOUND) {
+        (void)vfs_close(source_node);
+        shell_restore_drive(saved_drive);
+        shell_print_vfs_error("COPY", arguments[1], result);
+        return;
+    }
+    if (strcmp(source.vfs_path, destination.vfs_path) == 0) {
+        (void)vfs_close(source_node);
+        shell_restore_drive(saved_drive);
+        printf("COPY: source and destination are the same file.\n");
+        return;
+    }
+
+    result = vfs_create(destination.vfs_path);
+    if (result != VFS_OK) goto copy_failed;
+    destination_created = true;
+    result = vfs_open(destination.vfs_path, &destination_node);
+    if (result != VFS_OK || !destination_node) goto copy_failed;
+
+    uint8_t buffer[1024];
+    uint32_t source_offset = 0;
+    uint32_t destination_offset = 0;
+    while (source_offset < source_node->size) {
+        uint32_t amount = source_node->size - source_offset;
+        if (amount > sizeof(buffer)) amount = sizeof(buffer);
+        int read = vfs_read(source_node, source_offset, amount, buffer);
+        if (read <= 0 || (uint32_t)read > amount) {
+            result = read < 0 ? read : VFS_ERR_IO;
+            goto copy_failed;
+        }
+        uint32_t written_total = 0;
+        while (written_total < (uint32_t)read) {
+            int written = vfs_write(destination_node,
+                                    destination_offset + written_total,
+                                    (uint32_t)read - written_total,
+                                    buffer + written_total);
+            if (written <= 0 ||
+                (uint32_t)written > (uint32_t)read - written_total) {
+                result = written < 0 ? written : VFS_ERR_IO;
+                goto copy_failed;
+            }
+            written_total += (uint32_t)written;
+        }
+        source_offset += (uint32_t)read;
+        destination_offset += (uint32_t)read;
+    }
+
+    (void)vfs_close(destination_node);
+    (void)vfs_close(source_node);
+    shell_restore_drive(saved_drive);
+    printf("        1 file(s) copied.\n");
+    return;
+
+copy_failed:
+    if (destination_node) (void)vfs_close(destination_node);
+    if (source_node) (void)vfs_close(source_node);
+    if (destination_created) (void)vfs_delete(destination.vfs_path);
+    shell_restore_drive(saved_drive);
+    shell_print_vfs_error("COPY", arguments[1], result);
 }
 
 void cmd_exec(int arg_count, const char** arguments) {
-    if (arg_count == 0) {
-        printf("EXEC command without arguments\n");
-    } else {
-        create_process_for_file(arguments[0]);
+    if (arg_count != 1) {
+        printf("Usage: EXEC <program.prg>\n");
+        return;
     }
+    shell_resolved_path_t resolved;
+    if (!shell_resolve_path(arguments[0], &resolved)) return;
+    drive_t* saved_drive = current_drive;
+    int pid = create_process_for_file(resolved.vfs_path);
+    shell_restore_drive(saved_drive);
+    if (pid < 0) printf("Failed to start '%s'.\n", arguments[0]);
 }
 
 void cmd_kill(int arg_count, const char** arguments) {
@@ -1185,8 +1524,8 @@ void cmd_sys(int arg_count, const char** arguments) {
 }
 
 void cmd_open(int arg_count, const char** arguments) {
-    if (arg_count == 0) {
-        printf("OPEN command without arguments\n");
+    if (arg_count != 1) {
+        printf("Usage: TYPE <file>\n");
     } else {
         open_file(arguments[0]);
     }
@@ -1273,7 +1612,7 @@ void cmd_exit(int arg_count, const char** arguments) {
 
 void cmd_fdd(int arg_count, const char** arguments) {
     if (arg_count == 0) {
-        debug_read_bootsector(1);
+        debug_read_bootsector();
     } else {
 
         // int sector = strtoul(arguments[0], NULL, 10);
@@ -1321,103 +1660,80 @@ void cmd_wait(int arg_count, const char** arguments) {
 }
 
 void cmd_run(int arg_count, const char** arguments) {
-    if (arg_count == 0) {
-        printf("RUN command without arguments\n");
+    if (arg_count != 1) {
+        printf("Usage: RUN <program.prg>\n");
         return;
     }
-    char* program_name = (char*)arguments[0];
-    
-    int pid = create_process(program_name);
+    shell_resolved_path_t resolved;
+    if (!shell_resolve_path(arguments[0], &resolved)) return;
+    drive_t* saved_drive = current_drive;
+    int pid = create_process_for_file(resolved.vfs_path);
+    shell_restore_drive(saved_drive);
     if (pid == -1) {
-        printf("Failed to start program '%s'.\n", program_name);
+        printf("Failed to start program '%s'.\n", arguments[0]);
     }
 }
 
 // Open the specified file and print its contents
 void open_file(const char* path) {
-    printf("Opening file: %s\n", path);
+    shell_resolved_path_t resolved;
+    if (!shell_resolve_path(path, &resolved)) return;
 
-    switch ((drive_type_t)current_drive->type) {
-    case DRIVE_TYPE_ATA:
-{
-        FILE* file = fat32_open_file(path, "r");
-        if (file == NULL) {
-            printf("File not found: %s\n", path);
+    drive_t* saved_drive = current_drive;
+    vfs_node_t* node = NULL;
+    int result = vfs_open(resolved.vfs_path, &node);
+    if (result != VFS_OK) {
+        shell_restore_drive(saved_drive);
+        shell_print_vfs_error("TYPE", path, result);
+        return;
+    }
+    if (node->type != VFS_FILE) {
+        int type_error = node->type == VFS_DIRECTORY
+            ? VFS_ERR_IS_DIR : VFS_ERR_UNSUPPORTED;
+        (void)vfs_close(node);
+        shell_restore_drive(saved_drive);
+        shell_print_vfs_error("TYPE", path, type_error);
+        return;
+    }
+
+    uint8_t buffer[512];
+    uint32_t offset = 0;
+    char last = '\n';
+    bool wrote_anything = false;
+    while (offset < node->size) {
+        uint32_t amount = node->size - offset;
+        if (amount > sizeof(buffer)) amount = sizeof(buffer);
+        result = vfs_read(node, offset, amount, buffer);
+        if (result < 0) {
+            (void)vfs_close(node);
+            shell_restore_drive(saved_drive);
+            shell_print_vfs_error("TYPE", path, result);
             return;
         }
-
-        printf("Name: %s\n", file->name);
-        printf("Size: %zu\n", file->size);
-
-        // Calculate the size of the buffer based on the size of the file
-        size_t buffer_size = file->size; // Use the file size as the buffer size directly
-
-        // Allocate the buffer
-        char* buffer = (char*)malloc(buffer_size +1);
-        if (buffer == NULL) {
-            printf("Failed to allocate memory for file buffer\n");
+        if (result == 0 || (uint32_t)result > amount) {
+            (void)vfs_close(node);
+            shell_restore_drive(saved_drive);
+            shell_print_vfs_error("TYPE", path, VFS_ERR_IO);
             return;
         }
+        for (int i = 0; i < result; ++i) putchar((char)buffer[i]);
+        last = (char)buffer[result - 1];
+        wrote_anything = true;
+        offset += (uint32_t)result;
+    }
 
-        // Read the file into the buffer, passing the correct size
-        int result = fat32_read_file(file, buffer, buffer_size, buffer_size); // Pass buffer_size as the buffer size
-        if (result == 0) {
-            printf("Failed to read file\n");
-            free(buffer);  // Free buffer before returning
-            if (file->ptr) free(file->ptr);  // Free file data buffer
-            free(file);  // Free file structure
-            return;
-        }
-
-        printf("Result: %d\n", result);
-
-        printf("File contents:\n");
-        printf("%s\n", buffer);
-
-        // Free all allocated memory
-        secure_free(buffer, buffer_size);  // Clear the buffer with correct size
-        if (file->ptr) {
-            free(file->ptr);  // Free the file's internal buffer
-        }
-        free(file);  // Free the FILE structure
-        break;
+    int close_result = vfs_close(node);
+    shell_restore_drive(saved_drive);
+    if (wrote_anything && last != '\n') putchar('\n');
+    if (close_result != VFS_OK) {
+        shell_print_vfs_error("TYPE", path, close_result);
+    }
 }
-    case DRIVE_TYPE_FDD:
-    {
-        // TODO: use the gerneric FILE structure to read the file
-        fat12_file* file = fat12_open_file(path, "r");
-        if (file == NULL) {
-            printf("File not found: %s\n", path);
-            return;
-        }
 
-        // Calculate the size of the buffer based on the size of the file
-        size_t buffer_size = file->size; // Use the file size as the buffer size directly
-
-        // Allocate the buffer
-        char* buffer = (char*)malloc(sizeof(char) * buffer_size);
-        if (buffer == NULL) {
-            printf("Failed to allocate memory for file buffer\n");
-            return;
-        }
-
-        // Read the file into the buffer, passing the correct size
-        int result = fat12_read_file(file, buffer, buffer_size, file->size); // Pass buffer_size as the buffer size
-        if (result == 0) {
-            printf("Failed to read file\n");
-            return;
-        }
-
-        printf("File contents:\n%s\n", buffer);
-        hex_dump((unsigned char*)buffer, file->size);
-
-        secure_free(buffer, sizeof(buffer));  // Clear the buffer
-    }
-    break;
-
-    default:
-        break;
-    }
+void cmd_list_processes(int arg_count, const char** arguments) {
+    (void)arg_count;
+    (void)arguments;
+    list_running_processes();
 }
 
 void cmd_start_task(int arg_count, const char** arguments) {
@@ -1443,6 +1759,7 @@ void cmd_net(int arg_count, const char** arguments) {
         printf("  NET SEND    - Send test packet\n");
         printf("  NET INFO    - Show detailed network information\n");
         printf("  NET DEBUG   - Show E1000 register dump\n");
+        printf("  NET DHCP    - Request or renew the LAN address via DHCP\n");
         printf("  NET LISTEN [n] - Listen for incoming packets (n=count, default 10)\n");
         printf("  NET RECV    - Try to receive one packet\n");
         return;
@@ -1535,11 +1852,13 @@ void cmd_net(int arg_count, const char** arguments) {
             printf("  (Register dump not yet implemented for RTL8139)\n");
         } else if (e1000_is_initialized()) {
             e1000_debug_registers();
+            netstack_debug_stats();
             
             // Try to manually check for packets
             printf("\nManually checking for packets...\n");
             uint8_t buffer[2048];
-            int len = e1000_receive_packet(buffer, sizeof(buffer));
+            netdev_poll();
+            int len = netdev_receive_frame(buffer, sizeof(buffer));
             if (len > 0) {
                 printf("Found packet! Length: %d bytes\n", len);
                 // Print first 64 bytes
@@ -1554,6 +1873,15 @@ void cmd_net(int arg_count, const char** arguments) {
             }
         } else {
             printf("E1000 not initialized\n");
+        }
+    } else if (strcmp(arguments[0], "DHCP") == 0 ||
+               strcmp(arguments[0], "dhcp") == 0) {
+        if (!netdev_available()) {
+            printf("Network card not initialized.\n");
+            return;
+        }
+        if (!netstack_configure_dhcp()) {
+            printf("No DHCP lease received. Check the VMnet0 bridge and LAN.\n");
         }
     } else if(strcmp(arguments[0], "SEND") == 0 || strcmp(arguments[0], "send") == 0) {
         // Send a test packet
@@ -1575,19 +1903,11 @@ void cmd_net(int arg_count, const char** arguments) {
         }
     } else if(strcmp(arguments[0], "LISTEN") == 0 || strcmp(arguments[0], "listen") == 0) {
         // Listen for incoming packets
-        bool has_adapter = false;
-        if (e1000_is_initialized()) {
-            has_adapter = true;
-            printf("Using E1000 adapter\n");
-        } else if (ne2000_is_initialized()) {
-            has_adapter = true;
-            printf("Using NE2000 adapter\n");
-        }
-        
-        if (!has_adapter) {
+        if (!netdev_available()) {
             printf("Network card not initialized.\n");
             return;
         }
+        printf("Using %s adapter\n", netdev_backend_name());
         
         int max_packets = 10;  // Default
         if (arg_count > 1) {
@@ -1601,23 +1921,16 @@ void cmd_net(int arg_count, const char** arguments) {
         printf("Listening for up to %d packets... (Press Ctrl+C to stop)\n", max_packets);
         printf("Waiting for network traffic...\n");
         
-        uint8_t buffer[1500];
+        uint8_t buffer[1518];
         int packets_received = 0;
+        netdev_reset_monitor();
         
         for (int i = 0; i < max_packets * 100000; i++) {
-            int len = 0;
-            if (e1000_is_initialized()) {
-                len = e1000_receive_packet(buffer, sizeof(buffer));
-            } else if (ne2000_is_initialized()) {
-                len = ne2000_receive_packet(buffer, sizeof(buffer));
-            }
+            netdev_poll();
+            int len = netdev_receive_frame(buffer, sizeof(buffer));
             if (len > 0) {
                 packets_received++;
                 printf("\n[Packet %d] Received %d bytes:\n", packets_received, len);
-                
-                // Process packet through network stack
-                extern void netstack_process_packet(uint8_t *packet, uint16_t length);
-                netstack_process_packet(buffer, len);
                 
                 // Print packet header info
                 if (len >= 14) {
@@ -1652,17 +1965,14 @@ void cmd_net(int arg_count, const char** arguments) {
         
     } else if(strcmp(arguments[0], "RECV") == 0 || strcmp(arguments[0], "recv") == 0) {
         // Try to receive one packet
-        uint8_t buffer[1500];
-        int len = 0;
+        uint8_t buffer[1518];
         
-        if (e1000_is_initialized()) {
-            len = e1000_receive_packet(buffer, sizeof(buffer));
-        } else if (ne2000_is_initialized()) {
-            len = ne2000_receive_packet(buffer, sizeof(buffer));
-        } else {
+        if (!netdev_available()) {
             printf("Network card not initialized.\n");
             return;
         }
+        netdev_poll();
+        int len = netdev_receive_frame(buffer, sizeof(buffer));
         
         if (len > 0) {
             printf("Received %d bytes:\n", len);
@@ -1680,17 +1990,21 @@ void cmd_net(int arg_count, const char** arguments) {
     }
 }
 
-// Network stack commands
-extern void netstack_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway);
-extern uint32_t parse_ipv4(const char *ip_string);
-extern void netstack_process_packet(uint8_t *packet, uint16_t length);
-extern void arp_send_request(uint32_t target_ip);
-
 void cmd_ifconfig(int arg_count, const char** arguments) {
     if (arg_count == 0) {
         printf("IFCONFIG - Configure network interface\n");
+        printf("Usage: ifconfig dhcp\n");
         printf("Usage: ifconfig <ip> <netmask> <gateway>\n");
-        printf("Example: ifconfig 10.0.2.15 255.255.255.0 10.0.2.1\n");
+        printf("Example: ifconfig 192.168.1.50 255.255.255.0 192.168.1.1\n");
+        return;
+    }
+
+    if (arg_count == 1 &&
+        (strcmp(arguments[0], "dhcp") == 0 ||
+         strcmp(arguments[0], "DHCP") == 0)) {
+        if (!netstack_configure_dhcp()) {
+            printf("No DHCP lease received. Check the VMnet0 bridge and LAN.\n");
+        }
         return;
     }
     
@@ -1712,13 +2026,11 @@ void cmd_ifconfig(int arg_count, const char** arguments) {
     printf("Network interface configured successfully\n");
 }
 
-extern void icmp_send_echo_request(uint32_t dst_ip, uint16_t id, uint16_t seq);
-
 void cmd_ping(int arg_count, const char** arguments) {
     if (arg_count == 0) {
         printf("PING - Send ICMP echo request\n");
         printf("Usage: ping <ip_address>\n");
-        printf("Example: ping 10.0.2.1\n");
+        printf("Example: ping 192.168.1.1\n");
         return;
     }
 
@@ -1731,18 +2043,18 @@ void cmd_ping(int arg_count, const char** arguments) {
     static uint16_t ping_id = 0x1234;
     static uint16_t seq = 1;
 
-    printf("PING %s (id=0x%04X, seq=%d)...\n", arguments[0], ping_id, seq);
-
-    // Try to resolve ARP first
-    uint8_t mac[6];
-    if (!arp_lookup(target_ip, mac)) {
-        printf("No ARP entry for %s, sending ARP request...\n", arguments[0]);
-        arp_send_request(target_ip);
-        printf("Try again after ARP reply is received.\n");
+    if (netstack_get_ip_address() == 0) {
+        printf("PING aborted: no local IP address\n");
         return;
     }
 
-    icmp_send_echo_request(target_ip, htons(ping_id), htons(seq));
+    printf("PING %s (id=0x%04X, seq=%u)... ",
+           arguments[0], ping_id, seq);
+    if (netstack_ping(target_ip, ping_id, seq, 2000u)) {
+        printf("reply received\n");
+    } else {
+        printf("timeout or unreachable\n");
+    }
     seq++;
 }
 
@@ -1805,7 +2117,7 @@ void cmd_pci(int arg_count, const char **args) {
     }
 }
 
-#include "userspace/bin/basic.c"
+#include "userspace/bin/basic.h"
 
 // Print the current IP address
 void cmd_get_ip(int argc, const char **argv) {

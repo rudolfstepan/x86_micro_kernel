@@ -1,5 +1,11 @@
 # Priority 3.1: Cursor Positioning Implementation
 
+> **Historischer Implementierungsbericht (7. November 2025):** Die aktuelle
+> Tastatur- und Shellreferenz steht in
+> [`../features/KEYBOARD_SHORTCUTS.md`](../features/KEYBOARD_SHORTCUTS.md) und
+> [`../features/SHELL_ENHANCEMENTS.md`](../features/SHELL_ENHANCEMENTS.md).
+> Frühere Testausgaben und Einschränkungstabellen unten sind nicht maßgeblich.
+
 **Status**: ✅ **COMPLETED**  
 **Date**: 2025-11-07  
 **Feature**: Left/Right arrow keys for mid-line editing  

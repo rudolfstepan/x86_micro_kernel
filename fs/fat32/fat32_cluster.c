@@ -7,16 +7,12 @@
 // Validates that a cluster number is within valid range
 // --------------------------------------------------------------------
 bool is_valid_cluster(struct fat32_boot_sector* boot_sector, unsigned int cluster) {
-    if (cluster < 2) {
-        return false; // Clusters 0 and 1 are reserved
+    if (!boot_sector || cluster < 2 || cluster >= FAT32_RESERVED_MIN) {
+        return false;
     }
-    if (cluster >= FAT32_EOC_MIN) {
-        return true; // End-of-chain marker is valid in context
-    }
-    if (cluster >= get_total_clusters(boot_sector)) {
-        return false; // Beyond filesystem boundary
-    }
-    return true;
+
+    uint32_t count = get_total_clusters(boot_sector);
+    return count != 0 && (uint64_t)cluster <= (uint64_t)count + 1u;
 }
 
 // --------------------------------------------------------------------
@@ -51,9 +47,15 @@ unsigned int get_total_clusters(struct fat32_boot_sector* boot_sector) {
     // Assuming you have a global or accessible boot_sector structure
     // and the structure has fields: totalSectors32, reservedSectorCount,
     // numberOfFATs, FATsizeFAT32, and sectorsPerCluster
-    unsigned int total_data_sectors = boot_sector->total_sectors_32
-        - boot_sector->reserved_sector_count
-        - (boot_sector->number_of_fats * boot_sector->fat_size_32);
+    uint64_t metadata = (uint64_t)boot_sector->reserved_sector_count +
+                        (uint64_t)boot_sector->number_of_fats *
+                        boot_sector->fat_size_32;
+    if (metadata >= boot_sector->total_sectors_32) {
+        return 0;
+    }
+
+    unsigned int total_data_sectors =
+        boot_sector->total_sectors_32 - (uint32_t)metadata;
 
     unsigned int total_clusters = total_data_sectors / boot_sector->sectors_per_cluster;
 
@@ -75,17 +77,18 @@ unsigned int find_free_cluster(struct fat32_boot_sector* boot_sector) {
     
     // Use FSInfo hint if available
     if (fsinfo_valid && fsinfo.next_free_cluster != 0xFFFFFFFF && 
-        fsinfo.next_free_cluster >= 2 && fsinfo.next_free_cluster < total_clusters) {
+        fsinfo.next_free_cluster >= 2 &&
+        fsinfo.next_free_cluster <= total_clusters + 1u) {
         start_cluster = fsinfo.next_free_cluster;
-        printf("Using FSInfo hint: starting search at cluster %u\n", start_cluster);
     }
     
     // Search from hint to end
-    for (unsigned int cluster = start_cluster; cluster < total_clusters; cluster++) {
+    for (unsigned int cluster = start_cluster; cluster <= total_clusters + 1u; cluster++) {
         if (read_fat_entry(boot_sector, cluster) == 0) {
             // Found a free cluster - update FSInfo hint
             if (fsinfo_valid) {
-                fsinfo.next_free_cluster = cluster + 1;
+                fsinfo.next_free_cluster =
+                    cluster < total_clusters + 1u ? cluster + 1u : 0xFFFFFFFF;
             }
             return cluster;
         }
@@ -97,7 +100,7 @@ unsigned int find_free_cluster(struct fat32_boot_sector* boot_sector) {
             if (read_fat_entry(boot_sector, cluster) == 0) {
                 // Found a free cluster - update FSInfo hint
                 if (fsinfo_valid) {
-                    fsinfo.next_free_cluster = cluster + 1;
+                    fsinfo.next_free_cluster = cluster + 1u;
                 }
                 return cluster;
             }
@@ -109,63 +112,111 @@ unsigned int find_free_cluster(struct fat32_boot_sector* boot_sector) {
 
 // --------------------------------------------------------------------
 // mark_cluster_in_fat
-// Marks a cluster in the FAT with the specified value
-// Returns true if successful, false otherwise
 // --------------------------------------------------------------------
-bool mark_cluster_in_fat(struct fat32_boot_sector* boot_sector, unsigned int cluster, unsigned int value) {
-    if (cluster < 2 || cluster >= get_total_clusters(boot_sector)) {
-        return false; // Cluster number out of bounds
-    }
-    // Calculate the FAT entry's position
-    unsigned int fat_offset = cluster * 4; // Each FAT32 entry is 4 bytes
-    unsigned int fat_sector = partition_lba_offset + boot_sector->reserved_sector_count + (fat_offset / boot_sector->bytes_per_sector);
-    unsigned int ent_offset = fat_offset % boot_sector->bytes_per_sector;
-    // Read the sector containing this FAT entry
-    unsigned char buffer[boot_sector->bytes_per_sector];
-    if (!ata_read_sector(current_drive->base, fat_sector, buffer, current_drive->is_master)) {
-        printf("Error: Failed to read the sector containing the FAT entry.\n");
-        return false; // Error reading sector
-    }
-    
-    // Modify the FAT entry in the buffer
-    unsigned int* fat_entry_ptr = (unsigned int*)&buffer[ent_offset];
-    unsigned int old_value = *fat_entry_ptr & 0x0FFFFFFF;
-    *fat_entry_ptr = (*fat_entry_ptr & 0xF0000000) | (value & 0x0FFFFFFF); // Preserve high 4 bits, modify the rest
-    
-    // Write the modified sector back to ALL FAT copies (mirroring for redundancy)
-    for (unsigned int fat_num = 0; fat_num < boot_sector->number_of_fats; fat_num++) {
-        unsigned int fat_sector_offset = fat_num * boot_sector->fat_size_32;
-        unsigned int current_fat_sector = partition_lba_offset + boot_sector->reserved_sector_count + fat_sector_offset + (fat_offset / boot_sector->bytes_per_sector);
-        
-        if (!ata_write_sector(ata_base_address, current_fat_sector, buffer, current_drive->is_master)) {
-            printf("Error: Failed to write to FAT copy %u at sector %u\n", fat_num, current_fat_sector);
-            return false; // Error writing sector
+static bool write_fat_copy_entry(struct fat32_boot_sector* boot_sector,
+                                 unsigned int fat_number,
+                                 unsigned int fat_offset,
+                                 unsigned int value) {
+    const unsigned int sector = partition_lba_offset +
+        boot_sector->reserved_sector_count +
+        fat_number * boot_sector->fat_size_32 +
+        fat_offset / boot_sector->bytes_per_sector;
+    const unsigned int entry_offset = fat_offset % boot_sector->bytes_per_sector;
+    const unsigned int desired = value & 0x0FFFFFFFu;
+    unsigned char buffer[SECTOR_SIZE];
+    unsigned char verify[SECTOR_SIZE];
+    bool write_reported_success = false;
+    bool observed_after_write = false;
+
+    /* A command or its immediate verify read can fail after the sector was
+     * committed. Resolve the actual entry and retry before returning false. */
+    for (unsigned int attempt = 0; attempt < 3; ++attempt) {
+        if (!ata_read_sector(ata_base_address, sector, buffer,
+                             ata_is_master)) {
+            continue;
         }
-        
-        // Verify the write by reading back the sector
-        unsigned char verify_buffer[boot_sector->bytes_per_sector];
-        if (!ata_read_sector(current_drive->base, current_fat_sector, verify_buffer, current_drive->is_master)) {
-            printf("Error: Failed to read back FAT copy %u for verification\n", fat_num);
+
+        unsigned int* entry = (unsigned int*)&buffer[entry_offset];
+        if ((*entry & 0x0FFFFFFFu) == desired) return true;
+        *entry = (*entry & 0xF0000000u) | desired;
+        if (ata_write_sector(ata_base_address, sector, buffer,
+                             ata_is_master)) {
+            write_reported_success = true;
+        }
+
+        for (unsigned int verify_attempt = 0; verify_attempt < 3;
+             ++verify_attempt) {
+            if (ata_read_sector(ata_base_address, sector, verify,
+                                ata_is_master)) {
+                observed_after_write = true;
+                if (((*(unsigned int*)&verify[entry_offset]) & 0x0FFFFFFFu) ==
+                    desired) {
+                    return true;
+                }
+            }
+        }
+    }
+    /* A completed ATA write is authoritative when every subsequent read was
+     * unavailable.  A readable mismatch still fails: that is evidence that
+     * the requested value did not persist. */
+    if (write_reported_success && !observed_after_write) return true;
+    return false;
+}
+
+bool mark_cluster_in_fat(struct fat32_boot_sector* boot_sector,
+                         unsigned int cluster, unsigned int value) {
+    if (!is_valid_cluster(boot_sector, cluster) ||
+        boot_sector->bytes_per_sector != SECTOR_SIZE ||
+        boot_sector->number_of_fats == 0) {
+        return false;
+    }
+
+    const unsigned int active_fat = fat32_active_fat_index(boot_sector);
+    if (active_fat >= boot_sector->number_of_fats) return false;
+
+    const unsigned int fat_offset = cluster * 4u;
+    const unsigned int active_sector = partition_lba_offset +
+        boot_sector->reserved_sector_count +
+        active_fat * boot_sector->fat_size_32 +
+        fat_offset / boot_sector->bytes_per_sector;
+    const unsigned int entry_offset = fat_offset % boot_sector->bytes_per_sector;
+    unsigned char active_buffer[SECTOR_SIZE];
+    if (!ata_read_sector(ata_base_address, active_sector, active_buffer,
+                         ata_is_master)) {
+        return false;
+    }
+    const unsigned int old_value =
+        (*(unsigned int*)&active_buffer[entry_offset]) & 0x0FFFFFFFu;
+
+    const unsigned int first_fat = fat32_fat_is_mirrored(boot_sector) ?
+        0u : active_fat;
+    const unsigned int fat_count = fat32_fat_is_mirrored(boot_sector) ?
+        boot_sector->number_of_fats : active_fat + 1u;
+    bool mirror_degraded = false;
+    for (unsigned int fat_number = first_fat; fat_number < fat_count;
+         ++fat_number) {
+        bool updated = write_fat_copy_entry(boot_sector, fat_number,
+                                            fat_offset, value);
+        if (fat_number == active_fat && !updated) {
+            printf("Error: Failed to confirm active FAT entry %u\n", cluster);
             return false;
         }
-        
-        // Compare the written data
-        if (memcmp(buffer, verify_buffer, boot_sector->bytes_per_sector) != 0) {
-            printf("Error: Write verification failed for FAT copy %u\n", fat_num);
-            return false;
+        if (!updated) {
+            mirror_degraded = true;
+            printf("Warning: FAT copy %u is stale at entry %u\n",
+                   fat_number, cluster);
         }
     }
-    
-    // Update FSInfo if cluster allocation changed
+
     extern void update_fsinfo_free_count(int delta);
     if (old_value == 0 && value != 0) {
-        // Cluster was allocated
         update_fsinfo_free_count(-1);
     } else if (old_value != 0 && value == 0) {
-        // Cluster was freed
         update_fsinfo_free_count(1);
     }
-    
+    if (mirror_degraded) {
+        printf("Warning: continuing with the verified active FAT copy\n");
+    }
     return true;
 }
 
@@ -174,10 +225,15 @@ bool mark_cluster_in_fat(struct fat32_boot_sector* boot_sector, unsigned int clu
 // Calculates the first sector of the data region in the filesystem
 // --------------------------------------------------------------------
 unsigned int get_first_data_sector(struct fat32_boot_sector* boot_sector) {
-    unsigned int root_dir_sectors = ((boot_sector->root_entry_count * 32) + (boot_sector->bytes_per_sector - 1)) / boot_sector->bytes_per_sector;
-    unsigned int first_data_sector = partition_lba_offset + boot_sector->reserved_sector_count + (boot_sector->number_of_fats * boot_sector->fat_size_32) + root_dir_sectors;
-
-    return first_data_sector;
+    if (!boot_sector || boot_sector->bytes_per_sector == 0) return INVALID_CLUSTER;
+    uint64_t root_dir_sectors =
+        ((uint64_t)boot_sector->root_entry_count * 32u +
+         boot_sector->bytes_per_sector - 1u) / boot_sector->bytes_per_sector;
+    uint64_t first = (uint64_t)partition_lba_offset +
+        boot_sector->reserved_sector_count +
+        (uint64_t)boot_sector->number_of_fats * boot_sector->fat_size_32 +
+        root_dir_sectors;
+    return first <= UINT32_MAX ? (uint32_t)first : INVALID_CLUSTER;
 }
 
 // --------------------------------------------------------------------
@@ -186,12 +242,14 @@ unsigned int get_first_data_sector(struct fat32_boot_sector* boot_sector) {
 // Returns true if successful, false otherwise
 // --------------------------------------------------------------------
 bool write_cluster(struct fat32_boot_sector* boot_sector, unsigned int cluster, const struct fat32_dir_entry* entries) {
-    if (entries == NULL) {
+    if (entries == NULL || !is_valid_cluster(boot_sector, cluster) ||
+        boot_sector->bytes_per_sector != SECTOR_SIZE) {
         printf("Error: Entries buffer is null.\n");
         return false; // Error: Buffer is null
     }
-    // Calculate the starting sector for this cluster
-    unsigned int first_sector_of_cluster = ((cluster - 2) * boot_sector->sectors_per_cluster) + get_first_data_sector(boot_sector);
+    unsigned int first_sector_of_cluster =
+        cluster_to_sector(boot_sector, cluster);
+    if (first_sector_of_cluster == INVALID_CLUSTER) return false;
 
     for (unsigned int i = 0; i < boot_sector->sectors_per_cluster; i++) {
         // Calculate sector number to write to
@@ -200,14 +258,14 @@ bool write_cluster(struct fat32_boot_sector* boot_sector, unsigned int cluster, 
         void* buffer_ptr = ((unsigned char*)entries) + (i * boot_sector->bytes_per_sector);
         
         // Write the sector
-        if (!ata_write_sector(ata_base_address, sector_number, buffer_ptr, current_drive->is_master)) {
+        if (!ata_write_sector(ata_base_address, sector_number, buffer_ptr, ata_is_master)) {
             printf("Error: Failed to write to sector %u.\n", sector_number);
             return false; // Error writing sector
         }
         
         // Verify the write by reading back the sector
-        unsigned char verify_buffer[boot_sector->bytes_per_sector];
-        if (!ata_read_sector(current_drive->base, sector_number, verify_buffer, current_drive->is_master)) {
+        unsigned char verify_buffer[SECTOR_SIZE];
+        if (!ata_read_sector(ata_base_address, sector_number, verify_buffer, ata_is_master)) {
             printf("Error: Failed to read back sector %u for verification\n", sector_number);
             return false;
         }
@@ -226,28 +284,43 @@ unsigned int cluster_to_sector(struct fat32_boot_sector* boot_sector, unsigned i
     // Validate cluster number
     if (!is_valid_cluster(boot_sector, cluster)) {
         printf("Error: Invalid cluster number %u\n", cluster);
-        return 0; // Return invalid sector
+        return INVALID_CLUSTER;
     }
     
-    unsigned int first_data_sector = boot_sector->reserved_sector_count + (boot_sector->number_of_fats * boot_sector->fat_size_32);
-    return partition_lba_offset + ((cluster - 2) * boot_sector->sectors_per_cluster) + first_data_sector;
+    uint64_t first_data_sector = boot_sector->reserved_sector_count +
+        ((uint64_t)boot_sector->number_of_fats * boot_sector->fat_size_32);
+    uint64_t sector = partition_lba_offset + first_data_sector +
+        ((uint64_t)(cluster - 2) * boot_sector->sectors_per_cluster);
+    uint64_t volume_end = (uint64_t)partition_lba_offset +
+                          boot_sector->total_sectors_32;
+    if (sector > UINT32_MAX ||
+        sector + boot_sector->sectors_per_cluster > volume_end) {
+        return INVALID_CLUSTER;
+    }
+    return (unsigned int)sector;
 }
 
-void read_cluster(struct fat32_boot_sector* boot_sector, unsigned int cluster_number, void* buffer) {
-    if (!is_valid_cluster(boot_sector, cluster_number)) {
+bool read_cluster(struct fat32_boot_sector* boot_sector, unsigned int cluster_number, void* buffer) {
+    if (!buffer || !is_valid_cluster(boot_sector, cluster_number) ||
+        boot_sector->bytes_per_sector != SECTOR_SIZE) {
         printf("Error: Cannot read invalid cluster %u\n", cluster_number);
-        return;
+        return false;
     }
     
     unsigned int startSector = cluster_to_sector(boot_sector, cluster_number);
-    if (startSector == 0) {
+    if (startSector == INVALID_CLUSTER) {
         printf("Error: Invalid sector for cluster %u\n", cluster_number);
-        return;
+        return false;
     }
     
     for (unsigned int i = 0; i < boot_sector->sectors_per_cluster; ++i) {
-        ata_read_sector(current_drive->base, startSector + i, buffer + (i * SECTOR_SIZE), current_drive->is_master);
+        if (!ata_read_sector(ata_base_address, startSector + i,
+                             (uint8_t*)buffer + (i * SECTOR_SIZE),
+                             ata_is_master)) {
+            return false;
+        }
     }
+    return true;
 }
 
 unsigned int read_start_cluster(struct fat32_dir_entry* entry) {
@@ -255,13 +328,21 @@ unsigned int read_start_cluster(struct fat32_dir_entry* entry) {
 }
 
 unsigned int get_next_cluster_in_chain(struct fat32_boot_sector* boot_sector, unsigned int current_cluster) {
+    if (!is_valid_cluster(boot_sector, current_cluster) ||
+        boot_sector->bytes_per_sector != SECTOR_SIZE) {
+        return INVALID_CLUSTER;
+    }
+
     unsigned int fat_offset = current_cluster * 4; // 4 bytes per FAT32 entry
-    unsigned int fat_sector = partition_lba_offset + boot_sector->reserved_sector_count + (fat_offset / boot_sector->bytes_per_sector);
+    unsigned int fat_sector = partition_lba_offset +
+        boot_sector->reserved_sector_count +
+        fat32_active_fat_index(boot_sector) * boot_sector->fat_size_32 +
+        (fat_offset / boot_sector->bytes_per_sector);
     unsigned int ent_offset = fat_offset % boot_sector->bytes_per_sector;
     // Buffer to read a part of the FAT
-    unsigned char buffer[boot_sector->bytes_per_sector];
+    unsigned char buffer[SECTOR_SIZE];
     // Read the sector of the FAT that contains the current cluster's entry
-    if (!ata_read_sector(current_drive->base, fat_sector, buffer, current_drive->is_master)) {
+    if (!ata_read_sector(ata_base_address, fat_sector, buffer, ata_is_master)) {
         // Handle read error
         return INVALID_CLUSTER;
     }
@@ -269,10 +350,6 @@ unsigned int get_next_cluster_in_chain(struct fat32_boot_sector* boot_sector, un
     unsigned int nextCluster = *(unsigned int*)&buffer[ent_offset];
     // Mask out the high 4 bits (reserved for FAT32)
     nextCluster &= FAT32_EOC_MAX;
-    // Check for end of chain markers
-    if (nextCluster >= FAT32_EOC_MIN) {
-        return INVALID_CLUSTER; // End of chain
-    }
     return nextCluster;
 }
 
@@ -285,11 +362,15 @@ unsigned int find_next_cluster(struct fat32_boot_sector* boot_sector, const char
     struct fat32_dir_entry entries[SECTOR_SIZE / sizeof(struct fat32_dir_entry)];
     unsigned int nextCluster = INVALID_CLUSTER;
 
-    do {
+    unsigned int traversed = 0;
+    unsigned int limit = get_total_clusters(boot_sector);
+    while (is_valid_cluster(boot_sector, current_cluster) &&
+           traversed++ < limit) {
         unsigned int sector = cluster_to_sector(boot_sector, current_cluster);
+        if (sector == INVALID_CLUSTER) return INVALID_CLUSTER;
         for (unsigned int i = 0; i < boot_sector->sectors_per_cluster; i++) {
             // Read the entire sector
-            if (!ata_read_sector(current_drive->base, sector + i, entries, current_drive->is_master)) {
+            if (!ata_read_sector(ata_base_address, sector + i, entries, ata_is_master)) {
                 // Handle read error
                 return INVALID_CLUSTER;
             }
@@ -315,8 +396,14 @@ unsigned int find_next_cluster(struct fat32_boot_sector* boot_sector, const char
         }
 
         // Move to the next cluster in the chain
-        current_cluster = get_next_cluster_in_chain(boot_sector, current_cluster);
-    } while (current_cluster < FAT32_EOC_MIN);
+        unsigned int next =
+            get_next_cluster_in_chain(boot_sector, current_cluster);
+        if (next == INVALID_CLUSTER || is_end_of_cluster_chain(next) ||
+            !is_valid_cluster(boot_sector, next)) {
+            return INVALID_CLUSTER;
+        }
+        current_cluster = next;
+    }
 
     return INVALID_CLUSTER; // Directory not found
 }
@@ -368,8 +455,12 @@ void extract_fat32_time(uint16_t fat_time, int* hours, int* minutes, int* second
 
 // Function to read and print directory entries in a DOS-like format
 void read_cluster_dir_entries(unsigned int current_cluster) {
-    unsigned int sector = cluster_to_sector(&boot_sector, current_cluster);
-    struct fat32_dir_entry entries[SECTOR_SIZE * boot_sector.sectors_per_cluster / sizeof(struct fat32_dir_entry)];
+    size_t cluster_bytes = SECTOR_SIZE * boot_sector.sectors_per_cluster;
+    struct fat32_dir_entry* entries =
+        (struct fat32_dir_entry*)malloc(cluster_bytes);
+    if (!entries) {
+        return;
+    }
 
     // Print DOS-like header
     printf(" Volume in drive C has no label\n");
@@ -377,42 +468,55 @@ void read_cluster_dir_entries(unsigned int current_cluster) {
     printf("FILENAME      SIZE     DATE       TIME     TYPE\n");
     printf("----------------------------------------------------\n");
 
-    // Read directory entries - read entire cluster
-    for (unsigned int i = 0; i < boot_sector.sectors_per_cluster; i++) {
-        void* buffer_offset = (void*)((uint8_t*)entries + (i * SECTOR_SIZE));
-        if (!ata_read_sector(current_drive->base, sector + i, buffer_offset, current_drive->is_master)) {
-            printf("Error reading sector %u\n", sector + i);
+    uint32_t traversed = 0;
+    uint32_t cluster_limit = get_total_clusters(&boot_sector);
+    bool end_of_directory = false;
+    while (is_valid_cluster(&boot_sector, current_cluster) &&
+           traversed++ < cluster_limit && !end_of_directory) {
+        if (!read_cluster(&boot_sector, current_cluster, entries)) {
+            free(entries);
             return;
         }
+
+        unsigned int count = cluster_bytes / sizeof(struct fat32_dir_entry);
+        for (unsigned int j = 0; j < count; j++) {
+            if (entries[j].name[0] == 0x00) {
+                end_of_directory = true;
+                break;
+            }
+
+            // Skip LFN entries and deleted entries
+            if ((entries[j].name[0] == 0xE5) ||
+                (entries[j].attr & 0x0F) == 0x0F) {
+                continue;
+            }
+
+            char current_name[13];
+            format_filename(current_name, entries[j].name);
+
+            int day, month, year, hours, minutes, seconds;
+            extract_fat32_date(entries[j].write_date, &day, &month, &year);
+            extract_fat32_time(entries[j].write_time, &hours, &minutes, &seconds);
+
+            if (entries[j].attr & 0x10) {
+                printf("%-12s   <DIR>          %02d-%02d-%04d  %02d:%02d:%02d\n",
+                       current_name, day, month, year, hours, minutes, seconds);
+            } else {
+                printf("%-12s %10u %02d-%02d-%04d  %02d:%02d:%02d\n",
+                       current_name, entries[j].file_size, day, month, year,
+                       hours, minutes, seconds);
+            }
+        }
+
+        if (!end_of_directory) {
+            uint32_t next = get_next_cluster_in_chain(&boot_sector, current_cluster);
+            if (next == INVALID_CLUSTER || is_end_of_cluster_chain(next)) {
+                break;
+            }
+            current_cluster = next;
+        }
     }
-
-    for (unsigned int j = 0; j < sizeof(entries) / sizeof(struct fat32_dir_entry); j++) {
-        if (entries[j].name[0] == 0x00) { // End of directory
-            break;
-        }
-
-        // Skip LFN entries and deleted entries
-        if ((entries[j].name[0] == 0xE5) || (entries[j].attr & 0x0F) == 0x0F) {
-            continue;
-        }
-
-        // Process 8.3 entries and format the filename
-        char current_name[13]; // Buffer to hold formatted filename
-        format_filename(current_name, entries[j].name);
-
-        int day, month, year, hours, minutes, seconds;
-        extract_fat32_date(entries[j].write_date, &day, &month, &year);
-        extract_fat32_time(entries[j].write_time, &hours, &minutes, &seconds);
-
-        // Print directory or file entry in a DOS-like format
-        if (entries[j].attr & 0x10) {  // Directory
-            printf("%-12s   <DIR>          %02d-%02d-%04d  %02d:%02d:%02d\n",
-                   current_name, day, month, year, hours, minutes, seconds);
-        } else {  // File
-            printf("%-12s %10u %02d-%02d-%04d  %02d:%02d:%02d\n",
-                   current_name, entries[j].file_size, day, month, year, hours, minutes, seconds);
-        }
-    }
+    free(entries);
 }
 
 unsigned int allocate_new_cluster(struct fat32_boot_sector* boot_sector) {
@@ -420,10 +524,10 @@ unsigned int allocate_new_cluster(struct fat32_boot_sector* boot_sector) {
     // and a function to get the total number of clusters in the filesystem
     unsigned int total_clusters = get_total_clusters(boot_sector); // Implement this function
     // Scan the FAT for a free cluster
-    for (unsigned int cluster = 2; cluster < total_clusters; cluster++) {
+    for (unsigned int cluster = 2; cluster <= total_clusters + 1u; cluster++) {
         if (read_fat_entry(boot_sector, cluster) == 0) { // Assuming 0 indicates a free cluster
             // Mark the cluster as used (end of chain)
-            if (write_fat_entry(boot_sector, cluster, FAT32_EOC_MAX)) { // Implement this function
+            if (mark_cluster_in_fat(boot_sector, cluster, FAT32_EOC_MAX)) {
                 return cluster; // Successfully allocated cluster
             } else {
                 return INVALID_CLUSTER; // Failed to update FAT entry
@@ -435,20 +539,89 @@ unsigned int allocate_new_cluster(struct fat32_boot_sector* boot_sector) {
 }
 
 bool link_cluster_to_chain(struct fat32_boot_sector* boot_sector, unsigned int parent_cluster, unsigned int new_cluster) {
+    if (!is_valid_cluster(boot_sector, parent_cluster) ||
+        !is_valid_cluster(boot_sector, new_cluster)) {
+        return false;
+    }
+
     unsigned int current_cluster = parent_cluster;
     unsigned int nextCluster = get_next_cluster_in_chain(boot_sector, current_cluster);
+    unsigned int traversed = 0;
+    unsigned int cluster_limit = get_total_clusters(boot_sector);
 
-    while (nextCluster < FAT32_EOC_MIN) {
+    while (nextCluster != INVALID_CLUSTER &&
+           !is_end_of_cluster_chain(nextCluster) &&
+           traversed++ < cluster_limit) {
+        if (!is_valid_cluster(boot_sector, nextCluster)) {
+            return false;
+        }
         current_cluster = nextCluster;
         nextCluster = get_next_cluster_in_chain(boot_sector, current_cluster);
+    }
+    if (nextCluster == INVALID_CLUSTER || traversed >= cluster_limit) {
+        return false;
     }
     // current_cluster now points to the last cluster in the chain
     // Update the FAT to link the new cluster to the chain
     if (!mark_cluster_in_fat(boot_sector, current_cluster, new_cluster)) {
-        printf("Error: Failed to link cluster %u to chain starting at %u\n", new_cluster, parent_cluster);
-        return false; // Failed to update the FAT
+        unsigned int observed =
+            get_next_cluster_in_chain(boot_sector, current_cluster);
+        if (observed != new_cluster) {
+            printf("Error: Failed to confirm cluster %u in chain starting at %u\n",
+                   new_cluster, parent_cluster);
+            return false;
+        }
     }
     return true;
+}
+
+bool fat32_get_chain_tail(struct fat32_boot_sector* boot_sector,
+                          unsigned int start_cluster,
+                          unsigned int* tail_cluster) {
+    if (!boot_sector || !tail_cluster ||
+        !is_valid_cluster(boot_sector, start_cluster)) {
+        return false;
+    }
+
+    unsigned int current = start_cluster;
+    unsigned int cluster_limit = get_total_clusters(boot_sector);
+    for (unsigned int traversed = 0; traversed < cluster_limit; ++traversed) {
+        unsigned int next =
+            get_next_cluster_in_chain(boot_sector, current);
+        if (next == INVALID_CLUSTER) return false;
+        if (is_end_of_cluster_chain(next)) {
+            *tail_cluster = current;
+            return true;
+        }
+        if (!is_valid_cluster(boot_sector, next)) return false;
+        current = next;
+    }
+    return false;
+}
+
+bool fat32_reclaim_chain_suffix(struct fat32_boot_sector* boot_sector,
+                                unsigned int original_tail) {
+    if (!boot_sector || !is_valid_cluster(boot_sector, original_tail)) {
+        return false;
+    }
+
+    unsigned int suffix =
+        get_next_cluster_in_chain(boot_sector, original_tail);
+    if (suffix == INVALID_CLUSTER) return false;
+    if (is_end_of_cluster_chain(suffix)) return true;
+    if (!is_valid_cluster(boot_sector, suffix)) return false;
+
+    /* Detach first: once the old tail is durably EOC, reclaiming any part of
+     * the private suffix can no longer leave the published file dangling. */
+    if (!mark_cluster_in_fat(boot_sector, original_tail, FAT32_EOC_MAX)) {
+        unsigned int observed =
+            get_next_cluster_in_chain(boot_sector, original_tail);
+        if (observed == INVALID_CLUSTER ||
+            !is_end_of_cluster_chain(observed)) {
+            return false;
+        }
+    }
+    return free_cluster_chain(boot_sector, suffix);
 }
 
 bool free_cluster_chain(struct fat32_boot_sector* boot_sector, unsigned int start_cluster) {
@@ -459,10 +632,17 @@ bool free_cluster_chain(struct fat32_boot_sector* boot_sector, unsigned int star
     }
 
     unsigned int current_cluster = start_cluster;
+    unsigned int traversed = 0;
+    unsigned int cluster_limit = get_total_clusters(boot_sector);
 
-    while (1) {
-        // Read next cluster in chain (may return INVALID_CLUSTER on EOC or error)
+    while (traversed++ < cluster_limit) {
+        // Read the successor before freeing the current entry.  A read error
+        // must not be confused with EOC, otherwise a partial free is reported
+        // as success.
         unsigned int next_cluster = get_next_cluster_in_chain(boot_sector, current_cluster);
+        if (next_cluster == INVALID_CLUSTER) {
+            return false;
+        }
 
         // Free the current cluster's FAT entry
         if (!mark_cluster_in_fat(boot_sector, current_cluster, 0)) {
@@ -471,19 +651,19 @@ bool free_cluster_chain(struct fat32_boot_sector* boot_sector, unsigned int star
         }
 
         // If next_cluster indicates end-of-chain or an error, stop
-        if (next_cluster == INVALID_CLUSTER || is_end_of_cluster_chain(next_cluster)) {
+        if (is_end_of_cluster_chain(next_cluster)) {
             break;
         }
 
         // If the next cluster is invalid for the filesystem boundaries, stop to avoid loops
         if (!is_valid_cluster(boot_sector, next_cluster)) {
             printf("Warning: Next cluster %u is invalid, stopping free operation\n", next_cluster);
-            break;
+            return false;
         }
 
         // Continue with the next cluster
         current_cluster = next_cluster;
     }
 
-    return true;
+    return traversed <= cluster_limit;
 }

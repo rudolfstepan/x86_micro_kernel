@@ -1,5 +1,11 @@
 # Keyboard Driver Improvements - Priority 1 Complete ✅
 
+> **Historischer Implementierungsbericht:** Codeausschnitte und Testbefehle
+> beziehen sich auf den damaligen Zwischenschritt. Der heutige Eingabepfad ist
+> in [`../features/KEYBOARD_SHORTCUTS.md`](../features/KEYBOARD_SHORTCUTS.md)
+> und [`../features/SHELL_ENHANCEMENTS.md`](../features/SHELL_ENHANCEMENTS.md)
+> beschrieben.
+
 ## Summary of Changes
 
 I've completed **Priority 1 (Critical)** improvements to make your keyboard driver professional-grade:

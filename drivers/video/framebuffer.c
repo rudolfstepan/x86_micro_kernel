@@ -2,11 +2,20 @@
 #include "lib/libc/string.h"
 
 // Framebuffer state
-static uint32_t* fb_address = NULL;
+static uint8_t* fb_address = NULL;
 static uint32_t fb_width = 0;
 static uint32_t fb_height = 0;
 static uint32_t fb_pitch = 0;
 static uint8_t fb_bpp = 0;
+static uint8_t fb_bytes_per_pixel = 0;
+static uint8_t fb_red_position = 0;
+static uint8_t fb_red_size = 0;
+static uint8_t fb_green_position = 0;
+static uint8_t fb_green_size = 0;
+static uint8_t fb_blue_position = 0;
+static uint8_t fb_blue_size = 0;
+static int terminal_cols = 0;
+static int terminal_rows = 0;
 
 // Terminal state
 static int cursor_x = 0;
@@ -4628,15 +4637,73 @@ static const uint8_t font_8x16[4096] = {
 
 };
 
+static bool framebuffer_channel_valid(uint8_t position, uint8_t size,
+                                      uint8_t bits_per_pixel) {
+    return size > 0 && size <= bits_per_pixel && position < bits_per_pixel &&
+           (uint16_t)position + size <= bits_per_pixel;
+}
+
+static uint64_t framebuffer_channel_mask(uint8_t position, uint8_t size) {
+    return (((uint64_t)1u << size) - 1u) << position;
+}
+
 // Initialize framebuffer
 void framebuffer_init(multiboot_framebuffer_info_t* fb_info) {
-    if (!fb_info) return;
-    
-    fb_address = (uint32_t*)fb_info->framebuffer_addr;
+    fb_address = NULL;
+    fb_width = fb_height = fb_pitch = 0;
+    fb_bpp = fb_bytes_per_pixel = 0;
+    fb_red_position = fb_red_size = 0;
+    fb_green_position = fb_green_size = 0;
+    fb_blue_position = fb_blue_size = 0;
+    terminal_cols = terminal_rows = 0;
+    if (!fb_info || fb_info->framebuffer_addr == 0 ||
+        fb_info->framebuffer_type != 1 ||
+        fb_info->framebuffer_width < FONT_WIDTH ||
+        fb_info->framebuffer_height < FONT_HEIGHT ||
+        (fb_info->framebuffer_bpp != 8 && fb_info->framebuffer_bpp != 16 &&
+         fb_info->framebuffer_bpp != 24 && fb_info->framebuffer_bpp != 32) ||
+        !framebuffer_channel_valid(fb_info->red_field_position,
+                                   fb_info->red_mask_size,
+                                   fb_info->framebuffer_bpp) ||
+        !framebuffer_channel_valid(fb_info->green_field_position,
+                                   fb_info->green_mask_size,
+                                   fb_info->framebuffer_bpp) ||
+        !framebuffer_channel_valid(fb_info->blue_field_position,
+                                   fb_info->blue_mask_size,
+                                   fb_info->framebuffer_bpp)) return;
+
+    uint64_t red_mask = framebuffer_channel_mask(fb_info->red_field_position,
+                                                 fb_info->red_mask_size);
+    uint64_t green_mask = framebuffer_channel_mask(fb_info->green_field_position,
+                                                   fb_info->green_mask_size);
+    uint64_t blue_mask = framebuffer_channel_mask(fb_info->blue_field_position,
+                                                  fb_info->blue_mask_size);
+    if ((red_mask & green_mask) || (red_mask & blue_mask) ||
+        (green_mask & blue_mask)) return;
+
+    uint8_t bytes_per_pixel = (uint8_t)(fb_info->framebuffer_bpp / 8u);
+    if (fb_info->framebuffer_width > 0xFFFFFFFFu / bytes_per_pixel ||
+        fb_info->framebuffer_pitch < fb_info->framebuffer_width * bytes_per_pixel) return;
+    uint64_t framebuffer_size = (uint64_t)fb_info->framebuffer_pitch *
+                                fb_info->framebuffer_height;
+    if (framebuffer_size == 0 || framebuffer_size > 0x100000000ULL ||
+        fb_info->framebuffer_addr > 0xFFFFFFFFULL ||
+        fb_info->framebuffer_addr + framebuffer_size > 0x100000000ULL) return;
+
+    fb_address = (uint8_t*)(uintptr_t)fb_info->framebuffer_addr;
     fb_width = fb_info->framebuffer_width;
     fb_height = fb_info->framebuffer_height;
     fb_pitch = fb_info->framebuffer_pitch;
     fb_bpp = fb_info->framebuffer_bpp;
+    fb_bytes_per_pixel = bytes_per_pixel;
+    fb_red_position = fb_info->red_field_position;
+    fb_red_size = fb_info->red_mask_size;
+    fb_green_position = fb_info->green_field_position;
+    fb_green_size = fb_info->green_mask_size;
+    fb_blue_position = fb_info->blue_field_position;
+    fb_blue_size = fb_info->blue_mask_size;
+    terminal_cols = (int)(fb_width / FONT_WIDTH);
+    terminal_rows = (int)(fb_height / FONT_HEIGHT);
     
     cursor_x = 0;
     cursor_y = 0;
@@ -4649,12 +4716,27 @@ bool framebuffer_available() {
     return (fb_address != NULL);
 }
 
+static uint32_t framebuffer_scale_channel(uint8_t value, uint8_t bits) {
+    uint64_t maximum = ((uint64_t)1u << bits) - 1u;
+    return (uint32_t)(((uint64_t)value * maximum + 127u) / 255u);
+}
+
 // Set pixel at position
 static inline void fb_set_pixel(int x, int y, uint32_t color) {
     if (x < 0 || x >= (int)fb_width || y < 0 || y >= (int)fb_height) return;
     
-    uint32_t* pixel = (uint32_t*)((uint8_t*)fb_address + y * fb_pitch + x * (fb_bpp / 8));
-    *pixel = color;
+    uint8_t *pixel = fb_address + (uint32_t)y * fb_pitch +
+                     (uint32_t)x * fb_bytes_per_pixel;
+    uint8_t red = (uint8_t)(color >> 16);
+    uint8_t green = (uint8_t)(color >> 8);
+    uint8_t blue = (uint8_t)color;
+    uint32_t native_color =
+        (framebuffer_scale_channel(red, fb_red_size) << fb_red_position) |
+        (framebuffer_scale_channel(green, fb_green_size) << fb_green_position) |
+        (framebuffer_scale_channel(blue, fb_blue_size) << fb_blue_position);
+    for (uint8_t byte = 0; byte < fb_bytes_per_pixel; ++byte) {
+        pixel[byte] = (uint8_t)(native_color >> (byte * 8u));
+    }
 }
 
 // Draw a character at specific position
@@ -4694,28 +4776,20 @@ void framebuffer_clear() {
 void framebuffer_scroll() {
     if (!fb_address) return;
     
-    // Copy all rows up by one
-    for (int y = 0; y < TERM_ROWS - 1; y++) {
-        for (int x = 0; x < TERM_COLS; x++) {
-            // Copy character from row below
-            // This is simplified - in a real implementation you'd copy the pixels
-            for (int row = 0; row < FONT_HEIGHT; row++) {
-                for (int col = 0; col < FONT_WIDTH; col++) {
-                    int src_y = (y + 1) * FONT_HEIGHT + row;
-                    int dst_y = y * FONT_HEIGHT + row;
-                    int pixel_x = x * FONT_WIDTH + col;
-                    
-                    uint32_t* src = (uint32_t*)((uint8_t*)fb_address + src_y * fb_pitch + pixel_x * (fb_bpp / 8));
-                    uint32_t* dst = (uint32_t*)((uint8_t*)fb_address + dst_y * fb_pitch + pixel_x * (fb_bpp / 8));
-                    *dst = *src;
-                }
-            }
+    if (terminal_rows <= 0 || terminal_cols <= 0) return;
+    uint32_t row_bytes = fb_width * fb_bytes_per_pixel;
+    uint32_t copy_lines = (uint32_t)(terminal_rows - 1) * FONT_HEIGHT;
+    for (uint32_t y = 0; y < copy_lines; ++y) {
+        uint8_t *dst = fb_address + y * fb_pitch;
+        const uint8_t *src = fb_address + (y + FONT_HEIGHT) * fb_pitch;
+        for (uint32_t i = 0; i < row_bytes; ++i) {
+            dst[i] = src[i];
         }
     }
     
     // Clear the last row
-    for (int x = 0; x < TERM_COLS; x++) {
-        fb_draw_char(' ', x, TERM_ROWS - 1, fg_color, bg_color);
+    for (int x = 0; x < terminal_cols; x++) {
+        fb_draw_char(' ', x, terminal_rows - 1, fg_color, bg_color);
     }
 }
 
@@ -4741,15 +4815,15 @@ void framebuffer_putchar(char c) {
     }
     
     // Handle line wrap
-    if (cursor_x >= TERM_COLS) {
+    if (cursor_x >= terminal_cols) {
         cursor_x = 0;
         cursor_y++;
     }
     
     // Handle scroll
-    if (cursor_y >= TERM_ROWS) {
+    if (cursor_y >= terminal_rows) {
         framebuffer_scroll();
-        cursor_y = TERM_ROWS - 1;
+        cursor_y = terminal_rows - 1;
     }
 }
 
@@ -4774,6 +4848,6 @@ void framebuffer_get_cursor(int* x, int* y) {
 
 // Set cursor position
 void framebuffer_set_cursor(int x, int y) {
-    if (x >= 0 && x < TERM_COLS) cursor_x = x;
-    if (y >= 0 && y < TERM_ROWS) cursor_y = y;
+    if (x >= 0 && x < terminal_cols) cursor_x = x;
+    if (y >= 0 && y < terminal_rows) cursor_y = y;
 }

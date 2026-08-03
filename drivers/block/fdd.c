@@ -19,9 +19,10 @@
 #define FDD_MSR              0x3F4
 #define FDD_FIFO             0x3F5
 #define FDD_CCR              0x3F7   // ✅ added: Control Configuration Register
-#define PIC1_COMMAND         0x20
 #define PIC1_DATA            0x21
-#define PIC_EOI              0x20
+#define CMOS_ADDRESS         0x70
+#define CMOS_DATA            0x71
+#define CMOS_FLOPPY_TYPES    0x10
 #define SECTOR_SIZE          512
 
 #define DMA_CHANNEL_MASK 0x0A
@@ -32,7 +33,6 @@
 #define DMA_PAGE_PORT 0x81
 #define DMA_UNMASK_CHANNEL 0x02
 
-#define MAX_FDD_DRIVES 2
 #define FDD_DRIVE_A 0
 #define FDD_DRIVE_B 1
 
@@ -44,6 +44,22 @@ static volatile bool irq_triggered = false;
 static volatile int irq_count = 0;
 static bool fdc_controller_initialized = false;
 static bool fdc_drive_ready[4] = {false, false, false, false};
+
+/* ISA DMA channel 2 can only address the first 16 MiB and may not cross a
+ * 64-KiB boundary.  Reserve enough storage to select a 64-KiB boundary at
+ * runtime; the selected address is still checked before programming the 8237. */
+static uint8_t fdd_dma_storage[0x10000u + SECTOR_SIZE] __attribute__((aligned(16)));
+
+static uint8_t *fdd_dma_buffer(void) {
+    uintptr_t start = (uintptr_t)fdd_dma_storage;
+    if (start > ~(uintptr_t)0 - 0xFFFFu) return NULL;
+    return (uint8_t *)((start + 0xFFFFu) & ~(uintptr_t)0xFFFFu);
+}
+
+static uint8_t fdd_cmos_configuration(void) {
+    outb(CMOS_ADDRESS, CMOS_FLOPPY_TYPES);
+    return inb(CMOS_DATA);
+}
 
 // ============================================================
 // FIX #1: Correct FIFO readiness functions
@@ -73,7 +89,6 @@ static bool fdc_wait_read(uint32_t ms) {
 void fdd_irq_handler(uint8_t* r) {
     irq_triggered = true;
     irq_count++;
-    outb(PIC1_COMMAND, PIC_EOI);
 }
 
 // ============================================================
@@ -93,9 +108,13 @@ void mask_irq6() {
 // ============================================================
 // Init IRQ handler + unmask (✅ FIXED)
 // ============================================================
-void fdc_initialize() {
-    syscall(SYS_INSTALL_IRQ, (void*)6, (uint8_t*)fdd_irq_handler, 0);
+bool fdc_initialize(void) {
+    if (register_interrupt_handler(6, (void*)fdd_irq_handler) != 0) {
+        printf("Failed to register FDC IRQ6 handler.\n");
+        return false;
+    }
     unmask_irq6(); // ✅ was missing previously
+    return true;
 }
 
 uint8_t fdc_get_status() { return inb(FDD_MSR); }
@@ -108,12 +127,17 @@ void print_fdc_status() {
 // FIX #2: Correct DOR motor control bits
 // ============================================================
 void fdc_motor_on(int drive) {
-    // bit 3=enable IRQ/DMA, bit 2=reset=1, bits 4-7=motors
-    outb(FDD_DOR, 0x1C | (drive & 0x03));
+    if (drive < 0 || drive >= MAX_FDD_DRIVES) return;
+    // bits 4..7 select motors A..D; bits 0..1 select the active drive.
+    uint8_t dor = (uint8_t)(0x0C | (drive & 0x03) | (0x10u << drive));
+    outb(FDD_DOR, dor);
 }
 void fdc_motor_off(int drive) {
-    // keep controller enabled, disable only motor
-    outb(FDD_DOR, 0x0C | (drive & 0x03));
+    if (drive < 0 || drive >= MAX_FDD_DRIVES) return;
+    uint8_t dor = inb(FDD_DOR);
+    dor &= (uint8_t)~(0x10u << drive);
+    dor = (uint8_t)((dor & ~0x03u) | (drive & 0x03) | 0x0C);
+    outb(FDD_DOR, dor);
 }
 
 // ============================================================
@@ -166,15 +190,25 @@ void fdc_full_reset() {
 // ============================================================
 // DMA preparation (unchanged)
 // ============================================================
-void dma_prepare_floppy(uint8_t* buffer, uint16_t length, bool read) {
+static bool dma_prepare_floppy(uint8_t* buffer, uint16_t length, bool read) {
+    uintptr_t physical = (uintptr_t)buffer;
+    if (!buffer || length == 0 ||
+        physical > 0x00FFFFFFu ||
+        (uintptr_t)(length - 1) > (0x00FFFFFFu - physical) ||
+        ((physical & 0xFFFFu) + length) > 0x10000u) {
+        printf("FDD DMA buffer is outside ISA DMA limits (addr=0x%08X, len=%u)\n",
+               (uint32_t)physical, length);
+        return false;
+    }
+
     outb(DMA_CHANNEL_MASK, 0x06);
     outb(DMA_CLEAR, 0x00);
 
-    uint16_t address = (uint32_t)buffer & 0xFFFF;
+    uint16_t address = (uint16_t)(physical & 0xFFFFu);
     outb(DMA_ADDR_PORT, address & 0xFF);
     outb(DMA_ADDR_PORT, (address >> 8) & 0xFF);
 
-    uint8_t page = ((uint32_t)buffer >> 16) & 0xFF;
+    uint8_t page = (uint8_t)((physical >> 16) & 0xFFu);
     outb(DMA_PAGE_PORT, page);
 
     uint16_t count = length - 1;
@@ -183,15 +217,19 @@ void dma_prepare_floppy(uint8_t* buffer, uint16_t length, bool read) {
 
     outb(DMA_MODE, read ? 0x46 : 0x4A);
     outb(DMA_CHANNEL_MASK, DMA_UNMASK_CHANNEL);
+    return true;
 }
 
 // ============================================================
 // Controller init (✅ add CCR + interrupt clear loop fix)
 // ============================================================
 bool fdc_init_controller() {
+    if (fdc_controller_initialized) return true;
     printf("Initializing FDC controller...\n");
 
-    fdc_initialize(); // ✅ ensure IRQ installed
+    if (!fdc_initialize()) {
+        return false;
+    }
 
     outb(FDD_DOR, 0x00);
     delay_ms(10);
@@ -216,6 +254,7 @@ bool fdc_init_controller() {
         return false;
     }
 
+    fdc_controller_initialized = true;
     printf("FDC controller initialized.\n");
     return true;
 }
@@ -224,13 +263,51 @@ bool fdc_init_controller() {
 // Everything else unchanged below this line
 // ============================================================
 
-bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
-    if (!fdc_wait_write(100)) {
-        printf("FDC not ready to read sector.\n");
+static bool fdc_seek(uint8_t drive, uint8_t head, uint8_t track) {
+    irq_triggered = false;
+    if (!fdc_send_command(FDD_CMD_SEEK) ||
+        !fdc_send_command((uint8_t)((head << 2) | drive)) ||
+        !fdc_send_command(track) ||
+        !fdc_wait_for_irq() ||
+        !fdc_send_command(FDC_SENSE_INTERRUPT_CMD)) {
         return false;
     }
 
-    dma_prepare_floppy((uint8_t*)buffer, SECTOR_SIZE, true);
+    uint8_t st0 = fdc_read_data();
+    uint8_t cylinder = fdc_read_data();
+    return (st0 & 0xC0u) == 0 && (st0 & 0x20u) != 0 && cylinder == track;
+}
+
+static bool fdc_validate_chs(uint8_t drive, uint8_t head, uint8_t track,
+                             uint8_t sector, const void *buffer) {
+    return buffer != NULL && drive < MAX_FDD_DRIVES && head < 2 &&
+           track < 80 && sector >= 1 && sector <= 18;
+}
+
+bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
+    if (!fdc_validate_chs(drive, head, track, sector, buffer)) return false;
+
+    fdc_motor_on(drive);
+    delay_ms(500);
+
+    if (!fdc_seek(drive, head, track)) {
+        printf("FDC seek failed before read (drive=%u, head=%u, track=%u)\n",
+               drive, head, track);
+        fdc_motor_off(drive);
+        return false;
+    }
+
+    if (!fdc_wait_write(100)) {
+        printf("FDC not ready to read sector.\n");
+        fdc_motor_off(drive);
+        return false;
+    }
+
+    uint8_t *dma_buffer = fdd_dma_buffer();
+    if (!dma_prepare_floppy(dma_buffer, SECTOR_SIZE, true)) {
+        fdc_motor_off(drive);
+        return false;
+    }
     irq_triggered = false;
 
     if (!fdc_send_command(FDD_CMD_READ) ||
@@ -243,11 +320,13 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
         !fdc_send_command(0x1B) ||
         !fdc_send_command(0xFF)) {
         printf("Failed to send READ command sequence.\n");
+        fdc_motor_off(drive);
         return false;
     }
 
     if (!fdc_wait_for_irq()) {
         printf("Timeout waiting for FDC read completion.\n");
+        fdc_motor_off(drive);
         return false;
     }
 
@@ -258,9 +337,54 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
 
     if ((st0 & 0xC0) != 0) {
         printf("FDC read error: ST0=0x%x, ST1=0x%x, ST2=0x%x\n", st0, st1, st2);
+        fdc_motor_off(drive);
         return false;
     }
 
+    memcpy(buffer, dma_buffer, SECTOR_SIZE);
+    fdc_motor_off(drive);
+    return true;
+}
+
+bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
+    if (!fdc_validate_chs(drive, head, track, sector, buffer)) return false;
+
+    uint8_t *dma_buffer = fdd_dma_buffer();
+    memcpy(dma_buffer, buffer, SECTOR_SIZE);
+    fdc_motor_on(drive);
+    delay_ms(500);
+
+    if (!fdc_seek(drive, head, track) ||
+        !dma_prepare_floppy(dma_buffer, SECTOR_SIZE, false)) {
+        fdc_motor_off(drive);
+        return false;
+    }
+
+    irq_triggered = false;
+    if (!fdc_send_command(FDD_CMD_WRITE) ||
+        !fdc_send_command((uint8_t)((head << 2) | drive)) ||
+        !fdc_send_command(track) ||
+        !fdc_send_command(head) ||
+        !fdc_send_command(sector) ||
+        !fdc_send_command(2) ||
+        !fdc_send_command(18) ||
+        !fdc_send_command(0x1B) ||
+        !fdc_send_command(0xFF) ||
+        !fdc_wait_for_irq()) {
+        fdc_motor_off(drive);
+        return false;
+    }
+
+    uint8_t st0 = fdc_read_data();
+    uint8_t st1 = fdc_read_data();
+    uint8_t st2 = fdc_read_data();
+    fdc_read_data(); fdc_read_data(); fdc_read_data(); fdc_read_data();
+    fdc_motor_off(drive);
+
+    if ((st0 & 0xC0u) != 0 || st1 != 0 || st2 != 0) {
+        printf("FDC write error: ST0=0x%x, ST1=0x%x, ST2=0x%x\n", st0, st1, st2);
+        return false;
+    }
     return true;
 }
 
@@ -325,7 +449,12 @@ bool fdc_calibrate_drive(uint8_t drive) {
 // =============================================================
 // Fixed FDD drive detection (keeps same signature & behavior)
 // =============================================================
-void fdd_detect_drives() {
+void fdd_detect_drives(void) {
+    uint8_t cmos_drives = fdd_cmos_configuration();
+    if (cmos_drives == 0) {
+        printf("No floppy drives configured; skipping FDC.\n");
+        return;
+    }
     printf("Detecting floppy drives...\n");
 
     // Ensure FDC is initialized and IRQs are active
@@ -334,11 +463,16 @@ void fdd_detect_drives() {
             printf("FDC initialization failed. Cannot detect drives.\n");
             return;
         }
-        fdc_controller_initialized = true;
     }
+
+    int fdd_count = 0;
 
     // QEMU and PCs normally expose 0 or 1 floppy drive (A:)
     for (uint8_t drive = FDD_DRIVE_A; drive <= FDD_DRIVE_B; drive++) {
+        uint8_t drive_type = drive == FDD_DRIVE_A
+            ? (uint8_t)(cmos_drives >> 4)
+            : (uint8_t)(cmos_drives & 0x0F);
+        if (drive_type == 0) continue;
         printf("Probing drive %d...\n", drive);
 
         // Spin up motor
@@ -360,39 +494,37 @@ void fdd_detect_drives() {
             continue;
         }
 
-        // Allocate and register detected drive
-        drive_t* detected_drive = (drive_t*)malloc(sizeof(drive_t));
-        if (!detected_drive) {
-            printf("Memory allocation failed for drive %d.\n", drive);
+        if (drive_count < 0 || drive_count >= MAX_DRIVES) {
+            printf("Drive registry is full; cannot add fdd%u.\n", drive);
             fdc_motor_off(drive);
-            continue;
+            break;
         }
 
+        drive_t *detected_drive = &detected_drives[drive_count];
+        memset(detected_drive, 0, sizeof(*detected_drive));
         detected_drive->type = DRIVE_TYPE_FDD;
         detected_drive->fdd_drive_no = drive;
         snprintf(detected_drive->name, sizeof(detected_drive->name), "fdd%d", drive);
         detected_drive->cylinder = 80;  // 80 tracks
         detected_drive->head = 2;       // double-sided
         detected_drive->sector = 18;    // 18 sectors per track
-        detected_drive->mount_point[0] = '\0';
-
-        detected_drives[drive_count++] = *detected_drive;
-        free(detected_drive);
+        drive_count++;
+        fdd_count++;
 
         printf("Detected floppy drive: fdd%d (A:%c)\n", drive, 'A' + drive);
         fdc_motor_off(drive);
     }
 
-    if (drive_count == 0)
+    if (fdd_count == 0)
         printf("No floppy drives detected.\n");
     else
-        printf("%d floppy drive(s) initialized.\n", drive_count);
+        printf("%d floppy drive(s) initialized.\n", fdd_count);
 }
 
 // =============================================================
 // Debug: Read and dump the boot sector of a floppy drive
 // =============================================================
-void debug_read_bootsector() {
+void debug_read_bootsector(void) {
     uint8_t drive = 0;   // A:
     uint8_t head  = 0;
     uint8_t track = 0;

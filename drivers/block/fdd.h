@@ -21,17 +21,18 @@
 #define SECTOR_SIZE    512    // Sector size for FDD
 #define TIMEOUT_LIMIT  10000  // Arbitrary timeout limit for waiting loops
 
-#define SECTOR_SIZE    512    // Sector size for FDD
 #define FDD_SECTOR_CNT 1     // Reading/writing 1 sector at a time
 
 extern void fdd_irq_handler(uint8_t* r);
 
-void fdc_initialize();
-void fdd_detect_drives();
+bool fdc_initialize(void);
+bool fdc_init_controller(void);
+void fdd_detect_drives(void);
 
 
-void debug_read_bootsector();
+void debug_read_bootsector(void);
 bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer);
+bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer);
 
 void fdc_motor_on(int drive);
 void fdc_motor_off(int drive);

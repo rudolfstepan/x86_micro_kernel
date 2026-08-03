@@ -26,7 +26,8 @@ int isdigit(int c) {
 
 // Checks if the character is a whitespace character
 int isspace(int c) {
-    return (c == ' ' || c == '\t' || c == '\n' || c == '\r');
+    return (c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
+            c == '\v' || c == '\f');
 }
 
 // Checks if the character is alphabetic (a letter)
@@ -105,20 +106,32 @@ int strcmp(const char* str1, const char* str2) {
 
 // Compares up to n characters of two strings lexicographically
 int strncmp(const char* str1, const char* str2, size_t n) {
-    while (n-- && *str1 && (*str1 == *str2)) {
-        str1++;
-        str2++;
+    for (size_t i = 0; i < n; ++i) {
+        unsigned char first = (unsigned char)str1[i];
+        unsigned char second = (unsigned char)str2[i];
+        if (first != second) {
+            return first - second;
+        }
+        if (first == '\0') {
+            return 0;
+        }
     }
-    return (n == (size_t)-1) ? 0 : (*(unsigned char*)str1 - *(unsigned char*)str2);
+    return 0;
 }
 
 // Case-insensitive comparison of up to n characters of two strings
 int strncasecmp(const char* str1, const char* str2, size_t n) {
-    while (n-- && *str1 && (tolower((unsigned char)*str1) == tolower((unsigned char)*str2))) {
-        str1++;
-        str2++;
+    for (size_t i = 0; i < n; ++i) {
+        int first = tolower((unsigned char)str1[i]);
+        int second = tolower((unsigned char)str2[i]);
+        if (first != second) {
+            return first - second;
+        }
+        if (first == '\0') {
+            return 0;
+        }
     }
-    return (n == (size_t)-1) ? 0 : (tolower((unsigned char)*str1) - tolower((unsigned char)*str2));
+    return 0;
 }
 
 // Searches for the first occurrence of a character in a string
@@ -204,33 +217,48 @@ size_t strcspn(const char* str1, const char* str2) {
 
 // Converts a string to an unsigned long integer
 unsigned long strtoul(const char* str, char** endptr, int base) {
+    const char *original = str;
     if (base != 0 && (base < 2 || base > 36)) {
-        if (endptr) *endptr = (char*)str;
+        if (endptr) *endptr = (char*)original;
         return 0;
     }
 
-    int result = 0;
-    int digit;
-    int cutoff = ULONG_MAX / base;
-    int cutlim = ULONG_MAX % base;
-
     while (isspace((unsigned char)*str)) str++;
 
+    bool negative = false;
+    if (*str == '+' || *str == '-') {
+        negative = (*str == '-');
+        str++;
+    }
+
     if (base == 0) {
-        if (*str == '0') {
-            str++;
-            if (*str == 'x' || *str == 'X') {
-                base = 16;
-                str++;
-            } else {
-                base = 8;
-            }
+        if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X') &&
+            ((str[2] >= '0' && str[2] <= '9') ||
+             (str[2] >= 'a' && str[2] <= 'f') ||
+             (str[2] >= 'A' && str[2] <= 'F'))) {
+            base = 16;
+            str += 2;
+        } else if (str[0] == '0') {
+            base = 8;
         } else {
             base = 10;
         }
+    } else if (base == 16 && str[0] == '0' &&
+               (str[1] == 'x' || str[1] == 'X') &&
+               ((str[2] >= '0' && str[2] <= '9') ||
+                (str[2] >= 'a' && str[2] <= 'f') ||
+                (str[2] >= 'A' && str[2] <= 'F'))) {
+        str += 2;
     }
 
+    unsigned long result = 0;
+    unsigned long cutoff = ULONG_MAX / (unsigned long)base;
+    unsigned long cutlim = ULONG_MAX % (unsigned long)base;
+    bool any = false;
+    bool overflow = false;
+
     while (*str) {
+        int digit;
         if (isdigit((unsigned char)*str))
             digit = *str - '0';
         else if (isalpha((unsigned char)*str))
@@ -240,17 +268,22 @@ unsigned long strtoul(const char* str, char** endptr, int base) {
 
         if (digit >= base) break;
 
-        if (result > cutoff || (result == cutoff && digit > cutlim)) {
+        if (result > cutoff ||
+            (result == cutoff && (unsigned long)digit > cutlim)) {
             result = ULONG_MAX;
-            break;
+            overflow = true;
+        } else if (!overflow) {
+            result = result * (unsigned long)base + (unsigned long)digit;
         }
-
-        result = result * base + digit;
+        any = true;
         str++;
     }
 
-    if (endptr) *endptr = (char*)str;
+    if (endptr) *endptr = (char*)(any ? str : original);
 
+    if (negative && !overflow) {
+        return (unsigned long)(0UL - result);
+    }
     return result;
 }
 
@@ -422,7 +455,7 @@ char* strstr(const char* haystack, const char* needle) {
 /// <summary>
 /// Copies the values of num bytes from the location pointed by source directly to the memory block pointed by destination.
 /// </summary>
-void* memcpy(void* dest, const void* src, uint16_t n) {
+void* memcpy(void* dest, const void* src, size_t n) {
     if (dest == NULL || src == NULL) {
         return NULL; // Error handling for NULL pointers
     }
@@ -454,7 +487,7 @@ int memcmp(const void* s1, const void* s2, size_t n) {
     return 0;
 }
 
-void* memset(void* ptr, int value, unsigned int num) {
+void* memset(void* ptr, int value, size_t num) {
     if (ptr == NULL) {
         return NULL; // Error handling for NULL pointer
     }

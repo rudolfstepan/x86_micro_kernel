@@ -1,157 +1,105 @@
-# Virtual File System (VFS) Architecture
+# VFS-Architektur
 
-## Overview
-The VFS provides a unified abstraction layer for multiple filesystem types, following professional OS design patterns (similar to Linux VFS).
+Das Virtual File System ist die gemeinsame Schnittstelle zwischen Shell,
+Programmlader und den Dateisystemtreibern. FAT32, FAT12 und EXT2 sind über
+Adapter registriert; frühere direkte Shellaufrufe in globale FAT-Strukturen
+gehören nicht mehr zum aktuellen Design.
 
-## Architecture Layers
+## Schichten
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  User Applications (shell commands, programs)           │
-└────────────────────┬────────────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────────────┐
-│  VFS Layer (vfs.c/vfs.h)                                │
-│  - Path resolution                                      │
-│  - Mount point management                               │
-│  - Generic file/dir operations                          │
-│  - Filesystem registration                              │
-└────┬──────────────┬──────────────┬─────────────────────┘
-     │              │              │
-┌────▼──────┐  ┌───▼──────┐  ┌───▼──────┐
-│  FAT32    │  │  FAT12   │  │  Future  │
-│  Adapter  │  │  Adapter │  │  (ext2)  │
-└────┬──────┘  └───┬──────┘  └───┬──────┘
-     │             │              │
-┌────▼─────────────▼──────────────▼───────────────────────┐
-│  Hardware Drivers (ATA, FDD, etc.)                      │
-└─────────────────────────────────────────────────────────┘
+```text
+Shell / Programmlader / Kernelkomponenten
+                  |
+       kanonischer absoluter VFS-Pfad
+                  |
+     vfs_open/read/write/stat/readdir/...
+                  |
+      Mounttabelle und Adapterauswahl
+          /           |           \
+       FAT32         FAT12         EXT2
+          \           |           /
+              Blockgerät / ATA / FDD
 ```
 
-## Key Components
+## Öffentliche Operationen
 
-### 1. VFS Core (`vfs.h`, `vfs.c`)
-- **Filesystem Registration**: `vfs_register_filesystem()`
-- **Mount Management**: `vfs_mount()`, `vfs_unmount()`
-- **Path Resolution**: Finds correct filesystem for absolute paths
-- **Generic Operations**: Unified API for all filesystems
+Die aktuelle Schnittstelle umfasst die für den Kernel benötigten
+Datei-/Verzeichnisoperationen, unter anderem:
 
-### 2. Filesystem Operations Table (`vfs_filesystem_ops_t`)
-Each filesystem implements these operations:
-- **mount/unmount**: Initialize/cleanup filesystem
-- **open/close/read/write**: File operations
-- **readdir/finddir**: Directory traversal
-- **mkdir/rmdir**: Directory management
-- **create/delete/stat**: File management
+- Mounten und Unmounten
+- `open`, `close`, `read`, `write`, `seek`
+- `stat`
+- `readdir`
+- `mkdir`, `rmdir`, `create`, `unlink`
 
-### 3. VFS Node (`vfs_node_t`)
-Represents any filesystem object (file, directory, device):
-- Type (file/directory/device)
-- Inode/cluster number
-- Size, flags
-- Pointer to owning filesystem
-- Filesystem-specific data
+Adapter dürfen für nicht unterstützte Operationen einen eindeutigen
+VFS-Fehler zurückgeben. Die Shell übersetzt Fehler wie „nicht gefunden“,
+„bereits vorhanden“, „kein Verzeichnis“, „schreibgeschützt“ oder „Datenträger
+voll“ in lesbare Meldungen.
 
-### 4. Mount Points (`vfs_mount_t`)
-Maps paths to filesystems:
-- `/` → hdd0 (FAT32)
-- `/mnt/floppy` → fdd0 (FAT12)
-- `/mnt/usb` → Future USB drive
+## Mountregeln
 
-## Usage Example
+`auto_mount_all_drives()` initialisiert VFS und registriert alle drei
+Dateisystemtypen. Das erste erfolgreiche Laufwerk erhält `/`; weitere werden
+unter `/mnt/<laufwerk>` eingehängt. Der Mountpunkt wird zusätzlich im
+`drive_t` gespeichert, damit die Shell ihren Laufwerkspfad korrekt in einen
+VFS-Pfad übersetzen kann.
 
-### Registering a Filesystem
-```c
-// In fat32_adapter.c
-vfs_filesystem_ops_t fat32_ops = {
-    .mount = fat32_vfs_mount,
-    .open = fat32_vfs_open,
-    .read = fat32_vfs_read,
-    // ... other operations
-};
+Die Mountauswahl muss längste passende Präfixe berücksichtigen: `/mnt/hdd1/x`
+gehört zum Mount `/mnt/hdd1`, nicht zum Root-Mount `/`.
 
-// At boot
-vfs_register_filesystem("fat32", &fat32_ops);
+## Pfade
+
+VFS selbst erhält absolute, mit `/` getrennte Pfade. DOS-Syntax gehört in die
+Shellschicht:
+
+```text
+D:\DOCS\A.TXT
+  -> drive=hdd1, drive_path=/DOCS/A.TXT
+  -> /mnt/hdd1/DOCS/A.TXT
 ```
 
-### Mounting a Drive
-```c
-drive_t* drive = get_drive_by_name("hdd0");
-vfs_mount(drive, "fat32", "/");  // Mount as root
-```
+Der Resolver normalisiert `.`/`..`, doppelte Separatoren und Laufwerkspräfixe,
+bevor VFS aufgerufen wird. Dadurch verwenden `DIR`, `TYPE`, `COPY` und `RUN`
+dieselbe Dateiidentität.
 
-### Using VFS Operations
-```c
-// Open file (VFS automatically resolves path to correct filesystem)
-vfs_node_t* node;
-if (vfs_open("/readme.txt", &node) == VFS_OK) {
-    uint8_t buffer[256];
-    vfs_read(node, 0, 256, buffer);
-    vfs_close(node);
-}
+## Adapterstatus
 
-// List directory
-vfs_dir_entry_t entry;
-int index = 0;
-while (vfs_readdir("/docs", index++, &entry) == VFS_OK) {
-    printf("%s\n", entry.name);
-}
-```
+### FAT32
 
-## Benefits
+- Verzeichnisauflistung, Lesen und Schreiben
+- Datei- und Verzeichnisoperationen über VFS
+- Clusterketten und case-insensitive 8.3-Suche
+- Hostintegrationstest einschließlich `README.TXT`
 
-### 1. **Separation of Concerns**
-- VFS: Path resolution, mount management
-- Filesystem: Only filesystem-specific logic
+### FAT12
 
-### 2. **Extensibility**
-- Add new filesystems by implementing ops table
-- No changes to VFS core needed
+- Diskettenabbilder und VFS-Adapter
+- Datei-/Verzeichnisoperationen gemäß Adapterumfang
+- Hosttest auf erzeugtem FAT12-Abbild
 
-### 3. **Consistency**
-- All filesystems use same error codes
-- Unified API for applications
+### EXT2
 
-### 4. **Professional Design**
-- Similar to Linux VFS, BSD VFS
-- Industry-standard architecture
+- Erkennung als Superblock direkt auf dem Gerät oder in einer Linux-MBR-Partition
+- VFS-Adapter und hostseitiger Regressionstest
+- Funktionsumfang bleibt kleiner als bei einem vollständigen Linux-EXT2-Treiber
 
-## Implementation Status
+Einzelheiten und bekannte Grenzen stehen in den Dateisystemdokumenten.
 
-### Phase 1: VFS Core ✅
-- [x] VFS initialization
-- [x] Filesystem registration
-- [x] Mount/unmount
-- [x] Path resolution
-- [x] Generic operations API
+## Regeln für neue Kernelkomponenten
 
-### Phase 2: FAT32 Adapter (TODO)
-- [ ] Implement `fat32_vfs_mount()`
-- [ ] Implement `fat32_vfs_open()`
-- [ ] Implement `fat32_vfs_read()`
-- [ ] Implement `fat32_vfs_readdir()`
-- [ ] Wrap existing FAT32 functions
+1. Niemals einen Shellpfad direkt an einen FAT-Treiber geben.
+2. Erst in einen absoluten VFS-Pfad auflösen.
+3. Handles auf jedem Fehlerpfad schließen.
+4. Rückgabewerte vollständig prüfen.
+5. Dateiinhalte nicht als NUL-terminiert annehmen.
+6. Ein partiell erzeugtes Ziel bei fehlgeschlagener Kopie entfernen.
+7. Dateisystemspezifische Annahmen auf den Adapter begrenzen.
 
-### Phase 3: FAT12 Adapter (TODO)
-- [ ] Implement FAT12 VFS operations
-- [ ] Integrate with existing code
+## Tests
 
-### Phase 4: Integration (TODO)
-- [ ] Update shell commands to use VFS
-- [ ] Update filesystem.c to use VFS
-- [ ] Test multi-filesystem mounting
-
-## Error Handling
-VFS uses consistent error codes:
-- `VFS_OK` (0): Success
-- `VFS_ERR_NOT_FOUND` (-1): File/dir not found
-- `VFS_ERR_NO_MEMORY` (-2): Allocation failed
-- `VFS_ERR_INVALID` (-3): Invalid parameters
-- `VFS_ERR_IO` (-4): I/O error
-- `VFS_ERR_UNSUPPORTED` (-10): Operation not supported
-
-## Next Steps
-1. Create FAT32 adapter (`fat32_vfs_adapter.c`)
-2. Create FAT12 adapter (`fat12_vfs_adapter.c`)
-3. Update shell commands to use VFS API
-4. Test mounting multiple drives with different filesystems
+`test/test_fs_host.py` kompiliert Host-Harnesses für VFS und die
+Dateisystemadapter. `test/test_shell_path_host.c` prüft die reine
+Pfadnormalisierung. Die FAT32-Integration stellt unter anderem sicher, dass
+`readdir` und `open` dieselbe Datei finden und dass unterschiedliche
+Großschreibung akzeptiert wird.

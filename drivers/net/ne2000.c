@@ -8,6 +8,8 @@
 #include <stdint.h>
 #include "drivers/bus/pci.h"
 #include "drivers/char/io.h"
+#include "drivers/net/netdev.h"
+#include "arch/x86/include/interrupt.h"
 
 #define NE2000_VENDOR_ID 0x10EC
 #define NE2000_DEVICE_ID 0x8029
@@ -46,6 +48,7 @@
 // Define NE2000 ISR bits
 #define ISR_RDC 0x40  // Remote DMA Complete
 #define ISR_PTX 0x02  // Packet Transmitted
+#define NE2000_RX_INTERRUPT_MASK 0x15
 
 // Define NE2000 DCR bits
 #define DCR_WTS 0x01  // Word Transfer Select
@@ -61,15 +64,20 @@
 #define RX_START_PAGE 0x40
 #define RX_STOP_PAGE  0x80
 #define TX_START_PAGE 0x20
+#define NE2000_MAX_FRAME_SIZE 1518
 
 // I/O base address (to be set during runtime)
 uint16_t io_base = 0xc000;// = 0x300;
 
 uint8_t mac_address[MAC_ADDRESS_LENGTH] = {0};
 static bool ne2000_initialized = false;
+static volatile uint32_t ne2000_tx_busy;
+static volatile bool ne2000_rx_pending;
+static uint8_t ne2000_irq = PCI_IRQ_INVALID;
 
 // prototypes
-int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size);
+static int ne2000_receive_hardware_packet(uint8_t *buffer,
+                                           uint16_t buffer_size);
 void print_packet(const uint8_t *packet, uint16_t length);
 void print_hex_dump(const char* label, const uint8_t *data, uint16_t length);
 void ne2000_dump_page(uint8_t page_num, uint16_t length);
@@ -87,9 +95,25 @@ static inline void ne2000_write(uint8_t reg, uint8_t value) {
 static inline uint8_t ne2000_read(uint8_t reg) {
      if(io_base == 0) {
         printf("IO base address not set\n");
-        return;
+        return 0xFF;
     }
     return inb(io_base + reg);
+}
+
+static void ne2000_release_io(uint8_t saved_imr, bool abort_hardware) {
+    uint32_t flags = irq_save();
+    if (abort_hardware) {
+        /* Stop any stuck remote-DMA/transmit command before another RX/TX
+         * path is allowed to reuse the shared 8390 registers. */
+        ne2000_write(NE2000_CR, 0x21);  /* Stop, Page 0, NoDMA */
+        ne2000_write(NE2000_RBCR0, 0);
+        ne2000_write(NE2000_RBCR1, 0);
+        ne2000_write(NE2000_ISR, ISR_RDC | ISR_PTX | 0x08u);
+        ne2000_write(NE2000_CR, 0x22);  /* Start, Page 0, NoDMA */
+    }
+    __sync_lock_release(&ne2000_tx_busy);
+    ne2000_write(NE2000_IMR, saved_imr);
+    irq_restore(flags);
 }
 
 // Function to enable loopback mode
@@ -113,7 +137,7 @@ void ne2000_disable_loopback(uint16_t io_base) {
 }
 
 // Function to reset the NE2000 card
-void ne2000_reset() {
+static bool ne2000_reset(void) {
     // Perform a software reset
     printf("Resetting NE2000 network card...\n");
 
@@ -122,22 +146,49 @@ void ne2000_reset() {
     ne2000_write(0x1F, ne2000_read(0x1F));
 
     // wait for the RESET to complete
-    while (!(ne2000_read(NE2000_ISR) & 0x80));
+    uint32_t timeout = 1000000u;
+    while (!(ne2000_read(NE2000_ISR) & 0x80) && timeout > 0) {
+        --timeout;
+    }
+    if (!(ne2000_read(NE2000_ISR) & 0x80)) {
+        printf("NE2000 reset timeout.\n");
+        return false;
+    }
 
     // mask interrupts
     ne2000_write(NE2000_ISR, 0xFF);
 
     printf("NE2000 reset complete.\n");
+    return true;
 }
 
 // Forward declarations
 void ne2000_send_arp_reply(uint8_t *request_packet);
+
+static bool ne2000_ring_has_packet(void) {
+    ne2000_write(NE2000_CR, 0x62);  /* Page 1, Start, NoDMA */
+    uint8_t current = ne2000_read(NE2000_CURR);
+    ne2000_write(NE2000_CR, 0x22);  /* Page 0, Start, NoDMA */
+    uint8_t boundary = ne2000_read(NE2000_BNRY);
+    uint8_t next = (uint8_t)(boundary + 1u);
+    if (next >= RX_STOP_PAGE) next = RX_START_PAGE;
+    return next != current;
+}
 
 void ne2000_irq_handler() {
     uint8_t isr = ne2000_read(NE2000_ISR);
     
     // Silently ignore spurious interrupts
     if (isr == 0) {
+        return;
+    }
+
+    /* TX and RX share the 8390 remote-DMA registers.  A receive interrupt
+     * must neither start RX DMA nor acknowledge RDC/PTX while the foreground
+     * transmit path is polling those bits.  TX masks the device IRQ and
+     * restores it after releasing this lock, which retriggers any pending RX
+     * status. */
+    if (__atomic_load_n(&ne2000_tx_busy, __ATOMIC_ACQUIRE) != 0) {
         return;
     }
     
@@ -163,55 +214,17 @@ void ne2000_irq_handler() {
     // Process up to 5 packets per interrupt to avoid getting stuck
     int packets_processed = 0;
     const int max_packets_per_irq = 5;
+    bool receive_failed = false;
     
     while ((isr & 0x01) && packets_processed < max_packets_per_irq) {  // Packet received
-        uint8_t packet[1500];
-        int length = ne2000_receive_packet(packet, sizeof(packet));
+        uint8_t packet[NE2000_MAX_FRAME_SIZE];
+        int length = ne2000_receive_hardware_packet(packet, sizeof(packet));
         if (length > 0) {
-            printf("Received packet: %d bytes\n", length);
-            
-            // Parse and display ethernet frame
-            if (length >= 14) {  // Minimum ethernet frame has 14-byte header
-                printf("  Dst MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
-                       packet[0], packet[1], packet[2], packet[3], packet[4], packet[5]);
-                printf("  Src MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
-                       packet[6], packet[7], packet[8], packet[9], packet[10], packet[11]);
-                uint16_t ethertype = (packet[12] << 8) | packet[13];
-                printf("  EtherType: 0x%04X ", ethertype);
-                
-                if (ethertype == 0x0806) {
-                    printf("(ARP)\n");
-                    // Show ARP details if enough data
-                    if (length >= 42) {
-                        uint16_t ar_op = (packet[20] << 8) | packet[21];
-                        printf("    ARP Operation: %d %s\n", ar_op, 
-                               ar_op == 1 ? "(Request)" : ar_op == 2 ? "(Reply)" : "");
-                        printf("    Sender IP: %d.%d.%d.%d\n",
-                               packet[28], packet[29], packet[30], packet[31]);
-                        printf("    Target IP: %d.%d.%d.%d\n",
-                               packet[38], packet[39], packet[40], packet[41]);
-                        
-                        // If this is an ARP request for our IP (10.0.2.15), send a reply
-                        if (ar_op == 1 &&  // ARP Request
-                            packet[38] == 10 && packet[39] == 0 && 
-                            packet[40] == 2 && packet[41] == 15) {
-                            printf("    -> ARP request for our IP! Sending reply...\n");
-                            ne2000_send_arp_reply(packet);
-                        }
-                    }
-                } else if (ethertype == 0x0800) {
-                    printf("(IPv4)\n");
-                } else if (ethertype == 0x86DD) {
-                    printf("(IPv6)\n");
-                } else {
-                    printf("(Unknown)\n");
-                }
-            }
-            
-            print_packet(packet, length > 64 ? 64 : length);
+            netdev_deliver_rx(packet, (uint16_t)length);
             packets_processed++;
         } else if (length < 0) {
             // Error occurred, stop processing
+            receive_failed = true;
             break;
         } else {
             // No more packets
@@ -222,9 +235,14 @@ void ne2000_irq_handler() {
         isr = ne2000_read(NE2000_ISR);
     }
 
-    // Clear all ISR flags
-    ne2000_write(NE2000_ISR, 0xFF);
-}   
+    /* Acknowledge the edge, then inspect the ring.  Frames arriving before
+     * the acknowledge are discovered by the ring check; frames arriving
+     * afterwards generate a fresh IRQ edge. */
+    ne2000_write(NE2000_ISR, 0xFFu);
+    ne2000_rx_pending = receive_failed ||
+        packets_processed >= max_packets_per_irq ||
+        ne2000_ring_has_packet();
+}
 
 // Function to initialize the NE2000 card
 void ne2000_init() {
@@ -232,7 +250,7 @@ void ne2000_init() {
     printf("IO base address: 0x%04X\n", io_base);
 
     // Reset the card
-    ne2000_reset();
+    if (!ne2000_reset()) return;
 
     // === Proper NE2000 Initialization Sequence ===
     
@@ -262,8 +280,8 @@ void ne2000_init() {
     // 7. Clear Interrupt Status Register
     ne2000_write(NE2000_ISR, 0xFF);
     
-    // 8. Set Interrupt Mask Register - enable receive interrupt
-    ne2000_write(NE2000_IMR, 0x0F);  // Enable RX, TX, RX error, TX error interrupts
+    // 8. Keep interrupts masked until the handler is installed.
+    ne2000_write(NE2000_IMR, 0x00);
     
     // 9. Read MAC address from PROM using Remote DMA
     // In byte mode (DCR=0x48), we need to read 32 bytes and extract every other byte
@@ -275,16 +293,25 @@ void ne2000_init() {
     ne2000_write(NE2000_RSAR1, 0);
     ne2000_write(NE2000_CR, 0x0A);      // Start Remote DMA Read
     
-    // Read MAC address from data port - in byte mode, skip every other byte
-    for (int i = 0; i < MAC_ADDRESS_LENGTH; i++) {
-        mac_address[i] = inb(io_base + NE2000_DATA);
-        inb(io_base + NE2000_DATA);  // Skip duplicate byte (PROM stores each byte twice)
+    // DCR_WTS selected word mode above.  Consume the complete 32-byte PROM
+    // transfer (16 words); each of the first six words contains one duplicated
+    // MAC byte on an NE2000-compatible 16-bit board.
+    for (int i = 0; i < 16; i++) {
+        uint16_t prom_word = inw(io_base + NE2000_DATA);
+        if (i < MAC_ADDRESS_LENGTH) mac_address[i] = (uint8_t)prom_word;
     }
     
     // Wait for Remote DMA to complete with timeout
     int mac_timeout = 10000;
     while (!(ne2000_read(NE2000_ISR) & ISR_RDC) && mac_timeout-- > 0);
-    if (mac_timeout <= 0) {
+    bool invalid_mac = true;
+    bool all_ff = true;
+    for (int i = 0; i < MAC_ADDRESS_LENGTH; ++i) {
+        if (mac_address[i] != 0) invalid_mac = false;
+        if (mac_address[i] != 0xFF) all_ff = false;
+    }
+    invalid_mac = invalid_mac || all_ff || (mac_address[0] & 1u);
+    if (mac_timeout <= 0 || invalid_mac) {
         printf("[WARN] Timeout reading MAC address, using default\n");
         // Use default MAC if read fails
         mac_address[0] = 0x52;
@@ -321,10 +348,22 @@ void ne2000_init() {
     // 16. Set normal transmission mode initially (loopback will be set by test function)
     ne2000_write(NE2000_TCR, 0x00);  // Normal operation
 
-    // set irq handler
-    register_interrupt_handler(11, ne2000_irq_handler);
+    // Register only a valid PIC index; never index irq_routines with 0xFF.
+    if (!pci_irq_is_valid(ne2000_irq)) {
+        printf("NE2000: invalid legacy IRQ %u\n", ne2000_irq);
+        ne2000_write(NE2000_IMR, 0);
+        return;
+    }
+    if (register_interrupt_handler(ne2000_irq, ne2000_irq_handler) != 0) {
+        printf("NE2000: IRQ handler registration failed\n");
+        ne2000_write(NE2000_IMR, 0);
+        return;
+    }
 
     ne2000_initialized = true;
+    /* Any receive status accumulated while masked now safely triggers the
+     * installed handler. */
+    ne2000_write(NE2000_IMR, NE2000_RX_INTERRUPT_MASK);
     printf("NE2000 initialization complete.\n");
 }
 
@@ -361,11 +400,17 @@ void ne2000_print_status() {
     printf("==================================\n\n");
 }
 
-void ne2000_send_packet(uint8_t *data, uint16_t length) {
-    if (length > 1500) {
+bool ne2000_send_packet(uint8_t *data, uint16_t length) {
+    if (!ne2000_initialized || !data || length < 14 || length > 1518) {
         printf("Packet too large to send: %d bytes\n", length);
-        return;
+        return false;
     }
+    if (__sync_lock_test_and_set(&ne2000_tx_busy, 1u)) {
+        printf("NE2000: another transmission is in progress\n");
+        return false;
+    }
+    uint8_t saved_imr = ne2000_read(NE2000_IMR);
+    ne2000_write(NE2000_IMR, 0);
 
     // Use the defined TX buffer page, not hardcoded
     uint8_t tx_page_start = TX_START_PAGE;  // 0x20 - separate from RX buffer
@@ -393,18 +438,11 @@ void ne2000_send_packet(uint8_t *data, uint16_t length) {
     // 5. Set COMMAND register to "start" and "remote write DMA" (0x12)
     ne2000_write(NE2000_CR, 0x12);
 
-    // 6. Write packet data to the "data port" in word mode (16-bit transfers)
-    for (uint16_t i = 0; i + 1 < length; i += 2) {
-        uint16_t word = data[i] | (data[i + 1] << 8);  // Little endian
-        outw(io_base + NE2000_DATA, word);
-    }
-    // Write last byte if length is odd
-    if (length & 1) {
-        outw(io_base + NE2000_DATA, data[length - 1]);
-    }
-    // Pad with zeros if necessary
-    for (uint16_t i = length; i < send_length; i += 2) {
-        outw(io_base + NE2000_DATA, 0);
+    // 6. Write exactly send_length bytes in word mode, including padding.
+    for (uint16_t i = 0; i < send_length; i += 2) {
+        uint16_t word = i < length ? data[i] : 0;
+        if ((uint16_t)(i + 1u) < length) word |= (uint16_t)data[i + 1u] << 8;
+        outw((uint16_t)(io_base + NE2000_DATA), word);
     }
 
     // 7. Poll ISR register until bit 6 ("Remote DMA completed") is set
@@ -415,7 +453,8 @@ void ne2000_send_packet(uint8_t *data, uint16_t length) {
     
     if (timeout <= 0) {
         printf("[TX] Timeout waiting for Remote DMA complete\n");
-        return;
+        ne2000_release_io(saved_imr, true);
+        return false;
     }
 
     // Clear "Remote DMA complete" bit
@@ -440,7 +479,8 @@ void ne2000_send_packet(uint8_t *data, uint16_t length) {
         // Check for errors
         uint8_t isr = ne2000_read(NE2000_ISR);
         printf("[TX] ISR at timeout: 0x%02X\n", isr);
-        return;
+        ne2000_release_io(saved_imr, true);
+        return false;
     }
 
     // Clear transmission complete flag
@@ -449,7 +489,14 @@ void ne2000_send_packet(uint8_t *data, uint16_t length) {
     uint8_t tsr = ne2000_read(NE2000_TSR);  // Read Transmit Status Register
     printf("[TX] Transmission complete - TSR: 0x%02X\n", tsr);
 
+    if ((tsr & 0x01u) == 0) {
+        printf("[TX] Transmission completed with error (TSR=0x%02X)\n", tsr);
+        ne2000_release_io(saved_imr, false);
+        return false;
+    }
     printf("Packet sent successfully, length: %d bytes\n", length);
+    ne2000_release_io(saved_imr, false);
+    return true;
 }
 
 // Send ARP reply
@@ -526,7 +573,8 @@ void ne2000_send_arp_reply(uint8_t *request_packet) {
     ne2000_send_packet(arp_reply, 60);
 }
 
-int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
+static int ne2000_receive_hardware_packet(uint8_t *buffer,
+                                           uint16_t buffer_size) {
     // Switch to Page 1 to read CURR register
     ne2000_write(NE2000_CR, 0x62);  // Page 1, Start, NoDMA
     uint8_t current_page = ne2000_read(NE2000_CURR);
@@ -688,7 +736,12 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
         
         // Header is corrupt, but there might be valid data after it
         // Try reading 64 bytes starting from offset 0 (include the corrupt header)
-        uint16_t recovery_length = 64;
+        uint16_t recovery_length = buffer_size < 64u ? buffer_size : 64u;
+        if (recovery_length < 14u) {
+            ne2000_write(NE2000_CR, 0x22);
+            ne2000_write(NE2000_BNRY, next_packet_page);
+            return -1;
+        }
         
         ne2000_write(NE2000_CR, 0x22);
         ne2000_write(NE2000_RBCR0, recovery_length & 0xFF);
@@ -750,7 +803,9 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
                     buffer[i] = buffer[i + found_offset];
                 }
                 printf("[RX] Shifted packet data by %d bytes\n", found_offset);
-                print_hex_dump("[RX] Aligned packet", buffer, 60);
+                uint16_t aligned_length = (uint16_t)(recovery_length - found_offset);
+                print_hex_dump("[RX] Aligned packet", buffer,
+                               aligned_length < 60u ? aligned_length : 60u);
             }
             
             // Advance BNRY and return the recovered data
@@ -817,6 +872,33 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
     return data_length;
 }
 
+int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
+    if (!ne2000_initialized) return -1;
+    return netdev_receive_frame(buffer, buffer_size);
+}
+
+void ne2000_poll_rx(void) {
+    if (!ne2000_initialized || !ne2000_rx_pending) return;
+    if (__sync_lock_test_and_set(&ne2000_tx_busy, 1u)) return;
+
+    uint8_t saved_imr = ne2000_read(NE2000_IMR);
+    ne2000_write(NE2000_IMR, 0);
+    ne2000_rx_pending = false;
+
+    const unsigned int budget = RX_STOP_PAGE - RX_START_PAGE;
+    unsigned int processed = 0;
+    while (processed < budget) {
+        uint8_t packet[NE2000_MAX_FRAME_SIZE];
+        int length = ne2000_receive_hardware_packet(packet, sizeof(packet));
+        if (length <= 0) break;
+        netdev_deliver_rx(packet, (uint16_t)length);
+        ++processed;
+    }
+    ne2000_write(NE2000_ISR, 0x05u); /* PRX and RX error only */
+    ne2000_rx_pending = processed == budget || ne2000_ring_has_packet();
+    ne2000_release_io(saved_imr, false);
+}
+
 void ne2000_validate_init() {
     printf("PSTART: 0x%02X\n", ne2000_read(NE2000_PSTART));
     printf("PSTOP:  0x%02X\n", ne2000_read(NE2000_PSTOP));
@@ -865,6 +947,15 @@ void ne2000_detect() {
                     }
 
                     printf("NE2000 IO base address: 0x%04X\n", io_base);
+                    ne2000_irq = pci_get_irq((uint8_t)bus, device, function);
+                    if (!pci_irq_is_valid(ne2000_irq)) {
+                        printf("NE2000: invalid IRQ line %u\n", ne2000_irq);
+                        io_base = 0;
+                        return;
+                    }
+                    uint16_t command = pci_read_config_word((uint8_t)bus, device, function, PCI_COMMAND);
+                    pci_write_config_word((uint8_t)bus, device, function, PCI_COMMAND,
+                                          (uint16_t)(command | 0x0001u));
                     ne2000_init();
                     ne2000_validate_init();
                     ne2000_print_mac_address();
