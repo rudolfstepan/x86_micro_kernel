@@ -23,7 +23,8 @@ Das erzeugt unter anderem:
 - `build/x86-microkernel-floppy.img`: bootfähiges 1,44-MB-FAT12-Diskettenimage
 - `build/x86-microkernel.vmdk` und `.vmx`: VMware-Artefakte
 - `build/vmware/x86-microkernel/`: vollständig startbare VMware-VM
-- `build/programs/HELLO.PRG`: extern gebautes Beispielprogramm
+- `build/programs/`: native Ring-3-Systemprogramme, unter anderem `SYSINFO`,
+  `DATE`, `UPTIME`, `MEMINFO`, `REPEAT`, `CALC` und `ASCII`
 
 Die fertige VM startet über
 `build\vmware\x86-microkernel\START-VMWARE.cmd`. Alternativ kann die dortige
@@ -56,7 +57,9 @@ In der Kernel-Shell:
 ```text
 C:\> DIR
 C:\> TYPE README.TXT
-C:\> RUN APP.PRG
+C:\> sysinfo
+C:\> calc
+C:\> APP
 ```
 
 Details zu ABI, Linker, Dateiformat und Sicherheitsgrenze stehen in

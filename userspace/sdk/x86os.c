@@ -44,6 +44,22 @@ void* x86os_realloc(void* pointer, size_t size) {
     return (void*)x86os_syscall(X86OS_SYS_REALLOC, (uintptr_t)pointer, size, 0);
 }
 
+uint32_t x86os_get_date(void) {
+    return (uint32_t)x86os_syscall(X86OS_SYS_GET_DATE, 0, 0, 0);
+}
+
+uint32_t x86os_get_time(void) {
+    return (uint32_t)x86os_syscall(X86OS_SYS_GET_TIME, 0, 0, 0);
+}
+
+uint32_t x86os_uptime_ms(void) {
+    return (uint32_t)x86os_syscall(X86OS_SYS_UPTIME_MS, 0, 0, 0);
+}
+
+uint32_t x86os_memory_kb(void) {
+    return (uint32_t)x86os_syscall(X86OS_SYS_MEMORY_KB, 0, 0, 0);
+}
+
 void x86os_exit(int status) {
     (void)x86os_syscall(X86OS_SYS_EXIT, (uintptr_t)status, 0, 0);
     for (;;) {

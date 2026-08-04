@@ -10,6 +10,7 @@
 #include "arch/x86/include/sys.h"
 #include "drivers/video/display.h"
 #include "drivers/char/kb.h"
+#include "drivers/char/rtc.h"
 #include "kernel/time/pit.h"
 #include "kernel/sched/scheduler.h"
 #include "mm/kmalloc.h"
@@ -34,6 +35,24 @@ void kernel_print_number(int number) {
     printf("Kernel received number: %d\n", number);
 }
 
+static uint32_t syscall_get_date(void) {
+    int year, month, day;
+    read_date(&year, &month, &day);
+    return ((uint32_t)year << 16) | ((uint32_t)month << 8) | (uint32_t)day;
+}
+
+static uint32_t syscall_get_time(void) {
+    int hours, minutes, seconds;
+    read_time(&hours, &minutes, &seconds);
+    return ((uint32_t)hours << 16) | ((uint32_t)minutes << 8) |
+           (uint32_t)seconds;
+}
+
+static uint32_t syscall_memory_kb(void) {
+    uint64_t kibibytes = total_memory / 1024U;
+    return kibibytes > UINT32_MAX ? UINT32_MAX : (uint32_t)kibibytes;
+}
+
 //---------------------------------------------------------------------------------------------
 // System Call Table
 //---------------------------------------------------------------------------------------------
@@ -53,6 +72,10 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&getchar,                    // Syscall 7: Read character from keyboard
     NULL,                               // Syscall 8: reserved (IRQ registration is privileged)
     (void*)&task_exit,                  // Syscall 9: Terminate current task
+    (void*)&syscall_get_date,           // Syscall 10: Packed RTC date
+    (void*)&syscall_get_time,           // Syscall 11: Packed RTC time
+    (void*)&pit_ticks,                  // Syscall 12: Milliseconds since boot
+    (void*)&syscall_memory_kb,          // Syscall 13: Usable memory in KiB
     // Add more syscalls here as needed
 };
 
@@ -112,6 +135,18 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_EXIT:
             task_exit();
+        case SYS_GET_DATE:
+            result = syscall_get_date();
+            break;
+        case SYS_GET_TIME:
+            result = syscall_get_time();
+            break;
+        case SYS_UPTIME_MS:
+            result = pit_ticks();
+            break;
+        case SYS_MEMORY_KB:
+            result = syscall_memory_kb();
+            break;
         default:
             result = (uint32_t)-1;
             break;

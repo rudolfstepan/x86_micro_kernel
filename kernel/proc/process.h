@@ -19,6 +19,7 @@ typedef struct {
 
 int create_process(void* entry_point);
 int create_process_for_file(const char *filename);
+void wait_for_process(int pid);
 void list_running_processes(void);
 void terminate_process(int pid);
 

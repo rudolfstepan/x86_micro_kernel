@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Build the standard Ring-3 system programs into MYPR images."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from build_user_program import ROOT, build, find_zig
+
+
+PROGRAMS = {
+    "HELLO.PRG": ROOT / "examples/userspace/hello.c",
+    "SYSINFO.PRG": ROOT / "examples/userspace/sysinfo.c",
+    "REPEAT.PRG": ROOT / "examples/userspace/repeat.c",
+    "CALC.PRG": ROOT / "examples/userspace/calc.c",
+    "DATE.PRG": ROOT / "examples/userspace/date.c",
+    "UPTIME.PRG": ROOT / "examples/userspace/uptime.c",
+    "MEMINFO.PRG": ROOT / "examples/userspace/meminfo.c",
+    "ASCII.PRG": ROOT / "examples/userspace/ascii.c",
+}
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--zig", type=Path)
+    args = parser.parse_args()
+
+    zig = find_zig(args.zig)
+    output_dir = args.output_dir.resolve()
+    for name, source in PROGRAMS.items():
+        output = output_dir / name
+        build([source], output, zig)
+        print(f"System program: {output}")
+
+
+if __name__ == "__main__":
+    main()

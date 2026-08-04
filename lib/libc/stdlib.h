@@ -18,6 +18,10 @@
 #define SYS_TERMINAL_GETCHAR 7
 #define SYS_INSTALL_IRQ 8 /* Reserved: always rejected by the kernel. */
 #define SYS_EXIT 9
+#define SYS_GET_DATE 10
+#define SYS_GET_TIME 11
+#define SYS_UPTIME_MS 12
+#define SYS_MEMORY_KB 13
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

@@ -67,6 +67,31 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertIn(b"USERSPACE-E2E-OK\n", program)
             self.assertEqual(elf.read_bytes()[:4], b"\x7fELF")
 
+    def test_standard_system_programs_build_as_mypr_images(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "programs"
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "build_system_programs.py"),
+                    "--output-dir", str(output),
+                    "--zig", str(ZIG),
+                ],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                timeout=120,
+            )
+            expected = {
+                "HELLO.PRG", "SYSINFO.PRG", "REPEAT.PRG", "CALC.PRG",
+                "DATE.PRG", "UPTIME.PRG", "MEMINFO.PRG", "ASCII.PRG",
+            }
+            self.assertEqual({path.name for path in output.iterdir()}, expected)
+            for name in expected:
+                program = (output / name).read_bytes()
+                self.assertEqual(program[:4], b"MYPR")
+                self.assertGreater(len(program), 28)
+
 
 if __name__ == "__main__":
     unittest.main()

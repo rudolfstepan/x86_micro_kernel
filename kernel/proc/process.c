@@ -274,6 +274,27 @@ int create_process(void* entry_point) {
     return pid;
 }
 
+void wait_for_process(int pid) {
+    if (pid < 0) return;
+
+    for (;;) {
+        bool running = false;
+        uint32_t flags = irq_save();
+        for (int i = 0; i < MAX_PROGRAMS; ++i) {
+            if (process_list[i].pid == pid && process_list[i].is_running) {
+                running = true;
+                break;
+            }
+        }
+        irq_restore(flags);
+        if (!running) return;
+
+        /* The APIC timer schedules the userspace task. HLT avoids burning the
+         * shell's kernel context while it waits for the foreground process. */
+        __asm__ __volatile__("hlt");
+    }
+}
+
 void list_running_processes(void) {
     printf("Running programs:\n");
     for (int i = 0; i < MAX_PROGRAMS; i++) {

@@ -110,6 +110,12 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Floppy stage 1 assembly failed.' }
 
     New-Item -ItemType Directory -Force -Path $UserProgramDir | Out-Null
+    & $Python 'scripts/build_system_programs.py' `
+        --output-dir $UserProgramDir `
+        --zig $Zig
+    if ($LASTEXITCODE -ne 0) {
+        throw "System program build failed with exit code $LASTEXITCODE."
+    }
     $programBuildArguments = @(
         'scripts/build_user_program.py'
     ) + $ProgramSource + @('--output', $UserPrg, '--zig', $Zig)
@@ -123,7 +129,14 @@ try {
         --stage2 $Stage2 `
         --kernel $Kernel `
         --output $FloppyImage `
-        --data-file "$ProgramName=$UserPrg"
+        --data-file "$ProgramName=$UserPrg" `
+        --data-file "SYSINFO.PRG=$(Join-Path $UserProgramDir 'SYSINFO.PRG')" `
+        --data-file "REPEAT.PRG=$(Join-Path $UserProgramDir 'REPEAT.PRG')" `
+        --data-file "CALC.PRG=$(Join-Path $UserProgramDir 'CALC.PRG')" `
+        --data-file "DATE.PRG=$(Join-Path $UserProgramDir 'DATE.PRG')" `
+        --data-file "UPTIME.PRG=$(Join-Path $UserProgramDir 'UPTIME.PRG')" `
+        --data-file "MEMINFO.PRG=$(Join-Path $UserProgramDir 'MEMINFO.PRG')" `
+        --data-file "ASCII.PRG=$(Join-Path $UserProgramDir 'ASCII.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Floppy image creation failed with exit code $LASTEXITCODE."
     }
@@ -136,7 +149,14 @@ try {
         --vmdk $Vmdk `
         --vmware-dir $VmwareDir `
         --floppy $FloppyImage `
-        --data-file "$ProgramName=$UserPrg"
+        --data-file "$ProgramName=$UserPrg" `
+        --data-file "SYSINFO.PRG=$(Join-Path $UserProgramDir 'SYSINFO.PRG')" `
+        --data-file "REPEAT.PRG=$(Join-Path $UserProgramDir 'REPEAT.PRG')" `
+        --data-file "CALC.PRG=$(Join-Path $UserProgramDir 'CALC.PRG')" `
+        --data-file "DATE.PRG=$(Join-Path $UserProgramDir 'DATE.PRG')" `
+        --data-file "UPTIME.PRG=$(Join-Path $UserProgramDir 'UPTIME.PRG')" `
+        --data-file "MEMINFO.PRG=$(Join-Path $UserProgramDir 'MEMINFO.PRG')" `
+        --data-file "ASCII.PRG=$(Join-Path $UserProgramDir 'ASCII.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Native image creation failed with exit code $LASTEXITCODE."
     }

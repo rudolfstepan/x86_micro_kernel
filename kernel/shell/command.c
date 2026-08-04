@@ -1730,6 +1730,8 @@ void cmd_run(int arg_count, const char** arguments) {
     shell_restore_drive(saved_drive);
     if (pid == -1) {
         printf("Failed to start program '%s'.\n", arguments[0]);
+    } else {
+        wait_for_process(pid);
     }
 }
 

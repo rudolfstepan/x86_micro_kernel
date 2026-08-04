@@ -42,6 +42,7 @@ endif
 ZIG ?= zig
 USER_PROGRAM_SOURCE ?= examples/userspace/hello.c
 USER_PROGRAM_OUTPUT ?= $(OUTPUT_DIR)/programs/HELLO.PRG
+SYSTEM_PROGRAM_DIR := $(OUTPUT_DIR)/programs
 
 # Build target selection (default: qemu)
 # Override with: make TARGET=real_hw or TARGET=vmware
@@ -212,7 +213,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel user-program bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -273,6 +274,7 @@ help:
 	@echo "  build-real-hw - Build for real hardware (strict ATA timing)"
 	@echo "  kernel       - Build kernel binary only"
 	@echo "  user-program - Compile USER_PROGRAM_SOURCE into a loadable MYPR file"
+	@echo "  system-programs - Build the native Ring-3 system tool collection"
 	@echo "  bootdisk     - Create native BIOS disk image"
 	@echo "  floppy-image - Create a 1.44-MB BIOS floppy image"
 	@echo "  clean        - Remove all build artifacts"
@@ -489,6 +491,11 @@ user-program:
 	@$(PYTHON) scripts/build_user_program.py $(USER_PROGRAM_SOURCE) \
 		--output $(USER_PROGRAM_OUTPUT) --zig $(ZIG)
 
+system-programs:
+	@echo "Building standard Ring-3 system programs..."
+	@$(PYTHON) scripts/build_system_programs.py \
+		--output-dir $(SYSTEM_PROGRAM_DIR) --zig $(ZIG)
+
 native-image: floppy-image
 	@echo "Creating native BIOS disk image..."
 	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage1_mbr.asm -o $(OUTPUT_DIR)/stage1_mbr.bin
@@ -501,11 +508,18 @@ native-image: floppy-image
 		--vmdk $(OUTPUT_DIR)/x86-microkernel.vmdk \
 		--vmware-dir $(OUTPUT_DIR)/vmware/x86-microkernel \
 		--floppy $(OUTPUT_DIR)/x86-microkernel-floppy.img \
-		--data-file HELLO.PRG=$(USER_PROGRAM_OUTPUT)
+		--data-file HELLO.PRG=$(USER_PROGRAM_OUTPUT) \
+		--data-file SYSINFO.PRG=$(SYSTEM_PROGRAM_DIR)/SYSINFO.PRG \
+		--data-file REPEAT.PRG=$(SYSTEM_PROGRAM_DIR)/REPEAT.PRG \
+		--data-file CALC.PRG=$(SYSTEM_PROGRAM_DIR)/CALC.PRG \
+		--data-file DATE.PRG=$(SYSTEM_PROGRAM_DIR)/DATE.PRG \
+		--data-file UPTIME.PRG=$(SYSTEM_PROGRAM_DIR)/UPTIME.PRG \
+		--data-file MEMINFO.PRG=$(SYSTEM_PROGRAM_DIR)/MEMINFO.PRG \
+		--data-file ASCII.PRG=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/x86-microkernel.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
 
-floppy-image: kernel user-program
+floppy-image: kernel system-programs user-program
 	@echo "Creating 1.44-MB BIOS floppy image..."
 	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage1_floppy.asm -o $(OUTPUT_DIR)/stage1_floppy.bin
 	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage2_bios.asm -o $(OUTPUT_DIR)/stage2_bios.bin
@@ -514,7 +528,14 @@ floppy-image: kernel user-program
 		--stage2 $(OUTPUT_DIR)/stage2_bios.bin \
 		--kernel $(OUTPUT_DIR)/kernel.bin \
 		--output $(OUTPUT_DIR)/x86-microkernel-floppy.img \
-		--data-file HELLO.PRG=$(USER_PROGRAM_OUTPUT)
+		--data-file HELLO.PRG=$(USER_PROGRAM_OUTPUT) \
+		--data-file SYSINFO.PRG=$(SYSTEM_PROGRAM_DIR)/SYSINFO.PRG \
+		--data-file REPEAT.PRG=$(SYSTEM_PROGRAM_DIR)/REPEAT.PRG \
+		--data-file CALC.PRG=$(SYSTEM_PROGRAM_DIR)/CALC.PRG \
+		--data-file DATE.PRG=$(SYSTEM_PROGRAM_DIR)/DATE.PRG \
+		--data-file UPTIME.PRG=$(SYSTEM_PROGRAM_DIR)/UPTIME.PRG \
+		--data-file MEMINFO.PRG=$(SYSTEM_PROGRAM_DIR)/MEMINFO.PRG \
+		--data-file ASCII.PRG=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG
 
 # ============================================================================
 # TESTING

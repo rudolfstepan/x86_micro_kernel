@@ -489,7 +489,7 @@ Die VM ist bereits vollständig konfiguriert:
   - VGA ohne 3D-Beschleunigung
   - Intel E1000, ueber VMnet0 direkt mit dem physischen LAN gebridged
   - automatische IPv4-Konfiguration per DHCP
-  - 60-MiB-FAT32-Datenpartition mit README.TXT und HELLO.PRG
+  - 60-MiB-FAT32-Datenpartition mit README.TXT und Ring-3-Systemprogrammen
   - COM1-Bootprotokoll in vmware-serial.log
   - bootfähiges 1,44-MB-Floppy-Image, kein USB- oder Audiogerät
 
@@ -504,9 +504,16 @@ LAN-Test in der Kernel-Shell:
   ping 192.168.1.1  testet den Router (Adresse ggf. anpassen)
 
 Shell- und Programmtest:
-  dir                zeigt README.TXT und HELLO.PRG
+  dir                zeigt README.TXT und die eingebetteten PRG-Dateien
   type README.TXT    liest die Datei ueber den gemeinsamen VFS-Pfad
-  run HELLO.PRG      startet das extern gebaute Beispielprogramm
+  hello              startet den Ring-3-End-to-End-Test
+  sysinfo            zeigt Informationen zur Userspace-Umgebung
+  repeat             liest und wiederholt eine Textzeile
+  calc               startet den Ganzzahlrechner
+  date               zeigt Datum und Uhrzeit der Echtzeituhr
+  uptime             zeigt die Laufzeit seit dem Kernelstart
+  meminfo            zeigt den nutzbaren physischen Speicher
+  ascii              zeigt die druckbare ASCII-Tabelle
 
 Der aktuelle Minimal-Stack unterstuetzt Ethernet, ARP, IPv4, ICMP und DHCP.
 DNS-Anfragen und TCP-Anwendungen wie HTTP/SMB sind noch nicht implementiert.

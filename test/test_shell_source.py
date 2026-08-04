@@ -85,6 +85,9 @@ class ShellSourceRegressionTests(unittest.TestCase):
             self.source,
         )
 
+    def test_run_waits_for_foreground_program(self):
+        self.assertIn("wait_for_process(pid);", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
