@@ -49,6 +49,19 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertNotIn("getchar_nonblocking(", match.group("body"))
 
+    def test_ping_repeats_until_ctrl_c(self):
+        match = re.search(
+            r"void cmd_ping\s*\([^)]*\)\s*\{(?P<body>.*?)\n\}",
+            self.source,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        body = match.group("body")
+        self.assertIn("while (!interrupted)", body)
+        self.assertIn("getchar_nonblocking()", body)
+        self.assertIn("ch == 0x03", body)
+        self.assertIn("ping statistics", body)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2028,7 +2028,7 @@ void cmd_ifconfig(int arg_count, const char** arguments) {
 
 void cmd_ping(int arg_count, const char** arguments) {
     if (arg_count == 0) {
-        printf("PING - Send ICMP echo request\n");
+        printf("PING - Send ICMP echo requests until Ctrl+C\n");
         printf("Usage: ping <ip_address>\n");
         printf("Example: ping 192.168.1.1\n");
         return;
@@ -2048,14 +2048,39 @@ void cmd_ping(int arg_count, const char** arguments) {
         return;
     }
 
-    printf("PING %s (id=0x%04X, seq=%u)... ",
-           arguments[0], ping_id, seq);
-    if (netstack_ping(target_ip, ping_id, seq, 2000u)) {
-        printf("reply received\n");
-    } else {
-        printf("timeout or unreachable\n");
+    uint32_t sent = 0;
+    uint32_t received = 0;
+    bool interrupted = false;
+
+    printf("PING %s continuously (Ctrl+C to stop)\n", arguments[0]);
+    while (!interrupted) {
+        uint16_t current_seq = seq++;
+        ++sent;
+        printf("PING %s (id=0x%04X, seq=%u)... ",
+               arguments[0], ping_id, current_seq);
+        if (netstack_ping(target_ip, ping_id, current_seq, 2000u)) {
+            ++received;
+            printf("reply received\n");
+        } else {
+            printf("timeout or unreachable\n");
+        }
+
+        /* Keep the usual one-second ping cadence while remaining responsive
+         * to both PS/2 keyboard and serial-console Ctrl+C input. */
+        for (uint32_t elapsed = 0; elapsed < 1000u; elapsed += 10u) {
+            char ch = getchar_nonblocking();
+            if (ch == 0x03) {
+                interrupted = true;
+                break;
+            }
+            netdev_poll();
+            pit_delay(10u);
+        }
     }
-    seq++;
+
+    printf("^C\n--- %s ping statistics ---\n", arguments[0]);
+    printf("%u packets transmitted, %u received, %u lost\n",
+           sent, received, sent - received);
 }
 
 void cmd_arp(int arg_count, const char** arguments) {
