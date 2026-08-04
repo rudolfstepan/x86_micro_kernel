@@ -40,6 +40,15 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         self.assertIn("syscall_copy_file_info", source)
         self.assertIn("copy_to_user(user_info", source)
 
+    def test_file_writes_copy_data_from_userspace(self):
+        source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("syscall_create", source)
+        self.assertIn("syscall_write", source)
+        self.assertIn("syscall_unlink", source)
+        self.assertIn("copy_from_user(buffer", source)
+
     def test_process_exit_closes_open_descriptors(self):
         source = (ROOT / "kernel/sched/scheduler.c").read_text(
             encoding="utf-8"

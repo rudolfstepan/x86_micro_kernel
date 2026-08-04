@@ -87,6 +87,8 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "DATE.PRG", "UPTIME.PRG", "MEMINFO.PRG", "ASCII.PRG",
                 "CAT.PRG",
                 "LS.PRG",
+                "SAVE.PRG",
+                "BASIC.PRG",
             }
             self.assertEqual({path.name for path in output.iterdir()}, expected)
             for name in expected:

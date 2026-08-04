@@ -136,11 +136,6 @@ LIB_LIBC_C := $(wildcard $(LIB_DIR)/libc/*.c)
 LIB_LIBC_ASM := $(wildcard $(LIB_DIR)/libc/*.asm)
 LIB_LIBK_C := $(wildcard $(LIB_DIR)/libk/*.c)
 
-# The BASIC interpreter currently runs as a kernel-shell component.  Other
-# userspace programs have their own linker format and must not be folded into
-# the kernel image.
-BASIC_C := $(USERSPACE_DIR)/bin/basic.c
-BASIC_OBJ := $(BUILD_USERSPACE_DIR)/bin/basic.o
 CONFIG_STAMP := $(OUTPUT_DIR)/.config-$(TARGET)-$(VIDEO)
 
 # ============================================================================
@@ -195,7 +190,7 @@ DRIVERS_OBJ := $(DRIVERS_BLOCK_OBJ) $(DRIVERS_CHAR_OBJ) $(DRIVERS_VIDEO_OBJ) \
                $(DRIVERS_NET_OBJ) $(DRIVERS_USB_OBJ) $(DRIVERS_BUS_OBJ)
 LIB_OBJ := $(LIB_LIBC_C_OBJ) $(LIB_LIBC_ASM_OBJ) $(LIB_LIBK_OBJ)
 
-ALL_OBJ := $(ARCH_OBJ) $(KERNEL_OBJ) $(MM_OBJ) $(FS_OBJ) $(DRIVERS_OBJ) $(LIB_OBJ) $(BASIC_OBJ)
+ALL_OBJ := $(ARCH_OBJ) $(KERNEL_OBJ) $(MM_OBJ) $(FS_OBJ) $(DRIVERS_OBJ) $(LIB_OBJ)
 DEPS := $(ALL_OBJ:.o=.d)
 
 # Ensure the generated directory tree exists before any object is built.
@@ -395,11 +390,6 @@ $(BUILD_KERNEL_DIR)/shell/%.o: $(KERNEL_DIR)/shell/%.c
 	@echo "  CC    $<"
 	@$(CC) $(CFLAGS) $< -o $@
 
-# BASIC interpreter (linked into the kernel shell)
-$(BASIC_OBJ): $(BASIC_C)
-	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
-
 # Memory management
 $(BUILD_MM_DIR)/%.o: $(MM_DIR)/%.c
 	@echo "  CC    $<"
@@ -517,7 +507,9 @@ native-image: floppy-image
 		--data-file MEMINFO.PRG=$(SYSTEM_PROGRAM_DIR)/MEMINFO.PRG \
 		--data-file ASCII.PRG=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG \
 		--data-file CAT.PRG=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
-		--data-file LS.PRG=$(SYSTEM_PROGRAM_DIR)/LS.PRG
+		--data-file LS.PRG=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
+		--data-file SAVE.PRG=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
+		--data-file BASIC.PRG=$(SYSTEM_PROGRAM_DIR)/BASIC.PRG
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/x86-microkernel.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
 
@@ -539,7 +531,9 @@ floppy-image: kernel system-programs user-program
 		--data-file MEMINFO.PRG=$(SYSTEM_PROGRAM_DIR)/MEMINFO.PRG \
 		--data-file ASCII.PRG=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG \
 		--data-file CAT.PRG=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
-		--data-file LS.PRG=$(SYSTEM_PROGRAM_DIR)/LS.PRG
+		--data-file LS.PRG=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
+		--data-file SAVE.PRG=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
+		--data-file BASIC.PRG=$(SYSTEM_PROGRAM_DIR)/BASIC.PRG
 
 # ============================================================================
 # TESTING

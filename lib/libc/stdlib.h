@@ -27,6 +27,9 @@
 #define SYS_CLOSE 16
 #define SYS_STAT 17
 #define SYS_READDIR 18
+#define SYS_CREATE 19
+#define SYS_WRITE 20
+#define SYS_UNLINK 21
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

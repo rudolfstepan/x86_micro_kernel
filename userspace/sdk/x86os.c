@@ -86,6 +86,19 @@ int x86os_readdir(const char* path, uint32_t index, x86os_file_info_t* info) {
                               (uintptr_t)info);
 }
 
+int x86os_create(const char* path) {
+    return (int)x86os_syscall(X86OS_SYS_CREATE, (uintptr_t)path, 0, 0);
+}
+
+int x86os_write(int descriptor, const void* buffer, size_t size) {
+    return (int)x86os_syscall(X86OS_SYS_WRITE, (uintptr_t)descriptor,
+                              (uintptr_t)buffer, size);
+}
+
+int x86os_unlink(const char* path) {
+    return (int)x86os_syscall(X86OS_SYS_UNLINK, (uintptr_t)path, 0, 0);
+}
+
 void x86os_exit(int status) {
     (void)x86os_syscall(X86OS_SYS_EXIT, (uintptr_t)status, 0, 0);
     for (;;) {

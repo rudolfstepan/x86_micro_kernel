@@ -13,16 +13,13 @@
  * - END - exit program
  */
 
-#include "../../lib/libc/stdio.h"
-#include "../../lib/libc/stdlib.h"
-#include "../../lib/libc/string.h"
-#include "../../drivers/char/kb.h"
-#include "../../drivers/net/netdev.h"
-#include "../../fs/fat32/fat32.h"
+#include "x86os.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdarg.h>
+#include <limits.h>
 
 #define BASIC_MAX_LINES 100
 #define BASIC_LINE_CAPACITY 64
@@ -32,6 +29,84 @@
 #define BASIC_FILENAME_CAPACITY 32
 #define BASIC_MAX_SERIALIZED_SIZE \
     (BASIC_MAX_LINES * (BASIC_LINE_CAPACITY + 3))
+
+static void *basic_memcpy(void *destination, const void *source, size_t size) {
+    unsigned char *out = destination;
+    const unsigned char *in = source;
+    while (size-- != 0U) *out++ = *in++;
+    return destination;
+}
+
+static void *basic_memset(void *destination, int value, size_t size) {
+    unsigned char *out = destination;
+    while (size-- != 0U) *out++ = (unsigned char)value;
+    return destination;
+}
+
+static void print_number(int value, bool unsigned_value) {
+    char digits[11];
+    unsigned int count = 0;
+    uint32_t magnitude;
+    if (!unsigned_value && value < 0) {
+        x86os_putchar('-');
+        magnitude = 0U - (uint32_t)value;
+    } else {
+        magnitude = (uint32_t)value;
+    }
+    do {
+        digits[count++] = (char)('0' + magnitude % 10U);
+        magnitude /= 10U;
+    } while (magnitude != 0U);
+    while (count != 0U) x86os_putchar(digits[--count]);
+}
+
+static void basic_printf(const char *format, ...) {
+    va_list values;
+    va_start(values, format);
+    while (*format != '\0') {
+        if (*format != '%') {
+            x86os_putchar(*format++);
+            continue;
+        }
+        ++format;
+        if (*format == 's') x86os_puts(va_arg(values, const char*));
+        else if (*format == 'd') print_number(va_arg(values, int), false);
+        else if (*format == 'u') print_number((int)va_arg(values, unsigned int), true);
+        else if (*format == '%') x86os_putchar('%');
+        if (*format != '\0') ++format;
+    }
+    va_end(values);
+}
+
+static void basic_get_input_line(char *buffer, int capacity) {
+    int length = 0;
+    for (;;) {
+        char ch = (char)x86os_getchar();
+        if (ch == '\r' || ch == '\n') {
+            x86os_putchar('\n');
+            break;
+        }
+        if (ch == '\b') {
+            if (length > 0) {
+                --length;
+                x86os_puts("\b \b");
+            }
+        } else if (ch >= ' ' && ch <= '~' && length + 1 < capacity) {
+            buffer[length++] = ch;
+            x86os_putchar(ch);
+        }
+    }
+    buffer[length] = '\0';
+}
+
+#define printf basic_printf
+#define putchar x86os_putchar
+#define getchar x86os_getchar
+#define malloc x86os_malloc
+#define free x86os_free
+#define memcpy basic_memcpy
+#define memset basic_memset
+#define get_input_line basic_get_input_line
 
 int scmp_nocase(const char* s1, const char* s2);
 
@@ -376,6 +451,7 @@ int cgosub(int ln, char* s) {
 }
 
 int cret(int ln, char* s) {
+    (void)s;
     int target = 0;
     if (!lnpop(&target)) {
         berror(ln, "RET WITHOUT GOSUB");
@@ -385,6 +461,8 @@ int cret(int ln, char* s) {
 }
 
 int cend(int ln, char* s) {
+    (void)ln;
+    (void)s;
     return 999; // Exit program
 }
 
@@ -590,7 +668,6 @@ int emath(char* s) {
 void run_basic() {
     _linestackpos = 0;
     for (int i = 0; i < BASIC_MAX_LINES; ++i) {
-        netdev_poll();
         if (!prgm[i][0]) continue;
         i = runcmd(i, prgm[i]);
         if (i >= 999) break; // END command
@@ -628,11 +705,12 @@ void cmd_load(const char* filename) {
 
     printf("Loading %s...\n", full_filename);
 
-    uint32_t file_size = 0;
-    if (fat32_get_file_size(full_filename, &file_size) != 0) {
+    x86os_file_info_t info;
+    if (x86os_stat(full_filename, &info) != 0 || info.type != X86OS_FILE) {
         printf("ERROR: Could not find file '%s'\n", full_filename);
         return;
     }
+    uint32_t file_size = info.size;
     if (file_size > BASIC_MAX_SERIALIZED_SIZE) {
         printf("ERROR: File is too large (%u bytes, maximum %u)\n",
                file_size, (unsigned int)BASIC_MAX_SERIALIZED_SIZE);
@@ -645,9 +723,16 @@ void cmd_load(const char* filename) {
         return;
     }
 
-    int loaded_size = fat32_load_file_sized(full_filename, file_buffer,
-                                            file_size);
-    if (loaded_size < 0 || (uint32_t)loaded_size != file_size) {
+    int descriptor = x86os_open(full_filename);
+    uint32_t loaded_size = 0;
+    while (descriptor >= 0 && loaded_size < file_size) {
+        int amount = x86os_read(descriptor, file_buffer + loaded_size,
+                                file_size - loaded_size);
+        if (amount <= 0) break;
+        loaded_size += (uint32_t)amount;
+    }
+    if (descriptor >= 0) (void)x86os_close(descriptor);
+    if (descriptor < 0 || loaded_size != file_size) {
         printf("ERROR: Could not load file '%s'\n", full_filename);
         free(file_buffer);
         return;
@@ -785,8 +870,17 @@ void cmd_save(const char* filename) {
         }
     }
 
-    if (!fat32_replace_file(full_filename, file_buffer,
-                            (uint32_t)serialized_size)) {
+    (void)x86os_unlink(full_filename);
+    int descriptor = x86os_create(full_filename);
+    size_t written = 0;
+    while (descriptor >= 0 && written < serialized_size) {
+        int amount = x86os_write(descriptor, file_buffer + written,
+                                 serialized_size - written);
+        if (amount <= 0) break;
+        written += (size_t)amount;
+    }
+    if (descriptor >= 0) (void)x86os_close(descriptor);
+    if (descriptor < 0 || written != serialized_size) {
         printf("ERROR: Could not write complete file '%s'\n", full_filename);
         free(file_buffer);
         return;
@@ -919,4 +1013,9 @@ void basic_interpreter() {
                    BASIC_MAX_LINES - 1);
         }
     }
+}
+
+int main(void) {
+    basic_interpreter();
+    return 0;
 }

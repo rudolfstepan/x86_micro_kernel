@@ -115,7 +115,6 @@ void cmd_ifconfig(int cnt, const char **args);
 void cmd_ping(int cnt, const char **args);
 void cmd_arp(int cnt, const char **args);
 void cmd_history(int cnt, const char **args);
-void cmd_basic(int cnt, const char **args);
 void cmd_get_ip(int cnt, const char **args);
 
 // Command table
@@ -164,7 +163,6 @@ static const command_t command_table[MAX_COMMANDS] = {
     {"PING", cmd_ping},
     {"ARP", cmd_arp},
     {"HISTORY", cmd_history},
-    {"BASIC", cmd_basic},
     {"PCI", cmd_pci},
     {"GETIP", cmd_get_ip},
     {NULL, NULL} // End marker
@@ -2207,8 +2205,6 @@ void cmd_pci(int arg_count, const char **args) {
     }
 }
 
-#include "userspace/bin/basic.h"
-
 // Print the current IP address
 void cmd_get_ip(int argc, const char **argv) {
     (void)argc; (void)argv;
@@ -2219,21 +2215,4 @@ void cmd_get_ip(int argc, const char **argv) {
 
     for (const char *p = ip_str; *p; ++p) putchar(*p);
     putchar('\n');
-}
-
-void cmd_basic(int arg_count, const char** arguments) {
-    printf("\n=== BASIC Interpreter v1.2 ===\n");
-    printf("Commands (case-insensitive):\n");
-    printf("  RUN        - Execute the program\n");
-    printf("  LIST       - Display program listing\n");
-    printf("  NEW        - Clear program and variables\n");
-    printf("  LOAD file  - Load .BAS file from filesystem\n");
-    printf("  SAVE file  - Save program to .BAS file\n");
-    printf("  HELP       - Show help\n");
-    printf("  EXIT       - Return to shell\n");
-    printf("\nEnter program lines with line numbers (0-99)\n");
-    printf("Example: 10 PRINT \"HELLO\"\n\n");
-    
-    basic_interpreter(); // Call BASIC interpreter
-    printf("\nReturned to shell.\n");
 }

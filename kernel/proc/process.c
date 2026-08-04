@@ -548,6 +548,7 @@ int process_file_open(Process *process, const char *path) {
     process->files[slot].node = node;
     process->files[slot].offset = 0;
     process->files[slot].in_use = true;
+    process->files[slot].writable = false;
     return slot + PROCESS_FD_BASE;
 }
 
@@ -565,6 +566,51 @@ int process_file_read(Process *process, int descriptor, void *buffer,
     int result = vfs_read(file->node, file->offset, (uint32_t)size, buffer);
     if (result > 0) file->offset += (uint32_t)result;
     return result;
+}
+
+int process_file_create(Process *process, const char *path) {
+    if (process == NULL || path == NULL) return -1;
+    char resolved[PROCESS_PATH_MAX];
+    if (process_resolve_path(process, path, resolved) != 0) return -1;
+
+    int slot = -1;
+    for (int i = 0; i < MAX_PROCESS_FILES; ++i) {
+        if (!process->files[i].in_use) { slot = i; break; }
+    }
+    if (slot < 0 || vfs_create(resolved) != VFS_OK) return -1;
+
+    vfs_node_t *node = NULL;
+    if (vfs_open(resolved, &node) != VFS_OK || node == NULL ||
+        node->type != VFS_FILE) {
+        if (node != NULL) (void)vfs_close(node);
+        (void)vfs_delete(resolved);
+        return -1;
+    }
+    process->files[slot].node = node;
+    process->files[slot].offset = 0;
+    process->files[slot].in_use = true;
+    process->files[slot].writable = true;
+    return slot + PROCESS_FD_BASE;
+}
+
+int process_file_write(Process *process, int descriptor, const void *buffer,
+                       size_t size) {
+    int slot = descriptor - PROCESS_FD_BASE;
+    if (process == NULL || buffer == NULL || slot < 0 ||
+        slot >= MAX_PROCESS_FILES || !process->files[slot].in_use ||
+        !process->files[slot].writable || size > UINT32_MAX) return -1;
+    if (size == 0) return 0;
+    process_file_t *file = &process->files[slot];
+    int result = vfs_write(file->node, file->offset, (uint32_t)size, buffer);
+    if (result > 0) file->offset += (uint32_t)result;
+    return result;
+}
+
+int process_file_unlink(Process *process, const char *path) {
+    if (process == NULL || path == NULL) return -1;
+    char resolved[PROCESS_PATH_MAX];
+    if (process_resolve_path(process, path, resolved) != 0) return -1;
+    return vfs_delete(resolved) == VFS_OK ? 0 : -1;
 }
 
 int process_file_close(Process *process, int descriptor) {

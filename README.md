@@ -24,7 +24,8 @@ Das erzeugt unter anderem:
 - `build/x86-microkernel.vmdk` und `.vmx`: VMware-Artefakte
 - `build/vmware/x86-microkernel/`: vollständig startbare VMware-VM
 - `build/programs/`: native Ring-3-Systemprogramme, unter anderem `SYSINFO`,
-  `DATE`, `UPTIME`, `MEMINFO`, `REPEAT`, `CALC`, `ASCII`, `CAT` und `LS`
+  `DATE`, `UPTIME`, `MEMINFO`, `REPEAT`, `CALC`, `ASCII`, `CAT`, `LS`, `SAVE`
+  und `BASIC`
 
 Native Programme erhalten klassische `argc`/`argv`-Argumente und erben das
 Arbeitsverzeichnis der Shell. Beispielsweise zeigt `cat README.TXT` eine Datei

@@ -85,6 +85,14 @@ class ShellSourceRegressionTests(unittest.TestCase):
         )
         self.assertIn('"LS.PRG"', programs)
 
+    def test_basic_is_a_userspace_program_not_a_kernel_builtin(self):
+        self.assertNotIn('{"BASIC", cmd_basic}', self.source)
+        self.assertNotIn('#include "userspace/bin/basic.h"', self.source)
+        programs = (ROOT / "scripts/build_system_programs.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"BASIC.PRG"', programs)
+
     def test_prompt_has_no_trailing_space(self):
         self.assertIn('printf("%s:%s>", drive_label, dos_path);', self.source)
         self.assertNotIn('printf("%s:%s> ", drive_label, dos_path);', self.source)

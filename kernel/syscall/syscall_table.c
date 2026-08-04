@@ -149,6 +149,47 @@ static int syscall_readdir(const char *user_path, uint32_t index,
     return result == 0 ? 1 : result;
 }
 
+static int syscall_create(const char *user_path) {
+    char path[PROCESS_PATH_MAX];
+    int result = syscall_copy_path(path, user_path);
+    if (result != 0) return result;
+    Process *process = scheduler_current_process();
+    int descriptor = process_file_create(process, path);
+    return descriptor < 0 ? -5 : descriptor;
+}
+
+static int syscall_write(int descriptor, const void *user_buffer, size_t size) {
+    Process *process = scheduler_current_process();
+    if (process == NULL) return -9;
+    if (size == 0) return 0;
+    if (size > INT_MAX ||
+        !user_range_accessible(paging_current_directory(),
+                               (uint32_t)(uintptr_t)user_buffer, size, false)) {
+        return -14;
+    }
+    uint8_t buffer[512];
+    size_t total = 0;
+    while (total < size) {
+        size_t amount = size - total;
+        if (amount > sizeof(buffer)) amount = sizeof(buffer);
+        if (copy_from_user(buffer, (const uint8_t*)user_buffer + total,
+                           amount) != 0) return -14;
+        int written = process_file_write(process, descriptor, buffer, amount);
+        if (written < 0) return total != 0 ? (int)total : -9;
+        if (written == 0) break;
+        total += (size_t)written;
+        if ((size_t)written < amount) break;
+    }
+    return (int)total;
+}
+
+static int syscall_unlink(const char *user_path) {
+    char path[PROCESS_PATH_MAX];
+    int result = syscall_copy_path(path, user_path);
+    if (result != 0) return result;
+    return process_file_unlink(scheduler_current_process(), path) == 0 ? 0 : -2;
+}
+
 //---------------------------------------------------------------------------------------------
 // System Call Table
 //---------------------------------------------------------------------------------------------
@@ -177,6 +218,9 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_close,              // Syscall 16: Close descriptor
     (void*)&syscall_stat,               // Syscall 17: Get path metadata
     (void*)&syscall_readdir,            // Syscall 18: Read directory entry
+    (void*)&syscall_create,             // Syscall 19: Create writable file
+    (void*)&syscall_write,              // Syscall 20: Write descriptor
+    (void*)&syscall_unlink,             // Syscall 21: Delete file
     // Add more syscalls here as needed
 };
 
@@ -283,6 +327,22 @@ void syscall_handler(Registers* regs) {
             scheduler_preempt_disable();
             result = (uint32_t)syscall_readdir(
                 (const char*)(uintptr_t)arg1, arg2, (void*)(uintptr_t)arg3);
+            scheduler_preempt_enable();
+            break;
+        case SYS_CREATE:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_create((const char*)(uintptr_t)arg1);
+            scheduler_preempt_enable();
+            break;
+        case SYS_WRITE:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_write(
+                (int)arg1, (const void*)(uintptr_t)arg2, (size_t)arg3);
+            scheduler_preempt_enable();
+            break;
+        case SYS_UNLINK:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_unlink((const char*)(uintptr_t)arg1);
             scheduler_preempt_enable();
             break;
         default:
