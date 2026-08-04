@@ -20,8 +20,21 @@ enum {
     X86OS_SYS_MEMORY_KB = 13,
     X86OS_SYS_OPEN = 14,
     X86OS_SYS_READ = 15,
-    X86OS_SYS_CLOSE = 16
+    X86OS_SYS_CLOSE = 16,
+    X86OS_SYS_STAT = 17,
+    X86OS_SYS_READDIR = 18
 };
+
+enum {
+    X86OS_FILE = 1,
+    X86OS_DIRECTORY = 2
+};
+
+typedef struct {
+    char name[256];
+    uint32_t type;
+    uint32_t size;
+} x86os_file_info_t;
 
 uintptr_t x86os_syscall(uint32_t number, uintptr_t argument1,
                         uintptr_t argument2, uintptr_t argument3);
@@ -40,6 +53,8 @@ uint32_t x86os_memory_kb(void);
 int x86os_open(const char* path);
 int x86os_read(int descriptor, void* buffer, size_t size);
 int x86os_close(int descriptor);
+int x86os_stat(const char* path, x86os_file_info_t* info);
+int x86os_readdir(const char* path, uint32_t index, x86os_file_info_t* info);
 void x86os_exit(int status) __attribute__((noreturn));
 
 #endif

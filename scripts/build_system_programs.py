@@ -19,6 +19,7 @@ PROGRAMS = {
     "MEMINFO.PRG": ROOT / "examples/userspace/meminfo.c",
     "ASCII.PRG": ROOT / "examples/userspace/ascii.c",
     "CAT.PRG": ROOT / "examples/userspace/cat.c",
+    "LS.PRG": ROOT / "examples/userspace/ls.c",
 }
 
 

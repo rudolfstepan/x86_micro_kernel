@@ -15,9 +15,11 @@
 #include "kernel/sched/scheduler.h"
 #include "kernel/proc/process.h"
 #include "arch/x86/mm/paging.h"
+#include "fs/vfs/vfs.h"
 #include "mm/kmalloc.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"  // For SYS_MALLOC, SYS_FREE, SYS_REALLOC, etc.
+#include "lib/libc/string.h"
 
 //---------------------------------------------------------------------------------------------
 // Syscall Entry Points
@@ -99,6 +101,54 @@ static int syscall_close(int descriptor) {
     return process_file_close(process, descriptor) == 0 ? 0 : -9;
 }
 
+typedef struct {
+    char name[256];
+    uint32_t type;
+    uint32_t size;
+} syscall_file_info_t;
+
+static int syscall_copy_path(char resolved[PROCESS_PATH_MAX],
+                             const char *user_path) {
+    char path[PROCESS_PATH_MAX];
+    Process *process = scheduler_current_process();
+    if (process == NULL ||
+        copy_string_from_user(path, sizeof(path), user_path) < 0) return -14;
+    return process_resolve_path(process, path, resolved) == 0 ? 0 : -22;
+}
+
+static int syscall_copy_file_info(void *user_info,
+                                  const vfs_dir_entry_t *entry) {
+    syscall_file_info_t info;
+    memset(&info, 0, sizeof(info));
+    strncpy(info.name, entry->name, sizeof(info.name) - 1U);
+    info.type = (uint32_t)entry->type;
+    info.size = entry->size;
+    return copy_to_user(user_info, &info, sizeof(info)) == 0 ? 0 : -14;
+}
+
+static int syscall_stat(const char *user_path, void *user_info) {
+    char path[PROCESS_PATH_MAX];
+    int result = syscall_copy_path(path, user_path);
+    if (result != 0) return result;
+    vfs_dir_entry_t entry;
+    result = vfs_stat(path, &entry);
+    if (result != VFS_OK) return -2;
+    return syscall_copy_file_info(user_info, &entry);
+}
+
+static int syscall_readdir(const char *user_path, uint32_t index,
+                           void *user_info) {
+    char path[PROCESS_PATH_MAX];
+    int result = syscall_copy_path(path, user_path);
+    if (result != 0) return result;
+    vfs_dir_entry_t entry;
+    result = vfs_readdir(path, index, &entry);
+    if (result == VFS_ERR_NOT_FOUND) return 0;
+    if (result != VFS_OK) return -2;
+    result = syscall_copy_file_info(user_info, &entry);
+    return result == 0 ? 1 : result;
+}
+
 //---------------------------------------------------------------------------------------------
 // System Call Table
 //---------------------------------------------------------------------------------------------
@@ -125,6 +175,8 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_open,               // Syscall 14: Open read-only file
     (void*)&syscall_read,               // Syscall 15: Read from descriptor
     (void*)&syscall_close,              // Syscall 16: Close descriptor
+    (void*)&syscall_stat,               // Syscall 17: Get path metadata
+    (void*)&syscall_readdir,            // Syscall 18: Read directory entry
     // Add more syscalls here as needed
 };
 
@@ -219,6 +271,18 @@ void syscall_handler(Registers* regs) {
         case SYS_CLOSE:
             scheduler_preempt_disable();
             result = (uint32_t)syscall_close((int)arg1);
+            scheduler_preempt_enable();
+            break;
+        case SYS_STAT:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_stat(
+                (const char*)(uintptr_t)arg1, (void*)(uintptr_t)arg2);
+            scheduler_preempt_enable();
+            break;
+        case SYS_READDIR:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_readdir(
+                (const char*)(uintptr_t)arg1, arg2, (void*)(uintptr_t)arg3);
             scheduler_preempt_enable();
             break;
         default:

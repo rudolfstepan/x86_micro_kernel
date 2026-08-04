@@ -28,8 +28,17 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
 
     def test_relative_paths_use_the_process_working_directory(self):
         source = (ROOT / "kernel/proc/process.c").read_text(encoding="utf-8")
-        self.assertIn("resolve_process_path", source)
+        self.assertIn("process_resolve_path", source)
         self.assertIn("process->working_directory", source)
+
+    def test_directory_metadata_is_copied_through_the_user_boundary(self):
+        source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("syscall_stat", source)
+        self.assertIn("syscall_readdir", source)
+        self.assertIn("syscall_copy_file_info", source)
+        self.assertIn("copy_to_user(user_info", source)
 
     def test_process_exit_closes_open_descriptors(self):
         source = (ROOT / "kernel/sched/scheduler.c").read_text(

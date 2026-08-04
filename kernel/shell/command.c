@@ -126,7 +126,6 @@ static const command_t command_table[MAX_COMMANDS] = {
     {"ECHO", cmd_echo},
     {"MEM", cmd_mem},
     {"DUMP", cmd_dump},
-    {"LS", cmd_ls},
     {"DIR", cmd_ls},
     {"CD", cmd_cd},
     {"CHDIR", cmd_cd},

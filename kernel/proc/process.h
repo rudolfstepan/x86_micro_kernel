@@ -55,6 +55,8 @@ int process_file_read(Process* process, int descriptor, void* buffer,
                       size_t size);
 int process_file_close(Process* process, int descriptor);
 void process_close_all_files(Process* process);
+int process_resolve_path(const Process* process, const char* path,
+                         char resolved[PROCESS_PATH_MAX]);
 void list_running_processes(void);
 void terminate_process(int pid);
 

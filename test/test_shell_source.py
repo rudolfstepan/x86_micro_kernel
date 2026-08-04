@@ -78,6 +78,13 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertIn("create_process_for_file_args", self.source)
         self.assertIn("arguments, working_directory", self.source)
 
+    def test_ls_is_a_userspace_program_not_a_kernel_builtin(self):
+        self.assertNotIn('{"LS", cmd_ls}', self.source)
+        programs = (ROOT / "scripts/build_system_programs.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"LS.PRG"', programs)
+
     def test_prompt_has_no_trailing_space(self):
         self.assertIn('printf("%s:%s>", drive_label, dos_path);', self.source)
         self.assertNotIn('printf("%s:%s> ", drive_label, dos_path);', self.source)

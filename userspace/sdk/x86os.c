@@ -76,6 +76,16 @@ int x86os_close(int descriptor) {
     return (int)x86os_syscall(X86OS_SYS_CLOSE, (uintptr_t)descriptor, 0, 0);
 }
 
+int x86os_stat(const char* path, x86os_file_info_t* info) {
+    return (int)x86os_syscall(X86OS_SYS_STAT, (uintptr_t)path,
+                              (uintptr_t)info, 0);
+}
+
+int x86os_readdir(const char* path, uint32_t index, x86os_file_info_t* info) {
+    return (int)x86os_syscall(X86OS_SYS_READDIR, (uintptr_t)path, index,
+                              (uintptr_t)info);
+}
+
 void x86os_exit(int status) {
     (void)x86os_syscall(X86OS_SYS_EXIT, (uintptr_t)status, 0, 0);
     for (;;) {

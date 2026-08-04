@@ -514,8 +514,8 @@ static int append_path_components(char *output, size_t capacity,
     return 0;
 }
 
-static int resolve_process_path(const Process *process, const char *path,
-                                char *resolved) {
+int process_resolve_path(const Process *process, const char *path,
+                         char resolved[PROCESS_PATH_MAX]) {
     if (process == NULL || path == NULL || path[0] == '\0') return -1;
     strcpy(resolved, "/");
     if (path[0] != '/' &&
@@ -527,7 +527,7 @@ static int resolve_process_path(const Process *process, const char *path,
 int process_file_open(Process *process, const char *path) {
     if (process == NULL || path == NULL) return -1;
     char resolved[PROCESS_PATH_MAX];
-    if (resolve_process_path(process, path, resolved) != 0) return -1;
+    if (process_resolve_path(process, path, resolved) != 0) return -1;
 
     int slot = -1;
     for (int i = 0; i < MAX_PROCESS_FILES; ++i) {
