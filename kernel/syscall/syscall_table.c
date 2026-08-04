@@ -53,10 +53,6 @@ static uint32_t syscall_memory_kb(void) {
     return kibibytes > UINT32_MAX ? UINT32_MAX : (uint32_t)kibibytes;
 }
 
-static uint32_t syscall_not_implemented(void) {
-    return (uint32_t)-38; /* ENOSYS */
-}
-
 //---------------------------------------------------------------------------------------------
 // System Call Table
 //---------------------------------------------------------------------------------------------
@@ -70,9 +66,9 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&kernel_print_number,        // Syscall 1: Print number (for testing)
     (void*)&pit_delay,                  // Syscall 2: Millisecond delay
     (void*)&kb_wait_enter,              // Syscall 3: Wait for Enter key
-    (void*)&syscall_not_implemented,    // Syscall 4: User heap not implemented
-    (void*)&syscall_not_implemented,    // Syscall 5: User heap not implemented
-    (void*)&syscall_not_implemented,    // Syscall 6: User heap not implemented
+    (void*)&process_user_malloc,        // Syscall 4: Process-local allocation
+    (void*)&process_user_free,          // Syscall 5: Release user allocation
+    (void*)&process_user_realloc,       // Syscall 6: Resize user allocation
     (void*)&getchar,                    // Syscall 7: Read character from keyboard
     NULL,                               // Syscall 8: reserved (IRQ registration is privileged)
     (void*)&task_exit,                  // Syscall 9: Terminate current task
@@ -125,11 +121,17 @@ void syscall_handler(Registers* regs) {
             kb_wait_enter();
             break;
         case SYS_MALLOC:
+            result = (uint32_t)(uintptr_t)process_user_malloc((size_t)arg1);
+            if (result == 0) result = (uint32_t)-12; /* ENOMEM */
+            break;
         case SYS_FREE:
+            result = process_user_free((void*)(uintptr_t)arg1) == 0
+                ? 0U : (uint32_t)-22; /* EINVAL */
+            break;
         case SYS_REALLOC:
-            /* Never expose the supervisor-only kernel heap to Ring 3. A
-             * process-local mmap/brk allocator will replace this placeholder. */
-            result = syscall_not_implemented();
+            result = (uint32_t)(uintptr_t)process_user_realloc(
+                (void*)(uintptr_t)arg1, (size_t)arg2);
+            if (result == 0 && arg2 != 0) result = (uint32_t)-12;
             break;
         case SYS_TERMINAL_GETCHAR:
             result = (uint32_t)(uint8_t)getchar();

@@ -33,12 +33,13 @@ class PagingSourceRegressionTests(unittest.TestCase):
         self.assertIn("copy_string_from_user", source)
         self.assertGreaterEqual(source.count("user_range_accessible("), 3)
 
-    def test_kernel_heap_is_not_returned_to_userspace(self):
+    def test_userspace_allocations_do_not_use_the_kernel_heap(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
             encoding="utf-8"
         )
-        self.assertIn("User heap not implemented", source)
-        self.assertNotIn("result = (uint32_t)(uintptr_t)k_malloc", source)
+        self.assertIn("process_user_malloc", source)
+        self.assertIn("process_user_realloc", source)
+        self.assertNotIn("(uintptr_t)k_malloc((size_t)arg1)", source)
         libc = (ROOT / "lib/libc/stdlib.c").read_text(encoding="utf-8")
         self.assertIn("k_malloc(size)", libc)
         self.assertIn("k_realloc(ptr, new_size)", libc)

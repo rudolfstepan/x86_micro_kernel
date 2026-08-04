@@ -253,6 +253,14 @@ void scheduler_kill_current(void) {
     task_exit();
 }
 
+Process *scheduler_current_process(void) {
+    int index = current_task;
+    if (index < 0 || index >= num_tasks || !tasks[index].user_mode) {
+        return NULL;
+    }
+    return tasks[index].process;
+}
+
 void list_tasks(void) {
     printf("Task list:\n");
     for (int i = 0; i < num_tasks; ++i) {
