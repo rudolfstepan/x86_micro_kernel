@@ -3,7 +3,7 @@ param(
     [switch]$NoBuild,
     [switch]$Headless,
     [ValidateSet('qemu', 'vmware', 'real_hw')]
-    [string]$Target = 'real_hw'
+    [string]$Target = 'qemu'
 )
 
 Set-StrictMode -Version Latest
@@ -22,16 +22,16 @@ if (-not (Test-Path -LiteralPath $BootImage -PathType Leaf)) {
 }
 
 $QemuCommand = Get-Command 'qemu-system-i386' -ErrorAction SilentlyContinue
-$QemuCandidates = @(
+$Qemu = @(
     $(if ($QemuCommand) { $QemuCommand.Source }),
     'C:\tmp\qemu-portable\qemu-system-i386.exe',
     'C:\Program Files\qemu\qemu-system-i386.exe',
     'C:\msys64\mingw64\bin\qemu-system-i386.exe'
-) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
-if (-not $QemuCandidates) {
+) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
+    Select-Object -First 1
+if (-not $Qemu) {
     throw 'qemu-system-i386.exe was not found. Install or extract native QEMU first.'
 }
-$Qemu = $QemuCandidates[0]
 
 $arguments = @(
     '-accel', 'tcg',
@@ -67,4 +67,3 @@ if ($Headless) {
 Write-Host "Starting native BIOS image with: $Qemu" -ForegroundColor Green
 & $Qemu @arguments
 exit $LASTEXITCODE
-
