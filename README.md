@@ -3,7 +3,7 @@
 Ein freestanding 32-Bit-x86-Betriebssystem mit eigenem BIOS-Bootloader,
 Kernel-Shell, VFS, FAT-Dateisystemen, Netzwerkstack und einer kleinen
 Toolchain für externe Programme. Der bevorzugte Entwicklungsweg läuft nativ
-unter Windows: ohne WSL, ohne GRUB und ohne ISO.
+unter Windows mit dem eigenen BIOS-Bootloader, ohne WSL oder ISO.
 
 Stand dieser Dokumentation: 3. August 2026.
 
@@ -78,8 +78,8 @@ BIOS
 
 Das Image enthält eine kleine RAW-Bootpartition und eine FAT32-Datenpartition.
 Der Kernel wird über CRC32 und seine ELF32-Struktur geprüft. `README.TXT` und
-das gebaute `.PRG` liegen auf der Datenpartition. Der GRUB-/ISO-Weg bleibt nur
-als Legacy-Entwicklungsoption erhalten.
+das gebaute `.PRG` liegen auf der Datenpartition. Einen GRUB-/ISO-Buildpfad
+gibt es nicht mehr.
 
 ## Shell
 
@@ -122,7 +122,7 @@ Siehe [VMware](docs/hardware/VMWARE.md) und
 ## Build- und Testbefehle
 
 Der native Windows-Build ist der dokumentierte Referenzweg. Auf Systemen mit
-passender ELF32-/GRUB-Toolchain bleiben Make-Ziele verfügbar:
+passender ELF32-Toolchain bleiben Make-Ziele verfügbar:
 
 ```bash
 make kernel TARGET=qemu VIDEO=vga
@@ -146,7 +146,7 @@ drivers/           Block-, Eingabe-, Video-, PCI-, USB- und Netzwerktreiber
 lib/               freestanding libc/libk
 userspace/sdk/     öffentliche API und Startup-Code für externe Programme
 examples/userspace Beispielquellen
-scripts/           Windows-, Image-, Test- und Legacy-Buildwerkzeuge
+scripts/           Windows-, Image- und Testwerkzeuge
 test/              hostseitige Regressionstests
 docs/              aktuelle Anleitungen und historische Arbeitsberichte
 ```

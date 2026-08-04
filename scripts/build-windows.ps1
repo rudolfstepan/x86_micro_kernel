@@ -139,7 +139,7 @@ finally {
 }
 
 Write-Host ''
-Write-Host 'Native GRUB-free boot artifacts:' -ForegroundColor Green
+Write-Host 'Native boot artifacts:' -ForegroundColor Green
 Write-Host "  Raw BIOS disk: $RawImage"
 Write-Host "  VMware disk:   $Vmdk"
 Write-Host "  VMware VM:     $Vmx"

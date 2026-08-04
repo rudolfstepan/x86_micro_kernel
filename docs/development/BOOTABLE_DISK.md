@@ -118,8 +118,8 @@ make native-image TARGET=real_hw VIDEO=vga
 make run-native TARGET=real_hw VIDEO=vga
 ```
 
-Der alte GRUB-basierte Datenträger bleibt ausschließlich als Legacy-Weg unter
-`make bootdisk-grub` verfügbar.
+Der frühere GRUB-basierte Datenträger und der ISO-Buildpfad wurden entfernt.
+Alle aktuellen Build- und Laufziele verwenden dieses native Image.
 
 ## Reale Hardware
 

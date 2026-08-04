@@ -34,7 +34,7 @@ Vorder-/Hintergrundfarbe.
 
 ## Bootloaderbezug
 
-Beim Legacy-GRUB-Weg kann das Multiboot-Framebufferfeld von GRUB kommen. Der
+Das Multiboot-Framebufferfeld wird vom eigenen Stage-2-Bootloader erzeugt. Der
 eigene native BIOS-Loader bootet standardmäßig in VGA-Textmodus und fordert
 derzeit keinen VBE-Grafikmodus an. Deshalb ist `VIDEO=framebuffer` im nativen
 VMware-Paket nicht der Referenzweg.

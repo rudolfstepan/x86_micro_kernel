@@ -19,7 +19,6 @@ LIB_DIR := lib
 USERSPACE_DIR := userspace
 CONFIG_DIR := config
 OUTPUT_DIR := build
-ISO_DIR := iso
 
 # Output subdirectories
 BUILD_ARCH_DIR := $(OUTPUT_DIR)/arch
@@ -35,7 +34,11 @@ AS := nasm
 CC := gcc
 LD := ld
 OBJCOPY := objcopy
+ifeq ($(OS),Windows_NT)
+PYTHON ?= python
+else
 PYTHON ?= python3
+endif
 ZIG ?= zig
 USER_PROGRAM_SOURCE ?= examples/userspace/hello.c
 USER_PROGRAM_OUTPUT ?= $(OUTPUT_DIR)/programs/HELLO.PRG
@@ -201,9 +204,7 @@ $(ALL_OBJ): $(CONFIG_STAMP) | prepare
 # Object paths are shared across configurations.  A target/video switch must
 # therefore invalidate all objects even when no source timestamp changed.
 $(CONFIG_STAMP):
-	@mkdir -p $(OUTPUT_DIR)
-	@rm -f $(OUTPUT_DIR)/.config-*
-	@touch $@
+	@$(PYTHON) -c "from pathlib import Path; p=Path('$(OUTPUT_DIR)'); p.mkdir(parents=True, exist_ok=True); [f.unlink() for f in p.glob('.config-*')]; Path('$@').touch()"
 
 -include $(DEPS)
 
@@ -211,16 +212,16 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel user-program iso bootdisk native-image bootdisk-grub run run-disk run-native run-fb help format-disks test test-unit test-all test-images test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel user-program bootdisk native-image run run-disk run-native run-fb help format-disks test test-unit test-all test-images test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
-all: iso
+all: native-image
 
 # Build specifically for QEMU (relaxed timing)
 build-qemu:
 	@echo "Building kernel for QEMU emulation..."
 	@$(MAKE) clean
 	@$(MAKE) all TARGET=qemu
-	@echo "✓ QEMU build complete: kernel.iso"
+	@echo "✓ QEMU build complete: $(OUTPUT_DIR)/x86-microkernel.img"
 	@echo "  Run with: make run"
 
 # Build for QEMU with framebuffer
@@ -228,7 +229,7 @@ build-qemu-fb:
 	@echo "Building kernel for QEMU with framebuffer..."
 	@$(MAKE) clean
 	@$(MAKE) all TARGET=qemu VIDEO=framebuffer
-	@echo "✓ QEMU framebuffer build complete: kernel.iso"
+	@echo "✓ QEMU framebuffer build complete: $(OUTPUT_DIR)/x86-microkernel.img"
 	@echo "  Run with: make run-fb"
 
 # Build specifically for VMware Workstation
@@ -238,14 +239,14 @@ build-vmware:
 	@echo "  - VMware-optimized timing configuration"
 	@$(MAKE) clean
 	@$(MAKE) all TARGET=vmware
-	@echo "✓ VMware build complete: kernel.iso"
+	@echo "✓ VMware build complete: $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
 	@echo ""
 	@echo "VMware Configuration Instructions:"
 	@echo "  1. Create New VM → Custom (advanced)"
 	@echo "  2. Guest OS: Other → Other (32-bit)"
 	@echo "  3. Memory: 64 MB"
 	@echo "  4. Network Adapter → Advanced → Intel E1000"
-	@echo "  5. CD/DVD: Use ISO image → kernel.iso"
+	@echo "  5. Open $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
 	@echo "  6. Boot and enjoy!"
 
 # Build specifically for real hardware (strict timing)
@@ -253,8 +254,8 @@ build-real-hw:
 	@echo "Building kernel for real hardware..."
 	@$(MAKE) clean
 	@$(MAKE) all TARGET=real_hw
-	@echo "✓ Real hardware build complete: kernel.iso"
-	@echo "  Write to USB: dd if=kernel.iso of=/dev/sdX bs=4M"
+	@echo "✓ Real hardware build complete: $(OUTPUT_DIR)/x86-microkernel.img"
+	@echo "  Write to USB: dd if=$(OUTPUT_DIR)/x86-microkernel.img of=/dev/sdX bs=4M"
 
 format-disks:
 	@echo "Formatting disk images..."
@@ -265,20 +266,18 @@ help:
 	@echo "============================"
 	@echo ""
 	@echo "Build Targets:"
-	@echo "  all          - Build kernel and create ISO (default, TARGET=$(TARGET))"
+	@echo "  all          - Build the native BIOS disk image (default, TARGET=$(TARGET))"
 	@echo "  build-qemu   - Build specifically for QEMU (relaxed ATA timing)"
 	@echo "  build-qemu-fb - Build for QEMU with framebuffer support"
 	@echo "  build-vmware - Build for VMware Workstation (E1000 network)"
 	@echo "  build-real-hw - Build for real hardware (strict ATA timing)"
 	@echo "  kernel       - Build kernel binary only"
 	@echo "  user-program - Compile USER_PROGRAM_SOURCE into a loadable MYPR file"
-	@echo "  iso          - Create bootable ISO image"
-	@echo "  bootdisk     - Create native BIOS disk image (no GRUB)"
-	@echo "  bootdisk-grub - Create the legacy GRUB disk image (Linux/root tools)"
+	@echo "  bootdisk     - Create native BIOS disk image"
 	@echo "  clean        - Remove all build artifacts"
 	@echo ""
 	@echo "Run Targets:"
-	@echo "  run          - Build and run in QEMU (from ISO)"
+	@echo "  run          - Build and run the native image in QEMU"
 	@echo "  run-disk     - Build and run in QEMU (from bootable disk)"
 	@echo "  run-debug    - Build and run in QEMU with GDB debugging"
 	@echo ""
@@ -323,19 +322,11 @@ help:
 
 clean:
 	@echo "Cleaning build artifacts..."
-	rm -rf $(OUTPUT_DIR)/* $(ISO_DIR)/*
+	@$(PYTHON) -c "import shutil; from pathlib import Path; p=Path('$(OUTPUT_DIR)'); shutil.rmtree(p, ignore_errors=True); p.mkdir(parents=True, exist_ok=True)"
 
 prepare:
 	@echo "Creating build directories..."
-	@mkdir -p $(BUILD_ARCH_DIR)/boot $(BUILD_ARCH_DIR)/cpu $(BUILD_ARCH_DIR)/mm
-	@mkdir -p $(BUILD_KERNEL_DIR)/init $(BUILD_KERNEL_DIR)/syscall $(BUILD_KERNEL_DIR)/proc
-	@mkdir -p $(BUILD_KERNEL_DIR)/sched $(BUILD_KERNEL_DIR)/time $(BUILD_KERNEL_DIR)/shell
-	@mkdir -p $(BUILD_MM_DIR)
-	@mkdir -p $(BUILD_FS_DIR)/vfs $(BUILD_FS_DIR)/fat12 $(BUILD_FS_DIR)/fat32 $(BUILD_FS_DIR)/ext2
-	@mkdir -p $(BUILD_DRIVERS_DIR)/block $(BUILD_DRIVERS_DIR)/char $(BUILD_DRIVERS_DIR)/video
-	@mkdir -p $(BUILD_DRIVERS_DIR)/net $(BUILD_DRIVERS_DIR)/bus $(BUILD_DRIVERS_DIR)/usb
-	@mkdir -p $(BUILD_LIB_DIR)/libc $(BUILD_LIB_DIR)/libk
-	@mkdir -p $(BUILD_USERSPACE_DIR)/bin
+	@$(PYTHON) -c "from pathlib import Path; [Path(p).mkdir(parents=True, exist_ok=True) for p in '$(BUILD_ARCH_DIR)/boot $(BUILD_ARCH_DIR)/cpu $(BUILD_ARCH_DIR)/mm $(BUILD_KERNEL_DIR)/init $(BUILD_KERNEL_DIR)/syscall $(BUILD_KERNEL_DIR)/proc $(BUILD_KERNEL_DIR)/sched $(BUILD_KERNEL_DIR)/time $(BUILD_KERNEL_DIR)/shell $(BUILD_MM_DIR) $(BUILD_FS_DIR)/vfs $(BUILD_FS_DIR)/fat12 $(BUILD_FS_DIR)/fat32 $(BUILD_FS_DIR)/ext2 $(BUILD_DRIVERS_DIR)/block $(BUILD_DRIVERS_DIR)/char $(BUILD_DRIVERS_DIR)/video $(BUILD_DRIVERS_DIR)/net $(BUILD_DRIVERS_DIR)/bus $(BUILD_DRIVERS_DIR)/usb $(BUILD_LIB_DIR)/libc $(BUILD_LIB_DIR)/libk $(BUILD_USERSPACE_DIR)/bin'.split()]"
 
 # ============================================================================
 # COMPILATION RULES
@@ -486,19 +477,6 @@ kernel: $(ALL_OBJ)
 	@echo "Kernel built successfully: $(OUTPUT_DIR)/kernel.bin"
 
 # ============================================================================
-# ISO CREATION
-# ============================================================================
-
-iso: kernel
-	@echo "Creating bootable ISO..."
-	@mkdir -p $(ISO_DIR)/boot/grub
-	@cp $(OUTPUT_DIR)/kernel.bin $(ISO_DIR)/boot/
-	@cp $(CONFIG_DIR)/grub.cfg $(ISO_DIR)/boot/grub/
-	@grub-mkrescue -o kernel.iso $(ISO_DIR) 2>/dev/null || \
-		(echo "Error: grub-mkrescue failed. Install grub-pc-bin or grub2-common" && exit 1)
-	@echo "ISO created: kernel.iso"
-
-# ============================================================================
 # BOOTABLE DISK IMAGE
 # ============================================================================
 
@@ -506,12 +484,12 @@ bootdisk: native-image
 
 user-program:
 	@echo "Building external user program $(USER_PROGRAM_SOURCE)..."
-	@mkdir -p $(dir $(USER_PROGRAM_OUTPUT))
+	@$(PYTHON) -c "from pathlib import Path; Path('$(USER_PROGRAM_OUTPUT)').parent.mkdir(parents=True, exist_ok=True)"
 	@$(PYTHON) scripts/build_user_program.py $(USER_PROGRAM_SOURCE) \
 		--output $(USER_PROGRAM_OUTPUT) --zig $(ZIG)
 
 native-image: kernel user-program
-	@echo "Creating native GRUB-free BIOS disk image..."
+	@echo "Creating native BIOS disk image..."
 	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage1_mbr.asm -o $(OUTPUT_DIR)/stage1_mbr.bin
 	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage2_bios.asm -o $(OUTPUT_DIR)/stage2_bios.bin
 	@$(PYTHON) scripts/create_native_boot_image.py \
@@ -524,11 +502,6 @@ native-image: kernel user-program
 		--data-file HELLO.PRG=$(USER_PROGRAM_OUTPUT)
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/x86-microkernel.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
-
-bootdisk-grub: kernel
-	@echo "Creating legacy GRUB disk image..."
-	@./scripts/create_bootable_disk.sh
-	@echo "Legacy GRUB disk created: boot_disk.img"
 
 # ============================================================================
 # TESTING
@@ -573,310 +546,51 @@ test-quick:
 # RUN IN QEMU
 # ============================================================================
 
-run: iso
-	@echo "Starting QEMU..."
-	@echo "  - Booting from kernel.iso"
-	@echo "  - Primary Master (hdd0): disk.img (FAT32)"
-	@echo "  - Primary Slave (hdd1): ext2_disk.img (EXT2)"
-	@echo "  - Floppy (fd0): floppy.img (FAT12)"
-	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./ext2_disk.img,format=raw,if=ide,index=1 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
-		-monitor stdio -vga vmware
+QEMU := qemu-system-i386
+QEMU_IMAGE := -boot c -drive file=$(OUTPUT_DIR)/x86-microkernel.img,format=raw,if=ide,index=0
+QEMU_COMMON := -m 512M $(QEMU_IMAGE) -no-reboot -no-shutdown
 
-# Run from bootable disk (no ISO/CD-ROM needed)
-# run-disk: bootdisk
-# 	@echo "Starting QEMU from bootable disk..."
-# 	@echo "  - Booting from boot_disk.img (GRUB installed)"
-# 	@echo "  - Data disk (hdd1): disk.img (FAT32)"
-# 	@echo "  - Data disk (hdd2): disk1.img (FAT32)"
-# 	@echo "  - Floppy (fd0): floppy.img (FAT12)"
-# 	@qemu-system-i386 -m 512M -boot c \
-# 		-drive file=./boot_disk.img,format=raw,if=ide,index=0 \
-# 		-drive file=./disk.img,format=raw,if=ide,index=1 \
-# 		-drive file=./disk1.img,format=raw,if=ide,index=2 \
-# 		-drive file=./floppy.img,format=raw,if=floppy \
-# 		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
-# 		-monitor stdio -vga vmware
-
+run: run-native
 run-disk: run-native
 
 run-native: native-image
-	@echo "Starting QEMU through the native BIOS/MBR path (no GRUB)..."
-	@qemu-system-i386 -m 512M -boot c \
-		-drive file=$(OUTPUT_DIR)/x86-microkernel.img,format=raw,if=ide,index=0 \
+	@echo "Starting QEMU through the native BIOS/MBR path..."
+	@$(QEMU) $(QEMU_COMMON) \
 		-device rtl8139,netdev=net0 -netdev user,id=net0 \
-		-vga std -no-reboot -no-shutdown
+		-vga std
 
-# Run with framebuffer mode.  Use a sub-make so the parse-time VIDEO
-# conditionals are evaluated with the framebuffer configuration.
+# Rebuild the complete native image because the video mode affects both kernel
+# objects and the boot-time framebuffer handoff.
 run-fb:
-	@$(MAKE) iso TARGET=qemu VIDEO=framebuffer
-	@echo "Starting QEMU with framebuffer..."
-	@echo "  - Booting from kernel.iso"
-	@echo "  - Video mode: 1024x768x32 framebuffer"
-	@echo "  - Primary Master (hdd0): disk.img (FAT32)"
-	@echo "  - Primary Slave (hdd1): disk1.img (FAT32)"
-	@echo "  - Secondary Slave (hdd3): ext2_disk.img (EXT2)"
-	@echo "  - Floppy (fd0): floppy.img (FAT12)"
-	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
-		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
-		-monitor stdio -vga std
+	@$(MAKE) native-image TARGET=qemu VIDEO=framebuffer
+	@$(QEMU) $(QEMU_COMMON) \
+		-device rtl8139,netdev=net0 -netdev user,id=net0 \
+		-vga std
 
-# Run with debugging enabled
-run-debug: iso
-	@echo "Starting QEMU with GDB debugging..."
-	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
-		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
-		-s -S -monitor stdio -vga vmware
+run-debug: native-image
+	@echo "Starting QEMU and waiting for GDB on TCP port 1234..."
+	@$(QEMU) $(QEMU_COMMON) \
+		-device rtl8139,netdev=net0 -netdev user,id=net0 \
+		-s -S -vga std
 
-# Run with socket multicast network (for loopback testing)
-run-net-test: iso
-	@echo "Starting QEMU with socket multicast network (for loopback testing)..."
-	@echo "  - This allows packets to potentially loop back"
-	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
-		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device ne2k_pci,netdev=net0 -netdev socket,id=net0,mcast=230.0.0.1:1234 \
-		-monitor stdio -vga vmware
+run-net-dump: native-image
+	@echo "Writing network traffic to build/network-dump.pcap..."
+	@$(QEMU) $(QEMU_COMMON) \
+		-device rtl8139,netdev=net0 -netdev user,id=net0 \
+		-object filter-dump,id=dump0,netdev=net0,file=$(OUTPUT_DIR)/network-dump.pcap \
+		-vga std
 
-# Run with network packet dumping (creates ne2000-dump.pcap)
-run-net-dump: iso
-	@echo "Starting QEMU with network packet dumping..."
-	@echo "  - Packets will be logged to ne2000-dump.pcap"
-	@echo "  - Use Wireshark to analyze: wireshark ne2000-dump.pcap"
-	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
-		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device ne2k_pci,netdev=net0 \
-		-netdev user,id=net0 \
-		-object filter-dump,id=dump0,netdev=net0,file=ne2000-dump.pcap \
-		-monitor stdio -vga vmware
+run-rtl8139: native-image
+	@$(QEMU) $(QEMU_COMMON) \
+		-device rtl8139,netdev=net0 -netdev user,id=net0 -vga std
 
-# Run with TAP networking (requires sudo and TAP interface setup)
-run-net-tap: iso
-	@echo "Starting QEMU with TAP networking (bridged to LAN)..."
-	@echo "  - This requires sudo access and a configured TAP interface"
-	@echo "  - Run 'make setup-tap' first to create the TAP interface"
-	@echo "  - Or use 'sudo make run-net-tap-sudo' to setup automatically"
-	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
-		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device ne2k_pci,netdev=net0,mac=52:54:00:12:34:56 \
-		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
-		-monitor stdio -vga vmware
+run-e1000: native-image
+	@$(QEMU) $(QEMU_COMMON) \
+		-device e1000,netdev=net0 -netdev user,id=net0 -vga std
 
-# Run with TAP networking using sudo (auto-setup)
-run-net-tap-sudo: iso
-	@echo "Starting QEMU with TAP networking (with sudo auto-setup)..."
-	@echo "  - Setting up TAP interface..."
-	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
-	@sudo ip link set tap0 up
-	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
-	@echo "  - TAP interface ready (10.0.2.1/24)"
-	@echo "  - Your kernel will need to configure IP (e.g., 10.0.2.15)"
-	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=1 \
-		-drive file=./ext2_disk.img,format=raw,if=ide,index=0 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device ne2k_pci,netdev=net0,mac=52:54:00:12:34:56 \
-		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
-		-monitor stdio -vga vmware
-
-# Setup TAP interface (run once, requires sudo)
-setup-tap:
-	@echo "Setting up TAP network interface..."
-	@echo "  - This requires sudo access"
-	sudo ip tuntap add dev tap0 mode tap user $(USER)
-	sudo ip link set tap0 up
-	sudo ip addr add 10.0.2.1/24 dev tap0
-	@echo "  - TAP interface 'tap0' created at 10.0.2.1/24"
-	@echo "  - Your kernel can use IPs in 10.0.2.0/24 range"
-
-# Run in terminal mode (no GUI window, uses curses)
-run-term: iso
-	@echo "Starting QEMU in terminal mode (curses)..."
-	@echo "  - VGA output redirected to terminal"
-	@echo "  - Press Ctrl+A then X to quit"
-	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
-		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device ne2k_pci,netdev=net0 -netdev user,id=net0 \
-		-display curses
-
-# Run in terminal mode with TAP networking
-run-net-tap-term: iso
-	@echo "Starting QEMU with TAP networking in terminal mode..."
-	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
-	@sudo ip link set tap0 up
-	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
-	@echo "  - TAP interface ready (10.0.2.1/24)"
-	@echo "  - Running in terminal mode (curses)"
-	@echo "  - Press Ctrl+A then X to quit"
-	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
-		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
-		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
-		-display curses
-	@echo "  - Run 'make run-net-tap' to start QEMU"
-
-# Run with TAP networking and no graphics (serial console only) with USB passthrough/devices
-run-net-tap-nographic: iso
-	@echo "Starting QEMU with TAP networking (no graphics, serial console) and USB support..."
-	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
-	@sudo ip link set tap0 up
-	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
-	@echo "  - TAP interface ready (10.0.2.1/24)"
-	@echo "  - Serial console mode (full scrollback)"
-	@echo "  - USB: qemu-xhci + usb-kbd + usb-tablet added"
-	@echo "  - Press Ctrl+A then X to quit"
-	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./ext2_disk.img,format=raw,if=ide,index=1 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
-		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-tablet \
-		-nographic
-
-# Run with E1000 debug tracing
-run-net-debug: iso
-	@echo "Starting QEMU with E1000 debug tracing..."
-	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
-	@sudo ip link set tap0 up
-	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
-	@echo "  - Running with -d guest_errors,unimp -trace 'e1000*'"
-	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
-		-drive file=./ext2_disk.img,format=raw,if=ide,index=3 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device e1000,netdev=net0,mac=52:54:00:12:34:56 \
-		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
-		-d guest_errors,unimp \
-		-D qemu-debug.log \
-		-nographic
-
-# Cleanup TAP interface
-cleanup-tap:
-	@echo "Removing TAP network interface..."
-	sudo ip link set tap0 down 2>/dev/null || true
-	sudo ip tuntap del dev tap0 mode tap 2>/dev/null || true
-	@echo "  - TAP interface removed"
-
-# ============================================================================
-# NETWORK ADAPTER SPECIFIC TARGETS
-# ============================================================================
-
-# Run with RTL8139 (Realtek - best QEMU support)
-run-rtl8139: iso
-	@echo "=== Starting QEMU with RTL8139 (Realtek) ==="
-	@echo "  Network: User-mode (no TAP needed)"
-	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
-		-netdev user,id=net0 \
-		-monitor stdio
-
-# Run with RTL8139 + TAP networking
-run-rtl8139-tap: iso
-	@echo "=== Starting QEMU with RTL8139 + TAP networking ==="
-	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
-	@sudo ip link set tap0 up
-	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
-	@echo "  - TAP interface ready (10.0.2.1/24)"
-	@echo "  - Press Ctrl+A then X to quit"
-	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device rtl8139,netdev=net0,mac=52:54:00:12:34:56 \
-		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
-		-nographic
-
-# Run with E1000 (Intel Gigabit)
-run-e1000: iso
-	@echo "=== Starting QEMU with E1000 (Intel Gigabit) ==="
-	@echo "  Network: User-mode (no TAP needed)"
-	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device e1000,netdev=net0,mac=52:54:00:12:34:56 \
-		-netdev user,id=net0 \
-		-monitor stdio
-
-# Run with E1000 + TAP networking
-run-e1000-tap: iso
-	@echo "=== Starting QEMU with E1000 + TAP networking ==="
-	@sudo ip tuntap add dev tap0 mode tap user $(USER) 2>/dev/null || true
-	@sudo ip link set tap0 up
-	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
-	@echo "  - TAP interface ready (10.0.2.1/24)"
-	@echo "  - Press Ctrl+A then X to quit"
-	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device e1000,netdev=net0,mac=52:54:00:12:34:56 \
-		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
-		-nographic
-
-# Run with NE2000 (legacy compatibility)
-run-ne2000: iso
-	@echo "=== Starting QEMU with NE2000 (legacy) ==="
-	@echo "  Network: User-mode (no TAP needed)"
-	@qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device ne2k_pci,netdev=net0 \
-		-netdev user,id=net0 \
-		-monitor stdio
-
-# Run with NE2000 + TAP networking
-run-ne2000-tap: iso
-	@echo "=== Starting QEMU with NE2000 + TAP networking ==="
-	@sudo ip tuntap del dev tap0 mode tap 2>/dev/null || true
-	@sudo ip tuntap add dev tap0 mode tap user $(USER)
-	@sudo ip link set tap0 up
-	@sudo ip addr add 10.0.2.1/24 dev tap0 2>/dev/null || true
-	@echo "  - TAP interface ready (10.0.2.1/24)"
-	@echo "  - Press Ctrl+A then X to quit"
-	@sudo qemu-system-i386 -m 512M -boot d -cdrom ./kernel.iso \
-		-drive file=./disk.img,format=raw,if=ide,index=0 \
-		-drive file=./disk1.img,format=raw,if=ide,index=1 \
-		-drive file=./floppy.img,format=raw,if=floppy \
-		-device ne2k_pci,netdev=net0 \
-		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
-		-nographic
-	@sudo ip tuntap del dev tap0 mode tap 2>/dev/null || true
-
+run-ne2000: native-image
+	@$(QEMU) $(QEMU_COMMON) \
+		-device ne2k_pci,netdev=net0 -netdev user,id=net0 -vga std
 # ============================================================================
 # DEBUGGING INFO
 # ============================================================================

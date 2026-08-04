@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a GRUB-free BIOS disk image for QEMU, VMware, and raw media."""
+"""Create a native BIOS disk image for QEMU, VMware, and raw media."""
 
 from __future__ import annotations
 
@@ -385,7 +385,7 @@ config.version = "8"
 virtualHW.version = "20"
 productCompatibility = "hosted"
 displayName = "x86 Microkernel (Native BIOS)"
-annotation = "GRUB-free x86 microkernel with its own BIOS MBR and ELF32 loader"
+annotation = "x86 microkernel with its own BIOS MBR and ELF32 loader"
 guestOS = "other"
 firmware = "bios"
 bios.bootOrder = "hdd"

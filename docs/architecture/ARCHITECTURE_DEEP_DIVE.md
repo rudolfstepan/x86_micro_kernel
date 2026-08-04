@@ -1,8 +1,8 @@
 # Architekturüberblick
 
-Dieses Dokument beschreibt die aktuelle 32-Bit-x86-Architektur. Der native
-Standardweg startet über den eigenen BIOS-Bootloader; GRUB ist nur noch ein
-Legacy-Einstieg.
+Dieses Dokument beschreibt die aktuelle 32-Bit-x86-Architektur. Das System
+startet ausschließlich über den eigenen BIOS-Bootloader. Einen alternativen
+Legacy-Einstieg gibt es nicht mehr.
 
 ## Bootkette
 

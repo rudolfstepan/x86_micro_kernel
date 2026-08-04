@@ -111,8 +111,8 @@ make run-native TARGET=qemu VIDEO=vga
 make test-unit
 ```
 
-`make all`, `make run` und `make iso` verwenden weiterhin den historischen
-GRUB-/ISO-Weg. Sie sind nicht der Standard für das native Windows-/VMware-
+`make all`, `make run` und `make native-image` verwenden den eigenen
+BIOS-Bootloader. Sie entsprechen damit dem nativen Windows-/VMware-
 Paket.
 
 ## Häufige Fehler

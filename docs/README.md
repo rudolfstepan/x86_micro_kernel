@@ -20,8 +20,8 @@ bereits behobene Fehler enthalten.
 ## Bedienung und Laufzeit
 
 - [Shell und Pfade](features/SHELL_ENHANCEMENTS.md) – DOS-artige Befehle und Tastaturbearbeitung
-- [Laufwerke und Mounts](../DRIVE_MOUNTING_SYSTEM.md) – Zuordnung, VFS-Pfade und Laufwerkswechsel
-- [VFS-Architektur](../VFS_ARCHITECTURE.md) – gemeinsame Dateisystemschnittstelle
+- [Laufwerke und Mounts](filesystems/DRIVE_MOUNTING_SYSTEM.md) – Zuordnung, VFS-Pfade und Laufwerkswechsel
+- [VFS-Architektur](filesystems/VFS_ARCHITECTURE.md) – gemeinsame Dateisystemschnittstelle
 - [BASIC-Interpreter](features/BASIC_INTERPRETER.md) – Syntax, Laden und Speichern
 - [Tastaturkürzel](features/KEYBOARD_SHORTCUTS.md) – Zeilenbearbeitung und Verlauf
 - [Framebuffer](features/FRAMEBUFFER.md) – VGA-Standardweg und experimenteller Grafikmodus
@@ -32,8 +32,8 @@ bereits behobene Fehler enthalten.
 - [Netzwerkstack](networking/NETWORK.md) – E1000, DHCP, ARP und ICMP
 - [TAP-Netzwerk](networking/TAP_NETWORKING.md) – optionaler Linux/QEMU-Testweg
 - [USB-Design](hardware/USB_DESIGN.md) – experimenteller USB-/xHCI-Stand
-- [EXT2](../EXT2_SUPPORT.md), [FAT12](../FAT12_IMPROVEMENTS.md) und
-  [FAT32](../FAT32_OPTIMIZATIONS.md) – Dateisystemstatus und Grenzen
+- [EXT2](filesystems/EXT2_SUPPORT.md), [FAT12](filesystems/FAT12_IMPROVEMENTS.md) und
+  [FAT32](filesystems/FAT32_OPTIMIZATIONS.md) – Dateisystemstatus und Grenzen
 
 ## Tests
 
@@ -55,8 +55,8 @@ beschreibt:
 - `hardware/KEYBOARD_ANALYSIS.md`
 - `hardware/KEYBOARD_IMPROVEMENTS.md`
 - `networking/NE2000_LOOPBACK_FIX.md`
-- `../BASIC_INTERPRETER_UPDATES.md`
-- `../FAT12_ANALYSIS.md`
+- `features/BASIC_INTERPRETER_UPDATES.md`
+- `filesystems/FAT12_ANALYSIS.md`
 
 Bei Widersprüchen gilt in dieser Reihenfolge: ausführbarer Code und Tests,
 aktuelle Referenzdokumente, historische Berichte.

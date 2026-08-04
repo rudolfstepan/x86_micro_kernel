@@ -39,17 +39,15 @@ make kernel TARGET=qemu VIDEO=framebuffer
 make run-fb
 ```
 
-## Native und Legacy-Ausgaben
+## Build-Ausgaben
 
 | Befehl | Bootweg | Ergebnis |
 |---|---|---|
 | `build-windows.ps1` | eigener BIOS-/MBR-Loader | Raw-Image, VMDK, VMX und VMware-Paket |
-| `make native-image` | eigener BIOS-/MBR-Loader | Raw-Image und VMware-Dateien |
-| `make run-native` | eigener Loader in QEMU | direkter Festplattenstart |
-| `make iso` / `make run` | GRUB/Multiboot | Legacy-ISO für Entwicklung |
-| `make bootdisk-grub` | GRUB auf Festplatte | Legacy-Datenträger |
+| `make all` / `make native-image` | eigener BIOS-Bootloader | natives Raw-Image und VMware-VM |
+| `make run` / `make run-native` | eigener BIOS-Bootloader | natives Image in QEMU |
 
-Der native Bootpfad benötigt weder ein ISO noch GRUB noch QEMUs
+Der Bootpfad benötigt weder ein ISO noch einen externen Bootloader noch QEMUs
 `-kernel`-Abkürzung. Die Multiboot-1-kompatible Übergabestruktur wird von
 Stage 2 erzeugt, damit der Kernel denselben frühen Einstieg weiterverwenden
 kann.
