@@ -198,6 +198,44 @@ bool user_range_accessible(const page_directory_t *pd, uint32_t address,
     return true;
 }
 
+int copy_from_user(void *destination, const void *user_source, size_t length) {
+    if (destination == NULL || user_source == NULL || length == 0 ||
+        !user_range_accessible(paging_current_directory(),
+                               (uint32_t)(uintptr_t)user_source,
+                               length, false)) {
+        return -1;
+    }
+    memcpy(destination, user_source, length);
+    return 0;
+}
+
+int copy_to_user(void *user_destination, const void *source, size_t length) {
+    if (user_destination == NULL || source == NULL || length == 0 ||
+        !user_range_accessible(paging_current_directory(),
+                               (uint32_t)(uintptr_t)user_destination,
+                               length, true)) {
+        return -1;
+    }
+    memcpy(user_destination, source, length);
+    return 0;
+}
+
+int copy_string_from_user(char *destination, size_t capacity,
+                          const char *user_source) {
+    if (destination == NULL || user_source == NULL || capacity == 0) return -1;
+    for (size_t index = 0; index < capacity; ++index) {
+        char value;
+        if (copy_from_user(&value, user_source + index, sizeof(value)) != 0) {
+            destination[0] = '\0';
+            return -1;
+        }
+        destination[index] = value;
+        if (value == '\0') return (int)index;
+    }
+    destination[0] = '\0';
+    return -1;
+}
+
 void *map_kernel_mmio(uint32_t physical_address, size_t length) {
     if (length == 0 || length > UINT32_MAX - physical_address) return NULL;
 

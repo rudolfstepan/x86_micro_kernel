@@ -26,6 +26,25 @@ class PagingSourceRegressionTests(unittest.TestCase):
         self.assertIn("#define E1000_MMIO_SIZE", source)
         self.assertIn("map_mmio_region(bar0, E1000_MMIO_SIZE)", source)
 
+    def test_user_copies_validate_the_complete_range(self):
+        source = (ROOT / "arch/x86/mm/paging.c").read_text(encoding="utf-8")
+        self.assertIn("int copy_from_user", source)
+        self.assertIn("int copy_to_user", source)
+        self.assertIn("copy_string_from_user", source)
+        self.assertGreaterEqual(source.count("user_range_accessible("), 3)
+
+    def test_kernel_heap_is_not_returned_to_userspace(self):
+        source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("User heap not implemented", source)
+        self.assertNotIn("result = (uint32_t)(uintptr_t)k_malloc", source)
+        libc = (ROOT / "lib/libc/stdlib.c").read_text(encoding="utf-8")
+        self.assertIn("k_malloc(size)", libc)
+        self.assertIn("k_realloc(ptr, new_size)", libc)
+        self.assertIn("k_free(ptr)", libc)
+        self.assertNotIn("syscall(SYS_MALLOC", libc)
+
 
 if __name__ == "__main__":
     unittest.main()
