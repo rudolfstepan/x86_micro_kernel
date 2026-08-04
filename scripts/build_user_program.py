@@ -67,6 +67,7 @@ def elf_to_mypr(elf: bytes) -> bytes:
 
     segments: list[tuple[int, int, int, int, int]] = []
     image_end = PAYLOAD_BASE
+    file_end = PAYLOAD_BASE
     entry_is_executable = False
     for index in range(phnum):
         (segment_type, file_offset, virtual_address, physical_address,
@@ -87,28 +88,31 @@ def elf_to_mypr(elf: bytes) -> bytes:
             entry_is_executable = True
         segments.append((virtual_address, file_offset, file_size, memory_size, flags))
         image_end = max(image_end, segment_end)
+        file_end = max(file_end, virtual_address + file_size)
 
     if not segments or not entry_is_executable:
         raise ValueError("program entry point is not in an executable PT_LOAD segment")
 
-    payload = bytearray(image_end - PAYLOAD_BASE)
-    occupied = bytearray(len(payload))
+    payload = bytearray(file_end - PAYLOAD_BASE)
+    occupied = bytearray(image_end - PAYLOAD_BASE)
     for virtual_address, file_offset, file_size, memory_size, _flags in segments:
         destination = virtual_address - PAYLOAD_BASE
         if any(occupied[destination:destination + memory_size]):
             raise ValueError("overlapping PT_LOAD segments are not supported")
-        payload[destination:destination + file_size] = \
-            elf[file_offset:file_offset + file_size]
+        if file_size:
+            payload[destination:destination + file_size] = \
+                elf[file_offset:file_offset + file_size]
         occupied[destination:destination + memory_size] = b"\x01" * memory_size
 
     while (PROGRAM_HEADER.size + len(payload)) % 4:
         payload.append(0)
     relocation_offset = PROGRAM_HEADER.size + len(payload)
+    memory_payload_size = max(image_end - PAYLOAD_BASE, len(payload))
     header = PROGRAM_HEADER.pack(
         b"MYPR",
         0xDEADBEEF,
         entry - PROGRAM_BASE,
-        len(payload),
+        memory_payload_size,
         PROGRAM_BASE,
         relocation_offset,
         0,

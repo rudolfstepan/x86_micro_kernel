@@ -73,11 +73,13 @@ Mehrere C- oder präprozessierte Assembly-Quellen (`.S`) können gemeinsam
 
 ## Format und ABI
 
-Der Packer liest das gelinkte i386-ELF, materialisiert alle `PT_LOAD`-Segmente
-einschließlich genullter BSS-Bereiche und schreibt davor einen geprüften
-28-Byte-`MYPR`-Header. Programme werden für den gemeinsamen 8-MiB-Bereich ab
-`0x02100000` gelinkt. Der aktuelle Loader lädt exakt an diese Adresse; deshalb
-werden keine Laufzeit-Relokationen benötigt oder akzeptiert.
+Der Packer liest das gelinkte i386-ELF und schreibt die dateigestützten Teile
+aller `PT_LOAD`-Segmente hinter einen geprüften 28-Byte-`MYPR`-Header.
+Uninitialisierte `.bss`-Daten belegen keinen Platz in der PRG-Datei; ihre
+Speichergröße steht im Header und der Loader legt sie als genullte Seiten an.
+Programme werden für den 8-MiB-Bereich ab `0x40000000` gelinkt. Der aktuelle
+Loader lädt exakt an diese Adresse; deshalb werden keine Laufzeit-Relokationen
+benötigt oder erzeugt.
 
 Das Buildskript lehnt unter anderem folgende Fehler ab:
 
@@ -93,8 +95,6 @@ denselben kanonischen VFS-Pfad wie `DIR`, `TYPE` und `CD`.
 
 ## Wichtige Sicherheitsgrenze
 
-Die derzeitigen PRG-Tasks sind noch kein isolierter Ring-3-Userspace. Sie
-laufen in einem gemeinsamen Ladebereich und teilen den Kernel-Adressraum.
-Fremder oder fehlerhafter Code kann daher den Kernel beschädigen. Für nicht
-vertrauenswürdige Programme fehlen noch Ring-3-Einstieg, eigene Seitentabellen,
-separate User-Stacks und vollständige Syscall-Pointerprüfung.
+PRG-Tasks laufen in Ring 3 mit eigenen Seitentabellen, User-Stacks und
+validierten Syscall-Zeigern. Der Kernelanteil des Adressraums bleibt in jeder
+Prozessseitentabelle ausschließlich im Supervisor-Modus eingeblendet.

@@ -35,18 +35,14 @@ static int load_program_file(const char *program_name, uint32_t address) {
     }
 
     uint32_t loaded_size = node->size;
-    memset((void*)(uintptr_t)address, 0, loaded_size);
-    uint32_t offset = 0;
-    while (offset < loaded_size) {
-        uint32_t amount = loaded_size - offset;
-        if (amount > 4096U) amount = 4096U;
-        result = vfs_read(node, offset, amount,
-                          (uint8_t*)(uintptr_t)(address + offset));
-        if (result <= 0 || (uint32_t)result > amount) {
-            (void)vfs_close(node);
-            return -1;
-        }
-        offset += (uint32_t)result;
+    /* Read the image sequentially in one VFS operation.  Restarting a FAT
+     * read every page would walk the cluster chain from its beginning for
+     * each chunk and makes larger programs progressively slower to start. */
+    result = vfs_read(node, 0, loaded_size,
+                      (uint8_t*)(uintptr_t)address);
+    if (result != (int)loaded_size) {
+        (void)vfs_close(node);
+        return -1;
     }
     if (vfs_close(node) != VFS_OK ||
         program_image_validate((const void*)(uintptr_t)address, loaded_size,
@@ -234,6 +230,9 @@ int create_process_for_file_args(const char *filename, int argc,
     }
 
     program_header_t* header = (program_header_t*)PROGRAM_STAGING_ADDRESS;
+    uint32_t memory_image_size = (uint32_t)sizeof(*header) +
+                                 header->program_size;
+    uint32_t stored_image_size = header->relocation_offset;
     if (header->relocation_size == 0 &&
         header->base_address != USER_PROGRAM_ADDRESS) {
         printf("Program '%s' was linked for the wrong load address.\n",
@@ -246,7 +245,7 @@ int create_process_for_file_args(const char *filename, int argc,
     if (apply_relocation(relocation_table,
                          header->relocation_size / sizeof(uint32_t),
                          header->base_address, USER_PROGRAM_ADDRESS,
-                         (uint32_t)loaded_size) != 0) {
+                         memory_image_size) != 0) {
         printf("Invalid relocation table in '%s'.\n", filename);
         release_process_slot(process);
         return -1;
@@ -258,7 +257,7 @@ int create_process_for_file_args(const char *filename, int argc,
         return -1;
     }
 
-    uint32_t mapped_size = ((uint32_t)loaded_size + PAGE_SIZE - 1U) &
+    uint32_t mapped_size = (memory_image_size + PAGE_SIZE - 1U) &
                            ~(PAGE_SIZE - 1U);
     for (uint32_t offset = 0; offset < mapped_size; offset += PAGE_SIZE) {
         uint32_t frame = (uint32_t)allocate_frame();
@@ -271,9 +270,10 @@ int create_process_for_file_args(const char *filename, int argc,
             return -1;
         }
         memset((void*)(uintptr_t)frame, 0, PAGE_SIZE);
-        uint32_t amount = (uint32_t)loaded_size - offset;
-        if (amount > PAGE_SIZE) amount = PAGE_SIZE;
-        if (offset < (uint32_t)loaded_size) {
+        uint32_t amount = 0;
+        if (offset < stored_image_size) {
+            amount = stored_image_size - offset;
+            if (amount > PAGE_SIZE) amount = PAGE_SIZE;
             memcpy((void*)(uintptr_t)frame,
                    (const void*)(uintptr_t)(PROGRAM_STAGING_ADDRESS + offset),
                    amount);

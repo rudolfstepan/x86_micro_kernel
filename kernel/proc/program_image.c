@@ -16,9 +16,11 @@ int program_image_validate(const void* image, uint32_t image_size,
         header->identifier[2] != 'P' || header->identifier[3] != 'R' ||
         header->magic_number != PROGRAM_IMAGE_MAGIC ||
         header->program_size == 0 ||
-        header->program_size > image_size - sizeof(program_header_t) ||
+        header->program_size > region_size - sizeof(program_header_t) ||
         header->base_address == 0 ||
-        header->base_address > UINT32_MAX - image_size) {
+        header->base_address > UINT32_MAX -
+                                   (sizeof(program_header_t) +
+                                    header->program_size)) {
         return -1;
     }
 
@@ -26,7 +28,9 @@ int program_image_validate(const void* image, uint32_t image_size,
                            header->program_size;
     if (header->entry_point < sizeof(program_header_t) ||
         header->entry_point >= program_end ||
-        header->relocation_offset < program_end ||
+        header->entry_point >= header->relocation_offset ||
+        header->relocation_offset < sizeof(program_header_t) ||
+        header->relocation_offset > program_end ||
         header->relocation_offset > image_size ||
         (header->relocation_offset % sizeof(uint32_t)) != 0 ||
         header->relocation_size > image_size - header->relocation_offset ||

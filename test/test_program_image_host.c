@@ -26,6 +26,8 @@ int main(void) {
     CHECK(program_image_validate(image, 32, 8U * 1024U * 1024U) != 0);
     header->relocation_offset = 32;
     header->program_size = 40;
+    CHECK(program_image_validate(image, 32, 8U * 1024U * 1024U) == 0);
+    header->program_size = 8U * 1024U * 1024U;
     CHECK(program_image_validate(image, 32, 8U * 1024U * 1024U) != 0);
     header->program_size = 4;
     header->identifier[0] = 'X';

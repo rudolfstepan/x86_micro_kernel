@@ -31,6 +31,13 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         self.assertIn("process_resolve_path", source)
         self.assertIn("process->working_directory", source)
 
+    def test_program_loader_reads_the_image_sequentially(self):
+        source = (ROOT / "kernel/proc/process.c").read_text(encoding="utf-8")
+        loader = source[source.index("static int load_program_file") :]
+        loader = loader[:loader.index("\n}\n")]
+        self.assertIn("vfs_read(node, 0, loaded_size", loader)
+        self.assertNotIn("amount > 4096U", loader)
+
     def test_directory_metadata_is_copied_through_the_user_boundary(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
             encoding="utf-8"
