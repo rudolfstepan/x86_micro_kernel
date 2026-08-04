@@ -117,6 +117,7 @@ static int claim_process_slot(const char *name, bool shared_image) {
             memset(process->user_allocations, 0,
                    sizeof(process->user_allocations));
             memset(process->files, 0, sizeof(process->files));
+            strcpy(process->working_directory, "/");
             strncpy(process->name, name, sizeof(process->name) - 1U);
             process->name[sizeof(process->name) - 1U] = '\0';
             process->is_running = true;
@@ -154,6 +155,60 @@ int load_program_into_memory(const char* program_name, uint32_t address) {
 }
 
 int create_process_for_file(const char *filename) {
+    const char *arguments[] = {filename};
+    return create_process_for_file_args(filename, 1, arguments, "/");
+}
+
+static int build_user_arguments(page_directory_t *page_directory, int argc,
+                                const char *const *argv,
+                                uint32_t *user_stack) {
+    if (argc < 0 || argc > 32 || (argc != 0 && argv == NULL)) return -1;
+    uint32_t addresses[32];
+    uint32_t stack = USER_STACK_TOP;
+
+    for (int i = argc - 1; i >= 0; --i) {
+        if (argv[i] == NULL) return -1;
+        size_t length = strlen(argv[i]) + 1U;
+        if (length > 256U || stack < USER_STACK_TOP - USER_STACK_SIZE + length) {
+            return -1;
+        }
+        stack -= (uint32_t)length;
+        if (copy_to_user_space(page_directory, stack, argv[i], length) != 0) {
+            return -1;
+        }
+        addresses[i] = stack;
+    }
+
+    stack &= ~3U;
+    uint32_t zero = 0;
+    stack -= sizeof(uint32_t);
+    if (copy_to_user_space(page_directory, stack, &zero, sizeof(zero)) != 0) {
+        return -1;
+    }
+    for (int i = argc - 1; i >= 0; --i) {
+        stack -= sizeof(uint32_t);
+        if (copy_to_user_space(page_directory, stack, &addresses[i],
+                               sizeof(addresses[i])) != 0) return -1;
+    }
+    uint32_t user_argv = stack;
+    stack -= sizeof(uint32_t);
+    if (copy_to_user_space(page_directory, stack, &user_argv,
+                           sizeof(user_argv)) != 0) return -1;
+    stack -= sizeof(uint32_t);
+    uint32_t user_argc = (uint32_t)argc;
+    if (copy_to_user_space(page_directory, stack, &user_argc,
+                           sizeof(user_argc)) != 0) return -1;
+    stack -= sizeof(uint32_t);
+    if (copy_to_user_space(page_directory, stack, &zero, sizeof(zero)) != 0) {
+        return -1;
+    }
+    *user_stack = stack;
+    return 0;
+}
+
+int create_process_for_file_args(const char *filename, int argc,
+                                 const char *const *argv,
+                                 const char *working_directory) {
     if (filename == NULL || *filename == '\0') {
         return -1;
     }
@@ -165,6 +220,12 @@ int create_process_for_file(const char *filename) {
     }
 
     Process *process = &process_list[slot];
+    if (working_directory == NULL || working_directory[0] != '/' ||
+        strlen(working_directory) >= sizeof(process->working_directory)) {
+        release_process_slot(process);
+        return -1;
+    }
+    strcpy(process->working_directory, working_directory);
     int pid = process->pid;
     int loaded_size = load_program_into_memory(filename, PROGRAM_STAGING_ADDRESS);
     if (loaded_size < 0) {
@@ -238,8 +299,16 @@ int create_process_for_file(const char *filename) {
         return -1;
     }
 
+    uint32_t user_stack;
+    if (build_user_arguments(page_directory, argc, argv, &user_stack) != 0) {
+        k_free(kernel_stack);
+        free_page_directory(page_directory);
+        release_process_slot(process);
+        return -1;
+    }
+
     int task_id = create_user_task(
-        header->entry_point + USER_PROGRAM_ADDRESS, USER_STACK_TOP,
+        header->entry_point + USER_PROGRAM_ADDRESS, user_stack,
         kernel_stack, page_directory, process);
     if (task_id < 0) {
         k_free(kernel_stack);
@@ -412,8 +481,53 @@ void *process_user_realloc(void *pointer, size_t size) {
     return replacement;
 }
 
+static int append_path_components(char *output, size_t capacity,
+                                  const char *path) {
+    size_t output_length = strlen(output);
+    const char *cursor = path;
+    while (*cursor != '\0') {
+        while (*cursor == '/') ++cursor;
+        if (*cursor == '\0') break;
+        const char *start = cursor;
+        while (*cursor != '\0' && *cursor != '/') ++cursor;
+        size_t length = (size_t)(cursor - start);
+        if (length == 1 && start[0] == '.') continue;
+        if (length == 2 && start[0] == '.' && start[1] == '.') {
+            if (output_length > 1) {
+                while (output_length > 1 && output[output_length - 1] != '/') {
+                    --output_length;
+                }
+                if (output_length > 1) --output_length;
+                output[output_length] = '\0';
+            }
+            continue;
+        }
+        if (output_length > 1) {
+            if (output_length + 1 >= capacity) return -1;
+            output[output_length++] = '/';
+        }
+        if (length == 0 || length >= capacity - output_length) return -1;
+        memcpy(output + output_length, start, length);
+        output_length += length;
+        output[output_length] = '\0';
+    }
+    return 0;
+}
+
+static int resolve_process_path(const Process *process, const char *path,
+                                char *resolved) {
+    if (process == NULL || path == NULL || path[0] == '\0') return -1;
+    strcpy(resolved, "/");
+    if (path[0] != '/' &&
+        append_path_components(resolved, PROCESS_PATH_MAX,
+                               process->working_directory) != 0) return -1;
+    return append_path_components(resolved, PROCESS_PATH_MAX, path);
+}
+
 int process_file_open(Process *process, const char *path) {
-    if (process == NULL || path == NULL || path[0] != '/') return -1;
+    if (process == NULL || path == NULL) return -1;
+    char resolved[PROCESS_PATH_MAX];
+    if (resolve_process_path(process, path, resolved) != 0) return -1;
 
     int slot = -1;
     for (int i = 0; i < MAX_PROCESS_FILES; ++i) {
@@ -425,7 +539,7 @@ int process_file_open(Process *process, const char *path) {
     if (slot < 0) return -1;
 
     vfs_node_t *node = NULL;
-    if (vfs_open(path, &node) != VFS_OK || node == NULL) return -1;
+    if (vfs_open(resolved, &node) != VFS_OK || node == NULL) return -1;
     if (node->type != VFS_FILE) {
         (void)vfs_close(node);
         return -1;

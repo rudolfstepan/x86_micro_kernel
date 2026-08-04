@@ -84,6 +84,8 @@ bool user_range_accessible(const page_directory_t* pd, uint32_t address,
                            size_t length, bool write_access);
 int copy_from_user(void* destination, const void* user_source, size_t length);
 int copy_to_user(void* user_destination, const void* source, size_t length);
+int copy_to_user_space(page_directory_t* pd, uint32_t user_destination,
+                       const void* source, size_t length);
 int copy_string_from_user(char* destination, size_t capacity,
                           const char* user_source);
 void* map_kernel_mmio(uint32_t physical_address, size_t length);

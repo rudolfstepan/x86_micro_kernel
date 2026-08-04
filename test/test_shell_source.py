@@ -70,8 +70,13 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertRegex(
             self.source,
             r"(?s)if \(is_program_filename\(original_command\)\).*?"
-            r"cmd_run\(1, program_arguments\);",
+            r"cmd_run\(arg_cnt \+ 1, program_arguments\);",
         )
+
+    def test_native_programs_receive_command_line_arguments(self):
+        self.assertNotIn("Program arguments are not supported yet.", self.source)
+        self.assertIn("create_process_for_file_args", self.source)
+        self.assertIn("arguments, working_directory", self.source)
 
     def test_prompt_has_no_trailing_space(self):
         self.assertIn('printf("%s:%s>", drive_label, dos_path);', self.source)

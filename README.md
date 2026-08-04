@@ -26,6 +26,10 @@ Das erzeugt unter anderem:
 - `build/programs/`: native Ring-3-Systemprogramme, unter anderem `SYSINFO`,
   `DATE`, `UPTIME`, `MEMINFO`, `REPEAT`, `CALC`, `ASCII` und `CAT`
 
+Native Programme erhalten klassische `argc`/`argv`-Argumente und erben das
+Arbeitsverzeichnis der Shell. Beispielsweise zeigt `cat README.TXT` eine Datei
+direkt aus dem aktuellen Verzeichnis an.
+
 Die fertige VM startet über
 `build\vmware\x86-microkernel\START-VMWARE.cmd`. Alternativ kann die dortige
 `x86-microkernel.vmx` direkt in VMware Workstation geöffnet werden.

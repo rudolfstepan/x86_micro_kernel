@@ -10,6 +10,7 @@
 #define MAX_USER_ALLOCATIONS 16
 #define MAX_PROCESS_FILES 8
 #define PROCESS_FD_BASE 3
+#define PROCESS_PATH_MAX 256
 
 struct vfs_node;
 
@@ -35,12 +36,16 @@ typedef struct {
     uint32_t heap_next;
     user_allocation_t user_allocations[MAX_USER_ALLOCATIONS];
     process_file_t files[MAX_PROCESS_FILES];
+    char working_directory[PROCESS_PATH_MAX];
     // Add more fields as needed, e.g., priority, state, etc.
 } Process;
 
 
 int create_process(void* entry_point);
 int create_process_for_file(const char *filename);
+int create_process_for_file_args(const char* filename, int argc,
+                                 const char* const* argv,
+                                 const char* working_directory);
 void wait_for_process(int pid);
 void* process_user_malloc(size_t size);
 int process_user_free(void* pointer);

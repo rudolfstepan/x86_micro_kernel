@@ -62,7 +62,6 @@ static int syscall_open(const char *user_path) {
         copy_string_from_user(path, sizeof(path), user_path) < 0) {
         return -14; /* EFAULT */
     }
-    if (path[0] != '/') return -22; /* EINVAL */
     int descriptor = process_file_open(process, path);
     return descriptor < 0 ? -2 : descriptor; /* ENOENT/resource failure */
 }

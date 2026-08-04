@@ -26,6 +26,11 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         self.assertIn("user_range_accessible", source)
         self.assertIn("copy_to_user", source)
 
+    def test_relative_paths_use_the_process_working_directory(self):
+        source = (ROOT / "kernel/proc/process.c").read_text(encoding="utf-8")
+        self.assertIn("resolve_process_path", source)
+        self.assertIn("process->working_directory", source)
+
     def test_process_exit_closes_open_descriptors(self):
         source = (ROOT / "kernel/sched/scheduler.c").read_text(
             encoding="utf-8"

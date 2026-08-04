@@ -222,6 +222,30 @@ int copy_to_user(void *user_destination, const void *source, size_t length) {
     return 0;
 }
 
+int copy_to_user_space(page_directory_t *pd, uint32_t user_destination,
+                       const void *source, size_t length) {
+    if (pd == NULL || source == NULL || length == 0 ||
+        !user_range_accessible(pd, user_destination, length, true)) {
+        return -1;
+    }
+
+    const uint8_t *input = (const uint8_t*)source;
+    while (length != 0) {
+        uint32_t pde = ((uint32_t*)pd->entries)[user_destination >> 22];
+        uint32_t *table = (uint32_t*)(uintptr_t)(pde & 0xFFFFF000U);
+        uint32_t pte = table[(user_destination >> 12) & 0x3FFU];
+        uint32_t page_offset = user_destination & (PAGE_SIZE - 1U);
+        size_t amount = PAGE_SIZE - page_offset;
+        if (amount > length) amount = length;
+        void *physical = (void*)(uintptr_t)((pte & 0xFFFFF000U) + page_offset);
+        memcpy(physical, input, amount);
+        user_destination += (uint32_t)amount;
+        input += amount;
+        length -= amount;
+    }
+    return 0;
+}
+
 int copy_string_from_user(char *destination, size_t capacity,
                           const char *user_source) {
     if (destination == NULL || user_source == NULL || capacity == 0) return -1;

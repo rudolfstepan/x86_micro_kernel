@@ -25,12 +25,18 @@ static int read_path(char *path) {
     return length == 0 ? -1 : 0;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
     char path[PATH_CAPACITY];
     char buffer[256];
-    if (read_path(path) != 0) return 1;
+    const char *requested_path;
+    if (argc > 1) {
+        requested_path = argv[1];
+    } else {
+        if (read_path(path) != 0) return 1;
+        requested_path = path;
+    }
 
-    int descriptor = x86os_open(path);
+    int descriptor = x86os_open(requested_path);
     if (descriptor < 0) {
         x86os_puts("cat: cannot open file\n");
         return 1;

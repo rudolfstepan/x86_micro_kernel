@@ -351,8 +351,8 @@ static bool shell_resolve_path(const char* input,
     return true;
 }
 
-static bool try_run_program_without_extension(const char *name,
-                                              int arg_count) {
+static bool try_run_program_without_extension(const char *name, int arg_count,
+                                              char *const *arguments) {
     char program_name[MAX_LENGTH];
     size_t length;
     shell_resolved_path_t resolved;
@@ -372,13 +372,10 @@ static bool try_run_program_without_extension(const char *name,
     (void)vfs_close(node);
     if (!executable_file) return false;
 
-    if (arg_count != 0) {
-        printf("Program arguments are not supported yet.\n");
-        return true;
-    }
-
-    const char *program_arguments[] = {program_name};
-    cmd_run(1, program_arguments);
+    const char *program_arguments[MAX_ARGS + 1];
+    program_arguments[0] = program_name;
+    for (int i = 0; i < arg_count; ++i) program_arguments[i + 1] = arguments[i];
+    cmd_run(arg_count + 1, program_arguments);
     return true;
 }
 
@@ -469,14 +466,14 @@ void process_command(char *input_buffer) {
 
     if (!found) {
         if (is_program_filename(original_command)) {
-            const char *program_arguments[] = {original_command};
-            if (arg_cnt != 0) {
-                printf("Program arguments are not supported yet.\n");
-            } else {
-                cmd_run(1, program_arguments);
+            const char *program_arguments[MAX_ARGS + 1];
+            program_arguments[0] = original_command;
+            for (int i = 0; i < arg_cnt; ++i) {
+                program_arguments[i + 1] = arguments[i];
             }
+            cmd_run(arg_cnt + 1, program_arguments);
         } else if (!try_run_program_without_extension(original_command,
-                                                      arg_cnt)) {
+                                                      arg_cnt, arguments)) {
             printf("Unknown command: %s\n", command);
         }
     }
@@ -1719,14 +1716,22 @@ void cmd_wait(int arg_count, const char** arguments) {
 }
 
 void cmd_run(int arg_count, const char** arguments) {
-    if (arg_count != 1) {
-        printf("Usage: RUN <program.prg>\n");
+    if (arg_count < 1) {
+        printf("Usage: RUN <program.prg> [arguments...]\n");
         return;
     }
     shell_resolved_path_t resolved;
     if (!shell_resolve_path(arguments[0], &resolved)) return;
     drive_t* saved_drive = current_drive;
-    int pid = create_process_for_file(resolved.vfs_path);
+    char working_directory[SHELL_PATH_MAX];
+    if (shell_path_join_mount(saved_drive->mount_point, current_path,
+                              working_directory) != SHELL_PATH_OK) {
+        printf("Unable to determine the working directory.\n");
+        shell_restore_drive(saved_drive);
+        return;
+    }
+    int pid = create_process_for_file_args(resolved.vfs_path, arg_count,
+                                           arguments, working_directory);
     shell_restore_drive(saved_drive);
     if (pid == -1) {
         printf("Failed to start program '%s'.\n", arguments[0]);
