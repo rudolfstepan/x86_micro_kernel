@@ -515,7 +515,8 @@ native-image: floppy-image
 		--data-file DATE.PRG=$(SYSTEM_PROGRAM_DIR)/DATE.PRG \
 		--data-file UPTIME.PRG=$(SYSTEM_PROGRAM_DIR)/UPTIME.PRG \
 		--data-file MEMINFO.PRG=$(SYSTEM_PROGRAM_DIR)/MEMINFO.PRG \
-		--data-file ASCII.PRG=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG
+		--data-file ASCII.PRG=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG \
+		--data-file CAT.PRG=$(SYSTEM_PROGRAM_DIR)/CAT.PRG
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/x86-microkernel.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
 
@@ -535,7 +536,8 @@ floppy-image: kernel system-programs user-program
 		--data-file DATE.PRG=$(SYSTEM_PROGRAM_DIR)/DATE.PRG \
 		--data-file UPTIME.PRG=$(SYSTEM_PROGRAM_DIR)/UPTIME.PRG \
 		--data-file MEMINFO.PRG=$(SYSTEM_PROGRAM_DIR)/MEMINFO.PRG \
-		--data-file ASCII.PRG=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG
+		--data-file ASCII.PRG=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG \
+		--data-file CAT.PRG=$(SYSTEM_PROGRAM_DIR)/CAT.PRG
 
 # ============================================================================
 # TESTING

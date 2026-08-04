@@ -26,6 +26,17 @@ class PagingSourceRegressionTests(unittest.TestCase):
         self.assertIn("#define E1000_MMIO_SIZE", source)
         self.assertIn("map_mmio_region(bar0, E1000_MMIO_SIZE)", source)
 
+    def test_process_directories_share_high_kernel_mmio_mappings(self):
+        source = (ROOT / "arch/x86/mm/paging.c").read_text(encoding="utf-8")
+        start = source.index("page_directory_t *create_page_directory")
+        body = source[start:source.index("page_directory_t *paging_kernel_directory", start)]
+        self.assertIn("i >= USER_PAGE_END", body)
+        self.assertIn("entries[i] = page_directory[i]", body)
+
+        free_start = source.index("void free_page_directory")
+        free_body = source[free_start:source.index("\nint unmap_page", free_start)]
+        self.assertIn("i < USER_PAGE_END", free_body)
+
     def test_user_copies_validate_the_complete_range(self):
         source = (ROOT / "arch/x86/mm/paging.c").read_text(encoding="utf-8")
         self.assertIn("int copy_from_user", source)

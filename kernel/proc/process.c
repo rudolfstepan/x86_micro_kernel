@@ -80,6 +80,7 @@ static int allocate_pid_locked(void) {
 }
 
 static void release_process_slot(Process *process) {
+    process_close_all_files(process);
     uint32_t flags = irq_save();
     process->is_running = false;
     process->uses_shared_program_image = false;
@@ -115,6 +116,7 @@ static int claim_process_slot(const char *name, bool shared_image) {
             process->heap_next = USER_HEAP_BASE;
             memset(process->user_allocations, 0,
                    sizeof(process->user_allocations));
+            memset(process->files, 0, sizeof(process->files));
             strncpy(process->name, name, sizeof(process->name) - 1U);
             process->name[sizeof(process->name) - 1U] = '\0';
             process->is_running = true;
@@ -408,6 +410,71 @@ void *process_user_realloc(void *pointer, size_t size) {
     memcpy(replacement, pointer, copy_size);
     (void)process_user_free(pointer);
     return replacement;
+}
+
+int process_file_open(Process *process, const char *path) {
+    if (process == NULL || path == NULL || path[0] != '/') return -1;
+
+    int slot = -1;
+    for (int i = 0; i < MAX_PROCESS_FILES; ++i) {
+        if (!process->files[i].in_use) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) return -1;
+
+    vfs_node_t *node = NULL;
+    if (vfs_open(path, &node) != VFS_OK || node == NULL) return -1;
+    if (node->type != VFS_FILE) {
+        (void)vfs_close(node);
+        return -1;
+    }
+
+    process->files[slot].node = node;
+    process->files[slot].offset = 0;
+    process->files[slot].in_use = true;
+    return slot + PROCESS_FD_BASE;
+}
+
+int process_file_read(Process *process, int descriptor, void *buffer,
+                      size_t size) {
+    int slot = descriptor - PROCESS_FD_BASE;
+    if (process == NULL || buffer == NULL || slot < 0 ||
+        slot >= MAX_PROCESS_FILES || !process->files[slot].in_use ||
+        size > UINT32_MAX) {
+        return -1;
+    }
+    if (size == 0) return 0;
+
+    process_file_t *file = &process->files[slot];
+    int result = vfs_read(file->node, file->offset, (uint32_t)size, buffer);
+    if (result > 0) file->offset += (uint32_t)result;
+    return result;
+}
+
+int process_file_close(Process *process, int descriptor) {
+    int slot = descriptor - PROCESS_FD_BASE;
+    if (process == NULL || slot < 0 || slot >= MAX_PROCESS_FILES ||
+        !process->files[slot].in_use) {
+        return -1;
+    }
+
+    process_file_t *file = &process->files[slot];
+    int result = vfs_close(file->node);
+    if (result != VFS_OK) return -1;
+    memset(file, 0, sizeof(*file));
+    return 0;
+}
+
+void process_close_all_files(Process *process) {
+    if (process == NULL) return;
+    for (int i = 0; i < MAX_PROCESS_FILES; ++i) {
+        if (process->files[i].in_use) {
+            (void)vfs_close(process->files[i].node);
+            memset(&process->files[i], 0, sizeof(process->files[i]));
+        }
+    }
 }
 
 void wait_for_process(int pid) {

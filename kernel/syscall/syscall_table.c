@@ -13,6 +13,8 @@
 #include "drivers/char/rtc.h"
 #include "kernel/time/pit.h"
 #include "kernel/sched/scheduler.h"
+#include "kernel/proc/process.h"
+#include "arch/x86/mm/paging.h"
 #include "mm/kmalloc.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"  // For SYS_MALLOC, SYS_FREE, SYS_REALLOC, etc.
@@ -53,6 +55,51 @@ static uint32_t syscall_memory_kb(void) {
     return kibibytes > UINT32_MAX ? UINT32_MAX : (uint32_t)kibibytes;
 }
 
+static int syscall_open(const char *user_path) {
+    char path[256];
+    Process *process = scheduler_current_process();
+    if (process == NULL ||
+        copy_string_from_user(path, sizeof(path), user_path) < 0) {
+        return -14; /* EFAULT */
+    }
+    if (path[0] != '/') return -22; /* EINVAL */
+    int descriptor = process_file_open(process, path);
+    return descriptor < 0 ? -2 : descriptor; /* ENOENT/resource failure */
+}
+
+static int syscall_read(int descriptor, void *user_buffer, size_t size) {
+    Process *process = scheduler_current_process();
+    if (process == NULL) return -9; /* EBADF */
+    if (size == 0) return 0;
+    if (size > INT_MAX ||
+        !user_range_accessible(paging_current_directory(),
+                               (uint32_t)(uintptr_t)user_buffer, size, true)) {
+        return -14; /* EFAULT */
+    }
+
+    uint8_t buffer[512];
+    size_t total = 0;
+    while (total < size) {
+        size_t amount = size - total;
+        if (amount > sizeof(buffer)) amount = sizeof(buffer);
+        int result = process_file_read(process, descriptor, buffer, amount);
+        if (result < 0) return total != 0 ? (int)total : -9;
+        if (result == 0) break;
+        if (copy_to_user((uint8_t*)user_buffer + total, buffer,
+                         (size_t)result) != 0) {
+            return -14;
+        }
+        total += (size_t)result;
+        if ((size_t)result < amount) break;
+    }
+    return (int)total;
+}
+
+static int syscall_close(int descriptor) {
+    Process *process = scheduler_current_process();
+    return process_file_close(process, descriptor) == 0 ? 0 : -9;
+}
+
 //---------------------------------------------------------------------------------------------
 // System Call Table
 //---------------------------------------------------------------------------------------------
@@ -76,6 +123,9 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_get_time,           // Syscall 11: Packed RTC time
     (void*)&pit_ticks,                  // Syscall 12: Milliseconds since boot
     (void*)&syscall_memory_kb,          // Syscall 13: Usable memory in KiB
+    (void*)&syscall_open,               // Syscall 14: Open read-only file
+    (void*)&syscall_read,               // Syscall 15: Read from descriptor
+    (void*)&syscall_close,              // Syscall 16: Close descriptor
     // Add more syscalls here as needed
 };
 
@@ -98,6 +148,7 @@ void syscall_handler(Registers* regs) {
     const uint32_t syscall_index = regs->eax;
     const uint32_t arg1 = regs->ebx;
     const uint32_t arg2 = regs->ecx;
+    const uint32_t arg3 = regs->edx;
     uint32_t result = 0;
 
     // Validate syscall index
@@ -135,6 +186,10 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_TERMINAL_GETCHAR:
             result = (uint32_t)(uint8_t)getchar();
+            if (result == 0x03U) {
+                printf("^C\n");
+                task_exit();
+            }
             break;
         case SYS_EXIT:
             task_exit();
@@ -149,6 +204,23 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_MEMORY_KB:
             result = syscall_memory_kb();
+            break;
+        case SYS_OPEN:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_open((const char*)(uintptr_t)arg1);
+            scheduler_preempt_enable();
+            break;
+        case SYS_READ:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_read((int)arg1,
+                                            (void*)(uintptr_t)arg2,
+                                            (size_t)arg3);
+            scheduler_preempt_enable();
+            break;
+        case SYS_CLOSE:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_close((int)arg1);
+            scheduler_preempt_enable();
             break;
         default:
             result = (uint32_t)-1;

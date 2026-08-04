@@ -22,6 +22,9 @@
 #define SYS_GET_TIME 11
 #define SYS_UPTIME_MS 12
 #define SYS_MEMORY_KB 13
+#define SYS_OPEN 14
+#define SYS_READ 15
+#define SYS_CLOSE 16
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

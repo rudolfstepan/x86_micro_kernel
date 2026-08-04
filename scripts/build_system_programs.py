@@ -18,6 +18,7 @@ PROGRAMS = {
     "UPTIME.PRG": ROOT / "examples/userspace/uptime.c",
     "MEMINFO.PRG": ROOT / "examples/userspace/meminfo.c",
     "ASCII.PRG": ROOT / "examples/userspace/ascii.c",
+    "CAT.PRG": ROOT / "examples/userspace/cat.c",
 }
 
 

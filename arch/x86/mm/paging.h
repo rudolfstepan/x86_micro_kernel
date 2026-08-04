@@ -18,6 +18,7 @@
 #define USER_HEAP_BASE (USER_BASE + 8U * 1024U * 1024U)
 #define USER_HEAP_TOP  (USER_TOP - 16U * 1024U * 1024U)
 #define USER_PAGE_START (USER_BASE / (PAGE_SIZE * PAGE_TABLE_ENTRIES)) // Start index in the page directory
+#define USER_PAGE_END (USER_TOP / (PAGE_SIZE * PAGE_TABLE_ENTRIES))
 
 
 // Page table/directory attributes

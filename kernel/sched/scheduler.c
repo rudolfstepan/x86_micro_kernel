@@ -213,15 +213,21 @@ void scheduler_terminate_task(int task_id) {
         task_exit();
     }
 
-    tasks[task_id].status = TASK_FINISHED;
     if (tasks[task_id].process) {
+        process_close_all_files(tasks[task_id].process);
         tasks[task_id].process->is_running = false;
     }
+    tasks[task_id].status = TASK_FINISHED;
     irq_restore(flags);
 }
 
 void task_exit(void) {
     irq_disable();
+
+    int exiting = current_task;
+    if (exiting >= 0 && exiting < num_tasks && tasks[exiting].process) {
+        process_close_all_files(tasks[exiting].process);
+    }
 
     int finished = current_task;
     if (finished >= 0 && finished < num_tasks) {

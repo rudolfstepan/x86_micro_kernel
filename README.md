@@ -24,7 +24,7 @@ Das erzeugt unter anderem:
 - `build/x86-microkernel.vmdk` und `.vmx`: VMware-Artefakte
 - `build/vmware/x86-microkernel/`: vollständig startbare VMware-VM
 - `build/programs/`: native Ring-3-Systemprogramme, unter anderem `SYSINFO`,
-  `DATE`, `UPTIME`, `MEMINFO`, `REPEAT`, `CALC` und `ASCII`
+  `DATE`, `UPTIME`, `MEMINFO`, `REPEAT`, `CALC`, `ASCII` und `CAT`
 
 Die fertige VM startet über
 `build\vmware\x86-microkernel\START-VMWARE.cmd`. Alternativ kann die dortige

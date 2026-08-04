@@ -136,7 +136,8 @@ try {
         --data-file "DATE.PRG=$(Join-Path $UserProgramDir 'DATE.PRG')" `
         --data-file "UPTIME.PRG=$(Join-Path $UserProgramDir 'UPTIME.PRG')" `
         --data-file "MEMINFO.PRG=$(Join-Path $UserProgramDir 'MEMINFO.PRG')" `
-        --data-file "ASCII.PRG=$(Join-Path $UserProgramDir 'ASCII.PRG')"
+        --data-file "ASCII.PRG=$(Join-Path $UserProgramDir 'ASCII.PRG')" `
+        --data-file "CAT.PRG=$(Join-Path $UserProgramDir 'CAT.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Floppy image creation failed with exit code $LASTEXITCODE."
     }
@@ -156,7 +157,8 @@ try {
         --data-file "DATE.PRG=$(Join-Path $UserProgramDir 'DATE.PRG')" `
         --data-file "UPTIME.PRG=$(Join-Path $UserProgramDir 'UPTIME.PRG')" `
         --data-file "MEMINFO.PRG=$(Join-Path $UserProgramDir 'MEMINFO.PRG')" `
-        --data-file "ASCII.PRG=$(Join-Path $UserProgramDir 'ASCII.PRG')"
+        --data-file "ASCII.PRG=$(Join-Path $UserProgramDir 'ASCII.PRG')" `
+        --data-file "CAT.PRG=$(Join-Path $UserProgramDir 'CAT.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Native image creation failed with exit code $LASTEXITCODE."
     }

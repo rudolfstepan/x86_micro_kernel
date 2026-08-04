@@ -8,6 +8,10 @@
 
 #define MAX_PROGRAMS 256 // Maximum number of running programs
 #define MAX_USER_ALLOCATIONS 16
+#define MAX_PROCESS_FILES 8
+#define PROCESS_FD_BASE 3
+
+struct vfs_node;
 
 typedef struct {
     uint32_t address;
@@ -17,6 +21,12 @@ typedef struct {
 } user_allocation_t;
 
 typedef struct {
+    struct vfs_node *node;
+    uint32_t offset;
+    bool in_use;
+} process_file_t;
+
+typedef struct {
     int pid;
     int task_id;
     char name[32];
@@ -24,6 +34,7 @@ typedef struct {
     bool uses_shared_program_image;
     uint32_t heap_next;
     user_allocation_t user_allocations[MAX_USER_ALLOCATIONS];
+    process_file_t files[MAX_PROCESS_FILES];
     // Add more fields as needed, e.g., priority, state, etc.
 } Process;
 
@@ -34,6 +45,11 @@ void wait_for_process(int pid);
 void* process_user_malloc(size_t size);
 int process_user_free(void* pointer);
 void* process_user_realloc(void* pointer, size_t size);
+int process_file_open(Process* process, const char* path);
+int process_file_read(Process* process, int descriptor, void* buffer,
+                      size_t size);
+int process_file_close(Process* process, int descriptor);
+void process_close_all_files(Process* process);
 void list_running_processes(void);
 void terminate_process(int pid);
 

@@ -976,7 +976,6 @@ int fat12_read_file(fat12_file* file, void* buffer, unsigned int buffer_size, un
     }
 
     free(sectorBuffer);
-    printf("Completed reading %u bytes from file %s into buffer.\n", bytes_read, file->name);
 
     return bytes_read;
 }

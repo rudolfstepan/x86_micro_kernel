@@ -17,7 +17,10 @@ enum {
     X86OS_SYS_GET_DATE = 10,
     X86OS_SYS_GET_TIME = 11,
     X86OS_SYS_UPTIME_MS = 12,
-    X86OS_SYS_MEMORY_KB = 13
+    X86OS_SYS_MEMORY_KB = 13,
+    X86OS_SYS_OPEN = 14,
+    X86OS_SYS_READ = 15,
+    X86OS_SYS_CLOSE = 16
 };
 
 uintptr_t x86os_syscall(uint32_t number, uintptr_t argument1,
@@ -34,6 +37,9 @@ uint32_t x86os_get_date(void);
 uint32_t x86os_get_time(void);
 uint32_t x86os_uptime_ms(void);
 uint32_t x86os_memory_kb(void);
+int x86os_open(const char* path);
+int x86os_read(int descriptor, void* buffer, size_t size);
+int x86os_close(int descriptor);
 void x86os_exit(int status) __attribute__((noreturn));
 
 #endif

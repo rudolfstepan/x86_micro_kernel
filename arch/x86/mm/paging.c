@@ -68,11 +68,14 @@ page_directory_t *create_page_directory(void) {
     }
 
     uint32_t *entries = (uint32_t*)pd->entries;
-    for (size_t i = 0; i < KERNEL_PAGE_ENTRIES; ++i) {
-        entries[i] = page_directory[i];
+    /* Every address space shares supervisor-only kernel mappings.  This also
+     * includes device MMIO above USER_TOP (PCI BARs, LAPIC, and similar), so
+     * hardware IRQ handlers remain usable while a Ring-3 CR3 is active. */
+    for (size_t i = 0; i < PAGE_DIRECTORY_ENTRIES; ++i) {
+        if (i < USER_PAGE_START || i >= USER_PAGE_END) {
+            entries[i] = page_directory[i];
+        }
     }
-    entries[LOCAL_APIC_DIRECTORY_INDEX] =
-        page_directory[LOCAL_APIC_DIRECTORY_INDEX];
     return pd;
 }
 
@@ -138,10 +141,9 @@ void free_page_directory(page_directory_t *pd) {
     }
 
     uint32_t *entries = (uint32_t*)pd->entries;
-    for (size_t i = USER_PAGE_START; i < PAGE_DIRECTORY_ENTRIES; ++i) {
-        if (i == LOCAL_APIC_DIRECTORY_INDEX) {
-            continue;
-        }
+    /* Only the user window is private. Kernel and MMIO page tables are shared
+     * with the kernel directory and must never be released with a process. */
+    for (size_t i = USER_PAGE_START; i < USER_PAGE_END; ++i) {
         if ((entries[i] & PAGE_PRESENT) != 0) {
             uint32_t *table =
                 (uint32_t*)(uintptr_t)(entries[i] & 0xFFFFF000U);
