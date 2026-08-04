@@ -1,6 +1,6 @@
 # Externe Programme für die Kernel-Shell bauen
 
-Stand: 3. August 2026.
+Stand: 5. August 2026.
 
 Das Projekt enthält eine native Windows-Toolchain, die fremden C-Quelltext in
 das ausführbare `MYPR`-Format übersetzt. WSL, GRUB und ein Cross-GCC werden
@@ -56,11 +56,16 @@ Funktionen bereit:
 - `x86os_putchar`, `x86os_puts`, `x86os_print_number`
 - `x86os_delay`, `x86os_getchar`
 - `x86os_malloc`, `x86os_realloc`, `x86os_free`
+- `x86os_open`, `x86os_read`, `x86os_create`, `x86os_write`, `x86os_close`
+- `x86os_stat`, `x86os_readdir`, `x86os_unlink`
+- `x86os_getpid`, `x86os_spawn`, `x86os_wait`
 - `x86os_exit`
 
-Der Startup-Code ruft `main(void)` auf und beendet den Task anschließend mit
-`x86os_exit`. Kernel-Header und Kernel-Treiber dürfen von externen Programmen
-nicht eingebunden werden.
+Der Startup-Code übergibt `argc` und `argv` an `main` und reicht dessen
+Rückgabewert als Prozessstatus an `x86os_exit` weiter. `x86os_spawn` startet
+ein Kindprogramm im geerbten Arbeitsverzeichnis; `x86os_wait` wartet auf das
+Kind und liefert dessen Exit-Status. Kernel-Header und Kernel-Treiber dürfen
+von externen Programmen nicht eingebunden werden.
 
 Mehrere C- oder präprozessierte Assembly-Quellen (`.S`) können gemeinsam
 übergeben werden:

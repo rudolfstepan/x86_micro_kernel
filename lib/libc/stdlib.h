@@ -30,6 +30,9 @@
 #define SYS_CREATE 19
 #define SYS_WRITE 20
 #define SYS_UNLINK 21
+#define SYS_GETPID 22
+#define SYS_SPAWN 23
+#define SYS_WAIT 24
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

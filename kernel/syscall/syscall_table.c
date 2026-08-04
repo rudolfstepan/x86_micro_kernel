@@ -190,6 +190,30 @@ static int syscall_unlink(const char *user_path) {
     return process_file_unlink(scheduler_current_process(), path) == 0 ? 0 : -2;
 }
 
+static int syscall_getpid(void) {
+    Process *process = scheduler_current_process();
+    return process != NULL ? process->pid : -3;
+}
+
+static int syscall_spawn(const char *user_path) {
+    char path[PROCESS_PATH_MAX];
+    Process *parent = scheduler_current_process();
+    if (parent == NULL ||
+        copy_string_from_user(path, sizeof(path), user_path) < 0) return -14;
+    int pid = process_spawn(parent, path);
+    return pid < 0 ? -2 : pid;
+}
+
+static int syscall_wait(int pid, int *user_status) {
+    if (!user_range_accessible(paging_current_directory(),
+                               (uint32_t)(uintptr_t)user_status,
+                               sizeof(*user_status), true)) return -14;
+    int status = 0;
+    int result = process_wait_status(scheduler_current_process(), pid, &status);
+    if (result <= 0) return result == 0 ? -11 : -10;
+    return copy_to_user(user_status, &status, sizeof(status)) == 0 ? pid : -14;
+}
+
 //---------------------------------------------------------------------------------------------
 // System Call Table
 //---------------------------------------------------------------------------------------------
@@ -221,6 +245,9 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_create,             // Syscall 19: Create writable file
     (void*)&syscall_write,              // Syscall 20: Write descriptor
     (void*)&syscall_unlink,             // Syscall 21: Delete file
+    (void*)&syscall_getpid,             // Syscall 22: Current process ID
+    (void*)&syscall_spawn,              // Syscall 23: Start child process
+    (void*)&syscall_wait,               // Syscall 24: Collect child status
     // Add more syscalls here as needed
 };
 
@@ -283,11 +310,11 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)(uint8_t)getchar();
             if (result == 0x03U) {
                 printf("^C\n");
-                task_exit();
+                task_exit_status(130);
             }
             break;
         case SYS_EXIT:
-            task_exit();
+            task_exit_status((int)arg1);
         case SYS_GET_DATE:
             result = syscall_get_date();
             break;
@@ -344,6 +371,18 @@ void syscall_handler(Registers* regs) {
             scheduler_preempt_disable();
             result = (uint32_t)syscall_unlink((const char*)(uintptr_t)arg1);
             scheduler_preempt_enable();
+            break;
+        case SYS_GETPID:
+            result = (uint32_t)syscall_getpid();
+            break;
+        case SYS_SPAWN:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_spawn((const char*)(uintptr_t)arg1);
+            scheduler_preempt_enable();
+            break;
+        case SYS_WAIT:
+            result = (uint32_t)syscall_wait(
+                (int)arg1, (int*)(uintptr_t)arg2);
             break;
         default:
             result = (uint32_t)-1;

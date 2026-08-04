@@ -99,7 +99,8 @@ static int claim_process_slot(const char *name, bool shared_image) {
     }
 
     for (int i = 0; i < MAX_PROGRAMS; ++i) {
-        if (!process_list[i].is_running) {
+        if (!process_list[i].is_running &&
+            !(process_list[i].has_exited && process_list[i].parent_pid > 0)) {
             Process *process = &process_list[i];
             int pid = allocate_pid_locked();
             if (pid < 0) {
@@ -107,7 +108,10 @@ static int claim_process_slot(const char *name, bool shared_image) {
                 return -1;
             }
             process->pid = pid;
+            process->parent_pid = 0;
             process->task_id = -1;
+            process->exit_status = 0;
+            process->has_exited = false;
             process->uses_shared_program_image = shared_image;
             process->heap_next = USER_HEAP_BASE;
             memset(process->user_allocations, 0,
@@ -656,6 +660,64 @@ void wait_for_process(int pid) {
          * shell's kernel context while it waits for the foreground process. */
         __asm__ __volatile__("hlt");
     }
+}
+
+int process_spawn(Process *parent, const char *path) {
+    if (parent == NULL || path == NULL || *path == '\0') return -1;
+    char resolved[PROCESS_PATH_MAX];
+    if (process_resolve_path(parent, path, resolved) != 0) return -1;
+    const char *arguments[] = {path};
+    int pid = create_process_for_file_args(resolved, 1, arguments,
+                                           parent->working_directory);
+    if (pid < 0) return -1;
+
+    uint32_t flags = irq_save();
+    for (int i = 0; i < MAX_PROGRAMS; ++i) {
+        if (process_list[i].is_running && process_list[i].pid == pid) {
+            process_list[i].parent_pid = parent->pid;
+            break;
+        }
+    }
+    irq_restore(flags);
+    return pid;
+}
+
+int process_wait_status(Process *parent, int pid, int *status) {
+    if (parent == NULL || status == NULL || pid <= 0) return -1;
+    uint32_t flags = irq_save();
+    for (int i = 0; i < MAX_PROGRAMS; ++i) {
+        Process *child = &process_list[i];
+        if (child->pid != pid || child->parent_pid != parent->pid) continue;
+        if (child->is_running) {
+            irq_restore(flags);
+            return 0;
+        }
+        if (!child->has_exited) {
+            irq_restore(flags);
+            return -1;
+        }
+        *status = child->exit_status;
+        child->has_exited = false;
+        child->parent_pid = 0;
+        irq_restore(flags);
+        return 1;
+    }
+    irq_restore(flags);
+    return -1;
+}
+
+void process_orphan_children(int parent_pid) {
+    if (parent_pid <= 0) return;
+    uint32_t flags = irq_save();
+    for (int i = 0; i < MAX_PROGRAMS; ++i) {
+        if (process_list[i].parent_pid == parent_pid) {
+            process_list[i].parent_pid = 0;
+            if (!process_list[i].is_running) {
+                process_list[i].has_exited = false;
+            }
+        }
+    }
+    irq_restore(flags);
 }
 
 void list_running_processes(void) {

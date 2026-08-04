@@ -215,6 +215,9 @@ void scheduler_terminate_task(int task_id) {
 
     if (tasks[task_id].process) {
         process_close_all_files(tasks[task_id].process);
+        process_orphan_children(tasks[task_id].process->pid);
+        tasks[task_id].process->exit_status = 143;
+        tasks[task_id].process->has_exited = true;
         tasks[task_id].process->is_running = false;
     }
     tasks[task_id].status = TASK_FINISHED;
@@ -222,6 +225,10 @@ void scheduler_terminate_task(int task_id) {
 }
 
 void task_exit(void) {
+    task_exit_status(0);
+}
+
+void task_exit_status(int status) {
     irq_disable();
 
     int exiting = current_task;
@@ -233,6 +240,9 @@ void task_exit(void) {
     if (finished >= 0 && finished < num_tasks) {
         tasks[finished].status = TASK_FINISHED;
         if (tasks[finished].process) {
+            process_orphan_children(tasks[finished].process->pid);
+            tasks[finished].process->exit_status = status;
+            tasks[finished].process->has_exited = true;
             tasks[finished].process->is_running = false;
         }
     }

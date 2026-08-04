@@ -54,6 +54,7 @@ void scheduler_preempt_disable(void);
 void scheduler_preempt_enable(void);
 void scheduler_terminate_task(int task_id);
 void task_exit(void) __attribute__((noreturn));
+void task_exit_status(int status) __attribute__((noreturn));
 void scheduler_kill_current(void) __attribute__((noreturn));
 void list_tasks(void);
 Process* scheduler_current_process(void);

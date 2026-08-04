@@ -25,7 +25,10 @@ enum {
     X86OS_SYS_READDIR = 18,
     X86OS_SYS_CREATE = 19,
     X86OS_SYS_WRITE = 20,
-    X86OS_SYS_UNLINK = 21
+    X86OS_SYS_UNLINK = 21,
+    X86OS_SYS_GETPID = 22,
+    X86OS_SYS_SPAWN = 23,
+    X86OS_SYS_WAIT = 24
 };
 
 enum {
@@ -61,6 +64,9 @@ int x86os_readdir(const char* path, uint32_t index, x86os_file_info_t* info);
 int x86os_create(const char* path);
 int x86os_write(int descriptor, const void* buffer, size_t size);
 int x86os_unlink(const char* path);
+int x86os_getpid(void);
+int x86os_spawn(const char* path);
+int x86os_wait(int pid, int* status);
 void x86os_exit(int status) __attribute__((noreturn));
 
 #endif

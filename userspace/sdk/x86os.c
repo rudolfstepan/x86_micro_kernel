@@ -99,6 +99,24 @@ int x86os_unlink(const char* path) {
     return (int)x86os_syscall(X86OS_SYS_UNLINK, (uintptr_t)path, 0, 0);
 }
 
+int x86os_getpid(void) {
+    return (int)x86os_syscall(X86OS_SYS_GETPID, 0, 0, 0);
+}
+
+int x86os_spawn(const char* path) {
+    return (int)x86os_syscall(X86OS_SYS_SPAWN, (uintptr_t)path, 0, 0);
+}
+
+int x86os_wait(int pid, int* status) {
+    int result;
+    do {
+        result = (int)x86os_syscall(X86OS_SYS_WAIT, (uintptr_t)pid,
+                                    (uintptr_t)status, 0);
+        if (result == -11) x86os_delay(1);
+    } while (result == -11);
+    return result;
+}
+
 void x86os_exit(int status) {
     (void)x86os_syscall(X86OS_SYS_EXIT, (uintptr_t)status, 0, 0);
     for (;;) {

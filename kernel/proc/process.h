@@ -30,9 +30,12 @@ typedef struct {
 
 typedef struct {
     int pid;
+    int parent_pid;
     int task_id;
+    int exit_status;
     char name[32];
     bool is_running;
+    bool has_exited;
     bool uses_shared_program_image;
     uint32_t heap_next;
     user_allocation_t user_allocations[MAX_USER_ALLOCATIONS];
@@ -48,6 +51,9 @@ int create_process_for_file_args(const char* filename, int argc,
                                  const char* const* argv,
                                  const char* working_directory);
 void wait_for_process(int pid);
+int process_spawn(Process* parent, const char* path);
+int process_wait_status(Process* parent, int pid, int* status);
+void process_orphan_children(int parent_pid);
 void* process_user_malloc(size_t size);
 int process_user_free(void* pointer);
 void* process_user_realloc(void* pointer, size_t size);

@@ -22,6 +22,7 @@ PROGRAMS = {
     "LS.PRG": ROOT / "examples/userspace/ls.c",
     "SAVE.PRG": ROOT / "examples/userspace/save.c",
     "BASIC.PRG": ROOT / "userspace/bin/basic.c",
+    "SPAWN.PRG": ROOT / "examples/userspace/spawn.c",
 }
 
 

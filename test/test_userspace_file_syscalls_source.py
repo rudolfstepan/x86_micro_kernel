@@ -62,6 +62,26 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         )
         self.assertIn("process_close_all_files", source)
 
+    def test_child_exit_status_is_retained_until_wait(self):
+        process = (ROOT / "kernel/proc/process.c").read_text(encoding="utf-8")
+        scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("process_wait_status", process)
+        self.assertIn("child->has_exited = false", process)
+        self.assertIn("process->exit_status = status", scheduler)
+        self.assertIn("process->has_exited = true", scheduler)
+        self.assertIn("process_orphan_children", scheduler)
+
+    def test_process_syscalls_validate_userspace_arguments(self):
+        source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("syscall_getpid", source)
+        self.assertIn("copy_string_from_user(path, sizeof(path), user_path)", source)
+        self.assertIn("syscall_wait", source)
+        self.assertIn("copy_to_user(user_status", source)
+
     def test_ctrl_c_terminates_blocked_userspace_input(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
             encoding="utf-8"
@@ -69,7 +89,7 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         getchar_case = source[source.index("case SYS_TERMINAL_GETCHAR:") :]
         getchar_case = getchar_case[:getchar_case.index("break;")]
         self.assertIn("result == 0x03U", getchar_case)
-        self.assertIn("task_exit();", getchar_case)
+        self.assertIn("task_exit_status(130);", getchar_case)
 
 
 if __name__ == "__main__":

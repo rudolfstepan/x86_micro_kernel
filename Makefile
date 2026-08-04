@@ -509,7 +509,8 @@ native-image: floppy-image
 		--data-file CAT.PRG=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
 		--data-file LS.PRG=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
 		--data-file SAVE.PRG=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
-		--data-file BASIC.PRG=$(SYSTEM_PROGRAM_DIR)/BASIC.PRG
+		--data-file BASIC.PRG=$(SYSTEM_PROGRAM_DIR)/BASIC.PRG \
+		--data-file SPAWN.PRG=$(SYSTEM_PROGRAM_DIR)/SPAWN.PRG
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/x86-microkernel.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
 
@@ -533,7 +534,8 @@ floppy-image: kernel system-programs user-program
 		--data-file CAT.PRG=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
 		--data-file LS.PRG=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
 		--data-file SAVE.PRG=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
-		--data-file BASIC.PRG=$(SYSTEM_PROGRAM_DIR)/BASIC.PRG
+		--data-file BASIC.PRG=$(SYSTEM_PROGRAM_DIR)/BASIC.PRG \
+		--data-file SPAWN.PRG=$(SYSTEM_PROGRAM_DIR)/SPAWN.PRG
 
 # ============================================================================
 # TESTING

@@ -140,7 +140,8 @@ try {
         --data-file "CAT.PRG=$(Join-Path $UserProgramDir 'CAT.PRG')" `
         --data-file "LS.PRG=$(Join-Path $UserProgramDir 'LS.PRG')" `
         --data-file "SAVE.PRG=$(Join-Path $UserProgramDir 'SAVE.PRG')" `
-        --data-file "BASIC.PRG=$(Join-Path $UserProgramDir 'BASIC.PRG')"
+        --data-file "BASIC.PRG=$(Join-Path $UserProgramDir 'BASIC.PRG')" `
+        --data-file "SPAWN.PRG=$(Join-Path $UserProgramDir 'SPAWN.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Floppy image creation failed with exit code $LASTEXITCODE."
     }
@@ -164,7 +165,8 @@ try {
         --data-file "CAT.PRG=$(Join-Path $UserProgramDir 'CAT.PRG')" `
         --data-file "LS.PRG=$(Join-Path $UserProgramDir 'LS.PRG')" `
         --data-file "SAVE.PRG=$(Join-Path $UserProgramDir 'SAVE.PRG')" `
-        --data-file "BASIC.PRG=$(Join-Path $UserProgramDir 'BASIC.PRG')"
+        --data-file "BASIC.PRG=$(Join-Path $UserProgramDir 'BASIC.PRG')" `
+        --data-file "SPAWN.PRG=$(Join-Path $UserProgramDir 'SPAWN.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Native image creation failed with exit code $LASTEXITCODE."
     }
