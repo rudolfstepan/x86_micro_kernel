@@ -50,9 +50,11 @@ $MsysBin = Split-Path -Parent $MsysShell
 
 $BuildDir = Join-Path $RepoRoot 'build'
 $Stage1 = Join-Path $BuildDir 'stage1_mbr.bin'
+$FloppyStage1 = Join-Path $BuildDir 'stage1_floppy.bin'
 $Stage2 = Join-Path $BuildDir 'stage2_bios.bin'
 $Kernel = Join-Path $BuildDir 'kernel.bin'
 $RawImage = Join-Path $BuildDir 'x86-microkernel.img'
+$FloppyImage = Join-Path $BuildDir 'x86-microkernel-floppy.img'
 $Vmdk = Join-Path $BuildDir 'x86-microkernel.vmdk'
 $Vmx = Join-Path $BuildDir 'x86-microkernel.vmx'
 $VmwareDir = Join-Path $BuildDir 'vmware\x86-microkernel'
@@ -104,6 +106,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Stage 1 assembly failed.' }
     & $Nasm -f bin 'arch/x86/boot/bios/stage2_bios.asm' -o $Stage2
     if ($LASTEXITCODE -ne 0) { throw 'Stage 2 assembly failed.' }
+    & $Nasm -f bin 'arch/x86/boot/bios/stage1_floppy.asm' -o $FloppyStage1
+    if ($LASTEXITCODE -ne 0) { throw 'Floppy stage 1 assembly failed.' }
 
     New-Item -ItemType Directory -Force -Path $UserProgramDir | Out-Null
     $programBuildArguments = @(
@@ -114,6 +118,16 @@ try {
         throw "Example user program build failed with exit code $LASTEXITCODE."
     }
 
+    & $Python 'scripts/create_floppy_boot_image.py' `
+        --stage1 $FloppyStage1 `
+        --stage2 $Stage2 `
+        --kernel $Kernel `
+        --output $FloppyImage `
+        --data-file "$ProgramName=$UserPrg"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Floppy image creation failed with exit code $LASTEXITCODE."
+    }
+
     & $Python 'scripts/create_native_boot_image.py' `
         --stage1 $Stage1 `
         --stage2 $Stage2 `
@@ -121,6 +135,7 @@ try {
         --output $RawImage `
         --vmdk $Vmdk `
         --vmware-dir $VmwareDir `
+        --floppy $FloppyImage `
         --data-file "$ProgramName=$UserPrg"
     if ($LASTEXITCODE -ne 0) {
         throw "Native image creation failed with exit code $LASTEXITCODE."
@@ -141,6 +156,7 @@ finally {
 Write-Host ''
 Write-Host 'Native boot artifacts:' -ForegroundColor Green
 Write-Host "  Raw BIOS disk: $RawImage"
+Write-Host "  BIOS floppy:   $FloppyImage"
 Write-Host "  VMware disk:   $Vmdk"
 Write-Host "  VMware VM:     $Vmx"
 Write-Host "  Complete VM:   $PackagedVmx" -ForegroundColor Cyan

@@ -5,6 +5,7 @@
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
+#include "kernel/time/pit.h"
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -44,6 +45,12 @@ static volatile bool irq_triggered = false;
 static volatile int irq_count = 0;
 static bool fdc_controller_initialized = false;
 static bool fdc_drive_ready[4] = {false, false, false, false};
+static bool fdd_motor_running[MAX_FDD_DRIVES];
+static int8_t fdd_cached_track[MAX_FDD_DRIVES] = {-1, -1};
+static uint32_t fdd_last_activity[MAX_FDD_DRIVES];
+
+#define FDD_MOTOR_SPINUP_MS 500U
+#define FDD_MOTOR_IDLE_MS 2000U
 
 /* ISA DMA channel 2 can only address the first 16 MiB and may not cross a
  * 64-KiB boundary.  Reserve enough storage to select a 64-KiB boundary at
@@ -131,6 +138,8 @@ void fdc_motor_on(int drive) {
     // bits 4..7 select motors A..D; bits 0..1 select the active drive.
     uint8_t dor = (uint8_t)(0x0C | (drive & 0x03) | (0x10u << drive));
     outb(FDD_DOR, dor);
+    fdd_motor_running[drive] = true;
+    fdd_last_activity[drive] = pit_ticks();
 }
 void fdc_motor_off(int drive) {
     if (drive < 0 || drive >= MAX_FDD_DRIVES) return;
@@ -138,6 +147,26 @@ void fdc_motor_off(int drive) {
     dor &= (uint8_t)~(0x10u << drive);
     dor = (uint8_t)((dor & ~0x03u) | (drive & 0x03) | 0x0C);
     outb(FDD_DOR, dor);
+    fdd_motor_running[drive] = false;
+    fdd_cached_track[drive] = -1;
+}
+
+static void fdd_prepare_drive(uint8_t drive) {
+    if (!fdd_motor_running[drive]) {
+        fdc_motor_on(drive);
+        delay_ms(FDD_MOTOR_SPINUP_MS);
+    }
+    fdd_last_activity[drive] = pit_ticks();
+}
+
+void fdd_service(void) {
+    uint32_t now = pit_ticks();
+    for (uint8_t drive = 0; drive < MAX_FDD_DRIVES; ++drive) {
+        if (fdd_motor_running[drive] &&
+            (uint32_t)(now - fdd_last_activity[drive]) >= FDD_MOTOR_IDLE_MS) {
+            fdc_motor_off(drive);
+        }
+    }
 }
 
 // ============================================================
@@ -264,6 +293,7 @@ bool fdc_init_controller() {
 // ============================================================
 
 static bool fdc_seek(uint8_t drive, uint8_t head, uint8_t track) {
+    if (fdd_cached_track[drive] == (int8_t)track) return true;
     irq_triggered = false;
     if (!fdc_send_command(FDD_CMD_SEEK) ||
         !fdc_send_command((uint8_t)((head << 2) | drive)) ||
@@ -275,7 +305,13 @@ static bool fdc_seek(uint8_t drive, uint8_t head, uint8_t track) {
 
     uint8_t st0 = fdc_read_data();
     uint8_t cylinder = fdc_read_data();
-    return (st0 & 0xC0u) == 0 && (st0 & 0x20u) != 0 && cylinder == track;
+    bool ok = (st0 & 0xC0u) == 0 && (st0 & 0x20u) != 0 && cylinder == track;
+    if (ok) {
+        fdd_cached_track[drive] = (int8_t)track;
+    } else {
+        fdd_cached_track[drive] = -1;
+    }
+    return ok;
 }
 
 static bool fdc_validate_chs(uint8_t drive, uint8_t head, uint8_t track,
@@ -287,8 +323,7 @@ static bool fdc_validate_chs(uint8_t drive, uint8_t head, uint8_t track,
 bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
     if (!fdc_validate_chs(drive, head, track, sector, buffer)) return false;
 
-    fdc_motor_on(drive);
-    delay_ms(500);
+    fdd_prepare_drive(drive);
 
     if (!fdc_seek(drive, head, track)) {
         printf("FDC seek failed before read (drive=%u, head=%u, track=%u)\n",
@@ -342,7 +377,7 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
     }
 
     memcpy(buffer, dma_buffer, SECTOR_SIZE);
-    fdc_motor_off(drive);
+    fdd_last_activity[drive] = pit_ticks();
     return true;
 }
 
@@ -351,8 +386,7 @@ bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector
 
     uint8_t *dma_buffer = fdd_dma_buffer();
     memcpy(dma_buffer, buffer, SECTOR_SIZE);
-    fdc_motor_on(drive);
-    delay_ms(500);
+    fdd_prepare_drive(drive);
 
     if (!fdc_seek(drive, head, track) ||
         !dma_prepare_floppy(dma_buffer, SECTOR_SIZE, false)) {
@@ -379,10 +413,11 @@ bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector
     uint8_t st1 = fdc_read_data();
     uint8_t st2 = fdc_read_data();
     fdc_read_data(); fdc_read_data(); fdc_read_data(); fdc_read_data();
-    fdc_motor_off(drive);
+    fdd_last_activity[drive] = pit_ticks();
 
     if ((st0 & 0xC0u) != 0 || st1 != 0 || st2 != 0) {
         printf("FDC write error: ST0=0x%x, ST1=0x%x, ST2=0x%x\n", st0, st1, st2);
+        fdc_motor_off(drive);
         return false;
     }
     return true;

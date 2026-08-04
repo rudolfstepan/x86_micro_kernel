@@ -3,6 +3,7 @@
 #include <stdbool.h>
 
 #include "arch/x86/include/interrupt.h"
+#include "arch/x86/mm/paging.h"
 #include "mm/kmalloc.h"
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
@@ -11,7 +12,10 @@
 #include "kernel/init/prg.h"
 #include "kernel/sched/scheduler.h"
 
-#define PROGRAM_LOAD_ADDRESS KERNEL_PROGRAM_REGION_START
+#define PROGRAM_STAGING_ADDRESS KERNEL_PROGRAM_REGION_START
+#define USER_PROGRAM_ADDRESS USER_BASE
+#define USER_STACK_TOP (USER_TOP - PAGE_SIZE)
+#define USER_STACK_SIZE (8U * PAGE_SIZE)
 #define PROGRAM_REGION_SIZE  KERNEL_PROGRAM_REGION_SIZE
 static int load_program_file(const char *program_name, uint32_t address) {
     if (!memory_region_is_usable(address, PROGRAM_REGION_SIZE)) {
@@ -149,11 +153,7 @@ int create_process_for_file(const char *filename) {
         return -1;
     }
 
-    int slot = claim_process_slot(filename, true);
-    if (slot == -2) {
-        printf("A file-backed program already uses the shared image region.\n");
-        return -1;
-    }
+    int slot = claim_process_slot(filename, false);
     if (slot < 0) {
         printf("Error: Maximum number of running programs reached.\n");
         return -1;
@@ -161,42 +161,84 @@ int create_process_for_file(const char *filename) {
 
     Process *process = &process_list[slot];
     int pid = process->pid;
-    int loaded_size = load_program_into_memory(filename, PROGRAM_LOAD_ADDRESS);
+    int loaded_size = load_program_into_memory(filename, PROGRAM_STAGING_ADDRESS);
     if (loaded_size < 0) {
         release_process_slot(process);
         return -1;
     }
 
-    program_header_t* header = (program_header_t*)PROGRAM_LOAD_ADDRESS;
+    program_header_t* header = (program_header_t*)PROGRAM_STAGING_ADDRESS;
     if (header->relocation_size == 0 &&
-        header->base_address != PROGRAM_LOAD_ADDRESS) {
+        header->base_address != USER_PROGRAM_ADDRESS) {
         printf("Program '%s' was linked for the wrong load address.\n",
                filename);
         release_process_slot(process);
         return -1;
     }
     uint32_t *relocation_table = (uint32_t*)(
-        PROGRAM_LOAD_ADDRESS + header->relocation_offset);
+        PROGRAM_STAGING_ADDRESS + header->relocation_offset);
     if (apply_relocation(relocation_table,
                          header->relocation_size / sizeof(uint32_t),
-                         header->base_address, PROGRAM_LOAD_ADDRESS,
+                         header->base_address, USER_PROGRAM_ADDRESS,
                          (uint32_t)loaded_size) != 0) {
         printf("Invalid relocation table in '%s'.\n", filename);
         release_process_slot(process);
         return -1;
     }
 
-    uint32_t* stack = (uint32_t*)k_malloc(STACK_SIZE);
-    if (stack == NULL) {
-        printf("Error: Failed to allocate stack for process\n");
+    page_directory_t *page_directory = create_page_directory();
+    if (page_directory == NULL) {
         release_process_slot(process);
         return -1;
     }
 
-    int task_id = create_task(
-        (void (*)())(header->entry_point + PROGRAM_LOAD_ADDRESS), stack, process);
+    uint32_t mapped_size = ((uint32_t)loaded_size + PAGE_SIZE - 1U) &
+                           ~(PAGE_SIZE - 1U);
+    for (uint32_t offset = 0; offset < mapped_size; offset += PAGE_SIZE) {
+        uint32_t frame = (uint32_t)allocate_frame();
+        if (frame == 0 || map_page(page_directory,
+                                  USER_PROGRAM_ADDRESS + offset, frame,
+                                  PAGE_USER | PAGE_RW) != 0) {
+            if (frame != 0) free_frame(frame);
+            free_page_directory(page_directory);
+            release_process_slot(process);
+            return -1;
+        }
+        memset((void*)(uintptr_t)frame, 0, PAGE_SIZE);
+        uint32_t amount = (uint32_t)loaded_size - offset;
+        if (amount > PAGE_SIZE) amount = PAGE_SIZE;
+        if (offset < (uint32_t)loaded_size) {
+            memcpy((void*)(uintptr_t)frame,
+                   (const void*)(uintptr_t)(PROGRAM_STAGING_ADDRESS + offset),
+                   amount);
+        }
+    }
+    for (uint32_t address = USER_STACK_TOP - USER_STACK_SIZE;
+         address < USER_STACK_TOP; address += PAGE_SIZE) {
+        uint32_t frame = (uint32_t)allocate_frame();
+        if (frame == 0 || map_page(page_directory, address, frame,
+                                  PAGE_USER | PAGE_RW) != 0) {
+            if (frame != 0) free_frame(frame);
+            free_page_directory(page_directory);
+            release_process_slot(process);
+            return -1;
+        }
+        memset((void*)(uintptr_t)frame, 0, PAGE_SIZE);
+    }
+
+    uint32_t* kernel_stack = (uint32_t*)k_malloc(STACK_SIZE);
+    if (kernel_stack == NULL) {
+        free_page_directory(page_directory);
+        release_process_slot(process);
+        return -1;
+    }
+
+    int task_id = create_user_task(
+        header->entry_point + USER_PROGRAM_ADDRESS, USER_STACK_TOP,
+        kernel_stack, page_directory, process);
     if (task_id < 0) {
-        k_free(stack);
+        k_free(kernel_stack);
+        free_page_directory(page_directory);
         release_process_slot(process);
         return -1;
     }

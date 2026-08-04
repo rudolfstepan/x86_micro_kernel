@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROGRAM_BASE = 0x02100000
+PROGRAM_BASE = 0x40000000
 PROGRAM_REGION_SIZE = 8 * 1024 * 1024
 PROGRAM_HEADER = struct.Struct("<4s6I")
 PAYLOAD_BASE = PROGRAM_BASE + PROGRAM_HEADER.size

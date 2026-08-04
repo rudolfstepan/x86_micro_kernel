@@ -298,6 +298,11 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
         while (1) { asm volatile("hlt"); }
     }
 
+    /* Establish the kernel identity map before any APIC or PCI MMIO access.
+     * User processes rely on CR0.PG already being active when scheduled. */
+    init_paging();
+    test_paging();
+
     // Stage 1: Early initialization
     early_init();
     

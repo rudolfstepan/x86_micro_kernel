@@ -57,7 +57,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 struct.unpack_from("<4s6I", program)
             self.assertEqual(identifier, b"MYPR")
             self.assertEqual(magic, 0xDEADBEEF)
-            self.assertEqual(base, 0x02100000)
+            self.assertEqual(base, 0x40000000)
             self.assertEqual(size, len(program) - 28)
             self.assertGreaterEqual(entry, 28)
             self.assertLess(entry, 28 + size)

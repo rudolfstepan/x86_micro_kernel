@@ -21,6 +21,7 @@
 
 // E1000 MMIO Base Address (to be set via PCI configuration)
 #define E1000_MMIO_BASE                 0xF0000000
+#define E1000_MMIO_SIZE                 0x20000U
 
 // E1000 Register Offsets
 #define E1000_REG_CTRL                  0x0000      // Device Control
@@ -624,7 +625,11 @@ int e1000_probe(pci_device_t *pci_dev) {
             return -1;
         }
         uint64_t bar0 = raw_bar0 & ~0xFu;
-        e1000_device.mmio_base = (volatile uint32_t *)map_mmio(bar0);
+        e1000_device.mmio_base = map_mmio_region(bar0, E1000_MMIO_SIZE);
+        if (e1000_device.mmio_base == NULL) {
+            printf("E1000: unable to map BAR0 MMIO region\n");
+            return -1;
+        }
 
         printf("E1000: MMIO base mapped to 0x%08X\n", (uint32_t)e1000_device.mmio_base);
 

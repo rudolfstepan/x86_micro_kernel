@@ -62,6 +62,29 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertIn("ch == 0x03", body)
         self.assertIn("ping statistics", body)
 
+    def test_shell_services_floppy_motor_idle_timeout(self):
+        self.assertIn("fdd_service();", self.source)
+
+    def test_prg_filename_is_executed_without_run_command(self):
+        self.assertIn("static bool is_program_filename", self.source)
+        self.assertRegex(
+            self.source,
+            r"(?s)if \(is_program_filename\(original_command\)\).*?"
+            r"cmd_run\(1, program_arguments\);",
+        )
+
+    def test_prompt_has_no_trailing_space(self):
+        self.assertIn('printf("%s:%s>", drive_label, dos_path);', self.source)
+        self.assertNotIn('printf("%s:%s> ", drive_label, dos_path);', self.source)
+
+    def test_program_extension_is_optional_at_prompt(self):
+        self.assertIn("static bool try_run_program_without_extension", self.source)
+        self.assertIn('strcpy(program_name + length, ".PRG");', self.source)
+        self.assertIn(
+            "try_run_program_without_extension(original_command,",
+            self.source,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

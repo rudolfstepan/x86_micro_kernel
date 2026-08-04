@@ -288,14 +288,16 @@ class NativeBootImageTests(unittest.TestCase):
     def test_generated_vmware_machine_uses_bios_ide_and_serial_trace(self):
         with tempfile.TemporaryDirectory() as directory:
             vmx = Path(directory) / "kernel.vmx"
-            write_vmx(vmx, Path("kernel.vmdk"))
+            write_vmx(vmx, Path("kernel.vmdk"), Path("rescue.img"))
             text = vmx.read_text(encoding="ascii")
         self.assertIn('firmware = "bios"', text)
-        self.assertIn('bios.bootOrder = "hdd"', text)
+        self.assertIn('bios.bootOrder = "floppy,hdd"', text)
         self.assertIn('memsize = "512"', text)
         self.assertIn('ide0:0.fileName = "kernel.vmdk"', text)
         self.assertIn('serial0.fileName = "vmware-serial.log"', text)
         self.assertIn('serial0.tryNoRxLoss = "TRUE"', text)
+        self.assertIn('floppy0.present = "TRUE"', text)
+        self.assertIn('floppy0.fileName = "rescue.img"', text)
         self.assertIn('ethernet0.virtualDev = "e1000"', text)
         self.assertIn('ethernet0.connectionType = "custom"', text)
         self.assertIn('ethernet0.vnet = "VMnet0"', text)
@@ -316,7 +318,9 @@ class NativeBootImageTests(unittest.TestCase):
             raw = root / "source.img"
             raw.write_bytes(bytes(1024))
             package = root / "vm"
-            vmx = write_vmware_package(package, raw, 2, 0x12345678)
+            floppy = root / "rescue.img"
+            floppy.write_bytes(bytes(1474560))
+            vmx = write_vmware_package(package, raw, 2, 0x12345678, floppy)
             self.assertEqual(vmx, package / "x86-microkernel.vmx")
             self.assertEqual(
                 (package / "x86-microkernel-flat.vmdk").read_bytes(),
@@ -328,6 +332,10 @@ class NativeBootImageTests(unittest.TestCase):
             self.assertIn('FLAT "x86-microkernel-flat.vmdk" 0', descriptor)
             self.assertTrue((package / "START-VMWARE.cmd").is_file())
             self.assertTrue((package / "README-VMWARE.txt").is_file())
+            self.assertEqual(
+                (package / "x86-microkernel-floppy.img").read_bytes(),
+                floppy.read_bytes(),
+            )
 
 
 if __name__ == "__main__":

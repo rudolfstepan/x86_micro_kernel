@@ -379,7 +379,16 @@ ddb.virtualHWVersion = "4"
     path.write_text(descriptor, encoding="ascii", newline="\n")
 
 
-def write_vmx(path: Path, vmdk_path: Path) -> None:
+def write_vmx(path: Path, vmdk_path: Path,
+              floppy_path: Path | None = None) -> None:
+    floppy_configuration = (
+        f'''floppy0.present = "TRUE"
+floppy0.fileType = "file"
+floppy0.fileName = "{floppy_path.name}"
+floppy0.startConnected = "TRUE"'''
+        if floppy_path is not None else 'floppy0.present = "FALSE"'
+    )
+    boot_order = "floppy,hdd" if floppy_path is not None else "hdd"
     configuration = f'''.encoding = "UTF-8"
 config.version = "8"
 virtualHW.version = "20"
@@ -388,7 +397,7 @@ displayName = "x86 Microkernel (Native BIOS)"
 annotation = "x86 microkernel with its own BIOS MBR and ELF32 loader"
 guestOS = "other"
 firmware = "bios"
-bios.bootOrder = "hdd"
+bios.bootOrder = "{boot_order}"
 bios.hddOrder = "ide0:0"
 memsize = "512"
 numvcpus = "1"
@@ -402,7 +411,7 @@ ide0:0.mode = "persistent"
 ide0:0.startConnected = "TRUE"
 ide0:1.present = "FALSE"
 ide1:0.present = "FALSE"
-floppy0.present = "FALSE"
+{floppy_configuration}
 sound.present = "FALSE"
 usb.present = "FALSE"
 ehci.present = "FALSE"
@@ -433,14 +442,19 @@ tools.upgrade.policy = "manual"
 
 
 def write_vmware_package(vm_directory: Path, raw_image: Path,
-                         total_sectors: int, content_id: int) -> Path:
+                         total_sectors: int, content_id: int,
+                         floppy_image: Path | None = None) -> Path:
     vm_directory.mkdir(parents=True, exist_ok=True)
     flat_extent = vm_directory / f"{VMWARE_BASENAME}-flat.vmdk"
     descriptor = vm_directory / f"{VMWARE_BASENAME}.vmdk"
     vmx = vm_directory / f"{VMWARE_BASENAME}.vmx"
     shutil.copyfile(raw_image, flat_extent)
     write_vmdk_descriptor(descriptor, flat_extent, total_sectors, content_id)
-    write_vmx(vmx, descriptor)
+    packaged_floppy = None
+    if floppy_image is not None:
+        packaged_floppy = vm_directory / "x86-microkernel-floppy.img"
+        shutil.copyfile(floppy_image, packaged_floppy)
+    write_vmx(vmx, descriptor, packaged_floppy)
 
     launcher = r'''@echo off
 setlocal
@@ -470,14 +484,14 @@ Start:
   2. x86-microkernel.vmx in VMware Workstation öffnen und auf Play klicken.
 
 Die VM ist bereits vollständig konfiguriert:
-  - Legacy BIOS, Boot von der ersten IDE-Festplatte
+  - Legacy BIOS, zuerst Diskette, danach Fallback auf IDE-Festplatte
   - 1 virtuelle CPU, 512 MiB RAM
   - VGA ohne 3D-Beschleunigung
   - Intel E1000, ueber VMnet0 direkt mit dem physischen LAN gebridged
   - automatische IPv4-Konfiguration per DHCP
   - 60-MiB-FAT32-Datenpartition mit README.TXT und HELLO.PRG
   - COM1-Bootprotokoll in vmware-serial.log
-  - keine virtuelle Diskette, kein USB- oder Audiogerät
+  - bootfähiges 1,44-MB-Floppy-Image, kein USB- oder Audiogerät
 
 Die VMDK-Dateien und die VMX-Datei müssen im selben Ordner bleiben.
 VMnet0 verwendet standardmaessig VMwares automatische Bridge-Auswahl. Falls
@@ -506,7 +520,8 @@ DNS-Anfragen und TCP-Anwendungen wie HTTP/SMB sind noch nicht implementiert.
 def build_image(stage1_path: Path, stage2_path: Path, kernel_path: Path,
                  output_path: Path, vmdk_path: Path,
                  vmware_directory: Path | None = None,
-                 data_files: Mapping[str, bytes] | None = None) -> None:
+                 data_files: Mapping[str, bytes] | None = None,
+                 floppy_image: Path | None = None) -> None:
     stage1 = stage1_path.read_bytes()
     stage2 = stage2_path.read_bytes()
     kernel = kernel_path.read_bytes()
@@ -550,11 +565,12 @@ def build_image(stage1_path: Path, stage2_path: Path, kernel_path: Path,
     kernel_crc = binascii.crc32(kernel) & 0xFFFFFFFF
     write_vmdk_descriptor(vmdk_path, output_path, total_sectors, kernel_crc)
     vmx_path = vmdk_path.with_suffix(".vmx")
-    write_vmx(vmx_path, vmdk_path)
+    write_vmx(vmx_path, vmdk_path, floppy_image)
     packaged_vmx = None
     if vmware_directory is not None:
         packaged_vmx = write_vmware_package(
-            vmware_directory, output_path, total_sectors, kernel_crc
+            vmware_directory, output_path, total_sectors, kernel_crc,
+            floppy_image
         )
     messages = [
         f"Native BIOS image: {output_path} ({IMAGE_SIZE // (1024 * 1024)} MiB)",
@@ -578,6 +594,7 @@ def main() -> None:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--vmdk", required=True, type=Path)
     parser.add_argument("--vmware-dir", type=Path)
+    parser.add_argument("--floppy", type=Path)
     parser.add_argument(
         "--data-file",
         action="append",
@@ -616,6 +633,7 @@ def main() -> None:
         args.vmdk,
         args.vmware_dir,
         data_files,
+        args.floppy,
     )
 
 

@@ -35,6 +35,10 @@
 
 static volatile uint32_t timer_tick_count = 0;  // Use a 32-bit counter
 
+uint32_t pit_ticks(void) {
+    return timer_tick_count;
+}
+
 void timer_irq_handler(void* r) {
     // Increment a counter each time the timer interrupt fires
     timer_tick_count++;

@@ -462,6 +462,8 @@ load_file_range:
 
 ; Read CX sectors at absolute LBA EAX into the 32-KiB bounce buffer.
 read_bounce:
+    cmp byte [boot_drive], 0x80
+    jb read_bounce_chs
     mov [read_lba_value], eax
     mov [read_count], cx
     mov byte [read_retries], 3
@@ -490,6 +492,63 @@ read_bounce:
 .ok:
     mov ax, ds
     mov es, ax
+    clc
+    ret
+
+; Legacy floppy BIOSes commonly provide no INT 13h extensions. Read one
+; 1.44-MB floppy sector at a time using the standard 18-sector/2-head CHS
+; geometry. The caller already limits a bounce-buffer request to 64 sectors.
+read_bounce_chs:
+    mov [read_lba_value], eax
+    mov [read_count], cx
+    mov ax, BOUNCE_SEGMENT
+    mov es, ax
+    xor bx, bx
+.next_sector:
+    cmp word [read_count], 0
+    je .ok
+    mov eax, [read_lba_value]
+    xor edx, edx
+    mov ecx, 36
+    div ecx                         ; EAX=cylinder, EDX=track remainder
+    cmp eax, 79
+    ja .bad
+    mov [chs_cylinder], al
+    mov eax, edx
+    xor edx, edx
+    mov ecx, 18
+    div ecx                         ; EAX=head, EDX=sector index
+    mov dh, al
+    mov cl, dl
+    inc cl
+    mov ch, [chs_cylinder]
+    mov dl, [boot_drive]
+    mov ax, 0x0201
+    int 0x13
+    jc .retry_sector
+    inc dword [read_lba_value]
+    add bx, 512
+    dec word [read_count]
+    jmp .next_sector
+.retry_sector:
+    mov dl, [boot_drive]
+    xor ah, ah
+    int 0x13
+    mov eax, [read_lba_value]
+    ; Retry through the normal loop; a persistent error is bounded by the
+    ; BIOS reset succeeding only transiently on real drives.
+    inc byte [read_retries]
+    cmp byte [read_retries], 3
+    jbe .next_sector
+.bad:
+    mov ax, ds
+    mov es, ax
+    stc
+    ret
+.ok:
+    mov ax, ds
+    mov es, ax
+    mov byte [read_retries], 0
     clc
     ret
 
@@ -751,6 +810,7 @@ crc_value              dd 0
 kernel_crc             dd 0
 crc_chunk_size         dw 0
 crc_sector_count       dw 0
+chs_cylinder           db 0
 
 program_headers:
     times MAX_PROGRAM_HEADERS * 32 db 0

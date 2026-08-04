@@ -41,9 +41,6 @@ void logical_to_chs(int logical_sector, int* track, int* head, int* sector) {
         return;
     }
 
-    // Debug: Log input logical sector
-    printf("logical_to_chs: Converting logical sector %d\n", logical_sector);
-    
     // Use boot sector values if available
     if (fat12 && fat12->boot_sector.sectors_per_track > 0 && fat12->boot_sector.heads > 0) {
         spt = fat12->boot_sector.sectors_per_track;
@@ -471,8 +468,6 @@ int fat12_read_dir_entries(directory_entry* dir) {
 
     if (dir == NULL) {
         // --- ROOT DIRECTORY ---
-        printf("Reading root directory entries.\n");
-
         // Read all root dir sectors into a contiguous buffer
         const uint32_t root_bytes = root_dir_sectors * bps;
         local_buffer = (uint8_t*)malloc(root_bytes);
@@ -492,6 +487,17 @@ int fat12_read_dir_entries(directory_entry* dir) {
                 free(local_buffer);
                 return -1;
             }
+            directory_entry *sector_entries =
+                (directory_entry*)(local_buffer + si * bps);
+            uint32_t entries_per_sector = bps / sizeof(directory_entry);
+            bool end_of_directory = false;
+            for (uint32_t i = 0; i < entries_per_sector; ++i) {
+                if ((uint8_t)sector_entries[i].filename[0] == 0x00) {
+                    end_of_directory = true;
+                    break;
+                }
+            }
+            if (end_of_directory) break;
         }
 
         // Parse 32-byte entries
@@ -623,7 +629,6 @@ int fat12_read_dir_entries(directory_entry* dir) {
         }
     }
 
-    printf("Entries found: %d\n", entries_found);
     if (local_buffer) free(local_buffer);
     return entries_found;
 }

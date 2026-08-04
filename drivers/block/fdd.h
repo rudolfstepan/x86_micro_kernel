@@ -36,5 +36,6 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
 
 void fdc_motor_on(int drive);
 void fdc_motor_off(int drive);
+void fdd_service(void);
 
 #endif // FDD_H

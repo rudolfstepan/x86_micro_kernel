@@ -15,6 +15,7 @@ bereits behobene Fehler enthalten.
 - [Projektstatus](development/PROJECT_STATUS.md) – verifizierte Komponenten und offene Grenzen
 - [Build-Modi](development/BUILD_MODES.md) – `qemu`, `vmware`, `real_hw` und Videoauswahl
 - [Nativer Bootdatenträger](development/BOOTABLE_DISK.md) – BIOS/MBR, Stage 2 und FAT32-Image
+- [Bootfähige Diskette](development/FLOPPY_BOOT.md) – 1,44-MB-CHS-Image für echte BIOS-PCs
 - [Externe Programme](development/USER_PROGRAM_TOOLCHAIN.md) – SDK, ABI und MYPR-Toolchain
 
 ## Bedienung und Laufzeit

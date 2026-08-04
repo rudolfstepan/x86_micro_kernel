@@ -22,6 +22,7 @@ static uint32_t kernel_page_tables[KERNEL_PAGE_ENTRIES][PAGE_TABLE_ENTRIES]
 #define LOCAL_APIC_TABLE_INDEX ((LOCAL_APIC_BASE >> 12) & 0x3FFU)
 static uint32_t local_apic_page_table[PAGE_TABLE_ENTRIES]
     __attribute__((aligned(PAGE_SIZE)));
+static page_directory_t *current_directory;
 
 static inline void load_cr3(uint32_t address) {
     __asm__ __volatile__("mov %0, %%cr3" : : "r"(address) : "memory");
@@ -75,6 +76,20 @@ page_directory_t *create_page_directory(void) {
     return pd;
 }
 
+page_directory_t *paging_kernel_directory(void) {
+    return (page_directory_t*)(void*)page_directory;
+}
+
+page_directory_t *paging_current_directory(void) {
+    return current_directory ? current_directory : paging_kernel_directory();
+}
+
+void switch_page_directory(page_directory_t *pd) {
+    if (pd == NULL) pd = paging_kernel_directory();
+    current_directory = pd;
+    load_cr3((uint32_t)(uintptr_t)pd);
+}
+
 void init_paging(void) {
     memset(page_directory, 0, sizeof(page_directory));
     memset(kernel_page_tables, 0, sizeof(kernel_page_tables));
@@ -104,7 +119,7 @@ void init_paging(void) {
         (uint32_t)(uintptr_t)local_apic_page_table |
         PAGE_PRESENT | PAGE_RW;
 
-    load_cr3((uint32_t)(uintptr_t)page_directory);
+    switch_page_directory(paging_kernel_directory());
     write_cr0(read_cr0() | CR0_PG);
     printf("Paging enabled; identity-mapped the first %u MB.\n",
            (unsigned int)(KERNEL_IDENTITY_LIMIT / 1024U / 1024U));
@@ -128,10 +143,77 @@ void free_page_directory(page_directory_t *pd) {
             continue;
         }
         if ((entries[i] & PAGE_PRESENT) != 0) {
-            free_page((void*)(uintptr_t)(entries[i] & 0xFFFFF000U));
+            uint32_t *table =
+                (uint32_t*)(uintptr_t)(entries[i] & 0xFFFFF000U);
+            for (size_t j = 0; j < PAGE_TABLE_ENTRIES; ++j) {
+                if ((table[j] & (PAGE_PRESENT | PAGE_USER)) ==
+                    (PAGE_PRESENT | PAGE_USER)) {
+                    free_page((void*)(uintptr_t)(table[j] & 0xFFFFF000U));
+                }
+            }
+            free_page(table);
         }
     }
     free_page(pd);
+}
+
+int unmap_page(page_directory_t *pd, uint32_t virtual_address,
+               bool free_physical_frame) {
+    if (pd == NULL || virtual_address < USER_BASE ||
+        virtual_address >= USER_TOP ||
+        (virtual_address & (PAGE_SIZE - 1U)) != 0) return -1;
+    uint32_t *directory = (uint32_t*)pd->entries;
+    uint32_t di = virtual_address >> 22;
+    uint32_t ti = (virtual_address >> 12) & 0x3FFU;
+    if ((directory[di] & PAGE_PRESENT) == 0) return -1;
+    uint32_t *table = (uint32_t*)(uintptr_t)(directory[di] & 0xFFFFF000U);
+    if ((table[ti] & PAGE_PRESENT) == 0) return -1;
+    if (free_physical_frame) {
+        free_page((void*)(uintptr_t)(table[ti] & 0xFFFFF000U));
+    }
+    table[ti] = 0;
+    if (pd == paging_current_directory()) flush_tlb();
+    return 0;
+}
+
+bool user_range_accessible(const page_directory_t *pd, uint32_t address,
+                           size_t length, bool write_access) {
+    if (pd == NULL || length == 0 || address < USER_BASE ||
+        address >= USER_TOP || length > USER_TOP - address) return false;
+    uint32_t first = address & ~(PAGE_SIZE - 1U);
+    uint32_t last = (uint32_t)(address + length - 1U) & ~(PAGE_SIZE - 1U);
+    const uint32_t *directory = (const uint32_t*)pd->entries;
+    for (uint32_t page = first;; page += PAGE_SIZE) {
+        uint32_t pde = directory[page >> 22];
+        if ((pde & (PAGE_PRESENT | PAGE_USER)) !=
+            (PAGE_PRESENT | PAGE_USER)) return false;
+        const uint32_t *table =
+            (const uint32_t*)(uintptr_t)(pde & 0xFFFFF000U);
+        uint32_t pte = table[(page >> 12) & 0x3FFU];
+        uint32_t required = PAGE_PRESENT | PAGE_USER |
+                            (write_access ? PAGE_RW : 0U);
+        if ((pte & required) != required) return false;
+        if (page == last) break;
+    }
+    return true;
+}
+
+void *map_kernel_mmio(uint32_t physical_address, size_t length) {
+    if (length == 0 || length > UINT32_MAX - physical_address) return NULL;
+
+    uint32_t first = physical_address & ~(PAGE_SIZE - 1U);
+    uint32_t end_address = physical_address + (uint32_t)length - 1U;
+    uint32_t last = end_address & ~(PAGE_SIZE - 1U);
+
+    for (uint32_t page = first;; page += PAGE_SIZE) {
+        if (map_page(paging_kernel_directory(), page, page,
+                     PAGE_RW | PAGE_CACHE_DISABLE) != 0) {
+            return NULL;
+        }
+        if (page == last) break;
+        if (page > UINT32_MAX - PAGE_SIZE) return NULL;
+    }
+    return (void*)(uintptr_t)physical_address;
 }
 
 int map_page(page_directory_t *pd, uint32_t virtual_address,
@@ -144,7 +226,7 @@ int map_page(page_directory_t *pd, uint32_t virtual_address,
     uint32_t directory_index = virtual_address >> 22;
     bool kernel_directory = (void*)pd == (void*)page_directory;
     if (!kernel_directory &&
-        (virtual_address < USER_BASE ||
+        (virtual_address < USER_BASE || virtual_address >= USER_TOP ||
          directory_index == LOCAL_APIC_DIRECTORY_INDEX)) {
         return -1;
     }

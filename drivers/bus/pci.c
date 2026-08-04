@@ -1,6 +1,7 @@
 #include "pci.h"
 
 #include "drivers/char/io.h"
+#include "arch/x86/mm/paging.h"
 #include "lib/libc/stdio.h"
 #include <stdint.h>
 
@@ -251,11 +252,17 @@ uint32_t pci_read_bar(pci_device_t *dev, uint8_t bar_index) {
     return dev->bar[bar_index];
 }
 
-// Stub for mapping physical memory (platform-specific implementation required)
 volatile uint32_t *map_mmio(uint64_t physical_address) {
-    // Replace with actual memory mapping mechanism for your system.
-    //return (volatile uint32_t *)(physical_address | 0xFFFF800000000000); // Simplified example
-    return (volatile uint32_t *)(uintptr_t)physical_address;
+    return map_mmio_region(physical_address, PAGE_SIZE);
+}
+
+volatile uint32_t *map_mmio_region(uint64_t physical_address, size_t length) {
+    if (physical_address > UINT32_MAX || length == 0 ||
+        length > UINT32_MAX - (uint32_t)physical_address) {
+        return NULL;
+    }
+    return (volatile uint32_t*)map_kernel_mmio((uint32_t)physical_address,
+                                               length);
 }
 
 uint8_t pci_configure_irq(pci_device_t *dev) {

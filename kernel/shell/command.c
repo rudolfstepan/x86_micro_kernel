@@ -8,6 +8,7 @@
 
 #include "drivers/char/rtc.h"
 #include "drivers/block/ata.h"
+#include "drivers/block/fdd.h"
 #include "drivers/bus/drives.h"
 #include "drivers/bus/pci.h"
 
@@ -38,6 +39,19 @@ extern size_t pci_device_count;
 int split_input(const char* input, char* command, char** arguments, int max_length, int max_args);
 void open_file(const char* path);
 void free_arguments(char** arguments, int arg_count);
+
+static bool is_program_filename(const char *name) {
+    size_t length;
+
+    if (name == NULL) return false;
+    length = strlen(name);
+    if (length < 4U) return false;
+
+    return name[length - 4U] == '.' &&
+           (name[length - 3U] == 'p' || name[length - 3U] == 'P') &&
+           (name[length - 2U] == 'r' || name[length - 2U] == 'R') &&
+           (name[length - 1U] == 'g' || name[length - 1U] == 'G');
+}
 
 bool is_null_terminated(char* buffer, size_t max_length) {
     for (size_t i = 0; i < max_length; i++) {
@@ -337,6 +351,37 @@ static bool shell_resolve_path(const char* input,
     return true;
 }
 
+static bool try_run_program_without_extension(const char *name,
+                                              int arg_count) {
+    char program_name[MAX_LENGTH];
+    size_t length;
+    shell_resolved_path_t resolved;
+    vfs_node_t *node = NULL;
+
+    if (name == NULL || is_program_filename(name)) return false;
+    length = strlen(name);
+    if (length > sizeof(program_name) - sizeof(".PRG")) return false;
+
+    strcpy(program_name, name);
+    strcpy(program_name + length, ".PRG");
+    if (!shell_resolve_path(program_name, &resolved)) return false;
+    if (vfs_open(resolved.vfs_path, &node) != VFS_OK || node == NULL) {
+        return false;
+    }
+    bool executable_file = node->type == VFS_FILE;
+    (void)vfs_close(node);
+    if (!executable_file) return false;
+
+    if (arg_count != 0) {
+        printf("Program arguments are not supported yet.\n");
+        return true;
+    }
+
+    const char *program_arguments[] = {program_name};
+    cmd_run(1, program_arguments);
+    return true;
+}
+
 static void shell_restore_drive(drive_t* saved_drive) {
     current_drive = saved_drive;
 }
@@ -381,6 +426,7 @@ bool try_switch_drive(const char* name) {
 
 void process_command(char *input_buffer) {
     char command[MAX_LENGTH];
+    char original_command[MAX_LENGTH];
     char* arguments[MAX_ARGS] = {NULL};  // Initialize all pointers to NULL
     int arg_cnt = split_input(input_buffer, command, arguments, MAX_LENGTH, MAX_ARGS);
 
@@ -406,7 +452,9 @@ void process_command(char *input_buffer) {
         return;
     }
 
-    // Convert only the command to uppercase (not the arguments!)
+    // Preserve a filename's spelling for case-sensitive filesystems before
+    // normalizing built-in command names.
+    strcpy(original_command, command);
     str_to_upper(command);
 
     // Match command
@@ -420,7 +468,17 @@ void process_command(char *input_buffer) {
     }
 
     if (!found) {
-        printf("Unknown command: %s\n", command);
+        if (is_program_filename(original_command)) {
+            const char *program_arguments[] = {original_command};
+            if (arg_cnt != 0) {
+                printf("Program arguments are not supported yet.\n");
+            } else {
+                cmd_run(1, program_arguments);
+            }
+        } else if (!try_run_program_without_extension(original_command,
+                                                      arg_cnt)) {
+            printf("Unknown command: %s\n", command);
+        }
     }
 
     // Free allocated arguments after command execution
@@ -742,9 +800,9 @@ void show_prompt(void) {
         if (shell_path_to_dos(current_path, dos_path) != SHELL_PATH_OK) {
             strcpy(dos_path, "\\");
         }
-        printf("%s:%s> ", drive_label, dos_path);
+        printf("%s:%s>", drive_label, dos_path);
     } else {
-        printf("> ");
+        printf(">");
     }
 }
 
@@ -778,6 +836,7 @@ void command_loop(void) {
          * backend needs a comparatively expensive polling pass. */
         char ch = getchar_nonblocking();
         if (ch == 0) {
+            fdd_service();
             netdev_poll();
             /* Network processing may take long enough for input to arrive. */
             ch = getchar_nonblocking();

@@ -1,12 +1,16 @@
 #include "kernel/sched/scheduler.h"
 
 #include "arch/x86/include/interrupt.h"
+#include "arch/x86/include/tss.h"
+#include "arch/x86/mm/paging.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
 #include "mm/kmalloc.h"
 
 extern void swtch(context_t *old, context_t *new);
+extern void enter_user_mode(uint32_t entry_point, uint32_t user_stack)
+    __attribute__((noreturn));
 
 task_t tasks[MAX_TASKS];
 volatile int current_task = -1;
@@ -34,16 +38,29 @@ static int find_next_runnable(int after) {
 
 static void task_trampoline(void) __attribute__((noreturn));
 static void task_trampoline(void) {
-    irq_enable();
-
     int index = current_task;
     if (index < 0 || index >= num_tasks || tasks[index].context.eip == 0) {
         scheduler_kill_current();
     }
 
+    if (tasks[index].user_mode) {
+        enter_user_mode(tasks[index].user_entry, tasks[index].user_stack);
+    }
+
+    irq_enable();
     void (*entry_point)(void) = (void (*)(void))tasks[index].context.eip;
     entry_point();
     task_exit();
+}
+
+static void release_task_resources(task_t *task) {
+    if (task->page_directory &&
+        task->page_directory != paging_kernel_directory()) {
+        free_page_directory(task->page_directory);
+    }
+    if (task->kernel_stack) k_free(task->kernel_stack);
+    memset(task, 0, sizeof(*task));
+    task->status = TASK_FINISHED;
 }
 
 int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
@@ -55,9 +72,7 @@ int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
     int task_id = -1;
     for (int i = 0; i < num_tasks; ++i) {
         if (tasks[i].status == TASK_FINISHED && i != current_task) {
-            if (tasks[i].kernel_stack) {
-                k_free(tasks[i].kernel_stack);
-            }
+            release_task_resources(&tasks[i]);
             task_id = i;
             break;
         }
@@ -79,6 +94,7 @@ int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
     task->context.eip = (uint32_t)entry_point;
     task->is_started = 1;
     task->process = process;
+    task->page_directory = paging_kernel_directory();
 
     uintptr_t top = ((uintptr_t)stack + STACK_SIZE) & ~(uintptr_t)0x0F;
     uint32_t *initial_stack = (uint32_t*)top;
@@ -95,6 +111,41 @@ int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
 
     irq_restore(flags);
     return task_id;
+}
+
+int create_user_task(uint32_t entry_point, uint32_t user_stack,
+                     uint32_t *kernel_stack, page_directory_t *page_directory,
+                     Process *process) {
+    if (entry_point < USER_BASE || entry_point >= USER_TOP ||
+        user_stack <= USER_BASE || user_stack > USER_TOP || !kernel_stack ||
+        !page_directory) return -1;
+    scheduler_preempt_disable();
+    int task_id = create_task((void (*)(void))(uintptr_t)entry_point,
+                              kernel_stack, process);
+    if (task_id < 0) {
+        scheduler_preempt_enable();
+        return -1;
+    }
+    uint32_t flags = irq_save();
+    task_t *task = &tasks[task_id];
+    task->page_directory = page_directory;
+    task->user_entry = entry_point;
+    task->user_stack = user_stack;
+    task->user_mode = true;
+    irq_restore(flags);
+    scheduler_preempt_enable();
+    return task_id;
+}
+
+static void activate_task_address_space(int task_index) {
+    if (task_index >= 0 && task_index < num_tasks) {
+        task_t *task = &tasks[task_index];
+        switch_page_directory(task->page_directory);
+        tss_set_kernel_stack((uint32_t)(uintptr_t)task->kernel_stack +
+                             STACK_SIZE);
+    } else {
+        switch_page_directory(paging_kernel_directory());
+    }
 }
 
 void scheduler_interrupt_handler(void) {
@@ -115,6 +166,7 @@ void scheduler_interrupt_handler(void) {
 
     current_task = next;
     tasks[next].status = TASK_RUNNING;
+    activate_task_address_space(next);
 
     if (previous < 0) {
         kernel_context_saved = true;
@@ -183,11 +235,13 @@ void task_exit(void) {
     if (next >= 0) {
         current_task = next;
         tasks[next].status = TASK_RUNNING;
+        activate_task_address_space(next);
         swtch(NULL, &tasks[next].context);
     }
 
     current_task = -1;
     if (kernel_context_saved) {
+        activate_task_address_space(-1);
         swtch(NULL, &kernel_context);
     }
 

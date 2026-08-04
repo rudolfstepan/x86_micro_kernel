@@ -13,7 +13,8 @@
 #define KERNEL_PAGE_ENTRIES 64              // Identity-map the first 256 MB
 #define KERNEL_IDENTITY_LIMIT (KERNEL_PAGE_ENTRIES * PAGE_TABLE_ENTRIES * PAGE_SIZE)
 
-#define USER_BASE KERNEL_IDENTITY_LIMIT     // User mappings start after kernel identity map
+#define USER_BASE 0x40000000U               // User address spaces start at 1 GiB
+#define USER_TOP  0xC0000000U               // Exclusive upper user-space bound
 #define USER_PAGE_START (USER_BASE / (PAGE_SIZE * PAGE_TABLE_ENTRIES)) // Start index in the page directory
 
 
@@ -23,6 +24,8 @@
 #define PAGE_USER 0x4
 #define PAGE_CACHE_DISABLE 0x10
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 
@@ -69,6 +72,14 @@ page_directory_t* create_page_directory(void);
 void free_page_directory(page_directory_t* pd);
 int map_page(page_directory_t* pd, uint32_t virtual_address,
              uint32_t physical_address, uint32_t flags);
+int unmap_page(page_directory_t* pd, uint32_t virtual_address,
+               bool free_physical_frame);
+void switch_page_directory(page_directory_t* pd);
+page_directory_t* paging_kernel_directory(void);
+page_directory_t* paging_current_directory(void);
+bool user_range_accessible(const page_directory_t* pd, uint32_t address,
+                           size_t length, bool write_access);
+void* map_kernel_mmio(uint32_t physical_address, size_t length);
 
 
 #endif // PAGING_H

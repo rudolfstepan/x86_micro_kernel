@@ -7,7 +7,7 @@
 #include <stdbool.h>
 
 #include "kernel/proc/process.h"
-//#include "arch/x86/paging.h"
+#include "arch/x86/mm/paging.h"
 
 // Maximale Anzahl von Tasks
 #define MAX_TASKS 8
@@ -35,7 +35,10 @@ typedef struct task {
     int status;             // Task status (e.g., TASK_READY, TASK_RUNNING)
     int is_started;         // Task started flag
     Process *process;       // Process associated with the task
-    //page_directory_t *page_directory; // Pointer to the task's page directory
+    page_directory_t *page_directory;
+    uint32_t user_entry;
+    uint32_t user_stack;
+    bool user_mode;
 } task_t;
 
 extern task_t tasks[];
@@ -43,6 +46,9 @@ extern volatile int current_task;
 extern uint8_t num_tasks;
 
 int create_task(void (*entry_point)(void), uint32_t *stack, Process *process);
+int create_user_task(uint32_t entry_point, uint32_t user_stack,
+                     uint32_t *kernel_stack, page_directory_t *page_directory,
+                     Process *process);
 void scheduler_interrupt_handler(void);
 void scheduler_preempt_disable(void);
 void scheduler_preempt_enable(void);

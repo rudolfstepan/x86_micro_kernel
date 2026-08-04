@@ -212,7 +212,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel user-program bootdisk native-image run run-disk run-native run-fb help format-disks test test-unit test-all test-images test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel user-program bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -274,6 +274,7 @@ help:
 	@echo "  kernel       - Build kernel binary only"
 	@echo "  user-program - Compile USER_PROGRAM_SOURCE into a loadable MYPR file"
 	@echo "  bootdisk     - Create native BIOS disk image"
+	@echo "  floppy-image - Create a 1.44-MB BIOS floppy image"
 	@echo "  clean        - Remove all build artifacts"
 	@echo ""
 	@echo "Run Targets:"
@@ -488,7 +489,7 @@ user-program:
 	@$(PYTHON) scripts/build_user_program.py $(USER_PROGRAM_SOURCE) \
 		--output $(USER_PROGRAM_OUTPUT) --zig $(ZIG)
 
-native-image: kernel user-program
+native-image: floppy-image
 	@echo "Creating native BIOS disk image..."
 	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage1_mbr.asm -o $(OUTPUT_DIR)/stage1_mbr.bin
 	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage2_bios.asm -o $(OUTPUT_DIR)/stage2_bios.bin
@@ -499,9 +500,21 @@ native-image: kernel user-program
 		--output $(OUTPUT_DIR)/x86-microkernel.img \
 		--vmdk $(OUTPUT_DIR)/x86-microkernel.vmdk \
 		--vmware-dir $(OUTPUT_DIR)/vmware/x86-microkernel \
+		--floppy $(OUTPUT_DIR)/x86-microkernel-floppy.img \
 		--data-file HELLO.PRG=$(USER_PROGRAM_OUTPUT)
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/x86-microkernel.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
+
+floppy-image: kernel user-program
+	@echo "Creating 1.44-MB BIOS floppy image..."
+	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage1_floppy.asm -o $(OUTPUT_DIR)/stage1_floppy.bin
+	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage2_bios.asm -o $(OUTPUT_DIR)/stage2_bios.bin
+	@$(PYTHON) scripts/create_floppy_boot_image.py \
+		--stage1 $(OUTPUT_DIR)/stage1_floppy.bin \
+		--stage2 $(OUTPUT_DIR)/stage2_bios.bin \
+		--kernel $(OUTPUT_DIR)/kernel.bin \
+		--output $(OUTPUT_DIR)/x86-microkernel-floppy.img \
+		--data-file HELLO.PRG=$(USER_PROGRAM_OUTPUT)
 
 # ============================================================================
 # TESTING
@@ -572,6 +585,12 @@ run-debug: native-image
 	@$(QEMU) $(QEMU_COMMON) \
 		-device rtl8139,netdev=net0 -netdev user,id=net0 \
 		-s -S -vga std
+
+run-floppy: floppy-image
+	@$(QEMU) -m 512M -boot a \
+		-drive file=$(OUTPUT_DIR)/x86-microkernel-floppy.img,format=raw,if=floppy \
+		-device rtl8139,netdev=net0 -netdev user,id=net0 -vga std \
+		-no-reboot -no-shutdown
 
 run-net-dump: native-image
 	@echo "Writing network traffic to build/network-dump.pcap..."

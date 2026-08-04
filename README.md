@@ -20,6 +20,7 @@ Skript dokumentierten portablen Verzeichnisse unter `C:\tmp`.
 Das erzeugt unter anderem:
 
 - `build/x86-microkernel.img`: bootfähiges 64-MiB-Raw-Image
+- `build/x86-microkernel-floppy.img`: bootfähiges 1,44-MB-FAT12-Diskettenimage
 - `build/x86-microkernel.vmdk` und `.vmx`: VMware-Artefakte
 - `build/vmware/x86-microkernel/`: vollständig startbare VMware-VM
 - `build/programs/HELLO.PRG`: extern gebautes Beispielprogramm
