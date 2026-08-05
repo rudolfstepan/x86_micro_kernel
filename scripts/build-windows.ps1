@@ -141,7 +141,11 @@ try {
         --data-file "LS.PRG=$(Join-Path $UserProgramDir 'LS.PRG')" `
         --data-file "SAVE.PRG=$(Join-Path $UserProgramDir 'SAVE.PRG')" `
         --data-file "BASIC.PRG=$(Join-Path $UserProgramDir 'BASIC.PRG')" `
-        --data-file "SPAWN.PRG=$(Join-Path $UserProgramDir 'SPAWN.PRG')"
+        --data-file "SPAWN.PRG=$(Join-Path $UserProgramDir 'SPAWN.PRG')" `
+        --data-file "PS.PRG=$(Join-Path $UserProgramDir 'PS.PRG')" `
+        --data-file "KILL.PRG=$(Join-Path $UserProgramDir 'KILL.PRG')" `
+        --data-file "PWD.PRG=$(Join-Path $UserProgramDir 'PWD.PRG')" `
+        --data-file "SHELL.PRG=$(Join-Path $UserProgramDir 'SHELL.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Floppy image creation failed with exit code $LASTEXITCODE."
     }
@@ -166,7 +170,11 @@ try {
         --data-file "LS.PRG=$(Join-Path $UserProgramDir 'LS.PRG')" `
         --data-file "SAVE.PRG=$(Join-Path $UserProgramDir 'SAVE.PRG')" `
         --data-file "BASIC.PRG=$(Join-Path $UserProgramDir 'BASIC.PRG')" `
-        --data-file "SPAWN.PRG=$(Join-Path $UserProgramDir 'SPAWN.PRG')"
+        --data-file "SPAWN.PRG=$(Join-Path $UserProgramDir 'SPAWN.PRG')" `
+        --data-file "PS.PRG=$(Join-Path $UserProgramDir 'PS.PRG')" `
+        --data-file "KILL.PRG=$(Join-Path $UserProgramDir 'KILL.PRG')" `
+        --data-file "PWD.PRG=$(Join-Path $UserProgramDir 'PWD.PRG')" `
+        --data-file "SHELL.PRG=$(Join-Path $UserProgramDir 'SHELL.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Native image creation failed with exit code $LASTEXITCODE."
     }

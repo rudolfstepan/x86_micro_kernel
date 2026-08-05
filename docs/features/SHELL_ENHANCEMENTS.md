@@ -17,7 +17,11 @@ DOS-Laufwerk und Verzeichnis, beispielsweise `C:\TOOLS>`.
 | Datei anlegen/löschen | `MKFILE datei`, `DEL datei`, `ERASE`, `RMFILE` |
 | Kopieren | `COPY quelle ziel` |
 | Laufwerke | `DRIVES`, `MOUNT laufwerk`, `C:`, `hdd0:` |
-| Programme | `RUN datei.PRG`, `EXEC datei.PRG`, `PID`, `KILL`, `BASIC` |
+| Programme | `RUN datei.PRG`, `EXEC datei.PRG`, `PS`, `KILL`, `BASIC` |
+
+Der reguläre Bootpfad lädt `SHELL.PRG` als Ring-3-Command-Line-Interpreter.
+Die fest einkompilierte Kernel-Shell ist ausschließlich die Rettungskonsole,
+falls das Userspace-Programm nicht geladen werden kann oder beendet wird.
 | Netzwerk | `GETIP`, `IFCONFIG`, `PING`, `ARP`, `NET` |
 | Diagnose | `MEM`, `DUMP`, `PCI`, `IRQ`, `SYS`, `DATETIME` |
 

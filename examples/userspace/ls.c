@@ -72,6 +72,14 @@ int main(int argc, char **argv) {
     print_unsigned(total_bytes, 0U);
     x86os_puts(" bytes\n");
     print_unsigned(directory_count, 10U);
-    x86os_puts(" Dir(s)\n\n");
+    x86os_puts(" Dir(s)  ");
+    x86os_space_info_t space;
+    if (x86os_space(path, &space) == 0) {
+        print_unsigned(space.free_bytes, 0U);
+        x86os_puts(" bytes free");
+    } else {
+        x86os_puts("free space unavailable");
+    }
+    x86os_puts("\n\n");
     return 0;
 }

@@ -34,6 +34,13 @@
 #define SYS_SPAWN 23
 #define SYS_WAIT 24
 #define SYS_READDIR_BATCH 25
+#define SYS_PROCESS_INFO 26
+#define SYS_KILL 27
+#define SYS_GETCWD 28
+#define SYS_CHDIR 29
+#define SYS_SPAWNV 30
+#define SYS_DRIVE_INFO 31
+#define SYS_SPACE 32
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

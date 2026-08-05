@@ -113,9 +113,41 @@ int x86os_spawn(const char* path) {
     return (int)x86os_syscall(X86OS_SYS_SPAWN, (uintptr_t)path, 0, 0);
 }
 
+int x86os_spawnv(const char* path, int argc, const char* const* argv) {
+    return (int)x86os_syscall(X86OS_SYS_SPAWNV, (uintptr_t)path,
+                              (uintptr_t)argv, (uintptr_t)argc);
+}
+
 int x86os_wait(int pid, int* status) {
     return (int)x86os_syscall(X86OS_SYS_WAIT, (uintptr_t)pid,
                               (uintptr_t)status, 0);
+}
+
+int x86os_process_info(uint32_t index, x86os_process_info_t* info) {
+    return (int)x86os_syscall(X86OS_SYS_PROCESS_INFO, index,
+                              (uintptr_t)info, 0);
+}
+
+int x86os_kill(int pid) {
+    return (int)x86os_syscall(X86OS_SYS_KILL, (uintptr_t)pid, 0, 0);
+}
+
+int x86os_getcwd(char* buffer, size_t size) {
+    return (int)x86os_syscall(X86OS_SYS_GETCWD, (uintptr_t)buffer, size, 0);
+}
+
+int x86os_chdir(const char* path) {
+    return (int)x86os_syscall(X86OS_SYS_CHDIR, (uintptr_t)path, 0, 0);
+}
+
+int x86os_drive_info(uint32_t index, x86os_drive_info_t* info) {
+    return (int)x86os_syscall(X86OS_SYS_DRIVE_INFO, index,
+                              (uintptr_t)info, 0);
+}
+
+int x86os_space(const char* path, x86os_space_info_t* info) {
+    return (int)x86os_syscall(X86OS_SYS_SPACE, (uintptr_t)path,
+                              (uintptr_t)info, 0);
 }
 
 void x86os_exit(int status) {

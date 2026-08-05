@@ -296,6 +296,16 @@ static int ext2_vfs_stat(vfs_filesystem_t* fs, const char* path,
     return VFS_OK;
 }
 
+static int ext2_vfs_space(vfs_filesystem_t* fs, vfs_space_info_t* info) {
+    if (!fs || !fs->fs_data || !info) return VFS_ERR_INVALID;
+    ext2_fs_t* volume = (ext2_fs_t*)fs->fs_data;
+    info->total_bytes = (uint64_t)volume->superblock.s_blocks_count *
+                        volume->block_size;
+    info->free_bytes = (uint64_t)volume->superblock.s_free_blocks_count *
+                       volume->block_size;
+    return VFS_OK;
+}
+
 static vfs_filesystem_ops_t ext2_vfs_ops = {
     .mount = ext2_vfs_mount,
     .unmount = ext2_vfs_unmount,
@@ -309,7 +319,8 @@ static vfs_filesystem_ops_t ext2_vfs_ops = {
     .rmdir = ext2_vfs_rmdir,
     .create = ext2_vfs_create,
     .delete = ext2_vfs_delete,
-    .stat = ext2_vfs_stat
+    .stat = ext2_vfs_stat,
+    .space = ext2_vfs_space
 };
 
 bool ext2_register_vfs(void) {

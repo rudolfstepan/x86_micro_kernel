@@ -510,7 +510,11 @@ native-image: floppy-image
 		--data-file LS.PRG=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
 		--data-file SAVE.PRG=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
 		--data-file BASIC.PRG=$(SYSTEM_PROGRAM_DIR)/BASIC.PRG \
-		--data-file SPAWN.PRG=$(SYSTEM_PROGRAM_DIR)/SPAWN.PRG
+		--data-file SPAWN.PRG=$(SYSTEM_PROGRAM_DIR)/SPAWN.PRG \
+		--data-file PS.PRG=$(SYSTEM_PROGRAM_DIR)/PS.PRG \
+		--data-file KILL.PRG=$(SYSTEM_PROGRAM_DIR)/KILL.PRG \
+		--data-file PWD.PRG=$(SYSTEM_PROGRAM_DIR)/PWD.PRG \
+		--data-file SHELL.PRG=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/x86-microkernel.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
 
@@ -535,7 +539,11 @@ floppy-image: kernel system-programs user-program
 		--data-file LS.PRG=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
 		--data-file SAVE.PRG=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
 		--data-file BASIC.PRG=$(SYSTEM_PROGRAM_DIR)/BASIC.PRG \
-		--data-file SPAWN.PRG=$(SYSTEM_PROGRAM_DIR)/SPAWN.PRG
+		--data-file SPAWN.PRG=$(SYSTEM_PROGRAM_DIR)/SPAWN.PRG \
+		--data-file PS.PRG=$(SYSTEM_PROGRAM_DIR)/PS.PRG \
+		--data-file KILL.PRG=$(SYSTEM_PROGRAM_DIR)/KILL.PRG \
+		--data-file PWD.PRG=$(SYSTEM_PROGRAM_DIR)/PWD.PRG \
+		--data-file SHELL.PRG=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG
 
 # ============================================================================
 # TESTING

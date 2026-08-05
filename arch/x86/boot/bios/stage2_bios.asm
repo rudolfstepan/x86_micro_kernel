@@ -34,6 +34,7 @@ MANIFEST_KERNEL_CRC  equ 36
 
 MULTIBOOT_MAGIC      equ 0x2BADB002
 MULTIBOOT_FLAG_MEM   equ 0x001
+MULTIBOOT_FLAG_BOOT  equ 0x002
 MULTIBOOT_FLAG_MMAP  equ 0x040
 MULTIBOOT_FLAG_NAME  equ 0x200
 
@@ -185,7 +186,11 @@ build_multiboot_info:
     xor ax, ax
     rep stosw
 
-    mov dword [es:MB_INFO_ADDRESS], MULTIBOOT_FLAG_MEM | MULTIBOOT_FLAG_NAME
+    mov dword [es:MB_INFO_ADDRESS], MULTIBOOT_FLAG_MEM | MULTIBOOT_FLAG_BOOT | MULTIBOOT_FLAG_NAME
+    movzx eax, byte [boot_drive]
+    shl eax, 24
+    or eax, 0x00FFFFFF
+    mov [es:MB_INFO_ADDRESS + 12], eax
     int 0x12
     movzx eax, ax
     mov [es:MB_INFO_ADDRESS + 4], eax

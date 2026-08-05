@@ -920,6 +920,27 @@ static int fat32_vfs_stat(vfs_filesystem_t* fs, const char* path,
     return result;
 }
 
+static int fat32_vfs_space(vfs_filesystem_t* fs, vfs_space_info_t* info) {
+    if (!fs || !fs->fs_data || !info) return VFS_ERR_INVALID;
+    uint32_t flags = fat32_operation_begin();
+    fat32_activate(fs);
+    uint32_t total = get_total_clusters(&boot_sector);
+    uint32_t free_clusters = fsinfo_valid ? fsinfo.free_cluster_count
+                                         : 0xFFFFFFFFU;
+    if (free_clusters == 0xFFFFFFFFU || free_clusters > total) {
+        free_clusters = 0;
+        for (uint32_t cluster = 2; cluster <= total + 1U; ++cluster) {
+            if (read_fat_entry(&boot_sector, cluster) == 0) ++free_clusters;
+        }
+    }
+    uint64_t cluster_bytes = (uint64_t)boot_sector.bytes_per_sector *
+                             boot_sector.sectors_per_cluster;
+    info->total_bytes = (uint64_t)total * cluster_bytes;
+    info->free_bytes = (uint64_t)free_clusters * cluster_bytes;
+    fat32_operation_end(flags);
+    return VFS_OK;
+}
+
 // ===========================================================================
 // VFS Operations Table
 // ===========================================================================
@@ -938,7 +959,8 @@ vfs_filesystem_ops_t fat32_vfs_ops = {
     .rmdir = fat32_vfs_rmdir,
     .create = fat32_vfs_create,
     .delete = fat32_vfs_delete,
-    .stat = fat32_vfs_stat
+    .stat = fat32_vfs_stat,
+    .space = fat32_vfs_space
 };
 
 // ===========================================================================

@@ -266,6 +266,43 @@ static int fat12_vfs_stat(vfs_filesystem_t* fs, const char* path,
     return VFS_OK;
 }
 
+static int fat12_vfs_space(vfs_filesystem_t* fs, vfs_space_info_t* info) {
+    if (!fs || !fs->fs_data || !info) return VFS_ERR_INVALID;
+    fat12_t* volume = (fat12_t*)fs->fs_data;
+    const fat12_boot_sector* boot = &volume->boot_sector;
+    uint32_t root_sectors = ((uint32_t)boot->root_entry_count * 32U +
+                             boot->bytes_per_sector - 1U) /
+                            boot->bytes_per_sector;
+    uint32_t total_sectors = boot->total_sectors != 0
+        ? boot->total_sectors : boot->total_sectors_large;
+    uint32_t data_start = boot->reserved_sectors +
+                          (uint32_t)boot->fat_count * boot->sectors_per_fat +
+                          root_sectors;
+    if (boot->bytes_per_sector == 0 || boot->sectors_per_cluster == 0 ||
+        total_sectors <= data_start || volume->fat == NULL) return VFS_ERR_IO;
+    uint32_t clusters = (total_sectors - data_start) /
+                        boot->sectors_per_cluster;
+    uint32_t free_clusters = 0;
+    uint32_t fat_bytes = (uint32_t)boot->sectors_per_fat *
+                         boot->bytes_per_sector;
+    uint32_t fat_clusters = (fat_bytes * 2U) / 3U;
+    fat_clusters = fat_clusters > 2U ? fat_clusters - 2U : 0U;
+    if (clusters > fat_clusters) clusters = fat_clusters;
+    for (uint32_t cluster = 2; cluster <= clusters + 1U; ++cluster) {
+        uint32_t offset = cluster + cluster / 2U;
+        if (offset + 1U >= fat_bytes) return VFS_ERR_IO;
+        uint16_t value = (uint16_t)volume->fat[offset] |
+                         ((uint16_t)volume->fat[offset + 1U] << 8);
+        value = (cluster & 1U) != 0 ? value >> 4 : value & 0x0FFFU;
+        if (value == FAT12_FREE_CLUSTER) ++free_clusters;
+    }
+    uint64_t cluster_bytes = (uint64_t)boot->bytes_per_sector *
+                             boot->sectors_per_cluster;
+    info->total_bytes = (uint64_t)clusters * cluster_bytes;
+    info->free_bytes = (uint64_t)free_clusters * cluster_bytes;
+    return VFS_OK;
+}
+
 vfs_filesystem_ops_t fat12_vfs_ops = {
     .mount = fat12_vfs_mount,
     .unmount = fat12_vfs_unmount,
@@ -279,7 +316,8 @@ vfs_filesystem_ops_t fat12_vfs_ops = {
     .rmdir = fat12_vfs_rmdir,
     .create = fat12_vfs_create,
     .delete = fat12_vfs_delete,
-    .stat = fat12_vfs_stat
+    .stat = fat12_vfs_stat,
+    .space = fat12_vfs_space
 };
 
 void fat12_register_vfs(void) {

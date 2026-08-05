@@ -23,6 +23,10 @@ PROGRAMS = {
     "SAVE.PRG": ROOT / "examples/userspace/save.c",
     "BASIC.PRG": ROOT / "userspace/bin/basic.c",
     "SPAWN.PRG": ROOT / "examples/userspace/spawn.c",
+    "PS.PRG": ROOT / "examples/userspace/ps.c",
+    "KILL.PRG": ROOT / "examples/userspace/kill.c",
+    "PWD.PRG": ROOT / "examples/userspace/pwd.c",
+    "SHELL.PRG": ROOT / "userspace/bin/shell.c",
 }
 
 

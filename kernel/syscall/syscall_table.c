@@ -11,6 +11,7 @@
 #include "drivers/video/display.h"
 #include "drivers/char/kb.h"
 #include "drivers/char/rtc.h"
+#include "drivers/bus/drives.h"
 #include "kernel/time/pit.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/proc/process.h"
@@ -226,6 +227,31 @@ static int syscall_spawn(const char *user_path) {
     return pid < 0 ? -2 : pid;
 }
 
+#define SYSCALL_MAX_ARGUMENTS 16
+#define SYSCALL_ARGUMENT_CAPACITY 256
+static int syscall_spawnv(const char *user_path, const char *const *user_argv,
+                          int argc) {
+    if (argc < 1 || argc > SYSCALL_MAX_ARGUMENTS || user_argv == NULL) {
+        return -22;
+    }
+    char path[PROCESS_PATH_MAX];
+    char arguments[SYSCALL_MAX_ARGUMENTS][SYSCALL_ARGUMENT_CAPACITY];
+    const char *argument_list[SYSCALL_MAX_ARGUMENTS];
+    Process *parent = scheduler_current_process();
+    if (parent == NULL ||
+        copy_string_from_user(path, sizeof(path), user_path) < 0) return -14;
+
+    for (int index = 0; index < argc; ++index) {
+        const char *user_argument;
+        if (copy_from_user(&user_argument, user_argv + index,
+                           sizeof(user_argument)) != 0 ||
+            copy_string_from_user(arguments[index], sizeof(arguments[index]),
+                                  user_argument) < 0) return -14;
+        argument_list[index] = arguments[index];
+    }
+    return process_spawn_args(parent, path, argc, argument_list);
+}
+
 static int syscall_wait(int pid, int *user_status) {
     if (!user_range_accessible(paging_current_directory(),
                                (uint32_t)(uintptr_t)user_status,
@@ -241,6 +267,65 @@ static int syscall_wait(int pid, int *user_status) {
         }
         scheduler_wait_for_process(pid);
     }
+}
+
+static int syscall_process_info(uint32_t index, void *user_info) {
+    process_info_t info;
+    int result = process_get_info(index, &info);
+    if (result <= 0) return result;
+    return copy_to_user(user_info, &info, sizeof(info)) == 0 ? 1 : -14;
+}
+
+static int syscall_kill(int pid) {
+    Process *caller = scheduler_current_process();
+    if (caller == NULL || pid <= 0 || pid == caller->pid) return -22;
+    return process_terminate(pid) == 0 ? 0 : -3;
+}
+
+static int syscall_getcwd(void *user_buffer, size_t size) {
+    if (size == 0 || size > PROCESS_PATH_MAX) return -22;
+    char path[PROCESS_PATH_MAX];
+    if (process_get_working_directory(scheduler_current_process(), path,
+                                      size) != 0) return -34;
+    size_t length = strlen(path) + 1U;
+    return copy_to_user(user_buffer, path, length) == 0 ? 0 : -14;
+}
+
+static int syscall_chdir(const char *user_path) {
+    char path[PROCESS_PATH_MAX];
+    Process *process = scheduler_current_process();
+    if (process == NULL ||
+        copy_string_from_user(path, sizeof(path), user_path) < 0) return -14;
+    return process_set_working_directory(process, path) == 0 ? 0 : -2;
+}
+
+typedef struct {
+    uint32_t type;
+    char name[8];
+    char mount_point[64];
+} syscall_drive_info_t;
+
+static int syscall_drive_info(uint32_t index, void *user_info) {
+    if (index >= (uint32_t)drive_count) return 0;
+    drive_t *drive = &detected_drives[index];
+    if (drive->mount_point[0] == '\0') return -2;
+    syscall_drive_info_t info;
+    memset(&info, 0, sizeof(info));
+    info.type = (uint32_t)drive->type;
+    strncpy(info.name, drive->name, sizeof(info.name) - 1U);
+    strncpy(info.mount_point, drive->mount_point,
+            sizeof(info.mount_point) - 1U);
+    return copy_to_user(user_info, &info, sizeof(info)) == 0 ? 1 : -14;
+}
+
+static int syscall_space(const char *user_path, void *user_info) {
+    char path[PROCESS_PATH_MAX];
+    int result = syscall_copy_path(path, user_path);
+    if (result != 0) return result;
+    vfs_space_info_t info;
+    result = vfs_space(path, &info);
+    if (result != VFS_OK) return -5;
+    return copy_to_user(user_info, &info, sizeof(info)) == 0 ? 0 : -14;
 }
 
 //---------------------------------------------------------------------------------------------
@@ -278,6 +363,13 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_spawn,              // Syscall 23: Start child process
     (void*)&syscall_wait,               // Syscall 24: Collect child status
     (void*)&syscall_readdir_batch,      // Syscall 25: Read directory batch
+    (void*)&syscall_process_info,       // Syscall 26: Enumerate processes
+    (void*)&syscall_kill,               // Syscall 27: Terminate a process
+    (void*)&syscall_getcwd,             // Syscall 28: Current directory
+    (void*)&syscall_chdir,              // Syscall 29: Change directory
+    (void*)&syscall_spawnv,             // Syscall 30: Spawn with arguments
+    (void*)&syscall_drive_info,         // Syscall 31: Mounted drive metadata
+    (void*)&syscall_space,              // Syscall 32: Filesystem capacity
     // Add more syscalls here as needed
 };
 
@@ -419,6 +511,46 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)syscall_readdir_batch(
                 (const char*)(uintptr_t)arg1, arg2,
                 (void*)(uintptr_t)arg3);
+            scheduler_preempt_enable();
+            break;
+        case SYS_PROCESS_INFO:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_process_info(
+                arg1, (void*)(uintptr_t)arg2);
+            scheduler_preempt_enable();
+            break;
+        case SYS_KILL:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_kill((int)arg1);
+            scheduler_preempt_enable();
+            break;
+        case SYS_GETCWD:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_getcwd(
+                (void*)(uintptr_t)arg1, (size_t)arg2);
+            scheduler_preempt_enable();
+            break;
+        case SYS_CHDIR:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_chdir(
+                (const char*)(uintptr_t)arg1);
+            scheduler_preempt_enable();
+            break;
+        case SYS_SPAWNV:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_spawnv(
+                (const char*)(uintptr_t)arg1,
+                (const char* const*)(uintptr_t)arg2, (int)arg3);
+            scheduler_preempt_enable();
+            break;
+        case SYS_DRIVE_INFO:
+            result = (uint32_t)syscall_drive_info(
+                arg1, (void*)(uintptr_t)arg2);
+            break;
+        case SYS_SPACE:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_space(
+                (const char*)(uintptr_t)arg1, (void*)(uintptr_t)arg2);
             scheduler_preempt_enable();
             break;
         default:

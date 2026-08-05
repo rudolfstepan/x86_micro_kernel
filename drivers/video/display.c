@@ -55,6 +55,10 @@ void display_clear() {
 }
 
 void display_putchar(char c) {
+    if (c == '\b') {
+        display_backspace();
+        return;
+    }
 #ifdef USE_FRAMEBUFFER
     if (framebuffer_available()) framebuffer_putchar(c);
     else vga_write_char(c);

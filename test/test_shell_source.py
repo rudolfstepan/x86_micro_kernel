@@ -93,6 +93,34 @@ class ShellSourceRegressionTests(unittest.TestCase):
         )
         self.assertIn('"BASIC.PRG"', programs)
 
+    def test_process_tools_are_userspace_programs(self):
+        self.assertNotIn('{"KILL", cmd_kill}', self.source)
+        self.assertNotIn('{"PID", cmd_list_processes}', self.source)
+        programs = (ROOT / "scripts/build_system_programs.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"PS.PRG"', programs)
+        self.assertIn('"KILL.PRG"', programs)
+
+    def test_userspace_shell_is_built_as_a_system_program(self):
+        programs = (ROOT / "scripts/build_system_programs.py").read_text(
+            encoding="utf-8"
+        )
+        shell = (ROOT / "userspace/bin/shell.c").read_text(encoding="utf-8")
+        self.assertIn('"SHELL.PRG"', programs)
+        self.assertIn("x86os_spawnv", shell)
+        self.assertIn("x86os_chdir", shell)
+        self.assertIn("print_dos_path", shell)
+        self.assertIn("x86os_drive_info", shell)
+
+    def test_kernel_starts_userspace_shell_before_rescue_shell(self):
+        kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
+        start = kernel.index("start_userspace_shell(multiboot_info)")
+        rescue = kernel.index("command_loop();", start)
+        self.assertLess(start, rescue)
+        self.assertIn('"/SHELL.PRG"', kernel)
+        self.assertIn("wait_for_process(pid)", kernel)
+
     def test_prompt_has_no_trailing_space(self):
         self.assertIn('printf("%s:%s>", drive_label, dos_path);', self.source)
         self.assertNotIn('printf("%s:%s> ", drive_label, dos_path);', self.source)

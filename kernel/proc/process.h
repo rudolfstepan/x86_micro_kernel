@@ -44,6 +44,20 @@ typedef struct {
     // Add more fields as needed, e.g., priority, state, etc.
 } Process;
 
+typedef struct {
+    int32_t pid;
+    int32_t parent_pid;
+    int32_t state;
+    int32_t exit_status;
+    char name[32];
+} process_info_t;
+
+#define PROCESS_STATE_READY 0
+#define PROCESS_STATE_RUNNING 1
+#define PROCESS_STATE_SLEEPING 2
+#define PROCESS_STATE_WAITING 3
+#define PROCESS_STATE_ZOMBIE 4
+
 
 int create_process(void* entry_point);
 int create_process_for_file(const char *filename);
@@ -52,6 +66,8 @@ int create_process_for_file_args(const char* filename, int argc,
                                  const char* working_directory);
 void wait_for_process(int pid);
 int process_spawn(Process* parent, const char* path);
+int process_spawn_args(Process* parent, const char* path, int argc,
+                       const char* const* argv);
 int process_wait_status(Process* parent, int pid, int* status);
 void process_orphan_children(int parent_pid);
 void* process_user_malloc(size_t size);
@@ -68,8 +84,11 @@ int process_file_close(Process* process, int descriptor);
 void process_close_all_files(Process* process);
 int process_resolve_path(const Process* process, const char* path,
                          char resolved[PROCESS_PATH_MAX]);
-void list_running_processes(void);
-void terminate_process(int pid);
+int process_get_working_directory(const Process* process, char* buffer,
+                                  size_t size);
+int process_set_working_directory(Process* process, const char* path);
+int process_get_info(uint32_t index, process_info_t* info);
+int process_terminate(int pid);
 
 void start_program_execution(long entry_point);
 void load_and_execute_program(const char* program_name);

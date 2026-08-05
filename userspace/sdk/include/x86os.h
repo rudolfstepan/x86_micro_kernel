@@ -29,7 +29,14 @@ enum {
     X86OS_SYS_GETPID = 22,
     X86OS_SYS_SPAWN = 23,
     X86OS_SYS_WAIT = 24,
-    X86OS_SYS_READDIR_BATCH = 25
+    X86OS_SYS_READDIR_BATCH = 25,
+    X86OS_SYS_PROCESS_INFO = 26,
+    X86OS_SYS_KILL = 27,
+    X86OS_SYS_GETCWD = 28,
+    X86OS_SYS_CHDIR = 29,
+    X86OS_SYS_SPAWNV = 30,
+    X86OS_SYS_DRIVE_INFO = 31,
+    X86OS_SYS_SPACE = 32
 };
 
 enum {
@@ -42,6 +49,38 @@ typedef struct {
     uint32_t type;
     uint32_t size;
 } x86os_file_info_t;
+
+enum {
+    X86OS_PROCESS_READY = 0,
+    X86OS_PROCESS_RUNNING = 1,
+    X86OS_PROCESS_SLEEPING = 2,
+    X86OS_PROCESS_WAITING = 3,
+    X86OS_PROCESS_ZOMBIE = 4
+};
+
+typedef struct {
+    int32_t pid;
+    int32_t parent_pid;
+    int32_t state;
+    int32_t exit_status;
+    char name[32];
+} x86os_process_info_t;
+
+enum {
+    X86OS_DRIVE_ATA = 1,
+    X86OS_DRIVE_FDD = 2
+};
+
+typedef struct {
+    uint32_t type;
+    char name[8];
+    char mount_point[64];
+} x86os_drive_info_t;
+
+typedef struct {
+    uint64_t total_bytes;
+    uint64_t free_bytes;
+} x86os_space_info_t;
 
 #define X86OS_READDIR_BATCH_CAPACITY 4U
 
@@ -71,7 +110,14 @@ int x86os_write(int descriptor, const void* buffer, size_t size);
 int x86os_unlink(const char* path);
 int x86os_getpid(void);
 int x86os_spawn(const char* path);
+int x86os_spawnv(const char* path, int argc, const char* const* argv);
 int x86os_wait(int pid, int* status);
+int x86os_process_info(uint32_t index, x86os_process_info_t* info);
+int x86os_kill(int pid);
+int x86os_getcwd(char* buffer, size_t size);
+int x86os_chdir(const char* path);
+int x86os_drive_info(uint32_t index, x86os_drive_info_t* info);
+int x86os_space(const char* path, x86os_space_info_t* info);
 void x86os_exit(int status) __attribute__((noreturn));
 
 #endif

@@ -213,7 +213,11 @@ int create_process_for_file_args(const char *filename, int argc,
         return -1;
     }
 
-    int slot = claim_process_slot(filename, false);
+    const char *display_name = filename;
+    for (const char *cursor = filename; *cursor != '\0'; ++cursor) {
+        if (*cursor == '/') display_name = cursor + 1;
+    }
+    int slot = claim_process_slot(display_name, false);
     if (slot < 0) {
         printf("Error: Maximum number of running programs reached.\n");
         return -1;
@@ -528,6 +532,28 @@ int process_resolve_path(const Process *process, const char *path,
     return append_path_components(resolved, PROCESS_PATH_MAX, path);
 }
 
+int process_get_working_directory(const Process *process, char *buffer,
+                                  size_t size) {
+    if (process == NULL || buffer == NULL) return -1;
+    size_t length = strlen(process->working_directory) + 1U;
+    if (size < length) return -1;
+    memcpy(buffer, process->working_directory, length);
+    return 0;
+}
+
+int process_set_working_directory(Process *process, const char *path) {
+    if (process == NULL || path == NULL) return -1;
+    char resolved[PROCESS_PATH_MAX];
+    if (process_resolve_path(process, path, resolved) != 0) return -1;
+
+    vfs_dir_entry_t entry;
+    if (vfs_stat(resolved, &entry) != VFS_OK || entry.type != VFS_DIRECTORY) {
+        return -1;
+    }
+    strcpy(process->working_directory, resolved);
+    return 0;
+}
+
 int process_file_open(Process *process, const char *path) {
     if (process == NULL || path == NULL) return -1;
     char resolved[PROCESS_PATH_MAX];
@@ -664,10 +690,17 @@ void wait_for_process(int pid) {
 
 int process_spawn(Process *parent, const char *path) {
     if (parent == NULL || path == NULL || *path == '\0') return -1;
+    const char *arguments[] = {path};
+    return process_spawn_args(parent, path, 1, arguments);
+}
+
+int process_spawn_args(Process *parent, const char *path, int argc,
+                       const char *const *argv) {
+    if (parent == NULL || path == NULL || *path == '\0' || argc < 1 ||
+        argc > 32 || argv == NULL) return -1;
     char resolved[PROCESS_PATH_MAX];
     if (process_resolve_path(parent, path, resolved) != 0) return -1;
-    const char *arguments[] = {path};
-    int pid = create_process_for_file_args(resolved, 1, arguments,
+    int pid = create_process_for_file_args(resolved, argc, argv,
                                            parent->working_directory);
     if (pid < 0) return -1;
 
@@ -720,40 +753,53 @@ void process_orphan_children(int parent_pid) {
     irq_restore(flags);
 }
 
-void list_running_processes(void) {
-    printf("Running programs:\n");
+int process_get_info(uint32_t index, process_info_t* info) {
+    if (info == NULL) return -1;
+    uint32_t flags = irq_save();
+    uint32_t visible = 0;
     for (int i = 0; i < MAX_PROGRAMS; i++) {
-        if (process_list[i].is_running) {
-            printf("PID %d: %s\n", process_list[i].pid, process_list[i].name);
+        Process* process = &process_list[i];
+        if (!process->is_running && !process->has_exited) continue;
+        if (visible++ != index) continue;
+
+        memset(info, 0, sizeof(*info));
+        info->pid = process->pid;
+        info->parent_pid = process->parent_pid;
+        info->exit_status = process->exit_status;
+        strncpy(info->name, process->name, sizeof(info->name) - 1U);
+        if (process->has_exited) {
+            info->state = PROCESS_STATE_ZOMBIE;
+        } else if (process->task_id >= 0 && process->task_id < num_tasks) {
+            int task_state = tasks[process->task_id].status;
+            if (task_state == TASK_RUNNING) info->state = PROCESS_STATE_RUNNING;
+            else if (task_state == TASK_SLEEPING) info->state = PROCESS_STATE_SLEEPING;
+            else if (task_state == TASK_WAITING) info->state = PROCESS_STATE_WAITING;
+            else info->state = PROCESS_STATE_READY;
+        } else {
+            info->state = PROCESS_STATE_READY;
         }
+        irq_restore(flags);
+        return 1;
     }
+    irq_restore(flags);
+    return 0;
 }
 
-void terminate_process(int pid) {
+int process_terminate(int pid) {
+    if (pid <= 0) return -1;
     uint32_t flags = irq_save();
     for (int i = 0; i < MAX_PROGRAMS; i++) {
         if (process_list[i].is_running && process_list[i].pid == pid) {
-            if (process_list[i].task_id < 0) {
+            int task_id = process_list[i].task_id;
+            if (task_id < 0 || task_id >= num_tasks) {
                 irq_restore(flags);
-                printf("Program with PID %d is still loading.\n", pid);
-                return;
+                return -1;
             }
-
-            // Terminate the task associated with the process
-            scheduler_terminate_task(process_list[i].task_id);
-            process_list[i].is_running = false;
-            process_list[i].task_id = -1;
-            process_list[i].uses_shared_program_image = false;
-
-            char name[sizeof(process_list[i].name)];
-            strncpy(name, process_list[i].name, sizeof(name));
-            name[sizeof(name) - 1U] = '\0';
             irq_restore(flags);
-            printf("Program '%s' with PID %d terminated.\n", name, pid);
-            return;
+            scheduler_terminate_task(task_id);
+            return 0;
         }
     }
-
     irq_restore(flags);
-    printf("Error: PID %d not found.\n", pid);
+    return -1;
 }

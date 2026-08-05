@@ -47,6 +47,7 @@
 // Block devices
 #include "drivers/block/ata.h"
 #include "drivers/block/fdd.h"
+#include "drivers/bus/drives.h"
 
  // Bus enumeration
  #include "drivers/bus/pci.h"
@@ -61,6 +62,7 @@
 
 // Filesystems
 #include "fs/vfs/filesystem.h"
+#include "fs/vfs/vfs.h"
 #include "fs/fat32/fat32.h"
 
 // Standard library
@@ -224,6 +226,54 @@ static void system_ready(void) {
     printf("====================\n\n");
 }
 
+static bool shell_path_for_drive(const drive_t *drive,
+                                 char path[PROCESS_PATH_MAX]) {
+    if (drive == NULL || drive->mount_point[0] != '/') return false;
+    if (strcmp(drive->mount_point, "/") == 0) {
+        strcpy(path, "/SHELL.PRG");
+    } else {
+        size_t length = strlen(drive->mount_point);
+        if (length + sizeof("/SHELL.PRG") > PROCESS_PATH_MAX) return false;
+        strcpy(path, drive->mount_point);
+        strcpy(path + length, "/SHELL.PRG");
+    }
+    vfs_dir_entry_t entry;
+    return vfs_stat(path, &entry) == VFS_OK && entry.type == VFS_FILE;
+}
+
+static int start_userspace_shell(const multiboot1_info_t *boot_info) {
+    drive_type_t preferred_type = DRIVE_TYPE_NONE;
+    if ((boot_info->flags & MULTIBOOT1_FLAG_BOOT_DEVICE) != 0) {
+        uint8_t bios_drive = (uint8_t)(boot_info->boot_device >> 24);
+        preferred_type = bios_drive < 0x80 ? DRIVE_TYPE_FDD : DRIVE_TYPE_ATA;
+    }
+
+    for (int pass = 0; pass < 2; ++pass) {
+        for (int index = 0; index < drive_count; ++index) {
+            drive_t *drive = &detected_drives[index];
+            if (drive->mount_point[0] == '\0') continue;
+            bool preferred = preferred_type == DRIVE_TYPE_NONE ||
+                             drive->type == preferred_type;
+            if ((pass == 0) != preferred) continue;
+
+            char shell_path[PROCESS_PATH_MAX];
+            if (!shell_path_for_drive(drive, shell_path)) continue;
+            const char *arguments[] = {"SHELL.PRG"};
+            int pid = create_process_for_file_args(
+                shell_path, 1, arguments, drive->mount_point);
+            if (pid < 0) continue;
+
+            printf("Starting userspace command interpreter from %s\n",
+                   shell_path);
+            wait_for_process(pid);
+            printf("Userspace shell exited; entering rescue shell.\n");
+            return 0;
+        }
+        if (preferred_type == DRIVE_TYPE_NONE) break;
+    }
+    return -1;
+}
+
 //---------------------------------------------------------------------------------------------
 // Kernel Main Entry Point
 //---------------------------------------------------------------------------------------------
@@ -315,7 +365,14 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     // Stage 4: System ready
     system_ready();
 
-    // Enter interactive shell (this never returns)
+    /* SHELL.PRG is the normal command-line interpreter.  The in-kernel shell
+     * remains available only as a recovery console when the userspace image
+     * is missing, cannot be loaded, or terminates unexpectedly. */
+    if (start_userspace_shell(multiboot_info) < 0) {
+        printf("Unable to start SHELL.PRG; entering rescue shell.\n");
+    }
+
+    // Enter the recovery shell (this never returns)
     command_loop();
 
     // Should never reach here

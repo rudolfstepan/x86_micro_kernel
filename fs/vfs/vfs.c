@@ -475,6 +475,14 @@ int vfs_rmdir(const char* path) {
     return fs->ops->rmdir(fs, relative_path);
 }
 
+int vfs_space(const char* path, vfs_space_info_t* info) {
+    if (!path || !info) return VFS_ERR_INVALID;
+    vfs_filesystem_t* fs = vfs_get_filesystem(path);
+    if (!fs) return VFS_ERR_NOT_FOUND;
+    if (!fs->ops->space) return VFS_ERR_UNSUPPORTED;
+    return fs->ops->space(fs, info);
+}
+
 // ===========================================================================
 // File Management
 // ===========================================================================

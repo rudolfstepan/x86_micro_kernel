@@ -25,11 +25,20 @@ Das erzeugt unter anderem:
 - `build/vmware/x86-microkernel/`: vollständig startbare VMware-VM
 - `build/programs/`: native Ring-3-Systemprogramme, unter anderem `SYSINFO`,
   `DATE`, `UPTIME`, `MEMINFO`, `REPEAT`, `CALC`, `ASCII`, `CAT`, `LS`, `SAVE`,
-  `BASIC` und `SPAWN`
+  `BASIC`, `SPAWN`, `PS`, `KILL`, `PWD` und die neue `SHELL`
 
 Native Programme erhalten klassische `argc`/`argv`-Argumente und erben das
 Arbeitsverzeichnis der Shell. Beispielsweise zeigt `cat README.TXT` eine Datei
 direkt aus dem aktuellen Verzeichnis an.
+
+Nach der Hardware- und Dateisysteminitialisierung startet der Kernel
+`SHELL.PRG` automatisch vom BIOS-Bootlaufwerk. Die ältere Kernel-Shell wird
+nur noch als Rettungskonsole verwendet, falls die Userspace-Shell fehlt oder
+beendet wird.
+
+Die Userspace-Shell zeigt DOS-kompatible Laufwerksbuchstaben (`A:`/`B:` für
+Disketten und ab `C:` für ATA-Laufwerke). Ein Laufwerk wird beispielsweise
+mit `A:` oder `C:` gewechselt; interne VFS-Mountpfade bleiben verborgen.
 
 Die fertige VM startet über
 `build\vmware\x86-microkernel\START-VMWARE.cmd`. Alternativ kann die dortige
@@ -104,7 +113,7 @@ Wichtige Befehle:
 | Navigation | `DIR`, `LS`, `CD`, `CHDIR`, `DRIVES`, `MOUNT` |
 | Dateien | `TYPE`, `OPEN`, `COPY`, `DEL`, `ERASE`, `MKFILE` |
 | Verzeichnisse | `MD`, `MKDIR`, `RD`, `RMDIR` |
-| Programme | `RUN`, `EXEC`, `PID`, `KILL`, `BASIC` |
+| Programme | `RUN`, `EXEC`, `PS`, `KILL`, `BASIC` |
 | Netzwerk | `GETIP`, `IFCONFIG`, `PING`, `ARP`, `NET` |
 | System | `HELP`, `CLS`, `MEM`, `PCI`, `IRQ`, `DATETIME` |
 

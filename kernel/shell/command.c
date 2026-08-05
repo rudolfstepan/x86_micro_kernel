@@ -95,7 +95,6 @@ void cmd_rmfile(int cnt, const char **args);
 void cmd_copy(int cnt, const char **args);
 void cmd_run(int cnt, const char **args);
 void cmd_exec(int cnt, const char **args);
-void cmd_kill(int cnt, const char **args);
 void cmd_sys(int cnt, const char **args);
 void cmd_open(int cnt, const char **args);
 void cmd_read_datetime(int cnt, const char **args);
@@ -108,7 +107,6 @@ void cmd_fdd(int cnt, const char **args);
 void cmd_hdd(int cnt, const char **args);
 void cmd_beep(int cnt, const char **args);
 void cmd_wait(int cnt, const char **args);
-void cmd_list_processes(int cnt, const char **args);
 void cmd_start_task(int cnt, const char **args);
 void cmd_net(int cnt, const char **args);
 void cmd_ifconfig(int cnt, const char **args);
@@ -141,7 +139,6 @@ static const command_t command_table[MAX_COMMANDS] = {
     {"COPY", cmd_copy},
     {"RUN", cmd_run},
     {"EXEC", cmd_exec},
-    {"KILL", cmd_kill},
     {"SYS", cmd_sys},
     {"OPEN", cmd_open},
     {"TYPE", cmd_open},
@@ -156,7 +153,6 @@ static const command_t command_table[MAX_COMMANDS] = {
     {"HDD", cmd_hdd},
     {"BEEP", cmd_beep},
     {"WAIT", cmd_wait},
-    {"PID", cmd_list_processes},
     {"RTASK", cmd_start_task},
     {"NET", cmd_net},
     {"IFCONFIG", cmd_ifconfig},
@@ -1111,7 +1107,7 @@ void cmd_help(int arg_count, const char **args) {
     printf("  C: / HDD0:       Change drive\n");
     printf("\nSystem commands:\n");
     printf("  DRIVES  MOUNT  MEM  DUMP  PCI  IRQ  DATETIME\n");
-    printf("  RUN     EXEC   PID  KILL  BASIC  HISTORY\n");
+    printf("  RUN     EXEC   PS   KILL  BASIC  HISTORY\n");
     printf("  NET     IFCONFIG  PING  ARP  GETIP\n");
     printf("\nPaths accept both \\ and /, plus the . and .. components.\n");
     printf("Use arrow keys for history/editing and Ctrl+L to clear.\n\n");
@@ -1537,15 +1533,6 @@ void cmd_exec(int arg_count, const char** arguments) {
     if (pid < 0) printf("Failed to start '%s'.\n", arguments[0]);
 }
 
-void cmd_kill(int arg_count, const char** arguments) {
-    if (arg_count == 0) {
-        printf("KILL command without arguments\n");
-    } else {
-        int pid = strtoul(arguments[0], NULL, 10);
-        terminate_process(pid);
-    }
-}
-
 //TryContext ctx;
 
 void cmd_sys(int arg_count, const char** arguments) {
@@ -1791,12 +1778,6 @@ void open_file(const char* path) {
     if (close_result != VFS_OK) {
         shell_print_vfs_error("TYPE", path, close_result);
     }
-}
-
-void cmd_list_processes(int arg_count, const char** arguments) {
-    (void)arg_count;
-    (void)arguments;
-    list_running_processes();
 }
 
 void cmd_start_task(int arg_count, const char** arguments) {

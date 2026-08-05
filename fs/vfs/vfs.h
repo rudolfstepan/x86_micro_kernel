@@ -38,6 +38,11 @@ typedef struct vfs_dir_entry {
     uint8_t attributes;          // File attributes
 } vfs_dir_entry_t;
 
+typedef struct {
+    uint64_t total_bytes;
+    uint64_t free_bytes;
+} vfs_space_info_t;
+
 // ===========================================================================
 // VFS Node (represents a file, directory, device, etc.)
 // ===========================================================================
@@ -77,6 +82,7 @@ typedef struct vfs_filesystem_ops {
     int (*create)(struct vfs_filesystem* fs, const char* path);
     int (*delete)(struct vfs_filesystem* fs, const char* path);
     int (*stat)(struct vfs_filesystem* fs, const char* path, vfs_dir_entry_t* stat);
+    int (*space)(struct vfs_filesystem* fs, vfs_space_info_t* info);
 } vfs_filesystem_ops_t;
 
 // ===========================================================================
@@ -147,6 +153,7 @@ int vfs_rmdir(const char* path);
 int vfs_create(const char* path);
 int vfs_delete(const char* path);
 int vfs_stat(const char* path, vfs_dir_entry_t* stat);
+int vfs_space(const char* path, vfs_space_info_t* info);
 
 // Utility functions
 vfs_filesystem_t* vfs_get_filesystem(const char* path);

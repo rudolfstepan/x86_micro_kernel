@@ -94,6 +94,53 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         wait = wait[:wait.index("\n}")]
         self.assertNotIn("x86os_delay", wait)
 
+    def test_process_table_is_copied_to_userspace(self):
+        source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        process = (ROOT / "kernel/proc/process.c").read_text(encoding="utf-8")
+        self.assertIn("syscall_process_info", source)
+        self.assertIn("copy_to_user(user_info, &info, sizeof(info))", source)
+        self.assertIn("process_get_info", process)
+        self.assertIn("scheduler_terminate_task(task_id)", process)
+
+    def test_working_directory_syscalls_stay_process_local(self):
+        source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        process = (ROOT / "kernel/proc/process.c").read_text(encoding="utf-8")
+        self.assertIn("syscall_getcwd", source)
+        self.assertIn("syscall_chdir", source)
+        self.assertIn("copy_string_from_user(path, sizeof(path), user_path)", source)
+        self.assertIn("process->working_directory", process)
+        self.assertIn("entry.type != VFS_DIRECTORY", process)
+
+    def test_spawnv_copies_argument_vector_from_userspace(self):
+        source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("syscall_spawnv", source)
+        self.assertIn("copy_from_user(&user_argument", source)
+        self.assertIn("copy_string_from_user(arguments[index]", source)
+        self.assertIn("process_spawn_args(parent, path, argc, argument_list)", source)
+
+    def test_drive_metadata_is_copied_without_kernel_pointers(self):
+        source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("syscall_drive_info", source)
+        self.assertIn("copy_to_user(user_info, &info, sizeof(info))", source)
+
+    def test_filesystem_space_is_reported_through_vfs(self):
+        source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        ls = (ROOT / "examples/userspace/ls.c").read_text(encoding="utf-8")
+        self.assertIn("syscall_space", source)
+        self.assertIn("vfs_space(path, &info)", source)
+        self.assertIn("x86os_space(path, &space)", ls)
+        self.assertIn("bytes free", ls)
+
     def test_ctrl_c_terminates_blocked_userspace_input(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
             encoding="utf-8"
