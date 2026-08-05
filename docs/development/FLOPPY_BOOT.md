@@ -95,5 +95,13 @@ Bootloader und Kernel liegen innerhalb des FAT12-reservierten Bereichs und
 werden deshalb durch normale Dateioperationen nicht überschrieben. Nach dem
 Start mountet der Kernel dieselbe Diskette als aktives Laufwerk.
 
+Der FAT12-VFS ist beschreibbar. `SAVE`, `COPY`, `DEL`, `MKDIR` und `RMDIR`
+funktionieren deshalb auch direkt auf `A:`. Dateien dürfen fragmentierte
+Clusterketten verwenden, Unterverzeichnisse werden bei Bedarf erweitert und
+beide FAT-Kopien werden synchron aktualisiert. Schreibzugriffe werden vom
+FDC-Treiber wie Lesezugriffe bis zum Spurende gebündelt; ein vom Controller
+gemeldeter Schreibschutz oder E/A-Fehler wird an den aufrufenden Prozess
+zurückgegeben.
+
 Vorausgesetzt werden ein BIOS mit Floppy-Bootunterstützung, ein
 386-kompatibler 32-Bit-Prozessor und ausreichend RAM für den Kernel.

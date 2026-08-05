@@ -12,6 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 GCC = shutil.which("gcc")
 
 
+class FilesystemSourceTests(unittest.TestCase):
+    def test_fat12_directory_reads_do_not_print_diagnostics(self) -> None:
+        source = (ROOT / "fs" / "fat12" / "fat12.c").read_text(encoding="utf-8")
+        self.assertNotIn("Reading subdirectory. Start cluster:", source)
+
+
 @unittest.skipUnless(GCC, "gcc is required for the C host regressions")
 class FilesystemHostTests(unittest.TestCase):
     def build_and_run(self, name: str, sources: list[str]) -> None:
@@ -86,6 +92,7 @@ class FilesystemHostTests(unittest.TestCase):
             [
                 "test/test_fat12_host.c",
                 "fs/fat12/fat12.c",
+                "fs/fat12/fat12_vfs_adapter.c",
                 "lib/libc/string.c",
             ],
         )

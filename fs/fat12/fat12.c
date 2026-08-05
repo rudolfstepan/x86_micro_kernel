@@ -18,6 +18,8 @@ uint8_t current_fdd_drive = 0;
 
 static bool fdc_read_logical_range(uint8_t drive, uint32_t logical_sector,
                                    uint32_t count, uint8_t *output);
+static bool fdc_write_logical_range(uint8_t drive, uint32_t logical_sector,
+                                    uint32_t count, const uint8_t *input);
 
 // Helper: read a single sector using DMA first, then fall back to no-DMA path
 static bool fdc_read_with_fallback(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* out_buf) {
@@ -538,8 +540,6 @@ int fat12_read_dir_entries(directory_entry* dir) {
             return -1;
         }
 
-        printf("Reading subdirectory. Start cluster: %d\n", cluster);
-
         const uint32_t cluster_bytes = (uint32_t)spc * bps;
 
         local_buffer = (uint8_t*)malloc(cluster_bytes);
@@ -1044,6 +1044,113 @@ static bool fdc_read_logical_range(uint8_t drive, uint32_t logical_sector,
         logical_sector += batch;
         output += batch * FAT12_SECTOR_SIZE;
         count -= batch;
+    }
+    return true;
+}
+
+static bool fdc_write_logical_range(uint8_t drive, uint32_t logical_sector,
+                                    uint32_t count, const uint8_t *input) {
+    uint16_t sectors_per_track = fat12 && fat12->boot_sector.sectors_per_track ?
+        fat12->boot_sector.sectors_per_track : FAT12_DEFAULT_SPT;
+    while (count != 0) {
+        int track, head, sector;
+        logical_to_chs((int)logical_sector, &track, &head, &sector);
+        uint32_t batch = sectors_per_track - (uint32_t)sector + 1U;
+        if (batch > count) batch = count;
+        if (batch > 18U) batch = 18U;
+        if (!fdc_write_sectors(drive, (uint8_t)head, (uint8_t)track,
+                               (uint8_t)sector, (uint8_t)batch, input)) {
+            for (uint32_t index = 0; index < batch; ++index) {
+                int fallback_track, fallback_head, fallback_sector;
+                logical_to_chs((int)(logical_sector + index),
+                               &fallback_track, &fallback_head,
+                               &fallback_sector);
+                if (!fdd_write_sector(
+                        drive, (uint8_t)fallback_head,
+                        (uint8_t)fallback_track, (uint8_t)fallback_sector,
+                        input + index * FAT12_SECTOR_SIZE)) return false;
+            }
+        }
+        logical_sector += batch;
+        input += batch * FAT12_SECTOR_SIZE;
+        count -= batch;
+    }
+    return true;
+}
+
+uint32_t fat12_cluster_count(void) {
+    if (!fat12 || fat12->boot_sector.sectors_per_cluster == 0) return 0;
+    uint32_t total = fat12->boot_sector.total_sectors ?
+        fat12->boot_sector.total_sectors :
+        fat12->boot_sector.total_sectors_large;
+    if (total <= (uint32_t)fat12->data_start) return 0;
+    uint32_t clusters = (total - (uint32_t)fat12->data_start) /
+                        fat12->boot_sector.sectors_per_cluster;
+    uint32_t fat_entries = ((uint32_t)fat12->boot_sector.sectors_per_fat *
+                            fat12->boot_sector.bytes_per_sector * 2U) / 3U;
+    if (fat_entries <= 2U) return 0;
+    if (clusters > fat_entries - 2U) clusters = fat_entries - 2U;
+    return clusters;
+}
+
+uint16_t fat12_get_fat_entry(uint16_t cluster) {
+    if (!fat12 || !fat12->fat || cluster < FAT12_MIN_CLUSTER ||
+        (uint32_t)cluster >= fat12_cluster_count() + 2U) {
+        return FAT12_BAD_CLUSTER;
+    }
+    uint32_t offset = (uint32_t)cluster + cluster / 2U;
+    uint16_t packed = (uint16_t)fat12->fat[offset] |
+                      ((uint16_t)fat12->fat[offset + 1U] << 8);
+    return (cluster & 1U) ? (uint16_t)(packed >> 4) :
+                            (uint16_t)(packed & 0x0FFFU);
+}
+
+bool fat12_set_fat_entry(uint16_t cluster, uint16_t value) {
+    if (!fat12 || !fat12->fat || cluster < FAT12_MIN_CLUSTER ||
+        (uint32_t)cluster >= fat12_cluster_count() + 2U) return false;
+    uint32_t offset = (uint32_t)cluster + cluster / 2U;
+    value &= 0x0FFFU;
+    if ((cluster & 1U) == 0) {
+        fat12->fat[offset] = (uint8_t)value;
+        fat12->fat[offset + 1U] =
+            (uint8_t)((fat12->fat[offset + 1U] & 0xF0U) | (value >> 8));
+    } else {
+        fat12->fat[offset] =
+            (uint8_t)((fat12->fat[offset] & 0x0FU) | (value << 4));
+        fat12->fat[offset + 1U] = (uint8_t)(value >> 4);
+    }
+    return true;
+}
+
+bool fat12_read_logical_sectors(uint32_t logical_sector, uint32_t count,
+                                void* output) {
+    if (!fat12 || !output || count == 0) return false;
+    uint32_t total = fat12->boot_sector.total_sectors ?
+        fat12->boot_sector.total_sectors :
+        fat12->boot_sector.total_sectors_large;
+    if (logical_sector >= total || count > total - logical_sector) return false;
+    return fdc_read_logical_range(current_fdd_drive, logical_sector, count,
+                                  (uint8_t*)output);
+}
+
+bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
+                                 const void* input) {
+    if (!fat12 || !input || count == 0) return false;
+    uint32_t total = fat12->boot_sector.total_sectors ?
+        fat12->boot_sector.total_sectors :
+        fat12->boot_sector.total_sectors_large;
+    if (logical_sector >= total || count > total - logical_sector) return false;
+    return fdc_write_logical_range(current_fdd_drive, logical_sector, count,
+                                   (const uint8_t*)input);
+}
+
+bool fat12_sync_fat(void) {
+    if (!fat12 || !fat12->fat) return false;
+    uint32_t sectors = fat12->boot_sector.sectors_per_fat;
+    for (uint32_t copy = 0; copy < fat12->boot_sector.fat_count; ++copy) {
+        uint32_t start = (uint32_t)fat12->fat_start + copy * sectors;
+        if (!fat12_write_logical_sectors(start, sectors, fat12->fat))
+            return false;
     }
     return true;
 }

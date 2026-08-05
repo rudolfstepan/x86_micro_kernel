@@ -191,8 +191,9 @@ Buildschritte müssen explizit ergänzt werden.
 
 ## Aktuelle Grenzen
 
-- Externe `.PRG`-Programme sind vertrauenswürdige Ring-0-Tasks und noch nicht
-  durch Ring 3 oder eigene Adressräume isoliert.
+- Externe `.PRG`-Programme laufen in Ring 3 mit eigenen Adressräumen. Die
+  Prozess- und Syscall-API ist jedoch noch klein und besitzt beispielsweise
+  keine Pipes, Signale oder allgemeine Socket-Schnittstelle.
 - Das erzeugte FAT32-Image verwendet für eingebettete Dateien ASCII-8.3-Namen.
 - Der Netzwerkstack besitzt noch kein DNS, TCP, UDP-Socket-API oder IPv6.
 - Der native Bootpfad ist BIOS/MBR-basiert; UEFI ist nicht implementiert.

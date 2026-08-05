@@ -389,15 +389,18 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track,
     return fdc_read_sectors(drive, head, track, sector, 1, buffer);
 }
 
-bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
-    if (!fdc_validate_chs(drive, head, track, sector, buffer)) return false;
+bool fdc_write_sectors(uint8_t drive, uint8_t head, uint8_t track,
+                       uint8_t sector, uint8_t count, const void* buffer) {
+    if (!fdc_validate_chs(drive, head, track, sector, buffer) || count == 0 ||
+        count > 18 || (uint16_t)sector + count - 1U > 18U) return false;
 
     uint8_t *dma_buffer = fdd_dma_buffer();
-    memcpy(dma_buffer, buffer, SECTOR_SIZE);
+    uint16_t transfer_size = (uint16_t)count * SECTOR_SIZE;
+    memcpy(dma_buffer, buffer, transfer_size);
     fdd_prepare_drive(drive);
 
     if (!fdc_seek(drive, head, track) ||
-        !dma_prepare_floppy(dma_buffer, SECTOR_SIZE, false)) {
+        !dma_prepare_floppy(dma_buffer, transfer_size, false)) {
         fdc_motor_off(drive);
         return false;
     }
@@ -409,7 +412,7 @@ bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector
         !fdc_send_command(head) ||
         !fdc_send_command(sector) ||
         !fdc_send_command(2) ||
-        !fdc_send_command(18) ||
+        !fdc_send_command((uint8_t)(sector + count - 1U)) ||
         !fdc_send_command(0x1B) ||
         !fdc_send_command(0xFF) ||
         !fdc_wait_for_irq()) {
@@ -429,6 +432,11 @@ bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector
         return false;
     }
     return true;
+}
+
+bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track,
+                      uint8_t sector, const void* buffer) {
+    return fdc_write_sectors(drive, head, track, sector, 1, buffer);
 }
 
 bool fdc_calibrate_drive(uint8_t drive) {

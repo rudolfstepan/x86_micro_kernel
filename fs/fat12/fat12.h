@@ -118,6 +118,9 @@ typedef struct {
     size_t size;                     // Size of the file in bytes
     size_t position;                 // Current position within the file (offset from base)
     fat12_t* fat12_instance;         // Pointer to the FAT12 structure (for accessing FAT, boot sector, etc.)
+    uint32_t directory_sector;       // Logical sector containing the 8.3 entry
+    uint16_t directory_slot;         // Entry index within directory_sector
+    uint8_t attributes;
 } fat12_file;
 
 
@@ -142,5 +145,13 @@ void print_file_content(fat12_file* file);
 // Validation and utility functions
 bool is_valid_cluster_fat12(int cluster);
 bool validate_fat12_boot_sector(fat12_boot_sector* bs);
+uint32_t fat12_cluster_count(void);
+uint16_t fat12_get_fat_entry(uint16_t cluster);
+bool fat12_set_fat_entry(uint16_t cluster, uint16_t value);
+bool fat12_sync_fat(void);
+bool fat12_read_logical_sectors(uint32_t logical_sector, uint32_t count,
+                                void* output);
+bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
+                                 const void* input);
 
 #endif // FAT12_H

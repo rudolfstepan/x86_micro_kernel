@@ -29,6 +29,14 @@ class FloppyDriverSourceTests(unittest.TestCase):
         self.assertIn("bool fdc_read_sectors", driver)
         self.assertIn("transfer_size", driver)
         self.assertIn("fdc_read_logical_range", fat12)
+
+    def test_runtime_driver_batches_track_bounded_writes(self):
+        driver = (ROOT / "drivers/block/fdd.c").read_text(encoding="utf-8")
+        fat12 = (ROOT / "fs/fat12/fat12.c").read_text(encoding="utf-8")
+        self.assertIn("bool fdc_write_sectors", driver)
+        self.assertIn("sector + count - 1U", driver)
+        self.assertIn("fdc_write_logical_range", fat12)
+        self.assertIn("fat12_sync_fat", fat12)
         self.assertIn("complete_clusters", fat12)
 
     def test_root_directory_can_stop_at_fat_end_marker(self):

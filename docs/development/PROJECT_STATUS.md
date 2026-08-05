@@ -1,6 +1,6 @@
 # Projektstatus
 
-Stand: 3. August 2026. Diese Datei beschreibt den aktuell verifizierten
+Stand: 5. August 2026. Diese Datei beschreibt den aktuell verifizierten
 Zustand. Ältere Sitzungs- und Diagnoseberichte im Repository sind historische
 Arbeitsdokumente.
 
@@ -18,6 +18,8 @@ Arbeitsdokumente.
 - Hostseitige MYPR-Toolchain für externe C- und `.S`-Quellen
 - Loaderprüfung des Program-Headers, der Größen, Basis und Einstiegspunkte
 - Hostseitige Regressionstests für Image, VFS, Pfade und Toolchain
+- Ring-3-Prozesse mit eigenen Seitentabellen und geprüften User-Pointern
+- Schreibbarer FAT12-VFS mit Dateien, Verzeichnissen und FAT-Spiegelung
 
 Der zuletzt ausgeführte vollständige Windows-Build bootete in VMware bis zum
 Prompt `C:\>`, mountete `hdd0` als `/`, initialisierte E1000 und erhielt per
@@ -62,13 +64,15 @@ Zig/Clang und LLD übersetzen freestanding i386-C/Assembly in ein geprüftes
 MYPR-Image. SDK und Startup-Code stellen eine kleine Syscall-API bereit. Das
 Beispiel testet Code, Read-only-Daten, initialisierte Daten, BSS und Exit.
 
-Die zentrale Sicherheitsgrenze bleibt: PRG-Tasks laufen noch privilegiert in
-Ring 0 und teilen den Kerneladressraum. Sie dürfen daher nur aus
-vertrauenswürdigem Quelltext gebaut werden.
+PRG-Tasks laufen unprivilegiert in Ring 3 und besitzen eigene Seitentabellen.
+Syscalls kopieren und prüfen Zeiger über die User-/Kernel-Grenze. Der
+Kernelbereich bleibt für die für Interrupts und Syscalls notwendigen
+Kernelpfade in den Prozessadressräumen abgebildet, ist für Usercode aber nicht
+zugreifbar.
 
 ## Experimentell oder offen
 
-- Ring-3-Prozesse, eigene Seitentabellen und sichere User-Pointer-Prüfung
+- Pipes, Signale und eine allgemeinere Prozess-/IPC-Schnittstelle
 - UEFI-Boot
 - lange FAT-Dateinamen im erzeugten Image
 - TCP/DNS/IPv6 und Anwendungen oberhalb des Minimalstacks
