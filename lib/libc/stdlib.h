@@ -43,6 +43,7 @@
 #define SYS_SPACE 32
 #define SYS_MKDIR 33
 #define SYS_RMDIR 34
+#define SYS_CLEAR 35
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

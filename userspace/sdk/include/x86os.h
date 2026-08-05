@@ -38,7 +38,8 @@ enum {
     X86OS_SYS_DRIVE_INFO = 31,
     X86OS_SYS_SPACE = 32,
     X86OS_SYS_MKDIR = 33,
-    X86OS_SYS_RMDIR = 34
+    X86OS_SYS_RMDIR = 34,
+    X86OS_SYS_CLEAR = 35
 };
 
 enum {
@@ -122,6 +123,7 @@ int x86os_drive_info(uint32_t index, x86os_drive_info_t* info);
 int x86os_space(const char* path, x86os_space_info_t* info);
 int x86os_mkdir(const char* path);
 int x86os_rmdir(const char* path);
+void x86os_clear(void);
 void x86os_exit(int status) __attribute__((noreturn));
 
 #endif

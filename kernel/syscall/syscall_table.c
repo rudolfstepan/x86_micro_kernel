@@ -386,6 +386,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_space,              // Syscall 32: Filesystem capacity
     (void*)&syscall_mkdir,              // Syscall 33: Create directory
     (void*)&syscall_rmdir,              // Syscall 34: Remove directory
+    (void*)&display_clear,              // Syscall 35: Clear terminal
     // Add more syscalls here as needed
 };
 
@@ -578,6 +579,9 @@ void syscall_handler(Registers* regs) {
             scheduler_preempt_disable();
             result = (uint32_t)syscall_rmdir((const char*)(uintptr_t)arg1);
             scheduler_preempt_enable();
+            break;
+        case SYS_CLEAR:
+            display_clear();
             break;
         default:
             result = (uint32_t)-1;

@@ -140,6 +140,9 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         self.assertIn("vfs_space(path, &info)", source)
         self.assertIn("x86os_space(path, &space)", ls)
         self.assertIn("bytes free", ls)
+        self.assertIn("LS_PAGE_ENTRY_LINES", ls)
+        self.assertIn("wait_for_next_page", ls)
+        self.assertIn('key == \'q\' || key == \'Q\' || key == 0x1b', ls)
 
     def test_directory_mutation_is_available_to_userspace(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(

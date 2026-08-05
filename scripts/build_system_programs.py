@@ -31,6 +31,9 @@ PROGRAMS = {
     "RMDIR.PRG": ROOT / "examples/userspace/rmdir.c",
     "DEL.PRG": ROOT / "examples/userspace/del.c",
     "COPY.PRG": ROOT / "examples/userspace/copy.c",
+    "ECHO.PRG": ROOT / "examples/userspace/echo.c",
+    "CLS.PRG": ROOT / "examples/userspace/cls.c",
+    "DRIVES.PRG": ROOT / "examples/userspace/drives.c",
 }
 
 

@@ -158,6 +158,10 @@ int x86os_rmdir(const char* path) {
     return (int)x86os_syscall(X86OS_SYS_RMDIR, (uintptr_t)path, 0, 0);
 }
 
+void x86os_clear(void) {
+    (void)x86os_syscall(X86OS_SYS_CLEAR, 0, 0, 0);
+}
+
 void x86os_exit(int status) {
     (void)x86os_syscall(X86OS_SYS_EXIT, (uintptr_t)status, 0, 0);
     for (;;) {

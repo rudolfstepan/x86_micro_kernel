@@ -48,6 +48,14 @@ danach `PATH`. Beim Start enthält `PATH` das Stammverzeichnis des
 Bootlaufwerks, sodass Befehle auch in Unterverzeichnissen verfügbar bleiben.
 `path` zeigt den Suchpfad an; `path C:\;A:\TOOLS` setzt ihn neu.
 
+Die DOS-Aliase `DIR`, `TYPE`, `MD`, `RD` und `ERASE` starten die passenden
+Ring-3-Programme. Auch `ECHO`, `CLS` und `DRIVES` sind normale Programme und
+keine Kernel-Shell-Befehle.
+
+`LS` beziehungsweise `DIR` pausiert lange Verzeichnislisten automatisch mit
+`-- More --`. Eine Taste zeigt die nächste Bildschirmseite, `Q` oder `Esc`
+bricht die Ausgabe ab.
+
 Die fertige VM startet über
 `build\vmware\x86-microkernel\START-VMWARE.cmd`. Alternativ kann die dortige
 `x86-microkernel.vmx` direkt in VMware Workstation geöffnet werden.

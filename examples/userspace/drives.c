@@ -1,0 +1,26 @@
+#include "x86os.h"
+
+static char drive_letter(const x86os_drive_info_t* drive) {
+    if (drive->name[3] < '0' || drive->name[3] > '9') return '?';
+    if (drive->type == X86OS_DRIVE_FDD) return (char)('A' + drive->name[3] - '0');
+    if (drive->type == X86OS_DRIVE_ATA) return (char)('C' + drive->name[3] - '0');
+    return '?';
+}
+
+int main(void) {
+    x86os_puts("Drive  Device  Type\n");
+    x86os_puts("-------------------\n");
+    for (uint32_t index = 0;; ++index) {
+        x86os_drive_info_t drive;
+        int result = x86os_drive_info(index, &drive);
+        if (result == 0) break;
+        if (result < 0) continue;
+        x86os_putchar(drive_letter(&drive));
+        x86os_puts(":     ");
+        x86os_puts(drive.name);
+        x86os_puts("    ");
+        x86os_puts(drive.type == X86OS_DRIVE_FDD ? "FDD" : "HDD");
+        x86os_putchar('\n');
+    }
+    return 0;
+}

@@ -1,5 +1,7 @@
 #include "x86os.h"
 
+#define LS_PAGE_ENTRY_LINES 16U
+
 static unsigned int text_length(const char *text) {
     unsigned int length = 0;
     while (text[length] != '\0') ++length;
@@ -27,6 +29,15 @@ static void print_name(const char *name) {
     if (length < 40U) print_spaces(40U - length);
 }
 
+static int wait_for_next_page(void) {
+    x86os_puts("-- More --  (Q to quit)");
+    int key = x86os_getchar();
+    x86os_putchar('\r');
+    x86os_puts("                         ");
+    x86os_putchar('\r');
+    return key == 'q' || key == 'Q' || key == 0x1b ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
     const char *path = argc > 1 ? argv[1] : ".";
     x86os_file_info_t directory;
@@ -44,6 +55,8 @@ int main(int argc, char **argv) {
     uint32_t file_count = 0;
     uint32_t directory_count = 0;
     uint64_t total_bytes = 0;
+    uint32_t page_lines = 0;
+    int aborted = 0;
     for (uint32_t index = 0;;) {
         x86os_file_info_t entries[X86OS_READDIR_BATCH_CAPACITY];
         int result = x86os_readdir_batch(path, index, entries);
@@ -53,6 +66,13 @@ int main(int argc, char **argv) {
         }
         if (result == 0) break;
         for (int batch_index = 0; batch_index < result; ++batch_index) {
+            if (page_lines == LS_PAGE_ENTRY_LINES) {
+                if (!wait_for_next_page()) {
+                    aborted = 1;
+                    break;
+                }
+                page_lines = 0;
+            }
             x86os_file_info_t *entry = &entries[batch_index];
             print_name(entry->name);
             if (entry->type == X86OS_DIRECTORY) {
@@ -64,9 +84,12 @@ int main(int argc, char **argv) {
                 total_bytes += entry->size;
             }
             x86os_putchar('\n');
+            ++page_lines;
         }
+        if (aborted) break;
         index += (uint32_t)result;
     }
+    if (aborted) return 0;
     print_unsigned(file_count, 10U);
     x86os_puts(" File(s) ");
     print_unsigned(total_bytes, 0U);

@@ -100,6 +100,9 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "RMDIR.PRG",
                 "DEL.PRG",
                 "COPY.PRG",
+                "ECHO.PRG",
+                "CLS.PRG",
+                "DRIVES.PRG",
             }
             self.assertEqual({path.name for path in output.iterdir()}, expected)
             for name in expected:

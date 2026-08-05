@@ -115,6 +115,9 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertIn("search_paths", shell)
         self.assertIn("show_search_path", shell)
         self.assertIn("join_program_path", shell)
+        self.assertIn('program_alias', shell)
+        self.assertIn('text_equal(command, "dir")', shell)
+        self.assertIn('text_equal(command, "type")', shell)
 
     def test_kernel_starts_userspace_shell_before_rescue_shell(self):
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")

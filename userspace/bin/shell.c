@@ -266,18 +266,29 @@ static void show_prompt(void) {
 
 static void show_help(void) {
     x86os_puts("Built-ins: cd path pwd help exit\n");
+    x86os_puts("Aliases: dir type md rd erase\n");
     x86os_puts("Other commands are loaded as .PRG programs.\n");
+}
+
+static const char* program_alias(const char* command) {
+    if (text_equal(command, "dir")) return "LS";
+    if (text_equal(command, "type")) return "CAT";
+    if (text_equal(command, "md")) return "MKDIR";
+    if (text_equal(command, "rd")) return "RMDIR";
+    if (text_equal(command, "erase")) return "DEL";
+    return command;
 }
 
 static void run_program(int argc, const char* argv[SHELL_MAX_ARGUMENTS]) {
     char program[SHELL_PATH_CAPACITY];
-    unsigned length = text_length(argv[0]);
-    unsigned suffix = has_program_extension(argv[0]) ? 0U : 4U;
+    const char* command = program_alias(argv[0]);
+    unsigned length = text_length(command);
+    unsigned suffix = has_program_extension(command) ? 0U : 4U;
     if (length + suffix + 1U > sizeof(program)) {
         x86os_puts("Command name is too long.\n");
         return;
     }
-    for (unsigned index = 0; index < length; ++index) program[index] = argv[0][index];
+    for (unsigned index = 0; index < length; ++index) program[index] = command[index];
     if (suffix != 0U) {
         program[length++] = '.';
         program[length++] = 'P';
@@ -351,7 +362,7 @@ int main(void) {
                 print_dos_path(path);
                 x86os_putchar('\n');
             } else x86os_puts("Unable to read working directory.\n");
-        } else if (text_equal(argv[0], "cd")) {
+        } else if (text_equal(argv[0], "cd") || text_equal(argv[0], "chdir")) {
             if (argc != 2) x86os_puts("Usage: cd <directory>\n");
             else {
                 char path[SHELL_PATH_CAPACITY];
