@@ -156,7 +156,8 @@ try {
         --data-file "COPY.PRG=$(Join-Path $UserProgramDir 'COPY.PRG')" `
         --data-file "ECHO.PRG=$(Join-Path $UserProgramDir 'ECHO.PRG')" `
         --data-file "CLS.PRG=$(Join-Path $UserProgramDir 'CLS.PRG')" `
-        --data-file "DRIVES.PRG=$(Join-Path $UserProgramDir 'DRIVES.PRG')"
+        --data-file "DRIVES.PRG=$(Join-Path $UserProgramDir 'DRIVES.PRG')" `
+        --data-file "EDIT.PRG=$(Join-Path $UserProgramDir 'EDIT.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Floppy image creation failed with exit code $LASTEXITCODE."
     }
@@ -192,7 +193,8 @@ try {
         --data-file "COPY.PRG=$(Join-Path $UserProgramDir 'COPY.PRG')" `
         --data-file "ECHO.PRG=$(Join-Path $UserProgramDir 'ECHO.PRG')" `
         --data-file "CLS.PRG=$(Join-Path $UserProgramDir 'CLS.PRG')" `
-        --data-file "DRIVES.PRG=$(Join-Path $UserProgramDir 'DRIVES.PRG')"
+        --data-file "DRIVES.PRG=$(Join-Path $UserProgramDir 'DRIVES.PRG')" `
+        --data-file "EDIT.PRG=$(Join-Path $UserProgramDir 'EDIT.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Native image creation failed with exit code $LASTEXITCODE."
     }

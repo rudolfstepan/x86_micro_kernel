@@ -17,7 +17,11 @@ void x86os_putchar(char value) {
 
 void x86os_puts(const char* text) {
     if (!text) return;
-    while (*text != '\0') x86os_putchar(*text++);
+    size_t length = 0;
+    while (text[length] != '\0') ++length;
+    if (length != 0)
+        (void)x86os_syscall(X86OS_SYS_TERMINAL_WRITE,
+                            (uintptr_t)text, length, 0);
 }
 
 void x86os_print_number(int value) {
@@ -30,6 +34,10 @@ void x86os_delay(uint32_t milliseconds) {
 
 int x86os_getchar(void) {
     return (int)x86os_syscall(X86OS_SYS_GETCHAR, 0, 0, 0);
+}
+
+int x86os_getchar_nonblocking(void) {
+    return (int)x86os_syscall(X86OS_SYS_GETCHAR_NONBLOCKING, 0, 0, 0);
 }
 
 void* x86os_malloc(size_t size) {
@@ -160,6 +168,17 @@ int x86os_rmdir(const char* path) {
 
 void x86os_clear(void) {
     (void)x86os_syscall(X86OS_SYS_CLEAR, 0, 0, 0);
+}
+
+void x86os_set_cursor(unsigned int column, unsigned int row) {
+    (void)x86os_syscall(X86OS_SYS_SET_CURSOR, column, row, 0);
+}
+
+void x86os_draw_text(unsigned int column, unsigned int row,
+                     const char* text, size_t length) {
+    uintptr_t position = ((uintptr_t)row << 16) | column;
+    (void)x86os_syscall(X86OS_SYS_TERMINAL_DRAW, position,
+                        (uintptr_t)text, length);
 }
 
 void x86os_exit(int status) {

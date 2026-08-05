@@ -110,12 +110,19 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "ECHO.PRG",
                 "CLS.PRG",
                 "DRIVES.PRG",
+                "EDIT.PRG",
             }
             self.assertEqual({path.name for path in output.iterdir()}, expected)
             for name in expected:
                 program = (output / name).read_bytes()
                 self.assertEqual(program[:4], b"MYPR")
                 self.assertGreater(len(program), 28)
+
+    def test_editor_is_packaged_in_both_native_images(self):
+        build_script = (ROOT / "scripts" / "build-windows.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(build_script.count('--data-file "EDIT.PRG='), 2)
 
 
 if __name__ == "__main__":

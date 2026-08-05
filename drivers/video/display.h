@@ -41,6 +41,7 @@ void display_write(const char* str);
 // Get/set cursor position
 void display_get_cursor(int* x, int* y);
 void display_set_cursor(int x, int y);
+void display_write_at(int x, int y, const char* text, unsigned int length);
 
 // Backspace
 void display_backspace();

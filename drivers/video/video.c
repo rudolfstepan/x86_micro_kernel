@@ -84,6 +84,16 @@ void set_cursor_position(int x, int y) {
     outb(VGA_DATA_REGISTER, (unsigned char)((position >> 8) & 0xFF));
 }
 
+void vga_write_at(int x, int y, const char* text, unsigned int length) {
+    if (!text || x < 0 || y < 0 || x >= VGA_COLS || y >= VGA_ROWS) return;
+    unsigned int available = (unsigned int)(VGA_COLS - x);
+    if (length > available) length = available;
+    unsigned int offset = (unsigned int)y * VGA_COLS + (unsigned int)x;
+    for (unsigned int index = 0; index < length; ++index)
+        vga_buffer[offset + index] = (unsigned short)(uint8_t)text[index] |
+                                     ((unsigned short)(uint8_t)current_color << 8);
+}
+
 // write a character to the screen
 void vga_write_char(char ch) {
     // Write to serial console first (for nographic mode)

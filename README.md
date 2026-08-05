@@ -25,11 +25,16 @@ Das erzeugt unter anderem:
 - `build/vmware/x86-microkernel/`: vollständig startbare VMware-VM
 - `build/programs/`: native Ring-3-Systemprogramme, unter anderem `SYSINFO`,
   `DATE`, `UPTIME`, `MEMINFO`, `REPEAT`, `CALC`, `ASCII`, `CAT`, `LS`, `SAVE`,
-  `BASIC`, `SPAWN`, `PS`, `KILL`, `PWD` und die neue `SHELL`
+  `BASIC`, `SPAWN`, `PS`, `KILL`, `PWD`, `EDIT` und `SHELL`
 
 Native Programme erhalten klassische `argc`/`argv`-Argumente und erben das
 Arbeitsverzeichnis der Shell. Beispielsweise zeigt `cat README.TXT` eine Datei
 direkt aus dem aktuellen Verzeichnis an.
+
+`EDIT` ist derzeit ein experimenteller, noch nicht fertiggestellter
+Vollbild-Texteditor. Grundlegende Navigation und Bearbeitung funktionieren;
+komfortable Dialoge, robuste Dateiersetzung und weitere Praxistests fehlen
+noch.
 
 Nach der Hardware- und Dateisysteminitialisierung startet der Kernel
 `SHELL.PRG` automatisch vom BIOS-Bootlaufwerk. Die ältere Kernel-Shell wird
@@ -127,7 +132,7 @@ Wichtige Befehle:
 | Bereich | Befehle |
 |---|---|
 | Navigation | `DIR`, `LS`, `CD`, `CHDIR`, `DRIVES`, `MOUNT` |
-| Dateien | `TYPE`, `OPEN`, `COPY`, `DEL`, `ERASE`, `MKFILE` |
+| Dateien | `TYPE`, `OPEN`, `COPY`, `DEL`, `ERASE`, `MKFILE`, `EDIT` |
 | Verzeichnisse | `MD`, `MKDIR`, `RD`, `RMDIR` |
 | Programme | `RUN`, `EXEC`, `PS`, `KILL`, `BASIC` |
 | Netzwerk | `GETIP`, `IFCONFIG`, `PING`, `ARP`, `NET` |

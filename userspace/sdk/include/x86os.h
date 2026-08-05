@@ -39,7 +39,11 @@ enum {
     X86OS_SYS_SPACE = 32,
     X86OS_SYS_MKDIR = 33,
     X86OS_SYS_RMDIR = 34,
-    X86OS_SYS_CLEAR = 35
+    X86OS_SYS_CLEAR = 35,
+    X86OS_SYS_SET_CURSOR = 36,
+    X86OS_SYS_TERMINAL_WRITE = 37,
+    X86OS_SYS_TERMINAL_DRAW = 38,
+    X86OS_SYS_GETCHAR_NONBLOCKING = 39
 };
 
 enum {
@@ -94,6 +98,7 @@ void x86os_puts(const char* text);
 void x86os_print_number(int value);
 void x86os_delay(uint32_t milliseconds);
 int x86os_getchar(void);
+int x86os_getchar_nonblocking(void);
 void* x86os_malloc(size_t size);
 void x86os_free(void* pointer);
 void* x86os_realloc(void* pointer, size_t size);
@@ -124,6 +129,9 @@ int x86os_space(const char* path, x86os_space_info_t* info);
 int x86os_mkdir(const char* path);
 int x86os_rmdir(const char* path);
 void x86os_clear(void);
+void x86os_set_cursor(unsigned int column, unsigned int row);
+void x86os_draw_text(unsigned int column, unsigned int row,
+                     const char* text, size_t length);
 void x86os_exit(int status) __attribute__((noreturn));
 
 #endif

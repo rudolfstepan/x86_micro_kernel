@@ -34,6 +34,7 @@ PROGRAMS = {
     "ECHO.PRG": ROOT / "examples/userspace/echo.c",
     "CLS.PRG": ROOT / "examples/userspace/cls.c",
     "DRIVES.PRG": ROOT / "examples/userspace/drives.c",
+    "EDIT.PRG": ROOT / "userspace/bin/edit.c",
 }
 
 

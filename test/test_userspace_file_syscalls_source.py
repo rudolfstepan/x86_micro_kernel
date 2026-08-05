@@ -163,6 +163,18 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         self.assertIn("result == 0x03U", getchar_case)
         self.assertIn("task_exit_status(130);", getchar_case)
 
+    def test_buffered_terminal_output_validates_userspace_memory(self):
+        source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        sdk = (ROOT / "userspace/sdk/x86os.c").read_text(encoding="utf-8")
+        self.assertIn("static int syscall_terminal_write", source)
+        self.assertIn("user_range_accessible", source)
+        self.assertIn("X86OS_SYS_TERMINAL_WRITE", sdk)
+        self.assertIn("static int syscall_terminal_draw", source)
+        self.assertIn("X86OS_SYS_TERMINAL_DRAW", sdk)
+        self.assertIn("X86OS_SYS_GETCHAR_NONBLOCKING", sdk)
+
 
 if __name__ == "__main__":
     unittest.main()

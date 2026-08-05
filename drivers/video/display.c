@@ -96,6 +96,21 @@ void display_set_cursor(int x, int y) {
 #endif
 }
 
+void display_write_at(int x, int y, const char* text, unsigned int length) {
+    if (!text) return;
+#ifdef USE_FRAMEBUFFER
+    if (framebuffer_available()) {
+        framebuffer_set_cursor(x, y);
+        for (unsigned int index = 0; index < length; ++index)
+            framebuffer_putchar(text[index]);
+    } else {
+        vga_write_at(x, y, text, length);
+    }
+#else
+    vga_write_at(x, y, text, length);
+#endif
+}
+
 void display_backspace() {
 #ifdef USE_FRAMEBUFFER
     if (framebuffer_available()) framebuffer_putchar('\b');

@@ -119,6 +119,16 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertIn('text_equal(command, "dir")', shell)
         self.assertIn('text_equal(command, "type")', shell)
 
+    def test_text_editor_is_built_as_a_system_program(self):
+        programs = (ROOT / "scripts/build_system_programs.py").read_text(
+            encoding="utf-8"
+        )
+        editor = (ROOT / "userspace/bin/edit.c").read_text(encoding="utf-8")
+        self.assertIn('"EDIT.PRG"', programs)
+        self.assertIn("x86os_create(path)", editor)
+        self.assertIn("Save modified buffer?", editor)
+        self.assertIn("x86os_set_cursor", editor)
+
     def test_tab_completes_commands_and_file_names(self):
         shell = (ROOT / "userspace/bin/shell.c").read_text(encoding="utf-8")
         self.assertIn("complete_line(line, &length)", shell)

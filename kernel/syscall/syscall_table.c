@@ -58,6 +58,39 @@ static uint32_t syscall_memory_kb(void) {
     return kibibytes > UINT32_MAX ? UINT32_MAX : (uint32_t)kibibytes;
 }
 
+static int syscall_terminal_write(const char *user_buffer, size_t size) {
+    if (size > INT_MAX ||
+        !user_range_accessible(paging_current_directory(),
+                               (uint32_t)(uintptr_t)user_buffer,
+                               size, false)) return -14;
+    char buffer[256];
+    size_t total = 0;
+    while (total < size) {
+        size_t amount = size - total;
+        if (amount > sizeof(buffer)) amount = sizeof(buffer);
+        if (copy_from_user(buffer, user_buffer + total, amount) != 0) return -14;
+        for (size_t index = 0; index < amount; ++index)
+            display_putchar(buffer[index]);
+        total += amount;
+    }
+    return (int)total;
+}
+
+static int syscall_terminal_draw(uint32_t position, const char *user_buffer,
+                                 size_t size) {
+    uint32_t column = position & 0xFFFFU;
+    uint32_t row = position >> 16;
+    if (column >= 80U || row >= 25U || size > 80U - column) return -22;
+    if (size == 0) return 0;
+    if (!user_range_accessible(paging_current_directory(),
+                               (uint32_t)(uintptr_t)user_buffer,
+                               size, false)) return -14;
+    char buffer[80];
+    if (copy_from_user(buffer, user_buffer, size) != 0) return -14;
+    display_write_at((int)column, (int)row, buffer, (unsigned int)size);
+    return (int)size;
+}
+
 static int syscall_open(const char *user_path) {
     char path[256];
     Process *process = scheduler_current_process();
@@ -387,6 +420,10 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_mkdir,              // Syscall 33: Create directory
     (void*)&syscall_rmdir,              // Syscall 34: Remove directory
     (void*)&display_clear,              // Syscall 35: Clear terminal
+    (void*)&display_set_cursor,         // Syscall 36: Set terminal cursor
+    (void*)&syscall_terminal_write,     // Syscall 37: Write terminal buffer
+    (void*)&syscall_terminal_draw,      // Syscall 38: Draw text at position
+    (void*)&getchar_nonblocking,        // Syscall 39: Poll terminal input
     // Add more syscalls here as needed
 };
 
@@ -582,6 +619,23 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_CLEAR:
             display_clear();
+            break;
+        case SYS_SET_CURSOR:
+            if (arg1 < 80U && arg2 < 25U)
+                display_set_cursor((int)arg1, (int)arg2);
+            else
+                result = (uint32_t)-22;
+            break;
+        case SYS_TERMINAL_WRITE:
+            result = (uint32_t)syscall_terminal_write(
+                (const char*)(uintptr_t)arg1, (size_t)arg2);
+            break;
+        case SYS_TERMINAL_DRAW:
+            result = (uint32_t)syscall_terminal_draw(
+                arg1, (const char*)(uintptr_t)arg2, (size_t)arg3);
+            break;
+        case SYS_GETCHAR_NONBLOCKING:
+            result = (uint32_t)(uint8_t)getchar_nonblocking();
             break;
         default:
             result = (uint32_t)-1;

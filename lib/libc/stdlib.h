@@ -44,6 +44,10 @@
 #define SYS_MKDIR 33
 #define SYS_RMDIR 34
 #define SYS_CLEAR 35
+#define SYS_SET_CURSOR 36
+#define SYS_TERMINAL_WRITE 37
+#define SYS_TERMINAL_DRAW 38
+#define SYS_GETCHAR_NONBLOCKING 39
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)
