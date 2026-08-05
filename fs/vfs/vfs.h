@@ -67,6 +67,8 @@ typedef struct vfs_filesystem_ops {
     
     // Directory operations
     int (*readdir)(vfs_node_t* node, uint32_t index, vfs_dir_entry_t* entry);
+    int (*readdir_batch)(vfs_node_t* node, uint32_t index,
+                         vfs_dir_entry_t* entries, uint32_t capacity);
     int (*finddir)(vfs_node_t* node, const char* name, vfs_node_t** child);
     int (*mkdir)(struct vfs_filesystem* fs, const char* path);
     int (*rmdir)(struct vfs_filesystem* fs, const char* path);
@@ -136,6 +138,8 @@ int vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* b
 
 // Directory operations
 int vfs_readdir(const char* path, uint32_t index, vfs_dir_entry_t* entry);
+int vfs_readdir_batch(const char* path, uint32_t index,
+                      vfs_dir_entry_t* entries, uint32_t capacity);
 int vfs_mkdir(const char* path);
 int vfs_rmdir(const char* path);
 

@@ -407,6 +407,38 @@ int vfs_readdir(const char* path, uint32_t index, vfs_dir_entry_t* entry) {
     return result;
 }
 
+int vfs_readdir_batch(const char* path, uint32_t index,
+                      vfs_dir_entry_t* entries, uint32_t capacity) {
+    if (!path || !entries || capacity == 0) return VFS_ERR_INVALID;
+    vfs_filesystem_t* fs = vfs_get_filesystem(path);
+    if (!fs || !fs->ops->open) return VFS_ERR_NOT_FOUND;
+
+    vfs_node_t* node = NULL;
+    int result = fs->ops->open(fs, vfs_get_relative_path(path, fs), &node);
+    if (result != VFS_OK) return result;
+    if (!node || node->type != VFS_DIRECTORY) {
+        result = VFS_ERR_NOT_DIR;
+    } else if (fs->ops->readdir_batch) {
+        result = fs->ops->readdir_batch(node, index, entries, capacity);
+    } else if (!fs->ops->readdir) {
+        result = VFS_ERR_UNSUPPORTED;
+    } else {
+        uint32_t count = 0;
+        while (count < capacity) {
+            int current = fs->ops->readdir(node, index + count,
+                                           &entries[count]);
+            if (current == VFS_ERR_NOT_FOUND) break;
+            if (current != VFS_OK) { result = current; goto close_node; }
+            ++count;
+        }
+        result = (int)count;
+    }
+
+close_node:
+    if (node && fs->ops->close) (void)fs->ops->close(node);
+    return result;
+}
+
 int vfs_mkdir(const char* path) {
     if (!path) {
         return VFS_ERR_INVALID;

@@ -28,7 +28,8 @@ enum {
     X86OS_SYS_UNLINK = 21,
     X86OS_SYS_GETPID = 22,
     X86OS_SYS_SPAWN = 23,
-    X86OS_SYS_WAIT = 24
+    X86OS_SYS_WAIT = 24,
+    X86OS_SYS_READDIR_BATCH = 25
 };
 
 enum {
@@ -41,6 +42,8 @@ typedef struct {
     uint32_t type;
     uint32_t size;
 } x86os_file_info_t;
+
+#define X86OS_READDIR_BATCH_CAPACITY 4U
 
 uintptr_t x86os_syscall(uint32_t number, uintptr_t argument1,
                         uintptr_t argument2, uintptr_t argument3);
@@ -61,6 +64,8 @@ int x86os_read(int descriptor, void* buffer, size_t size);
 int x86os_close(int descriptor);
 int x86os_stat(const char* path, x86os_file_info_t* info);
 int x86os_readdir(const char* path, uint32_t index, x86os_file_info_t* info);
+int x86os_readdir_batch(const char* path, uint32_t index,
+                        x86os_file_info_t* entries);
 int x86os_create(const char* path);
 int x86os_write(int descriptor, const void* buffer, size_t size);
 int x86os_unlink(const char* path);

@@ -33,6 +33,7 @@
 #define SYS_GETPID 22
 #define SYS_SPAWN 23
 #define SYS_WAIT 24
+#define SYS_READDIR_BATCH 25
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

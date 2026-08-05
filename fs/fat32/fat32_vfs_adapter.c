@@ -627,9 +627,10 @@ static int fat32_vfs_write_unlocked(vfs_node_t* node, uint32_t offset,
     return written;
 }
 
-static int fat32_vfs_readdir_unlocked(vfs_node_t* node, uint32_t index,
-                                      vfs_dir_entry_t* entry) {
-    if (!node || !entry) {
+static int fat32_vfs_readdir_batch_unlocked(vfs_node_t* node, uint32_t index,
+                                            vfs_dir_entry_t* entries_out,
+                                            uint32_t capacity) {
+    if (!node || !entries_out || capacity == 0) {
         return VFS_ERR_INVALID;
     }
     
@@ -640,6 +641,7 @@ static int fat32_vfs_readdir_unlocked(vfs_node_t* node, uint32_t index,
     fat32_activate(node->fs);
     uint32_t cluster = node->inode;
     uint32_t visible_index = 0;
+    uint32_t count = 0;
     uint32_t clusters_left = get_total_clusters(&boot_sector);
     uint8_t sector_buffer[SECTOR_SIZE];
 
@@ -654,25 +656,31 @@ static int fat32_vfs_readdir_unlocked(vfs_node_t* node, uint32_t index,
             struct fat32_dir_entry* entries =
                 (struct fat32_dir_entry*)sector_buffer;
             for (uint32_t i = 0; i < SECTOR_SIZE / sizeof(*entries); i++) {
-                if (entries[i].name[0] == 0x00) return VFS_ERR_NOT_FOUND;
+                if (entries[i].name[0] == 0x00) return (int)count;
                 if (entries[i].name[0] == 0xE5 || entries[i].attr == 0x0F ||
                     (entries[i].attr & 0x08)) {
                     continue;
                 }
-                if (visible_index++ == index) {
-                    memset(entry, 0, sizeof(*entry));
-                    fat32_entry_to_vfs_entry(&entries[i], entry);
-                    return VFS_OK;
-                }
+                if (visible_index++ < index) continue;
+                memset(&entries_out[count], 0, sizeof(entries_out[count]));
+                fat32_entry_to_vfs_entry(&entries[i], &entries_out[count]);
+                if (++count == capacity) return (int)count;
             }
         }
 
         uint32_t next = get_next_cluster_in_chain(&boot_sector, cluster);
-        if (is_end_of_cluster_chain(next)) return VFS_ERR_NOT_FOUND;
+        if (is_end_of_cluster_chain(next)) return (int)count;
         if (!is_valid_cluster(&boot_sector, next)) return VFS_ERR_IO;
         cluster = next;
     }
     return VFS_ERR_IO;
+}
+
+static int fat32_vfs_readdir_unlocked(vfs_node_t* node, uint32_t index,
+                                      vfs_dir_entry_t* entry) {
+    int count = fat32_vfs_readdir_batch_unlocked(node, index, entry, 1);
+    if (count < 0) return count;
+    return count == 1 ? VFS_OK : VFS_ERR_NOT_FOUND;
 }
 
 static int fat32_vfs_finddir_unlocked(vfs_node_t* node, const char* name,
@@ -858,6 +866,16 @@ static int fat32_vfs_readdir(vfs_node_t* node, uint32_t index,
     return result;
 }
 
+static int fat32_vfs_readdir_batch(vfs_node_t* node, uint32_t index,
+                                   vfs_dir_entry_t* entries,
+                                   uint32_t capacity) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_readdir_batch_unlocked(node, index, entries,
+                                                  capacity);
+    fat32_operation_end(flags);
+    return result;
+}
+
 static int fat32_vfs_finddir(vfs_node_t* node, const char* name,
                              vfs_node_t** child) {
     uint32_t flags = fat32_operation_begin();
@@ -914,6 +932,7 @@ vfs_filesystem_ops_t fat32_vfs_ops = {
     .read = fat32_vfs_read,
     .write = fat32_vfs_write,
     .readdir = fat32_vfs_readdir,
+    .readdir_batch = fat32_vfs_readdir_batch,
     .finddir = fat32_vfs_finddir,
     .mkdir = fat32_vfs_mkdir,
     .rmdir = fat32_vfs_rmdir,

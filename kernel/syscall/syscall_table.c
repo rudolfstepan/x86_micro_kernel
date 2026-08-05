@@ -149,6 +149,28 @@ static int syscall_readdir(const char *user_path, uint32_t index,
     return result == 0 ? 1 : result;
 }
 
+#define SYSCALL_READDIR_BATCH_CAPACITY 4U
+static int syscall_readdir_batch(const char *user_path, uint32_t index,
+                                 void *user_entries) {
+    char path[PROCESS_PATH_MAX];
+    int result = syscall_copy_path(path, user_path);
+    if (result != 0) return result;
+    syscall_file_info_t info[SYSCALL_READDIR_BATCH_CAPACITY];
+    vfs_dir_entry_t entries[SYSCALL_READDIR_BATCH_CAPACITY];
+    result = vfs_readdir_batch(path, index, entries,
+                               SYSCALL_READDIR_BATCH_CAPACITY);
+    if (result < 0) return -5;
+    if (result == 0) return 0;
+    for (int i = 0; i < result; ++i) {
+        memset(&info[i], 0, sizeof(info[i]));
+        strncpy(info[i].name, entries[i].name, sizeof(info[i].name) - 1U);
+        info[i].type = (uint32_t)entries[i].type;
+        info[i].size = entries[i].size;
+    }
+    size_t bytes = (size_t)result * sizeof(info[0]);
+    return copy_to_user(user_entries, info, bytes) == 0 ? result : -14;
+}
+
 static int syscall_create(const char *user_path) {
     char path[PROCESS_PATH_MAX];
     int result = syscall_copy_path(path, user_path);
@@ -208,10 +230,17 @@ static int syscall_wait(int pid, int *user_status) {
     if (!user_range_accessible(paging_current_directory(),
                                (uint32_t)(uintptr_t)user_status,
                                sizeof(*user_status), true)) return -14;
-    int status = 0;
-    int result = process_wait_status(scheduler_current_process(), pid, &status);
-    if (result <= 0) return result == 0 ? -11 : -10;
-    return copy_to_user(user_status, &status, sizeof(status)) == 0 ? pid : -14;
+    for (;;) {
+        int status = 0;
+        int result = process_wait_status(scheduler_current_process(), pid,
+                                         &status);
+        if (result < 0) return -10;
+        if (result > 0) {
+            return copy_to_user(user_status, &status, sizeof(status)) == 0
+                ? pid : -14;
+        }
+        scheduler_wait_for_process(pid);
+    }
 }
 
 //---------------------------------------------------------------------------------------------
@@ -248,6 +277,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_getpid,             // Syscall 22: Current process ID
     (void*)&syscall_spawn,              // Syscall 23: Start child process
     (void*)&syscall_wait,               // Syscall 24: Collect child status
+    (void*)&syscall_readdir_batch,      // Syscall 25: Read directory batch
     // Add more syscalls here as needed
 };
 
@@ -383,6 +413,13 @@ void syscall_handler(Registers* regs) {
         case SYS_WAIT:
             result = (uint32_t)syscall_wait(
                 (int)arg1, (int*)(uintptr_t)arg2);
+            break;
+        case SYS_READDIR_BATCH:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_readdir_batch(
+                (const char*)(uintptr_t)arg1, arg2,
+                (void*)(uintptr_t)arg3);
+            scheduler_preempt_enable();
             break;
         default:
             result = (uint32_t)-1;

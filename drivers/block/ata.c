@@ -38,6 +38,26 @@ short drive_count = 0;  // Number of detected drives
 static unsigned int consecutive_read_failures = 0;
 #define MAX_CONSECUTIVE_FAILURES 5
 
+#define ATA_READ_CACHE_ENTRIES 32
+typedef struct {
+    unsigned short base;
+    unsigned int lba;
+    bool is_master;
+    bool valid;
+    uint8_t data[SECTOR_SIZE];
+} ata_cache_entry_t;
+
+static ata_cache_entry_t ata_read_cache[ATA_READ_CACHE_ENTRIES];
+
+static ata_cache_entry_t* ata_cache_slot(unsigned short base,
+                                         unsigned int lba, bool is_master) {
+    unsigned int drive = is_master ? 0U : 1U;
+    unsigned int controller = base == ATA_PRIMARY_IO ? 0U : 2U;
+    unsigned int index = (lba ^ (drive << 4) ^ (controller << 3)) %
+                         ATA_READ_CACHE_ENTRIES;
+    return &ata_read_cache[index];
+}
+
 bool wait_for_drive_ready(unsigned short base, unsigned int timeout_ms) {
     unsigned int elapsed_time = 0;
     
@@ -240,6 +260,12 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
         (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) {
         return false;
     }
+    ata_cache_entry_t* cached = ata_cache_slot(base, lba, is_master);
+    if (cached->valid && cached->base == base && cached->lba == lba &&
+        cached->is_master == is_master) {
+        memcpy(buffer, cached->data, SECTOR_SIZE);
+        return true;
+    }
     //printf("ata_read_sector: base=0x%X, lba=%u, is_master=%d\n", base, lba, is_master);
     
     // On first read attempt, try a soft reset if drive isn't responding
@@ -274,11 +300,6 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
     for (volatile int i = 0; i < 4; i++) {
         inb(ATA_ALT_STATUS(base));  // Read alternate status 4 times for 400ns delay
     }
-    
-#ifdef VMWARE_BUILD
-    // VMware needs extra time after drive selection
-    pit_delay(50);  // 50ms delay for VMware (increased from 10ms)
-#endif
     
     // Wait for drive to acknowledge selection
     //printf("  Step 2: Waiting for drive to acknowledge selection...\n");
@@ -336,6 +357,12 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
     // Success - reset failure counter
     consecutive_read_failures = 0;
 
+    cached->base = base;
+    cached->lba = lba;
+    cached->is_master = is_master;
+    cached->valid = true;
+    memcpy(cached->data, buffer, SECTOR_SIZE);
+
     //printf("ata_read_sector: SUCCESS\n");
     return true;
 }
@@ -357,6 +384,13 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer, bool 
     if (buffer == NULL || lba >= ATA_LBA28_LIMIT ||
         (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) {
         return false; // Error: Buffer is null
+    }
+    /* Never serve data cached before a write attempt.  Invalidating first is
+     * conservative when hardware reports a partial or uncertain failure. */
+    ata_cache_entry_t* cached = ata_cache_slot(base, lba, is_master);
+    if (cached->valid && cached->base == base && cached->lba == lba &&
+        cached->is_master == is_master) {
+        cached->valid = false;
     }
 
     // Wait for the drive to be ready

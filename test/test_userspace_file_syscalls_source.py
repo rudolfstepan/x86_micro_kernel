@@ -82,6 +82,18 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         self.assertIn("syscall_wait", source)
         self.assertIn("copy_to_user(user_status", source)
 
+    def test_wait_blocks_and_is_woken_by_child_exit(self):
+        scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
+            encoding="utf-8"
+        )
+        sdk = (ROOT / "userspace/sdk/x86os.c").read_text(encoding="utf-8")
+        self.assertIn("TASK_WAITING", scheduler)
+        self.assertIn("scheduler_wait_for_process", scheduler)
+        self.assertIn("wake_process_waiters", scheduler)
+        wait = sdk[sdk.index("int x86os_wait") :]
+        wait = wait[:wait.index("\n}")]
+        self.assertNotIn("x86os_delay", wait)
+
     def test_ctrl_c_terminates_blocked_userspace_input(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
             encoding="utf-8"

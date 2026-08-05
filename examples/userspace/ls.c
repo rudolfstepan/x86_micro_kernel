@@ -44,24 +44,28 @@ int main(int argc, char **argv) {
     uint32_t file_count = 0;
     uint32_t directory_count = 0;
     uint64_t total_bytes = 0;
-    for (uint32_t index = 0;; ++index) {
-        x86os_file_info_t entry;
-        int result = x86os_readdir(path, index, &entry);
+    for (uint32_t index = 0;;) {
+        x86os_file_info_t entries[X86OS_READDIR_BATCH_CAPACITY];
+        int result = x86os_readdir_batch(path, index, entries);
         if (result < 0) {
             x86os_puts("ls: read error\n");
             return 1;
         }
         if (result == 0) break;
-        print_name(entry.name);
-        if (entry.type == X86OS_DIRECTORY) {
-            x86os_puts("        <DIR>");
-            ++directory_count;
-        } else {
-            print_unsigned(entry.size, 12U);
-            ++file_count;
-            total_bytes += entry.size;
+        for (int batch_index = 0; batch_index < result; ++batch_index) {
+            x86os_file_info_t *entry = &entries[batch_index];
+            print_name(entry->name);
+            if (entry->type == X86OS_DIRECTORY) {
+                x86os_puts("        <DIR>");
+                ++directory_count;
+            } else {
+                print_unsigned(entry->size, 12U);
+                ++file_count;
+                total_bytes += entry->size;
+            }
+            x86os_putchar('\n');
         }
-        x86os_putchar('\n');
+        index += (uint32_t)result;
     }
     print_unsigned(file_count, 10U);
     x86os_puts(" File(s) ");

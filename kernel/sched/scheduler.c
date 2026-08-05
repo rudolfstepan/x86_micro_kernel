@@ -148,6 +148,42 @@ static void activate_task_address_space(int task_index) {
     }
 }
 
+static void wake_process_waiters(int pid) {
+    if (pid <= 0) return;
+    for (int i = 0; i < num_tasks; ++i) {
+        if (tasks[i].status == TASK_WAITING && tasks[i].wait_pid == pid) {
+            tasks[i].wait_pid = 0;
+            tasks[i].status = TASK_READY;
+        }
+    }
+}
+
+void scheduler_wait_for_process(int pid) {
+    irq_disable();
+    int waiting = current_task;
+    if (waiting < 0 || waiting >= num_tasks || pid <= 0) return;
+
+    tasks[waiting].wait_pid = pid;
+    tasks[waiting].status = TASK_WAITING;
+    int next = find_next_runnable(waiting);
+    if (next >= 0) {
+        current_task = next;
+        tasks[next].status = TASK_RUNNING;
+        activate_task_address_space(next);
+        swtch(&tasks[waiting].context, &tasks[next].context);
+        return;
+    }
+    current_task = -1;
+    if (kernel_context_saved) {
+        activate_task_address_space(-1);
+        swtch(&tasks[waiting].context, &kernel_context);
+        return;
+    }
+    current_task = waiting;
+    tasks[waiting].wait_pid = 0;
+    tasks[waiting].status = TASK_RUNNING;
+}
+
 void scheduler_interrupt_handler(void) {
     uint32_t flags = irq_save();
     if (preempt_disable_count != 0) {
@@ -219,6 +255,7 @@ void scheduler_terminate_task(int task_id) {
         tasks[task_id].process->exit_status = 143;
         tasks[task_id].process->has_exited = true;
         tasks[task_id].process->is_running = false;
+        wake_process_waiters(tasks[task_id].process->pid);
     }
     tasks[task_id].status = TASK_FINISHED;
     irq_restore(flags);
@@ -244,6 +281,7 @@ void task_exit_status(int status) {
             tasks[finished].process->exit_status = status;
             tasks[finished].process->has_exited = true;
             tasks[finished].process->is_running = false;
+            wake_process_waiters(tasks[finished].process->pid);
         }
     }
 

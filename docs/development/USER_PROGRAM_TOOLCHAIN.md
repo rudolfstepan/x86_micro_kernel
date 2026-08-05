@@ -64,8 +64,9 @@ Funktionen bereit:
 Der Startup-Code übergibt `argc` und `argv` an `main` und reicht dessen
 Rückgabewert als Prozessstatus an `x86os_exit` weiter. `x86os_spawn` startet
 ein Kindprogramm im geerbten Arbeitsverzeichnis; `x86os_wait` wartet auf das
-Kind und liefert dessen Exit-Status. Kernel-Header und Kernel-Treiber dürfen
-von externen Programmen nicht eingebunden werden.
+Kind, blockiert den aufrufenden Task ohne Polling und liefert dessen
+Exit-Status. Kernel-Header und Kernel-Treiber dürfen von externen Programmen
+nicht eingebunden werden.
 
 Mehrere C- oder präprozessierte Assembly-Quellen (`.S`) können gemeinsam
 übergeben werden:

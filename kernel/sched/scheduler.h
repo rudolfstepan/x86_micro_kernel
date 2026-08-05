@@ -16,6 +16,7 @@
 #define TASK_RUNNING 1
 #define TASK_SLEEPING 2
 #define TASK_FINISHED 3
+#define TASK_WAITING 4
 
 #define STACK_SIZE (8U * 1024U)
 
@@ -39,6 +40,7 @@ typedef struct task {
     uint32_t user_entry;
     uint32_t user_stack;
     bool user_mode;
+    int wait_pid;
 } task_t;
 
 extern task_t tasks[];
@@ -53,6 +55,7 @@ void scheduler_interrupt_handler(void);
 void scheduler_preempt_disable(void);
 void scheduler_preempt_enable(void);
 void scheduler_terminate_task(int task_id);
+void scheduler_wait_for_process(int pid);
 void task_exit(void) __attribute__((noreturn));
 void task_exit_status(int status) __attribute__((noreturn));
 void scheduler_kill_current(void) __attribute__((noreturn));

@@ -86,6 +86,12 @@ int x86os_readdir(const char* path, uint32_t index, x86os_file_info_t* info) {
                               (uintptr_t)info);
 }
 
+int x86os_readdir_batch(const char* path, uint32_t index,
+                        x86os_file_info_t* entries) {
+    return (int)x86os_syscall(X86OS_SYS_READDIR_BATCH, (uintptr_t)path, index,
+                              (uintptr_t)entries);
+}
+
 int x86os_create(const char* path) {
     return (int)x86os_syscall(X86OS_SYS_CREATE, (uintptr_t)path, 0, 0);
 }
@@ -108,13 +114,8 @@ int x86os_spawn(const char* path) {
 }
 
 int x86os_wait(int pid, int* status) {
-    int result;
-    do {
-        result = (int)x86os_syscall(X86OS_SYS_WAIT, (uintptr_t)pid,
-                                    (uintptr_t)status, 0);
-        if (result == -11) x86os_delay(1);
-    } while (result == -11);
-    return result;
+    return (int)x86os_syscall(X86OS_SYS_WAIT, (uintptr_t)pid,
+                              (uintptr_t)status, 0);
 }
 
 void x86os_exit(int status) {
