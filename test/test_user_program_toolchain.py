@@ -15,6 +15,13 @@ ZIG = shutil.which("zig") or Path(
 
 @unittest.skipUnless(Path(ZIG).is_file(), "Zig is required for user programs")
 class UserProgramToolchainTests(unittest.TestCase):
+    def test_userspace_toolchain_uses_release_flags(self):
+        source = (ROOT / "scripts/build_user_program.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"-O2", "-DNDEBUG"', source)
+        self.assertIn('"--gc-sections", "--strip-all"', source)
+
     def test_external_c_source_builds_a_valid_mypr_image(self):
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)

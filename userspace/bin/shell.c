@@ -222,6 +222,156 @@ static int has_program_extension(const char* name) {
            lower(name[length - 1U]) == 'g';
 }
 
+typedef struct {
+    char common[SHELL_PATH_CAPACITY];
+    unsigned length;
+    unsigned count;
+    int directory;
+} completion_t;
+
+static int text_starts_with(const char* text, const char* prefix) {
+    while (*prefix != '\0') {
+        if (*text == '\0') return 0;
+        if (lower(*text++) != lower(*prefix++)) return 0;
+    }
+    return 1;
+}
+
+static void consider_completion(completion_t* completion, const char* name,
+                                unsigned length, int directory) {
+    if (length + 1U > sizeof(completion->common)) return;
+    if (completion->count == 0U) {
+        for (unsigned index = 0; index < length; ++index) {
+            completion->common[index] = name[index];
+        }
+        completion->common[length] = '\0';
+        completion->length = length;
+        completion->directory = directory;
+    } else {
+        unsigned common = 0;
+        while (common < completion->length && common < length &&
+               lower(completion->common[common]) == lower(name[common])) {
+            ++common;
+        }
+        completion->length = common;
+        completion->common[common] = '\0';
+        completion->directory = 0;
+    }
+    ++completion->count;
+}
+
+static void scan_completion_directory(const char* directory,
+                                      const char* prefix,
+                                      int programs_only,
+                                      completion_t* completion) {
+    for (uint32_t index = 0;;) {
+        x86os_file_info_t entries[X86OS_READDIR_BATCH_CAPACITY];
+        int count = x86os_readdir_batch(directory, index, entries);
+        if (count <= 0) break;
+        for (int entry_index = 0; entry_index < count; ++entry_index) {
+            x86os_file_info_t* entry = &entries[entry_index];
+            unsigned length = text_length(entry->name);
+            if (programs_only) {
+                if (entry->type == X86OS_FILE) {
+                    if (!has_program_extension(entry->name)) continue;
+                    length -= 4U;
+                } else if (entry->type != X86OS_DIRECTORY) {
+                    continue;
+                }
+            }
+            if (text_starts_with(entry->name, prefix)) {
+                consider_completion(completion, entry->name, length,
+                                    entry->type == X86OS_DIRECTORY);
+            }
+        }
+        index += (uint32_t)count;
+    }
+}
+
+static void complete_command(const char* prefix, completion_t* completion) {
+    static const char* commands[] = {
+        "CD", "CHDIR", "PWD", "HELP", "PATH", "EXIT",
+        "DIR", "TYPE", "MD", "RD", "ERASE", "CLEAR"
+    };
+    for (unsigned index = 0; index < sizeof(commands) / sizeof(commands[0]);
+         ++index) {
+        if (text_starts_with(commands[index], prefix)) {
+            consider_completion(completion, commands[index],
+                                text_length(commands[index]), 0);
+        }
+    }
+
+    char cwd[SHELL_PATH_CAPACITY];
+    int have_cwd = x86os_getcwd(cwd, sizeof(cwd)) == 0;
+    scan_completion_directory(have_cwd ? cwd : ".", prefix, 1, completion);
+    for (unsigned index = 0; index < search_path_count; ++index) {
+        /* PATH commonly starts with the current directory. Avoid counting
+         * the same program twice, which would suppress unique completion. */
+        if (have_cwd && text_equal(cwd, search_paths[index])) continue;
+        scan_completion_directory(search_paths[index], prefix, 1, completion);
+    }
+}
+
+static void complete_line(char line[SHELL_LINE_CAPACITY], unsigned* length) {
+    unsigned token_start = *length;
+    while (token_start != 0U && line[token_start - 1U] != ' ' &&
+           line[token_start - 1U] != '\t') --token_start;
+
+    unsigned name_start = token_start;
+    for (unsigned index = token_start; index < *length; ++index) {
+        if (line[index] == '/' || line[index] == '\\' ||
+            (index == token_start + 1U && line[index] == ':')) {
+            name_start = index + 1U;
+        }
+    }
+
+    char prefix[SHELL_PATH_CAPACITY];
+    unsigned prefix_length = *length - name_start;
+    if (prefix_length + 1U > sizeof(prefix)) return;
+    for (unsigned index = 0; index < prefix_length; ++index) {
+        prefix[index] = line[name_start + index];
+    }
+    prefix[prefix_length] = '\0';
+
+    completion_t completion;
+    completion.common[0] = '\0';
+    completion.length = 0;
+    completion.count = 0;
+    completion.directory = 0;
+    int command = token_start == 0U;
+    if (command && name_start == token_start) {
+        complete_command(prefix, &completion);
+    } else {
+        char directory[SHELL_PATH_CAPACITY];
+        char resolved[SHELL_PATH_CAPACITY];
+        unsigned directory_length = name_start - token_start;
+        if (directory_length == 0U) {
+            directory[0] = '.';
+            directory[1] = '\0';
+        } else {
+            for (unsigned index = 0; index < directory_length; ++index) {
+                directory[index] = line[token_start + index];
+            }
+            directory[directory_length] = '\0';
+        }
+        if (resolve_shell_path(directory, resolved) < 0) return;
+        scan_completion_directory(resolved, prefix, command, &completion);
+    }
+
+    if (completion.count == 0U || completion.length < prefix_length) return;
+    for (unsigned index = prefix_length; index < completion.length; ++index) {
+        if (*length + 1U >= SHELL_LINE_CAPACITY) return;
+        line[(*length)++] = completion.common[index];
+        x86os_putchar(completion.common[index]);
+    }
+    if (completion.count == 1U && *length + 1U < SHELL_LINE_CAPACITY) {
+        char suffix = completion.directory ? '\\' : ' ';
+        line[(*length)++] = suffix;
+        x86os_putchar(suffix);
+    }
+    line[*length] = '\0';
+}
+
 static void read_line(char line[SHELL_LINE_CAPACITY]) {
     unsigned length = 0;
     for (;;) {
@@ -235,6 +385,9 @@ static void read_line(char line[SHELL_LINE_CAPACITY]) {
                 --length;
                 x86os_puts("\b \b");
             }
+        } else if (value == '\t') {
+            line[length] = '\0';
+            complete_line(line, &length);
         } else if (value >= ' ' && value <= '~' &&
                    length + 1U < SHELL_LINE_CAPACITY) {
             line[length++] = value;
@@ -266,7 +419,7 @@ static void show_prompt(void) {
 
 static void show_help(void) {
     x86os_puts("Built-ins: cd path pwd help exit\n");
-    x86os_puts("Aliases: dir type md rd erase\n");
+    x86os_puts("Aliases: dir type md rd erase clear\n");
     x86os_puts("Other commands are loaded as .PRG programs.\n");
 }
 
@@ -276,6 +429,7 @@ static const char* program_alias(const char* command) {
     if (text_equal(command, "md")) return "MKDIR";
     if (text_equal(command, "rd")) return "RMDIR";
     if (text_equal(command, "erase")) return "DEL";
+    if (text_equal(command, "clear")) return "CLS";
     return command;
 }
 

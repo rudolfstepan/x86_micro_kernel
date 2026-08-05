@@ -302,6 +302,32 @@ class NativeBootImageTests(unittest.TestCase):
         self.assertIn('ethernet0.connectionType = "custom"', text)
         self.assertIn('ethernet0.vnet = "VMnet0"', text)
 
+    def test_vmware_fdd_switch_uses_legacy_physical_backing(self):
+        script = (
+            Path(__file__).parents[1] / "scripts/configure-vmware-fdd.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn('floppy0.fileType = "device"', script)
+        self.assertIn('floppy0.fileName = "$Drive"', script)
+        self.assertIn('bios.bootOrder = "floppy,hdd"', script)
+        self.assertNotIn('usb.present = "TRUE"', script)
+
+    def test_vmware_build_restores_physical_floppy_backing(self):
+        script = (
+            Path(__file__).parents[1] / "scripts/build-windows.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("[string]$VmwareFloppy = 'Auto'", script)
+        self.assertIn("$Target -eq 'vmware'", script)
+        self.assertIn("configure-vmware-fdd.ps1", script)
+
+    def test_windows_floppy_writer_uses_multisector_transfers(self):
+        script = (
+            Path(__file__).parents[1] / "scripts/write-floppy.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("$sectorsPerTrack = 18", script)
+        self.assertIn("$heads = 2", script)
+        self.assertIn("$cylinderSize", script)
+        self.assertNotIn("$offset += 512", script)
+
     def test_vmdk_geometry_matches_vmware_legacy_ide_geometry(self):
         with tempfile.TemporaryDirectory() as directory:
             vmdk = Path(directory) / "kernel.vmdk"

@@ -81,13 +81,13 @@ endif
 CFLAGS := -m32 -std=gnu11 -c -MMD -MP -ffreestanding -nostdlib -nostartfiles -nodefaultlibs \
           -fno-builtin -fno-pic -fno-pie -fno-stack-protector \
           -fno-asynchronous-unwind-tables -fno-unwind-tables -mno-sse -mno-sse2 -mno-mmx \
-          -O1 -Wall -Wextra -g -Wno-unused-parameter -Wno-unused-variable -U_FORTIFY_SOURCE \
+          -O2 -DNDEBUG -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable -U_FORTIFY_SOURCE \
           -Werror=implicit-function-declaration -Werror=incompatible-pointer-types \
           -Werror=int-conversion -Werror=return-type \
           -I$(OUTPUT_DIR) -I. -I$(ARCH_DIR) -I$(ARCH_DIR)/include -I$(LIB_DIR)/libc -I$(KERNEL_DIR)/shell \
           $(TARGET_DEFINES) $(VIDEO_DEFINES)
 
-LDFLAGS := -m elf_i386 -nostdlib
+LDFLAGS := -m elf_i386 -nostdlib --strip-all
 KERNEL_LDSCRIPT := $(CONFIG_DIR)/klink.ld
 USER_LDSCRIPT := $(CONFIG_DIR)/cli.ld
 
@@ -467,7 +467,7 @@ $(BUILD_LIB_DIR)/libk/%.o: $(LIB_DIR)/libk/%.c
 kernel: $(ALL_OBJ)
 	@echo "Linking kernel..."
 	@$(LD) $(LDFLAGS) -T $(KERNEL_LDSCRIPT) -o $(OUTPUT_DIR)/kernel.bin $(ALL_OBJ)
-	@echo "Kernel built successfully: $(OUTPUT_DIR)/kernel.bin"
+	@echo "Release kernel ELF: $(OUTPUT_DIR)/kernel.bin"
 
 # ============================================================================
 # BOOTABLE DISK IMAGE

@@ -85,8 +85,8 @@ fatal:
     hlt
     jmp .hang
 
-; EAX=LBA, CX=count, DX:BX=destination. Reads individual sectors so track
-; boundaries and 64-KiB DMA boundaries are never crossed in a BIOS request.
+; EAX=LBA, CX=count, DX:BX=destination. Batch up to the end of the current
+; track; no request crosses a track or 64-KiB DMA boundary.
 read_chs:
     mov [next_lba], eax
     mov [remaining], cx
@@ -107,12 +107,22 @@ read_chs:
     xor edx, edx
     mov ecx, 18
     div ecx
-    mov dh, al
-    mov cl, dl
+    mov [head], al
+    mov [sector], dl
+    mov eax, 18
+    sub eax, edx
+    cmp ax, [remaining]
+    jbe .count_ready
+    mov ax, [remaining]
+.count_ready:
+    mov [transfer_count], al
+    mov dh, [head]
+    mov cl, [sector]
     inc cl
     mov ch, [cylinder]
     mov dl, [boot_drive]
-    mov ax, 0x0201
+    mov al, [transfer_count]
+    mov ah, 0x02
     int 0x13
     jnc .read
     mov dl, [boot_drive]
@@ -124,9 +134,12 @@ read_chs:
     stc
     ret
 .read:
-    inc dword [next_lba]
-    add bx, 512
-    dec word [remaining]
+    movzx ax, byte [transfer_count]
+    sub [remaining], ax
+    movzx eax, ax
+    add [next_lba], eax
+    shl ax, 9
+    add bx, ax
     jmp .next
 .ok:
     clc
@@ -146,6 +159,9 @@ print:
 boot_drive db 0
 retries db 0
 cylinder db 0
+head db 0
+sector db 0
+transfer_count db 0
 remaining dw 0
 next_lba dd 0
 msg_disk db "Floppy read error", 13, 10, 0

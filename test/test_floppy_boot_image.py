@@ -1,5 +1,6 @@
 import struct
 import unittest
+from pathlib import Path
 
 from scripts.create_floppy_boot_image import (
     FLOPPY_SIZE,
@@ -10,6 +11,14 @@ from test_native_boot_image import minimal_kernel
 
 
 class FloppyBootImageTests(unittest.TestCase):
+    def test_kernel_is_compiled_and_linked_as_release(self):
+        makefile = (Path(__file__).parents[1] / "Makefile").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("-O2 -DNDEBUG", makefile)
+        self.assertIn("LDFLAGS := -m elf_i386 -nostdlib --strip-all", makefile)
+        self.assertIn("$(OUTPUT_DIR)/kernel.bin", makefile)
+
     def test_creates_exact_1440_kib_signed_image(self):
         stage1 = bytes(510) + b"\x55\xaa"
         image = create_floppy_image(stage1, bytes(2048), minimal_kernel())

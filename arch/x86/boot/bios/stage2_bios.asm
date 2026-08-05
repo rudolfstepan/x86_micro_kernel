@@ -21,6 +21,8 @@ E820_TEMP_ADDRESS    equ 0x00007000
 BOUNCE_SEGMENT       equ 0x7000
 BOUNCE_PHYSICAL      equ 0x00070000
 BOUNCE_SIZE          equ 32768
+KERNEL_CACHE_ADDRESS equ 0x00400000
+KERNEL_CACHE_SIZE    equ 0x00100000       ; maximum boot ELF cached from floppy
 
 MANIFEST_MAGIC_0     equ 0x42363858       ; "X86B"
 MANIFEST_MAGIC_1     equ 0x31544F4F       ; "OOT1"
@@ -130,10 +132,20 @@ start:
     call print_string
 
     ; ELF header and program-header table are required to fit in 4 KiB.
+    cmp byte [kernel_cached], 1
+    je .header_from_cache
     mov eax, [kernel_lba]
     mov cx, 8
     call read_bounce
     jc disk_error
+    jmp .header_ready
+.header_from_cache:
+    mov dword [pm_source], KERNEL_CACHE_ADDRESS
+    mov dword [pm_destination], BOUNCE_PHYSICAL
+    mov dword [pm_length], 4096
+    mov byte [pm_operation], 0
+    call protected_memory_operation
+.header_ready:
     call parse_elf_header
     jc elf_error
     call load_elf_segments
@@ -372,6 +384,20 @@ load_elf_segments:
     ja .bad
     mov [segment_end], edx
 
+    ; A cached floppy image remains the source until every PT_LOAD segment has
+    ; been copied. Reject a future kernel layout that would overwrite unread
+    ; cache bytes; the normal disk path has no such reserved RAM interval.
+    cmp byte [kernel_cached], 1
+    jne .cache_overlap_checked
+    cmp edx, KERNEL_CACHE_ADDRESS
+    jbe .cache_overlap_checked
+    mov eax, KERNEL_CACHE_ADDRESS
+    add eax, [kernel_size]
+    cmp [segment_address], eax
+    jae .cache_overlap_checked
+    jmp .bad
+.cache_overlap_checked:
+
     mov eax, [si + 4]               ; p_offset
     mov [range_file_offset], eax
     add eax, [segment_file_size]
@@ -417,6 +443,23 @@ load_elf_segments:
     ret
 
 load_file_range:
+    cmp byte [kernel_cached], 1
+    jne .next
+    mov eax, KERNEL_CACHE_ADDRESS
+    add eax, [range_file_offset]
+    jc .bad
+    mov [pm_source], eax
+    mov eax, [range_destination]
+    mov [pm_destination], eax
+    mov eax, [range_remaining]
+    mov [pm_length], eax
+    mov byte [pm_operation], 0
+    call protected_memory_operation
+    mov eax, [range_remaining]
+    add [range_file_offset], eax
+    add [range_destination], eax
+    mov dword [range_remaining], 0
+    jmp .done
 .next:
     mov eax, [range_remaining]
     test eax, eax
@@ -500,9 +543,10 @@ read_bounce:
     clc
     ret
 
-; Legacy floppy BIOSes commonly provide no INT 13h extensions. Read one
-; 1.44-MB floppy sector at a time using the standard 18-sector/2-head CHS
-; geometry. The caller already limits a bounce-buffer request to 64 sectors.
+; Legacy floppy BIOSes commonly provide no INT 13h extensions. Read as many
+; sectors as remain on the current track using standard 18-sector/2-head CHS
+; geometry. Requests never cross a track because many real BIOSes and VMware's
+; physical-floppy backend reject or serialize cross-track transfers.
 read_bounce_chs:
     mov [read_lba_value], eax
     mov [read_count], cx
@@ -523,17 +567,33 @@ read_bounce_chs:
     xor edx, edx
     mov ecx, 18
     div ecx                         ; EAX=head, EDX=sector index
-    mov dh, al
-    mov cl, dl
+    mov [chs_head], al
+    mov [chs_sector], dl
+
+    mov eax, 18
+    sub eax, edx                    ; sectors left on this track
+    cmp ax, [read_count]
+    jbe .count_ready
+    mov ax, [read_count]
+.count_ready:
+    mov [chs_transfer_count], al
+
+    mov dh, [chs_head]
+    mov cl, [chs_sector]
     inc cl
     mov ch, [chs_cylinder]
     mov dl, [boot_drive]
-    mov ax, 0x0201
+    mov al, [chs_transfer_count]
+    mov ah, 0x02
     int 0x13
     jc .retry_sector
-    inc dword [read_lba_value]
-    add bx, 512
-    dec word [read_count]
+    movzx ax, byte [chs_transfer_count]
+    sub [read_count], ax
+    movzx eax, ax
+    add [read_lba_value], eax
+    shl ax, 9
+    add bx, ax
+    mov byte [read_retries], 0
     jmp .next_sector
 .retry_sector:
     mov dl, [boot_drive]
@@ -561,6 +621,19 @@ read_bounce_chs:
 ; covered by PT_LOAD segments.  This uses a compact reflected nibble table and
 ; reads no more than the existing 32-KiB bounce-buffer capacity per request.
 verify_kernel_crc:
+    mov byte [kernel_cached], 0
+    cmp byte [boot_drive], 0x80
+    jae .cache_ready
+    mov eax, [kernel_size]
+    cmp eax, KERNEL_CACHE_SIZE
+    ja .cache_ready
+    xor ax, ax
+    mov es, ax
+    cmp dword [es:MB_INFO_ADDRESS + 8], 4096
+    jb .cache_ready
+    mov byte [kernel_cached], 1
+    mov dword [cache_write_address], KERNEL_CACHE_ADDRESS
+.cache_ready:
     mov eax, [kernel_lba]
     mov [crc_lba], eax
     mov eax, [kernel_size]
@@ -584,6 +657,19 @@ verify_kernel_crc:
     call read_bounce
     jc .bad
 
+    cmp byte [kernel_cached], 1
+    jne .checksum_chunk
+    mov dword [pm_source], BOUNCE_PHYSICAL
+    mov eax, [cache_write_address]
+    mov [pm_destination], eax
+    movzx eax, word [crc_chunk_size]
+    mov [pm_length], eax
+    mov byte [pm_operation], 0
+    call protected_memory_operation
+    mov eax, [pm_length]
+    add [cache_write_address], eax
+
+.checksum_chunk:
     mov ax, BOUNCE_SEGMENT
     mov es, ax
     xor di, di
@@ -788,6 +874,7 @@ program_header_count   dw 0
 program_header_index   dw 0
 entry_is_executable    db 0
 pm_operation           db 0
+kernel_cached          db 0
 
 align 4
 partition_lba          dd 0
@@ -813,9 +900,13 @@ crc_lba                dd 0
 crc_remaining          dd 0
 crc_value              dd 0
 kernel_crc             dd 0
+cache_write_address    dd 0
 crc_chunk_size         dw 0
-crc_sector_count       dw 0
-chs_cylinder           db 0
+  crc_sector_count       dw 0
+  chs_cylinder           db 0
+  chs_head               db 0
+  chs_sector             db 0
+  chs_transfer_count     db 0
 
 program_headers:
     times MAX_PROGRAM_HEADERS * 32 db 0

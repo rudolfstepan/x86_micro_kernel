@@ -16,6 +16,9 @@ static directory_entry current_dir_storage;
 uint8_t* buffer = NULL;
 uint8_t current_fdd_drive = 0;
 
+static bool fdc_read_logical_range(uint8_t drive, uint32_t logical_sector,
+                                   uint32_t count, uint8_t *output);
+
 // Helper: read a single sector using DMA first, then fall back to no-DMA path
 static bool fdc_read_with_fallback(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* out_buf) {
     if (fdc_read_sector(drive, head, track, sector, out_buf)) {
@@ -257,18 +260,11 @@ int read_fat12(uint8_t drive, fat12_t* fat12) {
     }
 
     printf("Loading FAT table (%u sectors, %u bytes)...\n", spf, fat_size_bytes);
-    for (uint32_t i = 0; i < spf; i++) {
-        int logical_sector = (int)fat12->fat_start + (int)i;
-        int track, head, sector;
-        logical_to_chs(logical_sector, &track, &head, &sector);
-
-        uint8_t* fat_buffer = fat12->fat + (i * bps);
-        if (!fdc_read_with_fallback(drive, head, track, sector, fat_buffer)) {
-            printf("ERROR: Failed to read FAT sector %u\n", i);
-            free(fat12->fat);
-            fat12->fat = NULL;
-            return false;
-        }
+    if (!fdc_read_logical_range(drive, fat12->fat_start, spf, fat12->fat)) {
+        printf("ERROR: Failed to read FAT sectors\n");
+        free(fat12->fat);
+        fat12->fat = NULL;
+        return false;
     }
 
     printf("FAT table loaded successfully\n");
@@ -477,27 +473,35 @@ int fat12_read_dir_entries(directory_entry* dir) {
             return -1;
         }
 
-        for (uint32_t si = 0; si < root_dir_sectors; si++) {
+        for (uint32_t si = 0; si < root_dir_sectors;) {
             int ls = (int)fat12->root_dir_start + (int)si;
             int t, h, s;
             logical_to_chs(ls, &t, &h, &s);
-            if (!fdc_read_with_fallback(current_fdd_drive, h, t, s, local_buffer + si * bps)) {
+            uint32_t batch = fat12->boot_sector.sectors_per_track -
+                             (uint32_t)s + 1U;
+            if (batch > root_dir_sectors - si) batch = root_dir_sectors - si;
+            if (!fdc_read_logical_range(current_fdd_drive, (uint32_t)ls,
+                                        batch, local_buffer + si * bps)) {
                 printf("Error reading root directory sector %u (logical %d).\n", si, ls);
                 free(entries); entries = NULL;
                 free(local_buffer);
                 return -1;
             }
-            directory_entry *sector_entries =
-                (directory_entry*)(local_buffer + si * bps);
-            uint32_t entries_per_sector = bps / sizeof(directory_entry);
             bool end_of_directory = false;
-            for (uint32_t i = 0; i < entries_per_sector; ++i) {
-                if ((uint8_t)sector_entries[i].filename[0] == 0x00) {
-                    end_of_directory = true;
-                    break;
+            for (uint32_t batch_index = 0; batch_index < batch; ++batch_index) {
+                directory_entry *sector_entries = (directory_entry*)(
+                    local_buffer + (si + batch_index) * bps);
+                uint32_t entries_per_sector = bps / sizeof(directory_entry);
+                for (uint32_t i = 0; i < entries_per_sector; ++i) {
+                    if ((uint8_t)sector_entries[i].filename[0] == 0x00) {
+                        end_of_directory = true;
+                        break;
+                    }
                 }
+                if (end_of_directory) break;
             }
             if (end_of_directory) break;
+            si += batch;
         }
 
         // Parse 32-byte entries
@@ -556,17 +560,14 @@ int fat12_read_dir_entries(directory_entry* dir) {
         uint32_t clusters_seen = 0;
         while (is_valid_cluster_fat12(cluster) &&
                clusters_seen++ < maximum_clusters) {
-            // Read the whole cluster (sector by sector)
-            for (uint16_t si = 0; si < spc; si++) {
-                int ls = (int)fat12->data_start + (int)((cluster - 2) * spc) + (int)si;
-                int t, h, s;
-                logical_to_chs(ls, &t, &h, &s);
-                if (!fdc_read_with_fallback(current_fdd_drive, h, t, s, local_buffer + si * bps)) {
-                    printf("Error reading subdirectory sector %u of cluster %d (logical %d).\n", si, cluster, ls);
-                    free(entries); entries = NULL;
-                    free(local_buffer);
-                    return -1;
-                }
+            uint32_t cluster_sector = fat12->data_start +
+                (uint32_t)(cluster - 2) * spc;
+            if (!fdc_read_logical_range(current_fdd_drive, cluster_sector,
+                                        spc, local_buffer)) {
+                printf("Error reading subdirectory cluster %d.\n", cluster);
+                free(entries); entries = NULL;
+                free(local_buffer);
+                return -1;
             }
 
             // Parse 32-byte entries from this cluster
@@ -925,6 +926,41 @@ int fat12_read_file(fat12_file* file, void* buffer, unsigned int buffer_size, un
         // Calculate the first sector of the current cluster
         unsigned int firstSectorOfCluster = fat12->data_start + (current_cluster - 2) * fat12->boot_sector.sectors_per_cluster;
 
+        /* Image-created files normally have consecutive cluster chains. Read
+         * complete adjacent clusters in one logical range so program loading
+         * uses track-sized DMA requests instead of one IRQ per sector. */
+        unsigned int complete_clusters =
+            (bytes_to_read - bytes_read) / clusterSize;
+        if (offset_in_cluster == 0 && complete_clusters != 0) {
+            unsigned int run = 1;
+            unsigned int last_cluster = current_cluster;
+            while (run < complete_clusters &&
+                   clusters_seen + run - 1U < cluster_limit) {
+                int next_run_cluster = get_next_cluster((int)last_cluster);
+                if (next_run_cluster != (int)last_cluster + 1) break;
+                last_cluster = (unsigned int)next_run_cluster;
+                ++run;
+            }
+            uint32_t run_sectors = run *
+                fat12->boot_sector.sectors_per_cluster;
+            if (!fdc_read_logical_range(
+                    current_fdd_drive, firstSectorOfCluster, run_sectors,
+                    (uint8_t*)buffer + bytes_read)) {
+                free(sectorBuffer);
+                return bytes_read;
+            }
+            unsigned int copied = run * clusterSize;
+            bytes_read += copied;
+            file->position += copied;
+            clusters_seen += run - 1U;
+            if (bytes_read >= bytes_to_read) break;
+            int next = get_next_cluster((int)last_cluster);
+            if (next < 0) break;
+            current_cluster = (unsigned int)next;
+            offset_in_cluster = 0;
+            continue;
+        }
+
         // Read each sector in the cluster
         unsigned int first_sector_index = offset_in_cluster / FAT12_SECTOR_SIZE;
         unsigned int first_sector_offset = offset_in_cluster % FAT12_SECTOR_SIZE;
@@ -978,6 +1014,38 @@ int fat12_read_file(fat12_file* file, void* buffer, unsigned int buffer_size, un
     free(sectorBuffer);
 
     return bytes_read;
+}
+
+/* Read a contiguous logical range using the largest transfer that still fits
+ * on the current track. Fall back to single sectors for conservative FDCs. */
+static bool fdc_read_logical_range(uint8_t drive, uint32_t logical_sector,
+                                   uint32_t count, uint8_t *output) {
+    uint16_t sectors_per_track = fat12 && fat12->boot_sector.sectors_per_track ?
+        fat12->boot_sector.sectors_per_track : FAT12_DEFAULT_SPT;
+    while (count != 0) {
+        int track, head, sector;
+        logical_to_chs((int)logical_sector, &track, &head, &sector);
+        uint32_t batch = sectors_per_track - (uint32_t)sector + 1U;
+        if (batch > count) batch = count;
+        if (batch > 18U) batch = 18U;
+        if (!fdc_read_sectors(drive, (uint8_t)head, (uint8_t)track,
+                              (uint8_t)sector, (uint8_t)batch, output)) {
+            for (uint32_t index = 0; index < batch; ++index) {
+                int fallback_track, fallback_head, fallback_sector;
+                logical_to_chs((int)(logical_sector + index),
+                               &fallback_track, &fallback_head,
+                               &fallback_sector);
+                if (!fdc_read_with_fallback(
+                        drive, (uint8_t)fallback_head,
+                        (uint8_t)fallback_track, (uint8_t)fallback_sector,
+                        output + index * FAT12_SECTOR_SIZE)) return false;
+            }
+        }
+        logical_sector += batch;
+        output += batch * FAT12_SECTOR_SIZE;
+        count -= batch;
+    }
+    return true;
 }
 
 // Close a file and free its resources

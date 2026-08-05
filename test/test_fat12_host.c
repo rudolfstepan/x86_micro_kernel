@@ -19,6 +19,24 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track,
     return true;
 }
 
+bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track,
+                      uint8_t sector, uint8_t count, void* output) {
+    if (!output || count == 0 || sector == 0 ||
+        (uint16_t)sector + count - 1u > 18u) {
+        return false;
+    }
+
+    uint8_t* destination = output;
+    for (uint8_t index = 0; index < count; index++) {
+        if (!fdc_read_sector(drive, head, track,
+                             (uint8_t)(sector + index),
+                             destination + (uint32_t)index * FAT12_SECTOR_SIZE)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void hex_dump(const void* data, size_t size) {
     (void)data;
     (void)size;

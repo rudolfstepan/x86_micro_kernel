@@ -139,7 +139,7 @@ def build(sources: list[Path], output: Path, zig: Path,
         objects: list[Path] = []
         common_flags = [
             str(zig), "cc", "-target", "x86-freestanding", "-march=i386",
-            "-O1", "-ffreestanding", "-fno-builtin",
+            "-O2", "-DNDEBUG", "-ffreestanding", "-fno-builtin",
             "-fno-pic", "-fno-pie", "-fno-stack-protector",
             "-fno-asynchronous-unwind-tables", "-fno-unwind-tables",
             "-mno-sse", "-mno-sse2", "-mno-mmx", "-Wall", "-Wextra",
@@ -155,7 +155,7 @@ def build(sources: list[Path], output: Path, zig: Path,
         elf_path = temporary_path / "program.elf"
         run([
             str(zig), "ld.lld", "-m", "elf_i386", "-T", str(linker_script),
-            "--gc-sections", "-o", str(elf_path),
+            "--gc-sections", "--strip-all", "-o", str(elf_path),
             *(str(value) for value in objects),
         ], environment)
         elf = elf_path.read_bytes()

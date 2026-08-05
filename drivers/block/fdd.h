@@ -33,6 +33,8 @@ void fdd_detect_drives(void);
 void debug_read_bootsector(void);
 bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer);
 bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer);
+bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track,
+                      uint8_t sector, uint8_t count, void* buffer);
 
 void fdc_motor_on(int drive);
 void fdc_motor_off(int drive);

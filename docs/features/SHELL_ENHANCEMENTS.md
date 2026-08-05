@@ -118,8 +118,14 @@ C:\> ECHO "ein Argument mit Leerzeichen"
 | `Ctrl+K` | vom Cursor bis Zeilenende löschen |
 
 `HISTORY` zeigt bis zu 50 gespeicherte Befehle. Unmittelbar aufeinanderfolgende
-Duplikate werden nicht erneut aufgenommen. Tab-Vervollständigung ist noch
-nicht implementiert; Tab wird derzeit ignoriert.
+Duplikate werden nicht erneut aufgenommen.
+
+Tab vervollständigt das aktuelle Wort. Am Zeilenanfang werden Built-ins,
+Aliase und `.PRG`-Programme aus dem aktuellen Verzeichnis und `PATH`
+durchsucht; die Erweiterung `.PRG` muss dabei nicht eingegeben werden. Bei
+Argumenten werden Dateien und Verzeichnisse relativ zum aktuellen oder
+explizit angegebenen Pfad ergänzt. Eindeutige Verzeichnisse erhalten einen
+abschließenden Backslash.
 
 ## Beispiele
 

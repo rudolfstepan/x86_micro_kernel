@@ -123,3 +123,35 @@ Falls das Paket bewusst neu angelegt werden soll:
 5. Festplatte als erstes Bootgerät wählen.
 
 Die generierte VMX bleibt jedoch die Referenzkonfiguration.
+
+## Physisches USB-Diskettenlaufwerk
+
+Ein unter Windows als `A:` eingebundenes USB-FDD kann über VMwares physisches
+Floppy-Backing verwendet werden. Die VM muss dazu vollständig ausgeschaltet
+sein:
+
+```powershell
+.\scripts\configure-vmware-fdd.ps1 -Mode Physical -Drive A:
+```
+
+Danach startet die normale `x86-microkernel.vmx` zuerst von der eingelegten
+physischen Diskette und nur als Fallback von der IDE-Festplatte. VMware stellt
+das Hostlaufwerk dem Gast als klassischen Floppy-Controller bereit. Deshalb
+bleiben `usb.present`, EHCI und xHCI deaktiviert; der noch experimentelle
+USB-Mass-Storage-Pfad des Kernels wird hierfür nicht benötigt.
+
+`build-windows.ps1 -Target vmware` trägt ein vorhandenes physisches Laufwerk
+`A:` nach dem Neuaufbau automatisch wieder in beide VMX-Dateien ein. Der Build
+ersetzt die Zuordnung daher nicht mehr unbemerkt durch das Image. Mit
+`-VmwareFloppy Image` kann das Image erzwungen werden; ein anderes Laufwerk
+wird beispielsweise mit `-VmwareFloppy Physical -FloppyDrive B:` gewählt.
+
+Zurück zum mitgelieferten Image geht es ebenfalls nur bei ausgeschalteter VM:
+
+```powershell
+.\scripts\configure-vmware-fdd.ps1 -Mode Image
+```
+
+Explorer-Fenster und andere Hostprogramme dürfen während des VM-Betriebs nicht
+gleichzeitig auf `A:` zugreifen. Das Laufwerk kann immer nur exklusiv vom Host
+oder von VMware verwendet werden.

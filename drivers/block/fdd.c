@@ -320,8 +320,10 @@ static bool fdc_validate_chs(uint8_t drive, uint8_t head, uint8_t track,
            track < 80 && sector >= 1 && sector <= 18;
 }
 
-bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {
-    if (!fdc_validate_chs(drive, head, track, sector, buffer)) return false;
+bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track,
+                      uint8_t sector, uint8_t count, void* buffer) {
+    if (!fdc_validate_chs(drive, head, track, sector, buffer) || count == 0 ||
+        count > 18 || (uint16_t)sector + count - 1U > 18U) return false;
 
     fdd_prepare_drive(drive);
 
@@ -339,7 +341,8 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
     }
 
     uint8_t *dma_buffer = fdd_dma_buffer();
-    if (!dma_prepare_floppy(dma_buffer, SECTOR_SIZE, true)) {
+    uint16_t transfer_size = (uint16_t)count * SECTOR_SIZE;
+    if (!dma_prepare_floppy(dma_buffer, transfer_size, true)) {
         fdc_motor_off(drive);
         return false;
     }
@@ -351,7 +354,7 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
         !fdc_send_command(head) ||
         !fdc_send_command(sector) ||
         !fdc_send_command(2) ||
-        !fdc_send_command(18) ||
+        !fdc_send_command((uint8_t)(sector + count - 1U)) ||
         !fdc_send_command(0x1B) ||
         !fdc_send_command(0xFF)) {
         printf("Failed to send READ command sequence.\n");
@@ -376,9 +379,14 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector,
         return false;
     }
 
-    memcpy(buffer, dma_buffer, SECTOR_SIZE);
+    memcpy(buffer, dma_buffer, transfer_size);
     fdd_last_activity[drive] = pit_ticks();
     return true;
+}
+
+bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track,
+                     uint8_t sector, void* buffer) {
+    return fdc_read_sectors(drive, head, track, sector, 1, buffer);
 }
 
 bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer) {

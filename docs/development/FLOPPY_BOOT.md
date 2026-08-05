@@ -26,6 +26,25 @@ make floppy-image TARGET=real_hw VIDEO=vga
 Der Generator bricht ab, falls Stage 2 oder der Kernel nicht mehr auf die
 Diskette passen. Das Ergebnis ist immer exakt 1.474.560 Byte groß.
 
+Kernel und Userspace-Programme werden standardmäßig als Release mit `-O2` und
+`NDEBUG` gebaut. `build/kernel.bin` wird bereits beim Linken vollständig
+gestrippt. Dadurch muss das langsame Diskettenlaufwerk keine reinen
+Host-Debuginformationen lesen oder per CRC prüfen. Die `.PRG`-Programme werden
+mit denselben Release-Einstellungen und Linker-Garbage-Collection erzeugt.
+
+Beim Diskettenstart liest Stage 2 das Boot-ELF während der CRC32-Prüfung genau
+einmal und hält es vorübergehend im RAM. ELF-Header und `PT_LOAD`-Segmente
+werden anschließend aus diesem Cache übernommen. Der Festplattenpfad liest
+weiterhin direkt vom BIOS-Datenträger und reserviert keinen Cachebereich.
+
+Stage 1 und Stage 2 fassen aufeinanderfolgende Sektoren bis zum jeweiligen
+Spurende in einem BIOS-Aufruf zusammen. Nach dem Kernelstart verwendet auch
+der FDC-Treiber Mehrsektor-DMA: FAT, Verzeichnisse und zusammenhängende
+Dateicluster werden spurweise gelesen. Dadurch entfallen die meisten
+Controller-Kommandos und Interrupt-Wartezyklen. Falls ein älterer Controller
+einen Mehrsektorzugriff ablehnt, fällt FAT12 automatisch auf Einzelsektoren
+zurück.
+
 ## Test in QEMU
 
 ```bash

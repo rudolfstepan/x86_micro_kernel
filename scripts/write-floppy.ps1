@@ -53,6 +53,10 @@ function Invoke-VolumeControl([Microsoft.Win32.SafeHandles.SafeFileHandle]$Handl
 }
 
 $expectedSize = 1440KB
+$sectorSize = 512
+$sectorsPerTrack = 18
+$heads = 2
+$cylinderSize = $sectorSize * $sectorsPerTrack * $heads
 $image = [IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $ImagePath))
 if ($image.Length -ne $expectedSize) {
     throw "The image is $($image.Length) bytes instead of $expectedSize bytes."
@@ -85,14 +89,18 @@ try {
     $locked = $true
     Invoke-VolumeControl $handle ([FloppyNative]::FSCTL_DISMOUNT_VOLUME) "Dismounting the volume"
 
-    $stream = [IO.FileStream]::new($handle, [IO.FileAccess]::ReadWrite, 512, $false)
+    $stream = [IO.FileStream]::new(
+        $handle, [IO.FileAccess]::ReadWrite, $cylinderSize, $false)
     Write-Host "Writing 1,474,560 bytes directly to $devicePath ..."
     $stream.Position = 0
-    for ($offset = 0; $offset -lt $image.Length; $offset += 512) {
-        $stream.Write($image, $offset, 512)
-        if (($offset % (144 * 512)) -eq 0) {
-            Write-Progress -Activity "Writing floppy" -Status "$offset of $($image.Length) bytes" -PercentComplete (($offset * 100) / $image.Length)
-        }
+    # A 1.44-MB disk has 18 sectors per track and two heads. Sending one
+    # complete cylinder per request lets the Windows floppy driver perform
+    # efficient multi-sector transfers instead of 2,880 synchronous writes.
+    for ($offset = 0; $offset -lt $image.Length; $offset += $cylinderSize) {
+        $count = [Math]::Min($cylinderSize, $image.Length - $offset)
+        $stream.Write($image, $offset, $count)
+        $completed = $offset + $count
+        Write-Progress -Activity "Writing floppy" -Status "$completed of $($image.Length) bytes" -PercentComplete (($completed * 100) / $image.Length)
     }
     # FILE_FLAG_WRITE_THROUGH plus FlushFileBuffers forces the controller to
     # receive the data; verifying an ordinary cached write would be misleading.

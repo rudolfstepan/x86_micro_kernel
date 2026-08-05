@@ -5,7 +5,11 @@ param(
     [switch]$RunTests,
     [string[]]$ProgramSource = @('examples/userspace/hello.c'),
     [ValidatePattern('^[A-Za-z0-9_]{1,8}\.PRG$')]
-    [string]$ProgramName = 'HELLO.PRG'
+    [string]$ProgramName = 'HELLO.PRG',
+    [ValidateSet('Auto', 'Physical', 'Image')]
+    [string]$VmwareFloppy = 'Auto',
+    [ValidatePattern('^[A-Za-z]:$')]
+    [string]$FloppyDrive = 'A:'
 )
 
 Set-StrictMode -Version Latest
@@ -191,6 +195,27 @@ try {
         --data-file "DRIVES.PRG=$(Join-Path $UserProgramDir 'DRIVES.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Native image creation failed with exit code $LASTEXITCODE."
+    }
+
+    # Image generation recreates both VMX files. Restore physical floppy
+    # backing after every VMware build instead of silently switching to the
+    # packaged image again.
+    $effectiveFloppy = $VmwareFloppy
+    if ($effectiveFloppy -eq 'Auto') {
+        $logicalFloppy = Get-CimInstance Win32_LogicalDisk `
+            -Filter "DeviceID='$FloppyDrive'" -ErrorAction SilentlyContinue
+        if ($Target -eq 'vmware' -and $logicalFloppy -and
+            $logicalFloppy.DriveType -eq 2) {
+            $effectiveFloppy = 'Physical'
+        } else {
+            $effectiveFloppy = 'Image'
+        }
+    }
+    if ($effectiveFloppy -eq 'Physical') {
+        foreach ($generatedVmx in @($Vmx, $PackagedVmx)) {
+            & (Join-Path $PSScriptRoot 'configure-vmware-fdd.ps1') `
+                -Mode Physical -Drive $FloppyDrive -VmxPath $generatedVmx
+        }
     }
 
     if ($RunTests) {
