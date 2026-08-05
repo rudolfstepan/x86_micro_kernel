@@ -514,7 +514,11 @@ native-image: floppy-image
 		--data-file PS.PRG=$(SYSTEM_PROGRAM_DIR)/PS.PRG \
 		--data-file KILL.PRG=$(SYSTEM_PROGRAM_DIR)/KILL.PRG \
 		--data-file PWD.PRG=$(SYSTEM_PROGRAM_DIR)/PWD.PRG \
-		--data-file SHELL.PRG=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG
+		--data-file SHELL.PRG=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG \
+		--data-file MKDIR.PRG=$(SYSTEM_PROGRAM_DIR)/MKDIR.PRG \
+		--data-file RMDIR.PRG=$(SYSTEM_PROGRAM_DIR)/RMDIR.PRG \
+		--data-file DEL.PRG=$(SYSTEM_PROGRAM_DIR)/DEL.PRG \
+		--data-file COPY.PRG=$(SYSTEM_PROGRAM_DIR)/COPY.PRG
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/x86-microkernel.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
 
@@ -543,7 +547,11 @@ floppy-image: kernel system-programs user-program
 		--data-file PS.PRG=$(SYSTEM_PROGRAM_DIR)/PS.PRG \
 		--data-file KILL.PRG=$(SYSTEM_PROGRAM_DIR)/KILL.PRG \
 		--data-file PWD.PRG=$(SYSTEM_PROGRAM_DIR)/PWD.PRG \
-		--data-file SHELL.PRG=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG
+		--data-file SHELL.PRG=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG \
+		--data-file MKDIR.PRG=$(SYSTEM_PROGRAM_DIR)/MKDIR.PRG \
+		--data-file RMDIR.PRG=$(SYSTEM_PROGRAM_DIR)/RMDIR.PRG \
+		--data-file DEL.PRG=$(SYSTEM_PROGRAM_DIR)/DEL.PRG \
+		--data-file COPY.PRG=$(SYSTEM_PROGRAM_DIR)/COPY.PRG
 
 # ============================================================================
 # TESTING

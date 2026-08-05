@@ -22,6 +22,11 @@ DOS-Laufwerk und Verzeichnis, beispielsweise `C:\TOOLS>`.
 Der reguläre Bootpfad lädt `SHELL.PRG` als Ring-3-Command-Line-Interpreter.
 Die fest einkompilierte Kernel-Shell ist ausschließlich die Rettungskonsole,
 falls das Userspace-Programm nicht geladen werden kann oder beendet wird.
+
+Die Userspace-Shell verwaltet einen eigenen `PATH`. Das aktuelle Verzeichnis
+wird zuerst geprüft, anschließend die mit Semikolon getrennten
+Suchverzeichnisse. Standardmäßig verweist `PATH` auf das Stammverzeichnis des
+Bootlaufwerks.
 | Netzwerk | `GETIP`, `IFCONFIG`, `PING`, `ARP`, `NET` |
 | Diagnose | `MEM`, `DUMP`, `PCI`, `IRQ`, `SYS`, `DATETIME` |
 

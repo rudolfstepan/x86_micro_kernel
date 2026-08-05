@@ -9,6 +9,7 @@
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "fs/vfs/vfs.h"
+#include "drivers/bus/drives.h"
 #include "kernel/init/prg.h"
 #include "kernel/sched/scheduler.h"
 
@@ -494,10 +495,10 @@ static int append_path_components(char *output, size_t capacity,
     size_t output_length = strlen(output);
     const char *cursor = path;
     while (*cursor != '\0') {
-        while (*cursor == '/') ++cursor;
+        while (*cursor == '/' || *cursor == '\\') ++cursor;
         if (*cursor == '\0') break;
         const char *start = cursor;
-        while (*cursor != '\0' && *cursor != '/') ++cursor;
+        while (*cursor != '\0' && *cursor != '/' && *cursor != '\\') ++cursor;
         size_t length = (size_t)(cursor - start);
         if (length == 1 && start[0] == '.') continue;
         if (length == 2 && start[0] == '.' && start[1] == '.') {
@@ -522,10 +523,33 @@ static int append_path_components(char *output, size_t capacity,
     return 0;
 }
 
+static const char* process_drive_mount(char letter) {
+    if (letter >= 'a' && letter <= 'z') letter -= 'a' - 'A';
+    for (int index = 0; index < drive_count; ++index) {
+        drive_t* drive = &detected_drives[index];
+        if (drive->mount_point[0] == '\0' || strlen(drive->name) != 4U ||
+            drive->name[3] < '0' || drive->name[3] > '9') continue;
+        char mapped = 0;
+        if (drive->type == DRIVE_TYPE_FDD) {
+            mapped = (char)('A' + drive->name[3] - '0');
+        } else if (drive->type == DRIVE_TYPE_ATA) {
+            mapped = (char)('C' + drive->name[3] - '0');
+        }
+        if (mapped == letter) return drive->mount_point;
+    }
+    return NULL;
+}
+
 int process_resolve_path(const Process *process, const char *path,
                          char resolved[PROCESS_PATH_MAX]) {
     if (process == NULL || path == NULL || path[0] == '\0') return -1;
     strcpy(resolved, "/");
+    if (path[1] == ':') {
+        const char* mount = process_drive_mount(path[0]);
+        if (mount == NULL || strlen(mount) >= PROCESS_PATH_MAX) return -1;
+        strcpy(resolved, mount);
+        return append_path_components(resolved, PROCESS_PATH_MAX, path + 2);
+    }
     if (path[0] != '/' &&
         append_path_components(resolved, PROCESS_PATH_MAX,
                                process->working_directory) != 0) return -1;

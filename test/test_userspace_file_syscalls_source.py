@@ -141,6 +141,16 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         self.assertIn("x86os_space(path, &space)", ls)
         self.assertIn("bytes free", ls)
 
+    def test_directory_mutation_is_available_to_userspace(self):
+        source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        process = (ROOT / "kernel/proc/process.c").read_text(encoding="utf-8")
+        self.assertIn("syscall_mkdir", source)
+        self.assertIn("syscall_rmdir", source)
+        self.assertIn("process_drive_mount", process)
+        self.assertIn("path[1] == ':'", process)
+
     def test_ctrl_c_terminates_blocked_userspace_input(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
             encoding="utf-8"

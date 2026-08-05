@@ -39,6 +39,14 @@ beendet wird.
 Die Userspace-Shell zeigt DOS-kompatible Laufwerksbuchstaben (`A:`/`B:` für
 Disketten und ab `C:` für ATA-Laufwerke). Ein Laufwerk wird beispielsweise
 mit `A:` oder `C:` gewechselt; interne VFS-Mountpfade bleiben verborgen.
+Dateiverwaltung steht als Ring-3-Programme `MKDIR`, `RMDIR`, `DEL` und `COPY`
+zur Verfügung; DOS-Pfade können dabei auch laufwerksübergreifend verwendet
+werden, etwa `copy A:\README.TXT C:\README.TXT`.
+
+`SHELL.PRG` durchsucht bei Programmnamen zuerst das aktuelle Verzeichnis und
+danach `PATH`. Beim Start enthält `PATH` das Stammverzeichnis des
+Bootlaufwerks, sodass Befehle auch in Unterverzeichnissen verfügbar bleiben.
+`path` zeigt den Suchpfad an; `path C:\;A:\TOOLS` setzt ihn neu.
 
 Die fertige VM startet über
 `build\vmware\x86-microkernel\START-VMWARE.cmd`. Alternativ kann die dortige

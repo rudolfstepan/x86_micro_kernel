@@ -328,6 +328,20 @@ static int syscall_space(const char *user_path, void *user_info) {
     return copy_to_user(user_info, &info, sizeof(info)) == 0 ? 0 : -14;
 }
 
+static int syscall_mkdir(const char *user_path) {
+    char path[PROCESS_PATH_MAX];
+    int result = syscall_copy_path(path, user_path);
+    if (result != 0) return result;
+    return vfs_mkdir(path) == VFS_OK ? 0 : -5;
+}
+
+static int syscall_rmdir(const char *user_path) {
+    char path[PROCESS_PATH_MAX];
+    int result = syscall_copy_path(path, user_path);
+    if (result != 0) return result;
+    return vfs_rmdir(path) == VFS_OK ? 0 : -5;
+}
+
 //---------------------------------------------------------------------------------------------
 // System Call Table
 //---------------------------------------------------------------------------------------------
@@ -370,6 +384,8 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_spawnv,             // Syscall 30: Spawn with arguments
     (void*)&syscall_drive_info,         // Syscall 31: Mounted drive metadata
     (void*)&syscall_space,              // Syscall 32: Filesystem capacity
+    (void*)&syscall_mkdir,              // Syscall 33: Create directory
+    (void*)&syscall_rmdir,              // Syscall 34: Remove directory
     // Add more syscalls here as needed
 };
 
@@ -551,6 +567,16 @@ void syscall_handler(Registers* regs) {
             scheduler_preempt_disable();
             result = (uint32_t)syscall_space(
                 (const char*)(uintptr_t)arg1, (void*)(uintptr_t)arg2);
+            scheduler_preempt_enable();
+            break;
+        case SYS_MKDIR:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_mkdir((const char*)(uintptr_t)arg1);
+            scheduler_preempt_enable();
+            break;
+        case SYS_RMDIR:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_rmdir((const char*)(uintptr_t)arg1);
             scheduler_preempt_enable();
             break;
         default:

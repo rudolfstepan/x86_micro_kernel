@@ -112,6 +112,9 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertIn("x86os_chdir", shell)
         self.assertIn("print_dos_path", shell)
         self.assertIn("x86os_drive_info", shell)
+        self.assertIn("search_paths", shell)
+        self.assertIn("show_search_path", shell)
+        self.assertIn("join_program_path", shell)
 
     def test_kernel_starts_userspace_shell_before_rescue_shell(self):
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")

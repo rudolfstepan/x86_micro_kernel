@@ -150,6 +150,14 @@ int x86os_space(const char* path, x86os_space_info_t* info) {
                               (uintptr_t)info, 0);
 }
 
+int x86os_mkdir(const char* path) {
+    return (int)x86os_syscall(X86OS_SYS_MKDIR, (uintptr_t)path, 0, 0);
+}
+
+int x86os_rmdir(const char* path) {
+    return (int)x86os_syscall(X86OS_SYS_RMDIR, (uintptr_t)path, 0, 0);
+}
+
 void x86os_exit(int status) {
     (void)x86os_syscall(X86OS_SYS_EXIT, (uintptr_t)status, 0, 0);
     for (;;) {

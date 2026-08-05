@@ -145,7 +145,11 @@ try {
         --data-file "PS.PRG=$(Join-Path $UserProgramDir 'PS.PRG')" `
         --data-file "KILL.PRG=$(Join-Path $UserProgramDir 'KILL.PRG')" `
         --data-file "PWD.PRG=$(Join-Path $UserProgramDir 'PWD.PRG')" `
-        --data-file "SHELL.PRG=$(Join-Path $UserProgramDir 'SHELL.PRG')"
+        --data-file "SHELL.PRG=$(Join-Path $UserProgramDir 'SHELL.PRG')" `
+        --data-file "MKDIR.PRG=$(Join-Path $UserProgramDir 'MKDIR.PRG')" `
+        --data-file "RMDIR.PRG=$(Join-Path $UserProgramDir 'RMDIR.PRG')" `
+        --data-file "DEL.PRG=$(Join-Path $UserProgramDir 'DEL.PRG')" `
+        --data-file "COPY.PRG=$(Join-Path $UserProgramDir 'COPY.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Floppy image creation failed with exit code $LASTEXITCODE."
     }
@@ -174,7 +178,11 @@ try {
         --data-file "PS.PRG=$(Join-Path $UserProgramDir 'PS.PRG')" `
         --data-file "KILL.PRG=$(Join-Path $UserProgramDir 'KILL.PRG')" `
         --data-file "PWD.PRG=$(Join-Path $UserProgramDir 'PWD.PRG')" `
-        --data-file "SHELL.PRG=$(Join-Path $UserProgramDir 'SHELL.PRG')"
+        --data-file "SHELL.PRG=$(Join-Path $UserProgramDir 'SHELL.PRG')" `
+        --data-file "MKDIR.PRG=$(Join-Path $UserProgramDir 'MKDIR.PRG')" `
+        --data-file "RMDIR.PRG=$(Join-Path $UserProgramDir 'RMDIR.PRG')" `
+        --data-file "DEL.PRG=$(Join-Path $UserProgramDir 'DEL.PRG')" `
+        --data-file "COPY.PRG=$(Join-Path $UserProgramDir 'COPY.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Native image creation failed with exit code $LASTEXITCODE."
     }

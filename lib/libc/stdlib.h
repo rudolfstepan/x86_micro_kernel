@@ -41,6 +41,8 @@
 #define SYS_SPAWNV 30
 #define SYS_DRIVE_INFO 31
 #define SYS_SPACE 32
+#define SYS_MKDIR 33
+#define SYS_RMDIR 34
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

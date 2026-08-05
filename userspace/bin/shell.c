@@ -3,6 +3,10 @@
 #define SHELL_LINE_CAPACITY 256
 #define SHELL_PATH_CAPACITY 256
 #define SHELL_MAX_ARGUMENTS 16
+#define SHELL_MAX_PATH_ENTRIES 8
+
+static char search_paths[SHELL_MAX_PATH_ENTRIES][SHELL_PATH_CAPACITY];
+static unsigned search_path_count;
 
 static unsigned text_length(const char* text) {
     unsigned length = 0;
@@ -130,6 +134,86 @@ static int resolve_shell_path(const char* input,
     return 0;
 }
 
+static int copy_text(char* output, unsigned capacity, const char* input) {
+    unsigned length = text_length(input);
+    if (length + 1U > capacity) return -1;
+    for (unsigned index = 0; index <= length; ++index) output[index] = input[index];
+    return 0;
+}
+
+static int join_program_path(const char* directory, const char* program,
+                             char output[SHELL_PATH_CAPACITY]) {
+    unsigned directory_length = text_length(directory);
+    unsigned program_length = text_length(program);
+    unsigned separator = directory_length > 1U &&
+                         directory[directory_length - 1U] != '/' ? 1U : 0U;
+    if (directory_length + separator + program_length + 1U >
+        SHELL_PATH_CAPACITY) return -1;
+    for (unsigned index = 0; index < directory_length; ++index) {
+        output[index] = directory[index];
+    }
+    unsigned position = directory_length;
+    if (separator != 0U) output[position++] = '/';
+    for (unsigned index = 0; index <= program_length; ++index) {
+        output[position + index] = program[index];
+    }
+    return 0;
+}
+
+static int executable_file(const char* path) {
+    x86os_file_info_t info;
+    return x86os_stat(path, &info) == 0 && info.type == X86OS_FILE;
+}
+
+static int explicit_program_path(const char* path) {
+    if (path[1] == ':') return 1;
+    for (; *path != '\0'; ++path) {
+        if (*path == '/' || *path == '\\') return 1;
+    }
+    return 0;
+}
+
+static void show_search_path(void) {
+    x86os_puts("PATH=");
+    for (unsigned index = 0; index < search_path_count; ++index) {
+        if (index != 0U) x86os_putchar(';');
+        print_dos_path(search_paths[index]);
+    }
+    x86os_putchar('\n');
+}
+
+static void set_search_path(const char* value) {
+    char component[SHELL_PATH_CAPACITY];
+    unsigned component_length = 0;
+    unsigned count = 0;
+    for (;;) {
+        char current = *value++;
+        if (current == ';' || current == '\0') {
+            if (component_length != 0U && count < SHELL_MAX_PATH_ENTRIES) {
+                component[component_length] = '\0';
+                int result;
+                if (component[1] == ':' || component[0] == '/' ||
+                    component[0] == '\\') {
+                    result = resolve_shell_path(component, search_paths[count]);
+                } else {
+                    char cwd[SHELL_PATH_CAPACITY];
+                    result = x86os_getcwd(cwd, sizeof(cwd));
+                    if (result == 0) {
+                        result = join_program_path(cwd, component,
+                                                   search_paths[count]);
+                    }
+                }
+                if (result == 0) ++count;
+            }
+            component_length = 0;
+            if (current == '\0') break;
+        } else if (component_length + 1U < sizeof(component)) {
+            component[component_length++] = current;
+        }
+    }
+    search_path_count = count;
+}
+
 static int has_program_extension(const char* name) {
     unsigned length = text_length(name);
     return length >= 4U && name[length - 4U] == '.' &&
@@ -181,7 +265,7 @@ static void show_prompt(void) {
 }
 
 static void show_help(void) {
-    x86os_puts("Built-ins: cd pwd help exit\n");
+    x86os_puts("Built-ins: cd path pwd help exit\n");
     x86os_puts("Other commands are loaded as .PRG programs.\n");
 }
 
@@ -202,10 +286,31 @@ static void run_program(int argc, const char* argv[SHELL_MAX_ARGUMENTS]) {
     }
     program[length] = '\0';
 
+    char executable[SHELL_PATH_CAPACITY];
+    int found = 0;
+    if (explicit_program_path(program)) {
+        found = executable_file(program) &&
+                copy_text(executable, sizeof(executable), program) == 0;
+    } else if (executable_file(program)) {
+        found = copy_text(executable, sizeof(executable), program) == 0;
+    } else {
+        for (unsigned index = 0; index < search_path_count; ++index) {
+            if (join_program_path(search_paths[index], program, executable) == 0 &&
+                executable_file(executable)) {
+                found = 1;
+                break;
+            }
+        }
+    }
+    if (!found) {
+        x86os_puts("Bad command or program file.\n");
+        return;
+    }
+
     const char* child_argv[SHELL_MAX_ARGUMENTS];
     child_argv[0] = program;
     for (int index = 1; index < argc; ++index) child_argv[index] = argv[index];
-    int pid = x86os_spawnv(program, argc, child_argv);
+    int pid = x86os_spawnv(executable, argc, child_argv);
     if (pid < 0) {
         x86os_puts("Bad command or program file.\n");
         return;
@@ -217,6 +322,9 @@ static void run_program(int argc, const char* argv[SHELL_MAX_ARGUMENTS]) {
 int main(void) {
     char line[SHELL_LINE_CAPACITY];
     const char* argv[SHELL_MAX_ARGUMENTS];
+    if (x86os_getcwd(search_paths[0], sizeof(search_paths[0])) == 0) {
+        search_path_count = 1;
+    }
     x86os_puts("x86 OS userspace shell\nType HELP for available commands.\n\n");
     for (;;) {
         show_prompt();
@@ -233,6 +341,10 @@ int main(void) {
         }
         if (text_equal(argv[0], "help")) {
             show_help();
+        } else if (text_equal(argv[0], "path")) {
+            if (argc == 1) show_search_path();
+            else if (argc == 2) set_search_path(argv[1]);
+            else x86os_puts("Usage: path [directory[;directory...]]\n");
         } else if (text_equal(argv[0], "pwd")) {
             char path[SHELL_PATH_CAPACITY];
             if (x86os_getcwd(path, sizeof(path)) == 0) {
