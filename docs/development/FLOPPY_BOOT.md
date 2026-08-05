@@ -52,9 +52,18 @@ Bei einem USB-Diskettenlaufwerk ist es dagegen typischerweise ein `/dev/sdX`-
 Gerät. Der Gerätename muss vor `dd` sorgfältig geprüft werden, da ein falsches
 Ziel einen anderen Datenträger überschreibt.
 
-Unter Windows wird ein Werkzeug benötigt, das Raw-Images sektorweise auf ein
-Diskettenlaufwerk schreiben kann. Normales Kopieren der `.img`-Datei nach
-`A:` reicht nicht aus.
+Unter Windows schreibt das mitgelieferte Batch das Image auf Laufwerk `A:`:
+
+```powershell
+.\scripts\write-floppy.cmd
+```
+
+Es fordert Administratorrechte an, sperrt und dismountet das Volume und
+schreibt mit Write-through direkt auf das Laufwerk. Danach wird die komplette
+Diskette zurückgelesen und bytegenau geprüft. Normales Kopieren der
+`.img`-Datei nach `A:` reicht nicht aus. Während des Vorgangs darf die
+Diskette nicht entfernt werden; Programme und Explorer-Fenster, die `A:`
+verwenden, müssen vorher geschlossen sein.
 
 ## Aufbau
 
