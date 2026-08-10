@@ -521,7 +521,8 @@ native-image: floppy-image
 		--data-file COPY.PRG=$(SYSTEM_PROGRAM_DIR)/COPY.PRG \
 		--data-file ECHO.PRG=$(SYSTEM_PROGRAM_DIR)/ECHO.PRG \
 		--data-file CLS.PRG=$(SYSTEM_PROGRAM_DIR)/CLS.PRG \
-		--data-file DRIVES.PRG=$(SYSTEM_PROGRAM_DIR)/DRIVES.PRG
+		--data-file DRIVES.PRG=$(SYSTEM_PROGRAM_DIR)/DRIVES.PRG \
+		--data-file EDIT.PRG=$(SYSTEM_PROGRAM_DIR)/EDIT.PRG
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/x86-microkernel.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
 
@@ -557,7 +558,8 @@ floppy-image: kernel system-programs user-program
 		--data-file COPY.PRG=$(SYSTEM_PROGRAM_DIR)/COPY.PRG \
 		--data-file ECHO.PRG=$(SYSTEM_PROGRAM_DIR)/ECHO.PRG \
 		--data-file CLS.PRG=$(SYSTEM_PROGRAM_DIR)/CLS.PRG \
-		--data-file DRIVES.PRG=$(SYSTEM_PROGRAM_DIR)/DRIVES.PRG
+		--data-file DRIVES.PRG=$(SYSTEM_PROGRAM_DIR)/DRIVES.PRG \
+		--data-file EDIT.PRG=$(SYSTEM_PROGRAM_DIR)/EDIT.PRG
 
 # ============================================================================
 # TESTING

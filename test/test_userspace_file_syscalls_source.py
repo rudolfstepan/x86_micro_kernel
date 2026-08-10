@@ -163,6 +163,13 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         self.assertIn("result == 0x03U", getchar_case)
         self.assertIn("task_exit_status(130);", getchar_case)
 
+    def test_blocking_keyboard_read_enables_interrupt_delivery(self):
+        source = (ROOT / "drivers/char/kb.c").read_text(encoding="utf-8")
+        getchar = source[source.index("char getchar(void)") :]
+        getchar = getchar[:getchar.index("\n}")]
+        self.assertIn("irq_enable();", getchar)
+        self.assertIn('"hlt"', getchar)
+
     def test_buffered_terminal_output_validates_userspace_memory(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
             encoding="utf-8"

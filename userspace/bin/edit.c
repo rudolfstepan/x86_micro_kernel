@@ -21,7 +21,7 @@ static unsigned int cursor_column;
 static unsigned int first_line;
 static unsigned int first_column;
 static int modified;
-static char status_text[80] = "^S Save   ^X Exit   Arrows Move   Backspace/Delete Edit";
+static char status_text[80] = "^S Save   ^X Exit   ^C Abort   Arrows Move   Backspace/Delete Edit";
 
 static unsigned int text_length(const char *text) {
     unsigned int length = 0;
@@ -106,16 +106,16 @@ static void redraw(const char *path) {
     }
 
     draw_padded(22, status_text);
-    draw_padded(23, "^G Help    ^S Write Out    ^X Exit       ^K Cut Line");
+    draw_padded(23, "^G Help  ^S Write Out  ^X Exit  ^C Abort  ^K Cut Line");
     draw_padded(24, "^O New Line     ^D Delete      ^A Home       ^E End");
     x86os_set_cursor(cursor_column - first_column,
                      cursor_line - first_line + 1U);
 }
 
 static int wait_key(void) {
-    int key;
-    while ((key = x86os_getchar_nonblocking()) == 0) x86os_delay(1);
-    return key;
+    /* This is the kernel's foreground input path, including Ctrl+C abort.
+     * Other Ctrl combinations are returned as ASCII control codes. */
+    return x86os_getchar();
 }
 
 static int read_key(void) {
@@ -301,6 +301,7 @@ int main(int argc, char **argv) {
     for (;;) {
         redraw(argv[1]);
         int key = read_key();
+
         if (key >= 0x100) {
             key -= 0x100;
             if (key == KEY_DELETE) delete_at_cursor();
@@ -316,7 +317,7 @@ int main(int argc, char **argv) {
                 if (save_file(argv[1], &exists) == 0) break;
                 copy_status("Error writing file");
             } else if (answer == 'n' || answer == 'N') break;
-        } else if (key == 7) copy_status("^S saves, ^X exits, arrows move, Enter splits lines");
+        } else if (key == 7) copy_status("^S saves, ^X exits, ^C aborts, arrows move, Enter splits lines");
         else if (key == 11) cut_line();
         else if (key == 1) move_cursor(KEY_HOME);
         else if (key == 5) move_cursor(KEY_END);

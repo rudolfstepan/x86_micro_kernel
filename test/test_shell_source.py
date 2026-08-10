@@ -128,6 +128,8 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertIn("x86os_create(path)", editor)
         self.assertIn("Save modified buffer?", editor)
         self.assertIn("x86os_set_cursor", editor)
+        self.assertIn("return x86os_getchar();", editor)
+        self.assertNotIn("x86os_getchar_nonblocking", editor)
 
     def test_tab_completes_commands_and_file_names(self):
         shell = (ROOT / "userspace/bin/shell.c").read_text(encoding="utf-8")

@@ -458,6 +458,10 @@ static void queue_extended_key(char key) {
  * Waits until a character is available in the queue or serial port
  */
 char getchar(void) {
+    /* A blocking read cannot make progress with IRQs masked.  Ring-3 enters
+     * through an interrupt gate, so explicitly permit keyboard IRQ delivery
+     * before sleeping instead of relying on entry-stub flag inference. */
+    irq_enable();
     while (1) {
         // Check serial port first (for nographic mode)
         char serial_ch = read_normalized_serial();
