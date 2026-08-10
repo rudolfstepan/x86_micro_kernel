@@ -14,7 +14,12 @@ jobs:
 
     steps:
       - name: Check out sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
 
       - name: Install freestanding x86 build tools
         run: |
@@ -24,5 +29,5 @@ jobs:
       - name: Run fixture-independent tests
         run: make test
 
-      - name: Build kernel and bootable ISO
+      - name: Build kernel and bootable disk images
         run: make all TARGET=qemu VIDEO=vga
