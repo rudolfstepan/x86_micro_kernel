@@ -124,6 +124,17 @@ static int syscall_ipc_send(ipc_handle_t handle,
     return ipc_send(process, handle, &message);
 }
 
+static int syscall_ipc_send_timeout(ipc_handle_t handle,
+                                    const ipc_message_t *user_message,
+                                    uint32_t timeout_ms) {
+    Process *process = scheduler_current_process();
+    ipc_message_t message;
+    if (process == NULL ||
+        syscall_copy_from_user_space(&message, user_message,
+                                     sizeof(message)) != 0) return -14;
+    return ipc_send_timeout(process, handle, &message, timeout_ms);
+}
+
 static int syscall_ipc_receive(ipc_handle_t handle,
                                ipc_message_t *user_message) {
     Process *process = scheduler_current_process();
@@ -136,6 +147,24 @@ static int syscall_ipc_receive(ipc_handle_t handle,
         return -14;
     }
     int result = ipc_receive(process, handle, &message);
+    if (result != 0) return result;
+    return copy_to_user_space(directory, address, &message,
+                              sizeof(message)) == 0 ? 0 : -14;
+}
+
+static int syscall_ipc_receive_timeout(ipc_handle_t handle,
+                                       ipc_message_t *user_message,
+                                       uint32_t timeout_ms) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_message;
+    ipc_message_t message;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(message), true) ||
+        copy_from_user(&message, user_message, sizeof(message)) != 0) {
+        return -14;
+    }
+    int result = ipc_receive_timeout(process, handle, &message, timeout_ms);
     if (result != 0) return result;
     return copy_to_user_space(directory, address, &message,
                               sizeof(message)) == 0 ? 0 : -14;
@@ -656,6 +685,8 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_ipc_send,           // Syscall 50: Send bounded message
     (void*)&syscall_ipc_receive,        // Syscall 51: Receive/block on endpoint
     (void*)&syscall_ipc_close,          // Syscall 52: Revoke owned endpoint
+    (void*)&syscall_ipc_send_timeout,   // Syscall 53: Timed IPC send
+    (void*)&syscall_ipc_receive_timeout,// Syscall 54: Timed IPC receive
     // Add more syscalls here as needed
 };
 
@@ -920,6 +951,16 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_IPC_CLOSE:
             result = (uint32_t)syscall_ipc_close((ipc_handle_t)arg1);
+            break;
+        case SYS_IPC_SEND_TIMEOUT:
+            result = (uint32_t)syscall_ipc_send_timeout(
+                (ipc_handle_t)arg1,
+                (const ipc_message_t*)(uintptr_t)arg2, arg3);
+            break;
+        case SYS_IPC_RECEIVE_TIMEOUT:
+            result = (uint32_t)syscall_ipc_receive_timeout(
+                (ipc_handle_t)arg1,
+                (ipc_message_t*)(uintptr_t)arg2, arg3);
             break;
         default:
             result = (uint32_t)-1;

@@ -195,11 +195,16 @@ Nachricht über die vorhandenen Wait-Queues. Schließt der Eigentümer den
 Endpoint oder endet sein Prozess, widerruft der Kernel den Endpoint, entfernt
 alle zugehörigen Capability-Einträge und weckt blockierte Peers. Ein
 Peer-Prozessverlust wird als geschlossener Kanal sichtbar, statt einen
-wartenden Prozess dauerhaft an einem verwaisten Endpoint zu halten.
+wartenden Prozess dauerhaft an einem verwaisten Endpoint zu halten. Send und
+Receive besitzen nun endliche monotone Deadlines. Timeout null ist explizit
+nichtblockierend und liefert `EAGAIN`; eine abgelaufene positive Deadline
+liefert `ETIMEDOUT`. Die alten Syscalls 50/51 verwenden einen endlichen
+Standardwert, während 53/54 den Timeout explizit entgegennehmen. Der PIT weckt
+abgelaufene IPC-Warter über einen festen `MAX_TASKS`-Scan, ohne einen zweiten
+intrusiven Wait-Knoten zu verwenden.
 
 Diese Basis ist noch kein vollständiger High-Assurance-IPC-Vertrag. Es fehlen:
 
-- endliche IPC-Deadlines und ein eindeutig unterscheidbarer Timeoutstatus,
 - CRC beziehungsweise `critical_object`-Schutz für Nachrichten, Endpoint- und
   Capability-Metadaten,
 - explizite selektive Delegation und Rechteabschwächung unabhängig vom Spawn,

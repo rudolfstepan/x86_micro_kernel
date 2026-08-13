@@ -59,6 +59,7 @@ void timer_irq_handler(void* r) {
     timer_tick_count += pit_millisecond_fraction / PIT_FREQUENCY;
     pit_millisecond_fraction %= PIT_FREQUENCY;
     scheduler_wake_expired_sleepers_locked(timer_tick_count);
+    scheduler_wake_expired_waiters_locked(timer_tick_count);
     watchdog_clock_tick(timer_tick_count);
     supervisor_clock_tick(timer_tick_count);
 }

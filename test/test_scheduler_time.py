@@ -123,7 +123,7 @@ class SchedulerTimeSourceTests(unittest.TestCase):
 
     def test_generic_block_and_wake_paths_update_scheduler_state(self) -> None:
         block = function_block(
-            self.scheduler, "int wait_queue_block_locked("
+            self.scheduler, "int wait_queue_block_until_locked("
         )
         wake_one = function_block(
             self.scheduler, "bool wait_queue_wake_one_locked("
@@ -160,6 +160,15 @@ class SchedulerTimeSourceTests(unittest.TestCase):
         compact = re.sub(r"\s+", " ", wake)
         self.assertIn("sleep_waiters.head->key <= now_ms", compact)
         self.assertIn("wait_queue_wake_one_locked(&sleep_waiters)", compact)
+
+    def test_timed_waiters_use_bounded_task_scan(self) -> None:
+        wake = function_block(
+            self.scheduler, "void scheduler_wake_expired_waiters_locked("
+        )
+        self.assertIn("MAX_TASKS", wake)
+        self.assertIn("wait_queue_remove_locked(", wake)
+        self.assertIn("TASK_READY", wake)
+        self.assertIn("-110", wake)
 
     def test_yield_selects_another_ready_task_without_polling(self) -> None:
         yield_block = function_block(self.scheduler, "int scheduler_yield(")

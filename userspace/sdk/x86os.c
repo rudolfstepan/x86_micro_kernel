@@ -81,6 +81,20 @@ int x86os_ipc_receive(x86os_ipc_handle_t handle,
                               (uintptr_t)message, 0);
 }
 
+int x86os_ipc_send_timeout(x86os_ipc_handle_t handle,
+                           const x86os_ipc_message_t* message,
+                           uint32_t timeout_ms) {
+    return (int)x86os_syscall(X86OS_SYS_IPC_SEND_TIMEOUT, handle,
+                              (uintptr_t)message, timeout_ms);
+}
+
+int x86os_ipc_receive_timeout(x86os_ipc_handle_t handle,
+                              x86os_ipc_message_t* message,
+                              uint32_t timeout_ms) {
+    return (int)x86os_syscall(X86OS_SYS_IPC_RECEIVE_TIMEOUT, handle,
+                              (uintptr_t)message, timeout_ms);
+}
+
 int x86os_ipc_close(x86os_ipc_handle_t handle) {
     return (int)x86os_syscall(X86OS_SYS_IPC_CLOSE, handle, 0, 0);
 }

@@ -56,7 +56,9 @@ enum {
     X86OS_SYS_IPC_CREATE = 49,
     X86OS_SYS_IPC_SEND = 50,
     X86OS_SYS_IPC_RECEIVE = 51,
-    X86OS_SYS_IPC_CLOSE = 52
+    X86OS_SYS_IPC_CLOSE = 52,
+    X86OS_SYS_IPC_SEND_TIMEOUT = 53,
+    X86OS_SYS_IPC_RECEIVE_TIMEOUT = 54
 };
 
 enum {
@@ -107,6 +109,7 @@ typedef struct {
 #define X86OS_IPC_MAX_CAPABILITIES_PER_PROCESS 8U
 #define X86OS_IPC_MESSAGE_VERSION 1U
 #define X86OS_IPC_INVALID_HANDLE 0U
+#define X86OS_IPC_DEFAULT_TIMEOUT_MS 1000U
 
 typedef uint32_t x86os_ipc_handle_t;
 
@@ -191,6 +194,12 @@ int x86os_ipc_send(x86os_ipc_handle_t handle,
                    const x86os_ipc_message_t* message);
 int x86os_ipc_receive(x86os_ipc_handle_t handle,
                       x86os_ipc_message_t* message);
+int x86os_ipc_send_timeout(x86os_ipc_handle_t handle,
+                           const x86os_ipc_message_t* message,
+                           uint32_t timeout_ms);
+int x86os_ipc_receive_timeout(x86os_ipc_handle_t handle,
+                              x86os_ipc_message_t* message,
+                              uint32_t timeout_ms);
 int x86os_ipc_close(x86os_ipc_handle_t handle);
 int x86os_display_info(x86os_display_info_t* info);
 int x86os_fill_rect(int32_t x, int32_t y, uint32_t width, uint32_t height,

@@ -12,6 +12,7 @@ struct Process;
 #define IPC_QUEUE_DEPTH 4U
 #define IPC_MAX_MESSAGE_SIZE 128U
 #define IPC_MESSAGE_VERSION 1U
+#define IPC_DEFAULT_TIMEOUT_MS 1000U
 
 #define IPC_RIGHT_SEND    0x01U
 #define IPC_RIGHT_RECEIVE 0x02U
@@ -38,8 +39,12 @@ void ipc_init(void);
 int ipc_create(struct Process *owner, ipc_handle_t *handle);
 int ipc_send(struct Process *sender, ipc_handle_t handle,
              const ipc_message_t *message);
+int ipc_send_timeout(struct Process *sender, ipc_handle_t handle,
+                     const ipc_message_t *message, uint32_t timeout_ms);
 int ipc_receive(struct Process *receiver, ipc_handle_t handle,
                 ipc_message_t *message);
+int ipc_receive_timeout(struct Process *receiver, ipc_handle_t handle,
+                        ipc_message_t *message, uint32_t timeout_ms);
 int ipc_close(struct Process *process, ipc_handle_t handle);
 int ipc_inherit(const struct Process *parent, struct Process *child);
 void ipc_process_cleanup(int pid, uint32_t generation);

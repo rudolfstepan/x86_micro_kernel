@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3b"
-active_id = "S0.3b-1"
+active_id = "S0.3b-2"
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "S0.3b-1"
-status = "active"
+status = "done"
 risk = "high"
 title = "Finite IPC deadlines"
 scope = "Add finite monotonic deadlines and explicit nonblocking behavior to IPC send/receive. Keep syscall 50/51 and old SDK calls source-compatible through a finite default; append timeout syscalls 53/54. Prefer a bounded MAX_TASKS scan with per-task deadline metadata; never place the existing single wait_node in two queues."
@@ -63,11 +63,16 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: add bounded IPC deadlines"
-evidence = []
+evidence = [
+  "python test/test_reist_ipc.py -q",
+  "python test/test_scheduler_time.py -q",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal",
+]
 
 [[packages]]
 id = "S0.3b-2"
-status = "queued"
+status = "active"
 risk = "high"
 title = "Protected IPC metadata"
 scope = "Protect bounded endpoint, queue and capability control metadata with critical_object-compatible redundancy, validation and fail-closed corruption handling. Add deterministic single- and multi-bit fault injection."

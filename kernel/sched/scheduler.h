@@ -46,6 +46,8 @@ typedef struct task {
     uint32_t user_stack;
     bool user_mode;
     wait_queue_node_t wait_node;
+    uint64_t wait_deadline_ms;
+    int wait_result;
 } task_t;
 
 typedef enum {
@@ -74,12 +76,16 @@ bool scheduler_preempt_is_disabled(void);
 bool scheduler_can_sleep(void);
 void scheduler_terminate_task(int task_id);
 int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind);
+int wait_queue_block_until_locked(wait_queue_t *queue,
+                                  task_block_kind_t kind,
+                                  uint64_t deadline_ms);
 bool wait_queue_wake_one_locked(wait_queue_t *queue);
 size_t wait_queue_wake_all_locked(wait_queue_t *queue);
 void wait_queue_cancel_locked(task_t *task);
 int scheduler_sleep_ms(uint32_t milliseconds);
 int scheduler_yield(void);
 void scheduler_wake_expired_sleepers_locked(uint64_t now_ms);
+void scheduler_wake_expired_waiters_locked(uint64_t now_ms);
 void scheduler_set_apic_timer_active(bool active);
 bool scheduler_uses_pit_fallback(void);
 void scheduler_pit_interrupt_handler(void);

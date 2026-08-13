@@ -409,9 +409,12 @@ void wait_queue_cancel_locked(task_t *task) {
     if (task == NULL || task->wait_node.queue == NULL) return;
     (void)wait_queue_remove_locked(task->wait_node.queue, &task->wait_node);
     task->wait_node.key = 0;
+    task->wait_deadline_ms = 0;
 }
 
-int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind) {
+int wait_queue_block_until_locked(wait_queue_t *queue,
+                                  task_block_kind_t kind,
+                                  uint64_t deadline_ms) {
     KASSERT_IRQ_DISABLED();
     KASSERT_NOT_IRQ();
     if (queue == NULL || irq_enabled() || preempt_disable_count != 0 ||
@@ -426,6 +429,8 @@ int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind) {
         !wait_queue_push_locked(queue, &task->wait_node)) {
         return -1;
     }
+    task->wait_deadline_ms = deadline_ms;
+    task->wait_result = 0;
     task->status = kind == TASK_BLOCK_SLEEPING
         ? TASK_SLEEPING : TASK_WAITING;
 
@@ -435,7 +440,11 @@ int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind) {
         current_task = blocked;
         return -1;
     }
-    return 0;
+    return task->wait_result;
+}
+
+int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind) {
+    return wait_queue_block_until_locked(queue, kind, UINT64_MAX);
 }
 
 bool wait_queue_wake_one_locked(wait_queue_t *queue) {
@@ -447,8 +456,27 @@ bool wait_queue_wake_one_locked(wait_queue_t *queue) {
         task_t *task = task_from_wait_node(node);
         node->key = 0;
         if (task->status == TASK_WAITING || task->status == TASK_SLEEPING) {
+            task->wait_deadline_ms = 0;
+            task->wait_result = 0;
             task->status = TASK_READY;
             return true;
+        }
+    }
+}
+
+void scheduler_wake_expired_waiters_locked(uint64_t now_ms) {
+    KASSERT_IRQ_DISABLED();
+    if (irq_enabled()) return;
+    for (size_t index = 0; index < MAX_TASKS; ++index) {
+        task_t *task = &tasks[index];
+        if (task->status != TASK_WAITING || task->wait_node.queue == NULL ||
+            task->wait_deadline_ms == UINT64_MAX ||
+            task->wait_deadline_ms > now_ms) continue;
+        if (wait_queue_remove_locked(task->wait_node.queue,
+                                     &task->wait_node)) {
+            task->wait_deadline_ms = 0;
+            task->wait_result = -110;
+            task->status = TASK_READY;
         }
     }
 }

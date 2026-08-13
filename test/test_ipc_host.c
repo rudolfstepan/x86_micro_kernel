@@ -12,6 +12,9 @@
 static unsigned block_count;
 static unsigned wake_one_count;
 static unsigned wake_all_count;
+static uint64_t monotonic_ms;
+
+uint64_t pit_monotonic_ms(void) { return monotonic_ms; }
 
 void irq_context_enter(void) {}
 void irq_context_exit(void) {}
@@ -38,6 +41,13 @@ int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind) {
     (void)kind;
     ++block_count;
     return -1;
+}
+
+int wait_queue_block_until_locked(wait_queue_t *queue,
+                                  task_block_kind_t kind,
+                                  uint64_t deadline_ms) {
+    (void)deadline_ms;
+    return wait_queue_block_locked(queue, kind);
 }
 
 bool wait_queue_wake_one_locked(wait_queue_t *queue) {
@@ -107,6 +117,10 @@ static int test_rights_fifo_and_bounds(void) {
     CHECK(ipc_send(&owner, handle, &excess) < 0);
     CHECK(block_count == blocks_before + 1U);
 
+    blocks_before = block_count;
+    CHECK(ipc_send_timeout(&owner, handle, &excess, 0U) == -11);
+    CHECK(block_count == blocks_before);
+
     for (uint32_t index = 0; index < IPC_QUEUE_DEPTH; ++index) {
         ipc_message_t received;
         prepare_receive(&received);
@@ -122,6 +136,9 @@ static int test_rights_fifo_and_bounds(void) {
     prepare_receive(&empty);
     CHECK(ipc_receive(&child, handle, &empty) < 0);
     CHECK(block_count == blocks_before + 1U);
+    blocks_before = block_count;
+    CHECK(ipc_receive_timeout(&child, handle, &empty, 0U) == -11);
+    CHECK(block_count == blocks_before);
 
     /* Bidirectional queues must not let the sender consume its own message. */
     ipc_message_t reply = message(0xA5U);

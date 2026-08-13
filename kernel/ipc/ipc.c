@@ -3,6 +3,7 @@
 #include "kernel/proc/process.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/sched/wait_queue.h"
+#include "kernel/time/pit.h"
 
 #ifdef REIST_HOST_TEST
 #include <string.h>
@@ -26,6 +27,7 @@ static void ipc_unlock(uint32_t flags) { irq_restore(flags); }
 #define IPC_ENOSPC   (-28)
 #define IPC_EPIPE    (-32)
 #define IPC_EMSGSIZE (-90)
+#define IPC_ETIMEDOUT (-110)
 
 typedef struct {
     bool active;
@@ -285,12 +287,15 @@ static bool message_valid(const ipc_message_t *message) {
            message->length <= IPC_MAX_MESSAGE_SIZE;
 }
 
-int ipc_send(Process *sender, ipc_handle_t handle,
-             const ipc_message_t *message) {
+int ipc_send_timeout(Process *sender, ipc_handle_t handle,
+                     const ipc_message_t *message, uint32_t timeout_ms) {
     if (!message_valid(message)) {
         return message != NULL && message->length > IPC_MAX_MESSAGE_SIZE
             ? IPC_EMSGSIZE : IPC_EINVAL;
     }
+    uint64_t now = pit_monotonic_ms();
+    uint64_t deadline = now + (uint64_t)timeout_ms;
+    if (deadline < now) deadline = UINT64_MAX;
     for (;;) {
         uint32_t flags = ipc_lock();
         ipc_endpoint_t *endpoint = NULL;
@@ -321,11 +326,25 @@ int ipc_send(Process *sender, ipc_handle_t handle,
             ipc_unlock(flags);
             return 0;
         }
-        result = wait_queue_block_locked(&endpoint->send_waiters,
-                                         TASK_BLOCK_WAITING);
+        if (timeout_ms == 0U) {
+            ipc_unlock(flags);
+            return IPC_EAGAIN;
+        }
+        if (pit_monotonic_ms() >= deadline) {
+            ipc_unlock(flags);
+            return IPC_ETIMEDOUT;
+        }
+        result = wait_queue_block_until_locked(&endpoint->send_waiters,
+                                               TASK_BLOCK_WAITING, deadline);
         ipc_unlock(flags);
+        if (result == IPC_ETIMEDOUT) return IPC_ETIMEDOUT;
         if (result != 0) return IPC_EAGAIN;
     }
+}
+
+int ipc_send(Process *sender, ipc_handle_t handle,
+             const ipc_message_t *message) {
+    return ipc_send_timeout(sender, handle, message, IPC_DEFAULT_TIMEOUT_MS);
 }
 
 static int receivable_offset(const ipc_endpoint_t *endpoint,
@@ -357,9 +376,12 @@ static void remove_message_locked(ipc_endpoint_t *endpoint, uint32_t offset,
     if (endpoint->count == 0U) endpoint->head = 0U;
 }
 
-int ipc_receive(Process *receiver, ipc_handle_t handle,
-                ipc_message_t *message) {
+int ipc_receive_timeout(Process *receiver, ipc_handle_t handle,
+                        ipc_message_t *message, uint32_t timeout_ms) {
     if (!message_valid(message)) return IPC_EINVAL;
+    uint64_t now = pit_monotonic_ms();
+    uint64_t deadline = now + (uint64_t)timeout_ms;
+    if (deadline < now) deadline = UINT64_MAX;
     for (;;) {
         uint32_t flags = ipc_lock();
         ipc_endpoint_t *endpoint = NULL;
@@ -380,11 +402,26 @@ int ipc_receive(Process *receiver, ipc_handle_t handle,
             ipc_unlock(flags);
             return IPC_EPIPE;
         }
-        result = wait_queue_block_locked(&endpoint->receive_waiters,
-                                         TASK_BLOCK_WAITING);
+        if (timeout_ms == 0U) {
+            ipc_unlock(flags);
+            return IPC_EAGAIN;
+        }
+        if (pit_monotonic_ms() >= deadline) {
+            ipc_unlock(flags);
+            return IPC_ETIMEDOUT;
+        }
+        result = wait_queue_block_until_locked(&endpoint->receive_waiters,
+                                               TASK_BLOCK_WAITING, deadline);
         ipc_unlock(flags);
+        if (result == IPC_ETIMEDOUT) return IPC_ETIMEDOUT;
         if (result != 0) return IPC_EAGAIN;
     }
+}
+
+int ipc_receive(Process *receiver, ipc_handle_t handle,
+                ipc_message_t *message) {
+    return ipc_receive_timeout(receiver, handle, message,
+                               IPC_DEFAULT_TIMEOUT_MS);
 }
 
 int ipc_close(Process *process, ipc_handle_t handle) {

@@ -107,8 +107,8 @@ class ReistIpcContractTests(unittest.TestCase):
         self.assertRegex(resolver, r"(?:pid|owner).*(?:pid|owner)")
         close = c_block(self.source, "int ipc_close(")
         self.assertIn("IPC_RIGHT_CONTROL", close)
-        send = c_block(self.source, "int ipc_send(")
-        receive = c_block(self.source, "int ipc_receive(")
+        send = c_block(self.source, "int ipc_send_timeout(")
+        receive = c_block(self.source, "int ipc_receive_timeout(")
         self.assertIn("IPC_RIGHT_SEND", send)
         self.assertIn("IPC_RIGHT_RECEIVE", receive)
 
@@ -117,10 +117,10 @@ class ReistIpcContractTests(unittest.TestCase):
             self.source,
             r"ipc_message_t\s+\w+\s*\[\s*IPC_QUEUE_DEPTH\s*\]",
         )
-        send = c_block(self.source, "int ipc_send(")
-        receive = c_block(self.source, "int ipc_receive(")
+        send = c_block(self.source, "int ipc_send_timeout(")
+        receive = c_block(self.source, "int ipc_receive_timeout(")
         for operation in (send, receive):
-            self.assertIn("wait_queue_block_locked(", operation)
+            self.assertIn("wait_queue_block_until_locked(", operation)
             self.assertNotIn("scheduler_yield(", operation)
             self.assertNotRegex(operation, r"\b(?:hlt|pause)\b")
         self.assertIn("IPC_QUEUE_DEPTH", send)
@@ -162,6 +162,8 @@ class ReistIpcContractTests(unittest.TestCase):
             "IPC_SEND": 50,
             "IPC_RECEIVE": 51,
             "IPC_CLOSE": 52,
+            "IPC_SEND_TIMEOUT": 53,
+            "IPC_RECEIVE_TIMEOUT": 54,
         }
         for name, number in calls.items():
             self.assertRegex(
@@ -179,8 +181,21 @@ class ReistIpcContractTests(unittest.TestCase):
             "int x86os_ipc_send(",
             "int x86os_ipc_receive(",
             "int x86os_ipc_close(",
+            "int x86os_ipc_send_timeout(",
+            "int x86os_ipc_receive_timeout(",
         ):
             self.assertIn(declaration, self.sdk_h)
+
+    def test_deadlines_are_finite_monotonic_and_nonblocking(self) -> None:
+        self.assertIn("IPC_DEFAULT_TIMEOUT_MS", self.header)
+        for signature in ("int ipc_send_timeout(", "int ipc_receive_timeout("):
+            operation = c_block(self.source, signature)
+            self.assertIn("pit_monotonic_ms()", operation)
+            self.assertIn("UINT64_MAX", operation)
+            self.assertIn("IPC_EAGAIN", operation)
+            self.assertIn("IPC_ETIMEDOUT", operation)
+            self.assertIn("wait_queue_block_until_locked(", operation)
+            self.assertNotIn("scheduler_yield(", operation)
 
     def test_syscalls_validate_user_messages_before_blocking(self) -> None:
         send = c_block(self.syscalls, "static int syscall_ipc_send(")

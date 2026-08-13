@@ -662,14 +662,19 @@ Die Rechte sind `SEND`, `RECEIVE` und `CONTROL`. Der Erzeuger behält `CONTROL`,
 während ein Spawn einen noch ungebundenen Endpoint vor seiner
 READY-Publikation an genau ein Kind nur mit `SEND|RECEIVE` bindet.
 Mehrparteienrouting ist nicht Bestandteil von v1. Send und Receive blockieren
-auf festen Wait-Queues.
+auf festen Wait-Queues und besitzen endliche, auf `pit_monotonic_ms` basierende
+Deadlines. Timeout null liefert ohne Blockierung `EAGAIN`, eine abgelaufene
+positive Deadline `ETIMEDOUT`. Die kompatiblen Syscalls 50/51 verwenden einen
+endlichen Standard; die angehängten Syscalls 53/54 nehmen den Timeout explizit
+entgegen. Ein fester `MAX_TASKS`-Scan weckt abgelaufene Warter, ohne den
+einzigen intrusiven Wait-Knoten doppelt einzureihen.
 Close oder Eigentümer-Exit widerrufen den Endpoint, entfernen alle abgeleiteten
 Einträge und wecken blockierte Peers. Host- und Ring-3-Gasttests decken
 Nachrichtenaustausch, Rechteabschwächung, Ressourcenlimits, Close-Wakeup und
 Exit-Revoke ab.
 
-S0.3a ist ausdrücklich nur der Mechanismus-Unterbau. Noch offen sind endliche
-IPC-Deadlines, CRC-/`critical_object`-Schutz, explizite selektive Delegation,
+S0.3a ist ausdrücklich nur der Mechanismus-Unterbau. Noch offen sind
+CRC-/`critical_object`-Schutz, explizite selektive Delegation,
 reservierte Service-Taskslots und Capability-Gates für `kill` sowie die heute
 ambient verfügbaren Datei-, Display-, Prozess- und sonstigen Syscalls. Ohne
 diese Gates besitzt ein IPC-nutzender Prozess noch kein vollständiges
@@ -981,7 +986,7 @@ IPC/Capabilities v1** sind umgesetzt. Der nächste autonome Schritt ist
 sind die noch offenen Grenzen des IPC-Unterbaus in kleinen, getrennt testbaren
 Inkrementen zu schließen:
 
-1. endliche Send-/Receive-Deadlines mit eindeutigem Timeoutstatus,
+1. endliche Send-/Receive-Deadlines mit eindeutigem Timeoutstatus — umgesetzt,
 2. CRC- und `critical_object`-Schutz für Queue-, Endpoint- und
    Capability-Metadaten einschließlich Bitflip-Injection,
 3. explizite selektive Delegation mit ausschließlich abschwächbaren Rechten,
