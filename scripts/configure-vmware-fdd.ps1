@@ -14,7 +14,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if (-not $VmxPath) {
-    $VmxPath = Join-Path $repoRoot 'build\vmware\x86-microkernel\x86-microkernel.vmx'
+    $VmxPath = Join-Path $repoRoot 'build\vmware\reist-os\reist-os.vmx'
 }
 if (-not (Test-Path -LiteralPath $VmxPath -PathType Leaf)) {
     throw "VMware configuration not found: $VmxPath"
@@ -66,14 +66,14 @@ floppy0.autodetect = "FALSE"
 floppy0.clientDevice = "FALSE"
 "@
 } else {
-    $image = Join-Path (Split-Path -Parent $VmxPath) 'x86-microkernel-floppy.img'
+    $image = Join-Path (Split-Path -Parent $VmxPath) 'reist-os-floppy.img'
     if (-not (Test-Path -LiteralPath $image -PathType Leaf)) {
         throw "Packaged floppy image not found: $image"
     }
     $floppy = @"
 floppy0.present = "TRUE"
 floppy0.fileType = "file"
-floppy0.fileName = "x86-microkernel-floppy.img"
+floppy0.fileName = "reist-os-floppy.img"
 floppy0.startConnected = "TRUE"
 floppy0.autodetect = "FALSE"
 "@
@@ -86,6 +86,6 @@ Write-Host "VMware floppy backing changed to $Mode."
 if ($Mode -eq 'Physical') {
     Write-Host "Host $Drive is exposed to the guest as its legacy floppy drive A:."
 } else {
-    Write-Host 'The packaged x86-microkernel-floppy.img is active again.'
+    Write-Host 'The packaged reist-os-floppy.img is active again.'
 }
 Write-Host "VMX: $VmxPath"

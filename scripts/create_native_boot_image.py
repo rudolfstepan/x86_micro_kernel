@@ -23,7 +23,7 @@ DATA_PARTITION_TYPE = 0x0C  # FAT32 with LBA addressing
 MANIFEST_MAGIC = b"X86BOOT1"
 MANIFEST_VERSION = 1
 MAX_LOAD_ADDRESS = 0x04000000
-VMWARE_BASENAME = "x86-microkernel"
+VMWARE_BASENAME = "reist-os"
 
 
 def sectors_for(size: int) -> int:
@@ -205,7 +205,7 @@ def write_fat32_volume(image, partition_lba: int, total_sectors: int,
     cluster_size = sectors_per_cluster * SECTOR_SIZE
 
     readme = (
-        b"x86 Microkernel - VMware data volume\r\n"
+        b"REIST OS - VMware data volume\r\n"
         b"This FAT32 partition is ready for shell file operations.\r\n"
     )
     files: list[tuple[bytes, bytes]] = [
@@ -393,8 +393,8 @@ floppy0.startConnected = "TRUE"'''
 config.version = "8"
 virtualHW.version = "20"
 productCompatibility = "hosted"
-displayName = "x86 Microkernel (Native BIOS)"
-annotation = "x86 microkernel with its own BIOS MBR and ELF32 loader"
+displayName = "REIST OS (Native BIOS)"
+annotation = "REIST OS with its own BIOS MBR and ELF32 loader"
 guestOS = "other"
 firmware = "bios"
 bios.bootOrder = "{boot_order}"
@@ -452,7 +452,7 @@ def write_vmware_package(vm_directory: Path, raw_image: Path,
     write_vmdk_descriptor(descriptor, flat_extent, total_sectors, content_id)
     packaged_floppy = None
     if floppy_image is not None:
-        packaged_floppy = vm_directory / "x86-microkernel-floppy.img"
+        packaged_floppy = vm_directory / "reist-os-floppy.img"
         shutil.copyfile(floppy_image, packaged_floppy)
     write_vmx(vmx, descriptor, packaged_floppy)
 
@@ -462,11 +462,11 @@ set "VMRUN=%ProgramFiles%\VMware\VMware Workstation\vmrun.exe"
 if not exist "%VMRUN%" set "VMRUN=%ProgramFiles(x86)%\VMware\VMware Workstation\vmrun.exe"
 if not exist "%VMRUN%" (
   echo VMware Workstation with vmrun.exe was not found.
-  echo Open x86-microkernel.vmx manually after installing VMware Workstation.
+  echo Open reist-os.vmx manually after installing VMware Workstation.
   pause
   exit /b 1
 )
-"%VMRUN%" -T ws start "%~dp0x86-microkernel.vmx" gui
+"%VMRUN%" -T ws start "%~dp0reist-os.vmx" gui
 if errorlevel 1 (
   echo VMware could not start the virtual machine.
   pause
@@ -477,11 +477,11 @@ endlocal
     (vm_directory / "START-VMWARE.cmd").write_text(
         launcher, encoding="ascii", newline="\r\n"
     )
-    readme = """x86 Microkernel - fertige VMware-VM
+    readme = """REIST OS - fertige VMware-VM
 
 Start:
   1. START-VMWARE.cmd doppelklicken, oder
-  2. x86-microkernel.vmx in VMware Workstation öffnen und auf Play klicken.
+  2. reist-os.vmx in VMware Workstation öffnen und auf Play klicken.
 
 Die VM ist bereits vollständig konfiguriert:
   - Legacy BIOS, zuerst Diskette, danach Fallback auf IDE-Festplatte

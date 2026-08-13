@@ -396,7 +396,7 @@ def main():
     """Main entry point"""
     import argparse
     
-    parser = argparse.ArgumentParser(description='Test disk images for x86 microkernel')
+    parser = argparse.ArgumentParser(description='Test disk images for REIST OS')
     parser.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
     parser.add_argument('--project-root', type=Path, default=Path.cwd(),
                        help='Project root directory (default: current directory)')

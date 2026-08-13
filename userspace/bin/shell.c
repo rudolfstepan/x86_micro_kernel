@@ -490,7 +490,7 @@ int main(void) {
     if (x86os_getcwd(search_paths[0], sizeof(search_paths[0])) == 0) {
         search_path_count = 1;
     }
-    x86os_puts("x86 OS userspace shell\nType HELP for available commands.\n\n");
+    x86os_puts("REIST OS userspace shell\nType HELP for available commands.\n\n");
     for (;;) {
         show_prompt();
         read_line(line);

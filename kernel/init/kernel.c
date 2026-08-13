@@ -1,6 +1,6 @@
 /**
  * @file kernel.c
- * @brief x86 Microkernel Main Initialization
+ * @brief REIST OS Main Initialization
  * 
  * This is the main entry point for the kernel after bootloader handoff.
  * Provides staged initialization of all kernel subsystems:

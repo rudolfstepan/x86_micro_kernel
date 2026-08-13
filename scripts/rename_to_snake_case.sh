@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script to rename C naming conventions in the x86 microkernel
+# Script to rename C naming conventions in the REIST OS
 
 cd /home/rudolf/repos/x86_micro_kernel
 

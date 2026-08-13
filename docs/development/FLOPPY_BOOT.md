@@ -4,7 +4,7 @@ Das Projekt erzeugt zusätzlich zum normalen Festplattenimage ein echtes
 1,44-MB-BIOS-Diskettenimage:
 
 ```text
-build/x86-microkernel-floppy.img
+build/reist-os-floppy.img
 ```
 
 Es verwendet klassische BIOS-CHS-Zugriffe mit 80 Zylindern, zwei Köpfen und
@@ -55,7 +55,7 @@ Oder unter Windows direkt:
 
 ```powershell
 & 'C:\tmp\qemu-portable\qemu-system-i386.exe' -m 64M -boot a `
-  -drive file=build/x86-microkernel-floppy.img,format=raw,if=floppy
+  -drive file=build/reist-os-floppy.img,format=raw,if=floppy
 ```
 
 ## Auf eine echte Diskette schreiben
@@ -64,7 +64,7 @@ Unter Linux muss das Gerät vorher eindeutig bestimmt und ausgehängt werden.
 Für ein klassisches erstes Diskettenlaufwerk ist es häufig `/dev/fd0`:
 
 ```bash
-sudo dd if=build/x86-microkernel-floppy.img of=/dev/fd0 bs=512 conv=fsync
+sudo dd if=build/reist-os-floppy.img of=/dev/fd0 bs=512 conv=fsync
 ```
 
 Bei einem USB-Diskettenlaufwerk ist es dagegen typischerweise ein `/dev/sdX`-

@@ -589,7 +589,7 @@ Exit code: 0
 
 ✅ **Priority 3.1 (Cursor Positioning) Complete!**
 
-The x86 microkernel shell now provides **full bash-like cursor editing** with:
+The REIST OS shell now provides **full bash-like cursor editing** with:
 - **Left/Right arrows** - Move cursor anywhere in line
 - **Home/End keys** - Jump to start/end instantly
 - **Mid-line editing** - Insert characters at any position

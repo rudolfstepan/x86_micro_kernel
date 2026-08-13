@@ -9,7 +9,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
-$BootImage = Join-Path $RepoRoot 'build\x86-microkernel.img'
+$BootImage = Join-Path $RepoRoot 'build\reist-os.img'
 
 if (-not $NoBuild) {
     & (Join-Path $PSScriptRoot 'build-windows.ps1') -Target $Target

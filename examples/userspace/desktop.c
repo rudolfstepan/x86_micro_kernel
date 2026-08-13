@@ -123,7 +123,7 @@ static void render_desktop(const x86os_display_info_t *display,
                           display->width, 2U, apps[selected].accent);
     draw_text((int32_t)margin,
               (int32_t)((topbar_height - font_height) / 2U),
-              "x86 Microkernel Desktop", color_text, color_topbar);
+              "REIST OS Desktop", color_text, color_topbar);
     if (status_width + margin < display->width) {
         draw_text((int32_t)(display->width - margin - status_width),
                   (int32_t)((topbar_height - font_height) / 2U),

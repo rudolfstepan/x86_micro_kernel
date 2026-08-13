@@ -1,5 +1,5 @@
 #!/bin/bash
-# Create an EXT2 filesystem disk image for the x86 microkernel
+# Create an EXT2 filesystem disk image for the REIST OS
 
 set -e  # Exit on error
 

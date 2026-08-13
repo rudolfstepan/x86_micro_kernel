@@ -102,7 +102,7 @@ def create_floppy_image(stage1: bytes, stage2: bytes, kernel: bytes,
     root = bytearray(root_sectors * SECTOR_SIZE)
     data_start = reserved_sectors + fat_count * sectors_per_fat + root_sectors
     files = {"README.TXT": (
-        b"x86 Microkernel rescue floppy\r\n"
+        b"REIST OS rescue floppy\r\n"
         b"Bootloader and kernel occupy reserved FAT12 sectors.\r\n"
     )}
     if data_files:

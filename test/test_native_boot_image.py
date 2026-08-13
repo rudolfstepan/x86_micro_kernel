@@ -336,7 +336,7 @@ class NativeBootImageTests(unittest.TestCase):
 
         self.assertEqual(root_chain, [2, 3])
         self.assertEqual(len(files), 17)
-        self.assertEqual(files[b"README  TXT"][0][:3], b"x86")
+        self.assertEqual(files[b"README  TXT"][0][:3], b"REI")
         for index in range(16):
             name = f"F{index:02}".encode("ascii").ljust(8, b" ") + b"TXT"
             self.assertEqual(files[name], (b"", [], 0))
@@ -426,29 +426,29 @@ class NativeBootImageTests(unittest.TestCase):
             floppy = root / "rescue.img"
             floppy.write_bytes(bytes(1474560))
             vmx = write_vmware_package(package, raw, 2, 0x12345678, floppy)
-            self.assertEqual(vmx, package / "x86-microkernel.vmx")
+            self.assertEqual(vmx, package / "reist-os.vmx")
             self.assertEqual(
-                (package / "x86-microkernel-flat.vmdk").read_bytes(),
+                (package / "reist-os-flat.vmdk").read_bytes(),
                 raw.read_bytes(),
             )
-            descriptor = (package / "x86-microkernel.vmdk").read_text(
+            descriptor = (package / "reist-os.vmdk").read_text(
                 encoding="ascii"
             )
-            self.assertIn('FLAT "x86-microkernel-flat.vmdk" 0', descriptor)
-            config = (package / "x86-microkernel.vmx").read_text(
+            self.assertIn('FLAT "reist-os-flat.vmdk" 0', descriptor)
+            config = (package / "reist-os.vmx").read_text(
                 encoding="ascii"
             )
             self.assertIn('bios.bootOrder = "floppy,hdd"', config)
             self.assertIn('floppy0.present = "TRUE"', config)
             self.assertIn('floppy0.fileType = "file"', config)
             self.assertIn(
-                'floppy0.fileName = "x86-microkernel-floppy.img"',
+                'floppy0.fileName = "reist-os-floppy.img"',
                 config,
             )
             self.assertTrue((package / "START-VMWARE.cmd").is_file())
             self.assertTrue((package / "README-VMWARE.txt").is_file())
             self.assertEqual(
-                (package / "x86-microkernel-floppy.img").read_bytes(),
+                (package / "reist-os-floppy.img").read_bytes(),
                 floppy.read_bytes(),
             )
 

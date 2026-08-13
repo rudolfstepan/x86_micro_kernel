@@ -172,7 +172,7 @@ def build(sources: list[Path], output: Path, zig: Path,
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Compile external sources into a loadable x86 Microkernel PRG"
+        description="Compile external sources into a loadable REIST OS PRG"
     )
     parser.add_argument("sources", nargs="+", type=Path)
     parser.add_argument("-o", "--output", required=True, type=Path)

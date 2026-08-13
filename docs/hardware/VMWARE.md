@@ -8,13 +8,13 @@ nicht erforderlich.
 
 ```powershell
 .\scripts\build-windows.ps1 -Target vmware -RunTests
-.\build\vmware\x86-microkernel\START-VMWARE.cmd
+.\build\vmware\reist-os\START-VMWARE.cmd
 ```
 
 Alternativ wird diese Datei in VMware Workstation geöffnet:
 
 ```text
-build/vmware/x86-microkernel/x86-microkernel.vmx
+build/vmware/reist-os/reist-os.vmx
 ```
 
 Die VM muss vor einem erneuten Build ausgeschaltet sein. Das Buildskript
@@ -118,7 +118,7 @@ Falls das Paket bewusst neu angelegt werden soll:
 
 1. Gasttyp **Other / Other 32-bit** wählen.
 2. Legacy BIOS, eine vCPU und mindestens 512 MiB RAM einstellen.
-3. `build/x86-microkernel.vmdk` als vorhandene IDE-Platte einbinden.
+3. `build/reist-os.vmdk` als vorhandene IDE-Platte einbinden.
 4. Intel E1000 an `VMnet0` konfigurieren.
 5. Festplatte als erstes Bootgerät wählen.
 
@@ -134,7 +134,7 @@ sein:
 .\scripts\configure-vmware-fdd.ps1 -Mode Physical -Drive A:
 ```
 
-Danach startet die normale `x86-microkernel.vmx` zuerst von der eingelegten
+Danach startet die normale `reist-os.vmx` zuerst von der eingelegten
 physischen Diskette und nur als Fallback von der IDE-Festplatte. VMware stellt
 das Hostlaufwerk dem Gast als klassischen Floppy-Controller bereit. Deshalb
 bleiben `usb.present`, EHCI und xHCI deaktiviert; der noch experimentelle

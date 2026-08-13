@@ -11,7 +11,7 @@ if errorlevel 1 (
 )
 
 for %%I in ("%~dp0..") do set "PROJECT_ROOT=%%~fI"
-set "IMAGE=%PROJECT_ROOT%\build\x86-microkernel-floppy.img"
+set "IMAGE=%PROJECT_ROOT%\build\reist-os-floppy.img"
 set "WRITER=%~dp0write-floppy.ps1"
 
 if not exist "%WRITER%" (

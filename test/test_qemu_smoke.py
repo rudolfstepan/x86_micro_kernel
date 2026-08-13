@@ -289,7 +289,7 @@ class QemuGuestSmokePackagingTests(unittest.TestCase):
         self.assertRegex(makefile, r"(?m)^\.PHONY:.*\btest-smoke\b")
         self.assertRegex(makefile, r"(?m)^test-smoke:\s+native-image\s*$")
         self.assertIn("scripts/run_qemu_smoke.py", makefile)
-        self.assertIn("$(OUTPUT_DIR)/x86-microkernel.img", makefile)
+        self.assertIn("$(OUTPUT_DIR)/reist-os.img", makefile)
 
     def test_ci_installs_qemu_and_runs_the_guest_smoke(self) -> None:
         workflow = (ROOT / ".github/workflows/build.yml").read_text(

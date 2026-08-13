@@ -15,6 +15,7 @@ bereits behobene Fehler enthalten.
 - [Projektstatus](development/PROJECT_STATUS.md) – verifizierte Komponenten und offene Grenzen
 - [Fehlstellenanalyse und Roadmap](development/OS_GAP_ANALYSIS_AND_ROADMAP.md) – priorisierte Implementierungspakete mit Abhängigkeiten und Abnahmekriterien
 - [Medical-High-Assurance-Vertrag](architecture/MEDICAL_HIGH_ASSURANCE_CONTRACT.md) – verbindliche Safety-, Recovery-, Redundanz- und Lebenszyklusregeln; derzeit kein klinisch freigegebener Stand
+- [REIST-Zielarchitektur](architecture/REIST_ARCHITECTURE.md) – Detect, Contain, Recover, Validate und Reintegrate als technisches Systemmodell
 - [Build-Modi](development/BUILD_MODES.md) – `qemu`, `vmware`, `real_hw` und Videoauswahl
 - [Nativer Bootdatenträger](development/BOOTABLE_DISK.md) – BIOS/MBR, Stage 2 und FAT32-Image
 - [Bootfähige Diskette](development/FLOPPY_BOOT.md) – 1,44-MB-CHS-Image für echte BIOS-PCs

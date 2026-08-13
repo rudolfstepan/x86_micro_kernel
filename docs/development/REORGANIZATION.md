@@ -9,7 +9,7 @@
 ## Date: October 31, 2025
 
 ## Overview
-Successfully reorganized the x86 microkernel codebase from a flat `src/` structure to a hierarchical, modular architecture following standard operating system design patterns.
+Successfully reorganized the REIST OS codebase from a flat `src/` structure to a hierarchical, modular architecture following standard operating system design patterns.
 
 ## What Was Done
 

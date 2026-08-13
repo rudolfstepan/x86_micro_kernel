@@ -32,13 +32,13 @@ nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine wesentliche medizinische Funktion blockieren oder deren Zeitbudget
 verbrauchen.
 
-Der Projektname enthält „Microkernel“, die aktuelle Architektur ist jedoch ein
+**REIST OS** steht für **Resilient Execution, Isolation and Stability
+Technology**. Die aktuelle Architektur ist trotz des neuen Namens noch ein
 modularer monolithischer Kernel: Scheduler, Speicherverwaltung, Dateisysteme,
 Netzwerk und Treiber werden gemeinsam in `kernel.bin` gelinkt. Ring-3-Programme
-sind isoliert, Hardware- und Dateisystemdienste laufen aber nicht als
-Userspace-Server. Das ist kein unmittelbarer Fehler. Vor einem großen Umbau
-muss entschieden werden, ob „Microkernel“ nur der Projektname bleibt oder ob
-Nachrichten-IPC, Capabilities und Userspace-Server wirklich Projektziel sind.
+sind isoliert, Hardware- und Dateisystemdienste laufen aber noch nicht als
+Userspace-Server. Für das High-Assurance-Ziel werden Nachrichten-IPC,
+Capabilities und isolierte, neu startbare Dienste nun in S0.3 verbindlich.
 
 ## 2. Zusammenfassung
 
@@ -404,7 +404,7 @@ den Test aus und bewahren das serielle Protokoll.
 2. Einen Ring-3-Teststarter ins Image legen, der Userspace-Schutz,
    Spawn/Wait, Datei-I/O und Exceptions prüft; nach dem Erfolg beendet der
    Host QEMU kontrolliert.
-3. Den Smoke-Test direkt an das erzeugte `build/x86-microkernel.img` binden;
+3. Den Smoke-Test direkt an das erzeugte `build/reist-os.img` binden;
    Legacy-Fixture-Tests getrennt halten.
 4. Den Smoke-Test in CI ausführen und Logs als Artefakt sichern.
 

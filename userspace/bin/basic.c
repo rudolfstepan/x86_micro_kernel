@@ -1,6 +1,6 @@
 /**
  * @file basic.c
- * @brief Simple BASIC interpreter for x86 microkernel
+ * @brief Simple BASIC interpreter for REIST OS
  *
  * A minimal BASIC interpreter supporting:
  * - PRINT - output text and variables

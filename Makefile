@@ -1,4 +1,4 @@
-# x86 Microkernel Makefile - Reorganized Structure
+# REIST OS Makefile - Reorganized Structure
 # Build system for hierarchical OS architecture
 
 # ============================================================================
@@ -216,7 +216,7 @@ build-qemu:
 	@echo "Building kernel for QEMU emulation..."
 	@$(MAKE) clean
 	@$(MAKE) all TARGET=qemu
-	@echo "✓ QEMU build complete: $(OUTPUT_DIR)/x86-microkernel.img"
+	@echo "✓ QEMU build complete: $(OUTPUT_DIR)/reist-os.img"
 	@echo "  Run with: make run"
 
 # Build for QEMU with framebuffer
@@ -224,7 +224,7 @@ build-qemu-fb:
 	@echo "Building kernel for QEMU with framebuffer..."
 	@$(MAKE) clean
 	@$(MAKE) all TARGET=qemu VIDEO=framebuffer
-	@echo "✓ QEMU framebuffer build complete: $(OUTPUT_DIR)/x86-microkernel.img"
+	@echo "✓ QEMU framebuffer build complete: $(OUTPUT_DIR)/reist-os.img"
 	@echo "  Run with: make run-fb"
 
 # Build specifically for VMware Workstation
@@ -234,14 +234,14 @@ build-vmware:
 	@echo "  - VMware-optimized timing configuration"
 	@$(MAKE) clean
 	@$(MAKE) all TARGET=vmware
-	@echo "✓ VMware build complete: $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
+	@echo "✓ VMware build complete: $(OUTPUT_DIR)/vmware/reist-os/reist-os.vmx"
 	@echo ""
 	@echo "VMware Configuration Instructions:"
 	@echo "  1. Create New VM → Custom (advanced)"
 	@echo "  2. Guest OS: Other → Other (32-bit)"
 	@echo "  3. Memory: 64 MB"
 	@echo "  4. Network Adapter → Advanced → Intel E1000"
-	@echo "  5. Open $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
+	@echo "  5. Open $(OUTPUT_DIR)/vmware/reist-os/reist-os.vmx"
 	@echo "  6. Boot and enjoy!"
 
 # Build specifically for real hardware (strict timing)
@@ -249,15 +249,15 @@ build-real-hw:
 	@echo "Building kernel for real hardware..."
 	@$(MAKE) clean
 	@$(MAKE) all TARGET=real_hw
-	@echo "✓ Real hardware build complete: $(OUTPUT_DIR)/x86-microkernel.img"
-	@echo "  Write to USB: dd if=$(OUTPUT_DIR)/x86-microkernel.img of=/dev/sdX bs=4M"
+	@echo "✓ Real hardware build complete: $(OUTPUT_DIR)/reist-os.img"
+	@echo "  Write to USB: dd if=$(OUTPUT_DIR)/reist-os.img of=/dev/sdX bs=4M"
 
 format-disks:
 	@echo "Formatting disk images..."
 	@./scripts/format_disks.sh
 
 help:
-	@echo "x86 Microkernel Build System"
+	@echo "REIST OS Build System"
 	@echo "============================"
 	@echo ""
 	@echo "Build Targets:"
@@ -497,10 +497,10 @@ native-image: floppy-image
 		--stage1 $(OUTPUT_DIR)/stage1_mbr.bin \
 		--stage2 $(OUTPUT_DIR)/stage2_bios.bin \
 		--kernel $(OUTPUT_DIR)/kernel.bin \
-		--output $(OUTPUT_DIR)/x86-microkernel.img \
-		--vmdk $(OUTPUT_DIR)/x86-microkernel.vmdk \
-		--vmware-dir $(OUTPUT_DIR)/vmware/x86-microkernel \
-		--floppy $(OUTPUT_DIR)/x86-microkernel-floppy.img \
+		--output $(OUTPUT_DIR)/reist-os.img \
+		--vmdk $(OUTPUT_DIR)/reist-os.vmdk \
+		--vmware-dir $(OUTPUT_DIR)/vmware/reist-os \
+		--floppy $(OUTPUT_DIR)/reist-os-floppy.img \
 		--data-file HELLO.PRG=$(USER_PROGRAM_OUTPUT) \
 		--data-file SYSINFO.PRG=$(SYSTEM_PROGRAM_DIR)/SYSINFO.PRG \
 		--data-file REPEAT.PRG=$(SYSTEM_PROGRAM_DIR)/REPEAT.PRG \
@@ -533,8 +533,8 @@ native-image: floppy-image
 		--data-file FAULTPF.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTPF.PRG \
 		--data-file GTEST.PRG=$(SYSTEM_PROGRAM_DIR)/GTEST.PRG \
 		--data-file SLEEPER.PRG=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG
-	@echo "Native BIOS image created: $(OUTPUT_DIR)/x86-microkernel.img"
-	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
+	@echo "Native BIOS image created: $(OUTPUT_DIR)/reist-os.img"
+	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/reist-os/reist-os.vmx"
 
 floppy-image: kernel system-programs user-program
 	@echo "Creating 1.44-MB BIOS floppy image..."
@@ -544,7 +544,7 @@ floppy-image: kernel system-programs user-program
 		--stage1 $(OUTPUT_DIR)/stage1_floppy.bin \
 		--stage2 $(OUTPUT_DIR)/stage2_bios.bin \
 		--kernel $(OUTPUT_DIR)/kernel.bin \
-		--output $(OUTPUT_DIR)/x86-microkernel-floppy.img \
+		--output $(OUTPUT_DIR)/reist-os-floppy.img \
 		--data-file HELLO.PRG=$(USER_PROGRAM_OUTPUT) \
 		--data-file SYSINFO.PRG=$(SYSTEM_PROGRAM_DIR)/SYSINFO.PRG \
 		--data-file REPEAT.PRG=$(SYSTEM_PROGRAM_DIR)/REPEAT.PRG \
@@ -600,14 +600,14 @@ test-smoke: native-image
 	@echo "Running QEMU guest smoke test..."
 	@$(PYTHON) scripts/run_qemu_smoke.py \
 		--qemu $(QEMU) \
-		--image $(OUTPUT_DIR)/x86-microkernel.img \
+		--image $(OUTPUT_DIR)/reist-os.img \
 		--log $(OUTPUT_DIR)/guest-smoke.log
 
 test-smoke-pit: native-image
 	@echo "Running QEMU guest smoke test with PIT scheduling..."
 	@$(PYTHON) scripts/run_qemu_smoke.py \
 		--qemu $(QEMU) \
-		--image $(OUTPUT_DIR)/x86-microkernel.img \
+		--image $(OUTPUT_DIR)/reist-os.img \
 		--no-apic \
 		--log $(OUTPUT_DIR)/guest-smoke-pit.log
 
@@ -615,25 +615,25 @@ test-smoke-memory: native-image
 	@echo "Running QEMU guest smoke test with 32 MiB RAM..."
 	@$(PYTHON) scripts/run_qemu_smoke.py \
 		--qemu $(QEMU) \
-		--image $(OUTPUT_DIR)/x86-microkernel.img \
+		--image $(OUTPUT_DIR)/reist-os.img \
 		--memory 32M \
 		--log $(OUTPUT_DIR)/guest-smoke-memory-32m.log
 	@echo "Running QEMU guest smoke test with 64 MiB RAM..."
 	@$(PYTHON) scripts/run_qemu_smoke.py \
 		--qemu $(QEMU) \
-		--image $(OUTPUT_DIR)/x86-microkernel.img \
+		--image $(OUTPUT_DIR)/reist-os.img \
 		--memory 64M \
 		--log $(OUTPUT_DIR)/guest-smoke-memory-64m.log
 	@echo "Running QEMU guest smoke test with 256 MiB RAM..."
 	@$(PYTHON) scripts/run_qemu_smoke.py \
 		--qemu $(QEMU) \
-		--image $(OUTPUT_DIR)/x86-microkernel.img \
+		--image $(OUTPUT_DIR)/reist-os.img \
 		--memory 256M \
 		--log $(OUTPUT_DIR)/guest-smoke-memory-256m.log
 	@echo "Running QEMU guest smoke test at the 1-GiB managed-RAM ceiling..."
 	@$(PYTHON) scripts/run_qemu_smoke.py \
 		--qemu $(QEMU) \
-		--image $(OUTPUT_DIR)/x86-microkernel.img \
+		--image $(OUTPUT_DIR)/reist-os.img \
 		--memory 1024M \
 		--log $(OUTPUT_DIR)/guest-smoke-memory-1024m.log
 
@@ -642,7 +642,7 @@ test-smoke-desktop:
 	@$(MAKE) native-image TARGET=qemu VIDEO=framebuffer
 	@$(PYTHON) scripts/run_qemu_desktop_smoke.py \
 		--qemu $(QEMU) \
-		--image $(OUTPUT_DIR)/x86-microkernel.img \
+		--image $(OUTPUT_DIR)/reist-os.img \
 		--log $(OUTPUT_DIR)/guest-smoke-desktop.log \
 		--screenshot $(OUTPUT_DIR)/guest-smoke-desktop.ppm
 
@@ -672,7 +672,7 @@ test-quick:
 # ============================================================================
 
 QEMU := qemu-system-i386
-QEMU_IMAGE := -boot c -drive file=$(OUTPUT_DIR)/x86-microkernel.img,format=raw,if=ide,index=0
+QEMU_IMAGE := -boot c -drive file=$(OUTPUT_DIR)/reist-os.img,format=raw,if=ide,index=0
 QEMU_COMMON := -m 512M $(QEMU_IMAGE) -no-reboot -no-shutdown
 
 run: run-native
@@ -700,7 +700,7 @@ run-debug: native-image
 
 run-floppy: floppy-image
 	@$(QEMU) -m 512M -boot a \
-		-drive file=$(OUTPUT_DIR)/x86-microkernel-floppy.img,format=raw,if=floppy \
+		-drive file=$(OUTPUT_DIR)/reist-os-floppy.img,format=raw,if=floppy \
 		-device rtl8139,netdev=net0 -netdev user,id=net0 -vga std \
 		-no-reboot -no-shutdown
 

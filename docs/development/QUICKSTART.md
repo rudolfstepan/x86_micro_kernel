@@ -38,11 +38,11 @@ Wichtige Ergebnisse:
 build/kernel.bin
 build/stage1_mbr.bin
 build/stage2_bios.bin
-build/x86-microkernel.img
+build/reist-os.img
 build/programs/HELLO.PRG
 build/programs/DESKTOP.PRG
-build/vmware/x86-microkernel/x86-microkernel.vmx
-build/vmware/x86-microkernel/START-VMWARE.cmd
+build/vmware/reist-os/reist-os.vmx
+build/vmware/reist-os/START-VMWARE.cmd
 ```
 
 ## Starten
@@ -50,7 +50,7 @@ build/vmware/x86-microkernel/START-VMWARE.cmd
 VMware:
 
 ```powershell
-.\build\vmware\x86-microkernel\START-VMWARE.cmd
+.\build\vmware\reist-os\START-VMWARE.cmd
 ```
 
 QEMU mit bereits gebautem Raw-Image:

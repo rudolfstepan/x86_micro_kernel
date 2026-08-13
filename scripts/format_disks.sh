@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script to format disk images for the x86 microkernel
+# Script to format disk images for the REIST OS
 
 echo "Formatting disk images..."
 

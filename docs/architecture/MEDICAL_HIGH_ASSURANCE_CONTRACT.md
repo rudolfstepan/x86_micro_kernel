@@ -1,5 +1,8 @@
 # Medical High-Assurance Design- und Entwicklungsvertrag
 
+Produktname: **REIST OS — Resilient Execution, Isolation and Stability
+Technology**
+
 Stand: 13. August 2026
 
 Status: verbindliche Ziel- und Abnahmevorgabe für neue Architektur-,

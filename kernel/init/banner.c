@@ -26,7 +26,7 @@ void print_welcome_message(void) {
     display_set_color(WHITE);
     printf("\n");
     printf("      *------------------------------------------------------------*\n");
-    printf("      |        Welcome to the Rudolf Stepan x86 Micro Kernel       |\n");
+    printf("      |                     Welcome to REIST OS                    |\n");
     printf("      |      Type 'HELP' for a list of commands and instructions   |\n");
     printf("      *------------------------------------------------------------*\n");
     printf("        Memory: %llu MiB managed, %llu MiB free\n",

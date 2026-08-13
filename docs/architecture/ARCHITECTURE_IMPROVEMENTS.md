@@ -15,7 +15,7 @@
 
 ## Executive Summary
 
-Your x86 microkernel has a **solid foundation** but contains several **critical design flaws** that violate professional OS development practices. This document identifies issues and provides fixes to bring the kernel to production-grade quality.
+Your REIST OS has a **solid foundation** but contains several **critical design flaws** that violate professional OS development practices. This document identifies issues and provides fixes to bring the kernel to production-grade quality.
 
 ---
 

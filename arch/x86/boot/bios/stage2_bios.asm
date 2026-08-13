@@ -1,4 +1,4 @@
-; Native BIOS stage 2 loader for the x86 microkernel.
+; Native BIOS stage 2 loader for the REIST OS.
 ;
 ; Entry contract from stage 1:
 ;   CS:IP = 1000:0000
@@ -1254,7 +1254,7 @@ crc_chunk_size         dw 0
 program_headers:
     times MAX_PROGRAM_HEADERS * 32 db 0
 
-bootloader_name    db "x86 Microkernel BIOS Loader", 0
+bootloader_name    db "REIST OS BIOS Loader", 0
 msg_loader         db "x86 native BIOS loader", 13, 10, 0
 msg_verify         db "Verifying kernel CRC32...", 13, 10, 0
 msg_kernel         db "Loading ELF32 kernel...", 13, 10, 0

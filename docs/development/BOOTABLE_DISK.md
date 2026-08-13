@@ -15,10 +15,10 @@ GRUB noch ein ISO noch QEMUs `-kernel`-Abkürzung werden verwendet.
 
 Erzeugt werden:
 
-- `build/x86-microkernel.img`: 64-MiB-Raw-Datenträger für QEMU oder USB
-- `build/vmware/x86-microkernel/`: vollständiger, eigenständiger VMware-Ordner
+- `build/reist-os.img`: 64-MiB-Raw-Datenträger für QEMU oder USB
+- `build/vmware/reist-os/`: vollständiger, eigenständiger VMware-Ordner
 - `.../START-VMWARE.cmd`: startet die fertige VM per Doppelklick
-- `.../x86-microkernel.vmx`: kann direkt in VMware Workstation geöffnet werden
+- `.../reist-os.vmx`: kann direkt in VMware Workstation geöffnet werden
 
 Der Windows-Build verwendet native Programme. WSL wird nicht benötigt. Das
 Skript findet installierte Werkzeuge im `PATH` und unterstützt zusätzlich die
@@ -62,7 +62,7 @@ Das äquivalente native Kommando lautet:
 
 ```powershell
 qemu-system-i386 -accel tcg -machine pc -m 512M -boot c `
-  -drive file=build/x86-microkernel.img,format=raw,if=ide,index=0 `
+  -drive file=build/reist-os.img,format=raw,if=ide,index=0 `
   -device rtl8139,netdev=net0 -netdev user,id=net0 `
   -vga std -no-reboot -no-shutdown
 ```
@@ -70,9 +70,9 @@ qemu-system-i386 -accel tcg -machine pc -m 512M -boot c `
 ## VMware Workstation
 
 Die fertige VM befindet sich vollständig in
-`build/vmware/x86-microkernel/`. Am einfachsten wird dort
+`build/vmware/reist-os/`. Am einfachsten wird dort
 `START-VMWARE.cmd` doppelt angeklickt. Alternativ kann
-`x86-microkernel.vmx` direkt geöffnet werden.
+`reist-os.vmx` direkt geöffnet werden.
 
 Vorkonfiguriert sind:
 
@@ -94,7 +94,7 @@ Für eine manuell angelegte VM gelten dieselben Werte:
 
 1. Eine VM vom Typ **Other / Other 32-bit** erstellen.
 2. Firmware auf **BIOS**, nicht UEFI, stellen.
-3. `build/x86-microkernel.vmdk` als vorhandene **IDE**-Festplatte einbinden.
+3. `build/reist-os.vmdk` als vorhandene **IDE**-Festplatte einbinden.
 4. Einen E1000-Netzwerkadapter verwenden.
 5. Von der Festplatte starten.
 

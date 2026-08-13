@@ -1,4 +1,6 @@
-# x86 Microkernel
+# REIST OS
+
+**Resilient Execution, Isolation and Stability Technology**
 
 Ein freestanding 32-Bit-x86-Betriebssystem mit eigenem BIOS-Bootloader,
 Kernel-Shell, VFS, FAT-Dateisystemen, Netzwerkstack und einer kleinen
@@ -11,6 +13,9 @@ unter Windows mit dem eigenen BIOS-Bootloader, ohne WSL oder ISO.
 > freigegeben. Verbindliche Anforderungen und Übergangsgates stehen im
 > [Medical-High-Assurance-Vertrag](docs/architecture/MEDICAL_HIGH_ASSURANCE_CONTRACT.md)
 > und in der [Roadmap](docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md).
+
+Die bestehende öffentliche SDK-ABI behält vorerst ihre `x86os_*`-Symbolnamen,
+damit vorhandene PRG-Programme binär und quelltextlich kompatibel bleiben.
 
 Stand dieser Dokumentation: 13. August 2026.
 
@@ -26,10 +31,10 @@ Skript dokumentierten portablen Verzeichnisse unter `C:\tmp`.
 
 Das erzeugt unter anderem:
 
-- `build/x86-microkernel.img`: bootfähiges 64-MiB-Raw-Image
-- `build/x86-microkernel-floppy.img`: bootfähiges 1,44-MB-FAT12-Diskettenimage
-- `build/x86-microkernel.vmdk` und `.vmx`: VMware-Artefakte
-- `build/vmware/x86-microkernel/`: vollständig startbare VMware-VM
+- `build/reist-os.img`: bootfähiges 64-MiB-Raw-Image
+- `build/reist-os-floppy.img`: bootfähiges 1,44-MB-FAT12-Diskettenimage
+- `build/reist-os.vmdk` und `.vmx`: VMware-Artefakte
+- `build/vmware/reist-os/`: vollständig startbare VMware-VM
 - `build/programs/`: native Ring-3-Systemprogramme, unter anderem `SYSINFO`,
   `DATE`, `UPTIME`, `MEMINFO`, `REPEAT`, `CALC`, `ASCII`, `CAT`, `LS`, `SAVE`,
   `BASIC`, `SPAWN`, `PS`, `KILL`, `PWD`, `EDIT` und `SHELL`
@@ -69,8 +74,8 @@ keine Kernel-Shell-Befehle.
 bricht die Ausgabe ab.
 
 Die fertige VM startet über
-`build\vmware\x86-microkernel\START-VMWARE.cmd`. Alternativ kann die dortige
-`x86-microkernel.vmx` direkt in VMware Workstation geöffnet werden.
+`build\vmware\reist-os\START-VMWARE.cmd`. Alternativ kann die dortige
+`reist-os.vmx` direkt in VMware Workstation geöffnet werden.
 
 ## Eigenen Quelltext mitliefern
 
