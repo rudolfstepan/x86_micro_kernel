@@ -37,8 +37,11 @@ SECTIONS
     _kernel_bss_end = .;
   } > kernel_ram
 
-  /* Stack section (8 KB) */
+  /* Boot/rescue kernel stack: 64-byte overflow redzone + 8 KiB stack. */
   .stack ALIGN(4096) (NOLOAD) : {
+    _stack_guard_start = .;
+    . += 64;
+    _stack_guard_end = .;
     _stack_start = .;
     . += 8192;  /* Allocate 8 KB for the stack */
     _stack_end = .;

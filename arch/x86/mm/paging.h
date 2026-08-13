@@ -5,12 +5,15 @@
 #define CR0_PG 0x80000000 // Paging enable
 #define CR0_PE 0x00000001 // Protected mode enable
 
-#define PAGE_SIZE 4096                      // 4 KB pages
-#define PAGE_TABLE_ENTRIES 1024             // 1024 entries per page table
-#define PAGE_DIRECTORY_ENTRIES 1024         // 1024 entries per page directory
+#define PAGE_SIZE 4096U                     // 4 KB pages
+#define PAGE_TABLE_ENTRIES 1024U            // 1024 entries per page table
+#define PAGE_DIRECTORY_ENTRIES 1024U        // 1024 entries per page directory
 
 #define KERNEL_BASE 0x00000000              // Kernel starts at 0x00000000
-#define KERNEL_PAGE_ENTRIES 64              // Identity-map the first 256 MB
+/* The complete kernel half below USER_BASE is a shared, supervisor-only
+ * direct map.  This raises the managed physical-memory ceiling from 256 MiB
+ * to 1 GiB while preserving the existing 1 GiB/2 GiB kernel/user split. */
+#define KERNEL_PAGE_ENTRIES 256U             // Identity-map the first 1 GiB
 #define KERNEL_IDENTITY_LIMIT (KERNEL_PAGE_ENTRIES * PAGE_TABLE_ENTRIES * PAGE_SIZE)
 
 #define USER_BASE 0x40000000U               // User address spaces start at 1 GiB

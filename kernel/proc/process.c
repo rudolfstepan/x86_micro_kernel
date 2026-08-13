@@ -13,17 +13,16 @@
 #include "kernel/init/prg.h"
 #include "kernel/sched/scheduler.h"
 
-#define PROGRAM_STAGING_ADDRESS KERNEL_PROGRAM_REGION_START
-#define USER_PROGRAM_ADDRESS USER_BASE
+#define USER_PROGRAM_ADDRESS PROGRAM_V1_BASE
 #define USER_STACK_TOP (USER_TOP - PAGE_SIZE)
 #define USER_STACK_SIZE (8U * PAGE_SIZE)
-#define PROGRAM_REGION_SIZE  KERNEL_PROGRAM_REGION_SIZE
-static int load_program_file(const char *program_name, uint32_t address) {
-    if (!memory_region_is_usable(address, PROGRAM_REGION_SIZE)) {
-        printf("Program image region is not backed by usable RAM.\n");
-        return -1;
-    }
+#define PROGRAM_REGION_SIZE PROGRAM_V1_REGION_SIZE
 
+_Static_assert(PROGRAM_V1_BASE == USER_BASE,
+               "MYPR v1 base must match the user address-space base");
+static int load_program_file(const char *program_name, uint8_t **image_out) {
+    if (image_out == NULL) return -1;
+    *image_out = NULL;
     vfs_node_t* node = NULL;
     int result = vfs_open(program_name, &node);
     if (result != VFS_OK || !node) {
@@ -36,20 +35,27 @@ static int load_program_file(const char *program_name, uint32_t address) {
     }
 
     uint32_t loaded_size = node->size;
-    /* Read the image sequentially in one VFS operation.  Restarting a FAT
-     * read every page would walk the cluster chain from its beginning for
-     * each chunk and makes larger programs progressively slower to start. */
-    result = vfs_read(node, 0, loaded_size,
-                      (uint8_t*)(uintptr_t)address);
-    if (result != (int)loaded_size) {
+    uint8_t *image = (uint8_t*)k_malloc(loaded_size);
+    if (image == NULL) {
         (void)vfs_close(node);
         return -1;
     }
-    if (vfs_close(node) != VFS_OK ||
-        program_image_validate((const void*)(uintptr_t)address, loaded_size,
-                               PROGRAM_REGION_SIZE) != 0) {
+    /* Read the image sequentially in one VFS operation.  Restarting a FAT
+     * read every page would walk the cluster chain from its beginning for
+     * each chunk and makes larger programs progressively slower to start. */
+    result = vfs_read(node, 0, loaded_size, image);
+    if (result != (int)loaded_size) {
+        (void)vfs_close(node);
+        k_free(image);
         return -1;
     }
+    if (vfs_close(node) != VFS_OK ||
+        program_image_validate(image, loaded_size,
+                               PROGRAM_REGION_SIZE) != 0) {
+        k_free(image);
+        return -1;
+    }
+    *image_out = image;
     return (int)loaded_size;
 }
 
@@ -64,7 +70,8 @@ static int allocate_pid_locked(void) {
 
         bool in_use = false;
         for (int i = 0; i < MAX_PROGRAMS; ++i) {
-            if (process_list[i].is_running && process_list[i].pid == candidate) {
+            if ((process_list[i].is_running || process_list[i].has_exited) &&
+                process_list[i].pid == candidate) {
                 in_use = true;
                 break;
             }
@@ -86,7 +93,8 @@ static void release_process_slot(Process *process) {
 }
 
 /* Reserve list state atomically, but do slow file/heap work with IRQs enabled. */
-static int claim_process_slot(const char *name, bool shared_image) {
+static int claim_process_slot(const char *name, bool shared_image,
+                              int parent_pid) {
     uint32_t flags = irq_save();
 
     if (shared_image) {
@@ -108,8 +116,11 @@ static int claim_process_slot(const char *name, bool shared_image) {
                 irq_restore(flags);
                 return -1;
             }
+            uint32_t generation = process->generation + 1U;
+            if (generation == 0U) generation = 1U;
             process->pid = pid;
-            process->parent_pid = 0;
+            process->generation = generation;
+            process->parent_pid = parent_pid;
             process->task_id = -1;
             process->exit_status = 0;
             process->has_exited = false;
@@ -118,6 +129,7 @@ static int claim_process_slot(const char *name, bool shared_image) {
             memset(process->user_allocations, 0,
                    sizeof(process->user_allocations));
             memset(process->files, 0, sizeof(process->files));
+            wait_queue_init(&process->exit_waiters);
             strcpy(process->working_directory, "/");
             strncpy(process->name, name, sizeof(process->name) - 1U);
             process->name[sizeof(process->name) - 1U] = '\0';
@@ -129,30 +141,6 @@ static int claim_process_slot(const char *name, bool shared_image) {
 
     irq_restore(flags);
     return -1;
-}
-
-// execute the program at the specified entry point
-void start_program_execution(long entry_point) {
-    void (*program)() = (void (*)())entry_point;
-    program(); // Jump to the program
-}
-
-// load the program into memory
-void load_and_execute_program(const char* program_name) {
-    if (create_process_for_file(program_name) < 0) {
-        printf("Unable to load valid program '%s'\n", program_name);
-    }
-}
-
-int load_program_into_memory(const char* program_name, uint32_t address) {
-    // Load the program into the specified memory location
-    int loaded_size = load_program_file(program_name, address);
-    if (loaded_size > 0) {
-        return loaded_size;
-    } else {
-        printf("Unable to load valid program '%s'\n", program_name);
-        return -1;
-    }
 }
 
 int create_process_for_file(const char *filename) {
@@ -207,18 +195,23 @@ static int build_user_arguments(page_directory_t *page_directory, int argc,
     return 0;
 }
 
-int create_process_for_file_args(const char *filename, int argc,
-                                 const char *const *argv,
-                                 const char *working_directory) {
+static int create_process_for_file_args_owned(const char *filename, int argc,
+                                               const char *const *argv,
+                                               const char *working_directory,
+                                               int parent_pid) {
     if (filename == NULL || *filename == '\0') {
         return -1;
     }
+
+    /* Reclaim stacks and address spaces before this spawn needs new frames.
+     * Exit status remains in the Process zombie until its parent waits. */
+    (void)scheduler_reap_finished_tasks();
 
     const char *display_name = filename;
     for (const char *cursor = filename; *cursor != '\0'; ++cursor) {
         if (*cursor == '/') display_name = cursor + 1;
     }
-    int slot = claim_process_slot(display_name, false);
+    int slot = claim_process_slot(display_name, false, parent_pid);
     if (slot < 0) {
         printf("Error: Maximum number of running programs reached.\n");
         return -1;
@@ -232,36 +225,23 @@ int create_process_for_file_args(const char *filename, int argc,
     }
     strcpy(process->working_directory, working_directory);
     int pid = process->pid;
-    int loaded_size = load_program_into_memory(filename, PROGRAM_STAGING_ADDRESS);
+    uint8_t *program_image = NULL;
+    int loaded_size = load_program_file(filename, &program_image);
     if (loaded_size < 0) {
+        printf("Unable to load valid program '%s'\n", filename);
         release_process_slot(process);
         return -1;
     }
 
-    program_header_t* header = (program_header_t*)PROGRAM_STAGING_ADDRESS;
+    program_header_t* header = (program_header_t*)program_image;
     uint32_t memory_image_size = (uint32_t)sizeof(*header) +
                                  header->program_size;
     uint32_t stored_image_size = header->relocation_offset;
-    if (header->relocation_size == 0 &&
-        header->base_address != USER_PROGRAM_ADDRESS) {
-        printf("Program '%s' was linked for the wrong load address.\n",
-               filename);
-        release_process_slot(process);
-        return -1;
-    }
-    uint32_t *relocation_table = (uint32_t*)(
-        PROGRAM_STAGING_ADDRESS + header->relocation_offset);
-    if (apply_relocation(relocation_table,
-                         header->relocation_size / sizeof(uint32_t),
-                         header->base_address, USER_PROGRAM_ADDRESS,
-                         memory_image_size) != 0) {
-        printf("Invalid relocation table in '%s'.\n", filename);
-        release_process_slot(process);
-        return -1;
-    }
+    uint32_t entry_point = header->entry_point;
 
     page_directory_t *page_directory = create_page_directory();
     if (page_directory == NULL) {
+        k_free(program_image);
         release_process_slot(process);
         return -1;
     }
@@ -275,6 +255,7 @@ int create_process_for_file_args(const char *filename, int argc,
                                   PAGE_USER | PAGE_RW) != 0) {
             if (frame != 0) free_frame(frame);
             free_page_directory(page_directory);
+            k_free(program_image);
             release_process_slot(process);
             return -1;
         }
@@ -284,7 +265,7 @@ int create_process_for_file_args(const char *filename, int argc,
             amount = stored_image_size - offset;
             if (amount > PAGE_SIZE) amount = PAGE_SIZE;
             memcpy((void*)(uintptr_t)frame,
-                   (const void*)(uintptr_t)(PROGRAM_STAGING_ADDRESS + offset),
+                   program_image + offset,
                    amount);
         }
     }
@@ -295,13 +276,15 @@ int create_process_for_file_args(const char *filename, int argc,
                                   PAGE_USER | PAGE_RW) != 0) {
             if (frame != 0) free_frame(frame);
             free_page_directory(page_directory);
+            k_free(program_image);
             release_process_slot(process);
             return -1;
         }
         memset((void*)(uintptr_t)frame, 0, PAGE_SIZE);
     }
+    k_free(program_image);
 
-    uint32_t* kernel_stack = (uint32_t*)k_malloc(STACK_SIZE);
+    uint32_t* kernel_stack = scheduler_allocate_kernel_stack();
     if (kernel_stack == NULL) {
         free_page_directory(page_directory);
         release_process_slot(process);
@@ -310,17 +293,17 @@ int create_process_for_file_args(const char *filename, int argc,
 
     uint32_t user_stack;
     if (build_user_arguments(page_directory, argc, argv, &user_stack) != 0) {
-        k_free(kernel_stack);
+        scheduler_free_kernel_stack(kernel_stack);
         free_page_directory(page_directory);
         release_process_slot(process);
         return -1;
     }
 
     int task_id = create_user_task(
-        header->entry_point + USER_PROGRAM_ADDRESS, user_stack,
+        entry_point + USER_PROGRAM_ADDRESS, user_stack,
         kernel_stack, page_directory, process);
     if (task_id < 0) {
-        k_free(kernel_stack);
+        scheduler_free_kernel_stack(kernel_stack);
         free_page_directory(page_directory);
         release_process_slot(process);
         return -1;
@@ -328,12 +311,21 @@ int create_process_for_file_args(const char *filename, int argc,
     return pid;
 }
 
+int create_process_for_file_args(const char *filename, int argc,
+                                 const char *const *argv,
+                                 const char *working_directory) {
+    return create_process_for_file_args_owned(filename, argc, argv,
+                                               working_directory, 0);
+}
+
 int create_process(void* entry_point) {
     if (entry_point == NULL) {
         return -1;
     }
 
-    int slot = claim_process_slot("Unknown", false);
+    (void)scheduler_reap_finished_tasks();
+
+    int slot = claim_process_slot("Unknown", false, 0);
     if (slot < 0) {
         printf("Error: Maximum number of running programs reached.\n");
         return -1;
@@ -341,7 +333,7 @@ int create_process(void* entry_point) {
     Process *process = &process_list[slot];
     int pid = process->pid;
 
-    uint32_t* stack = (uint32_t*)k_malloc(STACK_SIZE);
+    uint32_t* stack = scheduler_allocate_kernel_stack();
     if (stack == NULL) {
         printf("Error: Failed to allocate stack for process\n");
         release_process_slot(process);
@@ -350,7 +342,7 @@ int create_process(void* entry_point) {
 
     int task_id = create_task((void (*)())entry_point, stack, process);
     if (task_id < 0) {
-        k_free(stack);
+        scheduler_free_kernel_stack(stack);
         release_process_slot(process);
         return -1;
     }
@@ -724,43 +716,42 @@ int process_spawn_args(Process *parent, const char *path, int argc,
         argc > 32 || argv == NULL) return -1;
     char resolved[PROCESS_PATH_MAX];
     if (process_resolve_path(parent, path, resolved) != 0) return -1;
-    int pid = create_process_for_file_args(resolved, argc, argv,
-                                           parent->working_directory);
-    if (pid < 0) return -1;
-
-    uint32_t flags = irq_save();
-    for (int i = 0; i < MAX_PROGRAMS; ++i) {
-        if (process_list[i].is_running && process_list[i].pid == pid) {
-            process_list[i].parent_pid = parent->pid;
-            break;
-        }
-    }
-    irq_restore(flags);
-    return pid;
+    return create_process_for_file_args_owned(
+        resolved, argc, argv, parent->working_directory, parent->pid);
 }
 
-int process_wait_status(Process *parent, int pid, int *status) {
+int process_wait_status_locked(Process *parent, int pid, int *status,
+                               wait_queue_t **wait_queue) {
     if (parent == NULL || status == NULL || pid <= 0) return -1;
-    uint32_t flags = irq_save();
+    if (wait_queue != NULL) *wait_queue = NULL;
     for (int i = 0; i < MAX_PROGRAMS; ++i) {
         Process *child = &process_list[i];
         if (child->pid != pid || child->parent_pid != parent->pid) continue;
         if (child->is_running) {
-            irq_restore(flags);
+            if (wait_queue != NULL) *wait_queue = &child->exit_waiters;
             return 0;
         }
         if (!child->has_exited) {
-            irq_restore(flags);
             return -1;
         }
         *status = child->exit_status;
+        if (child->task_id >= 0 &&
+            scheduler_reap_finished_task_locked(child->task_id, child) == 0) {
+            child->task_id = -1;
+        }
         child->has_exited = false;
         child->parent_pid = 0;
-        irq_restore(flags);
         return 1;
     }
-    irq_restore(flags);
     return -1;
+}
+
+int process_wait_status(Process *parent, int pid, int *status) {
+    uint32_t flags = irq_save();
+    int result = process_wait_status_locked(parent, pid, status, NULL);
+    irq_restore(flags);
+    if (result > 0) (void)scheduler_reap_finished_tasks();
+    return result;
 }
 
 void process_orphan_children(int parent_pid) {
@@ -770,6 +761,11 @@ void process_orphan_children(int parent_pid) {
         if (process_list[i].parent_pid == parent_pid) {
             process_list[i].parent_pid = 0;
             if (!process_list[i].is_running) {
+                if (process_list[i].task_id >= 0 &&
+                    scheduler_reap_finished_task_locked(
+                        process_list[i].task_id, &process_list[i]) == 0) {
+                    process_list[i].task_id = -1;
+                }
                 process_list[i].has_exited = false;
             }
         }
@@ -793,7 +789,10 @@ int process_get_info(uint32_t index, process_info_t* info) {
         strncpy(info->name, process->name, sizeof(info->name) - 1U);
         if (process->has_exited) {
             info->state = PROCESS_STATE_ZOMBIE;
-        } else if (process->task_id >= 0 && process->task_id < num_tasks) {
+        } else if (process->task_id >= 0 && process->task_id < num_tasks &&
+                   tasks[process->task_id].process == process &&
+                   tasks[process->task_id].process_generation ==
+                       process->generation) {
             int task_state = tasks[process->task_id].status;
             if (task_state == TASK_RUNNING) info->state = PROCESS_STATE_RUNNING;
             else if (task_state == TASK_SLEEPING) info->state = PROCESS_STATE_SLEEPING;
@@ -815,12 +814,16 @@ int process_terminate(int pid) {
     for (int i = 0; i < MAX_PROGRAMS; i++) {
         if (process_list[i].is_running && process_list[i].pid == pid) {
             int task_id = process_list[i].task_id;
-            if (task_id < 0 || task_id >= num_tasks) {
+            if (task_id < 0 || task_id >= num_tasks ||
+                tasks[task_id].process != &process_list[i] ||
+                tasks[task_id].process_generation !=
+                    process_list[i].generation) {
                 irq_restore(flags);
                 return -1;
             }
-            irq_restore(flags);
+            /* Keep PID -> slot -> owner validation atomic with termination. */
             scheduler_terminate_task(task_id);
+            irq_restore(flags);
             return 0;
         }
     }

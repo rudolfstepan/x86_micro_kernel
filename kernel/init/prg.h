@@ -1,64 +1,27 @@
-// the prg file format which is used to store the compiled program header
-
 #ifndef PRG_H
 #define PRG_H
 
 #include <stdint.h>
 
+#define PROGRAM_IMAGE_MAGIC 0xDEADBEEFU
+#define PROGRAM_V1_BASE 0x40000000U
+#define PROGRAM_V1_REGION_SIZE (8U * 1024U * 1024U)
 
-// The packed 28-byte header stored at the beginning of every MYPR executable.
+/* Fixed-address MYPR v1 header.  Version 1 has no version field; this exact
+ * legacy layout is the contract and unsupported variants are rejected. */
 #pragma pack(push, 1)
 typedef struct {
-    char identifier[4];         // 4-byte string identifier, e.g., "MYPR"
-    uint32_t magic_number;      // Zur Validierung des Programms
-    uint32_t entry_point;       // Adresse des Programmstarts
-    uint32_t program_size;      // In-memory payload size, including zeroed BSS
-    uint32_t base_address;      // Ursprüngliche Basisadresse
-    uint32_t relocation_offset; // Offset zur Relocation-Tabelle
-    uint32_t relocation_size;   // Größe der Relocation-Tabelle
-    // Weitere Felder nach Bedarf
+    char identifier[4];         /* ASCII "MYPR" */
+    uint32_t magic_number;      /* PROGRAM_IMAGE_MAGIC */
+    uint32_t entry_point;       /* Offset relative to base_address */
+    uint32_t program_size;      /* Memory payload after this header */
+    uint32_t base_address;      /* PROGRAM_V1_BASE */
+    uint32_t relocation_offset; /* Stored v1 image size / end of file */
+    uint32_t relocation_size;   /* Reserved; must be zero in v1 */
 } program_header_t;
 #pragma pack(pop)
 
-#define EI_NIDENT 16
-#define PT_LOAD 1 // Loadable segment type in ELF
-
-
-typedef struct {
-    unsigned char e_ident[EI_NIDENT]; // ELF Identification
-    uint16_t e_type;                  // Object file type
-    uint16_t e_machine;               // Machine type
-    uint32_t e_version;               // Object file version
-    uint32_t e_entry;                 // Entry point address
-    uint32_t e_phoff;                 // Program header offset
-    uint32_t e_shoff;                 // Section header offset
-    uint32_t e_flags;                 // Processor-specific flags
-    uint16_t e_ehsize;                // ELF header size
-    uint16_t e_phentsize;             // Program header entry size
-    uint16_t e_phnum;                 // Number of program header entries
-    uint16_t e_shentsize;             // Section header entry size
-    uint16_t e_shnum;                 // Number of section header entries
-    uint16_t e_shstrndx;              // Section header string table index
-} Elf32_Ehdr;
-
-typedef struct {
-    uint32_t p_type;   // Type of segment
-    uint32_t p_offset; // Offset in file
-    uint32_t p_vaddr;  // Virtual address in memory
-    uint32_t p_paddr;  // Physical address (unused)
-    uint32_t p_filesz; // Size of segment in file
-    uint32_t p_memsz;  // Size of segment in memory
-    uint32_t p_flags;  // Segment flags
-    uint32_t p_align;  // Segment alignment
-} Elf32_Phdr;
-
-extern uint32_t _text_start, _text_end;
-extern uint32_t _relocation_offset, _relocation_end;
-
-int apply_relocation(uint32_t *relocation_table, uint32_t relocation_count,
-                     uint32_t original_base, uint32_t load_base,
-                     uint32_t image_size);
-void load_and_relocate_program(void* program_src, void* target_address);
-int load_elf(void *elf_data);
+_Static_assert(sizeof(program_header_t) == 28,
+               "MYPR v1 header must remain 28 bytes");
 
 #endif // PRG_H

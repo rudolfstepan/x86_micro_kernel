@@ -1,229 +1,65 @@
 [BITS 32]
-global isr0, isr1, isr2, isr3, isr4, isr5, isr6, isr7, isr8, isr9, isr10, isr11, isr12, isr13, isr14, isr15, isr16, isr17, isr18, isr19, isr20, isr21, isr22, isr23, isr24, isr25, isr26, isr27, isr28, isr29, isr30, isr31
-global page_fault_handler_asm
 
-extern exception_handlers       ; Declare the handlers array
-extern setup_exceptions         ; Declare setup function
-extern exception_dispatcher     ; Declare the C function dispatcher
+extern exception_dispatcher
+
+%macro ISR_NO_ERROR_CODE 1
+global isr%1
+isr%1:
+    cli
+    push dword 0
+    push dword %1
+    jmp isr_common_stub
+%endmacro
+
+%macro ISR_CPU_ERROR_CODE 1
+global isr%1
+isr%1:
+    cli
+    ; The processor already pushed the exception-specific error code.
+    push dword %1
+    jmp isr_common_stub
+%endmacro
 
 section .text
+global page_fault_handler_asm
 page_fault_handler_asm:
     jmp isr14              ; Compatibility alias; isr14 builds a full Registers frame
 
-;  0: Divide By Zero Exception
-isr0:
-    cli
-    push byte 0
-    push byte 0
-    jmp isr_common_stub
-
-;  1: Debug Exception
-isr1:
-    cli
-    push byte 0
-    push byte 1
-    jmp isr_common_stub
-
-;  2: Non Maskable Interrupt Exception
-isr2:
-    cli
-    push byte 0
-    push byte 2
-    jmp isr_common_stub
-
-;  3: Int 3 Exception
-isr3:
-    cli
-    push byte 0
-    push byte 3
-    jmp isr_common_stub
-
-;  4: INTO Exception
-isr4:
-    cli
-    push byte 0
-    push byte 4
-    jmp isr_common_stub
-
-;  5: Out of Bounds Exception
-isr5:
-    cli
-    push byte 0
-    push byte 5
-    jmp isr_common_stub
-    
-;  6: Invalid Opcode Exception
-isr6:
-    cli
-    push byte 0
-    push byte 6
-    jmp isr_common_stub
-
-;  7: Coprocessor Not Available Exception
-isr7:
-    cli
-    push byte 0
-    push byte 7
-    jmp isr_common_stub
-
-;  8: Double Fault Exception (With Error Code!)
-isr8:
-    cli
-    push byte 8
-    jmp isr_common_stub
-
-;  9: Coprocessor Segment Overrun Exception
-isr9:
-    cli
-    push byte 0
-    push byte 9
-    jmp isr_common_stub
-
-; 10: Bad TSS Exception (With Error Code!)
-isr10:
-    cli
-    push byte 10
-    jmp isr_common_stub
-
-; 11: Segment Not Present Exception (With Error Code!)
-isr11:
-    cli
-    push byte 11
-    jmp isr_common_stub
-
-; 12: Stack Fault Exception (With Error Code!)
-isr12:
-    cli
-    push byte 12
-    jmp isr_common_stub
-
-; 13: General Protection Fault Exception (With Error Code!)
-isr13:
-    cli
-    push byte 13
-    jmp isr_common_stub
-
-; 14: Page Fault Exception (With Error Code!)
-isr14:
-    cli
-    push byte 14
-    jmp isr_common_stub
-
-; 15: Reserved Exception
-isr15:
-    cli
-    push byte 0
-    push byte 15
-    jmp isr_common_stub
-
-; 16: Floating Point Exception
-isr16:
-    cli
-    push byte 0
-    push byte 16
-    jmp isr_common_stub
-
-; 17: Alignment Check Exception
-isr17:
-    cli
-    push byte 0
-    push byte 17
-    jmp isr_common_stub
-
-; 18: Machine Check Exception
-isr18:
-    cli
-    push byte 0
-    push byte 18
-    jmp isr_common_stub
-
-; 19: Reserved
-isr19:
-    cli
-    push byte 0
-    push byte 19
-    jmp isr_common_stub
-
-; 20: Reserved
-isr20:
-    cli
-    push byte 0
-    push byte 20
-    jmp isr_common_stub
-
-; 21: Control Protection Exception (With Error Code!)
-isr21:
-    cli
-    push byte 21
-    jmp isr_common_stub
-
-; 22: Reserved
-isr22:
-    cli
-    push byte 0
-    push byte 22
-    jmp isr_common_stub
-
-; 23: Reserved
-isr23:
-    cli
-    push byte 0
-    push byte 23
-    jmp isr_common_stub
-
-; 24: Reserved
-isr24:
-    cli
-    push byte 0
-    push byte 24
-    jmp isr_common_stub
-
-; 25: Reserved
-isr25:
-    cli
-    push byte 0
-    push byte 25
-    jmp isr_common_stub
-
-; 26: Reserved
-isr26:
-    cli
-    push byte 0
-    push byte 26
-    jmp isr_common_stub
-
-; 27: Reserved
-isr27:
-    cli
-    push byte 0
-    push byte 27
-    jmp isr_common_stub
-
-; 28: Reserved
-isr28:
-    cli
-    push byte 0
-    push byte 28
-    jmp isr_common_stub
-
-; 29: VMM Communication Exception (With Error Code!)
-isr29:
-    cli
-    push byte 29
-    jmp isr_common_stub
-
-; 30: Security Exception (With Error Code!)
-isr30:
-    cli
-    push byte 30
-    jmp isr_common_stub
-
-; 31: Reserved
-isr31:
-    cli
-    push byte 0
-    push byte 31
-    jmp isr_common_stub
+; Keep this list aligned with the IA-32 exception table.  Vectors 21, 29 and
+; 30 are feature/vendor extensions but use the same error-code frame when the
+; corresponding exception is available.
+ISR_NO_ERROR_CODE 0
+ISR_NO_ERROR_CODE 1
+ISR_NO_ERROR_CODE 2
+ISR_NO_ERROR_CODE 3
+ISR_NO_ERROR_CODE 4
+ISR_NO_ERROR_CODE 5
+ISR_NO_ERROR_CODE 6
+ISR_NO_ERROR_CODE 7
+ISR_CPU_ERROR_CODE 8
+ISR_NO_ERROR_CODE 9
+ISR_CPU_ERROR_CODE 10
+ISR_CPU_ERROR_CODE 11
+ISR_CPU_ERROR_CODE 12
+ISR_CPU_ERROR_CODE 13
+ISR_CPU_ERROR_CODE 14
+ISR_NO_ERROR_CODE 15
+ISR_NO_ERROR_CODE 16
+ISR_CPU_ERROR_CODE 17
+ISR_NO_ERROR_CODE 18
+ISR_NO_ERROR_CODE 19
+ISR_NO_ERROR_CODE 20
+ISR_CPU_ERROR_CODE 21
+ISR_NO_ERROR_CODE 22
+ISR_NO_ERROR_CODE 23
+ISR_NO_ERROR_CODE 24
+ISR_NO_ERROR_CODE 25
+ISR_NO_ERROR_CODE 26
+ISR_NO_ERROR_CODE 27
+ISR_NO_ERROR_CODE 28
+ISR_CPU_ERROR_CODE 29
+ISR_CPU_ERROR_CODE 30
+ISR_NO_ERROR_CODE 31
 
 isr_common_stub:
     pusha                      ; Save general-purpose registers
@@ -242,7 +78,6 @@ isr_common_stub:
     sub esp, 12
     push ebx                   ; Pass pointer with ABI-compliant call alignment
 
-    ; Call the exception dispatcher
     call exception_dispatcher
 
     mov esp, ebx               ; Restore the exact interrupt frame
@@ -250,6 +85,6 @@ isr_common_stub:
     pop fs
     pop es
     pop ds
-    popa                       ; Restore registers
-    add esp, 8                 ; Clean up (remove IRQ and error code)
+    popa
+    add esp, 8                 ; Remove vector and real/synthetic error code
     iret

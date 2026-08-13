@@ -1,6 +1,6 @@
 # Dokumentationsindex
 
-Stand: 3. August 2026.
+Stand: 13. August 2026.
 
 Die Dokumentation unterscheidet zwischen aktuellen Referenzen und
 historischen Arbeitsberichten. Für Aufbau, Start und Bedienung sind die hier
@@ -13,6 +13,7 @@ bereits behobene Fehler enthalten.
 - [Projektübersicht](../README.md) – Schnellstart, Funktionen und Grenzen
 - [Quickstart](development/QUICKSTART.md) – nativer Windows-Build und erster Start
 - [Projektstatus](development/PROJECT_STATUS.md) – verifizierte Komponenten und offene Grenzen
+- [Fehlstellenanalyse und Roadmap](development/OS_GAP_ANALYSIS_AND_ROADMAP.md) – priorisierte Implementierungspakete mit Abhängigkeiten und Abnahmekriterien
 - [Build-Modi](development/BUILD_MODES.md) – `qemu`, `vmware`, `real_hw` und Videoauswahl
 - [Nativer Bootdatenträger](development/BOOTABLE_DISK.md) – BIOS/MBR, Stage 2 und FAT32-Image
 - [Bootfähige Diskette](development/FLOPPY_BOOT.md) – 1,44-MB-CHS-Image für echte BIOS-PCs

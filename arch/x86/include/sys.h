@@ -1,6 +1,7 @@
 #ifndef SYS_H
 #define SYS_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 // Structure for the registers
@@ -14,6 +15,18 @@ typedef struct
     uint32_t eip, cs, eflags, useresp, ss; // Automatically pushed by CPU
 } Registers;
 #pragma pack(pop)
+
+/* Keep the C view synchronized with the frames built by isr.asm, irq.asm and
+ * syscall.asm.  A mismatch here makes exception return consume the wrong
+ * words and is fatal before C diagnostics can help. */
+_Static_assert(offsetof(Registers, irq_number) == 48,
+               "Registers.irq_number offset must match assembly");
+_Static_assert(offsetof(Registers, error_code) == 52,
+               "Registers.error_code offset must match assembly");
+_Static_assert(offsetof(Registers, eip) == 56,
+               "Registers.eip offset must match assembly");
+_Static_assert(sizeof(Registers) == 76,
+               "Registers size must match a ring-transition frame");
 
 //gdt
 extern void gdt_install();

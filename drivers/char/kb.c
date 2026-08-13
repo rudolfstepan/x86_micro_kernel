@@ -5,6 +5,7 @@
 #include "arch/x86/include/sys.h"
 #include "arch/x86/include/interrupt.h"
 #include "include/lib/spinlock.h"
+#include "kernel/sched/scheduler.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
@@ -108,6 +109,7 @@ static volatile char input_queue[INPUT_QUEUE_SIZE];
 static volatile int input_queue_head = 0;
 static volatile int input_queue_tail = 0;
 static spinlock_t input_queue_lock = SPINLOCK_INIT;  // Protect queue access
+static wait_queue_t input_waiters = WAIT_QUEUE_INIT;
 static bool serial_swallow_line_feed = false;
 
 static char normalize_serial_input(char ch) {
@@ -162,7 +164,15 @@ static bool input_queue_push_sequence(const char* sequence, size_t length) {
         input_queue[input_queue_tail] = sequence[i];
         input_queue_tail = (input_queue_tail + 1) % INPUT_QUEUE_SIZE;
     }
-    spinlock_release_irq(&input_queue_lock, flags);
+    /* Publish the bytes and wake a reader under the same IRQ-disabled
+     * transaction.  This closes the condition-check/block lost-wakeup window
+     * for both PS/2 and serial console input. */
+    spinlock_release(&input_queue_lock);
+    /* Readiness is level-triggered: a sequence can satisfy more than one
+     * blocked reader.  Wake all and let each reader recheck/consume under the
+     * atomic condition-loop contract. */
+    (void)wait_queue_wake_all_locked(&input_waiters);
+    irq_restore(flags);
     return true;
 }
 
@@ -196,6 +206,12 @@ char input_queue_pop(void) {
  */
 static bool input_queue_empty(void) {
     return input_queue_head == input_queue_tail;
+}
+
+void kb_notify_input_ready(void) {
+    uint32_t flags = irq_save();
+    (void)wait_queue_wake_all_locked(&input_waiters);
+    irq_restore(flags);
 }
 
 //=============================================================================
@@ -463,16 +479,25 @@ char getchar(void) {
      * before sleeping instead of relying on entry-stub flag inference. */
     irq_enable();
     while (1) {
-        // Check serial port first (for nographic mode)
-        char serial_ch = read_normalized_serial();
-        if (serial_ch != 0) return serial_ch;
-        
-        // Check keyboard input queue
-        if (!input_queue_empty()) {
-            return input_queue_pop();
+        uint32_t flags = irq_save();
+
+        // Check serial port first (for nographic mode).
+        char ch = read_normalized_serial();
+        if (ch == 0) ch = input_queue_pop();
+        if (ch != 0) {
+            irq_restore(flags);
+            return ch;
         }
-        
-        // Wait for input using HLT instead of busy-waiting
+
+        /* The empty check and queue insertion are atomic with both input
+         * producers.  A userspace reader no longer occupies the CPU while it
+         * waits; kernel-only/preemption-disabled callers retain the safe HLT
+         * fallback used during early boot and driver operations. */
+        int blocked = wait_queue_block_locked(&input_waiters,
+                                              TASK_BLOCK_WAITING);
+        irq_restore(flags);
+        if (blocked == 0) continue;
+
         __asm__ __volatile__("hlt");
     }
 }

@@ -1,5 +1,6 @@
 #include "serial.h"
 #include "io.h"
+#include "kb.h"
 #include "arch/x86/include/interrupt.h"
 #include "arch/x86/include/sys.h"
 
@@ -71,13 +72,17 @@ static bool serial_rx_ring_pop(char *value) {
 /* Called only with interrupts disabled (either from IRQ4 or an irq_save()
  * critical section).  Always consume hardware bytes, even when the software
  * ring is full, so the UART interrupt source cannot remain asserted. */
-static void serial_drain_com1_rx(void) {
+static bool serial_drain_com1_rx(void) {
+    bool published = false;
     for (unsigned int drained = 0; drained < SERIAL_IRQ_DRAIN_LIMIT;
          ++drained) {
         uint8_t status = inb(SERIAL_LINE_STATUS(SERIAL_COM1));
         if ((status & SERIAL_LSR_DATA_READY) == 0) break;
-        (void)serial_rx_ring_push(inb(SERIAL_DATA(SERIAL_COM1)));
+        if (serial_rx_ring_push(inb(SERIAL_DATA(SERIAL_COM1)))) {
+            published = true;
+        }
     }
+    return published;
 }
 
 static void serial_com1_irq_handler(Registers *regs) {
@@ -92,7 +97,7 @@ static void serial_com1_irq_handler(Registers *regs) {
             case SERIAL_IIR_RX_AVAILABLE:
             case SERIAL_IIR_RX_TIMEOUT:
             case SERIAL_IIR_LINE_STATUS:
-                serial_drain_com1_rx();
+                if (serial_drain_com1_rx()) kb_notify_input_ready();
                 break;
             case SERIAL_IIR_MODEM_STATUS:
                 (void)inb(SERIAL_MODEM_STATUS(SERIAL_COM1));
@@ -155,7 +160,7 @@ bool serial_install_rx_irq(void) {
     // Preserve any bytes which arrived after the early UART initialization.
     // Writing 0x01 selects the one-byte trigger without clearing the FIFO.
     outb(SERIAL_FIFO_CTRL(SERIAL_COM1), 0x01);
-    serial_drain_com1_rx();
+    (void)serial_drain_com1_rx();
     serial_rx_irq_active = true;
     __asm__ __volatile__("" ::: "memory");
     outb(SERIAL_INT_ENABLE(SERIAL_COM1), SERIAL_IER_RX_AVAILABLE);
@@ -176,7 +181,7 @@ bool serial_install_rx_irq(void) {
 bool serial_received(uint16_t port) {
     if (port == SERIAL_COM1 && serial_rx_irq_active) {
         uint32_t flags = irq_save();
-        serial_drain_com1_rx();
+        if (serial_drain_com1_rx()) kb_notify_input_ready();
         bool available = serial_rx_tail != serial_rx_head;
         irq_restore(flags);
         return available;
@@ -235,7 +240,7 @@ char serial_read_char(uint16_t port) {
         char value = 0;
         uint32_t flags = irq_save();
         // This also covers a byte which arrived immediately before irq_save().
-        serial_drain_com1_rx();
+        if (serial_drain_com1_rx()) kb_notify_input_ready();
         bool available = serial_rx_ring_pop(&value);
         irq_restore(flags);
         return available ? value : 0;

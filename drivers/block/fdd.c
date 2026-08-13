@@ -25,6 +25,7 @@
 #define CMOS_DATA            0x71
 #define CMOS_FLOPPY_TYPES    0x10
 #define SECTOR_SIZE          512
+#define FDD_MAX_TRANSFER     (18U * SECTOR_SIZE)
 
 #define DMA_CHANNEL_MASK 0x0A
 #define DMA_MODE 0x0B
@@ -55,7 +56,8 @@ static uint32_t fdd_last_activity[MAX_FDD_DRIVES];
 /* ISA DMA channel 2 can only address the first 16 MiB and may not cross a
  * 64-KiB boundary.  Reserve enough storage to select a 64-KiB boundary at
  * runtime; the selected address is still checked before programming the 8237. */
-static uint8_t fdd_dma_storage[0x10000u + SECTOR_SIZE] __attribute__((aligned(16)));
+static uint8_t fdd_dma_storage[0x10000U + FDD_MAX_TRANSFER]
+    __attribute__((aligned(16)));
 
 static uint8_t *fdd_dma_buffer(void) {
     uintptr_t start = (uintptr_t)fdd_dma_storage;

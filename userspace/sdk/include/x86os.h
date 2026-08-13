@@ -43,7 +43,11 @@ enum {
     X86OS_SYS_SET_CURSOR = 36,
     X86OS_SYS_TERMINAL_WRITE = 37,
     X86OS_SYS_TERMINAL_DRAW = 38,
-    X86OS_SYS_GETCHAR_NONBLOCKING = 39
+    X86OS_SYS_GETCHAR_NONBLOCKING = 39,
+    X86OS_SYS_YIELD = 40,
+    X86OS_SYS_SLEEP_MS = 41,
+    X86OS_SYS_MONOTONIC_MS = 42,
+    X86OS_SYS_MEMORY_STATS = 43
 };
 
 enum {
@@ -73,6 +77,23 @@ typedef struct {
     char name[32];
 } x86os_process_info_t;
 
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint64_t detected_usable_bytes;
+    uint64_t managed_bytes;
+    uint64_t reserved_bytes;
+    uint64_t allocated_frame_bytes;
+    uint64_t free_frame_bytes;
+    uint64_t heap_capacity_bytes;
+    uint64_t heap_used_bytes;
+    uint64_t heap_free_bytes;
+    uint64_t heap_largest_free_block;
+    uint64_t heap_arena_count;
+} x86os_memory_stats_t;
+
+#define X86OS_MEMORY_STATS_VERSION 1U
+
 enum {
     X86OS_DRIVE_ATA = 1,
     X86OS_DRIVE_FDD = 2
@@ -97,6 +118,10 @@ void x86os_putchar(char value);
 void x86os_puts(const char* text);
 void x86os_print_number(int value);
 void x86os_delay(uint32_t milliseconds);
+int x86os_sleep_ms(uint32_t milliseconds);
+int x86os_yield(void);
+int x86os_monotonic_ms(uint64_t* value);
+int x86os_memory_stats(x86os_memory_stats_t* stats);
 int x86os_getchar(void);
 int x86os_getchar_nonblocking(void);
 void* x86os_malloc(size_t size);

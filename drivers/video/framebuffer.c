@@ -1,4 +1,5 @@
 #include "framebuffer.h"
+#include "arch/x86/mm/paging.h"
 #include "lib/libc/string.h"
 
 // Framebuffer state
@@ -4690,7 +4691,10 @@ void framebuffer_init(multiboot_framebuffer_info_t* fb_info) {
         fb_info->framebuffer_addr > 0xFFFFFFFFULL ||
         fb_info->framebuffer_addr + framebuffer_size > 0x100000000ULL) return;
 
-    fb_address = (uint8_t*)(uintptr_t)fb_info->framebuffer_addr;
+    void *mapping = map_kernel_mmio((uint32_t)fb_info->framebuffer_addr,
+                                    (size_t)framebuffer_size);
+    if (mapping == NULL) return;
+    fb_address = (uint8_t*)mapping;
     fb_width = fb_info->framebuffer_width;
     fb_height = fb_info->framebuffer_height;
     fb_pitch = fb_info->framebuffer_pitch;

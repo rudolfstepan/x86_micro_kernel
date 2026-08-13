@@ -384,9 +384,10 @@ load_elf_segments:
     ja .bad
     mov [segment_end], edx
 
-    ; A cached floppy image remains the source until every PT_LOAD segment has
-    ; been copied. Reject a future kernel layout that would overwrite unread
-    ; cache bytes; the normal disk path has no such reserved RAM interval.
+    ; A cached floppy image remains the source until a PT_LOAD destination
+    ; overlaps it.  The ELF header and program headers have already been copied
+    ; into stage-2 memory, so invalidate the cache and reload this and all later
+    ; ranges through the bounce buffer before the destination overwrites it.
     cmp byte [kernel_cached], 1
     jne .cache_overlap_checked
     cmp edx, KERNEL_CACHE_ADDRESS
@@ -395,7 +396,7 @@ load_elf_segments:
     add eax, [kernel_size]
     cmp [segment_address], eax
     jae .cache_overlap_checked
-    jmp .bad
+    mov byte [kernel_cached], 0
 .cache_overlap_checked:
 
     mov eax, [si + 4]               ; p_offset
@@ -753,6 +754,10 @@ copy_real:
     mov ax, cs
     mov ds, ax
     mov es, ax
+    ; The protected-mode copy helper disables interrupts while changing CR0.
+    ; BIOS disk services used by the following chunk may need IRQ delivery
+    ; (including VMware disk backends), so restore the real-mode IF contract.
+    sti
     ret
 
 enter_kernel:

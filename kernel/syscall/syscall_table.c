@@ -7,6 +7,7 @@
  */
 
 #include <stdbool.h>
+#include "arch/x86/include/interrupt.h"
 #include "arch/x86/include/sys.h"
 #include "drivers/video/display.h"
 #include "drivers/char/kb.h"
@@ -54,8 +55,36 @@ static uint32_t syscall_get_time(void) {
 }
 
 static uint32_t syscall_memory_kb(void) {
-    uint64_t kibibytes = total_memory / 1024U;
+    memory_stats_t stats;
+    memory_get_stats(&stats);
+    uint64_t kibibytes = stats.managed_bytes / 1024U;
     return kibibytes > UINT32_MAX ? UINT32_MAX : (uint32_t)kibibytes;
+}
+
+static int syscall_delay(const Registers *regs, uint32_t milliseconds) {
+    if (milliseconds == 0) return 0;
+    if (regs != NULL && (regs->cs & 3U) == 3U) {
+        return scheduler_sleep_ms(milliseconds);
+    }
+    /* Early initialization and the rescue shell execute outside a scheduled
+     * task and therefore cannot block on the scheduler. */
+    pit_delay(milliseconds);
+    return 0;
+}
+
+static int syscall_monotonic_ms(uint64_t *user_value) {
+    uint64_t value = pit_monotonic_ms();
+    return copy_to_user(user_value, &value, sizeof(value)) == 0 ? 0 : -14;
+}
+
+static int syscall_memory_stats(memory_stats_t *user_stats,
+                                uint32_t user_size, uint32_t version) {
+    if (version != MEMORY_STATS_VERSION || user_size < sizeof(memory_stats_t)) {
+        return -22;
+    }
+    memory_stats_t stats;
+    memory_get_stats(&stats);
+    return copy_to_user(user_stats, &stats, sizeof(stats)) == 0 ? 0 : -14;
 }
 
 static int syscall_terminal_write(const char *user_buffer, size_t size) {
@@ -268,37 +297,68 @@ static int syscall_spawnv(const char *user_path, const char *const *user_argv,
         return -22;
     }
     char path[PROCESS_PATH_MAX];
-    char arguments[SYSCALL_MAX_ARGUMENTS][SYSCALL_ARGUMENT_CAPACITY];
+    char *arguments = (char*)k_malloc(
+        (size_t)argc * SYSCALL_ARGUMENT_CAPACITY);
     const char *argument_list[SYSCALL_MAX_ARGUMENTS];
+    if (arguments == NULL) return -12;
+
     Process *parent = scheduler_current_process();
     if (parent == NULL ||
-        copy_string_from_user(path, sizeof(path), user_path) < 0) return -14;
+        copy_string_from_user(path, sizeof(path), user_path) < 0) {
+        k_free(arguments);
+        return -14;
+    }
 
     for (int index = 0; index < argc; ++index) {
         const char *user_argument;
+        char *argument = arguments +
+                         (size_t)index * SYSCALL_ARGUMENT_CAPACITY;
         if (copy_from_user(&user_argument, user_argv + index,
                            sizeof(user_argument)) != 0 ||
-            copy_string_from_user(arguments[index], sizeof(arguments[index]),
-                                  user_argument) < 0) return -14;
-        argument_list[index] = arguments[index];
+            copy_string_from_user(argument, SYSCALL_ARGUMENT_CAPACITY,
+                                  user_argument) < 0) {
+            k_free(arguments);
+            return -14;
+        }
+        argument_list[index] = argument;
     }
-    return process_spawn_args(parent, path, argc, argument_list);
+    int result = process_spawn_args(parent, path, argc, argument_list);
+    k_free(arguments);
+    return result;
 }
 
 static int syscall_wait(int pid, int *user_status) {
-    if (!user_range_accessible(paging_current_directory(),
+    Process *parent = scheduler_current_process();
+    if (parent == NULL ||
+        !user_range_accessible(paging_current_directory(),
                                (uint32_t)(uintptr_t)user_status,
                                sizeof(*user_status), true)) return -14;
     for (;;) {
         int status = 0;
-        int result = process_wait_status(scheduler_current_process(), pid,
-                                         &status);
-        if (result < 0) return -10;
-        if (result > 0) {
-            return copy_to_user(user_status, &status, sizeof(status)) == 0
-                ? pid : -14;
+        /* On this uniprocessor kernel, keeping interrupts disabled makes the
+         * child-state check and TASK_WAITING registration one atomic
+         * operation.  Otherwise a child can exit between both operations and
+         * its wakeup is lost permanently. */
+        uint32_t flags = irq_save();
+        wait_queue_t *wait_queue = NULL;
+        int result = process_wait_status_locked(parent, pid, &status,
+                                                &wait_queue);
+        if (result < 0) {
+            irq_restore(flags);
+            return -10;
         }
-        scheduler_wait_for_process(pid);
+        if (result > 0) {
+            irq_restore(flags);
+            (void)scheduler_reap_finished_tasks();
+            return copy_to_user(user_status, &status, sizeof(status)) == 0
+                       ? pid : -14;
+        }
+        if (wait_queue == NULL ||
+            wait_queue_block_locked(wait_queue, TASK_BLOCK_WAITING) != 0) {
+            irq_restore(flags);
+            return -11;
+        }
+        irq_restore(flags);
     }
 }
 
@@ -386,7 +446,7 @@ static int syscall_rmdir(const char *user_path) {
 void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&display_putchar,            // Syscall 0: Write character to display
     (void*)&kernel_print_number,        // Syscall 1: Print number (for testing)
-    (void*)&pit_delay,                  // Syscall 2: Millisecond delay
+    (void*)&scheduler_sleep_ms,         // Syscall 2: Compatible blocking delay
     (void*)&kb_wait_enter,              // Syscall 3: Wait for Enter key
     (void*)&process_user_malloc,        // Syscall 4: Process-local allocation
     (void*)&process_user_free,          // Syscall 5: Release user allocation
@@ -424,6 +484,10 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_terminal_write,     // Syscall 37: Write terminal buffer
     (void*)&syscall_terminal_draw,      // Syscall 38: Draw text at position
     (void*)&getchar_nonblocking,        // Syscall 39: Poll terminal input
+    (void*)&scheduler_yield,            // Syscall 40: Yield current time slice
+    (void*)&scheduler_sleep_ms,         // Syscall 41: Blocking sleep in ms
+    (void*)&syscall_monotonic_ms,       // Syscall 42: 64-bit monotonic time
+    (void*)&syscall_memory_stats,       // Syscall 43: Physical/heap metrics
     // Add more syscalls here as needed
 };
 
@@ -464,7 +528,7 @@ void syscall_handler(Registers* regs) {
             kernel_print_number((int)arg1);
             break;
         case SYS_DELAY:
-            pit_delay(arg1);
+            result = (uint32_t)syscall_delay(regs, arg1);
             break;
         case SYS_WAIT_ENTER:
             kb_wait_enter();
@@ -636,6 +700,20 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_GETCHAR_NONBLOCKING:
             result = (uint32_t)(uint8_t)getchar_nonblocking();
+            break;
+        case SYS_YIELD:
+            result = (uint32_t)scheduler_yield();
+            break;
+        case SYS_SLEEP_MS:
+            result = (uint32_t)syscall_delay(regs, arg1);
+            break;
+        case SYS_MONOTONIC_MS:
+            result = (uint32_t)syscall_monotonic_ms(
+                (uint64_t*)(uintptr_t)arg1);
+            break;
+        case SYS_MEMORY_STATS:
+            result = (uint32_t)syscall_memory_stats(
+                (memory_stats_t*)(uintptr_t)arg1, arg2, arg3);
             break;
         default:
             result = (uint32_t)-1;

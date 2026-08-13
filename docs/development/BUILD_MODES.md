@@ -18,6 +18,7 @@ Der native Windows-Build erhält das Profil so:
 .\scripts\build-windows.ps1 -Target qemu
 .\scripts\build-windows.ps1 -Target vmware
 .\scripts\build-windows.ps1 -Target real_hw
+.\scripts\build-windows.ps1 -Target qemu -Video framebuffer
 ```
 
 Für das auslieferbare VMware-Paket sollte `vmware` verwendet werden. Für ein
@@ -31,8 +32,8 @@ Raw-Image, das später auf einen echten Datenträger geschrieben wird, ist
 | `vga` | `USE_VGA_TEXT` | Standard und verifizierter Shell-Weg |
 | `framebuffer` | `USE_FRAMEBUFFER` | experimenteller Grafikweg |
 
-Das Windows-Skript baut derzeit bewusst mit VGA-Textmodus. Mit Make kann der
-Framebuffer gewählt werden:
+Das Windows-Skript verwendet standardmäßig VGA; `-Video framebuffer` wählt
+denselben optionalen Grafikpfad wie `VIDEO=framebuffer` bei Make:
 
 ```bash
 make kernel TARGET=qemu VIDEO=framebuffer

@@ -89,7 +89,6 @@ CFLAGS := -m32 -std=gnu11 -c -MMD -MP -ffreestanding -nostdlib -nostartfiles -no
 
 LDFLAGS := -m elf_i386 -nostdlib --strip-all
 KERNEL_LDSCRIPT := $(CONFIG_DIR)/klink.ld
-USER_LDSCRIPT := $(CONFIG_DIR)/cli.ld
 
 # Mount directory for disk image
 MOUNT_DIR := /mnt/disk
@@ -208,7 +207,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-memory test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -291,6 +290,9 @@ help:
 	@echo "  test         - Run fixture-independent host regression tests"
 	@echo "  test-all     - Run unit tests plus generated-image integration tests"
 	@echo "  test-images  - Validate generated disk images"
+	@echo "  test-smoke   - Boot QEMU and run the automated Ring-3 guest test"
+	@echo "  test-smoke-pit - Run the guest test with the LAPIC disabled"
+	@echo "  test-smoke-memory - Run guest tests with 32/64/256/1024 MiB RAM"
 	@echo "  test-verbose - Validate disk images with detailed output"
 	@echo "  test-bash    - Run disk image tests (Bash, no Python required)"
 	@echo "  test-quick   - Quick check if disk images exist"
@@ -522,7 +524,13 @@ native-image: floppy-image
 		--data-file ECHO.PRG=$(SYSTEM_PROGRAM_DIR)/ECHO.PRG \
 		--data-file CLS.PRG=$(SYSTEM_PROGRAM_DIR)/CLS.PRG \
 		--data-file DRIVES.PRG=$(SYSTEM_PROGRAM_DIR)/DRIVES.PRG \
-		--data-file EDIT.PRG=$(SYSTEM_PROGRAM_DIR)/EDIT.PRG
+		--data-file EDIT.PRG=$(SYSTEM_PROGRAM_DIR)/EDIT.PRG \
+		--data-file CHILDEX.PRG=$(SYSTEM_PROGRAM_DIR)/CHILDEX.PRG \
+		--data-file FAULTDE.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTDE.PRG \
+		--data-file FAULTUD.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTUD.PRG \
+		--data-file FAULTPF.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTPF.PRG \
+		--data-file GTEST.PRG=$(SYSTEM_PROGRAM_DIR)/GTEST.PRG \
+		--data-file SLEEPER.PRG=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/x86-microkernel.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/x86-microkernel/x86-microkernel.vmx"
 
@@ -559,7 +567,13 @@ floppy-image: kernel system-programs user-program
 		--data-file ECHO.PRG=$(SYSTEM_PROGRAM_DIR)/ECHO.PRG \
 		--data-file CLS.PRG=$(SYSTEM_PROGRAM_DIR)/CLS.PRG \
 		--data-file DRIVES.PRG=$(SYSTEM_PROGRAM_DIR)/DRIVES.PRG \
-		--data-file EDIT.PRG=$(SYSTEM_PROGRAM_DIR)/EDIT.PRG
+		--data-file EDIT.PRG=$(SYSTEM_PROGRAM_DIR)/EDIT.PRG \
+		--data-file CHILDEX.PRG=$(SYSTEM_PROGRAM_DIR)/CHILDEX.PRG \
+		--data-file FAULTDE.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTDE.PRG \
+		--data-file FAULTUD.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTUD.PRG \
+		--data-file FAULTPF.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTPF.PRG \
+		--data-file GTEST.PRG=$(SYSTEM_PROGRAM_DIR)/GTEST.PRG \
+		--data-file SLEEPER.PRG=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG
 
 # ============================================================================
 # TESTING
@@ -578,6 +592,47 @@ test-all: test-unit test-images
 test-images:
 	@echo "Running disk image unit tests..."
 	@$(PYTHON) scripts/test_disk_images.py
+
+test-smoke: native-image
+	@echo "Running QEMU guest smoke test..."
+	@$(PYTHON) scripts/run_qemu_smoke.py \
+		--qemu $(QEMU) \
+		--image $(OUTPUT_DIR)/x86-microkernel.img \
+		--log $(OUTPUT_DIR)/guest-smoke.log
+
+test-smoke-pit: native-image
+	@echo "Running QEMU guest smoke test with PIT scheduling..."
+	@$(PYTHON) scripts/run_qemu_smoke.py \
+		--qemu $(QEMU) \
+		--image $(OUTPUT_DIR)/x86-microkernel.img \
+		--no-apic \
+		--log $(OUTPUT_DIR)/guest-smoke-pit.log
+
+test-smoke-memory: native-image
+	@echo "Running QEMU guest smoke test with 32 MiB RAM..."
+	@$(PYTHON) scripts/run_qemu_smoke.py \
+		--qemu $(QEMU) \
+		--image $(OUTPUT_DIR)/x86-microkernel.img \
+		--memory 32M \
+		--log $(OUTPUT_DIR)/guest-smoke-memory-32m.log
+	@echo "Running QEMU guest smoke test with 64 MiB RAM..."
+	@$(PYTHON) scripts/run_qemu_smoke.py \
+		--qemu $(QEMU) \
+		--image $(OUTPUT_DIR)/x86-microkernel.img \
+		--memory 64M \
+		--log $(OUTPUT_DIR)/guest-smoke-memory-64m.log
+	@echo "Running QEMU guest smoke test with 256 MiB RAM..."
+	@$(PYTHON) scripts/run_qemu_smoke.py \
+		--qemu $(QEMU) \
+		--image $(OUTPUT_DIR)/x86-microkernel.img \
+		--memory 256M \
+		--log $(OUTPUT_DIR)/guest-smoke-memory-256m.log
+	@echo "Running QEMU guest smoke test at the 1-GiB managed-RAM ceiling..."
+	@$(PYTHON) scripts/run_qemu_smoke.py \
+		--qemu $(QEMU) \
+		--image $(OUTPUT_DIR)/x86-microkernel.img \
+		--memory 1024M \
+		--log $(OUTPUT_DIR)/guest-smoke-memory-1024m.log
 
 # Run disk image tests with verbose output
 test-verbose:

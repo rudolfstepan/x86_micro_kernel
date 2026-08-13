@@ -84,7 +84,10 @@ def elf_to_mypr(elf: bytes) -> bytes:
         segment_end = virtual_address + memory_size
         if segment_end < virtual_address or segment_end - PROGRAM_BASE > PROGRAM_REGION_SIZE:
             raise ValueError("user program exceeds the 8 MiB loader region")
-        if flags & 1 and virtual_address <= entry < segment_end:
+        # MYPR v1 has no segment table at runtime.  Its validator can only
+        # accept an entry point backed by bytes stored in the PRG file, never
+        # an address in a zero-filled executable segment tail.
+        if flags & 1 and virtual_address <= entry < virtual_address + file_size:
             entry_is_executable = True
         segments.append((virtual_address, file_offset, file_size, memory_size, flags))
         image_end = max(image_end, segment_end)

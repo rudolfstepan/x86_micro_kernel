@@ -21,6 +21,7 @@
 #include "arch/x86/include/interrupt.h"
 #include "arch/x86/include/tss.h"
 #include "kernel/init/banner.h"
+#include "include/kernel/panic.h"
 #include "kernel/shell/command.h"
 #include "mm/kmalloc.h"
 
@@ -208,9 +209,18 @@ static void driver_init(void) {
  * Display system ready message and status
  */
 static void system_ready(void) {
+    memory_stats_t memory;
+    memory_get_stats(&memory);
     printf("\n=== System Ready ===\n");
     printf("CPU Frequency: %llu Hz\n", cpu_frequency);
-    printf("Total Memory: %llu MB\n", total_memory / 1024 / 1024);
+    printf("Memory: %llu MiB detected, %llu MiB managed, %llu MiB free\n",
+           memory.detected_usable_bytes / 1024U / 1024U,
+           memory.managed_bytes / 1024U / 1024U,
+           memory.free_frame_bytes / 1024U / 1024U);
+    printf("Kernel heap: %llu KiB used, %llu KiB free in %llu arenas\n",
+           memory.heap_used_bytes / 1024U,
+           memory.heap_free_bytes / 1024U,
+           memory.heap_arena_count);
     printf("Drives Detected: %d\n", drive_count);
     
     // Network stack initialization (optional)
@@ -289,6 +299,9 @@ static int start_userspace_shell(const multiboot1_info_t *boot_info) {
  * @param multiboot_info Pointer to Multiboot1 info structure
  */
 void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_info) {
+    if (!scheduler_kernel_context_stack_is_valid()) {
+        panic("Static kernel stack guard was not initialized");
+    }
     
     // Validate Multiboot magic number
     if (multiboot_magic != MULTIBOOT1_BOOTLOADER_MAGIC) {
@@ -305,8 +318,20 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     // Parse bootloader-provided information
     parse_multiboot1_info(multiboot_info);
 
+    // Initialize kernel memory allocator
+    if (initialize_memory_system() != 0) {
+        printf("Fatal: kernel memory initialization failed.\n");
+        while (1) { asm volatile("hlt"); }
+    }
+
+    /* Establish the kernel identity map before any APIC or PCI MMIO access.
+     * User processes rely on CR0.PG already being active when scheduled. */
+    init_paging();
+    test_paging();
+
 #ifdef USE_FRAMEBUFFER
-    // Initialize framebuffer if available (for graphical boot)
+    /* Map the physical framebuffer only after paging exists.  A typical VBE
+     * BAR is above the 1-GiB RAM direct map and must be uncached MMIO. */
     if ((multiboot_info->flags & MULTIBOOT1_FLAG_FRAMEBUFFER) != 0 &&
         multiboot_info->framebuffer_addr != 0) {
         multiboot_framebuffer_info_t fb_info = {
@@ -338,20 +363,8 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
         printf("Warning: Framebuffer not available, using VGA text mode\n");
     }
 #else
-    // Standard VGA text mode
     display_init();
 #endif
-
-    // Initialize kernel memory allocator
-    if (initialize_memory_system() != 0) {
-        printf("Fatal: kernel memory initialization failed.\n");
-        while (1) { asm volatile("hlt"); }
-    }
-
-    /* Establish the kernel identity map before any APIC or PCI MMIO access.
-     * User processes rely on CR0.PG already being active when scheduled. */
-    init_paging();
-    test_paging();
 
     // Stage 1: Early initialization
     early_init();
@@ -364,6 +377,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     
     // Stage 4: System ready
     system_ready();
+    printf("BOOT_OK\n");
 
     /* SHELL.PRG is the normal command-line interpreter.  The in-kernel shell
      * remains available only as a recovery console when the userspace image

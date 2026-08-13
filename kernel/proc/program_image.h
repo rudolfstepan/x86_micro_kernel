@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-/* Validate a complete MYPR image before it is executed or relocated. */
+/* Validate a complete fixed-address MYPR v1 image before it is mapped. */
 int program_image_validate(const void* image, uint32_t image_size,
                            uint32_t region_size);
 

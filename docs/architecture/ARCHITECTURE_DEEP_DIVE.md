@@ -1,5 +1,7 @@
 # Architekturüberblick
 
+Stand: 13. August 2026
+
 Dieses Dokument beschreibt die aktuelle 32-Bit-x86-Architektur. Das System
 startet ausschließlich über den eigenen BIOS-Bootloader. Einen alternativen
 Legacy-Einstieg gibt es nicht mehr.
@@ -33,7 +35,8 @@ sie bedeutet nicht, dass der native Weg GRUB benötigt.
 3. VGA oder optionalen Framebuffer initialisieren
 4. Kernel-Allocator initialisieren
 5. TSS, GDT, IDT, Exceptions, IRQs, PIT und PS/2-Tastatur aufsetzen
-6. APIC-Timer, PCI und experimentelles USB probing starten
+6. APIC-Timer gegen PIT kalibrieren oder PIT-Scheduler-Fallback wählen sowie
+   PCI und experimentelles USB-Probing starten
 7. Netzwerktreiber passend zu erkannten PCI-Geräten registrieren
 8. ATA und Disketten erkennen
 9. VFS initialisieren und Laufwerke automatisch mounten
@@ -48,8 +51,10 @@ seriellen Log sichtbar bleiben.
 - Die GDT enthält Kernelsegmente und einen TSS-Deskriptor.
 - Die IDT deckt CPU-Ausnahmen, Hardware-IRQs und den Syscall-Einstieg ab.
 - Assembly-Stubs sichern den Registerzustand und rufen C-Handler auf.
-- PIT-Ticks liefern Millisekundenzeit und Scheduler-Ereignisse.
-- Der lokale APIC-Timer wird zusätzlich initialisiert, wenn verfügbar.
+- IRQ0 schreibt die monotone 64-Bit-PIT-Zeit fort und weckt fällige Sleeper.
+- Der lokale APIC-Timer wird gegen PIT kalibriert und liefert im Normalfall
+  die Scheduler-Ereignisse.
+- Ohne LAPIC übernimmt IRQ0 nach dem PIC-EOI das Scheduler-Quantum.
 - Präemptionskritische Kernelbereiche verwenden eigene Guards.
 
 IRQ-Handler sollen kurze Hardwarearbeit erledigen und keine dauerhaften
@@ -57,24 +62,119 @@ VGA-Debugmeldungen ausgeben. Insbesondere Netzwerk-RX wird über die
 gemeinsame `netdev`-Schicht weiterverarbeitet, ohne die Shellausgabe mit jedem
 Interrupt zu unterbrechen.
 
+## Zeitquellen und Timer
+
+Der aktive monotone Clocksource ist der PIT. IRQ0 akkumuliert den tatsächlich
+programmierten PIT-Divisor als Millisekunden plus Bruchteil in einem
+64-Bit-Zähler. Damit hängt die Zeit nicht mehr an einem 32-Bit-Wrap und der
+gerundete Divisor wird nicht fälschlich als exakt 1 kHz behandelt. Da ein
+64-Bit-Zugriff auf i386 nicht atomar ist, lesen Kernel und Syscall den Zähler
+mit lokal gesperrten Interrupts; IRQ0 ist der einzige Schreiber.
+
+Der LAPIC ist kein unabhängiger Clocksource, sondern der bevorzugte
+Scheduler-Timer. Beim Start läuft er zunächst maskiert als One-shot, wird über
+ein PIT-Zeitfenster kalibriert und danach periodisch auf das Scheduler-Quantum
+programmiert. Ist kein lokaler APIC vorhanden, teilt der PIT-Pfad seine IRQs
+auf dasselbe Quantum herunter. Der Kontextwechsel erfolgt dort erst, nachdem
+der PIC den EOI erhalten hat.
+
+Der vorhandene HPET-Code ist experimentell und nicht Teil des aktiven
+Zeitpfads. HPET bleibt bis zur zentralen, validierten ACPI-/MMIO- und
+Interrupt-Routing-Schicht in R5.1 zurückgestellt.
+
 ## Speicher
 
-Der Kernel verwendet einen eigenen Heap-Allocator in `mm/kmalloc.c` und die
-x86-Paging-Unterstützung in `arch/x86/mm/paging.c`. Bootloaderdaten liefern
-die verfügbare physische Speicherkarte. Der aktuelle Programmlader reserviert
-einen gemeinsamen 8-MiB-Bereich ab `0x02100000` für MYPR-Programme.
+Der Kernel verwendet einen eigenen Frame- und Heap-Allocator in
+`mm/kmalloc.c` und die x86-Paging-Unterstützung in
+`arch/x86/mm/paging.c`. Die vom Bootloader übergebene E820-Karte wird sortiert
+und überlappungsfrei normalisiert. Reservierte Firmwarebereiche,
+Multiboot-Strukturen und Module haben Vorrang vor nutzbaren Einträgen. Eine
+beschädigte oder abgeschnittene Karte und Kapazitätsfehler der festen
+Regionstabellen brechen die Speicherkartenübernahme fail-closed ab.
 
-Dieser Bereich ist noch keine Sicherheitsgrenze: Programmtasks laufen in
-Ring 0, teilen Kerneladressraum und Ladebereich und besitzen nur getrennte
-Kernelstacks. Vollständiger Userspace benötigt Ring-3-Übergang, eigene
-Seitentabellen, Userstacks und geprüfte Kopierfunktionen für Syscall-Pointer.
+Der gemeinsam in alle Adressräume eingeblendete, Supervisor-only Kernelanteil
+ist ein Directmap der ersten 1 GiB und endet exakt bei `USER_BASE` auf
+`0x40000000`. Der Frame-Allocator verwaltet nur vollständige nutzbare
+E820-Seiten innerhalb dieses Fensters. Ein umlaufender Next-Fit-Hinweis
+begrenzt wiederholte Suchen sowohl nach einzelnen als auch nach
+zusammenhängenden Frames. Von E820 gemeldeter Speicher oberhalb 1 GiB wird
+erkannt und in der Statistik ausgewiesen, ohne Highmem-/`kmap`-Fenster aber
+nicht vergeben. Für den verwalteten Bestand gilt:
+
+```text
+managed = reserved + allocated + free
+```
+
+Der Kernel-Heap beginnt mit ungefähr 1 MiB und wächst bei Bedarf um mindestens
+256 KiB. Jede Erweiterung reserviert zusammenhängende Frames innerhalb des
+Directmaps dauerhaft als Heap-Backing. Eine adresssortierte Blockliste teilt
+Blöcke und vereinigt ausschließlich physisch angrenzende freie Nachbarn; über
+Lücken getrennte Arenen bleiben getrennt. Der Heap schrumpft derzeit nicht.
+Da Allokation und Freigabe die IRQ-sperrenden Heap-/Frame-Locks verwenden und
+eine Suche auslösen können, sind `k_malloc`, `k_realloc` und `k_free` nicht für
+harten IRQ-Kontext bestimmt.
+
+Der Programmlader liest MYPR-Dateien in einen passend großen temporären
+Kernel-Heap-Puffer und validiert dort das vollständige PRG-v1-Image. Danach
+kopiert er den gespeicherten Anteil in private Prozessseiten ab `0x40000000`,
+nullt BSS und gibt den Stagingpuffer auf Erfolgs- und Fehlerpfaden wieder frei.
+Der Ring-3-Start hängt deshalb nicht mehr von einem festen physischen
+Stagingbereich ab und funktioniert auch in der 32-MiB-Testkonfiguration.
+
+Programmtasks laufen in Ring 3 mit eigener Seitentabelle und Userstack. Der
+gemeinsam eingeblendete Kernelanteil bleibt Supervisor-only. Syscall-Pointer
+werden vor Zugriffen bereichsweise geprüft und über Kopierfunktionen zwischen
+User- und Kerneladressraum übertragen.
+
+Die Speicherstatistik unterscheidet E820-erkannt, tatsächlich verwaltet,
+reserviert, alloziert und frei. Zusätzlich meldet sie Heap-Backing, belegte
+und freie Payloadbytes, den größten freien Block und die Zahl der
+Wachstumsarenen. `used + free` kann wegen Blockheadern und Alignment kleiner
+als die gesamte Heap-Kapazität sein.
 
 ## Scheduler und Prozesse
 
 Der Scheduler verwaltet bis zu acht Tasks mit je 8 KiB Stack und den Zuständen
-ready, running, sleeping und finished. Ein Prozessdatensatz ordnet PID,
-Task-ID, Namen und Programmbild zu. Timerpräemption kann für kritische
-Operationen vorübergehend unterdrückt werden.
+ready, running, sleeping, waiting, finished und dem internen Übergangszustand
+reaping. Ein Prozessdatensatz ordnet PID, Generation, Task-ID, Namen und
+Programmbild zu. Timerpräemption kann für kritische Operationen vorübergehend
+unterdrückt werden.
+
+Dynamisch angelegte Taskstacks besitzen unter- und oberhalb des nutzbaren
+8-KiB-Bereichs je eine 64-Byte-Canary. Der statische 8-KiB-Boot-/Rescue-Stack
+besitzt eine untere 64-Byte-Redzone, die der Assembler vor dem ersten C-Aufruf
+initialisiert. Schedulergrenzen prüfen sowohl die Wächter als auch den
+gespeicherten beziehungsweise aktuellen ESP-Bereich und panicen bei einer
+Verletzung. Das erkennt Überläufe deterministisch an Prüfstellen, ersetzt aber
+noch keine echte, nicht gemappte Guardpage.
+
+Jeder Task besitzt genau einen intrusiven Wait-Queue-Knoten und kann deshalb
+höchstens auf ein Ereignis gleichzeitig warten. Die generischen Operationen
+unterstützen FIFO-Einreihung, Wake-one, Wake-all, geordnete 64-Bit-Deadlines
+und das Entfernen eines wartenden Tasks. Ihr Synchronisationsvertrag ist auf
+dem aktuellen Single-Core-System: Bedingung prüfen, Queue verändern und
+Taskstatus wechseln erfolgen mit deaktivierten Interrupts. Wakeup markiert den
+Task als ready; beliebige Geräte-IRQs wechseln nicht unmittelbar den Kontext.
+
+`wait(pid)` prüft den Kindstatus und registriert den Eltern-Task atomar auf der
+kindeigenen Exit-Queue. Exit und Kill veröffentlichen den Status vor Wake-all.
+Kill, Exit und Task-Slot-Wiederverwendung lösen bestehende Queue-Mitgliedschaft,
+damit kein veralteter intrusiver Knoten zurückbleibt.
+
+Beim Reaping werden Besitzerzeiger und Prozessgeneration unter deaktivierten
+Interrupts validiert. Seitentabelle und Kernelstack werden atomar vom Task
+abgetrennt und der Slot wechselt zu `TASK_REAPING`. Die proportional teure
+Freigabe der Userseitentabellen, Frames und Heapallokation erfolgt danach mit
+aktivierten Hardware-Interrupts, während Taskpräemption unterdrückt bleibt.
+Erst ein kurzer abschließender kritischer Abschnitt setzt den leeren Slot
+wieder auf `finished` und damit wiederverwendbar. Das verhindert Slot-ABA und
+hält lange Page-Directory-Walks aus dem IRQ-gesperrten Abschnitt heraus.
+
+`sleep_ms` reiht den aktuellen Task nach seiner absoluten 64-Bit-Deadline ein,
+setzt ihn auf sleeping und schaltet zu einem lauffähigen Task oder in den
+gesicherten Kernelkontext. IRQ0 setzt abgelaufene Sleeper wieder auf ready.
+`yield` gibt das aktuelle Quantum unmittelbar an den nächsten bereiten Task ab;
+ohne Konkurrent bleibt der Aufrufer running.
 
 `RUN`/`EXEC` laden eine MYPR-Datei über VFS, validieren den vollständigen
 Header und erzeugen erst danach einen Task. Der Startup-Code externer
@@ -82,10 +182,47 @@ Programme ruft `main()` auf und endet über den Exit-Syscall.
 
 ## Syscalls
 
-Die öffentliche SDK-Schicht kapselt den Low-Level-Einstieg. Aktuell stehen
-Zeichenausgabe, Zahlenausgabe, Delay, Tastatureingabe, Speicheroperationen und
-Exit bereit. Externe Programme sollen nur `userspace/sdk/include/x86os.h`
-einbinden, keine internen Kernelheader.
+Die öffentliche SDK-Schicht kapselt den Low-Level-Einstieg über `INT 0x80`.
+Sie bietet Terminal-, Speicher-, Datei-, Verzeichnis-, Prozess- und
+Zeitoperationen. Externe Programme sollen nur
+`userspace/sdk/include/x86os.h` einbinden, keine internen Kernelheader.
+
+R1.1 und R1.2 hängen neue Nummern an die bestehende ABI an, ohne alte
+Programme umzunummerieren:
+
+| Nummer | SDK/API | Vertrag |
+|---:|---|---|
+| 2 | `x86os_delay(uint32_t)` | kompatibler, für Ring 3 blockierender Delay |
+| 12 | `x86os_uptime_ms()` | niedriges 32-Bit-Wort der monotonen Zeit |
+| 13 | `x86os_memory_kb()` | verwalteter physischer Speicher in KiB, auf 32 Bit gesättigt |
+| 40 | `x86os_yield()` | freiwillige Abgabe an einen bereiten Task |
+| 41 | `x86os_sleep_ms(uint32_t)` | blockierender Millisekunden-Sleep |
+| 42 | `x86os_monotonic_ms(uint64_t *)` | geprüfte 64-Bit-Ausgabe per User-Pointer |
+| 43 | `x86os_memory_stats(x86os_memory_stats_t *)` | versionierte v1-Speicherstatistik per geprüftem Copyout |
+
+Der generische Syscall-Rückgabekanal bleibt 32 Bit breit. Die monotone
+64-Bit-Zeit wird deshalb mit `copy_to_user` in einen zuvor validierten
+Userspace-Puffer geschrieben. Ring-0-Aufrufe des historischen Delay-Pfads
+bleiben aktive Kernel-/Hardware-Wartevorgänge; nur ein Ring-3-Aufrufer wird in
+die Sleep-Queue eingereiht.
+
+Die v1-Struktur für Syscall 43 ist 88 Byte groß: Auf `uint32_t version` und
+`uint32_t struct_size` folgen zehn `uint64_t`-Felder. Der SDK-Wrapper übergibt
+Pointer, Strukturgröße und `X86OS_MEMORY_STATS_VERSION`; der Kernel lehnt eine
+unbekannte Version oder einen zu kleinen Puffer vor `copy_to_user` ab. Sie
+trennt insbesondere `detected_usable_bytes` von `managed_bytes`, während der
+kompatible Syscall 13 ausschließlich die verwalteten KiB liefert.
+
+## Console-Eingabe
+
+PS/2-Tastatur und COM1 speisen die Console-Eingabe. Ein blockierendes
+`getchar` prüft die Eingabepuffer und registriert den Task unter derselben
+IRQ-geschützten Synchronisationsgrenze auf `input_waiters`; dadurch kann
+zwischen Leerprüfung und Blockieren kein Zeichen-Wakeup verloren gehen.
+PS/2-Eingabe und der COM1-RX-IRQ wecken alle Leser; jeder prüft den
+level-getriggerten Pufferzustand erneut und reiht sich bei Bedarf wieder ein. Frühe
+Kernelkontexte oder Aufrufe mit deaktivierter Präemption, die nicht sicher
+blockieren können, behalten einen HLT-basierten Fallback.
 
 ## Dateisysteme
 
@@ -99,21 +236,44 @@ vorher im Shellresolver normalisiert.
 | Bereich | Aktuelle Komponenten |
 |---|---|
 | Block | ATA/IDE, Floppy |
-| Eingabe | PS/2-Tastatur, experimentelles USB-HID |
+| Eingabe | PS/2-Tastatur und COM1 mit gemeinsamer blockierender Console-Wait-Queue, experimentelles USB-HID |
 | Anzeige | VGA-Text, optionaler RGB-Framebuffer |
 | Bus | PCI, USB-Hostcontroller-Probing |
 | Netzwerk | E1000, RTL8139, NE2000 über `netdev` |
-| Zeit | PIT, RTC, lokaler APIC-Timer |
+| Zeit | monotone 64-Bit-PIT-Zeit, RTC, kalibrierter lokaler APIC-Timer mit PIT-Fallback; HPET noch inaktiv |
 
 Die generierte VMware-Referenzmaschine verwendet IDE, VGA, PS/2 und E1000.
+
+## Verifikation des Speicherpfads
+
+Die R1.2-Abnahme kombiniert Hostregressionen, Boot-Selbsttests und den realen
+Ring-3-Smoke-Test. Der Gasttest prüft die Framezähler-Invariante, versionierte
+Statistiken und User-Pointer, Allokation/Freigabe sowie 64 aufeinanderfolgende
+Spawn/Exit/Wait/Reap-Zyklen ohne Frame- oder Heapdrift. Die QEMU-Matrix umfasst
+32, 64, 256, 512 und 1024 MiB. Der 512-MiB-Referenzlauf wird sowohl mit dem
+gegen PIT kalibrierten LAPIC-Timer als auch ohne APIC über den
+PIT-Scheduler-Fallback ausgeführt; der High-Frame-Selbsttest schreibt und liest
+zusätzlich einen Frame ab 256 MiB.
+
+Noch nicht enthalten sind systematische Failure-Injection für jede einzelne
+Teilallokation, ein Highmem-/`kmap`-Fenster für Speicher oberhalb 1 GiB, echte
+nicht gemappte Stack-Guardpages und ein für harten IRQ-Kontext geeigneter
+Allocator. Diese Punkte sind bewusster Restumfang für R1.3 beziehungsweise
+spätere Speichermeilensteine und ändern den abgenommenen R1.2-Vertrag nicht.
 
 ## Wichtige Grenzen
 
 - BIOS/MBR statt UEFI
 - i386 statt x86-64
-- noch kein isolierter Ring-3-Userspace
 - kein SMP-Scheduler
+- feste Obergrenze von acht Tasks und genau ein Wait-Ereignis pro Task
+- der Frame-Allocator verwaltet höchstens die ersten 1 GiB; höherer
+  E820-Speicher wird bis zu einer Highmem-/`kmap`-Lösung nur erkannt
+- Kernel-Heap-Operationen sind nicht für harten IRQ-Kontext bestimmt
+- Stack-Canaries erkennen Korruption an Prüfstellen, sind aber keine echten
+  nicht gemappten Guardpages
 - Minimalnetzwerk ohne TCP/DNS/IPv6
+- HPET und IOAPIC warten auf die validierte ACPI-/Plattformschicht
 - USB und Framebuffer sind nicht so umfassend verifiziert wie der
   VMware-VGA-/PS/2-/E1000-Weg
 
@@ -121,8 +281,12 @@ Die generierte VMware-Referenzmaschine verwendet IDE, VGA, PS/2 und E1000.
 
 - `arch/x86/boot/bios/` – native Bootstufen
 - `arch/x86/cpu/` – GDT, IDT, ISR, IRQ und Syscalls
+- `arch/x86/mm/` und `mm/` – Paging, E820-Normalisierung, Frames, Heap und
+  Speicherstatistik
+- `config/klink.ld` – statischer Kernelstack und seine 64-Byte-Redzone
 - `kernel/init/kernel.c` – Initialisierungsreihenfolge
-- `kernel/sched/` und `kernel/proc/` – Tasks und Programme
+- `kernel/sched/` und `kernel/proc/` – Tasks, Wait-Queues und Prozesse
+- `kernel/time/` – monotone PIT-Zeit und kalibrierter LAPIC-Timer
 - `kernel/shell/` – Shell und Pfadauflösung
 - `fs/vfs/` – Mount- und Dateisystemabstraktion
 - `drivers/` – Hardwaretreiber

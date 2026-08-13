@@ -6,6 +6,8 @@
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
+#include "include/kernel/panic.h"
+#include "kernel/time/pit.h"
 #include "mm/kmalloc.h"
 
 extern void swtch(context_t *old, context_t *new);
@@ -20,6 +22,112 @@ static context_t kernel_context;
 static bool kernel_context_saved = false;
 static volatile uint32_t preempt_disable_count;
 static volatile bool preemption_pending;
+static bool apic_timer_active;
+static uint32_t pit_scheduler_ticks;
+static wait_queue_t sleep_waiters = WAIT_QUEUE_INIT;
+
+#define SCHEDULER_QUANTUM_MS 10U
+#define STACK_GUARD_WORDS 16U
+#define STACK_GUARD_BYTES (STACK_GUARD_WORDS * sizeof(uint32_t))
+#define STACK_GUARD_BASE 0x5354414BU /* "STAK" */
+#define KERNEL_STACK_GUARD 0x4B535447U /* "KSTG" */
+
+extern uint32_t _stack_guard_start;
+extern uint32_t _stack_guard_end;
+extern uint8_t _stack_start;
+extern uint8_t _stack_end;
+
+static task_t *task_from_wait_node(wait_queue_node_t *node) {
+    return (task_t*)((uint8_t*)node - offsetof(task_t, wait_node));
+}
+
+static uint32_t stack_guard_value(size_t index, bool upper) {
+    return STACK_GUARD_BASE ^ (uint32_t)(index * 0x1020304U) ^
+           (upper ? 0x80000000U : 0U);
+}
+
+uint32_t *scheduler_allocate_kernel_stack(void) {
+    uint8_t *allocation = (uint8_t*)k_malloc(
+        STACK_SIZE + 2U * STACK_GUARD_BYTES);
+    if (allocation == NULL) return NULL;
+    uint32_t *lower = (uint32_t*)allocation;
+    uint32_t *stack = (uint32_t*)(allocation + STACK_GUARD_BYTES);
+    uint32_t *upper = (uint32_t*)((uint8_t*)stack + STACK_SIZE);
+    for (size_t i = 0; i < STACK_GUARD_WORDS; ++i) {
+        lower[i] = stack_guard_value(i, false);
+        upper[i] = stack_guard_value(i, true);
+    }
+    memset(stack, 0, STACK_SIZE);
+    return stack;
+}
+
+bool scheduler_kernel_stack_is_valid(const uint32_t *stack) {
+    if (stack == NULL || ((uintptr_t)stack & 0xFU) != 0) return false;
+    const uint32_t *lower = (const uint32_t*)((const uint8_t*)stack -
+                                              STACK_GUARD_BYTES);
+    const uint32_t *upper = (const uint32_t*)((const uint8_t*)stack +
+                                              STACK_SIZE);
+    for (size_t i = 0; i < STACK_GUARD_WORDS; ++i) {
+        if (lower[i] != stack_guard_value(i, false) ||
+            upper[i] != stack_guard_value(i, true)) return false;
+    }
+    return true;
+}
+
+bool scheduler_kernel_context_stack_is_valid(void) {
+    const uint32_t *guard = &_stack_guard_start;
+    const uint32_t *guard_end = &_stack_guard_end;
+    if ((uintptr_t)guard_end - (uintptr_t)guard != 64U) return false;
+    while (guard < guard_end) {
+        if (*guard++ != KERNEL_STACK_GUARD) return false;
+    }
+    return true;
+}
+
+void scheduler_free_kernel_stack(uint32_t *stack) {
+    if (stack == NULL) return;
+    if (!scheduler_kernel_stack_is_valid(stack)) {
+        panic("Kernel stack guard corrupted");
+    }
+    memset(stack, 0xDD, STACK_SIZE);
+    k_free((uint8_t*)stack - STACK_GUARD_BYTES);
+}
+
+static void validate_task_stack_or_panic(const task_t *task) {
+    if (task == NULL || task->kernel_stack == NULL) return;
+    uintptr_t low = (uintptr_t)task->kernel_stack;
+    uintptr_t high = low + STACK_SIZE;
+    if (!scheduler_kernel_stack_is_valid(task->kernel_stack) ||
+        (task->context.esp != 0U &&
+         ((uintptr_t)task->context.esp < low ||
+          (uintptr_t)task->context.esp >= high))) {
+        panic("Kernel stack guard or saved ESP corrupted");
+    }
+}
+
+static void validate_running_task_stack_or_panic(const task_t *task) {
+    validate_task_stack_or_panic(task);
+    uintptr_t current_esp;
+    __asm__ __volatile__("mov %%esp, %0" : "=r"(current_esp));
+    uintptr_t low = (uintptr_t)task->kernel_stack;
+    if (current_esp < low || current_esp >= low + STACK_SIZE) {
+        panic("Current ESP escaped the kernel task stack");
+    }
+}
+
+static void validate_kernel_context_stack_or_panic(bool check_esp) {
+    if (!scheduler_kernel_context_stack_is_valid()) {
+        panic("Static kernel stack guard corrupted");
+    }
+    if (check_esp) {
+        uintptr_t current_esp;
+        __asm__ __volatile__("mov %%esp, %0" : "=r"(current_esp));
+        if (current_esp < (uintptr_t)&_stack_start ||
+            current_esp >= (uintptr_t)&_stack_end) {
+            panic("Current ESP escaped the static kernel stack");
+        }
+    }
+}
 
 static int find_next_runnable(int after) {
     if (num_tasks == 0) {
@@ -54,25 +162,107 @@ static void task_trampoline(void) {
 }
 
 static void release_task_resources(task_t *task) {
-    if (task->page_directory &&
-        task->page_directory != paging_kernel_directory()) {
-        free_page_directory(task->page_directory);
+    int task_id = (int)(task - tasks);
+    wait_queue_cancel_locked(task);
+    if (task->process != NULL &&
+        task->process->generation == task->process_generation &&
+        task->process->task_id == task_id) {
+        /* A zombie keeps its PID and exit status until wait(), but it must not
+         * retain a numerical task slot after that slot becomes reusable. */
+        task->process->task_id = -1;
     }
-    if (task->kernel_stack) k_free(task->kernel_stack);
-    memset(task, 0, sizeof(*task));
-    task->status = TASK_FINISHED;
+    task->reap_page_directory =
+        task->page_directory != paging_kernel_directory()
+            ? task->page_directory : NULL;
+    task->reap_kernel_stack = task->kernel_stack;
+    task->page_directory = NULL;
+    task->kernel_stack = NULL;
+    task->process = NULL;
+    task->process_generation = 0U;
+    task->status = TASK_REAPING;
+}
+
+int scheduler_reap_finished_task_locked(int task_id, const Process *owner) {
+    if (irq_enabled() || task_id < 0 || task_id >= num_tasks ||
+        task_id == current_task || tasks[task_id].status != TASK_FINISHED ||
+        (owner != NULL && (tasks[task_id].process != owner ||
+                           tasks[task_id].process_generation !=
+                               owner->generation))) {
+        return -1;
+    }
+    release_task_resources(&tasks[task_id]);
+    return 0;
+}
+
+size_t scheduler_reap_finished_tasks(void) {
+    size_t reaped = 0;
+    scheduler_preempt_disable();
+
+    uint32_t flags = irq_save();
+    for (int task_id = 0; task_id < num_tasks; ++task_id) {
+        task_t *task = &tasks[task_id];
+        bool owns_resources = task->kernel_stack != NULL ||
+                              task->page_directory != NULL ||
+                              task->process != NULL ||
+                              task->wait_node.queue != NULL;
+        if (task_id != current_task && task->status == TASK_FINISHED &&
+            owns_resources) {
+            release_task_resources(task);
+        }
+    }
+    irq_restore(flags);
+
+    /* Page-directory walks and heap coalescing can be proportional to a
+     * process's allocation count.  Detach atomically above, then do that work
+     * with hardware interrupts enabled while task preemption is suppressed. */
+    for (int task_id = 0; task_id < num_tasks; ++task_id) {
+        page_directory_t *page_directory = NULL;
+        uint32_t *kernel_stack = NULL;
+
+        flags = irq_save();
+        task_t *task = &tasks[task_id];
+        if (task->status == TASK_REAPING &&
+            (task->reap_page_directory != NULL ||
+             task->reap_kernel_stack != NULL)) {
+            page_directory = task->reap_page_directory;
+            kernel_stack = task->reap_kernel_stack;
+            task->reap_page_directory = NULL;
+            task->reap_kernel_stack = NULL;
+        }
+        irq_restore(flags);
+
+        if (page_directory != NULL) free_page_directory(page_directory);
+        if (kernel_stack != NULL) scheduler_free_kernel_stack(kernel_stack);
+        if (page_directory == NULL && kernel_stack == NULL) continue;
+
+        flags = irq_save();
+        task = &tasks[task_id];
+        if (task->status == TASK_REAPING &&
+            task->reap_page_directory == NULL &&
+            task->reap_kernel_stack == NULL) {
+            memset(task, 0, sizeof(*task));
+            task->status = TASK_FINISHED;
+            ++reaped;
+        }
+        irq_restore(flags);
+    }
+
+    scheduler_preempt_enable();
+    return reaped;
 }
 
 int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
-    if (!entry_point || !stack) {
+    if (!entry_point || !stack || !scheduler_kernel_stack_is_valid(stack)) {
         return -1;
     }
 
     uint32_t flags = irq_save();
     int task_id = -1;
     for (int i = 0; i < num_tasks; ++i) {
-        if (tasks[i].status == TASK_FINISHED && i != current_task) {
-            release_task_resources(&tasks[i]);
+        if (tasks[i].status == TASK_FINISHED && i != current_task &&
+            tasks[i].kernel_stack == NULL &&
+            tasks[i].reap_kernel_stack == NULL &&
+            tasks[i].reap_page_directory == NULL) {
             task_id = i;
             break;
         }
@@ -94,6 +284,7 @@ int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
     task->context.eip = (uint32_t)entry_point;
     task->is_started = 1;
     task->process = process;
+    task->process_generation = process != NULL ? process->generation : 0U;
     task->page_directory = paging_kernel_directory();
 
     uintptr_t top = ((uintptr_t)stack + STACK_SIZE) & ~(uintptr_t)0x0F;
@@ -140,6 +331,7 @@ int create_user_task(uint32_t entry_point, uint32_t user_stack,
 static void activate_task_address_space(int task_index) {
     if (task_index >= 0 && task_index < num_tasks) {
         task_t *task = &tasks[task_index];
+        validate_task_stack_or_panic(task);
         switch_page_directory(task->page_directory);
         tss_set_kernel_stack((uint32_t)(uintptr_t)task->kernel_stack +
                              STACK_SIZE);
@@ -148,40 +340,165 @@ static void activate_task_address_space(int task_index) {
     }
 }
 
-static void wake_process_waiters(int pid) {
-    if (pid <= 0) return;
-    for (int i = 0; i < num_tasks; ++i) {
-        if (tasks[i].status == TASK_WAITING && tasks[i].wait_pid == pid) {
-            tasks[i].wait_pid = 0;
-            tasks[i].status = TASK_READY;
-        }
-    }
-}
-
-void scheduler_wait_for_process(int pid) {
-    irq_disable();
-    int waiting = current_task;
-    if (waiting < 0 || waiting >= num_tasks || pid <= 0) return;
-
-    tasks[waiting].wait_pid = pid;
-    tasks[waiting].status = TASK_WAITING;
-    int next = find_next_runnable(waiting);
+static bool schedule_blocked_current_locked(int blocked) {
+    validate_running_task_stack_or_panic(&tasks[blocked]);
+    int next = find_next_runnable(blocked);
     if (next >= 0) {
         current_task = next;
         tasks[next].status = TASK_RUNNING;
         activate_task_address_space(next);
-        swtch(&tasks[waiting].context, &tasks[next].context);
-        return;
+        swtch(&tasks[blocked].context, &tasks[next].context);
+        return true;
     }
+
+    if (!kernel_context_saved) return false;
+    validate_kernel_context_stack_or_panic(false);
     current_task = -1;
-    if (kernel_context_saved) {
-        activate_task_address_space(-1);
-        swtch(&tasks[waiting].context, &kernel_context);
-        return;
+    activate_task_address_space(-1);
+    swtch(&tasks[blocked].context, &kernel_context);
+    return true;
+}
+
+void wait_queue_cancel_locked(task_t *task) {
+    if (task == NULL || task->wait_node.queue == NULL) return;
+    (void)wait_queue_remove_locked(task->wait_node.queue, &task->wait_node);
+    task->wait_node.key = 0;
+}
+
+int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind) {
+    if (queue == NULL || irq_enabled() || preempt_disable_count != 0 ||
+        current_task < 0 || current_task >= num_tasks ||
+        (kind != TASK_BLOCK_WAITING && kind != TASK_BLOCK_SLEEPING)) {
+        return -1;
     }
-    current_task = waiting;
-    tasks[waiting].wait_pid = 0;
-    tasks[waiting].status = TASK_RUNNING;
+
+    int blocked = current_task;
+    task_t *task = &tasks[blocked];
+    if (task->status != TASK_RUNNING || task->wait_node.queue != NULL ||
+        !wait_queue_push_locked(queue, &task->wait_node)) {
+        return -1;
+    }
+    task->status = kind == TASK_BLOCK_SLEEPING
+        ? TASK_SLEEPING : TASK_WAITING;
+
+    if (!schedule_blocked_current_locked(blocked)) {
+        wait_queue_cancel_locked(task);
+        task->status = TASK_RUNNING;
+        current_task = blocked;
+        return -1;
+    }
+    return 0;
+}
+
+bool wait_queue_wake_one_locked(wait_queue_t *queue) {
+    if (queue == NULL || irq_enabled()) return false;
+    for (;;) {
+        wait_queue_node_t *node = wait_queue_pop_locked(queue);
+        if (node == NULL) return false;
+        task_t *task = task_from_wait_node(node);
+        node->key = 0;
+        if (task->status == TASK_WAITING || task->status == TASK_SLEEPING) {
+            task->status = TASK_READY;
+            return true;
+        }
+    }
+}
+
+size_t wait_queue_wake_all_locked(wait_queue_t *queue) {
+    size_t count = 0;
+    while (wait_queue_wake_one_locked(queue)) ++count;
+    return count;
+}
+
+void scheduler_wake_expired_sleepers_locked(uint64_t now_ms) {
+    if (irq_enabled()) return;
+    while (sleep_waiters.head != NULL &&
+           sleep_waiters.head->key <= now_ms) {
+        (void)wait_queue_wake_one_locked(&sleep_waiters);
+    }
+}
+
+int scheduler_sleep_ms(uint32_t milliseconds) {
+    if (milliseconds == 0) return 0;
+    uint32_t flags = irq_save();
+    if (preempt_disable_count != 0 || current_task < 0 ||
+        current_task >= num_tasks) {
+        irq_restore(flags);
+        return -1;
+    }
+
+    uint64_t now = pit_monotonic_ms();
+    uint64_t deadline = now + (uint64_t)milliseconds;
+    if (deadline < now) deadline = UINT64_MAX;
+
+    int blocked = current_task;
+    task_t *task = &tasks[blocked];
+    if (task->status != TASK_RUNNING || task->wait_node.queue != NULL ||
+        !wait_queue_insert_ordered_locked(&sleep_waiters, &task->wait_node,
+                                          deadline)) {
+        irq_restore(flags);
+        return -1;
+    }
+    task->status = TASK_SLEEPING;
+    if (!schedule_blocked_current_locked(blocked)) {
+        wait_queue_cancel_locked(task);
+        task->status = TASK_RUNNING;
+        current_task = blocked;
+        irq_restore(flags);
+        return -1;
+    }
+    irq_restore(flags);
+    return 0;
+}
+
+int scheduler_yield(void) {
+    uint32_t flags = irq_save();
+    if (preempt_disable_count != 0) {
+        irq_restore(flags);
+        return -1;
+    }
+    int previous = current_task;
+    if (previous < 0 || previous >= num_tasks) {
+        irq_restore(flags);
+        return 0;
+    }
+    validate_running_task_stack_or_panic(&tasks[previous]);
+
+    tasks[previous].status = TASK_READY;
+    int next = find_next_runnable(previous);
+    if (next < 0 || next == previous) {
+        tasks[previous].status = TASK_RUNNING;
+        irq_restore(flags);
+        return 0;
+    }
+
+    current_task = next;
+    tasks[next].status = TASK_RUNNING;
+    activate_task_address_space(next);
+    swtch(&tasks[previous].context, &tasks[next].context);
+    irq_restore(flags);
+    return 0;
+}
+
+void scheduler_set_apic_timer_active(bool active) {
+    uint32_t flags = irq_save();
+    apic_timer_active = active;
+    pit_scheduler_ticks = 0;
+    irq_restore(flags);
+}
+
+bool scheduler_uses_pit_fallback(void) {
+    uint32_t flags = irq_save();
+    bool fallback = !apic_timer_active;
+    irq_restore(flags);
+    return fallback;
+}
+
+void scheduler_pit_interrupt_handler(void) {
+    if (!scheduler_uses_pit_fallback()) return;
+    if (++pit_scheduler_ticks < SCHEDULER_QUANTUM_MS) return;
+    pit_scheduler_ticks = 0;
+    scheduler_interrupt_handler();
 }
 
 void scheduler_interrupt_handler(void) {
@@ -193,6 +510,11 @@ void scheduler_interrupt_handler(void) {
     }
     preemption_pending = false;
     int previous = current_task;
+    if (previous >= 0 && previous < num_tasks) {
+        validate_running_task_stack_or_panic(&tasks[previous]);
+    } else {
+        validate_kernel_context_stack_or_panic(true);
+    }
     int next = find_next_runnable(previous);
 
     if (next < 0 || next == previous) {
@@ -249,13 +571,15 @@ void scheduler_terminate_task(int task_id) {
         task_exit();
     }
 
+    wait_queue_cancel_locked(&tasks[task_id]);
     if (tasks[task_id].process) {
         process_close_all_files(tasks[task_id].process);
         process_orphan_children(tasks[task_id].process->pid);
         tasks[task_id].process->exit_status = 143;
         tasks[task_id].process->has_exited = true;
         tasks[task_id].process->is_running = false;
-        wake_process_waiters(tasks[task_id].process->pid);
+        (void)wait_queue_wake_all_locked(
+            &tasks[task_id].process->exit_waiters);
     }
     tasks[task_id].status = TASK_FINISHED;
     irq_restore(flags);
@@ -269,19 +593,24 @@ void task_exit_status(int status) {
     irq_disable();
 
     int exiting = current_task;
+    if (exiting >= 0 && exiting < num_tasks) {
+        validate_running_task_stack_or_panic(&tasks[exiting]);
+    }
     if (exiting >= 0 && exiting < num_tasks && tasks[exiting].process) {
         process_close_all_files(tasks[exiting].process);
     }
 
     int finished = current_task;
     if (finished >= 0 && finished < num_tasks) {
+        wait_queue_cancel_locked(&tasks[finished]);
         tasks[finished].status = TASK_FINISHED;
         if (tasks[finished].process) {
             process_orphan_children(tasks[finished].process->pid);
             tasks[finished].process->exit_status = status;
             tasks[finished].process->has_exited = true;
             tasks[finished].process->is_running = false;
-            wake_process_waiters(tasks[finished].process->pid);
+            (void)wait_queue_wake_all_locked(
+                &tasks[finished].process->exit_waiters);
         }
     }
 
@@ -295,6 +624,7 @@ void task_exit_status(int status) {
 
     current_task = -1;
     if (kernel_context_saved) {
+        validate_kernel_context_stack_or_panic(false);
         activate_task_address_space(-1);
         swtch(NULL, &kernel_context);
     }
@@ -321,6 +651,7 @@ void list_tasks(void) {
         const char *status = "Ready";
         if (tasks[i].status == TASK_RUNNING) status = "Running";
         else if (tasks[i].status == TASK_SLEEPING) status = "Sleeping";
+        else if (tasks[i].status == TASK_WAITING) status = "Waiting";
         else if (tasks[i].status == TASK_FINISHED) status = "Finished";
 
         printf("Task %d: EIP=%p, ESP=%p, Status=%s\n",

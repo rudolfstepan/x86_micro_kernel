@@ -153,7 +153,7 @@ void generic_exception_handler(Registers* r) {
         printf("EIP: 0x%08X, CS: 0x%04X (Ring %d)\n", r->eip, r->cs, cpl);
         printf("Process terminated.\n\n");
         
-        scheduler_kill_current();
+        task_exit_status(128 + (int)r->irq_number);
     }
 }
 
@@ -173,7 +173,7 @@ void divide_by_zero_handler(Registers* r) {
         printf("Divide by zero exception at EIP=0x%08X\n", r->eip);
         printf("Process terminated.\n\n");
         
-        scheduler_kill_current();
+        task_exit_status(128);
     }
 }
 
@@ -209,7 +209,7 @@ void page_fault_handler(Registers* r) {
         
         printf("Process terminated.\n\n");
         
-        scheduler_kill_current();
+        task_exit_status(142);
     }
 }
 

@@ -2,7 +2,8 @@
 global start
 global interrupt
 
-extern _stack_start
+extern _stack_end
+extern _stack_guard_start
 extern kernel_main
 
 section .text
@@ -10,9 +11,19 @@ start:
     cli
     cld
     ; Use the stack reserved by the kernel linker script.
-    mov esp, _stack_start + 8192
+    mov esp, _stack_end
     and esp, 0xfffffff0
     sub esp, 8                 ; Keep the i386 ABI's 16-byte call alignment
+    ; Initialize the 64-byte lower redzone before entering C. Preserve the
+    ; Multiboot handoff values in EAX/EBX on the freshly established stack.
+    push eax
+    push ebx
+    mov edi, _stack_guard_start
+    mov eax, 0x4B535447        ; "KSTG"
+    mov ecx, 16
+    rep stosd
+    pop ebx
+    pop eax
     ; Debug markers used by the native BIOS smoke tests. E9 is consumed by
     ; QEMU/Bochs; COM1 is captured by the generated headless VMware machine.
     ; Preserve the Multiboot handoff registers below.

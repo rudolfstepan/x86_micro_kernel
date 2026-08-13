@@ -2,6 +2,8 @@
 #include "kernel/time/pit.h"
 #include "drivers/char/io.h"
 #include "arch/x86/include/sys.h"
+#include "arch/x86/include/interrupt.h"
+#include "kernel/sched/scheduler.h"
 #include "lib/libc/stdio.h"
 
 
@@ -30,23 +32,41 @@
 // Combined command byte for common use (channel 0, lobyte/hibyte access, square wave mode)
 #define PIT_COMMAND_BYTE (PIT_CMD_CHANNEL_0 | PIT_CMD_LOHI | PIT_CMD_MODE_3 | PIT_CMD_BINARY)
 
-// Maximum value for a 32-bit unsigned counter
-#define TIMER_MAX UINT32_MAX  // Maximum value for a 32-bit unsigned counter
-
-static volatile uint32_t timer_tick_count = 0;  // Use a 32-bit counter
+static volatile uint64_t timer_tick_count;
+static uint32_t pit_divisor = PIT_FREQUENCY / 1000U;
+static uint32_t pit_millisecond_fraction;
 
 uint32_t pit_ticks(void) {
-    return timer_tick_count;
+    return (uint32_t)pit_monotonic_ms();
+}
+
+uint64_t pit_monotonic_ms(void) {
+    /* A 64-bit load is not atomic on i386.  IRQ0 is the sole writer, so
+     * excluding it gives readers a coherent value without a global lock. */
+    uint32_t flags = irq_save();
+    uint64_t ticks = timer_tick_count;
+    irq_restore(flags);
+    return ticks;
 }
 
 void timer_irq_handler(void* r) {
-    // Increment a counter each time the timer interrupt fires
-    timer_tick_count++;
+    /* Accumulate the real programmed PIT interval instead of assuming that
+     * the rounded integer divisor is exactly 1 kHz.  With divisor 1193 this
+     * removes the former ~13-second-per-day drift. */
+    pit_millisecond_fraction += pit_divisor * 1000U;
+    timer_tick_count += pit_millisecond_fraction / PIT_FREQUENCY;
+    pit_millisecond_fraction %= PIT_FREQUENCY;
+    scheduler_wake_expired_sleepers_locked(timer_tick_count);
 }
 
 // Function to initialize the PIT with a given frequency
 void init_pit(uint32_t frequency) {
-    uint16_t divisor = (uint16_t)(PIT_FREQUENCY / frequency);
+    if (frequency == 0) frequency = 1;
+    uint32_t divisor = PIT_FREQUENCY / frequency;
+    if (divisor == 0) divisor = 1;
+    if (divisor > UINT16_MAX) divisor = UINT16_MAX;
+    pit_divisor = divisor;
+    pit_millisecond_fraction = 0;
 
     // Send command byte: 0x36 = 00 11 011 0 (channel 0, access mode lobyte/hibyte, mode 3)
     outb(PIT_COMMAND_PORT, 0x36);
@@ -78,31 +98,9 @@ uint16_t read_pit_counter() {
 }
 
 void pit_delay(uint32_t milliseconds) {
-    //printf("Delay for %d ms\n", milliseconds);
-    uint32_t start_tick = timer_tick_count;
-    uint32_t ticks_to_wait = milliseconds;
-    uint32_t failsafe_timeout = 10000; // 10 seconds
-    uint32_t failsafe_start = start_tick;
-
-    while (1) {
-        uint32_t current_tick = timer_tick_count;
-
-        // Check if the desired delay has passed
-        if ((current_tick - start_tick) >= ticks_to_wait) {
-            break;
-        }
-
-        // Check if failsafe timeout has been exceeded
-        if ((current_tick - failsafe_start) >= failsafe_timeout) {
-            printf("Warning: Delay loop timed out\n");
-            break;
-        }
-
-        // Optionally check PIT value without `printf` to avoid recursion
-        // if ((current_tick - start_tick) % 100 == 0) {
-        //     uint16_t current_pit_value = read_pit_counter();
-        //     // Replace with lightweight debug output, if needed
-        //     printf("Updated PIT counter value: %d\n", current_pit_value);
-        // }
+    if (milliseconds == 0) return;
+    uint64_t start = pit_monotonic_ms();
+    while (pit_monotonic_ms() - start < (uint64_t)milliseconds) {
+        __asm__ __volatile__("pause");
     }
 }

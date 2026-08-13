@@ -1,0 +1,287 @@
+#!/usr/bin/env python3
+"""Boot the native image in QEMU and require ordered guest-test markers."""
+
+from __future__ import annotations
+
+import argparse
+import queue
+import re
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+
+BOOT_MARKER = "BOOT_OK"
+TEST_MARKER = "TEST_OK"
+SHELL_PROMPT = "C:\\>"
+FAIL_MARKERS = (
+    "TEST_FAIL",
+    "PANIC:",
+    "KERNEL ASSERTION FAILED",
+    "Kernel exception:",
+    "Unable to start SHELL.PRG",
+)
+
+
+def qemu_command(
+    qemu: Path,
+    image: Path,
+    no_apic: bool = False,
+    memory: str = "512M",
+) -> list[str]:
+    command = [
+        str(qemu),
+        "-accel", "tcg",
+        "-machine", "pc",
+        "-nodefaults",
+        "-m", memory,
+        "-boot", "c",
+        "-drive", f"file={image},format=raw,if=ide,index=0,media=disk",
+        "-snapshot",
+        "-display", "none",
+        "-monitor", "none",
+        "-serial", "stdio",
+        "-no-reboot",
+        "-no-shutdown",
+    ]
+    if no_apic:
+        command.extend(["-cpu", "qemu32,-apic"])
+    return command
+
+
+def reader(
+    stream,
+    chunks: queue.Queue[str],
+    finished: threading.Event,
+) -> None:
+    try:
+        while True:
+            chunk = stream.read(1)
+            if not chunk:
+                break
+            chunks.put(chunk)
+    finally:
+        finished.set()
+
+
+def drain(chunks: queue.Queue[str], transcript: list[str]) -> None:
+    while True:
+        try:
+            transcript.append(chunks.get_nowait())
+        except queue.Empty:
+            return
+
+
+def exact_line_position(text: str, expected: str, after: int = -1) -> int:
+    pattern = re.compile(
+        rf"(?:^|\n){re.escape(expected)}\r?(?=\n|$)"
+    )
+    for match in pattern.finditer(text):
+        position = match.start() + (1 if text[match.start():].startswith("\n") else 0)
+        if position > after:
+            return position
+    return -1
+
+
+def failure_marker(text: str) -> str | None:
+    for line in text.splitlines():
+        clean = line.rstrip("\r")
+        for marker in FAIL_MARKERS:
+            if clean.startswith(marker):
+                return marker
+    return None
+
+
+def wait_for_line(
+    process: subprocess.Popen[str],
+    chunks: queue.Queue[str],
+    transcript: list[str],
+    finished: threading.Event,
+    expected: str,
+    deadline: float,
+    *,
+    after: int = -1,
+) -> tuple[str | None, int]:
+    while time.monotonic() < deadline:
+        drain(chunks, transcript)
+        text = "".join(transcript)
+        failed = failure_marker(text)
+        if failed is not None:
+            return f"guest emitted failure marker {failed!r}", -1
+        position = exact_line_position(text, expected, after)
+        if position >= 0:
+            return None, position
+        if process.poll() is not None:
+            # stdout can reach EOF slightly after process.poll() changes.
+            # Wait for the reader and inspect every final byte before failing.
+            finished.wait(timeout=0.25)
+            drain(chunks, transcript)
+            text = "".join(transcript)
+            failed = failure_marker(text)
+            if failed is not None:
+                return f"guest emitted failure marker {failed!r}", -1
+            position = exact_line_position(text, expected, after)
+            if position >= 0:
+                return None, position
+            return (
+                f"QEMU exited with status {process.returncode} before {expected}",
+                -1,
+            )
+        try:
+            transcript.append(chunks.get(timeout=0.05))
+        except queue.Empty:
+            pass
+    return f"timeout before {expected}", -1
+
+
+def stop_process(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=3)
+
+
+def run(
+    qemu: Path,
+    image: Path,
+    timeout: float,
+    no_apic: bool = False,
+    memory: str = "512M",
+) -> tuple[int, str, str | None]:
+    process = subprocess.Popen(
+        qemu_command(qemu, image, no_apic, memory),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=0,
+    )
+    assert process.stdin is not None and process.stdout is not None
+    chunks: queue.Queue[str] = queue.Queue()
+    transcript: list[str] = []
+    finished = threading.Event()
+    thread = threading.Thread(
+        target=reader,
+        args=(process.stdout, chunks, finished),
+        daemon=True,
+    )
+    thread.start()
+    deadline = time.monotonic() + timeout
+    error: str | None = None
+    try:
+        error, _ = wait_for_line(
+            process, chunks, transcript, finished, SHELL_PROMPT, deadline
+        )
+        if error is None:
+            # The UART RX path currently drops command bursts.  Pace every
+            # byte so the same runner works on Windows and POSIX hosts.
+            for character in "GTEST\n":
+                process.stdin.write(character)
+                process.stdin.flush()
+                time.sleep(0.075)
+            error, test_position = wait_for_line(
+                process, chunks, transcript, finished, TEST_MARKER, deadline
+            )
+            if error is None:
+                error, _ = wait_for_line(
+                    process,
+                    chunks,
+                    transcript,
+                    finished,
+                    SHELL_PROMPT,
+                    deadline,
+                    after=test_position,
+                )
+    finally:
+        stop_process(process)
+        finished.wait(timeout=1)
+        thread.join(timeout=1)
+        drain(chunks, transcript)
+    text = "".join(transcript)
+    return (0 if error is None else 1), text, error
+
+
+def validate(transcript: str) -> str | None:
+    failed = failure_marker(transcript)
+    if failed is not None:
+        return f"guest emitted failure marker {failed!r}"
+    boot = exact_line_position(transcript, BOOT_MARKER)
+    test = exact_line_position(transcript, TEST_MARKER)
+    if boot < 0:
+        return f"missing {BOOT_MARKER} marker"
+    if test < 0:
+        return f"missing {TEST_MARKER} marker"
+    if test < boot:
+        return f"{TEST_MARKER} appeared before {BOOT_MARKER}"
+    if exact_line_position(transcript, SHELL_PROMPT, after=test) < 0:
+        return f"missing {SHELL_PROMPT} prompt after {TEST_MARKER}"
+    return None
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--qemu", type=Path, default=Path("qemu-system-i386"))
+    parser.add_argument("--image", type=Path, required=True)
+    parser.add_argument("--timeout", type=float, default=90.0)
+    parser.add_argument("--log", type=Path)
+    parser.add_argument(
+        "--memory",
+        default="512M",
+        help="QEMU guest RAM size (for example 64M, 512M, or 1024M)",
+    )
+    parser.add_argument(
+        "--no-apic",
+        action="store_true",
+        help="disable the local APIC and exercise the PIT scheduler fallback",
+    )
+    args = parser.parse_args()
+
+    if not args.image.is_file():
+        print(f"guest-smoke: image not found: {args.image}", file=sys.stderr)
+        return 2
+    if args.timeout <= 0:
+        print("guest-smoke: timeout must be positive", file=sys.stderr)
+        return 2
+    if re.fullmatch(r"[1-9][0-9]*[KMG]", args.memory,
+                    flags=re.IGNORECASE) is None:
+        print("guest-smoke: memory must look like 64M or 1G", file=sys.stderr)
+        return 2
+
+    try:
+        status, transcript, process_error = run(
+            args.qemu, args.image.resolve(), args.timeout, args.no_apic,
+            args.memory,
+        )
+    except OSError as error:
+        print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)
+        return 2
+
+    if args.log:
+        args.log.parent.mkdir(parents=True, exist_ok=True)
+        args.log.write_text(transcript, encoding="utf-8")
+
+    marker_error = validate(transcript)
+    if marker_error is None and process_error is None:
+        print(transcript, end="" if transcript.endswith("\n") else "\n")
+        print("guest-smoke: PASS")
+        return 0
+
+    print(transcript, end="" if transcript.endswith("\n") else "\n",
+          file=sys.stderr)
+    detail = process_error or marker_error
+    if TEST_MARKER not in str(detail):
+        detail = f"{detail}; missing {TEST_MARKER} marker"
+    print(f"guest-smoke: FAIL: {detail}", file=sys.stderr)
+    return status or 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

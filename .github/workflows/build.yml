@@ -24,10 +24,33 @@ jobs:
       - name: Install freestanding x86 build tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes gcc-multilib nasm grub-pc-bin grub-common xorriso mtools python3
+          sudo apt-get install --yes gcc-multilib nasm grub-pc-bin grub-common xorriso mtools python3 qemu-system-x86
 
       - name: Run fixture-independent tests
         run: make test
 
       - name: Build kernel and bootable disk images
         run: make all TARGET=qemu VIDEO=vga
+
+      - name: Run Ring-3 guest smoke test
+        run: make test-smoke TARGET=qemu VIDEO=vga
+
+      - name: Run Ring-3 guest smoke test with PIT scheduling
+        run: make test-smoke-pit TARGET=qemu VIDEO=vga
+
+      - name: Run Ring-3 guest memory matrix (32/64/256/1024 MiB)
+        run: make test-smoke-memory TARGET=qemu VIDEO=vga
+
+      - name: Upload guest smoke log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: guest-smoke-log
+          path: |
+            build/guest-smoke.log
+            build/guest-smoke-pit.log
+            build/guest-smoke-memory-32m.log
+            build/guest-smoke-memory-64m.log
+            build/guest-smoke-memory-256m.log
+            build/guest-smoke-memory-1024m.log
+          if-no-files-found: ignore

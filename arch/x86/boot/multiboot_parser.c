@@ -12,6 +12,22 @@
 #include "lib/libc/stdio.h"
 #include "mm/kmalloc.h"
 
+static bool reserve_boot_region(uint64_t base, uint64_t length,
+                                const char *description) {
+    if (length == 0 || memory_reserve_region(base, length) == 0) return true;
+    printf("Fatal: unable to reserve %s in the physical memory map.\n",
+           description);
+    memory_map_reset();
+    return false;
+}
+
+static bool add_boot_usable_region(uint64_t base, uint64_t length) {
+    if (length == 0 || memory_add_usable_region(base, length) == 0) return true;
+    printf("Fatal: usable memory-map regions exceed capacity.\n");
+    memory_map_reset();
+    return false;
+}
+
 //---------------------------------------------------------------------------------------------
 // Multiboot 1 Parsing
 //---------------------------------------------------------------------------------------------
@@ -25,7 +41,8 @@
 void parse_multiboot1_info(const multiboot1_info_t *mb_info) {
     printf("Parsing Multiboot1 Information...\n");
     memory_map_reset();
-    memory_reserve_region((uint32_t)(uintptr_t)mb_info, sizeof(*mb_info));
+    if (!reserve_boot_region((uint32_t)(uintptr_t)mb_info, sizeof(*mb_info),
+                             "Multiboot information")) return;
 
     // Check flags for available fields
     if (mb_info->flags & MULTIBOOT1_FLAG_MEM) {
@@ -63,7 +80,8 @@ void parse_multiboot1_info(const multiboot1_info_t *mb_info) {
         printf("Memory Map:\n");
         const uint8_t *cursor = (const uint8_t *)(uintptr_t)mb_info->mmap_addr;
         const uint8_t *mmap_end = cursor + mb_info->mmap_length;
-        memory_reserve_region(mb_info->mmap_addr, mb_info->mmap_length);
+        if (!reserve_boot_region(mb_info->mmap_addr, mb_info->mmap_length,
+                                 "Multiboot memory-map storage")) return;
 
         printf("------------------------------------------------------------\n");
         printf("| Address                 | Length        | Type (1=Usable)|\n");
@@ -75,8 +93,9 @@ void parse_multiboot1_info(const multiboot1_info_t *mb_info) {
             size_t remaining = (size_t)(mmap_end - cursor);
             if (mmap->size < sizeof(multiboot1_mmap_entry_t) - sizeof(mmap->size) ||
                 (size_t)mmap->size > remaining - sizeof(mmap->size)) {
-                printf("Warning: malformed Multiboot memory-map entry.\n");
-                break;
+                printf("Fatal: malformed Multiboot memory-map entry.\n");
+                memory_map_reset();
+                return;
             }
             size_t entry_size = (size_t)mmap->size + sizeof(mmap->size);
 
@@ -89,38 +108,52 @@ void parse_multiboot1_info(const multiboot1_info_t *mb_info) {
             printf("%-14u |\n", mmap->type);
 
             if (mmap->type == 1) {
-                if (memory_add_usable_region(mmap->base_addr, mmap->length) != 0) {
-                    printf("Warning: too many usable memory-map regions.\n");
+                if (!add_boot_usable_region(mmap->base_addr, mmap->length)) {
+                    return;
                 }
+            } else if (mmap->length != 0 &&
+                       memory_reserve_region(mmap->base_addr,
+                                             mmap->length) != 0) {
+                printf("Fatal: reserved memory-map regions exceed capacity.\n");
+                memory_map_reset();
+                return;
             }
 
             cursor += entry_size;
         }
+        if (cursor != mmap_end) {
+            printf("Fatal: truncated Multiboot memory map.\n");
+            memory_map_reset();
+            return;
+        }
         printf("------------------------------------------------------------\n");
     } else if (mb_info->flags & MULTIBOOT1_FLAG_MEM) {
         /* Multiboot's basic memory fields are a conservative fallback only. */
-        memory_add_usable_region(0, (uint64_t)mb_info->mem_lower * 1024U);
-        memory_add_usable_region(0x100000U,
-                                 (uint64_t)mb_info->mem_upper * 1024U);
+        if (!add_boot_usable_region(
+                0, (uint64_t)mb_info->mem_lower * 1024U) ||
+            !add_boot_usable_region(
+                0x100000U, (uint64_t)mb_info->mem_upper * 1024U)) return;
     }
 
-    if (total_memory == 0 && (mb_info->flags & MULTIBOOT1_FLAG_MEM)) {
-        printf("Warning: memory map contained no usable regions; using basic memory info.\n");
-        memory_add_usable_region(0, (uint64_t)mb_info->mem_lower * 1024U);
-        memory_add_usable_region(0x100000U,
-                                 (uint64_t)mb_info->mem_upper * 1024U);
+    if (total_memory == 0) {
+        printf("Fatal: boot memory map contains no usable regions.\n");
+        memory_map_reset();
+        return;
     }
 
     if ((mb_info->flags & MULTIBOOT1_FLAG_MODS) && mb_info->mods_addr != 0) {
-        memory_reserve_region(mb_info->mods_addr,
-                              (uint64_t)mb_info->mods_count *
-                                  sizeof(multiboot1_module_t));
+        if (!reserve_boot_region(
+                mb_info->mods_addr,
+                (uint64_t)mb_info->mods_count * sizeof(multiboot1_module_t),
+                "Multiboot module table")) return;
         const multiboot1_module_t *mods =
             (const multiboot1_module_t *)(uintptr_t)mb_info->mods_addr;
         for (uint32_t i = 0; i < mb_info->mods_count; ++i) {
             if (mods[i].mod_end > mods[i].mod_start) {
-                memory_reserve_region(mods[i].mod_start,
-                                      mods[i].mod_end - mods[i].mod_start);
+                if (!reserve_boot_region(
+                        mods[i].mod_start,
+                        mods[i].mod_end - mods[i].mod_start,
+                        "Multiboot module payload")) return;
             }
         }
     }

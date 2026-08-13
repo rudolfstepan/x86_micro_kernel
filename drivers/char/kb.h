@@ -53,6 +53,8 @@ typedef struct {
 // Public API
 extern void kb_handler(void* r);
 void kb_install(void);
+/* Called by console input producers after publishing buffered input. */
+void kb_notify_input_ready(void);
 void kb_wait_enter(void);
 char getchar(void);
 char getchar_nonblocking(void);

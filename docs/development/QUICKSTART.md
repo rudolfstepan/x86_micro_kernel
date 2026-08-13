@@ -109,11 +109,16 @@ make user-program
 make native-image TARGET=real_hw VIDEO=vga
 make run-native TARGET=qemu VIDEO=vga
 make test-unit
+make test-smoke TARGET=qemu VIDEO=vga
 ```
 
 `make all`, `make run` und `make native-image` verwenden den eigenen
 BIOS-Bootloader. Sie entsprechen damit dem nativen Windows-/VMware-
 Paket.
+
+`make test-smoke` startet das QEMU-Image ohne Anzeige, führt den automatischen
+Ring-3-Test aus und schreibt das serielle Protokoll nach
+`build/guest-smoke.log`. Der Test benötigt `qemu-system-i386` im `PATH`.
 
 ## Häufige Fehler
 
@@ -137,4 +142,6 @@ WLAN-Client-Isolation kann gebridgte Gäste blockieren. Danach `NET DHCP` und
 
 Den Packer verwenden und keine fremde ELF-Datei nur in `.PRG` umbenennen. Der
 Loader akzeptiert ausschließlich geprüfte MYPR-Images für Basisadresse
-`0x02100000` und maximal 8 MiB.
+`0x40000000` und maximal 8 MiB. Der Kernel liest die Datei in einen
+dynamischen Heap-Puffer, kopiert sie in private Prozessseiten und gibt den
+Puffer danach wieder frei; es gibt keine zweite Link- oder Ausführungsadresse.

@@ -11,6 +11,8 @@ _Static_assert(sizeof(page_table_entry_t) == sizeof(uint32_t),
                "x86 page-table entries must be 32 bits");
 _Static_assert(sizeof(page_directory_entry_t) == sizeof(uint32_t),
                "x86 page-directory entries must be 32 bits");
+_Static_assert(KERNEL_IDENTITY_LIMIT == USER_BASE,
+               "kernel direct map must end at the user-space boundary");
 
 uint32_t page_directory[PAGE_DIRECTORY_ENTRIES]
     __attribute__((aligned(PAGE_SIZE)));
@@ -265,8 +267,19 @@ int copy_string_from_user(char *destination, size_t capacity,
 void *map_kernel_mmio(uint32_t physical_address, size_t length) {
     if (length == 0 || length > UINT32_MAX - physical_address) return NULL;
 
+    /* Identity-mapped MMIO inside the user virtual window would alias a
+     * process-private PDE and disappear (or become user-accessible) on CR3
+     * switches.  A dedicated high-MMIO virtual allocator is required before
+     * such BARs can be supported safely. */
+    uint32_t final_address = physical_address + (uint32_t)length - 1U;
+    if ((physical_address >= USER_BASE && physical_address < USER_TOP) ||
+        (final_address >= USER_BASE && final_address < USER_TOP) ||
+        (physical_address < USER_BASE && final_address >= USER_BASE)) {
+        return NULL;
+    }
+
     uint32_t first = physical_address & ~(PAGE_SIZE - 1U);
-    uint32_t end_address = physical_address + (uint32_t)length - 1U;
+    uint32_t end_address = final_address;
     uint32_t last = end_address & ~(PAGE_SIZE - 1U);
 
     for (uint32_t page = first;; page += PAGE_SIZE) {

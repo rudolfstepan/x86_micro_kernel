@@ -86,10 +86,14 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
             encoding="utf-8"
         )
+        syscall = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
         sdk = (ROOT / "userspace/sdk/x86os.c").read_text(encoding="utf-8")
         self.assertIn("TASK_WAITING", scheduler)
-        self.assertIn("scheduler_wait_for_process", scheduler)
-        self.assertIn("wake_process_waiters", scheduler)
+        self.assertIn("wait_queue_wake_all_locked", scheduler)
+        self.assertIn("process_wait_status_locked", syscall)
+        self.assertIn("wait_queue_block_locked", syscall)
         wait = sdk[sdk.index("int x86os_wait") :]
         wait = wait[:wait.index("\n}")]
         self.assertNotIn("x86os_delay", wait)
@@ -120,9 +124,11 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("syscall_spawnv", source)
+        self.assertIn("char *arguments = (char*)k_malloc(", source)
         self.assertIn("copy_from_user(&user_argument", source)
-        self.assertIn("copy_string_from_user(arguments[index]", source)
+        self.assertIn("copy_string_from_user(argument, SYSCALL_ARGUMENT_CAPACITY", source)
         self.assertIn("process_spawn_args(parent, path, argc, argument_list)", source)
+        self.assertIn("k_free(arguments);", source)
 
     def test_drive_metadata_is_copied_without_kernel_pointers(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
@@ -168,7 +174,9 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         getchar = source[source.index("char getchar(void)") :]
         getchar = getchar[:getchar.index("\n}")]
         self.assertIn("irq_enable();", getchar)
+        self.assertIn("wait_queue_block_locked", getchar)
         self.assertIn('"hlt"', getchar)
+        self.assertIn("wait_queue_wake_all_locked", source)
 
     def test_buffered_terminal_output_validates_userspace_memory(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(

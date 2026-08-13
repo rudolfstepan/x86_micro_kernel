@@ -35,6 +35,12 @@ PROGRAMS = {
     "CLS.PRG": ROOT / "examples/userspace/cls.c",
     "DRIVES.PRG": ROOT / "examples/userspace/drives.c",
     "EDIT.PRG": ROOT / "userspace/bin/edit.c",
+    "CHILDEX.PRG": ROOT / "examples/userspace/child_exit.c",
+    "FAULTDE.PRG": ROOT / "examples/userspace/fault_de.c",
+    "FAULTUD.PRG": ROOT / "examples/userspace/fault_ud.c",
+    "FAULTPF.PRG": ROOT / "examples/userspace/fault_pf.c",
+    "GTEST.PRG": ROOT / "examples/userspace/guest_test.c",
+    "SLEEPER.PRG": ROOT / "examples/userspace/sleep_child.c",
 }
 
 

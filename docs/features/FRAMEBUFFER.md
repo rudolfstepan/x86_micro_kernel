@@ -11,7 +11,8 @@ make kernel TARGET=qemu VIDEO=framebuffer
 make run-fb
 ```
 
-`scripts/build-windows.ps1` setzt derzeit fest `VIDEO=vga`, damit das native
+`scripts/build-windows.ps1 -Video framebuffer` wählt den Framebuffer-Build;
+ohne den Parameter bleibt `VIDEO=vga`, damit das native
 VMware-Paket den robusten Textpfad verwendet.
 
 ## Abstraktionsschicht

@@ -87,6 +87,34 @@ Programme werden für den 8-MiB-Bereich ab `0x40000000` gelinkt. Der aktuelle
 Loader lädt exakt an diese Adresse; deshalb werden keine Laufzeit-Relokationen
 benötigt oder erzeugt.
 
+### Verbindlicher MYPR-v1-Vertrag
+
+„v1“ bezeichnet den bestehenden, versionslosen Little-Endian-Header
+`<4s6I>`. Seine 28 Bytes sind fest definiert:
+
+| Offset | Feld | Vorgabe für v1 |
+|---:|---|---|
+| 0 | `identifier` | ASCII `MYPR` |
+| 4 | `magic_number` | `0xDEADBEEF` |
+| 8 | `entry_point` | Offset relativ zu `base_address` |
+| 12 | `program_size` | Speicher-Payload ohne Header, inklusive BSS |
+| 16 | `base_address` | exakt `0x40000000` |
+| 20 | `relocation_offset` | Dateigröße und Ende des gespeicherten Images |
+| 24 | `relocation_size` | exakt `0`; in v1 reserviert |
+
+Auf den Header folgen die dateigestützten Payload-Bytes und höchstens drei
+Padding-Bytes zur Vierbyteausrichtung. Nachlaufbytes und
+Relokationstabellen sind nicht erlaubt. Fehlende Bytes zwischen Dateiende und
+`28 + program_size` bilden BSS und werden vom Loader genullt. Der Einstieg
+muss in gespeicherten Payload-Bytes liegen; der gesamte Speicherbereich muss
+in `[0x40000000, 0x40800000)` passen.
+
+MYPR v1 speichert keine Segmentgrenzen oder Seitenrechte. Ein späteres v2
+benötigt deshalb einen eindeutig versionierten neuen Header, eine
+Segmenttabelle mit Datei-/Speichergrößen und R/W/X-Rechten sowie – falls
+wirklich erforderlich – typisierte relative Relokationen. Ein v2-Image darf
+nicht als v1 mit `relocation_size != 0` getarnt werden.
+
 Das Buildskript lehnt unter anderem folgende Fehler ab:
 
 - falsche Architektur oder ein falsches ELF-Format

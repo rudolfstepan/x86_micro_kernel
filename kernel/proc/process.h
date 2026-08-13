@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "kernel/sched/wait_queue.h"
+
 
 #define MAX_PROGRAMS 256 // Maximum number of running programs
 #define MAX_USER_ALLOCATIONS 16
@@ -30,6 +32,7 @@ typedef struct {
 
 typedef struct {
     int pid;
+    uint32_t generation;
     int parent_pid;
     int task_id;
     int exit_status;
@@ -41,6 +44,7 @@ typedef struct {
     user_allocation_t user_allocations[MAX_USER_ALLOCATIONS];
     process_file_t files[MAX_PROCESS_FILES];
     char working_directory[PROCESS_PATH_MAX];
+    wait_queue_t exit_waiters;
     // Add more fields as needed, e.g., priority, state, etc.
 } Process;
 
@@ -69,6 +73,8 @@ int process_spawn(Process* parent, const char* path);
 int process_spawn_args(Process* parent, const char* path, int argc,
                        const char* const* argv);
 int process_wait_status(Process* parent, int pid, int* status);
+int process_wait_status_locked(Process* parent, int pid, int* status,
+                               wait_queue_t** wait_queue);
 void process_orphan_children(int parent_pid);
 void* process_user_malloc(size_t size);
 int process_user_free(void* pointer);
@@ -89,9 +95,5 @@ int process_get_working_directory(const Process* process, char* buffer,
 int process_set_working_directory(Process* process, const char* path);
 int process_get_info(uint32_t index, process_info_t* info);
 int process_terminate(int pid);
-
-void start_program_execution(long entry_point);
-void load_and_execute_program(const char* program_name);
-int load_program_into_memory(const char* program_name, uint32_t address);
 
 #endif // PROCESS_H

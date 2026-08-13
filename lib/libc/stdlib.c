@@ -136,7 +136,11 @@ void exit(int status) {
 }
 
 void delay_ms(uint32_t ms) {
-    syscall(SYS_DELAY, (void*)ms, NULL, NULL);
+    /* This libc is linked into the kernel.  Hardware/early-boot delays must
+     * not enter INT 0x80 and accidentally join a userspace sleep queue while
+     * a process happens to be current.  Ring-3 programs use x86os_delay() or
+     * x86os_sleep_ms() from the userspace SDK instead. */
+    pit_delay(ms);
 }
 
 void wait_enter_pressed() {

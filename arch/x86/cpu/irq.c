@@ -1,6 +1,7 @@
 #include "drivers/char/io.h"
 #include "arch/x86/include/sys.h"
 #include "lib/libc/stdio.h"
+#include "kernel/sched/scheduler.h"
 
 extern char _kernel_start;
 extern char _kernel_text_end;
@@ -121,4 +122,8 @@ void irq_handler(Registers* regs) {
         outb(0xA0, 0x20); // Send EOI to slave PIC
     }
     outb(0x20, 0x20);     // Send EOI to master PIC
+
+    /* A context switch must happen only after the PIC has acknowledged IRQ0;
+     * otherwise the parked interrupt frame leaves the timer in-service. */
+    if (irq == 0) scheduler_pit_interrupt_handler();
 }

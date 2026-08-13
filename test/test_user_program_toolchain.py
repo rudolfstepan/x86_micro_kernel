@@ -12,6 +12,113 @@ ZIG = shutil.which("zig") or Path(
     r"C:\tmp\zig-0.16.0-portable\zig-x86_64-windows-0.16.0\zig.exe"
 )
 
+sys.path.insert(0, str(ROOT))
+from scripts import build_user_program as builder  # noqa: E402
+
+
+def make_elf32(segments, entry, *, runtime_relocations=False):
+    """Create the smallest ELF32 fixture accepted by the MYPR converter."""
+    phoff = builder.ELF_HEADER.size
+    cursor = phoff + len(segments) * builder.ELF_PROGRAM_HEADER.size
+    elf = bytearray(cursor)
+    program_headers = []
+
+    for virtual_address, data, memory_size, flags in segments:
+        file_offset = cursor
+        elf.extend(data)
+        cursor += len(data)
+        program_headers.append((
+            1, file_offset, virtual_address, virtual_address,
+            len(data), memory_size, flags, 1,
+        ))
+
+    section_offset = 0
+    section_count = 0
+    if runtime_relocations:
+        section_offset = cursor
+        section_count = 1
+        # SHT_REL with one non-empty entry is enough for the converter to
+        # reject a runtime-relocatable executable.
+        elf.extend(builder.ELF_SECTION_HEADER.pack(
+            0, 9, 0, 0, 0, 8, 0, 0, 4, 8
+        ))
+
+    ident = b"\x7fELF\x01\x01\x01" + b"\0" * 9
+    elf[:builder.ELF_HEADER.size] = builder.ELF_HEADER.pack(
+        ident, 2, 3, 1, entry, phoff, section_offset, 0,
+        builder.ELF_HEADER.size, builder.ELF_PROGRAM_HEADER.size,
+        len(program_headers), builder.ELF_SECTION_HEADER.size,
+        section_count, 0,
+    )
+    for index, program_header in enumerate(program_headers):
+        builder.ELF_PROGRAM_HEADER.pack_into(
+            elf,
+            phoff + index * builder.ELF_PROGRAM_HEADER.size,
+            *program_header,
+        )
+    return bytes(elf)
+
+
+class MyprV1BuilderContractTests(unittest.TestCase):
+    def test_converter_emits_only_the_fixed_address_v1_contract(self):
+        payload_address = builder.PAYLOAD_BASE
+        elf = make_elf32(
+            [(payload_address, b"\x90\xc3", 8, 5)],
+            payload_address,
+        )
+
+        program = builder.elf_to_mypr(elf)
+        identifier, magic, entry, size, base, reloc_offset, reloc_size = \
+            builder.PROGRAM_HEADER.unpack_from(program)
+
+        self.assertEqual(identifier, b"MYPR")
+        self.assertEqual(magic, 0xDEADBEEF)
+        self.assertEqual(base, builder.PROGRAM_BASE)
+        self.assertEqual(reloc_size, 0)
+        self.assertEqual(reloc_offset, len(program))
+        self.assertGreaterEqual(entry, builder.PROGRAM_HEADER.size)
+        self.assertLess(entry, reloc_offset)
+        self.assertLessEqual(len(program), builder.PROGRAM_HEADER.size + size)
+
+    def test_converter_rejects_runtime_relocations(self):
+        elf = make_elf32(
+            [(builder.PAYLOAD_BASE, b"\x90", 4, 5)],
+            builder.PAYLOAD_BASE,
+            runtime_relocations=True,
+        )
+        with self.assertRaisesRegex(ValueError, "relocations"):
+            builder.elf_to_mypr(elf)
+
+    def test_converter_rejects_an_entry_point_in_zero_filled_bss(self):
+        elf = make_elf32(
+            [(builder.PAYLOAD_BASE, b"\x90", 8, 5)],
+            builder.PAYLOAD_BASE + 4,
+        )
+        with self.assertRaisesRegex(ValueError, "entry point"):
+            builder.elf_to_mypr(elf)
+
+    def test_converter_rejects_overlapping_load_segments(self):
+        elf = make_elf32(
+            [
+                (builder.PAYLOAD_BASE, b"AAAA", 16, 5),
+                (builder.PAYLOAD_BASE + 8, b"BBBB", 8, 6),
+            ],
+            builder.PAYLOAD_BASE,
+        )
+        with self.assertRaisesRegex(ValueError, "overlapping"):
+            builder.elf_to_mypr(elf)
+
+    def test_converter_rejects_a_program_linked_outside_the_fixed_region(self):
+        wrong_base = builder.PROGRAM_BASE + builder.PROGRAM_REGION_SIZE + 0x1000
+        elf = make_elf32([(wrong_base, b"\x90", 4, 5)], wrong_base)
+        with self.assertRaisesRegex(ValueError, "8 MiB"):
+            builder.elf_to_mypr(elf)
+
+    def test_converter_rejects_a_virtual_address_overflow(self):
+        elf = make_elf32([(0xFFFFFFFC, b"\x90", 8, 5)], 0xFFFFFFFC)
+        with self.assertRaisesRegex(ValueError, "8 MiB"):
+            builder.elf_to_mypr(elf)
+
 
 @unittest.skipUnless(Path(ZIG).is_file(), "Zig is required for user programs")
 class UserProgramToolchainTests(unittest.TestCase):
@@ -111,6 +218,12 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "CLS.PRG",
                 "DRIVES.PRG",
                 "EDIT.PRG",
+                "CHILDEX.PRG",
+                "FAULTDE.PRG",
+                "FAULTUD.PRG",
+                "FAULTPF.PRG",
+                "GTEST.PRG",
+                "SLEEPER.PRG",
             }
             self.assertEqual({path.name for path in output.iterdir()}, expected)
             for name in expected:

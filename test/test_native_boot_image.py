@@ -135,6 +135,85 @@ def read_fat32_root_files(image, partition_lba):
 
 
 class NativeBootImageTests(unittest.TestCase):
+    def test_vmware_bios_reads_resume_with_interrupts_enabled(self):
+        """A protected-mode copy must not leave later BIOS I/O with IF=0.
+
+        The uncached loader copies PT_LOAD data in 32-KiB chunks. Consequently
+        a sufficiently large segment enters protected mode and then issues the
+        next INT 13h read. BIOS disk backends may require IRQ delivery for that
+        subsequent request, including VMware's floppy path.
+        """
+        source = (
+            Path(__file__).parents[1]
+            / "arch/x86/boot/bios/stage2_bios.asm"
+        ).read_text(encoding="utf-8")
+        copy_return = source.split("copy_real:", 1)[1].split(
+            "enter_kernel:", 1
+        )[0]
+
+        instructions = [
+            line.partition(";")[0].strip()
+            for line in copy_return.splitlines()
+            if line.partition(";")[0].strip()
+        ]
+        self.assertIn(
+            "sti",
+            instructions,
+            "copy_real must restore IF before returning to BIOS disk I/O",
+        )
+        self.assertLess(
+            instructions.index("sti"),
+            instructions.index("ret"),
+            "copy_real must enable interrupts before its real-mode return",
+        )
+
+    def test_floppy_cache_overlap_falls_back_to_uncached_segment_load(self):
+        """An overlapping PT_LOAD must invalidate, not reject, the cache."""
+        source = (
+            Path(__file__).parents[1]
+            / "arch/x86/boot/bios/stage2_bios.asm"
+        ).read_text(encoding="utf-8")
+        segment_loader = source.split("load_elf_segments:", 1)[1].split(
+            "load_file_range:", 1
+        )[0]
+        overlap_guard = segment_loader.split(
+            "cmp byte [kernel_cached], 1", 1
+        )[1].split(".cache_overlap_checked:", 1)[0]
+        continuation = segment_loader.split(".cache_overlap_checked:", 1)[1]
+
+        self.assertIn(
+            "mov byte [kernel_cached], 0",
+            overlap_guard,
+            "an overlapping destination must invalidate the floppy cache",
+        )
+        self.assertNotIn(
+            "jmp .bad",
+            overlap_guard,
+            "a valid cache overlap must not become 'Kernel load failed'",
+        )
+        self.assertIn(
+            "call load_file_range",
+            continuation,
+            "the overlapping segment must continue through the normal loader",
+        )
+
+        file_loader = source.split("load_file_range:", 1)[1].split(
+            "; Read CX sectors", 1
+        )[0]
+        cache_dispatch = file_loader.split(
+            "cmp byte [kernel_cached], 1", 1
+        )[1]
+        self.assertLess(
+            cache_dispatch.index("jne .next"),
+            cache_dispatch.index(".next:"),
+            "an invalidated cache must select the uncached path",
+        )
+        self.assertIn(
+            "call read_bounce",
+            cache_dispatch.split(".next:", 1)[1],
+            "the fallback path must reload segment bytes from the boot medium",
+        )
+
     def test_accepts_supported_identity_mapped_elf32(self):
         self.assertEqual(validate_elf32(minimal_kernel()), (0x00100000, 1))
 
@@ -356,6 +435,16 @@ class NativeBootImageTests(unittest.TestCase):
                 encoding="ascii"
             )
             self.assertIn('FLAT "x86-microkernel-flat.vmdk" 0', descriptor)
+            config = (package / "x86-microkernel.vmx").read_text(
+                encoding="ascii"
+            )
+            self.assertIn('bios.bootOrder = "floppy,hdd"', config)
+            self.assertIn('floppy0.present = "TRUE"', config)
+            self.assertIn('floppy0.fileType = "file"', config)
+            self.assertIn(
+                'floppy0.fileName = "x86-microkernel-floppy.img"',
+                config,
+            )
             self.assertTrue((package / "START-VMWARE.cmd").is_file())
             self.assertTrue((package / "README-VMWARE.txt").is_file())
             self.assertEqual(

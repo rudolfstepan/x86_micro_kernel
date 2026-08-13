@@ -1,0 +1,308 @@
+"""Host regressions for the deterministic QEMU guest-smoke runner.
+
+The tests use a tiny fake QEMU executable.  They therefore exercise process
+control, marker parsing and build/CI wiring without booting a virtual machine.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+RUNNER = ROOT / "scripts" / "run_qemu_smoke.py"
+
+
+class QemuGuestSmokeRunnerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.assertTrue(
+            RUNNER.is_file(),
+            "R0.4 requires scripts/run_qemu_smoke.py",
+        )
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+        self.image = self.directory / "boot image.img"
+        self.image.write_bytes(b"not a real disk; fake QEMU never reads it")
+        self.arguments_file = self.directory / "qemu-arguments.txt"
+        self.log_file = self.directory / "guest-smoke.log"
+        self.qemu = self._write_fake_qemu()
+
+    def _write_fake_qemu(self) -> Path:
+        if os.name == "nt":
+            path = self.directory / "fake-qemu.cmd"
+            path.write_text(
+                "@echo off\n"
+                "> \"%FAKE_QEMU_ARGS%\" echo %*\n"
+                "if \"%FAKE_QEMU_MODE%\"==\"success\" goto success\n"
+                "if \"%FAKE_QEMU_MODE%\"==\"missing-test\" goto missing\n"
+                "if \"%FAKE_QEMU_MODE%\"==\"reverse\" goto reverse\n"
+                "if \"%FAKE_QEMU_MODE%\"==\"not-test-ok\" goto not_test_ok\n"
+                "if \"%FAKE_QEMU_MODE%\"==\"panic-after-test\" goto panic_after_test\n"
+                "if \"%FAKE_QEMU_MODE%\"==\"missing-second-prompt\" goto missing_second_prompt\n"
+                "if \"%FAKE_QEMU_MODE%\"==\"early-exit\" goto early\n"
+                "if \"%FAKE_QEMU_MODE%\"==\"timeout\" goto timeout\n"
+                "exit /b 99\n"
+                ":success\n"
+                "echo firmware trace\n"
+                "echo BOOT_OK\n"
+                "echo C:\\^>\n"
+                "call :short_delay\n"
+                "echo TEST_OK\n"
+                "echo C:\\^>\n"
+                "exit /b 0\n"
+                ":missing\n"
+                "echo BOOT_OK\n"
+                "echo shell did not finish\n"
+                "exit /b 0\n"
+                ":reverse\n"
+                "echo TEST_OK\n"
+                "echo BOOT_OK\n"
+                "exit /b 0\n"
+                ":not_test_ok\n"
+                "echo BOOT_OK\n"
+                "echo C:\\^>\n"
+                "call :short_delay\n"
+                "echo NOT_TEST_OK\n"
+                "echo C:\\^>\n"
+                "exit /b 0\n"
+                ":panic_after_test\n"
+                "echo BOOT_OK\n"
+                "echo C:\\^>\n"
+                "call :short_delay\n"
+                "echo TEST_OK\n"
+                "echo PANIC: failure after test marker\n"
+                "echo C:\\^>\n"
+                "exit /b 0\n"
+                ":missing_second_prompt\n"
+                "echo BOOT_OK\n"
+                "echo C:\\^>\n"
+                "call :short_delay\n"
+                "echo TEST_OK\n"
+                "exit /b 0\n"
+                ":early\n"
+                "echo BOOT_OK\n"
+                "echo fatal detail before QEMU exit\n"
+                "exit /b 7\n"
+                ":timeout\n"
+                "echo partial boot transcript\n"
+                ":spin\n"
+                "goto spin\n"
+                ":short_delay\n"
+                "ping -n 2 127.0.0.1 >nul\n"
+                "exit /b 0\n",
+                encoding="ascii",
+            )
+            return path
+
+        path = self.directory / "fake-qemu"
+        path.write_text(
+            "#!/bin/sh\n"
+            "printf '%s\\n' \"$@\" > \"$FAKE_QEMU_ARGS\"\n"
+            "case \"$FAKE_QEMU_MODE\" in\n"
+            "  success) printf 'firmware trace\\nBOOT_OK\\nC:\\\\>\\n'; "
+            "sleep 0.6; printf 'TEST_OK\\nC:\\\\>\\n'; exit 0 ;;\n"
+            "  missing-test) printf 'BOOT_OK\\nshell did not finish\\n'; exit 0 ;;\n"
+            "  reverse) printf 'TEST_OK\\nBOOT_OK\\n'; exit 0 ;;\n"
+            "  not-test-ok) printf 'BOOT_OK\\nC:\\\\>\\n'; "
+            "sleep 0.6; printf 'NOT_TEST_OK\\nC:\\\\>\\n'; exit 0 ;;\n"
+            "  panic-after-test) printf 'BOOT_OK\\nC:\\\\>\\n'; "
+            "sleep 0.6; "
+            "printf 'TEST_OK\\nPANIC: failure after test marker\\nC:\\\\>\\n'; exit 0 ;;\n"
+            "  missing-second-prompt) printf 'BOOT_OK\\nC:\\\\>\\n'; "
+            "sleep 0.6; printf 'TEST_OK\\n'; exit 0 ;;\n"
+            "  early-exit) printf 'BOOT_OK\\nfatal detail before QEMU exit\\n'; exit 7 ;;\n"
+            "  timeout) printf 'partial boot transcript\\n'; "
+            "while :; do :; done ;;\n"
+            "  *) exit 99 ;;\n"
+            "esac\n",
+            encoding="ascii",
+        )
+        path.chmod(0o755)
+        return path
+
+    def run_smoke(
+        self,
+        mode: str,
+        *,
+        timeout: str = "4",
+        image: Path | None = None,
+        memory: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment["FAKE_QEMU_MODE"] = mode
+        environment["FAKE_QEMU_ARGS"] = str(self.arguments_file)
+        command = [
+                sys.executable,
+                str(RUNNER),
+                "--qemu",
+                str(self.qemu),
+                "--image",
+                str(image or self.image),
+                "--timeout",
+                timeout,
+                "--log",
+                str(self.log_file),
+            ]
+        if memory is not None:
+            command.extend(["--memory", memory])
+        return subprocess.run(
+            command,
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+            timeout=8,
+        )
+
+    def combined_output(self, result: subprocess.CompletedProcess[str]) -> str:
+        return result.stdout + result.stderr
+
+    def test_success_requires_ordered_boot_and_test_markers(self) -> None:
+        result = self.run_smoke("success")
+
+        self.assertEqual(result.returncode, 0, self.combined_output(result))
+        transcript = self.log_file.read_text(encoding="utf-8")
+        self.assertLess(transcript.index("BOOT_OK"), transcript.index("TEST_OK"))
+        prompts = [line.rstrip("\r") for line in transcript.splitlines()]
+        self.assertGreaterEqual(prompts.count(r"C:\>"), 2)
+        self.assertGreater(
+            prompts.index(r"C:\>", prompts.index("TEST_OK")),
+            prompts.index("TEST_OK"),
+        )
+
+    def test_negated_test_marker_is_not_accepted_as_success(self) -> None:
+        result = self.run_smoke("not-test-ok")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("NOT_TEST_OK", self.combined_output(result))
+
+    def test_panic_after_test_marker_still_fails_the_smoke(self) -> None:
+        result = self.run_smoke("panic-after-test")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "PANIC: failure after test marker",
+            self.combined_output(result),
+        )
+
+    def test_test_marker_without_second_shell_prompt_is_failure(self) -> None:
+        result = self.run_smoke("missing-second-prompt")
+
+        self.assertNotEqual(result.returncode, 0)
+        output = self.combined_output(result)
+        self.assertIn("TEST_OK", output)
+        self.assertIn(r"C:\>", output)
+
+    def test_qemu_is_headless_and_uses_the_generated_ide_image(self) -> None:
+        result = self.run_smoke("success")
+        self.assertEqual(result.returncode, 0, self.combined_output(result))
+        arguments = self.arguments_file.read_text(encoding="utf-8")
+
+        self.assertRegex(arguments, r"(?:^|\s)-accel(?:\s|$)")
+        self.assertRegex(arguments, r"(?:^|\s)tcg(?:\s|$)")
+        self.assertRegex(arguments, r"(?:^|\s)-display(?:\s|$)")
+        self.assertRegex(arguments, r"(?:^|\s)none(?:\s|$)")
+        self.assertRegex(arguments, r"(?:^|\s)-monitor(?:\s|$)")
+        self.assertRegex(arguments, r"(?:^|\s)-serial(?:\s|$)")
+        self.assertRegex(arguments, r"(?:^|\s)stdio(?:\s|$)")
+        self.assertIn("-nodefaults", arguments)
+        self.assertIn("-snapshot", arguments)
+        self.assertIn("-no-reboot", arguments)
+        self.assertIn("-no-shutdown", arguments)
+        self.assertIn(f"file={self.image}", arguments)
+        self.assertIn("format=raw", arguments)
+        self.assertIn("if=ide", arguments)
+        self.assertIn("index=0", arguments)
+
+    def test_memory_option_forwards_every_smoke_matrix_size_to_qemu(self) -> None:
+        for amount in ("32M", "64M", "256M", "1024M"):
+            with self.subTest(amount=amount):
+                result = self.run_smoke("success", memory=amount)
+                self.assertEqual(result.returncode, 0, self.combined_output(result))
+                arguments = self.arguments_file.read_text(encoding="utf-8")
+                self.assertRegex(
+                    arguments,
+                    rf"(?:^|\s)-m\s+{re.escape(amount)}(?:\s|$)",
+                )
+
+    def test_invalid_memory_option_is_rejected_before_qemu_starts(self) -> None:
+        result = self.run_smoke("success", memory="0M")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.arguments_file.exists())
+        self.assertIn("memory", self.combined_output(result).lower())
+
+    def test_normal_qemu_exit_without_test_marker_is_failure(self) -> None:
+        result = self.run_smoke("missing-test")
+
+        self.assertNotEqual(result.returncode, 0)
+        output = self.combined_output(result)
+        self.assertIn("shell did not finish", output)
+        self.assertIn("TEST_OK", output)
+
+    def test_test_marker_before_boot_marker_is_failure(self) -> None:
+        result = self.run_smoke("reverse")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("BOOT_OK", self.combined_output(result))
+
+    def test_early_qemu_failure_preserves_the_guest_transcript(self) -> None:
+        result = self.run_smoke("early-exit")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fatal detail before QEMU exit", self.combined_output(result))
+        self.assertIn("fatal detail before QEMU exit",
+                      self.log_file.read_text(encoding="utf-8"))
+
+    def test_timeout_terminates_qemu_and_prints_partial_transcript(self) -> None:
+        started = time.monotonic()
+        result = self.run_smoke("timeout", timeout="0.2")
+        elapsed = time.monotonic() - started
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertLess(elapsed, 3.0, "smoke timeout did not terminate QEMU")
+        output = self.combined_output(result).lower()
+        self.assertIn("timeout", output)
+        self.assertIn("partial boot transcript", output)
+
+    def test_missing_image_is_rejected_before_qemu_is_started(self) -> None:
+        missing = self.directory / "missing.img"
+        result = self.run_smoke("success", image=missing)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.arguments_file.exists())
+        self.assertIn("image", self.combined_output(result).lower())
+
+
+class QemuGuestSmokePackagingTests(unittest.TestCase):
+    def test_make_exposes_a_native_image_smoke_target(self) -> None:
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+        self.assertRegex(makefile, r"(?m)^\.PHONY:.*\btest-smoke\b")
+        self.assertRegex(makefile, r"(?m)^test-smoke:\s+native-image\s*$")
+        self.assertIn("scripts/run_qemu_smoke.py", makefile)
+        self.assertIn("$(OUTPUT_DIR)/x86-microkernel.img", makefile)
+
+    def test_ci_installs_qemu_and_runs_the_guest_smoke(self) -> None:
+        workflow = (ROOT / ".github/workflows/build.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertRegex(workflow, r"\bqemu-system-(?:x86|i386)\b")
+        self.assertIn("make test-smoke", workflow)
+        self.assertLess(
+            workflow.index("make all TARGET=qemu VIDEO=vga"),
+            workflow.index("make test-smoke"),
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

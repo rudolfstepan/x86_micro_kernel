@@ -48,6 +48,10 @@
 #define SYS_TERMINAL_WRITE 37
 #define SYS_TERMINAL_DRAW 38
 #define SYS_GETCHAR_NONBLOCKING 39
+#define SYS_YIELD 40
+#define SYS_SLEEP_MS 41
+#define SYS_MONOTONIC_MS 42
+#define SYS_MEMORY_STATS 43
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

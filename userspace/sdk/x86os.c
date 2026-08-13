@@ -1,5 +1,10 @@
 #include "x86os.h"
 
+_Static_assert(sizeof(x86os_memory_stats_t) == 88U,
+               "memory statistics ABI size changed");
+_Static_assert(offsetof(x86os_memory_stats_t, detected_usable_bytes) == 8U,
+               "memory statistics ABI header changed");
+
 uintptr_t x86os_syscall(uint32_t number, uintptr_t argument1,
                         uintptr_t argument2, uintptr_t argument3) {
     uintptr_t result;
@@ -30,6 +35,25 @@ void x86os_print_number(int value) {
 
 void x86os_delay(uint32_t milliseconds) {
     (void)x86os_syscall(X86OS_SYS_DELAY, milliseconds, 0, 0);
+}
+
+int x86os_sleep_ms(uint32_t milliseconds) {
+    return (int)x86os_syscall(X86OS_SYS_SLEEP_MS, milliseconds, 0, 0);
+}
+
+int x86os_yield(void) {
+    return (int)x86os_syscall(X86OS_SYS_YIELD, 0, 0, 0);
+}
+
+int x86os_monotonic_ms(uint64_t* value) {
+    return (int)x86os_syscall(X86OS_SYS_MONOTONIC_MS,
+                              (uintptr_t)value, 0, 0);
+}
+
+int x86os_memory_stats(x86os_memory_stats_t* stats) {
+    return (int)x86os_syscall(X86OS_SYS_MEMORY_STATS,
+                              (uintptr_t)stats, sizeof(*stats),
+                              X86OS_MEMORY_STATS_VERSION);
 }
 
 int x86os_getchar(void) {

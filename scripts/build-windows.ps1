@@ -2,6 +2,8 @@
 param(
     [ValidateSet('qemu', 'vmware', 'real_hw')]
     [string]$Target = 'real_hw',
+    [ValidateSet('vga', 'framebuffer')]
+    [string]$Video = 'vga',
     [switch]$RunTests,
     [string[]]$ProgramSource = @('examples/userspace/hello.c'),
     [ValidatePattern('^[A-Za-z0-9_]{1,8}\.PRG$')]
@@ -95,7 +97,7 @@ try {
     $makeArguments = @(
         'kernel',
         "TARGET=$Target",
-        'VIDEO=vga',
+        "VIDEO=$Video",
         "SHELL=$(To-MakePath $MsysShell)",
         "AS=$(To-MakePath $Nasm)",
         "CC=$(To-MakePath $Zig) cc -target x86-freestanding -Wno-unused-command-line-argument",
@@ -157,7 +159,13 @@ try {
         --data-file "ECHO.PRG=$(Join-Path $UserProgramDir 'ECHO.PRG')" `
         --data-file "CLS.PRG=$(Join-Path $UserProgramDir 'CLS.PRG')" `
         --data-file "DRIVES.PRG=$(Join-Path $UserProgramDir 'DRIVES.PRG')" `
-        --data-file "EDIT.PRG=$(Join-Path $UserProgramDir 'EDIT.PRG')"
+        --data-file "EDIT.PRG=$(Join-Path $UserProgramDir 'EDIT.PRG')" `
+        --data-file "CHILDEX.PRG=$(Join-Path $UserProgramDir 'CHILDEX.PRG')" `
+        --data-file "FAULTDE.PRG=$(Join-Path $UserProgramDir 'FAULTDE.PRG')" `
+        --data-file "FAULTUD.PRG=$(Join-Path $UserProgramDir 'FAULTUD.PRG')" `
+        --data-file "FAULTPF.PRG=$(Join-Path $UserProgramDir 'FAULTPF.PRG')" `
+        --data-file "GTEST.PRG=$(Join-Path $UserProgramDir 'GTEST.PRG')" `
+        --data-file "SLEEPER.PRG=$(Join-Path $UserProgramDir 'SLEEPER.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Floppy image creation failed with exit code $LASTEXITCODE."
     }
@@ -194,7 +202,13 @@ try {
         --data-file "ECHO.PRG=$(Join-Path $UserProgramDir 'ECHO.PRG')" `
         --data-file "CLS.PRG=$(Join-Path $UserProgramDir 'CLS.PRG')" `
         --data-file "DRIVES.PRG=$(Join-Path $UserProgramDir 'DRIVES.PRG')" `
-        --data-file "EDIT.PRG=$(Join-Path $UserProgramDir 'EDIT.PRG')"
+        --data-file "EDIT.PRG=$(Join-Path $UserProgramDir 'EDIT.PRG')" `
+        --data-file "CHILDEX.PRG=$(Join-Path $UserProgramDir 'CHILDEX.PRG')" `
+        --data-file "FAULTDE.PRG=$(Join-Path $UserProgramDir 'FAULTDE.PRG')" `
+        --data-file "FAULTUD.PRG=$(Join-Path $UserProgramDir 'FAULTUD.PRG')" `
+        --data-file "FAULTPF.PRG=$(Join-Path $UserProgramDir 'FAULTPF.PRG')" `
+        --data-file "GTEST.PRG=$(Join-Path $UserProgramDir 'GTEST.PRG')" `
+        --data-file "SLEEPER.PRG=$(Join-Path $UserProgramDir 'SLEEPER.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Native image creation failed with exit code $LASTEXITCODE."
     }

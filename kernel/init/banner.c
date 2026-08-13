@@ -21,13 +21,17 @@ extern drive_t* current_drive;       // From drives.h
  * Shows system information including memory and detected drives
  */
 void print_welcome_message(void) {
+    memory_stats_t memory;
+    memory_get_stats(&memory);
     display_set_color(WHITE);
     printf("\n");
     printf("      *------------------------------------------------------------*\n");
     printf("      |        Welcome to the Rudolf Stepan x86 Micro Kernel       |\n");
     printf("      |      Type 'HELP' for a list of commands and instructions   |\n");
     printf("      *------------------------------------------------------------*\n");
-    printf("        Total Memory: %llu MB\n", total_memory/1024/1024);
+    printf("        Memory: %llu MiB managed, %llu MiB free\n",
+           memory.managed_bytes / 1024U / 1024U,
+           memory.free_frame_bytes / 1024U / 1024U);
     printf("        Detected Drives (%d): ", drive_count);
     
     for(int i = 0; i < drive_count; i++) {
