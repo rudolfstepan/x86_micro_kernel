@@ -53,12 +53,14 @@ typedef struct {
 
 void supervisor_init(void);
 void supervisor_clock_tick(uint64_t now_ms);
+bool supervisor_start_worker(void);
 int supervisor_register(const char *name, const supervisor_config_t *config,
                         const supervisor_fence_ops_t *fence_ops,
                         uint64_t now_ms, supervisor_handle_t *handle_out);
 int supervisor_report_progress(supervisor_handle_t handle,
                                uint32_t progress_marker, uint64_t now_ms);
 supervisor_event_t supervisor_poll(uint64_t now_ms);
+supervisor_event_t supervisor_service_one(uint64_t now_ms);
 supervisor_event_t supervisor_apply_fence(supervisor_handle_t handle,
                                           uint64_t now_ms);
 int supervisor_report_self_test(supervisor_handle_t handle, bool passed,

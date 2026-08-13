@@ -631,8 +631,13 @@ positive Rückleseprüfung führt zu Restart, jeder Fehler zu `SAFE_STATE`.
 Deadlineprüfungen laufen zusätzlich in einem festen 10-ms-Raster aus der
 monotonen PIT-Zeit. Der Clockpfad persistiert ausschließlich `ISOLATED`; die
 potenziell blockierende Hardwareaktion verbleibt im Foreground. Offen sind der
-dedizierte Foreground-Executor sowie die Registrierung der ersten realen
-Dienst-/Treiberdomäne mit eigener Idle-Health-Semantik.
+periodische Aufruf des nun begrenzten `supervisor_service_one()` sowie die
+Registrierung der ersten realen Dienst-/Treiberdomäne mit eigener
+Idle-Health-Semantik. Ein Aufruf verarbeitet maximal eine Fence-/Verify-Aktion;
+Restart und Selbsttest bleiben explizite Folgeereignisse. Der Executor läuft
+nun in einem reservierten Kernel-Worker alle 10 ms; dieser beansprucht einen
+der acht Task-Slots. Restart-/Safe-State-Ereignisse bleiben level-triggered.
+Beim Safe State wird derzeit konservativ das globale Output-Fence verriegelt.
 
 1. Einen minimalen Safety-Kern definieren; Treiber, Dateisystem, Netzwerk und
    GUI in neu startbare Least-Privilege-Domänen verschieben.

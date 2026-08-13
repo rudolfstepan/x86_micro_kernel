@@ -3,6 +3,10 @@
 #include "include/kernel/critical_object.h"
 #ifndef REIST_HOST_TEST
 #include "arch/x86/include/interrupt.h"
+#include "include/kernel/panic.h"
+#include "include/kernel/output_fence.h"
+#include "kernel/sched/scheduler.h"
+#include "kernel/time/pit.h"
 #endif
 
 typedef struct {
@@ -27,6 +31,7 @@ typedef struct {
 static supervisor_slot_t slots[SUPERVISOR_MAX_DOMAINS];
 static uint32_t next_generation = 1U;
 static uint64_t last_deadline_check_ms;
+static uint32_t next_poll_slot;
 
 #define SUPERVISOR_CHECK_INTERVAL_MS 10U
 
@@ -99,6 +104,7 @@ void supervisor_init(void) {
     }
     next_generation = 1U;
     last_deadline_check_ms = 0;
+    next_poll_slot = 0;
     supervisor_unlock(flags);
 }
 
@@ -196,7 +202,8 @@ supervisor_event_t supervisor_poll(uint64_t now_ms) {
     uint32_t flags = supervisor_lock();
     supervisor_event_t none = {.type = SUPERVISOR_EVENT_NONE};
     check_deadlines_locked(now_ms);
-    for (uint32_t slot = 0; slot < SUPERVISOR_MAX_DOMAINS; ++slot) {
+    for (uint32_t offset = 0; offset < SUPERVISOR_MAX_DOMAINS; ++offset) {
+        uint32_t slot = (next_poll_slot + offset) % SUPERVISOR_MAX_DOMAINS;
         if (!slots[slot].occupied) continue;
         supervisor_state_t state;
         if (state_read(slot, &state) != 0) {
@@ -204,18 +211,75 @@ supervisor_event_t supervisor_poll(uint64_t now_ms) {
                 .type = SUPERVISOR_EVENT_SAFE_STATE_REQUIRED,
                 .handle = {.slot = slot, .generation = 0, .epoch = 0},
             };
+            next_poll_slot = (slot + 1U) % SUPERVISOR_MAX_DOMAINS;
             supervisor_unlock(flags);
             return result;
         }
         if (state.state == SUPERVISOR_ISOLATED) {
             supervisor_event_t result = event(SUPERVISOR_EVENT_FENCE_REQUIRED,
                                                slot, &state);
+            next_poll_slot = (slot + 1U) % SUPERVISOR_MAX_DOMAINS;
+            supervisor_unlock(flags);
+            return result;
+        }
+        if (state.state == SUPERVISOR_RECOVERING) {
+            supervisor_event_t result = event(
+                SUPERVISOR_EVENT_RESTART_REQUIRED, slot, &state);
+            next_poll_slot = (slot + 1U) % SUPERVISOR_MAX_DOMAINS;
+            supervisor_unlock(flags);
+            return result;
+        }
+        if (state.state == SUPERVISOR_SAFE_STATE) {
+            supervisor_event_t result = event(
+                SUPERVISOR_EVENT_SAFE_STATE_REQUIRED, slot, &state);
+            next_poll_slot = (slot + 1U) % SUPERVISOR_MAX_DOMAINS;
             supervisor_unlock(flags);
             return result;
         }
     }
     supervisor_unlock(flags);
     return none;
+}
+
+#ifndef REIST_HOST_TEST
+static void supervisor_worker(void) {
+    for (;;) {
+        supervisor_event_t result = supervisor_service_one(pit_monotonic_ms());
+        if (result.type == SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) {
+            /* Until per-hazard external interlocks are registered, the
+             * conservative system response revokes every known output. */
+            output_fence_all();
+        }
+        if (scheduler_sleep_ms(SUPERVISOR_CHECK_INTERVAL_MS) != 0)
+            (void)scheduler_yield();
+    }
+}
+
+bool supervisor_start_worker(void) {
+    uint32_t *stack = scheduler_allocate_kernel_stack();
+    if (stack == NULL) return false;
+    if (create_task(supervisor_worker, stack, NULL) < 0) {
+        scheduler_free_kernel_stack(stack);
+        return false;
+    }
+    return true;
+}
+#else
+bool supervisor_start_worker(void) {
+    return false;
+}
+#endif
+
+supervisor_event_t supervisor_service_one(uint64_t now_ms) {
+#ifndef REIST_HOST_TEST
+    KASSERT_NOT_IRQ();
+    KASSERT(irq_enabled());
+#endif
+    /* One invocation performs at most one potentially slow fence action.
+     * Callers retain explicit control over their execution-time budget. */
+    supervisor_event_t pending = supervisor_poll(now_ms);
+    if (pending.type != SUPERVISOR_EVENT_FENCE_REQUIRED) return pending;
+    return supervisor_apply_fence(pending.handle, now_ms);
 }
 
 supervisor_event_t supervisor_apply_fence(supervisor_handle_t handle,

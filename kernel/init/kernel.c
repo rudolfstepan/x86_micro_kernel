@@ -420,6 +420,9 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     }
     printf("REIST_TEST FATAL_RECOVERY_OK\n");
 #endif
+    if (!supervisor_start_worker()) {
+        panic("Unable to start REIST safety supervisor worker");
+    }
     printf("BOOT_OK\n");
 
     /* A real framebuffer prefers the graphical desktop.  VGA boots and any

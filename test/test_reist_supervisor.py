@@ -37,6 +37,14 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("fence_ops.verify(fence_ops.context)", source)
         self.assertIn("SUPERVISOR_CHECK_INTERVAL_MS 10U", source)
         self.assertIn("state.state == SUPERVISOR_ISOLATED", source)
+        self.assertIn("static uint32_t next_poll_slot", source)
+        self.assertIn("(next_poll_slot + offset) % SUPERVISOR_MAX_DOMAINS", source)
+        self.assertIn("supervisor_service_one(uint64_t now_ms)", source)
+        self.assertIn("KASSERT_NOT_IRQ();", source)
+        self.assertIn("KASSERT(irq_enabled());", source)
+        service = source[source.index("supervisor_service_one(uint64_t now_ms)"):]
+        service = service[:service.index("supervisor_apply_fence(", 1)]
+        self.assertNotIn("while (", service)
         self.assertNotIn("supervisor_ack_fenced", header)
         self.assertIn("restart_count >= state.restart_budget", source)
         self.assertIn("state->epoch != handle.epoch", source)
@@ -47,6 +55,17 @@ class ReistSupervisorTests(unittest.TestCase):
     def test_pit_drives_bounded_supervisor_deadline_checks(self):
         pit = (ROOT / "kernel/time/pit.c").read_text(encoding="utf-8")
         self.assertIn("supervisor_clock_tick(timer_tick_count);", pit)
+
+    def test_reserved_foreground_worker_is_fail_closed(self):
+        source = (ROOT / "kernel/init/supervisor.c").read_text(encoding="utf-8")
+        kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
+        guest = (ROOT / "examples/userspace/guest_test.c").read_text(encoding="utf-8")
+        self.assertIn("static void supervisor_worker(void)", source)
+        self.assertIn("supervisor_service_one(pit_monotonic_ms())", source)
+        self.assertIn("output_fence_all();", source)
+        self.assertIn("scheduler_sleep_ms(SUPERVISOR_CHECK_INTERVAL_MS)", source)
+        self.assertIn("if (!supervisor_start_worker())", kernel)
+        self.assertIn("int children[5];", guest)
 
 
 if __name__ == "__main__":

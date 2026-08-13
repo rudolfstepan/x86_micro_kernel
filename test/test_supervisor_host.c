@@ -41,6 +41,8 @@ int main(void) {
     if (supervisor_output_allowed(handle)) return 8;
     supervisor_event_t restart = supervisor_apply_fence(fence.handle, 1120U);
     if (restart.type != SUPERVISOR_EVENT_RESTART_REQUIRED) return 9;
+    if (supervisor_poll(1120U).type != SUPERVISOR_EVENT_RESTART_REQUIRED)
+        return 26;
     if (fence_apply_count != 1U) return 23;
     if (supervisor_apply_fence(fence.handle, 1120U).type !=
         SUPERVISOR_EVENT_NONE || fence_apply_count != 1U) return 24;
@@ -54,6 +56,8 @@ int main(void) {
     if (fence.type != SUPERVISOR_EVENT_FENCE_REQUIRED) return 15;
     supervisor_event_t safe = supervisor_apply_fence(fence.handle, 1240U);
     if (safe.type != SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) return 16;
+    if (supervisor_poll(1240U).type != SUPERVISOR_EVENT_SAFE_STATE_REQUIRED)
+        return 27;
     if (supervisor_output_allowed(safe.handle)) return 17;
 
     supervisor_handle_t failed_handle;
@@ -62,9 +66,8 @@ int main(void) {
     if (supervisor_register("actuator", &config, &fence_ops, 2000U,
                             &failed_handle) != 0) return 18;
     if (supervisor_report_progress(failed_handle, 1U, 2001U) != 0) return 19;
-    fence = supervisor_poll(2101U);
-    if (fence.type != SUPERVISOR_EVENT_FENCE_REQUIRED) return 20;
-    safe = supervisor_apply_fence(fence.handle, 2102U);
+    safe = supervisor_service_one(2101U);
+    if (!fence_applied) return 20;
     if (safe.type != SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) return 21;
     if (supervisor_output_allowed(failed_handle)) return 22;
     return 0;

@@ -213,6 +213,20 @@ ECC-geschützten Domänenzustand. Er führt dort weder Fencing noch Restart aus.
 Der spätere Foreground-Executor kann das wiederholbar angebotene
 `FENCE_REQUIRED` daher verlustfrei übernehmen; ein verzögerter Executor kann
 keine Timeoutmeldung versehentlich konsumieren.
+`supervisor_service_one()` ist der erste Foreground-Executor: Er ist außerhalb
+von IRQ-Kontext und mit aktivierten Interrupts aufzurufen und führt pro Aufruf
+höchstens eine Fence-Aktion samt Verify aus. Restart und Selbsttest bleiben als
+explizite Folgeereignisse beim Domänen-Orchestrator; damit entstehen weder
+unbegrenzte Ereignisschleifen noch versteckte Restartketten.
+Ein reservierter Kernel-Worker ruft diesen Executor alle 10 ms auf. Er belegt
+bewusst einen der acht Task-Slots und kann daher nicht durch Userprozesse
+verdrängt werden. `RESTART_REQUIRED` und `SAFE_STATE_REQUIRED` bleiben
+level-triggered sichtbar, bis ein Orchestrator den geschützten Zustand ändert.
+Ein deterministischer Round-Robin-Cursor verhindert dabei, dass ein dauerhaft
+anstehender Safe State die Ereignisse anderer Domänen verdeckt.
+Beim sicheren Zustand verriegelt der heutige konservative Fallback alle
+registrierten Ausgänge; ein späterer Hazard-Orchestrator darf dies nur durch
+nachgewiesene, mindestens gleich sichere domänenspezifische Interlocks ersetzen.
 
 Unterbrechungsfreie wesentliche
 Leistung bei Kernel-, CPU-, RAM- oder Stromfehlern setzt eine ausreichend

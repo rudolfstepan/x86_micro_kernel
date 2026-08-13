@@ -207,8 +207,9 @@ static int test_memory_accounting(void) {
 }
 
 static int test_task_capacity_and_parenting(void) {
-    /* The shell and GTEST occupy two of the eight task slots. */
-    int children[6];
+    /* The reserved REIST supervisor worker, shell and GTEST occupy three of
+     * the eight task slots. Safety supervision is capacity, not best effort. */
+    int children[5];
     int parent_pid = x86os_getpid();
     for (size_t index = 0; index < sizeof(children) / sizeof(children[0]);
          ++index) {
