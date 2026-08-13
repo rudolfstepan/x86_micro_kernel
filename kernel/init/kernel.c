@@ -26,6 +26,7 @@
 #include "include/kernel/watchdog.h"
 #include "include/kernel/supervisor.h"
 #include "include/kernel/storage_safety.h"
+#include "include/kernel/filesystem_safety.h"
 #include "include/kernel/output_fence.h"
 #include "kernel/shell/command.h"
 #include "mm/kmalloc.h"
@@ -205,6 +206,9 @@ static void driver_init(void) {
 
     if (!storage_safety_init(pit_monotonic_ms())) {
         panic("Unable to initialize REIST storage write supervision");
+    }
+    if (!output_fence_register(storage_fence_writes)) {
+        panic("Unable to register the storage write fence");
     }
 
     // Auto-mount all detected drives
@@ -407,6 +411,12 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     fatal_boot_recover_record();
     supervisor_init();
     output_fence_init();
+    if (!filesystem_safety_init(pit_monotonic_ms())) {
+        panic("Unable to initialize REIST filesystem supervision");
+    }
+    if (!output_fence_register(filesystem_fence_mutations)) {
+        panic("Unable to register the filesystem mutation fence");
+    }
     if (!output_fence_register(netdev_fence_outputs)) {
         panic("Unable to register the network output fence");
     }

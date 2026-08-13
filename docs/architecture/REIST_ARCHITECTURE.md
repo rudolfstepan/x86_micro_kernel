@@ -247,6 +247,15 @@ einen bereits an das Gerät übergebenen Sektor nicht zurückrollen. Atomare
 Metadatenänderungen, Journal/COW, Flush-Barrieren und Power-Loss-Recovery sind
 weiterhin Aufgabe von S0.5.
 
+Darüber liegt `filesystem-write` als dritte reale Domäne. Alle öffentlichen
+VFS-Mutationen (`write`, `create`, `delete`, `mkdir`, `rmdir`, `unmount`)
+werden mit einer 15-s-Deadline überwacht. Ein I/O-Fehler oder Timeout schaltet
+das VFS dauerhaft bis zum Neustart auf Read-only; Lese- und Diagnosezugriffe
+bleiben verfügbar. Fatal-Fencing verriegelt sowohl diese VFS-Schranke als auch
+den physischen Storage-Write-Pfad. Der Modus ist bewusst fail-closed und hat
+kein automatisches Restartbudget. Er ist Schadensbegrenzung, noch keine
+Transaktionsgarantie über mehrere FAT-/EXT2-Metadatenwrites.
+
 Auch die Recovery-Steuerung ist Teil des kritischen Zustands: Apply-/Verify-
 Funktionszeiger und ihr Kontext liegen nicht mehr als ungeschützte Pointer in
 der Domänentabelle, sondern als Primary/Shadow-`critical_object` mit SECDED,

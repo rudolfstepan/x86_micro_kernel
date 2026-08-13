@@ -651,6 +651,11 @@ liest `BSY/DRQ`, FDD Motorbits und Controller-Busy zurück; ein fehlgeschlagener
 ATA-Flush wird als Schreibfehler weitergereicht. Nicht gelöst ist damit die
 atomare Wiederherstellung eines bereits teilweise geschriebenen Dateisystems;
 Journal/COW, Barrieren und Power-Loss-Injection bleiben S0.5.
+Als dritte Domäne überwacht `filesystem-write` alle mutierenden öffentlichen
+VFS-Aufrufe. I/O-Fehler oder Deadlineverletzung verriegeln das VFS Read-only,
+während Lesen und Diagnose weiter möglich bleiben. Fatal-Fencing sperrt VFS-
+und physische Storage-Writes gemeinsam. Das begrenzt Folgeschäden, ersetzt
+aber noch kein Journal und keine atomare Mehrsektortransaktion.
 Die Apply-/Verify-Callbacks samt Kontext sind ebenfalls redundant über
 `critical_object` geschützt. Single-Bit-Fehler werden korrigiert; bei zwei
 unbrauchbaren Kopien wird kein Funktionszeiger ausgeführt und unmittelbar zum
