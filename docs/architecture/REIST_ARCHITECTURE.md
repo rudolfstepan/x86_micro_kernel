@@ -109,6 +109,25 @@ Zustandsübergänge. Aktualisierungen werden vorbereitet, vollständig validiert
 und erst danach atomar veröffentlicht. Ein Fehler zwischen Vorbereitung und
 Commit darf für Leser keinen halben Zustand sichtbar machen.
 
+### Software-ECC für kritische Objekte
+
+Kleine kritische Metadaten können den generischen `critical_object`-Umschlag
+verwenden: versionierte Nutzdaten, Sequenzzähler und Integritätszustand werden
+wortweise durch SECDED geschützt und als Primary/Shadow gespeichert. CRC32
+erkennt Mehrbitfehler außerhalb der SECDED-Garantie; ein objektspezifischer
+Validator prüft anschließend semantische Invarianten.
+
+```text
+ECC -> CRC -> Version/Sequence -> Invariant -> Replica -> Recovery/Eskalation
+```
+
+Ein einzelner Bitfehler wird korrigiert und beide Kopien werden neu versiegelt.
+Eine ungültige Kopie wird aus der validen rekonstruiert. Zwei ungültige oder
+gleich alte, aber widersprüchliche gültige Kopien liefern ausschließlich
+`UNCORRECTABLE`; es wird keine Autorität geraten. Primary und Shadow müssen bei
+produktiver Nutzung räumlich getrennt platziert werden. Für höchste Kritikalität
+bleiben 2oo3 oder eine unabhängige autoritative Recovery-Domäne erforderlich.
+
 ## Capability- und Ressourcenmodell
 
 Eine Capability verbindet Objektidentität, Generation und minimale Rechte,
@@ -134,7 +153,12 @@ unabhängiger Kanal bereits den sicheren Zustand hält.
 
 ## Panic, Stackfehler und kontrollierter Neustart
 
-User-Stackfehler werden durch Guardpages auf den Prozess begrenzt. Ein
+User-Stacks besitzen unterhalb und oberhalb des achtseitigen Stackbereichs
+explizite, nicht abgebildete Guardpages. Ein Zugriff darauf wird als User-#PF
+auf den Prozess begrenzt und im Gasttest erzwungen. Jeder Kernelbuild lehnt
+dynamische Frames fail-closed ab und begrenzt compilerseitig erkannte statische
+Einzelframes auf 4096 Byte. Ein vollständiger
+Entry-/IRQ-Callgraph mit nachgewiesener Gesamttiefe bleibt zusätzlich nötig. Ein
 Kernel-Stackfehler, Double Fault oder eine fundamentale Inkonsistenz macht den
 betroffenen Rechnerkanal unvertrauenswürdig. Dann gilt:
 
@@ -149,9 +173,25 @@ revoke/fence hazardous outputs
 ```
 
 Der Fatalpfad nutzt einen eigenen Emergency-Stack und weder Heap, Dateisystem,
-blockierende Locks noch unbeschränktes `printf`. Unterbrechungsfreie wesentliche
+blockierende Locks noch unbeschränktes `printf`. Der native x86-Pfad schreibt
+einen prüfsummengeschützten Record redundant in eine reservierte Low-Memory-
+Seite und CMOS/NVRAM, veröffentlicht dessen Magic jeweils zuletzt und meldet
+ihn nach einem Reset genau
+einmal. Im qualifizierten QEMU-Profil überwacht ein eigenständiges emuliertes
+IB700-Gerät den Schedulerfortschritt; bloße Timerinterrupts berechtigen nicht
+zum Füttern. Der Fatalpfad stoppt das Füttern und armiert das kürzeste Intervall.
+Danach fordert er mit festem Pollbudget einen Plattformreset an und erzwingt
+ersatzweise einen CPU-Reset. Für Zielhardware ist weiterhin ein unabhängig
+versorgter externer Watchdog mit Fencing erforderlich.
+Unterbrechungsfreie wesentliche
 Leistung bei Kernel-, CPU-, RAM- oder Stromfehlern setzt eine ausreichend
 unabhängige zweite Ausführungslinie beziehungsweise ein Safety Island voraus.
+
+Ein ausschließlich in separaten Testartefakten aktivierbarer Buildschalter löst
+Vektor 8 über den realen Task-Gate-/TSS-Pfad aus. Die Abnahme verlangt die
+geordnete Kette `armed -> fatal record -> watchdog reset -> record recovered ->
+normaler Gasttest`. Das Produktionsartefakt enthält keinen erreichbaren
+Auslösepfad.
 
 ## Fault-Injection als Produktschnittstelle
 

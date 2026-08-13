@@ -135,6 +135,7 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         timeout: str = "4",
         image: Path | None = None,
         memory: str | None = None,
+        watchdog: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["FAKE_QEMU_MODE"] = mode
@@ -153,6 +154,8 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
             ]
         if memory is not None:
             command.extend(["--memory", memory])
+        if watchdog:
+            command.append("--watchdog")
         return subprocess.run(
             command,
             cwd=ROOT,
@@ -232,6 +235,26 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
                     arguments,
                     rf"(?:^|\s)-m\s+{re.escape(amount)}(?:\s|$)",
                 )
+
+    def test_watchdog_profile_attaches_real_ib700_reset_device(self) -> None:
+        result = self.run_smoke("success", watchdog=True)
+        self.assertEqual(result.returncode, 0, self.combined_output(result))
+        arguments = self.arguments_file.read_text(encoding="utf-8")
+        self.assertRegex(arguments, r"(?:^|\s)-device\s+ib700(?:\s|$)")
+        self.assertRegex(arguments, r"(?:^|\s)-watchdog-action\s+reset(?:\s|$)")
+
+    def test_fatal_recovery_profile_allows_the_expected_reboot(self) -> None:
+        environment = os.environ.copy()
+        environment["FAKE_QEMU_MODE"] = "success"
+        environment["FAKE_QEMU_ARGS"] = str(self.arguments_file)
+        subprocess.run(
+            [sys.executable, str(RUNNER), "--qemu", str(self.qemu),
+             "--image", str(self.image), "--timeout", "1",
+             "--expect-fatal-recovery"], cwd=ROOT, env=environment,
+            capture_output=True, text=True, timeout=8,
+        )
+        arguments = self.arguments_file.read_text(encoding="utf-8")
+        self.assertNotIn("-no-reboot", arguments)
 
     def test_invalid_memory_option_is_rejected_before_qemu_starts(self) -> None:
         result = self.run_smoke("success", memory="0M")

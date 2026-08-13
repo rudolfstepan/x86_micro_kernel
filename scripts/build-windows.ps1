@@ -4,6 +4,7 @@ param(
     [string]$Target = 'real_hw',
     [ValidateSet('vga', 'framebuffer')]
     [string]$Video = 'vga',
+    [switch]$FaultInjection,
     [switch]$RunTests,
     [string[]]$ProgramSource = @('examples/userspace/hello.c'),
     [ValidatePattern('^[A-Za-z0-9_]{1,8}\.PRG$')]
@@ -103,6 +104,9 @@ try {
         "CC=$(To-MakePath $Zig) cc -target x86-freestanding -Wno-unused-command-line-argument",
         "LD=$(To-MakePath $Zig) ld.lld"
     )
+    if ($FaultInjection) {
+        $makeArguments += 'FAULT_INJECTION=1'
+    }
     & $Make @makeArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Kernel build failed with exit code $LASTEXITCODE."
@@ -170,6 +174,7 @@ try {
         --data-file "FAULTDE.PRG=$(Join-Path $UserProgramDir 'FAULTDE.PRG')" `
         --data-file "FAULTUD.PRG=$(Join-Path $UserProgramDir 'FAULTUD.PRG')" `
         --data-file "FAULTPF.PRG=$(Join-Path $UserProgramDir 'FAULTPF.PRG')" `
+        --data-file "FAULTSTK.PRG=$(Join-Path $UserProgramDir 'FAULTSTK.PRG')" `
         --data-file "GTEST.PRG=$(Join-Path $UserProgramDir 'GTEST.PRG')" `
         --data-file "SLEEPER.PRG=$(Join-Path $UserProgramDir 'SLEEPER.PRG')"
     if ($LASTEXITCODE -ne 0) {
@@ -214,6 +219,7 @@ try {
         --data-file "FAULTDE.PRG=$(Join-Path $UserProgramDir 'FAULTDE.PRG')" `
         --data-file "FAULTUD.PRG=$(Join-Path $UserProgramDir 'FAULTUD.PRG')" `
         --data-file "FAULTPF.PRG=$(Join-Path $UserProgramDir 'FAULTPF.PRG')" `
+        --data-file "FAULTSTK.PRG=$(Join-Path $UserProgramDir 'FAULTSTK.PRG')" `
         --data-file "GTEST.PRG=$(Join-Path $UserProgramDir 'GTEST.PRG')" `
         --data-file "SLEEPER.PRG=$(Join-Path $UserProgramDir 'SLEEPER.PRG')"
     if ($LASTEXITCODE -ne 0) {

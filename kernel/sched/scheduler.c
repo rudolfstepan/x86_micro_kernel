@@ -8,6 +8,7 @@
 #include "lib/libc/string.h"
 #include "include/kernel/panic.h"
 #include "kernel/time/pit.h"
+#include "include/kernel/watchdog.h"
 #include "mm/kmalloc.h"
 
 extern void swtch(context_t *old, context_t *new);
@@ -566,6 +567,10 @@ void scheduler_interrupt_handler(void) {
     } else {
         validate_kernel_context_stack_or_panic(true);
     }
+    /* Feeding eligibility is earned only after the scheduler reached its
+     * validation point with preemption enabled. Merely receiving IRQ0 does
+     * not constitute system progress. */
+    watchdog_health_progress();
     int next = find_next_runnable(previous);
 
     if (next < 0 || next == previous) {

@@ -587,9 +587,18 @@ Reproduzierbarkeit erhöhen.
 **Teilstatus:** Kernel-Taskstacks besitzen beidseitige nicht-präsente
 Guardpages; der Bootstack eine volle untere Guardpage. `#DF` läuft über eine
 dedizierte TSS und einen unabhängigen Emergency-Stack in einen begrenzten,
-heap-/lockfreien Crashrecord-/COM1-Pfad. Noch offen sind User-Stack-Guardpages,
-statische Stackbudget-Gates, persistenter Crashrecord, Watchdog/Fencing und ein
-echter Double-Fault-Fault-Injection-Gastlauf.
+heap-/lockfreien Crashrecord-/COM1-Pfad. Explizite beidseitige
+User-Stack-Guardpages samt Ring-3-Fault-Test sind umgesetzt. Noch offen sind
+Dynamische Frames und compilerseitig erkannte statische Einzelframes über 4096
+Byte brechen jeden Kernelbuild ab. Ein prüfsummengeschützter, redundant in
+reserviertem RAM und CMOS/NVRAM gespeicherter Crashrecord überlebt den nativen
+Reset, wird beim Boot einmal gemeldet und
+der #DF-Pfad fordert begrenzt einen Reset an. Das QEMU-Profil besitzt nun einen
+echten IB700-Watchdog, der nur nach Schedulerfortschritt gefüttert wird und im
+Fatalpfad ausläuft. Noch offen sind Callgraph-Gesamtbudgets, ein von CPU und
+Versorgung unabhängiger Zielhardware-Watchdog samt Fencing. Der echte
+Double-Fault-Task-Gate-Pfad wird inzwischen in einem isolierten Testimage bis
+zum Watchdog-Warmstart, Crashrecord-Recovery und anschließenden Gasttest geprüft.
 
 1. Nicht gemappte Guardpages für jeden Kernel- und Userstack, statische
    Stackbudgets, Watermarks und Rekursionsverbote einführen.
@@ -622,6 +631,9 @@ echter Double-Fault-Fault-Injection-Gastlauf.
    Allokation, Rekursion, Retries und Warteschlangen sind dort unzulässig.
 3. Überlast, Priority Inversion, Interruptstürme und Zeitquellenausfall müssen
    einen getesteten degradierten Zustand auslösen.
+4. Kritische Kernelobjekte selektiv über den `critical_object`-Umschlag mit
+   wortweisem SECDED, CRC32, Version/Sequenz, semantischem Validator und
+   Primary/Shadow schützen; Bitflip-Injection misst Korrektur und Eskalation.
 
 #### S0.5 Datenintegrität, Boot und unterbrechungsarme Updates — XL
 

@@ -4,6 +4,7 @@
 #include "arch/x86/include/sys.h"
 #include "arch/x86/include/interrupt.h"
 #include "kernel/sched/scheduler.h"
+#include "include/kernel/watchdog.h"
 #include "lib/libc/stdio.h"
 
 
@@ -57,6 +58,7 @@ void timer_irq_handler(void* r) {
     timer_tick_count += pit_millisecond_fraction / PIT_FREQUENCY;
     pit_millisecond_fraction %= PIT_FREQUENCY;
     scheduler_wake_expired_sleepers_locked(timer_tick_count);
+    watchdog_clock_tick(timer_tick_count);
 }
 
 // Function to initialize the PIT with a given frequency

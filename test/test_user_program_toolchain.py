@@ -223,6 +223,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "FAULTDE.PRG",
                 "FAULTUD.PRG",
                 "FAULTPF.PRG",
+                "FAULTSTK.PRG",
                 "GTEST.PRG",
                 "SLEEPER.PRG",
             }

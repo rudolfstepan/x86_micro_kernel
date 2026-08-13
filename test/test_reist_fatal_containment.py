@@ -43,7 +43,7 @@ class ReistFatalContainmentTests(unittest.TestCase):
 
     def test_emergency_path_is_bounded_and_dependency_minimal(self):
         self.assertIn("EMERGENCY_SERIAL_POLL_BUDGET", self.fatal)
-        self.assertIn('"REIST_FATAL DOUBLE_FAULT\\n"', self.fatal)
+        self.assertIn('"REIST_FATAL DOUBLE_FAULT RESET\\n"', self.fatal)
         self.assertIn("cpu_halt_forever()", self.fatal)
         for forbidden in ("printf(", "k_malloc(", "vfs_", "serial_write_char("):
             with self.subTest(forbidden=forbidden):

@@ -15,12 +15,14 @@
 #include "include/kernel/panic.h"
 
 #define USER_PROGRAM_ADDRESS PROGRAM_V1_BASE
-#define USER_STACK_TOP (USER_TOP - PAGE_SIZE)
-#define USER_STACK_SIZE (8U * PAGE_SIZE)
 #define PROGRAM_REGION_SIZE PROGRAM_V1_REGION_SIZE
 
 _Static_assert(PROGRAM_V1_BASE == USER_BASE,
                "MYPR v1 base must match the user address-space base");
+_Static_assert(USER_STACK_LOWER_GUARD >= USER_HEAP_TOP,
+               "User stack guards must not overlap the user heap");
+_Static_assert(USER_STACK_UPPER_GUARD + PAGE_SIZE == USER_TOP,
+               "Upper user stack guard must terminate at USER_TOP");
 static int load_program_file(const char *program_name, uint8_t **image_out) {
     if (image_out == NULL) return -1;
     *image_out = NULL;
@@ -159,7 +161,7 @@ static int build_user_arguments(page_directory_t *page_directory, int argc,
     for (int i = argc - 1; i >= 0; --i) {
         if (argv[i] == NULL) return -1;
         size_t length = strlen(argv[i]) + 1U;
-        if (length > 256U || stack < USER_STACK_TOP - USER_STACK_SIZE + length) {
+        if (length > 256U || stack < USER_STACK_BOTTOM + length) {
             return -1;
         }
         stack -= (uint32_t)length;
@@ -270,7 +272,9 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
                    amount);
         }
     }
-    for (uint32_t address = USER_STACK_TOP - USER_STACK_SIZE;
+    /* Fresh page directories leave both adjacent guard pages non-present.
+     * Only the bounded stack interval is mapped user-writable. */
+    for (uint32_t address = USER_STACK_BOTTOM;
          address < USER_STACK_TOP; address += PAGE_SIZE) {
         uint32_t frame = (uint32_t)allocate_frame();
         if (frame == 0 || map_page(page_directory, address, frame,

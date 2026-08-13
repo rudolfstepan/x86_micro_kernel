@@ -51,6 +51,7 @@ TARGET ?= qemu
 # Video mode selection (default: vga)
 # Override with: make VIDEO=framebuffer
 VIDEO ?= vga
+FAULT_INJECTION ?= 0
 
 # Target-specific defines
 ifeq ($(TARGET),real_hw)
@@ -61,6 +62,12 @@ else ifeq ($(TARGET),vmware)
     TARGET_DEFINES := -DVMWARE_BUILD -DATA_MODERATE_TIMING
 else
     $(error Invalid TARGET=$(TARGET). Use 'qemu', 'vmware', or 'real_hw')
+endif
+
+ifeq ($(FAULT_INJECTION),1)
+    SAFETY_TEST_DEFINES := -DREIST_FAULT_INJECTION
+else
+    SAFETY_TEST_DEFINES :=
 endif
 
 # Video mode defines
@@ -80,12 +87,13 @@ endif
 
 CFLAGS := -m32 -std=gnu11 -c -MMD -MP -ffreestanding -nostdlib -nostartfiles -nodefaultlibs \
           -fno-builtin -fno-pic -fno-pie -fno-stack-protector \
+          -Werror=vla -Wframe-larger-than=4096 -Werror=frame-larger-than \
           -fno-asynchronous-unwind-tables -fno-unwind-tables -mno-sse -mno-sse2 -mno-mmx \
           -O2 -DNDEBUG -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable -U_FORTIFY_SOURCE \
           -Werror=implicit-function-declaration -Werror=incompatible-pointer-types \
           -Werror=int-conversion -Werror=return-type \
           -I$(OUTPUT_DIR) -I. -I$(ARCH_DIR) -I$(ARCH_DIR)/include -I$(LIB_DIR)/libc -I$(KERNEL_DIR)/shell \
-          $(TARGET_DEFINES) $(VIDEO_DEFINES)
+          $(TARGET_DEFINES) $(VIDEO_DEFINES) $(SAFETY_TEST_DEFINES)
 
 LDFLAGS := -m elf_i386 -nostdlib --strip-all --build-id=sha1
 KERNEL_LDSCRIPT := $(CONFIG_DIR)/klink.ld
@@ -207,7 +215,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel check-kernel-stack user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -472,6 +480,9 @@ kernel: $(ALL_OBJ)
 	@$(LD) $(LDFLAGS) -T $(KERNEL_LDSCRIPT) -o $(OUTPUT_DIR)/kernel.bin $(ALL_OBJ)
 	@echo "Release kernel ELF: $(OUTPUT_DIR)/kernel.bin"
 
+check-kernel-stack: $(ALL_OBJ)
+	@echo "Kernel stack-frame and VLA compiler gates passed."
+
 # ============================================================================
 # BOOTABLE DISK IMAGE
 # ============================================================================
@@ -531,6 +542,7 @@ native-image: floppy-image
 		--data-file FAULTDE.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTDE.PRG \
 		--data-file FAULTUD.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTUD.PRG \
 		--data-file FAULTPF.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTPF.PRG \
+		--data-file FAULTSTK.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTSTK.PRG \
 		--data-file GTEST.PRG=$(SYSTEM_PROGRAM_DIR)/GTEST.PRG \
 		--data-file SLEEPER.PRG=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/reist-os.img"
@@ -575,6 +587,7 @@ floppy-image: kernel system-programs user-program
 		--data-file FAULTDE.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTDE.PRG \
 		--data-file FAULTUD.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTUD.PRG \
 		--data-file FAULTPF.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTPF.PRG \
+		--data-file FAULTSTK.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTSTK.PRG \
 		--data-file GTEST.PRG=$(SYSTEM_PROGRAM_DIR)/GTEST.PRG \
 		--data-file SLEEPER.PRG=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG
 
@@ -610,6 +623,26 @@ test-smoke-pit: native-image
 		--image $(OUTPUT_DIR)/reist-os.img \
 		--no-apic \
 		--log $(OUTPUT_DIR)/guest-smoke-pit.log
+
+test-smoke-watchdog: native-image
+	@echo "Running QEMU guest smoke test with IB700 hardware watchdog..."
+	@$(PYTHON) scripts/run_qemu_smoke.py \
+		--qemu $(QEMU) \
+		--image $(OUTPUT_DIR)/reist-os.img \
+		--watchdog \
+		--log $(OUTPUT_DIR)/guest-smoke-watchdog.log
+
+test-smoke-fatal-recovery:
+	@echo "Building isolated REIST Double-Fault injection image..."
+	@$(MAKE) native-image TARGET=qemu VIDEO=vga FAULT_INJECTION=1 \
+		OUTPUT_DIR=build/fatal-injection
+	@$(PYTHON) scripts/run_qemu_smoke.py \
+		--qemu $(QEMU) \
+		--image build/fatal-injection/reist-os.img \
+		--watchdog \
+		--expect-fatal-recovery \
+		--timeout 120 \
+		--log build/fatal-injection/guest-smoke-fatal-recovery.log
 
 test-smoke-memory: native-image
 	@echo "Running QEMU guest smoke test with 32 MiB RAM..."

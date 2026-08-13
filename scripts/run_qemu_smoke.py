@@ -15,6 +15,10 @@ from pathlib import Path
 
 BOOT_MARKER = "BOOT_OK"
 TEST_MARKER = "TEST_OK"
+FATAL_ARMED_MARKER = "REIST_TEST DOUBLE_FAULT_ARMED"
+FATAL_MARKER = "REIST_FATAL DOUBLE_FAULT RESET"
+RECOVERY_MARKER = "REIST_RECOVERY PREVIOUS_FATAL"
+RECOVERY_OK_MARKER = "REIST_TEST FATAL_RECOVERY_OK"
 SHELL_PROMPT = "C:\\>"
 FAIL_MARKERS = (
     "TEST_FAIL",
@@ -30,6 +34,8 @@ def qemu_command(
     image: Path,
     no_apic: bool = False,
     memory: str = "512M",
+    watchdog: bool = False,
+    allow_reboot: bool = False,
 ) -> list[str]:
     command = [
         str(qemu),
@@ -43,11 +49,14 @@ def qemu_command(
         "-display", "none",
         "-monitor", "none",
         "-serial", "stdio",
-        "-no-reboot",
         "-no-shutdown",
     ]
+    if not allow_reboot:
+        command.append("-no-reboot")
     if no_apic:
         command.extend(["-cpu", "qemu32,-apic"])
+    if watchdog:
+        command.extend(["-device", "ib700", "-watchdog-action", "reset"])
     return command
 
 
@@ -153,9 +162,11 @@ def run(
     timeout: float,
     no_apic: bool = False,
     memory: str = "512M",
+    watchdog: bool = False,
+    allow_reboot: bool = False,
 ) -> tuple[int, str, str | None]:
     process = subprocess.Popen(
-        qemu_command(qemu, image, no_apic, memory),
+        qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -209,7 +220,7 @@ def run(
     return (0 if error is None else 1), text, error
 
 
-def validate(transcript: str) -> str | None:
+def validate(transcript: str, expect_fatal_recovery: bool = False) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
         return f"guest emitted failure marker {failed!r}"
@@ -223,6 +234,15 @@ def validate(transcript: str) -> str | None:
         return f"{TEST_MARKER} appeared before {BOOT_MARKER}"
     if exact_line_position(transcript, SHELL_PROMPT, after=test) < 0:
         return f"missing {SHELL_PROMPT} prompt after {TEST_MARKER}"
+    if expect_fatal_recovery:
+        positions = [exact_line_position(transcript, marker) for marker in (
+            FATAL_ARMED_MARKER, FATAL_MARKER, RECOVERY_MARKER,
+            RECOVERY_OK_MARKER, BOOT_MARKER,
+        )]
+        if any(position < 0 for position in positions):
+            return "missing fatal-injection/recovery marker"
+        if positions != sorted(positions):
+            return "fatal-injection/recovery markers are out of order"
     return None
 
 
@@ -242,6 +262,16 @@ def main() -> int:
         action="store_true",
         help="disable the local APIC and exercise the PIT scheduler fallback",
     )
+    parser.add_argument(
+        "--watchdog",
+        action="store_true",
+        help="attach the qualified QEMU IB700 hardware-watchdog profile",
+    )
+    parser.add_argument(
+        "--expect-fatal-recovery",
+        action="store_true",
+        help="require ordered Double-Fault, reset and recovered-record markers",
+    )
     args = parser.parse_args()
 
     if not args.image.is_file():
@@ -258,7 +288,7 @@ def main() -> int:
     try:
         status, transcript, process_error = run(
             args.qemu, args.image.resolve(), args.timeout, args.no_apic,
-            args.memory,
+            args.memory, args.watchdog, args.expect_fatal_recovery,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)
@@ -268,7 +298,7 @@ def main() -> int:
         args.log.parent.mkdir(parents=True, exist_ok=True)
         args.log.write_text(transcript, encoding="utf-8")
 
-    marker_error = validate(transcript)
+    marker_error = validate(transcript, args.expect_fatal_recovery)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")

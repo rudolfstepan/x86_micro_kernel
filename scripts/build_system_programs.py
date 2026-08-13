@@ -40,6 +40,7 @@ PROGRAMS = {
     "FAULTDE.PRG": ROOT / "examples/userspace/fault_de.c",
     "FAULTUD.PRG": ROOT / "examples/userspace/fault_ud.c",
     "FAULTPF.PRG": ROOT / "examples/userspace/fault_pf.c",
+    "FAULTSTK.PRG": ROOT / "examples/userspace/fault_stack.c",
     "GTEST.PRG": ROOT / "examples/userspace/guest_test.c",
     "SLEEPER.PRG": ROOT / "examples/userspace/sleep_child.c",
 }

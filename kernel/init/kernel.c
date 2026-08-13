@@ -22,6 +22,8 @@
 #include "arch/x86/include/tss.h"
 #include "kernel/init/banner.h"
 #include "include/kernel/panic.h"
+#include "include/kernel/fatal.h"
+#include "include/kernel/watchdog.h"
 #include "kernel/shell/command.h"
 #include "mm/kmalloc.h"
 
@@ -337,6 +339,10 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
                               KERNEL_STACK_ARENA_SIZE) != 0) {
         panic("Unable to reserve kernel stack guard arena");
     }
+    if (memory_reserve_region(FATAL_CRASH_RECORD_ADDRESS,
+                              FATAL_CRASH_RECORD_REGION_SIZE) != 0) {
+        panic("Unable to reserve persistent crash record");
+    }
 
     // Initialize kernel memory allocator
     if (initialize_memory_system() != 0) {
@@ -388,6 +394,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 
     // Stage 1: Early initialization
     early_init();
+    fatal_boot_recover_record();
     
     // Stage 2: Hardware initialization
     hardware_init();
@@ -397,6 +404,15 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     
     // Stage 4: System ready
     system_ready();
+    watchdog_init();
+    printf("Watchdog: %s\n", watchdog_available() ? "IB700 armed" : "external backend required");
+#ifdef REIST_FAULT_INJECTION
+    if (fatal_last_crash_record()->magic != FATAL_CRASH_RECORD_MAGIC) {
+        printf("REIST_TEST DOUBLE_FAULT_ARMED\n");
+        fatal_test_trigger_double_fault();
+    }
+    printf("REIST_TEST FATAL_RECOVERY_OK\n");
+#endif
     printf("BOOT_OK\n");
 
     /* A real framebuffer prefers the graphical desktop.  VGA boots and any

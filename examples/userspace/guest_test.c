@@ -274,7 +274,8 @@ int main(void) {
 
     if (wait_for_expected("FAULTDE.PRG", 128) != 0 ||
         wait_for_expected("FAULTUD.PRG", 134) != 0 ||
-        wait_for_expected("FAULTPF.PRG", 142) != 0) {
+        wait_for_expected("FAULTPF.PRG", 142) != 0 ||
+        wait_for_expected("FAULTSTK.PRG", 142) != 0) {
         x86os_puts("TEST_FAIL EXCEPTIONS\n");
         return 6;
     }
