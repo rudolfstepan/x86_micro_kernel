@@ -1,7 +1,13 @@
 #ifndef PANIC_H
 #define PANIC_H
 
+#include <stdbool.h>
 #include <stdint.h>
+#include "arch/x86/include/interrupt.h"
+#include "arch/x86/include/sys.h"
+
+bool scheduler_preempt_is_disabled(void);
+bool scheduler_can_sleep(void);
 
 /**
  * @file panic.h
@@ -19,6 +25,16 @@
  * 4. Halts the system
  */
 void __attribute__((noreturn)) panic(const char* message);
+
+/** Return the SHA-1 identifier embedded in the linked kernel image. */
+const char* kernel_build_id(void);
+
+/** Print the complete CPU state captured by an x86 exception stub. */
+void panic_dump_exception_context(const Registers* registers, uint32_t cr2);
+
+/** Kernel panic with the original CPU exception frame. */
+void __attribute__((noreturn)) panic_with_exception(
+    const char* message, const Registers* registers, uint32_t cr2);
 
 /**
  * Kernel assertion failure
@@ -40,6 +56,10 @@ void __attribute__((noreturn)) kassert_fail(const char* expr, const char* file,
             kassert_fail(#expr, __FILE__, __LINE__, __func__); \
         } \
     } while (0)
+
+#define KASSERT_IRQ_DISABLED() KASSERT(!irq_enabled())
+#define KASSERT_NOT_IRQ() KASSERT(!irq_in_context())
+#define KASSERT_CAN_SLEEP() KASSERT(scheduler_can_sleep())
 
 /**
  * Static (compile-time) assertion

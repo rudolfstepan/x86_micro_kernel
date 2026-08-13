@@ -4,6 +4,7 @@
 #include "drivers/net/ne2000.h"
 #include "drivers/net/netstack.h"
 #include "drivers/net/rtl8139.h"
+#include "include/kernel/panic.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
 
@@ -27,6 +28,7 @@ static netdev_queued_packet_t monitor_queue[NETDEV_MONITOR_QUEUE_SIZE];
 static volatile uint8_t monitor_queue_head;
 static volatile uint8_t monitor_queue_tail;
 static volatile uint32_t rx_producer_busy;
+static volatile uint32_t netdev_poll_busy;
 
 bool netdev_available(void) {
     return e1000_is_initialized() || rtl8139_is_initialized() ||
@@ -142,6 +144,13 @@ void netdev_deliver_rx(const uint8_t* packet, uint16_t length) {
 }
 
 void netdev_poll(void) {
+    KASSERT_NOT_IRQ();
+    KASSERT(irq_enabled());
+    /* Multiple foreground callers may be preempted between polling passes.
+     * Never spin behind the parked task; the pending device flag will make a
+     * later pass retry the work. */
+    if (__sync_lock_test_and_set(&netdev_poll_busy, 1u)) return;
+    if (e1000_is_initialized()) e1000_poll_rx();
     if (rtl8139_is_initialized()) rtl8139_poll_rx();
     if (ne2000_is_initialized()) ne2000_poll_rx();
     unsigned int processed = 0;
@@ -153,6 +162,7 @@ void netdev_poll(void) {
         rx_queue_tail =
             (uint8_t)((tail + 1u) % NETDEV_RX_QUEUE_SIZE);
     }
+    __sync_lock_release(&netdev_poll_busy);
 }
 
 int netdev_receive(uint8_t* buffer, size_t capacity) {

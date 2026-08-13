@@ -4,6 +4,7 @@
 #include "arch/x86/mm/paging.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
+#include "include/kernel/kernel_log.h"
 
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
@@ -59,9 +60,11 @@ static bool cpu_has_local_apic(void) {
 }
 
 void apic_timer_isr(void* r) {
+    irq_context_enter();
     // Acknowledge before switching away from this interrupt stack. Otherwise
     // the LAPIC blocks subsequent timer vectors until this context returns.
     apic[0xB0 / 4] = 0;
+    irq_context_exit();
     scheduler_interrupt_handler();
 }
 
@@ -148,7 +151,8 @@ static uint32_t calibrate_apic_timer(void) {
 void initialize_apic_timer(void) {
     scheduler_set_apic_timer_active(false);
     if (!cpu_has_local_apic()) {
-        printf("Local APIC is not supported; using PIT scheduler fallback.\n");
+        klog(KLOG_WARN, "apic",
+             "Local APIC unavailable; using PIT scheduler fallback");
         return;
     }
 
@@ -157,7 +161,8 @@ void initialize_apic_timer(void) {
     set_idt_entry(APIC_VECTOR_BASE, (uint32_t)(uintptr_t)apic_timer_interrupt);
     if (!enable_apic()) {
         irq_restore(flags);
-        printf("Unable to map local APIC; using PIT scheduler fallback.\n");
+        klog(KLOG_WARN, "apic",
+             "Unable to map local APIC; using PIT scheduler fallback");
         return;
     }
     irq_restore(flags);
@@ -168,6 +173,7 @@ void initialize_apic_timer(void) {
     scheduler_set_apic_timer_active(true);
     irq_restore(flags);
 
-    printf("APIC Timer calibrated to %u ms (%u ticks) on vector %u\n",
-           APIC_SCHEDULER_PERIOD_MS, ticks, APIC_VECTOR_BASE);
+    klog(KLOG_INFO, "apic",
+         "Timer calibrated to %u ms (%u ticks) on vector %u",
+         APIC_SCHEDULER_PERIOD_MS, ticks, APIC_VECTOR_BASE);
 }

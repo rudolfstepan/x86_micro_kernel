@@ -126,6 +126,13 @@ typedef struct vfs_mount {
 // VFS Public API
 // ===========================================================================
 
+/*
+ * Execution contract (uniprocessor): every public entry point requires
+ * foreground context with hardware interrupts enabled.  VFS serializes each
+ * synchronous operation with a nestable preemption guard; filesystem
+ * callbacks therefore must not sleep, yield, block, exit, or switch context.
+ */
+
 // Initialization
 void vfs_init(void);
 

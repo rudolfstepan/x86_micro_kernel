@@ -84,6 +84,12 @@ typedef void (*ExceptionHandler)(Registers*);
 // Declare an array to store handlers for each exception
 ExceptionHandler exception_handlers[32];
 
+static uint32_t exception_read_cr2(void) {
+    uint32_t cr2;
+    __asm__ __volatile__("mov %%cr2, %0" : "=r"(cr2));
+    return cr2;
+}
+
 // void print_registers(Registers* r) {
 //     // Print registers in a compact table to fit 80 characters width
 //     printf("Registers:\n");
@@ -134,7 +140,8 @@ void generic_exception_handler(Registers* r) {
     // CS & 0x3 gives Current Privilege Level (CPL)
     // 0 = Ring 0 (kernel), 3 = Ring 3 (user)
     uint16_t cpl = r->cs & 0x3;
-    
+    uint32_t cr2 = exception_read_cr2();
+
     if (cpl == 0) {
         // Kernel exception - unrecoverable
         char panic_msg[128];
@@ -143,7 +150,7 @@ void generic_exception_handler(Registers* r) {
                  exception_messages[r->irq_number], 
                  r->irq_number, 
                  r->eip);
-        panic(panic_msg);
+        panic_with_exception(panic_msg, r, cr2);
     } else {
         // User mode exception - terminate process
         printf("\n*** USER PROCESS EXCEPTION ***\n");
@@ -151,6 +158,7 @@ void generic_exception_handler(Registers* r) {
                exception_messages[r->irq_number], 
                r->irq_number);
         printf("EIP: 0x%08X, CS: 0x%04X (Ring %d)\n", r->eip, r->cs, cpl);
+        panic_dump_exception_context(r, cr2);
         printf("Process terminated.\n\n");
         
         task_exit_status(128 + (int)r->irq_number);
@@ -160,17 +168,19 @@ void generic_exception_handler(Registers* r) {
 // Divide by zero handler (specific override)
 void divide_by_zero_handler(Registers* r) {
     uint16_t cpl = r->cs & 0x3;
+    uint32_t cr2 = exception_read_cr2();
     
     if (cpl == 0) {
         // Kernel divide by zero - unrecoverable
         char panic_msg[128];
         snprintf(panic_msg, sizeof(panic_msg),
                  "Kernel divide by zero at EIP=0x%08X", r->eip);
-        panic(panic_msg);
+        panic_with_exception(panic_msg, r, cr2);
     } else {
         // User mode divide by zero
         printf("\n*** USER PROCESS ERROR ***\n");
         printf("Divide by zero exception at EIP=0x%08X\n", r->eip);
+        panic_dump_exception_context(r, cr2);
         printf("Process terminated.\n\n");
         
         task_exit_status(128);
@@ -182,7 +192,7 @@ void page_fault_handler(Registers* r) {
     uint32_t error_code = r->error_code;
     
     // Read the faulting address from CR2
-    asm volatile("mov %%cr2, %0" : "=r"(faulting_address));
+    faulting_address = exception_read_cr2();
     
     // The saved CS describes the faulting context; the current CS is Ring 0.
     uint16_t cpl = r->cs & 0x3;
@@ -193,7 +203,7 @@ void page_fault_handler(Registers* r) {
         snprintf(panic_msg, sizeof(panic_msg),
                  "Kernel page fault at address 0x%08X (error code: 0x%X)",
                  faulting_address, error_code);
-        panic(panic_msg);
+        panic_with_exception(panic_msg, r, faulting_address);
     } else {
         // User mode page fault
         printf("\n*** USER PROCESS PAGE FAULT ***\n");
@@ -206,6 +216,7 @@ void page_fault_handler(Registers* r) {
         if (error_code & 0x2) printf(", write"); else printf(", read");
         if (error_code & 0x4) printf(", user mode"); else printf(", kernel mode");
         printf(")\n");
+        panic_dump_exception_context(r, faulting_address);
         
         printf("Process terminated.\n\n");
         

@@ -2,6 +2,8 @@
 #include "arch/x86/include/sys.h"
 #include "lib/libc/stdio.h"
 #include "kernel/sched/scheduler.h"
+#include "arch/x86/include/interrupt.h"
+#include "include/kernel/panic.h"
 
 extern char _kernel_start;
 extern char _kernel_text_end;
@@ -31,6 +33,21 @@ extern void apic_spurious_interrupt();
 #define IRQ_ROUTINE_COUNT 16
 #define IRQ_HANDLERS_PER_LINE 4
 static void* irq_routines[IRQ_ROUTINE_COUNT][IRQ_HANDLERS_PER_LINE] = {{0}};
+static volatile uint32_t irq_context_depth;
+
+void irq_context_enter(void) {
+    KASSERT(irq_context_depth < UINT32_MAX);
+    ++irq_context_depth;
+}
+
+void irq_context_exit(void) {
+    KASSERT(irq_context_depth != 0);
+    --irq_context_depth;
+}
+
+int irq_in_context(void) {
+    return irq_context_depth != 0;
+}
 
 // Function to install a custom IRQ handler
 int register_interrupt_handler(int irq, void* r) {
@@ -40,13 +57,19 @@ int register_interrupt_handler(int irq, void* r) {
         handler >= (uintptr_t)&_kernel_text_end) {
         return -1;
     }
+    uint32_t flags = irq_save();
     for (int slot = 0; slot < IRQ_HANDLERS_PER_LINE; ++slot) {
-        if (irq_routines[irq][slot] == r) return 0;
+        if (irq_routines[irq][slot] == r) {
+            irq_restore(flags);
+            return 0;
+        }
         if (irq_routines[irq][slot] == NULL) {
             irq_routines[irq][slot] = r;
+            irq_restore(flags);
             return 0;
         }
     }
+    irq_restore(flags);
     return -1;
 }
 
@@ -55,9 +78,11 @@ void irq_uninstall_handler(int irq) {
     if (irq < 0 || irq >= IRQ_ROUTINE_COUNT) {
         return;
     }
+    uint32_t flags = irq_save();
     for (int slot = 0; slot < IRQ_HANDLERS_PER_LINE; ++slot) {
         irq_routines[irq][slot] = NULL;
     }
+    irq_restore(flags);
 }
 
 // Remaps IRQs 0-15 to interrupt vectors 0x20-0x2F
@@ -108,6 +133,7 @@ void irq_handler(Registers* regs) {
         return;
     }
 
+    irq_context_enter();
     uint32_t irq = regs->irq_number - 32;
     // Legacy PCI lines may be shared.  Every registered handler must inspect
     // its device status and return when the interrupt does not belong to it.
@@ -125,5 +151,6 @@ void irq_handler(Registers* regs) {
 
     /* A context switch must happen only after the PIC has acknowledged IRQ0;
      * otherwise the parked interrupt frame leaves the timer in-service. */
+    irq_context_exit();
     if (irq == 0) scheduler_pit_interrupt_handler();
 }

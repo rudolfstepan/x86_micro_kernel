@@ -14,6 +14,13 @@ SECTIONS
     *(.multiboot)
   } > kernel_ram
 
+  /* Runtime-visible content identifier emitted by GNU ld and LLD. */
+  .note.gnu.build-id ALIGN(4) : {
+    _kernel_build_id_note_start = .;
+    KEEP(*(.note.gnu.build-id))
+    _kernel_build_id_note_end = .;
+  } > kernel_ram
+
   /* Kernel code and read-only data */
   .text ALIGN(4096) : {
     _kernel_start = .;

@@ -18,6 +18,7 @@ bereits behobene Fehler enthalten.
 - [Nativer Bootdatenträger](development/BOOTABLE_DISK.md) – BIOS/MBR, Stage 2 und FAT32-Image
 - [Bootfähige Diskette](development/FLOPPY_BOOT.md) – 1,44-MB-CHS-Image für echte BIOS-PCs
 - [Externe Programme](development/USER_PROGRAM_TOOLCHAIN.md) – SDK, ABI und MYPR-Toolchain
+- [Synchronisationsvertrag](architecture/SYNCHRONIZATION_CONTRACT.md) – Ausführungskontexte, Lock-Reihenfolge und Diagnose
 
 ## Bedienung und Laufzeit
 

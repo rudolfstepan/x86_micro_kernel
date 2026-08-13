@@ -4,6 +4,7 @@
 #include "drivers/video/video.h"
 #include "arch/x86/include/sys.h"
 #include "arch/x86/include/interrupt.h"
+#include "include/kernel/panic.h"
 #include "include/lib/spinlock.h"
 #include "kernel/sched/scheduler.h"
 #include "lib/libc/stdio.h"
@@ -474,10 +475,9 @@ static void queue_extended_key(char key) {
  * Waits until a character is available in the queue or serial port
  */
 char getchar(void) {
-    /* A blocking read cannot make progress with IRQs masked.  Ring-3 enters
-     * through an interrupt gate, so explicitly permit keyboard IRQ delivery
-     * before sleeping instead of relying on entry-stub flag inference. */
-    irq_enable();
+    /* Blocking console input must preserve, not silently change, the caller's
+     * interrupt contract. */
+    KASSERT_CAN_SLEEP();
     while (1) {
         uint32_t flags = irq_save();
 

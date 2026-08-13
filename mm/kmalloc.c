@@ -5,6 +5,7 @@
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
 #include "include/kernel/panic.h"
+#include "include/kernel/kernel_log.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -620,6 +621,7 @@ static memory_block *find_allocated_block(void *ptr) {
 }
 
 void *k_malloc(size_t size) {
+    KASSERT_NOT_IRQ();
     if (!memory_initialized || size == 0 || size > SIZE_MAX - 15U) {
         return NULL;
     }
@@ -646,11 +648,13 @@ void *k_malloc(size_t size) {
     }
 
     spinlock_release_irq(&heap_lock, flags);
-    printf("Out of kernel heap memory (requested %u bytes).\n", (unsigned int)size);
+    klog(KLOG_ERROR, "heap", "Allocation failed (%u bytes)",
+         (unsigned int)size);
     return NULL;
 }
 
 void k_free(void *ptr) {
+    KASSERT_NOT_IRQ();
     if (ptr == NULL) {
         return;
     }
@@ -689,6 +693,7 @@ void k_free(void *ptr) {
 }
 
 void *k_realloc(void *ptr, size_t new_size) {
+    KASSERT_NOT_IRQ();
     if (ptr == NULL) {
         return k_malloc(new_size);
     }

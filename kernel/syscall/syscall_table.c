@@ -638,9 +638,7 @@ void syscall_handler(Registers* regs) {
             scheduler_preempt_enable();
             break;
         case SYS_KILL:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_kill((int)arg1);
-            scheduler_preempt_enable();
             break;
         case SYS_GETCWD:
             scheduler_preempt_disable();

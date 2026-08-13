@@ -2,6 +2,8 @@
 #include "ata.h"
 #include "arch/x86/include/sys.h"
 #include "drivers/char/io.h"
+#include "include/kernel/panic.h"
+#include "kernel/sched/scheduler.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
@@ -49,6 +51,23 @@ static bool fdc_drive_ready[4] = {false, false, false, false};
 static bool fdd_motor_running[MAX_FDD_DRIVES];
 static int8_t fdd_cached_track[MAX_FDD_DRIVES] = {-1, -1};
 static uint32_t fdd_last_activity[MAX_FDD_DRIVES];
+
+/* The FDC command FIFO, DMA channel and completion flag form one synchronous
+ * transaction domain.  Keep IRQ6 enabled for completion and prevent another
+ * task from interleaving controller state.  The scheduler counter is nestable
+ * because public convenience operations call other public FDC operations. */
+static void fdd_transaction_begin(void) {
+    KASSERT_NOT_IRQ();
+    KASSERT(irq_enabled());
+    scheduler_preempt_disable();
+}
+
+static void fdd_transaction_end(void) {
+    KASSERT_NOT_IRQ();
+    KASSERT(irq_enabled());
+    KASSERT(scheduler_preempt_is_disabled());
+    scheduler_preempt_enable();
+}
 
 #define FDD_MOTOR_SPINUP_MS 500U
 #define FDD_MOTOR_IDLE_MS 2000U
@@ -117,13 +136,20 @@ void mask_irq6() {
 // ============================================================
 // Init IRQ handler + unmask (✅ FIXED)
 // ============================================================
-bool fdc_initialize(void) {
+static bool fdc_initialize_impl(void) {
     if (register_interrupt_handler(6, (void*)fdd_irq_handler) != 0) {
         printf("Failed to register FDC IRQ6 handler.\n");
         return false;
     }
     unmask_irq6(); // ✅ was missing previously
     return true;
+}
+
+bool fdc_initialize(void) {
+    fdd_transaction_begin();
+    bool result = fdc_initialize_impl();
+    fdd_transaction_end();
+    return result;
 }
 
 uint8_t fdc_get_status() { return inb(FDD_MSR); }
@@ -135,7 +161,7 @@ void print_fdc_status() {
 // ============================================================
 // FIX #2: Correct DOR motor control bits
 // ============================================================
-void fdc_motor_on(int drive) {
+static void fdc_motor_on_impl(int drive) {
     if (drive < 0 || drive >= MAX_FDD_DRIVES) return;
     // bits 4..7 select motors A..D; bits 0..1 select the active drive.
     uint8_t dor = (uint8_t)(0x0C | (drive & 0x03) | (0x10u << drive));
@@ -143,7 +169,14 @@ void fdc_motor_on(int drive) {
     fdd_motor_running[drive] = true;
     fdd_last_activity[drive] = pit_ticks();
 }
-void fdc_motor_off(int drive) {
+
+void fdc_motor_on(int drive) {
+    fdd_transaction_begin();
+    fdc_motor_on_impl(drive);
+    fdd_transaction_end();
+}
+
+static void fdc_motor_off_impl(int drive) {
     if (drive < 0 || drive >= MAX_FDD_DRIVES) return;
     uint8_t dor = inb(FDD_DOR);
     dor &= (uint8_t)~(0x10u << drive);
@@ -151,6 +184,12 @@ void fdc_motor_off(int drive) {
     outb(FDD_DOR, dor);
     fdd_motor_running[drive] = false;
     fdd_cached_track[drive] = -1;
+}
+
+void fdc_motor_off(int drive) {
+    fdd_transaction_begin();
+    fdc_motor_off_impl(drive);
+    fdd_transaction_end();
 }
 
 static void fdd_prepare_drive(uint8_t drive) {
@@ -161,7 +200,7 @@ static void fdd_prepare_drive(uint8_t drive) {
     fdd_last_activity[drive] = pit_ticks();
 }
 
-void fdd_service(void) {
+static void fdd_service_impl(void) {
     uint32_t now = pit_ticks();
     for (uint8_t drive = 0; drive < MAX_FDD_DRIVES; ++drive) {
         if (fdd_motor_running[drive] &&
@@ -169,6 +208,12 @@ void fdd_service(void) {
             fdc_motor_off(drive);
         }
     }
+}
+
+void fdd_service(void) {
+    fdd_transaction_begin();
+    fdd_service_impl();
+    fdd_transaction_end();
 }
 
 // ============================================================
@@ -254,7 +299,7 @@ static bool dma_prepare_floppy(uint8_t* buffer, uint16_t length, bool read) {
 // ============================================================
 // Controller init (✅ add CCR + interrupt clear loop fix)
 // ============================================================
-bool fdc_init_controller() {
+static bool fdc_init_controller_impl(void) {
     if (fdc_controller_initialized) return true;
     printf("Initializing FDC controller...\n");
 
@@ -290,6 +335,13 @@ bool fdc_init_controller() {
     return true;
 }
 
+bool fdc_init_controller(void) {
+    fdd_transaction_begin();
+    bool result = fdc_init_controller_impl();
+    fdd_transaction_end();
+    return result;
+}
+
 // ============================================================
 // Everything else unchanged below this line
 // ============================================================
@@ -322,8 +374,9 @@ static bool fdc_validate_chs(uint8_t drive, uint8_t head, uint8_t track,
            track < 80 && sector >= 1 && sector <= 18;
 }
 
-bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track,
-                      uint8_t sector, uint8_t count, void* buffer) {
+static bool fdc_read_sectors_impl(uint8_t drive, uint8_t head, uint8_t track,
+                                  uint8_t sector, uint8_t count,
+                                  void* buffer) {
     if (!fdc_validate_chs(drive, head, track, sector, buffer) || count == 0 ||
         count > 18 || (uint16_t)sector + count - 1U > 18U) return false;
 
@@ -386,13 +439,26 @@ bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track,
     return true;
 }
 
-bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track,
-                     uint8_t sector, void* buffer) {
-    return fdc_read_sectors(drive, head, track, sector, 1, buffer);
+bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track,
+                      uint8_t sector, uint8_t count, void* buffer) {
+    fdd_transaction_begin();
+    bool result = fdc_read_sectors_impl(drive, head, track, sector, count,
+                                        buffer);
+    fdd_transaction_end();
+    return result;
 }
 
-bool fdc_write_sectors(uint8_t drive, uint8_t head, uint8_t track,
-                       uint8_t sector, uint8_t count, const void* buffer) {
+bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track,
+                     uint8_t sector, void* buffer) {
+    fdd_transaction_begin();
+    bool result = fdc_read_sectors(drive, head, track, sector, 1, buffer);
+    fdd_transaction_end();
+    return result;
+}
+
+static bool fdc_write_sectors_impl(uint8_t drive, uint8_t head, uint8_t track,
+                                   uint8_t sector, uint8_t count,
+                                   const void* buffer) {
     if (!fdc_validate_chs(drive, head, track, sector, buffer) || count == 0 ||
         count > 18 || (uint16_t)sector + count - 1U > 18U) return false;
 
@@ -436,12 +502,24 @@ bool fdc_write_sectors(uint8_t drive, uint8_t head, uint8_t track,
     return true;
 }
 
-bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track,
-                      uint8_t sector, const void* buffer) {
-    return fdc_write_sectors(drive, head, track, sector, 1, buffer);
+bool fdc_write_sectors(uint8_t drive, uint8_t head, uint8_t track,
+                       uint8_t sector, uint8_t count, const void* buffer) {
+    fdd_transaction_begin();
+    bool result = fdc_write_sectors_impl(drive, head, track, sector, count,
+                                         buffer);
+    fdd_transaction_end();
+    return result;
 }
 
-bool fdc_calibrate_drive(uint8_t drive) {
+bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track,
+                      uint8_t sector, const void* buffer) {
+    fdd_transaction_begin();
+    bool result = fdc_write_sectors(drive, head, track, sector, 1, buffer);
+    fdd_transaction_end();
+    return result;
+}
+
+static bool fdc_calibrate_drive_impl(uint8_t drive) {
     const int max_retries = 3;
 
     for (int attempt = 1; attempt <= max_retries; attempt++) {
@@ -499,10 +577,17 @@ bool fdc_calibrate_drive(uint8_t drive) {
     return false;
 }
 
+bool fdc_calibrate_drive(uint8_t drive) {
+    fdd_transaction_begin();
+    bool result = fdc_calibrate_drive_impl(drive);
+    fdd_transaction_end();
+    return result;
+}
+
 // =============================================================
 // Fixed FDD drive detection (keeps same signature & behavior)
 // =============================================================
-void fdd_detect_drives(void) {
+static void fdd_detect_drives_impl(void) {
     uint8_t cmos_drives = fdd_cmos_configuration();
     if (cmos_drives == 0) {
         printf("No floppy drives configured; skipping FDC.\n");
@@ -572,6 +657,12 @@ void fdd_detect_drives(void) {
         printf("No floppy drives detected.\n");
     else
         printf("%d floppy drive(s) initialized.\n", fdd_count);
+}
+
+void fdd_detect_drives(void) {
+    fdd_transaction_begin();
+    fdd_detect_drives_impl();
+    fdd_transaction_end();
 }
 
 // =============================================================

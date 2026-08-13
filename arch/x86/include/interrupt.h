@@ -10,6 +10,12 @@
 
 #include <stdint.h>
 
+/* Nesting depth of hardware IRQ handlers on the current uniprocessor.  The
+ * counter is maintained by the C dispatch boundaries, not by CLI/STI. */
+void irq_context_enter(void);
+void irq_context_exit(void);
+int irq_in_context(void);
+
 /**
  * Disable interrupts (CLI)
  * Sets IF=0 in EFLAGS, preventing hardware interrupts

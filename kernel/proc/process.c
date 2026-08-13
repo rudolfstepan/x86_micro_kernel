@@ -12,6 +12,7 @@
 #include "drivers/bus/drives.h"
 #include "kernel/init/prg.h"
 #include "kernel/sched/scheduler.h"
+#include "include/kernel/panic.h"
 
 #define USER_PROGRAM_ADDRESS PROGRAM_V1_BASE
 #define USER_STACK_TOP (USER_TOP - PAGE_SIZE)
@@ -810,6 +811,8 @@ int process_get_info(uint32_t index, process_info_t* info) {
 
 int process_terminate(int pid) {
     if (pid <= 0) return -1;
+    KASSERT_NOT_IRQ();
+    scheduler_preempt_disable();
     uint32_t flags = irq_save();
     for (int i = 0; i < MAX_PROGRAMS; i++) {
         if (process_list[i].is_running && process_list[i].pid == pid) {
@@ -819,14 +822,22 @@ int process_terminate(int pid) {
                 tasks[task_id].process_generation !=
                     process_list[i].generation) {
                 irq_restore(flags);
+                scheduler_preempt_enable();
                 return -1;
             }
-            /* Keep PID -> slot -> owner validation atomic with termination. */
-            scheduler_terminate_task(task_id);
             irq_restore(flags);
+            if (task_id == current_task) {
+                scheduler_preempt_enable();
+                task_exit_status(143);
+            }
+            /* The preemption guard preserves PID -> slot -> generation while
+             * the scheduler closes the target's files with IRQs enabled. */
+            scheduler_terminate_task(task_id);
+            scheduler_preempt_enable();
             return 0;
         }
     }
     irq_restore(flags);
+    scheduler_preempt_enable();
     return -1;
 }

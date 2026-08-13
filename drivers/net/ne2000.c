@@ -73,6 +73,7 @@ uint8_t mac_address[MAC_ADDRESS_LENGTH] = {0};
 static bool ne2000_initialized = false;
 static volatile uint32_t ne2000_tx_busy;
 static volatile bool ne2000_rx_pending;
+static volatile uint8_t ne2000_rx_events;
 static uint8_t ne2000_irq = PCI_IRQ_INVALID;
 
 // prototypes
@@ -176,72 +177,23 @@ static bool ne2000_ring_has_packet(void) {
 }
 
 void ne2000_irq_handler() {
-    uint8_t isr = ne2000_read(NE2000_ISR);
-    
-    // Silently ignore spurious interrupts
-    if (isr == 0) {
-        return;
-    }
-
     /* TX and RX share the 8390 remote-DMA registers.  A receive interrupt
-     * must neither start RX DMA nor acknowledge RDC/PTX while the foreground
-     * transmit path is polling those bits.  TX masks the device IRQ and
-     * restores it after releasing this lock, which retriggers any pending RX
-     * status. */
+     * must not touch them while foreground TX owns the device.  TX restores
+     * IMR afterwards, which retriggers the unacknowledged receive status. */
+    if (!ne2000_initialized || io_base == 0) return;
     if (__atomic_load_n(&ne2000_tx_busy, __ATOMIC_ACQUIRE) != 0) {
+        __atomic_store_n(&ne2000_rx_pending, true, __ATOMIC_RELEASE);
         return;
     }
-    
-    printf("NE2000 IRQ - ISR: 0x%02X\n", isr);
 
-    // Handle buffer overrun first (most critical)
-    if (isr & 0x10) {  // Overwrite warning
-        printf("[WARNING] RX buffer overrun - resetting receive buffer\n");
-        // Stop NIC
-        ne2000_write(NE2000_CR, 0x21);  // Stop
-        // Clear Remote DMA
-        ne2000_write(NE2000_RBCR0, 0);
-        ne2000_write(NE2000_RBCR1, 0);
-        // Reset receive buffer pointers
-        ne2000_write(NE2000_BNRY, RX_START_PAGE);
-        ne2000_write(NE2000_CR, 0x62);  // Page 1
-        ne2000_write(NE2000_CURR, RX_START_PAGE + 1);
-        ne2000_write(NE2000_CR, 0x22);  // Page 0, Start
-        // Clear overwrite flag
-        ne2000_write(NE2000_ISR, 0x10);
-    }
+    uint8_t status = inb((uint16_t)(io_base + NE2000_ISR));
+    if (status == 0 || status == 0xFFu) return;
+    uint8_t events = status & NE2000_RX_INTERRUPT_MASK;
+    if (events == 0) return;
 
-    // Process up to 5 packets per interrupt to avoid getting stuck
-    int packets_processed = 0;
-    const int max_packets_per_irq = 5;
-    bool receive_failed = false;
-    
-    while ((isr & 0x01) && packets_processed < max_packets_per_irq) {  // Packet received
-        uint8_t packet[NE2000_MAX_FRAME_SIZE];
-        int length = ne2000_receive_hardware_packet(packet, sizeof(packet));
-        if (length > 0) {
-            netdev_deliver_rx(packet, (uint16_t)length);
-            packets_processed++;
-        } else if (length < 0) {
-            // Error occurred, stop processing
-            receive_failed = true;
-            break;
-        } else {
-            // No more packets
-            break;
-        }
-        
-        // Check if more packets arrived
-        isr = ne2000_read(NE2000_ISR);
-    }
-
-    /* Acknowledge the edge, then inspect the ring.  Frames arriving before
-     * the acknowledge are discovered by the ring check; frames arriving
-     * afterwards generate a fresh IRQ edge. */
-    ne2000_write(NE2000_ISR, 0xFFu);
-    ne2000_rx_pending = receive_failed ||
-        packets_processed >= max_packets_per_irq ||
-        ne2000_ring_has_packet();
+    __atomic_fetch_or(&ne2000_rx_events, events, __ATOMIC_RELEASE);
+    __atomic_store_n(&ne2000_rx_pending, true, __ATOMIC_RELEASE);
+    outb((uint16_t)(io_base + NE2000_ISR), events);
 }
 
 // Function to initialize the NE2000 card
@@ -360,6 +312,8 @@ void ne2000_init() {
         return;
     }
 
+    ne2000_rx_events = 0;
+    ne2000_rx_pending = false;
     ne2000_initialized = true;
     /* Any receive status accumulated while masked now safely triggers the
      * installed handler. */
@@ -877,13 +831,31 @@ int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size) {
     return netdev_receive_frame(buffer, buffer_size);
 }
 
+static void ne2000_recover_rx_overrun(void) {
+    printf("[WARNING] NE2000 RX buffer overrun; resetting receive ring\n");
+    ne2000_write(NE2000_CR, 0x21);  /* Stop, Page 0, NoDMA */
+    ne2000_write(NE2000_RBCR0, 0);
+    ne2000_write(NE2000_RBCR1, 0);
+    ne2000_write(NE2000_BNRY, RX_START_PAGE);
+    ne2000_write(NE2000_CR, 0x62);  /* Start, Page 1, NoDMA */
+    ne2000_write(NE2000_CURR, RX_START_PAGE + 1);
+    ne2000_write(NE2000_CR, 0x22);  /* Start, Page 0, NoDMA */
+}
+
 void ne2000_poll_rx(void) {
-    if (!ne2000_initialized || !ne2000_rx_pending) return;
+    if (!ne2000_initialized ||
+        !__atomic_load_n(&ne2000_rx_pending, __ATOMIC_ACQUIRE)) return;
     if (__sync_lock_test_and_set(&ne2000_tx_busy, 1u)) return;
 
     uint8_t saved_imr = ne2000_read(NE2000_IMR);
     ne2000_write(NE2000_IMR, 0);
-    ne2000_rx_pending = false;
+    __atomic_store_n(&ne2000_rx_pending, false, __ATOMIC_RELEASE);
+
+    uint8_t events = __atomic_exchange_n(&ne2000_rx_events, 0,
+                                          __ATOMIC_ACQ_REL);
+    events |= ne2000_read(NE2000_ISR) & NE2000_RX_INTERRUPT_MASK;
+    if (events != 0) ne2000_write(NE2000_ISR, events);
+    if (events & 0x10u) ne2000_recover_rx_overrun();
 
     const unsigned int budget = RX_STOP_PAGE - RX_START_PAGE;
     unsigned int processed = 0;

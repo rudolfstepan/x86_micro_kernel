@@ -2,6 +2,7 @@
 #define STDIO_H
 
 #include <stddef.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include "definitions.h"
 
@@ -45,6 +46,7 @@ int chdir(const char* path);                                   // Change the cur
 // POSIX Console Functions
 int isprint(int c);
 int printf(const char* format, ...);                           // Print formatted string to standard output
+int vprintf(const char* format, va_list args);
 int snprintf(char* buffer, size_t size, const char* format, ...); // Print formatted string to a buffer safely
 
 void hex_dump(const void* data, size_t size);

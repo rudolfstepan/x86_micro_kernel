@@ -169,11 +169,12 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         self.assertIn("result == 0x03U", getchar_case)
         self.assertIn("task_exit_status(130);", getchar_case)
 
-    def test_blocking_keyboard_read_enables_interrupt_delivery(self):
+    def test_blocking_keyboard_read_requires_sleepable_context(self):
         source = (ROOT / "drivers/char/kb.c").read_text(encoding="utf-8")
         getchar = source[source.index("char getchar(void)") :]
         getchar = getchar[:getchar.index("\n}")]
-        self.assertIn("irq_enable();", getchar)
+        self.assertIn("KASSERT_CAN_SLEEP();", getchar)
+        self.assertNotIn("irq_enable();", getchar)
         self.assertIn("wait_queue_block_locked", getchar)
         self.assertIn('"hlt"', getchar)
         self.assertIn("wait_queue_wake_all_locked", source)

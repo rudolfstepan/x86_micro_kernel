@@ -2,6 +2,10 @@
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
+#ifndef KERNEL_HOST_TEST
+#include "include/kernel/panic.h"
+#include "kernel/sched/scheduler.h"
+#endif
 
 // ===========================================================================
 // VFS Internal State
@@ -20,6 +24,32 @@ static fs_registration_t registered_filesystems[MAX_FILESYSTEMS];
 static vfs_mount_t* mount_list = NULL;
 static int fs_count = 0;
 static int mount_count = 0;
+
+/*
+ * VFS state is serialized on the current uniprocessor by suppressing task
+ * preemption while leaving hardware interrupts enabled.  The scheduler guard
+ * is counter-based, so a filesystem callback may enter another guarded
+ * foreground API without prematurely re-enabling preemption.  Blocking and
+ * context-switching APIs reject this state through KASSERT_CAN_SLEEP().
+ *
+ * Host regressions are single-threaded and do not link the kernel scheduler.
+ */
+static void vfs_operation_begin(void) {
+#ifndef KERNEL_HOST_TEST
+    KASSERT_NOT_IRQ();
+    KASSERT(irq_enabled());
+    scheduler_preempt_disable();
+#endif
+}
+
+static void vfs_operation_end(void) {
+#ifndef KERNEL_HOST_TEST
+    KASSERT_NOT_IRQ();
+    KASSERT(irq_enabled());
+    KASSERT(scheduler_preempt_is_disabled());
+    scheduler_preempt_enable();
+#endif
+}
 
 static bool vfs_valid_absolute_path(const char* path) {
     if (!path || path[0] != '/') return false;
@@ -41,7 +71,7 @@ static bool vfs_valid_absolute_path(const char* path) {
 // VFS Initialization
 // ===========================================================================
 
-void vfs_init(void) {
+static void vfs_init_locked(void) {
     printf("VFS: Initializing Virtual File System...\n");
 
     if (mount_list != NULL) {
@@ -65,7 +95,8 @@ void vfs_init(void) {
 // Filesystem Registration
 // ===========================================================================
 
-int vfs_register_filesystem(const char* name, vfs_filesystem_ops_t* ops) {
+static int vfs_register_filesystem_locked(const char* name,
+                                          vfs_filesystem_ops_t* ops) {
     if (fs_count >= MAX_FILESYSTEMS) {
         printf("VFS: Error - maximum filesystems registered.\n");
         return VFS_ERR_NO_MEMORY;
@@ -105,7 +136,8 @@ int vfs_register_filesystem(const char* name, vfs_filesystem_ops_t* ops) {
 // Mount/Unmount Operations
 // ===========================================================================
 
-int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path) {
+static int vfs_mount_locked(drive_t* drive, const char* fs_type,
+                            const char* mount_path) {
     if (!drive || !fs_type || !mount_path) {
         return VFS_ERR_INVALID;
     }
@@ -183,7 +215,7 @@ int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path) {
     return VFS_OK;
 }
 
-int vfs_unmount(const char* mount_path) {
+static int vfs_unmount_locked(const char* mount_path) {
     if (!mount_path) {
         return VFS_ERR_INVALID;
     }
@@ -224,7 +256,7 @@ int vfs_unmount(const char* mount_path) {
 // Path Resolution
 // ===========================================================================
 
-vfs_filesystem_t* vfs_get_filesystem(const char* path) {
+static vfs_filesystem_t* vfs_get_filesystem_locked(const char* path) {
     if (!vfs_valid_absolute_path(path)) {
         return NULL;
     }
@@ -254,7 +286,8 @@ vfs_filesystem_t* vfs_get_filesystem(const char* path) {
     return best_match ? best_match->fs : NULL;
 }
 
-const char* vfs_get_relative_path(const char* absolute_path, vfs_filesystem_t* fs) {
+static const char* vfs_get_relative_path_locked(const char* absolute_path,
+                                                vfs_filesystem_t* fs) {
     if (!absolute_path || !fs) {
         return NULL;
     }
@@ -279,17 +312,17 @@ const char* vfs_get_relative_path(const char* absolute_path, vfs_filesystem_t* f
 // File Operations
 // ===========================================================================
 
-int vfs_open(const char* path, vfs_node_t** node) {
+static int vfs_open_locked(const char* path, vfs_node_t** node) {
     if (!path || !node) {
         return VFS_ERR_INVALID;
     }
     
-    vfs_filesystem_t* fs = vfs_get_filesystem(path);
+    vfs_filesystem_t* fs = vfs_get_filesystem_locked(path);
     if (!fs) {
         return VFS_ERR_NOT_FOUND;
     }
     
-    const char* relative_path = vfs_get_relative_path(path, fs);
+    const char* relative_path = vfs_get_relative_path_locked(path, fs);
     if (!fs->ops->open) {
         return VFS_ERR_UNSUPPORTED;
     }
@@ -316,7 +349,7 @@ int vfs_open(const char* path, vfs_node_t** node) {
     return VFS_OK;
 }
 
-int vfs_close(vfs_node_t* node) {
+static int vfs_close_locked(vfs_node_t* node) {
     if (!node || !node->fs) {
         return VFS_ERR_INVALID;
     }
@@ -333,7 +366,8 @@ int vfs_close(vfs_node_t* node) {
     return result;
 }
 
-int vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) {
+static int vfs_read_locked(vfs_node_t* node, uint32_t offset, uint32_t size,
+                           uint8_t* buffer) {
     if (!node || !node->fs || !buffer) {
         return VFS_ERR_INVALID;
     }
@@ -345,7 +379,8 @@ int vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer) 
     return node->fs->ops->read(node, offset, size, buffer);
 }
 
-int vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer) {
+static int vfs_write_locked(vfs_node_t* node, uint32_t offset, uint32_t size,
+                            const uint8_t* buffer) {
     if (!node || !node->fs || !buffer) {
         return VFS_ERR_INVALID;
     }
@@ -361,19 +396,20 @@ int vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* b
 // Directory Operations
 // ===========================================================================
 
-int vfs_readdir(const char* path, uint32_t index, vfs_dir_entry_t* entry) {
+static int vfs_readdir_locked(const char* path, uint32_t index,
+                              vfs_dir_entry_t* entry) {
     if (!path || !entry) {
         return VFS_ERR_INVALID;
     }
     
-    vfs_filesystem_t* fs = vfs_get_filesystem(path);
+    vfs_filesystem_t* fs = vfs_get_filesystem_locked(path);
     if (!fs) {
         return VFS_ERR_NOT_FOUND;
     }
     
     // Open directory node
     vfs_node_t* dir_node;
-    const char* relative_path = vfs_get_relative_path(path, fs);
+    const char* relative_path = vfs_get_relative_path_locked(path, fs);
     
     if (!fs->ops->open) {
         return VFS_ERR_UNSUPPORTED;
@@ -407,14 +443,16 @@ int vfs_readdir(const char* path, uint32_t index, vfs_dir_entry_t* entry) {
     return result;
 }
 
-int vfs_readdir_batch(const char* path, uint32_t index,
-                      vfs_dir_entry_t* entries, uint32_t capacity) {
+static int vfs_readdir_batch_locked(const char* path, uint32_t index,
+                                    vfs_dir_entry_t* entries,
+                                    uint32_t capacity) {
     if (!path || !entries || capacity == 0) return VFS_ERR_INVALID;
-    vfs_filesystem_t* fs = vfs_get_filesystem(path);
+    vfs_filesystem_t* fs = vfs_get_filesystem_locked(path);
     if (!fs || !fs->ops->open) return VFS_ERR_NOT_FOUND;
 
     vfs_node_t* node = NULL;
-    int result = fs->ops->open(fs, vfs_get_relative_path(path, fs), &node);
+    int result = fs->ops->open(
+        fs, vfs_get_relative_path_locked(path, fs), &node);
     if (result != VFS_OK) return result;
     if (!node || node->type != VFS_DIRECTORY) {
         result = VFS_ERR_NOT_DIR;
@@ -439,17 +477,17 @@ close_node:
     return result;
 }
 
-int vfs_mkdir(const char* path) {
+static int vfs_mkdir_locked(const char* path) {
     if (!path) {
         return VFS_ERR_INVALID;
     }
     
-    vfs_filesystem_t* fs = vfs_get_filesystem(path);
+    vfs_filesystem_t* fs = vfs_get_filesystem_locked(path);
     if (!fs) {
         return VFS_ERR_NOT_FOUND;
     }
     
-    const char* relative_path = vfs_get_relative_path(path, fs);
+    const char* relative_path = vfs_get_relative_path_locked(path, fs);
     if (!fs->ops->mkdir) {
         return VFS_ERR_UNSUPPORTED;
     }
@@ -457,17 +495,17 @@ int vfs_mkdir(const char* path) {
     return fs->ops->mkdir(fs, relative_path);
 }
 
-int vfs_rmdir(const char* path) {
+static int vfs_rmdir_locked(const char* path) {
     if (!path) {
         return VFS_ERR_INVALID;
     }
     
-    vfs_filesystem_t* fs = vfs_get_filesystem(path);
+    vfs_filesystem_t* fs = vfs_get_filesystem_locked(path);
     if (!fs) {
         return VFS_ERR_NOT_FOUND;
     }
     
-    const char* relative_path = vfs_get_relative_path(path, fs);
+    const char* relative_path = vfs_get_relative_path_locked(path, fs);
     if (!fs->ops->rmdir) {
         return VFS_ERR_UNSUPPORTED;
     }
@@ -475,9 +513,9 @@ int vfs_rmdir(const char* path) {
     return fs->ops->rmdir(fs, relative_path);
 }
 
-int vfs_space(const char* path, vfs_space_info_t* info) {
+static int vfs_space_locked(const char* path, vfs_space_info_t* info) {
     if (!path || !info) return VFS_ERR_INVALID;
-    vfs_filesystem_t* fs = vfs_get_filesystem(path);
+    vfs_filesystem_t* fs = vfs_get_filesystem_locked(path);
     if (!fs) return VFS_ERR_NOT_FOUND;
     if (!fs->ops->space) return VFS_ERR_UNSUPPORTED;
     return fs->ops->space(fs, info);
@@ -487,17 +525,17 @@ int vfs_space(const char* path, vfs_space_info_t* info) {
 // File Management
 // ===========================================================================
 
-int vfs_create(const char* path) {
+static int vfs_create_locked(const char* path) {
     if (!path) {
         return VFS_ERR_INVALID;
     }
     
-    vfs_filesystem_t* fs = vfs_get_filesystem(path);
+    vfs_filesystem_t* fs = vfs_get_filesystem_locked(path);
     if (!fs) {
         return VFS_ERR_NOT_FOUND;
     }
     
-    const char* relative_path = vfs_get_relative_path(path, fs);
+    const char* relative_path = vfs_get_relative_path_locked(path, fs);
     if (!fs->ops->create) {
         return VFS_ERR_UNSUPPORTED;
     }
@@ -505,17 +543,17 @@ int vfs_create(const char* path) {
     return fs->ops->create(fs, relative_path);
 }
 
-int vfs_delete(const char* path) {
+static int vfs_delete_locked(const char* path) {
     if (!path) {
         return VFS_ERR_INVALID;
     }
     
-    vfs_filesystem_t* fs = vfs_get_filesystem(path);
+    vfs_filesystem_t* fs = vfs_get_filesystem_locked(path);
     if (!fs) {
         return VFS_ERR_NOT_FOUND;
     }
     
-    const char* relative_path = vfs_get_relative_path(path, fs);
+    const char* relative_path = vfs_get_relative_path_locked(path, fs);
     if (!fs->ops->delete) {
         return VFS_ERR_UNSUPPORTED;
     }
@@ -523,20 +561,153 @@ int vfs_delete(const char* path) {
     return fs->ops->delete(fs, relative_path);
 }
 
-int vfs_stat(const char* path, vfs_dir_entry_t* stat) {
+static int vfs_stat_locked(const char* path, vfs_dir_entry_t* stat) {
     if (!path || !stat) {
         return VFS_ERR_INVALID;
     }
     
-    vfs_filesystem_t* fs = vfs_get_filesystem(path);
+    vfs_filesystem_t* fs = vfs_get_filesystem_locked(path);
     if (!fs) {
         return VFS_ERR_NOT_FOUND;
     }
     
-    const char* relative_path = vfs_get_relative_path(path, fs);
+    const char* relative_path = vfs_get_relative_path_locked(path, fs);
     if (!fs->ops->stat) {
         return VFS_ERR_UNSUPPORTED;
     }
     
     return fs->ops->stat(fs, relative_path, stat);
+}
+
+// ===========================================================================
+// Public serialized API
+// ===========================================================================
+
+void vfs_init(void) {
+    vfs_operation_begin();
+    vfs_init_locked();
+    vfs_operation_end();
+}
+
+int vfs_register_filesystem(const char* name, vfs_filesystem_ops_t* ops) {
+    vfs_operation_begin();
+    int result = vfs_register_filesystem_locked(name, ops);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path) {
+    vfs_operation_begin();
+    int result = vfs_mount_locked(drive, fs_type, mount_path);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_unmount(const char* mount_path) {
+    vfs_operation_begin();
+    int result = vfs_unmount_locked(mount_path);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_open(const char* path, vfs_node_t** node) {
+    vfs_operation_begin();
+    int result = vfs_open_locked(path, node);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_close(vfs_node_t* node) {
+    vfs_operation_begin();
+    int result = vfs_close_locked(node);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size,
+             uint8_t* buffer) {
+    vfs_operation_begin();
+    int result = vfs_read_locked(node, offset, size, buffer);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
+              const uint8_t* buffer) {
+    vfs_operation_begin();
+    int result = vfs_write_locked(node, offset, size, buffer);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_readdir(const char* path, uint32_t index, vfs_dir_entry_t* entry) {
+    vfs_operation_begin();
+    int result = vfs_readdir_locked(path, index, entry);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_readdir_batch(const char* path, uint32_t index,
+                      vfs_dir_entry_t* entries, uint32_t capacity) {
+    vfs_operation_begin();
+    int result = vfs_readdir_batch_locked(path, index, entries, capacity);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_mkdir(const char* path) {
+    vfs_operation_begin();
+    int result = vfs_mkdir_locked(path);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_rmdir(const char* path) {
+    vfs_operation_begin();
+    int result = vfs_rmdir_locked(path);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_create(const char* path) {
+    vfs_operation_begin();
+    int result = vfs_create_locked(path);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_delete(const char* path) {
+    vfs_operation_begin();
+    int result = vfs_delete_locked(path);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_stat(const char* path, vfs_dir_entry_t* stat) {
+    vfs_operation_begin();
+    int result = vfs_stat_locked(path, stat);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_space(const char* path, vfs_space_info_t* info) {
+    vfs_operation_begin();
+    int result = vfs_space_locked(path, info);
+    vfs_operation_end();
+    return result;
+}
+
+vfs_filesystem_t* vfs_get_filesystem(const char* path) {
+    vfs_operation_begin();
+    vfs_filesystem_t* result = vfs_get_filesystem_locked(path);
+    vfs_operation_end();
+    return result;
+}
+
+const char* vfs_get_relative_path(const char* absolute_path,
+                                  vfs_filesystem_t* fs) {
+    vfs_operation_begin();
+    const char* result = vfs_get_relative_path_locked(absolute_path, fs);
+    vfs_operation_end();
+    return result;
 }

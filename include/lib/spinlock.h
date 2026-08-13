@@ -3,12 +3,15 @@
 
 #include <stdint.h>
 #include "arch/x86/include/interrupt.h"
+#include "include/kernel/panic.h"
 
 /**
  * @file spinlock.h
- * @brief Spinlock implementation for SMP-safe critical sections
+ * @brief IRQ-safe mutual exclusion for the current uniprocessor kernel
  * 
- * Spinlocks provide mutual exclusion by busy-waiting. Use for:
+ * Atomic instructions keep the representation SMP-ready, but recursive-acquire
+ * detection currently assumes one active CPU.  Revisit ownership tracking
+ * before AP startup. Use for:
  * - Short critical sections
  * - Interrupt-safe locking (no sleeping)
  * - Protecting shared data structures
@@ -40,6 +43,9 @@ static inline void spinlock_init(spinlock_t *lock) {
  * Includes PAUSE instruction to reduce contention.
  */
 static inline void spinlock_acquire(spinlock_t *lock) {
+    KASSERT(lock != NULL);
+    KASSERT_IRQ_DISABLED();
+    KASSERT(lock->lock == 0);
     while (__sync_lock_test_and_set(&lock->lock, 1)) {
         // CPU hint: we're spinning (reduces power, improves performance)
         __asm__ __volatile__("pause");
@@ -55,6 +61,9 @@ static inline void spinlock_acquire(spinlock_t *lock) {
  * Uses GCC atomic built-in for release operation with memory barrier.
  */
 static inline void spinlock_release(spinlock_t *lock) {
+    KASSERT(lock != NULL);
+    KASSERT_IRQ_DISABLED();
+    KASSERT(lock->lock != 0);
     // Memory barrier: ensure all loads/stores before unlock complete
     __asm__ __volatile__("" ::: "memory");
     __sync_lock_release(&lock->lock);
@@ -66,6 +75,8 @@ static inline void spinlock_release(spinlock_t *lock) {
  * @return 1 if lock acquired, 0 if lock already held
  */
 static inline int spinlock_trylock(spinlock_t *lock) {
+    KASSERT(lock != NULL);
+    KASSERT_IRQ_DISABLED();
     return !__sync_lock_test_and_set(&lock->lock, 1);
 }
 

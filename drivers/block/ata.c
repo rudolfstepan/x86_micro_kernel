@@ -5,6 +5,8 @@
 #include "lib/libc/string.h"
 #include "lib/libc/stdlib.h"
 #include "drivers/block/fdd.h"
+#include "include/kernel/panic.h"
+#include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"  // For pit_delay() in kernel context
 #include <stddef.h>
 #include <stdint.h>
@@ -48,6 +50,22 @@ typedef struct {
 } ata_cache_entry_t;
 
 static ata_cache_entry_t ata_read_cache[ATA_READ_CACHE_ENTRIES];
+
+/* ATA PIO is synchronous and uses controller-global task-file registers.  On
+ * this single-core kernel a nestable preemption guard serializes complete
+ * transactions while leaving hardware interrupts enabled. */
+static void ata_transaction_begin(void) {
+    KASSERT_NOT_IRQ();
+    KASSERT(irq_enabled());
+    scheduler_preempt_disable();
+}
+
+static void ata_transaction_end(void) {
+    KASSERT_NOT_IRQ();
+    KASSERT(irq_enabled());
+    KASSERT(scheduler_preempt_is_disabled());
+    scheduler_preempt_enable();
+}
 
 static ata_cache_entry_t* ata_cache_slot(unsigned short base,
                                          unsigned int lba, bool is_master) {
@@ -255,7 +273,8 @@ static void ata_soft_reset(unsigned short base, bool is_master) {
     * @param buffer The buffer to read the sector into.
     * @return True if the sector was read successfully, false otherwise.
 */
-bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master) {
+static bool ata_read_sector_impl(unsigned short base, unsigned int lba,
+                                 void* buffer, bool is_master) {
     if (buffer == NULL || lba >= ATA_LBA28_LIMIT ||
         (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) {
         return false;
@@ -367,6 +386,14 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool i
     return true;
 }
 
+bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,
+                     bool is_master) {
+    ata_transaction_begin();
+    bool result = ata_read_sector_impl(base, lba, buffer, is_master);
+    ata_transaction_end();
+    return result;
+}
+
 // Reset the consecutive failure counter (useful after system idle or manual intervention)
 void ata_reset_error_counter() {
     //printf("ata_reset_error_counter: Resetting failure counter (was %u)\n", consecutive_read_failures);
@@ -380,7 +407,8 @@ void ata_reset_error_counter() {
     * @param buffer The buffer to write to the sector.
     * @return True if the sector was written successfully, false otherwise.
 */
-bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master) {
+static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
+                                  void* buffer, bool is_master) {
     if (buffer == NULL || lba >= ATA_LBA28_LIMIT ||
         (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) {
         return false; // Error: Buffer is null
@@ -438,6 +466,14 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer, bool 
     return true;
 }
 
+bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
+                      bool is_master) {
+    ata_transaction_begin();
+    bool result = ata_write_sector_impl(base, lba, buffer, is_master);
+    ata_transaction_end();
+    return result;
+}
+
 drive_t* ata_get_drive(unsigned short drive_index) {
     if (drive_index >= drive_count) {
         return NULL;  // Return NULL if the index is out of bounds
@@ -472,7 +508,7 @@ drive_t* ata_get_first_hdd() {
 }
 
 // Function to detect all ATA drives on the primary and secondary buses
-void ata_detect_drives() {
+static void ata_detect_drives_impl(void) {
     uint16_t bases[2] = { ATA_PRIMARY_IO, ATA_SECONDARY_IO };
     uint8_t drives[2] = { ATA_MASTER, ATA_SLAVE };
     int drive_name_index = 0;  // For generating names like "hdd1", "hdd2", etc.
@@ -520,7 +556,14 @@ void ata_detect_drives() {
     //printf("ATA detection complete. Total ATA drives: %d\n", drive_count);
 }
 
-bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info) {
+void ata_detect_drives(void) {
+    ata_transaction_begin();
+    ata_detect_drives_impl();
+    ata_transaction_end();
+}
+
+static bool ata_identify_drive_impl(uint16_t base, uint8_t drive,
+                                    drive_t *drive_info) {
     if (!drive_info || (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) return false;
 
     // Select the drive (master or slave)
@@ -582,6 +625,13 @@ bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info) {
     }
 
     return true;
+}
+
+bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info) {
+    ata_transaction_begin();
+    bool result = ata_identify_drive_impl(base, drive, drive_info);
+    ata_transaction_end();
+    return result;
 }
 
 drive_t* get_drive_by_name(const char* name) {

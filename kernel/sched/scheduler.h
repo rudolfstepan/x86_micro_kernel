@@ -70,6 +70,8 @@ size_t scheduler_reap_finished_tasks(void);
 void scheduler_interrupt_handler(void);
 void scheduler_preempt_disable(void);
 void scheduler_preempt_enable(void);
+bool scheduler_preempt_is_disabled(void);
+bool scheduler_can_sleep(void);
 void scheduler_terminate_task(int task_id);
 int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind);
 bool wait_queue_wake_one_locked(wait_queue_t *queue);

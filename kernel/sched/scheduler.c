@@ -183,6 +183,7 @@ static void release_task_resources(task_t *task) {
 }
 
 int scheduler_reap_finished_task_locked(int task_id, const Process *owner) {
+    KASSERT_IRQ_DISABLED();
     if (irq_enabled() || task_id < 0 || task_id >= num_tasks ||
         task_id == current_task || tasks[task_id].status != TASK_FINISHED ||
         (owner != NULL && (tasks[task_id].process != owner ||
@@ -360,12 +361,15 @@ static bool schedule_blocked_current_locked(int blocked) {
 }
 
 void wait_queue_cancel_locked(task_t *task) {
+    KASSERT_IRQ_DISABLED();
     if (task == NULL || task->wait_node.queue == NULL) return;
     (void)wait_queue_remove_locked(task->wait_node.queue, &task->wait_node);
     task->wait_node.key = 0;
 }
 
 int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind) {
+    KASSERT_IRQ_DISABLED();
+    KASSERT_NOT_IRQ();
     if (queue == NULL || irq_enabled() || preempt_disable_count != 0 ||
         current_task < 0 || current_task >= num_tasks ||
         (kind != TASK_BLOCK_WAITING && kind != TASK_BLOCK_SLEEPING)) {
@@ -391,6 +395,7 @@ int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind) {
 }
 
 bool wait_queue_wake_one_locked(wait_queue_t *queue) {
+    KASSERT_IRQ_DISABLED();
     if (queue == NULL || irq_enabled()) return false;
     for (;;) {
         wait_queue_node_t *node = wait_queue_pop_locked(queue);
@@ -405,12 +410,14 @@ bool wait_queue_wake_one_locked(wait_queue_t *queue) {
 }
 
 size_t wait_queue_wake_all_locked(wait_queue_t *queue) {
+    KASSERT_IRQ_DISABLED();
     size_t count = 0;
     while (wait_queue_wake_one_locked(queue)) ++count;
     return count;
 }
 
 void scheduler_wake_expired_sleepers_locked(uint64_t now_ms) {
+    KASSERT_IRQ_DISABLED();
     if (irq_enabled()) return;
     while (sleep_waiters.head != NULL &&
            sleep_waiters.head->key <= now_ms) {
@@ -419,9 +426,10 @@ void scheduler_wake_expired_sleepers_locked(uint64_t now_ms) {
 }
 
 int scheduler_sleep_ms(uint32_t milliseconds) {
+    KASSERT_CAN_SLEEP();
     if (milliseconds == 0) return 0;
     uint32_t flags = irq_save();
-    if (preempt_disable_count != 0 || current_task < 0 ||
+    if (preempt_disable_count != 0 || irq_in_context() || current_task < 0 ||
         current_task >= num_tasks) {
         irq_restore(flags);
         return -1;
@@ -452,6 +460,7 @@ int scheduler_sleep_ms(uint32_t milliseconds) {
 }
 
 int scheduler_yield(void) {
+    KASSERT_CAN_SLEEP();
     uint32_t flags = irq_save();
     if (preempt_disable_count != 0) {
         irq_restore(flags);
@@ -541,18 +550,14 @@ void scheduler_interrupt_handler(void) {
 
 void scheduler_preempt_disable(void) {
     uint32_t flags = irq_save();
-    if (preempt_disable_count != UINT32_MAX) {
-        ++preempt_disable_count;
-    }
+    KASSERT(preempt_disable_count < UINT32_MAX);
+    ++preempt_disable_count;
     irq_restore(flags);
 }
 
 void scheduler_preempt_enable(void) {
     uint32_t flags = irq_save();
-    if (preempt_disable_count == 0) {
-        irq_restore(flags);
-        return;
-    }
+    KASSERT(preempt_disable_count != 0);
     --preempt_disable_count;
     /* Do not context-switch from inside the unlock path.  The periodic timer
      * will observe preempt_disable_count == 0 on its next tick, clear the
@@ -560,28 +565,50 @@ void scheduler_preempt_enable(void) {
     irq_restore(flags);
 }
 
-void scheduler_terminate_task(int task_id) {
+bool scheduler_preempt_is_disabled(void) {
     uint32_t flags = irq_save();
+    bool disabled = preempt_disable_count != 0;
+    irq_restore(flags);
+    return disabled;
+}
+
+bool scheduler_can_sleep(void) {
+    return irq_enabled() && !irq_in_context() &&
+           !scheduler_preempt_is_disabled();
+}
+
+void scheduler_terminate_task(int task_id) {
+    KASSERT_NOT_IRQ();
+    KASSERT(irq_enabled());
+    KASSERT(scheduler_preempt_is_disabled());
     if (task_id < 0 || task_id >= num_tasks) {
-        irq_restore(flags);
+        return;
+    }
+    KASSERT(task_id != current_task);
+
+    task_t *task = &tasks[task_id];
+    Process *process = task->process;
+    uint32_t generation = task->process_generation;
+    if (task->status == TASK_FINISHED || task->status == TASK_REAPING ||
+        process == NULL || process->generation != generation) {
         return;
     }
 
-    if (task_id == current_task) {
-        task_exit();
-    }
+    /* VFS teardown may reach block drivers and must run with IF=1, outside the
+     * scheduler's IRQ-disabled commit.  The caller's preemption guard keeps
+     * the target slot and generation stable on this UP scheduler. */
+    process_close_all_files(process);
+    process_orphan_children(process->pid);
 
-    wait_queue_cancel_locked(&tasks[task_id]);
-    if (tasks[task_id].process) {
-        process_close_all_files(tasks[task_id].process);
-        process_orphan_children(tasks[task_id].process->pid);
-        tasks[task_id].process->exit_status = 143;
-        tasks[task_id].process->has_exited = true;
-        tasks[task_id].process->is_running = false;
-        (void)wait_queue_wake_all_locked(
-            &tasks[task_id].process->exit_waiters);
-    }
-    tasks[task_id].status = TASK_FINISHED;
+    uint32_t flags = irq_save();
+    KASSERT(task->process == process &&
+            task->process_generation == generation);
+    wait_queue_cancel_locked(task);
+    process->exit_status = 143;
+    process->has_exited = true;
+    process->is_running = false;
+    (void)wait_queue_wake_all_locked(&process->exit_waiters);
+    task->status = TASK_FINISHED;
     irq_restore(flags);
 }
 
@@ -590,22 +617,32 @@ void task_exit(void) {
 }
 
 void task_exit_status(int status) {
-    irq_disable();
+    KASSERT_NOT_IRQ();
+    KASSERT(!scheduler_preempt_is_disabled());
+    scheduler_preempt_disable();
 
     int exiting = current_task;
+    Process *process = NULL;
     if (exiting >= 0 && exiting < num_tasks) {
         validate_running_task_stack_or_panic(&tasks[exiting]);
+        process = tasks[exiting].process;
     }
-    if (exiting >= 0 && exiting < num_tasks && tasks[exiting].process) {
-        process_close_all_files(tasks[exiting].process);
+
+    /* User exceptions arrive with IF=0.  Keep scheduling suppressed while
+     * temporarily enabling device IRQs for VFS/block-driver cleanup. */
+    irq_enable();
+    if (process != NULL) {
+        process_close_all_files(process);
+        process_orphan_children(process->pid);
     }
+    irq_disable();
+    scheduler_preempt_enable();
 
     int finished = current_task;
     if (finished >= 0 && finished < num_tasks) {
         wait_queue_cancel_locked(&tasks[finished]);
         tasks[finished].status = TASK_FINISHED;
         if (tasks[finished].process) {
-            process_orphan_children(tasks[finished].process->pid);
             tasks[finished].process->exit_status = status;
             tasks[finished].process->has_exited = true;
             tasks[finished].process->is_running = false;

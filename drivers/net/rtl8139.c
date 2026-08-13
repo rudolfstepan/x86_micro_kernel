@@ -221,13 +221,14 @@ void rtl8139_receive_packet(void) {
 }
 
 void rtl8139_poll_rx(void) {
-    if (!rtl8139_device.initialized || !rtl8139_rx_pending) return;
+    if (!rtl8139_device.initialized ||
+        !__atomic_load_n(&rtl8139_rx_pending, __ATOMIC_ACQUIRE)) return;
     if (__sync_lock_test_and_set(&rtl8139_rx_busy, 1u)) return;
 
     uint16_t base = rtl8139_device.io_base;
     uint16_t saved_imr = inw((uint16_t)(base + RTL_IMR));
     outw((uint16_t)(base + RTL_IMR), 0);
-    rtl8139_rx_pending = false;
+    __atomic_store_n(&rtl8139_rx_pending, false, __ATOMIC_RELEASE);
     rtl8139_drain_rx();
 
     uint32_t flags = irq_save();
@@ -244,12 +245,8 @@ void rtl8139_interrupt_handler(void) {
     outw(port, status);
 
     if (status & (RTL_ISR_ROK | RTL_ISR_RXOVW)) {
-        if (__sync_lock_test_and_set(&rtl8139_rx_busy, 1u)) {
-            rtl8139_rx_pending = true;
-            return;
-        }
-        rtl8139_drain_rx();
-        __sync_lock_release(&rtl8139_rx_busy);
+        /* Hard IRQ only acknowledges and schedules the foreground drain. */
+        __atomic_store_n(&rtl8139_rx_pending, true, __ATOMIC_RELEASE);
     }
 }
 

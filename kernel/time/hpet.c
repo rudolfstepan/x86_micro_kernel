@@ -14,6 +14,7 @@ volatile uint64_t* hpet_base = (volatile uint64_t*)HPET_BASE_ADDRESS;
 // Access HPET registers using offsets
 #define HPET_CAPABILITIES      0x00 // General Capabilities Register
 #define HPET_CONFIGURATION     0x10 // General Configuration Register
+#define HPET_INTERRUPT_STATUS  0x20 // General Interrupt Status Register
 #define HPET_MAIN_COUNTER      0xF0 // Main Counter Register
 #define HPET_TIMER_CONFIG(n)   (0x100 + (n * 0x20)) // Timer N Configuration
 #define HPET_TIMER_COMPARATOR(n) (0x108 + (n * 0x20)) // Timer N Comparator
@@ -129,17 +130,15 @@ RSDPDescriptor* find_rsdp() {
     return NULL;
 }
 
-volatile uint64_t hpet_interrupt_count = 0;
+/* A native-width counter makes foreground snapshots tear-free on i386. */
+volatile uint32_t hpet_interrupt_count = 0;
 
 void hpet_timer_isr(void* r) {
+    (void)r;
+    /* W1C the timer-0 interrupt.  The counter is the deferred-visible event
+     * state; formatting or callback work is forbidden in hard IRQ context. */
+    hpet_base[HPET_INTERRUPT_STATUS / 8] = 1ULL;
     hpet_interrupt_count++;
-
-    //Acknowledge the interrupt by updating the comparator
-    uint64_t current_counter = hpet_base[HPET_MAIN_COUNTER / 8];
-    uint64_t ticks = hpet_base[HPET_TIMER_COMPARATOR(0) / 8];
-    hpet_base[HPET_TIMER_COMPARATOR(0) / 8] = current_counter + ticks;
-
-    printf("Periodic timer callback triggered: %u\n", hpet_interrupt_count);
 }
 
 // Check for HPET

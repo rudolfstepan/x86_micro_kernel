@@ -142,6 +142,7 @@ static uint8_t tx_buffer_storage[E1000_NUM_TX_DESC][2048]
 static uint8_t rx_delivery_buffer[2048] __attribute__((aligned(16)));
 static bool e1000_initialized = false;
 static volatile uint32_t e1000_tx_busy;
+static volatile uint32_t e1000_pending_events;
 
 typedef struct {
     volatile uint32_t irq_total;
@@ -175,7 +176,7 @@ static inline void e1000_write_reg(uint32_t offset, uint32_t value) {
 
 // Forward declarations
 void e1000_send_arp_reply(uint8_t *request_packet);
-void check_received_packet(void);
+static void e1000_drain_rx(void);
 
 void e1000_enable_interrupts() {
     /* TX completion is polled synchronously, so TXDW would only create an
@@ -189,7 +190,7 @@ void e1000_enable_interrupts() {
     if (icr) {
         printf("E1000: Cleared pending interrupts (ICR=0x%08X)\n", icr);
     }
-    check_received_packet();
+    e1000_drain_rx();
     e1000_write_reg(E1000_REG_IMS, ims);
     printf("E1000: Interrupts enabled (IMS=0x%08X)\n", ims);
 }
@@ -205,7 +206,7 @@ void e1000_enable_loopback() {
     e1000_write_reg(E1000_REG_RCTL, rctl);
 }
 
-void check_received_packet() {
+static void e1000_drain_rx(void) {
     for (unsigned int processed = 0; processed < E1000_NUM_RX_DESC;
          ++processed) {
         int length = e1000_receive_packet(rx_delivery_buffer,
@@ -227,16 +228,29 @@ static void e1000_isr(Registers *regs) {
 
     if (icr & E1000_INT_RXO) ++e1000_stats.irq_overrun;
     if (icr & E1000_INT_RXT0) ++e1000_stats.irq_rx;
-    if (icr & (E1000_INT_RXO | E1000_INT_RXT0)) {
-        /* IRQ context only copies completed frames into the netdev queues.
-         * Protocol processing and any response transmission stay deferred. */
-        check_received_packet();
-    }
     if (icr & E1000_INT_TXDW) ++e1000_stats.irq_tx;
-    if (icr & E1000_INT_LSC) {
-        ++e1000_stats.irq_link_change;
+    if (icr & E1000_INT_LSC) ++e1000_stats.irq_link_change;
+
+    /* Reading ICR acknowledges the device.  Everything else, including RX
+     * descriptor copies and link inspection, runs from netdev_poll(). */
+    __atomic_fetch_or(&e1000_pending_events, icr, __ATOMIC_RELEASE);
+}
+
+void e1000_poll_rx(void) {
+    if (!e1000_initialized) return;
+
+    uint32_t events = __atomic_exchange_n(&e1000_pending_events, 0,
+                                           __ATOMIC_ACQ_REL);
+    if (events & E1000_INT_LSC) {
         e1000_stats.link_up =
             (e1000_read_reg(E1000_REG_STATUS) & E1000_STATUS_LINK_UP) != 0;
+    }
+    if ((events & (E1000_INT_RXO | E1000_INT_RXT0)) == 0) return;
+
+    e1000_drain_rx();
+    if (rx_descs[rx_cur].status & E1000_RXD_STAT_DD) {
+        __atomic_fetch_or(&e1000_pending_events, E1000_INT_RXT0,
+                          __ATOMIC_RELEASE);
     }
 }
 
@@ -508,6 +522,7 @@ static bool reset_e1000(void) {
 
 static bool e1000_init(e1000_device_t *dev) {
     memset((void *)&e1000_stats, 0, sizeof(e1000_stats));
+    e1000_pending_events = 0;
 
     // Reset the device
     if (!dev || !dev->mmio_base || !reset_e1000()) return false;

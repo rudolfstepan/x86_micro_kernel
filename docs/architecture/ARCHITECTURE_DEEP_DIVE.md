@@ -48,6 +48,9 @@ seriellen Log sichtbar bleiben.
 
 ## CPU-Tabellen und Interrupts
 
+Der verbindliche Kontext- und Lockingvertrag steht in
+[SYNCHRONIZATION_CONTRACT.md](SYNCHRONIZATION_CONTRACT.md).
+
 - Die GDT enthält Kernelsegmente und einen TSS-Deskriptor.
 - Die IDT deckt CPU-Ausnahmen, Hardware-IRQs und den Syscall-Einstieg ab.
 - Assembly-Stubs sichern den Registerzustand und rufen C-Handler auf.
@@ -133,6 +136,9 @@ Wachstumsarenen. `used + free` kann wegen Blockheadern und Alignment kleiner
 als die gesamte Heap-Kapazität sein.
 
 ## Scheduler und Prozesse
+
+Für `*_locked`-, Präemptions- und Sleep-APIs gilt der
+[Synchronisationsvertrag](SYNCHRONIZATION_CONTRACT.md).
 
 Der Scheduler verwaltet bis zu acht Tasks mit je 8 KiB Stack und den Zuständen
 ready, running, sleeping, waiting, finished und dem internen Übergangszustand
@@ -230,6 +236,12 @@ Die VFS-Mounttabelle wählt anhand des längsten passenden Mountpfades einen
 Adapter. FAT32, FAT12 und EXT2 werden beim Boot registriert. Shell und
 Programmlader arbeiten mit absoluten VFS-Pfaden; DOS-Laufwerksnotation wird
 vorher im Shellresolver normalisiert.
+
+Öffentliche VFS- sowie synchrone ATA-/FDD-Transaktionen laufen nach dem
+[Synchronisationsvertrag](SYNCHRONIZATION_CONTRACT.md) mit aktiven IRQs unter
+einem nestbaren Präemptionsguard. Netzwerk- und HPET-IRQs quittieren nur die
+Hardware und markieren Arbeit; begrenzte Netzwerk-Polling-Pässe verarbeiten
+sie anschließend im Foreground-Kontext.
 
 ## Treiber
 

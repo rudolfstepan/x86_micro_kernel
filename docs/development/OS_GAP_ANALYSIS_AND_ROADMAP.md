@@ -30,11 +30,11 @@ Das OS ist kein Minimalgerüst mehr. Es bootet nativ über BIOS/MBR, besitzt
 Paging, Ring-3-Prozesse mit eigenen Seitentabellen, validierte User-Pointer,
 präemptives Round-Robin-Scheduling, ein VFS, schreibbares FAT12/FAT32, lesbares
 EXT2, mehrere Gerätetreiber, einen kleinen IPv4-Stack und einen gebauten
-Userspace. Der geprüfte Windows-Referenzbuild ist erfolgreich. Phase 0, R1.1
-und R1.2 sind abgeschlossen. Die aktuelle Hosttest-Suite und automatisierte
-Ring-3-Tests prüfen neben dem normalen, LAPIC-gesteuerten Betrieb einen eigenen
-PIT-Scheduler-Fallback ohne LAPIC sowie Speicherkonfigurationen mit 32, 64,
-256, 512 und 1024 MiB.
+Userspace. Der geprüfte Windows-Referenzbuild ist erfolgreich. Phase 0 sowie
+R1.1, R1.2 und R1.3 sind abgeschlossen. Die aktuelle Hosttest-Suite und
+automatisierte Ring-3-Tests prüfen neben dem normalen, LAPIC-gesteuerten Betrieb
+einen eigenen PIT-Scheduler-Fallback ohne LAPIC sowie Speicherkonfigurationen
+mit 32, 64, 256, 512 und 1024 MiB.
 
 Die beim ersten Audit belegten Korrektheitslücken in Prozess-Wait,
 Exception-Frames und PRG-v1-Vertrag sind in Phase 0 behoben. R1.1 hat darauf
@@ -43,10 +43,12 @@ Wait-Queues, atomaren Prozess-Wait, blockierendes Sleep und Console-Input,
 `yield`, 64-Bit-Zeit sowie einen kalibrierten Scheduler-Timer. R1.2 trennt nun
 erkannten von verwaltetem Speicher, erweitert den Kernel-Heap dynamisch,
 schützt statische und dynamische Kernelstacks mit Canaries und räumt beendete
-Tasks außerhalb langer IRQ-Sperrabschnitte auf. Als nächstes werden in R1.3
-die Synchronisations-, IRQ-Kontext- und Diagnoseverträge festgeschrieben;
-Pipes, Signale, TTYs und Sockets können anschließend auf diesen Grundlagen
-aufbauen.
+Tasks außerhalb langer IRQ-Sperrabschnitte auf. R1.3 definiert nun die
+IRQ-, Präemptions-, Schlaf- und Lockverträge, serialisiert VFS und
+ATA-/FDD-Zugriffe und verlagert Netzwerk- sowie HPET-Arbeit aus dem harten
+IRQ-Kontext. Strukturierte Logs und vollständige Panic-Diagnosen schließen
+den Meilenstein ab. Als nächstes folgt R2.1 mit einer gemeinsamen ABI-v1-Quelle
+und vollständigen Dateideskriptoren.
 
 ## 3. Verifizierter Ist-Zustand
 
@@ -61,12 +63,14 @@ aufbauen.
 | Netzwerk | E1000, RTL8139, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping am besten verifiziert |
 | USB | PCI-Erkennung eines xHCI-Controllers | nur Probe-Gerüst |
 | Userspace | SDK, Shell, Editor, BASIC und zahlreiche Systemprogramme | brauchbare Demo-/CLI-Basis |
-| Qualität | Hosttests, CI-Build, Image-Validatoren, serielle QEMU-Ring-3-Tests mit LAPIC/PIT sowie 32-/64-/256-/512-/1024-MiB-Matrix | breitere Hardware- und Fehler-Injektionsmatrix fehlt |
+| Qualität | Hosttests, CI-Build, Image-Validatoren, Kontextassertions, fünf Log-Level, Panic-Kontext mit Build-ID sowie serielle QEMU-Ring-3-Tests mit LAPIC/PIT und 32-/64-/256-/512-/1024-MiB-Matrix | breitere Hardware- und Fehler-Injektionsmatrix fehlt |
 
 Maßgebliche Quellen sind der ausführbare Code und die Tests. Der aktuelle
 Architekturüberblick in `docs/architecture/ARCHITECTURE_DEEP_DIVE.md` beschreibt
 die vorhandene Ring-3-Isolation, den mit R1.1 eingeführten Blockier- und
-Zeitvertrag und den R1.2-Vertrag für Speicher, Kernelstacks und Reaping.
+Zeitvertrag und den R1.2-Vertrag für Speicher, Kernelstacks und Reaping. Der
+verbindliche R1.3-Kontext- und Lockvertrag steht ergänzend in
+`docs/architecture/SYNCHRONIZATION_CONTRACT.md`.
 
 ## 4. Belegte Korrektheits- und Basislücken
 
@@ -257,8 +261,8 @@ Eine vollständige TTY-Schicht bleibt der nächste darüberliegende Ausbau.
   keinen absichtlichen Austausch
 - Zufallsquelle/CSPRNG, ASLR und sichere Netzwerk-Defaults erst bei einem
   Sicherheitsziel
-- strukturierte Log-Level, Crashkontext mit Registern/CR2 und optionaler
-  Symbolauflösung statt verstreuter Debug-`printf`s
+- optionale Panic-Symbolauflösung zusätzlich zum vorhandenen Register-/CR2-
+  Kontext und der SHA1-Build-ID
 - Debug-Buildprofil, statische Analyse und hostseitiges Sanitizer-/Fuzzing für
   Parser
 - reproduzierbare Gasttests und eine kleine Hardwarematrix
@@ -271,6 +275,7 @@ P0-Korrektheit
        -> Pipes + TTY + Signale -> Shell-Jobs
        -> Socket-Deskriptoren -> UDP -> DNS -> TCP -> Anwendungen
 
+R1.3-Kontext-/Lockvertrag [erledigt] -> VFS/Blockgeräte + ACPI/DMA
 ABI/FD-Ausbau -> VFS rename/truncate/fsync -> sicherer Editor und Dateitools
 Blockgeräte -> Partitionen + DMA -> AHCI/NVMe und USB-Massenspeicher
 ACPI + DMA -> xHCI -> USB-Enumeration -> HID/Storage
@@ -474,9 +479,28 @@ kalibrierte LAPIC-Pfad als auch der PIT-Fallback ohne APIC ausgeführt.
 Nicht Teil von R1.2 sind systematische Failure-Injection für jede
 Teilallokation, ein Highmem-/`kmap`-Fenster oberhalb 1 GiB, echte nicht gemappte
 Guardpages und ein IRQ-tauglicher Allocator; diese Punkte bleiben expliziter
-Restumfang für R1.3 bzw. spätere Speicherarbeit.
+Restumfang späterer Speicherhärtung und sind nicht Bestandteil von R1.3.
 
 #### R1.3 Synchronisations- und Diagnosevertrag — M
+
+**Status (13. August 2026): Abgeschlossen und abgenommen.** Der Kernel
+unterscheidet harten IRQ-Kontext, IRQ-deaktivierten Foreground-Kontext,
+präemptionsgeschützten Foreground-Kontext und schlaffähigen Taskkontext.
+Benannte Assertions prüfen die erlaubten IRQ-, Interrupt-, Präemptions- und
+Schlafzustände. IRQ-Verschachtelung endet vor jedem Scheduler-Tail; blockierende
+Operationen dürfen keine Präemptionsgrenze überschreiten.
+
+Die globale Lockordnung lautet `VFS -> DATEISYSTEM -> TREIBER -> SCHEDULER`,
+innerhalb der Speicherverwaltung gilt `HEAP -> FRAME`. VFS-Operationen und die
+ATA-/FDD-Datenpfade sind entsprechend serialisiert. Netzwerk- und HPET-ISRs
+beschränken sich auf Quittierung und Pending-Markierung; die eigentliche Arbeit
+läuft außerhalb des harten IRQ-Kontexts.
+
+Der Logger unterstützt `TRACE`, `DEBUG`, `INFO`, `WARN` und `ERROR` mit
+Komponentenpräfix und Mindestlevel. Panic- und Exceptionausgaben enthalten den
+vollständigen Registerframe, CR2 und die 40-stellige SHA1-Build-ID des Kernels.
+Vertrags-/Regressionstests, Windows-Referenzbuild und QEMU-Ring-3-Smoke sichern
+die Umsetzung ab.
 
 1. Festlegen, welche APIs in IRQ-Kontext, mit deaktivierter Präemption oder
    schlafend aufgerufen werden dürfen.
@@ -598,7 +622,7 @@ nebenbei in die 32-Bit-Basis eingebaut werden.
 | 4 | R0.4 Gast-Smoke-Test (erledigt) | 1–3 für Regressionen | M |
 | 5 | R1.1 Wait-Queues/Sleep/Zeit (erledigt) | R0.1 | L |
 | 6 | R1.2 Speicherverwaltung (erledigt) | R0.4 | L |
-| 7 | R1.3 Synchronisation/Diagnose | R1.1 | M |
+| 7 | R1.3 Synchronisation/Diagnose (erledigt) | R1.1 | M |
 | 8 | R2.1 ABI und FDs | R1.1 | L |
 | 9 | R2.2 VFS/FAT-Zuverlässigkeit | R2.1 | L |
 | 10 | R2.3 Blockgeräte/Partitionen | R1.3 | L |
@@ -648,11 +672,13 @@ make test-fuzz
 
 ## 10. Unmittelbar nächster Schritt
 
-Phase 0 sowie **R1.1 Wait-Queues, Sleep und Yield** und **R1.2
-Speicherverwaltung und Schutz** sind umgesetzt und abgenommen. Als nächstes
-folgt **R1.3 Synchronisations- und Diagnosevertrag**: IRQ-, Präemptions- und
-Schlafkontexte je API festlegen, die Lock-Reihenfolge dokumentieren und
-Assertions sowie Panic-Diagnosen ausbauen. Systematische Allocation-
-Failure-Injection, ein IRQ-tauglicher Allocator und weitere Reaper-Stresstests
-werden dabei als verbleibende R1.2-Härtung mitgeführt; Highmem/`kmap` und echte
-Guardpages sind getrennte spätere Speicherarbeiten.
+Phase 0 sowie **R1.1 Wait-Queues, Sleep und Yield**, **R1.2 Speicherverwaltung
+und Schutz** und **R1.3 Synchronisations- und Diagnosevertrag** sind umgesetzt
+und abgenommen. Als nächstes folgt **R2.1 ABI v1 und vollständige
+Dateideskriptoren**: gemeinsame ABI-Header, stabile Fehlercodes und Open-Flags,
+Standarddeskriptoren 0/1/2 sowie `lseek`, `fstat`, `truncate`, `rename` und
+`fsync`.
+
+Systematische Allocation-Failure-Injection, ein IRQ-tauglicher Allocator,
+weitere Reaper-Stresstests, Highmem/`kmap` und echte nicht gemappte Guardpages
+bleiben ausdrücklich spätere Speicherhärtung und gehören nicht zu R2.1.

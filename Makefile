@@ -87,7 +87,7 @@ CFLAGS := -m32 -std=gnu11 -c -MMD -MP -ffreestanding -nostdlib -nostartfiles -no
           -I$(OUTPUT_DIR) -I. -I$(ARCH_DIR) -I$(ARCH_DIR)/include -I$(LIB_DIR)/libc -I$(KERNEL_DIR)/shell \
           $(TARGET_DEFINES) $(VIDEO_DEFINES)
 
-LDFLAGS := -m elf_i386 -nostdlib --strip-all
+LDFLAGS := -m elf_i386 -nostdlib --strip-all --build-id=sha1
 KERNEL_LDSCRIPT := $(CONFIG_DIR)/klink.ld
 
 # Mount directory for disk image

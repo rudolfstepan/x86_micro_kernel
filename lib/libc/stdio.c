@@ -563,6 +563,12 @@ int printf(const char *format, ...) {
     return result;
 }
 
+int vprintf(const char *format, va_list args) {
+    format_output_t output = { .buffer = NULL, .capacity = 0,
+                               .count = 0, .console = true };
+    return format_v(&output, format, args);
+}
+
 int sprintf(char *buffer, const char *format, ...) {
     if (buffer == NULL) return -1;
     format_output_t output = { .buffer = buffer, .capacity = SIZE_MAX,
