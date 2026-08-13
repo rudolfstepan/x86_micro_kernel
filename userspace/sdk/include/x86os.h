@@ -51,7 +51,8 @@ enum {
     X86OS_SYS_DISPLAY_INFO = 44,
     X86OS_SYS_FILL_RECT = 45,
     X86OS_SYS_DRAW_TEXT = 46,
-    X86OS_SYS_RENAME = 47
+    X86OS_SYS_RENAME = 47,
+    X86OS_SYS_FSYNC = 48
 };
 
 enum {
@@ -191,6 +192,7 @@ int x86os_readdir_batch(const char* path, uint32_t index,
                         x86os_file_info_t* entries);
 int x86os_create(const char* path);
 int x86os_write(int descriptor, const void* buffer, size_t size);
+int x86os_fsync(int descriptor);
 int x86os_unlink(const char* path);
 int x86os_rename(const char* old_path, const char* new_path);
 int x86os_getpid(void);

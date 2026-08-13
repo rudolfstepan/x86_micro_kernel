@@ -56,6 +56,7 @@
 #define SYS_FILL_RECT 45
 #define SYS_DRAW_TEXT 46
 #define SYS_RENAME 47
+#define SYS_FSYNC 48
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

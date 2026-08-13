@@ -470,6 +470,12 @@ static int vfs_readdir_locked(const char* path, uint32_t index,
     return result;
 }
 
+static int vfs_sync_locked(vfs_node_t* node) {
+    if (!node || !node->fs || !node->fs->ops) return VFS_ERR_INVALID;
+    if (!node->fs->ops->sync) return VFS_ERR_UNSUPPORTED;
+    return node->fs->ops->sync(node);
+}
+
 static int vfs_readdir_batch_locked(const char* path, uint32_t index,
                                     vfs_dir_entry_t* entries,
                                     uint32_t capacity) {
@@ -682,6 +688,16 @@ int vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
     int result = armed ? vfs_write_locked(node, offset, size, buffer)
                        : VFS_ERR_READ_ONLY;
     result = vfs_mutation_finish(armed, result);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_sync(vfs_node_t* node) {
+    vfs_operation_begin();
+    int result = vfs_sync_locked(node);
+#ifndef KERNEL_HOST_TEST
+    if (result == VFS_ERR_IO) filesystem_fence_mutations();
+#endif
     vfs_operation_end();
     return result;
 }

@@ -765,6 +765,24 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
     return result;
 }
 
+bool ata_flush_cache(unsigned short base, bool is_master) {
+    ata_transaction_begin();
+    bool armed = !ata_write_fenced && storage_write_begin(pit_monotonic_ms());
+    bool result = false;
+    if (armed) {
+        outb(ATA_DRIVE_HEAD(base), is_master ? 0xE0U : 0xF0U);
+        for (volatile int i = 0; i < 4; ++i) (void)inb(ATA_ALT_STATUS(base));
+        if (wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
+            outb(ATA_COMMAND(base), 0xE7U);
+            result = wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS);
+        }
+    }
+    if (armed && !storage_write_end()) result = false;
+    if (!result) storage_fence_writes();
+    ata_transaction_end();
+    return result;
+}
+
 void ata_fence_writes(void) {
     ata_write_fenced = true;
     __asm__ volatile("" ::: "memory");

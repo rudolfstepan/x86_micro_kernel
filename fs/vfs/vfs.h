@@ -69,6 +69,7 @@ typedef struct vfs_filesystem_ops {
     int (*close)(vfs_node_t* node);
     int (*read)(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
     int (*write)(vfs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
+    int (*sync)(vfs_node_t* node);
     
     // Directory operations
     int (*readdir)(vfs_node_t* node, uint32_t index, vfs_dir_entry_t* entry);
@@ -150,6 +151,7 @@ int vfs_open(const char* path, vfs_node_t** node);
 int vfs_close(vfs_node_t* node);
 int vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
 int vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
+int vfs_sync(vfs_node_t* node);
 
 // Directory operations
 int vfs_readdir(const char* path, uint32_t index, vfs_dir_entry_t* entry);

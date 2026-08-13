@@ -39,6 +39,7 @@ class VfsSynchronizationContractTests(unittest.TestCase):
         "int vfs_close(": "vfs_close_locked(",
         "int vfs_read(": "vfs_read_locked(",
         "int vfs_write(": "vfs_write_locked(",
+        "int vfs_sync(": "vfs_sync_locked(",
         "int vfs_readdir(": "vfs_readdir_locked(",
         "int vfs_readdir_batch(": "vfs_readdir_batch_locked(",
         "int vfs_mkdir(": "vfs_mkdir_locked(",

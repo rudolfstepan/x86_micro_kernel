@@ -15,7 +15,15 @@ static int payload_writes_before_failure = -1;
 static int fat_writes_before_verify_failure = -1;
 static unsigned int fat_verify_read_failures;
 static unsigned int fat_verify_failure_burst = 1;
+static unsigned int cache_flushes;
 drive_t* current_drive;
+
+bool ata_flush_cache(unsigned short base, bool is_master) {
+    (void)base;
+    (void)is_master;
+    ++cache_flushes;
+    return true;
+}
 
 static bool sector_has_nonzero_data(const void* buffer) {
     const uint8_t* bytes = (const uint8_t*)buffer;
@@ -528,8 +536,10 @@ int main(void) {
         CHECK(memcmp(contents, readme, sizeof(contents)) == 0);
         CHECK(vfs_read(node, sizeof(contents), 1,
                        (uint8_t*)contents) == 0);
+        CHECK(vfs_sync(node) == VFS_OK);
         CHECK(vfs_close(node) == VFS_OK);
     }
+    CHECK(cache_flushes == 2);
 
     static const char renamed_payload[] = "atomic replacement\r\n";
     CHECK(fat32_replace_file("RST00001.TMP", renamed_payload,

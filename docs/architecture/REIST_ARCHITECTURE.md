@@ -308,8 +308,9 @@ Operationen benötigen künftig ein skalierbares Journal beziehungsweise COW.
 Journal-v1-Medien werden rückwärtskompatibel wiederhergestellt und anschließend
 mit einem sauberen v2-Header migriert.
 FAT32 Same-Directory-Rename und Replace laufen als eine solche VFS-Transaktion.
-Der Editor schreibt zuerst eine PID-spezifische 8.3-Tempdatei und ersetzt das
-Ziel erst nach erfolgreichem Close per Rename. Ein Fehler vor dem Commit lässt
+Der Editor schreibt zuerst eine PID-spezifische 8.3-Tempdatei, fordert über
+Prozess-FD und VFS einen begrenzten ATA-`FLUSH CACHE` an und ersetzt das Ziel
+erst nach erfolgreichem `fsync` und Close per Rename. Ein Fehler vor dem Commit lässt
 die alte Zieldatei unangetastet; FAT12-, Cross-Directory- und Cross-Volume-
 Rename bleiben explizit unsupported.
 Der v2-Superblock liegt redundant in den reservierten Sektoren 8 und 31. Jeder

@@ -353,6 +353,11 @@ static int syscall_write(int descriptor, const void *user_buffer, size_t size) {
     return (int)total;
 }
 
+static int syscall_fsync(int descriptor) {
+    return process_file_sync(scheduler_current_process(), descriptor) == 0
+        ? 0 : -5;
+}
+
 static int syscall_unlink(const char *user_path) {
     char path[PROCESS_PATH_MAX];
     int result = syscall_copy_path(path, user_path);
@@ -588,6 +593,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_display_fill_rect,  // Syscall 45: Clipped RGB rectangle
     (void*)&syscall_display_draw_text,  // Syscall 46: Clipped pixel text
     (void*)&syscall_rename,             // Syscall 47: Atomic same-FS rename
+    (void*)&syscall_fsync,              // Syscall 48: Persist writable file
     // Add more syscalls here as needed
 };
 
@@ -830,6 +836,11 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)syscall_rename(
                 (const char*)(uintptr_t)arg1,
                 (const char*)(uintptr_t)arg2);
+            scheduler_preempt_enable();
+            break;
+        case SYS_FSYNC:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_fsync((int)arg1);
             scheduler_preempt_enable();
             break;
         default:

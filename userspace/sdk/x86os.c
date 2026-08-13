@@ -180,6 +180,10 @@ int x86os_write(int descriptor, const void* buffer, size_t size) {
                               (uintptr_t)buffer, size);
 }
 
+int x86os_fsync(int descriptor) {
+    return (int)x86os_syscall(X86OS_SYS_FSYNC, (uintptr_t)descriptor, 0, 0);
+}
+
 int x86os_unlink(const char* path) {
     return (int)x86os_syscall(X86OS_SYS_UNLINK, (uintptr_t)path, 0, 0);
 }

@@ -53,7 +53,9 @@ static int test_file_io(void) {
         (void)x86os_unlink(path);
         return -1;
     }
-    if (x86os_close(descriptor) != 0) {
+    int initial_sync = x86os_fsync(descriptor);
+    int initial_close = x86os_close(descriptor);
+    if (initial_sync != 0 || initial_close != 0) {
         (void)x86os_unlink(path);
         return -1;
     }
@@ -87,9 +89,11 @@ static int test_file_io(void) {
     }
     int replacement_write = x86os_write(
         descriptor, replacement, sizeof(replacement) - 1U);
+    int replacement_sync = x86os_fsync(descriptor);
     int replacement_close = x86os_close(descriptor);
     if (replacement_write != (int)(sizeof(replacement) - 1U) ||
-        replacement_close != 0 || x86os_rename(replacement_path, path) != 0 ||
+        replacement_sync != 0 || replacement_close != 0 ||
+        x86os_rename(replacement_path, path) != 0 ||
         x86os_stat(replacement_path, &info) == 0) {
         (void)x86os_unlink(replacement_path);
         (void)x86os_unlink(path);

@@ -4,6 +4,7 @@
 #include "lib/libc/string.h"
 #include "lib/libc/stdlib.h"
 #include "drivers/bus/drives.h"
+#include "drivers/block/ata.h"
 
 // ===========================================================================
 // FAT32 VFS Adapter
@@ -926,6 +927,14 @@ static int fat32_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
     return result;
 }
 
+static int fat32_vfs_sync(vfs_node_t* node) {
+    if (!node || !node->fs || !node->fs->drive) return VFS_ERR_INVALID;
+    drive_t* drive = node->fs->drive;
+    if (drive->type != DRIVE_TYPE_ATA) return VFS_ERR_UNSUPPORTED;
+    return ata_flush_cache(drive->base, drive->is_master)
+        ? VFS_OK : VFS_ERR_IO;
+}
+
 static int fat32_vfs_readdir(vfs_node_t* node, uint32_t index,
                              vfs_dir_entry_t* entry) {
     uint32_t flags = fat32_operation_begin();
@@ -1028,6 +1037,7 @@ vfs_filesystem_ops_t fat32_vfs_ops = {
     .close = fat32_vfs_close,
     .read = fat32_vfs_read,
     .write = fat32_vfs_write,
+    .sync = fat32_vfs_sync,
     .readdir = fat32_vfs_readdir,
     .readdir_batch = fat32_vfs_readdir_batch,
     .finddir = fat32_vfs_finddir,

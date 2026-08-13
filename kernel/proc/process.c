@@ -657,6 +657,15 @@ int process_file_write(Process *process, int descriptor, const void *buffer,
     return result;
 }
 
+int process_file_sync(Process *process, int descriptor) {
+    int slot = descriptor - PROCESS_FD_BASE;
+    if (process == NULL || slot < 0 || slot >= MAX_PROCESS_FILES ||
+        !process->files[slot].in_use || !process->files[slot].writable) {
+        return -1;
+    }
+    return vfs_sync(process->files[slot].node) == VFS_OK ? 0 : -1;
+}
+
 int process_file_unlink(Process *process, const char *path) {
     if (process == NULL || path == NULL) return -1;
     char resolved[PROCESS_PATH_MAX];

@@ -282,7 +282,9 @@ static int save_file(const char *path, int *exists) {
             return -1;
         }
     }
-    if (x86os_close(descriptor) < 0) {
+    int sync_result = x86os_fsync(descriptor);
+    int close_result = x86os_close(descriptor);
+    if (sync_result < 0 || close_result < 0) {
         (void)x86os_unlink(temp);
         return -1;
     }

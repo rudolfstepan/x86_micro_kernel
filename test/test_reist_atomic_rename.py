@@ -57,10 +57,29 @@ class ReistAtomicRenameTests(unittest.TestCase):
         end = editor.index("static void move_cursor(", start)
         save = editor[start:end]
         self.assertIn("x86os_create(temp)", save)
+        self.assertIn("x86os_fsync(descriptor)", save)
         self.assertIn("x86os_rename(temp, path)", save)
         self.assertNotIn("x86os_unlink(path)", save)
         self.assertLess(save.index("x86os_close(descriptor)"),
                         save.index("x86os_rename(temp, path)"))
+
+    def test_fsync_reaches_the_bounded_ata_flush(self) -> None:
+        kernel_h = read("lib/libc/stdlib.h")
+        sdk_h = read("userspace/sdk/include/x86os.h")
+        process = read("kernel/proc/process.c")
+        vfs = read("fs/vfs/vfs.c")
+        fat32 = read("fs/fat32/fat32_vfs_adapter.c")
+        ata = read("drivers/block/ata.c")
+        self.assertIn("#define SYS_FSYNC 48", kernel_h)
+        self.assertIn("X86OS_SYS_FSYNC = 48", sdk_h)
+        self.assertIn("process_file_sync", process)
+        self.assertIn("vfs_sync(process->files[slot].node)", process)
+        self.assertIn("int vfs_sync(vfs_node_t* node)", vfs)
+        self.assertIn("ata_flush_cache(drive->base, drive->is_master)", fat32)
+        self.assertIn("bool ata_flush_cache(unsigned short base", ata)
+        self.assertIn("ATA_WAIT_TIMEOUT_MS", ata)
+        self.assertIn("if (!result) storage_fence_writes();", ata)
+        self.assertIn("filesystem_fence_mutations();", vfs)
 
 
 if __name__ == "__main__":

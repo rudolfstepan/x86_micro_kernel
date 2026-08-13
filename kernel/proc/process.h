@@ -85,6 +85,7 @@ int process_file_read(Process* process, int descriptor, void* buffer,
 int process_file_create(Process* process, const char* path);
 int process_file_write(Process* process, int descriptor, const void* buffer,
                        size_t size);
+int process_file_sync(Process* process, int descriptor);
 int process_file_unlink(Process* process, const char* path);
 int process_file_close(Process* process, int descriptor);
 void process_close_all_files(Process* process);
