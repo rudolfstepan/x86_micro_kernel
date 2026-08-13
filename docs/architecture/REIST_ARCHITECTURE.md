@@ -91,6 +91,13 @@ Zustandsvalidierung und expliziter Freigabe darf eine Instanz erneut Ausgaben
 autorisieren. Fencing und Epochen verhindern Split Brain und verspätete
 Nachrichten einer alten Instanz.
 
+Der erste Supervisor-Kern stellt dafür acht statische Domänenslots bereit. Sein
+Zustand liegt im ECC-/Primary-Shadow-Umschlag. Eine verstrichene Deadline liefert
+zunächst ausschließlich `FENCE_REQUIRED`; erst eine bestätigte Sperre erzeugt
+`RESTART_REQUIRED`. Nach erschöpftem Restartbudget oder fehlgeschlagenem
+Selbsttest folgt `SAFE_STATE_REQUIRED`. Handles enthalten Generation und Epoche,
+sodass verspätete Fortschrittsmeldungen einer alten Instanz abgewiesen werden.
+
 ## Transaktionaler Zustand und Invarianten
 
 Kritischer Zustand wird niemals direkt überschrieben:

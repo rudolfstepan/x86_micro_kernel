@@ -24,6 +24,7 @@
 #include "include/kernel/panic.h"
 #include "include/kernel/fatal.h"
 #include "include/kernel/watchdog.h"
+#include "include/kernel/supervisor.h"
 #include "kernel/shell/command.h"
 #include "mm/kmalloc.h"
 
@@ -395,6 +396,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     // Stage 1: Early initialization
     early_init();
     fatal_boot_recover_record();
+    supervisor_init();
     
     // Stage 2: Hardware initialization
     hardware_init();

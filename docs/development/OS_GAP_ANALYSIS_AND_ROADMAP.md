@@ -614,6 +614,12 @@ zum Watchdog-Warmstart, Crashrecord-Recovery und anschließenden Gasttest geprü
 
 #### S0.3 Fehlerdomänen, Supervisor und Redundanz — XL
 
+**Teilstatus:** Ein fester, allokationsfreier Supervisor-Kern verwaltet acht
+ECC-geschützte Domänenzustände mit Deadlines, Generation/Epoche,
+Restartbudgets und der zwingenden Reihenfolge `timeout -> fence -> restart ->
+self-test -> reintegrate`. Die Migration realer Dienste in eigene Fehlerdomänen
+und unabhängige Supervisorhardware bleiben offen.
+
 1. Einen minimalen Safety-Kern definieren; Treiber, Dateisystem, Netzwerk und
    GUI in neu startbare Least-Privilege-Domänen verschieben.
 2. Fortschritts-/Deadline-Watchdogs, Restart-Budgets, Fencing, Selbsttest und
