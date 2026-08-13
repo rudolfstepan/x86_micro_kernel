@@ -137,18 +137,21 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         self.assertIn("syscall_drive_info", source)
         self.assertIn("copy_to_user(user_info, &info, sizeof(info))", source)
 
-    def test_filesystem_space_is_reported_through_vfs(self):
+    def test_ls_has_compact_output_and_opt_in_paging(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
             encoding="utf-8"
         )
         ls = (ROOT / "examples/userspace/ls.c").read_text(encoding="utf-8")
         self.assertIn("syscall_space", source)
         self.assertIn("vfs_space(path, &info)", source)
-        self.assertIn("x86os_space(path, &space)", ls)
-        self.assertIn("bytes free", ls)
-        self.assertIn("LS_PAGE_ENTRY_LINES", ls)
-        self.assertIn("wait_for_next_page", ls)
-        self.assertIn('key == \'q\' || key == \'Q\' || key == 0x1b', ls)
+        self.assertIn("LS_COLUMNS 4U", ls)
+        self.assertIn('text_equal(argument, "--pager")', ls)
+        self.assertIn("options->pager", ls)
+        self.assertIn("options->long_format", ls)
+        self.assertIn("options->show_hidden", ls)
+        self.assertIn("options->classify_dirs", ls)
+        self.assertIn("options->human_sizes", ls)
+        self.assertIn("key != 'q' && key != 'Q' && key != 0x1b", ls)
 
     def test_directory_mutation_is_available_to_userspace(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
