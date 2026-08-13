@@ -86,5 +86,42 @@ int main(void) {
     supervisor_clock_tick(4100U);
     safe = supervisor_service_one(4100U);
     if (safe.type != SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) return 32;
+
+    supervisor_init();
+    config.restart_budget = 1U;
+    fence_applied = false;
+    if (supervisor_register("corrected-ops", &config, &fence_ops, 5000U,
+                            &handle) != 0 ||
+        supervisor_report_progress(handle, 1U, 5001U) != 0 ||
+        supervisor_test_corrupt_fence_ops(handle, false) != 0) return 33;
+    supervisor_clock_tick(5101U);
+    restart = supervisor_service_one(5101U);
+    if (restart.type != SUPERVISOR_EVENT_RESTART_REQUIRED || !fence_applied)
+        return 34;
+
+    supervisor_init();
+    fence_applied = false;
+    if (supervisor_register("broken-ops", &config, &fence_ops, 6000U,
+                            &handle) != 0 ||
+        supervisor_report_progress(handle, 1U, 6001U) != 0 ||
+        supervisor_test_corrupt_fence_ops(handle, true) != 0) return 35;
+    supervisor_clock_tick(6101U);
+    safe = supervisor_service_one(6101U);
+    if (safe.type != SUPERVISOR_EVENT_SAFE_STATE_REQUIRED || fence_applied)
+        return 36;
+
+    supervisor_init();
+    if (supervisor_register("corrected-slot", &config, &fence_ops, 7000U,
+                            &handle) != 0 ||
+        supervisor_test_corrupt_descriptor(handle, false) != 0 ||
+        supervisor_report_progress(handle, 1U, 7001U) != 0) return 37;
+    if (!supervisor_output_allowed(handle)) return 38;
+
+    supervisor_init();
+    if (supervisor_register("broken-slot", &config, &fence_ops, 8000U,
+                            &handle) != 0 ||
+        supervisor_test_corrupt_descriptor(handle, true) != 0) return 39;
+    if (supervisor_poll(8001U).type != SUPERVISOR_EVENT_SAFE_STATE_REQUIRED)
+        return 40;
     return 0;
 }

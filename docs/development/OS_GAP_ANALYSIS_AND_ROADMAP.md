@@ -644,6 +644,15 @@ falschen Ausfall. Der 64-Bit-Fortschritt vermeidet ein Langzeit-Wrap. Nach
 Timeout folgen Software-Latch, NIC-Abschaltung und Register-Rückleseprüfung;
 der Restart-Budgetwert null erzwingt bis zu einem implementierten,
 qualifizierten Reinitialisierungspfad den Safe State.
+Die Apply-/Verify-Callbacks samt Kontext sind ebenfalls redundant über
+`critical_object` geschützt. Single-Bit-Fehler werden korrigiert; bei zwei
+unbrauchbaren Kopien wird kein Funktionszeiger ausgeführt und unmittelbar zum
+Safe State eskaliert. Noch ungeschützt sind Slot-Belegung und Domänenname; die
+Belegung, Generation und Name liegen inzwischen ebenfalls in einem
+versionierten Primary/Shadow-Descriptor. Dieser wird bei Registrierung zuletzt
+publiziert; unkorrektierbare Scanfehler erzeugen fail-closed ein Safe-State-
+Ereignis. Offen bleibt die unabhängige externe Kopie der gesamten
+Supervisor-Konfiguration über eine zweite Fehlerdomäne.
 
 1. Einen minimalen Safety-Kern definieren; Treiber, Dateisystem, Netzwerk und
    GUI in neu startbare Least-Privilege-Domänen verschieben.

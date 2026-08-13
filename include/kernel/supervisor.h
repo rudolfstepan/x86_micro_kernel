@@ -7,6 +7,8 @@
 #define SUPERVISOR_MAX_DOMAINS 8U
 #define SUPERVISOR_NAME_CAPACITY 16U
 #define SUPERVISOR_STATE_VERSION 1U
+#define SUPERVISOR_FENCE_OPS_VERSION 1U
+#define SUPERVISOR_DESCRIPTOR_VERSION 1U
 
 typedef enum {
     SUPERVISOR_STARTING = 1,
@@ -68,5 +70,12 @@ supervisor_event_t supervisor_apply_fence(supervisor_handle_t handle,
 int supervisor_report_self_test(supervisor_handle_t handle, bool passed,
                                 uint64_t now_ms);
 bool supervisor_output_allowed(supervisor_handle_t handle);
+
+#ifdef REIST_HOST_TEST
+int supervisor_test_corrupt_fence_ops(supervisor_handle_t handle,
+                                      bool corrupt_both_copies);
+int supervisor_test_corrupt_descriptor(supervisor_handle_t handle,
+                                       bool corrupt_both_copies);
+#endif
 
 #endif

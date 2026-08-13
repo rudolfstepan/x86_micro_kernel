@@ -236,6 +236,19 @@ die vorhandenen Sender und liest bei E1000, RTL8139 und NE2000 die relevanten
 Register zurück. Erst diese Rückleseprüfung bestätigt das Fence; andernfalls
 bleibt die Domäne ebenfalls im global eskalierten Safe State.
 
+Auch die Recovery-Steuerung ist Teil des kritischen Zustands: Apply-/Verify-
+Funktionszeiger und ihr Kontext liegen nicht mehr als ungeschützte Pointer in
+der Domänentabelle, sondern als Primary/Shadow-`critical_object` mit SECDED,
+CRC, Version und semantischer Nicht-Null-Prüfung. Korrigierbare Fehler werden
+vor Benutzung repariert. Sind beide Kopien ungültig, wird kein Pointer
+aufgerufen und die Domäne wechselt unmittelbar in `SAFE_STATE`.
+Auch Slot-Belegung, Generation und der begrenzte Domänenname bilden nun einen
+versionierten Primary/Shadow-Descriptor mit SECDED und CRC. Registrierung
+veröffentlicht diesen Descriptor zuletzt. Ein beschädigter Deskriptor wird
+korrigiert oder beim Scan fail-closed als globales Safe-State-Ereignis
+gemeldet; ein gekipptes `occupied`-Bit kann keine Domäne mehr verschwinden
+lassen.
+
 Unterbrechungsfreie wesentliche
 Leistung bei Kernel-, CPU-, RAM- oder Stromfehlern setzt eine ausreichend
 unabhängige zweite Ausführungslinie beziehungsweise ein Safety Island voraus.

@@ -22,9 +22,14 @@ typedef struct {
 } supervisor_state_t;
 
 typedef struct {
-    bool occupied;
+    uint32_t active;
+    uint32_t generation;
     char name[SUPERVISOR_NAME_CAPACITY];
-    supervisor_fence_ops_t fence_ops;
+} supervisor_descriptor_t;
+
+typedef struct {
+    critical_object_t protected_descriptor;
+    critical_object_t protected_fence_ops;
     critical_object_t protected_state;
 } supervisor_slot_t;
 
@@ -65,6 +70,40 @@ static bool state_valid(const void *payload, size_t length) {
            state->restart_count <= state->restart_budget;
 }
 
+static bool fence_ops_valid(const void *payload, size_t length) {
+    if (length != sizeof(supervisor_fence_ops_t)) return false;
+    const supervisor_fence_ops_t *ops =
+        (const supervisor_fence_ops_t *)payload;
+    return ops->apply != 0 && ops->verify != 0;
+}
+
+static bool descriptor_valid(const void *payload, size_t length) {
+    if (length != sizeof(supervisor_descriptor_t)) return false;
+    const supervisor_descriptor_t *descriptor =
+        (const supervisor_descriptor_t *)payload;
+    if (descriptor->active > 1U) return false;
+    if (descriptor->active == 0U)
+        return descriptor->generation == 0U && descriptor->name[0] == '\0';
+    return descriptor->generation != 0U && descriptor->name[0] != '\0' &&
+           descriptor->name[SUPERVISOR_NAME_CAPACITY - 1U] == '\0';
+}
+
+static int descriptor_read(uint32_t slot, supervisor_descriptor_t *descriptor) {
+    size_t length = 0;
+    critical_read_result_t result = critical_object_read(
+        &slots[slot].protected_descriptor, SUPERVISOR_DESCRIPTOR_VERSION,
+        descriptor, sizeof(*descriptor), &length, descriptor_valid);
+    return result < 0 ? -1 : 0;
+}
+
+static int fence_ops_read(uint32_t slot, supervisor_fence_ops_t *ops) {
+    size_t length = 0;
+    critical_read_result_t result = critical_object_read(
+        &slots[slot].protected_fence_ops, SUPERVISOR_FENCE_OPS_VERSION, ops,
+        sizeof(*ops), &length, fence_ops_valid);
+    return result < 0 ? -1 : 0;
+}
+
 static int state_read(uint32_t slot, supervisor_state_t *state) {
     size_t length = 0;
     critical_read_result_t result = critical_object_read(
@@ -80,8 +119,11 @@ static int state_write(uint32_t slot, const supervisor_state_t *state) {
 }
 
 static int resolve(supervisor_handle_t handle, supervisor_state_t *state) {
+    supervisor_descriptor_t descriptor;
     if (handle.slot >= SUPERVISOR_MAX_DOMAINS ||
-        !slots[handle.slot].occupied || state_read(handle.slot, state) != 0 ||
+        descriptor_read(handle.slot, &descriptor) != 0 ||
+        descriptor.active == 0U || descriptor.generation != handle.generation ||
+        state_read(handle.slot, state) != 0 ||
         state->generation != handle.generation || state->epoch != handle.epoch) return -1;
     return 0;
 }
@@ -98,9 +140,15 @@ static supervisor_event_t event(supervisor_event_type_t type, uint32_t slot,
 
 void supervisor_init(void) {
     uint32_t flags = supervisor_lock();
+    supervisor_descriptor_t empty = {0};
     for (uint32_t slot = 0; slot < SUPERVISOR_MAX_DOMAINS; ++slot) {
-        slots[slot].occupied = false;
-        slots[slot].name[0] = '\0';
+        if (critical_object_init(&slots[slot].protected_descriptor,
+                                 SUPERVISOR_DESCRIPTOR_VERSION, &empty,
+                                 sizeof(empty)) != 0) {
+#ifndef REIST_HOST_TEST
+            panic("Unable to initialize supervisor descriptor");
+#endif
+        }
     }
     next_generation = 1U;
     last_deadline_check_ms = 0;
@@ -110,7 +158,9 @@ void supervisor_init(void) {
 
 static void check_deadlines_locked(uint64_t now_ms) {
     for (uint32_t slot = 0; slot < SUPERVISOR_MAX_DOMAINS; ++slot) {
-        if (!slots[slot].occupied) continue;
+        supervisor_descriptor_t descriptor;
+        if (descriptor_read(slot, &descriptor) != 0 || descriptor.active == 0U)
+            continue;
         supervisor_state_t state;
         if (state_read(slot, &state) != 0) continue;
         if ((state.state == SUPERVISOR_STARTING ||
@@ -143,7 +193,14 @@ int supervisor_register(const char *name, const supervisor_config_t *config,
         return -1;
     uint32_t flags = supervisor_lock();
     uint32_t slot = 0;
-    while (slot < SUPERVISOR_MAX_DOMAINS && slots[slot].occupied) ++slot;
+    for (; slot < SUPERVISOR_MAX_DOMAINS; ++slot) {
+        supervisor_descriptor_t descriptor;
+        if (descriptor_read(slot, &descriptor) != 0) {
+            supervisor_unlock(flags);
+            return -1;
+        }
+        if (descriptor.active == 0U) break;
+    }
     if (slot == SUPERVISOR_MAX_DOMAINS) {
         supervisor_unlock(flags);
         return -1;
@@ -164,14 +221,27 @@ int supervisor_register(const char *name, const supervisor_config_t *config,
         supervisor_unlock(flags);
         return -1;
     }
+    supervisor_descriptor_t descriptor = {
+        .active = 1U, .generation = generation, .name = {0},
+    };
     uint32_t index = 0;
     while (index + 1U < SUPERVISOR_NAME_CAPACITY && name[index] != '\0') {
-        slots[slot].name[index] = name[index];
+        descriptor.name[index] = name[index];
         ++index;
     }
-    slots[slot].name[index] = '\0';
-    slots[slot].fence_ops = *fence_ops;
-    slots[slot].occupied = true;
+    descriptor.name[index] = '\0';
+    if (critical_object_init(&slots[slot].protected_fence_ops,
+                             SUPERVISOR_FENCE_OPS_VERSION, fence_ops,
+                             sizeof(*fence_ops)) != 0) {
+        supervisor_unlock(flags);
+        return -1;
+    }
+    if (critical_object_update(&slots[slot].protected_descriptor,
+                               SUPERVISOR_DESCRIPTOR_VERSION, &descriptor,
+                               sizeof(descriptor), descriptor_valid) != 0) {
+        supervisor_unlock(flags);
+        return -1;
+    }
     handle_out->slot = slot;
     handle_out->generation = generation;
     handle_out->epoch = state.epoch;
@@ -218,7 +288,17 @@ supervisor_event_t supervisor_poll(uint64_t now_ms) {
     check_deadlines_locked(now_ms);
     for (uint32_t offset = 0; offset < SUPERVISOR_MAX_DOMAINS; ++offset) {
         uint32_t slot = (next_poll_slot + offset) % SUPERVISOR_MAX_DOMAINS;
-        if (!slots[slot].occupied) continue;
+        supervisor_descriptor_t descriptor;
+        if (descriptor_read(slot, &descriptor) != 0) {
+            supervisor_event_t result = {
+                .type = SUPERVISOR_EVENT_SAFE_STATE_REQUIRED,
+                .handle = {.slot = slot, .generation = 0, .epoch = 0},
+            };
+            next_poll_slot = (slot + 1U) % SUPERVISOR_MAX_DOMAINS;
+            supervisor_unlock(flags);
+            return result;
+        }
+        if (descriptor.active == 0U) continue;
         supervisor_state_t state;
         if (state_read(slot, &state) != 0) {
             supervisor_event_t result = {
@@ -306,7 +386,14 @@ supervisor_event_t supervisor_apply_fence(supervisor_handle_t handle,
         supervisor_unlock(flags);
         return none;
     }
-    fence_ops = slots[handle.slot].fence_ops;
+    if (fence_ops_read(handle.slot, &fence_ops) != 0) {
+        state.state = SUPERVISOR_SAFE_STATE;
+        (void)state_write(handle.slot, &state);
+        supervisor_event_t result = event(
+            SUPERVISOR_EVENT_SAFE_STATE_REQUIRED, handle.slot, &state);
+        supervisor_unlock(flags);
+        return result;
+    }
     state.state = SUPERVISOR_FENCING;
     if (state_write(handle.slot, &state) != 0) {
         supervisor_unlock(flags);
@@ -377,3 +464,25 @@ bool supervisor_output_allowed(supervisor_handle_t handle) {
     supervisor_unlock(flags);
     return allowed;
 }
+
+#ifdef REIST_HOST_TEST
+int supervisor_test_corrupt_fence_ops(supervisor_handle_t handle,
+                                      bool corrupt_both_copies) {
+    supervisor_state_t state;
+    if (resolve(handle, &state) != 0) return -1;
+    critical_object_t *object = &slots[handle.slot].protected_fence_ops;
+    object->primary.crc32 ^= 1U;
+    if (corrupt_both_copies) object->shadow.crc32 ^= 2U;
+    return 0;
+}
+
+int supervisor_test_corrupt_descriptor(supervisor_handle_t handle,
+                                       bool corrupt_both_copies) {
+    supervisor_state_t state;
+    if (resolve(handle, &state) != 0) return -1;
+    critical_object_t *object = &slots[handle.slot].protected_descriptor;
+    object->primary.crc32 ^= 1U;
+    if (corrupt_both_copies) object->shadow.crc32 ^= 2U;
+    return 0;
+}
+#endif
