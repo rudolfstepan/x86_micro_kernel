@@ -1,12 +1,12 @@
-# Medical High-Assurance Design- und Entwicklungsvertrag
+# Medical Reference Profile für den REIST High-Assurance Core
 
 Produktname: **REIST OS — Resilient Execution, Isolation and Stability
 Technology**
 
 Stand: 13. August 2026
 
-Status: verbindliche Ziel- und Abnahmevorgabe für neue Architektur-,
-Implementierungs- und Releaseentscheidungen
+Status: optionales Referenzprofil; nur für ausdrücklich ausgewählte
+medizinische Zielsysteme verbindlich
 
 > **Safety-Hinweis:** Das aktuelle OS ist ein Forschungsprototyp. Es ist nicht
 > zertifiziert, nicht klinisch validiert und darf nicht für Diagnose,
@@ -16,6 +16,13 @@ Implementierungs- und Releaseentscheidungen
 > eine streng begrenzte, gesondert nachzuweisende Ausnahme.
 
 ## Zweck und klare Abgrenzung
+
+Dieses Dokument ist ein **optionales Safety Profile** auf Basis des
+[generischen REIST-Core-Vertrags](HIGH_ASSURANCE_CORE_CONTRACT.md). Es bestimmt
+nicht die Identität oder die allgemeine Roadmap von REIST OS. Seine
+medizinischen Anforderungen werden erst verbindlich, wenn ein konkretes
+Zielsystem dieses Profil auswählt und Intended Purpose, Systemgrenze und
+Risikoanalyse festlegt.
 
 Dieses Dokument richtet die weitere Entwicklung des Betriebssystems auf einen
 medizinischen High-Assurance-Einsatz aus. Bis die produktbezogene

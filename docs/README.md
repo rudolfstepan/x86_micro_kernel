@@ -14,7 +14,8 @@ bereits behobene Fehler enthalten.
 - [Quickstart](development/QUICKSTART.md) – nativer Windows-Build und erster Start
 - [Projektstatus](development/PROJECT_STATUS.md) – verifizierte Komponenten und offene Grenzen
 - [Fehlstellenanalyse und Roadmap](development/OS_GAP_ANALYSIS_AND_ROADMAP.md) – priorisierte Implementierungspakete mit Abhängigkeiten und Abnahmekriterien
-- [Medical-High-Assurance-Vertrag](architecture/MEDICAL_HIGH_ASSURANCE_CONTRACT.md) – verbindliche Safety-, Recovery-, Redundanz- und Lebenszyklusregeln; derzeit kein klinisch freigegebener Stand
+- [REIST High-Assurance Core Contract](architecture/HIGH_ASSURANCE_CORE_CONTRACT.md) – verbindliche, branchenunabhängige Regeln für Fehlerbegrenzung, Recovery und Nachweisführung
+- [Medical Reference Profile](architecture/MEDICAL_HIGH_ASSURANCE_CONTRACT.md) – optionale medizinische Verschärfung; keine klinische Freigabe
 - [REIST-Zielarchitektur](architecture/REIST_ARCHITECTURE.md) – Detect, Contain, Recover, Validate und Reintegrate als technisches Systemmodell
 - [Build-Modi](development/BUILD_MODES.md) – `qemu`, `vmware`, `real_hw` und Videoauswahl
 - [Nativer Bootdatenträger](development/BOOTABLE_DISK.md) – BIOS/MBR, Stage 2 und FAT32-Image

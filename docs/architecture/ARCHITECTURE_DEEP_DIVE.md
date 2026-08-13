@@ -6,11 +6,11 @@ Dieses Dokument beschreibt die aktuelle 32-Bit-x86-Architektur. Das System
 startet ausschließlich über den eigenen BIOS-Bootloader. Einen alternativen
 Legacy-Einstieg gibt es nicht mehr.
 
-Das neue Ziel ist eine medizinische High-Assurance-Plattform. Der heutige Stand
-ist jedoch ein Forschungsprototyp, weder zertifiziert noch für klinische
-Verwendung freigegeben. Zielanforderungen, Fehlerreaktion und Nachweisregeln
-definiert der
-[Medical-High-Assurance-Vertrag](MEDICAL_HIGH_ASSURANCE_CONTRACT.md); dieses
+Das neue Ziel ist ein branchenunabhängiges High-Assurance-Forschungsbetriebssystem.
+Der heutige Stand ist jedoch ein nicht zertifizierter Forschungsprototyp.
+Zielanforderungen, Fehlerreaktion und Nachweisregeln definiert der
+[REIST High-Assurance Core Contract](HIGH_ASSURANCE_CORE_CONTRACT.md);
+Medizin, Raumfahrt, Industrie und FPGA sind getrennte Referenzprofile. Dieses
 Dokument beschreibt weiterhin ehrlich den ausführbaren Ist-Zustand.
 
 ## High-Assurance-Grenze und Wiederherstellungsmodell
@@ -18,7 +18,7 @@ Dokument beschreibt weiterhin ehrlich den ausführbaren Ist-Zustand.
 Der heutige modulare Monolith ist eine gemeinsame Fehlerdomäne: Ein Ring-0-
 Speicherfehler kann Scheduler, Treiber, Dateisystem und Diagnose gleichzeitig
 beschädigen. `panic()` sichert Diagnose und hält danach die CPU an. Das ist ein
-kontrollierter Stopp, aber noch kein fehlertoleranter medizinischer Betrieb.
+kontrollierter Stopp, aber noch kein fail-operationaler Betrieb.
 
 Das Zielmodell ordnet Fehler nach ihrer nachweisbaren Reichweite:
 
@@ -45,7 +45,7 @@ Kernelstack unbrauchbar ist. Der Fatalpfad darf nicht allokieren, blockieren
 oder von Dateisystem, Netzwerk, Desktop bzw. normalem Logging abhängen.
 
 Desktop, Netzwerk, Massenspeicher und allgemeine Diagnose sind nichtkritische
-Partitionen. Keine wesentliche medizinische Funktion darf von ihrer
+Partitionen. Keine profilabhängige Essential Function darf von ihrer
 Verfügbarkeit oder ihrem Timing abhängen. Der Übergang zu diesem Zielmodell ist
 als Sicherheits-Gate S0 in der Roadmap geplant; er ist noch nicht umgesetzt.
 

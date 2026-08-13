@@ -21,10 +21,23 @@ Ist die Integrität des Kernels oder der Hardware nicht mehr vertrauenswürdig,
 wird nicht innerhalb derselben Instanz weitergearbeitet. Ein unabhängiger
 Supervisor übernimmt oder stellt den validierten sicheren Zustand her.
 
+REIST ist branchenunabhängig aufgebaut:
+
+```text
+REIST OS
+├── Generic High-Assurance Core
+├── Medical reference profile
+├── Spacecraft reference profile
+├── Industrial-control reference profile
+└── Experimental FPGA profile
+```
+
 Dieses Dokument beschreibt die technische Zielarchitektur. Der aktuelle
 32-Bit-Kernel ist noch ein modularer Monolith und erfüllt sie nicht. Die
-verbindlichen Safety- und Nachweisregeln stehen im
-[Medical-High-Assurance-Vertrag](MEDICAL_HIGH_ASSURANCE_CONTRACT.md).
+verbindlichen, profilunabhängigen Regeln stehen im
+[High-Assurance-Core-Vertrag](HIGH_ASSURANCE_CORE_CONTRACT.md). Der
+[Medical-High-Assurance-Vertrag](MEDICAL_HIGH_ASSURANCE_CONTRACT.md) ist nur
+ein optionales Referenzprofil.
 
 ## Minimaler REIST-Kern
 
@@ -48,6 +61,18 @@ oder verworfen. Paging und getrennte Kernel-/Userräume werden früh aktiviert;
 NX, SMEP/SMAP, IOMMU und später CET werden nur auf Zielplattformen verwendet,
 die diese Funktionen nachweislich besitzen. Für den aktuellen i386-Pfad sind
 fehlende Hardwareeigenschaften explizite Grenzen, keine stillen Annahmen.
+
+Der entscheidende nächste Architekturwechsel ist damit ausdrücklich:
+
+```text
+modular-monolithisches kernel.bin
+-> minimaler Safety Kernel mit IPC und Capabilities
+-> isolierte Storage-, Network- und Driver-Domänen
+```
+
+Erst diese Trennung erzeugt Failure Domains, in denen ein kompletter Dienst
+gezielt beendet, blockiert oder korrumpiert werden kann, ohne den übrigen Kern
+und dessen Essential Functions mitzunehmen.
 
 ## Fehlereindämmungsregionen
 
@@ -337,7 +362,7 @@ werden.
 
 ## Übergang vom heutigen Kernel
 
-1. Zweck, Hazards, wesentliche Leistung, FTTI und Recoveryziele festlegen.
+1. Einsatzprofil, Hazards, Essential Functions, FTTI und Recoveryziele festlegen.
 2. Guardpages, Emergency-/Double-Fault-Pfad, begrenzten Crashrecord und externen
    Watchdog implementieren.
 3. IPC, Capabilities, Quoten und Supervisor zunächst für neue Dienste bauen.

@@ -10,7 +10,8 @@ und überprüfbare Abnahmekriterien.
 
 ## 1. Zielbild und Abgrenzung
 
-Das neue Projektziel ist eine **medizinische High-Assurance-Plattform**, bei der
+Das neue Projektziel ist ein **High-Assurance Research Operating System for
+Fault-Tolerant and Fail-Operational Computing**, bei dem
 Stabilität, Fehlerbegrenzung, nachweisbares Laufzeitverhalten und langfristige
 Wartbarkeit vor Funktionsumfang und Geschwindigkeit stehen. Neue Funktionen
 dürfen nur aufgenommen werden, wenn Fehlergrenzen, Diagnose, Rückfallpfad,
@@ -18,18 +19,17 @@ Ressourcenobergrenzen, Verifikation und Lebenszyklus geklärt sind. Redundanz is
 der bevorzugte Weg zu Verfügbarkeit, muss aber unabhängig sein und gemeinsame
 Fehlerursachen berücksichtigen.
 
-Die konkrete medizinische Zweckbestimmung, wesentliche Leistung, das
-Geräterisiko und der regulatorische Zielmarkt sind noch nicht festgelegt. Das
-OS ist deshalb **nicht zertifiziert, nicht für klinischen Einsatz freigegeben
-und derzeit ein Forschungsprototyp**. Intern wird bis zu einer späteren
-Produktklassifizierung mit der strengsten sinnvollen Software-Evidenz geplant;
-das ersetzt weder ein Qualitätsmanagementsystem noch die Validierung des
-vollständigen Medizinprodukts. Der verbindliche Zielvertrag steht in
-[`MEDICAL_HIGH_ASSURANCE_CONTRACT.md`](../architecture/MEDICAL_HIGH_ASSURANCE_CONTRACT.md).
+REIST besitzt einen generischen High-Assurance-Kern. Medizin, Raumfahrt,
+Industrieautomatisierung und FPGA-Forschung sind getrennte Referenzprofile,
+nicht die Identität des Betriebssystems. Der Forschungsprototyp ist weder
+zertifiziert noch für einen sicherheitskritischen Produktionseinsatz
+freigegeben. Der verbindliche Kernvertrag steht in
+[`HIGH_ASSURANCE_CORE_CONTRACT.md`](../architecture/HIGH_ASSURANCE_CORE_CONTRACT.md);
+der bisherige medizinische Vertrag ist ein optionales Referenzprofil.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
-keine wesentliche medizinische Funktion blockieren oder deren Zeitbudget
+keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget
 verbrauchen.
 
 **REIST OS** steht für **Resilient Execution, Isolation and Stability
@@ -67,7 +67,7 @@ IRQ-Kontext. Strukturierte Logs und vollständige Panic-Diagnosen schließen
 den Meilenstein ab. R1.4 ergänzt den nativen VBE-Handoff, eine schmale
 versionierte Ring-3-Display-ABI und `DESKTOP.PRG`. Vor jedem weiteren regulären
 Funktionspaket steht nun das Sicherheits-Gate S0. Der nächste Schritt ist S0.1:
-Zweckbestimmung, wesentliche Leistung, Gefahren, sichere/degradierte Zustände
+Einsatzprofil, Essential Functions, Gefahren, sichere/degradierte Zustände
 und maximale Fehlerreaktionszeiten rückverfolgbar festzulegen.
 
 ## 3. Verifizierter Ist-Zustand
@@ -310,8 +310,8 @@ Blockgeräte -> Partitionen + DMA -> AHCI/NVMe und USB-Massenspeicher
 ACPI + DMA -> xHCI -> USB-Enumeration -> HID/Storage
 R1.2-Directmap bis 1 GiB -> Highmem/kmap oberhalb 1 GiB -> später x86-64/SMP
 
-Medical High-Assurance Gate S0
-  -> Zweckbestimmung + Gefahren + wesentliche Leistung + FTTI
+Generic High-Assurance Gate S0
+  -> Einsatzprofil + Gefahren + Essential Functions + FTTI
   -> Fehlerdomänen + minimaler Safety-Kern + unabhängiger Supervisor
   -> Stack-/Exception-Containment + Watchdog + Knoten-Failover
   -> deterministische Ressourcen + persistente Integrität + sichere Updates
@@ -572,10 +572,10 @@ Eintrittsbedingung für alle folgenden Phasen. Bis S0.1 abgenommen ist, sind nur
 Änderungen zulässig, die Sicherheit, Isolation, Diagnose, Verifikation oder
 Reproduzierbarkeit erhöhen.
 
-#### S0.1 Zweckbestimmung, Gefahren und Safety Case — M
+#### S0.1 Einsatzprofil, Gefahren und Assurance Case — M
 
-1. Medizinische Verwendung, Umgebung und vorhersehbaren Fehlgebrauch festlegen.
-2. Wesentliche Leistung, sichere/degradierte Zustände und je Gefahr die FTTI
+1. Zielsystem, Einsatzprofil, Umgebung und vorhersehbaren Fehlgebrauch festlegen.
+2. Essential Functions, sichere/degradierte Zustände und je Gefahr die FTTI
    definieren.
 3. Ein versioniertes Gefahrenregister mit Ursache, Kontrolle, Restrisiko und
    Verifikationsnachweis anlegen.
@@ -623,6 +623,15 @@ sperrt Netzwerk-TX logisch und schaltet die Sender der unterstützten NICs
 best-effort ab. Die Migration realer Dienste in eigene Fehlerdomänen sowie
 rücklesbare externe Interlocks und unabhängige Supervisorhardware bleiben
 offen.
+
+**Architektur-Gate:** Der Supervisor innerhalb des heutigen `kernel.bin`
+verbessert Erkennung und Fencing, erzeugt aber noch keine unabhängige
+Failure Domain. Der nächste große Umbau verkleinert Ring 0 auf MMU, Scheduler,
+IPC, Capabilities und Supervisor-Primitiven. Storage, Netzwerk und komplexe
+Treiber werden anschließend als getrennte, capability-beschränkte und neu
+startbare Dienste migriert. Abnahme verlangt Fault-Injection, die einen ganzen
+Dienst beendet oder korrumpiert, während nicht betroffene Essential Functions
+innerhalb ihrer Profilbudgets weiterlaufen.
 
 Das Restart-Gate akzeptiert keine vertrauensbasierte Fence-Bestätigung mehr:
 Jede Domäne muss einen Apply- und einen separaten Verify-Hook bereitstellen.
@@ -844,7 +853,7 @@ nebenbei in die 32-Bit-Basis eingebaut werden.
 | 6 | R1.2 Speicherverwaltung (erledigt) | R0.4 | L |
 | 7 | R1.3 Synchronisation/Diagnose (erledigt) | R1.1 | M |
 | 8 | R1.4 Grafischer Desktop-MVP (erledigt) | R0.4, R1.1 | M |
-| 9 | S0.1 Zweck/Gefahren/Safety Case | R1.3 | M |
+| 9 | S0.1 Profil/Gefahren/Assurance Case | R1.3 | M |
 | 10 | S0.2 Stack/Exception/Panic-Containment | S0.1 | L |
 | 11 | S0.3 Fehlerdomänen/Supervisor/Redundanz | S0.1, S0.2 | XL |
 | 12 | S0.4 Determinismus/Ressourcengarantie | S0.1, S0.3 | L |
@@ -872,7 +881,7 @@ Ein Paket gilt nur dann als fertig, wenn alle folgenden Punkte erfüllt sind:
 - relevante QEMU-, VMware- oder Hardwarematrix ist dokumentiert
 - alte Stubs, widersprüchliche Dokumentation und tote Pfade sind entfernt oder
   ausdrücklich als nicht unterstützt markiert
-- betroffene Gefahren, wesentliche Leistung, FTTI und sicherer/degradierter
+- betroffene Gefahren, Essential Functions, FTTI und sicherer/degradierter
   Zustand sind identifiziert; das Restrisiko ist begründet
 - Anforderungen, Design, Code, Testfall und Ergebnis sind bidirektional
   rückverfolgbar und unabhängig geprüft
@@ -903,9 +912,10 @@ make test-fuzz
 
 ## 10. Unmittelbar nächster Schritt
 
-Phase 0 und R1.1 bis R1.4 sind umgesetzt. Wegen des neuen medizinischen
-Zielbilds ist der nächste Schritt nicht R2.1, sondern **S0.1 Zweckbestimmung,
-Gefahren und Safety Case**. Als erstes Ergebnis müssen wesentliche Leistung,
+Phase 0 und R1.1 bis R1.4 sind umgesetzt. Wegen des neuen generischen
+High-Assurance-Zielbilds ist der nächste Schritt nicht R2.1, sondern **S0.1
+Einsatzprofil, Gefahren und Assurance Case**. Als erstes Ergebnis müssen die
+profilabhängigen Essential Functions,
 sichere und degradierte Zustände, FTTI und ein versioniertes Gefahrenregister
 vorliegen.
 
@@ -918,7 +928,7 @@ Prozess beendet und ein Kernel-Stackfehler nicht still korrumpiert oder per
 Triple-Fault verschwindet.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
-glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie wesentliche Leistung
+glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions
 bei Kernel-Panic benötigt S0.3: eine unabhängige Supervisor-/Standby-Domäne,
 die Ausgänge einzäunt und innerhalb der FTTI übernimmt. R2.1 und alle weiteren
 Funktionsarbeiten bleiben bis zur Festlegung und Prüfung dieser S0-Gates
