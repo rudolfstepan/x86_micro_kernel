@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "package_id",
+    "summary",
+    "commit",
+    "passed",
+    "blocker"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["committed", "blocked", "no_work"]
+    },
+    "package_id": { "type": "string" },
+    "summary": { "type": "string", "maxLength": 400 },
+    "commit": { "type": "string", "maxLength": 40 },
+    "passed": {
+      "type": "array",
+      "maxItems": 12,
+      "items": { "type": "string", "maxLength": 160 }
+    },
+    "blocker": { "type": "string", "maxLength": 400 }
+  }
+}

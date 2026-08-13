@@ -1,0 +1,304 @@
+version = 1
+program = "S0.3b"
+active_id = "S0.3b-1"
+
+[policy]
+one_package_per_run = true
+advance_only_after_commit_gates = true
+allow_parallel_writers = false
+max_read_only_reviewers = 1
+external_writes = false
+push = false
+
+[[packages]]
+id = "S0.3b-1"
+status = "active"
+risk = "high"
+title = "Finite IPC deadlines"
+scope = "Add finite monotonic deadlines and explicit nonblocking behavior to IPC send/receive. Keep syscall 50/51 and old SDK calls source-compatible through a finite default; append timeout syscalls 53/54. Prefer a bounded MAX_TASKS scan with per-task deadline metadata; never place the existing single wait_node in two queues."
+allowed_files = [
+  "include/kernel/ipc.h",
+  "kernel/ipc/ipc.c",
+  "kernel/sched/scheduler.h",
+  "kernel/sched/scheduler.c",
+  "kernel/sched/wait_queue.h",
+  "kernel/sched/wait_queue.c",
+  "kernel/time/pit.c",
+  "kernel/time/pit.h",
+  "kernel/syscall/syscall_table.c",
+  "lib/libc/stdlib.h",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "examples/userspace/guest_test.c",
+  "test/test_ipc_host.c",
+  "test/test_reist_ipc.py",
+  "test/test_scheduler_time.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  ".codex/tasks/reist-s03b.toml"
+]
+invariants = [
+  "timeout zero never blocks and returns EAGAIN",
+  "a positive expired deadline returns ETIMEDOUT (-110)",
+  "deadline arithmetic saturates at UINT64_MAX and uses pit_monotonic_ms",
+  "normal wake, timeout, close, kill and revoke remove a waiter exactly once",
+  "timeout leaves message and capability state unchanged",
+  "no polling, heap allocation or unbounded retry",
+  "syscalls are append-only and user pointers are validated before blocking"
+]
+targeted_tests = [
+  "python test/test_reist_ipc.py -q",
+  "python test/test_scheduler_time.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal"
+]
+stop_conditions = [
+  "timed waiting cannot be expressed without enqueueing one intrusive node twice",
+  "append-only ABI compatibility cannot be retained",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add bounded IPC deadlines"
+evidence = []
+
+[[packages]]
+id = "S0.3b-2"
+status = "queued"
+risk = "high"
+title = "Protected IPC metadata"
+scope = "Protect bounded endpoint, queue and capability control metadata with critical_object-compatible redundancy, validation and fail-closed corruption handling. Add deterministic single- and multi-bit fault injection."
+allowed_files = [
+  "include/kernel/ipc.h",
+  "kernel/ipc/ipc.c",
+  "include/kernel/critical_object.h",
+  "kernel/init/critical_object.c",
+  "test/test_ipc_host.c",
+  "test/test_reist_ipc.py",
+  "test/test_reist_critical_object.py",
+  "examples/userspace/guest_test.c",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  ".codex/tasks/reist-s03b.toml"
+]
+invariants = [
+  "all protected payloads fit fixed critical_object capacity or are split explicitly",
+  "validation occurs before rights, queue indexes or payload are used",
+  "corruption never grants authority or emits unvalidated data",
+  "single-bit correction is logged boundedly and double corruption fails closed",
+  "waiters on a quarantined endpoint are woken and receive a distinct integrity error"
+]
+targeted_tests = [
+  "python test/test_reist_ipc.py -q",
+  "python test/test_reist_critical_object.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal"
+]
+stop_conditions = [
+  "critical_object validation would require heap allocation or unbounded IRQ-off work",
+  "the corruption policy can publish partially validated state",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: protect IPC control metadata"
+evidence = []
+
+[[packages]]
+id = "S0.3b-3"
+status = "queued"
+risk = "high"
+title = "Attenuating capability delegation"
+scope = "Add explicit generation-scoped delegation to a named process. Delegated rights must be a nonempty subset; CONTROL is never implicit. Migrate callers before removing ambient spawn inheritance."
+allowed_files = [
+  "include/kernel/ipc.h",
+  "kernel/ipc/ipc.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "kernel/syscall/syscall_table.c",
+  "lib/libc/stdlib.h",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "test/test_ipc_host.c",
+  "test/test_reist_ipc.py",
+  "examples/userspace/guest_test.c",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  ".codex/tasks/reist-s03b.toml"
+]
+invariants = [
+  "delegated rights are a nonempty subset of the source rights",
+  "CONTROL is never inherited or delegated implicitly",
+  "target identity includes process generation and is validated atomically",
+  "quota failure rolls back without a leaked capability",
+  "old handles remain invalid after close, exit and slot reuse"
+]
+targeted_tests = [
+  "python test/test_reist_ipc.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal"
+]
+stop_conditions = [
+  "the target cannot be identified generation-safely",
+  "a failed delegation can leak rights or consume quota",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add attenuating IPC delegation"
+evidence = []
+
+[[packages]]
+id = "S0.3b-4"
+status = "queued"
+risk = "high"
+title = "Reserved restart capacity"
+scope = "Reserve at least one task/process slot and bounded memory admission for supervisor-managed service restart. Ambient spawn must fail before consuming the reserve."
+allowed_files = [
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "kernel/sched/scheduler.h",
+  "kernel/sched/scheduler.c",
+  "include/kernel/supervisor.h",
+  "kernel/init/supervisor.c",
+  "test/test_reist_supervisor.py",
+  "examples/userspace/guest_test.c",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  ".codex/tasks/reist-s03b.toml"
+]
+invariants = [
+  "ambient callers cannot consume reserved restart capacity",
+  "supervisor admission is explicit and bounded",
+  "failed task creation restores every resource counter",
+  "PID and generation reuse remain ABA-safe",
+  "normal task exhaustion cannot prevent one supervised restart"
+]
+targeted_tests = [
+  "python test/test_reist_supervisor.py -q",
+  "python test/test_memory_r12.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode memory"
+]
+stop_conditions = [
+  "the reserve depends on dynamic allocation",
+  "ordinary exhaustion can consume the restart slot",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: reserve supervised restart capacity"
+evidence = []
+
+[[packages]]
+id = "S0.3b-5"
+status = "queued"
+risk = "high"
+title = "Least-privilege domain profiles"
+scope = "Add explicit per-process domain profiles and default-deny gates for kill and ambient file, display, process-control and other syscalls used by the probe. Authorization must precede all side effects. Preserve the unrestricted compatibility profile for existing programs."
+allowed_files = [
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "kernel/syscall/syscall_table.c",
+  "include/kernel/supervisor.h",
+  "kernel/init/supervisor.c",
+  "lib/libc/stdlib.h",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "test/test_reist_supervisor.py",
+  "test/test_reist_probe_domain.py",
+  "examples/userspace/guest_test.c",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  ".codex/tasks/reist-s03b.toml"
+]
+invariants = [
+  "the probe profile is default-deny and versioned",
+  "authorization occurs before state mutation or user-memory output",
+  "kill authorization is capability/domain and generation based, never PID-only",
+  "kernel-internal operations use an explicit trusted path",
+  "existing programs retain behavior only through an explicit compatibility profile"
+]
+targeted_tests = [
+  "python test/test_reist_probe_domain.py -q",
+  "python test/test_reist_supervisor.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal"
+]
+stop_conditions = [
+  "a complete syscall authority inventory cannot be established",
+  "any denied operation performs a side effect before authorization",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: enforce REIST domain authority profiles"
+evidence = []
+
+[[packages]]
+id = "S0.3b-6"
+status = "queued"
+risk = "critical"
+title = "Supervised Ring-3 probe lifecycle"
+scope = "Launch a static-profile Ring-3 probe and implement bounded crash, hang and invalid-reply recovery: fence, revoke, reap, recreate, self-test and reintegrate. Exhausted restart budget enters the documented degraded state while unrelated work continues."
+allowed_files = [
+  "include/kernel/supervisor.h",
+  "kernel/init/supervisor.c",
+  "kernel/init/kernel.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "kernel/ipc/ipc.c",
+  "kernel/syscall/syscall_table.c",
+  "examples/userspace/guest_test.c",
+  "examples/userspace/reist_probe.c",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_smoke.py",
+  "Makefile",
+  "test/test_reist_probe_domain.py",
+  "test/test_qemu_smoke.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  ".codex/tasks/reist-s03b.toml"
+]
+invariants = [
+  "every recovery phase has a finite deadline and ordered state transition",
+  "old endpoint and process generations are invalid before recreation",
+  "outputs remain fenced until the replacement passes self-test",
+  "restart-budget exhaustion reaches a defined degraded state without looping",
+  "scheduler, time and an unrelated process demonstrate progress during each injection",
+  "S0.3b is not marked complete without real QEMU lifecycle evidence"
+]
+targeted_tests = [
+  "python test/test_reist_probe_domain.py -q",
+  "python test/test_qemu_smoke.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode pit",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode watchdog",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode memory"
+]
+stop_conditions = [
+  "fencing has no verifiable effect",
+  "independent progress cannot be observed in the guest",
+  "recovery can exceed its restart budget",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add supervised Ring-3 probe recovery"
+evidence = []
