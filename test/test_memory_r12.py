@@ -285,11 +285,7 @@ class KernelStackAndReapingTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-    def test_kernel_stacks_have_two_64_byte_canaries(self):
-        self.assertRegex(
-            self.scheduler,
-            r"(?m)^#define\s+STACK_GUARD_WORDS\s+16U\b",
-        )
+    def test_kernel_stacks_use_non_present_guard_pages(self):
         allocate = function_block(
             self.scheduler, "uint32_t *scheduler_allocate_kernel_stack("
         )
@@ -299,15 +295,17 @@ class KernelStackAndReapingTests(unittest.TestCase):
         release = function_block(
             self.scheduler, "void scheduler_free_kernel_stack("
         )
-        self.assertIn("STACK_SIZE + 2U * STACK_GUARD_BYTES", allocate)
-        self.assertIn("lower[i] = stack_guard_value(i, false)", allocate)
-        self.assertIn("upper[i] = stack_guard_value(i, true)", allocate)
-        self.assertIn("lower[i] != stack_guard_value(i, false)", validate)
-        self.assertIn("upper[i] != stack_guard_value(i, true)", validate)
+        self.assertIn("KERNEL_STACK_ARENA_BASE", allocate)
+        self.assertIn("allocate_frame()", allocate)
+        self.assertIn("map_page(paging_kernel_directory()", allocate)
+        self.assertIn("base - PAGE_SIZE", validate)
+        self.assertIn("base + STACK_SIZE", validate)
+        self.assertGreaterEqual(validate.count("paging_kernel_page_present"), 3)
         self.assertIn("scheduler_kernel_stack_is_valid(stack)", release)
+        self.assertIn("unmap_kernel_page", release)
         self.assertIn('panic("Kernel stack guard corrupted")', release)
 
-    def test_static_kernel_stack_has_a_linker_reserved_64_byte_guard(self):
+    def test_static_kernel_stack_has_a_linker_reserved_guard_page(self):
         stack_section = self.linker[
             self.linker.index(".stack ALIGN(4096)") :
             self.linker.index("} > kernel_ram", self.linker.index(".stack ALIGN(4096)"))
@@ -315,7 +313,7 @@ class KernelStackAndReapingTests(unittest.TestCase):
         compact = re.sub(r"\s+", " ", stack_section)
         self.assertRegex(
             compact,
-            r"_stack_guard_start\s*=\s*\.\s*;\s*\.\s*\+=\s*64\s*;\s*"
+            r"_stack_guard_start\s*=\s*\.\s*;\s*\.\s*\+=\s*4096\s*;\s*"
             r"_stack_guard_end\s*=\s*\.\s*;\s*_stack_start\s*=\s*\.\s*;",
         )
         self.assertLess(
@@ -334,7 +332,7 @@ class KernelStackAndReapingTests(unittest.TestCase):
             "push ebx",
             "mov edi, _stack_guard_start",
             "mov eax, 0x4B535447",
-            "mov ecx, 16",
+            "mov ecx, 1024",
             "rep stosd",
             "pop ebx",
             "pop eax",
@@ -357,7 +355,8 @@ class KernelStackAndReapingTests(unittest.TestCase):
         compact = re.sub(r"\s+", " ", validate)
         self.assertIn("&_stack_guard_start", validate)
         self.assertIn("&_stack_guard_end", validate)
-        self.assertIn("!= 64U", compact)
+        self.assertIn("== PAGE_SIZE", compact)
+        self.assertIn("!paging_kernel_page_present", compact)
         self.assertIn("*guard++ != KERNEL_STACK_GUARD", compact)
 
         kernel_main = function_block(self.kernel, "void kernel_main(")

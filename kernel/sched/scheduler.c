@@ -27,9 +27,6 @@ static uint32_t pit_scheduler_ticks;
 static wait_queue_t sleep_waiters = WAIT_QUEUE_INIT;
 
 #define SCHEDULER_QUANTUM_MS 10U
-#define STACK_GUARD_WORDS 16U
-#define STACK_GUARD_BYTES (STACK_GUARD_WORDS * sizeof(uint32_t))
-#define STACK_GUARD_BASE 0x5354414BU /* "STAK" */
 #define KERNEL_STACK_GUARD 0x4B535447U /* "KSTG" */
 
 extern uint32_t _stack_guard_start;
@@ -37,47 +34,84 @@ extern uint32_t _stack_guard_end;
 extern uint8_t _stack_start;
 extern uint8_t _stack_end;
 
+typedef struct {
+    bool allocated;
+    uintptr_t frames[STACK_SIZE / PAGE_SIZE];
+} kernel_stack_slot_t;
+
+static kernel_stack_slot_t kernel_stack_slots[MAX_TASKS];
+
 static task_t *task_from_wait_node(wait_queue_node_t *node) {
     return (task_t*)((uint8_t*)node - offsetof(task_t, wait_node));
 }
 
-static uint32_t stack_guard_value(size_t index, bool upper) {
-    return STACK_GUARD_BASE ^ (uint32_t)(index * 0x1020304U) ^
-           (upper ? 0x80000000U : 0U);
+static int kernel_stack_slot_for(const uint32_t *stack) {
+    uintptr_t address = (uintptr_t)stack;
+    if (address < KERNEL_STACK_ARENA_BASE + PAGE_SIZE) return -1;
+    uintptr_t offset = address - KERNEL_STACK_ARENA_BASE - PAGE_SIZE;
+    if ((offset % KERNEL_STACK_SLOT_SIZE) != 0) return -1;
+    size_t slot = offset / KERNEL_STACK_SLOT_SIZE;
+    return slot < MAX_TASKS ? (int)slot : -1;
 }
 
 uint32_t *scheduler_allocate_kernel_stack(void) {
-    uint8_t *allocation = (uint8_t*)k_malloc(
-        STACK_SIZE + 2U * STACK_GUARD_BYTES);
-    if (allocation == NULL) return NULL;
-    uint32_t *lower = (uint32_t*)allocation;
-    uint32_t *stack = (uint32_t*)(allocation + STACK_GUARD_BYTES);
-    uint32_t *upper = (uint32_t*)((uint8_t*)stack + STACK_SIZE);
-    for (size_t i = 0; i < STACK_GUARD_WORDS; ++i) {
-        lower[i] = stack_guard_value(i, false);
-        upper[i] = stack_guard_value(i, true);
+    KASSERT_NOT_IRQ();
+    for (size_t slot = 0; slot < MAX_TASKS; ++slot) {
+        if (kernel_stack_slots[slot].allocated) continue;
+        uint32_t stack_base = KERNEL_STACK_ARENA_BASE +
+                              (uint32_t)slot * KERNEL_STACK_SLOT_SIZE +
+                              PAGE_SIZE;
+        size_t mapped = 0;
+        for (; mapped < STACK_SIZE / PAGE_SIZE; ++mapped) {
+            uintptr_t frame = allocate_frame();
+            if (frame == 0 ||
+                map_page(paging_kernel_directory(),
+                         stack_base + (uint32_t)mapped * PAGE_SIZE,
+                         (uint32_t)frame, PAGE_RW) != 0) {
+                if (frame != 0) free_frame(frame);
+                while (mapped != 0) {
+                    --mapped;
+                    (void)unmap_kernel_page(
+                        stack_base + (uint32_t)mapped * PAGE_SIZE, true);
+                }
+                return NULL;
+            }
+            kernel_stack_slots[slot].frames[mapped] = frame;
+        }
+        kernel_stack_slots[slot].allocated = true;
+        uint32_t *stack = (uint32_t*)(uintptr_t)stack_base;
+        memset(stack, 0, STACK_SIZE);
+        return stack;
     }
-    memset(stack, 0, STACK_SIZE);
-    return stack;
+    return NULL;
 }
 
 bool scheduler_kernel_stack_is_valid(const uint32_t *stack) {
-    if (stack == NULL || ((uintptr_t)stack & 0xFU) != 0) return false;
-    const uint32_t *lower = (const uint32_t*)((const uint8_t*)stack -
-                                              STACK_GUARD_BYTES);
-    const uint32_t *upper = (const uint32_t*)((const uint8_t*)stack +
-                                              STACK_SIZE);
-    for (size_t i = 0; i < STACK_GUARD_WORDS; ++i) {
-        if (lower[i] != stack_guard_value(i, false) ||
-            upper[i] != stack_guard_value(i, true)) return false;
+    int slot = kernel_stack_slot_for(stack);
+    if (slot < 0 || !kernel_stack_slots[slot].allocated) return false;
+    uintptr_t base = (uintptr_t)stack;
+    if (paging_kernel_page_present((uint32_t)(base - PAGE_SIZE)) ||
+        paging_kernel_page_present((uint32_t)(base + STACK_SIZE))) {
+        return false;
+    }
+    for (size_t page = 0; page < STACK_SIZE / PAGE_SIZE; ++page) {
+        if (!paging_kernel_page_present((uint32_t)(base + page * PAGE_SIZE))) {
+            return false;
+        }
     }
     return true;
 }
 
 bool scheduler_kernel_context_stack_is_valid(void) {
+    if (paging_is_enabled()) {
+        return (uintptr_t)&_stack_guard_end -
+                   (uintptr_t)&_stack_guard_start == PAGE_SIZE &&
+               !paging_kernel_page_present(
+                   (uint32_t)(uintptr_t)&_stack_guard_start);
+    }
     const uint32_t *guard = &_stack_guard_start;
     const uint32_t *guard_end = &_stack_guard_end;
-    if ((uintptr_t)guard_end - (uintptr_t)guard != 64U) return false;
+    if ((uintptr_t)guard_end - (uintptr_t)guard != PAGE_SIZE) return false;
     while (guard < guard_end) {
         if (*guard++ != KERNEL_STACK_GUARD) return false;
     }
@@ -89,8 +123,16 @@ void scheduler_free_kernel_stack(uint32_t *stack) {
     if (!scheduler_kernel_stack_is_valid(stack)) {
         panic("Kernel stack guard corrupted");
     }
+    int slot = kernel_stack_slot_for(stack);
     memset(stack, 0xDD, STACK_SIZE);
-    k_free((uint8_t*)stack - STACK_GUARD_BYTES);
+    for (size_t page = 0; page < STACK_SIZE / PAGE_SIZE; ++page) {
+        if (unmap_kernel_page((uint32_t)(uintptr_t)stack +
+                              (uint32_t)page * PAGE_SIZE, true) != 0) {
+            panic("Unable to release guarded kernel stack");
+        }
+        kernel_stack_slots[slot].frames[page] = 0;
+    }
+    kernel_stack_slots[slot].allocated = false;
 }
 
 static void validate_task_stack_or_panic(const task_t *task) {

@@ -25,6 +25,9 @@ static uint32_t kernel_page_tables[KERNEL_PAGE_ENTRIES][PAGE_TABLE_ENTRIES]
 static uint32_t local_apic_page_table[PAGE_TABLE_ENTRIES]
     __attribute__((aligned(PAGE_SIZE)));
 static page_directory_t *current_directory;
+static bool paging_enabled;
+
+extern uint8_t _stack_guard_start;
 
 static inline void load_cr3(uint32_t address) {
     __asm__ __volatile__("mov %0, %%cr3" : : "r"(address) : "memory");
@@ -124,10 +127,50 @@ void init_paging(void) {
         (uint32_t)(uintptr_t)local_apic_page_table |
         PAGE_PRESENT | PAGE_RW;
 
+    /* Boot-stack and task-stack guards must fault before any stack data can
+     * corrupt an adjacent object.  Task stack pages are mapped on demand. */
+    uint32_t boot_guard = (uint32_t)(uintptr_t)&_stack_guard_start;
+    kernel_page_tables[boot_guard >> 22]
+                      [(boot_guard >> 12) & 0x3FFU] = 0;
+    for (uint32_t address = KERNEL_STACK_ARENA_BASE;
+         address < KERNEL_STACK_ARENA_BASE + KERNEL_STACK_ARENA_SIZE;
+         address += PAGE_SIZE) {
+        kernel_page_tables[address >> 22][(address >> 12) & 0x3FFU] = 0;
+    }
+
     switch_page_directory(paging_kernel_directory());
     write_cr0(read_cr0() | CR0_PG);
+    paging_enabled = true;
     printf("Paging enabled; identity-mapped the first %u MB.\n",
            (unsigned int)(KERNEL_IDENTITY_LIMIT / 1024U / 1024U));
+}
+
+bool paging_is_enabled(void) {
+    return paging_enabled;
+}
+
+bool paging_kernel_page_present(uint32_t virtual_address) {
+    uint32_t pde = page_directory[virtual_address >> 22];
+    if ((pde & PAGE_PRESENT) == 0) return false;
+    const uint32_t *table =
+        (const uint32_t*)(uintptr_t)(pde & 0xFFFFF000U);
+    return (table[(virtual_address >> 12) & 0x3FFU] & PAGE_PRESENT) != 0;
+}
+
+int unmap_kernel_page(uint32_t virtual_address, bool free_physical_frame) {
+    if ((virtual_address & (PAGE_SIZE - 1U)) != 0 ||
+        virtual_address >= USER_BASE) return -1;
+    uint32_t pde = page_directory[virtual_address >> 22];
+    if ((pde & PAGE_PRESENT) == 0) return -1;
+    uint32_t *table = (uint32_t*)(uintptr_t)(pde & 0xFFFFF000U);
+    uint32_t *entry = &table[(virtual_address >> 12) & 0x3FFU];
+    if ((*entry & PAGE_PRESENT) == 0) return -1;
+    if (free_physical_frame) {
+        free_page((void*)(uintptr_t)(*entry & 0xFFFFF000U));
+    }
+    *entry = 0;
+    flush_tlb();
+    return 0;
 }
 
 void test_paging(void) {

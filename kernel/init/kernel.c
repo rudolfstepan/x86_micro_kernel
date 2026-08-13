@@ -330,6 +330,14 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     // Parse bootloader-provided information
     parse_multiboot1_info(multiboot_info);
 
+    /* The stack arena is a virtual window inside the direct map.  Reserve the
+     * same physical interval so its non-present guard aliases can never hide
+     * frames that the PMM might otherwise allocate. */
+    if (memory_reserve_region(KERNEL_STACK_ARENA_BASE,
+                              KERNEL_STACK_ARENA_SIZE) != 0) {
+        panic("Unable to reserve kernel stack guard arena");
+    }
+
     // Initialize kernel memory allocator
     if (initialize_memory_system() != 0) {
         printf("Fatal: kernel memory initialization failed.\n");

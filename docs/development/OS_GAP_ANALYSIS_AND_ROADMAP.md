@@ -59,7 +59,7 @@ eine allgemeine **Blockier-/Ereignisgrundlage** aufgebaut: intrusive
 Wait-Queues, atomaren Prozess-Wait, blockierendes Sleep und Console-Input,
 `yield`, 64-Bit-Zeit sowie einen kalibrierten Scheduler-Timer. R1.2 trennt nun
 erkannten von verwaltetem Speicher, erweitert den Kernel-Heap dynamisch,
-schützt statische und dynamische Kernelstacks mit Canaries und räumt beendete
+schützt statische und dynamische Kernelstacks mit Guardpages und räumt beendete
 Tasks außerhalb langer IRQ-Sperrabschnitte auf. R1.3 definiert nun die
 IRQ-, Präemptions-, Schlaf- und Lockverträge, serialisiert VFS und
 ATA-/FDD-Zugriffe und verlagert Netzwerk- sowie HPET-Arbeit aus dem harten
@@ -76,7 +76,7 @@ und maximale Fehlerreaktionszeiten rückverfolgbar festzulegen.
 |---|---|---|
 | Boot | BIOS/MBR, zweistufiger Loader, E820, A20, ELF32-Prüfung, Kernel-CRC32, FAT12-Floppy, optionaler nativer VBE-LFB-Handoff | stabiler Referenzpfad mit VGA-Rückfall |
 | CPU | GDT/IDT/TSS, Ring 0/3, Exceptions, PIC, gegen PIT kalibrierter lokaler APIC-Timer, PIT-Scheduler-Fallback, `INT 0x80` | funktionsfähiger Single-Core-Pfad |
-| Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Stack-Canaries, getrennte Prozessadressräume, sichere User-Kopien | R1.2 abgenommen; Speicher oberhalb 1 GiB nur erkannt |
+| Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
 | Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD | klein, maximal 8 Tasks |
 | Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, EXT2 lesen | gute Basis, kleine ABI und keine atomaren Dateioperationen |
 | Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 und COM1 mit blockierendem Console-Wait, RTC, VGA, nativer VBE-RGB-Framebuffer | Referenzhardware gut, moderne Geräte fehlen |
@@ -170,7 +170,7 @@ separate Bereinigung der optionalen Legacy-Image-Tests bleiben Folgearbeiten.
   Reparenting-/Reaper-Semantik
 - dynamische oder zumindest deutlich größere Tasktabelle statt `MAX_TASKS 8`
 - Prioritäten erst nach korrekter Blockierung; Threads und SMP deutlich später
-- echte Kernel-Stack-Guardpages zusätzlich zu den vorhandenen 64-Byte-Canaries
+- echte User-Stack-Guardpages zusätzlich zu den vorhandenen Kernel-Guardpages
   und aussagekräftigere Prozessstatistiken
 
 ### Syscall- und Userspace-ABI
@@ -483,11 +483,11 @@ zusammengelegt. Der Heap schrumpft derzeit nicht und `k_malloc`/`k_free` sind
 wegen IRQ-Sperre, Metadatensuche und möglichem Frame-Scan keine APIs für harten
 IRQ-Kontext.
 
-Der statische 8-KiB-Boot-/Rescue-Stack besitzt eine vom Assembler vor dem
-ersten C-Aufruf initialisierte untere 64-Byte-Redzone. Dynamische 8-KiB-
-Taskstacks besitzen je eine 64-Byte-Canary unter- und oberhalb. Scheduler-
-Grenzen prüfen Wächter und ESP-Bereich; eine Verletzung führt kontrolliert zur
-Panic. Beendete Tasks wechseln beim atomaren, owner- und
+R1.2 führte zunächst 64-Byte-Canaries ein. S0.2 hat sie inzwischen durch echte
+nicht-präsente Guardpages ersetzt: eine volle Seite unter dem Bootstack sowie
+je eine Seite unter und über jedem dynamischen 8-KiB-Kernelstack. Scheduler-
+Grenzen prüfen Slot, Mapping und ESP-Bereich. Beendete Tasks wechseln beim
+atomaren, owner- und
 generationsvalidierten Detach in `TASK_REAPING`. Seitentabellen und Kernelstack
 werden anschließend mit aktivierten Hardware-Interrupts, aber unterdrückter
 Taskpräemption freigegeben; erst danach darf der Slot wiederverwendet werden.
@@ -513,10 +513,10 @@ jedem Erfolgs- und Fehlerpfad frei. Dadurch bootet CI den vollständigen
 Ring-3-Test mit 32, 64, 256, 512 und 1024 MiB; bei 512 MiB werden sowohl der
 kalibrierte LAPIC-Pfad als auch der PIT-Fallback ohne APIC ausgeführt.
 
-Nicht Teil von R1.2 sind systematische Failure-Injection für jede
-Teilallokation, ein Highmem-/`kmap`-Fenster oberhalb 1 GiB, echte nicht gemappte
-Guardpages und ein IRQ-tauglicher Allocator; diese Punkte bleiben expliziter
-Restumfang späterer Speicherhärtung und sind nicht Bestandteil von R1.3.
+Nicht Teil von R1.2 waren systematische Failure-Injection für jede
+Teilallokation, ein Highmem-/`kmap`-Fenster oberhalb 1 GiB, Guardpages und ein
+IRQ-tauglicher Allocator. Die Kernel-Guardpages sind nun der erste umgesetzte
+Teil von S0.2; die übrigen Punkte bleiben offen.
 
 #### R1.3 Synchronisations- und Diagnosevertrag — M
 
@@ -583,6 +583,13 @@ Reproduzierbarkeit erhöhen.
    automatisiert prüfen.
 
 #### S0.2 Stack-, Exception- und Panic-Containment — L
+
+**Teilstatus:** Kernel-Taskstacks besitzen beidseitige nicht-präsente
+Guardpages; der Bootstack eine volle untere Guardpage. `#DF` läuft über eine
+dedizierte TSS und einen unabhängigen Emergency-Stack in einen begrenzten,
+heap-/lockfreien Crashrecord-/COM1-Pfad. Noch offen sind User-Stack-Guardpages,
+statische Stackbudget-Gates, persistenter Crashrecord, Watchdog/Fencing und ein
+echter Double-Fault-Fault-Injection-Gastlauf.
 
 1. Nicht gemappte Guardpages für jeden Kernel- und Userstack, statische
    Stackbudgets, Watermarks und Rekursionsverbote einführen.

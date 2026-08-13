@@ -14,13 +14,14 @@ start:
     mov esp, _stack_end
     and esp, 0xfffffff0
     sub esp, 8                 ; Keep the i386 ABI's 16-byte call alignment
-    ; Initialize the 64-byte lower redzone before entering C. Preserve the
+    ; Initialize the lower guard page before paging makes it non-present.
+    ; Preserve the
     ; Multiboot handoff values in EAX/EBX on the freshly established stack.
     push eax
     push ebx
     mov edi, _stack_guard_start
     mov eax, 0x4B535447        ; "KSTG"
-    mov ecx, 16
+    mov ecx, 1024
     rep stosd
     pop ebx
     pop eax

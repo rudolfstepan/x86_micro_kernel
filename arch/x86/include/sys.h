@@ -35,6 +35,7 @@ extern void gdt_install();
 extern void idt_install();
 extern void set_idt_entry(int vector, uint32_t handler);
 extern void set_idt_entry_flags(int vector, uint32_t handler, uint8_t type_attr);
+extern void set_idt_task_gate(int vector, uint16_t tss_selector);
 
 //isr
 extern void isr_install();

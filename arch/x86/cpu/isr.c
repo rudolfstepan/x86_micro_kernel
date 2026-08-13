@@ -1,5 +1,6 @@
 #include "arch/x86/include/sys.h"
 #include "arch/x86/include/interrupt.h"
+#include "arch/x86/include/tss.h"
 #include "include/kernel/panic.h"
 #include "kernel/sched/scheduler.h"
 #include "lib/libc/stdio.h"
@@ -283,6 +284,10 @@ void isr_install() {
     set_idt_entry(29, (uint32_t)isr29);
     set_idt_entry(30, (uint32_t)isr30);
     set_idt_entry(31, (uint32_t)isr31);
+
+    /* A normal interrupt gate would reuse a potentially destroyed stack and
+     * can turn #DF into an invisible triple fault. */
+    set_idt_task_gate(8, DOUBLE_FAULT_TSS_SELECTOR);
 
     // Set up the exception handlers
 

@@ -69,6 +69,8 @@ void tss_init(uint32_t kernel_stack, uint32_t kernel_ss);
  */
 void tss_set_kernel_stack(uint32_t kernel_stack);
 
+#define DOUBLE_FAULT_TSS_SELECTOR 0x30U
+
 /**
  * Get TSS base address
  * 
@@ -86,5 +88,7 @@ uint32_t tss_get_base(void);
  * @return Size of TSS structure in bytes
  */
 uint32_t tss_get_limit(void);
+uint32_t tss_get_double_fault_base(void);
+uint32_t tss_get_double_fault_limit(void);
 
 #endif // ARCH_X86_TSS_H

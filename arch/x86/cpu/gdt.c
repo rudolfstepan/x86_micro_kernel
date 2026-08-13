@@ -12,7 +12,8 @@
 // 2: Kernel Data Segment (Ring 0, selector 0x10)
 // 3: User Code Segment   (Ring 3, selector 0x18)
 // 4: User Data Segment   (Ring 3, selector 0x20)
-// 5: TSS (Task State Segment, selector 0x28)
+// 5: Runtime TSS (selector 0x28)
+// 6: Double-fault emergency TSS (selector 0x30)
 
 
 struct gdt_entry {
@@ -30,7 +31,7 @@ struct gdt_ptr {
 } __attribute__((packed));
 
 
-struct gdt_entry gdt[6];  // Expanded from 3 to 6 entries
+struct gdt_entry gdt[7];
 struct gdt_ptr gp;
 
 extern void gdt_flush();
@@ -51,7 +52,7 @@ void gdt_set_gate(int num, unsigned long base, unsigned long limit, unsigned cha
 }
 
 void gdt_install() {
-    gp.limit = (sizeof(struct gdt_entry) * 6) - 1;  // 6 entries now
+    gp.limit = (sizeof(struct gdt_entry) * 7) - 1;
     gp.base = (unsigned)&gdt;
 
     // Entry 0: NULL descriptor (required by x86 architecture)
@@ -89,6 +90,9 @@ void gdt_install() {
     uint32_t tss_base = tss_get_base();
     uint32_t tss_limit = tss_get_limit();
     gdt_set_gate(5, tss_base, tss_limit, 0x89, 0x00);
+
+    gdt_set_gate(6, tss_get_double_fault_base(),
+                 tss_get_double_fault_limit(), 0x89, 0x00);
 
     // Flush out the old GDT and install the new changes!
     // method is in gdt.asm

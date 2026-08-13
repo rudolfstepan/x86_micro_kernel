@@ -16,6 +16,14 @@
 #define KERNEL_PAGE_ENTRIES 256U             // Identity-map the first 1 GiB
 #define KERNEL_IDENTITY_LIMIT (KERNEL_PAGE_ENTRIES * PAGE_TABLE_ENTRIES * PAGE_SIZE)
 
+/* Reserved supervisor-only VA window for fault-contained task stacks.
+ * Each of MAX_TASKS slots is [guard][8 KiB stack][guard].  The corresponding
+ * identity-mapped physical range is reserved before the PMM is initialized so
+ * an unmapped guard VA can never hide an allocatable direct-map frame. */
+#define KERNEL_STACK_ARENA_BASE 0x3FF00000U
+#define KERNEL_STACK_SLOT_SIZE  (4U * PAGE_SIZE)
+#define KERNEL_STACK_ARENA_SIZE (8U * KERNEL_STACK_SLOT_SIZE)
+
 #define USER_BASE 0x40000000U               // User address spaces start at 1 GiB
 #define USER_TOP  0xC0000000U               // Exclusive upper user-space bound
 #define USER_HEAP_BASE (USER_BASE + 8U * 1024U * 1024U)
@@ -92,6 +100,9 @@ int copy_to_user_space(page_directory_t* pd, uint32_t user_destination,
 int copy_string_from_user(char* destination, size_t capacity,
                           const char* user_source);
 void* map_kernel_mmio(uint32_t physical_address, size_t length);
+int unmap_kernel_page(uint32_t virtual_address, bool free_physical_frame);
+bool paging_kernel_page_present(uint32_t virtual_address);
+bool paging_is_enabled(void);
 
 
 #endif // PAGING_H

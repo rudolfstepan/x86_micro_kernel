@@ -195,13 +195,21 @@ reaping. Ein Prozessdatensatz ordnet PID, Generation, Task-ID, Namen und
 Programmbild zu. Timerpräemption kann für kritische Operationen vorübergehend
 unterdrückt werden.
 
-Dynamisch angelegte Taskstacks besitzen unter- und oberhalb des nutzbaren
-8-KiB-Bereichs je eine 64-Byte-Canary. Der statische 8-KiB-Boot-/Rescue-Stack
-besitzt eine untere 64-Byte-Redzone, die der Assembler vor dem ersten C-Aufruf
-initialisiert. Schedulergrenzen prüfen sowohl die Wächter als auch den
-gespeicherten beziehungsweise aktuellen ESP-Bereich und panicen bei einer
-Verletzung. Das erkennt Überläufe deterministisch an Prüfstellen, ersetzt aber
-noch keine echte, nicht gemappte Guardpage.
+Dynamisch angelegte Kernel-Taskstacks liegen nun in einer reservierten
+virtuellen Arena. Jeder 8-KiB-Stack besitzt darunter und darüber eine
+nicht-präsente 4-KiB-Seite; seine zwei Datenseiten werden aus unabhängigen
+physischen Frames abgebildet. Der statische 8-KiB-Boot-/Rescue-Stack besitzt
+ebenfalls eine volle untere Guardpage, die unmittelbar beim Aktivieren von
+Paging nicht-präsent wird. Schedulergrenzen prüfen Stackslot, Mappings und den
+gespeicherten beziehungsweise aktuellen ESP-Bereich.
+
+Vektor 8 verwendet eine zweite TSS als Task-Gate mit eigenem vorallokiertem
+4-KiB-Emergency-Stack. Damit hängt Double-Fault-Eskalation nicht vom
+möglicherweise zerstörten normalen Stack ab. Der aktuelle Minimalpfad schreibt
+einen festen Crashrecord, sendet mit begrenztem Pollbudget
+`REIST_FATAL DOUBLE_FAULT` an COM1 und hält anschließend kontrolliert. Externer
+Watchdog, persistenter Boot-übergreifender Crashrecord und realer Failover sind
+noch folgende REIST-Schritte.
 
 Jeder Task besitzt genau einen intrusiven Wait-Queue-Knoten und kann deshalb
 höchstens auf ein Ereignis gleichzeitig warten. Die generischen Operationen
@@ -345,10 +353,8 @@ PIT-Scheduler-Fallback ausgeführt; der High-Frame-Selbsttest schreibt und liest
 zusätzlich einen Frame ab 256 MiB.
 
 Noch nicht enthalten sind systematische Failure-Injection für jede einzelne
-Teilallokation, ein Highmem-/`kmap`-Fenster für Speicher oberhalb 1 GiB, echte
-nicht gemappte Stack-Guardpages und ein für harten IRQ-Kontext geeigneter
-Allocator. Diese Punkte sind bewusster Restumfang für R1.3 beziehungsweise
-spätere Speichermeilensteine und ändern den abgenommenen R1.2-Vertrag nicht.
+Teilallokation, ein Highmem-/`kmap`-Fenster für Speicher oberhalb 1 GiB,
+User-Stack-Guardpages und ein für harten IRQ-Kontext geeigneter Allocator.
 
 ## Wichtige Grenzen
 
@@ -359,8 +365,7 @@ spätere Speichermeilensteine und ändern den abgenommenen R1.2-Vertrag nicht.
 - der Frame-Allocator verwaltet höchstens die ersten 1 GiB; höherer
   E820-Speicher wird bis zu einer Highmem-/`kmap`-Lösung nur erkannt
 - Kernel-Heap-Operationen sind nicht für harten IRQ-Kontext bestimmt
-- Stack-Canaries erkennen Korruption an Prüfstellen, sind aber keine echten
-  nicht gemappten Guardpages
+- Kernelstacks besitzen Guardpages; Userstacks noch nicht
 - Minimalnetzwerk ohne TCP/DNS/IPv6
 - HPET und IOAPIC warten auf die validierte ACPI-/Plattformschicht
 - der Desktop ist ein tastaturbedienter Vollbild-Launcher ohne Maus,
@@ -374,7 +379,7 @@ spätere Speichermeilensteine und ändern den abgenommenen R1.2-Vertrag nicht.
 - `arch/x86/cpu/` – GDT, IDT, ISR, IRQ und Syscalls
 - `arch/x86/mm/` und `mm/` – Paging, E820-Normalisierung, Frames, Heap und
   Speicherstatistik
-- `config/klink.ld` – statischer Kernelstack und seine 64-Byte-Redzone
+- `config/klink.ld` – statischer Kernelstack und seine Guardpage
 - `kernel/init/kernel.c` – Initialisierungsreihenfolge
 - `kernel/sched/` und `kernel/proc/` – Tasks, Wait-Queues und Prozesse
 - `kernel/time/` – monotone PIT-Zeit und kalibrierter LAPIC-Timer

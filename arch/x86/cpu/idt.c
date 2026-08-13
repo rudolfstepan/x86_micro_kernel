@@ -42,6 +42,15 @@ void set_idt_entry(int vector, uint32_t handler) {
     set_idt_entry_flags(vector, handler, 0x8E); // Ring-0 interrupt gate
 }
 
+void set_idt_task_gate(int vector, uint16_t tss_selector) {
+    if (vector < 0 || vector >= NUM_IDT_ENTRIES) return;
+    idt[vector].offset_low = 0;
+    idt[vector].selector = tss_selector;
+    idt[vector].zero = 0;
+    idt[vector].type_attr = 0x85; /* Present, DPL0, 32-bit task gate. */
+    idt[vector].offset_high = 0;
+}
+
 void idt_install() {
     idtp.limit = (sizeof(struct idt_entry) * 256) - 1;
     idtp.base = (unsigned)&idt;
