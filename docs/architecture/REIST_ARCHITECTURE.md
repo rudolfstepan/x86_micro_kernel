@@ -190,6 +190,17 @@ zum Füttern. Der Fatalpfad stoppt das Füttern und armiert das kürzeste Interv
 Danach fordert er mit festem Pollbudget einen Plattformreset an und erzwingt
 ersatzweise einen CPU-Reset. Für Zielhardware ist weiterhin ein unabhängig
 versorgter externer Watchdog mit Fencing erforderlich.
+
+Als erste konkrete S0.3-Sperre besitzt der Kernel eine statische, begrenzte
+Output-Fence-Registry. Ein Fatalereignis verriegelt sie vor jeder Diagnose und
+vor dem Watchdog-Handover dauerhaft bis zum Neustart. Der Netzwerk-Hook sperrt
+alle Software-TX-Pfade und deaktiviert best-effort die Sender von E1000,
+RTL8139 und NE2000; Wiederholung ist wirkungslos und benötigt weder Heap noch
+Locks. Das verhindert weitere Netzwerkausgabe aus dem fehlerhaften Kanal, ist
+aber kein Ersatz für ein elektrisch unabhängiges Interlock für gefährliche
+Aktoren. Solche Ausgänge benötigen je Hazard einen rücklesbaren, extern
+überwachten Safe-State-Pfad.
+
 Unterbrechungsfreie wesentliche
 Leistung bei Kernel-, CPU-, RAM- oder Stromfehlern setzt eine ausreichend
 unabhängige zweite Ausführungslinie beziehungsweise ein Safety Island voraus.

@@ -617,8 +617,12 @@ zum Watchdog-Warmstart, Crashrecord-Recovery und anschließenden Gasttest geprü
 **Teilstatus:** Ein fester, allokationsfreier Supervisor-Kern verwaltet acht
 ECC-geschützte Domänenzustände mit Deadlines, Generation/Epoche,
 Restartbudgets und der zwingenden Reihenfolge `timeout -> fence -> restart ->
-self-test -> reintegrate`. Die Migration realer Dienste in eigene Fehlerdomänen
-und unabhängige Supervisorhardware bleiben offen.
+self-test -> reintegrate`. Eine statische, bis zum Reboot verriegelte
+Output-Fence-Registry ist mit dem Fatalpfad verbunden. Ihr erster realer Hook
+sperrt Netzwerk-TX logisch und schaltet die Sender der unterstützten NICs
+best-effort ab. Die Migration realer Dienste in eigene Fehlerdomänen sowie
+rücklesbare externe Interlocks und unabhängige Supervisorhardware bleiben
+offen.
 
 1. Einen minimalen Safety-Kern definieren; Treiber, Dateisystem, Netzwerk und
    GUI in neu startbare Least-Privilege-Domänen verschieben.

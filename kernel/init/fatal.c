@@ -4,6 +4,7 @@
 #include "drivers/char/io.h"
 #include "drivers/char/serial.h"
 #include "include/kernel/watchdog.h"
+#include "include/kernel/output_fence.h"
 #include <stdbool.h>
 
 #define COM1_LINE_STATUS (SERIAL_COM1 + 5U)
@@ -136,6 +137,8 @@ static void __attribute__((noreturn)) controlled_reset(void) {
 
 void __attribute__((noreturn)) fatal_emergency_handoff(uint32_t reason) {
     irq_disable();
+    /* Revoke hazardous software/hardware outputs before diagnosis or reset. */
+    output_fence_all();
     volatile fatal_crash_record_t *destination = persistent_record();
     uint32_t sequence = persistent_record_valid(destination)
                             ? destination->sequence + 1U : 1U;

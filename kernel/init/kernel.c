@@ -25,6 +25,7 @@
 #include "include/kernel/fatal.h"
 #include "include/kernel/watchdog.h"
 #include "include/kernel/supervisor.h"
+#include "include/kernel/output_fence.h"
 #include "kernel/shell/command.h"
 #include "mm/kmalloc.h"
 
@@ -397,6 +398,10 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     early_init();
     fatal_boot_recover_record();
     supervisor_init();
+    output_fence_init();
+    if (!output_fence_register(netdev_fence_outputs)) {
+        panic("Unable to register the network output fence");
+    }
     
     // Stage 2: Hardware initialization
     hardware_init();

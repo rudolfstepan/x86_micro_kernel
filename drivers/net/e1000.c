@@ -831,6 +831,7 @@ void e1000_test_registers() {
 }
 
 bool e1000_send_packet(void *packet, size_t length) {
+    if (netdev_outputs_fenced()) return false;
     if (!e1000_initialized || !packet || length > 1518 || length < 14) {
         ++e1000_stats.tx_errors;
         return false;
@@ -893,6 +894,13 @@ bool e1000_send_packet(void *packet, size_t length) {
     ++e1000_stats.tx_packets;
     __sync_lock_release(&e1000_tx_busy);
     return true;
+}
+
+void e1000_fence_outputs(void) {
+    if (!e1000_initialized || e1000_device.mmio_base == NULL) return;
+    e1000_write_reg(E1000_REG_IMC, 0xFFFFFFFFu);
+    uint32_t tctl = e1000_read_reg(E1000_REG_TCTL);
+    e1000_write_reg(E1000_REG_TCTL, tctl & ~E1000_TCTL_EN);
 }
 
 void e1000_send_test_packet() {

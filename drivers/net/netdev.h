@@ -15,5 +15,7 @@ void netdev_deliver_rx(const uint8_t* packet, uint16_t length);
 void netdev_poll(void);
 void netdev_reset_rx(void);
 void netdev_reset_monitor(void);
+void netdev_fence_outputs(void);
+bool netdev_outputs_fenced(void);
 
 #endif

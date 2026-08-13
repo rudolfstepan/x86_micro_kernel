@@ -29,6 +29,7 @@ static volatile uint8_t monitor_queue_head;
 static volatile uint8_t monitor_queue_tail;
 static volatile uint32_t rx_producer_busy;
 static volatile uint32_t netdev_poll_busy;
+static volatile bool netdev_tx_fenced;
 
 bool netdev_available(void) {
     return e1000_is_initialized() || rtl8139_is_initialized() ||
@@ -43,6 +44,7 @@ const char* netdev_backend_name(void) {
 }
 
 bool netdev_send(const uint8_t* packet, size_t length) {
+    if (netdev_tx_fenced) return false;
     if (!packet || length < 14u || length > NETDEV_MAX_FRAME_SIZE) return false;
     if (e1000_is_initialized()) {
         return e1000_send_packet((void*)packet, length);
@@ -54,6 +56,19 @@ bool netdev_send(const uint8_t* packet, size_t length) {
         return ne2000_send_packet((uint8_t*)packet, (uint16_t)length);
     }
     return false;
+}
+
+void netdev_fence_outputs(void) {
+    /* Publish the software interlock before touching fallible hardware. */
+    netdev_tx_fenced = true;
+    __asm__ volatile("" ::: "memory");
+    e1000_fence_outputs();
+    rtl8139_fence_outputs();
+    ne2000_fence_outputs();
+}
+
+bool netdev_outputs_fenced(void) {
+    return netdev_tx_fenced;
 }
 
 bool netdev_get_mac_address(uint8_t mac[6]) {

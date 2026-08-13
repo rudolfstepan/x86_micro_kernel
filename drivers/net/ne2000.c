@@ -355,6 +355,7 @@ void ne2000_print_status() {
 }
 
 bool ne2000_send_packet(uint8_t *data, uint16_t length) {
+    if (netdev_outputs_fenced()) return false;
     if (!ne2000_initialized || !data || length < 14 || length > 1518) {
         printf("Packet too large to send: %d bytes\n", length);
         return false;
@@ -451,6 +452,12 @@ bool ne2000_send_packet(uint8_t *data, uint16_t length) {
     printf("Packet sent successfully, length: %d bytes\n", length);
     ne2000_release_io(saved_imr, false);
     return true;
+}
+
+void ne2000_fence_outputs(void) {
+    if (!ne2000_initialized || io_base == 0) return;
+    outb((uint16_t)(io_base + NE2000_IMR), 0);
+    outb((uint16_t)(io_base + NE2000_CR), CR_STP | CR_RD2);
 }
 
 // Send ARP reply

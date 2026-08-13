@@ -14,5 +14,6 @@ void ne2000_print_mac_address();
 void ne2000_get_mac_address(uint8_t *mac);
 bool ne2000_send_packet(uint8_t *data, uint16_t length);
 int ne2000_receive_packet(uint8_t *buffer, uint16_t buffer_size);
+void ne2000_fence_outputs(void);
 
 #endif // NE2000_H

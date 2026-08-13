@@ -123,6 +123,7 @@ static bool rtl8139_activate(void) {
 }
 
 bool rtl8139_send_packet(void *data, uint16_t len) {
+    if (netdev_outputs_fenced()) return false;
     if (!rtl8139_device.initialized || !data || len < 14 || len > RTL_MAX_FRAME_SIZE) {
         printf("RTL8139: invalid TX request (length=%u)\n", len);
         return false;
@@ -170,6 +171,14 @@ bool rtl8139_send_packet(void *data, uint16_t len) {
     rtl8139_device.tx_next = (uint8_t)((slot + 1u) % RTL_TX_COUNT);
     __sync_lock_release(&rtl8139_tx_busy);
     return completed;
+}
+
+void rtl8139_fence_outputs(void) {
+    if (!rtl8139_device.initialized) return;
+    outw((uint16_t)(rtl8139_device.io_base + RTL_IMR), 0);
+    uint8_t command = inb((uint16_t)(rtl8139_device.io_base + RTL_COMMAND));
+    outb((uint16_t)(rtl8139_device.io_base + RTL_COMMAND),
+         (uint8_t)(command & (uint8_t)~RTL_CMD_TX_ENABLE));
 }
 
 static void rtl8139_drain_rx(void) {

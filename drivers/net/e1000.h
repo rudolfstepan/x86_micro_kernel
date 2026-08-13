@@ -34,5 +34,6 @@ int e1000_receive_packet(uint8_t *buffer, size_t buffer_size);
 void e1000_poll_rx(void);
 void e1000_send_test_packet();
 void e1000_debug_registers();
+void e1000_fence_outputs(void);
 
 #endif // E1000_H
