@@ -38,6 +38,9 @@ jobs:
       - name: Run Ring-3 guest smoke test with PIT scheduling
         run: make test-smoke-pit TARGET=qemu VIDEO=vga
 
+      - name: Run journal power-loss recovery test
+        run: make test-smoke-journal-recovery TARGET=qemu VIDEO=vga
+
       - name: Run Ring-3 guest memory matrix (32/64/256/1024 MiB)
         run: make test-smoke-memory TARGET=qemu VIDEO=vga
 
@@ -52,6 +55,7 @@ jobs:
           path: |
             build/guest-smoke.log
             build/guest-smoke-pit.log
+            build/guest-smoke-journal-recovery.log
             build/guest-smoke-memory-32m.log
             build/guest-smoke-memory-64m.log
             build/guest-smoke-memory-256m.log

@@ -659,6 +659,13 @@ aber noch kein Journal und keine atomare Mehrsektortransaktion.
 Fortschrittssequenz und Interlockzustand beider Persistenzdomänen sind als
 SECDED-/CRC-geschützte Primary/Shadow-Objekte ausgeführt. Korrigierbare Fehler
 werden repariert; unbrauchbare Kopien führen fail-closed zur Schreibsperre.
+Das native FAT32-Image enthält nun außerdem ein explizit markiertes
+Einzelsektor-Undo-Journal in reservierten BPB-Sektoren. Die Reihenfolge
+`old-data flush -> ACTIVE flush -> target flush -> CLEAN flush` ermöglicht
+Boot-Recovery nach Abbruch an jeder Barriere. CRC und Volumegrenzen werden vor
+Rollback geprüft; fremde Medien ohne Marker werden nicht verändert. Offen
+bleibt ein echtes transaktionales Journal über alle Sektoren einer VFS-
+Mutation sowie eine Power-Cut-Matrix auf Zielhardware.
 Die Apply-/Verify-Callbacks samt Kontext sind ebenfalls redundant über
 `critical_object` geschützt. Single-Bit-Fehler werden korrigiert; bei zwei
 unbrauchbaren Kopien wird kein Funktionszeiger ausgeführt und unmittelbar zum

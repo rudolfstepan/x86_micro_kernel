@@ -73,6 +73,17 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
     return true;
 }
 
+bool ata_journal_attach(unsigned short base, bool is_master,
+                        uint32_t partition_lba, uint32_t volume_sectors,
+                        uint16_t reserved_sectors) {
+    (void)base;
+    (void)is_master;
+    (void)partition_lba;
+    (void)volume_sectors;
+    (void)reserved_sectors;
+    return true;
+}
+
 void read_date(int* year, int* month, int* day) {
     *year = 2026;
     *month = 8;

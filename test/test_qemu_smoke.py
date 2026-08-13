@@ -136,6 +136,7 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         image: Path | None = None,
         memory: str | None = None,
         watchdog: bool = False,
+        persistent: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["FAKE_QEMU_MODE"] = mode
@@ -156,6 +157,8 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
             command.extend(["--memory", memory])
         if watchdog:
             command.append("--watchdog")
+        if persistent:
+            command.append("--persistent")
         return subprocess.run(
             command,
             cwd=ROOT,
@@ -242,6 +245,12 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         arguments = self.arguments_file.read_text(encoding="utf-8")
         self.assertRegex(arguments, r"(?:^|\s)-device\s+ib700(?:\s|$)")
         self.assertRegex(arguments, r"(?:^|\s)-watchdog-action\s+reset(?:\s|$)")
+
+    def test_persistent_mode_omits_snapshot_for_disposable_recovery_images(self) -> None:
+        result = self.run_smoke("success", persistent=True)
+        self.assertEqual(result.returncode, 0, self.combined_output(result))
+        arguments = self.arguments_file.read_text(encoding="utf-8")
+        self.assertNotIn("-snapshot", arguments)
 
     def test_fatal_recovery_profile_allows_the_expected_reboot(self) -> None:
         environment = os.environ.copy()

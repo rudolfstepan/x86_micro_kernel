@@ -53,6 +53,57 @@ typedef struct {
 static ata_cache_entry_t ata_read_cache[ATA_READ_CACHE_ENTRIES];
 static volatile bool ata_write_fenced;
 
+#define ATA_JOURNAL_MAGIC 0x4A545352U /* "RSTJ" */
+#define ATA_JOURNAL_VERSION 1U
+#define ATA_JOURNAL_CLEAN 0U
+#define ATA_JOURNAL_ACTIVE 1U
+#define ATA_JOURNAL_HEADER_OFFSET 8U
+#define ATA_JOURNAL_DATA_OFFSET 9U
+
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t state;
+    uint32_t target_lba;
+    uint32_t data_crc32;
+    uint32_t sequence;
+    uint32_t header_crc32;
+    uint8_t reserved[SECTOR_SIZE - 28U];
+} ata_journal_record_t;
+
+static struct {
+    bool enabled;
+    unsigned short base;
+    bool is_master;
+    uint32_t header_lba;
+    uint32_t data_lba;
+    uint32_t volume_start_lba;
+    uint32_t volume_end_lba;
+    uint32_t sequence;
+} ata_journal;
+
+static uint32_t ata_journal_crc32(const void *data, size_t length) {
+    const uint8_t *bytes = (const uint8_t *)data;
+    uint32_t crc = 0xFFFFFFFFU;
+    for (size_t i = 0; i < length; ++i) {
+        crc ^= bytes[i];
+        for (uint32_t bit = 0; bit < 8U; ++bit)
+            crc = (crc >> 1) ^ (0xEDB88320U & (0U - (crc & 1U)));
+    }
+    return crc ^ 0xFFFFFFFFU;
+}
+
+static bool ata_journal_record_valid(const ata_journal_record_t *record) {
+    return record->magic == ATA_JOURNAL_MAGIC &&
+           record->version == ATA_JOURNAL_VERSION &&
+           record->state <= ATA_JOURNAL_ACTIVE &&
+           record->header_crc32 == ata_journal_crc32(record, 24U);
+}
+
+static void ata_journal_seal(ata_journal_record_t *record) {
+    record->header_crc32 = ata_journal_crc32(record, 24U);
+}
+
 /* ATA PIO is synchronous and uses controller-global task-file registers.  On
  * this single-core kernel a nestable preemption guard serializes complete
  * transactions while leaving hardware interrupts enabled. */
@@ -468,12 +519,108 @@ static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
     return true;
 }
 
+static bool ata_journal_clear(void) {
+    ata_journal_record_t clean;
+    memset(&clean, 0, sizeof(clean));
+    clean.magic = ATA_JOURNAL_MAGIC;
+    clean.version = ATA_JOURNAL_VERSION;
+    clean.state = ATA_JOURNAL_CLEAN;
+    clean.sequence = ata_journal.sequence;
+    ata_journal_seal(&clean);
+    return ata_write_sector_impl(ata_journal.base, ata_journal.header_lba,
+                                 &clean, ata_journal.is_master);
+}
+
+static bool ata_write_sector_journaled(unsigned short base, unsigned int lba,
+                                       void *buffer, bool is_master) {
+    if (!ata_journal.enabled || base != ata_journal.base ||
+        is_master != ata_journal.is_master ||
+        lba < ata_journal.volume_start_lba || lba >= ata_journal.volume_end_lba) {
+        return ata_write_sector_impl(base, lba, buffer, is_master);
+    }
+    if (lba == ata_journal.header_lba || lba == ata_journal.data_lba)
+        return false;
+
+    uint8_t old_data[SECTOR_SIZE];
+    if (!ata_read_sector_impl(base, lba, old_data, is_master)) return false;
+    if (!ata_write_sector_impl(base, ata_journal.data_lba, old_data,
+                               is_master)) return false;
+
+    ata_journal_record_t active;
+    memset(&active, 0, sizeof(active));
+    active.magic = ATA_JOURNAL_MAGIC;
+    active.version = ATA_JOURNAL_VERSION;
+    active.state = ATA_JOURNAL_ACTIVE;
+    active.target_lba = lba;
+    active.data_crc32 = ata_journal_crc32(old_data, sizeof(old_data));
+    if (++ata_journal.sequence == 0U) return false;
+    active.sequence = ata_journal.sequence;
+    ata_journal_seal(&active);
+    if (!ata_write_sector_impl(base, ata_journal.header_lba, &active,
+                               is_master)) return false;
+    if (!ata_write_sector_impl(base, lba, buffer, is_master)) return false;
+    return ata_journal_clear();
+}
+
+bool ata_journal_attach(unsigned short base, bool is_master,
+                        uint32_t partition_lba, uint32_t volume_sectors,
+                        uint16_t reserved_sectors) {
+    ata_transaction_begin();
+    bool result = true;
+    ata_journal.enabled = false;
+    if (reserved_sectors <= ATA_JOURNAL_DATA_OFFSET || volume_sectors == 0U ||
+        partition_lba > UINT32_MAX - ATA_JOURNAL_DATA_OFFSET ||
+        volume_sectors > UINT32_MAX - partition_lba) goto done;
+
+    uint32_t header_lba = partition_lba + ATA_JOURNAL_HEADER_OFFSET;
+    uint32_t data_lba = partition_lba + ATA_JOURNAL_DATA_OFFSET;
+    ata_journal_record_t record;
+    if (!ata_read_sector_impl(base, header_lba, &record, is_master)) {
+        result = false;
+        goto done;
+    }
+    /* Only images explicitly provisioned by our builder opt in. */
+    if (record.magic != ATA_JOURNAL_MAGIC) goto done;
+    if (!ata_journal_record_valid(&record)) {
+        result = false;
+        goto done;
+    }
+
+    ata_journal.base = base;
+    ata_journal.is_master = is_master;
+    ata_journal.header_lba = header_lba;
+    ata_journal.data_lba = data_lba;
+    ata_journal.volume_start_lba = partition_lba;
+    ata_journal.volume_end_lba = partition_lba + volume_sectors;
+    ata_journal.sequence = record.sequence;
+    if (record.state == ATA_JOURNAL_ACTIVE) {
+        uint8_t old_data[SECTOR_SIZE];
+        if (record.target_lba < ata_journal.volume_start_lba ||
+            record.target_lba >= ata_journal.volume_end_lba ||
+            record.target_lba == header_lba || record.target_lba == data_lba ||
+            record.target_lba >= ATA_LBA28_LIMIT ||
+            !ata_read_sector_impl(base, data_lba, old_data, is_master) ||
+            ata_journal_crc32(old_data, sizeof(old_data)) != record.data_crc32 ||
+            !ata_write_sector_impl(base, record.target_lba, old_data,
+                                   is_master) ||
+            !ata_journal_clear()) {
+            result = false;
+            goto done;
+        }
+    }
+    ata_journal.enabled = true;
+done:
+    if (!result) ata_fence_writes();
+    ata_transaction_end();
+    return result;
+}
+
 bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
                       bool is_master) {
     ata_transaction_begin();
     bool armed = !ata_write_fenced && storage_write_begin(pit_monotonic_ms());
     bool result = armed &&
-                  ata_write_sector_impl(base, lba, buffer, is_master);
+                  ata_write_sector_journaled(base, lba, buffer, is_master);
     if (armed && !storage_write_end()) result = false;
     ata_transaction_end();
     return result;

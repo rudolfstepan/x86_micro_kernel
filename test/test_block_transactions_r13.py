@@ -73,7 +73,7 @@ class BlockTransactionContractTests(unittest.TestCase):
     def test_ata_public_transactions_pair_the_guard_on_every_return_path(self):
         wrappers = {
             "ata_read_sector": "ata_read_sector_impl(",
-            "ata_write_sector": "ata_write_sector_impl(",
+            "ata_write_sector": "ata_write_sector_journaled(",
             "ata_detect_drives": "ata_detect_drives_impl(",
             "ata_identify_drive": "ata_identify_drive_impl(",
         }

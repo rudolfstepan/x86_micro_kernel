@@ -123,6 +123,16 @@ int fat32_init_fs_at(unsigned short base, bool is_master, uint32_t partition_lba
         return FAILURE;
     }
 
+    /* Recover an interrupted single-sector update before consuming any
+     * mutable FAT/FSInfo/directory metadata.  Foreign volumes without the
+     * explicit REIST journal marker remain untouched. */
+    if (!ata_journal_attach(base, is_master, partition_lba,
+                            candidate_boot.total_sectors_32,
+                            candidate_boot.reserved_sector_count)) {
+        printf("+++ REIST journal recovery failed; refusing writable mount +++\n");
+        return FAILURE;
+    }
+
     /* Read and validate optional metadata into local storage as well.  None of
      * the global selectors or cached structures are published until the BPB
      * is known to be usable, so a failed volume switch is transactional. */

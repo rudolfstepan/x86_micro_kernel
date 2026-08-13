@@ -37,6 +37,7 @@ def qemu_command(
     watchdog: bool = False,
     allow_reboot: bool = False,
     nic: str = "none",
+    persistent: bool = False,
 ) -> list[str]:
     command = [
         str(qemu),
@@ -46,12 +47,13 @@ def qemu_command(
         "-m", memory,
         "-boot", "c",
         "-drive", f"file={image},format=raw,if=ide,index=0,media=disk",
-        "-snapshot",
         "-display", "none",
         "-monitor", "none",
         "-serial", "stdio",
         "-no-shutdown",
     ]
+    if not persistent:
+        command.append("-snapshot")
     if not allow_reboot:
         command.append("-no-reboot")
     if no_apic:
@@ -169,9 +171,11 @@ def run(
     watchdog: bool = False,
     allow_reboot: bool = False,
     nic: str = "none",
+    persistent: bool = False,
 ) -> tuple[int, str, str | None]:
     process = subprocess.Popen(
-        qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot, nic),
+        qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot, nic,
+                     persistent),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -281,6 +285,10 @@ def main() -> int:
         action="store_true",
         help="require ordered Double-Fault, reset and recovered-record markers",
     )
+    parser.add_argument(
+        "--persistent", action="store_true",
+        help="allow guest writes to the image (use only with a disposable copy)",
+    )
     args = parser.parse_args()
 
     if not args.image.is_file():
@@ -298,6 +306,7 @@ def main() -> int:
         status, transcript, process_error = run(
             args.qemu, args.image.resolve(), args.timeout, args.no_apic,
             args.memory, args.watchdog, args.expect_fatal_recovery, args.nic,
+            args.persistent,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)

@@ -215,7 +215,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel check-kernel-stack user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel check-kernel-stack user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-journal-recovery test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -631,6 +631,14 @@ test-smoke-watchdog: native-image
 		--image $(OUTPUT_DIR)/reist-os.img \
 		--watchdog \
 		--log $(OUTPUT_DIR)/guest-smoke-watchdog.log
+
+test-smoke-journal-recovery: native-image
+	@echo "Running REIST journal power-loss recovery test..."
+	@$(PYTHON) scripts/test_journal_recovery.py \
+		--qemu $(QEMU) \
+		--image $(OUTPUT_DIR)/reist-os.img \
+		--work-image $(OUTPUT_DIR)/journal-recovery.img \
+		--log $(OUTPUT_DIR)/guest-smoke-journal-recovery.log
 
 test-smoke-fatal-recovery:
 	@echo "Building isolated REIST Double-Fault injection image..."
