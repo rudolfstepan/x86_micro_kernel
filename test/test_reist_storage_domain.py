@@ -15,6 +15,10 @@ class ReistStorageDomainTests(unittest.TestCase):
         self.assertIn("fdd_fence_writes();", source)
         self.assertIn("ata_writes_quiescent()", source)
         self.assertIn("fdd_writes_quiescent()", source)
+        self.assertIn("critical_object_t storage_control", source)
+        self.assertIn("critical_object_read(&storage_control", source)
+        self.assertIn("critical_object_update(&storage_control", source)
+        self.assertIn("storage_integrity_failed = true", source)
 
     def test_ata_write_is_supervised_and_flush_failure_is_fatal(self):
         source = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")

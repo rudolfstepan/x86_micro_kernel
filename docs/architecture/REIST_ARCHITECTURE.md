@@ -256,6 +256,14 @@ den physischen Storage-Write-Pfad. Der Modus ist bewusst fail-closed und hat
 kein automatisches Restartbudget. Er ist Schadensbegrenzung, noch keine
 Transaktionsgarantie über mehrere FAT-/EXT2-Metadatenwrites.
 
+Auch die Steuerdaten beider Persistenzdomänen sind jetzt `critical_object`s:
+Fortschrittssequenz und Fence-/Read-only-Zustand liegen jeweils als
+Primary/Shadow-Kopie mit SECDED, CRC und semantischem Validator vor.
+Einzelbitfehler werden korrigiert, eine brauchbare Kopie rekonstruiert die
+andere. Sind beide Kopien unbrauchbar, verriegeln Storage beziehungsweise VFS
+fail-closed. Ein vor der redundanten Aktualisierung gesetztes monotones
+Softwareinterlock schließt das Zeitfenster während des Fence-Vorgangs.
+
 Auch die Recovery-Steuerung ist Teil des kritischen Zustands: Apply-/Verify-
 Funktionszeiger und ihr Kontext liegen nicht mehr als ungeschützte Pointer in
 der Domänentabelle, sondern als Primary/Shadow-`critical_object` mit SECDED,

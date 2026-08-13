@@ -11,7 +11,10 @@ class ReistFilesystemDomainTests(unittest.TestCase):
         self.assertIn('supervisor_register("filesystem-write"', source)
         self.assertIn(".restart_budget = 0", source)
         self.assertIn("supervisor_report_idle(filesystem_supervisor_handle)", source)
-        self.assertIn("filesystem_read_only = true", source)
+        self.assertIn("filesystem_force_read_only = true", source)
+        self.assertIn("critical_object_t filesystem_control", source)
+        self.assertIn("critical_object_read(&filesystem_control", source)
+        self.assertIn("critical_object_update(&filesystem_control", source)
 
     def test_all_public_vfs_mutations_are_supervised(self):
         source = (ROOT / "fs/vfs/vfs.c").read_text(encoding="utf-8")

@@ -1,13 +1,54 @@
 #include "include/kernel/filesystem_safety.h"
 
+#include "include/kernel/critical_object.h"
 #include "include/kernel/supervisor.h"
 
 #define FILESYSTEM_MUTATION_DEADLINE_MS 15000U
 
-static volatile bool filesystem_read_only;
+#define FILESYSTEM_CONTROL_VERSION 1U
+
+typedef struct {
+    uint64_t progress_marker;
+    uint32_t read_only;
+    uint32_t reserved;
+} filesystem_control_t;
+
+static critical_object_t filesystem_control;
+static volatile bool filesystem_integrity_failed;
+static volatile bool filesystem_force_read_only;
 static bool filesystem_supervised;
-static uint64_t filesystem_progress_marker;
 static supervisor_handle_t filesystem_supervisor_handle;
+
+static bool filesystem_control_valid(const void *payload, size_t length) {
+    if (length != sizeof(filesystem_control_t)) return false;
+    const filesystem_control_t *state = (const filesystem_control_t *)payload;
+    return state->progress_marker != 0U && state->read_only <= 1U &&
+           state->reserved == 0U;
+}
+
+static bool filesystem_control_read(filesystem_control_t *state) {
+    size_t length = 0;
+    if (filesystem_integrity_failed ||
+        critical_object_read(&filesystem_control, FILESYSTEM_CONTROL_VERSION,
+                             state, sizeof(*state), &length,
+                             filesystem_control_valid) < 0 ||
+        length != sizeof(*state)) {
+        filesystem_integrity_failed = true;
+        return false;
+    }
+    return true;
+}
+
+static bool filesystem_control_write(const filesystem_control_t *state) {
+    if (filesystem_integrity_failed ||
+        critical_object_update(&filesystem_control, FILESYSTEM_CONTROL_VERSION,
+                               state, sizeof(*state),
+                               filesystem_control_valid) != 0) {
+        filesystem_integrity_failed = true;
+        return false;
+    }
+    return true;
+}
 
 static bool filesystem_apply_fence(void *context) {
     (void)context;
@@ -22,6 +63,13 @@ static bool filesystem_verify_fence(void *context) {
 
 bool filesystem_safety_init(uint64_t now_ms) {
     if (filesystem_supervised) return true;
+    filesystem_control_t state = {
+        .progress_marker = 1U,
+        .read_only = 0U,
+        .reserved = 0U,
+    };
+    if (critical_object_init(&filesystem_control, FILESYSTEM_CONTROL_VERSION,
+                             &state, sizeof(state)) != 0) return false;
     supervisor_config_t config = {
         .heartbeat_timeout_ms = FILESYSTEM_MUTATION_DEADLINE_MS,
         .recovery_timeout_ms = FILESYSTEM_MUTATION_DEADLINE_MS,
@@ -36,29 +84,42 @@ bool filesystem_safety_init(uint64_t now_ms) {
                             &filesystem_supervisor_handle) != 0 ||
         supervisor_report_progress(filesystem_supervisor_handle, 1U, now_ms) != 0 ||
         supervisor_report_idle(filesystem_supervisor_handle) != 0) return false;
-    filesystem_progress_marker = 1U;
     filesystem_supervised = true;
     return true;
 }
 
 bool filesystem_mutation_begin(uint64_t now_ms) {
-    if (filesystem_read_only) return false;
-    if (!filesystem_supervised) return true;
+    filesystem_control_t state;
+    if (!filesystem_supervised)
+        return !filesystem_integrity_failed && !filesystem_force_read_only;
+    if (filesystem_force_read_only) return false;
+    if (!filesystem_control_read(&state) || state.read_only != 0U) return false;
+    if (++state.progress_marker == 0U || !filesystem_control_write(&state))
+        return false;
     return supervisor_report_progress(filesystem_supervisor_handle,
-                                      ++filesystem_progress_marker, now_ms) == 0;
+                                      state.progress_marker, now_ms) == 0;
 }
 
 bool filesystem_mutation_end(void) {
-    if (!filesystem_supervised) return !filesystem_read_only;
+    filesystem_control_t state;
+    if (!filesystem_supervised) return !filesystem_integrity_failed;
+    if (!filesystem_control_read(&state) || state.read_only != 0U) return false;
     return supervisor_report_idle(filesystem_supervisor_handle) == 0 &&
-           !filesystem_read_only;
+           !filesystem_integrity_failed;
 }
 
 void filesystem_fence_mutations(void) {
-    filesystem_read_only = true;
+    filesystem_force_read_only = true;
     __asm__ volatile("" ::: "memory");
+    filesystem_control_t state;
+    if (filesystem_control_read(&state)) {
+        state.read_only = 1U;
+        (void)filesystem_control_write(&state);
+    }
 }
 
 bool filesystem_is_read_only(void) {
-    return filesystem_read_only;
+    if (filesystem_integrity_failed || filesystem_force_read_only) return true;
+    filesystem_control_t state;
+    return !filesystem_control_read(&state) || state.read_only != 0U;
 }

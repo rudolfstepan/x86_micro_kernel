@@ -656,6 +656,9 @@ VFS-Aufrufe. I/O-Fehler oder Deadlineverletzung verriegeln das VFS Read-only,
 während Lesen und Diagnose weiter möglich bleiben. Fatal-Fencing sperrt VFS-
 und physische Storage-Writes gemeinsam. Das begrenzt Folgeschäden, ersetzt
 aber noch kein Journal und keine atomare Mehrsektortransaktion.
+Fortschrittssequenz und Interlockzustand beider Persistenzdomänen sind als
+SECDED-/CRC-geschützte Primary/Shadow-Objekte ausgeführt. Korrigierbare Fehler
+werden repariert; unbrauchbare Kopien führen fail-closed zur Schreibsperre.
 Die Apply-/Verify-Callbacks samt Kontext sind ebenfalls redundant über
 `critical_object` geschützt. Single-Bit-Fehler werden korrigiert; bei zwei
 unbrauchbaren Kopien wird kein Funktionszeiger ausgeführt und unmittelbar zum
