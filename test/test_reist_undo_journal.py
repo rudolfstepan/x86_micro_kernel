@@ -19,11 +19,13 @@ class ReistUndoJournalTests(unittest.TestCase):
         write_fat32_volume(image, partition, 30000, 0x12345678)
         image.seek((partition + 8) * SECTOR)
         header = image.read(SECTOR)
-        magic, version, state, target, data_crc, sequence, header_crc = \
-            struct.unpack_from("<7I", header)
-        self.assertEqual((magic, version, state), (MAGIC, 1, 0))
-        self.assertEqual((target, data_crc, sequence), (0, 0, 0))
-        self.assertEqual(header_crc, binascii.crc32(header[:24]) & 0xFFFFFFFF)
+        magic, version, state, sequence, entry_count, header_crc = \
+            struct.unpack_from("<6I", header)
+        self.assertEqual((magic, version, state), (MAGIC, 2, 0))
+        self.assertEqual((sequence, entry_count), (0, 0))
+        check = bytearray(header)
+        struct.pack_into("<I", check, 20, 0)
+        self.assertEqual(header_crc, binascii.crc32(check) & 0xFFFFFFFF)
         image.seek((partition + 9) * SECTOR)
         self.assertEqual(image.read(SECTOR), bytes(SECTOR))
 
@@ -35,11 +37,10 @@ class ReistUndoJournalTests(unittest.TestCase):
         body = body[body.index("uint8_t old_data"):]
         ordered = [
             "ata_read_sector_impl(base, lba",
-            "ata_write_sector_impl(base, ata_journal.data_lba",
-            "active.state = ATA_JOURNAL_ACTIVE",
-            "ata_write_sector_impl(base, ata_journal.header_lba",
+            "ata_write_sector_impl(base, ata_journal.data_lba + slot",
+            "ata_journal_write_active()",
             "ata_write_sector_impl(base, lba, buffer",
-            "ata_journal_clear()",
+            "ata_journal_transaction_end(result)",
         ]
         position = -1
         for token in ordered:
@@ -54,12 +55,19 @@ class ReistUndoJournalTests(unittest.TestCase):
         body = source[start:end]
         self.assertIn("record.magic != ATA_JOURNAL_MAGIC", body)
         self.assertIn("ata_journal_record_valid(&record)", body)
-        self.assertIn("ata_journal_crc32(old_data", body)
-        self.assertLess(body.index("ata_journal_crc32(old_data"),
-                        body.index("record.target_lba, old_data"))
-        self.assertLess(body.index("record.target_lba, old_data"),
-                        body.index("ata_journal_clear()"))
+        self.assertIn("record.entries[index].data_crc32", body)
+        self.assertIn("data_lba + index", body)
+        self.assertIn("ata_write_sector_impl(base, target, data", body)
         self.assertIn("if (!result) ata_fence_writes();", body)
+
+    def test_vfs_transaction_spans_multiple_unique_sector_updates(self):
+        ata = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
+        fs = (ROOT / "kernel/init/filesystem_safety.c").read_text(encoding="utf-8")
+        self.assertIn("#define ATA_JOURNAL_MAX_ENTRIES 20U", ata)
+        self.assertIn("ata_journal.entries[i].target_lba == lba", ata)
+        self.assertIn("ata_journal.entry_count >= ATA_JOURNAL_MAX_ENTRIES", ata)
+        self.assertIn("ata_journal_transaction_begin()", fs)
+        self.assertIn("ata_journal_transaction_end(commit)", fs)
 
     def test_recovery_runs_before_mutable_fat_metadata_is_consumed(self):
         source = (ROOT / "fs/fat32/fat32.c").read_text(encoding="utf-8")
@@ -71,7 +79,8 @@ class ReistUndoJournalTests(unittest.TestCase):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
         self.assertIn('"--persistent"', runner)
-        self.assertIn("restored != expected or state != 0", runner)
+        self.assertIn("if not restored or state != 0", runner)
+        self.assertIn("targets = [DATA_PARTITION_START + 6", runner)
         self.assertIn("test-smoke-journal-recovery:", makefile)
         self.assertIn("make test-smoke-journal-recovery", workflow)
 

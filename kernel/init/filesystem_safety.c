@@ -2,6 +2,7 @@
 
 #include "include/kernel/critical_object.h"
 #include "include/kernel/supervisor.h"
+#include "drivers/block/ata.h"
 
 #define FILESYSTEM_MUTATION_DEADLINE_MS 15000U
 
@@ -96,13 +97,22 @@ bool filesystem_mutation_begin(uint64_t now_ms) {
     if (!filesystem_control_read(&state) || state.read_only != 0U) return false;
     if (++state.progress_marker == 0U || !filesystem_control_write(&state))
         return false;
-    return supervisor_report_progress(filesystem_supervisor_handle,
-                                      state.progress_marker, now_ms) == 0;
+    if (supervisor_report_progress(filesystem_supervisor_handle,
+                                   state.progress_marker, now_ms) != 0 ||
+        !ata_journal_transaction_begin()) {
+        filesystem_fence_mutations();
+        return false;
+    }
+    return true;
 }
 
-bool filesystem_mutation_end(void) {
+bool filesystem_mutation_end(bool commit) {
     filesystem_control_t state;
     if (!filesystem_supervised) return !filesystem_integrity_failed;
+    if (!ata_journal_transaction_end(commit)) {
+        filesystem_fence_mutations();
+        return false;
+    }
     if (!filesystem_control_read(&state) || state.read_only != 0U) return false;
     return supervisor_report_idle(filesystem_supervisor_handle) == 0 &&
            !filesystem_integrity_failed;

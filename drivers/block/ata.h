@@ -57,6 +57,8 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer, bool 
 bool ata_journal_attach(unsigned short base, bool is_master,
                         uint32_t partition_lba, uint32_t volume_sectors,
                         uint16_t reserved_sectors);
+bool ata_journal_transaction_begin(void);
+bool ata_journal_transaction_end(bool commit);
 void ata_fence_writes(void);
 bool ata_writes_quiescent(void);
 

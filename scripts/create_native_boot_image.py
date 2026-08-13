@@ -308,9 +308,10 @@ def write_fat32_volume(image, partition_lba: int, total_sectors: int,
     # marker and are therefore never modified implicitly by the kernel.
     journal = bytearray(SECTOR_SIZE)
     struct.pack_into("<6I", journal, 0,
-                     0x4A545352, 1, 0, 0, 0, 0)
-    struct.pack_into("<I", journal, 24,
-                     binascii.crc32(journal[:24]) & 0xFFFFFFFF)
+                     0x4A545352, 2, 0, 0, 0, 0)
+    struct.pack_into("<I", journal, 20, 0)
+    struct.pack_into("<I", journal, 20,
+                     binascii.crc32(journal) & 0xFFFFFFFF)
     write_relative_sector(8, bytes(journal))
     write_relative_sector(9, bytes(SECTOR_SIZE))
 

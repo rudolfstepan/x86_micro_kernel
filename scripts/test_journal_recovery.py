@@ -8,21 +8,27 @@ SECTOR_SIZE = 512
 DATA_PARTITION_START = 8192
 JOURNAL_MAGIC = 0x4A545352
 
-def inject(source: Path, destination: Path) -> bytes:
+def inject(source: Path, destination: Path) -> list[tuple[int, bytes]]:
     shutil.copyfile(source, destination)
     image = bytearray(destination.read_bytes())
-    target, header_lba, data_lba = (DATA_PARTITION_START + n for n in (6, 8, 9))
-    old = bytes(image[target * SECTOR_SIZE:(target + 1) * SECTOR_SIZE])
-    image[data_lba * SECTOR_SIZE:(data_lba + 1) * SECTOR_SIZE] = old
+    targets = [DATA_PARTITION_START + 6, DATA_PARTITION_START + 7]
+    header_lba, data_lba = DATA_PARTITION_START + 8, DATA_PARTITION_START + 9
+    expected = []
     record = bytearray(SECTOR_SIZE)
-    struct.pack_into("<6I", record, 0, JOURNAL_MAGIC, 1, 1, target,
-                     binascii.crc32(old) & 0xFFFFFFFF, 1)
-    struct.pack_into("<I", record, 24,
-                     binascii.crc32(record[:24]) & 0xFFFFFFFF)
+    struct.pack_into("<6I", record, 0, JOURNAL_MAGIC, 2, 1, 1, len(targets), 0)
+    for index, target in enumerate(targets):
+        old = bytes(image[target * SECTOR_SIZE:(target + 1) * SECTOR_SIZE])
+        expected.append((target, old))
+        image[(data_lba + index) * SECTOR_SIZE:
+              (data_lba + index + 1) * SECTOR_SIZE] = old
+        struct.pack_into("<2I", record, 24 + index * 8, target,
+                         binascii.crc32(old) & 0xFFFFFFFF)
+        image[target * SECTOR_SIZE:(target + 1) * SECTOR_SIZE] = \
+            bytes([0xA5 + index]) * SECTOR_SIZE
+    struct.pack_into("<I", record, 20, binascii.crc32(record) & 0xFFFFFFFF)
     image[header_lba * SECTOR_SIZE:(header_lba + 1) * SECTOR_SIZE] = record
-    image[target * SECTOR_SIZE:(target + 1) * SECTOR_SIZE] = b"\xA5" * SECTOR_SIZE
     destination.write_bytes(image)
-    return old
+    return expected
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -42,10 +48,11 @@ def main() -> int:
          str(args.timeout), "--log", str(args.log)], check=False)
     if result.returncode != 0: return result.returncode
     image = args.work_image.read_bytes()
-    target, header_lba = DATA_PARTITION_START + 6, DATA_PARTITION_START + 8
-    restored = image[target * SECTOR_SIZE:(target + 1) * SECTOR_SIZE]
+    header_lba = DATA_PARTITION_START + 8
     state = struct.unpack_from("<I", image, header_lba * SECTOR_SIZE + 8)[0]
-    if restored != expected or state != 0:
+    restored = all(image[target * SECTOR_SIZE:(target + 1) * SECTOR_SIZE] == old
+                   for target, old in expected)
+    if not restored or state != 0:
         print("journal-recovery: restored sector or CLEAN state mismatch", file=sys.stderr)
         return 1
     print("journal-recovery: PASS")

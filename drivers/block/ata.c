@@ -54,22 +54,32 @@ static ata_cache_entry_t ata_read_cache[ATA_READ_CACHE_ENTRIES];
 static volatile bool ata_write_fenced;
 
 #define ATA_JOURNAL_MAGIC 0x4A545352U /* "RSTJ" */
-#define ATA_JOURNAL_VERSION 1U
+#define ATA_JOURNAL_VERSION 2U
 #define ATA_JOURNAL_CLEAN 0U
 #define ATA_JOURNAL_ACTIVE 1U
 #define ATA_JOURNAL_HEADER_OFFSET 8U
 #define ATA_JOURNAL_DATA_OFFSET 9U
+#define ATA_JOURNAL_MAX_ENTRIES 20U
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
     uint32_t version;
     uint32_t state;
-    uint32_t target_lba;
-    uint32_t data_crc32;
     uint32_t sequence;
+    uint32_t entry_count;
+    uint32_t header_crc32;
+    struct {
+        uint32_t target_lba;
+        uint32_t data_crc32;
+    } entries[ATA_JOURNAL_MAX_ENTRIES];
+    uint8_t reserved[SECTOR_SIZE - 24U - ATA_JOURNAL_MAX_ENTRIES * 8U];
+} ata_journal_record_t;
+
+typedef struct __attribute__((packed)) {
+    uint32_t magic, version, state, target_lba, data_crc32, sequence;
     uint32_t header_crc32;
     uint8_t reserved[SECTOR_SIZE - 28U];
-} ata_journal_record_t;
+} ata_journal_v1_record_t;
 
 static struct {
     bool enabled;
@@ -80,6 +90,12 @@ static struct {
     uint32_t volume_start_lba;
     uint32_t volume_end_lba;
     uint32_t sequence;
+    uint32_t entry_count;
+    uint32_t transaction_depth;
+    struct {
+        uint32_t target_lba;
+        uint32_t data_crc32;
+    } entries[ATA_JOURNAL_MAX_ENTRIES];
 } ata_journal;
 
 static uint32_t ata_journal_crc32(const void *data, size_t length) {
@@ -94,14 +110,20 @@ static uint32_t ata_journal_crc32(const void *data, size_t length) {
 }
 
 static bool ata_journal_record_valid(const ata_journal_record_t *record) {
-    return record->magic == ATA_JOURNAL_MAGIC &&
+    ata_journal_record_t copy = *record;
+    uint32_t expected_crc = copy.header_crc32;
+    copy.header_crc32 = 0U;
+    return copy.magic == ATA_JOURNAL_MAGIC &&
            record->version == ATA_JOURNAL_VERSION &&
            record->state <= ATA_JOURNAL_ACTIVE &&
-           record->header_crc32 == ata_journal_crc32(record, 24U);
+           record->entry_count <= ATA_JOURNAL_MAX_ENTRIES &&
+           (record->state == ATA_JOURNAL_ACTIVE || record->entry_count == 0U) &&
+           expected_crc == ata_journal_crc32(&copy, sizeof(copy));
 }
 
 static void ata_journal_seal(ata_journal_record_t *record) {
-    record->header_crc32 = ata_journal_crc32(record, 24U);
+    record->header_crc32 = 0U;
+    record->header_crc32 = ata_journal_crc32(record, sizeof(*record));
 }
 
 /* ATA PIO is synchronous and uses controller-global task-file registers.  On
@@ -531,6 +553,39 @@ static bool ata_journal_clear(void) {
                                  &clean, ata_journal.is_master);
 }
 
+static bool ata_journal_write_active(void) {
+    ata_journal_record_t active;
+    memset(&active, 0, sizeof(active));
+    active.magic = ATA_JOURNAL_MAGIC;
+    active.version = ATA_JOURNAL_VERSION;
+    active.state = ATA_JOURNAL_ACTIVE;
+    active.sequence = ata_journal.sequence;
+    active.entry_count = ata_journal.entry_count;
+    for (uint32_t i = 0; i < ata_journal.entry_count; ++i) {
+        active.entries[i].target_lba = ata_journal.entries[i].target_lba;
+        active.entries[i].data_crc32 = ata_journal.entries[i].data_crc32;
+    }
+    ata_journal_seal(&active);
+    return ata_write_sector_impl(ata_journal.base, ata_journal.header_lba,
+                                 &active, ata_journal.is_master);
+}
+
+bool ata_journal_transaction_begin(void) {
+    if (!ata_journal.enabled) return true;
+    if (ata_journal.transaction_depth++ == 0U) ata_journal.entry_count = 0U;
+    return ata_journal.transaction_depth != 0U;
+}
+
+bool ata_journal_transaction_end(bool commit) {
+    if (!ata_journal.enabled) return true;
+    if (ata_journal.transaction_depth == 0U) return false;
+    if (--ata_journal.transaction_depth != 0U) return true;
+    bool result = true;
+    if (ata_journal.entry_count != 0U && commit) result = ata_journal_clear();
+    ata_journal.entry_count = 0U;
+    return result;
+}
+
 static bool ata_write_sector_journaled(unsigned short base, unsigned int lba,
                                        void *buffer, bool is_master) {
     if (!ata_journal.enabled || base != ata_journal.base ||
@@ -538,28 +593,40 @@ static bool ata_write_sector_journaled(unsigned short base, unsigned int lba,
         lba < ata_journal.volume_start_lba || lba >= ata_journal.volume_end_lba) {
         return ata_write_sector_impl(base, lba, buffer, is_master);
     }
-    if (lba == ata_journal.header_lba || lba == ata_journal.data_lba)
+    if (lba >= ata_journal.header_lba &&
+        lba < ata_journal.data_lba + ATA_JOURNAL_MAX_ENTRIES)
         return false;
 
-    uint8_t old_data[SECTOR_SIZE];
-    if (!ata_read_sector_impl(base, lba, old_data, is_master)) return false;
-    if (!ata_write_sector_impl(base, ata_journal.data_lba, old_data,
-                               is_master)) return false;
+    bool automatic = ata_journal.transaction_depth == 0U;
+    if (automatic && !ata_journal_transaction_begin()) return false;
+    for (uint32_t i = 0; i < ata_journal.entry_count; ++i) {
+        if (ata_journal.entries[i].target_lba == lba) {
+            bool result = ata_write_sector_impl(base, lba, buffer, is_master);
+            return automatic ? (ata_journal_transaction_end(result) && result)
+                             : result;
+        }
+    }
+    if (ata_journal.entry_count >= ATA_JOURNAL_MAX_ENTRIES) {
+        if (automatic) (void)ata_journal_transaction_end(false);
+        return false;
+    }
 
-    ata_journal_record_t active;
-    memset(&active, 0, sizeof(active));
-    active.magic = ATA_JOURNAL_MAGIC;
-    active.version = ATA_JOURNAL_VERSION;
-    active.state = ATA_JOURNAL_ACTIVE;
-    active.target_lba = lba;
-    active.data_crc32 = ata_journal_crc32(old_data, sizeof(old_data));
-    if (++ata_journal.sequence == 0U) return false;
-    active.sequence = ata_journal.sequence;
-    ata_journal_seal(&active);
-    if (!ata_write_sector_impl(base, ata_journal.header_lba, &active,
-                               is_master)) return false;
-    if (!ata_write_sector_impl(base, lba, buffer, is_master)) return false;
-    return ata_journal_clear();
+    uint8_t old_data[SECTOR_SIZE];
+    uint32_t slot = ata_journal.entry_count;
+    bool result = ata_read_sector_impl(base, lba, old_data, is_master) &&
+        ata_write_sector_impl(base, ata_journal.data_lba + slot, old_data,
+                              is_master);
+    if (result) {
+        ata_journal.entries[slot].target_lba = lba;
+        ata_journal.entries[slot].data_crc32 =
+            ata_journal_crc32(old_data, sizeof(old_data));
+        ata_journal.entry_count++;
+        if (slot == 0U && ++ata_journal.sequence == 0U) result = false;
+    }
+    if (result) result = ata_journal_write_active();
+    if (result) result = ata_write_sector_impl(base, lba, buffer, is_master);
+    if (automatic) result = ata_journal_transaction_end(result) && result;
+    return result;
 }
 
 bool ata_journal_attach(unsigned short base, bool is_master,
@@ -581,33 +648,50 @@ bool ata_journal_attach(unsigned short base, bool is_master,
     }
     /* Only images explicitly provisioned by our builder opt in. */
     if (record.magic != ATA_JOURNAL_MAGIC) goto done;
-    if (!ata_journal_record_valid(&record)) {
-        result = false;
-        goto done;
-    }
-
     ata_journal.base = base;
     ata_journal.is_master = is_master;
     ata_journal.header_lba = header_lba;
     ata_journal.data_lba = data_lba;
     ata_journal.volume_start_lba = partition_lba;
     ata_journal.volume_end_lba = partition_lba + volume_sectors;
-    ata_journal.sequence = record.sequence;
-    if (record.state == ATA_JOURNAL_ACTIVE) {
-        uint8_t old_data[SECTOR_SIZE];
-        if (record.target_lba < ata_journal.volume_start_lba ||
-            record.target_lba >= ata_journal.volume_end_lba ||
-            record.target_lba == header_lba || record.target_lba == data_lba ||
-            record.target_lba >= ATA_LBA28_LIMIT ||
-            !ata_read_sector_impl(base, data_lba, old_data, is_master) ||
-            ata_journal_crc32(old_data, sizeof(old_data)) != record.data_crc32 ||
-            !ata_write_sector_impl(base, record.target_lba, old_data,
-                                   is_master) ||
-            !ata_journal_clear()) {
-            result = false;
-            goto done;
+    ata_journal.entry_count = 0U;
+    ata_journal.transaction_depth = 0U;
+    if (record.version == 1U) {
+        ata_journal_v1_record_t *old = (ata_journal_v1_record_t *)&record;
+        if (old->state > ATA_JOURNAL_ACTIVE ||
+            old->header_crc32 != ata_journal_crc32(old, 24U)) result = false;
+        ata_journal.sequence = old->sequence;
+        if (result && old->state == ATA_JOURNAL_ACTIVE) {
+            uint8_t data[SECTOR_SIZE];
+            result = old->target_lba >= ata_journal.volume_start_lba &&
+                old->target_lba < ata_journal.volume_end_lba &&
+                ata_read_sector_impl(base, data_lba, data, is_master) &&
+                ata_journal_crc32(data, sizeof(data)) == old->data_crc32 &&
+                ata_write_sector_impl(base, old->target_lba, data, is_master);
         }
+        if (result) result = ata_journal_clear();
+    } else {
+        result = reserved_sectors >
+                     ATA_JOURNAL_DATA_OFFSET + ATA_JOURNAL_MAX_ENTRIES - 1U &&
+                 ata_journal_record_valid(&record);
+        ata_journal.sequence = record.sequence;
+        for (uint32_t i = record.entry_count; result && i > 0U; --i) {
+            uint32_t index = i - 1U;
+            uint32_t target = record.entries[index].target_lba;
+            uint8_t data[SECTOR_SIZE];
+            result = target >= ata_journal.volume_start_lba &&
+                target < ata_journal.volume_end_lba &&
+                !(target >= header_lba &&
+                  target < data_lba + ATA_JOURNAL_MAX_ENTRIES) &&
+                ata_read_sector_impl(base, data_lba + index, data, is_master) &&
+                ata_journal_crc32(data, sizeof(data)) ==
+                    record.entries[index].data_crc32 &&
+                ata_write_sector_impl(base, target, data, is_master);
+        }
+        if (result && record.state == ATA_JOURNAL_ACTIVE)
+            result = ata_journal_clear();
     }
+    if (!result) goto done;
     ata_journal.enabled = true;
 done:
     if (!result) ata_fence_writes();

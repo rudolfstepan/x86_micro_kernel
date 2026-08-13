@@ -273,8 +273,14 @@ FAT-/FSInfo-/Verzeichnismetadaten zurückgerollt. Ziel-LBA, Volumegrenzen sowie
 Header- und Daten-CRC werden geprüft; ein Fehler verriegelt Storage und
 verweigert den schreibbaren Mount. Nur Medien mit dem expliziten Builder-Marker
 aktivieren diesen Pfad, fremde FAT32-Volumes bleiben unverändert. Das liefert
-atomare Einzel-Sektorupdates, jedoch noch keine Atomizität für eine komplette
-Mehrsektor-VFS-Operation.
+atomare VFS-Mutationen mit bis zu 20 unterschiedlichen Sektoren. Wiederholte
+Writes desselben Sektors benötigen nur einen Undo-Slot. Die VFS-Klammer hält
+den Record über die komplette Operation `ACTIVE` und setzt `CLEAN` erst nach
+erfolgreichem Abschluss. Kapazitätsüberschreitung oder ein I/O-Fehler lassen
+den Undo-Satz für Boot-Recovery stehen und schalten das VFS Read-only. Größere
+Operationen benötigen künftig ein skalierbares Journal beziehungsweise COW.
+Journal-v1-Medien werden rückwärtskompatibel wiederhergestellt und anschließend
+mit einem sauberen v2-Header migriert.
 
 Auch die Recovery-Steuerung ist Teil des kritischen Zustands: Apply-/Verify-
 Funktionszeiger und ihr Kontext liegen nicht mehr als ungeschützte Pointer in

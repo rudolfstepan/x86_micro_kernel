@@ -61,10 +61,11 @@ static bool vfs_mutation_begin(void) {
 #endif
 }
 
-static bool vfs_mutation_end(void) {
+static bool vfs_mutation_end(bool commit) {
 #ifndef KERNEL_HOST_TEST
-    return filesystem_mutation_end();
+    return filesystem_mutation_end(commit);
 #else
+    (void)commit;
     return true;
 #endif
 }
@@ -73,7 +74,7 @@ static int vfs_mutation_finish(bool armed, int result) {
 #ifndef KERNEL_HOST_TEST
     if (result == VFS_ERR_IO) filesystem_fence_mutations();
 #endif
-    if (armed && !vfs_mutation_end()) return VFS_ERR_IO;
+    if (armed && !vfs_mutation_end(result != VFS_ERR_IO)) return VFS_ERR_IO;
     return result;
 }
 
