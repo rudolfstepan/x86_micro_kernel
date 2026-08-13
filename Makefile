@@ -116,6 +116,7 @@ ARCH_MM_C := $(wildcard $(ARCH_DIR)/mm/*.c)
 KERNEL_INIT_C := $(wildcard $(KERNEL_DIR)/init/*.c)
 KERNEL_SYSCALL_C := $(wildcard $(KERNEL_DIR)/syscall/*.c)
 KERNEL_PROC_C := $(wildcard $(KERNEL_DIR)/proc/*.c)
+KERNEL_IPC_C := $(wildcard $(KERNEL_DIR)/ipc/*.c)
 KERNEL_SCHED_C := $(wildcard $(KERNEL_DIR)/sched/*.c)
 KERNEL_SCHED_ASM := $(wildcard $(KERNEL_DIR)/sched/*.asm)
 KERNEL_TIME_C := $(wildcard $(KERNEL_DIR)/time/*.c)
@@ -160,6 +161,7 @@ ARCH_MM_OBJ := $(patsubst $(ARCH_DIR)/mm/%.c,$(BUILD_ARCH_DIR)/mm/%.o,$(ARCH_MM_
 KERNEL_INIT_OBJ := $(patsubst $(KERNEL_DIR)/init/%.c,$(BUILD_KERNEL_DIR)/init/%.o,$(KERNEL_INIT_C))
 KERNEL_SYSCALL_OBJ := $(patsubst $(KERNEL_DIR)/syscall/%.c,$(BUILD_KERNEL_DIR)/syscall/%.o,$(KERNEL_SYSCALL_C))
 KERNEL_PROC_OBJ := $(patsubst $(KERNEL_DIR)/proc/%.c,$(BUILD_KERNEL_DIR)/proc/%.o,$(KERNEL_PROC_C))
+KERNEL_IPC_OBJ := $(patsubst $(KERNEL_DIR)/ipc/%.c,$(BUILD_KERNEL_DIR)/ipc/%.o,$(KERNEL_IPC_C))
 KERNEL_SCHED_C_OBJ := $(patsubst $(KERNEL_DIR)/sched/%.c,$(BUILD_KERNEL_DIR)/sched/%.o,$(KERNEL_SCHED_C))
 KERNEL_SCHED_ASM_OBJ := $(patsubst $(KERNEL_DIR)/sched/%.asm,$(BUILD_KERNEL_DIR)/sched/%.o,$(KERNEL_SCHED_ASM))
 KERNEL_TIME_OBJ := $(patsubst $(KERNEL_DIR)/time/%.c,$(BUILD_KERNEL_DIR)/time/%.o,$(KERNEL_TIME_C))
@@ -190,6 +192,7 @@ LIB_LIBK_OBJ := $(patsubst $(LIB_DIR)/libk/%.c,$(BUILD_LIB_DIR)/libk/%.o,$(LIB_L
 # Aggregate objects for linking
 ARCH_OBJ := $(ARCH_BOOT_ASM_OBJ) $(ARCH_BOOT_C_OBJ) $(ARCH_CPU_ASM_OBJ) $(ARCH_CPU_C_OBJ) $(ARCH_MM_OBJ)
 KERNEL_OBJ := $(KERNEL_INIT_OBJ) $(KERNEL_SYSCALL_OBJ) $(KERNEL_PROC_OBJ) \
+              $(KERNEL_IPC_OBJ) \
               $(KERNEL_SCHED_C_OBJ) $(KERNEL_SCHED_ASM_OBJ) $(KERNEL_TIME_OBJ) \
               $(KERNEL_SHELL_OBJ)
 FS_OBJ := $(FS_VFS_OBJ) $(FS_FAT12_OBJ) $(FS_FAT32_OBJ) $(FS_EXT2_OBJ)
@@ -335,7 +338,7 @@ clean:
 
 prepare:
 	@echo "Creating build directories..."
-	@$(PYTHON) -c "from pathlib import Path; [Path(p).mkdir(parents=True, exist_ok=True) for p in '$(BUILD_ARCH_DIR)/boot $(BUILD_ARCH_DIR)/cpu $(BUILD_ARCH_DIR)/mm $(BUILD_KERNEL_DIR)/init $(BUILD_KERNEL_DIR)/syscall $(BUILD_KERNEL_DIR)/proc $(BUILD_KERNEL_DIR)/sched $(BUILD_KERNEL_DIR)/time $(BUILD_KERNEL_DIR)/shell $(BUILD_MM_DIR) $(BUILD_FS_DIR)/vfs $(BUILD_FS_DIR)/fat12 $(BUILD_FS_DIR)/fat32 $(BUILD_FS_DIR)/ext2 $(BUILD_DRIVERS_DIR)/block $(BUILD_DRIVERS_DIR)/char $(BUILD_DRIVERS_DIR)/video $(BUILD_DRIVERS_DIR)/net $(BUILD_DRIVERS_DIR)/bus $(BUILD_DRIVERS_DIR)/usb $(BUILD_LIB_DIR)/libc $(BUILD_LIB_DIR)/libk $(BUILD_USERSPACE_DIR)/bin'.split()]"
+	@$(PYTHON) -c "from pathlib import Path; [Path(p).mkdir(parents=True, exist_ok=True) for p in '$(BUILD_ARCH_DIR)/boot $(BUILD_ARCH_DIR)/cpu $(BUILD_ARCH_DIR)/mm $(BUILD_KERNEL_DIR)/init $(BUILD_KERNEL_DIR)/syscall $(BUILD_KERNEL_DIR)/proc $(BUILD_KERNEL_DIR)/ipc $(BUILD_KERNEL_DIR)/sched $(BUILD_KERNEL_DIR)/time $(BUILD_KERNEL_DIR)/shell $(BUILD_MM_DIR) $(BUILD_FS_DIR)/vfs $(BUILD_FS_DIR)/fat12 $(BUILD_FS_DIR)/fat32 $(BUILD_FS_DIR)/ext2 $(BUILD_DRIVERS_DIR)/block $(BUILD_DRIVERS_DIR)/char $(BUILD_DRIVERS_DIR)/video $(BUILD_DRIVERS_DIR)/net $(BUILD_DRIVERS_DIR)/bus $(BUILD_DRIVERS_DIR)/usb $(BUILD_LIB_DIR)/libc $(BUILD_LIB_DIR)/libk $(BUILD_USERSPACE_DIR)/bin'.split()]"
 
 # ============================================================================
 # COMPILATION RULES
@@ -398,6 +401,11 @@ $(BUILD_KERNEL_DIR)/time/%.o: $(KERNEL_DIR)/time/%.c
 
 # Kernel - Shell
 $(BUILD_KERNEL_DIR)/shell/%.o: $(KERNEL_DIR)/shell/%.c
+	@echo "  CC    $<"
+	@$(CC) $(CFLAGS) $< -o $@
+
+# Kernel - IPC
+$(BUILD_KERNEL_DIR)/ipc/%.o: $(KERNEL_DIR)/ipc/%.c
 	@echo "  CC    $<"
 	@$(CC) $(CFLAGS) $< -o $@
 

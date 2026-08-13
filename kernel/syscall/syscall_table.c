@@ -17,6 +17,7 @@
 #include "kernel/time/pit.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/proc/process.h"
+#include "include/kernel/ipc.h"
 #include "arch/x86/mm/paging.h"
 #include "fs/vfs/vfs.h"
 #include "mm/kmalloc.h"
@@ -86,6 +87,63 @@ static int syscall_memory_stats(memory_stats_t *user_stats,
     memory_stats_t stats;
     memory_get_stats(&stats);
     return copy_to_user(user_stats, &stats, sizeof(stats)) == 0 ? 0 : -14;
+}
+
+static int syscall_copy_from_user_space(void *destination,
+                                        const void *user_source,
+                                        size_t length) {
+    return copy_from_user(destination, user_source, length);
+}
+
+static int syscall_ipc_create(ipc_handle_t *user_handle) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_handle;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(*user_handle),
+                               true)) return -14;
+
+    ipc_handle_t handle = IPC_INVALID_HANDLE;
+    int result = ipc_create(process, &handle);
+    if (result != 0) return result;
+    if (copy_to_user_space(directory, address, &handle,
+                           sizeof(handle)) != 0) {
+        (void)ipc_close(process, handle);
+        return -14;
+    }
+    return 0;
+}
+
+static int syscall_ipc_send(ipc_handle_t handle,
+                            const ipc_message_t *user_message) {
+    Process *process = scheduler_current_process();
+    ipc_message_t message;
+    if (process == NULL ||
+        syscall_copy_from_user_space(&message, user_message,
+                                     sizeof(message)) != 0) return -14;
+    return ipc_send(process, handle, &message);
+}
+
+static int syscall_ipc_receive(ipc_handle_t handle,
+                               ipc_message_t *user_message) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_message;
+    ipc_message_t message;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(message), true) ||
+        copy_from_user(&message, user_message, sizeof(message)) != 0) {
+        return -14;
+    }
+    int result = ipc_receive(process, handle, &message);
+    if (result != 0) return result;
+    return copy_to_user_space(directory, address, &message,
+                              sizeof(message)) == 0 ? 0 : -14;
+}
+
+static int syscall_ipc_close(ipc_handle_t handle) {
+    Process *process = scheduler_current_process();
+    return process != NULL ? ipc_close(process, handle) : -1;
 }
 
 typedef struct {
@@ -594,6 +652,10 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_display_draw_text,  // Syscall 46: Clipped pixel text
     (void*)&syscall_rename,             // Syscall 47: Atomic same-FS rename
     (void*)&syscall_fsync,              // Syscall 48: Persist writable file
+    (void*)&syscall_ipc_create,         // Syscall 49: Create IPC endpoint
+    (void*)&syscall_ipc_send,           // Syscall 50: Send bounded message
+    (void*)&syscall_ipc_receive,        // Syscall 51: Receive/block on endpoint
+    (void*)&syscall_ipc_close,          // Syscall 52: Revoke owned endpoint
     // Add more syscalls here as needed
 };
 
@@ -842,6 +904,22 @@ void syscall_handler(Registers* regs) {
             scheduler_preempt_disable();
             result = (uint32_t)syscall_fsync((int)arg1);
             scheduler_preempt_enable();
+            break;
+        case SYS_IPC_CREATE:
+            result = (uint32_t)syscall_ipc_create(
+                (ipc_handle_t*)(uintptr_t)arg1);
+            break;
+        case SYS_IPC_SEND:
+            result = (uint32_t)syscall_ipc_send(
+                (ipc_handle_t)arg1,
+                (const ipc_message_t*)(uintptr_t)arg2);
+            break;
+        case SYS_IPC_RECEIVE:
+            result = (uint32_t)syscall_ipc_receive(
+                (ipc_handle_t)arg1, (ipc_message_t*)(uintptr_t)arg2);
+            break;
+        case SYS_IPC_CLOSE:
+            result = (uint32_t)syscall_ipc_close((ipc_handle_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "include/kernel/ipc.h"
 #include "kernel/sched/wait_queue.h"
 
 
@@ -30,7 +31,7 @@ typedef struct {
     bool writable;
 } process_file_t;
 
-typedef struct {
+typedef struct Process {
     int pid;
     uint32_t generation;
     int parent_pid;
@@ -43,6 +44,7 @@ typedef struct {
     uint32_t heap_next;
     user_allocation_t user_allocations[MAX_USER_ALLOCATIONS];
     process_file_t files[MAX_PROCESS_FILES];
+    ipc_capability_t ipc_capabilities[IPC_MAX_CAPABILITIES_PER_PROCESS];
     char working_directory[PROCESS_PATH_MAX];
     wait_queue_t exit_waiters;
     // Add more fields as needed, e.g., priority, state, etc.

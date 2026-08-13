@@ -2,6 +2,98 @@
 
 #define WAIT_STRESS_ITERATIONS 64
 
+static int text_equal(const char *left, const char *right) {
+    if (left == NULL || right == NULL) return 0;
+    while (*left != '\0' && *left == *right) {
+        ++left;
+        ++right;
+    }
+    return *left == *right;
+}
+
+static int parse_ipc_handle(const char *text, x86os_ipc_handle_t *handle) {
+    if (text == NULL || handle == NULL || *text == '\0') return -1;
+    uint32_t value = 0U;
+    while (*text != '\0') {
+        if (*text < '0' || *text > '9') return -1;
+        uint32_t digit = (uint32_t)(*text - '0');
+        if (value > (UINT32_MAX - digit) / 10U) return -1;
+        value = value * 10U + digit;
+        ++text;
+    }
+    if (value == X86OS_IPC_INVALID_HANDLE) return -1;
+    *handle = value;
+    return 0;
+}
+
+static void format_ipc_handle(x86os_ipc_handle_t handle, char text[11]) {
+    char reverse[10];
+    size_t length = 0U;
+    do {
+        reverse[length++] = (char)('0' + handle % 10U);
+        handle /= 10U;
+    } while (handle != 0U);
+    for (size_t index = 0; index < length; ++index) {
+        text[index] = reverse[length - index - 1U];
+    }
+    text[length] = '\0';
+}
+
+static void ipc_message_prepare(x86os_ipc_message_t *message) {
+    message->version = X86OS_IPC_MESSAGE_VERSION;
+    message->struct_size = sizeof(*message);
+    message->length = 0U;
+}
+
+static void ipc_message_set(x86os_ipc_message_t *message, const char *text) {
+    ipc_message_prepare(message);
+    while (text[message->length] != '\0' &&
+           message->length < X86OS_IPC_MAX_MESSAGE_SIZE) {
+        message->payload[message->length] = (uint8_t)text[message->length];
+        ++message->length;
+    }
+}
+
+static int ipc_message_is(const x86os_ipc_message_t *message,
+                          const char *text) {
+    size_t length = 0U;
+    while (text[length] != '\0') ++length;
+    if (message->version != X86OS_IPC_MESSAGE_VERSION ||
+        message->struct_size != sizeof(*message) ||
+        message->length != length) return 0;
+    for (size_t index = 0; index < length; ++index) {
+        if (message->payload[index] != (uint8_t)text[index]) return 0;
+    }
+    return 1;
+}
+
+static int ipc_child_main(const char *mode, const char *handle_text) {
+    x86os_ipc_handle_t handle;
+    if (parse_ipc_handle(handle_text, &handle) != 0) return 70;
+
+    if (text_equal(mode, "IPC_ECHO")) {
+        /* Spawn inheritance grants the peer SEND/RECEIVE, never CONTROL. */
+        if (x86os_ipc_close(handle) >= 0) return 71;
+        x86os_ipc_message_t message;
+        ipc_message_prepare(&message);
+        if (x86os_ipc_receive(handle, &message) != 0 ||
+            !ipc_message_is(&message, "PING")) return 72;
+        ipc_message_set(&message, "PONG");
+        if (x86os_ipc_send(handle, &message) != 0) return 73;
+        (void)x86os_yield();
+        return 53;
+    }
+
+    if (text_equal(mode, "IPC_WAIT_CLOSE")) {
+        x86os_ipc_message_t message;
+        ipc_message_prepare(&message);
+        return x86os_ipc_receive(handle, &message) < 0 ? 55 : 74;
+    }
+
+    if (text_equal(mode, "IPC_EXIT")) return 54;
+    return 75;
+}
+
 static int bytes_equal(const char *left, const char *right, size_t length) {
     for (size_t index = 0; index < length; ++index) {
         if (left[index] != right[index]) return 0;
@@ -131,6 +223,116 @@ static int process_info_for_pid(int pid, x86os_process_info_t *result) {
         }
     }
     return -1;
+}
+
+static int spawn_ipc_child(const char *mode, x86os_ipc_handle_t handle) {
+    char handle_text[11];
+    format_ipc_handle(handle, handle_text);
+    const char *arguments[] = {"GTEST.PRG", mode, handle_text};
+    return x86os_spawnv("GTEST.PRG", 3, arguments);
+}
+
+static int wait_for_ipc_child(int pid, int expected_status) {
+    int status = -1;
+    return pid > 0 && x86os_wait(pid, &status) == pid &&
+           status == expected_status ? 0 : -1;
+}
+
+static int test_ipc_capabilities(void) {
+    x86os_memory_stats_t before;
+    x86os_memory_stats_t after;
+    if (x86os_memory_stats(&before) != 0 ||
+        x86os_ipc_create(
+            (x86os_ipc_handle_t*)(uintptr_t)0x1000U) != -14) return -1;
+
+    x86os_ipc_handle_t handle = X86OS_IPC_INVALID_HANDLE;
+    if (x86os_ipc_create(&handle) != 0 ||
+        handle == X86OS_IPC_INVALID_HANDLE) return -1;
+    int child = spawn_ipc_child("IPC_ECHO", handle);
+    if (child <= 0 || x86os_yield() != 0 ||
+        process_state_for_pid(child) != X86OS_PROCESS_WAITING) {
+        (void)x86os_ipc_close(handle);
+        return -1;
+    }
+
+    x86os_ipc_message_t message;
+    ipc_message_prepare(&message);
+    if (x86os_ipc_send(
+            handle, (const x86os_ipc_message_t*)(uintptr_t)0x1000U) != -14 ||
+        x86os_ipc_receive(
+            handle, (x86os_ipc_message_t*)(uintptr_t)0x1000U) != -14) {
+        (void)x86os_ipc_close(handle);
+        return -1;
+    }
+    message.version = X86OS_IPC_MESSAGE_VERSION + 1U;
+    if (x86os_ipc_send(handle, &message) >= 0) {
+        (void)x86os_ipc_close(handle);
+        return -1;
+    }
+    ipc_message_prepare(&message);
+    message.length = X86OS_IPC_MAX_MESSAGE_SIZE + 1U;
+    if (x86os_ipc_send(handle, &message) >= 0) {
+        (void)x86os_ipc_close(handle);
+        return -1;
+    }
+
+    ipc_message_set(&message, "PING");
+    if (x86os_ipc_send(handle, &message) != 0) {
+        (void)x86os_ipc_close(handle);
+        return -1;
+    }
+    ipc_message_prepare(&message);
+    if (x86os_ipc_receive(handle, &message) != 0 ||
+        !ipc_message_is(&message, "PONG") ||
+        wait_for_ipc_child(child, 53) != 0) {
+        (void)x86os_ipc_close(handle);
+        return -1;
+    }
+
+    x86os_ipc_handle_t stale = handle;
+    if (x86os_ipc_close(handle) != 0 || x86os_ipc_create(&handle) != 0 ||
+        handle == stale) return -1;
+    ipc_message_set(&message, "STALE");
+    if (x86os_ipc_send(stale, &message) >= 0 ||
+        x86os_ipc_close(handle) != 0) return -1;
+
+    /* Per-process capability admission is fixed and fail-closed. */
+    x86os_ipc_handle_t quota[X86OS_IPC_MAX_CAPABILITIES_PER_PROCESS];
+    for (size_t index = 0;
+         index < X86OS_IPC_MAX_CAPABILITIES_PER_PROCESS; ++index) {
+        quota[index] = X86OS_IPC_INVALID_HANDLE;
+        if (x86os_ipc_create(&quota[index]) != 0) return -1;
+    }
+    x86os_ipc_handle_t excess = X86OS_IPC_INVALID_HANDLE;
+    if (x86os_ipc_create(&excess) >= 0) return -1;
+    for (size_t index = 0;
+         index < X86OS_IPC_MAX_CAPABILITIES_PER_PROCESS; ++index) {
+        if (x86os_ipc_close(quota[index]) != 0) return -1;
+    }
+
+    /* Destroying an endpoint must wake an already blocked peer. */
+    if (x86os_ipc_create(&handle) != 0) return -1;
+    child = spawn_ipc_child("IPC_WAIT_CLOSE", handle);
+    if (child <= 0 || x86os_yield() != 0 ||
+        process_state_for_pid(child) != X86OS_PROCESS_WAITING ||
+        x86os_ipc_close(handle) != 0 ||
+        wait_for_ipc_child(child, 55) != 0) return -1;
+
+    /* A peer exit revokes its inherited capability and wakes the owner. */
+    if (x86os_ipc_create(&handle) != 0) return -1;
+    child = spawn_ipc_child("IPC_EXIT", handle);
+    if (child <= 0) {
+        (void)x86os_ipc_close(handle);
+        return -1;
+    }
+    ipc_message_prepare(&message);
+    if (x86os_ipc_receive(handle, &message) >= 0 ||
+        wait_for_ipc_child(child, 54) != 0 ||
+        x86os_ipc_close(handle) != 0 ||
+        x86os_memory_stats(&after) != 0 ||
+        after.allocated_frame_bytes != before.allocated_frame_bytes ||
+        after.heap_used_bytes != before.heap_used_bytes) return -1;
+    return 0;
 }
 
 static int test_scheduler_time(void) {
@@ -272,7 +474,14 @@ static int test_task_capacity_and_parenting(void) {
     return wait_for_expected("CHILDEX.PRG", 37);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc == 3 && text_equal(argv[1], "IPC_ECHO"))
+        return ipc_child_main(argv[1], argv[2]);
+    if (argc == 3 && text_equal(argv[1], "IPC_WAIT_CLOSE"))
+        return ipc_child_main(argv[1], argv[2]);
+    if (argc == 3 && text_equal(argv[1], "IPC_EXIT"))
+        return ipc_child_main(argv[1], argv[2]);
+
     x86os_puts("GUEST_TEST_BEGIN\n");
 
     if (test_wait_wakeup() != 0) {
@@ -299,9 +508,15 @@ int main(void) {
     }
     x86os_puts("TEST_STAGE MEMORY_OK\n");
 
+    if (test_ipc_capabilities() != 0) {
+        x86os_puts("TEST_FAIL IPC\n");
+        return 5;
+    }
+    x86os_puts("TEST_STAGE IPC_OK\n");
+
     if (test_task_capacity_and_parenting() != 0) {
         x86os_puts("TEST_FAIL TASK_CAPACITY\n");
-        return 5;
+        return 6;
     }
     x86os_puts("TEST_STAGE TASK_CAPACITY_OK\n");
 
@@ -310,7 +525,7 @@ int main(void) {
         wait_for_expected("FAULTPF.PRG", 142) != 0 ||
         wait_for_expected("FAULTSTK.PRG", 142) != 0) {
         x86os_puts("TEST_FAIL EXCEPTIONS\n");
-        return 6;
+        return 7;
     }
     x86os_puts("TEST_STAGE EXCEPTIONS_OK\n");
     x86os_puts("TEST_OK\n");

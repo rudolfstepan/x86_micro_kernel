@@ -28,6 +28,7 @@
 #include "include/kernel/storage_safety.h"
 #include "include/kernel/filesystem_safety.h"
 #include "include/kernel/output_fence.h"
+#include "include/kernel/ipc.h"
 #include "kernel/shell/command.h"
 #include "mm/kmalloc.h"
 
@@ -410,6 +411,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     early_init();
     fatal_boot_recover_record();
     supervisor_init();
+    ipc_init();
     output_fence_init();
     if (!filesystem_safety_init(pit_monotonic_ms())) {
         panic("Unable to initialize REIST filesystem supervision");

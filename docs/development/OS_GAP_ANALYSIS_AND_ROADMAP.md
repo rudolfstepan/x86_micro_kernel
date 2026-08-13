@@ -77,7 +77,7 @@ und maximale Fehlerreaktionszeiten rückverfolgbar festzulegen.
 | Boot | BIOS/MBR, zweistufiger Loader, E820, A20, ELF32-Prüfung, Kernel-CRC32, FAT12-Floppy, optionaler nativer VBE-LFB-Handoff | stabiler Referenzpfad mit VGA-Rückfall |
 | CPU | GDT/IDT/TSS, Ring 0/3, Exceptions, PIC, gegen PIT kalibrierter lokaler APIC-Timer, PIT-Scheduler-Fallback, `INT 0x80` | funktionsfähiger Single-Core-Pfad |
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
-| Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD | klein, maximal 8 Tasks |
+| Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit generationsgebundenen Capabilities | maximal 8 Tasks; IPC noch ohne Deadline, Integritätsschutz und explizite Delegation |
 | Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, FAT32-Rename/Replace im Undo-Journal, FAT32/ATA-`fsync`, EXT2 lesen | persistenter Editor-Commit vorhanden; ABI, FAT12-Sync und breitere Rename-Semantik fehlen |
 | Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 und COM1 mit blockierendem Console-Wait, RTC, VGA, nativer VBE-RGB-Framebuffer | Referenzhardware gut, moderne Geräte fehlen |
 | Netzwerk | E1000, RTL8139, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping am besten verifiziert |
@@ -164,6 +164,14 @@ separate Bereinigung der optionalen Legacy-Image-Tests bleiben Folgearbeiten.
 
 ### Prozess, Scheduler und IPC
 
+- **S0.3a umgesetzt:** 16 statische Endpoints, acht Capabilities je Prozess,
+  vier Nachrichten je Queue, 128 Byte Nutzlast, blockierendes Send/Receive,
+  Spawn-Vererbung ohne `CONTROL` und vollständiger Exit-Widerruf
+- IPC-Deadlines, Timeoutstatus, CRC-/`critical_object`-Schutz und explizite
+  selektive Capability-Delegation ergänzen
+- reservierte Task-Slots und Admission Control für überwachte Dienste schaffen
+- `kill` sowie Datei-, Display-, Prozess- und weitere ambient verfügbare
+  Syscalls durch Capability- beziehungsweise Domänenrichtlinien begrenzen
 - generische Wait-Queues auf weitere Geräte- und Protokollereignisse anwenden
 - Pipes, Prozessgruppen und ein kleines Signalmodell
 - `waitpid(-1, ...)`, optionales nichtblockierendes Warten und saubere
@@ -193,7 +201,10 @@ innerhalb desselben FAT32-Verzeichnisses; volumen- oder
 verzeichnisübergreifendes Verschieben wird fail-closed abgelehnt.
 `SYS_FSYNC` (48) führt writable Deskriptoren über Prozess-FD und VFS bis zu
 einem begrenzten ATA-`FLUSH CACHE`; Timeout oder Storage-Fence werden als
-Fehler an Ring 3 zurückgegeben.
+Fehler an Ring 3 zurückgegeben. S0.3a hängt `SYS_IPC_CREATE` (49),
+`SYS_IPC_SEND` (50), `SYS_IPC_RECEIVE` (51) und `SYS_IPC_CLOSE` (52) an. Die
+versionierte 128-Byte-Nachricht wird vollständig über validierte User-Kopien
+übertragen; rohe Kernelpointer verlassen die Prozessgrenze nicht.
 
 - eine einzige gemeinsame, versionierte Quelle für Syscallnummern und
   Fehlercodes
@@ -633,12 +644,47 @@ offen.
 
 **Architektur-Gate:** Der Supervisor innerhalb des heutigen `kernel.bin`
 verbessert Erkennung und Fencing, erzeugt aber noch keine unabhängige
-Failure Domain. Der nächste große Umbau verkleinert Ring 0 auf MMU, Scheduler,
-IPC, Capabilities und Supervisor-Primitiven. Storage, Netzwerk und komplexe
-Treiber werden anschließend als getrennte, capability-beschränkte und neu
-startbare Dienste migriert. Abnahme verlangt Fault-Injection, die einen ganzen
-Dienst beendet oder korrumpiert, während nicht betroffene Essential Functions
-innerhalb ihrer Profilbudgets weiterlaufen.
+Failure Domain. S0.3a stellt nun die erste begrenzte IPC-/Capability-Basis
+bereit; Storage, Netzwerk und komplexe Treiber verbleiben trotzdem in Ring 0.
+Erst getrennte, capability-beschränkte und neu startbare Dienste schließen das
+Gate. Die Abnahme verlangt Fault-Injection, die einen ganzen Dienst beendet
+oder korrumpiert, während nicht betroffene Essential Functions innerhalb ihrer
+Profilbudgets weiterlaufen.
+
+##### S0.3a Bounded IPC/Capabilities v1 — umgesetzt
+
+Der Kernel besitzt 16 statische Endpoints, acht lokale Capabilities je Prozess,
+vier Nachrichtenplätze je Endpoint und eine maximale Nutzlast von 128 Byte.
+Nach der Initialisierung benötigt der Pfad keinen Heap. Ein 32-Bit-Handle
+verbindet einen Endpoint-Slot im unteren Byte mit einer 24-Bit-Generation;
+zusätzlich werden Halter und Eigentümer über PID und Prozessgeneration geprüft.
+Die Rechte sind `SEND`, `RECEIVE` und `CONTROL`. Der Erzeuger behält `CONTROL`,
+während ein Spawn einen noch ungebundenen Endpoint vor seiner
+READY-Publikation an genau ein Kind nur mit `SEND|RECEIVE` bindet.
+Mehrparteienrouting ist nicht Bestandteil von v1. Send und Receive blockieren
+auf festen Wait-Queues.
+Close oder Eigentümer-Exit widerrufen den Endpoint, entfernen alle abgeleiteten
+Einträge und wecken blockierte Peers. Host- und Ring-3-Gasttests decken
+Nachrichtenaustausch, Rechteabschwächung, Ressourcenlimits, Close-Wakeup und
+Exit-Revoke ab.
+
+S0.3a ist ausdrücklich nur der Mechanismus-Unterbau. Noch offen sind endliche
+IPC-Deadlines, CRC-/`critical_object`-Schutz, explizite selektive Delegation,
+reservierte Service-Taskslots und Capability-Gates für `kill` sowie die heute
+ambient verfügbaren Datei-, Display-, Prozess- und sonstigen Syscalls. Ohne
+diese Gates besitzt ein IPC-nutzender Prozess noch kein vollständiges
+Least-Privilege-Profil.
+
+##### S0.3b Supervised Userspace Probe Domain — nächster Schritt
+
+Eine kleine Ring-3-Probedomäne erhält ausschließlich ein statisches
+Capability-/Syscall-Profil. Der Supervisor muss Crash, Hang und ungültige
+Antwort erkennen, Ausgaben sperren, Endpoint und alte Generation widerrufen,
+den Prozess begrenzt neu erzeugen, per Selbsttest validieren und erst danach
+reintegrieren. Gast-Fault-Injection muss gleichzeitig zeigen, dass Scheduler,
+Zeitbasis und ein unabhängiger Prozess weiterlaufen. Dieses Paket ist das erste
+echte Failure-Domain-Gate; erst danach beginnt die Migration von Netzwerk,
+Storage oder komplexen Treibern.
 
 Das Restart-Gate akzeptiert keine vertrauensbasierte Fence-Bestätigung mehr:
 Jede Domäne muss einen Apply- und einen separaten Verify-Hook bereitstellen.
@@ -646,13 +692,12 @@ Der atomar beanspruchte Zustand `FENCING` verhindert Doppelaufrufe; nur eine
 positive Rückleseprüfung führt zu Restart, jeder Fehler zu `SAFE_STATE`.
 Deadlineprüfungen laufen zusätzlich in einem festen 10-ms-Raster aus der
 monotonen PIT-Zeit. Der Clockpfad persistiert ausschließlich `ISOLATED`; die
-potenziell blockierende Hardwareaktion verbleibt im Foreground. Offen sind der
-periodische Aufruf des nun begrenzten `supervisor_service_one()` sowie die
-Registrierung der ersten realen Dienst-/Treiberdomäne mit eigener
-Idle-Health-Semantik. Ein Aufruf verarbeitet maximal eine Fence-/Verify-Aktion;
-Restart und Selbsttest bleiben explizite Folgeereignisse. Der Executor läuft
-nun in einem reservierten Kernel-Worker alle 10 ms; dieser beansprucht einen
-der acht Task-Slots. Restart-/Safe-State-Ereignisse bleiben level-triggered.
+potenziell blockierende Hardwareaktion verbleibt im Foreground. Ein Aufruf von
+`supervisor_service_one()` verarbeitet maximal eine Fence-/Verify-Aktion;
+Restart und Selbsttest bleiben explizite Folgeereignisse. Der Executor läuft in
+einem reservierten Kernel-Worker alle 10 ms; dieser beansprucht einen der acht
+Task-Slots. Zusätzliche reservierte Slots für neu startbare Userdienste fehlen
+noch. Restart-/Safe-State-Ereignisse bleiben level-triggered.
 Beim Safe State wird derzeit konservativ das globale Output-Fence verriegelt.
 Mit `network-tx` ist die erste reale Domäne registriert. Ihre 250-ms-Deadline
 gilt ausschließlich während einer Sendetransaktion; Idle erzeugt daher keinen
@@ -664,14 +709,17 @@ qualifizierten Reinitialisierungspfad den Safe State.
 Schreibtransaktion mit einer 10-s-Deadline und explizitem Idle. Timeout oder
 fehlgeschlagene Ruhestellung sperren weitere Writes ohne Restartversuch. ATA
 liest `BSY/DRQ`, FDD Motorbits und Controller-Busy zurück; ein fehlgeschlagener
-ATA-Flush wird als Schreibfehler weitergereicht. Nicht gelöst ist damit die
-atomare Wiederherstellung eines bereits teilweise geschriebenen Dateisystems;
-Journal/COW, Barrieren und Power-Loss-Injection bleiben S0.5.
+ATA-Flush wird als Schreibfehler weitergereicht. Das Storage-Fence allein kann
+einen Teilwrite nicht zurückrollen; für markierte native FAT32-Images übernimmt
+dies inzwischen das nachfolgende Undo-Journal v2 mit Flush-Barrieren und
+Boot-Recovery. Größere Transaktionen/COW und die Power-Cut-Matrix auf
+Zielhardware bleiben S0.5.
 Als dritte Domäne überwacht `filesystem-write` alle mutierenden öffentlichen
 VFS-Aufrufe. I/O-Fehler oder Deadlineverletzung verriegeln das VFS Read-only,
 während Lesen und Diagnose weiter möglich bleiben. Fatal-Fencing sperrt VFS-
-und physische Storage-Writes gemeinsam. Das begrenzt Folgeschäden, ersetzt
-aber noch kein Journal und keine atomare Mehrsektortransaktion.
+und physische Storage-Writes gemeinsam. Markierte FAT32-Images koppeln diese
+Schranke an die Journaltransaktion; FAT12, EXT2 und fremde Medien besitzen noch
+keine entsprechende atomare Mehrsektorgarantie.
 Fortschrittssequenz und Interlockzustand beider Persistenzdomänen sind als
 SECDED-/CRC-geschützte Primary/Shadow-Objekte ausgeführt. Korrigierbare Fehler
 werden repariert; unbrauchbare Kopien führen fail-closed zur Schreibsperre.
@@ -700,13 +748,15 @@ publiziert; unkorrektierbare Scanfehler erzeugen fail-closed ein Safe-State-
 Ereignis. Offen bleibt die unabhängige externe Kopie der gesamten
 Supervisor-Konfiguration über eine zweite Fehlerdomäne.
 
-1. Einen minimalen Safety-Kern definieren; Treiber, Dateisystem, Netzwerk und
-   GUI in neu startbare Least-Privilege-Domänen verschieben.
-2. Fortschritts-/Deadline-Watchdogs, Restart-Budgets, Fencing, Selbsttest und
-   sichere Reintegration implementieren.
-3. Hot-Standby oder Dual-Controller-Handover mit regelmäßigem realem
+1. S0.3a um IPC-Deadlines, Metadatenintegrität, explizite Delegation,
+   Service-Taskreservierung und Capability-Gates ergänzen.
+2. S0.3b als überwachte, neu startbare Least-Privilege-Probedomäne abnehmen;
+   danach Netzwerk, Storage und komplexe Treiber schrittweise migrieren.
+3. Fortschritts-/Deadline-Watchdogs, Restart-Budgets, Fencing, Selbsttest und
+   sichere Reintegration für jede migrierte Domäne nachweisen.
+4. Hot-Standby oder Dual-Controller-Handover mit regelmäßigem realem
    Failover-Test aufbauen.
-4. Common-Cause-Fehler bewerten; wo nötig unabhängige Hardware,
+5. Common-Cause-Fehler bewerten; wo nötig unabhängige Hardware,
    Stromversorgung, Takte, Sensorpfade oder diverse Implementierungen nutzen.
 
 #### S0.4 Determinismus und garantierte Ressourcen — L
@@ -843,7 +893,8 @@ Erst nach den vorherigen Meilensteinen einzeln entscheiden:
 - SMP, IOAPIC/MSI und per-CPU-Daten
 - AHCI/NVMe, USB-Massenspeicher und Hotplug
 - IPv6
-- Benutzer, Dateirechte, Capabilities und kryptografisch verifizierter Boot
+- Mehrbenutzer-Identitäten, Dateirechte/ACLs und kryptografisch verifizierter
+  Boot; dies ist getrennt von der bereits begonnenen Kernel-Capability-Basis
 - dynamischer Linker, Shared Libraries, Paketverwaltung
 - vollständiges Grafik-/Fenstersystem mit Compositor und Maus sowie Audio und
   WLAN
@@ -865,14 +916,16 @@ nebenbei in die 32-Bit-Basis eingebaut werden.
 | 8 | R1.4 Grafischer Desktop-MVP (erledigt) | R0.4, R1.1 | M |
 | 9 | S0.1 Profil/Gefahren/Assurance Case | R1.3 | M |
 | 10 | S0.2 Stack/Exception/Panic-Containment | S0.1 | L |
-| 11 | S0.3 Fehlerdomänen/Supervisor/Redundanz | S0.1, S0.2 | XL |
-| 12 | S0.4 Determinismus/Ressourcengarantie | S0.1, S0.3 | L |
-| 13 | S0.5 Integrität/Boot/A-B-Updates | S0.1, S0.3 | XL |
-| 14 | S0.6 Verifikation/Langzeitbetrieb | S0.1–S0.5 | XL |
-| 15 | R2.1 ABI und FDs | abgenommenes S0-Gate | L |
-| 16 | R2.2 VFS/FAT-Zuverlässigkeit | R2.1, S0.5 | L |
-| 17 | R2.3 Blockgeräte/Partitionen | R1.3, S0.5 | L |
-| 18+ | R3 bis R6 | abgenommenes S0-Gate und jeweilige Basis | L–XL |
+| 11 | S0.3a Bounded IPC/Capabilities v1 (erledigt) | S0.1, S0.2 | L |
+| 12 | S0.3b Supervised Userspace Probe Domain | S0.3a | L |
+| 13 | S0.3c Dienstmigration/Redundanz | S0.3b | XL |
+| 14 | S0.4 Determinismus/Ressourcengarantie | S0.1, S0.3 | L |
+| 15 | S0.5 Integrität/Boot/A-B-Updates | S0.1, S0.3 | XL |
+| 16 | S0.6 Verifikation/Langzeitbetrieb | S0.1–S0.5 | XL |
+| 17 | R2.1 ABI und FDs | abgenommenes S0-Gate | L |
+| 18 | R2.2 VFS/FAT-Zuverlässigkeit | R2.1, S0.5 | L |
+| 19 | R2.3 Blockgeräte/Partitionen | R1.3, S0.5 | L |
+| 20+ | R3 bis R6 | abgenommenes S0-Gate und jeweilige Basis | L–XL |
 
 R2 bis R6 bleiben hinter dem S0-Gate. Erst danach können voneinander
 unabhängige Pakete parallel laufen, sofern ihre Ressourcen-, Fehler- und
@@ -922,29 +975,35 @@ make test-fuzz
 
 ## 10. Unmittelbar nächster Schritt
 
-Phase 0 und R1.1 bis R1.4 sind umgesetzt. Wegen des neuen generischen
-High-Assurance-Zielbilds ist der nächste Schritt nicht R2.1, sondern **S0.1
-Einsatzprofil, Gefahren und Assurance Case**. Als erstes Ergebnis müssen die
-profilabhängigen Essential Functions,
-sichere und degradierte Zustände, FTTI und ein versioniertes Gefahrenregister
-vorliegen.
+Phase 0, R1.1 bis R1.4 und der begrenzte Mechanismus von **S0.3a Bounded
+IPC/Capabilities v1** sind umgesetzt. Der nächste autonome Schritt ist
+**S0.3b Supervised Userspace Probe Domain**. Vor der Abnahme der Probedomäne
+sind die noch offenen Grenzen des IPC-Unterbaus in kleinen, getrennt testbaren
+Inkrementen zu schließen:
 
-Das erste danach umzusetzende Kernelpaket ist **S0.2 Controlled Fatal Fault
-v1**: reservierte Stack-VA-Arena mit echten Guardpages, volle Guardpage für den
-Bootstack, zweite TSS mit Task-Gate und Emergency-Stack für `#DF`, fester
-allokations-/lockfreier Crashrecord sowie ein zeitlich begrenzter Übergang zum
-Watchdog. Fault-Injection muss beweisen, dass ein User-Stackfehler nur seinen
-Prozess beendet und ein Kernel-Stackfehler nicht still korrumpiert oder per
-Triple-Fault verschwindet.
+1. endliche Send-/Receive-Deadlines mit eindeutigem Timeoutstatus,
+2. CRC- und `critical_object`-Schutz für Queue-, Endpoint- und
+   Capability-Metadaten einschließlich Bitflip-Injection,
+3. explizite selektive Delegation mit ausschließlich abschwächbaren Rechten,
+4. mindestens ein reservierter Service-/Restart-Taskslot mit Admission Control,
+5. Capability-/Domänen-Gates für `kill` und alle ambienten Datei-, Display-,
+   Prozess- und sonstigen Syscalls der Probedomäne.
+
+Danach wird eine kleine Ring-3-Domäne mit eigenem Adressraum und statischem
+Least-Privilege-Profil gestartet. Crash, Hang und ungültige Antwort müssen den
+begrenzten Ablauf `fence -> revoke -> reap -> recreate -> self-test ->
+reintegrate` auslösen. Alte Endpointgenerationen bleiben ungültig; nach
+erschöpftem Restartbudget folgt der definierte degradierte beziehungsweise
+sichere Zustand. Der QEMU-Gasttest muss während jeder Injektion Fortschritt von
+Scheduler, monotoner Zeit und einem unabhängigen Prozess nachweisen.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions
 bei Kernel-Panic benötigt S0.3: eine unabhängige Supervisor-/Standby-Domäne,
-die Ausgänge einzäunt und innerhalb der FTTI übernimmt. R2.1 und alle weiteren
-Funktionsarbeiten bleiben bis zur Festlegung und Prüfung dieser S0-Gates
-zurückgestellt.
+die Ausgänge einzäunt und innerhalb der FTTI übernimmt. S0.3a allein erfüllt
+diese Forderung ausdrücklich nicht. Bereits vorgezogene Funktionsinkremente
+gelten daher nicht als Abnahme des S0-Gates.
 
 Systematische Allocation-Failure-Injection, ein IRQ-tauglicher Allocator,
 weitere Reaper-Stresstests und Highmem/`kmap` bleiben zusätzliche
-Speicherhärtung. Echte nicht gemappte Stack-Guardpages sind wegen der neuen
-Safety-Priorität dagegen verpflichtender Bestandteil von S0.2.
+Speicherhärtung.

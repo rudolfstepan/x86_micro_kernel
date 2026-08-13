@@ -10,6 +10,8 @@ _Static_assert(sizeof(x86os_display_rect_t) == 28U,
                "display rectangle ABI size changed");
 _Static_assert(sizeof(x86os_display_text_t) == 32U,
                "display text ABI size changed");
+_Static_assert(sizeof(x86os_ipc_message_t) == 140U,
+               "IPC message ABI size changed");
 
 uintptr_t x86os_syscall(uint32_t number, uintptr_t argument1,
                         uintptr_t argument2, uintptr_t argument3) {
@@ -60,6 +62,27 @@ int x86os_memory_stats(x86os_memory_stats_t* stats) {
     return (int)x86os_syscall(X86OS_SYS_MEMORY_STATS,
                               (uintptr_t)stats, sizeof(*stats),
                               X86OS_MEMORY_STATS_VERSION);
+}
+
+int x86os_ipc_create(x86os_ipc_handle_t* handle) {
+    return (int)x86os_syscall(X86OS_SYS_IPC_CREATE,
+                              (uintptr_t)handle, 0, 0);
+}
+
+int x86os_ipc_send(x86os_ipc_handle_t handle,
+                   const x86os_ipc_message_t* message) {
+    return (int)x86os_syscall(X86OS_SYS_IPC_SEND, handle,
+                              (uintptr_t)message, 0);
+}
+
+int x86os_ipc_receive(x86os_ipc_handle_t handle,
+                      x86os_ipc_message_t* message) {
+    return (int)x86os_syscall(X86OS_SYS_IPC_RECEIVE, handle,
+                              (uintptr_t)message, 0);
+}
+
+int x86os_ipc_close(x86os_ipc_handle_t handle) {
+    return (int)x86os_syscall(X86OS_SYS_IPC_CLOSE, handle, 0, 0);
 }
 
 int x86os_display_info(x86os_display_info_t* info) {

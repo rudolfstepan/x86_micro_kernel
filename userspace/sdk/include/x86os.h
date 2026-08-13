@@ -52,7 +52,11 @@ enum {
     X86OS_SYS_FILL_RECT = 45,
     X86OS_SYS_DRAW_TEXT = 46,
     X86OS_SYS_RENAME = 47,
-    X86OS_SYS_FSYNC = 48
+    X86OS_SYS_FSYNC = 48,
+    X86OS_SYS_IPC_CREATE = 49,
+    X86OS_SYS_IPC_SEND = 50,
+    X86OS_SYS_IPC_RECEIVE = 51,
+    X86OS_SYS_IPC_CLOSE = 52
 };
 
 enum {
@@ -98,6 +102,20 @@ typedef struct {
 } x86os_memory_stats_t;
 
 #define X86OS_MEMORY_STATS_VERSION 1U
+
+#define X86OS_IPC_MAX_MESSAGE_SIZE 128U
+#define X86OS_IPC_MAX_CAPABILITIES_PER_PROCESS 8U
+#define X86OS_IPC_MESSAGE_VERSION 1U
+#define X86OS_IPC_INVALID_HANDLE 0U
+
+typedef uint32_t x86os_ipc_handle_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t length;
+    uint8_t payload[X86OS_IPC_MAX_MESSAGE_SIZE];
+} x86os_ipc_message_t;
 
 #define X86OS_DISPLAY_ABI_VERSION 1U
 #define X86OS_DISPLAY_MAX_TEXT 256U
@@ -168,6 +186,12 @@ int x86os_sleep_ms(uint32_t milliseconds);
 int x86os_yield(void);
 int x86os_monotonic_ms(uint64_t* value);
 int x86os_memory_stats(x86os_memory_stats_t* stats);
+int x86os_ipc_create(x86os_ipc_handle_t* handle);
+int x86os_ipc_send(x86os_ipc_handle_t handle,
+                   const x86os_ipc_message_t* message);
+int x86os_ipc_receive(x86os_ipc_handle_t handle,
+                      x86os_ipc_message_t* message);
+int x86os_ipc_close(x86os_ipc_handle_t handle);
 int x86os_display_info(x86os_display_info_t* info);
 int x86os_fill_rect(int32_t x, int32_t y, uint32_t width, uint32_t height,
                     uint32_t rgb);

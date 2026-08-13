@@ -9,6 +9,7 @@
 #include "include/kernel/panic.h"
 #include "kernel/time/pit.h"
 #include "include/kernel/watchdog.h"
+#include "include/kernel/ipc.h"
 #include "mm/kmalloc.h"
 
 extern void swtch(context_t *old, context_t *new);
@@ -644,6 +645,7 @@ void scheduler_terminate_task(int task_id) {
     /* VFS teardown may reach block drivers and must run with IF=1, outside the
      * scheduler's IRQ-disabled commit.  The caller's preemption guard keeps
      * the target slot and generation stable on this UP scheduler. */
+    ipc_process_cleanup(process->pid, generation);
     process_close_all_files(process);
     process_orphan_children(process->pid);
 
@@ -670,15 +672,18 @@ void task_exit_status(int status) {
 
     int exiting = current_task;
     Process *process = NULL;
+    uint32_t process_generation = 0U;
     if (exiting >= 0 && exiting < num_tasks) {
         validate_running_task_stack_or_panic(&tasks[exiting]);
         process = tasks[exiting].process;
+        process_generation = tasks[exiting].process_generation;
     }
 
     /* User exceptions arrive with IF=0.  Keep scheduling suppressed while
      * temporarily enabling device IRQs for VFS/block-driver cleanup. */
     irq_enable();
     if (process != NULL) {
+        ipc_process_cleanup(process->pid, process_generation);
         process_close_all_files(process);
         process_orphan_children(process->pid);
     }

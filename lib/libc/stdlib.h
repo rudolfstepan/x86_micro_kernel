@@ -57,6 +57,10 @@
 #define SYS_DRAW_TEXT 46
 #define SYS_RENAME 47
 #define SYS_FSYNC 48
+#define SYS_IPC_CREATE 49
+#define SYS_IPC_SEND 50
+#define SYS_IPC_RECEIVE 51
+#define SYS_IPC_CLOSE 52
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

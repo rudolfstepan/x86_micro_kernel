@@ -87,6 +87,7 @@ static int allocate_pid_locked(void) {
 }
 
 static void release_process_slot(Process *process) {
+    ipc_process_cleanup(process->pid, process->generation);
     process_close_all_files(process);
     uint32_t flags = irq_save();
     process->is_running = false;
@@ -114,13 +115,15 @@ static int claim_process_slot(const char *name, bool shared_image,
         if (!process_list[i].is_running &&
             !(process_list[i].has_exited && process_list[i].parent_pid > 0)) {
             Process *process = &process_list[i];
+            /* Generation wrap would make stale process identities valid
+             * again.  Retire the slot instead of reusing generation zero. */
+            if (process->generation == UINT32_MAX) continue;
             int pid = allocate_pid_locked();
             if (pid < 0) {
                 irq_restore(flags);
                 return -1;
             }
             uint32_t generation = process->generation + 1U;
-            if (generation == 0U) generation = 1U;
             process->pid = pid;
             process->generation = generation;
             process->parent_pid = parent_pid;
@@ -132,6 +135,8 @@ static int claim_process_slot(const char *name, bool shared_image,
             memset(process->user_allocations, 0,
                    sizeof(process->user_allocations));
             memset(process->files, 0, sizeof(process->files));
+            memset(process->ipc_capabilities, 0,
+                   sizeof(process->ipc_capabilities));
             wait_queue_init(&process->exit_waiters);
             strcpy(process->working_directory, "/");
             strncpy(process->name, name, sizeof(process->name) - 1U);
@@ -201,7 +206,7 @@ static int build_user_arguments(page_directory_t *page_directory, int argc,
 static int create_process_for_file_args_owned(const char *filename, int argc,
                                                const char *const *argv,
                                                const char *working_directory,
-                                               int parent_pid) {
+                                               Process *parent) {
     if (filename == NULL || *filename == '\0') {
         return -1;
     }
@@ -214,6 +219,7 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
     for (const char *cursor = filename; *cursor != '\0'; ++cursor) {
         if (*cursor == '/') display_name = cursor + 1;
     }
+    int parent_pid = parent != NULL ? parent->pid : 0;
     int slot = claim_process_slot(display_name, false, parent_pid);
     if (slot < 0) {
         printf("Error: Maximum number of running programs reached.\n");
@@ -304,6 +310,15 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
         return -1;
     }
 
+    /* Install the attenuated peer capabilities before READY publication so
+     * the child can never execute with a partially constructed manifest. */
+    if (parent != NULL && ipc_inherit(parent, process) != 0) {
+        scheduler_free_kernel_stack(kernel_stack);
+        free_page_directory(page_directory);
+        release_process_slot(process);
+        return -1;
+    }
+
     int task_id = create_user_task(
         entry_point + USER_PROGRAM_ADDRESS, user_stack,
         kernel_stack, page_directory, process);
@@ -320,7 +335,7 @@ int create_process_for_file_args(const char *filename, int argc,
                                  const char *const *argv,
                                  const char *working_directory) {
     return create_process_for_file_args_owned(filename, argc, argv,
-                                               working_directory, 0);
+                                               working_directory, NULL);
 }
 
 int create_process(void* entry_point) {
@@ -731,7 +746,7 @@ int process_spawn_args(Process *parent, const char *path, int argc,
     char resolved[PROCESS_PATH_MAX];
     if (process_resolve_path(parent, path, resolved) != 0) return -1;
     return create_process_for_file_args_owned(
-        resolved, argc, argv, parent->working_directory, parent->pid);
+        resolved, argc, argv, parent->working_directory, parent);
 }
 
 int process_wait_status_locked(Process *parent, int pid, int *status,

@@ -171,6 +171,47 @@ Quoten sorgen dafür, dass Lecks und Überlast lokal bleiben. Wird ein Limit
 erreicht, wird die fehlerhafte Domäne gedrosselt, abgewiesen oder neu gestartet;
 reservierte Ressourcen der Safety-Funktionen bleiben erhalten.
 
+### S0.3a: begrenzte IPC- und Capability-Basis
+
+S0.3a ist als erster ausführbarer Mechanismus umgesetzt. Der Kernel verwaltet
+statisch 16 Endpoints, acht lokale Capability-Einträge pro Prozess und je
+Endpoint eine FIFO mit vier Nachrichten zu höchstens 128 Byte Nutzlast. Der
+Pfad ist nach `ipc_init()` heapfrei; Queue-, Endpoint- und Capability-Grenzen
+sind feste Teile des gegenwärtigen Vertrags.
+
+Eine lokale Capability ist ein 32-Bit-Handle. Das untere Byte kodiert den
+Endpoint-Slot, die oberen 24 Bit dessen Generation. Slot null und Generation
+null sind ungültig; ein Slot wird nach ausgeschöpfter Generation stillgelegt,
+statt ein altes Handle erneut gültig werden zu lassen. Zusätzlich bindet der
+Kernel jeden Capability-Eintrag an PID und Prozessgeneration. S0.3a kennt
+`SEND`, `RECEIVE` und `CONTROL`. Der Erzeuger erhält alle drei Rechte. Beim
+Spawn werden noch ungebundene Endpoints vor der READY-Publikation an genau ein
+Kind vererbt, aber auf `SEND|RECEIVE` abgeschwächt; `CONTROL` bleibt beim
+Erzeuger. Mehrparteienrouting ist bewusst noch kein Bestandteil von v1.
+
+Nachrichten tragen in Version 1 `version`, `struct_size`, `length` und die
+begrenzte Nutzlast. `send` blockiert bei voller Queue, `receive` bei fehlender
+Nachricht über die vorhandenen Wait-Queues. Schließt der Eigentümer den
+Endpoint oder endet sein Prozess, widerruft der Kernel den Endpoint, entfernt
+alle zugehörigen Capability-Einträge und weckt blockierte Peers. Ein
+Peer-Prozessverlust wird als geschlossener Kanal sichtbar, statt einen
+wartenden Prozess dauerhaft an einem verwaisten Endpoint zu halten.
+
+Diese Basis ist noch kein vollständiger High-Assurance-IPC-Vertrag. Es fehlen:
+
+- endliche IPC-Deadlines und ein eindeutig unterscheidbarer Timeoutstatus,
+- CRC beziehungsweise `critical_object`-Schutz für Nachrichten, Endpoint- und
+  Capability-Metadaten,
+- explizite selektive Delegation und Rechteabschwächung unabhängig vom Spawn,
+- reservierte Task-Slots und Admission Control für neu startbare Dienste,
+- Capability-Gates für `kill` und die weiterhin ambient verfügbaren Datei-,
+  Display-, Prozess- und sonstigen Syscalls,
+- eine überwachte, neu startbare Ring-3-Domäne als S0.3b-Abnahmeobjekt.
+
+Bis diese Punkte erfüllt sind, beweist S0.3a begrenzte Nachrichtenübertragung,
+Handlegeneration und Exit-Widerruf, aber weder Least Privilege für den gesamten
+Syscallraum noch eine vom modularen Monolithen unabhängige Failure Domain.
+
 ## Betriebsstufen
 
 ```text
@@ -268,18 +309,22 @@ weiteren Schreibaufrufe, prüft ATA auf gelöste `BSY`-/`DRQ`-Signale und stellt
 beim FDC die Motorleitungen ab; DOR und Controller-Busy werden zurückgelesen.
 Ein ATA-Cache-Flush-Timeout wird als Fehler propagiert und nicht mehr als
 erfolgreicher Write gemeldet. Diese Sperre verhindert Folgeschäden, kann aber
-einen bereits an das Gerät übergebenen Sektor nicht zurückrollen. Atomare
-Metadatenänderungen, Journal/COW, Flush-Barrieren und Power-Loss-Recovery sind
-weiterhin Aufgabe von S0.5.
+einen bereits an das Gerät übergebenen Sektor allein nicht zurückrollen. Für
+markierte native FAT32-Images übernimmt dies das unten beschriebene
+Undo-Journal v2 einschließlich Flush-Barrieren und Boot-Recovery. Ein
+skalierbares Journal beziehungsweise COW sowie die Power-Cut-Matrix auf
+Zielhardware bleiben Aufgabe von S0.5.
 
 Darüber liegt `filesystem-write` als dritte reale Domäne. Alle öffentlichen
-VFS-Mutationen (`write`, `create`, `delete`, `mkdir`, `rmdir`, `unmount`)
+VFS-Mutationen (`write`, `create`, `delete`, `rename`, `mkdir`, `rmdir`,
+`unmount`)
 werden mit einer 15-s-Deadline überwacht. Ein I/O-Fehler oder Timeout schaltet
 das VFS dauerhaft bis zum Neustart auf Read-only; Lese- und Diagnosezugriffe
 bleiben verfügbar. Fatal-Fencing verriegelt sowohl diese VFS-Schranke als auch
 den physischen Storage-Write-Pfad. Der Modus ist bewusst fail-closed und hat
-kein automatisches Restartbudget. Er ist Schadensbegrenzung, noch keine
-Transaktionsgarantie über mehrere FAT-/EXT2-Metadatenwrites.
+kein automatisches Restartbudget. Für markierte FAT32-Images umfasst ihn die
+nachfolgende Journaltransaktion; FAT12, EXT2 und fremde Medien besitzen diese
+Mehrsektor-Transaktionsgarantie weiterhin nicht.
 
 Auch die Steuerdaten beider Persistenzdomänen sind jetzt `critical_object`s:
 Fortschrittssequenz und Fence-/Read-only-Zustand liegen jeweils als
@@ -372,10 +417,13 @@ werden.
 1. Einsatzprofil, Hazards, Essential Functions, FTTI und Recoveryziele festlegen.
 2. Guardpages, Emergency-/Double-Fault-Pfad, begrenzten Crashrecord und externen
    Watchdog implementieren.
-3. IPC, Capabilities, Quoten und Supervisor zunächst für neue Dienste bauen.
-4. GUI und Netzwerk, danach Dateisystem und komplexe Treiber aus Ring 0 lösen.
-5. Deterministische Ressourcenreservierung und transaktionalen Zustand
+3. Die umgesetzte begrenzte IPC-/Capability-Basis um Deadlines, Integrität,
+   explizite Delegation, reservierte Service-Slots und Syscall-Gates härten.
+4. Mit S0.3b eine capability-beschränkte Ring-3-Probedomäne überwachen, gezielt
+   beenden und innerhalb eines begrenzten Restartvertrags reintegrieren.
+5. GUI und Netzwerk, danach Dateisystem und komplexe Treiber aus Ring 0 lösen.
+6. Deterministische Ressourcenreservierung und transaktionalen Zustand
    einführen.
-6. Signierte A/B-Images, Boot-Failover und unabhängigen Standby-Kanal ergänzen.
-7. Erst danach x86-64 und zusätzliche Schutzmechanismen als kontrollierte
+7. Signierte A/B-Images, Boot-Failover und unabhängigen Standby-Kanal ergänzen.
+8. Erst danach x86-64 und zusätzliche Schutzmechanismen als kontrollierte
    Plattformmigration qualifizieren.
