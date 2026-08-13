@@ -314,6 +314,7 @@ def write_fat32_volume(image, partition_lba: int, total_sectors: int,
                      binascii.crc32(journal) & 0xFFFFFFFF)
     write_relative_sector(8, bytes(journal))
     write_relative_sector(9, bytes(SECTOR_SIZE))
+    write_relative_sector(31, bytes(journal))
 
     fat = bytearray(fat_sectors * SECTOR_SIZE)
     struct.pack_into("<I", fat, 0, 0x0FFFFFF8)

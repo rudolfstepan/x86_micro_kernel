@@ -28,6 +28,8 @@ class ReistUndoJournalTests(unittest.TestCase):
         self.assertEqual(header_crc, binascii.crc32(check) & 0xFFFFFFFF)
         image.seek((partition + 9) * SECTOR)
         self.assertEqual(image.read(SECTOR), bytes(SECTOR))
+        image.seek((partition + 31) * SECTOR)
+        self.assertEqual(image.read(SECTOR), header)
 
     def test_kernel_orders_undo_data_active_target_then_clean(self):
         source = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
@@ -53,7 +55,8 @@ class ReistUndoJournalTests(unittest.TestCase):
         start = source.index("bool ata_journal_attach")
         end = source.index("bool ata_write_sector(", start)
         body = source[start:end]
-        self.assertIn("record.magic != ATA_JOURNAL_MAGIC", body)
+        self.assertIn("primary.magic == ATA_JOURNAL_MAGIC", body)
+        self.assertIn("mirror.magic == ATA_JOURNAL_MAGIC", body)
         self.assertIn("ata_journal_record_valid(&record)", body)
         self.assertIn("record.entries[index].data_crc32", body)
         self.assertIn("data_lba + index", body)
@@ -69,6 +72,17 @@ class ReistUndoJournalTests(unittest.TestCase):
         self.assertIn("ata_journal_transaction_begin()", fs)
         self.assertIn("ata_journal_transaction_end(commit)", fs)
 
+    def test_redundant_headers_select_conservatively_and_self_repair(self):
+        source = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
+        self.assertIn("#define ATA_JOURNAL_MIRROR_OFFSET 31U", source)
+        self.assertIn("primary.state != mirror.state", source)
+        self.assertIn("primary.state == ATA_JOURNAL_ACTIVE ? primary : mirror", source)
+        self.assertIn("else if (result && repair_headers)", source)
+        writer = source[source.index("static bool ata_journal_write_record"):
+                        source.index("static bool ata_journal_clear")]
+        self.assertIn("ata_journal.header_lba", writer)
+        self.assertIn("ata_journal.mirror_lba", writer)
+
     def test_recovery_runs_before_mutable_fat_metadata_is_consumed(self):
         source = (ROOT / "fs/fat32/fat32.c").read_text(encoding="utf-8")
         self.assertLess(source.index("ata_journal_attach("),
@@ -81,6 +95,8 @@ class ReistUndoJournalTests(unittest.TestCase):
         self.assertIn('"--persistent"', runner)
         self.assertIn("if not restored or state != 0", runner)
         self.assertIn("targets = [DATA_PARTITION_START + 6", runner)
+        self.assertIn("mirror_lba = DATA_PARTITION_START + 31", runner)
+        self.assertIn("headers_match", runner)
         self.assertIn("test-smoke-journal-recovery:", makefile)
         self.assertIn("make test-smoke-journal-recovery", workflow)
 

@@ -281,6 +281,13 @@ den Undo-Satz für Boot-Recovery stehen und schalten das VFS Read-only. Größer
 Operationen benötigen künftig ein skalierbares Journal beziehungsweise COW.
 Journal-v1-Medien werden rückwärtskompatibel wiederhergestellt und anschließend
 mit einem sauberen v2-Header migriert.
+Der v2-Superblock liegt redundant in den reservierten Sektoren 8 und 31. Jeder
+Statuswechsel wird primär und gespiegelt mit identischer Sequenz und CRC
+persistiert. Beim Boot gewinnt die höchste gültige Sequenz; bei gleicher
+Sequenz und `CLEAN`/`ACTIVE`-Divergenz wird konservativ `ACTIVE` gewählt und
+zurückgerollt. Eine einzelne ungültige Kopie wird aus der gültigen Kopie
+automatisch rekonstruiert. Zwei widersprüchliche, formal gültige Kopien mit
+gleichem Zustand führen dagegen fail-closed zur Schreibsperre.
 
 Auch die Recovery-Steuerung ist Teil des kritischen Zustands: Apply-/Verify-
 Funktionszeiger und ihr Kontext liegen nicht mehr als ungeschützte Pointer in

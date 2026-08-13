@@ -13,6 +13,7 @@ def inject(source: Path, destination: Path) -> list[tuple[int, bytes]]:
     image = bytearray(destination.read_bytes())
     targets = [DATA_PARTITION_START + 6, DATA_PARTITION_START + 7]
     header_lba, data_lba = DATA_PARTITION_START + 8, DATA_PARTITION_START + 9
+    mirror_lba = DATA_PARTITION_START + 31
     expected = []
     record = bytearray(SECTOR_SIZE)
     struct.pack_into("<6I", record, 0, JOURNAL_MAGIC, 2, 1, 1, len(targets), 0)
@@ -27,6 +28,9 @@ def inject(source: Path, destination: Path) -> list[tuple[int, bytes]]:
             bytes([0xA5 + index]) * SECTOR_SIZE
     struct.pack_into("<I", record, 20, binascii.crc32(record) & 0xFFFFFFFF)
     image[header_lba * SECTOR_SIZE:(header_lba + 1) * SECTOR_SIZE] = record
+    image[mirror_lba * SECTOR_SIZE:(mirror_lba + 1) * SECTOR_SIZE] = record
+    # Simulate an independent corruption of the primary metadata copy too.
+    image[header_lba * SECTOR_SIZE + 20] ^= 0x80
     destination.write_bytes(image)
     return expected
 
@@ -49,10 +53,13 @@ def main() -> int:
     if result.returncode != 0: return result.returncode
     image = args.work_image.read_bytes()
     header_lba = DATA_PARTITION_START + 8
+    mirror_lba = DATA_PARTITION_START + 31
     state = struct.unpack_from("<I", image, header_lba * SECTOR_SIZE + 8)[0]
+    headers_match = image[header_lba * SECTOR_SIZE:(header_lba + 1) * SECTOR_SIZE] == \
+        image[mirror_lba * SECTOR_SIZE:(mirror_lba + 1) * SECTOR_SIZE]
     restored = all(image[target * SECTOR_SIZE:(target + 1) * SECTOR_SIZE] == old
                    for target, old in expected)
-    if not restored or state != 0:
+    if not restored or state != 0 or not headers_match:
         print("journal-recovery: restored sector or CLEAN state mismatch", file=sys.stderr)
         return 1
     print("journal-recovery: PASS")

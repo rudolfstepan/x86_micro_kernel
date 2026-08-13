@@ -669,6 +669,11 @@ werden dedupliziert. CRC und Volumegrenzen werden vor Rollback geprüft;
 fremde Medien ohne Marker werden nicht verändert. Kapazitätsüberschreitung
 führt fail-closed zu Read-only. Offen bleiben größere Transaktionen/COW und
 eine Power-Cut-Matrix auf Zielhardware.
+Journal-v2-Metadaten besitzen nun zwei CRC-geschützte Superblöcke in den
+reservierten Sektoren 8 und 31. Sequenzwahl, konservatives `ACTIVE` bei einem
+unterbrochenen Mirror-Update und automatische Einzelkopie-Reparatur beseitigen
+den bisherigen Header-Single-Point-of-Failure. Der persistente QEMU-Test
+zerstört absichtlich die Primärkopie und verlangt Rollback plus Mirror-Reparatur.
 Die Apply-/Verify-Callbacks samt Kontext sind ebenfalls redundant über
 `critical_object` geschützt. Single-Bit-Fehler werden korrigiert; bei zwei
 unbrauchbaren Kopien wird kein Funktionszeiger ausgeführt und unmittelbar zum
