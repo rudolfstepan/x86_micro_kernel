@@ -6,6 +6,49 @@ Dieses Dokument beschreibt die aktuelle 32-Bit-x86-Architektur. Das System
 startet ausschließlich über den eigenen BIOS-Bootloader. Einen alternativen
 Legacy-Einstieg gibt es nicht mehr.
 
+Das neue Ziel ist eine medizinische High-Assurance-Plattform. Der heutige Stand
+ist jedoch ein Forschungsprototyp, weder zertifiziert noch für klinische
+Verwendung freigegeben. Zielanforderungen, Fehlerreaktion und Nachweisregeln
+definiert der
+[Medical-High-Assurance-Vertrag](MEDICAL_HIGH_ASSURANCE_CONTRACT.md); dieses
+Dokument beschreibt weiterhin ehrlich den ausführbaren Ist-Zustand.
+
+## High-Assurance-Grenze und Wiederherstellungsmodell
+
+Der heutige modulare Monolith ist eine gemeinsame Fehlerdomäne: Ein Ring-0-
+Speicherfehler kann Scheduler, Treiber, Dateisystem und Diagnose gleichzeitig
+beschädigen. `panic()` sichert Diagnose und hält danach die CPU an. Das ist ein
+kontrollierter Stopp, aber noch kein fehlertoleranter medizinischer Betrieb.
+
+Das Zielmodell ordnet Fehler nach ihrer nachweisbaren Reichweite:
+
+| Fehlerdomäne | Zielreaktion |
+|---|---|
+| Ring-3-App oder nichtkritischer Dienst | einfrieren, Zustand verwerfen, aus bekannt gutem Image neu starten |
+| Treiber oder Gerät | I/O sperren, Gerät zurücksetzen, Ersatzgerät/-kanal übernehmen |
+| Safety-Dienst | Ausgang sicher halten, Hot-Standby übernehmen lassen, ausgefallene Instanz neu qualifizieren |
+| Kernelintegrität zweifelhaft | Knoten einzäunen; unabhängiger Supervisor schaltet auf Standby und startet ihn kontrolliert neu |
+| CPU, RAM, Strom oder Takt nicht vertrauenswürdig | externer Hardwarekanal hält den sicheren Zustand und isoliert den Rechner |
+
+In-Place-Weiterlauf nach unbekannter Kernelkorruption ist ausdrücklich kein
+zulässiger Recovery-Mechanismus. Unterbrechungsfreie wesentliche Leistung bei
+einem Kernel-Panic ist nur mit einer unabhängigen zweiten Ausführungs- und
+Überwachungsdomäne glaubwürdig erreichbar. Redundante Kanäle werden gegen
+gemeinsame Fehlerursachen bewertet; zwei identische Instanzen allein sind kein
+ausreichender Nachweis.
+
+Stacküberlauf soll vor Datenkorruption durch nicht gemappte Guardpages erkannt
+werden. Statische Stackbudgets, Watermarks und Rekursionsverbote verhindern die
+Mehrzahl der Fälle. Ein eigener, vorallokierter Exception-/Double-Fault-/NMI-
+Stack muss Diagnose und Eskalation auch dann ermöglichen, wenn der normale
+Kernelstack unbrauchbar ist. Der Fatalpfad darf nicht allokieren, blockieren
+oder von Dateisystem, Netzwerk, Desktop bzw. normalem Logging abhängen.
+
+Desktop, Netzwerk, Massenspeicher und allgemeine Diagnose sind nichtkritische
+Partitionen. Keine wesentliche medizinische Funktion darf von ihrer
+Verfügbarkeit oder ihrem Timing abhängen. Der Übergang zu diesem Zielmodell ist
+als Sicherheits-Gate S0 in der Roadmap geplant; er ist noch nicht umgesetzt.
+
 ## Bootkette
 
 ```text
@@ -14,6 +57,7 @@ BIOS
   -> Manifest in der aktiven RAW-Bootpartition
   -> arch/x86/boot/bios/stage2_bios.asm
   -> A20, E820, ELF32-Laden und CRC32-Prüfung
+  -> optional VBE-LFB (1024x768x32, Rückfall 800x600x32)
   -> Protected Mode
   -> Multiboot-1-kompatibler Handoff
   -> arch/x86/boot/multiboot.asm
@@ -23,8 +67,12 @@ BIOS
 Stage 1 ist exakt ein MBR-Sektor. Stage 2 liest Kernel und Manifest per BIOS
 EDD/INT 13h, validiert 32-Bit-i386-ELF und lädt nur `PT_LOAD`-Segmente in
 zulässige physische Bereiche. Bereiche mit `p_memsz > p_filesz` werden für
-BSS genullt. Die Multiboot-Struktur bleibt eine interne Übergabeschnittstelle;
-sie bedeutet nicht, dass der native Weg GRUB benötigt.
+BSS genullt. Im Framebuffer-Build wählt Stage 2 unmittelbar vor dem
+Protected-Mode-Handoff einen linearen 32-Bit-Direct-Color-VBE-Modus und
+veröffentlicht dessen Metadaten. Jeder Fehler stellt BIOS-Modus 03h wieder her
+und lässt das Framebuffer-Flag ungültig. Die Multiboot-Struktur bleibt eine
+interne Übergabeschnittstelle; sie bedeutet nicht, dass der native Weg GRUB
+benötigt.
 
 ## Kernelinitialisierung
 
@@ -32,7 +80,7 @@ sie bedeutet nicht, dass der native Weg GRUB benötigt.
 
 1. Multiboot-Magic und Informationszeiger prüfen
 2. Bootinformationen und Speicherkarte auswerten
-3. VGA oder optionalen Framebuffer initialisieren
+3. VGA oder den vom nativen VBE-Pfad übergebenen Framebuffer initialisieren
 4. Kernel-Allocator initialisieren
 5. TSS, GDT, IDT, Exceptions, IRQs, PIT und PS/2-Tastatur aufsetzen
 6. APIC-Timer gegen PIT kalibrieren oder PIT-Scheduler-Fallback wählen sowie
@@ -41,10 +89,11 @@ sie bedeutet nicht, dass der native Weg GRUB benötigt.
 8. ATA und Disketten erkennen
 9. VFS initialisieren und Laufwerke automatisch mounten
 10. Netzwerkstack und DHCP starten
-11. in die interaktive Shell wechseln
+11. bei einem echten Framebuffer `DESKTOP.PRG`, sonst `SHELL.PRG` starten
 
 COM1 wird früh initialisiert, damit auch Fehler vor der VGA-Shell in einem
-seriellen Log sichtbar bleiben.
+seriellen Log sichtbar bleiben. Die gemeinsame Anzeige spiegelt Console-Text
+auch im Framebuffer-Modus genau einmal nach COM1.
 
 ## CPU-Tabellen und Interrupts
 
@@ -193,8 +242,8 @@ Sie bietet Terminal-, Speicher-, Datei-, Verzeichnis-, Prozess- und
 Zeitoperationen. Externe Programme sollen nur
 `userspace/sdk/include/x86os.h` einbinden, keine internen Kernelheader.
 
-R1.1 und R1.2 hängen neue Nummern an die bestehende ABI an, ohne alte
-Programme umzunummerieren:
+Neue Funktionen hängen Nummern an die bestehende ABI an, ohne alte Programme
+umzunummerieren:
 
 | Nummer | SDK/API | Vertrag |
 |---:|---|---|
@@ -205,6 +254,9 @@ Programme umzunummerieren:
 | 41 | `x86os_sleep_ms(uint32_t)` | blockierender Millisekunden-Sleep |
 | 42 | `x86os_monotonic_ms(uint64_t *)` | geprüfte 64-Bit-Ausgabe per User-Pointer |
 | 43 | `x86os_memory_stats(x86os_memory_stats_t *)` | versionierte v1-Speicherstatistik per geprüftem Copyout |
+| 44 | `x86os_display_info(x86os_display_info_t *)` | versionierte Framebuffergeometrie, RGB-Masken und Schriftmetrik |
+| 45 | `x86os_fill_rect(...)` | geclipptes Rechteck in `0x00RRGGBB` |
+| 46 | `x86os_draw_text_pixels(...)` | geclippte Pixelschrift mit höchstens 256 Zeichen je Aufruf |
 
 Der generische Syscall-Rückgabekanal bleibt 32 Bit breit. Die monotone
 64-Bit-Zeit wird deshalb mit `copy_to_user` in einen zuvor validierten
@@ -218,6 +270,27 @@ Pointer, Strukturgröße und `X86OS_MEMORY_STATS_VERSION`; der Kernel lehnt eine
 unbekannte Version oder einen zu kleinen Puffer vor `copy_to_user` ab. Sie
 trennt insbesondere `detected_usable_bytes` von `managed_bytes`, während der
 kompatible Syscall 13 ausschließlich die verwalteten KiB liefert.
+
+Die Display-ABI v1 verwendet ebenfalls `version` und `struct_size`. Der Kernel
+kopiert Requests und Text über die geprüften User-Copy-Hilfen, clippt Rechtecke
+und Text am sichtbaren Bereich und wandelt `0x00RRGGBB` in das vom
+Bootloader gemeldete Pixelformat. Der lineare Framebuffer bleibt ausschließlich
+Supervisor-MMIO und wird nicht in Ring 3 gemappt.
+
+## Grafik und Desktop-MVP
+
+Ein `VIDEO=framebuffer`-Build lässt den nativen BIOS-Loader bevorzugt
+1024x768x32 und danach 800x600x32 anfordern. Nur ein erfolgreich gesetzter
+linearer Direct-Color-Modus aktiviert den Framebuffertreiber. Ohne ihn bleibt
+VGA-Text aktiv und der normale Shellstart unverändert.
+
+Auf einem echten Framebuffer startet der Kernel `DESKTOP.PRG` vor
+`SHELL.PRG`. Dieser Ring-3-Launcher zeichnet Hintergrund, Statusleiste und vier
+Karten für Shell, Dateiliste, Editor und Systeminformationen ausschließlich
+über die Display-Syscalls. Tastaturauswahl und `Enter` starten jeweils einen
+Vollbild-Kindprozess; der Desktop wartet mit `spawn`/`wait`, leert danach
+verbliebene Eingabe und zeichnet sich neu. `Esc` startet die Shell. Es gibt
+noch keine Maus, keinen Compositor, Windowmanager oder Fokusvertrag.
 
 ## Console-Eingabe
 
@@ -249,12 +322,16 @@ sie anschließend im Foreground-Kontext.
 |---|---|
 | Block | ATA/IDE, Floppy |
 | Eingabe | PS/2-Tastatur und COM1 mit gemeinsamer blockierender Console-Wait-Queue, experimentelles USB-HID |
-| Anzeige | VGA-Text, optionaler RGB-Framebuffer |
+| Anzeige | VGA-Text, nativer VBE-RGB-Framebuffer, geclippte Ring-3-Display-ABI und Desktop-MVP |
 | Bus | PCI, USB-Hostcontroller-Probing |
 | Netzwerk | E1000, RTL8139, NE2000 über `netdev` |
 | Zeit | monotone 64-Bit-PIT-Zeit, RTC, kalibrierter lokaler APIC-Timer mit PIT-Fallback; HPET noch inaktiv |
 
 Die generierte VMware-Referenzmaschine verwendet IDE, VGA, PS/2 und E1000.
+
+Der reale QEMU-Framebuffer-Boot bestätigt VBE-Handoff, Kernelinitialisierung
+und den ersten Ring-3-Renderdurchlauf über den seriellen Marker `DESKTOP_OK`.
+VGA- und VBE-Fehlerpfad bleiben getrennte, sichere Rückfälle.
 
 ## Verifikation des Speicherpfads
 
@@ -286,8 +363,10 @@ spätere Speichermeilensteine und ändern den abgenommenen R1.2-Vertrag nicht.
   nicht gemappten Guardpages
 - Minimalnetzwerk ohne TCP/DNS/IPv6
 - HPET und IOAPIC warten auf die validierte ACPI-/Plattformschicht
-- USB und Framebuffer sind nicht so umfassend verifiziert wie der
-  VMware-VGA-/PS/2-/E1000-Weg
+- der Desktop ist ein tastaturbedienter Vollbild-Launcher ohne Maus,
+  Compositor, Windowmanager oder Fokusmodell
+- USB und unterschiedliche reale VBE-Implementierungen sind nicht so
+  umfassend verifiziert wie der VMware-VGA-/PS/2-/E1000-Weg
 
 ## Quellreferenzen
 
@@ -301,5 +380,7 @@ spätere Speichermeilensteine und ändern den abgenommenen R1.2-Vertrag nicht.
 - `kernel/time/` – monotone PIT-Zeit und kalibrierter LAPIC-Timer
 - `kernel/shell/` – Shell und Pfadauflösung
 - `fs/vfs/` – Mount- und Dateisystemabstraktion
-- `drivers/` – Hardwaretreiber
+- `drivers/video/` – VGA, Framebuffer, Console-Spiegelung und Zeichenprimitive
+- `drivers/` – weitere Hardwaretreiber
 - `userspace/sdk/` – externe Programmschnittstelle
+- `examples/userspace/desktop.c` – grafischer Ring-3-Launcher

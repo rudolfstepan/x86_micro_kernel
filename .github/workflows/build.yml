@@ -41,6 +41,9 @@ jobs:
       - name: Run Ring-3 guest memory matrix (32/64/256/1024 MiB)
         run: make test-smoke-memory TARGET=qemu VIDEO=vga
 
+      - name: Run graphical desktop framebuffer smoke test
+        run: make test-smoke-desktop TARGET=qemu
+
       - name: Upload guest smoke log on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -53,4 +56,6 @@ jobs:
             build/guest-smoke-memory-64m.log
             build/guest-smoke-memory-256m.log
             build/guest-smoke-memory-1024m.log
+            build/guest-smoke-desktop.log
+            build/guest-smoke-desktop.ppm
           if-no-files-found: ignore

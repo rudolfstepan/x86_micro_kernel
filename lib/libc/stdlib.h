@@ -52,6 +52,9 @@
 #define SYS_SLEEP_MS 41
 #define SYS_MONOTONIC_MS 42
 #define SYS_MEMORY_STATS 43
+#define SYS_DISPLAY_INFO 44
+#define SYS_FILL_RECT 45
+#define SYS_DRAW_TEXT 46
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

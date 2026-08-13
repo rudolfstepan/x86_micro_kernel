@@ -4725,41 +4725,115 @@ static uint32_t framebuffer_scale_channel(uint8_t value, uint8_t bits) {
     return (uint32_t)(((uint64_t)value * maximum + 127u) / 255u);
 }
 
-// Set pixel at position
-static inline void fb_set_pixel(int x, int y, uint32_t color) {
-    if (x < 0 || x >= (int)fb_width || y < 0 || y >= (int)fb_height) return;
-    
-    uint8_t *pixel = fb_address + (uint32_t)y * fb_pitch +
-                     (uint32_t)x * fb_bytes_per_pixel;
-    uint8_t red = (uint8_t)(color >> 16);
-    uint8_t green = (uint8_t)(color >> 8);
-    uint8_t blue = (uint8_t)color;
-    uint32_t native_color =
+static uint32_t framebuffer_native_color(uint32_t rgb) {
+    uint8_t red = (uint8_t)(rgb >> 16);
+    uint8_t green = (uint8_t)(rgb >> 8);
+    uint8_t blue = (uint8_t)rgb;
+    return
         (framebuffer_scale_channel(red, fb_red_size) << fb_red_position) |
         (framebuffer_scale_channel(green, fb_green_size) << fb_green_position) |
         (framebuffer_scale_channel(blue, fb_blue_size) << fb_blue_position);
-    for (uint8_t byte = 0; byte < fb_bytes_per_pixel; ++byte) {
-        pixel[byte] = (uint8_t)(native_color >> (byte * 8u));
-    }
 }
 
-// Draw a character at specific position
-static void fb_draw_char(char c, int x, int y, uint32_t fg, uint32_t bg) {
+static inline void framebuffer_store_native(uint8_t *pixel,
+                                            uint32_t native_color) {
+    for (uint8_t byte = 0; byte < fb_bytes_per_pixel; ++byte)
+        pixel[byte] = (uint8_t)(native_color >> (byte * 8u));
+}
+
+// Set pixel at position
+static inline void fb_set_pixel(int x, int y, uint32_t color) {
+    if (x < 0 || x >= (int)fb_width || y < 0 || y >= (int)fb_height) return;
+
+    uint8_t *pixel = fb_address + (uint32_t)y * fb_pitch +
+                     (uint32_t)x * fb_bytes_per_pixel;
+    framebuffer_store_native(pixel, framebuffer_native_color(color));
+}
+
+static void fb_draw_glyph_pixels(char c, int x, int y, uint32_t fg,
+                                 uint32_t bg) {
     const uint8_t* glyph = &font_8x16[(unsigned char)c * FONT_HEIGHT];
-    
+
     for (int row = 0; row < FONT_HEIGHT; row++) {
         uint8_t line = glyph[row];
         for (int col = 0; col < FONT_WIDTH; col++) {
-            int pixel_x = x * FONT_WIDTH + col;
-            int pixel_y = y * FONT_HEIGHT + row;
-            
             if (line & (0x80 >> col)) {
-                fb_set_pixel(pixel_x, pixel_y, fg);
+                fb_set_pixel(x + col, y + row, fg);
             } else {
-                fb_set_pixel(pixel_x, pixel_y, bg);
+                fb_set_pixel(x + col, y + row, bg);
             }
         }
     }
+}
+
+// Draw a character at a terminal-cell position.
+static void fb_draw_char(char c, int x, int y, uint32_t fg, uint32_t bg) {
+    fb_draw_glyph_pixels(c, x * FONT_WIDTH, y * FONT_HEIGHT, fg, bg);
+}
+
+bool framebuffer_get_display_info(framebuffer_display_info_t* info) {
+    if (!fb_address || !info) return false;
+    info->version = FRAMEBUFFER_DISPLAY_ABI_VERSION;
+    info->struct_size = sizeof(*info);
+    info->width = fb_width;
+    info->height = fb_height;
+    info->pitch = fb_pitch;
+    info->bits_per_pixel = fb_bpp;
+    info->red_field_position = fb_red_position;
+    info->red_mask_size = fb_red_size;
+    info->green_field_position = fb_green_position;
+    info->green_mask_size = fb_green_size;
+    info->blue_field_position = fb_blue_position;
+    info->blue_mask_size = fb_blue_size;
+    info->font_width = FONT_WIDTH;
+    info->font_height = FONT_HEIGHT;
+    return true;
+}
+
+bool framebuffer_fill_rect(int32_t x, int32_t y, uint32_t width,
+                           uint32_t height, uint32_t rgb) {
+    if (!fb_address) return false;
+    if (width == 0 || height == 0) return true;
+
+    int64_t left = x;
+    int64_t top = y;
+    int64_t right = left + (int64_t)width;
+    int64_t bottom = top + (int64_t)height;
+    if (left < 0) left = 0;
+    if (top < 0) top = 0;
+    if (right > (int64_t)fb_width) right = fb_width;
+    if (bottom > (int64_t)fb_height) bottom = fb_height;
+    if (left >= right || top >= bottom) return true;
+
+    uint32_t native_color = framebuffer_native_color(rgb & 0x00FFFFFFU);
+    for (int64_t pixel_y = top; pixel_y < bottom; ++pixel_y) {
+        uint8_t *pixel = fb_address + (uint32_t)pixel_y * fb_pitch +
+                         (uint32_t)left * fb_bytes_per_pixel;
+        for (int64_t pixel_x = left; pixel_x < right; ++pixel_x) {
+            framebuffer_store_native(pixel, native_color);
+            pixel += fb_bytes_per_pixel;
+        }
+    }
+    return true;
+}
+
+bool framebuffer_draw_text_pixels(int32_t x, int32_t y, const char* text,
+                                  size_t length, uint32_t foreground_rgb,
+                                  uint32_t background_rgb) {
+    if (!fb_address) return false;
+    if (!text && length != 0) return false;
+    foreground_rgb &= 0x00FFFFFFU;
+    background_rgb &= 0x00FFFFFFU;
+    for (size_t index = 0; index < length; ++index) {
+        int64_t glyph_x = (int64_t)x + (int64_t)index * FONT_WIDTH;
+        if (glyph_x >= (int64_t)fb_width) break;
+        if (glyph_x + FONT_WIDTH <= 0 ||
+            (int64_t)y >= (int64_t)fb_height ||
+            (int64_t)y + FONT_HEIGHT <= 0) continue;
+        fb_draw_glyph_pixels(text[index], (int)glyph_x, (int)y,
+                             foreground_rgb, background_rgb);
+    }
+    return true;
 }
 
 // Clear the framebuffer

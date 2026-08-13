@@ -2,6 +2,7 @@
 
 #ifdef USE_FRAMEBUFFER
 #include "framebuffer.h"
+#include "drivers/char/serial.h"
 #endif
 #include "video.h"
 
@@ -60,8 +61,12 @@ void display_putchar(char c) {
         return;
     }
 #ifdef USE_FRAMEBUFFER
-    if (framebuffer_available()) framebuffer_putchar(c);
-    else vga_write_char(c);
+    if (framebuffer_available()) {
+        framebuffer_putchar(c);
+        serial_write_char(SERIAL_COM1, c);
+    } else {
+        vga_write_char(c);
+    }
 #else
     vga_write_char(c);
 #endif
@@ -69,8 +74,10 @@ void display_putchar(char c) {
 
 void display_write(const char* str) {
 #ifdef USE_FRAMEBUFFER
-    if (framebuffer_available()) framebuffer_write_string(str);
-    else while (*str) vga_write_char(*str++);
+    if (framebuffer_available()) {
+        framebuffer_write_string(str);
+        serial_write_string(SERIAL_COM1, str);
+    } else while (*str) vga_write_char(*str++);
 #else
     while (*str) {
         vga_write_char(*str++);
@@ -113,7 +120,10 @@ void display_write_at(int x, int y, const char* text, unsigned int length) {
 
 void display_backspace() {
 #ifdef USE_FRAMEBUFFER
-    if (framebuffer_available()) framebuffer_putchar('\b');
+    if (framebuffer_available()) {
+        framebuffer_putchar('\b');
+        serial_write_char(SERIAL_COM1, '\b');
+    }
     else vga_backspace();
 #else
     vga_backspace();

@@ -207,7 +207,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-memory test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -293,6 +293,7 @@ help:
 	@echo "  test-smoke   - Boot QEMU and run the automated Ring-3 guest test"
 	@echo "  test-smoke-pit - Run the guest test with the LAPIC disabled"
 	@echo "  test-smoke-memory - Run guest tests with 32/64/256/1024 MiB RAM"
+	@echo "  test-smoke-desktop - Boot the framebuffer desktop and capture it"
 	@echo "  test-verbose - Validate disk images with detailed output"
 	@echo "  test-bash    - Run disk image tests (Bash, no Python required)"
 	@echo "  test-quick   - Quick check if disk images exist"
@@ -491,7 +492,7 @@ system-programs:
 native-image: floppy-image
 	@echo "Creating native BIOS disk image..."
 	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage1_mbr.asm -o $(OUTPUT_DIR)/stage1_mbr.bin
-	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage2_bios.asm -o $(OUTPUT_DIR)/stage2_bios.bin
+	@$(AS) $(VIDEO_DEFINES) -f bin arch/$(ARCH)/boot/bios/stage2_bios.asm -o $(OUTPUT_DIR)/stage2_bios.bin
 	@$(PYTHON) scripts/create_native_boot_image.py \
 		--stage1 $(OUTPUT_DIR)/stage1_mbr.bin \
 		--stage2 $(OUTPUT_DIR)/stage2_bios.bin \
@@ -517,6 +518,7 @@ native-image: floppy-image
 		--data-file KILL.PRG=$(SYSTEM_PROGRAM_DIR)/KILL.PRG \
 		--data-file PWD.PRG=$(SYSTEM_PROGRAM_DIR)/PWD.PRG \
 		--data-file SHELL.PRG=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG \
+		--data-file DESKTOP.PRG=$(SYSTEM_PROGRAM_DIR)/DESKTOP.PRG \
 		--data-file MKDIR.PRG=$(SYSTEM_PROGRAM_DIR)/MKDIR.PRG \
 		--data-file RMDIR.PRG=$(SYSTEM_PROGRAM_DIR)/RMDIR.PRG \
 		--data-file DEL.PRG=$(SYSTEM_PROGRAM_DIR)/DEL.PRG \
@@ -537,7 +539,7 @@ native-image: floppy-image
 floppy-image: kernel system-programs user-program
 	@echo "Creating 1.44-MB BIOS floppy image..."
 	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage1_floppy.asm -o $(OUTPUT_DIR)/stage1_floppy.bin
-	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage2_bios.asm -o $(OUTPUT_DIR)/stage2_bios.bin
+	@$(AS) $(VIDEO_DEFINES) -f bin arch/$(ARCH)/boot/bios/stage2_bios.asm -o $(OUTPUT_DIR)/stage2_bios.bin
 	@$(PYTHON) scripts/create_floppy_boot_image.py \
 		--stage1 $(OUTPUT_DIR)/stage1_floppy.bin \
 		--stage2 $(OUTPUT_DIR)/stage2_bios.bin \
@@ -560,6 +562,7 @@ floppy-image: kernel system-programs user-program
 		--data-file KILL.PRG=$(SYSTEM_PROGRAM_DIR)/KILL.PRG \
 		--data-file PWD.PRG=$(SYSTEM_PROGRAM_DIR)/PWD.PRG \
 		--data-file SHELL.PRG=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG \
+		--data-file DESKTOP.PRG=$(SYSTEM_PROGRAM_DIR)/DESKTOP.PRG \
 		--data-file MKDIR.PRG=$(SYSTEM_PROGRAM_DIR)/MKDIR.PRG \
 		--data-file RMDIR.PRG=$(SYSTEM_PROGRAM_DIR)/RMDIR.PRG \
 		--data-file DEL.PRG=$(SYSTEM_PROGRAM_DIR)/DEL.PRG \
@@ -633,6 +636,15 @@ test-smoke-memory: native-image
 		--image $(OUTPUT_DIR)/x86-microkernel.img \
 		--memory 1024M \
 		--log $(OUTPUT_DIR)/guest-smoke-memory-1024m.log
+
+test-smoke-desktop:
+	@echo "Building and running QEMU framebuffer desktop smoke test..."
+	@$(MAKE) native-image TARGET=qemu VIDEO=framebuffer
+	@$(PYTHON) scripts/run_qemu_desktop_smoke.py \
+		--qemu $(QEMU) \
+		--image $(OUTPUT_DIR)/x86-microkernel.img \
+		--log $(OUTPUT_DIR)/guest-smoke-desktop.log \
+		--screenshot $(OUTPUT_DIR)/guest-smoke-desktop.ppm
 
 # Run disk image tests with verbose output
 test-verbose:

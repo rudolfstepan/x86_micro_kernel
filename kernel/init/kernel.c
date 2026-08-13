@@ -236,22 +236,28 @@ static void system_ready(void) {
     printf("====================\n\n");
 }
 
-static bool shell_path_for_drive(const drive_t *drive,
-                                 char path[PROCESS_PATH_MAX]) {
+static bool program_path_for_drive(const drive_t *drive,
+                                   const char *filename,
+                                   char path[PROCESS_PATH_MAX]) {
     if (drive == NULL || drive->mount_point[0] != '/') return false;
     if (strcmp(drive->mount_point, "/") == 0) {
-        strcpy(path, "/SHELL.PRG");
+        if (strlen(filename) + 2U > PROCESS_PATH_MAX) return false;
+        path[0] = '/';
+        strcpy(path + 1, filename);
     } else {
         size_t length = strlen(drive->mount_point);
-        if (length + sizeof("/SHELL.PRG") > PROCESS_PATH_MAX) return false;
+        if (length + strlen(filename) + 2U > PROCESS_PATH_MAX) return false;
         strcpy(path, drive->mount_point);
-        strcpy(path + length, "/SHELL.PRG");
+        path[length] = '/';
+        strcpy(path + length + 1U, filename);
     }
     vfs_dir_entry_t entry;
     return vfs_stat(path, &entry) == VFS_OK && entry.type == VFS_FILE;
 }
 
-static int start_userspace_shell(const multiboot1_info_t *boot_info) {
+static int start_userspace_program(const multiboot1_info_t *boot_info,
+                                   const char *filename,
+                                   const char *description) {
     drive_type_t preferred_type = DRIVE_TYPE_NONE;
     if ((boot_info->flags & MULTIBOOT1_FLAG_BOOT_DEVICE) != 0) {
         uint8_t bios_drive = (uint8_t)(boot_info->boot_device >> 24);
@@ -266,17 +272,23 @@ static int start_userspace_shell(const multiboot1_info_t *boot_info) {
                              drive->type == preferred_type;
             if ((pass == 0) != preferred) continue;
 
-            char shell_path[PROCESS_PATH_MAX];
-            if (!shell_path_for_drive(drive, shell_path)) continue;
-            const char *arguments[] = {"SHELL.PRG"};
+            char program_path[PROCESS_PATH_MAX];
+            if (!program_path_for_drive(drive, filename, program_path)) continue;
+            const char *arguments[] = {filename};
+            /* Publish the READY task and its launch message as one foreground
+             * transaction so the child cannot split the serial log line. */
+            scheduler_preempt_disable();
             int pid = create_process_for_file_args(
-                shell_path, 1, arguments, drive->mount_point);
-            if (pid < 0) continue;
+                program_path, 1, arguments, drive->mount_point);
+            if (pid < 0) {
+                scheduler_preempt_enable();
+                continue;
+            }
 
-            printf("Starting userspace command interpreter from %s\n",
-                   shell_path);
+            printf("Starting %s from %s\n", description, program_path);
+            scheduler_preempt_enable();
             wait_for_process(pid);
-            printf("Userspace shell exited; entering rescue shell.\n");
+            printf("%s exited.\n", description);
             return 0;
         }
         if (preferred_type == DRIVE_TYPE_NONE) break;
@@ -379,10 +391,20 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     system_ready();
     printf("BOOT_OK\n");
 
-    /* SHELL.PRG is the normal command-line interpreter.  The in-kernel shell
-     * remains available only as a recovery console when the userspace image
-     * is missing, cannot be loaded, or terminates unexpectedly. */
-    if (start_userspace_shell(multiboot_info) < 0) {
+    /* A real framebuffer prefers the graphical desktop.  VGA boots and any
+     * failed/terminated desktop fall back to the userspace shell. */
+#ifdef USE_FRAMEBUFFER
+    if (framebuffer_available()) {
+        if (start_userspace_program(multiboot_info, "DESKTOP.PRG",
+                                    "graphical desktop") == 0) {
+            printf("Graphical desktop exited; starting shell fallback.\n");
+        } else {
+            printf("Unable to start DESKTOP.PRG; starting shell fallback.\n");
+        }
+    }
+#endif
+    if (start_userspace_program(multiboot_info, "SHELL.PRG",
+                                "userspace command interpreter") < 0) {
         printf("Unable to start SHELL.PRG; entering rescue shell.\n");
     }
 

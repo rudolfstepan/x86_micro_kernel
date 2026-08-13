@@ -10,6 +10,7 @@
 #include "arch/x86/include/interrupt.h"
 #include "arch/x86/include/sys.h"
 #include "drivers/video/display.h"
+#include "drivers/video/framebuffer.h"
 #include "drivers/char/kb.h"
 #include "drivers/char/rtc.h"
 #include "drivers/bus/drives.h"
@@ -85,6 +86,90 @@ static int syscall_memory_stats(memory_stats_t *user_stats,
     memory_stats_t stats;
     memory_get_stats(&stats);
     return copy_to_user(user_stats, &stats, sizeof(stats)) == 0 ? 0 : -14;
+}
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+} syscall_abi_header_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t x;
+    int32_t y;
+    uint32_t width;
+    uint32_t height;
+    uint32_t rgb;
+} syscall_display_rect_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t x;
+    int32_t y;
+    uint32_t foreground_rgb;
+    uint32_t background_rgb;
+    uint32_t text_address;
+    uint32_t text_length;
+} syscall_display_text_t;
+
+_Static_assert(sizeof(framebuffer_display_info_t) == 56U,
+               "display information ABI size changed");
+_Static_assert(sizeof(syscall_display_rect_t) == 28U,
+               "display rectangle ABI size changed");
+_Static_assert(sizeof(syscall_display_text_t) == 32U,
+               "display text ABI size changed");
+
+static int syscall_display_info(framebuffer_display_info_t *user_info) {
+    if (!framebuffer_available()) return -19; /* ENODEV */
+    syscall_abi_header_t header;
+    if (copy_from_user(&header, user_info, sizeof(header)) != 0) return -14;
+    if (header.version != FRAMEBUFFER_DISPLAY_ABI_VERSION ||
+        header.struct_size < sizeof(framebuffer_display_info_t)) return -22;
+
+    framebuffer_display_info_t info;
+    if (!framebuffer_get_display_info(&info)) return -19;
+    return copy_to_user(user_info, &info, sizeof(info)) == 0 ? 0 : -14;
+}
+
+static int syscall_display_fill_rect(const syscall_display_rect_t *user_rect) {
+    if (!framebuffer_available()) return -19; /* ENODEV */
+    syscall_display_rect_t rect;
+    if (copy_from_user(&rect, user_rect, sizeof(rect)) != 0) return -14;
+    if (rect.version != FRAMEBUFFER_DISPLAY_ABI_VERSION ||
+        rect.struct_size < sizeof(rect) ||
+        (rect.rgb & 0xFF000000U) != 0) return -22;
+
+    /* Rendering is deliberately preemptible.  The framebuffer geometry is
+     * immutable after boot and occasional visual tearing is preferable to a
+     * Ring-3 caller monopolizing the global UP scheduler. */
+    bool drawn = framebuffer_fill_rect(rect.x, rect.y, rect.width,
+                                       rect.height, rect.rgb);
+    return drawn ? 0 : -19;
+}
+
+static int syscall_display_draw_text(const syscall_display_text_t *user_text) {
+    if (!framebuffer_available()) return -19; /* ENODEV */
+    syscall_display_text_t request;
+    if (copy_from_user(&request, user_text, sizeof(request)) != 0) return -14;
+    if (request.version != FRAMEBUFFER_DISPLAY_ABI_VERSION ||
+        request.struct_size < sizeof(request) ||
+        request.text_length > FRAMEBUFFER_DISPLAY_MAX_TEXT ||
+        (request.foreground_rgb & 0xFF000000U) != 0 ||
+        (request.background_rgb & 0xFF000000U) != 0) return -22;
+    if (request.text_length == 0) return 0;
+    if (!user_range_accessible(paging_current_directory(),
+                               request.text_address, request.text_length,
+                               false)) return -14;
+
+    char text[FRAMEBUFFER_DISPLAY_MAX_TEXT];
+    if (copy_from_user(text, (const void*)(uintptr_t)request.text_address,
+                       request.text_length) != 0) return -14;
+    bool drawn = framebuffer_draw_text_pixels(
+        request.x, request.y, text, request.text_length,
+        request.foreground_rgb, request.background_rgb);
+    return drawn ? (int)request.text_length : -19;
 }
 
 static int syscall_terminal_write(const char *user_buffer, size_t size) {
@@ -488,6 +573,9 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&scheduler_sleep_ms,         // Syscall 41: Blocking sleep in ms
     (void*)&syscall_monotonic_ms,       // Syscall 42: 64-bit monotonic time
     (void*)&syscall_memory_stats,       // Syscall 43: Physical/heap metrics
+    (void*)&syscall_display_info,       // Syscall 44: Versioned display info
+    (void*)&syscall_display_fill_rect,  // Syscall 45: Clipped RGB rectangle
+    (void*)&syscall_display_draw_text,  // Syscall 46: Clipped pixel text
     // Add more syscalls here as needed
 };
 
@@ -712,6 +800,18 @@ void syscall_handler(Registers* regs) {
         case SYS_MEMORY_STATS:
             result = (uint32_t)syscall_memory_stats(
                 (memory_stats_t*)(uintptr_t)arg1, arg2, arg3);
+            break;
+        case SYS_DISPLAY_INFO:
+            result = (uint32_t)syscall_display_info(
+                (framebuffer_display_info_t*)(uintptr_t)arg1);
+            break;
+        case SYS_FILL_RECT:
+            result = (uint32_t)syscall_display_fill_rect(
+                (const syscall_display_rect_t*)(uintptr_t)arg1);
+            break;
+        case SYS_DRAW_TEXT:
+            result = (uint32_t)syscall_display_draw_text(
+                (const syscall_display_text_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

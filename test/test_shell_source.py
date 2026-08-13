@@ -140,11 +140,20 @@ class ShellSourceRegressionTests(unittest.TestCase):
 
     def test_kernel_starts_userspace_shell_before_rescue_shell(self):
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
-        start = kernel.index("start_userspace_shell(multiboot_info)")
+        start = kernel.index('start_userspace_program(multiboot_info, "SHELL.PRG"')
         rescue = kernel.index("command_loop();", start)
         self.assertLess(start, rescue)
-        self.assertIn('"/SHELL.PRG"', kernel)
+        self.assertIn('"SHELL.PRG"', kernel)
         self.assertIn("wait_for_process(pid)", kernel)
+
+    def test_framebuffer_boot_prefers_desktop_with_shell_fallback(self):
+        kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
+        framebuffer = kernel.index("if (framebuffer_available())")
+        desktop = kernel.index('"DESKTOP.PRG"', framebuffer)
+        shell = kernel.index('"SHELL.PRG"', desktop)
+        self.assertLess(framebuffer, desktop)
+        self.assertLess(desktop, shell)
+        self.assertIn("Unable to start DESKTOP.PRG; starting shell fallback", kernel)
 
     def test_prompt_has_no_trailing_space(self):
         self.assertIn('printf("%s:%s>", drive_label, dos_path);', self.source)

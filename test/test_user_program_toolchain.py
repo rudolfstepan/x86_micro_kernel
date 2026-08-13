@@ -210,6 +210,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "KILL.PRG",
                 "PWD.PRG",
                 "SHELL.PRG",
+                "DESKTOP.PRG",
                 "MKDIR.PRG",
                 "RMDIR.PRG",
                 "DEL.PRG",
@@ -236,6 +237,14 @@ class UserProgramToolchainTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertEqual(build_script.count('--data-file "EDIT.PRG='), 2)
+
+    def test_desktop_is_packaged_in_both_native_images(self):
+        build_script = (ROOT / "scripts" / "build-windows.ps1").read_text(
+            encoding="utf-8"
+        )
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertEqual(build_script.count('--data-file "DESKTOP.PRG='), 2)
+        self.assertEqual(makefile.count("--data-file DESKTOP.PRG="), 2)
 
 
 if __name__ == "__main__":

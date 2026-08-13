@@ -4,6 +4,12 @@ _Static_assert(sizeof(x86os_memory_stats_t) == 88U,
                "memory statistics ABI size changed");
 _Static_assert(offsetof(x86os_memory_stats_t, detected_usable_bytes) == 8U,
                "memory statistics ABI header changed");
+_Static_assert(sizeof(x86os_display_info_t) == 56U,
+               "display information ABI size changed");
+_Static_assert(sizeof(x86os_display_rect_t) == 28U,
+               "display rectangle ABI size changed");
+_Static_assert(sizeof(x86os_display_text_t) == 32U,
+               "display text ABI size changed");
 
 uintptr_t x86os_syscall(uint32_t number, uintptr_t argument1,
                         uintptr_t argument2, uintptr_t argument3) {
@@ -54,6 +60,47 @@ int x86os_memory_stats(x86os_memory_stats_t* stats) {
     return (int)x86os_syscall(X86OS_SYS_MEMORY_STATS,
                               (uintptr_t)stats, sizeof(*stats),
                               X86OS_MEMORY_STATS_VERSION);
+}
+
+int x86os_display_info(x86os_display_info_t* info) {
+    if (!info) return -22;
+    info->version = X86OS_DISPLAY_ABI_VERSION;
+    info->struct_size = sizeof(*info);
+    return (int)x86os_syscall(X86OS_SYS_DISPLAY_INFO,
+                              (uintptr_t)info, 0, 0);
+}
+
+int x86os_fill_rect(int32_t x, int32_t y, uint32_t width, uint32_t height,
+                    uint32_t rgb) {
+    x86os_display_rect_t rect = {
+        .version = X86OS_DISPLAY_ABI_VERSION,
+        .struct_size = sizeof(rect),
+        .x = x,
+        .y = y,
+        .width = width,
+        .height = height,
+        .rgb = rgb
+    };
+    return (int)x86os_syscall(X86OS_SYS_FILL_RECT,
+                              (uintptr_t)&rect, 0, 0);
+}
+
+int x86os_draw_text_pixels(int32_t x, int32_t y, const char* text,
+                           size_t length, uint32_t foreground_rgb,
+                           uint32_t background_rgb) {
+    if ((!text && length != 0) || length > X86OS_DISPLAY_MAX_TEXT) return -22;
+    x86os_display_text_t request = {
+        .version = X86OS_DISPLAY_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .x = x,
+        .y = y,
+        .foreground_rgb = foreground_rgb,
+        .background_rgb = background_rgb,
+        .text_address = (uint32_t)(uintptr_t)text,
+        .text_length = (uint32_t)length
+    };
+    return (int)x86os_syscall(X86OS_SYS_DRAW_TEXT,
+                              (uintptr_t)&request, 0, 0);
 }
 
 int x86os_getchar(void) {

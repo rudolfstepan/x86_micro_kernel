@@ -5,7 +5,14 @@ Kernel-Shell, VFS, FAT-Dateisystemen, Netzwerkstack und einer kleinen
 Toolchain für externe Programme. Der bevorzugte Entwicklungsweg läuft nativ
 unter Windows mit dem eigenen BIOS-Bootloader, ohne WSL oder ISO.
 
-Stand dieser Dokumentation: 3. August 2026.
+> **Safety-Status:** Das Projekt verfolgt neu ein medizinisches
+> High-Assurance-Ziel, ist aktuell aber ein Forschungsprototyp, nicht
+> zertifiziert, nicht klinisch validiert und nicht für medizinische Verwendung
+> freigegeben. Verbindliche Anforderungen und Übergangsgates stehen im
+> [Medical-High-Assurance-Vertrag](docs/architecture/MEDICAL_HIGH_ASSURANCE_CONTRACT.md)
+> und in der [Roadmap](docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md).
+
+Stand dieser Dokumentation: 13. August 2026.
 
 ## Schnellstart unter Windows
 

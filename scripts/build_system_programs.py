@@ -27,6 +27,7 @@ PROGRAMS = {
     "KILL.PRG": ROOT / "examples/userspace/kill.c",
     "PWD.PRG": ROOT / "examples/userspace/pwd.c",
     "SHELL.PRG": ROOT / "userspace/bin/shell.c",
+    "DESKTOP.PRG": ROOT / "examples/userspace/desktop.c",
     "MKDIR.PRG": ROOT / "examples/userspace/mkdir.c",
     "RMDIR.PRG": ROOT / "examples/userspace/rmdir.c",
     "DEL.PRG": ROOT / "examples/userspace/del.c",

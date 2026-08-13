@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 // Framebuffer configuration
 #define FB_WIDTH 1024
@@ -28,6 +29,28 @@ typedef struct {
 // Font dimensions
 #define FONT_WIDTH 8
 #define FONT_HEIGHT 16
+
+/* Stable Ring-3 drawing contract.  Colors passed to these APIs use packed
+ * 0x00RRGGBB regardless of the framebuffer's native channel layout. */
+#define FRAMEBUFFER_DISPLAY_ABI_VERSION 1U
+#define FRAMEBUFFER_DISPLAY_MAX_TEXT 256U
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t width;
+    uint32_t height;
+    uint32_t pitch;
+    uint32_t bits_per_pixel;
+    uint32_t red_field_position;
+    uint32_t red_mask_size;
+    uint32_t green_field_position;
+    uint32_t green_mask_size;
+    uint32_t blue_field_position;
+    uint32_t blue_mask_size;
+    uint32_t font_width;
+    uint32_t font_height;
+} framebuffer_display_info_t;
 
 // Color definitions (32-bit ARGB)
 #define FB_COLOR_BLACK      0xFF000000
@@ -59,5 +82,11 @@ void framebuffer_set_cursor(int x, int y);
 
 // Check if framebuffer is available
 bool framebuffer_available();
+bool framebuffer_get_display_info(framebuffer_display_info_t* info);
+bool framebuffer_fill_rect(int32_t x, int32_t y, uint32_t width,
+                           uint32_t height, uint32_t rgb);
+bool framebuffer_draw_text_pixels(int32_t x, int32_t y, const char* text,
+                                  size_t length, uint32_t foreground_rgb,
+                                  uint32_t background_rgb);
 
 #endif // FRAMEBUFFER_H

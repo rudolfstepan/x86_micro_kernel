@@ -28,8 +28,9 @@ Im Projektstamm:
 ```
 
 Der Build räumt zunächst die gemeinsamen Objektdateien auf, kompiliert den
-Kernel als freestanding i386-ELF, assembliert beide BIOS-Stufen, baut
-`HELLO.PRG`, erzeugt das Raw-Image und verpackt die VMware-VM.
+Kernel als freestanding i386-ELF, assembliert beide BIOS-Stufen, baut die
+Systemprogramme einschließlich `DESKTOP.PRG` sowie `HELLO.PRG`, erzeugt das
+Raw-Image und verpackt die VMware-VM.
 
 Wichtige Ergebnisse:
 
@@ -39,6 +40,7 @@ build/stage1_mbr.bin
 build/stage2_bios.bin
 build/x86-microkernel.img
 build/programs/HELLO.PRG
+build/programs/DESKTOP.PRG
 build/vmware/x86-microkernel/x86-microkernel.vmx
 build/vmware/x86-microkernel/START-VMWARE.cmd
 ```
@@ -64,9 +66,28 @@ interaktive VGA-Shell auf der Konsole bereit:
 .\scripts\run-windows.ps1 -NoBuild -Headless
 ```
 
+## Grafischen Desktop starten
+
+Der Desktop benötigt einen nativen Framebuffer-Build:
+
+```powershell
+.\scripts\build-windows.ps1 -Target qemu -Video framebuffer -RunTests
+.\scripts\run-windows.ps1 -NoBuild
+```
+
+Stage 2 bevorzugt VBE 1024x768x32 und versucht danach 800x600x32. Bei Erfolg
+startet `DESKTOP.PRG`; `Tab` oder die Pfeiltasten wählen eine der vier
+App-Karten, `Enter` startet sie und `Esc` öffnet die Shell. Die gestartete App
+läuft im Vollbild. Nach ihrem Ende zeichnet der Desktop sich neu.
+
+Ist kein geeigneter VBE-Modus vorhanden, fällt der Bootvorgang sicher auf
+VGA-Text und `SHELL.PRG` zurück. `DESKTOP_OK` im seriellen Log bestätigt einen
+erfolgreichen ersten Desktop-Renderdurchlauf.
+
 ## Erster Funktionstest
 
-Nach dem Boot sollte der Prompt `C:\>` erscheinen. Danach:
+Beim standardmäßigen VGA-Build sollte nach dem Boot der Prompt `C:\>`
+erscheinen. Danach:
 
 ```text
 C:\> DIR
@@ -108,6 +129,7 @@ make kernel TARGET=qemu VIDEO=vga
 make user-program
 make native-image TARGET=real_hw VIDEO=vga
 make run-native TARGET=qemu VIDEO=vga
+make run-fb
 make test-unit
 make test-smoke TARGET=qemu VIDEO=vga
 ```

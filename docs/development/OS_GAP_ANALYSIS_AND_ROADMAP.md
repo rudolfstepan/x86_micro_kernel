@@ -10,11 +10,27 @@ und überprüfbare Abnahmekriterien.
 
 ## 1. Zielbild und Abgrenzung
 
-Als nächstes realistisches Ziel wird ein **stabiles, einzelbenutzerfähiges
-32-Bit-x86-System mit Ring-3-Programmen, zuverlässiger CLI, Dateiverwaltung und
-IPv4-Netzwerk** angenommen. UEFI, x86-64, SMP, eine GUI, Audio, WLAN und eine
-vollständige POSIX-Kompatibilität sind sinnvolle spätere Ziele, aber keine
-Voraussetzung für dieses erste belastbare Systemniveau.
+Das neue Projektziel ist eine **medizinische High-Assurance-Plattform**, bei der
+Stabilität, Fehlerbegrenzung, nachweisbares Laufzeitverhalten und langfristige
+Wartbarkeit vor Funktionsumfang und Geschwindigkeit stehen. Neue Funktionen
+dürfen nur aufgenommen werden, wenn Fehlergrenzen, Diagnose, Rückfallpfad,
+Ressourcenobergrenzen, Verifikation und Lebenszyklus geklärt sind. Redundanz ist
+der bevorzugte Weg zu Verfügbarkeit, muss aber unabhängig sein und gemeinsame
+Fehlerursachen berücksichtigen.
+
+Die konkrete medizinische Zweckbestimmung, wesentliche Leistung, das
+Geräterisiko und der regulatorische Zielmarkt sind noch nicht festgelegt. Das
+OS ist deshalb **nicht zertifiziert, nicht für klinischen Einsatz freigegeben
+und derzeit ein Forschungsprototyp**. Intern wird bis zu einer späteren
+Produktklassifizierung mit der strengsten sinnvollen Software-Evidenz geplant;
+das ersetzt weder ein Qualitätsmanagementsystem noch die Validierung des
+vollständigen Medizinprodukts. Der verbindliche Zielvertrag steht in
+[`MEDICAL_HIGH_ASSURANCE_CONTRACT.md`](../architecture/MEDICAL_HIGH_ASSURANCE_CONTRACT.md).
+
+Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
+nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
+keine wesentliche medizinische Funktion blockieren oder deren Zeitbudget
+verbrauchen.
 
 Der Projektname enthält „Microkernel“, die aktuelle Architektur ist jedoch ein
 modularer monolithischer Kernel: Scheduler, Speicherverwaltung, Dateisysteme,
@@ -31,7 +47,8 @@ Paging, Ring-3-Prozesse mit eigenen Seitentabellen, validierte User-Pointer,
 präemptives Round-Robin-Scheduling, ein VFS, schreibbares FAT12/FAT32, lesbares
 EXT2, mehrere Gerätetreiber, einen kleinen IPv4-Stack und einen gebauten
 Userspace. Der geprüfte Windows-Referenzbuild ist erfolgreich. Phase 0 sowie
-R1.1, R1.2 und R1.3 sind abgeschlossen. Die aktuelle Hosttest-Suite und
+R1.1, R1.2, R1.3 und der vor R2.1 eingeschobene Desktop-MVP R1.4 sind
+abgeschlossen. Die aktuelle Hosttest-Suite und
 automatisierte Ring-3-Tests prüfen neben dem normalen, LAPIC-gesteuerten Betrieb
 einen eigenen PIT-Scheduler-Fallback ohne LAPIC sowie Speicherkonfigurationen
 mit 32, 64, 256, 512 und 1024 MiB.
@@ -47,22 +64,25 @@ Tasks außerhalb langer IRQ-Sperrabschnitte auf. R1.3 definiert nun die
 IRQ-, Präemptions-, Schlaf- und Lockverträge, serialisiert VFS und
 ATA-/FDD-Zugriffe und verlagert Netzwerk- sowie HPET-Arbeit aus dem harten
 IRQ-Kontext. Strukturierte Logs und vollständige Panic-Diagnosen schließen
-den Meilenstein ab. Als nächstes folgt R2.1 mit einer gemeinsamen ABI-v1-Quelle
-und vollständigen Dateideskriptoren.
+den Meilenstein ab. R1.4 ergänzt den nativen VBE-Handoff, eine schmale
+versionierte Ring-3-Display-ABI und `DESKTOP.PRG`. Vor jedem weiteren regulären
+Funktionspaket steht nun das Sicherheits-Gate S0. Der nächste Schritt ist S0.1:
+Zweckbestimmung, wesentliche Leistung, Gefahren, sichere/degradierte Zustände
+und maximale Fehlerreaktionszeiten rückverfolgbar festzulegen.
 
 ## 3. Verifizierter Ist-Zustand
 
 | Bereich | Vorhanden | Reifegrad |
 |---|---|---|
-| Boot | BIOS/MBR, zweistufiger Loader, E820, A20, ELF32-Prüfung, Kernel-CRC32, FAT12-Floppy | stabiler Referenzpfad |
+| Boot | BIOS/MBR, zweistufiger Loader, E820, A20, ELF32-Prüfung, Kernel-CRC32, FAT12-Floppy, optionaler nativer VBE-LFB-Handoff | stabiler Referenzpfad mit VGA-Rückfall |
 | CPU | GDT/IDT/TSS, Ring 0/3, Exceptions, PIC, gegen PIT kalibrierter lokaler APIC-Timer, PIT-Scheduler-Fallback, `INT 0x80` | funktionsfähiger Single-Core-Pfad |
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Stack-Canaries, getrennte Prozessadressräume, sichere User-Kopien | R1.2 abgenommen; Speicher oberhalb 1 GiB nur erkannt |
 | Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD | klein, maximal 8 Tasks |
 | Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, EXT2 lesen | gute Basis, kleine ABI und keine atomaren Dateioperationen |
-| Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 und COM1 mit blockierendem Console-Wait, RTC, VGA, optionaler Framebuffer | Referenzhardware gut, moderne Geräte fehlen |
+| Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 und COM1 mit blockierendem Console-Wait, RTC, VGA, nativer VBE-RGB-Framebuffer | Referenzhardware gut, moderne Geräte fehlen |
 | Netzwerk | E1000, RTL8139, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping am besten verifiziert |
 | USB | PCI-Erkennung eines xHCI-Controllers | nur Probe-Gerüst |
-| Userspace | SDK, Shell, Editor, BASIC und zahlreiche Systemprogramme | brauchbare Demo-/CLI-Basis |
+| Userspace | SDK, Shell, Editor, BASIC, zahlreiche Systemprogramme und tastaturbedienter Ring-3-Desktop mit vier App-Karten | brauchbare CLI- und Desktop-MVP-Basis |
 | Qualität | Hosttests, CI-Build, Image-Validatoren, Kontextassertions, fünf Log-Level, Panic-Kontext mit Build-ID sowie serielle QEMU-Ring-3-Tests mit LAPIC/PIT und 32-/64-/256-/512-/1024-MiB-Matrix | breitere Hardware- und Fehler-Injektionsmatrix fehlt |
 
 Maßgebliche Quellen sind der ausführbare Code und die Tests. Der aktuelle
@@ -165,7 +185,10 @@ v1-Struktur beginnt mit `uint32_t version` und `uint32_t struct_size`, ist
 88 Byte groß und enthält zehn `uint64_t`-Zähler. Der Aufrufer übergibt Größe
 und Version separat; der Kernel lehnt unbekannte Versionen und zu kleine
 Puffer vor dem geprüften Copyout ab. Der ältere `SYS_MEMORY_KB` (13) bleibt
-erhalten und meldet die vom Frame-Allocator verwalteten KiB.
+erhalten und meldet die vom Frame-Allocator verwalteten KiB. R1.4 hängt
+`SYS_DISPLAY_INFO` (44), `SYS_FILL_RECT` (45) und `SYS_DRAW_TEXT` (46) an.
+Die versionierten Requests werden geprüft kopiert und geclippt; Ring 3 erhält
+kein direktes Framebuffer-Mapping.
 
 - eine einzige gemeinsame, versionierte Quelle für Syscallnummern und
   Fehlercodes
@@ -197,13 +220,16 @@ erhalten und meldet die vom Frame-Allocator verwalteten KiB.
 - EXT2 entweder klar dauerhaft read-only halten oder erst nach den
   Zuverlässigkeitsarbeiten vollständig schreibbar machen
 
-### Terminal und Shell
+### Terminal, Shell und Desktop
 
 Die heutige Console-Eingabe vermeidet bereits Busy-Waiting für reguläre
 Ring-3-Tasks: `getchar` prüft den Puffer und reiht den Task atomar auf der
 gemeinsamen Input-Wait-Queue ein; PS/2 und COM1 wecken alle Leser zur erneuten
 Prüfung der level-getriggerten Pufferbereitschaft.
 Eine vollständige TTY-Schicht bleibt der nächste darüberliegende Ausbau.
+Der Desktop-MVP umgeht die feste Terminalgeometrie für seine Oberfläche über
+Pixelrechtecke und Pixelschrift. Er startet vorhandene Apps jedoch bewusst als
+einzelne Vollbild-Kindprozesse und ist noch kein Fenstersystem.
 
 - TTY-Abstraktion mit kanonischem/raw Modus, Echo und per-Prozess
   Vordergrundgruppe
@@ -218,6 +244,8 @@ Eine vollständige TTY-Schicht bleibt der nächste darüberliegende Ausbau.
 - Editor: temporäre Datei plus atomisches Rename, dynamischer Puffer, Suche,
   Auswahl/Clipboard und Aufhebung des Limits von 200 Zeilen
 - ein kleines Ring-3-`init` als PID 1 statt direktem Shellstart durch den Kernel
+- Mausereignisse, Fokusmodell, Compositor und Windowmanager als getrenntes
+  späteres Paket statt Erweiterung der schmalen Display-ABI
 
 ### Netzwerk
 
@@ -276,10 +304,19 @@ P0-Korrektheit
        -> Socket-Deskriptoren -> UDP -> DNS -> TCP -> Anwendungen
 
 R1.3-Kontext-/Lockvertrag [erledigt] -> VFS/Blockgeräte + ACPI/DMA
+Native VBE + Display-ABI [R1.4 erledigt] -> Desktop-Härtung -> später Fenstersystem/Maus
 ABI/FD-Ausbau -> VFS rename/truncate/fsync -> sicherer Editor und Dateitools
 Blockgeräte -> Partitionen + DMA -> AHCI/NVMe und USB-Massenspeicher
 ACPI + DMA -> xHCI -> USB-Enumeration -> HID/Storage
 R1.2-Directmap bis 1 GiB -> Highmem/kmap oberhalb 1 GiB -> später x86-64/SMP
+
+Medical High-Assurance Gate S0
+  -> Zweckbestimmung + Gefahren + wesentliche Leistung + FTTI
+  -> Fehlerdomänen + minimaler Safety-Kern + unabhängiger Supervisor
+  -> Stack-/Exception-Containment + Watchdog + Knoten-Failover
+  -> deterministische Ressourcen + persistente Integrität + sichere Updates
+  -> Safety Case + Traceability + Fault-Injection + Langzeitnachweis
+  -> erst danach weitere Funktionspakete
 ```
 
 TCP oder USB vor diesen Grundlagen zu bauen würde dieselben Warte-, Timeout-,
@@ -508,6 +545,99 @@ die Umsetzung ab.
 3. Assertions für IRQ-/Lock-Zustand sowie strukturierte Log-Level ergänzen.
 4. Panic-Ausgabe um vollständige Register, CR2 und Build-ID erweitern.
 
+#### R1.4 Grafischer Desktop-MVP — M
+
+**Status (13. August 2026): Abgeschlossen und abgenommen.** Dieser Meilenstein
+wurde auf Wunsch bewusst vor R2.1 eingeschoben. Der native Stage-2-Loader
+wählt in Framebuffer-Builds bevorzugt VBE 1024x768x32 und danach 800x600x32.
+Ein fehlender oder ungültiger Modus fällt ohne gesetztes Framebuffer-Flag auf
+BIOS-Modus 03h und VGA-Text zurück.
+
+Die angehängten Syscalls 44 bis 46 bilden eine versionierte Ring-3-Display-ABI
+für Modusinformationen, geclippte Rechtecke und geclippte Pixelschrift. Farben
+verwenden `0x00RRGGBB`; alle Userdaten werden geprüft kopiert und der LFB bleibt
+Supervisor-only. Framebuffer-Console-Ausgaben erscheinen zusätzlich auf COM1.
+
+`DESKTOP.PRG` wird nur bei einem echten Framebuffer vor `SHELL.PRG` gestartet.
+Vier tastaturbediente Karten öffnen Shell, Dateiliste, Editor oder
+Systeminformationen als Vollbild-Kindprozess. Der Desktop wartet auf dessen
+Ende und zeichnet sich danach neu. Ein realer QEMU-Lauf erreicht den seriellen
+Marker `DESKTOP_OK`. Maus, Compositor, Windowmanager und Fokusmodell gehören
+ausdrücklich nicht zu diesem MVP.
+
+### Sicherheits-Gate S0 — vor weiterer Funktionsentwicklung
+
+**Status (13. August 2026): begonnen, nicht abgenommen.** S0 ist die
+Eintrittsbedingung für alle folgenden Phasen. Bis S0.1 abgenommen ist, sind nur
+Änderungen zulässig, die Sicherheit, Isolation, Diagnose, Verifikation oder
+Reproduzierbarkeit erhöhen.
+
+#### S0.1 Zweckbestimmung, Gefahren und Safety Case — M
+
+1. Medizinische Verwendung, Umgebung und vorhersehbaren Fehlgebrauch festlegen.
+2. Wesentliche Leistung, sichere/degradierte Zustände und je Gefahr die FTTI
+   definieren.
+3. Ein versioniertes Gefahrenregister mit Ursache, Kontrolle, Restrisiko und
+   Verifikationsnachweis anlegen.
+4. Traceability `Gefahr -> Anforderung -> Design -> Code -> Test -> Ergebnis`
+   automatisiert prüfen.
+
+#### S0.2 Stack-, Exception- und Panic-Containment — L
+
+1. Nicht gemappte Guardpages für jeden Kernel- und Userstack, statische
+   Stackbudgets, Watermarks und Rekursionsverbote einführen.
+2. Einen reservierten Exception-/Double-Fault-/NMI-Notfallstack mit
+   vorallokiertem, beschränktem Crashdatensatz bereitstellen.
+3. Wiederherstellbare Prozess-/Dienstfehler von möglicher globaler
+   Kernelkorruption trennen; betroffene Domänen einfrieren und aus bekannt
+   gutem Zustand neu starten.
+4. `panic()` darf nicht nur `halt()` ausführen: Ausgänge zuerst in den
+   gefahrenspezifisch sicheren Zustand bringen, Diagnose begrenzt sichern und
+   einen unabhängigen Supervisor Failover oder Neustart ausführen lassen.
+   In-Place-Weiterlauf nach unbekannter Kernelkorruption bleibt verboten.
+
+#### S0.3 Fehlerdomänen, Supervisor und Redundanz — XL
+
+1. Einen minimalen Safety-Kern definieren; Treiber, Dateisystem, Netzwerk und
+   GUI in neu startbare Least-Privilege-Domänen verschieben.
+2. Fortschritts-/Deadline-Watchdogs, Restart-Budgets, Fencing, Selbsttest und
+   sichere Reintegration implementieren.
+3. Hot-Standby oder Dual-Controller-Handover mit regelmäßigem realem
+   Failover-Test aufbauen.
+4. Common-Cause-Fehler bewerten; wo nötig unabhängige Hardware,
+   Stromversorgung, Takte, Sensorpfade oder diverse Implementierungen nutzen.
+
+#### S0.4 Determinismus und garantierte Ressourcen — L
+
+1. Kritische Tasks erhalten feste Prioritäten, CPU-/Speicher-/Queue-Budgets,
+   Admission Control und nachgewiesene Worst-Case-Laufzeiten.
+2. Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte
+   Allokation, Rekursion, Retries und Warteschlangen sind dort unzulässig.
+3. Überlast, Priority Inversion, Interruptstürme und Zeitquellenausfall müssen
+   einen getesteten degradierten Zustand auslösen.
+
+#### S0.5 Datenintegrität, Boot und unterbrechungsarme Updates — XL
+
+1. Sicherheitsrelevanten Zustand transaktional, checksummiert, versioniert und
+   redundant speichern; Stromausfall an jeder Commitstelle injizieren.
+2. Verifizierten Boot, signierte Artefakte, reproduzierbare Builds, Provenienz
+   und SBOM einführen.
+3. Updates als atomaren A/B-Wechsel mit Selbsttest und automatischem Rollback
+   ausführen; Standby-Kanäle nacheinander statt gleichzeitig aktualisieren.
+4. Kernel-Livepatching bleibt eine eng begrenzte Ausnahme mit Quieszenzpunkt,
+   Zustandskompatibilität, Vorabnachweis und sicherem Rollback.
+
+#### S0.6 Verifikation und Langzeitbetrieb — XL
+
+1. Statische Stack-/Code-/WCET-Analyse, Fuzzing, modellbasierte Tests und
+   unabhängige Reviews als Gates einführen.
+2. Fault-Injection für Bitfehler, Speichererschöpfung, Timingfehler,
+   Geräteverlust, beschädigte Eingaben, Stromausfall und Updates automatisieren.
+3. Soak-/Alterungstests, ECC/EDAC, Medien-Scrubbing und Hardwaretausch über die
+   geplante Produktlebensdauer nachweisen.
+4. Toolchain, Schlüssel, Abhängigkeiten, Feldtelemetrie, Schwachstellen,
+   Beschwerden, Patches und Rückrufe kontrolliert über den Lebenszyklus führen.
+
 ### Phase 2 — Deskriptoren, VFS und zuverlässige Datenträger
 
 #### R2.1 ABI v1 und vollständige Dateideskriptoren — L
@@ -607,7 +737,8 @@ Erst nach den vorherigen Meilensteinen einzeln entscheiden:
 - IPv6
 - Benutzer, Dateirechte, Capabilities und kryptografisch verifizierter Boot
 - dynamischer Linker, Shared Libraries, Paketverwaltung
-- Grafik-/Fenstersystem, Maus, Audio und WLAN
+- vollständiges Grafik-/Fenstersystem mit Compositor und Maus sowie Audio und
+  WLAN
 
 Diese Punkte sind groß genug für eigene Entwurfsdokumente und sollten nicht
 nebenbei in die 32-Bit-Basis eingebaut werden.
@@ -623,21 +754,21 @@ nebenbei in die 32-Bit-Basis eingebaut werden.
 | 5 | R1.1 Wait-Queues/Sleep/Zeit (erledigt) | R0.1 | L |
 | 6 | R1.2 Speicherverwaltung (erledigt) | R0.4 | L |
 | 7 | R1.3 Synchronisation/Diagnose (erledigt) | R1.1 | M |
-| 8 | R2.1 ABI und FDs | R1.1 | L |
-| 9 | R2.2 VFS/FAT-Zuverlässigkeit | R2.1 | L |
-| 10 | R2.3 Blockgeräte/Partitionen | R1.3 | L |
-| 11 | R3.1 Pipes/Signale/TTY | R1.1, R2.1 | XL |
-| 12 | R3.2 Shell/Init | R3.1 | L |
-| 13 | R4.1 UDP-Sockets | R1.1, R2.1 | L |
-| 14 | R4.2 DNS | R4.1 | M |
-| 15 | R4.3 TCP | R4.1 | XL |
-| 16 | R5.1 ACPI/DMA | R1.2, R1.3 | L |
-| 17 | R5.2 xHCI/USB | R5.1 | XL |
-| 18 | Phase-6-Entscheidung | stabile vorherige Meilensteine | XL |
+| 8 | R1.4 Grafischer Desktop-MVP (erledigt) | R0.4, R1.1 | M |
+| 9 | S0.1 Zweck/Gefahren/Safety Case | R1.3 | M |
+| 10 | S0.2 Stack/Exception/Panic-Containment | S0.1 | L |
+| 11 | S0.3 Fehlerdomänen/Supervisor/Redundanz | S0.1, S0.2 | XL |
+| 12 | S0.4 Determinismus/Ressourcengarantie | S0.1, S0.3 | L |
+| 13 | S0.5 Integrität/Boot/A-B-Updates | S0.1, S0.3 | XL |
+| 14 | S0.6 Verifikation/Langzeitbetrieb | S0.1–S0.5 | XL |
+| 15 | R2.1 ABI und FDs | abgenommenes S0-Gate | L |
+| 16 | R2.2 VFS/FAT-Zuverlässigkeit | R2.1, S0.5 | L |
+| 17 | R2.3 Blockgeräte/Partitionen | R1.3, S0.5 | L |
+| 18+ | R3 bis R6 | abgenommenes S0-Gate und jeweilige Basis | L–XL |
 
-R2.2 und R2.3 können nach Fertigstellung der gemeinsamen
-Synchronisationsregeln parallel bearbeitet werden. R4 und R5 können ebenfalls
-parallel laufen, sobald Wait-Queues, FD- und DMA-Grundlagen stabil sind.
+R2 bis R6 bleiben hinter dem S0-Gate. Erst danach können voneinander
+unabhängige Pakete parallel laufen, sofern ihre Ressourcen-, Fehler- und
+Nachweisgrenzen getrennt sind.
 
 ## 9. Definition of Done für jedes Paket
 
@@ -652,12 +783,23 @@ Ein Paket gilt nur dann als fertig, wenn alle folgenden Punkte erfüllt sind:
 - relevante QEMU-, VMware- oder Hardwarematrix ist dokumentiert
 - alte Stubs, widersprüchliche Dokumentation und tote Pfade sind entfernt oder
   ausdrücklich als nicht unterstützt markiert
+- betroffene Gefahren, wesentliche Leistung, FTTI und sicherer/degradierter
+  Zustand sind identifiziert; das Restrisiko ist begründet
+- Anforderungen, Design, Code, Testfall und Ergebnis sind bidirektional
+  rückverfolgbar und unabhängig geprüft
+- Laufzeit-, Stack-, Speicher-, Queue- und I/O-Grenzen werden unter Überlast
+  sowie durch Fault-Injection geprüft
+- jeder Dienst besitzt Health-Monitoring, einen begrenzten Fehlerpfad und einen
+  getesteten Restart-, Failover- oder Safe-State-Mechanismus
+- Releaseartefakte sind signiert, reproduzierbar und ihrer SBOM sowie exakten
+  Toolchain zuordenbar
 
 Aktuelle Referenzbefehle:
 
 ```powershell
 make test
 .\scripts\build-windows.ps1 -Target qemu -RunTests
+.\scripts\build-windows.ps1 -Target qemu -Video framebuffer -RunTests
 ```
 
 Zusätzliche und geplante Ziele:
@@ -672,13 +814,28 @@ make test-fuzz
 
 ## 10. Unmittelbar nächster Schritt
 
-Phase 0 sowie **R1.1 Wait-Queues, Sleep und Yield**, **R1.2 Speicherverwaltung
-und Schutz** und **R1.3 Synchronisations- und Diagnosevertrag** sind umgesetzt
-und abgenommen. Als nächstes folgt **R2.1 ABI v1 und vollständige
-Dateideskriptoren**: gemeinsame ABI-Header, stabile Fehlercodes und Open-Flags,
-Standarddeskriptoren 0/1/2 sowie `lseek`, `fstat`, `truncate`, `rename` und
-`fsync`.
+Phase 0 und R1.1 bis R1.4 sind umgesetzt. Wegen des neuen medizinischen
+Zielbilds ist der nächste Schritt nicht R2.1, sondern **S0.1 Zweckbestimmung,
+Gefahren und Safety Case**. Als erstes Ergebnis müssen wesentliche Leistung,
+sichere und degradierte Zustände, FTTI und ein versioniertes Gefahrenregister
+vorliegen.
+
+Das erste danach umzusetzende Kernelpaket ist **S0.2 Controlled Fatal Fault
+v1**: reservierte Stack-VA-Arena mit echten Guardpages, volle Guardpage für den
+Bootstack, zweite TSS mit Task-Gate und Emergency-Stack für `#DF`, fester
+allokations-/lockfreier Crashrecord sowie ein zeitlich begrenzter Übergang zum
+Watchdog. Fault-Injection muss beweisen, dass ein User-Stackfehler nur seinen
+Prozess beendet und ein Kernel-Stackfehler nicht still korrumpiert oder per
+Triple-Fault verschwindet.
+
+Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
+glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie wesentliche Leistung
+bei Kernel-Panic benötigt S0.3: eine unabhängige Supervisor-/Standby-Domäne,
+die Ausgänge einzäunt und innerhalb der FTTI übernimmt. R2.1 und alle weiteren
+Funktionsarbeiten bleiben bis zur Festlegung und Prüfung dieser S0-Gates
+zurückgestellt.
 
 Systematische Allocation-Failure-Injection, ein IRQ-tauglicher Allocator,
-weitere Reaper-Stresstests, Highmem/`kmap` und echte nicht gemappte Guardpages
-bleiben ausdrücklich spätere Speicherhärtung und gehören nicht zu R2.1.
+weitere Reaper-Stresstests und Highmem/`kmap` bleiben zusätzliche
+Speicherhärtung. Echte nicht gemappte Stack-Guardpages sind wegen der neuen
+Safety-Priorität dagegen verpflichtender Bestandteil von S0.2.

@@ -18,6 +18,8 @@ STACK_TOP            equ 0x0000F000
 MB_INFO_ADDRESS      equ 0x00005000
 MMAP_ADDRESS         equ 0x00006000
 E820_TEMP_ADDRESS    equ 0x00007000
+VBE_CTRL_INFO_ADDRESS equ 0x00008000
+VBE_MODE_INFO_ADDRESS equ 0x00008200
 BOUNCE_SEGMENT       equ 0x7000
 BOUNCE_PHYSICAL      equ 0x00070000
 BOUNCE_SIZE          equ 32768
@@ -39,6 +41,13 @@ MULTIBOOT_FLAG_MEM   equ 0x001
 MULTIBOOT_FLAG_BOOT  equ 0x002
 MULTIBOOT_FLAG_MMAP  equ 0x040
 MULTIBOOT_FLAG_NAME  equ 0x200
+MULTIBOOT_FLAG_FRAMEBUFFER equ 0x1000
+
+VBE_MODE_SUPPORTED   equ 0x0001
+VBE_MODE_GRAPHICS    equ 0x0010
+VBE_MODE_LFB         equ 0x0080
+VBE_MEMORY_DIRECT    equ 0x06
+VBE_LFB_REQUEST      equ 0x4000
 
 ELF_MAGIC            equ 0x464C457F
 ELF_PT_LOAD          equ 1
@@ -155,6 +164,11 @@ start:
 
     mov si, msg_start
     call print_string
+%ifdef USE_FRAMEBUFFER
+    ; Keep BIOS text diagnostics available until the kernel is fully loaded.
+    ; The VBE switch is the final real-mode operation before entering it.
+    call setup_vbe_framebuffer
+%endif
     jmp enter_kernel
 
 disk_error:
@@ -290,6 +304,308 @@ collect_e820:
     mov dword [es:MB_INFO_ADDRESS + 48], MMAP_ADDRESS
 .return:
     ret
+
+%ifdef USE_FRAMEBUFFER
+; Select a linear, direct-colour VBE mode and publish the Multiboot-1
+; framebuffer extension.  1024x768x32 is preferred; 800x600x32 is the
+; compatibility fallback.  Any malformed/unsupported response returns to
+; VGA mode 03 and deliberately leaves the framebuffer flag clear.
+setup_vbe_framebuffer:
+    push cs
+    pop ds
+    cld
+    xor ax, ax
+    mov es, ax
+    mov di, VBE_CTRL_INFO_ADDRESS
+    mov cx, 512 / 2
+    xor ax, ax
+    rep stosw
+    mov dword [es:VBE_CTRL_INFO_ADDRESS], 0x32454256 ; "VBE2"
+    mov di, VBE_CTRL_INFO_ADDRESS
+    mov ax, 0x4F00
+    int 0x10
+    push cs
+    pop ds
+    cmp ax, 0x004F
+    jne .failed
+    xor ax, ax
+    mov es, ax
+    cmp dword [es:VBE_CTRL_INFO_ADDRESS], 0x41534556 ; "VESA"
+    jne .failed
+
+    mov word [vbe_target_width], 1024
+    mov word [vbe_target_height], 768
+    call find_vbe_mode
+    jnc .mode_found
+    mov word [vbe_target_width], 800
+    mov word [vbe_target_height], 600
+    call find_vbe_mode
+    jc .failed
+
+.mode_found:
+    mov bx, [vbe_selected_mode]
+    or bx, VBE_LFB_REQUEST
+    mov ax, 0x4F02
+    int 0x10
+    push cs
+    pop ds
+    cmp ax, 0x004F
+    jne .failed
+
+    ; Publish offsets 88..115 only after the requested LFB mode is active.
+    ; The VBE physical base is 32-bit, so the upper half of framebuffer_addr
+    ; is explicitly zeroed for Multiboot's 64-bit field.
+    xor ax, ax
+    mov es, ax
+    mov eax, [vbe_selected_address]
+    mov [es:MB_INFO_ADDRESS + 88], eax
+    mov dword [es:MB_INFO_ADDRESS + 92], 0
+    movzx eax, word [vbe_selected_pitch]
+    mov [es:MB_INFO_ADDRESS + 96], eax
+    movzx eax, word [vbe_target_width]
+    mov [es:MB_INFO_ADDRESS + 100], eax
+    movzx eax, word [vbe_target_height]
+    mov [es:MB_INFO_ADDRESS + 104], eax
+    mov byte [es:MB_INFO_ADDRESS + 108], 32
+    mov byte [es:MB_INFO_ADDRESS + 109], 1 ; direct RGB colour
+    mov al, [vbe_red_position]
+    mov [es:MB_INFO_ADDRESS + 110], al
+    mov al, [vbe_red_size]
+    mov [es:MB_INFO_ADDRESS + 111], al
+    mov al, [vbe_green_position]
+    mov [es:MB_INFO_ADDRESS + 112], al
+    mov al, [vbe_green_size]
+    mov [es:MB_INFO_ADDRESS + 113], al
+    mov al, [vbe_blue_position]
+    mov [es:MB_INFO_ADDRESS + 114], al
+    mov al, [vbe_blue_size]
+    mov [es:MB_INFO_ADDRESS + 115], al
+    or dword [es:MB_INFO_ADDRESS], MULTIBOOT_FLAG_FRAMEBUFFER
+    ret
+
+.failed:
+    ; A failed set-mode call can leave firmware in an indeterminate display
+    ; state.  Restore the universally available VGA text mode and invalidate
+    ; every framebuffer byte before continuing with the kernel fallback.
+    mov ax, 0x0003
+    int 0x10
+    push cs
+    pop ds
+    xor ax, ax
+    mov es, ax
+    and dword [es:MB_INFO_ADDRESS], 0xFFFFEFFF
+    mov di, MB_INFO_ADDRESS + 88
+    mov cx, 28 / 2
+    xor ax, ax
+    cld
+    rep stosw
+    ret
+
+; Find a matching 32-bit direct-colour mode in the controller's mode list.
+; Input is vbe_target_width/height; carry is clear only for a valid LFB mode.
+find_vbe_mode:
+    xor ax, ax
+    mov es, ax
+    mov ax, [es:VBE_CTRL_INFO_ADDRESS + 14]
+    mov [vbe_mode_list_offset], ax
+    mov ax, [es:VBE_CTRL_INFO_ADDRESS + 16]
+    mov [vbe_mode_list_segment], ax
+    mov word [vbe_modes_examined], 0
+
+.next_mode:
+    cmp word [vbe_modes_examined], 512
+    jae .not_found
+    mov ax, [vbe_mode_list_segment]
+    mov fs, ax
+    mov si, [vbe_mode_list_offset]
+    mov cx, [fs:si]
+    cmp cx, 0xFFFF
+    je .not_found
+    mov [vbe_candidate_mode], cx
+    add word [vbe_mode_list_offset], 2
+    jnc .pointer_advanced
+    add word [vbe_mode_list_segment], 0x1000
+.pointer_advanced:
+    inc word [vbe_modes_examined]
+
+    xor ax, ax
+    mov es, ax
+    mov di, VBE_MODE_INFO_ADDRESS
+    push cx
+    mov cx, 256 / 2
+    xor ax, ax
+    cld
+    rep stosw
+    pop cx
+    mov di, VBE_MODE_INFO_ADDRESS
+    mov ax, 0x4F01
+    int 0x10
+    push cs
+    pop ds
+    cmp ax, 0x004F
+    jne .next_mode
+    xor ax, ax
+    mov es, ax
+
+    mov ax, [es:VBE_MODE_INFO_ADDRESS]
+    and ax, VBE_MODE_SUPPORTED | VBE_MODE_GRAPHICS | VBE_MODE_LFB
+    cmp ax, VBE_MODE_SUPPORTED | VBE_MODE_GRAPHICS | VBE_MODE_LFB
+    jne .next_mode
+    mov ax, [es:VBE_MODE_INFO_ADDRESS + 18]
+    cmp ax, [vbe_target_width]
+    jne .next_mode
+    mov ax, [es:VBE_MODE_INFO_ADDRESS + 20]
+    cmp ax, [vbe_target_height]
+    jne .next_mode
+    cmp byte [es:VBE_MODE_INFO_ADDRESS + 24], 1
+    jne .next_mode
+    cmp byte [es:VBE_MODE_INFO_ADDRESS + 25], 32
+    jne .next_mode
+    cmp byte [es:VBE_MODE_INFO_ADDRESS + 27], VBE_MEMORY_DIRECT
+    jne .next_mode
+    cmp dword [es:VBE_MODE_INFO_ADDRESS + 40], 0
+    je .next_mode
+
+    ; VBE 3 supplies LFB-specific pitch/masks.  VBE 2 leaves those bytes zero,
+    ; in which case the original direct-colour fields are authoritative.
+    mov ax, [es:VBE_MODE_INFO_ADDRESS + 50]
+    test ax, ax
+    jnz .pitch_ready
+    mov ax, [es:VBE_MODE_INFO_ADDRESS + 16]
+.pitch_ready:
+    mov dx, [vbe_target_width]
+    shl dx, 2
+    cmp ax, dx
+    jb .next_mode
+    mov [vbe_selected_pitch], ax
+
+    cmp byte [es:VBE_MODE_INFO_ADDRESS + 54], 0
+    je .standard_masks
+    cmp byte [es:VBE_MODE_INFO_ADDRESS + 56], 0
+    je .standard_masks
+    cmp byte [es:VBE_MODE_INFO_ADDRESS + 58], 0
+    je .standard_masks
+    mov al, [es:VBE_MODE_INFO_ADDRESS + 54]
+    mov [vbe_red_size], al
+    mov al, [es:VBE_MODE_INFO_ADDRESS + 55]
+    mov [vbe_red_position], al
+    mov al, [es:VBE_MODE_INFO_ADDRESS + 56]
+    mov [vbe_green_size], al
+    mov al, [es:VBE_MODE_INFO_ADDRESS + 57]
+    mov [vbe_green_position], al
+    mov al, [es:VBE_MODE_INFO_ADDRESS + 58]
+    mov [vbe_blue_size], al
+    mov al, [es:VBE_MODE_INFO_ADDRESS + 59]
+    mov [vbe_blue_position], al
+    jmp .masks_ready
+
+.standard_masks:
+    mov al, [es:VBE_MODE_INFO_ADDRESS + 31]
+    mov [vbe_red_size], al
+    mov al, [es:VBE_MODE_INFO_ADDRESS + 32]
+    mov [vbe_red_position], al
+    mov al, [es:VBE_MODE_INFO_ADDRESS + 33]
+    mov [vbe_green_size], al
+    mov al, [es:VBE_MODE_INFO_ADDRESS + 34]
+    mov [vbe_green_position], al
+    mov al, [es:VBE_MODE_INFO_ADDRESS + 35]
+    mov [vbe_blue_size], al
+    mov al, [es:VBE_MODE_INFO_ADDRESS + 36]
+    mov [vbe_blue_position], al
+
+.masks_ready:
+    ; Match framebuffer_init's channel contract before changing hardware
+    ; modes.  Use 16-bit arithmetic so hostile VBE bytes cannot wrap an
+    ; 8-bit position + size check.
+    movzx ax, byte [vbe_red_size]
+    test ax, ax
+    jz .next_mode
+    cmp ax, 32
+    ja .next_mode
+    movzx dx, byte [vbe_red_position]
+    cmp dx, 32
+    jae .next_mode
+    add ax, dx
+    cmp ax, 32
+    ja .next_mode
+    mov [vbe_red_end], ax
+
+    movzx ax, byte [vbe_green_size]
+    test ax, ax
+    jz .next_mode
+    cmp ax, 32
+    ja .next_mode
+    movzx dx, byte [vbe_green_position]
+    cmp dx, 32
+    jae .next_mode
+    add ax, dx
+    cmp ax, 32
+    ja .next_mode
+    mov [vbe_green_end], ax
+
+    movzx ax, byte [vbe_blue_size]
+    test ax, ax
+    jz .next_mode
+    cmp ax, 32
+    ja .next_mode
+    movzx dx, byte [vbe_blue_position]
+    cmp dx, 32
+    jae .next_mode
+    add ax, dx
+    cmp ax, 32
+    ja .next_mode
+    mov [vbe_blue_end], ax
+
+    ; Direct-colour channels are contiguous bit ranges and must be disjoint.
+    movzx ax, byte [vbe_red_position]
+    movzx bx, byte [vbe_green_position]
+    cmp word [vbe_red_end], bx
+    jbe .red_green_separate
+    cmp word [vbe_green_end], ax
+    ja .next_mode
+.red_green_separate:
+    movzx bx, byte [vbe_blue_position]
+    cmp word [vbe_red_end], bx
+    jbe .red_blue_separate
+    cmp word [vbe_blue_end], ax
+    ja .next_mode
+.red_blue_separate:
+    movzx ax, byte [vbe_green_position]
+    cmp word [vbe_green_end], bx
+    jbe .channels_separate
+    cmp word [vbe_blue_end], ax
+    ja .next_mode
+.channels_separate:
+
+    ; map_kernel_mmio uses an identity mapping and rejects overflow or any
+    ; physical range intersecting the process-private 1..3-GiB window.
+    movzx eax, word [vbe_selected_pitch]
+    movzx ecx, word [vbe_target_height]
+    mul ecx
+    test edx, edx
+    jnz .next_mode
+    test eax, eax
+    jz .next_mode
+    mov ebx, [es:VBE_MODE_INFO_ADDRESS + 40]
+    add eax, ebx
+    jc .next_mode
+    cmp eax, 0x40000000
+    jbe .lfb_range_valid
+    cmp ebx, 0xC0000000
+    jb .next_mode
+.lfb_range_valid:
+
+    mov ax, [vbe_candidate_mode]
+    mov [vbe_selected_mode], ax
+    mov eax, [es:VBE_MODE_INFO_ADDRESS + 40]
+    mov [vbe_selected_address], eax
+    clc
+    ret
+
+.not_found:
+    stc
+    ret
+%endif
 
 parse_elf_header:
     mov ax, BOUNCE_SEGMENT
@@ -880,6 +1196,14 @@ program_header_index   dw 0
 entry_is_executable    db 0
 pm_operation           db 0
 kernel_cached          db 0
+%ifdef USE_FRAMEBUFFER
+vbe_red_size           db 0
+vbe_red_position       db 0
+vbe_green_size         db 0
+vbe_green_position     db 0
+vbe_blue_size          db 0
+vbe_blue_position      db 0
+%endif
 
 align 4
 partition_lba          dd 0
@@ -906,6 +1230,20 @@ crc_remaining          dd 0
 crc_value              dd 0
 kernel_crc             dd 0
 cache_write_address    dd 0
+%ifdef USE_FRAMEBUFFER
+vbe_selected_address   dd 0
+vbe_mode_list_offset   dw 0
+vbe_mode_list_segment  dw 0
+vbe_modes_examined     dw 0
+vbe_candidate_mode     dw 0
+vbe_selected_mode      dw 0
+vbe_target_width       dw 0
+vbe_target_height      dw 0
+vbe_selected_pitch     dw 0
+vbe_red_end            dw 0
+vbe_green_end          dw 0
+vbe_blue_end           dw 0
+%endif
 crc_chunk_size         dw 0
   crc_sector_count       dw 0
   chs_cylinder           db 0

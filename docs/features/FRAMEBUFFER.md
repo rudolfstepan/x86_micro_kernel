@@ -1,7 +1,8 @@
-# Anzeige: VGA und Framebuffer
+# Anzeige: VGA, Framebuffer und Desktop-MVP
 
-Der verifizierte Standardweg verwendet VGA-Textmodus. Ein optionaler linearer
-RGB-Framebuffer ist vorhanden, bleibt aber experimentell.
+VGA-Text bleibt der robuste Standardweg. Ein `VIDEO=framebuffer`-Build richtet
+über den eigenen BIOS-Loader einen linearen RGB-Framebuffer ein und startet
+darauf bevorzugt den grafischen Ring-3-Desktop.
 
 ## Buildauswahl
 
@@ -11,41 +12,73 @@ make kernel TARGET=qemu VIDEO=framebuffer
 make run-fb
 ```
 
-`scripts/build-windows.ps1 -Video framebuffer` wählt den Framebuffer-Build;
-ohne den Parameter bleibt `VIDEO=vga`, damit das native
-VMware-Paket den robusten Textpfad verwendet.
+Unter Windows baut beispielsweise
 
-## Abstraktionsschicht
+```powershell
+.\scripts\build-windows.ps1 -Target qemu -Video framebuffer -RunTests
+```
 
-`drivers/video/display.c` stellt die gemeinsame Textausgabe bereit. Bei einem
-Framebuffer-Build wird der Framebuffer verwendet, wenn der Bootloader gültige
-Metadaten liefert; andernfalls fällt die Anzeige auf VGA-Text zurück.
+den Kernel und das native BIOS-Image; Stage 2 erhält dabei den
+Framebuffer-Schalter. Ohne `-Video framebuffer` bleibt `VIDEO=vga` aktiv.
 
-Der Framebuffertreiber prüft unter anderem:
+## Nativer VBE-Handoff
 
-- vorhandene physische Adresse
-- RGB-Typ
-- Breite, Höhe und Pitch
-- 8, 16, 24 oder 32 Bit pro Pixel
-- gültige Position und Größe der RGB-Kanäle
-- Überlauf und Adressbereich unterhalb von 4 GiB
+Stage 2 sucht im Framebuffer-Build einen linearen 32-Bit-Direct-Color-Modus.
+Bevorzugt wird 1024x768x32, als Rückfall 800x600x32. Erst nachdem der Modus
+erfolgreich gesetzt wurde, veröffentlicht der Loader Adresse, Pitch, Auflösung,
+Farbtiefe und RGB-Masken in der Multiboot-1-kompatiblen Übergabestruktur.
 
-Er unterstützt Löschen, Zeichenausgabe, Scrollen, Cursorposition und
-Vorder-/Hintergrundfarbe.
+Scheitert VBE oder ist kein passender Modus vorhanden, stellt Stage 2 BIOS-Modus
+03h wieder her und setzt kein Framebuffer-Flag. Der Kernel verwendet dann
+VGA-Text und startet die Userspace-Shell statt des Desktops.
 
-## Bootloaderbezug
+## Kernelanzeige
 
-Das Multiboot-Framebufferfeld wird vom eigenen Stage-2-Bootloader erzeugt. Der
-eigene native BIOS-Loader bootet standardmäßig in VGA-Textmodus und fordert
-derzeit keinen VBE-Grafikmodus an. Deshalb ist `VIDEO=framebuffer` im nativen
-VMware-Paket nicht der Referenzweg.
+`drivers/video/display.c` stellt die gemeinsame Console-Ausgabe bereit. Der
+Framebuffertreiber akzeptiert nur konsistente RGB-Metadaten, prüft Adresse,
+Geometrie, Pitch, Kanalmasken und Überläufe und mappt den Speicher ausschließlich
+als Supervisor-MMIO. Er unterstützt Console-Text sowie geclippte Rechtecke und
+Pixelschrift. Console-Ausgaben werden auch im Framebuffer-Modus einmal nach
+COM1 gespiegelt; dadurch bleiben Bootdiagnose und Bereitschaftsmarker headless
+sichtbar.
+
+## Versionierte Ring-3-Display-ABI
+
+Das SDK kapselt drei angehängte Syscalls. Farben sind unabhängig vom nativen
+Pixelformat als `0x00RRGGBB` angegeben.
+
+| Syscall | SDK-Funktion | Vertrag |
+|---:|---|---|
+| 44 | `x86os_display_info()` | versionierte Geometrie-, Pitch-, RGB- und Schriftmetrik-Ausgabe |
+| 45 | `x86os_fill_rect()` | an den sichtbaren Bereich geclipptes Rechteck |
+| 46 | `x86os_draw_text_pixels()` | geclippte Pixelschrift, höchstens 256 Zeichen pro Aufruf |
+
+Alle Übergabestrukturen tragen `version` und `struct_size`; Pointer und Text
+werden mit den geprüften User-Copy-Hilfen übertragen. Ring-3-Programme erhalten
+bewusst kein direktes Mapping des linearen Framebuffers.
+
+## Desktop-MVP
+
+Bei einem tatsächlich initialisierten Framebuffer startet der Kernel
+`DESKTOP.PRG` vor `SHELL.PRG`. Der Desktop zeigt vier App-Karten:
+
+- Shell (`SHELL.PRG`)
+- Dateien (`LS.PRG`)
+- Editor (`EDIT.PRG`)
+- Systeminformationen (`SYSINFO.PRG`)
+
+`Tab` und die Pfeiltasten ändern die Auswahl, `Enter` startet die gewählte App
+und `Esc` die Shell. Eine App läuft als Vollbild-Kindprozess; der Desktop wartet
+auf ihr Ende, leert verbliebene Eingabe und zeichnet sich neu. Der serielle
+Marker `DESKTOP_OK` bestätigt den ersten erfolgreichen Renderdurchlauf.
 
 ## Grenzen
 
-- keine Hardwarebeschleunigung
-- keine Benutzer-Grafik-API
-- keine dynamische Modusumschaltung
-- keine garantierte VBE-Einrichtung durch den nativen Loader
-- Schrift und Shelllayout sind primär für Textausgabe ausgelegt
+- keine Hardwarebeschleunigung oder dynamische Modusumschaltung
+- kein direktes LFB-Mapping für Ring 3
+- keine Maus
+- kein Compositor, Windowmanager oder Fenster-/Fokusmodell
+- genau eine Vordergrund-App; vorhandene Console-Programme laufen im Vollbild
 
-Für Kernel-, Shell- und VMware-Fehlersuche sollte VGA verwendet werden.
+Für frühe Boot- und Hardwarefehlersuche bleibt `VIDEO=vga` der einfachste
+Referenzpfad.

@@ -47,7 +47,10 @@ enum {
     X86OS_SYS_YIELD = 40,
     X86OS_SYS_SLEEP_MS = 41,
     X86OS_SYS_MONOTONIC_MS = 42,
-    X86OS_SYS_MEMORY_STATS = 43
+    X86OS_SYS_MEMORY_STATS = 43,
+    X86OS_SYS_DISPLAY_INFO = 44,
+    X86OS_SYS_FILL_RECT = 45,
+    X86OS_SYS_DRAW_TEXT = 46
 };
 
 enum {
@@ -94,6 +97,47 @@ typedef struct {
 
 #define X86OS_MEMORY_STATS_VERSION 1U
 
+#define X86OS_DISPLAY_ABI_VERSION 1U
+#define X86OS_DISPLAY_MAX_TEXT 256U
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t width;
+    uint32_t height;
+    uint32_t pitch;
+    uint32_t bits_per_pixel;
+    uint32_t red_field_position;
+    uint32_t red_mask_size;
+    uint32_t green_field_position;
+    uint32_t green_mask_size;
+    uint32_t blue_field_position;
+    uint32_t blue_mask_size;
+    uint32_t font_width;
+    uint32_t font_height;
+} x86os_display_info_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t x;
+    int32_t y;
+    uint32_t width;
+    uint32_t height;
+    uint32_t rgb;
+} x86os_display_rect_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t x;
+    int32_t y;
+    uint32_t foreground_rgb;
+    uint32_t background_rgb;
+    uint32_t text_address;
+    uint32_t text_length;
+} x86os_display_text_t;
+
 enum {
     X86OS_DRIVE_ATA = 1,
     X86OS_DRIVE_FDD = 2
@@ -122,6 +166,12 @@ int x86os_sleep_ms(uint32_t milliseconds);
 int x86os_yield(void);
 int x86os_monotonic_ms(uint64_t* value);
 int x86os_memory_stats(x86os_memory_stats_t* stats);
+int x86os_display_info(x86os_display_info_t* info);
+int x86os_fill_rect(int32_t x, int32_t y, uint32_t width, uint32_t height,
+                    uint32_t rgb);
+int x86os_draw_text_pixels(int32_t x, int32_t y, const char* text,
+                           size_t length, uint32_t foreground_rgb,
+                           uint32_t background_rgb);
 int x86os_getchar(void);
 int x86os_getchar_nonblocking(void);
 void* x86os_malloc(size_t size);

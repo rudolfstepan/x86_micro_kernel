@@ -110,7 +110,12 @@ try {
 
     & $Nasm -f bin 'arch/x86/boot/bios/stage1_mbr.asm' -o $Stage1
     if ($LASTEXITCODE -ne 0) { throw 'Stage 1 assembly failed.' }
-    & $Nasm -f bin 'arch/x86/boot/bios/stage2_bios.asm' -o $Stage2
+    $stage2Arguments = @('-f', 'bin')
+    if ($Video -eq 'framebuffer') {
+        $stage2Arguments += '-DUSE_FRAMEBUFFER'
+    }
+    $stage2Arguments += @('arch/x86/boot/bios/stage2_bios.asm', '-o', $Stage2)
+    & $Nasm @stage2Arguments
     if ($LASTEXITCODE -ne 0) { throw 'Stage 2 assembly failed.' }
     & $Nasm -f bin 'arch/x86/boot/bios/stage1_floppy.asm' -o $FloppyStage1
     if ($LASTEXITCODE -ne 0) { throw 'Floppy stage 1 assembly failed.' }
@@ -152,6 +157,7 @@ try {
         --data-file "KILL.PRG=$(Join-Path $UserProgramDir 'KILL.PRG')" `
         --data-file "PWD.PRG=$(Join-Path $UserProgramDir 'PWD.PRG')" `
         --data-file "SHELL.PRG=$(Join-Path $UserProgramDir 'SHELL.PRG')" `
+        --data-file "DESKTOP.PRG=$(Join-Path $UserProgramDir 'DESKTOP.PRG')" `
         --data-file "MKDIR.PRG=$(Join-Path $UserProgramDir 'MKDIR.PRG')" `
         --data-file "RMDIR.PRG=$(Join-Path $UserProgramDir 'RMDIR.PRG')" `
         --data-file "DEL.PRG=$(Join-Path $UserProgramDir 'DEL.PRG')" `
@@ -195,6 +201,7 @@ try {
         --data-file "KILL.PRG=$(Join-Path $UserProgramDir 'KILL.PRG')" `
         --data-file "PWD.PRG=$(Join-Path $UserProgramDir 'PWD.PRG')" `
         --data-file "SHELL.PRG=$(Join-Path $UserProgramDir 'SHELL.PRG')" `
+        --data-file "DESKTOP.PRG=$(Join-Path $UserProgramDir 'DESKTOP.PRG')" `
         --data-file "MKDIR.PRG=$(Join-Path $UserProgramDir 'MKDIR.PRG')" `
         --data-file "RMDIR.PRG=$(Join-Path $UserProgramDir 'RMDIR.PRG')" `
         --data-file "DEL.PRG=$(Join-Path $UserProgramDir 'DEL.PRG')" `

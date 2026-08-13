@@ -14,6 +14,7 @@ bereits behobene Fehler enthalten.
 - [Quickstart](development/QUICKSTART.md) – nativer Windows-Build und erster Start
 - [Projektstatus](development/PROJECT_STATUS.md) – verifizierte Komponenten und offene Grenzen
 - [Fehlstellenanalyse und Roadmap](development/OS_GAP_ANALYSIS_AND_ROADMAP.md) – priorisierte Implementierungspakete mit Abhängigkeiten und Abnahmekriterien
+- [Medical-High-Assurance-Vertrag](architecture/MEDICAL_HIGH_ASSURANCE_CONTRACT.md) – verbindliche Safety-, Recovery-, Redundanz- und Lebenszyklusregeln; derzeit kein klinisch freigegebener Stand
 - [Build-Modi](development/BUILD_MODES.md) – `qemu`, `vmware`, `real_hw` und Videoauswahl
 - [Nativer Bootdatenträger](development/BOOTABLE_DISK.md) – BIOS/MBR, Stage 2 und FAT32-Image
 - [Bootfähige Diskette](development/FLOPPY_BOOT.md) – 1,44-MB-CHS-Image für echte BIOS-PCs
@@ -27,7 +28,7 @@ bereits behobene Fehler enthalten.
 - [VFS-Architektur](filesystems/VFS_ARCHITECTURE.md) – gemeinsame Dateisystemschnittstelle
 - [BASIC-Interpreter](features/BASIC_INTERPRETER.md) – Syntax, Laden und Speichern
 - [Tastaturkürzel](features/KEYBOARD_SHORTCUTS.md) – Zeilenbearbeitung und Verlauf
-- [Framebuffer](features/FRAMEBUFFER.md) – VGA-Standardweg und experimenteller Grafikmodus
+- [Framebuffer](features/FRAMEBUFFER.md) – nativer VBE-Pfad, Ring-3-Display-ABI und Desktop-MVP
 
 ## Hardware und Netzwerk
 
