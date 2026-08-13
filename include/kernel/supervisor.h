@@ -16,6 +16,7 @@ typedef enum {
     SUPERVISOR_FAILED = 5,
     SUPERVISOR_ISOLATED = 6,
     SUPERVISOR_SAFE_STATE = 7,
+    SUPERVISOR_FENCING = 8,
 } supervisor_health_state_t;
 
 typedef enum {
@@ -37,6 +38,14 @@ typedef struct {
     uint32_t restart_budget;
 } supervisor_config_t;
 
+typedef bool (*supervisor_fence_fn_t)(void *context);
+
+typedef struct {
+    supervisor_fence_fn_t apply;
+    supervisor_fence_fn_t verify;
+    void *context;
+} supervisor_fence_ops_t;
+
 typedef struct {
     supervisor_event_type_t type;
     supervisor_handle_t handle;
@@ -44,12 +53,13 @@ typedef struct {
 
 void supervisor_init(void);
 int supervisor_register(const char *name, const supervisor_config_t *config,
+                        const supervisor_fence_ops_t *fence_ops,
                         uint64_t now_ms, supervisor_handle_t *handle_out);
 int supervisor_report_progress(supervisor_handle_t handle,
                                uint32_t progress_marker, uint64_t now_ms);
 supervisor_event_t supervisor_poll(uint64_t now_ms);
-supervisor_event_t supervisor_ack_fenced(supervisor_handle_t handle,
-                                         uint64_t now_ms);
+supervisor_event_t supervisor_apply_fence(supervisor_handle_t handle,
+                                          uint64_t now_ms);
 int supervisor_report_self_test(supervisor_handle_t handle, bool passed,
                                 uint64_t now_ms);
 bool supervisor_output_allowed(supervisor_handle_t handle);

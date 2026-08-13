@@ -201,6 +201,13 @@ aber kein Ersatz für ein elektrisch unabhängiges Interlock für gefährliche
 Aktoren. Solche Ausgänge benötigen je Hazard einen rücklesbaren, extern
 überwachten Safe-State-Pfad.
 
+Supervisor-Domänen registrieren deshalb getrennte `apply`- und `verify`-Hooks.
+Nach einem Deadlinefehler beansprucht der Supervisor die Domäne atomar als
+`FENCING`, führt beide Hooks außerhalb seines IRQ-off-Zustandslocks aus und
+erlaubt einen Restart ausschließlich nach positiver Rückleseprüfung. Ein
+fehlgeschlagenes Apply oder Verify eskaliert unmittelbar in `SAFE_STATE`;
+eine bloße Software-Bestätigung kann das Gate nicht mehr passieren.
+
 Unterbrechungsfreie wesentliche
 Leistung bei Kernel-, CPU-, RAM- oder Stromfehlern setzt eine ausreichend
 unabhängige zweite Ausführungslinie beziehungsweise ein Safety Island voraus.

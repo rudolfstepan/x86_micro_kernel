@@ -20,6 +20,7 @@ typedef struct {
 typedef struct {
     bool occupied;
     char name[SUPERVISOR_NAME_CAPACITY];
+    supervisor_fence_ops_t fence_ops;
     critical_object_t protected_state;
 } supervisor_slot_t;
 
@@ -50,7 +51,7 @@ static bool state_valid(const void *payload, size_t length) {
     if (length != sizeof(supervisor_state_t)) return false;
     const supervisor_state_t *state = (const supervisor_state_t *)payload;
     return state->generation != 0 && state->state >= SUPERVISOR_STARTING &&
-           state->state <= SUPERVISOR_SAFE_STATE &&
+           state->state <= SUPERVISOR_FENCING &&
            state->heartbeat_timeout_ms != 0 &&
            state->recovery_timeout_ms != 0 && state->restart_budget != 0 &&
            state->restart_count <= state->restart_budget;
@@ -98,8 +99,10 @@ void supervisor_init(void) {
 }
 
 int supervisor_register(const char *name, const supervisor_config_t *config,
+                        const supervisor_fence_ops_t *fence_ops,
                         uint64_t now_ms, supervisor_handle_t *handle_out) {
-    if (name == 0 || name[0] == '\0' || config == 0 || handle_out == 0 ||
+    if (name == 0 || name[0] == '\0' || config == 0 || fence_ops == 0 ||
+        fence_ops->apply == 0 || fence_ops->verify == 0 || handle_out == 0 ||
         config->heartbeat_timeout_ms == 0 || config->recovery_timeout_ms == 0 ||
         config->restart_budget == 0) return -1;
     uint32_t flags = supervisor_lock();
@@ -131,6 +134,7 @@ int supervisor_register(const char *name, const supervisor_config_t *config,
         ++index;
     }
     slots[slot].name[index] = '\0';
+    slots[slot].fence_ops = *fence_ops;
     slots[slot].occupied = true;
     handle_out->slot = slot;
     handle_out->generation = generation;
@@ -190,14 +194,42 @@ supervisor_event_t supervisor_poll(uint64_t now_ms) {
     return none;
 }
 
-supervisor_event_t supervisor_ack_fenced(supervisor_handle_t handle,
-                                         uint64_t now_ms) {
+supervisor_event_t supervisor_apply_fence(supervisor_handle_t handle,
+                                          uint64_t now_ms) {
+    supervisor_event_t none = {.type = SUPERVISOR_EVENT_NONE};
+    supervisor_fence_ops_t fence_ops;
     uint32_t flags = supervisor_lock();
     supervisor_state_t state;
     if (resolve(handle, &state) != 0 || state.state != SUPERVISOR_ISOLATED) {
-        supervisor_event_t none = {.type = SUPERVISOR_EVENT_NONE};
         supervisor_unlock(flags);
         return none;
+    }
+    fence_ops = slots[handle.slot].fence_ops;
+    state.state = SUPERVISOR_FENCING;
+    if (state_write(handle.slot, &state) != 0) {
+        supervisor_unlock(flags);
+        return event(SUPERVISOR_EVENT_SAFE_STATE_REQUIRED, handle.slot, &state);
+    }
+    supervisor_unlock(flags);
+
+    /* Hardware/service fencing may require interrupt-driven I/O. Never run it
+     * under the supervisor's IRQ-off state lock. Verification is deliberately
+     * separate: a successful write alone is not safety evidence. */
+    bool fenced = fence_ops.apply(fence_ops.context) &&
+                  fence_ops.verify(fence_ops.context);
+
+    flags = supervisor_lock();
+    if (resolve(handle, &state) != 0 || state.state != SUPERVISOR_FENCING) {
+        supervisor_unlock(flags);
+        return none;
+    }
+    if (!fenced) {
+        state.state = SUPERVISOR_SAFE_STATE;
+        (void)state_write(handle.slot, &state);
+        supervisor_event_t result = event(SUPERVISOR_EVENT_SAFE_STATE_REQUIRED,
+                                           handle.slot, &state);
+        supervisor_unlock(flags);
+        return result;
     }
     supervisor_event_type_t type;
     if (state.restart_count >= state.restart_budget) {

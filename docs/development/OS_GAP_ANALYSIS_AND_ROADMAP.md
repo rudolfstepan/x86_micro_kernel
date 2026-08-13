@@ -624,6 +624,11 @@ best-effort ab. Die Migration realer Dienste in eigene Fehlerdomänen sowie
 rücklesbare externe Interlocks und unabhängige Supervisorhardware bleiben
 offen.
 
+Das Restart-Gate akzeptiert keine vertrauensbasierte Fence-Bestätigung mehr:
+Jede Domäne muss einen Apply- und einen separaten Verify-Hook bereitstellen.
+Der atomar beanspruchte Zustand `FENCING` verhindert Doppelaufrufe; nur eine
+positive Rückleseprüfung führt zu Restart, jeder Fehler zu `SAFE_STATE`.
+
 1. Einen minimalen Safety-Kern definieren; Treiber, Dateisystem, Netzwerk und
    GUI in neu startbare Least-Privilege-Domänen verschieben.
 2. Fortschritts-/Deadline-Watchdogs, Restart-Budgets, Fencing, Selbsttest und
