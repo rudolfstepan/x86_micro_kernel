@@ -13,7 +13,7 @@ typedef struct {
     uint32_t generation;
     uint32_t state;
     uint32_t epoch;
-    uint32_t progress_marker;
+    uint64_t progress_marker;
     uint32_t restart_count;
     uint32_t heartbeat_timeout_ms;
     uint32_t recovery_timeout_ms;
@@ -59,9 +59,9 @@ static bool state_valid(const void *payload, size_t length) {
     if (length != sizeof(supervisor_state_t)) return false;
     const supervisor_state_t *state = (const supervisor_state_t *)payload;
     return state->generation != 0 && state->state >= SUPERVISOR_STARTING &&
-           state->state <= SUPERVISOR_FENCING &&
+           state->state <= SUPERVISOR_IDLE &&
            state->heartbeat_timeout_ms != 0 &&
-           state->recovery_timeout_ms != 0 && state->restart_budget != 0 &&
+           state->recovery_timeout_ms != 0 &&
            state->restart_count <= state->restart_budget;
 }
 
@@ -139,8 +139,8 @@ int supervisor_register(const char *name, const supervisor_config_t *config,
                         uint64_t now_ms, supervisor_handle_t *handle_out) {
     if (name == 0 || name[0] == '\0' || config == 0 || fence_ops == 0 ||
         fence_ops->apply == 0 || fence_ops->verify == 0 || handle_out == 0 ||
-        config->heartbeat_timeout_ms == 0 || config->recovery_timeout_ms == 0 ||
-        config->restart_budget == 0) return -1;
+        config->heartbeat_timeout_ms == 0 || config->recovery_timeout_ms == 0)
+        return -1;
     uint32_t flags = supervisor_lock();
     uint32_t slot = 0;
     while (slot < SUPERVISOR_MAX_DOMAINS && slots[slot].occupied) ++slot;
@@ -180,12 +180,12 @@ int supervisor_register(const char *name, const supervisor_config_t *config,
 }
 
 int supervisor_report_progress(supervisor_handle_t handle,
-                               uint32_t progress_marker, uint64_t now_ms) {
+                               uint64_t progress_marker, uint64_t now_ms) {
     uint32_t flags = supervisor_lock();
     supervisor_state_t state;
     if (resolve(handle, &state) != 0 ||
         (state.state != SUPERVISOR_STARTING && state.state != SUPERVISOR_HEALTHY &&
-         state.state != SUPERVISOR_DEGRADED) ||
+         state.state != SUPERVISOR_DEGRADED && state.state != SUPERVISOR_IDLE) ||
         progress_marker <= state.progress_marker) {
         supervisor_unlock(flags);
         return -1;
@@ -193,6 +193,20 @@ int supervisor_report_progress(supervisor_handle_t handle,
     state.progress_marker = progress_marker;
     state.state = SUPERVISOR_HEALTHY;
     state.deadline_ms = deadline_after(now_ms, state.heartbeat_timeout_ms);
+    int result = state_write(handle.slot, &state);
+    supervisor_unlock(flags);
+    return result;
+}
+
+int supervisor_report_idle(supervisor_handle_t handle) {
+    uint32_t flags = supervisor_lock();
+    supervisor_state_t state;
+    if (resolve(handle, &state) != 0 || state.state != SUPERVISOR_HEALTHY) {
+        supervisor_unlock(flags);
+        return -1;
+    }
+    state.state = SUPERVISOR_IDLE;
+    state.deadline_ms = UINT64_MAX;
     int result = state_write(handle.slot, &state);
     supervisor_unlock(flags);
     return result;
@@ -357,7 +371,9 @@ int supervisor_report_self_test(supervisor_handle_t handle, bool passed,
 bool supervisor_output_allowed(supervisor_handle_t handle) {
     uint32_t flags = supervisor_lock();
     supervisor_state_t state;
-    bool allowed = resolve(handle, &state) == 0 && state.state == SUPERVISOR_HEALTHY;
+    bool allowed = resolve(handle, &state) == 0 &&
+                   (state.state == SUPERVISOR_HEALTHY ||
+                    state.state == SUPERVISOR_IDLE);
     supervisor_unlock(flags);
     return allowed;
 }

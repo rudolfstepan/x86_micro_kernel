@@ -70,5 +70,21 @@ int main(void) {
     if (!fence_applied) return 20;
     if (safe.type != SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) return 21;
     if (supervisor_output_allowed(failed_handle)) return 22;
+
+    supervisor_init();
+    config.restart_budget = 0U;
+    fence_applied = false;
+    fence_verified = true;
+    if (supervisor_register("idle-domain", &config, &fence_ops, 3000U,
+                            &handle) != 0) return 28;
+    if (supervisor_report_progress(handle, 1U, 3001U) != 0 ||
+        supervisor_report_idle(handle) != 0 ||
+        !supervisor_output_allowed(handle)) return 29;
+    supervisor_clock_tick(UINT64_MAX);
+    if (supervisor_poll(UINT64_MAX).type != SUPERVISOR_EVENT_NONE) return 30;
+    if (supervisor_report_progress(handle, 2U, 4000U) != 0) return 31;
+    supervisor_clock_tick(4100U);
+    safe = supervisor_service_one(4100U);
+    if (safe.type != SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) return 32;
     return 0;
 }

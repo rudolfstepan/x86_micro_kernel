@@ -17,5 +17,6 @@ void netdev_reset_rx(void);
 void netdev_reset_monitor(void);
 void netdev_fence_outputs(void);
 bool netdev_outputs_fenced(void);
+bool netdev_supervision_init(uint64_t now_ms);
 
 #endif

@@ -5,6 +5,8 @@
 #include "drivers/net/netstack.h"
 #include "drivers/net/rtl8139.h"
 #include "include/kernel/panic.h"
+#include "include/kernel/supervisor.h"
+#include "kernel/time/pit.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
 
@@ -30,6 +32,43 @@ static volatile uint8_t monitor_queue_tail;
 static volatile uint32_t rx_producer_busy;
 static volatile uint32_t netdev_poll_busy;
 static volatile bool netdev_tx_fenced;
+static bool netdev_supervised;
+static uint64_t netdev_progress_marker;
+static supervisor_handle_t netdev_supervisor_handle;
+
+#define NETDEV_TX_DEADLINE_MS 250U
+
+static bool netdev_apply_supervisor_fence(void *context) {
+    (void)context;
+    netdev_fence_outputs();
+    return true;
+}
+
+static bool netdev_verify_supervisor_fence(void *context) {
+    (void)context;
+    return netdev_outputs_fenced();
+}
+
+bool netdev_supervision_init(uint64_t now_ms) {
+    if (netdev_supervised) return true;
+    supervisor_config_t config = {
+        .heartbeat_timeout_ms = NETDEV_TX_DEADLINE_MS,
+        .recovery_timeout_ms = NETDEV_TX_DEADLINE_MS,
+        .restart_budget = 0,
+    };
+    supervisor_fence_ops_t fence_ops = {
+        .apply = netdev_apply_supervisor_fence,
+        .verify = netdev_verify_supervisor_fence,
+        .context = NULL,
+    };
+    if (supervisor_register("network-tx", &config, &fence_ops, now_ms,
+                            &netdev_supervisor_handle) != 0 ||
+        supervisor_report_progress(netdev_supervisor_handle, 1U, now_ms) != 0 ||
+        supervisor_report_idle(netdev_supervisor_handle) != 0) return false;
+    netdev_progress_marker = 1U;
+    netdev_supervised = true;
+    return true;
+}
 
 bool netdev_available(void) {
     return e1000_is_initialized() || rtl8139_is_initialized() ||
@@ -46,16 +85,21 @@ const char* netdev_backend_name(void) {
 bool netdev_send(const uint8_t* packet, size_t length) {
     if (netdev_tx_fenced) return false;
     if (!packet || length < 14u || length > NETDEV_MAX_FRAME_SIZE) return false;
+    if (netdev_supervised &&
+        supervisor_report_progress(netdev_supervisor_handle,
+                                   ++netdev_progress_marker,
+                                   pit_monotonic_ms()) != 0) return false;
+    bool result = false;
     if (e1000_is_initialized()) {
-        return e1000_send_packet((void*)packet, length);
+        result = e1000_send_packet((void*)packet, length);
+    } else if (rtl8139_is_initialized()) {
+        result = rtl8139_send_packet((void*)packet, (uint16_t)length);
+    } else if (ne2000_is_initialized()) {
+        result = ne2000_send_packet((uint8_t*)packet, (uint16_t)length);
     }
-    if (rtl8139_is_initialized()) {
-        return rtl8139_send_packet((void*)packet, (uint16_t)length);
-    }
-    if (ne2000_is_initialized()) {
-        return ne2000_send_packet((uint8_t*)packet, (uint16_t)length);
-    }
-    return false;
+    if (netdev_supervised && supervisor_report_idle(netdev_supervisor_handle) != 0)
+        return false;
+    return result;
 }
 
 void netdev_fence_outputs(void) {
@@ -68,7 +112,8 @@ void netdev_fence_outputs(void) {
 }
 
 bool netdev_outputs_fenced(void) {
-    return netdev_tx_fenced;
+    return netdev_tx_fenced && e1000_outputs_fenced() &&
+           rtl8139_outputs_fenced() && ne2000_outputs_fenced();
 }
 
 bool netdev_get_mac_address(uint8_t mac[6]) {

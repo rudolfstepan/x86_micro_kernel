@@ -638,6 +638,12 @@ Restart und Selbsttest bleiben explizite Folgeereignisse. Der Executor läuft
 nun in einem reservierten Kernel-Worker alle 10 ms; dieser beansprucht einen
 der acht Task-Slots. Restart-/Safe-State-Ereignisse bleiben level-triggered.
 Beim Safe State wird derzeit konservativ das globale Output-Fence verriegelt.
+Mit `network-tx` ist die erste reale Domäne registriert. Ihre 250-ms-Deadline
+gilt ausschließlich während einer Sendetransaktion; Idle erzeugt daher keinen
+falschen Ausfall. Der 64-Bit-Fortschritt vermeidet ein Langzeit-Wrap. Nach
+Timeout folgen Software-Latch, NIC-Abschaltung und Register-Rückleseprüfung;
+der Restart-Budgetwert null erzwingt bis zu einem implementierten,
+qualifizierten Reinitialisierungspfad den Safe State.
 
 1. Einen minimalen Safety-Kern definieren; Treiber, Dateisystem, Netzwerk und
    GUI in neu startbare Least-Privilege-Domänen verschieben.

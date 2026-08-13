@@ -228,6 +228,14 @@ Beim sicheren Zustand verriegelt der heutige konservative Fallback alle
 registrierten Ausgänge; ein späterer Hazard-Orchestrator darf dies nur durch
 nachgewiesene, mindestens gleich sichere domänenspezifische Interlocks ersetzen.
 
+Die erste produktiv verdrahtete Domäne ist `network-tx`. Sie bleibt im
+Leerlauf ohne künstliche Deadline und bewaffnet nur eine aktive
+Sendetransaktion mit 250 ms. Der Fortschrittszähler ist 64 Bit. Ein Timeout
+erlaubt keinen automatischen Restart, setzt das logische TX-Latch, deaktiviert
+die vorhandenen Sender und liest bei E1000, RTL8139 und NE2000 die relevanten
+Register zurück. Erst diese Rückleseprüfung bestätigt das Fence; andernfalls
+bleibt die Domäne ebenfalls im global eskalierten Safe State.
+
 Unterbrechungsfreie wesentliche
 Leistung bei Kernel-, CPU-, RAM- oder Stromfehlern setzt eine ausreichend
 unabhängige zweite Ausführungslinie beziehungsweise ein Safety Island voraus.

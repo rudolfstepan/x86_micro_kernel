@@ -13,5 +13,6 @@ void rtl8139_detect(void);
 void rtl8139_send_test_packet(void);
 int rtl8139_is_initialized(void);
 void rtl8139_fence_outputs(void);
+bool rtl8139_outputs_fenced(void);
 
 #endif  // RTL8139_H

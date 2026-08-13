@@ -229,6 +229,9 @@ static void system_ready(void) {
     
     // Network stack initialization (optional)
     if (netdev_available()) {
+        if (!netdev_supervision_init(pit_monotonic_ms())) {
+            panic("Unable to supervise network transmit domain");
+        }
         netstack_init();
         printf("Network stack initialized on %s\n", netdev_backend_name());
         printf("Requesting LAN configuration via DHCP...\n");

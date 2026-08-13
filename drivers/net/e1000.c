@@ -903,6 +903,11 @@ void e1000_fence_outputs(void) {
     e1000_write_reg(E1000_REG_TCTL, tctl & ~E1000_TCTL_EN);
 }
 
+bool e1000_outputs_fenced(void) {
+    return !e1000_initialized || e1000_device.mmio_base == NULL ||
+           (e1000_read_reg(E1000_REG_TCTL) & E1000_TCTL_EN) == 0;
+}
+
 void e1000_send_test_packet() {
     printf("E1000: Sending broadcast test packet...\n");
     

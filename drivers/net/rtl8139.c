@@ -181,6 +181,13 @@ void rtl8139_fence_outputs(void) {
          (uint8_t)(command & (uint8_t)~RTL_CMD_TX_ENABLE));
 }
 
+bool rtl8139_outputs_fenced(void) {
+    if (!rtl8139_device.initialized) return true;
+    return (inb((uint16_t)(rtl8139_device.io_base + RTL_COMMAND)) &
+            RTL_CMD_TX_ENABLE) == 0 &&
+           inw((uint16_t)(rtl8139_device.io_base + RTL_IMR)) == 0;
+}
+
 static void rtl8139_drain_rx(void) {
     if (!rtl8139_device.initialized) return;
 

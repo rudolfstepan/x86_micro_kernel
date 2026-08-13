@@ -17,6 +17,7 @@ typedef enum {
     SUPERVISOR_ISOLATED = 6,
     SUPERVISOR_SAFE_STATE = 7,
     SUPERVISOR_FENCING = 8,
+    SUPERVISOR_IDLE = 9,
 } supervisor_health_state_t;
 
 typedef enum {
@@ -58,7 +59,8 @@ int supervisor_register(const char *name, const supervisor_config_t *config,
                         const supervisor_fence_ops_t *fence_ops,
                         uint64_t now_ms, supervisor_handle_t *handle_out);
 int supervisor_report_progress(supervisor_handle_t handle,
-                               uint32_t progress_marker, uint64_t now_ms);
+                               uint64_t progress_marker, uint64_t now_ms);
+int supervisor_report_idle(supervisor_handle_t handle);
 supervisor_event_t supervisor_poll(uint64_t now_ms);
 supervisor_event_t supervisor_service_one(uint64_t now_ms);
 supervisor_event_t supervisor_apply_fence(supervisor_handle_t handle,

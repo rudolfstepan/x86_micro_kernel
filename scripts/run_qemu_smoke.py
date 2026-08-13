@@ -36,6 +36,7 @@ def qemu_command(
     memory: str = "512M",
     watchdog: bool = False,
     allow_reboot: bool = False,
+    nic: str = "none",
 ) -> list[str]:
     command = [
         str(qemu),
@@ -57,6 +58,9 @@ def qemu_command(
         command.extend(["-cpu", "qemu32,-apic"])
     if watchdog:
         command.extend(["-device", "ib700", "-watchdog-action", "reset"])
+    if nic != "none":
+        command.extend(["-device", f"{nic},netdev=reistnet0",
+                        "-netdev", "user,id=reistnet0"])
     return command
 
 
@@ -164,9 +168,10 @@ def run(
     memory: str = "512M",
     watchdog: bool = False,
     allow_reboot: bool = False,
+    nic: str = "none",
 ) -> tuple[int, str, str | None]:
     process = subprocess.Popen(
-        qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot),
+        qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot, nic),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -268,6 +273,10 @@ def main() -> int:
         help="attach the qualified QEMU IB700 hardware-watchdog profile",
     )
     parser.add_argument(
+        "--nic", choices=("none", "rtl8139", "e1000"), default="none",
+        help="attach a supported NIC and exercise its REIST supervision",
+    )
+    parser.add_argument(
         "--expect-fatal-recovery",
         action="store_true",
         help="require ordered Double-Fault, reset and recovered-record markers",
@@ -288,7 +297,7 @@ def main() -> int:
     try:
         status, transcript, process_error = run(
             args.qemu, args.image.resolve(), args.timeout, args.no_apic,
-            args.memory, args.watchdog, args.expect_fatal_recovery,
+            args.memory, args.watchdog, args.expect_fatal_recovery, args.nic,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)

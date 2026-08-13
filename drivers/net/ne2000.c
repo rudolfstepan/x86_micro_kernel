@@ -460,6 +460,13 @@ void ne2000_fence_outputs(void) {
     outb((uint16_t)(io_base + NE2000_CR), CR_STP | CR_RD2);
 }
 
+bool ne2000_outputs_fenced(void) {
+    if (!ne2000_initialized || io_base == 0) return true;
+    uint8_t command = inb((uint16_t)(io_base + NE2000_CR));
+    return inb((uint16_t)(io_base + NE2000_IMR)) == 0 &&
+           (command & CR_STP) != 0 && (command & CR_STA) == 0;
+}
+
 // Send ARP reply
 void ne2000_send_arp_reply(uint8_t *request_packet) {
     uint8_t arp_reply[60];  // Minimum ethernet frame size

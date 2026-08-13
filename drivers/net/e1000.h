@@ -35,5 +35,6 @@ void e1000_poll_rx(void);
 void e1000_send_test_packet();
 void e1000_debug_registers();
 void e1000_fence_outputs(void);
+bool e1000_outputs_fenced(void);
 
 #endif // E1000_H
