@@ -289,8 +289,9 @@ andere. Sind beide Kopien unbrauchbar, verriegeln Storage beziehungsweise VFS
 fail-closed. Ein vor der redundanten Aktualisierung gesetztes monotones
 Softwareinterlock schließt das Zeitfenster während des Fence-Vorgangs.
 
-Native REIST-FAT32-Images reservieren zusätzlich die BPB-Sektoren 8 und 9 für
-ein kleines CRC-geschütztes Undo-Journal. Vor jedem einzelnen Sektorwrite wird
+Native REIST-FAT32-Images reservieren zusätzlich BPB-Sektor 8 für den primären
+Header, 9 bis 28 für Undo-Daten und 31 für den gespiegelten Header eines
+CRC-geschützten Undo-Journals. Vor jedem einzelnen Sektorwrite wird
 das alte Abbild dauerhaft geschrieben, anschließend ein `ACTIVE`-Record
 geflusht, erst dann der Zielsektor geändert und zuletzt der Record als `CLEAN`
 markiert. Beim Mount wird ein gültiger aktiver Record vor dem Lesen veränderter
@@ -306,6 +307,11 @@ den Undo-Satz für Boot-Recovery stehen und schalten das VFS Read-only. Größer
 Operationen benötigen künftig ein skalierbares Journal beziehungsweise COW.
 Journal-v1-Medien werden rückwärtskompatibel wiederhergestellt und anschließend
 mit einem sauberen v2-Header migriert.
+FAT32 Same-Directory-Rename und Replace laufen als eine solche VFS-Transaktion.
+Der Editor schreibt zuerst eine PID-spezifische 8.3-Tempdatei und ersetzt das
+Ziel erst nach erfolgreichem Close per Rename. Ein Fehler vor dem Commit lässt
+die alte Zieldatei unangetastet; FAT12-, Cross-Directory- und Cross-Volume-
+Rename bleiben explizit unsupported.
 Der v2-Superblock liegt redundant in den reservierten Sektoren 8 und 31. Jeder
 Statuswechsel wird primär und gespiegelt mit identischer Sequenz und CRC
 persistiert. Beim Boot gewinnt die höchste gültige Sequenz; bei gleicher

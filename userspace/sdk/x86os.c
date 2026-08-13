@@ -184,6 +184,11 @@ int x86os_unlink(const char* path) {
     return (int)x86os_syscall(X86OS_SYS_UNLINK, (uintptr_t)path, 0, 0);
 }
 
+int x86os_rename(const char* old_path, const char* new_path) {
+    return (int)x86os_syscall(X86OS_SYS_RENAME, (uintptr_t)old_path,
+                              (uintptr_t)new_path, 0);
+}
+
 int x86os_getpid(void) {
     return (int)x86os_syscall(X86OS_SYS_GETPID, 0, 0, 0);
 }

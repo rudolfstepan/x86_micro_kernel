@@ -773,6 +773,74 @@ static int fat32_vfs_delete_unlocked(vfs_filesystem_t* fs, const char* path) {
     return VFS_OK;
 }
 
+static int fat32_vfs_rename_unlocked(vfs_filesystem_t* fs,
+                                     const char* old_path,
+                                     const char* new_path) {
+    if (!fs || !old_path || !new_path) return VFS_ERR_INVALID;
+    fat32_activate(fs);
+
+    uint32_t old_parent;
+    uint32_t new_parent;
+    char old_leaf[13];
+    char new_leaf[13];
+    if (!fat32_resolve_parent(fs, old_path, &old_parent, old_leaf) ||
+        !fat32_resolve_parent(fs, new_path, &new_parent, new_leaf)) {
+        return VFS_ERR_INVALID;
+    }
+    if (old_parent != new_parent) return VFS_ERR_UNSUPPORTED;
+    if (!fat32_is_valid_short_name(old_leaf) ||
+        !fat32_is_valid_short_name(new_leaf)) return VFS_ERR_INVALID;
+    unsigned char old_name[11];
+    unsigned char new_name[11];
+    convert_to_83_format(old_name, old_leaf);
+    convert_to_83_format(new_name, new_leaf);
+    if (memcmp(old_name, new_name, sizeof(old_name)) == 0) return VFS_OK;
+
+    struct fat32_dir_entry source;
+    fat32_lookup_result_t source_result = fat32_lookup_entry_in_directory(
+        old_parent, old_leaf, &source);
+    if (source_result == FAT32_LOOKUP_NOT_FOUND) return VFS_ERR_NOT_FOUND;
+    if (source_result != FAT32_LOOKUP_FOUND) return VFS_ERR_IO;
+    if (source.attr & ATTR_DIRECTORY) return VFS_ERR_IS_DIR;
+    if (source.attr & ATTR_READ_ONLY) return VFS_ERR_READ_ONLY;
+
+    struct fat32_dir_entry destination;
+    fat32_lookup_result_t destination_result = fat32_lookup_entry_in_directory(
+        new_parent, new_leaf, &destination);
+    if (destination_result == FAT32_LOOKUP_ERROR) return VFS_ERR_IO;
+    if (destination_result == FAT32_LOOKUP_FOUND &&
+        (destination.attr & ATTR_DIRECTORY)) return VFS_ERR_IS_DIR;
+    if (destination_result == FAT32_LOOKUP_FOUND &&
+        (destination.attr & ATTR_READ_ONLY)) return VFS_ERR_READ_ONLY;
+
+    struct fat32_dir_entry renamed = source;
+    convert_to_83_format(renamed.name, new_leaf);
+    if (destination_result == FAT32_LOOKUP_NOT_FOUND) {
+        if (!update_directory_entry(old_parent, source.name, &renamed))
+            return VFS_ERR_IO;
+    } else {
+        uint32_t replaced_cluster = read_start_cluster(&destination);
+        if (!update_directory_entry(new_parent, destination.name, &renamed))
+            return VFS_ERR_IO;
+
+        struct fat32_dir_entry tombstone = source;
+        tombstone.name[0] = 0xE5;
+        if (!update_directory_entry(old_parent, source.name, &tombstone))
+            return VFS_ERR_IO;
+
+        uint32_t source_cluster = read_start_cluster(&source);
+        if (is_valid_cluster(&boot_sector, replaced_cluster) &&
+            replaced_cluster != source_cluster &&
+            !free_cluster_chain(&boot_sector, replaced_cluster)) {
+            return VFS_ERR_IO;
+        }
+        (void)write_fsinfo();
+    }
+
+    fat32_flush_context(fs);
+    return VFS_OK;
+}
+
 static int fat32_vfs_stat_unlocked(vfs_filesystem_t* fs, const char* path,
                                    vfs_dir_entry_t* stat) {
     if (!fs || !path || !stat) return VFS_ERR_INVALID;
@@ -912,6 +980,14 @@ static int fat32_vfs_delete(vfs_filesystem_t* fs, const char* path) {
     return result;
 }
 
+static int fat32_vfs_rename(vfs_filesystem_t* fs, const char* old_path,
+                            const char* new_path) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_rename_unlocked(fs, old_path, new_path);
+    fat32_operation_end(flags);
+    return result;
+}
+
 static int fat32_vfs_stat(vfs_filesystem_t* fs, const char* path,
                           vfs_dir_entry_t* stat) {
     uint32_t flags = fat32_operation_begin();
@@ -959,6 +1035,7 @@ vfs_filesystem_ops_t fat32_vfs_ops = {
     .rmdir = fat32_vfs_rmdir,
     .create = fat32_vfs_create,
     .delete = fat32_vfs_delete,
+    .rename = fat32_vfs_rename,
     .stat = fat32_vfs_stat,
     .space = fat32_vfs_space
 };

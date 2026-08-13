@@ -45,6 +45,7 @@ class VfsSynchronizationContractTests(unittest.TestCase):
         "int vfs_rmdir(": "vfs_rmdir_locked(",
         "int vfs_create(": "vfs_create_locked(",
         "int vfs_delete(": "vfs_delete_locked(",
+        "int vfs_rename(": "vfs_rename_locked(",
         "int vfs_stat(": "vfs_stat_locked(",
         "int vfs_space(": "vfs_space_locked(",
         "vfs_filesystem_t* vfs_get_filesystem(":
@@ -95,6 +96,7 @@ class VfsSynchronizationContractTests(unittest.TestCase):
             "vfs_rmdir_locked(",
             "vfs_create_locked(",
             "vfs_delete_locked(",
+            "vfs_rename_locked(",
             "vfs_stat_locked(",
             "vfs_space_locked(",
         ):

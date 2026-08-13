@@ -606,6 +606,20 @@ static int vfs_stat_locked(const char* path, vfs_dir_entry_t* stat) {
     return fs->ops->stat(fs, relative_path, stat);
 }
 
+static int vfs_rename_locked(const char* old_path, const char* new_path) {
+    if (!old_path || !new_path) return VFS_ERR_INVALID;
+
+    vfs_filesystem_t* old_fs = vfs_get_filesystem_locked(old_path);
+    vfs_filesystem_t* new_fs = vfs_get_filesystem_locked(new_path);
+    if (!old_fs || !new_fs) return VFS_ERR_NOT_FOUND;
+    if (old_fs != new_fs) return VFS_ERR_UNSUPPORTED;
+    if (!old_fs->ops->rename) return VFS_ERR_UNSUPPORTED;
+
+    const char* old_relative = vfs_get_relative_path_locked(old_path, old_fs);
+    const char* new_relative = vfs_get_relative_path_locked(new_path, new_fs);
+    return old_fs->ops->rename(old_fs, old_relative, new_relative);
+}
+
 // ===========================================================================
 // Public serialized API
 // ===========================================================================
@@ -718,6 +732,16 @@ int vfs_delete(const char* path) {
     vfs_operation_begin();
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_delete_locked(path) : VFS_ERR_READ_ONLY;
+    result = vfs_mutation_finish(armed, result);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_rename(const char* old_path, const char* new_path) {
+    vfs_operation_begin();
+    bool armed = vfs_mutation_begin();
+    int result = armed ? vfs_rename_locked(old_path, new_path)
+                       : VFS_ERR_READ_ONLY;
     result = vfs_mutation_finish(armed, result);
     vfs_operation_end();
     return result;

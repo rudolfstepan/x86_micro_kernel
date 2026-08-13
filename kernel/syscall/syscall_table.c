@@ -360,6 +360,17 @@ static int syscall_unlink(const char *user_path) {
     return process_file_unlink(scheduler_current_process(), path) == 0 ? 0 : -2;
 }
 
+static int syscall_rename(const char *user_old_path,
+                          const char *user_new_path) {
+    char old_path[PROCESS_PATH_MAX];
+    char new_path[PROCESS_PATH_MAX];
+    int result = syscall_copy_path(old_path, user_old_path);
+    if (result != 0) return result;
+    result = syscall_copy_path(new_path, user_new_path);
+    if (result != 0) return result;
+    return vfs_rename(old_path, new_path) == VFS_OK ? 0 : -5;
+}
+
 static int syscall_getpid(void) {
     Process *process = scheduler_current_process();
     return process != NULL ? process->pid : -3;
@@ -576,6 +587,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_display_info,       // Syscall 44: Versioned display info
     (void*)&syscall_display_fill_rect,  // Syscall 45: Clipped RGB rectangle
     (void*)&syscall_display_draw_text,  // Syscall 46: Clipped pixel text
+    (void*)&syscall_rename,             // Syscall 47: Atomic same-FS rename
     // Add more syscalls here as needed
 };
 
@@ -812,6 +824,13 @@ void syscall_handler(Registers* regs) {
         case SYS_DRAW_TEXT:
             result = (uint32_t)syscall_display_draw_text(
                 (const syscall_display_text_t*)(uintptr_t)arg1);
+            break;
+        case SYS_RENAME:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_rename(
+                (const char*)(uintptr_t)arg1,
+                (const char*)(uintptr_t)arg2);
+            scheduler_preempt_enable();
             break;
         default:
             result = (uint32_t)-1;

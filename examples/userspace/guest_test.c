@@ -69,12 +69,40 @@ static int test_file_io(void) {
     int close_result = x86os_close(descriptor);
     x86os_file_info_t info;
     int stat_result = x86os_stat(path, &info);
-    int unlink_result = x86os_unlink(path);
-    return amount == (int)sizeof(actual) && eof == 0 && close_result == 0 &&
-           stat_result == 0 && info.type == X86OS_FILE &&
-           info.size == sizeof(expected) && unlink_result == 0 &&
-           bytes_equal(actual, expected, sizeof(actual))
-        ? 0 : -1;
+    if (amount != (int)sizeof(actual) || eof != 0 || close_result != 0 ||
+        stat_result != 0 || info.type != X86OS_FILE ||
+        info.size != sizeof(expected) ||
+        !bytes_equal(actual, expected, sizeof(actual))) {
+        (void)x86os_unlink(path);
+        return -1;
+    }
+
+    static const char replacement_path[] = "GSTNEW.TMP";
+    static const char replacement[] = "REIST atomic rename replacement";
+    (void)x86os_unlink(replacement_path);
+    descriptor = x86os_create(replacement_path);
+    if (descriptor < 0) {
+        (void)x86os_unlink(path);
+        return -1;
+    }
+    int replacement_write = x86os_write(
+        descriptor, replacement, sizeof(replacement) - 1U);
+    int replacement_close = x86os_close(descriptor);
+    if (replacement_write != (int)(sizeof(replacement) - 1U) ||
+        replacement_close != 0 || x86os_rename(replacement_path, path) != 0 ||
+        x86os_stat(replacement_path, &info) == 0) {
+        (void)x86os_unlink(replacement_path);
+        (void)x86os_unlink(path);
+        return -1;
+    }
+    descriptor = x86os_open(path);
+    if (descriptor < 0) return -1;
+    char renamed[sizeof(replacement) - 1U];
+    amount = x86os_read(descriptor, renamed, sizeof(renamed));
+    close_result = x86os_close(descriptor);
+    return amount == (int)sizeof(renamed) && close_result == 0 &&
+           bytes_equal(renamed, replacement, sizeof(renamed)) &&
+           x86os_unlink(path) == 0 ? 0 : -1;
 }
 
 static int process_state_for_pid(int pid) {

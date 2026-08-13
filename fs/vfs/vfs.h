@@ -81,6 +81,8 @@ typedef struct vfs_filesystem_ops {
     // File management
     int (*create)(struct vfs_filesystem* fs, const char* path);
     int (*delete)(struct vfs_filesystem* fs, const char* path);
+    int (*rename)(struct vfs_filesystem* fs, const char* old_path,
+                  const char* new_path);
     int (*stat)(struct vfs_filesystem* fs, const char* path, vfs_dir_entry_t* stat);
     int (*space)(struct vfs_filesystem* fs, vfs_space_info_t* info);
 } vfs_filesystem_ops_t;
@@ -159,6 +161,7 @@ int vfs_rmdir(const char* path);
 // File management
 int vfs_create(const char* path);
 int vfs_delete(const char* path);
+int vfs_rename(const char* old_path, const char* new_path);
 int vfs_stat(const char* path, vfs_dir_entry_t* stat);
 int vfs_space(const char* path, vfs_space_info_t* info);
 

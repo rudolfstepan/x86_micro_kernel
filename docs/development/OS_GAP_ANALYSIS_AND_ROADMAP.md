@@ -78,7 +78,7 @@ und maximale Fehlerreaktionszeiten rückverfolgbar festzulegen.
 | CPU | GDT/IDT/TSS, Ring 0/3, Exceptions, PIC, gegen PIT kalibrierter lokaler APIC-Timer, PIT-Scheduler-Fallback, `INT 0x80` | funktionsfähiger Single-Core-Pfad |
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
 | Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD | klein, maximal 8 Tasks |
-| Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, EXT2 lesen | gute Basis, kleine ABI und keine atomaren Dateioperationen |
+| Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, FAT32-Rename/Replace im Undo-Journal, EXT2 lesen | atomare Same-Directory-Ersetzung vorhanden; ABI, FAT12-Rename und `fsync` fehlen |
 | Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 und COM1 mit blockierendem Console-Wait, RTC, VGA, nativer VBE-RGB-Framebuffer | Referenzhardware gut, moderne Geräte fehlen |
 | Netzwerk | E1000, RTL8139, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping am besten verifiziert |
 | USB | PCI-Erkennung eines xHCI-Controllers | nur Probe-Gerüst |
@@ -188,21 +188,24 @@ Puffer vor dem geprüften Copyout ab. Der ältere `SYS_MEMORY_KB` (13) bleibt
 erhalten und meldet die vom Frame-Allocator verwalteten KiB. R1.4 hängt
 `SYS_DISPLAY_INFO` (44), `SYS_FILL_RECT` (45) und `SYS_DRAW_TEXT` (46) an.
 Die versionierten Requests werden geprüft kopiert und geclippt; Ring 3 erhält
-kein direktes Framebuffer-Mapping.
+kein direktes Framebuffer-Mapping. `SYS_RENAME` (47) ergänzt atomisches Rename
+innerhalb desselben FAT32-Verzeichnisses; volumen- oder
+verzeichnisübergreifendes Verschieben wird fail-closed abgelehnt.
 
 - eine einzige gemeinsame, versionierte Quelle für Syscallnummern und
   Fehlercodes
 - stabile `errno`-ähnliche Fehlersemantik; aktuell werden VFS-Fehler oft auf
   allgemeine Werte wie `-2`, `-5` oder `-9` reduziert
 - `open`-Flags (`RDONLY`, `WRONLY`, `RDWR`, `CREATE`, `TRUNC`, `APPEND`)
-- `lseek`, `fstat`, `truncate`, `rename`, `fsync`, später `dup`/`dup2`
+- `lseek`, `fstat`, `truncate`, `fsync`, später `dup`/`dup2`; Rename ist als
+  erster atomarer Spezialfall vorhanden
 - echte Deskriptoren 0/1/2 für Standard-Ein-/Ausgabe
 - ABI-Fähigkeitsabfrage, damit ältere Programme kontrolliert weiterlaufen
 
 ### VFS, Dateisysteme und Blockgeräte
 
-- atomisches `rename`; der Editor löscht beim Speichern derzeit zuerst die alte
-  Datei (`userspace/bin/edit.c:250-258`) und kann sie bei einem Fehler verlieren
+- Rename auf FAT12 sowie verzeichnis- und volumenübergreifendes Verschieben;
+  FAT32 Same-Directory-Replace ist journalgestützt atomar
 - konsistente Open-Handle-, Delete- und Unmount-Semantik unter Nebenläufigkeit
 - eine generische `block_device`-Schnittstelle mit `read`, `write`, `flush`,
   Sektorgröße und Kapazität statt direkter ATA/FDD-Kopplung
@@ -241,8 +244,9 @@ einzelne Vollbild-Kindprozesse und ist noch kein Fenstersystem.
   Userspace-Shell
 - Pipes, Ein-/Ausgabeumleitung und Hintergrundjobs nach Fertigstellung von
   Deskriptoren, Wait-Queues und Signalen
-- Editor: temporäre Datei plus atomisches Rename, dynamischer Puffer, Suche,
-  Auswahl/Clipboard und Aufhebung des Limits von 200 Zeilen
+- Editor: das sichere `TEMP -> close -> rename` ist umgesetzt; explizites
+  `fsync`, dynamischer Puffer, Suche, Auswahl/Clipboard und die Aufhebung des
+  Limits von 200 Zeilen fehlen
 - ein kleines Ring-3-`init` als PID 1 statt direktem Shellstart durch den Kernel
 - Mausereignisse, Fokusmodell, Compositor und Windowmanager als getrenntes
   späteres Paket statt Erweiterung der schmalen Display-ABI
@@ -743,13 +747,16 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
 1. Syscallnummern, Strukturen und Fehlercodes aus einem gemeinsamen ABI-Header
    für Kernel und SDK generieren bzw. teilen.
 2. Open-Flags, Rechte je Handle und Standarddeskriptoren 0/1/2 ergänzen.
-3. `lseek`, `fstat`, `truncate`, `rename` und `fsync` implementieren.
+3. `lseek`, `fstat`, `truncate` und `fsync` implementieren; den bestehenden
+   Rename-Syscall in den gemeinsamen ABI-Header überführen.
 4. Teilzugriffe, EOF, ungültige Handles und Prozess-Exit vollständig testen.
 
 #### R2.2 VFS- und FAT-Zuverlässigkeit — L
 
-1. Atomisches Rename innerhalb eines Volumes zuerst für FAT32 umsetzen.
-2. Editor auf `TEMP -> fsync -> rename` umstellen.
+1. **Teilstatus:** Atomisches Same-Directory-Rename/Replace ist für FAT32
+   umgesetzt; Cross-Directory, FAT12 und offene Handle-Semantik fehlen.
+2. **Teilstatus:** Der Editor nutzt `TEMP -> close -> rename`; nach Einführung
+   von `fsync` muss die explizite Persistenzbarriere vor Rename ergänzt werden.
 3. Open/Delete/Unmount-Regeln und Locking vereinheitlichen.
 4. Fehler nach jedem einzelnen Sektorwrite injizieren und das resultierende
    Image mit einem Hostprüfer untersuchen.

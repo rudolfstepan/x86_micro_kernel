@@ -2,7 +2,7 @@
 
 /*
  * Experimental full-screen editor. The basic editing workflow works, but the
- * program is not finished yet; robust file replacement, richer prompts,
+ * program is not finished yet; richer prompts,
  * selection/clipboard support and broader hardware testing are still open.
  */
 
@@ -247,18 +247,49 @@ static int write_all(int descriptor, const char *buffer, unsigned int size) {
     return 0;
 }
 
+static int make_temp_path(const char *path, char temp[256]) {
+    unsigned int length = text_length(path);
+    if (length == 0 || length >= 256U) return -1;
+    unsigned int prefix = 0;
+    for (unsigned int i = 0; i < length; ++i) {
+        if (path[i] == '/' || path[i] == '\\') prefix = i + 1U;
+    }
+    static const char leaf[] = "RST00000.TMP";
+    if (prefix + sizeof(leaf) > 256U) return -1;
+    for (unsigned int i = 0; i < prefix; ++i) temp[i] = path[i];
+    for (unsigned int i = 0; i < sizeof(leaf); ++i) temp[prefix + i] = leaf[i];
+    unsigned int pid = (unsigned int)x86os_getpid();
+    for (unsigned int digit = 0; digit < 5U; ++digit) {
+        temp[prefix + 7U - digit] = (char)('0' + (pid % 10U));
+        pid /= 10U;
+    }
+    unsigned int i = 0;
+    while (path[i] == temp[i] && path[i] != '\0') ++i;
+    return path[i] == temp[i] ? -1 : 0;
+}
+
 static int save_file(const char *path, int *exists) {
-    if (*exists && x86os_unlink(path) != 0) return -1;
-    int descriptor = x86os_create(path);
+    char temp[256];
+    if (make_temp_path(path, temp) != 0) return -1;
+    (void)x86os_unlink(temp);
+    int descriptor = x86os_create(temp);
     if (descriptor < 0) return -1;
     for (unsigned int index = 0; index < line_count; ++index) {
         if (write_all(descriptor, lines[index], text_length(lines[index])) != 0 ||
             (index + 1U < line_count && write_all(descriptor, "\r\n", 2) != 0)) {
             (void)x86os_close(descriptor);
+            (void)x86os_unlink(temp);
             return -1;
         }
     }
-    if (x86os_close(descriptor) < 0) return -1;
+    if (x86os_close(descriptor) < 0) {
+        (void)x86os_unlink(temp);
+        return -1;
+    }
+    if (x86os_rename(temp, path) != 0) {
+        (void)x86os_unlink(temp);
+        return -1;
+    }
     *exists = 1;
     modified = 0;
     copy_status("Wrote file successfully");

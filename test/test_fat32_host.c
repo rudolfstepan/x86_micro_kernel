@@ -530,6 +530,23 @@ int main(void) {
                        (uint8_t*)contents) == 0);
         CHECK(vfs_close(node) == VFS_OK);
     }
+
+    static const char renamed_payload[] = "atomic replacement\r\n";
+    CHECK(fat32_replace_file("RST00001.TMP", renamed_payload,
+                             sizeof(renamed_payload) - 1));
+    CHECK(vfs_rename("/RST00001.TMP", "/README.TXT") == VFS_OK);
+    CHECK(vfs_stat("/RST00001.TMP", &listed) == VFS_ERR_NOT_FOUND);
+    CHECK(vfs_stat("/README.TXT", &listed) == VFS_OK);
+    CHECK(listed.size == sizeof(renamed_payload) - 1);
+    vfs_node_t* replaced = NULL;
+    CHECK(vfs_open("/README.TXT", &replaced) == VFS_OK);
+    char replaced_contents[sizeof(renamed_payload) - 1];
+    CHECK(vfs_read(replaced, 0, sizeof(replaced_contents),
+                   (uint8_t*)replaced_contents) ==
+          (int)sizeof(replaced_contents));
+    CHECK(memcmp(replaced_contents, renamed_payload,
+                 sizeof(replaced_contents)) == 0);
+    CHECK(vfs_close(replaced) == VFS_OK);
     CHECK(vfs_unmount("/") == VFS_OK);
     return 0;
 }
