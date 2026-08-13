@@ -644,6 +644,13 @@ falschen Ausfall. Der 64-Bit-Fortschritt vermeidet ein Langzeit-Wrap. Nach
 Timeout folgen Software-Latch, NIC-Abschaltung und Register-Rückleseprüfung;
 der Restart-Budgetwert null erzwingt bis zu einem implementierten,
 qualifizierten Reinitialisierungspfad den Safe State.
+`storage-write` überwacht nun als zweite reale Domäne jede physische ATA-/FDD-
+Schreibtransaktion mit einer 10-s-Deadline und explizitem Idle. Timeout oder
+fehlgeschlagene Ruhestellung sperren weitere Writes ohne Restartversuch. ATA
+liest `BSY/DRQ`, FDD Motorbits und Controller-Busy zurück; ein fehlgeschlagener
+ATA-Flush wird als Schreibfehler weitergereicht. Nicht gelöst ist damit die
+atomare Wiederherstellung eines bereits teilweise geschriebenen Dateisystems;
+Journal/COW, Barrieren und Power-Loss-Injection bleiben S0.5.
 Die Apply-/Verify-Callbacks samt Kontext sind ebenfalls redundant über
 `critical_object` geschützt. Single-Bit-Fehler werden korrigiert; bei zwei
 unbrauchbaren Kopien wird kein Funktionszeiger ausgeführt und unmittelbar zum

@@ -3,6 +3,7 @@
 #include "arch/x86/include/sys.h"
 #include "drivers/char/io.h"
 #include "include/kernel/panic.h"
+#include "include/kernel/storage_safety.h"
 #include "kernel/sched/scheduler.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
@@ -51,6 +52,7 @@ static bool fdc_drive_ready[4] = {false, false, false, false};
 static bool fdd_motor_running[MAX_FDD_DRIVES];
 static int8_t fdd_cached_track[MAX_FDD_DRIVES] = {-1, -1};
 static uint32_t fdd_last_activity[MAX_FDD_DRIVES];
+static volatile bool fdd_write_fenced;
 
 /* The FDC command FIFO, DMA channel and completion flag form one synchronous
  * transaction domain.  Keep IRQ6 enabled for completion and prevent another
@@ -505,8 +507,10 @@ static bool fdc_write_sectors_impl(uint8_t drive, uint8_t head, uint8_t track,
 bool fdc_write_sectors(uint8_t drive, uint8_t head, uint8_t track,
                        uint8_t sector, uint8_t count, const void* buffer) {
     fdd_transaction_begin();
-    bool result = fdc_write_sectors_impl(drive, head, track, sector, count,
-                                         buffer);
+    bool armed = !fdd_write_fenced && storage_write_begin(pit_monotonic_ms());
+    bool result = armed && fdc_write_sectors_impl(drive, head, track, sector,
+                                                  count, buffer);
+    if (armed && !storage_write_end()) result = false;
     fdd_transaction_end();
     return result;
 }
@@ -517,6 +521,23 @@ bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track,
     bool result = fdc_write_sectors(drive, head, track, sector, 1, buffer);
     fdd_transaction_end();
     return result;
+}
+
+void fdd_fence_writes(void) {
+    fdd_write_fenced = true;
+    __asm__ volatile("" ::: "memory");
+    if (!fdc_controller_initialized) return;
+    outb(FDD_DOR, (uint8_t)(inb(FDD_DOR) & 0x0FU));
+    for (uint8_t drive = 0; drive < MAX_FDD_DRIVES; ++drive) {
+        fdd_motor_running[drive] = false;
+        fdd_cached_track[drive] = -1;
+    }
+}
+
+bool fdd_writes_quiescent(void) {
+    if (!fdd_write_fenced) return false;
+    if (!fdc_controller_initialized) return true;
+    return (inb(FDD_DOR) & 0xF0U) == 0U && (inb(FDD_MSR) & MSR_CB) == 0U;
 }
 
 static bool fdc_calibrate_drive_impl(uint8_t drive) {

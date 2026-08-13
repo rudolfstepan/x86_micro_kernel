@@ -25,6 +25,7 @@
 #include "include/kernel/fatal.h"
 #include "include/kernel/watchdog.h"
 #include "include/kernel/supervisor.h"
+#include "include/kernel/storage_safety.h"
 #include "include/kernel/output_fence.h"
 #include "kernel/shell/command.h"
 #include "mm/kmalloc.h"
@@ -201,6 +202,10 @@ static void driver_init(void) {
 
     // Detect floppy drives
     fdd_detect_drives();  // Floppy disk drives
+
+    if (!storage_safety_init(pit_monotonic_ms())) {
+        panic("Unable to initialize REIST storage write supervision");
+    }
 
     // Auto-mount all detected drives
     extern void auto_mount_all_drives(void);

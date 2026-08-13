@@ -35,6 +35,8 @@ bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track,
                       uint8_t sector, const void* buffer);
 bool fdc_write_sectors(uint8_t drive, uint8_t head, uint8_t track,
                        uint8_t sector, uint8_t count, const void* buffer);
+void fdd_fence_writes(void);
+bool fdd_writes_quiescent(void);
 bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer);
 bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track,
                       uint8_t sector, uint8_t count, void* buffer);

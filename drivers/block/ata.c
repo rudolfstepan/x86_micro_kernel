@@ -6,6 +6,7 @@
 #include "lib/libc/stdlib.h"
 #include "drivers/block/fdd.h"
 #include "include/kernel/panic.h"
+#include "include/kernel/storage_safety.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"  // For pit_delay() in kernel context
 #include <stddef.h>
@@ -50,6 +51,7 @@ typedef struct {
 } ata_cache_entry_t;
 
 static ata_cache_entry_t ata_read_cache[ATA_READ_CACHE_ENTRIES];
+static volatile bool ata_write_fenced;
 
 /* ATA PIO is synchronous and uses controller-global task-file registers.  On
  * this single-core kernel a nestable preemption guard serializes complete
@@ -460,7 +462,7 @@ static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
     outb(ATA_COMMAND(base), 0xE7);  // FLUSH CACHE command
     if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
         printf("Warning: Cache flush timeout\n");
-        // Continue anyway - the write was successful
+        return false;
     }
 
     return true;
@@ -469,9 +471,27 @@ static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
 bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
                       bool is_master) {
     ata_transaction_begin();
-    bool result = ata_write_sector_impl(base, lba, buffer, is_master);
+    bool armed = !ata_write_fenced && storage_write_begin(pit_monotonic_ms());
+    bool result = armed &&
+                  ata_write_sector_impl(base, lba, buffer, is_master);
+    if (armed && !storage_write_end()) result = false;
     ata_transaction_end();
     return result;
+}
+
+void ata_fence_writes(void) {
+    ata_write_fenced = true;
+    __asm__ volatile("" ::: "memory");
+}
+
+bool ata_writes_quiescent(void) {
+    if (!ata_write_fenced) return false;
+    for (short i = 0; i < drive_count; ++i) {
+        if (detected_drives[i].type != DRIVE_TYPE_ATA) continue;
+        uint8_t status = inb(ATA_ALT_STATUS(detected_drives[i].base));
+        if ((status & (0x80U | 0x08U)) != 0U) return false;
+    }
+    return true;
 }
 
 drive_t* ata_get_drive(unsigned short drive_index) {

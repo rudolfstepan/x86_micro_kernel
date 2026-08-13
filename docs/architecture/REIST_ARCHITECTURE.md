@@ -236,6 +236,17 @@ die vorhandenen Sender und liest bei E1000, RTL8139 und NE2000 die relevanten
 Register zurück. Erst diese Rückleseprüfung bestätigt das Fence; andernfalls
 bleibt die Domäne ebenfalls im global eskalierten Safe State.
 
+Die zweite reale Domäne ist `storage-write`. ATA- und FDD-Schreibtransaktionen
+bewaffnen eine 10-s-Deadline und melden danach wieder explizit Idle. Ihr
+Restartbudget ist null. Bei einer Fristverletzung verriegelt REIST alle
+weiteren Schreibaufrufe, prüft ATA auf gelöste `BSY`-/`DRQ`-Signale und stellt
+beim FDC die Motorleitungen ab; DOR und Controller-Busy werden zurückgelesen.
+Ein ATA-Cache-Flush-Timeout wird als Fehler propagiert und nicht mehr als
+erfolgreicher Write gemeldet. Diese Sperre verhindert Folgeschäden, kann aber
+einen bereits an das Gerät übergebenen Sektor nicht zurückrollen. Atomare
+Metadatenänderungen, Journal/COW, Flush-Barrieren und Power-Loss-Recovery sind
+weiterhin Aufgabe von S0.5.
+
 Auch die Recovery-Steuerung ist Teil des kritischen Zustands: Apply-/Verify-
 Funktionszeiger und ihr Kontext liegen nicht mehr als ungeschützte Pointer in
 der Domänentabelle, sondern als Primary/Shadow-`critical_object` mit SECDED,
