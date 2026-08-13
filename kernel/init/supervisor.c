@@ -26,6 +26,9 @@ typedef struct {
 
 static supervisor_slot_t slots[SUPERVISOR_MAX_DOMAINS];
 static uint32_t next_generation = 1U;
+static uint64_t last_deadline_check_ms;
+
+#define SUPERVISOR_CHECK_INTERVAL_MS 10U
 
 static uint32_t supervisor_lock(void) {
 #ifdef REIST_HOST_TEST
@@ -95,6 +98,33 @@ void supervisor_init(void) {
         slots[slot].name[0] = '\0';
     }
     next_generation = 1U;
+    last_deadline_check_ms = 0;
+    supervisor_unlock(flags);
+}
+
+static void check_deadlines_locked(uint64_t now_ms) {
+    for (uint32_t slot = 0; slot < SUPERVISOR_MAX_DOMAINS; ++slot) {
+        if (!slots[slot].occupied) continue;
+        supervisor_state_t state;
+        if (state_read(slot, &state) != 0) continue;
+        if ((state.state == SUPERVISOR_STARTING ||
+             state.state == SUPERVISOR_HEALTHY ||
+             state.state == SUPERVISOR_DEGRADED ||
+             state.state == SUPERVISOR_RECOVERING) &&
+            now_ms >= state.deadline_ms) {
+            state.state = SUPERVISOR_ISOLATED;
+            (void)state_write(slot, &state);
+        }
+    }
+}
+
+void supervisor_clock_tick(uint64_t now_ms) {
+    if (now_ms - last_deadline_check_ms < SUPERVISOR_CHECK_INTERVAL_MS) return;
+    uint32_t flags = supervisor_lock();
+    if (now_ms - last_deadline_check_ms >= SUPERVISOR_CHECK_INTERVAL_MS) {
+        last_deadline_check_ms = now_ms;
+        check_deadlines_locked(now_ms);
+    }
     supervisor_unlock(flags);
 }
 
@@ -165,6 +195,7 @@ int supervisor_report_progress(supervisor_handle_t handle,
 supervisor_event_t supervisor_poll(uint64_t now_ms) {
     uint32_t flags = supervisor_lock();
     supervisor_event_t none = {.type = SUPERVISOR_EVENT_NONE};
+    check_deadlines_locked(now_ms);
     for (uint32_t slot = 0; slot < SUPERVISOR_MAX_DOMAINS; ++slot) {
         if (!slots[slot].occupied) continue;
         supervisor_state_t state;
@@ -176,14 +207,7 @@ supervisor_event_t supervisor_poll(uint64_t now_ms) {
             supervisor_unlock(flags);
             return result;
         }
-        if ((state.state == SUPERVISOR_STARTING || state.state == SUPERVISOR_HEALTHY ||
-             state.state == SUPERVISOR_DEGRADED || state.state == SUPERVISOR_RECOVERING) &&
-            now_ms >= state.deadline_ms) {
-            state.state = SUPERVISOR_ISOLATED;
-            if (state_write(slot, &state) != 0) {
-                supervisor_unlock(flags);
-                return event(SUPERVISOR_EVENT_SAFE_STATE_REQUIRED, slot, &state);
-            }
+        if (state.state == SUPERVISOR_ISOLATED) {
             supervisor_event_t result = event(SUPERVISOR_EVENT_FENCE_REQUIRED,
                                                slot, &state);
             supervisor_unlock(flags);

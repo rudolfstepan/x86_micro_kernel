@@ -52,6 +52,7 @@ typedef struct {
 } supervisor_event_t;
 
 void supervisor_init(void);
+void supervisor_clock_tick(uint64_t now_ms);
 int supervisor_register(const char *name, const supervisor_config_t *config,
                         const supervisor_fence_ops_t *fence_ops,
                         uint64_t now_ms, supervisor_handle_t *handle_out);

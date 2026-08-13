@@ -35,12 +35,18 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("SUPERVISOR_EVENT_FENCE_REQUIRED", source)
         self.assertIn("fence_ops.apply(fence_ops.context)", source)
         self.assertIn("fence_ops.verify(fence_ops.context)", source)
+        self.assertIn("SUPERVISOR_CHECK_INTERVAL_MS 10U", source)
+        self.assertIn("state.state == SUPERVISOR_ISOLATED", source)
         self.assertNotIn("supervisor_ack_fenced", header)
         self.assertIn("restart_count >= state.restart_budget", source)
         self.assertIn("state->epoch != handle.epoch", source)
         self.assertNotIn("k_malloc", source)
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
         self.assertIn("supervisor_init();", kernel)
+
+    def test_pit_drives_bounded_supervisor_deadline_checks(self):
+        pit = (ROOT / "kernel/time/pit.c").read_text(encoding="utf-8")
+        self.assertIn("supervisor_clock_tick(timer_tick_count);", pit)
 
 
 if __name__ == "__main__":

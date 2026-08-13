@@ -628,6 +628,11 @@ Das Restart-Gate akzeptiert keine vertrauensbasierte Fence-Bestätigung mehr:
 Jede Domäne muss einen Apply- und einen separaten Verify-Hook bereitstellen.
 Der atomar beanspruchte Zustand `FENCING` verhindert Doppelaufrufe; nur eine
 positive Rückleseprüfung führt zu Restart, jeder Fehler zu `SAFE_STATE`.
+Deadlineprüfungen laufen zusätzlich in einem festen 10-ms-Raster aus der
+monotonen PIT-Zeit. Der Clockpfad persistiert ausschließlich `ISOLATED`; die
+potenziell blockierende Hardwareaktion verbleibt im Foreground. Offen sind der
+dedizierte Foreground-Executor sowie die Registrierung der ersten realen
+Dienst-/Treiberdomäne mit eigener Idle-Health-Semantik.
 
 1. Einen minimalen Safety-Kern definieren; Treiber, Dateisystem, Netzwerk und
    GUI in neu startbare Least-Privilege-Domänen verschieben.

@@ -207,6 +207,12 @@ Nach einem Deadlinefehler beansprucht der Supervisor die Domäne atomar als
 erlaubt einen Restart ausschließlich nach positiver Rückleseprüfung. Ein
 fehlgeschlagenes Apply oder Verify eskaliert unmittelbar in `SAFE_STATE`;
 eine bloße Software-Bestätigung kann das Gate nicht mehr passieren.
+Der PIT-Clockpfad prüft die feste Tabelle in einem begrenzten 10-ms-Raster und
+schreibt abgelaufene Deadlines dauerhaft als `ISOLATED` in den
+ECC-geschützten Domänenzustand. Er führt dort weder Fencing noch Restart aus.
+Der spätere Foreground-Executor kann das wiederholbar angebotene
+`FENCE_REQUIRED` daher verlustfrei übernehmen; ein verzögerter Executor kann
+keine Timeoutmeldung versehentlich konsumieren.
 
 Unterbrechungsfreie wesentliche
 Leistung bei Kernel-, CPU-, RAM- oder Stromfehlern setzt eine ausreichend

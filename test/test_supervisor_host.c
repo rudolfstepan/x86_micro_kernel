@@ -34,8 +34,10 @@ int main(void) {
     if (supervisor_report_progress(handle, 1U, 1020U) == 0) return 5;
     if (supervisor_poll(1109U).type != SUPERVISOR_EVENT_NONE) return 6;
 
+    supervisor_clock_tick(1110U);
     supervisor_event_t fence = supervisor_poll(1110U);
     if (fence.type != SUPERVISOR_EVENT_FENCE_REQUIRED) return 7;
+    if (supervisor_poll(1111U).type != SUPERVISOR_EVENT_FENCE_REQUIRED) return 25;
     if (supervisor_output_allowed(handle)) return 8;
     supervisor_event_t restart = supervisor_apply_fence(fence.handle, 1120U);
     if (restart.type != SUPERVISOR_EVENT_RESTART_REQUIRED) return 9;
