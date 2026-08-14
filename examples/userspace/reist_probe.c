@@ -86,6 +86,16 @@ int main(int argc, char **argv) {
                     return 7;
                 continue;
             }
+            if (message_is(&request, "NETCRASH")) {
+                if (x86os_network_probe() != 0) {
+                    message_init(&response, "REIST_NET_UNAVAILABLE");
+                    if (x86os_ipc_send_timeout(endpoint, &response, 100U) != 0)
+                        return 7;
+                    continue;
+                }
+                __asm__ volatile("ud2");
+                return 10;
+            }
             const char *network = network_classification(&request);
             if (network != NULL && request.payload[3] == 'R') {
                 uint32_t ethertype = ((uint32_t)request.payload[16] << 8) |

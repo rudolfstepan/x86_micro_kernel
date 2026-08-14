@@ -59,6 +59,10 @@ S0.3c-3d hat die parallele Verarbeitung für den übernommenen ARP-Probe-Reply
 entfernt: Erfolgreiche IPC-Übernahme bedeutet ausschließlich Ring 3; bei nicht
 übernommenen Frames bleibt der Kernelpfad fail-closed zuständig. Pending-Zustand
 wird beim Fence generationssicher verworfen.
+S0.3c-3e weist diese Grenze nun per realer Fault-Injection nach: Nach einem
+echten Handoff crasht der Dienst bei ausstehender Probe, der alte Kanal bricht
+ab und GTEST verbindet sich begrenzt mit der neuen Generation. Diagnose und
+unabhängiger Gastfortschritt erreichen danach wieder `TEST_OK`.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 

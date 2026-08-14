@@ -28,9 +28,12 @@ REIST_PROBE_MARKERS = (
     "REIST_PROBE INVALID_RECOVERED",
     "REIST_PROBE REINTEGRATED",
 )
+REIST_PROBE_COMPLETION_MARKER = "REIST_PROBE RECOVERY_SEQUENCE_OK"
 REIST_SERVICE_MARKER = "TEST_STAGE DIAGNOSTIC_SERVICE_OK"
 REIST_NETWORK_MARKER = "TEST_STAGE NETWORK_PARSER_OK"
 REIST_NETWORK_HANDOFF_MARKER = "TEST_STAGE NETWORK_HANDOFF_OK"
+REIST_NETWORK_CRASH_MARKER = "REIST_NETWORK SERVICE_CRASH_RECOVERED"
+REIST_NETWORK_RECOVERY_MARKER = "TEST_STAGE NETWORK_RECOVERY_OK"
 SHELL_PROMPT = "C:\\>"
 FAIL_MARKERS = (
     "TEST_FAIL",
@@ -216,7 +219,7 @@ def run(
         if error is None and expect_reist_probe:
             error, _ = wait_for_line(
                 process, chunks, transcript, finished,
-                REIST_PROBE_MARKERS[-1], deadline,
+                REIST_PROBE_COMPLETION_MARKER, deadline,
             )
         if error is None:
             # The UART RX path currently drops command bursts.  Pace every
@@ -276,14 +279,12 @@ def validate(
         if positions != sorted(positions):
             return "fatal-injection/recovery markers are out of order"
     if expect_reist_probe:
-        positions = [exact_line_position(transcript, marker)
-                     for marker in REIST_PROBE_MARKERS]
-        if any(position < 0 for position in positions):
-            return "missing REIST probe recovery marker"
-        if positions != sorted(positions) or positions[-1] > test:
-            return "REIST probe recovery markers are out of order"
+        completion = exact_line_position(transcript,
+                                         REIST_PROBE_COMPLETION_MARKER)
+        if completion < 0 or completion > test:
+            return "missing cumulative REIST probe recovery marker"
         service = exact_line_position(transcript, REIST_SERVICE_MARKER)
-        if service < positions[-1] or service > test:
+        if service < completion or service > test:
             return "missing ordered REIST diagnostic-service marker"
         network = exact_line_position(transcript, REIST_NETWORK_MARKER)
         if network < service or network > test:
@@ -293,6 +294,11 @@ def validate(
                                       REIST_NETWORK_HANDOFF_MARKER)
         if handoff < 0 or handoff > test:
             return "missing ordered real NIC network-handoff marker"
+        crash = exact_line_position(transcript, REIST_NETWORK_CRASH_MARKER)
+        recovery = exact_line_position(transcript,
+                                       REIST_NETWORK_RECOVERY_MARKER)
+        if crash < handoff or recovery < crash or recovery > test:
+            return "missing ordered network-service crash recovery marker"
     return None
 
 

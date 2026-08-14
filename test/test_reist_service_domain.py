@@ -132,6 +132,19 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("scheduler_sleep_ms(SUPERVISOR_CHECK_INTERVAL_MS)",
                       worker)
 
+    def test_network_handoff_crash_revokes_and_reconnects(self):
+        supervisor = read("kernel/init/supervisor.c")
+        service = read("examples/userspace/reist_probe.c")
+        guest = read("examples/userspace/guest_test.c")
+        runner = read("scripts/run_qemu_smoke.py")
+        self.assertIn('message_is(&request, "NETCRASH")', service)
+        self.assertIn('volatile("ud2")', service)
+        self.assertIn("runtime->network_probe_pending = false", supervisor)
+        self.assertIn("REIST_NETWORK SERVICE_CRASH_RECOVERED", supervisor)
+        self.assertIn("attempt < 100U", guest)
+        self.assertIn("TEST_STAGE NETWORK_RECOVERY_OK", guest)
+        self.assertIn("REIST_NETWORK_RECOVERY_MARKER", runner)
+
 
 if __name__ == "__main__":
     unittest.main()

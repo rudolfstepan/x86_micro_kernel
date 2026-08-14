@@ -1061,9 +1061,18 @@ fehlendem Dienst, falschem EtherType oder Queue-Druck bleibt der Kernelpfad
 zuständig; Fence/Restart löscht die Pending-Autorität. Damit existiert für das
 übernommene Frame kein paralleler autoritativer Klassifikationspfad mehr.
 
-S0.3c-3e ergänzt gezielte Dienst-Crash-/Queue-Druck-Injection während eines
-realen NIC-Handoffs und weist nach, dass nicht übernommene Frames sowie der
-übrige Netzwerkbetrieb weiter Fortschritt machen.
+**S0.3c-3e ist umgesetzt:** Nach einem echten NIC-Handoff fordert GTEST einen
+zweiten ARP-Probe an; der Dienst führt unmittelbar danach absichtlich `UD2`
+aus. Der Fence löscht Pending-Autorität, Exit-Cleanup widerruft den alten
+Endpoint und der Client erwartet einen Kanalfehler. Innerhalb von höchstens
+100 × 20 ms verbindet er sich mit der Ersatzgeneration, wiederholt den
+Diagnose-Request und erreicht `NETWORK_RECOVERY_OK` sowie `TEST_OK`.
+Die Basis-Recovery gilt im Runner über `RECOVERY_SEQUENCE_OK` als abgeschlossen;
+dieser kumulative Marker entsteht ausschließlich nach der vierten erfolgreich
+selbstgetesteten Generation und ersetzt flüchtige Zwischenzeilen als Gate.
+
+S0.3c-3f ergänzt deterministischen Queue-Druck während des Handoffs und weist
+nach, dass nicht übernommene Frames im Kernelpfad weiter Fortschritt machen.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

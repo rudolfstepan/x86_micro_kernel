@@ -294,6 +294,16 @@ fehlendem Dienst, falschem EtherType oder Queue-Druck bleibt der bestehende
 Kernelpfad zuständig. Fence/Restart löscht den Pending-Zustand, sodass keine
 alte Probeautorität auf eine neue Dienstgeneration übergehen kann.
 
+S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
+während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
+alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet
+sich innerhalb einer festen 2-s-Grenze mit der Ersatzgeneration und bestätigt
+erneut `DIAG -> REIST_DIAG_OK`. Der strikte NIC-Smoke verlangt sowohl
+`SERVICE_CRASH_RECOVERED` als auch `NETWORK_RECOVERY_OK`.
+Die Laufzeitabnahme verwendet für die vorangehende Basisfolge den kumulativen
+Marker `RECOVERY_SEQUENCE_OK`, der erst nach der vierten selbstgetesteten
+Generation entsteht; einzelne konkurrierende Diagnosezeilen sind kein Gate.
+
 ## Betriebsstufen
 
 ```text

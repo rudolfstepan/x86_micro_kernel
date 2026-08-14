@@ -417,10 +417,36 @@ static int test_diagnostic_service(void) {
     if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
     ipc_message_prepare(&message);
     if (x86os_ipc_receive_timeout(handle, &message, 1000U) != 0) return -1;
-    if (ipc_message_is(&message, "REIST_NET_ARP"))
+    int network_handoff = ipc_message_is(&message, "REIST_NET_ARP");
+    if (network_handoff)
         x86os_puts("TEST_STAGE NETWORK_HANDOFF_OK\n");
     else if (!ipc_message_is(&message, "REIST_NET_UNAVAILABLE")) return -1;
-    if (x86os_ipc_release(handle) != 0) return -1;
+
+    if (!network_handoff) {
+        if (x86os_ipc_release(handle) != 0) return -1;
+        return 0;
+    }
+
+    if (x86os_sleep_ms(300U) != 0) return -1;
+    ipc_message_set(&message, "NETCRASH");
+    if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
+    ipc_message_prepare(&message);
+    if (x86os_ipc_receive_timeout(handle, &message, 1000U) >= 0) return -1;
+
+    handle = X86OS_IPC_INVALID_HANDLE;
+    for (unsigned int attempt = 0U; attempt < 100U; ++attempt) {
+        if (x86os_service_connect(X86OS_SERVICE_DIAGNOSTIC, &handle) == 0)
+            break;
+        if (x86os_sleep_ms(20U) != 0) return -1;
+    }
+    if (handle == X86OS_IPC_INVALID_HANDLE) return -1;
+    ipc_message_set(&message, "DIAG");
+    if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
+    ipc_message_prepare(&message);
+    if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
+        !ipc_message_is(&message, "REIST_DIAG_OK") ||
+        x86os_ipc_release(handle) != 0) return -1;
+    x86os_puts("TEST_STAGE NETWORK_RECOVERY_OK\n");
     return 0;
 }
 

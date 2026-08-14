@@ -108,7 +108,7 @@ class ReistProbeDomainContractTests(unittest.TestCase):
         for marker in (
             "CRASH_DETECTED", "CRASH_RECOVERED", "HANG_DETECTED",
             "HANG_RECOVERED", "INVALID_REPLY_DETECTED",
-            "INVALID_RECOVERED", "REINTEGRATED",
+            "INVALID_RECOVERED", "REINTEGRATED", "RECOVERY_SEQUENCE_OK",
         ):
             self.assertIn(marker, self.supervisor)
         recovery = function(self.supervisor,

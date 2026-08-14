@@ -394,10 +394,13 @@ static void probe_report_recovery_pair(uint32_t launch_count) {
     else if (launch_count == 3U)
         printf("\nREIST_PROBE HANG_DETECTED\n"
                "REIST_PROBE HANG_RECOVERED\n");
-    else if (launch_count >= 4U)
+    else if (launch_count == 4U)
         printf("\nREIST_PROBE INVALID_REPLY_DETECTED\n"
                "REIST_PROBE INVALID_RECOVERED\n"
-               "REIST_PROBE REINTEGRATED\n");
+               "REIST_PROBE REINTEGRATED\n"
+               "REIST_PROBE RECOVERY_SEQUENCE_OK\n");
+    else if (launch_count >= 5U)
+        printf("\nREIST_NETWORK SERVICE_CRASH_RECOVERED\n");
     scheduler_preempt_enable();
 }
 

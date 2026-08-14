@@ -29,21 +29,17 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
     def test_reist_probe_markers_are_required_in_order(self) -> None:
         transcript = "\n".join((
             "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,
+            RUNNER_MODULE.REIST_PROBE_COMPLETION_MARKER,
             RUNNER_MODULE.REIST_SERVICE_MARKER,
             RUNNER_MODULE.REIST_NETWORK_MARKER,
             "TEST_OK", "C:\\>", "",
         ))
         self.assertIsNone(RUNNER_MODULE.validate(
             transcript, expect_reist_probe=True))
-        missing = transcript.replace("REIST_PROBE HANG_RECOVERED\n", "")
-        self.assertIn("missing REIST probe", RUNNER_MODULE.validate(
+        missing = transcript.replace(
+            RUNNER_MODULE.REIST_PROBE_COMPLETION_MARKER + "\n", "")
+        self.assertIn("cumulative REIST probe", RUNNER_MODULE.validate(
             missing, expect_reist_probe=True))
-        reversed_markers = transcript.replace(
-            "REIST_PROBE CRASH_DETECTED\nREIST_PROBE CRASH_RECOVERED",
-            "REIST_PROBE CRASH_RECOVERED\nREIST_PROBE CRASH_DETECTED",
-        )
-        self.assertIn("out of order", RUNNER_MODULE.validate(
-            reversed_markers, expect_reist_probe=True))
         no_service = transcript.replace(
             RUNNER_MODULE.REIST_SERVICE_MARKER + "\n", "")
         self.assertIn("diagnostic-service", RUNNER_MODULE.validate(
@@ -56,9 +52,12 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
     def test_real_network_handoff_marker_is_optional_but_enforceable(self):
         transcript = "\n".join((
             "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,
+            RUNNER_MODULE.REIST_PROBE_COMPLETION_MARKER,
             RUNNER_MODULE.REIST_SERVICE_MARKER,
             RUNNER_MODULE.REIST_NETWORK_MARKER,
             RUNNER_MODULE.REIST_NETWORK_HANDOFF_MARKER,
+            RUNNER_MODULE.REIST_NETWORK_CRASH_MARKER,
+            RUNNER_MODULE.REIST_NETWORK_RECOVERY_MARKER,
             "TEST_OK", "C:\\>", "",
         ))
         self.assertIsNone(RUNNER_MODULE.validate(
@@ -69,10 +68,15 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertIn("real NIC", RUNNER_MODULE.validate(
             missing, expect_reist_probe=True,
             expect_network_handoff=True))
+        no_recovery = transcript.replace(
+            RUNNER_MODULE.REIST_NETWORK_RECOVERY_MARKER + "\n", "")
+        self.assertIn("crash recovery", RUNNER_MODULE.validate(
+            no_recovery, expect_reist_probe=True,
+            expect_network_handoff=True))
 
     def test_reist_probe_completion_precedes_guest_command(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
-        completion = source.index("REIST_PROBE_MARKERS[-1]")
+        completion = source.index("REIST_PROBE_COMPLETION_MARKER, deadline")
         command = source.index('for character in "GTEST\\n"')
         self.assertLess(completion, command)
 
