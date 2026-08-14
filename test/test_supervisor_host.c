@@ -163,5 +163,18 @@ int main(void) {
     supervisor_network_degradation_record(
         &stats, SUPERVISOR_NETWORK_DEGRADED_SEMANTIC);
     if (stats.semantic_reject != UINT32_MAX) return 47;
+
+    supervisor_init();
+    if (supervisor_test_record_network_degradation(
+            SUPERVISOR_NETWORK_DEGRADED_QUEUE) != 0 ||
+        supervisor_test_corrupt_network_degradation(false) != 0 ||
+        supervisor_network_degradation_snapshot(&stats) != 0 ||
+        stats.queue_fallback != 1U) return 48;
+    supervisor_init();
+    if (supervisor_test_record_network_degradation(
+            SUPERVISOR_NETWORK_DEGRADED_EXPIRED) != 0 ||
+        supervisor_test_corrupt_network_degradation(true) != 0 ||
+        supervisor_network_degradation_snapshot(&stats) !=
+            SUPERVISOR_EINTEGRITY) return 49;
     return 0;
 }

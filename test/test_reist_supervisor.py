@@ -82,6 +82,14 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("SUPERVISOR_NETWORK_DEGRADED_EXPIRED", source)
         self.assertIn("SUPERVISOR_NETWORK_DEGRADED_SEMANTIC", source)
         self.assertIn("stats.semantic_reject = UINT32_MAX", host)
+        self.assertIn("critical_object_t protected_network_degradation_stats",
+                      source)
+        self.assertIn("SUPERVISOR_NETWORK_DEGRADATION_VERSION", source)
+        self.assertIn("supervisor_test_corrupt_network_degradation(false)",
+                      host)
+        self.assertIn("supervisor_test_corrupt_network_degradation(true)",
+                      host)
+        self.assertIn("SUPERVISOR_EINTEGRITY", host)
 
     def test_pit_drives_bounded_supervisor_deadline_checks(self):
         pit = (ROOT / "kernel/time/pit.c").read_text(encoding="utf-8")

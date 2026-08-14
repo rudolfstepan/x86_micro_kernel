@@ -93,6 +93,9 @@ getrennt und saturierend. Hosttests bestätigen die drei Pfade sowie
 S0.3c-3m stellt diese Werte über die read-only, versionierte 24-Byte-ABI von
 Syscall 61 bereit. GTEST prüft ungültige Pointer, ABI-Header und den real
 gestiegenen Queue-Fallback-Zähler mit `NETWORK_STATS_OK`.
+S0.3c-3n hält den Snapshot redundant im Critical-Object-Format. Ein beschädigter
+CRC einer Kopie wird beim Lesen korrigiert; sind beide Kopien ungültig, liefert
+Syscall 61 `-84` und veröffentlicht keine möglicherweise erfundenen Werte.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 

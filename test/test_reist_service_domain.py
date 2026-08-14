@@ -245,6 +245,9 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertLess(body.index("user_range_accessible"),
                         body.index("supervisor_network_degradation_snapshot"))
         self.assertIn("NETWORK_PROBE_STATS_VERSION", body)
+        self.assertIn("snapshot_result != 0", body)
+        self.assertLess(body.index("snapshot_result != 0"),
+                        body.index("copy_to_user_space"))
         self.assertIn("copy_to_user_space", body)
         self.assertNotIn("supervisor_network_degradation_init", body)
         self.assertIn("TEST_STAGE NETWORK_STATS_OK", guest)

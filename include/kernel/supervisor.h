@@ -11,6 +11,8 @@ struct Process;
 #define SUPERVISOR_STATE_VERSION 1U
 #define SUPERVISOR_FENCE_OPS_VERSION 1U
 #define SUPERVISOR_DESCRIPTOR_VERSION 1U
+#define SUPERVISOR_NETWORK_DEGRADATION_VERSION 1U
+#define SUPERVISOR_EINTEGRITY (-84)
 #define REIST_REPORT_SELF_TEST 1U
 #define REIST_REPORT_PROGRESS 2U
 #define REIST_REPORT_INVALID 3U
@@ -86,7 +88,7 @@ void supervisor_network_degradation_init(
 void supervisor_network_degradation_record(
     supervisor_network_degradation_stats_t *stats,
     supervisor_network_degradation_reason_t reason);
-void supervisor_network_degradation_snapshot(
+int supervisor_network_degradation_snapshot(
     supervisor_network_degradation_stats_t *stats_out);
 
 void supervisor_probe_authority_init(supervisor_probe_authority_t *authority);
@@ -135,6 +137,9 @@ int supervisor_test_corrupt_fence_ops(supervisor_handle_t handle,
                                       bool corrupt_both_copies);
 int supervisor_test_corrupt_descriptor(supervisor_handle_t handle,
                                        bool corrupt_both_copies);
+int supervisor_test_corrupt_network_degradation(bool corrupt_both_copies);
+int supervisor_test_record_network_degradation(
+    supervisor_network_degradation_reason_t reason);
 #endif
 
 #endif

@@ -239,7 +239,8 @@ static int syscall_network_probe_stats(syscall_network_probe_stats_t *user_stats
     if (version != NETWORK_PROBE_STATS_VERSION ||
         user_size < sizeof(*user_stats)) return -22;
     supervisor_network_degradation_stats_t snapshot;
-    supervisor_network_degradation_snapshot(&snapshot);
+    int snapshot_result = supervisor_network_degradation_snapshot(&snapshot);
+    if (snapshot_result != 0) return snapshot_result;
     syscall_network_probe_stats_t result = {
         .version = NETWORK_PROBE_STATS_VERSION,
         .struct_size = sizeof(result),

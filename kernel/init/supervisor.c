@@ -41,7 +41,7 @@ static supervisor_slot_t slots[SUPERVISOR_MAX_DOMAINS];
 static uint32_t next_generation = 1U;
 static uint64_t last_deadline_check_ms;
 static uint32_t next_poll_slot;
-static supervisor_network_degradation_stats_t network_degradation_stats;
+static critical_object_t protected_network_degradation_stats;
 
 #define SUPERVISOR_CHECK_INTERVAL_MS 10U
 #define SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS 250U
@@ -154,21 +154,42 @@ void supervisor_network_degradation_record(
         saturating_increment(&stats->semantic_reject);
 }
 
-#ifndef REIST_HOST_TEST
+static bool network_degradation_valid(const void *payload, size_t length) {
+    return payload != NULL &&
+           length == sizeof(supervisor_network_degradation_stats_t);
+}
+
+static int network_degradation_read(
+        supervisor_network_degradation_stats_t *stats) {
+    size_t length = 0U;
+    critical_read_result_t result = critical_object_read(
+        &protected_network_degradation_stats,
+        SUPERVISOR_NETWORK_DEGRADATION_VERSION, stats, sizeof(*stats),
+        &length, network_degradation_valid);
+    return result < 0 ? SUPERVISOR_EINTEGRITY : 0;
+}
+
 static void network_degradation_record(
         supervisor_network_degradation_reason_t reason) {
     uint32_t flags = supervisor_lock();
-    supervisor_network_degradation_record(&network_degradation_stats, reason);
+    supervisor_network_degradation_stats_t stats;
+    if (network_degradation_read(&stats) == 0) {
+        supervisor_network_degradation_record(&stats, reason);
+        (void)critical_object_update(
+            &protected_network_degradation_stats,
+            SUPERVISOR_NETWORK_DEGRADATION_VERSION, &stats, sizeof(stats),
+            network_degradation_valid);
+    }
     supervisor_unlock(flags);
 }
-#endif
 
-void supervisor_network_degradation_snapshot(
+int supervisor_network_degradation_snapshot(
         supervisor_network_degradation_stats_t *stats_out) {
-    if (stats_out == NULL) return;
+    if (stats_out == NULL) return -22;
     uint32_t flags = supervisor_lock();
-    *stats_out = network_degradation_stats;
+    int result = network_degradation_read(stats_out);
     supervisor_unlock(flags);
+    return result;
 }
 
 static bool state_valid(const void *payload, size_t length) {
@@ -264,7 +285,15 @@ void supervisor_init(void) {
     next_generation = 1U;
     last_deadline_check_ms = 0;
     next_poll_slot = 0;
-    supervisor_network_degradation_init(&network_degradation_stats);
+    supervisor_network_degradation_stats_t network_stats;
+    supervisor_network_degradation_init(&network_stats);
+    if (critical_object_init(&protected_network_degradation_stats,
+                             SUPERVISOR_NETWORK_DEGRADATION_VERSION,
+                             &network_stats, sizeof(network_stats)) != 0) {
+#ifndef REIST_HOST_TEST
+        panic("Unable to initialize supervisor network statistics");
+#endif
+    }
     supervisor_unlock(flags);
 }
 
@@ -927,6 +956,19 @@ int supervisor_test_corrupt_descriptor(supervisor_handle_t handle,
     critical_object_t *object = &slots[handle.slot].protected_descriptor;
     object->primary.crc32 ^= 1U;
     if (corrupt_both_copies) object->shadow.crc32 ^= 2U;
+    return 0;
+}
+
+int supervisor_test_corrupt_network_degradation(bool corrupt_both_copies) {
+    protected_network_degradation_stats.primary.crc32 ^= 1U;
+    if (corrupt_both_copies)
+        protected_network_degradation_stats.shadow.crc32 ^= 2U;
+    return 0;
+}
+
+int supervisor_test_record_network_degradation(
+        supervisor_network_degradation_reason_t reason) {
+    network_degradation_record(reason);
     return 0;
 }
 #endif

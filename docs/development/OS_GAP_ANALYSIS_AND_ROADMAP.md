@@ -1134,9 +1134,15 @@ ABI bietet absichtlich keine Reset- oder Mutationsoperation. GTEST prüft
 EFAULT, Header/Reserved-Feld, monotone Werte und beim echten Vier-Slot-Druck
 einen gestiegenen Queue-Fallback-Zähler über `NETWORK_STATS_OK`.
 
-S0.3c-3n schützt als nächsten Schritt den Diagnose-Snapshot selbst mit dem
-bestehenden Critical-Object-Mechanismus, damit Einzelbitfehler korrigiert und
-nicht korrigierbare Doppelkopiefehler fail-closed gemeldet werden.
+**S0.3c-3n ist umgesetzt:** Der Diagnose-Snapshot liegt als versioniertes,
+redundantes Critical Object vor. Lesen repariert eine beschädigte Kopie aus der
+gültigen Replica. Bei Doppelkorruption liefert Syscall 61 `-84`, bevor Daten in
+den Userbereich kopiert werden. Deterministische Hostinjektion beweist beide
+Pfade und den Erhalt eines zuvor gezählten Ereignisses nach Einzelkorrektur.
+
+S0.3c-3o schützt als nächsten Schritt die aktive Probe-Autorität selbst gegen
+Einzelbitfehler und lehnt bei nicht korrigierbarer Metadatenkorruption jede
+weitere Probe fail-closed ab.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

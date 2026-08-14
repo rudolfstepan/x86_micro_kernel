@@ -335,14 +335,18 @@ sättigen beziehungsweise scheitern endgültig statt wiederverwendet zu werden.
 S0.3c-3l führt getrennte saturierende Diagnosezähler für Deadline-Ablauf,
 Queue-Fallback und semantische Ablehnung. Die Zähler beeinflussen keine
 Autoritätsentscheidung, werden unter der kurzen Supervisor-Sperre aktualisiert
-und können bei Beschädigung daher höchstens Diagnosequalität verlieren. Kein
-Update erfolgt im Hard-IRQ; `UINT32_MAX` bleibt dauerhaft gesättigt.
+und kein Update erfolgt im Hard-IRQ; `UINT32_MAX` bleibt dauerhaft gesättigt.
 
 S0.3c-3m exportiert die Zähler ausschließlich lesend über Syscall 61. Die
 versionierte 24-Byte-Struktur wird erst nach vollständiger Userbereichs-,
 Versions- und Größenprüfung gefüllt; `reserved` ist Null. Normale Prozesse
 besitzen keine Reset-Autorität. Der reale Queue-Druck-Gasttest fordert einen
 monoton gestiegenen Fallback-Zähler.
+
+S0.3c-3n speichert diese Statistik als Critical Object mit ECC/CRC-geschützter
+Primär- und Schattenkopie. Eine gültige Replica rekonstruiert einen beschädigten
+Snapshot. Sind beide Kopien ungültig, endet die Abfrage vor der Userkopie mit
+`-84`; das System erfindet weder Nullstände noch scheinbar plausible Zähler.
 
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
