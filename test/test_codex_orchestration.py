@@ -126,13 +126,15 @@ class CodexOrchestrationTests(unittest.TestCase):
         self.assertEqual(config["model"], "gpt-5.6-sol")
         self.assertEqual(config["model_reasoning_effort"], "low")
         self.assertEqual(config["model_verbosity"], "low")
-        self.assertEqual(config["sandbox_mode"], "workspace-write")
+        self.assertEqual(config["default_permissions"], ":workspace")
+        self.assertNotIn("sandbox_mode", config)
         self.assertEqual(config["agents"]["max_concurrent_threads_per_session"], 1)
         reviewer = tomllib.loads(
             (ROOT / ".codex/agents/reist-reviewer.toml").read_text("utf-8")
         )
         self.assertEqual(reviewer["model"], "gpt-5.6-sol")
-        self.assertEqual(reviewer["sandbox_mode"], "read-only")
+        self.assertEqual(reviewer["default_permissions"], ":read-only")
+        self.assertNotIn("sandbox_mode", reviewer)
 
     def test_task_queue_has_exactly_one_active_bounded_package(self):
         task = tomllib.loads(

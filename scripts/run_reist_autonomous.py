@@ -670,10 +670,9 @@ result object with the full 40-character commit SHA.
         print(f"{result['status']}: {result['summary']}")
         if result["status"] == "blocked":
             if discarded_status:
-                discarded = ", ".join(
-                    line[3:] for line in discarded_status.splitlines()
-                )
-                print(f"discarded isolated edits: {discarded}")
+                print("discarded isolated edits:")
+                for line in discarded_status.splitlines():
+                    print(f"  {line}")
             print(f"blocker: {result['blocker']}")
             return 2
         if result["status"] == "no_work":

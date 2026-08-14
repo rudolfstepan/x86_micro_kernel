@@ -2,7 +2,7 @@ name = "reist_reviewer"
 description = "Read-only high-assurance reviewer for a completed REIST package."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
-sandbox_mode = "read-only"
+default_permissions = ":read-only"
 developer_instructions = """
 Review only the current diff and directly affected execution paths. Prioritize
 P0/P1 correctness: unbounded waits, lost wakeups, generation/authority leaks,
