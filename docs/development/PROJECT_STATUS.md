@@ -87,6 +87,9 @@ S0.3c-3k begrenzt jede Probe-Autorität zusätzlich auf eine absolute monotone
 250-ms-Deadline. Eine hostgetestete feste Zustandsmaschine übernimmt
 Einmalverbrauch, Ablauf, Sättigung und ID-Erschöpfung; der Supervisor-Worker
 räumt abgelaufene IDs unabhängig vom RX-Pfad auf.
+S0.3c-3l zählt Deadline-Ablauf, Queue-Fallback und semantische Ablehnung
+getrennt und saturierend. Hosttests bestätigen die drei Pfade sowie
+`UINT32_MAX`; alle Updates bleiben außerhalb des Hard-IRQ-Kontexts.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 

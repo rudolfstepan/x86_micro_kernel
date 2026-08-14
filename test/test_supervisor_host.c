@@ -148,5 +148,20 @@ int main(void) {
                                          &probe_id) ||
         supervisor_probe_authority_begin(&authority, 0U, 1U,
                                          &probe_id) != -75) return 45;
+
+    supervisor_network_degradation_stats_t stats;
+    supervisor_network_degradation_init(&stats);
+    supervisor_network_degradation_record(
+        &stats, SUPERVISOR_NETWORK_DEGRADED_EXPIRED);
+    supervisor_network_degradation_record(
+        &stats, SUPERVISOR_NETWORK_DEGRADED_QUEUE);
+    supervisor_network_degradation_record(
+        &stats, SUPERVISOR_NETWORK_DEGRADED_SEMANTIC);
+    if (stats.expired != 1U || stats.queue_fallback != 1U ||
+        stats.semantic_reject != 1U) return 46;
+    stats.semantic_reject = UINT32_MAX;
+    supervisor_network_degradation_record(
+        &stats, SUPERVISOR_NETWORK_DEGRADED_SEMANTIC);
+    if (stats.semantic_reject != UINT32_MAX) return 47;
     return 0;
 }

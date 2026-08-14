@@ -1120,9 +1120,16 @@ Der Hosttest deckt Frühzugriff, exakten Ablauf, Einmalverbrauch,
 `UINT64_MAX`-Sättigung und endgültige 32-Bit-ID-Erschöpfung ab. Dadurch kann
 eine späte semantisch gleiche ARP-Antwort keine alte Autorität verwenden.
 
-S0.3c-3l ergänzt als nächsten Schritt einen expliziten, gezählten
-Degradationsstatus für abgelaufene, unter Queue-Druck zurückgefallene und
-semantisch abgelehnte Probeantworten, ohne Logging im IRQ-Pfad.
+**S0.3c-3l ist umgesetzt:** Saturierende 32-Bit-Zähler unterscheiden
+abgelaufene Autoritäten, Queue-Fallback und semantisch abgelehnte Ingress-
+Frames. Ablauf wird im 10-ms-Worker, Queue-Druck im Foreground-Handoff und
+semantische Ablehnung durch den generation-validierten Dienstbericht erfasst;
+kein Zählerpfad läuft im IRQ. Der Hosttest beweist getrennte Inkremente und
+Sättigung bei `UINT32_MAX`, sodass Diagnosewerte nie still zurückspringen.
+
+S0.3c-3m ergänzt als nächsten Schritt eine versionierte, read-only
+Diagnose-ABI für diese Zähler mit vollständiger Pointer-/Größenprüfung und
+ohne Reset-Autorität für normale Prozesse.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

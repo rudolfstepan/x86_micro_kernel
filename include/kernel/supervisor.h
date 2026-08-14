@@ -16,6 +16,7 @@ struct Process;
 #define REIST_REPORT_INVALID 3U
 #define REIST_REPORT_NETWORK_HEADER 4U
 #define REIST_REPORT_NETWORK_PROBE_ID 5U
+#define REIST_REPORT_NETWORK_DEGRADED 6U
 #define REIST_SERVICE_DIAGNOSTIC 1U
 
 typedef enum {
@@ -67,6 +68,26 @@ typedef struct {
     uint64_t deadline_ms;
     uint32_t active_id;
 } supervisor_probe_authority_t;
+
+typedef enum {
+    SUPERVISOR_NETWORK_DEGRADED_EXPIRED = 1,
+    SUPERVISOR_NETWORK_DEGRADED_QUEUE = 2,
+    SUPERVISOR_NETWORK_DEGRADED_SEMANTIC = 3,
+} supervisor_network_degradation_reason_t;
+
+typedef struct {
+    uint32_t expired;
+    uint32_t queue_fallback;
+    uint32_t semantic_reject;
+} supervisor_network_degradation_stats_t;
+
+void supervisor_network_degradation_init(
+    supervisor_network_degradation_stats_t *stats);
+void supervisor_network_degradation_record(
+    supervisor_network_degradation_stats_t *stats,
+    supervisor_network_degradation_reason_t reason);
+void supervisor_network_degradation_snapshot(
+    supervisor_network_degradation_stats_t *stats_out);
 
 void supervisor_probe_authority_init(supervisor_probe_authority_t *authority);
 int supervisor_probe_authority_begin(supervisor_probe_authority_t *authority,

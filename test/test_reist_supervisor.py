@@ -71,6 +71,18 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("UINT64_MAX - 5U", host)
         self.assertIn("probe_id != UINT32_MAX", host)
 
+    def test_network_degradation_counters_saturate(self):
+        header = (ROOT / "include/kernel/supervisor.h").read_text(encoding="utf-8")
+        source = (ROOT / "kernel/init/supervisor.c").read_text(encoding="utf-8")
+        host = (ROOT / "test/test_supervisor_host.c").read_text(encoding="utf-8")
+        for field in ("expired", "queue_fallback", "semantic_reject"):
+            self.assertIn(f"uint32_t {field};", header)
+        self.assertIn("if (*value != UINT32_MAX)", source)
+        self.assertIn("SUPERVISOR_NETWORK_DEGRADED_QUEUE", source)
+        self.assertIn("SUPERVISOR_NETWORK_DEGRADED_EXPIRED", source)
+        self.assertIn("SUPERVISOR_NETWORK_DEGRADED_SEMANTIC", source)
+        self.assertIn("stats.semantic_reject = UINT32_MAX", host)
+
     def test_pit_drives_bounded_supervisor_deadline_checks(self):
         pit = (ROOT / "kernel/time/pit.c").read_text(encoding="utf-8")
         self.assertIn("supervisor_clock_tick(timer_tick_count);", pit)

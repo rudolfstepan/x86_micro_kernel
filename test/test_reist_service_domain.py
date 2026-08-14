@@ -218,6 +218,18 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("x86os_network_probe_id((uint32_t*)(uintptr_t)0x1000U)",
                       guest)
 
+    def test_network_degradation_is_counted_outside_irq_context(self):
+        supervisor = read("kernel/init/supervisor.c")
+        service = read("examples/userspace/reist_probe.c")
+        self.assertIn("network_degradation_record(", supervisor)
+        self.assertIn("SUPERVISOR_NETWORK_DEGRADED_QUEUE", supervisor)
+        self.assertIn("SUPERVISOR_NETWORK_DEGRADED_EXPIRED", supervisor)
+        self.assertIn("REIST_REPORT_NETWORK_DEGRADED", service)
+        worker = supervisor[supervisor.index("static void supervisor_worker("):
+                            supervisor.index("bool supervisor_start_worker(")]
+        self.assertIn("supervisor_probe_authority_expire(", worker)
+        self.assertIn("network_degradation_record(", worker)
+
     def test_service_protocol_correlates_generation_scoped_requests(self):
         service = read("examples/userspace/reist_probe.c")
         guest = read("examples/userspace/guest_test.c")

@@ -130,6 +130,12 @@ static uint32_t message_probe_id(const x86os_ipc_message_t *message) {
            ((uint32_t)message->payload[63] << 24U);
 }
 
+static int message_is_network_ingress(const x86os_ipc_message_t *message) {
+    return message->length >= 4U && message->payload[0] == 'N' &&
+        message->payload[1] == 'E' && message->payload[2] == 'T' &&
+        message->payload[3] == 'R';
+}
+
 int main(int argc, char **argv) {
     if (argc != 2) return 2;
     x86os_ipc_handle_t endpoint = 0U;
@@ -199,9 +205,17 @@ int main(int argc, char **argv) {
                 continue;
             }
             const char *network = network_classification(&request);
+            if (network == NULL && pending_network_probe_id != 0U &&
+                message_is_network_ingress(&request)) {
+                if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_DEGRADED,
+                        X86OS_REIST_NETWORK_DEGRADED_SEMANTIC) != 0) return 14;
+                continue;
+            }
             if (network != NULL && request.payload[3] == 'R' &&
                 (pending_network_probe_id == 0U ||
                  message_probe_id(&request) != pending_network_probe_id)) {
+                if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_DEGRADED,
+                        X86OS_REIST_NETWORK_DEGRADED_SEMANTIC) != 0) return 14;
                 continue;
             }
             if (network != NULL && request.payload[3] == 'R') {

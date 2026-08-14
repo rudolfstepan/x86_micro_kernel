@@ -41,6 +41,7 @@ static supervisor_slot_t slots[SUPERVISOR_MAX_DOMAINS];
 static uint32_t next_generation = 1U;
 static uint64_t last_deadline_check_ms;
 static uint32_t next_poll_slot;
+static supervisor_network_degradation_stats_t network_degradation_stats;
 
 #define SUPERVISOR_CHECK_INTERVAL_MS 10U
 #define SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS 250U
@@ -130,6 +131,44 @@ bool supervisor_probe_authority_expire(supervisor_probe_authority_t *authority,
 
 void supervisor_probe_authority_cancel(supervisor_probe_authority_t *authority) {
     if (authority != NULL) authority->active_id = 0U;
+}
+
+void supervisor_network_degradation_init(
+        supervisor_network_degradation_stats_t *stats) {
+    if (stats != NULL) *stats = (supervisor_network_degradation_stats_t){0};
+}
+
+static void saturating_increment(uint32_t *value) {
+    if (*value != UINT32_MAX) ++*value;
+}
+
+void supervisor_network_degradation_record(
+        supervisor_network_degradation_stats_t *stats,
+        supervisor_network_degradation_reason_t reason) {
+    if (stats == NULL) return;
+    if (reason == SUPERVISOR_NETWORK_DEGRADED_EXPIRED)
+        saturating_increment(&stats->expired);
+    else if (reason == SUPERVISOR_NETWORK_DEGRADED_QUEUE)
+        saturating_increment(&stats->queue_fallback);
+    else if (reason == SUPERVISOR_NETWORK_DEGRADED_SEMANTIC)
+        saturating_increment(&stats->semantic_reject);
+}
+
+#ifndef REIST_HOST_TEST
+static void network_degradation_record(
+        supervisor_network_degradation_reason_t reason) {
+    uint32_t flags = supervisor_lock();
+    supervisor_network_degradation_record(&network_degradation_stats, reason);
+    supervisor_unlock(flags);
+}
+#endif
+
+void supervisor_network_degradation_snapshot(
+        supervisor_network_degradation_stats_t *stats_out) {
+    if (stats_out == NULL) return;
+    uint32_t flags = supervisor_lock();
+    *stats_out = network_degradation_stats;
+    supervisor_unlock(flags);
 }
 
 static bool state_valid(const void *payload, size_t length) {
@@ -225,6 +264,7 @@ void supervisor_init(void) {
     next_generation = 1U;
     last_deadline_check_ms = 0;
     next_poll_slot = 0;
+    supervisor_network_degradation_init(&network_degradation_stats);
     supervisor_unlock(flags);
 }
 
@@ -546,6 +586,11 @@ int supervisor_probe_report(int pid, uint32_t generation,
         printf("REIST_NETWORK PROBE_ID_OK\n");
         return 0;
     }
+    if (report_type == REIST_REPORT_NETWORK_DEGRADED) {
+        if (value != SUPERVISOR_NETWORK_DEGRADED_SEMANTIC) return -1;
+        network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_SEMANTIC);
+        return 0;
+    }
     return -1;
 }
 
@@ -613,7 +658,10 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     /* A matching reply consumes exactly one probe authorization even when
      * bounded IPC pressure forces the frame back to the kernel path. */
     probe_runtime.network_probe_delivered_id = ingress == 0 ? probe_id : 0U;
-    if (ingress == -11) printf("REIST_NETWORK QUEUE_PRESSURE_FALLBACK\n");
+    if (ingress == -11) {
+        network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_QUEUE);
+        printf("REIST_NETWORK QUEUE_PRESSURE_FALLBACK\n");
+    }
     return ingress == 0;
 }
 
@@ -663,8 +711,11 @@ static void supervisor_worker(void) {
          * pending flags, so foreground progress must not depend on a shell
          * command happening to poll the NIC. */
         netdev_poll();
-        (void)supervisor_probe_authority_expire(
-            &probe_runtime.network_probe_authority, pit_monotonic_ms());
+        if (supervisor_probe_authority_expire(
+                &probe_runtime.network_probe_authority,
+                pit_monotonic_ms())) {
+            network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_EXPIRED);
+        }
         if (probe_runtime.active && !probe_runtime.fenced &&
             !process_identity_alive(probe_runtime.pid,
                                     probe_runtime.process_generation)) {

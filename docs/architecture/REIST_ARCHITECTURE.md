@@ -332,6 +332,12 @@ und Cancel sind allokationsfrei und besitzen keine Schleifen. Nach 250 ms wird
 die aktive ID im Supervisor-Worker widerrufen; Deadline- und ID-Überlauf
 sättigen beziehungsweise scheitern endgültig statt wiederverwendet zu werden.
 
+S0.3c-3l führt getrennte saturierende Diagnosezähler für Deadline-Ablauf,
+Queue-Fallback und semantische Ablehnung. Die Zähler beeinflussen keine
+Autoritätsentscheidung, werden unter der kurzen Supervisor-Sperre aktualisiert
+und können bei Beschädigung daher höchstens Diagnosequalität verlieren. Kein
+Update erfolgt im Hard-IRQ; `UINT32_MAX` bleibt dauerhaft gesättigt.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet
