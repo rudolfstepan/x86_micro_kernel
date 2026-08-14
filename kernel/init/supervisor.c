@@ -1326,7 +1326,9 @@ int supervisor_network_commit_arp_binding(
         result = supervisor_protected_network_context_consume_epoch(
             &probe_runtime.network_probe_context, control.network_epoch,
             binding->probe_id);
-    if (result == 0 && !netstack_commit_arp_binding(binding->ip, binding->mac))
+    if (result == 0 && !netstack_commit_arp_binding(
+            binding->ip, binding->mac, binding->probe_id,
+            pit_monotonic_ms()))
         result = -22;
     supervisor_unlock(transaction_flags);
     if (result == 0)

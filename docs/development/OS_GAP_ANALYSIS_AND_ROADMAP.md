@@ -1,6 +1,6 @@
 # Fehlstellenanalyse und Implementierungsfahrplan
 
-Stand: 13. August 2026
+Stand: 14. August 2026
 
 Dieses Dokument beschreibt den anhand des aktuellen Quellstands geprüften
 Ist-Zustand, die wichtigsten noch fehlenden Betriebssystemfunktionen und eine
@@ -66,9 +66,73 @@ ATA-/FDD-Zugriffe und verlagert Netzwerk- sowie HPET-Arbeit aus dem harten
 IRQ-Kontext. Strukturierte Logs und vollständige Panic-Diagnosen schließen
 den Meilenstein ab. R1.4 ergänzt den nativen VBE-Handoff, eine schmale
 versionierte Ring-3-Display-ABI und `DESKTOP.PRG`. Vor jedem weiteren regulären
-Funktionspaket steht nun das Sicherheits-Gate S0. Der nächste Schritt ist S0.1:
-Einsatzprofil, Essential Functions, Gefahren, sichere/degradierte Zustände
-und maximale Fehlerreaktionszeiten rückverfolgbar festzulegen.
+Funktionspaket steht das Sicherheits-Gate S0. Wesentliche Grundlagen aus S0.1
+und S0.2 sowie S0.3a und S0.3b sind umgesetzt; aktiv ist die schrittweise
+Migration des Netzwerkdienstes in S0.3c. Die noch offenen Nachweise aus S0.1
+und S0.2 bleiben sichtbar und werden nicht durch spätere Teilpakete ersetzt.
+
+### 2.1 Fortschrittsübersicht
+
+Diese Liste ist der schnelle Einstieg in den Arbeitsstand. `[x]` bedeutet
+umgesetzt und mit den im Paket genannten Tests abgenommen. `[ ]` bedeutet
+offen; der Zusatz **in Arbeit** kennzeichnet genau das aktuelle Paket.
+Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
+und 10 verbindlich.
+
+#### Abgeschlossene Grundlagen
+
+- [x] R0.1 Atomarer Wait/Wakeup-Pfad
+- [x] R0.2 Einheitliche Exception-Stubs einschließlich `#AC`
+- [x] R0.3 Festgeschriebener und validierter PRG-v1-Vertrag
+- [x] R0.4 Automatisierter Ring-3-QEMU-Smoke
+- [x] R1.1 Wait-Queues, blockierendes Sleep/Yield und monotone 64-Bit-Zeit
+- [x] R1.2 Speicherverwaltung, dynamischer Heap, Guardpages und Reaping
+- [x] R1.3 Synchronisations-, IRQ-, Logging- und Panic-Vertrag
+- [x] R1.4 Nativer VBE-Handoff und grafischer Ring-3-Desktop-MVP
+
+#### High-Assurance-Gate S0
+
+- [ ] S0.1 Einsatzprofile, Gefahrenregister und vollständiger Assurance Case
+  - [x] Generischer High-Assurance-Kernvertrag und getrennte Referenzprofile
+  - [ ] Versioniertes Gefahrenregister mit FTTI und Restrisiken
+  - [ ] Automatische Traceability von Gefahr bis Testergebnis
+- [ ] S0.2 Vollständiges Stack-, Exception- und Panic-Containment
+  - [x] Guardpages, Double-Fault-Notfallpfad, Crashrecord und QEMU-Watchdog
+  - [ ] Callgraph-Gesamtbudgets und Stack-Watermarks
+  - [ ] Unabhängiger Zielhardware-Watchdog mit rücklesbarem Fencing
+- [x] S0.3a Begrenzte IPC-/Capability-Basis
+- [x] S0.3b Überwachte, neu startbare Least-Privilege-Probedomäne
+- [ ] S0.3c Reale Dienstmigration und Redundanz
+  - [x] S0.3c-1 Begrenzter Ring-3-Diagnosedienst
+  - [x] S0.3c-2 Freigabe delegierter Client-Capabilities ohne Quota-Leck
+  - [x] S0.3c-3a bis 3r Geschützter, epochengebundener Netzwerk-Handoff
+  - [x] S0.3c-4a Eng vermittelte ARP-Zustandsänderung aus Ring 3
+  - [x] S0.3c-4b Geschützter ARP-Cache mit Ablaufzeit, Quellepoche,
+    Redundanz und Fail-Closed-Lookup
+  - [ ] **S0.3c-4c in Arbeit:** Dienstneustart widerruft Bindungen der alten
+    Epoche und
+    weist Scrubbing sowie Integritätseskalation im Gast nach
+  - [ ] S0.3c-5 Netzwerkdatenpfad vollständig aus Ring 0 lösen und den
+    Dienst unter Fehler-, Druck- und Restart-Injektion abnehmen
+  - [ ] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
+  - [ ] S0.3c-7 Unabhängiger Standby-/Supervisor-Kanal und realer Handover
+- [ ] S0.4 Deterministische Planung und garantierte Ressourcen
+- [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
+- [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
+
+#### Funktionsroadmap nach dem S0-Gate
+
+- [ ] R2.1 Gemeinsame ABI v1 und vollständige Dateideskriptoren
+- [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
+- [ ] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
+- [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
+- [ ] R3.2 Userspace-Shell und Init-/Service-Management
+- [ ] R4.1 Gehärtetes IPv4/UDP und Socket-ABI
+- [ ] R4.2 DNS
+- [ ] R4.3 TCP
+- [ ] R5.1 ACPI-, DMA- und Plattformbasis
+- [ ] R5.2 xHCI/USB in überprüfbaren Stufen
+- [ ] R6 Optionale Modernisierung: UEFI, SMP, 64 Bit und Highmem
 
 ## 3. Verifizierter Ist-Zustand
 
@@ -164,22 +228,22 @@ separate Bereinigung der optionalen Legacy-Image-Tests bleiben Folgearbeiten.
 
 ### Prozess, Scheduler und IPC
 
-- **S0.3a umgesetzt:** 16 statische Endpoints, acht Capabilities je Prozess,
+- [x] **S0.3a umgesetzt:** 16 statische Endpoints, acht Capabilities je Prozess,
   vier Nachrichten je Queue, 128 Byte Nutzlast, blockierendes Send/Receive,
   explizite abschwächende Delegation ohne `CONTROL` und vollständiger
   Exit-Widerruf
-- **umgesetzt:** ein Taskslot, ein Prozessslot und 32 Frames bleiben für
+- [x] **umgesetzt:** ein Taskslot, ein Prozessslot und 32 Frames bleiben für
   explizite Supervisor-Spawns reserviert
-- **umgesetzt:** vollständiges 56-Syscall-Inventar; Default-Deny-Probeprofil
+- [x] **umgesetzt:** vollständiges 56-Syscall-Inventar; Default-Deny-Probeprofil
   und generation-sicheres Child-Kill vor jedem Seiteneffekt
-- generische Wait-Queues auf weitere Geräte- und Protokollereignisse anwenden
-- Pipes, Prozessgruppen und ein kleines Signalmodell
-- `waitpid(-1, ...)`, optionales nichtblockierendes Warten und saubere
+- [ ] generische Wait-Queues auf weitere Geräte- und Protokollereignisse anwenden
+- [ ] Pipes, Prozessgruppen und ein kleines Signalmodell
+- [ ] `waitpid(-1, ...)`, optionales nichtblockierendes Warten und saubere
   Reparenting-/Reaper-Semantik
-- dynamische oder zumindest deutlich größere Tasktabelle statt `MAX_TASKS 8`
-- Prioritäten erst nach korrekter Blockierung; Threads und SMP deutlich später
-- echte User-Stack-Guardpages zusätzlich zu den vorhandenen Kernel-Guardpages
-  und aussagekräftigere Prozessstatistiken
+- [ ] dynamische oder zumindest deutlich größere Tasktabelle statt `MAX_TASKS 8`
+- [ ] Prioritäten erst nach korrekter Blockierung; Threads und SMP deutlich später
+- [x] echte User-Stack-Guardpages zusätzlich zu den vorhandenen Kernel-Guardpages
+- [ ] aussagekräftigere Prozessstatistiken
 
 ### Syscall- und Userspace-ABI
 
@@ -209,35 +273,35 @@ versionierte 128-Byte-Nachricht wird vollständig über validierte User-Kopien
 an die unter Präemptionsschutz aufgelöste aktuelle Generation einer Ziel-PID.
 `CONTROL` und Ambient-Spawn-Vererbung sind ausgeschlossen.
 
-- eine einzige gemeinsame, versionierte Quelle für Syscallnummern und
+- [ ] eine einzige gemeinsame, versionierte Quelle für Syscallnummern und
   Fehlercodes
-- stabile `errno`-ähnliche Fehlersemantik; aktuell werden VFS-Fehler oft auf
+- [ ] stabile `errno`-ähnliche Fehlersemantik; aktuell werden VFS-Fehler oft auf
   allgemeine Werte wie `-2`, `-5` oder `-9` reduziert
-- `open`-Flags (`RDONLY`, `WRONLY`, `RDWR`, `CREATE`, `TRUNC`, `APPEND`)
-- `lseek`, `fstat`, `truncate`, später `dup`/`dup2`; FAT32/ATA-`fsync` und
+- [ ] `open`-Flags (`RDONLY`, `WRONLY`, `RDWR`, `CREATE`, `TRUNC`, `APPEND`)
+- [ ] `lseek`, `fstat`, `truncate`, später `dup`/`dup2`; FAT32/ATA-`fsync` und
   Rename sind als erste persistente Spezialfälle vorhanden
-- echte Deskriptoren 0/1/2 für Standard-Ein-/Ausgabe
-- ABI-Fähigkeitsabfrage, damit ältere Programme kontrolliert weiterlaufen
+- [ ] echte Deskriptoren 0/1/2 für Standard-Ein-/Ausgabe
+- [ ] ABI-Fähigkeitsabfrage, damit ältere Programme kontrolliert weiterlaufen
 
 ### VFS, Dateisysteme und Blockgeräte
 
-- Rename auf FAT12 sowie verzeichnis- und volumenübergreifendes Verschieben;
+- [ ] Rename auf FAT12 sowie verzeichnis- und volumenübergreifendes Verschieben;
   FAT32 Same-Directory-Replace ist journalgestützt atomar
-- konsistente Open-Handle-, Delete- und Unmount-Semantik unter Nebenläufigkeit
-- eine generische `block_device`-Schnittstelle mit `read`, `write`, `flush`,
+- [ ] konsistente Open-Handle-, Delete- und Unmount-Semantik unter Nebenläufigkeit
+- [ ] eine generische `block_device`-Schnittstelle mit `read`, `write`, `flush`,
   Sektorgröße und Kapazität statt direkter ATA/FDD-Kopplung
-- Partitionen als eigene Blockgeräte; derzeit wird pro physischem Laufwerk nur
+- [ ] Partitionen als eigene Blockgeräte; derzeit wird pro physischem Laufwerk nur
   ein gefundenes Dateisystem automatisch gemountet
-- vollständige MBR-Prüfung und später GPT; Partitionsgrenzen bei jeder I/O
+- [ ] vollständige MBR-Prüfung und später GPT; Partitionsgrenzen bei jeder I/O
   erzwingen
-- ATA LBA48 und Multi-Sektor-I/O; aktuell ist der PIO-Treiber auf LBA28
+- [ ] ATA LBA48 und Multi-Sektor-I/O; aktuell ist der PIO-Treiber auf LBA28
   begrenzt (`drivers/block/ata.h:25`)
-- FAT-Schreibreihenfolge, Fehlerpropagation und Power-Loss-Tests
-- FAT Long File Names und eine definierte Zeichenkodierung
-- FAT-Zeitstempel über VFS; FAT32 liefert derzeit Nullen
-- mehrere FAT12-Volumes; der Adapter besitzt aktuell nur einen globalen
+- [ ] FAT-Schreibreihenfolge, Fehlerpropagation und Power-Loss-Tests
+- [ ] FAT Long File Names und eine definierte Zeichenkodierung
+- [ ] FAT-Zeitstempel über VFS; FAT32 liefert derzeit Nullen
+- [ ] mehrere FAT12-Volumes; der Adapter besitzt aktuell nur einen globalen
   `mounted_fat12_fs`
-- EXT2 entweder klar dauerhaft read-only halten oder erst nach den
+- [ ] EXT2 entweder klar dauerhaft read-only halten oder erst nach den
   Zuverlässigkeitsarbeiten vollständig schreibbar machen
 
 ### Terminal, Shell und Desktop
@@ -251,70 +315,71 @@ Der Desktop-MVP umgeht die feste Terminalgeometrie für seine Oberfläche über
 Pixelrechtecke und Pixelschrift. Er startet vorhandene Apps jedoch bewusst als
 einzelne Vollbild-Kindprozesse und ist noch kein Fenstersystem.
 
-- TTY-Abstraktion mit kanonischem/raw Modus, Echo und per-Prozess
+- [ ] TTY-Abstraktion mit kanonischem/raw Modus, Echo und per-Prozess
   Vordergrundgruppe
-- `Ctrl+C` als Signal an die Vordergrundgruppe statt Sonderbehandlung direkt
+- [ ] `Ctrl+C` als Signal an die Vordergrundgruppe statt Sonderbehandlung direkt
   im `getchar`-Syscall
-- dynamische Terminalgröße; mehrere Syscalls prüfen heute fest gegen 80x25,
+- [ ] dynamische Terminalgröße; mehrere Syscalls prüfen heute fest gegen 80x25,
   obwohl der Framebuffer andere Größen besitzen kann
-- Quotes/Escapes, Umgebungsvariablen, Verlauf und Exitcodes in der
+- [ ] Quotes/Escapes, Umgebungsvariablen, Verlauf und Exitcodes in der
   Userspace-Shell
-- Pipes, Ein-/Ausgabeumleitung und Hintergrundjobs nach Fertigstellung von
+- [ ] Pipes, Ein-/Ausgabeumleitung und Hintergrundjobs nach Fertigstellung von
   Deskriptoren, Wait-Queues und Signalen
-- Editor: das sichere `TEMP -> fsync -> close -> rename` ist umgesetzt;
+- [ ] Editor: das sichere `TEMP -> fsync -> close -> rename` ist umgesetzt;
   dynamischer Puffer, Suche, Auswahl/Clipboard und die Aufhebung des
   Limits von 200 Zeilen fehlen
-- ein kleines Ring-3-`init` als PID 1 statt direktem Shellstart durch den Kernel
-- Mausereignisse, Fokusmodell, Compositor und Windowmanager als getrenntes
+- [ ] ein kleines Ring-3-`init` als PID 1 statt direktem Shellstart durch den Kernel
+- [ ] Mausereignisse, Fokusmodell, Compositor und Windowmanager als getrenntes
   späteres Paket statt Erweiterung der schmalen Display-ABI
 
 ### Netzwerk
 
-- ARP-Ablauf/Erneuerung, DHCP-Lease-Timer und Renew/Rebind
-- robuste IPv4-Fehlerpfade und definierter Umgang mit Fragmenten; aktuell
+- [ ] ARP-Ablauf/Erneuerung, DHCP-Lease-Timer und Renew/Rebind
+- [ ] robuste IPv4-Fehlerpfade und definierter Umgang mit Fragmenten; aktuell
   werden Fragmente verworfen
-- nutzbares UDP-Binding: `udp_bind()` ist in
+- [ ] nutzbares UDP-Binding: `udp_bind()` ist in
   `drivers/net/netstack.c:961-964` noch ein Stub
-- Socketobjekte als Dateideskriptoren und Userspace-Syscalls
-- DNS-Resolver nach funktionierenden UDP-Sockets
-- TCP mit Zustandsautomat, Sequenznummern, Retransmission, Timern, Fenstern und
+- [ ] Socketobjekte als Dateideskriptoren und Userspace-Syscalls
+- [ ] DNS-Resolver nach funktionierenden UDP-Sockets
+- [ ] TCP mit Zustandsautomat, Sequenznummern, Retransmission, Timern, Fenstern und
   sauberem Verbindungsabbau; alle vier öffentlichen TCP-Funktionen sind derzeit
   Stubs (`drivers/net/netstack.c:966-970`)
-- erste Anwendungen wie `netcat` und ein kleiner HTTP/1.0-Client
-- IPv6 erst nach einer belastbaren IPv4-/Socket-Schicht
-- VMXNET3 nur implementieren, wenn E1000 nicht mehr als VMware-Referenz reicht;
+- [ ] erste Anwendungen wie `netcat` und ein kleiner HTTP/1.0-Client
+- [ ] IPv6 erst nach einer belastbaren IPv4-/Socket-Schicht
+- [ ] VMXNET3 nur implementieren, wenn E1000 nicht mehr als VMware-Referenz reicht;
   der vorhandene Treiber deaktiviert das Gerät absichtlich
 
 ### USB und moderne Hardware
 
-- DMA-API für physische Adressen, Alignment, 32-Bit-Grenzen und kohärente
+- [ ] DMA-API für physische Adressen, Alignment, 32-Bit-Grenzen und kohärente
   Puffer
-- vollständiger xHCI-Reset und Controllerstart, Command-/Event-/Transfer-Ringe,
+- [ ] vollständiger xHCI-Reset und Controllerstart, Command-/Event-/Transfer-Ringe,
   Doorbells und Interrupts
-- Root-Port-Status, Geräteadressierung, Deskriptoren und Konfiguration
-- Hub-Unterstützung, danach HID-Tastatur und USB-Massenspeicher
-- der heutige Code endet nach PCI/BAR/IRQ-Ausgabe und lässt xHCI deaktiviert
+- [ ] Root-Port-Status, Geräteadressierung, Deskriptoren und Konfiguration
+- [ ] Hub-Unterstützung, danach HID-Tastatur und USB-Massenspeicher
+- [ ] der heutige Code endet nach PCI/BAR/IRQ-Ausgabe und lässt xHCI deaktiviert
   (`drivers/usb/xhci.c:4-25`); `hub.c` und `hid_kb.c` sind Platzhalter
-- zentrale, validierte ACPI-Schicht statt der isolierten experimentellen
+- [ ] zentrale, validierte ACPI-Schicht statt der isolierten experimentellen
   HPET-Suche; danach HPET als optionalen Clocksource, IOAPIC und
   Poweroff/Reboot integrieren
-- AHCI/NVMe erst nach Block- und DMA-Abstraktion
+- [ ] AHCI/NVMe erst nach Block- und DMA-Abstraktion
 
 ### Sicherheit, Diagnose und Produktreife
 
-- dokumentiertes Bedrohungsmodell: vorerst vertrauenswürdiger Single-User oder
+- [ ] dokumentiertes Bedrohungsmodell: vorerst vertrauenswürdiger Single-User oder
   später Benutzer/Rechte/Capabilities
-- aktuell darf jeder Prozess jeden anderen Prozess beenden; FAT kennt keine
-  Berechtigungen
-- keine kryptografische Boot-Authentizität: CRC32 erkennt Beschädigung, aber
+- [x] Prozess-Kill ist generation-sicher auf eigene Kinder bzw. explizite
+  Supervisor-Autorität begrenzt
+- [ ] Dateirechte und ACLs; FAT besitzt derzeit keine Berechtigungsmetadaten
+- [ ] keine kryptografische Boot-Authentizität: CRC32 erkennt Beschädigung, aber
   keinen absichtlichen Austausch
-- Zufallsquelle/CSPRNG, ASLR und sichere Netzwerk-Defaults erst bei einem
+- [ ] Zufallsquelle/CSPRNG, ASLR und sichere Netzwerk-Defaults erst bei einem
   Sicherheitsziel
-- optionale Panic-Symbolauflösung zusätzlich zum vorhandenen Register-/CR2-
+- [ ] optionale Panic-Symbolauflösung zusätzlich zum vorhandenen Register-/CR2-
   Kontext und der SHA1-Build-ID
-- Debug-Buildprofil, statische Analyse und hostseitiges Sanitizer-/Fuzzing für
+- [ ] Debug-Buildprofil, statische Analyse und hostseitiges Sanitizer-/Fuzzing für
   Parser
-- reproduzierbare Gasttests und eine kleine Hardwarematrix
+- [ ] reproduzierbare Gasttests und eine kleine Hardwarematrix
 
 ## 6. Abhängigkeiten
 
@@ -361,12 +426,12 @@ die aktuelle Gesamtabnahme umfasst 134 Hosttests, den
 Windows-QEMU-Referenzbuild und 64
 erfolgreiche Spawn/Wait-Zyklen im automatisierten Gasttest.
 
-1. Kindstatusprüfung und Registrierung des aktuellen Tasks als `TASK_WAITING`
+- [x] Kindstatusprüfung und Registrierung des aktuellen Tasks als `TASK_WAITING`
    auf dem Single-Core-System in einem gemeinsamen IRQ-geschützten Abschnitt
    ausführen.
-2. Kind-Exit, Kill und normales Exit über denselben Wakeup-Pfad führen.
-3. Status genau einmal konsumieren; verwaiste Zombies kontrolliert aufräumen.
-4. Einen deterministischen Test-Hook für einen Kind-Exit im bisherigen
+- [x] Kind-Exit, Kill und normales Exit über denselben Wakeup-Pfad führen.
+- [x] Status genau einmal konsumieren; verwaiste Zombies kontrolliert aufräumen.
+- [x] Einen deterministischen Test-Hook für einen Kind-Exit im bisherigen
    Race-Fenster sowie einen Gast-Stresstest mit vielen Spawn/Wait-Zyklen bauen.
 
 **Fertig, wenn:** Kein Test hängt, jeder Exitstatus wird genau einmal geliefert
@@ -380,11 +445,11 @@ nun korrekt den CPU-Fehlercode. Compile-Time-Assertions sichern Offsets und
 Größe des gemeinsamen `Registers`-Frames. Die vollständige Fehlercode-Matrix
 ist hostseitig getestet.
 
-1. Vektoren mit und ohne CPU-Fehlercode tabellarisch definieren und Stubs aus
+- [x] Vektoren mit und ohne CPU-Fehlercode tabellarisch definieren und Stubs aus
    zwei Makros erzeugen.
-2. Vector 17 korrigieren; 8, 10–14, 17, 21, 29 und 30 explizit prüfen.
-3. Layout von Assembly-Frame und `Registers` mit statischen Offsets absichern.
-4. Ring-3-Tests für Divide-by-zero, Invalid Opcode und Page Fault ergänzen;
+- [x] Vector 17 korrigieren; 8, 10–14, 17, 21, 29 und 30 explizit prüfen.
+- [x] Layout von Assembly-Frame und `Registers` mit statischen Offsets absichern.
+- [x] Ring-3-Tests für Divide-by-zero, Invalid Opcode und Page Fault ergänzen;
    kontrollierte Testpfade für Fehlercode-Exceptions hinzufügen.
 
 **Fertig, wenn:** User-Exceptions beenden nur den Verursacher, Kernel-Exceptions
@@ -399,13 +464,13 @@ Relokationen und keine Nachlaufbytes. Historische, unbenutzte ELF- und
 Relokationspfade im Kernel wurden entfernt; negative Hosttests decken falsche
 Basen, Relokationen, Überläufe, Überlappungen und ungültige Einstiegspunkte ab.
 
-1. Für Version 1 nur `base_address == USER_BASE` und
+- [x] Für Version 1 nur `base_address == USER_BASE` und
    `relocation_size == 0` akzeptieren.
-2. Validator, Loader, Python-Builder und Dokumentation auf dieselben Regeln
+- [x] Validator, Loader, Python-Builder und Dokumentation auf dieselben Regeln
    bringen; tote alternative ELF-Lader aus dem Laufzeitpfad entfernen.
-3. Negative Tests für Relokationen, Überläufe, überlappende Bereiche und
+- [x] Negative Tests für Relokationen, Überläufe, überlappende Bereiche und
    falsche Entry-Points ergänzen.
-4. Anforderungen an ein späteres segmentbasiertes PRG v2 separat notieren.
+- [x] Anforderungen an ein späteres segmentbasiertes PRG v2 separat notieren.
 
 **Fertig, wenn:** Jedes vom Builder erzeugte Image lädt und jede nicht
 unterstützte Variante vor dem Mapping eindeutig abgelehnt wird.
@@ -420,14 +485,14 @@ konsumierbare Exitstatus, Datei-I/O über mehrere 512-Byte-Syscall-Blöcke sowie
 kontrollierte `#DE`-, `#UD`- und `#PF`-Prozessabbrüche. Makefile und CI führen
 den Test aus und bewahren das serielle Protokoll.
 
-1. QEMU mit serieller Konsole, festem Timeout und eindeutigem
+- [x] QEMU mit serieller Konsole, festem Timeout und eindeutigem
    `BOOT_OK`/`TEST_OK`-Protokoll starten.
-2. Einen Ring-3-Teststarter ins Image legen, der Userspace-Schutz,
+- [x] Einen Ring-3-Teststarter ins Image legen, der Userspace-Schutz,
    Spawn/Wait, Datei-I/O und Exceptions prüft; nach dem Erfolg beendet der
    Host QEMU kontrolliert.
-3. Den Smoke-Test direkt an das erzeugte `build/reist-os.img` binden;
+- [x] Den Smoke-Test direkt an das erzeugte `build/reist-os.img` binden;
    Legacy-Fixture-Tests getrennt halten.
-4. Den Smoke-Test in CI ausführen und Logs als Artefakt sichern.
+- [x] Den Smoke-Test in CI ausführen und Logs als Artefakt sichern.
 
 **Fertig, wenn:** Ein CI-Lauf nicht nur kompiliert, sondern bis Ring 3 bootet,
 Tests ausführt und bei Panic, Triple Fault oder Timeout fehlschlägt.
@@ -458,13 +523,13 @@ PIC-EOI über den PIT-Fallback. HPET gehört bewusst nicht zu R1.1; seine
 Integration bleibt bis zur validierten ACPI-/Plattformbasis in R5.1
 zurückgestellt.
 
-1. Generische Wait-Queues mit Wake-one/Wake-all einführen.
-2. 64-Bit-monotone Zeit und geordnete Deadline-Liste implementieren.
-3. `sleep_ms` und `yield` als Syscalls anbieten; `SYS_DELAY` kompatibel darauf
+- [x] Generische Wait-Queues mit Wake-one/Wake-all einführen.
+- [x] 64-Bit-monotone Zeit und geordnete Deadline-Liste implementieren.
+- [x] `sleep_ms` und `yield` als Syscalls anbieten; `SYS_DELAY` kompatibel darauf
    abbilden.
-4. Keyboard-, serielle und später Netzwerk-I/O auf blockierende Events
+- [x] Keyboard-, serielle und später Netzwerk-I/O auf blockierende Events
    vorbereiten.
-5. APIC-Timer gegen PIT kalibrieren und bei fehlendem LAPIC einen
+- [x] APIC-Timer gegen PIT kalibrieren und bei fehlendem LAPIC einen
    Scheduler-Fallback bereitstellen.
 
 **Abnahme erfüllt:** 134 Hosttests prüfen unter anderem Queue-Invarianten,
@@ -513,13 +578,13 @@ generationsvalidierten Detach in `TASK_REAPING`. Seitentabellen und Kernelstack
 werden anschließend mit aktivierten Hardware-Interrupts, aber unterdrückter
 Taskpräemption freigegeben; erst danach darf der Slot wiederverwendet werden.
 
-1. Erkannte, verwaltete, reservierte und freie Frames separat zählen.
-2. Framezugriff oberhalb 256 MiB durch ein konsistentes Directmap bis 1 GiB
+- [x] Erkannte, verwaltete, reservierte und freie Frames separat zählen.
+- [x] Framezugriff oberhalb 256 MiB durch ein konsistentes Directmap bis 1 GiB
    ermöglichen und die Grenze explizit ausweisen.
-3. Kernel-Heap erweiterbar machen und belegte/freie Bytes exportieren.
-4. Statische und dynamische Kernelstacks mit 64-Byte-Canaries und
+- [x] Kernel-Heap erweiterbar machen und belegte/freie Bytes exportieren.
+- [x] Statische und dynamische Kernelstacks mit 64-Byte-Canaries und
    ESP-Bereichsprüfungen schützen.
-5. Allokationsfehler, Fragmentierung und wiederholtes Prozess-Reaping testen.
+- [x] Allokationsfehler, Fragmentierung und wiederholtes Prozess-Reaping testen.
 
 **Abnahme erfüllt:** `MEMINFO` nutzt die versionierte 88-Byte-v1-Struktur von
 `SYS_MEMORY_STATS` (43); `SYS_MEMORY_KB` (13) meldet weiterhin kompatibel die
@@ -560,11 +625,11 @@ vollständigen Registerframe, CR2 und die 40-stellige SHA1-Build-ID des Kernels.
 Vertrags-/Regressionstests, Windows-Referenzbuild und QEMU-Ring-3-Smoke sichern
 die Umsetzung ab.
 
-1. Festlegen, welche APIs in IRQ-Kontext, mit deaktivierter Präemption oder
+- [x] Festlegen, welche APIs in IRQ-Kontext, mit deaktivierter Präemption oder
    schlafend aufgerufen werden dürfen.
-2. Lock-Reihenfolge für Scheduler, VFS, Dateisysteme und Treiber dokumentieren.
-3. Assertions für IRQ-/Lock-Zustand sowie strukturierte Log-Level ergänzen.
-4. Panic-Ausgabe um vollständige Register, CR2 und Build-ID erweitern.
+- [x] Lock-Reihenfolge für Scheduler, VFS, Dateisysteme und Treiber dokumentieren.
+- [x] Assertions für IRQ-/Lock-Zustand sowie strukturierte Log-Level ergänzen.
+- [x] Panic-Ausgabe um vollständige Register, CR2 und Build-ID erweitern.
 
 #### R1.4 Grafischer Desktop-MVP — M
 
@@ -595,12 +660,12 @@ Reproduzierbarkeit erhöhen.
 
 #### S0.1 Einsatzprofil, Gefahren und Assurance Case — M
 
-1. Zielsystem, Einsatzprofil, Umgebung und vorhersehbaren Fehlgebrauch festlegen.
-2. Essential Functions, sichere/degradierte Zustände und je Gefahr die FTTI
+- [ ] Zielsystem, Einsatzprofil, Umgebung und vorhersehbaren Fehlgebrauch festlegen.
+- [ ] Essential Functions, sichere/degradierte Zustände und je Gefahr die FTTI
    definieren.
-3. Ein versioniertes Gefahrenregister mit Ursache, Kontrolle, Restrisiko und
+- [ ] Ein versioniertes Gefahrenregister mit Ursache, Kontrolle, Restrisiko und
    Verifikationsnachweis anlegen.
-4. Traceability `Gefahr -> Anforderung -> Design -> Code -> Test -> Ergebnis`
+- [ ] Traceability `Gefahr -> Anforderung -> Design -> Code -> Test -> Ergebnis`
    automatisiert prüfen.
 
 #### S0.2 Stack-, Exception- und Panic-Containment — L
@@ -621,14 +686,14 @@ Versorgung unabhängiger Zielhardware-Watchdog samt Fencing. Der echte
 Double-Fault-Task-Gate-Pfad wird inzwischen in einem isolierten Testimage bis
 zum Watchdog-Warmstart, Crashrecord-Recovery und anschließenden Gasttest geprüft.
 
-1. Nicht gemappte Guardpages für jeden Kernel- und Userstack, statische
+- [ ] Nicht gemappte Guardpages für jeden Kernel- und Userstack, statische
    Stackbudgets, Watermarks und Rekursionsverbote einführen.
-2. Einen reservierten Exception-/Double-Fault-/NMI-Notfallstack mit
+- [ ] Einen reservierten Exception-/Double-Fault-/NMI-Notfallstack mit
    vorallokiertem, beschränktem Crashdatensatz bereitstellen.
-3. Wiederherstellbare Prozess-/Dienstfehler von möglicher globaler
+- [ ] Wiederherstellbare Prozess-/Dienstfehler von möglicher globaler
    Kernelkorruption trennen; betroffene Domänen einfrieren und aus bekannt
    gutem Zustand neu starten.
-4. `panic()` darf nicht nur `halt()` ausführen: Ausgänge zuerst in den
+- [ ] `panic()` darf nicht nur `halt()` ausführen: Ausgänge zuerst in den
    gefahrenspezifisch sicheren Zustand bringen, Diagnose begrenzt sichern und
    einen unabhängigen Supervisor Failover oder Neustart ausführen lassen.
    In-Place-Weiterlauf nach unbekannter Kernelkorruption bleibt verboten.
@@ -762,138 +827,138 @@ publiziert; unkorrektierbare Scanfehler erzeugen fail-closed ein Safe-State-
 Ereignis. Offen bleibt die unabhängige externe Kopie der gesamten
 Supervisor-Konfiguration über eine zweite Fehlerdomäne.
 
-1. S0.3a um IPC-Deadlines, Metadatenintegrität, explizite Delegation,
+- [x] S0.3a um IPC-Deadlines, Metadatenintegrität, explizite Delegation,
    Service-Taskreservierung und Capability-Gates ergänzen.
-2. S0.3b als überwachte, neu startbare Least-Privilege-Probedomäne abnehmen;
+- [x] S0.3b als überwachte, neu startbare Least-Privilege-Probedomäne abnehmen;
    danach Netzwerk, Storage und komplexe Treiber schrittweise migrieren.
-3. Fortschritts-/Deadline-Watchdogs, Restart-Budgets, Fencing, Selbsttest und
+- [ ] Fortschritts-/Deadline-Watchdogs, Restart-Budgets, Fencing, Selbsttest und
    sichere Reintegration für jede migrierte Domäne nachweisen.
-4. Hot-Standby oder Dual-Controller-Handover mit regelmäßigem realem
+- [ ] Hot-Standby oder Dual-Controller-Handover mit regelmäßigem realem
    Failover-Test aufbauen.
-5. Common-Cause-Fehler bewerten; wo nötig unabhängige Hardware,
+- [ ] Common-Cause-Fehler bewerten; wo nötig unabhängige Hardware,
    Stromversorgung, Takte, Sensorpfade oder diverse Implementierungen nutzen.
 
 #### S0.4 Determinismus und garantierte Ressourcen — L
 
-1. Kritische Tasks erhalten feste Prioritäten, CPU-/Speicher-/Queue-Budgets,
+- [ ] Kritische Tasks erhalten feste Prioritäten, CPU-/Speicher-/Queue-Budgets,
    Admission Control und nachgewiesene Worst-Case-Laufzeiten.
-2. Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte
+- [ ] Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte
    Allokation, Rekursion, Retries und Warteschlangen sind dort unzulässig.
-3. Überlast, Priority Inversion, Interruptstürme und Zeitquellenausfall müssen
+- [ ] Überlast, Priority Inversion, Interruptstürme und Zeitquellenausfall müssen
    einen getesteten degradierten Zustand auslösen.
-4. Kritische Kernelobjekte selektiv über den `critical_object`-Umschlag mit
+- [ ] Kritische Kernelobjekte selektiv über den `critical_object`-Umschlag mit
    wortweisem SECDED, CRC32, Version/Sequenz, semantischem Validator und
    Primary/Shadow schützen; Bitflip-Injection misst Korrektur und Eskalation.
 
 #### S0.5 Datenintegrität, Boot und unterbrechungsarme Updates — XL
 
-1. Sicherheitsrelevanten Zustand transaktional, checksummiert, versioniert und
+- [ ] Sicherheitsrelevanten Zustand transaktional, checksummiert, versioniert und
    redundant speichern; Stromausfall an jeder Commitstelle injizieren.
-2. Verifizierten Boot, signierte Artefakte, reproduzierbare Builds, Provenienz
+- [ ] Verifizierten Boot, signierte Artefakte, reproduzierbare Builds, Provenienz
    und SBOM einführen.
-3. Updates als atomaren A/B-Wechsel mit Selbsttest und automatischem Rollback
+- [ ] Updates als atomaren A/B-Wechsel mit Selbsttest und automatischem Rollback
    ausführen; Standby-Kanäle nacheinander statt gleichzeitig aktualisieren.
-4. Kernel-Livepatching bleibt eine eng begrenzte Ausnahme mit Quieszenzpunkt,
+- [ ] Kernel-Livepatching bleibt eine eng begrenzte Ausnahme mit Quieszenzpunkt,
    Zustandskompatibilität, Vorabnachweis und sicherem Rollback.
 
 #### S0.6 Verifikation und Langzeitbetrieb — XL
 
-1. Statische Stack-/Code-/WCET-Analyse, Fuzzing, modellbasierte Tests und
+- [ ] Statische Stack-/Code-/WCET-Analyse, Fuzzing, modellbasierte Tests und
    unabhängige Reviews als Gates einführen.
-2. Fault-Injection für Bitfehler, Speichererschöpfung, Timingfehler,
+- [ ] Fault-Injection für Bitfehler, Speichererschöpfung, Timingfehler,
    Geräteverlust, beschädigte Eingaben, Stromausfall und Updates automatisieren.
-3. Soak-/Alterungstests, ECC/EDAC, Medien-Scrubbing und Hardwaretausch über die
+- [ ] Soak-/Alterungstests, ECC/EDAC, Medien-Scrubbing und Hardwaretausch über die
    geplante Produktlebensdauer nachweisen.
-4. Toolchain, Schlüssel, Abhängigkeiten, Feldtelemetrie, Schwachstellen,
+- [ ] Toolchain, Schlüssel, Abhängigkeiten, Feldtelemetrie, Schwachstellen,
    Beschwerden, Patches und Rückrufe kontrolliert über den Lebenszyklus führen.
 
 ### Phase 2 — Deskriptoren, VFS und zuverlässige Datenträger
 
 #### R2.1 ABI v1 und vollständige Dateideskriptoren — L
 
-1. Syscallnummern, Strukturen und Fehlercodes aus einem gemeinsamen ABI-Header
+- [ ] Syscallnummern, Strukturen und Fehlercodes aus einem gemeinsamen ABI-Header
    für Kernel und SDK generieren bzw. teilen.
-2. Open-Flags, Rechte je Handle und Standarddeskriptoren 0/1/2 ergänzen.
-3. `lseek`, `fstat` und `truncate` implementieren; die bestehenden Rename- und
+- [ ] Open-Flags, Rechte je Handle und Standarddeskriptoren 0/1/2 ergänzen.
+- [ ] `lseek`, `fstat` und `truncate` implementieren; die bestehenden Rename- und
    `fsync`-Syscalls in den gemeinsamen ABI-Header überführen.
-4. Teilzugriffe, EOF, ungültige Handles und Prozess-Exit vollständig testen.
+- [ ] Teilzugriffe, EOF, ungültige Handles und Prozess-Exit vollständig testen.
 
 #### R2.2 VFS- und FAT-Zuverlässigkeit — L
 
-1. **Teilstatus:** Atomisches Same-Directory-Rename/Replace ist für FAT32
+- [ ] **Teilstatus:** Atomisches Same-Directory-Rename/Replace ist für FAT32
    umgesetzt; Cross-Directory, FAT12 und offene Handle-Semantik fehlen.
-2. **Teilstatus:** Der Editor nutzt `TEMP -> fsync -> close -> rename`; FAT12
+- [ ] **Teilstatus:** Der Editor nutzt `TEMP -> fsync -> close -> rename`; FAT12
    und künftige Blockgeräte benötigen noch einen gleichwertigen Sync-Vertrag.
-3. Open/Delete/Unmount-Regeln und Locking vereinheitlichen.
-4. Fehler nach jedem einzelnen Sektorwrite injizieren und das resultierende
+- [ ] Open/Delete/Unmount-Regeln und Locking vereinheitlichen.
+- [ ] Fehler nach jedem einzelnen Sektorwrite injizieren und das resultierende
    Image mit einem Hostprüfer untersuchen.
-5. Danach Zeitstempel und LFN ergänzen; EXT2 vorerst ausdrücklich read-only
+- [ ] Danach Zeitstempel und LFN ergänzen; EXT2 vorerst ausdrücklich read-only
    mounten.
 
 #### R2.3 Blockgeräte und Partitionen — L
 
-1. ATA und FDD hinter eine gemeinsame Blockgeräte-API legen.
-2. MBR-Partitionen als Child-Geräte erzeugen und mehrere Partitionen mounten.
-3. Bereichsprüfung und `flush` zentral erzwingen.
-4. ATA LBA48 und gebündelte PIO-Transfers ergänzen.
-5. GPT, AHCI und NVMe als getrennte Folgepakete behandeln.
+- [ ] ATA und FDD hinter eine gemeinsame Blockgeräte-API legen.
+- [ ] MBR-Partitionen als Child-Geräte erzeugen und mehrere Partitionen mounten.
+- [ ] Bereichsprüfung und `flush` zentral erzwingen.
+- [ ] ATA LBA48 und gebündelte PIO-Transfers ergänzen.
+- [ ] GPT, AHCI und NVMe als getrennte Folgepakete behandeln.
 
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 
 #### R3.1 Pipes, Signale und TTY — XL
 
-1. Pipeobjekt mit blockierendem Ringpuffer auf Wait-Queues bauen.
-2. `dup`/`dup2` und Deskriptorvererbung beim Spawn ergänzen.
-3. Minimale Signale `SIGINT`, `SIGTERM`, `SIGKILL`, `SIGCHLD` implementieren.
-4. Prozessgruppen, Vordergrundgruppe und TTY-Modi hinzufügen.
-5. `waitpid` einschließlich `WNOHANG` bereitstellen.
+- [ ] Pipeobjekt mit blockierendem Ringpuffer auf Wait-Queues bauen.
+- [ ] `dup`/`dup2` und Deskriptorvererbung beim Spawn ergänzen.
+- [ ] Minimale Signale `SIGINT`, `SIGTERM`, `SIGKILL`, `SIGCHLD` implementieren.
+- [ ] Prozessgruppen, Vordergrundgruppe und TTY-Modi hinzufügen.
+- [ ] `waitpid` einschließlich `WNOHANG` bereitstellen.
 
 #### R3.2 Userspace-Shell und Init — L
 
-1. Parser für Quotes und Escapes erstellen.
-2. `<`, `>`, `>>` und `|` auf Deskriptoren/Pipes abbilden.
-3. Hintergrundjobs, Verlauf, Umgebungsvariablen und Exitcodes ergänzen.
-4. Ein kleines `INIT.PRG` als Reaper und Starter der Shell einführen.
+- [ ] Parser für Quotes und Escapes erstellen.
+- [ ] `<`, `>`, `>>` und `|` auf Deskriptoren/Pipes abbilden.
+- [ ] Hintergrundjobs, Verlauf, Umgebungsvariablen und Exitcodes ergänzen.
+- [ ] Ein kleines `INIT.PRG` als Reaper und Starter der Shell einführen.
 
 ### Phase 4 — Netzwerk bis zu Anwendungen
 
 #### R4.1 IPv4/UDP härten und Sockets einführen — L
 
-1. ARP-Ablauf, DHCP-Lease/Renew/Rebind und ICMP-Fehler ergänzen.
-2. Paketparser mit aufgezeichneten Frames, Grenzfällen und Fuzzing testen.
-3. Socketobjekte in die FD-Schicht integrieren: `socket`, `bind`, `sendto`,
+- [ ] ARP-Ablauf, DHCP-Lease/Renew/Rebind und ICMP-Fehler ergänzen.
+- [ ] Paketparser mit aufgezeichneten Frames, Grenzfällen und Fuzzing testen.
+- [ ] Socketobjekte in die FD-Schicht integrieren: `socket`, `bind`, `sendto`,
    `recvfrom`, `close` und Timeouts.
-4. UDP-Echo zwischen Gast und Host als automatisierten Test betreiben.
+- [ ] UDP-Echo zwischen Gast und Host als automatisierten Test betreiben.
 
 #### R4.2 DNS — M
 
-1. DNS-Namen sicher kodieren/dekodieren, Kompressionszeiger begrenzen.
-2. A-Records, CNAME-Ketten, Timeouts und Caching implementieren.
-3. Lokalen deterministischen Testserver statt öffentliches Internet verwenden.
+- [ ] DNS-Namen sicher kodieren/dekodieren, Kompressionszeiger begrenzen.
+- [ ] A-Records, CNAME-Ketten, Timeouts und Caching implementieren.
+- [ ] Lokalen deterministischen Testserver statt öffentliches Internet verwenden.
 
 #### R4.3 TCP — XL
 
-1. Zustandsautomat und Connection Control Block erstellen.
-2. Sequenz-/ACK-Prüfung, Retransmission, RTO und Empfangsfenster ergänzen.
-3. Verbindungsaufbau, geordnete Daten, Reset und aktiven/passiven Close testen.
-4. Erst danach einen kleinen HTTP-Client oder `NETCAT.PRG` bauen.
+- [ ] Zustandsautomat und Connection Control Block erstellen.
+- [ ] Sequenz-/ACK-Prüfung, Retransmission, RTO und Empfangsfenster ergänzen.
+- [ ] Verbindungsaufbau, geordnete Daten, Reset und aktiven/passiven Close testen.
+- [ ] Erst danach einen kleinen HTTP-Client oder `NETCAT.PRG` bauen.
 
 ### Phase 5 — USB und Plattform
 
 #### R5.1 ACPI- und DMA-Basis — L
 
-1. RSDP/RSDT/XSDT mit Checksummen und Längengrenzen zentral parsen.
-2. MADT und HPET aus dieser Schicht beziehen; Poweroff/Reboot ergänzen.
-3. DMA-Puffer mit physischer Adresse, Alignment und Below-4-GiB-Grenze
+- [ ] RSDP/RSDT/XSDT mit Checksummen und Längengrenzen zentral parsen.
+- [ ] MADT und HPET aus dieser Schicht beziehen; Poweroff/Reboot ergänzen.
+- [ ] DMA-Puffer mit physischer Adresse, Alignment und Below-4-GiB-Grenze
    bereitstellen.
 
 #### R5.2 xHCI in überprüfbaren Stufen — XL
 
-1. Controller stoppen/resetten und Capability-/Operational-Register validieren.
-2. DCBAA, Command Ring, Event Ring und Interrupter initialisieren.
-3. Root-Port-Anschluss erkennen, Slot aktivieren und Control Transfers testen.
-4. Deskriptoren lesen, Adresse und Konfiguration setzen.
-5. Erst HID-Boot-Tastatur, dann Hub und Mass Storage implementieren.
+- [ ] Controller stoppen/resetten und Capability-/Operational-Register validieren.
+- [ ] DCBAA, Command Ring, Event Ring und Interrupter initialisieren.
+- [ ] Root-Port-Anschluss erkennen, Slot aktivieren und Control Transfers testen.
+- [ ] Deskriptoren lesen, Adresse und Konfiguration setzen.
+- [ ] Erst HID-Boot-Tastatur, dann Hub und Mass Storage implementieren.
 
 Jede Stufe benötigt einen QEMU-xHCI-Test und darf bei unbekannter Hardware das
 Gerät nur deaktivieren, nicht den Bootvorgang blockieren.
@@ -902,15 +967,15 @@ Gerät nur deaktivieren, nicht den Bootvorgang blockieren.
 
 Erst nach den vorherigen Meilensteinen einzeln entscheiden:
 
-- UEFI-Boot und GPT
-- x86-64-Port mit neuem ABI
-- SMP, IOAPIC/MSI und per-CPU-Daten
-- AHCI/NVMe, USB-Massenspeicher und Hotplug
-- IPv6
-- Mehrbenutzer-Identitäten, Dateirechte/ACLs und kryptografisch verifizierter
+- [ ] UEFI-Boot und GPT
+- [ ] x86-64-Port mit neuem ABI
+- [ ] SMP, IOAPIC/MSI und per-CPU-Daten
+- [ ] AHCI/NVMe, USB-Massenspeicher und Hotplug
+- [ ] IPv6
+- [ ] Mehrbenutzer-Identitäten, Dateirechte/ACLs und kryptografisch verifizierter
   Boot; dies ist getrennt von der bereits begonnenen Kernel-Capability-Basis
-- dynamischer Linker, Shared Libraries, Paketverwaltung
-- vollständiges Grafik-/Fenstersystem mit Compositor und Maus sowie Audio und
+- [ ] dynamischer Linker, Shared Libraries, Paketverwaltung
+- [ ] vollständiges Grafik-/Fenstersystem mit Compositor und Maus sowie Audio und
   WLAN
 
 Diese Punkte sind groß genug für eigene Entwurfsdokumente und sollten nicht
@@ -918,28 +983,37 @@ nebenbei in die 32-Bit-Basis eingebaut werden.
 
 ## 8. Empfohlene Arbeitsreihenfolge
 
-| Reihenfolge | Paket | Abhängigkeit | Größe |
-|---:|---|---|:---:|
-| 1 | R0.1 Wait/Wakeup (erledigt) | keine | S |
-| 2 | R0.2 Exception-Frames (erledigt) | keine | S |
-| 3 | R0.3 PRG-v1-Vertrag (erledigt) | keine | S |
-| 4 | R0.4 Gast-Smoke-Test (erledigt) | 1–3 für Regressionen | M |
-| 5 | R1.1 Wait-Queues/Sleep/Zeit (erledigt) | R0.1 | L |
-| 6 | R1.2 Speicherverwaltung (erledigt) | R0.4 | L |
-| 7 | R1.3 Synchronisation/Diagnose (erledigt) | R1.1 | M |
-| 8 | R1.4 Grafischer Desktop-MVP (erledigt) | R0.4, R1.1 | M |
-| 9 | S0.1 Profil/Gefahren/Assurance Case | R1.3 | M |
-| 10 | S0.2 Stack/Exception/Panic-Containment | S0.1 | L |
-| 11 | S0.3a Bounded IPC/Capabilities v1 (erledigt) | S0.1, S0.2 | L |
-| 12 | S0.3b Supervised Userspace Probe Domain | S0.3a | L |
-| 13 | S0.3c Dienstmigration/Redundanz | S0.3b | XL |
-| 14 | S0.4 Determinismus/Ressourcengarantie | S0.1, S0.3 | L |
-| 15 | S0.5 Integrität/Boot/A-B-Updates | S0.1, S0.3 | XL |
-| 16 | S0.6 Verifikation/Langzeitbetrieb | S0.1–S0.5 | XL |
-| 17 | R2.1 ABI und FDs | abgenommenes S0-Gate | L |
-| 18 | R2.2 VFS/FAT-Zuverlässigkeit | R2.1, S0.5 | L |
-| 19 | R2.3 Blockgeräte/Partitionen | R1.3, S0.5 | L |
-| 20+ | R3 bis R6 | abgenommenes S0-Gate und jeweilige Basis | L–XL |
+- [x] **1 · R0.1 Wait/Wakeup** — Größe S; keine Abhängigkeit
+- [x] **2 · R0.2 Exception-Frames** — Größe S; keine Abhängigkeit
+- [x] **3 · R0.3 PRG-v1-Vertrag** — Größe S; keine Abhängigkeit
+- [x] **4 · R0.4 Gast-Smoke-Test** — Größe M; abhängig von R0.1–R0.3
+- [x] **5 · R1.1 Wait-Queues/Sleep/Zeit** — Größe L; abhängig von R0.1
+- [x] **6 · R1.2 Speicherverwaltung** — Größe L; abhängig von R0.4
+- [x] **7 · R1.3 Synchronisation/Diagnose** — Größe M; abhängig von R1.1
+- [x] **8 · R1.4 Grafischer Desktop-MVP** — Größe M; abhängig von R0.4 und R1.1
+- [ ] **9 · S0.1 Profil/Gefahren/Assurance Case (teilweise)** — Größe M;
+  abhängig von R1.3
+- [ ] **10 · S0.2 Stack/Exception/Panic-Containment (teilweise)** — Größe L;
+  abhängig von S0.1
+- [x] **11 · S0.3a Bounded IPC/Capabilities v1** — Größe L; abhängig von
+  S0.1 und S0.2
+- [x] **12 · S0.3b Supervised Userspace Probe Domain** — Größe L; abhängig
+  von S0.3a
+- [ ] **13 · S0.3c Dienstmigration/Redundanz (in Arbeit)** — Größe XL;
+  abhängig von S0.3b
+- [ ] **14 · S0.4 Determinismus/Ressourcengarantie** — Größe L; abhängig von
+  S0.1 und S0.3
+- [ ] **15 · S0.5 Integrität/Boot/A-B-Updates** — Größe XL; abhängig von S0.1
+  und S0.3
+- [ ] **16 · S0.6 Verifikation/Langzeitbetrieb** — Größe XL; abhängig von
+  S0.1–S0.5
+- [ ] **17 · R2.1 ABI und FDs** — Größe L; abhängig vom abgenommenen S0-Gate
+- [ ] **18 · R2.2 VFS/FAT-Zuverlässigkeit** — Größe L; abhängig von R2.1 und
+  S0.5
+- [ ] **19 · R2.3 Blockgeräte/Partitionen** — Größe L; abhängig von R1.3 und
+  S0.5
+- [ ] **20+ · R3 bis R6** — Größe L–XL; abhängig vom abgenommenen S0-Gate und
+  der jeweiligen Basis
 
 R2 bis R6 bleiben hinter dem S0-Gate. Erst danach können voneinander
 unabhängige Pakete parallel laufen, sofern ihre Ressourcen-, Fehler- und
@@ -949,24 +1023,24 @@ Nachweisgrenzen getrennt sind.
 
 Ein Paket gilt nur dann als fertig, wenn alle folgenden Punkte erfüllt sind:
 
-- öffentliche API, Fehlerfälle und Nebenläufigkeitsregeln sind dokumentiert
-- positive, negative und mindestens ein Ressourcenfehler-Test existieren
-- Hosttests laufen erfolgreich
-- Windows-Referenzbuild läuft erfolgreich
-- betroffene Laufzeitfunktion wird im automatisierten Gast geprüft
-- kein Test beweist eine Laufzeiteigenschaft ausschließlich durch Quelltextsuche
-- relevante QEMU-, VMware- oder Hardwarematrix ist dokumentiert
-- alte Stubs, widersprüchliche Dokumentation und tote Pfade sind entfernt oder
+- [ ] öffentliche API, Fehlerfälle und Nebenläufigkeitsregeln sind dokumentiert
+- [ ] positive, negative und mindestens ein Ressourcenfehler-Test existieren
+- [ ] Hosttests laufen erfolgreich
+- [ ] Windows-Referenzbuild läuft erfolgreich
+- [ ] betroffene Laufzeitfunktion wird im automatisierten Gast geprüft
+- [ ] kein Test beweist eine Laufzeiteigenschaft ausschließlich durch Quelltextsuche
+- [ ] relevante QEMU-, VMware- oder Hardwarematrix ist dokumentiert
+- [ ] alte Stubs, widersprüchliche Dokumentation und tote Pfade sind entfernt oder
   ausdrücklich als nicht unterstützt markiert
-- betroffene Gefahren, Essential Functions, FTTI und sicherer/degradierter
+- [ ] betroffene Gefahren, Essential Functions, FTTI und sicherer/degradierter
   Zustand sind identifiziert; das Restrisiko ist begründet
-- Anforderungen, Design, Code, Testfall und Ergebnis sind bidirektional
+- [ ] Anforderungen, Design, Code, Testfall und Ergebnis sind bidirektional
   rückverfolgbar und unabhängig geprüft
-- Laufzeit-, Stack-, Speicher-, Queue- und I/O-Grenzen werden unter Überlast
+- [ ] Laufzeit-, Stack-, Speicher-, Queue- und I/O-Grenzen werden unter Überlast
   sowie durch Fault-Injection geprüft
-- jeder Dienst besitzt Health-Monitoring, einen begrenzten Fehlerpfad und einen
+- [ ] jeder Dienst besitzt Health-Monitoring, einen begrenzten Fehlerpfad und einen
   getesteten Restart-, Failover- oder Safe-State-Mechanismus
-- Releaseartefakte sind signiert, reproduzierbar und ihrer SBOM sowie exakten
+- [ ] Releaseartefakte sind signiert, reproduzierbar und ihrer SBOM sowie exakten
   Toolchain zuordenbar
 
 Aktuelle Referenzbefehle:
@@ -993,22 +1067,22 @@ Phase 0, R1.1 bis R1.4, **S0.3a Bounded IPC/Capabilities v1** und
 **S0.3b Supervised Userspace Probe Domain** sind umgesetzt und abgenommen.
 Die dafür geschlossenen IPC-/Isolationsinkremente sind:
 
-1. endliche Send-/Receive-Deadlines mit eindeutigem Timeoutstatus — umgesetzt,
-2. CRC- und `critical_object`-Schutz für Queue-, Endpoint- und
+- [x] endliche Send-/Receive-Deadlines mit eindeutigem Timeoutstatus — umgesetzt,
+- [x] CRC- und `critical_object`-Schutz für Queue-, Endpoint- und
    Capability-Metadaten einschließlich deterministischer Bitflip-Injection —
    umgesetzt; unkorrektierbare Objekte quarantänisieren den Endpoint und
    wecken beide begrenzten Warteschlangen mit eigenem Integritätsstatus,
-3. explizite selektive Delegation mit ausschließlich abschwächbaren Rechten —
+- [x] explizite selektive Delegation mit ausschließlich abschwächbaren Rechten —
    umgesetzt; Ziel-PID und Prozessgeneration werden atomar gebunden, Spawn
    vererbt keine IPC-Autorität mehr,
-4. mindestens ein reservierter Service-/Restart-Taskslot mit Admission Control
+- [x] mindestens ein reservierter Service-/Restart-Taskslot mit Admission Control
    — umgesetzt; normale Spawns können weder den letzten Task-/Prozessslot noch
    das 32-Frame-Restartbudget verbrauchen,
-5. Capability-/Domänen-Gates für `kill` und alle ambienten Datei-, Display-,
+- [x] Capability-/Domänen-Gates für `kill` und alle ambienten Datei-, Display-,
    Prozess- und sonstigen Syscalls der Probedomäne — umgesetzt; Autorisierung
    erfolgt zentral vor Seiteneffekten, das Probeprofil ist default-deny.
 
-6. überwachte Ring-3-Probe mit begrenztem Ablauf `fence -> revoke -> reap ->
+- [x] überwachte Ring-3-Probe mit begrenztem Ablauf `fence -> revoke -> reap ->
    recreate -> self-test -> reintegrate` — umgesetzt und in realem QEMU mit
    unabhängiger Prozess-/Zeitfortschrittsmessung abgenommen.
 
@@ -1176,10 +1250,24 @@ Autorität vor dem begrenzten 32-Slot-Cache-Update; Replay, falsche Epoche,
 falsche IP/MAC, Broadcast/Null-MAC und fremde Prozesse scheitern vor der
 Mutation. Der RTL8139-Gast bestätigt den realen Pfad mit `ARP_BINDING_OK`.
 
-S0.3c-4b trennt als nächsten Schritt vermittelte ARP-Bindungen vom Legacy-
-Cache, versieht sie mit monotone Deadline/Quellepoche und schützt die
-Cache-Metadaten redundant. Lookups dürfen abgelaufene oder beschädigte
-Service-Bindungen weder verwenden noch still auf unvalidierte Werte fallen.
+**S0.3c-4b ist umgesetzt:** Vermittelte ARP-Bindungen liegen in einem eigenen,
+festen 32-Slot-Cache. Jeder Slot ist als versioniertes Critical Object mit
+SECDED/CRC-geschützter Primär- und Schattenkopie gespeichert und bindet IP/MAC,
+Quellepoche und eine saturierend berechnete monotone 30-s-Deadline zusammen.
+Einzelkopiefehler werden rekonstruiert. Eine unlesbare Doppelkopie sperrt den
+gesamten Lookup fail-closed, statt möglicherweise den beschädigten Slot zu
+übersehen. Bei Ablauf wird die Bindung zu einem bleibenden Sperreintrag; der
+Lookup fällt für diese IP nicht auf den unvalidierten Legacy-Cache zurück.
+Auch Kapazitätserschöpfung verdrängt keine frühere Vertrauensentscheidung,
+sondern lehnt die neue Mutation ab. Hosttests prüfen Ablaufgrenze, Sättigung,
+Einzel-/Doppelkorruption und Poolgrenze; Paket-, normaler Gast- und echter
+RTL8139-Smoke sind grün.
+
+S0.3c-4c bindet als nächsten Schritt Cache-Gültigkeit an die aktuelle
+Dienstgeneration: Fence oder Restart widerrufen alle Bindungen der alten
+Quellepoche, ein begrenzter Scrub meldet Korrektur/Ablauf und der Gast weist
+nach, dass alte Einträge nach Recovery weder verwendbar noch wiederbelebbar
+sind.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

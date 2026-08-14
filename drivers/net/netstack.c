@@ -6,6 +6,8 @@
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
 #include "kernel/time/pit.h"
+#include "include/kernel/arp_binding_cache.h"
+#include "include/kernel/panic.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -17,6 +19,7 @@
 // =============================================================================
 static network_config_t net_config;
 static arp_cache_entry_t arp_cache[ARP_CACHE_SIZE];
+static supervised_arp_cache_t supervised_arp_cache;
 static uint16_t ip_identification = 0;
 
 typedef struct {
@@ -225,8 +228,19 @@ void arp_add_entry(uint32_t ip, const uint8_t *mac) {
     ++netstack_stats.arp_cache_updates;
 }
 
+static void arp_remove_entry(uint32_t ip) {
+    for (int i = 0; i < ARP_CACHE_SIZE; ++i)
+        if (arp_cache[i].valid && arp_cache[i].ip == ip)
+            arp_cache[i].valid = false;
+}
+
 bool arp_lookup(uint32_t ip, uint8_t *mac_out) {
     if (!mac_out) return false;
+    supervised_arp_lookup_result_t protected_result =
+        supervised_arp_cache_lookup(&supervised_arp_cache, ip,
+                                    pit_monotonic_ms(), mac_out);
+    if (protected_result == SUPERVISED_ARP_HIT) return true;
+    if (protected_result != SUPERVISED_ARP_MISS) return false;
     for (int i = 0; i < ARP_CACHE_SIZE; ++i) {
         if (arp_cache[i].valid && arp_cache[i].ip == ip) {
             memcpy(mac_out, arp_cache[i].mac, ETH_ADDR_LEN);
@@ -262,13 +276,17 @@ static bool arp_send_request_now(uint32_t target_ip) {
     return nic_send(packet, sizeof(packet));
 }
 
-bool netstack_commit_arp_binding(uint32_t ip, const uint8_t mac[6]) {
+bool netstack_commit_arp_binding(uint32_t ip, const uint8_t mac[6],
+                                 uint32_t source_epoch, uint64_t now_ms) {
     if (ip == 0U || mac == NULL || (mac[0] & 1U) != 0U) return false;
     bool nonzero = false;
     for (uint32_t index = 0U; index < ETH_ADDR_LEN; ++index)
         if (mac[index] != 0U) nonzero = true;
     if (!nonzero) return false;
-    arp_add_entry(ip, mac);
+    if (supervised_arp_cache_commit(&supervised_arp_cache, ip, mac,
+                                    source_epoch, now_ms,
+                                    SUPERVISED_ARP_LEASE_MS) != 0) return false;
+    arp_remove_entry(ip);
     return true;
 }
 
@@ -799,6 +817,8 @@ void netstack_init(void) {
     ping_waiting = false;
     ping_reply_received = false;
     for (int i = 0; i < ARP_CACHE_SIZE; ++i) arp_cache[i].valid = false;
+    if (supervised_arp_cache_init(&supervised_arp_cache) != 0)
+        panic("Unable to initialize protected ARP binding cache");
 
     if (!netdev_get_mac_address(net_config.mac_address)) {
         memset(net_config.mac_address, 0, ETH_ADDR_LEN);

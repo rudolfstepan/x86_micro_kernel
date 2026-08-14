@@ -111,8 +111,15 @@ Probes werden vor Handoff, Ablauf oder Bestätigung fail-closed abgelehnt.
 S0.3c-4a erlaubt dem Ring-3-Dienst erstmals eine reale, eng begrenzte
 Netzwerkzustandsänderung: Syscall 62 übernimmt nur die epochengebundene,
 bytegenau mit dem geschützten Ingress übereinstimmende ARP-Bindung.
-Die bisherige
-Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
+S0.3c-4b hält diese Bindung nun getrennt vom Legacy-Cache in 32 statischen,
+redundant geschützten Slots. Quellepoche und monotone 30-s-Deadline gehören
+zur selben validierten Nutzlast. Ablauf bleibt als Sperreintrag erhalten;
+Einzelkorruption wird rekonstruiert, Doppelkorruption und Kapazitätserschöpfung
+enden fail-closed ohne Legacy-Fallback oder Verdrängung. Host-, Paket-, normaler
+Gast- und echter RTL8139-Smoke sind grün. Als nächstes widerruft S0.3c-4c alle
+Bindungen einer gefenceten oder ersetzten Dienstgeneration.
+Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
+RAM-Fehlerdomäne.
 
 Der zuletzt ausgeführte vollständige Windows-Build bootete in VMware bis zum
 Prompt `C:\>`, mountete `hdd0` als `/`, initialisierte E1000 und erhielt per

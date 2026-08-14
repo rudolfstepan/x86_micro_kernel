@@ -378,6 +378,18 @@ mit Prozessgeneration, Control-Epoche und dem roh aus dem geschützten Ingress
 gesicherten Kandidaten. Erst nach dem atomaren Autoritätsverbrauch darf der
 feste ARP-Cache aktualisiert werden.
 
+S0.3c-4b trennt diesen vermittelten Zustand vom ungeschützten Legacy-Cache.
+Der feste Cache besitzt 32 statische Slots; jeder Slot speichert IP/MAC,
+Quellepoche, Zustand und absolute monotone 30-s-Deadline redundant als
+versioniertes Critical Object. Korrigierbare Einzelkopiefehler werden beim
+Lesen rekonstruiert. Sind beide Kopien unlesbar, ist ein Sperreintrag
+abgelaufen oder die Kapazität erschöpft, führt der Pfad fail-closed weder zu
+Verdrängung noch zum Rückfall
+auf eine möglicherweise unvalidierte Legacy-Bindung. Der Legacy-Pfad bleibt
+nur für IP-Adressen zulässig, für die nie eine vermittelte
+Vertrauensentscheidung existierte. Die nächste Stufe widerruft diese Slots
+zusätzlich anhand der Dienstgeneration beim Fence/Restart.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet
