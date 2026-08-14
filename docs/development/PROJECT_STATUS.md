@@ -75,6 +75,10 @@ S0.3c-3h übergibt den vollständigen festen Ethernet/ARP-Header und verschiebt
 dessen Strukturvalidierung in den Ring-3-Dienst. Der Gast injiziert vor dem
 gültigen Frame eine falsche ARP-Adresslänge und verlangt
 `ARP_VALIDATION_OK` ohne Antwort auf die ungültige Eingabe.
+S0.3c-3i friert Gateway-IP sowie lokale IP/MAC beim Probe-Start ein und lässt
+Ring 3 nur eine semantisch dazu passende ARP-Antwort akzeptieren. Eine
+verfälschte Gateway-Identität wird verworfen, bevor `ARP_IDENTITY_OK` den
+gültigen Pfad bestätigt.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 

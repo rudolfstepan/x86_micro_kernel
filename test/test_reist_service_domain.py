@@ -89,7 +89,7 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("supervisor_network_submit_header(", netdev)
         self.assertIn("service_header, sizeof(service_header)", netdev)
         self.assertIn("if (!service_owned) netdev_queue_rx_packet", netdev)
-        self.assertIn(".length = 46U", supervisor)
+        self.assertIn(".length = 60U", supervisor)
         handoff = supervisor[
             supervisor.index("bool supervisor_network_submit_header("):
             supervisor.index("static void supervisor_worker(")]
@@ -131,6 +131,22 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("message.payload[22] = 5U", guest)
         self.assertNotIn("arp_packet_t", service)
         self.assertNotIn("k_malloc", service)
+
+    def test_arp_reply_is_bound_to_probe_identity(self):
+        supervisor = read("kernel/init/supervisor.c")
+        service = read("examples/userspace/reist_probe.c")
+        guest = read("examples/userspace/guest_test.c")
+        netstack = read("drivers/net/netstack.c")
+        self.assertIn("uint32_t netstack_get_gateway(void)", netstack)
+        self.assertIn("network_probe_gateway", supervisor)
+        self.assertIn("network_probe_local_ip", supervisor)
+        self.assertIn("network_probe_local_mac", supervisor)
+        self.assertIn(".length = 60U", supervisor)
+        for offset in (32, 42, 46, 50, 54):
+            self.assertIn(f"message->payload[{offset}U + index]", service)
+        self.assertIn("message->payload[25] != 2U", service)
+        self.assertIn("message.payload[46] ^= 1U", guest)
+        self.assertIn("TEST_STAGE ARP_IDENTITY_OK", guest)
 
     def test_real_nic_probe_is_service_scoped_and_rate_limited(self):
         supervisor = read("kernel/init/supervisor.c")

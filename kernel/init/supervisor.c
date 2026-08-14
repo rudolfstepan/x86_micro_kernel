@@ -56,6 +56,9 @@ typedef struct {
     uint32_t endpoint_handle;
     uint64_t last_network_probe_ms;
     bool network_probe_pending;
+    uint32_t network_probe_gateway;
+    uint32_t network_probe_local_ip;
+    uint8_t network_probe_local_mac[6];
 } supervisor_probe_runtime_t;
 
 static supervisor_probe_runtime_t probe_runtime;
@@ -524,11 +527,21 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     ipc_message_t message = {
         .version = IPC_MESSAGE_VERSION,
         .struct_size = sizeof(ipc_message_t),
-        .length = 46U,
+        .length = 60U,
         .payload = {'N', 'E', 'T', 'R'},
     };
     for (uint32_t index = 0U; index < 42U; ++index)
         message.payload[index + 4U] = frame[index];
+    uint32_t gateway = probe_runtime.network_probe_gateway;
+    uint32_t local_ip = probe_runtime.network_probe_local_ip;
+    for (uint32_t index = 0U; index < 4U; ++index) {
+        uint32_t shift = 24U - index * 8U;
+        message.payload[46U + index] = (uint8_t)(gateway >> shift);
+        message.payload[50U + index] = (uint8_t)(local_ip >> shift);
+    }
+    for (uint32_t index = 0U; index < 6U; ++index)
+        message.payload[54U + index] =
+            probe_runtime.network_probe_local_mac[index];
     int ingress = ipc_send_external_from_peer(
         probe_runtime.pid, probe_runtime.process_generation,
         probe_runtime.endpoint_handle, &message);
@@ -547,7 +560,16 @@ int supervisor_network_probe_request(int pid, uint32_t generation,
         !process_identity_alive(pid, generation)) return -13;
     if (probe_runtime.last_network_probe_ms != 0U &&
         now_ms - probe_runtime.last_network_probe_ms < 250U) return -11;
+    uint32_t gateway = netstack_get_gateway();
+    uint32_t local_ip = netstack_get_ip_address();
+    uint8_t local_mac[6];
+    if (gateway == 0U || local_ip == 0U ||
+        !netdev_get_mac_address(local_mac)) return -19;
     probe_runtime.last_network_probe_ms = now_ms;
+    probe_runtime.network_probe_gateway = gateway;
+    probe_runtime.network_probe_local_ip = local_ip;
+    for (uint32_t index = 0U; index < 6U; ++index)
+        probe_runtime.network_probe_local_mac[index] = local_mac[index];
     probe_runtime.network_probe_pending = true;
     if (netstack_probe_gateway()) return 0;
     probe_runtime.network_probe_pending = false;

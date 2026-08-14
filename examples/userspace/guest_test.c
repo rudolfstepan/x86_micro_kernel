@@ -131,6 +131,25 @@ static void ipc_message_set_test_arp_frame(x86os_ipc_message_t *message) {
     message->length = 46U;
 }
 
+static void ipc_message_set_test_arp_identity(x86os_ipc_message_t *message) {
+    ipc_message_set_test_arp_frame(message);
+    message->payload[3] = 'X';
+    for (size_t index = 0U; index < 6U; ++index) {
+        message->payload[4U + index] = (uint8_t)(0xA0U + index);
+        message->payload[10U + index] = (uint8_t)(0xB0U + index);
+        message->payload[26U + index] = message->payload[10U + index];
+        message->payload[36U + index] = message->payload[4U + index];
+        message->payload[54U + index] = message->payload[4U + index];
+    }
+    for (size_t index = 0U; index < 4U; ++index) {
+        message->payload[32U + index] = (uint8_t)(10U + index);
+        message->payload[42U + index] = (uint8_t)(20U + index);
+        message->payload[46U + index] = message->payload[32U + index];
+        message->payload[50U + index] = message->payload[42U + index];
+    }
+    message->length = 60U;
+}
+
 static int ipc_child_main(const char *mode, const char *handle_text) {
     x86os_ipc_handle_t handle;
     if (parse_ipc_handle(handle_text, &handle) != 0) return 70;
@@ -468,6 +487,18 @@ static int test_diagnostic_service(void) {
     handle = X86OS_IPC_INVALID_HANDLE;
     if (x86os_service_connect(X86OS_SERVICE_DIAGNOSTIC, &handle) != 0)
         return -1;
+    ipc_message_set_test_arp_identity(&message);
+    message.payload[46] ^= 1U;
+    if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
+    ipc_message_prepare(&message);
+    if (x86os_ipc_receive_timeout(handle, &message, 100U) != -110)
+        return -1;
+    ipc_message_set_test_arp_identity(&message);
+    if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
+    ipc_message_prepare(&message);
+    if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
+        !ipc_message_is(&message, "REIST_NET_ARP")) return -1;
+    x86os_puts("TEST_STAGE ARP_IDENTITY_OK\n");
     ipc_message_set_test_arp_frame(&message);
     message.payload[22] = 5U;
     if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;

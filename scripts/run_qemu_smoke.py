@@ -33,6 +33,7 @@ REIST_SERVICE_MARKER = "TEST_STAGE DIAGNOSTIC_SERVICE_OK"
 REIST_SERVICE_CORRELATION_MARKER = "TEST_STAGE SERVICE_CORRELATION_OK"
 REIST_NETWORK_MARKER = "TEST_STAGE NETWORK_PARSER_OK"
 REIST_ARP_VALIDATION_MARKER = "TEST_STAGE ARP_VALIDATION_OK"
+REIST_ARP_IDENTITY_MARKER = "TEST_STAGE ARP_IDENTITY_OK"
 REIST_NETWORK_HANDOFF_MARKER = "TEST_STAGE NETWORK_HANDOFF_OK"
 REIST_NETWORK_CRASH_MARKER = "REIST_NETWORK SERVICE_CRASH_RECOVERED"
 REIST_NETWORK_RECOVERY_MARKER = "TEST_STAGE NETWORK_RECOVERY_OK"
@@ -295,7 +296,10 @@ def validate(
         network = exact_line_position(transcript, REIST_NETWORK_MARKER)
         arp_validation = exact_line_position(transcript,
                                              REIST_ARP_VALIDATION_MARKER)
-        if arp_validation < completion or network < arp_validation or network > test:
+        arp_identity = exact_line_position(transcript,
+                                           REIST_ARP_IDENTITY_MARKER)
+        if (arp_identity < completion or arp_validation < arp_identity or
+                service < arp_validation or network < service or network > test):
             return "missing ordered REIST network-parser marker"
     if expect_network_handoff:
         handoff = exact_line_position(transcript,

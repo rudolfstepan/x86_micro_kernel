@@ -313,6 +313,12 @@ für diesen autoritativen Pfad nur im restartbaren Ring-3-Dienst validiert.
 Strukturell ungültige ARP-Frames erzeugen weder Klassifikation noch Antwort;
 der Kernel erhält weiterhin nur Frames, deren Übergabe vorher abgelehnt wurde.
 
+S0.3c-3i bindet die ARP-Antwort an den beim Probe-Start eingefrorenen
+Kontext: Gateway-IP, lokale IP und lokale MAC. Der Ring-3-Validator vergleicht
+zusätzlich Ethernet- und ARP-Absender/Ziel miteinander und verlangt Opcode
+Reply. Der 60-Byte-Ingress bleibt fest begrenzt; eine falsche Identität führt
+zu keiner Antwort oder Zustandsveröffentlichung.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

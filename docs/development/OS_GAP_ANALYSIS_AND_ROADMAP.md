@@ -1096,9 +1096,17 @@ variable Schleifen. Ein absichtlich falscher Hardware-Adresslängenwert erzeugt
 keine Antwort; erst danach wird ein gültiges ARP-Frame klassifiziert. Der Gast
 und Runner verlangen `ARP_VALIDATION_OK`.
 
-S0.3c-3i bindet als nächsten Schritt die ARP-Reply-Semantik an die konkrete
-ausstehende Probe (Ziel-/Absenderidentität), statt jedes strukturell gültige
-ARP-Frame als Probeantwort zu akzeptieren.
+**S0.3c-3i ist umgesetzt:** Beim Start einer Gateway-Probe friert der
+Supervisor Gateway-IP sowie lokale IP/MAC generationsgebunden ein und hängt
+sie an den 42-Byte-Frame an. Ring 3 akzeptiert ausschließlich ARP-Reply,
+dessen Sender-IP der Gateway-IP entspricht, dessen Ziel-IP/MAC lokal sind und
+dessen Ethernet-Quell-/Zieladressen mit dem ARP-Inhalt übereinstimmen. Eine
+synthetisch verfälschte Gateway-Identität bleibt unbeantwortet; die korrekte
+Identität erzeugt `ARP_IDENTITY_OK`, bevor der echte NIC-Handoff folgt.
+
+S0.3c-3j trennt als nächsten Schritt die Probe-Autorität von einem bloßen
+Boolean und versieht sie mit einer monotonen, nicht wiederverwendbaren
+Probe-ID, die im Ingress und Dienstprotokoll mitgeführt wird.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

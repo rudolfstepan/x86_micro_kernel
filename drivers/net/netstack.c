@@ -844,6 +844,10 @@ uint32_t netstack_get_ip_address(void) {
     return net_config.ip_address;
 }
 
+uint32_t netstack_get_gateway(void) {
+    return net_config.gateway;
+}
+
 void netstack_debug_stats(void) {
     char ip_s[16], mask_s[16], gateway_s[16], dns_s[16];
     format_ipv4(net_config.ip_address, ip_s);

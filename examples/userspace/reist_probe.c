@@ -86,7 +86,8 @@ static const char *network_classification(
      * bounded v1 parser performs no allocation and publishes no output. */
     if (message->length < 18U || message->payload[0] != 'N' ||
         message->payload[1] != 'E' || message->payload[2] != 'T' ||
-        (message->payload[3] != '1' && message->payload[3] != 'R'))
+        (message->payload[3] != '1' && message->payload[3] != 'R' &&
+         message->payload[3] != 'X'))
         return NULL;
     uint16_t ethertype = ((uint16_t)message->payload[16] << 8) |
                          message->payload[17];
@@ -97,6 +98,24 @@ static const char *network_classification(
             message->payload[23] != 4U || message->payload[24] != 0U ||
             (message->payload[25] != 1U && message->payload[25] != 2U))
             return NULL;
+        if (message->payload[3] != '1') {
+            if (message->length < 60U || message->payload[25] != 2U)
+                return NULL;
+            for (uint32_t index = 0U; index < 4U; ++index) {
+                if (message->payload[32U + index] !=
+                        message->payload[46U + index] ||
+                    message->payload[42U + index] !=
+                        message->payload[50U + index]) return NULL;
+            }
+            for (uint32_t index = 0U; index < 6U; ++index) {
+                if (message->payload[4U + index] !=
+                        message->payload[54U + index] ||
+                    message->payload[36U + index] !=
+                        message->payload[54U + index] ||
+                    message->payload[10U + index] !=
+                        message->payload[26U + index]) return NULL;
+            }
+        }
         return "REIST_NET_ARP";
     }
     if (ethertype == 0x0800U) return "REIST_NET_IPV4";
