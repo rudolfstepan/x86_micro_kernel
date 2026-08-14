@@ -154,6 +154,11 @@ und 10 verbindlich.
         Active vor Fence-Ack und vollständigem Ring-3-Smoke nach Übernahme
       - [ ] S0.3c-7c2 Kontinuierliche Replikation des sicherheitsrelevanten
         Dienstzustands und kontrollierte Reintegration des reparierten Kanals
+        - [x] S0.3c-7c2a Geschützter Referenz-Dienstzustand mit strikt
+          monotonen Frames, drei Updates vor Failover, Epoch-Promotion und
+          gefenceter Reintegration eines dritten QEMU-Kanals
+        - [ ] S0.3c-7c2b Produktionsdienstzustand mit begrenztem Catch-up,
+          Selbsttest und kontrollierter Wiederaufnahme realer Ausgänge
     - [ ] S0.3c-7d Common-Cause-Analyse und wiederholte Zielhardware-Failover-Gates
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
@@ -1469,6 +1474,21 @@ besteht den vollständigen Ring-3-Gasttest. Drei Läufe des finalen Standes best
 die Reihenfolge. Noch nicht nachgewiesen sind kontinuierliche Nutzdaten-
 Replikation, Reintegration und physisch unabhängige Hardware; 7c bleibt daher
 offen.
+
+**S0.3c-7c2a ist umgesetzt:** Ein fester Referenz-Dienstzustand liegt als
+redundantes `critical_object` mit ECC, CRC und semantischem Validator vor. Der
+Active veröffentlicht vor dem Failover drei CRC-geschützte 52-Byte-Frames mit
+identischer Quelle/Epoche und lückenlos steigender 64-Bit-Sequenz. Der Standby
+akzeptiert ausschließlich den unmittelbaren Nachfolger; Replay, Lücke,
+Quellen-/Epochenwechsel und doppelte Kopienkorruption enden fail-closed. Nach
+dem extern bestätigten Fence übernimmt er mit erhöhter Epoche und publiziert
+den neuen Zustand. Ein drittes, separat gestartetes QEMU-Image erhält diesen
+Zustand, besteht die Integritätsprüfung, darf aber weder die alte Lease
+verlängern noch ohne neues Fence übernehmen. Drei vollständige Läufe bewiesen
+parallel den Weiterbetrieb des übernommenen Kanals bis `TEST_OK`. Das ist ein
+prozessgetrennter Referenznachweis; Catch-up eines echten Produktionsdienstes,
+Freigabe realer Ausgänge und physisch unabhängige Zielhardware bleiben als
+S0.3c-7c2b beziehungsweise 7b2b offen.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

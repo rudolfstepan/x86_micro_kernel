@@ -554,6 +554,21 @@ Supervisor-, Dienst- und Ring-3-Smoke bestehen. Das ist ein realer
 Zwei-Prozess-Failover-Test, aber weder kontinuierliche Dienstzustandsreplikation
 noch ein Nachweis unabhängiger Hardware oder kontrollierter Reintegration.
 
+S0.3c-7c2a ergänzt eine geschützte Referenz-Zustandsmaschine. Ihr fester
+40-Byte-Dienstzustand bindet Quelle, Dienst-ID, Epoche, 64-Bit-Sequenz und Wert;
+Primär- und Shadow-Kopie werden durch ECC, CRC und Invarianten geprüft. Der
+Transport kapselt ihn in einen versionierten 52-Byte-CRC-Frame. Innerhalb einer
+Epoche wird ausschließlich `sequence + 1` angenommen. Replays, Lücken,
+Quellenwechsel und Epochenwechsel werden vor jeder Veröffentlichung verworfen.
+Nach einem bestätigten Takeover erhöht der neue Active Epoche und Sequenz und
+sendet den promovierten Zustand. Ein dritter QEMU-Kanal wird erst danach
+gestartet, übernimmt diesen Snapshot und bleibt nach expliziten Negativtests
+ohne Lease-/Takeover-Autorität gefenceter Standby. Der Host prüft gleichzeitig,
+dass der neue Active bis zum vollständigen Ring-3-Smoke weiterläuft. Diese
+Referenz beweist Protokollreihenfolge und kontrollierten Prozess-Rejoin, nicht
+Catch-up oder Ausgangsfreigabe eines realen Produktionsdienstes und keine
+elektrisch unabhängige Hardware.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

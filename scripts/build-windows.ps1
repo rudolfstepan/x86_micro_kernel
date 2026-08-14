@@ -8,7 +8,7 @@ param(
     [switch]$StorageFaultInjection,
     [switch]$StorageIoFaultInjection,
     [switch]$HandoverFaultInjection,
-    [ValidateRange(0, 2)]
+    [ValidateRange(0, 3)]
     [int]$HandoverNodeId = 0,
     [switch]$RunTests,
     [string[]]$ProgramSource = @('examples/userspace/hello.c'),

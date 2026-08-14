@@ -82,21 +82,23 @@ int handover_attach_fence_backend(const handover_fence_backend_t *backend) {
     return 0;
 }
 
-int handover_init(uint32_t active_node, uint32_t standby_node,
-                  uint32_t lease_ms, uint64_t now_ms) {
+int handover_init_replica(uint32_t active_node, uint32_t standby_node,
+                          uint32_t lease_ms, uint64_t epoch,
+                          uint64_t transition_sequence, uint64_t now_ms) {
     if (!backend_attached) return HANDOVER_ENODEV;
     if (initialized || active_node == 0U || standby_node == 0U ||
         active_node == standby_node || lease_ms < HANDOVER_MIN_LEASE_MS ||
-        lease_ms > HANDOVER_MAX_LEASE_MS) return HANDOVER_EINVAL;
+        lease_ms > HANDOVER_MAX_LEASE_MS || epoch == 0U ||
+        transition_sequence == 0U) return HANDOVER_EINVAL;
     handover_status_t status = {
         .version = HANDOVER_PROTOCOL_VERSION,
         .struct_size = sizeof(status),
         .active_node = active_node,
         .standby_node = standby_node,
         .lease_ms = lease_ms,
-        .epoch = 1U,
+        .epoch = epoch,
         .lease_deadline_ms = deadline_after(now_ms, lease_ms),
-        .transition_sequence = 1U,
+        .transition_sequence = transition_sequence,
     };
     uint32_t flags = handover_lock();
     int result = critical_object_init(&protected_status,
@@ -105,6 +107,12 @@ int handover_init(uint32_t active_node, uint32_t standby_node,
     if (result == 0) initialized = true;
     handover_unlock(flags);
     return result;
+}
+
+int handover_init(uint32_t active_node, uint32_t standby_node,
+                  uint32_t lease_ms, uint64_t now_ms) {
+    return handover_init_replica(active_node, standby_node, lease_ms,
+                                 1U, 1U, now_ms);
 }
 
 int handover_snapshot(handover_status_t *status_out) {

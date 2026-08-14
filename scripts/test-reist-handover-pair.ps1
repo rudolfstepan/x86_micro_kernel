@@ -7,6 +7,7 @@ $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $BuildScript = Join-Path $PSScriptRoot 'build-windows.ps1'
 $Runner = Join-Path $PSScriptRoot 'run_qemu_handover_pair.py'
 $TemporaryActive = Join-Path $RepoRoot 'reist-pair-active.tmp.img'
+$TemporaryStandby = Join-Path $RepoRoot 'reist-pair-standby.tmp.img'
 $PairDir = Join-Path $RepoRoot 'build\handover-pair'
 
 function Resolve-NativeTool {
@@ -37,14 +38,20 @@ try {
     Copy-Item -LiteralPath 'build\reist-os.img' -Destination $TemporaryActive
     & $BuildScript -Target qemu -Video vga -HandoverFaultInjection `
         -HandoverNodeId 2
+    Copy-Item -LiteralPath 'build\reist-os.img' -Destination $TemporaryStandby
+    & $BuildScript -Target qemu -Video vga -HandoverFaultInjection `
+        -HandoverNodeId 3
     New-Item -ItemType Directory -Force -Path $PairDir | Out-Null
     Copy-Item -LiteralPath $TemporaryActive `
         -Destination (Join-Path $PairDir 'active.img')
-    Copy-Item -LiteralPath 'build\reist-os.img' `
+    Copy-Item -LiteralPath $TemporaryStandby `
         -Destination (Join-Path $PairDir 'standby.img')
+    Copy-Item -LiteralPath 'build\reist-os.img' `
+        -Destination (Join-Path $PairDir 'rejoin.img')
     & $Python $Runner --qemu $Qemu `
         --active-image (Join-Path $PairDir 'active.img') `
         --standby-image (Join-Path $PairDir 'standby.img') --timeout 120 `
+        --rejoin-image (Join-Path $PairDir 'rejoin.img') `
         --log 'build\guest-smoke-handover-pair.log'
     if ($LASTEXITCODE -ne 0) {
         throw "REIST two-channel handover failed with exit $LASTEXITCODE."
@@ -53,6 +60,9 @@ try {
 finally {
     if (Test-Path -LiteralPath $TemporaryActive -PathType Leaf) {
         Remove-Item -LiteralPath $TemporaryActive -Force
+    }
+    if (Test-Path -LiteralPath $TemporaryStandby -PathType Leaf) {
+        Remove-Item -LiteralPath $TemporaryStandby -Force
     }
     Pop-Location
 }

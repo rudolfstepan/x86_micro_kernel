@@ -28,6 +28,9 @@ static serial_fence_context_t serial_context;
 
 _Static_assert(sizeof(handover_serial_frame_t) == HANDOVER_SERIAL_FRAME_SIZE,
                "handover serial frame ABI drift");
+_Static_assert(sizeof(handover_serial_state_frame_t) ==
+               HANDOVER_SERIAL_STATE_FRAME_SIZE,
+               "handover serial state frame ABI drift");
 
 static uint32_t frame_crc32(const uint8_t *data, size_t length) {
     uint32_t crc = 0xFFFFFFFFU;
@@ -71,6 +74,59 @@ bool handover_serial_frame_valid(const handover_serial_frame_t *frame,
         frame->epoch != expected_epoch) return false;
     return frame->crc32 == frame_crc32((const uint8_t *)frame,
                                   offsetof(handover_serial_frame_t, crc32));
+}
+
+bool handover_serial_state_frame_build(handover_serial_state_frame_t *frame,
+                                       const handover_replica_state_t *state) {
+    if (frame == NULL || state == NULL ||
+        state->version != HANDOVER_REPLICA_VERSION ||
+        state->struct_size != sizeof(*state) || state->source_node == 0U ||
+        state->service_id == 0U || state->epoch == 0U ||
+        state->sequence == 0U || state->reserved != 0U) return false;
+    *frame = (handover_serial_state_frame_t) {
+        .magic = HANDOVER_SERIAL_MAGIC,
+        .version = HANDOVER_SERIAL_VERSION,
+        .type = HANDOVER_SERIAL_STATE,
+        .frame_size = sizeof(*frame),
+        .state_version = state->version,
+        .state_size = state->struct_size,
+        .source_node = state->source_node,
+        .service_id = state->service_id,
+        .epoch = state->epoch,
+        .sequence = state->sequence,
+        .value = state->value,
+        .reserved = state->reserved,
+    };
+    frame->crc32 = frame_crc32((const uint8_t *)frame,
+        offsetof(handover_serial_state_frame_t, crc32));
+    return true;
+}
+
+bool handover_serial_state_frame_valid(
+    const handover_serial_state_frame_t *frame,
+    handover_replica_state_t *state_out) {
+    if (frame == NULL || state_out == NULL ||
+        frame->magic != HANDOVER_SERIAL_MAGIC ||
+        frame->version != HANDOVER_SERIAL_VERSION ||
+        frame->type != HANDOVER_SERIAL_STATE ||
+        frame->frame_size != sizeof(*frame) ||
+        frame->state_version != HANDOVER_REPLICA_VERSION ||
+        frame->state_size != sizeof(*state_out) || frame->source_node == 0U ||
+        frame->service_id == 0U || frame->epoch == 0U ||
+        frame->sequence == 0U || frame->reserved != 0U ||
+        frame->crc32 != frame_crc32((const uint8_t *)frame,
+            offsetof(handover_serial_state_frame_t, crc32))) return false;
+    *state_out = (handover_replica_state_t) {
+        .version = frame->state_version,
+        .struct_size = frame->state_size,
+        .source_node = frame->source_node,
+        .service_id = frame->service_id,
+        .epoch = frame->epoch,
+        .sequence = frame->sequence,
+        .value = frame->value,
+        .reserved = frame->reserved,
+    };
+    return true;
 }
 
 static uint64_t io_deadline(void) {
@@ -186,4 +242,18 @@ bool handover_serial_receive_replica(uint32_t *active_node_out,
     *active_node_out = frame.active_node;
     *epoch_out = frame.epoch;
     return true;
+}
+
+bool handover_serial_send_state(const handover_replica_state_t *state) {
+    handover_serial_state_frame_t frame;
+    return serial_context.initialized &&
+        handover_serial_state_frame_build(&frame, state) &&
+        write_bytes((const uint8_t *)&frame, sizeof(frame));
+}
+
+bool handover_serial_receive_state(handover_replica_state_t *state_out) {
+    handover_serial_state_frame_t frame;
+    return serial_context.initialized && state_out != NULL &&
+        read_bytes((uint8_t *)&frame, sizeof(frame)) &&
+        handover_serial_state_frame_valid(&frame, state_out);
 }

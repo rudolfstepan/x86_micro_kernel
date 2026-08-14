@@ -1,4 +1,4 @@
-"""Prove fenced takeover between two independent QEMU processes."""
+"""Prove replicated takeover and fenced rejoin across three QEMU processes."""
 
 from __future__ import annotations
 
@@ -16,6 +16,9 @@ import run_qemu_smoke as smoke
 
 ACTIVE_STATE_MARKER = "REIST_HANDOVER ACTIVE_STATE_SENT"
 STANDBY_STATE_MARKER = "REIST_HANDOVER STANDBY_STATE_APPLIED"
+TAKEOVER_STATE_MARKER = "REIST_HANDOVER TAKEOVER_STATE_SENT"
+REJOIN_STATE_MARKER = "REIST_HANDOVER REJOIN_STATE_APPLIED"
+REJOIN_FENCED_MARKER = "REIST_HANDOVER REJOIN_FENCED"
 
 
 def launch(qemu: Path, image: Path, port: int) -> subprocess.Popen[str]:
@@ -69,12 +72,13 @@ def stop_and_drain(process, state) -> None:
 
 
 def run(qemu: Path, active_image: Path, standby_image: Path,
-        timeout: float) -> tuple[int, str, str | None]:
+        rejoin_image: Path, timeout: float) -> tuple[int, str, str | None]:
     active_listener, active_port = smoke.open_injection_listener()
     standby_listener, standby_port = smoke.open_injection_listener()
-    active = standby = None
-    active_connection = standby_connection = None
-    active_state = standby_state = None
+    rejoin_listener, rejoin_port = smoke.open_injection_listener()
+    active = standby = rejoin = None
+    active_connection = standby_connection = rejoin_connection = None
+    active_state = standby_state = rejoin_state = None
     events: list[str] = []
     error: str | None = None
     deadline = time.monotonic() + timeout
@@ -87,13 +91,16 @@ def run(qemu: Path, active_image: Path, standby_image: Path,
         standby_connection = accept(standby_listener)
         standby_state = start_reader(standby)
 
-        replica = smoke.receive_exact(
-            active_connection, smoke.HANDOVER_SERIAL_FRAME.size)
-        replicated = (None if replica is None else
-                      smoke.validate_handover_frame(
-                          replica, smoke.HANDOVER_SERIAL_REPLICA))
-        if replicated != (1, 1):
-            error = "invalid or missing active-state replica"
+        replicas: list[bytes] = []
+        for sequence in range(1, 4):
+            replica = smoke.receive_exact(
+                active_connection, smoke.HANDOVER_SERIAL_STATE_FRAME.size)
+            replicated = (None if replica is None else
+                          smoke.validate_handover_state_frame(replica))
+            if replicated != (1, 1, 1, sequence, 99 + sequence):
+                error = f"invalid active state frame {sequence}"
+                break
+            replicas.append(replica)
         if error is None:
             error = wait(active, active_state, ACTIVE_STATE_MARKER, deadline)
         if error is None:
@@ -106,8 +113,9 @@ def run(qemu: Path, active_image: Path, standby_image: Path,
                 error = "invalid or missing standby-ready frame"
         if error is None:
             events.append("HOST_STANDBY_READY")
-            standby_connection.sendall(replica)
-            events.append("HOST_REPLICA_FORWARDED")
+            for replica in replicas:
+                standby_connection.sendall(replica)
+            events.append("HOST_STATE_STREAM_FORWARDED")
             error = wait(standby, standby_state, STANDBY_STATE_MARKER, deadline)
 
         request = None
@@ -137,12 +145,45 @@ def run(qemu: Path, active_image: Path, standby_image: Path,
                 "REIST_HANDOVER REQUEST_SENT",
                 "REIST_HANDOVER FENCE_CONFIRMED",
                 "REIST_HANDOVER TAKEOVER_OK",
+                TAKEOVER_STATE_MARKER,
                 smoke.SHELL_PROMPT,
                 smoke.REIST_PROBE_COMPLETION_MARKER,
             ):
                 error = wait(standby, standby_state, marker, deadline)
                 if error is not None:
                     break
+        promoted_state = None
+        if error is None:
+            promoted_state = smoke.receive_exact(
+                standby_connection, smoke.HANDOVER_SERIAL_STATE_FRAME.size)
+            promoted = (None if promoted_state is None else
+                        smoke.validate_handover_state_frame(promoted_state))
+            if promoted != (2, 1, 2, 4, 200):
+                error = "invalid or missing promoted service state"
+        if error is None:
+            rejoin = launch(qemu, rejoin_image, rejoin_port)
+            rejoin_connection = accept(rejoin_listener)
+            rejoin_state = start_reader(rejoin)
+            ready = smoke.receive_exact(
+                rejoin_connection, smoke.HANDOVER_SERIAL_FRAME.size)
+            parsed_ready = (None if ready is None else
+                            smoke.validate_handover_frame(
+                                ready, smoke.HANDOVER_SERIAL_READY))
+            if parsed_ready != (1, 2):
+                error = "invalid or missing repaired-channel ready frame"
+        if error is None:
+            events.append("HOST_REJOIN_READY")
+            rejoin_connection.sendall(promoted_state)
+            events.append("HOST_REJOIN_STATE_FORWARDED")
+            for marker in (REJOIN_STATE_MARKER, REJOIN_FENCED_MARKER,
+                           "BOOT_OK"):
+                error = wait(rejoin, rejoin_state, marker, deadline)
+                if error is not None:
+                    break
+            if error is None:
+                events.append("HOST_REJOIN_FENCED")
+        if error is None and standby.poll() is not None:
+            error = "standby QEMU exited during repaired-channel reintegration"
         if error is None:
             assert standby.stdin is not None
             for character in "GTEST\n":
@@ -165,19 +206,26 @@ def run(qemu: Path, active_image: Path, standby_image: Path,
             active_connection.close()
         if standby_connection is not None:
             standby_connection.close()
+        if rejoin_connection is not None:
+            rejoin_connection.close()
         active_listener.close()
         standby_listener.close()
+        rejoin_listener.close()
         if active is not None and active_state is not None:
             stop_and_drain(active, active_state)
         if standby is not None and standby_state is not None:
             stop_and_drain(standby, standby_state)
+        if rejoin is not None and rejoin_state is not None:
+            stop_and_drain(rejoin, rejoin_state)
 
     active_text = "" if active_state is None else "".join(active_state[1])
     standby_text = "" if standby_state is None else "".join(standby_state[1])
+    rejoin_text = "" if rejoin_state is None else "".join(rejoin_state[1])
     transcript = "\n".join((
         "=== ACTIVE CHANNEL ===", active_text,
         "=== HOST SUPERVISOR ===", *events,
         "=== STANDBY CHANNEL ===", standby_text,
+        "=== REJOIN CHANNEL ===", rejoin_text,
     ))
     if error is None:
         marker_error = smoke.validate(
@@ -192,16 +240,19 @@ def main() -> int:
     parser.add_argument("--qemu", type=Path, default=Path("qemu-system-i386"))
     parser.add_argument("--active-image", type=Path, required=True)
     parser.add_argument("--standby-image", type=Path, required=True)
+    parser.add_argument("--rejoin-image", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--log", type=Path)
     args = parser.parse_args()
     if (not args.active_image.is_file() or
-            not args.standby_image.is_file() or args.timeout <= 0):
+            not args.standby_image.is_file() or
+            not args.rejoin_image.is_file() or args.timeout <= 0):
         print("handover-pair: invalid image or timeout", file=sys.stderr)
         return 2
     status, transcript, error = run(
         args.qemu, args.active_image.resolve(),
-        args.standby_image.resolve(), args.timeout)
+        args.standby_image.resolve(), args.rejoin_image.resolve(),
+        args.timeout)
     if args.log:
         args.log.parent.mkdir(parents=True, exist_ok=True)
         args.log.write_text(transcript, encoding="utf-8")

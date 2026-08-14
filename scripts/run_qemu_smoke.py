@@ -71,7 +71,9 @@ HANDOVER_SERIAL_REQUEST = 1
 HANDOVER_SERIAL_ACK = 2
 HANDOVER_SERIAL_REPLICA = 3
 HANDOVER_SERIAL_READY = 4
+HANDOVER_SERIAL_STATE = 5
 HANDOVER_SERIAL_FRAME = struct.Struct("<IBBHIQI")
+HANDOVER_SERIAL_STATE_FRAME = struct.Struct("<IBBHIIIIQQIII")
 SHELL_PROMPT = "C:\\>"
 FAIL_MARKERS = (
     "TEST_FAIL",
@@ -165,6 +167,24 @@ def validate_handover_frame(data: bytes, expected_type: int) -> tuple[int, int] 
             zlib.crc32(data[:-4]) & 0xFFFFFFFF != crc):
         return None
     return active_node, epoch
+
+
+def validate_handover_state_frame(
+    data: bytes,
+) -> tuple[int, int, int, int, int] | None:
+    if len(data) != HANDOVER_SERIAL_STATE_FRAME.size:
+        return None
+    (magic, version, frame_type, size, state_version, state_size,
+     source_node, service_id, epoch, sequence, value, reserved, crc) = (
+        HANDOVER_SERIAL_STATE_FRAME.unpack(data)
+    )
+    if (magic != HANDOVER_SERIAL_MAGIC or version != HANDOVER_SERIAL_VERSION or
+            frame_type != HANDOVER_SERIAL_STATE or size != len(data) or
+            state_version != 1 or state_size != 40 or source_node == 0 or
+            service_id == 0 or epoch == 0 or sequence == 0 or reserved != 0 or
+            zlib.crc32(data[:-4]) & 0xFFFFFFFF != crc):
+        return None
+    return source_node, service_id, epoch, sequence, value
 
 
 def serve_handover_fence(connection: socket.socket, timeout: float,

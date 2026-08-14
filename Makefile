@@ -709,10 +709,14 @@ test-smoke-handover-pair:
 	@echo "Building REIST standby handover channel..."
 	@$(MAKE) native-image TARGET=qemu VIDEO=vga HANDOVER_FAULT_INJECTION=1 \
 		HANDOVER_NODE_ID=2 OUTPUT_DIR=build/handover-standby
+	@echo "Building REIST repaired standby handover channel..."
+	@$(MAKE) native-image TARGET=qemu VIDEO=vga HANDOVER_FAULT_INJECTION=1 \
+		HANDOVER_NODE_ID=3 OUTPUT_DIR=build/handover-rejoin
 	@$(PYTHON) scripts/run_qemu_handover_pair.py \
 		--qemu $(QEMU) \
 		--active-image build/handover-active/reist-os.img \
 		--standby-image build/handover-standby/reist-os.img \
+		--rejoin-image build/handover-rejoin/reist-os.img \
 		--timeout 120 \
 		--log build/guest-smoke-handover-pair.log
 

@@ -216,9 +216,15 @@ Ein CRC-geschützter Ready/Replica-Handshake verhindert UART-FIFO-Verlust vor
 Standby-Initialisierung. Der Host beendet den Active nach der Fence-Anforderung
 und bestätigt das Fence erst nach geprüftem Prozessende. Anschließend übernimmt
 der Standby und besteht den vollständigen Ring-3-Test. Drei Wiederholungsläufe
-des finalen Standes waren erfolgreich. Kontinuierliche Dienstzustandsreplikation,
-Reintegration und
-physisch unabhängige Zielhardware bleiben offen.
+des finalen Standes waren erfolgreich.
+S0.3c-7c2a repliziert jetzt zusätzlich einen `critical_object`-geschützten
+Referenz-Dienstzustand über drei streng monotone CRC-Frames. Nach dem
+nachgewiesenen Active-Ausfall erhöht der neue Active Epoche und Sequenz und
+publiziert den promovierten Zustand. Ein drittes QEMU-Image tritt danach als
+reparierter Kanal bei, validiert den Zustand und bleibt nach negativen
+Lease-/Takeover-Prüfungen gefenceter Standby. Drei vollständige Drei-Kanal-Läufe
+erreichten im übernommenen Kanal `TEST_OK`. Ein realer Produktionsdienst mit
+begrenztem Catch-up sowie physisch unabhängige Zielhardware bleiben offen.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 
