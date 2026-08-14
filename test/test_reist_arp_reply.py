@@ -40,6 +40,8 @@ class ReistArpReplyTests(unittest.TestCase):
         self.assertIn("bool local_request", handoff)
         self.assertIn("return local_request;", handoff)
         self.assertIn(".payload = {'N', 'E', 'T', 'Q'}", handoff)
+        self.assertIn("REIST_NETWORK ARP_REQUEST_QUEUED", handoff)
+        self.assertIn("REIST_NETWORK ARP_REPLY_REJECTED", supervisor)
         self.assertIn("return true;", handoff)
         self.assertIn("if (!service_owned) netdev_queue_rx_packet", netdev)
         arp = netstack[netstack.index("static void handle_arp_packet("):
@@ -75,7 +77,39 @@ class ReistArpReplyTests(unittest.TestCase):
         self.assertIn("destination_is_broadcast", q_parser)
         self.assertIn("target_mac_zero", q_parser)
         self.assertIn("target_mac_local", q_parser)
+        self.assertIn("message->payload[4U + index] != 0xFFU", q_parser)
+        self.assertIn("message->payload[26U + index] !=\n"
+                      "                    message->payload[10U + index]",
+                      q_parser)
         self.assertIn("x86os_reist_send_arp_reply(&reply)", service)
+
+    def test_runner_injects_a_real_bounded_arp_frame(self):
+        runner = read("scripts/run_qemu_smoke.py")
+        runtime = read("scripts/test-reist-runtime.ps1")
+        guest = read("examples/userspace/guest_test.c")
+        self.assertIn('"--inject-arp-request"', runner)
+        self.assertIn("socket,id=reistsocket,connect=127.0.0.1", runner)
+        self.assertIn("struct.pack(\"!I\", len(frame)) + frame", runner)
+        self.assertIn("socket.TCP_NODELAY", runner)
+        self.assertIn("REIST_ARP_REPLY_MARKER", runner)
+        self.assertIn("REIST_ARP_REQUEST_QUEUED_MARKER", runner)
+        self.assertIn("for _ in range(3):", runner)
+        self.assertIn("time.monotonic() + 1.0", runner)
+        self.assertIn("TEST_STAGE NETWORK_INJECTION_READY", guest)
+        self.assertIn("REIST_NETWORK_INJECTION_READY_MARKER", runner)
+        self.assertIn("'arp-reply'", runtime)
+        self.assertIn("'--nic', 'rtl8139', '--inject-arp-request'", runtime)
+
+    def test_nic_pollers_recover_from_a_lost_rx_interrupt(self):
+        rtl = read("drivers/net/rtl8139.c")
+        e1000 = read("drivers/net/e1000.c")
+        rtl_poll = rtl[rtl.index("void rtl8139_poll_rx("):
+                       rtl.index("void rtl8139_interrupt_handler(")]
+        e1000_poll = e1000[e1000.index("void e1000_poll_rx("):
+                           e1000.index("// Function to initialize rings")]
+        self.assertIn("hardware_pending", rtl_poll)
+        self.assertIn("RTL_CMD_RX_EMPTY", rtl_poll)
+        self.assertIn("rx_descs[rx_cur].status & E1000_RXD_STAT_DD", e1000_poll)
 
 
 if __name__ == "__main__":

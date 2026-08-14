@@ -119,8 +119,9 @@ und 10 verbindlich.
       überwachten Dienst vermitteln
       - [x] S0.3c-5b1 Lokale ARP-Antwortentscheidung mit geschützter,
         generationgebundener Einmalautorität vermittelt
-      - [ ] S0.3c-5b2 Ausgehende lokale ARP-Auflösung migrieren und einen
-        deterministisch injizierten echten RX-Request im Gast nachweisen
+      - [x] S0.3c-5b2a Deterministisch injizierten echten RX-Request samt
+        vermittelter Antwort im RTL8139-Gast nachweisen
+      - [ ] S0.3c-5b2b Ausgehende lokale ARP-Auflösung in den Dienst migrieren
   - [ ] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
   - [ ] S0.3c-7 Unabhängiger Standby-/Supervisor-Kanal und realer Handover
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
@@ -1307,10 +1308,18 @@ und einen redundant geschützten Request-Kontext ab; erst nach atomarem
 Verbrauch darf der NIC-Sendemechanismus laufen. Dienst-, Queue- oder
 Sendefehler verwerfen den Request und zählen Degradation, statt den alten
 Ring-0-Responder zu reaktivieren oder den Dienst zu beenden. Hosttests prüfen
-ABI, Autorität, Einzelkorrektur und Doppelkorruption. Der reale RTL8139-Smoke
-belegt die Regressionsfreiheit des bestehenden Netzwerk-Handoffs; eine
-deterministische externe ARP-Request-Injektion bleibt ausdrücklich Teil von
-S0.3c-5b2 und ist noch kein erbrachter Laufzeitnachweis.
+ABI, Autorität, Einzelkorrektur und Doppelkorruption.
+
+**S0.3c-5b2a ist umgesetzt:** Der QEMU-Runner verbindet User-Netzwerk,
+Socket-Injektor und RTL8139 über einen virtuellen Hub. Nach der expliziten
+Gastbereitschaft sendet er höchstens drei einzeln bestätigte, korrekt gerahmte
+ARP-Requests und verlangt die geordnete Kette `ARP_REQUEST_QUEUED ->
+ARP_REPLY_MEDIATED -> TEST_OK`. Der Lauf deckte zwei zuvor synthetisch
+verdeckte Fehler auf: Request-ID und Dienstgeneration waren unzulässig
+gleichgesetzt, und der Ring-3-Parser prüfte die Quell- statt der
+Broadcast-Zieladresse. Hostvertrag, Paketbuild und der echte Runtime-Modus
+`arp-reply` sind grün. S0.3c-5b2b migriert als Nächstes die ausgehende lokale
+ARP-Auflösung.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

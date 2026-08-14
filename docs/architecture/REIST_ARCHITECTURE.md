@@ -421,8 +421,17 @@ vergleicht diese Daten mit einer redundanten Critical-Object-Kopie sowie einer
 250 ms begrenzten, an die konkrete Prozessgeneration gebundenen
 Einmalautorität. Autorität und Kontext werden vor dem Gerätesend verbraucht.
 Bei Queue-Druck, Deadline oder Sendefehler bleibt das System fail-closed; es
-existiert kein Ring-0-Antwortfallback. Die ausgehende Auflösung lokaler Peers
-und ein deterministischer echter RX-Request-Gastnachweis verbleiben in 5b2.
+existiert kein Ring-0-Antwortfallback.
+
+S0.3c-5b2a schließt den realen RX-Nachweis. Ein hostseitiger QEMU-Socket hängt
+mit Slirp und RTL8139 an einem Hub und injiziert nach einem Gastmarker einen
+vollständigen Broadcast-ARP-Request. Retries sind auf drei begrenzt und werden
+erst nach ausbleibender Queue-Bestätigung ausgelöst, sodass nie mehrere
+Einmalautorisierungen konkurrieren. Der Runtime-Vertrag verlangt Queue,
+Ring-3-Entscheidung, echten NIC-Send und unabhängigen Gastfortschritt in dieser
+Reihenfolge. Request-ID und Prozessgeneration bleiben dabei getrennte
+monotone Namensräume. S0.3c-5b2b übernimmt noch die ausgehende Auflösung
+lokaler Peers.
 
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und

@@ -114,7 +114,7 @@ static const char *network_classification(
             for (uint32_t index = 0U; index < 6U; ++index) {
                 if (message->payload[26U + index] != 0U)
                     source_nonzero = true;
-                if (message->payload[10U + index] != 0xFFU)
+                if (message->payload[4U + index] != 0xFFU)
                     destination_is_broadcast = false;
                 if (message->payload[36U + index] != 0U)
                     target_mac_zero = false;

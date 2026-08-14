@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import queue
 import re
+import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -36,9 +38,12 @@ REIST_NETWORK_STATS_MARKER = "TEST_STAGE NETWORK_STATS_OK"
 REIST_ARP_VALIDATION_MARKER = "TEST_STAGE ARP_VALIDATION_OK"
 REIST_ARP_IDENTITY_MARKER = "TEST_STAGE ARP_IDENTITY_OK"
 REIST_NETWORK_HANDOFF_MARKER = "TEST_STAGE NETWORK_HANDOFF_OK"
+REIST_NETWORK_INJECTION_READY_MARKER = "TEST_STAGE NETWORK_INJECTION_READY"
 REIST_NETWORK_PROBE_ID_MARKER = "REIST_NETWORK PROBE_ID_OK"
 REIST_ARP_BINDING_MARKER = "REIST_NETWORK ARP_BINDING_OK"
 REIST_ARP_REVOKED_MARKER = "REIST_NETWORK ARP_BINDINGS_REVOKED"
+REIST_ARP_REQUEST_QUEUED_MARKER = "REIST_NETWORK ARP_REQUEST_QUEUED"
+REIST_ARP_REPLY_MARKER = "REIST_NETWORK ARP_REPLY_MEDIATED"
 REIST_NETWORK_CRASH_MARKER = "REIST_NETWORK SERVICE_CRASH_RECOVERED"
 REIST_NETWORK_RECOVERY_MARKER = "TEST_STAGE NETWORK_RECOVERY_OK"
 REIST_NETWORK_PRESSURE_FALLBACK_MARKER = "REIST_NETWORK QUEUE_PRESSURE_FALLBACK"
@@ -50,6 +55,7 @@ FAIL_MARKERS = (
     "KERNEL ASSERTION FAILED",
     "Kernel exception:",
     "Unable to start SHELL.PRG",
+    "REIST_NETWORK ARP_REPLY_REJECTED",
 )
 
 
@@ -62,6 +68,7 @@ def qemu_command(
     allow_reboot: bool = False,
     nic: str = "none",
     persistent: bool = False,
+    injection_port: int | None = None,
 ) -> list[str]:
     command = [
         str(qemu),
@@ -85,9 +92,53 @@ def qemu_command(
     if watchdog:
         command.extend(["-device", "ib700", "-watchdog-action", "reset"])
     if nic != "none":
-        command.extend(["-device", f"{nic},netdev=reistnet0",
-                        "-netdev", "user,id=reistnet0"])
+        if injection_port is None:
+            command.extend(["-device", f"{nic},netdev=reistnet0",
+                            "-netdev", "user,id=reistnet0"])
+        else:
+            command.extend([
+                "-netdev", "user,id=reistuser",
+                "-netdev", ("socket,id=reistsocket,connect=127.0.0.1:"
+                            f"{injection_port}"),
+                "-netdev", "hubport,id=reistuserport,hubid=0,netdev=reistuser",
+                "-netdev", ("hubport,id=reistsocketport,hubid=0,"
+                            "netdev=reistsocket"),
+                "-netdev", "hubport,id=reistnicport,hubid=0",
+                "-device", f"{nic},netdev=reistnicport",
+            ])
     return command
+
+
+def open_injection_listener() -> tuple[socket.socket, int]:
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    listener.settimeout(5.0)
+    return listener, int(listener.getsockname()[1])
+
+
+def arp_request_frame() -> bytes:
+    source_mac = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x01))
+    frame = b"".join((
+        b"\xff" * 6, source_mac, b"\x08\x06",
+        b"\x00\x01", b"\x08\x00", b"\x06\x04", b"\x00\x01",
+        source_mac, bytes((10, 0, 2, 99)), b"\x00" * 6,
+        bytes((10, 0, 2, 15)),
+    ))
+    return frame.ljust(60, b"\x00")
+
+
+def inject_ethernet_frame(
+    connection: socket.socket, frame: bytes
+) -> bool:
+    if len(frame) < 14 or len(frame) > 1514:
+        return False
+    try:
+        framed = struct.pack("!I", len(frame)) + frame
+        connection.sendall(framed)
+        return True
+    except OSError:
+        return False
 
 
 def reader(
@@ -197,18 +248,40 @@ def run(
     nic: str = "none",
     persistent: bool = False,
     expect_reist_probe: bool = False,
+    inject_arp_request: bool = False,
 ) -> tuple[int, str, str | None]:
-    process = subprocess.Popen(
-        qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot, nic,
-                     persistent),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        bufsize=0,
-    )
+    injection_listener: socket.socket | None = None
+    injection_connection: socket.socket | None = None
+    injection_port: int | None = None
+    if inject_arp_request:
+        injection_listener, injection_port = open_injection_listener()
+    try:
+        process = subprocess.Popen(
+            qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot,
+                         nic, persistent, injection_port),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=0,
+        )
+    except BaseException:
+        if injection_listener is not None:
+            injection_listener.close()
+        raise
+    if injection_listener is not None:
+        try:
+            injection_connection, _ = injection_listener.accept()
+            injection_connection.settimeout(None)
+            injection_connection.setsockopt(socket.IPPROTO_TCP,
+                                            socket.TCP_NODELAY, 1)
+        except BaseException:
+            stop_process(process)
+            raise
+        finally:
+            injection_listener.close()
     assert process.stdin is not None and process.stdout is not None
     chunks: queue.Queue[str] = queue.Queue()
     transcript: list[str] = []
@@ -237,9 +310,43 @@ def run(
                 process.stdin.write(character)
                 process.stdin.flush()
                 time.sleep(0.075)
-            error, test_position = wait_for_line(
-                process, chunks, transcript, finished, TEST_MARKER, deadline
-            )
+            if inject_arp_request:
+                error, _ = wait_for_line(
+                    process, chunks, transcript, finished,
+                    REIST_NETWORK_INJECTION_READY_MARKER, deadline,
+                )
+            if error is None and inject_arp_request:
+                assert injection_port is not None
+                assert injection_connection is not None
+                queued = False
+                for _ in range(3):
+                    if not inject_ethernet_frame(
+                            injection_connection, arp_request_frame()):
+                        error = "unable to inject bounded ARP request"
+                        break
+                    confirmation_deadline = min(deadline,
+                                                time.monotonic() + 1.0)
+                    confirmation_error, _ = wait_for_line(
+                        process, chunks, transcript, finished,
+                        REIST_ARP_REQUEST_QUEUED_MARKER,
+                        confirmation_deadline,
+                    )
+                    if confirmation_error is None:
+                        queued = True
+                        break
+                if error is None and not queued:
+                    error = "ARP request was not queued after 3 bounded attempts"
+                if error is None:
+                    error, _ = wait_for_line(
+                        process, chunks, transcript, finished,
+                        REIST_ARP_REPLY_MARKER, deadline,
+                    )
+            test_position = -1
+            if error is None:
+                error, test_position = wait_for_line(
+                    process, chunks, transcript, finished, TEST_MARKER,
+                    deadline,
+                )
             if error is None:
                 error, _ = wait_for_line(
                     process,
@@ -251,6 +358,8 @@ def run(
                     after=test_position,
                 )
     finally:
+        if injection_connection is not None:
+            injection_connection.close()
         stop_process(process)
         finished.wait(timeout=1)
         thread.join(timeout=1)
@@ -264,6 +373,7 @@ def validate(
     expect_fatal_recovery: bool = False,
     expect_reist_probe: bool = False,
     expect_network_handoff: bool = False,
+    expect_arp_reply: bool = False,
 ) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
@@ -330,6 +440,10 @@ def validate(
                 revoked < pressure or crash < revoked or recovery < crash or
                 recovery > test):
             return "missing ordered network-service crash recovery marker"
+    if expect_arp_reply:
+        arp_reply = exact_line_position(transcript, REIST_ARP_REPLY_MARKER)
+        if arp_reply < boot or arp_reply > test:
+            return "missing mediated ARP reply marker"
     return None
 
 
@@ -374,6 +488,11 @@ def main() -> int:
         help="require a real NIC RX header to reach the Ring-3 service",
     )
     parser.add_argument(
+        "--inject-arp-request",
+        action="store_true",
+        help="inject one bounded Ethernet ARP request through a QEMU socket hub",
+    )
+    parser.add_argument(
         "--persistent", action="store_true",
         help="allow guest writes to the image (use only with a disposable copy)",
     )
@@ -389,12 +508,16 @@ def main() -> int:
                     flags=re.IGNORECASE) is None:
         print("guest-smoke: memory must look like 64M or 1G", file=sys.stderr)
         return 2
+    if args.inject_arp_request and args.nic == "none":
+        print("guest-smoke: ARP injection requires a NIC", file=sys.stderr)
+        return 2
 
     try:
         status, transcript, process_error = run(
             args.qemu, args.image.resolve(), args.timeout, args.no_apic,
             args.memory, args.watchdog, args.expect_fatal_recovery, args.nic,
             args.persistent, args.expect_reist_probe,
+            args.inject_arp_request,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)
@@ -406,7 +529,8 @@ def main() -> int:
 
     marker_error = validate(transcript, args.expect_fatal_recovery,
                             args.expect_reist_probe,
-                            args.expect_network_handoff)
+                            args.expect_network_handoff,
+                            args.inject_arp_request)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")

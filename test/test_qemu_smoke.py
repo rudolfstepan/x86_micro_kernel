@@ -9,9 +9,12 @@ from __future__ import annotations
 import os
 import importlib.util
 import re
+import socket
+import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -26,6 +29,54 @@ RUNNER_SPEC.loader.exec_module(RUNNER_MODULE)
 
 
 class QemuGuestSmokeRunnerTests(unittest.TestCase):
+    def test_arp_request_injection_uses_qemu_hub_and_framed_socket(self) -> None:
+        frame = RUNNER_MODULE.arp_request_frame()
+        self.assertEqual(len(frame), 60)
+        self.assertEqual(frame[0:6], b"\xff" * 6)
+        self.assertEqual(frame[12:14], b"\x08\x06")
+        self.assertEqual(frame[20:22], b"\x00\x01")
+        self.assertEqual(frame[38:42], bytes((10, 0, 2, 15)))
+        self.assertEqual(frame[42:], b"\x00" * 18)
+        command = RUNNER_MODULE.qemu_command(
+            Path("qemu"), Path("image"), nic="rtl8139",
+            injection_port=32123,
+        )
+        joined = " ".join(str(argument) for argument in command)
+        self.assertIn("socket,id=reistsocket,connect=127.0.0.1:32123", joined)
+        self.assertIn("hubport,id=reistuserport,hubid=0,netdev=reistuser", joined)
+        self.assertIn("hubport,id=reistsocketport,hubid=0,netdev=reistsocket",
+                      joined)
+        self.assertIn("rtl8139,netdev=reistnicport", joined)
+        self.assertIn("-device", command)
+
+        received = bytearray()
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        client = socket.create_connection(("127.0.0.1", port))
+        server, _ = listener.accept()
+
+        def receive() -> None:
+            with server:
+                expected = len(frame) + 4
+                while len(received) < expected:
+                    packet = server.recv(expected - len(received))
+                    if not packet:
+                        break
+                    received.extend(packet)
+            listener.close()
+
+        thread = threading.Thread(target=receive)
+        thread.start()
+        self.assertTrue(RUNNER_MODULE.inject_ethernet_frame(client, frame))
+        client.close()
+        thread.join(timeout=1)
+        framed_size = len(frame) + 4
+        self.assertEqual(len(received), framed_size)
+        self.assertEqual(struct.unpack("!I", received[:4])[0], len(frame))
+        self.assertEqual(bytes(received[4:]), frame)
+
     def test_reist_probe_markers_are_required_in_order(self) -> None:
         transcript = "\n".join((
             "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,

@@ -168,13 +168,12 @@ int main(void) {
         supervisor_protected_probe_authority_expire_epoch(
             &protected_authority, 300U, 99U) != 0 ||
         supervisor_protected_probe_authority_begin_epoch(
-            &protected_authority, 300U, 10U, 2U, &probe_id) != -13 ||
-        supervisor_protected_probe_authority_begin_epoch(
-            &protected_authority, 300U, 10U, 1U, &probe_id) != 0 ||
+            &protected_authority, 300U, 10U, 7U, &probe_id) != 0 ||
+        probe_id != 1U ||
         supervisor_protected_probe_authority_take_epoch(
             &protected_authority, 301U, 2U, &probe_id) != -13 ||
         supervisor_protected_probe_authority_take_epoch(
-            &protected_authority, 301U, 1U, &probe_id) != 0) return 56;
+            &protected_authority, 301U, 7U, &probe_id) != 0) return 56;
 
     supervisor_protected_network_context_t protected_context;
     supervisor_network_probe_context_t context_snapshot;

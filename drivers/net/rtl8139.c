@@ -237,8 +237,16 @@ void rtl8139_receive_packet(void) {
 }
 
 void rtl8139_poll_rx(void) {
-    if (!rtl8139_device.initialized ||
-        !__atomic_load_n(&rtl8139_rx_pending, __ATOMIC_ACQUIRE)) return;
+    if (!rtl8139_device.initialized) return;
+    bool interrupt_pending =
+        __atomic_load_n(&rtl8139_rx_pending, __ATOMIC_ACQUIRE);
+    bool hardware_pending =
+        (inb((uint16_t)(rtl8139_device.io_base + RTL_COMMAND)) &
+         RTL_CMD_RX_EMPTY) == 0;
+    /* IRQ delivery is only a latency hint.  Poll the bounded hardware ring
+     * directly as well, so a lost/coalesced edge cannot strand received data
+     * forever. */
+    if (!interrupt_pending && !hardware_pending) return;
     if (__sync_lock_test_and_set(&rtl8139_rx_busy, 1u)) return;
 
     uint16_t base = rtl8139_device.io_base;

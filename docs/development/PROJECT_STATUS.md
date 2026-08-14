@@ -134,8 +134,15 @@ vermittelt S0.3c-5b auch lokale ARP-Auflösung und Antwortentscheidung über den
 festen Ring-3-Parser und eine 250-ms-, generation- und requestgebundene
 Einmalautorität; Syscall 63 löst erst nach geschütztem Abgleich eine Antwort
 aus. Der frühere Ring-0-Responder ist entfernt und Fehler fallen nicht auf ihn
-zurück. 5b2 migriert noch die ausgehende lokale Auflösung und ergänzt den
-deterministisch injizierten echten RX-Request-Gastnachweis.
+zurück. S0.3c-5b2a ist ebenfalls abgenommen: Ein echter, über den QEMU-Hub in
+RTL8139 injizierter Broadcast-Request erreicht die geschützte Supervisor-
+Queue, wird vom Ring-3-Dienst validiert und erzeugt genau die autorisierte
+Antwort. Der Lauf verlangt `ARP_REQUEST_QUEUED`, `ARP_REPLY_MEDIATED` und
+anschließend `TEST_OK`; verlorene/coalesced RX-Interrupts werden durch
+begrenztes Ring-Polling aufgefangen. Dabei wurden Prozessgeneration und
+Request-ID als unabhängige Namensräume korrigiert sowie der echte
+Ethernet-Broadcast-Offset im Parser abgesichert. Als nächstes migriert
+S0.3c-5b2b die ausgehende lokale ARP-Auflösung.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 

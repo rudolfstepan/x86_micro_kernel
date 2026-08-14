@@ -213,10 +213,9 @@ int supervisor_protected_probe_authority_begin_epoch(
         result = supervisor_probe_authority_begin(&authority, now_ms,
                                                   timeout_ms, probe_id_out);
     if (result == 0) {
-        if (transaction_epoch != *probe_id_out) {
-            supervisor_unlock(flags);
-            return -13;
-        }
+        /* Request IDs and service generations are independent monotonic
+         * namespaces.  Bind the freshly allocated request to the caller's
+         * generation; never require their numeric values to coincide. */
         authority.transaction_epoch = transaction_epoch;
         result = protected_probe_authority_write(protected_authority,
                                                  &authority);
@@ -1316,6 +1315,8 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
                 &probe_runtime.arp_reply_context);
             supervisor_unlock(transaction_flags);
             network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_QUEUE);
+        } else {
+            printf("REIST_NETWORK ARP_REQUEST_QUEUED\n");
         }
         /* A local request belongs exclusively to the service.  Queue pressure
          * drops it fail-closed instead of reviving the Ring-0 reply path. */
@@ -1535,6 +1536,8 @@ int supervisor_network_send_arp_reply(
     supervisor_arp_reply_context_t context;
     int result = supervisor_protected_probe_control_read(
         &probe_runtime.control, &control);
+    bool caller_is_service = result == 0 && pid == control.pid &&
+                             generation == control.process_generation;
     if (result == 0 &&
         (control.active == 0U || control.fenced != 0U ||
          control.healthy == 0U || pid != control.pid ||
@@ -1565,9 +1568,15 @@ int supervisor_network_send_arp_reply(
         result = supervisor_protected_arp_reply_context_clear(
             &probe_runtime.arp_reply_context);
     supervisor_unlock(transaction_flags);
+    if (result != 0 && caller_is_service) {
+        printf("REIST_NETWORK ARP_REPLY_REJECTED %d\n", result);
+        return result;
+    }
     if (result != 0) return result;
-    if (!netstack_send_arp_reply(reply->target_ip, reply->target_mac))
+    if (!netstack_send_arp_reply(reply->target_ip, reply->target_mac)) {
+        printf("REIST_NETWORK ARP_REPLY_REJECTED -5\n");
         return -5;
+    }
     printf("REIST_NETWORK ARP_REPLY_MEDIATED\n");
     return 0;
 }

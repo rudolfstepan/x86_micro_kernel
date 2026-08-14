@@ -245,7 +245,10 @@ void e1000_poll_rx(void) {
         e1000_stats.link_up =
             (e1000_read_reg(E1000_REG_STATUS) & E1000_STATUS_LINK_UP) != 0;
     }
-    if ((events & (E1000_INT_RXO | E1000_INT_RXT0)) == 0) return;
+    /* Treat IRQ state as a latency hint.  A completed descriptor is
+     * authoritative and must make progress even after a lost/coalesced IRQ. */
+    if ((events & (E1000_INT_RXO | E1000_INT_RXT0)) == 0 &&
+        (rx_descs[rx_cur].status & E1000_RXD_STAT_DD) == 0) return;
 
     e1000_drain_rx();
     if (rx_descs[rx_cur].status & E1000_RXD_STAT_DD) {

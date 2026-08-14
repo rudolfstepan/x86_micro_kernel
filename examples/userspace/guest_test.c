@@ -563,6 +563,12 @@ static int test_diagnostic_service(void) {
         return 0;
     }
 
+    /* The host-side strict NIC gate injects a real ARP request only after this
+     * line.  Keep the window finite while allowing slow Windows pipe delivery
+     * to synchronize without turning the service path into a polling loop. */
+    x86os_puts("TEST_STAGE NETWORK_INJECTION_READY\n");
+    if (x86os_sleep_ms(2000U) != 0) return -1;
+
     /* Hold the owner briefly, fill every bounded queue slot, then let its
      * real ARP probe prove that ingress fails closed to the kernel path. */
     if (x86os_sleep_ms(300U) != 0) return -1;
