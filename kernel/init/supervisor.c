@@ -373,14 +373,27 @@ static bool probe_fence_apply(void *context) {
     if (runtime == NULL || !runtime->active) return false;
     runtime->fenced = true;
     runtime->healthy = false;
-    if (runtime->launch_count == 1U) printf("REIST_PROBE CRASH_DETECTED\n");
-    else if (runtime->launch_count == 2U) printf("REIST_PROBE HANG_DETECTED\n");
-    else if (runtime->launch_count == 3U)
-        printf("REIST_PROBE INVALID_REPLY_DETECTED\n");
     if (process_identity_alive(runtime->pid, runtime->process_generation)) {
         (void)process_terminate(runtime->pid);
     }
     return true;
+}
+
+static void probe_report_recovery_pair(uint32_t launch_count) {
+    /* Publish evidence only after the replacement passed self-test. Keep the
+     * bounded pair together in the serial record. */
+    scheduler_preempt_disable();
+    if (launch_count == 2U)
+        printf("\nREIST_PROBE CRASH_DETECTED\n"
+               "REIST_PROBE CRASH_RECOVERED\n");
+    else if (launch_count == 3U)
+        printf("\nREIST_PROBE HANG_DETECTED\n"
+               "REIST_PROBE HANG_RECOVERED\n");
+    else if (launch_count >= 4U)
+        printf("\nREIST_PROBE INVALID_REPLY_DETECTED\n"
+               "REIST_PROBE INVALID_RECOVERED\n"
+               "REIST_PROBE REINTEGRATED\n");
+    scheduler_preempt_enable();
 }
 
 static bool probe_fence_verify(void *context) {
@@ -450,17 +463,7 @@ int supervisor_probe_report(int pid, uint32_t generation,
         if (result == 0 && probe_runtime.fenced) {
             probe_runtime.fenced = false;
             probe_runtime.healthy = true;
-            if (probe_runtime.launch_count == 2U)
-                printf("\nREIST_PROBE CRASH_DETECTED\n"
-                       "REIST_PROBE CRASH_RECOVERED\n");
-            else if (probe_runtime.launch_count == 3U)
-                printf("\nREIST_PROBE HANG_DETECTED\n"
-                       "REIST_PROBE HANG_RECOVERED\n");
-            else if (probe_runtime.launch_count >= 4U) {
-                printf("\nREIST_PROBE INVALID_REPLY_DETECTED\n"
-                       "REIST_PROBE INVALID_RECOVERED\n");
-                printf("REIST_PROBE REINTEGRATED\n");
-            }
+            probe_report_recovery_pair(probe_runtime.launch_count);
         }
         if (result == 0) probe_runtime.healthy = true;
         return result;
@@ -489,6 +492,30 @@ int supervisor_service_connect(Process *client, uint32_t service_id,
         IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE);
     if (result == 0) *handle_out = probe_runtime.endpoint_handle;
     return result;
+}
+
+bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
+    KASSERT_NOT_IRQ();
+    KASSERT(irq_enabled());
+    if (frame == NULL || length < 14U || !probe_runtime.active ||
+        probe_runtime.fenced || !probe_runtime.healthy ||
+        probe_runtime.launch_count < 4U ||
+        probe_runtime.endpoint_handle == IPC_INVALID_HANDLE ||
+        !process_identity_alive(probe_runtime.pid,
+                                probe_runtime.process_generation)) {
+        return false;
+    }
+    ipc_message_t message = {
+        .version = IPC_MESSAGE_VERSION,
+        .struct_size = sizeof(ipc_message_t),
+        .length = 18U,
+        .payload = {'N', 'E', 'T', '1'},
+    };
+    for (uint32_t index = 0U; index < 14U; ++index)
+        message.payload[index + 4U] = frame[index];
+    return ipc_send_external_from_peer(
+        probe_runtime.pid, probe_runtime.process_generation,
+        probe_runtime.endpoint_handle, &message) == 0;
 }
 
 static void supervisor_worker(void) {
@@ -564,6 +591,11 @@ int supervisor_service_connect(struct Process *client, uint32_t service_id,
                                uint32_t *handle_out) {
     (void)client; (void)service_id; (void)handle_out;
     return -1;
+}
+
+bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
+    (void)frame; (void)length;
+    return false;
 }
 #endif
 

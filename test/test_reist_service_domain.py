@@ -80,6 +80,27 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("TEST_STAGE NETWORK_PARSER_OK", guest)
         self.assertIn("REIST_NETWORK_MARKER", runner)
 
+    def test_real_rx_header_handoff_is_bounded_and_peer_routed(self):
+        netdev = read("drivers/net/netdev.c")
+        supervisor = read("kernel/init/supervisor.c")
+        ipc = read("kernel/ipc/ipc.c")
+        self.assertIn("uint8_t service_header[14U]", netdev)
+        self.assertIn("memcpy(service_header, packet", netdev)
+        self.assertIn("supervisor_network_submit_header(service_header",
+                      netdev)
+        self.assertIn(".length = 18U", supervisor)
+        handoff = supervisor[
+            supervisor.index("bool supervisor_network_submit_header("):
+            supervisor.index("static void supervisor_worker(")]
+        self.assertIn("KASSERT_NOT_IRQ();", handoff)
+        self.assertIn("KASSERT(irq_enabled());", handoff)
+        self.assertIn("for (uint32_t index = 0U; index < 14U; ++index)",
+                      supervisor)
+        self.assertIn("ipc_send_external_from_peer(", supervisor)
+        self.assertIn("if (endpoint->count >= IPC_QUEUE_DEPTH)", ipc)
+        self.assertIn("peer->holder_pid", ipc)
+        self.assertNotIn("ipc_send_timeout(", handoff)
+
 
 if __name__ == "__main__":
     unittest.main()

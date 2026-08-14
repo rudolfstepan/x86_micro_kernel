@@ -69,6 +69,7 @@ int supervisor_probe_report(int pid, uint32_t generation,
                             uint64_t now_ms);
 int supervisor_service_connect(struct Process *client, uint32_t service_id,
                                uint32_t *handle_out);
+bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length);
 int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind);
 int supervisor_register(const char *name, const supervisor_config_t *config,

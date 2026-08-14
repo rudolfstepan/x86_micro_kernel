@@ -110,6 +110,12 @@ class ReistProbeDomainContractTests(unittest.TestCase):
             "INVALID_RECOVERED", "REINTEGRATED",
         ):
             self.assertIn(marker, self.supervisor)
+        recovery = function(self.supervisor,
+                            "static void probe_report_recovery_pair(")
+        self.assertIn("scheduler_preempt_disable();", recovery)
+        self.assertIn("scheduler_preempt_enable();", recovery)
+        fence = function(self.supervisor, "static bool probe_fence_apply(")
+        self.assertNotIn("_DETECTED", fence)
 
     def test_probe_program_and_boot_packaging_are_present(self):
         probe = read("examples/userspace/reist_probe.c")

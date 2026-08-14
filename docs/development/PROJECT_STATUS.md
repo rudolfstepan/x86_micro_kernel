@@ -46,7 +46,11 @@ Quota-Leck. Als nächstes folgt die erste funktionale Migration ohne parallelen
 Ring-0-Datenpfad. S0.3c-3a hat dafür bereits einen festen, heapfreien
 Ethernet-Header-Parser in den Ring-3-Dienst verschoben und weist ARP-
 Klassifikation im Gast nach. Als nächstes wird dieser Parser über einen
-begrenzten Frame-Handoff an den echten RX-Pfad angebunden. Die bisherige
+begrenzten Frame-Handoff an den echten RX-Pfad angebunden. S0.3c-3b hat diesen
+Handoff nun implementiert: genau 14 Headerbytes, feste Queue, keine Allokation,
+kein Warten und generation-sicheres Peer-Routing. Als nächstes muss ein echter
+NIC-Gastlauf die Übergabe beweisen; danach wird die ausgewählte parallele
+Kernelklassifikation entfernt. Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 
 Der zuletzt ausgeführte vollständige Windows-Build bootete in VMware bis zum

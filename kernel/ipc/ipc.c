@@ -567,6 +567,36 @@ static int load_message(size_t endpoint_slot, uint32_t queue_slot,
     return 0;
 }
 
+static int enqueue_message_locked(size_t endpoint_slot,
+                                  ipc_endpoint_t *endpoint,
+                                  const ipc_message_t *message,
+                                  int sender_pid,
+                                  uint32_t sender_generation) {
+    if (endpoint->count >= IPC_QUEUE_DEPTH) return IPC_EAGAIN;
+    uint32_t tail = (endpoint->head + endpoint->count) % IPC_QUEUE_DEPTH;
+    memset(&endpoint->messages[tail], 0, sizeof(endpoint->messages[tail]));
+    endpoint->messages[tail].version = message->version;
+    endpoint->messages[tail].struct_size = message->struct_size;
+    endpoint->messages[tail].length = message->length;
+    memcpy(endpoint->messages[tail].payload, message->payload,
+           message->length);
+    endpoint->sender_pid[tail] = sender_pid;
+    endpoint->sender_generation[tail] = sender_generation;
+    ipc_protected_message_t protected_message = {
+        endpoint->messages[tail], sender_pid, sender_generation
+    };
+    if (seal_message(endpoint_slot, tail, &protected_message) != 0) {
+        return IPC_EINTEGRITY;
+    }
+    ++endpoint->count;
+    if (seal_endpoint(endpoint_slot) != 0) {
+        --endpoint->count;
+        return IPC_EINTEGRITY;
+    }
+    (void)wait_queue_wake_one_locked(&endpoint->receive_waiters);
+    return 0;
+}
+
 int ipc_send_timeout(Process *sender, ipc_handle_t handle,
                      const ipc_message_t *message, uint32_t timeout_ms) {
     if (!message_valid(message)) {
@@ -591,35 +621,14 @@ int ipc_send_timeout(Process *sender, ipc_handle_t handle,
             return IPC_EPIPE;
         }
         if (endpoint->count < IPC_QUEUE_DEPTH) {
-            uint32_t tail = (endpoint->head + endpoint->count) %
-                            IPC_QUEUE_DEPTH;
-            memset(&endpoint->messages[tail], 0,
-                   sizeof(endpoint->messages[tail]));
-            endpoint->messages[tail].version = message->version;
-            endpoint->messages[tail].struct_size = message->struct_size;
-            endpoint->messages[tail].length = message->length;
-            memcpy(endpoint->messages[tail].payload, message->payload,
-                   message->length);
-            endpoint->sender_pid[tail] = sender->pid;
-            endpoint->sender_generation[tail] = sender->generation;
-            ipc_protected_message_t protected_message = {
-                endpoint->messages[tail], sender->pid, sender->generation
-            };
-            if (seal_message(endpoint_slot, tail, &protected_message) != 0) {
+            result = enqueue_message_locked(endpoint_slot, endpoint, message,
+                                            sender->pid,
+                                            sender->generation);
+            if (result == IPC_EINTEGRITY) {
                 quarantine_endpoint_locked(endpoint_slot);
-                ipc_unlock(flags);
-                return IPC_EINTEGRITY;
             }
-            ++endpoint->count;
-            if (seal_endpoint(endpoint_slot) != 0) {
-                --endpoint->count;
-                quarantine_endpoint_locked(endpoint_slot);
-                ipc_unlock(flags);
-                return IPC_EINTEGRITY;
-            }
-            (void)wait_queue_wake_one_locked(&endpoint->receive_waiters);
             ipc_unlock(flags);
-            return 0;
+            return result;
         }
         if (timeout_ms == 0U) {
             ipc_unlock(flags);
@@ -687,6 +696,62 @@ static int remove_message_locked(size_t endpoint_slot,
     --endpoint->count;
     if (endpoint->count == 0U) endpoint->head = 0U;
     return seal_endpoint(endpoint_slot) == 0 ? 0 : IPC_EINTEGRITY;
+}
+
+int ipc_send_external_from_peer(int owner_pid, uint32_t owner_generation,
+                                ipc_handle_t handle,
+                                const ipc_message_t *message) {
+    if (owner_pid <= 0 || owner_generation == 0U || !message_valid(message))
+        return IPC_EINVAL;
+    size_t endpoint_slot;
+    uint32_t generation;
+    if (decode_handle(handle, &endpoint_slot, &generation) != 0)
+        return IPC_EBADF;
+
+    uint32_t flags = ipc_lock();
+    if (load_endpoint(endpoint_slot) != 0) {
+        quarantine_endpoint_locked(endpoint_slot);
+        ipc_unlock(flags);
+        return IPC_EINTEGRITY;
+    }
+    ipc_endpoint_t *endpoint = &ipc_endpoints[endpoint_slot];
+    if (!endpoint->active || endpoint->generation != generation ||
+        endpoint->owner_pid != owner_pid ||
+        endpoint->owner_generation != owner_generation) {
+        ipc_unlock(flags);
+        return IPC_EBADF;
+    }
+
+    ipc_capability_record_t *peer = NULL;
+    for (size_t index = 0; index < IPC_MAX_CAPABILITY_RECORDS; ++index) {
+        if (load_capability(index) != 0) {
+            quarantine_endpoint_locked(endpoint_slot);
+            ipc_unlock(flags);
+            return IPC_EINTEGRITY;
+        }
+        ipc_capability_record_t *candidate = &ipc_capability_records[index];
+        if (candidate->active && candidate->endpoint_slot == endpoint_slot &&
+            (candidate->rights & IPC_RIGHT_CONTROL) == 0U) {
+            if (peer != NULL) {
+                quarantine_endpoint_locked(endpoint_slot);
+                ipc_unlock(flags);
+                return IPC_EINTEGRITY;
+            }
+            peer = candidate;
+        }
+    }
+    if (peer == NULL || peer->holder == NULL || !peer->holder->is_running ||
+        peer->holder->pid != peer->holder_pid ||
+        peer->holder->generation != peer->holder_generation) {
+        ipc_unlock(flags);
+        return IPC_EPIPE;
+    }
+    int result = enqueue_message_locked(endpoint_slot, endpoint, message,
+                                        peer->holder_pid,
+                                        peer->holder_generation);
+    if (result == IPC_EINTEGRITY) quarantine_endpoint_locked(endpoint_slot);
+    ipc_unlock(flags);
+    return result;
 }
 
 int ipc_receive_timeout(Process *receiver, ipc_handle_t handle,

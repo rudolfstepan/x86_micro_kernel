@@ -125,7 +125,9 @@ class ReistIpcContractTests(unittest.TestCase):
             self.assertNotRegex(operation, r"\b(?:hlt|pause)\b")
         self.assertIn("IPC_QUEUE_DEPTH", send)
         self.assertIn("IPC_MAX_MESSAGE_SIZE", send)
-        self.assertIn("wait_queue_wake_one_locked(", send)
+        enqueue = c_block(self.source, "static int enqueue_message_locked(")
+        self.assertIn("wait_queue_wake_one_locked(", enqueue)
+        self.assertIn("enqueue_message_locked(", send)
         self.assertIn("wait_queue_wake_one_locked(", receive)
 
     def test_delegation_is_explicit_attenuated_and_generation_scoped(self) -> None:

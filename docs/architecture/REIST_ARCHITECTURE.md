@@ -267,6 +267,16 @@ deterministischen Gastnachweis. Der reale NIC-RX-/TX-Pfad bleibt vorerst im
 Kernel; dieses Inkrement ist daher bewusst noch keine vollständige
 Netzwerkdienstmigration.
 
+S0.3c-3b bindet den echten RX-Pfad an diese Grenze an. `netdev` kopiert nach
+der validierten Geräteannahme ausschließlich den 14-Byte-Ethernet-Header in
+eine feste `NET1`-IPC-Nachricht. Der Trusted-Ingress blockiert nie, allokiert
+nicht und verwirft bei voller Queue oder fehlendem Client. Er verwendet die
+generation-gebundene Identität des einzigen delegierten Peers als Absender;
+damit kann nur der Dienstbesitzer den Header empfangen und eine Antwort nur an
+diesen Peer richten. Die bisherige Kernelverarbeitung bleibt während dieser
+Transportstufe noch aktiv und wird erst nach einem realen NIC-Laufzeitnachweis
+für den ausgewählten Pakettyp entfernt.
+
 ## Betriebsstufen
 
 ```text

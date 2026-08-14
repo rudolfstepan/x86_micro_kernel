@@ -1038,11 +1038,17 @@ Nachrichtengröße und Antwort sind fest begrenzt; der Pfad allokiert nicht und
 besitzt keine Hardware- oder Ausgabeautorität. GTEST überträgt einen
 synthetischen ARP-Frame und der QEMU-Runner verlangt `NETWORK_PARSER_OK`.
 
-S0.3c-3b bindet diesen Parser über einen begrenzten Frame-Handoff an den echten
-RX-Pfad an. Erst wenn die ausgewählte Klassifikationsfunktion im Kernel
-entfernt ist und Fault-Injection den übrigen Netzwerkbetrieb nicht beeinflusst,
-gilt dieser Netzwerkbaustein als migriert; ein paralleler autoritativer
-Kernelpfad zählt nicht.
+**S0.3c-3b ist umgesetzt:** Der echte `netdev`-RX-Pfad spiegelt genau den
+14-Byte-Ethernet-Header als feste `NET1`-Nachricht an den gesunden Dienst. Der
+Ingress ist nichtblockierend, heapfrei und verwirft bei Queue-Druck oder ohne
+aktiven Client. IPC bindet den Absender an den einzigen generation-geprüften
+Peer, sodass der Client die eigene Ingress-Nachricht nicht konsumieren kann.
+
+S0.3c-3c ergänzt einen echten NIC-Gastnachweis und entfernt danach für den
+ausgewählten Pakettyp die parallele Kernelklassifikation. Erst wenn
+Fault-Injection den übrigen Netzwerkbetrieb nicht beeinflusst, gilt dieser
+Netzwerkbaustein als migriert; ein paralleler autoritativer Kernelpfad zählt
+nicht.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

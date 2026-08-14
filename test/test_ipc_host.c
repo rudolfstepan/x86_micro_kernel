@@ -99,6 +99,18 @@ static int test_rights_fifo_and_bounds(void) {
     CHECK(ipc_close(&child, handle) < 0);
     CHECK(ipc_send(&stranger, handle, &(ipc_message_t){0}) < 0);
 
+    /* Trusted ingress is routed as the active peer: the peer cannot consume
+     * the injected message, while the endpoint owner can. */
+    ipc_message_t ingress = message(0x4EU);
+    CHECK(ipc_send_external_from_peer(owner.pid, owner.generation, handle,
+                                      &ingress) == 0);
+    ipc_message_t peer_view;
+    prepare_receive(&peer_view);
+    CHECK(ipc_receive_timeout(&child, handle, &peer_view, 0U) == -11);
+    prepare_receive(&peer_view);
+    CHECK(ipc_receive_timeout(&owner, handle, &peer_view, 0U) == 0);
+    CHECK(peer_view.length == 1U && peer_view.payload[0] == 0x4EU);
+
     ipc_message_t invalid = message(0U);
     invalid.version = IPC_MESSAGE_VERSION + 1U;
     CHECK(ipc_send(&owner, handle, &invalid) < 0);

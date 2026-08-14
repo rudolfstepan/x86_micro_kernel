@@ -48,6 +48,11 @@ int ipc_send(struct Process *sender, ipc_handle_t handle,
              const ipc_message_t *message);
 int ipc_send_timeout(struct Process *sender, ipc_handle_t handle,
                      const ipc_message_t *message, uint32_t timeout_ms);
+/* Nonblocking trusted ingress.  The active peer identity is used as the
+ * sender so only the endpoint owner can receive the injected message. */
+int ipc_send_external_from_peer(int owner_pid, uint32_t owner_generation,
+                                ipc_handle_t handle,
+                                const ipc_message_t *message);
 int ipc_receive(struct Process *receiver, ipc_handle_t handle,
                 ipc_message_t *message);
 int ipc_receive_timeout(struct Process *receiver, ipc_handle_t handle,
