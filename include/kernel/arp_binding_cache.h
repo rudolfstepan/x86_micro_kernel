@@ -19,10 +19,26 @@ typedef struct {
     critical_object_t entries[SUPERVISED_ARP_CACHE_SIZE];
 } supervised_arp_cache_t;
 
+typedef struct {
+    uint32_t scanned;
+    uint32_t active;
+    uint32_t expired;
+    uint32_t newly_expired;
+    uint32_t corrected;
+} supervised_arp_scrub_stats_t;
+
 int supervised_arp_cache_init(supervised_arp_cache_t *cache);
 int supervised_arp_cache_commit(supervised_arp_cache_t *cache, uint32_t ip,
-                                const uint8_t mac[6], uint32_t source_epoch,
-                                uint64_t now_ms, uint32_t lease_ms);
+                                const uint8_t mac[6],
+                                uint32_t transaction_epoch,
+                                int32_t source_pid, uint32_t source_generation,
+                                uint64_t now_ms,
+                                uint32_t lease_ms);
+int supervised_arp_cache_revoke_identity(supervised_arp_cache_t *cache,
+                                         int32_t source_pid,
+                                         uint32_t source_generation);
+int supervised_arp_cache_scrub(supervised_arp_cache_t *cache, uint64_t now_ms,
+                               supervised_arp_scrub_stats_t *stats_out);
 supervised_arp_lookup_result_t supervised_arp_cache_lookup(
     supervised_arp_cache_t *cache, uint32_t ip, uint64_t now_ms,
     uint8_t mac_out[6]);

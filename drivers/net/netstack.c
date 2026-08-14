@@ -20,6 +20,7 @@
 static network_config_t net_config;
 static arp_cache_entry_t arp_cache[ARP_CACHE_SIZE];
 static supervised_arp_cache_t supervised_arp_cache;
+static bool supervised_arp_cache_initialized;
 static uint16_t ip_identification = 0;
 
 typedef struct {
@@ -277,16 +278,38 @@ static bool arp_send_request_now(uint32_t target_ip) {
 }
 
 bool netstack_commit_arp_binding(uint32_t ip, const uint8_t mac[6],
-                                 uint32_t source_epoch, uint64_t now_ms) {
+                                 uint32_t transaction_epoch,
+                                 int32_t source_pid,
+                                 uint32_t source_generation, uint64_t now_ms) {
     if (ip == 0U || mac == NULL || (mac[0] & 1U) != 0U) return false;
     bool nonzero = false;
     for (uint32_t index = 0U; index < ETH_ADDR_LEN; ++index)
         if (mac[index] != 0U) nonzero = true;
     if (!nonzero) return false;
     if (supervised_arp_cache_commit(&supervised_arp_cache, ip, mac,
-                                    source_epoch, now_ms,
+                                    transaction_epoch, source_pid,
+                                    source_generation,
+                                    now_ms,
                                     SUPERVISED_ARP_LEASE_MS) != 0) return false;
     arp_remove_entry(ip);
+    return true;
+}
+
+int netstack_revoke_arp_bindings(int32_t source_pid,
+                                 uint32_t source_generation) {
+    return supervised_arp_cache_revoke_identity(
+        &supervised_arp_cache, source_pid, source_generation);
+}
+
+bool netstack_scrub_arp_bindings(uint64_t now_ms,
+                                 uint32_t *newly_expired_out,
+                                 uint32_t *corrected_out) {
+    if (newly_expired_out == NULL || corrected_out == NULL) return false;
+    supervised_arp_scrub_stats_t stats;
+    if (supervised_arp_cache_scrub(&supervised_arp_cache, now_ms,
+                                   &stats) != 0) return false;
+    *newly_expired_out = stats.newly_expired;
+    *corrected_out = stats.corrected;
     return true;
 }
 
@@ -811,13 +834,20 @@ void netstack_process_packet(uint8_t *packet, uint16_t length) {
 // =============================================================================
 // Öffentliche API
 // =============================================================================
+bool netstack_safety_init(void) {
+    if (supervised_arp_cache_initialized) return true;
+    if (supervised_arp_cache_init(&supervised_arp_cache) != 0) return false;
+    supervised_arp_cache_initialized = true;
+    return true;
+}
+
 void netstack_init(void) {
     printf("[NET] init...\n");
     memset(&netstack_stats, 0, sizeof(netstack_stats));
     ping_waiting = false;
     ping_reply_received = false;
     for (int i = 0; i < ARP_CACHE_SIZE; ++i) arp_cache[i].valid = false;
-    if (supervised_arp_cache_init(&supervised_arp_cache) != 0)
+    if (!netstack_safety_init())
         panic("Unable to initialize protected ARP binding cache");
 
     if (!netdev_get_mac_address(net_config.mac_address)) {

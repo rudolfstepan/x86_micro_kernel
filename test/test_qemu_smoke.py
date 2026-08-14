@@ -66,6 +66,7 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
             RUNNER_MODULE.REIST_NETWORK_PRESSURE_FALLBACK_MARKER,
             RUNNER_MODULE.REIST_NETWORK_PRESSURE_MARKER,
             RUNNER_MODULE.REIST_NETWORK_STATS_MARKER,
+            RUNNER_MODULE.REIST_ARP_REVOKED_MARKER,
             RUNNER_MODULE.REIST_NETWORK_CRASH_MARKER,
             RUNNER_MODULE.REIST_NETWORK_RECOVERY_MARKER,
             RUNNER_MODULE.REIST_SERVICE_MARKER,
@@ -84,6 +85,11 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
             RUNNER_MODULE.REIST_NETWORK_RECOVERY_MARKER + "\n", "")
         self.assertIn("crash recovery", RUNNER_MODULE.validate(
             no_recovery, expect_reist_probe=True,
+            expect_network_handoff=True))
+        no_revoke = transcript.replace(
+            RUNNER_MODULE.REIST_ARP_REVOKED_MARKER + "\n", "")
+        self.assertIn("crash recovery", RUNNER_MODULE.validate(
+            no_revoke, expect_reist_probe=True,
             expect_network_handoff=True))
 
     def test_reist_probe_completion_precedes_guest_command(self) -> None:

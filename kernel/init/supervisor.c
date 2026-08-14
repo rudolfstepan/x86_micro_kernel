@@ -927,6 +927,14 @@ static bool probe_fence_apply(void *context) {
         output_fence_all();
         return false;
     }
+    int revoked = netstack_revoke_arp_bindings(
+        control.pid, control.process_generation);
+    if (revoked < 0) {
+        output_fence_all();
+        return false;
+    }
+    if (revoked > 0)
+        printf("REIST_NETWORK ARP_BINDINGS_REVOKED\n");
     control.fenced = 1U;
     control.healthy = 0U;
     control.network_epoch = 0U;
@@ -1328,7 +1336,7 @@ int supervisor_network_commit_arp_binding(
             binding->probe_id);
     if (result == 0 && !netstack_commit_arp_binding(
             binding->ip, binding->mac, binding->probe_id,
-            pit_monotonic_ms()))
+            pid, generation, pit_monotonic_ms()))
         result = -22;
     supervisor_unlock(transaction_flags);
     if (result == 0)
@@ -1337,6 +1345,7 @@ int supervisor_network_commit_arp_binding(
 }
 
 static void supervisor_worker(void) {
+    static uint64_t next_arp_scrub_ms;
     for (;;) {
         /* Bounded network bottom half: IRQ handlers only acknowledge and set
          * pending flags, so foreground progress must not depend on a shell
@@ -1353,10 +1362,27 @@ static void supervisor_worker(void) {
                 (void)scheduler_yield();
             continue;
         }
+        uint64_t now_ms = pit_monotonic_ms();
         int authority_expiry = supervisor_protected_probe_authority_expire_epoch(
-            &probe_runtime.network_probe_authority, pit_monotonic_ms(),
+            &probe_runtime.network_probe_authority, now_ms,
             control.network_epoch);
         supervisor_unlock(transaction_flags);
+        if (now_ms >= next_arp_scrub_ms) {
+            next_arp_scrub_ms = UINT64_MAX - now_ms < 1000U
+                                    ? UINT64_MAX : now_ms + 1000U;
+            uint32_t expired = 0U;
+            uint32_t corrected = 0U;
+            if (!netstack_scrub_arp_bindings(now_ms, &expired, &corrected)) {
+                if (control.active != 0U)
+                    (void)supervisor_force_isolate(control.handle);
+                else
+                    output_fence_all();
+            }
+            if (expired != 0U)
+                printf("REIST_NETWORK ARP_BINDING_EXPIRED %u\n", expired);
+            if (corrected != 0U)
+                printf("REIST_NETWORK ARP_BINDING_CORRECTED %u\n", corrected);
+        }
         if (authority_expiry == 1) {
             network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_EXPIRED);
         } else if (authority_expiry < 0 && control.active != 0U) {

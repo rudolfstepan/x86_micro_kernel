@@ -165,6 +165,7 @@ typedef struct {
 
 // Initialization
 void netstack_init(void);
+bool netstack_safety_init(void);
 void netstack_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway);
 bool netstack_configure_dhcp(void);
 uint32_t netstack_get_ip_address(void);
@@ -183,7 +184,14 @@ void arp_send_reply(uint32_t target_ip, uint8_t *target_mac);
 bool arp_lookup(uint32_t ip, uint8_t *mac_out);
 void arp_add_entry(uint32_t ip, const uint8_t *mac);
 bool netstack_commit_arp_binding(uint32_t ip, const uint8_t mac[6],
-                                 uint32_t source_epoch, uint64_t now_ms);
+                                 uint32_t transaction_epoch,
+                                 int32_t source_pid,
+                                 uint32_t source_generation, uint64_t now_ms);
+int netstack_revoke_arp_bindings(int32_t source_pid,
+                                 uint32_t source_generation);
+bool netstack_scrub_arp_bindings(uint64_t now_ms,
+                                 uint32_t *newly_expired_out,
+                                 uint32_t *corrected_out);
 
 // ICMP Functions
 void icmp_send_echo_request(uint32_t dst_ip, uint16_t id, uint16_t seq);

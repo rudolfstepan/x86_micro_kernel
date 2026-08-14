@@ -109,11 +109,10 @@ und 10 verbindlich.
   - [x] S0.3c-4a Eng vermittelte ARP-Zustandsänderung aus Ring 3
   - [x] S0.3c-4b Geschützter ARP-Cache mit Ablaufzeit, Quellepoche,
     Redundanz und Fail-Closed-Lookup
-  - [ ] **S0.3c-4c in Arbeit:** Dienstneustart widerruft Bindungen der alten
-    Epoche und
-    weist Scrubbing sowie Integritätseskalation im Gast nach
-  - [ ] S0.3c-5 Netzwerkdatenpfad vollständig aus Ring 0 lösen und den
-    Dienst unter Fehler-, Druck- und Restart-Injektion abnehmen
+  - [x] S0.3c-4c Dienstneustart widerruft Bindungen der alten Generation;
+    begrenzter Scrub und Integritätseskalation sind nachgewiesen
+  - [ ] **S0.3c-5 in Arbeit:** Netzwerkdatenpfad vollständig aus Ring 0 lösen
+    und den Dienst unter Fehler-, Druck- und Restart-Injektion abnehmen
   - [ ] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
   - [ ] S0.3c-7 Unabhängiger Standby-/Supervisor-Kanal und realer Handover
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
@@ -1263,11 +1262,23 @@ sondern lehnt die neue Mutation ab. Hosttests prüfen Ablaufgrenze, Sättigung,
 Einzel-/Doppelkorruption und Poolgrenze; Paket-, normaler Gast- und echter
 RTL8139-Smoke sind grün.
 
-S0.3c-4c bindet als nächsten Schritt Cache-Gültigkeit an die aktuelle
-Dienstgeneration: Fence oder Restart widerrufen alle Bindungen der alten
-Quellepoche, ein begrenzter Scrub meldet Korrektur/Ablauf und der Gast weist
-nach, dass alte Einträge nach Recovery weder verwendbar noch wiederbelebbar
-sind.
+**S0.3c-4c ist umgesetzt:** Neben der Transaktionsepoche speichert jeder Slot
+PID und Prozessgeneration des erzeugenden Dienstes. Der Fence wandelt vor dem
+Prozessabbruch alle noch gültigen Einträge genau dieser vollständigen Identität
+in bleibende Sperreinträge um. Der Supervisor-Worker scrubbt
+hardwareunabhängig höchstens
+einmal pro Sekunde alle 32 Slots; Ablauf wird publiziert, Einzelkorruption
+gezählt und repariert, Doppelkorruption löst Isolation bzw. den globalen
+Output-Fence aus. Die Cachebasis wird vor Hardwareerkennung initialisiert,
+sodass auch ein No-NIC-System sicher recovern kann. Der echte RTL8139-Gast
+erzwingt nach einer vermittelten Bindung einen Dienstcrash und akzeptiert
+`NETWORK_RECOVERY_OK` erst nach `ARP_BINDINGS_REVOKED`. Hosttests prüfen zudem
+falsche/richtige Generation sowie Scrub-Ablauf und Integritätsfehler.
+
+S0.3c-5 verschiebt als nächsten Schritt die nächste echte ARP-/IPv4-
+Verarbeitungsentscheidung vollständig in den isolierten Dienst und entfernt
+den entsprechenden Ring-0-Parallelpfad. Fehler-, Queue-Druck- und
+Restart-Injektion müssen weiterhin unabhängigen Gastfortschritt beweisen.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

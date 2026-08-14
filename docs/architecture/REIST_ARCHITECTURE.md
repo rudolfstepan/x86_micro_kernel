@@ -390,6 +390,18 @@ nur für IP-Adressen zulässig, für die nie eine vermittelte
 Vertrauensentscheidung existierte. Die nächste Stufe widerruft diese Slots
 zusätzlich anhand der Dienstgeneration beim Fence/Restart.
 
+S0.3c-4c ergänzt deshalb neben der Probe-Transaktionsepoche die vollständige
+Identität aus PID und Prozessgeneration des produzierenden Dienstes. Der Fence
+widerruft vor dem Terminate alle gültigen Slots genau dieser Identität zu
+dauerhaften Sperreinträgen; gleiche Generationen anderer Prozessslots bleiben
+unberührt.
+Ein hardwareunabhängig initialisierter, einmal pro Sekunde begrenzter Scrub
+liest exakt 32 Critical Objects, publiziert Ablauf und repariert eine gültige
+Replica. Doppelkorruption verhindert weitere Lookups und isoliert die
+Probedomäne beziehungsweise aktiviert ohne laufende Domäne den globalen
+Output-Fence. Der RTL8139-Crashgast verlangt den Widerruf vor der erfolgreichen
+Reintegration der Ersatzgeneration.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

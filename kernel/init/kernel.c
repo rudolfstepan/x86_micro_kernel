@@ -411,6 +411,9 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     early_init();
     fatal_boot_recover_record();
     supervisor_init();
+    if (!netstack_safety_init()) {
+        panic("Unable to initialize protected network state");
+    }
     ipc_init();
     output_fence_init();
     if (!filesystem_safety_init(pit_monotonic_ms())) {

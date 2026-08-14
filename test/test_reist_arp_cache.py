@@ -38,7 +38,11 @@ class ReistArpCacheTests(unittest.TestCase):
     def test_supervisor_commits_epoch_and_monotonic_time(self):
         source = (ROOT / "kernel/init/supervisor.c").read_text(encoding="utf-8")
         self.assertIn("binding->mac, binding->probe_id,", source)
-        self.assertIn("pit_monotonic_ms()))", source)
+        self.assertIn("pid, generation, pit_monotonic_ms()))", source)
+        self.assertIn("control.pid, control.process_generation", source)
+        self.assertIn("netstack_scrub_arp_bindings(now_ms, &expired, &corrected)",
+                      source)
+        self.assertIn("ARP_BINDING_CORRECTED", source)
 
     def test_cache_is_fixed_capacity_and_heap_free(self):
         header = (ROOT / "include/kernel/arp_binding_cache.h").read_text(
@@ -49,6 +53,12 @@ class ReistArpCacheTests(unittest.TestCase):
         self.assertIn("critical_object_t entries", header)
         self.assertNotIn("k_malloc", source)
         self.assertNotIn("k_free", source)
+
+    def test_cache_is_initialized_without_network_hardware(self):
+        kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
+        self.assertIn("if (!netstack_safety_init())", kernel)
+        self.assertLess(kernel.index("netstack_safety_init"),
+                        kernel.index("supervisor_start_worker"))
 
 
 if __name__ == "__main__":

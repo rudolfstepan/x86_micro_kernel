@@ -116,8 +116,16 @@ redundant geschützten Slots. Quellepoche und monotone 30-s-Deadline gehören
 zur selben validierten Nutzlast. Ablauf bleibt als Sperreintrag erhalten;
 Einzelkorruption wird rekonstruiert, Doppelkorruption und Kapazitätserschöpfung
 enden fail-closed ohne Legacy-Fallback oder Verdrängung. Host-, Paket-, normaler
-Gast- und echter RTL8139-Smoke sind grün. Als nächstes widerruft S0.3c-4c alle
-Bindungen einer gefenceten oder ersetzten Dienstgeneration.
+Gast- und echter RTL8139-Smoke sind grün.
+S0.3c-4c ist nun ebenfalls umgesetzt: Jeder Slot trägt PID und konkrete
+Prozessgeneration. Der Fence widerruft nur exakt passende Einträge vor dem
+Prozessende;
+der echte RTL8139-Gast beobachtet `ARP_BINDINGS_REVOKED` vor erfolgreicher
+Recovery. Ein auf einmal pro Sekunde begrenzter 32-Slot-Scrub repariert
+Einzelkopien, publiziert Ablauf und eskaliert Doppelkorruption. Die
+hardwareunabhängige Frühinitialisierung hält denselben Vertrag auch ohne NIC.
+Als nächstes beginnt S0.3c-5 mit der vollständigen Verlagerung der nächsten
+ARP-/IPv4-Verarbeitungsentscheidung aus Ring 0.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 
