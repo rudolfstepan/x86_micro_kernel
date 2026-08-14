@@ -63,6 +63,10 @@ S0.3c-3e weist diese Grenze nun per realer Fault-Injection nach: Nach einem
 echten Handoff crasht der Dienst bei ausstehender Probe, der alte Kanal bricht
 ab und GTEST verbindet sich begrenzt mit der neuen Generation. Diagnose und
 unabhängiger Gastfortschritt erreichen danach wieder `TEST_OK`.
+S0.3c-3f ergänzt einen deterministischen Vier-Slot-IPC-Drucktest. Ein echter
+ARP-Reply fällt bei voller Dienstqueue einmalig zum Kernelpfad zurück; danach
+werden alle vier Lastnachrichten beantwortet und `NETWORK_PRESSURE_OK`
+erreicht.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 

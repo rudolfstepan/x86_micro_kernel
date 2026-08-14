@@ -294,6 +294,12 @@ fehlendem Dienst, falschem EtherType oder Queue-Druck bleibt der bestehende
 Kernelpfad zuständig. Fence/Restart löscht den Pending-Zustand, sodass keine
 alte Probeautorität auf eine neue Dienstgeneration übergehen kann.
 
+S0.3c-3f sättigt nach einem begrenzten Handshake deterministisch alle vier
+IPC-Slots. Der folgende echte ARP-Reply kann dann nicht übernommen werden,
+verbraucht die einmalige Probeautorität und fällt in den Kernelpfad zurück.
+Vier anschließend korrekt beantwortete Lastnachrichten belegen, dass Queue,
+Dienst und Kernelpfad nach dem Druckfenster weiter Fortschritt machen.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

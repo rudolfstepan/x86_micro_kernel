@@ -34,6 +34,8 @@ REIST_NETWORK_MARKER = "TEST_STAGE NETWORK_PARSER_OK"
 REIST_NETWORK_HANDOFF_MARKER = "TEST_STAGE NETWORK_HANDOFF_OK"
 REIST_NETWORK_CRASH_MARKER = "REIST_NETWORK SERVICE_CRASH_RECOVERED"
 REIST_NETWORK_RECOVERY_MARKER = "TEST_STAGE NETWORK_RECOVERY_OK"
+REIST_NETWORK_PRESSURE_FALLBACK_MARKER = "REIST_NETWORK QUEUE_PRESSURE_FALLBACK"
+REIST_NETWORK_PRESSURE_MARKER = "TEST_STAGE NETWORK_PRESSURE_OK"
 SHELL_PROMPT = "C:\\>"
 FAIL_MARKERS = (
     "TEST_FAIL",
@@ -295,9 +297,14 @@ def validate(
         if handoff < 0 or handoff > test:
             return "missing ordered real NIC network-handoff marker"
         crash = exact_line_position(transcript, REIST_NETWORK_CRASH_MARKER)
+        pressure_fallback = exact_line_position(
+            transcript, REIST_NETWORK_PRESSURE_FALLBACK_MARKER)
+        pressure = exact_line_position(transcript,
+                                       REIST_NETWORK_PRESSURE_MARKER)
         recovery = exact_line_position(transcript,
                                        REIST_NETWORK_RECOVERY_MARKER)
-        if crash < handoff or recovery < crash or recovery > test:
+        if (pressure_fallback < handoff or pressure < pressure_fallback or
+                crash < pressure or recovery < crash or recovery > test):
             return "missing ordered network-service crash recovery marker"
     return None
 

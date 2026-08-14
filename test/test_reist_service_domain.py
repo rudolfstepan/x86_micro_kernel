@@ -99,12 +99,26 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("frame[13] != 0x06U", handoff)
         self.assertIn("!probe_runtime.network_probe_pending", handoff)
         self.assertIn("network_probe_pending = false", handoff)
+
+    def test_queue_pressure_consumes_probe_and_falls_back(self):
+        supervisor = (ROOT / "kernel" / "init" / "supervisor.c").read_text()
+        ipc = (ROOT / "kernel" / "ipc" / "ipc.c").read_text()
+        service = (ROOT / "examples" / "userspace" / "reist_probe.c").read_text()
+        guest = (ROOT / "examples" / "userspace" / "guest_test.c").read_text()
+        self.assertIn('message_is(&request, "NETPRESSURE")', service)
+        self.assertIn('"REIST_PRESSURE_READY"', service)
+        self.assertIn("X86OS_IPC_QUEUE_DEPTH", guest)
+        self.assertIn("QUEUE_PRESSURE_FALLBACK", supervisor)
+        ingress = supervisor[supervisor.index("bool supervisor_network_submit_header"):
+                             supervisor.index("int supervisor_network_probe_request")]
+        self.assertLess(ingress.index("network_probe_pending = false"),
+                        ingress.index("return ingress == 0"))
         self.assertIn("for (uint32_t index = 0U; index < 14U; ++index)",
                       supervisor)
         self.assertIn("ipc_send_external_from_peer(", supervisor)
         self.assertIn("if (endpoint->count >= IPC_QUEUE_DEPTH)", ipc)
         self.assertIn("peer->holder_pid", ipc)
-        self.assertNotIn("ipc_send_timeout(", handoff)
+        self.assertNotIn("ipc_send_timeout(", ingress)
 
     def test_real_nic_probe_is_service_scoped_and_rate_limited(self):
         supervisor = read("kernel/init/supervisor.c")

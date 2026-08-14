@@ -529,11 +529,14 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     };
     for (uint32_t index = 0U; index < 14U; ++index)
         message.payload[index + 4U] = frame[index];
-    bool accepted = ipc_send_external_from_peer(
+    int ingress = ipc_send_external_from_peer(
         probe_runtime.pid, probe_runtime.process_generation,
-        probe_runtime.endpoint_handle, &message) == 0;
-    if (accepted) probe_runtime.network_probe_pending = false;
-    return accepted;
+        probe_runtime.endpoint_handle, &message);
+    /* A matching reply consumes exactly one probe authorization even when
+     * bounded IPC pressure forces the frame back to the kernel path. */
+    probe_runtime.network_probe_pending = false;
+    if (ingress == -11) printf("REIST_NETWORK QUEUE_PRESSURE_FALLBACK\n");
+    return ingress == 0;
 }
 
 int supervisor_network_probe_request(int pid, uint32_t generation,

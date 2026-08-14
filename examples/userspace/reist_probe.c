@@ -96,6 +96,14 @@ int main(int argc, char **argv) {
                 __asm__ volatile("ud2");
                 return 10;
             }
+            if (message_is(&request, "NETPRESSURE")) {
+                message_init(&response, "REIST_PRESSURE_READY");
+                if (x86os_ipc_send_timeout(endpoint, &response, 100U) != 0)
+                    return 7;
+                (void)x86os_sleep_ms(100U);
+                if (x86os_network_probe() != 0) return 11;
+                continue;
+            }
             const char *network = network_classification(&request);
             if (network != NULL && request.payload[3] == 'R') {
                 uint32_t ethertype = ((uint32_t)request.payload[16] << 8) |

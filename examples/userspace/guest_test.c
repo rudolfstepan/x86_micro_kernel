@@ -427,6 +427,26 @@ static int test_diagnostic_service(void) {
         return 0;
     }
 
+    /* Hold the owner briefly, fill every bounded queue slot, then let its
+     * real ARP probe prove that ingress fails closed to the kernel path. */
+    if (x86os_sleep_ms(300U) != 0) return -1;
+    ipc_message_set(&message, "NETPRESSURE");
+    if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
+    ipc_message_prepare(&message);
+    if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
+        !ipc_message_is(&message, "REIST_PRESSURE_READY")) return -1;
+    for (unsigned int index = 0U; index < X86OS_IPC_QUEUE_DEPTH; ++index) {
+        ipc_message_set(&message, "LOAD");
+        if (x86os_ipc_send_timeout(handle, &message, 0U) != 0) return -1;
+    }
+    if (x86os_sleep_ms(500U) != 0) return -1;
+    for (unsigned int index = 0U; index < X86OS_IPC_QUEUE_DEPTH; ++index) {
+        ipc_message_prepare(&message);
+        if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
+            !ipc_message_is(&message, "REIST_DIAG_INVALID")) return -1;
+    }
+    x86os_puts("TEST_STAGE NETWORK_PRESSURE_OK\n");
+
     if (x86os_sleep_ms(300U) != 0) return -1;
     ipc_message_set(&message, "NETCRASH");
     if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
