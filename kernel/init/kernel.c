@@ -261,9 +261,35 @@ static void test_external_handover_channel(void) {
     const uint32_t lease_ms = 50U;
     uint64_t now = pit_monotonic_ms();
     if (!handover_serial_backend_init() ||
-        handover_attach_fence_backend(handover_serial_backend()) != 0 ||
-        handover_init(1U, 2U, lease_ms, now) != 0)
+        handover_attach_fence_backend(handover_serial_backend()) != 0)
         panic("Unable to initialize external handover test channel");
+
+#if REIST_HANDOVER_NODE_ID == 1
+    if (handover_init(1U, 2U, lease_ms, now) != 0)
+        panic("Unable to initialize active handover state");
+    if (!handover_serial_send_replica(1U, 1U))
+        panic("Unable to replicate active handover state");
+    printf("REIST_HANDOVER ACTIVE_STATE_SENT\n");
+    return;
+#elif REIST_HANDOVER_NODE_ID == 2
+    if (!handover_serial_send_ready(2U, 1U))
+        panic("Unable to announce standby handover readiness");
+    uint32_t replicated_active = 0U;
+    uint64_t replicated_epoch = 0U;
+    if (!handover_serial_receive_replica(&replicated_active,
+                                         &replicated_epoch) ||
+        replicated_active != 1U || replicated_epoch != 1U ||
+        handover_init(replicated_active, 2U, lease_ms, now) != 0)
+        panic("Unable to receive active handover state");
+    handover_status_t replicated;
+    if (handover_snapshot(&replicated) != 0 || replicated.active_node != 1U ||
+        replicated.standby_node != 2U || replicated.epoch != 1U)
+        panic("Replicated handover state validation failed");
+    printf("REIST_HANDOVER STANDBY_STATE_APPLIED\n");
+#else
+    if (handover_init(1U, 2U, lease_ms, now) != 0)
+        panic("Unable to initialize standalone handover state");
+#endif
 
     pit_delay(lease_ms + 10U);
     now = pit_monotonic_ms();

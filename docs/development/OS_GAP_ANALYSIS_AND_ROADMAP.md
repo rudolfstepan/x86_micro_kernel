@@ -149,6 +149,11 @@ und 10 verbindlich.
         Zielhardware mit eigener Stromversorgung und Zeitbasis
     - [ ] S0.3c-7c Zwei reale Ausführungskanäle mit Zustandsreplikation,
       Selbsttest, Übernahme und kontrollierter Reintegration
+      - [x] S0.3c-7c1 Zwei getrennte QEMU-Prozesse mit CRC-geschützter
+        Epoch-Replikation, explizitem Standby-Ready, nachgewiesen beendetem
+        Active vor Fence-Ack und vollständigem Ring-3-Smoke nach Übernahme
+      - [ ] S0.3c-7c2 Kontinuierliche Replikation des sicherheitsrelevanten
+        Dienstzustands und kontrollierte Reintegration des reparierten Kanals
     - [ ] S0.3c-7d Common-Cause-Analyse und wiederholte Zielhardware-Failover-Gates
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
@@ -1453,6 +1458,17 @@ eine monotone 1-s-Deadline. Der reale Gastlauf beweist geordnet
 Das trennt Transport und Supervisorprozess, aber nicht Strom, CPU oder
 Zeitquelle; daher bleibt S0.3c-7b2b auf Zielhardware offen und ein
 Fail-operational-Claim weiterhin unzulässig.
+
+**S0.3c-7c1 ist umgesetzt:** Zwei separat gebaute Images laufen gleichzeitig
+in zwei QEMU-Prozessen. Der Active sendet seinen versionierten Epoch-Snapshot;
+der Host leitet ihn erst nach einem CRC-geschützten `STANDBY_READY` an den
+Standby weiter. Nach Leaseablauf fordert ausschließlich der Standby das Fence
+an. Der Host beendet den Active-Prozess, prüft dessen Ende und sendet erst dann
+den Ack. Danach übernimmt der Standby, startet seine überwachten Dienste und
+besteht den vollständigen Ring-3-Gasttest. Drei Läufe des finalen Standes bestätigten
+die Reihenfolge. Noch nicht nachgewiesen sind kontinuierliche Nutzdaten-
+Replikation, Reintegration und physisch unabhängige Hardware; 7c bleibt daher
+offen.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

@@ -211,6 +211,14 @@ ein Startreihenfolge-Race entfernt: Probe und Storage-Dienst werden jetzt
 vollständig veröffentlicht, bevor der Supervisor-Worker sie prüfen darf. Der
 Scheduler-Gasttest wartet auf den beobachtbaren `SLEEPING`-Zustand statt eine
 bestimmte Round-Robin-Position vorauszusetzen.
+S0.3c-7c1 betreibt nun Active und Standby als zwei getrennte QEMU-Prozesse.
+Ein CRC-geschützter Ready/Replica-Handshake verhindert UART-FIFO-Verlust vor
+Standby-Initialisierung. Der Host beendet den Active nach der Fence-Anforderung
+und bestätigt das Fence erst nach geprüftem Prozessende. Anschließend übernimmt
+der Standby und besteht den vollständigen Ring-3-Test. Drei Wiederholungsläufe
+des finalen Standes waren erfolgreich. Kontinuierliche Dienstzustandsreplikation,
+Reintegration und
+physisch unabhängige Zielhardware bleiben offen.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 

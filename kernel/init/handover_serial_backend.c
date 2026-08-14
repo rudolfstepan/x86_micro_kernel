@@ -44,7 +44,8 @@ bool handover_serial_frame_build(handover_serial_frame_t *frame,
                                  uint8_t type, uint32_t active_node,
                                  uint64_t epoch) {
     if (frame == NULL ||
-        (type != HANDOVER_SERIAL_REQUEST && type != HANDOVER_SERIAL_ACK) ||
+        (type != HANDOVER_SERIAL_REQUEST && type != HANDOVER_SERIAL_ACK &&
+         type != HANDOVER_SERIAL_REPLICA && type != HANDOVER_SERIAL_READY) ||
         active_node == 0U || epoch == 0U) return false;
     *frame = (handover_serial_frame_t) {
         .magic = HANDOVER_SERIAL_MAGIC,
@@ -156,4 +157,33 @@ bool handover_serial_backend_init(void) {
 
 const handover_fence_backend_t *handover_serial_backend(void) {
     return serial_context.initialized ? &backend : NULL;
+}
+
+bool handover_serial_send_replica(uint32_t active_node, uint64_t epoch) {
+    handover_serial_frame_t frame;
+    return serial_context.initialized &&
+        handover_serial_frame_build(&frame, HANDOVER_SERIAL_REPLICA,
+                                    active_node, epoch) &&
+        write_bytes((const uint8_t *)&frame, sizeof(frame));
+}
+
+bool handover_serial_send_ready(uint32_t standby_node, uint64_t epoch) {
+    handover_serial_frame_t frame;
+    return serial_context.initialized &&
+        handover_serial_frame_build(&frame, HANDOVER_SERIAL_READY,
+                                    standby_node, epoch) &&
+        write_bytes((const uint8_t *)&frame, sizeof(frame));
+}
+
+bool handover_serial_receive_replica(uint32_t *active_node_out,
+                                     uint64_t *epoch_out) {
+    handover_serial_frame_t frame;
+    if (!serial_context.initialized || active_node_out == NULL ||
+        epoch_out == NULL || !read_bytes((uint8_t *)&frame, sizeof(frame)) ||
+        !handover_serial_frame_valid(&frame, HANDOVER_SERIAL_REPLICA,
+                                     frame.active_node, frame.epoch))
+        return false;
+    *active_node_out = frame.active_node;
+    *epoch_out = frame.epoch;
+    return true;
 }

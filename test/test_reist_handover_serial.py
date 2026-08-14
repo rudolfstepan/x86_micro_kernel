@@ -45,9 +45,17 @@ class ReistHandoverSerialTests(unittest.TestCase):
         self.assertIn("HANDOVER_FAULT_INJECTION ?= 0", makefile)
         self.assertIn("test-smoke-handover:", makefile)
         self.assertIn("$HandoverFaultInjection", build)
+        self.assertIn("HANDOVER_NODE_ID=$HandoverNodeId", build)
         self.assertIn("'handover'", runtime)
         self.assertIn("REIST_HANDOVER REQUEST_SENT", kernel)
         self.assertIn("REIST_HANDOVER TAKEOVER_OK", kernel)
+        self.assertIn("REIST_HANDOVER ACTIVE_STATE_SENT", kernel)
+        self.assertIn("REIST_HANDOVER STANDBY_STATE_APPLIED", kernel)
+        receive = kernel.index("handover_serial_receive_replica")
+        initialize = kernel.index("handover_init(replicated_active", receive)
+        applied = kernel.index("REIST_HANDOVER STANDBY_STATE_APPLIED", initialize)
+        self.assertLess(receive, initialize)
+        self.assertLess(initialize, applied)
         self.assertLess(kernel.index("supervisor_start_probe("),
                         kernel.index("supervisor_start_worker()"))
         self.assertLess(kernel.index("storage_service_start("),

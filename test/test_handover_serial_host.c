@@ -22,5 +22,12 @@ int main(void) {
     if (handover_serial_frame_build(&frame, 99U, 7U, 9U)) return 7;
     if (handover_serial_frame_build(&frame, HANDOVER_SERIAL_ACK, 0U, 9U))
         return 8;
+    if (!handover_serial_frame_build(&frame, HANDOVER_SERIAL_REPLICA,
+                                     1U, 2U) ||
+        !handover_serial_frame_valid(&frame, HANDOVER_SERIAL_REPLICA,
+                                     1U, 2U)) return 9;
+    if (!handover_serial_frame_build(&frame, HANDOVER_SERIAL_READY, 2U, 2U) ||
+        !handover_serial_frame_valid(&frame, HANDOVER_SERIAL_READY, 2U, 2U))
+        return 10;
     return 0;
 }

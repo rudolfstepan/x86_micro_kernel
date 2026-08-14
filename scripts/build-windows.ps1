@@ -8,6 +8,8 @@ param(
     [switch]$StorageFaultInjection,
     [switch]$StorageIoFaultInjection,
     [switch]$HandoverFaultInjection,
+    [ValidateRange(0, 2)]
+    [int]$HandoverNodeId = 0,
     [switch]$RunTests,
     [string[]]$ProgramSource = @('examples/userspace/hello.c'),
     [ValidatePattern('^[A-Za-z0-9_]{1,8}\.PRG$')]
@@ -118,6 +120,7 @@ try {
     }
     if ($HandoverFaultInjection) {
         $makeArguments += 'HANDOVER_FAULT_INJECTION=1'
+        $makeArguments += "HANDOVER_NODE_ID=$HandoverNodeId"
     }
     & $Make @makeArguments
     if ($LASTEXITCODE -ne 0) {

@@ -542,6 +542,18 @@ und Transportkanal von COM1, qualifiziert aber keine elektrische
 Unabhängigkeit. S0.3c-7b2b benötigt weiterhin ein Zielhardware-Interlock mit
 eigener Stromversorgung und Zeitbasis.
 
+S0.3c-7c1 erweitert das Referenzprofil auf zwei gleichzeitig laufende
+QEMU-Prozesse. Das Active-Image sendet einen CRC-geschützten Epoch-Snapshot.
+Das Standby-Image kündigt zuerst mit einem eigenen `READY`-Frame an, dass sein
+UART empfangsbereit ist; erst dann leitet der Host den Snapshot weiter. Diese
+Flusskontrolle ist notwendig, weil ein UART-FIFO keinen vollständigen
+24-Byte-Frame vor Initialisierung puffern muss. Nach Leaseablauf stoppt der
+Host den Active-Prozess und prüft dessen Ende, bevor er den Fence-Ack an den
+Standby sendet. Der übernehmende Gast muss anschließend den kompletten
+Supervisor-, Dienst- und Ring-3-Smoke bestehen. Das ist ein realer
+Zwei-Prozess-Failover-Test, aber weder kontinuierliche Dienstzustandsreplikation
+noch ein Nachweis unabhängiger Hardware oder kontrollierter Reintegration.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

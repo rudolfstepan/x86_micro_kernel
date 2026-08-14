@@ -55,6 +55,7 @@ FAULT_INJECTION ?= 0
 STORAGE_FAULT_INJECTION ?= 0
 STORAGE_IO_FAULT_INJECTION ?= 0
 HANDOVER_FAULT_INJECTION ?= 0
+HANDOVER_NODE_ID ?= 0
 
 # Target-specific defines
 ifeq ($(TARGET),real_hw)
@@ -82,7 +83,8 @@ ifeq ($(STORAGE_IO_FAULT_INJECTION),1)
 endif
 
 ifeq ($(HANDOVER_FAULT_INJECTION),1)
-    SAFETY_TEST_DEFINES += -DREIST_HANDOVER_FAULT_INJECTION
+    SAFETY_TEST_DEFINES += -DREIST_HANDOVER_FAULT_INJECTION \
+        -DREIST_HANDOVER_NODE_ID=$(HANDOVER_NODE_ID)
 endif
 
 # Video mode defines
@@ -233,7 +235,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel check-kernel-stack user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-handover test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel check-kernel-stack user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -699,6 +701,20 @@ test-smoke-handover:
 		--expect-handover \
 		--timeout 120 \
 		--log build/handover-injection/guest-smoke-handover.log
+
+test-smoke-handover-pair:
+	@echo "Building REIST active handover channel..."
+	@$(MAKE) native-image TARGET=qemu VIDEO=vga HANDOVER_FAULT_INJECTION=1 \
+		HANDOVER_NODE_ID=1 OUTPUT_DIR=build/handover-active
+	@echo "Building REIST standby handover channel..."
+	@$(MAKE) native-image TARGET=qemu VIDEO=vga HANDOVER_FAULT_INJECTION=1 \
+		HANDOVER_NODE_ID=2 OUTPUT_DIR=build/handover-standby
+	@$(PYTHON) scripts/run_qemu_handover_pair.py \
+		--qemu $(QEMU) \
+		--active-image build/handover-active/reist-os.img \
+		--standby-image build/handover-standby/reist-os.img \
+		--timeout 120 \
+		--log build/guest-smoke-handover-pair.log
 
 test-smoke-fatal-recovery:
 	@echo "Building isolated REIST Double-Fault injection image..."
