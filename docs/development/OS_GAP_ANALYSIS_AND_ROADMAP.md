@@ -1112,9 +1112,17 @@ genau einen passenden Dienstbericht mit `PROBE_ID_OK`, verwirft Replay und
 fenced die ID bei Recovery. Nach Erschöpfung wird mit `-EOVERFLOW` gestoppt,
 nicht auf Null zurückgesprungen; Syscall 59 bleibt kompatibel erhalten.
 
-S0.3c-3k ergänzt als nächsten Schritt eine monotone absolute Deadline pro
-Probe-Autorität, damit ein ausbleibendes ARP-Frame den Ingress nicht bis zu
-einer späteren, semantisch gleichen Antwort offen hält.
+**S0.3c-3k ist umgesetzt:** Jede Probe-ID besitzt eine saturierend berechnete
+absolute 250-ms-Deadline. Die heapfreie Autoritätszustandsmaschine erlaubt nur
+eine aktive ID, konsumiert sie genau einmal und verwirft sie bei `now >=
+deadline`; der 10-ms-Supervisor-Worker räumt auch ohne eingehendes Frame auf.
+Der Hosttest deckt Frühzugriff, exakten Ablauf, Einmalverbrauch,
+`UINT64_MAX`-Sättigung und endgültige 32-Bit-ID-Erschöpfung ab. Dadurch kann
+eine späte semantisch gleiche ARP-Antwort keine alte Autorität verwenden.
+
+S0.3c-3l ergänzt als nächsten Schritt einen expliziten, gezählten
+Degradationsstatus für abgelaufene, unter Queue-Druck zurückgefallene und
+semantisch abgelehnte Probeantworten, ohne Logging im IRQ-Pfad.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

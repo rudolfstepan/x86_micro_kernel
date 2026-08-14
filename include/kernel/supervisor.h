@@ -62,6 +62,22 @@ typedef struct {
     supervisor_handle_t handle;
 } supervisor_event_t;
 
+typedef struct {
+    uint64_t next_id;
+    uint64_t deadline_ms;
+    uint32_t active_id;
+} supervisor_probe_authority_t;
+
+void supervisor_probe_authority_init(supervisor_probe_authority_t *authority);
+int supervisor_probe_authority_begin(supervisor_probe_authority_t *authority,
+                                     uint64_t now_ms, uint32_t timeout_ms,
+                                     uint32_t *probe_id_out);
+bool supervisor_probe_authority_take(supervisor_probe_authority_t *authority,
+                                     uint64_t now_ms, uint32_t *probe_id_out);
+bool supervisor_probe_authority_expire(supervisor_probe_authority_t *authority,
+                                       uint64_t now_ms);
+void supervisor_probe_authority_cancel(supervisor_probe_authority_t *authority);
+
 void supervisor_init(void);
 void supervisor_clock_tick(uint64_t now_ms);
 bool supervisor_start_worker(void);

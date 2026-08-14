@@ -43,6 +43,7 @@ static uint64_t last_deadline_check_ms;
 static uint32_t next_poll_slot;
 
 #define SUPERVISOR_CHECK_INTERVAL_MS 10U
+#define SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS 250U
 
 #ifndef REIST_HOST_TEST
 typedef struct {
@@ -55,9 +56,8 @@ typedef struct {
     uint32_t launch_count;
     uint32_t endpoint_handle;
     uint64_t last_network_probe_ms;
-    uint32_t network_probe_id;
+    supervisor_probe_authority_t network_probe_authority;
     uint32_t network_probe_delivered_id;
-    uint64_t next_network_probe_id;
     uint32_t network_probe_gateway;
     uint32_t network_probe_local_ip;
     uint8_t network_probe_local_mac[6];
@@ -84,6 +84,52 @@ static void supervisor_unlock(uint32_t flags) {
 
 static uint64_t deadline_after(uint64_t now, uint32_t interval) {
     return UINT64_MAX - now < interval ? UINT64_MAX : now + interval;
+}
+
+void supervisor_probe_authority_init(supervisor_probe_authority_t *authority) {
+    if (authority == NULL) return;
+    *authority = (supervisor_probe_authority_t){.next_id = 1U};
+}
+
+int supervisor_probe_authority_begin(supervisor_probe_authority_t *authority,
+                                     uint64_t now_ms, uint32_t timeout_ms,
+                                     uint32_t *probe_id_out) {
+    if (authority == NULL || probe_id_out == NULL || timeout_ms == 0U)
+        return -22;
+    if (authority->active_id != 0U) return -11;
+    if (authority->next_id == 0U || authority->next_id > UINT32_MAX)
+        return -75;
+    uint32_t probe_id = (uint32_t)authority->next_id++;
+    authority->active_id = probe_id;
+    authority->deadline_ms = deadline_after(now_ms, timeout_ms);
+    *probe_id_out = probe_id;
+    return 0;
+}
+
+bool supervisor_probe_authority_take(supervisor_probe_authority_t *authority,
+                                     uint64_t now_ms,
+                                     uint32_t *probe_id_out) {
+    if (authority == NULL || probe_id_out == NULL ||
+        authority->active_id == 0U) return false;
+    if (now_ms >= authority->deadline_ms) {
+        authority->active_id = 0U;
+        return false;
+    }
+    *probe_id_out = authority->active_id;
+    authority->active_id = 0U;
+    return true;
+}
+
+bool supervisor_probe_authority_expire(supervisor_probe_authority_t *authority,
+                                       uint64_t now_ms) {
+    if (authority == NULL || authority->active_id == 0U ||
+        now_ms < authority->deadline_ms) return false;
+    authority->active_id = 0U;
+    return true;
+}
+
+void supervisor_probe_authority_cancel(supervisor_probe_authority_t *authority) {
+    if (authority != NULL) authority->active_id = 0U;
 }
 
 static bool state_valid(const void *payload, size_t length) {
@@ -382,7 +428,7 @@ static bool probe_fence_apply(void *context) {
     if (runtime == NULL || !runtime->active) return false;
     runtime->fenced = true;
     runtime->healthy = false;
-    runtime->network_probe_id = 0U;
+    supervisor_probe_authority_cancel(&runtime->network_probe_authority);
     runtime->network_probe_delivered_id = 0U;
     if (process_identity_alive(runtime->pid, runtime->process_generation)) {
         (void)process_terminate(runtime->pid);
@@ -435,7 +481,7 @@ static bool probe_spawn_next(void) {
 bool supervisor_start_probe(uint64_t now_ms) {
     if (probe_runtime.active) return false;
     probe_runtime = (supervisor_probe_runtime_t){0};
-    probe_runtime.next_network_probe_id = 1U;
+    supervisor_probe_authority_init(&probe_runtime.network_probe_authority);
     supervisor_config_t config = {
         .heartbeat_timeout_ms = 2000U,
         .recovery_timeout_ms = 1000U,
@@ -526,7 +572,8 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     KASSERT_NOT_IRQ();
     KASSERT(irq_enabled());
     if (frame == NULL || length < 42U || frame[12] != 0x08U ||
-        frame[13] != 0x06U || probe_runtime.network_probe_id == 0U ||
+        frame[13] != 0x06U ||
+        probe_runtime.network_probe_authority.active_id == 0U ||
         !probe_runtime.active ||
         probe_runtime.fenced || !probe_runtime.healthy ||
         probe_runtime.launch_count < 4U ||
@@ -535,6 +582,10 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
                                 probe_runtime.process_generation)) {
         return false;
     }
+    uint32_t probe_id;
+    if (!supervisor_probe_authority_take(
+            &probe_runtime.network_probe_authority, pit_monotonic_ms(),
+            &probe_id)) return false;
     ipc_message_t message = {
         .version = IPC_MESSAGE_VERSION,
         .struct_size = sizeof(ipc_message_t),
@@ -553,7 +604,6 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     for (uint32_t index = 0U; index < 6U; ++index)
         message.payload[54U + index] =
             probe_runtime.network_probe_local_mac[index];
-    uint32_t probe_id = probe_runtime.network_probe_id;
     for (uint32_t index = 0U; index < 4U; ++index)
         message.payload[60U + index] =
             (uint8_t)(probe_id >> (index * 8U));
@@ -562,7 +612,6 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
         probe_runtime.endpoint_handle, &message);
     /* A matching reply consumes exactly one probe authorization even when
      * bounded IPC pressure forces the frame back to the kernel path. */
-    probe_runtime.network_probe_id = 0U;
     probe_runtime.network_probe_delivered_id = ingress == 0 ? probe_id : 0U;
     if (ingress == -11) printf("REIST_NETWORK QUEUE_PRESSURE_FALLBACK\n");
     return ingress == 0;
@@ -590,19 +639,21 @@ int supervisor_network_probe_request_id(int pid, uint32_t generation,
     uint8_t local_mac[6];
     if (gateway == 0U || local_ip == 0U ||
         !netdev_get_mac_address(local_mac)) return -19;
-    if (probe_runtime.next_network_probe_id > UINT32_MAX) return -75;
-    uint32_t probe_id = (uint32_t)probe_runtime.next_network_probe_id++;
+    uint32_t probe_id;
+    int authority = supervisor_probe_authority_begin(
+        &probe_runtime.network_probe_authority, now_ms,
+        SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS, &probe_id);
+    if (authority != 0) return authority;
     probe_runtime.last_network_probe_ms = now_ms;
     probe_runtime.network_probe_gateway = gateway;
     probe_runtime.network_probe_local_ip = local_ip;
     for (uint32_t index = 0U; index < 6U; ++index)
         probe_runtime.network_probe_local_mac[index] = local_mac[index];
-    probe_runtime.network_probe_id = probe_id;
     if (netstack_probe_gateway()) {
         *probe_id_out = probe_id;
         return 0;
     }
-    probe_runtime.network_probe_id = 0U;
+    supervisor_probe_authority_cancel(&probe_runtime.network_probe_authority);
     return -19;
 }
 
@@ -612,6 +663,8 @@ static void supervisor_worker(void) {
          * pending flags, so foreground progress must not depend on a shell
          * command happening to poll the NIC. */
         netdev_poll();
+        (void)supervisor_probe_authority_expire(
+            &probe_runtime.network_probe_authority, pit_monotonic_ms());
         if (probe_runtime.active && !probe_runtime.fenced &&
             !process_identity_alive(probe_runtime.pid,
                                     probe_runtime.process_generation)) {

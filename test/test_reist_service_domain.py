@@ -97,8 +97,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("KASSERT(irq_enabled());", handoff)
         self.assertIn("frame[12] != 0x08U", handoff)
         self.assertIn("frame[13] != 0x06U", handoff)
-        self.assertIn("probe_runtime.network_probe_id == 0U", handoff)
-        self.assertIn("network_probe_id = 0U", handoff)
+        self.assertIn("network_probe_authority.active_id == 0U", handoff)
+        self.assertIn("supervisor_probe_authority_take(", handoff)
 
     def test_queue_pressure_consumes_probe_and_falls_back(self):
         supervisor = (ROOT / "kernel" / "init" / "supervisor.c").read_text()
@@ -111,7 +111,7 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("QUEUE_PRESSURE_FALLBACK", supervisor)
         ingress = supervisor[supervisor.index("bool supervisor_network_submit_header"):
                              supervisor.index("int supervisor_network_probe_request")]
-        self.assertLess(ingress.index("network_probe_id = 0U"),
+        self.assertLess(ingress.index("supervisor_probe_authority_take("),
                         ingress.index("return ingress == 0"))
         self.assertIn("for (uint32_t index = 0U; index < 42U; ++index)",
                       supervisor)
@@ -160,8 +160,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("generation != probe_runtime.process_generation", probe)
         self.assertIn("< 250U", probe)
         self.assertIn("netstack_probe_gateway()", probe)
-        self.assertIn("network_probe_id = probe_id", probe)
-        self.assertIn("network_probe_id = 0U", probe)
+        self.assertIn("supervisor_probe_authority_begin(", probe)
+        self.assertIn("supervisor_probe_authority_cancel(", probe)
         self.assertIn("X86OS_SYS_NETWORK_PROBE = 59", sdk)
         self.assertIn('message_request_is(&request, "NETPROBE")', service)
         self.assertIn("request.payload[3] == 'R'", service)
@@ -181,7 +181,7 @@ class ReistServiceDomainTests(unittest.TestCase):
         runner = read("scripts/run_qemu_smoke.py")
         self.assertIn('message_request_is(&request, "NETCRASH")', service)
         self.assertIn('volatile("ud2")', service)
-        self.assertIn("runtime->network_probe_id = 0U", supervisor)
+        self.assertIn("supervisor_probe_authority_cancel(", supervisor)
         self.assertIn("REIST_NETWORK SERVICE_CRASH_RECOVERED", supervisor)
         self.assertIn("attempt < 100U", guest)
         self.assertIn("TEST_STAGE NETWORK_RECOVERY_OK", guest)
@@ -194,9 +194,9 @@ class ReistServiceDomainTests(unittest.TestCase):
         sdk = read("userspace/sdk/include/x86os.h")
         service = read("examples/userspace/reist_probe.c")
         guest = read("examples/userspace/guest_test.c")
-        self.assertIn("next_network_probe_id", supervisor)
-        self.assertIn("next_network_probe_id > UINT32_MAX", supervisor)
-        self.assertIn("network_probe_id = probe_id", supervisor)
+        self.assertIn("authority->next_id", supervisor)
+        self.assertIn("authority->next_id > UINT32_MAX", supervisor)
+        self.assertIn("authority->active_id = probe_id", supervisor)
         self.assertIn("message.payload[60U + index]", supervisor)
         self.assertIn("SYS_NETWORK_PROBE_ID 60", read("lib/libc/stdlib.h"))
         self.assertIn("X86OS_SYS_NETWORK_PROBE_ID = 60", sdk)

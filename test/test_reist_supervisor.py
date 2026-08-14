@@ -58,6 +58,19 @@ class ReistSupervisorTests(unittest.TestCase):
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
         self.assertIn("supervisor_init();", kernel)
 
+    def test_network_probe_authority_has_absolute_bounded_deadline(self):
+        header = (ROOT / "include/kernel/supervisor.h").read_text(encoding="utf-8")
+        source = (ROOT / "kernel/init/supervisor.c").read_text(encoding="utf-8")
+        host = (ROOT / "test/test_supervisor_host.c").read_text(encoding="utf-8")
+        self.assertIn("supervisor_probe_authority_t", header)
+        self.assertIn("SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS 250U", source)
+        self.assertIn("supervisor_probe_authority_begin", source)
+        self.assertIn("supervisor_probe_authority_take", source)
+        self.assertIn("supervisor_probe_authority_expire", source)
+        self.assertIn("now_ms >= authority->deadline_ms", source)
+        self.assertIn("UINT64_MAX - 5U", host)
+        self.assertIn("probe_id != UINT32_MAX", host)
+
     def test_pit_drives_bounded_supervisor_deadline_checks(self):
         pit = (ROOT / "kernel/time/pit.c").read_text(encoding="utf-8")
         self.assertIn("supervisor_clock_tick(timer_tick_count);", pit)

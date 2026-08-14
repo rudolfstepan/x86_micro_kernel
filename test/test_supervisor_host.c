@@ -123,5 +123,30 @@ int main(void) {
         supervisor_test_corrupt_descriptor(handle, true) != 0) return 39;
     if (supervisor_poll(8001U).type != SUPERVISOR_EVENT_SAFE_STATE_REQUIRED)
         return 40;
+
+    supervisor_probe_authority_t authority;
+    uint32_t probe_id = 0U;
+    supervisor_probe_authority_init(&authority);
+    if (supervisor_probe_authority_begin(&authority, 100U, 10U,
+                                         &probe_id) != 0 || probe_id != 1U)
+        return 41;
+    if (supervisor_probe_authority_begin(&authority, 101U, 10U,
+                                         &probe_id) != -11) return 42;
+    if (!supervisor_probe_authority_take(&authority, 109U, &probe_id) ||
+        probe_id != 1U ||
+        supervisor_probe_authority_take(&authority, 109U, &probe_id)) return 43;
+    if (supervisor_probe_authority_begin(&authority, 110U, 10U,
+                                         &probe_id) != 0 || probe_id != 2U ||
+        supervisor_probe_authority_expire(&authority, 119U) ||
+        !supervisor_probe_authority_expire(&authority, 120U) ||
+        supervisor_probe_authority_take(&authority, 120U, &probe_id)) return 44;
+    authority.next_id = UINT32_MAX;
+    if (supervisor_probe_authority_begin(&authority, UINT64_MAX - 5U, 10U,
+                                         &probe_id) != 0 ||
+        probe_id != UINT32_MAX || authority.deadline_ms != UINT64_MAX ||
+        !supervisor_probe_authority_take(&authority, UINT64_MAX - 1U,
+                                         &probe_id) ||
+        supervisor_probe_authority_begin(&authority, 0U, 1U,
+                                         &probe_id) != -75) return 45;
     return 0;
 }

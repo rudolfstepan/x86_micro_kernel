@@ -326,6 +326,12 @@ dem Headerbericht. ID-Erschöpfung ist fail-closed; Fence und Queue-Fallback
 widerrufen aktive bzw. zugestellte IDs. Der bestehende Syscall 59 bleibt als
 kompatibler Wrapper bestehen.
 
+S0.3c-3k modelliert die Probe-Autorität als feste Zustandsmaschine aus
+`next_id`, `active_id` und absoluter monotoner Deadline. Begin, Take, Expire
+und Cancel sind allokationsfrei und besitzen keine Schleifen. Nach 250 ms wird
+die aktive ID im Supervisor-Worker widerrufen; Deadline- und ID-Überlauf
+sättigen beziehungsweise scheitern endgültig statt wiederverwendet zu werden.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

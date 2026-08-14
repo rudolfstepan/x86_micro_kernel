@@ -83,6 +83,10 @@ S0.3c-3j ersetzt die boolesche Probe-Autorität durch eine monotone ID. Die
 append-only v2-API ist Syscall 60; Ingress, Dienst und Supervisor bestätigen
 dieselbe ID genau einmal über `PROBE_ID_OK`. Erschöpfung und Recovery widerrufen
 fail-closed, während Syscall 59 kompatibel bleibt.
+S0.3c-3k begrenzt jede Probe-Autorität zusätzlich auf eine absolute monotone
+250-ms-Deadline. Eine hostgetestete feste Zustandsmaschine übernimmt
+Einmalverbrauch, Ablauf, Sättigung und ID-Erschöpfung; der Supervisor-Worker
+räumt abgelaufene IDs unabhängig vom RX-Pfad auf.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 
