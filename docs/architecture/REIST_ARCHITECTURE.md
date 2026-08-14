@@ -463,6 +463,17 @@ maximal fünf Sekunden Laufzeit halten. Der erste reale End-to-End-Pfad liest
 Sektor 0 einer erkannten ATA-Ressource und liefert ihn generationssicher an
 den Client zurück; Schreib- und VFS-Ausführung bleiben bis S0.3c-6d gesperrt.
 
+S0.3c-6d1 prüft den Restartpfad mit einem separaten, nicht auslieferbaren
+Fault-Injection-Build. Nach einem erfolgreichen ATA-Sektorread beendet der
+Kernel genau die erste Storage-Dienstgeneration, bevor sie Daten kopieren oder
+den Request abschließen kann. Prozess-Cleanup widerruft den beanspruchten Slot;
+der Supervisor bindet ausschließlich die neue Generation. Der Client darf den
+stalen Handle nicht weiterverwenden und wiederholt genau einmal innerhalb
+einer Zwei-Sekunden-Grenze. Erst ein erneut validierter MBR schließt den Gate.
+Der normale Build enthält weder Trigger noch zusätzliche Autorität. Reale
+I/O-Fehler und ein persistenter Power-Loss-Pfad bleiben 6d2 beziehungsweise
+6d3.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

@@ -50,6 +50,11 @@ REIST_NETWORK_CRASH_MARKER = "REIST_NETWORK SERVICE_CRASH_RECOVERED"
 REIST_NETWORK_RECOVERY_MARKER = "TEST_STAGE NETWORK_RECOVERY_OK"
 REIST_NETWORK_PRESSURE_FALLBACK_MARKER = "REIST_NETWORK QUEUE_PRESSURE_FALLBACK"
 REIST_NETWORK_PRESSURE_MARKER = "TEST_STAGE NETWORK_PRESSURE_OK"
+REIST_STORAGE_CRASH_MARKER = "REIST_STORAGE TEST_CRASH_INJECTED"
+REIST_STORAGE_FAILURE_MARKER = "REIST_STORAGE SERVICE_FAILURE_DETECTED"
+REIST_STORAGE_RESTARTED_MARKER = "REIST_STORAGE SERVICE_RESTARTED"
+REIST_STORAGE_READY_MARKER = "REIST_STORAGE SERVICE_READY"
+REIST_STORAGE_RECOVERY_MARKER = "TEST_STAGE STORAGE_RESTART_OK"
 SHELL_PROMPT = "C:\\>"
 FAIL_MARKERS = (
     "TEST_FAIL",
@@ -421,6 +426,7 @@ def validate(
     expect_reist_probe: bool = False,
     expect_network_handoff: bool = False,
     expect_arp_reply: bool = False,
+    expect_storage_recovery: bool = False,
 ) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
@@ -491,6 +497,20 @@ def validate(
         arp_reply = exact_line_position(transcript, REIST_ARP_REPLY_MARKER)
         if arp_reply < boot or arp_reply > test:
             return "missing mediated ARP reply marker"
+    if expect_storage_recovery:
+        crash = exact_line_position(transcript, REIST_STORAGE_CRASH_MARKER)
+        failure = exact_line_position(transcript, REIST_STORAGE_FAILURE_MARKER)
+        restarted = exact_line_position(transcript,
+                                        REIST_STORAGE_RESTARTED_MARKER)
+        ready = exact_line_position(transcript, REIST_STORAGE_READY_MARKER,
+                                    after=restarted)
+        recovered = exact_line_position(transcript,
+                                        REIST_STORAGE_RECOVERY_MARKER)
+        positions = [crash, failure, restarted, ready, recovered]
+        if any(position < 0 for position in positions):
+            return "missing storage-service crash/recovery marker"
+        if positions != sorted(positions):
+            return "storage-service crash/recovery markers are out of order"
     return None
 
 
@@ -544,6 +564,10 @@ def main() -> int:
         help="trigger PING and require a mediated outgoing ARP request",
     )
     parser.add_argument(
+        "--expect-storage-recovery", action="store_true",
+        help="require an injected storage-service crash and bounded recovery",
+    )
+    parser.add_argument(
         "--persistent", action="store_true",
         help="allow guest writes to the image (use only with a disposable copy)",
     )
@@ -582,7 +606,8 @@ def main() -> int:
     marker_error = validate(transcript, args.expect_fatal_recovery,
                             args.expect_reist_probe,
                             args.expect_network_handoff,
-                            args.inject_arp_request)
+                            args.inject_arp_request,
+                            args.expect_storage_recovery)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")

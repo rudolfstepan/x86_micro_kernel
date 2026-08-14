@@ -52,6 +52,7 @@ TARGET ?= qemu
 # Override with: make VIDEO=framebuffer
 VIDEO ?= vga
 FAULT_INJECTION ?= 0
+STORAGE_FAULT_INJECTION ?= 0
 
 # Target-specific defines
 ifeq ($(TARGET),real_hw)
@@ -68,6 +69,10 @@ ifeq ($(FAULT_INJECTION),1)
     SAFETY_TEST_DEFINES := -DREIST_FAULT_INJECTION
 else
     SAFETY_TEST_DEFINES :=
+endif
+
+ifeq ($(STORAGE_FAULT_INJECTION),1)
+    SAFETY_TEST_DEFINES += -DREIST_STORAGE_FAULT_INJECTION
 endif
 
 # Video mode defines
@@ -218,7 +223,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel check-kernel-stack user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-journal-recovery test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel check-kernel-stack user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -651,6 +656,17 @@ test-smoke-journal-recovery: native-image
 		--image $(OUTPUT_DIR)/reist-os.img \
 		--work-image $(OUTPUT_DIR)/journal-recovery.img \
 		--log $(OUTPUT_DIR)/guest-smoke-journal-recovery.log
+
+test-smoke-storage-recovery:
+	@echo "Building isolated REIST storage-service crash injection image..."
+	@$(MAKE) native-image TARGET=qemu VIDEO=vga STORAGE_FAULT_INJECTION=1 \
+		OUTPUT_DIR=build/storage-injection
+	@$(PYTHON) scripts/run_qemu_smoke.py \
+		--qemu $(QEMU) \
+		--image build/storage-injection/reist-os.img \
+		--expect-storage-recovery \
+		--timeout 120 \
+		--log build/storage-injection/guest-smoke-storage-recovery.log
 
 test-smoke-fatal-recovery:
 	@echo "Building isolated REIST Double-Fault injection image..."

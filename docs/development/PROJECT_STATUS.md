@@ -164,6 +164,13 @@ Danach verriegelt der Supervisor Storage und VFS. Requests laufen höchstens
 fünf Sekunden und höchstens zwei gleichzeitig je Client. Der QEMU-Gast liest
 den realen MBR über den Ring-3-Dienst und bestätigt dessen `0x55AA`-Signatur.
 Als nächstes folgt S0.3c-6d mit realer Fehler- und Restart-Injektion.
+Der erste Teil S0.3c-6d1 ist abgenommen: Ein isoliertes QEMU-Testimage beendet
+den Ring-3-Storage-Dienst nach einem realen ATA-Read, aber vor Abschluss des
+beanspruchten Requests. Exit-Cleanup verwirft die alte Generation, der
+Supervisor startet begrenzt neu, und der Client liest anschließend über einen
+neuen Request erneut den MBR. Der Lauf endet mit `STORAGE_RESTART_OK` und
+`TEST_OK`. Als Nächstes folgt 6d2 mit vermittelter ATA-I/O-Fehlerinjektion;
+Power-Loss und Journal-Recovery folgen separat in 6d3.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 

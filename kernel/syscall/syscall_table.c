@@ -410,6 +410,14 @@ static int syscall_storage_block_read(uint32_t resource, uint32_t block,
     uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
     drive_t *drive = &detected_drives[resource];
     if (!ata_read_sector(drive->base, block, data, drive->is_master)) return -5;
+#ifdef REIST_STORAGE_FAULT_INJECTION
+    static bool storage_read_fault_injected;
+    if (!storage_read_fault_injected) {
+        storage_read_fault_injected = true;
+        printf("REIST_STORAGE TEST_CRASH_INJECTED\n");
+        task_exit_status(201);
+    }
+#endif
     return copy_to_user_space(directory, data_address, data, sizeof(data)) == 0
         ? 0 : -14;
 }

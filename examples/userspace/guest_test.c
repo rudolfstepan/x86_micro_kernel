@@ -1,3 +1,5 @@
+#include <stdbool.h>
+
 #include "x86os.h"
 
 #define WAIT_STRESS_ITERATIONS 64
@@ -792,19 +794,32 @@ static int test_storage_service(void) {
             0, &handle) != -14 ||
         x86os_storage_submit(&request, 0, &handle) != 0 || handle == 0U)
         return -1;
-    uint64_t deadline = 0U;
-    if (x86os_monotonic_ms(&deadline) != 0) return -1;
-    deadline += 1000U;
-    for (;;) {
-        int collect = x86os_storage_collect(handle, &result, sector);
-        if (collect == 0) break;
-        uint64_t now = 0U;
-        if (collect != -11 || x86os_monotonic_ms(&now) != 0 ||
-            now >= deadline) return -1;
-        if (x86os_sleep_ms(5U) != 0) return -1;
+    bool recovered = false;
+    for (uint32_t attempt = 0U; attempt < 2U; ++attempt) {
+        uint64_t deadline = 0U;
+        if (x86os_monotonic_ms(&deadline) != 0) return -1;
+        deadline += 2000U;
+        for (;;) {
+            int collect = x86os_storage_collect(handle, &result, sector);
+            if (collect == 0) break;
+            uint64_t now = 0U;
+            if (collect == -22 && attempt == 0U) {
+                recovered = true;
+                break;
+            }
+            if (collect != -11 || x86os_monotonic_ms(&now) != 0 ||
+                now >= deadline) return -1;
+            if (x86os_sleep_ms(5U) != 0) return -1;
+        }
+        if (!recovered || attempt != 0U) break;
+        handle = 0U;
+        if (x86os_storage_submit(&request, 0, &handle) != 0 || handle == 0U)
+            return -1;
     }
-    return result == 0 && sector[510] == 0x55U && sector[511] == 0xAAU
-        ? 0 : -1;
+    bool signature_valid = sector[510] == 0x55U && sector[511] == 0xAAU;
+    if (result != 0 || !signature_valid) return -1;
+    if (recovered) x86os_puts("TEST_STAGE STORAGE_RESTART_OK\n");
+    return 0;
 }
 
 int main(int argc, char **argv) {

@@ -128,6 +128,12 @@ und 10 verbindlich.
     - [x] S0.3c-6b Versioniertes Block-/VFS-IPC und statische Request-Pools
     - [x] S0.3c-6c Ring-3-Storage-Service mit Capability-Profil und Restart
     - [ ] S0.3c-6d Reale Power-Loss-/I/O-/Restart-Injektion in QEMU
+      - [x] S0.3c-6d1 Dienstcrash bei beanspruchtem Request, generationssicherer
+        Widerruf, begrenzter Restart und erfolgreicher Wiederholungsrequest
+      - [ ] S0.3c-6d2 Vermittelte ATA-I/O-Fehler mit definiertem Fehlerstatus,
+        Quarantäne und geprüftem Weiterbetrieb
+      - [ ] S0.3c-6d3 Stromverlust während einer persistenten Mutation mit
+        Neustart, Journal-Recovery und anschließendem Ring-3-Dienst-Selbsttest
   - [ ] S0.3c-7 Unabhängiger Standby-/Supervisor-Kanal und realer Handover
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
@@ -1359,6 +1365,18 @@ von fünf Sekunden und ein Zwei-Slot-Clientlimit. Der reale Gasttest liest über
 Client -> Pool -> Ring-3-Dienst -> kernelvermittelten ATA-Zugriff -> Pool den
 MBR und validiert `0x55AA`. S0.3c-6d ergänzt als Nächstes echte
 Crash-/I/O-/Power-Loss-Injektion.
+
+**S0.3c-6d1 ist umgesetzt:** Ein ausschließlich im separaten Testimage
+kompilierter Hook beendet genau die erste Storage-Dienstgeneration nach einem
+erfolgreichen ATA-Read und vor Copyout/Complete. Der beanspruchte Request wird
+beim Exit generationssicher widerrufen. Der Supervisor erkennt den Verlust,
+startet innerhalb seines festen Budgets eine neue Instanz und bindet nur deren
+neue Generation. Der Client akzeptiert den alten Handle nicht erneut, stellt
+höchstens einen Ersatzrequest und validiert danach wieder den echten MBR. Der
+QEMU-Gate verlangt die geordnete Folge `TEST_CRASH_INJECTED ->
+SERVICE_FAILURE_DETECTED -> SERVICE_RESTARTED -> SERVICE_READY ->
+STORAGE_RESTART_OK -> TEST_OK`. S0.3c-6d2 ergänzt als Nächstes einen realen,
+kontrollierten ATA-I/O-Fehler; Power-Loss bleibt S0.3c-6d3.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions
