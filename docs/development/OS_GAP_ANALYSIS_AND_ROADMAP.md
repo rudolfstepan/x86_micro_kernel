@@ -122,17 +122,17 @@ und 10 verbindlich.
       - [x] S0.3c-5b2a Deterministisch injizierten echten RX-Request samt
         vermittelter Antwort im RTL8139-Gast nachweisen
       - [x] S0.3c-5b2b Ausgehende lokale ARP-Auflösung in den Dienst migrieren
-  - [ ] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
+  - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
     - [x] S0.3c-6b Versioniertes Block-/VFS-IPC und statische Request-Pools
     - [x] S0.3c-6c Ring-3-Storage-Service mit Capability-Profil und Restart
-    - [ ] S0.3c-6d Reale Power-Loss-/I/O-/Restart-Injektion in QEMU
+    - [x] S0.3c-6d Reale Power-Loss-/I/O-/Restart-Injektion in QEMU
       - [x] S0.3c-6d1 Dienstcrash bei beanspruchtem Request, generationssicherer
         Widerruf, begrenzter Restart und erfolgreicher Wiederholungsrequest
       - [x] S0.3c-6d2 Vermittelte ATA-I/O-Fehler mit definiertem Fehlerstatus,
         Quarantäne und geprüftem Weiterbetrieb
-      - [ ] S0.3c-6d3 Stromverlust während einer persistenten Mutation mit
+      - [x] S0.3c-6d3 Stromverlust während einer persistenten Mutation mit
         Neustart, Journal-Recovery und anschließendem Ring-3-Dienst-Selbsttest
   - [ ] S0.3c-7 Unabhängiger Standby-/Supervisor-Kanal und realer Handover
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
@@ -1388,6 +1388,20 @@ weiter. Ein separater Testbuild erzwingt beide Fehlschläge und verlangt
 STORAGE_IO_QUARANTINE_OK -> TEST_OK`. Der normale Build enthält keinen
 Injektionspfad. Offen bleibt S0.3c-6d3: Stromverlust während einer persistenten
 Mutation und anschließende Recovery über den Ring-3-Dienst.
+
+**S0.3c-6d3 und damit S0.3c-6 sind umgesetzt:** Der persistente QEMU-Test
+erzeugt eine ACTIVE-Undo-Transaktion, verändert zwei Zielsektoren, hält die
+alten Daten redundant vor und beschädigt zusätzlich die primäre
+Journal-Metadatenkopie. Beim Neustart wählt der Kernel konservativ die gültige
+Kopie, restauriert beide Sektoren, repariert die Header und schreibt CLEAN.
+Erst nach vollständiger Probe-Reintegration startet GTEST; der neu gebundene
+Ring-3-Storage-Dienst muss danach den echten MBR-Selbsttest bestehen. Der Lauf
+prüft abschließend die persistenten Sektoren und beide identischen Header. Das
+Gate deckte außerdem einen Start-Race auf: Der Supervisor-Worker konnte den
+noch nicht explizit aktivierten Dienst vor `storage_service_start()` starten.
+Ein eigener Aktivierungszustand trennt nun „noch nicht gestartet“ von
+„ausgefallen“, und IRQ-serialisierte Kontrollzugriffe verhindern konkurrierende
+Reparatur der redundanten Kopien. Nächster Dienstmigrationsschritt ist S0.3c-7.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

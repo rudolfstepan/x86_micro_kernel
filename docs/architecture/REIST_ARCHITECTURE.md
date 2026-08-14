@@ -484,6 +484,18 @@ enthält nur Retry, Quarantäne und Fehlerpropagation. Ein kontrolliertes
 Requalifizieren der Ressource ist noch nicht erlaubt und wird erst zusammen
 mit einem verifizierten Medien-Selbsttest eingeführt.
 
+S0.3c-6d3 koppelt persistente Journal-Recovery an die Dienst-Reintegration.
+Der Testdatenträger enthält eine ACTIVE-Transaktion, zwei bereits veränderte
+Zielsektoren, redundante Undo-Daten und eine absichtlich beschädigte primäre
+Headerkopie. Boot-Recovery muss die gültige Kopie wählen, beide Zielsektoren
+restaurieren sowie Primär- und Spiegelheader identisch CLEAN schreiben. Danach
+wartet der Harness auf die vollständige Supervisor-Probe-Sequenz und verlangt
+vom neu gebundenen Storage-Dienst einen echten MBR-Read. Die Servicekontrolle
+besitzt dafür einen expliziten Aktivierungszustand: `poll()` darf einen noch
+nicht gestarteten Dienst nicht als Ausfall behandeln. Alle Read/Repair/Update-
+Operationen derselben redundanten Kontrollinstanz sind lokal IRQ-serialisiert,
+damit Worker und Bind-Syscall keine Kopien gegeneinander überschreiben.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

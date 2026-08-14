@@ -163,20 +163,27 @@ wird bei Starttimeout oder Prozessverlust höchstens dreimal neu gestartet.
 Danach verriegelt der Supervisor Storage und VFS. Requests laufen höchstens
 fünf Sekunden und höchstens zwei gleichzeitig je Client. Der QEMU-Gast liest
 den realen MBR über den Ring-3-Dienst und bestätigt dessen `0x55AA`-Signatur.
-Als nächstes folgt S0.3c-6d mit realer Fehler- und Restart-Injektion.
+S0.3c-6d wurde anschließend in drei getrennten Fehlergates abgenommen.
 Der erste Teil S0.3c-6d1 ist abgenommen: Ein isoliertes QEMU-Testimage beendet
 den Ring-3-Storage-Dienst nach einem realen ATA-Read, aber vor Abschluss des
 beanspruchten Requests. Exit-Cleanup verwirft die alte Generation, der
 Supervisor startet begrenzt neu, und der Client liest anschließend über einen
 neuen Request erneut den MBR. Der Lauf endet mit `STORAGE_RESTART_OK` und
-`TEST_OK`. Als Nächstes folgt 6d2 mit vermittelter ATA-I/O-Fehlerinjektion;
-Power-Loss und Journal-Recovery folgen separat in 6d3.
+`TEST_OK`.
 S0.3c-6d2 ist ebenfalls abgenommen: Ein isoliertes QEMU-Image erzwingt zwei
 aufeinanderfolgende ATA-Lesefehler. Der Client erhält `-EIO`, Ressource 0 wird
 in der geschützten Storage-Kontrolle quarantänisiert und der nächste Request
 endet vor erneutem ATA-Zugriff mit `-EHOSTDOWN`. Dienst, Scheduler und übrige
-Gasttests laufen bis `TEST_OK` weiter. Als nächstes folgt ausschließlich 6d3
-mit persistentem Stromverlust und Journal-Recovery.
+Gasttests laufen bis `TEST_OK` weiter.
+S0.3c-6d3 ist abgeschlossen und schließt S0.3c-6 ab. Der persistente
+QEMU-Harness bootet eine ACTIVE-Undo-Transaktion mit zwei überschriebenen
+Sektoren und beschädigter primärer Headerkopie. Der Kernel restauriert die
+alten Daten, repariert beide Header zu CLEAN und startet anschließend die
+vollständige Probe-Reintegration. Erst danach muss der neu gebundene
+Ring-3-Storage-Dienst den realen MBR-Selbsttest und der Gast `TEST_OK`
+erreichen. Ein dabei reproduzierter Race zwischen Supervisor-Worker und
+explizitem Storage-Start wurde durch einen getrennten Aktivierungszustand und
+IRQ-serialisierte Kontrollzugriffe beseitigt. Als nächstes folgt S0.3c-7.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 

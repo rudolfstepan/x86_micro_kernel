@@ -1,5 +1,6 @@
 #include "include/kernel/storage_service.h"
 
+#include "arch/x86/include/interrupt.h"
 #include "drivers/block/ata.h"
 #include "include/kernel/critical_object.h"
 #include "include/kernel/filesystem_safety.h"
@@ -24,6 +25,8 @@ typedef struct {
 
 static critical_object_t protected_control;
 static bool initialized;
+static volatile bool service_starting;
+static volatile bool service_started;
 
 _Static_assert(sizeof(storage_service_control_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
@@ -48,15 +51,21 @@ static bool control_valid(const void *payload, size_t length) {
 
 static int control_read(storage_service_control_t *control) {
     size_t length = 0U;
-    return critical_object_read(&protected_control,
+    uint32_t flags = irq_save();
+    int result = critical_object_read(&protected_control,
         STORAGE_SERVICE_CONTROL_VERSION, control, sizeof(*control), &length,
         control_valid) < 0 || length != sizeof(*control) ? -84 : 0;
+    irq_restore(flags);
+    return result;
 }
 
 static int control_write(const storage_service_control_t *control) {
-    return critical_object_update(&protected_control,
+    uint32_t flags = irq_save();
+    int result = critical_object_update(&protected_control,
         STORAGE_SERVICE_CONTROL_VERSION, control, sizeof(*control),
         control_valid) == 0 ? 0 : -84;
+    irq_restore(flags);
+    return result;
 }
 
 static uint64_t deadline_after(uint64_t now_ms, uint32_t interval_ms) {
@@ -94,10 +103,14 @@ bool storage_service_init(void) {
 }
 
 bool storage_service_start(uint64_t now_ms) {
-    if (!initialized) return false;
+    if (!initialized || service_starting || service_started) return false;
+    service_starting = true;
     storage_service_control_t control;
-    if (control_read(&control) != 0 || control.pid != 0) return false;
-    return spawn_service(&control, now_ms);
+    bool result = control_read(&control) == 0 && control.pid == 0 &&
+                  spawn_service(&control, now_ms);
+    service_started = result;
+    service_starting = false;
+    return result;
 }
 
 int storage_service_bind(int pid, uint32_t generation) {
@@ -158,7 +171,7 @@ bool storage_service_report_io_failure(uint32_t resource) {
 }
 
 void storage_service_poll(uint64_t now_ms) {
-    if (!initialized) return;
+    if (!initialized || !service_started || service_starting) return;
     storage_service_control_t control;
     if (control_read(&control) != 0) {
         storage_fence_writes();

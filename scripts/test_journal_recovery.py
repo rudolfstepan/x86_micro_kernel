@@ -49,7 +49,9 @@ def main() -> int:
     result = subprocess.run(
         [sys.executable, str(runner), "--qemu", str(args.qemu), "--image",
          str(args.work_image), "--persistent", "--watchdog", "--timeout",
-         str(args.timeout), "--log", str(args.log)], check=False)
+         str(args.timeout), "--expect-reist-probe",
+         "--expect-storage-self-test", "--log",
+         str(args.log)], check=False)
     if result.returncode != 0: return result.returncode
     image = args.work_image.read_bytes()
     header_lba = DATA_PARTITION_START + 8

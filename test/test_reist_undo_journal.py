@@ -93,6 +93,8 @@ class ReistUndoJournalTests(unittest.TestCase):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
         self.assertIn('"--persistent"', runner)
+        self.assertIn('"--expect-reist-probe"', runner)
+        self.assertIn('"--expect-storage-self-test"', runner)
         self.assertIn("if not restored or state != 0", runner)
         self.assertIn("targets = [DATA_PARTITION_START + 6", runner)
         self.assertIn("mirror_lba = DATA_PARTITION_START + 31", runner)

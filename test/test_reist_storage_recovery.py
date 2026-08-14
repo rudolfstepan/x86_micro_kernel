@@ -108,6 +108,48 @@ class StorageRecoveryContracts(unittest.TestCase):
             "\n".join(lines) + "\n",
             expect_storage_io_failure=True))
 
+    def test_power_loss_gate_requires_post_recovery_storage_self_test(self):
+        journal = read("scripts/test_journal_recovery.py")
+        self.assertIn('"--persistent"', journal)
+        self.assertIn('"--expect-reist-probe"', journal)
+        self.assertIn('"--expect-storage-self-test"', journal)
+        lines = [
+            RUNNER.BOOT_MARKER,
+            RUNNER.REIST_STORAGE_READY_MARKER,
+            RUNNER.REIST_STORAGE_SELF_TEST_MARKER,
+            RUNNER.TEST_MARKER,
+            RUNNER.SHELL_PROMPT,
+        ]
+        self.assertIsNone(RUNNER.validate(
+            "\n".join(lines) + "\n", expect_storage_self_test=True))
+        del lines[2]
+        self.assertIsNotNone(RUNNER.validate(
+            "\n".join(lines) + "\n", expect_storage_self_test=True))
+
+    def test_storage_control_redundant_copy_repair_is_serialized(self):
+        service = read("kernel/init/storage_service.c")
+        for function in ("control_read", "control_write"):
+            start = service.index(f"static int {function}")
+            end = service.index("\n}", start)
+            body = service[start:end]
+            self.assertLess(body.index("irq_save()"),
+                            body.index("critical_object_"))
+            self.assertGreater(body.index("irq_restore(flags)"),
+                               body.index("critical_object_"))
+
+    def test_supervisor_poll_cannot_race_explicit_service_start(self):
+        service = read("kernel/init/storage_service.c")
+        self.assertIn("static volatile bool service_starting", service)
+        self.assertIn("static volatile bool service_started", service)
+        poll = service[service.index("void storage_service_poll"):]
+        self.assertIn("!service_started || service_starting", poll)
+        start = service[service.index("bool storage_service_start"):
+                        service.index("int storage_service_bind")]
+        self.assertLess(start.index("service_starting = true"),
+                        start.index("spawn_service"))
+        self.assertLess(start.index("service_started = result"),
+                        start.index("service_starting = false"))
+
 
 if __name__ == "__main__":
     unittest.main()
