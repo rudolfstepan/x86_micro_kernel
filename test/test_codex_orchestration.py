@@ -173,6 +173,21 @@ class CodexOrchestrationTests(unittest.TestCase):
         )
         self.assertEqual(schema["properties"]["commit"]["maxLength"], 40)
 
+    def test_runner_canonicalizes_gate_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            task = pathlib.Path(temporary) / "task.toml"
+            task.write_text(
+                'version = 1\n\n[[packages]]\nid = "A"\n'
+                'evidence = ["wrong"]\n\n[[packages]]\nid = "B"\n'
+                'evidence = []\n',
+                "utf-8",
+            )
+            gates = ["python test/test_a.py -q", ".\\scripts\\gate.ps1"]
+            RUNNER.canonicalize_task_evidence(task, "A", gates)
+            parsed = tomllib.loads(task.read_text("utf-8"))
+            self.assertEqual(parsed["packages"][0]["evidence"], gates)
+            self.assertEqual(parsed["packages"][1]["evidence"], [])
+
     def test_runner_is_bounded_and_verifies_git_postconditions(self):
         runner = RUNNER_PATH.read_text("utf-8")
         wrapper = (ROOT / "scripts/run-reist-autonomous.ps1").read_text("utf-8")
@@ -200,6 +215,7 @@ class CodexOrchestrationTests(unittest.TestCase):
         self.assertIn('"remote", "remove", "origin"', runner)
         self.assertIn('"merge", "--ff-only"', runner)
         self.assertIn("outer verifier runs every gate exactly once", runner)
+        self.assertIn("canonicalize_task_evidence", runner)
         contract = (ROOT / "AGENTS.md").read_text("utf-8")
         self.assertIn("outer runner is the only gate authority", contract.lower())
         self.assertIn("Do not run the listed acceptance gates", contract)

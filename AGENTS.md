@@ -39,12 +39,13 @@ package in the same run.
    and stale documentation. Do not start subagents or reviewers in autonomous
    package runs; the outer gates provide the independent acceptance boundary.
 7. On success, set the active package to `done`, set the next `queued` package
-   to `active`, update `active_id`, and copy every targeted/package/runtime test
-   command into `evidence` in its original order. When no queued package
-   remains, set `active_id` to the empty string.
-8. Commit the candidate with the exact `commit_message`, require a clean
-   worktree and return the frozen gate list in `passed`. This is not accepted
-   evidence until the outer verifier has actually passed every gate. Never push.
+   to `active`, and update `active_id`. When no queued package remains, set
+   `active_id` to the empty string. Leave gate evidence bookkeeping to the
+   deterministic outer runner.
+8. Commit the candidate with the exact `commit_message` and require a clean
+   worktree. Return an empty `passed` list; the outer runner writes the frozen
+   gate list, executes it, and accepts it as evidence only after success. Never
+   push.
 9. On ambiguity, missing required inputs or a pre-existing source failure: do
    not commit and return `blocked` with one concrete cause.
 

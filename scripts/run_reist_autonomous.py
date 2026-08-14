@@ -271,6 +271,39 @@ def required_gates(package: dict[str, Any]) -> list[str]:
     ]
 
 
+def canonicalize_task_evidence(
+    task_path: pathlib.Path, package_id: str, gates: list[str]
+) -> None:
+    text = task_path.read_text("utf-8")
+    markers = list(re.finditer(r"(?m)^\[\[packages\]\]\s*$", text))
+    target_start = None
+    target_end = None
+    for index, marker in enumerate(markers):
+        end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
+        block = text[marker.start():end]
+        identifier = re.search(r'(?m)^id = "([^"]+)"\s*$', block)
+        if identifier and identifier.group(1) == package_id:
+            target_start, target_end = marker.start(), end
+            break
+    if target_start is None or target_end is None:
+        raise VerificationError(f"active package {package_id!r} is missing from task")
+    block = text[target_start:target_end]
+    evidence = re.search(r"(?ms)^evidence = \[[^\]]*\]\s*", block)
+    if evidence is None:
+        raise VerificationError(f"package {package_id!r} has no evidence field")
+    newline = "\r\n" if "\r\n" in text else "\n"
+    rendered = "evidence = [" + newline
+    for gate in gates:
+        rendered += "  " + json.dumps(gate, ensure_ascii=False) + "," + newline
+    rendered += "]" + newline
+    updated_block = block[:evidence.start()] + rendered + block[evidence.end():]
+    task_path.write_text(
+        text[:target_start] + updated_block + text[target_end:],
+        "utf-8",
+        newline="",
+    )
+
+
 def scoped_regular_file(repo: pathlib.Path, relative: str) -> pathlib.Path:
     root = repo.resolve()
     path = (root / relative).resolve()
@@ -667,9 +700,9 @@ package. Use no subagents or reviewers.
 Do not run the listed acceptance gates inside this nested agent sandbox; the
 outer verifier runs every gate exactly once after validating your candidate
 commit. You may run bounded lightweight inspections that do not duplicate a
-listed gate. On success list the exact contract gates as pending evidence,
-update only this package's status/evidence and the next active queue entry in
-automation/reist-s03b.toml, commit once with the exact commit_message, and
+listed gate. On success leave passed/evidence empty; the outer runner owns gate
+bookkeeping. Update only this package's status and the next active queue entry
+in automation/reist-s03b.toml, commit once with the exact commit_message, and
 leave a clean worktree. On a blocker, do not restore files: return blocked
 immediately without committing; this isolated checkout is discarded by the
 runner. Return only the required result object with the full 40-character
@@ -723,6 +756,19 @@ commit SHA.
                         f"{tail(event_log)}"
                     )
                 result = json.loads(isolated_result_file.read_text("utf-8"))
+                if result.get("status") == "committed":
+                    gates = required_gates(package)
+                    canonicalize_task_evidence(
+                        isolated_task_path, package["id"], gates
+                    )
+                    git(worktree, "add", "automation/reist-s03b.toml")
+                    git(worktree, "commit", "--amend", "--no-edit")
+                    result["commit"] = git(worktree, "rev-parse", "HEAD")
+                    result["passed"] = gates
+                    isolated_result_file.write_text(
+                        json.dumps(result, ensure_ascii=False) + "\n", "utf-8"
+                    )
+                    shutil.copyfile(isolated_result_file, result_file)
                 discarded_status = (
                     git(worktree, "status", "--short")
                     if result.get("status") == "blocked"
