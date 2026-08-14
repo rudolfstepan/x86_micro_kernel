@@ -25,7 +25,13 @@ class VerificationError(RuntimeError):
 
 
 class GateFailure(VerificationError):
-    pass
+    def __init__(self, gate: str, log_path: pathlib.Path, exit_code: int):
+        self.gate = gate
+        self.log_path = log_path
+        self.exit_code = exit_code
+        super().__init__(
+            f"gate failed ({exit_code}): {gate}; log={log_path}\n{tail(log_path)}"
+        )
 
 
 class PackageTimeout(RuntimeError):
@@ -345,6 +351,42 @@ def materialize_candidate(
     return result["commit"]
 
 
+def amend_repair_candidate(
+    worktree: pathlib.Path,
+    candidate_head: str,
+    package: dict[str, Any],
+    task_path: pathlib.Path,
+    result: dict[str, Any],
+) -> str:
+    if result.get("status") != "candidate":
+        raise VerificationError("repair must be returned as candidate")
+    if result.get("package_id") != package["id"]:
+        raise VerificationError("repair names the wrong package")
+    if result.get("commit") or result.get("passed") or result.get("blocker"):
+        raise VerificationError("repair must not claim commit, gates or blocker")
+    if git(worktree, "rev-parse", "HEAD") != candidate_head:
+        raise VerificationError("repair agent changed candidate HEAD")
+    git(worktree, "add", "-A")
+    changed = set(
+        filter(None, git(worktree, "diff", "--cached", "--name-only").splitlines())
+    )
+    if not changed:
+        raise VerificationError("repair contains no changes")
+    task_relative = task_path.relative_to(worktree).as_posix()
+    if task_relative in changed:
+        raise VerificationError("repair changed the already-verified task transition")
+    allowed = {path.replace("\\", "/") for path in package["allowed_files"]}
+    outside = sorted(changed - allowed)
+    if outside:
+        raise VerificationError(f"repair changed files outside package scope: {outside}")
+    git(worktree, "commit", "--amend", "--no-edit")
+    result["status"] = "committed"
+    result["commit"] = git(worktree, "rev-parse", "HEAD")
+    result["passed"] = required_gates(package)
+    assert_clean(worktree)
+    return result["commit"]
+
+
 def scoped_regular_file(repo: pathlib.Path, relative: str) -> pathlib.Path:
     root = repo.resolve()
     path = (root / relative).resolve()
@@ -431,10 +473,7 @@ def run_sandboxed_gates(
             environment,
         )
         if exit_code != 0:
-            raise GateFailure(
-                f"gate failed ({exit_code}): {gate}; log={gate_log}\n"
-                f"{tail(gate_log)}"
-            )
+            raise GateFailure(gate, gate_log, exit_code)
     return gates
 
 
@@ -826,14 +865,76 @@ commit SHA.
                     allow_dirty_blocked=True,
                 )
                 if result["status"] == "committed":
-                    passed = run_sandboxed_gates(
-                        codex,
-                        package,
-                        worktree,
-                        isolated_log_root,
-                        args.package_timeout_seconds,
-                        agent_environment,
-                    )
+                    try:
+                        passed = run_sandboxed_gates(
+                            codex,
+                            package,
+                            worktree,
+                            isolated_log_root,
+                            args.package_timeout_seconds,
+                            agent_environment,
+                        )
+                    except GateFailure as first_failure:
+                        repair_log = isolated_log_root / f"{stamp}-repair-events.jsonl"
+                        repair_result_file = isolated_log_root / f"{stamp}-repair-result.json"
+                        repair_command = command.copy()
+                        output_index = repair_command.index("--output-last-message") + 1
+                        repair_command[output_index] = str(repair_result_file)
+                        repair_prompt = f"""Repair only the first failing gate for package
+{package['id']}: {first_failure.gate}
+
+Failure log tail:
+{tail(first_failure.log_path)}
+
+Keep the verified task transition unchanged. Stay within allowed_files, use no
+subagents, and make the smallest focused repair. Do not stage or commit. Return
+candidate with empty commit, passed and blocker. If the failure cannot be fixed
+within scope, return blocked with one concrete reason.
+"""
+                        repair_exit = run_bounded(
+                            repair_command,
+                            worktree,
+                            repair_prompt,
+                            repair_log,
+                            min(args.package_timeout_seconds, 300),
+                            agent_environment,
+                        )
+                        if repair_exit != 0 or not repair_result_file.is_file():
+                            raise first_failure
+                        repair_result = json.loads(
+                            repair_result_file.read_text("utf-8")
+                        )
+                        if repair_result.get("status") != "candidate":
+                            raise GateFailure(
+                                first_failure.gate, repair_log, repair_exit or 2
+                            )
+                        verified_head = amend_repair_candidate(
+                            worktree,
+                            verified_head,
+                            package,
+                            isolated_task_path,
+                            repair_result,
+                        )
+                        result.update(repair_result)
+                        isolated_result_file.write_text(
+                            json.dumps(result, ensure_ascii=False) + "\n", "utf-8"
+                        )
+                        shutil.copyfile(isolated_result_file, result_file)
+                        verified_head = verify_result(
+                            worktree,
+                            before_head,
+                            before_task,
+                            result,
+                            isolated_task_path,
+                        )
+                        passed = run_sandboxed_gates(
+                            codex,
+                            package,
+                            worktree,
+                            isolated_log_root,
+                            args.package_timeout_seconds,
+                            agent_environment,
+                        )
                     if passed != result["passed"]:
                         raise VerificationError(
                             "outer gate order differs from committed evidence"

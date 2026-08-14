@@ -235,7 +235,7 @@ class ReistIpcContractTests(unittest.TestCase):
             executable = Path(directory) / (
                 "ipc-test.exe" if os.name == "nt" else "ipc-test"
             )
-            subprocess.run(
+            compile_result = subprocess.run(
                 [
                     compiler,
                     "-std=c11",
@@ -252,10 +252,15 @@ class ReistIpcContractTests(unittest.TestCase):
                     str(executable),
                 ],
                 cwd=ROOT,
-                check=True,
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=30,
+            )
+            self.assertEqual(
+                compile_result.returncode,
+                0,
+                msg=compile_result.stdout + compile_result.stderr,
             )
             result = subprocess.run(
                 [str(executable)], cwd=ROOT, capture_output=True, timeout=10

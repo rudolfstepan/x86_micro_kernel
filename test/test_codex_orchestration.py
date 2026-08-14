@@ -487,6 +487,23 @@ evidence = []
                              "feat: exact subject")
             self.assertEqual(self.git(repo, "status", "--porcelain"), "")
 
+            (repo / "allowed.txt").write_text("repaired\n", "utf-8")
+            repair = {
+                "status": "candidate",
+                "package_id": "P1",
+                "summary": "repair",
+                "commit": "",
+                "passed": [],
+                "blocker": "",
+            }
+            amended = RUNNER.amend_repair_candidate(
+                repo, commit, RUNNER.active_package(task),
+                repo / self.TASK_RELATIVE, repair
+            )
+            self.assertNotEqual(amended, commit)
+            self.assertEqual(self.git(repo, "rev-list", "--count", f"{head}..HEAD"), "1")
+            self.assertEqual(repair["passed"], self.GATES)
+
     def test_rejects_wrong_subject_scope_and_task_transition(self):
         cases = [
             ("fix: wrong subject", False, False),
