@@ -35,7 +35,7 @@ allowed_files = [
   "test/test_scheduler_time.py",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
-  ".codex/tasks/reist-s03b.toml"
+  "automation/reist-s03b.toml"
 ]
 invariants = [
   "timeout zero never blocks and returns EAGAIN",
@@ -87,7 +87,7 @@ allowed_files = [
   "examples/userspace/guest_test.c",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
-  ".codex/tasks/reist-s03b.toml"
+  "automation/reist-s03b.toml"
 ]
 invariants = [
   "all protected payloads fit fixed critical_object capacity or are split explicitly",
@@ -134,7 +134,7 @@ allowed_files = [
   "examples/userspace/guest_test.c",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
-  ".codex/tasks/reist-s03b.toml"
+  "automation/reist-s03b.toml"
 ]
 invariants = [
   "delegated rights are a nonempty subset of the source rights",
@@ -177,7 +177,7 @@ allowed_files = [
   "examples/userspace/guest_test.c",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
-  ".codex/tasks/reist-s03b.toml"
+  "automation/reist-s03b.toml"
 ]
 invariants = [
   "ambient callers cannot consume reserved restart capacity",
@@ -225,7 +225,7 @@ allowed_files = [
   "examples/userspace/guest_test.c",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
-  ".codex/tasks/reist-s03b.toml"
+  "automation/reist-s03b.toml"
 ]
 invariants = [
   "the probe profile is default-deny and versioned",
@@ -276,7 +276,7 @@ allowed_files = [
   "test/test_qemu_smoke.py",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
-  ".codex/tasks/reist-s03b.toml"
+  "automation/reist-s03b.toml"
 ]
 invariants = [
   "every recovery phase has a finite deadline and ordered state transition",

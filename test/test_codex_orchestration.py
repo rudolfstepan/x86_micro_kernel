@@ -140,7 +140,7 @@ class CodexOrchestrationTests(unittest.TestCase):
 
     def test_task_queue_has_exactly_one_active_bounded_package(self):
         task = tomllib.loads(
-            (ROOT / ".codex/tasks/reist-s03b.toml").read_text("utf-8")
+            (ROOT / "automation/reist-s03b.toml").read_text("utf-8")
         )
         packages = task["packages"]
         active = [package for package in packages if package["status"] == "active"]
@@ -275,7 +275,7 @@ class CodexOrchestrationTests(unittest.TestCase):
         self.assertIn("Get-Content -LiteralPath $gateLog -Tail 40", runner)
         self.assertNotIn("make test-smoke", runner)
         task = tomllib.loads(
-            (ROOT / ".codex/tasks/reist-s03b.toml").read_text("utf-8")
+            (ROOT / "automation/reist-s03b.toml").read_text("utf-8")
         )
         for package in task["packages"]:
             self.assertTrue(
@@ -292,7 +292,7 @@ class CodexOrchestrationTests(unittest.TestCase):
         self.assertIn("build\\reist-os.img", gate)
         self.assertIn("Get-Content -LiteralPath $log -Tail 40", gate)
         task = tomllib.loads(
-            (ROOT / ".codex/tasks/reist-s03b.toml").read_text("utf-8")
+            (ROOT / "automation/reist-s03b.toml").read_text("utf-8")
         )
         for package in task["packages"]:
             self.assertEqual(len(package["package_tests"]), 1)
@@ -341,7 +341,7 @@ class CodexOrchestrationTests(unittest.TestCase):
 
 class AutonomousVerifierTests(unittest.TestCase):
     TASK_RELATIVE = pathlib.Path(".codex/tasks/task.toml")
-    EXEC_TASK_RELATIVE = pathlib.Path(".codex/tasks/reist-s03b.toml")
+    EXEC_TASK_RELATIVE = pathlib.Path("automation/reist-s03b.toml")
     GATES = ["target", "package", "runtime"]
 
     def git(self, repo, *arguments):

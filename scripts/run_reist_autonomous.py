@@ -610,7 +610,7 @@ def prepare_agent_environment(
 
 def execute(args: argparse.Namespace) -> int:
     repo = pathlib.Path(args.repo).resolve()
-    task_path = repo / ".codex/tasks/reist-s03b.toml"
+    task_path = repo / "automation/reist-s03b.toml"
     schema_path = repo / ".codex/schemas/reist-run-result.schema.json"
     task = read_task(task_path)
     package = active_package(task)
@@ -649,7 +649,7 @@ def execute(args: argparse.Namespace) -> int:
         try:
             with isolated_checkout(repo, before_head, evidence_dir) as worktree:
                 agent_environment = prepare_agent_environment(worktree, environment)
-                isolated_task_path = worktree / ".codex/tasks/reist-s03b.toml"
+                isolated_task_path = worktree / "automation/reist-s03b.toml"
                 isolated_schema_path = (
                     worktree / ".codex/schemas/reist-run-result.schema.json"
                 )
@@ -669,7 +669,7 @@ outer verifier runs every gate exactly once after validating your candidate
 commit. You may run bounded lightweight inspections that do not duplicate a
 listed gate. On success list the exact contract gates as pending evidence,
 update only this package's status/evidence and the next active queue entry in
-.codex/tasks/reist-s03b.toml, commit once with the exact commit_message, and
+automation/reist-s03b.toml, commit once with the exact commit_message, and
 leave a clean worktree. On a blocker, do not restore files: return blocked
 immediately without committing; this isolated checkout is discarded by the
 runner. Return only the required result object with the full 40-character

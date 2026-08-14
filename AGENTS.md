@@ -11,7 +11,7 @@ behavior that has not been demonstrated on the target system.
 
 Read only the material needed for the active package, in this order:
 
-1. `.codex/tasks/reist-s03b.toml` — executable queue and acceptance gates.
+1. `automation/reist-s03b.toml` — executable queue and acceptance gates.
 2. `docs/architecture/REIST_ARCHITECTURE.md` — target architecture.
 3. `docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md` — order and DoD.
 4. `docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md` and the subsystem
