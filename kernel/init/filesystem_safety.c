@@ -10,8 +10,9 @@
 
 typedef struct {
     uint64_t progress_marker;
+    uint64_t mutation_deadline_ms;
     uint32_t read_only;
-    uint32_t reserved;
+    uint32_t mutation_active;
 } filesystem_control_t;
 
 static critical_object_t filesystem_control;
@@ -24,7 +25,11 @@ static bool filesystem_control_valid(const void *payload, size_t length) {
     if (length != sizeof(filesystem_control_t)) return false;
     const filesystem_control_t *state = (const filesystem_control_t *)payload;
     return state->progress_marker != 0U && state->read_only <= 1U &&
-           state->reserved == 0U;
+           state->mutation_active <= 1U &&
+           ((state->mutation_active == 0U &&
+             state->mutation_deadline_ms == 0U) ||
+            (state->mutation_active != 0U &&
+             state->mutation_deadline_ms != 0U));
 }
 
 static bool filesystem_control_read(filesystem_control_t *state) {
@@ -66,8 +71,9 @@ bool filesystem_safety_init(uint64_t now_ms) {
     if (filesystem_supervised) return true;
     filesystem_control_t state = {
         .progress_marker = 1U,
+        .mutation_deadline_ms = 0U,
         .read_only = 0U,
-        .reserved = 0U,
+        .mutation_active = 0U,
     };
     if (critical_object_init(&filesystem_control, FILESYSTEM_CONTROL_VERSION,
                              &state, sizeof(state)) != 0) return false;
@@ -94,9 +100,20 @@ bool filesystem_mutation_begin(uint64_t now_ms) {
     if (!filesystem_supervised)
         return !filesystem_integrity_failed && !filesystem_force_read_only;
     if (filesystem_force_read_only) return false;
-    if (!filesystem_control_read(&state) || state.read_only != 0U) return false;
-    if (++state.progress_marker == 0U || !filesystem_control_write(&state))
+    if (!filesystem_control_read(&state) || state.read_only != 0U ||
+        state.mutation_active != 0U) return false;
+    if (++state.progress_marker == 0U) {
+        filesystem_fence_mutations();
         return false;
+    }
+    state.mutation_active = 1U;
+    state.mutation_deadline_ms =
+        UINT64_MAX - now_ms < FILESYSTEM_MUTATION_DEADLINE_MS
+            ? UINT64_MAX : now_ms + FILESYSTEM_MUTATION_DEADLINE_MS;
+    if (!filesystem_control_write(&state)) {
+        filesystem_fence_mutations();
+        return false;
+    }
     if (supervisor_report_progress(filesystem_supervisor_handle,
                                    state.progress_marker, now_ms) != 0 ||
         !ata_journal_transaction_begin()) {
@@ -113,9 +130,16 @@ bool filesystem_mutation_end(bool commit) {
         filesystem_fence_mutations();
         return false;
     }
-    if (!filesystem_control_read(&state) || state.read_only != 0U) return false;
-    return supervisor_report_idle(filesystem_supervisor_handle) == 0 &&
-           !filesystem_integrity_failed;
+    if (!filesystem_control_read(&state) || state.read_only != 0U ||
+        state.mutation_active == 0U) return false;
+    state.mutation_active = 0U;
+    state.mutation_deadline_ms = 0U;
+    if (!filesystem_control_write(&state) ||
+        supervisor_report_idle(filesystem_supervisor_handle) != 0) {
+        filesystem_fence_mutations();
+        return false;
+    }
+    return !filesystem_integrity_failed;
 }
 
 void filesystem_fence_mutations(void) {

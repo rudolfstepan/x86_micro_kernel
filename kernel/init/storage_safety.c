@@ -11,8 +11,9 @@
 
 typedef struct {
     uint64_t progress_marker;
+    uint64_t operation_deadline_ms;
     uint32_t write_fenced;
-    uint32_t reserved;
+    uint32_t operation_active;
 } storage_control_t;
 
 static critical_object_t storage_control;
@@ -25,7 +26,11 @@ static bool storage_control_valid(const void *payload, size_t length) {
     if (length != sizeof(storage_control_t)) return false;
     const storage_control_t *state = (const storage_control_t *)payload;
     return state->progress_marker != 0U && state->write_fenced <= 1U &&
-           state->reserved == 0U;
+           state->operation_active <= 1U &&
+           ((state->operation_active == 0U &&
+             state->operation_deadline_ms == 0U) ||
+            (state->operation_active != 0U &&
+             state->operation_deadline_ms != 0U));
 }
 
 static bool storage_control_read(storage_control_t *state) {
@@ -71,8 +76,9 @@ bool storage_safety_init(uint64_t now_ms) {
     if (storage_supervised) return true;
     storage_control_t state = {
         .progress_marker = 1U,
+        .operation_deadline_ms = 0U,
         .write_fenced = 0U,
-        .reserved = 0U,
+        .operation_active = 0U,
     };
     if (critical_object_init(&storage_control, STORAGE_CONTROL_VERSION, &state,
                              sizeof(state)) != 0) return false;
@@ -99,19 +105,37 @@ bool storage_write_begin(uint64_t now_ms) {
     if (!storage_supervised)
         return !storage_integrity_failed && !storage_force_fenced;
     if (storage_force_fenced) return false;
-    if (!storage_control_read(&state) || state.write_fenced != 0U) return false;
-    if (++state.progress_marker == 0U || !storage_control_write(&state))
+    if (!storage_control_read(&state) || state.write_fenced != 0U ||
+        state.operation_active != 0U) return false;
+    if (++state.progress_marker == 0U) {
+        storage_fence_writes();
         return false;
-    return supervisor_report_progress(storage_supervisor_handle,
-                                      state.progress_marker, now_ms) == 0;
+    }
+    state.operation_active = 1U;
+    state.operation_deadline_ms = UINT64_MAX - now_ms < STORAGE_WRITE_DEADLINE_MS
+        ? UINT64_MAX : now_ms + STORAGE_WRITE_DEADLINE_MS;
+    if (!storage_control_write(&state) ||
+        supervisor_report_progress(storage_supervisor_handle,
+                                   state.progress_marker, now_ms) != 0) {
+        storage_fence_writes();
+        return false;
+    }
+    return true;
 }
 
 bool storage_write_end(void) {
     storage_control_t state;
     if (!storage_supervised) return !storage_integrity_failed;
-    if (!storage_control_read(&state) || state.write_fenced != 0U) return false;
-    return supervisor_report_idle(storage_supervisor_handle) == 0 &&
-           !storage_integrity_failed;
+    if (!storage_control_read(&state) || state.write_fenced != 0U ||
+        state.operation_active == 0U) return false;
+    state.operation_active = 0U;
+    state.operation_deadline_ms = 0U;
+    if (!storage_control_write(&state) ||
+        supervisor_report_idle(storage_supervisor_handle) != 0) {
+        storage_fence_writes();
+        return false;
+    }
+    return !storage_integrity_failed;
 }
 
 void storage_fence_writes(void) {

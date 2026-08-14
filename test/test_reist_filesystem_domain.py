@@ -15,6 +15,11 @@ class ReistFilesystemDomainTests(unittest.TestCase):
         self.assertIn("critical_object_t filesystem_control", source)
         self.assertIn("critical_object_read(&filesystem_control", source)
         self.assertIn("critical_object_update(&filesystem_control", source)
+        self.assertIn("mutation_active", source)
+        self.assertIn("mutation_deadline_ms", source)
+        self.assertIn("state.mutation_active != 0U", source)
+        self.assertIn("UINT64_MAX - now_ms < FILESYSTEM_MUTATION_DEADLINE_MS",
+                      source)
 
     def test_all_public_vfs_mutations_are_supervised(self):
         source = (ROOT / "fs/vfs/vfs.c").read_text(encoding="utf-8")

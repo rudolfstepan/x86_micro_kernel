@@ -438,6 +438,14 @@ RTL8139-Lauf prüft den resultierenden Ethernet-Frame am QEMU-Socket. Damit ist
 der lokale ARP-Request-/Reply-Pfad vermittelt; S0.3c-6 beginnt als Nächstes mit
 der Storage-/Dateisystemdomäne.
 
+S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
+Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau
+einen geschützt gespeicherten Aktivzustand und eine saturierend berechnete
+absolute Deadline. Reentranz oder Parallelüberlappung wird vor Seiteneffekten
+abgewiesen; inkonsistente Übergänge fencen den Blockpfad beziehungsweise
+schalten das Dateisystem read-only. Das folgende S0.3c-6b ersetzt direkte
+Aufrufe schrittweise durch versioniertes IPC mit statischen Request-Pools.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

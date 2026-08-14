@@ -147,6 +147,11 @@ geschützten 250-ms-Einmalvertrag und den ausschließlich dem Ring-3-Dienst
 erlaubten Syscall 64. Der reale RTL8139-Lauf beobachtet den ausgesendeten
 Request für `10.0.2.99` am QEMU-Socket. Es gibt keinen direkten Ring-0-Fallback
 mehr. Als nächstes folgt S0.3c-6 (Storage-/Dateisystemdienst).
+Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
+Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
+eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler
+führen zum Schreib-Fence beziehungsweise Read-only-Zustand. Als nächstes folgt
+das statisch begrenzte Block-/VFS-IPC (S0.3c-6b).
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 

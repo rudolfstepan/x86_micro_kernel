@@ -19,6 +19,12 @@ class ReistStorageDomainTests(unittest.TestCase):
         self.assertIn("critical_object_read(&storage_control", source)
         self.assertIn("critical_object_update(&storage_control", source)
         self.assertIn("storage_integrity_failed = true", source)
+        self.assertIn("operation_active", source)
+        self.assertIn("operation_deadline_ms", source)
+        self.assertIn("state.operation_active != 0U", source)
+        self.assertIn("UINT64_MAX - now_ms < STORAGE_WRITE_DEADLINE_MS", source)
+        self.assertIn("storage_fence_writes();", source[source.index(
+            "bool storage_write_begin"):source.index("bool storage_write_end")])
 
     def test_ata_write_is_supervised_and_flush_failure_is_fatal(self):
         source = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")

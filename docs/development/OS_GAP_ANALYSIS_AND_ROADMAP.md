@@ -123,6 +123,11 @@ und 10 verbindlich.
         vermittelter Antwort im RTL8139-Gast nachweisen
       - [x] S0.3c-5b2b Ausgehende lokale ARP-Auflösung in den Dienst migrieren
   - [ ] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
+    - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
+      Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
+    - [ ] S0.3c-6b Versioniertes Block-/VFS-IPC und statische Request-Pools
+    - [ ] S0.3c-6c Ring-3-Storage-Service mit Capability-Profil und Restart
+    - [ ] S0.3c-6d Reale Power-Loss-/I/O-/Restart-Injektion in QEMU
   - [ ] S0.3c-7 Unabhängiger Standby-/Supervisor-Kanal und realer Handover
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
@@ -1327,6 +1332,14 @@ Ring-0-Fallback. Der RTL8139-QEMU-Lauf fordert die Auflösung über Syscall 65 a
 und prüft `ARP_RESOLUTION_QUEUED`, `ARP_RESOLUTION_MEDIATED` sowie den am
 QEMU-Socket ausgesendeten ARP-Frame für `10.0.2.99`. Damit ist S0.3c-5b
 geschlossen; als nächstes folgt S0.3c-6.
+
+**S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
+besitzen nun jeweils einen redundant geschützten Aktivzustand und eine
+saturierend gebildete absolute Deadline. Überlappende Operationen werden vor
+dem ersten Seiteneffekt abgewiesen. Progress-, Integritäts- oder Idle-Fehler
+verriegeln den Hardware-Schreibpfad beziehungsweise den VFS-Zustand
+fail-closed. S0.3c-6b definiert als Nächstes das versionierte, statisch
+begrenzte Block-/VFS-IPC.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions
