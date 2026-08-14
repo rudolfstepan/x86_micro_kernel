@@ -224,10 +224,19 @@ separat benannt und darf genau diese statisch begrenzte Restartkapazität
 verwenden; fehlgeschlagene Erzeugung läuft durch die bestehenden vollständigen
 Rollbackpfade.
 
+Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
+Bitinventar der gegenwärtig 56 Syscalls. Normale Programme erhalten explizit
+das Kompatibilitätsprofil. Das Supervisor-Profil `PROBE` beginnt dagegen bei
+Default-Deny und erlaubt ausschließlich Exit, Identität, Yield/Sleep,
+monotone Diagnosezeit, Memory-Statistik und die für den kontrollierten Kanal
+benötigten IPC-Operationen. Der Dispatcher prüft das Profil zentral vor jeder
+User-Speicherausgabe und jedem Seiteneffekt. Ring-0-Operationen besitzen einen
+separaten Trusted-Pfad. `kill` ist auch im Kompatibilitätsprofil nur für ein
+Kind erlaubt, dessen gespeicherte Eltern-PID und Elterngeneration mit dem
+Aufrufer übereinstimmen.
+
 Diese Basis ist noch kein vollständiger High-Assurance-IPC-Vertrag. Es fehlen:
 
-- Capability-Gates für `kill` und die weiterhin ambient verfügbaren Datei-,
-  Display-, Prozess- und sonstigen Syscalls,
 - eine überwachte, neu startbare Ring-3-Domäne als S0.3b-Abnahmeobjekt.
 
 Bis diese Punkte erfüllt sind, beweist S0.3a begrenzte Nachrichtenübertragung,

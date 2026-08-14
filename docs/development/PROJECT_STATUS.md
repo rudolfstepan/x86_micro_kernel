@@ -27,13 +27,15 @@ Arbeitsdokumente.
 
 ## Aktueller REIST-Ausbaustand
 
-S0.3b-1 bis S0.3b-4 sind umgesetzt und durch Host-, Referenzbuild- und
+S0.3b-1 bis S0.3b-5 sind umgesetzt und durch Host-, Referenzbuild- und
 QEMU-Gasttests abgenommen. Normale Prozesse können die reservierte
 Restartkapazität nicht verbrauchen; ausschließlich der explizite
-Supervisor-Spawn darf sie verwenden. Als nächstes folgen per Prozess
-default-deny Domänenprofile und Capability-Gates für ambient verfügbare
-Syscalls. Eine vollständige neu startbare Userspace-Domäne ist damit noch
-nicht behauptet.
+Supervisor-Spawn darf sie verwenden. Prozesse besitzen versionierte
+Syscallprofile; die künftige Probedomäne ist default-deny und erhält nur einen
+begrenzten Lifecycle-/IPC-Satz. Kill ist generation-sicher auf eigene Kinder
+begrenzt. Als nächstes folgt der echte überwachte Ring-3-Probeprozess mit
+Restart, Selbsttest und Reintegrationsnachweis. Eine vollständig neu startbare
+Userspace-Domäne ist daher noch nicht behauptet.
 
 Der zuletzt ausgeführte vollständige Windows-Build bootete in VMware bis zum
 Prompt `C:\>`, mountete `hdd0` als `/`, initialisierte E1000 und erhielt per

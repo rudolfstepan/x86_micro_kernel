@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3b"
-active_id = "S0.3b-5"
+active_id = "S0.3b-6"
 
 [policy]
 one_package_per_run = true
@@ -224,7 +224,7 @@ evidence = [
 
 [[packages]]
 id = "S0.3b-5"
-status = "active"
+status = "done"
 risk = "high"
 title = "Least-privilege domain profiles"
 scope = "Add explicit per-process domain profiles and default-deny gates for kill and ambient file, display, process-control and other syscalls used by the probe. Authorization must precede all side effects. Preserve the unrestricted compatibility profile for existing programs."
@@ -268,11 +268,16 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: enforce REIST domain authority profiles"
-evidence = []
+evidence = [
+  "python test/test_reist_probe_domain.py -q",
+  "python test/test_reist_supervisor.py -q",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal",
+]
 
 [[packages]]
 id = "S0.3b-6"
-status = "queued"
+status = "active"
 risk = "critical"
 title = "Supervised Ring-3 probe lifecycle"
 scope = "Launch a static-profile Ring-3 probe and implement bounded crash, hang and invalid-reply recovery: fence, revoke, reap, recreate, self-test and reintegrate. Exhausted restart budget enters the documented degraded state while unrelated work continues."

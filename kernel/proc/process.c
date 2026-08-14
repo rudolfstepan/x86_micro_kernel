@@ -72,6 +72,52 @@ static void release_admission_image(uint8_t **image) {
 Process process_list[MAX_PROGRAMS];
 int next_pid = 1; // PID counter starting at 1
 
+static void profile_allow(process_domain_profile_t *profile,
+                          uint32_t syscall_index) {
+    if (syscall_index >= PROCESS_DOMAIN_SYSCALL_LIMIT) return;
+    profile->allowed_syscalls[syscall_index / 32U] |=
+        1U << (syscall_index % 32U);
+}
+
+static bool initialize_domain_profile(process_domain_profile_t *profile,
+                                      process_domain_kind_t kind) {
+    if (profile == NULL) return false;
+    memset(profile, 0, sizeof(*profile));
+    profile->version = PROCESS_DOMAIN_PROFILE_VERSION;
+    profile->struct_size = sizeof(*profile);
+    profile->kind = (uint32_t)kind;
+    if (kind == PROCESS_DOMAIN_COMPATIBILITY) {
+        for (uint32_t index = 0; index < PROCESS_DOMAIN_SYSCALL_LIMIT; ++index) {
+            profile_allow(profile, index);
+        }
+        return true;
+    }
+    if (kind != PROCESS_DOMAIN_PROBE) return false;
+
+    static const uint8_t probe_syscalls[] = {
+        SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS, SYS_MONOTONIC_MS,
+        SYS_MEMORY_STATS, SYS_IPC_SEND, SYS_IPC_RECEIVE, SYS_IPC_CLOSE,
+        SYS_IPC_SEND_TIMEOUT, SYS_IPC_RECEIVE_TIMEOUT
+    };
+    for (size_t index = 0;
+         index < sizeof(probe_syscalls) / sizeof(probe_syscalls[0]); ++index) {
+        profile_allow(profile, probe_syscalls[index]);
+    }
+    return true;
+}
+
+bool process_syscall_allowed(const Process *process, uint32_t syscall_index) {
+    if (process == NULL) return true; /* Explicit trusted kernel path. */
+    const process_domain_profile_t *profile = &process->domain_profile;
+    if (profile->version != PROCESS_DOMAIN_PROFILE_VERSION ||
+        profile->struct_size != sizeof(*profile) ||
+        syscall_index >= PROCESS_DOMAIN_SYSCALL_LIMIT ||
+        (profile->kind != PROCESS_DOMAIN_COMPATIBILITY &&
+         profile->kind != PROCESS_DOMAIN_PROBE)) return false;
+    return (profile->allowed_syscalls[syscall_index / 32U] &
+            (1U << (syscall_index % 32U))) != 0U;
+}
+
 static int allocate_pid_locked(void) {
     for (int attempt = 0; attempt <= MAX_PROGRAMS; ++attempt) {
         int candidate = next_pid;
@@ -104,7 +150,9 @@ static void release_process_slot(Process *process) {
 
 /* Reserve list state atomically, but do slow file/heap work with IRQs enabled. */
 static int claim_process_slot(const char *name, bool shared_image,
-                              int parent_pid, bool supervised) {
+                              int parent_pid, uint32_t parent_generation,
+                              bool supervised,
+                              process_domain_kind_t domain_kind) {
     uint32_t flags = irq_save();
 
     if (shared_image) {
@@ -145,6 +193,7 @@ static int claim_process_slot(const char *name, bool shared_image,
             process->pid = pid;
             process->generation = generation;
             process->parent_pid = parent_pid;
+            process->parent_generation = parent_generation;
             process->task_id = -1;
             process->exit_status = 0;
             process->has_exited = false;
@@ -153,6 +202,12 @@ static int claim_process_slot(const char *name, bool shared_image,
             memset(process->user_allocations, 0,
                    sizeof(process->user_allocations));
             memset(process->files, 0, sizeof(process->files));
+            if (!initialize_domain_profile(&process->domain_profile,
+                                           domain_kind)) {
+                process->is_running = false;
+                irq_restore(flags);
+                return -1;
+            }
             memset(process->ipc_capabilities, 0,
                    sizeof(process->ipc_capabilities));
             wait_queue_init(&process->exit_waiters);
@@ -225,7 +280,8 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
                                                const char *const *argv,
                                                const char *working_directory,
                                                Process *parent,
-                                               bool supervised) {
+                                               bool supervised,
+                                               process_domain_kind_t domain_kind) {
     if (filename == NULL || *filename == '\0') {
         return -1;
     }
@@ -239,7 +295,9 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
         if (*cursor == '/') display_name = cursor + 1;
     }
     int parent_pid = parent != NULL ? parent->pid : 0;
-    int slot = claim_process_slot(display_name, false, parent_pid, supervised);
+    uint32_t parent_generation = parent != NULL ? parent->generation : 0U;
+    int slot = claim_process_slot(display_name, false, parent_pid,
+                                  parent_generation, supervised, domain_kind);
     if (slot < 0) {
         printf("Error: Maximum number of running programs reached.\n");
         return -1;
@@ -360,7 +418,7 @@ int create_process_for_file_args(const char *filename, int argc,
                                  const char *const *argv,
                                  const char *working_directory) {
     return create_process_for_file_args_owned(filename, argc, argv,
-                                               working_directory, NULL, false);
+        working_directory, NULL, false, PROCESS_DOMAIN_COMPATIBILITY);
 }
 
 int create_process(void* entry_point) {
@@ -370,7 +428,8 @@ int create_process(void* entry_point) {
 
     (void)scheduler_reap_finished_tasks();
 
-    int slot = claim_process_slot("Unknown", false, 0, true);
+    int slot = claim_process_slot("Unknown", false, 0, 0U, true,
+                                  PROCESS_DOMAIN_COMPATIBILITY);
     if (slot < 0) {
         printf("Error: Maximum number of running programs reached.\n");
         return -1;
@@ -771,15 +830,17 @@ int process_spawn_args(Process *parent, const char *path, int argc,
     char resolved[PROCESS_PATH_MAX];
     if (process_resolve_path(parent, path, resolved) != 0) return -1;
     return create_process_for_file_args_owned(
-        resolved, argc, argv, parent->working_directory, parent, false);
+        resolved, argc, argv, parent->working_directory, parent, false,
+        PROCESS_DOMAIN_COMPATIBILITY);
 }
 
 int process_spawn_supervised(const char *path, int argc,
-                             const char *const *argv) {
+                             const char *const *argv,
+                             process_domain_kind_t domain_kind) {
     if (path == NULL || *path == '\0' || argc < 1 || argc > 32 ||
         argv == NULL) return -1;
     return create_process_for_file_args_owned(path, argc, argv, "/", NULL,
-                                               true);
+                                               true, domain_kind);
 }
 
 int process_ipc_delegate(Process *source, ipc_handle_t handle,
@@ -926,4 +987,25 @@ int process_terminate(int pid) {
     irq_restore(flags);
     scheduler_preempt_enable();
     return -1;
+}
+
+int process_terminate_authorized(Process *requester, int pid) {
+    if (requester == NULL || pid <= 0) return -1;
+    KASSERT_NOT_IRQ();
+    scheduler_preempt_disable();
+    uint32_t flags = irq_save();
+    bool authorized = false;
+    for (int index = 0; index < MAX_PROGRAMS; ++index) {
+        Process *target = &process_list[index];
+        if (target->is_running && target->pid == pid &&
+            target->parent_pid == requester->pid &&
+            target->parent_generation == requester->generation) {
+            authorized = true;
+            break;
+        }
+    }
+    irq_restore(flags);
+    int result = authorized ? process_terminate(pid) : -1;
+    scheduler_preempt_enable();
+    return result;
 }

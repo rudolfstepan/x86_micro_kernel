@@ -361,8 +361,10 @@ bool supervisor_start_worker(void) {
 }
 
 int supervisor_spawn_service(const char *path, int argc,
-                             const char *const *argv) {
-    return process_spawn_supervised(path, argc, argv);
+                             const char *const *argv, uint32_t domain_kind) {
+    if (domain_kind != PROCESS_DOMAIN_PROBE) return -1;
+    return process_spawn_supervised(path, argc, argv,
+                                    (process_domain_kind_t)domain_kind);
 }
 #else
 bool supervisor_start_worker(void) {
@@ -370,10 +372,11 @@ bool supervisor_start_worker(void) {
 }
 
 int supervisor_spawn_service(const char *path, int argc,
-                             const char *const *argv) {
+                             const char *const *argv, uint32_t domain_kind) {
     (void)path;
     (void)argc;
     (void)argv;
+    (void)domain_kind;
     return -1;
 }
 #endif

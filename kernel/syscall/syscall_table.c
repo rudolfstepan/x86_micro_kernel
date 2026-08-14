@@ -567,7 +567,7 @@ static int syscall_process_info(uint32_t index, void *user_info) {
 static int syscall_kill(int pid) {
     Process *caller = scheduler_current_process();
     if (caller == NULL || pid <= 0 || pid == caller->pid) return -22;
-    return process_terminate(pid) == 0 ? 0 : -3;
+    return process_terminate_authorized(caller, pid) == 0 ? 0 : -13;
 }
 
 static int syscall_getcwd(void *user_buffer, size_t size) {
@@ -719,6 +719,14 @@ void syscall_handler(Registers* regs) {
     const uint32_t arg2 = regs->ecx;
     const uint32_t arg3 = regs->edx;
     uint32_t result = 0;
+
+    bool user_call = (regs->cs & 3U) == 3U;
+    Process *authority_process = user_call ? scheduler_current_process() : NULL;
+    if (user_call && (authority_process == NULL ||
+        !process_syscall_allowed(authority_process, syscall_index))) {
+        regs->eax = (uint32_t)-13;
+        return;
+    }
 
     // Validate syscall index
     if (syscall_index >= 512 || syscall_table[syscall_index] == 0) {

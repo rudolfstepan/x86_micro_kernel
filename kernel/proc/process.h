@@ -16,6 +16,21 @@
 #define PROCESS_PATH_MAX 256
 #define SUPERVISED_PROCESS_RESERVE 1U
 #define SUPERVISED_RESTART_FRAME_RESERVE 32U
+#define PROCESS_DOMAIN_PROFILE_VERSION 1U
+#define PROCESS_DOMAIN_SYSCALL_WORDS 2U
+#define PROCESS_DOMAIN_SYSCALL_LIMIT 56U
+
+typedef enum {
+    PROCESS_DOMAIN_COMPATIBILITY = 1,
+    PROCESS_DOMAIN_PROBE = 2,
+} process_domain_kind_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t kind;
+    uint32_t allowed_syscalls[PROCESS_DOMAIN_SYSCALL_WORDS];
+} process_domain_profile_t;
 
 struct vfs_node;
 
@@ -37,6 +52,7 @@ typedef struct Process {
     int pid;
     uint32_t generation;
     int parent_pid;
+    uint32_t parent_generation;
     int task_id;
     int exit_status;
     char name[32];
@@ -46,6 +62,7 @@ typedef struct Process {
     uint32_t heap_next;
     user_allocation_t user_allocations[MAX_USER_ALLOCATIONS];
     process_file_t files[MAX_PROCESS_FILES];
+    process_domain_profile_t domain_profile;
     ipc_capability_t ipc_capabilities[IPC_MAX_CAPABILITIES_PER_PROCESS];
     char working_directory[PROCESS_PATH_MAX];
     wait_queue_t exit_waiters;
@@ -77,7 +94,10 @@ int process_spawn(Process* parent, const char* path);
 int process_spawn_args(Process* parent, const char* path, int argc,
                        const char* const* argv);
 int process_spawn_supervised(const char *path, int argc,
-                             const char *const *argv);
+                             const char *const *argv,
+                             process_domain_kind_t domain_kind);
+bool process_syscall_allowed(const Process *process, uint32_t syscall_index);
+int process_terminate_authorized(Process *requester, int pid);
 int process_ipc_delegate(Process *source, ipc_handle_t handle,
                          int target_pid, uint32_t rights);
 int process_wait_status(Process* parent, int pid, int* status);
