@@ -14,6 +14,8 @@
 #define MAX_PROCESS_FILES 8
 #define PROCESS_FD_BASE 3
 #define PROCESS_PATH_MAX 256
+#define SUPERVISED_PROCESS_RESERVE 1U
+#define SUPERVISED_RESTART_FRAME_RESERVE 32U
 
 struct vfs_node;
 
@@ -74,6 +76,8 @@ void wait_for_process(int pid);
 int process_spawn(Process* parent, const char* path);
 int process_spawn_args(Process* parent, const char* path, int argc,
                        const char* const* argv);
+int process_spawn_supervised(const char *path, int argc,
+                             const char *const *argv);
 int process_ipc_delegate(Process *source, ipc_handle_t handle,
                          int target_pid, uint32_t rights);
 int process_wait_status(Process* parent, int pid, int* status);

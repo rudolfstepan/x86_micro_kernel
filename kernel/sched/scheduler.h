@@ -12,6 +12,7 @@
 
 // Maximale Anzahl von Tasks
 #define MAX_TASKS 8
+#define SUPERVISED_TASK_RESERVE 1U
 
 #define TASK_READY 0
 #define TASK_RUNNING 1
@@ -63,6 +64,10 @@ int create_task(void (*entry_point)(void), uint32_t *stack, Process *process);
 int create_user_task(uint32_t entry_point, uint32_t user_stack,
                      uint32_t *kernel_stack, page_directory_t *page_directory,
                      Process *process);
+int create_supervised_user_task(uint32_t entry_point, uint32_t user_stack,
+                                uint32_t *kernel_stack,
+                                page_directory_t *page_directory,
+                                Process *process);
 uint32_t* scheduler_allocate_kernel_stack(void);
 void scheduler_free_kernel_stack(uint32_t* stack);
 bool scheduler_kernel_stack_is_valid(const uint32_t* stack);

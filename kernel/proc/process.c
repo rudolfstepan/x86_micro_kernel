@@ -62,6 +62,12 @@ static int load_program_file(const char *program_name, uint8_t **image_out) {
     return (int)loaded_size;
 }
 
+static void release_admission_image(uint8_t **image) {
+    if (image == NULL || *image == NULL) return;
+    k_free(*image);
+    *image = NULL;
+}
+
 
 Process process_list[MAX_PROGRAMS];
 int next_pid = 1; // PID counter starting at 1
@@ -98,7 +104,7 @@ static void release_process_slot(Process *process) {
 
 /* Reserve list state atomically, but do slow file/heap work with IRQs enabled. */
 static int claim_process_slot(const char *name, bool shared_image,
-                              int parent_pid) {
+                              int parent_pid, bool supervised) {
     uint32_t flags = irq_save();
 
     if (shared_image) {
@@ -109,6 +115,18 @@ static int claim_process_slot(const char *name, bool shared_image,
                 return -2;
             }
         }
+    }
+
+    size_t free_slots = 0U;
+    for (int i = 0; i < MAX_PROGRAMS; ++i) {
+        if (!process_list[i].is_running &&
+            !(process_list[i].has_exited && process_list[i].parent_pid > 0) &&
+            process_list[i].generation != UINT32_MAX) ++free_slots;
+    }
+    if (free_slots == 0U ||
+        (!supervised && free_slots <= SUPERVISED_PROCESS_RESERVE)) {
+        irq_restore(flags);
+        return -1;
     }
 
     for (int i = 0; i < MAX_PROGRAMS; ++i) {
@@ -206,7 +224,8 @@ static int build_user_arguments(page_directory_t *page_directory, int argc,
 static int create_process_for_file_args_owned(const char *filename, int argc,
                                                const char *const *argv,
                                                const char *working_directory,
-                                               Process *parent) {
+                                               Process *parent,
+                                               bool supervised) {
     if (filename == NULL || *filename == '\0') {
         return -1;
     }
@@ -220,7 +239,7 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
         if (*cursor == '/') display_name = cursor + 1;
     }
     int parent_pid = parent != NULL ? parent->pid : 0;
-    int slot = claim_process_slot(display_name, false, parent_pid);
+    int slot = claim_process_slot(display_name, false, parent_pid, supervised);
     if (slot < 0) {
         printf("Error: Maximum number of running programs reached.\n");
         return -1;
@@ -247,6 +266,21 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
                                  header->program_size;
     uint32_t stored_image_size = header->relocation_offset;
     uint32_t entry_point = header->entry_point;
+
+    uint32_t program_frames =
+        (memory_image_size + PAGE_SIZE - 1U) / PAGE_SIZE;
+    uint32_t stack_frames = (USER_STACK_TOP - USER_STACK_BOTTOM) / PAGE_SIZE;
+    uint64_t required_frames = (uint64_t)program_frames + stack_frames + 16U;
+    memory_stats_t memory_stats;
+    memory_get_stats(&memory_stats);
+    uint64_t reserve_frames = supervised
+        ? 0U : SUPERVISED_RESTART_FRAME_RESERVE;
+    if (required_frames + reserve_frames >
+        memory_stats.free_frame_bytes / PAGE_SIZE) {
+        release_admission_image(&program_image);
+        release_process_slot(process);
+        return -1;
+    }
 
     page_directory_t *page_directory = create_page_directory();
     if (page_directory == NULL) {
@@ -310,7 +344,7 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
         return -1;
     }
 
-    int task_id = create_user_task(
+    int task_id = (supervised ? create_supervised_user_task : create_user_task)(
         entry_point + USER_PROGRAM_ADDRESS, user_stack,
         kernel_stack, page_directory, process);
     if (task_id < 0) {
@@ -326,7 +360,7 @@ int create_process_for_file_args(const char *filename, int argc,
                                  const char *const *argv,
                                  const char *working_directory) {
     return create_process_for_file_args_owned(filename, argc, argv,
-                                               working_directory, NULL);
+                                               working_directory, NULL, false);
 }
 
 int create_process(void* entry_point) {
@@ -336,7 +370,7 @@ int create_process(void* entry_point) {
 
     (void)scheduler_reap_finished_tasks();
 
-    int slot = claim_process_slot("Unknown", false, 0);
+    int slot = claim_process_slot("Unknown", false, 0, true);
     if (slot < 0) {
         printf("Error: Maximum number of running programs reached.\n");
         return -1;
@@ -737,7 +771,15 @@ int process_spawn_args(Process *parent, const char *path, int argc,
     char resolved[PROCESS_PATH_MAX];
     if (process_resolve_path(parent, path, resolved) != 0) return -1;
     return create_process_for_file_args_owned(
-        resolved, argc, argv, parent->working_directory, parent);
+        resolved, argc, argv, parent->working_directory, parent, false);
+}
+
+int process_spawn_supervised(const char *path, int argc,
+                             const char *const *argv) {
+    if (path == NULL || *path == '\0' || argc < 1 || argc > 32 ||
+        argv == NULL) return -1;
+    return create_process_for_file_args_owned(path, argc, argv, "/", NULL,
+                                               true);
 }
 
 int process_ipc_delegate(Process *source, ipc_handle_t handle,

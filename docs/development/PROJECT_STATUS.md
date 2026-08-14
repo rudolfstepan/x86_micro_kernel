@@ -1,6 +1,6 @@
 # Projektstatus
 
-Stand: 5. August 2026. Diese Datei beschreibt den aktuell verifizierten
+Stand: 14. August 2026. Diese Datei beschreibt den aktuell verifizierten
 Zustand. Ältere Sitzungs- und Diagnoseberichte im Repository sind historische
 Arbeitsdokumente.
 
@@ -20,6 +20,20 @@ Arbeitsdokumente.
 - Hostseitige Regressionstests für Image, VFS, Pfade und Toolchain
 - Ring-3-Prozesse mit eigenen Seitentabellen und geprüften User-Pointern
 - Schreibbarer FAT12-VFS mit Dateien, Verzeichnissen und FAT-Spiegelung
+- REIST IPC v1 mit begrenzten Queues, endlichen Deadlines, geschützten
+  Primary/Shadow-Metadaten und explizit abschwächender Capability-Delegation
+- Reservierte Supervisor-Restartkapazität: ein Taskslot, ein Prozessslot und
+  ein Admission-Budget von 32 physischen Frames
+
+## Aktueller REIST-Ausbaustand
+
+S0.3b-1 bis S0.3b-4 sind umgesetzt und durch Host-, Referenzbuild- und
+QEMU-Gasttests abgenommen. Normale Prozesse können die reservierte
+Restartkapazität nicht verbrauchen; ausschließlich der explizite
+Supervisor-Spawn darf sie verwenden. Als nächstes folgen per Prozess
+default-deny Domänenprofile und Capability-Gates für ambient verfügbare
+Syscalls. Eine vollständige neu startbare Userspace-Domäne ist damit noch
+nicht behauptet.
 
 Der zuletzt ausgeführte vollständige Windows-Build bootete in VMware bis zum
 Prompt `C:\>`, mountete `hdd0` als `/`, initialisierte E1000 und erhielt per

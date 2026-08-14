@@ -216,9 +216,16 @@ veröffentlicht werden. Prozesslokale Handle-Slots sind nur Selektoren; jede
 Verwendung muss einen geschützten, holder- und generationsgebundenen globalen
 Capability-Record auflösen.
 
+Ein Taskslot, ein Prozessslot und ein Admission-Budget von 32 physischen
+Frames bleiben für einen expliziten Supervisor-Spawn reserviert. Normale
+Ring-3-Spawns werden vor Prozesspublikation beziehungsweise Taskanlage
+abgewiesen, sobald sie diese Reserve berühren würden. Der Supervisorpfad ist
+separat benannt und darf genau diese statisch begrenzte Restartkapazität
+verwenden; fehlgeschlagene Erzeugung läuft durch die bestehenden vollständigen
+Rollbackpfade.
+
 Diese Basis ist noch kein vollständiger High-Assurance-IPC-Vertrag. Es fehlen:
 
-- reservierte Task-Slots und Admission Control für neu startbare Dienste,
 - Capability-Gates für `kill` und die weiterhin ambient verfügbaren Datei-,
   Display-, Prozess- und sonstigen Syscalls,
 - eine überwachte, neu startbare Ring-3-Domäne als S0.3b-Abnahmeobjekt.

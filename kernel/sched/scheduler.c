@@ -349,13 +349,33 @@ int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
     return task_id;
 }
 
-int create_user_task(uint32_t entry_point, uint32_t user_stack,
-                     uint32_t *kernel_stack, page_directory_t *page_directory,
-                     Process *process) {
+static size_t available_task_slots_locked(void) {
+    size_t available = MAX_TASKS - num_tasks;
+    for (int index = 0; index < num_tasks; ++index) {
+        if (index != current_task && tasks[index].status == TASK_FINISHED &&
+            tasks[index].kernel_stack == NULL &&
+            tasks[index].reap_kernel_stack == NULL &&
+            tasks[index].reap_page_directory == NULL) ++available;
+    }
+    return available;
+}
+
+static int create_user_task_admitted(
+    uint32_t entry_point, uint32_t user_stack, uint32_t *kernel_stack,
+    page_directory_t *page_directory, Process *process, bool supervised) {
     if (entry_point < USER_BASE || entry_point >= USER_TOP ||
         user_stack <= USER_BASE || user_stack > USER_TOP || !kernel_stack ||
         !page_directory) return -1;
     scheduler_preempt_disable();
+    uint32_t admission_flags = irq_save();
+    size_t available = available_task_slots_locked();
+    bool admitted = available != 0U &&
+        (supervised || available > SUPERVISED_TASK_RESERVE);
+    irq_restore(admission_flags);
+    if (!admitted) {
+        scheduler_preempt_enable();
+        return -1;
+    }
     int task_id = create_task((void (*)(void))(uintptr_t)entry_point,
                               kernel_stack, process);
     if (task_id < 0) {
@@ -371,6 +391,20 @@ int create_user_task(uint32_t entry_point, uint32_t user_stack,
     irq_restore(flags);
     scheduler_preempt_enable();
     return task_id;
+}
+
+int create_user_task(uint32_t entry_point, uint32_t user_stack,
+                     uint32_t *kernel_stack, page_directory_t *page_directory,
+                     Process *process) {
+    return create_user_task_admitted(entry_point, user_stack, kernel_stack,
+                                     page_directory, process, false);
+}
+
+int create_supervised_user_task(
+    uint32_t entry_point, uint32_t user_stack, uint32_t *kernel_stack,
+    page_directory_t *page_directory, Process *process) {
+    return create_user_task_admitted(entry_point, user_stack, kernel_stack,
+                                     page_directory, process, true);
 }
 
 static void activate_task_address_space(int task_index) {

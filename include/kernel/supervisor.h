@@ -57,6 +57,8 @@ typedef struct {
 void supervisor_init(void);
 void supervisor_clock_tick(uint64_t now_ms);
 bool supervisor_start_worker(void);
+int supervisor_spawn_service(const char *path, int argc,
+                             const char *const *argv);
 int supervisor_register(const char *name, const supervisor_config_t *config,
                         const supervisor_fence_ops_t *fence_ops,
                         uint64_t now_ms, supervisor_handle_t *handle_out);

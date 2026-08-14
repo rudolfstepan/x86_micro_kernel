@@ -77,7 +77,7 @@ und maximale Fehlerreaktionszeiten rückverfolgbar festzulegen.
 | Boot | BIOS/MBR, zweistufiger Loader, E820, A20, ELF32-Prüfung, Kernel-CRC32, FAT12-Floppy, optionaler nativer VBE-LFB-Handoff | stabiler Referenzpfad mit VGA-Rückfall |
 | CPU | GDT/IDT/TSS, Ring 0/3, Exceptions, PIC, gegen PIT kalibrierter lokaler APIC-Timer, PIT-Scheduler-Fallback, `INT 0x80` | funktionsfähiger Single-Core-Pfad |
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
-| Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit explizit delegierten generationsgebundenen Capabilities, endlichen Deadlines und geschützten Steuerdaten | maximal 8 Tasks; IPC noch ohne reservierte Dienstkapazität und vollständige Domänenprofile |
+| Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit explizit delegierten generationsgebundenen Capabilities, endlichen Deadlines, geschützten Steuerdaten und reservierter Restart-Admission | maximal 8 Tasks; IPC noch ohne vollständige Domänenprofile |
 | Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, FAT32-Rename/Replace im Undo-Journal, FAT32/ATA-`fsync`, EXT2 lesen | persistenter Editor-Commit vorhanden; ABI, FAT12-Sync und breitere Rename-Semantik fehlen |
 | Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 und COM1 mit blockierendem Console-Wait, RTC, VGA, nativer VBE-RGB-Framebuffer | Referenzhardware gut, moderne Geräte fehlen |
 | Netzwerk | E1000, RTL8139, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping am besten verifiziert |
@@ -168,7 +168,8 @@ separate Bereinigung der optionalen Legacy-Image-Tests bleiben Folgearbeiten.
   vier Nachrichten je Queue, 128 Byte Nutzlast, blockierendes Send/Receive,
   explizite abschwächende Delegation ohne `CONTROL` und vollständiger
   Exit-Widerruf
-- reservierte Task-Slots und Admission Control für überwachte Dienste schaffen
+- **umgesetzt:** ein Taskslot, ein Prozessslot und 32 Frames bleiben für
+  explizite Supervisor-Spawns reserviert
 - `kill` sowie Datei-, Display-, Prozess- und weitere ambient verfügbare
   Syscalls durch Capability- beziehungsweise Domänenrichtlinien begrenzen
 - generische Wait-Queues auf weitere Geräte- und Protokollereignisse anwenden
@@ -678,7 +679,7 @@ Exit-Revoke ab.
 
 S0.3a ist ausdrücklich nur der Mechanismus-Unterbau. Endliche Deadlines,
 CRC-/`critical_object`-Schutz und abschwächende Delegation sind umgesetzt.
-Noch offen sind reservierte Service-Taskslots und Capability-Gates für `kill` sowie die heute
+Noch offen sind Capability-Gates für `kill` sowie die heute
 ambient verfügbaren Datei-, Display-, Prozess- und sonstigen Syscalls. Ohne
 diese Gates besitzt ein IPC-nutzender Prozess noch kein vollständiges
 Least-Privilege-Profil.
@@ -704,8 +705,9 @@ potenziell blockierende Hardwareaktion verbleibt im Foreground. Ein Aufruf von
 `supervisor_service_one()` verarbeitet maximal eine Fence-/Verify-Aktion;
 Restart und Selbsttest bleiben explizite Folgeereignisse. Der Executor läuft in
 einem reservierten Kernel-Worker alle 10 ms; dieser beansprucht einen der acht
-Task-Slots. Zusätzliche reservierte Slots für neu startbare Userdienste fehlen
-noch. Restart-/Safe-State-Ereignisse bleiben level-triggered.
+Task-Slots. Zusätzlich bleiben ein Taskslot, ein Prozessslot und 32 Frames per
+Admission Control exklusiv für einen Supervisor-Restart verfügbar.
+Restart-/Safe-State-Ereignisse bleiben level-triggered.
 Beim Safe State wird derzeit konservativ das globale Output-Fence verriegelt.
 Mit `network-tx` ist die erste reale Domäne registriert. Ihre 250-ms-Deadline
 gilt ausschließlich während einer Sendetransaktion; Idle erzeugt daher keinen
@@ -997,7 +999,9 @@ Inkrementen zu schließen:
 3. explizite selektive Delegation mit ausschließlich abschwächbaren Rechten —
    umgesetzt; Ziel-PID und Prozessgeneration werden atomar gebunden, Spawn
    vererbt keine IPC-Autorität mehr,
-4. mindestens ein reservierter Service-/Restart-Taskslot mit Admission Control,
+4. mindestens ein reservierter Service-/Restart-Taskslot mit Admission Control
+   — umgesetzt; normale Spawns können weder den letzten Task-/Prozessslot noch
+   das 32-Frame-Restartbudget verbrauchen,
 5. Capability-/Domänen-Gates für `kill` und alle ambienten Datei-, Display-,
    Prozess- und sonstigen Syscalls der Probedomäne.
 

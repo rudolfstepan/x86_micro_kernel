@@ -5,6 +5,7 @@
 #include "arch/x86/include/interrupt.h"
 #include "include/kernel/panic.h"
 #include "include/kernel/output_fence.h"
+#include "kernel/proc/process.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
 #endif
@@ -358,9 +359,22 @@ bool supervisor_start_worker(void) {
     }
     return true;
 }
+
+int supervisor_spawn_service(const char *path, int argc,
+                             const char *const *argv) {
+    return process_spawn_supervised(path, argc, argv);
+}
 #else
 bool supervisor_start_worker(void) {
     return false;
+}
+
+int supervisor_spawn_service(const char *path, int argc,
+                             const char *const *argv) {
+    (void)path;
+    (void)argc;
+    (void)argv;
+    return -1;
 }
 #endif
 

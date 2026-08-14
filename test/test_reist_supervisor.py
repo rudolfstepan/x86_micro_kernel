@@ -64,6 +64,10 @@ class ReistSupervisorTests(unittest.TestCase):
 
     def test_reserved_foreground_worker_is_fail_closed(self):
         source = (ROOT / "kernel/init/supervisor.c").read_text(encoding="utf-8")
+        scheduler_h = (ROOT / "kernel/sched/scheduler.h").read_text(encoding="utf-8")
+        scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(encoding="utf-8")
+        process_h = (ROOT / "kernel/proc/process.h").read_text(encoding="utf-8")
+        process = (ROOT / "kernel/proc/process.c").read_text(encoding="utf-8")
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
         guest = (ROOT / "examples/userspace/guest_test.c").read_text(encoding="utf-8")
         self.assertIn("static void supervisor_worker(void)", source)
@@ -71,7 +75,15 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("output_fence_all();", source)
         self.assertIn("scheduler_sleep_ms(SUPERVISOR_CHECK_INTERVAL_MS)", source)
         self.assertIn("if (!supervisor_start_worker())", kernel)
-        self.assertIn("int children[5];", guest)
+        self.assertIn("SUPERVISED_TASK_RESERVE 1U", scheduler_h)
+        self.assertIn("available > SUPERVISED_TASK_RESERVE", scheduler)
+        self.assertIn("create_supervised_user_task", scheduler)
+        self.assertIn("SUPERVISED_PROCESS_RESERVE 1U", process_h)
+        self.assertIn("SUPERVISED_RESTART_FRAME_RESERVE 32U", process_h)
+        self.assertIn("free_slots <= SUPERVISED_PROCESS_RESERVE", process)
+        self.assertIn("memory_stats.free_frame_bytes / PAGE_SIZE", process)
+        self.assertIn("process_spawn_supervised", source)
+        self.assertIn("int children[4];", guest)
 
 
 if __name__ == "__main__":

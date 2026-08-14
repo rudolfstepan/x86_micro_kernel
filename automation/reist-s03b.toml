@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3b"
-active_id = "S0.3b-4"
+active_id = "S0.3b-5"
 
 [policy]
 one_package_per_run = true
@@ -172,7 +172,7 @@ evidence = [
 
 [[packages]]
 id = "S0.3b-4"
-status = "active"
+status = "done"
 risk = "high"
 title = "Reserved restart capacity"
 scope = "Reserve at least one task/process slot and bounded memory admission for supervisor-managed service restart. Ambient spawn must fail before consuming the reserve."
@@ -187,6 +187,7 @@ allowed_files = [
   "examples/userspace/guest_test.c",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
   "automation/reist-s03b.toml"
 ]
 invariants = [
@@ -213,11 +214,17 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: reserve supervised restart capacity"
-evidence = []
+evidence = [
+  "python test/test_reist_supervisor.py -q",
+  "python test/test_memory_r12.py -q",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode memory",
+]
 
 [[packages]]
 id = "S0.3b-5"
-status = "queued"
+status = "active"
 risk = "high"
 title = "Least-privilege domain profiles"
 scope = "Add explicit per-process domain profiles and default-deny gates for kill and ambient file, display, process-control and other syscalls used by the probe. Authorization must precede all side effects. Preserve the unrestricted compatibility profile for existing programs."
@@ -235,6 +242,7 @@ allowed_files = [
   "examples/userspace/guest_test.c",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
   "automation/reist-s03b.toml"
 ]
 invariants = [
@@ -286,6 +294,7 @@ allowed_files = [
   "test/test_qemu_smoke.py",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
   "automation/reist-s03b.toml"
 ]
 invariants = [
