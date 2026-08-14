@@ -28,6 +28,7 @@ REIST_PROBE_MARKERS = (
     "REIST_PROBE INVALID_RECOVERED",
     "REIST_PROBE REINTEGRATED",
 )
+REIST_SERVICE_MARKER = "TEST_STAGE DIAGNOSTIC_SERVICE_OK"
 SHELL_PROMPT = "C:\\>"
 FAIL_MARKERS = (
     "TEST_FAIL",
@@ -278,6 +279,9 @@ def validate(
             return "missing REIST probe recovery marker"
         if positions != sorted(positions) or positions[-1] > test:
             return "REIST probe recovery markers are out of order"
+        service = exact_line_position(transcript, REIST_SERVICE_MARKER)
+        if service < positions[-1] or service > test:
+            return "missing ordered REIST diagnostic-service marker"
     return None
 
 

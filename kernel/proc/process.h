@@ -18,7 +18,7 @@
 #define SUPERVISED_RESTART_FRAME_RESERVE 32U
 #define PROCESS_DOMAIN_PROFILE_VERSION 1U
 #define PROCESS_DOMAIN_SYSCALL_WORDS 2U
-#define PROCESS_DOMAIN_SYSCALL_LIMIT 57U
+#define PROCESS_DOMAIN_SYSCALL_LIMIT 58U
 
 typedef enum {
     PROCESS_DOMAIN_COMPATIBILITY = 1,
@@ -102,6 +102,9 @@ int process_get_identity(int pid, uint32_t *generation_out);
 bool process_identity_alive(int pid, uint32_t generation);
 int process_ipc_delegate(Process *source, ipc_handle_t handle,
                          int target_pid, uint32_t rights);
+int process_ipc_delegate_identity(int source_pid, uint32_t source_generation,
+                                  ipc_handle_t handle, Process *target,
+                                  uint32_t rights);
 int process_wait_status(Process* parent, int pid, int* status);
 int process_wait_status_locked(Process* parent, int pid, int* status,
                                wait_queue_t** wait_queue);

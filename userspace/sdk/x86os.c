@@ -109,6 +109,12 @@ int x86os_reist_report(uint32_t report_type, uint32_t value) {
     return (int)x86os_syscall(X86OS_SYS_REIST_REPORT, report_type, value, 0);
 }
 
+int x86os_service_connect(uint32_t service_id,
+                          x86os_ipc_handle_t* handle) {
+    return (int)x86os_syscall(X86OS_SYS_SERVICE_CONNECT, service_id,
+                              (uintptr_t)handle, 0);
+}
+
 int x86os_display_info(x86os_display_info_t* info) {
     if (!info) return -22;
     info->version = X86OS_DISPLAY_ABI_VERSION;

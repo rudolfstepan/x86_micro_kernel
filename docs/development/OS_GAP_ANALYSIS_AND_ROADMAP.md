@@ -1018,6 +1018,15 @@ verschieben, danach Netzwerk und Storage schrittweise aus Ring 0 lösen. Jede
 Migration benötigt Fault-Injection, Ressourcenbudgets und einen nachweisbaren
 degradierten Betrieb ohne Rückfall auf ambienten Kernelzugriff.
 
+**S0.3c-1 ist umgesetzt:** Die gesunde Ersatzdomäne stellt einen begrenzten
+Diagnosedienst bereit. Ein neuer append-only Service-Connect-Syscall 57 prüft
+den Userpuffer vor Delegation, validiert die aktuelle Dienst-PID und
+-Generation und vergibt ausschließlich `SEND|RECEIVE`. `CONTROL` verbleibt
+beim Dienst. Der reale Gast sendet `DIAG`, erhält `REIST_DIAG_OK` innerhalb
+endlicher IPC-Deadlines und läuft danach bis `TEST_OK`. Die nächste Stufe
+S0.3c-2 migriert einen unkritischen Netzwerk-/Diagnosebaustein vollständig aus
+Ring 0; ein bloßer Proxy bei weiterhin autoritativem Kernelpfad zählt nicht.
+
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions
 bei Kernel-Panic benötigt S0.3: eine unabhängige Supervisor-/Standby-Domäne,

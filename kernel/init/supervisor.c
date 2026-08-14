@@ -46,6 +46,7 @@ static uint32_t next_poll_slot;
 typedef struct {
     bool active;
     bool fenced;
+    bool healthy;
     supervisor_handle_t handle;
     int pid;
     uint32_t process_generation;
@@ -371,6 +372,7 @@ static bool probe_fence_apply(void *context) {
     supervisor_probe_runtime_t *runtime = context;
     if (runtime == NULL || !runtime->active) return false;
     runtime->fenced = true;
+    runtime->healthy = false;
     if (runtime->launch_count == 1U) printf("REIST_PROBE CRASH_DETECTED\n");
     else if (runtime->launch_count == 2U) printf("REIST_PROBE HANG_DETECTED\n");
     else if (runtime->launch_count == 3U)
@@ -398,6 +400,7 @@ static bool probe_spawn_next(void) {
     if (pid <= 0 || process_get_identity(pid, &generation) != 0) return false;
     probe_runtime.pid = pid;
     probe_runtime.process_generation = generation;
+    probe_runtime.healthy = false;
     ++probe_runtime.launch_count;
     return true;
 }
@@ -446,6 +449,7 @@ int supervisor_probe_report(int pid, uint32_t generation,
                                                 value, now_ms);
         if (result == 0 && probe_runtime.fenced) {
             probe_runtime.fenced = false;
+            probe_runtime.healthy = true;
             if (probe_runtime.launch_count == 2U)
                 printf("\nREIST_PROBE CRASH_DETECTED\n"
                        "REIST_PROBE CRASH_RECOVERED\n");
@@ -458,6 +462,7 @@ int supervisor_probe_report(int pid, uint32_t generation,
                 printf("REIST_PROBE REINTEGRATED\n");
             }
         }
+        if (result == 0) probe_runtime.healthy = true;
         return result;
     }
     if (report_type == REIST_REPORT_INVALID) {
@@ -465,6 +470,25 @@ int supervisor_probe_report(int pid, uint32_t generation,
         return -1;
     }
     return -1;
+}
+
+int supervisor_service_connect(Process *client, uint32_t service_id,
+                               uint32_t *handle_out) {
+    if (client == NULL || handle_out == NULL ||
+        service_id != REIST_SERVICE_DIAGNOSTIC || !probe_runtime.active ||
+        probe_runtime.fenced || !probe_runtime.healthy ||
+        probe_runtime.launch_count < 4U ||
+        probe_runtime.endpoint_handle == IPC_INVALID_HANDLE ||
+        !process_identity_alive(probe_runtime.pid,
+                                probe_runtime.process_generation)) {
+        return -11;
+    }
+    int result = process_ipc_delegate_identity(
+        probe_runtime.pid, probe_runtime.process_generation,
+        probe_runtime.endpoint_handle, client,
+        IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE);
+    if (result == 0) *handle_out = probe_runtime.endpoint_handle;
+    return result;
 }
 
 static void supervisor_worker(void) {
@@ -533,6 +557,12 @@ int supervisor_probe_report(int pid, uint32_t generation,
                             uint32_t report_type, uint32_t value,
                             uint64_t now_ms) {
     (void)pid; (void)generation; (void)report_type; (void)value; (void)now_ms;
+    return -1;
+}
+
+int supervisor_service_connect(struct Process *client, uint32_t service_id,
+                               uint32_t *handle_out) {
+    (void)client; (void)service_id; (void)handle_out;
     return -1;
 }
 #endif

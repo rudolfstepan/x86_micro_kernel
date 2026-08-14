@@ -369,6 +369,24 @@ static int test_ipc_capabilities(void) {
     return 0;
 }
 
+static int test_diagnostic_service(void) {
+    x86os_ipc_handle_t handle = X86OS_IPC_INVALID_HANDLE;
+    if (x86os_service_connect(X86OS_SERVICE_DIAGNOSTIC,
+            (x86os_ipc_handle_t*)(uintptr_t)0x1000U) != -14 ||
+        x86os_service_connect(0xFFFFFFFFU, &handle) >= 0 ||
+        x86os_service_connect(X86OS_SERVICE_DIAGNOSTIC, &handle) != 0 ||
+        handle == X86OS_IPC_INVALID_HANDLE) return -1;
+
+    x86os_ipc_message_t message;
+    ipc_message_set(&message, "DIAG");
+    if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
+    ipc_message_prepare(&message);
+    if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
+        !ipc_message_is(&message, "REIST_DIAG_OK")) return -1;
+    /* Clients receive attenuated SEND/RECEIVE rights, never ownership. */
+    return x86os_ipc_close(handle) < 0 ? 0 : -1;
+}
+
 static int test_scheduler_time(void) {
     uint64_t start;
     uint64_t now;
@@ -548,9 +566,15 @@ int main(int argc, char **argv) {
     }
     x86os_puts("TEST_STAGE IPC_OK\n");
 
+    if (test_diagnostic_service() != 0) {
+        x86os_puts("TEST_FAIL DIAGNOSTIC_SERVICE\n");
+        return 6;
+    }
+    x86os_puts("TEST_STAGE DIAGNOSTIC_SERVICE_OK\n");
+
     if (test_task_capacity_and_parenting() != 0) {
         x86os_puts("TEST_FAIL TASK_CAPACITY\n");
-        return 6;
+        return 7;
     }
     x86os_puts("TEST_STAGE TASK_CAPACITY_OK\n");
     x86os_puts("TEST_STAGE REIST_PROGRESS_OK\n");
@@ -560,7 +584,7 @@ int main(int argc, char **argv) {
         wait_for_expected("FAULTPF.PRG", 142) != 0 ||
         wait_for_expected("FAULTSTK.PRG", 142) != 0) {
         x86os_puts("TEST_FAIL EXCEPTIONS\n");
-        return 7;
+        return 8;
     }
     x86os_puts("TEST_STAGE EXCEPTIONS_OK\n");
     x86os_puts("TEST_OK\n");

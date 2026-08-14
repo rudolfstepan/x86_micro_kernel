@@ -1,0 +1,59 @@
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+class ReistServiceDomainTests(unittest.TestCase):
+    def test_connect_abi_is_append_only_and_pointer_checked_first(self):
+        libc = read("lib/libc/stdlib.h")
+        sdk = read("userspace/sdk/include/x86os.h")
+        syscall = read("kernel/syscall/syscall_table.c")
+        self.assertIn("SYS_SERVICE_CONNECT 57", libc)
+        self.assertIn("X86OS_SYS_SERVICE_CONNECT = 57", sdk)
+        start = syscall.index("static int syscall_service_connect(")
+        end = syscall.index("\n}", start)
+        body = syscall[start:end]
+        self.assertLess(body.index("user_range_accessible"),
+                        body.index("supervisor_service_connect"))
+        self.assertIn("copy_to_user_space", body)
+
+    def test_directory_delegation_is_generation_scoped_and_attenuated(self):
+        supervisor = read("kernel/init/supervisor.c")
+        process = read("kernel/proc/process.c")
+        self.assertIn("process_identity_alive(probe_runtime.pid", supervisor)
+        self.assertIn("probe_runtime.process_generation", supervisor)
+        self.assertIn("IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE", supervisor)
+        self.assertNotIn("IPC_RIGHT_CONTROL);", supervisor[
+            supervisor.index("int supervisor_service_connect("):
+            supervisor.index("static void supervisor_worker(")])
+        self.assertIn("candidate->generation == source_generation", process)
+
+    def test_real_ring3_service_has_bounded_request_reply(self):
+        service = read("examples/userspace/reist_probe.c")
+        guest = read("examples/userspace/guest_test.c")
+        self.assertIn('message_is(&request, "DIAG")', service)
+        self.assertIn('"REIST_DIAG_OK"', service)
+        self.assertIn("x86os_ipc_receive_timeout(endpoint, &request, 40U)",
+                      service)
+        self.assertIn("x86os_ipc_send_timeout(endpoint, &response, 100U)",
+                      service)
+        self.assertIn("x86os_service_connect", guest)
+        self.assertIn("TEST_STAGE DIAGNOSTIC_SERVICE_OK", guest)
+
+    def test_service_is_unavailable_until_reintegrated(self):
+        supervisor = read("kernel/init/supervisor.c")
+        connect = supervisor[supervisor.index("int supervisor_service_connect("):
+                             supervisor.index("static void supervisor_worker(")]
+        for condition in ("probe_runtime.fenced", "!probe_runtime.healthy",
+                          "probe_runtime.launch_count < 4U"):
+            self.assertIn(condition, connect)
+
+
+if __name__ == "__main__":
+    unittest.main()

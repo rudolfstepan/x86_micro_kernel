@@ -225,7 +225,7 @@ verwenden; fehlgeschlagene Erzeugung läuft durch die bestehenden vollständigen
 Rollbackpfade.
 
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
-Bitinventar der gegenwärtig 57 Syscalls. Normale Programme erhalten explizit
+Bitinventar der gegenwärtig 58 Syscalls. Normale Programme erhalten explizit
 das Kompatibilitätsprofil. Das Supervisor-Profil `PROBE` beginnt dagegen bei
 Default-Deny und erlaubt ausschließlich Exit, Identität, Yield/Sleep,
 monotone Diagnosezeit, Memory-Statistik und die für den kontrollierten Kanal
@@ -241,6 +241,16 @@ innerhalb endlicher Deadlines über Fence, Revoke/Reap, Restart und Selbsttest
 zur Reintegrationsentscheidung. Das beweist Prozessisolation und Recovery des
 Probekanals, aber noch keine vom modularen Monolithen unabhängige Kernel-, CPU-
 oder RAM-Fehlerdomäne.
+
+S0.3c beginnt mit einem echten, wenn auch noch unkritischen Dienst: Der nach
+der Fault-Injection gesund reintegrierte Prozess beantwortet begrenzte
+Diagnoseanfragen über IPC. Syscall 57 ist ein schmaler Service-Directory-
+Einstieg. Er prüft Zielpuffer und Dienstzustand vor jeder Veröffentlichung,
+bindet die Besitzeridentität an PID plus Generation und delegiert an genau
+einen Client ausschließlich `SEND|RECEIVE`, niemals `CONTROL`. Der Dienst
+arbeitet mit 40-ms-Receive- und 100-ms-Send-Deadlines. Damit ist erstmals eine
+reale Funktion hinter der restartbaren Ring-3-Grenze erreichbar; Kernelzeit,
+Netzwerk, Storage und GUI bleiben noch Ring-0-/Kompatibilitätspfade.
 
 ## Betriebsstufen
 

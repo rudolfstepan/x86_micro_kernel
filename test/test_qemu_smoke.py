@@ -29,6 +29,7 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
     def test_reist_probe_markers_are_required_in_order(self) -> None:
         transcript = "\n".join((
             "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,
+            RUNNER_MODULE.REIST_SERVICE_MARKER,
             "TEST_OK", "C:\\>", "",
         ))
         self.assertIsNone(RUNNER_MODULE.validate(
@@ -42,6 +43,10 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         )
         self.assertIn("out of order", RUNNER_MODULE.validate(
             reversed_markers, expect_reist_probe=True))
+        no_service = transcript.replace(
+            RUNNER_MODULE.REIST_SERVICE_MARKER + "\n", "")
+        self.assertIn("diagnostic-service", RUNNER_MODULE.validate(
+            no_service, expect_reist_probe=True))
 
     def test_reist_probe_completion_precedes_guest_command(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")

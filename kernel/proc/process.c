@@ -869,6 +869,27 @@ int process_ipc_delegate(Process *source, ipc_handle_t handle,
     return result;
 }
 
+int process_ipc_delegate_identity(int source_pid, uint32_t source_generation,
+                                  ipc_handle_t handle, Process *target,
+                                  uint32_t rights) {
+    if (source_pid <= 0 || source_generation == 0U || target == NULL)
+        return -22;
+    scheduler_preempt_disable();
+    Process *source = NULL;
+    for (size_t index = 0; index < MAX_PROGRAMS; ++index) {
+        Process *candidate = &process_list[index];
+        if (candidate->is_running && candidate->pid == source_pid &&
+            candidate->generation == source_generation) {
+            source = candidate;
+            break;
+        }
+    }
+    int result = source != NULL
+        ? ipc_delegate(source, handle, target, rights) : -9;
+    scheduler_preempt_enable();
+    return result;
+}
+
 int process_wait_status_locked(Process *parent, int pid, int *status,
                                wait_queue_t **wait_queue) {
     if (parent == NULL || status == NULL || pid <= 0) return -1;

@@ -192,6 +192,21 @@ static int syscall_reist_report(uint32_t report_type, uint32_t value) {
                                    report_type, value, pit_monotonic_ms());
 }
 
+static int syscall_service_connect(uint32_t service_id,
+                                   ipc_handle_t *user_handle) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_handle;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(*user_handle), true))
+        return -14;
+    ipc_handle_t handle = IPC_INVALID_HANDLE;
+    int result = supervisor_service_connect(process, service_id, &handle);
+    if (result != 0) return result;
+    return copy_to_user_space(directory, address, &handle, sizeof(handle)) == 0
+        ? 0 : -14;
+}
+
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -706,6 +721,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_ipc_receive_timeout,// Syscall 54: Timed IPC receive
     (void*)&syscall_ipc_delegate,       // Syscall 55: Attenuated delegation
     (void*)&syscall_reist_report,       // Syscall 56: Probe health report
+    (void*)&syscall_service_connect,    // Syscall 57: Connect named service
     // Add more syscalls here as needed
 };
 
@@ -995,6 +1011,10 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_REIST_REPORT:
             result = (uint32_t)syscall_reist_report(arg1, arg2);
+            break;
+        case SYS_SERVICE_CONNECT:
+            result = (uint32_t)syscall_service_connect(
+                arg1, (ipc_handle_t*)(uintptr_t)arg2);
             break;
         default:
             result = (uint32_t)-1;
