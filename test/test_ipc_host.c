@@ -265,6 +265,39 @@ static int test_global_endpoint_quota(void) {
     return 0;
 }
 
+static int test_integrity_fault_injection(void) {
+    Process owner = process(200, 1U);
+    Process child = process(201, 1U);
+    ipc_handle_t handle = 0U;
+    ipc_message_t sent = message(0x5AU);
+    ipc_message_t received;
+
+    ipc_init();
+    CHECK(ipc_create(&owner, &handle) == 0);
+    CHECK(ipc_inherit(&owner, &child) == 0);
+    CHECK(ipc_fault_inject(IPC_FAULT_ENDPOINT, 0U, 0U, 4U, 1U) == 0);
+    CHECK(ipc_send(&owner, handle, &sent) == 0);
+    CHECK(ipc_integrity_correction_count() == 1U);
+
+    CHECK(ipc_fault_inject(IPC_FAULT_MESSAGE, 0U, 0U, 4U, 3U) == 0);
+    CHECK(ipc_fault_inject(IPC_FAULT_MESSAGE, 0U, 1U, 4U, 3U) == 0);
+    prepare_receive(&received);
+    unsigned wakes_before = wake_all_count;
+    CHECK(ipc_receive(&child, handle, &received) == IPC_EINTEGRITY);
+    CHECK(wake_all_count >= wakes_before + 2U);
+    CHECK(received.length == 0U);
+
+    ipc_init();
+    owner = process(202, 1U);
+    CHECK(ipc_create(&owner, &handle) == 0);
+    CHECK(ipc_fault_inject(IPC_FAULT_CAPABILITY, 0U, 0U, 4U, 3U) == 0);
+    CHECK(ipc_fault_inject(IPC_FAULT_CAPABILITY, 0U, 1U, 4U, 3U) == 0);
+    wakes_before = wake_all_count;
+    CHECK(ipc_send(&owner, handle, &sent) == IPC_EINTEGRITY);
+    CHECK(wake_all_count >= wakes_before + 2U);
+    return 0;
+}
+
 int main(void) {
     int result = test_rights_fifo_and_bounds();
     if (result != 0) return result;
@@ -272,5 +305,7 @@ int main(void) {
     if (result != 0) return result;
     result = test_global_endpoint_quota();
     if (result != 0) return result;
-    return test_message_stress_without_resource_growth();
+    result = test_message_stress_without_resource_growth();
+    if (result != 0) return result;
+    return test_integrity_fault_injection();
 }

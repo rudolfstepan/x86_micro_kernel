@@ -1,4 +1,5 @@
 #include "include/kernel/ipc.h"
+#include "include/kernel/critical_object.h"
 
 #include "kernel/proc/process.h"
 #include "kernel/sched/scheduler.h"
@@ -28,6 +29,8 @@ static void ipc_unlock(uint32_t flags) { irq_restore(flags); }
 #define IPC_EPIPE    (-32)
 #define IPC_EMSGSIZE (-90)
 #define IPC_ETIMEDOUT (-110)
+#define IPC_METADATA_VERSION 1U
+#define IPC_MESSAGE_CHUNKS 3U
 
 typedef struct {
     bool active;
@@ -59,6 +62,165 @@ typedef struct {
 static ipc_endpoint_t ipc_endpoints[IPC_MAX_ENDPOINTS];
 static ipc_capability_record_t
     ipc_capability_records[IPC_MAX_CAPABILITY_RECORDS];
+
+typedef struct {
+    uint32_t active;
+    uint32_t retired;
+    uint32_t peer_seen;
+    uint32_t generation;
+    int32_t owner_pid;
+    uint32_t owner_generation;
+    uint32_t peer_capabilities;
+    uint32_t head;
+    uint32_t count;
+} ipc_endpoint_metadata_t;
+
+typedef struct {
+    uint32_t active;
+    ipc_handle_t handle;
+    uintptr_t holder;
+    int32_t holder_pid;
+    uint32_t holder_generation;
+    uint32_t rights;
+    uint32_t endpoint_slot;
+} ipc_capability_metadata_t;
+
+typedef struct {
+    ipc_message_t message;
+    int32_t sender_pid;
+    uint32_t sender_generation;
+} ipc_protected_message_t;
+
+static critical_object_t ipc_endpoint_integrity[IPC_MAX_ENDPOINTS];
+static critical_object_t ipc_capability_integrity[IPC_MAX_CAPABILITY_RECORDS];
+static critical_object_t
+    ipc_message_integrity[IPC_MAX_ENDPOINTS][IPC_QUEUE_DEPTH]
+                         [IPC_MESSAGE_CHUNKS];
+static uint32_t ipc_integrity_corrections;
+static bool ipc_capability_scan_corrupt;
+
+_Static_assert(sizeof(ipc_endpoint_metadata_t) <= CRITICAL_OBJECT_MAX_PAYLOAD,
+               "IPC endpoint metadata exceeds critical-object capacity");
+_Static_assert(sizeof(ipc_capability_metadata_t) <= CRITICAL_OBJECT_MAX_PAYLOAD,
+               "IPC capability metadata exceeds critical-object capacity");
+_Static_assert(sizeof(ipc_protected_message_t) <=
+                   IPC_MESSAGE_CHUNKS * CRITICAL_OBJECT_MAX_PAYLOAD,
+               "IPC message split is too small");
+
+static bool endpoint_metadata_valid(const void *payload, size_t length) {
+    const ipc_endpoint_metadata_t *value = payload;
+    if (length != sizeof(*value) || value->active > 1U ||
+        value->retired > 1U || value->peer_seen > 1U ||
+        value->generation > IPC_HANDLE_GENERATION_MAX ||
+        value->peer_capabilities > IPC_MAX_CAPABILITY_RECORDS ||
+        value->head >= IPC_QUEUE_DEPTH || value->count > IPC_QUEUE_DEPTH) {
+        return false;
+    }
+    return value->active == 0U ||
+        (value->generation != 0U && value->owner_pid > 0 &&
+         value->owner_generation != 0U);
+}
+
+static bool capability_metadata_valid(const void *payload, size_t length) {
+    const ipc_capability_metadata_t *value = payload;
+    const uint32_t all_rights =
+        IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE | IPC_RIGHT_CONTROL;
+    if (length != sizeof(*value) || value->active > 1U) return false;
+    return value->active == 0U ||
+        (value->handle != IPC_INVALID_HANDLE && value->holder != 0U &&
+         value->holder_pid > 0 && value->holder_generation != 0U &&
+         value->rights != 0U && (value->rights & ~all_rights) == 0U &&
+         value->endpoint_slot < IPC_MAX_ENDPOINTS);
+}
+
+static bool message_chunk_valid(const void *payload, size_t length) {
+    (void)payload;
+    return length != 0U && length <= CRITICAL_OBJECT_MAX_PAYLOAD;
+}
+
+static void note_integrity_result(critical_read_result_t result) {
+    if ((result == CRITICAL_READ_CORRECTED ||
+         result == CRITICAL_READ_RECOVERED) &&
+        ipc_integrity_corrections != UINT32_MAX) {
+        ++ipc_integrity_corrections;
+    }
+}
+
+static int seal_endpoint(size_t slot) {
+    ipc_endpoint_t *endpoint = &ipc_endpoints[slot];
+    ipc_endpoint_metadata_t value = {
+        endpoint->active ? 1U : 0U,
+        endpoint->retired ? 1U : 0U,
+        endpoint->peer_seen ? 1U : 0U,
+        endpoint->generation,
+        endpoint->owner_pid,
+        endpoint->owner_generation,
+        endpoint->peer_capabilities,
+        endpoint->head,
+        endpoint->count,
+    };
+    if (!endpoint_metadata_valid(&value, sizeof(value))) return IPC_EINTEGRITY;
+    return critical_object_update(&ipc_endpoint_integrity[slot],
+        IPC_METADATA_VERSION, &value, sizeof(value), endpoint_metadata_valid);
+}
+
+static int load_endpoint(size_t slot) {
+    ipc_endpoint_metadata_t value;
+    size_t length = 0U;
+    critical_read_result_t result = critical_object_read(
+        &ipc_endpoint_integrity[slot], IPC_METADATA_VERSION, &value,
+        sizeof(value), &length, endpoint_metadata_valid);
+    if (result < 0 || length != sizeof(value)) return IPC_EINTEGRITY;
+    note_integrity_result(result);
+    ipc_endpoint_t *endpoint = &ipc_endpoints[slot];
+    endpoint->active = value.active != 0U;
+    endpoint->retired = value.retired != 0U;
+    endpoint->peer_seen = value.peer_seen != 0U;
+    endpoint->generation = value.generation;
+    endpoint->owner_pid = value.owner_pid;
+    endpoint->owner_generation = value.owner_generation;
+    endpoint->peer_capabilities = value.peer_capabilities;
+    endpoint->head = value.head;
+    endpoint->count = value.count;
+    return 0;
+}
+
+static int seal_capability(size_t slot) {
+    ipc_capability_record_t *record = &ipc_capability_records[slot];
+    ipc_capability_metadata_t value = {
+        record->active ? 1U : 0U,
+        record->handle,
+        (uintptr_t)record->holder,
+        record->holder_pid,
+        record->holder_generation,
+        record->rights,
+        record->endpoint_slot,
+    };
+    if (!capability_metadata_valid(&value, sizeof(value))) {
+        return IPC_EINTEGRITY;
+    }
+    return critical_object_update(&ipc_capability_integrity[slot],
+        IPC_METADATA_VERSION, &value, sizeof(value), capability_metadata_valid);
+}
+
+static int load_capability(size_t slot) {
+    ipc_capability_metadata_t value;
+    size_t length = 0U;
+    critical_read_result_t result = critical_object_read(
+        &ipc_capability_integrity[slot], IPC_METADATA_VERSION, &value,
+        sizeof(value), &length, capability_metadata_valid);
+    if (result < 0 || length != sizeof(value)) return IPC_EINTEGRITY;
+    note_integrity_result(result);
+    ipc_capability_record_t *record = &ipc_capability_records[slot];
+    record->active = value.active != 0U;
+    record->handle = value.handle;
+    record->holder = (Process *)value.holder;
+    record->holder_pid = value.holder_pid;
+    record->holder_generation = value.holder_generation;
+    record->rights = value.rights;
+    record->endpoint_slot = (uint8_t)value.endpoint_slot;
+    return 0;
+}
 
 static ipc_handle_t make_handle(size_t slot, uint32_t generation) {
     return (generation << 8U) | (ipc_handle_t)(slot + 1U);
@@ -101,6 +263,7 @@ static int free_process_capability_slot(const Process *process) {
 
 static int free_capability_record(void) {
     for (size_t index = 0; index < IPC_MAX_CAPABILITY_RECORDS; ++index) {
+        if (load_capability(index) != 0) return IPC_EINTEGRITY;
         if (!ipc_capability_records[index].active) return (int)index;
     }
     return -1;
@@ -109,7 +272,12 @@ static int free_capability_record(void) {
 static ipc_capability_record_t *capability_record_for(
     const Process *process, ipc_handle_t handle) {
     if (process == NULL) return NULL;
+    ipc_capability_scan_corrupt = false;
     for (size_t index = 0; index < IPC_MAX_CAPABILITY_RECORDS; ++index) {
+        if (load_capability(index) != 0) {
+            ipc_capability_scan_corrupt = true;
+            return NULL;
+        }
         ipc_capability_record_t *record = &ipc_capability_records[index];
         if (record->active && record->handle == handle &&
             record->holder_pid == process->pid &&
@@ -119,6 +287,8 @@ static ipc_capability_record_t *capability_record_for(
     }
     return NULL;
 }
+
+static void quarantine_endpoint_locked(size_t endpoint_slot);
 
 static int resolve_capability(Process *process, ipc_handle_t handle,
                               uint32_t required_rights,
@@ -133,6 +303,10 @@ static int resolve_capability(Process *process, ipc_handle_t handle,
     }
 
     ipc_capability_record_t *record = capability_record_for(process, handle);
+    if (ipc_capability_scan_corrupt) {
+        quarantine_endpoint_locked(endpoint_slot);
+        return IPC_EINTEGRITY;
+    }
     if (record == NULL || record->endpoint_slot != endpoint_slot ||
         record->holder_pid != process->pid) {
         return IPC_EBADF;
@@ -141,6 +315,10 @@ static int resolve_capability(Process *process, ipc_handle_t handle,
         return IPC_EACCES;
     }
 
+    if (load_endpoint(endpoint_slot) != 0) {
+        quarantine_endpoint_locked(endpoint_slot);
+        return IPC_EINTEGRITY;
+    }
     ipc_endpoint_t *endpoint = &ipc_endpoints[endpoint_slot];
     if (!endpoint->active || endpoint->generation != generation) {
         return IPC_EBADF;
@@ -156,12 +334,14 @@ static int resolve_capability(Process *process, ipc_handle_t handle,
 static void clear_capability_record_locked(
     ipc_capability_record_t *record) {
     if (record == NULL || !record->active) return;
+    size_t record_slot = (size_t)(record - ipc_capability_records);
     size_t endpoint_slot = record->endpoint_slot;
     if (endpoint_slot < IPC_MAX_ENDPOINTS) {
         ipc_endpoint_t *endpoint = &ipc_endpoints[endpoint_slot];
         if ((record->rights & IPC_RIGHT_CONTROL) == 0U &&
             endpoint->active && endpoint->peer_capabilities != 0U) {
             --endpoint->peer_capabilities;
+            (void)seal_endpoint(endpoint_slot);
         }
     }
     Process *holder = record->holder;
@@ -174,6 +354,26 @@ static void clear_capability_record_locked(
         }
     }
     memset(record, 0, sizeof(*record));
+    (void)seal_capability(record_slot);
+}
+
+static void quarantine_endpoint_locked(size_t endpoint_slot) {
+    if (endpoint_slot >= IPC_MAX_ENDPOINTS) return;
+    ipc_endpoint_t *endpoint = &ipc_endpoints[endpoint_slot];
+    endpoint->active = false;
+    endpoint->count = 0U;
+    endpoint->head = 0U;
+    endpoint->peer_capabilities = 0U;
+    (void)seal_endpoint(endpoint_slot);
+    for (size_t index = 0; index < IPC_MAX_CAPABILITY_RECORDS; ++index) {
+        if (load_capability(index) != 0) continue;
+        ipc_capability_record_t *record = &ipc_capability_records[index];
+        if (record->active && record->endpoint_slot == endpoint_slot) {
+            clear_capability_record_locked(record);
+        }
+    }
+    (void)wait_queue_wake_all_locked(&endpoint->send_waiters);
+    (void)wait_queue_wake_all_locked(&endpoint->receive_waiters);
 }
 
 static void revoke_endpoint_locked(size_t endpoint_slot) {
@@ -183,6 +383,7 @@ static void revoke_endpoint_locked(size_t endpoint_slot) {
     endpoint->head = 0U;
     endpoint->peer_capabilities = 0U;
     for (size_t index = 0; index < IPC_MAX_CAPABILITY_RECORDS; ++index) {
+        if (load_capability(index) != 0) continue;
         ipc_capability_record_t *record = &ipc_capability_records[index];
         if (record->active && record->endpoint_slot == endpoint_slot &&
             record->handle == make_handle(endpoint_slot,
@@ -192,6 +393,7 @@ static void revoke_endpoint_locked(size_t endpoint_slot) {
     }
     (void)wait_queue_wake_all_locked(&endpoint->send_waiters);
     (void)wait_queue_wake_all_locked(&endpoint->receive_waiters);
+    (void)seal_endpoint(endpoint_slot);
 }
 
 static int install_capability_locked(Process *process, ipc_handle_t handle,
@@ -199,6 +401,7 @@ static int install_capability_locked(Process *process, ipc_handle_t handle,
                                      uint32_t rights) {
     int process_slot = free_process_capability_slot(process);
     int record_slot = free_capability_record();
+    if (record_slot == IPC_EINTEGRITY) return IPC_EINTEGRITY;
     if (process_slot < 0 || record_slot < 0) return IPC_ENOSPC;
 
     ipc_capability_t *capability =
@@ -216,6 +419,11 @@ static int install_capability_locked(Process *process, ipc_handle_t handle,
     record->holder_generation = process->generation;
     record->rights = rights;
     record->endpoint_slot = (uint8_t)endpoint_slot;
+    if (seal_capability((size_t)record_slot) != 0) {
+        memset(capability, 0, sizeof(*capability));
+        memset(record, 0, sizeof(*record));
+        return IPC_EINTEGRITY;
+    }
     return 0;
 }
 
@@ -223,9 +431,22 @@ void ipc_init(void) {
     uint32_t flags = ipc_lock();
     memset(ipc_endpoints, 0, sizeof(ipc_endpoints));
     memset(ipc_capability_records, 0, sizeof(ipc_capability_records));
+    memset(ipc_endpoint_integrity, 0, sizeof(ipc_endpoint_integrity));
+    memset(ipc_capability_integrity, 0, sizeof(ipc_capability_integrity));
+    memset(ipc_message_integrity, 0, sizeof(ipc_message_integrity));
+    ipc_integrity_corrections = 0U;
+    ipc_capability_scan_corrupt = false;
     for (size_t index = 0; index < IPC_MAX_ENDPOINTS; ++index) {
         wait_queue_init(&ipc_endpoints[index].send_waiters);
         wait_queue_init(&ipc_endpoints[index].receive_waiters);
+        ipc_endpoint_metadata_t empty = {0};
+        (void)critical_object_init(&ipc_endpoint_integrity[index],
+            IPC_METADATA_VERSION, &empty, sizeof(empty));
+    }
+    for (size_t index = 0; index < IPC_MAX_CAPABILITY_RECORDS; ++index) {
+        ipc_capability_metadata_t empty = {0};
+        (void)critical_object_init(&ipc_capability_integrity[index],
+            IPC_METADATA_VERSION, &empty, sizeof(empty));
     }
     ipc_unlock(flags);
 }
@@ -235,18 +456,27 @@ int ipc_create(Process *owner, ipc_handle_t *handle) {
         return IPC_EINVAL;
     }
     uint32_t flags = ipc_lock();
-    if (free_process_capability_slot(owner) < 0 ||
-        free_capability_record() < 0) {
+    int available_record = free_capability_record();
+    if (available_record == IPC_EINTEGRITY) {
+        ipc_unlock(flags);
+        return IPC_EINTEGRITY;
+    }
+    if (free_process_capability_slot(owner) < 0 || available_record < 0) {
         ipc_unlock(flags);
         return IPC_ENOSPC;
     }
 
     size_t endpoint_slot = IPC_MAX_ENDPOINTS;
     for (size_t index = 0; index < IPC_MAX_ENDPOINTS; ++index) {
+        if (load_endpoint(index) != 0) {
+            quarantine_endpoint_locked(index);
+            continue;
+        }
         ipc_endpoint_t *candidate = &ipc_endpoints[index];
         if (candidate->active || candidate->retired) continue;
         if (candidate->generation >= IPC_HANDLE_GENERATION_MAX) {
             candidate->retired = true;
+            (void)seal_endpoint(index);
             continue;
         }
         endpoint_slot = index;
@@ -266,6 +496,11 @@ int ipc_create(Process *owner, ipc_handle_t *handle) {
     endpoint->owner_generation = owner->generation;
     wait_queue_init(&endpoint->send_waiters);
     wait_queue_init(&endpoint->receive_waiters);
+    if (seal_endpoint(endpoint_slot) != 0) {
+        endpoint->active = false;
+        ipc_unlock(flags);
+        return IPC_EINTEGRITY;
+    }
 
     ipc_handle_t created = make_handle(endpoint_slot, generation);
     int result = install_capability_locked(
@@ -273,6 +508,7 @@ int ipc_create(Process *owner, ipc_handle_t *handle) {
         IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE | IPC_RIGHT_CONTROL);
     if (result != 0) {
         endpoint->active = false;
+        (void)seal_endpoint(endpoint_slot);
         ipc_unlock(flags);
         return result;
     }
@@ -287,6 +523,50 @@ static bool message_valid(const ipc_message_t *message) {
            message->length <= IPC_MAX_MESSAGE_SIZE;
 }
 
+static int seal_message(size_t endpoint_slot, uint32_t queue_slot,
+                        const ipc_protected_message_t *value) {
+    const uint8_t *bytes = (const uint8_t *)value;
+    size_t remaining = sizeof(*value);
+    for (size_t chunk = 0; chunk < IPC_MESSAGE_CHUNKS; ++chunk) {
+        size_t length = remaining > CRITICAL_OBJECT_MAX_PAYLOAD
+            ? CRITICAL_OBJECT_MAX_PAYLOAD : remaining;
+        critical_object_t *object =
+            &ipc_message_integrity[endpoint_slot][queue_slot][chunk];
+        int result = object->primary.words[0] == 0U
+            ? critical_object_init(object, IPC_METADATA_VERSION, bytes, length)
+            : critical_object_update(object, IPC_METADATA_VERSION, bytes,
+                                     length, message_chunk_valid);
+        if (result != 0) return IPC_EINTEGRITY;
+        bytes += length;
+        remaining -= length;
+    }
+    return remaining == 0U ? 0 : IPC_EINTEGRITY;
+}
+
+static int load_message(size_t endpoint_slot, uint32_t queue_slot,
+                        ipc_protected_message_t *value) {
+    uint8_t *bytes = (uint8_t *)value;
+    size_t remaining = sizeof(*value);
+    for (size_t chunk = 0; chunk < IPC_MESSAGE_CHUNKS; ++chunk) {
+        size_t expected = remaining > CRITICAL_OBJECT_MAX_PAYLOAD
+            ? CRITICAL_OBJECT_MAX_PAYLOAD : remaining;
+        size_t length = 0U;
+        critical_read_result_t result = critical_object_read(
+            &ipc_message_integrity[endpoint_slot][queue_slot][chunk],
+            IPC_METADATA_VERSION, bytes, expected, &length,
+            message_chunk_valid);
+        if (result < 0 || length != expected) return IPC_EINTEGRITY;
+        note_integrity_result(result);
+        bytes += length;
+        remaining -= length;
+    }
+    if (remaining != 0U || !message_valid(&value->message) ||
+        value->sender_pid <= 0 || value->sender_generation == 0U) {
+        return IPC_EINTEGRITY;
+    }
+    return 0;
+}
+
 int ipc_send_timeout(Process *sender, ipc_handle_t handle,
                      const ipc_message_t *message, uint32_t timeout_ms) {
     if (!message_valid(message)) {
@@ -299,8 +579,9 @@ int ipc_send_timeout(Process *sender, ipc_handle_t handle,
     for (;;) {
         uint32_t flags = ipc_lock();
         ipc_endpoint_t *endpoint = NULL;
+        size_t endpoint_slot = 0U;
         int result = resolve_capability(sender, handle, IPC_RIGHT_SEND,
-                                        &endpoint, NULL);
+                                        &endpoint, &endpoint_slot);
         if (result != 0) {
             ipc_unlock(flags);
             return result;
@@ -321,7 +602,21 @@ int ipc_send_timeout(Process *sender, ipc_handle_t handle,
                    message->length);
             endpoint->sender_pid[tail] = sender->pid;
             endpoint->sender_generation[tail] = sender->generation;
+            ipc_protected_message_t protected_message = {
+                endpoint->messages[tail], sender->pid, sender->generation
+            };
+            if (seal_message(endpoint_slot, tail, &protected_message) != 0) {
+                quarantine_endpoint_locked(endpoint_slot);
+                ipc_unlock(flags);
+                return IPC_EINTEGRITY;
+            }
             ++endpoint->count;
+            if (seal_endpoint(endpoint_slot) != 0) {
+                --endpoint->count;
+                quarantine_endpoint_locked(endpoint_slot);
+                ipc_unlock(flags);
+                return IPC_EINTEGRITY;
+            }
             (void)wait_queue_wake_one_locked(&endpoint->receive_waiters);
             ipc_unlock(flags);
             return 0;
@@ -347,33 +642,51 @@ int ipc_send(Process *sender, ipc_handle_t handle,
     return ipc_send_timeout(sender, handle, message, IPC_DEFAULT_TIMEOUT_MS);
 }
 
-static int receivable_offset(const ipc_endpoint_t *endpoint,
+static int receivable_offset(size_t endpoint_slot,
+                             const ipc_endpoint_t *endpoint,
                              const Process *receiver) {
     for (uint32_t offset = 0; offset < endpoint->count; ++offset) {
         uint32_t index = (endpoint->head + offset) % IPC_QUEUE_DEPTH;
-        if (endpoint->sender_pid[index] != receiver->pid ||
-            endpoint->sender_generation[index] != receiver->generation) {
+        ipc_protected_message_t value;
+        if (load_message(endpoint_slot, index, &value) != 0) {
+            return IPC_EINTEGRITY;
+        }
+        if (value.sender_pid != receiver->pid ||
+            value.sender_generation != receiver->generation) {
             return (int)offset;
         }
     }
     return -1;
 }
 
-static void remove_message_locked(ipc_endpoint_t *endpoint, uint32_t offset,
-                                  ipc_message_t *message) {
+static int remove_message_locked(size_t endpoint_slot,
+                                 ipc_endpoint_t *endpoint, uint32_t offset,
+                                 ipc_message_t *message) {
     uint32_t index = (endpoint->head + offset) % IPC_QUEUE_DEPTH;
-    *message = endpoint->messages[index];
+    ipc_protected_message_t protected_message;
+    if (load_message(endpoint_slot, index, &protected_message) != 0) {
+        return IPC_EINTEGRITY;
+    }
+    *message = protected_message.message;
     while (offset + 1U < endpoint->count) {
         uint32_t next = (index + 1U) % IPC_QUEUE_DEPTH;
+        ipc_protected_message_t shifted;
+        if (load_message(endpoint_slot, next, &shifted) != 0) {
+            return IPC_EINTEGRITY;
+        }
         endpoint->messages[index] = endpoint->messages[next];
         endpoint->sender_pid[index] = endpoint->sender_pid[next];
         endpoint->sender_generation[index] =
             endpoint->sender_generation[next];
+        if (seal_message(endpoint_slot, index, &shifted) != 0) {
+            return IPC_EINTEGRITY;
+        }
         index = next;
         ++offset;
     }
     --endpoint->count;
     if (endpoint->count == 0U) endpoint->head = 0U;
+    return seal_endpoint(endpoint_slot) == 0 ? 0 : IPC_EINTEGRITY;
 }
 
 int ipc_receive_timeout(Process *receiver, ipc_handle_t handle,
@@ -385,15 +698,27 @@ int ipc_receive_timeout(Process *receiver, ipc_handle_t handle,
     for (;;) {
         uint32_t flags = ipc_lock();
         ipc_endpoint_t *endpoint = NULL;
+        size_t endpoint_slot = 0U;
         int result = resolve_capability(receiver, handle, IPC_RIGHT_RECEIVE,
-                                        &endpoint, NULL);
+                                        &endpoint, &endpoint_slot);
         if (result != 0) {
             ipc_unlock(flags);
             return result;
         }
-        int offset = receivable_offset(endpoint, receiver);
+        int offset = receivable_offset(endpoint_slot, endpoint, receiver);
+        if (offset == IPC_EINTEGRITY) {
+            quarantine_endpoint_locked(endpoint_slot);
+            ipc_unlock(flags);
+            return IPC_EINTEGRITY;
+        }
         if (offset >= 0) {
-            remove_message_locked(endpoint, (uint32_t)offset, message);
+            result = remove_message_locked(endpoint_slot, endpoint,
+                                           (uint32_t)offset, message);
+            if (result != 0) {
+                quarantine_endpoint_locked(endpoint_slot);
+                ipc_unlock(flags);
+                return IPC_EINTEGRITY;
+            }
             (void)wait_queue_wake_one_locked(&endpoint->send_waiters);
             ipc_unlock(flags);
             return 0;
@@ -463,8 +788,13 @@ int ipc_inherit(const Process *parent, Process *child) {
         uint32_t generation;
         ipc_capability_record_t *record = source->in_use
             ? capability_record_for(parent, source->handle) : NULL;
+        if (ipc_capability_scan_corrupt) {
+            ipc_unlock(flags);
+            return IPC_EINTEGRITY;
+        }
         if (record != NULL &&
             decode_handle(source->handle, &endpoint_slot, &generation) == 0 &&
+            load_endpoint(endpoint_slot) == 0 &&
             ipc_endpoints[endpoint_slot].active &&
             ipc_endpoints[endpoint_slot].generation == generation &&
             ipc_endpoints[endpoint_slot].peer_capabilities == 0U &&
@@ -479,6 +809,10 @@ int ipc_inherit(const Process *parent, Process *child) {
     }
     size_t free_global = 0U;
     for (size_t index = 0; index < IPC_MAX_CAPABILITY_RECORDS; ++index) {
+        if (load_capability(index) != 0) {
+            ipc_unlock(flags);
+            return IPC_EINTEGRITY;
+        }
         if (!ipc_capability_records[index].active) ++free_global;
     }
     if (needed > free_local || needed > free_global) {
@@ -494,8 +828,13 @@ int ipc_inherit(const Process *parent, Process *child) {
         uint32_t generation;
         ipc_capability_record_t *source_record =
             capability_record_for(parent, source->handle);
+        if (ipc_capability_scan_corrupt) {
+            ipc_unlock(flags);
+            return IPC_EINTEGRITY;
+        }
         if (source_record == NULL ||
             decode_handle(source->handle, &endpoint_slot, &generation) != 0 ||
+            load_endpoint(endpoint_slot) != 0 ||
             !ipc_endpoints[endpoint_slot].active ||
             ipc_endpoints[endpoint_slot].generation != generation) continue;
 
@@ -515,6 +854,11 @@ int ipc_inherit(const Process *parent, Process *child) {
         }
         ipc_endpoints[endpoint_slot].peer_seen = true;
         ++ipc_endpoints[endpoint_slot].peer_capabilities;
+        if (seal_endpoint(endpoint_slot) != 0) {
+            quarantine_endpoint_locked(endpoint_slot);
+            ipc_unlock(flags);
+            return IPC_EINTEGRITY;
+        }
     }
     ipc_unlock(flags);
     return 0;
@@ -526,6 +870,10 @@ void ipc_process_cleanup(int pid, uint32_t generation) {
 
     for (size_t endpoint_slot = 0;
          endpoint_slot < IPC_MAX_ENDPOINTS; ++endpoint_slot) {
+        if (load_endpoint(endpoint_slot) != 0) {
+            quarantine_endpoint_locked(endpoint_slot);
+            continue;
+        }
         ipc_endpoint_t *endpoint = &ipc_endpoints[endpoint_slot];
         if (endpoint->active && endpoint->owner_pid == pid &&
             endpoint->owner_generation == generation) {
@@ -534,6 +882,7 @@ void ipc_process_cleanup(int pid, uint32_t generation) {
     }
 
     for (size_t index = 0; index < IPC_MAX_CAPABILITY_RECORDS; ++index) {
+        if (load_capability(index) != 0) continue;
         ipc_capability_record_t *record = &ipc_capability_records[index];
         if (!record->active || record->holder_pid != pid ||
             record->holder_generation != generation) continue;
@@ -547,4 +896,40 @@ void ipc_process_cleanup(int pid, uint32_t generation) {
     }
 
     ipc_unlock(flags);
+}
+
+uint32_t ipc_integrity_correction_count(void) {
+    uint32_t flags = ipc_lock();
+    uint32_t result = ipc_integrity_corrections;
+    ipc_unlock(flags);
+    return result;
+}
+
+int ipc_fault_inject(ipc_fault_target_t target, size_t object_index,
+                     size_t copy_index, size_t word_index, uint32_t bit_mask) {
+    if (copy_index > 1U || word_index >= CRITICAL_OBJECT_WORDS ||
+        bit_mask == 0U) {
+        return IPC_EINVAL;
+    }
+    uint32_t flags = ipc_lock();
+    critical_object_t *object = NULL;
+    if (target == IPC_FAULT_ENDPOINT && object_index < IPC_MAX_ENDPOINTS) {
+        object = &ipc_endpoint_integrity[object_index];
+    } else if (target == IPC_FAULT_CAPABILITY &&
+               object_index < IPC_MAX_CAPABILITY_RECORDS) {
+        object = &ipc_capability_integrity[object_index];
+    } else if (target == IPC_FAULT_MESSAGE &&
+               object_index < IPC_MAX_ENDPOINTS * IPC_QUEUE_DEPTH *
+                                  IPC_MESSAGE_CHUNKS) {
+        object = &ipc_message_integrity[0][0][0] + object_index;
+    }
+    if (object == NULL || object->primary.words[0] == 0U) {
+        ipc_unlock(flags);
+        return IPC_EINVAL;
+    }
+    critical_object_copy_t *copy = copy_index == 0U
+        ? &object->primary : &object->shadow;
+    copy->words[word_index] ^= bit_mask;
+    ipc_unlock(flags);
+    return 0;
 }

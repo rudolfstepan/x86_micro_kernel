@@ -19,6 +19,13 @@ struct Process;
 #define IPC_RIGHT_CONTROL 0x04U
 
 #define IPC_INVALID_HANDLE 0U
+#define IPC_EINTEGRITY (-84)
+
+typedef enum {
+    IPC_FAULT_ENDPOINT = 0,
+    IPC_FAULT_CAPABILITY = 1,
+    IPC_FAULT_MESSAGE = 2,
+} ipc_fault_target_t;
 
 typedef uint32_t ipc_handle_t;
 
@@ -48,5 +55,8 @@ int ipc_receive_timeout(struct Process *receiver, ipc_handle_t handle,
 int ipc_close(struct Process *process, ipc_handle_t handle);
 int ipc_inherit(const struct Process *parent, struct Process *child);
 void ipc_process_cleanup(int pid, uint32_t generation);
+int ipc_fault_inject(ipc_fault_target_t target, size_t object_index,
+                     size_t copy_index, size_t word_index, uint32_t bit_mask);
+uint32_t ipc_integrity_correction_count(void);
 
 #endif

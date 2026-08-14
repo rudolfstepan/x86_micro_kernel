@@ -211,6 +211,15 @@ class ReistIpcContractTests(unittest.TestCase):
             receive.index("copy_to_user_space"),
         )
 
+    def test_metadata_is_redundant_and_corruption_fails_closed(self) -> None:
+        self.assertIn("critical_object_t ipc_endpoint_integrity", self.source)
+        self.assertIn("critical_object_t ipc_capability_integrity", self.source)
+        self.assertIn("ipc_message_integrity", self.source)
+        self.assertIn("IPC_MESSAGE_CHUNKS 3U", self.source)
+        self.assertIn("quarantine_endpoint_locked", self.source)
+        self.assertIn("IPC_EINTEGRITY", self.header)
+        self.assertIn("ipc_fault_inject(", self.header)
+
     def test_real_guest_exercises_rights_blocking_stale_and_cleanup(self) -> None:
         guest = read("examples/userspace/guest_test.c")
         for contract in (
@@ -246,6 +255,7 @@ class ReistIpcContractTests(unittest.TestCase):
                     "-I",
                     str(ROOT),
                     str(ROOT / "kernel/ipc/ipc.c"),
+                    str(ROOT / "kernel/init/critical_object.c"),
                     str(ROOT / "kernel/sched/wait_queue.c"),
                     str(ROOT / "test/test_ipc_host.c"),
                     "-o",

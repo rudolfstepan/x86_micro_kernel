@@ -77,7 +77,7 @@ und maximale Fehlerreaktionszeiten rückverfolgbar festzulegen.
 | Boot | BIOS/MBR, zweistufiger Loader, E820, A20, ELF32-Prüfung, Kernel-CRC32, FAT12-Floppy, optionaler nativer VBE-LFB-Handoff | stabiler Referenzpfad mit VGA-Rückfall |
 | CPU | GDT/IDT/TSS, Ring 0/3, Exceptions, PIC, gegen PIT kalibrierter lokaler APIC-Timer, PIT-Scheduler-Fallback, `INT 0x80` | funktionsfähiger Single-Core-Pfad |
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
-| Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit generationsgebundenen Capabilities | maximal 8 Tasks; IPC noch ohne Deadline, Integritätsschutz und explizite Delegation |
+| Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit generationsgebundenen Capabilities, endlichen Deadlines und geschützten Steuerdaten | maximal 8 Tasks; IPC noch ohne explizite Delegation und vollständige Domänenprofile |
 | Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, FAT32-Rename/Replace im Undo-Journal, FAT32/ATA-`fsync`, EXT2 lesen | persistenter Editor-Commit vorhanden; ABI, FAT12-Sync und breitere Rename-Semantik fehlen |
 | Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 und COM1 mit blockierendem Console-Wait, RTC, VGA, nativer VBE-RGB-Framebuffer | Referenzhardware gut, moderne Geräte fehlen |
 | Netzwerk | E1000, RTL8139, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping am besten verifiziert |
@@ -167,8 +167,8 @@ separate Bereinigung der optionalen Legacy-Image-Tests bleiben Folgearbeiten.
 - **S0.3a umgesetzt:** 16 statische Endpoints, acht Capabilities je Prozess,
   vier Nachrichten je Queue, 128 Byte Nutzlast, blockierendes Send/Receive,
   Spawn-Vererbung ohne `CONTROL` und vollständiger Exit-Widerruf
-- IPC-Deadlines, Timeoutstatus, CRC-/`critical_object`-Schutz und explizite
-  selektive Capability-Delegation ergänzen
+- explizite selektive Capability-Delegation ergänzen; endliche Deadlines und
+  CRC-/`critical_object`-Schutz sind umgesetzt
 - reservierte Task-Slots und Admission Control für überwachte Dienste schaffen
 - `kill` sowie Datei-, Display-, Prozess- und weitere ambient verfügbare
   Syscalls durch Capability- beziehungsweise Domänenrichtlinien begrenzen
@@ -673,8 +673,8 @@ Einträge und wecken blockierte Peers. Host- und Ring-3-Gasttests decken
 Nachrichtenaustausch, Rechteabschwächung, Ressourcenlimits, Close-Wakeup und
 Exit-Revoke ab.
 
-S0.3a ist ausdrücklich nur der Mechanismus-Unterbau. Noch offen sind
-CRC-/`critical_object`-Schutz, explizite selektive Delegation,
+S0.3a ist ausdrücklich nur der Mechanismus-Unterbau. Endliche Deadlines und
+CRC-/`critical_object`-Schutz sind umgesetzt. Noch offen sind explizite Delegation,
 reservierte Service-Taskslots und Capability-Gates für `kill` sowie die heute
 ambient verfügbaren Datei-, Display-, Prozess- und sonstigen Syscalls. Ohne
 diese Gates besitzt ein IPC-nutzender Prozess noch kein vollständiges
@@ -988,7 +988,9 @@ Inkrementen zu schließen:
 
 1. endliche Send-/Receive-Deadlines mit eindeutigem Timeoutstatus — umgesetzt,
 2. CRC- und `critical_object`-Schutz für Queue-, Endpoint- und
-   Capability-Metadaten einschließlich Bitflip-Injection,
+   Capability-Metadaten einschließlich deterministischer Bitflip-Injection —
+   umgesetzt; unkorrektierbare Objekte quarantänisieren den Endpoint und
+   wecken beide begrenzten Warteschlangen mit eigenem Integritätsstatus,
 3. explizite selektive Delegation mit ausschließlich abschwächbaren Rechten,
 4. mindestens ein reservierter Service-/Restart-Taskslot mit Admission Control,
 5. Capability-/Domänen-Gates für `kill` und alle ambienten Datei-, Display-,

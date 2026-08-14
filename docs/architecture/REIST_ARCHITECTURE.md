@@ -203,10 +203,19 @@ Standardwert, während 53/54 den Timeout explizit entgegennehmen. Der PIT weckt
 abgelaufene IPC-Warter über einen festen `MAX_TASKS`-Scan, ohne einen zweiten
 intrusiven Wait-Knoten zu verwenden.
 
+Endpoint-, Queue- und autoritative globale Capability-Steuerdaten liegen nun
+als feste Primary/Shadow-`critical_object`s mit SECDED, CRC, Version, Sequenz
+und semantischen Validatoren vor. Eine Nachricht wird einschließlich
+Absenderidentität explizit auf drei Blöcke von höchstens 64 Byte verteilt.
+Einzelbitfehler werden korrigiert und begrenzt gezählt. Sind beide Kopien
+unbrauchbar, wird der Endpoint quarantänisiert, beide Warterichtungen werden
+geweckt und `IPC_EINTEGRITY` zurückgegeben, bevor Rechte oder Payload
+veröffentlicht werden. Prozesslokale Handle-Slots sind nur Selektoren; jede
+Verwendung muss einen geschützten, holder- und generationsgebundenen globalen
+Capability-Record auflösen.
+
 Diese Basis ist noch kein vollständiger High-Assurance-IPC-Vertrag. Es fehlen:
 
-- CRC beziehungsweise `critical_object`-Schutz für Nachrichten, Endpoint- und
-  Capability-Metadaten,
 - explizite selektive Delegation und Rechteabschwächung unabhängig vom Spawn,
 - reservierte Task-Slots und Admission Control für neu startbare Dienste,
 - Capability-Gates für `kill` und die weiterhin ambient verfügbaren Datei-,
