@@ -2,6 +2,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -178,6 +179,10 @@ class CodexOrchestrationTests(unittest.TestCase):
         self.assertNotIn('"--approve-for-me"', runner)
         self.assertIn('approval_policy="never"', runner)
         self.assertIn('default_permissions=":workspace"', runner)
+        self.assertIn('"sandbox",', runner)
+        self.assertIn('"-P",', runner)
+        self.assertIn(":workspace", runner)
+        self.assertIn("--include-managed-config", runner)
         self.assertIn('"gpt-5.6-sol"', runner)
         self.assertIn('model_reasoning_effort="low"', runner)
         self.assertIn("agents.max_concurrent_threads_per_session=1", runner)
@@ -192,9 +197,74 @@ class CodexOrchestrationTests(unittest.TestCase):
         self.assertIn('"clone",', runner)
         self.assertIn('"remote", "remove", "origin"', runner)
         self.assertIn('"merge", "--ff-only"', runner)
-        self.assertIn("Run a failing gate at most twice total", runner)
+        self.assertIn("outer verifier runs every gate exactly once", runner)
+        contract = (ROOT / "AGENTS.md").read_text("utf-8")
+        self.assertIn("outer runner is the only gate authority", contract.lower())
+        self.assertIn("Do not run the listed acceptance gates", contract)
         self.assertIn("prepare_agent_environment", runner)
         self.assertIn("run_reist_autonomous.py", wrapper)
+
+    def test_gate_parser_rejects_shell_and_path_escape(self):
+        command = RUNNER.trusted_gate_command(
+            "python test/test_reist_ipc.py -q", ROOT, dict(os.environ)
+        )
+        self.assertEqual(pathlib.Path(command[0]), pathlib.Path(sys.executable))
+        self.assertEqual(pathlib.Path(command[1]), ROOT / "test/test_reist_ipc.py")
+        self.assertEqual(command[2:], ["-q"])
+        for invalid in (
+            "python ../evil.py -q",
+            "python test/test_reist_ipc.py -q; whoami",
+            "cmd /c whoami",
+            ".\\scripts\\unknown.ps1",
+        ):
+            with self.subTest(gate=invalid):
+                with self.assertRaises(RUNNER.VerificationError):
+                    RUNNER.trusted_gate_command(invalid, ROOT, dict(os.environ))
+
+    def test_outer_gates_are_sandboxed_once_and_stop_on_failure(self):
+        package = {
+            "targeted_tests": [
+                "python test/test_reist_ipc.py -q",
+                "python test/test_reist_critical_object.py -q",
+            ],
+            "package_tests": [],
+            "runtime_tests": [],
+        }
+        calls = []
+        original = RUNNER.run_bounded
+
+        def fake_run(command, cwd, prompt, log_path, timeout_seconds, env=None):
+            calls.append(command)
+            log_path.write_text("gate\n", "utf-8")
+            return 1 if len(calls) == 1 else 0
+
+        RUNNER.run_bounded = fake_run
+        try:
+            with tempfile.TemporaryDirectory() as temporary:
+                with self.assertRaises(RUNNER.GateFailure):
+                    RUNNER.run_sandboxed_gates(
+                        "codex",
+                        package,
+                        ROOT,
+                        pathlib.Path(temporary),
+                        30,
+                        dict(os.environ),
+                    )
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(
+                calls[0][1:7],
+                [
+                    "sandbox",
+                    "-P",
+                    ":workspace",
+                    "--include-managed-config",
+                    "-C",
+                    str(ROOT),
+                ],
+            )
+            self.assertEqual(pathlib.Path(calls[0][7]), pathlib.Path(sys.executable))
+        finally:
+            RUNNER.run_bounded = original
 
     def test_windows_runtime_gate_reuses_reference_build(self):
         runner = (ROOT / "scripts/test-reist-runtime.ps1").read_text("utf-8")

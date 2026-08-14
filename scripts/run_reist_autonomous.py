@@ -24,6 +24,10 @@ class VerificationError(RuntimeError):
     pass
 
 
+class GateFailure(VerificationError):
+    pass
+
+
 class PackageTimeout(RuntimeError):
     pass
 
@@ -194,12 +198,8 @@ def verify_result(
     after_completed = next(
         item for item in after_task["packages"] if item["id"] == expected_package_id
     )
-    required_gates = [
-        *package["targeted_tests"],
-        *package["package_tests"],
-        *package["runtime_tests"],
-    ]
-    if passed != required_gates or after_completed["evidence"] != required_gates:
+    gates = required_gates(package)
+    if passed != gates or after_completed["evidence"] != gates:
         raise VerificationError("result and task evidence must list every gate in order")
     if result.get("blocker"):
         raise VerificationError("committed result must not report a blocker")
@@ -261,6 +261,107 @@ def run_bounded(
                 f"agent exceeded the {timeout_seconds:g}s package deadline"
             ) from error
         return process.returncode
+
+
+def required_gates(package: dict[str, Any]) -> list[str]:
+    return [
+        *package["targeted_tests"],
+        *package["package_tests"],
+        *package["runtime_tests"],
+    ]
+
+
+def scoped_regular_file(repo: pathlib.Path, relative: str) -> pathlib.Path:
+    root = repo.resolve()
+    path = (root / relative).resolve()
+    if not path.is_relative_to(root) or not path.is_file() or path.is_symlink():
+        raise VerificationError(f"gate file is not a scoped regular file: {relative}")
+    return path
+
+
+def trusted_gate_command(
+    gate: str, repo: pathlib.Path, environment: dict[str, str]
+) -> list[str]:
+    python_gate = re.fullmatch(r"python (test/[A-Za-z0-9_.-]+\.py) -q", gate)
+    if python_gate:
+        test_file = scoped_regular_file(repo, python_gate.group(1))
+        return [str(pathlib.Path(sys.executable).resolve()), str(test_file), "-q"]
+
+    package_gate = re.fullmatch(
+        r"\.\\scripts\\test-reist-package\.ps1 "
+        r"-Target (qemu|vmware) -Video (vga|framebuffer)",
+        gate,
+    )
+    runtime_gate = re.fullmatch(
+        r"\.\\scripts\\test-reist-runtime\.ps1 "
+        r"-Mode (normal|pit|watchdog|memory)",
+        gate,
+    )
+    if package_gate or runtime_gate:
+        powershell = shutil.which("pwsh", path=environment.get("PATH"))
+        if powershell is None:
+            raise VerificationError("PowerShell 7 is required for REIST gates")
+        if package_gate:
+            script = scoped_regular_file(repo, "scripts/test-reist-package.ps1")
+            return [
+                powershell,
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                str(script),
+                "-Target",
+                package_gate.group(1),
+                "-Video",
+                package_gate.group(2),
+            ]
+        script = scoped_regular_file(repo, "scripts/test-reist-runtime.ps1")
+        return [
+            powershell,
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(script),
+            "-Mode",
+            runtime_gate.group(1),
+        ]
+    raise VerificationError(f"unsupported gate command: {gate!r}")
+
+
+def run_sandboxed_gates(
+    codex: str,
+    package: dict[str, Any],
+    worktree: pathlib.Path,
+    log_root: pathlib.Path,
+    timeout_seconds: int | float,
+    environment: dict[str, str],
+) -> list[str]:
+    gates = required_gates(package)
+    for index, gate in enumerate(gates, 1):
+        gate_log = log_root / f"gate-{index}.log"
+        command = [
+            codex,
+            "sandbox",
+            "-P",
+            ":workspace",
+            "--include-managed-config",
+            "-C",
+            str(worktree),
+            *trusted_gate_command(gate, worktree, environment),
+        ]
+        exit_code = run_bounded(
+            command,
+            worktree,
+            "",
+            gate_log,
+            timeout_seconds,
+            environment,
+        )
+        if exit_code != 0:
+            raise GateFailure(
+                f"gate failed ({exit_code}): {gate}; log={gate_log}\n"
+                f"{tail(gate_log)}"
+            )
+    return gates
 
 
 def resolve_qemu(environment: dict[str, str]) -> None:
@@ -563,13 +664,16 @@ def execute(args: argparse.Namespace) -> int:
                 prompt = f"""Execute exactly the package contract in {active_file}.
 Follow AGENTS.md and every invariant/stop condition. Do not implement the next
 package. Use no parallel writers and at most one read-only reist_reviewer.
-Run every listed gate. On success update only this package's status/evidence
-and the next active queue entry in .codex/tasks/reist-s03b.toml, commit once
-with the exact commit_message, and leave a clean worktree. On a blocker, do not
-restore files: return blocked immediately without committing; this isolated
-checkout is discarded by the runner. Run a failing gate at most twice total
-(initial run plus one focused repair), then stop. Return only the required
-result object with the full 40-character commit SHA.
+Do not run the listed acceptance gates inside this nested agent sandbox; the
+outer verifier runs every gate exactly once after validating your candidate
+commit. You may run bounded lightweight inspections that do not duplicate a
+listed gate. On success list the exact contract gates as pending evidence,
+update only this package's status/evidence and the next active queue entry in
+.codex/tasks/reist-s03b.toml, commit once with the exact commit_message, and
+leave a clean worktree. On a blocker, do not restore files: return blocked
+immediately without committing; this isolated checkout is discarded by the
+runner. Return only the required result object with the full 40-character
+commit SHA.
 """
                 command = [
                     codex,
@@ -643,6 +747,20 @@ result object with the full 40-character commit SHA.
                     isolated_task_path,
                     allow_dirty_blocked=True,
                 )
+                if result["status"] == "committed":
+                    passed = run_sandboxed_gates(
+                        codex,
+                        package,
+                        worktree,
+                        isolated_log_root,
+                        args.package_timeout_seconds,
+                        agent_environment,
+                    )
+                    if passed != result["passed"]:
+                        raise VerificationError(
+                            "outer gate order differs from committed evidence"
+                        )
+                    assert_clean(worktree)
                 assert_clean(repo)
                 if git(repo, "rev-parse", "HEAD") != before_head:
                     raise VerificationError(
@@ -666,6 +784,9 @@ result object with the full 40-character commit SHA.
         except PackageTimeout as error:
             print(f"blocked: {error}; main worktree unchanged; log={event_log}")
             return 124
+        except GateFailure as error:
+            print(f"blocked: {error}; candidate discarded; main worktree unchanged")
+            return 2
         except (json.JSONDecodeError, VerificationError) as error:
             print(f"verification failed: {error}; log={event_log}")
             return 1

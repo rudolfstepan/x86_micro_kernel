@@ -31,19 +31,27 @@ package in the same run.
 4. Make the smallest complete change within `allowed_files`. If another source
    file is required, stop and report the architectural reason; do not expand
    scope silently.
-5. Run the package's tests in listed order and stop at the first failing gate.
-   One focused repair attempt is allowed for an in-scope failure.
+5. Do not run the listed acceptance gates inside the nested agent sandbox.
+   Perform only bounded lightweight inspections that do not duplicate a gate.
+   The outer runner executes every frozen gate exactly once in a separate
+   `:workspace` verifier sandbox after validating the candidate commit.
 6. Inspect the final diff for ABI drift, unbounded work, lost cleanup and stale
    documentation. For scheduler, memory, boot, IPC, persistence or privilege
-   changes, use at most one read-only `reist_reviewer` subagent after tests.
+   changes, use at most one read-only `reist_reviewer` subagent before commit.
 7. On success, set the active package to `done`, set the next `queued` package
    to `active`, update `active_id`, and copy every targeted/package/runtime test
    command into `evidence` in its original order. When no queued package
    remains, set `active_id` to the empty string.
-8. Commit all in-scope changes with the exact `commit_message`, then require a
-   clean worktree. Never push.
-9. On ambiguity, missing hardware evidence, pre-existing failure or failed
-   acceptance gate: do not commit and return `blocked` with one concrete cause.
+8. Commit the candidate with the exact `commit_message`, require a clean
+   worktree and return the frozen gate list in `passed`. This is not accepted
+   evidence until the outer verifier has actually passed every gate. Never push.
+9. On ambiguity, missing required inputs or a pre-existing source failure: do
+   not commit and return `blocked` with one concrete cause.
+
+The outer runner is the only gate authority. It validates commit topology,
+scope and queue transition before executing candidate code. It runs trusted
+gate commands without a shell through `codex sandbox -P :workspace`, stops at
+the first failure and fast-forwards the main branch only after all gates pass.
 
 Do not use parallel writing agents. Subagents are optional and read-only;
 their extra token cost must buy an independent, bounded audit.
