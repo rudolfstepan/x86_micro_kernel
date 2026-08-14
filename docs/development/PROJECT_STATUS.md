@@ -71,6 +71,10 @@ S0.3c-3g korreliert Dienstanfragen zusätzlich mit einer festen 32-Bit-ID und
 der Endpointgeneration. Eine absichtlich um eins verfälschte Antwort wird im
 Gast verworfen; erst die nachfolgende korrekte Diagnoseantwort erzeugt
 `SERVICE_CORRELATION_OK`.
+S0.3c-3h übergibt den vollständigen festen Ethernet/ARP-Header und verschiebt
+dessen Strukturvalidierung in den Ring-3-Dienst. Der Gast injiziert vor dem
+gültigen Frame eine falsche ARP-Adresslänge und verlangt
+`ARP_VALIDATION_OK` ohne Antwort auf die ungültige Eingabe.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 

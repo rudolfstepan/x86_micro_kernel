@@ -118,7 +118,17 @@ static void ipc_message_set_test_arp_frame(x86os_ipc_message_t *message) {
         message->payload[index] = (uint8_t)index;
     message->payload[16] = 0x08U;
     message->payload[17] = 0x06U;
-    message->length = 18U;
+    message->payload[18] = 0U;
+    message->payload[19] = 1U;
+    message->payload[20] = 0x08U;
+    message->payload[21] = 0U;
+    message->payload[22] = 6U;
+    message->payload[23] = 4U;
+    message->payload[24] = 0U;
+    message->payload[25] = 2U;
+    for (size_t index = 26U; index < 46U; ++index)
+        message->payload[index] = (uint8_t)index;
+    message->length = 46U;
 }
 
 static int ipc_child_main(const char *mode, const char *handle_text) {
@@ -458,6 +468,13 @@ static int test_diagnostic_service(void) {
     handle = X86OS_IPC_INVALID_HANDLE;
     if (x86os_service_connect(X86OS_SERVICE_DIAGNOSTIC, &handle) != 0)
         return -1;
+    ipc_message_set_test_arp_frame(&message);
+    message.payload[22] = 5U;
+    if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
+    ipc_message_prepare(&message);
+    if (x86os_ipc_receive_timeout(handle, &message, 100U) != -110)
+        return -1;
+    x86os_puts("TEST_STAGE ARP_VALIDATION_OK\n");
     ipc_message_set_test_arp_frame(&message);
     if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
     ipc_message_prepare(&message);

@@ -511,7 +511,7 @@ int supervisor_service_connect(Process *client, uint32_t service_id,
 bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     KASSERT_NOT_IRQ();
     KASSERT(irq_enabled());
-    if (frame == NULL || length < 14U || frame[12] != 0x08U ||
+    if (frame == NULL || length < 42U || frame[12] != 0x08U ||
         frame[13] != 0x06U || !probe_runtime.network_probe_pending ||
         !probe_runtime.active ||
         probe_runtime.fenced || !probe_runtime.healthy ||
@@ -524,10 +524,10 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     ipc_message_t message = {
         .version = IPC_MESSAGE_VERSION,
         .struct_size = sizeof(ipc_message_t),
-        .length = 18U,
+        .length = 46U,
         .payload = {'N', 'E', 'T', 'R'},
     };
-    for (uint32_t index = 0U; index < 14U; ++index)
+    for (uint32_t index = 0U; index < 42U; ++index)
         message.payload[index + 4U] = frame[index];
     int ingress = ipc_send_external_from_peer(
         probe_runtime.pid, probe_runtime.process_generation,

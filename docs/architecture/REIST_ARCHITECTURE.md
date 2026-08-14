@@ -307,6 +307,12 @@ von Null verschiedenen Anfrage-ID passen. IDs laufen nicht still auf Null
 über. Der Gast weist die Ablehnung einer absichtlich falschen Antwort-ID nach,
 bevor eine korrekt korrelierte Anfrage weiter Fortschritt macht.
 
+S0.3c-3h erweitert den exklusiven Ingress auf den festen 42-Byte-
+Ethernet/ARP-Header. Hardwaretyp, Protokolltyp, Adresslängen und Opcode werden
+für diesen autoritativen Pfad nur im restartbaren Ring-3-Dienst validiert.
+Strukturell ungültige ARP-Frames erzeugen weder Klassifikation noch Antwort;
+der Kernel erhält weiterhin nur Frames, deren Übergabe vorher abgelehnt wurde.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

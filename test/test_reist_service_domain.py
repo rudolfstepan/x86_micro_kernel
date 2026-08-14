@@ -84,12 +84,12 @@ class ReistServiceDomainTests(unittest.TestCase):
         netdev = read("drivers/net/netdev.c")
         supervisor = read("kernel/init/supervisor.c")
         ipc = read("kernel/ipc/ipc.c")
-        self.assertIn("uint8_t service_header[14U]", netdev)
+        self.assertIn("uint8_t service_header[42U]", netdev)
         self.assertIn("memcpy(service_header, packet", netdev)
         self.assertIn("supervisor_network_submit_header(", netdev)
         self.assertIn("service_header, sizeof(service_header)", netdev)
         self.assertIn("if (!service_owned) netdev_queue_rx_packet", netdev)
-        self.assertIn(".length = 18U", supervisor)
+        self.assertIn(".length = 46U", supervisor)
         handoff = supervisor[
             supervisor.index("bool supervisor_network_submit_header("):
             supervisor.index("static void supervisor_worker(")]
@@ -113,12 +113,24 @@ class ReistServiceDomainTests(unittest.TestCase):
                              supervisor.index("int supervisor_network_probe_request")]
         self.assertLess(ingress.index("network_probe_pending = false"),
                         ingress.index("return ingress == 0"))
-        self.assertIn("for (uint32_t index = 0U; index < 14U; ++index)",
+        self.assertIn("for (uint32_t index = 0U; index < 42U; ++index)",
                       supervisor)
         self.assertIn("ipc_send_external_from_peer(", supervisor)
         self.assertIn("if (endpoint->count >= IPC_QUEUE_DEPTH)", ipc)
         self.assertIn("peer->holder_pid", ipc)
         self.assertNotIn("ipc_send_timeout(", ingress)
+
+    def test_arp_structure_validation_runs_only_in_ring3_service(self):
+        service = read("examples/userspace/reist_probe.c")
+        guest = read("examples/userspace/guest_test.c")
+        self.assertIn("message->length < 46U", service)
+        for offset in range(18, 26):
+            self.assertIn(f"message->payload[{offset}]", service)
+        self.assertIn("message->length = 46U", guest)
+        self.assertIn("TEST_STAGE ARP_VALIDATION_OK", guest)
+        self.assertIn("message.payload[22] = 5U", guest)
+        self.assertNotIn("arp_packet_t", service)
+        self.assertNotIn("k_malloc", service)
 
     def test_real_nic_probe_is_service_scoped_and_rate_limited(self):
         supervisor = read("kernel/init/supervisor.c")

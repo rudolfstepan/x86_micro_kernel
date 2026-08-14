@@ -193,10 +193,13 @@ void netdev_deliver_rx(const uint8_t* packet, uint16_t length) {
      * drain runs with interrupts enabled.  Drop rather than spin if an IRQ
      * interrupts that foreground producer. */
     if (__sync_lock_test_and_set(&rx_producer_busy, 1u)) return;
-    uint8_t service_header[14U];
-    memcpy(service_header, packet, sizeof(service_header));
-    bool service_owned = supervisor_network_submit_header(
-        service_header, sizeof(service_header));
+    bool service_owned = false;
+    if (length >= 42U) {
+        uint8_t service_header[42U];
+        memcpy(service_header, packet, sizeof(service_header));
+        service_owned = supervisor_network_submit_header(
+            service_header, sizeof(service_header));
+    }
     if (netdev_is_dhcp_client_packet(packet, length)) {
         netdev_queue_dhcp_packet(packet, length);
     }

@@ -1088,9 +1088,17 @@ aktuelle ID. Der Gast lässt den Dienst absichtlich `request_id + 1` senden,
 verwirft diese Antwort und beweist anschließend mit einer korrekt korrelierten
 Diagnoseanfrage weiteren Fortschritt über `SERVICE_CORRELATION_OK`.
 
-S0.3c-3h inventarisiert als nächsten Schritt den verbleibenden autoritativen
-Kernel-Netzwerkpfad und verschiebt die nächste kleinste, begrenzte
-Protokollfunktion vollständig in die restartbare Ring-3-Domäne.
+**S0.3c-3h ist umgesetzt:** Der exklusive Probe-Handoff transportiert jetzt
+den vollständigen festen 42-Byte-Ethernet/ARP-Header. Die restartbare
+Ring-3-Domäne validiert Hardwaretyp Ethernet, Protokolltyp IPv4,
+Adresslängen 6/4 und den begrenzten Request/Reply-Opcode ohne Heap oder
+variable Schleifen. Ein absichtlich falscher Hardware-Adresslängenwert erzeugt
+keine Antwort; erst danach wird ein gültiges ARP-Frame klassifiziert. Der Gast
+und Runner verlangen `ARP_VALIDATION_OK`.
+
+S0.3c-3i bindet als nächsten Schritt die ARP-Reply-Semantik an die konkrete
+ausstehende Probe (Ziel-/Absenderidentität), statt jedes strukturell gültige
+ARP-Frame als Probeantwort zu akzeptieren.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

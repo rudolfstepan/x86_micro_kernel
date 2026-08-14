@@ -82,7 +82,7 @@ static void response_init(x86os_ipc_message_t *message, uint32_t request_id,
 
 static const char *network_classification(
         const x86os_ipc_message_t *message) {
-    /* NET1 followed by one complete Ethernet header.  This deliberately
+    /* NET1/NETR followed by one complete Ethernet+ARP header.  This deliberately
      * bounded v1 parser performs no allocation and publishes no output. */
     if (message->length < 18U || message->payload[0] != 'N' ||
         message->payload[1] != 'E' || message->payload[2] != 'T' ||
@@ -90,7 +90,15 @@ static const char *network_classification(
         return NULL;
     uint16_t ethertype = ((uint16_t)message->payload[16] << 8) |
                          message->payload[17];
-    if (ethertype == 0x0806U) return "REIST_NET_ARP";
+    if (ethertype == 0x0806U) {
+        if (message->length < 46U || message->payload[18] != 0U ||
+            message->payload[19] != 1U || message->payload[20] != 0x08U ||
+            message->payload[21] != 0U || message->payload[22] != 6U ||
+            message->payload[23] != 4U || message->payload[24] != 0U ||
+            (message->payload[25] != 1U && message->payload[25] != 2U))
+            return NULL;
+        return "REIST_NET_ARP";
+    }
     if (ethertype == 0x0800U) return "REIST_NET_IPV4";
     return "REIST_NET_OTHER";
 }
