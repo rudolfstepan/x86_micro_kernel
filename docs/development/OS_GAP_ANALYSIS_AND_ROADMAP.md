@@ -135,6 +135,13 @@ und 10 verbindlich.
       - [x] S0.3c-6d3 Stromverlust während einer persistenten Mutation mit
         Neustart, Journal-Recovery und anschließendem Ring-3-Dienst-Selbsttest
   - [ ] S0.3c-7 Unabhängiger Standby-/Supervisor-Kanal und realer Handover
+    - [x] S0.3c-7a Statischer Lease-/Epoch-/Fence-Protokollkern mit
+      Split-Brain-, Stale-Epoch- und Integritäts-Fault-Tests
+    - [ ] S0.3c-7b Plattformbackend für einen elektrisch und zeitlich
+      unabhängigen Supervisor-Kanal samt rücklesbarem Fence
+    - [ ] S0.3c-7c Zwei reale Ausführungskanäle mit Zustandsreplikation,
+      Selbsttest, Übernahme und kontrollierter Reintegration
+    - [ ] S0.3c-7d Common-Cause-Analyse und wiederholte Zielhardware-Failover-Gates
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
@@ -1402,6 +1409,19 @@ noch nicht explizit aktivierten Dienst vor `storage_service_start()` starten.
 Ein eigener Aktivierungszustand trennt nun „noch nicht gestartet“ von
 „ausgefallen“, und IRQ-serialisierte Kontrollzugriffe verhindern konkurrierende
 Reparatur der redundanten Kopien. Nächster Dienstmigrationsschritt ist S0.3c-7.
+
+**S0.3c-7a ist umgesetzt:** Ein statischer, `critical_object`-geschützter
+Zwei-Knoten-Protokollkern verwaltet aktive und Standby-ID, monotone Lease,
+64-Bit-Epoche, Fence-Epoche und Transitionssequenz. Nur der aktive Knoten darf
+seine aktuelle, noch nicht abgelaufene Epoche verlängern. Eine Übernahme ist
+erst nach Leaseablauf und expliziter Bestätigung möglich, dass genau diese
+Epoche extern gefenct wurde. Der Rollenwechsel erhöht die Epoche; alter Active,
+alte Fence-Bestätigungen und alte Kandidaten verlieren damit dauerhaft ihre
+Autorität. Alle Kapazitäten sind statisch, Überläufe enden fail-closed, und
+Host-Fault-Tests decken Split-Brain, verfrühte Übernahme, stale Epoch sowie
+einfach und doppelt beschädigte Kontrollkopien ab. Das ist nur der
+Protokollbaustein: Ohne S0.3c-7b existieren weder unabhängiger Transport noch
+rücklesbares Hardware-Fence; ein fail-operationaler Claim bleibt unzulässig.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

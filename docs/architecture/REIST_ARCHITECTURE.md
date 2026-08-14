@@ -496,6 +496,29 @@ nicht gestarteten Dienst nicht als Ausfall behandeln. Alle Read/Repair/Update-
 Operationen derselben redundanten Kontrollinstanz sind lokal IRQ-serialisiert,
 damit Worker und Bind-Syscall keine Kopien gegeneinander überschreiben.
 
+### Standby-Handover-Protokoll
+
+S0.3c-7a definiert den plattformneutralen Sicherheitskern für zwei Kanäle.
+Sein fester Status enthält `active_node`, `standby_node`, Lease-Dauer und
+-Deadline, eine 64-Bit-Epoche, die extern bestätigte Fence-Epoche sowie eine
+monotone Transitionssequenz. Der Status liegt redundant mit ECC, CRC und
+semantischem Validator vor. Ein Standby darf nur übernehmen, wenn
+
+1. die beobachtete Epoche noch exakt aktuell ist,
+2. die Lease des Active abgelaufen ist,
+3. ein unabhängiger Kanal das Fence genau dieser Epoche bestätigt hat und
+4. Epoche sowie Sequenz noch erhöht werden können.
+
+Der Rollenwechsel tauscht die IDs, erhöht die Epoche, löscht die alte
+Fence-Bestätigung und eröffnet eine neue begrenzte Lease. Damit kann ein alter
+Active weder verlängern noch mit einem alten Fence erneut übernehmen. Der
+Protokollkern allokiert nicht und führt keine I/O aus. Die derzeitige
+Implementierung ist absichtlich noch nicht im Bootpfad aktiviert: Ein lokaler
+RAM-Datensatz wäre keine unabhängige Fehlerdomäne und dürfte keinen realen
+Ausgang freigeben. S0.3c-7b muss Transport, rücklesbares Interlock und eigene
+Zeit-/Stromversorgung bereitstellen; erst S0.3c-7c darf reale Übernahme und
+Reintegration behaupten.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

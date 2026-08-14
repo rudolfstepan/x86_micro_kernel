@@ -184,6 +184,13 @@ Ring-3-Storage-Dienst den realen MBR-Selbsttest und der Gast `TEST_OK`
 erreichen. Ein dabei reproduzierter Race zwischen Supervisor-Worker und
 explizitem Storage-Start wurde durch einen getrennten Aktivierungszustand und
 IRQ-serialisierte Kontrollzugriffe beseitigt. Als nächstes folgt S0.3c-7.
+S0.3c-7a liefert dafür den ersten, noch plattformneutralen Protokollbaustein:
+Aktiv- und Standby-Knoten teilen eine geschützt gespeicherte Lease, Epoche,
+Fence-Epoche und Transitionssequenz. Takeover ist nur nach Leaseablauf und
+verifiziertem Fence derselben Epoche erlaubt; danach sind alle alten Tokens
+stale. Hosttests prüfen Split-Brain-Abwehr, Überlauf und ECC/CRC-Recovery. Das
+ist ausdrücklich noch kein unabhängiger Kanal. Als nächstes muss S0.3c-7b ein
+externes Supervisor-/Fence-Backend mit eigener Fehlerdomäne anbinden.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 
