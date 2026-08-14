@@ -5,6 +5,8 @@
 #include "arch/x86/include/interrupt.h"
 #include "include/kernel/panic.h"
 #include "include/kernel/output_fence.h"
+#include "drivers/net/netstack.h"
+#include "drivers/net/netdev.h"
 #include "kernel/proc/process.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
@@ -52,6 +54,7 @@ typedef struct {
     uint32_t process_generation;
     uint32_t launch_count;
     uint32_t endpoint_handle;
+    uint64_t last_network_probe_ms;
 } supervisor_probe_runtime_t;
 
 static supervisor_probe_runtime_t probe_runtime;
@@ -472,6 +475,12 @@ int supervisor_probe_report(int pid, uint32_t generation,
         (void)supervisor_force_isolate(probe_runtime.handle);
         return -1;
     }
+    if (report_type == REIST_REPORT_NETWORK_HEADER) {
+        if (value != 0x0800U && value != 0x0806U) return -1;
+        printf(value == 0x0806U ? "REIST_NETWORK RX_HEADER_ARP\n"
+                                : "REIST_NETWORK RX_HEADER_IPV4\n");
+        return 0;
+    }
     return -1;
 }
 
@@ -497,7 +506,8 @@ int supervisor_service_connect(Process *client, uint32_t service_id,
 bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     KASSERT_NOT_IRQ();
     KASSERT(irq_enabled());
-    if (frame == NULL || length < 14U || !probe_runtime.active ||
+    if (frame == NULL || length < 14U || frame[12] != 0x08U ||
+        frame[13] != 0x06U || !probe_runtime.active ||
         probe_runtime.fenced || !probe_runtime.healthy ||
         probe_runtime.launch_count < 4U ||
         probe_runtime.endpoint_handle == IPC_INVALID_HANDLE ||
@@ -509,7 +519,7 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
         .version = IPC_MESSAGE_VERSION,
         .struct_size = sizeof(ipc_message_t),
         .length = 18U,
-        .payload = {'N', 'E', 'T', '1'},
+        .payload = {'N', 'E', 'T', 'R'},
     };
     for (uint32_t index = 0U; index < 14U; ++index)
         message.payload[index + 4U] = frame[index];
@@ -518,8 +528,24 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
         probe_runtime.endpoint_handle, &message) == 0;
 }
 
+int supervisor_network_probe_request(int pid, uint32_t generation,
+                                     uint64_t now_ms) {
+    if (!probe_runtime.active || probe_runtime.fenced ||
+        !probe_runtime.healthy || pid != probe_runtime.pid ||
+        generation != probe_runtime.process_generation ||
+        !process_identity_alive(pid, generation)) return -13;
+    if (probe_runtime.last_network_probe_ms != 0U &&
+        now_ms - probe_runtime.last_network_probe_ms < 250U) return -11;
+    probe_runtime.last_network_probe_ms = now_ms;
+    return netstack_probe_gateway() ? 0 : -19;
+}
+
 static void supervisor_worker(void) {
     for (;;) {
+        /* Bounded network bottom half: IRQ handlers only acknowledge and set
+         * pending flags, so foreground progress must not depend on a shell
+         * command happening to poll the NIC. */
+        netdev_poll();
         if (probe_runtime.active && !probe_runtime.fenced &&
             !process_identity_alive(probe_runtime.pid,
                                     probe_runtime.process_generation)) {
@@ -596,6 +622,11 @@ int supervisor_service_connect(struct Process *client, uint32_t service_id,
 bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     (void)frame; (void)length;
     return false;
+}
+int supervisor_network_probe_request(int pid, uint32_t generation,
+                                     uint64_t now_ms) {
+    (void)pid; (void)generation; (void)now_ms;
+    return -1;
 }
 #endif
 

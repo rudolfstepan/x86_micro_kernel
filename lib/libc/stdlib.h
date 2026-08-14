@@ -67,6 +67,7 @@
 #define SYS_REIST_REPORT 56
 #define SYS_SERVICE_CONNECT 57
 #define SYS_IPC_RELEASE 58
+#define SYS_NETWORK_PROBE 59
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

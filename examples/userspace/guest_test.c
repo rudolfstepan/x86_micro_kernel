@@ -411,8 +411,16 @@ static int test_diagnostic_service(void) {
     if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
     ipc_message_prepare(&message);
     if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
-        !ipc_message_is(&message, "REIST_NET_ARP") ||
-        x86os_ipc_release(handle) != 0) return -1;
+        !ipc_message_is(&message, "REIST_NET_ARP")) return -1;
+
+    ipc_message_set(&message, "NETPROBE");
+    if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
+    ipc_message_prepare(&message);
+    if (x86os_ipc_receive_timeout(handle, &message, 1000U) != 0) return -1;
+    if (ipc_message_is(&message, "REIST_NET_ARP"))
+        x86os_puts("TEST_STAGE NETWORK_HANDOFF_OK\n");
+    else if (!ipc_message_is(&message, "REIST_NET_UNAVAILABLE")) return -1;
+    if (x86os_ipc_release(handle) != 0) return -1;
     return 0;
 }
 

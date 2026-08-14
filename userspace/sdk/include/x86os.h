@@ -62,7 +62,8 @@ enum {
     X86OS_SYS_IPC_DELEGATE = 55,
     X86OS_SYS_REIST_REPORT = 56,
     X86OS_SYS_SERVICE_CONNECT = 57,
-    X86OS_SYS_IPC_RELEASE = 58
+    X86OS_SYS_IPC_RELEASE = 58,
+    X86OS_SYS_NETWORK_PROBE = 59
 };
 
 enum {
@@ -121,6 +122,7 @@ typedef struct {
 #define X86OS_REIST_REPORT_SELF_TEST 1U
 #define X86OS_REIST_REPORT_PROGRESS 2U
 #define X86OS_REIST_REPORT_INVALID 3U
+#define X86OS_REIST_REPORT_NETWORK_HEADER 4U
 #define X86OS_SERVICE_DIAGNOSTIC 1U
 
 typedef uint32_t x86os_ipc_handle_t;
@@ -214,6 +216,7 @@ int x86os_ipc_receive_timeout(x86os_ipc_handle_t handle,
                               uint32_t timeout_ms);
 int x86os_ipc_close(x86os_ipc_handle_t handle);
 int x86os_ipc_release(x86os_ipc_handle_t handle);
+int x86os_network_probe(void);
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,
                        uint32_t rights);
 int x86os_reist_report(uint32_t report_type, uint32_t value);

@@ -236,7 +236,7 @@ bool arp_lookup(uint32_t ip, uint8_t *mac_out) {
     return false;
 }
 
-void arp_send_request(uint32_t target_ip) {
+static bool arp_send_request_now(uint32_t target_ip) {
     uint8_t packet[sizeof(eth_header_t) + sizeof(arp_packet_t)];
     eth_header_t *eth = (eth_header_t *)packet;
     arp_packet_t *arp = (arp_packet_t *)(packet + sizeof(eth_header_t));
@@ -259,7 +259,16 @@ void arp_send_request(uint32_t target_ip) {
     memset(arp->target_mac, 0, ETH_ADDR_LEN);
     arp->target_ip = htonl(target_ip);
 
-    nic_send(packet, sizeof(packet));
+    return nic_send(packet, sizeof(packet));
+}
+
+void arp_send_request(uint32_t target_ip) {
+    (void)arp_send_request_now(target_ip);
+}
+
+bool netstack_probe_gateway(void) {
+    return net_config.gateway != 0U &&
+           arp_send_request_now(net_config.gateway);
 }
 
 void arp_send_reply(uint32_t target_ip, uint8_t *target_mac) {

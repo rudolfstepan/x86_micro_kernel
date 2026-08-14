@@ -14,6 +14,7 @@ struct Process;
 #define REIST_REPORT_SELF_TEST 1U
 #define REIST_REPORT_PROGRESS 2U
 #define REIST_REPORT_INVALID 3U
+#define REIST_REPORT_NETWORK_HEADER 4U
 #define REIST_SERVICE_DIAGNOSTIC 1U
 
 typedef enum {
@@ -70,6 +71,8 @@ int supervisor_probe_report(int pid, uint32_t generation,
 int supervisor_service_connect(struct Process *client, uint32_t service_id,
                                uint32_t *handle_out);
 bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length);
+int supervisor_network_probe_request(int pid, uint32_t generation,
+                                     uint64_t now_ms);
 int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind);
 int supervisor_register(const char *name, const supervisor_config_t *config,

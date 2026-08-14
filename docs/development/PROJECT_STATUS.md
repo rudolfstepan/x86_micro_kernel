@@ -48,9 +48,14 @@ Ethernet-Header-Parser in den Ring-3-Dienst verschoben und weist ARP-
 Klassifikation im Gast nach. Als nächstes wird dieser Parser über einen
 begrenzten Frame-Handoff an den echten RX-Pfad angebunden. S0.3c-3b hat diesen
 Handoff nun implementiert: genau 14 Headerbytes, feste Queue, keine Allokation,
-kein Warten und generation-sicheres Peer-Routing. Als nächstes muss ein echter
-NIC-Gastlauf die Übergabe beweisen; danach wird die ausgewählte parallele
-Kernelklassifikation entfernt. Die bisherige
+kein Warten und generation-sicheres Peer-Routing. S0.3c-3c weist die Übergabe
+nun mit einem echten RTL8139-Gastlauf nach: Der gesunde Dienst fordert einen
+festen, auf 250 ms begrenzten Gateway-ARP-Probe an und bestätigt erst den vom
+NIC zurückkehrenden `NETR`-Header mit `NETWORK_HANDOFF_OK`. Ohne NIC bleibt der
+Pfad definiert degradiert. Als nächstes wird die ausgewählte parallele
+Kernelklassifikation entfernt. Der begrenzte Netzwerk-Bottom-Half läuft nun
+garantiert im 10-ms-Supervisor-Worker statt nur opportunistisch in Shellpfaden.
+Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 
 Der zuletzt ausgeführte vollständige Windows-Build bootete in VMware bis zum

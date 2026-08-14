@@ -192,6 +192,13 @@ static int syscall_reist_report(uint32_t report_type, uint32_t value) {
                                    report_type, value, pit_monotonic_ms());
 }
 
+static int syscall_network_probe(void) {
+    Process *process = scheduler_current_process();
+    if (process == NULL) return -13;
+    return supervisor_network_probe_request(process->pid, process->generation,
+                                            pit_monotonic_ms());
+}
+
 static int syscall_service_connect(uint32_t service_id,
                                    ipc_handle_t *user_handle) {
     Process *process = scheduler_current_process();
@@ -723,6 +730,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_reist_report,       // Syscall 56: Probe health report
     (void*)&syscall_service_connect,    // Syscall 57: Connect named service
     (void*)&ipc_release,                // Syscall 58: Release delegated cap
+    (void*)&syscall_network_probe,      // Syscall 59: Fixed supervised probe
     // Add more syscalls here as needed
 };
 
@@ -1020,6 +1028,9 @@ void syscall_handler(Registers* regs) {
         case SYS_IPC_RELEASE:
             result = (uint32_t)ipc_release(
                 scheduler_current_process(), (ipc_handle_t)arg1);
+            break;
+        case SYS_NETWORK_PROBE:
+            result = (uint32_t)syscall_network_probe();
             break;
         default:
             result = (uint32_t)-1;

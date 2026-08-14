@@ -103,6 +103,10 @@ int x86os_ipc_release(x86os_ipc_handle_t handle) {
     return (int)x86os_syscall(X86OS_SYS_IPC_RELEASE, handle, 0, 0);
 }
 
+int x86os_network_probe(void) {
+    return (int)x86os_syscall(X86OS_SYS_NETWORK_PROBE, 0, 0, 0);
+}
+
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,
                        uint32_t rights) {
     return (int)x86os_syscall(X86OS_SYS_IPC_DELEGATE, handle,

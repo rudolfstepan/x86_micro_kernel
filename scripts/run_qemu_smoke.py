@@ -30,6 +30,7 @@ REIST_PROBE_MARKERS = (
 )
 REIST_SERVICE_MARKER = "TEST_STAGE DIAGNOSTIC_SERVICE_OK"
 REIST_NETWORK_MARKER = "TEST_STAGE NETWORK_PARSER_OK"
+REIST_NETWORK_HANDOFF_MARKER = "TEST_STAGE NETWORK_HANDOFF_OK"
 SHELL_PROMPT = "C:\\>"
 FAIL_MARKERS = (
     "TEST_FAIL",
@@ -250,6 +251,7 @@ def validate(
     transcript: str,
     expect_fatal_recovery: bool = False,
     expect_reist_probe: bool = False,
+    expect_network_handoff: bool = False,
 ) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
@@ -286,6 +288,11 @@ def validate(
         network = exact_line_position(transcript, REIST_NETWORK_MARKER)
         if network < service or network > test:
             return "missing ordered REIST network-parser marker"
+    if expect_network_handoff:
+        handoff = exact_line_position(transcript,
+                                      REIST_NETWORK_HANDOFF_MARKER)
+        if handoff < 0 or handoff > test:
+            return "missing ordered real NIC network-handoff marker"
     return None
 
 
@@ -325,6 +332,11 @@ def main() -> int:
         help="require ordered crash, hang and invalid-reply recovery markers",
     )
     parser.add_argument(
+        "--expect-network-handoff",
+        action="store_true",
+        help="require a real NIC RX header to reach the Ring-3 service",
+    )
+    parser.add_argument(
         "--persistent", action="store_true",
         help="allow guest writes to the image (use only with a disposable copy)",
     )
@@ -356,7 +368,8 @@ def main() -> int:
         args.log.write_text(transcript, encoding="utf-8")
 
     marker_error = validate(transcript, args.expect_fatal_recovery,
-                            args.expect_reist_probe)
+                            args.expect_reist_probe,
+                            args.expect_network_handoff)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")

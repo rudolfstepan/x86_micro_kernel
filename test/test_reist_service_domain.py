@@ -94,12 +94,38 @@ class ReistServiceDomainTests(unittest.TestCase):
             supervisor.index("static void supervisor_worker(")]
         self.assertIn("KASSERT_NOT_IRQ();", handoff)
         self.assertIn("KASSERT(irq_enabled());", handoff)
+        self.assertIn("frame[12] != 0x08U", handoff)
+        self.assertIn("frame[13] != 0x06U", handoff)
         self.assertIn("for (uint32_t index = 0U; index < 14U; ++index)",
                       supervisor)
         self.assertIn("ipc_send_external_from_peer(", supervisor)
         self.assertIn("if (endpoint->count >= IPC_QUEUE_DEPTH)", ipc)
         self.assertIn("peer->holder_pid", ipc)
         self.assertNotIn("ipc_send_timeout(", handoff)
+
+    def test_real_nic_probe_is_service_scoped_and_rate_limited(self):
+        supervisor = read("kernel/init/supervisor.c")
+        service = read("examples/userspace/reist_probe.c")
+        guest = read("examples/userspace/guest_test.c")
+        sdk = read("userspace/sdk/include/x86os.h")
+        probe = supervisor[
+            supervisor.index("int supervisor_network_probe_request("):
+            supervisor.index("static void supervisor_worker(")]
+        self.assertIn("pid != probe_runtime.pid", probe)
+        self.assertIn("generation != probe_runtime.process_generation", probe)
+        self.assertIn("< 250U", probe)
+        self.assertIn("netstack_probe_gateway()", probe)
+        self.assertIn("X86OS_SYS_NETWORK_PROBE = 59", sdk)
+        self.assertIn('message_is(&request, "NETPROBE")', service)
+        self.assertIn("request.payload[3] == 'R'", service)
+        self.assertIn("REIST_REPORT_NETWORK_HEADER", service)
+        self.assertIn("TEST_STAGE NETWORK_HANDOFF_OK", guest)
+        worker = supervisor[
+            supervisor.index("static void supervisor_worker("):
+            supervisor.index("bool supervisor_start_worker(")]
+        self.assertIn("netdev_poll();", worker)
+        self.assertIn("scheduler_sleep_ms(SUPERVISOR_CHECK_INTERVAL_MS)",
+                      worker)
 
 
 if __name__ == "__main__":

@@ -53,6 +53,23 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertIn("network-parser", RUNNER_MODULE.validate(
             no_network, expect_reist_probe=True))
 
+    def test_real_network_handoff_marker_is_optional_but_enforceable(self):
+        transcript = "\n".join((
+            "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,
+            RUNNER_MODULE.REIST_SERVICE_MARKER,
+            RUNNER_MODULE.REIST_NETWORK_MARKER,
+            RUNNER_MODULE.REIST_NETWORK_HANDOFF_MARKER,
+            "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_reist_probe=True,
+            expect_network_handoff=True))
+        missing = transcript.replace(
+            RUNNER_MODULE.REIST_NETWORK_HANDOFF_MARKER + "\n", "")
+        self.assertIn("real NIC", RUNNER_MODULE.validate(
+            missing, expect_reist_probe=True,
+            expect_network_handoff=True))
+
     def test_reist_probe_completion_precedes_guest_command(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         completion = source.index("REIST_PROBE_MARKERS[-1]")

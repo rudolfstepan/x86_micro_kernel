@@ -170,6 +170,7 @@ bool netstack_configure_dhcp(void);
 uint32_t netstack_get_ip_address(void);
 bool netstack_ping(uint32_t dst_ip, uint16_t id, uint16_t seq,
                    uint32_t timeout_ms);
+bool netstack_probe_gateway(void);
 void netstack_debug_stats(void);
 
 // Packet Processing

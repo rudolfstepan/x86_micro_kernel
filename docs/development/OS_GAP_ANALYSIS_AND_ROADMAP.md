@@ -1044,11 +1044,20 @@ Ingress ist nichtblockierend, heapfrei und verwirft bei Queue-Druck oder ohne
 aktiven Client. IPC bindet den Absender an den einzigen generation-geprüften
 Peer, sodass der Client die eigene Ingress-Nachricht nicht konsumieren kann.
 
-S0.3c-3c ergänzt einen echten NIC-Gastnachweis und entfernt danach für den
-ausgewählten Pakettyp die parallele Kernelklassifikation. Erst wenn
-Fault-Injection den übrigen Netzwerkbetrieb nicht beeinflusst, gilt dieser
-Netzwerkbaustein als migriert; ein paralleler autoritativer Kernelpfad zählt
-nicht.
+**S0.3c-3c ist umgesetzt:** Der gesunde Dienst kann über den ausschließlich im
+Default-Deny-Profil erlaubten Syscall 59 einen festen Gateway-ARP-Probe
+anfordern. Die Supervisorgrenze prüft PID plus Generation und begrenzt Aufrufe
+auf einen pro 250 ms. Nur ein realer `NETR`-RX-Header erzeugt
+`NETWORK_HANDOFF_OK`; ohne NIC antwortet der Dienst definiert mit
+`REIST_NET_UNAVAILABLE`. Der QEMU-Runner besitzt dafür ein separates striktes
+Abnahmeflag. Der 10-ms-Supervisor-Worker ruft den begrenzten `netdev_poll()`
+als garantierten Bottom-Half auf; RX-Fortschritt hängt nicht mehr von einem
+opportunistischen Shell-/Netzwerkkommando ab.
+
+S0.3c-3d entfernt für den ausgewählten Pakettyp die parallele
+Kernelklassifikation. Erst wenn Fault-Injection den übrigen Netzwerkbetrieb
+nicht beeinflusst, gilt dieser Netzwerkbaustein als migriert; ein paralleler
+autoritativer Kernelpfad zählt nicht.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

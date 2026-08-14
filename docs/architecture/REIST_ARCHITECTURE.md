@@ -225,7 +225,7 @@ verwenden; fehlgeschlagene Erzeugung läuft durch die bestehenden vollständigen
 Rollbackpfade.
 
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
-Bitinventar der gegenwärtig 59 Syscalls. Normale Programme erhalten explizit
+Bitinventar der gegenwärtig 60 Syscalls. Normale Programme erhalten explizit
 das Kompatibilitätsprofil. Das Supervisor-Profil `PROBE` beginnt dagegen bei
 Default-Deny und erlaubt ausschließlich Exit, Identität, Yield/Sleep,
 monotone Diagnosezeit, Memory-Statistik und die für den kontrollierten Kanal
@@ -276,6 +276,16 @@ damit kann nur der Dienstbesitzer den Header empfangen und eine Antwort nur an
 diesen Peer richten. Die bisherige Kernelverarbeitung bleibt während dieser
 Transportstufe noch aktiv und wird erst nach einem realen NIC-Laufzeitnachweis
 für den ausgewählten Pakettyp entfernt.
+
+S0.3c-3c liefert den realen NIC-Nachweis. Nur die generation-geprüfte gesunde
+Probedomäne darf über Syscall 59 höchstens alle 250 ms einen festen
+ARP-Gateway-Probe auslösen; beliebige Frames oder Ziele sind nicht möglich.
+Der Dienst unterscheidet synthetische `NET1`- von echten `NETR`-Headern und
+meldet den Handoff erst nach einem tatsächlich empfangenen ARP-Header. Der
+QEMU-Runner kann `NETWORK_HANDOFF_OK` verpflichtend verlangen. Ohne NIC liefert
+der Dienst einen definierten `REIST_NET_UNAVAILABLE`-Degradationsstatus.
+Der 10-ms-Supervisor-Worker führt außerdem den begrenzten Netzwerk-Bottom-Half
+aus; RX-Fortschritt hängt damit nicht mehr von zufälligen Shell-Kommandos ab.
 
 ## Betriebsstufen
 

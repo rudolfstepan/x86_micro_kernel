@@ -34,7 +34,7 @@ class ReistProbeDomainContractTests(unittest.TestCase):
 
     def test_profile_is_versioned_fixed_and_attached_before_publication(self):
         self.assertIn("PROCESS_DOMAIN_PROFILE_VERSION 1U", self.process_h)
-        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 59U", self.process_h)
+        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 60U", self.process_h)
         for field in ("version", "struct_size", "kind", "allowed_syscalls"):
             self.assertIn(field, self.process_h)
         self.assertRegex(
@@ -58,6 +58,7 @@ class ReistProbeDomainContractTests(unittest.TestCase):
             "SYS_MONOTONIC_MS", "SYS_IPC_SEND", "SYS_IPC_RECEIVE",
             "SYS_IPC_CREATE", "SYS_IPC_CLOSE", "SYS_IPC_SEND_TIMEOUT",
             "SYS_IPC_RECEIVE_TIMEOUT", "SYS_REIST_REPORT",
+            "SYS_NETWORK_PROBE",
         ):
             self.assertIn(allowed, probe)
         for denied in (

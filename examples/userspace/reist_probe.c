@@ -43,7 +43,8 @@ static const char *network_classification(
      * bounded v1 parser performs no allocation and publishes no output. */
     if (message->length < 18U || message->payload[0] != 'N' ||
         message->payload[1] != 'E' || message->payload[2] != 'T' ||
-        message->payload[3] != '1') return NULL;
+        (message->payload[3] != '1' && message->payload[3] != 'R'))
+        return NULL;
     uint16_t ethertype = ((uint16_t)message->payload[16] << 8) |
                          message->payload[17];
     if (ethertype == 0x0806U) return "REIST_NET_ARP";
@@ -78,7 +79,20 @@ int main(int argc, char **argv) {
         int receive = x86os_ipc_receive_timeout(endpoint, &request, 40U);
         if (receive == 0) {
             x86os_ipc_message_t response;
+            if (message_is(&request, "NETPROBE")) {
+                if (x86os_network_probe() == 0) continue;
+                message_init(&response, "REIST_NET_UNAVAILABLE");
+                if (x86os_ipc_send_timeout(endpoint, &response, 100U) != 0)
+                    return 7;
+                continue;
+            }
             const char *network = network_classification(&request);
+            if (network != NULL && request.payload[3] == 'R') {
+                uint32_t ethertype = ((uint32_t)request.payload[16] << 8) |
+                                     request.payload[17];
+                if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_HEADER,
+                                       ethertype) != 0) return 9;
+            }
             message_init(&response, message_is(&request, "DIAG")
                          ? "REIST_DIAG_OK"
                          : (network != NULL ? network
