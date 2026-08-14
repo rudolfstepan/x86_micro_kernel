@@ -10,6 +10,7 @@
 #include "kernel/time/pit.h"
 #include "include/kernel/watchdog.h"
 #include "include/kernel/ipc.h"
+#include "include/kernel/storage_request_pool.h"
 #include "mm/kmalloc.h"
 
 extern void swtch(context_t *old, context_t *new);
@@ -710,6 +711,7 @@ void scheduler_terminate_task(int task_id) {
      * scheduler's IRQ-disabled commit.  The caller's preemption guard keeps
      * the target slot and generation stable on this UP scheduler. */
     ipc_process_cleanup(process->pid, generation);
+    storage_request_cancel_process(process->pid, generation);
     process_close_all_files(process);
     process_orphan_children(process->pid);
 
@@ -748,6 +750,7 @@ void task_exit_status(int status) {
     irq_enable();
     if (process != NULL) {
         ipc_process_cleanup(process->pid, process_generation);
+        storage_request_cancel_process(process->pid, process_generation);
         process_close_all_files(process);
         process_orphan_children(process->pid);
     }

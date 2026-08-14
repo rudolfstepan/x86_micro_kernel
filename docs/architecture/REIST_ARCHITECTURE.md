@@ -445,6 +445,13 @@ absolute Deadline. Reentranz oder Parallelüberlappung wird vor Seiteneffekten
 abgewiesen; inkonsistente Übergänge fencen den Blockpfad beziehungsweise
 schalten das Dateisystem read-only. Das folgende S0.3c-6b ersetzt direkte
 Aufrufe schrittweise durch versioniertes IPC mit statischen Request-Pools.
+S0.3c-6b stellt dafür den gemeinsamen Dataplane bereit: acht feste Slots,
+24-Bit-Generationshandles, versionierte Block- und VFS-Operationen sowie
+maximal 512 Byte Nutzdaten. Payloads liegen als CRC-geschützte Primär- und
+Schattenkopie vor; Requestmetadaten und die einzige autorisierte
+Dienstidentität sind `critical_object`-geschützt. Der kleine IPC-Control-Plane
+transportiert künftig nur Handles und Status. Claim/Complete/Collect prüfen
+Client- und Dienstgeneration atomar; Exit-Cleanup widerruft idempotent.
 
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und

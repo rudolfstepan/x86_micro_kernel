@@ -151,7 +151,12 @@ Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler
 führen zum Schreib-Fence beziehungsweise Read-only-Zustand. Als nächstes folgt
-das statisch begrenzte Block-/VFS-IPC (S0.3c-6b).
+S0.3c-6b ist ebenfalls abgeschlossen: Ein gemeinsamer statischer 8-Slot-Pool
+trägt versionierte Block-/VFS-Requests über generationssichere Handles. Die
+maximal 512 Byte Nutzdaten sind CRC-geschützt redundant, Metadaten und
+Dienstidentität über `critical_object`; Prozessende widerruft alle betroffenen
+Slots. Als nächstes wird dieser Dataplane an den restartbaren Ring-3-Dienst
+gebunden (S0.3c-6c).
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 

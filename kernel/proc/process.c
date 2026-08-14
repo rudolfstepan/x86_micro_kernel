@@ -13,6 +13,7 @@
 #include "kernel/init/prg.h"
 #include "kernel/sched/scheduler.h"
 #include "include/kernel/panic.h"
+#include "include/kernel/storage_request_pool.h"
 
 #define USER_PROGRAM_ADDRESS PROGRAM_V1_BASE
 #define PROGRAM_REGION_SIZE PROGRAM_V1_REGION_SIZE
@@ -143,6 +144,7 @@ static int allocate_pid_locked(void) {
 
 static void release_process_slot(Process *process) {
     ipc_process_cleanup(process->pid, process->generation);
+    storage_request_cancel_process(process->pid, process->generation);
     process_close_all_files(process);
     uint32_t flags = irq_save();
     process->is_running = false;
