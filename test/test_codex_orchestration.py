@@ -22,6 +22,105 @@ RUNNER_SPEC.loader.exec_module(RUNNER)
 
 
 class CodexOrchestrationTests(unittest.TestCase):
+    def test_windows_codex_resolution_skips_incomplete_bundle(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            incomplete = root / "incomplete"
+            complete = root / "complete"
+            incomplete.mkdir()
+            complete.mkdir()
+            (incomplete / "codex.exe").write_bytes(b"")
+            (complete / "codex.exe").write_bytes(b"")
+            for helper in RUNNER.WINDOWS_CODEX_HELPERS:
+                (complete / helper).write_bytes(b"")
+            environment = {
+                "PATH": f"{incomplete};{complete}",
+                "PATHEXT": ".EXE;.CMD",
+                "USERPROFILE": str(root / "profile"),
+                "LOCALAPPDATA": str(root / "local"),
+            }
+            resolved = RUNNER.resolve_codex("codex", environment, windows=True)
+            self.assertEqual(pathlib.Path(resolved), complete / "codex.exe")
+            RUNNER.prepare_codex_environment(resolved, environment, windows=True)
+            path_entries = environment["PATH"].split(";")
+            self.assertEqual(pathlib.Path(path_entries[0]), complete)
+            self.assertEqual(pathlib.Path(path_entries[1]), complete)
+
+    def test_windows_codex_resolution_fails_closed_without_helpers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            incomplete = root / "incomplete"
+            incomplete.mkdir()
+            executable = incomplete / "codex.exe"
+            executable.write_bytes(b"")
+            environment = {
+                "PATH": str(incomplete),
+                "PATHEXT": ".EXE",
+                "USERPROFILE": str(root / "profile"),
+                "LOCALAPPDATA": str(root / "local"),
+            }
+            with self.assertRaisesRegex(
+                RUNNER.VerificationError, "no complete Windows Codex bundle"
+            ):
+                RUNNER.resolve_codex("codex", environment, windows=True)
+            with self.assertRaisesRegex(
+                RUNNER.VerificationError, "no complete Windows Codex bundle"
+            ):
+                RUNNER.resolve_codex(str(executable), environment, windows=True)
+
+    def test_windows_codex_resolution_accepts_packaged_resources(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary) / "release"
+            executable = root / "bin/codex.exe"
+            resources = root / "codex-resources"
+            executable.parent.mkdir(parents=True)
+            resources.mkdir()
+            executable.write_bytes(b"")
+            for helper in RUNNER.WINDOWS_CODEX_HELPERS:
+                (resources / helper).write_bytes(b"")
+            (root / "codex-package.json").write_text(
+                json.dumps(
+                    {
+                        "entrypoint": "bin/codex.exe",
+                        "resourcesDir": "codex-resources",
+                    }
+                ),
+                "utf-8",
+            )
+            resolved = RUNNER.resolve_codex(
+                str(executable), {"PATH": ""}, windows=True
+            )
+            self.assertEqual(pathlib.Path(resolved), executable)
+
+    def test_windows_codex_resolution_finds_managed_package_fallback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            profile = pathlib.Path(temporary) / "profile"
+            root = profile / ".codex/packages/standalone/releases/0.147.0"
+            executable = root / "bin/codex.exe"
+            resources = root / "codex-resources"
+            executable.parent.mkdir(parents=True)
+            resources.mkdir()
+            executable.write_bytes(b"")
+            for helper in RUNNER.WINDOWS_CODEX_HELPERS:
+                (resources / helper).write_bytes(b"")
+            (root / "codex-package.json").write_text(
+                json.dumps(
+                    {
+                        "entrypoint": "bin/codex.exe",
+                        "resourcesDir": "codex-resources",
+                    }
+                ),
+                "utf-8",
+            )
+            environment = {
+                "PATH": "",
+                "PATHEXT": ".EXE",
+                "USERPROFILE": str(profile),
+                "LOCALAPPDATA": str(profile / "local"),
+            }
+            resolved = RUNNER.resolve_codex("codex", environment, windows=True)
+            self.assertEqual(pathlib.Path(resolved), executable)
+
     def test_project_config_pins_sol_light_and_bounded_agents(self):
         config = tomllib.loads((ROOT / ".codex/config.toml").read_text("utf-8"))
         self.assertEqual(config["model"], "gpt-5.6-sol")

@@ -28,6 +28,12 @@ class PackageTimeout(RuntimeError):
     pass
 
 
+WINDOWS_CODEX_HELPERS = (
+    "codex-command-runner.exe",
+    "codex-windows-sandbox-setup.exe",
+)
+
+
 def git(repo: pathlib.Path, *arguments: str) -> str:
     result = subprocess.run(
         ["git", *arguments],
@@ -270,6 +276,152 @@ def resolve_qemu(environment: dict[str, str]) -> None:
     environment["PATH"] = f"{qemu.parent}{os.pathsep}{environment.get('PATH', '')}"
 
 
+def windows_codex_helper_directory(executable: pathlib.Path) -> pathlib.Path | None:
+    """Return the helper directory only for a complete, matching Codex bundle."""
+    executable = executable.resolve()
+    adjacent = executable.parent
+    if all((adjacent / helper).is_file() for helper in WINDOWS_CODEX_HELPERS):
+        return adjacent
+
+    package_root = executable.parent.parent
+    manifest_path = package_root / "codex-package.json"
+    if not manifest_path.is_file():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text("utf-8"))
+        entrypoint = (package_root / manifest["entrypoint"]).resolve()
+        resources = (package_root / manifest["resourcesDir"]).resolve()
+    except (KeyError, OSError, ValueError):
+        return None
+    if entrypoint != executable:
+        return None
+    if all((resources / helper).is_file() for helper in WINDOWS_CODEX_HELPERS):
+        return resources
+    return None
+
+
+def windows_path_candidates(
+    command: str, environment: dict[str, str]
+) -> list[pathlib.Path]:
+    command_path = pathlib.Path(command)
+    if command_path.parent != pathlib.Path("."):
+        return [command_path] if command_path.is_file() else []
+
+    suffixes = [""] if command_path.suffix else [
+        suffix
+        for extension in environment.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";")
+        if (suffix := extension.strip())
+    ]
+    candidates: list[pathlib.Path] = []
+    seen: set[str] = set()
+    for raw_directory in environment.get("PATH", "").split(";"):
+        directory = raw_directory.strip().strip('"')
+        if not directory:
+            continue
+        for suffix in suffixes:
+            candidate = pathlib.Path(directory) / f"{command}{suffix}"
+            if not candidate.is_file():
+                candidate = pathlib.Path(directory) / f"{command}{suffix.lower()}"
+            if not candidate.is_file():
+                continue
+            key = str(candidate.resolve()).casefold()
+            if key not in seen:
+                seen.add(key)
+                candidates.append(candidate.resolve())
+    return candidates
+
+
+def installed_windows_codex_candidates(
+    environment: dict[str, str]
+) -> list[pathlib.Path]:
+    profile = pathlib.Path(environment.get("USERPROFILE", pathlib.Path.home()))
+    codex_home = pathlib.Path(environment.get("CODEX_HOME", profile / ".codex"))
+    local_app_data = pathlib.Path(
+        environment.get("LOCALAPPDATA", profile / "AppData/Local")
+    )
+    searches = (
+        (codex_home / "packages/standalone/releases", "*/bin/codex.exe"),
+        (local_app_data / "OpenAI/Codex/bin", "*/codex.exe"),
+        (
+            profile / ".vscode/extensions",
+            "openai.chatgpt-*/bin/windows-x86_64/codex.exe",
+        ),
+    )
+    candidates: list[pathlib.Path] = []
+    for root, pattern in searches:
+        if not root.is_dir():
+            continue
+        matches = sorted(
+            root.glob(pattern),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        candidates.extend(path.resolve() for path in matches if path.is_file())
+    return candidates
+
+
+def resolve_codex(
+    command: str,
+    environment: dict[str, str],
+    *,
+    windows: bool | None = None,
+) -> str:
+    is_windows = os.name == "nt" if windows is None else windows
+    if not is_windows:
+        executable = shutil.which(command, path=environment.get("PATH"))
+        if executable is None:
+            raise VerificationError(f"Codex executable {command!r} was not found")
+        return executable
+
+    explicit = pathlib.Path(command).parent != pathlib.Path(".")
+    candidates = windows_path_candidates(command, environment)
+    if not explicit:
+        candidates.extend(installed_windows_codex_candidates(environment))
+    unique_candidates: list[pathlib.Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate).casefold()
+        if key not in seen:
+            seen.add(key)
+            unique_candidates.append(candidate)
+
+    for candidate in unique_candidates:
+        if candidate.suffix.casefold() in {".cmd", ".bat"}:
+            if explicit:
+                return str(candidate)
+            continue
+        if candidate.suffix.casefold() == ".exe" and windows_codex_helper_directory(
+            candidate
+        ):
+            return str(candidate)
+
+    checked = ", ".join(str(path) for path in unique_candidates) or "none"
+    helpers = ", ".join(WINDOWS_CODEX_HELPERS)
+    raise VerificationError(
+        f"no complete Windows Codex bundle was found; required helpers: {helpers}; "
+        f"checked: {checked}"
+    )
+
+
+def prepare_codex_environment(
+    executable: str,
+    environment: dict[str, str],
+    *,
+    windows: bool | None = None,
+) -> None:
+    is_windows = os.name == "nt" if windows is None else windows
+    if not is_windows or pathlib.Path(executable).suffix.casefold() != ".exe":
+        return
+    helper_directory = windows_codex_helper_directory(pathlib.Path(executable))
+    if helper_directory is None:
+        raise VerificationError("the selected Windows Codex bundle is incomplete")
+    entries = [str(pathlib.Path(executable).parent), str(helper_directory)]
+    current_path = environment.get("PATH", "")
+    if current_path:
+        entries.append(current_path)
+    environment["PATH"] = ";".join(entries)
+
+
 def tail(path: pathlib.Path, lines: int = 40) -> str:
     content = path.read_text("utf-8", errors="replace").splitlines()
     return "\n".join(content[-lines:])
@@ -347,9 +499,9 @@ def execute(args: argparse.Namespace) -> int:
     assert_clean(repo)
     environment = os.environ.copy()
     resolve_qemu(environment)
-    codex = shutil.which(args.codex, path=environment.get("PATH"))
-    if codex is None:
-        raise VerificationError(f"Codex executable {args.codex!r} was not found")
+    codex = resolve_codex(args.codex, environment)
+    prepare_codex_environment(codex, environment)
+    print(f"Codex bundle: {codex}")
     log_root = repo / "build/codex-agent"
     log_root.mkdir(parents=True, exist_ok=True)
 
