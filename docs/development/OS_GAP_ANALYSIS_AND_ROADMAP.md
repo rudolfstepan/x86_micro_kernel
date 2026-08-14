@@ -117,6 +117,10 @@ und 10 verbindlich.
       Ring-0-ARP-/IPv4-Pfad entfernt
     - [ ] S0.3c-5b Lokale ARP-Auflösung und Antwortentscheidung über den
       überwachten Dienst vermitteln
+      - [x] S0.3c-5b1 Lokale ARP-Antwortentscheidung mit geschützter,
+        generationgebundener Einmalautorität vermittelt
+      - [ ] S0.3c-5b2 Ausgehende lokale ARP-Auflösung migrieren und einen
+        deterministisch injizierten echten RX-Request im Gast nachweisen
   - [ ] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
   - [ ] S0.3c-7 Unabhängiger Standby-/Supervisor-Kanal und realer Handover
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
@@ -1293,6 +1297,20 @@ Legacy-Bindung. Gateway-Autorität kann damit ausschließlich über den
 generation- und epochengebundenen Ring-3-Mediator in den geschützten Cache
 gelangen. Nicht-Gateway-Peers verbleiben bis S0.3c-5b im klar bezeichneten
 Kompatibilitätspfad.
+
+**S0.3c-5b1 ist umgesetzt:** Ein an die lokale IP gerichteter ARP-Request wird
+bei gesundem Dienst als festes 60-Byte-`NETQ`-Objekt exklusiv nach Ring 3
+übergeben. Ring 3 validiert Ethernetziel, ARP-Struktur, Absenderidentität,
+lokale Zielidentität und Request-ID, bevor Syscall 63 eine einzige Antwort
+anfordert. Der Kernel gleicht PID, Prozessgeneration, 250-ms-Einmalautorität
+und einen redundant geschützten Request-Kontext ab; erst nach atomarem
+Verbrauch darf der NIC-Sendemechanismus laufen. Dienst-, Queue- oder
+Sendefehler verwerfen den Request und zählen Degradation, statt den alten
+Ring-0-Responder zu reaktivieren oder den Dienst zu beenden. Hosttests prüfen
+ABI, Autorität, Einzelkorrektur und Doppelkorruption. Der reale RTL8139-Smoke
+belegt die Regressionsfreiheit des bestehenden Netzwerk-Handoffs; eine
+deterministische externe ARP-Request-Injektion bleibt ausdrücklich Teil von
+S0.3c-5b2 und ist noch kein erbrachter Laufzeitnachweis.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

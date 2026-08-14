@@ -130,7 +130,12 @@ den Legacy-Cache schreiben; beim Setzen einer manuellen oder per DHCP
 erhaltenen Route wird eine vorherige Altbindung gelöscht. Damit kann nur noch
 der geschützte Ring-3-Mediator Gateway-Autorität publizieren. Als nächstes
 vermittelt S0.3c-5b auch lokale ARP-Auflösung und Antwortentscheidung über den
-überwachten Dienst.
+überwachten Dienst. 5b1 ist umgesetzt: Lokale Requests passieren einen
+festen Ring-3-Parser und eine 250-ms-, generation- und requestgebundene
+Einmalautorität; Syscall 63 löst erst nach geschütztem Abgleich eine Antwort
+aus. Der frühere Ring-0-Responder ist entfernt und Fehler fallen nicht auf ihn
+zurück. 5b2 migriert noch die ausgehende lokale Auflösung und ergänzt den
+deterministisch injizierten echten RX-Request-Gastnachweis.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 

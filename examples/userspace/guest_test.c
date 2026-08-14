@@ -462,11 +462,21 @@ static int test_diagnostic_service(void) {
         .ip = 0x0A000202U,
         .mac = {2U, 1U, 2U, 3U, 4U, 5U},
     };
+    x86os_reist_arp_reply_t unauthorized_reply = {
+        .version = X86OS_REIST_ARP_REPLY_VERSION,
+        .struct_size = sizeof(unauthorized_reply),
+        .request_id = 1U,
+        .target_ip = 0x0A000203U,
+        .target_mac = {2U, 6U, 7U, 8U, 9U, 10U},
+    };
     if (x86os_network_probe_stats(
             (x86os_network_probe_stats_t*)(uintptr_t)0x1000U) != -14 ||
         x86os_reist_commit_arp_binding(
             (const x86os_reist_arp_binding_t*)(uintptr_t)0x1000U) != -14 ||
         x86os_reist_commit_arp_binding(&unauthorized_binding) != -13 ||
+        x86os_reist_send_arp_reply(
+            (const x86os_reist_arp_reply_t*)(uintptr_t)0x1000U) != -14 ||
+        x86os_reist_send_arp_reply(&unauthorized_reply) != -13 ||
         x86os_network_probe_stats(&stats_before) != 0 ||
         stats_before.version != X86OS_NETWORK_PROBE_STATS_VERSION ||
         stats_before.struct_size != sizeof(stats_before) ||

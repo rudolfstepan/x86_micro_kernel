@@ -165,6 +165,8 @@ int main(void) {
             &protected_authority, 200U, 10U, &probe_id) !=
             SUPERVISOR_EINTEGRITY) return 51;
     if (supervisor_protected_probe_authority_init(&protected_authority) != 0 ||
+        supervisor_protected_probe_authority_expire_epoch(
+            &protected_authority, 300U, 99U) != 0 ||
         supervisor_protected_probe_authority_begin_epoch(
             &protected_authority, 300U, 10U, 2U, &probe_id) != -13 ||
         supervisor_protected_probe_authority_begin_epoch(
@@ -211,6 +213,29 @@ int main(void) {
             SUPERVISOR_EINTEGRITY ||
         supervisor_protected_network_context_publish(
             &protected_context, 9U) != SUPERVISOR_EINTEGRITY) return 53;
+
+    supervisor_protected_arp_reply_context_t protected_reply;
+    supervisor_arp_reply_context_t reply_snapshot;
+    const uint8_t peer_mac[6] = {2U, 9U, 8U, 7U, 6U, 5U};
+    if (supervisor_protected_arp_reply_context_init(&protected_reply) != 0 ||
+        supervisor_protected_arp_reply_context_publish(
+            &protected_reply, 11U, 7U, 0x0A000203U, peer_mac) != 0 ||
+        supervisor_test_corrupt_arp_reply_context(
+            &protected_reply, false) != 0 ||
+        supervisor_protected_arp_reply_context_snapshot(
+            &protected_reply, &reply_snapshot) != 0 ||
+        reply_snapshot.request_id != 11U ||
+        reply_snapshot.transaction_epoch != 7U ||
+        reply_snapshot.target_ip != 0x0A000203U ||
+        supervisor_protected_arp_reply_context_clear(
+            &protected_reply) != 0) return 58;
+    if (supervisor_protected_arp_reply_context_publish(
+            &protected_reply, 12U, 7U, 0x0A000203U, peer_mac) != 0 ||
+        supervisor_test_corrupt_arp_reply_context(
+            &protected_reply, true) != 0 ||
+        supervisor_protected_arp_reply_context_snapshot(
+            &protected_reply, &reply_snapshot) !=
+            SUPERVISOR_EINTEGRITY) return 59;
 
     supervisor_protected_probe_control_t protected_control;
     supervisor_probe_control_t control = {

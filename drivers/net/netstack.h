@@ -170,6 +170,7 @@ void netstack_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway);
 bool netstack_configure_dhcp(void);
 uint32_t netstack_get_ip_address(void);
 uint32_t netstack_get_gateway(void);
+bool netstack_get_local_identity(uint32_t *ip_out, uint8_t mac_out[6]);
 bool netstack_ping(uint32_t dst_ip, uint16_t id, uint16_t seq,
                    uint32_t timeout_ms);
 bool netstack_probe_gateway(void);
@@ -180,7 +181,8 @@ void netstack_process_packet(uint8_t *packet, uint16_t length);
 
 // ARP Functions
 void arp_send_request(uint32_t target_ip);
-void arp_send_reply(uint32_t target_ip, uint8_t *target_mac);
+bool netstack_send_arp_reply(uint32_t target_ip,
+                             const uint8_t target_mac[6]);
 bool arp_lookup(uint32_t ip, uint8_t *mac_out);
 void arp_add_entry(uint32_t ip, const uint8_t *mac);
 bool netstack_commit_arp_binding(uint32_t ip, const uint8_t mac[6],

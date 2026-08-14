@@ -71,6 +71,7 @@
 #define SYS_NETWORK_PROBE_ID 60
 #define SYS_NETWORK_PROBE_STATS 61
 #define SYS_REIST_ARP_BINDING 62
+#define SYS_REIST_ARP_REPLY 63
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

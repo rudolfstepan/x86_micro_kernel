@@ -272,6 +272,25 @@ static int syscall_reist_arp_binding(
         process->pid, process->generation, &binding);
 }
 
+_Static_assert(sizeof(supervisor_arp_reply_t) == 24U,
+               "REIST ARP reply ABI changed");
+
+static int syscall_reist_arp_reply(
+        const supervisor_arp_reply_t *user_reply) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_reply;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(*user_reply), false))
+        return -14;
+    supervisor_arp_reply_t reply;
+    if (copy_from_user(&reply, user_reply, sizeof(reply)) != 0) return -14;
+    if (reply.version != SUPERVISOR_ARP_REPLY_VERSION ||
+        reply.struct_size < sizeof(reply)) return -22;
+    return supervisor_network_send_arp_reply(
+        process->pid, process->generation, &reply);
+}
+
 static int syscall_service_connect(uint32_t service_id,
                                    ipc_handle_t *user_handle) {
     Process *process = scheduler_current_process();
@@ -807,6 +826,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_network_probe_id,   // Syscall 60: Probe with monotone ID
     (void*)&syscall_network_probe_stats,// Syscall 61: Read degradation stats
     (void*)&syscall_reist_arp_binding,  // Syscall 62: Commit bounded ARP binding
+    (void*)&syscall_reist_arp_reply,    // Syscall 63: Mediated ARP reply
     // Add more syscalls here as needed
 };
 
@@ -1119,6 +1139,10 @@ void syscall_handler(Registers* regs) {
         case SYS_REIST_ARP_BINDING:
             result = (uint32_t)syscall_reist_arp_binding(
                 (const supervisor_arp_binding_t*)(uintptr_t)arg1);
+            break;
+        case SYS_REIST_ARP_REPLY:
+            result = (uint32_t)syscall_reist_arp_reply(
+                (const supervisor_arp_reply_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

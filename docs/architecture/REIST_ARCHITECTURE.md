@@ -412,6 +412,18 @@ epochengebundenen Ring-3-Mediator Autorität. Lokale Nicht-Gateway-Peers bleiben
 vorübergehend kompatibel und werden in S0.3c-5b in denselben Dienstvertrag
 überführt.
 
+S0.3c-5b1 entfernt zusätzlich den lokalen ARP-Responder aus dem allgemeinen
+Ring-0-Paketparser. Ein Request an die eigene IP wird ausschließlich als
+festes `NETQ`-Objekt an die gesunde, generationgeprüfte Ring-3-Domäne
+publiziert. Deren Parser validiert die vollständige Ethernet-/ARP-Identität.
+Syscall 63 akzeptiert danach nur `{version,size,request_id,target_ip,mac}` und
+vergleicht diese Daten mit einer redundanten Critical-Object-Kopie sowie einer
+250 ms begrenzten, an die konkrete Prozessgeneration gebundenen
+Einmalautorität. Autorität und Kontext werden vor dem Gerätesend verbraucht.
+Bei Queue-Druck, Deadline oder Sendefehler bleibt das System fail-closed; es
+existiert kein Ring-0-Antwortfallback. Die ausgehende Auflösung lokaler Peers
+und ein deterministischer echter RX-Request-Gastnachweis verbleiben in 5b2.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

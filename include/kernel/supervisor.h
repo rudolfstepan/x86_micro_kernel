@@ -15,6 +15,7 @@ struct Process;
 #define SUPERVISOR_NETWORK_DEGRADATION_VERSION 1U
 #define SUPERVISOR_PROBE_AUTHORITY_VERSION 1U
 #define SUPERVISOR_NETWORK_CONTEXT_VERSION 1U
+#define SUPERVISOR_ARP_REPLY_CONTEXT_VERSION 1U
 #define SUPERVISOR_PROBE_CONTROL_VERSION 1U
 #define SUPERVISOR_EINTEGRITY (-84)
 #define REIST_REPORT_SELF_TEST 1U
@@ -119,6 +120,28 @@ typedef struct {
     uint8_t reserved[2];
 } supervisor_arp_binding_t;
 
+#define SUPERVISOR_ARP_REPLY_VERSION 1U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t request_id;
+    uint32_t target_ip;
+    uint8_t target_mac[6];
+    uint8_t reserved[2];
+} supervisor_arp_reply_t;
+
+typedef struct {
+    uint32_t request_id;
+    uint32_t transaction_epoch;
+    uint32_t target_ip;
+    uint8_t target_mac[6];
+    uint8_t reserved[2];
+} supervisor_arp_reply_context_t;
+
+typedef struct {
+    critical_object_t object;
+} supervisor_protected_arp_reply_context_t;
+
 typedef struct {
     critical_object_t object;
 } supervisor_protected_network_context_t;
@@ -201,6 +224,17 @@ int supervisor_protected_network_context_consume_epoch(
     uint32_t probe_id);
 int supervisor_protected_network_context_clear(
     supervisor_protected_network_context_t *context);
+int supervisor_protected_arp_reply_context_init(
+    supervisor_protected_arp_reply_context_t *context);
+int supervisor_protected_arp_reply_context_publish(
+    supervisor_protected_arp_reply_context_t *context, uint32_t request_id,
+    uint32_t transaction_epoch, uint32_t target_ip,
+    const uint8_t target_mac[6]);
+int supervisor_protected_arp_reply_context_snapshot(
+    supervisor_protected_arp_reply_context_t *context,
+    supervisor_arp_reply_context_t *snapshot_out);
+int supervisor_protected_arp_reply_context_clear(
+    supervisor_protected_arp_reply_context_t *context);
 int supervisor_protected_probe_control_init(
     supervisor_protected_probe_control_t *control);
 int supervisor_protected_probe_control_read(
@@ -227,6 +261,8 @@ int supervisor_network_probe_request_id(int pid, uint32_t generation,
                                         uint32_t *probe_id_out);
 int supervisor_network_commit_arp_binding(
     int pid, uint32_t generation, const supervisor_arp_binding_t *binding);
+int supervisor_network_send_arp_reply(
+    int pid, uint32_t generation, const supervisor_arp_reply_t *reply);
 int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind);
 int supervisor_register(const char *name, const supervisor_config_t *config,
@@ -256,6 +292,9 @@ int supervisor_test_corrupt_probe_authority(
     bool corrupt_both_copies);
 int supervisor_test_corrupt_network_context(
     supervisor_protected_network_context_t *context,
+    bool corrupt_both_copies);
+int supervisor_test_corrupt_arp_reply_context(
+    supervisor_protected_arp_reply_context_t *context,
     bool corrupt_both_copies);
 int supervisor_test_corrupt_probe_control(
     supervisor_protected_probe_control_t *control,

@@ -324,8 +324,10 @@ bool netstack_probe_gateway(void) {
            arp_send_request_now(net_config.gateway);
 }
 
-void arp_send_reply(uint32_t target_ip, uint8_t *target_mac) {
-    if (!target_mac) return;
+bool netstack_send_arp_reply(uint32_t target_ip,
+                             const uint8_t target_mac[6]) {
+    if (!target_mac || target_ip == 0U || net_config.ip_address == 0U)
+        return false;
     uint8_t packet[sizeof(eth_header_t) + sizeof(arp_packet_t)];
     eth_header_t *eth = (eth_header_t *)packet;
     arp_packet_t *arp = (arp_packet_t *)(packet + sizeof(eth_header_t));
@@ -345,7 +347,7 @@ void arp_send_reply(uint32_t target_ip, uint8_t *target_mac) {
     memcpy(arp->target_mac, target_mac, ETH_ADDR_LEN);
     arp->target_ip = htonl(target_ip);
 
-    nic_send(packet, sizeof(packet));
+    return nic_send(packet, sizeof(packet));
 }
 
 static void handle_arp_packet(uint8_t *packet, uint16_t length) {
@@ -365,15 +367,9 @@ static void handle_arp_packet(uint8_t *packet, uint16_t length) {
 
     ++netstack_stats.rx_arp;
 
-    uint16_t op   = ntohs(arp->operation);
     uint32_t sip  = ntohl(arp->sender_ip);
-    uint32_t tip  = ntohl(arp->target_ip);
 
     arp_add_entry(sip, arp->sender_mac);
-
-    if (op == ARP_REQUEST && tip == net_config.ip_address) {
-        arp_send_reply(sip, arp->sender_mac);
-    }
 }
 
 // =============================================================================
@@ -915,6 +911,18 @@ uint32_t netstack_get_ip_address(void) {
 
 uint32_t netstack_get_gateway(void) {
     return net_config.gateway;
+}
+
+bool netstack_get_local_identity(uint32_t *ip_out, uint8_t mac_out[6]) {
+    if (ip_out == NULL || mac_out == NULL || net_config.ip_address == 0U)
+        return false;
+    bool nonzero_mac = false;
+    for (uint32_t index = 0U; index < ETH_ADDR_LEN; ++index) {
+        mac_out[index] = net_config.mac_address[index];
+        if (mac_out[index] != 0U) nonzero_mac = true;
+    }
+    *ip_out = net_config.ip_address;
+    return nonzero_mac;
 }
 
 void netstack_debug_stats(void) {
