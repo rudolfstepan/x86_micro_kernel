@@ -453,6 +453,14 @@ static int test_ipc_capabilities(void) {
 }
 
 static int test_diagnostic_service(void) {
+    x86os_network_probe_stats_t stats_before;
+    x86os_network_probe_stats_t stats_after;
+    if (x86os_network_probe_stats(
+            (x86os_network_probe_stats_t*)(uintptr_t)0x1000U) != -14 ||
+        x86os_network_probe_stats(&stats_before) != 0 ||
+        stats_before.version != X86OS_NETWORK_PROBE_STATS_VERSION ||
+        stats_before.struct_size != sizeof(stats_before) ||
+        stats_before.reserved != 0U) return -1;
     x86os_ipc_handle_t handle = X86OS_IPC_INVALID_HANDLE;
     if (x86os_network_probe_id((uint32_t*)(uintptr_t)0x1000U) != -14 ||
         x86os_service_connect(X86OS_SERVICE_DIAGNOSTIC,
@@ -526,7 +534,12 @@ static int test_diagnostic_service(void) {
                                   "REIST_NET_UNAVAILABLE")) return -1;
 
     if (!network_handoff) {
-        if (x86os_ipc_release(handle) != 0) return -1;
+        if (x86os_network_probe_stats(&stats_after) != 0 ||
+            stats_after.expired < stats_before.expired ||
+            stats_after.queue_fallback < stats_before.queue_fallback ||
+            stats_after.semantic_reject < stats_before.semantic_reject ||
+            x86os_ipc_release(handle) != 0) return -1;
+        x86os_puts("TEST_STAGE NETWORK_STATS_OK\n");
         return 0;
     }
 
@@ -556,6 +569,12 @@ static int test_diagnostic_service(void) {
                                  "REIST_DIAG_INVALID")) return -1;
     }
     x86os_puts("TEST_STAGE NETWORK_PRESSURE_OK\n");
+    if (x86os_network_probe_stats(&stats_after) != 0 ||
+        stats_after.expired < stats_before.expired ||
+        stats_after.queue_fallback <= stats_before.queue_fallback ||
+        stats_after.semantic_reject < stats_before.semantic_reject)
+        return -1;
+    x86os_puts("TEST_STAGE NETWORK_STATS_OK\n");
 
     if (x86os_sleep_ms(300U) != 0) return -1;
     ++request_id;

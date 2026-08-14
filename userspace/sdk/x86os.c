@@ -4,6 +4,8 @@ _Static_assert(sizeof(x86os_memory_stats_t) == 88U,
                "memory statistics ABI size changed");
 _Static_assert(offsetof(x86os_memory_stats_t, detected_usable_bytes) == 8U,
                "memory statistics ABI header changed");
+_Static_assert(sizeof(x86os_network_probe_stats_t) == 24U,
+               "network probe statistics ABI size changed");
 _Static_assert(sizeof(x86os_display_info_t) == 56U,
                "display information ABI size changed");
 _Static_assert(sizeof(x86os_display_rect_t) == 28U,
@@ -110,6 +112,12 @@ int x86os_network_probe(void) {
 int x86os_network_probe_id(uint32_t *probe_id) {
     return (int)x86os_syscall(X86OS_SYS_NETWORK_PROBE_ID,
                               (uintptr_t)probe_id, 0, 0);
+}
+
+int x86os_network_probe_stats(x86os_network_probe_stats_t *stats) {
+    return (int)x86os_syscall(X86OS_SYS_NETWORK_PROBE_STATS,
+                              (uintptr_t)stats, sizeof(*stats),
+                              X86OS_NETWORK_PROBE_STATS_VERSION);
 }
 
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,

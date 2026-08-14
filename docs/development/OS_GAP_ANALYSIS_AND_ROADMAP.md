@@ -1127,9 +1127,16 @@ semantische Ablehnung durch den generation-validierten Dienstbericht erfasst;
 kein Zählerpfad läuft im IRQ. Der Hosttest beweist getrennte Inkremente und
 Sättigung bei `UINT32_MAX`, sodass Diagnosewerte nie still zurückspringen.
 
-S0.3c-3m ergänzt als nächsten Schritt eine versionierte, read-only
-Diagnose-ABI für diese Zähler mit vollständiger Pointer-/Größenprüfung und
-ohne Reset-Autorität für normale Prozesse.
+**S0.3c-3m ist umgesetzt:** Syscall 61 liefert eine feste 24-Byte-v1-Struktur
+mit Version, Strukturgröße und den drei saturierenden Zählern. Pointer,
+Schreibbereich, Version und Mindestgröße werden vor dem Snapshot geprüft; die
+ABI bietet absichtlich keine Reset- oder Mutationsoperation. GTEST prüft
+EFAULT, Header/Reserved-Feld, monotone Werte und beim echten Vier-Slot-Druck
+einen gestiegenen Queue-Fallback-Zähler über `NETWORK_STATS_OK`.
+
+S0.3c-3n schützt als nächsten Schritt den Diagnose-Snapshot selbst mit dem
+bestehenden Critical-Object-Mechanismus, damit Einzelbitfehler korrigiert und
+nicht korrigierbare Doppelkopiefehler fail-closed gemeldet werden.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

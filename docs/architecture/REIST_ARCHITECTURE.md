@@ -338,6 +338,12 @@ Autoritätsentscheidung, werden unter der kurzen Supervisor-Sperre aktualisiert
 und können bei Beschädigung daher höchstens Diagnosequalität verlieren. Kein
 Update erfolgt im Hard-IRQ; `UINT32_MAX` bleibt dauerhaft gesättigt.
 
+S0.3c-3m exportiert die Zähler ausschließlich lesend über Syscall 61. Die
+versionierte 24-Byte-Struktur wird erst nach vollständiger Userbereichs-,
+Versions- und Größenprüfung gefüllt; `reserved` ist Null. Normale Prozesse
+besitzen keine Reset-Autorität. Der reale Queue-Druck-Gasttest fordert einen
+monoton gestiegenen Fallback-Zähler.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

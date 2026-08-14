@@ -214,6 +214,44 @@ static int syscall_network_probe_id(uint32_t *user_probe_id) {
                               sizeof(probe_id)) == 0 ? 0 : -14;
 }
 
+#define NETWORK_PROBE_STATS_VERSION 1U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t expired;
+    uint32_t queue_fallback;
+    uint32_t semantic_reject;
+    uint32_t reserved;
+} syscall_network_probe_stats_t;
+
+_Static_assert(sizeof(syscall_network_probe_stats_t) == 24U,
+               "network probe statistics ABI changed");
+
+static int syscall_network_probe_stats(syscall_network_probe_stats_t *user_stats,
+                                       uint32_t user_size,
+                                       uint32_t version) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_stats;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(*user_stats), true))
+        return -14;
+    if (version != NETWORK_PROBE_STATS_VERSION ||
+        user_size < sizeof(*user_stats)) return -22;
+    supervisor_network_degradation_stats_t snapshot;
+    supervisor_network_degradation_snapshot(&snapshot);
+    syscall_network_probe_stats_t result = {
+        .version = NETWORK_PROBE_STATS_VERSION,
+        .struct_size = sizeof(result),
+        .expired = snapshot.expired,
+        .queue_fallback = snapshot.queue_fallback,
+        .semantic_reject = snapshot.semantic_reject,
+        .reserved = 0U,
+    };
+    return copy_to_user_space(directory, address, &result, sizeof(result)) == 0
+        ? 0 : -14;
+}
+
 static int syscall_service_connect(uint32_t service_id,
                                    ipc_handle_t *user_handle) {
     Process *process = scheduler_current_process();
@@ -747,6 +785,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&ipc_release,                // Syscall 58: Release delegated cap
     (void*)&syscall_network_probe,      // Syscall 59: Fixed supervised probe
     (void*)&syscall_network_probe_id,   // Syscall 60: Probe with monotone ID
+    (void*)&syscall_network_probe_stats,// Syscall 61: Read degradation stats
     // Add more syscalls here as needed
 };
 
@@ -1051,6 +1090,10 @@ void syscall_handler(Registers* regs) {
         case SYS_NETWORK_PROBE_ID:
             result = (uint32_t)syscall_network_probe_id(
                 (uint32_t*)(uintptr_t)arg1);
+            break;
+        case SYS_NETWORK_PROBE_STATS:
+            result = (uint32_t)syscall_network_probe_stats(
+                (syscall_network_probe_stats_t*)(uintptr_t)arg1, arg2, arg3);
             break;
         default:
             result = (uint32_t)-1;

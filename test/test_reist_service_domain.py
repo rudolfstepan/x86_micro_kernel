@@ -230,6 +230,26 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("supervisor_probe_authority_expire(", worker)
         self.assertIn("network_degradation_record(", worker)
 
+    def test_network_degradation_stats_abi_is_versioned_read_only(self):
+        libc = read("lib/libc/stdlib.h")
+        sdk = read("userspace/sdk/include/x86os.h")
+        syscall = read("kernel/syscall/syscall_table.c")
+        guest = read("examples/userspace/guest_test.c")
+        self.assertIn("SYS_NETWORK_PROBE_STATS 61", libc)
+        self.assertIn("X86OS_SYS_NETWORK_PROBE_STATS = 61", sdk)
+        self.assertIn("X86OS_NETWORK_PROBE_STATS_VERSION 1U", sdk)
+        self.assertIn("sizeof(x86os_network_probe_stats_t) == 24U",
+                      read("userspace/sdk/x86os.c"))
+        body = syscall[syscall.index("static int syscall_network_probe_stats("):
+                       syscall.index("static int syscall_service_connect(")]
+        self.assertLess(body.index("user_range_accessible"),
+                        body.index("supervisor_network_degradation_snapshot"))
+        self.assertIn("NETWORK_PROBE_STATS_VERSION", body)
+        self.assertIn("copy_to_user_space", body)
+        self.assertNotIn("supervisor_network_degradation_init", body)
+        self.assertIn("TEST_STAGE NETWORK_STATS_OK", guest)
+        self.assertIn("queue_fallback <= stats_before.queue_fallback", guest)
+
     def test_service_protocol_correlates_generation_scoped_requests(self):
         service = read("examples/userspace/reist_probe.c")
         guest = read("examples/userspace/guest_test.c")

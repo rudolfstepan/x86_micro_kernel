@@ -90,6 +90,9 @@ räumt abgelaufene IDs unabhängig vom RX-Pfad auf.
 S0.3c-3l zählt Deadline-Ablauf, Queue-Fallback und semantische Ablehnung
 getrennt und saturierend. Hosttests bestätigen die drei Pfade sowie
 `UINT32_MAX`; alle Updates bleiben außerhalb des Hard-IRQ-Kontexts.
+S0.3c-3m stellt diese Werte über die read-only, versionierte 24-Byte-ABI von
+Syscall 61 bereit. GTEST prüft ungültige Pointer, ABI-Header und den real
+gestiegenen Queue-Fallback-Zähler mit `NETWORK_STATS_OK`.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 
