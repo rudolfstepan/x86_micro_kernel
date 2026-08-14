@@ -111,7 +111,7 @@ und 10 verbindlich.
     Redundanz und Fail-Closed-Lookup
   - [x] S0.3c-4c Dienstneustart widerruft Bindungen der alten Generation;
     begrenzter Scrub und Integritätseskalation sind nachgewiesen
-  - [ ] **S0.3c-5 in Arbeit:** Netzwerkdatenpfad vollständig aus Ring 0 lösen
+  - [ ] S0.3c-5 Netzwerkdatenpfad vollständig aus Ring 0 lösen
     und den Dienst unter Fehler-, Druck- und Restart-Injektion abnehmen
     - [x] S0.3c-5a Passive Gateway-Vertrauensentscheidung aus dem
       Ring-0-ARP-/IPv4-Pfad entfernt
@@ -134,14 +134,18 @@ und 10 verbindlich.
         Quarantäne und geprüftem Weiterbetrieb
       - [x] S0.3c-6d3 Stromverlust während einer persistenten Mutation mit
         Neustart, Journal-Recovery und anschließendem Ring-3-Dienst-Selbsttest
-  - [ ] S0.3c-7 Unabhängiger Standby-/Supervisor-Kanal und realer Handover
+  - [ ] **S0.3c-7 in Arbeit:** Unabhängiger Standby-/Supervisor-Kanal und
+    realer Handover
     - [x] S0.3c-7a Statischer Lease-/Epoch-/Fence-Protokollkern mit
       Split-Brain-, Stale-Epoch- und Integritäts-Fault-Tests
     - [ ] S0.3c-7b Plattformbackend für einen elektrisch und zeitlich
       unabhängigen Supervisor-Kanal samt rücklesbarem Fence
       - [x] S0.3c-7b1 Fest gebundener, statischer Request/Readback-Vertrag;
         Backendaufrufe außerhalb des IRQ-Locks und anschließende Revalidierung
-      - [ ] S0.3c-7b2 Reales externes Transport-/Interlock-Backend auf
+      - [x] S0.3c-7b2a Prozessgetrennter QEMU-Host-Supervisor über einen
+        dedizierten COM2-Kanal mit CRC-Frame, exaktem Epoch-Readback und
+        realem Takeover-Lauf
+      - [ ] S0.3c-7b2b Reales externes Transport-/Interlock-Backend auf
         Zielhardware mit eigener Stromversorgung und Zeitbasis
     - [ ] S0.3c-7c Zwei reale Ausführungskanäle mit Zustandsreplikation,
       Selbsttest, Übernahme und kontrollierter Reintegration
@@ -1436,8 +1440,19 @@ Backend exakt dieselbe ID/Epoche rückmeldet. Die potenziell langsamen
 Backendoperationen laufen nicht mit deaktivierten IRQs. Danach werden Epoche,
 Active-ID, Lease und Transitionssequenz unter Lock erneut geprüft, sodass ein
 zwischenzeitlicher Rollen- oder Leasewechsel die Bestätigung verwirft. Das
-Hostbackend beweist Negativpfade und idempotentes Readback. S0.3c-7b2 bleibt
+Hostbackend beweist Negativpfade und idempotentes Readback. S0.3c-7b2b bleibt
 offen, weil noch kein physisch unabhängiger Transport oder Interlock existiert.
+
+**S0.3c-7b2a ist umgesetzt:** Ein isoliertes QEMU-Testprofil bindet den
+Handover-Kern an COM2 statt an den Konsolenkanal. Der Kern sendet ein festes,
+heapfreies 24-Byte-Request mit Version, Active-ID, 64-Bit-Epoche und CRC32. Ein
+getrennter Hostprozess validiert den vollständigen Frame und antwortet nur mit
+einem CRC-geschützten Ack für exakt dasselbe Tupel. Alle UART-Wartepfade haben
+eine monotone 1-s-Deadline. Der reale Gastlauf beweist geordnet
+`REQUEST_SENT -> FENCE_CONFIRMED -> TAKEOVER_OK -> BOOT_OK -> TEST_OK`.
+Das trennt Transport und Supervisorprozess, aber nicht Strom, CPU oder
+Zeitquelle; daher bleibt S0.3c-7b2b auf Zielhardware offen und ein
+Fail-operational-Claim weiterhin unzulässig.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

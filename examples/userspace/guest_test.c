@@ -664,8 +664,8 @@ static int test_scheduler_time(void) {
     }
 
     int sleeper_pid = x86os_spawn("SLEEPER.PRG");
-    if (sleeper_pid <= 0 || x86os_yield() != 0 ||
-        process_state_for_pid(sleeper_pid) != X86OS_PROCESS_SLEEPING) {
+    if (sleeper_pid <= 0 ||
+        wait_for_process_state(sleeper_pid, X86OS_PROCESS_SLEEPING, 250U) != 0) {
         return -1;
     }
 
@@ -684,8 +684,8 @@ static int test_scheduler_time(void) {
     /* Killing a sleeper must unlink its intrusive queue node before its task
      * slot is reused by the next child. */
     sleeper_pid = x86os_spawn("SLEEPER.PRG");
-    if (sleeper_pid <= 0 || x86os_yield() != 0 ||
-        process_state_for_pid(sleeper_pid) != X86OS_PROCESS_SLEEPING ||
+    if (sleeper_pid <= 0 ||
+        wait_for_process_state(sleeper_pid, X86OS_PROCESS_SLEEPING, 250U) != 0 ||
         x86os_kill(sleeper_pid) != 0 ||
         x86os_wait(sleeper_pid, &status) != sleeper_pid || status != 143 ||
         wait_for_expected("CHILDEX.PRG", 37) != 0) {

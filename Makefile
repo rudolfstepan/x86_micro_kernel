@@ -54,6 +54,7 @@ VIDEO ?= vga
 FAULT_INJECTION ?= 0
 STORAGE_FAULT_INJECTION ?= 0
 STORAGE_IO_FAULT_INJECTION ?= 0
+HANDOVER_FAULT_INJECTION ?= 0
 
 # Target-specific defines
 ifeq ($(TARGET),real_hw)
@@ -78,6 +79,10 @@ endif
 
 ifeq ($(STORAGE_IO_FAULT_INJECTION),1)
     SAFETY_TEST_DEFINES += -DREIST_STORAGE_IO_FAULT_INJECTION
+endif
+
+ifeq ($(HANDOVER_FAULT_INJECTION),1)
+    SAFETY_TEST_DEFINES += -DREIST_HANDOVER_FAULT_INJECTION
 endif
 
 # Video mode defines
@@ -228,7 +233,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel check-kernel-stack user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel check-kernel-stack user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-handover test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -683,6 +688,17 @@ test-smoke-storage-io-failure:
 		--expect-storage-io-failure \
 		--timeout 120 \
 		--log build/storage-io-injection/guest-smoke-storage-io-failure.log
+
+test-smoke-handover:
+	@echo "Building isolated REIST external handover injection image..."
+	@$(MAKE) native-image TARGET=qemu VIDEO=vga HANDOVER_FAULT_INJECTION=1 \
+		OUTPUT_DIR=build/handover-injection
+	@$(PYTHON) scripts/run_qemu_smoke.py \
+		--qemu $(QEMU) \
+		--image build/handover-injection/reist-os.img \
+		--expect-handover \
+		--timeout 120 \
+		--log build/handover-injection/guest-smoke-handover.log
 
 test-smoke-fatal-recovery:
 	@echo "Building isolated REIST Double-Fault injection image..."

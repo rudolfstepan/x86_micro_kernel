@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import zlib
 from pathlib import Path
 
 
@@ -59,6 +60,16 @@ REIST_STORAGE_IO_INJECTION_MARKER = "REIST_STORAGE TEST_IO_ERROR_INJECTED"
 REIST_STORAGE_QUARANTINE_MARKER = "REIST_STORAGE RESOURCE_QUARANTINED 0"
 REIST_STORAGE_IO_RECOVERY_MARKER = "TEST_STAGE STORAGE_IO_QUARANTINE_OK"
 REIST_STORAGE_SELF_TEST_MARKER = "TEST_STAGE STORAGE_SERVICE_OK"
+REIST_HANDOVER_MARKERS = (
+    "REIST_HANDOVER REQUEST_SENT",
+    "REIST_HANDOVER FENCE_CONFIRMED",
+    "REIST_HANDOVER TAKEOVER_OK",
+)
+HANDOVER_SERIAL_MAGIC = 0x54464952
+HANDOVER_SERIAL_VERSION = 1
+HANDOVER_SERIAL_REQUEST = 1
+HANDOVER_SERIAL_ACK = 2
+HANDOVER_SERIAL_FRAME = struct.Struct("<IBBHIQI")
 SHELL_PROMPT = "C:\\>"
 FAIL_MARKERS = (
     "TEST_FAIL",
@@ -80,6 +91,7 @@ def qemu_command(
     nic: str = "none",
     persistent: bool = False,
     injection_port: int | None = None,
+    handover_port: int | None = None,
 ) -> list[str]:
     command = [
         str(qemu),
@@ -117,6 +129,8 @@ def qemu_command(
                 "-netdev", "hubport,id=reistnicport,hubid=0",
                 "-device", f"{nic},netdev=reistnicport",
             ])
+    if handover_port is not None:
+        command.extend(["-serial", f"tcp:127.0.0.1:{handover_port}"])
     return command
 
 
@@ -126,6 +140,47 @@ def open_injection_listener() -> tuple[socket.socket, int]:
     listener.listen(1)
     listener.settimeout(5.0)
     return listener, int(listener.getsockname()[1])
+
+
+def handover_frame(frame_type: int, active_node: int, epoch: int) -> bytes:
+    prefix = HANDOVER_SERIAL_FRAME.pack(
+        HANDOVER_SERIAL_MAGIC, HANDOVER_SERIAL_VERSION, frame_type,
+        HANDOVER_SERIAL_FRAME.size, active_node, epoch, 0,
+    )
+    crc = zlib.crc32(prefix[:-4]) & 0xFFFFFFFF
+    return prefix[:-4] + struct.pack("<I", crc)
+
+
+def validate_handover_frame(data: bytes, expected_type: int) -> tuple[int, int] | None:
+    if len(data) != HANDOVER_SERIAL_FRAME.size:
+        return None
+    magic, version, frame_type, size, active_node, epoch, crc = (
+        HANDOVER_SERIAL_FRAME.unpack(data)
+    )
+    if (magic != HANDOVER_SERIAL_MAGIC or version != HANDOVER_SERIAL_VERSION or
+            frame_type != expected_type or size != len(data) or
+            active_node == 0 or epoch == 0 or
+            zlib.crc32(data[:-4]) & 0xFFFFFFFF != crc):
+        return None
+    return active_node, epoch
+
+
+def serve_handover_fence(connection: socket.socket, timeout: float,
+                         result: list[str | None]) -> None:
+    try:
+        connection.settimeout(timeout)
+        request = receive_exact(connection, HANDOVER_SERIAL_FRAME.size)
+        parsed = (None if request is None else
+                  validate_handover_frame(request, HANDOVER_SERIAL_REQUEST))
+        if parsed is None:
+            result[0] = "invalid or missing handover fence request"
+            return
+        active_node, epoch = parsed
+        connection.sendall(handover_frame(HANDOVER_SERIAL_ACK,
+                                          active_node, epoch))
+        result[0] = None
+    except OSError as error:
+        result[0] = f"handover fence channel failed: {error}"
 
 
 def arp_request_frame() -> bytes:
@@ -293,16 +348,24 @@ def run(
     expect_reist_probe: bool = False,
     inject_arp_request: bool = False,
     expect_arp_resolution: bool = False,
+    expect_handover: bool = False,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
     injection_connection: socket.socket | None = None
     injection_port: int | None = None
+    handover_listener: socket.socket | None = None
+    handover_connection: socket.socket | None = None
+    handover_port: int | None = None
+    handover_thread: threading.Thread | None = None
+    handover_result: list[str | None] = [None]
     if inject_arp_request or expect_arp_resolution:
         injection_listener, injection_port = open_injection_listener()
+    if expect_handover:
+        handover_listener, handover_port = open_injection_listener()
     try:
         process = subprocess.Popen(
             qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot,
-                         nic, persistent, injection_port),
+                         nic, persistent, injection_port, handover_port),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -314,6 +377,8 @@ def run(
     except BaseException:
         if injection_listener is not None:
             injection_listener.close()
+        if handover_listener is not None:
+            handover_listener.close()
         raise
     if injection_listener is not None:
         try:
@@ -326,6 +391,22 @@ def run(
             raise
         finally:
             injection_listener.close()
+    if handover_listener is not None:
+        try:
+            handover_connection, _ = handover_listener.accept()
+            handover_connection.setsockopt(socket.IPPROTO_TCP,
+                                           socket.TCP_NODELAY, 1)
+            handover_thread = threading.Thread(
+                target=serve_handover_fence,
+                args=(handover_connection, timeout, handover_result),
+                daemon=True,
+            )
+            handover_thread.start()
+        except BaseException:
+            stop_process(process)
+            raise
+        finally:
+            handover_listener.close()
     assert process.stdin is not None and process.stdout is not None
     chunks: queue.Queue[str] = queue.Queue()
     transcript: list[str] = []
@@ -416,6 +497,14 @@ def run(
     finally:
         if injection_connection is not None:
             injection_connection.close()
+        if handover_thread is not None:
+            handover_thread.join(timeout=1)
+            if error is None and handover_thread.is_alive():
+                error = "handover fence supervisor did not finish"
+            elif error is None and handover_result[0] is not None:
+                error = handover_result[0]
+        if handover_connection is not None:
+            handover_connection.close()
         stop_process(process)
         finished.wait(timeout=1)
         thread.join(timeout=1)
@@ -433,6 +522,7 @@ def validate(
     expect_storage_recovery: bool = False,
     expect_storage_io_failure: bool = False,
     expect_storage_self_test: bool = False,
+    expect_handover: bool = False,
 ) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
@@ -535,6 +625,13 @@ def validate(
                                         after=ready)
         if ready < boot or self_test < ready or self_test > test:
             return "missing ordered storage-service post-recovery self-test"
+    if expect_handover:
+        positions = [exact_line_position(transcript, marker)
+                     for marker in REIST_HANDOVER_MARKERS]
+        if any(position < 0 for position in positions):
+            return "missing external handover marker"
+        if positions != sorted(positions) or positions[-1] > boot:
+            return "external handover markers are out of order"
     return None
 
 
@@ -600,6 +697,10 @@ def main() -> int:
         help="require storage-service bind and media self-test before PASS",
     )
     parser.add_argument(
+        "--expect-handover", action="store_true",
+        help="serve COM2 fence readback and require bounded takeover markers",
+    )
+    parser.add_argument(
         "--persistent", action="store_true",
         help="allow guest writes to the image (use only with a disposable copy)",
     )
@@ -626,6 +727,7 @@ def main() -> int:
             args.persistent, args.expect_reist_probe,
             args.inject_arp_request,
             args.expect_arp_resolution,
+            args.expect_handover,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)
@@ -641,7 +743,8 @@ def main() -> int:
                             args.inject_arp_request,
                             args.expect_storage_recovery,
                             args.expect_storage_io_failure,
-                            args.expect_storage_self_test)
+                            args.expect_storage_self_test,
+                            args.expect_handover)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")

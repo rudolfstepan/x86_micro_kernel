@@ -29,6 +29,40 @@ RUNNER_SPEC.loader.exec_module(RUNNER_MODULE)
 
 
 class QemuGuestSmokeRunnerTests(unittest.TestCase):
+    def test_external_handover_channel_uses_com2_and_crc_frames(self) -> None:
+        command = RUNNER_MODULE.qemu_command(
+            Path("qemu"), Path("image"), handover_port=32124,
+        )
+        serial_positions = [index for index, argument in enumerate(command)
+                            if argument == "-serial"]
+        self.assertEqual(len(serial_positions), 2)
+        self.assertEqual(command[serial_positions[0] + 1], "stdio")
+        self.assertEqual(command[serial_positions[1] + 1],
+                         "tcp:127.0.0.1:32124")
+
+        request = RUNNER_MODULE.handover_frame(
+            RUNNER_MODULE.HANDOVER_SERIAL_REQUEST, 1, 9)
+        self.assertEqual(len(request), RUNNER_MODULE.HANDOVER_SERIAL_FRAME.size)
+        self.assertEqual(RUNNER_MODULE.validate_handover_frame(
+            request, RUNNER_MODULE.HANDOVER_SERIAL_REQUEST), (1, 9))
+        damaged = bytearray(request)
+        damaged[12] ^= 1
+        self.assertIsNone(RUNNER_MODULE.validate_handover_frame(
+            bytes(damaged), RUNNER_MODULE.HANDOVER_SERIAL_REQUEST))
+
+        transcript = "\n".join((
+            *RUNNER_MODULE.REIST_HANDOVER_MARKERS,
+            "BOOT_OK", "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_handover=True))
+        reversed_markers = transcript.replace(
+            "REIST_HANDOVER REQUEST_SENT\nREIST_HANDOVER FENCE_CONFIRMED",
+            "REIST_HANDOVER FENCE_CONFIRMED\nREIST_HANDOVER REQUEST_SENT",
+        )
+        self.assertIn("out of order", RUNNER_MODULE.validate(
+            reversed_markers, expect_handover=True))
+
     def test_arp_request_injection_uses_qemu_hub_and_framed_socket(self) -> None:
         frame = RUNNER_MODULE.arp_request_frame()
         self.assertEqual(len(frame), 60)

@@ -198,6 +198,19 @@ der komplette Epoch-/Lease-Zustand atomar revalidiert. Ein bloßer Request oder
 ein Readback einer alten Epoche kann keine Übernahme autorisieren. Offen bleibt
 7b2 mit realem externem Transport, eigener Zeitbasis/Stromversorgung und
 rücklesbarem Hardware-Interlock.
+S0.3c-7b2a liefert inzwischen die ausführbare Zwischenstufe: Ein separater
+Host-Supervisor bedient in QEMU einen dedizierten COM2-Kanal. CRC-geschützte,
+versionierte 24-Byte-Frames binden Fence-Request und Readback an Active-ID und
+64-Bit-Epoche; alle UART-Wartepfade enden nach spätestens einer Sekunde. Der
+Gastlauf bestätigt die geordnete Folge von Fence-Request, Readback, Takeover,
+Boot und Ring-3-Smoke. Da Host und Gast weiterhin keine elektrisch getrennten
+Controller mit eigener Strom- und Zeitversorgung sind, bleibt 7b2b auf realer
+Zielhardware offen.
+Fünf aufeinanderfolgende Handover-Gastläufe bestanden. Dabei wurde außerdem
+ein Startreihenfolge-Race entfernt: Probe und Storage-Dienst werden jetzt
+vollständig veröffentlicht, bevor der Supervisor-Worker sie prüfen darf. Der
+Scheduler-Gasttest wartet auf den beobachtbaren `SLEEPING`-Zustand statt eine
+bestimmte Round-Robin-Position vorauszusetzen.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 

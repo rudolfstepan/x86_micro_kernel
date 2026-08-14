@@ -531,6 +531,17 @@ zwischenzeitliche Änderung verwirft das Readback. Diese Schnittstelle ist nur
 die sichere Aufnahme für S0.3c-7b2; ein Host-Fake ist kein unabhängiges
 Interlock und wird nicht als Failover-Nachweis gezählt.
 
+S0.3c-7b2a ergänzt ein ausführbares Referenzbackend über den dedizierten
+COM2-UART. Request und Ack sind feste 24-Byte-Frames mit Magic, Version, Typ,
+Länge, Active-ID, 64-Bit-Epoche und CRC32. Der Kernel akzeptiert nur den
+vollständigen Ack für das zuletzt gesendete Tupel; Sende- und Empfangsloops
+enden jeweils an einer monotonen 1-s-Deadline. Im isolierten QEMU-Profil läuft
+der bestätigende Supervisor als eigener Hostprozess und der Gast führt nach
+Leaseablauf einen echten Rollenwechsel aus. Dieser Test trennt Softwareprozess
+und Transportkanal von COM1, qualifiziert aber keine elektrische
+Unabhängigkeit. S0.3c-7b2b benötigt weiterhin ein Zielhardware-Interlock mit
+eigener Stromversorgung und Zeitbasis.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

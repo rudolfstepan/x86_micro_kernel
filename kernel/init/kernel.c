@@ -27,6 +27,8 @@
 #include "include/kernel/supervisor.h"
 #include "include/kernel/storage_safety.h"
 #include "include/kernel/storage_service.h"
+#include "include/kernel/handover.h"
+#include "include/kernel/handover_serial_backend.h"
 #include "include/kernel/filesystem_safety.h"
 #include "include/kernel/output_fence.h"
 #include "include/kernel/ipc.h"
@@ -254,6 +256,33 @@ static void system_ready(void) {
     printf("====================\n\n");
 }
 
+#ifdef REIST_HANDOVER_FAULT_INJECTION
+static void test_external_handover_channel(void) {
+    const uint32_t lease_ms = 50U;
+    uint64_t now = pit_monotonic_ms();
+    if (!handover_serial_backend_init() ||
+        handover_attach_fence_backend(handover_serial_backend()) != 0 ||
+        handover_init(1U, 2U, lease_ms, now) != 0)
+        panic("Unable to initialize external handover test channel");
+
+    pit_delay(lease_ms + 10U);
+    now = pit_monotonic_ms();
+    if (handover_request_fence(1U, now) != 0)
+        panic("External handover fence request failed");
+    printf("REIST_HANDOVER REQUEST_SENT\n");
+    if (handover_confirm_fenced(1U, now) != 0)
+        panic("External handover fence readback failed");
+    printf("REIST_HANDOVER FENCE_CONFIRMED\n");
+    if (handover_takeover(2U, 1U, now) != 0)
+        panic("External handover takeover failed");
+    handover_status_t status;
+    if (handover_snapshot(&status) != 0 || status.active_node != 2U ||
+        status.standby_node != 1U || status.epoch != 2U)
+        panic("External handover state validation failed");
+    printf("REIST_HANDOVER TAKEOVER_OK\n");
+}
+#endif
+
 static bool program_path_for_drive(const drive_t *drive,
                                    const char *filename,
                                    char path[PROCESS_PATH_MAX]) {
@@ -440,6 +469,9 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     system_ready();
     watchdog_init();
     printf("Watchdog: %s\n", watchdog_available() ? "IB700 armed" : "external backend required");
+#ifdef REIST_HANDOVER_FAULT_INJECTION
+    test_external_handover_channel();
+#endif
 #ifdef REIST_FAULT_INJECTION
     if (fatal_last_crash_record()->magic != FATAL_CRASH_RECORD_MAGIC) {
         printf("REIST_TEST DOUBLE_FAULT_ARMED\n");
@@ -447,14 +479,16 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     }
     printf("REIST_TEST FATAL_RECOVERY_OK\n");
 #endif
-    if (!supervisor_start_worker()) {
-        panic("Unable to start REIST safety supervisor worker");
-    }
     if (!supervisor_start_probe(pit_monotonic_ms())) {
         panic("Unable to start REIST Ring-3 probe");
     }
     if (!storage_service_start(pit_monotonic_ms())) {
         panic("Unable to start REIST Ring-3 storage service");
+    }
+    /* Publish every supervised service before the worker can inspect or
+     * restart it.  This removes a boot-time partial-initialization race. */
+    if (!supervisor_start_worker()) {
+        panic("Unable to start REIST safety supervisor worker");
     }
     printf("BOOT_OK\n");
 
