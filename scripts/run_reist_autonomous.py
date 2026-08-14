@@ -123,6 +123,8 @@ def verify_result(
     before_task: dict[str, Any],
     result: dict[str, Any],
     task_path: pathlib.Path,
+    *,
+    allow_dirty_blocked: bool = False,
 ) -> str:
     status = result.get("status")
     package = active_package(before_task)
@@ -132,7 +134,6 @@ def verify_result(
     if status in {"blocked", "no_work"}:
         if after_head != before_head:
             raise VerificationError(f"{status} result changed HEAD")
-        assert_clean(repo)
         if result.get("commit"):
             raise VerificationError(f"{status} result reported a commit")
         if status == "no_work" and package is not None:
@@ -143,6 +144,8 @@ def verify_result(
             raise VerificationError("blocked result names the wrong package")
         if status == "blocked" and not str(result.get("blocker", "")).strip():
             raise VerificationError("blocked result has no concrete blocker")
+        if status == "no_work" or not allow_dirty_blocked:
+            assert_clean(repo)
         return after_head
 
     if status != "committed":
@@ -433,7 +436,11 @@ def isolated_checkout(
     baseline: str,
     evidence_destination: pathlib.Path | None = None,
 ):
-    temporary = tempfile.TemporaryDirectory(prefix="reist-codex-")
+    temporary_root = repo / "build/codex-worktrees"
+    temporary_root.mkdir(parents=True, exist_ok=True)
+    temporary = tempfile.TemporaryDirectory(
+        prefix="reist-codex-", dir=temporary_root
+    )
     checkout = pathlib.Path(temporary.name) / "checkout"
     try:
         clone = subprocess.run(
@@ -456,9 +463,12 @@ def isolated_checkout(
             raise VerificationError(
                 f"isolated clone failed: {clone.stdout.strip()} {clone.stderr.strip()}"
             )
-        git(checkout, "checkout", "--quiet", "--detach", baseline)
         git(checkout, "remote", "remove", "origin")
-        git(checkout, "config", "commit.gpgsign", "false")
+        git(checkout, "config", "--local", "commit.gpgsign", "false")
+        git(checkout, "config", "--local", "core.autocrlf", "false")
+        git(checkout, "config", "--local", "core.eol", "lf")
+        git(checkout, "config", "--local", "core.safecrlf", "false")
+        git(checkout, "checkout", "--quiet", "--detach", baseline)
         for key in ("user.name", "user.email"):
             identity = subprocess.run(
                 ["git", "config", "--get", key],
@@ -480,6 +490,21 @@ def isolated_checkout(
                 dirs_exist_ok=True,
             )
         temporary.cleanup()
+
+
+def prepare_agent_environment(
+    worktree: pathlib.Path, environment: dict[str, str]
+) -> dict[str, str]:
+    agent_environment = environment.copy()
+    temporary = worktree / ".reist-agent-tmp"
+    temporary.mkdir(exist_ok=True)
+    exclude = worktree / ".git/info/exclude"
+    current_excludes = exclude.read_text("utf-8", errors="replace")
+    if "/.reist-agent-tmp/" not in current_excludes.splitlines():
+        exclude.write_text(current_excludes + "/.reist-agent-tmp/\n", "utf-8")
+    for name in ("TEMP", "TMP", "TMPDIR"):
+        agent_environment[name] = str(temporary)
+    return agent_environment
 
 
 def execute(args: argparse.Namespace) -> int:
@@ -522,6 +547,7 @@ def execute(args: argparse.Namespace) -> int:
         )
         try:
             with isolated_checkout(repo, before_head, evidence_dir) as worktree:
+                agent_environment = prepare_agent_environment(worktree, environment)
                 isolated_task_path = worktree / ".codex/tasks/reist-s03b.toml"
                 isolated_schema_path = (
                     worktree / ".codex/schemas/reist-run-result.schema.json"
@@ -539,9 +565,11 @@ Follow AGENTS.md and every invariant/stop condition. Do not implement the next
 package. Use no parallel writers and at most one read-only reist_reviewer.
 Run every listed gate. On success update only this package's status/evidence
 and the next active queue entry in .codex/tasks/reist-s03b.toml, commit once
-with the exact commit_message, and leave a clean worktree. On a blocker restore
-your in-scope edits, do not commit, and leave a clean worktree. Return only the
-required result object with the full 40-character commit SHA.
+with the exact commit_message, and leave a clean worktree. On a blocker, do not
+restore files: return blocked immediately without committing; this isolated
+checkout is discarded by the runner. Run a failing gate at most twice total
+(initial run plus one focused repair), then stop. Return only the required
+result object with the full 40-character commit SHA.
 """
                 command = [
                     codex,
@@ -589,7 +617,7 @@ required result object with the full 40-character commit SHA.
                     prompt,
                     event_log,
                     args.package_timeout_seconds,
-                    environment,
+                    agent_environment,
                 )
                 if isolated_result_file.is_file():
                     shutil.copyfile(isolated_result_file, result_file)
@@ -599,12 +627,18 @@ required result object with the full 40-character commit SHA.
                         f"{tail(event_log)}"
                     )
                 result = json.loads(isolated_result_file.read_text("utf-8"))
+                discarded_status = (
+                    git(worktree, "status", "--short")
+                    if result.get("status") == "blocked"
+                    else ""
+                )
                 verified_head = verify_result(
                     worktree,
                     before_head,
                     before_task,
                     result,
                     isolated_task_path,
+                    allow_dirty_blocked=True,
                 )
                 assert_clean(repo)
                 if git(repo, "rev-parse", "HEAD") != before_head:
@@ -635,6 +669,11 @@ required result object with the full 40-character commit SHA.
 
         print(f"{result['status']}: {result['summary']}")
         if result["status"] == "blocked":
+            if discarded_status:
+                discarded = ", ".join(
+                    line[3:] for line in discarded_status.splitlines()
+                )
+                print(f"discarded isolated edits: {discarded}")
             print(f"blocker: {result['blocker']}")
             return 2
         if result["status"] == "no_work":

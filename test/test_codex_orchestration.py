@@ -187,6 +187,8 @@ class CodexOrchestrationTests(unittest.TestCase):
         self.assertIn('"clone",', runner)
         self.assertIn('"remote", "remove", "origin"', runner)
         self.assertIn('"merge", "--ff-only"', runner)
+        self.assertIn("Run a failing gate at most twice total", runner)
+        self.assertIn("prepare_agent_environment", runner)
         self.assertIn("run_reist_autonomous.py", wrapper)
 
     def test_windows_runtime_gate_reuses_reference_build(self):
@@ -409,7 +411,51 @@ evidence = []
                     task,
                     self.result(repo, status="blocked", subject_commit=False),
                     repo / self.TASK_RELATIVE,
+                    allow_dirty_blocked=True,
                 )
+
+    def test_blocked_result_discards_uncommitted_isolated_edits(self):
+        temporary, repo, head, task = self.make_repo()
+        with temporary:
+            (repo / "allowed.txt").write_text("unfinished\n", "utf-8")
+            with self.assertRaises(RUNNER.VerificationError):
+                RUNNER.verify_result(
+                    repo,
+                    head,
+                    task,
+                    self.result(repo, status="blocked", subject_commit=False),
+                    repo / self.TASK_RELATIVE,
+                )
+            verified = RUNNER.verify_result(
+                repo,
+                head,
+                task,
+                self.result(repo, status="blocked", subject_commit=False),
+                repo / self.TASK_RELATIVE,
+                allow_dirty_blocked=True,
+            )
+            self.assertEqual(verified, head)
+            self.assertNotEqual(self.git(repo, "status", "--porcelain"), "")
+
+    def test_isolated_checkout_uses_stable_git_and_workspace_temp(self):
+        temporary, repo, head, _ = self.make_repo()
+        with temporary:
+            with RUNNER.isolated_checkout(repo, head) as checkout:
+                expected_root = repo / "build/codex-worktrees"
+                self.assertTrue(checkout.is_relative_to(expected_root))
+                self.assertEqual(
+                    self.git(checkout, "config", "core.autocrlf"), "false"
+                )
+                self.assertEqual(self.git(checkout, "config", "core.eol"), "lf")
+                environment = RUNNER.prepare_agent_environment(
+                    checkout, {"PATH": "test"}
+                )
+                for name in ("TEMP", "TMP", "TMPDIR"):
+                    self.assertEqual(
+                        pathlib.Path(environment[name]),
+                        checkout / ".reist-agent-tmp",
+                    )
+                self.assertEqual(self.git(checkout, "status", "--porcelain"), "")
 
     def test_rejects_no_work_while_active(self):
         temporary, repo, head, task = self.make_repo()
