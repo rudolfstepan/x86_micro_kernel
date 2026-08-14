@@ -1054,10 +1054,16 @@ Abnahmeflag. Der 10-ms-Supervisor-Worker ruft den begrenzten `netdev_poll()`
 als garantierten Bottom-Half auf; RX-Fortschritt hängt nicht mehr von einem
 opportunistischen Shell-/Netzwerkkommando ab.
 
-S0.3c-3d entfernt für den ausgewählten Pakettyp die parallele
-Kernelklassifikation. Erst wenn Fault-Injection den übrigen Netzwerkbetrieb
-nicht beeinflusst, gilt dieser Netzwerkbaustein als migriert; ein paralleler
-autoritativer Kernelpfad zählt nicht.
+**S0.3c-3d ist umgesetzt:** Nur während einer ausstehenden, rate-limitierten
+Probe kann ein ARP-Header übernommen werden. Nach erfolgreicher IPC-Publikation
+wird dieses Frame nicht zusätzlich in die Kernel-Netstack-Queue gestellt. Bei
+fehlendem Dienst, falschem EtherType oder Queue-Druck bleibt der Kernelpfad
+zuständig; Fence/Restart löscht die Pending-Autorität. Damit existiert für das
+übernommene Frame kein paralleler autoritativer Klassifikationspfad mehr.
+
+S0.3c-3e ergänzt gezielte Dienst-Crash-/Queue-Druck-Injection während eines
+realen NIC-Handoffs und weist nach, dass nicht übernommene Frames sowie der
+übrige Netzwerkbetrieb weiter Fortschritt machen.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

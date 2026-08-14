@@ -287,6 +287,13 @@ der Dienst einen definierten `REIST_NET_UNAVAILABLE`-Degradationsstatus.
 Der 10-ms-Supervisor-Worker führt außerdem den begrenzten Netzwerk-Bottom-Half
 aus; RX-Fortschritt hängt damit nicht mehr von zufälligen Shell-Kommandos ab.
 
+S0.3c-3d überträgt für genau den ausstehenden, rate-limitierten ARP-Probe die
+Verarbeitungsautorität: Nimmt die generation-gebundene IPC-Queue den Header an,
+wird dieses Frame nicht zusätzlich in die Kernel-Netstack-Queue gestellt. Bei
+fehlendem Dienst, falschem EtherType oder Queue-Druck bleibt der bestehende
+Kernelpfad zuständig. Fence/Restart löscht den Pending-Zustand, sodass keine
+alte Probeautorität auf eine neue Dienstgeneration übergehen kann.
+
 ## Betriebsstufen
 
 ```text

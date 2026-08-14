@@ -55,6 +55,7 @@ typedef struct {
     uint32_t launch_count;
     uint32_t endpoint_handle;
     uint64_t last_network_probe_ms;
+    bool network_probe_pending;
 } supervisor_probe_runtime_t;
 
 static supervisor_probe_runtime_t probe_runtime;
@@ -376,6 +377,7 @@ static bool probe_fence_apply(void *context) {
     if (runtime == NULL || !runtime->active) return false;
     runtime->fenced = true;
     runtime->healthy = false;
+    runtime->network_probe_pending = false;
     if (process_identity_alive(runtime->pid, runtime->process_generation)) {
         (void)process_terminate(runtime->pid);
     }
@@ -507,7 +509,8 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     KASSERT_NOT_IRQ();
     KASSERT(irq_enabled());
     if (frame == NULL || length < 14U || frame[12] != 0x08U ||
-        frame[13] != 0x06U || !probe_runtime.active ||
+        frame[13] != 0x06U || !probe_runtime.network_probe_pending ||
+        !probe_runtime.active ||
         probe_runtime.fenced || !probe_runtime.healthy ||
         probe_runtime.launch_count < 4U ||
         probe_runtime.endpoint_handle == IPC_INVALID_HANDLE ||
@@ -523,9 +526,11 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     };
     for (uint32_t index = 0U; index < 14U; ++index)
         message.payload[index + 4U] = frame[index];
-    return ipc_send_external_from_peer(
+    bool accepted = ipc_send_external_from_peer(
         probe_runtime.pid, probe_runtime.process_generation,
         probe_runtime.endpoint_handle, &message) == 0;
+    if (accepted) probe_runtime.network_probe_pending = false;
+    return accepted;
 }
 
 int supervisor_network_probe_request(int pid, uint32_t generation,
@@ -537,7 +542,10 @@ int supervisor_network_probe_request(int pid, uint32_t generation,
     if (probe_runtime.last_network_probe_ms != 0U &&
         now_ms - probe_runtime.last_network_probe_ms < 250U) return -11;
     probe_runtime.last_network_probe_ms = now_ms;
-    return netstack_probe_gateway() ? 0 : -19;
+    probe_runtime.network_probe_pending = true;
+    if (netstack_probe_gateway()) return 0;
+    probe_runtime.network_probe_pending = false;
+    return -19;
 }
 
 static void supervisor_worker(void) {

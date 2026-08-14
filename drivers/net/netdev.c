@@ -195,18 +195,16 @@ void netdev_deliver_rx(const uint8_t* packet, uint16_t length) {
     if (__sync_lock_test_and_set(&rx_producer_busy, 1u)) return;
     uint8_t service_header[14U];
     memcpy(service_header, packet, sizeof(service_header));
+    bool service_owned = supervisor_network_submit_header(
+        service_header, sizeof(service_header));
     if (netdev_is_dhcp_client_packet(packet, length)) {
         netdev_queue_dhcp_packet(packet, length);
     }
     /* IRQ handlers only copy frames. ARP/ICMP processing and any response TX
      * happen later in foreground context via netdev_poll(). */
-    netdev_queue_rx_packet(packet, length);
+    if (!service_owned) netdev_queue_rx_packet(packet, length);
     netdev_queue_monitor_packet(packet, length);
     __sync_lock_release(&rx_producer_busy);
-    /* Trusted ingress is nonblocking and copies only the fixed Ethernet
-     * header. Queue pressure or an unavailable service drops this mirror. */
-    (void)supervisor_network_submit_header(service_header,
-                                           sizeof(service_header));
 }
 
 void netdev_poll(void) {

@@ -55,6 +55,10 @@ NIC zurückkehrenden `NETR`-Header mit `NETWORK_HANDOFF_OK`. Ohne NIC bleibt der
 Pfad definiert degradiert. Als nächstes wird die ausgewählte parallele
 Kernelklassifikation entfernt. Der begrenzte Netzwerk-Bottom-Half läuft nun
 garantiert im 10-ms-Supervisor-Worker statt nur opportunistisch in Shellpfaden.
+S0.3c-3d hat die parallele Verarbeitung für den übernommenen ARP-Probe-Reply
+entfernt: Erfolgreiche IPC-Übernahme bedeutet ausschließlich Ring 3; bei nicht
+übernommenen Frames bleibt der Kernelpfad fail-closed zuständig. Pending-Zustand
+wird beim Fence generationssicher verworfen.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 

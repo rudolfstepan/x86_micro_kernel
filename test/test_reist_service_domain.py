@@ -86,8 +86,9 @@ class ReistServiceDomainTests(unittest.TestCase):
         ipc = read("kernel/ipc/ipc.c")
         self.assertIn("uint8_t service_header[14U]", netdev)
         self.assertIn("memcpy(service_header, packet", netdev)
-        self.assertIn("supervisor_network_submit_header(service_header",
-                      netdev)
+        self.assertIn("supervisor_network_submit_header(", netdev)
+        self.assertIn("service_header, sizeof(service_header)", netdev)
+        self.assertIn("if (!service_owned) netdev_queue_rx_packet", netdev)
         self.assertIn(".length = 18U", supervisor)
         handoff = supervisor[
             supervisor.index("bool supervisor_network_submit_header("):
@@ -96,6 +97,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("KASSERT(irq_enabled());", handoff)
         self.assertIn("frame[12] != 0x08U", handoff)
         self.assertIn("frame[13] != 0x06U", handoff)
+        self.assertIn("!probe_runtime.network_probe_pending", handoff)
+        self.assertIn("network_probe_pending = false", handoff)
         self.assertIn("for (uint32_t index = 0U; index < 14U; ++index)",
                       supervisor)
         self.assertIn("ipc_send_external_from_peer(", supervisor)
@@ -115,6 +118,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("generation != probe_runtime.process_generation", probe)
         self.assertIn("< 250U", probe)
         self.assertIn("netstack_probe_gateway()", probe)
+        self.assertIn("network_probe_pending = true", probe)
+        self.assertIn("network_probe_pending = false", probe)
         self.assertIn("X86OS_SYS_NETWORK_PROBE = 59", sdk)
         self.assertIn('message_is(&request, "NETPROBE")', service)
         self.assertIn("request.payload[3] == 'R'", service)
