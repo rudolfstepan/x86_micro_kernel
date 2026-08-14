@@ -81,6 +81,14 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("supervisor_protected_probe_control_t", header)
         self.assertIn("SUPERVISOR_PROBE_CONTROL_VERSION", source)
         self.assertIn("supervisor_test_corrupt_probe_control", host)
+        self.assertIn("transaction_epoch", header)
+        self.assertIn("network_epoch", header)
+        self.assertIn("supervisor_protected_probe_authority_take_epoch",
+                      source)
+        self.assertIn("supervisor_protected_network_context_publish_epoch",
+                      source)
+        self.assertIn("&protected_authority, 301U, 2U", host)
+        self.assertIn("&protected_context, 8U, 10U", host)
         self.assertNotIn("bool active;", source[source.index(
             "typedef struct {"):source.index("static supervisor_probe_runtime_t")])
 

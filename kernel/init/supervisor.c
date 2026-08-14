@@ -139,7 +139,8 @@ static bool probe_authority_valid(const void *payload, size_t length) {
     return authority->next_id >= 1U &&
            authority->next_id <= (uint64_t)UINT32_MAX + 1U &&
            (authority->active_id == 0U ||
-            authority->active_id < authority->next_id);
+            (authority->active_id < authority->next_id &&
+             authority->transaction_epoch != 0U));
 }
 
 static int protected_probe_authority_read(
@@ -187,9 +188,34 @@ int supervisor_protected_probe_authority_begin(
     }
     result = supervisor_probe_authority_begin(&authority, now_ms, timeout_ms,
                                               probe_id_out);
+    if (result == 0) authority.transaction_epoch = *probe_id_out;
     if (result == 0)
         result = protected_probe_authority_write(protected_authority,
                                                  &authority);
+    supervisor_unlock(flags);
+    return result;
+}
+
+int supervisor_protected_probe_authority_begin_epoch(
+        supervisor_protected_probe_authority_t *protected_authority,
+        uint64_t now_ms, uint32_t timeout_ms, uint32_t transaction_epoch,
+        uint32_t *probe_id_out) {
+    if (transaction_epoch == 0U) return -22;
+    supervisor_probe_authority_t authority;
+    uint32_t flags = supervisor_lock();
+    int result = protected_probe_authority_read(protected_authority, &authority);
+    if (result == 0)
+        result = supervisor_probe_authority_begin(&authority, now_ms,
+                                                  timeout_ms, probe_id_out);
+    if (result == 0) {
+        if (transaction_epoch != *probe_id_out) {
+            supervisor_unlock(flags);
+            return -13;
+        }
+        authority.transaction_epoch = transaction_epoch;
+        result = protected_probe_authority_write(protected_authority,
+                                                 &authority);
+    }
     supervisor_unlock(flags);
     return result;
 }
@@ -200,6 +226,25 @@ int supervisor_protected_probe_authority_take(
     supervisor_probe_authority_t authority;
     uint32_t flags = supervisor_lock();
     int result = protected_probe_authority_read(protected_authority, &authority);
+    if (result == 0 &&
+        !supervisor_probe_authority_take(&authority, now_ms, probe_id_out))
+        result = -11;
+    if (result == 0)
+        result = protected_probe_authority_write(protected_authority,
+                                                 &authority);
+    supervisor_unlock(flags);
+    return result;
+}
+
+int supervisor_protected_probe_authority_take_epoch(
+        supervisor_protected_probe_authority_t *protected_authority,
+        uint64_t now_ms, uint32_t transaction_epoch, uint32_t *probe_id_out) {
+    if (transaction_epoch == 0U) return -22;
+    supervisor_probe_authority_t authority;
+    uint32_t flags = supervisor_lock();
+    int result = protected_probe_authority_read(protected_authority, &authority);
+    if (result == 0 && authority.transaction_epoch != transaction_epoch)
+        result = -13;
     if (result == 0 &&
         !supervisor_probe_authority_take(&authority, now_ms, probe_id_out))
         result = -11;
@@ -225,6 +270,24 @@ int supervisor_protected_probe_authority_expire(
     return result == 0 && expired ? 1 : result;
 }
 
+int supervisor_protected_probe_authority_expire_epoch(
+        supervisor_protected_probe_authority_t *protected_authority,
+        uint64_t now_ms, uint32_t transaction_epoch) {
+    if (transaction_epoch == 0U) return 0;
+    supervisor_probe_authority_t authority;
+    uint32_t flags = supervisor_lock();
+    int result = protected_probe_authority_read(protected_authority, &authority);
+    if (result == 0 && authority.transaction_epoch != transaction_epoch)
+        result = -13;
+    bool expired = result == 0 &&
+        supervisor_probe_authority_expire(&authority, now_ms);
+    if (expired)
+        result = protected_probe_authority_write(protected_authority,
+                                                 &authority);
+    supervisor_unlock(flags);
+    return result == 0 && expired ? 1 : result;
+}
+
 int supervisor_protected_probe_authority_cancel(
         supervisor_protected_probe_authority_t *protected_authority) {
     supervisor_probe_authority_t authority;
@@ -232,6 +295,7 @@ int supervisor_protected_probe_authority_cancel(
     int result = protected_probe_authority_read(protected_authority, &authority);
     if (result == 0) {
         supervisor_probe_authority_cancel(&authority);
+        authority.transaction_epoch = 0U;
         result = protected_probe_authority_write(protected_authority,
                                                  &authority);
     }
@@ -250,7 +314,9 @@ static bool network_context_valid(const void *payload, size_t length) {
     bool empty = context->gateway == 0U && context->local_ip == 0U && empty_mac;
     bool complete = context->gateway != 0U && context->local_ip != 0U &&
                     !empty_mac;
-    return (empty && context->delivered_id == 0U) || complete;
+    return (empty && context->delivered_id == 0U &&
+            context->transaction_epoch == 0U) ||
+           (complete && context->transaction_epoch != 0U);
 }
 
 static int network_context_read(
@@ -288,9 +354,18 @@ int supervisor_protected_network_context_init(
 int supervisor_protected_network_context_prepare(
         supervisor_protected_network_context_t *protected_context,
         uint32_t gateway, uint32_t local_ip, const uint8_t local_mac[6]) {
+    return supervisor_protected_network_context_prepare_epoch(
+        protected_context, 1U, gateway, local_ip, local_mac);
+}
+
+int supervisor_protected_network_context_prepare_epoch(
+        supervisor_protected_network_context_t *protected_context,
+        uint32_t transaction_epoch, uint32_t gateway, uint32_t local_ip,
+        const uint8_t local_mac[6]) {
     if (protected_context == NULL || gateway == 0U || local_ip == 0U ||
-        local_mac == NULL) return -22;
+        local_mac == NULL || transaction_epoch == 0U) return -22;
     supervisor_network_probe_context_t context = {
+        .transaction_epoch = transaction_epoch,
         .gateway = gateway, .local_ip = local_ip,
     };
     for (uint32_t index = 0U; index < 6U; ++index)
@@ -314,10 +389,23 @@ int supervisor_protected_network_context_snapshot(
 int supervisor_protected_network_context_publish(
         supervisor_protected_network_context_t *protected_context,
         uint32_t probe_id) {
-    if (probe_id == 0U) return -22;
+    supervisor_network_probe_context_t snapshot;
+    int result = supervisor_protected_network_context_snapshot(
+        protected_context, &snapshot);
+    if (result != 0) return result;
+    return supervisor_protected_network_context_publish_epoch(
+        protected_context, snapshot.transaction_epoch, probe_id);
+}
+
+int supervisor_protected_network_context_publish_epoch(
+        supervisor_protected_network_context_t *protected_context,
+        uint32_t transaction_epoch, uint32_t probe_id) {
+    if (probe_id == 0U || transaction_epoch == 0U) return -22;
     supervisor_network_probe_context_t context;
     uint32_t flags = supervisor_lock();
     int result = network_context_read(protected_context, &context);
+    if (result == 0 && context.transaction_epoch != transaction_epoch)
+        result = -13;
     if (result == 0 && (context.gateway == 0U || context.delivered_id != 0U))
         result = -11;
     if (result == 0) {
@@ -331,10 +419,23 @@ int supervisor_protected_network_context_publish(
 int supervisor_protected_network_context_consume(
         supervisor_protected_network_context_t *protected_context,
         uint32_t probe_id) {
-    if (probe_id == 0U) return -22;
+    supervisor_network_probe_context_t snapshot;
+    int result = supervisor_protected_network_context_snapshot(
+        protected_context, &snapshot);
+    if (result != 0) return result;
+    return supervisor_protected_network_context_consume_epoch(
+        protected_context, snapshot.transaction_epoch, probe_id);
+}
+
+int supervisor_protected_network_context_consume_epoch(
+        supervisor_protected_network_context_t *protected_context,
+        uint32_t transaction_epoch, uint32_t probe_id) {
+    if (probe_id == 0U || transaction_epoch == 0U) return -22;
     supervisor_network_probe_context_t context;
     uint32_t flags = supervisor_lock();
     int result = network_context_read(protected_context, &context);
+    if (result == 0 && context.transaction_epoch != transaction_epoch)
+        result = -13;
     if (result == 0 && context.delivered_id != probe_id) result = -13;
     if (result == 0) {
         context.delivered_id = 0U;
@@ -797,6 +898,7 @@ static bool probe_fence_apply(void *context) {
     }
     control.fenced = 1U;
     control.healthy = 0U;
+    control.network_epoch = 0U;
     if (supervisor_protected_probe_control_write(
             &runtime->control, &control) != 0) {
         output_fence_all();
@@ -947,8 +1049,18 @@ int supervisor_probe_report(int pid, uint32_t generation,
         return 0;
     }
     if (report_type == REIST_REPORT_NETWORK_PROBE_ID) {
-        if (supervisor_protected_network_context_consume(
-                &probe_runtime.network_probe_context, value) != 0) return -1;
+        uint32_t transaction_flags = supervisor_lock();
+        int control_result = supervisor_protected_probe_control_read(
+            &probe_runtime.control, &control);
+        int consume_result = control_result == 0 && control.active != 0U &&
+                pid == control.pid &&
+                generation == control.process_generation
+            ? supervisor_protected_network_context_consume_epoch(
+                  &probe_runtime.network_probe_context, control.network_epoch,
+                  value)
+            : -1;
+        supervisor_unlock(transaction_flags);
+        if (consume_result != 0) return -1;
         printf("REIST_NETWORK PROBE_ID_OK\n");
         return 0;
     }
@@ -983,28 +1095,40 @@ int supervisor_service_connect(Process *client, uint32_t service_id,
 bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     KASSERT_NOT_IRQ();
     KASSERT(irq_enabled());
-    supervisor_probe_control_t control;
     if (frame == NULL || length < 42U || frame[12] != 0x08U ||
-        frame[13] != 0x06U ||
-        supervisor_protected_probe_control_read(
+        frame[13] != 0x06U) return false;
+    uint32_t transaction_flags = supervisor_lock();
+    supervisor_probe_control_t control;
+    if (supervisor_protected_probe_control_read(
             &probe_runtime.control, &control) != 0 || control.active == 0U ||
         control.fenced != 0U || control.healthy == 0U ||
         control.launch_count < 4U ||
         control.endpoint_handle == IPC_INVALID_HANDLE ||
         !process_identity_alive(control.pid, control.process_generation)) {
+        supervisor_unlock(transaction_flags);
         return false;
     }
     uint32_t probe_id;
     supervisor_network_probe_context_t network_context;
     int context_result = supervisor_protected_network_context_snapshot(
         &probe_runtime.network_probe_context, &network_context);
-    if (context_result != 0) {
+    if (context_result != 0 || control.network_epoch == 0U ||
+        network_context.transaction_epoch != control.network_epoch) {
+        supervisor_unlock(transaction_flags);
         (void)supervisor_force_isolate(control.handle);
         return false;
     }
-    if (supervisor_protected_probe_authority_take(
+    if (supervisor_protected_probe_authority_take_epoch(
             &probe_runtime.network_probe_authority, pit_monotonic_ms(),
-            &probe_id) != 0) return false;
+            control.network_epoch, &probe_id) != 0 ||
+        supervisor_protected_network_context_publish_epoch(
+            &probe_runtime.network_probe_context, control.network_epoch,
+            probe_id) != 0) {
+        supervisor_unlock(transaction_flags);
+        (void)supervisor_force_isolate(control.handle);
+        return false;
+    }
+    supervisor_unlock(transaction_flags);
     ipc_message_t message = {
         .version = IPC_MESSAGE_VERSION,
         .struct_size = sizeof(ipc_message_t),
@@ -1026,19 +1150,15 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     for (uint32_t index = 0U; index < 4U; ++index)
         message.payload[60U + index] =
             (uint8_t)(probe_id >> (index * 8U));
-    if (supervisor_protected_network_context_publish(
-            &probe_runtime.network_probe_context, probe_id) != 0) {
-        (void)supervisor_force_isolate(control.handle);
-        return false;
-    }
     int ingress = ipc_send_external_from_peer(
         control.pid, control.process_generation, control.endpoint_handle,
         &message);
     /* A matching reply consumes exactly one probe authorization even when
      * bounded IPC pressure forces the frame back to the kernel path. */
     if (ingress != 0)
-        (void)supervisor_protected_network_context_consume(
-            &probe_runtime.network_probe_context, probe_id);
+        (void)supervisor_protected_network_context_consume_epoch(
+            &probe_runtime.network_probe_context, control.network_epoch,
+            probe_id);
     if (ingress == -11) {
         network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_QUEUE);
         printf("REIST_NETWORK QUEUE_PRESSURE_FALLBACK\n");
@@ -1070,18 +1190,39 @@ int supervisor_network_probe_request_id(int pid, uint32_t generation,
     uint8_t local_mac[6];
     if (gateway == 0U || local_ip == 0U ||
         !netdev_get_mac_address(local_mac)) return -19;
+    uint32_t transaction_flags = supervisor_lock();
+    if (supervisor_protected_probe_control_read(
+            &probe_runtime.control, &control) != 0 || control.active == 0U ||
+        control.fenced != 0U || control.healthy == 0U || pid != control.pid ||
+        generation != control.process_generation ||
+        !process_identity_alive(pid, generation)) {
+        supervisor_unlock(transaction_flags);
+        return -13;
+    }
+    if (control.last_network_probe_ms != 0U &&
+        now_ms - control.last_network_probe_ms < 250U) {
+        supervisor_unlock(transaction_flags);
+        return -11;
+    }
     uint32_t probe_id;
     int authority = supervisor_protected_probe_authority_begin(
         &probe_runtime.network_probe_authority, now_ms,
         SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS, &probe_id);
-    if (authority != 0) return authority;
-    int context_result = supervisor_protected_network_context_prepare(
-        &probe_runtime.network_probe_context, gateway, local_ip, local_mac);
+    if (authority != 0) {
+        supervisor_unlock(transaction_flags);
+        return authority;
+    }
+    uint32_t transaction_epoch = probe_id;
+    int context_result = supervisor_protected_network_context_prepare_epoch(
+        &probe_runtime.network_probe_context, transaction_epoch, gateway,
+        local_ip, local_mac);
     if (context_result != 0) {
         (void)supervisor_protected_probe_authority_cancel(
             &probe_runtime.network_probe_authority);
+        supervisor_unlock(transaction_flags);
         return context_result;
     }
+    control.network_epoch = transaction_epoch;
     control.last_network_probe_ms = now_ms;
     if (supervisor_protected_probe_control_write(
             &probe_runtime.control, &control) != 0) {
@@ -1089,8 +1230,10 @@ int supervisor_network_probe_request_id(int pid, uint32_t generation,
             &probe_runtime.network_probe_authority);
         (void)supervisor_protected_network_context_clear(
             &probe_runtime.network_probe_context);
+        supervisor_unlock(transaction_flags);
         return SUPERVISOR_EINTEGRITY;
     }
+    supervisor_unlock(transaction_flags);
     if (netstack_probe_gateway()) {
         *probe_id_out = probe_id;
         return 0;
@@ -1099,6 +1242,12 @@ int supervisor_network_probe_request_id(int pid, uint32_t generation,
         &probe_runtime.network_probe_authority);
     (void)supervisor_protected_network_context_clear(
         &probe_runtime.network_probe_context);
+    control.network_epoch = 0U;
+    if (supervisor_protected_probe_control_write(
+            &probe_runtime.control, &control) != 0) {
+        output_fence_all();
+        return SUPERVISOR_EINTEGRITY;
+    }
     return -19;
 }
 
@@ -1109,20 +1258,23 @@ static void supervisor_worker(void) {
          * command happening to poll the NIC. */
         netdev_poll();
         supervisor_probe_control_t control;
+        uint32_t transaction_flags = supervisor_lock();
         int control_result = supervisor_protected_probe_control_read(
             &probe_runtime.control, &control);
         if (control_result != 0) {
+            supervisor_unlock(transaction_flags);
             output_fence_all();
             if (scheduler_sleep_ms(SUPERVISOR_CHECK_INTERVAL_MS) != 0)
                 (void)scheduler_yield();
             continue;
         }
-        int authority_expiry = supervisor_protected_probe_authority_expire(
-            &probe_runtime.network_probe_authority, pit_monotonic_ms());
+        int authority_expiry = supervisor_protected_probe_authority_expire_epoch(
+            &probe_runtime.network_probe_authority, pit_monotonic_ms(),
+            control.network_epoch);
+        supervisor_unlock(transaction_flags);
         if (authority_expiry == 1) {
             network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_EXPIRED);
-        } else if (authority_expiry == SUPERVISOR_EINTEGRITY &&
-                   control.active != 0U) {
+        } else if (authority_expiry < 0 && control.active != 0U) {
             (void)supervisor_force_isolate(control.handle);
         }
         if (control.active != 0U && control.fenced == 0U &&

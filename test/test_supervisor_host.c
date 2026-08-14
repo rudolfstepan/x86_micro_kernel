@@ -164,6 +164,15 @@ int main(void) {
         supervisor_protected_probe_authority_begin(
             &protected_authority, 200U, 10U, &probe_id) !=
             SUPERVISOR_EINTEGRITY) return 51;
+    if (supervisor_protected_probe_authority_init(&protected_authority) != 0 ||
+        supervisor_protected_probe_authority_begin_epoch(
+            &protected_authority, 300U, 10U, 2U, &probe_id) != -13 ||
+        supervisor_protected_probe_authority_begin_epoch(
+            &protected_authority, 300U, 10U, 1U, &probe_id) != 0 ||
+        supervisor_protected_probe_authority_take_epoch(
+            &protected_authority, 301U, 2U, &probe_id) != -13 ||
+        supervisor_protected_probe_authority_take_epoch(
+            &protected_authority, 301U, 1U, &probe_id) != 0) return 56;
 
     supervisor_protected_network_context_t protected_context;
     supervisor_network_probe_context_t context_snapshot;
@@ -183,6 +192,17 @@ int main(void) {
             &protected_context, 8U) != -13 ||
         supervisor_protected_network_context_consume(
             &protected_context, 7U) != 0) return 52;
+    if (supervisor_protected_network_context_prepare_epoch(
+            &protected_context, 7U, 0x0A000202U, 0x0A00020FU,
+            local_mac) != 0 ||
+        supervisor_protected_network_context_publish_epoch(
+            &protected_context, 8U, 10U) != -13 ||
+        supervisor_protected_network_context_publish_epoch(
+            &protected_context, 7U, 10U) != 0 ||
+        supervisor_protected_network_context_consume_epoch(
+            &protected_context, 8U, 10U) != -13 ||
+        supervisor_protected_network_context_consume_epoch(
+            &protected_context, 7U, 10U) != 0) return 57;
     if (supervisor_protected_network_context_init(&protected_context) != 0 ||
         supervisor_test_corrupt_network_context(
             &protected_context, true) != 0 ||
@@ -200,6 +220,7 @@ int main(void) {
         .process_generation = 7U,
         .launch_count = 1U,
         .endpoint_handle = 9U,
+        .network_epoch = 7U,
         .last_network_probe_ms = 123U,
     };
     supervisor_probe_control_t control_snapshot;

@@ -1161,10 +1161,17 @@ wird rekonstruiert; Doppelkorruption sperrt alle Dienste und Probes, der Worker
 fenced sämtliche Ausgänge. Hosttests beweisen Korrektur und fail-closed Read/
 Write; direkte ungeschützte Probe-Control-Felder wurden entfernt.
 
-S0.3c-3r versieht als nächsten Schritt Control, Probe-Autorität und
-Identitätskontext mit einer gemeinsamen Transaktionsepoche. Damit können auch
-drei jeweils gültige, aber zeitlich inkonsistente Snapshots nicht kombiniert
-werden.
+**S0.3c-3r ist umgesetzt:** Die monotone Probe-ID dient zugleich als gemeinsame
+Transaktionsepoche von Control, Autorität und Identitätskontext. Begin/Prepare/
+Control-Publish sowie Snapshot/Take/Delivery-Publish laufen jeweils unter einer
+kurzen gemeinsamen Supervisor-Sperre. Ablauf und Dienstbestätigung verlangen
+dieselbe Epoche. Hosttests kombinieren absichtlich einzeln gültige Snapshots
+verschiedener Epochen; Take, Publish und Consume lehnen sie ohne Mutation ab.
+
+Als nächstes beginnt **S0.3c-4 ARP-State-Migration**: Der Ring-3-Dienst soll
+eine validierte, epochengebundene Nachbarbindung an einen engen Kernel-Mediator
+zurückgeben. Nur dieser Mediator darf den begrenzten ARP-Zustand aktualisieren;
+Treiber-, DMA- oder ambienter Netzwerkzugriff bleibt der Domäne verwehrt.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

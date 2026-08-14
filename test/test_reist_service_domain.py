@@ -99,7 +99,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("frame[12] != 0x08U", handoff)
         self.assertIn("frame[13] != 0x06U", handoff)
         self.assertNotIn("network_probe_authority.active_id", handoff)
-        self.assertIn("supervisor_protected_probe_authority_take(", handoff)
+        self.assertIn("supervisor_protected_probe_authority_take_epoch(",
+                      handoff)
 
     def test_queue_pressure_consumes_probe_and_falls_back(self):
         supervisor = (ROOT / "kernel" / "init" / "supervisor.c").read_text()
@@ -113,7 +114,7 @@ class ReistServiceDomainTests(unittest.TestCase):
         ingress = supervisor[supervisor.index("bool supervisor_network_submit_header"):
                              supervisor.index("int supervisor_network_probe_request")]
         self.assertLess(ingress.index(
-                            "supervisor_protected_probe_authority_take("),
+                            "supervisor_protected_probe_authority_take_epoch("),
                         ingress.index("return ingress == 0"))
         self.assertIn("for (uint32_t index = 0U; index < 42U; ++index)",
                       supervisor)
@@ -235,8 +236,30 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("REIST_REPORT_NETWORK_DEGRADED", service)
         worker = supervisor[supervisor.index("static void supervisor_worker("):
                             supervisor.index("bool supervisor_start_worker(")]
-        self.assertIn("supervisor_protected_probe_authority_expire(", worker)
+        self.assertIn("supervisor_protected_probe_authority_expire_epoch(",
+                      worker)
         self.assertIn("network_degradation_record(", worker)
+
+    def test_network_transaction_epoch_rejects_mixed_snapshots(self):
+        supervisor = read("kernel/init/supervisor.c")
+        header = read("include/kernel/supervisor.h")
+        self.assertIn("uint32_t network_epoch;", header)
+        self.assertGreaterEqual(header.count("uint32_t transaction_epoch;"), 2)
+        handoff = supervisor[
+            supervisor.index("bool supervisor_network_submit_header("):
+            supervisor.index("int supervisor_network_probe_request(")]
+        self.assertIn("network_context.transaction_epoch != "
+                      "control.network_epoch", handoff)
+        self.assertIn("supervisor_protected_probe_authority_take_epoch(",
+                      handoff)
+        self.assertIn("supervisor_protected_network_context_publish_epoch(",
+                      handoff)
+        report = supervisor[
+            supervisor.index("int supervisor_probe_report("):
+            supervisor.index("int supervisor_service_connect(")]
+        self.assertIn("control.network_epoch", report)
+        self.assertIn("supervisor_protected_network_context_consume_epoch(",
+                      report)
 
     def test_network_degradation_stats_abi_is_versioned_read_only(self):
         libc = read("lib/libc/stdlib.h")

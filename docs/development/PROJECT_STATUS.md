@@ -105,6 +105,9 @@ Ring 3 gesendet oder bestätigt; Doppelkorruption isoliert die Domäne.
 S0.3c-3q schützt außerdem PID/Generation, Endpoint, Supervisor-Handle,
 Health/Fence, Launch-Zähler und Rate-Limit-Zeit als einen Control-Snapshot.
 Direkte ungeschützte Laufzeitentscheidungen existieren in der Probe nicht mehr.
+S0.3c-3r bindet Control, Probe-Autorität und Identitätskontext an dieselbe
+monotone Transaktionsepoche. Drei einzeln gültige Snapshots verschiedener
+Probes werden vor Handoff, Ablauf oder Bestätigung fail-closed abgelehnt.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 

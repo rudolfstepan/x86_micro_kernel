@@ -59,6 +59,7 @@ typedef struct {
     uint32_t process_generation;
     uint32_t launch_count;
     uint32_t endpoint_handle;
+    uint32_t network_epoch;
     uint64_t last_network_probe_ms;
 } supervisor_probe_control_t;
 
@@ -89,6 +90,7 @@ typedef struct {
     uint64_t next_id;
     uint64_t deadline_ms;
     uint32_t active_id;
+    uint32_t transaction_epoch;
 } supervisor_probe_authority_t;
 
 typedef struct {
@@ -97,6 +99,7 @@ typedef struct {
 
 typedef struct {
     uint32_t delivered_id;
+    uint32_t transaction_epoch;
     uint32_t gateway;
     uint32_t local_ip;
     uint8_t local_mac[6];
@@ -141,11 +144,21 @@ int supervisor_protected_probe_authority_init(
 int supervisor_protected_probe_authority_begin(
     supervisor_protected_probe_authority_t *authority, uint64_t now_ms,
     uint32_t timeout_ms, uint32_t *probe_id_out);
+int supervisor_protected_probe_authority_begin_epoch(
+    supervisor_protected_probe_authority_t *authority, uint64_t now_ms,
+    uint32_t timeout_ms, uint32_t transaction_epoch,
+    uint32_t *probe_id_out);
 int supervisor_protected_probe_authority_take(
     supervisor_protected_probe_authority_t *authority, uint64_t now_ms,
     uint32_t *probe_id_out);
+int supervisor_protected_probe_authority_take_epoch(
+    supervisor_protected_probe_authority_t *authority, uint64_t now_ms,
+    uint32_t transaction_epoch, uint32_t *probe_id_out);
 int supervisor_protected_probe_authority_expire(
     supervisor_protected_probe_authority_t *authority, uint64_t now_ms);
+int supervisor_protected_probe_authority_expire_epoch(
+    supervisor_protected_probe_authority_t *authority, uint64_t now_ms,
+    uint32_t transaction_epoch);
 int supervisor_protected_probe_authority_cancel(
     supervisor_protected_probe_authority_t *authority);
 int supervisor_protected_network_context_init(
@@ -153,13 +166,22 @@ int supervisor_protected_network_context_init(
 int supervisor_protected_network_context_prepare(
     supervisor_protected_network_context_t *context, uint32_t gateway,
     uint32_t local_ip, const uint8_t local_mac[6]);
+int supervisor_protected_network_context_prepare_epoch(
+    supervisor_protected_network_context_t *context, uint32_t transaction_epoch,
+    uint32_t gateway, uint32_t local_ip, const uint8_t local_mac[6]);
 int supervisor_protected_network_context_snapshot(
     supervisor_protected_network_context_t *context,
     supervisor_network_probe_context_t *snapshot_out);
 int supervisor_protected_network_context_publish(
     supervisor_protected_network_context_t *context, uint32_t probe_id);
+int supervisor_protected_network_context_publish_epoch(
+    supervisor_protected_network_context_t *context, uint32_t transaction_epoch,
+    uint32_t probe_id);
 int supervisor_protected_network_context_consume(
     supervisor_protected_network_context_t *context, uint32_t probe_id);
+int supervisor_protected_network_context_consume_epoch(
+    supervisor_protected_network_context_t *context, uint32_t transaction_epoch,
+    uint32_t probe_id);
 int supervisor_protected_network_context_clear(
     supervisor_protected_network_context_t *context);
 int supervisor_protected_probe_control_init(

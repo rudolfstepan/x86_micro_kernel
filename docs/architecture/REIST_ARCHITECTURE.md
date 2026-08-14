@@ -364,6 +364,13 @@ Launch-Zähler und Rate-Limit-Zeit liegen in einem validierten Control-Snapshot.
 Ist keine Replica lesbar, bleiben Connect, Report und Handoff geschlossen; der
 Worker aktiviert zusätzlich den globalen Output-Fence.
 
+S0.3c-3r korreliert die drei geschützten Objekte zusätzlich durch die monotone
+Probe-ID als Transaktionsepoche. Selbst drei CRC-/ECC-gültige Kopien dürfen nur
+gemeinsam verwendet werden, wenn Control, Autorität und Identitätskontext
+dieselbe Epoche tragen. Der Vergleich und die jeweilige Zustandsmutation liegen
+unter einer gemeinsamen kurzen IRQ-off-Sperre; IPC und Gerätetransaktionen
+bleiben außerhalb dieser Sperre.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet
