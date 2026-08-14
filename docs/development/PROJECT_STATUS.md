@@ -96,6 +96,9 @@ gestiegenen Queue-Fallback-Zähler mit `NETWORK_STATS_OK`.
 S0.3c-3n hält den Snapshot redundant im Critical-Object-Format. Ein beschädigter
 CRC einer Kopie wird beim Lesen korrigiert; sind beide Kopien ungültig, liefert
 Syscall 61 `-84` und veröffentlicht keine möglicherweise erfundenen Werte.
+S0.3c-3o schützt auch Probe-ID, Deadline und ID-Sequenz als versioniertes
+Critical Object. Einzelkopiefehler werden rekonstruiert; Doppelkorruption
+verhindert Begin/Take und zwingt die aktive Domäne in Isolation.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 

@@ -1140,9 +1140,15 @@ gültigen Replica. Bei Doppelkorruption liefert Syscall 61 `-84`, bevor Daten in
 den Userbereich kopiert werden. Deterministische Hostinjektion beweist beide
 Pfade und den Erhalt eines zuvor gezählten Ereignisses nach Einzelkorrektur.
 
-S0.3c-3o schützt als nächsten Schritt die aktive Probe-Autorität selbst gegen
-Einzelbitfehler und lehnt bei nicht korrigierbarer Metadatenkorruption jede
-weitere Probe fail-closed ab.
+**S0.3c-3o ist umgesetzt:** Probe-ID, absolute Deadline und monotone ID-Sequenz
+liegen in einem versionierten Critical Object. Begin, Take, Expire und Cancel
+lesen und publizieren ausschließlich validierte Snapshots. Ein beschädigter
+CRC wird aus der zweiten Kopie rekonstruiert; Doppelkorruption liefert `-84`,
+erteilt keine Autorität und isoliert eine aktive Probe-Domäne im Worker.
+
+S0.3c-3p schützt als nächsten Schritt den nachgelagerten Probe-Kontext aus
+zugestellter ID, Gateway, lokaler IP und MAC, damit auch zwischen Autoritäts-
+Take und Dienstbestätigung keine ungeschützte Identitätsentscheidung bleibt.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

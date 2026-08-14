@@ -348,6 +348,11 @@ Primär- und Schattenkopie. Eine gültige Replica rekonstruiert einen beschädig
 Snapshot. Sind beide Kopien ungültig, endet die Abfrage vor der Userkopie mit
 `-84`; das System erfindet weder Nullstände noch scheinbar plausible Zähler.
 
+S0.3c-3o wendet denselben Vertrag auf die kurzlebige Probe-Autorität an. Die
+monotone ID-Sequenz, aktive ID und absolute Deadline werden nur als validierter
+Snapshot verändert. Nicht korrigierbare Korruption kann deshalb weder eine
+Probe erzeugen noch verbrauchen; der Worker fordert stattdessen Isolation an.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

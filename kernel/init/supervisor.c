@@ -57,7 +57,7 @@ typedef struct {
     uint32_t launch_count;
     uint32_t endpoint_handle;
     uint64_t last_network_probe_ms;
-    supervisor_probe_authority_t network_probe_authority;
+    supervisor_protected_probe_authority_t network_probe_authority;
     uint32_t network_probe_delivered_id;
     uint32_t network_probe_gateway;
     uint32_t network_probe_local_ip;
@@ -131,6 +131,89 @@ bool supervisor_probe_authority_expire(supervisor_probe_authority_t *authority,
 
 void supervisor_probe_authority_cancel(supervisor_probe_authority_t *authority) {
     if (authority != NULL) authority->active_id = 0U;
+}
+
+static bool probe_authority_valid(const void *payload, size_t length) {
+    if (payload == NULL || length != sizeof(supervisor_probe_authority_t))
+        return false;
+    const supervisor_probe_authority_t *authority = payload;
+    return authority->next_id >= 1U &&
+           authority->next_id <= (uint64_t)UINT32_MAX + 1U &&
+           (authority->active_id == 0U ||
+            authority->active_id < authority->next_id);
+}
+
+static int protected_probe_authority_read(
+        supervisor_protected_probe_authority_t *protected_authority,
+        supervisor_probe_authority_t *authority) {
+    if (protected_authority == NULL || authority == NULL) return -22;
+    size_t length = 0U;
+    critical_read_result_t result = critical_object_read(
+        &protected_authority->object, SUPERVISOR_PROBE_AUTHORITY_VERSION,
+        authority, sizeof(*authority), &length, probe_authority_valid);
+    return result < 0 ? SUPERVISOR_EINTEGRITY : 0;
+}
+
+static int protected_probe_authority_write(
+        supervisor_protected_probe_authority_t *protected_authority,
+        const supervisor_probe_authority_t *authority) {
+    return critical_object_update(
+        &protected_authority->object, SUPERVISOR_PROBE_AUTHORITY_VERSION,
+        authority, sizeof(*authority), probe_authority_valid) == 0
+        ? 0 : SUPERVISOR_EINTEGRITY;
+}
+
+int supervisor_protected_probe_authority_init(
+        supervisor_protected_probe_authority_t *protected_authority) {
+    if (protected_authority == NULL) return -22;
+    supervisor_probe_authority_t authority;
+    supervisor_probe_authority_init(&authority);
+    return critical_object_init(
+        &protected_authority->object, SUPERVISOR_PROBE_AUTHORITY_VERSION,
+        &authority, sizeof(authority)) == 0 ? 0 : SUPERVISOR_EINTEGRITY;
+}
+
+int supervisor_protected_probe_authority_begin(
+        supervisor_protected_probe_authority_t *protected_authority,
+        uint64_t now_ms, uint32_t timeout_ms, uint32_t *probe_id_out) {
+    supervisor_probe_authority_t authority;
+    int result = protected_probe_authority_read(protected_authority, &authority);
+    if (result != 0) return result;
+    result = supervisor_probe_authority_begin(&authority, now_ms, timeout_ms,
+                                              probe_id_out);
+    if (result != 0) return result;
+    return protected_probe_authority_write(protected_authority, &authority);
+}
+
+int supervisor_protected_probe_authority_take(
+        supervisor_protected_probe_authority_t *protected_authority,
+        uint64_t now_ms, uint32_t *probe_id_out) {
+    supervisor_probe_authority_t authority;
+    int result = protected_probe_authority_read(protected_authority, &authority);
+    if (result != 0) return result;
+    if (!supervisor_probe_authority_take(&authority, now_ms, probe_id_out))
+        return -11;
+    return protected_probe_authority_write(protected_authority, &authority);
+}
+
+int supervisor_protected_probe_authority_expire(
+        supervisor_protected_probe_authority_t *protected_authority,
+        uint64_t now_ms) {
+    supervisor_probe_authority_t authority;
+    int result = protected_probe_authority_read(protected_authority, &authority);
+    if (result != 0) return result;
+    if (!supervisor_probe_authority_expire(&authority, now_ms)) return 0;
+    result = protected_probe_authority_write(protected_authority, &authority);
+    return result == 0 ? 1 : result;
+}
+
+int supervisor_protected_probe_authority_cancel(
+        supervisor_protected_probe_authority_t *protected_authority) {
+    supervisor_probe_authority_t authority;
+    int result = protected_probe_authority_read(protected_authority, &authority);
+    if (result != 0) return result;
+    supervisor_probe_authority_cancel(&authority);
+    return protected_probe_authority_write(protected_authority, &authority);
 }
 
 void supervisor_network_degradation_init(
@@ -497,7 +580,8 @@ static bool probe_fence_apply(void *context) {
     if (runtime == NULL || !runtime->active) return false;
     runtime->fenced = true;
     runtime->healthy = false;
-    supervisor_probe_authority_cancel(&runtime->network_probe_authority);
+    (void)supervisor_protected_probe_authority_cancel(
+        &runtime->network_probe_authority);
     runtime->network_probe_delivered_id = 0U;
     if (process_identity_alive(runtime->pid, runtime->process_generation)) {
         (void)process_terminate(runtime->pid);
@@ -550,7 +634,8 @@ static bool probe_spawn_next(void) {
 bool supervisor_start_probe(uint64_t now_ms) {
     if (probe_runtime.active) return false;
     probe_runtime = (supervisor_probe_runtime_t){0};
-    supervisor_probe_authority_init(&probe_runtime.network_probe_authority);
+    if (supervisor_protected_probe_authority_init(
+            &probe_runtime.network_probe_authority) != 0) return false;
     supervisor_config_t config = {
         .heartbeat_timeout_ms = 2000U,
         .recovery_timeout_ms = 1000U,
@@ -647,7 +732,6 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     KASSERT(irq_enabled());
     if (frame == NULL || length < 42U || frame[12] != 0x08U ||
         frame[13] != 0x06U ||
-        probe_runtime.network_probe_authority.active_id == 0U ||
         !probe_runtime.active ||
         probe_runtime.fenced || !probe_runtime.healthy ||
         probe_runtime.launch_count < 4U ||
@@ -657,9 +741,9 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
         return false;
     }
     uint32_t probe_id;
-    if (!supervisor_probe_authority_take(
+    if (supervisor_protected_probe_authority_take(
             &probe_runtime.network_probe_authority, pit_monotonic_ms(),
-            &probe_id)) return false;
+            &probe_id) != 0) return false;
     ipc_message_t message = {
         .version = IPC_MESSAGE_VERSION,
         .struct_size = sizeof(ipc_message_t),
@@ -717,7 +801,7 @@ int supervisor_network_probe_request_id(int pid, uint32_t generation,
     if (gateway == 0U || local_ip == 0U ||
         !netdev_get_mac_address(local_mac)) return -19;
     uint32_t probe_id;
-    int authority = supervisor_probe_authority_begin(
+    int authority = supervisor_protected_probe_authority_begin(
         &probe_runtime.network_probe_authority, now_ms,
         SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS, &probe_id);
     if (authority != 0) return authority;
@@ -730,7 +814,8 @@ int supervisor_network_probe_request_id(int pid, uint32_t generation,
         *probe_id_out = probe_id;
         return 0;
     }
-    supervisor_probe_authority_cancel(&probe_runtime.network_probe_authority);
+    (void)supervisor_protected_probe_authority_cancel(
+        &probe_runtime.network_probe_authority);
     return -19;
 }
 
@@ -740,10 +825,13 @@ static void supervisor_worker(void) {
          * pending flags, so foreground progress must not depend on a shell
          * command happening to poll the NIC. */
         netdev_poll();
-        if (supervisor_probe_authority_expire(
-                &probe_runtime.network_probe_authority,
-                pit_monotonic_ms())) {
+        int authority_expiry = supervisor_protected_probe_authority_expire(
+            &probe_runtime.network_probe_authority, pit_monotonic_ms());
+        if (authority_expiry == 1) {
             network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_EXPIRED);
+        } else if (authority_expiry == SUPERVISOR_EINTEGRITY &&
+                   probe_runtime.active) {
+            (void)supervisor_force_isolate(probe_runtime.handle);
         }
         if (probe_runtime.active && !probe_runtime.fenced &&
             !process_identity_alive(probe_runtime.pid,
@@ -969,6 +1057,15 @@ int supervisor_test_corrupt_network_degradation(bool corrupt_both_copies) {
 int supervisor_test_record_network_degradation(
         supervisor_network_degradation_reason_t reason) {
     network_degradation_record(reason);
+    return 0;
+}
+
+int supervisor_test_corrupt_probe_authority(
+        supervisor_protected_probe_authority_t *authority,
+        bool corrupt_both_copies) {
+    if (authority == NULL) return -22;
+    authority->object.primary.crc32 ^= 1U;
+    if (corrupt_both_copies) authority->object.shadow.crc32 ^= 2U;
     return 0;
 }
 #endif

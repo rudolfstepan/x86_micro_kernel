@@ -149,6 +149,22 @@ int main(void) {
         supervisor_probe_authority_begin(&authority, 0U, 1U,
                                          &probe_id) != -75) return 45;
 
+    supervisor_protected_probe_authority_t protected_authority;
+    if (supervisor_protected_probe_authority_init(&protected_authority) != 0 ||
+        supervisor_protected_probe_authority_begin(
+            &protected_authority, 200U, 10U, &probe_id) != 0 ||
+        supervisor_test_corrupt_probe_authority(
+            &protected_authority, false) != 0 ||
+        supervisor_protected_probe_authority_take(
+            &protected_authority, 205U, &probe_id) != 0 || probe_id != 1U)
+        return 50;
+    if (supervisor_protected_probe_authority_init(&protected_authority) != 0 ||
+        supervisor_test_corrupt_probe_authority(
+            &protected_authority, true) != 0 ||
+        supervisor_protected_probe_authority_begin(
+            &protected_authority, 200U, 10U, &probe_id) !=
+            SUPERVISOR_EINTEGRITY) return 51;
+
     supervisor_network_degradation_stats_t stats;
     supervisor_network_degradation_init(&stats);
     supervisor_network_degradation_record(

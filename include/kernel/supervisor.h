@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "include/kernel/critical_object.h"
 
 struct Process;
 
@@ -12,6 +13,7 @@ struct Process;
 #define SUPERVISOR_FENCE_OPS_VERSION 1U
 #define SUPERVISOR_DESCRIPTOR_VERSION 1U
 #define SUPERVISOR_NETWORK_DEGRADATION_VERSION 1U
+#define SUPERVISOR_PROBE_AUTHORITY_VERSION 1U
 #define SUPERVISOR_EINTEGRITY (-84)
 #define REIST_REPORT_SELF_TEST 1U
 #define REIST_REPORT_PROGRESS 2U
@@ -71,6 +73,10 @@ typedef struct {
     uint32_t active_id;
 } supervisor_probe_authority_t;
 
+typedef struct {
+    critical_object_t object;
+} supervisor_protected_probe_authority_t;
+
 typedef enum {
     SUPERVISOR_NETWORK_DEGRADED_EXPIRED = 1,
     SUPERVISOR_NETWORK_DEGRADED_QUEUE = 2,
@@ -100,6 +106,18 @@ bool supervisor_probe_authority_take(supervisor_probe_authority_t *authority,
 bool supervisor_probe_authority_expire(supervisor_probe_authority_t *authority,
                                        uint64_t now_ms);
 void supervisor_probe_authority_cancel(supervisor_probe_authority_t *authority);
+int supervisor_protected_probe_authority_init(
+    supervisor_protected_probe_authority_t *authority);
+int supervisor_protected_probe_authority_begin(
+    supervisor_protected_probe_authority_t *authority, uint64_t now_ms,
+    uint32_t timeout_ms, uint32_t *probe_id_out);
+int supervisor_protected_probe_authority_take(
+    supervisor_protected_probe_authority_t *authority, uint64_t now_ms,
+    uint32_t *probe_id_out);
+int supervisor_protected_probe_authority_expire(
+    supervisor_protected_probe_authority_t *authority, uint64_t now_ms);
+int supervisor_protected_probe_authority_cancel(
+    supervisor_protected_probe_authority_t *authority);
 
 void supervisor_init(void);
 void supervisor_clock_tick(uint64_t now_ms);
@@ -140,6 +158,9 @@ int supervisor_test_corrupt_descriptor(supervisor_handle_t handle,
 int supervisor_test_corrupt_network_degradation(bool corrupt_both_copies);
 int supervisor_test_record_network_degradation(
     supervisor_network_degradation_reason_t reason);
+int supervisor_test_corrupt_probe_authority(
+    supervisor_protected_probe_authority_t *authority,
+    bool corrupt_both_copies);
 #endif
 
 #endif

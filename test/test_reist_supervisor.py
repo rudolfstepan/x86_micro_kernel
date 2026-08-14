@@ -70,6 +70,10 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("now_ms >= authority->deadline_ms", source)
         self.assertIn("UINT64_MAX - 5U", host)
         self.assertIn("probe_id != UINT32_MAX", host)
+        self.assertIn("supervisor_protected_probe_authority_t", header)
+        self.assertIn("SUPERVISOR_PROBE_AUTHORITY_VERSION", source)
+        self.assertIn("supervisor_test_corrupt_probe_authority", host)
+        self.assertIn("SUPERVISOR_EINTEGRITY", host)
 
     def test_network_degradation_counters_saturate(self):
         header = (ROOT / "include/kernel/supervisor.h").read_text(encoding="utf-8")
