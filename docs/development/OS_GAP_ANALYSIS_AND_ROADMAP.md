@@ -77,7 +77,7 @@ und maximale Fehlerreaktionszeiten rückverfolgbar festzulegen.
 | Boot | BIOS/MBR, zweistufiger Loader, E820, A20, ELF32-Prüfung, Kernel-CRC32, FAT12-Floppy, optionaler nativer VBE-LFB-Handoff | stabiler Referenzpfad mit VGA-Rückfall |
 | CPU | GDT/IDT/TSS, Ring 0/3, Exceptions, PIC, gegen PIT kalibrierter lokaler APIC-Timer, PIT-Scheduler-Fallback, `INT 0x80` | funktionsfähiger Single-Core-Pfad |
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
-| Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit generationsgebundenen Capabilities, endlichen Deadlines und geschützten Steuerdaten | maximal 8 Tasks; IPC noch ohne explizite Delegation und vollständige Domänenprofile |
+| Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit explizit delegierten generationsgebundenen Capabilities, endlichen Deadlines und geschützten Steuerdaten | maximal 8 Tasks; IPC noch ohne reservierte Dienstkapazität und vollständige Domänenprofile |
 | Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, FAT32-Rename/Replace im Undo-Journal, FAT32/ATA-`fsync`, EXT2 lesen | persistenter Editor-Commit vorhanden; ABI, FAT12-Sync und breitere Rename-Semantik fehlen |
 | Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 und COM1 mit blockierendem Console-Wait, RTC, VGA, nativer VBE-RGB-Framebuffer | Referenzhardware gut, moderne Geräte fehlen |
 | Netzwerk | E1000, RTL8139, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping am besten verifiziert |
@@ -166,9 +166,8 @@ separate Bereinigung der optionalen Legacy-Image-Tests bleiben Folgearbeiten.
 
 - **S0.3a umgesetzt:** 16 statische Endpoints, acht Capabilities je Prozess,
   vier Nachrichten je Queue, 128 Byte Nutzlast, blockierendes Send/Receive,
-  Spawn-Vererbung ohne `CONTROL` und vollständiger Exit-Widerruf
-- explizite selektive Capability-Delegation ergänzen; endliche Deadlines und
-  CRC-/`critical_object`-Schutz sind umgesetzt
+  explizite abschwächende Delegation ohne `CONTROL` und vollständiger
+  Exit-Widerruf
 - reservierte Task-Slots und Admission Control für überwachte Dienste schaffen
 - `kill` sowie Datei-, Display-, Prozess- und weitere ambient verfügbare
   Syscalls durch Capability- beziehungsweise Domänenrichtlinien begrenzen
@@ -205,6 +204,9 @@ Fehler an Ring 3 zurückgegeben. S0.3a hängt `SYS_IPC_CREATE` (49),
 `SYS_IPC_SEND` (50), `SYS_IPC_RECEIVE` (51) und `SYS_IPC_CLOSE` (52) an. Die
 versionierte 128-Byte-Nachricht wird vollständig über validierte User-Kopien
 übertragen; rohe Kernelpointer verlassen die Prozessgrenze nicht.
+`SYS_IPC_DELEGATE` (55) bindet eine nichtleere Teilmenge von `SEND|RECEIVE`
+an die unter Präemptionsschutz aufgelöste aktuelle Generation einer Ziel-PID.
+`CONTROL` und Ambient-Spawn-Vererbung sind ausgeschlossen.
 
 - eine einzige gemeinsame, versionierte Quelle für Syscallnummern und
   Fehlercodes
@@ -658,9 +660,10 @@ vier Nachrichtenplätze je Endpoint und eine maximale Nutzlast von 128 Byte.
 Nach der Initialisierung benötigt der Pfad keinen Heap. Ein 32-Bit-Handle
 verbindet einen Endpoint-Slot im unteren Byte mit einer 24-Bit-Generation;
 zusätzlich werden Halter und Eigentümer über PID und Prozessgeneration geprüft.
-Die Rechte sind `SEND`, `RECEIVE` und `CONTROL`. Der Erzeuger behält `CONTROL`,
-während ein Spawn einen noch ungebundenen Endpoint vor seiner
-READY-Publikation an genau ein Kind nur mit `SEND|RECEIVE` bindet.
+Die Rechte sind `SEND`, `RECEIVE` und `CONTROL`. Der Erzeuger behält `CONTROL`.
+Eine explizite Delegation bindet eine nichtleere Teilmenge von `SEND|RECEIVE`
+an die aktuelle Prozessgeneration der Ziel-PID; Spawn selbst vererbt keine
+IPC-Rechte.
 Mehrparteienrouting ist nicht Bestandteil von v1. Send und Receive blockieren
 auf festen Wait-Queues und besitzen endliche, auf `pit_monotonic_ms` basierende
 Deadlines. Timeout null liefert ohne Blockierung `EAGAIN`, eine abgelaufene
@@ -673,9 +676,9 @@ Einträge und wecken blockierte Peers. Host- und Ring-3-Gasttests decken
 Nachrichtenaustausch, Rechteabschwächung, Ressourcenlimits, Close-Wakeup und
 Exit-Revoke ab.
 
-S0.3a ist ausdrücklich nur der Mechanismus-Unterbau. Endliche Deadlines und
-CRC-/`critical_object`-Schutz sind umgesetzt. Noch offen sind explizite Delegation,
-reservierte Service-Taskslots und Capability-Gates für `kill` sowie die heute
+S0.3a ist ausdrücklich nur der Mechanismus-Unterbau. Endliche Deadlines,
+CRC-/`critical_object`-Schutz und abschwächende Delegation sind umgesetzt.
+Noch offen sind reservierte Service-Taskslots und Capability-Gates für `kill` sowie die heute
 ambient verfügbaren Datei-, Display-, Prozess- und sonstigen Syscalls. Ohne
 diese Gates besitzt ein IPC-nutzender Prozess noch kein vollständiges
 Least-Privilege-Profil.
@@ -991,7 +994,9 @@ Inkrementen zu schließen:
    Capability-Metadaten einschließlich deterministischer Bitflip-Injection —
    umgesetzt; unkorrektierbare Objekte quarantänisieren den Endpoint und
    wecken beide begrenzten Warteschlangen mit eigenem Integritätsstatus,
-3. explizite selektive Delegation mit ausschließlich abschwächbaren Rechten,
+3. explizite selektive Delegation mit ausschließlich abschwächbaren Rechten —
+   umgesetzt; Ziel-PID und Prozessgeneration werden atomar gebunden, Spawn
+   vererbt keine IPC-Autorität mehr,
 4. mindestens ein reservierter Service-/Restart-Taskslot mit Admission Control,
 5. Capability-/Domänen-Gates für `kill` und alle ambienten Datei-, Display-,
    Prozess- und sonstigen Syscalls der Probedomäne.

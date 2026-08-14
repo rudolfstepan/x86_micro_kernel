@@ -184,10 +184,12 @@ Endpoint-Slot, die oberen 24 Bit dessen Generation. Slot null und Generation
 null sind ungültig; ein Slot wird nach ausgeschöpfter Generation stillgelegt,
 statt ein altes Handle erneut gültig werden zu lassen. Zusätzlich bindet der
 Kernel jeden Capability-Eintrag an PID und Prozessgeneration. S0.3a kennt
-`SEND`, `RECEIVE` und `CONTROL`. Der Erzeuger erhält alle drei Rechte. Beim
-Spawn werden noch ungebundene Endpoints vor der READY-Publikation an genau ein
-Kind vererbt, aber auf `SEND|RECEIVE` abgeschwächt; `CONTROL` bleibt beim
-Erzeuger. Mehrparteienrouting ist bewusst noch kein Bestandteil von v1.
+`SEND`, `RECEIVE` und `CONTROL`. Der Erzeuger erhält alle drei Rechte.
+Syscall 55 delegiert einen Endpoint explizit an die atomar aufgelöste aktuelle
+Generation einer Ziel-PID. Die delegierten Rechte müssen eine nichtleere
+Teilmenge der Quellrechte sein; `CONTROL` ist grundsätzlich nicht delegierbar.
+Spawn vererbt keine IPC-Autorität mehr. Mehrparteienrouting ist bewusst noch
+kein Bestandteil von v1.
 
 Nachrichten tragen in Version 1 `version`, `struct_size`, `length` und die
 begrenzte Nutzlast. `send` blockiert bei voller Queue, `receive` bei fehlender
@@ -216,7 +218,6 @@ Capability-Record auflösen.
 
 Diese Basis ist noch kein vollständiger High-Assurance-IPC-Vertrag. Es fehlen:
 
-- explizite selektive Delegation und Rechteabschwächung unabhängig vom Spawn,
 - reservierte Task-Slots und Admission Control für neu startbare Dienste,
 - Capability-Gates für `kill` und die weiterhin ambient verfügbaren Datei-,
   Display-, Prozess- und sonstigen Syscalls,

@@ -310,15 +310,6 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
         return -1;
     }
 
-    /* Install the attenuated peer capabilities before READY publication so
-     * the child can never execute with a partially constructed manifest. */
-    if (parent != NULL && ipc_inherit(parent, process) != 0) {
-        scheduler_free_kernel_stack(kernel_stack);
-        free_page_directory(page_directory);
-        release_process_slot(process);
-        return -1;
-    }
-
     int task_id = create_user_task(
         entry_point + USER_PROGRAM_ADDRESS, user_stack,
         kernel_stack, page_directory, process);
@@ -747,6 +738,31 @@ int process_spawn_args(Process *parent, const char *path, int argc,
     if (process_resolve_path(parent, path, resolved) != 0) return -1;
     return create_process_for_file_args_owned(
         resolved, argc, argv, parent->working_directory, parent);
+}
+
+int process_ipc_delegate(Process *source, ipc_handle_t handle,
+                         int target_pid, uint32_t rights) {
+    if (source == NULL || target_pid <= 0 || target_pid == source->pid) {
+        return -22;
+    }
+
+    /* The preemption guard makes PID lookup and generation-scoped capability
+     * publication one transaction on the current UP scheduler. */
+    scheduler_preempt_disable();
+    Process *target = NULL;
+    uint32_t target_generation = 0U;
+    for (int index = 0; index < MAX_PROGRAMS; ++index) {
+        if (process_list[index].is_running &&
+            process_list[index].pid == target_pid) {
+            target = &process_list[index];
+            target_generation = process_list[index].generation;
+            break;
+        }
+    }
+    int result = target != NULL && target->generation == target_generation
+        ? ipc_delegate(source, handle, target, rights) : -3;
+    scheduler_preempt_enable();
+    return result;
 }
 
 int process_wait_status_locked(Process *parent, int pid, int *status,

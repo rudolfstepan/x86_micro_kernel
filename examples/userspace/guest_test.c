@@ -70,9 +70,13 @@ static int ipc_message_is(const x86os_ipc_message_t *message,
 static int ipc_child_main(const char *mode, const char *handle_text) {
     x86os_ipc_handle_t handle;
     if (parse_ipc_handle(handle_text, &handle) != 0) return 70;
+    /* Delegation is explicit and occurs immediately after spawn.  Yield the
+     * fresh child through a bounded sleep so the parent can publish its
+     * generation-scoped capability before the first IPC operation. */
+    if (x86os_sleep_ms(10U) != 0) return 76;
 
     if (text_equal(mode, "IPC_ECHO")) {
-        /* Spawn inheritance grants the peer SEND/RECEIVE, never CONTROL. */
+        /* Explicit delegation grants SEND/RECEIVE, never CONTROL. */
         if (x86os_ipc_close(handle) >= 0) return 71;
         x86os_ipc_message_t message;
         ipc_message_prepare(&message);
@@ -229,7 +233,16 @@ static int spawn_ipc_child(const char *mode, x86os_ipc_handle_t handle) {
     char handle_text[11];
     format_ipc_handle(handle, handle_text);
     const char *arguments[] = {"GTEST.PRG", mode, handle_text};
-    return x86os_spawnv("GTEST.PRG", 3, arguments);
+    int pid = x86os_spawnv("GTEST.PRG", 3, arguments);
+    if (pid <= 0) return pid;
+    if (x86os_ipc_delegate(handle, pid,
+            X86OS_IPC_RIGHT_SEND | X86OS_IPC_RIGHT_RECEIVE) != 0) {
+        (void)x86os_kill(pid);
+        int status;
+        (void)x86os_wait(pid, &status);
+        return -1;
+    }
+    return pid;
 }
 
 static int wait_for_ipc_child(int pid, int expected_status) {
@@ -248,6 +261,16 @@ static int test_ipc_capabilities(void) {
     x86os_ipc_handle_t handle = X86OS_IPC_INVALID_HANDLE;
     if (x86os_ipc_create(&handle) != 0 ||
         handle == X86OS_IPC_INVALID_HANDLE) return -1;
+    if (x86os_ipc_delegate(handle, x86os_getpid(),
+            X86OS_IPC_RIGHT_SEND) >= 0 ||
+        x86os_ipc_delegate(handle, 0, X86OS_IPC_RIGHT_SEND) >= 0 ||
+        x86os_ipc_delegate(handle, x86os_getpid() + 10000,
+            X86OS_IPC_RIGHT_SEND) >= 0 ||
+        x86os_ipc_delegate(handle, x86os_getpid(),
+            X86OS_IPC_RIGHT_CONTROL) >= 0) {
+        (void)x86os_ipc_close(handle);
+        return -1;
+    }
     int child = spawn_ipc_child("IPC_ECHO", handle);
     if (child <= 0 || x86os_yield() != 0 ||
         process_state_for_pid(child) != X86OS_PROCESS_WAITING) {

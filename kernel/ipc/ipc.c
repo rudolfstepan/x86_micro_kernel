@@ -775,93 +775,67 @@ int ipc_close(Process *process, ipc_handle_t handle) {
     return 0;
 }
 
-int ipc_inherit(const Process *parent, Process *child) {
-    if (parent == NULL || child == NULL || !parent->is_running ||
-        !child->is_running) return IPC_EINVAL;
-    uint32_t flags = ipc_lock();
+int ipc_delegate(Process *source, ipc_handle_t handle, Process *target,
+                 uint32_t rights) {
+    const uint32_t delegable = IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE;
+    if (source == NULL || target == NULL || source == target ||
+        !source->is_running || !target->is_running || rights == 0U ||
+        source->generation == 0U || target->generation == 0U ||
+        (rights & IPC_RIGHT_CONTROL) != 0U ||
+        (rights & ~delegable) != 0U) return IPC_EINVAL;
 
-    size_t needed = 0U;
-    for (size_t index = 0;
-         index < IPC_MAX_CAPABILITIES_PER_PROCESS; ++index) {
-        const ipc_capability_t *source = &parent->ipc_capabilities[index];
-        size_t endpoint_slot;
-        uint32_t generation;
-        ipc_capability_record_t *record = source->in_use
-            ? capability_record_for(parent, source->handle) : NULL;
-        if (ipc_capability_scan_corrupt) {
-            ipc_unlock(flags);
-            return IPC_EINTEGRITY;
-        }
-        if (record != NULL &&
-            decode_handle(source->handle, &endpoint_slot, &generation) == 0 &&
-            load_endpoint(endpoint_slot) == 0 &&
-            ipc_endpoints[endpoint_slot].active &&
-            ipc_endpoints[endpoint_slot].generation == generation &&
-            ipc_endpoints[endpoint_slot].peer_capabilities == 0U &&
-            (record->rights & (IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE)) != 0U) {
-            ++needed;
-        }
+    uint32_t flags = ipc_lock();
+    ipc_endpoint_t *endpoint = NULL;
+    size_t endpoint_slot = 0U;
+    int result = resolve_capability(source, handle, rights, &endpoint,
+                                    &endpoint_slot);
+    if (result != 0) {
+        ipc_unlock(flags);
+        return result;
     }
-    size_t free_local = 0U;
-    for (size_t index = 0;
-         index < IPC_MAX_CAPABILITIES_PER_PROCESS; ++index) {
-        if (!child->ipc_capabilities[index].in_use) ++free_local;
+    ipc_capability_record_t *source_record =
+        capability_record_for(source, handle);
+    if (ipc_capability_scan_corrupt) {
+        quarantine_endpoint_locked(endpoint_slot);
+        ipc_unlock(flags);
+        return IPC_EINTEGRITY;
     }
-    size_t free_global = 0U;
-    for (size_t index = 0; index < IPC_MAX_CAPABILITY_RECORDS; ++index) {
-        if (load_capability(index) != 0) {
-            ipc_unlock(flags);
-            return IPC_EINTEGRITY;
-        }
-        if (!ipc_capability_records[index].active) ++free_global;
+    if (source_record == NULL ||
+        (rights & source_record->rights) != rights) {
+        ipc_unlock(flags);
+        return IPC_EACCES;
     }
-    if (needed > free_local || needed > free_global) {
+    if (endpoint->peer_capabilities != 0U ||
+        process_capability_slot(target, handle) >= 0) {
+        ipc_unlock(flags);
+        return IPC_EACCES;
+    }
+    if (free_process_capability_slot(target) < 0) {
+        ipc_unlock(flags);
+        return IPC_ENOSPC;
+    }
+    int record_slot = free_capability_record();
+    if (record_slot == IPC_EINTEGRITY) {
+        quarantine_endpoint_locked(endpoint_slot);
+        ipc_unlock(flags);
+        return IPC_EINTEGRITY;
+    }
+    if (record_slot < 0) {
         ipc_unlock(flags);
         return IPC_ENOSPC;
     }
 
-    for (size_t index = 0;
-         index < IPC_MAX_CAPABILITIES_PER_PROCESS; ++index) {
-        const ipc_capability_t *source = &parent->ipc_capabilities[index];
-        if (!source->in_use) continue;
-        size_t endpoint_slot;
-        uint32_t generation;
-        ipc_capability_record_t *source_record =
-            capability_record_for(parent, source->handle);
-        if (ipc_capability_scan_corrupt) {
-            ipc_unlock(flags);
-            return IPC_EINTEGRITY;
-        }
-        if (source_record == NULL ||
-            decode_handle(source->handle, &endpoint_slot, &generation) != 0 ||
-            load_endpoint(endpoint_slot) != 0 ||
-            !ipc_endpoints[endpoint_slot].active ||
-            ipc_endpoints[endpoint_slot].generation != generation) continue;
-
-        /* v1 endpoints are deliberately point-to-point.  Reject a second
-         * live peer instead of allowing one child to consume another child's
-         * response from the same queue. */
-        if (ipc_endpoints[endpoint_slot].peer_capabilities != 0U) continue;
-
-        uint32_t peer_rights = source_record->rights &
-            (IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE);
-        if (peer_rights == 0U) continue;
-        int result = install_capability_locked(
-            child, source->handle, endpoint_slot, peer_rights);
-        if (result != 0) {
-            ipc_unlock(flags);
-            return result;
-        }
-        ipc_endpoints[endpoint_slot].peer_seen = true;
-        ++ipc_endpoints[endpoint_slot].peer_capabilities;
+    result = install_capability_locked(target, handle, endpoint_slot, rights);
+    if (result == 0) {
+        endpoint->peer_seen = true;
+        endpoint->peer_capabilities = 1U;
         if (seal_endpoint(endpoint_slot) != 0) {
             quarantine_endpoint_locked(endpoint_slot);
-            ipc_unlock(flags);
-            return IPC_EINTEGRITY;
+            result = IPC_EINTEGRITY;
         }
     }
     ipc_unlock(flags);
-    return 0;
+    return result;
 }
 
 void ipc_process_cleanup(int pid, uint32_t generation) {

@@ -94,7 +94,8 @@ static int test_rights_fifo_and_bounds(void) {
 
     ipc_init();
     CHECK(ipc_create(&owner, &handle) == 0 && handle != 0U);
-    CHECK(ipc_inherit(&owner, &child) == 0);
+    CHECK(ipc_delegate(&owner, handle, &child,
+                       IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE) == 0);
     CHECK(ipc_close(&child, handle) < 0);
     CHECK(ipc_send(&stranger, handle, &(ipc_message_t){0}) < 0);
 
@@ -159,7 +160,8 @@ static int test_generation_quota_and_cleanup(void) {
 
     ipc_init();
     CHECK(ipc_create(&owner, &stale) == 0);
-    CHECK(ipc_inherit(&owner, &child) == 0);
+    CHECK(ipc_delegate(&owner, stale, &child,
+                       IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE) == 0);
 
     Process reused_identity = owner;
     ++reused_identity.generation;
@@ -184,7 +186,8 @@ static int test_generation_quota_and_cleanup(void) {
 
     ipc_handle_t cleanup_handle = 0U;
     CHECK(ipc_create(&owner, &cleanup_handle) == 0);
-    CHECK(ipc_inherit(&owner, &child) == 0);
+    CHECK(ipc_delegate(&owner, cleanup_handle, &child,
+                       IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE) == 0);
     unsigned wakes_before = wake_all_count;
     ipc_process_cleanup(child.pid, child.generation);
     CHECK(wake_all_count > wakes_before);
@@ -208,7 +211,8 @@ static int test_generation_quota_and_cleanup(void) {
     /* Owner revocation must reclaim the peer's local capability slots. */
     for (size_t cycle = 0; cycle < IPC_MAX_CAPABILITIES_PER_PROCESS; ++cycle) {
         CHECK(ipc_create(&owner, &cleanup_handle) == 0);
-        CHECK(ipc_inherit(&owner, &child) == 0);
+        CHECK(ipc_delegate(&owner, cleanup_handle, &child,
+                           IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE) == 0);
         CHECK(ipc_close(&owner, cleanup_handle) == 0);
     }
     for (size_t index = 0; index < IPC_MAX_CAPABILITIES_PER_PROCESS; ++index) {
@@ -226,7 +230,8 @@ static int test_message_stress_without_resource_growth(void) {
     ipc_handle_t handle = 0U;
     ipc_init();
     CHECK(ipc_create(&owner, &handle) == 0);
-    CHECK(ipc_inherit(&owner, &child) == 0);
+    CHECK(ipc_delegate(&owner, handle, &child,
+                       IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE) == 0);
     for (uint32_t sequence = 0; sequence < 10000U; ++sequence) {
         ipc_message_t sent = message((uint8_t)sequence);
         ipc_message_t received;
@@ -265,6 +270,40 @@ static int test_global_endpoint_quota(void) {
     return 0;
 }
 
+static int test_attenuating_delegation(void) {
+    Process owner = process(25, 2U);
+    Process peer = process(26, 4U);
+    Process second_peer = process(27, 1U);
+    ipc_handle_t handle = 0U;
+    ipc_message_t value = message(0x31U);
+    ipc_message_t received;
+
+    ipc_init();
+    CHECK(ipc_create(&owner, &handle) == 0);
+    CHECK(ipc_delegate(&owner, handle, &peer, 0U) < 0);
+    CHECK(ipc_delegate(&owner, handle, &peer, IPC_RIGHT_CONTROL) < 0);
+    CHECK(ipc_delegate(&owner, handle, &peer, IPC_RIGHT_RECEIVE) == 0);
+    CHECK(ipc_send(&peer, handle, &value) < 0);
+    CHECK(ipc_delegate(&owner, handle, &second_peer, IPC_RIGHT_SEND) < 0);
+    CHECK(ipc_send(&owner, handle, &value) == 0);
+    prepare_receive(&received);
+    CHECK(ipc_receive(&peer, handle, &received) == 0);
+    CHECK(received.payload[0] == 0x31U);
+    CHECK(ipc_close(&owner, handle) == 0);
+
+    ipc_handle_t quota[IPC_MAX_CAPABILITIES_PER_PROCESS];
+    for (size_t index = 0; index < IPC_MAX_CAPABILITIES_PER_PROCESS; ++index) {
+        CHECK(ipc_create(&peer, &quota[index]) == 0);
+    }
+    CHECK(ipc_create(&owner, &handle) == 0);
+    CHECK(ipc_delegate(&owner, handle, &peer, IPC_RIGHT_SEND) < 0);
+    CHECK(ipc_close(&owner, handle) == 0);
+    for (size_t index = 0; index < IPC_MAX_CAPABILITIES_PER_PROCESS; ++index) {
+        CHECK(ipc_close(&peer, quota[index]) == 0);
+    }
+    return 0;
+}
+
 static int test_integrity_fault_injection(void) {
     Process owner = process(200, 1U);
     Process child = process(201, 1U);
@@ -274,7 +313,8 @@ static int test_integrity_fault_injection(void) {
 
     ipc_init();
     CHECK(ipc_create(&owner, &handle) == 0);
-    CHECK(ipc_inherit(&owner, &child) == 0);
+    CHECK(ipc_delegate(&owner, handle, &child,
+                       IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE) == 0);
     CHECK(ipc_fault_inject(IPC_FAULT_ENDPOINT, 0U, 0U, 4U, 1U) == 0);
     CHECK(ipc_send(&owner, handle, &sent) == 0);
     CHECK(ipc_integrity_correction_count() == 1U);
@@ -302,6 +342,8 @@ int main(void) {
     int result = test_rights_fifo_and_bounds();
     if (result != 0) return result;
     result = test_generation_quota_and_cleanup();
+    if (result != 0) return result;
+    result = test_attenuating_delegation();
     if (result != 0) return result;
     result = test_global_endpoint_quota();
     if (result != 0) return result;

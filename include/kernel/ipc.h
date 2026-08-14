@@ -53,7 +53,8 @@ int ipc_receive(struct Process *receiver, ipc_handle_t handle,
 int ipc_receive_timeout(struct Process *receiver, ipc_handle_t handle,
                         ipc_message_t *message, uint32_t timeout_ms);
 int ipc_close(struct Process *process, ipc_handle_t handle);
-int ipc_inherit(const struct Process *parent, struct Process *child);
+int ipc_delegate(struct Process *source, ipc_handle_t handle,
+                 struct Process *target, uint32_t rights);
 void ipc_process_cleanup(int pid, uint32_t generation);
 int ipc_fault_inject(ipc_fault_target_t target, size_t object_index,
                      size_t copy_index, size_t word_index, uint32_t bit_mask);

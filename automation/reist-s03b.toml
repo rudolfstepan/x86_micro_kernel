@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3b"
-active_id = "S0.3b-3"
+active_id = "S0.3b-4"
 
 [policy]
 one_package_per_run = true
@@ -122,7 +122,7 @@ evidence = [
 
 [[packages]]
 id = "S0.3b-3"
-status = "active"
+status = "done"
 risk = "high"
 title = "Attenuating capability delegation"
 scope = "Add explicit generation-scoped delegation to a named process. Delegated rights must be a nonempty subset; CONTROL is never implicit. Migrate callers before removing ambient spawn inheritance."
@@ -164,11 +164,15 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: add attenuating IPC delegation"
-evidence = []
+evidence = [
+  "python test/test_reist_ipc.py -q",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal",
+]
 
 [[packages]]
 id = "S0.3b-4"
-status = "queued"
+status = "active"
 risk = "high"
 title = "Reserved restart capacity"
 scope = "Reserve at least one task/process slot and bounded memory admission for supervisor-managed service restart. Ambient spawn must fail before consuming the reserve."

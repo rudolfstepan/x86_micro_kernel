@@ -128,20 +128,18 @@ class ReistIpcContractTests(unittest.TestCase):
         self.assertIn("wait_queue_wake_one_locked(", send)
         self.assertIn("wait_queue_wake_one_locked(", receive)
 
-    def test_spawn_inherits_peer_rights_without_control(self) -> None:
-        inherit = c_block(self.source, "int ipc_inherit(")
-        self.assertIn("IPC_RIGHT_SEND", inherit)
-        self.assertIn("IPC_RIGHT_RECEIVE", inherit)
-        self.assertNotRegex(
-            inherit,
-            r"IPC_RIGHT_SEND\s*\|\s*IPC_RIGHT_RECEIVE\s*\|"
-            r"\s*IPC_RIGHT_CONTROL",
-        )
-        self.assertIn("ipc_inherit(", self.process)
-        create = c_block(
-            self.process, "static int create_process_for_file_args_owned("
-        )
-        self.assertLess(create.index("ipc_inherit("), create.index("create_user_task("))
+    def test_delegation_is_explicit_attenuated_and_generation_scoped(self) -> None:
+        delegate = c_block(self.source, "int ipc_delegate(")
+        self.assertIn("rights == 0U", delegate)
+        self.assertIn("IPC_RIGHT_CONTROL", delegate)
+        self.assertRegex(delegate, r"rights\s*&\s*source_record->rights")
+        self.assertIn("target->generation", self.source)
+        self.assertNotIn("ipc_inherit(", self.source)
+        self.assertNotIn("ipc_inherit(", self.process)
+        process_delegate = c_block(self.process, "int process_ipc_delegate(")
+        self.assertIn("scheduler_preempt_disable()", process_delegate)
+        self.assertIn("scheduler_preempt_enable()", process_delegate)
+        self.assertIn("process_list[index].generation", process_delegate)
 
     def test_exit_cleanup_is_generation_scoped_and_wakes_both_directions(self) -> None:
         cleanup = c_block(self.source, "void ipc_process_cleanup(")
@@ -164,6 +162,7 @@ class ReistIpcContractTests(unittest.TestCase):
             "IPC_CLOSE": 52,
             "IPC_SEND_TIMEOUT": 53,
             "IPC_RECEIVE_TIMEOUT": 54,
+            "IPC_DELEGATE": 55,
         }
         for name, number in calls.items():
             self.assertRegex(
@@ -183,6 +182,7 @@ class ReistIpcContractTests(unittest.TestCase):
             "int x86os_ipc_close(",
             "int x86os_ipc_send_timeout(",
             "int x86os_ipc_receive_timeout(",
+            "int x86os_ipc_delegate(",
         ):
             self.assertIn(declaration, self.sdk_h)
 
@@ -227,6 +227,7 @@ class ReistIpcContractTests(unittest.TestCase):
             "x86os_ipc_send(handle, &message)",
             "x86os_ipc_receive(handle, &message)",
             "x86os_ipc_close(handle)",
+            "x86os_ipc_delegate(handle, pid",
             'spawn_ipc_child("IPC_ECHO", handle)',
             'spawn_ipc_child("IPC_WAIT_CLOSE", handle)',
             'spawn_ipc_child("IPC_EXIT", handle)',

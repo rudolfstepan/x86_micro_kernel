@@ -175,6 +175,13 @@ static int syscall_ipc_close(ipc_handle_t handle) {
     return process != NULL ? ipc_close(process, handle) : -1;
 }
 
+static int syscall_ipc_delegate(ipc_handle_t handle, int target_pid,
+                                uint32_t rights) {
+    Process *process = scheduler_current_process();
+    return process != NULL
+        ? process_ipc_delegate(process, handle, target_pid, rights) : -1;
+}
+
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -687,6 +694,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_ipc_close,          // Syscall 52: Revoke owned endpoint
     (void*)&syscall_ipc_send_timeout,   // Syscall 53: Timed IPC send
     (void*)&syscall_ipc_receive_timeout,// Syscall 54: Timed IPC receive
+    (void*)&syscall_ipc_delegate,       // Syscall 55: Attenuated delegation
     // Add more syscalls here as needed
 };
 
@@ -961,6 +969,10 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)syscall_ipc_receive_timeout(
                 (ipc_handle_t)arg1,
                 (ipc_message_t*)(uintptr_t)arg2, arg3);
+            break;
+        case SYS_IPC_DELEGATE:
+            result = (uint32_t)syscall_ipc_delegate(
+                (ipc_handle_t)arg1, (int)arg2, arg3);
             break;
         default:
             result = (uint32_t)-1;

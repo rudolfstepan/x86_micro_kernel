@@ -74,6 +74,8 @@ void wait_for_process(int pid);
 int process_spawn(Process* parent, const char* path);
 int process_spawn_args(Process* parent, const char* path, int argc,
                        const char* const* argv);
+int process_ipc_delegate(Process *source, ipc_handle_t handle,
+                         int target_pid, uint32_t rights);
 int process_wait_status(Process* parent, int pid, int* status);
 int process_wait_status_locked(Process* parent, int pid, int* status,
                                wait_queue_t** wait_queue);
