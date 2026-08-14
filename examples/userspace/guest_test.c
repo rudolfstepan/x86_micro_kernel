@@ -567,6 +567,9 @@ static int test_diagnostic_service(void) {
      * line.  Keep the window finite while allowing slow Windows pipe delivery
      * to synchronize without turning the service path into a polling loop. */
     x86os_puts("TEST_STAGE NETWORK_INJECTION_READY\n");
+    /* On NIC-enabled smokes this traverses the complete supervised outgoing
+     * ARP path. Headless/no-NIC profiles reject it without affecting GTEST. */
+    (void)x86os_network_arp_resolve(0x0A000263U);
     if (x86os_sleep_ms(2000U) != 0) return -1;
 
     /* Hold the owner briefly, fill every bounded queue slot, then let its

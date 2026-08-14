@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution')]
     [string]$Mode = 'normal'
 )
 
@@ -96,6 +96,11 @@ switch ($Mode) {
     'arp-reply' {
         Invoke-Smoke 'guest-smoke-arp-reply.log' @(
             '--nic', 'rtl8139', '--inject-arp-request'
+        )
+    }
+    'arp-resolution' {
+        Invoke-Smoke 'guest-smoke-arp-resolution.log' @(
+            '--nic', 'rtl8139', '--expect-arp-resolution'
         )
     }
 }

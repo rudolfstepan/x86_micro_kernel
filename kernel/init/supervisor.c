@@ -40,6 +40,9 @@ _Static_assert(sizeof(supervisor_network_probe_context_t) <=
 _Static_assert(sizeof(supervisor_arp_reply_context_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
                "ARP reply context exceeds critical object payload");
+_Static_assert(sizeof(supervisor_arp_resolution_context_t) <=
+                   CRITICAL_OBJECT_MAX_PAYLOAD,
+               "ARP resolution context exceeds critical object payload");
 _Static_assert(sizeof(supervisor_probe_control_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
                "probe control exceeds critical object payload");
@@ -66,6 +69,8 @@ typedef struct {
     supervisor_protected_network_context_t network_probe_context;
     supervisor_protected_probe_authority_t arp_reply_authority;
     supervisor_protected_arp_reply_context_t arp_reply_context;
+    supervisor_protected_probe_authority_t arp_resolution_authority;
+    supervisor_protected_arp_resolution_context_t arp_resolution_context;
 } supervisor_probe_runtime_t;
 
 static supervisor_probe_runtime_t probe_runtime;
@@ -575,6 +580,68 @@ int supervisor_protected_arp_reply_context_clear(
     return arp_reply_context_write(protected_context, &context);
 }
 
+static bool arp_resolution_context_valid(const void *payload, size_t length) {
+    if (payload == NULL || length != sizeof(supervisor_arp_resolution_context_t))
+        return false;
+    const supervisor_arp_resolution_context_t *context = payload;
+    bool empty = context->request_id == 0U &&
+                 context->transaction_epoch == 0U &&
+                 context->target_ip == 0U && context->reserved == 0U;
+    bool complete = context->request_id != 0U &&
+                    context->transaction_epoch != 0U &&
+                    context->target_ip != 0U && context->reserved == 0U;
+    return empty || complete;
+}
+
+static int arp_resolution_context_write(
+        supervisor_protected_arp_resolution_context_t *protected_context,
+        const supervisor_arp_resolution_context_t *context) {
+    return critical_object_update(
+        &protected_context->object, SUPERVISOR_ARP_RESOLUTION_CONTEXT_VERSION,
+        context, sizeof(*context), arp_resolution_context_valid) == 0
+        ? 0 : SUPERVISOR_EINTEGRITY;
+}
+
+int supervisor_protected_arp_resolution_context_init(
+        supervisor_protected_arp_resolution_context_t *protected_context) {
+    if (protected_context == NULL) return -22;
+    supervisor_arp_resolution_context_t context = {0};
+    return critical_object_init(
+        &protected_context->object, SUPERVISOR_ARP_RESOLUTION_CONTEXT_VERSION,
+        &context, sizeof(context)) == 0 ? 0 : SUPERVISOR_EINTEGRITY;
+}
+
+int supervisor_protected_arp_resolution_context_publish(
+        supervisor_protected_arp_resolution_context_t *protected_context,
+        uint32_t request_id, uint32_t transaction_epoch, uint32_t target_ip) {
+    if (protected_context == NULL || request_id == 0U ||
+        transaction_epoch == 0U || target_ip == 0U) return -22;
+    supervisor_arp_resolution_context_t context = {
+        .request_id = request_id,
+        .transaction_epoch = transaction_epoch,
+        .target_ip = target_ip,
+    };
+    return arp_resolution_context_write(protected_context, &context);
+}
+
+int supervisor_protected_arp_resolution_context_snapshot(
+        supervisor_protected_arp_resolution_context_t *protected_context,
+        supervisor_arp_resolution_context_t *snapshot_out) {
+    if (protected_context == NULL || snapshot_out == NULL) return -22;
+    size_t length = 0U;
+    critical_read_result_t result = critical_object_read(
+        &protected_context->object, SUPERVISOR_ARP_RESOLUTION_CONTEXT_VERSION,
+        snapshot_out, sizeof(*snapshot_out), &length,
+        arp_resolution_context_valid);
+    return result < 0 ? SUPERVISOR_EINTEGRITY : 0;
+}
+
+int supervisor_protected_arp_resolution_context_clear(
+        supervisor_protected_arp_resolution_context_t *protected_context) {
+    supervisor_arp_resolution_context_t context = {0};
+    return arp_resolution_context_write(protected_context, &context);
+}
+
 static bool probe_control_valid(const void *payload, size_t length) {
     if (payload == NULL || length != sizeof(supervisor_probe_control_t))
         return false;
@@ -809,7 +876,11 @@ void supervisor_init(void) {
         supervisor_protected_probe_authority_init(
             &probe_runtime.arp_reply_authority) != 0 ||
         supervisor_protected_arp_reply_context_init(
-            &probe_runtime.arp_reply_context) != 0) {
+            &probe_runtime.arp_reply_context) != 0 ||
+        supervisor_protected_probe_authority_init(
+            &probe_runtime.arp_resolution_authority) != 0 ||
+        supervisor_protected_arp_resolution_context_init(
+            &probe_runtime.arp_resolution_context) != 0) {
         panic("Unable to initialize protected probe runtime");
     }
 #endif
@@ -1044,6 +1115,10 @@ static bool probe_fence_apply(void *context) {
         &runtime->arp_reply_authority);
     (void)supervisor_protected_arp_reply_context_clear(
         &runtime->arp_reply_context);
+    (void)supervisor_protected_probe_authority_cancel(
+        &runtime->arp_resolution_authority);
+    (void)supervisor_protected_arp_resolution_context_clear(
+        &runtime->arp_resolution_context);
     if (process_identity_alive(control.pid, control.process_generation)) {
         (void)process_terminate(control.pid);
     }
@@ -1116,7 +1191,11 @@ bool supervisor_start_probe(uint64_t now_ms) {
         supervisor_protected_probe_authority_init(
             &probe_runtime.arp_reply_authority) != 0 ||
         supervisor_protected_arp_reply_context_init(
-            &probe_runtime.arp_reply_context) != 0)
+            &probe_runtime.arp_reply_context) != 0 ||
+        supervisor_protected_probe_authority_init(
+            &probe_runtime.arp_resolution_authority) != 0 ||
+        supervisor_protected_arp_resolution_context_init(
+            &probe_runtime.arp_resolution_context) != 0)
         return false;
     supervisor_config_t config = {
         .heartbeat_timeout_ms = 2000U,
@@ -1519,6 +1598,116 @@ int supervisor_network_commit_arp_binding(
     return result;
 }
 
+bool supervisor_network_request_arp_resolution(uint32_t target_ip) {
+    KASSERT_NOT_IRQ();
+    KASSERT(irq_enabled());
+    uint32_t local_ip = 0U;
+    uint8_t local_mac[6] = {0};
+    if (target_ip == 0U || target_ip == 0xFFFFFFFFU ||
+        !netstack_get_local_identity(&local_ip, local_mac) ||
+        target_ip == local_ip) return false;
+
+    uint32_t flags = supervisor_lock();
+    supervisor_probe_control_t control;
+    int result = supervisor_protected_probe_control_read(
+        &probe_runtime.control, &control);
+    if (result != 0 || control.active == 0U || control.fenced != 0U ||
+        control.healthy == 0U || control.launch_count < 4U ||
+        control.endpoint_handle == IPC_INVALID_HANDLE ||
+        !process_identity_alive(control.pid, control.process_generation)) {
+        supervisor_unlock(flags);
+        return false;
+    }
+    uint32_t request_id = 0U;
+    result = supervisor_protected_probe_authority_begin_epoch(
+        &probe_runtime.arp_resolution_authority, pit_monotonic_ms(),
+        SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS, control.process_generation,
+        &request_id);
+    if (result == 0)
+        result = supervisor_protected_arp_resolution_context_publish(
+            &probe_runtime.arp_resolution_context, request_id,
+            control.process_generation, target_ip);
+    supervisor_unlock(flags);
+    if (result != 0) return false;
+
+    ipc_message_t message = {
+        .version = IPC_MESSAGE_VERSION,
+        .struct_size = sizeof(ipc_message_t),
+        .length = 22U,
+        .payload = {'N', 'E', 'T', 'A'},
+    };
+    for (uint32_t index = 0U; index < 4U; ++index) {
+        uint32_t shift = 24U - index * 8U;
+        message.payload[4U + index] = (uint8_t)(target_ip >> shift);
+        message.payload[8U + index] = (uint8_t)(local_ip >> shift);
+    }
+    for (uint32_t index = 0U; index < 6U; ++index)
+        message.payload[12U + index] = local_mac[index];
+    for (uint32_t index = 0U; index < 4U; ++index)
+        message.payload[18U + index] =
+            (uint8_t)(request_id >> (index * 8U));
+    result = ipc_send_external_from_peer(
+        control.pid, control.process_generation, control.endpoint_handle,
+        &message);
+    if (result != 0) {
+        flags = supervisor_lock();
+        (void)supervisor_protected_probe_authority_cancel(
+            &probe_runtime.arp_resolution_authority);
+        (void)supervisor_protected_arp_resolution_context_clear(
+            &probe_runtime.arp_resolution_context);
+        supervisor_unlock(flags);
+        network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_QUEUE);
+        return false;
+    }
+    printf("REIST_NETWORK ARP_RESOLUTION_QUEUED\n");
+    return true;
+}
+
+int supervisor_network_send_arp_request(
+        int pid, uint32_t generation,
+        const supervisor_arp_resolution_t *request) {
+    if (request == NULL ||
+        request->version != SUPERVISOR_ARP_RESOLUTION_VERSION ||
+        request->struct_size < sizeof(*request) || request->request_id == 0U ||
+        request->target_ip == 0U || request->target_ip == 0xFFFFFFFFU)
+        return -22;
+    uint32_t flags = supervisor_lock();
+    supervisor_probe_control_t control;
+    supervisor_arp_resolution_context_t context;
+    int result = supervisor_protected_probe_control_read(
+        &probe_runtime.control, &control);
+    bool caller_is_service = result == 0 && pid == control.pid &&
+                             generation == control.process_generation;
+    if (result == 0 &&
+        (control.active == 0U || control.fenced != 0U ||
+         control.healthy == 0U || !caller_is_service ||
+         !process_identity_alive(pid, generation))) result = -13;
+    if (result == 0)
+        result = supervisor_protected_arp_resolution_context_snapshot(
+            &probe_runtime.arp_resolution_context, &context);
+    if (result == 0 &&
+        (context.request_id != request->request_id ||
+         context.transaction_epoch != generation ||
+         context.target_ip != request->target_ip)) result = -13;
+    uint32_t consumed_id = 0U;
+    if (result == 0)
+        result = supervisor_protected_probe_authority_take_epoch(
+            &probe_runtime.arp_resolution_authority, pit_monotonic_ms(),
+            generation, &consumed_id);
+    if (result == 0 && consumed_id != request->request_id) result = -13;
+    (void)supervisor_protected_arp_resolution_context_clear(
+        &probe_runtime.arp_resolution_context);
+    supervisor_unlock(flags);
+    if (result != 0) {
+        if (caller_is_service)
+            printf("REIST_NETWORK ARP_RESOLUTION_REJECTED %d\n", result);
+        return result;
+    }
+    if (!netstack_send_arp_request(request->target_ip)) return -5;
+    printf("REIST_NETWORK ARP_RESOLUTION_MEDIATED\n");
+    return 0;
+}
+
 int supervisor_network_send_arp_reply(
         int pid, uint32_t generation, const supervisor_arp_reply_t *reply) {
     if (reply == NULL || reply->version != SUPERVISOR_ARP_REPLY_VERSION ||
@@ -1606,9 +1795,16 @@ static void supervisor_worker(void) {
         int reply_expiry = supervisor_protected_probe_authority_expire_epoch(
             &probe_runtime.arp_reply_authority, now_ms,
             control.process_generation);
+        int resolution_expiry =
+            supervisor_protected_probe_authority_expire_epoch(
+                &probe_runtime.arp_resolution_authority, now_ms,
+                control.process_generation);
         if (reply_expiry == 1)
             (void)supervisor_protected_arp_reply_context_clear(
                 &probe_runtime.arp_reply_context);
+        if (resolution_expiry == 1)
+            (void)supervisor_protected_arp_resolution_context_clear(
+                &probe_runtime.arp_resolution_context);
         supervisor_unlock(transaction_flags);
         if (now_ms >= next_arp_scrub_ms) {
             next_arp_scrub_ms = UINT64_MAX - now_ms < 1000U
@@ -1634,6 +1830,11 @@ static void supervisor_worker(void) {
         if (reply_expiry == 1) {
             network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_EXPIRED);
         } else if (reply_expiry < 0 && control.active != 0U) {
+            (void)supervisor_force_isolate(control.handle);
+        }
+        if (resolution_expiry == 1) {
+            network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_EXPIRED);
+        } else if (resolution_expiry < 0 && control.active != 0U) {
             (void)supervisor_force_isolate(control.handle);
         }
         if (control.active != 0U && control.fenced == 0U &&

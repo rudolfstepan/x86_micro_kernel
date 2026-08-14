@@ -115,13 +115,13 @@ und 10 verbindlich.
     und den Dienst unter Fehler-, Druck- und Restart-Injektion abnehmen
     - [x] S0.3c-5a Passive Gateway-Vertrauensentscheidung aus dem
       Ring-0-ARP-/IPv4-Pfad entfernt
-    - [ ] S0.3c-5b Lokale ARP-Auflösung und Antwortentscheidung über den
+    - [x] S0.3c-5b Lokale ARP-Auflösung und Antwortentscheidung über den
       überwachten Dienst vermitteln
       - [x] S0.3c-5b1 Lokale ARP-Antwortentscheidung mit geschützter,
         generationgebundener Einmalautorität vermittelt
       - [x] S0.3c-5b2a Deterministisch injizierten echten RX-Request samt
         vermittelter Antwort im RTL8139-Gast nachweisen
-      - [ ] S0.3c-5b2b Ausgehende lokale ARP-Auflösung in den Dienst migrieren
+      - [x] S0.3c-5b2b Ausgehende lokale ARP-Auflösung in den Dienst migrieren
   - [ ] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
   - [ ] S0.3c-7 Unabhängiger Standby-/Supervisor-Kanal und realer Handover
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
@@ -1318,8 +1318,15 @@ ARP_REPLY_MEDIATED -> TEST_OK`. Der Lauf deckte zwei zuvor synthetisch
 verdeckte Fehler auf: Request-ID und Dienstgeneration waren unzulässig
 gleichgesetzt, und der Ring-3-Parser prüfte die Quell- statt der
 Broadcast-Zieladresse. Hostvertrag, Paketbuild und der echte Runtime-Modus
-`arp-reply` sind grün. S0.3c-5b2b migriert als Nächstes die ausgehende lokale
-ARP-Auflösung.
+`arp-reply` sind grün. **S0.3c-5b2b ist ebenfalls umgesetzt und abgenommen:**
+Ein Cache-Miss veröffentlicht eine feste `NETA`-Nachricht an den überwachten
+Ring-3-Dienst. Eine geschützte, generationgebundene 250-ms-Einmalautorität
+bindet Request-ID und Zieladresse; erst Syscall 64 darf nach vollständigem
+Abgleich den echten ARP-Request senden. Fehler aktivieren keinen alten
+Ring-0-Fallback. Der RTL8139-QEMU-Lauf fordert die Auflösung über Syscall 65 an
+und prüft `ARP_RESOLUTION_QUEUED`, `ARP_RESOLUTION_MEDIATED` sowie den am
+QEMU-Socket ausgesendeten ARP-Frame für `10.0.2.99`. Damit ist S0.3c-5b
+geschlossen; als nächstes folgt S0.3c-6.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

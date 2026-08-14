@@ -141,8 +141,12 @@ Antwort. Der Lauf verlangt `ARP_REQUEST_QUEUED`, `ARP_REPLY_MEDIATED` und
 anschließend `TEST_OK`; verlorene/coalesced RX-Interrupts werden durch
 begrenztes Ring-Polling aufgefangen. Dabei wurden Prozessgeneration und
 Request-ID als unabhängige Namensräume korrigiert sowie der echte
-Ethernet-Broadcast-Offset im Parser abgesichert. Als nächstes migriert
-S0.3c-5b2b die ausgehende lokale ARP-Auflösung.
+Ethernet-Broadcast-Offset im Parser abgesichert. S0.3c-5b2b ist nun ebenfalls
+abgenommen: Cache-Misses laufen über eine feste `NETA`-Nachricht, einen
+geschützten 250-ms-Einmalvertrag und den ausschließlich dem Ring-3-Dienst
+erlaubten Syscall 64. Der reale RTL8139-Lauf beobachtet den ausgesendeten
+Request für `10.0.2.99` am QEMU-Socket. Es gibt keinen direkten Ring-0-Fallback
+mehr. Als nächstes folgt S0.3c-6 (Storage-/Dateisystemdienst).
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 

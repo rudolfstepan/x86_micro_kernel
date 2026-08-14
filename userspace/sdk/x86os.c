@@ -137,6 +137,20 @@ int x86os_reist_send_arp_reply(const x86os_reist_arp_reply_t *reply) {
                               (uintptr_t)reply, 0, 0);
 }
 
+_Static_assert(sizeof(x86os_reist_arp_resolution_t) == 16U,
+               "REIST ARP resolution ABI changed");
+
+int x86os_reist_send_arp_request(
+        const x86os_reist_arp_resolution_t *request) {
+    return (int)x86os_syscall(X86OS_SYS_REIST_ARP_RESOLUTION,
+                              (uintptr_t)request, 0, 0);
+}
+
+int x86os_network_arp_resolve(uint32_t target_ip) {
+    return (int)x86os_syscall(X86OS_SYS_NETWORK_ARP_RESOLVE,
+                              target_ip, 0, 0);
+}
+
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,
                        uint32_t rights) {
     return (int)x86os_syscall(X86OS_SYS_IPC_DELEGATE, handle,

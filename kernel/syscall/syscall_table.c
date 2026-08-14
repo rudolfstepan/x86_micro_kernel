@@ -291,6 +291,29 @@ static int syscall_reist_arp_reply(
         process->pid, process->generation, &reply);
 }
 
+_Static_assert(sizeof(supervisor_arp_resolution_t) == 16U,
+               "REIST ARP resolution ABI changed");
+
+static int syscall_reist_arp_resolution(
+        const supervisor_arp_resolution_t *user_request) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_request;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(*user_request), false))
+        return -14;
+    supervisor_arp_resolution_t request;
+    if (copy_from_user(&request, user_request, sizeof(request)) != 0) return -14;
+    if (request.version != SUPERVISOR_ARP_RESOLUTION_VERSION ||
+        request.struct_size < sizeof(request)) return -22;
+    return supervisor_network_send_arp_request(
+        process->pid, process->generation, &request);
+}
+
+static int syscall_network_arp_resolve(uint32_t target_ip) {
+    return supervisor_network_request_arp_resolution(target_ip) ? 0 : -11;
+}
+
 static int syscall_service_connect(uint32_t service_id,
                                    ipc_handle_t *user_handle) {
     Process *process = scheduler_current_process();
@@ -827,6 +850,8 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_network_probe_stats,// Syscall 61: Read degradation stats
     (void*)&syscall_reist_arp_binding,  // Syscall 62: Commit bounded ARP binding
     (void*)&syscall_reist_arp_reply,    // Syscall 63: Mediated ARP reply
+    (void*)&syscall_reist_arp_resolution,// Syscall 64: Mediated ARP request
+    (void*)&syscall_network_arp_resolve, // Syscall 65: Request ARP resolution
     // Add more syscalls here as needed
 };
 
@@ -1143,6 +1168,13 @@ void syscall_handler(Registers* regs) {
         case SYS_REIST_ARP_REPLY:
             result = (uint32_t)syscall_reist_arp_reply(
                 (const supervisor_arp_reply_t*)(uintptr_t)arg1);
+            break;
+        case SYS_REIST_ARP_RESOLUTION:
+            result = (uint32_t)syscall_reist_arp_resolution(
+                (const supervisor_arp_resolution_t*)(uintptr_t)arg1);
+            break;
+        case SYS_NETWORK_ARP_RESOLVE:
+            result = (uint32_t)syscall_network_arp_resolve(arg1);
             break;
         default:
             result = (uint32_t)-1;

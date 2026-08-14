@@ -2,6 +2,7 @@
 // NE2000-focused improved stack (header-aligned)
 
 #include "drivers/net/netstack.h"
+#include "include/kernel/supervisor.h"
 #include "include/kernel/arp_learning_policy.h"
 #include "drivers/net/netdev.h"
 #include "lib/libc/string.h"
@@ -316,7 +317,11 @@ bool netstack_scrub_arp_bindings(uint64_t now_ms,
 }
 
 void arp_send_request(uint32_t target_ip) {
-    (void)arp_send_request_now(target_ip);
+    (void)supervisor_network_request_arp_resolution(target_ip);
+}
+
+bool netstack_send_arp_request(uint32_t target_ip) {
+    return arp_send_request_now(target_ip);
 }
 
 bool netstack_probe_gateway(void) {

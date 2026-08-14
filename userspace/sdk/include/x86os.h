@@ -67,7 +67,9 @@ enum {
     X86OS_SYS_NETWORK_PROBE_ID = 60,
     X86OS_SYS_NETWORK_PROBE_STATS = 61,
     X86OS_SYS_REIST_ARP_BINDING = 62,
-    X86OS_SYS_REIST_ARP_REPLY = 63
+    X86OS_SYS_REIST_ARP_REPLY = 63,
+    X86OS_SYS_REIST_ARP_RESOLUTION = 64,
+    X86OS_SYS_NETWORK_ARP_RESOLVE = 65
 };
 
 enum {
@@ -136,6 +138,7 @@ typedef struct {
 #define X86OS_NETWORK_PROBE_STATS_VERSION 1U
 #define X86OS_REIST_ARP_BINDING_VERSION 1U
 #define X86OS_REIST_ARP_REPLY_VERSION 1U
+#define X86OS_REIST_ARP_RESOLUTION_VERSION 1U
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -162,6 +165,13 @@ typedef struct {
     uint8_t target_mac[6];
     uint8_t reserved[2];
 } x86os_reist_arp_reply_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t request_id;
+    uint32_t target_ip;
+} x86os_reist_arp_resolution_t;
 
 typedef uint32_t x86os_ipc_handle_t;
 
@@ -260,6 +270,9 @@ int x86os_network_probe_stats(x86os_network_probe_stats_t *stats);
 int x86os_reist_commit_arp_binding(
     const x86os_reist_arp_binding_t *binding);
 int x86os_reist_send_arp_reply(const x86os_reist_arp_reply_t *reply);
+int x86os_reist_send_arp_request(
+    const x86os_reist_arp_resolution_t *request);
+int x86os_network_arp_resolve(uint32_t target_ip);
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,
                        uint32_t rights);
 int x86os_reist_report(uint32_t report_type, uint32_t value);

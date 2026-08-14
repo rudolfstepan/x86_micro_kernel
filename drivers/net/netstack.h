@@ -181,6 +181,7 @@ void netstack_process_packet(uint8_t *packet, uint16_t length);
 
 // ARP Functions
 void arp_send_request(uint32_t target_ip);
+bool netstack_send_arp_request(uint32_t target_ip);
 bool netstack_send_arp_reply(uint32_t target_ip,
                              const uint8_t target_mac[6]);
 bool arp_lookup(uint32_t ip, uint8_t *mac_out);

@@ -430,8 +430,13 @@ erst nach ausbleibender Queue-Bestätigung ausgelöst, sodass nie mehrere
 Einmalautorisierungen konkurrieren. Der Runtime-Vertrag verlangt Queue,
 Ring-3-Entscheidung, echten NIC-Send und unabhängigen Gastfortschritt in dieser
 Reihenfolge. Request-ID und Prozessgeneration bleiben dabei getrennte
-monotone Namensräume. S0.3c-5b2b übernimmt noch die ausgehende Auflösung
-lokaler Peers.
+monotone Namensräume. S0.3c-5b2b übernimmt auch die ausgehende Auflösung:
+Cache-Misses erzeugen eine feste `NETA`-Nachricht; Zieladresse, Request-ID und
+Dienstgeneration liegen in einem geschützten 250-ms-Einmalvertrag. Nur der
+verifizierte Dienst darf über Syscall 64 den echten Request auslösen. Der
+RTL8139-Lauf prüft den resultierenden Ethernet-Frame am QEMU-Socket. Damit ist
+der lokale ARP-Request-/Reply-Pfad vermittelt; S0.3c-6 beginnt als Nächstes mit
+der Storage-/Dateisystemdomäne.
 
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und

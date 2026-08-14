@@ -43,6 +43,8 @@ REIST_NETWORK_PROBE_ID_MARKER = "REIST_NETWORK PROBE_ID_OK"
 REIST_ARP_BINDING_MARKER = "REIST_NETWORK ARP_BINDING_OK"
 REIST_ARP_REVOKED_MARKER = "REIST_NETWORK ARP_BINDINGS_REVOKED"
 REIST_ARP_REQUEST_QUEUED_MARKER = "REIST_NETWORK ARP_REQUEST_QUEUED"
+REIST_ARP_RESOLUTION_QUEUED_MARKER = "REIST_NETWORK ARP_RESOLUTION_QUEUED"
+REIST_ARP_RESOLUTION_MARKER = "REIST_NETWORK ARP_RESOLUTION_MEDIATED"
 REIST_ARP_REPLY_MARKER = "REIST_NETWORK ARP_REPLY_MEDIATED"
 REIST_NETWORK_CRASH_MARKER = "REIST_NETWORK SERVICE_CRASH_RECOVERED"
 REIST_NETWORK_RECOVERY_MARKER = "TEST_STAGE NETWORK_RECOVERY_OK"
@@ -139,6 +141,38 @@ def inject_ethernet_frame(
         return True
     except OSError:
         return False
+
+
+def receive_exact(connection: socket.socket, size: int) -> bytes | None:
+    data = bytearray()
+    try:
+        while len(data) < size:
+            chunk = connection.recv(size - len(data))
+            if not chunk:
+                return None
+            data.extend(chunk)
+    except OSError:
+        return None
+    return bytes(data)
+
+
+def receive_arp_request(connection: socket.socket, target: bytes,
+                        deadline: float) -> bool:
+    while time.monotonic() < deadline:
+        connection.settimeout(max(0.01, deadline - time.monotonic()))
+        header = receive_exact(connection, 4)
+        if header is None:
+            return False
+        length = struct.unpack("!I", header)[0]
+        if length < 14 or length > 1514:
+            return False
+        frame = receive_exact(connection, length)
+        if frame is None:
+            return False
+        if (len(frame) >= 42 and frame[12:14] == b"\x08\x06" and
+                frame[20:22] == b"\x00\x01" and frame[38:42] == target):
+            return True
+    return False
 
 
 def reader(
@@ -249,11 +283,12 @@ def run(
     persistent: bool = False,
     expect_reist_probe: bool = False,
     inject_arp_request: bool = False,
+    expect_arp_resolution: bool = False,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
     injection_connection: socket.socket | None = None
     injection_port: int | None = None
-    if inject_arp_request:
+    if inject_arp_request or expect_arp_resolution:
         injection_listener, injection_port = open_injection_listener()
     try:
         process = subprocess.Popen(
@@ -357,6 +392,18 @@ def run(
                     deadline,
                     after=test_position,
                 )
+            if error is None and expect_arp_resolution:
+                assert injection_connection is not None
+                error, _ = wait_for_line(
+                    process, chunks, transcript, finished,
+                    REIST_ARP_RESOLUTION_QUEUED_MARKER, deadline)
+                if error is None:
+                    error, _ = wait_for_line(
+                        process, chunks, transcript, finished,
+                        REIST_ARP_RESOLUTION_MARKER, deadline)
+                if error is None and not receive_arp_request(
+                        injection_connection, bytes((10, 0, 2, 99)), deadline):
+                    error = "mediated ARP request was not observed on QEMU socket"
     finally:
         if injection_connection is not None:
             injection_connection.close()
@@ -493,6 +540,10 @@ def main() -> int:
         help="inject one bounded Ethernet ARP request through a QEMU socket hub",
     )
     parser.add_argument(
+        "--expect-arp-resolution", action="store_true",
+        help="trigger PING and require a mediated outgoing ARP request",
+    )
+    parser.add_argument(
         "--persistent", action="store_true",
         help="allow guest writes to the image (use only with a disposable copy)",
     )
@@ -508,8 +559,8 @@ def main() -> int:
                     flags=re.IGNORECASE) is None:
         print("guest-smoke: memory must look like 64M or 1G", file=sys.stderr)
         return 2
-    if args.inject_arp_request and args.nic == "none":
-        print("guest-smoke: ARP injection requires a NIC", file=sys.stderr)
+    if (args.inject_arp_request or args.expect_arp_resolution) and args.nic == "none":
+        print("guest-smoke: ARP socket verification requires a NIC", file=sys.stderr)
         return 2
 
     try:
@@ -518,6 +569,7 @@ def main() -> int:
             args.memory, args.watchdog, args.expect_fatal_recovery, args.nic,
             args.persistent, args.expect_reist_probe,
             args.inject_arp_request,
+            args.expect_arp_resolution,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)

@@ -16,6 +16,7 @@ struct Process;
 #define SUPERVISOR_PROBE_AUTHORITY_VERSION 1U
 #define SUPERVISOR_NETWORK_CONTEXT_VERSION 1U
 #define SUPERVISOR_ARP_REPLY_CONTEXT_VERSION 1U
+#define SUPERVISOR_ARP_RESOLUTION_CONTEXT_VERSION 1U
 #define SUPERVISOR_PROBE_CONTROL_VERSION 1U
 #define SUPERVISOR_EINTEGRITY (-84)
 #define REIST_REPORT_SELF_TEST 1U
@@ -142,6 +143,25 @@ typedef struct {
     critical_object_t object;
 } supervisor_protected_arp_reply_context_t;
 
+#define SUPERVISOR_ARP_RESOLUTION_VERSION 1U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t request_id;
+    uint32_t target_ip;
+} supervisor_arp_resolution_t;
+
+typedef struct {
+    uint32_t request_id;
+    uint32_t transaction_epoch;
+    uint32_t target_ip;
+    uint32_t reserved;
+} supervisor_arp_resolution_context_t;
+
+typedef struct {
+    critical_object_t object;
+} supervisor_protected_arp_resolution_context_t;
+
 typedef struct {
     critical_object_t object;
 } supervisor_protected_network_context_t;
@@ -235,6 +255,16 @@ int supervisor_protected_arp_reply_context_snapshot(
     supervisor_arp_reply_context_t *snapshot_out);
 int supervisor_protected_arp_reply_context_clear(
     supervisor_protected_arp_reply_context_t *context);
+int supervisor_protected_arp_resolution_context_init(
+    supervisor_protected_arp_resolution_context_t *context);
+int supervisor_protected_arp_resolution_context_publish(
+    supervisor_protected_arp_resolution_context_t *context,
+    uint32_t request_id, uint32_t transaction_epoch, uint32_t target_ip);
+int supervisor_protected_arp_resolution_context_snapshot(
+    supervisor_protected_arp_resolution_context_t *context,
+    supervisor_arp_resolution_context_t *snapshot_out);
+int supervisor_protected_arp_resolution_context_clear(
+    supervisor_protected_arp_resolution_context_t *context);
 int supervisor_protected_probe_control_init(
     supervisor_protected_probe_control_t *control);
 int supervisor_protected_probe_control_read(
@@ -263,6 +293,10 @@ int supervisor_network_commit_arp_binding(
     int pid, uint32_t generation, const supervisor_arp_binding_t *binding);
 int supervisor_network_send_arp_reply(
     int pid, uint32_t generation, const supervisor_arp_reply_t *reply);
+bool supervisor_network_request_arp_resolution(uint32_t target_ip);
+int supervisor_network_send_arp_request(
+    int pid, uint32_t generation,
+    const supervisor_arp_resolution_t *request);
 int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind);
 int supervisor_register(const char *name, const supervisor_config_t *config,

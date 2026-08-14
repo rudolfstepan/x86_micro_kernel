@@ -88,8 +88,11 @@ static const char *network_classification(
     if (message->length < 18U || message->payload[0] != 'N' ||
         message->payload[1] != 'E' || message->payload[2] != 'T' ||
         (message->payload[3] != '1' && message->payload[3] != 'R' &&
+         message->payload[3] != 'A' &&
          message->payload[3] != 'Q' && message->payload[3] != 'X'))
         return NULL;
+    if (message->payload[3] == 'A')
+        return message->length == 22U ? "REIST_ARP_RESOLUTION" : NULL;
     uint16_t ethertype = ((uint16_t)message->payload[16] << 8) |
                          message->payload[17];
     if (ethertype == 0x0806U) {
@@ -293,6 +296,35 @@ int main(int argc, char **argv) {
                             X86OS_REIST_NETWORK_DEGRADED_SEMANTIC) != 0)
                         return 15;
                 }
+                continue;
+            }
+            if (network != NULL && request.payload[3] == 'A') {
+                if (request.length != 22U) return 16;
+                uint32_t target_ip = ((uint32_t)request.payload[4] << 24U) |
+                    ((uint32_t)request.payload[5] << 16U) |
+                    ((uint32_t)request.payload[6] << 8U) |
+                    request.payload[7];
+                uint32_t local_ip = ((uint32_t)request.payload[8] << 24U) |
+                    ((uint32_t)request.payload[9] << 16U) |
+                    ((uint32_t)request.payload[10] << 8U) |
+                    request.payload[11];
+                uint32_t request_id = (uint32_t)request.payload[18] |
+                    ((uint32_t)request.payload[19] << 8U) |
+                    ((uint32_t)request.payload[20] << 16U) |
+                    ((uint32_t)request.payload[21] << 24U);
+                bool nonzero_mac = false;
+                for (uint32_t index = 0U; index < 6U; ++index)
+                    if (request.payload[12U + index] != 0U) nonzero_mac = true;
+                if (target_ip == 0U || target_ip == local_ip ||
+                    request_id == 0U || !nonzero_mac ||
+                    (request.payload[12] & 1U) != 0U) return 16;
+                x86os_reist_arp_resolution_t resolution = {
+                    .version = X86OS_REIST_ARP_RESOLUTION_VERSION,
+                    .struct_size = sizeof(resolution),
+                    .request_id = request_id,
+                    .target_ip = target_ip,
+                };
+                if (x86os_reist_send_arp_request(&resolution) != 0) return 17;
                 continue;
             }
             if (network != NULL && request.payload[3] == 'R' &&
