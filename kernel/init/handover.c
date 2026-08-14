@@ -13,9 +13,12 @@
 #define HANDOVER_EAGAIN (-11)
 #define HANDOVER_EINTEGRITY (-117)
 #define HANDOVER_EOVERFLOW (-75)
+#define HANDOVER_ENODEV (-19)
 
 static critical_object_t protected_status;
 static bool initialized;
+static bool backend_attached;
+static handover_fence_backend_t fence_backend;
 
 _Static_assert(sizeof(handover_status_t) <= CRITICAL_OBJECT_MAX_PAYLOAD,
                "handover status exceeds protected payload");
@@ -70,8 +73,18 @@ static int store_status(const handover_status_t *status) {
         status_valid) == 0 ? 0 : HANDOVER_EINTEGRITY;
 }
 
+int handover_attach_fence_backend(const handover_fence_backend_t *backend) {
+    if (backend == NULL || backend_attached || initialized ||
+        backend->request_fence == NULL || backend->fence_confirmed == NULL)
+        return HANDOVER_EINVAL;
+    fence_backend = *backend;
+    backend_attached = true;
+    return 0;
+}
+
 int handover_init(uint32_t active_node, uint32_t standby_node,
                   uint32_t lease_ms, uint64_t now_ms) {
+    if (!backend_attached) return HANDOVER_ENODEV;
     if (initialized || active_node == 0U || standby_node == 0U ||
         active_node == standby_node || lease_ms < HANDOVER_MIN_LEASE_MS ||
         lease_ms > HANDOVER_MAX_LEASE_MS) return HANDOVER_EINVAL;
@@ -106,7 +119,7 @@ int handover_renew(uint32_t node, uint64_t expected_epoch, uint64_t now_ms) {
     if (!initialized || node == 0U || expected_epoch == 0U)
         return HANDOVER_EINVAL;
     uint32_t flags = handover_lock();
-    handover_status_t status;
+    handover_status_t status = {0};
     int result = load_status(&status);
     if (result == 0 && (node != status.active_node ||
                        expected_epoch != status.epoch)) result = HANDOVER_EACCES;
@@ -124,13 +137,29 @@ int handover_renew(uint32_t node, uint64_t expected_epoch, uint64_t now_ms) {
 }
 
 int handover_confirm_fenced(uint64_t expected_epoch, uint64_t now_ms) {
-    if (!initialized || expected_epoch == 0U) return HANDOVER_EINVAL;
+    if (!initialized || !backend_attached || expected_epoch == 0U)
+        return HANDOVER_EINVAL;
     uint32_t flags = handover_lock();
-    handover_status_t status;
+    handover_status_t status = {0};
     int result = load_status(&status);
     if (result == 0 && expected_epoch != status.epoch)
         result = HANDOVER_EACCES;
     if (result == 0 && now_ms < status.lease_deadline_ms)
+        result = HANDOVER_EAGAIN;
+    uint32_t active_node = status.active_node;
+    uint64_t sequence = status.transition_sequence;
+    handover_unlock(flags);
+    if (result != 0) return result;
+    if (!fence_backend.fence_confirmed(fence_backend.context, active_node,
+                                       expected_epoch))
+        return HANDOVER_EAGAIN;
+
+    flags = handover_lock();
+    result = load_status(&status);
+    if (result == 0 && (status.epoch != expected_epoch ||
+                       status.active_node != active_node ||
+                       status.transition_sequence != sequence ||
+                       now_ms < status.lease_deadline_ms))
         result = HANDOVER_EAGAIN;
     if (result == 0 && status.fenced_epoch == status.epoch) {
         handover_unlock(flags);
@@ -145,6 +174,24 @@ int handover_confirm_fenced(uint64_t expected_epoch, uint64_t now_ms) {
     }
     handover_unlock(flags);
     return result;
+}
+
+int handover_request_fence(uint64_t expected_epoch, uint64_t now_ms) {
+    if (!initialized || !backend_attached || expected_epoch == 0U)
+        return HANDOVER_EINVAL;
+    uint32_t flags = handover_lock();
+    handover_status_t status = {0};
+    int result = load_status(&status);
+    if (result == 0 && expected_epoch != status.epoch)
+        result = HANDOVER_EACCES;
+    if (result == 0 && now_ms < status.lease_deadline_ms)
+        result = HANDOVER_EAGAIN;
+    uint32_t active_node = status.active_node;
+    handover_unlock(flags);
+    if (result != 0) return result;
+    return fence_backend.request_fence(fence_backend.context, active_node,
+                                       expected_epoch)
+        ? 0 : HANDOVER_EAGAIN;
 }
 
 int handover_takeover(uint32_t candidate_node, uint64_t expected_epoch,

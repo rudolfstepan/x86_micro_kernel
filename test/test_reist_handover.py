@@ -39,6 +39,12 @@ class ReistHandoverTests(unittest.TestCase):
         self.assertIn("status.fenced_epoch != status.epoch", source)
         self.assertIn("expected_epoch != status.epoch", source)
         self.assertIn("status.epoch == UINT64_MAX", source)
+        self.assertIn("handover_attach_fence_backend", source)
+        self.assertIn("fence_backend.request_fence", source)
+        self.assertIn("fence_backend.fence_confirmed", source)
+        self.assertLess(source.index("handover_unlock(flags);",
+                                     source.index("int handover_confirm_fenced")),
+                        source.index("fence_backend.fence_confirmed"))
 
 
 if __name__ == "__main__":

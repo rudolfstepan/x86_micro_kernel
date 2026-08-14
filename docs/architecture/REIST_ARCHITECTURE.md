@@ -519,6 +519,18 @@ Ausgang freigeben. S0.3c-7b muss Transport, rücklesbares Interlock und eigene
 Zeit-/Stromversorgung bereitstellen; erst S0.3c-7c darf reale Übernahme und
 Reintegration behaupten.
 
+S0.3c-7b1 ersetzt direkte Fence-Bestätigung durch einen fest gebundenen
+Backendvertrag. Das Backend muss das Fence für `(active_node, epoch)` getrennt
+anfordern und später exakt für dasselbe Paar rücklesbar bestätigen. Ohne
+Backend verweigert der Handover-Kern seine Initialisierung. Da ein externer
+Transport warten oder I/O ausführen kann, werden Callbacks außerhalb der
+kurzen IRQ-gesperrten Kontrollsektion aufgerufen. Vor Veröffentlichung der
+Bestätigung liest der Kern den geschützten Status erneut und vergleicht
+Active-ID, Epoche, Lease und Transitionssequenz mit dem Snapshot. Jede
+zwischenzeitliche Änderung verwirft das Readback. Diese Schnittstelle ist nur
+die sichere Aufnahme für S0.3c-7b2; ein Host-Fake ist kein unabhängiges
+Interlock und wird nicht als Failover-Nachweis gezählt.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

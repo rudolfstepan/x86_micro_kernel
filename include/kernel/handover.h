@@ -21,10 +21,20 @@ typedef struct {
     uint64_t transition_sequence;
 } handover_status_t;
 
+typedef struct {
+    bool (*request_fence)(void *context, uint32_t active_node,
+                          uint64_t epoch);
+    bool (*fence_confirmed)(void *context, uint32_t active_node,
+                            uint64_t epoch);
+    void *context;
+} handover_fence_backend_t;
+
+int handover_attach_fence_backend(const handover_fence_backend_t *backend);
 int handover_init(uint32_t active_node, uint32_t standby_node,
                   uint32_t lease_ms, uint64_t now_ms);
 int handover_snapshot(handover_status_t *status_out);
 int handover_renew(uint32_t node, uint64_t expected_epoch, uint64_t now_ms);
+int handover_request_fence(uint64_t expected_epoch, uint64_t now_ms);
 int handover_confirm_fenced(uint64_t expected_epoch, uint64_t now_ms);
 int handover_takeover(uint32_t candidate_node, uint64_t expected_epoch,
                       uint64_t now_ms);

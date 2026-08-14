@@ -191,6 +191,13 @@ verifiziertem Fence derselben Epoche erlaubt; danach sind alle alten Tokens
 stale. Hosttests prüfen Split-Brain-Abwehr, Überlauf und ECC/CRC-Recovery. Das
 ist ausdrücklich noch kein unabhängiger Kanal. Als nächstes muss S0.3c-7b ein
 externes Supervisor-/Fence-Backend mit eigener Fehlerdomäne anbinden.
+S0.3c-7b1 härtet dafür die Softwaregrenze: Der Handover-Kern startet ohne
+fest gebundenes Fence-Backend nicht. Request und rücklesbare Bestätigung sind
+getrennte Callbacks; beide laufen außerhalb des IRQ-Locks, anschließend wird
+der komplette Epoch-/Lease-Zustand atomar revalidiert. Ein bloßer Request oder
+ein Readback einer alten Epoche kann keine Übernahme autorisieren. Offen bleibt
+7b2 mit realem externem Transport, eigener Zeitbasis/Stromversorgung und
+rücklesbarem Hardware-Interlock.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 

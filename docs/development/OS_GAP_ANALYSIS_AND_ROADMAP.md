@@ -139,6 +139,10 @@ und 10 verbindlich.
       Split-Brain-, Stale-Epoch- und Integritäts-Fault-Tests
     - [ ] S0.3c-7b Plattformbackend für einen elektrisch und zeitlich
       unabhängigen Supervisor-Kanal samt rücklesbarem Fence
+      - [x] S0.3c-7b1 Fest gebundener, statischer Request/Readback-Vertrag;
+        Backendaufrufe außerhalb des IRQ-Locks und anschließende Revalidierung
+      - [ ] S0.3c-7b2 Reales externes Transport-/Interlock-Backend auf
+        Zielhardware mit eigener Stromversorgung und Zeitbasis
     - [ ] S0.3c-7c Zwei reale Ausführungskanäle mit Zustandsreplikation,
       Selbsttest, Übernahme und kontrollierter Reintegration
     - [ ] S0.3c-7d Common-Cause-Analyse und wiederholte Zielhardware-Failover-Gates
@@ -1422,6 +1426,18 @@ Host-Fault-Tests decken Split-Brain, verfrühte Übernahme, stale Epoch sowie
 einfach und doppelt beschädigte Kontrollkopien ab. Das ist nur der
 Protokollbaustein: Ohne S0.3c-7b existieren weder unabhängiger Transport noch
 rücklesbares Hardware-Fence; ein fail-operationaler Claim bleibt unzulässig.
+
+**S0.3c-7b1 ist umgesetzt:** Der Protokollkern kann erst initialisiert werden,
+nachdem genau ein statisches Fence-Backend mit getrennten Request- und
+Readback-Funktionen gebunden wurde. Leaseablauf allein erzeugt keine
+Bestätigung. `handover_request_fence()` fordert das externe Fence für Active-ID
+und Epoche an; `handover_confirm_fenced()` akzeptiert den Zustand nur, wenn das
+Backend exakt dieselbe ID/Epoche rückmeldet. Die potenziell langsamen
+Backendoperationen laufen nicht mit deaktivierten IRQs. Danach werden Epoche,
+Active-ID, Lease und Transitionssequenz unter Lock erneut geprüft, sodass ein
+zwischenzeitlicher Rollen- oder Leasewechsel die Bestätigung verwirft. Das
+Hostbackend beweist Negativpfade und idempotentes Readback. S0.3c-7b2 bleibt
+offen, weil noch kein physisch unabhängiger Transport oder Interlock existiert.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions
