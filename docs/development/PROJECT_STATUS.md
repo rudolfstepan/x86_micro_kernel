@@ -39,9 +39,11 @@ QEMU-Matrix belegt dies bei LAPIC, PIT, Watchdog sowie 32–1024 MiB RAM paralle
 zu einem unabhängigen Gasttest. S0.3c-1 stellt nun zusätzlich einen echten
 begrenzten Ring-3-Diagnosedienst bereit. Ein generation-sicheres
 Service-Connect-Gate delegiert nur `SEND|RECEIVE`; GTEST bestätigt den
-Request/Reply `DIAG -> REIST_DIAG_OK` nach vollständiger Recovery. Als nächstes
-folgt die erste funktionale Migration ohne parallelen Ring-0-Datenpfad,
-beginnend mit einem unkritischen Netzwerk-/Diagnosebaustein. Die bisherige
+Request/Reply `DIAG -> REIST_DIAG_OK` nach vollständiger Recovery. S0.3c-2
+ergänzt die separate Freigabe delegierter Client-Capabilities: GTEST prüft
+Freigabe, stale Handle, erneute Verbindung und einen zweiten Request/Reply ohne
+Quota-Leck. Als nächstes folgt die erste funktionale Migration ohne parallelen
+Ring-0-Datenpfad, beginnend mit einem unkritischen Netzwerkbaustein. Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 
 Der zuletzt ausgeführte vollständige Windows-Build bootete in VMware bis zum

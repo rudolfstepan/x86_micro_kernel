@@ -68,6 +68,8 @@ int main(int argc, char **argv) {
                          ? "REIST_DIAG_OK" : "REIST_DIAG_INVALID");
             if (x86os_ipc_send_timeout(endpoint, &response, 100U) != 0)
                 return 7;
+        } else if (receive == -32) {
+            (void)x86os_sleep_ms(40U);
         } else if (receive != -110 && receive != -11) {
             return 8;
         }

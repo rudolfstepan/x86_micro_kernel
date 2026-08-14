@@ -53,6 +53,7 @@ int ipc_receive(struct Process *receiver, ipc_handle_t handle,
 int ipc_receive_timeout(struct Process *receiver, ipc_handle_t handle,
                         ipc_message_t *message, uint32_t timeout_ms);
 int ipc_close(struct Process *process, ipc_handle_t handle);
+int ipc_release(struct Process *process, ipc_handle_t handle);
 int ipc_delegate(struct Process *source, ipc_handle_t handle,
                  struct Process *target, uint32_t rights);
 void ipc_process_cleanup(int pid, uint32_t generation);

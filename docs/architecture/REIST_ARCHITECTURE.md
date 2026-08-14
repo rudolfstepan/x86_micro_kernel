@@ -225,7 +225,7 @@ verwenden; fehlgeschlagene Erzeugung läuft durch die bestehenden vollständigen
 Rollbackpfade.
 
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
-Bitinventar der gegenwärtig 58 Syscalls. Normale Programme erhalten explizit
+Bitinventar der gegenwärtig 59 Syscalls. Normale Programme erhalten explizit
 das Kompatibilitätsprofil. Das Supervisor-Profil `PROBE` beginnt dagegen bei
 Default-Deny und erlaubt ausschließlich Exit, Identität, Yield/Sleep,
 monotone Diagnosezeit, Memory-Statistik und die für den kontrollierten Kanal
@@ -251,6 +251,12 @@ einen Client ausschließlich `SEND|RECEIVE`, niemals `CONTROL`. Der Dienst
 arbeitet mit 40-ms-Receive- und 100-ms-Send-Deadlines. Damit ist erstmals eine
 reale Funktion hinter der restartbaren Ring-3-Grenze erreichbar; Kernelzeit,
 Netzwerk, Storage und GUI bleiben noch Ring-0-/Kompatibilitätspfade.
+
+S0.3c-2 ergänzt mit Syscall 58 die explizite Freigabe einer delegierten
+Capability. Sie ist von der Endpoint-Zerstörung durch den Besitzer getrennt,
+entfernt den generation-gebundenen Clientdatensatz atomar und weckt begrenzt
+wartende Peers. Ein Client kann dadurch verbinden, arbeiten, freigeben und
+erneut verbinden, ohne Capability-Slots dauerhaft zu verbrauchen.
 
 ## Betriebsstufen
 

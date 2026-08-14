@@ -61,7 +61,8 @@ enum {
     X86OS_SYS_IPC_RECEIVE_TIMEOUT = 54,
     X86OS_SYS_IPC_DELEGATE = 55,
     X86OS_SYS_REIST_REPORT = 56,
-    X86OS_SYS_SERVICE_CONNECT = 57
+    X86OS_SYS_SERVICE_CONNECT = 57,
+    X86OS_SYS_IPC_RELEASE = 58
 };
 
 enum {
@@ -212,6 +213,7 @@ int x86os_ipc_receive_timeout(x86os_ipc_handle_t handle,
                               x86os_ipc_message_t* message,
                               uint32_t timeout_ms);
 int x86os_ipc_close(x86os_ipc_handle_t handle);
+int x86os_ipc_release(x86os_ipc_handle_t handle);
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,
                        uint32_t rights);
 int x86os_reist_report(uint32_t report_type, uint32_t value);

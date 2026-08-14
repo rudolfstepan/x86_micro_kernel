@@ -162,6 +162,11 @@ static int test_generation_quota_and_cleanup(void) {
     CHECK(ipc_create(&owner, &stale) == 0);
     CHECK(ipc_delegate(&owner, stale, &child,
                        IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE) == 0);
+    CHECK(ipc_release(&owner, stale) == -13);
+    CHECK(ipc_release(&child, stale) == 0);
+    CHECK(ipc_send(&child, stale, &value) == -9);
+    CHECK(ipc_delegate(&owner, stale, &child,
+                       IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE) == 0);
 
     Process reused_identity = owner;
     ++reused_identity.generation;

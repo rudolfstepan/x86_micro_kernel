@@ -838,6 +838,35 @@ int ipc_delegate(Process *source, ipc_handle_t handle, Process *target,
     return result;
 }
 
+int ipc_release(Process *process, ipc_handle_t handle) {
+    if (process == NULL || handle == IPC_INVALID_HANDLE) return IPC_EINVAL;
+    uint32_t flags = ipc_lock();
+    ipc_endpoint_t *endpoint = NULL;
+    size_t endpoint_slot = 0U;
+    int result = resolve_capability(process, handle, 0U, &endpoint,
+                                    &endpoint_slot);
+    if (result != 0) {
+        ipc_unlock(flags);
+        return result;
+    }
+    if (endpoint->owner_pid == process->pid &&
+        endpoint->owner_generation == process->generation) {
+        ipc_unlock(flags);
+        return IPC_EACCES;
+    }
+    ipc_capability_record_t *record = capability_record_for(process, handle);
+    if (ipc_capability_scan_corrupt || record == NULL) {
+        quarantine_endpoint_locked(endpoint_slot);
+        ipc_unlock(flags);
+        return ipc_capability_scan_corrupt ? IPC_EINTEGRITY : IPC_EBADF;
+    }
+    clear_capability_record_locked(record);
+    (void)wait_queue_wake_all_locked(&endpoint->send_waiters);
+    (void)wait_queue_wake_all_locked(&endpoint->receive_waiters);
+    ipc_unlock(flags);
+    return 0;
+}
+
 void ipc_process_cleanup(int pid, uint32_t generation) {
     if (pid <= 0 || generation == 0U) return;
     uint32_t flags = ipc_lock();

@@ -384,7 +384,23 @@ static int test_diagnostic_service(void) {
     if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
         !ipc_message_is(&message, "REIST_DIAG_OK")) return -1;
     /* Clients receive attenuated SEND/RECEIVE rights, never ownership. */
-    return x86os_ipc_close(handle) < 0 ? 0 : -1;
+    if (x86os_ipc_close(handle) >= 0 || x86os_ipc_release(handle) != 0)
+        return -1;
+    ipc_message_set(&message, "STALE");
+    if (x86os_ipc_send_timeout(handle, &message, 0U) >= 0) return -1;
+
+    /* A released single-client slot can be delegated again without leaking
+     * capability quota or requiring endpoint destruction. */
+    handle = X86OS_IPC_INVALID_HANDLE;
+    if (x86os_service_connect(X86OS_SERVICE_DIAGNOSTIC, &handle) != 0)
+        return -1;
+    ipc_message_set(&message, "DIAG");
+    if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
+    ipc_message_prepare(&message);
+    if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
+        !ipc_message_is(&message, "REIST_DIAG_OK") ||
+        x86os_ipc_release(handle) != 0) return -1;
+    return 0;
 }
 
 static int test_scheduler_time(void) {

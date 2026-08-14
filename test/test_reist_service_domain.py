@@ -54,6 +54,19 @@ class ReistServiceDomainTests(unittest.TestCase):
                           "probe_runtime.launch_count < 4U"):
             self.assertIn(condition, connect)
 
+    def test_client_release_is_distinct_from_owner_destroy(self):
+        ipc = read("kernel/ipc/ipc.c")
+        sdk = read("userspace/sdk/include/x86os.h")
+        guest = read("examples/userspace/guest_test.c")
+        self.assertIn("int ipc_release(Process *process", ipc)
+        start = ipc.index("int ipc_release(Process *process")
+        release = ipc[start:ipc.index("void ipc_process_cleanup(", start)]
+        self.assertIn("IPC_EACCES", release)
+        self.assertIn("clear_capability_record_locked(record)", release)
+        self.assertIn("X86OS_SYS_IPC_RELEASE = 58", sdk)
+        self.assertGreaterEqual(guest.count("x86os_service_connect("), 4)
+        self.assertGreaterEqual(guest.count("x86os_ipc_release(handle)"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

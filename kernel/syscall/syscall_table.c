@@ -722,6 +722,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_ipc_delegate,       // Syscall 55: Attenuated delegation
     (void*)&syscall_reist_report,       // Syscall 56: Probe health report
     (void*)&syscall_service_connect,    // Syscall 57: Connect named service
+    (void*)&ipc_release,                // Syscall 58: Release delegated cap
     // Add more syscalls here as needed
 };
 
@@ -1015,6 +1016,10 @@ void syscall_handler(Registers* regs) {
         case SYS_SERVICE_CONNECT:
             result = (uint32_t)syscall_service_connect(
                 arg1, (ipc_handle_t*)(uintptr_t)arg2);
+            break;
+        case SYS_IPC_RELEASE:
+            result = (uint32_t)ipc_release(
+                scheduler_current_process(), (ipc_handle_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

@@ -231,7 +231,7 @@ class ReistIpcContractTests(unittest.TestCase):
             'spawn_ipc_child("IPC_ECHO", handle)',
             'spawn_ipc_child("IPC_WAIT_CLOSE", handle)',
             'spawn_ipc_child("IPC_EXIT", handle)',
-            "process_state_for_pid(child) != X86OS_PROCESS_WAITING",
+            "wait_for_process_state(child, X86OS_PROCESS_WAITING, 250U)",
             "handle == stale",
             "TEST_STAGE IPC_OK",
         ):

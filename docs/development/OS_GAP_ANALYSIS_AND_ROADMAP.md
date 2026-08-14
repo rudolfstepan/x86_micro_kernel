@@ -1023,9 +1023,17 @@ Diagnosedienst bereit. Ein neuer append-only Service-Connect-Syscall 57 prüft
 den Userpuffer vor Delegation, validiert die aktuelle Dienst-PID und
 -Generation und vergibt ausschließlich `SEND|RECEIVE`. `CONTROL` verbleibt
 beim Dienst. Der reale Gast sendet `DIAG`, erhält `REIST_DIAG_OK` innerhalb
-endlicher IPC-Deadlines und läuft danach bis `TEST_OK`. Die nächste Stufe
-S0.3c-2 migriert einen unkritischen Netzwerk-/Diagnosebaustein vollständig aus
-Ring 0; ein bloßer Proxy bei weiterhin autoritativem Kernelpfad zählt nicht.
+endlicher IPC-Deadlines und läuft danach bis `TEST_OK`.
+
+**S0.3c-2 ist umgesetzt:** Der append-only Syscall 58 gibt eine delegierte
+Client-Capability frei, ohne den Endpoint des Dienstbesitzers zu zerstören.
+Freigabe und Exit-Cleanup entfernen den generation-gebundenen Datensatz atomar
+und wecken blockierte Peers. Der reale Gast prüft Freigabe, Ablehnung des stale
+Handles, erneute Verbindung und einen zweiten Diagnose-Request/Reply ohne
+Verbrauch zusätzlicher Capability-Slots.
+
+S0.3c-3 migriert einen unkritischen Netzwerkbaustein vollständig aus Ring 0;
+ein bloßer Proxy bei weiterhin autoritativem Kernelpfad zählt nicht.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions
