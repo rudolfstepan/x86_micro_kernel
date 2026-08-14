@@ -300,6 +300,13 @@ verbraucht die einmalige Probeautorität und fällt in den Kernelpfad zurück.
 Vier anschließend korrekt beantwortete Lastnachrichten belegen, dass Queue,
 Dienst und Kernelpfad nach dem Druckfenster weiter Fortschritt machen.
 
+S0.3c-3g ergänzt oberhalb des IPC-v1-Transports einen festen Acht-Byte-
+Dienstheader (`RQ1`/`RS1` plus 32-Bit-Anfrage-ID). Eine gültige Antwort muss
+sowohl zur generation-codierten Endpoint-Capability als auch zur aktuellen,
+von Null verschiedenen Anfrage-ID passen. IDs laufen nicht still auf Null
+über. Der Gast weist die Ablehnung einer absichtlich falschen Antwort-ID nach,
+bevor eine korrekt korrelierte Anfrage weiter Fortschritt macht.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

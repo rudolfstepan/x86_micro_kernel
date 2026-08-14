@@ -67,6 +67,10 @@ S0.3c-3f ergänzt einen deterministischen Vier-Slot-IPC-Drucktest. Ein echter
 ARP-Reply fällt bei voller Dienstqueue einmalig zum Kernelpfad zurück; danach
 werden alle vier Lastnachrichten beantwortet und `NETWORK_PRESSURE_OK`
 erreicht.
+S0.3c-3g korreliert Dienstanfragen zusätzlich mit einer festen 32-Bit-ID und
+der Endpointgeneration. Eine absichtlich um eins verfälschte Antwort wird im
+Gast verworfen; erst die nachfolgende korrekte Diagnoseantwort erzeugt
+`SERVICE_CORRELATION_OK`.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 

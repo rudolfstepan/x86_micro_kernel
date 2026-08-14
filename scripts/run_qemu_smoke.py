@@ -30,6 +30,7 @@ REIST_PROBE_MARKERS = (
 )
 REIST_PROBE_COMPLETION_MARKER = "REIST_PROBE RECOVERY_SEQUENCE_OK"
 REIST_SERVICE_MARKER = "TEST_STAGE DIAGNOSTIC_SERVICE_OK"
+REIST_SERVICE_CORRELATION_MARKER = "TEST_STAGE SERVICE_CORRELATION_OK"
 REIST_NETWORK_MARKER = "TEST_STAGE NETWORK_PARSER_OK"
 REIST_NETWORK_HANDOFF_MARKER = "TEST_STAGE NETWORK_HANDOFF_OK"
 REIST_NETWORK_CRASH_MARKER = "REIST_NETWORK SERVICE_CRASH_RECOVERED"
@@ -286,7 +287,9 @@ def validate(
         if completion < 0 or completion > test:
             return "missing cumulative REIST probe recovery marker"
         service = exact_line_position(transcript, REIST_SERVICE_MARKER)
-        if service < completion or service > test:
+        correlation = exact_line_position(transcript,
+                                          REIST_SERVICE_CORRELATION_MARKER)
+        if correlation < completion or service < correlation or service > test:
             return "missing ordered REIST diagnostic-service marker"
         network = exact_line_position(transcript, REIST_NETWORK_MARKER)
         if network < service or network > test:

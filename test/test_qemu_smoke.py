@@ -30,6 +30,7 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         transcript = "\n".join((
             "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,
             RUNNER_MODULE.REIST_PROBE_COMPLETION_MARKER,
+            RUNNER_MODULE.REIST_SERVICE_CORRELATION_MARKER,
             RUNNER_MODULE.REIST_SERVICE_MARKER,
             RUNNER_MODULE.REIST_NETWORK_MARKER,
             "TEST_OK", "C:\\>", "",
@@ -53,6 +54,7 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         transcript = "\n".join((
             "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,
             RUNNER_MODULE.REIST_PROBE_COMPLETION_MARKER,
+            RUNNER_MODULE.REIST_SERVICE_CORRELATION_MARKER,
             RUNNER_MODULE.REIST_SERVICE_MARKER,
             RUNNER_MODULE.REIST_NETWORK_MARKER,
             RUNNER_MODULE.REIST_NETWORK_HANDOFF_MARKER,

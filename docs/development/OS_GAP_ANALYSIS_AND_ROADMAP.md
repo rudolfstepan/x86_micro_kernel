@@ -1080,9 +1080,17 @@ vier korrekt beantworteten Lastnachrichten wird `NETWORK_PRESSURE_OK`
 ausgegeben; der strikte RTL8139-Smoke verlangt die geordnete Fallback- und
 Fortschrittskette.
 
-S0.3c-3g ergänzt als nächsten Schritt eine begrenzte, generation-sichere
-Dienstanfrage-ID, damit verspätete Antworten nach Recovery nicht einer neuen
-Anfrage zugeordnet werden können.
+**S0.3c-3g ist umgesetzt:** Das versionierte Dienstprotokoll bindet jede
+Anfrage und Antwort an eine von Null verschiedene 32-Bit-ID. Zusammen mit der
+Endpointgeneration bildet sie die Korrelationsidentität; ein Restart zerstört
+die alte Queue, und der Client akzeptiert auf der neuen Generation nur seine
+aktuelle ID. Der Gast lässt den Dienst absichtlich `request_id + 1` senden,
+verwirft diese Antwort und beweist anschließend mit einer korrekt korrelierten
+Diagnoseanfrage weiteren Fortschritt über `SERVICE_CORRELATION_OK`.
+
+S0.3c-3h inventarisiert als nächsten Schritt den verbleibenden autoritativen
+Kernel-Netzwerkpfad und verschiebt die nächste kleinste, begrenzte
+Protokollfunktion vollständig in die restartbare Ring-3-Domäne.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

@@ -67,6 +67,47 @@ static int ipc_message_is(const x86os_ipc_message_t *message,
     return 1;
 }
 
+#define SERVICE_PROTOCOL_HEADER_SIZE 8U
+
+static int service_request_set(x86os_ipc_message_t *message,
+                               uint32_t request_id, const char *text) {
+    if (request_id == 0U) return -1;
+    ipc_message_prepare(message);
+    message->payload[0] = 'R';
+    message->payload[1] = 'Q';
+    message->payload[2] = '1';
+    message->payload[3] = 0U;
+    message->payload[4] = (uint8_t)request_id;
+    message->payload[5] = (uint8_t)(request_id >> 8U);
+    message->payload[6] = (uint8_t)(request_id >> 16U);
+    message->payload[7] = (uint8_t)(request_id >> 24U);
+    message->length = SERVICE_PROTOCOL_HEADER_SIZE;
+    while (*text != '\0' && message->length < X86OS_IPC_MAX_MESSAGE_SIZE)
+        message->payload[message->length++] = (uint8_t)*text++;
+    return *text == '\0' ? 0 : -1;
+}
+
+static int service_response_is(const x86os_ipc_message_t *message,
+                               uint32_t request_id, const char *text) {
+    if (request_id == 0U || message->length < SERVICE_PROTOCOL_HEADER_SIZE ||
+        message->payload[0] != 'R' || message->payload[1] != 'S' ||
+        message->payload[2] != '1' || message->payload[3] != 0U)
+        return 0;
+    uint32_t received = (uint32_t)message->payload[4] |
+        ((uint32_t)message->payload[5] << 8U) |
+        ((uint32_t)message->payload[6] << 16U) |
+        ((uint32_t)message->payload[7] << 24U);
+    if (received != request_id) return 0;
+    size_t length = 0U;
+    while (text[length] != '\0') ++length;
+    if (message->length != SERVICE_PROTOCOL_HEADER_SIZE + length) return 0;
+    for (size_t index = 0U; index < length; ++index) {
+        if (message->payload[SERVICE_PROTOCOL_HEADER_SIZE + index] !=
+            (uint8_t)text[index]) return 0;
+    }
+    return 1;
+}
+
 static void ipc_message_set_test_arp_frame(x86os_ipc_message_t *message) {
     ipc_message_prepare(message);
     message->payload[0] = 'N';
@@ -391,11 +432,21 @@ static int test_diagnostic_service(void) {
         handle == X86OS_IPC_INVALID_HANDLE) return -1;
 
     x86os_ipc_message_t message;
-    ipc_message_set(&message, "DIAG");
+    uint32_t request_id = 1U;
+    if (service_request_set(&message, request_id, "BADID") != 0) return -1;
     if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
     ipc_message_prepare(&message);
     if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
-        !ipc_message_is(&message, "REIST_DIAG_OK")) return -1;
+        service_response_is(&message, request_id, "REIST_DIAG_OK"))
+        return -1;
+    x86os_puts("TEST_STAGE SERVICE_CORRELATION_OK\n");
+    ++request_id;
+    if (service_request_set(&message, request_id, "DIAG") != 0) return -1;
+    if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
+    ipc_message_prepare(&message);
+    if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
+        !service_response_is(&message, request_id, "REIST_DIAG_OK"))
+        return -1;
     /* Clients receive attenuated SEND/RECEIVE rights, never ownership. */
     if (x86os_ipc_close(handle) >= 0 || x86os_ipc_release(handle) != 0)
         return -1;
@@ -413,14 +464,17 @@ static int test_diagnostic_service(void) {
     if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
         !ipc_message_is(&message, "REIST_NET_ARP")) return -1;
 
-    ipc_message_set(&message, "NETPROBE");
+    ++request_id;
+    if (service_request_set(&message, request_id, "NETPROBE") != 0) return -1;
     if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
     ipc_message_prepare(&message);
     if (x86os_ipc_receive_timeout(handle, &message, 1000U) != 0) return -1;
-    int network_handoff = ipc_message_is(&message, "REIST_NET_ARP");
+    int network_handoff = service_response_is(&message, request_id,
+                                               "REIST_NET_ARP");
     if (network_handoff)
         x86os_puts("TEST_STAGE NETWORK_HANDOFF_OK\n");
-    else if (!ipc_message_is(&message, "REIST_NET_UNAVAILABLE")) return -1;
+    else if (!service_response_is(&message, request_id,
+                                  "REIST_NET_UNAVAILABLE")) return -1;
 
     if (!network_handoff) {
         if (x86os_ipc_release(handle) != 0) return -1;
@@ -430,25 +484,34 @@ static int test_diagnostic_service(void) {
     /* Hold the owner briefly, fill every bounded queue slot, then let its
      * real ARP probe prove that ingress fails closed to the kernel path. */
     if (x86os_sleep_ms(300U) != 0) return -1;
-    ipc_message_set(&message, "NETPRESSURE");
+    ++request_id;
+    if (service_request_set(&message, request_id, "NETPRESSURE") != 0)
+        return -1;
     if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
     ipc_message_prepare(&message);
     if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
-        !ipc_message_is(&message, "REIST_PRESSURE_READY")) return -1;
+        !service_response_is(&message, request_id, "REIST_PRESSURE_READY"))
+        return -1;
     for (unsigned int index = 0U; index < X86OS_IPC_QUEUE_DEPTH; ++index) {
-        ipc_message_set(&message, "LOAD");
+        ++request_id;
+        if (service_request_set(&message, request_id, "LOAD") != 0)
+            return -1;
         if (x86os_ipc_send_timeout(handle, &message, 0U) != 0) return -1;
     }
     if (x86os_sleep_ms(500U) != 0) return -1;
     for (unsigned int index = 0U; index < X86OS_IPC_QUEUE_DEPTH; ++index) {
         ipc_message_prepare(&message);
+        uint32_t response_id = request_id - X86OS_IPC_QUEUE_DEPTH + index + 1U;
         if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
-            !ipc_message_is(&message, "REIST_DIAG_INVALID")) return -1;
+            !service_response_is(&message, response_id,
+                                 "REIST_DIAG_INVALID")) return -1;
     }
     x86os_puts("TEST_STAGE NETWORK_PRESSURE_OK\n");
 
     if (x86os_sleep_ms(300U) != 0) return -1;
-    ipc_message_set(&message, "NETCRASH");
+    ++request_id;
+    if (service_request_set(&message, request_id, "NETCRASH") != 0)
+        return -1;
     if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
     ipc_message_prepare(&message);
     if (x86os_ipc_receive_timeout(handle, &message, 1000U) >= 0) return -1;
@@ -460,11 +523,12 @@ static int test_diagnostic_service(void) {
         if (x86os_sleep_ms(20U) != 0) return -1;
     }
     if (handle == X86OS_IPC_INVALID_HANDLE) return -1;
-    ipc_message_set(&message, "DIAG");
+    ++request_id;
+    if (service_request_set(&message, request_id, "DIAG") != 0) return -1;
     if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
     ipc_message_prepare(&message);
     if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
-        !ipc_message_is(&message, "REIST_DIAG_OK") ||
+        !service_response_is(&message, request_id, "REIST_DIAG_OK") ||
         x86os_ipc_release(handle) != 0) return -1;
     x86os_puts("TEST_STAGE NETWORK_RECOVERY_OK\n");
     return 0;

@@ -37,7 +37,7 @@ class ReistServiceDomainTests(unittest.TestCase):
     def test_real_ring3_service_has_bounded_request_reply(self):
         service = read("examples/userspace/reist_probe.c")
         guest = read("examples/userspace/guest_test.c")
-        self.assertIn('message_is(&request, "DIAG")', service)
+        self.assertIn('message_request_is(&request, "DIAG")', service)
         self.assertIn('"REIST_DIAG_OK"', service)
         self.assertIn("x86os_ipc_receive_timeout(endpoint, &request, 40U)",
                       service)
@@ -105,7 +105,7 @@ class ReistServiceDomainTests(unittest.TestCase):
         ipc = (ROOT / "kernel" / "ipc" / "ipc.c").read_text()
         service = (ROOT / "examples" / "userspace" / "reist_probe.c").read_text()
         guest = (ROOT / "examples" / "userspace" / "guest_test.c").read_text()
-        self.assertIn('message_is(&request, "NETPRESSURE")', service)
+        self.assertIn('message_request_is(&request, "NETPRESSURE")', service)
         self.assertIn('"REIST_PRESSURE_READY"', service)
         self.assertIn("X86OS_IPC_QUEUE_DEPTH", guest)
         self.assertIn("QUEUE_PRESSURE_FALLBACK", supervisor)
@@ -135,7 +135,7 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("network_probe_pending = true", probe)
         self.assertIn("network_probe_pending = false", probe)
         self.assertIn("X86OS_SYS_NETWORK_PROBE = 59", sdk)
-        self.assertIn('message_is(&request, "NETPROBE")', service)
+        self.assertIn('message_request_is(&request, "NETPROBE")', service)
         self.assertIn("request.payload[3] == 'R'", service)
         self.assertIn("REIST_REPORT_NETWORK_HEADER", service)
         self.assertIn("TEST_STAGE NETWORK_HANDOFF_OK", guest)
@@ -151,13 +151,28 @@ class ReistServiceDomainTests(unittest.TestCase):
         service = read("examples/userspace/reist_probe.c")
         guest = read("examples/userspace/guest_test.c")
         runner = read("scripts/run_qemu_smoke.py")
-        self.assertIn('message_is(&request, "NETCRASH")', service)
+        self.assertIn('message_request_is(&request, "NETCRASH")', service)
         self.assertIn('volatile("ud2")', service)
         self.assertIn("runtime->network_probe_pending = false", supervisor)
         self.assertIn("REIST_NETWORK SERVICE_CRASH_RECOVERED", supervisor)
         self.assertIn("attempt < 100U", guest)
         self.assertIn("TEST_STAGE NETWORK_RECOVERY_OK", guest)
         self.assertIn("REIST_NETWORK_RECOVERY_MARKER", runner)
+
+    def test_service_protocol_correlates_generation_scoped_requests(self):
+        service = read("examples/userspace/reist_probe.c")
+        guest = read("examples/userspace/guest_test.c")
+        self.assertIn("SERVICE_PROTOCOL_HEADER_SIZE 8U", service)
+        self.assertIn("message_request_id", service)
+        self.assertIn("response_init(&response, request_id", service)
+        self.assertIn("pending_network_request", service)
+        self.assertIn("service_request_set", guest)
+        self.assertIn("service_response_is", guest)
+        self.assertIn("received != request_id", guest)
+        self.assertIn("++request_id", guest)
+        self.assertIn('message_request_is(&request, "BADID")', service)
+        self.assertIn("request_id + 1U", service)
+        self.assertIn("TEST_STAGE SERVICE_CORRELATION_OK", guest)
 
 
 if __name__ == "__main__":

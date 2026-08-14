@@ -37,6 +37,49 @@ static int message_is(const x86os_ipc_message_t *message, const char *text) {
     return 1;
 }
 
+#define SERVICE_PROTOCOL_HEADER_SIZE 8U
+
+static uint32_t message_request_id(const x86os_ipc_message_t *message) {
+    if (message->length < SERVICE_PROTOCOL_HEADER_SIZE ||
+        message->payload[0] != 'R' || message->payload[1] != 'Q' ||
+        message->payload[2] != '1' || message->payload[3] != 0U)
+        return 0U;
+    return (uint32_t)message->payload[4] |
+           ((uint32_t)message->payload[5] << 8U) |
+           ((uint32_t)message->payload[6] << 16U) |
+           ((uint32_t)message->payload[7] << 24U);
+}
+
+static int message_request_is(const x86os_ipc_message_t *message,
+                              const char *text) {
+    uint32_t request_id = message_request_id(message);
+    if (request_id == 0U) return 0;
+    uint32_t length = 0U;
+    while (text[length] != '\0') ++length;
+    if (message->length != SERVICE_PROTOCOL_HEADER_SIZE + length) return 0;
+    for (uint32_t index = 0U; index < length; ++index) {
+        if (message->payload[SERVICE_PROTOCOL_HEADER_SIZE + index] !=
+            (uint8_t)text[index]) return 0;
+    }
+    return 1;
+}
+
+static void response_init(x86os_ipc_message_t *message, uint32_t request_id,
+                          const char *text) {
+    message_init(message, "");
+    message->payload[0] = 'R';
+    message->payload[1] = 'S';
+    message->payload[2] = '1';
+    message->payload[3] = 0U;
+    message->payload[4] = (uint8_t)request_id;
+    message->payload[5] = (uint8_t)(request_id >> 8U);
+    message->payload[6] = (uint8_t)(request_id >> 16U);
+    message->payload[7] = (uint8_t)(request_id >> 24U);
+    message->length = SERVICE_PROTOCOL_HEADER_SIZE;
+    while (*text != '\0' && message->length < X86OS_IPC_MAX_MESSAGE_SIZE)
+        message->payload[message->length++] = (uint8_t)*text++;
+}
+
 static const char *network_classification(
         const x86os_ipc_message_t *message) {
     /* NET1 followed by one complete Ethernet header.  This deliberately
@@ -73,22 +116,34 @@ int main(int argc, char **argv) {
     if (!text_equal(argv[1], "healthy")) return 5;
 
     uint32_t sequence = 2U;
+    uint32_t pending_network_request = 0U;
     for (;;) {
         x86os_ipc_message_t request;
         message_init(&request, "");
         int receive = x86os_ipc_receive_timeout(endpoint, &request, 40U);
         if (receive == 0) {
             x86os_ipc_message_t response;
-            if (message_is(&request, "NETPROBE")) {
-                if (x86os_network_probe() == 0) continue;
-                message_init(&response, "REIST_NET_UNAVAILABLE");
+            uint32_t request_id = message_request_id(&request);
+            if (message_request_is(&request, "BADID")) {
+                if (request_id == UINT32_MAX) return 12;
+                response_init(&response, request_id + 1U, "REIST_DIAG_OK");
                 if (x86os_ipc_send_timeout(endpoint, &response, 100U) != 0)
                     return 7;
                 continue;
             }
-            if (message_is(&request, "NETCRASH")) {
+            if (message_request_is(&request, "NETPROBE")) {
+                pending_network_request = request_id;
+                if (x86os_network_probe() == 0) continue;
+                pending_network_request = 0U;
+                response_init(&response, request_id, "REIST_NET_UNAVAILABLE");
+                if (x86os_ipc_send_timeout(endpoint, &response, 100U) != 0)
+                    return 7;
+                continue;
+            }
+            if (message_request_is(&request, "NETCRASH")) {
                 if (x86os_network_probe() != 0) {
-                    message_init(&response, "REIST_NET_UNAVAILABLE");
+                    response_init(&response, request_id,
+                                  "REIST_NET_UNAVAILABLE");
                     if (x86os_ipc_send_timeout(endpoint, &response, 100U) != 0)
                         return 7;
                     continue;
@@ -96,8 +151,8 @@ int main(int argc, char **argv) {
                 __asm__ volatile("ud2");
                 return 10;
             }
-            if (message_is(&request, "NETPRESSURE")) {
-                message_init(&response, "REIST_PRESSURE_READY");
+            if (message_request_is(&request, "NETPRESSURE")) {
+                response_init(&response, request_id, "REIST_PRESSURE_READY");
                 if (x86os_ipc_send_timeout(endpoint, &response, 100U) != 0)
                     return 7;
                 (void)x86os_sleep_ms(100U);
@@ -111,10 +166,20 @@ int main(int argc, char **argv) {
                 if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_HEADER,
                                        ethertype) != 0) return 9;
             }
-            message_init(&response, message_is(&request, "DIAG")
-                         ? "REIST_DIAG_OK"
-                         : (network != NULL ? network
-                                            : "REIST_DIAG_INVALID"));
+            if (network != NULL && request.payload[3] == 'R' &&
+                pending_network_request != 0U) {
+                response_init(&response, pending_network_request, network);
+                pending_network_request = 0U;
+            } else if (network != NULL) {
+                message_init(&response, network);
+            } else if (request_id != 0U) {
+                response_init(&response, request_id,
+                              message_request_is(&request, "DIAG")
+                                  ? "REIST_DIAG_OK"
+                                  : "REIST_DIAG_INVALID");
+            } else {
+                continue;
+            }
             if (x86os_ipc_send_timeout(endpoint, &response, 100U) != 0)
                 return 7;
         } else if (receive == -32) {
