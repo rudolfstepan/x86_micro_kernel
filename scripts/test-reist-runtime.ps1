@@ -47,13 +47,14 @@ function Invoke-Smoke([string]$LogName, [string[]]$Extra) {
         $Runner,
         '--qemu', $Qemu,
         '--image', $Image,
-        '--log', (Join-Path $RepoRoot "build\$LogName")
+        '--log', (Join-Path $RepoRoot "build\$LogName"),
+        '--expect-reist-probe'
     ) + $Extra
     $exitCode = 0
     try {
         $LASTEXITCODE = 0
         & $Python @arguments *> $gateLog
-        $exitCode = $LASTEXITCODE
+        $exitCode = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
     }
     catch {
         $exitCode = 1
@@ -61,6 +62,11 @@ function Invoke-Smoke([string]$LogName, [string[]]$Extra) {
     }
     finally {
         $watch.Stop()
+    }
+    if ($exitCode -eq 0 -and
+        (Select-String -LiteralPath $gateLog -SimpleMatch 'guest-smoke: FAIL' `
+            -Quiet)) {
+        $exitCode = 1
     }
     if ($exitCode -ne 0) {
         Write-Output "RUNTIME FAIL exit=$exitCode elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"

@@ -34,7 +34,7 @@ class ReistProbeDomainContractTests(unittest.TestCase):
 
     def test_profile_is_versioned_fixed_and_attached_before_publication(self):
         self.assertIn("PROCESS_DOMAIN_PROFILE_VERSION 1U", self.process_h)
-        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 56U", self.process_h)
+        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 57U", self.process_h)
         for field in ("version", "struct_size", "kind", "allowed_syscalls"):
             self.assertIn(field, self.process_h)
         self.assertRegex(
@@ -56,8 +56,8 @@ class ReistProbeDomainContractTests(unittest.TestCase):
         for allowed in (
             "SYS_EXIT", "SYS_GETPID", "SYS_YIELD", "SYS_SLEEP_MS",
             "SYS_MONOTONIC_MS", "SYS_IPC_SEND", "SYS_IPC_RECEIVE",
-            "SYS_IPC_CLOSE", "SYS_IPC_SEND_TIMEOUT",
-            "SYS_IPC_RECEIVE_TIMEOUT",
+            "SYS_IPC_CREATE", "SYS_IPC_CLOSE", "SYS_IPC_SEND_TIMEOUT",
+            "SYS_IPC_RECEIVE_TIMEOUT", "SYS_REIST_REPORT",
         ):
             self.assertIn(allowed, probe)
         for denied in (
@@ -95,6 +95,41 @@ class ReistProbeDomainContractTests(unittest.TestCase):
         process_spawn = function(self.process, "int process_spawn_supervised(")
         self.assertIn("domain_kind", process_spawn)
         self.assertIn("true, domain_kind", process_spawn)
+
+    def test_probe_lifecycle_is_generation_scoped_and_bounded(self):
+        for token in (
+            "process_identity_alive", "process_generation",
+            "heartbeat_timeout_ms = 2000U", "recovery_timeout_ms = 1000U",
+            "restart_budget = 4U", "probe_fence_apply",
+            "probe_fence_verify", "supervisor_force_isolate",
+        ):
+            self.assertIn(token, self.supervisor)
+        for marker in (
+            "CRASH_DETECTED", "CRASH_RECOVERED", "HANG_DETECTED",
+            "HANG_RECOVERED", "INVALID_REPLY_DETECTED",
+            "INVALID_RECOVERED", "REINTEGRATED",
+        ):
+            self.assertIn(marker, self.supervisor)
+
+    def test_probe_program_and_boot_packaging_are_present(self):
+        probe = read("examples/userspace/reist_probe.c")
+        for mode in ('"crash"', '"hang"', '"invalid"', '"healthy"'):
+            self.assertIn(mode, probe)
+        self.assertIn('volatile("ud2")', probe)
+        self.assertIn("x86os_reist_report", probe)
+        self.assertIn("supervisor_start_probe", read("kernel/init/kernel.c"))
+        self.assertIn('"REIST.PRG"', read("scripts/build_system_programs.py"))
+        self.assertEqual(read("Makefile").count("--data-file REIST.PRG="), 2)
+        self.assertEqual(read("scripts/build-windows.ps1").count(
+            '--data-file "REIST.PRG='), 2)
+
+    def test_report_syscall_is_append_only_and_probe_only(self):
+        self.assertIn("SYS_REIST_REPORT 56", read("lib/libc/stdlib.h"))
+        self.assertIn("X86OS_SYS_REIST_REPORT = 56", read(
+            "userspace/sdk/include/x86os.h"))
+        report = function(self.syscalls, "static int syscall_reist_report(")
+        self.assertIn("process->generation", report)
+        self.assertIn("supervisor_probe_report", report)
 
 
 if __name__ == "__main__":

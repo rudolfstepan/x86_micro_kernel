@@ -443,6 +443,9 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     if (!supervisor_start_worker()) {
         panic("Unable to start REIST safety supervisor worker");
     }
+    if (!supervisor_start_probe(pit_monotonic_ms())) {
+        panic("Unable to start REIST Ring-3 probe");
+    }
     printf("BOOT_OK\n");
 
     /* A real framebuffer prefers the graphical desktop.  VGA boots and any

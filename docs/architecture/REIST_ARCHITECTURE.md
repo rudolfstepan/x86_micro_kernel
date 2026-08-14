@@ -225,7 +225,7 @@ verwenden; fehlgeschlagene Erzeugung läuft durch die bestehenden vollständigen
 Rollbackpfade.
 
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
-Bitinventar der gegenwärtig 56 Syscalls. Normale Programme erhalten explizit
+Bitinventar der gegenwärtig 57 Syscalls. Normale Programme erhalten explizit
 das Kompatibilitätsprofil. Das Supervisor-Profil `PROBE` beginnt dagegen bei
 Default-Deny und erlaubt ausschließlich Exit, Identität, Yield/Sleep,
 monotone Diagnosezeit, Memory-Statistik und die für den kontrollierten Kanal
@@ -235,13 +235,12 @@ separaten Trusted-Pfad. `kill` ist auch im Kompatibilitätsprofil nur für ein
 Kind erlaubt, dessen gespeicherte Eltern-PID und Elterngeneration mit dem
 Aufrufer übereinstimmen.
 
-Diese Basis ist noch kein vollständiger High-Assurance-IPC-Vertrag. Es fehlen:
-
-- eine überwachte, neu startbare Ring-3-Domäne als S0.3b-Abnahmeobjekt.
-
-Bis diese Punkte erfüllt sind, beweist S0.3a begrenzte Nachrichtenübertragung,
-Handlegeneration und Exit-Widerruf, aber weder Least Privilege für den gesamten
-Syscallraum noch eine vom modularen Monolithen unabhängige Failure Domain.
+S0.3b ergänzt diese Basis um eine überwachte, neu startbare Ring-3-Probe. Der
+Health-Kanal ist generationgebunden; Crash, Hang und ungültige Antwort führen
+innerhalb endlicher Deadlines über Fence, Revoke/Reap, Restart und Selbsttest
+zur Reintegrationsentscheidung. Das beweist Prozessisolation und Recovery des
+Probekanals, aber noch keine vom modularen Monolithen unabhängige Kernel-, CPU-
+oder RAM-Fehlerdomäne.
 
 ## Betriebsstufen
 
@@ -450,9 +449,9 @@ werden.
    Watchdog implementieren.
 3. Die umgesetzte begrenzte IPC-/Capability-Basis um Deadlines, Integrität,
    explizite Delegation, reservierte Service-Slots und Syscall-Gates härten.
-4. Mit S0.3b eine capability-beschränkte Ring-3-Probedomäne überwachen, gezielt
-   beenden und innerhalb eines begrenzten Restartvertrags reintegrieren.
-5. GUI und Netzwerk, danach Dateisystem und komplexe Treiber aus Ring 0 lösen.
+4. Die umgesetzte S0.3b-Probedomäne als Referenz für begrenzte Recovery nutzen.
+5. Mit S0.3c GUI und Netzwerk, danach Dateisystem und komplexe Treiber aus
+   Ring 0 lösen und als echte überwachte Dienste betreiben.
 6. Deterministische Ressourcenreservierung und transaktionalen Zustand
    einführen.
 7. Signierte A/B-Images, Boot-Failover und unabhängigen Standby-Kanal ergänzen.

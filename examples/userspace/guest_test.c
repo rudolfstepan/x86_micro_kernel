@@ -215,6 +215,17 @@ static int process_state_for_pid(int pid) {
     return -1;
 }
 
+static int wait_for_process_state(int pid, int expected, uint32_t timeout_ms) {
+    uint64_t start = 0U;
+    uint64_t now = 0U;
+    if (x86os_monotonic_ms(&start) != 0) return -1;
+    do {
+        if (process_state_for_pid(pid) == expected) return 0;
+        if (x86os_yield() != 0 || x86os_monotonic_ms(&now) != 0) return -1;
+    } while (now - start < timeout_ms);
+    return -1;
+}
+
 static int process_info_for_pid(int pid, x86os_process_info_t *result) {
     if (result == NULL) return -1;
     for (uint32_t index = 0; index < 32U; ++index) {
@@ -272,8 +283,8 @@ static int test_ipc_capabilities(void) {
         return -1;
     }
     int child = spawn_ipc_child("IPC_ECHO", handle);
-    if (child <= 0 || x86os_yield() != 0 ||
-        process_state_for_pid(child) != X86OS_PROCESS_WAITING) {
+    if (child <= 0 ||
+        wait_for_process_state(child, X86OS_PROCESS_WAITING, 250U) != 0) {
         (void)x86os_ipc_close(handle);
         return -1;
     }
@@ -336,8 +347,8 @@ static int test_ipc_capabilities(void) {
     /* Destroying an endpoint must wake an already blocked peer. */
     if (x86os_ipc_create(&handle) != 0) return -1;
     child = spawn_ipc_child("IPC_WAIT_CLOSE", handle);
-    if (child <= 0 || x86os_yield() != 0 ||
-        process_state_for_pid(child) != X86OS_PROCESS_WAITING ||
+    if (child <= 0 ||
+        wait_for_process_state(child, X86OS_PROCESS_WAITING, 250U) != 0 ||
         x86os_ipc_close(handle) != 0 ||
         wait_for_ipc_child(child, 55) != 0) return -1;
 
@@ -374,8 +385,8 @@ static int test_scheduler_time(void) {
 
     /* A direct yield must hand execution to the already-ready child. */
     int quick_pid = x86os_spawn("CHILDEX.PRG");
-    if (quick_pid <= 0 || x86os_yield() != 0 ||
-        process_state_for_pid(quick_pid) != X86OS_PROCESS_ZOMBIE) {
+    if (quick_pid <= 0 ||
+        wait_for_process_state(quick_pid, X86OS_PROCESS_ZOMBIE, 250U) != 0) {
         return -1;
     }
     int status = -1;
@@ -464,9 +475,9 @@ static int test_memory_accounting(void) {
 }
 
 static int test_task_capacity_and_parenting(void) {
-    /* Worker, shell and GTEST occupy three slots; ordinary userspace may use
-     * only four more. The final slot remains available for supervised restart. */
-    int children[4];
+    /* Worker, probe, shell and GTEST occupy four slots. Three ambient slots
+     * remain while the final slot stays reserved for supervised restart. */
+    int children[3];
     int parent_pid = x86os_getpid();
     for (size_t index = 0; index < sizeof(children) / sizeof(children[0]);
          ++index) {
@@ -542,6 +553,7 @@ int main(int argc, char **argv) {
         return 6;
     }
     x86os_puts("TEST_STAGE TASK_CAPACITY_OK\n");
+    x86os_puts("TEST_STAGE REIST_PROGRESS_OK\n");
 
     if (wait_for_expected("FAULTDE.PRG", 128) != 0 ||
         wait_for_expected("FAULTUD.PRG", 134) != 0 ||

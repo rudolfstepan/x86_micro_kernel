@@ -105,6 +105,10 @@ int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,
                               (uintptr_t)target_pid, rights);
 }
 
+int x86os_reist_report(uint32_t report_type, uint32_t value) {
+    return (int)x86os_syscall(X86OS_SYS_REIST_REPORT, report_type, value, 0);
+}
+
 int x86os_display_info(x86os_display_info_t* info) {
     if (!info) return -22;
     info->version = X86OS_DISPLAY_ABI_VERSION;

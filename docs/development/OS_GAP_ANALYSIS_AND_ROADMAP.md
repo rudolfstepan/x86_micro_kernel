@@ -77,7 +77,7 @@ und maximale Fehlerreaktionszeiten rückverfolgbar festzulegen.
 | Boot | BIOS/MBR, zweistufiger Loader, E820, A20, ELF32-Prüfung, Kernel-CRC32, FAT12-Floppy, optionaler nativer VBE-LFB-Handoff | stabiler Referenzpfad mit VGA-Rückfall |
 | CPU | GDT/IDT/TSS, Ring 0/3, Exceptions, PIC, gegen PIT kalibrierter lokaler APIC-Timer, PIT-Scheduler-Fallback, `INT 0x80` | funktionsfähiger Single-Core-Pfad |
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
-| Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit explizit delegierten generationsgebundenen Capabilities, endlichen Deadlines, geschützten Steuerdaten, reservierter Restart-Admission und versionierten Domänenprofilen | maximal 8 Tasks; überwachte Probe-Lifecycle-Abnahme noch offen |
+| Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit explizit delegierten generationsgebundenen Capabilities, endlichen Deadlines, geschützten Steuerdaten, reservierter Restart-Admission, versionierten Domänenprofilen und abgenommener Ring-3-Probe-Recovery | maximal 8 Tasks; produktive Dienste liegen noch im modularen Monolithen |
 | Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, FAT32-Rename/Replace im Undo-Journal, FAT32/ATA-`fsync`, EXT2 lesen | persistenter Editor-Commit vorhanden; ABI, FAT12-Sync und breitere Rename-Semantik fehlen |
 | Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 und COM1 mit blockierendem Console-Wait, RTC, VGA, nativer VBE-RGB-Framebuffer | Referenzhardware gut, moderne Geräte fehlen |
 | Netzwerk | E1000, RTL8139, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping am besten verifiziert |
@@ -685,16 +685,19 @@ Prozesslisten-, Delegations- und Kill-Autorität bleiben gesperrt. Bestehende
 Programme laufen ausschließlich über ein explizites Kompatibilitätsprofil;
 auch dort ist Kill auf generation-sicher gebundene eigene Kinder begrenzt.
 
-##### S0.3b Supervised Userspace Probe Domain — nächster Schritt
+##### S0.3b Supervised Userspace Probe Domain — abgeschlossen
 
-Eine kleine Ring-3-Probedomäne erhält ausschließlich ein statisches
-Capability-/Syscall-Profil. Der Supervisor muss Crash, Hang und ungültige
-Antwort erkennen, Ausgaben sperren, Endpoint und alte Generation widerrufen,
-den Prozess begrenzt neu erzeugen, per Selbsttest validieren und erst danach
-reintegrieren. Gast-Fault-Injection muss gleichzeitig zeigen, dass Scheduler,
-Zeitbasis und ein unabhängiger Prozess weiterlaufen. Dieses Paket ist das erste
-echte Failure-Domain-Gate; erst danach beginnt die Migration von Netzwerk,
-Storage oder komplexen Treibern.
+Die statisch profilierte Ring-3-Probe ist umgesetzt. Eine deterministische
+Testsequenz injiziert Crash, Heartbeat-Hang und ungültige Antwort. Der
+Supervisor führt jeweils `fence -> revoke/reap -> recreate -> self-test ->
+reintegrate` mit einer 2-s-Heartbeat- und 1-s-Recovery-Deadline sowie einem
+Budget von vier Restarts aus. Ein
+versionierter Health-Syscall 56 bindet Meldungen an PID und Generation; jeder
+Ersatzprozess muss einen neuen IPC-Endpoint nachweisen. QEMU bestätigt die
+geordnete Markerfolge und parallelen GTEST-Fortschritt mit LAPIC, PIT,
+IB700-Watchdog sowie 32/64/256/1024 MiB RAM. Das ist ein belastbarer
+Prozess-Failure-Domain-Nachweis, jedoch keine Unabhängigkeit von Kernel, CPU
+oder RAM. S0.3c migriert nun echte Dienste aus Ring 0.
 
 Das Restart-Gate akzeptiert keine vertrauensbasierte Fence-Bestätigung mehr:
 Jede Domäne muss einen Apply- und einen separaten Verify-Hook bereitstellen.
@@ -986,11 +989,9 @@ make test-fuzz
 
 ## 10. Unmittelbar nächster Schritt
 
-Phase 0, R1.1 bis R1.4 und der begrenzte Mechanismus von **S0.3a Bounded
-IPC/Capabilities v1** sind umgesetzt. Der nächste autonome Schritt ist
-**S0.3b Supervised Userspace Probe Domain**. Vor der Abnahme der Probedomäne
-sind die noch offenen Grenzen des IPC-Unterbaus in kleinen, getrennt testbaren
-Inkrementen zu schließen:
+Phase 0, R1.1 bis R1.4, **S0.3a Bounded IPC/Capabilities v1** und
+**S0.3b Supervised Userspace Probe Domain** sind umgesetzt und abgenommen.
+Die dafür geschlossenen IPC-/Isolationsinkremente sind:
 
 1. endliche Send-/Receive-Deadlines mit eindeutigem Timeoutstatus — umgesetzt,
 2. CRC- und `critical_object`-Schutz für Queue-, Endpoint- und
@@ -1007,13 +1008,15 @@ Inkrementen zu schließen:
    Prozess- und sonstigen Syscalls der Probedomäne — umgesetzt; Autorisierung
    erfolgt zentral vor Seiteneffekten, das Probeprofil ist default-deny.
 
-Danach wird eine kleine Ring-3-Domäne mit eigenem Adressraum und statischem
-Least-Privilege-Profil gestartet. Crash, Hang und ungültige Antwort müssen den
-begrenzten Ablauf `fence -> revoke -> reap -> recreate -> self-test ->
-reintegrate` auslösen. Alte Endpointgenerationen bleiben ungültig; nach
-erschöpftem Restartbudget folgt der definierte degradierte beziehungsweise
-sichere Zustand. Der QEMU-Gasttest muss während jeder Injektion Fortschritt von
-Scheduler, monotoner Zeit und einem unabhängigen Prozess nachweisen.
+6. überwachte Ring-3-Probe mit begrenztem Ablauf `fence -> revoke -> reap ->
+   recreate -> self-test -> reintegrate` — umgesetzt und in realem QEMU mit
+   unabhängiger Prozess-/Zeitfortschrittsmessung abgenommen.
+
+Der nächste Schritt ist **S0.3c Dienstmigration/Redundanz**: zuerst einen
+unkritischen echten Dienst hinter die bestehende Capability-/Supervisorgrenze
+verschieben, danach Netzwerk und Storage schrittweise aus Ring 0 lösen. Jede
+Migration benötigt Fault-Injection, Ressourcenbudgets und einen nachweisbaren
+degradierten Betrieb ohne Rückfall auf ambienten Kernelzugriff.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

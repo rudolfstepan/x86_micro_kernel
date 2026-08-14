@@ -64,6 +64,7 @@
 #define SYS_IPC_SEND_TIMEOUT 53
 #define SYS_IPC_RECEIVE_TIMEOUT 54
 #define SYS_IPC_DELEGATE 55
+#define SYS_REIST_REPORT 56
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

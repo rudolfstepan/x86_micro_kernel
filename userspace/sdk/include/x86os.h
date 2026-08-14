@@ -59,7 +59,8 @@ enum {
     X86OS_SYS_IPC_CLOSE = 52,
     X86OS_SYS_IPC_SEND_TIMEOUT = 53,
     X86OS_SYS_IPC_RECEIVE_TIMEOUT = 54,
-    X86OS_SYS_IPC_DELEGATE = 55
+    X86OS_SYS_IPC_DELEGATE = 55,
+    X86OS_SYS_REIST_REPORT = 56
 };
 
 enum {
@@ -114,6 +115,10 @@ typedef struct {
 #define X86OS_IPC_RIGHT_SEND 0x01U
 #define X86OS_IPC_RIGHT_RECEIVE 0x02U
 #define X86OS_IPC_RIGHT_CONTROL 0x04U
+
+#define X86OS_REIST_REPORT_SELF_TEST 1U
+#define X86OS_REIST_REPORT_PROGRESS 2U
+#define X86OS_REIST_REPORT_INVALID 3U
 
 typedef uint32_t x86os_ipc_handle_t;
 
@@ -207,6 +212,7 @@ int x86os_ipc_receive_timeout(x86os_ipc_handle_t handle,
 int x86os_ipc_close(x86os_ipc_handle_t handle);
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,
                        uint32_t rights);
+int x86os_reist_report(uint32_t report_type, uint32_t value);
 int x86os_display_info(x86os_display_info_t* info);
 int x86os_fill_rect(int32_t x, int32_t y, uint32_t width, uint32_t height,
                     uint32_t rgb);

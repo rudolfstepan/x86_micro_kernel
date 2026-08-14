@@ -8,6 +8,7 @@
 #include "kernel/proc/process.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
+#include "lib/libc/stdio.h"
 #endif
 
 typedef struct {
@@ -40,6 +41,20 @@ static uint64_t last_deadline_check_ms;
 static uint32_t next_poll_slot;
 
 #define SUPERVISOR_CHECK_INTERVAL_MS 10U
+
+#ifndef REIST_HOST_TEST
+typedef struct {
+    bool active;
+    bool fenced;
+    supervisor_handle_t handle;
+    int pid;
+    uint32_t process_generation;
+    uint32_t launch_count;
+    uint32_t endpoint_handle;
+} supervisor_probe_runtime_t;
+
+static supervisor_probe_runtime_t probe_runtime;
+#endif
 
 static uint32_t supervisor_lock(void) {
 #ifdef REIST_HOST_TEST
@@ -283,6 +298,21 @@ int supervisor_report_idle(supervisor_handle_t handle) {
     return result;
 }
 
+#ifndef REIST_HOST_TEST
+static int supervisor_force_isolate(supervisor_handle_t handle) {
+    uint32_t flags = supervisor_lock();
+    supervisor_state_t state;
+    if (resolve(handle, &state) != 0 || state.state == SUPERVISOR_SAFE_STATE) {
+        supervisor_unlock(flags);
+        return -1;
+    }
+    state.state = SUPERVISOR_ISOLATED;
+    int result = state_write(handle.slot, &state);
+    supervisor_unlock(flags);
+    return result;
+}
+#endif
+
 supervisor_event_t supervisor_poll(uint64_t now_ms) {
     uint32_t flags = supervisor_lock();
     supervisor_event_t none = {.type = SUPERVISOR_EVENT_NONE};
@@ -337,9 +367,123 @@ supervisor_event_t supervisor_poll(uint64_t now_ms) {
 }
 
 #ifndef REIST_HOST_TEST
+static bool probe_fence_apply(void *context) {
+    supervisor_probe_runtime_t *runtime = context;
+    if (runtime == NULL || !runtime->active) return false;
+    runtime->fenced = true;
+    if (runtime->launch_count == 1U) printf("REIST_PROBE CRASH_DETECTED\n");
+    else if (runtime->launch_count == 2U) printf("REIST_PROBE HANG_DETECTED\n");
+    else if (runtime->launch_count == 3U)
+        printf("REIST_PROBE INVALID_REPLY_DETECTED\n");
+    if (process_identity_alive(runtime->pid, runtime->process_generation)) {
+        (void)process_terminate(runtime->pid);
+    }
+    return true;
+}
+
+static bool probe_fence_verify(void *context) {
+    supervisor_probe_runtime_t *runtime = context;
+    return runtime != NULL && runtime->fenced &&
+        !process_identity_alive(runtime->pid, runtime->process_generation);
+}
+
+static bool probe_spawn_next(void) {
+    static const char *const modes[] = {"crash", "hang", "invalid", "healthy"};
+    uint32_t mode_index = probe_runtime.launch_count;
+    if (mode_index >= sizeof(modes) / sizeof(modes[0])) mode_index = 3U;
+    const char *arguments[] = {"REIST.PRG", modes[mode_index]};
+    int pid = supervisor_spawn_service("/REIST.PRG", 2, arguments,
+                                       PROCESS_DOMAIN_PROBE);
+    uint32_t generation = 0U;
+    if (pid <= 0 || process_get_identity(pid, &generation) != 0) return false;
+    probe_runtime.pid = pid;
+    probe_runtime.process_generation = generation;
+    ++probe_runtime.launch_count;
+    return true;
+}
+
+bool supervisor_start_probe(uint64_t now_ms) {
+    if (probe_runtime.active) return false;
+    probe_runtime = (supervisor_probe_runtime_t){0};
+    supervisor_config_t config = {
+        .heartbeat_timeout_ms = 2000U,
+        .recovery_timeout_ms = 1000U,
+        .restart_budget = 4U,
+    };
+    supervisor_fence_ops_t fence = {
+        .apply = probe_fence_apply,
+        .verify = probe_fence_verify,
+        .context = &probe_runtime,
+    };
+    if (supervisor_register("ring3-probe", &config, &fence, now_ms,
+                            &probe_runtime.handle) != 0) return false;
+    probe_runtime.active = true;
+    if (!probe_spawn_next()) {
+        probe_runtime.active = false;
+        return false;
+    }
+    return true;
+}
+
+int supervisor_probe_report(int pid, uint32_t generation,
+                            uint32_t report_type, uint32_t value,
+                            uint64_t now_ms) {
+    if (!probe_runtime.active || pid != probe_runtime.pid ||
+        generation != probe_runtime.process_generation ||
+        !process_identity_alive(pid, generation)) return -1;
+    if (report_type == REIST_REPORT_SELF_TEST) {
+        if (value == 0U ||
+            (probe_runtime.endpoint_handle != 0U &&
+             value == probe_runtime.endpoint_handle)) {
+            (void)supervisor_force_isolate(probe_runtime.handle);
+            return -1;
+        }
+        probe_runtime.endpoint_handle = value;
+        return supervisor_report_self_test(probe_runtime.handle, true, now_ms);
+    }
+    if (report_type == REIST_REPORT_PROGRESS) {
+        int result = supervisor_report_progress(probe_runtime.handle,
+                                                value, now_ms);
+        if (result == 0 && probe_runtime.fenced) {
+            probe_runtime.fenced = false;
+            if (probe_runtime.launch_count == 2U)
+                printf("\nREIST_PROBE CRASH_DETECTED\n"
+                       "REIST_PROBE CRASH_RECOVERED\n");
+            else if (probe_runtime.launch_count == 3U)
+                printf("\nREIST_PROBE HANG_DETECTED\n"
+                       "REIST_PROBE HANG_RECOVERED\n");
+            else if (probe_runtime.launch_count >= 4U) {
+                printf("\nREIST_PROBE INVALID_REPLY_DETECTED\n"
+                       "REIST_PROBE INVALID_RECOVERED\n");
+                printf("REIST_PROBE REINTEGRATED\n");
+            }
+        }
+        return result;
+    }
+    if (report_type == REIST_REPORT_INVALID) {
+        (void)supervisor_force_isolate(probe_runtime.handle);
+        return -1;
+    }
+    return -1;
+}
+
 static void supervisor_worker(void) {
     for (;;) {
+        if (probe_runtime.active && !probe_runtime.fenced &&
+            !process_identity_alive(probe_runtime.pid,
+                                    probe_runtime.process_generation)) {
+            (void)supervisor_force_isolate(probe_runtime.handle);
+        }
         supervisor_event_t result = supervisor_service_one(pit_monotonic_ms());
+        if (probe_runtime.active &&
+            result.type == SUPERVISOR_EVENT_RESTART_REQUIRED &&
+            result.handle.slot == probe_runtime.handle.slot &&
+            result.handle.generation == probe_runtime.handle.generation) {
+            probe_runtime.handle = result.handle;
+            if (!probe_spawn_next()) {
+                (void)supervisor_force_isolate(probe_runtime.handle);
+            }
+        }
         if (result.type == SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) {
             /* Until per-hazard external interlocks are registered, the
              * conservative system response revokes every known output. */
@@ -377,6 +521,18 @@ int supervisor_spawn_service(const char *path, int argc,
     (void)argc;
     (void)argv;
     (void)domain_kind;
+    return -1;
+}
+
+bool supervisor_start_probe(uint64_t now_ms) {
+    (void)now_ms;
+    return false;
+}
+
+int supervisor_probe_report(int pid, uint32_t generation,
+                            uint32_t report_type, uint32_t value,
+                            uint64_t now_ms) {
+    (void)pid; (void)generation; (void)report_type; (void)value; (void)now_ms;
     return -1;
 }
 #endif
@@ -460,11 +616,13 @@ int supervisor_report_self_test(supervisor_handle_t handle, bool passed,
                                 uint64_t now_ms) {
     uint32_t flags = supervisor_lock();
     supervisor_state_t state;
-    if (resolve(handle, &state) != 0 || state.state != SUPERVISOR_RECOVERING) {
+    if (resolve(handle, &state) != 0 ||
+        (state.state != SUPERVISOR_RECOVERING &&
+         state.state != SUPERVISOR_STARTING)) {
         supervisor_unlock(flags);
         return -1;
     }
-    state.state = passed ? SUPERVISOR_STARTING : SUPERVISOR_SAFE_STATE;
+    state.state = passed ? SUPERVISOR_STARTING : SUPERVISOR_ISOLATED;
     state.progress_marker = 0;
     state.deadline_ms = deadline_after(now_ms, state.recovery_timeout_ms);
     int result = state_write(handle.slot, &state);

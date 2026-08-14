@@ -9,6 +9,9 @@
 #define SUPERVISOR_STATE_VERSION 1U
 #define SUPERVISOR_FENCE_OPS_VERSION 1U
 #define SUPERVISOR_DESCRIPTOR_VERSION 1U
+#define REIST_REPORT_SELF_TEST 1U
+#define REIST_REPORT_PROGRESS 2U
+#define REIST_REPORT_INVALID 3U
 
 typedef enum {
     SUPERVISOR_STARTING = 1,
@@ -57,6 +60,10 @@ typedef struct {
 void supervisor_init(void);
 void supervisor_clock_tick(uint64_t now_ms);
 bool supervisor_start_worker(void);
+bool supervisor_start_probe(uint64_t now_ms);
+int supervisor_probe_report(int pid, uint32_t generation,
+                            uint32_t report_type, uint32_t value,
+                            uint64_t now_ms);
 int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind);
 int supervisor_register(const char *name, const supervisor_config_t *config,

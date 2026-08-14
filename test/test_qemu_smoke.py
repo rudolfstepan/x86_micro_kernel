@@ -7,6 +7,7 @@ control, marker parsing and build/CI wiring without booting a virtual machine.
 from __future__ import annotations
 
 import os
+import importlib.util
 import re
 import subprocess
 import sys
@@ -18,9 +19,36 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "scripts" / "run_qemu_smoke.py"
+RUNNER_SPEC = importlib.util.spec_from_file_location("run_qemu_smoke", RUNNER)
+RUNNER_MODULE = importlib.util.module_from_spec(RUNNER_SPEC)
+assert RUNNER_SPEC.loader is not None
+RUNNER_SPEC.loader.exec_module(RUNNER_MODULE)
 
 
 class QemuGuestSmokeRunnerTests(unittest.TestCase):
+    def test_reist_probe_markers_are_required_in_order(self) -> None:
+        transcript = "\n".join((
+            "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,
+            "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_reist_probe=True))
+        missing = transcript.replace("REIST_PROBE HANG_RECOVERED\n", "")
+        self.assertIn("missing REIST probe", RUNNER_MODULE.validate(
+            missing, expect_reist_probe=True))
+        reversed_markers = transcript.replace(
+            "REIST_PROBE CRASH_DETECTED\nREIST_PROBE CRASH_RECOVERED",
+            "REIST_PROBE CRASH_RECOVERED\nREIST_PROBE CRASH_DETECTED",
+        )
+        self.assertIn("out of order", RUNNER_MODULE.validate(
+            reversed_markers, expect_reist_probe=True))
+
+    def test_reist_probe_completion_precedes_guest_command(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        completion = source.index("REIST_PROBE_MARKERS[-1]")
+        command = source.index('for character in "GTEST\\n"')
+        self.assertLess(completion, command)
+
     def setUp(self) -> None:
         self.assertTrue(
             RUNNER.is_file(),

@@ -96,8 +96,9 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
 
     static const uint8_t probe_syscalls[] = {
         SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS, SYS_MONOTONIC_MS,
-        SYS_MEMORY_STATS, SYS_IPC_SEND, SYS_IPC_RECEIVE, SYS_IPC_CLOSE,
-        SYS_IPC_SEND_TIMEOUT, SYS_IPC_RECEIVE_TIMEOUT
+        SYS_MEMORY_STATS, SYS_IPC_CREATE, SYS_IPC_SEND, SYS_IPC_RECEIVE,
+        SYS_IPC_CLOSE,
+        SYS_IPC_SEND_TIMEOUT, SYS_IPC_RECEIVE_TIMEOUT, SYS_REIST_REPORT
     };
     for (size_t index = 0;
          index < sizeof(probe_syscalls) / sizeof(probe_syscalls[0]); ++index) {
@@ -1008,4 +1009,33 @@ int process_terminate_authorized(Process *requester, int pid) {
     int result = authorized ? process_terminate(pid) : -1;
     scheduler_preempt_enable();
     return result;
+}
+
+int process_get_identity(int pid, uint32_t *generation_out) {
+    if (pid <= 0 || generation_out == NULL) return -1;
+    uint32_t flags = irq_save();
+    for (int index = 0; index < MAX_PROGRAMS; ++index) {
+        if (process_list[index].is_running && process_list[index].pid == pid) {
+            *generation_out = process_list[index].generation;
+            irq_restore(flags);
+            return 0;
+        }
+    }
+    irq_restore(flags);
+    return -1;
+}
+
+bool process_identity_alive(int pid, uint32_t generation) {
+    if (pid <= 0 || generation == 0U) return false;
+    uint32_t flags = irq_save();
+    bool alive = false;
+    for (int index = 0; index < MAX_PROGRAMS; ++index) {
+        if (process_list[index].is_running && process_list[index].pid == pid &&
+            process_list[index].generation == generation) {
+            alive = true;
+            break;
+        }
+    }
+    irq_restore(flags);
+    return alive;
 }

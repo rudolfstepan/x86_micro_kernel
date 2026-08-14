@@ -27,15 +27,18 @@ Arbeitsdokumente.
 
 ## Aktueller REIST-Ausbaustand
 
-S0.3b-1 bis S0.3b-5 sind umgesetzt und durch Host-, Referenzbuild- und
+S0.3b-1 bis S0.3b-6 sind umgesetzt und durch Host-, VMware-Referenzbuild- und
 QEMU-Gasttests abgenommen. Normale Prozesse können die reservierte
 Restartkapazität nicht verbrauchen; ausschließlich der explizite
 Supervisor-Spawn darf sie verwenden. Prozesse besitzen versionierte
-Syscallprofile; die künftige Probedomäne ist default-deny und erhält nur einen
-begrenzten Lifecycle-/IPC-Satz. Kill ist generation-sicher auf eigene Kinder
-begrenzt. Als nächstes folgt der echte überwachte Ring-3-Probeprozess mit
-Restart, Selbsttest und Reintegrationsnachweis. Eine vollständig neu startbare
-Userspace-Domäne ist daher noch nicht behauptet.
+Syscallprofile; die Ring-3-Probedomäne ist default-deny und erhält nur einen
+begrenzten Lifecycle-/IPC-Satz. Der Supervisor erkennt Crash, Hang und
+ungültige Antworten, sperrt die Probe, widerruft ihre generationsgebundenen
+Ressourcen und reintegriert erst nach Selbsttest und neuem Endpoint. Die reale
+QEMU-Matrix belegt dies bei LAPIC, PIT, Watchdog sowie 32–1024 MiB RAM parallel
+zu einem unabhängigen Gasttest. Als nächstes folgt S0.3c: echte Dienste aus
+dem modularen Monolithen herauslösen; die Probe allein ist noch keine
+unabhängige Kernel-Fehlerdomäne.
 
 Der zuletzt ausgeführte vollständige Windows-Build bootete in VMware bis zum
 Prompt `C:\>`, mountete `hdd0` als `/`, initialisierte E1000 und erhielt per

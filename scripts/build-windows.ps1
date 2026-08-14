@@ -176,6 +176,7 @@ try {
         --data-file "FAULTPF.PRG=$(Join-Path $UserProgramDir 'FAULTPF.PRG')" `
         --data-file "FAULTSTK.PRG=$(Join-Path $UserProgramDir 'FAULTSTK.PRG')" `
         --data-file "GTEST.PRG=$(Join-Path $UserProgramDir 'GTEST.PRG')" `
+        --data-file "REIST.PRG=$(Join-Path $UserProgramDir 'REIST.PRG')" `
         --data-file "SLEEPER.PRG=$(Join-Path $UserProgramDir 'SLEEPER.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Floppy image creation failed with exit code $LASTEXITCODE."
@@ -221,6 +222,7 @@ try {
         --data-file "FAULTPF.PRG=$(Join-Path $UserProgramDir 'FAULTPF.PRG')" `
         --data-file "FAULTSTK.PRG=$(Join-Path $UserProgramDir 'FAULTSTK.PRG')" `
         --data-file "GTEST.PRG=$(Join-Path $UserProgramDir 'GTEST.PRG')" `
+        --data-file "REIST.PRG=$(Join-Path $UserProgramDir 'REIST.PRG')" `
         --data-file "SLEEPER.PRG=$(Join-Path $UserProgramDir 'SLEEPER.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Native image creation failed with exit code $LASTEXITCODE."

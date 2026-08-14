@@ -18,6 +18,9 @@
 #include "kernel/sched/scheduler.h"
 #include "kernel/proc/process.h"
 #include "include/kernel/ipc.h"
+#include "include/kernel/supervisor.h"
+#include "include/kernel/supervisor.h"
+#include "include/kernel/supervisor.h"
 #include "arch/x86/mm/paging.h"
 #include "fs/vfs/vfs.h"
 #include "mm/kmalloc.h"
@@ -180,6 +183,13 @@ static int syscall_ipc_delegate(ipc_handle_t handle, int target_pid,
     Process *process = scheduler_current_process();
     return process != NULL
         ? process_ipc_delegate(process, handle, target_pid, rights) : -1;
+}
+
+static int syscall_reist_report(uint32_t report_type, uint32_t value) {
+    Process *process = scheduler_current_process();
+    if (process == NULL) return -13;
+    return supervisor_probe_report(process->pid, process->generation,
+                                   report_type, value, pit_monotonic_ms());
 }
 
 typedef struct {
@@ -695,6 +705,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_ipc_send_timeout,   // Syscall 53: Timed IPC send
     (void*)&syscall_ipc_receive_timeout,// Syscall 54: Timed IPC receive
     (void*)&syscall_ipc_delegate,       // Syscall 55: Attenuated delegation
+    (void*)&syscall_reist_report,       // Syscall 56: Probe health report
     // Add more syscalls here as needed
 };
 
@@ -981,6 +992,9 @@ void syscall_handler(Registers* regs) {
         case SYS_IPC_DELEGATE:
             result = (uint32_t)syscall_ipc_delegate(
                 (ipc_handle_t)arg1, (int)arg2, arg3);
+            break;
+        case SYS_REIST_REPORT:
+            result = (uint32_t)syscall_reist_report(arg1, arg2);
             break;
         default:
             result = (uint32_t)-1;

@@ -19,6 +19,15 @@ FATAL_ARMED_MARKER = "REIST_TEST DOUBLE_FAULT_ARMED"
 FATAL_MARKER = "REIST_FATAL DOUBLE_FAULT RESET"
 RECOVERY_MARKER = "REIST_RECOVERY PREVIOUS_FATAL"
 RECOVERY_OK_MARKER = "REIST_TEST FATAL_RECOVERY_OK"
+REIST_PROBE_MARKERS = (
+    "REIST_PROBE CRASH_DETECTED",
+    "REIST_PROBE CRASH_RECOVERED",
+    "REIST_PROBE HANG_DETECTED",
+    "REIST_PROBE HANG_RECOVERED",
+    "REIST_PROBE INVALID_REPLY_DETECTED",
+    "REIST_PROBE INVALID_RECOVERED",
+    "REIST_PROBE REINTEGRATED",
+)
 SHELL_PROMPT = "C:\\>"
 FAIL_MARKERS = (
     "TEST_FAIL",
@@ -172,6 +181,7 @@ def run(
     allow_reboot: bool = False,
     nic: str = "none",
     persistent: bool = False,
+    expect_reist_probe: bool = False,
 ) -> tuple[int, str, str | None]:
     process = subprocess.Popen(
         qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot, nic,
@@ -200,6 +210,11 @@ def run(
         error, _ = wait_for_line(
             process, chunks, transcript, finished, SHELL_PROMPT, deadline
         )
+        if error is None and expect_reist_probe:
+            error, _ = wait_for_line(
+                process, chunks, transcript, finished,
+                REIST_PROBE_MARKERS[-1], deadline,
+            )
         if error is None:
             # The UART RX path currently drops command bursts.  Pace every
             # byte so the same runner works on Windows and POSIX hosts.
@@ -229,7 +244,11 @@ def run(
     return (0 if error is None else 1), text, error
 
 
-def validate(transcript: str, expect_fatal_recovery: bool = False) -> str | None:
+def validate(
+    transcript: str,
+    expect_fatal_recovery: bool = False,
+    expect_reist_probe: bool = False,
+) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
         return f"guest emitted failure marker {failed!r}"
@@ -252,6 +271,13 @@ def validate(transcript: str, expect_fatal_recovery: bool = False) -> str | None
             return "missing fatal-injection/recovery marker"
         if positions != sorted(positions):
             return "fatal-injection/recovery markers are out of order"
+    if expect_reist_probe:
+        positions = [exact_line_position(transcript, marker)
+                     for marker in REIST_PROBE_MARKERS]
+        if any(position < 0 for position in positions):
+            return "missing REIST probe recovery marker"
+        if positions != sorted(positions) or positions[-1] > test:
+            return "REIST probe recovery markers are out of order"
     return None
 
 
@@ -286,6 +312,11 @@ def main() -> int:
         help="require ordered Double-Fault, reset and recovered-record markers",
     )
     parser.add_argument(
+        "--expect-reist-probe",
+        action="store_true",
+        help="require ordered crash, hang and invalid-reply recovery markers",
+    )
+    parser.add_argument(
         "--persistent", action="store_true",
         help="allow guest writes to the image (use only with a disposable copy)",
     )
@@ -306,7 +337,7 @@ def main() -> int:
         status, transcript, process_error = run(
             args.qemu, args.image.resolve(), args.timeout, args.no_apic,
             args.memory, args.watchdog, args.expect_fatal_recovery, args.nic,
-            args.persistent,
+            args.persistent, args.expect_reist_probe,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)
@@ -316,7 +347,8 @@ def main() -> int:
         args.log.parent.mkdir(parents=True, exist_ok=True)
         args.log.write_text(transcript, encoding="utf-8")
 
-    marker_error = validate(transcript, args.expect_fatal_recovery)
+    marker_error = validate(transcript, args.expect_fatal_recovery,
+                            args.expect_reist_probe)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")
