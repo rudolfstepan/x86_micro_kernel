@@ -37,6 +37,20 @@ static int message_is(const x86os_ipc_message_t *message, const char *text) {
     return 1;
 }
 
+static const char *network_classification(
+        const x86os_ipc_message_t *message) {
+    /* NET1 followed by one complete Ethernet header.  This deliberately
+     * bounded v1 parser performs no allocation and publishes no output. */
+    if (message->length < 18U || message->payload[0] != 'N' ||
+        message->payload[1] != 'E' || message->payload[2] != 'T' ||
+        message->payload[3] != '1') return NULL;
+    uint16_t ethertype = ((uint16_t)message->payload[16] << 8) |
+                         message->payload[17];
+    if (ethertype == 0x0806U) return "REIST_NET_ARP";
+    if (ethertype == 0x0800U) return "REIST_NET_IPV4";
+    return "REIST_NET_OTHER";
+}
+
 int main(int argc, char **argv) {
     if (argc != 2) return 2;
     x86os_ipc_handle_t endpoint = 0U;
@@ -64,8 +78,11 @@ int main(int argc, char **argv) {
         int receive = x86os_ipc_receive_timeout(endpoint, &request, 40U);
         if (receive == 0) {
             x86os_ipc_message_t response;
+            const char *network = network_classification(&request);
             message_init(&response, message_is(&request, "DIAG")
-                         ? "REIST_DIAG_OK" : "REIST_DIAG_INVALID");
+                         ? "REIST_DIAG_OK"
+                         : (network != NULL ? network
+                                            : "REIST_DIAG_INVALID"));
             if (x86os_ipc_send_timeout(endpoint, &response, 100U) != 0)
                 return 7;
         } else if (receive == -32) {

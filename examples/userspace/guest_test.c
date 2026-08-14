@@ -67,6 +67,19 @@ static int ipc_message_is(const x86os_ipc_message_t *message,
     return 1;
 }
 
+static void ipc_message_set_test_arp_frame(x86os_ipc_message_t *message) {
+    ipc_message_prepare(message);
+    message->payload[0] = 'N';
+    message->payload[1] = 'E';
+    message->payload[2] = 'T';
+    message->payload[3] = '1';
+    for (size_t index = 4U; index < 16U; ++index)
+        message->payload[index] = (uint8_t)index;
+    message->payload[16] = 0x08U;
+    message->payload[17] = 0x06U;
+    message->length = 18U;
+}
+
 static int ipc_child_main(const char *mode, const char *handle_text) {
     x86os_ipc_handle_t handle;
     if (parse_ipc_handle(handle_text, &handle) != 0) return 70;
@@ -394,11 +407,11 @@ static int test_diagnostic_service(void) {
     handle = X86OS_IPC_INVALID_HANDLE;
     if (x86os_service_connect(X86OS_SERVICE_DIAGNOSTIC, &handle) != 0)
         return -1;
-    ipc_message_set(&message, "DIAG");
+    ipc_message_set_test_arp_frame(&message);
     if (x86os_ipc_send_timeout(handle, &message, 250U) != 0) return -1;
     ipc_message_prepare(&message);
     if (x86os_ipc_receive_timeout(handle, &message, 500U) != 0 ||
-        !ipc_message_is(&message, "REIST_DIAG_OK") ||
+        !ipc_message_is(&message, "REIST_NET_ARP") ||
         x86os_ipc_release(handle) != 0) return -1;
     return 0;
 }
@@ -587,6 +600,7 @@ int main(int argc, char **argv) {
         return 6;
     }
     x86os_puts("TEST_STAGE DIAGNOSTIC_SERVICE_OK\n");
+    x86os_puts("TEST_STAGE NETWORK_PARSER_OK\n");
 
     if (test_task_capacity_and_parenting() != 0) {
         x86os_puts("TEST_FAIL TASK_CAPACITY\n");

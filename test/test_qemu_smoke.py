@@ -30,6 +30,7 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         transcript = "\n".join((
             "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,
             RUNNER_MODULE.REIST_SERVICE_MARKER,
+            RUNNER_MODULE.REIST_NETWORK_MARKER,
             "TEST_OK", "C:\\>", "",
         ))
         self.assertIsNone(RUNNER_MODULE.validate(
@@ -47,6 +48,10 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
             RUNNER_MODULE.REIST_SERVICE_MARKER + "\n", "")
         self.assertIn("diagnostic-service", RUNNER_MODULE.validate(
             no_service, expect_reist_probe=True))
+        no_network = transcript.replace(
+            RUNNER_MODULE.REIST_NETWORK_MARKER + "\n", "")
+        self.assertIn("network-parser", RUNNER_MODULE.validate(
+            no_network, expect_reist_probe=True))
 
     def test_reist_probe_completion_precedes_guest_command(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")

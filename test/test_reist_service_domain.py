@@ -67,6 +67,19 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertGreaterEqual(guest.count("x86os_service_connect("), 4)
         self.assertGreaterEqual(guest.count("x86os_ipc_release(handle)"), 2)
 
+    def test_bounded_network_parser_runs_in_ring3(self):
+        service = read("examples/userspace/reist_probe.c")
+        guest = read("examples/userspace/guest_test.c")
+        runner = read("scripts/run_qemu_smoke.py")
+        self.assertIn("static const char *network_classification(", service)
+        self.assertIn("message->length < 18U", service)
+        self.assertIn('return "REIST_NET_ARP";', service)
+        self.assertIn('return "REIST_NET_IPV4";', service)
+        self.assertNotIn("k_malloc", service)
+        self.assertIn("ipc_message_set_test_arp_frame", guest)
+        self.assertIn("TEST_STAGE NETWORK_PARSER_OK", guest)
+        self.assertIn("REIST_NETWORK_MARKER", runner)
+
 
 if __name__ == "__main__":
     unittest.main()

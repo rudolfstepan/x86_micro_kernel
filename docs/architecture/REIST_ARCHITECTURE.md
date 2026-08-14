@@ -258,6 +258,15 @@ entfernt den generation-gebundenen Clientdatensatz atomar und weckt begrenzt
 wartende Peers. Ein Client kann dadurch verbinden, arbeiten, freigeben und
 erneut verbinden, ohne Capability-Slots dauerhaft zu verbrauchen.
 
+S0.3c-3a verlagert als erstes Netzwerkinkrement die begrenzte Klassifikation
+eines Ethernet-Headers in den Ring-3-Dienst. Das `NET1`-Protokoll akzeptiert
+höchstens eine IPC-Nachricht, prüft vor jedem Zugriff die Mindestlänge und
+klassifiziert ARP, IPv4 oder andere EtherTypes ohne Heap und ohne Ausgabe.
+Ein synthetischer ARP-Frame und der Marker `NETWORK_PARSER_OK` liefern einen
+deterministischen Gastnachweis. Der reale NIC-RX-/TX-Pfad bleibt vorerst im
+Kernel; dieses Inkrement ist daher bewusst noch keine vollständige
+Netzwerkdienstmigration.
+
 ## Betriebsstufen
 
 ```text

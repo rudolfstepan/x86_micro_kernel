@@ -43,7 +43,10 @@ Request/Reply `DIAG -> REIST_DIAG_OK` nach vollständiger Recovery. S0.3c-2
 ergänzt die separate Freigabe delegierter Client-Capabilities: GTEST prüft
 Freigabe, stale Handle, erneute Verbindung und einen zweiten Request/Reply ohne
 Quota-Leck. Als nächstes folgt die erste funktionale Migration ohne parallelen
-Ring-0-Datenpfad, beginnend mit einem unkritischen Netzwerkbaustein. Die bisherige
+Ring-0-Datenpfad. S0.3c-3a hat dafür bereits einen festen, heapfreien
+Ethernet-Header-Parser in den Ring-3-Dienst verschoben und weist ARP-
+Klassifikation im Gast nach. Als nächstes wird dieser Parser über einen
+begrenzten Frame-Handoff an den echten RX-Pfad angebunden. Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 
 Der zuletzt ausgeführte vollständige Windows-Build bootete in VMware bis zum

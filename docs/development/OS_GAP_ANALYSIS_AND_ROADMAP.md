@@ -1032,8 +1032,17 @@ und wecken blockierte Peers. Der reale Gast prüft Freigabe, Ablehnung des stale
 Handles, erneute Verbindung und einen zweiten Diagnose-Request/Reply ohne
 Verbrauch zusätzlicher Capability-Slots.
 
-S0.3c-3 migriert einen unkritischen Netzwerkbaustein vollständig aus Ring 0;
-ein bloßer Proxy bei weiterhin autoritativem Kernelpfad zählt nicht.
+**S0.3c-3a ist umgesetzt:** Der Ring-3-Dienst klassifiziert einen begrenzten
+Ethernet-v1-Header als ARP, IPv4 oder sonstigen EtherType. Mindestlänge,
+Nachrichtengröße und Antwort sind fest begrenzt; der Pfad allokiert nicht und
+besitzt keine Hardware- oder Ausgabeautorität. GTEST überträgt einen
+synthetischen ARP-Frame und der QEMU-Runner verlangt `NETWORK_PARSER_OK`.
+
+S0.3c-3b bindet diesen Parser über einen begrenzten Frame-Handoff an den echten
+RX-Pfad an. Erst wenn die ausgewählte Klassifikationsfunktion im Kernel
+entfernt ist und Fault-Injection den übrigen Netzwerkbetrieb nicht beeinflusst,
+gilt dieser Netzwerkbaustein als migriert; ein paralleler autoritativer
+Kernelpfad zählt nicht.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions
