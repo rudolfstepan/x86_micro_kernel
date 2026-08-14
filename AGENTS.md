@@ -42,10 +42,10 @@ package in the same run.
    to `active`, and update `active_id`. When no queued package remains, set
    `active_id` to the empty string. Leave gate evidence bookkeeping to the
    deterministic outer runner.
-8. Commit the candidate with the exact `commit_message` and require a clean
-   worktree. Return an empty `passed` list; the outer runner writes the frozen
-   gate list, executes it, and accepts it as evidence only after success. Never
-   push.
+8. Do not stage or commit. Return `candidate` with an empty `commit`, `passed`
+   and `blocker`. The outer runner validates and commits the scoped changes,
+   writes the frozen gate list, executes it, and accepts it as evidence only
+   after success. Never push.
 9. On ambiguity, missing required inputs or a pre-existing source failure: do
    not commit and return `blocked` with one concrete cause.
 

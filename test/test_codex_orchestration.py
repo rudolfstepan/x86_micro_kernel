@@ -169,7 +169,7 @@ class CodexOrchestrationTests(unittest.TestCase):
         self.assertFalse(schema["additionalProperties"])
         self.assertEqual(
             schema["properties"]["status"]["enum"],
-            ["committed", "blocked", "no_work"],
+            ["candidate", "blocked", "no_work"],
         )
         self.assertEqual(schema["properties"]["commit"]["maxLength"], 40)
 
@@ -461,6 +461,30 @@ evidence = []
                 repo, head, task, result, repo / self.TASK_RELATIVE
             )
             self.assertEqual(verified, result["commit"])
+
+    def test_runner_materializes_scoped_candidate_commit(self):
+        temporary, repo, head, task = self.make_repo()
+        with temporary:
+            (repo / "allowed.txt").write_text("changed\n", "utf-8")
+            self.write_task(repo, completed=True)
+            result = {
+                "status": "candidate",
+                "package_id": "P1",
+                "summary": "candidate",
+                "commit": "",
+                "passed": [],
+                "blocker": "",
+            }
+            commit = RUNNER.materialize_candidate(
+                repo, head, task, RUNNER.active_package(task),
+                repo / self.TASK_RELATIVE, result
+            )
+            self.assertEqual(result["status"], "committed")
+            self.assertEqual(result["commit"], commit)
+            self.assertEqual(result["passed"], self.GATES)
+            self.assertEqual(self.git(repo, "show", "-s", "--format=%s"),
+                             "feat: exact subject")
+            self.assertEqual(self.git(repo, "status", "--porcelain"), "")
 
     def test_rejects_wrong_subject_scope_and_task_transition(self):
         cases = [

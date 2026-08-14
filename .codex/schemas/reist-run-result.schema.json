@@ -13,7 +13,7 @@
   "properties": {
     "status": {
       "type": "string",
-      "enum": ["committed", "blocked", "no_work"]
+      "enum": ["candidate", "blocked", "no_work"]
     },
     "package_id": { "type": "string" },
     "summary": { "type": "string", "maxLength": 400 },

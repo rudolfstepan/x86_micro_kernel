@@ -304,6 +304,47 @@ def canonicalize_task_evidence(
     )
 
 
+def materialize_candidate(
+    worktree: pathlib.Path,
+    before_head: str,
+    before_task: dict[str, Any],
+    package: dict[str, Any],
+    task_path: pathlib.Path,
+    result: dict[str, Any],
+) -> str:
+    if result.get("status") != "candidate":
+        raise VerificationError("agent success must be returned as candidate")
+    if result.get("package_id") != package["id"]:
+        raise VerificationError("candidate names the wrong package")
+    if result.get("commit") or result.get("passed") or result.get("blocker"):
+        raise VerificationError("candidate must not claim commit, gates or blocker")
+    if git(worktree, "rev-parse", "HEAD") != before_head:
+        raise VerificationError("agent changed HEAD before candidate verification")
+
+    gates = required_gates(package)
+    canonicalize_task_evidence(task_path, package["id"], gates)
+    git(worktree, "add", "-A")
+    changed = set(
+        filter(None, git(worktree, "diff", "--cached", "--name-only").splitlines())
+    )
+    if not changed:
+        raise VerificationError("candidate contains no changes")
+    allowed = {path.replace("\\", "/") for path in package["allowed_files"]}
+    outside = sorted(changed - allowed)
+    if outside:
+        raise VerificationError(f"candidate changed files outside package scope: {outside}")
+    after_task = read_task(task_path)
+    if after_task != expected_task_after_success(before_task, after_task):
+        raise VerificationError("candidate task transition changed more than status/evidence")
+
+    git(worktree, "commit", "-m", package["commit_message"])
+    result["status"] = "committed"
+    result["commit"] = git(worktree, "rev-parse", "HEAD")
+    result["passed"] = gates
+    assert_clean(worktree)
+    return result["commit"]
+
+
 def scoped_regular_file(repo: pathlib.Path, relative: str) -> pathlib.Path:
     root = repo.resolve()
     path = (root / relative).resolve()
@@ -700,10 +741,10 @@ package. Use no subagents or reviewers.
 Do not run the listed acceptance gates inside this nested agent sandbox; the
 outer verifier runs every gate exactly once after validating your candidate
 commit. You may run bounded lightweight inspections that do not duplicate a
-listed gate. On success leave passed/evidence empty; the outer runner owns gate
-bookkeeping. Update only this package's status and the next active queue entry
-in automation/reist-s03b.toml, commit once with the exact commit_message, and
-leave a clean worktree. On a blocker, do not restore files: return blocked
+listed gate. On success leave commit/passed/evidence/blocker empty; the outer
+runner owns commit and gate bookkeeping. Update only this package's status and
+the next active queue entry in automation/reist-s03b.toml, then return candidate
+without staging or committing. On a blocker, do not restore files: return blocked
 immediately without committing; this isolated checkout is discarded by the
 runner. Return only the required result object with the full 40-character
 commit SHA.
@@ -756,15 +797,11 @@ commit SHA.
                         f"{tail(event_log)}"
                     )
                 result = json.loads(isolated_result_file.read_text("utf-8"))
-                if result.get("status") == "committed":
-                    gates = required_gates(package)
-                    canonicalize_task_evidence(
-                        isolated_task_path, package["id"], gates
+                if result.get("status") == "candidate":
+                    materialize_candidate(
+                        worktree, before_head, before_task, package,
+                        isolated_task_path, result
                     )
-                    git(worktree, "add", "automation/reist-s03b.toml")
-                    git(worktree, "commit", "--amend", "--no-edit")
-                    result["commit"] = git(worktree, "rev-parse", "HEAD")
-                    result["passed"] = gates
                     isolated_result_file.write_text(
                         json.dumps(result, ensure_ascii=False) + "\n", "utf-8"
                     )
