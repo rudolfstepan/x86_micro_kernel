@@ -35,6 +35,7 @@ REIST_NETWORK_MARKER = "TEST_STAGE NETWORK_PARSER_OK"
 REIST_ARP_VALIDATION_MARKER = "TEST_STAGE ARP_VALIDATION_OK"
 REIST_ARP_IDENTITY_MARKER = "TEST_STAGE ARP_IDENTITY_OK"
 REIST_NETWORK_HANDOFF_MARKER = "TEST_STAGE NETWORK_HANDOFF_OK"
+REIST_NETWORK_PROBE_ID_MARKER = "REIST_NETWORK PROBE_ID_OK"
 REIST_NETWORK_CRASH_MARKER = "REIST_NETWORK SERVICE_CRASH_RECOVERED"
 REIST_NETWORK_RECOVERY_MARKER = "TEST_STAGE NETWORK_RECOVERY_OK"
 REIST_NETWORK_PRESSURE_FALLBACK_MARKER = "REIST_NETWORK QUEUE_PRESSURE_FALLBACK"
@@ -304,7 +305,9 @@ def validate(
     if expect_network_handoff:
         handoff = exact_line_position(transcript,
                                       REIST_NETWORK_HANDOFF_MARKER)
-        if handoff < 0 or handoff > test:
+        probe_id = exact_line_position(transcript,
+                                       REIST_NETWORK_PROBE_ID_MARKER)
+        if probe_id < 0 or handoff < probe_id or handoff > test:
             return "missing ordered real NIC network-handoff marker"
         crash = exact_line_position(transcript, REIST_NETWORK_CRASH_MARKER)
         pressure_fallback = exact_line_position(

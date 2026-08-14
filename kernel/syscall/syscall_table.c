@@ -199,6 +199,21 @@ static int syscall_network_probe(void) {
                                             pit_monotonic_ms());
 }
 
+static int syscall_network_probe_id(uint32_t *user_probe_id) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_probe_id;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(*user_probe_id), true))
+        return -14;
+    uint32_t probe_id = 0U;
+    int result = supervisor_network_probe_request_id(
+        process->pid, process->generation, pit_monotonic_ms(), &probe_id);
+    if (result != 0) return result;
+    return copy_to_user_space(directory, address, &probe_id,
+                              sizeof(probe_id)) == 0 ? 0 : -14;
+}
+
 static int syscall_service_connect(uint32_t service_id,
                                    ipc_handle_t *user_handle) {
     Process *process = scheduler_current_process();
@@ -731,6 +746,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_service_connect,    // Syscall 57: Connect named service
     (void*)&ipc_release,                // Syscall 58: Release delegated cap
     (void*)&syscall_network_probe,      // Syscall 59: Fixed supervised probe
+    (void*)&syscall_network_probe_id,   // Syscall 60: Probe with monotone ID
     // Add more syscalls here as needed
 };
 
@@ -1031,6 +1047,10 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_NETWORK_PROBE:
             result = (uint32_t)syscall_network_probe();
+            break;
+        case SYS_NETWORK_PROBE_ID:
+            result = (uint32_t)syscall_network_probe_id(
+                (uint32_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

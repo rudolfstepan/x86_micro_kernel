@@ -79,6 +79,10 @@ S0.3c-3i friert Gateway-IP sowie lokale IP/MAC beim Probe-Start ein und lässt
 Ring 3 nur eine semantisch dazu passende ARP-Antwort akzeptieren. Eine
 verfälschte Gateway-Identität wird verworfen, bevor `ARP_IDENTITY_OK` den
 gültigen Pfad bestätigt.
+S0.3c-3j ersetzt die boolesche Probe-Autorität durch eine monotone ID. Die
+append-only v2-API ist Syscall 60; Ingress, Dienst und Supervisor bestätigen
+dieselbe ID genau einmal über `PROBE_ID_OK`. Erschöpfung und Recovery widerrufen
+fail-closed, während Syscall 59 kompatibel bleibt.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 

@@ -1104,9 +1104,17 @@ dessen Ethernet-Quell-/Zieladressen mit dem ARP-Inhalt übereinstimmen. Eine
 synthetisch verfälschte Gateway-Identität bleibt unbeantwortet; die korrekte
 Identität erzeugt `ARP_IDENTITY_OK`, bevor der echte NIC-Handoff folgt.
 
-S0.3c-3j trennt als nächsten Schritt die Probe-Autorität von einem bloßen
-Boolean und versieht sie mit einer monotonen, nicht wiederverwendbaren
-Probe-ID, die im Ingress und Dienstprotokoll mitgeführt wird.
+**S0.3c-3j ist umgesetzt:** Syscall 60 ergänzt append-only eine Probe-v2-API,
+die nach vollständiger Pointerprüfung eine von Null verschiedene monotone
+32-Bit-Probe-ID liefert. Der 64-Byte-Ingress trägt diese ID; Ring 3 akzeptiert
+das Frame nur für seine aktuell ausstehende ID. Der Supervisor bestätigt
+genau einen passenden Dienstbericht mit `PROBE_ID_OK`, verwirft Replay und
+fenced die ID bei Recovery. Nach Erschöpfung wird mit `-EOVERFLOW` gestoppt,
+nicht auf Null zurückgesprungen; Syscall 59 bleibt kompatibel erhalten.
+
+S0.3c-3k ergänzt als nächsten Schritt eine monotone absolute Deadline pro
+Probe-Autorität, damit ein ausbleibendes ARP-Frame den Ingress nicht bis zu
+einer späteren, semantisch gleichen Antwort offen hält.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

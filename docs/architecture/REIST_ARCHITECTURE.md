@@ -319,6 +319,13 @@ zusätzlich Ethernet- und ARP-Absender/Ziel miteinander und verlangt Opcode
 Reply. Der 60-Byte-Ingress bleibt fest begrenzt; eine falsche Identität führt
 zu keiner Antwort oder Zustandsveröffentlichung.
 
+S0.3c-3j ersetzt den bloßen Pending-Zustand durch eine monotone Probe-ID.
+Syscall 60 liefert sie dem Dienst, der feste Ingress trägt sie an Offset 60,
+und ein einmaliger Supervisor-Bericht bestätigt die übereinstimmende ID vor
+dem Headerbericht. ID-Erschöpfung ist fail-closed; Fence und Queue-Fallback
+widerrufen aktive bzw. zugestellte IDs. Der bestehende Syscall 59 bleibt als
+kompatibler Wrapper bestehen.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

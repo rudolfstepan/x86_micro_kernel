@@ -454,7 +454,8 @@ static int test_ipc_capabilities(void) {
 
 static int test_diagnostic_service(void) {
     x86os_ipc_handle_t handle = X86OS_IPC_INVALID_HANDLE;
-    if (x86os_service_connect(X86OS_SERVICE_DIAGNOSTIC,
+    if (x86os_network_probe_id((uint32_t*)(uintptr_t)0x1000U) != -14 ||
+        x86os_service_connect(X86OS_SERVICE_DIAGNOSTIC,
             (x86os_ipc_handle_t*)(uintptr_t)0x1000U) != -14 ||
         x86os_service_connect(0xFFFFFFFFU, &handle) >= 0 ||
         x86os_service_connect(X86OS_SERVICE_DIAGNOSTIC, &handle) != 0 ||

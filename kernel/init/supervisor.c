@@ -55,7 +55,9 @@ typedef struct {
     uint32_t launch_count;
     uint32_t endpoint_handle;
     uint64_t last_network_probe_ms;
-    bool network_probe_pending;
+    uint32_t network_probe_id;
+    uint32_t network_probe_delivered_id;
+    uint64_t next_network_probe_id;
     uint32_t network_probe_gateway;
     uint32_t network_probe_local_ip;
     uint8_t network_probe_local_mac[6];
@@ -380,7 +382,8 @@ static bool probe_fence_apply(void *context) {
     if (runtime == NULL || !runtime->active) return false;
     runtime->fenced = true;
     runtime->healthy = false;
-    runtime->network_probe_pending = false;
+    runtime->network_probe_id = 0U;
+    runtime->network_probe_delivered_id = 0U;
     if (process_identity_alive(runtime->pid, runtime->process_generation)) {
         (void)process_terminate(runtime->pid);
     }
@@ -432,6 +435,7 @@ static bool probe_spawn_next(void) {
 bool supervisor_start_probe(uint64_t now_ms) {
     if (probe_runtime.active) return false;
     probe_runtime = (supervisor_probe_runtime_t){0};
+    probe_runtime.next_network_probe_id = 1U;
     supervisor_config_t config = {
         .heartbeat_timeout_ms = 2000U,
         .recovery_timeout_ms = 1000U,
@@ -489,6 +493,13 @@ int supervisor_probe_report(int pid, uint32_t generation,
                                 : "REIST_NETWORK RX_HEADER_IPV4\n");
         return 0;
     }
+    if (report_type == REIST_REPORT_NETWORK_PROBE_ID) {
+        if (value == 0U || value != probe_runtime.network_probe_delivered_id)
+            return -1;
+        probe_runtime.network_probe_delivered_id = 0U;
+        printf("REIST_NETWORK PROBE_ID_OK\n");
+        return 0;
+    }
     return -1;
 }
 
@@ -515,7 +526,7 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     KASSERT_NOT_IRQ();
     KASSERT(irq_enabled());
     if (frame == NULL || length < 42U || frame[12] != 0x08U ||
-        frame[13] != 0x06U || !probe_runtime.network_probe_pending ||
+        frame[13] != 0x06U || probe_runtime.network_probe_id == 0U ||
         !probe_runtime.active ||
         probe_runtime.fenced || !probe_runtime.healthy ||
         probe_runtime.launch_count < 4U ||
@@ -527,7 +538,7 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     ipc_message_t message = {
         .version = IPC_MESSAGE_VERSION,
         .struct_size = sizeof(ipc_message_t),
-        .length = 60U,
+        .length = 64U,
         .payload = {'N', 'E', 'T', 'R'},
     };
     for (uint32_t index = 0U; index < 42U; ++index)
@@ -542,18 +553,32 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     for (uint32_t index = 0U; index < 6U; ++index)
         message.payload[54U + index] =
             probe_runtime.network_probe_local_mac[index];
+    uint32_t probe_id = probe_runtime.network_probe_id;
+    for (uint32_t index = 0U; index < 4U; ++index)
+        message.payload[60U + index] =
+            (uint8_t)(probe_id >> (index * 8U));
     int ingress = ipc_send_external_from_peer(
         probe_runtime.pid, probe_runtime.process_generation,
         probe_runtime.endpoint_handle, &message);
     /* A matching reply consumes exactly one probe authorization even when
      * bounded IPC pressure forces the frame back to the kernel path. */
-    probe_runtime.network_probe_pending = false;
+    probe_runtime.network_probe_id = 0U;
+    probe_runtime.network_probe_delivered_id = ingress == 0 ? probe_id : 0U;
     if (ingress == -11) printf("REIST_NETWORK QUEUE_PRESSURE_FALLBACK\n");
     return ingress == 0;
 }
 
 int supervisor_network_probe_request(int pid, uint32_t generation,
                                      uint64_t now_ms) {
+    uint32_t ignored_probe_id;
+    return supervisor_network_probe_request_id(pid, generation, now_ms,
+                                               &ignored_probe_id);
+}
+
+int supervisor_network_probe_request_id(int pid, uint32_t generation,
+                                        uint64_t now_ms,
+                                        uint32_t *probe_id_out) {
+    if (probe_id_out == NULL) return -22;
     if (!probe_runtime.active || probe_runtime.fenced ||
         !probe_runtime.healthy || pid != probe_runtime.pid ||
         generation != probe_runtime.process_generation ||
@@ -565,14 +590,19 @@ int supervisor_network_probe_request(int pid, uint32_t generation,
     uint8_t local_mac[6];
     if (gateway == 0U || local_ip == 0U ||
         !netdev_get_mac_address(local_mac)) return -19;
+    if (probe_runtime.next_network_probe_id > UINT32_MAX) return -75;
+    uint32_t probe_id = (uint32_t)probe_runtime.next_network_probe_id++;
     probe_runtime.last_network_probe_ms = now_ms;
     probe_runtime.network_probe_gateway = gateway;
     probe_runtime.network_probe_local_ip = local_ip;
     for (uint32_t index = 0U; index < 6U; ++index)
         probe_runtime.network_probe_local_mac[index] = local_mac[index];
-    probe_runtime.network_probe_pending = true;
-    if (netstack_probe_gateway()) return 0;
-    probe_runtime.network_probe_pending = false;
+    probe_runtime.network_probe_id = probe_id;
+    if (netstack_probe_gateway()) {
+        *probe_id_out = probe_id;
+        return 0;
+    }
+    probe_runtime.network_probe_id = 0U;
     return -19;
 }
 
@@ -662,6 +692,12 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
 int supervisor_network_probe_request(int pid, uint32_t generation,
                                      uint64_t now_ms) {
     (void)pid; (void)generation; (void)now_ms;
+    return -1;
+}
+int supervisor_network_probe_request_id(int pid, uint32_t generation,
+                                        uint64_t now_ms,
+                                        uint32_t *probe_id_out) {
+    (void)pid; (void)generation; (void)now_ms; (void)probe_id_out;
     return -1;
 }
 #endif

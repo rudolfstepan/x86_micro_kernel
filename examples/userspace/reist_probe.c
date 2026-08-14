@@ -122,6 +122,14 @@ static const char *network_classification(
     return "REIST_NET_OTHER";
 }
 
+static uint32_t message_probe_id(const x86os_ipc_message_t *message) {
+    if (message->length < 64U || message->payload[3] != 'R') return 0U;
+    return (uint32_t)message->payload[60] |
+           ((uint32_t)message->payload[61] << 8U) |
+           ((uint32_t)message->payload[62] << 16U) |
+           ((uint32_t)message->payload[63] << 24U);
+}
+
 int main(int argc, char **argv) {
     if (argc != 2) return 2;
     x86os_ipc_handle_t endpoint = 0U;
@@ -144,6 +152,7 @@ int main(int argc, char **argv) {
 
     uint32_t sequence = 2U;
     uint32_t pending_network_request = 0U;
+    uint32_t pending_network_probe_id = 0U;
     for (;;) {
         x86os_ipc_message_t request;
         message_init(&request, "");
@@ -160,15 +169,17 @@ int main(int argc, char **argv) {
             }
             if (message_request_is(&request, "NETPROBE")) {
                 pending_network_request = request_id;
-                if (x86os_network_probe() == 0) continue;
+                if (x86os_network_probe_id(&pending_network_probe_id) == 0)
+                    continue;
                 pending_network_request = 0U;
+                pending_network_probe_id = 0U;
                 response_init(&response, request_id, "REIST_NET_UNAVAILABLE");
                 if (x86os_ipc_send_timeout(endpoint, &response, 100U) != 0)
                     return 7;
                 continue;
             }
             if (message_request_is(&request, "NETCRASH")) {
-                if (x86os_network_probe() != 0) {
+                if (x86os_network_probe_id(&pending_network_probe_id) != 0) {
                     response_init(&response, request_id,
                                   "REIST_NET_UNAVAILABLE");
                     if (x86os_ipc_send_timeout(endpoint, &response, 100U) != 0)
@@ -183,13 +194,22 @@ int main(int argc, char **argv) {
                 if (x86os_ipc_send_timeout(endpoint, &response, 100U) != 0)
                     return 7;
                 (void)x86os_sleep_ms(100U);
-                if (x86os_network_probe() != 0) return 11;
+                if (x86os_network_probe_id(&pending_network_probe_id) != 0)
+                    return 11;
                 continue;
             }
             const char *network = network_classification(&request);
+            if (network != NULL && request.payload[3] == 'R' &&
+                (pending_network_probe_id == 0U ||
+                 message_probe_id(&request) != pending_network_probe_id)) {
+                continue;
+            }
             if (network != NULL && request.payload[3] == 'R') {
                 uint32_t ethertype = ((uint32_t)request.payload[16] << 8) |
                                      request.payload[17];
+                if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_PROBE_ID,
+                                       pending_network_probe_id) != 0)
+                    return 13;
                 if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_HEADER,
                                        ethertype) != 0) return 9;
             }
@@ -197,6 +217,7 @@ int main(int argc, char **argv) {
                 pending_network_request != 0U) {
                 response_init(&response, pending_network_request, network);
                 pending_network_request = 0U;
+                pending_network_probe_id = 0U;
             } else if (network != NULL) {
                 message_init(&response, network);
             } else if (request_id != 0U) {

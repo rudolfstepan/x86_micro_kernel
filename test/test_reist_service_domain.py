@@ -89,7 +89,7 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("supervisor_network_submit_header(", netdev)
         self.assertIn("service_header, sizeof(service_header)", netdev)
         self.assertIn("if (!service_owned) netdev_queue_rx_packet", netdev)
-        self.assertIn(".length = 60U", supervisor)
+        self.assertIn(".length = 64U", supervisor)
         handoff = supervisor[
             supervisor.index("bool supervisor_network_submit_header("):
             supervisor.index("static void supervisor_worker(")]
@@ -97,8 +97,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("KASSERT(irq_enabled());", handoff)
         self.assertIn("frame[12] != 0x08U", handoff)
         self.assertIn("frame[13] != 0x06U", handoff)
-        self.assertIn("!probe_runtime.network_probe_pending", handoff)
-        self.assertIn("network_probe_pending = false", handoff)
+        self.assertIn("probe_runtime.network_probe_id == 0U", handoff)
+        self.assertIn("network_probe_id = 0U", handoff)
 
     def test_queue_pressure_consumes_probe_and_falls_back(self):
         supervisor = (ROOT / "kernel" / "init" / "supervisor.c").read_text()
@@ -111,7 +111,7 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("QUEUE_PRESSURE_FALLBACK", supervisor)
         ingress = supervisor[supervisor.index("bool supervisor_network_submit_header"):
                              supervisor.index("int supervisor_network_probe_request")]
-        self.assertLess(ingress.index("network_probe_pending = false"),
+        self.assertLess(ingress.index("network_probe_id = 0U"),
                         ingress.index("return ingress == 0"))
         self.assertIn("for (uint32_t index = 0U; index < 42U; ++index)",
                       supervisor)
@@ -141,7 +141,7 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("network_probe_gateway", supervisor)
         self.assertIn("network_probe_local_ip", supervisor)
         self.assertIn("network_probe_local_mac", supervisor)
-        self.assertIn(".length = 60U", supervisor)
+        self.assertIn(".length = 64U", supervisor)
         for offset in (32, 42, 46, 50, 54):
             self.assertIn(f"message->payload[{offset}U + index]", service)
         self.assertIn("message->payload[25] != 2U", service)
@@ -160,8 +160,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("generation != probe_runtime.process_generation", probe)
         self.assertIn("< 250U", probe)
         self.assertIn("netstack_probe_gateway()", probe)
-        self.assertIn("network_probe_pending = true", probe)
-        self.assertIn("network_probe_pending = false", probe)
+        self.assertIn("network_probe_id = probe_id", probe)
+        self.assertIn("network_probe_id = 0U", probe)
         self.assertIn("X86OS_SYS_NETWORK_PROBE = 59", sdk)
         self.assertIn('message_request_is(&request, "NETPROBE")', service)
         self.assertIn("request.payload[3] == 'R'", service)
@@ -181,11 +181,42 @@ class ReistServiceDomainTests(unittest.TestCase):
         runner = read("scripts/run_qemu_smoke.py")
         self.assertIn('message_request_is(&request, "NETCRASH")', service)
         self.assertIn('volatile("ud2")', service)
-        self.assertIn("runtime->network_probe_pending = false", supervisor)
+        self.assertIn("runtime->network_probe_id = 0U", supervisor)
         self.assertIn("REIST_NETWORK SERVICE_CRASH_RECOVERED", supervisor)
         self.assertIn("attempt < 100U", guest)
         self.assertIn("TEST_STAGE NETWORK_RECOVERY_OK", guest)
         self.assertIn("REIST_NETWORK_RECOVERY_MARKER", runner)
+
+    def test_monotone_probe_id_is_append_only_and_correlated(self):
+        supervisor = read("kernel/init/supervisor.c")
+        syscall = read("kernel/syscall/syscall_table.c")
+        process = read("kernel/proc/process.c")
+        sdk = read("userspace/sdk/include/x86os.h")
+        service = read("examples/userspace/reist_probe.c")
+        guest = read("examples/userspace/guest_test.c")
+        self.assertIn("next_network_probe_id", supervisor)
+        self.assertIn("next_network_probe_id > UINT32_MAX", supervisor)
+        self.assertIn("network_probe_id = probe_id", supervisor)
+        self.assertIn("message.payload[60U + index]", supervisor)
+        self.assertIn("SYS_NETWORK_PROBE_ID 60", read("lib/libc/stdlib.h"))
+        self.assertIn("X86OS_SYS_NETWORK_PROBE_ID = 60", sdk)
+        self.assertIn("SYS_NETWORK_PROBE, SYS_NETWORK_PROBE_ID", process)
+        body = syscall[syscall.index("static int syscall_network_probe_id("):
+                       syscall.index("static int syscall_service_connect(")]
+        self.assertLess(body.index("user_range_accessible"),
+                        body.index("supervisor_network_probe_request_id"))
+        self.assertIn("copy_to_user_space", body)
+        self.assertIn("x86os_network_probe_id(&pending_network_probe_id)",
+                      service)
+        self.assertIn("message_probe_id(&request) != pending_network_probe_id",
+                      service)
+        self.assertIn("REIST_REPORT_NETWORK_PROBE_ID", service)
+        self.assertIn("network_probe_delivered_id", supervisor)
+        self.assertIn("value != probe_runtime.network_probe_delivered_id",
+                      supervisor)
+        self.assertIn("REIST_NETWORK PROBE_ID_OK", supervisor)
+        self.assertIn("x86os_network_probe_id((uint32_t*)(uintptr_t)0x1000U)",
+                      guest)
 
     def test_service_protocol_correlates_generation_scoped_requests(self):
         service = read("examples/userspace/reist_probe.c")
