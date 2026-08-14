@@ -444,6 +444,8 @@ int wait_queue_block_until_locked(wait_queue_t *queue,
 }
 
 int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind) {
+    KASSERT_IRQ_DISABLED();
+    KASSERT_NOT_IRQ();
     return wait_queue_block_until_locked(queue, kind, UINT64_MAX);
 }
 
