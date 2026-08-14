@@ -216,6 +216,7 @@ class CodexOrchestrationTests(unittest.TestCase):
         self.assertIn('"merge", "--ff-only"', runner)
         self.assertIn("outer verifier runs every gate exactly once", runner)
         self.assertIn("canonicalize_task_evidence", runner)
+        self.assertIn('result.get("commit") == before_head', runner)
         contract = (ROOT / "AGENTS.md").read_text("utf-8")
         self.assertIn("outer runner is the only gate authority", contract.lower())
         self.assertIn("Do not run the listed acceptance gates", contract)

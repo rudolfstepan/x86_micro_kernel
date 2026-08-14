@@ -797,6 +797,12 @@ commit SHA.
                         f"{tail(event_log)}"
                     )
                 result = json.loads(isolated_result_file.read_text("utf-8"))
+                if (
+                    result.get("status") == "blocked"
+                    and result.get("commit") == before_head
+                ):
+                    result["commit"] = ""
+                    result["passed"] = []
                 if result.get("status") == "candidate":
                     materialize_candidate(
                         worktree, before_head, before_task, package,

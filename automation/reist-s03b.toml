@@ -75,7 +75,7 @@ id = "S0.3b-2"
 status = "active"
 risk = "high"
 title = "Protected IPC metadata"
-scope = "Protect bounded endpoint, queue and capability control metadata with critical_object-compatible redundancy, validation and fail-closed corruption handling. Add deterministic single- and multi-bit fault injection."
+scope = "Protect bounded endpoint, queue and authoritative global capability records with critical_object-compatible redundancy, validation and fail-closed corruption handling. Process-local handle slots remain non-authoritative selectors and must resolve through protected global records before use. Add deterministic single- and multi-bit fault injection."
 allowed_files = [
   "include/kernel/ipc.h",
   "kernel/ipc/ipc.c",
@@ -92,6 +92,7 @@ allowed_files = [
 invariants = [
   "all protected payloads fit fixed critical_object capacity or are split explicitly",
   "validation occurs before rights, queue indexes or payload are used",
+  "process-local handle corruption cannot grant authority because every use resolves a protected holder-scoped global record",
   "corruption never grants authority or emits unvalidated data",
   "single-bit correction is logged boundedly and double corruption fails closed",
   "waiters on a quarantined endpoint are woken and receive a distinct integrity error"
