@@ -130,7 +130,7 @@ und 10 verbindlich.
     - [ ] S0.3c-6d Reale Power-Loss-/I/O-/Restart-Injektion in QEMU
       - [x] S0.3c-6d1 Dienstcrash bei beanspruchtem Request, generationssicherer
         Widerruf, begrenzter Restart und erfolgreicher Wiederholungsrequest
-      - [ ] S0.3c-6d2 Vermittelte ATA-I/O-Fehler mit definiertem Fehlerstatus,
+      - [x] S0.3c-6d2 Vermittelte ATA-I/O-Fehler mit definiertem Fehlerstatus,
         Quarantäne und geprüftem Weiterbetrieb
       - [ ] S0.3c-6d3 Stromverlust während einer persistenten Mutation mit
         Neustart, Journal-Recovery und anschließendem Ring-3-Dienst-Selbsttest
@@ -1377,6 +1377,17 @@ QEMU-Gate verlangt die geordnete Folge `TEST_CRASH_INJECTED ->
 SERVICE_FAILURE_DETECTED -> SERVICE_RESTARTED -> SERVICE_READY ->
 STORAGE_RESTART_OK -> TEST_OK`. S0.3c-6d2 ergänzt als Nächstes einen realen,
 kontrollierten ATA-I/O-Fehler; Power-Loss bleibt S0.3c-6d3.
+
+**S0.3c-6d2 ist umgesetzt:** Der vermittelte Block-Read führt höchstens zwei
+ATA-Versuche aus. Scheitern beide, erhält der Client `-EIO` und die Ressource
+wird in der redundant geschützten Dienstkontrolle dauerhaft für diesen Boot
+quarantänisiert. Jeder Folgezugriff derselben Ressource endet vor dem
+Hardwareaufruf mit `-EHOSTDOWN`; andere Kernel- und Dienstfunktionen laufen
+weiter. Ein separater Testbuild erzwingt beide Fehlschläge und verlangt
+`TEST_IO_ERROR_INJECTED -> RESOURCE_QUARANTINED ->
+STORAGE_IO_QUARANTINE_OK -> TEST_OK`. Der normale Build enthält keinen
+Injektionspfad. Offen bleibt S0.3c-6d3: Stromverlust während einer persistenten
+Mutation und anschließende Recovery über den Ring-3-Dienst.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

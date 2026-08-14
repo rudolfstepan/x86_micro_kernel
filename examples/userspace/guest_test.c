@@ -816,6 +816,25 @@ static int test_storage_service(void) {
         if (x86os_storage_submit(&request, 0, &handle) != 0 || handle == 0U)
             return -1;
     }
+    if (result == -5) {
+        handle = 0U;
+        result = -1;
+        if (x86os_storage_submit(&request, 0, &handle) != 0 || handle == 0U)
+            return -1;
+        uint64_t deadline = 0U;
+        if (x86os_monotonic_ms(&deadline) != 0) return -1;
+        deadline += 2000U;
+        for (;;) {
+            int collect = x86os_storage_collect(handle, &result, sector);
+            if (collect == 0) break;
+            uint64_t now = 0U;
+            if (collect != -11 || x86os_monotonic_ms(&now) != 0 ||
+                now >= deadline || x86os_sleep_ms(5U) != 0) return -1;
+        }
+        if (result != -112) return -1;
+        x86os_puts("TEST_STAGE STORAGE_IO_QUARANTINE_OK\n");
+        return 0;
+    }
     bool signature_valid = sector[510] == 0x55U && sector[511] == 0xAAU;
     if (result != 0 || !signature_valid) return -1;
     if (recovered) x86os_puts("TEST_STAGE STORAGE_RESTART_OK\n");

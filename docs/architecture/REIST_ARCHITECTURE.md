@@ -470,9 +470,19 @@ den Request abschließen kann. Prozess-Cleanup widerruft den beanspruchten Slot;
 der Supervisor bindet ausschließlich die neue Generation. Der Client darf den
 stalen Handle nicht weiterverwenden und wiederholt genau einmal innerhalb
 einer Zwei-Sekunden-Grenze. Erst ein erneut validierter MBR schließt den Gate.
-Der normale Build enthält weder Trigger noch zusätzliche Autorität. Reale
-I/O-Fehler und ein persistenter Power-Loss-Pfad bleiben 6d2 beziehungsweise
-6d3.
+Der normale Build enthält weder Trigger noch zusätzliche Autorität. Der
+persistente Power-Loss-Pfad bleibt 6d3.
+
+S0.3c-6d2 begrenzt jeden vermittelten ATA-Read auf zwei Versuche. Nach zwei
+Fehlern wird die Ressourcen-ID in der `critical_object`-geschützten
+Dienstkontrolle quarantänisiert. Der auslösende Request endet mit `-EIO`;
+weitere Requests gegen diese Ressource werden ohne Hardwarekontakt mit
+`-EHOSTDOWN` abgeschlossen. Die Quarantäne überlebt Dienstneustarts innerhalb
+desselben Boots und kann daher nicht durch einen Generationstausch umgangen
+werden. Ein separater Build injiziert den Fehler genau einmal; Produktion
+enthält nur Retry, Quarantäne und Fehlerpropagation. Ein kontrolliertes
+Requalifizieren der Ressource ist noch nicht erlaubt und wird erst zusammen
+mit einem verifizierten Medien-Selbsttest eingeführt.
 
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und

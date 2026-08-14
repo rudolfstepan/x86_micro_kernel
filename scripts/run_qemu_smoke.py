@@ -55,6 +55,9 @@ REIST_STORAGE_FAILURE_MARKER = "REIST_STORAGE SERVICE_FAILURE_DETECTED"
 REIST_STORAGE_RESTARTED_MARKER = "REIST_STORAGE SERVICE_RESTARTED"
 REIST_STORAGE_READY_MARKER = "REIST_STORAGE SERVICE_READY"
 REIST_STORAGE_RECOVERY_MARKER = "TEST_STAGE STORAGE_RESTART_OK"
+REIST_STORAGE_IO_INJECTION_MARKER = "REIST_STORAGE TEST_IO_ERROR_INJECTED"
+REIST_STORAGE_QUARANTINE_MARKER = "REIST_STORAGE RESOURCE_QUARANTINED 0"
+REIST_STORAGE_IO_RECOVERY_MARKER = "TEST_STAGE STORAGE_IO_QUARANTINE_OK"
 SHELL_PROMPT = "C:\\>"
 FAIL_MARKERS = (
     "TEST_FAIL",
@@ -427,6 +430,7 @@ def validate(
     expect_network_handoff: bool = False,
     expect_arp_reply: bool = False,
     expect_storage_recovery: bool = False,
+    expect_storage_io_failure: bool = False,
 ) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
@@ -511,6 +515,16 @@ def validate(
             return "missing storage-service crash/recovery marker"
         if positions != sorted(positions):
             return "storage-service crash/recovery markers are out of order"
+    if expect_storage_io_failure:
+        positions = [exact_line_position(transcript, marker) for marker in (
+            REIST_STORAGE_IO_INJECTION_MARKER,
+            REIST_STORAGE_QUARANTINE_MARKER,
+            REIST_STORAGE_IO_RECOVERY_MARKER,
+        )]
+        if any(position < 0 for position in positions):
+            return "missing storage I/O-failure/quarantine marker"
+        if positions != sorted(positions):
+            return "storage I/O-failure/quarantine markers are out of order"
     return None
 
 
@@ -568,6 +582,10 @@ def main() -> int:
         help="require an injected storage-service crash and bounded recovery",
     )
     parser.add_argument(
+        "--expect-storage-io-failure", action="store_true",
+        help="require an injected storage I/O failure and quarantine",
+    )
+    parser.add_argument(
         "--persistent", action="store_true",
         help="allow guest writes to the image (use only with a disposable copy)",
     )
@@ -607,7 +625,8 @@ def main() -> int:
                             args.expect_reist_probe,
                             args.expect_network_handoff,
                             args.inject_arp_request,
-                            args.expect_storage_recovery)
+                            args.expect_storage_recovery,
+                            args.expect_storage_io_failure)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")

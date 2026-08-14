@@ -171,6 +171,12 @@ Supervisor startet begrenzt neu, und der Client liest anschließend über einen
 neuen Request erneut den MBR. Der Lauf endet mit `STORAGE_RESTART_OK` und
 `TEST_OK`. Als Nächstes folgt 6d2 mit vermittelter ATA-I/O-Fehlerinjektion;
 Power-Loss und Journal-Recovery folgen separat in 6d3.
+S0.3c-6d2 ist ebenfalls abgenommen: Ein isoliertes QEMU-Image erzwingt zwei
+aufeinanderfolgende ATA-Lesefehler. Der Client erhält `-EIO`, Ressource 0 wird
+in der geschützten Storage-Kontrolle quarantänisiert und der nächste Request
+endet vor erneutem ATA-Zugriff mit `-EHOSTDOWN`. Dienst, Scheduler und übrige
+Gasttests laufen bis `TEST_OK` weiter. Als nächstes folgt ausschließlich 6d3
+mit persistentem Stromverlust und Journal-Recovery.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 

@@ -6,6 +6,7 @@ param(
     [string]$Video = 'vga',
     [switch]$FaultInjection,
     [switch]$StorageFaultInjection,
+    [switch]$StorageIoFaultInjection,
     [switch]$RunTests,
     [string[]]$ProgramSource = @('examples/userspace/hello.c'),
     [ValidatePattern('^[A-Za-z0-9_]{1,8}\.PRG$')]
@@ -110,6 +111,9 @@ try {
     }
     if ($StorageFaultInjection) {
         $makeArguments += 'STORAGE_FAULT_INJECTION=1'
+    }
+    if ($StorageIoFaultInjection) {
+        $makeArguments += 'STORAGE_IO_FAULT_INJECTION=1'
     }
     & $Make @makeArguments
     if ($LASTEXITCODE -ne 0) {

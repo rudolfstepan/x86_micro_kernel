@@ -405,11 +405,30 @@ static int syscall_storage_block_read(uint32_t resource, uint32_t block,
     if (resource >= (uint32_t)drive_count ||
         detected_drives[resource].type != DRIVE_TYPE_ATA ||
         block >= detected_drives[resource].sectors) return -22;
+    if (!storage_service_resource_available(resource)) return -112;
     if (!user_range_accessible(directory, data_address,
                                STORAGE_REQUEST_BLOCK_SIZE, true)) return -14;
     uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
     drive_t *drive = &detected_drives[resource];
-    if (!ata_read_sector(drive->base, block, data, drive->is_master)) return -5;
+    bool read_ok = false;
+#ifdef REIST_STORAGE_IO_FAULT_INJECTION
+    static bool storage_io_fault_injected;
+    bool inject_failure = !storage_io_fault_injected;
+    if (inject_failure) {
+        storage_io_fault_injected = true;
+        printf("REIST_STORAGE TEST_IO_ERROR_INJECTED\n");
+    }
+#endif
+    for (uint32_t attempt = 0U; attempt < 2U && !read_ok; ++attempt) {
+#ifdef REIST_STORAGE_IO_FAULT_INJECTION
+        if (inject_failure) continue;
+#endif
+        read_ok = ata_read_sector(drive->base, block, data, drive->is_master);
+    }
+    if (!read_ok) {
+        (void)storage_service_report_io_failure(resource);
+        return -5;
+    }
 #ifdef REIST_STORAGE_FAULT_INJECTION
     static bool storage_read_fault_injected;
     if (!storage_read_fault_injected) {

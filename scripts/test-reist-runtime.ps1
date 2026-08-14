@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'storage-recovery')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'storage-recovery', 'storage-io-failure')]
     [string]$Mode = 'normal'
 )
 
@@ -106,6 +106,11 @@ switch ($Mode) {
     'storage-recovery' {
         Invoke-Smoke 'guest-smoke-storage-recovery.log' @(
             '--expect-storage-recovery'
+        )
+    }
+    'storage-io-failure' {
+        Invoke-Smoke 'guest-smoke-storage-io-failure.log' @(
+            '--expect-storage-io-failure'
         )
     }
 }

@@ -1,5 +1,6 @@
 #include "include/kernel/storage_service.h"
 
+#include "drivers/block/ata.h"
 #include "include/kernel/critical_object.h"
 #include "include/kernel/filesystem_safety.h"
 #include "include/kernel/storage_request_pool.h"
@@ -17,6 +18,7 @@ typedef struct {
     uint32_t generation;
     uint32_t launch_count;
     uint32_t healthy;
+    uint32_t quarantined_resources;
     uint64_t start_deadline_ms;
 } storage_service_control_t;
 
@@ -26,12 +28,15 @@ static bool initialized;
 _Static_assert(sizeof(storage_service_control_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
                "storage service control exceeds protected payload");
+_Static_assert(MAX_DRIVES > 0 && MAX_DRIVES < 32,
+               "storage quarantine mask requires 1..31 resources");
 
 static bool control_valid(const void *payload, size_t length) {
     if (payload == NULL || length != sizeof(storage_service_control_t))
         return false;
     const storage_service_control_t *control = payload;
     if (control->healthy > 1U ||
+        (control->quarantined_resources & ~((1U << MAX_DRIVES) - 1U)) != 0U ||
         control->launch_count > STORAGE_SERVICE_RESTART_BUDGET + 1U)
         return false;
     if (control->pid == 0)
@@ -118,6 +123,38 @@ bool storage_service_authorized(int pid, uint32_t generation) {
            control.healthy != 0U && control.pid == pid &&
            control.generation == generation &&
            process_identity_alive(pid, generation);
+}
+
+bool storage_service_resource_available(uint32_t resource) {
+    storage_service_control_t control;
+    if (resource >= MAX_DRIVES || !initialized ||
+        control_read(&control) != 0) {
+        storage_fence_writes();
+        filesystem_fence_mutations();
+        return false;
+    }
+    return (control.quarantined_resources & (1U << resource)) == 0U;
+}
+
+bool storage_service_report_io_failure(uint32_t resource) {
+    storage_service_control_t control;
+    if (resource >= MAX_DRIVES || !initialized ||
+        control_read(&control) != 0) {
+        storage_fence_writes();
+        filesystem_fence_mutations();
+        return false;
+    }
+    uint32_t mask = 1U << resource;
+    if ((control.quarantined_resources & mask) == 0U) {
+        control.quarantined_resources |= mask;
+        if (control_write(&control) != 0) {
+            storage_fence_writes();
+            filesystem_fence_mutations();
+            return false;
+        }
+        printf("REIST_STORAGE RESOURCE_QUARANTINED %u\n", resource);
+    }
+    return true;
 }
 
 void storage_service_poll(uint64_t now_ms) {
