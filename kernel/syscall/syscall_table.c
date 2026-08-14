@@ -14,11 +14,14 @@
 #include "drivers/char/kb.h"
 #include "drivers/char/rtc.h"
 #include "drivers/bus/drives.h"
+#include "drivers/block/ata.h"
 #include "kernel/time/pit.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/proc/process.h"
 #include "include/kernel/ipc.h"
 #include "include/kernel/supervisor.h"
+#include "include/kernel/storage_request_pool.h"
+#include "include/kernel/storage_service.h"
 #include "include/kernel/supervisor.h"
 #include "include/kernel/supervisor.h"
 #include "arch/x86/mm/paging.h"
@@ -312,6 +315,147 @@ static int syscall_reist_arp_resolution(
 
 static int syscall_network_arp_resolve(uint32_t target_ip) {
     return supervisor_network_request_arp_resolution(target_ip) ? 0 : -11;
+}
+
+_Static_assert(sizeof(storage_request_submit_t) == 28U,
+               "storage submit ABI changed");
+_Static_assert(sizeof(storage_request_descriptor_t) == 28U,
+               "storage descriptor ABI changed");
+
+static int syscall_storage_bind(void) {
+    Process *process = scheduler_current_process();
+    return process == NULL ? -13 :
+        storage_service_bind(process->pid, process->generation);
+}
+
+static int syscall_storage_submit(const storage_request_submit_t *user_request,
+        const uint8_t *user_data, storage_request_handle_t *user_handle) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t request_address = (uint32_t)(uintptr_t)user_request;
+    uint32_t handle_address = (uint32_t)(uintptr_t)user_handle;
+    if (process == NULL ||
+        !user_range_accessible(directory, request_address,
+                               sizeof(*user_request), false) ||
+        !user_range_accessible(directory, handle_address,
+                               sizeof(*user_handle), true)) return -14;
+    storage_request_submit_t request;
+    if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+        return -14;
+    uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
+    const uint8_t *data_argument = NULL;
+    if (request.operation == STORAGE_REQUEST_BLOCK_WRITE ||
+        request.operation == STORAGE_REQUEST_VFS_WRITE) {
+        uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+        if (request.length > sizeof(data) ||
+            !user_range_accessible(directory, data_address, request.length,
+                                   false) ||
+            copy_from_user(data, user_data, request.length) != 0) return -14;
+        data_argument = data;
+    }
+    storage_request_handle_t handle = STORAGE_REQUEST_INVALID_HANDLE;
+    int result = storage_request_submit(process->pid, process->generation,
+                                        &request, data_argument,
+                                        pit_monotonic_ms(), &handle);
+    if (result != 0) return result;
+    if (copy_to_user_space(directory, handle_address, &handle,
+                           sizeof(handle)) != 0) {
+        storage_request_cancel_process(process->pid, process->generation);
+        return -14;
+    }
+    return 0;
+}
+
+static int syscall_storage_claim(storage_request_descriptor_t *user_request,
+                                 uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t request_address = (uint32_t)(uintptr_t)user_request;
+    uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+    if (process == NULL) return -13;
+    if (!storage_service_authorized(process->pid, process->generation))
+        return -13;
+    if (
+        !user_range_accessible(directory, request_address,
+                               sizeof(*user_request), true) ||
+        !user_range_accessible(directory, data_address,
+                               STORAGE_REQUEST_BLOCK_SIZE, true)) return -14;
+    storage_request_descriptor_t request;
+    uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
+    int result = storage_request_claim(process->pid, process->generation,
+                                       pit_monotonic_ms(), &request, data);
+    if (result != 0) return result;
+    if (copy_to_user_space(directory, request_address, &request,
+                           sizeof(request)) != 0 ||
+        ((request.operation == STORAGE_REQUEST_BLOCK_WRITE ||
+          request.operation == STORAGE_REQUEST_VFS_WRITE) &&
+         copy_to_user_space(directory, data_address, data,
+                            request.length) != 0)) return -14;
+    return 0;
+}
+
+static int syscall_storage_block_read(uint32_t resource, uint32_t block,
+                                      uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+    if (process == NULL ||
+        !storage_service_authorized(process->pid, process->generation))
+        return -13;
+    if (resource >= (uint32_t)drive_count ||
+        detected_drives[resource].type != DRIVE_TYPE_ATA ||
+        block >= detected_drives[resource].sectors) return -22;
+    if (!user_range_accessible(directory, data_address,
+                               STORAGE_REQUEST_BLOCK_SIZE, true)) return -14;
+    uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
+    drive_t *drive = &detected_drives[resource];
+    if (!ata_read_sector(drive->base, block, data, drive->is_master)) return -5;
+    return copy_to_user_space(directory, data_address, data, sizeof(data)) == 0
+        ? 0 : -14;
+}
+
+static int syscall_storage_complete(storage_request_handle_t handle,
+        int32_t result_code, const uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    if (process == NULL ||
+        !storage_service_authorized(process->pid, process->generation))
+        return -13;
+    uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
+    const uint8_t *data_argument = NULL;
+    if (result_code == 0) {
+        uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+        if (!user_range_accessible(directory, data_address, sizeof(data),
+                                   false) ||
+            copy_from_user(data, user_data, sizeof(data)) != 0) return -14;
+        data_argument = data;
+    }
+    return storage_request_complete(process->pid, process->generation,
+                                    handle, result_code, data_argument);
+}
+
+static int syscall_storage_collect(storage_request_handle_t handle,
+        int32_t *user_result, uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t result_address = (uint32_t)(uintptr_t)user_result;
+    uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+    if (process == NULL ||
+        !user_range_accessible(directory, result_address,
+                               sizeof(*user_result), true) ||
+        !user_range_accessible(directory, data_address,
+                               STORAGE_REQUEST_BLOCK_SIZE, true)) return -14;
+    int32_t result_code = 0;
+    uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
+    memset(data, 0, sizeof(data));
+    int result = storage_request_collect(process->pid, process->generation,
+                                         handle, &result_code, data);
+    if (result != 0) return result;
+    if (copy_to_user_space(directory, result_address, &result_code,
+                           sizeof(result_code)) != 0 ||
+        (result_code == 0 && copy_to_user_space(
+             directory, data_address, data, sizeof(data)) != 0)) return -14;
+    return 0;
 }
 
 static int syscall_service_connect(uint32_t service_id,
@@ -852,6 +996,12 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_reist_arp_reply,    // Syscall 63: Mediated ARP reply
     (void*)&syscall_reist_arp_resolution,// Syscall 64: Mediated ARP request
     (void*)&syscall_network_arp_resolve, // Syscall 65: Request ARP resolution
+    (void*)&syscall_storage_bind,       // Syscall 66: Bind storage service
+    (void*)&syscall_storage_submit,     // Syscall 67: Submit storage request
+    (void*)&syscall_storage_claim,      // Syscall 68: Claim storage request
+    (void*)&syscall_storage_block_read, // Syscall 69: Mediated block read
+    (void*)&syscall_storage_complete,   // Syscall 70: Complete storage request
+    (void*)&syscall_storage_collect,    // Syscall 71: Collect storage request
     // Add more syscalls here as needed
 };
 
@@ -1175,6 +1325,33 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_NETWORK_ARP_RESOLVE:
             result = (uint32_t)syscall_network_arp_resolve(arg1);
+            break;
+        case SYS_STORAGE_BIND:
+            result = (uint32_t)syscall_storage_bind();
+            break;
+        case SYS_STORAGE_SUBMIT:
+            result = (uint32_t)syscall_storage_submit(
+                (const storage_request_submit_t*)(uintptr_t)arg1,
+                (const uint8_t*)(uintptr_t)arg2,
+                (storage_request_handle_t*)(uintptr_t)arg3);
+            break;
+        case SYS_STORAGE_CLAIM:
+            result = (uint32_t)syscall_storage_claim(
+                (storage_request_descriptor_t*)(uintptr_t)arg1,
+                (uint8_t*)(uintptr_t)arg2);
+            break;
+        case SYS_STORAGE_BLOCK_READ:
+            result = (uint32_t)syscall_storage_block_read(
+                arg1, arg2, (uint8_t*)(uintptr_t)arg3);
+            break;
+        case SYS_STORAGE_COMPLETE:
+            result = (uint32_t)syscall_storage_complete(
+                arg1, (int32_t)arg2, (const uint8_t*)(uintptr_t)arg3);
+            break;
+        case SYS_STORAGE_COLLECT:
+            result = (uint32_t)syscall_storage_collect(
+                arg1, (int32_t*)(uintptr_t)arg2,
+                (uint8_t*)(uintptr_t)arg3);
             break;
         default:
             result = (uint32_t)-1;

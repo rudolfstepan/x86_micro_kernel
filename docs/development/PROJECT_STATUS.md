@@ -157,6 +157,13 @@ maximal 512 Byte Nutzdaten sind CRC-geschützt redundant, Metadaten und
 Dienstidentität über `critical_object`; Prozessende widerruft alle betroffenen
 Slots. Als nächstes wird dieser Dataplane an den restartbaren Ring-3-Dienst
 gebunden (S0.3c-6c).
+S0.3c-6c ist umgesetzt: `STORAGE.PRG` besitzt ein separates Default-Deny-
+Syscallprofil, bindet sich generationssicher an den statischen Dataplane und
+wird bei Starttimeout oder Prozessverlust höchstens dreimal neu gestartet.
+Danach verriegelt der Supervisor Storage und VFS. Requests laufen höchstens
+fünf Sekunden und höchstens zwei gleichzeitig je Client. Der QEMU-Gast liest
+den realen MBR über den Ring-3-Dienst und bestätigt dessen `0x55AA`-Signatur.
+Als nächstes folgt S0.3c-6d mit realer Fehler- und Restart-Injektion.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 

@@ -23,6 +23,7 @@
 typedef enum {
     PROCESS_DOMAIN_COMPATIBILITY = 1,
     PROCESS_DOMAIN_PROBE = 2,
+    PROCESS_DOMAIN_STORAGE = 3,
 } process_domain_kind_t;
 
 typedef struct {

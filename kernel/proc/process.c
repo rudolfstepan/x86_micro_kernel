@@ -93,6 +93,17 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
         }
         return true;
     }
+    if (kind == PROCESS_DOMAIN_STORAGE) {
+        static const uint8_t storage_syscalls[] = {
+            SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS, SYS_MONOTONIC_MS,
+            SYS_STORAGE_BIND, SYS_STORAGE_CLAIM, SYS_STORAGE_BLOCK_READ,
+            SYS_STORAGE_COMPLETE
+        };
+        for (size_t index = 0;
+             index < sizeof(storage_syscalls) / sizeof(storage_syscalls[0]);
+             ++index) profile_allow(profile, storage_syscalls[index]);
+        return true;
+    }
     if (kind != PROCESS_DOMAIN_PROBE) return false;
 
     static const uint8_t probe_syscalls[] = {
@@ -117,7 +128,8 @@ bool process_syscall_allowed(const Process *process, uint32_t syscall_index) {
         profile->struct_size != sizeof(*profile) ||
         syscall_index >= PROCESS_DOMAIN_SYSCALL_LIMIT ||
         (profile->kind != PROCESS_DOMAIN_COMPATIBILITY &&
-         profile->kind != PROCESS_DOMAIN_PROBE)) return false;
+         profile->kind != PROCESS_DOMAIN_PROBE &&
+         profile->kind != PROCESS_DOMAIN_STORAGE)) return false;
     return (profile->allowed_syscalls[syscall_index / 32U] &
             (1U << (syscall_index % 32U))) != 0U;
 }

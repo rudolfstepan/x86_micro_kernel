@@ -5,6 +5,7 @@
 #include "arch/x86/include/interrupt.h"
 #include "include/kernel/panic.h"
 #include "include/kernel/output_fence.h"
+#include "include/kernel/storage_service.h"
 #include "drivers/net/netstack.h"
 #include "drivers/net/netdev.h"
 #include "kernel/proc/process.h"
@@ -1777,6 +1778,7 @@ static void supervisor_worker(void) {
          * pending flags, so foreground progress must not depend on a shell
          * command happening to poll the NIC. */
         netdev_poll();
+        storage_service_poll(pit_monotonic_ms());
         supervisor_probe_control_t control;
         uint32_t transaction_flags = supervisor_lock();
         int control_result = supervisor_protected_probe_control_read(
@@ -1884,7 +1886,8 @@ bool supervisor_start_worker(void) {
 
 int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind) {
-    if (domain_kind != PROCESS_DOMAIN_PROBE) return -1;
+    if (domain_kind != PROCESS_DOMAIN_PROBE &&
+        domain_kind != PROCESS_DOMAIN_STORAGE) return -1;
     return process_spawn_supervised(path, argc, argv,
                                     (process_domain_kind_t)domain_kind);
 }

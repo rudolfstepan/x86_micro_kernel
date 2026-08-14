@@ -18,15 +18,15 @@ int main(void) {
     fill(write_data, 3U);
     storage_request_submit_t write = {
         STORAGE_REQUEST_VERSION, sizeof(write), STORAGE_REQUEST_WRITE,
-        1U, 42U, STORAGE_REQUEST_BLOCK_SIZE,
+        1U, 42U, STORAGE_REQUEST_BLOCK_SIZE, 1000U,
     };
     storage_request_handle_t write_handle = 0U;
-    if (storage_request_submit(3, 5U, &write, write_data,
+    if (storage_request_submit(3, 5U, &write, write_data, 10U,
                                &write_handle) != 0 || write_handle == 0U)
         return 2;
     storage_request_descriptor_t descriptor;
-    if (storage_request_claim(8, 12U, &descriptor, transfer) != -13 ||
-        storage_request_claim(7, 11U, &descriptor, transfer) != 0 ||
+    if (storage_request_claim(8, 12U, 11U, &descriptor, transfer) != -13 ||
+        storage_request_claim(7, 11U, 11U, &descriptor, transfer) != 0 ||
         descriptor.handle != write_handle || descriptor.resource != 1U ||
         descriptor.offset != 42U ||
         memcmp(write_data, transfer, sizeof(write_data)) != 0) return 3;
@@ -39,48 +39,64 @@ int main(void) {
         storage_request_collect(3, 5U, write_handle, &result, 0) >= 0)
         return 5;
 
-    if (storage_request_submit(3, 5U, &write, write_data,
+    if (storage_request_submit(3, 5U, &write, write_data, 20U,
                                &write_handle) != 0 ||
         storage_request_test_corrupt_data(write_handle, false) != 0 ||
-        storage_request_claim(7, 11U, &descriptor, transfer) != 0 ||
+        storage_request_claim(7, 11U, 21U, &descriptor, transfer) != 0 ||
         memcmp(write_data, transfer, sizeof(write_data)) != 0 ||
         storage_request_complete(7, 11U, write_handle, 0, 0) != 0 ||
         storage_request_collect(3, 5U, write_handle, &result, 0) != 0)
         return 13;
-    if (storage_request_submit(3, 5U, &write, write_data,
+    if (storage_request_submit(3, 5U, &write, write_data, 30U,
                                &write_handle) != 0 ||
         storage_request_test_corrupt_data(write_handle, true) != 0 ||
-        storage_request_claim(7, 11U, &descriptor, transfer) != -84)
+        storage_request_claim(7, 11U, 31U, &descriptor, transfer) != -84)
         return 14;
     storage_request_cancel_process(3, 5U);
 
     storage_request_submit_t read = {
         STORAGE_REQUEST_VERSION, sizeof(read), STORAGE_REQUEST_READ,
-        1U, 43U, STORAGE_REQUEST_BLOCK_SIZE,
+        1U, 43U, STORAGE_REQUEST_BLOCK_SIZE, 1000U,
     };
     storage_request_handle_t read_handle = 0U;
-    if (storage_request_submit(3, 5U, &read, 0, &read_handle) != 0 ||
-        storage_request_claim(7, 11U, &descriptor, 0) != 0) return 6;
+    if (storage_request_submit(3, 5U, &read, 0, 40U, &read_handle) != 0 ||
+        storage_request_claim(7, 11U, 41U, &descriptor, 0) != 0) return 6;
     uint8_t read_data[STORAGE_REQUEST_BLOCK_SIZE];
     fill(read_data, 99U);
     if (storage_request_complete(7, 11U, read_handle, 0, read_data) != 0 ||
         storage_request_collect(3, 5U, read_handle, &result, transfer) != 0 ||
         memcmp(read_data, transfer, sizeof(read_data)) != 0) return 7;
 
+    if (storage_request_submit(3, 5U, &read, 0, 100U, &read_handle) != 0 ||
+        storage_request_claim(7, 11U, 1100U, &descriptor, 0) != -11 ||
+        storage_request_collect(3, 5U, read_handle, &result, transfer) != 0 ||
+        result != -110) return 15;
+
+    storage_request_handle_t quota[STORAGE_REQUEST_MAX_PER_CLIENT];
+    for (uint32_t index = 0U; index < STORAGE_REQUEST_MAX_PER_CLIENT; ++index)
+        if (storage_request_submit(3, 5U, &read, 0, 50U,
+                                   &quota[index]) != 0) return 8;
+    storage_request_handle_t excess;
+    if (storage_request_submit(3, 5U, &read, 0, 50U, &excess) != -28)
+        return 9;
+    storage_request_cancel_process(3, 5U);
+
     storage_request_handle_t handles[STORAGE_REQUEST_POOL_CAPACITY];
     for (uint32_t index = 0U; index < STORAGE_REQUEST_POOL_CAPACITY; ++index)
-        if (storage_request_submit(3, 5U, &read, 0, &handles[index]) != 0)
+        if (storage_request_submit(10 + (int)index, 5U, &read, 0, 60U,
+                                   &handles[index]) != 0)
             return 8;
-    storage_request_handle_t excess;
-    if (storage_request_submit(3, 5U, &read, 0, &excess) != -28) return 9;
-    storage_request_cancel_process(3, 5U);
-    if (storage_request_claim(7, 11U, &descriptor, 0) != -11) return 10;
+    if (storage_request_submit(30, 5U, &read, 0, 60U, &excess) != -28)
+        return 9;
+    for (uint32_t index = 0U; index < STORAGE_REQUEST_POOL_CAPACITY; ++index)
+        storage_request_cancel_process(10 + (int)index, 5U);
+    if (storage_request_claim(7, 11U, 61U, &descriptor, 0) != -11) return 10;
     for (uint32_t index = 0U; index < STORAGE_REQUEST_POOL_CAPACITY; ++index)
         if (storage_request_collect(3, 5U, handles[index], &result,
                                     transfer) >= 0) return 11;
 
     storage_request_unbind_service(7, 11U);
-    if (storage_request_claim(7, 11U, &descriptor, 0) != -13 ||
+    if (storage_request_claim(7, 11U, 61U, &descriptor, 0) != -13 ||
         storage_request_bind_service(9, 13U) != 0) return 12;
     return 0;
 }

@@ -26,6 +26,7 @@
 #include "include/kernel/watchdog.h"
 #include "include/kernel/supervisor.h"
 #include "include/kernel/storage_safety.h"
+#include "include/kernel/storage_service.h"
 #include "include/kernel/filesystem_safety.h"
 #include "include/kernel/output_fence.h"
 #include "include/kernel/ipc.h"
@@ -411,6 +412,9 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     early_init();
     fatal_boot_recover_record();
     supervisor_init();
+    if (!storage_service_init()) {
+        panic("Unable to initialize REIST storage service control");
+    }
     if (!netstack_safety_init()) {
         panic("Unable to initialize protected network state");
     }
@@ -448,6 +452,9 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     }
     if (!supervisor_start_probe(pit_monotonic_ms())) {
         panic("Unable to start REIST Ring-3 probe");
+    }
+    if (!storage_service_start(pit_monotonic_ms())) {
+        panic("Unable to start REIST Ring-3 storage service");
     }
     printf("BOOT_OK\n");
 

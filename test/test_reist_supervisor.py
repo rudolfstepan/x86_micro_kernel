@@ -137,7 +137,8 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("free_slots <= SUPERVISED_PROCESS_RESERVE", process)
         self.assertIn("memory_stats.free_frame_bytes / PAGE_SIZE", process)
         self.assertIn("process_spawn_supervised", source)
-        self.assertIn("int children[3];", guest)
+        self.assertIn("int children[2];", guest)
+        self.assertIn("storage service, shell and GTEST occupy five", guest)
         self.assertIn("TEST_STAGE REIST_PROGRESS_OK", guest)
 
 

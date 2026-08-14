@@ -151,6 +151,43 @@ int x86os_network_arp_resolve(uint32_t target_ip) {
                               target_ip, 0, 0);
 }
 
+_Static_assert(sizeof(x86os_storage_submit_t) == 28U,
+               "storage submit ABI changed");
+_Static_assert(sizeof(x86os_storage_descriptor_t) == 28U,
+               "storage descriptor ABI changed");
+
+int x86os_storage_bind(void) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_BIND, 0, 0, 0);
+}
+
+int x86os_storage_submit(const x86os_storage_submit_t *request,
+                         const void *data, x86os_storage_handle_t *handle) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_SUBMIT, (uintptr_t)request,
+                              (uintptr_t)data, (uintptr_t)handle);
+}
+
+int x86os_storage_claim(x86os_storage_descriptor_t *request, void *data) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_CLAIM, (uintptr_t)request,
+                              (uintptr_t)data, 0);
+}
+
+int x86os_storage_block_read(uint32_t resource, uint32_t block, void *data) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_BLOCK_READ, resource, block,
+                              (uintptr_t)data);
+}
+
+int x86os_storage_complete(x86os_storage_handle_t handle, int32_t result,
+                           const void *data) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_COMPLETE, handle,
+                              (uintptr_t)result, (uintptr_t)data);
+}
+
+int x86os_storage_collect(x86os_storage_handle_t handle, int32_t *result,
+                          void *data) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_COLLECT, handle,
+                              (uintptr_t)result, (uintptr_t)data);
+}
+
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,
                        uint32_t rights) {
     return (int)x86os_syscall(X86OS_SYS_IPC_DELEGATE, handle,

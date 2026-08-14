@@ -737,9 +737,9 @@ static int test_memory_accounting(void) {
 }
 
 static int test_task_capacity_and_parenting(void) {
-    /* Worker, probe, shell and GTEST occupy four slots. Three ambient slots
-     * remain while the final slot stays reserved for supervised restart. */
-    int children[3];
+    /* Worker, network probe, storage service, shell and GTEST occupy five
+     * slots. Two ambient slots remain while the final slot stays reserved. */
+    int children[2];
     int parent_pid = x86os_getpid();
     for (size_t index = 0; index < sizeof(children) / sizeof(children[0]);
          ++index) {
@@ -768,6 +768,43 @@ static int test_task_capacity_and_parenting(void) {
             status != 143) return -1;
     }
     return wait_for_expected("CHILDEX.PRG", 37);
+}
+
+static int test_storage_service(void) {
+    uint8_t sector[X86OS_STORAGE_BLOCK_SIZE];
+    int32_t result = -1;
+    x86os_storage_handle_t handle = 0U;
+    x86os_storage_submit_t request = {
+        .version = X86OS_STORAGE_REQUEST_VERSION,
+        .struct_size = sizeof(request),
+        .operation = X86OS_STORAGE_BLOCK_READ,
+        .resource = 0U,
+        .offset = 0U,
+        .length = sizeof(sector),
+        .timeout_ms = 1000U,
+    };
+    if (x86os_storage_bind() != -13 ||
+        x86os_storage_claim((x86os_storage_descriptor_t*)(uintptr_t)0x1000U,
+                            sector) != -13 ||
+        x86os_storage_block_read(0U, 0U, sector) != -13 ||
+        x86os_storage_submit(
+            (const x86os_storage_submit_t*)(uintptr_t)0x1000U,
+            0, &handle) != -14 ||
+        x86os_storage_submit(&request, 0, &handle) != 0 || handle == 0U)
+        return -1;
+    uint64_t deadline = 0U;
+    if (x86os_monotonic_ms(&deadline) != 0) return -1;
+    deadline += 1000U;
+    for (;;) {
+        int collect = x86os_storage_collect(handle, &result, sector);
+        if (collect == 0) break;
+        uint64_t now = 0U;
+        if (collect != -11 || x86os_monotonic_ms(&now) != 0 ||
+            now >= deadline) return -1;
+        if (x86os_sleep_ms(5U) != 0) return -1;
+    }
+    return result == 0 && sector[510] == 0x55U && sector[511] == 0xAAU
+        ? 0 : -1;
 }
 
 int main(int argc, char **argv) {
@@ -817,9 +854,15 @@ int main(int argc, char **argv) {
     x86os_puts("TEST_STAGE DIAGNOSTIC_SERVICE_OK\n");
     x86os_puts("TEST_STAGE NETWORK_PARSER_OK\n");
 
+    if (test_storage_service() != 0) {
+        x86os_puts("TEST_FAIL STORAGE_SERVICE\n");
+        return 7;
+    }
+    x86os_puts("TEST_STAGE STORAGE_SERVICE_OK\n");
+
     if (test_task_capacity_and_parenting() != 0) {
         x86os_puts("TEST_FAIL TASK_CAPACITY\n");
-        return 7;
+        return 8;
     }
     x86os_puts("TEST_STAGE TASK_CAPACITY_OK\n");
     x86os_puts("TEST_STAGE REIST_PROGRESS_OK\n");
@@ -829,7 +872,7 @@ int main(int argc, char **argv) {
         wait_for_expected("FAULTPF.PRG", 142) != 0 ||
         wait_for_expected("FAULTSTK.PRG", 142) != 0) {
         x86os_puts("TEST_FAIL EXCEPTIONS\n");
-        return 8;
+        return 9;
     }
     x86os_puts("TEST_STAGE EXCEPTIONS_OK\n");
     x86os_puts("TEST_OK\n");

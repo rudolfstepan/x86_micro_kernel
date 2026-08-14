@@ -45,6 +45,7 @@ typedef struct {
     uint32_t offset;
     uint32_t length;
     int32_t result;
+    uint64_t deadline_ms;
 } storage_slot_metadata_t;
 
 typedef struct {
@@ -97,9 +98,11 @@ static bool metadata_valid(const void *payload, size_t length) {
                value->client_generation == 0U && value->service_pid == 0 &&
                value->service_generation == 0U && value->resource == 0U &&
                value->offset == 0U &&
-               value->length == 0U && value->result == 0;
+               value->length == 0U && value->result == 0 &&
+               value->deadline_ms == 0U;
     if (value->generation == 0U || value->client_pid <= 0 ||
         value->client_generation == 0U ||
+        value->deadline_ms == 0U ||
         value->operation < STORAGE_REQUEST_READ ||
         value->operation > STORAGE_REQUEST_VFS_SYNC) return false;
     if (value->operation == STORAGE_REQUEST_BLOCK_FLUSH ||
@@ -109,6 +112,11 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->operation == STORAGE_REQUEST_BLOCK_WRITE)
         return value->length == STORAGE_REQUEST_BLOCK_SIZE;
     return value->length != 0U && value->length <= STORAGE_REQUEST_BLOCK_SIZE;
+}
+
+static uint64_t deadline_after(uint64_t now_ms, uint32_t timeout_ms) {
+    return UINT64_MAX - now_ms < timeout_ms
+        ? UINT64_MAX : now_ms + timeout_ms;
 }
 
 static bool operation_is_write(uint32_t operation) {
@@ -248,12 +256,15 @@ static void unbind_service_locked(int pid, uint32_t generation) {
 
 static int submit_locked(int client_pid, uint32_t client_generation,
         const storage_request_submit_t *request, const uint8_t *block_data,
-        storage_request_handle_t *handle_out) {
+        uint64_t now_ms, storage_request_handle_t *handle_out) {
     if (client_pid <= 0 || client_generation == 0U || request == NULL ||
         handle_out == NULL || request->version != STORAGE_REQUEST_VERSION ||
         request->struct_size < sizeof(*request) ||
         request->operation < STORAGE_REQUEST_READ ||
-        request->operation > STORAGE_REQUEST_VFS_SYNC) return STORAGE_EINVAL;
+        request->operation > STORAGE_REQUEST_VFS_SYNC ||
+        request->timeout_ms == 0U ||
+        request->timeout_ms > STORAGE_REQUEST_MAX_TIMEOUT_MS)
+        return STORAGE_EINVAL;
     uint32_t expected = request->length;
     if (request->operation == STORAGE_REQUEST_BLOCK_FLUSH ||
         request->operation == STORAGE_REQUEST_VFS_SYNC) expected = 0U;
@@ -267,6 +278,19 @@ static int submit_locked(int client_pid, uint32_t client_generation,
     if (request->length != expected) return STORAGE_EMSGSIZE;
     if (operation_is_write(request->operation) && block_data == NULL)
         return STORAGE_EINVAL;
+    uint32_t client_requests = 0U;
+    for (size_t slot = 0U; slot < STORAGE_REQUEST_POOL_CAPACITY; ++slot) {
+        storage_slot_metadata_t metadata;
+        int result = load_metadata(slot, &metadata);
+        if (result != 0) return result;
+        if (metadata.state != STORAGE_SLOT_FREE &&
+            metadata.state != STORAGE_SLOT_RETIRED &&
+            metadata.client_pid == client_pid &&
+            metadata.client_generation == client_generation)
+            ++client_requests;
+    }
+    if (client_requests >= STORAGE_REQUEST_MAX_PER_CLIENT)
+        return STORAGE_ENOSPC;
     for (size_t slot = 0U; slot < STORAGE_REQUEST_POOL_CAPACITY; ++slot) {
         storage_slot_metadata_t metadata;
         int result = load_metadata(slot, &metadata);
@@ -291,6 +315,7 @@ static int submit_locked(int client_pid, uint32_t client_generation,
             .resource = request->resource,
             .offset = request->offset,
             .length = expected,
+            .deadline_ms = deadline_after(now_ms, request->timeout_ms),
         };
         store_data(slot, operation_is_write(request->operation)
                                   ? block_data : NULL,
@@ -307,6 +332,7 @@ static int submit_locked(int client_pid, uint32_t client_generation,
 }
 
 static int claim_locked(int service_pid, uint32_t service_generation,
+        uint64_t now_ms,
         storage_request_descriptor_t *request_out, uint8_t *block_data_out) {
     if (request_out == NULL) return STORAGE_EINVAL;
     storage_service_identity_t identity;
@@ -319,6 +345,13 @@ static int claim_locked(int service_pid, uint32_t service_generation,
         result = load_metadata(slot, &metadata);
         if (result != 0) return result;
         if (metadata.state != STORAGE_SLOT_QUEUED) continue;
+        if (now_ms >= metadata.deadline_ms) {
+            metadata.state = STORAGE_SLOT_COMPLETE;
+            metadata.result = -110;
+            result = store_metadata(slot, &metadata);
+            if (result != 0) return result;
+            continue;
+        }
         if (operation_is_write(metadata.operation) &&
             load_data(slot, block_data_out, metadata.length) != 0)
             return STORAGE_EINTEGRITY;
@@ -419,19 +452,20 @@ void storage_request_unbind_service(int pid, uint32_t generation) {
 
 int storage_request_submit(int client_pid, uint32_t client_generation,
         const storage_request_submit_t *request, const uint8_t *block_data,
-        storage_request_handle_t *handle_out) {
+        uint64_t now_ms, storage_request_handle_t *handle_out) {
     uint32_t flags = storage_pool_lock();
     int result = submit_locked(client_pid, client_generation, request,
-                               block_data, handle_out);
+                               block_data, now_ms, handle_out);
     storage_pool_unlock(flags);
     return result;
 }
 
 int storage_request_claim(int service_pid, uint32_t service_generation,
-        storage_request_descriptor_t *request_out, uint8_t *block_data_out) {
+        uint64_t now_ms, storage_request_descriptor_t *request_out,
+        uint8_t *block_data_out) {
     uint32_t flags = storage_pool_lock();
-    int result = claim_locked(service_pid, service_generation, request_out,
-                              block_data_out);
+    int result = claim_locked(service_pid, service_generation, now_ms,
+                              request_out, block_data_out);
     storage_pool_unlock(flags);
     return result;
 }

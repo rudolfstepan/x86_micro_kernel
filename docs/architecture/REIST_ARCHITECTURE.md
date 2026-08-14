@@ -453,6 +453,16 @@ Dienstidentität sind `critical_object`-geschützt. Der kleine IPC-Control-Plane
 transportiert künftig nur Handles und Status. Claim/Complete/Collect prüfen
 Client- und Dienstgeneration atomar; Exit-Cleanup widerruft idempotent.
 
+S0.3c-6c verbindet diesen Dataplane mit `STORAGE.PRG`. Das Prozessprofil ist
+Default-Deny und erlaubt nur Bind, Claim, kernelvermitteltes Block-Read und
+Complete neben den elementaren Zeit-/Exit-Syscalls. Die Dienstidentität und
+der Restartzustand sind redundant geschützt; Start ist auf eine Sekunde und
+Recovery auf drei Neustarts begrenzt. Danach fencet der Supervisor
+Blockschreiben und VFS-Mutationen. Clients dürfen höchstens zwei Requests mit
+maximal fünf Sekunden Laufzeit halten. Der erste reale End-to-End-Pfad liest
+Sektor 0 einer erkannten ATA-Ressource und liefert ihn generationssicher an
+den Client zurück; Schreib- und VFS-Ausführung bleiben bis S0.3c-6d gesperrt.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

@@ -226,6 +226,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "FAULTSTK.PRG",
                 "GTEST.PRG",
                 "REIST.PRG",
+                "STORAGE.PRG",
                 "SLEEPER.PRG",
             }
             self.assertEqual({path.name for path in output.iterdir()}, expected)

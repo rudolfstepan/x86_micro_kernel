@@ -8,6 +8,8 @@
 #define STORAGE_REQUEST_VERSION 1U
 #define STORAGE_REQUEST_POOL_CAPACITY 8U
 #define STORAGE_REQUEST_BLOCK_SIZE 512U
+#define STORAGE_REQUEST_MAX_PER_CLIENT 2U
+#define STORAGE_REQUEST_MAX_TIMEOUT_MS 5000U
 #define STORAGE_REQUEST_INVALID_HANDLE 0U
 
 typedef uint32_t storage_request_handle_t;
@@ -32,6 +34,7 @@ typedef struct {
     uint32_t resource;
     uint32_t offset;
     uint32_t length;
+    uint32_t timeout_ms;
 } storage_request_submit_t;
 
 typedef struct {
@@ -49,9 +52,10 @@ int storage_request_bind_service(int pid, uint32_t generation);
 void storage_request_unbind_service(int pid, uint32_t generation);
 int storage_request_submit(int client_pid, uint32_t client_generation,
                            const storage_request_submit_t *request,
-                           const uint8_t *block_data,
+                           const uint8_t *block_data, uint64_t now_ms,
                            storage_request_handle_t *handle_out);
 int storage_request_claim(int service_pid, uint32_t service_generation,
+                          uint64_t now_ms,
                           storage_request_descriptor_t *request_out,
                           uint8_t *block_data_out);
 int storage_request_complete(int service_pid, uint32_t service_generation,

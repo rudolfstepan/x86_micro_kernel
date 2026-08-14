@@ -126,7 +126,7 @@ und 10 verbindlich.
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
     - [x] S0.3c-6b Versioniertes Block-/VFS-IPC und statische Request-Pools
-    - [ ] S0.3c-6c Ring-3-Storage-Service mit Capability-Profil und Restart
+    - [x] S0.3c-6c Ring-3-Storage-Service mit Capability-Profil und Restart
     - [ ] S0.3c-6d Reale Power-Loss-/I/O-/Restart-Injektion in QEMU
   - [ ] S0.3c-7 Unabhängiger Standby-/Supervisor-Kanal und realer Handover
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
@@ -1347,6 +1347,18 @@ generationgebunden, Rechte werden vor Zustandsänderungen geprüft und
 Prozessende widerruft offene Requests. Der 128-Byte-IPC-Kanal muss damit nur
 Handle und Status transportieren. S0.3c-6c bindet diesen Pool als Nächstes an
 einen restartbaren Ring-3-Storage-Service.
+
+**S0.3c-6c ist umgesetzt:** `STORAGE.PRG` läuft in einem eigenen
+Default-Deny-Profil und besitzt ausschließlich Zeit-/Fortschritts- sowie
+Storage-Bind/Claim/Block-Read/Complete-Syscalls. Eine geschützt gespeicherte
+Dienstidentität bindet den Dataplane generationsgenau. Der Supervisor erkennt
+Starttimeout oder Prozessverlust, widerruft alte Slots und startet höchstens
+drei Ersatzinstanzen; danach werden Blockschreibpfad und VFS-Mutationen
+fail-closed gefenct. Requests besitzen zusätzlich eine monotone Maximaldauer
+von fünf Sekunden und ein Zwei-Slot-Clientlimit. Der reale Gasttest liest über
+Client -> Pool -> Ring-3-Dienst -> kernelvermittelten ATA-Zugriff -> Pool den
+MBR und validiert `0x55AA`. S0.3c-6d ergänzt als Nächstes echte
+Crash-/I/O-/Power-Loss-Injektion.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

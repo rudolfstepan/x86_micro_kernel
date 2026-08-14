@@ -74,6 +74,12 @@
 #define SYS_REIST_ARP_REPLY 63
 #define SYS_REIST_ARP_RESOLUTION 64
 #define SYS_NETWORK_ARP_RESOLVE 65
+#define SYS_STORAGE_BIND 66
+#define SYS_STORAGE_SUBMIT 67
+#define SYS_STORAGE_CLAIM 68
+#define SYS_STORAGE_BLOCK_READ 69
+#define SYS_STORAGE_COMPLETE 70
+#define SYS_STORAGE_COLLECT 71
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

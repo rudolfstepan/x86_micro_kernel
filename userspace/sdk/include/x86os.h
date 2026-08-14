@@ -69,7 +69,13 @@ enum {
     X86OS_SYS_REIST_ARP_BINDING = 62,
     X86OS_SYS_REIST_ARP_REPLY = 63,
     X86OS_SYS_REIST_ARP_RESOLUTION = 64,
-    X86OS_SYS_NETWORK_ARP_RESOLVE = 65
+    X86OS_SYS_NETWORK_ARP_RESOLVE = 65,
+    X86OS_SYS_STORAGE_BIND = 66,
+    X86OS_SYS_STORAGE_SUBMIT = 67,
+    X86OS_SYS_STORAGE_CLAIM = 68,
+    X86OS_SYS_STORAGE_BLOCK_READ = 69,
+    X86OS_SYS_STORAGE_COMPLETE = 70,
+    X86OS_SYS_STORAGE_COLLECT = 71
 };
 
 enum {
@@ -173,6 +179,34 @@ typedef struct {
     uint32_t target_ip;
 } x86os_reist_arp_resolution_t;
 
+#define X86OS_STORAGE_REQUEST_VERSION 1U
+#define X86OS_STORAGE_BLOCK_SIZE 512U
+#define X86OS_STORAGE_BLOCK_READ 1U
+#define X86OS_STORAGE_BLOCK_WRITE 2U
+#define X86OS_STORAGE_BLOCK_FLUSH 3U
+#define X86OS_STORAGE_VFS_READ 4U
+#define X86OS_STORAGE_VFS_WRITE 5U
+#define X86OS_STORAGE_VFS_SYNC 6U
+typedef uint32_t x86os_storage_handle_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t resource;
+    uint32_t offset;
+    uint32_t length;
+    uint32_t timeout_ms;
+} x86os_storage_submit_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_storage_handle_t handle;
+    uint32_t operation;
+    uint32_t resource;
+    uint32_t offset;
+    uint32_t length;
+} x86os_storage_descriptor_t;
+
 typedef uint32_t x86os_ipc_handle_t;
 
 typedef struct {
@@ -273,6 +307,15 @@ int x86os_reist_send_arp_reply(const x86os_reist_arp_reply_t *reply);
 int x86os_reist_send_arp_request(
     const x86os_reist_arp_resolution_t *request);
 int x86os_network_arp_resolve(uint32_t target_ip);
+int x86os_storage_bind(void);
+int x86os_storage_submit(const x86os_storage_submit_t *request,
+                         const void *data, x86os_storage_handle_t *handle);
+int x86os_storage_claim(x86os_storage_descriptor_t *request, void *data);
+int x86os_storage_block_read(uint32_t resource, uint32_t block, void *data);
+int x86os_storage_complete(x86os_storage_handle_t handle, int32_t result,
+                           const void *data);
+int x86os_storage_collect(x86os_storage_handle_t handle, int32_t *result,
+                          void *data);
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,
                        uint32_t rights);
 int x86os_reist_report(uint32_t report_type, uint32_t value);
