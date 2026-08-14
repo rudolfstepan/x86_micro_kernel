@@ -104,7 +104,20 @@ typedef struct {
     uint32_t local_ip;
     uint8_t local_mac[6];
     uint8_t reserved[2];
+    uint32_t candidate_ip;
+    uint8_t candidate_mac[6];
+    uint8_t candidate_reserved[2];
 } supervisor_network_probe_context_t;
+
+#define SUPERVISOR_ARP_BINDING_VERSION 1U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t probe_id;
+    uint32_t ip;
+    uint8_t mac[6];
+    uint8_t reserved[2];
+} supervisor_arp_binding_t;
 
 typedef struct {
     critical_object_t object;
@@ -177,6 +190,10 @@ int supervisor_protected_network_context_publish(
 int supervisor_protected_network_context_publish_epoch(
     supervisor_protected_network_context_t *context, uint32_t transaction_epoch,
     uint32_t probe_id);
+int supervisor_protected_network_context_publish_binding_epoch(
+    supervisor_protected_network_context_t *context, uint32_t transaction_epoch,
+    uint32_t probe_id, uint32_t candidate_ip,
+    const uint8_t candidate_mac[6]);
 int supervisor_protected_network_context_consume(
     supervisor_protected_network_context_t *context, uint32_t probe_id);
 int supervisor_protected_network_context_consume_epoch(
@@ -208,6 +225,8 @@ int supervisor_network_probe_request(int pid, uint32_t generation,
 int supervisor_network_probe_request_id(int pid, uint32_t generation,
                                         uint64_t now_ms,
                                         uint32_t *probe_id_out);
+int supervisor_network_commit_arp_binding(
+    int pid, uint32_t generation, const supervisor_arp_binding_t *binding);
 int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind);
 int supervisor_register(const char *name, const supervisor_config_t *config,

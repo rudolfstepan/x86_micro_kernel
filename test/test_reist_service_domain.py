@@ -218,10 +218,10 @@ class ReistServiceDomainTests(unittest.TestCase):
                       service)
         self.assertIn("message_probe_id(&request) != pending_network_probe_id",
                       service)
-        self.assertIn("REIST_REPORT_NETWORK_PROBE_ID", service)
-        self.assertIn("supervisor_protected_network_context_publish(",
+        self.assertIn("x86os_reist_commit_arp_binding(&binding)", service)
+        self.assertIn("supervisor_protected_network_context_publish_binding_epoch(",
                       supervisor)
-        self.assertIn("supervisor_protected_network_context_consume(",
+        self.assertIn("supervisor_protected_network_context_consume_epoch(",
                       supervisor)
         self.assertIn("REIST_NETWORK PROBE_ID_OK", supervisor)
         self.assertIn("x86os_network_probe_id((uint32_t*)(uintptr_t)0x1000U)",
@@ -252,7 +252,8 @@ class ReistServiceDomainTests(unittest.TestCase):
                       "control.network_epoch", handoff)
         self.assertIn("supervisor_protected_probe_authority_take_epoch(",
                       handoff)
-        self.assertIn("supervisor_protected_network_context_publish_epoch(",
+        self.assertIn(
+            "supervisor_protected_network_context_publish_binding_epoch(",
                       handoff)
         report = supervisor[
             supervisor.index("int supervisor_probe_report("):
@@ -260,6 +261,46 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("control.network_epoch", report)
         self.assertIn("supervisor_protected_network_context_consume_epoch(",
                       report)
+
+    def test_arp_binding_commit_is_narrow_versioned_and_epoch_bound(self):
+        libc = read("lib/libc/stdlib.h")
+        sdk = read("userspace/sdk/include/x86os.h")
+        sdk_c = read("userspace/sdk/x86os.c")
+        syscall = read("kernel/syscall/syscall_table.c")
+        process = read("kernel/proc/process.c")
+        supervisor = read("kernel/init/supervisor.c")
+        netstack = read("drivers/net/netstack.c")
+        service = read("examples/userspace/reist_probe.c")
+        guest = read("examples/userspace/guest_test.c")
+        runner = read("scripts/run_qemu_smoke.py")
+        self.assertIn("SYS_REIST_ARP_BINDING 62", libc)
+        self.assertIn("X86OS_SYS_REIST_ARP_BINDING = 62", sdk)
+        self.assertIn("sizeof(x86os_reist_arp_binding_t) == 24U", sdk_c)
+        self.assertIn("SYS_REIST_ARP_BINDING", process)
+        body = syscall[syscall.index("static int syscall_reist_arp_binding("):
+                       syscall.index("static int syscall_service_connect(")]
+        self.assertLess(body.index("user_range_accessible"),
+                        body.index("copy_from_user"))
+        self.assertLess(body.index("copy_from_user"),
+                        body.index("supervisor_network_commit_arp_binding"))
+        mediator = supervisor[
+            supervisor.index("int supervisor_network_commit_arp_binding("):
+            supervisor.index("static void supervisor_worker(")]
+        self.assertIn("control.network_epoch != binding->probe_id", mediator)
+        self.assertIn("context.candidate_ip != binding->ip", mediator)
+        self.assertIn("context.candidate_mac[index] != binding->mac[index]",
+                      mediator)
+        self.assertLess(mediator.index(
+                            "supervisor_protected_network_context_consume_epoch"),
+                        mediator.index("netstack_commit_arp_binding"))
+        self.assertIn("ARP_CACHE_SIZE", netstack)
+        self.assertIn("netstack_commit_arp_binding", netstack)
+        self.assertIn("x86os_reist_commit_arp_binding(&binding)", service)
+        self.assertIn("x86os_reist_commit_arp_binding(\n"
+                      "            (const x86os_reist_arp_binding_t*)"
+                      "(uintptr_t)0x1000U) != -14", guest)
+        self.assertIn("REIST_NETWORK ARP_BINDING_OK", supervisor)
+        self.assertIn("REIST_ARP_BINDING_MARKER", runner)
 
     def test_network_degradation_stats_abi_is_versioned_read_only(self):
         libc = read("lib/libc/stdlib.h")

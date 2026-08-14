@@ -221,9 +221,18 @@ int main(int argc, char **argv) {
             if (network != NULL && request.payload[3] == 'R') {
                 uint32_t ethertype = ((uint32_t)request.payload[16] << 8) |
                                      request.payload[17];
-                if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_PROBE_ID,
-                                       pending_network_probe_id) != 0)
-                    return 13;
+                x86os_reist_arp_binding_t binding = {
+                    .version = X86OS_REIST_ARP_BINDING_VERSION,
+                    .struct_size = sizeof(binding),
+                    .probe_id = pending_network_probe_id,
+                    .ip = ((uint32_t)request.payload[32] << 24U) |
+                          ((uint32_t)request.payload[33] << 16U) |
+                          ((uint32_t)request.payload[34] << 8U) |
+                          request.payload[35],
+                };
+                for (uint32_t index = 0U; index < 6U; ++index)
+                    binding.mac[index] = request.payload[26U + index];
+                if (x86os_reist_commit_arp_binding(&binding) != 0) return 13;
                 if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_HEADER,
                                        ethertype) != 0) return 9;
             }

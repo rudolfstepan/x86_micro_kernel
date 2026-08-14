@@ -371,6 +371,13 @@ dieselbe Epoche tragen. Der Vergleich und die jeweilige Zustandsmutation liegen
 unter einer gemeinsamen kurzen IRQ-off-Sperre; IPC und Gerätetransaktionen
 bleiben außerhalb dieser Sperre.
 
+S0.3c-4a führt den ersten mutierenden Netzwerk-Mediator ein. Ring 3 besitzt
+weiterhin weder Cache-, Treiber- noch DMA-Zugriff, sondern übergibt über Syscall
+62 genau `{version,size,probe_id,ip,mac}`. Der Kernel vergleicht die Struktur
+mit Prozessgeneration, Control-Epoche und dem roh aus dem geschützten Ingress
+gesicherten Kandidaten. Erst nach dem atomaren Autoritätsverbrauch darf der
+feste ARP-Cache aktualisiert werden.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

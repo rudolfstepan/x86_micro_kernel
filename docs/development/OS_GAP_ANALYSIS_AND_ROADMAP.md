@@ -1168,10 +1168,18 @@ kurzen gemeinsamen Supervisor-Sperre. Ablauf und Dienstbestätigung verlangen
 dieselbe Epoche. Hosttests kombinieren absichtlich einzeln gültige Snapshots
 verschiedener Epochen; Take, Publish und Consume lehnen sie ohne Mutation ab.
 
-Als nächstes beginnt **S0.3c-4 ARP-State-Migration**: Der Ring-3-Dienst soll
-eine validierte, epochengebundene Nachbarbindung an einen engen Kernel-Mediator
-zurückgeben. Nur dieser Mediator darf den begrenzten ARP-Zustand aktualisieren;
-Treiber-, DMA- oder ambienter Netzwerkzugriff bleibt der Domäne verwehrt.
+**S0.3c-4a ist umgesetzt:** Der append-only Syscall 62 übernimmt eine feste,
+versionierte 24-Byte-ARP-Bindung ausschließlich von der generation-validierten
+Probe-Domäne. Probe-ID, Gateway-IP und Sender-MAC müssen bytegenau zu Control-
+Epoche und geschütztem Ingress-Kandidaten passen. Der Mediator verbraucht die
+Autorität vor dem begrenzten 32-Slot-Cache-Update; Replay, falsche Epoche,
+falsche IP/MAC, Broadcast/Null-MAC und fremde Prozesse scheitern vor der
+Mutation. Der RTL8139-Gast bestätigt den realen Pfad mit `ARP_BINDING_OK`.
+
+S0.3c-4b trennt als nächsten Schritt vermittelte ARP-Bindungen vom Legacy-
+Cache, versieht sie mit monotone Deadline/Quellepoche und schützt die
+Cache-Metadaten redundant. Lookups dürfen abgelaufene oder beschädigte
+Service-Bindungen weder verwenden noch still auf unvalidierte Werte fallen.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

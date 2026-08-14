@@ -182,6 +182,7 @@ void arp_send_request(uint32_t target_ip);
 void arp_send_reply(uint32_t target_ip, uint8_t *target_mac);
 bool arp_lookup(uint32_t ip, uint8_t *mac_out);
 void arp_add_entry(uint32_t ip, const uint8_t *mac);
+bool netstack_commit_arp_binding(uint32_t ip, const uint8_t mac[6]);
 
 // ICMP Functions
 void icmp_send_echo_request(uint32_t dst_ip, uint16_t id, uint16_t seq);

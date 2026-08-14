@@ -99,7 +99,7 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
         SYS_MEMORY_STATS, SYS_IPC_CREATE, SYS_IPC_SEND, SYS_IPC_RECEIVE,
         SYS_IPC_CLOSE,
         SYS_IPC_SEND_TIMEOUT, SYS_IPC_RECEIVE_TIMEOUT, SYS_REIST_REPORT,
-        SYS_NETWORK_PROBE, SYS_NETWORK_PROBE_ID
+        SYS_NETWORK_PROBE, SYS_NETWORK_PROBE_ID, SYS_REIST_ARP_BINDING
     };
     for (size_t index = 0;
          index < sizeof(probe_syscalls) / sizeof(probe_syscalls[0]); ++index) {

@@ -108,6 +108,9 @@ Direkte ungeschützte Laufzeitentscheidungen existieren in der Probe nicht mehr.
 S0.3c-3r bindet Control, Probe-Autorität und Identitätskontext an dieselbe
 monotone Transaktionsepoche. Drei einzeln gültige Snapshots verschiedener
 Probes werden vor Handoff, Ablauf oder Bestätigung fail-closed abgelehnt.
+S0.3c-4a erlaubt dem Ring-3-Dienst erstmals eine reale, eng begrenzte
+Netzwerkzustandsänderung: Syscall 62 übernimmt nur die epochengebundene,
+bytegenau mit dem geschützten Ingress übereinstimmende ARP-Bindung.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 

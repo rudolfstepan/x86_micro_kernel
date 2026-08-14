@@ -120,6 +120,15 @@ int x86os_network_probe_stats(x86os_network_probe_stats_t *stats) {
                               X86OS_NETWORK_PROBE_STATS_VERSION);
 }
 
+_Static_assert(sizeof(x86os_reist_arp_binding_t) == 24U,
+               "REIST ARP binding ABI changed");
+
+int x86os_reist_commit_arp_binding(
+        const x86os_reist_arp_binding_t *binding) {
+    return (int)x86os_syscall(X86OS_SYS_REIST_ARP_BINDING,
+                              (uintptr_t)binding, 0, 0);
+}
+
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,
                        uint32_t rights) {
     return (int)x86os_syscall(X86OS_SYS_IPC_DELEGATE, handle,

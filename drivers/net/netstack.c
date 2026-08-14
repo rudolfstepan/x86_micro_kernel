@@ -262,6 +262,16 @@ static bool arp_send_request_now(uint32_t target_ip) {
     return nic_send(packet, sizeof(packet));
 }
 
+bool netstack_commit_arp_binding(uint32_t ip, const uint8_t mac[6]) {
+    if (ip == 0U || mac == NULL || (mac[0] & 1U) != 0U) return false;
+    bool nonzero = false;
+    for (uint32_t index = 0U; index < ETH_ADDR_LEN; ++index)
+        if (mac[index] != 0U) nonzero = true;
+    if (!nonzero) return false;
+    arp_add_entry(ip, mac);
+    return true;
+}
+
 void arp_send_request(uint32_t target_ip) {
     (void)arp_send_request_now(target_ip);
 }

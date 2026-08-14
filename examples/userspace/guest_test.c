@@ -455,8 +455,18 @@ static int test_ipc_capabilities(void) {
 static int test_diagnostic_service(void) {
     x86os_network_probe_stats_t stats_before;
     x86os_network_probe_stats_t stats_after;
+    x86os_reist_arp_binding_t unauthorized_binding = {
+        .version = X86OS_REIST_ARP_BINDING_VERSION,
+        .struct_size = sizeof(unauthorized_binding),
+        .probe_id = 1U,
+        .ip = 0x0A000202U,
+        .mac = {2U, 1U, 2U, 3U, 4U, 5U},
+    };
     if (x86os_network_probe_stats(
             (x86os_network_probe_stats_t*)(uintptr_t)0x1000U) != -14 ||
+        x86os_reist_commit_arp_binding(
+            (const x86os_reist_arp_binding_t*)(uintptr_t)0x1000U) != -14 ||
+        x86os_reist_commit_arp_binding(&unauthorized_binding) != -13 ||
         x86os_network_probe_stats(&stats_before) != 0 ||
         stats_before.version != X86OS_NETWORK_PROBE_STATS_VERSION ||
         stats_before.struct_size != sizeof(stats_before) ||

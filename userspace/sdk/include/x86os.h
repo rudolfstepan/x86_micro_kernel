@@ -65,7 +65,8 @@ enum {
     X86OS_SYS_IPC_RELEASE = 58,
     X86OS_SYS_NETWORK_PROBE = 59,
     X86OS_SYS_NETWORK_PROBE_ID = 60,
-    X86OS_SYS_NETWORK_PROBE_STATS = 61
+    X86OS_SYS_NETWORK_PROBE_STATS = 61,
+    X86OS_SYS_REIST_ARP_BINDING = 62
 };
 
 enum {
@@ -132,6 +133,7 @@ typedef struct {
 #define X86OS_SERVICE_DIAGNOSTIC 1U
 
 #define X86OS_NETWORK_PROBE_STATS_VERSION 1U
+#define X86OS_REIST_ARP_BINDING_VERSION 1U
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -140,6 +142,15 @@ typedef struct {
     uint32_t semantic_reject;
     uint32_t reserved;
 } x86os_network_probe_stats_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t probe_id;
+    uint32_t ip;
+    uint8_t mac[6];
+    uint8_t reserved[2];
+} x86os_reist_arp_binding_t;
 
 typedef uint32_t x86os_ipc_handle_t;
 
@@ -235,6 +246,8 @@ int x86os_ipc_release(x86os_ipc_handle_t handle);
 int x86os_network_probe(void);
 int x86os_network_probe_id(uint32_t *probe_id);
 int x86os_network_probe_stats(x86os_network_probe_stats_t *stats);
+int x86os_reist_commit_arp_binding(
+    const x86os_reist_arp_binding_t *binding);
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,
                        uint32_t rights);
 int x86os_reist_report(uint32_t report_type, uint32_t value);
