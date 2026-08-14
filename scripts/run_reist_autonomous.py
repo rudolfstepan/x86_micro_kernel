@@ -663,7 +663,7 @@ def execute(args: argparse.Namespace) -> int:
                 )
                 prompt = f"""Execute exactly the package contract in {active_file}.
 Follow AGENTS.md and every invariant/stop condition. Do not implement the next
-package. Use no parallel writers and at most one read-only reist_reviewer.
+package. Use no subagents or reviewers.
 Do not run the listed acceptance gates inside this nested agent sandbox; the
 outer verifier runs every gate exactly once after validating your candidate
 commit. You may run bounded lightweight inspections that do not duplicate a
@@ -694,22 +694,11 @@ commit SHA.
                     "--config",
                     "agents.max_concurrent_threads_per_session=1",
                     "--config",
+                    "agents.enabled=false",
+                    "--config",
                     'agents.default_subagent_model="gpt-5.6-sol"',
                     "--config",
                     'agents.default_subagent_reasoning_effort="low"',
-                    "--config",
-                    (
-                        'agents.reist_reviewer.description="Read-only REIST '
-                        'P0/P1 package reviewer"'
-                    ),
-                    "--config",
-                    (
-                        'agents.reist_reviewer.config_file="'
-                        + str(
-                            worktree / ".codex/agents/reist-reviewer.toml"
-                        ).replace("\\", "/")
-                        + '"'
-                    ),
                     "--ephemeral",
                     "--json",
                     "--output-schema",
@@ -812,7 +801,7 @@ def main() -> int:
     )
     parser.add_argument("--codex", default="codex")
     parser.add_argument("--max-packages", type=int, choices=range(1, 7), default=6)
-    parser.add_argument("--package-timeout-seconds", type=int, default=7200)
+    parser.add_argument("--package-timeout-seconds", type=int, default=600)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if args.package_timeout_seconds <= 0:

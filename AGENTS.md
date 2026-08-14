@@ -35,9 +35,9 @@ package in the same run.
    Perform only bounded lightweight inspections that do not duplicate a gate.
    The outer runner executes every frozen gate exactly once in a separate
    `:workspace` verifier sandbox after validating the candidate commit.
-6. Inspect the final diff for ABI drift, unbounded work, lost cleanup and stale
-   documentation. For scheduler, memory, boot, IPC, persistence or privilege
-   changes, use at most one read-only `reist_reviewer` subagent before commit.
+6. Inspect the final diff directly for ABI drift, unbounded work, lost cleanup
+   and stale documentation. Do not start subagents or reviewers in autonomous
+   package runs; the outer gates provide the independent acceptance boundary.
 7. On success, set the active package to `done`, set the next `queued` package
    to `active`, update `active_id`, and copy every targeted/package/runtime test
    command into `evidence` in its original order. When no queued package
@@ -53,8 +53,7 @@ scope and queue transition before executing candidate code. It runs trusted
 gate commands without a shell through `codex sandbox -P :workspace`, stops at
 the first failure and fast-forwards the main branch only after all gates pass.
 
-Do not use parallel writing agents. Subagents are optional and read-only;
-their extra token cost must buy an independent, bounded audit.
+Do not use subagents in autonomous package runs.
 
 ## Non-negotiable engineering rules
 

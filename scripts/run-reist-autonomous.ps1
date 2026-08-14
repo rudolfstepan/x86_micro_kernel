@@ -3,7 +3,7 @@ param(
     [ValidateRange(1, 6)]
     [int]$MaxPackages = 6,
     [ValidateRange(1, 14400)]
-    [int]$PackageTimeoutSeconds = 7200,
+    [int]$PackageTimeoutSeconds = 600,
     [switch]$DryRun
 )
 
