@@ -124,8 +124,13 @@ der echte RTL8139-Gast beobachtet `ARP_BINDINGS_REVOKED` vor erfolgreicher
 Recovery. Ein auf einmal pro Sekunde begrenzter 32-Slot-Scrub repariert
 Einzelkopien, publiziert Ablauf und eskaliert Doppelkorruption. Die
 hardwareunabhängige Frühinitialisierung hält denselben Vertrag auch ohne NIC.
-Als nächstes beginnt S0.3c-5 mit der vollständigen Verlagerung der nächsten
-ARP-/IPv4-Verarbeitungsentscheidung aus Ring 0.
+S0.3c-5a entfernt die passive Gateway-Vertrauensentscheidung aus Ring 0.
+Weder ARP-Absender noch IPv4-Quell-MACs dürfen die konfigurierte Gateway-IP in
+den Legacy-Cache schreiben; beim Setzen einer manuellen oder per DHCP
+erhaltenen Route wird eine vorherige Altbindung gelöscht. Damit kann nur noch
+der geschützte Ring-3-Mediator Gateway-Autorität publizieren. Als nächstes
+vermittelt S0.3c-5b auch lokale ARP-Auflösung und Antwortentscheidung über den
+überwachten Dienst.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 

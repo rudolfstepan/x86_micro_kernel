@@ -113,6 +113,10 @@ und 10 verbindlich.
     begrenzter Scrub und Integritätseskalation sind nachgewiesen
   - [ ] **S0.3c-5 in Arbeit:** Netzwerkdatenpfad vollständig aus Ring 0 lösen
     und den Dienst unter Fehler-, Druck- und Restart-Injektion abnehmen
+    - [x] S0.3c-5a Passive Gateway-Vertrauensentscheidung aus dem
+      Ring-0-ARP-/IPv4-Pfad entfernt
+    - [ ] S0.3c-5b Lokale ARP-Auflösung und Antwortentscheidung über den
+      überwachten Dienst vermitteln
   - [ ] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
   - [ ] S0.3c-7 Unabhängiger Standby-/Supervisor-Kanal und realer Handover
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
@@ -1279,6 +1283,16 @@ S0.3c-5 verschiebt als nächsten Schritt die nächste echte ARP-/IPv4-
 Verarbeitungsentscheidung vollständig in den isolierten Dienst und entfernt
 den entsprechenden Ring-0-Parallelpfad. Fehler-, Queue-Druck- und
 Restart-Injektion müssen weiterhin unabhängigen Gastfortschritt beweisen.
+
+**S0.3c-5a ist umgesetzt:** Der Legacy-Cache darf die konfigurierte
+Gateway-IP weder aus einem ARP-Paket noch implizit aus der Quell-MAC eines
+IPv4-Pakets lernen. Eine zentrale, hostgetestete Policy blockiert diese
+Mutation vor jedem Cache-Seiteneffekt. Wird eine Route manuell oder durch DHCP
+publiziert, entfernt der Kernel außerdem eine möglicherweise zuvor gelernte
+Legacy-Bindung. Gateway-Autorität kann damit ausschließlich über den
+generation- und epochengebundenen Ring-3-Mediator in den geschützten Cache
+gelangen. Nicht-Gateway-Peers verbleiben bis S0.3c-5b im klar bezeichneten
+Kompatibilitätspfad.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

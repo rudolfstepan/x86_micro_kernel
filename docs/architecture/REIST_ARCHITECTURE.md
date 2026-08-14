@@ -402,6 +402,16 @@ Probedomäne beziehungsweise aktiviert ohne laufende Domäne den globalen
 Output-Fence. Der RTL8139-Crashgast verlangt den Widerruf vor der erfolgreichen
 Reintegration der Ersatzgeneration.
 
+S0.3c-5a entfernt die erste verbliebene passive Vertrauensentscheidung aus
+dem Ring-0-Netzstack. Die konfigurierte Gateway-IP ist für den Legacy-ARP-
+Cache grundsätzlich gesperrt; dies gilt sowohl für ARP-Absender als auch für
+das frühere implizite Lernen aus IPv4-Quell-MACs. Beim Publizieren einer
+manuellen oder per DHCP erhaltenen Route wird eine vorherige Legacy-Bindung
+gelöscht. Eine Gateway-MAC erhält erst durch den geschützten, generation- und
+epochengebundenen Ring-3-Mediator Autorität. Lokale Nicht-Gateway-Peers bleiben
+vorübergehend kompatibel und werden in S0.3c-5b in denselben Dienstvertrag
+überführt.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

@@ -2,6 +2,7 @@
 // NE2000-focused improved stack (header-aligned)
 
 #include "drivers/net/netstack.h"
+#include "include/kernel/arp_learning_policy.h"
 #include "drivers/net/netdev.h"
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
@@ -215,7 +216,8 @@ static uint32_t netstack_next_hop(uint32_t dst_ip) {
 // ARP (öffentliche Signaturen aus Header)
 // =============================================================================
 void arp_add_entry(uint32_t ip, const uint8_t *mac) {
-    if (!mac) return;
+    if (!mac ||
+        !arp_learning_policy_allows_legacy(ip, net_config.gateway)) return;
     int slot = -1;
     for (int i = 0; i < ARP_CACHE_SIZE; ++i) {
         if (arp_cache[i].valid && arp_cache[i].ip == ip) { slot = i; break; }
@@ -864,6 +866,11 @@ void netstack_init(void) {
 }
 
 void netstack_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway) {
+    /* A value learned before the route was known must not retain gateway
+     * authority after configuration.  Only the supervised mediator may
+     * republish it into the protected cache. */
+    arp_remove_entry(net_config.gateway);
+    arp_remove_entry(gateway);
     net_config.ip_address = ip;
     net_config.netmask    = netmask;
     net_config.gateway    = gateway;
@@ -873,6 +880,7 @@ void netstack_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway) {
 }
 
 bool netstack_configure_dhcp(void) {
+    arp_remove_entry(net_config.gateway);
     net_config.ip_address = 0;
     net_config.netmask = 0;
     net_config.gateway = 0;
@@ -882,6 +890,7 @@ bool netstack_configure_dhcp(void) {
         printf("[DHCP] attempt %u/%u\n", attempt, DHCP_ATTEMPTS);
         uint32_t ip=0, mask=0, gw=0, dns=0;
         if (dhcp_discover_request(&ip, &mask, &gw, &dns)) {
+            arp_remove_entry(gw);
             net_config.ip_address = ip;
             net_config.netmask    = mask;
             net_config.gateway    = gw;
