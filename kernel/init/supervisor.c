@@ -37,6 +37,9 @@ _Static_assert(sizeof(supervisor_probe_authority_t) <=
 _Static_assert(sizeof(supervisor_network_probe_context_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
                "network context exceeds critical object payload");
+_Static_assert(sizeof(supervisor_probe_control_t) <=
+                   CRITICAL_OBJECT_MAX_PAYLOAD,
+               "probe control exceeds critical object payload");
 
 typedef struct {
     critical_object_t protected_descriptor;
@@ -55,15 +58,7 @@ static critical_object_t protected_network_degradation_stats;
 
 #ifndef REIST_HOST_TEST
 typedef struct {
-    bool active;
-    bool fenced;
-    bool healthy;
-    supervisor_handle_t handle;
-    int pid;
-    uint32_t process_generation;
-    uint32_t launch_count;
-    uint32_t endpoint_handle;
-    uint64_t last_network_probe_ms;
+    supervisor_protected_probe_control_t control;
     supervisor_protected_probe_authority_t network_probe_authority;
     supervisor_protected_network_context_t network_probe_context;
 } supervisor_probe_runtime_t;
@@ -359,6 +354,70 @@ int supervisor_protected_network_context_clear(
     return result;
 }
 
+static bool probe_control_valid(const void *payload, size_t length) {
+    if (payload == NULL || length != sizeof(supervisor_probe_control_t))
+        return false;
+    const supervisor_probe_control_t *control = payload;
+    if (control->active > 1U || control->fenced > 1U ||
+        control->healthy > 1U ||
+        (control->fenced != 0U && control->healthy != 0U)) return false;
+    if (control->active == 0U) {
+        const supervisor_probe_control_t empty = {0};
+        const uint8_t *actual = (const uint8_t *)control;
+        const uint8_t *expected = (const uint8_t *)&empty;
+        for (size_t index = 0U; index < sizeof(*control); ++index)
+            if (actual[index] != expected[index]) return false;
+        return true;
+    }
+    if (control->handle.slot >= SUPERVISOR_MAX_DOMAINS ||
+        control->handle.generation == 0U || control->handle.epoch == 0U ||
+        control->pid < 0) return false;
+    if (control->pid == 0)
+        return control->process_generation == 0U &&
+               control->launch_count == 0U && control->healthy == 0U &&
+               control->endpoint_handle == 0U;
+    return control->process_generation != 0U && control->launch_count != 0U;
+}
+
+int supervisor_protected_probe_control_init(
+        supervisor_protected_probe_control_t *protected_control) {
+    if (protected_control == NULL) return -22;
+    supervisor_probe_control_t control = {0};
+    uint32_t flags = supervisor_lock();
+    int result = critical_object_init(
+        &protected_control->object, SUPERVISOR_PROBE_CONTROL_VERSION,
+        &control, sizeof(control)) == 0 ? 0 : SUPERVISOR_EINTEGRITY;
+    supervisor_unlock(flags);
+    return result;
+}
+
+int supervisor_protected_probe_control_read(
+        supervisor_protected_probe_control_t *protected_control,
+        supervisor_probe_control_t *snapshot_out) {
+    if (protected_control == NULL || snapshot_out == NULL) return -22;
+    size_t length = 0U;
+    uint32_t flags = supervisor_lock();
+    critical_read_result_t read_result = critical_object_read(
+        &protected_control->object, SUPERVISOR_PROBE_CONTROL_VERSION,
+        snapshot_out, sizeof(*snapshot_out), &length, probe_control_valid);
+    supervisor_unlock(flags);
+    return read_result < 0 ? SUPERVISOR_EINTEGRITY : 0;
+}
+
+int supervisor_protected_probe_control_write(
+        supervisor_protected_probe_control_t *protected_control,
+        const supervisor_probe_control_t *snapshot) {
+    if (protected_control == NULL || snapshot == NULL ||
+        !probe_control_valid(snapshot, sizeof(*snapshot))) return -22;
+    uint32_t flags = supervisor_lock();
+    int result = critical_object_update(
+        &protected_control->object, SUPERVISOR_PROBE_CONTROL_VERSION,
+        snapshot, sizeof(*snapshot), probe_control_valid) == 0
+        ? 0 : SUPERVISOR_EINTEGRITY;
+    supervisor_unlock(flags);
+    return result;
+}
+
 void supervisor_network_degradation_init(
         supervisor_network_degradation_stats_t *stats) {
     if (stats != NULL) *stats = (supervisor_network_degradation_stats_t){0};
@@ -520,6 +579,15 @@ void supervisor_init(void) {
         panic("Unable to initialize supervisor network statistics");
 #endif
     }
+#ifndef REIST_HOST_TEST
+    if (supervisor_protected_probe_control_init(&probe_runtime.control) != 0 ||
+        supervisor_protected_probe_authority_init(
+            &probe_runtime.network_probe_authority) != 0 ||
+        supervisor_protected_network_context_init(
+            &probe_runtime.network_probe_context) != 0) {
+        panic("Unable to initialize protected probe runtime");
+    }
+#endif
     supervisor_unlock(flags);
 }
 
@@ -720,15 +788,26 @@ supervisor_event_t supervisor_poll(uint64_t now_ms) {
 #ifndef REIST_HOST_TEST
 static bool probe_fence_apply(void *context) {
     supervisor_probe_runtime_t *runtime = context;
-    if (runtime == NULL || !runtime->active) return false;
-    runtime->fenced = true;
-    runtime->healthy = false;
+    supervisor_probe_control_t control;
+    if (runtime == NULL ||
+        supervisor_protected_probe_control_read(
+            &runtime->control, &control) != 0 || control.active == 0U) {
+        output_fence_all();
+        return false;
+    }
+    control.fenced = 1U;
+    control.healthy = 0U;
+    if (supervisor_protected_probe_control_write(
+            &runtime->control, &control) != 0) {
+        output_fence_all();
+        return false;
+    }
     (void)supervisor_protected_probe_authority_cancel(
         &runtime->network_probe_authority);
     (void)supervisor_protected_network_context_clear(
         &runtime->network_probe_context);
-    if (process_identity_alive(runtime->pid, runtime->process_generation)) {
-        (void)process_terminate(runtime->pid);
+    if (process_identity_alive(control.pid, control.process_generation)) {
+        (void)process_terminate(control.pid);
     }
     return true;
 }
@@ -755,32 +834,46 @@ static void probe_report_recovery_pair(uint32_t launch_count) {
 
 static bool probe_fence_verify(void *context) {
     supervisor_probe_runtime_t *runtime = context;
-    return runtime != NULL && runtime->fenced &&
-        !process_identity_alive(runtime->pid, runtime->process_generation);
+    supervisor_probe_control_t control;
+    return runtime != NULL &&
+        supervisor_protected_probe_control_read(
+            &runtime->control, &control) == 0 && control.fenced != 0U &&
+        !process_identity_alive(control.pid, control.process_generation);
 }
 
 static bool probe_spawn_next(void) {
     static const char *const modes[] = {"crash", "hang", "invalid", "healthy"};
-    uint32_t mode_index = probe_runtime.launch_count;
+    supervisor_probe_control_t control;
+    if (supervisor_protected_probe_control_read(
+            &probe_runtime.control, &control) != 0 || control.active == 0U)
+        return false;
+    uint32_t mode_index = control.launch_count;
     if (mode_index >= sizeof(modes) / sizeof(modes[0])) mode_index = 3U;
     const char *arguments[] = {"REIST.PRG", modes[mode_index]};
     int pid = supervisor_spawn_service("/REIST.PRG", 2, arguments,
                                        PROCESS_DOMAIN_PROBE);
     uint32_t generation = 0U;
     if (pid <= 0 || process_get_identity(pid, &generation) != 0) return false;
-    probe_runtime.pid = pid;
-    probe_runtime.process_generation = generation;
-    probe_runtime.healthy = false;
-    ++probe_runtime.launch_count;
+    control.pid = pid;
+    control.process_generation = generation;
+    control.healthy = 0U;
+    ++control.launch_count;
+    if (supervisor_protected_probe_control_write(
+            &probe_runtime.control, &control) != 0) {
+        (void)process_terminate(pid);
+        return false;
+    }
     return true;
 }
 
 bool supervisor_start_probe(uint64_t now_ms) {
-    if (probe_runtime.active) return false;
-    probe_runtime = (supervisor_probe_runtime_t){0};
+    supervisor_probe_control_t control;
+    if (supervisor_protected_probe_control_read(
+            &probe_runtime.control, &control) != 0 || control.active != 0U)
+        return false;
     if (supervisor_protected_probe_authority_init(
-            &probe_runtime.network_probe_authority) != 0) return false;
-    if (supervisor_protected_network_context_init(
+            &probe_runtime.network_probe_authority) != 0 ||
+        supervisor_protected_network_context_init(
             &probe_runtime.network_probe_context) != 0) return false;
     supervisor_config_t config = {
         .heartbeat_timeout_ms = 2000U,
@@ -792,11 +885,17 @@ bool supervisor_start_probe(uint64_t now_ms) {
         .verify = probe_fence_verify,
         .context = &probe_runtime,
     };
+    supervisor_handle_t handle;
     if (supervisor_register("ring3-probe", &config, &fence, now_ms,
-                            &probe_runtime.handle) != 0) return false;
-    probe_runtime.active = true;
+                            &handle) != 0) return false;
+    control = (supervisor_probe_control_t){
+        .active = 1U,
+        .handle = handle,
+    };
+    if (supervisor_protected_probe_control_write(
+            &probe_runtime.control, &control) != 0) return false;
     if (!probe_spawn_next()) {
-        probe_runtime.active = false;
+        (void)supervisor_force_isolate(control.handle);
         return false;
     }
     return true;
@@ -805,32 +904,40 @@ bool supervisor_start_probe(uint64_t now_ms) {
 int supervisor_probe_report(int pid, uint32_t generation,
                             uint32_t report_type, uint32_t value,
                             uint64_t now_ms) {
-    if (!probe_runtime.active || pid != probe_runtime.pid ||
-        generation != probe_runtime.process_generation ||
+    supervisor_probe_control_t control;
+    if (supervisor_protected_probe_control_read(
+            &probe_runtime.control, &control) != 0 || control.active == 0U ||
+        pid != control.pid || generation != control.process_generation ||
         !process_identity_alive(pid, generation)) return -1;
     if (report_type == REIST_REPORT_SELF_TEST) {
         if (value == 0U ||
-            (probe_runtime.endpoint_handle != 0U &&
-             value == probe_runtime.endpoint_handle)) {
-            (void)supervisor_force_isolate(probe_runtime.handle);
+            (control.endpoint_handle != 0U &&
+             value == control.endpoint_handle)) {
+            (void)supervisor_force_isolate(control.handle);
             return -1;
         }
-        probe_runtime.endpoint_handle = value;
-        return supervisor_report_self_test(probe_runtime.handle, true, now_ms);
+        control.endpoint_handle = value;
+        if (supervisor_protected_probe_control_write(
+                &probe_runtime.control, &control) != 0) return -1;
+        return supervisor_report_self_test(control.handle, true, now_ms);
     }
     if (report_type == REIST_REPORT_PROGRESS) {
-        int result = supervisor_report_progress(probe_runtime.handle,
-                                                value, now_ms);
-        if (result == 0 && probe_runtime.fenced) {
-            probe_runtime.fenced = false;
-            probe_runtime.healthy = true;
-            probe_report_recovery_pair(probe_runtime.launch_count);
+        int result = supervisor_report_progress(control.handle, value, now_ms);
+        if (result == 0 && control.fenced != 0U) {
+            control.fenced = 0U;
+            control.healthy = 1U;
+            if (supervisor_protected_probe_control_write(
+                    &probe_runtime.control, &control) != 0) return -1;
+            probe_report_recovery_pair(control.launch_count);
+        } else if (result == 0 && control.healthy == 0U) {
+            control.healthy = 1U;
+            if (supervisor_protected_probe_control_write(
+                    &probe_runtime.control, &control) != 0) return -1;
         }
-        if (result == 0) probe_runtime.healthy = true;
         return result;
     }
     if (report_type == REIST_REPORT_INVALID) {
-        (void)supervisor_force_isolate(probe_runtime.handle);
+        (void)supervisor_force_isolate(control.handle);
         return -1;
     }
     if (report_type == REIST_REPORT_NETWORK_HEADER) {
@@ -855,34 +962,36 @@ int supervisor_probe_report(int pid, uint32_t generation,
 
 int supervisor_service_connect(Process *client, uint32_t service_id,
                                uint32_t *handle_out) {
+    supervisor_probe_control_t control;
     if (client == NULL || handle_out == NULL ||
-        service_id != REIST_SERVICE_DIAGNOSTIC || !probe_runtime.active ||
-        probe_runtime.fenced || !probe_runtime.healthy ||
-        probe_runtime.launch_count < 4U ||
-        probe_runtime.endpoint_handle == IPC_INVALID_HANDLE ||
-        !process_identity_alive(probe_runtime.pid,
-                                probe_runtime.process_generation)) {
+        service_id != REIST_SERVICE_DIAGNOSTIC ||
+        supervisor_protected_probe_control_read(
+            &probe_runtime.control, &control) != 0 || control.active == 0U ||
+        control.fenced != 0U || control.healthy == 0U ||
+        control.launch_count < 4U ||
+        control.endpoint_handle == IPC_INVALID_HANDLE ||
+        !process_identity_alive(control.pid, control.process_generation)) {
         return -11;
     }
     int result = process_ipc_delegate_identity(
-        probe_runtime.pid, probe_runtime.process_generation,
-        probe_runtime.endpoint_handle, client,
+        control.pid, control.process_generation, control.endpoint_handle, client,
         IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE);
-    if (result == 0) *handle_out = probe_runtime.endpoint_handle;
+    if (result == 0) *handle_out = control.endpoint_handle;
     return result;
 }
 
 bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     KASSERT_NOT_IRQ();
     KASSERT(irq_enabled());
+    supervisor_probe_control_t control;
     if (frame == NULL || length < 42U || frame[12] != 0x08U ||
         frame[13] != 0x06U ||
-        !probe_runtime.active ||
-        probe_runtime.fenced || !probe_runtime.healthy ||
-        probe_runtime.launch_count < 4U ||
-        probe_runtime.endpoint_handle == IPC_INVALID_HANDLE ||
-        !process_identity_alive(probe_runtime.pid,
-                                probe_runtime.process_generation)) {
+        supervisor_protected_probe_control_read(
+            &probe_runtime.control, &control) != 0 || control.active == 0U ||
+        control.fenced != 0U || control.healthy == 0U ||
+        control.launch_count < 4U ||
+        control.endpoint_handle == IPC_INVALID_HANDLE ||
+        !process_identity_alive(control.pid, control.process_generation)) {
         return false;
     }
     uint32_t probe_id;
@@ -890,7 +999,7 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     int context_result = supervisor_protected_network_context_snapshot(
         &probe_runtime.network_probe_context, &network_context);
     if (context_result != 0) {
-        (void)supervisor_force_isolate(probe_runtime.handle);
+        (void)supervisor_force_isolate(control.handle);
         return false;
     }
     if (supervisor_protected_probe_authority_take(
@@ -919,12 +1028,12 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
             (uint8_t)(probe_id >> (index * 8U));
     if (supervisor_protected_network_context_publish(
             &probe_runtime.network_probe_context, probe_id) != 0) {
-        (void)supervisor_force_isolate(probe_runtime.handle);
+        (void)supervisor_force_isolate(control.handle);
         return false;
     }
     int ingress = ipc_send_external_from_peer(
-        probe_runtime.pid, probe_runtime.process_generation,
-        probe_runtime.endpoint_handle, &message);
+        control.pid, control.process_generation, control.endpoint_handle,
+        &message);
     /* A matching reply consumes exactly one probe authorization even when
      * bounded IPC pressure forces the frame back to the kernel path. */
     if (ingress != 0)
@@ -948,12 +1057,14 @@ int supervisor_network_probe_request_id(int pid, uint32_t generation,
                                         uint64_t now_ms,
                                         uint32_t *probe_id_out) {
     if (probe_id_out == NULL) return -22;
-    if (!probe_runtime.active || probe_runtime.fenced ||
-        !probe_runtime.healthy || pid != probe_runtime.pid ||
-        generation != probe_runtime.process_generation ||
+    supervisor_probe_control_t control;
+    if (supervisor_protected_probe_control_read(
+            &probe_runtime.control, &control) != 0 || control.active == 0U ||
+        control.fenced != 0U || control.healthy == 0U || pid != control.pid ||
+        generation != control.process_generation ||
         !process_identity_alive(pid, generation)) return -13;
-    if (probe_runtime.last_network_probe_ms != 0U &&
-        now_ms - probe_runtime.last_network_probe_ms < 250U) return -11;
+    if (control.last_network_probe_ms != 0U &&
+        now_ms - control.last_network_probe_ms < 250U) return -11;
     uint32_t gateway = netstack_get_gateway();
     uint32_t local_ip = netstack_get_ip_address();
     uint8_t local_mac[6];
@@ -964,13 +1075,21 @@ int supervisor_network_probe_request_id(int pid, uint32_t generation,
         &probe_runtime.network_probe_authority, now_ms,
         SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS, &probe_id);
     if (authority != 0) return authority;
-    probe_runtime.last_network_probe_ms = now_ms;
     int context_result = supervisor_protected_network_context_prepare(
         &probe_runtime.network_probe_context, gateway, local_ip, local_mac);
     if (context_result != 0) {
         (void)supervisor_protected_probe_authority_cancel(
             &probe_runtime.network_probe_authority);
         return context_result;
+    }
+    control.last_network_probe_ms = now_ms;
+    if (supervisor_protected_probe_control_write(
+            &probe_runtime.control, &control) != 0) {
+        (void)supervisor_protected_probe_authority_cancel(
+            &probe_runtime.network_probe_authority);
+        (void)supervisor_protected_network_context_clear(
+            &probe_runtime.network_probe_context);
+        return SUPERVISOR_EINTEGRITY;
     }
     if (netstack_probe_gateway()) {
         *probe_id_out = probe_id;
@@ -989,27 +1108,46 @@ static void supervisor_worker(void) {
          * pending flags, so foreground progress must not depend on a shell
          * command happening to poll the NIC. */
         netdev_poll();
+        supervisor_probe_control_t control;
+        int control_result = supervisor_protected_probe_control_read(
+            &probe_runtime.control, &control);
+        if (control_result != 0) {
+            output_fence_all();
+            if (scheduler_sleep_ms(SUPERVISOR_CHECK_INTERVAL_MS) != 0)
+                (void)scheduler_yield();
+            continue;
+        }
         int authority_expiry = supervisor_protected_probe_authority_expire(
             &probe_runtime.network_probe_authority, pit_monotonic_ms());
         if (authority_expiry == 1) {
             network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_EXPIRED);
         } else if (authority_expiry == SUPERVISOR_EINTEGRITY &&
-                   probe_runtime.active) {
-            (void)supervisor_force_isolate(probe_runtime.handle);
+                   control.active != 0U) {
+            (void)supervisor_force_isolate(control.handle);
         }
-        if (probe_runtime.active && !probe_runtime.fenced &&
-            !process_identity_alive(probe_runtime.pid,
-                                    probe_runtime.process_generation)) {
-            (void)supervisor_force_isolate(probe_runtime.handle);
+        if (control.active != 0U && control.fenced == 0U &&
+            !process_identity_alive(control.pid, control.process_generation)) {
+            (void)supervisor_force_isolate(control.handle);
         }
         supervisor_event_t result = supervisor_service_one(pit_monotonic_ms());
-        if (probe_runtime.active &&
+        if (control.active != 0U &&
             result.type == SUPERVISOR_EVENT_RESTART_REQUIRED &&
-            result.handle.slot == probe_runtime.handle.slot &&
-            result.handle.generation == probe_runtime.handle.generation) {
-            probe_runtime.handle = result.handle;
+            result.handle.slot == control.handle.slot &&
+            result.handle.generation == control.handle.generation) {
+            if (supervisor_protected_probe_control_read(
+                    &probe_runtime.control, &control) != 0 ||
+                control.active == 0U) {
+                output_fence_all();
+                continue;
+            }
+            control.handle = result.handle;
+            if (supervisor_protected_probe_control_write(
+                    &probe_runtime.control, &control) != 0) {
+                output_fence_all();
+                continue;
+            }
             if (!probe_spawn_next()) {
-                (void)supervisor_force_isolate(probe_runtime.handle);
+                (void)supervisor_force_isolate(control.handle);
             }
         }
         if (result.type == SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) {
@@ -1239,6 +1377,15 @@ int supervisor_test_corrupt_network_context(
     if (context == NULL) return -22;
     context->object.primary.crc32 ^= 1U;
     if (corrupt_both_copies) context->object.shadow.crc32 ^= 2U;
+    return 0;
+}
+
+int supervisor_test_corrupt_probe_control(
+        supervisor_protected_probe_control_t *control,
+        bool corrupt_both_copies) {
+    if (control == NULL) return -22;
+    control->object.primary.crc32 ^= 1U;
+    if (corrupt_both_copies) control->object.shadow.crc32 ^= 2U;
     return 0;
 }
 #endif

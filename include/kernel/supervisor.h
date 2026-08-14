@@ -15,6 +15,7 @@ struct Process;
 #define SUPERVISOR_NETWORK_DEGRADATION_VERSION 1U
 #define SUPERVISOR_PROBE_AUTHORITY_VERSION 1U
 #define SUPERVISOR_NETWORK_CONTEXT_VERSION 1U
+#define SUPERVISOR_PROBE_CONTROL_VERSION 1U
 #define SUPERVISOR_EINTEGRITY (-84)
 #define REIST_REPORT_SELF_TEST 1U
 #define REIST_REPORT_PROGRESS 2U
@@ -48,6 +49,22 @@ typedef struct {
     uint32_t generation;
     uint32_t epoch;
 } supervisor_handle_t;
+
+typedef struct {
+    uint32_t active;
+    uint32_t fenced;
+    uint32_t healthy;
+    supervisor_handle_t handle;
+    int32_t pid;
+    uint32_t process_generation;
+    uint32_t launch_count;
+    uint32_t endpoint_handle;
+    uint64_t last_network_probe_ms;
+} supervisor_probe_control_t;
+
+typedef struct {
+    critical_object_t object;
+} supervisor_protected_probe_control_t;
 
 typedef struct {
     uint32_t heartbeat_timeout_ms;
@@ -145,6 +162,14 @@ int supervisor_protected_network_context_consume(
     supervisor_protected_network_context_t *context, uint32_t probe_id);
 int supervisor_protected_network_context_clear(
     supervisor_protected_network_context_t *context);
+int supervisor_protected_probe_control_init(
+    supervisor_protected_probe_control_t *control);
+int supervisor_protected_probe_control_read(
+    supervisor_protected_probe_control_t *control,
+    supervisor_probe_control_t *snapshot_out);
+int supervisor_protected_probe_control_write(
+    supervisor_protected_probe_control_t *control,
+    const supervisor_probe_control_t *snapshot);
 
 void supervisor_init(void);
 void supervisor_clock_tick(uint64_t now_ms);
@@ -190,6 +215,9 @@ int supervisor_test_corrupt_probe_authority(
     bool corrupt_both_copies);
 int supervisor_test_corrupt_network_context(
     supervisor_protected_network_context_t *context,
+    bool corrupt_both_copies);
+int supervisor_test_corrupt_probe_control(
+    supervisor_protected_probe_control_t *control,
     bool corrupt_both_copies);
 #endif
 

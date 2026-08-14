@@ -358,6 +358,12 @@ Gateway, lokale IP/MAC und die tatsächlich zugestellte ID werden gemeinsam
 publiziert und verbraucht. Der Ring-3-Dienst kann dadurch weder eine veraltete
 ID noch eine Identität aus einem teilweise beschädigten Snapshot bestätigen.
 
+S0.3c-3q entfernt die letzten direkten Laufzeitentscheidungen aus der
+Probe-Domäne. Prozessidentität, Endpoint, Supervisor-Handle, Health/Fence,
+Launch-Zähler und Rate-Limit-Zeit liegen in einem validierten Control-Snapshot.
+Ist keine Replica lesbar, bleiben Connect, Report und Handoff geschlossen; der
+Worker aktiviert zusätzlich den globalen Output-Fence.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

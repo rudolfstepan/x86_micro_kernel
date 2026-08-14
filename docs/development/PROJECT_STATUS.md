@@ -102,6 +102,9 @@ verhindert Begin/Take und zwingt die aktive Domäne in Isolation.
 S0.3c-3p fasst zugestellte ID, Gateway, lokale IP und MAC in einem weiteren
 Critical Object zusammen. Nur ein vollständig validierter Snapshot wird an
 Ring 3 gesendet oder bestätigt; Doppelkorruption isoliert die Domäne.
+S0.3c-3q schützt außerdem PID/Generation, Endpoint, Supervisor-Handle,
+Health/Fence, Launch-Zähler und Rate-Limit-Zeit als einen Control-Snapshot.
+Direkte ungeschützte Laufzeitentscheidungen existieren in der Probe nicht mehr.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 

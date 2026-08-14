@@ -26,8 +26,9 @@ class ReistServiceDomainTests(unittest.TestCase):
     def test_directory_delegation_is_generation_scoped_and_attenuated(self):
         supervisor = read("kernel/init/supervisor.c")
         process = read("kernel/proc/process.c")
-        self.assertIn("process_identity_alive(probe_runtime.pid", supervisor)
-        self.assertIn("probe_runtime.process_generation", supervisor)
+        self.assertIn("process_identity_alive(control.pid", supervisor)
+        self.assertIn("control.process_generation", supervisor)
+        self.assertIn("supervisor_protected_probe_control_read(", supervisor)
         self.assertIn("IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE", supervisor)
         self.assertNotIn("IPC_RIGHT_CONTROL);", supervisor[
             supervisor.index("int supervisor_service_connect("):
@@ -50,8 +51,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         supervisor = read("kernel/init/supervisor.c")
         connect = supervisor[supervisor.index("int supervisor_service_connect("):
                              supervisor.index("static void supervisor_worker(")]
-        for condition in ("probe_runtime.fenced", "!probe_runtime.healthy",
-                          "probe_runtime.launch_count < 4U"):
+        for condition in ("control.fenced != 0U", "control.healthy == 0U",
+                          "control.launch_count < 4U"):
             self.assertIn(condition, connect)
 
     def test_client_release_is_distinct_from_owner_destroy(self):
@@ -159,8 +160,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         probe = supervisor[
             supervisor.index("int supervisor_network_probe_request("):
             supervisor.index("static void supervisor_worker(")]
-        self.assertIn("pid != probe_runtime.pid", probe)
-        self.assertIn("generation != probe_runtime.process_generation", probe)
+        self.assertIn("pid != control.pid", probe)
+        self.assertIn("generation != control.process_generation", probe)
         self.assertIn("< 250U", probe)
         self.assertIn("netstack_probe_gateway()", probe)
         self.assertIn("supervisor_protected_probe_authority_begin(", probe)

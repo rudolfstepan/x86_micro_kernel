@@ -192,6 +192,35 @@ int main(void) {
         supervisor_protected_network_context_publish(
             &protected_context, 9U) != SUPERVISOR_EINTEGRITY) return 53;
 
+    supervisor_protected_probe_control_t protected_control;
+    supervisor_probe_control_t control = {
+        .active = 1U,
+        .handle = {.slot = 1U, .generation = 2U, .epoch = 3U},
+        .pid = 42,
+        .process_generation = 7U,
+        .launch_count = 1U,
+        .endpoint_handle = 9U,
+        .last_network_probe_ms = 123U,
+    };
+    supervisor_probe_control_t control_snapshot;
+    if (supervisor_protected_probe_control_init(&protected_control) != 0 ||
+        supervisor_protected_probe_control_write(
+            &protected_control, &control) != 0 ||
+        supervisor_test_corrupt_probe_control(
+            &protected_control, false) != 0 ||
+        supervisor_protected_probe_control_read(
+            &protected_control, &control_snapshot) != 0 ||
+        control_snapshot.pid != 42 || control_snapshot.endpoint_handle != 9U)
+        return 54;
+    if (supervisor_protected_probe_control_init(&protected_control) != 0 ||
+        supervisor_test_corrupt_probe_control(
+            &protected_control, true) != 0 ||
+        supervisor_protected_probe_control_read(
+            &protected_control, &control_snapshot) !=
+            SUPERVISOR_EINTEGRITY ||
+        supervisor_protected_probe_control_write(
+            &protected_control, &control) != SUPERVISOR_EINTEGRITY) return 55;
+
     supervisor_network_degradation_stats_t stats;
     supervisor_network_degradation_init(&stats);
     supervisor_network_degradation_record(

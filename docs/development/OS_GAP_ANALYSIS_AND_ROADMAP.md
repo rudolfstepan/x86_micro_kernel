@@ -1153,9 +1153,18 @@ unvollständige Identitäten und falsche Bestätigungs-IDs werden abgelehnt. Ein
 beschädigte Kopie wird rekonstruiert, Doppelkorruption erzeugt `-84` und führt
 vor einem Handoff zur Isolation. Der Hosttest injiziert beide Fehlerklassen.
 
-S0.3c-3q schützt als nächsten Schritt die verbleibenden Laufzeit-Metadaten der
-Probe-Domäne (PID/Generation, Endpoint, Health/Fence und Launch-Zähler), damit
-keine Autoritätsentscheidung mehr auf ungeschützten Supervisorfeldern beruht.
+**S0.3c-3q ist umgesetzt:** PID/Generation, Endpoint, Supervisor-Handle,
+Health/Fence, Launch-Zähler und Rate-Limit-Zeit bilden einen versionierten
+Control-Snapshot. Registrierung, Restart, Self-Test, Delegation, Handoff und
+Worker lesen und publizieren ausschließlich validierte Kopien. Einzelkorruption
+wird rekonstruiert; Doppelkorruption sperrt alle Dienste und Probes, der Worker
+fenced sämtliche Ausgänge. Hosttests beweisen Korrektur und fail-closed Read/
+Write; direkte ungeschützte Probe-Control-Felder wurden entfernt.
+
+S0.3c-3r versieht als nächsten Schritt Control, Probe-Autorität und
+Identitätskontext mit einer gemeinsamen Transaktionsepoche. Damit können auch
+drei jeweils gültige, aber zeitlich inkonsistente Snapshots nicht kombiniert
+werden.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions
