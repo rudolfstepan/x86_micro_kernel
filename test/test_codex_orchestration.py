@@ -126,6 +126,7 @@ class CodexOrchestrationTests(unittest.TestCase):
         self.assertEqual(config["model"], "gpt-5.6-sol")
         self.assertEqual(config["model_reasoning_effort"], "low")
         self.assertEqual(config["model_verbosity"], "low")
+        self.assertEqual(config["approval_policy"], "never")
         self.assertEqual(config["default_permissions"], ":workspace")
         self.assertNotIn("sandbox_mode", config)
         self.assertEqual(config["agents"]["max_concurrent_threads_per_session"], 1)
@@ -174,7 +175,9 @@ class CodexOrchestrationTests(unittest.TestCase):
     def test_runner_is_bounded_and_verifies_git_postconditions(self):
         runner = RUNNER_PATH.read_text("utf-8")
         wrapper = (ROOT / "scripts/run-reist-autonomous.ps1").read_text("utf-8")
-        self.assertIn('"--approve-for-me"', runner)
+        self.assertNotIn('"--approve-for-me"', runner)
+        self.assertIn('approval_policy="never"', runner)
+        self.assertIn('default_permissions=":workspace"', runner)
         self.assertIn('"gpt-5.6-sol"', runner)
         self.assertIn('model_reasoning_effort="low"', runner)
         self.assertIn("agents.max_concurrent_threads_per_session=1", runner)
