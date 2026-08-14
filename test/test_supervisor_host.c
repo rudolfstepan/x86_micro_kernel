@@ -165,6 +165,33 @@ int main(void) {
             &protected_authority, 200U, 10U, &probe_id) !=
             SUPERVISOR_EINTEGRITY) return 51;
 
+    supervisor_protected_network_context_t protected_context;
+    supervisor_network_probe_context_t context_snapshot;
+    const uint8_t local_mac[6] = {2U, 1U, 2U, 3U, 4U, 5U};
+    if (supervisor_protected_network_context_init(&protected_context) != 0 ||
+        supervisor_protected_network_context_prepare(
+            &protected_context, 0x0A000202U, 0x0A00020FU, local_mac) != 0 ||
+        supervisor_test_corrupt_network_context(
+            &protected_context, false) != 0 ||
+        supervisor_protected_network_context_snapshot(
+            &protected_context, &context_snapshot) != 0 ||
+        context_snapshot.gateway != 0x0A000202U ||
+        context_snapshot.local_ip != 0x0A00020FU ||
+        supervisor_protected_network_context_publish(
+            &protected_context, 7U) != 0 ||
+        supervisor_protected_network_context_consume(
+            &protected_context, 8U) != -13 ||
+        supervisor_protected_network_context_consume(
+            &protected_context, 7U) != 0) return 52;
+    if (supervisor_protected_network_context_init(&protected_context) != 0 ||
+        supervisor_test_corrupt_network_context(
+            &protected_context, true) != 0 ||
+        supervisor_protected_network_context_snapshot(
+            &protected_context, &context_snapshot) !=
+            SUPERVISOR_EINTEGRITY ||
+        supervisor_protected_network_context_publish(
+            &protected_context, 9U) != SUPERVISOR_EINTEGRITY) return 53;
+
     supervisor_network_degradation_stats_t stats;
     supervisor_network_degradation_init(&stats);
     supervisor_network_degradation_record(

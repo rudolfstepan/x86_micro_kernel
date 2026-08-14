@@ -99,6 +99,9 @@ Syscall 61 `-84` und veröffentlicht keine möglicherweise erfundenen Werte.
 S0.3c-3o schützt auch Probe-ID, Deadline und ID-Sequenz als versioniertes
 Critical Object. Einzelkopiefehler werden rekonstruiert; Doppelkorruption
 verhindert Begin/Take und zwingt die aktive Domäne in Isolation.
+S0.3c-3p fasst zugestellte ID, Gateway, lokale IP und MAC in einem weiteren
+Critical Object zusammen. Nur ein vollständig validierter Snapshot wird an
+Ring 3 gesendet oder bestätigt; Doppelkorruption isoliert die Domäne.
 Die bisherige
 Domäne ist noch keine unabhängige Kernel-, CPU- oder RAM-Fehlerdomäne.
 

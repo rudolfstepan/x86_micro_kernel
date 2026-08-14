@@ -1146,9 +1146,16 @@ lesen und publizieren ausschließlich validierte Snapshots. Ein beschädigter
 CRC wird aus der zweiten Kopie rekonstruiert; Doppelkorruption liefert `-84`,
 erteilt keine Autorität und isoliert eine aktive Probe-Domäne im Worker.
 
-S0.3c-3p schützt als nächsten Schritt den nachgelagerten Probe-Kontext aus
-zugestellter ID, Gateway, lokaler IP und MAC, damit auch zwischen Autoritäts-
-Take und Dienstbestätigung keine ungeschützte Identitätsentscheidung bleibt.
+**S0.3c-3p ist umgesetzt:** Zugestellte Probe-ID, Gateway, lokale IP und MAC
+bilden einen einzigen versionierten Critical-Object-Snapshot. Prepare,
+Snapshot, Publish, Consume und Clear sind atomar unter der Supervisor-Sperre;
+unvollständige Identitäten und falsche Bestätigungs-IDs werden abgelehnt. Eine
+beschädigte Kopie wird rekonstruiert, Doppelkorruption erzeugt `-84` und führt
+vor einem Handoff zur Isolation. Der Hosttest injiziert beide Fehlerklassen.
+
+S0.3c-3q schützt als nächsten Schritt die verbleibenden Laufzeit-Metadaten der
+Probe-Domäne (PID/Generation, Endpoint, Health/Fence und Launch-Zähler), damit
+keine Autoritätsentscheidung mehr auf ungeschützten Supervisorfeldern beruht.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

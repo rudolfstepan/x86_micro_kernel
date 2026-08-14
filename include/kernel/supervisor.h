@@ -14,6 +14,7 @@ struct Process;
 #define SUPERVISOR_DESCRIPTOR_VERSION 1U
 #define SUPERVISOR_NETWORK_DEGRADATION_VERSION 1U
 #define SUPERVISOR_PROBE_AUTHORITY_VERSION 1U
+#define SUPERVISOR_NETWORK_CONTEXT_VERSION 1U
 #define SUPERVISOR_EINTEGRITY (-84)
 #define REIST_REPORT_SELF_TEST 1U
 #define REIST_REPORT_PROGRESS 2U
@@ -77,6 +78,18 @@ typedef struct {
     critical_object_t object;
 } supervisor_protected_probe_authority_t;
 
+typedef struct {
+    uint32_t delivered_id;
+    uint32_t gateway;
+    uint32_t local_ip;
+    uint8_t local_mac[6];
+    uint8_t reserved[2];
+} supervisor_network_probe_context_t;
+
+typedef struct {
+    critical_object_t object;
+} supervisor_protected_network_context_t;
+
 typedef enum {
     SUPERVISOR_NETWORK_DEGRADED_EXPIRED = 1,
     SUPERVISOR_NETWORK_DEGRADED_QUEUE = 2,
@@ -118,6 +131,20 @@ int supervisor_protected_probe_authority_expire(
     supervisor_protected_probe_authority_t *authority, uint64_t now_ms);
 int supervisor_protected_probe_authority_cancel(
     supervisor_protected_probe_authority_t *authority);
+int supervisor_protected_network_context_init(
+    supervisor_protected_network_context_t *context);
+int supervisor_protected_network_context_prepare(
+    supervisor_protected_network_context_t *context, uint32_t gateway,
+    uint32_t local_ip, const uint8_t local_mac[6]);
+int supervisor_protected_network_context_snapshot(
+    supervisor_protected_network_context_t *context,
+    supervisor_network_probe_context_t *snapshot_out);
+int supervisor_protected_network_context_publish(
+    supervisor_protected_network_context_t *context, uint32_t probe_id);
+int supervisor_protected_network_context_consume(
+    supervisor_protected_network_context_t *context, uint32_t probe_id);
+int supervisor_protected_network_context_clear(
+    supervisor_protected_network_context_t *context);
 
 void supervisor_init(void);
 void supervisor_clock_tick(uint64_t now_ms);
@@ -160,6 +187,9 @@ int supervisor_test_record_network_degradation(
     supervisor_network_degradation_reason_t reason);
 int supervisor_test_corrupt_probe_authority(
     supervisor_protected_probe_authority_t *authority,
+    bool corrupt_both_copies);
+int supervisor_test_corrupt_network_context(
+    supervisor_protected_network_context_t *context,
     bool corrupt_both_copies);
 #endif
 

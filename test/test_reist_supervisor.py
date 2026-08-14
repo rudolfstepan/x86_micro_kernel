@@ -74,6 +74,10 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("SUPERVISOR_PROBE_AUTHORITY_VERSION", source)
         self.assertIn("supervisor_test_corrupt_probe_authority", host)
         self.assertIn("SUPERVISOR_EINTEGRITY", host)
+        self.assertIn("supervisor_protected_network_context_t", header)
+        self.assertIn("SUPERVISOR_NETWORK_CONTEXT_VERSION", source)
+        self.assertIn("supervisor_test_corrupt_network_context", host)
+        self.assertIn("context_snapshot.gateway != 0x0A000202U", host)
 
     def test_network_degradation_counters_saturate(self):
         header = (ROOT / "include/kernel/supervisor.h").read_text(encoding="utf-8")

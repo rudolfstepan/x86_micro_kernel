@@ -139,9 +139,11 @@ class ReistServiceDomainTests(unittest.TestCase):
         guest = read("examples/userspace/guest_test.c")
         netstack = read("drivers/net/netstack.c")
         self.assertIn("uint32_t netstack_get_gateway(void)", netstack)
-        self.assertIn("network_probe_gateway", supervisor)
-        self.assertIn("network_probe_local_ip", supervisor)
-        self.assertIn("network_probe_local_mac", supervisor)
+        self.assertIn("supervisor_protected_network_context_prepare(",
+                      supervisor)
+        self.assertIn("network_context.gateway", supervisor)
+        self.assertIn("network_context.local_ip", supervisor)
+        self.assertIn("network_context.local_mac[index]", supervisor)
         self.assertIn(".length = 64U", supervisor)
         for offset in (32, 42, 46, 50, 54):
             self.assertIn(f"message->payload[{offset}U + index]", service)
@@ -182,7 +184,10 @@ class ReistServiceDomainTests(unittest.TestCase):
         runner = read("scripts/run_qemu_smoke.py")
         self.assertIn('message_request_is(&request, "NETCRASH")', service)
         self.assertIn('volatile("ud2")', service)
-        self.assertIn("supervisor_probe_authority_cancel(", supervisor)
+        self.assertIn("supervisor_protected_probe_authority_cancel(",
+                      supervisor)
+        self.assertIn("supervisor_protected_network_context_clear(",
+                      supervisor)
         self.assertIn("REIST_NETWORK SERVICE_CRASH_RECOVERED", supervisor)
         self.assertIn("attempt < 100U", guest)
         self.assertIn("TEST_STAGE NETWORK_RECOVERY_OK", guest)
@@ -212,8 +217,9 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("message_probe_id(&request) != pending_network_probe_id",
                       service)
         self.assertIn("REIST_REPORT_NETWORK_PROBE_ID", service)
-        self.assertIn("network_probe_delivered_id", supervisor)
-        self.assertIn("value != probe_runtime.network_probe_delivered_id",
+        self.assertIn("supervisor_protected_network_context_publish(",
+                      supervisor)
+        self.assertIn("supervisor_protected_network_context_consume(",
                       supervisor)
         self.assertIn("REIST_NETWORK PROBE_ID_OK", supervisor)
         self.assertIn("x86os_network_probe_id((uint32_t*)(uintptr_t)0x1000U)",

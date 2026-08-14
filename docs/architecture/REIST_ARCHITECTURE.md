@@ -353,6 +353,11 @@ monotone ID-Sequenz, aktive ID und absolute Deadline werden nur als validierter
 Snapshot verändert. Nicht korrigierbare Korruption kann deshalb weder eine
 Probe erzeugen noch verbrauchen; der Worker fordert stattdessen Isolation an.
 
+S0.3c-3p schützt den nachfolgenden Identitätskontext ebenfalls redundant.
+Gateway, lokale IP/MAC und die tatsächlich zugestellte ID werden gemeinsam
+publiziert und verbraucht. Der Ring-3-Dienst kann dadurch weder eine veraltete
+ID noch eine Identität aus einem teilweise beschädigten Snapshot bestätigen.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

@@ -31,6 +31,13 @@ typedef struct {
     char name[SUPERVISOR_NAME_CAPACITY];
 } supervisor_descriptor_t;
 
+_Static_assert(sizeof(supervisor_probe_authority_t) <=
+                   CRITICAL_OBJECT_MAX_PAYLOAD,
+               "probe authority exceeds critical object payload");
+_Static_assert(sizeof(supervisor_network_probe_context_t) <=
+                   CRITICAL_OBJECT_MAX_PAYLOAD,
+               "network context exceeds critical object payload");
+
 typedef struct {
     critical_object_t protected_descriptor;
     critical_object_t protected_fence_ops;
@@ -58,10 +65,7 @@ typedef struct {
     uint32_t endpoint_handle;
     uint64_t last_network_probe_ms;
     supervisor_protected_probe_authority_t network_probe_authority;
-    uint32_t network_probe_delivered_id;
-    uint32_t network_probe_gateway;
-    uint32_t network_probe_local_ip;
-    uint8_t network_probe_local_mac[6];
+    supervisor_protected_network_context_t network_probe_context;
 } supervisor_probe_runtime_t;
 
 static supervisor_probe_runtime_t probe_runtime;
@@ -168,52 +172,191 @@ int supervisor_protected_probe_authority_init(
     if (protected_authority == NULL) return -22;
     supervisor_probe_authority_t authority;
     supervisor_probe_authority_init(&authority);
-    return critical_object_init(
+    uint32_t flags = supervisor_lock();
+    int result = critical_object_init(
         &protected_authority->object, SUPERVISOR_PROBE_AUTHORITY_VERSION,
         &authority, sizeof(authority)) == 0 ? 0 : SUPERVISOR_EINTEGRITY;
+    supervisor_unlock(flags);
+    return result;
 }
 
 int supervisor_protected_probe_authority_begin(
         supervisor_protected_probe_authority_t *protected_authority,
         uint64_t now_ms, uint32_t timeout_ms, uint32_t *probe_id_out) {
     supervisor_probe_authority_t authority;
+    uint32_t flags = supervisor_lock();
     int result = protected_probe_authority_read(protected_authority, &authority);
-    if (result != 0) return result;
+    if (result != 0) {
+        supervisor_unlock(flags);
+        return result;
+    }
     result = supervisor_probe_authority_begin(&authority, now_ms, timeout_ms,
                                               probe_id_out);
-    if (result != 0) return result;
-    return protected_probe_authority_write(protected_authority, &authority);
+    if (result == 0)
+        result = protected_probe_authority_write(protected_authority,
+                                                 &authority);
+    supervisor_unlock(flags);
+    return result;
 }
 
 int supervisor_protected_probe_authority_take(
         supervisor_protected_probe_authority_t *protected_authority,
         uint64_t now_ms, uint32_t *probe_id_out) {
     supervisor_probe_authority_t authority;
+    uint32_t flags = supervisor_lock();
     int result = protected_probe_authority_read(protected_authority, &authority);
-    if (result != 0) return result;
-    if (!supervisor_probe_authority_take(&authority, now_ms, probe_id_out))
-        return -11;
-    return protected_probe_authority_write(protected_authority, &authority);
+    if (result == 0 &&
+        !supervisor_probe_authority_take(&authority, now_ms, probe_id_out))
+        result = -11;
+    if (result == 0)
+        result = protected_probe_authority_write(protected_authority,
+                                                 &authority);
+    supervisor_unlock(flags);
+    return result;
 }
 
 int supervisor_protected_probe_authority_expire(
         supervisor_protected_probe_authority_t *protected_authority,
         uint64_t now_ms) {
     supervisor_probe_authority_t authority;
+    uint32_t flags = supervisor_lock();
     int result = protected_probe_authority_read(protected_authority, &authority);
-    if (result != 0) return result;
-    if (!supervisor_probe_authority_expire(&authority, now_ms)) return 0;
-    result = protected_probe_authority_write(protected_authority, &authority);
-    return result == 0 ? 1 : result;
+    bool expired = result == 0 &&
+        supervisor_probe_authority_expire(&authority, now_ms);
+    if (expired)
+        result = protected_probe_authority_write(protected_authority,
+                                                 &authority);
+    supervisor_unlock(flags);
+    return result == 0 && expired ? 1 : result;
 }
 
 int supervisor_protected_probe_authority_cancel(
         supervisor_protected_probe_authority_t *protected_authority) {
     supervisor_probe_authority_t authority;
+    uint32_t flags = supervisor_lock();
     int result = protected_probe_authority_read(protected_authority, &authority);
-    if (result != 0) return result;
-    supervisor_probe_authority_cancel(&authority);
-    return protected_probe_authority_write(protected_authority, &authority);
+    if (result == 0) {
+        supervisor_probe_authority_cancel(&authority);
+        result = protected_probe_authority_write(protected_authority,
+                                                 &authority);
+    }
+    supervisor_unlock(flags);
+    return result;
+}
+
+static bool network_context_valid(const void *payload, size_t length) {
+    if (payload == NULL ||
+        length != sizeof(supervisor_network_probe_context_t)) return false;
+    const supervisor_network_probe_context_t *context = payload;
+    if (context->reserved[0] != 0U || context->reserved[1] != 0U) return false;
+    bool empty_mac = true;
+    for (uint32_t index = 0U; index < 6U; ++index)
+        if (context->local_mac[index] != 0U) empty_mac = false;
+    bool empty = context->gateway == 0U && context->local_ip == 0U && empty_mac;
+    bool complete = context->gateway != 0U && context->local_ip != 0U &&
+                    !empty_mac;
+    return (empty && context->delivered_id == 0U) || complete;
+}
+
+static int network_context_read(
+        supervisor_protected_network_context_t *protected_context,
+        supervisor_network_probe_context_t *context) {
+    if (protected_context == NULL || context == NULL) return -22;
+    size_t length = 0U;
+    critical_read_result_t result = critical_object_read(
+        &protected_context->object, SUPERVISOR_NETWORK_CONTEXT_VERSION,
+        context, sizeof(*context), &length, network_context_valid);
+    return result < 0 ? SUPERVISOR_EINTEGRITY : 0;
+}
+
+static int network_context_write(
+        supervisor_protected_network_context_t *protected_context,
+        const supervisor_network_probe_context_t *context) {
+    return critical_object_update(
+        &protected_context->object, SUPERVISOR_NETWORK_CONTEXT_VERSION,
+        context, sizeof(*context), network_context_valid) == 0
+        ? 0 : SUPERVISOR_EINTEGRITY;
+}
+
+int supervisor_protected_network_context_init(
+        supervisor_protected_network_context_t *protected_context) {
+    if (protected_context == NULL) return -22;
+    supervisor_network_probe_context_t context = {0};
+    uint32_t flags = supervisor_lock();
+    int result = critical_object_init(
+        &protected_context->object, SUPERVISOR_NETWORK_CONTEXT_VERSION,
+        &context, sizeof(context)) == 0 ? 0 : SUPERVISOR_EINTEGRITY;
+    supervisor_unlock(flags);
+    return result;
+}
+
+int supervisor_protected_network_context_prepare(
+        supervisor_protected_network_context_t *protected_context,
+        uint32_t gateway, uint32_t local_ip, const uint8_t local_mac[6]) {
+    if (protected_context == NULL || gateway == 0U || local_ip == 0U ||
+        local_mac == NULL) return -22;
+    supervisor_network_probe_context_t context = {
+        .gateway = gateway, .local_ip = local_ip,
+    };
+    for (uint32_t index = 0U; index < 6U; ++index)
+        context.local_mac[index] = local_mac[index];
+    if (!network_context_valid(&context, sizeof(context))) return -22;
+    uint32_t flags = supervisor_lock();
+    int result = network_context_write(protected_context, &context);
+    supervisor_unlock(flags);
+    return result;
+}
+
+int supervisor_protected_network_context_snapshot(
+        supervisor_protected_network_context_t *protected_context,
+        supervisor_network_probe_context_t *snapshot_out) {
+    uint32_t flags = supervisor_lock();
+    int result = network_context_read(protected_context, snapshot_out);
+    supervisor_unlock(flags);
+    return result;
+}
+
+int supervisor_protected_network_context_publish(
+        supervisor_protected_network_context_t *protected_context,
+        uint32_t probe_id) {
+    if (probe_id == 0U) return -22;
+    supervisor_network_probe_context_t context;
+    uint32_t flags = supervisor_lock();
+    int result = network_context_read(protected_context, &context);
+    if (result == 0 && (context.gateway == 0U || context.delivered_id != 0U))
+        result = -11;
+    if (result == 0) {
+        context.delivered_id = probe_id;
+        result = network_context_write(protected_context, &context);
+    }
+    supervisor_unlock(flags);
+    return result;
+}
+
+int supervisor_protected_network_context_consume(
+        supervisor_protected_network_context_t *protected_context,
+        uint32_t probe_id) {
+    if (probe_id == 0U) return -22;
+    supervisor_network_probe_context_t context;
+    uint32_t flags = supervisor_lock();
+    int result = network_context_read(protected_context, &context);
+    if (result == 0 && context.delivered_id != probe_id) result = -13;
+    if (result == 0) {
+        context.delivered_id = 0U;
+        result = network_context_write(protected_context, &context);
+    }
+    supervisor_unlock(flags);
+    return result;
+}
+
+int supervisor_protected_network_context_clear(
+        supervisor_protected_network_context_t *protected_context) {
+    if (protected_context == NULL) return -22;
+    supervisor_network_probe_context_t context = {0};
+    uint32_t flags = supervisor_lock();
+    int result = network_context_write(protected_context, &context);
+    supervisor_unlock(flags);
+    return result;
 }
 
 void supervisor_network_degradation_init(
@@ -582,7 +725,8 @@ static bool probe_fence_apply(void *context) {
     runtime->healthy = false;
     (void)supervisor_protected_probe_authority_cancel(
         &runtime->network_probe_authority);
-    runtime->network_probe_delivered_id = 0U;
+    (void)supervisor_protected_network_context_clear(
+        &runtime->network_probe_context);
     if (process_identity_alive(runtime->pid, runtime->process_generation)) {
         (void)process_terminate(runtime->pid);
     }
@@ -636,6 +780,8 @@ bool supervisor_start_probe(uint64_t now_ms) {
     probe_runtime = (supervisor_probe_runtime_t){0};
     if (supervisor_protected_probe_authority_init(
             &probe_runtime.network_probe_authority) != 0) return false;
+    if (supervisor_protected_network_context_init(
+            &probe_runtime.network_probe_context) != 0) return false;
     supervisor_config_t config = {
         .heartbeat_timeout_ms = 2000U,
         .recovery_timeout_ms = 1000U,
@@ -694,9 +840,8 @@ int supervisor_probe_report(int pid, uint32_t generation,
         return 0;
     }
     if (report_type == REIST_REPORT_NETWORK_PROBE_ID) {
-        if (value == 0U || value != probe_runtime.network_probe_delivered_id)
-            return -1;
-        probe_runtime.network_probe_delivered_id = 0U;
+        if (supervisor_protected_network_context_consume(
+                &probe_runtime.network_probe_context, value) != 0) return -1;
         printf("REIST_NETWORK PROBE_ID_OK\n");
         return 0;
     }
@@ -741,6 +886,13 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
         return false;
     }
     uint32_t probe_id;
+    supervisor_network_probe_context_t network_context;
+    int context_result = supervisor_protected_network_context_snapshot(
+        &probe_runtime.network_probe_context, &network_context);
+    if (context_result != 0) {
+        (void)supervisor_force_isolate(probe_runtime.handle);
+        return false;
+    }
     if (supervisor_protected_probe_authority_take(
             &probe_runtime.network_probe_authority, pit_monotonic_ms(),
             &probe_id) != 0) return false;
@@ -752,8 +904,8 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     };
     for (uint32_t index = 0U; index < 42U; ++index)
         message.payload[index + 4U] = frame[index];
-    uint32_t gateway = probe_runtime.network_probe_gateway;
-    uint32_t local_ip = probe_runtime.network_probe_local_ip;
+    uint32_t gateway = network_context.gateway;
+    uint32_t local_ip = network_context.local_ip;
     for (uint32_t index = 0U; index < 4U; ++index) {
         uint32_t shift = 24U - index * 8U;
         message.payload[46U + index] = (uint8_t)(gateway >> shift);
@@ -761,16 +913,23 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     }
     for (uint32_t index = 0U; index < 6U; ++index)
         message.payload[54U + index] =
-            probe_runtime.network_probe_local_mac[index];
+            network_context.local_mac[index];
     for (uint32_t index = 0U; index < 4U; ++index)
         message.payload[60U + index] =
             (uint8_t)(probe_id >> (index * 8U));
+    if (supervisor_protected_network_context_publish(
+            &probe_runtime.network_probe_context, probe_id) != 0) {
+        (void)supervisor_force_isolate(probe_runtime.handle);
+        return false;
+    }
     int ingress = ipc_send_external_from_peer(
         probe_runtime.pid, probe_runtime.process_generation,
         probe_runtime.endpoint_handle, &message);
     /* A matching reply consumes exactly one probe authorization even when
      * bounded IPC pressure forces the frame back to the kernel path. */
-    probe_runtime.network_probe_delivered_id = ingress == 0 ? probe_id : 0U;
+    if (ingress != 0)
+        (void)supervisor_protected_network_context_consume(
+            &probe_runtime.network_probe_context, probe_id);
     if (ingress == -11) {
         network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_QUEUE);
         printf("REIST_NETWORK QUEUE_PRESSURE_FALLBACK\n");
@@ -806,16 +965,21 @@ int supervisor_network_probe_request_id(int pid, uint32_t generation,
         SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS, &probe_id);
     if (authority != 0) return authority;
     probe_runtime.last_network_probe_ms = now_ms;
-    probe_runtime.network_probe_gateway = gateway;
-    probe_runtime.network_probe_local_ip = local_ip;
-    for (uint32_t index = 0U; index < 6U; ++index)
-        probe_runtime.network_probe_local_mac[index] = local_mac[index];
+    int context_result = supervisor_protected_network_context_prepare(
+        &probe_runtime.network_probe_context, gateway, local_ip, local_mac);
+    if (context_result != 0) {
+        (void)supervisor_protected_probe_authority_cancel(
+            &probe_runtime.network_probe_authority);
+        return context_result;
+    }
     if (netstack_probe_gateway()) {
         *probe_id_out = probe_id;
         return 0;
     }
     (void)supervisor_protected_probe_authority_cancel(
         &probe_runtime.network_probe_authority);
+    (void)supervisor_protected_network_context_clear(
+        &probe_runtime.network_probe_context);
     return -19;
 }
 
@@ -1066,6 +1230,15 @@ int supervisor_test_corrupt_probe_authority(
     if (authority == NULL) return -22;
     authority->object.primary.crc32 ^= 1U;
     if (corrupt_both_copies) authority->object.shadow.crc32 ^= 2U;
+    return 0;
+}
+
+int supervisor_test_corrupt_network_context(
+        supervisor_protected_network_context_t *context,
+        bool corrupt_both_copies) {
+    if (context == NULL) return -22;
+    context->object.primary.crc32 ^= 1U;
+    if (corrupt_both_copies) context->object.shadow.crc32 ^= 2U;
     return 0;
 }
 #endif
