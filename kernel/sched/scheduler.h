@@ -7,6 +7,7 @@
 #include <stdbool.h>
 
 #include "kernel/proc/process.h"
+#include "kernel/sched/scheduling_policy.h"
 #include "kernel/sched/wait_queue.h"
 #include "arch/x86/mm/paging.h"
 
@@ -49,6 +50,8 @@ typedef struct task {
     wait_queue_node_t wait_node;
     uint64_t wait_deadline_ms;
     int wait_result;
+    uint8_t scheduling_class;
+    uint8_t budget_remaining;
 } task_t;
 
 typedef enum {

@@ -639,6 +639,7 @@ static int test_scheduler_time(void) {
     if (x86os_monotonic_ms(&start) != 0 ||
         x86os_monotonic_ms((uint64_t*)(uintptr_t)0x1000U) != -14 ||
         x86os_sleep_ms(0) != 0) {
+        x86os_puts("SCHED_FAIL INIT\n");
         return -1;
     }
     for (unsigned int iteration = 0; iteration < 1000U; ++iteration) {
@@ -651,21 +652,27 @@ static int test_scheduler_time(void) {
     int quick_pid = x86os_spawn("CHILDEX.PRG");
     if (quick_pid <= 0 ||
         wait_for_process_state(quick_pid, X86OS_PROCESS_ZOMBIE, 250U) != 0) {
+        x86os_puts("SCHED_FAIL QUICK_STATE\n");
         return -1;
     }
     int status = -1;
-    if (x86os_wait(quick_pid, &status) != quick_pid || status != 37) return -1;
+    if (x86os_wait(quick_pid, &status) != quick_pid || status != 37) {
+        x86os_puts("SCHED_FAIL QUICK_WAIT\n");
+        return -1;
+    }
 
     uint64_t short_start;
     if (x86os_monotonic_ms(&short_start) != 0 ||
         x86os_sleep_ms(30) != 0 || x86os_monotonic_ms(&now) != 0 ||
         now - short_start < 30U || now - short_start > 2000U) {
+        x86os_puts("SCHED_FAIL SHORT_SLEEP\n");
         return -1;
     }
 
     int sleeper_pid = x86os_spawn("SLEEPER.PRG");
     if (sleeper_pid <= 0 ||
         wait_for_process_state(sleeper_pid, X86OS_PROCESS_SLEEPING, 250U) != 0) {
+        x86os_puts("SCHED_FAIL SLEEP_STATE\n");
         return -1;
     }
 
@@ -674,12 +681,16 @@ static int test_scheduler_time(void) {
     if (wait_for_expected("CHILDEX.PRG", 37) != 0 ||
         x86os_wait(sleeper_pid, &status) != sleeper_pid || status != 41 ||
         x86os_monotonic_ms(&now) != 0 || now - start < 400U) {
+        x86os_puts("SCHED_FAIL SLEEP_WAIT\n");
         return -1;
     }
 
     start = now;
     x86os_delay(25);
-    if (x86os_monotonic_ms(&now) != 0 || now - start < 25U) return -1;
+    if (x86os_monotonic_ms(&now) != 0 || now - start < 25U) {
+        x86os_puts("SCHED_FAIL DELAY\n");
+        return -1;
+    }
 
     /* Killing a sleeper must unlink its intrusive queue node before its task
      * slot is reused by the next child. */
@@ -689,6 +700,7 @@ static int test_scheduler_time(void) {
         x86os_kill(sleeper_pid) != 0 ||
         x86os_wait(sleeper_pid, &status) != sleeper_pid || status != 143 ||
         wait_for_expected("CHILDEX.PRG", 37) != 0) {
+        x86os_puts("SCHED_FAIL KILL_REUSE\n");
         return -1;
     }
     return 0;

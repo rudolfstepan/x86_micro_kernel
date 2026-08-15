@@ -224,6 +224,16 @@ separat benannt und darf genau diese statisch begrenzte Restartkapazität
 verwenden; fehlgeschlagene Erzeugung läuft durch die bestehenden vollständigen
 Rollbackpfade.
 
+S0.4a führt drei statische Schedulingklassen ein: Kernel-Safety, überwachte
+Services und Ambient-Tasks. Die Auswahl ist eine heapfreie gewichtete
+Festprioritätsrunde mit zwei Quanten für Safety und je einem Quantum für
+Service und Ambient. Innerhalb derselben Klasse bleibt der Cursor fair; nach
+Verbrauch aller laufbereiten Anteile werden die festen Budgets in höchstens
+`MAX_TASKS` Schritten erneuert. Blockierte Tasks halten keine Runde offen.
+Damit ist die Auswahl begrenzt und reproduzierbar, aber noch keine harte
+Echtzeitgarantie: Absolute CPU-Zeitfenster, Überlasteskalation, Priority
+Inheritance und WCET-Nachweise folgen in S0.4b/c.
+
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
 Bitinventar der gegenwärtig 60 Syscalls. Normale Programme erhalten explizit
 das Kompatibilitätsprofil. Das Supervisor-Profil `PROBE` beginnt dagegen bei

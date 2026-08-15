@@ -229,6 +229,12 @@ und 10 verbindlich.
           Selbsttest und kontrollierter Wiederaufnahme realer Ausgänge
     - [ ] S0.3c-7d Common-Cause-Analyse und wiederholte Zielhardware-Failover-Gates
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
+  - [x] S0.4a Heapfreie, gewichtete Festprioritätsrunden mit statischen
+    Safety-/Service-/Ambient-Klassen und begrenzter Auswahl über `MAX_TASKS`
+  - [ ] S0.4b Absolute CPU-Zeitfenster, Überlast-Erkennung und definierter
+    degradierter Zustand
+  - [ ] S0.4c Priority Inheritance für blockierende Ressourcen und
+    nachgewiesene WCET-/Speicher-/Queue-Budgets
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
 
@@ -961,6 +967,13 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
 
 #### S0.4 Determinismus und garantierte Ressourcen — L
 
+- S0.4a ersetzt die ungewichtete Taskauswahl durch drei statische Klassen.
+   Safety-Tasks erhalten zwei, Service- und Ambient-Tasks je ein Quantum pro
+   endlicher Runde. Innerhalb einer Klasse bleibt die Auswahl Round-Robin;
+   erst wenn alle laufbereiten Anteile verbraucht sind, werden die festen
+   Budgets in einem `MAX_TASKS`-Scan erneuert. Der Pfad allokiert nicht und
+   blockierte Tasks können eine Runde nicht festhalten. Ein Host-Verhaltenstest
+   und der vollständige Scheduler-Gasttest bis `TEST_OK` sind grün.
 - Kritische Tasks erhalten feste Prioritäten, CPU-/Speicher-/Queue-Budgets,
    Admission Control und nachgewiesene Worst-Case-Laufzeiten.
 - Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte

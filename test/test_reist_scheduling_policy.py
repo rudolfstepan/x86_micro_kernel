@@ -1,0 +1,37 @@
+import pathlib
+import subprocess
+import tempfile
+import unittest
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+class ReistSchedulingPolicyTests(unittest.TestCase):
+    def test_weighted_fixed_priority_policy_is_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory) / "scheduling-policy-test.exe"
+            subprocess.run([
+                "gcc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-I.", "kernel/sched/scheduling_policy.c",
+                "test/test_scheduling_policy_host.c", "-o", str(output),
+            ], cwd=ROOT, check=True, capture_output=True)
+            result = subprocess.run([str(output)], cwd=ROOT, check=True,
+                                    capture_output=True, text=True)
+            self.assertIn("SCHEDULING_POLICY_OK", result.stdout)
+
+    def test_scheduler_assigns_classes_without_dynamic_allocation(self):
+        scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
+            encoding="utf-8")
+        policy = (ROOT / "kernel/sched/scheduling_policy.c").read_text(
+            encoding="utf-8")
+        self.assertIn("process == NULL ? SCHEDULER_CLASS_SAFETY", scheduler)
+        self.assertIn("supervised ? SCHEDULER_CLASS_SERVICE", scheduler)
+        self.assertIn("scheduler_policy_select(candidates, num_tasks, after)",
+                      scheduler)
+        self.assertNotIn("k_malloc", policy)
+        self.assertNotIn("while (", policy)
+
+
+if __name__ == "__main__":
+    unittest.main()

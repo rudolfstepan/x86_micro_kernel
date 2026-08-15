@@ -29,6 +29,9 @@ static bool apic_timer_active;
 static uint32_t pit_scheduler_ticks;
 static wait_queue_t sleep_waiters = WAIT_QUEUE_INIT;
 
+_Static_assert(MAX_TASKS <= SCHEDULER_POLICY_MAX_CANDIDATES,
+               "scheduler policy candidate capacity is too small");
+
 #define SCHEDULER_QUANTUM_MS 10U
 #define KERNEL_STACK_GUARD 0x4B535447U /* "KSTG" */
 
@@ -178,15 +181,17 @@ static int find_next_runnable(int after) {
     if (num_tasks == 0) {
         return -1;
     }
-
-    for (int step = 1; step <= num_tasks; ++step) {
-        int index = (after < 0) ? (step - 1) : ((after + step) % num_tasks);
-        if (tasks[index].status == TASK_READY ||
-            tasks[index].status == TASK_RUNNING) {
-            return index;
-        }
+    scheduler_candidate_t candidates[MAX_TASKS] = {0};
+    for (int index = 0; index < num_tasks; ++index) {
+        candidates[index].runnable = tasks[index].status == TASK_READY ||
+                                     tasks[index].status == TASK_RUNNING;
+        candidates[index].scheduling_class = tasks[index].scheduling_class;
+        candidates[index].budget_remaining = tasks[index].budget_remaining;
     }
-    return -1;
+    int selected = scheduler_policy_select(candidates, num_tasks, after);
+    for (int index = 0; index < num_tasks; ++index)
+        tasks[index].budget_remaining = candidates[index].budget_remaining;
+    return selected;
 }
 
 static void task_trampoline(void) __attribute__((noreturn));
@@ -332,6 +337,10 @@ int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
     task->process = process;
     task->process_generation = process != NULL ? process->generation : 0U;
     task->page_directory = paging_kernel_directory();
+    task->scheduling_class = process == NULL ? SCHEDULER_CLASS_SAFETY :
+                                               SCHEDULER_CLASS_AMBIENT;
+    task->budget_remaining = scheduler_policy_budget(
+        task->scheduling_class);
 
     uintptr_t top = ((uintptr_t)stack + STACK_SIZE) & ~(uintptr_t)0x0F;
     uint32_t *initial_stack = (uint32_t*)top;
@@ -389,6 +398,10 @@ static int create_user_task_admitted(
     task->user_entry = entry_point;
     task->user_stack = user_stack;
     task->user_mode = true;
+    task->scheduling_class = supervised ? SCHEDULER_CLASS_SERVICE :
+                                          SCHEDULER_CLASS_AMBIENT;
+    task->budget_remaining = scheduler_policy_budget(
+        task->scheduling_class);
     irq_restore(flags);
     scheduler_preempt_enable();
     return task_id;
