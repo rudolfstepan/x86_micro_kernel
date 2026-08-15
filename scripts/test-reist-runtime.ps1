@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'storage-recovery', 'storage-io-failure', 'handover')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'storage-recovery', 'storage-io-failure', 'handover')]
     [string]$Mode = 'normal'
 )
 
@@ -101,6 +101,11 @@ switch ($Mode) {
     'arp-resolution' {
         Invoke-Smoke 'guest-smoke-arp-resolution.log' @(
             '--nic', 'rtl8139', '--expect-arp-resolution'
+        )
+    }
+    'icmp-echo' {
+        Invoke-Smoke 'guest-smoke-icmp-echo.log' @(
+            '--nic', 'rtl8139', '--inject-icmp-echo'
         )
     }
     'storage-recovery' {

@@ -17,6 +17,7 @@ struct Process;
 #define SUPERVISOR_NETWORK_CONTEXT_VERSION 1U
 #define SUPERVISOR_ARP_REPLY_CONTEXT_VERSION 1U
 #define SUPERVISOR_ARP_RESOLUTION_CONTEXT_VERSION 1U
+#define SUPERVISOR_ICMP_ECHO_CONTEXT_VERSION 1U
 #define SUPERVISOR_PROBE_CONTROL_VERSION 1U
 #define SUPERVISOR_EINTEGRITY (-84)
 #define REIST_REPORT_SELF_TEST 1U
@@ -162,6 +163,32 @@ typedef struct {
     critical_object_t object;
 } supervisor_protected_arp_resolution_context_t;
 
+#define SUPERVISOR_ICMP_ECHO_MAX_DATA 32U
+#define SUPERVISOR_ICMP_ECHO_REPLY_VERSION 1U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t request_id;
+    uint32_t reserved;
+} supervisor_icmp_echo_reply_t;
+
+typedef struct {
+    uint32_t request_id;
+    uint32_t transaction_epoch;
+    uint32_t source_ip;
+    uint16_t identifier;
+    uint16_t sequence;
+    uint16_t data_length;
+    uint16_t reserved;
+    uint8_t source_mac[6];
+    uint8_t data[SUPERVISOR_ICMP_ECHO_MAX_DATA];
+    uint8_t reserved_tail[2];
+} supervisor_icmp_echo_context_t;
+
+typedef struct {
+    critical_object_t object;
+} supervisor_protected_icmp_echo_context_t;
+
 typedef struct {
     critical_object_t object;
 } supervisor_protected_network_context_t;
@@ -265,6 +292,18 @@ int supervisor_protected_arp_resolution_context_snapshot(
     supervisor_arp_resolution_context_t *snapshot_out);
 int supervisor_protected_arp_resolution_context_clear(
     supervisor_protected_arp_resolution_context_t *context);
+int supervisor_protected_icmp_echo_context_init(
+    supervisor_protected_icmp_echo_context_t *context);
+int supervisor_protected_icmp_echo_context_publish(
+    supervisor_protected_icmp_echo_context_t *context, uint32_t request_id,
+    uint32_t transaction_epoch, uint32_t source_ip,
+    const uint8_t source_mac[6], uint16_t identifier, uint16_t sequence,
+    const uint8_t *data, uint16_t data_length);
+int supervisor_protected_icmp_echo_context_snapshot(
+    supervisor_protected_icmp_echo_context_t *context,
+    supervisor_icmp_echo_context_t *snapshot_out);
+int supervisor_protected_icmp_echo_context_clear(
+    supervisor_protected_icmp_echo_context_t *context);
 int supervisor_protected_probe_control_init(
     supervisor_protected_probe_control_t *control);
 int supervisor_protected_probe_control_read(
@@ -297,6 +336,12 @@ bool supervisor_network_request_arp_resolution(uint32_t target_ip);
 int supervisor_network_send_arp_request(
     int pid, uint32_t generation,
     const supervisor_arp_resolution_t *request);
+bool supervisor_network_submit_icmp_echo(
+    uint32_t source_ip, const uint8_t source_mac[6], uint16_t identifier,
+    uint16_t sequence, const uint8_t *data, uint16_t data_length);
+int supervisor_network_send_icmp_echo_reply(
+    int pid, uint32_t generation,
+    const supervisor_icmp_echo_reply_t *reply);
 int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind);
 int supervisor_register(const char *name, const supervisor_config_t *config,

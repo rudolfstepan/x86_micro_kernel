@@ -47,6 +47,8 @@ REIST_ARP_REQUEST_QUEUED_MARKER = "REIST_NETWORK ARP_REQUEST_QUEUED"
 REIST_ARP_RESOLUTION_QUEUED_MARKER = "REIST_NETWORK ARP_RESOLUTION_QUEUED"
 REIST_ARP_RESOLUTION_MARKER = "REIST_NETWORK ARP_RESOLUTION_MEDIATED"
 REIST_ARP_REPLY_MARKER = "REIST_NETWORK ARP_REPLY_MEDIATED"
+REIST_ICMP_ECHO_QUEUED_MARKER = "REIST_NETWORK ICMP_ECHO_QUEUED"
+REIST_ICMP_ECHO_MARKER = "REIST_NETWORK ICMP_ECHO_MEDIATED"
 REIST_NETWORK_CRASH_MARKER = "REIST_NETWORK SERVICE_CRASH_RECOVERED"
 REIST_NETWORK_RECOVERY_MARKER = "TEST_STAGE NETWORK_RECOVERY_OK"
 REIST_NETWORK_PRESSURE_FALLBACK_MARKER = "REIST_NETWORK QUEUE_PRESSURE_FALLBACK"
@@ -82,6 +84,7 @@ FAIL_MARKERS = (
     "Kernel exception:",
     "Unable to start SHELL.PRG",
     "REIST_NETWORK ARP_REPLY_REJECTED",
+    "REIST_NETWORK ICMP_ECHO_REJECTED",
 )
 
 
@@ -216,6 +219,33 @@ def arp_request_frame() -> bytes:
     return frame.ljust(60, b"\x00")
 
 
+def internet_checksum(data: bytes) -> int:
+    if len(data) & 1:
+        data += b"\x00"
+    total = sum(struct.unpack(f"!{len(data) // 2}H", data))
+    while total >> 16:
+        total = (total & 0xFFFF) + (total >> 16)
+    return (~total) & 0xFFFF
+
+
+def icmp_echo_request_frame() -> bytes:
+    source_mac = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x02))
+    destination_mac = b"\xff" * 6
+    source_ip = bytes((10, 0, 2, 99))
+    destination_ip = bytes((10, 0, 2, 15))
+    payload = b"REIS"
+    icmp = struct.pack("!BBHHH", 8, 0, 0, 0x1234, 1) + payload
+    icmp = icmp[:2] + struct.pack("!H", internet_checksum(icmp)) + icmp[4:]
+    total_length = 20 + len(icmp)
+    ip = struct.pack(
+        "!BBHHHBBH4s4s", 0x45, 0, total_length, 0x5245, 0,
+        64, 1, 0, source_ip, destination_ip,
+    )
+    ip = ip[:10] + struct.pack("!H", internet_checksum(ip)) + ip[12:]
+    return (destination_mac + source_mac + b"\x08\x00" + ip + icmp).ljust(
+        60, b"\x00")
+
+
 def inject_ethernet_frame(
     connection: socket.socket, frame: bytes
 ) -> bool:
@@ -257,6 +287,43 @@ def receive_arp_request(connection: socket.socket, target: bytes,
             return False
         if (len(frame) >= 42 and frame[12:14] == b"\x08\x06" and
                 frame[20:22] == b"\x00\x01" and frame[38:42] == target):
+            return True
+    return False
+
+
+def receive_icmp_echo_reply(connection: socket.socket,
+                            deadline: float) -> bool:
+    expected_destination = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x02))
+    expected_source_ip = bytes((10, 0, 2, 15))
+    expected_destination_ip = bytes((10, 0, 2, 99))
+    while time.monotonic() < deadline:
+        connection.settimeout(max(0.01, deadline - time.monotonic()))
+        header = receive_exact(connection, 4)
+        if header is None:
+            return False
+        length = struct.unpack("!I", header)[0]
+        if length < 14 or length > 1514:
+            return False
+        frame = receive_exact(connection, length)
+        if frame is None:
+            return False
+        if (len(frame) < 46 or frame[0:6] != expected_destination or
+                frame[12:14] != b"\x08\x00"):
+            continue
+        ihl = (frame[14] & 0x0F) * 4
+        if (ihl < 20 or len(frame) < 14 + ihl + 12 or frame[23] != 1 or
+                frame[26:30] != expected_source_ip or
+                frame[30:34] != expected_destination_ip):
+            continue
+        icmp = frame[14 + ihl:]
+        ip_total = struct.unpack("!H", frame[16:18])[0]
+        icmp_length = ip_total - ihl
+        if icmp_length < 8 or len(icmp) < icmp_length:
+            continue
+        icmp = icmp[:icmp_length]
+        if (icmp[0:2] == b"\x00\x00" and
+                icmp[4:8] == b"\x12\x34\x00\x01" and
+                icmp[8:] == b"REIS" and internet_checksum(icmp) == 0):
             return True
     return False
 
@@ -371,6 +438,7 @@ def run(
     inject_arp_request: bool = False,
     expect_arp_resolution: bool = False,
     expect_handover: bool = False,
+    inject_icmp_echo: bool = False,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
     injection_connection: socket.socket | None = None
@@ -380,7 +448,7 @@ def run(
     handover_port: int | None = None
     handover_thread: threading.Thread | None = None
     handover_result: list[str | None] = [None]
-    if inject_arp_request or expect_arp_resolution:
+    if inject_arp_request or expect_arp_resolution or inject_icmp_echo:
         injection_listener, injection_port = open_injection_listener()
     if expect_handover:
         handover_listener, handover_port = open_injection_listener()
@@ -457,7 +525,7 @@ def run(
                 process.stdin.write(character)
                 process.stdin.flush()
                 time.sleep(0.075)
-            if inject_arp_request:
+            if inject_arp_request or inject_icmp_echo:
                 error, _ = wait_for_line(
                     process, chunks, transcript, finished,
                     REIST_NETWORK_INJECTION_READY_MARKER, deadline,
@@ -488,6 +556,34 @@ def run(
                         process, chunks, transcript, finished,
                         REIST_ARP_REPLY_MARKER, deadline,
                     )
+            if error is None and inject_icmp_echo:
+                assert injection_connection is not None
+                queued = False
+                for _ in range(3):
+                    if not inject_ethernet_frame(
+                            injection_connection, icmp_echo_request_frame()):
+                        error = "unable to inject bounded ICMP echo request"
+                        break
+                    confirmation_deadline = min(deadline,
+                                                time.monotonic() + 1.0)
+                    confirmation_error, _ = wait_for_line(
+                        process, chunks, transcript, finished,
+                        REIST_ICMP_ECHO_QUEUED_MARKER,
+                        confirmation_deadline,
+                    )
+                    if confirmation_error is None:
+                        queued = True
+                        break
+                if error is None and not queued:
+                    error = "ICMP echo request was not queued after 3 bounded attempts"
+                if error is None:
+                    error, _ = wait_for_line(
+                        process, chunks, transcript, finished,
+                        REIST_ICMP_ECHO_MARKER, deadline,
+                    )
+                if error is None and not receive_icmp_echo_reply(
+                        injection_connection, deadline):
+                    error = "mediated ICMP echo reply was not observed on QEMU socket"
             test_position = -1
             if error is None:
                 error, test_position = wait_for_line(
@@ -545,6 +641,7 @@ def validate(
     expect_storage_io_failure: bool = False,
     expect_storage_self_test: bool = False,
     expect_handover: bool = False,
+    expect_icmp_echo: bool = False,
 ) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
@@ -615,6 +712,12 @@ def validate(
         arp_reply = exact_line_position(transcript, REIST_ARP_REPLY_MARKER)
         if arp_reply < boot or arp_reply > test:
             return "missing mediated ARP reply marker"
+    if expect_icmp_echo:
+        queued = exact_line_position(transcript,
+                                     REIST_ICMP_ECHO_QUEUED_MARKER)
+        replied = exact_line_position(transcript, REIST_ICMP_ECHO_MARKER)
+        if queued < boot or replied < queued or replied > test:
+            return "missing ordered mediated ICMP echo markers"
     if expect_storage_recovery:
         crash = exact_line_position(transcript, REIST_STORAGE_CRASH_MARKER)
         failure = exact_line_position(transcript, REIST_STORAGE_FAILURE_MARKER)
@@ -703,6 +806,11 @@ def main() -> int:
         help="inject one bounded Ethernet ARP request through a QEMU socket hub",
     )
     parser.add_argument(
+        "--inject-icmp-echo",
+        action="store_true",
+        help="inject and verify one bounded Ring-3-mediated ICMP echo",
+    )
+    parser.add_argument(
         "--expect-arp-resolution", action="store_true",
         help="trigger PING and require a mediated outgoing ARP request",
     )
@@ -738,8 +846,10 @@ def main() -> int:
                     flags=re.IGNORECASE) is None:
         print("guest-smoke: memory must look like 64M or 1G", file=sys.stderr)
         return 2
-    if (args.inject_arp_request or args.expect_arp_resolution) and args.nic == "none":
-        print("guest-smoke: ARP socket verification requires a NIC", file=sys.stderr)
+    if (args.inject_arp_request or args.expect_arp_resolution or
+            args.inject_icmp_echo) and args.nic == "none":
+        print("guest-smoke: network injection verification requires a NIC",
+              file=sys.stderr)
         return 2
 
     try:
@@ -750,6 +860,7 @@ def main() -> int:
             args.inject_arp_request,
             args.expect_arp_resolution,
             args.expect_handover,
+            args.inject_icmp_echo,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)
@@ -766,7 +877,8 @@ def main() -> int:
                             args.expect_storage_recovery,
                             args.expect_storage_io_failure,
                             args.expect_storage_self_test,
-                            args.expect_handover)
+                            args.expect_handover,
+                            args.inject_icmp_echo)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")

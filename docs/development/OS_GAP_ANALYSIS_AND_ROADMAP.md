@@ -124,6 +124,9 @@ und 10 verbindlich.
       - [x] S0.3c-5b2a Deterministisch injizierten echten RX-Request samt
         vermittelter Antwort im RTL8139-Gast nachweisen
       - [x] S0.3c-5b2b Ausgehende lokale ARP-Auflösung in den Dienst migrieren
+    - [x] S0.3c-5c ICMP-Echo-Antwort mit geschützter 250-ms-
+      Einmalautorität, festem 32-Byte-Payloadlimit und echtem RTL8139-
+      Request/Reply-Nachweis über Ring 3 vermitteln
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -1364,7 +1367,21 @@ Abgleich den echten ARP-Request senden. Fehler aktivieren keinen alten
 Ring-0-Fallback. Der RTL8139-QEMU-Lauf fordert die Auflösung über Syscall 65 an
 und prüft `ARP_RESOLUTION_QUEUED`, `ARP_RESOLUTION_MEDIATED` sowie den am
 QEMU-Socket ausgesendeten ARP-Frame für `10.0.2.99`. Damit ist S0.3c-5b
-geschlossen; als nächstes folgt S0.3c-6.
+geschlossen.
+
+**S0.3c-5c ist umgesetzt und abgenommen:** Gültige IPv4-/ICMP-Prüfsummen und
+Paketgrenzen werden noch im Kernel geprüft; ein Echo-Request erzeugt danach
+ausschließlich eine feste `NETI`-Nachricht für den gesunden Ring-3-Dienst.
+Request-ID, Prozessgeneration, Quell-IP/-MAC, Identifier, Sequenz und höchstens
+32 Payloadbytes liegen in einem redundanten Critical Object und einer auf
+250 ms begrenzten Einmalautorität. Nur der neue append-only Syscall 72 darf
+nach vollständigem Abgleich Kontext und Autorität atomar verbrauchen; erst
+außerhalb der Supervisor-Sperre wird gesendet. Es existiert kein Ring-0-
+Antwortfallback. Der Runtime-Modus `icmp-echo` injiziert einen echten Request
+in RTL8139, verlangt `ICMP_ECHO_QUEUED -> ICMP_ECHO_MEDIATED -> TEST_OK` und
+prüft Zieladressen, Identifier, Sequenz, Nutzdaten und Checksumme des wirklich
+am QEMU-Socket beobachteten Reply. Als nächstes vermittelt S0.3c-5d die noch
+im Kernel liegenden UDP-/DHCP-Entscheidungen schrittweise.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

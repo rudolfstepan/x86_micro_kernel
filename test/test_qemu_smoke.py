@@ -111,6 +111,26 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertEqual(struct.unpack("!I", received[:4])[0], len(frame))
         self.assertEqual(bytes(received[4:]), frame)
 
+    def test_icmp_echo_frame_has_valid_checksums_and_bounded_payload(self) -> None:
+        frame = RUNNER_MODULE.icmp_echo_request_frame()
+        self.assertEqual(len(frame), 60)
+        self.assertEqual(frame[12:14], b"\x08\x00")
+        self.assertEqual(frame[23], 1)
+        self.assertEqual(frame[26:30], bytes((10, 0, 2, 99)))
+        self.assertEqual(frame[30:34], bytes((10, 0, 2, 15)))
+        self.assertEqual(RUNNER_MODULE.internet_checksum(frame[14:34]), 0)
+        self.assertEqual(frame[34], 8)
+        self.assertEqual(frame[38:42], b"\x12\x34\x00\x01")
+        self.assertEqual(frame[42:46], b"REIS")
+        self.assertEqual(RUNNER_MODULE.internet_checksum(frame[34:46]), 0)
+
+        transcript = "\n".join((
+            "BOOT_OK", RUNNER_MODULE.REIST_ICMP_ECHO_QUEUED_MARKER,
+            RUNNER_MODULE.REIST_ICMP_ECHO_MARKER, "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_icmp_echo=True))
+
     def test_reist_probe_markers_are_required_in_order(self) -> None:
         transcript = "\n".join((
             "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,

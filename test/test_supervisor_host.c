@@ -236,6 +236,30 @@ int main(void) {
             &protected_reply, &reply_snapshot) !=
             SUPERVISOR_EINTEGRITY) return 59;
 
+    supervisor_protected_icmp_echo_context_t protected_icmp;
+    supervisor_icmp_echo_context_t icmp_snapshot;
+    const uint8_t echo_data[4] = {0x52U, 0x45U, 0x49U, 0x53U};
+    if (supervisor_protected_icmp_echo_context_init(&protected_icmp) != 0 ||
+        supervisor_protected_icmp_echo_context_publish(
+            &protected_icmp, 13U, 7U, 0x0A000204U, peer_mac,
+            0x1234U, 0x5678U, echo_data, sizeof(echo_data)) != 0 ||
+        supervisor_protected_icmp_echo_context_snapshot(
+            &protected_icmp, &icmp_snapshot) != 0 ||
+        icmp_snapshot.request_id != 13U ||
+        icmp_snapshot.transaction_epoch != 7U ||
+        icmp_snapshot.source_ip != 0x0A000204U ||
+        icmp_snapshot.identifier != 0x1234U ||
+        icmp_snapshot.sequence != 0x5678U ||
+        icmp_snapshot.data_length != sizeof(echo_data) ||
+        icmp_snapshot.data[3] != 0x53U ||
+        supervisor_protected_icmp_echo_context_publish(
+            &protected_icmp, 14U, 7U, 0x0A000204U, peer_mac,
+            0U, 0U, echo_data, SUPERVISOR_ICMP_ECHO_MAX_DATA + 1U) != -22 ||
+        supervisor_protected_icmp_echo_context_clear(&protected_icmp) != 0 ||
+        supervisor_protected_icmp_echo_context_snapshot(
+            &protected_icmp, &icmp_snapshot) != 0 ||
+        icmp_snapshot.request_id != 0U) return 60;
+
     supervisor_protected_probe_control_t protected_control;
     supervisor_probe_control_t control = {
         .active = 1U,

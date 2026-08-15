@@ -380,27 +380,19 @@ static void handle_arp_packet(uint8_t *packet, uint16_t length) {
 // =============================================================================
 // IPv4/ICMP
 // =============================================================================
-void icmp_send_echo_reply(uint32_t dst_ip, uint16_t id, uint16_t seq, uint8_t *data, uint16_t data_len) {
-    const uint16_t max_data = (uint16_t)(ETH_MAX_PAYLOAD - sizeof(ip_header_t) - sizeof(icmp_header_t));
-    if (data_len > max_data || (data_len && !data)) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
+bool netstack_send_icmp_echo_reply(uint32_t dst_ip,
+                                  const uint8_t dst_mac[6], uint16_t id,
+                                  uint16_t seq, const uint8_t *data,
+                                  uint16_t data_len) {
+    if (dst_ip == 0U || dst_ip == 0xFFFFFFFFU || dst_mac == NULL ||
+        data_len > SUPERVISOR_ICMP_ECHO_MAX_DATA ||
+        (data_len != 0U && data == NULL) || (dst_mac[0] & 1U) != 0U)
+        return false;
     uint8_t packet[1514] = {0};
     eth_header_t  *eth  = (eth_header_t *)packet;
     ip_header_t   *ip   = (ip_header_t  *)(packet + sizeof(eth_header_t));
     icmp_header_t *icmp = (icmp_header_t *)(packet + sizeof(eth_header_t) + sizeof(ip_header_t));
     uint8_t       *payload = packet + sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(icmp_header_t);
-
-    uint32_t next_hop = netstack_next_hop(dst_ip);
-
-    uint8_t dst_mac[ETH_ADDR_LEN];
-    if (dst_ip == 0xFFFFFFFFu) {
-        memset(dst_mac, 0xFF, ETH_ADDR_LEN);
-    } else if (!arp_lookup(next_hop, dst_mac)) {
-        arp_send_request(next_hop);
-        return;
-    }
 
     memcpy(eth->dst_mac, dst_mac, ETH_ADDR_LEN);
     memcpy(eth->src_mac, net_config.mac_address, ETH_ADDR_LEN);
@@ -428,10 +420,14 @@ void icmp_send_echo_reply(uint32_t dst_ip, uint16_t id, uint16_t seq, uint8_t *d
     icmp->checksum = htons(ip_checksum(icmp, (uint16_t)(sizeof(icmp_header_t) + data_len)));
 
     size_t total_len = sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(icmp_header_t) + data_len;
-    if (nic_send(packet, total_len)) ++netstack_stats.icmp_echo_replies_sent;
+    if (!nic_send(packet, total_len)) return false;
+    ++netstack_stats.icmp_echo_replies_sent;
+    return true;
 }
 
-static void handle_icmp_packet(uint8_t *packet, uint16_t length, uint32_t src_ip) {
+static void handle_icmp_packet(uint8_t *packet, uint16_t length,
+                               uint32_t src_ip,
+                               const uint8_t source_mac[6]) {
     if (length < sizeof(icmp_header_t)) {
         ++netstack_stats.rx_dropped;
         return;
@@ -444,9 +440,12 @@ static void handle_icmp_packet(uint8_t *packet, uint16_t length, uint32_t src_ip
     uint8_t *data = packet + sizeof(icmp_header_t);
     uint16_t dlen = length - sizeof(icmp_header_t);
 
-    if (icmp->type == ICMP_ECHO_REQUEST) {
+    if (icmp->type == ICMP_ECHO_REQUEST && icmp->code == 0U) {
         ++netstack_stats.icmp_echo_requests;
-        icmp_send_echo_reply(src_ip, ntohs(icmp->identifier), ntohs(icmp->sequence), data, dlen);
+        if (!supervisor_network_submit_icmp_echo(
+                src_ip, source_mac, ntohs(icmp->identifier),
+                ntohs(icmp->sequence), data, dlen))
+            ++netstack_stats.rx_dropped;
     } else if (icmp->type == ICMP_ECHO_REPLY && icmp->code == 0) {
         ++netstack_stats.icmp_echo_replies;
         if (ping_waiting && src_ip == ping_expected_ip &&
@@ -798,7 +797,7 @@ static void handle_ip_packet(uint8_t *packet, uint16_t length,
 
     switch (ip->protocol) {
         case IP_PROTOCOL_ICMP:
-            handle_icmp_packet(payload, payload_len, source_ip);
+            handle_icmp_packet(payload, payload_len, source_ip, source_mac);
             break;
         case IP_PROTOCOL_UDP:
             // UDP wird über netstack_receive_udp_low konsumiert

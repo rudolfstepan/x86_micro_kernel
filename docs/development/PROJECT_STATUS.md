@@ -1,6 +1,6 @@
 # Projektstatus
 
-Stand: 14. August 2026. Diese Datei beschreibt den aktuell verifizierten
+Stand: 15. August 2026. Diese Datei beschreibt den aktuell verifizierten
 Zustand. Ältere Sitzungs- und Diagnoseberichte im Repository sind historische
 Arbeitsdokumente.
 
@@ -146,7 +146,14 @@ abgenommen: Cache-Misses laufen über eine feste `NETA`-Nachricht, einen
 geschützten 250-ms-Einmalvertrag und den ausschließlich dem Ring-3-Dienst
 erlaubten Syscall 64. Der reale RTL8139-Lauf beobachtet den ausgesendeten
 Request für `10.0.2.99` am QEMU-Socket. Es gibt keinen direkten Ring-0-Fallback
-mehr. Als nächstes folgt S0.3c-6 (Storage-/Dateisystemdienst).
+mehr. S0.3c-5c vermittelt nun auch ICMP Echo: Der Kernel übergibt höchstens
+32 Payloadbytes als festes `NETI`-Objekt; ein geschützter Requestkontext und
+eine generationgebundene 250-ms-Einmalautorität erlauben ausschließlich dem
+gesunden Ring-3-Dienst Syscall 72. Autorität und Kontext werden vor dem
+einzigen Sendepunkt verbraucht. Der reale RTL8139-Lauf injiziert den Request
+und prüft den vollständigen Echo-Reply samt IP-/ICMP-Identität und Checksumme
+am QEMU-Socket. Es gibt keinen Ring-0-Antwortfallback. Der nächste
+Netzwerkbaustein ist die schrittweise Vermittlung von UDP/DHCP (S0.3c-5d).
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

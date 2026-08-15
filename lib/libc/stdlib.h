@@ -80,6 +80,7 @@
 #define SYS_STORAGE_BLOCK_READ 69
 #define SYS_STORAGE_COMPLETE 70
 #define SYS_STORAGE_COLLECT 71
+#define SYS_REIST_ICMP_ECHO_REPLY 72
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

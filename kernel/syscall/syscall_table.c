@@ -317,6 +317,25 @@ static int syscall_network_arp_resolve(uint32_t target_ip) {
     return supervisor_network_request_arp_resolution(target_ip) ? 0 : -11;
 }
 
+_Static_assert(sizeof(supervisor_icmp_echo_reply_t) == 16U,
+               "REIST ICMP echo reply ABI changed");
+
+static int syscall_reist_icmp_echo_reply(
+        const supervisor_icmp_echo_reply_t *user_reply) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_reply;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(*user_reply), false))
+        return -14;
+    supervisor_icmp_echo_reply_t reply;
+    if (copy_from_user(&reply, user_reply, sizeof(reply)) != 0) return -14;
+    if (reply.version != SUPERVISOR_ICMP_ECHO_REPLY_VERSION ||
+        reply.struct_size < sizeof(reply)) return -22;
+    return supervisor_network_send_icmp_echo_reply(
+        process->pid, process->generation, &reply);
+}
+
 _Static_assert(sizeof(storage_request_submit_t) == 28U,
                "storage submit ABI changed");
 _Static_assert(sizeof(storage_request_descriptor_t) == 28U,
@@ -1029,6 +1048,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_storage_block_read, // Syscall 69: Mediated block read
     (void*)&syscall_storage_complete,   // Syscall 70: Complete storage request
     (void*)&syscall_storage_collect,    // Syscall 71: Collect storage request
+    (void*)&syscall_reist_icmp_echo_reply,// Syscall 72: Mediated ICMP echo
     // Add more syscalls here as needed
 };
 
@@ -1379,6 +1399,10 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)syscall_storage_collect(
                 arg1, (int32_t*)(uintptr_t)arg2,
                 (uint8_t*)(uintptr_t)arg3);
+            break;
+        case SYS_REIST_ICMP_ECHO_REPLY:
+            result = (uint32_t)syscall_reist_icmp_echo_reply(
+                (const supervisor_icmp_echo_reply_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

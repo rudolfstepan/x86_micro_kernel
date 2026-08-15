@@ -89,10 +89,32 @@ static const char *network_classification(
         message->payload[1] != 'E' || message->payload[2] != 'T' ||
         (message->payload[3] != '1' && message->payload[3] != 'R' &&
          message->payload[3] != 'A' &&
-         message->payload[3] != 'Q' && message->payload[3] != 'X'))
+         message->payload[3] != 'Q' && message->payload[3] != 'I' &&
+         message->payload[3] != 'X'))
         return NULL;
     if (message->payload[3] == 'A')
         return message->length == 22U ? "REIST_ARP_RESOLUTION" : NULL;
+    if (message->payload[3] == 'I') {
+        if (message->length < 24U || message->length > 56U) return NULL;
+        uint32_t request_id = (uint32_t)message->payload[4] |
+            ((uint32_t)message->payload[5] << 8U) |
+            ((uint32_t)message->payload[6] << 16U) |
+            ((uint32_t)message->payload[7] << 24U);
+        uint32_t source_ip = ((uint32_t)message->payload[8] << 24U) |
+            ((uint32_t)message->payload[9] << 16U) |
+            ((uint32_t)message->payload[10] << 8U) |
+            message->payload[11];
+        uint16_t data_length = (uint16_t)message->payload[22] |
+            ((uint16_t)message->payload[23] << 8U);
+        bool nonzero_mac = false;
+        for (uint32_t index = 0U; index < 6U; ++index)
+            if (message->payload[12U + index] != 0U) nonzero_mac = true;
+        if (request_id == 0U || source_ip == 0U ||
+            source_ip == 0xFFFFFFFFU || !nonzero_mac ||
+            (message->payload[12] & 1U) != 0U || data_length > 32U ||
+            message->length != 24U + data_length) return NULL;
+        return "REIST_ICMP_ECHO";
+    }
     uint16_t ethertype = ((uint16_t)message->payload[16] << 8) |
                          message->payload[17];
     if (ethertype == 0x0806U) {
@@ -325,6 +347,23 @@ int main(int argc, char **argv) {
                     .target_ip = target_ip,
                 };
                 if (x86os_reist_send_arp_request(&resolution) != 0) return 17;
+                continue;
+            }
+            if (network != NULL && request.payload[3] == 'I') {
+                x86os_reist_icmp_echo_reply_t reply = {
+                    .version = X86OS_REIST_ICMP_ECHO_REPLY_VERSION,
+                    .struct_size = sizeof(reply),
+                    .request_id = (uint32_t)request.payload[4] |
+                        ((uint32_t)request.payload[5] << 8U) |
+                        ((uint32_t)request.payload[6] << 16U) |
+                        ((uint32_t)request.payload[7] << 24U),
+                };
+                if (x86os_reist_send_icmp_echo_reply(&reply) != 0) {
+                    if (x86os_reist_report(
+                            X86OS_REIST_REPORT_NETWORK_DEGRADED,
+                            X86OS_REIST_NETWORK_DEGRADED_SEMANTIC) != 0)
+                        return 18;
+                }
                 continue;
             }
             if (network != NULL && request.payload[3] == 'R' &&

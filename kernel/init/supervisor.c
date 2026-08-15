@@ -44,6 +44,9 @@ _Static_assert(sizeof(supervisor_arp_reply_context_t) <=
 _Static_assert(sizeof(supervisor_arp_resolution_context_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
                "ARP resolution context exceeds critical object payload");
+_Static_assert(sizeof(supervisor_icmp_echo_context_t) <=
+                   CRITICAL_OBJECT_MAX_PAYLOAD,
+               "ICMP echo context exceeds critical object payload");
 _Static_assert(sizeof(supervisor_probe_control_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
                "probe control exceeds critical object payload");
@@ -72,6 +75,8 @@ typedef struct {
     supervisor_protected_arp_reply_context_t arp_reply_context;
     supervisor_protected_probe_authority_t arp_resolution_authority;
     supervisor_protected_arp_resolution_context_t arp_resolution_context;
+    supervisor_protected_probe_authority_t icmp_echo_authority;
+    supervisor_protected_icmp_echo_context_t icmp_echo_context;
 } supervisor_probe_runtime_t;
 
 static supervisor_probe_runtime_t probe_runtime;
@@ -643,6 +648,99 @@ int supervisor_protected_arp_resolution_context_clear(
     return arp_resolution_context_write(protected_context, &context);
 }
 
+static bool icmp_echo_context_valid(const void *payload, size_t length) {
+    if (payload == NULL || length != sizeof(supervisor_icmp_echo_context_t))
+        return false;
+    const supervisor_icmp_echo_context_t *context = payload;
+    if (context->reserved != 0U || context->reserved_tail[0] != 0U ||
+        context->reserved_tail[1] != 0U ||
+        context->data_length > SUPERVISOR_ICMP_ECHO_MAX_DATA) return false;
+    bool empty_mac = true;
+    for (uint32_t index = 0U; index < 6U; ++index)
+        if (context->source_mac[index] != 0U) empty_mac = false;
+    bool empty = context->request_id == 0U &&
+        context->transaction_epoch == 0U && context->source_ip == 0U &&
+        context->identifier == 0U && context->sequence == 0U &&
+        context->data_length == 0U && empty_mac;
+    if (empty) {
+        for (uint32_t index = 0U; index < SUPERVISOR_ICMP_ECHO_MAX_DATA;
+             ++index)
+            if (context->data[index] != 0U) return false;
+        return true;
+    }
+    if (context->request_id == 0U || context->transaction_epoch == 0U ||
+        context->source_ip == 0U || context->source_ip == 0xFFFFFFFFU ||
+        empty_mac ||
+        (context->source_mac[0] & 1U) != 0U) return false;
+    for (uint32_t index = context->data_length;
+         index < SUPERVISOR_ICMP_ECHO_MAX_DATA; ++index)
+        if (context->data[index] != 0U) return false;
+    return true;
+}
+
+static int icmp_echo_context_write(
+        supervisor_protected_icmp_echo_context_t *protected_context,
+        const supervisor_icmp_echo_context_t *context) {
+    return critical_object_update(
+        &protected_context->object, SUPERVISOR_ICMP_ECHO_CONTEXT_VERSION,
+        context, sizeof(*context), icmp_echo_context_valid) == 0
+        ? 0 : SUPERVISOR_EINTEGRITY;
+}
+
+int supervisor_protected_icmp_echo_context_init(
+        supervisor_protected_icmp_echo_context_t *protected_context) {
+    if (protected_context == NULL) return -22;
+    supervisor_icmp_echo_context_t context = {0};
+    return critical_object_init(
+        &protected_context->object, SUPERVISOR_ICMP_ECHO_CONTEXT_VERSION,
+        &context, sizeof(context)) == 0 ? 0 : SUPERVISOR_EINTEGRITY;
+}
+
+int supervisor_protected_icmp_echo_context_publish(
+        supervisor_protected_icmp_echo_context_t *protected_context,
+        uint32_t request_id, uint32_t transaction_epoch, uint32_t source_ip,
+        const uint8_t source_mac[6], uint16_t identifier, uint16_t sequence,
+        const uint8_t *data, uint16_t data_length) {
+    if (protected_context == NULL || request_id == 0U ||
+        transaction_epoch == 0U || source_ip == 0U ||
+        source_ip == 0xFFFFFFFFU || source_mac == NULL ||
+        (source_mac[0] & 1U) != 0U ||
+        data_length > SUPERVISOR_ICMP_ECHO_MAX_DATA ||
+        (data_length != 0U && data == NULL)) return -22;
+    supervisor_icmp_echo_context_t context = {
+        .request_id = request_id,
+        .transaction_epoch = transaction_epoch,
+        .source_ip = source_ip,
+        .identifier = identifier,
+        .sequence = sequence,
+        .data_length = data_length,
+    };
+    for (uint32_t index = 0U; index < 6U; ++index)
+        context.source_mac[index] = source_mac[index];
+    for (uint32_t index = 0U; index < data_length; ++index)
+        context.data[index] = data[index];
+    if (!icmp_echo_context_valid(&context, sizeof(context))) return -22;
+    return icmp_echo_context_write(protected_context, &context);
+}
+
+int supervisor_protected_icmp_echo_context_snapshot(
+        supervisor_protected_icmp_echo_context_t *protected_context,
+        supervisor_icmp_echo_context_t *snapshot_out) {
+    if (protected_context == NULL || snapshot_out == NULL) return -22;
+    size_t length = 0U;
+    critical_read_result_t result = critical_object_read(
+        &protected_context->object, SUPERVISOR_ICMP_ECHO_CONTEXT_VERSION,
+        snapshot_out, sizeof(*snapshot_out), &length,
+        icmp_echo_context_valid);
+    return result < 0 ? SUPERVISOR_EINTEGRITY : 0;
+}
+
+int supervisor_protected_icmp_echo_context_clear(
+        supervisor_protected_icmp_echo_context_t *protected_context) {
+    supervisor_icmp_echo_context_t context = {0};
+    return icmp_echo_context_write(protected_context, &context);
+}
+
 static bool probe_control_valid(const void *payload, size_t length) {
     if (payload == NULL || length != sizeof(supervisor_probe_control_t))
         return false;
@@ -881,7 +979,11 @@ void supervisor_init(void) {
         supervisor_protected_probe_authority_init(
             &probe_runtime.arp_resolution_authority) != 0 ||
         supervisor_protected_arp_resolution_context_init(
-            &probe_runtime.arp_resolution_context) != 0) {
+            &probe_runtime.arp_resolution_context) != 0 ||
+        supervisor_protected_probe_authority_init(
+            &probe_runtime.icmp_echo_authority) != 0 ||
+        supervisor_protected_icmp_echo_context_init(
+            &probe_runtime.icmp_echo_context) != 0) {
         panic("Unable to initialize protected probe runtime");
     }
 #endif
@@ -1120,6 +1222,10 @@ static bool probe_fence_apply(void *context) {
         &runtime->arp_resolution_authority);
     (void)supervisor_protected_arp_resolution_context_clear(
         &runtime->arp_resolution_context);
+    (void)supervisor_protected_probe_authority_cancel(
+        &runtime->icmp_echo_authority);
+    (void)supervisor_protected_icmp_echo_context_clear(
+        &runtime->icmp_echo_context);
     if (process_identity_alive(control.pid, control.process_generation)) {
         (void)process_terminate(control.pid);
     }
@@ -1196,7 +1302,11 @@ bool supervisor_start_probe(uint64_t now_ms) {
         supervisor_protected_probe_authority_init(
             &probe_runtime.arp_resolution_authority) != 0 ||
         supervisor_protected_arp_resolution_context_init(
-            &probe_runtime.arp_resolution_context) != 0)
+            &probe_runtime.arp_resolution_context) != 0 ||
+        supervisor_protected_probe_authority_init(
+            &probe_runtime.icmp_echo_authority) != 0 ||
+        supervisor_protected_icmp_echo_context_init(
+            &probe_runtime.icmp_echo_context) != 0)
         return false;
     supervisor_config_t config = {
         .heartbeat_timeout_ms = 2000U,
@@ -1771,6 +1881,138 @@ int supervisor_network_send_arp_reply(
     return 0;
 }
 
+bool supervisor_network_submit_icmp_echo(
+        uint32_t source_ip, const uint8_t source_mac[6], uint16_t identifier,
+        uint16_t sequence, const uint8_t *data, uint16_t data_length) {
+    KASSERT_NOT_IRQ();
+    KASSERT(irq_enabled());
+    if (source_ip == 0U || source_ip == 0xFFFFFFFFU || source_mac == NULL ||
+        (source_mac[0] & 1U) != 0U ||
+        data_length > SUPERVISOR_ICMP_ECHO_MAX_DATA ||
+        (data_length != 0U && data == NULL)) return false;
+    bool nonzero_mac = false;
+    for (uint32_t index = 0U; index < 6U; ++index)
+        if (source_mac[index] != 0U) nonzero_mac = true;
+    if (!nonzero_mac) return false;
+
+    uint32_t flags = supervisor_lock();
+    supervisor_probe_control_t control;
+    int result = supervisor_protected_probe_control_read(
+        &probe_runtime.control, &control);
+    if (result != 0 || control.active == 0U || control.fenced != 0U ||
+        control.healthy == 0U || control.launch_count < 4U ||
+        control.endpoint_handle == IPC_INVALID_HANDLE ||
+        !process_identity_alive(control.pid, control.process_generation)) {
+        supervisor_unlock(flags);
+        return false;
+    }
+    uint32_t request_id = 0U;
+    result = supervisor_protected_probe_authority_begin_epoch(
+        &probe_runtime.icmp_echo_authority, pit_monotonic_ms(),
+        SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS, control.process_generation,
+        &request_id);
+    if (result == 0)
+        result = supervisor_protected_icmp_echo_context_publish(
+            &probe_runtime.icmp_echo_context, request_id,
+            control.process_generation, source_ip, source_mac, identifier,
+            sequence, data, data_length);
+    supervisor_unlock(flags);
+    if (result != 0) return false;
+
+    ipc_message_t message = {
+        .version = IPC_MESSAGE_VERSION,
+        .struct_size = sizeof(ipc_message_t),
+        .length = (uint32_t)(24U + data_length),
+        .payload = {'N', 'E', 'T', 'I'},
+    };
+    for (uint32_t index = 0U; index < 4U; ++index) {
+        message.payload[4U + index] =
+            (uint8_t)(request_id >> (index * 8U));
+        message.payload[8U + index] =
+            (uint8_t)(source_ip >> (24U - index * 8U));
+    }
+    for (uint32_t index = 0U; index < 6U; ++index)
+        message.payload[12U + index] = source_mac[index];
+    message.payload[18] = (uint8_t)(identifier >> 8U);
+    message.payload[19] = (uint8_t)identifier;
+    message.payload[20] = (uint8_t)(sequence >> 8U);
+    message.payload[21] = (uint8_t)sequence;
+    message.payload[22] = (uint8_t)data_length;
+    message.payload[23] = (uint8_t)(data_length >> 8U);
+    for (uint32_t index = 0U; index < data_length; ++index)
+        message.payload[24U + index] = data[index];
+    result = ipc_send_external_from_peer(
+        control.pid, control.process_generation, control.endpoint_handle,
+        &message);
+    if (result != 0) {
+        flags = supervisor_lock();
+        (void)supervisor_protected_probe_authority_cancel(
+            &probe_runtime.icmp_echo_authority);
+        (void)supervisor_protected_icmp_echo_context_clear(
+            &probe_runtime.icmp_echo_context);
+        supervisor_unlock(flags);
+        network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_QUEUE);
+        return false;
+    }
+    printf("REIST_NETWORK ICMP_ECHO_QUEUED\n");
+    return true;
+}
+
+int supervisor_network_send_icmp_echo_reply(
+        int pid, uint32_t generation,
+        const supervisor_icmp_echo_reply_t *reply) {
+    if (reply == NULL ||
+        reply->version != SUPERVISOR_ICMP_ECHO_REPLY_VERSION ||
+        reply->struct_size < sizeof(*reply) || reply->request_id == 0U ||
+        reply->reserved != 0U) return -22;
+    uint32_t flags = supervisor_lock();
+    supervisor_probe_control_t control;
+    supervisor_icmp_echo_context_t context;
+    int result = supervisor_protected_probe_control_read(
+        &probe_runtime.control, &control);
+    bool caller_is_service = result == 0 && pid == control.pid &&
+                             generation == control.process_generation;
+    if (result == 0 &&
+        (control.active == 0U || control.fenced != 0U ||
+         control.healthy == 0U || !caller_is_service ||
+         !process_identity_alive(pid, generation))) result = -13;
+    if (result == 0)
+        result = supervisor_protected_icmp_echo_context_snapshot(
+            &probe_runtime.icmp_echo_context, &context);
+    if (result == 0 &&
+        (context.request_id != reply->request_id ||
+         context.transaction_epoch != generation)) result = -13;
+    uint32_t consumed_id = 0U;
+    if (result == 0)
+        result = supervisor_protected_probe_authority_take_epoch(
+            &probe_runtime.icmp_echo_authority, pit_monotonic_ms(), generation,
+            &consumed_id);
+    if (result == 0 && consumed_id != reply->request_id) result = -13;
+    int cleanup_result = supervisor_protected_icmp_echo_context_clear(
+        &probe_runtime.icmp_echo_context);
+    int cancel_result = supervisor_protected_probe_authority_cancel(
+        &probe_runtime.icmp_echo_authority);
+    if (result == 0 && cleanup_result != 0) result = cleanup_result;
+    if (result == 0 && cancel_result != 0) result = cancel_result;
+    bool integrity_failure = result == SUPERVISOR_EINTEGRITY;
+    supervisor_unlock(flags);
+    if (result != 0) {
+        if (integrity_failure && caller_is_service)
+            (void)supervisor_force_isolate(control.handle);
+        if (caller_is_service)
+            printf("REIST_NETWORK ICMP_ECHO_REJECTED %d\n", result);
+        return result;
+    }
+    if (!netstack_send_icmp_echo_reply(
+            context.source_ip, context.source_mac, context.identifier,
+            context.sequence, context.data, context.data_length)) {
+        printf("REIST_NETWORK ICMP_ECHO_REJECTED -5\n");
+        return -5;
+    }
+    printf("REIST_NETWORK ICMP_ECHO_MEDIATED\n");
+    return 0;
+}
+
 static void supervisor_worker(void) {
     static uint64_t next_arp_scrub_ms;
     for (;;) {
@@ -1801,12 +2043,18 @@ static void supervisor_worker(void) {
             supervisor_protected_probe_authority_expire_epoch(
                 &probe_runtime.arp_resolution_authority, now_ms,
                 control.process_generation);
+        int icmp_expiry = supervisor_protected_probe_authority_expire_epoch(
+            &probe_runtime.icmp_echo_authority, now_ms,
+            control.process_generation);
         if (reply_expiry == 1)
             (void)supervisor_protected_arp_reply_context_clear(
                 &probe_runtime.arp_reply_context);
         if (resolution_expiry == 1)
             (void)supervisor_protected_arp_resolution_context_clear(
                 &probe_runtime.arp_resolution_context);
+        if (icmp_expiry == 1)
+            (void)supervisor_protected_icmp_echo_context_clear(
+                &probe_runtime.icmp_echo_context);
         supervisor_unlock(transaction_flags);
         if (now_ms >= next_arp_scrub_ms) {
             next_arp_scrub_ms = UINT64_MAX - now_ms < 1000U

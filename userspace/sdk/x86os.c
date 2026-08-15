@@ -146,6 +146,15 @@ int x86os_reist_send_arp_request(
                               (uintptr_t)request, 0, 0);
 }
 
+_Static_assert(sizeof(x86os_reist_icmp_echo_reply_t) == 16U,
+               "REIST ICMP echo reply ABI changed");
+
+int x86os_reist_send_icmp_echo_reply(
+        const x86os_reist_icmp_echo_reply_t *reply) {
+    return (int)x86os_syscall(X86OS_SYS_REIST_ICMP_ECHO_REPLY,
+                              (uintptr_t)reply, 0, 0);
+}
+
 int x86os_network_arp_resolve(uint32_t target_ip) {
     return (int)x86os_syscall(X86OS_SYS_NETWORK_ARP_RESOLVE,
                               target_ip, 0, 0);

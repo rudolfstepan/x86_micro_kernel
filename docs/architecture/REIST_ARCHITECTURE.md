@@ -438,6 +438,18 @@ RTL8139-Lauf prüft den resultierenden Ethernet-Frame am QEMU-Socket. Damit ist
 der lokale ARP-Request-/Reply-Pfad vermittelt; S0.3c-6 beginnt als Nächstes mit
 der Storage-/Dateisystemdomäne.
 
+S0.3c-5c entfernt auch den autonomen ICMP-Echo-Responder aus Ring 0. Der
+Kernel prüft weiterhin Ethernet-, IPv4- und ICMP-Grenzen sowie beide
+Prüfsummen, veröffentlicht einen gültigen Request aber nur als festes
+`NETI`-Objekt an die gesunde Ring-3-Domäne. Der geschützte Kontext umfasst
+Request-ID, Dienstgeneration, Quell-IP/-MAC, Identifier, Sequenz und maximal
+32 Payloadbytes. Eine absolute 250-ms-Einmalautorität wird vor dem einzigen
+Sendepunkt zusammen mit dem Kontext verbraucht. Syscall 72 ist ausschließlich
+im Default-Deny-Profil des Dienstes freigegeben; normale Prozesse erhalten
+keine Antwortautorität und Fehler reaktivieren keinen Kernel-Fallback. Der
+RTL8139-Runtime-Test injiziert den Request und validiert den tatsächlich am
+QEMU-Socket ausgegebenen Echo-Reply einschließlich Checksumme.
+
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau
 einen geschützt gespeicherten Aktivzustand und eine saturierend berechnete
