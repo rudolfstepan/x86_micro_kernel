@@ -83,11 +83,11 @@ mit Stack-Usage und Callgraph-Information übersetzt. Fehlende Artefakte,
 dynamische oder über 4096 Byte große lokale Frames und Rekursionszyklen sind
 Gatefehler. Die lokale Framegrenze ist kein Gesamtstacknachweis; Entry-/IRQ-
 Pfade benötigen zusätzlich explizite kumulative Budgets und Zielhardware-WCET.
-Legacy- und Scheduler-IRQ besitzen diese Budgets bereits über
-`safety/stack_budgets.json`: registrierte Handler, indirekte Callbacks und
-Assembly-Reserven sind vollständig zu inventarisieren; jede unbekannte Kante
-scheitert geschlossen. Syscall-/Exception-Gesamtpfade und Plattform-WCET sind
-weiterhin offene Abnahmepunkte.
+Legacy-/Scheduler-IRQ und CPU-Exceptions besitzen diese Budgets bereits über
+`safety/stack_budgets.json`: registrierte Handler, im Exitpfad erreichbare
+VFS-Callbacks, indirekte Callbacks und Assembly-Reserven sind vollständig zu
+inventarisieren; jede unbekannte Kante scheitert geschlossen. Syscall-
+Gesamtpfade und Plattform-WCET sind weiterhin offene Abnahmepunkte.
 
 Headerabhängigkeiten sind Teil der Build-Evidenz. Jeder Kernel-C-Compile muss
 eine explizite Dependency-Datei erzeugen; fehlende, falsche oder nicht zum

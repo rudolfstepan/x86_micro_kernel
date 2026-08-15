@@ -306,15 +306,17 @@ Bridge-/Multifunktionsscan durch die ohnehin vollständig begrenzten Schleifen
 über 256 Busse, 32 Slots und acht Funktionen ersetzt. Diese Evidenz ersetzt
 noch keine Zielhardware-WCET-Budgets.
 
-S0.4c-2c2a erweitert diese Evidenz um kumulative Budgets für Legacy- und
-Scheduler-IRQ-Einstiege. `safety/stack_budgets.json` ist der prüfbare Vertrag:
-Er bindet jeden registrierten IRQ-Handler an den indirekten Dispatcherpfad und
-weist konservative Reserven für Assembly-, Validator- und Fence-Callbacks aus.
-Der Validator vergleicht das Register mit sämtlichen C-Registrierungen und
-scheitert bei Drift, unbekannten indirekten Zielen, fehlenden Kosten oder
-Überschreitung. Aktuell sind 1.744/7.168 Byte im Legacy-IRQ-Pfad und
-720/4.096 Byte im Scheduler-IRQ-Pfad belegt. Syscall-/Exception-Pfade sowie
-WCET-Baselines der ausgewählten Plattformen folgen getrennt.
+S0.4c-2c2a erweitert diese Evidenz um kumulative Budgets für Legacy-/Scheduler-
+IRQ- und CPU-Exception-Einstiege. `safety/stack_budgets.json` ist der prüfbare
+Vertrag: Er bindet jeden registrierten IRQ-/Exception-Handler sowie die im
+User-Exception-Exit erreichbaren VFS-Callbacks an den indirekten
+Dispatcherpfad und weist konservative Reserven für Assembly-, Validator- und
+Fence-Callbacks aus. Der Validator vergleicht die Inventare mit den
+Produktionsquellen und scheitert bei Drift, unbekannten indirekten Zielen,
+fehlenden Kosten oder Überschreitung. Aktuell sind 1.744/7.168 Byte im Legacy-
+IRQ-Pfad, 720/4.096 Byte im Scheduler-IRQ-Pfad und 2.000/7.168 Byte im CPU-
+Exception-Pfad belegt. Syscallpfade sowie WCET-Baselines der ausgewählten
+Plattformen folgen getrennt.
 
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
 Bitinventar der gegenwärtig 60 Syscalls. Normale Programme erhalten explizit

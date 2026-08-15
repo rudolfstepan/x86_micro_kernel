@@ -18,6 +18,11 @@ NODE_SIZE_RE = re.compile(r'\\n(\d+) bytes \(static\)"')
 IRQ_REGISTRATION_RE = re.compile(
     r'register_interrupt_handler\s*\(\s*[^,]+,\s*'
     r'(?:\(\s*void\s*\*\s*\)\s*)?([A-Za-z_]\w*)')
+EXCEPTION_HANDLER_RE = re.compile(
+    r'exception_handlers\s*\[[^\]]+\]\s*=\s*([A-Za-z_]\w*)')
+VFS_CLOSE_HANDLER_RE = re.compile(r'\.close\s*=\s*([A-Za-z_]\w*)')
+FAT32_SYNC_HOOK_RE = re.compile(
+    r'fat32_context_sync_hook\s*=\s*([A-Za-z_]\w*)')
 
 
 def validate(root: Path, expected: int, local_limit: int,
@@ -123,24 +128,40 @@ def validate(root: Path, expected: int, local_limit: int,
         if not entry_budgets:
             errors.append("stack budget file contains no entry budgets")
 
-        expected_irq_handlers = set(
-            budget_data.get("registered_irq_handlers", []))
-        if expected_irq_handlers:
-            if source_root is None:
-                errors.append("registered IRQ contract requires --source-root")
-            else:
-                actual_irq_handlers: set[str] = set()
-                for source in source_root.resolve().rglob("*.c"):
-                    source_text = source.read_text(encoding="utf-8")
-                    actual_irq_handlers.update(
-                        name for name in IRQ_REGISTRATION_RE.findall(source_text)
-                        if name != "void")
-                missing = sorted(actual_irq_handlers - expected_irq_handlers)
-                stale = sorted(expected_irq_handlers - actual_irq_handlers)
-                for name in missing:
-                    errors.append(f"unbudgeted registered IRQ handler: {name}")
-                for name in stale:
-                    errors.append(f"stale registered IRQ handler budget: {name}")
+        inventories = (
+            ("registered IRQ handler", "registered_irq_handlers",
+             IRQ_REGISTRATION_RE, {"void"}),
+            ("CPU exception handler", "exception_handlers",
+             EXCEPTION_HANDLER_RE, set()),
+            ("VFS close handler", "vfs_close_handlers",
+             VFS_CLOSE_HANDLER_RE, set()),
+            ("FAT32 sync hook", "fat32_sync_hooks",
+             FAT32_SYNC_HOOK_RE, {"NULL"}),
+        )
+        requested_inventories = [
+            item for item in inventories if budget_data.get(item[1])]
+        if requested_inventories and source_root is None:
+            errors.append("source inventories require --source-root")
+        elif requested_inventories:
+            resolved_source_root = source_root.resolve()
+            production_roots = [
+                resolved_source_root / name
+                for name in ("arch", "drivers", "fs", "kernel", "lib", "mm")
+                if (resolved_source_root / name).is_dir()]
+            source_files = (
+                [source for directory in production_roots
+                 for source in directory.rglob("*.c")]
+                if production_roots else list(resolved_source_root.rglob("*.c")))
+            source_text = "\n".join(
+                source.read_text(encoding="utf-8")
+                for source in source_files)
+            for label, key, pattern, ignored in requested_inventories:
+                expected = set(budget_data[key])
+                actual = set(pattern.findall(source_text)) - ignored
+                for name in sorted(actual - expected):
+                    errors.append(f"unbudgeted {label}: {name}")
+                for name in sorted(expected - actual):
+                    errors.append(f"stale {label} budget: {name}")
 
         missing_reported: set[str] = set()
 

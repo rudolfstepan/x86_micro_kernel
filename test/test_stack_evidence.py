@@ -152,6 +152,7 @@ class StackEvidenceTests(unittest.TestCase):
                 "entry_budgets": [
                     {"name": "entry", "root": "entry", "limit": 32}],
                 "registered_irq_handlers": ["old_handler"],
+                "exception_handlers": ["old_exception"],
             }), encoding="utf-8")
             errors, _, _ = VALIDATOR.validate(
                 root, 1, 128, budget, source_root)

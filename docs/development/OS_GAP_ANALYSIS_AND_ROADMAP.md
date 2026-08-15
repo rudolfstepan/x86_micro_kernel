@@ -261,9 +261,10 @@ und 10 verbindlich.
           fail-closed Rekursionsprüfung
         - [ ] S0.4c-2c2 Entry-/IRQ-Gesamtpfadbudgets und WCET-Messungen auf
           jeder ausgewählten Zielplattform
-          - [x] S0.4c-2c2a Kumulative Legacy-/Scheduler-IRQ-Stackbudgets mit
-            vollständigem Handlerinventar und fail-closed Indirektaufrufen
-          - [ ] S0.4c-2c2b Syscall-/Exception-Gesamtpfade sowie bounded
+          - [x] S0.4c-2c2a Kumulative Legacy-/Scheduler-IRQ- und
+            CPU-Exception-Stackbudgets mit vollständigem Handlerinventar und
+            fail-closed Indirektaufrufen
+          - [ ] S0.4c-2c2b Syscall-Gesamtpfade sowie bounded
             WCET-Baselines auf QEMU, VMware und ausgewählter Referenzhardware
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
@@ -1059,13 +1060,15 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    ersetzt.
 - S0.4c-2c2a summiert nun die statischen Stackkosten entlang der direkten
    Legacy- und Scheduler-IRQ-Callgraphen. Das maschinenlesbare Register
-   `safety/stack_budgets.json` bindet alle acht registrierten IRQ-Handler ein;
-   neue oder entfernte Registrierungen, unbekannte indirekte Aufrufe, fehlende
-   Kosten und Budgetüberschreitungen stoppen das Gate. Der Referenzcompile
-   belegt 1.744 von 7.168 Byte für den Legacy-IRQ-Pfad und 720 von 4.096 Byte
-   für den Scheduler-IRQ-Pfad. Konservative Reserven für Assembly- und
-   Validator-/Fence-Callbacks sind explizit im Register begründet. Syscall-/
-   Exception-Gesamtpfade und Zielplattform-WCET bleiben S0.4c-2c2b.
+   `safety/stack_budgets.json` bindet alle acht registrierten IRQ-Handler, die
+   drei CPU-Exception-Handler und die im Exitpfad erreichbaren VFS-Callbacks
+   ein; neue oder entfernte Registrierungen, unbekannte indirekte Aufrufe,
+   fehlende Kosten und Budgetüberschreitungen stoppen das Gate. Der
+   Referenzcompile belegt 1.744 von 7.168 Byte für den Legacy-IRQ-Pfad, 720 von
+   4.096 Byte für den Scheduler-IRQ-Pfad und 2.000 von 7.168 Byte für CPU-
+   Exceptions. Konservative Reserven für Assembly- und Validator-/Fence-
+   Callbacks sind explizit im Register begründet. Syscall-Gesamtpfade und
+   Zielplattform-WCET bleiben S0.4c-2c2b.
 - Kritische Tasks erhalten feste Prioritäten, CPU-/Speicher-/Queue-Budgets,
    Admission Control und nachgewiesene Worst-Case-Laufzeiten.
 - Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte

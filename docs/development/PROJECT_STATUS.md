@@ -305,11 +305,13 @@ Kernel-C-Objekte 1.204 Stackdatensätze und 5.767 Callgraph-Kanten. Der
 fail-closed Validator begrenzt lokale Frames auf 4096 Byte und verbietet
 Rekursionszyklen. Der dadurch gefundene rekursive PCI-Scan wurde durch feste
 Schleifen ersetzt; Zig-Referenzbuild und QEMU-Gast bleiben grün. Das folgende
-IRQ-Budgetgate summiert den direkten Callgraph samt explizit inventarisierten
-indirekten Handlern: Legacy-IRQ 1.744/7.168 Byte, Scheduler-IRQ 720/4.096 Byte.
-Registrierungsdrift, unbekannte indirekte Ziele oder fehlende Kosten scheitern
-geschlossen. Syscall-/Exception-Gesamtpfade und WCET-Messungen auf QEMU,
-VMware und Referenzhardware bleiben offen.
+IRQ-/Exception-Budgetgate summiert den direkten Callgraph samt explizit
+inventarisierten indirekten Handlern: Legacy-IRQ 1.744/7.168 Byte,
+Scheduler-IRQ 720/4.096 Byte und CPU-Exception 2.000/7.168 Byte. IRQ-,
+Exception-, VFS-Close- und FAT32-Hook-Inventare werden mit den Quellen
+abgeglichen; Drift, unbekannte indirekte Ziele oder fehlende Kosten scheitern
+geschlossen. Syscall-Gesamtpfade und WCET-Messungen auf QEMU, VMware und
+Referenzhardware bleiben offen.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

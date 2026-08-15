@@ -1,7 +1,8 @@
 {
   "entry_budgets": [
     {"name": "legacy_irq", "root": "irq_handler", "limit": 7168},
-    {"name": "scheduler_irq", "root": "scheduler_interrupt_handler", "limit": 4096}
+    {"name": "scheduler_irq", "root": "scheduler_interrupt_handler", "limit": 4096},
+    {"name": "cpu_exception", "root": "exception_dispatcher", "limit": 7168}
   ],
   "indirect_calls": {
     "irq_handler": [
@@ -13,6 +14,19 @@
       "rtl8139_interrupt_handler",
       "ne2000_irq_handler",
       "drivers/net/e1000.c:e1000_isr"
+    ],
+    "exception_dispatcher": [
+      "generic_exception_handler",
+      "divide_by_zero_handler",
+      "page_fault_handler"
+    ],
+    "vfs_close": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_close",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_close",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_close"
+    ],
+    "fat32_operation_end": [
+      "fs/fat32/fat32_vfs_adapter.c:fat32_sync_registered_contexts"
     ]
   },
   "registered_irq_handlers": [
@@ -24,6 +38,19 @@
     "rtl8139_interrupt_handler",
     "ne2000_irq_handler",
     "e1000_isr"
+  ],
+  "exception_handlers": [
+    "generic_exception_handler",
+    "divide_by_zero_handler",
+    "page_fault_handler"
+  ],
+  "vfs_close_handlers": [
+    "ext2_vfs_close",
+    "fat12_vfs_close",
+    "fat32_vfs_close"
+  ],
+  "fat32_sync_hooks": [
+    "fat32_sync_registered_contexts"
   ],
   "indirect_costs": {
     "kernel/init/critical_object.c:copy_check": 1024,
