@@ -3,6 +3,7 @@
 #include "x86os.h"
 #include "reist_dhcp_parser.h"
 #include "reist_dhcp_state.h"
+#include "reist_icmp_parser.h"
 #include "reist_ipv4_parser.h"
 #include "reist_udp_parser.h"
 
@@ -361,6 +362,7 @@ int main(int argc, char **argv) {
     uint32_t pending_network_probe_id = 0U;
     bool network_frame_reported = false;
     bool network_ipv4_reported = false;
+    bool network_icmp_reported = false;
     bool network_udp_reported = false;
     bool network_dhcp_reported = false;
     for (;;) {
@@ -378,6 +380,9 @@ int main(int argc, char **argv) {
             reist_ipv4_parse_result_t ipv4_result;
             int ipv4_parse = reist_ipv4_parse_frame(
                 network_frame.data, network_frame.length, &ipv4_result);
+            reist_icmp_parse_result_t icmp_result;
+            int icmp_parse = reist_icmp_parse_frame(
+                network_frame.data, network_frame.length, &icmp_result);
             reist_udp_parse_result_t udp_result;
             int udp_parse = reist_udp_parse_frame(
                 network_frame.data, network_frame.length, &udp_result);
@@ -399,6 +404,12 @@ int main(int argc, char **argv) {
                                        ipv4_result.protocol) != 0)
                     return 33;
                 network_ipv4_reported = true;
+            }
+            if (!network_icmp_reported && icmp_parse == 0) {
+                if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_ICMP,
+                                       frame_crc32) != 0)
+                    return 41;
+                network_icmp_reported = true;
             }
             if (!network_udp_reported && udp_parse == 0) {
                 if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_UDP,

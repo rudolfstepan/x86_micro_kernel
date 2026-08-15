@@ -242,7 +242,14 @@ Eingang fällt im Kernel geschlossen aus; nur der validierte Ring-3-Ingress darf
 für aktive Bindings Antwortautorität erzeugen. Reale RTL8139-Läufe für Port
 9000, Port 9001 und Boot-DHCP sind grün. Als nächstes wird der verbleibende
 Ring-0-IPv4/ICMP-Fallback außerhalb des gesunden Dienstpfads untersucht und
-schrittweise geschlossen.
+schrittweise geschlossen. Der erste ICMP-Teilschritt ist abgenommen: Ein
+heapfreier Ring-3-v1-Parser validiert ausschließlich Echo Request/Reply, Code,
+IPv4-Grenzen und die vollständige ICMP-Prüfsumme. Das feste 28-Byte-Ergebnis
+wird bei Fehlern kanonisch genullt. Der PID-/generations- und Frame-CRC-
+gebundene Shadow-Nachweis `REIST_NETWORK ICMP_PARSED_RING3` ist mit RTL8139 grün und
+erteilt noch keine Eingangs- oder Ausgabeautorität. Als nächstes wird der
+ICMP-Eingang an dieses validierte Ergebnis gebunden und der Ring-0-Parser
+entfernt.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

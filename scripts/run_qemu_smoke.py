@@ -61,6 +61,7 @@ REIST_DHCP_RENEW_INGRESS_RING3_MARKER = \
     "REIST_NETWORK DHCP_RENEW_INGRESS_RING3"
 REIST_NETWORK_FRAME_MARKER = "REIST_NETWORK FRAME_HANDOFF"
 REIST_NETWORK_IPV4_MARKER = "REIST_NETWORK IPV4_PARSED_RING3"
+REIST_NETWORK_ICMP_MARKER = "REIST_NETWORK ICMP_PARSED_RING3"
 REIST_NETWORK_UDP_MARKER = "REIST_NETWORK UDP_PARSED_RING3"
 REIST_NETWORK_DHCP_MARKER = "REIST_NETWORK DHCP_PARSED_RING3"
 REIST_NETWORK_UDP_INGRESS_MARKER = "REIST_NETWORK UDP_INGRESS_RING3"
@@ -824,6 +825,7 @@ def validate(
     expect_udp_binding: bool = False,
     expect_network_frame: bool = False,
     expect_network_ipv4: bool = False,
+    expect_network_icmp: bool = False,
     expect_network_udp: bool = False,
     expect_network_dhcp: bool = False,
     expect_network_udp_ingress: bool = False,
@@ -945,6 +947,10 @@ def validate(
         ipv4 = exact_line_position(transcript, REIST_NETWORK_IPV4_MARKER)
         if ipv4 < 0 or (test >= 0 and ipv4 > test):
             return "missing bounded Ring-3 IPv4 parser marker"
+    if expect_network_icmp:
+        icmp = exact_line_position(transcript, REIST_NETWORK_ICMP_MARKER)
+        if icmp < 0 or (test >= 0 and icmp > test):
+            return "missing bounded Ring-3 ICMP parser marker"
     if expect_network_udp:
         udp = exact_line_position(transcript, REIST_NETWORK_UDP_MARKER)
         if udp < 0 or (test >= 0 and udp > test):
@@ -1097,6 +1103,11 @@ def main() -> int:
         help="require one checksum-valid IPv4 frame parsed by Ring 3",
     )
     parser.add_argument(
+        "--expect-network-icmp",
+        action="store_true",
+        help="require one checksum-valid ICMP echo parsed by Ring 3",
+    )
+    parser.add_argument(
         "--expect-network-udp",
         action="store_true",
         help="require one checksum-valid UDP datagram parsed by Ring 3",
@@ -1157,7 +1168,8 @@ def main() -> int:
         return 2
     if (args.expect_dhcp_config or args.expect_dhcp_expiry or
             args.expect_dhcp_renewal or args.expect_network_frame or
-            args.expect_network_ipv4 or args.expect_network_udp or
+            args.expect_network_ipv4 or args.expect_network_icmp or
+            args.expect_network_udp or
             args.expect_network_dhcp or
             args.expect_network_udp_ingress) and \
             args.nic == "none":
@@ -1202,6 +1214,7 @@ def main() -> int:
                             args.inject_udp_echo and args.udp_port != 9000,
                             args.expect_network_frame,
                             args.expect_network_ipv4,
+                            args.expect_network_icmp,
                             args.expect_network_udp,
                             args.expect_network_dhcp,
                             args.expect_network_udp_ingress)

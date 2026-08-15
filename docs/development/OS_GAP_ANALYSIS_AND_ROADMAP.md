@@ -147,7 +147,7 @@ und 10 verbindlich.
       - [x] S0.3c-5e1 Separate statische 8-Slot-RX-Queue und append-only
         Syscall 79 für einen vollständigen, generation-frischen 1518-Byte-
         Frame-Handoff mit realem RTL8139-Ring-3-Nachweis
-      - [ ] S0.3c-5e2 IPv4-/UDP-/DHCP-Parser und Protokollzustand über den
+      - [ ] S0.3c-5e2 IPv4-/ICMP-/UDP-/DHCP-Parser und Protokollzustand über den
         neuen Handoff übernehmen und den parallelen Ring-0-Demux entfernen
         - [x] S0.3c-5e2a Begrenzten heapfreien IPv4-v1-Shadow-Parser mit
           Headerprüfsumme, Fragmentablehnung und realem RTL8139-Nachweis
@@ -181,6 +181,10 @@ und 10 verbindlich.
                   - [x] S0.3c-5e2b2b2b2 Tote synchrone Ring-0-DHCP-Routinen,
                     Queue und Poller entfernen sowie Restart-/Druckpfade ohne
                     Parallelzustellung abnehmen
+        - [x] S0.3c-5e2c Heapfreien ICMP-Echo-v1-Shadow-Parser mit vollständiger
+          Prüfsumme, fester 28-Byte-Ausgabe und realem RTL8139-Nachweis ergänzen
+        - [ ] S0.3c-5e2d ICMP-Eingangsautorität aus dem validierten Ring-3-
+          Ergebnis speisen und den verbleibenden Ring-0-IPv4/ICMP-Parser entfernen
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -1592,8 +1596,17 @@ unbenutzte direkte Echo-Sendehilfe sind ebenfalls entfernt. Ring 0 verwirft
 UDP-Eingang fail-closed; ausschließlich der CRC-/generation-/deadlinegebundene
 Ring-3-Ingress darf für ein aktives Binding Antwortautorität erzeugen. Reale
 RTL8139-Läufe bestätigen den primären und einen zweiten gebundenen Port sowie
-Boot-DHCP. Damit ist S0.3c-5e2b abgeschlossen. Offen bleibt in S0.3c-5e2 der
-Ring-0-IPv4/ICMP-Fallback außerhalb des gesunden Dienstpfads.
+Boot-DHCP. Damit ist S0.3c-5e2b abgeschlossen. S0.3c-5e2c ergänzt nun einen
+heapfreien ICMP-Echo-v1-Shadow-Parser. Er akzeptiert ausschließlich vom
+IPv4-v1-Parser validierte Echo-Requests oder -Replies, verlangt Code null,
+prüft die vollständige ICMP-Prüfsumme einschließlich ungerader Nutzdaten und
+publiziert ein kanonisches 28-Byte-Ergebnis. Ein PID-/generations- und
+Frame-CRC-gebundener Liefernachweis erzeugt nur den Diagnosemarker
+`ICMP_PARSED_RING3`; er verleiht keine Ausgabeautorität. Der reale RTL8139-
+Lauf bestätigt den Marker gemeinsam mit der bereits vermittelten Echoantwort
+und `TEST_OK`. Offen bleibt in
+S0.3c-5e2d die Übernahme der ICMP-Eingangsautorität und der Rückbau des
+Ring-0-IPv4/ICMP-Parsers.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

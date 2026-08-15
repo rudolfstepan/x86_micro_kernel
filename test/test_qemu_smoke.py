@@ -259,6 +259,18 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
                                "NOT_IPV4_PARSED_RING3"),
             expect_network_ipv4=True))
 
+    def test_network_icmp_parser_requires_exact_ring3_marker(self) -> None:
+        transcript = "\n".join((
+            RUNNER_MODULE.REIST_NETWORK_ICMP_MARKER,
+            "BOOT_OK", "C:\\>", "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_network_icmp=True))
+        self.assertIn("ICMP parser", RUNNER_MODULE.validate(
+            transcript.replace(RUNNER_MODULE.REIST_NETWORK_ICMP_MARKER,
+                               "NOT_ICMP_PARSED_RING3"),
+            expect_network_icmp=True))
+
     def test_network_udp_parser_requires_exact_ring3_marker(self) -> None:
         transcript = "\n".join((
             RUNNER_MODULE.REIST_NETWORK_UDP_MARKER,

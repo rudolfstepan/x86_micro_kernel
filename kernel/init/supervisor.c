@@ -128,6 +128,12 @@ typedef struct {
     uint32_t ipv4_delivery_pending;
     int32_t ipv4_report_pid;
     uint32_t ipv4_report_generation;
+    int32_t icmp_delivery_pid;
+    uint32_t icmp_delivery_generation;
+    uint32_t icmp_delivery_crc32;
+    uint32_t icmp_delivery_pending;
+    int32_t icmp_report_pid;
+    uint32_t icmp_report_generation;
     int32_t udp_delivery_pid;
     uint32_t udp_delivery_generation;
     uint32_t udp_delivery_pending;
@@ -1952,6 +1958,10 @@ static bool probe_spawn_next(void) {
     probe_runtime.ipv4_delivery_pid = 0;
     probe_runtime.ipv4_delivery_generation = 0U;
     probe_runtime.ipv4_delivery_pending = 0U;
+    probe_runtime.icmp_delivery_pid = 0;
+    probe_runtime.icmp_delivery_generation = 0U;
+    probe_runtime.icmp_delivery_crc32 = 0U;
+    probe_runtime.icmp_delivery_pending = 0U;
     probe_runtime.udp_delivery_pid = 0;
     probe_runtime.udp_delivery_generation = 0U;
     probe_runtime.udp_delivery_pending = 0U;
@@ -2181,6 +2191,30 @@ int supervisor_probe_report(int pid, uint32_t generation,
             printf("REIST_NETWORK IPV4_PARSED_RING3\n");
         return 0;
     }
+    if (report_type == REIST_REPORT_NETWORK_ICMP) {
+        uint32_t flags = supervisor_lock();
+        bool delivery_matches = probe_runtime.icmp_delivery_pending != 0U &&
+            probe_runtime.icmp_delivery_pid == pid &&
+            probe_runtime.icmp_delivery_generation == generation &&
+            probe_runtime.icmp_delivery_crc32 == value;
+        bool first_for_generation = probe_runtime.icmp_report_pid != pid ||
+            probe_runtime.icmp_report_generation != generation;
+        if (delivery_matches) {
+            probe_runtime.icmp_delivery_pid = 0;
+            probe_runtime.icmp_delivery_generation = 0U;
+            probe_runtime.icmp_delivery_crc32 = 0U;
+            probe_runtime.icmp_delivery_pending = 0U;
+        }
+        if (delivery_matches && first_for_generation) {
+            probe_runtime.icmp_report_pid = pid;
+            probe_runtime.icmp_report_generation = generation;
+        }
+        supervisor_unlock(flags);
+        if (!delivery_matches) return -1;
+        if (first_for_generation)
+            printf("REIST_NETWORK ICMP_PARSED_RING3\n");
+        return 0;
+    }
     if (report_type == REIST_REPORT_NETWORK_UDP) {
         if (value == 0U || value > UINT16_MAX) return -1;
         uint32_t flags = supervisor_lock();
@@ -2293,6 +2327,8 @@ int supervisor_network_confirm_frame_delivery(
     bool ipv4_already_reported =
         probe_runtime.ipv4_report_pid == pid &&
         probe_runtime.ipv4_report_generation == generation;
+    bool icmp_already_reported = probe_runtime.icmp_report_pid == pid &&
+        probe_runtime.icmp_report_generation == generation;
     bool udp_already_reported = probe_runtime.udp_report_pid == pid &&
         probe_runtime.udp_report_generation == generation;
     bool dhcp_already_reported = probe_runtime.dhcp_report_pid == pid &&
@@ -2315,6 +2351,13 @@ int supervisor_network_confirm_frame_delivery(
         probe_runtime.ipv4_delivery_pid = pid;
         probe_runtime.ipv4_delivery_generation = generation;
         probe_runtime.ipv4_delivery_pending = 1U;
+    }
+    if (result == 0 && ethertype == 0x0800U && frame->length >= 34U &&
+        frame->data[23U] == 1U && !icmp_already_reported) {
+        probe_runtime.icmp_delivery_pid = pid;
+        probe_runtime.icmp_delivery_generation = generation;
+        probe_runtime.icmp_delivery_crc32 = frame_crc32;
+        probe_runtime.icmp_delivery_pending = 1U;
     }
     if (result == 0 && ethertype == 0x0800U && frame->length >= 34U &&
         frame->data[23U] == 17U && !udp_already_reported &&

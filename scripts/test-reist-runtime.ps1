@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'handover')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'handover')]
     [string]$Mode = 'normal'
 )
 
@@ -147,6 +147,13 @@ switch ($Mode) {
         Invoke-Smoke 'guest-smoke-network-ipv4-parser.log' @(
             '--nic', 'rtl8139', '--expect-network-frame',
             '--expect-network-ipv4'
+        )
+    }
+    'network-icmp-parser' {
+        Invoke-Smoke 'guest-smoke-network-icmp-parser.log' @(
+            '--nic', 'rtl8139', '--expect-network-frame',
+            '--expect-network-ipv4', '--expect-network-icmp',
+            '--inject-icmp-echo'
         )
     }
     'network-udp-parser' {

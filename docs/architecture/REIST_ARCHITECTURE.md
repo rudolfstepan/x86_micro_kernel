@@ -636,6 +636,16 @@ direkte Echo-Sendehilfe. Der Kernel verwirft UDP-Eingang fail-closed; nur
 Binding-Prüfung eine Antwortautorität erzeugen. Der Ring-0-IPv4/ICMP-Fallback
 außerhalb des gesunden Dienstpfads bleibt als S0.3c-5e2-Restpaket offen.
 
+S0.3c-5e2c bereitet dessen kontrollierten Rückbau vor. Ein separater,
+heapfreier Ring-3-Parser akzeptiert nur vollständig vom IPv4-v1-Parser
+validierte ICMP-Echo-Requests und -Replies mit Code null. Er prüft die gesamte
+ICMP-Nutzlast einschließlich ungerader Länge und veröffentlicht ausschließlich
+ein festes 28-Byte-Ergebnis mit validierten Adressen, Offsets, Identifier und
+Sequenz. Der Supervisor bindet `ICMP_PARSED_RING3` an die tatsächlich
+ausgelieferte PID, Prozessgeneration und Frame-CRC. Dieser Shadow-Nachweis
+besitzt bewusst keine Autorität; erst S0.3c-5e2d darf den Ring-0-ICMP-Eingang
+nach äquivalenten Fault-, Druck- und Restart-Tests entfernen.
+
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau
 einen geschützt gespeicherten Aktivzustand und eine saturierend berechnete
