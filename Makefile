@@ -116,16 +116,20 @@ ifeq ($(VIDEO),framebuffer)
     ASFLAGS += -DUSE_FRAMEBUFFER
 endif
 
+FRAME_WARNING_FLAGS ?= -Wframe-larger-than=4096 -Werror=frame-larger-than
 CFLAGS := -m32 -std=gnu11 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs \
           -fno-builtin -fno-pic -fno-pie -fno-stack-protector \
-          -Werror=vla -Wframe-larger-than=4096 -Werror=frame-larger-than \
+          -Werror=vla $(FRAME_WARNING_FLAGS) \
           -fno-asynchronous-unwind-tables -fno-unwind-tables -mno-sse -mno-sse2 -mno-mmx \
           -O2 -DNDEBUG -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable -U_FORTIFY_SOURCE \
           -Werror=implicit-function-declaration -Werror=incompatible-pointer-types \
           -Werror=int-conversion -Werror=return-type \
           -I$(OUTPUT_DIR) -I. -I$(ARCH_DIR) -I$(ARCH_DIR)/include -I$(LIB_DIR)/libc -I$(KERNEL_DIR)/shell \
-          $(TARGET_DEFINES) $(VIDEO_DEFINES) $(SAFETY_TEST_DEFINES)
+          $(TARGET_DEFINES) $(VIDEO_DEFINES) $(SAFETY_TEST_DEFINES) \
+          $(STACK_ANALYSIS_FLAGS)
 DEPFLAGS = -MMD -MP -MF $(@:.o=.d) -MT $@
+STACK_ANALYSIS_CC ?= gcc
+STACK_ANALYSIS_OUTPUT_DIR ?= build/stack-analysis
 
 LDFLAGS := -m elf_i386 -nostdlib --strip-all --build-id=sha1
 KERNEL_LDSCRIPT := $(CONFIG_DIR)/klink.ld
@@ -255,7 +259,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel check-kernel-dependencies check-kernel-stack user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -530,6 +534,16 @@ kernel: check-kernel-dependencies
 
 check-kernel-stack: check-kernel-dependencies
 	@echo "Kernel stack-frame and VLA compiler gates passed."
+
+check-kernel-stack-analysis:
+	@$(MAKE) clean OUTPUT_DIR=$(STACK_ANALYSIS_OUTPUT_DIR)
+	@$(MAKE) check-kernel-stack OUTPUT_DIR=$(STACK_ANALYSIS_OUTPUT_DIR) \
+		CC=$(STACK_ANALYSIS_CC) \
+		FRAME_WARNING_FLAGS="-Wframe-larger-than=4096 -Werror=frame-larger-than=4096" \
+		STACK_ANALYSIS_FLAGS="-fstack-usage -fcallgraph-info=su"
+	@$(PYTHON) scripts/validate_stack_usage.py \
+		--root $(STACK_ANALYSIS_OUTPUT_DIR) --expected 75 \
+		--local-limit 4096
 
 # ============================================================================
 # BOOTABLE DISK IMAGE

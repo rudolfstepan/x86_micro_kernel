@@ -297,6 +297,15 @@ nach der ersten Seite gescheiterten Kernelstack-Allokation. Nach Disarm muss
 derselbe Stackslot wieder vollständig nutzbar sein; erst dann wird der
 Erfolgsmarker ausgegeben.
 
+S0.4c-2c1 ergänzt den Zig-Referenzbuild um einen getrennten GCC-Analysecompile
+mit `-fstack-usage` und `-fcallgraph-info=su`. Für jedes der 75 C-Objekte muss
+ein gepaartes Stack-/Callgraph-Artefakt existieren. Der begrenzte Validator
+verlangt statische lokale Frames bis höchstens 4096 Byte und einen azyklischen
+direkten Callgraph. Als erste konkrete Korrektur wurde der rekursive PCI-
+Bridge-/Multifunktionsscan durch die ohnehin vollständig begrenzten Schleifen
+über 256 Busse, 32 Slots und acht Funktionen ersetzt. Diese Evidenz ersetzt
+noch keine Entry-/IRQ-Gesamtpfad- oder Zielhardware-WCET-Budgets.
+
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
 Bitinventar der gegenwärtig 60 Syscalls. Normale Programme erhalten explizit
 das Kompatibilitätsprofil. Das Supervisor-Profil `PROBE` beginnt dagegen bei

@@ -256,6 +256,11 @@ und 10 verbindlich.
             - [x] S0.4c-2b2b2 Deterministische Heap-/Frame-ENOMEM-Injection
               mit vollständigem Rollbacknachweis
       - [ ] S0.4c-2c Zielhardwarebezogene WCET- und Stack-Callgraph-Nachweise
+        - [x] S0.4c-2c1 Unabhängiger GCC-Analysecompile mit vollständiger
+          Stack-Usage-/Callgraph-Evidenz, lokalen 4096-Byte-Gates und
+          fail-closed Rekursionsprüfung
+        - [ ] S0.4c-2c2 Entry-/IRQ-Gesamtpfadbudgets und WCET-Messungen auf
+          jeder ausgewählten Zielplattform
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
 
@@ -1041,6 +1046,13 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    prüft die exakte Framebilanz und verwendet den Stackslot anschließend
    erneut. Das QEMU-Image erreicht danach weiterhin den vollständigen
    Ring-3-`TEST_OK`-Marker.
+- S0.4c-2c1 erzeugt mit einem unabhängigen GCC-Analysecompile für alle 75
+   Kernel-C-Objekte `.su`- und `.ci`-Evidenz. Der Validator lehnt fehlende oder
+   ungepaarte Dateien, dynamische beziehungsweise über 4096 Byte große lokale
+   Frames und direkte oder transitive Rekursionszyklen ab. Der erste Lauf
+   erfasste 1.204 Stackdatensätze und 5.767 Callgraph-Kanten; dabei wurde der
+   rekursive PCI-Topologiescan durch feste Bus-/Slot-/Funktionsschleifen
+   ersetzt. Gesamtpfadbudgets und Zielhardware-WCET bleiben S0.4c-2c2.
 - Kritische Tasks erhalten feste Prioritäten, CPU-/Speicher-/Queue-Budgets,
    Admission Control und nachgewiesene Worst-Case-Laufzeiten.
 - Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte

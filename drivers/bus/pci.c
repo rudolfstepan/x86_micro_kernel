@@ -171,25 +171,18 @@ void pci_scan_function(uint8_t bus, uint8_t slot, uint8_t function) {
         pci_devices[pci_device_count++] = dev;
     }
 
-    // Traverse PCI-to-PCI bridges immediately; the full-bus fallback in
-    // pci_init also covers unusual multi-root firmware layouts.
-    if (dev.class_code == 0x06 && dev.subclass_code == 0x04) {
-        uint8_t secondary_bus =
-            pci_read_config_byte(bus, slot, function, 0x19);
-        if (secondary_bus != bus) pci_scan_bus(secondary_bus);
-    }
-
-    // Check for multifunction devices
-    if ((function == 0) && (dev.header_type & 0x80)) {
-        for (uint8_t func = 1; func < 8; func++) {
-            pci_scan_function(bus, slot, func);
-        }
-    }
 }
 
 // Scan a specific slot on the PCI bus
 void pci_scan_slot(uint8_t bus, uint8_t slot) {
+    if (pci_read_config_word(bus, slot, 0U, 0x00U) == 0xFFFFU) return;
+    uint8_t header_type = pci_read_config_byte(bus, slot, 0U, 0x0EU);
     pci_scan_function(bus, slot, 0);
+    if ((header_type & 0x80U) != 0U) {
+        for (uint8_t function = 1U; function < 8U; ++function) {
+            pci_scan_function(bus, slot, function);
+        }
+    }
 }
 
 // Scan the PCI bus
@@ -208,8 +201,9 @@ void pci_init(void) {
         pci_bus_scanned[bus] = false;
     }
 
-    // Start with the conventional root and then cover additional roots which
-    // are not represented by a discoverable PCI-to-PCI bridge.
+    /* Cover every representable bus with fixed loop bounds.  This deliberately
+     * avoids recursive bridge traversal and gives boot-time stack/WCET a hard
+     * upper bound independent of malformed bridge topology. */
     pci_scan_bus(0);
     for (unsigned int bus = 1; bus < 256; ++bus) {
         pci_scan_bus((uint8_t)bus);

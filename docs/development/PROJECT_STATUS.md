@@ -299,7 +299,13 @@ Memory-Fault-Testimage erzwingt zusätzlich Heap-ENOMEM und einen Framefehler
 nach partieller Kernelstack-Allokation. Der Boottest belegt unveränderte
 Belegung, exakte Frame-Rückgewinnung und anschließende Wiederverwendung des
 Stackslots; der komplette Ring-3-Gastlauf bleibt grün. Weitere Queue-Metriken
-und Zielhardware-WCET bleiben offen.
+und Zielhardware-WCET bleiben offen. Der erste Stack-/Callgraph-Nachweis ist
+ebenfalls automatisiert: Ein separater GCC-Compile erzeugt für alle 75
+Kernel-C-Objekte 1.204 Stackdatensätze und 5.767 Callgraph-Kanten. Der
+fail-closed Validator begrenzt lokale Frames auf 4096 Byte und verbietet
+Rekursionszyklen. Der dadurch gefundene rekursive PCI-Scan wurde durch feste
+Schleifen ersetzt; Zig-Referenzbuild und QEMU-Gast bleiben grün. Entry-/IRQ-
+Gesamtpfadbudgets und Messungen auf jeder Zielhardware bleiben offen.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

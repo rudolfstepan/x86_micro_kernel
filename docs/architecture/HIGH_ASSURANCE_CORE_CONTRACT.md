@@ -78,6 +78,12 @@ ist ausschließlich in einem getrennten Testimage enthalten. Sie prüft
 fehlgeschlagene Erst- und Teilallokationen auf exakte Rückgewinnung und darf in
 keinem Produktionsprofil aktiv sein.
 
+Jeder Kernel-C-Buildpfad wird zusätzlich in einem unabhängigen Analysecompile
+mit Stack-Usage und Callgraph-Information übersetzt. Fehlende Artefakte,
+dynamische oder über 4096 Byte große lokale Frames und Rekursionszyklen sind
+Gatefehler. Die lokale Framegrenze ist kein Gesamtstacknachweis; Entry-/IRQ-
+Pfade benötigen weiterhin explizite kumulative Budgets und Zielhardware-WCET.
+
 Headerabhängigkeiten sind Teil der Build-Evidenz. Jeder Kernel-C-Compile muss
 eine explizite Dependency-Datei erzeugen; fehlende, falsche oder nicht zum
 Quellobjekt gehörende Evidenz verhindert den Link. Damit darf eine ABI- oder
