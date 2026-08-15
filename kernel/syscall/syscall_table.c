@@ -104,6 +104,16 @@ static int syscall_memory_stats(memory_stats_t *user_stats,
     return copy_to_user(user_stats, &stats, copy_size) == 0 ? 0 : -14;
 }
 
+static int syscall_scheduler_stats(scheduler_resource_stats_t *user_stats,
+                                   uint32_t user_size, uint32_t version) {
+    if (version != SCHEDULER_RESOURCE_STATS_VERSION ||
+        user_size < sizeof(scheduler_resource_stats_t)) return -22;
+    scheduler_resource_stats_t stats;
+    int result = scheduler_resource_stats(&stats);
+    if (result != 0) return result;
+    return copy_to_user(user_stats, &stats, sizeof(stats)) == 0 ? 0 : -14;
+}
+
 static int syscall_copy_from_user_space(void *destination,
                                         const void *user_source,
                                         size_t length) {
@@ -1309,6 +1319,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_reist_dhcp_ingress,  // Syscall 81: Validate Ring-3 DHCP ingress
     (void*)&syscall_reist_dhcp_boot_start,// Syscall 82: Start bounded boot DHCP
     (void*)&syscall_reist_icmp_ingress,   // Syscall 83: Validate Ring-3 ICMP ingress
+    (void*)&syscall_scheduler_stats,       // Syscall 84: Bounded task-slot metrics
     // Add more syscalls here as needed
 };
 
@@ -1709,6 +1720,10 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)syscall_reist_icmp_ingress(
                 (const supervisor_icmp_ingress_t*)(uintptr_t)arg1,
                 (const uint8_t*)(uintptr_t)arg2);
+            break;
+        case SYS_SCHEDULER_STATS:
+            result = (uint32_t)syscall_scheduler_stats(
+                (scheduler_resource_stats_t*)(uintptr_t)arg1, arg2, arg3);
             break;
         default:
             result = (uint32_t)-1;

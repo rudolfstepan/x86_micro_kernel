@@ -250,6 +250,11 @@ und 10 verbindlich.
             saturierenden Fehlerzählern, v1-Kompatibilität und Gastnachweis
           - [ ] S0.4c-2b2b Taskslot-High-Water sowie deterministische
             Heap-/Frame-ENOMEM-Fault-Injection
+            - [x] S0.4c-2b2b1 Versionierte Taskslot-Diagnostik mit aktiver
+              Belegung, High-Water, Reserve und saturierenden Ablehnungen;
+              Gastnachweis für Erschöpfung und Rückgewinnung
+            - [ ] S0.4c-2b2b2 Deterministische Heap-/Frame-ENOMEM-Injection
+              mit vollständigem Rollbacknachweis
       - [ ] S0.4c-2c Zielhardwarebezogene WCET- und Stack-Callgraph-Nachweise
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
@@ -1025,6 +1030,11 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    entdeckte inkrementelle ABI-Mischbuild ist ebenfalls geschlossen: jeder
    C-Compile erzeugt jetzt explizit eine `.d`-Datei, und der Kernel-Link bricht
    bei fehlender oder falscher Dependency-Evidenz ab.
+- S0.4c-2b2b1 ergänzt append-only Syscall 84. Seine feste 32-Byte-v1-Struktur
+   meldet aktuelle und maximale Taskslot-Belegung, Kapazität, reservierten
+   Supervisor-Slot und saturierende Ablehnungen. Der Gast füllt die Ambient-
+   Kapazität bis zur definierten Ablehnung und weist danach Rückgewinnung bei
+   erhaltenem High-Water nach.
 - Kritische Tasks erhalten feste Prioritäten, CPU-/Speicher-/Queue-Budgets,
    Admission Control und nachgewiesene Worst-Case-Laufzeiten.
 - Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte

@@ -87,7 +87,8 @@ enum {
     X86OS_SYS_REIST_UDP_INGRESS = 80,
     X86OS_SYS_REIST_DHCP_INGRESS = 81,
     X86OS_SYS_REIST_DHCP_BOOT_START = 82,
-    X86OS_SYS_REIST_ICMP_INGRESS = 83
+    X86OS_SYS_REIST_ICMP_INGRESS = 83,
+    X86OS_SYS_SCHEDULER_STATS = 84
 };
 
 enum {
@@ -139,6 +140,18 @@ typedef struct {
 #define X86OS_MEMORY_STATS_V1_VERSION 1U
 #define X86OS_MEMORY_STATS_V1_SIZE 88U
 #define X86OS_MEMORY_STATS_VERSION 2U
+
+#define X86OS_SCHEDULER_STATS_VERSION 1U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t task_capacity;
+    uint32_t active_tasks;
+    uint32_t peak_active_tasks;
+    uint32_t capacity_rejections;
+    uint32_t supervised_reserve;
+    uint32_t reserved;
+} x86os_scheduler_stats_t;
 
 #define X86OS_IPC_MAX_MESSAGE_SIZE 128U
 #define X86OS_IPC_QUEUE_DEPTH 4U
@@ -430,6 +443,7 @@ int x86os_sleep_ms(uint32_t milliseconds);
 int x86os_yield(void);
 int x86os_monotonic_ms(uint64_t* value);
 int x86os_memory_stats(x86os_memory_stats_t* stats);
+int x86os_scheduler_stats(x86os_scheduler_stats_t *stats);
 int x86os_ipc_create(x86os_ipc_handle_t* handle);
 int x86os_ipc_send(x86os_ipc_handle_t handle,
                    const x86os_ipc_message_t* message);

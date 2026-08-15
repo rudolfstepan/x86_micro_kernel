@@ -774,6 +774,16 @@ static int test_memory_accounting(void) {
 static int test_task_capacity_and_parenting(void) {
     /* Worker, network probe, storage service, shell and GTEST occupy five
      * slots. Two ambient slots remain while the final slot stays reserved. */
+    x86os_scheduler_stats_t before;
+    if (x86os_scheduler_stats(&before) != 0 ||
+        x86os_scheduler_stats(
+            (x86os_scheduler_stats_t*)(uintptr_t)0x1000U) != -14 ||
+        before.version != X86OS_SCHEDULER_STATS_VERSION ||
+        before.struct_size != sizeof(before) ||
+        before.task_capacity != 8U ||
+        before.supervised_reserve != 1U ||
+        before.peak_active_tasks < before.active_tasks) return -1;
+
     int children[2];
     int parent_pid = x86os_getpid();
     for (size_t index = 0; index < sizeof(children) / sizeof(children[0]);
@@ -782,6 +792,12 @@ static int test_task_capacity_and_parenting(void) {
         if (children[index] <= 0) return -1;
     }
     if (x86os_spawn("SLEEPER.PRG") >= 0) return -1;
+    x86os_scheduler_stats_t exhausted;
+    if (x86os_scheduler_stats(&exhausted) != 0 ||
+        exhausted.active_tasks <= before.active_tasks ||
+        exhausted.peak_active_tasks < exhausted.active_tasks ||
+        exhausted.capacity_rejections <= before.capacity_rejections)
+        return -1;
 
     for (size_t index = 0; index < sizeof(children) / sizeof(children[0]);
          ++index) {
@@ -802,7 +818,13 @@ static int test_task_capacity_and_parenting(void) {
             x86os_wait(children[index], &status) != children[index] ||
             status != 143) return -1;
     }
-    return wait_for_expected("CHILDEX.PRG", 37);
+    if (wait_for_expected("CHILDEX.PRG", 37) != 0) return -1;
+    x86os_scheduler_stats_t reclaimed;
+    return x86os_scheduler_stats(&reclaimed) == 0 &&
+           reclaimed.active_tasks < exhausted.active_tasks &&
+           reclaimed.peak_active_tasks >= exhausted.peak_active_tasks &&
+           reclaimed.capacity_rejections >= exhausted.capacity_rejections
+        ? 0 : -1;
 }
 
 static int test_storage_service(void) {

@@ -70,8 +70,10 @@ Laufzeit-High-Water-Marken aller kritischen Pools sowie Zielhardware-WCET-,
 Callgraph- und vollständige Speicherbudgets nachgewiesen sind. IPC und der
 Storage-Request-Pool liefern bereits versionierte, saturierende Belegungs- und
 Erschöpfungsdiagnostik. Die Memory-Statistik v2 ergänzt Frame-/Heap-Peaks und
-saturierende Allokationsfehler bei kompatiblem v1-Präfix; Taskslots und
-deterministische ENOMEM-Injection folgen.
+saturierende Allokationsfehler bei kompatiblem v1-Präfix. Taskslots besitzen
+eine versionierte, allokationsfreie Momentaufnahme mit Kapazität, Supervisor-
+Reserve, aktueller/maximaler Belegung und saturierenden Ablehnungen; sie scannt
+höchstens `MAX_TASKS` Einträge. Deterministische ENOMEM-Injection folgt.
 
 Headerabhängigkeiten sind Teil der Build-Evidenz. Jeder Kernel-C-Compile muss
 eine explizite Dependency-Datei erzeugen; fehlende, falsche oder nicht zum

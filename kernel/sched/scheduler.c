@@ -31,9 +31,13 @@ static wait_queue_t sleep_waiters = WAIT_QUEUE_INIT;
 static scheduler_window_t cpu_window;
 static int8_t scheduling_class_cursors[SCHEDULER_CLASS_COUNT] = {-1, -1, -1};
 static uint8_t scheduling_class_cycle_cursor;
+static uint32_t peak_active_tasks;
+static uint32_t task_capacity_rejections;
 
 _Static_assert(MAX_TASKS <= SCHEDULER_POLICY_MAX_CANDIDATES,
                "scheduler policy candidate capacity is too small");
+_Static_assert(sizeof(scheduler_resource_stats_t) == 32U,
+               "scheduler statistics ABI size changed");
 
 #define SCHEDULER_QUANTUM_MS 10U
 #define KERNEL_STACK_GUARD 0x4B535447U /* "KSTG" */
@@ -247,6 +251,21 @@ static int find_next_runnable(int after) {
     return selected;
 }
 
+static uint32_t active_task_count_locked(void) {
+    KASSERT_IRQ_DISABLED();
+    uint32_t active = 0U;
+    for (int index = 0; index < num_tasks; ++index) {
+        if (tasks[index].status != TASK_FINISHED &&
+            tasks[index].status != TASK_REAPING) ++active;
+    }
+    return active;
+}
+
+static void note_task_capacity_rejection_locked(void) {
+    KASSERT_IRQ_DISABLED();
+    if (task_capacity_rejections != UINT32_MAX) ++task_capacity_rejections;
+}
+
 static void task_trampoline(void) __attribute__((noreturn));
 static void task_trampoline(void) {
     int index = current_task;
@@ -374,6 +393,7 @@ int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
 
     if (task_id < 0) {
         if (num_tasks >= MAX_TASKS) {
+            note_task_capacity_rejection_locked();
             irq_restore(flags);
             printf("Error: Maximum number of tasks reached!\n");
             return -1;
@@ -409,6 +429,8 @@ int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
     if (task_id == num_tasks) {
         num_tasks++;
     }
+    uint32_t active = active_task_count_locked();
+    if (active > peak_active_tasks) peak_active_tasks = active;
 
     irq_restore(flags);
     return task_id;
@@ -438,6 +460,9 @@ static int create_user_task_admitted(
         (supervised || available > SUPERVISED_TASK_RESERVE);
     irq_restore(admission_flags);
     if (!admitted) {
+        uint32_t flags = irq_save();
+        note_task_capacity_rejection_locked();
+        irq_restore(flags);
         scheduler_preempt_enable();
         return -1;
     }
@@ -950,4 +975,23 @@ void list_tasks(void) {
                scheduler_policy_window_limit(scheduling_class),
                cpu_window.overload_count[scheduling_class]);
     }
+}
+
+int scheduler_resource_stats(scheduler_resource_stats_t *stats_out) {
+    if (stats_out == NULL) return -22;
+    uint32_t flags = irq_save();
+    uint32_t active = active_task_count_locked();
+    if (active > peak_active_tasks) peak_active_tasks = active;
+    *stats_out = (scheduler_resource_stats_t){
+        .version = SCHEDULER_RESOURCE_STATS_VERSION,
+        .struct_size = sizeof(*stats_out),
+        .task_capacity = MAX_TASKS,
+        .active_tasks = active,
+        .peak_active_tasks = peak_active_tasks,
+        .capacity_rejections = task_capacity_rejections,
+        .supervised_reserve = SUPERVISED_TASK_RESERVE,
+        .reserved = 0U,
+    };
+    irq_restore(flags);
+    return 0;
 }

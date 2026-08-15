@@ -24,6 +24,19 @@
 
 #define STACK_SIZE (8U * 1024U)
 
+#define SCHEDULER_RESOURCE_STATS_VERSION 1U
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t task_capacity;
+    uint32_t active_tasks;
+    uint32_t peak_active_tasks;
+    uint32_t capacity_rejections;
+    uint32_t supervised_reserve;
+    uint32_t reserved;
+} scheduler_resource_stats_t;
+
 
 typedef struct {
     uint32_t esp;  // Stack-Pointer
@@ -107,5 +120,6 @@ void task_exit_status(int status) __attribute__((noreturn));
 void scheduler_kill_current(void) __attribute__((noreturn));
 void list_tasks(void);
 Process* scheduler_current_process(void);
+int scheduler_resource_stats(scheduler_resource_stats_t *stats_out);
 
 #endif // SCHEDULER_H
