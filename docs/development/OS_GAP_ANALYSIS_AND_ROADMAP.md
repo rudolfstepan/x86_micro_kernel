@@ -149,6 +149,11 @@ und 10 verbindlich.
         Frame-Handoff mit realem RTL8139-Ring-3-Nachweis
       - [ ] S0.3c-5e2 IPv4-/UDP-/DHCP-Parser und Protokollzustand über den
         neuen Handoff übernehmen und den parallelen Ring-0-Demux entfernen
+        - [x] S0.3c-5e2a Begrenzten heapfreien IPv4-v1-Shadow-Parser mit
+          Headerprüfsumme, Fragmentablehnung und realem RTL8139-Nachweis
+          nach Ring 3 verlagern
+        - [ ] S0.3c-5e2b UDP-/DHCP-Demux und Protokollzustand auf dem
+          Ring-3-Parser aufbauen und erst danach den Parallelpfad entfernen
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -1486,6 +1491,17 @@ einmal konsumierbare Bestätigung für `FRAME_HANDOFF`. Der reale RTL8139-Lauf
 weist diesen Weg bis Ring 3 nach. Der bestehende Ring-0-Demux bleibt in dieser
 Schattenphase absichtlich aktiv. S0.3c-5e2 übernimmt darauf IPv4, UDP und DHCP
 und entfernt erst nach äquivalenten Fault-/Drucktests den Parallelpfad.
+
+**S0.3c-5e2a ist umgesetzt und abgenommen:** Der Netzdienst verarbeitet den
+rohen Frame nun zusätzlich mit einem heapfreien IPv4-v1-Parser. Er begrenzt
+Ethernetframe und IPv4-Header auf 1518 beziehungsweise 60 Byte, prüft Version,
+IHL, Total Length, TTL und Headerprüfsumme und verwirft Fragmente sowie fremde
+EtherTypes fail-closed. Das Ergebnisobjekt ist fest 28 Byte groß und wird vor
+jeder Prüfung genullt. Ein generationsgebundener Liefernachweis erlaubt genau
+den ersten ICMP- oder UDP-Parserreport; der RTL8139-Lauf bestätigt
+`IPV4_PARSED_RING3`. Dies ist bewusst nur ein Shadow-Nachweis: Ausgabe und
+Legacy-Demux bleiben bis S0.3c-5e2b im Kernel, und der Report erteilt keinerlei
+Netzwerkautorität.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

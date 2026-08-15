@@ -235,6 +235,19 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
                                "NOT_FRAME_HANDOFF"),
             expect_network_frame=True))
 
+    def test_network_ipv4_parser_requires_exact_ring3_marker(self) -> None:
+        transcript = "\n".join((
+            RUNNER_MODULE.REIST_NETWORK_FRAME_MARKER,
+            RUNNER_MODULE.REIST_NETWORK_IPV4_MARKER,
+            "BOOT_OK", "C:\\>", "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_network_ipv4=True))
+        self.assertIn("IPv4 parser", RUNNER_MODULE.validate(
+            transcript.replace(RUNNER_MODULE.REIST_NETWORK_IPV4_MARKER,
+                               "NOT_IPV4_PARSED_RING3"),
+            expect_network_ipv4=True))
+
     def test_reist_probe_markers_are_required_in_order(self) -> None:
         transcript = "\n".join((
             "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,

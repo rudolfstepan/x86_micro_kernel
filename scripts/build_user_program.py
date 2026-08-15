@@ -129,6 +129,8 @@ def build(sources: list[Path], output: Path, zig: Path,
     linker_script = ROOT / "config" / "user_program.ld"
     all_sources = [sdk / "crt0.c", sdk / "x86os.c",
                    sdk / "reist_dhcp_state.c", *sources]
+    if any(source.name == "reist_probe.c" for source in sources):
+        all_sources.insert(3, sdk / "reist_ipv4_parser.c")
     for source in all_sources:
         if not source.is_file():
             raise FileNotFoundError(source)

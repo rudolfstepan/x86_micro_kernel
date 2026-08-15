@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include "x86os.h"
 #include "reist_dhcp_state.h"
+#include "reist_ipv4_parser.h"
 
 static x86os_reist_network_frame_t network_frame;
 
@@ -335,6 +336,7 @@ int main(int argc, char **argv) {
     uint32_t pending_network_request = 0U;
     uint32_t pending_network_probe_id = 0U;
     bool network_frame_reported = false;
+    bool network_ipv4_reported = false;
     for (;;) {
         int frame_result = x86os_reist_receive_network_frame(&network_frame);
         if (frame_result == 0) {
@@ -347,12 +349,22 @@ int main(int argc, char **argv) {
             uint32_t ethertype =
                 ((uint32_t)network_frame.data[12U] << 8U) |
                 network_frame.data[13U];
+            reist_ipv4_parse_result_t ipv4_result;
+            int ipv4_parse = reist_ipv4_parse_frame(
+                network_frame.data, network_frame.length, &ipv4_result);
             if (!network_frame_reported &&
                 (ethertype == 0x0800U || ethertype == 0x0806U)) {
                 if (x86os_reist_report(
                         X86OS_REIST_REPORT_NETWORK_FRAME, ethertype) != 0)
                     return 31;
                 network_frame_reported = true;
+            }
+            if (!network_ipv4_reported && ipv4_parse == 0 &&
+                (ipv4_result.protocol == 1U || ipv4_result.protocol == 17U)) {
+                if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_IPV4,
+                                       ipv4_result.protocol) != 0)
+                    return 33;
+                network_ipv4_reported = true;
             }
         } else if (frame_result != -11) {
             return 32;

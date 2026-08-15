@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'storage-recovery', 'storage-io-failure', 'handover')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'storage-recovery', 'storage-io-failure', 'handover')]
     [string]$Mode = 'normal'
 )
 
@@ -141,6 +141,12 @@ switch ($Mode) {
     'network-frame' {
         Invoke-Smoke 'guest-smoke-network-frame.log' @(
             '--nic', 'rtl8139', '--expect-network-frame'
+        )
+    }
+    'network-ipv4-parser' {
+        Invoke-Smoke 'guest-smoke-network-ipv4-parser.log' @(
+            '--nic', 'rtl8139', '--expect-network-frame',
+            '--expect-network-ipv4'
         )
     }
     'storage-recovery' {

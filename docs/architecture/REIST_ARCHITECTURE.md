@@ -542,6 +542,17 @@ IPv4-/UDP-/DHCP-Zustand über diesen Pfad übernehmen und darf den parallelen
 Ring-0-Demux erst nach funktional äquivalenten Druck-, Restart- und
 Fault-Injection-Tests entfernen.
 
+S0.3c-5e2a setzt auf diesem Transport einen ersten begrenzten Ring-3-Parser
+auf. Der heapfreie IPv4-v1-Code akzeptiert nur Ethernet-II/IPv4 bis 1518 Byte,
+IHL 20 bis 60 Byte, konsistente Gesamtlängen, TTL ungleich null und eine
+gültige Headerprüfsumme. IPv4-Fragmente werden in v1 vollständig verworfen.
+Das 28-Byte-Ergebnis enthält ausschließlich validierte Offsets, Längen,
+Adressen und Protokoll. Der Supervisor bindet den Diagnosemarker
+`REIST_NETWORK IPV4_PARSED_RING3` an eine tatsächlich an dieselbe PID und
+Generation gelieferte IPv4-Frame-Berechtigung und akzeptiert nur ICMP oder
+UDP. Diese Korrelation ist Nachweis-, nicht Ausgabeberechtigung; Ring-0-Demux
+und Protokollzustand bleiben bis S0.3c-5e2b aktiv.
+
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau
 einen geschützt gespeicherten Aktivzustand und eine saturierend berechnete

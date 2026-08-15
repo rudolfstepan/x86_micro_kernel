@@ -197,6 +197,12 @@ Header und Grenzen; nur nach erfolgreichem Copy-out kann es die korrelierte
 Einmalbestätigung abgeben. Der reale RTL8139-Lauf erreicht
 `REIST_NETWORK FRAME_HANDOFF`. Als nächstes übernimmt S0.3c-5e2 die
 IPv4-/UDP-/DHCP-Parser und entfernt danach den noch parallelen Ring-0-Demux.
+S0.3c-5e2a ist abgeschlossen: Ein fester, heapfreier IPv4-v1-Parser validiert
+in Ring 3 Version, IHL, Gesamtlänge, TTL und Headerprüfsumme und lehnt
+Fragmente fail-closed ab. Der generationsgebundene Shadow-Nachweis
+`REIST_NETWORK IPV4_PARSED_RING3` wurde mit RTL8139 bestätigt. Der Parser hat
+noch keine Ausgabeautorität; als nächstes übernimmt S0.3c-5e2b UDP-/DHCP-
+Demultiplex und Protokollzustand, bevor der Ring-0-Parallelpfad entfernt wird.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler
