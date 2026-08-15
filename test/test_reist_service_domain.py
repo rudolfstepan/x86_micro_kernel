@@ -88,8 +88,10 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("uint8_t service_header[42U]", netdev)
         self.assertIn("memcpy(service_header, packet", netdev)
         self.assertIn("supervisor_network_submit_header(", netdev)
-        self.assertIn("service_header, sizeof(service_header)", netdev)
-        self.assertIn("if (!service_owned) netdev_queue_rx_packet", netdev)
+        self.assertIn("supervisor_network_submit_header(service_header,", netdev)
+        self.assertIn("sizeof(service_header)", netdev)
+        self.assertIn("netdev_queue_service_packet(packet, length)", netdev)
+        self.assertNotIn("netdev_queue_rx_packet", netdev)
         self.assertIn(".length = 64U", supervisor)
         handoff = supervisor[
             supervisor.index("bool supervisor_network_submit_header("):
@@ -293,7 +295,9 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertLess(mediator.index(
                             "supervisor_protected_network_context_consume_epoch"),
                         mediator.index("netstack_commit_arp_binding"))
-        self.assertIn("ARP_CACHE_SIZE", netstack)
+        self.assertIn("SUPERVISED_ARP_CACHE_SIZE", read(
+            "include/kernel/arp_binding_cache.h"))
+        self.assertNotIn("ARP_CACHE_SIZE", netstack)
         self.assertIn("netstack_commit_arp_binding", netstack)
         self.assertIn("x86os_reist_commit_arp_binding(&binding)", service)
         self.assertIn("x86os_reist_commit_arp_binding(\n"

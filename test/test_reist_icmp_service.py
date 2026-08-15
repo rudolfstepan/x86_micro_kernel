@@ -15,7 +15,8 @@ class ReistIcmpServiceTests(unittest.TestCase):
         netstack = read("drivers/net/netstack.c")
         self.assertNotIn("static void handle_icmp_packet(", netstack)
         self.assertNotIn("supervisor_network_submit_icmp_echo(", netstack)
-        self.assertIn("Ring-3 service-frame path", netstack)
+        self.assertNotIn("netstack_process_packet", netstack)
+        self.assertNotIn("case IP_PROTOCOL_ICMP:", netstack)
 
     def test_context_is_fixed_protected_and_generation_scoped(self) -> None:
         header = read("include/kernel/supervisor.h")

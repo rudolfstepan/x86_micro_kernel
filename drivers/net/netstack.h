@@ -45,15 +45,6 @@ typedef struct {
     uint32_t target_ip;
 } __attribute__((packed)) arp_packet_t;
 
-// ARP Cache Entry
-#define ARP_CACHE_SIZE 32
-typedef struct {
-    uint32_t ip;
-    uint8_t mac[ETH_ADDR_LEN];
-    uint32_t timestamp;
-    bool valid;
-} arp_cache_entry_t;
-
 // =============================================================================
 // IP LAYER (Layer 3)
 // =============================================================================
@@ -166,7 +157,7 @@ typedef struct {
 // Initialization
 void netstack_init(void);
 bool netstack_safety_init(void);
-void netstack_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway);
+bool netstack_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway);
 bool netstack_send_supervised_dhcp_discover(uint32_t transaction_id);
 bool netstack_send_supervised_dhcp_select(uint32_t transaction_id,
                                           uint32_t offered_ip,
@@ -191,16 +182,12 @@ bool netstack_ping(uint32_t dst_ip, uint16_t id, uint16_t seq,
 bool netstack_probe_gateway(void);
 void netstack_debug_stats(void);
 
-// Packet Processing
-void netstack_process_packet(uint8_t *packet, uint16_t length);
-
 // ARP Functions
 void arp_send_request(uint32_t target_ip);
 bool netstack_send_arp_request(uint32_t target_ip);
 bool netstack_send_arp_reply(uint32_t target_ip,
                              const uint8_t target_mac[6]);
 bool arp_lookup(uint32_t ip, uint8_t *mac_out);
-void arp_add_entry(uint32_t ip, const uint8_t *mac);
 bool netstack_commit_arp_binding(uint32_t ip, const uint8_t mac[6],
                                  uint32_t transaction_epoch,
                                  int32_t source_pid,

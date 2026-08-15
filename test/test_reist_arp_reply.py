@@ -43,10 +43,10 @@ class ReistArpReplyTests(unittest.TestCase):
         self.assertIn("REIST_NETWORK ARP_REQUEST_QUEUED", handoff)
         self.assertIn("REIST_NETWORK ARP_REPLY_REJECTED", supervisor)
         self.assertIn("return true;", handoff)
-        self.assertIn("if (!service_owned) netdev_queue_rx_packet", netdev)
-        arp = netstack[netstack.index("static void handle_arp_packet("):
-                       netstack.index("// IPv4/ICMP")]
-        self.assertNotIn("arp_send_reply", arp)
+        self.assertIn("netdev_queue_service_packet(packet, length)", netdev)
+        self.assertNotIn("netdev_queue_rx_packet", netdev)
+        self.assertNotIn("handle_arp_packet", netstack)
+        self.assertNotIn("netstack_process_packet", netstack)
 
     def test_reply_authority_is_bounded_protected_and_generation_scoped(self):
         header = read("include/kernel/supervisor.h")

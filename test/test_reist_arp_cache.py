@@ -26,14 +26,14 @@ class ReistArpCacheTests(unittest.TestCase):
             )
             self.assertIn("ARP_BINDING_CACHE_OK", result.stdout)
 
-    def test_netstack_checks_protected_cache_before_legacy(self):
+    def test_netstack_uses_only_the_protected_cache(self):
         source = (ROOT / "drivers/net/netstack.c").read_text(encoding="utf-8")
         lookup = source[source.index("bool arp_lookup"):
                         source.index("static bool arp_send_request_now")]
-        self.assertLess(lookup.index("supervised_arp_cache_lookup"),
-                        lookup.index("arp_cache[i].valid"))
-        self.assertIn("protected_result != SUPERVISED_ARP_MISS", lookup)
-        self.assertIn("arp_remove_entry(ip)", source)
+        self.assertIn("supervised_arp_cache_lookup", lookup)
+        self.assertIn("protected_result == SUPERVISED_ARP_HIT", lookup)
+        self.assertNotIn("arp_cache[", source)
+        self.assertNotIn("arp_remove_entry", source)
 
     def test_supervisor_commits_epoch_and_monotonic_time(self):
         source = (ROOT / "kernel/init/supervisor.c").read_text(encoding="utf-8")

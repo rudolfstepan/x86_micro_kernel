@@ -18,9 +18,8 @@ class ReistUdpServiceTests(unittest.TestCase):
         self.assertNotIn("udp_checksum_valid", netstack)
         self.assertNotIn("bool supervisor_network_submit_udp(", supervisor)
         self.assertNotIn("case IP_PROTOCOL_UDP:", netstack)
-        ipv4_case = netstack[netstack.index("case ETHERTYPE_IPV4:"):]
-        ipv4_case = ipv4_case[:ipv4_case.index("break;")]
-        self.assertIn("++netstack_stats.rx_dropped", ipv4_case)
+        self.assertNotIn("case ETHERTYPE_IPV4:", netstack)
+        self.assertNotIn("netstack_process_packet", netstack)
 
     def test_context_authority_and_bindings_are_protected_and_bounded(self) -> None:
         header = read("include/kernel/supervisor.h")

@@ -2,7 +2,6 @@
 
 #include "drivers/net/e1000.h"
 #include "drivers/net/ne2000.h"
-#include "drivers/net/netstack.h"
 #include "drivers/net/rtl8139.h"
 #include "include/kernel/panic.h"
 #include "include/kernel/supervisor.h"
@@ -10,7 +9,6 @@
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
 
-#define NETDEV_RX_QUEUE_SIZE 64
 #define NETDEV_MONITOR_QUEUE_SIZE 8
 #define NETDEV_SERVICE_QUEUE_SIZE 8
 #define NETDEV_MAX_FRAME_SIZE 1518
@@ -20,9 +18,6 @@ typedef struct {
     uint8_t data[NETDEV_MAX_FRAME_SIZE];
 } netdev_queued_packet_t;
 
-static netdev_queued_packet_t rx_queue[NETDEV_RX_QUEUE_SIZE];
-static volatile uint8_t rx_queue_head;
-static volatile uint8_t rx_queue_tail;
 static netdev_queued_packet_t monitor_queue[NETDEV_MONITOR_QUEUE_SIZE];
 static volatile uint8_t monitor_queue_head;
 static volatile uint8_t monitor_queue_tail;
@@ -128,16 +123,6 @@ bool netdev_get_mac_address(uint8_t mac[6]) {
     return true;
 }
 
-static void netdev_queue_rx_packet(const uint8_t* packet, uint16_t length) {
-    uint8_t head = rx_queue_head;
-    uint8_t next = (uint8_t)((head + 1u) % NETDEV_RX_QUEUE_SIZE);
-    if (next == rx_queue_tail) return;
-    rx_queue[head].length = length;
-    memcpy(rx_queue[head].data, packet, length);
-    __asm__ volatile("" ::: "memory");
-    rx_queue_head = next;
-}
-
 static void netdev_queue_monitor_packet(const uint8_t* packet,
                                         uint16_t length) {
     uint8_t head = monitor_queue_head;
@@ -168,16 +153,14 @@ void netdev_deliver_rx(const uint8_t* packet, uint16_t length) {
      * drain runs with interrupts enabled.  Drop rather than spin if an IRQ
      * interrupts that foreground producer. */
     if (__sync_lock_test_and_set(&rx_producer_busy, 1u)) return;
-    bool service_owned = false;
     if (length >= 42U) {
         uint8_t service_header[42U];
         memcpy(service_header, packet, sizeof(service_header));
-        service_owned = supervisor_network_submit_header(
-            service_header, sizeof(service_header));
+        (void)supervisor_network_submit_header(service_header,
+                                               sizeof(service_header));
     }
-    /* IRQ handlers only copy frames. ARP/ICMP processing and any response TX
-     * happen later in foreground context via netdev_poll(). */
-    if (!service_owned) netdev_queue_rx_packet(packet, length);
+    /* Every ingress decision belongs to the bounded Ring-3 service queue.
+     * The monitor copy is diagnostic only and grants no network authority. */
     netdev_queue_monitor_packet(packet, length);
     netdev_queue_service_packet(packet, length);
     __sync_lock_release(&rx_producer_busy);
@@ -193,15 +176,6 @@ void netdev_poll(void) {
     if (e1000_is_initialized()) e1000_poll_rx();
     if (rtl8139_is_initialized()) rtl8139_poll_rx();
     if (ne2000_is_initialized()) ne2000_poll_rx();
-    unsigned int processed = 0;
-    while (rx_queue_tail != rx_queue_head &&
-           processed++ < NETDEV_RX_QUEUE_SIZE) {
-        uint8_t tail = rx_queue_tail;
-        netstack_process_packet(rx_queue[tail].data, rx_queue[tail].length);
-        __asm__ volatile("" ::: "memory");
-        rx_queue_tail =
-            (uint8_t)((tail + 1u) % NETDEV_RX_QUEUE_SIZE);
-    }
     __sync_lock_release(&netdev_poll_busy);
 }
 

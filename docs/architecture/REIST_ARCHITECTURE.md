@@ -652,12 +652,14 @@ geschützte `NETI`-Einmalautorität erzeugen; ein Reply darf nur die exakt
 erwartete Ping-Identität abschließen. Der alte Ring-0-ICMP-Parser ist entfernt
 und sein Eingang fällt geschlossen aus. Der RTL8139-Nachweis umfasst Parser,
 Ingress und den wirklich ausgesendeten vermittelten Reply. S0.3c-5e2e entfernt
-danach `handle_ip_packet` vollständig. Ein nicht von der gesunden Dienstdomäne
-übernommener IPv4-Frame wird in Ring 0 nur gezählt und verworfen; es gibt dort
-weder Headerparser noch Protokolldemux oder implizites ARP-Lernen. Der statische
-Ring-3-Frame-Handoff ist damit die einzige IPv4-Eingangsentscheidung. Der noch
-vorhandene Ring-0-ARP-Fallback samt Legacy-Cache wird separat in S0.3c-5f
-geschlossen.
+danach `handle_ip_packet` vollständig. S0.3c-5f entfernt zusätzlich die gesamte
+Legacy-RX-Queue, `netstack_process_packet`, den Ring-0-ARP-Parser und den
+ungeschützten ARP-Cache. Der statische Ring-3-Frame-Handoff ist damit die
+einzige ARP-/IPv4-Eingangsentscheidung. Die parallele Monitorqueue ist
+ausdrücklich autoritätslos. Ausgehende Auflösung liest ausschließlich den
+`critical_object`-geschützten ARP-Cache; ein Routenwechsel widerruft betroffene
+Gateway-Bindungen vor der neuen Konfigurationspublikation. Damit ist S0.3c-5
+abgeschlossen.
 
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau

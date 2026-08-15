@@ -113,7 +113,7 @@ und 10 verbindlich.
     Redundanz und Fail-Closed-Lookup
   - [x] S0.3c-4c Dienstneustart widerruft Bindungen der alten Generation;
     begrenzter Scrub und Integritätseskalation sind nachgewiesen
-  - [ ] S0.3c-5 Netzwerkdatenpfad vollständig aus Ring 0 lösen
+  - [x] S0.3c-5 Netzwerkdatenpfad vollständig aus Ring 0 lösen
     und den Dienst unter Fehler-, Druck- und Restart-Injektion abnehmen
     - [x] S0.3c-5a Passive Gateway-Vertrauensentscheidung aus dem
       Ring-0-ARP-/IPv4-Pfad entfernt
@@ -188,7 +188,7 @@ und 10 verbindlich.
           Ring-0-ICMP-Parser entfernen
         - [x] S0.3c-5e2e Verbleibenden Ring-0-IPv4-Demux und seine implizite
           ARP-Lernmutation durch validierte Ring-3-Entscheidungen ersetzen
-    - [ ] S0.3c-5f Verbleibenden Ring-0-ARP-Fallback und ungeschützten lokalen
+    - [x] S0.3c-5f Verbleibenden Ring-0-ARP-Fallback und ungeschützten lokalen
       Legacy-Cache entfernen; ausschließlich überwachte ARP-Entscheide zulassen
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
@@ -1618,10 +1618,14 @@ entfernt und ICMP fällt dort geschlossen aus. Der reale RTL8139-Lauf bestätigt
 ICMP_ECHO_MEDIATED -> TEST_OK`; der bisherige ICMP-Echo-Lauf bleibt grün.
 S0.3c-5e2e entfernt anschließend auch `handle_ip_packet`: Fallback-IPv4-Frames
 werden in Ring 0 weder geparst noch demultiplext und dürfen keine implizite
-ARP-Lernmutation mehr auslösen. Sie werden ausschließlich gezählt und
-fail-closed verworfen; der vollständige Frame bleibt dem statischen Ring-3-
-Handoff vorbehalten. Damit ist S0.3c-5e2 abgeschlossen. Als nächster lokaler
-Netzwerkrest bleibt S0.3c-5f: Der Ring-0-ARP-Fallback und sein Legacy-Cache.
+ARP-Lernmutation mehr auslösen. S0.3c-5f schließt danach den gesamten
+Legacy-Eingang: Die separate 64-Slot-Ring-0-RX-Queue, `netstack_process_packet`,
+der ARP-Parser, der ungeschützte ARP-Cache und seine Lernrichtlinie sind
+entfernt. Alle ARP-Lookups verwenden ausschließlich den redundant geschützten,
+generations- und leasegebundenen Cache; Routenwechsel widerrufen alte und neue
+Gateway-Bindungen vor der Konfigurationspublikation. Vollständige Frames gehen
+nur noch an die statische Ring-3-Servicequeue, während die Monitorqueue rein
+diagnostisch bleibt. Damit ist S0.3c-5 abgeschlossen.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

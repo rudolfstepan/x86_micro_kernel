@@ -2066,7 +2066,10 @@ void cmd_ifconfig(int arg_count, const char** arguments) {
         return;
     }
     
-    netstack_set_config(ip, netmask, gateway);
+    if (!netstack_set_config(ip, netmask, gateway)) {
+        printf("Error: protected neighbor cache could not be reset\n");
+        return;
+    }
     printf("Network interface configured successfully\n");
 }
 

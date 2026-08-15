@@ -3,7 +3,6 @@
 
 #include "drivers/net/netstack.h"
 #include "include/kernel/supervisor.h"
-#include "include/kernel/arp_learning_policy.h"
 #include "drivers/net/netdev.h"
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
@@ -20,17 +19,12 @@
 // GLOBAL STATE
 // =============================================================================
 static network_config_t net_config;
-static arp_cache_entry_t arp_cache[ARP_CACHE_SIZE];
 static supervised_arp_cache_t supervised_arp_cache;
 static bool supervised_arp_cache_initialized;
 static uint16_t ip_identification = 0;
 static uint32_t dhcp_runtime_transaction_id;
 
 typedef struct {
-    uint32_t rx_arp;
-    uint32_t rx_ipv4;
-    uint32_t rx_dropped;
-    uint32_t arp_cache_updates;
     uint32_t icmp_echo_requests;
     uint32_t icmp_echo_replies;
     uint32_t icmp_echo_replies_sent;
@@ -193,45 +187,22 @@ static uint32_t netstack_next_hop(uint32_t dst_ip) {
     return net_config.gateway;
 }
 
-// =============================================================================
-// ARP (öffentliche Signaturen aus Header)
-// =============================================================================
-void arp_add_entry(uint32_t ip, const uint8_t *mac) {
-    if (!mac ||
-        !arp_learning_policy_allows_legacy(ip, net_config.gateway)) return;
-    int slot = -1;
-    for (int i = 0; i < ARP_CACHE_SIZE; ++i) {
-        if (arp_cache[i].valid && arp_cache[i].ip == ip) { slot = i; break; }
-        if (!arp_cache[i].valid && slot < 0) slot = i;
-    }
-    if (slot < 0) slot = 0;
-    arp_cache[slot].ip = ip;
-    memcpy(arp_cache[slot].mac, mac, ETH_ADDR_LEN);
-    arp_cache[slot].valid = true;
-    arp_cache[slot].timestamp = 0;
-    ++netstack_stats.arp_cache_updates;
-}
-
-static void arp_remove_entry(uint32_t ip) {
-    for (int i = 0; i < ARP_CACHE_SIZE; ++i)
-        if (arp_cache[i].valid && arp_cache[i].ip == ip)
-            arp_cache[i].valid = false;
-}
-
 bool arp_lookup(uint32_t ip, uint8_t *mac_out) {
     if (!mac_out) return false;
     supervised_arp_lookup_result_t protected_result =
         supervised_arp_cache_lookup(&supervised_arp_cache, ip,
                                     pit_monotonic_ms(), mac_out);
-    if (protected_result == SUPERVISED_ARP_HIT) return true;
-    if (protected_result != SUPERVISED_ARP_MISS) return false;
-    for (int i = 0; i < ARP_CACHE_SIZE; ++i) {
-        if (arp_cache[i].valid && arp_cache[i].ip == ip) {
-            memcpy(mac_out, arp_cache[i].mac, ETH_ADDR_LEN);
-            return true;
-        }
-    }
-    return false;
+    return protected_result == SUPERVISED_ARP_HIT;
+}
+
+static bool arp_revoke_route_bindings(uint32_t old_gateway,
+                                      uint32_t new_gateway) {
+    if (old_gateway != 0U &&
+        supervised_arp_cache_revoke_ip(&supervised_arp_cache,
+                                       old_gateway) < 0) return false;
+    return new_gateway == 0U || new_gateway == old_gateway ||
+           supervised_arp_cache_revoke_ip(&supervised_arp_cache,
+                                          new_gateway) >= 0;
 }
 
 static bool arp_send_request_now(uint32_t target_ip) {
@@ -274,7 +245,6 @@ bool netstack_commit_arp_binding(uint32_t ip, const uint8_t mac[6],
                                     source_generation,
                                     now_ms,
                                     SUPERVISED_ARP_LEASE_MS) != 0) return false;
-    arp_remove_entry(ip);
     return true;
 }
 
@@ -333,28 +303,6 @@ bool netstack_send_arp_reply(uint32_t target_ip,
     arp->target_ip = htonl(target_ip);
 
     return nic_send(packet, sizeof(packet));
-}
-
-static void handle_arp_packet(uint8_t *packet, uint16_t length) {
-    if (length < sizeof(arp_packet_t)) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
-    arp_packet_t *arp = (arp_packet_t *)packet;
-
-    if (ntohs(arp->hardware_type) != ARP_HARDWARE_ETHERNET ||
-        ntohs(arp->protocol_type) != ARP_PROTOCOL_IPV4 ||
-        arp->hardware_addr_len   != ETH_ADDR_LEN ||
-        arp->protocol_addr_len   != 4) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
-
-    ++netstack_stats.rx_arp;
-
-    uint32_t sip  = ntohl(arp->sender_ip);
-
-    arp_add_entry(sip, arp->sender_mac);
 }
 
 // =============================================================================
@@ -649,36 +597,6 @@ bool netstack_finish_supervised_dhcp_request(uint32_t transaction_id) {
     return true;
 }
 
-void netstack_process_packet(uint8_t *packet, uint16_t length) {
-    if (!packet || length < sizeof(eth_header_t)) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
-    eth_header_t *eth = (eth_header_t *)packet;
-    uint16_t type = ntohs(eth->ethertype);
-    uint8_t *payload = packet + sizeof(eth_header_t);
-    uint16_t plen = length - sizeof(eth_header_t);
-
-    // nur für uns / Broadcast
-    bool is_bcast = true;
-    for (int i=0;i<6;++i) if (eth->dst_mac[i] != 0xFF) { is_bcast=false; break; }
-    if (!is_bcast && memcmp(eth->dst_mac, net_config.mac_address, ETH_ADDR_LEN)!=0) {
-        return;
-    }
-
-    switch (type) {
-        case ETHERTYPE_ARP:  handle_arp_packet(payload, plen); break;
-        case ETHERTYPE_IPV4:
-            /* The complete IPv4 ingress decision belongs to the validated
-             * Ring-3 service-frame path. Never parse or learn neighbors from
-             * an unowned fallback frame in Ring 0. */
-            ++netstack_stats.rx_ipv4;
-            ++netstack_stats.rx_dropped;
-            break;
-        default: break;
-    }
-}
-
 // =============================================================================
 // Öffentliche API
 // =============================================================================
@@ -710,7 +628,6 @@ void netstack_init(void) {
     ping_waiting = false;
     ping_reply_received = false;
     dhcp_runtime_transaction_id = 0U;
-    for (int i = 0; i < ARP_CACHE_SIZE; ++i) arp_cache[i].valid = false;
     if (!netstack_safety_init())
         panic("Unable to initialize protected ARP binding cache");
 
@@ -727,18 +644,15 @@ void netstack_init(void) {
     printf("[NET] backend=%s MAC=%s\n", netdev_backend_name(), mac_s);
 }
 
-void netstack_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway) {
-    /* A value learned before the route was known must not retain gateway
-     * authority after configuration.  Only the supervised mediator may
-     * republish it into the protected cache. */
-    arp_remove_entry(net_config.gateway);
-    arp_remove_entry(gateway);
+bool netstack_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway) {
+    if (!arp_revoke_route_bindings(net_config.gateway, gateway)) return false;
     net_config.ip_address = ip;
     net_config.netmask    = netmask;
     net_config.gateway    = gateway;
     net_config.dns_server = 0;
     char ip_s[16]; format_ipv4(ip, ip_s);
     printf("[NET] IP configured: %s\n", ip_s);
+    return true;
 }
 
 bool netstack_apply_supervised_dhcp(uint32_t ip, uint32_t netmask,
@@ -755,8 +669,7 @@ bool netstack_apply_supervised_dhcp(uint32_t ip, uint32_t netmask,
         if ((gateway & netmask) != (ip & netmask) || gateway_host == 0U ||
             gateway_host == host_mask) return false;
     }
-    arp_remove_entry(net_config.gateway);
-    arp_remove_entry(gateway);
+    if (!arp_revoke_route_bindings(net_config.gateway, gateway)) return false;
     net_config.ip_address = ip;
     net_config.netmask = netmask;
     net_config.gateway = gateway;
@@ -777,7 +690,6 @@ bool netstack_clear_supervised_dhcp(uint32_t expected_ip) {
     uint32_t gateway = net_config.gateway;
     bool protected_cache_intact = gateway == 0U ||
         supervised_arp_cache_revoke_ip(&supervised_arp_cache, gateway) >= 0;
-    arp_remove_entry(net_config.gateway);
     net_config.ip_address = 0U;
     net_config.netmask = 0U;
     net_config.gateway = 0U;
@@ -819,10 +731,7 @@ void netstack_debug_stats(void) {
     printf("Network configuration:\n");
     printf("  IP=%s MASK=%s GW=%s DNS=%s\n",
            ip_s, mask_s, gateway_s, dns_s);
-    printf("Network receive statistics:\n");
-    printf("  ARP=%u IPv4=%u dropped=%u ARP-cache-updates=%u\n",
-           netstack_stats.rx_arp, netstack_stats.rx_ipv4,
-           netstack_stats.rx_dropped, netstack_stats.arp_cache_updates);
+    printf("Validated network statistics:\n");
     printf("  ICMP requests=%u replies=%u replies-sent=%u\n",
            netstack_stats.icmp_echo_requests,
            netstack_stats.icmp_echo_replies,
