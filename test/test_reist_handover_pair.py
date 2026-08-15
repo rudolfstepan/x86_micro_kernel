@@ -25,13 +25,13 @@ class ReistHandoverPairTests(unittest.TestCase):
         payload = (PAIR.smoke.HANDOVER_SERIAL_MAGIC, 1,
                    PAIR.smoke.HANDOVER_SERIAL_STATE,
                    PAIR.smoke.HANDOVER_SERIAL_STATE_FRAME.size,
-                   1, 40, 2, 1, 7, 9, 42, 0)
+                   1, 40, 2, 2, 7, 9, 42, 0)
         without_crc = PAIR.smoke.HANDOVER_SERIAL_STATE_FRAME.pack(
             *payload, 0)[:-4]
         frame = PAIR.smoke.HANDOVER_SERIAL_STATE_FRAME.pack(
             *payload, zlib.crc32(without_crc) & 0xFFFFFFFF)
         self.assertEqual(PAIR.smoke.validate_handover_state_frame(frame),
-                         (2, 1, 7, 9, 42))
+                         (2, 2, 7, 9, 42))
         corrupted = bytearray(frame)
         corrupted[24] ^= 1
         self.assertIsNone(PAIR.smoke.validate_handover_state_frame(
@@ -59,6 +59,8 @@ class ReistHandoverPairTests(unittest.TestCase):
         self.assertLess(launch, forward)
         self.assertLess(forward, fenced)
         self.assertIn("HOST_REJOIN_STATE_FORWARDED", source)
+        self.assertIn("REJOIN_STORAGE_HELD_MARKER", source)
+        self.assertIn("STORAGE_RELEASED_MARKER", source)
 
     def test_pair_build_and_reference_gate_are_wired(self):
         makefile = (ROOT / "Makefile").read_text()

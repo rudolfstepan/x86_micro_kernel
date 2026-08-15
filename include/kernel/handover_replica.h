@@ -6,6 +6,7 @@
 
 #define HANDOVER_REPLICA_VERSION 1U
 #define HANDOVER_REPLICA_SERVICE_TEST 1U
+#define HANDOVER_REPLICA_SERVICE_STORAGE 2U
 
 typedef struct {
     uint32_t version;

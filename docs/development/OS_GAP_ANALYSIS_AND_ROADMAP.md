@@ -147,17 +147,17 @@ und 10 verbindlich.
         realem Takeover-Lauf
       - [ ] S0.3c-7b2b Reales externes Transport-/Interlock-Backend auf
         Zielhardware mit eigener Stromversorgung und Zeitbasis
-    - [ ] S0.3c-7c Zwei reale Ausführungskanäle mit Zustandsreplikation,
+    - [x] S0.3c-7c Zwei reale Ausführungskanäle mit Zustandsreplikation,
       Selbsttest, Übernahme und kontrollierter Reintegration
       - [x] S0.3c-7c1 Zwei getrennte QEMU-Prozesse mit CRC-geschützter
         Epoch-Replikation, explizitem Standby-Ready, nachgewiesen beendetem
         Active vor Fence-Ack und vollständigem Ring-3-Smoke nach Übernahme
-      - [ ] S0.3c-7c2 Kontinuierliche Replikation des sicherheitsrelevanten
+      - [x] S0.3c-7c2 Kontinuierliche Replikation des sicherheitsrelevanten
         Dienstzustands und kontrollierte Reintegration des reparierten Kanals
         - [x] S0.3c-7c2a Geschützter Referenz-Dienstzustand mit strikt
           monotonen Frames, drei Updates vor Failover, Epoch-Promotion und
           gefenceter Reintegration eines dritten QEMU-Kanals
-        - [ ] S0.3c-7c2b Produktionsdienstzustand mit begrenztem Catch-up,
+        - [x] S0.3c-7c2b Produktionsdienstzustand mit begrenztem Catch-up,
           Selbsttest und kontrollierter Wiederaufnahme realer Ausgänge
     - [ ] S0.3c-7d Common-Cause-Analyse und wiederholte Zielhardware-Failover-Gates
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
@@ -1471,9 +1471,9 @@ Standby weiter. Nach Leaseablauf fordert ausschließlich der Standby das Fence
 an. Der Host beendet den Active-Prozess, prüft dessen Ende und sendet erst dann
 den Ack. Danach übernimmt der Standby, startet seine überwachten Dienste und
 besteht den vollständigen Ring-3-Gasttest. Drei Läufe des finalen Standes bestätigten
-die Reihenfolge. Noch nicht nachgewiesen sind kontinuierliche Nutzdaten-
-Replikation, Reintegration und physisch unabhängige Hardware; 7c bleibt daher
-offen.
+die Reihenfolge. Zum Stand von 7c1 waren kontinuierliche Nutzdaten-Replikation
+und Reintegration noch nicht nachgewiesen; 7c2a/7c2b schließen diese beiden
+Lücken. Physisch unabhängige Hardware bleibt weiterhin offen.
 
 **S0.3c-7c2a ist umgesetzt:** Ein fester Referenz-Dienstzustand liegt als
 redundantes `critical_object` mit ECC, CRC und semantischem Validator vor. Der
@@ -1486,9 +1486,26 @@ den neuen Zustand. Ein drittes, separat gestartetes QEMU-Image erhält diesen
 Zustand, besteht die Integritätsprüfung, darf aber weder die alte Lease
 verlängern noch ohne neues Fence übernehmen. Drei vollständige Läufe bewiesen
 parallel den Weiterbetrieb des übernommenen Kanals bis `TEST_OK`. Das ist ein
-prozessgetrennter Referenznachweis; Catch-up eines echten Produktionsdienstes,
-Freigabe realer Ausgänge und physisch unabhängige Zielhardware bleiben als
-S0.3c-7c2b beziehungsweise 7b2b offen.
+prozessgetrennter Referenznachweis. Das folgende Paket 7c2b bindet diesen
+Vertrag an den Storage-Produktionszustand; physisch unabhängige Zielhardware
+bleibt unter 7b2b offen.
+
+**S0.3c-7c2b ist umgesetzt:** Der replizierte Produktionszustand ist der
+CRC32-Fingerprint des tatsächlich erkannten ATA-Bootvolumes einschließlich
+gültiger MBR-Signatur. Standby und reparierter Kanal aktivieren vor dem Mount
+ein separates Storage-Handover-Gate; jede überwachte ATA-/FDD-Schreiboperation
+prüft dieses Gate. Der Standby übernimmt drei lückenlos sequenzierte
+Fingerprint-Checkpoints und liest seinen eigenen Datenträger zur lokalen
+Gegenprüfung. Erst nach nachgewiesen beendetem Active, extern bestätigtem
+Fence, Epoch-Promotion, erfolgreicher Publikation des promovierten Zustands und
+erneutem Volume-Selbsttest wird das Gate freigegeben. Der anschließende
+Ring-3-Test führt reale VFS-Mutationen aus und erreicht `TEST_OK`. Der reparierte
+dritte Kanal validiert denselben Zustand, bleibt jedoch ausdrücklich gehalten
+und ohne Takeover-Autorität. Falscher Fingerprint, I/O-Fehler, Replay/Lücke oder
+vorzeitige Freigabe bleiben fail-closed. Drei vollständige Läufe des finalen
+Stands waren erfolgreich. Damit ist das QEMU-Referenzpaket 7c abgeschlossen;
+das elektrisch unabhängige Interlock auf Zielhardware (7b2b) und
+Common-Cause-/Hardware-Failover-Gates (7d) bleiben offen.
 
 Ein einzelner monolithischer Kernel kann nach unbekannter Eigenkorruption nicht
 glaubwürdig störungsfrei weiterlaufen. Unterbrechungsfreie Essential Functions

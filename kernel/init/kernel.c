@@ -26,6 +26,7 @@
 #include "include/kernel/watchdog.h"
 #include "include/kernel/supervisor.h"
 #include "include/kernel/storage_safety.h"
+#include "include/kernel/storage_handover.h"
 #include "include/kernel/storage_service.h"
 #include "include/kernel/handover.h"
 #include "include/kernel/handover_replica.h"
@@ -212,6 +213,11 @@ static void driver_init(void) {
     if (!storage_safety_init(pit_monotonic_ms())) {
         panic("Unable to initialize REIST storage write supervision");
     }
+#if defined(REIST_HANDOVER_FAULT_INJECTION) && \
+    (REIST_HANDOVER_NODE_ID == 2 || REIST_HANDOVER_NODE_ID == 3)
+    if (!storage_handover_hold())
+        panic("Unable to hold standby storage outputs");
+#endif
     if (!output_fence_register(storage_fence_writes)) {
         panic("Unable to register the storage write fence");
     }
@@ -268,15 +274,9 @@ static void test_external_handover_channel(void) {
 #if REIST_HANDOVER_NODE_ID == 1
     if (handover_init(1U, 2U, lease_ms, now) != 0)
         panic("Unable to initialize active handover state");
-    handover_replica_state_t state = {
-        .version = HANDOVER_REPLICA_VERSION,
-        .struct_size = sizeof(state),
-        .source_node = 1U,
-        .service_id = HANDOVER_REPLICA_SERVICE_TEST,
-        .epoch = 1U,
-        .sequence = 1U,
-        .value = 100U,
-    };
+    handover_replica_state_t state;
+    if (!storage_handover_snapshot(1U, 1U, 1U, &state))
+        panic("Unable to snapshot active storage state");
     if (handover_replica_init(&state) != 0)
         panic("Unable to initialize active replicated service state");
     for (uint32_t update = 0U; update < 3U; ++update) {
@@ -285,7 +285,6 @@ static void test_external_handover_channel(void) {
             panic("Unable to replicate active service state");
         if (update + 1U < 3U) {
             ++state.sequence;
-            ++state.value;
             if (handover_replica_apply(&state) != 0)
                 panic("Unable to advance active service state");
             pit_delay(10U);
@@ -298,22 +297,24 @@ static void test_external_handover_channel(void) {
         panic("Unable to announce standby handover readiness");
     handover_replica_state_t state;
     if (!handover_serial_receive_state(&state) || state.source_node != 1U ||
-        state.service_id != HANDOVER_REPLICA_SERVICE_TEST ||
+        state.service_id != HANDOVER_REPLICA_SERVICE_STORAGE ||
         state.epoch != 1U || state.sequence != 1U ||
+        !storage_handover_validate(&state) ||
         handover_init_replica(state.source_node, 2U, lease_ms, state.epoch,
                               1U, now) != 0 ||
         handover_replica_init(&state) != 0)
         panic("Unable to receive active handover state");
     for (uint64_t expected = 2U; expected <= 3U; ++expected) {
         if (!handover_serial_receive_state(&state) ||
-            state.sequence != expected || handover_replica_apply(&state) != 0)
+            state.sequence != expected || !storage_handover_validate(&state) ||
+            handover_replica_apply(&state) != 0)
             panic("Unable to apply sequenced service state");
     }
     handover_status_t replicated;
     if (handover_snapshot(&replicated) != 0 || replicated.active_node != 1U ||
         replicated.standby_node != 2U || replicated.epoch != 1U ||
         handover_replica_snapshot(&state) != 0 || state.sequence != 3U ||
-        state.value != 102U)
+        !storage_handover_validate(&state))
         panic("Replicated handover state validation failed");
     printf("REIST_HANDOVER STANDBY_STATE_APPLIED\n");
 #elif REIST_HANDOVER_NODE_ID == 3
@@ -321,8 +322,9 @@ static void test_external_handover_channel(void) {
         panic("Unable to announce repaired channel readiness");
     handover_replica_state_t state;
     if (!handover_serial_receive_state(&state) || state.source_node != 2U ||
-        state.service_id != HANDOVER_REPLICA_SERVICE_TEST ||
-        state.epoch != 2U || state.sequence != 4U || state.value != 200U ||
+        state.service_id != HANDOVER_REPLICA_SERVICE_STORAGE ||
+        state.epoch != 2U || state.sequence != 4U ||
+        !storage_handover_validate(&state) ||
         handover_init_replica(2U, 1U, lease_ms, 2U, 3U, now) != 0 ||
         handover_replica_init(&state) != 0)
         panic("Unable to reintegrate repaired standby state");
@@ -330,6 +332,9 @@ static void test_external_handover_channel(void) {
         handover_takeover(1U, 2U, now) >= 0)
         panic("Reintegrated standby acquired authority");
     printf("REIST_HANDOVER REJOIN_STATE_APPLIED\n");
+    if (!storage_handover_is_held())
+        panic("Repaired channel storage outputs were released");
+    printf("REIST_HANDOVER REJOIN_STORAGE_HELD\n");
     printf("REIST_HANDOVER REJOIN_FENCED\n");
     return;
 #else
@@ -353,10 +358,14 @@ static void test_external_handover_channel(void) {
         panic("External handover state validation failed");
     printf("REIST_HANDOVER TAKEOVER_OK\n");
 #if REIST_HANDOVER_NODE_ID == 2
-    if (handover_replica_promote(2U, 2U, 200U) != 0 ||
+    if (handover_replica_snapshot(&state) != 0 ||
+        handover_replica_promote(2U, 2U, state.value) != 0 ||
         handover_replica_snapshot(&state) != 0 ||
-        !handover_serial_send_state(&state))
+        !storage_handover_validate(&state) ||
+        !handover_serial_send_state(&state) ||
+        !storage_handover_release(&state) || storage_handover_is_held())
         panic("Unable to publish promoted service state");
+    printf("REIST_HANDOVER STORAGE_OUTPUT_RELEASED\n");
     printf("REIST_HANDOVER TAKEOVER_STATE_SENT\n");
 #endif
 }

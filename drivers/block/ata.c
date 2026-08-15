@@ -477,6 +477,22 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,
     return result;
 }
 
+bool ata_read_sector_fresh(unsigned short base, unsigned int lba, void *buffer,
+                           bool is_master) {
+    ata_transaction_begin();
+    if (buffer == NULL || lba >= ATA_LBA28_LIMIT ||
+        (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) {
+        ata_transaction_end();
+        return false;
+    }
+    ata_cache_entry_t *cached = ata_cache_slot(base, lba, is_master);
+    if (cached->valid && cached->base == base && cached->lba == lba &&
+        cached->is_master == is_master) cached->valid = false;
+    bool result = ata_read_sector_impl(base, lba, buffer, is_master);
+    ata_transaction_end();
+    return result;
+}
+
 // Reset the consecutive failure counter (useful after system idle or manual intervention)
 void ata_reset_error_counter() {
     //printf("ata_reset_error_counter: Resetting failure counter (was %u)\n", consecutive_read_failures);

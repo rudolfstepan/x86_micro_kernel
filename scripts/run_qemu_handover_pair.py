@@ -19,6 +19,8 @@ STANDBY_STATE_MARKER = "REIST_HANDOVER STANDBY_STATE_APPLIED"
 TAKEOVER_STATE_MARKER = "REIST_HANDOVER TAKEOVER_STATE_SENT"
 REJOIN_STATE_MARKER = "REIST_HANDOVER REJOIN_STATE_APPLIED"
 REJOIN_FENCED_MARKER = "REIST_HANDOVER REJOIN_FENCED"
+STORAGE_RELEASED_MARKER = "REIST_HANDOVER STORAGE_OUTPUT_RELEASED"
+REJOIN_STORAGE_HELD_MARKER = "REIST_HANDOVER REJOIN_STORAGE_HELD"
 
 
 def launch(qemu: Path, image: Path, port: int) -> subprocess.Popen[str]:
@@ -92,14 +94,19 @@ def run(qemu: Path, active_image: Path, standby_image: Path,
         standby_state = start_reader(standby)
 
         replicas: list[bytes] = []
+        storage_fingerprint: int | None = None
         for sequence in range(1, 4):
             replica = smoke.receive_exact(
                 active_connection, smoke.HANDOVER_SERIAL_STATE_FRAME.size)
             replicated = (None if replica is None else
                           smoke.validate_handover_state_frame(replica))
-            if replicated != (1, 1, 1, sequence, 99 + sequence):
+            if (replicated is None or replicated[0:4] !=
+                    (1, 2, 1, sequence) or replicated[4] == 0 or
+                    (storage_fingerprint is not None and
+                     replicated[4] != storage_fingerprint)):
                 error = f"invalid active state frame {sequence}"
                 break
+            storage_fingerprint = replicated[4]
             replicas.append(replica)
         if error is None:
             error = wait(active, active_state, ACTIVE_STATE_MARKER, deadline)
@@ -146,6 +153,7 @@ def run(qemu: Path, active_image: Path, standby_image: Path,
                 "REIST_HANDOVER FENCE_CONFIRMED",
                 "REIST_HANDOVER TAKEOVER_OK",
                 TAKEOVER_STATE_MARKER,
+                STORAGE_RELEASED_MARKER,
                 smoke.SHELL_PROMPT,
                 smoke.REIST_PROBE_COMPLETION_MARKER,
             ):
@@ -158,7 +166,7 @@ def run(qemu: Path, active_image: Path, standby_image: Path,
                 standby_connection, smoke.HANDOVER_SERIAL_STATE_FRAME.size)
             promoted = (None if promoted_state is None else
                         smoke.validate_handover_state_frame(promoted_state))
-            if promoted != (2, 1, 2, 4, 200):
+            if promoted != (2, 2, 2, 4, storage_fingerprint):
                 error = "invalid or missing promoted service state"
         if error is None:
             rejoin = launch(qemu, rejoin_image, rejoin_port)
@@ -175,8 +183,8 @@ def run(qemu: Path, active_image: Path, standby_image: Path,
             events.append("HOST_REJOIN_READY")
             rejoin_connection.sendall(promoted_state)
             events.append("HOST_REJOIN_STATE_FORWARDED")
-            for marker in (REJOIN_STATE_MARKER, REJOIN_FENCED_MARKER,
-                           "BOOT_OK"):
+            for marker in (REJOIN_STATE_MARKER, REJOIN_STORAGE_HELD_MARKER,
+                           REJOIN_FENCED_MARKER, "BOOT_OK"):
                 error = wait(rejoin, rejoin_state, marker, deadline)
                 if error is not None:
                     break

@@ -5,6 +5,7 @@
 #include "include/kernel/critical_object.h"
 #include "include/kernel/supervisor.h"
 #include "include/kernel/storage_request_pool.h"
+#include "include/kernel/storage_handover.h"
 
 #define STORAGE_WRITE_DEADLINE_MS 10000U
 
@@ -75,7 +76,8 @@ static bool storage_verify_supervisor_fence(void *context) {
 
 bool storage_safety_init(uint64_t now_ms) {
     if (storage_supervised) return true;
-    if (storage_request_pool_init() != 0) return false;
+    if (storage_request_pool_init() != 0 || !storage_handover_init())
+        return false;
     storage_control_t state = {
         .progress_marker = 1U,
         .operation_deadline_ms = 0U,
@@ -104,6 +106,7 @@ bool storage_safety_init(uint64_t now_ms) {
 
 bool storage_write_begin(uint64_t now_ms) {
     storage_control_t state;
+    if (storage_handover_is_held()) return false;
     if (!storage_supervised)
         return !storage_integrity_failed && !storage_force_fenced;
     if (storage_force_fenced) return false;

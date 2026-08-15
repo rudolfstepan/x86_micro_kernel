@@ -569,6 +569,22 @@ Referenz beweist Protokollreihenfolge und kontrollierten Prozess-Rejoin, nicht
 Catch-up oder Ausgangsfreigabe eines realen Produktionsdienstes und keine
 elektrisch unabhängige Hardware.
 
+S0.3c-7c2b bindet die Referenz-Zustandsmaschine an einen realen
+Produktionszustand: den CRC32-Fingerprint des erkannten ATA-Bootsektors mit
+gültiger MBR-Signatur. Standby-Kanäle setzen vor dem Dateisystem-Mount ein
+eigenes reversibles Storage-Handover-Gate. Dieses Gate liegt zusätzlich zu den
+permanenten Fatal-/Integritäts-Fences und darf diese niemals zurücksetzen.
+`storage_write_begin()` verweigert deshalb jede ATA- oder FDD-Mutation, solange
+der Kanal nicht autorisiert wurde. Der Catch-up umfasst genau drei streng
+sequenzierte Frames; jeder wird gegen den lokalen Datenträger geprüft. Eine
+Freigabe ist nur nach Rollenwechsel und erfolgreicher Publikation des
+promovierten Zustands möglich und führt den lokalen Fingerprint-Selbsttest
+erneut aus. Der Ring-3-Gasttest beweist danach mit echten VFS-Schreibvorgängen,
+dass der neue Active arbeitsfähig ist. Ein reparierter dritter Kanal übernimmt
+den Zustand, behält das Gate aber bis zu einem späteren autorisierten Takeover.
+Damit ist die reversible Freigabe enger als ein allgemeines „Unfence“: weder
+Fatal- noch Integritäts-Fences können zur Laufzeit aufgehoben werden.
+
 S0.3c-3e injiziert nach einem erfolgreichen echten Handoff einen Dienstcrash,
 während eine weitere Probe aussteht. Der Fence löscht Pending-Autorität und
 alte Endpoint-Generation; der Client beobachtet den Kanalabbruch, verbindet

@@ -223,8 +223,19 @@ nachgewiesenen Active-Ausfall erhöht der neue Active Epoche und Sequenz und
 publiziert den promovierten Zustand. Ein drittes QEMU-Image tritt danach als
 reparierter Kanal bei, validiert den Zustand und bleibt nach negativen
 Lease-/Takeover-Prüfungen gefenceter Standby. Drei vollständige Drei-Kanal-Läufe
-erreichten im übernommenen Kanal `TEST_OK`. Ein realer Produktionsdienst mit
-begrenztem Catch-up sowie physisch unabhängige Zielhardware bleiben offen.
+erreichten im übernommenen Kanal `TEST_OK`. Die folgende Produktionsbindung
+schließt Catch-up und kontrollierte Ausgangsfreigabe im QEMU-Referenzprofil;
+physisch unabhängige Zielhardware bleibt offen.
+S0.3c-7c2b ersetzt den synthetischen Wert durch den CRC32-Fingerprint des
+realen ATA-Bootvolumes. Standby und Rejoin-Kanal halten überwachte
+Storage-Schreibausgänge bereits vor dem Mount. Drei lückenlose Checkpoints und
+ein lokaler MBR-Selbsttest sind Voraussetzung für die Übernahme. Erst nach
+Active-Ende, Fence-Ack, Epoch-Promotion und erfolgreicher Zustandspublikation
+wird der neue Active freigegeben; danach beweist `FILE_IO_OK` reale
+VFS-Mutationen bis `TEST_OK`. Der reparierte Kanal bleibt gehalten. Drei
+vollständige finale Läufe waren grün. Das QEMU-Referenzpaket 7c ist damit
+abgeschlossen; echte unabhängige Zielhardware und Common-Cause-Gates bleiben
+offen.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 
