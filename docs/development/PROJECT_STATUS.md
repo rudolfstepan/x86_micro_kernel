@@ -224,7 +224,14 @@ Prüfsumme ist verpflichtend korrekt, der IPv4-DHCP-Nullwert wird separat
 markiert. Der generations- und Frame-CRC-korrelierte Ring-3-Nachweis
 `DHCP_PARSED_RING3` wurde mit RTL8139 vor `BOOT_OK` und `TEST_OK` bestätigt.
 Noch offen ist die Übernahme der OFFER-/ACK-/NAK-Autorität und danach das
-Entfernen der parallelen Ring-0-DHCP-Queue.
+Entfernen der parallelen Ring-0-DHCP-Queue. Renewal/Rebind ist inzwischen
+dienstautorisiert: Syscall 81 bindet das validierte Ergebnis an Frame-CRC,
+250-ms-Lieferdeadline, Dienstgeneration, lokale MAC und die bestehende
+geschützte Transaktions-ID. Währenddessen werden Legacy-DHCP-Queue und
+Ring-0-Poller unterdrückt. Der reale RTL8139-Lauf bestätigt
+`DHCP_RENEW_REQUESTED -> DHCP_RENEW_INGRESS_RING3 -> DHCP_RENEWED`. Als
+nächster Teil bleibt der Boot-DISCOVER/OFFER/REQUEST/ACK-Zustandsautomat in
+Ring 3 und danach die vollständige Entfernung der Ring-0-DHCP-Queue.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

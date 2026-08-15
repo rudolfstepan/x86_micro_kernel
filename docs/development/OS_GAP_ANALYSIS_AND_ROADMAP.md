@@ -166,9 +166,15 @@ und 10 verbindlich.
               - [x] S0.3c-5e2b2b1 Heapfreien DHCP-v1-Shadow-Parser mit
                 begrenzten Optionen, BOOTP-/Cookie-Prüfung, optionaler
                 IPv4-UDP-Prüfsumme und realem RTL8139-Nachweis ergänzen
-              - [ ] S0.3c-5e2b2b2 OFFER/ACK/NAK aus dem validierten Ring-3-
-                Ergebnis speisen und den parallelen Ring-0-DHCP-Demux nach
-                Druck-, Restart- und Fehlpfadtests entfernen
+              - [ ] S0.3c-5e2b2b2 OFFER/ACK/NAK-Autorität aus dem validierten
+                Ring-3-Ergebnis speisen und den Parallelpfad entfernen
+                - [x] S0.3c-5e2b2b2a Renewal/Rebind-ACK/NAK über append-only
+                  Syscall 81, Frame-CRC, Dienstgeneration und bestehende
+                  Transaktionsautorität übernehmen; Ring-0-Queue und -Poller
+                  während der Transaktion unterdrücken
+                - [ ] S0.3c-5e2b2b2b Boot-DISCOVER/OFFER/REQUEST/ACK als
+                  begrenzten Ring-3-Zustandsautomaten übernehmen und danach
+                  die dedizierte Ring-0-DHCP-Queue entfernen
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -1553,7 +1559,17 @@ korrelierter Diagnosebericht erzeugt keinerlei Konfigurationsautorität. Der
 reale RTL8139-Lauf bestätigt `DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED ->
 DHCP_PARSED_RING3 -> BOOT_OK -> TEST_OK`. S0.3c-5e2b2b2 übernimmt als Nächstes
 die eigentliche OFFER-/ACK-/NAK-Entscheidung und entfernt erst danach die
-parallele Ring-0-Queue.
+parallele Ring-0-Queue. Dessen Renewal-/Rebind-Teil S0.3c-5e2b2b2a ist bereits
+umgesetzt: Der feste 52-Byte-Syscall 81 akzeptiert nur die aktuelle gesunde
+Dienstgeneration und korreliert Frame-CRC, absolute Lieferdeadline,
+Client-MAC sowie die geschützte DHCP-Transaktions-ID. ACK benötigt die
+vollständigen Netzmasken-, Gateway-, DNS- und Lease-Optionen; NAK entzieht die
+Lease fail-closed. Solange eine solche Transaktion aktiv ist, befüllt `netdev`
+die Legacy-DHCP-Queue nicht und der Supervisor-Worker ruft den Ring-0-Poller
+nicht auf. Der RTL8139-Test bestätigt `DHCP_RENEW_REQUESTED ->
+DHCP_RENEW_INGRESS_RING3 -> DHCP_RENEWED`. Offen bleibt S0.3c-5e2b2b2b mit
+dem Boot-DISCOVER/OFFER/REQUEST/ACK-Zustandsautomaten und der anschließenden
+vollständigen Entfernung der dedizierten Ring-0-Queue.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

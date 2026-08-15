@@ -58,7 +58,8 @@ class ReistUdpIngressTests(unittest.TestCase):
         service = read("examples/userspace/reist_probe.c")
         frame_loop = service[service.index("raw_udp_delivery"):]
         frame_loop = frame_loop[:frame_loop.index("} else if (frame_result")]
-        self.assertIn("reist_frame_crc32", frame_loop)
+        self.assertIn(".frame_crc32 = frame_crc32", frame_loop)
+        self.assertIn("frame_crc32 = reist_frame_crc32", service)
         self.assertIn("udp_binding_for_port", frame_loop)
         self.assertEqual(frame_loop.count("x86os_reist_udp_ingress("), 1)
         self.assertIn("x86os_reist_udp_reply", frame_loop)

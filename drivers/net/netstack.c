@@ -908,6 +908,13 @@ void netstack_dhcp_poll(void) {
         ntohl(dns_n), ntohl(lease_n));
 }
 
+bool netstack_finish_supervised_dhcp_request(uint32_t transaction_id) {
+    if (transaction_id == 0U ||
+        dhcp_runtime_transaction_id != transaction_id) return false;
+    dhcp_runtime_transaction_id = 0U;
+    return true;
+}
+
 // =============================================================================
 // IP/ETH Demux
 // =============================================================================

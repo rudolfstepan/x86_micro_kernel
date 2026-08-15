@@ -207,6 +207,7 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
             RUNNER_MODULE.REIST_DHCP_CONFIG_MARKER,
             "BOOT_OK", "C:\\>",
             RUNNER_MODULE.REIST_DHCP_RENEW_REQUESTED_MARKER,
+            RUNNER_MODULE.REIST_DHCP_RENEW_INGRESS_RING3_MARKER,
             RUNNER_MODULE.REIST_DHCP_RENEWED_MARKER, "",
         ))
         self.assertIsNone(RUNNER_MODULE.validate(

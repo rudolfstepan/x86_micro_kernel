@@ -219,6 +219,15 @@ int x86os_reist_udp_ingress(x86os_reist_udp_ingress_t *ingress,
                               (uint32_t)(uintptr_t)data, 0U);
 }
 
+_Static_assert(sizeof(x86os_reist_dhcp_ingress_t) == 52U,
+               "REIST DHCP ingress ABI size changed");
+
+int x86os_reist_dhcp_ingress(
+        const x86os_reist_dhcp_ingress_t *ingress) {
+    return (int)x86os_syscall(X86OS_SYS_REIST_DHCP_INGRESS,
+                              (uint32_t)(uintptr_t)ingress, 0U, 0U);
+}
+
 int x86os_network_arp_resolve(uint32_t target_ip) {
     return (int)x86os_syscall(X86OS_SYS_NETWORK_ARP_RESOLVE,
                               target_ip, 0, 0);

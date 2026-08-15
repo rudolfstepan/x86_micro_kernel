@@ -54,6 +54,8 @@ REIST_DHCP_CONFIG_MARKER = "REIST_NETWORK DHCP_CONFIG_MEDIATED"
 REIST_DHCP_LEASE_EXPIRED_MARKER = "REIST_NETWORK DHCP_LEASE_EXPIRED"
 REIST_DHCP_RENEWED_MARKER = "REIST_NETWORK DHCP_RENEWED"
 REIST_DHCP_RENEW_REQUESTED_MARKER = "REIST_NETWORK DHCP_RENEW_REQUESTED"
+REIST_DHCP_RENEW_INGRESS_RING3_MARKER = \
+    "REIST_NETWORK DHCP_RENEW_INGRESS_RING3"
 REIST_NETWORK_FRAME_MARKER = "REIST_NETWORK FRAME_HANDOFF"
 REIST_NETWORK_IPV4_MARKER = "REIST_NETWORK IPV4_PARSED_RING3"
 REIST_NETWORK_UDP_MARKER = "REIST_NETWORK UDP_PARSED_RING3"
@@ -920,9 +922,12 @@ def validate(
         prompt = transcript.find(SHELL_PROMPT, boot)
         requested = exact_line_after_prompt_position(
             transcript, REIST_DHCP_RENEW_REQUESTED_MARKER)
+        ingress = exact_line_position(
+            transcript, REIST_DHCP_RENEW_INGRESS_RING3_MARKER)
         renewed = exact_line_position(transcript, REIST_DHCP_RENEWED_MARKER)
         if (committed < 0 or boot < committed or prompt < boot or
-                requested < prompt or renewed < requested):
+                requested < prompt or ingress < requested or
+                renewed < ingress):
             return "missing ordered bounded DHCP renewal"
     if expect_network_frame:
         frame = exact_line_position(transcript, REIST_NETWORK_FRAME_MARKER)

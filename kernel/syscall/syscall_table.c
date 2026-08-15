@@ -508,6 +508,24 @@ static int syscall_reist_udp_ingress(
     return 0;
 }
 
+_Static_assert(sizeof(supervisor_dhcp_ingress_t) == 52U,
+               "REIST DHCP ingress ABI changed");
+
+static int syscall_reist_dhcp_ingress(
+        const supervisor_dhcp_ingress_t *user_ingress) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_ingress;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(*user_ingress),
+                               false)) return -14;
+    supervisor_dhcp_ingress_t ingress;
+    if (copy_from_user(&ingress, user_ingress, sizeof(ingress)) != 0)
+        return -14;
+    return supervisor_network_dhcp_ingress(
+        process->pid, process->generation, &ingress);
+}
+
 _Static_assert(sizeof(storage_request_submit_t) == 28U,
                "storage submit ABI changed");
 _Static_assert(sizeof(storage_request_descriptor_t) == 28U,
@@ -1229,6 +1247,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_reist_dhcp_renew,    // Syscall 78: Bounded DHCP renew/rebind
     (void*)&syscall_reist_network_frame, // Syscall 79: Bounded raw RX handoff
     (void*)&syscall_reist_udp_ingress,   // Syscall 80: Validate Ring-3 UDP ingress
+    (void*)&syscall_reist_dhcp_ingress,  // Syscall 81: Validate Ring-3 DHCP ingress
     // Add more syscalls here as needed
 };
 
@@ -1616,6 +1635,10 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)syscall_reist_udp_ingress(
                 (supervisor_udp_ingress_t*)(uintptr_t)arg1,
                 (const uint8_t*)(uintptr_t)arg2);
+            break;
+        case SYS_REIST_DHCP_INGRESS:
+            result = (uint32_t)syscall_reist_dhcp_ingress(
+                (const supervisor_dhcp_ingress_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

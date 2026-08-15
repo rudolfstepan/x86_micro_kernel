@@ -236,12 +236,39 @@ typedef struct {
 #define SUPERVISOR_DHCP_RENEW_REQUEST_VERSION 1U
 #define SUPERVISOR_DHCP_RENEW 1U
 #define SUPERVISOR_DHCP_REBIND 2U
+#define SUPERVISOR_DHCP_INGRESS_VERSION 1U
+#define SUPERVISOR_DHCP_MESSAGE_OFFER 2U
+#define SUPERVISOR_DHCP_MESSAGE_ACK 5U
+#define SUPERVISOR_DHCP_MESSAGE_NAK 6U
+#define SUPERVISOR_DHCP_OPTION_NETMASK 0x01U
+#define SUPERVISOR_DHCP_OPTION_GATEWAY 0x02U
+#define SUPERVISOR_DHCP_OPTION_DNS 0x04U
+#define SUPERVISOR_DHCP_OPTION_LEASE 0x08U
+#define SUPERVISOR_DHCP_OPTION_MESSAGE_TYPE 0x10U
+#define SUPERVISOR_DHCP_OPTION_SERVER_ID 0x20U
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
     uint32_t operation;
     uint32_t expected_ip;
 } supervisor_dhcp_renew_request_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t frame_crc32;
+    uint32_t transaction_id;
+    uint32_t offered_ip;
+    uint32_t server_id;
+    uint32_t netmask;
+    uint32_t gateway;
+    uint32_t dns_server;
+    uint32_t lease_seconds;
+    uint32_t option_flags;
+    uint8_t client_mac[6];
+    uint8_t message_type;
+    uint8_t checksum_present;
+} supervisor_dhcp_ingress_t;
 
 typedef struct {
     uint32_t process_generation;
@@ -572,6 +599,9 @@ bool supervisor_network_accept_dhcp_renewal(
     uint32_t transaction_id, uint32_t ip_address, uint32_t netmask,
     uint32_t gateway, uint32_t dns_server, uint32_t lease_seconds);
 bool supervisor_network_reject_dhcp_renewal(uint32_t transaction_id);
+int supervisor_network_dhcp_ingress(
+    int pid, uint32_t generation, const supervisor_dhcp_ingress_t *ingress);
+bool supervisor_network_dhcp_service_owns_ingress(void);
 bool supervisor_network_submit_udp_echo(
     uint32_t source_ip, const uint8_t source_mac[6], uint16_t source_port,
     uint16_t destination_port, const uint8_t *data, uint16_t data_length);

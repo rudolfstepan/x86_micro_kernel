@@ -56,6 +56,8 @@ _Static_assert(sizeof(supervisor_dhcp_lease_t) <=
 _Static_assert(sizeof(supervisor_dhcp_renewal_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
                "DHCP renewal exceeds critical object payload");
+_Static_assert(sizeof(supervisor_dhcp_ingress_t) == 52U,
+               "DHCP ingress ABI drift");
 _Static_assert(sizeof(supervisor_udp_echo_context_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
                "UDP echo context exceeds critical object payload");
@@ -3214,6 +3216,124 @@ bool supervisor_network_reject_dhcp_renewal(uint32_t transaction_id) {
     return true;
 }
 
+static uint32_t dhcp_transaction_wire_value(uint32_t value) {
+    return ((value & 0x000000FFU) << 24U) |
+           ((value & 0x0000FF00U) << 8U) |
+           ((value & 0x00FF0000U) >> 8U) |
+           ((value & 0xFF000000U) >> 24U);
+}
+
+bool supervisor_network_dhcp_service_owns_ingress(void) {
+    uint32_t flags = supervisor_lock();
+    supervisor_probe_control_t control = {0};
+    supervisor_dhcp_renewal_t renewal = {0};
+    int control_result = supervisor_protected_probe_control_read(
+        &probe_runtime.control, &control);
+    int renewal_result = supervisor_protected_dhcp_renewal_snapshot(
+        &probe_runtime.dhcp_renewal, &renewal);
+    bool integrity_failure = control_result == SUPERVISOR_EINTEGRITY ||
+                             renewal_result == SUPERVISOR_EINTEGRITY;
+    bool owns = integrity_failure ||
+        (control_result == 0 && renewal_result == 0 &&
+         control.active != 0U && control.fenced == 0U &&
+         control.healthy != 0U && renewal.active != 0U &&
+         renewal.process_generation == control.process_generation &&
+         process_identity_alive(control.pid, control.process_generation));
+    supervisor_unlock(flags);
+    if (integrity_failure && control.active != 0U)
+        (void)supervisor_force_isolate(control.handle);
+    return owns;
+}
+
+int supervisor_network_dhcp_ingress(
+        int pid, uint32_t generation,
+        const supervisor_dhcp_ingress_t *ingress) {
+    if (ingress == NULL ||
+        ingress->version != SUPERVISOR_DHCP_INGRESS_VERSION ||
+        ingress->struct_size != sizeof(*ingress) ||
+        ingress->frame_crc32 == 0U || ingress->transaction_id == 0U ||
+        ingress->checksum_present > 1U ||
+        (ingress->option_flags & ~0x3FU) != 0U ||
+        (ingress->option_flags & SUPERVISOR_DHCP_OPTION_MESSAGE_TYPE) == 0U ||
+        (ingress->message_type != SUPERVISOR_DHCP_MESSAGE_OFFER &&
+         ingress->message_type != SUPERVISOR_DHCP_MESSAGE_ACK &&
+         ingress->message_type != SUPERVISOR_DHCP_MESSAGE_NAK)) return -22;
+    const uint32_t required_ack_options =
+        SUPERVISOR_DHCP_OPTION_NETMASK |
+        SUPERVISOR_DHCP_OPTION_GATEWAY |
+        SUPERVISOR_DHCP_OPTION_DNS |
+        SUPERVISOR_DHCP_OPTION_LEASE;
+    if (ingress->message_type == SUPERVISOR_DHCP_MESSAGE_ACK &&
+        (ingress->option_flags & required_ack_options) != required_ack_options)
+        return -22;
+    if (ingress->message_type == SUPERVISOR_DHCP_MESSAGE_OFFER) return -11;
+
+    uint32_t local_ip = 0U;
+    uint8_t local_mac[6] = {0};
+    if (!netstack_get_local_identity(&local_ip, local_mac)) return -13;
+    for (uint32_t index = 0U; index < 6U; ++index)
+        if (ingress->client_mac[index] != local_mac[index]) return -13;
+    if (ingress->message_type == SUPERVISOR_DHCP_MESSAGE_ACK &&
+        (!dhcp_config_valid_values(
+             ingress->offered_ip != 0U ? ingress->offered_ip : local_ip,
+             ingress->netmask, ingress->gateway, ingress->dns_server) ||
+         ingress->lease_seconds < SUPERVISOR_DHCP_LEASE_MIN_SECONDS ||
+         ingress->lease_seconds > SUPERVISOR_DHCP_LEASE_MAX_SECONDS))
+        return -22;
+
+    uint32_t flags = supervisor_lock();
+    supervisor_probe_control_t control = {0};
+    supervisor_dhcp_renewal_t renewal = {0};
+    supervisor_udp_delivery_t delivery = {0};
+    int result = supervisor_protected_probe_control_read(
+        &probe_runtime.control, &control);
+    bool caller_is_service = result == 0 && pid == control.pid &&
+                             generation == control.process_generation;
+    if (result == 0 &&
+        (control.active == 0U || control.fenced != 0U ||
+         control.healthy == 0U || !caller_is_service ||
+         !process_identity_alive(pid, generation))) result = -13;
+    if (result == 0)
+        result = supervisor_protected_dhcp_renewal_snapshot(
+            &probe_runtime.dhcp_renewal, &renewal);
+    if (result == 0 && renewal.active == 0U) result = -11;
+    if (result == 0 &&
+        (renewal.process_generation != generation ||
+         renewal.transaction_id == 0U ||
+         dhcp_transaction_wire_value(renewal.transaction_id) !=
+             ingress->transaction_id)) result = -13;
+    if (result == 0) result = udp_delivery_read(&delivery);
+    if (result == 0 &&
+        (delivery.active == 0U ||
+         delivery.process_generation != generation ||
+         delivery.frame_crc32 != ingress->frame_crc32)) result = -13;
+    if (result == 0 && pit_monotonic_ms() >= delivery.deadline_ms) {
+        (void)udp_delivery_clear();
+        result = -110;
+    }
+    if (result == 0) result = udp_delivery_clear();
+    bool integrity_failure = result == SUPERVISOR_EINTEGRITY;
+    supervisor_unlock(flags);
+    if (integrity_failure && caller_is_service)
+        (void)supervisor_force_isolate(control.handle);
+    if (result != 0) return result;
+    if (!netstack_finish_supervised_dhcp_request(renewal.transaction_id))
+        return -13;
+
+    if (ingress->message_type == SUPERVISOR_DHCP_MESSAGE_NAK)
+        return supervisor_network_reject_dhcp_renewal(
+            renewal.transaction_id) ? 0 : -13;
+    uint32_t ip_address = ingress->offered_ip != 0U
+        ? ingress->offered_ip : renewal.ip_address;
+    if (ip_address != renewal.ip_address ||
+        !supervisor_network_accept_dhcp_renewal(
+            renewal.transaction_id, ip_address, ingress->netmask,
+            ingress->gateway, ingress->dns_server,
+            ingress->lease_seconds)) return -13;
+    printf("REIST_NETWORK DHCP_RENEW_INGRESS_RING3\n");
+    return 0;
+}
+
 int supervisor_network_udp_bind(
         int pid, uint32_t generation,
         const supervisor_udp_bind_request_t *request,
@@ -3721,7 +3841,8 @@ static void supervisor_worker(void) {
          * pending flags, so foreground progress must not depend on a shell
          * command happening to poll the NIC. */
         netdev_poll();
-        netstack_dhcp_poll();
+        if (!supervisor_network_dhcp_service_owns_ingress())
+            netstack_dhcp_poll();
         storage_service_poll(pit_monotonic_ms());
         supervisor_probe_control_t control;
         uint32_t transaction_flags = supervisor_lock();

@@ -596,6 +596,27 @@ Schattenphase aktiv. S0.3c-5e2b2b2 muss OFFER/ACK/NAK aus dem validierten
 Ergebnis in den geschützten Lease-Zustand übernehmen und anschließend den
 parallelen Ring-0-Eingang mit Druck-, Restart- und Fehlpfadnachweisen entfernen.
 
+S0.3c-5e2b2b2a verschiebt Renewal/Rebind bereits aus diesem Parallelpfad. Der
+append-only Syscall 81 übernimmt ein festes 52-Byte-Ergebnis und prüft vor
+jeder Mutation ABI, Nachrichtentyp, Optionsmenge, lokale Client-MAC,
+Dienstidentität und -generation, Frame-CRC, 250-ms-Lieferdeadline und die
+geschützt gespeicherte DHCP-Transaktions-ID. Die historisch auf x86 in
+Hostreihenfolge übertragene XID wird an dieser Grenze explizit in ihren
+Wire-Wert überführt; eine stille Endian-Annahme ist damit ausgeschlossen.
+ACK muss Netzmaske, Gateway, DNS und Lease enthalten und darf nur die bereits
+geleaste Adresse erneuern. NAK löscht die geschützte Lease über den vorhandenen
+Fail-Closed-Pfad.
+
+Vom Veröffentlichen der Renewal-Autorität bis zu ihrem Verbrauch besitzt der
+Ring-3-Dienst den Eingang exklusiv: `netdev` schreibt passende Antworten nicht
+in die Legacy-DHCP-Queue, und der Supervisor-Worker überspringt den alten
+Ring-0-Poller. Ein erfolgreicher Dienstentscheid verbraucht zunächst das
+CRC-/generationgebundene Lieferobjekt und beendet dann den Transportzustand,
+bevor die bestehende geschützte Commit-Sequenz startet. Der reale RTL8139-
+Nachweis erreicht `DHCP_RENEW_INGRESS_RING3` vor `DHCP_RENEWED`. Der synchrone
+Boot-DISCOVER/OFFER/REQUEST/ACK-Ablauf bleibt bis S0.3c-5e2b2b2b bewusst in
+Ring 0; erst seine Migration erlaubt das Entfernen der dedizierten DHCP-Queue.
+
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau
 einen geschützt gespeicherten Aktivzustand und eine saturierend berechnete

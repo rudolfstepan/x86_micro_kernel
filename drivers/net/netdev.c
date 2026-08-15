@@ -217,7 +217,8 @@ void netdev_deliver_rx(const uint8_t* packet, uint16_t length) {
             service_header, sizeof(service_header));
     }
     if (netdev_is_dhcp_client_packet(packet, length)) {
-        netdev_queue_dhcp_packet(packet, length);
+        if (!supervisor_network_dhcp_service_owns_ingress())
+            netdev_queue_dhcp_packet(packet, length);
     }
     /* IRQ handlers only copy frames. ARP/ICMP processing and any response TX
      * happen later in foreground context via netdev_poll(). */

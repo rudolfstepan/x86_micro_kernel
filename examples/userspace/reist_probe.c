@@ -374,6 +374,8 @@ int main(int argc, char **argv) {
             reist_dhcp_parse_result_t dhcp_result;
             int dhcp_parse = reist_dhcp_parse_frame(
                 network_frame.data, network_frame.length, &dhcp_result);
+            uint32_t frame_crc32 = reist_frame_crc32(
+                network_frame.data, network_frame.length);
             if (!network_frame_reported &&
                 (ethertype == 0x0800U || ethertype == 0x0806U)) {
                 if (x86os_reist_report(
@@ -396,17 +398,41 @@ int main(int argc, char **argv) {
             }
             if (!network_dhcp_reported && dhcp_parse == 0) {
                 if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_DHCP,
-                        reist_frame_crc32(network_frame.data,
-                                         network_frame.length)) != 0)
+                                       frame_crc32) != 0)
                     return 39;
                 network_dhcp_reported = true;
+            }
+            bool dhcp_ingress_consumed = false;
+            if (dhcp_parse == 0) {
+                x86os_reist_dhcp_ingress_t ingress = {
+                    .version = X86OS_REIST_DHCP_INGRESS_VERSION,
+                    .struct_size = sizeof(ingress),
+                    .frame_crc32 = frame_crc32,
+                    .transaction_id = dhcp_result.transaction_id,
+                    .offered_ip = dhcp_result.offered_ip,
+                    .server_id = dhcp_result.server_id,
+                    .netmask = dhcp_result.netmask,
+                    .gateway = dhcp_result.gateway,
+                    .dns_server = dhcp_result.dns_server,
+                    .lease_seconds = dhcp_result.lease_seconds,
+                    .option_flags = dhcp_result.option_flags,
+                    .message_type = dhcp_result.message_type,
+                    .checksum_present = dhcp_result.checksum_present,
+                };
+                for (uint32_t index = 0U; index < 6U; ++index)
+                    ingress.client_mac[index] = dhcp_result.client_mac[index];
+                int ingress_result = x86os_reist_dhcp_ingress(&ingress);
+                if (ingress_result == 0) {
+                    dhcp_ingress_consumed = true;
+                } else if (ingress_result != -11 && ingress_result != -13 &&
+                           ingress_result != -22 && ingress_result != -110) {
+                    return 40;
+                }
             }
             bool raw_udp_delivery = ethertype == 0x0800U &&
                 network_frame.length >= 34U &&
                 network_frame.data[23U] == 17U;
-            if (raw_udp_delivery) {
-                uint32_t frame_crc32 = reist_frame_crc32(
-                    network_frame.data, network_frame.length);
+            if (raw_udp_delivery && !dhcp_ingress_consumed) {
                 x86os_reist_udp_ingress_t ingress = {
                     .version = X86OS_REIST_UDP_INGRESS_VERSION,
                     .struct_size = sizeof(ingress),
