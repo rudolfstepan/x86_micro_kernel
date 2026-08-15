@@ -154,6 +154,10 @@ und 10 verbindlich.
           nach Ring 3 verlagern
         - [ ] S0.3c-5e2b UDP-/DHCP-Demux und Protokollzustand auf dem
           Ring-3-Parser aufbauen und erst danach den Parallelpfad entfernen
+          - [x] S0.3c-5e2b1 Heapfreien UDP-v1-Shadow-Parser mit Pflicht-
+            prüfsumme, exakter Längenkonsistenz und RTL8139-Nachweis ergänzen
+          - [ ] S0.3c-5e2b2 UDP-Bindings und DHCP-Eingang aus dem validierten
+            Ring-3-Ergebnis speisen und den Ring-0-UDP-Demux entfernen
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -1502,6 +1506,17 @@ den ersten ICMP- oder UDP-Parserreport; der RTL8139-Lauf bestätigt
 `IPV4_PARSED_RING3`. Dies ist bewusst nur ein Shadow-Nachweis: Ausgabe und
 Legacy-Demux bleiben bis S0.3c-5e2b im Kernel, und der Report erteilt keinerlei
 Netzwerkautorität.
+
+**S0.3c-5e2b1 ist umgesetzt und abgenommen:** Ein zweiter fester Ring-3-
+Parser akzeptiert nur vom IPv4-v1-Parser validierte UDP-Datagramme. Er verlangt
+ein nichtleeres Portpaar, eine UDP-Länge ab acht Byte, exakte Übereinstimmung
+mit der IPv4-Nutzlast und eine nichtnull, über den Pseudoheader validierte
+Prüfsumme. Ungerade Nutzdatenlängen sind abgedeckt; das 20-Byte-Ergebnis wird
+bei jedem Fehler vollständig genullt. Der generationsgebundene UDP-
+Liefernachweis ist weiterhin reine Diagnose. Ein realer RTL8139-Lauf bestätigt
+`UDP_PARSED_RING3` sowie im selben Lauf einen vermittelten UDP-Echo-Request.
+S0.3c-5e2b2 muss als Nächstes Binding-/DHCP-Zustand aus diesem Ergebnis speisen,
+bevor der Ring-0-UDP-Demux entfernt werden darf.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

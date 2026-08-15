@@ -203,6 +203,12 @@ Fragmente fail-closed ab. Der generationsgebundene Shadow-Nachweis
 `REIST_NETWORK IPV4_PARSED_RING3` wurde mit RTL8139 bestätigt. Der Parser hat
 noch keine Ausgabeautorität; als nächstes übernimmt S0.3c-5e2b UDP-/DHCP-
 Demultiplex und Protokollzustand, bevor der Ring-0-Parallelpfad entfernt wird.
+S0.3c-5e2b1 ist ebenfalls abgeschlossen: Der Ring-3-Dienst validiert UDP-Länge,
+Portpaar und verpflichtende Pseudoheader-Prüfsumme heapfrei und liefert ein
+festes 20-Byte-Ergebnis. Der reale RTL8139-Lauf bestätigt
+`REIST_NETWORK UDP_PARSED_RING3` und einen vermittelten UDP-Echo-Request.
+Weiter offen bleibt S0.3c-5e2b2: Binding-/DHCP-Demux über das validierte
+Ergebnis führen und erst dann den Ring-0-UDP-Parallelpfad abschalten.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

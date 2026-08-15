@@ -117,6 +117,11 @@ typedef struct {
     uint32_t ipv4_delivery_pending;
     int32_t ipv4_report_pid;
     uint32_t ipv4_report_generation;
+    int32_t udp_delivery_pid;
+    uint32_t udp_delivery_generation;
+    uint32_t udp_delivery_pending;
+    int32_t udp_report_pid;
+    uint32_t udp_report_generation;
 } supervisor_probe_runtime_t;
 
 static supervisor_probe_runtime_t probe_runtime;
@@ -1769,6 +1774,9 @@ static bool probe_spawn_next(void) {
     probe_runtime.ipv4_delivery_pid = 0;
     probe_runtime.ipv4_delivery_generation = 0U;
     probe_runtime.ipv4_delivery_pending = 0U;
+    probe_runtime.udp_delivery_pid = 0;
+    probe_runtime.udp_delivery_generation = 0U;
+    probe_runtime.udp_delivery_pending = 0U;
     int pid = supervisor_spawn_service("/REIST.PRG", 2, arguments,
                                        PROCESS_DOMAIN_PROBE);
     uint32_t generation = 0U;
@@ -1986,6 +1994,29 @@ int supervisor_probe_report(int pid, uint32_t generation,
             printf("REIST_NETWORK IPV4_PARSED_RING3\n");
         return 0;
     }
+    if (report_type == REIST_REPORT_NETWORK_UDP) {
+        if (value == 0U || value > UINT16_MAX) return -1;
+        uint32_t flags = supervisor_lock();
+        bool delivery_matches = probe_runtime.udp_delivery_pending != 0U &&
+            probe_runtime.udp_delivery_pid == pid &&
+            probe_runtime.udp_delivery_generation == generation;
+        bool first_for_generation = probe_runtime.udp_report_pid != pid ||
+            probe_runtime.udp_report_generation != generation;
+        if (delivery_matches) {
+            probe_runtime.udp_delivery_pid = 0;
+            probe_runtime.udp_delivery_generation = 0U;
+            probe_runtime.udp_delivery_pending = 0U;
+        }
+        if (delivery_matches && first_for_generation) {
+            probe_runtime.udp_report_pid = pid;
+            probe_runtime.udp_report_generation = generation;
+        }
+        supervisor_unlock(flags);
+        if (!delivery_matches) return -1;
+        if (first_for_generation)
+            printf("REIST_NETWORK UDP_PARSED_RING3\n");
+        return 0;
+    }
     return -1;
 }
 
@@ -2038,6 +2069,8 @@ int supervisor_network_confirm_frame_delivery(
     bool ipv4_already_reported =
         probe_runtime.ipv4_report_pid == pid &&
         probe_runtime.ipv4_report_generation == generation;
+    bool udp_already_reported = probe_runtime.udp_report_pid == pid &&
+        probe_runtime.udp_report_generation == generation;
     if (result == 0 &&
         (control.active == 0U || control.fenced != 0U ||
          control.healthy == 0U || pid != control.pid ||
@@ -2056,6 +2089,13 @@ int supervisor_network_confirm_frame_delivery(
         probe_runtime.ipv4_delivery_pid = pid;
         probe_runtime.ipv4_delivery_generation = generation;
         probe_runtime.ipv4_delivery_pending = 1U;
+    }
+    if (result == 0 && ethertype == 0x0800U && frame->length >= 34U &&
+        frame->data[23U] == 17U && !udp_already_reported &&
+        probe_runtime.udp_delivery_pending == 0U) {
+        probe_runtime.udp_delivery_pid = pid;
+        probe_runtime.udp_delivery_generation = generation;
+        probe_runtime.udp_delivery_pending = 1U;
     }
     supervisor_unlock(flags);
     return result;

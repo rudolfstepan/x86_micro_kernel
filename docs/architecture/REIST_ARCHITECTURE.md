@@ -553,6 +553,16 @@ Generation gelieferte IPv4-Frame-Berechtigung und akzeptiert nur ICMP oder
 UDP. Diese Korrelation ist Nachweis-, nicht Ausgabeberechtigung; Ring-0-Demux
 und Protokollzustand bleiben bis S0.3c-5e2b aktiv.
 
+S0.3c-5e2b1 ergänzt darauf UDP-v1. Der Parser ruft den vollständigen IPv4-
+Validator erneut auf, verlangt ein nichtnull Portpaar, exakt acht Byte plus
+Nutzlast als UDP-Länge und eine verpflichtende Prüfsumme über IPv4-
+Pseudoheader, UDP-Header und höchstens 1476 Nutzdatenbytes. Das feste
+20-Byte-Ergebnis enthält nur Ports, Datagrammlänge, validierten Payloadoffset,
+Payloadlänge und Prüfsumme. Eine getrennte PID-/Generationsberechtigung bindet
+`REIST_NETWORK UDP_PARSED_RING3` an ein tatsächlich geliefertes IPv4/UDP-
+Frame. Sie autorisiert weder Demultiplex noch Antwort; diese Zustände wechseln
+erst in S0.3c-5e2b2 aus Ring 0.
+
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau
 einen geschützt gespeicherten Aktivzustand und eine saturierend berechnete
