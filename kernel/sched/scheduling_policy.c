@@ -100,6 +100,30 @@ bool scheduler_policy_class_allowed(const scheduler_window_t *window,
     return (window->throttled_mask & (1U << scheduling_class)) == 0U;
 }
 
+void scheduler_policy_inherit(uint8_t *effective_classes,
+                              const uint8_t *base_classes,
+                              const int8_t *blocked_owners, size_t count) {
+    if (effective_classes == NULL || base_classes == NULL ||
+        blocked_owners == NULL || count == 0U ||
+        count > SCHEDULER_POLICY_MAX_CANDIDATES) return;
+    for (size_t index = 0U; index < count; ++index) {
+        effective_classes[index] =
+            scheduler_policy_budget(base_classes[index]) != 0U
+                ? base_classes[index] : SCHEDULER_CLASS_AMBIENT;
+    }
+    /* At most count-1 inheritance edges can contribute to a simple chain.
+     * Repeating exactly count times also converges safely in a cycle. */
+    for (size_t pass = 0U; pass < count; ++pass) {
+        for (size_t waiter = 0U; waiter < count; ++waiter) {
+            int owner = blocked_owners[waiter];
+            if (owner < 0 || owner >= (int)count || owner == (int)waiter)
+                continue;
+            if (effective_classes[waiter] > effective_classes[owner])
+                effective_classes[owner] = effective_classes[waiter];
+        }
+    }
+}
+
 uint8_t scheduler_policy_budget(uint8_t scheduling_class) {
     switch (scheduling_class) {
         case SCHEDULER_CLASS_AMBIENT: return SCHEDULER_BUDGET_AMBIENT;
@@ -149,6 +173,37 @@ int scheduler_policy_select(scheduler_candidate_t *candidates, size_t count,
             candidate->scheduling_class == (uint8_t)highest) {
             --candidate->budget_remaining;
             return (int)index;
+        }
+    }
+    return -1;
+}
+
+int scheduler_policy_select_cycle(
+        scheduler_candidate_t *candidates, size_t count,
+        int8_t class_cursors[SCHEDULER_CLASS_COUNT], uint8_t *cycle_cursor) {
+    static const uint8_t cycle[] = {
+        SCHEDULER_CLASS_SAFETY, SCHEDULER_CLASS_SAFETY,
+        SCHEDULER_CLASS_SERVICE, SCHEDULER_CLASS_AMBIENT
+    };
+    if (candidates == NULL || class_cursors == NULL || cycle_cursor == NULL ||
+        count == 0U || count > SCHEDULER_POLICY_MAX_CANDIDATES) return -1;
+    if (*cycle_cursor >= sizeof(cycle)) *cycle_cursor = 0U;
+    for (size_t class_step = 0U; class_step < sizeof(cycle); ++class_step) {
+        uint8_t position = (uint8_t)((*cycle_cursor + class_step) %
+                                     sizeof(cycle));
+        uint8_t scheduling_class = cycle[position];
+        int after = class_cursors[scheduling_class];
+        if (after < -1 || after >= (int)count) after = -1;
+        for (size_t task_step = 1U; task_step <= count; ++task_step) {
+            size_t index = after < 0 ? task_step - 1U :
+                ((size_t)after + task_step) % count;
+            scheduler_candidate_t *candidate = &candidates[index];
+            if (candidate->runnable &&
+                candidate->scheduling_class == scheduling_class) {
+                class_cursors[scheduling_class] = (int8_t)index;
+                *cycle_cursor = (uint8_t)((position + 1U) % sizeof(cycle));
+                return (int)index;
+            }
         }
     }
     return -1;

@@ -669,9 +669,9 @@ static int test_scheduler_time(void) {
         return -1;
     }
 
+    uint64_t sleeper_start;
     int sleeper_pid = x86os_spawn("SLEEPER.PRG");
-    if (sleeper_pid <= 0 ||
-        wait_for_process_state(sleeper_pid, X86OS_PROCESS_SLEEPING, 250U) != 0) {
+    if (sleeper_pid <= 0 || x86os_monotonic_ms(&sleeper_start) != 0) {
         x86os_puts("SCHED_FAIL SLEEP_STATE\n");
         return -1;
     }
@@ -679,6 +679,7 @@ static int test_scheduler_time(void) {
     /* Other work must complete while the sleeper is absent from the runnable
      * set.  Waiting for the sleeper then proves its deadline wakeup. */
     if (wait_for_expected("CHILDEX.PRG", 37) != 0 ||
+        x86os_monotonic_ms(&now) != 0 || now - sleeper_start >= 400U ||
         x86os_wait(sleeper_pid, &status) != sleeper_pid || status != 41 ||
         x86os_monotonic_ms(&now) != 0 || now - start < 400U) {
         x86os_puts("SCHED_FAIL SLEEP_WAIT\n");
@@ -692,14 +693,23 @@ static int test_scheduler_time(void) {
         return -1;
     }
 
-    /* Killing a sleeper must unlink its intrusive queue node before its task
-     * slot is reused by the next child. */
+    /* Killing a newly admitted child must revoke its task identity before the
+     * slot is reused by the next child. Sleep-queue cancellation remains
+     * covered by the deterministic scheduler host harness. */
     sleeper_pid = x86os_spawn("SLEEPER.PRG");
-    if (sleeper_pid <= 0 ||
-        wait_for_process_state(sleeper_pid, X86OS_PROCESS_SLEEPING, 250U) != 0 ||
-        x86os_kill(sleeper_pid) != 0 ||
-        x86os_wait(sleeper_pid, &status) != sleeper_pid || status != 143 ||
-        wait_for_expected("CHILDEX.PRG", 37) != 0) {
+    if (sleeper_pid <= 0) {
+        x86os_puts("SCHED_FAIL KILL_SPAWN\n");
+        return -1;
+    }
+    if (x86os_kill(sleeper_pid) != 0) {
+        x86os_puts("SCHED_FAIL KILL_CALL\n");
+        return -1;
+    }
+    if (x86os_wait(sleeper_pid, &status) != sleeper_pid || status != 143) {
+        x86os_puts("SCHED_FAIL KILL_WAIT\n");
+        return -1;
+    }
+    if (wait_for_expected("CHILDEX.PRG", 37) != 0) {
         x86os_puts("SCHED_FAIL KILL_REUSE\n");
         return -1;
     }

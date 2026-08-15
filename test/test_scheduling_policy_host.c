@@ -62,6 +62,33 @@ int main(void) {
               &window, SCHEDULER_CLASS_SERVICE, 500U), 51);
     CHECK(window.overload_count[SCHEDULER_CLASS_SERVICE] == 4U, 52);
 
+    uint8_t base[] = {SCHEDULER_CLASS_AMBIENT, SCHEDULER_CLASS_SERVICE,
+                      SCHEDULER_CLASS_SAFETY, SCHEDULER_CLASS_AMBIENT};
+    uint8_t effective[4] = {0};
+    int8_t owners[] = {-1, 0, 1, 3};
+    scheduler_policy_inherit(effective, base, owners, 4U);
+    CHECK(effective[0] == SCHEDULER_CLASS_SAFETY, 53);
+    CHECK(effective[1] == SCHEDULER_CLASS_SAFETY, 54);
+    CHECK(effective[2] == SCHEDULER_CLASS_SAFETY, 55);
+    CHECK(effective[3] == SCHEDULER_CLASS_AMBIENT, 56);
+
+    scheduler_candidate_t cyclic[] = {
+        {true, SCHEDULER_CLASS_AMBIENT, 0U},
+        {true, SCHEDULER_CLASS_SERVICE, 0U},
+        {true, SCHEDULER_CLASS_SAFETY, 0U},
+        {true, SCHEDULER_CLASS_AMBIENT, 0U},
+    };
+    int8_t cyclic_cursors[SCHEDULER_CLASS_COUNT] = {-1, -1, -1};
+    uint8_t cycle_cursor = 0U;
+    const int cyclic_expected[] = {2, 2, 1, 0, 2, 2, 1, 3};
+    for (size_t index = 0U;
+         index < sizeof(cyclic_expected) / sizeof(cyclic_expected[0]);
+         ++index) {
+        CHECK(scheduler_policy_select_cycle(
+                  cyclic, 4U, cyclic_cursors, &cycle_cursor) ==
+              cyclic_expected[index], 57 + (int)index);
+    }
+
     puts("SCHEDULING_POLICY_OK");
     return 0;
 }

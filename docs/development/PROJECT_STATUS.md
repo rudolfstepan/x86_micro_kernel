@@ -258,18 +258,19 @@ Legacy-Lernrichtlinie mehr. Eingehende Frames werden nur noch an die statische
 Ring-3-Servicequeue und die autoritätslose Diagnosequeue kopiert. Ausgehende
 Auflösung nutzt ausschließlich den geschützten, generations- und
 leasegebundenen ARP-Cache. S0.3c-5 ist damit vollständig abgeschlossen.
-S0.4a/b sind als erste Determinismusinkremente umgesetzt. Der Scheduler ordnet
+S0.4a/b und S0.4c-1 sind als Determinismusinkremente umgesetzt. Der Scheduler ordnet
 Kernel-Safety-, überwachte Service- und Ambient-Tasks statischen Klassen zu.
-Eine heapfreie, über `MAX_TASKS` begrenzte gewichtete Runde vergibt zwei
-Quanten an Safety und je eines an Service/Ambient, behält Round-Robin innerhalb
-der Klasse bei und erneuert Budgets erst nach Verbrauch aller laufbereiten
-Anteile. Zusätzlich erzwingen absolute 100-ms-Fenster Klassenbudgets von
+Ein heapfreier Zyklus vergibt zwei Quanten an Safety und je eines an
+Service/Ambient; getrennte Klassencursor erhalten Round-Robin und verhindern
+Slotverhungern. Zusätzlich erzwingen absolute 100-ms-Fenster Klassenbudgets von
 60/25/15 ms. Überschreitung drosselt die betroffene Klasse bis zur nächsten
 Fenstergrenze; übersprungene Fenster und rückläufige Zeit werden begrenzt und
 fail-closed behandelt. Taskdiagnose zeigt Verbrauch, Limit und Überlastzähler.
-Hosttest, Kernel-Referenzcompile und realer Scheduler-Gasttest sind grün.
-Priority Inheritance und vollständige WCET-/Speicher-/Queue-Nachweise bleiben
-S0.4c.
+Blockierendes IPC vererbt die effektive Klasse generationssicher und transitiv
+an den eindeutigen Gegenprozess; Wakeup, Timeout, Cancel und Exit nehmen den
+Boost automatisch zurück. Hosttests, Kernel-Referenzcompile und realer
+Scheduler-/IPC-Gasttest sind grün. Vollständige WCET-, Stack-, Speicher- und
+Queue-Nachweise bleiben S0.4c-2.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

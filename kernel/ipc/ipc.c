@@ -427,6 +427,40 @@ static int install_capability_locked(Process *process, ipc_handle_t handle,
     return 0;
 }
 
+static int counterpart_identity_locked(size_t endpoint_slot,
+                                       const Process *process,
+                                       uint32_t required_right,
+                                       int *pid_out,
+                                       uint32_t *generation_out) {
+    if (pid_out != NULL) *pid_out = 0;
+    if (generation_out != NULL) *generation_out = 0U;
+    bool found = false;
+    int pid = 0;
+    uint32_t generation = 0U;
+    for (size_t index = 0U; index < IPC_MAX_CAPABILITY_RECORDS; ++index) {
+        if (load_capability(index) != 0) return IPC_EINTEGRITY;
+        const ipc_capability_record_t *record =
+            &ipc_capability_records[index];
+        if (!record->active || record->endpoint_slot != endpoint_slot ||
+            (record->rights & required_right) == 0U ||
+            (record->holder_pid == process->pid &&
+             record->holder_generation == process->generation)) continue;
+        if (found && (pid != record->holder_pid ||
+                      generation != record->holder_generation)) {
+            return IPC_EINTEGRITY;
+        }
+        found = true;
+        pid = record->holder_pid;
+        generation = record->holder_generation;
+    }
+    if (found) {
+        if (pid_out != NULL) *pid_out = pid;
+        if (generation_out != NULL) *generation_out = generation;
+        return 1;
+    }
+    return 0;
+}
+
 void ipc_init(void) {
     uint32_t flags = ipc_lock();
     memset(ipc_endpoints, 0, sizeof(ipc_endpoints));
@@ -642,8 +676,22 @@ int ipc_send_timeout(Process *sender, ipc_handle_t handle,
             ipc_unlock(flags);
             return IPC_ETIMEDOUT;
         }
+        int owner_pid = 0;
+        uint32_t owner_generation = 0U;
+        int counterpart = counterpart_identity_locked(
+            endpoint_slot, sender, IPC_RIGHT_RECEIVE, &owner_pid,
+            &owner_generation);
+        if (counterpart == IPC_EINTEGRITY) {
+            quarantine_endpoint_locked(endpoint_slot);
+            ipc_unlock(flags);
+            return IPC_EINTEGRITY;
+        }
+        if (counterpart > 0)
+            (void)scheduler_set_wait_owner_locked(owner_pid,
+                                                  owner_generation);
         result = wait_queue_block_until_locked(&endpoint->send_waiters,
                                                TASK_BLOCK_WAITING, deadline);
+        scheduler_clear_wait_owner_locked();
         ipc_unlock(flags);
         if (result == IPC_ETIMEDOUT) return IPC_ETIMEDOUT;
         if (result != 0) return IPC_EAGAIN;
@@ -833,8 +881,22 @@ int ipc_receive_timeout(Process *receiver, ipc_handle_t handle,
             ipc_unlock(flags);
             return IPC_ETIMEDOUT;
         }
+        int owner_pid = 0;
+        uint32_t owner_generation = 0U;
+        int counterpart = counterpart_identity_locked(
+            endpoint_slot, receiver, IPC_RIGHT_SEND, &owner_pid,
+            &owner_generation);
+        if (counterpart == IPC_EINTEGRITY) {
+            quarantine_endpoint_locked(endpoint_slot);
+            ipc_unlock(flags);
+            return IPC_EINTEGRITY;
+        }
+        if (counterpart > 0)
+            (void)scheduler_set_wait_owner_locked(owner_pid,
+                                                  owner_generation);
         result = wait_queue_block_until_locked(&endpoint->receive_waiters,
                                                TASK_BLOCK_WAITING, deadline);
+        scheduler_clear_wait_owner_locked();
         ipc_unlock(flags);
         if (result == IPC_ETIMEDOUT) return IPC_ETIMEDOUT;
         if (result != 0) return IPC_EAGAIN;

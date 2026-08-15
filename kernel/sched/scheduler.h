@@ -51,7 +51,10 @@ typedef struct task {
     uint64_t wait_deadline_ms;
     int wait_result;
     uint8_t scheduling_class;
+    uint8_t effective_scheduling_class;
     uint8_t budget_remaining;
+    int8_t blocked_owner_task;
+    uint32_t blocked_owner_generation;
 } task_t;
 
 typedef enum {
@@ -94,6 +97,8 @@ int scheduler_sleep_ms(uint32_t milliseconds);
 int scheduler_yield(void);
 void scheduler_wake_expired_sleepers_locked(uint64_t now_ms);
 void scheduler_wake_expired_waiters_locked(uint64_t now_ms);
+bool scheduler_set_wait_owner_locked(int pid, uint32_t generation);
+void scheduler_clear_wait_owner_locked(void);
 void scheduler_set_apic_timer_active(bool active);
 bool scheduler_uses_pit_fallback(void);
 void scheduler_pit_interrupt_handler(void);

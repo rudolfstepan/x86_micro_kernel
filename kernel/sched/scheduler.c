@@ -29,6 +29,8 @@ static bool apic_timer_active;
 static uint32_t pit_scheduler_ticks;
 static wait_queue_t sleep_waiters = WAIT_QUEUE_INIT;
 static scheduler_window_t cpu_window;
+static int8_t scheduling_class_cursors[SCHEDULER_CLASS_COUNT] = {-1, -1, -1};
+static uint8_t scheduling_class_cycle_cursor;
 
 _Static_assert(MAX_TASKS <= SCHEDULER_POLICY_MAX_CANDIDATES,
                "scheduler policy candidate capacity is too small");
@@ -178,21 +180,68 @@ static void validate_kernel_context_stack_or_panic(bool check_esp) {
     }
 }
 
+static void refresh_effective_classes_locked(void) {
+    uint8_t base[MAX_TASKS] = {0};
+    uint8_t effective[MAX_TASKS] = {0};
+    int8_t owners[MAX_TASKS];
+    for (int index = 0; index < num_tasks; ++index) {
+        base[index] = tasks[index].scheduling_class;
+        owners[index] = -1;
+        int owner = tasks[index].blocked_owner_task;
+        if ((tasks[index].status == TASK_WAITING ||
+             tasks[index].status == TASK_SLEEPING) &&
+            owner >= 0 && owner < num_tasks &&
+            tasks[owner].process_generation ==
+                tasks[index].blocked_owner_generation &&
+            (tasks[owner].status == TASK_READY ||
+             tasks[owner].status == TASK_RUNNING)) {
+            owners[index] = (int8_t)owner;
+        }
+    }
+    scheduler_policy_inherit(effective, base, owners, num_tasks);
+    for (int index = 0; index < num_tasks; ++index) {
+        if (tasks[index].effective_scheduling_class != effective[index]) {
+            tasks[index].effective_scheduling_class = effective[index];
+            tasks[index].budget_remaining = scheduler_policy_budget(
+                effective[index]);
+        }
+    }
+}
+
+static void account_current_runtime_locked(void) {
+    refresh_effective_classes_locked();
+    uint8_t charged_class = current_task >= 0 && current_task < num_tasks
+        ? tasks[current_task].effective_scheduling_class
+        : SCHEDULER_CLASS_NONE;
+    if (scheduler_policy_window_charge(
+            &cpu_window, charged_class, pit_monotonic_ms())) {
+        for (int index = 0; index < num_tasks; ++index) {
+            tasks[index].budget_remaining = scheduler_policy_budget(
+                tasks[index].effective_scheduling_class);
+        }
+    }
+}
+
 static int find_next_runnable(int after) {
+    (void)after;
     if (num_tasks == 0) {
         return -1;
     }
+    account_current_runtime_locked();
     scheduler_candidate_t candidates[MAX_TASKS] = {0};
     for (int index = 0; index < num_tasks; ++index) {
         candidates[index].runnable =
             (tasks[index].status == TASK_READY ||
              tasks[index].status == TASK_RUNNING) &&
             scheduler_policy_class_allowed(&cpu_window,
-                                            tasks[index].scheduling_class);
-        candidates[index].scheduling_class = tasks[index].scheduling_class;
+                tasks[index].effective_scheduling_class);
+        candidates[index].scheduling_class =
+            tasks[index].effective_scheduling_class;
         candidates[index].budget_remaining = tasks[index].budget_remaining;
     }
-    int selected = scheduler_policy_select(candidates, num_tasks, after);
+    int selected = scheduler_policy_select_cycle(
+        candidates, num_tasks, scheduling_class_cursors,
+        &scheduling_class_cycle_cursor);
     for (int index = 0; index < num_tasks; ++index)
         tasks[index].budget_remaining = candidates[index].budget_remaining;
     return selected;
@@ -343,8 +392,10 @@ int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
     task->page_directory = paging_kernel_directory();
     task->scheduling_class = process == NULL ? SCHEDULER_CLASS_SAFETY :
                                                SCHEDULER_CLASS_AMBIENT;
+    task->effective_scheduling_class = task->scheduling_class;
     task->budget_remaining = scheduler_policy_budget(
         task->scheduling_class);
+    task->blocked_owner_task = -1;
 
     uintptr_t top = ((uintptr_t)stack + STACK_SIZE) & ~(uintptr_t)0x0F;
     uint32_t *initial_stack = (uint32_t*)top;
@@ -404,6 +455,7 @@ static int create_user_task_admitted(
     task->user_mode = true;
     task->scheduling_class = supervised ? SCHEDULER_CLASS_SERVICE :
                                           SCHEDULER_CLASS_AMBIENT;
+    task->effective_scheduling_class = task->scheduling_class;
     task->budget_remaining = scheduler_policy_budget(
         task->scheduling_class);
     irq_restore(flags);
@@ -458,10 +510,41 @@ static bool schedule_blocked_current_locked(int blocked) {
 
 void wait_queue_cancel_locked(task_t *task) {
     KASSERT_IRQ_DISABLED();
-    if (task == NULL || task->wait_node.queue == NULL) return;
-    (void)wait_queue_remove_locked(task->wait_node.queue, &task->wait_node);
+    if (task == NULL) return;
+    if (task->wait_node.queue != NULL)
+        (void)wait_queue_remove_locked(task->wait_node.queue,
+                                       &task->wait_node);
     task->wait_node.key = 0;
     task->wait_deadline_ms = 0;
+    task->blocked_owner_task = -1;
+    task->blocked_owner_generation = 0U;
+}
+
+bool scheduler_set_wait_owner_locked(int pid, uint32_t generation) {
+    KASSERT_IRQ_DISABLED();
+    if (irq_enabled() || pid <= 0 || generation == 0U || current_task < 0 ||
+        current_task >= num_tasks) return false;
+    for (int owner = 0; owner < num_tasks; ++owner) {
+        task_t *candidate = &tasks[owner];
+        if (owner != current_task && candidate->process != NULL &&
+            candidate->process->pid == pid &&
+            candidate->process_generation == generation &&
+            candidate->process->generation == generation &&
+            (candidate->status == TASK_READY ||
+             candidate->status == TASK_RUNNING)) {
+            tasks[current_task].blocked_owner_task = (int8_t)owner;
+            tasks[current_task].blocked_owner_generation = generation;
+            return true;
+        }
+    }
+    return false;
+}
+
+void scheduler_clear_wait_owner_locked(void) {
+    KASSERT_IRQ_DISABLED();
+    if (irq_enabled() || current_task < 0 || current_task >= num_tasks) return;
+    tasks[current_task].blocked_owner_task = -1;
+    tasks[current_task].blocked_owner_generation = 0U;
 }
 
 int wait_queue_block_until_locked(wait_queue_t *queue,
@@ -512,6 +595,8 @@ bool wait_queue_wake_one_locked(wait_queue_t *queue) {
         if (task->status == TASK_WAITING || task->status == TASK_SLEEPING) {
             task->wait_deadline_ms = 0;
             task->wait_result = 0;
+            task->blocked_owner_task = -1;
+            task->blocked_owner_generation = 0U;
             task->status = TASK_READY;
             return true;
         }
@@ -530,6 +615,8 @@ void scheduler_wake_expired_waiters_locked(uint64_t now_ms) {
                                      &task->wait_node)) {
             task->wait_deadline_ms = 0;
             task->wait_result = -110;
+            task->blocked_owner_task = -1;
+            task->blocked_owner_generation = 0U;
             task->status = TASK_READY;
         }
     }
@@ -601,6 +688,16 @@ int scheduler_yield(void) {
 
     tasks[previous].status = TASK_READY;
     int next = find_next_runnable(previous);
+    bool previous_allowed = scheduler_policy_class_allowed(
+        &cpu_window, tasks[previous].effective_scheduling_class);
+    if ((next < 0 || next == previous) && !previous_allowed &&
+        kernel_context_saved) {
+        current_task = -1;
+        activate_task_address_space(-1);
+        swtch(&tasks[previous].context, &kernel_context);
+        irq_restore(flags);
+        return 0;
+    }
     if (next < 0 || next == previous) {
         tasks[previous].status = TASK_RUNNING;
         irq_restore(flags);
@@ -654,22 +751,11 @@ void scheduler_interrupt_handler(void) {
      * validation point with preemption enabled. Merely receiving IRQ0 does
      * not constitute system progress. */
     watchdog_health_progress();
-    uint64_t now_ms = pit_monotonic_ms();
-    uint8_t charged_class = previous >= 0 && previous < num_tasks
-        ? tasks[previous].scheduling_class : SCHEDULER_CLASS_NONE;
-    bool new_window = scheduler_policy_window_charge(
-        &cpu_window, charged_class, now_ms);
-    if (new_window) {
-        for (int index = 0; index < num_tasks; ++index) {
-            tasks[index].budget_remaining = scheduler_policy_budget(
-                tasks[index].scheduling_class);
-        }
-    }
     int next = find_next_runnable(previous);
 
     bool previous_allowed = previous >= 0 && previous < num_tasks &&
         scheduler_policy_class_allowed(&cpu_window,
-                                        tasks[previous].scheduling_class);
+            tasks[previous].effective_scheduling_class);
     if (next < 0 && previous >= 0 && !previous_allowed &&
         kernel_context_saved) {
         tasks[previous].status = TASK_READY;
@@ -851,10 +937,11 @@ void list_tasks(void) {
         else if (tasks[i].status == TASK_WAITING) status = "Waiting";
         else if (tasks[i].status == TASK_FINISHED) status = "Finished";
 
-        printf("Task %d: EIP=%p, ESP=%p, Status=%s, Class=%u\n",
+        printf("Task %d: EIP=%p, ESP=%p, Status=%s, Class=%u/%u\n",
                i, (void*)(uintptr_t)tasks[i].context.eip,
                (void*)(uintptr_t)tasks[i].context.esp, status,
-               tasks[i].scheduling_class);
+               tasks[i].scheduling_class,
+               tasks[i].effective_scheduling_class);
     }
     for (uint8_t scheduling_class = 0U;
          scheduling_class < SCHEDULER_CLASS_COUNT; ++scheduling_class) {

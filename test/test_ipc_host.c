@@ -13,6 +13,8 @@ static unsigned block_count;
 static unsigned wake_one_count;
 static unsigned wake_all_count;
 static uint64_t monotonic_ms;
+static unsigned inherit_count;
+static unsigned inheritance_clear_count;
 
 uint64_t pit_monotonic_ms(void) { return monotonic_ms; }
 
@@ -21,6 +23,14 @@ void irq_context_exit(void) {}
 int irq_in_context(void) { return 0; }
 bool scheduler_preempt_is_disabled(void) { return false; }
 bool scheduler_can_sleep(void) { return true; }
+bool scheduler_set_wait_owner_locked(int pid, uint32_t generation) {
+    if (pid <= 0 || generation == 0U) return false;
+    ++inherit_count;
+    return true;
+}
+void scheduler_clear_wait_owner_locked(void) {
+    ++inheritance_clear_count;
+}
 
 void __attribute__((noreturn)) kassert_fail(const char *expression,
                                             const char *file, int line,
@@ -126,9 +136,13 @@ static int test_rights_fifo_and_bounds(void) {
         CHECK(ipc_send(&owner, handle, &queued) == 0);
     }
     unsigned blocks_before = block_count;
+    unsigned inherits_before = inherit_count;
+    unsigned clears_before = inheritance_clear_count;
     ipc_message_t excess = message(0xEEU);
     CHECK(ipc_send(&owner, handle, &excess) < 0);
     CHECK(block_count == blocks_before + 1U);
+    CHECK(inherit_count == inherits_before + 1U);
+    CHECK(inheritance_clear_count == clears_before + 1U);
 
     blocks_before = block_count;
     CHECK(ipc_send_timeout(&owner, handle, &excess, 0U) == -11);
@@ -145,10 +159,14 @@ static int test_rights_fifo_and_bounds(void) {
         }
     }
     blocks_before = block_count;
+    inherits_before = inherit_count;
+    clears_before = inheritance_clear_count;
     ipc_message_t empty;
     prepare_receive(&empty);
     CHECK(ipc_receive(&child, handle, &empty) < 0);
     CHECK(block_count == blocks_before + 1U);
+    CHECK(inherit_count == inherits_before + 1U);
+    CHECK(inheritance_clear_count == clears_before + 1U);
     blocks_before = block_count;
     CHECK(ipc_receive_timeout(&child, handle, &empty, 0U) == -11);
     CHECK(block_count == blocks_before);

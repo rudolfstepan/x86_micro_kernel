@@ -38,6 +38,9 @@ typedef struct {
 uint8_t scheduler_policy_budget(uint8_t scheduling_class);
 int scheduler_policy_select(scheduler_candidate_t *candidates, size_t count,
                             int after);
+int scheduler_policy_select_cycle(
+    scheduler_candidate_t *candidates, size_t count,
+    int8_t class_cursors[SCHEDULER_CLASS_COUNT], uint8_t *cycle_cursor);
 void scheduler_policy_window_init(scheduler_window_t *window,
                                   uint64_t now_ms);
 bool scheduler_policy_window_charge(scheduler_window_t *window,
@@ -46,5 +49,8 @@ bool scheduler_policy_window_charge(scheduler_window_t *window,
 bool scheduler_policy_class_allowed(const scheduler_window_t *window,
                                     uint8_t scheduling_class);
 uint32_t scheduler_policy_window_limit(uint8_t scheduling_class);
+void scheduler_policy_inherit(uint8_t *effective_classes,
+                              const uint8_t *base_classes,
+                              const int8_t *blocked_owners, size_t count);
 
 #endif

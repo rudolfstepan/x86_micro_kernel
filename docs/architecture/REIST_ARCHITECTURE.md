@@ -225,11 +225,11 @@ verwenden; fehlgeschlagene Erzeugung läuft durch die bestehenden vollständigen
 Rollbackpfade.
 
 S0.4a führt drei statische Schedulingklassen ein: Kernel-Safety, überwachte
-Services und Ambient-Tasks. Die Auswahl ist eine heapfreie gewichtete
-Festprioritätsrunde mit zwei Quanten für Safety und je einem Quantum für
-Service und Ambient. Innerhalb derselben Klasse bleibt der Cursor fair; nach
-Verbrauch aller laufbereiten Anteile werden die festen Budgets in höchstens
-`MAX_TASKS` Schritten erneuert. Blockierte Tasks halten keine Runde offen.
+Services und Ambient-Tasks. Die Auswahl ist ein heapfreier fester Zyklus
+`Safety, Safety, Service, Ambient`. Jede Klasse führt einen eigenen
+Round-Robin-Cursor und überspringt blockierte Tasks in höchstens `MAX_TASKS`
+Schritten. Dadurch bleiben sowohl das Verhältnis 2:1:1 als auch Fortschritt
+innerhalb jeder laufbereiten Klasse unabhängig von Taskslot-Reuse erhalten.
 Damit ist die Auswahl begrenzt und reproduzierbar, aber noch keine harte
 Echtzeitgarantie.
 
@@ -242,6 +242,16 @@ ist die Klasse bis zur nächsten Fenstergrenze gedrosselt, während der
 Kernelkontext für Diagnose und Recovery weiterläuft. Eine rückläufige
 Clocksource sperrt alle Klassen fail-closed. Priority Inheritance sowie
 vollständige WCET-, Speicher- und Queue-Nachweise folgen in S0.4c.
+
+S0.4c-1 ergänzt Priority Inheritance ausschließlich für IPC-Wartebeziehungen
+mit eindeutigem Gegenprozess. Der Wartende speichert Taskslot und
+Prozessgeneration des Owners; der Scheduler berechnet die effektiven Klassen
+in einer über `MAX_TASKS` begrenzten Fixpunktfolge und unterstützt damit auch
+transitive Ketten. Wakeup, Timeout, Cancel und Exit entfernen die Beziehung.
+Eine Klassenanhebung verändert keine Basisautorität und wird bei der
+CPU-Fensterabrechnung der effektiven Klasse belastet. Spinlocks und
+Präemptions-Guards bleiben ausgeschlossen, weil sie nach dem
+Synchronisationsvertrag keine blockierenden Abschnitte enthalten dürfen.
 
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
 Bitinventar der gegenwärtig 60 Syscalls. Normale Programme erhalten explizit

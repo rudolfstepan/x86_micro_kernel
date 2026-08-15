@@ -27,8 +27,9 @@ class ReistSchedulingPolicyTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("process == NULL ? SCHEDULER_CLASS_SAFETY", scheduler)
         self.assertIn("supervised ? SCHEDULER_CLASS_SERVICE", scheduler)
-        self.assertIn("scheduler_policy_select(candidates, num_tasks, after)",
-                      scheduler)
+        self.assertIn("scheduling_class_cursors", scheduler)
+        self.assertIn("scheduler_policy_select_cycle(", scheduler)
+        self.assertIn("scheduling_class_cycle_cursor", scheduler)
         self.assertNotIn("k_malloc", policy)
         self.assertNotIn("while (", policy)
 
@@ -43,6 +44,16 @@ class ReistSchedulingPolicyTests(unittest.TestCase):
         self.assertIn("scheduler_policy_window_charge", scheduler)
         self.assertIn("scheduler_policy_class_allowed", scheduler)
         self.assertNotIn("k_malloc", policy)
+
+    def test_ipc_waits_use_generation_scoped_priority_inheritance(self):
+        ipc = (ROOT / "kernel/ipc/ipc.c").read_text(encoding="utf-8")
+        scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
+            encoding="utf-8")
+        self.assertIn("counterpart_identity_locked", ipc)
+        self.assertEqual(ipc.count("scheduler_set_wait_owner_locked("), 2)
+        self.assertEqual(ipc.count("scheduler_clear_wait_owner_locked();"), 2)
+        self.assertIn("blocked_owner_generation", scheduler)
+        self.assertIn("scheduler_policy_inherit", scheduler)
 
 
 if __name__ == "__main__":

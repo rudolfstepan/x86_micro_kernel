@@ -42,6 +42,12 @@ ist der Spinlock-Erwerb; Freigabe eines nicht gehaltenen Locks ist ebenso
 ein Kernel-Fehler. Die Laufzeitassertions in `spinlock.h` bilden diesen
 UP-Vertrag ab.
 
+Priority Inheritance gilt nur für blockierende IPC-Endpunkte mit genau einem
+generationssicher identifizierten Gegenprozess. Sie propagiert transitiv über
+höchstens `MAX_TASKS` und endet bei Wakeup, Timeout, Cancel oder Exit.
+Spinlocks, IRQ-Locks und Präemptions-Guards erhalten keine Inheritance: Unter
+ihnen ist Blockieren bereits ein Vertragsfehler.
+
 ## Subsystemverträge
 
 - Scheduler- und Wait-Queue-Funktionen mit Suffix `_locked` verlangen IF=0.
