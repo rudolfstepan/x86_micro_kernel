@@ -28,6 +28,7 @@ static volatile bool preemption_pending;
 static bool apic_timer_active;
 static uint32_t pit_scheduler_ticks;
 static wait_queue_t sleep_waiters = WAIT_QUEUE_INIT;
+static scheduler_window_t cpu_window;
 
 _Static_assert(MAX_TASKS <= SCHEDULER_POLICY_MAX_CANDIDATES,
                "scheduler policy candidate capacity is too small");
@@ -183,8 +184,11 @@ static int find_next_runnable(int after) {
     }
     scheduler_candidate_t candidates[MAX_TASKS] = {0};
     for (int index = 0; index < num_tasks; ++index) {
-        candidates[index].runnable = tasks[index].status == TASK_READY ||
-                                     tasks[index].status == TASK_RUNNING;
+        candidates[index].runnable =
+            (tasks[index].status == TASK_READY ||
+             tasks[index].status == TASK_RUNNING) &&
+            scheduler_policy_class_allowed(&cpu_window,
+                                            tasks[index].scheduling_class);
         candidates[index].scheduling_class = tasks[index].scheduling_class;
         candidates[index].budget_remaining = tasks[index].budget_remaining;
     }
@@ -650,8 +654,31 @@ void scheduler_interrupt_handler(void) {
      * validation point with preemption enabled. Merely receiving IRQ0 does
      * not constitute system progress. */
     watchdog_health_progress();
+    uint64_t now_ms = pit_monotonic_ms();
+    uint8_t charged_class = previous >= 0 && previous < num_tasks
+        ? tasks[previous].scheduling_class : SCHEDULER_CLASS_NONE;
+    bool new_window = scheduler_policy_window_charge(
+        &cpu_window, charged_class, now_ms);
+    if (new_window) {
+        for (int index = 0; index < num_tasks; ++index) {
+            tasks[index].budget_remaining = scheduler_policy_budget(
+                tasks[index].scheduling_class);
+        }
+    }
     int next = find_next_runnable(previous);
 
+    bool previous_allowed = previous >= 0 && previous < num_tasks &&
+        scheduler_policy_class_allowed(&cpu_window,
+                                        tasks[previous].scheduling_class);
+    if (next < 0 && previous >= 0 && !previous_allowed &&
+        kernel_context_saved) {
+        tasks[previous].status = TASK_READY;
+        current_task = -1;
+        activate_task_address_space(-1);
+        swtch(&tasks[previous].context, &kernel_context);
+        irq_restore(flags);
+        return;
+    }
     if (next < 0 || next == previous) {
         irq_restore(flags);
         return;
@@ -815,7 +842,8 @@ Process *scheduler_current_process(void) {
 }
 
 void list_tasks(void) {
-    printf("Task list:\n");
+    printf("Task list (CPU window %u ms, throttled=0x%x):\n",
+           SCHEDULER_WINDOW_MS, cpu_window.throttled_mask);
     for (int i = 0; i < num_tasks; ++i) {
         const char *status = "Ready";
         if (tasks[i].status == TASK_RUNNING) status = "Running";
@@ -823,8 +851,16 @@ void list_tasks(void) {
         else if (tasks[i].status == TASK_WAITING) status = "Waiting";
         else if (tasks[i].status == TASK_FINISHED) status = "Finished";
 
-        printf("Task %d: EIP=%p, ESP=%p, Status=%s\n",
+        printf("Task %d: EIP=%p, ESP=%p, Status=%s, Class=%u\n",
                i, (void*)(uintptr_t)tasks[i].context.eip,
-               (void*)(uintptr_t)tasks[i].context.esp, status);
+               (void*)(uintptr_t)tasks[i].context.esp, status,
+               tasks[i].scheduling_class);
+    }
+    for (uint8_t scheduling_class = 0U;
+         scheduling_class < SCHEDULER_CLASS_COUNT; ++scheduling_class) {
+        printf("CPU class %u: used=%u/%u ms overloads=%u\n",
+               scheduling_class, cpu_window.used_ms[scheduling_class],
+               scheduler_policy_window_limit(scheduling_class),
+               cpu_window.overload_count[scheduling_class]);
     }
 }

@@ -32,6 +32,18 @@ class ReistSchedulingPolicyTests(unittest.TestCase):
         self.assertNotIn("k_malloc", policy)
         self.assertNotIn("while (", policy)
 
+    def test_absolute_windows_throttle_overloaded_classes(self):
+        policy = (ROOT / "kernel/sched/scheduling_policy.c").read_text(
+            encoding="utf-8")
+        scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
+            encoding="utf-8")
+        self.assertIn("SCHEDULER_WINDOW_MS 100U", (
+            ROOT / "kernel/sched/scheduling_policy.h").read_text(
+                encoding="utf-8"))
+        self.assertIn("scheduler_policy_window_charge", scheduler)
+        self.assertIn("scheduler_policy_class_allowed", scheduler)
+        self.assertNotIn("k_malloc", policy)
+
 
 if __name__ == "__main__":
     unittest.main()

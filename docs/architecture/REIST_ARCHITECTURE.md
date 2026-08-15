@@ -231,8 +231,17 @@ Service und Ambient. Innerhalb derselben Klasse bleibt der Cursor fair; nach
 Verbrauch aller laufbereiten Anteile werden die festen Budgets in höchstens
 `MAX_TASKS` Schritten erneuert. Blockierte Tasks halten keine Runde offen.
 Damit ist die Auswahl begrenzt und reproduzierbar, aber noch keine harte
-Echtzeitgarantie: Absolute CPU-Zeitfenster, Überlasteskalation, Priority
-Inheritance und WCET-Nachweise folgen in S0.4b/c.
+Echtzeitgarantie.
+
+S0.4b legt darüber absolute, an der monotonen PIT-Zeit ausgerichtete
+100-ms-Fenster. Safety erhält 60 ms, Service 25 ms und Ambient 15 ms. Verbrauch
+wird ausschließlich an Schedulergrenzen abgerechnet; lange nicht
+präemptierbare Abschnitte und vollständig übersprungene Fenster erhöhen den
+Überlastzähler ohne nachträgliche unbeschränkte Schleife. Nach Budgetverbrauch
+ist die Klasse bis zur nächsten Fenstergrenze gedrosselt, während der
+Kernelkontext für Diagnose und Recovery weiterläuft. Eine rückläufige
+Clocksource sperrt alle Klassen fail-closed. Priority Inheritance sowie
+vollständige WCET-, Speicher- und Queue-Nachweise folgen in S0.4c.
 
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
 Bitinventar der gegenwärtig 60 Syscalls. Normale Programme erhalten explizit

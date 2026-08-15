@@ -231,7 +231,7 @@ und 10 verbindlich.
 - [ ] S0.4 Deterministische Planung und garantierte Ressourcen
   - [x] S0.4a Heapfreie, gewichtete Festprioritätsrunden mit statischen
     Safety-/Service-/Ambient-Klassen und begrenzter Auswahl über `MAX_TASKS`
-  - [ ] S0.4b Absolute CPU-Zeitfenster, Überlast-Erkennung und definierter
+  - [x] S0.4b Absolute CPU-Zeitfenster, Überlast-Erkennung und definierter
     degradierter Zustand
   - [ ] S0.4c Priority Inheritance für blockierende Ressourcen und
     nachgewiesene WCET-/Speicher-/Queue-Budgets
@@ -974,12 +974,21 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    Budgets in einem `MAX_TASKS`-Scan erneuert. Der Pfad allokiert nicht und
    blockierte Tasks können eine Runde nicht festhalten. Ein Host-Verhaltenstest
    und der vollständige Scheduler-Gasttest bis `TEST_OK` sind grün.
+- S0.4b begrenzt jede Klasse zusätzlich in absoluten 100-ms-Fenstern auf
+   60 ms Safety, 25 ms Service und 15 ms Ambient. Die monotone Abrechnung
+   erkennt auch übersprungene Fenster nach langen nicht präemptierbaren
+   Abschnitten ohne unbeschränkte Schleife. Eine erschöpfte Klasse wird bis zur
+   nächsten absoluten Fenstergrenze aus der Taskauswahl entfernt; der
+   Kernelkontext bleibt für Diagnose und Recovery ausführbar. Rückläufige Zeit
+   sperrt alle Klassen fail-closed. Zähler und aktueller Drosselzustand sind in
+   der Taskdiagnose sichtbar. Host-Verhaltenstest, vollständiger i386-Build und
+   realer Scheduler-Gastlauf sind grün.
 - Kritische Tasks erhalten feste Prioritäten, CPU-/Speicher-/Queue-Budgets,
    Admission Control und nachgewiesene Worst-Case-Laufzeiten.
 - Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte
    Allokation, Rekursion, Retries und Warteschlangen sind dort unzulässig.
-- Überlast, Priority Inversion, Interruptstürme und Zeitquellenausfall müssen
-   einen getesteten degradierten Zustand auslösen.
+- Priority Inversion, Interruptstürme und Zeitquellenausfall müssen noch einen
+   getesteten degradierten Zustand auslösen.
 - Kritische Kernelobjekte selektiv über den `critical_object`-Umschlag mit
    wortweisem SECDED, CRC32, Version/Sequenz, semantischem Validator und
    Primary/Shadow schützen; Bitflip-Injection misst Korrektur und Eskalation.

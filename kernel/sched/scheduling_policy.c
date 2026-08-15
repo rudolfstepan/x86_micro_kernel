@@ -1,5 +1,105 @@
 #include "kernel/sched/scheduling_policy.h"
 
+#include <limits.h>
+
+uint32_t scheduler_policy_window_limit(uint8_t scheduling_class) {
+    switch (scheduling_class) {
+        case SCHEDULER_CLASS_AMBIENT: return SCHEDULER_WINDOW_AMBIENT_MS;
+        case SCHEDULER_CLASS_SERVICE: return SCHEDULER_WINDOW_SERVICE_MS;
+        case SCHEDULER_CLASS_SAFETY: return SCHEDULER_WINDOW_SAFETY_MS;
+        default: return 0U;
+    }
+}
+
+static uint32_t saturating_add_u32(uint32_t value, uint64_t amount) {
+    if (amount >= UINT32_MAX || value > UINT32_MAX - (uint32_t)amount)
+        return UINT32_MAX;
+    return value + (uint32_t)amount;
+}
+
+static void record_charge(scheduler_window_t *window,
+                          uint8_t scheduling_class, uint64_t elapsed_ms) {
+    uint32_t limit = scheduler_policy_window_limit(scheduling_class);
+    if (limit == 0U || elapsed_ms == 0U) return;
+    uint8_t bit = (uint8_t)(1U << scheduling_class);
+    uint32_t before = window->used_ms[scheduling_class];
+    window->used_ms[scheduling_class] = saturating_add_u32(before, elapsed_ms);
+    if (window->used_ms[scheduling_class] >= limit) {
+        if ((window->throttled_mask & bit) == 0U) {
+            window->overload_count[scheduling_class] = saturating_add_u32(
+                window->overload_count[scheduling_class], 1U);
+        }
+        window->throttled_mask |= bit;
+    }
+}
+
+void scheduler_policy_window_init(scheduler_window_t *window,
+                                  uint64_t now_ms) {
+    if (window == NULL) return;
+    *window = (scheduler_window_t){0};
+    window->window_start_ms = now_ms - now_ms % SCHEDULER_WINDOW_MS;
+    window->last_account_ms = now_ms;
+    window->initialized = true;
+}
+
+bool scheduler_policy_window_charge(scheduler_window_t *window,
+                                    uint8_t scheduling_class,
+                                    uint64_t now_ms) {
+    if (window == NULL) return false;
+    if (!window->initialized) {
+        scheduler_policy_window_init(window, now_ms);
+        return false;
+    }
+    if (now_ms < window->last_account_ms) {
+        /* A regressing clock invalidates all accounting. Fail closed until
+         * the next valid window instead of granting fresh CPU time. */
+        window->throttled_mask = (1U << SCHEDULER_CLASS_COUNT) - 1U;
+        return false;
+    }
+
+    uint64_t new_start = now_ms - now_ms % SCHEDULER_WINDOW_MS;
+    bool rolled = new_start != window->window_start_ms;
+    if (rolled) {
+        uint64_t old_end = window->window_start_ms <=
+                UINT64_MAX - SCHEDULER_WINDOW_MS
+            ? window->window_start_ms + SCHEDULER_WINDOW_MS : UINT64_MAX;
+        if (old_end > window->last_account_ms &&
+            scheduling_class < SCHEDULER_CLASS_COUNT) {
+            record_charge(window, scheduling_class,
+                          old_end - window->last_account_ms);
+        }
+        uint64_t skipped_windows = new_start > old_end
+            ? (new_start - old_end) / SCHEDULER_WINDOW_MS : 0U;
+        if (scheduling_class < SCHEDULER_CLASS_COUNT &&
+            skipped_windows != 0U) {
+            window->overload_count[scheduling_class] = saturating_add_u32(
+                window->overload_count[scheduling_class], skipped_windows);
+        }
+        uint32_t overload[SCHEDULER_CLASS_COUNT];
+        for (size_t index = 0U; index < SCHEDULER_CLASS_COUNT; ++index)
+            overload[index] = window->overload_count[index];
+        *window = (scheduler_window_t){0};
+        for (size_t index = 0U; index < SCHEDULER_CLASS_COUNT; ++index)
+            window->overload_count[index] = overload[index];
+        window->window_start_ms = new_start;
+        window->initialized = true;
+        if (scheduling_class < SCHEDULER_CLASS_COUNT)
+            record_charge(window, scheduling_class, now_ms - new_start);
+    } else if (scheduling_class < SCHEDULER_CLASS_COUNT) {
+        record_charge(window, scheduling_class,
+                      now_ms - window->last_account_ms);
+    }
+    window->last_account_ms = now_ms;
+    return rolled;
+}
+
+bool scheduler_policy_class_allowed(const scheduler_window_t *window,
+                                    uint8_t scheduling_class) {
+    if (window == NULL || scheduling_class >= SCHEDULER_CLASS_COUNT)
+        return false;
+    return (window->throttled_mask & (1U << scheduling_class)) == 0U;
+}
+
 uint8_t scheduler_policy_budget(uint8_t scheduling_class) {
     switch (scheduling_class) {
         case SCHEDULER_CLASS_AMBIENT: return SCHEDULER_BUDGET_AMBIENT;

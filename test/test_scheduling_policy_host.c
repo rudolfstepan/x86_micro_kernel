@@ -29,6 +29,39 @@ int main(void) {
     CHECK(scheduler_policy_select(NULL, 4U, 0) == -1, 32);
     CHECK(scheduler_policy_select(candidates, 4U, 4) == -1, 33);
 
+    scheduler_window_t window;
+    scheduler_policy_window_init(&window, 95U);
+    CHECK(scheduler_policy_window_charge(
+              &window, SCHEDULER_CLASS_AMBIENT, 100U), 40);
+    CHECK(window.used_ms[SCHEDULER_CLASS_AMBIENT] == 0U, 41);
+    CHECK(scheduler_policy_window_charge(
+              &window, SCHEDULER_CLASS_AMBIENT, 115U) == false, 42);
+    CHECK(!scheduler_policy_class_allowed(
+              &window, SCHEDULER_CLASS_AMBIENT), 43);
+    CHECK(window.overload_count[SCHEDULER_CLASS_AMBIENT] == 1U, 44);
+    CHECK(scheduler_policy_class_allowed(
+              &window, SCHEDULER_CLASS_SERVICE), 45);
+    CHECK(scheduler_policy_window_charge(
+              &window, SCHEDULER_CLASS_NONE, 200U), 46);
+    CHECK(scheduler_policy_class_allowed(
+              &window, SCHEDULER_CLASS_AMBIENT), 47);
+    CHECK(window.overload_count[SCHEDULER_CLASS_AMBIENT] == 1U, 48);
+
+    scheduler_policy_window_init(&window, 250U);
+    CHECK(!scheduler_policy_window_charge(
+              &window, SCHEDULER_CLASS_SAFETY, 249U), 49);
+    CHECK(!scheduler_policy_class_allowed(
+              &window, SCHEDULER_CLASS_AMBIENT) &&
+          !scheduler_policy_class_allowed(
+              &window, SCHEDULER_CLASS_SERVICE) &&
+          !scheduler_policy_class_allowed(
+              &window, SCHEDULER_CLASS_SAFETY), 50);
+
+    scheduler_policy_window_init(&window, 100U);
+    CHECK(scheduler_policy_window_charge(
+              &window, SCHEDULER_CLASS_SERVICE, 500U), 51);
+    CHECK(window.overload_count[SCHEDULER_CLASS_SERVICE] == 4U, 52);
+
     puts("SCHEDULING_POLICY_OK");
     return 0;
 }
