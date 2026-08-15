@@ -1818,7 +1818,9 @@ FDD-Ressource und quarantänisiert sie. Nach dem Wiedereinlegen setzt die Probe
 den FDC zurück, leert die Reset-Interrupts, programmiert ihn neu, kalibriert
 das Laufwerk und liest das Medium zweimal außerhalb des normalen gesperrten
 Pfads. Erst danach folgen `RESOURCE_REINTEGRATED_RW 1`, eine erneut
-erfolgreiche Lektüre von `HOTPLUG.TXT` und `TEST_OK`.
+erfolgreiche Lektüre von `HOTPLUG.TXT` und `TEST_OK`. Der identische
+Disconnect/Reconnect-Ablauf wurde am 15. August 2026 außerdem manuell unter
+VMware mit erfolgreicher Wiederverwendung von A: bestätigt.
 
 **S0.3c-6f bleibt offen:** Der Vertrag gilt für alle persistenten Medien, doch
 das persistente Undo-Journal ist derzeit auf markierte FAT32/ATA-Images

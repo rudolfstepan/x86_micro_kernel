@@ -368,7 +368,9 @@ kalibriert das Laufwerk und darf anschließend kontrolliert durch die
 Quarantäne lesen. Der QEMU-QMP-Lauf wirft ein gemountetes FAT12-Medium aus,
 beobachtet `RESOURCE_QUARANTINED 1`, legt dasselbe Image wieder ein und endet
 nach `RESOURCE_REINTEGRATED_RW 1` sowie erneut gelesenem `HOTPLUG.TXT` mit
-`TEST_OK`.
+`TEST_OK`. Der ursprüngliche Ablauf wurde am 15. August 2026 zusätzlich
+manuell unter VMware bestätigt: A: trennen, wieder verbinden und anschließend
+ohne Neustart erneut erfolgreich verwenden.
 
 S0.3c-6 bleibt wegen S0.3c-6f teilweise offen: Nur markierte FAT32/ATA-Images
 besitzen derzeit ein persistentes Undo-Journal. FDD/FAT12, EXT2, fremde und
