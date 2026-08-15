@@ -30,6 +30,14 @@ int main(void) {
     print_unsigned(stats.heap_used_bytes / 1024U);
     x86os_puts("/");
     print_unsigned(stats.heap_free_bytes / 1024U);
-    x86os_puts(" KiB\n");
+    x86os_puts(" KiB\nPeak frames/heap: ");
+    print_unsigned(stats.peak_allocated_frame_bytes / 1024U);
+    x86os_puts("/");
+    print_unsigned(stats.peak_heap_used_bytes / 1024U);
+    x86os_puts(" KiB\nAllocation failures frame/heap: ");
+    print_unsigned(stats.frame_allocation_failures);
+    x86os_puts("/");
+    print_unsigned(stats.heap_allocation_failures);
+    x86os_puts("\n");
     return 0;
 }

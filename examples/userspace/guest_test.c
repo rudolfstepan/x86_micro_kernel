@@ -730,7 +730,9 @@ static int test_memory_accounting(void) {
         before.heap_arena_count < 2U ||
         before.heap_used_bytes + before.heap_free_bytes >
             before.heap_capacity_bytes ||
-        before.heap_largest_free_block > before.heap_free_bytes) {
+        before.heap_largest_free_block > before.heap_free_bytes ||
+        before.peak_allocated_frame_bytes < before.allocated_frame_bytes ||
+        before.peak_heap_used_bytes < before.heap_used_bytes) {
         return -1;
     }
 
@@ -738,7 +740,10 @@ static int test_memory_accounting(void) {
     void *allocation = x86os_malloc(allocation_size);
     if (allocation == NULL || x86os_memory_stats(&allocated) != 0 ||
         allocated.allocated_frame_bytes <= before.allocated_frame_bytes ||
-        allocated.free_frame_bytes >= before.free_frame_bytes) {
+        allocated.free_frame_bytes >= before.free_frame_bytes ||
+        allocated.peak_allocated_frame_bytes <
+            allocated.allocated_frame_bytes ||
+        allocated.peak_heap_used_bytes < allocated.heap_used_bytes) {
         x86os_free(allocation);
         return -1;
     }
@@ -753,6 +758,12 @@ static int test_memory_accounting(void) {
     x86os_free(allocation);
     if (x86os_memory_stats(&reclaimed) != 0 ||
         reclaimed.free_frame_bytes < allocated.free_frame_bytes + 4U * 4096U ||
+        reclaimed.peak_allocated_frame_bytes <
+            allocated.peak_allocated_frame_bytes ||
+        reclaimed.peak_heap_used_bytes < allocated.peak_heap_used_bytes ||
+        reclaimed.frame_allocation_failures <
+            before.frame_allocation_failures ||
+        reclaimed.heap_allocation_failures < before.heap_allocation_failures ||
         reclaimed.managed_bytes != reclaimed.reserved_bytes +
             reclaimed.allocated_frame_bytes + reclaimed.free_frame_bytes) {
         return -1;

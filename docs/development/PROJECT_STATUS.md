@@ -281,8 +281,18 @@ Storage-Request-Pool ist der erste Laufzeitteil inzwischen vorhanden:
 versionierte Diagnosestrukturen melden aktive und maximale Belegung sowie
 saturierende Kapazitätsablehnungen. Die Host-C-Verhaltenstests füllen Queue und
 Pools bis zur statischen Grenze, erwarten den definierten Fehler und prüfen
-anschließend vollständige Freigabe bei erhaltenem High-Water-Wert. Task-,
-Heap- und Frame-High-Water sowie Zielhardware-WCET bleiben offen.
+anschließend vollständige Freigabe bei erhaltenem High-Water-Wert. Taskslot-
+und weitere Queue-High-Water sowie deterministische Heap-/Frame-ENOMEM- und
+Zielhardware-WCET-Nachweise bleiben offen. Die
+Speicherdiagnostik ist nun append-only auf ABI v2 erweitert: Der alte
+88-Byte-v1-Präfix bleibt nutzbar, während v2 Frame-/Heap-Peaks und saturierende
+Allokationsfehler meldet. Der Ring-3-Gast prüft Peak-Monotonie und
+Frame-Rückgewinnung. Ein dabei sichtbar gewordener Mischbuild aus alten und
+neuen Headerlayouts wurde dauerhaft verhindert: C-Regeln schreiben explizite
+Dependency-Dateien, `check-kernel-dependencies` validiert alle 75 C-Objekte vor
+dem Link, und ein Header-Touch baut nachweislich alle abhängigen Objekte neu.
+Taskslot-High-Water, deterministische ENOMEM-Injection und Zielhardware-WCET
+bleiben offen.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

@@ -1,6 +1,6 @@
 #include "x86os.h"
 
-_Static_assert(sizeof(x86os_memory_stats_t) == 88U,
+_Static_assert(sizeof(x86os_memory_stats_t) == 120U,
                "memory statistics ABI size changed");
 _Static_assert(offsetof(x86os_memory_stats_t, detected_usable_bytes) == 8U,
                "memory statistics ABI header changed");

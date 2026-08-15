@@ -111,7 +111,7 @@ ifeq ($(VIDEO),framebuffer)
     ASFLAGS += -DUSE_FRAMEBUFFER
 endif
 
-CFLAGS := -m32 -std=gnu11 -c -MMD -MP -ffreestanding -nostdlib -nostartfiles -nodefaultlibs \
+CFLAGS := -m32 -std=gnu11 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs \
           -fno-builtin -fno-pic -fno-pie -fno-stack-protector \
           -Werror=vla -Wframe-larger-than=4096 -Werror=frame-larger-than \
           -fno-asynchronous-unwind-tables -fno-unwind-tables -mno-sse -mno-sse2 -mno-mmx \
@@ -120,6 +120,7 @@ CFLAGS := -m32 -std=gnu11 -c -MMD -MP -ffreestanding -nostdlib -nostartfiles -no
           -Werror=int-conversion -Werror=return-type \
           -I$(OUTPUT_DIR) -I. -I$(ARCH_DIR) -I$(ARCH_DIR)/include -I$(LIB_DIR)/libc -I$(KERNEL_DIR)/shell \
           $(TARGET_DEFINES) $(VIDEO_DEFINES) $(SAFETY_TEST_DEFINES)
+DEPFLAGS = -MMD -MP -MF $(@:.o=.d) -MT $@
 
 LDFLAGS := -m elf_i386 -nostdlib --strip-all --build-id=sha1
 KERNEL_LDSCRIPT := $(CONFIG_DIR)/klink.ld
@@ -227,7 +228,12 @@ DRIVERS_OBJ := $(DRIVERS_BLOCK_OBJ) $(DRIVERS_CHAR_OBJ) $(DRIVERS_VIDEO_OBJ) \
 LIB_OBJ := $(LIB_LIBC_C_OBJ) $(LIB_LIBC_ASM_OBJ) $(LIB_LIBK_OBJ)
 
 ALL_OBJ := $(ARCH_OBJ) $(KERNEL_OBJ) $(MM_OBJ) $(FS_OBJ) $(DRIVERS_OBJ) $(LIB_OBJ)
-DEPS := $(ALL_OBJ:.o=.d)
+C_OBJ := $(ARCH_BOOT_C_OBJ) $(ARCH_CPU_C_OBJ) $(ARCH_MM_OBJ) \
+         $(KERNEL_INIT_OBJ) $(KERNEL_SYSCALL_OBJ) $(KERNEL_PROC_OBJ) \
+         $(KERNEL_IPC_OBJ) $(KERNEL_SCHED_C_OBJ) $(KERNEL_TIME_OBJ) \
+         $(KERNEL_SHELL_OBJ) $(MM_OBJ) $(FS_OBJ) $(DRIVERS_OBJ) \
+         $(LIB_LIBC_C_OBJ) $(LIB_LIBK_OBJ)
+DEPS := $(C_OBJ:.o=.d)
 
 # Ensure the generated directory tree exists before any object is built.
 # This also makes direct and parallel `make kernel` invocations reliable.
@@ -244,7 +250,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel check-kernel-stack user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel check-kernel-dependencies check-kernel-stack user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -378,7 +384,7 @@ $(BUILD_ARCH_DIR)/boot/%.o: $(ARCH_DIR)/boot/%.asm
 # Architecture - Boot C
 $(BUILD_ARCH_DIR)/boot/%.o: $(ARCH_DIR)/boot/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Architecture - CPU assembly (renamed to avoid conflicts with C files)
 $(BUILD_ARCH_DIR)/cpu/%_asm.o: $(ARCH_DIR)/cpu/%.asm
@@ -388,32 +394,32 @@ $(BUILD_ARCH_DIR)/cpu/%_asm.o: $(ARCH_DIR)/cpu/%.asm
 # Architecture - CPU C
 $(BUILD_ARCH_DIR)/cpu/%.o: $(ARCH_DIR)/cpu/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Architecture - Memory management
 $(BUILD_ARCH_DIR)/mm/%.o: $(ARCH_DIR)/mm/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Kernel - Init
 $(BUILD_KERNEL_DIR)/init/%.o: $(KERNEL_DIR)/init/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Kernel - Syscall
 $(BUILD_KERNEL_DIR)/syscall/%.o: $(KERNEL_DIR)/syscall/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Kernel - Process
 $(BUILD_KERNEL_DIR)/proc/%.o: $(KERNEL_DIR)/proc/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Kernel - Scheduler C
 $(BUILD_KERNEL_DIR)/sched/%.o: $(KERNEL_DIR)/sched/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Kernel - Scheduler ASM
 $(BUILD_KERNEL_DIR)/sched/%.o: $(KERNEL_DIR)/sched/%.asm
@@ -423,77 +429,77 @@ $(BUILD_KERNEL_DIR)/sched/%.o: $(KERNEL_DIR)/sched/%.asm
 # Kernel - Time
 $(BUILD_KERNEL_DIR)/time/%.o: $(KERNEL_DIR)/time/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Kernel - Shell
 $(BUILD_KERNEL_DIR)/shell/%.o: $(KERNEL_DIR)/shell/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Kernel - IPC
 $(BUILD_KERNEL_DIR)/ipc/%.o: $(KERNEL_DIR)/ipc/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Memory management
 $(BUILD_MM_DIR)/%.o: $(MM_DIR)/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Filesystem - VFS
 $(BUILD_FS_DIR)/vfs/%.o: $(FS_DIR)/vfs/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Filesystem - FAT12
 $(BUILD_FS_DIR)/fat12/%.o: $(FS_DIR)/fat12/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Filesystem - FAT32
 $(BUILD_FS_DIR)/fat32/%.o: $(FS_DIR)/fat32/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Filesystem - EXT2
 $(BUILD_FS_DIR)/ext2/%.o: $(FS_DIR)/ext2/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Drivers - Block
 $(BUILD_DRIVERS_DIR)/block/%.o: $(DRIVERS_DIR)/block/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Drivers - Char
 $(BUILD_DRIVERS_DIR)/char/%.o: $(DRIVERS_DIR)/char/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Drivers - Video
 $(BUILD_DRIVERS_DIR)/video/%.o: $(DRIVERS_DIR)/video/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Drivers - Net
 $(BUILD_DRIVERS_DIR)/net/%.o: $(DRIVERS_DIR)/net/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Drivers - Bus
 $(BUILD_DRIVERS_DIR)/bus/%.o: $(DRIVERS_DIR)/bus/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Drivers - USB
 $(BUILD_DRIVERS_DIR)/usb/%.o: $(DRIVERS_DIR)/usb/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Library - libc C
 $(BUILD_LIB_DIR)/libc/%.o: $(LIB_DIR)/libc/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # Library - libc ASM
 $(BUILD_LIB_DIR)/libc/%.o: $(LIB_DIR)/libc/%.asm
@@ -503,18 +509,21 @@ $(BUILD_LIB_DIR)/libc/%.o: $(LIB_DIR)/libc/%.asm
 # Library - libk
 $(BUILD_LIB_DIR)/libk/%.o: $(LIB_DIR)/libk/%.c
 	@echo "  CC    $<"
-	@$(CC) $(CFLAGS) $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
 # ============================================================================
 # KERNEL LINKING
 # ============================================================================
 
-kernel: $(ALL_OBJ)
+check-kernel-dependencies: $(ALL_OBJ)
+	@$(PYTHON) scripts/validate_build_dependencies.py $(DEPS)
+
+kernel: check-kernel-dependencies
 	@echo "Linking kernel..."
 	@$(LD) $(LDFLAGS) -T $(KERNEL_LDSCRIPT) -o $(OUTPUT_DIR)/kernel.bin $(ALL_OBJ)
 	@echo "Release kernel ELF: $(OUTPUT_DIR)/kernel.bin"
 
-check-kernel-stack: $(ALL_OBJ)
+check-kernel-stack: check-kernel-dependencies
 	@echo "Kernel stack-frame and VLA compiler gates passed."
 
 # ============================================================================

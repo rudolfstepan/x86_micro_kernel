@@ -69,7 +69,15 @@ fehlende Evidenz führen zum Fehler. Der Status bleibt `partial`, bis zusätzlic
 Laufzeit-High-Water-Marken aller kritischen Pools sowie Zielhardware-WCET-,
 Callgraph- und vollständige Speicherbudgets nachgewiesen sind. IPC und der
 Storage-Request-Pool liefern bereits versionierte, saturierende Belegungs- und
-Erschöpfungsdiagnostik; Task-, Heap- und Frame-Pools folgen.
+Erschöpfungsdiagnostik. Die Memory-Statistik v2 ergänzt Frame-/Heap-Peaks und
+saturierende Allokationsfehler bei kompatiblem v1-Präfix; Taskslots und
+deterministische ENOMEM-Injection folgen.
+
+Headerabhängigkeiten sind Teil der Build-Evidenz. Jeder Kernel-C-Compile muss
+eine explizite Dependency-Datei erzeugen; fehlende, falsche oder nicht zum
+Quellobjekt gehörende Evidenz verhindert den Link. Damit darf eine ABI- oder
+Strukturänderung keinen inkrementellen Mischbuild aus alten und neuen
+Objektlayouts erzeugen.
 
 ## Ziel-Failure-Domains
 

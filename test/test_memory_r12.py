@@ -518,6 +518,10 @@ class SpawnvAndMemoryStatsAbiTests(unittest.TestCase):
         ("uint64_t", "heap_free_bytes"),
         ("uint64_t", "heap_largest_free_block"),
         ("uint64_t", "heap_arena_count"),
+        ("uint64_t", "peak_allocated_frame_bytes"),
+        ("uint64_t", "frame_allocation_failures"),
+        ("uint64_t", "peak_heap_used_bytes"),
+        ("uint64_t", "heap_allocation_failures"),
     ]
 
     @classmethod
@@ -553,7 +557,7 @@ class SpawnvAndMemoryStatsAbiTests(unittest.TestCase):
             spawnv.rindex("k_free(arguments)"),
         )
 
-    def test_syscall_43_v1_struct_is_identical_and_88_bytes(self):
+    def test_syscall_43_v2_appends_high_water_to_stable_v1_prefix(self):
         self.assertRegex(
             self.kernel_api,
             r"(?m)^#define\s+SYS_MEMORY_STATS\s+43\b",
@@ -564,11 +568,19 @@ class SpawnvAndMemoryStatsAbiTests(unittest.TestCase):
         )
         self.assertRegex(
             self.memory_header,
-            r"(?m)^#define\s+MEMORY_STATS_VERSION\s+1U\b",
+            r"(?m)^#define\s+MEMORY_STATS_V1_SIZE\s+88U\b",
         )
         self.assertRegex(
             self.user_header,
-            r"(?m)^#define\s+X86OS_MEMORY_STATS_VERSION\s+1U\b",
+            r"(?m)^#define\s+X86OS_MEMORY_STATS_V1_SIZE\s+88U\b",
+        )
+        self.assertRegex(
+            self.memory_header,
+            r"(?m)^#define\s+MEMORY_STATS_VERSION\s+2U\b",
+        )
+        self.assertRegex(
+            self.user_header,
+            r"(?m)^#define\s+X86OS_MEMORY_STATS_VERSION\s+2U\b",
         )
         self.assertEqual(
             typedef_fields(self.memory_header, "memory_stats_t"),
@@ -578,18 +590,21 @@ class SpawnvAndMemoryStatsAbiTests(unittest.TestCase):
             typedef_fields(self.user_header, "x86os_memory_stats_t"),
             self.EXPECTED_FIELDS,
         )
-        self.assertIn("sizeof(memory_stats_t) == 88U", self.memory)
-        self.assertIn("sizeof(x86os_memory_stats_t) == 88U", self.user_sdk)
+        self.assertIn("sizeof(memory_stats_t) == 120U", self.memory)
+        self.assertIn("sizeof(x86os_memory_stats_t) == 120U", self.user_sdk)
+        self.assertIn("MEMORY_STATS_V1_SIZE", self.memory)
 
     def test_syscall_43_negotiates_version_and_size_before_copyout(self):
         syscall = function_block(
             self.syscalls, "static int syscall_memory_stats("
         )
         compact = re.sub(r"\s+", " ", syscall)
-        self.assertIn("version != MEMORY_STATS_VERSION", compact)
-        self.assertIn("user_size < sizeof(memory_stats_t)", compact)
+        self.assertIn("version == MEMORY_STATS_V1_VERSION", compact)
+        self.assertIn("user_size >= MEMORY_STATS_V1_SIZE", compact)
+        self.assertIn("version == MEMORY_STATS_VERSION", compact)
+        self.assertIn("user_size >= sizeof(memory_stats_t)", compact)
         self.assertIn("return -22", compact)
-        self.assertIn("copy_to_user(user_stats, &stats, sizeof(stats))", compact)
+        self.assertIn("copy_to_user(user_stats, &stats, copy_size)", compact)
 
         wrapper = function_block(
             self.user_sdk, "int x86os_memory_stats("
@@ -597,6 +612,15 @@ class SpawnvAndMemoryStatsAbiTests(unittest.TestCase):
         self.assertIn("X86OS_SYS_MEMORY_STATS", wrapper)
         self.assertIn("(uintptr_t)stats, sizeof(*stats)", wrapper)
         self.assertIn("X86OS_MEMORY_STATS_VERSION", wrapper)
+
+    def test_memory_high_water_is_monotonic_and_failures_saturate(self):
+        self.assertIn("allocated_frame_high_water_count", self.memory)
+        self.assertIn("heap_used_high_water_bytes", self.memory)
+        self.assertIn("frame_allocation_failures != UINT64_MAX", self.memory)
+        self.assertIn("heap_allocation_failures != UINT64_MAX", self.memory)
+        stats = function_block(self.memory, "void memory_get_stats(")
+        self.assertIn("peak_allocated_frame_bytes", stats)
+        self.assertIn("peak_heap_used_bytes", stats)
 
 
 class DynamicProgramStagingTests(unittest.TestCase):

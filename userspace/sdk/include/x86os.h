@@ -130,9 +130,15 @@ typedef struct {
     uint64_t heap_free_bytes;
     uint64_t heap_largest_free_block;
     uint64_t heap_arena_count;
+    uint64_t peak_allocated_frame_bytes;
+    uint64_t frame_allocation_failures;
+    uint64_t peak_heap_used_bytes;
+    uint64_t heap_allocation_failures;
 } x86os_memory_stats_t;
 
-#define X86OS_MEMORY_STATS_VERSION 1U
+#define X86OS_MEMORY_STATS_V1_VERSION 1U
+#define X86OS_MEMORY_STATS_V1_SIZE 88U
+#define X86OS_MEMORY_STATS_VERSION 2U
 
 #define X86OS_IPC_MAX_MESSAGE_SIZE 128U
 #define X86OS_IPC_QUEUE_DEPTH 4U

@@ -246,6 +246,10 @@ und 10 verbindlich.
           Erschöpfungs- und vollständigem Rückgewinnungsnachweis
         - [ ] S0.4c-2b2 Task-, Heap-, Frame- und weitere statische
           Queue-High-Water-Nachweise
+          - [x] S0.4c-2b2a Memory-ABI v2 mit Frame-/Heap-Peaks,
+            saturierenden Fehlerzählern, v1-Kompatibilität und Gastnachweis
+          - [ ] S0.4c-2b2b Taskslot-High-Water sowie deterministische
+            Heap-/Frame-ENOMEM-Fault-Injection
       - [ ] S0.4c-2c Zielhardwarebezogene WCET- und Stack-Callgraph-Nachweise
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
@@ -1014,6 +1018,13 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    erzwingen die jeweilige statische Kapazität, prüfen den fail-closed
    Fehlercode und belegen danach aktive Zähler von null bei erhaltenem
    High-Water-Wert. Die Zähler sind Diagnose, keine Autoritätsentscheidung.
+- S0.4c-2b2a erweitert Syscall 43 append-only um Memory-Statistik v2. Der
+   unveränderte 88-Byte-v1-Präfix bleibt verhandelbar; v2 ergänzt historische
+   Frame-/Heap-Peaks und saturierende Allokationsfehlerzähler. Ein realer
+   Ring-3-Test belegt Peak-Monotonie und Frame-Rückgewinnung. Der dabei
+   entdeckte inkrementelle ABI-Mischbuild ist ebenfalls geschlossen: jeder
+   C-Compile erzeugt jetzt explizit eine `.d`-Datei, und der Kernel-Link bricht
+   bei fehlender oder falscher Dependency-Evidenz ab.
 - Kritische Tasks erhalten feste Prioritäten, CPU-/Speicher-/Queue-Budgets,
    Admission Control und nachgewiesene Worst-Case-Laufzeiten.
 - Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte

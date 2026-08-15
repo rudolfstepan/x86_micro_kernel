@@ -87,12 +87,21 @@ static int syscall_monotonic_ms(uint64_t *user_value) {
 
 static int syscall_memory_stats(memory_stats_t *user_stats,
                                 uint32_t user_size, uint32_t version) {
-    if (version != MEMORY_STATS_VERSION || user_size < sizeof(memory_stats_t)) {
+    size_t copy_size;
+    if (version == MEMORY_STATS_V1_VERSION &&
+        user_size >= MEMORY_STATS_V1_SIZE) {
+        copy_size = MEMORY_STATS_V1_SIZE;
+    } else if (version == MEMORY_STATS_VERSION &&
+               user_size >= sizeof(memory_stats_t)) {
+        copy_size = sizeof(memory_stats_t);
+    } else {
         return -22;
     }
     memory_stats_t stats;
     memory_get_stats(&stats);
-    return copy_to_user(user_stats, &stats, sizeof(stats)) == 0 ? 0 : -14;
+    stats.version = version;
+    stats.struct_size = (uint32_t)copy_size;
+    return copy_to_user(user_stats, &stats, copy_size) == 0 ? 0 : -14;
 }
 
 static int syscall_copy_from_user_space(void *destination,

@@ -6,7 +6,9 @@
 
 extern uint64_t total_memory;
 
-#define MEMORY_STATS_VERSION 1U
+#define MEMORY_STATS_V1_VERSION 1U
+#define MEMORY_STATS_V1_SIZE 88U
+#define MEMORY_STATS_VERSION 2U
 
 typedef struct {
     uint32_t version;
@@ -21,6 +23,10 @@ typedef struct {
     uint64_t heap_free_bytes;
     uint64_t heap_largest_free_block;
     uint64_t heap_arena_count;
+    uint64_t peak_allocated_frame_bytes;
+    uint64_t frame_allocation_failures;
+    uint64_t peak_heap_used_bytes;
+    uint64_t heap_allocation_failures;
 } memory_stats_t;
 
 void memory_map_reset(void);

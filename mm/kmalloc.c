@@ -38,10 +38,13 @@ typedef struct memory_block {
 
 _Static_assert(sizeof(memory_block) == 16,
                "heap metadata must preserve 16-byte payload alignment");
-_Static_assert(sizeof(memory_stats_t) == 88U,
+_Static_assert(sizeof(memory_stats_t) == 120U,
                "memory statistics ABI size changed");
 _Static_assert(offsetof(memory_stats_t, detected_usable_bytes) == 8U,
                "memory statistics ABI header changed");
+_Static_assert(offsetof(memory_stats_t, peak_allocated_frame_bytes) ==
+                   MEMORY_STATS_V1_SIZE,
+               "memory statistics v1 prefix changed");
 
 uint64_t total_memory = 0;
 
@@ -58,6 +61,8 @@ static size_t managed_frame_count;
 static size_t reserved_frame_count;
 static size_t allocated_frame_count;
 static size_t free_frame_count;
+static size_t allocated_frame_high_water_count;
+static uint64_t frame_allocation_failures;
 static size_t frame_search_hint = 1U;
 
 static uintptr_t heap_begin;
@@ -65,6 +70,9 @@ static uintptr_t heap_limit;
 static memory_block *free_list;
 static size_t heap_arena_count;
 static size_t heap_backing_bytes;
+static size_t heap_used_payload_bytes;
+static size_t heap_used_high_water_bytes;
+static uint64_t heap_allocation_failures;
 static bool memory_initialized;
 
 static spinlock_t heap_lock = SPINLOCK_INIT;
@@ -89,12 +97,17 @@ void memory_map_reset(void) {
     reserved_frame_count = 0;
     allocated_frame_count = 0;
     free_frame_count = 0;
+    allocated_frame_high_water_count = 0;
+    frame_allocation_failures = 0U;
     frame_search_hint = 1U;
     free_list = NULL;
     heap_begin = 0;
     heap_limit = 0;
     heap_arena_count = 0;
     heap_backing_bytes = 0;
+    heap_used_payload_bytes = 0U;
+    heap_used_high_water_bytes = 0U;
+    heap_allocation_failures = 0U;
     memory_initialized = false;
 }
 
@@ -439,6 +452,8 @@ static size_t allocate_frame_from(size_t minimum_address, bool report_failure) {
                 set_frame(frame);
                 if (free_frame_count != 0) --free_frame_count;
                 ++allocated_frame_count;
+                if (allocated_frame_count > allocated_frame_high_water_count)
+                    allocated_frame_high_water_count = allocated_frame_count;
                 frame_search_hint = frame + 1U;
                 if (frame_search_hint >= frame_count) frame_search_hint = 1U;
                 spinlock_release_irq(&frame_lock, flags);
@@ -448,6 +463,8 @@ static size_t allocate_frame_from(size_t minimum_address, bool report_failure) {
         if (start == first) break;
     }
 
+    if (frame_allocation_failures != UINT64_MAX)
+        ++frame_allocation_failures;
     spinlock_release_irq(&frame_lock, flags);
     if (report_failure) {
         printf("[CRITICAL] Physical frame allocation failed "
@@ -507,6 +524,8 @@ static uintptr_t reserve_contiguous_frames(size_t count) {
     if (count == 0 || count > frame_count) return 0;
     uint32_t flags = spinlock_acquire_irq(&frame_lock);
     if (!memory_initialized || count > free_frame_count) {
+        if (memory_initialized && frame_allocation_failures != UINT64_MAX)
+            ++frame_allocation_failures;
         spinlock_release_irq(&frame_lock, flags);
         return 0;
     }
@@ -532,8 +551,26 @@ static uintptr_t reserve_contiguous_frames(size_t count) {
         return run_start * FRAME_SIZE;
     }
 
+    if (!found && frame_allocation_failures != UINT64_MAX)
+        ++frame_allocation_failures;
     spinlock_release_irq(&frame_lock, flags);
     return 0;
+}
+
+static void heap_usage_added_locked(size_t amount) {
+    if (amount > SIZE_MAX - heap_used_payload_bytes)
+        heap_used_payload_bytes = SIZE_MAX;
+    else
+        heap_used_payload_bytes += amount;
+    if (heap_used_payload_bytes > heap_used_high_water_bytes)
+        heap_used_high_water_bytes = heap_used_payload_bytes;
+}
+
+static void heap_usage_removed_locked(size_t amount) {
+    if (amount <= heap_used_payload_bytes)
+        heap_used_payload_bytes -= amount;
+    else
+        heap_used_payload_bytes = 0U;
 }
 
 static bool blocks_are_adjacent(const memory_block *left,
@@ -640,6 +677,7 @@ void *k_malloc(size_t size) {
 
             split_block(current, size);
             current->free = 0;
+            heap_usage_added_locked(current->size);
             void *result = (uint8_t*)current + sizeof(memory_block);
             spinlock_release_irq(&heap_lock, flags);
             return result;
@@ -647,6 +685,7 @@ void *k_malloc(size_t size) {
         if (!extend_heap_locked(size)) break;
     }
 
+    if (heap_allocation_failures != UINT64_MAX) ++heap_allocation_failures;
     spinlock_release_irq(&heap_lock, flags);
     klog(KLOG_ERROR, "heap", "Allocation failed (%u bytes)",
          (unsigned int)size);
@@ -671,7 +710,9 @@ void k_free(void *ptr) {
         return;
     }
 
+    size_t released_size = block->size;
     block->free = 1;
+    heap_usage_removed_locked(released_size);
     if (block->next != NULL && block->next->free &&
         block->next->magic == BLOCK_MAGIC &&
         blocks_are_adjacent(block, block->next)) {
@@ -723,6 +764,7 @@ void *k_realloc(void *ptr, size_t new_size) {
         block->size += sizeof(memory_block) + next->size;
         block->next = next->next;
         split_block(block, aligned_size);
+        heap_usage_added_locked(block->size - old_size);
         spinlock_release_irq(&heap_lock, flags);
         return ptr;
     }
@@ -750,6 +792,9 @@ void memory_get_stats(memory_stats_t *stats) {
     stats->allocated_frame_bytes =
         (uint64_t)allocated_frame_count * FRAME_SIZE;
     stats->free_frame_bytes = (uint64_t)free_frame_count * FRAME_SIZE;
+    stats->peak_allocated_frame_bytes =
+        (uint64_t)allocated_frame_high_water_count * FRAME_SIZE;
+    stats->frame_allocation_failures = frame_allocation_failures;
     spinlock_release_irq(&frame_lock, flags);
 
     flags = spinlock_acquire_irq(&heap_lock);
@@ -766,6 +811,11 @@ void memory_get_stats(memory_stats_t *stats) {
             stats->heap_used_bytes += block->size;
         }
     }
+    heap_used_payload_bytes = (size_t)stats->heap_used_bytes;
+    if (heap_used_payload_bytes > heap_used_high_water_bytes)
+        heap_used_high_water_bytes = heap_used_payload_bytes;
+    stats->peak_heap_used_bytes = heap_used_high_water_bytes;
+    stats->heap_allocation_failures = heap_allocation_failures;
     spinlock_release_irq(&heap_lock, flags);
 }
 

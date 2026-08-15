@@ -269,7 +269,19 @@ Subsystem-Lock. Sie allokieren nicht und beeinflussen keine
 Autoritätsentscheidung. Verhaltenstests erzwingen Endpunkt-, Capability-,
 Nachrichten-, Client- und globale Storagegrenzen und belegen, dass Cleanup die
 aktive Belegung auf null zurückführt, ohne den historischen Höchststand zu
-verlieren. Weitere Task-, Heap-, Frame- und Queue-Metriken bleiben S0.4c-2b2.
+verlieren. Weitere Task-, ENOMEM- und Queue-Metriken bleiben S0.4c-2b2.
+
+S0.4c-2b2a versioniert die bestehende Speicherdiagnostik append-only auf v2.
+Der 88-Byte-v1-Präfix bleibt im Syscall explizit verhandelbar; v2 hängt
+historische Frame-/Heap-Belegung und saturierende Allokationsfehler an. Die
+Zähler werden unter Frame- beziehungsweise Heap-Lock aktualisiert. Der
+Ring-3-Gast prüft, dass Peaks nie unter der aktuellen Belegung liegen, nach
+Freigabe erhalten bleiben und die Framebilanz wieder stimmt. Weil ein alter
+`process.o` beim ersten inkrementellen ABI-Build den erweiterten Kerneloutput
+in einen zu kleinen Stackslot kopierte, ist die Buildkette nun ebenfalls Teil
+des Vertrags: explizite `.d`-Dateien für jedes C-Objekt werden vor jedem Link
+vollständig validiert. Headeränderungen können damit keinen stillen
+Mischbuild mehr erzeugen.
 
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
 Bitinventar der gegenwärtig 60 Syscalls. Normale Programme erhalten explizit
