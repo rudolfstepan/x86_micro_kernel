@@ -6,6 +6,14 @@
 #include "reist_ipv4_parser.h"
 #include "reist_udp_parser.h"
 
+#define REIST_DHCP_BOOT_MAX_ATTEMPTS 3U
+#define REIST_DHCP_BOOT_RETRY_MS 1600U
+
+static uint64_t probe_deadline_after(uint64_t now_ms, uint32_t interval_ms) {
+    return UINT64_MAX - now_ms < interval_ms
+        ? UINT64_MAX : now_ms + interval_ms;
+}
+
 static x86os_reist_network_frame_t network_frame;
 
 static int text_equal(const char *left, const char *right) {
@@ -312,6 +320,8 @@ int main(int argc, char **argv) {
     x86os_reist_udp_binding_t udp_bindings[4] = {0U, 0U, 0U, 0U};
     reist_dhcp_state_t dhcp_state;
     reist_dhcp_state_init(&dhcp_state);
+    uint32_t dhcp_boot_attempts = 0U;
+    uint64_t dhcp_boot_next_attempt_ms = 0U;
     const uint16_t udp_ports[4] = {9000U, 9001U, 9002U, 9003U};
     for (uint32_t index = 0U; index < 4U; ++index) {
         x86os_reist_udp_bind_request_t bind = {
@@ -478,6 +488,30 @@ int main(int argc, char **argv) {
         }
         uint64_t now_ms = 0U;
         if (x86os_monotonic_ms(&now_ms) != 0) return 27;
+        if (dhcp_state.state == REIST_DHCP_STATE_IDLE &&
+            dhcp_boot_attempts < REIST_DHCP_BOOT_MAX_ATTEMPTS &&
+            now_ms >= dhcp_boot_next_attempt_ms) {
+            x86os_reist_dhcp_boot_start_t start = {
+                .version = X86OS_REIST_DHCP_BOOT_START_VERSION,
+                .struct_size = sizeof(start),
+            };
+            int start_result = x86os_reist_start_dhcp_boot(&start);
+            if (start_result == 0) {
+                ++dhcp_boot_attempts;
+                dhcp_boot_next_attempt_ms = probe_deadline_after(
+                    now_ms, REIST_DHCP_BOOT_RETRY_MS);
+            } else if (start_result == -11) {
+                dhcp_boot_next_attempt_ms = probe_deadline_after(now_ms, 50U);
+            } else if (start_result == -17) {
+                dhcp_boot_attempts = REIST_DHCP_BOOT_MAX_ATTEMPTS;
+            } else if (start_result != -5 && start_result != -13) {
+                return 41;
+            } else {
+                ++dhcp_boot_attempts;
+                dhcp_boot_next_attempt_ms = probe_deadline_after(
+                    now_ms, REIST_DHCP_BOOT_RETRY_MS);
+            }
+        }
         reist_dhcp_action_t dhcp_action =
             reist_dhcp_state_poll(&dhcp_state, now_ms);
         if (dhcp_action != REIST_DHCP_ACTION_NONE) {

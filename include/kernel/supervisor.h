@@ -21,6 +21,7 @@ struct Process;
 #define SUPERVISOR_DHCP_CONTEXT_VERSION 1U
 #define SUPERVISOR_DHCP_LEASE_VERSION 1U
 #define SUPERVISOR_DHCP_RENEWAL_VERSION 1U
+#define SUPERVISOR_DHCP_BOOT_VERSION 1U
 #define SUPERVISOR_UDP_ECHO_CONTEXT_VERSION 1U
 #define SUPERVISOR_PROBE_CONTROL_VERSION 1U
 #define SUPERVISOR_EINTEGRITY (-84)
@@ -246,6 +247,29 @@ typedef struct {
 #define SUPERVISOR_DHCP_OPTION_LEASE 0x08U
 #define SUPERVISOR_DHCP_OPTION_MESSAGE_TYPE 0x10U
 #define SUPERVISOR_DHCP_OPTION_SERVER_ID 0x20U
+#define SUPERVISOR_DHCP_BOOT_START_VERSION 1U
+#define SUPERVISOR_DHCP_BOOT_DISCOVER_SENT 1U
+#define SUPERVISOR_DHCP_BOOT_REQUEST_SENT 2U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+} supervisor_dhcp_boot_start_t;
+
+typedef struct {
+    uint32_t active;
+    uint32_t phase;
+    uint32_t process_generation;
+    uint32_t transaction_id;
+    uint32_t offered_ip;
+    uint32_t server_id;
+    uint32_t reserved;
+    uint64_t deadline_ms;
+} supervisor_dhcp_boot_t;
+
+typedef struct {
+    critical_object_t object;
+} supervisor_protected_dhcp_boot_t;
+
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -532,6 +556,17 @@ int supervisor_protected_dhcp_renewal_snapshot(
     supervisor_dhcp_renewal_t *snapshot_out);
 int supervisor_protected_dhcp_renewal_clear(
     supervisor_protected_dhcp_renewal_t *renewal);
+int supervisor_protected_dhcp_boot_init(
+    supervisor_protected_dhcp_boot_t *transaction);
+int supervisor_protected_dhcp_boot_publish(
+    supervisor_protected_dhcp_boot_t *transaction, uint32_t phase,
+    uint32_t process_generation, uint32_t transaction_id,
+    uint32_t offered_ip, uint32_t server_id, uint64_t deadline_ms);
+int supervisor_protected_dhcp_boot_snapshot(
+    supervisor_protected_dhcp_boot_t *transaction,
+    supervisor_dhcp_boot_t *snapshot_out);
+int supervisor_protected_dhcp_boot_clear(
+    supervisor_protected_dhcp_boot_t *transaction);
 int supervisor_protected_udp_echo_context_init(
     supervisor_protected_udp_echo_context_t *context);
 int supervisor_protected_udp_echo_context_publish(
@@ -601,6 +636,9 @@ bool supervisor_network_accept_dhcp_renewal(
 bool supervisor_network_reject_dhcp_renewal(uint32_t transaction_id);
 int supervisor_network_dhcp_ingress(
     int pid, uint32_t generation, const supervisor_dhcp_ingress_t *ingress);
+int supervisor_network_start_dhcp_boot(
+    int pid, uint32_t generation,
+    const supervisor_dhcp_boot_start_t *request);
 bool supervisor_network_dhcp_service_owns_ingress(void);
 bool supervisor_network_submit_udp_echo(
     uint32_t source_ip, const uint8_t source_mac[6], uint16_t source_port,

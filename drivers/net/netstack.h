@@ -168,6 +168,10 @@ void netstack_init(void);
 bool netstack_safety_init(void);
 void netstack_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway);
 bool netstack_configure_dhcp(void);
+bool netstack_send_supervised_dhcp_discover(uint32_t transaction_id);
+bool netstack_send_supervised_dhcp_select(uint32_t transaction_id,
+                                          uint32_t offered_ip,
+                                          uint32_t server_id);
 bool netstack_send_supervised_dhcp_request(uint32_t transaction_id,
                                            uint32_t ip_address,
                                            bool rebind);

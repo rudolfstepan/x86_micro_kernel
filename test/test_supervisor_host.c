@@ -323,6 +323,35 @@ int main(void) {
             &protected_renewal, &renewal_snapshot) != 0 ||
         renewal_snapshot.active != 0U) return 64;
 
+    supervisor_protected_dhcp_boot_t protected_boot;
+    supervisor_dhcp_boot_t boot_snapshot;
+    if (supervisor_protected_dhcp_boot_init(&protected_boot) != 0 ||
+        supervisor_protected_dhcp_boot_publish(
+            &protected_boot, SUPERVISOR_DHCP_BOOT_DISCOVER_SENT, 7U, 31U,
+            0U, 0U, 7000U) != 0 ||
+        supervisor_protected_dhcp_boot_snapshot(
+            &protected_boot, &boot_snapshot) != 0 ||
+        boot_snapshot.active != 1U ||
+        boot_snapshot.phase != SUPERVISOR_DHCP_BOOT_DISCOVER_SENT ||
+        boot_snapshot.process_generation != 7U ||
+        boot_snapshot.transaction_id != 31U ||
+        boot_snapshot.offered_ip != 0U || boot_snapshot.server_id != 0U ||
+        supervisor_protected_dhcp_boot_publish(
+            &protected_boot, SUPERVISOR_DHCP_BOOT_REQUEST_SENT, 7U, 31U,
+            0x0A00020FU, 0x0A000202U, 7000U) != 0 ||
+        supervisor_protected_dhcp_boot_snapshot(
+            &protected_boot, &boot_snapshot) != 0 ||
+        boot_snapshot.phase != SUPERVISOR_DHCP_BOOT_REQUEST_SENT ||
+        boot_snapshot.offered_ip != 0x0A00020FU ||
+        boot_snapshot.server_id != 0x0A000202U ||
+        supervisor_protected_dhcp_boot_publish(
+            &protected_boot, SUPERVISOR_DHCP_BOOT_REQUEST_SENT, 7U, 31U,
+            0U, 0x0A000202U, 7000U) != -22 ||
+        supervisor_protected_dhcp_boot_clear(&protected_boot) != 0 ||
+        supervisor_protected_dhcp_boot_snapshot(
+            &protected_boot, &boot_snapshot) != 0 ||
+        boot_snapshot.active != 0U) return 65;
+
     supervisor_protected_udp_echo_context_t protected_udp;
     supervisor_udp_echo_context_t udp_snapshot;
     if (supervisor_protected_udp_echo_context_init(&protected_udp) != 0 ||

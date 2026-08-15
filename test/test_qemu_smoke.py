@@ -167,6 +167,9 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
 
     def test_dhcp_mediation_must_complete_before_boot(self) -> None:
         transcript = "\n".join((
+            RUNNER_MODULE.REIST_DHCP_BOOT_DISCOVER_MARKER,
+            RUNNER_MODULE.REIST_DHCP_BOOT_OFFER_MARKER,
+            RUNNER_MODULE.REIST_DHCP_BOOT_ACK_MARKER,
             RUNNER_MODULE.REIST_DHCP_CONFIG_QUEUED_MARKER,
             RUNNER_MODULE.REIST_DHCP_CONFIG_MARKER,
             "BOOT_OK", "TEST_OK", "C:\\>", "",
@@ -179,9 +182,16 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         )
         self.assertIn("pre-boot", RUNNER_MODULE.validate(
             late, expect_dhcp_config=True))
+        missing_offer = transcript.replace(
+            RUNNER_MODULE.REIST_DHCP_BOOT_OFFER_MARKER + "\n", "")
+        self.assertIn("Ring-3", RUNNER_MODULE.validate(
+            missing_offer, expect_dhcp_config=True))
 
     def test_dhcp_lease_expiry_must_withdraw_configuration_after_boot(self) -> None:
         transcript = "\n".join((
+            RUNNER_MODULE.REIST_DHCP_BOOT_DISCOVER_MARKER,
+            RUNNER_MODULE.REIST_DHCP_BOOT_OFFER_MARKER,
+            RUNNER_MODULE.REIST_DHCP_BOOT_ACK_MARKER,
             RUNNER_MODULE.REIST_DHCP_CONFIG_QUEUED_MARKER,
             RUNNER_MODULE.REIST_DHCP_CONFIG_MARKER,
             "BOOT_OK", "C:\\>",

@@ -282,17 +282,13 @@ static void configure_network_after_service(void) {
         pit_monotonic_ms(), 50U);
     while (pit_monotonic_ms() < settle_deadline)
         __asm__ __volatile__("sti; hlt");
-    printf("Requesting supervised LAN configuration via DHCP...\n");
-    if (!netstack_configure_dhcp()) {
-        printf("Network link is ready without an IP; use 'getip' to retry\n");
-        return;
-    }
+    printf("Waiting for supervised Ring-3 DHCP configuration...\n");
     uint64_t commit_deadline = kernel_deadline_after(
-        pit_monotonic_ms(), 1500U);
+        pit_monotonic_ms(), 6000U);
     while (!netstack_is_configured() && pit_monotonic_ms() < commit_deadline)
         __asm__ __volatile__("sti; hlt");
     if (!netstack_is_configured())
-        printf("DHCP proposal was not committed; network remains unconfigured\n");
+        printf("DHCP did not complete; network remains fail-closed\n");
 }
 
 #ifdef REIST_HANDOVER_FAULT_INJECTION

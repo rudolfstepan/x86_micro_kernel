@@ -613,9 +613,25 @@ in die Legacy-DHCP-Queue, und der Supervisor-Worker überspringt den alten
 Ring-0-Poller. Ein erfolgreicher Dienstentscheid verbraucht zunächst das
 CRC-/generationgebundene Lieferobjekt und beendet dann den Transportzustand,
 bevor die bestehende geschützte Commit-Sequenz startet. Der reale RTL8139-
-Nachweis erreicht `DHCP_RENEW_INGRESS_RING3` vor `DHCP_RENEWED`. Der synchrone
-Boot-DISCOVER/OFFER/REQUEST/ACK-Ablauf bleibt bis S0.3c-5e2b2b2b bewusst in
-Ring 0; erst seine Migration erlaubt das Entfernen der dedizierten DHCP-Queue.
+Nachweis erreicht `DHCP_RENEW_INGRESS_RING3` vor `DHCP_RENEWED`.
+
+S0.3c-5e2b2b2b1 verschiebt auch die Bootentscheidung in den Dienst. Der
+append-only Syscall 82 darf nur von der aktuellen gesunden Dienstgeneration
+eine geschützte, absolut auf 1.500 ms begrenzte Transaktion eröffnen. Ring 0
+sendet pro Übergang genau ein DISCOVER- beziehungsweise REQUEST-Frame und
+pollt weder Netz noch Timer. OFFER und ACK gelangen über den bestehenden
+Frame-Handoff zum heapfreien Ring-3-Parser; der Supervisor bindet das Ergebnis
+an Dienstgeneration, Frame-CRC, Client-MAC, XID, Server-ID, angebotene Adresse
+und Lieferdeadline. Erst ein passendes ACK darf die bestehende geschützte
+Lease-Commit-Sequenz auslösen. NAK oder Timeout löschen die Bootautorität. Der
+Dienst versucht den Ablauf höchstens dreimal, der Kernel wartet insgesamt
+höchstens sechs Sekunden und setzt den Boot ohne IP fort. Der RTL8139-Nachweis
+bestätigt die vollständige Reihenfolge bis `BOOT_OK`.
+
+Die früheren synchronen Parserroutinen und die dedizierte DHCP-Queue sind nach
+dieser Umschaltung nicht mehr autoritativ, liegen aber bis S0.3c-5e2b2b2b2 noch
+als zu löschender Altcode im Baum. Erst deren Entfernung und ein erneuter
+Restart-/Drucktest schließen den Parallelpfad vollständig.
 
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau

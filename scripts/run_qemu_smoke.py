@@ -51,6 +51,9 @@ REIST_ICMP_ECHO_QUEUED_MARKER = "REIST_NETWORK ICMP_ECHO_QUEUED"
 REIST_ICMP_ECHO_MARKER = "REIST_NETWORK ICMP_ECHO_MEDIATED"
 REIST_DHCP_CONFIG_QUEUED_MARKER = "REIST_NETWORK DHCP_CONFIG_QUEUED"
 REIST_DHCP_CONFIG_MARKER = "REIST_NETWORK DHCP_CONFIG_MEDIATED"
+REIST_DHCP_BOOT_DISCOVER_MARKER = "REIST_NETWORK DHCP_BOOT_DISCOVER_RING3"
+REIST_DHCP_BOOT_OFFER_MARKER = "REIST_NETWORK DHCP_BOOT_OFFER_RING3"
+REIST_DHCP_BOOT_ACK_MARKER = "REIST_NETWORK DHCP_BOOT_ACK_RING3"
 REIST_DHCP_LEASE_EXPIRED_MARKER = "REIST_NETWORK DHCP_LEASE_EXPIRED"
 REIST_DHCP_RENEWED_MARKER = "REIST_NETWORK DHCP_RENEWED"
 REIST_DHCP_RENEW_REQUESTED_MARKER = "REIST_NETWORK DHCP_RENEW_REQUESTED"
@@ -902,11 +905,16 @@ def validate(
         if queued < boot or replied < queued or replied > test:
             return "missing ordered mediated ICMP echo markers"
     if expect_dhcp_config:
+        discover = exact_line_position(
+            transcript, REIST_DHCP_BOOT_DISCOVER_MARKER)
+        offer = exact_line_position(transcript, REIST_DHCP_BOOT_OFFER_MARKER)
+        ack = exact_line_position(transcript, REIST_DHCP_BOOT_ACK_MARKER)
         queued = exact_line_position(transcript,
                                      REIST_DHCP_CONFIG_QUEUED_MARKER)
         committed = exact_line_position(transcript, REIST_DHCP_CONFIG_MARKER)
-        if queued < 0 or committed < queued or committed > boot:
-            return "missing ordered pre-boot mediated DHCP configuration"
+        if (discover < 0 or offer < discover or ack < offer or
+                queued < ack or committed < queued or committed > boot):
+            return "missing ordered Ring-3 pre-boot DHCP configuration"
     if expect_dhcp_expiry:
         committed = exact_line_position(transcript, REIST_DHCP_CONFIG_MARKER)
         expired = exact_line_position(transcript,

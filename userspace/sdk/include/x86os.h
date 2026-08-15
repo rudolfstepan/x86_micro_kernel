@@ -85,7 +85,8 @@ enum {
     X86OS_SYS_REIST_DHCP_RENEW = 78,
     X86OS_SYS_REIST_NETWORK_FRAME = 79,
     X86OS_SYS_REIST_UDP_INGRESS = 80,
-    X86OS_SYS_REIST_DHCP_INGRESS = 81
+    X86OS_SYS_REIST_DHCP_INGRESS = 81,
+    X86OS_SYS_REIST_DHCP_BOOT_START = 82
 };
 
 enum {
@@ -288,6 +289,12 @@ typedef struct {
     uint8_t checksum_present;
 } x86os_reist_dhcp_ingress_t;
 
+#define X86OS_REIST_DHCP_BOOT_START_VERSION 1U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+} x86os_reist_dhcp_boot_start_t;
+
 #define X86OS_STORAGE_REQUEST_VERSION 1U
 #define X86OS_STORAGE_BLOCK_SIZE 512U
 #define X86OS_STORAGE_BLOCK_READ 1U
@@ -432,6 +439,8 @@ int x86os_reist_udp_ingress(x86os_reist_udp_ingress_t *ingress,
                             const uint8_t *data);
 int x86os_reist_dhcp_ingress(
     const x86os_reist_dhcp_ingress_t *ingress);
+int x86os_reist_start_dhcp_boot(
+    const x86os_reist_dhcp_boot_start_t *request);
 int x86os_network_arp_resolve(uint32_t target_ip);
 int x86os_storage_bind(void);
 int x86os_storage_submit(const x86os_storage_submit_t *request,

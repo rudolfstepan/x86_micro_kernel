@@ -836,6 +836,64 @@ static bool dhcp_discover_request(uint32_t *out_ip, uint32_t *out_subnet, uint32
     return true;
 }
 
+bool netstack_send_supervised_dhcp_discover(uint32_t transaction_id) {
+    if (transaction_id == 0U || net_config.ip_address != 0U) return false;
+    struct dhcp_packet packet;
+    memset(&packet, 0, sizeof(packet));
+    packet.op = 1U;
+    packet.htype = 1U;
+    packet.hlen = 6U;
+    packet.xid = htonl(transaction_id);
+    packet.flags = htons(0x8000U);
+    memcpy(packet.chaddr, net_config.mac_address, 6U);
+
+    uint8_t *option = packet.options;
+    uint32_t cookie = htonl(DHCP_MAGIC_COOKIE);
+    memcpy(option, &cookie, sizeof(cookie));
+    option += sizeof(cookie);
+    option = dhcp_opt_put_u8(option, DHO_MSG_TYPE, DHCP_DISCOVER);
+    const uint8_t requested[] = {
+        DHO_SUBNET, DHO_ROUTER, DHO_DNS, DHO_LEASE_TIME, DHO_SERVER_ID
+    };
+    option = dhcp_opt_put_list(option, DHO_PARAM_REQ, requested,
+                               sizeof(requested));
+    *option = DHO_END;
+    if (netstack_send_udp_low(
+            UINT32_MAX, DHCP_CLIENT_PORT, DHCP_SERVER_PORT,
+            &packet, sizeof(packet), false) != 0) return false;
+    dhcp_runtime_transaction_id = transaction_id;
+    return true;
+}
+
+bool netstack_send_supervised_dhcp_select(uint32_t transaction_id,
+                                          uint32_t offered_ip,
+                                          uint32_t server_id) {
+    if (transaction_id == 0U || offered_ip == 0U ||
+        offered_ip == UINT32_MAX || server_id == 0U ||
+        server_id == UINT32_MAX || net_config.ip_address != 0U ||
+        dhcp_runtime_transaction_id != transaction_id) return false;
+    struct dhcp_packet packet;
+    memset(&packet, 0, sizeof(packet));
+    packet.op = 1U;
+    packet.htype = 1U;
+    packet.hlen = 6U;
+    packet.xid = htonl(transaction_id);
+    packet.flags = htons(0x8000U);
+    memcpy(packet.chaddr, net_config.mac_address, 6U);
+
+    uint8_t *option = packet.options;
+    uint32_t cookie = htonl(DHCP_MAGIC_COOKIE);
+    memcpy(option, &cookie, sizeof(cookie));
+    option += sizeof(cookie);
+    option = dhcp_opt_put_u8(option, DHO_MSG_TYPE, DHCP_REQUEST);
+    option = dhcp_opt_put_u32(option, DHO_REQ_IP, offered_ip);
+    option = dhcp_opt_put_u32(option, DHO_SERVER_ID, server_id);
+    *option = DHO_END;
+    return netstack_send_udp_low(
+        UINT32_MAX, DHCP_CLIENT_PORT, DHCP_SERVER_PORT,
+        &packet, sizeof(packet), false) == 0;
+}
+
 bool netstack_send_supervised_dhcp_request(uint32_t transaction_id,
                                            uint32_t ip_address,
                                            bool rebind) {
@@ -1123,9 +1181,6 @@ bool netstack_clear_supervised_dhcp(uint32_t expected_ip) {
 }
 
 uint32_t netstack_get_ip_address(void) {
-    if (net_config.ip_address == 0) {
-        (void)netstack_configure_dhcp();
-    }
     return net_config.ip_address;
 }
 

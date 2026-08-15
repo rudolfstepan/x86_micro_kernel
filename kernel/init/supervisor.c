@@ -56,6 +56,9 @@ _Static_assert(sizeof(supervisor_dhcp_lease_t) <=
 _Static_assert(sizeof(supervisor_dhcp_renewal_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
                "DHCP renewal exceeds critical object payload");
+_Static_assert(sizeof(supervisor_dhcp_boot_t) <=
+                   CRITICAL_OBJECT_MAX_PAYLOAD,
+               "DHCP boot transaction exceeds critical object payload");
 _Static_assert(sizeof(supervisor_dhcp_ingress_t) == 52U,
                "DHCP ingress ABI drift");
 _Static_assert(sizeof(supervisor_udp_echo_context_t) <=
@@ -93,6 +96,7 @@ static critical_object_t protected_network_degradation_stats;
 #define SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS 250U
 #define SUPERVISOR_DHCP_COMMIT_TIMEOUT_MS 1000U
 #define SUPERVISOR_DHCP_RENEW_TIMEOUT_MS 1500U
+#define SUPERVISOR_DHCP_BOOT_TIMEOUT_MS 1500U
 
 #ifndef REIST_HOST_TEST
 typedef struct {
@@ -110,6 +114,8 @@ typedef struct {
     supervisor_protected_dhcp_lease_t dhcp_lease;
     supervisor_protected_probe_authority_t dhcp_renewal_authority;
     supervisor_protected_dhcp_renewal_t dhcp_renewal;
+    supervisor_protected_probe_authority_t dhcp_boot_authority;
+    supervisor_protected_dhcp_boot_t dhcp_boot;
     supervisor_udp_binding_runtime_t udp_bindings[SUPERVISOR_UDP_MAX_BINDINGS];
     int32_t frame_delivery_pid;
     uint32_t frame_delivery_generation;
@@ -1060,6 +1066,85 @@ int supervisor_protected_dhcp_renewal_clear(
     return dhcp_renewal_write(protected_renewal, &renewal);
 }
 
+static bool dhcp_boot_valid(const void *payload, size_t length) {
+    if (payload == NULL || length != sizeof(supervisor_dhcp_boot_t))
+        return false;
+    const supervisor_dhcp_boot_t *transaction = payload;
+    if (transaction->active == 0U) {
+        const supervisor_dhcp_boot_t empty = {0};
+        const uint8_t *actual = payload;
+        const uint8_t *expected = (const uint8_t *)&empty;
+        for (size_t index = 0U; index < sizeof(empty); ++index)
+            if (actual[index] != expected[index]) return false;
+        return true;
+    }
+    if (transaction->active != 1U || transaction->reserved != 0U ||
+        transaction->process_generation == 0U ||
+        transaction->transaction_id == 0U ||
+        transaction->deadline_ms == 0U ||
+        (transaction->phase != SUPERVISOR_DHCP_BOOT_DISCOVER_SENT &&
+         transaction->phase != SUPERVISOR_DHCP_BOOT_REQUEST_SENT))
+        return false;
+    if (transaction->phase == SUPERVISOR_DHCP_BOOT_DISCOVER_SENT)
+        return transaction->offered_ip == 0U && transaction->server_id == 0U;
+    return transaction->offered_ip != 0U &&
+        transaction->offered_ip != UINT32_MAX &&
+        transaction->server_id != 0U && transaction->server_id != UINT32_MAX;
+}
+
+static int dhcp_boot_write(
+        supervisor_protected_dhcp_boot_t *protected_transaction,
+        const supervisor_dhcp_boot_t *transaction) {
+    return critical_object_update(
+        &protected_transaction->object, SUPERVISOR_DHCP_BOOT_VERSION,
+        transaction, sizeof(*transaction), dhcp_boot_valid) == 0
+        ? 0 : SUPERVISOR_EINTEGRITY;
+}
+
+int supervisor_protected_dhcp_boot_init(
+        supervisor_protected_dhcp_boot_t *protected_transaction) {
+    if (protected_transaction == NULL) return -22;
+    supervisor_dhcp_boot_t transaction = {0};
+    return critical_object_init(
+        &protected_transaction->object, SUPERVISOR_DHCP_BOOT_VERSION,
+        &transaction, sizeof(transaction)) == 0 ? 0 : SUPERVISOR_EINTEGRITY;
+}
+
+int supervisor_protected_dhcp_boot_publish(
+        supervisor_protected_dhcp_boot_t *protected_transaction,
+        uint32_t phase, uint32_t process_generation, uint32_t transaction_id,
+        uint32_t offered_ip, uint32_t server_id, uint64_t deadline_ms) {
+    if (protected_transaction == NULL) return -22;
+    supervisor_dhcp_boot_t transaction = {
+        .active = 1U,
+        .phase = phase,
+        .process_generation = process_generation,
+        .transaction_id = transaction_id,
+        .offered_ip = offered_ip,
+        .server_id = server_id,
+        .deadline_ms = deadline_ms,
+    };
+    if (!dhcp_boot_valid(&transaction, sizeof(transaction))) return -22;
+    return dhcp_boot_write(protected_transaction, &transaction);
+}
+
+int supervisor_protected_dhcp_boot_snapshot(
+        supervisor_protected_dhcp_boot_t *protected_transaction,
+        supervisor_dhcp_boot_t *snapshot_out) {
+    if (protected_transaction == NULL || snapshot_out == NULL) return -22;
+    size_t length = 0U;
+    critical_read_result_t result = critical_object_read(
+        &protected_transaction->object, SUPERVISOR_DHCP_BOOT_VERSION,
+        snapshot_out, sizeof(*snapshot_out), &length, dhcp_boot_valid);
+    return result < 0 ? SUPERVISOR_EINTEGRITY : 0;
+}
+
+int supervisor_protected_dhcp_boot_clear(
+        supervisor_protected_dhcp_boot_t *protected_transaction) {
+    supervisor_dhcp_boot_t transaction = {0};
+    return dhcp_boot_write(protected_transaction, &transaction);
+}
+
 static bool udp_echo_context_valid(const void *payload, size_t length) {
     if (payload == NULL || length != sizeof(supervisor_udp_echo_context_t))
         return false;
@@ -1511,7 +1596,11 @@ void supervisor_init(void) {
         supervisor_protected_probe_authority_init(
             &probe_runtime.dhcp_renewal_authority) != 0 ||
         supervisor_protected_dhcp_renewal_init(
-            &probe_runtime.dhcp_renewal) != 0) {
+            &probe_runtime.dhcp_renewal) != 0 ||
+        supervisor_protected_probe_authority_init(
+            &probe_runtime.dhcp_boot_authority) != 0 ||
+        supervisor_protected_dhcp_boot_init(
+            &probe_runtime.dhcp_boot) != 0) {
         panic("Unable to initialize protected probe runtime");
     }
     for (uint32_t slot = 0U; slot < SUPERVISOR_UDP_MAX_BINDINGS; ++slot) {
@@ -1776,6 +1865,9 @@ static bool probe_fence_apply(void *context) {
     (void)supervisor_protected_probe_authority_cancel(
         &runtime->dhcp_renewal_authority);
     (void)supervisor_protected_dhcp_renewal_clear(&runtime->dhcp_renewal);
+    (void)supervisor_protected_probe_authority_cancel(
+        &runtime->dhcp_boot_authority);
+    (void)supervisor_protected_dhcp_boot_clear(&runtime->dhcp_boot);
     if (udp_delivery_clear() != 0) {
         output_fence_all();
         return false;
@@ -1914,7 +2006,11 @@ bool supervisor_start_probe(uint64_t now_ms) {
         supervisor_protected_probe_authority_init(
             &probe_runtime.dhcp_renewal_authority) != 0 ||
         supervisor_protected_dhcp_renewal_init(
-            &probe_runtime.dhcp_renewal) != 0)
+            &probe_runtime.dhcp_renewal) != 0 ||
+        supervisor_protected_probe_authority_init(
+            &probe_runtime.dhcp_boot_authority) != 0 ||
+        supervisor_protected_dhcp_boot_init(
+            &probe_runtime.dhcp_boot) != 0)
         return false;
     for (uint32_t slot = 0U; slot < SUPERVISOR_UDP_MAX_BINDINGS; ++slot) {
         supervisor_udp_binding_t previous = {0};
@@ -3223,21 +3319,90 @@ static uint32_t dhcp_transaction_wire_value(uint32_t value) {
            ((value & 0xFF000000U) >> 24U);
 }
 
+int supervisor_network_start_dhcp_boot(
+        int pid, uint32_t generation,
+        const supervisor_dhcp_boot_start_t *request) {
+    if (request == NULL ||
+        request->version != SUPERVISOR_DHCP_BOOT_START_VERSION ||
+        request->struct_size != sizeof(*request)) return -22;
+    if (netstack_is_configured()) return -17;
+    uint64_t now_ms = pit_monotonic_ms();
+    uint32_t flags = supervisor_lock();
+    supervisor_probe_control_t control = {0};
+    supervisor_dhcp_boot_t boot = {0};
+    supervisor_dhcp_renewal_t renewal = {0};
+    int result = supervisor_protected_probe_control_read(
+        &probe_runtime.control, &control);
+    bool caller_is_service = result == 0 && pid == control.pid &&
+                             generation == control.process_generation;
+    if (result == 0 &&
+        (control.active == 0U || control.fenced != 0U ||
+         control.healthy == 0U || !caller_is_service ||
+         !process_identity_alive(pid, generation))) result = -13;
+    if (result == 0)
+        result = supervisor_protected_dhcp_boot_snapshot(
+            &probe_runtime.dhcp_boot, &boot);
+    if (result == 0 && boot.active != 0U && now_ms < boot.deadline_ms)
+        result = -11;
+    if (result == 0 && boot.active != 0U) {
+        result = supervisor_protected_dhcp_boot_clear(
+            &probe_runtime.dhcp_boot);
+        (void)supervisor_protected_probe_authority_cancel(
+            &probe_runtime.dhcp_boot_authority);
+    }
+    if (result == 0)
+        result = supervisor_protected_dhcp_renewal_snapshot(
+            &probe_runtime.dhcp_renewal, &renewal);
+    if (result == 0 && renewal.active != 0U) result = -11;
+    uint32_t transaction_id = 0U;
+    if (result == 0)
+        result = supervisor_protected_probe_authority_begin_epoch(
+            &probe_runtime.dhcp_boot_authority, now_ms,
+            SUPERVISOR_DHCP_BOOT_TIMEOUT_MS, generation, &transaction_id);
+    if (result == 0)
+        result = supervisor_protected_dhcp_boot_publish(
+            &probe_runtime.dhcp_boot, SUPERVISOR_DHCP_BOOT_DISCOVER_SENT,
+            generation, transaction_id, 0U, 0U,
+            deadline_after(now_ms, SUPERVISOR_DHCP_BOOT_TIMEOUT_MS));
+    bool integrity_failure = result == SUPERVISOR_EINTEGRITY;
+    supervisor_unlock(flags);
+    if (integrity_failure && caller_is_service)
+        (void)supervisor_force_isolate(control.handle);
+    if (result != 0) return result;
+    if (!netstack_send_supervised_dhcp_discover(transaction_id)) {
+        flags = supervisor_lock();
+        (void)supervisor_protected_dhcp_boot_clear(&probe_runtime.dhcp_boot);
+        (void)supervisor_protected_probe_authority_cancel(
+            &probe_runtime.dhcp_boot_authority);
+        supervisor_unlock(flags);
+        return -5;
+    }
+    printf("REIST_NETWORK DHCP_BOOT_DISCOVER_RING3\n");
+    return 0;
+}
+
 bool supervisor_network_dhcp_service_owns_ingress(void) {
     uint32_t flags = supervisor_lock();
     supervisor_probe_control_t control = {0};
     supervisor_dhcp_renewal_t renewal = {0};
+    supervisor_dhcp_boot_t boot = {0};
     int control_result = supervisor_protected_probe_control_read(
         &probe_runtime.control, &control);
     int renewal_result = supervisor_protected_dhcp_renewal_snapshot(
         &probe_runtime.dhcp_renewal, &renewal);
+    int boot_result = supervisor_protected_dhcp_boot_snapshot(
+        &probe_runtime.dhcp_boot, &boot);
     bool integrity_failure = control_result == SUPERVISOR_EINTEGRITY ||
-                             renewal_result == SUPERVISOR_EINTEGRITY;
+                             renewal_result == SUPERVISOR_EINTEGRITY ||
+                             boot_result == SUPERVISOR_EINTEGRITY;
     bool owns = integrity_failure ||
-        (control_result == 0 && renewal_result == 0 &&
+        (control_result == 0 && renewal_result == 0 && boot_result == 0 &&
          control.active != 0U && control.fenced == 0U &&
-         control.healthy != 0U && renewal.active != 0U &&
-         renewal.process_generation == control.process_generation &&
+         control.healthy != 0U &&
+         ((renewal.active != 0U &&
+           renewal.process_generation == control.process_generation) ||
+          (boot.active != 0U &&
+           boot.process_generation == control.process_generation)) &&
          process_identity_alive(control.pid, control.process_generation));
     supervisor_unlock(flags);
     if (integrity_failure && control.active != 0U)
@@ -3266,23 +3431,14 @@ int supervisor_network_dhcp_ingress(
     if (ingress->message_type == SUPERVISOR_DHCP_MESSAGE_ACK &&
         (ingress->option_flags & required_ack_options) != required_ack_options)
         return -22;
-    if (ingress->message_type == SUPERVISOR_DHCP_MESSAGE_OFFER) return -11;
-
-    uint32_t local_ip = 0U;
     uint8_t local_mac[6] = {0};
-    if (!netstack_get_local_identity(&local_ip, local_mac)) return -13;
+    if (!netdev_get_mac_address(local_mac)) return -13;
     for (uint32_t index = 0U; index < 6U; ++index)
         if (ingress->client_mac[index] != local_mac[index]) return -13;
-    if (ingress->message_type == SUPERVISOR_DHCP_MESSAGE_ACK &&
-        (!dhcp_config_valid_values(
-             ingress->offered_ip != 0U ? ingress->offered_ip : local_ip,
-             ingress->netmask, ingress->gateway, ingress->dns_server) ||
-         ingress->lease_seconds < SUPERVISOR_DHCP_LEASE_MIN_SECONDS ||
-         ingress->lease_seconds > SUPERVISOR_DHCP_LEASE_MAX_SECONDS))
-        return -22;
 
     uint32_t flags = supervisor_lock();
     supervisor_probe_control_t control = {0};
+    supervisor_dhcp_boot_t boot = {0};
     supervisor_dhcp_renewal_t renewal = {0};
     supervisor_udp_delivery_t delivery = {0};
     int result = supervisor_protected_probe_control_read(
@@ -3294,10 +3450,19 @@ int supervisor_network_dhcp_ingress(
          control.healthy == 0U || !caller_is_service ||
          !process_identity_alive(pid, generation))) result = -13;
     if (result == 0)
+        result = supervisor_protected_dhcp_boot_snapshot(
+            &probe_runtime.dhcp_boot, &boot);
+    if (result == 0)
         result = supervisor_protected_dhcp_renewal_snapshot(
             &probe_runtime.dhcp_renewal, &renewal);
-    if (result == 0 && renewal.active == 0U) result = -11;
-    if (result == 0 &&
+    bool boot_active = result == 0 && boot.active != 0U;
+    bool renewal_active = result == 0 && renewal.active != 0U;
+    if (result == 0 && !boot_active && !renewal_active) result = -11;
+    if (result == 0 && boot_active &&
+        (boot.process_generation != generation ||
+         boot.transaction_id != ingress->transaction_id ||
+         pit_monotonic_ms() >= boot.deadline_ms)) result = -13;
+    if (result == 0 && renewal_active && !boot_active &&
         (renewal.process_generation != generation ||
          renewal.transaction_id == 0U ||
          dhcp_transaction_wire_value(renewal.transaction_id) !=
@@ -3311,12 +3476,89 @@ int supervisor_network_dhcp_ingress(
         (void)udp_delivery_clear();
         result = -110;
     }
+    bool boot_offer = result == 0 && boot_active &&
+        ingress->message_type == SUPERVISOR_DHCP_MESSAGE_OFFER;
+    bool boot_complete = result == 0 && boot_active && !boot_offer;
+    if (result == 0 && boot_offer &&
+        (boot.phase != SUPERVISOR_DHCP_BOOT_DISCOVER_SENT ||
+         ingress->offered_ip == 0U || ingress->offered_ip == UINT32_MAX ||
+         ingress->server_id == 0U || ingress->server_id == UINT32_MAX ||
+         (ingress->option_flags & SUPERVISOR_DHCP_OPTION_SERVER_ID) == 0U))
+        result = -22;
+    if (result == 0 && boot_complete &&
+        (boot.phase != SUPERVISOR_DHCP_BOOT_REQUEST_SENT ||
+         (ingress->message_type == SUPERVISOR_DHCP_MESSAGE_ACK &&
+          (ingress->offered_ip != boot.offered_ip ||
+           ((ingress->option_flags & SUPERVISOR_DHCP_OPTION_SERVER_ID) != 0U &&
+            ingress->server_id != boot.server_id))))) result = -13;
+    if (result == 0 && boot_active &&
+        ingress->message_type == SUPERVISOR_DHCP_MESSAGE_ACK &&
+        (!dhcp_config_valid_values(
+             ingress->offered_ip, ingress->netmask, ingress->gateway,
+             ingress->dns_server) ||
+         ingress->lease_seconds < SUPERVISOR_DHCP_LEASE_MIN_SECONDS ||
+         ingress->lease_seconds > SUPERVISOR_DHCP_LEASE_MAX_SECONDS))
+        result = -22;
+    if (result == 0 && renewal_active && !boot_active &&
+        ingress->message_type == SUPERVISOR_DHCP_MESSAGE_OFFER)
+        result = -11;
+    if (result == 0 && renewal_active && !boot_active &&
+        ingress->message_type == SUPERVISOR_DHCP_MESSAGE_ACK &&
+        (!dhcp_config_valid_values(
+             ingress->offered_ip != 0U ? ingress->offered_ip :
+                                         renewal.ip_address,
+             ingress->netmask, ingress->gateway, ingress->dns_server) ||
+         ingress->lease_seconds < SUPERVISOR_DHCP_LEASE_MIN_SECONDS ||
+         ingress->lease_seconds > SUPERVISOR_DHCP_LEASE_MAX_SECONDS))
+        result = -22;
     if (result == 0) result = udp_delivery_clear();
+    if (result == 0 && boot_offer)
+        result = supervisor_protected_dhcp_boot_publish(
+            &probe_runtime.dhcp_boot, SUPERVISOR_DHCP_BOOT_REQUEST_SENT,
+            generation, boot.transaction_id, ingress->offered_ip,
+            ingress->server_id, boot.deadline_ms);
+    if (result == 0 && boot_complete) {
+        result = supervisor_protected_dhcp_boot_clear(
+            &probe_runtime.dhcp_boot);
+        if (result == 0)
+            result = supervisor_protected_probe_authority_cancel(
+                &probe_runtime.dhcp_boot_authority);
+    }
     bool integrity_failure = result == SUPERVISOR_EINTEGRITY;
     supervisor_unlock(flags);
     if (integrity_failure && caller_is_service)
         (void)supervisor_force_isolate(control.handle);
     if (result != 0) return result;
+
+    if (boot_offer) {
+        if (!netstack_send_supervised_dhcp_select(
+                boot.transaction_id, ingress->offered_ip,
+                ingress->server_id)) {
+            flags = supervisor_lock();
+            (void)supervisor_protected_dhcp_boot_clear(
+                &probe_runtime.dhcp_boot);
+            (void)supervisor_protected_probe_authority_cancel(
+                &probe_runtime.dhcp_boot_authority);
+            supervisor_unlock(flags);
+            (void)netstack_finish_supervised_dhcp_request(
+                boot.transaction_id);
+            return -5;
+        }
+        printf("REIST_NETWORK DHCP_BOOT_OFFER_RING3\n");
+        return 0;
+    }
+    if (boot_complete) {
+        if (!netstack_finish_supervised_dhcp_request(boot.transaction_id))
+            return -13;
+        if (ingress->message_type == SUPERVISOR_DHCP_MESSAGE_NAK) {
+            printf("REIST_NETWORK DHCP_BOOT_REJECTED\n");
+            return 0;
+        }
+        printf("REIST_NETWORK DHCP_BOOT_ACK_RING3\n");
+        return supervisor_network_submit_dhcp_config_operation(
+            ingress->offered_ip, ingress->netmask, ingress->gateway,
+            ingress->dns_server, ingress->lease_seconds, 0U) ? 0 : -13;
+    }
     if (!netstack_finish_supervised_dhcp_request(renewal.transaction_id))
         return -13;
 
@@ -3890,6 +4132,9 @@ static void supervisor_worker(void) {
         int renewal_expiry = supervisor_protected_probe_authority_expire_epoch(
             &probe_runtime.dhcp_renewal_authority, now_ms,
             control.process_generation);
+        int boot_expiry = supervisor_protected_probe_authority_expire_epoch(
+            &probe_runtime.dhcp_boot_authority, now_ms,
+            control.process_generation);
         if (reply_expiry == 1)
             (void)supervisor_protected_arp_reply_context_clear(
                 &probe_runtime.arp_reply_context);
@@ -3905,6 +4150,9 @@ static void supervisor_worker(void) {
         if (renewal_expiry == 1)
             (void)supervisor_protected_dhcp_renewal_clear(
                 &probe_runtime.dhcp_renewal);
+        if (boot_expiry == 1)
+            (void)supervisor_protected_dhcp_boot_clear(
+                &probe_runtime.dhcp_boot);
         int udp_expiry_state = 0;
         for (uint32_t slot = 0U; slot < SUPERVISOR_UDP_MAX_BINDINGS; ++slot) {
             int udp_expiry =
@@ -3970,6 +4218,11 @@ static void supervisor_worker(void) {
         }
         if (renewal_expiry < 0 && control.active != 0U)
             (void)supervisor_force_isolate(control.handle);
+        if (boot_expiry == 1) {
+            network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_EXPIRED);
+        } else if (boot_expiry < 0 && control.active != 0U) {
+            (void)supervisor_force_isolate(control.handle);
+        }
         if (udp_expiry_state == 1) {
             network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_EXPIRED);
         } else if (udp_expiry_state < 0 && control.active != 0U) {

@@ -526,6 +526,24 @@ static int syscall_reist_dhcp_ingress(
         process->pid, process->generation, &ingress);
 }
 
+_Static_assert(sizeof(supervisor_dhcp_boot_start_t) == 8U,
+               "REIST DHCP boot start ABI changed");
+
+static int syscall_reist_dhcp_boot_start(
+        const supervisor_dhcp_boot_start_t *user_request) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_request;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(*user_request),
+                               false)) return -14;
+    supervisor_dhcp_boot_start_t request;
+    if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+        return -14;
+    return supervisor_network_start_dhcp_boot(
+        process->pid, process->generation, &request);
+}
+
 _Static_assert(sizeof(storage_request_submit_t) == 28U,
                "storage submit ABI changed");
 _Static_assert(sizeof(storage_request_descriptor_t) == 28U,
@@ -1248,6 +1266,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_reist_network_frame, // Syscall 79: Bounded raw RX handoff
     (void*)&syscall_reist_udp_ingress,   // Syscall 80: Validate Ring-3 UDP ingress
     (void*)&syscall_reist_dhcp_ingress,  // Syscall 81: Validate Ring-3 DHCP ingress
+    (void*)&syscall_reist_dhcp_boot_start,// Syscall 82: Start bounded boot DHCP
     // Add more syscalls here as needed
 };
 
@@ -1639,6 +1658,10 @@ void syscall_handler(Registers* regs) {
         case SYS_REIST_DHCP_INGRESS:
             result = (uint32_t)syscall_reist_dhcp_ingress(
                 (const supervisor_dhcp_ingress_t*)(uintptr_t)arg1);
+            break;
+        case SYS_REIST_DHCP_BOOT_START:
+            result = (uint32_t)syscall_reist_dhcp_boot_start(
+                (const supervisor_dhcp_boot_start_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

@@ -228,6 +228,15 @@ int x86os_reist_dhcp_ingress(
                               (uint32_t)(uintptr_t)ingress, 0U, 0U);
 }
 
+_Static_assert(sizeof(x86os_reist_dhcp_boot_start_t) == 8U,
+               "REIST DHCP boot start ABI size changed");
+
+int x86os_reist_start_dhcp_boot(
+        const x86os_reist_dhcp_boot_start_t *request) {
+    return (int)x86os_syscall(X86OS_SYS_REIST_DHCP_BOOT_START,
+                              (uint32_t)(uintptr_t)request, 0U, 0U);
+}
+
 int x86os_network_arp_resolve(uint32_t target_ip) {
     return (int)x86os_syscall(X86OS_SYS_NETWORK_ARP_RESOLVE,
                               target_ip, 0, 0);

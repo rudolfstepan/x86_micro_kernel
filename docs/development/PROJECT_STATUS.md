@@ -229,9 +229,16 @@ dienstautorisiert: Syscall 81 bindet das validierte Ergebnis an Frame-CRC,
 250-ms-Lieferdeadline, Dienstgeneration, lokale MAC und die bestehende
 geschützte Transaktions-ID. Währenddessen werden Legacy-DHCP-Queue und
 Ring-0-Poller unterdrückt. Der reale RTL8139-Lauf bestätigt
-`DHCP_RENEW_REQUESTED -> DHCP_RENEW_INGRESS_RING3 -> DHCP_RENEWED`. Als
-nächster Teil bleibt der Boot-DISCOVER/OFFER/REQUEST/ACK-Zustandsautomat in
-Ring 3 und danach die vollständige Entfernung der Ring-0-DHCP-Queue.
+`DHCP_RENEW_REQUESTED -> DHCP_RENEW_INGRESS_RING3 -> DHCP_RENEWED`. Der
+Bootpfad ist nun ebenfalls dienstgesteuert: Syscall 82 eröffnet eine
+geschützte 1.500-ms-Transaktion, Ring 3 validiert OFFER/ACK und Ring 0 sendet
+nur die beiden vermittelten DISCOVER-/REQUEST-Frames. Drei Dienstversuche und
+eine gesamte Kernelwartezeit von sechs Sekunden begrenzen den Start. Der reale
+RTL8139-Lauf bestätigt `DHCP_BOOT_DISCOVER_RING3 -> DHCP_BOOT_OFFER_RING3 ->
+DHCP_BOOT_ACK_RING3 -> DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED -> BOOT_OK`.
+Als nächstes werden die jetzt toten synchronen Ring-0-DHCP-Routinen, die
+dedizierte Queue und der alte Poller entfernt und Restart-/Druckpfade erneut
+abgenommen.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

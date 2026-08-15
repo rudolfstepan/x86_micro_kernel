@@ -175,6 +175,12 @@ und 10 verbindlich.
                 - [ ] S0.3c-5e2b2b2b Boot-DISCOVER/OFFER/REQUEST/ACK als
                   begrenzten Ring-3-Zustandsautomaten übernehmen und danach
                   die dedizierte Ring-0-DHCP-Queue entfernen
+                  - [x] S0.3c-5e2b2b2b1 Geschützte Boot-Transaktion mit
+                    append-only Start-Syscall 82, drei endlichen
+                    Dienstversuchen und realem RTL8139-Nachweis übernehmen
+                  - [ ] S0.3c-5e2b2b2b2 Tote synchrone Ring-0-DHCP-Routinen,
+                    Queue und Poller entfernen sowie Restart-/Druckpfade ohne
+                    Parallelzustellung abnehmen
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -1567,9 +1573,18 @@ vollständigen Netzmasken-, Gateway-, DNS- und Lease-Optionen; NAK entzieht die
 Lease fail-closed. Solange eine solche Transaktion aktiv ist, befüllt `netdev`
 die Legacy-DHCP-Queue nicht und der Supervisor-Worker ruft den Ring-0-Poller
 nicht auf. Der RTL8139-Test bestätigt `DHCP_RENEW_REQUESTED ->
-DHCP_RENEW_INGRESS_RING3 -> DHCP_RENEWED`. Offen bleibt S0.3c-5e2b2b2b mit
-dem Boot-DISCOVER/OFFER/REQUEST/ACK-Zustandsautomaten und der anschließenden
-vollständigen Entfernung der dedizierten Ring-0-Queue.
+DHCP_RENEW_INGRESS_RING3 -> DHCP_RENEWED`. S0.3c-5e2b2b2b1 ist ebenfalls
+abgenommen: Der append-only Syscall 82 startet nur für die aktuelle gesunde
+Dienstgeneration eine geschützte 1.500-ms-Boot-Transaktion. Ring 3 validiert
+OFFER und ACK, während Ring 0 ausschließlich je ein DISCOVER beziehungsweise
+REQUEST sendet. Transaktions-ID, Frame-CRC, Client-MAC, Server-ID, angebotene
+Adresse und Lieferdeadline werden vor jedem Zustandswechsel geprüft. Der
+Dienst führt höchstens drei Versuche aus; der Kernel wartet insgesamt höchstens
+sechs Sekunden und bleibt danach ohne IP fail-closed. Der RTL8139-Lauf bestätigt
+`DHCP_BOOT_DISCOVER_RING3 -> DHCP_BOOT_OFFER_RING3 -> DHCP_BOOT_ACK_RING3 ->
+DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED -> BOOT_OK`. Offen bleibt nur noch
+S0.3c-5e2b2b2b2: die nun toten synchronen Ring-0-Routinen, die dedizierte
+DHCP-Queue und den Poller löschen und die Restart-/Druckpfade erneut abnehmen.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine
