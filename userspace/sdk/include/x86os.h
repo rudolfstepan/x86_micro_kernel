@@ -78,7 +78,10 @@ enum {
     X86OS_SYS_STORAGE_COLLECT = 71,
     X86OS_SYS_REIST_ICMP_ECHO_REPLY = 72,
     X86OS_SYS_REIST_DHCP_COMMIT = 73,
-    X86OS_SYS_REIST_UDP_ECHO_REPLY = 74
+    X86OS_SYS_REIST_UDP_ECHO_REPLY = 74,
+    X86OS_SYS_REIST_UDP_BIND = 75,
+    X86OS_SYS_REIST_UDP_UNBIND = 76,
+    X86OS_SYS_REIST_UDP_REPLY = 77
 };
 
 enum {
@@ -205,6 +208,24 @@ typedef struct {
     uint32_t request_id;
     uint32_t reserved;
 } x86os_reist_udp_echo_reply_t;
+
+#define X86OS_REIST_UDP_BIND_REQUEST_VERSION 1U
+#define X86OS_REIST_UDP_REPLY_VERSION 1U
+#define X86OS_REIST_UDP_MAX_DATA 32U
+typedef uint32_t x86os_reist_udp_binding_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint16_t port;
+    uint16_t max_data;
+    uint32_t reserved;
+} x86os_reist_udp_bind_request_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_reist_udp_binding_t binding;
+    uint32_t request_id;
+} x86os_reist_udp_reply_t;
 
 #define X86OS_STORAGE_REQUEST_VERSION 1U
 #define X86OS_STORAGE_BLOCK_SIZE 512U
@@ -339,6 +360,10 @@ int x86os_reist_commit_dhcp(
     const x86os_reist_dhcp_commit_t *commit);
 int x86os_reist_send_udp_echo_reply(
     const x86os_reist_udp_echo_reply_t *reply);
+int x86os_reist_udp_bind(const x86os_reist_udp_bind_request_t *request,
+                         x86os_reist_udp_binding_t *binding);
+int x86os_reist_udp_unbind(x86os_reist_udp_binding_t binding);
+int x86os_reist_udp_reply(const x86os_reist_udp_reply_t *reply);
 int x86os_network_arp_resolve(uint32_t target_ip);
 int x86os_storage_bind(void);
 int x86os_storage_submit(const x86os_storage_submit_t *request,

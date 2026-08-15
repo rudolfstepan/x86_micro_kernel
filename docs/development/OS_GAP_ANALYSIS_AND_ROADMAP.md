@@ -137,6 +137,10 @@ und 10 verbindlich.
         schützen und die Netzkonfiguration bei Ablauf fail-closed entziehen
       - [ ] S0.3c-5d2b2 Allgemeine UDP-Bindings sowie DHCP-Renew/Rebind
         generationgebunden in den Dienst verlagern
+        - [x] S0.3c-5d2b2a Vier statische, generationsgebundene
+          Dienst-Bindings mit 32-Byte-Datagrammen, Ablauf und Fence-Revoke
+        - [ ] S0.3c-5d2b2b DHCP-Renew/Rebind als begrenzten, nichtblockierenden
+          Ring-3-Zustandsautomaten umsetzen
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -1419,8 +1423,9 @@ den append-only Syscall 74 antworten. Kontext und Autorität werden vor dem
 einzigen NIC-Sendepunkt verbraucht; es gibt keinen Ring-0-Echo-Fallback. Der
 Runtime-Modus `udp-echo` injiziert ein echtes Datagramm über RTL8139 und prüft
 am QEMU-Socket Ports, IP-Adressen, Payload und Antwortprüfsumme. Allgemeine
-UDP-Bindings, größere Nutzdaten, DHCP-Renew/Rebind und eine Socket-ABI bleiben
-S0.3c-5d2b2/R4.1.
+Weitere Bindings, größere Nutzdaten, DHCP-Renew/Rebind und eine Socket-ABI
+blieben zu diesem Stand S0.3c-5d2b2/R4.1; 5d2b2a schließt inzwischen den
+statisch begrenzten Dienst-Binding-Vertrag.
 
 **S0.3c-5d2b1 ist umgesetzt und abgenommen:** DHCP-Option 51 ist nun
 verpflichtend und wird auf 60 Sekunden bis sieben Tage begrenzt. Vorschlag,
@@ -1431,8 +1436,21 @@ IP, Maske, Gateway und DNS einschließlich der alten Gateway-Bindung; eine
 veraltete Generation kann die Autorität nicht behalten. Das dedizierte
 Buildprofil verkürzt ausschließlich die Testdeadline auf 2500 ms. Der reale
 RTL8139-Lauf verlangt `BOOT_OK -> DHCP_LEASE_EXPIRED` und weist danach noch
-laufenden Kernel und Shell nach. Renew/Rebind und allgemeine UDP-Bindings
-bleiben S0.3c-5d2b2.
+laufenden Kernel und Shell nach. Renew/Rebind bleibt S0.3c-5d2b2b.
+
+**S0.3c-5d2b2a ist umgesetzt und abgenommen:** Der überwachte Ring-3-Netzdienst
+kann bis zu vier Ports ab 1024 binden. Ein 24-Bit-Generationsanteil im Handle,
+die gebundene Dienstgeneration und eine pro Slot geschützte Einmalautorität
+verhindern stale Antworten und Portübernahme. Jeder Slot besitzt einen
+`critical_object`-geschützten Descriptor und Transaktionskontext; Payload,
+Antwortfenster und Pool sind auf 32 Byte, 250 ms und vier Slots begrenzt.
+Unbind, Deadline, Dienst-Fence und Neustart räumen Kontext und Autorität
+idempotent auf, während die Generation monoton bleibt. Die append-only
+Syscalls 75–77 validieren beide Userbereiche vor Publikation und rollen einen
+Bind bei fehlgeschlagenem Copy-out zurück. Der echte RTL8139-Lauf bindet neben
+Port 9000 auch Port 9001 und prüft dort Request, Ring-3-Revalidierung, Reply,
+Ports, Payload und UDP-Prüfsumme. Das ist bewusst noch keine allgemeine
+Anwendungs-Socket-ABI; DHCP Renew/Rebind folgt als S0.3c-5d2b2b.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

@@ -211,6 +211,12 @@ bool netstack_send_udp_echo_reply(uint32_t dst_ip,
                                   uint16_t source_port,
                                   uint16_t destination_port,
                                   const uint8_t *data, uint16_t data_len);
+bool netstack_send_supervised_udp_reply(uint32_t dst_ip,
+                                        const uint8_t dst_mac[6],
+                                        uint16_t source_port,
+                                        uint16_t destination_port,
+                                        const uint8_t *data,
+                                        uint16_t data_len);
 void icmp_send_echo_reply(uint32_t dst_ip, uint16_t id, uint16_t seq, uint8_t *data, uint16_t data_len);
 
 // UDP Functions

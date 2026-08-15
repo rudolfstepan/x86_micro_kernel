@@ -231,6 +231,40 @@ typedef struct {
 
 #define SUPERVISOR_UDP_ECHO_PORT 9000U
 #define SUPERVISOR_UDP_ECHO_MAX_DATA 32U
+#define SUPERVISOR_UDP_MAX_BINDINGS 4U
+#define SUPERVISOR_UDP_BINDING_MIN_PORT 1024U
+#define SUPERVISOR_UDP_BINDING_VERSION 1U
+#define SUPERVISOR_UDP_BIND_REQUEST_VERSION 1U
+#define SUPERVISOR_UDP_REPLY_VERSION 1U
+typedef uint32_t supervisor_udp_binding_handle_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint16_t port;
+    uint16_t max_data;
+    uint32_t reserved;
+} supervisor_udp_bind_request_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    supervisor_udp_binding_handle_t binding;
+    uint32_t request_id;
+} supervisor_udp_reply_t;
+
+typedef struct {
+    uint32_t active;
+    uint32_t generation;
+    uint32_t process_generation;
+    uint16_t port;
+    uint16_t reserved;
+} supervisor_udp_binding_t;
+
+typedef struct {
+    critical_object_t object;
+} supervisor_protected_udp_binding_t;
+
 #define SUPERVISOR_UDP_ECHO_REPLY_VERSION 1U
 typedef struct {
     uint32_t version;
@@ -453,6 +487,16 @@ bool supervisor_network_submit_udp_echo(
     uint16_t destination_port, const uint8_t *data, uint16_t data_length);
 int supervisor_network_send_udp_echo_reply(
     int pid, uint32_t generation, const supervisor_udp_echo_reply_t *reply);
+int supervisor_network_udp_bind(
+    int pid, uint32_t generation, const supervisor_udp_bind_request_t *request,
+    supervisor_udp_binding_handle_t *handle_out);
+int supervisor_network_udp_unbind(
+    int pid, uint32_t generation, supervisor_udp_binding_handle_t handle);
+bool supervisor_network_submit_udp(
+    uint32_t source_ip, const uint8_t source_mac[6], uint16_t source_port,
+    uint16_t destination_port, const uint8_t *data, uint16_t data_length);
+int supervisor_network_send_udp_reply(
+    int pid, uint32_t generation, const supervisor_udp_reply_t *reply);
 int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind);
 int supervisor_register(const char *name, const supervisor_config_t *config,

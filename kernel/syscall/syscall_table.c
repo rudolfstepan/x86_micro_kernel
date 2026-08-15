@@ -368,6 +368,58 @@ static int syscall_reist_udp_echo_reply(
         process->pid, process->generation, &reply);
 }
 
+_Static_assert(sizeof(supervisor_udp_bind_request_t) == 16U,
+               "REIST UDP bind request ABI changed");
+_Static_assert(sizeof(supervisor_udp_reply_t) == 16U,
+               "REIST UDP reply ABI changed");
+
+static int syscall_reist_udp_bind(
+        const supervisor_udp_bind_request_t *user_request,
+        supervisor_udp_binding_handle_t *user_handle) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t request_address = (uint32_t)(uintptr_t)user_request;
+    uint32_t handle_address = (uint32_t)(uintptr_t)user_handle;
+    if (process == NULL ||
+        !user_range_accessible(directory, request_address,
+                               sizeof(*user_request), false) ||
+        !user_range_accessible(directory, handle_address,
+                               sizeof(*user_handle), true)) return -14;
+    supervisor_udp_bind_request_t request;
+    if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+        return -14;
+    supervisor_udp_binding_handle_t handle = 0U;
+    int result = supervisor_network_udp_bind(
+        process->pid, process->generation, &request, &handle);
+    if (result != 0) return result;
+    if (copy_to_user(user_handle, &handle, sizeof(handle)) != 0) {
+        (void)supervisor_network_udp_unbind(
+            process->pid, process->generation, handle);
+        return -14;
+    }
+    return 0;
+}
+
+static int syscall_reist_udp_unbind(supervisor_udp_binding_handle_t handle) {
+    Process *process = scheduler_current_process();
+    return process == NULL ? -13 : supervisor_network_udp_unbind(
+        process->pid, process->generation, handle);
+}
+
+static int syscall_reist_udp_reply(
+        const supervisor_udp_reply_t *user_reply) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_reply;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(*user_reply), false))
+        return -14;
+    supervisor_udp_reply_t reply;
+    if (copy_from_user(&reply, user_reply, sizeof(reply)) != 0) return -14;
+    return supervisor_network_send_udp_reply(
+        process->pid, process->generation, &reply);
+}
+
 _Static_assert(sizeof(storage_request_submit_t) == 28U,
                "storage submit ABI changed");
 _Static_assert(sizeof(storage_request_descriptor_t) == 28U,
@@ -1083,6 +1135,9 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_reist_icmp_echo_reply,// Syscall 72: Mediated ICMP echo
     (void*)&syscall_reist_dhcp_commit,   // Syscall 73: Mediated DHCP config
     (void*)&syscall_reist_udp_echo_reply,// Syscall 74: Mediated UDP echo
+    (void*)&syscall_reist_udp_bind,      // Syscall 75: Bind supervised UDP
+    (void*)&syscall_reist_udp_unbind,    // Syscall 76: Unbind supervised UDP
+    (void*)&syscall_reist_udp_reply,     // Syscall 77: Reply on UDP binding
     // Add more syscalls here as needed
 };
 
@@ -1445,6 +1500,18 @@ void syscall_handler(Registers* regs) {
         case SYS_REIST_UDP_ECHO_REPLY:
             result = (uint32_t)syscall_reist_udp_echo_reply(
                 (const supervisor_udp_echo_reply_t*)(uintptr_t)arg1);
+            break;
+        case SYS_REIST_UDP_BIND:
+            result = (uint32_t)syscall_reist_udp_bind(
+                (const supervisor_udp_bind_request_t*)(uintptr_t)arg1,
+                (supervisor_udp_binding_handle_t*)(uintptr_t)arg2);
+            break;
+        case SYS_REIST_UDP_UNBIND:
+            result = (uint32_t)syscall_reist_udp_unbind(arg1);
+            break;
+        case SYS_REIST_UDP_REPLY:
+            result = (uint32_t)syscall_reist_udp_reply(
+                (const supervisor_udp_reply_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

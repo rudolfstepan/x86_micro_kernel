@@ -106,27 +106,31 @@ static bool dhcp_proposal_valid(const x86os_ipc_message_t *message) {
     return true;
 }
 
-static bool udp_echo_proposal_valid(const x86os_ipc_message_t *message) {
-    if (message->length < 24U || message->length > 56U) return false;
-    uint32_t request_id = (uint32_t)message->payload[4] |
+static bool udp_proposal_valid(const x86os_ipc_message_t *message) {
+    if (message->length < 28U || message->length > 60U) return false;
+    uint32_t binding = (uint32_t)message->payload[4] |
         ((uint32_t)message->payload[5] << 8U) |
         ((uint32_t)message->payload[6] << 16U) |
         ((uint32_t)message->payload[7] << 24U);
-    uint32_t source_ip = payload_be32(message, 8U);
-    uint16_t source_port = ((uint16_t)message->payload[18] << 8U) |
-                           message->payload[19];
-    uint16_t destination_port = ((uint16_t)message->payload[20] << 8U) |
-                                message->payload[21];
-    uint16_t data_length = (uint16_t)message->payload[22] |
-                           ((uint16_t)message->payload[23] << 8U);
+    uint32_t request_id = (uint32_t)message->payload[8] |
+        ((uint32_t)message->payload[9] << 8U) |
+        ((uint32_t)message->payload[10] << 16U) |
+        ((uint32_t)message->payload[11] << 24U);
+    uint32_t source_ip = payload_be32(message, 12U);
+    uint16_t source_port = ((uint16_t)message->payload[22] << 8U) |
+                           message->payload[23];
+    uint16_t destination_port = ((uint16_t)message->payload[24] << 8U) |
+                                message->payload[25];
+    uint16_t data_length = (uint16_t)message->payload[26] |
+                           ((uint16_t)message->payload[27] << 8U);
     bool nonzero_mac = false;
     for (uint32_t index = 0U; index < 6U; ++index)
-        if (message->payload[12U + index] != 0U) nonzero_mac = true;
-    return request_id != 0U && source_ip != 0U &&
+        if (message->payload[16U + index] != 0U) nonzero_mac = true;
+    return binding != 0U && request_id != 0U && source_ip != 0U &&
         source_ip != 0xFFFFFFFFU && source_port != 0U &&
-        destination_port == 9000U && nonzero_mac &&
-        (message->payload[12] & 1U) == 0U && data_length <= 32U &&
-        message->length == 24U + data_length;
+        destination_port >= 1024U && nonzero_mac &&
+        (message->payload[16] & 1U) == 0U && data_length <= 32U &&
+        message->length == 28U + data_length;
 }
 
 static const char *network_classification(
@@ -139,7 +143,7 @@ static const char *network_classification(
          message->payload[3] != 'A' &&
          message->payload[3] != 'Q' && message->payload[3] != 'I' &&
          message->payload[3] != 'D' &&
-         message->payload[3] != 'U' &&
+         message->payload[3] != 'U' && message->payload[3] != 'V' &&
          message->payload[3] != 'X'))
         return NULL;
     if (message->payload[3] == 'A')
@@ -168,7 +172,9 @@ static const char *network_classification(
     if (message->payload[3] == 'D')
         return dhcp_proposal_valid(message) ? "REIST_DHCP_CONFIG" : NULL;
     if (message->payload[3] == 'U')
-        return udp_echo_proposal_valid(message) ? "REIST_UDP_ECHO" : NULL;
+        return NULL;
+    if (message->payload[3] == 'V')
+        return udp_proposal_valid(message) ? "REIST_UDP_DATAGRAM" : NULL;
     uint16_t ethertype = ((uint16_t)message->payload[16] << 8) |
                          message->payload[17];
     if (ethertype == 0x0806U) {
@@ -270,6 +276,39 @@ int main(int argc, char **argv) {
         for (;;) (void)x86os_sleep_ms(1000U);
     }
     if (!text_equal(argv[1], "healthy")) return 5;
+
+    x86os_reist_udp_binding_t udp_bindings[4] = {0U, 0U, 0U, 0U};
+    const uint16_t udp_ports[4] = {9000U, 9001U, 9002U, 9003U};
+    for (uint32_t index = 0U; index < 4U; ++index) {
+        x86os_reist_udp_bind_request_t bind = {
+            .version = X86OS_REIST_UDP_BIND_REQUEST_VERSION,
+            .struct_size = sizeof(bind),
+            .port = udp_ports[index],
+            .max_data = X86OS_REIST_UDP_MAX_DATA,
+        };
+        if (x86os_reist_udp_bind(&bind, &udp_bindings[index]) != 0 ||
+            udp_bindings[index] == 0U) return 21;
+    }
+    x86os_reist_udp_bind_request_t quota_probe = {
+        .version = X86OS_REIST_UDP_BIND_REQUEST_VERSION,
+        .struct_size = sizeof(quota_probe),
+        .port = 9004U,
+        .max_data = X86OS_REIST_UDP_MAX_DATA,
+    };
+    x86os_reist_udp_binding_t rejected_binding = 0U;
+    if (x86os_reist_udp_bind(&quota_probe, &rejected_binding) != -28 ||
+        rejected_binding != 0U) return 22;
+    quota_probe.port = 9000U;
+    if (x86os_reist_udp_bind(&quota_probe, &rejected_binding) != -17)
+        return 23;
+    x86os_reist_udp_binding_t stale_binding = udp_bindings[3];
+    if (x86os_reist_udp_unbind(stale_binding) != 0) return 24;
+    quota_probe.port = 9003U;
+    if (x86os_reist_udp_bind(&quota_probe, &udp_bindings[3]) != 0 ||
+        udp_bindings[3] == stale_binding) return 25;
+    if (x86os_reist_udp_unbind(stale_binding) != -9 ||
+        x86os_reist_udp_unbind(udp_bindings[3]) != 0 ||
+        x86os_reist_udp_unbind(udp_bindings[2]) != 0) return 26;
 
     uint32_t sequence = 2U;
     uint32_t pending_network_request = 0U;
@@ -437,16 +476,20 @@ int main(int argc, char **argv) {
                 }
                 continue;
             }
-            if (network != NULL && request.payload[3] == 'U') {
-                x86os_reist_udp_echo_reply_t reply = {
-                    .version = X86OS_REIST_UDP_ECHO_REPLY_VERSION,
+            if (network != NULL && request.payload[3] == 'V') {
+                x86os_reist_udp_reply_t reply = {
+                    .version = X86OS_REIST_UDP_REPLY_VERSION,
                     .struct_size = sizeof(reply),
-                    .request_id = (uint32_t)request.payload[4] |
+                    .binding = (uint32_t)request.payload[4] |
                         ((uint32_t)request.payload[5] << 8U) |
                         ((uint32_t)request.payload[6] << 16U) |
                         ((uint32_t)request.payload[7] << 24U),
+                    .request_id = (uint32_t)request.payload[8] |
+                        ((uint32_t)request.payload[9] << 8U) |
+                        ((uint32_t)request.payload[10] << 16U) |
+                        ((uint32_t)request.payload[11] << 24U),
                 };
-                if (x86os_reist_send_udp_echo_reply(&reply) != 0) {
+                if (x86os_reist_udp_reply(&reply) != 0) {
                     if (x86os_reist_report(
                             X86OS_REIST_REPORT_NETWORK_DEGRADED,
                             X86OS_REIST_NETWORK_DEGRADED_SEMANTIC) != 0)

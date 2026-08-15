@@ -475,7 +475,8 @@ der Kernel genau eine Antwort mit vertauschten Ports sendet. Queue-Druck,
 Deadline, Integritätsfehler oder ungültige Semantik erzeugen keine Antwort und
 reaktivieren keinen Kernelpfad. Der RTL8139-Test validiert den tatsächlich am
 QEMU-Socket beobachteten Frame samt UDP-Prüfsumme. Dies ist noch keine Socket-
-ABI: allgemeine Bindings und DHCP-Renew/Rebind bleiben S0.3c-5d2b2.
+ABI. S0.3c-5d2b2a erweitert den Dienstpfad inzwischen um vier statische,
+generationgebundene Port-Bindings; DHCP-Renew/Rebind bleibt S0.3c-5d2b2b.
 
 S0.3c-5d2b1 ergänzt die zeitliche Autoritätsgrenze. Der ACK muss eine
 Leasezeit zwischen 60 Sekunden und sieben Tagen enthalten; Transport,
@@ -487,7 +488,19 @@ Netzmaske, Gateway, DNS und die zugehörige Gateway-Bindung entzogen, ohne
 Renewal im Kernel zu simulieren. Korruption und Dienst-Fence räumen dieselbe
 Autorität fail-closed. Ein ausschließlich im Testbuild aktives 2500-ms-Limit
 beweist den Ablauf mit RTL8139 und weiter betriebsfähiger Shell. Automatisches
-Renew/Rebind und allgemeine UDP-Bindings folgen in S0.3c-5d2b2.
+Renew/Rebind folgt in S0.3c-5d2b2b.
+
+S0.3c-5d2b2a verwendet je Binding einen redundanten Descriptor, eine eigene
+Einmalautorität und einen eigenen geschützten Datagrammkontext. Handles tragen
+Slot und 24-Bit-Generation; zusätzlich muss die aktuelle Prozessgeneration des
+Netzdienstes übereinstimmen. Doppelte Ports, erschöpfte Slots, stale Handles,
+Antworten nach 250 ms und Antworten nach Fence werden vor dem NIC-Sendepunkt
+abgewiesen. Der Kernel akzeptiert ausschließlich gültige UDP-Prüfsummen und
+höchstens 32 Byte, übergibt Handle und vollständigen Peer-Kontext als `NETV`
+an Ring 3 und verbraucht Autorität und Kontext vor dem einzigen Sendepunkt.
+Port 9000 bleibt kompatibel, Port 9001 dient als realer Mehrbinding-Nachweis.
+Anwendungs-Sockets und unbeschränkte Port-/Pufferzahlen gehören weiterhin
+nicht zu diesem Safety-Dienstvertrag.
 
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau

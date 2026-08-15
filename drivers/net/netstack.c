@@ -425,13 +425,15 @@ bool netstack_send_icmp_echo_reply(uint32_t dst_ip,
     return true;
 }
 
-bool netstack_send_udp_echo_reply(uint32_t dst_ip,
-                                  const uint8_t dst_mac[6],
-                                  uint16_t source_port,
-                                  uint16_t destination_port,
-                                  const uint8_t *data, uint16_t data_len) {
+bool netstack_send_supervised_udp_reply(uint32_t dst_ip,
+                                        const uint8_t dst_mac[6],
+                                        uint16_t source_port,
+                                        uint16_t destination_port,
+                                        const uint8_t *data,
+                                        uint16_t data_len) {
     if (dst_ip == 0U || dst_ip == 0xFFFFFFFFU || dst_mac == NULL ||
-        source_port != SUPERVISOR_UDP_ECHO_PORT || destination_port == 0U ||
+        source_port < SUPERVISOR_UDP_BINDING_MIN_PORT ||
+        destination_port == 0U ||
         data_len > SUPERVISOR_UDP_ECHO_MAX_DATA ||
         (data_len != 0U && data == NULL) || (dst_mac[0] & 1U) != 0U)
         return false;
@@ -462,6 +464,16 @@ bool netstack_send_udp_echo_reply(uint32_t dst_ip,
     size_t total_len = sizeof(eth_header_t) + sizeof(ip_header_t) +
                        sizeof(udp_header_t) + data_len;
     return nic_send(packet, total_len);
+}
+
+bool netstack_send_udp_echo_reply(uint32_t dst_ip,
+                                  const uint8_t dst_mac[6],
+                                  uint16_t source_port,
+                                  uint16_t destination_port,
+                                  const uint8_t *data, uint16_t data_len) {
+    return source_port == SUPERVISOR_UDP_ECHO_PORT &&
+        netstack_send_supervised_udp_reply(dst_ip, dst_mac, source_port,
+                                           destination_port, data, data_len);
 }
 
 static void handle_icmp_packet(uint8_t *packet, uint16_t length,
@@ -509,13 +521,12 @@ static void handle_udp_packet(const ip_header_t *ip, uint8_t *packet,
         return;
     }
     uint16_t destination_port = ntohs(udp->dst_port);
-    if (destination_port != SUPERVISOR_UDP_ECHO_PORT) return;
     uint16_t source_port = ntohs(udp->src_port);
     uint16_t data_length = (uint16_t)(udp_length - sizeof(udp_header_t));
     uint8_t *data = packet + sizeof(udp_header_t);
     if (udp->checksum == 0U ||
         !udp_checksum_valid(ip, udp, data, data_length) ||
-        !supervisor_network_submit_udp_echo(
+        !supervisor_network_submit_udp(
             source_ip, source_mac, source_port, destination_port,
             data, data_length)) {
         ++netstack_stats.rx_dropped;

@@ -151,6 +151,20 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertIsNone(RUNNER_MODULE.validate(
             transcript, expect_udp_echo=True))
 
+    def test_udp_binding_frame_uses_requested_port_and_generic_markers(self) -> None:
+        frame = RUNNER_MODULE.udp_echo_request_frame(9001)
+        udp_length = struct.unpack("!H", frame[38:40])[0]
+        udp = frame[34:34 + udp_length]
+        self.assertEqual(struct.unpack("!HH", udp[:4]), (40000, 9001))
+        pseudo = frame[26:34] + struct.pack("!BBH", 0, 17, udp_length)
+        self.assertEqual(RUNNER_MODULE.internet_checksum(pseudo + udp), 0)
+        transcript = "\n".join((
+            "BOOT_OK", RUNNER_MODULE.REIST_UDP_DATAGRAM_QUEUED_MARKER,
+            RUNNER_MODULE.REIST_UDP_DATAGRAM_MARKER, "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_udp_binding=True))
+
     def test_dhcp_mediation_must_complete_before_boot(self) -> None:
         transcript = "\n".join((
             RUNNER_MODULE.REIST_DHCP_CONFIG_QUEUED_MARKER,

@@ -54,6 +54,8 @@ REIST_DHCP_CONFIG_MARKER = "REIST_NETWORK DHCP_CONFIG_MEDIATED"
 REIST_DHCP_LEASE_EXPIRED_MARKER = "REIST_NETWORK DHCP_LEASE_EXPIRED"
 REIST_UDP_ECHO_QUEUED_MARKER = "REIST_NETWORK UDP_ECHO_QUEUED"
 REIST_UDP_ECHO_MARKER = "REIST_NETWORK UDP_ECHO_MEDIATED"
+REIST_UDP_DATAGRAM_QUEUED_MARKER = "REIST_NETWORK UDP_DATAGRAM_QUEUED"
+REIST_UDP_DATAGRAM_MARKER = "REIST_NETWORK UDP_DATAGRAM_MEDIATED"
 REIST_NETWORK_CRASH_MARKER = "REIST_NETWORK SERVICE_CRASH_RECOVERED"
 REIST_NETWORK_RECOVERY_MARKER = "TEST_STAGE NETWORK_RECOVERY_OK"
 REIST_NETWORK_PRESSURE_FALLBACK_MARKER = "REIST_NETWORK QUEUE_PRESSURE_FALLBACK"
@@ -253,14 +255,14 @@ def icmp_echo_request_frame() -> bytes:
         60, b"\x00")
 
 
-def udp_echo_request_frame() -> bytes:
+def udp_echo_request_frame(destination_port: int = 9000) -> bytes:
     source_mac = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x02))
     destination_mac = b"\xff" * 6
     source_ip = bytes((10, 0, 2, 99))
     destination_ip = bytes((10, 0, 2, 15))
     payload = b"REIST-UDP"
     udp_length = 8 + len(payload)
-    udp = struct.pack("!HHHH", 40000, 9000, udp_length, 0) + payload
+    udp = struct.pack("!HHHH", 40000, destination_port, udp_length, 0) + payload
     pseudo = source_ip + destination_ip + struct.pack("!BBH", 0, 17,
                                                        udp_length)
     checksum = internet_checksum(pseudo + udp)
@@ -357,8 +359,8 @@ def receive_icmp_echo_reply(connection: socket.socket,
     return False
 
 
-def receive_udp_echo_reply(connection: socket.socket,
-                           deadline: float) -> bool:
+def receive_udp_echo_reply(connection: socket.socket, deadline: float,
+                           source_port_expected: int = 9000) -> bool:
     expected_destination = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x02))
     expected_source_ip = bytes((10, 0, 2, 15))
     expected_destination_ip = bytes((10, 0, 2, 99))
@@ -387,7 +389,7 @@ def receive_udp_echo_reply(connection: socket.socket,
             continue
         source_port, destination_port, udp_length, checksum = struct.unpack(
             "!HHHH", udp[:8])
-        if (source_port != 9000 or destination_port != 40000 or
+        if (source_port != source_port_expected or destination_port != 40000 or
                 udp_length != len(udp) or checksum == 0 or
                 udp[8:] != b"REIST-UDP"):
             continue
@@ -511,6 +513,7 @@ def run(
     inject_icmp_echo: bool = False,
     inject_udp_echo: bool = False,
     expect_dhcp_expiry: bool = False,
+    udp_port: int = 9000,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
     injection_connection: socket.socket | None = None
@@ -676,17 +679,22 @@ def run(
                     error = "mediated ICMP echo reply was not observed on QEMU socket"
             if error is None and inject_udp_echo:
                 assert injection_connection is not None
+                queued_marker = (REIST_UDP_ECHO_QUEUED_MARKER if udp_port == 9000
+                                 else REIST_UDP_DATAGRAM_QUEUED_MARKER)
+                reply_marker = (REIST_UDP_ECHO_MARKER if udp_port == 9000
+                                else REIST_UDP_DATAGRAM_MARKER)
                 queued = False
                 for _ in range(3):
                     if not inject_ethernet_frame(
-                            injection_connection, udp_echo_request_frame()):
+                            injection_connection,
+                            udp_echo_request_frame(udp_port)):
                         error = "unable to inject bounded UDP echo request"
                         break
                     confirmation_deadline = min(deadline,
                                                 time.monotonic() + 1.0)
                     confirmation_error, _ = wait_for_line(
                         process, chunks, transcript, finished,
-                        REIST_UDP_ECHO_QUEUED_MARKER,
+                        queued_marker,
                         confirmation_deadline,
                     )
                     if confirmation_error is None:
@@ -697,10 +705,10 @@ def run(
                 if error is None:
                     error, _ = wait_for_line(
                         process, chunks, transcript, finished,
-                        REIST_UDP_ECHO_MARKER, deadline,
+                        reply_marker, deadline,
                     )
                 if error is None and not receive_udp_echo_reply(
-                        injection_connection, deadline):
+                        injection_connection, deadline, udp_port):
                     error = "mediated UDP echo reply was not observed on QEMU socket"
             test_position = -1
             if error is None:
@@ -763,6 +771,7 @@ def validate(
     expect_dhcp_config: bool = False,
     expect_dhcp_expiry: bool = False,
     expect_udp_echo: bool = False,
+    expect_udp_binding: bool = False,
 ) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
@@ -859,6 +868,12 @@ def validate(
         replied = exact_line_position(transcript, REIST_UDP_ECHO_MARKER)
         if queued < boot or replied < queued or replied > test:
             return "missing ordered mediated UDP echo markers"
+    if expect_udp_binding:
+        queued = exact_line_position(transcript,
+                                     REIST_UDP_DATAGRAM_QUEUED_MARKER)
+        replied = exact_line_position(transcript, REIST_UDP_DATAGRAM_MARKER)
+        if queued < boot or replied < queued or replied > test:
+            return "missing ordered mediated UDP binding markers"
     if expect_storage_recovery:
         crash = exact_line_position(transcript, REIST_STORAGE_CRASH_MARKER)
         failure = exact_line_position(transcript, REIST_STORAGE_FAILURE_MARKER)
@@ -957,6 +972,10 @@ def main() -> int:
         help="inject and verify one bounded Ring-3-mediated UDP echo",
     )
     parser.add_argument(
+        "--udp-port", type=int, default=9000,
+        help="destination port for the bounded UDP injection (default 9000)",
+    )
+    parser.add_argument(
         "--expect-dhcp-config",
         action="store_true",
         help="require a Ring-3-mediated DHCP configuration before boot",
@@ -998,6 +1017,9 @@ def main() -> int:
     if args.timeout <= 0:
         print("guest-smoke: timeout must be positive", file=sys.stderr)
         return 2
+    if args.udp_port < 1024 or args.udp_port > 65535:
+        print("guest-smoke: UDP port must be in 1024..65535", file=sys.stderr)
+        return 2
     if re.fullmatch(r"[1-9][0-9]*[KMG]", args.memory,
                     flags=re.IGNORECASE) is None:
         print("guest-smoke: memory must look like 64M or 1G", file=sys.stderr)
@@ -1022,6 +1044,7 @@ def main() -> int:
             args.inject_icmp_echo,
             args.inject_udp_echo,
             args.expect_dhcp_expiry,
+            args.udp_port,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)
@@ -1042,7 +1065,8 @@ def main() -> int:
                             args.inject_icmp_echo,
                             args.expect_dhcp_config,
                             args.expect_dhcp_expiry,
-                            args.inject_udp_echo)
+                            args.inject_udp_echo and args.udp_port == 9000,
+                            args.inject_udp_echo and args.udp_port != 9000)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")

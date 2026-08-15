@@ -83,6 +83,9 @@
 #define SYS_REIST_ICMP_ECHO_REPLY 72
 #define SYS_REIST_DHCP_COMMIT 73
 #define SYS_REIST_UDP_ECHO_REPLY 74
+#define SYS_REIST_UDP_BIND 75
+#define SYS_REIST_UDP_UNBIND 76
+#define SYS_REIST_UDP_REPLY 77
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)
