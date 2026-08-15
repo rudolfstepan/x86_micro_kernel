@@ -523,6 +523,25 @@ Testlease bestätigt `DHCP_RENEW_REQUESTED -> DHCP_RENEWED`. Damit ist
 S0.3c-5d2 geschlossen; die verbliebene Ring-0-Protokollzustands- und allgemeine
 Socket-Demultiplexlogik bildet S0.3c-5e.
 
+S0.3c-5e1 führt dafür einen vollständigen, aber noch parallelen RX-Handoff ein.
+Neben den bestehenden DHCP-, Legacy- und Monitorqueues besitzt `netdev` eine
+eigene statische Queue mit acht Slots zu je 1518 Byte. IRQ-/Poll-Produzenten
+kopieren Frames begrenzt und verwerfen bei Druck, statt zu warten. Syscall 79
+ist nur für die aktuelle gesunde Dienstgeneration freigegeben, validiert den
+gesamten 1536-Byte-Ausgabebereich vor dem Dequeue und liefert leer sofort
+`EAGAIN`. Ein Restart setzt den Queue-Lesepunkt auf den aktuellen Schreibpunkt
+und verhindert damit Übergaben aus einer alten Generation.
+
+Der Ring-3-Dienst prüft Version, Strukturgröße, Framegrenzen, Padding und
+EtherType erneut. Der Kernel veröffentlicht die einmalige Diagnosebestätigung
+erst nach erfolgreichem Copy-out; der folgende Dienstreport muss PID,
+Generation und EtherType exakt treffen und verbraucht sie. Der RTL8139-Smoke
+verlangt den Marker `REIST_NETWORK FRAME_HANDOFF`. Dieser Nachweis belegt den
+neuen Transport, noch nicht die Entfernung des alten Parsers. S0.3c-5e2 muss
+IPv4-/UDP-/DHCP-Zustand über diesen Pfad übernehmen und darf den parallelen
+Ring-0-Demux erst nach funktional äquivalenten Druck-, Restart- und
+Fault-Injection-Tests entfernen.
+
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau
 einen geschützt gespeicherten Aktivzustand und eine saturierend berechnete

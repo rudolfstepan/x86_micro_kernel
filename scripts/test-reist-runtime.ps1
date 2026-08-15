@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'storage-recovery', 'storage-io-failure', 'handover')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'storage-recovery', 'storage-io-failure', 'handover')]
     [string]$Mode = 'normal'
 )
 
@@ -137,6 +137,11 @@ switch ($Mode) {
         Invoke-Smoke 'guest-smoke-dhcp-renewal.log' @(
             '--nic', 'rtl8139', '--expect-dhcp-renewal'
         ) $false
+    }
+    'network-frame' {
+        Invoke-Smoke 'guest-smoke-network-frame.log' @(
+            '--nic', 'rtl8139', '--expect-network-frame'
+        )
     }
     'storage-recovery' {
         Invoke-Smoke 'guest-smoke-storage-recovery.log' @(

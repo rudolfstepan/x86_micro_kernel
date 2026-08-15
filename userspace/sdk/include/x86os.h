@@ -82,7 +82,8 @@ enum {
     X86OS_SYS_REIST_UDP_BIND = 75,
     X86OS_SYS_REIST_UDP_UNBIND = 76,
     X86OS_SYS_REIST_UDP_REPLY = 77,
-    X86OS_SYS_REIST_DHCP_RENEW = 78
+    X86OS_SYS_REIST_DHCP_RENEW = 78,
+    X86OS_SYS_REIST_NETWORK_FRAME = 79
 };
 
 enum {
@@ -145,6 +146,7 @@ typedef struct {
 #define X86OS_REIST_REPORT_NETWORK_HEADER 4U
 #define X86OS_REIST_REPORT_NETWORK_PROBE_ID 5U
 #define X86OS_REIST_REPORT_NETWORK_DEGRADED 6U
+#define X86OS_REIST_REPORT_NETWORK_FRAME 7U
 #define X86OS_REIST_NETWORK_DEGRADED_SEMANTIC 3U
 #define X86OS_SERVICE_DIAGNOSTIC 1U
 
@@ -211,6 +213,17 @@ typedef struct {
     uint32_t operation;
     uint32_t expected_ip;
 } x86os_reist_dhcp_renew_request_t;
+
+#define X86OS_REIST_NETWORK_FRAME_VERSION 1U
+#define X86OS_REIST_NETWORK_FRAME_MAX_SIZE 1518U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t length;
+    uint32_t reserved;
+    uint8_t data[X86OS_REIST_NETWORK_FRAME_MAX_SIZE];
+    uint8_t padding[2];
+} x86os_reist_network_frame_t;
 
 #define X86OS_REIST_UDP_ECHO_REPLY_VERSION 1U
 typedef struct {
@@ -371,6 +384,7 @@ int x86os_reist_commit_dhcp(
     const x86os_reist_dhcp_commit_t *commit);
 int x86os_reist_renew_dhcp(
     const x86os_reist_dhcp_renew_request_t *request);
+int x86os_reist_receive_network_frame(x86os_reist_network_frame_t *frame);
 int x86os_reist_send_udp_echo_reply(
     const x86os_reist_udp_echo_reply_t *reply);
 int x86os_reist_udp_bind(const x86os_reist_udp_bind_request_t *request,

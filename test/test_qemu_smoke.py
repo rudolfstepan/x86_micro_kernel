@@ -223,6 +223,18 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertIsNone(RUNNER_MODULE.validate(
             prompt_without_newline, expect_dhcp_renewal=True))
 
+    def test_network_frame_handoff_requires_exact_ring3_marker(self) -> None:
+        transcript = "\n".join((
+            RUNNER_MODULE.REIST_NETWORK_FRAME_MARKER,
+            "BOOT_OK", "C:\\>", "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_network_frame=True))
+        self.assertIn("network frame handoff", RUNNER_MODULE.validate(
+            transcript.replace(RUNNER_MODULE.REIST_NETWORK_FRAME_MARKER,
+                               "NOT_FRAME_HANDOFF"),
+            expect_network_frame=True))
+
     def test_reist_probe_markers_are_required_in_order(self) -> None:
         transcript = "\n".join((
             "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,

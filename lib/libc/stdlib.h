@@ -87,6 +87,7 @@
 #define SYS_REIST_UDP_UNBIND 76
 #define SYS_REIST_UDP_REPLY 77
 #define SYS_REIST_DHCP_RENEW 78
+#define SYS_REIST_NETWORK_FRAME 79
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

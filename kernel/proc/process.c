@@ -115,7 +115,8 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
         SYS_REIST_ARP_REPLY, SYS_REIST_ARP_RESOLUTION,
         SYS_REIST_ICMP_ECHO_REPLY, SYS_REIST_DHCP_COMMIT,
         SYS_REIST_UDP_ECHO_REPLY, SYS_REIST_UDP_BIND,
-        SYS_REIST_UDP_UNBIND, SYS_REIST_UDP_REPLY, SYS_REIST_DHCP_RENEW
+        SYS_REIST_UDP_UNBIND, SYS_REIST_UDP_REPLY, SYS_REIST_DHCP_RENEW,
+        SYS_REIST_NETWORK_FRAME
     };
     for (size_t index = 0;
          index < sizeof(probe_syscalls) / sizeof(probe_syscalls[0]); ++index) {

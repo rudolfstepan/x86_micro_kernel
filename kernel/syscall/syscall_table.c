@@ -372,6 +372,26 @@ static int syscall_reist_dhcp_renew(
         process->pid, process->generation, &request);
 }
 
+_Static_assert(sizeof(supervisor_network_frame_t) == 1536U,
+               "REIST network frame ABI changed");
+
+static int syscall_reist_network_frame(
+        supervisor_network_frame_t *user_frame) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_frame;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(*user_frame), true))
+        return -14;
+    supervisor_network_frame_t frame;
+    int result = supervisor_network_receive_frame(
+        process->pid, process->generation, &frame);
+    if (result != 0) return result;
+    if (copy_to_user(user_frame, &frame, sizeof(frame)) != 0) return -14;
+    return supervisor_network_confirm_frame_delivery(
+        process->pid, process->generation, &frame);
+}
+
 static int syscall_reist_udp_echo_reply(
         const supervisor_udp_echo_reply_t *user_reply) {
     Process *process = scheduler_current_process();
@@ -1159,6 +1179,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_reist_udp_unbind,    // Syscall 76: Unbind supervised UDP
     (void*)&syscall_reist_udp_reply,     // Syscall 77: Reply on UDP binding
     (void*)&syscall_reist_dhcp_renew,    // Syscall 78: Bounded DHCP renew/rebind
+    (void*)&syscall_reist_network_frame, // Syscall 79: Bounded raw RX handoff
     // Add more syscalls here as needed
 };
 
@@ -1537,6 +1558,10 @@ void syscall_handler(Registers* regs) {
         case SYS_REIST_DHCP_RENEW:
             result = (uint32_t)syscall_reist_dhcp_renew(
                 (const supervisor_dhcp_renew_request_t*)(uintptr_t)arg1);
+            break;
+        case SYS_REIST_NETWORK_FRAME:
+            result = (uint32_t)syscall_reist_network_frame(
+                (supervisor_network_frame_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

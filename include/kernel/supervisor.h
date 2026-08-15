@@ -30,7 +30,19 @@ struct Process;
 #define REIST_REPORT_NETWORK_HEADER 4U
 #define REIST_REPORT_NETWORK_PROBE_ID 5U
 #define REIST_REPORT_NETWORK_DEGRADED 6U
+#define REIST_REPORT_NETWORK_FRAME 7U
 #define REIST_SERVICE_DIAGNOSTIC 1U
+#define SUPERVISOR_NETWORK_FRAME_VERSION 1U
+#define SUPERVISOR_NETWORK_FRAME_MAX_SIZE 1518U
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t length;
+    uint32_t reserved;
+    uint8_t data[SUPERVISOR_NETWORK_FRAME_MAX_SIZE];
+    uint8_t padding[2];
+} supervisor_network_frame_t;
 
 typedef enum {
     SUPERVISOR_STARTING = 1,
@@ -491,6 +503,10 @@ bool supervisor_probe_ready(void);
 int supervisor_probe_report(int pid, uint32_t generation,
                             uint32_t report_type, uint32_t value,
                             uint64_t now_ms);
+int supervisor_network_receive_frame(int pid, uint32_t generation,
+                                     supervisor_network_frame_t *frame_out);
+int supervisor_network_confirm_frame_delivery(
+    int pid, uint32_t generation, const supervisor_network_frame_t *frame);
 int supervisor_service_connect(struct Process *client, uint32_t service_id,
                                uint32_t *handle_out);
 bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length);

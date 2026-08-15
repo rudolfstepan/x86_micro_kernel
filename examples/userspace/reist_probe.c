@@ -3,6 +3,8 @@
 #include "x86os.h"
 #include "reist_dhcp_state.h"
 
+static x86os_reist_network_frame_t network_frame;
+
 static int text_equal(const char *left, const char *right) {
     while (*left != '\0' && *right != '\0' && *left == *right) {
         ++left;
@@ -332,7 +334,29 @@ int main(int argc, char **argv) {
     uint32_t sequence = 2U;
     uint32_t pending_network_request = 0U;
     uint32_t pending_network_probe_id = 0U;
+    bool network_frame_reported = false;
     for (;;) {
+        int frame_result = x86os_reist_receive_network_frame(&network_frame);
+        if (frame_result == 0) {
+            if (network_frame.version != X86OS_REIST_NETWORK_FRAME_VERSION ||
+                network_frame.struct_size != sizeof(network_frame) ||
+                network_frame.length < 14U ||
+                network_frame.length > X86OS_REIST_NETWORK_FRAME_MAX_SIZE ||
+                network_frame.reserved != 0U || network_frame.padding[0] != 0U ||
+                network_frame.padding[1] != 0U) return 30;
+            uint32_t ethertype =
+                ((uint32_t)network_frame.data[12U] << 8U) |
+                network_frame.data[13U];
+            if (!network_frame_reported &&
+                (ethertype == 0x0800U || ethertype == 0x0806U)) {
+                if (x86os_reist_report(
+                        X86OS_REIST_REPORT_NETWORK_FRAME, ethertype) != 0)
+                    return 31;
+                network_frame_reported = true;
+            }
+        } else if (frame_result != -11) {
+            return 32;
+        }
         uint64_t now_ms = 0U;
         if (x86os_monotonic_ms(&now_ms) != 0) return 27;
         reist_dhcp_action_t dhcp_action =

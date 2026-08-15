@@ -54,6 +54,7 @@ REIST_DHCP_CONFIG_MARKER = "REIST_NETWORK DHCP_CONFIG_MEDIATED"
 REIST_DHCP_LEASE_EXPIRED_MARKER = "REIST_NETWORK DHCP_LEASE_EXPIRED"
 REIST_DHCP_RENEWED_MARKER = "REIST_NETWORK DHCP_RENEWED"
 REIST_DHCP_RENEW_REQUESTED_MARKER = "REIST_NETWORK DHCP_RENEW_REQUESTED"
+REIST_NETWORK_FRAME_MARKER = "REIST_NETWORK FRAME_HANDOFF"
 REIST_UDP_ECHO_QUEUED_MARKER = "REIST_NETWORK UDP_ECHO_QUEUED"
 REIST_UDP_ECHO_MARKER = "REIST_NETWORK UDP_ECHO_MEDIATED"
 REIST_UDP_DATAGRAM_QUEUED_MARKER = "REIST_NETWORK UDP_DATAGRAM_QUEUED"
@@ -812,6 +813,7 @@ def validate(
     expect_dhcp_renewal: bool = False,
     expect_udp_echo: bool = False,
     expect_udp_binding: bool = False,
+    expect_network_frame: bool = False,
 ) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
@@ -914,6 +916,10 @@ def validate(
         if (committed < 0 or boot < committed or prompt < boot or
                 requested < prompt or renewed < requested):
             return "missing ordered bounded DHCP renewal"
+    if expect_network_frame:
+        frame = exact_line_position(transcript, REIST_NETWORK_FRAME_MARKER)
+        if frame < 0 or (test >= 0 and frame > test):
+            return "missing bounded Ring-3 network frame handoff"
     if expect_udp_echo:
         queued = exact_line_position(transcript,
                                      REIST_UDP_ECHO_QUEUED_MARKER)
@@ -1043,6 +1049,11 @@ def main() -> int:
         help="require a bounded Ring-3 DHCP renewal after boot",
     )
     parser.add_argument(
+        "--expect-network-frame",
+        action="store_true",
+        help="require one bounded raw network frame consumed by Ring 3",
+    )
+    parser.add_argument(
         "--expect-arp-resolution", action="store_true",
         help="trigger PING and require a mediated outgoing ARP request",
     )
@@ -1087,7 +1098,8 @@ def main() -> int:
               file=sys.stderr)
         return 2
     if (args.expect_dhcp_config or args.expect_dhcp_expiry or
-            args.expect_dhcp_renewal) and args.nic == "none":
+            args.expect_dhcp_renewal or args.expect_network_frame) and \
+            args.nic == "none":
         print("guest-smoke: DHCP mediation requires a NIC", file=sys.stderr)
         return 2
 
@@ -1126,7 +1138,8 @@ def main() -> int:
                             args.expect_dhcp_expiry,
                             args.expect_dhcp_renewal,
                             args.inject_udp_echo and args.udp_port == 9000,
-                            args.inject_udp_echo and args.udp_port != 9000)
+                            args.inject_udp_echo and args.udp_port != 9000,
+                            args.expect_network_frame)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")

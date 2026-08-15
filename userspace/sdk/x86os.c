@@ -172,6 +172,14 @@ int x86os_reist_renew_dhcp(
                               (uint32_t)(uintptr_t)request, 0U, 0U);
 }
 
+_Static_assert(sizeof(x86os_reist_network_frame_t) == 1536U,
+               "REIST network frame ABI size changed");
+
+int x86os_reist_receive_network_frame(x86os_reist_network_frame_t *frame) {
+    return (int)x86os_syscall(X86OS_SYS_REIST_NETWORK_FRAME,
+                              (uint32_t)(uintptr_t)frame, 0U, 0U);
+}
+
 _Static_assert(sizeof(x86os_reist_udp_echo_reply_t) == 16U,
                "REIST UDP echo reply ABI size changed");
 

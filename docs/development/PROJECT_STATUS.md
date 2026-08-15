@@ -188,6 +188,15 @@ Der reale RTL8139-Lauf mit fünf Sekunden Testlease bestätigt
 S0.3c-5d2 abgeschlossen. Als nächstes verlagert S0.3c-5e die verbleibenden
 IPv4-/UDP-/DHCP-Protokollzustände und den allgemeinen Socket-Demultiplexer aus
 Ring 0.
+S0.3c-5e1 liefert dafür den ersten vollständigen Schatten-Handoff: Eine eigene
+statische Acht-Slot-Queue hält Frames bis 1518 Byte getrennt von Monitor und
+Legacy-Demux. Der append-only Syscall 79 ist nur der aktuellen gesunden
+Dienstgeneration erlaubt, blockiert nie und prüft den gesamten 1536-Byte-
+Userbereich vor dem Dequeue. Neustart verwirft alte Frames. Ring 3 revalidiert
+Header und Grenzen; nur nach erfolgreichem Copy-out kann es die korrelierte
+Einmalbestätigung abgeben. Der reale RTL8139-Lauf erreicht
+`REIST_NETWORK FRAME_HANDOFF`. Als nächstes übernimmt S0.3c-5e2 die
+IPv4-/UDP-/DHCP-Parser und entfernt danach den noch parallelen Ring-0-Demux.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

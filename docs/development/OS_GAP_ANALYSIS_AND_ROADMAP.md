@@ -144,6 +144,11 @@ und 10 verbindlich.
           Einmaltransaktion und realem RTL8139-Renewal-Nachweis umsetzen
     - [ ] S0.3c-5e Verbleibende IPv4-/UDP-/DHCP-Protokollzustände und den
       allgemeinen Socket-Demultiplexer aus Ring 0 in die Dienstgrenze verlagern
+      - [x] S0.3c-5e1 Separate statische 8-Slot-RX-Queue und append-only
+        Syscall 79 für einen vollständigen, generation-frischen 1518-Byte-
+        Frame-Handoff mit realem RTL8139-Ring-3-Nachweis
+      - [ ] S0.3c-5e2 IPv4-/UDP-/DHCP-Parser und Protokollzustand über den
+        neuen Handoff übernehmen und den parallelen Ring-0-Demux entfernen
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -1469,6 +1474,18 @@ Testprofil verkürzt nur die effektive Lease auf fünf Sekunden; der reale
 RTL8139-Lauf bestätigt `DHCP_RENEW_REQUESTED -> DHCP_RENEWED` bei weiter
 laufender Shell. S0.3c-5e migriert als Nächstes den verbliebenen allgemeinen
 IPv4-/UDP-/DHCP-Protokollzustand aus Ring 0.
+
+**S0.3c-5e1 ist umgesetzt und abgenommen:** Eine vom Monitor- und Legacy-
+Demux getrennte statische Acht-Slot-Queue spiegelt vollständige Ethernetframes
+mit maximal 1518 Byte an den gesunden Netzdienst. Syscall 79 ist ausschließlich
+im Default-Deny-Profil der aktuellen Dienstgeneration freigegeben, prüft den
+gesamten User-Zielbereich vor dem Dequeue und liefert bei leerer Queue sofort
+`EAGAIN`. Jeder Dienstneustart verwirft alte Queueinhalte. Ring 3 revalidiert
+ABI, Länge, Padding und EtherType; erst ein erfolgreicher Copy-out erzeugt die
+einmal konsumierbare Bestätigung für `FRAME_HANDOFF`. Der reale RTL8139-Lauf
+weist diesen Weg bis Ring 3 nach. Der bestehende Ring-0-Demux bleibt in dieser
+Schattenphase absichtlich aktiv. S0.3c-5e2 übernimmt darauf IPv4, UDP und DHCP
+und entfernt erst nach äquivalenten Fault-/Drucktests den Parallelpfad.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

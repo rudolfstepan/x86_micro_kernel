@@ -106,6 +106,12 @@ typedef struct {
     supervisor_protected_probe_authority_t dhcp_renewal_authority;
     supervisor_protected_dhcp_renewal_t dhcp_renewal;
     supervisor_udp_binding_runtime_t udp_bindings[SUPERVISOR_UDP_MAX_BINDINGS];
+    int32_t frame_delivery_pid;
+    uint32_t frame_delivery_generation;
+    uint32_t frame_delivery_ethertype;
+    uint32_t frame_delivery_pending;
+    int32_t frame_handoff_report_pid;
+    uint32_t frame_handoff_report_generation;
 } supervisor_probe_runtime_t;
 
 static supervisor_probe_runtime_t probe_runtime;
@@ -1749,6 +1755,12 @@ static bool probe_spawn_next(void) {
     uint32_t mode_index = control.launch_count;
     if (mode_index >= sizeof(modes) / sizeof(modes[0])) mode_index = 3U;
     const char *arguments[] = {"REIST.PRG", modes[mode_index]};
+    /* Do not expose frames queued for a previous service generation. */
+    netdev_reset_service_frames();
+    probe_runtime.frame_delivery_pid = 0;
+    probe_runtime.frame_delivery_generation = 0U;
+    probe_runtime.frame_delivery_ethertype = 0U;
+    probe_runtime.frame_delivery_pending = 0U;
     int pid = supervisor_spawn_service("/REIST.PRG", 2, arguments,
                                        PROCESS_DOMAIN_PROBE);
     uint32_t generation = 0U;
@@ -1917,7 +1929,96 @@ int supervisor_probe_report(int pid, uint32_t generation,
         network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_SEMANTIC);
         return 0;
     }
+    if (report_type == REIST_REPORT_NETWORK_FRAME) {
+        if (value != 0x0800U && value != 0x0806U) return -1;
+        uint32_t flags = supervisor_lock();
+        bool delivery_matches = probe_runtime.frame_delivery_pending != 0U &&
+            probe_runtime.frame_delivery_pid == pid &&
+            probe_runtime.frame_delivery_generation == generation &&
+            probe_runtime.frame_delivery_ethertype == value;
+        bool first_for_generation =
+            probe_runtime.frame_handoff_report_pid != pid ||
+            probe_runtime.frame_handoff_report_generation != generation;
+        if (delivery_matches) {
+            probe_runtime.frame_delivery_pid = 0;
+            probe_runtime.frame_delivery_generation = 0U;
+            probe_runtime.frame_delivery_ethertype = 0U;
+            probe_runtime.frame_delivery_pending = 0U;
+        }
+        if (delivery_matches && first_for_generation) {
+            probe_runtime.frame_handoff_report_pid = pid;
+            probe_runtime.frame_handoff_report_generation = generation;
+        }
+        supervisor_unlock(flags);
+        if (!delivery_matches) return -1;
+        if (first_for_generation)
+            printf("REIST_NETWORK FRAME_HANDOFF\n");
+        return 0;
+    }
     return -1;
+}
+
+int supervisor_network_receive_frame(int pid, uint32_t generation,
+                                     supervisor_network_frame_t *frame_out) {
+    if (frame_out == NULL) return -22;
+    uint32_t flags = supervisor_lock();
+    supervisor_probe_control_t control = {0};
+    int result = supervisor_protected_probe_control_read(
+        &probe_runtime.control, &control);
+    if (result == 0 &&
+        (control.active == 0U || control.fenced != 0U ||
+         control.healthy == 0U || pid != control.pid ||
+         generation != control.process_generation ||
+         !process_identity_alive(pid, generation))) result = -13;
+    supervisor_unlock(flags);
+    if (result != 0) return result;
+
+    *frame_out = (supervisor_network_frame_t){
+        .version = SUPERVISOR_NETWORK_FRAME_VERSION,
+        .struct_size = sizeof(*frame_out),
+    };
+    int length = netdev_receive_service_frame(
+        frame_out->data, sizeof(frame_out->data));
+    if (length == 0) return -11;
+    if (length < 0) return SUPERVISOR_EINTEGRITY;
+    frame_out->length = (uint32_t)length;
+    return 0;
+}
+
+int supervisor_network_confirm_frame_delivery(
+        int pid, uint32_t generation,
+        const supervisor_network_frame_t *frame) {
+    if (frame == NULL || frame->version != SUPERVISOR_NETWORK_FRAME_VERSION ||
+        frame->struct_size != sizeof(*frame) || frame->length < 14U ||
+        frame->length > SUPERVISOR_NETWORK_FRAME_MAX_SIZE ||
+        frame->reserved != 0U || frame->padding[0] != 0U ||
+        frame->padding[1] != 0U) return -22;
+    uint32_t ethertype = ((uint32_t)frame->data[12U] << 8U) |
+                         frame->data[13U];
+    if (ethertype != 0x0800U && ethertype != 0x0806U) return 0;
+
+    uint32_t flags = supervisor_lock();
+    supervisor_probe_control_t control = {0};
+    int result = supervisor_protected_probe_control_read(
+        &probe_runtime.control, &control);
+    bool already_reported =
+        probe_runtime.frame_handoff_report_pid == pid &&
+        probe_runtime.frame_handoff_report_generation == generation;
+    if (result == 0 &&
+        (control.active == 0U || control.fenced != 0U ||
+         control.healthy == 0U || pid != control.pid ||
+         generation != control.process_generation ||
+         !process_identity_alive(pid, generation))) result = -13;
+    if (result == 0 && !already_reported &&
+        probe_runtime.frame_delivery_pending != 0U) result = -11;
+    if (result == 0 && !already_reported) {
+        probe_runtime.frame_delivery_pid = pid;
+        probe_runtime.frame_delivery_generation = generation;
+        probe_runtime.frame_delivery_ethertype = ethertype;
+        probe_runtime.frame_delivery_pending = 1U;
+    }
+    supervisor_unlock(flags);
+    return result;
 }
 
 int supervisor_service_connect(Process *client, uint32_t service_id,

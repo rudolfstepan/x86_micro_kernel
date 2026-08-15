@@ -13,6 +13,7 @@
 #define NETDEV_DHCP_QUEUE_SIZE 4
 #define NETDEV_RX_QUEUE_SIZE 64
 #define NETDEV_MONITOR_QUEUE_SIZE 8
+#define NETDEV_SERVICE_QUEUE_SIZE 8
 #define NETDEV_MAX_FRAME_SIZE 1518
 
 typedef struct {
@@ -29,6 +30,9 @@ static volatile uint8_t rx_queue_tail;
 static netdev_queued_packet_t monitor_queue[NETDEV_MONITOR_QUEUE_SIZE];
 static volatile uint8_t monitor_queue_head;
 static volatile uint8_t monitor_queue_tail;
+static netdev_queued_packet_t service_queue[NETDEV_SERVICE_QUEUE_SIZE];
+static volatile uint8_t service_queue_head;
+static volatile uint8_t service_queue_tail;
 static volatile uint32_t rx_producer_busy;
 static volatile uint32_t netdev_poll_busy;
 static volatile bool netdev_tx_fenced;
@@ -187,6 +191,18 @@ static void netdev_queue_monitor_packet(const uint8_t* packet,
     monitor_queue_head = next;
 }
 
+static void netdev_queue_service_packet(const uint8_t* packet,
+                                        uint16_t length) {
+    uint8_t head = service_queue_head;
+    uint8_t next =
+        (uint8_t)((head + 1u) % NETDEV_SERVICE_QUEUE_SIZE);
+    if (next == service_queue_tail) return;
+    service_queue[head].length = length;
+    memcpy(service_queue[head].data, packet, length);
+    __asm__ volatile("" ::: "memory");
+    service_queue_head = next;
+}
+
 void netdev_deliver_rx(const uint8_t* packet, uint16_t length) {
     if (!packet || length < 14u || length > NETDEV_MAX_FRAME_SIZE) return;
     /* IRQ producers cannot nest on this UP kernel, but the deferred NE2000
@@ -207,6 +223,7 @@ void netdev_deliver_rx(const uint8_t* packet, uint16_t length) {
      * happen later in foreground context via netdev_poll(). */
     if (!service_owned) netdev_queue_rx_packet(packet, length);
     netdev_queue_monitor_packet(packet, length);
+    netdev_queue_service_packet(packet, length);
     __sync_lock_release(&rx_producer_busy);
 }
 
@@ -265,10 +282,38 @@ int netdev_receive_frame(uint8_t* buffer, size_t capacity) {
     return (int)length;
 }
 
+int netdev_receive_service_frame(uint8_t* buffer, size_t capacity) {
+    uint8_t tail = service_queue_tail;
+    uint8_t head = service_queue_head;
+    if (tail >= NETDEV_SERVICE_QUEUE_SIZE || head >= NETDEV_SERVICE_QUEUE_SIZE) {
+        service_queue_tail = 0U;
+        service_queue_head = 0U;
+        return -1;
+    }
+    if (tail == head) return 0;
+
+    uint16_t length = service_queue[tail].length;
+    uint8_t next =
+        (uint8_t)((tail + 1u) % NETDEV_SERVICE_QUEUE_SIZE);
+    if (!buffer || length < 14U || length > NETDEV_MAX_FRAME_SIZE ||
+        length > capacity) {
+        service_queue_tail = next;
+        return -1;
+    }
+    memcpy(buffer, service_queue[tail].data, length);
+    __asm__ volatile("" ::: "memory");
+    service_queue_tail = next;
+    return (int)length;
+}
+
 void netdev_reset_rx(void) {
     dhcp_queue_tail = dhcp_queue_head;
 }
 
 void netdev_reset_monitor(void) {
     monitor_queue_tail = monitor_queue_head;
+}
+
+void netdev_reset_service_frames(void) {
+    service_queue_tail = service_queue_head;
 }
