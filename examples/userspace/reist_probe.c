@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "x86os.h"
+#include "reist_dhcp_parser.h"
 #include "reist_dhcp_state.h"
 #include "reist_ipv4_parser.h"
 #include "reist_udp_parser.h"
@@ -351,6 +352,7 @@ int main(int argc, char **argv) {
     bool network_frame_reported = false;
     bool network_ipv4_reported = false;
     bool network_udp_reported = false;
+    bool network_dhcp_reported = false;
     for (;;) {
         int frame_result = x86os_reist_receive_network_frame(&network_frame);
         if (frame_result == 0) {
@@ -369,6 +371,9 @@ int main(int argc, char **argv) {
             reist_udp_parse_result_t udp_result;
             int udp_parse = reist_udp_parse_frame(
                 network_frame.data, network_frame.length, &udp_result);
+            reist_dhcp_parse_result_t dhcp_result;
+            int dhcp_parse = reist_dhcp_parse_frame(
+                network_frame.data, network_frame.length, &dhcp_result);
             if (!network_frame_reported &&
                 (ethertype == 0x0800U || ethertype == 0x0806U)) {
                 if (x86os_reist_report(
@@ -388,6 +393,13 @@ int main(int argc, char **argv) {
                                        udp_result.destination_port) != 0)
                     return 34;
                 network_udp_reported = true;
+            }
+            if (!network_dhcp_reported && dhcp_parse == 0) {
+                if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_DHCP,
+                        reist_frame_crc32(network_frame.data,
+                                         network_frame.length)) != 0)
+                    return 39;
+                network_dhcp_reported = true;
             }
             bool raw_udp_delivery = ethertype == 0x0800U &&
                 network_frame.length >= 34U &&

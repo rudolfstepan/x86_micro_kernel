@@ -215,7 +215,16 @@ ungebundene oder ungültige Datagramme müssen kanonisch verworfen werden. Für
 dienstbesessene Ports ist die parallele Legacy-Zustellung in Ring 0
 unterbunden. Der echte RTL8139-Lauf bestätigt `UDP_INGRESS_RING3`, die
 vermittelte Antwort und `TEST_OK`. Offen bleibt S0.3c-5e2b2b: DHCP-Eingang und
-den verbleibenden UDP-Demux aus Ring 0 lösen.
+den verbleibenden UDP-Demux aus Ring 0 lösen. Der erste Teil davon ist nun
+abgenommen: Der heapfreie DHCP-v1-Parser validiert BOOTP-Reply, XID,
+Client-MAC, Cookie, Ports, IPv4-/UDP-Längen sowie eine begrenzte Optionsliste
+mit genau einem OFFER-, ACK- oder NAK-Typ. Kritische Optionsduplikate,
+Abschneidung und fehlendes END werden verworfen; eine vorhandene UDP-
+Prüfsumme ist verpflichtend korrekt, der IPv4-DHCP-Nullwert wird separat
+markiert. Der generations- und Frame-CRC-korrelierte Ring-3-Nachweis
+`DHCP_PARSED_RING3` wurde mit RTL8139 vor `BOOT_OK` und `TEST_OK` bestätigt.
+Noch offen ist die Übernahme der OFFER-/ACK-/NAK-Autorität und danach das
+Entfernen der parallelen Ring-0-DHCP-Queue.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

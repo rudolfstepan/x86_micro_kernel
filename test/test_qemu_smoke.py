@@ -260,6 +260,18 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
                                "NOT_UDP_PARSED_RING3"),
             expect_network_udp=True))
 
+    def test_network_dhcp_parser_requires_exact_ring3_marker(self) -> None:
+        transcript = "\n".join((
+            RUNNER_MODULE.REIST_NETWORK_DHCP_MARKER,
+            "BOOT_OK", "C:\\>", "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_network_dhcp=True))
+        self.assertIn("DHCP parser", RUNNER_MODULE.validate(
+            transcript.replace(RUNNER_MODULE.REIST_NETWORK_DHCP_MARKER,
+                               "NOT_DHCP_PARSED_RING3"),
+            expect_network_dhcp=True))
+
     def test_network_udp_ingress_requires_exact_ring3_marker(self) -> None:
         transcript = "\n".join((
             RUNNER_MODULE.REIST_NETWORK_UDP_INGRESS_MARKER,

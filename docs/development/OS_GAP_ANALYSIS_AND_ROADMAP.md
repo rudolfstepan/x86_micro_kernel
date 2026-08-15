@@ -163,6 +163,12 @@ und 10 verbindlich.
               und deren parallele Ring-0-Zustellung unterbinden
             - [ ] S0.3c-5e2b2b DHCP-Eingang und verbleibenden UDP-Demux aus
               Ring 0 lösen; Druck-, Restart- und Fehlpfade abnehmen
+              - [x] S0.3c-5e2b2b1 Heapfreien DHCP-v1-Shadow-Parser mit
+                begrenzten Optionen, BOOTP-/Cookie-Prüfung, optionaler
+                IPv4-UDP-Prüfsumme und realem RTL8139-Nachweis ergänzen
+              - [ ] S0.3c-5e2b2b2 OFFER/ACK/NAK aus dem validierten Ring-3-
+                Ergebnis speisen und den parallelen Ring-0-DHCP-Demux nach
+                Druck-, Restart- und Fehlpfadtests entfernen
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -1534,7 +1540,20 @@ ungebundene Datagramme werden kanonisch verworfen. Der Kernel unterdrückt für
 diese dienstbesessenen Ports die parallele Legacy-Zustellung. Der reale
 RTL8139-Lauf bestätigt `UDP_INGRESS_RING3 -> UDP_ECHO_MEDIATED -> TEST_OK`.
 S0.3c-5e2b2b muss als Nächstes DHCP-Eingang und verbleibenden UDP-Demux über
-denselben validierten Ring-3-Pfad führen.
+denselben validierten Ring-3-Pfad führen. Der erste Teil S0.3c-5e2b2b1 ist
+abgenommen: Ein festes 52-Byte-Ergebnis entsteht ausschließlich aus einem
+vollständig validierten BOOTP/DHCP-Reply mit Ports 67 nach 68, Ethernet/IPv4-
+Grenzen, BOOTREPLY-Typ, Hardwaretyp/-länge, Transaktions-ID, Client-MAC,
+Magic-Cookie und begrenzt durchlaufener Optionsliste. OFFER, ACK und NAK sind
+die einzigen Nachrichtentypen; fehlendes END, abgeschnittene oder doppelte
+kritische Optionen werden fail-closed verworfen. Eine vorhandene UDP-
+Prüfsumme wird vollständig geprüft; der nur für DHCP/IPv4 zulässige Nullwert
+„keine Prüfsumme“ bleibt explizit erkennbar. Ein CRC32- und generations-
+korrelierter Diagnosebericht erzeugt keinerlei Konfigurationsautorität. Der
+reale RTL8139-Lauf bestätigt `DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED ->
+DHCP_PARSED_RING3 -> BOOT_OK -> TEST_OK`. S0.3c-5e2b2b2 übernimmt als Nächstes
+die eigentliche OFFER-/ACK-/NAK-Entscheidung und entfernt erst danach die
+parallele Ring-0-Queue.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

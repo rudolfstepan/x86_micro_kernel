@@ -576,6 +576,26 @@ aktiven Dienstports nicht zusätzlich über den Legacy-Pfad; andere Ports und
 DHCP bleiben bis S0.3c-5e2b2b unverändert. Der RTL8139-Nachweis verlangt
 `UDP_INGRESS_RING3` und die vermittelte Echoantwort bis `TEST_OK`.
 
+S0.3c-5e2b2b1 ergänzt den DHCP-v1-Shadow-Parser direkt im Ring-3-Dienst. Er
+akzeptiert höchstens 548 Byte DHCP-Nutzlast und nur BOOTREPLY über UDP 67 nach
+68. Ethernet/IPv4-Grenzen, Fragmentfreiheit, BOOTP-Hardwaretyp und -länge,
+Transaktions-ID, Client-MAC und Magic-Cookie werden vor der Optionsauswertung
+geprüft. Die Optionsschleife ist durch die validierte UDP-Länge begrenzt,
+verlangt END und lehnt abgeschnittene oder doppelte kritische Optionen ab.
+Nur OFFER, ACK und NAK sind zulässig. IPv4 erlaubt für UDP eine Nullprüfsumme;
+der DHCP-Parser akzeptiert sie ausschließlich in diesem eng begrenzten Pfad
+und markiert sie im Ergebnis, während jede vorhandene Prüfsumme korrekt sein
+muss. Das feste 52-Byte-Ergebnis enthält nur validierte Werte und Offsets.
+
+Der Supervisor erkennt lediglich einen strukturellen 67→68-Kandidaten und
+veröffentlicht dazu eine PID-/Generations- und Frame-CRC-gebundene
+Diagnoseberechtigung. Erst der erfolgreiche Ring-3-Parser kann sie verbrauchen
+und `DHCP_PARSED_RING3` auslösen; daraus entsteht weder Lease- noch
+Ausgabeautorität. Der vorhandene Ring-0-DHCP-Client bleibt während dieser
+Schattenphase aktiv. S0.3c-5e2b2b2 muss OFFER/ACK/NAK aus dem validierten
+Ergebnis in den geschützten Lease-Zustand übernehmen und anschließend den
+parallelen Ring-0-Eingang mit Druck-, Restart- und Fehlpfadnachweisen entfernen.
+
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau
 einen geschützt gespeicherten Aktivzustand und eine saturierend berechnete

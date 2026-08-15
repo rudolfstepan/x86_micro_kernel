@@ -125,6 +125,12 @@ typedef struct {
     uint32_t udp_delivery_pending;
     int32_t udp_report_pid;
     uint32_t udp_report_generation;
+    int32_t dhcp_delivery_pid;
+    uint32_t dhcp_delivery_generation;
+    uint32_t dhcp_delivery_crc32;
+    uint32_t dhcp_delivery_pending;
+    int32_t dhcp_report_pid;
+    uint32_t dhcp_report_generation;
     supervisor_protected_udp_delivery_t udp_ingress_delivery;
 } supervisor_probe_runtime_t;
 
@@ -160,6 +166,20 @@ static uint32_t network_frame_crc32(const uint8_t *data, uint32_t length) {
             crc = (crc >> 1U) ^ (0xEDB88320U & (0U - (crc & 1U)));
     }
     return crc ^ 0xFFFFFFFFU;
+}
+
+static bool network_frame_is_dhcp_reply(
+        const supervisor_network_frame_t *frame) {
+    if (frame == NULL || frame->length < 42U || frame->data[12U] != 0x08U ||
+        frame->data[13U] != 0x00U) return false;
+    uint8_t version_ihl = frame->data[14U];
+    uint32_t header_length = (uint32_t)(version_ihl & 0x0FU) * 4U;
+    if ((version_ihl >> 4U) != 4U || header_length < 20U ||
+        header_length > 60U || 14U + header_length + 8U > frame->length ||
+        frame->data[23U] != 17U) return false;
+    const uint8_t *udp = &frame->data[14U + header_length];
+    return udp[0U] == 0U && udp[1U] == 67U &&
+           udp[2U] == 0U && udp[3U] == 68U;
 }
 #endif
 
@@ -1841,6 +1861,10 @@ static bool probe_spawn_next(void) {
     probe_runtime.udp_delivery_pid = 0;
     probe_runtime.udp_delivery_generation = 0U;
     probe_runtime.udp_delivery_pending = 0U;
+    probe_runtime.dhcp_delivery_pid = 0;
+    probe_runtime.dhcp_delivery_generation = 0U;
+    probe_runtime.dhcp_delivery_crc32 = 0U;
+    probe_runtime.dhcp_delivery_pending = 0U;
     if (udp_delivery_clear() != 0) return false;
     int pid = supervisor_spawn_service("/REIST.PRG", 2, arguments,
                                        PROCESS_DOMAIN_PROBE);
@@ -2082,6 +2106,30 @@ int supervisor_probe_report(int pid, uint32_t generation,
             printf("REIST_NETWORK UDP_PARSED_RING3\n");
         return 0;
     }
+    if (report_type == REIST_REPORT_NETWORK_DHCP) {
+        uint32_t flags = supervisor_lock();
+        bool delivery_matches = probe_runtime.dhcp_delivery_pending != 0U &&
+            probe_runtime.dhcp_delivery_pid == pid &&
+            probe_runtime.dhcp_delivery_generation == generation &&
+            probe_runtime.dhcp_delivery_crc32 == value;
+        bool first_for_generation = probe_runtime.dhcp_report_pid != pid ||
+            probe_runtime.dhcp_report_generation != generation;
+        if (delivery_matches) {
+            probe_runtime.dhcp_delivery_pid = 0;
+            probe_runtime.dhcp_delivery_generation = 0U;
+            probe_runtime.dhcp_delivery_crc32 = 0U;
+            probe_runtime.dhcp_delivery_pending = 0U;
+        }
+        if (delivery_matches && first_for_generation) {
+            probe_runtime.dhcp_report_pid = pid;
+            probe_runtime.dhcp_report_generation = generation;
+        }
+        supervisor_unlock(flags);
+        if (!delivery_matches) return -1;
+        if (first_for_generation)
+            printf("REIST_NETWORK DHCP_PARSED_RING3\n");
+        return 0;
+    }
     return -1;
 }
 
@@ -2149,6 +2197,8 @@ int supervisor_network_confirm_frame_delivery(
         probe_runtime.ipv4_report_generation == generation;
     bool udp_already_reported = probe_runtime.udp_report_pid == pid &&
         probe_runtime.udp_report_generation == generation;
+    bool dhcp_already_reported = probe_runtime.dhcp_report_pid == pid &&
+        probe_runtime.dhcp_report_generation == generation;
     if (result == 0 &&
         (control.active == 0U || control.fenced != 0U ||
          control.healthy == 0U || pid != control.pid ||
@@ -2174,6 +2224,13 @@ int supervisor_network_confirm_frame_delivery(
         probe_runtime.udp_delivery_pid = pid;
         probe_runtime.udp_delivery_generation = generation;
         probe_runtime.udp_delivery_pending = 1U;
+    }
+    if (result == 0 && network_frame_is_dhcp_reply(frame) &&
+        !dhcp_already_reported) {
+        probe_runtime.dhcp_delivery_pid = pid;
+        probe_runtime.dhcp_delivery_generation = generation;
+        probe_runtime.dhcp_delivery_crc32 = frame_crc32;
+        probe_runtime.dhcp_delivery_pending = 1U;
     }
     if (result == 0 && ethertype == 0x0800U && frame->length >= 34U &&
         frame->data[23U] == 17U) {

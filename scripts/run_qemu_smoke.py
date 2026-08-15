@@ -57,6 +57,7 @@ REIST_DHCP_RENEW_REQUESTED_MARKER = "REIST_NETWORK DHCP_RENEW_REQUESTED"
 REIST_NETWORK_FRAME_MARKER = "REIST_NETWORK FRAME_HANDOFF"
 REIST_NETWORK_IPV4_MARKER = "REIST_NETWORK IPV4_PARSED_RING3"
 REIST_NETWORK_UDP_MARKER = "REIST_NETWORK UDP_PARSED_RING3"
+REIST_NETWORK_DHCP_MARKER = "REIST_NETWORK DHCP_PARSED_RING3"
 REIST_NETWORK_UDP_INGRESS_MARKER = "REIST_NETWORK UDP_INGRESS_RING3"
 REIST_UDP_ECHO_QUEUED_MARKER = "REIST_NETWORK UDP_ECHO_QUEUED"
 REIST_UDP_ECHO_MARKER = "REIST_NETWORK UDP_ECHO_MEDIATED"
@@ -819,6 +820,7 @@ def validate(
     expect_network_frame: bool = False,
     expect_network_ipv4: bool = False,
     expect_network_udp: bool = False,
+    expect_network_dhcp: bool = False,
     expect_network_udp_ingress: bool = False,
 ) -> str | None:
     failed = failure_marker(transcript)
@@ -934,6 +936,10 @@ def validate(
         udp = exact_line_position(transcript, REIST_NETWORK_UDP_MARKER)
         if udp < 0 or (test >= 0 and udp > test):
             return "missing bounded Ring-3 UDP parser marker"
+    if expect_network_dhcp:
+        dhcp = exact_line_position(transcript, REIST_NETWORK_DHCP_MARKER)
+        if dhcp < 0 or (test >= 0 and dhcp > test):
+            return "missing bounded Ring-3 DHCP parser marker"
     if expect_network_udp_ingress:
         ingress = exact_line_position(
             transcript, REIST_NETWORK_UDP_INGRESS_MARKER)
@@ -1083,6 +1089,11 @@ def main() -> int:
         help="require one checksum-valid UDP datagram parsed by Ring 3",
     )
     parser.add_argument(
+        "--expect-network-dhcp",
+        action="store_true",
+        help="require one bounded DHCP reply parsed by Ring 3",
+    )
+    parser.add_argument(
         "--expect-network-udp-ingress",
         action="store_true",
         help="require one service-owned UDP datagram accepted from Ring 3",
@@ -1134,6 +1145,7 @@ def main() -> int:
     if (args.expect_dhcp_config or args.expect_dhcp_expiry or
             args.expect_dhcp_renewal or args.expect_network_frame or
             args.expect_network_ipv4 or args.expect_network_udp or
+            args.expect_network_dhcp or
             args.expect_network_udp_ingress) and \
             args.nic == "none":
         print("guest-smoke: DHCP mediation requires a NIC", file=sys.stderr)
@@ -1178,6 +1190,7 @@ def main() -> int:
                             args.expect_network_frame,
                             args.expect_network_ipv4,
                             args.expect_network_udp,
+                            args.expect_network_dhcp,
                             args.expect_network_udp_ingress)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")

@@ -132,6 +132,7 @@ def build(sources: list[Path], output: Path, zig: Path,
     if any(source.name == "reist_probe.c" for source in sources):
         all_sources.insert(3, sdk / "reist_ipv4_parser.c")
         all_sources.insert(4, sdk / "reist_udp_parser.c")
+        all_sources.insert(5, sdk / "reist_dhcp_parser.c")
     for source in all_sources:
         if not source.is_file():
             raise FileNotFoundError(source)
