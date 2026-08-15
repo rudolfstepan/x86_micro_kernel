@@ -5,8 +5,8 @@
 #include <stdint.h>
 
 bool storage_safety_init(uint64_t now_ms);
-bool storage_write_begin(uint64_t now_ms);
-bool storage_write_end(void);
+bool storage_write_begin(uint32_t resource, uint64_t now_ms);
+bool storage_write_end(bool durable_commit);
 void storage_fence_writes(void);
 bool storage_writes_fenced(void);
 

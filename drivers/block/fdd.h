@@ -27,6 +27,7 @@ extern void fdd_irq_handler(uint8_t* r);
 
 bool fdc_initialize(void);
 bool fdc_init_controller(void);
+bool fdc_calibrate_drive(uint8_t drive);
 void fdd_detect_drives(void);
 
 

@@ -213,6 +213,9 @@ static void driver_init(void) {
     if (!storage_safety_init(pit_monotonic_ms())) {
         panic("Unable to initialize REIST storage write supervision");
     }
+    if (!storage_service_inventory_media()) {
+        panic("Unable to inventory REIST storage media");
+    }
 #if defined(REIST_HANDOVER_FAULT_INJECTION) && \
     (REIST_HANDOVER_NODE_ID == 2 || REIST_HANDOVER_NODE_ID == 3)
     if (!storage_handover_hold())

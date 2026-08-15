@@ -872,22 +872,41 @@ static int test_storage_service(void) {
             return -1;
     }
     if (result == -5) {
-        handle = 0U;
-        result = -1;
-        if (x86os_storage_submit(&request, 0, &handle) != 0 || handle == 0U)
-            return -1;
         uint64_t deadline = 0U;
         if (x86os_monotonic_ms(&deadline) != 0) return -1;
-        deadline += 2000U;
+        deadline += 5000U;
         for (;;) {
-            int collect = x86os_storage_collect(handle, &result, sector);
-            if (collect == 0) break;
             uint64_t now = 0U;
-            if (collect != -11 || x86os_monotonic_ms(&now) != 0 ||
-                now >= deadline || x86os_sleep_ms(5U) != 0) return -1;
+            handle = 0U;
+            result = -1;
+            if (x86os_storage_submit(&request, 0, &handle) != 0 ||
+                handle == 0U) {
+                x86os_puts("TEST_DIAG STORAGE_REINTEGRATE_SUBMIT\n");
+                return -1;
+            }
+            for (;;) {
+                int collect = x86os_storage_collect(handle, &result, sector);
+                if (collect == 0) break;
+                if (collect != -11 || x86os_sleep_ms(5U) != 0) {
+                    x86os_puts("TEST_DIAG STORAGE_REINTEGRATE_COLLECT\n");
+                    return -1;
+                }
+            }
+            if (result == 0) break;
+            if (result != -112) {
+                x86os_puts(result == -5
+                    ? "TEST_DIAG STORAGE_REINTEGRATE_STILL_IO\n"
+                    : "TEST_DIAG STORAGE_REINTEGRATE_OTHER_RESULT\n");
+                return -1;
+            }
+            if (x86os_monotonic_ms(&now) != 0 || now >= deadline ||
+                x86os_sleep_ms(50U) != 0) {
+                x86os_puts("TEST_DIAG STORAGE_REINTEGRATE_TIMEOUT\n");
+                return -1;
+            }
         }
-        if (result != -112) return -1;
-        x86os_puts("TEST_STAGE STORAGE_IO_QUARANTINE_OK\n");
+        if (sector[510] != 0x55U || sector[511] != 0xAAU) return -1;
+        x86os_puts("TEST_STAGE STORAGE_MEDIA_REINTEGRATED_OK\n");
         return 0;
     }
     bool signature_valid = sector[510] == 0x55U && sector[511] == 0xAAU;

@@ -7,3 +7,4 @@ kernel.iso
 disk.vmdk
 __pycache__/
 *.py[cod]
+.zig-cache

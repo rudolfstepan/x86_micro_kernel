@@ -340,7 +340,7 @@ aufeinanderfolgende ATA-Lesefehler. Der Client erhält `-EIO`, Ressource 0 wird
 in der geschützten Storage-Kontrolle quarantänisiert und der nächste Request
 endet vor erneutem ATA-Zugriff mit `-EHOSTDOWN`. Dienst, Scheduler und übrige
 Gasttests laufen bis `TEST_OK` weiter.
-S0.3c-6d3 ist abgeschlossen und schließt S0.3c-6 ab. Der persistente
+S0.3c-6d3 ist abgeschlossen. Der persistente
 QEMU-Harness bootet eine ACTIVE-Undo-Transaktion mit zwei überschriebenen
 Sektoren und beschädigter primärer Headerkopie. Der Kernel restauriert die
 alten Daten, repariert beide Header zu CLEAN und startet anschließend die
@@ -348,7 +348,24 @@ vollständige Probe-Reintegration. Erst danach muss der neu gebundene
 Ring-3-Storage-Dienst den realen MBR-Selbsttest und der Gast `TEST_OK`
 erreichen. Ein dabei reproduzierter Race zwischen Supervisor-Worker und
 explizitem Storage-Start wurde durch einen getrennten Aktivierungszustand und
-IRQ-serialisierte Kontrollzugriffe beseitigt. Als nächstes folgt S0.3c-7.
+IRQ-serialisierte Kontrollzugriffe beseitigt.
+
+S0.3c-6e ist ebenfalls umgesetzt: Alle überwachten ATA- und FDD-Schreibpfade
+melden Beginn und dauerhaften Abschluss mit einer konkreten Medienressource.
+Fehler quarantänisieren das Medium; ein unklarer Schreibabschluss fencet
+Storage und VFS und lässt nur read-only-Reintegration zu. Der Hintergrundpoller
+prüft mit begrenztem Backoff Controller/Identität sowie zwei frische identische
+Bootsektor-Reads gegen einen geschützt gespeicherten Boot-Fingerprint. Der
+QEMU-Fehlerlauf belegt `RESOURCE_QUARANTINED ->
+RESOURCE_REINTEGRATED_RW -> TEST_STAGE STORAGE_MEDIA_REINTEGRATED_OK` für
+einen reinen Lesefehler. Blindes Wiederholen von Schreibzugriffen ist verboten.
+
+S0.3c-6 bleibt wegen S0.3c-6f teilweise offen: Nur markierte FAT32/ATA-Images
+besitzen derzeit ein persistentes Undo-Journal. FDD/FAT12, EXT2, fremde und
+künftige Medien bleiben nach unklarem Schreibabschluss read-only, bis ein
+medienunabhängiges Journal-/COW-Protokoll samt Flush-/Barrier- und
+Power-Loss-Nachweis umgesetzt ist. Die parallele Arbeit an S0.3c-7 bleibt
+davon unabhängig.
 S0.3c-7a liefert dafür den ersten, noch plattformneutralen Protokollbaustein:
 Aktiv- und Standby-Knoten teilen eine geschützt gespeicherte Lease, Epoche,
 Fence-Epoche und Transitionssequenz. Takeover ist nur nach Leaseablauf und

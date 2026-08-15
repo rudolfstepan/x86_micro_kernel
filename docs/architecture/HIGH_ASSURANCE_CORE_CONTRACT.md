@@ -46,6 +46,38 @@ das entsprechende Profil für ein konkretes Zielsystem ausgewählt wurde.
    atomar, stromausfallsicher und rückfallfähig; Zeit- und Zählerüberläufe
    werden über die vorgesehene Lebensdauer geprüft.
 
+## Medienübergreifender Schreib- und Wiederanlaufvertrag
+
+Der Vertrag gilt für **jeden** beschreibbaren persistenten Datenträger und
+nicht nur für ATA: FDD, SATA/NVMe, USB-Massenspeicher, Flash, optische und
+später ergänzte Medien müssen dieselbe Zustandsmaschine verwenden.
+
+1. Jeder Schreibvorgang wird vor dem ersten Seiteneffekt mit Ressourcen-ID,
+   Generation und absoluter Deadline eröffnet und erst nach nachgewiesener
+   dauerhafter Übernahme als erfolgreich beendet.
+2. Timeout, Geräteverlust, Controllerreset oder unklarer Abschluss führen vor
+   jedem weiteren Zugriff zu `QUARANTINED`; ein unklarer Schreibabschluss
+   verriegelt zusätzlich alle Mutationen und setzt das betroffene Medium auf
+   read-only. Ein Schreibvorgang wird niemals blind wiederholt.
+3. Automatische Wiedererkennung ist nur nach Controllerreset, unveränderter
+   Geräteidentität sowie zwei übereinstimmenden frischen Reads mit erwartetem
+   Fingerprint zulässig. Ein anderes oder nicht eindeutig erkanntes Medium
+   bleibt quarantänisiert.
+4. Nach einem reinen Lesefehler darf eine vollständig bestandene Prüfung das
+   unveränderte Medium wieder `ONLINE_RW` schalten. Nach einem unklaren
+   Schreibabschluss ist höchstens `ONLINE_RO` zulässig, bis ein für dieses
+   Medium nachgewiesenes Undo-/COW-/Journal-Recovery die Transaktion eindeutig
+   als zurückgerollt oder dauerhaft abgeschlossen bestätigt.
+5. Persistente Recovery-Metadaten sind redundant, versioniert, geordnet und
+   gegen Stromverlust abgesichert. Ohne diesen Nachweis bleibt der Schreibpfad
+   für das jeweilige Backend geschlossen; Datenverfügbarkeit darf niemals
+   durch riskante automatische Reparatur erkauft werden.
+
+Die gegenwärtige ATA-/FDD-Implementierung erfüllt Erkennung, Quarantäne,
+begrenzte Requalifizierung und read-only-Degradation. Das persistente
+FAT32/ATA-Undo-Journal deckt markierte Images ab. Ein medienunabhängiges
+Transaktionsprotokoll für FDD/FAT12, EXT2 und künftige Backends ist noch offen.
+
 ## Gefahrenregister und Traceability
 
 Das maschinenlesbare Register [`safety/hazards.toml`](../../safety/hazards.toml)

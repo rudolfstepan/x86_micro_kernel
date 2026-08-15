@@ -190,7 +190,7 @@ und 10 verbindlich.
           ARP-Lernmutation durch validierte Ring-3-Entscheidungen ersetzen
     - [x] S0.3c-5f Verbleibenden Ring-0-ARP-Fallback und ungeschützten lokalen
       Legacy-Cache entfernen; ausschließlich überwachte ARP-Entscheide zulassen
-  - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
+  - [ ] S0.3c-6 Storage-/Dateisystemdienst und medienübergreifende Recovery
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
     - [x] S0.3c-6b Versioniertes Block-/VFS-IPC und statische Request-Pools
@@ -202,6 +202,11 @@ und 10 verbindlich.
         Quarantäne und geprüftem Weiterbetrieb
       - [x] S0.3c-6d3 Stromverlust während einer persistenten Mutation mit
         Neustart, Journal-Recovery und anschließendem Ring-3-Dienst-Selbsttest
+    - [x] S0.3c-6e Automatische ATA-/FDD-Quarantäne und Requalifizierung über
+      Geräteidentität, geschützten Fingerprint und zwei frische Reads; unklare
+      Schreibabschlüsse nur read-only reintegrieren
+    - [ ] S0.3c-6f Medienunabhängiges Undo/COW/Journal mit Flush-/Barrier- und
+      Power-Loss-Nachweis für jeden beschreibbaren Datenträger
   - [ ] **S0.3c-7 in Arbeit:** Unabhängiger Standby-/Supervisor-Kanal und
     realer Handover
     - [x] S0.3c-7a Statischer Lease-/Epoch-/Fence-Protokollkern mit
@@ -1776,16 +1781,13 @@ kontrollierten ATA-I/O-Fehler; Power-Loss bleibt S0.3c-6d3.
 
 **S0.3c-6d2 ist umgesetzt:** Der vermittelte Block-Read führt höchstens zwei
 ATA-Versuche aus. Scheitern beide, erhält der Client `-EIO` und die Ressource
-wird in der redundant geschützten Dienstkontrolle dauerhaft für diesen Boot
-quarantänisiert. Jeder Folgezugriff derselben Ressource endet vor dem
-Hardwareaufruf mit `-EHOSTDOWN`; andere Kernel- und Dienstfunktionen laufen
-weiter. Ein separater Testbuild erzwingt beide Fehlschläge und verlangt
-`TEST_IO_ERROR_INJECTED -> RESOURCE_QUARANTINED ->
-STORAGE_IO_QUARANTINE_OK -> TEST_OK`. Der normale Build enthält keinen
-Injektionspfad. Offen bleibt S0.3c-6d3: Stromverlust während einer persistenten
-Mutation und anschließende Recovery über den Ring-3-Dienst.
+wird in der redundant geschützten Dienstkontrolle quarantänisiert. Bis zur in
+S0.3c-6e eingeführten vollständigen Requalifizierung endet jeder Folgezugriff
+derselben Ressource vor dem Hardwareaufruf mit `-EHOSTDOWN`; andere Kernel- und
+Dienstfunktionen laufen weiter. Ein separater Testbuild erzwingt beide
+Fehlschläge. Der normale Build enthält keinen Injektionspfad.
 
-**S0.3c-6d3 und damit S0.3c-6 sind umgesetzt:** Der persistente QEMU-Test
+**S0.3c-6d3 ist umgesetzt:** Der persistente QEMU-Test
 erzeugt eine ACTIVE-Undo-Transaktion, verändert zwei Zielsektoren, hält die
 alten Daten redundant vor und beschädigt zusätzlich die primäre
 Journal-Metadatenkopie. Beim Neustart wählt der Kernel konservativ die gültige
@@ -1797,7 +1799,25 @@ Gate deckte außerdem einen Start-Race auf: Der Supervisor-Worker konnte den
 noch nicht explizit aktivierten Dienst vor `storage_service_start()` starten.
 Ein eigener Aktivierungszustand trennt nun „noch nicht gestartet“ von
 „ausgefallen“, und IRQ-serialisierte Kontrollzugriffe verhindern konkurrierende
-Reparatur der redundanten Kopien. Nächster Dienstmigrationsschritt ist S0.3c-7.
+Reparatur der redundanten Kopien.
+
+**S0.3c-6e ist umgesetzt:** ATA- und FDD-Ressourcen erhalten beim Boot einen
+redundant geschützten Fingerprint. Nach einem I/O-Ausfall prüft ein begrenzter
+Hintergrundlauf Controller- und Medienidentität sowie zwei frische, identische
+Bootsektor-Reads. Ein reiner Lesefehler darf das unveränderte Medium wieder
+`ONLINE_RW` schalten; der QEMU-Gate verlangt dafür `RESOURCE_QUARANTINED ->
+RESOURCE_REINTEGRATED_RW -> STORAGE_MEDIA_REINTEGRATED_OK -> TEST_OK`.
+Unsicher abgeschlossene Schreibzugriffe werden nie blind wiederholt: Sie
+fencen Storage und VFS und erlauben höchstens `ONLINE_RO`.
+
+**S0.3c-6f bleibt offen:** Der Vertrag gilt für alle persistenten Medien, doch
+das persistente Undo-Journal ist derzeit auf markierte FAT32/ATA-Images
+begrenzt. FDD/FAT12, EXT2, fremde sowie künftige USB-/Flash-/NVMe-Backends
+benötigen ein gemeinsames Undo/COW/Journal-Protokoll, geordnete Flush-/Barrier-
+Semantik und echte Power-Loss-Injektion. Vor diesem Nachweis darf ein Medium
+nach unklarem Schreibabschluss nicht automatisch wieder beschreibbar werden.
+S0.3c-6 bleibt deshalb teilweise offen; S0.3c-7 kann parallel fortgesetzt
+werden.
 
 **S0.3c-7a ist umgesetzt:** Ein statischer, `critical_object`-geschützter
 Zwei-Knoten-Protokollkern verwaltet aktive und Standby-ID, monotone Lease,

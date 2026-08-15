@@ -813,6 +813,24 @@ nicht gestarteten Dienst nicht als Ausfall behandeln. Alle Read/Repair/Update-
 Operationen derselben redundanten Kontrollinstanz sind lokal IRQ-serialisiert,
 damit Worker und Bind-Syscall keine Kopien gegeneinander überschreiben.
 
+S0.3c-6e erweitert den Wiederanlauf auf die physische Medienressource. ATA und
+FDD erhalten beim Boot einen `critical_object`-geschützten Fingerprint aus
+Controllerlage, Geometrie beziehungsweise Modell/Kapazität und Bootsektor-CRC.
+Nach einem I/O-Ausfall bleibt das Medium quarantänisiert. Der Supervisor prüft
+es mit monoton begrenztem Backoff erneut, verifiziert die Geräteidentität und
+verlangt zwei identische frische Bootsektor-Reads. Nur danach wird ein reiner
+Lesefehler automatisch nach `ONLINE_RW` reintegriert. Ein unklar beendeter
+Schreibzugriff setzt das Medium dagegen auf `ONLINE_RO` und hält das globale
+Storage-/VFS-Schreib-Fence geschlossen. Es gibt keine blinde Wiederholung.
+
+Dieser Vertrag gilt für alle heutigen und künftigen persistenten Medien. Die
+Zustandsfolge lautet `ONLINE_RW -> QUARANTINED -> PROBING -> ONLINE_RW` bei
+einem verifizierten reinen Lesefehler und `... -> ONLINE_RO` bei unklarem
+Schreibabschluss. Der noch offene Schritt S0.3c-6f muss Undo/COW/Journal,
+Flush-/Barrier-Semantik, Recovery und Fault-Injection medienunabhängig für
+jedes schreibbare Backend nachweisen. Erst dann darf ein solches Medium nach
+einem abgebrochenen Schreibzugriff automatisch wieder `ONLINE_RW` werden.
+
 ### Standby-Handover-Protokoll
 
 S0.3c-7a definiert den plattformneutralen Sicherheitskern für zwei Kanäle.

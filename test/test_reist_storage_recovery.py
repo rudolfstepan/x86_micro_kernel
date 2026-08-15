@@ -81,6 +81,37 @@ class StorageRecoveryContracts(unittest.TestCase):
         self.assertIn("critical_object_t protected_control", service)
         self.assertIn("quarantined_resources", service)
         self.assertIn("RESOURCE_QUARANTINED", service)
+        self.assertIn("media_identity_matches(resource)", service)
+        self.assertIn("RESOURCE_REINTEGRATED_", service)
+        self.assertIn("STORAGE_MEDIA_PROBE_MAX_MS", service)
+        self.assertIn("canonical_model_prefix", service)
+        self.assertIn("control.probe_cursor + count", service)
+
+    def test_all_media_writes_report_uncertain_completion_fail_closed(self):
+        safety = read("kernel/init/storage_safety.c")
+        ata = read("drivers/block/ata.c")
+        fdd = read("drivers/block/fdd.c")
+        header = read("include/kernel/storage_safety.h")
+        self.assertIn("storage_write_begin(uint32_t resource", header)
+        self.assertIn("storage_write_end(bool durable_commit)", header)
+        self.assertIn("storage_service_report_media_failure(resource, true)",
+                      safety)
+        self.assertIn("filesystem_fence_mutations();", safety)
+        self.assertIn("storage_write_end(result)", ata)
+        self.assertIn("storage_write_end(result)", fdd)
+
+    def test_all_media_recovery_contract_is_documented_fail_closed(self):
+        contract = read("docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md")
+        architecture = read("docs/architecture/REIST_ARCHITECTURE.md")
+        roadmap = read("docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md")
+        for medium in ("FDD", "SATA/NVMe", "USB-Massenspeicher", "Flash"):
+            self.assertIn(medium, contract)
+        self.assertIn("Ein Schreibvorgang wird niemals blind wiederholt", contract)
+        self.assertIn("höchstens `ONLINE_RO`", contract)
+        self.assertIn("S0.3c-6e", architecture)
+        self.assertIn("S0.3c-6f", architecture)
+        self.assertIn("- [x] S0.3c-6e", roadmap)
+        self.assertIn("- [ ] S0.3c-6f", roadmap)
 
     def test_io_failure_hook_and_runtime_gate_are_isolated(self):
         makefile = read("Makefile")
@@ -96,6 +127,7 @@ class StorageRecoveryContracts(unittest.TestCase):
             RUNNER.BOOT_MARKER,
             RUNNER.REIST_STORAGE_IO_INJECTION_MARKER,
             RUNNER.REIST_STORAGE_QUARANTINE_MARKER,
+            RUNNER.REIST_STORAGE_REINTEGRATION_MARKER,
             RUNNER.REIST_STORAGE_IO_RECOVERY_MARKER,
             RUNNER.TEST_MARKER,
             RUNNER.SHELL_PROMPT,

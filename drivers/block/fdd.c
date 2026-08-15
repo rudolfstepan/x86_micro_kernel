@@ -507,10 +507,19 @@ static bool fdc_write_sectors_impl(uint8_t drive, uint8_t head, uint8_t track,
 bool fdc_write_sectors(uint8_t drive, uint8_t head, uint8_t track,
                        uint8_t sector, uint8_t count, const void* buffer) {
     fdd_transaction_begin();
-    bool armed = !fdd_write_fenced && storage_write_begin(pit_monotonic_ms());
+    int resource = -1;
+    for (short index = 0; index < drive_count; ++index) {
+        if (detected_drives[index].type == DRIVE_TYPE_FDD &&
+            detected_drives[index].fdd_drive_no == drive) {
+            resource = index;
+            break;
+        }
+    }
+    bool armed = !fdd_write_fenced && resource >= 0 &&
+        storage_write_begin((uint32_t)resource, pit_monotonic_ms());
     bool result = armed && fdc_write_sectors_impl(drive, head, track, sector,
                                                   count, buffer);
-    if (armed && !storage_write_end()) result = false;
+    if (armed && !storage_write_end(result)) result = false;
     fdd_transaction_end();
     return result;
 }

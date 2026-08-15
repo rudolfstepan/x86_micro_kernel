@@ -53,6 +53,15 @@ typedef struct {
 static ata_cache_entry_t ata_read_cache[ATA_READ_CACHE_ENTRIES];
 static volatile bool ata_write_fenced;
 
+static int ata_resource_index(unsigned short base, bool is_master) {
+    for (short index = 0; index < drive_count; ++index) {
+        drive_t *drive = &detected_drives[index];
+        if (drive->type == DRIVE_TYPE_ATA && drive->base == base &&
+            drive->is_master == is_master) return index;
+    }
+    return -1;
+}
+
 #define ATA_JOURNAL_MAGIC 0x4A545352U /* "RSTJ" */
 #define ATA_JOURNAL_VERSION 2U
 #define ATA_JOURNAL_CLEAN 0U
@@ -773,17 +782,21 @@ done:
 bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
                       bool is_master) {
     ata_transaction_begin();
-    bool armed = !ata_write_fenced && storage_write_begin(pit_monotonic_ms());
+    int resource = ata_resource_index(base, is_master);
+    bool armed = !ata_write_fenced && resource >= 0 &&
+        storage_write_begin((uint32_t)resource, pit_monotonic_ms());
     bool result = armed &&
                   ata_write_sector_journaled(base, lba, buffer, is_master);
-    if (armed && !storage_write_end()) result = false;
+    if (armed && !storage_write_end(result)) result = false;
     ata_transaction_end();
     return result;
 }
 
 bool ata_flush_cache(unsigned short base, bool is_master) {
     ata_transaction_begin();
-    bool armed = !ata_write_fenced && storage_write_begin(pit_monotonic_ms());
+    int resource = ata_resource_index(base, is_master);
+    bool armed = !ata_write_fenced && resource >= 0 &&
+        storage_write_begin((uint32_t)resource, pit_monotonic_ms());
     bool result = false;
     if (armed) {
         outb(ATA_DRIVE_HEAD(base), is_master ? 0xE0U : 0xF0U);
@@ -793,8 +806,7 @@ bool ata_flush_cache(unsigned short base, bool is_master) {
             result = wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS);
         }
     }
-    if (armed && !storage_write_end()) result = false;
-    if (!result) storage_fence_writes();
+    if (armed && !storage_write_end(result)) result = false;
     ata_transaction_end();
     return result;
 }
