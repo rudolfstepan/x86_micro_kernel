@@ -186,12 +186,45 @@ typedef struct {
 
 #define SUPERVISOR_ICMP_ECHO_MAX_DATA 32U
 #define SUPERVISOR_ICMP_ECHO_REPLY_VERSION 1U
+#define SUPERVISOR_ICMP_INGRESS_VERSION 1U
+#define SUPERVISOR_ICMP_DELIVERY_VERSION 1U
+#define SUPERVISOR_ICMP_INGRESS_DROP 0U
+#define SUPERVISOR_ICMP_INGRESS_ECHO_REQUEST 1U
+#define SUPERVISOR_ICMP_INGRESS_ECHO_REPLY 2U
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
     uint32_t request_id;
     uint32_t reserved;
 } supervisor_icmp_echo_reply_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t frame_crc32;
+    uint32_t reserved;
+    uint32_t source_ip;
+    uint32_t destination_ip;
+    uint8_t source_mac[6];
+    uint16_t identifier;
+    uint16_t sequence;
+    uint16_t data_length;
+    uint8_t operation;
+    uint8_t reserved_byte;
+    uint16_t reserved_tail;
+} supervisor_icmp_ingress_t;
+
+typedef struct {
+    uint32_t active;
+    uint32_t process_generation;
+    uint32_t frame_crc32;
+    uint32_t frame_length;
+    uint64_t deadline_ms;
+} supervisor_icmp_delivery_t;
+
+typedef struct {
+    critical_object_t object;
+} supervisor_protected_icmp_delivery_t;
 
 typedef struct {
     uint32_t request_id;
@@ -620,6 +653,9 @@ int supervisor_network_send_arp_request(
 bool supervisor_network_submit_icmp_echo(
     uint32_t source_ip, const uint8_t source_mac[6], uint16_t identifier,
     uint16_t sequence, const uint8_t *data, uint16_t data_length);
+int supervisor_network_icmp_ingress(
+    int pid, uint32_t generation, const supervisor_icmp_ingress_t *ingress,
+    const uint8_t *data);
 int supervisor_network_send_icmp_echo_reply(
     int pid, uint32_t generation,
     const supervisor_icmp_echo_reply_t *reply);

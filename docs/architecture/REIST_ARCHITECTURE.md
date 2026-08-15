@@ -438,9 +438,9 @@ RTL8139-Lauf prüft den resultierenden Ethernet-Frame am QEMU-Socket. Damit ist
 der lokale ARP-Request-/Reply-Pfad vermittelt; ICMP und die DHCP-
 Konfigurationsentscheidung folgen über denselben eng begrenzten Vertrag.
 
-S0.3c-5c entfernt auch den autonomen ICMP-Echo-Responder aus Ring 0. Der
-Kernel prüft weiterhin Ethernet-, IPv4- und ICMP-Grenzen sowie beide
-Prüfsummen, veröffentlicht einen gültigen Request aber nur als festes
+S0.3c-5c entfernt auch den autonomen ICMP-Echo-Responder aus Ring 0. In dieser
+Zwischenstufe prüfte der Kernel noch Ethernet-, IPv4- und ICMP-Grenzen sowie
+beide Prüfsummen und veröffentlichte einen gültigen Request nur als festes
 `NETI`-Objekt an die gesunde Ring-3-Domäne. Der geschützte Kontext umfasst
 Request-ID, Dienstgeneration, Quell-IP/-MAC, Identifier, Sequenz und maximal
 32 Payloadbytes. Eine absolute 250-ms-Einmalautorität wird vor dem einzigen
@@ -643,8 +643,17 @@ ICMP-Nutzlast einschließlich ungerader Länge und veröffentlicht ausschließli
 ein festes 28-Byte-Ergebnis mit validierten Adressen, Offsets, Identifier und
 Sequenz. Der Supervisor bindet `ICMP_PARSED_RING3` an die tatsächlich
 ausgelieferte PID, Prozessgeneration und Frame-CRC. Dieser Shadow-Nachweis
-besitzt bewusst keine Autorität; erst S0.3c-5e2d darf den Ring-0-ICMP-Eingang
-nach äquivalenten Fault-, Druck- und Restart-Tests entfernen.
+besitzt bewusst keine Autorität. S0.3c-5e2d schließt den ICMP-Rückbau: Für
+jeden rohen ICMP-Kandidaten erzeugt Ring 0 ein redundanzgeschütztes Ticket mit
+Dienstgeneration, Frame-CRC und absoluter 250-ms-Deadline. Der append-only
+Syscall 83 verbraucht es genau einmal und akzeptiert ausschließlich kanonisches
+`DROP`, `ECHO_REQUEST` oder `ECHO_REPLY`. Erst der Request darf die bereits
+geschützte `NETI`-Einmalautorität erzeugen; ein Reply darf nur die exakt
+erwartete Ping-Identität abschließen. Der alte Ring-0-ICMP-Parser ist entfernt
+und sein Eingang fällt geschlossen aus. Der RTL8139-Nachweis umfasst Parser,
+Ingress und den wirklich ausgesendeten vermittelten Reply. S0.3c-5e2e muss
+noch den verbleibenden Ring-0-IPv4-Demux und dessen implizites ARP-Lernen
+ersetzen.
 
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau

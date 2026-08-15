@@ -183,8 +183,11 @@ und 10 verbindlich.
                     Parallelzustellung abnehmen
         - [x] S0.3c-5e2c Heapfreien ICMP-Echo-v1-Shadow-Parser mit vollständiger
           Prüfsumme, fester 28-Byte-Ausgabe und realem RTL8139-Nachweis ergänzen
-        - [ ] S0.3c-5e2d ICMP-Eingangsautorität aus dem validierten Ring-3-
-          Ergebnis speisen und den verbleibenden Ring-0-IPv4/ICMP-Parser entfernen
+        - [x] S0.3c-5e2d ICMP-Eingangsautorität aus einem geschützten,
+          CRC-/generations-/deadlinegebundenen Ring-3-Ergebnis speisen und den
+          Ring-0-ICMP-Parser entfernen
+        - [ ] S0.3c-5e2e Verbleibenden Ring-0-IPv4-Demux und seine implizite
+          ARP-Lernmutation durch validierte Ring-3-Entscheidungen ersetzen
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -1602,11 +1605,17 @@ IPv4-v1-Parser validierte Echo-Requests oder -Replies, verlangt Code null,
 prüft die vollständige ICMP-Prüfsumme einschließlich ungerader Nutzdaten und
 publiziert ein kanonisches 28-Byte-Ergebnis. Ein PID-/generations- und
 Frame-CRC-gebundener Liefernachweis erzeugt nur den Diagnosemarker
-`ICMP_PARSED_RING3`; er verleiht keine Ausgabeautorität. Der reale RTL8139-
-Lauf bestätigt den Marker gemeinsam mit der bereits vermittelten Echoantwort
-und `TEST_OK`. Offen bleibt in
-S0.3c-5e2d die Übernahme der ICMP-Eingangsautorität und der Rückbau des
-Ring-0-IPv4/ICMP-Parsers.
+`ICMP_PARSED_RING3`; er verleiht keine Ausgabeautorität. S0.3c-5e2d bindet
+darauf jede ICMP-Eingangsentscheidung an ein redundanzgeschütztes Ticket mit
+PID, Prozessgeneration, Frame-CRC und absoluter 250-ms-Deadline. Syscall 83
+akzeptiert ausschließlich kanonisches `DROP`, `ECHO_REQUEST` oder
+`ECHO_REPLY`; erst danach darf eine Echo-Autorität entstehen beziehungsweise
+ein erwarteter Ping abgeschlossen werden. Der alte Ring-0-ICMP-Parser ist
+entfernt und ICMP fällt dort geschlossen aus. Der reale RTL8139-Lauf bestätigt
+`ICMP_PARSED_RING3 -> ICMP_ECHO_QUEUED -> ICMP_INGRESS_RING3 ->
+ICMP_ECHO_MEDIATED -> TEST_OK`; der bisherige ICMP-Echo-Lauf bleibt grün.
+Offen bleibt S0.3c-5e2e: Der Ring-0-IPv4-Demux validiert noch Header und lernt
+implizit ARP-Nachbarn.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

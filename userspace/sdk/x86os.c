@@ -155,6 +155,16 @@ int x86os_reist_send_icmp_echo_reply(
                               (uintptr_t)reply, 0, 0);
 }
 
+_Static_assert(sizeof(x86os_reist_icmp_ingress_t) == 40U,
+               "REIST ICMP ingress ABI size changed");
+
+int x86os_reist_icmp_ingress(const x86os_reist_icmp_ingress_t *ingress,
+                             const uint8_t *data) {
+    return (int)x86os_syscall(X86OS_SYS_REIST_ICMP_INGRESS,
+                              (uint32_t)(uintptr_t)ingress,
+                              (uint32_t)(uintptr_t)data, 0U);
+}
+
 _Static_assert(sizeof(x86os_reist_dhcp_commit_t) == 16U,
                "REIST DHCP commit ABI size changed");
 

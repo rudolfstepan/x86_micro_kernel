@@ -182,6 +182,10 @@ uint32_t netstack_get_ip_address(void);
 bool netstack_is_configured(void);
 uint32_t netstack_get_gateway(void);
 bool netstack_get_local_identity(uint32_t *ip_out, uint8_t mac_out[6]);
+void netstack_record_validated_icmp_echo_request(void);
+bool netstack_accept_validated_icmp_echo_reply(uint32_t source_ip,
+                                               uint16_t identifier,
+                                               uint16_t sequence);
 bool netstack_ping(uint32_t dst_ip, uint16_t id, uint16_t seq,
                    uint32_t timeout_ms);
 bool netstack_probe_gateway(void);

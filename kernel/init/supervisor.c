@@ -145,6 +145,7 @@ typedef struct {
     uint32_t dhcp_delivery_pending;
     int32_t dhcp_report_pid;
     uint32_t dhcp_report_generation;
+    supervisor_protected_icmp_delivery_t icmp_ingress_delivery;
     supervisor_protected_udp_delivery_t udp_ingress_delivery;
 } supervisor_probe_runtime_t;
 
@@ -1328,6 +1329,45 @@ static int udp_delivery_clear(void) {
     return udp_delivery_write(&delivery);
 }
 
+static bool icmp_delivery_valid(const void *payload, size_t length) {
+    if (payload == NULL || length != sizeof(supervisor_icmp_delivery_t))
+        return false;
+    const supervisor_icmp_delivery_t *delivery = payload;
+    if (delivery->active == 0U) {
+        const supervisor_icmp_delivery_t empty = {0};
+        const uint8_t *actual = payload;
+        const uint8_t *expected = (const uint8_t *)&empty;
+        for (size_t index = 0U; index < sizeof(empty); ++index)
+            if (actual[index] != expected[index]) return false;
+        return true;
+    }
+    return delivery->active == 1U && delivery->process_generation != 0U &&
+        delivery->frame_length >= 34U &&
+        delivery->frame_length <= SUPERVISOR_NETWORK_FRAME_MAX_SIZE &&
+        delivery->deadline_ms != 0U;
+}
+
+static int icmp_delivery_write(const supervisor_icmp_delivery_t *delivery) {
+    return critical_object_update(
+        &probe_runtime.icmp_ingress_delivery.object,
+        SUPERVISOR_ICMP_DELIVERY_VERSION, delivery, sizeof(*delivery),
+        icmp_delivery_valid) == 0 ? 0 : SUPERVISOR_EINTEGRITY;
+}
+
+static int icmp_delivery_read(supervisor_icmp_delivery_t *delivery_out) {
+    size_t length = 0U;
+    critical_read_result_t result = critical_object_read(
+        &probe_runtime.icmp_ingress_delivery.object,
+        SUPERVISOR_ICMP_DELIVERY_VERSION, delivery_out, sizeof(*delivery_out),
+        &length, icmp_delivery_valid);
+    return result < 0 ? SUPERVISOR_EINTEGRITY : 0;
+}
+
+static int icmp_delivery_clear(void) {
+    const supervisor_icmp_delivery_t delivery = {0};
+    return icmp_delivery_write(&delivery);
+}
+
 static supervisor_udp_binding_handle_t udp_binding_handle(
         uint32_t slot, uint32_t generation) {
     return (generation << 8U) | (slot + 1U);
@@ -1572,8 +1612,12 @@ void supervisor_init(void) {
 #endif
     }
 #ifndef REIST_HOST_TEST
+    supervisor_icmp_delivery_t empty_icmp_delivery = {0};
     supervisor_udp_delivery_t empty_udp_delivery = {0};
-    if (critical_object_init(&probe_runtime.udp_ingress_delivery.object,
+    if (critical_object_init(&probe_runtime.icmp_ingress_delivery.object,
+            SUPERVISOR_ICMP_DELIVERY_VERSION, &empty_icmp_delivery,
+            sizeof(empty_icmp_delivery)) != 0 ||
+        critical_object_init(&probe_runtime.udp_ingress_delivery.object,
             SUPERVISOR_UDP_DELIVERY_VERSION, &empty_udp_delivery,
             sizeof(empty_udp_delivery)) != 0 ||
         supervisor_protected_probe_control_init(&probe_runtime.control) != 0 ||
@@ -1874,7 +1918,7 @@ static bool probe_fence_apply(void *context) {
     (void)supervisor_protected_probe_authority_cancel(
         &runtime->dhcp_boot_authority);
     (void)supervisor_protected_dhcp_boot_clear(&runtime->dhcp_boot);
-    if (udp_delivery_clear() != 0) {
+    if (icmp_delivery_clear() != 0 || udp_delivery_clear() != 0) {
         output_fence_all();
         return false;
     }
@@ -1969,7 +2013,7 @@ static bool probe_spawn_next(void) {
     probe_runtime.dhcp_delivery_generation = 0U;
     probe_runtime.dhcp_delivery_crc32 = 0U;
     probe_runtime.dhcp_delivery_pending = 0U;
-    if (udp_delivery_clear() != 0) return false;
+    if (icmp_delivery_clear() != 0 || udp_delivery_clear() != 0) return false;
     int pid = supervisor_spawn_service("/REIST.PRG", 2, arguments,
                                        PROCESS_DOMAIN_PROBE);
     uint32_t generation = 0U;
@@ -2277,11 +2321,22 @@ int supervisor_network_receive_frame(int pid, uint32_t generation,
          control.healthy == 0U || pid != control.pid ||
          generation != control.process_generation ||
          !process_identity_alive(pid, generation))) result = -13;
-    supervisor_udp_delivery_t delivery = {0};
-    if (result == 0) result = udp_delivery_read(&delivery);
-    if (result == 0 && delivery.active != 0U) {
-        if (delivery.process_generation != generation ||
-            pit_monotonic_ms() >= delivery.deadline_ms) {
+    uint64_t now_ms = pit_monotonic_ms();
+    supervisor_icmp_delivery_t icmp_delivery = {0};
+    if (result == 0) result = icmp_delivery_read(&icmp_delivery);
+    if (result == 0 && icmp_delivery.active != 0U) {
+        if (icmp_delivery.process_generation != generation ||
+            now_ms >= icmp_delivery.deadline_ms) {
+            result = icmp_delivery_clear();
+        } else {
+            result = -11;
+        }
+    }
+    supervisor_udp_delivery_t udp_delivery = {0};
+    if (result == 0) result = udp_delivery_read(&udp_delivery);
+    if (result == 0 && udp_delivery.active != 0U) {
+        if (udp_delivery.process_generation != generation ||
+            now_ms >= udp_delivery.deadline_ms) {
             result = udp_delivery_clear();
         } else {
             result = -11;
@@ -2358,6 +2413,23 @@ int supervisor_network_confirm_frame_delivery(
         probe_runtime.icmp_delivery_generation = generation;
         probe_runtime.icmp_delivery_crc32 = frame_crc32;
         probe_runtime.icmp_delivery_pending = 1U;
+    }
+    if (result == 0 && ethertype == 0x0800U && frame->length >= 34U &&
+        frame->data[23U] == 1U) {
+        supervisor_icmp_delivery_t delivery = {0};
+        result = icmp_delivery_read(&delivery);
+        if (result == 0 && delivery.active != 0U) result = -11;
+        if (result == 0) {
+            delivery = (supervisor_icmp_delivery_t){
+                .active = 1U,
+                .process_generation = generation,
+                .frame_crc32 = frame_crc32,
+                .frame_length = frame->length,
+                .deadline_ms = deadline_after(
+                    pit_monotonic_ms(), SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS),
+            };
+            result = icmp_delivery_write(&delivery);
+        }
     }
     if (result == 0 && ethertype == 0x0800U && frame->length >= 34U &&
         frame->data[23U] == 17U && !udp_already_reported &&
@@ -2949,6 +3021,88 @@ bool supervisor_network_submit_icmp_echo(
     }
     printf("REIST_NETWORK ICMP_ECHO_QUEUED\n");
     return true;
+}
+
+static bool icmp_ingress_drop_is_canonical(
+        const supervisor_icmp_ingress_t *ingress) {
+    if (ingress->reserved != 0U || ingress->source_ip != 0U ||
+        ingress->destination_ip != 0U || ingress->identifier != 0U ||
+        ingress->sequence != 0U || ingress->data_length != 0U ||
+        ingress->reserved_byte != 0U || ingress->reserved_tail != 0U)
+        return false;
+    for (uint32_t index = 0U; index < 6U; ++index)
+        if (ingress->source_mac[index] != 0U) return false;
+    return true;
+}
+
+int supervisor_network_icmp_ingress(
+        int pid, uint32_t generation,
+        const supervisor_icmp_ingress_t *ingress, const uint8_t *data) {
+    if (ingress == NULL ||
+        ingress->version != SUPERVISOR_ICMP_INGRESS_VERSION ||
+        ingress->struct_size != sizeof(*ingress) ||
+        ingress->operation > SUPERVISOR_ICMP_INGRESS_ECHO_REPLY ||
+        ingress->reserved != 0U || ingress->reserved_byte != 0U ||
+        ingress->reserved_tail != 0U ||
+        ingress->data_length > SUPERVISOR_ICMP_ECHO_MAX_DATA ||
+        (ingress->data_length != 0U && data == NULL)) return -22;
+    bool drop = ingress->operation == SUPERVISOR_ICMP_INGRESS_DROP;
+    if (drop && !icmp_ingress_drop_is_canonical(ingress)) return -22;
+
+    uint32_t local_ip = 0U;
+    uint8_t local_mac[6] = {0};
+    if (!drop) {
+        if (ingress->source_ip == 0U || ingress->source_ip == UINT32_MAX ||
+            !netstack_get_local_identity(&local_ip, local_mac) ||
+            ingress->destination_ip != local_ip) return -22;
+        bool nonzero_mac = false;
+        for (uint32_t index = 0U; index < 6U; ++index)
+            if (ingress->source_mac[index] != 0U) nonzero_mac = true;
+        if (!nonzero_mac || (ingress->source_mac[0] & 1U) != 0U) return -22;
+        if (ingress->operation == SUPERVISOR_ICMP_INGRESS_ECHO_REPLY &&
+            ingress->data_length != 0U) return -22;
+    }
+
+    uint32_t flags = supervisor_lock();
+    supervisor_probe_control_t control = {0};
+    supervisor_icmp_delivery_t delivery = {0};
+    int result = supervisor_protected_probe_control_read(
+        &probe_runtime.control, &control);
+    bool caller_is_service = result == 0 && pid == control.pid &&
+                             generation == control.process_generation;
+    if (result == 0 &&
+        (control.active == 0U || control.fenced != 0U ||
+         control.healthy == 0U || !caller_is_service ||
+         !process_identity_alive(pid, generation))) result = -13;
+    if (result == 0) result = icmp_delivery_read(&delivery);
+    if (result == 0 &&
+        (delivery.active == 0U ||
+         delivery.process_generation != generation ||
+         delivery.frame_crc32 != ingress->frame_crc32)) result = -13;
+    if (result == 0 && pit_monotonic_ms() >= delivery.deadline_ms) {
+        (void)icmp_delivery_clear();
+        result = -110;
+    }
+    if (result == 0) result = icmp_delivery_clear();
+    bool integrity_failure = result == SUPERVISOR_EINTEGRITY;
+    supervisor_unlock(flags);
+    if (integrity_failure && caller_is_service)
+        (void)supervisor_force_isolate(control.handle);
+    if (result != 0) return result;
+    if (drop) return 0;
+
+    if (ingress->operation == SUPERVISOR_ICMP_INGRESS_ECHO_REPLY) {
+        (void)netstack_accept_validated_icmp_echo_reply(
+            ingress->source_ip, ingress->identifier, ingress->sequence);
+        printf("REIST_NETWORK ICMP_REPLY_INGRESS_RING3\n");
+        return 0;
+    }
+    netstack_record_validated_icmp_echo_request();
+    if (!supervisor_network_submit_icmp_echo(
+            ingress->source_ip, ingress->source_mac, ingress->identifier,
+            ingress->sequence, data, ingress->data_length)) return -11;
+    printf("REIST_NETWORK ICMP_INGRESS_RING3\n");
+    return 0;
 }
 
 int supervisor_network_send_icmp_echo_reply(

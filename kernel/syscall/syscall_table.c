@@ -508,6 +508,38 @@ static int syscall_reist_udp_ingress(
     return 0;
 }
 
+_Static_assert(sizeof(supervisor_icmp_ingress_t) == 40U,
+               "REIST ICMP ingress ABI changed");
+
+static int syscall_reist_icmp_ingress(
+        const supervisor_icmp_ingress_t *user_ingress,
+        const uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t ingress_address = (uint32_t)(uintptr_t)user_ingress;
+    if (process == NULL ||
+        !user_range_accessible(directory, ingress_address,
+                               sizeof(*user_ingress), false)) return -14;
+    supervisor_icmp_ingress_t ingress;
+    if (copy_from_user(&ingress, user_ingress, sizeof(ingress)) != 0)
+        return -14;
+    if (ingress.version != SUPERVISOR_ICMP_INGRESS_VERSION ||
+        ingress.struct_size != sizeof(ingress) ||
+        ingress.data_length > SUPERVISOR_ICMP_ECHO_MAX_DATA) return -22;
+    uint8_t data[SUPERVISOR_ICMP_ECHO_MAX_DATA] = {0};
+    const uint8_t *data_argument = NULL;
+    if (ingress.data_length != 0U) {
+        uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+        if (!user_range_accessible(directory, data_address,
+                                   ingress.data_length, false) ||
+            copy_from_user(data, user_data, ingress.data_length) != 0)
+            return -14;
+        data_argument = data;
+    }
+    return supervisor_network_icmp_ingress(
+        process->pid, process->generation, &ingress, data_argument);
+}
+
 _Static_assert(sizeof(supervisor_dhcp_ingress_t) == 52U,
                "REIST DHCP ingress ABI changed");
 
@@ -1267,6 +1299,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_reist_udp_ingress,   // Syscall 80: Validate Ring-3 UDP ingress
     (void*)&syscall_reist_dhcp_ingress,  // Syscall 81: Validate Ring-3 DHCP ingress
     (void*)&syscall_reist_dhcp_boot_start,// Syscall 82: Start bounded boot DHCP
+    (void*)&syscall_reist_icmp_ingress,   // Syscall 83: Validate Ring-3 ICMP ingress
     // Add more syscalls here as needed
 };
 
@@ -1662,6 +1695,11 @@ void syscall_handler(Registers* regs) {
         case SYS_REIST_DHCP_BOOT_START:
             result = (uint32_t)syscall_reist_dhcp_boot_start(
                 (const supervisor_dhcp_boot_start_t*)(uintptr_t)arg1);
+            break;
+        case SYS_REIST_ICMP_INGRESS:
+            result = (uint32_t)syscall_reist_icmp_ingress(
+                (const supervisor_icmp_ingress_t*)(uintptr_t)arg1,
+                (const uint8_t*)(uintptr_t)arg2);
             break;
         default:
             result = (uint32_t)-1;

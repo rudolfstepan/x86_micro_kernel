@@ -13,11 +13,9 @@ def read(path: str) -> str:
 class ReistIcmpServiceTests(unittest.TestCase):
     def test_echo_request_has_no_ring0_reply_fallback(self) -> None:
         netstack = read("drivers/net/netstack.c")
-        start = netstack.index("static void handle_icmp_packet(")
-        body = netstack[start:netstack.index("// UDP low-level", start)]
-        self.assertIn("supervisor_network_submit_icmp_echo(", body)
-        self.assertNotIn("icmp_send_echo_reply(", body)
-        self.assertIn("SUPERVISOR_ICMP_ECHO_MAX_DATA", netstack)
+        self.assertNotIn("static void handle_icmp_packet(", netstack)
+        self.assertNotIn("supervisor_network_submit_icmp_echo(", netstack)
+        self.assertIn("legacy Ring-0 parser fails closed", netstack)
 
     def test_context_is_fixed_protected_and_generation_scoped(self) -> None:
         header = read("include/kernel/supervisor.h")
@@ -55,6 +53,35 @@ class ReistIcmpServiceTests(unittest.TestCase):
         self.assertIn("SYS_REIST_ICMP_ECHO_REPLY", syscall)
         self.assertIn("copy_from_user(&reply", syscall)
         self.assertIn("SYS_REIST_ICMP_ECHO_REPLY", process)
+
+    def test_ingress_is_append_only_protected_and_generation_scoped(self) -> None:
+        libc = read("lib/libc/stdlib.h")
+        sdk = read("userspace/sdk/include/x86os.h")
+        wrapper = read("userspace/sdk/x86os.c")
+        syscall = read("kernel/syscall/syscall_table.c")
+        supervisor = read("kernel/init/supervisor.c")
+        process = read("kernel/proc/process.c")
+        self.assertIn("SYS_REIST_ICMP_INGRESS 83", libc)
+        self.assertIn("X86OS_SYS_REIST_ICMP_INGRESS = 83", sdk)
+        self.assertIn("sizeof(x86os_reist_icmp_ingress_t) == 40U", wrapper)
+        self.assertIn("copy_from_user(&ingress", syscall)
+        self.assertIn("SYS_REIST_ICMP_INGRESS", process)
+        self.assertIn("supervisor_protected_icmp_delivery_t", supervisor)
+        self.assertIn("delivery.process_generation != generation", supervisor)
+        self.assertIn("delivery.frame_crc32 != ingress->frame_crc32", supervisor)
+        self.assertIn("pit_monotonic_ms() >= delivery.deadline_ms", supervisor)
+        self.assertIn("icmp_delivery_clear()", supervisor)
+
+    def test_ring3_result_is_only_icmp_ingress_authority_source(self) -> None:
+        probe = read("examples/userspace/reist_probe.c")
+        supervisor = read("kernel/init/supervisor.c")
+        self.assertIn("x86os_reist_icmp_ingress(", probe)
+        self.assertIn("X86OS_REIST_ICMP_INGRESS_DROP", probe)
+        self.assertIn("supervisor_network_icmp_ingress(", supervisor)
+        ingress = supervisor.index("int supervisor_network_icmp_ingress(")
+        submit = supervisor.index("supervisor_network_submit_icmp_echo(", ingress)
+        self.assertLess(ingress, submit)
+        self.assertIn("netstack_accept_validated_icmp_echo_reply", supervisor)
 
     def test_ring3_parser_validates_and_authorizes_net_i(self) -> None:
         probe = read("examples/userspace/reist_probe.c")

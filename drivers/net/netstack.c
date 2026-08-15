@@ -446,37 +446,6 @@ bool netstack_send_supervised_udp_reply(uint32_t dst_ip,
     return nic_send(packet, total_len);
 }
 
-static void handle_icmp_packet(uint8_t *packet, uint16_t length,
-                               uint32_t src_ip,
-                               const uint8_t source_mac[6]) {
-    if (length < sizeof(icmp_header_t)) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
-    if (ip_checksum(packet, length) != 0) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
-    icmp_header_t *icmp = (icmp_header_t *)packet;
-    uint8_t *data = packet + sizeof(icmp_header_t);
-    uint16_t dlen = length - sizeof(icmp_header_t);
-
-    if (icmp->type == ICMP_ECHO_REQUEST && icmp->code == 0U) {
-        ++netstack_stats.icmp_echo_requests;
-        if (!supervisor_network_submit_icmp_echo(
-                src_ip, source_mac, ntohs(icmp->identifier),
-                ntohs(icmp->sequence), data, dlen))
-            ++netstack_stats.rx_dropped;
-    } else if (icmp->type == ICMP_ECHO_REPLY && icmp->code == 0) {
-        ++netstack_stats.icmp_echo_replies;
-        if (ping_waiting && src_ip == ping_expected_ip &&
-            ntohs(icmp->identifier) == ping_expected_id &&
-            ntohs(icmp->sequence) == ping_expected_seq) {
-            ping_reply_received = true;
-        }
-    }
-}
-
 // =============================================================================
 // UDP low-level (für DHCP ausreichend)
 // =============================================================================
@@ -731,12 +700,11 @@ static void handle_ip_packet(uint8_t *packet, uint16_t length,
         arp_add_entry(source_next_hop, source_mac);
     }
 
-    uint8_t *payload = (uint8_t*)ip + ihl_bytes;
-    uint16_t payload_len = (uint16_t)(total_length - ihl_bytes);
-
     switch (ip->protocol) {
         case IP_PROTOCOL_ICMP:
-            handle_icmp_packet(payload, payload_len, source_ip, source_mac);
+            /* ICMP interpretation belongs exclusively to the validated
+             * Ring-3 frame handoff. The legacy Ring-0 parser fails closed. */
+            ++netstack_stats.rx_dropped;
             break;
         case IP_PROTOCOL_UDP:
             /* UDP input belongs exclusively to the validated Ring-3 frame
@@ -781,6 +749,21 @@ bool netstack_safety_init(void) {
     if (supervised_arp_cache_initialized) return true;
     if (supervised_arp_cache_init(&supervised_arp_cache) != 0) return false;
     supervised_arp_cache_initialized = true;
+    return true;
+}
+
+void netstack_record_validated_icmp_echo_request(void) {
+    ++netstack_stats.icmp_echo_requests;
+}
+
+bool netstack_accept_validated_icmp_echo_reply(uint32_t source_ip,
+                                               uint16_t identifier,
+                                               uint16_t sequence) {
+    ++netstack_stats.icmp_echo_replies;
+    if (!ping_waiting || source_ip != ping_expected_ip ||
+        identifier != ping_expected_id || sequence != ping_expected_seq)
+        return false;
+    ping_reply_received = true;
     return true;
 }
 

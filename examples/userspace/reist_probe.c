@@ -411,6 +411,46 @@ int main(int argc, char **argv) {
                     return 41;
                 network_icmp_reported = true;
             }
+            bool raw_icmp_delivery = ethertype == 0x0800U &&
+                network_frame.length >= 34U &&
+                network_frame.data[23U] == 1U;
+            if (raw_icmp_delivery) {
+                x86os_reist_icmp_ingress_t ingress = {
+                    .version = X86OS_REIST_ICMP_INGRESS_VERSION,
+                    .struct_size = sizeof(ingress),
+                    .frame_crc32 = frame_crc32,
+                };
+                const uint8_t *payload = NULL;
+                if (icmp_parse == 0) {
+                    if (icmp_result.type == 8U &&
+                        icmp_result.payload_length <=
+                            X86OS_REIST_ICMP_ECHO_MAX_DATA) {
+                        ingress.operation =
+                            X86OS_REIST_ICMP_INGRESS_ECHO_REQUEST;
+                        ingress.data_length = icmp_result.payload_length;
+                        payload = &network_frame.data[
+                            icmp_result.payload_offset];
+                    } else if (icmp_result.type == 0U) {
+                        ingress.operation =
+                            X86OS_REIST_ICMP_INGRESS_ECHO_REPLY;
+                    }
+                    if (ingress.operation !=
+                            X86OS_REIST_ICMP_INGRESS_DROP) {
+                        ingress.source_ip = icmp_result.source_ip;
+                        ingress.destination_ip = icmp_result.destination_ip;
+                        ingress.identifier = icmp_result.identifier;
+                        ingress.sequence = icmp_result.sequence;
+                        for (uint32_t index = 0U; index < 6U; ++index)
+                            ingress.source_mac[index] =
+                                network_frame.data[6U + index];
+                    }
+                }
+                int ingress_result = x86os_reist_icmp_ingress(
+                    &ingress, payload);
+                if (ingress_result != 0 && ingress_result != -11 &&
+                    ingress_result != -13 && ingress_result != -110)
+                    return 42;
+            }
             if (!network_udp_reported && udp_parse == 0) {
                 if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_UDP,
                                        udp_result.destination_port) != 0)

@@ -91,6 +91,7 @@
 #define SYS_REIST_UDP_INGRESS 80
 #define SYS_REIST_DHCP_INGRESS 81
 #define SYS_REIST_DHCP_BOOT_START 82
+#define SYS_REIST_ICMP_INGRESS 83
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

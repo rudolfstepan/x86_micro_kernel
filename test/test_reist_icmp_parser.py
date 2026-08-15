@@ -45,6 +45,9 @@ class ReistIcmpParserTests(unittest.TestCase):
         supervisor = read("kernel/init/supervisor.c")
         self.assertIn("reist_icmp_parse_frame", service)
         self.assertIn("X86OS_REIST_REPORT_NETWORK_ICMP", service)
+        self.assertIn("x86os_reist_icmp_ingress(", service)
+        self.assertIn("X86OS_REIST_ICMP_INGRESS_ECHO_REQUEST", service)
+        self.assertIn("X86OS_REIST_ICMP_INGRESS_ECHO_REPLY", service)
         self.assertLess(service.index("reist_icmp_parse_frame"),
                         service.index("X86OS_REIST_REPORT_NETWORK_ICMP"))
         self.assertIn("icmp_delivery_pending", supervisor)

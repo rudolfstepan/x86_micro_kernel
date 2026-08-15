@@ -86,7 +86,8 @@ enum {
     X86OS_SYS_REIST_NETWORK_FRAME = 79,
     X86OS_SYS_REIST_UDP_INGRESS = 80,
     X86OS_SYS_REIST_DHCP_INGRESS = 81,
-    X86OS_SYS_REIST_DHCP_BOOT_START = 82
+    X86OS_SYS_REIST_DHCP_BOOT_START = 82,
+    X86OS_SYS_REIST_ICMP_INGRESS = 83
 };
 
 enum {
@@ -202,6 +203,27 @@ typedef struct {
     uint32_t request_id;
     uint32_t reserved;
 } x86os_reist_icmp_echo_reply_t;
+
+#define X86OS_REIST_ICMP_INGRESS_VERSION 1U
+#define X86OS_REIST_ICMP_ECHO_MAX_DATA 32U
+#define X86OS_REIST_ICMP_INGRESS_DROP 0U
+#define X86OS_REIST_ICMP_INGRESS_ECHO_REQUEST 1U
+#define X86OS_REIST_ICMP_INGRESS_ECHO_REPLY 2U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t frame_crc32;
+    uint32_t reserved;
+    uint32_t source_ip;
+    uint32_t destination_ip;
+    uint8_t source_mac[6];
+    uint16_t identifier;
+    uint16_t sequence;
+    uint16_t data_length;
+    uint8_t operation;
+    uint8_t reserved_byte;
+    uint16_t reserved_tail;
+} x86os_reist_icmp_ingress_t;
 
 #define X86OS_REIST_DHCP_COMMIT_VERSION 1U
 typedef struct {
@@ -425,6 +447,8 @@ int x86os_reist_send_arp_request(
     const x86os_reist_arp_resolution_t *request);
 int x86os_reist_send_icmp_echo_reply(
     const x86os_reist_icmp_echo_reply_t *reply);
+int x86os_reist_icmp_ingress(const x86os_reist_icmp_ingress_t *ingress,
+                             const uint8_t *data);
 int x86os_reist_commit_dhcp(
     const x86os_reist_dhcp_commit_t *commit);
 int x86os_reist_renew_dhcp(
