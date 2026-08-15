@@ -36,6 +36,17 @@ class ReistStorageRequestPoolTests(unittest.TestCase):
         self.assertIn("client_generation", source)
         self.assertIn("service_generation", source)
         self.assertIn("STORAGE_HANDLE_GENERATION_MAX", source)
+        self.assertIn("STORAGE_REQUEST_STATS_VERSION", header)
+        self.assertIn("storage_request_stats_t", header)
+        self.assertIn("int storage_request_stats(", header)
+
+    def test_capacity_high_water_and_rejections_are_bounded_diagnostics(self):
+        source = (ROOT / "kernel/init/storage_request_pool.c").read_text()
+        self.assertIn("static storage_request_stats_t request_stats", source)
+        self.assertIn("UINT32_MAX", source)
+        self.assertIn("request_stats.request_high_water", source)
+        self.assertIn("client_capacity_rejections", source)
+        self.assertIn("pool_capacity_rejections", source)
 
     def test_payload_has_crc_and_redundant_copy(self):
         source = (ROOT / "kernel/init/storage_request_pool.c").read_text()

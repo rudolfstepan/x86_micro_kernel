@@ -11,6 +11,7 @@
 #define STORAGE_REQUEST_MAX_PER_CLIENT 2U
 #define STORAGE_REQUEST_MAX_TIMEOUT_MS 5000U
 #define STORAGE_REQUEST_INVALID_HANDLE 0U
+#define STORAGE_REQUEST_STATS_VERSION 1U
 
 typedef uint32_t storage_request_handle_t;
 
@@ -47,6 +48,15 @@ typedef struct {
     uint32_t length;
 } storage_request_descriptor_t;
 
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t active_requests;
+    uint32_t request_high_water;
+    uint32_t client_capacity_rejections;
+    uint32_t pool_capacity_rejections;
+} storage_request_stats_t;
+
 int storage_request_pool_init(void);
 int storage_request_bind_service(int pid, uint32_t generation);
 void storage_request_unbind_service(int pid, uint32_t generation);
@@ -65,6 +75,7 @@ int storage_request_collect(int client_pid, uint32_t client_generation,
                             storage_request_handle_t handle,
                             int32_t *result_out, uint8_t *block_data_out);
 void storage_request_cancel_process(int pid, uint32_t generation);
+int storage_request_stats(storage_request_stats_t *stats_out);
 
 #ifdef REIST_HOST_TEST
 int storage_request_test_corrupt_data(storage_request_handle_t handle,

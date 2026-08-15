@@ -76,6 +76,19 @@ class ReistIpcContractTests(unittest.TestCase):
         )
         self.assertIn("X86OS_IPC_MAX_MESSAGE_SIZE 128U", self.sdk_h)
         self.assertIn("X86OS_IPC_MESSAGE_VERSION", self.sdk_h)
+        self.assertIn("IPC_RESOURCE_STATS_VERSION", self.header)
+        self.assertIn("ipc_resource_stats_t", self.header)
+        self.assertIn("int ipc_resource_stats(", self.header)
+
+    def test_resource_high_water_is_bounded_saturating_and_observable(self) -> None:
+        self.assertIn("static ipc_resource_stats_t ipc_stats", self.source)
+        self.assertIn("UINT32_MAX", self.source)
+        self.assertIn("resource_added(&ipc_stats.active_endpoints", self.source)
+        self.assertIn("resource_added(&ipc_stats.active_capabilities", self.source)
+        self.assertIn("resource_added(&ipc_stats.queued_messages", self.source)
+        stats = c_block(self.source, "int ipc_resource_stats(")
+        self.assertIn("ipc_lock()", stats)
+        self.assertIn("ipc_unlock(flags)", stats)
 
     def test_ipc_storage_is_static_and_allocator_free(self) -> None:
         self.assertRegex(

@@ -262,6 +262,15 @@ bricht bei Drift oder fehlender Traceability ab. Das Register steht bewusst
 auf `partial`: Laufzeit-High-Water-Marken, vollständige Speicherbudgets und
 WCET-Messungen auf den ausgewählten Zielplattformen sind noch nicht erbracht.
 
+S0.4c-2b1 ergänzt diesen statischen Vertrag um Laufzeitbeobachtung für IPC und
+Storage-Requests. Versionierte Diagnosestrukturen führen aktive und maximale
+Belegung sowie saturierende Ablehnungszähler unter dem bereits vorhandenen
+Subsystem-Lock. Sie allokieren nicht und beeinflussen keine
+Autoritätsentscheidung. Verhaltenstests erzwingen Endpunkt-, Capability-,
+Nachrichten-, Client- und globale Storagegrenzen und belegen, dass Cleanup die
+aktive Belegung auf null zurückführt, ohne den historischen Höchststand zu
+verlieren. Weitere Task-, Heap-, Frame- und Queue-Metriken bleiben S0.4c-2b2.
+
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
 Bitinventar der gegenwärtig 60 Syscalls. Normale Programme erhalten explizit
 das Kompatibilitätsprofil. Das Supervisor-Profil `PROBE` beginnt dagegen bei

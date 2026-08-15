@@ -67,12 +67,30 @@ typedef struct {
 
 static storage_slot_t slots[STORAGE_REQUEST_POOL_CAPACITY];
 static critical_object_t protected_service_identity;
+static storage_request_stats_t request_stats;
+
+static void increment_saturating(uint32_t *value) {
+    if (*value != UINT32_MAX) ++*value;
+}
+
+static void request_added(void) {
+    increment_saturating(&request_stats.active_requests);
+    if (request_stats.active_requests > request_stats.request_high_water)
+        request_stats.request_high_water = request_stats.active_requests;
+}
+
+static void request_removed(void) {
+    if (request_stats.active_requests != 0U)
+        --request_stats.active_requests;
+}
 
 _Static_assert(sizeof(storage_slot_metadata_t) <= CRITICAL_OBJECT_MAX_PAYLOAD,
                "storage request metadata exceeds protected payload");
 _Static_assert(sizeof(storage_service_identity_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
                "storage service identity exceeds protected payload");
+_Static_assert(sizeof(storage_request_stats_t) == 6U * sizeof(uint32_t),
+               "storage request stats ABI drift");
 
 static uint32_t crc32_bytes(const uint8_t *data, size_t length) {
     uint32_t crc = 0xFFFFFFFFU;
@@ -215,6 +233,7 @@ static int resolve_handle(storage_request_handle_t handle, size_t *slot_out,
 }
 
 int storage_request_pool_init(void) {
+    request_stats = (storage_request_stats_t){0};
     storage_service_identity_t identity = {0};
     if (critical_object_init(&protected_service_identity,
             STORAGE_POOL_METADATA_VERSION, &identity, sizeof(identity)) != 0)
@@ -226,6 +245,10 @@ int storage_request_pool_init(void) {
                 sizeof(metadata)) != 0) return STORAGE_EINTEGRITY;
         clear_data(slot);
     }
+    request_stats = (storage_request_stats_t){
+        .version = STORAGE_REQUEST_STATS_VERSION,
+        .struct_size = sizeof(storage_request_stats_t),
+    };
     return 0;
 }
 
@@ -289,8 +312,10 @@ static int submit_locked(int client_pid, uint32_t client_generation,
             metadata.client_generation == client_generation)
             ++client_requests;
     }
-    if (client_requests >= STORAGE_REQUEST_MAX_PER_CLIENT)
+    if (client_requests >= STORAGE_REQUEST_MAX_PER_CLIENT) {
+        increment_saturating(&request_stats.client_capacity_rejections);
         return STORAGE_ENOSPC;
+    }
     for (size_t slot = 0U; slot < STORAGE_REQUEST_POOL_CAPACITY; ++slot) {
         storage_slot_metadata_t metadata;
         int result = load_metadata(slot, &metadata);
@@ -325,9 +350,11 @@ static int submit_locked(int client_pid, uint32_t client_generation,
             clear_data(slot);
             return result;
         }
+        request_added();
         *handle_out = make_handle(slot, generation);
         return 0;
     }
+    increment_saturating(&request_stats.pool_capacity_rejections);
     return STORAGE_ENOSPC;
 }
 
@@ -415,7 +442,9 @@ static int collect_locked(int client_pid, uint32_t client_generation,
     uint32_t generation = metadata.generation;
     metadata = (storage_slot_metadata_t){.generation = generation};
     clear_data(slot);
-    return store_metadata(slot, &metadata);
+    result = store_metadata(slot, &metadata);
+    if (result == 0) request_removed();
+    return result;
 }
 
 static void cancel_process_locked(int pid, uint32_t generation) {
@@ -432,7 +461,7 @@ static void cancel_process_locked(int pid, uint32_t generation) {
                 .generation = saved_generation,
             };
             clear_data(slot);
-            (void)store_metadata(slot, &metadata);
+            if (store_metadata(slot, &metadata) == 0) request_removed();
         }
     }
 }
@@ -494,6 +523,14 @@ void storage_request_cancel_process(int pid, uint32_t generation) {
     uint32_t flags = storage_pool_lock();
     cancel_process_locked(pid, generation);
     storage_pool_unlock(flags);
+}
+
+int storage_request_stats(storage_request_stats_t *stats_out) {
+    if (stats_out == NULL) return STORAGE_EINVAL;
+    uint32_t flags = storage_pool_lock();
+    *stats_out = request_stats;
+    storage_pool_unlock(flags);
+    return 0;
 }
 
 #ifdef REIST_HOST_TEST

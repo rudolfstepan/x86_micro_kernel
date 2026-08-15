@@ -13,6 +13,7 @@ struct Process;
 #define IPC_MAX_MESSAGE_SIZE 128U
 #define IPC_MESSAGE_VERSION 1U
 #define IPC_DEFAULT_TIMEOUT_MS 1000U
+#define IPC_RESOURCE_STATS_VERSION 1U
 
 #define IPC_RIGHT_SEND    0x01U
 #define IPC_RIGHT_RECEIVE 0x02U
@@ -41,6 +42,18 @@ typedef struct {
     uint32_t length;
     uint8_t payload[IPC_MAX_MESSAGE_SIZE];
 } ipc_message_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t active_endpoints;
+    uint32_t endpoint_high_water;
+    uint32_t active_capabilities;
+    uint32_t capability_high_water;
+    uint32_t queued_messages;
+    uint32_t message_high_water;
+    uint32_t capacity_rejections;
+} ipc_resource_stats_t;
 
 void ipc_init(void);
 int ipc_create(struct Process *owner, ipc_handle_t *handle);
@@ -71,5 +84,6 @@ void ipc_process_cleanup(int pid, uint32_t generation);
 int ipc_fault_inject(ipc_fault_target_t target, size_t object_index,
                      size_t copy_index, size_t word_index, uint32_t bit_mask);
 uint32_t ipc_integrity_correction_count(void);
+int ipc_resource_stats(ipc_resource_stats_t *stats_out);
 
 #endif

@@ -276,7 +276,13 @@ maschinenlesbar und bindet jeden Wert an das konkrete C-Makro sowie vorhandene
 Verifikationstests. `scripts/validate_resource_budgets.py` lehnt Quellcode-
 Drift, doppelte IDs/Symbole, unsichere Pfade und nicht auswertbare
 Konstantenausdrücke fail-closed ab. Laufzeit-High-Water-Marken und
-zielhardwarebezogene WCET-/Callgraph-Nachweise bleiben offen.
+zielhardwarebezogene WCET-/Callgraph-Nachweise bleiben offen. Für IPC und den
+Storage-Request-Pool ist der erste Laufzeitteil inzwischen vorhanden:
+versionierte Diagnosestrukturen melden aktive und maximale Belegung sowie
+saturierende Kapazitätsablehnungen. Die Host-C-Verhaltenstests füllen Queue und
+Pools bis zur statischen Grenze, erwarten den definierten Fehler und prüfen
+anschließend vollständige Freigabe bei erhaltenem High-Water-Wert. Task-,
+Heap- und Frame-High-Water sowie Zielhardware-WCET bleiben offen.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

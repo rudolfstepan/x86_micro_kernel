@@ -135,6 +135,15 @@ static int test_rights_fifo_and_bounds(void) {
         ipc_message_t queued = message((uint8_t)(index + 1U));
         CHECK(ipc_send(&owner, handle, &queued) == 0);
     }
+    ipc_resource_stats_t stats;
+    CHECK(ipc_resource_stats(&stats) == 0);
+    CHECK(stats.version == IPC_RESOURCE_STATS_VERSION);
+    CHECK(stats.struct_size == sizeof(stats));
+    CHECK(stats.active_endpoints == 1U && stats.endpoint_high_water == 1U);
+    CHECK(stats.active_capabilities == 2U &&
+          stats.capability_high_water == 2U);
+    CHECK(stats.queued_messages == IPC_QUEUE_DEPTH &&
+          stats.message_high_water == IPC_QUEUE_DEPTH);
     unsigned blocks_before = block_count;
     unsigned inherits_before = inherit_count;
     unsigned clears_before = inheritance_clear_count;
@@ -147,6 +156,8 @@ static int test_rights_fifo_and_bounds(void) {
     blocks_before = block_count;
     CHECK(ipc_send_timeout(&owner, handle, &excess, 0U) == -11);
     CHECK(block_count == blocks_before);
+    CHECK(ipc_resource_stats(&stats) == 0);
+    CHECK(stats.capacity_rejections != 0U);
 
     for (uint32_t index = 0; index < IPC_QUEUE_DEPTH; ++index) {
         ipc_message_t received;
@@ -158,6 +169,9 @@ static int test_rights_fifo_and_bounds(void) {
             CHECK(received.payload[tail] == 0U);
         }
     }
+    CHECK(ipc_resource_stats(&stats) == 0);
+    CHECK(stats.queued_messages == 0U &&
+          stats.message_high_water == IPC_QUEUE_DEPTH);
     blocks_before = block_count;
     inherits_before = inherit_count;
     clears_before = inheritance_clear_count;
@@ -179,6 +193,9 @@ static int test_rights_fifo_and_bounds(void) {
     CHECK(reply.length == 1U && reply.payload[0] == 0xA5U);
     CHECK(wake_one_count >= IPC_QUEUE_DEPTH * 2U + 2U);
     CHECK(ipc_close(&owner, handle) == 0);
+    CHECK(ipc_resource_stats(&stats) == 0);
+    CHECK(stats.active_endpoints == 0U &&
+          stats.active_capabilities == 0U && stats.queued_messages == 0U);
     return 0;
 }
 
@@ -298,10 +315,19 @@ static int test_global_endpoint_quota(void) {
     }
     ipc_handle_t excess = 0U;
     CHECK(ipc_create(&owners[HOST_OWNER_COUNT - 1U], &excess) < 0);
+    ipc_resource_stats_t stats;
+    CHECK(ipc_resource_stats(&stats) == 0);
+    CHECK(stats.active_endpoints == IPC_MAX_ENDPOINTS);
+    CHECK(stats.endpoint_high_water == IPC_MAX_ENDPOINTS);
+    CHECK(stats.capacity_rejections != 0U);
     for (size_t index = 0; index < IPC_MAX_ENDPOINTS; ++index) {
         size_t owner = index / IPC_MAX_CAPABILITIES_PER_PROCESS;
         CHECK(ipc_close(&owners[owner], handles[index]) == 0);
     }
+    CHECK(ipc_resource_stats(&stats) == 0);
+    CHECK(stats.active_endpoints == 0U &&
+          stats.active_capabilities == 0U && stats.queued_messages == 0U);
+    CHECK(stats.endpoint_high_water == IPC_MAX_ENDPOINTS);
     return 0;
 }
 

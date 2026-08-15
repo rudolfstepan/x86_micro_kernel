@@ -242,6 +242,10 @@ und 10 verbindlich.
         Kernelstacks, IPC und Storage einschließlich Quellcode-Driftprüfung
       - [ ] S0.4c-2b Laufzeitnachweise für High-Water-Marken,
         Kapazitätserschöpfung und vollständige Rückgewinnung
+        - [x] S0.4c-2b1 Saturierende IPC-/Storage-Pool-Diagnostik mit
+          Erschöpfungs- und vollständigem Rückgewinnungsnachweis
+        - [ ] S0.4c-2b2 Task-, Heap-, Frame- und weitere statische
+          Queue-High-Water-Nachweise
       - [ ] S0.4c-2c Zielhardwarebezogene WCET- und Stack-Callgraph-Nachweise
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
@@ -1004,6 +1008,12 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    Pfadflucht und fehlende Evidenz fail-closed ab. Die Compiler-Gates gegen VLA
    und Kernel-Stackframes über 4096 Byte bleiben verbindlich. Laufzeit-High-
    Water-Marken und zielhardwarebezogene WCET-Nachweise folgen in 2b/2c.
+- S0.4c-2b1 ergänzt versionierte, lockgeschützte und saturierende
+   Laufzeitdiagnostik für aktive beziehungsweise maximale IPC-Endpunkte,
+   Capabilities, Nachrichten und Storage-Requests. Die C-Verhaltenstests
+   erzwingen die jeweilige statische Kapazität, prüfen den fail-closed
+   Fehlercode und belegen danach aktive Zähler von null bei erhaltenem
+   High-Water-Wert. Die Zähler sind Diagnose, keine Autoritätsentscheidung.
 - Kritische Tasks erhalten feste Prioritäten, CPU-/Speicher-/Queue-Budgets,
    Admission Control und nachgewiesene Worst-Case-Laufzeiten.
 - Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte

@@ -10,6 +10,12 @@ static void fill(uint8_t block[STORAGE_REQUEST_BLOCK_SIZE], uint8_t seed) {
 
 int main(void) {
     if (storage_request_pool_init() != 0) return 100;
+    storage_request_stats_t stats;
+    if (storage_request_stats(0) != -22 ||
+        storage_request_stats(&stats) != 0 ||
+        stats.version != STORAGE_REQUEST_STATS_VERSION ||
+        stats.struct_size != sizeof(stats) || stats.active_requests != 0U ||
+        stats.request_high_water != 0U) return 101;
     if (storage_request_bind_service(7, 11U) != 0 ||
         storage_request_bind_service(8, 12U) != -13) return 1;
 
@@ -79,7 +85,13 @@ int main(void) {
     storage_request_handle_t excess;
     if (storage_request_submit(3, 5U, &read, 0, 50U, &excess) != -28)
         return 9;
+    if (storage_request_stats(&stats) != 0 ||
+        stats.active_requests != STORAGE_REQUEST_MAX_PER_CLIENT ||
+        stats.request_high_water < STORAGE_REQUEST_MAX_PER_CLIENT ||
+        stats.client_capacity_rejections == 0U) return 16;
     storage_request_cancel_process(3, 5U);
+    if (storage_request_stats(&stats) != 0 || stats.active_requests != 0U)
+        return 17;
 
     storage_request_handle_t handles[STORAGE_REQUEST_POOL_CAPACITY];
     for (uint32_t index = 0U; index < STORAGE_REQUEST_POOL_CAPACITY; ++index)
@@ -88,8 +100,14 @@ int main(void) {
             return 8;
     if (storage_request_submit(30, 5U, &read, 0, 60U, &excess) != -28)
         return 9;
+    if (storage_request_stats(&stats) != 0 ||
+        stats.active_requests != STORAGE_REQUEST_POOL_CAPACITY ||
+        stats.request_high_water != STORAGE_REQUEST_POOL_CAPACITY ||
+        stats.pool_capacity_rejections == 0U) return 18;
     for (uint32_t index = 0U; index < STORAGE_REQUEST_POOL_CAPACITY; ++index)
         storage_request_cancel_process(10 + (int)index, 5U);
+    if (storage_request_stats(&stats) != 0 || stats.active_requests != 0U ||
+        stats.request_high_water != STORAGE_REQUEST_POOL_CAPACITY) return 19;
     if (storage_request_claim(7, 11U, 61U, &descriptor, 0) != -11) return 10;
     for (uint32_t index = 0U; index < STORAGE_REQUEST_POOL_CAPACITY; ++index)
         if (storage_request_collect(3, 5U, handles[index], &result,

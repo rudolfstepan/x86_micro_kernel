@@ -66,8 +66,10 @@ Verifikationstests. `scripts/validate_resource_budgets.py` wertet keine
 beliebigen Ausdrücke aus, sondern nur einen begrenzten ganzzahligen
 Konstantenvertrag. Quellcode-Drift, doppelte IDs oder Symbole, Pfadflucht und
 fehlende Evidenz führen zum Fehler. Der Status bleibt `partial`, bis zusätzlich
-Laufzeit-High-Water-Marken sowie Zielhardware-WCET-, Callgraph- und vollständige
-Speicherbudgets nachgewiesen sind.
+Laufzeit-High-Water-Marken aller kritischen Pools sowie Zielhardware-WCET-,
+Callgraph- und vollständige Speicherbudgets nachgewiesen sind. IPC und der
+Storage-Request-Pool liefern bereits versionierte, saturierende Belegungs- und
+Erschöpfungsdiagnostik; Task-, Heap- und Frame-Pools folgen.
 
 ## Ziel-Failure-Domains
 
