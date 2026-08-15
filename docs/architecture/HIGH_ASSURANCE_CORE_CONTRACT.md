@@ -57,6 +57,18 @@ unsichere Pfade und fehlende Evidenz fail-closed ab. Der Registerstatus bleibt
 `partial`, bis alle Kern-, Geräte- und ausgewählten Profilgefahren erfasst und
 die Testergebnisse automatisiert an eine Release-Baseline gebunden sind.
 
+## Ressourcenregister
+
+Das versionierte Register
+[`safety/resource_budgets.toml`](../../safety/resource_budgets.toml) bindet
+statische Ressourcenobergrenzen an ihre autoritativen C-Makros und konkrete
+Verifikationstests. `scripts/validate_resource_budgets.py` wertet keine
+beliebigen Ausdrücke aus, sondern nur einen begrenzten ganzzahligen
+Konstantenvertrag. Quellcode-Drift, doppelte IDs oder Symbole, Pfadflucht und
+fehlende Evidenz führen zum Fehler. Der Status bleibt `partial`, bis zusätzlich
+Laufzeit-High-Water-Marken sowie Zielhardware-WCET-, Callgraph- und vollständige
+Speicherbudgets nachgewiesen sind.
+
 ## Ziel-Failure-Domains
 
 Der aktuelle Kernel ist noch ein modularer Monolith. Das zentrale

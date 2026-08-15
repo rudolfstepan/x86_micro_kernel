@@ -1,0 +1,75 @@
+schema_version = 1
+baseline = "REIST-S0.4c"
+status = "partial"
+
+[[budget]]
+id = "RB-SCHED-TASK-SLOTS"
+description = "Globale statische Taskslots"
+source = "kernel/sched/scheduler.h"
+symbol = "MAX_TASKS"
+limit = 8
+unit = "tasks"
+verification = ["test/test_reist_scheduling_policy.py", "test/test_scheduler_time.py"]
+
+[[budget]]
+id = "RB-KERNEL-STACK-BYTES"
+description = "Nutzbarer Kernelstack pro dynamischem Task"
+source = "kernel/sched/scheduler.h"
+symbol = "STACK_SIZE"
+limit = 8192
+unit = "bytes/task"
+verification = ["test/test_reist_stack_budget.py", "test/test_reist_user_stack_guards.py"]
+
+[[budget]]
+id = "RB-IPC-ENDPOINTS"
+description = "Globale statische IPC-Endpunkte"
+source = "include/kernel/ipc.h"
+symbol = "IPC_MAX_ENDPOINTS"
+limit = 16
+unit = "endpoints"
+verification = ["test/test_reist_ipc.py"]
+
+[[budget]]
+id = "RB-IPC-CAPS-PROCESS"
+description = "IPC-Capabilities pro Prozess"
+source = "include/kernel/ipc.h"
+symbol = "IPC_MAX_CAPABILITIES_PER_PROCESS"
+limit = 8
+unit = "capabilities/process"
+verification = ["test/test_reist_ipc.py"]
+
+[[budget]]
+id = "RB-IPC-QUEUE-DEPTH"
+description = "Nachrichten pro IPC-Endpunktqueue"
+source = "include/kernel/ipc.h"
+symbol = "IPC_QUEUE_DEPTH"
+limit = 4
+unit = "messages/endpoint"
+verification = ["test/test_reist_ipc.py"]
+
+[[budget]]
+id = "RB-IPC-MESSAGE-BYTES"
+description = "Maximale IPC-Nutzdaten pro Nachricht"
+source = "include/kernel/ipc.h"
+symbol = "IPC_MAX_MESSAGE_SIZE"
+limit = 128
+unit = "bytes/message"
+verification = ["test/test_reist_ipc.py"]
+
+[[budget]]
+id = "RB-STORAGE-REQUEST-SLOTS"
+description = "Globale statische Storage-Request-Slots"
+source = "include/kernel/storage_request_pool.h"
+symbol = "STORAGE_REQUEST_POOL_CAPACITY"
+limit = 8
+unit = "requests"
+verification = ["test/test_reist_storage_request_pool.py"]
+
+[[budget]]
+id = "RB-STORAGE-REQUESTS-CLIENT"
+description = "Gleichzeitige Storage-Requests pro Clientgeneration"
+source = "include/kernel/storage_request_pool.h"
+symbol = "STORAGE_REQUEST_MAX_PER_CLIENT"
+limit = 2
+unit = "requests/client"
+verification = ["test/test_reist_storage_request_pool.py"]

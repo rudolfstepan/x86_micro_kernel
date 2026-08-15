@@ -238,6 +238,11 @@ und 10 verbindlich.
     - [x] S0.4c-1 Generationssichere, transitive Priority Inheritance für
       blockierendes IPC mit automatischer Rücknahme bei Wakeup, Timeout und Exit
     - [ ] S0.4c-2 Statische WCET-, Stack-, Speicher- und Queue-Budgetnachweise
+      - [x] S0.4c-2a Maschinenprüfbares Kapazitätsregister für Scheduler,
+        Kernelstacks, IPC und Storage einschließlich Quellcode-Driftprüfung
+      - [ ] S0.4c-2b Laufzeitnachweise für High-Water-Marken,
+        Kapazitätserschöpfung und vollständige Rückgewinnung
+      - [ ] S0.4c-2c Zielhardwarebezogene WCET- und Stack-Callgraph-Nachweise
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
 
@@ -992,6 +997,13 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    oder beschädigte Capability-Metadaten werden vor dem Blockieren fail-closed
    abgewiesen. Spinlocks und Präemptions-Guards erhalten bewusst keine
    Inheritance, weil ihr Kontextvertrag Blockieren verbietet.
+- S0.4c-2a bindet die statischen Task-, Stack-, IPC- und Storage-Grenzen im
+   versionierten Register `safety/resource_budgets.toml` an ihre konkreten
+   C-Makros und Verifikationstests. Der begrenzte Validator wertet nur sichere
+   ganzzahlige Konstantenausdrücke aus und lehnt Drift, doppelte Einträge,
+   Pfadflucht und fehlende Evidenz fail-closed ab. Die Compiler-Gates gegen VLA
+   und Kernel-Stackframes über 4096 Byte bleiben verbindlich. Laufzeit-High-
+   Water-Marken und zielhardwarebezogene WCET-Nachweise folgen in 2b/2c.
 - Kritische Tasks erhalten feste Prioritäten, CPU-/Speicher-/Queue-Budgets,
    Admission Control und nachgewiesene Worst-Case-Laufzeiten.
 - Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte

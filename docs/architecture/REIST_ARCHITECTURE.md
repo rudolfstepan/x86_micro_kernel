@@ -253,6 +253,15 @@ CPU-Fensterabrechnung der effektiven Klasse belastet. Spinlocks und
 Präemptions-Guards bleiben ausgeschlossen, weil sie nach dem
 Synchronisationsvertrag keine blockierenden Abschnitte enthalten dürfen.
 
+S0.4c-2a macht die bereits statischen Kernkapazitäten prüfbar. Das versionierte
+Register `safety/resource_budgets.toml` verweist für Taskslots, Kernelstack,
+IPC-Endpunkte, Capability- und Nachrichtengrenzen sowie Storage-Requests auf
+das jeweils autoritative C-Makro und mindestens einen Test. Der Validator
+akzeptiert ausschließlich begrenzte ganzzahlige Präprozessorausdrücke und
+bricht bei Drift oder fehlender Traceability ab. Das Register steht bewusst
+auf `partial`: Laufzeit-High-Water-Marken, vollständige Speicherbudgets und
+WCET-Messungen auf den ausgewählten Zielplattformen sind noch nicht erbracht.
+
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
 Bitinventar der gegenwärtig 60 Syscalls. Normale Programme erhalten explizit
 das Kompatibilitätsprofil. Das Supervisor-Profil `PROBE` beginnt dagegen bei

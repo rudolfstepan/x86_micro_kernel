@@ -270,7 +270,13 @@ Blockierendes IPC vererbt die effektive Klasse generationssicher und transitiv
 an den eindeutigen Gegenprozess; Wakeup, Timeout, Cancel und Exit nehmen den
 Boost automatisch zurück. Hosttests, Kernel-Referenzcompile und realer
 Scheduler-/IPC-Gasttest sind grün. Vollständige WCET-, Stack-, Speicher- und
-Queue-Nachweise bleiben S0.4c-2.
+Queue-Nachweise bleiben S0.4c-2. Dessen erster Evidenzschritt ist umgesetzt:
+`safety/resource_budgets.toml` erfasst Task-, Stack-, IPC- und Storagegrenzen
+maschinenlesbar und bindet jeden Wert an das konkrete C-Makro sowie vorhandene
+Verifikationstests. `scripts/validate_resource_budgets.py` lehnt Quellcode-
+Drift, doppelte IDs/Symbole, unsichere Pfade und nicht auswertbare
+Konstantenausdrücke fail-closed ab. Laufzeit-High-Water-Marken und
+zielhardwarebezogene WCET-/Callgraph-Nachweise bleiben offen.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler
