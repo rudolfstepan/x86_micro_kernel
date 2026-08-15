@@ -1,6 +1,6 @@
 # Fehlstellenanalyse und Implementierungsfahrplan
 
-Stand: 14. August 2026
+Stand: 15. August 2026
 
 Dieses Dokument beschreibt den anhand des aktuellen Quellstands geprüften
 Ist-Zustand, die wichtigsten noch fehlenden Betriebssystemfunktionen und eine
@@ -127,6 +127,10 @@ und 10 verbindlich.
     - [x] S0.3c-5c ICMP-Echo-Antwort mit geschützter 250-ms-
       Einmalautorität, festem 32-Byte-Payloadlimit und echtem RTL8139-
       Request/Reply-Nachweis über Ring 3 vermitteln
+    - [x] S0.3c-5d1 DHCP-Lease-Konfiguration über einen geschützten,
+      generationgebundenen Ring-3-Entscheid und Syscall 73 publizieren
+    - [ ] S0.3c-5d2 UDP-Datenpfad und DHCP-Renew/Rebind schrittweise in den
+      überwachten Dienst verlagern
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -1382,6 +1386,21 @@ in RTL8139, verlangt `ICMP_ECHO_QUEUED -> ICMP_ECHO_MEDIATED -> TEST_OK` und
 prüft Zieladressen, Identifier, Sequenz, Nutzdaten und Checksumme des wirklich
 am QEMU-Socket beobachteten Reply. Als nächstes vermittelt S0.3c-5d die noch
 im Kernel liegenden UDP-/DHCP-Entscheidungen schrittweise.
+
+**S0.3c-5d1 ist umgesetzt und abgenommen:** Der begrenzte Kerneltransport
+parst DHCP weiterhin und validiert die angebotenen IPv4-Werte, darf die aktive
+Netzkonfiguration aber nicht mehr selbst publizieren. Stattdessen legt er
+Request-ID, IP, Netzmaske, Gateway und DNS in einen redundant geschützten
+Kontext und sendet ein festes 24-Byte-`NETD`-Objekt direkt an den exakten
+Endpoint-Besitzer. Dieser Kernel-zu-Owner-Ingress verwendet die reservierte
+Absenderidentität `(0,0)` und benötigt weder einen erfundenen Prozess noch
+eine vorher delegierte Client-Capability. Der Ring-3-Dienst prüft Maske,
+Hostbereich und Gateway-Subnetz erneut; nur sein append-only Syscall 73 darf
+die generationgebundene 1-s-Einmalautorität verbrauchen. Kontext und Autorität
+werden vor der Netzmutation gelöscht. Der reale RTL8139-Modus `dhcp-config`
+verlangt `DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED -> BOOT_OK`; Normalbetrieb,
+ARP und ICMP bleiben zusätzlich grün. UDP-Transport, DHCP-Lease-Timer sowie
+Renew/Rebind verbleiben bewusst als S0.3c-5d2 im Kernel.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

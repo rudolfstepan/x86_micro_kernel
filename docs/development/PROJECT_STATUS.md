@@ -153,7 +153,14 @@ gesunden Ring-3-Dienst Syscall 72. Autorität und Kontext werden vor dem
 einzigen Sendepunkt verbraucht. Der reale RTL8139-Lauf injiziert den Request
 und prüft den vollständigen Echo-Reply samt IP-/ICMP-Identität und Checksumme
 am QEMU-Socket. Es gibt keinen Ring-0-Antwortfallback. Der nächste
-Netzwerkbaustein ist die schrittweise Vermittlung von UDP/DHCP (S0.3c-5d).
+Netzwerkbaustein S0.3c-5d1 ist ebenfalls abgenommen: DHCP ACKs werden im
+Kernel nur noch transportiert und vorvalidiert. Ein geschützter Kontext, der
+explizite Kernel-zu-Owner-Ingress und eine generationgebundene 1-s-
+Einmalautorität übergeben die endgültige Lease-Entscheidung an Ring 3. Erst
+Syscall 73 publiziert IP, Netzmaske, Gateway und DNS; der reale RTL8139-Lauf
+beweist `DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED -> BOOT_OK`. Ohne gesunden
+Dienst bleibt das Interface nach festen Deadlines unkonfiguriert. Als Nächstes
+folgen der UDP-Datenpfad sowie DHCP-Renew/Rebind in S0.3c-5d2.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

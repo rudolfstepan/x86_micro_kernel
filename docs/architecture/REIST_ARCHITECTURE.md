@@ -1,6 +1,6 @@
 # REIST-OS-Zielarchitektur
 
-Stand: 13. August 2026
+Stand: 15. August 2026
 
 **REIST OS** steht für **Resilient Execution, Isolation and Stability
 Technology**. Das zentrale Architekturprinzip lautet:
@@ -435,8 +435,8 @@ Cache-Misses erzeugen eine feste `NETA`-Nachricht; Zieladresse, Request-ID und
 Dienstgeneration liegen in einem geschützten 250-ms-Einmalvertrag. Nur der
 verifizierte Dienst darf über Syscall 64 den echten Request auslösen. Der
 RTL8139-Lauf prüft den resultierenden Ethernet-Frame am QEMU-Socket. Damit ist
-der lokale ARP-Request-/Reply-Pfad vermittelt; S0.3c-6 beginnt als Nächstes mit
-der Storage-/Dateisystemdomäne.
+der lokale ARP-Request-/Reply-Pfad vermittelt; ICMP und die DHCP-
+Konfigurationsentscheidung folgen über denselben eng begrenzten Vertrag.
 
 S0.3c-5c entfernt auch den autonomen ICMP-Echo-Responder aus Ring 0. Der
 Kernel prüft weiterhin Ethernet-, IPv4- und ICMP-Grenzen sowie beide
@@ -449,6 +449,22 @@ im Default-Deny-Profil des Dienstes freigegeben; normale Prozesse erhalten
 keine Antwortautorität und Fehler reaktivieren keinen Kernel-Fallback. Der
 RTL8139-Runtime-Test injiziert den Request und validiert den tatsächlich am
 QEMU-Socket ausgegebenen Echo-Reply einschließlich Checksumme.
+
+S0.3c-5d1 entfernt anschließend die direkte DHCP-Lease-Publikation aus dem
+Ring-0-Transport. Der Kernel validiert das empfangene ACK und schützt
+`{request_id, ip, netmask, gateway, dns}` redundant, mutiert den aktiven
+Netzwerkzustand aber erst nach einer zweiten semantischen Prüfung durch den
+gesunden Ring-3-Dienst. Ein eigener Kernel-zu-Endpoint-Owner-Ingress mit der
+reservierten Absenderidentität `(0,0)` transportiert das feste 24-Byte-`NETD`-
+Objekt ohne ambienten Client und ohne künstliche Prozessidentität. Syscall 73
+ist ausschließlich im Dienstprofil freigegeben und verbraucht eine an
+Prozessgeneration und Request-ID gebundene 1-s-Einmalautorität. Kontext und
+Autorität verschwinden vor der eigentlichen Konfigurationsmutation. Der
+Bootpfad wartet höchstens 10 s auf einen gesunden Dienst und höchstens 1,5 s
+auf den Commit; andernfalls bleibt das Interface definiert unkonfiguriert.
+Der echte RTL8139-Nachweis fordert die Vermittlungsmarker vor `BOOT_OK`.
+UDP-Transport, Lease-Erneuerung und Rebind bleiben noch Kernelaufgaben und
+bilden S0.3c-5d2.
 
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau

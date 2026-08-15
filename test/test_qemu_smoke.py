@@ -131,6 +131,21 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertIsNone(RUNNER_MODULE.validate(
             transcript, expect_icmp_echo=True))
 
+    def test_dhcp_mediation_must_complete_before_boot(self) -> None:
+        transcript = "\n".join((
+            RUNNER_MODULE.REIST_DHCP_CONFIG_QUEUED_MARKER,
+            RUNNER_MODULE.REIST_DHCP_CONFIG_MARKER,
+            "BOOT_OK", "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_dhcp_config=True))
+        late = transcript.replace(
+            "REIST_NETWORK DHCP_CONFIG_MEDIATED\nBOOT_OK",
+            "BOOT_OK\nREIST_NETWORK DHCP_CONFIG_MEDIATED",
+        )
+        self.assertIn("pre-boot", RUNNER_MODULE.validate(
+            late, expect_dhcp_config=True))
+
     def test_reist_probe_markers_are_required_in_order(self) -> None:
         transcript = "\n".join((
             "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,

@@ -336,6 +336,22 @@ static int syscall_reist_icmp_echo_reply(
         process->pid, process->generation, &reply);
 }
 
+static int syscall_reist_dhcp_commit(
+        const supervisor_dhcp_commit_t *user_commit) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_commit;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(*user_commit), false))
+        return -14;
+    supervisor_dhcp_commit_t commit;
+    if (copy_from_user(&commit, user_commit, sizeof(commit)) != 0) return -14;
+    if (commit.version != SUPERVISOR_DHCP_COMMIT_VERSION ||
+        commit.struct_size < sizeof(commit)) return -22;
+    return supervisor_network_commit_dhcp_config(
+        process->pid, process->generation, &commit);
+}
+
 _Static_assert(sizeof(storage_request_submit_t) == 28U,
                "storage submit ABI changed");
 _Static_assert(sizeof(storage_request_descriptor_t) == 28U,
@@ -1049,6 +1065,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_storage_complete,   // Syscall 70: Complete storage request
     (void*)&syscall_storage_collect,    // Syscall 71: Collect storage request
     (void*)&syscall_reist_icmp_echo_reply,// Syscall 72: Mediated ICMP echo
+    (void*)&syscall_reist_dhcp_commit,   // Syscall 73: Mediated DHCP config
     // Add more syscalls here as needed
 };
 
@@ -1403,6 +1420,10 @@ void syscall_handler(Registers* regs) {
         case SYS_REIST_ICMP_ECHO_REPLY:
             result = (uint32_t)syscall_reist_icmp_echo_reply(
                 (const supervisor_icmp_echo_reply_t*)(uintptr_t)arg1);
+            break;
+        case SYS_REIST_DHCP_COMMIT:
+            result = (uint32_t)syscall_reist_dhcp_commit(
+                (const supervisor_dhcp_commit_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

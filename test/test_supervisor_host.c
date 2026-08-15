@@ -260,6 +260,27 @@ int main(void) {
             &protected_icmp, &icmp_snapshot) != 0 ||
         icmp_snapshot.request_id != 0U) return 60;
 
+    supervisor_protected_dhcp_context_t protected_dhcp;
+    supervisor_dhcp_context_t dhcp_snapshot;
+    if (supervisor_protected_dhcp_context_init(&protected_dhcp) != 0 ||
+        supervisor_protected_dhcp_context_publish(
+            &protected_dhcp, 17U, 7U, 0x0A00020FU, 0xFFFFFF00U,
+            0x0A000202U, 0x0A000203U) != 0 ||
+        supervisor_protected_dhcp_context_snapshot(
+            &protected_dhcp, &dhcp_snapshot) != 0 ||
+        dhcp_snapshot.request_id != 17U ||
+        dhcp_snapshot.transaction_epoch != 7U ||
+        dhcp_snapshot.ip_address != 0x0A00020FU ||
+        dhcp_snapshot.netmask != 0xFFFFFF00U ||
+        dhcp_snapshot.gateway != 0x0A000202U ||
+        supervisor_protected_dhcp_context_publish(
+            &protected_dhcp, 18U, 7U, 0x0A00020FU, 0xFF00FF00U,
+            0x0A000202U, 0U) != -22 ||
+        supervisor_protected_dhcp_context_clear(&protected_dhcp) != 0 ||
+        supervisor_protected_dhcp_context_snapshot(
+            &protected_dhcp, &dhcp_snapshot) != 0 ||
+        dhcp_snapshot.request_id != 0U) return 61;
+
     supervisor_protected_probe_control_t protected_control;
     supervisor_probe_control_t control = {
         .active = 1U,

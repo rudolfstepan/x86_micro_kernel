@@ -890,15 +890,9 @@ bool netstack_configure_dhcp(void) {
         printf("[DHCP] attempt %u/%u\n", attempt, DHCP_ATTEMPTS);
         uint32_t ip=0, mask=0, gw=0, dns=0;
         if (dhcp_discover_request(&ip, &mask, &gw, &dns)) {
-            arp_remove_entry(gw);
-            net_config.ip_address = ip;
-            net_config.netmask    = mask;
-            net_config.gateway    = gw;
-            net_config.dns_server = dns;
-            char ip_s[16], m_s[16], gw_s[16], dns_s[16];
-            format_ipv4(ip, ip_s); format_ipv4(mask, m_s); format_ipv4(gw, gw_s); format_ipv4(dns, dns_s);
-            printf("[DHCP] ACK IP=%s MASK=%s GW=%s DNS=%s\n", ip_s, m_s, gw_s, dns_s);
-            return true;
+            if (supervisor_network_submit_dhcp_config(ip, mask, gw, dns))
+                return true;
+            printf("[DHCP] lease proposal rejected\n");
         }
     }
 
@@ -906,11 +900,45 @@ bool netstack_configure_dhcp(void) {
     return false;
 }
 
+bool netstack_apply_supervised_dhcp(uint32_t ip, uint32_t netmask,
+                                    uint32_t gateway, uint32_t dns_server) {
+    if (ip == 0U || ip == 0xFFFFFFFFU || netmask == 0U ||
+        netmask == 0xFFFFFFFFU || gateway == 0xFFFFFFFFU ||
+        dns_server == 0xFFFFFFFFU) return false;
+    uint32_t host_mask = ~netmask;
+    uint32_t host = ip & host_mask;
+    if ((host_mask & (host_mask + 1U)) != 0U || host == 0U ||
+        host == host_mask) return false;
+    if (gateway != 0U) {
+        uint32_t gateway_host = gateway & host_mask;
+        if ((gateway & netmask) != (ip & netmask) || gateway_host == 0U ||
+            gateway_host == host_mask) return false;
+    }
+    arp_remove_entry(net_config.gateway);
+    arp_remove_entry(gateway);
+    net_config.ip_address = ip;
+    net_config.netmask = netmask;
+    net_config.gateway = gateway;
+    net_config.dns_server = dns_server;
+    char ip_s[16], m_s[16], gw_s[16], dns_s[16];
+    format_ipv4(ip, ip_s);
+    format_ipv4(netmask, m_s);
+    format_ipv4(gateway, gw_s);
+    format_ipv4(dns_server, dns_s);
+    printf("[DHCP] MEDIATED IP=%s MASK=%s GW=%s DNS=%s\n",
+           ip_s, m_s, gw_s, dns_s);
+    return true;
+}
+
 uint32_t netstack_get_ip_address(void) {
     if (net_config.ip_address == 0) {
         (void)netstack_configure_dhcp();
     }
     return net_config.ip_address;
+}
+
+bool netstack_is_configured(void) {
+    return net_config.ip_address != 0U;
 }
 
 uint32_t netstack_get_gateway(void) {

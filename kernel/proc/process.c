@@ -113,7 +113,7 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
         SYS_IPC_SEND_TIMEOUT, SYS_IPC_RECEIVE_TIMEOUT, SYS_REIST_REPORT,
         SYS_NETWORK_PROBE, SYS_NETWORK_PROBE_ID, SYS_REIST_ARP_BINDING,
         SYS_REIST_ARP_REPLY, SYS_REIST_ARP_RESOLUTION,
-        SYS_REIST_ICMP_ECHO_REPLY
+        SYS_REIST_ICMP_ECHO_REPLY, SYS_REIST_DHCP_COMMIT
     };
     for (size_t index = 0;
          index < sizeof(probe_syscalls) / sizeof(probe_syscalls[0]); ++index) {

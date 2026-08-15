@@ -53,6 +53,12 @@ int ipc_send_timeout(struct Process *sender, ipc_handle_t handle,
 int ipc_send_external_from_peer(int owner_pid, uint32_t owner_generation,
                                 ipc_handle_t handle,
                                 const ipc_message_t *message);
+/* Nonblocking kernel-originated control ingress.  The reserved sender
+ * identity (0, 0) is receivable only by the exact endpoint owner and does
+ * not manufacture or require a userspace peer capability. */
+int ipc_send_kernel_to_owner(int owner_pid, uint32_t owner_generation,
+                             ipc_handle_t handle,
+                             const ipc_message_t *message);
 int ipc_receive(struct Process *receiver, ipc_handle_t handle,
                 ipc_message_t *message);
 int ipc_receive_timeout(struct Process *receiver, ipc_handle_t handle,

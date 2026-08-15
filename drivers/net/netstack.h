@@ -168,7 +168,10 @@ void netstack_init(void);
 bool netstack_safety_init(void);
 void netstack_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway);
 bool netstack_configure_dhcp(void);
+bool netstack_apply_supervised_dhcp(uint32_t ip, uint32_t netmask,
+                                    uint32_t gateway, uint32_t dns_server);
 uint32_t netstack_get_ip_address(void);
+bool netstack_is_configured(void);
 uint32_t netstack_get_gateway(void);
 bool netstack_get_local_identity(uint32_t *ip_out, uint8_t mac_out[6]);
 bool netstack_ping(uint32_t dst_ip, uint16_t id, uint16_t seq,

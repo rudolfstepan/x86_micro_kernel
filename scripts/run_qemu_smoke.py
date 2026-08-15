@@ -49,6 +49,8 @@ REIST_ARP_RESOLUTION_MARKER = "REIST_NETWORK ARP_RESOLUTION_MEDIATED"
 REIST_ARP_REPLY_MARKER = "REIST_NETWORK ARP_REPLY_MEDIATED"
 REIST_ICMP_ECHO_QUEUED_MARKER = "REIST_NETWORK ICMP_ECHO_QUEUED"
 REIST_ICMP_ECHO_MARKER = "REIST_NETWORK ICMP_ECHO_MEDIATED"
+REIST_DHCP_CONFIG_QUEUED_MARKER = "REIST_NETWORK DHCP_CONFIG_QUEUED"
+REIST_DHCP_CONFIG_MARKER = "REIST_NETWORK DHCP_CONFIG_MEDIATED"
 REIST_NETWORK_CRASH_MARKER = "REIST_NETWORK SERVICE_CRASH_RECOVERED"
 REIST_NETWORK_RECOVERY_MARKER = "TEST_STAGE NETWORK_RECOVERY_OK"
 REIST_NETWORK_PRESSURE_FALLBACK_MARKER = "REIST_NETWORK QUEUE_PRESSURE_FALLBACK"
@@ -85,6 +87,7 @@ FAIL_MARKERS = (
     "Unable to start SHELL.PRG",
     "REIST_NETWORK ARP_REPLY_REJECTED",
     "REIST_NETWORK ICMP_ECHO_REJECTED",
+    "REIST_NETWORK DHCP_CONFIG_REJECTED",
 )
 
 
@@ -642,6 +645,7 @@ def validate(
     expect_storage_self_test: bool = False,
     expect_handover: bool = False,
     expect_icmp_echo: bool = False,
+    expect_dhcp_config: bool = False,
 ) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
@@ -718,6 +722,12 @@ def validate(
         replied = exact_line_position(transcript, REIST_ICMP_ECHO_MARKER)
         if queued < boot or replied < queued or replied > test:
             return "missing ordered mediated ICMP echo markers"
+    if expect_dhcp_config:
+        queued = exact_line_position(transcript,
+                                     REIST_DHCP_CONFIG_QUEUED_MARKER)
+        committed = exact_line_position(transcript, REIST_DHCP_CONFIG_MARKER)
+        if queued < 0 or committed < queued or committed > boot:
+            return "missing ordered pre-boot mediated DHCP configuration"
     if expect_storage_recovery:
         crash = exact_line_position(transcript, REIST_STORAGE_CRASH_MARKER)
         failure = exact_line_position(transcript, REIST_STORAGE_FAILURE_MARKER)
@@ -811,6 +821,11 @@ def main() -> int:
         help="inject and verify one bounded Ring-3-mediated ICMP echo",
     )
     parser.add_argument(
+        "--expect-dhcp-config",
+        action="store_true",
+        help="require a Ring-3-mediated DHCP configuration before boot",
+    )
+    parser.add_argument(
         "--expect-arp-resolution", action="store_true",
         help="trigger PING and require a mediated outgoing ARP request",
     )
@@ -851,6 +866,9 @@ def main() -> int:
         print("guest-smoke: network injection verification requires a NIC",
               file=sys.stderr)
         return 2
+    if args.expect_dhcp_config and args.nic == "none":
+        print("guest-smoke: DHCP mediation requires a NIC", file=sys.stderr)
+        return 2
 
     try:
         status, transcript, process_error = run(
@@ -878,7 +896,8 @@ def main() -> int:
                             args.expect_storage_io_failure,
                             args.expect_storage_self_test,
                             args.expect_handover,
-                            args.inject_icmp_echo)
+                            args.inject_icmp_echo,
+                            args.expect_dhcp_config)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")

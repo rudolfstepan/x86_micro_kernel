@@ -47,6 +47,9 @@ _Static_assert(sizeof(supervisor_arp_resolution_context_t) <=
 _Static_assert(sizeof(supervisor_icmp_echo_context_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
                "ICMP echo context exceeds critical object payload");
+_Static_assert(sizeof(supervisor_dhcp_context_t) <=
+                   CRITICAL_OBJECT_MAX_PAYLOAD,
+               "DHCP context exceeds critical object payload");
 _Static_assert(sizeof(supervisor_probe_control_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
                "probe control exceeds critical object payload");
@@ -65,6 +68,7 @@ static critical_object_t protected_network_degradation_stats;
 
 #define SUPERVISOR_CHECK_INTERVAL_MS 10U
 #define SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS 250U
+#define SUPERVISOR_DHCP_COMMIT_TIMEOUT_MS 1000U
 
 #ifndef REIST_HOST_TEST
 typedef struct {
@@ -77,6 +81,8 @@ typedef struct {
     supervisor_protected_arp_resolution_context_t arp_resolution_context;
     supervisor_protected_probe_authority_t icmp_echo_authority;
     supervisor_protected_icmp_echo_context_t icmp_echo_context;
+    supervisor_protected_probe_authority_t dhcp_authority;
+    supervisor_protected_dhcp_context_t dhcp_context;
 } supervisor_probe_runtime_t;
 
 static supervisor_probe_runtime_t probe_runtime;
@@ -741,6 +747,92 @@ int supervisor_protected_icmp_echo_context_clear(
     return icmp_echo_context_write(protected_context, &context);
 }
 
+static bool dhcp_config_valid_values(uint32_t ip_address, uint32_t netmask,
+                                     uint32_t gateway, uint32_t dns_server) {
+    if (ip_address == 0U || ip_address == 0xFFFFFFFFU || netmask == 0U ||
+        netmask == 0xFFFFFFFFU || gateway == 0xFFFFFFFFU ||
+        dns_server == 0xFFFFFFFFU) return false;
+    uint32_t host_mask = ~netmask;
+    if ((host_mask & (host_mask + 1U)) != 0U) return false;
+    uint32_t host = ip_address & host_mask;
+    if (host == 0U || host == host_mask) return false;
+    if (gateway != 0U) {
+        uint32_t gateway_host = gateway & host_mask;
+        if ((gateway & netmask) != (ip_address & netmask) ||
+            gateway_host == 0U || gateway_host == host_mask) return false;
+    }
+    return true;
+}
+
+static bool dhcp_context_valid(const void *payload, size_t length) {
+    if (payload == NULL || length != sizeof(supervisor_dhcp_context_t))
+        return false;
+    const supervisor_dhcp_context_t *context = payload;
+    if (context->reserved[0] != 0U || context->reserved[1] != 0U)
+        return false;
+    bool empty = context->request_id == 0U &&
+        context->transaction_epoch == 0U && context->ip_address == 0U &&
+        context->netmask == 0U && context->gateway == 0U &&
+        context->dns_server == 0U;
+    if (empty) return true;
+    return context->request_id != 0U && context->transaction_epoch != 0U &&
+        dhcp_config_valid_values(context->ip_address, context->netmask,
+                                 context->gateway, context->dns_server);
+}
+
+static int dhcp_context_write(
+        supervisor_protected_dhcp_context_t *protected_context,
+        const supervisor_dhcp_context_t *context) {
+    return critical_object_update(
+        &protected_context->object, SUPERVISOR_DHCP_CONTEXT_VERSION,
+        context, sizeof(*context), dhcp_context_valid) == 0
+        ? 0 : SUPERVISOR_EINTEGRITY;
+}
+
+int supervisor_protected_dhcp_context_init(
+        supervisor_protected_dhcp_context_t *protected_context) {
+    if (protected_context == NULL) return -22;
+    supervisor_dhcp_context_t context = {0};
+    return critical_object_init(
+        &protected_context->object, SUPERVISOR_DHCP_CONTEXT_VERSION,
+        &context, sizeof(context)) == 0 ? 0 : SUPERVISOR_EINTEGRITY;
+}
+
+int supervisor_protected_dhcp_context_publish(
+        supervisor_protected_dhcp_context_t *protected_context,
+        uint32_t request_id, uint32_t transaction_epoch, uint32_t ip_address,
+        uint32_t netmask, uint32_t gateway, uint32_t dns_server) {
+    supervisor_dhcp_context_t context = {
+        .request_id = request_id,
+        .transaction_epoch = transaction_epoch,
+        .ip_address = ip_address,
+        .netmask = netmask,
+        .gateway = gateway,
+        .dns_server = dns_server,
+    };
+    if (protected_context == NULL || !dhcp_context_valid(&context,
+                                                         sizeof(context)))
+        return -22;
+    return dhcp_context_write(protected_context, &context);
+}
+
+int supervisor_protected_dhcp_context_snapshot(
+        supervisor_protected_dhcp_context_t *protected_context,
+        supervisor_dhcp_context_t *snapshot_out) {
+    if (protected_context == NULL || snapshot_out == NULL) return -22;
+    size_t length = 0U;
+    critical_read_result_t result = critical_object_read(
+        &protected_context->object, SUPERVISOR_DHCP_CONTEXT_VERSION,
+        snapshot_out, sizeof(*snapshot_out), &length, dhcp_context_valid);
+    return result < 0 ? SUPERVISOR_EINTEGRITY : 0;
+}
+
+int supervisor_protected_dhcp_context_clear(
+        supervisor_protected_dhcp_context_t *protected_context) {
+    supervisor_dhcp_context_t context = {0};
+    return dhcp_context_write(protected_context, &context);
+}
+
 static bool probe_control_valid(const void *payload, size_t length) {
     if (payload == NULL || length != sizeof(supervisor_probe_control_t))
         return false;
@@ -983,7 +1075,11 @@ void supervisor_init(void) {
         supervisor_protected_probe_authority_init(
             &probe_runtime.icmp_echo_authority) != 0 ||
         supervisor_protected_icmp_echo_context_init(
-            &probe_runtime.icmp_echo_context) != 0) {
+            &probe_runtime.icmp_echo_context) != 0 ||
+        supervisor_protected_probe_authority_init(
+            &probe_runtime.dhcp_authority) != 0 ||
+        supervisor_protected_dhcp_context_init(
+            &probe_runtime.dhcp_context) != 0) {
         panic("Unable to initialize protected probe runtime");
     }
 #endif
@@ -1226,6 +1322,9 @@ static bool probe_fence_apply(void *context) {
         &runtime->icmp_echo_authority);
     (void)supervisor_protected_icmp_echo_context_clear(
         &runtime->icmp_echo_context);
+    (void)supervisor_protected_probe_authority_cancel(
+        &runtime->dhcp_authority);
+    (void)supervisor_protected_dhcp_context_clear(&runtime->dhcp_context);
     if (process_identity_alive(control.pid, control.process_generation)) {
         (void)process_terminate(control.pid);
     }
@@ -1306,7 +1405,11 @@ bool supervisor_start_probe(uint64_t now_ms) {
         supervisor_protected_probe_authority_init(
             &probe_runtime.icmp_echo_authority) != 0 ||
         supervisor_protected_icmp_echo_context_init(
-            &probe_runtime.icmp_echo_context) != 0)
+            &probe_runtime.icmp_echo_context) != 0 ||
+        supervisor_protected_probe_authority_init(
+            &probe_runtime.dhcp_authority) != 0 ||
+        supervisor_protected_dhcp_context_init(
+            &probe_runtime.dhcp_context) != 0)
         return false;
     supervisor_config_t config = {
         .heartbeat_timeout_ms = 2000U,
@@ -1332,6 +1435,20 @@ bool supervisor_start_probe(uint64_t now_ms) {
         return false;
     }
     return true;
+}
+
+bool supervisor_probe_ready(void) {
+    uint32_t flags = supervisor_lock();
+    supervisor_probe_control_t control;
+    int result = supervisor_protected_probe_control_read(
+        &probe_runtime.control, &control);
+    bool ready = result == 0 && control.active != 0U &&
+        control.fenced == 0U && control.healthy != 0U &&
+        control.launch_count >= 4U &&
+        control.endpoint_handle != IPC_INVALID_HANDLE &&
+        process_identity_alive(control.pid, control.process_generation);
+    supervisor_unlock(flags);
+    return ready;
 }
 
 int supervisor_probe_report(int pid, uint32_t generation,
@@ -2013,6 +2130,126 @@ int supervisor_network_send_icmp_echo_reply(
     return 0;
 }
 
+bool supervisor_network_submit_dhcp_config(
+        uint32_t ip_address, uint32_t netmask, uint32_t gateway,
+        uint32_t dns_server) {
+    KASSERT_NOT_IRQ();
+    KASSERT(irq_enabled());
+    if (!dhcp_config_valid_values(ip_address, netmask, gateway, dns_server))
+        return false;
+    uint32_t flags = supervisor_lock();
+    supervisor_probe_control_t control;
+    int result = supervisor_protected_probe_control_read(
+        &probe_runtime.control, &control);
+    if (result != 0 || control.active == 0U || control.fenced != 0U ||
+        control.healthy == 0U || control.launch_count < 4U ||
+        control.endpoint_handle == IPC_INVALID_HANDLE ||
+        !process_identity_alive(control.pid, control.process_generation)) {
+        supervisor_unlock(flags);
+        return false;
+    }
+    uint32_t request_id = 0U;
+    result = supervisor_protected_probe_authority_begin_epoch(
+        &probe_runtime.dhcp_authority, pit_monotonic_ms(),
+        SUPERVISOR_DHCP_COMMIT_TIMEOUT_MS, control.process_generation,
+        &request_id);
+    if (result == 0)
+        result = supervisor_protected_dhcp_context_publish(
+            &probe_runtime.dhcp_context, request_id,
+            control.process_generation, ip_address, netmask, gateway,
+            dns_server);
+    supervisor_unlock(flags);
+    if (result != 0) return false;
+
+    ipc_message_t message = {
+        .version = IPC_MESSAGE_VERSION,
+        .struct_size = sizeof(ipc_message_t),
+        .length = 24U,
+        .payload = {'N', 'E', 'T', 'D'},
+    };
+    for (uint32_t index = 0U; index < 4U; ++index) {
+        message.payload[4U + index] =
+            (uint8_t)(request_id >> (index * 8U));
+        message.payload[8U + index] =
+            (uint8_t)(ip_address >> (24U - index * 8U));
+        message.payload[12U + index] =
+            (uint8_t)(netmask >> (24U - index * 8U));
+        message.payload[16U + index] =
+            (uint8_t)(gateway >> (24U - index * 8U));
+        message.payload[20U + index] =
+            (uint8_t)(dns_server >> (24U - index * 8U));
+    }
+    result = ipc_send_kernel_to_owner(
+        control.pid, control.process_generation, control.endpoint_handle,
+        &message);
+    if (result != 0) {
+        flags = supervisor_lock();
+        (void)supervisor_protected_probe_authority_cancel(
+            &probe_runtime.dhcp_authority);
+        (void)supervisor_protected_dhcp_context_clear(
+            &probe_runtime.dhcp_context);
+        supervisor_unlock(flags);
+        network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_QUEUE);
+        return false;
+    }
+    printf("REIST_NETWORK DHCP_CONFIG_QUEUED\n");
+    return true;
+}
+
+int supervisor_network_commit_dhcp_config(
+        int pid, uint32_t generation,
+        const supervisor_dhcp_commit_t *commit) {
+    if (commit == NULL || commit->version != SUPERVISOR_DHCP_COMMIT_VERSION ||
+        commit->struct_size < sizeof(*commit) || commit->request_id == 0U ||
+        commit->reserved != 0U) return -22;
+    uint32_t flags = supervisor_lock();
+    supervisor_probe_control_t control;
+    supervisor_dhcp_context_t context;
+    int result = supervisor_protected_probe_control_read(
+        &probe_runtime.control, &control);
+    bool caller_is_service = result == 0 && pid == control.pid &&
+                             generation == control.process_generation;
+    if (result == 0 &&
+        (control.active == 0U || control.fenced != 0U ||
+         control.healthy == 0U || !caller_is_service ||
+         !process_identity_alive(pid, generation))) result = -13;
+    if (result == 0)
+        result = supervisor_protected_dhcp_context_snapshot(
+            &probe_runtime.dhcp_context, &context);
+    if (result == 0 &&
+        (context.request_id != commit->request_id ||
+         context.transaction_epoch != generation)) result = -13;
+    uint32_t consumed_id = 0U;
+    if (result == 0)
+        result = supervisor_protected_probe_authority_take_epoch(
+            &probe_runtime.dhcp_authority, pit_monotonic_ms(), generation,
+            &consumed_id);
+    if (result == 0 && consumed_id != commit->request_id) result = -13;
+    int cleanup_result = supervisor_protected_dhcp_context_clear(
+        &probe_runtime.dhcp_context);
+    int cancel_result = supervisor_protected_probe_authority_cancel(
+        &probe_runtime.dhcp_authority);
+    if (result == 0 && cleanup_result != 0) result = cleanup_result;
+    if (result == 0 && cancel_result != 0) result = cancel_result;
+    bool integrity_failure = result == SUPERVISOR_EINTEGRITY;
+    supervisor_unlock(flags);
+    if (result != 0) {
+        if (integrity_failure && caller_is_service)
+            (void)supervisor_force_isolate(control.handle);
+        if (caller_is_service)
+            printf("REIST_NETWORK DHCP_CONFIG_REJECTED %d\n", result);
+        return result;
+    }
+    if (!netstack_apply_supervised_dhcp(
+            context.ip_address, context.netmask, context.gateway,
+            context.dns_server)) {
+        printf("REIST_NETWORK DHCP_CONFIG_REJECTED -5\n");
+        return -5;
+    }
+    printf("REIST_NETWORK DHCP_CONFIG_MEDIATED\n");
+    return 0;
+}
+
 static void supervisor_worker(void) {
     static uint64_t next_arp_scrub_ms;
     for (;;) {
@@ -2046,6 +2283,9 @@ static void supervisor_worker(void) {
         int icmp_expiry = supervisor_protected_probe_authority_expire_epoch(
             &probe_runtime.icmp_echo_authority, now_ms,
             control.process_generation);
+        int dhcp_expiry = supervisor_protected_probe_authority_expire_epoch(
+            &probe_runtime.dhcp_authority, now_ms,
+            control.process_generation);
         if (reply_expiry == 1)
             (void)supervisor_protected_arp_reply_context_clear(
                 &probe_runtime.arp_reply_context);
@@ -2055,6 +2295,9 @@ static void supervisor_worker(void) {
         if (icmp_expiry == 1)
             (void)supervisor_protected_icmp_echo_context_clear(
                 &probe_runtime.icmp_echo_context);
+        if (dhcp_expiry == 1)
+            (void)supervisor_protected_dhcp_context_clear(
+                &probe_runtime.dhcp_context);
         supervisor_unlock(transaction_flags);
         if (now_ms >= next_arp_scrub_ms) {
             next_arp_scrub_ms = UINT64_MAX - now_ms < 1000U
@@ -2085,6 +2328,11 @@ static void supervisor_worker(void) {
         if (resolution_expiry == 1) {
             network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_EXPIRED);
         } else if (resolution_expiry < 0 && control.active != 0U) {
+            (void)supervisor_force_isolate(control.handle);
+        }
+        if (dhcp_expiry == 1) {
+            network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_EXPIRED);
+        } else if (dhcp_expiry < 0 && control.active != 0U) {
             (void)supervisor_force_isolate(control.handle);
         }
         if (control.active != 0U && control.fenced == 0U &&
@@ -2155,6 +2403,10 @@ int supervisor_spawn_service(const char *path, int argc,
 
 bool supervisor_start_probe(uint64_t now_ms) {
     (void)now_ms;
+    return false;
+}
+
+bool supervisor_probe_ready(void) {
     return false;
 }
 

@@ -247,20 +247,52 @@ static void system_ready(void) {
            memory.heap_arena_count);
     printf("Drives Detected: %d\n", drive_count);
     
-    // Network stack initialization (optional)
+    printf("====================\n\n");
+}
+
+static void network_initialize(void) {
     if (netdev_available()) {
         if (!netdev_supervision_init(pit_monotonic_ms())) {
             panic("Unable to supervise network transmit domain");
         }
         netstack_init();
         printf("Network stack initialized on %s\n", netdev_backend_name());
-        printf("Requesting LAN configuration via DHCP...\n");
-        if (netstack_get_ip_address() == 0) {
-            printf("Network link is ready without an IP; use 'getip' to retry\n");
-        }
     }
-    
-    printf("====================\n\n");
+}
+
+static uint64_t kernel_deadline_after(uint64_t now_ms, uint32_t timeout_ms) {
+    return UINT64_MAX - now_ms < timeout_ms
+        ? UINT64_MAX : now_ms + timeout_ms;
+}
+
+static void configure_network_after_service(void) {
+    if (!netdev_available()) return;
+    uint64_t ready_deadline = kernel_deadline_after(
+        pit_monotonic_ms(), 10000U);
+    while (!supervisor_probe_ready() && pit_monotonic_ms() < ready_deadline)
+        __asm__ __volatile__("sti; hlt");
+    if (!supervisor_probe_ready()) {
+        printf("Network service not ready; DHCP remains fail-closed\n");
+        return;
+    }
+    /* Health publication precedes the service's receive loop by only a few
+     * instructions. Give the new generation a bounded scheduler window so
+     * startup IPC cannot be mistaken for a DHCP-policy rejection. */
+    uint64_t settle_deadline = kernel_deadline_after(
+        pit_monotonic_ms(), 50U);
+    while (pit_monotonic_ms() < settle_deadline)
+        __asm__ __volatile__("sti; hlt");
+    printf("Requesting supervised LAN configuration via DHCP...\n");
+    if (!netstack_configure_dhcp()) {
+        printf("Network link is ready without an IP; use 'getip' to retry\n");
+        return;
+    }
+    uint64_t commit_deadline = kernel_deadline_after(
+        pit_monotonic_ms(), 1500U);
+    while (!netstack_is_configured() && pit_monotonic_ms() < commit_deadline)
+        __asm__ __volatile__("sti; hlt");
+    if (!netstack_is_configured())
+        printf("DHCP proposal was not committed; network remains unconfigured\n");
 }
 
 #ifdef REIST_HANDOVER_FAULT_INJECTION
@@ -553,8 +585,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     // Stage 3: Driver initialization
     driver_init();
     
-    // Stage 4: System ready
-    system_ready();
+    network_initialize();
     watchdog_init();
     printf("Watchdog: %s\n", watchdog_available() ? "IB700 armed" : "external backend required");
 #ifdef REIST_HANDOVER_FAULT_INJECTION
@@ -578,6 +609,9 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     if (!supervisor_start_worker()) {
         panic("Unable to start REIST safety supervisor worker");
     }
+    configure_network_after_service();
+    // Stage 4: System ready
+    system_ready();
     printf("BOOT_OK\n");
 
     /* A real framebuffer prefers the graphical desktop.  VGA boots and any

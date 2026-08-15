@@ -155,6 +155,14 @@ int x86os_reist_send_icmp_echo_reply(
                               (uintptr_t)reply, 0, 0);
 }
 
+_Static_assert(sizeof(x86os_reist_dhcp_commit_t) == 16U,
+               "REIST DHCP commit ABI size changed");
+
+int x86os_reist_commit_dhcp(const x86os_reist_dhcp_commit_t *commit) {
+    return (int)x86os_syscall(X86OS_SYS_REIST_DHCP_COMMIT,
+                              (uint32_t)(uintptr_t)commit, 0U, 0U);
+}
+
 int x86os_network_arp_resolve(uint32_t target_ip) {
     return (int)x86os_syscall(X86OS_SYS_NETWORK_ARP_RESOLVE,
                               target_ip, 0, 0);

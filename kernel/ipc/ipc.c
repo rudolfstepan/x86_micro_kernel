@@ -560,8 +560,12 @@ static int load_message(size_t endpoint_slot, uint32_t queue_slot,
         bytes += length;
         remaining -= length;
     }
+    bool kernel_sender = value->sender_pid == 0 &&
+                         value->sender_generation == 0U;
+    bool process_sender = value->sender_pid > 0 &&
+                          value->sender_generation != 0U;
     if (remaining != 0U || !message_valid(&value->message) ||
-        value->sender_pid <= 0 || value->sender_generation == 0U) {
+        (!kernel_sender && !process_sender)) {
         return IPC_EINTEGRITY;
     }
     return 0;
@@ -749,6 +753,35 @@ int ipc_send_external_from_peer(int owner_pid, uint32_t owner_generation,
     int result = enqueue_message_locked(endpoint_slot, endpoint, message,
                                         peer->holder_pid,
                                         peer->holder_generation);
+    if (result == IPC_EINTEGRITY) quarantine_endpoint_locked(endpoint_slot);
+    ipc_unlock(flags);
+    return result;
+}
+
+int ipc_send_kernel_to_owner(int owner_pid, uint32_t owner_generation,
+                             ipc_handle_t handle,
+                             const ipc_message_t *message) {
+    if (owner_pid <= 0 || owner_generation == 0U || !message_valid(message))
+        return IPC_EINVAL;
+    size_t endpoint_slot;
+    uint32_t generation;
+    if (decode_handle(handle, &endpoint_slot, &generation) != 0)
+        return IPC_EBADF;
+    uint32_t flags = ipc_lock();
+    if (load_endpoint(endpoint_slot) != 0) {
+        quarantine_endpoint_locked(endpoint_slot);
+        ipc_unlock(flags);
+        return IPC_EINTEGRITY;
+    }
+    ipc_endpoint_t *endpoint = &ipc_endpoints[endpoint_slot];
+    if (!endpoint->active || endpoint->generation != generation ||
+        endpoint->owner_pid != owner_pid ||
+        endpoint->owner_generation != owner_generation) {
+        ipc_unlock(flags);
+        return IPC_EBADF;
+    }
+    int result = enqueue_message_locked(endpoint_slot, endpoint, message,
+                                        0, 0U);
     if (result == IPC_EINTEGRITY) quarantine_endpoint_locked(endpoint_slot);
     ipc_unlock(flags);
     return result;

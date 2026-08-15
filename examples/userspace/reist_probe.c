@@ -28,16 +28,6 @@ static void message_init(x86os_ipc_message_t *message, const char *text) {
     }
 }
 
-static int message_is(const x86os_ipc_message_t *message, const char *text) {
-    uint32_t length = 0U;
-    while (text[length] != '\0') ++length;
-    if (message->length != length) return 0;
-    for (uint32_t index = 0; index < length; ++index) {
-        if (message->payload[index] != (uint8_t)text[index]) return 0;
-    }
-    return 1;
-}
-
 #define SERVICE_PROTOCOL_HEADER_SIZE 8U
 
 static uint32_t message_request_id(const x86os_ipc_message_t *message) {
@@ -81,6 +71,39 @@ static void response_init(x86os_ipc_message_t *message, uint32_t request_id,
         message->payload[message->length++] = (uint8_t)*text++;
 }
 
+static uint32_t payload_be32(const x86os_ipc_message_t *message,
+                             uint32_t offset) {
+    return ((uint32_t)message->payload[offset] << 24U) |
+           ((uint32_t)message->payload[offset + 1U] << 16U) |
+           ((uint32_t)message->payload[offset + 2U] << 8U) |
+           message->payload[offset + 3U];
+}
+
+static bool dhcp_proposal_valid(const x86os_ipc_message_t *message) {
+    if (message->length != 24U) return false;
+    uint32_t request_id = (uint32_t)message->payload[4] |
+        ((uint32_t)message->payload[5] << 8U) |
+        ((uint32_t)message->payload[6] << 16U) |
+        ((uint32_t)message->payload[7] << 24U);
+    uint32_t ip = payload_be32(message, 8U);
+    uint32_t mask = payload_be32(message, 12U);
+    uint32_t gateway = payload_be32(message, 16U);
+    uint32_t dns = payload_be32(message, 20U);
+    if (request_id == 0U || ip == 0U || ip == 0xFFFFFFFFU || mask == 0U ||
+        mask == 0xFFFFFFFFU || gateway == 0xFFFFFFFFU ||
+        dns == 0xFFFFFFFFU) return false;
+    uint32_t host_mask = ~mask;
+    uint32_t host = ip & host_mask;
+    if ((host_mask & (host_mask + 1U)) != 0U || host == 0U ||
+        host == host_mask) return false;
+    if (gateway != 0U) {
+        uint32_t gateway_host = gateway & host_mask;
+        if ((gateway & mask) != (ip & mask) || gateway_host == 0U ||
+            gateway_host == host_mask) return false;
+    }
+    return true;
+}
+
 static const char *network_classification(
         const x86os_ipc_message_t *message) {
     /* NET1/NETR/NETQ followed by one complete Ethernet+ARP header. This deliberately
@@ -90,6 +113,7 @@ static const char *network_classification(
         (message->payload[3] != '1' && message->payload[3] != 'R' &&
          message->payload[3] != 'A' &&
          message->payload[3] != 'Q' && message->payload[3] != 'I' &&
+         message->payload[3] != 'D' &&
          message->payload[3] != 'X'))
         return NULL;
     if (message->payload[3] == 'A')
@@ -115,6 +139,8 @@ static const char *network_classification(
             message->length != 24U + data_length) return NULL;
         return "REIST_ICMP_ECHO";
     }
+    if (message->payload[3] == 'D')
+        return dhcp_proposal_valid(message) ? "REIST_DHCP_CONFIG" : NULL;
     uint16_t ethertype = ((uint16_t)message->payload[16] << 8) |
                          message->payload[17];
     if (ethertype == 0x0806U) {
@@ -363,6 +389,23 @@ int main(int argc, char **argv) {
                             X86OS_REIST_REPORT_NETWORK_DEGRADED,
                             X86OS_REIST_NETWORK_DEGRADED_SEMANTIC) != 0)
                         return 18;
+                }
+                continue;
+            }
+            if (network != NULL && request.payload[3] == 'D') {
+                x86os_reist_dhcp_commit_t commit = {
+                    .version = X86OS_REIST_DHCP_COMMIT_VERSION,
+                    .struct_size = sizeof(commit),
+                    .request_id = (uint32_t)request.payload[4] |
+                        ((uint32_t)request.payload[5] << 8U) |
+                        ((uint32_t)request.payload[6] << 16U) |
+                        ((uint32_t)request.payload[7] << 24U),
+                };
+                if (x86os_reist_commit_dhcp(&commit) != 0) {
+                    if (x86os_reist_report(
+                            X86OS_REIST_REPORT_NETWORK_DEGRADED,
+                            X86OS_REIST_NETWORK_DEGRADED_SEMANTIC) != 0)
+                        return 19;
                 }
                 continue;
             }

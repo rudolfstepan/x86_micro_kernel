@@ -287,6 +287,27 @@ static int test_global_endpoint_quota(void) {
     return 0;
 }
 
+static int test_kernel_to_owner_ingress_without_peer(void) {
+    Process owner = process(40, 5U);
+    ipc_handle_t handle = 0U;
+    ipc_message_t ingress = message(0xD4U);
+    ipc_message_t received;
+
+    ipc_init();
+    CHECK(ipc_create(&owner, &handle) == 0);
+    CHECK(ipc_send_kernel_to_owner(owner.pid, owner.generation, handle,
+                                   &ingress) == 0);
+    prepare_receive(&received);
+    CHECK(ipc_receive_timeout(&owner, handle, &received, 0U) == 0);
+    CHECK(received.length == 1U && received.payload[0] == 0xD4U);
+    CHECK(ipc_send_kernel_to_owner(owner.pid, owner.generation + 1U, handle,
+                                   &ingress) == -9);
+    CHECK(ipc_send_kernel_to_owner(owner.pid + 1, owner.generation, handle,
+                                   &ingress) == -9);
+    CHECK(ipc_close(&owner, handle) == 0);
+    return 0;
+}
+
 static int test_attenuating_delegation(void) {
     Process owner = process(25, 2U);
     Process peer = process(26, 4U);
@@ -365,6 +386,8 @@ int main(void) {
     result = test_global_endpoint_quota();
     if (result != 0) return result;
     result = test_message_stress_without_resource_growth();
+    if (result != 0) return result;
+    result = test_kernel_to_owner_ingress_without_peer();
     if (result != 0) return result;
     return test_integrity_fault_injection();
 }

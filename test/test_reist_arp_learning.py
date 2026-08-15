@@ -37,12 +37,12 @@ class ReistArpLearningTests(unittest.TestCase):
         source = (ROOT / "drivers/net/netstack.c").read_text(encoding="utf-8")
         manual = source[source.index("void netstack_set_config("):
                         source.index("bool netstack_configure_dhcp(")]
-        dhcp = source[source.index("bool netstack_configure_dhcp("):
-                      source.index("uint32_t netstack_get_ip_address(")]
+        dhcp_commit = source[source.index("bool netstack_apply_supervised_dhcp("):
+                             source.index("uint32_t netstack_get_ip_address(")]
         self.assertIn("arp_remove_entry(net_config.gateway);", manual)
         self.assertIn("arp_remove_entry(gateway);", manual)
-        self.assertIn("arp_remove_entry(net_config.gateway);", dhcp)
-        self.assertIn("arp_remove_entry(gw);", dhcp)
+        self.assertIn("arp_remove_entry(net_config.gateway);", dhcp_commit)
+        self.assertIn("arp_remove_entry(gateway);", dhcp_commit)
 
     def test_only_supervised_mediator_can_commit_gateway_binding(self):
         source = (ROOT / "drivers/net/netstack.c").read_text(encoding="utf-8")

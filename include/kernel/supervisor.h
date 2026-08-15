@@ -18,6 +18,7 @@ struct Process;
 #define SUPERVISOR_ARP_REPLY_CONTEXT_VERSION 1U
 #define SUPERVISOR_ARP_RESOLUTION_CONTEXT_VERSION 1U
 #define SUPERVISOR_ICMP_ECHO_CONTEXT_VERSION 1U
+#define SUPERVISOR_DHCP_CONTEXT_VERSION 1U
 #define SUPERVISOR_PROBE_CONTROL_VERSION 1U
 #define SUPERVISOR_EINTEGRITY (-84)
 #define REIST_REPORT_SELF_TEST 1U
@@ -189,6 +190,28 @@ typedef struct {
     critical_object_t object;
 } supervisor_protected_icmp_echo_context_t;
 
+#define SUPERVISOR_DHCP_COMMIT_VERSION 1U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t request_id;
+    uint32_t reserved;
+} supervisor_dhcp_commit_t;
+
+typedef struct {
+    uint32_t request_id;
+    uint32_t transaction_epoch;
+    uint32_t ip_address;
+    uint32_t netmask;
+    uint32_t gateway;
+    uint32_t dns_server;
+    uint32_t reserved[2];
+} supervisor_dhcp_context_t;
+
+typedef struct {
+    critical_object_t object;
+} supervisor_protected_dhcp_context_t;
+
 typedef struct {
     critical_object_t object;
 } supervisor_protected_network_context_t;
@@ -304,6 +327,17 @@ int supervisor_protected_icmp_echo_context_snapshot(
     supervisor_icmp_echo_context_t *snapshot_out);
 int supervisor_protected_icmp_echo_context_clear(
     supervisor_protected_icmp_echo_context_t *context);
+int supervisor_protected_dhcp_context_init(
+    supervisor_protected_dhcp_context_t *context);
+int supervisor_protected_dhcp_context_publish(
+    supervisor_protected_dhcp_context_t *context, uint32_t request_id,
+    uint32_t transaction_epoch, uint32_t ip_address, uint32_t netmask,
+    uint32_t gateway, uint32_t dns_server);
+int supervisor_protected_dhcp_context_snapshot(
+    supervisor_protected_dhcp_context_t *context,
+    supervisor_dhcp_context_t *snapshot_out);
+int supervisor_protected_dhcp_context_clear(
+    supervisor_protected_dhcp_context_t *context);
 int supervisor_protected_probe_control_init(
     supervisor_protected_probe_control_t *control);
 int supervisor_protected_probe_control_read(
@@ -317,6 +351,7 @@ void supervisor_init(void);
 void supervisor_clock_tick(uint64_t now_ms);
 bool supervisor_start_worker(void);
 bool supervisor_start_probe(uint64_t now_ms);
+bool supervisor_probe_ready(void);
 int supervisor_probe_report(int pid, uint32_t generation,
                             uint32_t report_type, uint32_t value,
                             uint64_t now_ms);
@@ -342,6 +377,11 @@ bool supervisor_network_submit_icmp_echo(
 int supervisor_network_send_icmp_echo_reply(
     int pid, uint32_t generation,
     const supervisor_icmp_echo_reply_t *reply);
+bool supervisor_network_submit_dhcp_config(
+    uint32_t ip_address, uint32_t netmask, uint32_t gateway,
+    uint32_t dns_server);
+int supervisor_network_commit_dhcp_config(
+    int pid, uint32_t generation, const supervisor_dhcp_commit_t *commit);
 int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind);
 int supervisor_register(const char *name, const supervisor_config_t *config,
