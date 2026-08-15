@@ -166,19 +166,19 @@ und 10 verbindlich.
               - [x] S0.3c-5e2b2b1 Heapfreien DHCP-v1-Shadow-Parser mit
                 begrenzten Optionen, BOOTP-/Cookie-Prüfung, optionaler
                 IPv4-UDP-Prüfsumme und realem RTL8139-Nachweis ergänzen
-              - [ ] S0.3c-5e2b2b2 OFFER/ACK/NAK-Autorität aus dem validierten
+              - [x] S0.3c-5e2b2b2 OFFER/ACK/NAK-Autorität aus dem validierten
                 Ring-3-Ergebnis speisen und den Parallelpfad entfernen
                 - [x] S0.3c-5e2b2b2a Renewal/Rebind-ACK/NAK über append-only
                   Syscall 81, Frame-CRC, Dienstgeneration und bestehende
                   Transaktionsautorität übernehmen; Ring-0-Queue und -Poller
                   während der Transaktion unterdrücken
-                - [ ] S0.3c-5e2b2b2b Boot-DISCOVER/OFFER/REQUEST/ACK als
+                - [x] S0.3c-5e2b2b2b Boot-DISCOVER/OFFER/REQUEST/ACK als
                   begrenzten Ring-3-Zustandsautomaten übernehmen und danach
                   die dedizierte Ring-0-DHCP-Queue entfernen
                   - [x] S0.3c-5e2b2b2b1 Geschützte Boot-Transaktion mit
                     append-only Start-Syscall 82, drei endlichen
                     Dienstversuchen und realem RTL8139-Nachweis übernehmen
-                  - [ ] S0.3c-5e2b2b2b2 Tote synchrone Ring-0-DHCP-Routinen,
+                  - [x] S0.3c-5e2b2b2b2 Tote synchrone Ring-0-DHCP-Routinen,
                     Queue und Poller entfernen sowie Restart-/Druckpfade ohne
                     Parallelzustellung abnehmen
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
@@ -1563,16 +1563,13 @@ Prüfsumme wird vollständig geprüft; der nur für DHCP/IPv4 zulässige Nullwer
 „keine Prüfsumme“ bleibt explizit erkennbar. Ein CRC32- und generations-
 korrelierter Diagnosebericht erzeugt keinerlei Konfigurationsautorität. Der
 reale RTL8139-Lauf bestätigt `DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED ->
-DHCP_PARSED_RING3 -> BOOT_OK -> TEST_OK`. S0.3c-5e2b2b2 übernimmt als Nächstes
-die eigentliche OFFER-/ACK-/NAK-Entscheidung und entfernt erst danach die
-parallele Ring-0-Queue. Dessen Renewal-/Rebind-Teil S0.3c-5e2b2b2a ist bereits
-umgesetzt: Der feste 52-Byte-Syscall 81 akzeptiert nur die aktuelle gesunde
-Dienstgeneration und korreliert Frame-CRC, absolute Lieferdeadline,
+DHCP_PARSED_RING3 -> BOOT_OK -> TEST_OK`. S0.3c-5e2b2b2 ist vollständig
+umgesetzt: Der feste 52-Byte-Syscall 81 akzeptiert für Renewal/Rebind nur die
+aktuelle gesunde Dienstgeneration und korreliert Frame-CRC, absolute
+Lieferdeadline,
 Client-MAC sowie die geschützte DHCP-Transaktions-ID. ACK benötigt die
 vollständigen Netzmasken-, Gateway-, DNS- und Lease-Optionen; NAK entzieht die
-Lease fail-closed. Solange eine solche Transaktion aktiv ist, befüllt `netdev`
-die Legacy-DHCP-Queue nicht und der Supervisor-Worker ruft den Ring-0-Poller
-nicht auf. Der RTL8139-Test bestätigt `DHCP_RENEW_REQUESTED ->
+Lease fail-closed. Der RTL8139-Test bestätigt `DHCP_RENEW_REQUESTED ->
 DHCP_RENEW_INGRESS_RING3 -> DHCP_RENEWED`. S0.3c-5e2b2b2b1 ist ebenfalls
 abgenommen: Der append-only Syscall 82 startet nur für die aktuelle gesunde
 Dienstgeneration eine geschützte 1.500-ms-Boot-Transaktion. Ring 3 validiert
@@ -1582,9 +1579,13 @@ Adresse und Lieferdeadline werden vor jedem Zustandswechsel geprüft. Der
 Dienst führt höchstens drei Versuche aus; der Kernel wartet insgesamt höchstens
 sechs Sekunden und bleibt danach ohne IP fail-closed. Der RTL8139-Lauf bestätigt
 `DHCP_BOOT_DISCOVER_RING3 -> DHCP_BOOT_OFFER_RING3 -> DHCP_BOOT_ACK_RING3 ->
-DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED -> BOOT_OK`. Offen bleibt nur noch
-S0.3c-5e2b2b2b2: die nun toten synchronen Ring-0-Routinen, die dedizierte
-DHCP-Queue und den Poller löschen und die Restart-/Druckpfade erneut abnehmen.
+DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED -> BOOT_OK`. S0.3c-5e2b2b2b2 hat
+anschließend die synchronen Ring-0-Parserroutinen, die dedizierte Vier-Slot-
+DHCP-Queue und den Supervisor-Poller entfernt. Der statische Service-Frame-
+Handoff ist damit der einzige DHCP-Eingang. Boot und Renewal wurden erneut mit
+RTL8139 abgenommen; der Bootlauf enthält zusätzlich Dienst-Crash, Restart und
+Queue-Druck. Offen bleibt innerhalb S0.3c-5e2b2 der allgemeine, nicht
+dienstgebundene UDP-Legacy-Demux.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

@@ -46,16 +46,19 @@ class ReistDhcpIngressTests(unittest.TestCase):
         self.assertLess(body.index("udp_delivery_clear"),
                         body.index("netstack_finish_supervised_dhcp_request"))
 
-    def test_ring0_renewal_demux_is_suppressed_while_service_owns_it(self) -> None:
+    def test_no_parallel_ring0_dhcp_receive_path_remains(self) -> None:
         netdev = read("drivers/net/netdev.c")
+        netstack = read("drivers/net/netstack.c")
         supervisor = read("kernel/init/supervisor.c")
-        self.assertIn("supervisor_network_dhcp_service_owns_ingress()",
-                      netdev)
-        worker = supervisor[supervisor.index("static void supervisor_worker"):
-                            supervisor.index("bool supervisor_start_worker")]
-        self.assertIn("!supervisor_network_dhcp_service_owns_ingress()",
-                      worker)
-        self.assertIn("netstack_dhcp_poll()", worker)
+        for legacy in (
+            "dhcp_queue", "netdev_receive(", "netdev_reset_rx(",
+            "netstack_dhcp_poll", "netstack_receive_udp_queued",
+            "netstack_receive_udp_low", "dhcp_parse_opts",
+            "dhcp_discover_request",
+        ):
+            self.assertNotIn(legacy, netdev + netstack + supervisor)
+        self.assertIn("netdev_queue_service_packet", netdev)
+        self.assertIn("supervisor_network_receive_frame", supervisor)
 
     def test_runtime_requires_ring3_renewal_ingress(self) -> None:
         runner = read("scripts/run_qemu_smoke.py")

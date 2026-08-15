@@ -214,21 +214,18 @@ Frame. Nur ein aktives Binding darf eine geschützte Antwortautorität erzeugen;
 ungebundene oder ungültige Datagramme müssen kanonisch verworfen werden. Für
 dienstbesessene Ports ist die parallele Legacy-Zustellung in Ring 0
 unterbunden. Der echte RTL8139-Lauf bestätigt `UDP_INGRESS_RING3`, die
-vermittelte Antwort und `TEST_OK`. Offen bleibt S0.3c-5e2b2b: DHCP-Eingang und
-den verbleibenden UDP-Demux aus Ring 0 lösen. Der erste Teil davon ist nun
-abgenommen: Der heapfreie DHCP-v1-Parser validiert BOOTP-Reply, XID,
+vermittelte Antwort und `TEST_OK`. Der heapfreie DHCP-v1-Parser validiert
+BOOTP-Reply, XID,
 Client-MAC, Cookie, Ports, IPv4-/UDP-Längen sowie eine begrenzte Optionsliste
 mit genau einem OFFER-, ACK- oder NAK-Typ. Kritische Optionsduplikate,
 Abschneidung und fehlendes END werden verworfen; eine vorhandene UDP-
 Prüfsumme ist verpflichtend korrekt, der IPv4-DHCP-Nullwert wird separat
 markiert. Der generations- und Frame-CRC-korrelierte Ring-3-Nachweis
 `DHCP_PARSED_RING3` wurde mit RTL8139 vor `BOOT_OK` und `TEST_OK` bestätigt.
-Noch offen ist die Übernahme der OFFER-/ACK-/NAK-Autorität und danach das
-Entfernen der parallelen Ring-0-DHCP-Queue. Renewal/Rebind ist inzwischen
-dienstautorisiert: Syscall 81 bindet das validierte Ergebnis an Frame-CRC,
+Renewal/Rebind ist dienstautorisiert: Syscall 81 bindet das validierte
+Ergebnis an Frame-CRC,
 250-ms-Lieferdeadline, Dienstgeneration, lokale MAC und die bestehende
-geschützte Transaktions-ID. Währenddessen werden Legacy-DHCP-Queue und
-Ring-0-Poller unterdrückt. Der reale RTL8139-Lauf bestätigt
+geschützte Transaktions-ID. Der reale RTL8139-Lauf bestätigt
 `DHCP_RENEW_REQUESTED -> DHCP_RENEW_INGRESS_RING3 -> DHCP_RENEWED`. Der
 Bootpfad ist nun ebenfalls dienstgesteuert: Syscall 82 eröffnet eine
 geschützte 1.500-ms-Transaktion, Ring 3 validiert OFFER/ACK und Ring 0 sendet
@@ -236,9 +233,11 @@ nur die beiden vermittelten DISCOVER-/REQUEST-Frames. Drei Dienstversuche und
 eine gesamte Kernelwartezeit von sechs Sekunden begrenzen den Start. Der reale
 RTL8139-Lauf bestätigt `DHCP_BOOT_DISCOVER_RING3 -> DHCP_BOOT_OFFER_RING3 ->
 DHCP_BOOT_ACK_RING3 -> DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED -> BOOT_OK`.
-Als nächstes werden die jetzt toten synchronen Ring-0-DHCP-Routinen, die
-dedizierte Queue und der alte Poller entfernt und Restart-/Druckpfade erneut
-abgenommen.
+Die früheren synchronen Ring-0-DHCP-Routinen, die dedizierte Vier-Slot-Queue
+und der alte Poller sind entfernt. Der statische Service-Frame-Handoff ist der
+einzige DHCP-Eingang; Boot und Renewal sind erneut mit RTL8139 grün, wobei der
+Bootlauf Dienst-Crash, Restart und Queue-Druck einschließt. Als nächstes wird
+der allgemeine, nicht dienstgebundene UDP-Legacy-Demux aus Ring 0 gelöst.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

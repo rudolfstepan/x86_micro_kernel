@@ -587,14 +587,12 @@ der DHCP-Parser akzeptiert sie ausschließlich in diesem eng begrenzten Pfad
 und markiert sie im Ergebnis, während jede vorhandene Prüfsumme korrekt sein
 muss. Das feste 52-Byte-Ergebnis enthält nur validierte Werte und Offsets.
 
-Der Supervisor erkennt lediglich einen strukturellen 67→68-Kandidaten und
-veröffentlicht dazu eine PID-/Generations- und Frame-CRC-gebundene
-Diagnoseberechtigung. Erst der erfolgreiche Ring-3-Parser kann sie verbrauchen
-und `DHCP_PARSED_RING3` auslösen; daraus entsteht weder Lease- noch
-Ausgabeautorität. Der vorhandene Ring-0-DHCP-Client bleibt während dieser
-Schattenphase aktiv. S0.3c-5e2b2b2 muss OFFER/ACK/NAK aus dem validierten
-Ergebnis in den geschützten Lease-Zustand übernehmen und anschließend den
-parallelen Ring-0-Eingang mit Druck-, Restart- und Fehlpfadnachweisen entfernen.
+Der Supervisor erkennt einen strukturellen 67→68-Kandidaten und veröffentlicht
+dazu eine PID-/Generations- und Frame-CRC-gebundene Diagnoseberechtigung. Erst
+der erfolgreiche Ring-3-Parser kann sie verbrauchen und
+`DHCP_PARSED_RING3` auslösen. S0.3c-5e2b2b2 bindet dieses validierte Ergebnis
+anschließend an die geschützte Boot- oder Renewal-Transaktion; ohne passende
+Autorität entsteht weder Lease- noch Ausgabeautorität.
 
 S0.3c-5e2b2b2a verschiebt Renewal/Rebind bereits aus diesem Parallelpfad. Der
 append-only Syscall 81 übernimmt ein festes 52-Byte-Ergebnis und prüft vor
@@ -607,10 +605,7 @@ ACK muss Netzmaske, Gateway, DNS und Lease enthalten und darf nur die bereits
 geleaste Adresse erneuern. NAK löscht die geschützte Lease über den vorhandenen
 Fail-Closed-Pfad.
 
-Vom Veröffentlichen der Renewal-Autorität bis zu ihrem Verbrauch besitzt der
-Ring-3-Dienst den Eingang exklusiv: `netdev` schreibt passende Antworten nicht
-in die Legacy-DHCP-Queue, und der Supervisor-Worker überspringt den alten
-Ring-0-Poller. Ein erfolgreicher Dienstentscheid verbraucht zunächst das
+Ein erfolgreicher Dienstentscheid verbraucht zunächst das
 CRC-/generationgebundene Lieferobjekt und beendet dann den Transportzustand,
 bevor die bestehende geschützte Commit-Sequenz startet. Der reale RTL8139-
 Nachweis erreicht `DHCP_RENEW_INGRESS_RING3` vor `DHCP_RENEWED`.
@@ -628,10 +623,14 @@ Dienst versucht den Ablauf höchstens dreimal, der Kernel wartet insgesamt
 höchstens sechs Sekunden und setzt den Boot ohne IP fort. Der RTL8139-Nachweis
 bestätigt die vollständige Reihenfolge bis `BOOT_OK`.
 
-Die früheren synchronen Parserroutinen und die dedizierte DHCP-Queue sind nach
-dieser Umschaltung nicht mehr autoritativ, liegen aber bis S0.3c-5e2b2b2b2 noch
-als zu löschender Altcode im Baum. Erst deren Entfernung und ein erneuter
-Restart-/Drucktest schließen den Parallelpfad vollständig.
+S0.3c-5e2b2b2b2 entfernt die früheren synchronen Parserroutinen, die dedizierte
+Vier-Slot-DHCP-Queue und den Supervisor-Poller vollständig. Eingehende DHCP-
+Frames gelangen ausschließlich über die feste Service-Frame-Queue zum Ring-3-
+Parser; Ring 0 sendet nur die einzeln autorisierten Transportframes und
+committet ein vollständig korreliertes Ergebnis. Reale RTL8139-Läufe belegen
+Boot und Renewal nach dem Rückbau; der Bootlauf umfasst zusätzlich Dienst-
+Crash, Restart und Queue-Druck. Der allgemeine UDP-Legacy-Demux außerhalb
+dienstgebundener Ports bleibt ein separates S0.3c-5e2-Restpaket.
 
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau

@@ -36,7 +36,7 @@ class ReistDhcpServiceTests(unittest.TestCase):
         supervisor = read("kernel/init/supervisor.c")
         probe = read("examples/userspace/reist_probe.c")
         self.assertIn("netstack_send_supervised_dhcp_request", netstack)
-        self.assertIn("void netstack_dhcp_poll(void)", netstack)
+        self.assertNotIn("netstack_dhcp_poll", netstack)
         self.assertIn("supervisor_network_request_dhcp_renewal", supervisor)
         self.assertIn("supervisor_network_accept_dhcp_renewal", supervisor)
         self.assertIn("reist_dhcp_state_poll", probe)
@@ -66,12 +66,15 @@ class ReistDhcpServiceTests(unittest.TestCase):
         self.assertIn("REIST_DHCP_RENEWED_MARKER", runner)
 
     def test_dhcp_transport_only_submits_a_proposal(self) -> None:
+        supervisor = read("kernel/init/supervisor.c")
+        ingress = supervisor[supervisor.index(
+            "int supervisor_network_dhcp_ingress("):]
+        ingress = ingress[:ingress.index("int supervisor_network_udp_bind(")]
+        self.assertIn("supervisor_network_submit_dhcp_config_operation",
+                      ingress)
+        self.assertNotIn("netstack_configure_dhcp", read(
+            "drivers/net/netstack.c"))
         netstack = read("drivers/net/netstack.c")
-        start = netstack.index("bool netstack_configure_dhcp(void)")
-        body = netstack[start:netstack.index(
-            "bool netstack_apply_supervised_dhcp", start)]
-        self.assertIn("supervisor_network_submit_dhcp_config", body)
-        self.assertNotIn("net_config.ip_address = ip", body)
         self.assertIn("bool netstack_apply_supervised_dhcp", netstack)
 
     def test_proposal_is_protected_bounded_and_generation_scoped(self) -> None:
@@ -133,10 +136,12 @@ class ReistDhcpServiceTests(unittest.TestCase):
         self.assertIn("bool netstack_clear_supervised_dhcp", netstack)
 
     def test_dhcp_ack_requires_a_bounded_lease_option(self) -> None:
-        netstack = read("drivers/net/netstack.c")
-        self.assertIn("case DHO_LEASE_TIME", netstack)
-        self.assertIn("SUPERVISOR_DHCP_LEASE_MIN_SECONDS", netstack)
-        self.assertIn("SUPERVISOR_DHCP_LEASE_MAX_SECONDS", netstack)
+        parser = read("userspace/sdk/reist_dhcp_parser.c")
+        supervisor = read("kernel/init/supervisor.c")
+        self.assertIn("case 51U", parser)
+        self.assertIn("parsed.lease_seconds = read_be32(value)", parser)
+        self.assertIn("SUPERVISOR_DHCP_LEASE_MIN_SECONDS", supervisor)
+        self.assertIn("SUPERVISOR_DHCP_LEASE_MAX_SECONDS", supervisor)
 
     def test_runtime_has_a_bounded_expiry_fault_profile(self) -> None:
         build = read("scripts/build-windows.ps1")

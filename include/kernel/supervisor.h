@@ -639,7 +639,6 @@ int supervisor_network_dhcp_ingress(
 int supervisor_network_start_dhcp_boot(
     int pid, uint32_t generation,
     const supervisor_dhcp_boot_start_t *request);
-bool supervisor_network_dhcp_service_owns_ingress(void);
 bool supervisor_network_submit_udp_echo(
     uint32_t source_ip, const uint8_t source_mac[6], uint16_t source_port,
     uint16_t destination_port, const uint8_t *data, uint16_t data_length);

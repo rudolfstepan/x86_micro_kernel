@@ -49,6 +49,10 @@ C:\> NET DHCP
 C:\> GETIP
 ```
 
+`NET DHCP` zeigt nur noch den Zustand der durch `REIST.PRG` überwachten Lease.
+DISCOVER, OFFER, REQUEST, ACK sowie Renewal/Rebind laufen automatisch über den
+Ring-3-Netzwerkdienst; die Kernel-Shell startet keinen parallelen DHCP-Client.
+
 Statische Konfiguration:
 
 ```text
@@ -117,7 +121,7 @@ Dateifreigabe-Stack.
 ## Fehlerdiagnose
 
 1. `NET STATUS` – ist ein Treiber aktiv und Link vorhanden?
-2. `NET DHCP` – wird ein Lease ausgehandelt?
+2. `NET DHCP` – ist eine überwachte Lease aktiv?
 3. `GETIP` – sind IP, Netzmaske und Gateway gesetzt?
 4. `ARP` – wird der Gateway-Nachbar aufgelöst?
 5. `PING <gateway>` – funktioniert ICMP im lokalen Netz?

@@ -109,7 +109,8 @@ verwechseln.
 
 - In der VMX muss `ethernet0.virtualDev = "e1000"` stehen.
 - Adapter muss verbunden und `VMnet0` dem richtigen Hostadapter zugeordnet sein.
-- `NET DHCP`, danach `GETIP` ausführen.
+- Mit `NET DHCP` den überwachten Lease-Zustand prüfen, danach `GETIP`
+  ausführen. DHCP wird beim Boot automatisch durch `REIST.PRG` ausgehandelt.
 - Bei WLAN-Problemen Ethernet oder testweise eine andere VMware-Netzart verwenden.
 
 ## Manuelle Ersatzkonfiguration

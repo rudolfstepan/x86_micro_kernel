@@ -3381,35 +3381,6 @@ int supervisor_network_start_dhcp_boot(
     return 0;
 }
 
-bool supervisor_network_dhcp_service_owns_ingress(void) {
-    uint32_t flags = supervisor_lock();
-    supervisor_probe_control_t control = {0};
-    supervisor_dhcp_renewal_t renewal = {0};
-    supervisor_dhcp_boot_t boot = {0};
-    int control_result = supervisor_protected_probe_control_read(
-        &probe_runtime.control, &control);
-    int renewal_result = supervisor_protected_dhcp_renewal_snapshot(
-        &probe_runtime.dhcp_renewal, &renewal);
-    int boot_result = supervisor_protected_dhcp_boot_snapshot(
-        &probe_runtime.dhcp_boot, &boot);
-    bool integrity_failure = control_result == SUPERVISOR_EINTEGRITY ||
-                             renewal_result == SUPERVISOR_EINTEGRITY ||
-                             boot_result == SUPERVISOR_EINTEGRITY;
-    bool owns = integrity_failure ||
-        (control_result == 0 && renewal_result == 0 && boot_result == 0 &&
-         control.active != 0U && control.fenced == 0U &&
-         control.healthy != 0U &&
-         ((renewal.active != 0U &&
-           renewal.process_generation == control.process_generation) ||
-          (boot.active != 0U &&
-           boot.process_generation == control.process_generation)) &&
-         process_identity_alive(control.pid, control.process_generation));
-    supervisor_unlock(flags);
-    if (integrity_failure && control.active != 0U)
-        (void)supervisor_force_isolate(control.handle);
-    return owns;
-}
-
 int supervisor_network_dhcp_ingress(
         int pid, uint32_t generation,
         const supervisor_dhcp_ingress_t *ingress) {
@@ -4083,8 +4054,6 @@ static void supervisor_worker(void) {
          * pending flags, so foreground progress must not depend on a shell
          * command happening to poll the NIC. */
         netdev_poll();
-        if (!supervisor_network_dhcp_service_owns_ingress())
-            netstack_dhcp_poll();
         storage_service_poll(pit_monotonic_ms());
         supervisor_probe_control_t control;
         uint32_t transaction_flags = supervisor_lock();

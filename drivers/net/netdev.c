@@ -10,7 +10,6 @@
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
 
-#define NETDEV_DHCP_QUEUE_SIZE 4
 #define NETDEV_RX_QUEUE_SIZE 64
 #define NETDEV_MONITOR_QUEUE_SIZE 8
 #define NETDEV_SERVICE_QUEUE_SIZE 8
@@ -21,9 +20,6 @@ typedef struct {
     uint8_t data[NETDEV_MAX_FRAME_SIZE];
 } netdev_queued_packet_t;
 
-static netdev_queued_packet_t dhcp_queue[NETDEV_DHCP_QUEUE_SIZE];
-static volatile uint8_t dhcp_queue_head;
-static volatile uint8_t dhcp_queue_tail;
 static netdev_queued_packet_t rx_queue[NETDEV_RX_QUEUE_SIZE];
 static volatile uint8_t rx_queue_head;
 static volatile uint8_t rx_queue_tail;
@@ -132,43 +128,6 @@ bool netdev_get_mac_address(uint8_t mac[6]) {
     return true;
 }
 
-static bool netdev_is_dhcp_client_packet(const uint8_t* packet,
-                                         uint16_t length) {
-    if (!packet || length < 14u + 20u + 8u || packet[12] != 0x08 ||
-        packet[13] != 0x00 || (packet[14] >> 4) != 4) return false;
-
-    uint16_t ip_header_length = (uint16_t)(packet[14] & 0x0Fu) * 4u;
-    if (ip_header_length < 20u || 14u + ip_header_length + 8u > length ||
-        packet[23] != 17u) return false;
-
-    uint16_t ip_total =
-        (uint16_t)(((uint16_t)packet[16] << 8) | packet[17]);
-    uint16_t fragment =
-        (uint16_t)(((uint16_t)packet[20] << 8) | packet[21]);
-    if (ip_total < ip_header_length + 8u || 14u + ip_total > length ||
-        (fragment & 0x3FFFu) != 0) return false;
-
-    size_t udp = 14u + ip_header_length;
-    uint16_t source_port =
-        (uint16_t)(((uint16_t)packet[udp] << 8) | packet[udp + 1u]);
-    uint16_t destination_port =
-        (uint16_t)(((uint16_t)packet[udp + 2u] << 8) | packet[udp + 3u]);
-    uint16_t udp_length =
-        (uint16_t)(((uint16_t)packet[udp + 4u] << 8) | packet[udp + 5u]);
-    return source_port == 67u && destination_port == 68u &&
-           udp_length >= 8u && udp_length <= ip_total - ip_header_length;
-}
-
-static void netdev_queue_dhcp_packet(const uint8_t* packet, uint16_t length) {
-    uint8_t head = dhcp_queue_head;
-    uint8_t next = (uint8_t)((head + 1u) % NETDEV_DHCP_QUEUE_SIZE);
-    if (next == dhcp_queue_tail) return;
-    dhcp_queue[head].length = length;
-    memcpy(dhcp_queue[head].data, packet, length);
-    __asm__ volatile("" ::: "memory");
-    dhcp_queue_head = next;
-}
-
 static void netdev_queue_rx_packet(const uint8_t* packet, uint16_t length) {
     uint8_t head = rx_queue_head;
     uint8_t next = (uint8_t)((head + 1u) % NETDEV_RX_QUEUE_SIZE);
@@ -216,10 +175,6 @@ void netdev_deliver_rx(const uint8_t* packet, uint16_t length) {
         service_owned = supervisor_network_submit_header(
             service_header, sizeof(service_header));
     }
-    if (netdev_is_dhcp_client_packet(packet, length)) {
-        if (!supervisor_network_dhcp_service_owns_ingress())
-            netdev_queue_dhcp_packet(packet, length);
-    }
     /* IRQ handlers only copy frames. ARP/ICMP processing and any response TX
      * happen later in foreground context via netdev_poll(). */
     if (!service_owned) netdev_queue_rx_packet(packet, length);
@@ -248,22 +203,6 @@ void netdev_poll(void) {
             (uint8_t)((tail + 1u) % NETDEV_RX_QUEUE_SIZE);
     }
     __sync_lock_release(&netdev_poll_busy);
-}
-
-int netdev_receive(uint8_t* buffer, size_t capacity) {
-    uint8_t tail = dhcp_queue_tail;
-    if (tail == dhcp_queue_head) return 0;
-
-    uint16_t length = dhcp_queue[tail].length;
-    uint8_t next = (uint8_t)((tail + 1u) % NETDEV_DHCP_QUEUE_SIZE);
-    if (!buffer || length > capacity) {
-        dhcp_queue_tail = next;
-        return -1;
-    }
-    memcpy(buffer, dhcp_queue[tail].data, length);
-    __asm__ volatile("" ::: "memory");
-    dhcp_queue_tail = next;
-    return (int)length;
 }
 
 int netdev_receive_frame(uint8_t* buffer, size_t capacity) {
@@ -305,10 +244,6 @@ int netdev_receive_service_frame(uint8_t* buffer, size_t capacity) {
     __asm__ volatile("" ::: "memory");
     service_queue_tail = next;
     return (int)length;
-}
-
-void netdev_reset_rx(void) {
-    dhcp_queue_tail = dhcp_queue_head;
 }
 
 void netdev_reset_monitor(void) {

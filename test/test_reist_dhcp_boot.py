@@ -64,6 +64,14 @@ class ReistDhcpBootTests(unittest.TestCase):
         self.assertIn("netstack_is_configured", body)
         self.assertIn("pit_monotonic_ms() < commit_deadline", body)
 
+    def test_legacy_ring0_dhcp_client_is_absent(self) -> None:
+        source = read("drivers/net/netstack.c") + read("drivers/net/netdev.c")
+        for legacy in (
+            "netstack_configure_dhcp", "netstack_dhcp_poll",
+            "dhcp_discover_request", "dhcp_parse_opts", "dhcp_queue",
+        ):
+            self.assertNotIn(legacy, source)
+
 
 if __name__ == "__main__":
     unittest.main()

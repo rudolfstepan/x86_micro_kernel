@@ -167,7 +167,6 @@ typedef struct {
 void netstack_init(void);
 bool netstack_safety_init(void);
 void netstack_set_config(uint32_t ip, uint32_t netmask, uint32_t gateway);
-bool netstack_configure_dhcp(void);
 bool netstack_send_supervised_dhcp_discover(uint32_t transaction_id);
 bool netstack_send_supervised_dhcp_select(uint32_t transaction_id,
                                           uint32_t offered_ip,
@@ -175,7 +174,6 @@ bool netstack_send_supervised_dhcp_select(uint32_t transaction_id,
 bool netstack_send_supervised_dhcp_request(uint32_t transaction_id,
                                            uint32_t ip_address,
                                            bool rebind);
-void netstack_dhcp_poll(void);
 bool netstack_finish_supervised_dhcp_request(uint32_t transaction_id);
 bool netstack_apply_supervised_dhcp(uint32_t ip, uint32_t netmask,
                                     uint32_t gateway, uint32_t dns_server);

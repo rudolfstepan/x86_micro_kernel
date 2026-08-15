@@ -157,8 +157,9 @@ einer laufenden paketierten VM.
 ### Kein LAN
 
 Im VMware Virtual Network Editor `VMnet0` dem richtigen Hostadapter zuordnen.
-WLAN-Client-Isolation kann gebridgte Gäste blockieren. Danach `NET DHCP` und
-`GETIP` verwenden.
+WLAN-Client-Isolation kann gebridgte Gäste blockieren. Danach mit `NET DHCP`
+den automatisch durch `REIST.PRG` verwalteten Lease-Zustand und mit `GETIP`
+die aktive Konfiguration prüfen.
 
 ### Programm wird abgelehnt
 

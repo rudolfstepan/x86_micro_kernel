@@ -1924,9 +1924,9 @@ void cmd_net(int arg_count, const char** arguments) {
             printf("Network card not initialized.\n");
             return;
         }
-        if (!netstack_configure_dhcp()) {
-            printf("No DHCP lease received. Check the VMnet0 bridge and LAN.\n");
-        }
+        printf(netstack_is_configured()
+            ? "DHCP lease is active and supervised by REIST.PRG.\n"
+            : "DHCP is managed by REIST.PRG; no lease is active.\n");
     } else if(strcmp(arguments[0], "SEND") == 0 || strcmp(arguments[0], "send") == 0) {
         // Send a test packet
         if (rtl8139_is_initialized()) {
@@ -2046,9 +2046,9 @@ void cmd_ifconfig(int arg_count, const char** arguments) {
     if (arg_count == 1 &&
         (strcmp(arguments[0], "dhcp") == 0 ||
          strcmp(arguments[0], "DHCP") == 0)) {
-        if (!netstack_configure_dhcp()) {
-            printf("No DHCP lease received. Check the VMnet0 bridge and LAN.\n");
-        }
+        printf(netstack_is_configured()
+            ? "DHCP lease is active and supervised by REIST.PRG.\n"
+            : "DHCP is managed by REIST.PRG; no lease is active.\n");
         return;
     }
     

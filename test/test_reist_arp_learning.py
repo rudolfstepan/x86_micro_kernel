@@ -36,7 +36,7 @@ class ReistArpLearningTests(unittest.TestCase):
     def test_gateway_configuration_purges_preexisting_legacy_binding(self):
         source = (ROOT / "drivers/net/netstack.c").read_text(encoding="utf-8")
         manual = source[source.index("void netstack_set_config("):
-                        source.index("bool netstack_configure_dhcp(")]
+                        source.index("bool netstack_apply_supervised_dhcp(")]
         dhcp_commit = source[source.index("bool netstack_apply_supervised_dhcp("):
                              source.index("uint32_t netstack_get_ip_address(")]
         self.assertIn("arp_remove_entry(net_config.gateway);", manual)
