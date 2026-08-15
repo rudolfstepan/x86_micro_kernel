@@ -673,6 +673,15 @@ def run(
                     process, chunks, transcript, finished,
                     REIST_NETWORK_INJECTION_READY_MARKER, deadline,
                 )
+            if error is None and (inject_icmp_echo or inject_udp_echo):
+                # These injected IPv4 frames target the DHCP-assigned guest
+                # address.  Do not race the mediated DHCP commit: a faster
+                # Ring-0 fallback must never be required to make this test
+                # pass.
+                error, _ = wait_for_line(
+                    process, chunks, transcript, finished,
+                    REIST_DHCP_CONFIG_MARKER, deadline,
+                )
             if error is None and inject_arp_request:
                 assert injection_port is not None
                 assert injection_connection is not None

@@ -649,73 +649,6 @@ bool netstack_finish_supervised_dhcp_request(uint32_t transaction_id) {
     return true;
 }
 
-// =============================================================================
-// IP/ETH Demux
-// =============================================================================
-static void handle_ip_packet(uint8_t *packet, uint16_t length,
-                             const uint8_t source_mac[ETH_ADDR_LEN]) {
-    if (length < sizeof(ip_header_t)) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
-    ip_header_t *ip = (ip_header_t *)packet;
-
-    if (IP_VERSION(ip) != 4) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
-    int ihl_bytes = (IP_IHL(ip)) * 4;
-    if (ihl_bytes < (int)sizeof(ip_header_t) || ihl_bytes > (int)length) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
-
-    if (ip_checksum(ip, (uint16_t)ihl_bytes) != 0) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
-
-    uint16_t total_length = ntohs(ip->total_length);
-    if (total_length < (uint16_t)ihl_bytes || total_length > length) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
-
-    uint32_t dst = ntohl(ip->dst_ip);
-    if (dst != net_config.ip_address && dst != 0xFFFFFFFFu) return;
-
-    uint16_t ff = ntohs(ip->flags_fragment);
-    if (ff & 0x3FFF) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
-
-    ++netstack_stats.rx_ipv4;
-
-    /* Learn the directly reachable sender. For off-subnet packets the frame
-     * came from the configured gateway, so cache that next-hop MAC instead. */
-    uint32_t source_ip = ntohl(ip->src_ip);
-    uint32_t source_next_hop = netstack_next_hop(source_ip);
-    if (source_next_hop != 0 && source_mac) {
-        arp_add_entry(source_next_hop, source_mac);
-    }
-
-    switch (ip->protocol) {
-        case IP_PROTOCOL_ICMP:
-            /* ICMP interpretation belongs exclusively to the validated
-             * Ring-3 frame handoff. The legacy Ring-0 parser fails closed. */
-            ++netstack_stats.rx_dropped;
-            break;
-        case IP_PROTOCOL_UDP:
-            /* UDP input belongs exclusively to the validated Ring-3 frame
-             * handoff. The legacy Ring-0 path fails closed. */
-            ++netstack_stats.rx_dropped;
-            break;
-        default:
-            break;
-    }
-}
-
 void netstack_process_packet(uint8_t *packet, uint16_t length) {
     if (!packet || length < sizeof(eth_header_t)) {
         ++netstack_stats.rx_dropped;
@@ -736,7 +669,11 @@ void netstack_process_packet(uint8_t *packet, uint16_t length) {
     switch (type) {
         case ETHERTYPE_ARP:  handle_arp_packet(payload, plen); break;
         case ETHERTYPE_IPV4:
-            handle_ip_packet(payload, plen, eth->src_mac);
+            /* The complete IPv4 ingress decision belongs to the validated
+             * Ring-3 service-frame path. Never parse or learn neighbors from
+             * an unowned fallback frame in Ring 0. */
+            ++netstack_stats.rx_ipv4;
+            ++netstack_stats.rx_dropped;
             break;
         default: break;
     }

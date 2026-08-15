@@ -15,7 +15,7 @@ class ReistIcmpServiceTests(unittest.TestCase):
         netstack = read("drivers/net/netstack.c")
         self.assertNotIn("static void handle_icmp_packet(", netstack)
         self.assertNotIn("supervisor_network_submit_icmp_echo(", netstack)
-        self.assertIn("legacy Ring-0 parser fails closed", netstack)
+        self.assertIn("Ring-3 service-frame path", netstack)
 
     def test_context_is_fixed_protected_and_generation_scoped(self) -> None:
         header = read("include/kernel/supervisor.h")
@@ -96,6 +96,7 @@ class ReistIcmpServiceTests(unittest.TestCase):
         self.assertIn("def icmp_echo_request_frame()", runner)
         self.assertIn("def receive_icmp_echo_reply(", runner)
         self.assertIn('"--inject-icmp-echo"', runner)
+        self.assertIn("REIST_DHCP_CONFIG_MARKER, deadline", runner)
         self.assertIn("'icmp-echo'", runtime)
         self.assertIn("'--nic', 'rtl8139', '--inject-icmp-echo'", runtime)
 

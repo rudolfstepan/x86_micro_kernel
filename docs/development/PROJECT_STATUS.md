@@ -251,8 +251,10 @@ Syscall 83 zusätzlich an PID, Prozessgeneration, Frame-CRC und eine absolute
 Einmalautorität; `ECHO_REPLY` darf ausschließlich einen exakt erwarteten Ping
 abschließen, und der kanonische Drop bleibt wirkungslos. Der Ring-0-ICMP-
 Parser ist entfernt. Der RTL8139-Lauf belegt Parser, Ingress und vermittelten
-Reply bis `TEST_OK`; der verbleibende Ring-0-IPv4-Demux ist der nächste
-Migrationsschritt.
+Reply bis `TEST_OK`. Der Ring-0-IPv4-Demux ist ebenfalls entfernt: Fallback-
+Frames werden dort nicht mehr geparst, demultiplext oder zum impliziten ARP-
+Lernen verwendet. S0.3c-5e2 ist damit geschlossen. Als nächster Netzwerkrest
+folgt der Ring-0-ARP-Fallback samt ungeschütztem Legacy-Cache.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

@@ -142,12 +142,12 @@ und 10 verbindlich.
         - [x] S0.3c-5d2b2b DHCP-Renew/Rebind als begrenzten, nichtblockierenden
           Ring-3-Zustandsautomaten mit drei Versuchen je Phase, geschützter
           Einmaltransaktion und realem RTL8139-Renewal-Nachweis umsetzen
-    - [ ] S0.3c-5e Verbleibende IPv4-/UDP-/DHCP-Protokollzustände und den
+    - [x] S0.3c-5e Verbleibende IPv4-/UDP-/DHCP-Protokollzustände und den
       allgemeinen Socket-Demultiplexer aus Ring 0 in die Dienstgrenze verlagern
       - [x] S0.3c-5e1 Separate statische 8-Slot-RX-Queue und append-only
         Syscall 79 für einen vollständigen, generation-frischen 1518-Byte-
         Frame-Handoff mit realem RTL8139-Ring-3-Nachweis
-      - [ ] S0.3c-5e2 IPv4-/ICMP-/UDP-/DHCP-Parser und Protokollzustand über den
+      - [x] S0.3c-5e2 IPv4-/ICMP-/UDP-/DHCP-Parser und Protokollzustand über den
         neuen Handoff übernehmen und den parallelen Ring-0-Demux entfernen
         - [x] S0.3c-5e2a Begrenzten heapfreien IPv4-v1-Shadow-Parser mit
           Headerprüfsumme, Fragmentablehnung und realem RTL8139-Nachweis
@@ -186,8 +186,10 @@ und 10 verbindlich.
         - [x] S0.3c-5e2d ICMP-Eingangsautorität aus einem geschützten,
           CRC-/generations-/deadlinegebundenen Ring-3-Ergebnis speisen und den
           Ring-0-ICMP-Parser entfernen
-        - [ ] S0.3c-5e2e Verbleibenden Ring-0-IPv4-Demux und seine implizite
+        - [x] S0.3c-5e2e Verbleibenden Ring-0-IPv4-Demux und seine implizite
           ARP-Lernmutation durch validierte Ring-3-Entscheidungen ersetzen
+    - [ ] S0.3c-5f Verbleibenden Ring-0-ARP-Fallback und ungeschützten lokalen
+      Legacy-Cache entfernen; ausschließlich überwachte ARP-Entscheide zulassen
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -1614,8 +1616,12 @@ ein erwarteter Ping abgeschlossen werden. Der alte Ring-0-ICMP-Parser ist
 entfernt und ICMP fällt dort geschlossen aus. Der reale RTL8139-Lauf bestätigt
 `ICMP_PARSED_RING3 -> ICMP_ECHO_QUEUED -> ICMP_INGRESS_RING3 ->
 ICMP_ECHO_MEDIATED -> TEST_OK`; der bisherige ICMP-Echo-Lauf bleibt grün.
-Offen bleibt S0.3c-5e2e: Der Ring-0-IPv4-Demux validiert noch Header und lernt
-implizit ARP-Nachbarn.
+S0.3c-5e2e entfernt anschließend auch `handle_ip_packet`: Fallback-IPv4-Frames
+werden in Ring 0 weder geparst noch demultiplext und dürfen keine implizite
+ARP-Lernmutation mehr auslösen. Sie werden ausschließlich gezählt und
+fail-closed verworfen; der vollständige Frame bleibt dem statischen Ring-3-
+Handoff vorbehalten. Damit ist S0.3c-5e2 abgeschlossen. Als nächster lokaler
+Netzwerkrest bleibt S0.3c-5f: Der Ring-0-ARP-Fallback und sein Legacy-Cache.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

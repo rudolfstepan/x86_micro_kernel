@@ -59,6 +59,16 @@ class ReistIpv4ParserTests(unittest.TestCase):
         self.assertIn("'network-ipv4-parser'", runtime)
         self.assertIn("--expect-network-ipv4", runtime)
 
+    def test_ring0_ipv4_fallback_is_removed_and_fail_closed(self) -> None:
+        netstack = read("drivers/net/netstack.c")
+        self.assertNotIn("static void handle_ip_packet(", netstack)
+        ipv4_case = netstack[netstack.index("case ETHERTYPE_IPV4:"):]
+        ipv4_case = ipv4_case[:ipv4_case.index("break;")]
+        self.assertIn("validated", ipv4_case)
+        self.assertIn("Ring-3 service-frame path", ipv4_case)
+        self.assertIn("++netstack_stats.rx_dropped", ipv4_case)
+        self.assertNotIn("arp_add_entry", ipv4_case)
+
 
 if __name__ == "__main__":
     unittest.main()
