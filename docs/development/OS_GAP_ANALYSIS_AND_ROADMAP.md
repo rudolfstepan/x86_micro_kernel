@@ -273,6 +273,10 @@ und 10 verbindlich.
             fail-closed Indirektaufrufen
           - [ ] S0.4c-2c2b Syscall-Gesamtpfade sowie bounded
             WCET-Baselines auf QEMU, VMware und ausgewählter Referenzhardware
+            - [x] S0.4c-2c2b1 Kumulatives INT-80-/Syscall-Stackbudget mit
+              Assemblyreserve sowie vollständigem VFS-/EXT2-Callbackinventar
+            - [ ] S0.4c-2c2b2 Bounded WCET-Baselines auf QEMU, VMware und
+              ausgewählter Referenzhardware
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
 
@@ -1062,7 +1066,7 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    Kernel-C-Objekte `.su`- und `.ci`-Evidenz. Der Validator lehnt fehlende oder
    ungepaarte Dateien, dynamische beziehungsweise über 4096 Byte große lokale
    Frames und direkte oder transitive Rekursionszyklen ab. Der erste Lauf
-   erfasste 1.204 Stackdatensätze und 5.767 Callgraph-Kanten; dabei wurde der
+   erfasste 1.214 Stackdatensätze und 5.816 Callgraph-Kanten; dabei wurde der
    rekursive PCI-Topologiescan durch feste Bus-/Slot-/Funktionsschleifen
    ersetzt.
 - S0.4c-2c2a summiert nun die statischen Stackkosten entlang der direkten
@@ -1074,8 +1078,12 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    Referenzcompile belegt 1.744 von 7.168 Byte für den Legacy-IRQ-Pfad, 720 von
    4.096 Byte für den Scheduler-IRQ-Pfad und 2.000 von 7.168 Byte für CPU-
    Exceptions. Konservative Reserven für Assembly- und Validator-/Fence-
-   Callbacks sind explizit im Register begründet. Syscall-Gesamtpfade und
-   Zielplattform-WCET bleiben S0.4c-2c2b.
+   Callbacks sind explizit im Register begründet. S0.4c-2c2b1 bindet nun auch
+   den vollständigen INT-80-Pfad: einschließlich 128 Byte Assemblyreserve
+   belegt der schlechteste Syscallpfad 6.880 von 7.168 Byte. Alle VFS-
+   Operationstabellen und EXT2-Verzeichnisbesucher werden mit den
+   Produktionsquellen abgeglichen; neue unbekannte Callbackziele stoppen das
+   Gate. Zielplattform-WCET bleibt S0.4c-2c2b2.
 - Kritische Tasks erhalten feste Prioritäten, CPU-/Speicher-/Queue-Budgets,
    Admission Control und nachgewiesene Worst-Case-Laufzeiten.
 - Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte

@@ -133,6 +133,42 @@ class StackEvidenceTests(unittest.TestCase):
         self.assertEqual([], errors)
         self.assertIn("entry=96/96", summary)
 
+    def test_entry_reserve_is_counted_and_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "unit.su").write_text(
+                "u.c:1:1:entry\t32\tstatic\n", encoding="utf-8")
+            (root / "unit.ci").write_text(
+                'graph: { node: { title: "entry" '
+                'label: "entry\\nu.c:1:1\\n32 bytes (static)" } }\n',
+                encoding="utf-8")
+            budget = root / "budgets.json"
+            budget.write_text(json.dumps({
+                "entry_budgets": [{
+                    "name": "entry", "root": "entry", "limit": 96,
+                    "entry_reserve": 64}],
+            }), encoding="utf-8")
+            errors, _, summary = VALIDATOR.validate(root, 1, 128, budget)
+        self.assertEqual([], errors)
+        self.assertIn("entry=96/96", summary)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "unit.su").write_text(
+                "u.c:1:1:entry\t32\tstatic\n", encoding="utf-8")
+            (root / "unit.ci").write_text(
+                'graph: { node: { title: "entry" '
+                'label: "entry\\nu.c:1:1\\n32 bytes (static)" } }\n',
+                encoding="utf-8")
+            budget = root / "budgets.json"
+            budget.write_text(json.dumps({
+                "entry_budgets": [{
+                    "name": "entry", "root": "entry", "limit": 96,
+                    "entry_reserve": -1}],
+            }), encoding="utf-8")
+            errors, _, _ = VALIDATOR.validate(root, 1, 128, budget)
+        self.assertTrue(any("invalid entry budget" in error for error in errors))
+
     def test_registered_irq_handler_drift_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -158,6 +194,35 @@ class StackEvidenceTests(unittest.TestCase):
                 root, 1, 128, budget, source_root)
         self.assertTrue(any("unbudgeted" in error for error in errors))
         self.assertTrue(any("stale" in error for error in errors))
+
+    def test_vfs_operation_handler_drift_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_root = root / "source"
+            source_root.mkdir()
+            (source_root / "unit_vfs_adapter.c").write_text(
+                "struct ops table = { .read = new_read };\n",
+                encoding="utf-8")
+            (root / "unit.su").write_text(
+                "u.c:1:1:entry\t32\tstatic\n", encoding="utf-8")
+            (root / "unit.ci").write_text(
+                'graph: { node: { title: "entry" '
+                'label: "entry\\nu.c:1:1\\n32 bytes (static)" } }\n',
+                encoding="utf-8")
+            budget = root / "budgets.json"
+            budget.write_text(json.dumps({
+                "entry_budgets": [{
+                    "name": "entry", "root": "entry", "limit": 32}],
+                "vfs_read_handlers": ["old_read"],
+            }), encoding="utf-8")
+            errors, _, _ = VALIDATOR.validate(
+                root, 1, 128, budget, source_root)
+        self.assertTrue(any(
+            "unbudgeted VFS read handler: new_read" in error
+            for error in errors))
+        self.assertTrue(any(
+            "stale VFS read handler budget: old_read" in error
+            for error in errors))
 
 
 if __name__ == "__main__":

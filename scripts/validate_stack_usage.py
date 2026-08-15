@@ -20,9 +20,15 @@ IRQ_REGISTRATION_RE = re.compile(
     r'(?:\(\s*void\s*\*\s*\)\s*)?([A-Za-z_]\w*)')
 EXCEPTION_HANDLER_RE = re.compile(
     r'exception_handlers\s*\[[^\]]+\]\s*=\s*([A-Za-z_]\w*)')
-VFS_CLOSE_HANDLER_RE = re.compile(r'\.close\s*=\s*([A-Za-z_]\w*)')
 FAT32_SYNC_HOOK_RE = re.compile(
     r'fat32_context_sync_hook\s*=\s*([A-Za-z_]\w*)')
+EXT2_DIR_VISITOR_RE = re.compile(
+    r'ext2_walk_dir\s*\(\s*[^,]+,\s*[^,]+,\s*([A-Za-z_]\w*)')
+VFS_BUDGETED_OPERATIONS = (
+    "open", "close", "read", "write", "sync", "readdir",
+    "readdir_batch", "mkdir", "rmdir", "create", "delete", "rename",
+    "stat", "space",
+)
 
 
 def validate(root: Path, expected: int, local_limit: int,
@@ -133,10 +139,14 @@ def validate(root: Path, expected: int, local_limit: int,
              IRQ_REGISTRATION_RE, {"void"}),
             ("CPU exception handler", "exception_handlers",
              EXCEPTION_HANDLER_RE, set()),
-            ("VFS close handler", "vfs_close_handlers",
-             VFS_CLOSE_HANDLER_RE, set()),
             ("FAT32 sync hook", "fat32_sync_hooks",
              FAT32_SYNC_HOOK_RE, {"NULL"}),
+            ("EXT2 directory visitor", "ext2_dir_visitors",
+             EXT2_DIR_VISITOR_RE, {"visitor", "ext2_dir_visitor_t"}),
+        ) + tuple(
+            (f"VFS {operation} handler", f"vfs_{operation}_handlers",
+             re.compile(rf'\.{operation}\s*=\s*([A-Za-z_]\w*)'), {"NULL"})
+            for operation in VFS_BUDGETED_OPERATIONS
         )
         requested_inventories = [
             item for item in inventories if budget_data.get(item[1])]
@@ -155,9 +165,15 @@ def validate(root: Path, expected: int, local_limit: int,
             source_text = "\n".join(
                 source.read_text(encoding="utf-8")
                 for source in source_files)
+            vfs_adapter_text = "\n".join(
+                source.read_text(encoding="utf-8")
+                for source in source_files
+                if source.name.endswith("_vfs_adapter.c"))
             for label, key, pattern, ignored in requested_inventories:
                 expected = set(budget_data[key])
-                actual = set(pattern.findall(source_text)) - ignored
+                inventory_text = (
+                    vfs_adapter_text if key.startswith("vfs_") else source_text)
+                actual = set(pattern.findall(inventory_text)) - ignored
                 for name in sorted(actual - expected):
                     errors.append(f"unbudgeted {label}: {name}")
                 for name in sorted(expected - actual):
@@ -201,10 +217,16 @@ def validate(root: Path, expected: int, local_limit: int,
             name = entry.get("name", "")
             root_name = entry.get("root", "")
             limit = entry.get("limit", 0)
-            if not name or not root_name or not isinstance(limit, int) or limit <= 0:
+            entry_reserve = entry.get("entry_reserve", 0)
+            if (not name or not root_name or not isinstance(limit, int) or
+                    limit <= 0 or not isinstance(entry_reserve, int) or
+                    entry_reserve < 0):
                 errors.append(f"invalid entry budget: {entry!r}")
                 continue
             total, worst_path = path_cost(root_name, set())
+            total += entry_reserve
+            if entry_reserve:
+                worst_path.insert(0, f"<entry-reserve:{entry_reserve}>")
             if total > limit:
                 errors.append(
                     f"entry stack {name} uses {total}, exceeds {limit}: "

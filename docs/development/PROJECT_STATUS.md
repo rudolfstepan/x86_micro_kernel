@@ -301,16 +301,20 @@ Belegung, exakte Frame-Rückgewinnung und anschließende Wiederverwendung des
 Stackslots; der komplette Ring-3-Gastlauf bleibt grün. Weitere Queue-Metriken
 und Zielhardware-WCET bleiben offen. Der erste Stack-/Callgraph-Nachweis ist
 ebenfalls automatisiert: Ein separater GCC-Compile erzeugt für alle 75
-Kernel-C-Objekte 1.204 Stackdatensätze und 5.767 Callgraph-Kanten. Der
+Kernel-C-Objekte 1.214 Stackdatensätze und 5.816 Callgraph-Kanten. Der
 fail-closed Validator begrenzt lokale Frames auf 4096 Byte und verbietet
 Rekursionszyklen. Der dadurch gefundene rekursive PCI-Scan wurde durch feste
 Schleifen ersetzt; Zig-Referenzbuild und QEMU-Gast bleiben grün. Das folgende
 IRQ-/Exception-Budgetgate summiert den direkten Callgraph samt explizit
 inventarisierten indirekten Handlern: Legacy-IRQ 1.744/7.168 Byte,
 Scheduler-IRQ 720/4.096 Byte und CPU-Exception 2.000/7.168 Byte. IRQ-,
-Exception-, VFS-Close- und FAT32-Hook-Inventare werden mit den Quellen
-abgeglichen; Drift, unbekannte indirekte Ziele oder fehlende Kosten scheitern
-geschlossen. Syscall-Gesamtpfade und WCET-Messungen auf QEMU, VMware und
+Exception-, VFS- und FAT32-Hook-Inventare werden mit den Quellen abgeglichen;
+Drift, unbekannte indirekte Ziele oder fehlende Kosten scheitern geschlossen.
+Der INT-80-Pfad ist ebenfalls vollständig budgetiert: VFS-Operationstabellen,
+EXT2-Verzeichnisbesucher und beide Task-Erzeugungsziele sind explizit
+gebunden. Einschließlich 128 Byte Assemblyreserve belegt der schlechteste
+Syscallpfad 6.880/7.168 Byte; weitere 1.024 Byte des realen 8-KiB-Stacks
+bleiben außerhalb des zulässigen Budgets. WCET-Messungen auf QEMU, VMware und
 Referenzhardware bleiben offen.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,

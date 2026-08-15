@@ -2,7 +2,8 @@
   "entry_budgets": [
     {"name": "legacy_irq", "root": "irq_handler", "limit": 7168},
     {"name": "scheduler_irq", "root": "scheduler_interrupt_handler", "limit": 4096},
-    {"name": "cpu_exception", "root": "exception_dispatcher", "limit": 7168}
+    {"name": "cpu_exception", "root": "exception_dispatcher", "limit": 7168},
+    {"name": "syscall", "root": "syscall_handler", "limit": 7168, "entry_reserve": 128}
   ],
   "indirect_calls": {
     "irq_handler": [
@@ -24,6 +25,92 @@
       "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_close",
       "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_close",
       "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_close"
+    ],
+    "vfs_open": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_open",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_open",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_open",
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_close",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_close",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_close"
+    ],
+    "vfs_read": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_read",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_read",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_read"
+    ],
+    "vfs_write": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_write",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_write",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_write"
+    ],
+    "vfs_sync": [
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_sync"
+    ],
+    "vfs_readdir": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_open",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_open",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_open",
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_readdir",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_readdir",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_readdir",
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_close",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_close",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_close"
+    ],
+    "vfs_readdir_batch": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_open",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_open",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_open",
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_readdir",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_readdir",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_readdir",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_readdir_batch",
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_close",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_close",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_close"
+    ],
+    "vfs_mkdir": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_mkdir",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_mkdir",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_mkdir"
+    ],
+    "vfs_rmdir": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_rmdir",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_rmdir",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_rmdir"
+    ],
+    "vfs_create": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_create",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_create",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_create"
+    ],
+    "vfs_delete": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_delete",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_delete",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_delete"
+    ],
+    "vfs_rename": [
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_rename"
+    ],
+    "vfs_stat": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_stat",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_stat",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_stat"
+    ],
+    "vfs_space": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_space",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_space",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_space"
+    ],
+    "kernel/proc/process.c:create_process_for_file_args_owned": [
+      "create_user_task",
+      "create_supervised_user_task"
+    ],
+    "fs/ext2/ext2.c:ext2_walk_dir": [
+      "fs/ext2/ext2.c:ext2_collect_entry",
+      "fs/ext2/ext2.c:ext2_find_visitor",
+      "fs/ext2/ext2.c:ext2_index_visitor"
     ],
     "fat32_operation_end": [
       "fs/fat32/fat32_vfs_adapter.c:fat32_sync_registered_contexts"
@@ -49,8 +136,26 @@
     "fat12_vfs_close",
     "fat32_vfs_close"
   ],
+  "vfs_open_handlers": ["ext2_vfs_open", "fat12_vfs_open", "fat32_vfs_open"],
+  "vfs_read_handlers": ["ext2_vfs_read", "fat12_vfs_read", "fat32_vfs_read"],
+  "vfs_write_handlers": ["ext2_vfs_write", "fat12_vfs_write", "fat32_vfs_write"],
+  "vfs_sync_handlers": ["fat32_vfs_sync"],
+  "vfs_readdir_handlers": ["ext2_vfs_readdir", "fat12_vfs_readdir", "fat32_vfs_readdir"],
+  "vfs_readdir_batch_handlers": ["fat32_vfs_readdir_batch"],
+  "vfs_mkdir_handlers": ["ext2_vfs_mkdir", "fat12_vfs_mkdir", "fat32_vfs_mkdir"],
+  "vfs_rmdir_handlers": ["ext2_vfs_rmdir", "fat12_vfs_rmdir", "fat32_vfs_rmdir"],
+  "vfs_create_handlers": ["ext2_vfs_create", "fat12_vfs_create", "fat32_vfs_create"],
+  "vfs_delete_handlers": ["ext2_vfs_delete", "fat12_vfs_delete", "fat32_vfs_delete"],
+  "vfs_rename_handlers": ["fat32_vfs_rename"],
+  "vfs_stat_handlers": ["ext2_vfs_stat", "fat12_vfs_stat", "fat32_vfs_stat"],
+  "vfs_space_handlers": ["ext2_vfs_space", "fat12_vfs_space", "fat32_vfs_space"],
   "fat32_sync_hooks": [
     "fat32_sync_registered_contexts"
+  ],
+  "ext2_dir_visitors": [
+    "ext2_collect_entry",
+    "ext2_find_visitor",
+    "ext2_index_visitor"
   ],
   "indirect_costs": {
     "kernel/init/critical_object.c:copy_check": 1024,
@@ -64,6 +169,7 @@
     "kernel/init/critical_object.c:copy_check": "1024-byte reserve covers the validator callback beneath the 80-byte wrapper",
     "output_fence_all": "1024-byte reserve covers one sequentially invoked registered fence callback",
     "swtch": "64-byte conservative assembly transition reserve",
-    "__udivmoddi4": "128-byte compiler-runtime reserve"
+    "__udivmoddi4": "128-byte compiler-runtime reserve",
+    "syscall_handler": "128-byte reserve covers the INT 0x80 privilege frame, synthetic vector/error fields, saved registers and alignment"
   }
 }

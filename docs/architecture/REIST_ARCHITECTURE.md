@@ -315,8 +315,14 @@ Fence-Callbacks aus. Der Validator vergleicht die Inventare mit den
 Produktionsquellen und scheitert bei Drift, unbekannten indirekten Zielen,
 fehlenden Kosten oder Überschreitung. Aktuell sind 1.744/7.168 Byte im Legacy-
 IRQ-Pfad, 720/4.096 Byte im Scheduler-IRQ-Pfad und 2.000/7.168 Byte im CPU-
-Exception-Pfad belegt. Syscallpfade sowie WCET-Baselines der ausgewählten
-Plattformen folgen getrennt.
+Exception-Pfad belegt. S0.4c-2c2b1 erweitert denselben Vertrag auf INT 0x80:
+Der vollständige Syscallpfad belegt einschließlich einer konservativen
+128-Byte-Reserve für Privilegwechsel, Registerframe und Assemblyausrichtung
+6.880/7.168 Byte. Sämtliche VFS-Operationstabellen und die indirekten EXT2-
+Verzeichnisbesucher werden gegen die Produktionsquellen inventarisiert. Die
+verbleibenden 1.024 Byte des realen 8-KiB-Taskstacks sind nicht Teil des
+zulässigen Budgets. WCET-Baselines der ausgewählten Plattformen folgen
+getrennt.
 
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
 Bitinventar der gegenwärtig 60 Syscalls. Normale Programme erhalten explizit
