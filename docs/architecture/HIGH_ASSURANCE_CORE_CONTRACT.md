@@ -73,7 +73,10 @@ Erschöpfungsdiagnostik. Die Memory-Statistik v2 ergänzt Frame-/Heap-Peaks und
 saturierende Allokationsfehler bei kompatiblem v1-Präfix. Taskslots besitzen
 eine versionierte, allokationsfreie Momentaufnahme mit Kapazität, Supervisor-
 Reserve, aktueller/maximaler Belegung und saturierenden Ablehnungen; sie scannt
-höchstens `MAX_TASKS` Einträge. Deterministische ENOMEM-Injection folgt.
+höchstens `MAX_TASKS` Einträge. Deterministische Heap-/Frame-ENOMEM-Injection
+ist ausschließlich in einem getrennten Testimage enthalten. Sie prüft
+fehlgeschlagene Erst- und Teilallokationen auf exakte Rückgewinnung und darf in
+keinem Produktionsprofil aktiv sein.
 
 Headerabhängigkeiten sind Teil der Build-Evidenz. Jeder Kernel-C-Compile muss
 eine explizite Dependency-Datei erzeugen; fehlende, falsche oder nicht zum

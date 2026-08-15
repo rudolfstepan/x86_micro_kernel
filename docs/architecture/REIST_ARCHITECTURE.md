@@ -269,7 +269,7 @@ Subsystem-Lock. Sie allokieren nicht und beeinflussen keine
 Autoritätsentscheidung. Verhaltenstests erzwingen Endpunkt-, Capability-,
 Nachrichten-, Client- und globale Storagegrenzen und belegen, dass Cleanup die
 aktive Belegung auf null zurückführt, ohne den historischen Höchststand zu
-verlieren. Weitere ENOMEM- und Queue-Metriken bleiben S0.4c-2b2.
+verlieren. Weitere Queue-Metriken bleiben S0.4c-2b2.
 
 S0.4c-2b2a versioniert die bestehende Speicherdiagnostik append-only auf v2.
 Der 88-Byte-v1-Präfix bleibt im Syscall explizit verhandelbar; v2 hängt
@@ -288,6 +288,14 @@ Die 32-Byte-v1-Antwort wird unter IRQ-Schutz aus höchstens `MAX_TASKS` Slots
 gebildet und enthält Kapazität, aktuelle/maximale Belegung, Supervisor-Reserve
 und saturierende Ablehnungen. Der Messpfad allokiert nicht und verändert außer
 den monotonen Diagnosezählern keinen Schedulerzustand.
+
+S0.4c-2b2b2 hält Allokationsfehler aus Produktionsimages heraus und aktiviert
+sie nur mit `REIST_MEMORY_FAULT_INJECTION`. Zwei statische Countdowns erzwingen
+Heap- oder Frame-ENOMEM an einem vorgegebenen Allokationspunkt. Der Boottest
+prüft eine unveränderte Heapbelegung sowie den vollständigen Rollback einer
+nach der ersten Seite gescheiterten Kernelstack-Allokation. Nach Disarm muss
+derselbe Stackslot wieder vollständig nutzbar sein; erst dann wird der
+Erfolgsmarker ausgegeben.
 
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
 Bitinventar der gegenwärtig 60 Syscalls. Normale Programme erhalten explizit

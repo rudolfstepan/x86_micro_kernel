@@ -248,12 +248,12 @@ und 10 verbindlich.
           Queue-High-Water-Nachweise
           - [x] S0.4c-2b2a Memory-ABI v2 mit Frame-/Heap-Peaks,
             saturierenden Fehlerzählern, v1-Kompatibilität und Gastnachweis
-          - [ ] S0.4c-2b2b Taskslot-High-Water sowie deterministische
+          - [x] S0.4c-2b2b Taskslot-High-Water sowie deterministische
             Heap-/Frame-ENOMEM-Fault-Injection
             - [x] S0.4c-2b2b1 Versionierte Taskslot-Diagnostik mit aktiver
               Belegung, High-Water, Reserve und saturierenden Ablehnungen;
               Gastnachweis für Erschöpfung und Rückgewinnung
-            - [ ] S0.4c-2b2b2 Deterministische Heap-/Frame-ENOMEM-Injection
+            - [x] S0.4c-2b2b2 Deterministische Heap-/Frame-ENOMEM-Injection
               mit vollständigem Rollbacknachweis
       - [ ] S0.4c-2c Zielhardwarebezogene WCET- und Stack-Callgraph-Nachweise
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
@@ -1035,6 +1035,12 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    Supervisor-Slot und saturierende Ablehnungen. Der Gast füllt die Ambient-
    Kapazität bis zur definierten Ablehnung und weist danach Rückgewinnung bei
    erhaltenem High-Water nach.
+- S0.4c-2b2b2 ergänzt ausschließlich für getrennte Testimages begrenzte Heap-
+   und Frame-Countdowns. Der Boot-Selbsttest erzwingt Heap-ENOMEM ohne
+   Belegungsänderung sowie einen Framefehler nach der ersten Kernelstackseite,
+   prüft die exakte Framebilanz und verwendet den Stackslot anschließend
+   erneut. Das QEMU-Image erreicht danach weiterhin den vollständigen
+   Ring-3-`TEST_OK`-Marker.
 - Kritische Tasks erhalten feste Prioritäten, CPU-/Speicher-/Queue-Budgets,
    Admission Control und nachgewiesene Worst-Case-Laufzeiten.
 - Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte

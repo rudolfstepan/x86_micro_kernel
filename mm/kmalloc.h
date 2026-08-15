@@ -47,4 +47,10 @@ void memory_get_stats(memory_stats_t* stats);
 int initialize_memory_system(void);
 void test_memory(void);
 
+#ifdef REIST_MEMORY_FAULT_INJECTION
+void memory_fault_inject_heap_after(uint32_t successful_allocations);
+void memory_fault_inject_frame_after(uint32_t successful_allocations);
+void memory_fault_injection_disarm(void);
+#endif
+
 #endif // MEMORY_H

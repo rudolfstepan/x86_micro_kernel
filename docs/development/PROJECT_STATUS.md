@@ -294,8 +294,12 @@ dem Link, und ein Header-Touch baut nachweislich alle abhängigen Objekte neu.
 Die Taskslot-Diagnostik ist nun ebenfalls versioniert und bounded: Syscall 84
 meldet aktuelle/maximale Belegung, statische Kapazität, Supervisor-Reserve und
 saturierende Ablehnungen. Der Gast erzwingt die Ambient-Kapazitätsgrenze und
-prüft danach Rückgewinnung bei erhaltenem Peak. Deterministische
-Heap-/Frame-ENOMEM-Injection und Zielhardware-WCET bleiben offen.
+prüft danach Rückgewinnung bei erhaltenem Peak. Ein separates
+Memory-Fault-Testimage erzwingt zusätzlich Heap-ENOMEM und einen Framefehler
+nach partieller Kernelstack-Allokation. Der Boottest belegt unveränderte
+Belegung, exakte Frame-Rückgewinnung und anschließende Wiederverwendung des
+Stackslots; der komplette Ring-3-Gastlauf bleibt grün. Weitere Queue-Metriken
+und Zielhardware-WCET bleiben offen.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

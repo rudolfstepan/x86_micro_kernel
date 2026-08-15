@@ -52,6 +52,7 @@ TARGET ?= qemu
 # Override with: make VIDEO=framebuffer
 VIDEO ?= vga
 FAULT_INJECTION ?= 0
+MEMORY_FAULT_INJECTION ?= 0
 STORAGE_FAULT_INJECTION ?= 0
 STORAGE_IO_FAULT_INJECTION ?= 0
 HANDOVER_FAULT_INJECTION ?= 0
@@ -73,6 +74,10 @@ ifeq ($(FAULT_INJECTION),1)
     SAFETY_TEST_DEFINES := -DREIST_FAULT_INJECTION
 else
     SAFETY_TEST_DEFINES :=
+endif
+
+ifeq ($(MEMORY_FAULT_INJECTION),1)
+    SAFETY_TEST_DEFINES += -DREIST_MEMORY_FAULT_INJECTION
 endif
 
 ifeq ($(STORAGE_FAULT_INJECTION),1)
@@ -250,7 +255,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel check-kernel-dependencies check-kernel-stack user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel check-kernel-dependencies check-kernel-stack user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -749,6 +754,17 @@ test-smoke-fatal-recovery:
 		--expect-fatal-recovery \
 		--timeout 120 \
 		--log build/fatal-injection/guest-smoke-fatal-recovery.log
+
+test-smoke-memory-fault:
+	@echo "Building deterministic REIST memory-fault injection image..."
+	@$(MAKE) native-image TARGET=qemu VIDEO=vga MEMORY_FAULT_INJECTION=1 \
+		OUTPUT_DIR=build/memory-fault-injection
+	@$(PYTHON) scripts/run_qemu_smoke.py \
+		--qemu $(QEMU) \
+		--image build/memory-fault-injection/reist-os.img \
+		--expect-memory-fault \
+		--timeout 120 \
+		--log build/memory-fault-injection/guest-smoke-memory-fault.log
 
 test-smoke-memory: native-image
 	@echo "Running QEMU guest smoke test with 32 MiB RAM..."

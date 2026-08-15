@@ -5,6 +5,9 @@
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
 #include "include/kernel/panic.h"
+#ifdef REIST_MEMORY_FAULT_INJECTION
+#include "kernel/sched/scheduler.h"
+#endif
 #include "include/kernel/kernel_log.h"
 
 #include <stdbool.h>
@@ -73,10 +76,43 @@ static size_t heap_backing_bytes;
 static size_t heap_used_payload_bytes;
 static size_t heap_used_high_water_bytes;
 static uint64_t heap_allocation_failures;
+#ifdef REIST_MEMORY_FAULT_INJECTION
+static bool heap_fault_armed;
+static uint32_t heap_fault_countdown;
+static bool frame_fault_armed;
+static uint32_t frame_fault_countdown;
+#endif
 static bool memory_initialized;
 
 static spinlock_t heap_lock = SPINLOCK_INIT;
 static spinlock_t frame_lock = SPINLOCK_INIT;
+
+#ifdef REIST_MEMORY_FAULT_INJECTION
+void memory_fault_inject_heap_after(uint32_t successful_allocations) {
+    uint32_t flags = spinlock_acquire_irq(&heap_lock);
+    heap_fault_countdown = successful_allocations;
+    heap_fault_armed = true;
+    spinlock_release_irq(&heap_lock, flags);
+}
+
+void memory_fault_inject_frame_after(uint32_t successful_allocations) {
+    uint32_t flags = spinlock_acquire_irq(&frame_lock);
+    frame_fault_countdown = successful_allocations;
+    frame_fault_armed = true;
+    spinlock_release_irq(&frame_lock, flags);
+}
+
+void memory_fault_injection_disarm(void) {
+    uint32_t flags = spinlock_acquire_irq(&heap_lock);
+    heap_fault_armed = false;
+    heap_fault_countdown = 0U;
+    spinlock_release_irq(&heap_lock, flags);
+    flags = spinlock_acquire_irq(&frame_lock);
+    frame_fault_armed = false;
+    frame_fault_countdown = 0U;
+    spinlock_release_irq(&frame_lock, flags);
+}
+#endif
 
 static uint64_t saturated_region_end(uint64_t base, uint64_t length) {
     if (length > UINT64_MAX - base) {
@@ -108,6 +144,12 @@ void memory_map_reset(void) {
     heap_used_payload_bytes = 0U;
     heap_used_high_water_bytes = 0U;
     heap_allocation_failures = 0U;
+#ifdef REIST_MEMORY_FAULT_INJECTION
+    heap_fault_armed = false;
+    heap_fault_countdown = 0U;
+    frame_fault_armed = false;
+    frame_fault_countdown = 0U;
+#endif
     memory_initialized = false;
 }
 
@@ -440,6 +482,17 @@ static size_t allocate_frame_from(size_t minimum_address, bool report_failure) {
         spinlock_release_irq(&frame_lock, flags);
         return 0;
     }
+#ifdef REIST_MEMORY_FAULT_INJECTION
+    if (frame_fault_armed) {
+        if (frame_fault_countdown == 0U) {
+            if (frame_allocation_failures != UINT64_MAX)
+                ++frame_allocation_failures;
+            spinlock_release_irq(&frame_lock, flags);
+            return 0;
+        }
+        --frame_fault_countdown;
+    }
+#endif
     size_t first = ALIGN_UP(minimum_address, FRAME_SIZE) / FRAME_SIZE;
     if (first == 0) first = 1;
     size_t start = frame_search_hint;
@@ -665,6 +718,17 @@ void *k_malloc(size_t size) {
     size = ALIGN_UP(size, 16U);
 
     uint32_t flags = spinlock_acquire_irq(&heap_lock);
+#ifdef REIST_MEMORY_FAULT_INJECTION
+    if (heap_fault_armed) {
+        if (heap_fault_countdown == 0U) {
+            if (heap_allocation_failures != UINT64_MAX)
+                ++heap_allocation_failures;
+            spinlock_release_irq(&heap_lock, flags);
+            return NULL;
+        }
+        --heap_fault_countdown;
+    }
+#endif
     for (unsigned int attempt = 0; attempt < 2U; ++attempt) {
         for (memory_block *current = free_list; current != NULL;
              current = current->next) {
@@ -824,6 +888,46 @@ static void print_test_result(const char *name, bool passed) {
     printf("  %s: %s\n", name, passed ? "PASS" : "FAIL");
 }
 
+#ifdef REIST_MEMORY_FAULT_INJECTION
+static void test_memory_fault_rollback(void) {
+    memory_stats_t before;
+    memory_stats_t after;
+
+    memory_get_stats(&before);
+    memory_fault_inject_heap_after(0U);
+    void *heap_result = k_malloc(64U);
+    memory_fault_injection_disarm();
+    memory_get_stats(&after);
+    if (heap_result != NULL ||
+        after.heap_used_bytes != before.heap_used_bytes ||
+        after.heap_allocation_failures !=
+            before.heap_allocation_failures + 1U) {
+        panic("Heap ENOMEM injection rollback failed");
+    }
+
+    memory_get_stats(&before);
+    memory_fault_inject_frame_after(1U);
+    uint32_t *stack = scheduler_allocate_kernel_stack();
+    memory_fault_injection_disarm();
+    memory_get_stats(&after);
+    if (stack != NULL ||
+        after.allocated_frame_bytes != before.allocated_frame_bytes ||
+        after.free_frame_bytes != before.free_frame_bytes ||
+        after.frame_allocation_failures !=
+            before.frame_allocation_failures + 1U) {
+        if (stack != NULL) scheduler_free_kernel_stack(stack);
+        panic("Frame ENOMEM injection rollback failed");
+    }
+
+    stack = scheduler_allocate_kernel_stack();
+    if (stack == NULL || !scheduler_kernel_stack_is_valid(stack)) {
+        panic("Kernel stack slot was not reusable after ENOMEM");
+    }
+    scheduler_free_kernel_stack(stack);
+    printf("REIST_MEMORY_FAULT_INJECTION_OK\n");
+}
+#endif
+
 void test_memory(void) {
     unsigned int passed = 0;
     unsigned int total = 8;
@@ -917,4 +1021,7 @@ void test_memory(void) {
     if (passed != total) {
         panic("Kernel memory self-test failed");
     }
+#ifdef REIST_MEMORY_FAULT_INJECTION
+    test_memory_fault_rollback();
+#endif
 }

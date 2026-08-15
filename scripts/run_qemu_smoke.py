@@ -32,6 +32,7 @@ REIST_PROBE_MARKERS = (
     "REIST_PROBE REINTEGRATED",
 )
 REIST_PROBE_COMPLETION_MARKER = "REIST_PROBE RECOVERY_SEQUENCE_OK"
+REIST_MEMORY_FAULT_MARKER = "REIST_MEMORY_FAULT_INJECTION_OK"
 REIST_SERVICE_MARKER = "TEST_STAGE DIAGNOSTIC_SERVICE_OK"
 REIST_SERVICE_CORRELATION_MARKER = "TEST_STAGE SERVICE_CORRELATION_OK"
 REIST_NETWORK_MARKER = "TEST_STAGE NETWORK_PARSER_OK"
@@ -838,6 +839,7 @@ def validate(
     expect_network_udp: bool = False,
     expect_network_dhcp: bool = False,
     expect_network_udp_ingress: bool = False,
+    expect_memory_fault: bool = False,
 ) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
@@ -850,6 +852,11 @@ def validate(
         return f"missing {TEST_MARKER} marker"
     if test >= 0 and test < boot:
         return f"{TEST_MARKER} appeared before {BOOT_MARKER}"
+    if expect_memory_fault:
+        memory_fault = exact_line_position(transcript,
+                                           REIST_MEMORY_FAULT_MARKER)
+        if memory_fault < 0 or memory_fault > boot:
+            return "missing pre-boot memory fault-injection marker"
     if not (expect_dhcp_expiry or expect_dhcp_renewal) and exact_line_position(
             transcript, SHELL_PROMPT, after=test) < 0:
         return f"missing {SHELL_PROMPT} prompt after {TEST_MARKER}"
@@ -1063,6 +1070,11 @@ def main() -> int:
         help="require ordered crash, hang and invalid-reply recovery markers",
     )
     parser.add_argument(
+        "--expect-memory-fault",
+        action="store_true",
+        help="require deterministic pre-boot memory rollback evidence",
+    )
+    parser.add_argument(
         "--expect-network-handoff",
         action="store_true",
         help="require a real NIC RX header to reach the Ring-3 service",
@@ -1226,7 +1238,8 @@ def main() -> int:
                             args.expect_network_icmp,
                             args.expect_network_udp,
                             args.expect_network_dhcp,
-                            args.expect_network_udp_ingress)
+                            args.expect_network_udp_ingress,
+                            args.expect_memory_fault)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")
