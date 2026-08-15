@@ -80,7 +80,7 @@ static uint32_t payload_be32(const x86os_ipc_message_t *message,
 }
 
 static bool dhcp_proposal_valid(const x86os_ipc_message_t *message) {
-    if (message->length != 24U) return false;
+    if (message->length != 28U) return false;
     uint32_t request_id = (uint32_t)message->payload[4] |
         ((uint32_t)message->payload[5] << 8U) |
         ((uint32_t)message->payload[6] << 16U) |
@@ -89,9 +89,11 @@ static bool dhcp_proposal_valid(const x86os_ipc_message_t *message) {
     uint32_t mask = payload_be32(message, 12U);
     uint32_t gateway = payload_be32(message, 16U);
     uint32_t dns = payload_be32(message, 20U);
+    uint32_t lease_seconds = payload_be32(message, 24U);
     if (request_id == 0U || ip == 0U || ip == 0xFFFFFFFFU || mask == 0U ||
         mask == 0xFFFFFFFFU || gateway == 0xFFFFFFFFU ||
-        dns == 0xFFFFFFFFU) return false;
+        dns == 0xFFFFFFFFU || lease_seconds < 60U ||
+        lease_seconds > 604800U) return false;
     uint32_t host_mask = ~mask;
     uint32_t host = ip & host_mask;
     if ((host_mask & (host_mask + 1U)) != 0U || host == 0U ||

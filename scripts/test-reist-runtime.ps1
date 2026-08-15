@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'dhcp-config', 'storage-recovery', 'storage-io-failure', 'handover')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'dhcp-config', 'dhcp-expiry', 'storage-recovery', 'storage-io-failure', 'handover')]
     [string]$Mode = 'normal'
 )
 
@@ -38,7 +38,11 @@ if (!(Test-Path -LiteralPath $Image -PathType Leaf)) {
     throw 'build\reist-os.img is missing; run build-windows.ps1 first.'
 }
 
-function Invoke-Smoke([string]$LogName, [string[]]$Extra) {
+function Invoke-Smoke(
+    [string]$LogName,
+    [string[]]$Extra,
+    [bool]$ExpectProbe = $true
+) {
     New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $gateLog = Join-Path $LogRoot "$stamp-runtime-$LogName"
@@ -47,9 +51,10 @@ function Invoke-Smoke([string]$LogName, [string[]]$Extra) {
         $Runner,
         '--qemu', $Qemu,
         '--image', $Image,
-        '--log', (Join-Path $RepoRoot "build\$LogName"),
-        '--expect-reist-probe'
-    ) + $Extra
+        '--log', (Join-Path $RepoRoot "build\$LogName")
+    )
+    if ($ExpectProbe) { $arguments += '--expect-reist-probe' }
+    $arguments += $Extra
     $exitCode = 0
     try {
         $LASTEXITCODE = 0
@@ -117,6 +122,11 @@ switch ($Mode) {
         Invoke-Smoke 'guest-smoke-dhcp-config.log' @(
             '--nic', 'rtl8139', '--expect-dhcp-config'
         )
+    }
+    'dhcp-expiry' {
+        Invoke-Smoke 'guest-smoke-dhcp-expiry.log' @(
+            '--nic', 'rtl8139', '--expect-dhcp-expiry'
+        ) $false
     }
     'storage-recovery' {
         Invoke-Smoke 'guest-smoke-storage-recovery.log' @(

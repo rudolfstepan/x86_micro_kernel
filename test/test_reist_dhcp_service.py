@@ -30,6 +30,7 @@ class ReistDhcpServiceTests(unittest.TestCase):
         self.assertIn("dhcp_authority", supervisor)
         self.assertIn("control.process_generation", supervisor)
         self.assertIn("dhcp_config_valid_values", supervisor)
+        self.assertIn("supervisor_protected_dhcp_lease_t", header)
         self.assertIn("ipc_send_kernel_to_owner", ipc_header)
         self.assertIn("ipc_send_kernel_to_owner", supervisor)
         self.assertIn("enqueue_message_locked(endpoint_slot, endpoint, message,\n"
@@ -62,6 +63,35 @@ class ReistDhcpServiceTests(unittest.TestCase):
         self.assertIn("dhcp_proposal_valid(message)", probe)
         self.assertIn("host_mask & (host_mask + 1U)", probe)
         self.assertIn("x86os_reist_commit_dhcp(&commit)", probe)
+        self.assertIn("message->length != 28U", probe)
+        self.assertIn("lease_seconds", probe)
+
+    def test_lease_expiry_is_protected_and_withdraws_configuration(self) -> None:
+        header = read("include/kernel/supervisor.h")
+        supervisor = read("kernel/init/supervisor.c")
+        netstack = read("drivers/net/netstack.c")
+        self.assertIn("SUPERVISOR_DHCP_LEASE_VERSION", header)
+        self.assertIn("supervisor_protected_dhcp_lease_publish", supervisor)
+        self.assertIn("now_ms >= lease.deadline_ms", supervisor)
+        self.assertIn("netstack_clear_supervised_dhcp(lease.ip_address)",
+                      supervisor)
+        self.assertIn("REIST_NETWORK DHCP_LEASE_EXPIRED", supervisor)
+        self.assertIn("bool netstack_clear_supervised_dhcp", netstack)
+
+    def test_dhcp_ack_requires_a_bounded_lease_option(self) -> None:
+        netstack = read("drivers/net/netstack.c")
+        self.assertIn("case DHO_LEASE_TIME", netstack)
+        self.assertIn("SUPERVISOR_DHCP_LEASE_MIN_SECONDS", netstack)
+        self.assertIn("SUPERVISOR_DHCP_LEASE_MAX_SECONDS", netstack)
+
+    def test_runtime_has_a_bounded_expiry_fault_profile(self) -> None:
+        build = read("scripts/build-windows.ps1")
+        runtime = read("scripts/test-reist-runtime.ps1")
+        runner = read("scripts/run_qemu_smoke.py")
+        self.assertIn("DhcpLeaseFaultInjection", build)
+        self.assertIn("REIST_DHCP_LEASE_TEST_MS=2500U", read("Makefile"))
+        self.assertIn("'dhcp-expiry'", runtime)
+        self.assertIn("--expect-dhcp-expiry", runner)
 
     def test_boot_starts_supervisor_before_dhcp(self) -> None:
         kernel = read("kernel/init/kernel.c")

@@ -166,6 +166,27 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertIn("pre-boot", RUNNER_MODULE.validate(
             late, expect_dhcp_config=True))
 
+    def test_dhcp_lease_expiry_must_withdraw_configuration_after_boot(self) -> None:
+        transcript = "\n".join((
+            RUNNER_MODULE.REIST_DHCP_CONFIG_QUEUED_MARKER,
+            RUNNER_MODULE.REIST_DHCP_CONFIG_MARKER,
+            "BOOT_OK", "C:\\>",
+            RUNNER_MODULE.REIST_DHCP_LEASE_EXPIRED_MARKER, "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_dhcp_config=True, expect_dhcp_expiry=True))
+        missing = transcript.replace(
+            RUNNER_MODULE.REIST_DHCP_LEASE_EXPIRED_MARKER + "\n", "")
+        self.assertIn("lease expiry", RUNNER_MODULE.validate(
+            missing, expect_dhcp_expiry=True))
+        self.assertIn("BOOT_OK", RUNNER_MODULE.validate(
+            transcript.replace("BOOT_OK\n", ""), expect_dhcp_expiry=True))
+        before_prompt = transcript.replace(
+            "C:\\>\n" + RUNNER_MODULE.REIST_DHCP_LEASE_EXPIRED_MARKER,
+            RUNNER_MODULE.REIST_DHCP_LEASE_EXPIRED_MARKER + "\nC:\\>")
+        self.assertIn("lease expiry", RUNNER_MODULE.validate(
+            before_prompt, expect_dhcp_expiry=True))
+
     def test_reist_probe_markers_are_required_in_order(self) -> None:
         transcript = "\n".join((
             "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,

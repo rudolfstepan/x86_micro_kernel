@@ -167,6 +167,14 @@ akzeptiert nur prüfsummengeschützte Datagramme bis 32 Byte, bindet den festen
 gesunden Ring-3-Dienst Syscall 74. Der echte RTL8139-Lauf prüft Request,
 vermittelte Antwort, Ports, Payload und UDP-Prüfsumme. Ein allgemeines UDP-
 Binding, Socket-FDs und DHCP-Renew/Rebind bleiben offen.
+S0.3c-5d2b1 begrenzt nun auch die Lebensdauer der DHCP-Autorität. Option 51
+wird auf 60 Sekunden bis sieben Tage validiert und gemeinsam mit
+Dienstgeneration, IP und absoluter monotoner Deadline redundant geschützt.
+Ablauf, Integritätsfehler oder Service-Fence entziehen IP, Maske, Gateway und
+DNS fail-closed. Ein separates Testprofil verkürzt nur die Testdeadline auf
+2500 ms; der echte RTL8139-Lauf bestätigt den Entzug nach `BOOT_OK` und eine
+weiter laufende Shell. DHCP-Renew/Rebind und allgemeine UDP-Bindings bleiben
+offen.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

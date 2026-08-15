@@ -133,7 +133,9 @@ und 10 verbindlich.
       überwachten Dienst verlagern
       - [x] S0.3c-5d2a Begrenztes UDP-Echo auf Port 9000 mit 32-Byte-Limit,
         Pflichtprüfsumme und echtem RTL8139-Request/Reply vermitteln
-      - [ ] S0.3c-5d2b Allgemeine UDP-Bindings sowie DHCP-Renew/Rebind
+      - [x] S0.3c-5d2b1 DHCP-Leasezeit aus dem ACK übernehmen, redundant
+        schützen und die Netzkonfiguration bei Ablauf fail-closed entziehen
+      - [ ] S0.3c-5d2b2 Allgemeine UDP-Bindings sowie DHCP-Renew/Rebind
         generationgebunden in den Dienst verlagern
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
@@ -391,7 +393,7 @@ einzelne Vollbild-Kindprozesse und ist noch kein Fenstersystem.
 
 ### Netzwerk
 
-- [ ] ARP-Ablauf/Erneuerung, DHCP-Lease-Timer und Renew/Rebind
+- [ ] ARP-Erneuerung sowie DHCP-Renew/Rebind
 - [ ] robuste IPv4-Fehlerpfade und definierter Umgang mit Fragmenten; aktuell
   werden Fragmente verworfen
 - [ ] nutzbares UDP-Binding: `udp_bind()` ist in
@@ -981,11 +983,11 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
 
 #### R4.1 IPv4/UDP härten und Sockets einführen — L
 
-- [ ] ARP-Ablauf, DHCP-Lease/Renew/Rebind und ICMP-Fehler ergänzen.
+- [ ] ARP-Erneuerung, DHCP-Renew/Rebind und ICMP-Fehler ergänzen.
 - [ ] Paketparser mit aufgezeichneten Frames, Grenzfällen und Fuzzing testen.
 - [ ] Socketobjekte in die FD-Schicht integrieren: `socket`, `bind`, `sendto`,
    `recvfrom`, `close` und Timeouts.
-- [ ] UDP-Echo zwischen Gast und Host als automatisierten Test betreiben.
+- [x] UDP-Echo zwischen Gast und Host als automatisierten Test betreiben.
 
 #### R4.2 DNS — M
 
@@ -1395,7 +1397,8 @@ im Kernel liegenden UDP-/DHCP-Entscheidungen schrittweise.
 parst DHCP weiterhin und validiert die angebotenen IPv4-Werte, darf die aktive
 Netzkonfiguration aber nicht mehr selbst publizieren. Stattdessen legt er
 Request-ID, IP, Netzmaske, Gateway und DNS in einen redundant geschützten
-Kontext und sendet ein festes 24-Byte-`NETD`-Objekt direkt an den exakten
+Kontext und sendet ein festes 28-Byte-`NETD`-Objekt einschließlich der
+Leasezeit direkt an den exakten
 Endpoint-Besitzer. Dieser Kernel-zu-Owner-Ingress verwendet die reservierte
 Absenderidentität `(0,0)` und benötigt weder einen erfundenen Prozess noch
 eine vorher delegierte Client-Capability. Der Ring-3-Dienst prüft Maske,
@@ -1403,8 +1406,8 @@ Hostbereich und Gateway-Subnetz erneut; nur sein append-only Syscall 73 darf
 die generationgebundene 1-s-Einmalautorität verbrauchen. Kontext und Autorität
 werden vor der Netzmutation gelöscht. Der reale RTL8139-Modus `dhcp-config`
 verlangt `DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED -> BOOT_OK`; Normalbetrieb,
-ARP und ICMP bleiben zusätzlich grün. UDP-Transport, DHCP-Lease-Timer sowie
-Renew/Rebind verbleiben bewusst als S0.3c-5d2 im Kernel.
+ARP und ICMP bleiben zusätzlich grün. UDP-Transport sowie Renew/Rebind
+verbleiben bewusst als S0.3c-5d2 im Kernel.
 
 **S0.3c-5d2a ist umgesetzt und abgenommen:** Als erster echter UDP-
 Dataplane-Schnitt akzeptiert Ring 0 ausschließlich Datagramme an Port 9000,
@@ -1417,7 +1420,19 @@ einzigen NIC-Sendepunkt verbraucht; es gibt keinen Ring-0-Echo-Fallback. Der
 Runtime-Modus `udp-echo` injiziert ein echtes Datagramm über RTL8139 und prüft
 am QEMU-Socket Ports, IP-Adressen, Payload und Antwortprüfsumme. Allgemeine
 UDP-Bindings, größere Nutzdaten, DHCP-Renew/Rebind und eine Socket-ABI bleiben
-S0.3c-5d2b/R4.1.
+S0.3c-5d2b2/R4.1.
+
+**S0.3c-5d2b1 ist umgesetzt und abgenommen:** DHCP-Option 51 ist nun
+verpflichtend und wird auf 60 Sekunden bis sieben Tage begrenzt. Vorschlag,
+Ring-3-Prüfung und Commit tragen denselben Wert. Nach dem Commit speichert der
+Supervisor Dienstgeneration, IP, Leasezeit und absolute monotone Deadline als
+redundantes Critical Object. Ablauf, Integritätsfehler oder Fence entziehen
+IP, Maske, Gateway und DNS einschließlich der alten Gateway-Bindung; eine
+veraltete Generation kann die Autorität nicht behalten. Das dedizierte
+Buildprofil verkürzt ausschließlich die Testdeadline auf 2500 ms. Der reale
+RTL8139-Lauf verlangt `BOOT_OK -> DHCP_LEASE_EXPIRED` und weist danach noch
+laufenden Kernel und Shell nach. Renew/Rebind und allgemeine UDP-Bindings
+bleiben S0.3c-5d2b2.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

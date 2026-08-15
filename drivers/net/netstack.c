@@ -686,7 +686,7 @@ static uint8_t* dhcp_opt_put_u32(uint8_t *opt, uint8_t code, uint32_t v_host) {
 static uint8_t* dhcp_opt_put_list(uint8_t *opt, uint8_t code, const uint8_t *lst, uint8_t n) {
     *opt++ = code; *opt++ = n; memcpy(opt, lst, n); opt += n; return opt;
 }
-static bool dhcp_parse_opts(const struct dhcp_packet *pkt, uint32_t *server_id_n, uint32_t *subnet_n, uint32_t *router_n, uint32_t *dns_n, uint8_t *msgtype) {
+static bool dhcp_parse_opts(const struct dhcp_packet *pkt, uint32_t *server_id_n, uint32_t *subnet_n, uint32_t *router_n, uint32_t *dns_n, uint32_t *lease_n, uint8_t *msgtype) {
     const uint8_t *opt = pkt->options;
     uint32_t mc; memcpy(&mc, opt, 4); opt += 4;
     if (ntohl(mc) != DHCP_MAGIC_COOKIE) return false;
@@ -703,6 +703,7 @@ static bool dhcp_parse_opts(const struct dhcp_packet *pkt, uint32_t *server_id_n
             case DHO_SUBNET:    if (len==4 && subnet_n)    memcpy(subnet_n,    opt, 4); break;
             case DHO_ROUTER:    if (len>=4 && router_n)    memcpy(router_n,    opt, 4); break;
             case DHO_DNS:       if (len>=4 && dns_n)       memcpy(dns_n,       opt, 4); break;
+            case DHO_LEASE_TIME:if (len==4 && lease_n)     memcpy(lease_n,     opt, 4); break;
             default: break;
         }
         opt += len;
@@ -726,7 +727,7 @@ static bool dhcp_receive_message(uint32_t xid, uint8_t expected_type,
         }
 
         uint8_t message_type = 0;
-        if (dhcp_parse_opts(packet, NULL, NULL, NULL, NULL, &message_type) &&
+        if (dhcp_parse_opts(packet, NULL, NULL, NULL, NULL, NULL, &message_type) &&
             message_type == expected_type) {
             return true;
         }
@@ -734,7 +735,7 @@ static bool dhcp_receive_message(uint32_t xid, uint8_t expected_type,
     return false;
 }
 
-static bool dhcp_discover_request(uint32_t *out_ip, uint32_t *out_subnet, uint32_t *out_router, uint32_t *out_dns) {
+static bool dhcp_discover_request(uint32_t *out_ip, uint32_t *out_subnet, uint32_t *out_router, uint32_t *out_dns, uint32_t *out_lease_seconds) {
     netdev_reset_rx();
     struct dhcp_packet pkt; memset(&pkt, 0, sizeof(pkt));
     pkt.op    = 1; pkt.htype = 1; pkt.hlen = 6; pkt.hops = 0;
@@ -764,7 +765,7 @@ static bool dhcp_discover_request(uint32_t *out_ip, uint32_t *out_subnet, uint32
     }
 
     uint8_t mtype = 0; uint32_t sid_n=0, mask_n=0, gw_n=0, dns_n=0;
-    if (!dhcp_parse_opts(&offer, &sid_n, &mask_n, &gw_n, &dns_n, &mtype) || mtype != DHCP_OFFER) {
+    if (!dhcp_parse_opts(&offer, &sid_n, &mask_n, &gw_n, &dns_n, NULL, &mtype) || mtype != DHCP_OFFER) {
         printf("[DHCP] invalid OFFER/options\n"); return false;
     }
     uint32_t yi = offer.yiaddr; // network order
@@ -795,8 +796,9 @@ static bool dhcp_discover_request(uint32_t *out_ip, uint32_t *out_subnet, uint32
                               DHCP_REPLY_TIMEOUT_MS)) {
         printf("[DHCP] no valid ACK\n"); return false;
     }
+    uint32_t lease_n = 0;
     mtype = 0; sid_n=mask_n=gw_n=dns_n=0;
-    if (!dhcp_parse_opts(&ack, &sid_n, &mask_n, &gw_n, &dns_n, &mtype) || mtype != DHCP_ACK) {
+    if (!dhcp_parse_opts(&ack, &sid_n, &mask_n, &gw_n, &dns_n, &lease_n, &mtype) || mtype != DHCP_ACK) {
         printf("[DHCP] not ACK\n"); return false;
     }
 
@@ -804,6 +806,12 @@ static bool dhcp_discover_request(uint32_t *out_ip, uint32_t *out_subnet, uint32
     *out_subnet = ntohl(mask_n);
     *out_router = ntohl(gw_n);
     *out_dns    = ntohl(dns_n);
+    *out_lease_seconds = ntohl(lease_n);
+    if (*out_lease_seconds < SUPERVISOR_DHCP_LEASE_MIN_SECONDS ||
+        *out_lease_seconds > SUPERVISOR_DHCP_LEASE_MAX_SECONDS) {
+        printf("[DHCP] invalid lease lifetime\n");
+        return false;
+    }
     return true;
 }
 
@@ -955,9 +963,10 @@ bool netstack_configure_dhcp(void) {
 
     for (unsigned int attempt = 1; attempt <= DHCP_ATTEMPTS; ++attempt) {
         printf("[DHCP] attempt %u/%u\n", attempt, DHCP_ATTEMPTS);
-        uint32_t ip=0, mask=0, gw=0, dns=0;
-        if (dhcp_discover_request(&ip, &mask, &gw, &dns)) {
-            if (supervisor_network_submit_dhcp_config(ip, mask, gw, dns))
+        uint32_t ip=0, mask=0, gw=0, dns=0, lease_seconds=0;
+        if (dhcp_discover_request(&ip, &mask, &gw, &dns, &lease_seconds)) {
+            if (supervisor_network_submit_dhcp_config(
+                    ip, mask, gw, dns, lease_seconds))
                 return true;
             printf("[DHCP] lease proposal rejected\n");
         }
@@ -995,6 +1004,20 @@ bool netstack_apply_supervised_dhcp(uint32_t ip, uint32_t netmask,
     printf("[DHCP] MEDIATED IP=%s MASK=%s GW=%s DNS=%s\n",
            ip_s, m_s, gw_s, dns_s);
     return true;
+}
+
+bool netstack_clear_supervised_dhcp(uint32_t expected_ip) {
+    if (expected_ip != 0U && net_config.ip_address != expected_ip)
+        return false;
+    uint32_t gateway = net_config.gateway;
+    bool protected_cache_intact = gateway == 0U ||
+        supervised_arp_cache_revoke_ip(&supervised_arp_cache, gateway) >= 0;
+    arp_remove_entry(net_config.gateway);
+    net_config.ip_address = 0U;
+    net_config.netmask = 0U;
+    net_config.gateway = 0U;
+    net_config.dns_server = 0U;
+    return protected_cache_intact;
 }
 
 uint32_t netstack_get_ip_address(void) {

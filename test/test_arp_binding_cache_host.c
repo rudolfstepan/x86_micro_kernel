@@ -40,6 +40,12 @@ int main(void) {
     CHECK(supervised_arp_cache_revoke_identity(&cache, 3, 80U) == 1, 27);
     CHECK(supervised_arp_cache_lookup(&cache, 1U, 201U, out) ==
           SUPERVISED_ARP_BLOCKED, 28);
+    CHECK(supervised_arp_cache_commit(&cache, 2U, mac_b, 10U, 3, 82U, 200U,
+                                      100U) == 0, 40);
+    CHECK(supervised_arp_cache_revoke_ip(&cache, 2U) == 1, 41);
+    CHECK(supervised_arp_cache_lookup(&cache, 2U, 201U, out) ==
+          SUPERVISED_ARP_BLOCKED, 42);
+    CHECK(supervised_arp_cache_revoke_ip(&cache, 0U) < 0, 43);
     CHECK(supervised_arp_cache_commit(&cache, 1U, mac_b, 9U, 3, 81U, 200U,
                                       30U) == 0, 29);
 

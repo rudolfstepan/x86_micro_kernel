@@ -51,6 +51,7 @@ REIST_ICMP_ECHO_QUEUED_MARKER = "REIST_NETWORK ICMP_ECHO_QUEUED"
 REIST_ICMP_ECHO_MARKER = "REIST_NETWORK ICMP_ECHO_MEDIATED"
 REIST_DHCP_CONFIG_QUEUED_MARKER = "REIST_NETWORK DHCP_CONFIG_QUEUED"
 REIST_DHCP_CONFIG_MARKER = "REIST_NETWORK DHCP_CONFIG_MEDIATED"
+REIST_DHCP_LEASE_EXPIRED_MARKER = "REIST_NETWORK DHCP_LEASE_EXPIRED"
 REIST_UDP_ECHO_QUEUED_MARKER = "REIST_NETWORK UDP_ECHO_QUEUED"
 REIST_UDP_ECHO_MARKER = "REIST_NETWORK UDP_ECHO_MEDIATED"
 REIST_NETWORK_CRASH_MARKER = "REIST_NETWORK SERVICE_CRASH_RECOVERED"
@@ -509,6 +510,7 @@ def run(
     expect_handover: bool = False,
     inject_icmp_echo: bool = False,
     inject_udp_echo: bool = False,
+    expect_dhcp_expiry: bool = False,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
     injection_connection: socket.socket | None = None
@@ -589,7 +591,24 @@ def run(
                 process, chunks, transcript, finished,
                 REIST_PROBE_COMPLETION_MARKER, deadline,
             )
-        if error is None:
+        if error is None and expect_dhcp_expiry:
+            error, expiry_position = wait_for_line(
+                process, chunks, transcript, finished,
+                REIST_DHCP_LEASE_EXPIRED_MARKER, deadline,
+            )
+            if error is None:
+                settle_deadline = min(deadline, time.monotonic() + 0.5)
+                while time.monotonic() < settle_deadline:
+                    drain(chunks, transcript)
+                    failed = failure_marker("".join(transcript))
+                    if failed is not None:
+                        error = f"guest emitted failure marker {failed!r}"
+                        break
+                    if process.poll() is not None:
+                        error = "QEMU exited immediately after DHCP lease expiry"
+                        break
+                    time.sleep(0.02)
+        elif error is None:
             # The UART RX path currently drops command bursts.  Pace every
             # byte so the same runner works on Windows and POSIX hosts.
             for character in "GTEST\n":
@@ -742,6 +761,7 @@ def validate(
     expect_handover: bool = False,
     expect_icmp_echo: bool = False,
     expect_dhcp_config: bool = False,
+    expect_dhcp_expiry: bool = False,
     expect_udp_echo: bool = False,
 ) -> str | None:
     failed = failure_marker(transcript)
@@ -751,11 +771,12 @@ def validate(
     test = exact_line_position(transcript, TEST_MARKER)
     if boot < 0:
         return f"missing {BOOT_MARKER} marker"
-    if test < 0:
+    if test < 0 and not expect_dhcp_expiry:
         return f"missing {TEST_MARKER} marker"
-    if test < boot:
+    if test >= 0 and test < boot:
         return f"{TEST_MARKER} appeared before {BOOT_MARKER}"
-    if exact_line_position(transcript, SHELL_PROMPT, after=test) < 0:
+    if not expect_dhcp_expiry and exact_line_position(
+            transcript, SHELL_PROMPT, after=test) < 0:
         return f"missing {SHELL_PROMPT} prompt after {TEST_MARKER}"
     if expect_fatal_recovery:
         positions = [exact_line_position(transcript, marker) for marker in (
@@ -825,6 +846,13 @@ def validate(
         committed = exact_line_position(transcript, REIST_DHCP_CONFIG_MARKER)
         if queued < 0 or committed < queued or committed > boot:
             return "missing ordered pre-boot mediated DHCP configuration"
+    if expect_dhcp_expiry:
+        committed = exact_line_position(transcript, REIST_DHCP_CONFIG_MARKER)
+        expired = exact_line_position(transcript,
+                                      REIST_DHCP_LEASE_EXPIRED_MARKER)
+        prompt = exact_line_position(transcript, SHELL_PROMPT)
+        if committed < 0 or boot < committed or prompt < boot or expired < prompt:
+            return "missing ordered fail-closed DHCP lease expiry"
     if expect_udp_echo:
         queued = exact_line_position(transcript,
                                      REIST_UDP_ECHO_QUEUED_MARKER)
@@ -934,6 +962,11 @@ def main() -> int:
         help="require a Ring-3-mediated DHCP configuration before boot",
     )
     parser.add_argument(
+        "--expect-dhcp-expiry",
+        action="store_true",
+        help="require bounded fail-closed DHCP lease withdrawal after boot",
+    )
+    parser.add_argument(
         "--expect-arp-resolution", action="store_true",
         help="trigger PING and require a mediated outgoing ARP request",
     )
@@ -974,7 +1007,7 @@ def main() -> int:
         print("guest-smoke: network injection verification requires a NIC",
               file=sys.stderr)
         return 2
-    if args.expect_dhcp_config and args.nic == "none":
+    if (args.expect_dhcp_config or args.expect_dhcp_expiry) and args.nic == "none":
         print("guest-smoke: DHCP mediation requires a NIC", file=sys.stderr)
         return 2
 
@@ -988,6 +1021,7 @@ def main() -> int:
             args.expect_handover,
             args.inject_icmp_echo,
             args.inject_udp_echo,
+            args.expect_dhcp_expiry,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)
@@ -1007,6 +1041,7 @@ def main() -> int:
                             args.expect_handover,
                             args.inject_icmp_echo,
                             args.expect_dhcp_config,
+                            args.expect_dhcp_expiry,
                             args.inject_udp_echo)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
@@ -1016,7 +1051,7 @@ def main() -> int:
     print(transcript, end="" if transcript.endswith("\n") else "\n",
           file=sys.stderr)
     detail = process_error or marker_error
-    if TEST_MARKER not in str(detail):
+    if not args.expect_dhcp_expiry and TEST_MARKER not in str(detail):
         detail = f"{detail}; missing {TEST_MARKER} marker"
     print(f"guest-smoke: FAIL: {detail}", file=sys.stderr)
     return status or 1

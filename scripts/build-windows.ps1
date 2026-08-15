@@ -8,6 +8,7 @@ param(
     [switch]$StorageFaultInjection,
     [switch]$StorageIoFaultInjection,
     [switch]$HandoverFaultInjection,
+    [switch]$DhcpLeaseFaultInjection,
     [ValidateRange(0, 3)]
     [int]$HandoverNodeId = 0,
     [switch]$RunTests,
@@ -121,6 +122,9 @@ try {
     if ($HandoverFaultInjection) {
         $makeArguments += 'HANDOVER_FAULT_INJECTION=1'
         $makeArguments += "HANDOVER_NODE_ID=$HandoverNodeId"
+    }
+    if ($DhcpLeaseFaultInjection) {
+        $makeArguments += 'DHCP_LEASE_FAULT_INJECTION=1'
     }
     & $Make @makeArguments
     if ($LASTEXITCODE -ne 0) {

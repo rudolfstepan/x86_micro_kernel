@@ -452,10 +452,10 @@ QEMU-Socket ausgegebenen Echo-Reply einschließlich Checksumme.
 
 S0.3c-5d1 entfernt anschließend die direkte DHCP-Lease-Publikation aus dem
 Ring-0-Transport. Der Kernel validiert das empfangene ACK und schützt
-`{request_id, ip, netmask, gateway, dns}` redundant, mutiert den aktiven
+`{request_id, ip, netmask, gateway, dns, lease_seconds}` redundant, mutiert den aktiven
 Netzwerkzustand aber erst nach einer zweiten semantischen Prüfung durch den
 gesunden Ring-3-Dienst. Ein eigener Kernel-zu-Endpoint-Owner-Ingress mit der
-reservierten Absenderidentität `(0,0)` transportiert das feste 24-Byte-`NETD`-
+reservierten Absenderidentität `(0,0)` transportiert das feste 28-Byte-`NETD`-
 Objekt ohne ambienten Client und ohne künstliche Prozessidentität. Syscall 73
 ist ausschließlich im Dienstprofil freigegeben und verbraucht eine an
 Prozessgeneration und Request-ID gebundene 1-s-Einmalautorität. Kontext und
@@ -463,8 +463,7 @@ Autorität verschwinden vor der eigentlichen Konfigurationsmutation. Der
 Bootpfad wartet höchstens 10 s auf einen gesunden Dienst und höchstens 1,5 s
 auf den Commit; andernfalls bleibt das Interface definiert unkonfiguriert.
 Der echte RTL8139-Nachweis fordert die Vermittlungsmarker vor `BOOT_OK`.
-UDP-Transport, Lease-Erneuerung und Rebind bleiben noch Kernelaufgaben und
-bilden S0.3c-5d2.
+UDP-Transport, Lease-Erneuerung und Rebind bilden S0.3c-5d2.
 
 S0.3c-5d2a zieht einen ersten eng begrenzten UDP-Datenschritt über dieselbe
 Grenze: Nur Port 9000, maximal 32 Byte und Datagramme mit vorhandener gültiger
@@ -476,7 +475,19 @@ der Kernel genau eine Antwort mit vertauschten Ports sendet. Queue-Druck,
 Deadline, Integritätsfehler oder ungültige Semantik erzeugen keine Antwort und
 reaktivieren keinen Kernelpfad. Der RTL8139-Test validiert den tatsächlich am
 QEMU-Socket beobachteten Frame samt UDP-Prüfsumme. Dies ist noch keine Socket-
-ABI: allgemeine Bindings und DHCP-Renew/Rebind bleiben S0.3c-5d2b.
+ABI: allgemeine Bindings und DHCP-Renew/Rebind bleiben S0.3c-5d2b2.
+
+S0.3c-5d2b1 ergänzt die zeitliche Autoritätsgrenze. Der ACK muss eine
+Leasezeit zwischen 60 Sekunden und sieben Tagen enthalten; Transport,
+geschützter Vorschlag und Ring-3-Dienst validieren denselben Wert. Nach dem
+Commit liegt `{process_generation, ip, lease_seconds, deadline_ms}` als
+Primary/Shadow-Critical-Object vor. Der Supervisor-Worker prüft die absolute
+monotone Deadline in seinem festen 10-ms-Raster. Bei Ablauf werden IP,
+Netzmaske, Gateway, DNS und die zugehörige Gateway-Bindung entzogen, ohne
+Renewal im Kernel zu simulieren. Korruption und Dienst-Fence räumen dieselbe
+Autorität fail-closed. Ein ausschließlich im Testbuild aktives 2500-ms-Limit
+beweist den Ablauf mit RTL8139 und weiter betriebsfähiger Shell. Automatisches
+Renew/Rebind und allgemeine UDP-Bindings folgen in S0.3c-5d2b2.
 
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau

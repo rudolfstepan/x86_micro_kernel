@@ -265,7 +265,7 @@ int main(void) {
     if (supervisor_protected_dhcp_context_init(&protected_dhcp) != 0 ||
         supervisor_protected_dhcp_context_publish(
             &protected_dhcp, 17U, 7U, 0x0A00020FU, 0xFFFFFF00U,
-            0x0A000202U, 0x0A000203U) != 0 ||
+            0x0A000202U, 0x0A000203U, 3600U) != 0 ||
         supervisor_protected_dhcp_context_snapshot(
             &protected_dhcp, &dhcp_snapshot) != 0 ||
         dhcp_snapshot.request_id != 17U ||
@@ -273,13 +273,34 @@ int main(void) {
         dhcp_snapshot.ip_address != 0x0A00020FU ||
         dhcp_snapshot.netmask != 0xFFFFFF00U ||
         dhcp_snapshot.gateway != 0x0A000202U ||
+        dhcp_snapshot.lease_seconds != 3600U ||
         supervisor_protected_dhcp_context_publish(
             &protected_dhcp, 18U, 7U, 0x0A00020FU, 0xFF00FF00U,
-            0x0A000202U, 0U) != -22 ||
+            0x0A000202U, 0U, 3600U) != -22 ||
         supervisor_protected_dhcp_context_clear(&protected_dhcp) != 0 ||
         supervisor_protected_dhcp_context_snapshot(
             &protected_dhcp, &dhcp_snapshot) != 0 ||
         dhcp_snapshot.request_id != 0U) return 61;
+
+    supervisor_protected_dhcp_lease_t protected_lease;
+    supervisor_dhcp_lease_t lease_snapshot;
+    if (supervisor_protected_dhcp_lease_init(&protected_lease) != 0 ||
+        supervisor_protected_dhcp_lease_publish(
+            &protected_lease, 7U, 0x0A00020FU, 3600U, 5000U) != 0 ||
+        supervisor_protected_dhcp_lease_snapshot(
+            &protected_lease, &lease_snapshot) != 0 ||
+        lease_snapshot.process_generation != 7U ||
+        lease_snapshot.ip_address != 0x0A00020FU ||
+        lease_snapshot.lease_seconds != 3600U ||
+        lease_snapshot.deadline_ms != 5000U ||
+        supervisor_protected_dhcp_lease_publish(
+            &protected_lease, 7U, 0x0A00020FU, 59U, 5000U) != -22 ||
+        supervisor_protected_dhcp_lease_publish(
+            &protected_lease, 7U, 0x0A00020FU, 3600U, 0U) != -22 ||
+        supervisor_protected_dhcp_lease_clear(&protected_lease) != 0 ||
+        supervisor_protected_dhcp_lease_snapshot(
+            &protected_lease, &lease_snapshot) != 0 ||
+        lease_snapshot.ip_address != 0U) return 63;
 
     supervisor_protected_udp_echo_context_t protected_udp;
     supervisor_udp_echo_context_t udp_snapshot;

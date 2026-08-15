@@ -164,6 +164,34 @@ int supervised_arp_cache_revoke_identity(supervised_arp_cache_t *cache,
     return revoked;
 }
 
+int supervised_arp_cache_revoke_ip(supervised_arp_cache_t *cache,
+                                   uint32_t ip) {
+    if (cache == NULL || ip == 0U || ip == 0xFFFFFFFFU) return -1;
+    uint32_t flags = cache_lock();
+    arp_binding_payload_t entries[SUPERVISED_ARP_CACHE_SIZE];
+    for (uint32_t i = 0U; i < SUPERVISED_ARP_CACHE_SIZE; ++i) {
+        if (read_entry(&cache->entries[i], &entries[i]) < 0) {
+            cache_unlock(flags);
+            return -2;
+        }
+    }
+    int revoked = 0;
+    for (uint32_t i = 0U; i < SUPERVISED_ARP_CACHE_SIZE; ++i) {
+        if (entries[i].state != ARP_BINDING_VALID || entries[i].ip != ip)
+            continue;
+        entries[i].state = ARP_BINDING_EXPIRED;
+        if (critical_object_update(&cache->entries[i],
+                                   SUPERVISED_ARP_OBJECT_VERSION, &entries[i],
+                                   sizeof(entries[i]), payload_valid) != 0) {
+            cache_unlock(flags);
+            return -2;
+        }
+        ++revoked;
+    }
+    cache_unlock(flags);
+    return revoked;
+}
+
 int supervised_arp_cache_scrub(supervised_arp_cache_t *cache, uint64_t now_ms,
                                supervised_arp_scrub_stats_t *stats_out) {
     if (cache == NULL || stats_out == NULL) return -1;

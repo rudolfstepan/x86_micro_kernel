@@ -19,6 +19,7 @@ struct Process;
 #define SUPERVISOR_ARP_RESOLUTION_CONTEXT_VERSION 1U
 #define SUPERVISOR_ICMP_ECHO_CONTEXT_VERSION 1U
 #define SUPERVISOR_DHCP_CONTEXT_VERSION 1U
+#define SUPERVISOR_DHCP_LEASE_VERSION 1U
 #define SUPERVISOR_UDP_ECHO_CONTEXT_VERSION 1U
 #define SUPERVISOR_PROBE_CONTROL_VERSION 1U
 #define SUPERVISOR_EINTEGRITY (-84)
@@ -206,12 +207,27 @@ typedef struct {
     uint32_t netmask;
     uint32_t gateway;
     uint32_t dns_server;
-    uint32_t reserved[2];
+    uint32_t lease_seconds;
+    uint32_t reserved;
 } supervisor_dhcp_context_t;
 
 typedef struct {
     critical_object_t object;
 } supervisor_protected_dhcp_context_t;
+
+#define SUPERVISOR_DHCP_LEASE_MIN_SECONDS 60U
+#define SUPERVISOR_DHCP_LEASE_MAX_SECONDS 604800U
+typedef struct {
+    uint32_t process_generation;
+    uint32_t ip_address;
+    uint32_t lease_seconds;
+    uint32_t reserved;
+    uint64_t deadline_ms;
+} supervisor_dhcp_lease_t;
+
+typedef struct {
+    critical_object_t object;
+} supervisor_protected_dhcp_lease_t;
 
 #define SUPERVISOR_UDP_ECHO_PORT 9000U
 #define SUPERVISOR_UDP_ECHO_MAX_DATA 32U
@@ -360,12 +376,22 @@ int supervisor_protected_dhcp_context_init(
 int supervisor_protected_dhcp_context_publish(
     supervisor_protected_dhcp_context_t *context, uint32_t request_id,
     uint32_t transaction_epoch, uint32_t ip_address, uint32_t netmask,
-    uint32_t gateway, uint32_t dns_server);
+    uint32_t gateway, uint32_t dns_server, uint32_t lease_seconds);
 int supervisor_protected_dhcp_context_snapshot(
     supervisor_protected_dhcp_context_t *context,
     supervisor_dhcp_context_t *snapshot_out);
 int supervisor_protected_dhcp_context_clear(
     supervisor_protected_dhcp_context_t *context);
+int supervisor_protected_dhcp_lease_init(
+    supervisor_protected_dhcp_lease_t *lease);
+int supervisor_protected_dhcp_lease_publish(
+    supervisor_protected_dhcp_lease_t *lease, uint32_t process_generation,
+    uint32_t ip_address, uint32_t lease_seconds, uint64_t deadline_ms);
+int supervisor_protected_dhcp_lease_snapshot(
+    supervisor_protected_dhcp_lease_t *lease,
+    supervisor_dhcp_lease_t *snapshot_out);
+int supervisor_protected_dhcp_lease_clear(
+    supervisor_protected_dhcp_lease_t *lease);
 int supervisor_protected_udp_echo_context_init(
     supervisor_protected_udp_echo_context_t *context);
 int supervisor_protected_udp_echo_context_publish(
@@ -419,7 +445,7 @@ int supervisor_network_send_icmp_echo_reply(
     const supervisor_icmp_echo_reply_t *reply);
 bool supervisor_network_submit_dhcp_config(
     uint32_t ip_address, uint32_t netmask, uint32_t gateway,
-    uint32_t dns_server);
+    uint32_t dns_server, uint32_t lease_seconds);
 int supervisor_network_commit_dhcp_config(
     int pid, uint32_t generation, const supervisor_dhcp_commit_t *commit);
 bool supervisor_network_submit_udp_echo(

@@ -37,6 +37,8 @@ int supervised_arp_cache_commit(supervised_arp_cache_t *cache, uint32_t ip,
 int supervised_arp_cache_revoke_identity(supervised_arp_cache_t *cache,
                                          int32_t source_pid,
                                          uint32_t source_generation);
+int supervised_arp_cache_revoke_ip(supervised_arp_cache_t *cache,
+                                   uint32_t ip);
 int supervised_arp_cache_scrub(supervised_arp_cache_t *cache, uint64_t now_ms,
                                supervised_arp_scrub_stats_t *stats_out);
 supervised_arp_lookup_result_t supervised_arp_cache_lookup(
