@@ -11,13 +11,15 @@ def read(path: str) -> str:
 
 
 class ReistUdpServiceTests(unittest.TestCase):
-    def test_kernel_accepts_only_checked_bound_service_datagrams(self) -> None:
+    def test_kernel_has_no_parallel_udp_receive_demux(self) -> None:
         netstack = read("drivers/net/netstack.c")
-        start = netstack.index("static void handle_udp_packet(")
-        body = netstack[start:netstack.index("// UDP low-level", start)]
-        self.assertIn("udp->checksum == 0U", body)
-        self.assertIn("udp_checksum_valid", body)
-        self.assertIn("supervisor_network_submit_udp", body)
+        supervisor = read("kernel/init/supervisor.c")
+        self.assertNotIn("static void handle_udp_packet(", netstack)
+        self.assertNotIn("udp_checksum_valid", netstack)
+        self.assertNotIn("bool supervisor_network_submit_udp(", supervisor)
+        udp_case = netstack[netstack.index("case IP_PROTOCOL_UDP:"):]
+        udp_case = udp_case[:udp_case.index("break;")]
+        self.assertIn("++netstack_stats.rx_dropped", udp_case)
 
     def test_context_authority_and_bindings_are_protected_and_bounded(self) -> None:
         header = read("include/kernel/supervisor.h")
@@ -45,7 +47,8 @@ class ReistUdpServiceTests(unittest.TestCase):
     def test_reply_consumes_state_before_the_only_send(self) -> None:
         supervisor = read("kernel/init/supervisor.c")
         start = supervisor.index("int supervisor_network_send_udp_reply(")
-        end = supervisor.index("bool supervisor_network_submit_udp_echo(", start)
+        end = supervisor.index(
+            "int supervisor_network_send_udp_echo_reply(", start)
         body = supervisor[start:end]
         self.assertLess(body.index("probe_authority_take_epoch"),
                         body.index("udp_echo_context_clear"))
@@ -86,10 +89,9 @@ class ReistUdpServiceTests(unittest.TestCase):
 
     def test_no_direct_udp_reply_exists_in_receive_path(self) -> None:
         netstack = read("drivers/net/netstack.c")
-        start = netstack.index("static void handle_udp_packet(")
-        body = netstack[start:netstack.index("// UDP low-level", start)]
-        self.assertNotIn("netstack_send_supervised_udp_reply", body)
-        self.assertNotIn("netstack_send_udp_echo_reply", body)
+        self.assertNotIn("handle_udp_packet", netstack)
+        self.assertNotIn("netstack_send_udp_echo_reply", netstack)
+        self.assertIn("netstack_send_supervised_udp_reply", netstack)
 
     def test_runtime_contract_covers_a_second_bound_port(self) -> None:
         runtime = read("scripts/test-reist-runtime.ps1")

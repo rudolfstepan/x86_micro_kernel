@@ -152,16 +152,16 @@ und 10 verbindlich.
         - [x] S0.3c-5e2a Begrenzten heapfreien IPv4-v1-Shadow-Parser mit
           Headerprüfsumme, Fragmentablehnung und realem RTL8139-Nachweis
           nach Ring 3 verlagern
-        - [ ] S0.3c-5e2b UDP-/DHCP-Demux und Protokollzustand auf dem
+        - [x] S0.3c-5e2b UDP-/DHCP-Demux und Protokollzustand auf dem
           Ring-3-Parser aufbauen und erst danach den Parallelpfad entfernen
           - [x] S0.3c-5e2b1 Heapfreien UDP-v1-Shadow-Parser mit Pflicht-
             prüfsumme, exakter Längenkonsistenz und RTL8139-Nachweis ergänzen
-          - [ ] S0.3c-5e2b2 UDP-Bindings und DHCP-Eingang aus dem validierten
+          - [x] S0.3c-5e2b2 UDP-Bindings und DHCP-Eingang aus dem validierten
             Ring-3-Ergebnis speisen und den Ring-0-UDP-Demux entfernen
             - [x] S0.3c-5e2b2a Dienstgebundene UDP-Ports über einen
               CRC-/generation-/deadlinegeschützten Ring-3-Entscheid speisen
               und deren parallele Ring-0-Zustellung unterbinden
-            - [ ] S0.3c-5e2b2b DHCP-Eingang und verbleibenden UDP-Demux aus
+            - [x] S0.3c-5e2b2b DHCP-Eingang und verbleibenden UDP-Demux aus
               Ring 0 lösen; Druck-, Restart- und Fehlpfade abnehmen
               - [x] S0.3c-5e2b2b1 Heapfreien DHCP-v1-Shadow-Parser mit
                 begrenzten Optionen, BOOTP-/Cookie-Prüfung, optionaler
@@ -1584,8 +1584,13 @@ anschließend die synchronen Ring-0-Parserroutinen, die dedizierte Vier-Slot-
 DHCP-Queue und den Supervisor-Poller entfernt. Der statische Service-Frame-
 Handoff ist damit der einzige DHCP-Eingang. Boot und Renewal wurden erneut mit
 RTL8139 abgenommen; der Bootlauf enthält zusätzlich Dienst-Crash, Restart und
-Queue-Druck. Offen bleibt innerhalb S0.3c-5e2b2 der allgemeine, nicht
-dienstgebundene UDP-Legacy-Demux.
+Queue-Druck. Der allgemeine Ring-0-UDP-Parser, seine Legacy-Einspeisung und die
+unbenutzte direkte Echo-Sendehilfe sind ebenfalls entfernt. Ring 0 verwirft
+UDP-Eingang fail-closed; ausschließlich der CRC-/generation-/deadlinegebundene
+Ring-3-Ingress darf für ein aktives Binding Antwortautorität erzeugen. Reale
+RTL8139-Läufe bestätigen den primären und einen zweiten gebundenen Port sowie
+Boot-DHCP. Damit ist S0.3c-5e2b abgeschlossen. Offen bleibt in S0.3c-5e2 der
+Ring-0-IPv4/ICMP-Fallback außerhalb des gesunden Dienstpfads.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

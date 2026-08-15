@@ -629,8 +629,12 @@ Frames gelangen ausschließlich über die feste Service-Frame-Queue zum Ring-3-
 Parser; Ring 0 sendet nur die einzeln autorisierten Transportframes und
 committet ein vollständig korreliertes Ergebnis. Reale RTL8139-Läufe belegen
 Boot und Renewal nach dem Rückbau; der Bootlauf umfasst zusätzlich Dienst-
-Crash, Restart und Queue-Druck. Der allgemeine UDP-Legacy-Demux außerhalb
-dienstgebundener Ports bleibt ein separates S0.3c-5e2-Restpaket.
+Crash, Restart und Queue-Druck. Der anschließende Rückbau entfernt auch den
+allgemeinen Ring-0-UDP-Parser, dessen Legacy-Einspeisung und die unbenutzte
+direkte Echo-Sendehilfe. Der Kernel verwirft UDP-Eingang fail-closed; nur
+`supervisor_network_udp_ingress` darf nach CRC-, Generations-, Deadline- und
+Binding-Prüfung eine Antwortautorität erzeugen. Der Ring-0-IPv4/ICMP-Fallback
+außerhalb des gesunden Dienstpfads bleibt als S0.3c-5e2-Restpaket offen.
 
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau

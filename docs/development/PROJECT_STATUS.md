@@ -236,8 +236,13 @@ DHCP_BOOT_ACK_RING3 -> DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED -> BOOT_OK`.
 Die früheren synchronen Ring-0-DHCP-Routinen, die dedizierte Vier-Slot-Queue
 und der alte Poller sind entfernt. Der statische Service-Frame-Handoff ist der
 einzige DHCP-Eingang; Boot und Renewal sind erneut mit RTL8139 grün, wobei der
-Bootlauf Dienst-Crash, Restart und Queue-Druck einschließt. Als nächstes wird
-der allgemeine, nicht dienstgebundene UDP-Legacy-Demux aus Ring 0 gelöst.
+Bootlauf Dienst-Crash, Restart und Queue-Druck einschließt. Der allgemeine
+Ring-0-UDP-Parser und seine Legacy-Einspeisung sind ebenfalls entfernt. UDP-
+Eingang fällt im Kernel geschlossen aus; nur der validierte Ring-3-Ingress darf
+für aktive Bindings Antwortautorität erzeugen. Reale RTL8139-Läufe für Port
+9000, Port 9001 und Boot-DHCP sind grün. Als nächstes wird der verbleibende
+Ring-0-IPv4/ICMP-Fallback außerhalb des gesunden Dienstpfads untersucht und
+schrittweise geschlossen.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

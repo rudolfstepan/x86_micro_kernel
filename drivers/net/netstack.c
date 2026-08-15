@@ -177,24 +177,6 @@ static uint16_t udp_checksum(const ip_header_t* ip, const udp_header_t* udp, con
     return checksum ? checksum : 0xFFFFu;
 }
 
-static bool udp_checksum_valid(const ip_header_t* ip, const udp_header_t* udp,
-                               const uint8_t* payload, size_t len) {
-    if (udp->checksum == 0) return true;
-    struct pseudo {
-        uint32_t src, dst;
-        uint8_t zero;
-        uint8_t proto;
-        uint16_t udp_len;
-    } __attribute__((packed)) pseudo = {
-        ip->src_ip, ip->dst_ip, 0, IP_PROTOCOL_UDP,
-        htons((uint16_t)(sizeof(*udp) + len))
-    };
-    uint32_t sum = checksum_accumulate(&pseudo, sizeof(pseudo), 0);
-    sum = checksum_accumulate(udp, sizeof(*udp), sum);
-    sum = checksum_accumulate(payload, len, sum);
-    return fold_checksum(sum) == 0;
-}
-
 // =============================================================================
 // NIC wrapper (selected initialized backend)
 // =============================================================================
@@ -464,16 +446,6 @@ bool netstack_send_supervised_udp_reply(uint32_t dst_ip,
     return nic_send(packet, total_len);
 }
 
-bool netstack_send_udp_echo_reply(uint32_t dst_ip,
-                                  const uint8_t dst_mac[6],
-                                  uint16_t source_port,
-                                  uint16_t destination_port,
-                                  const uint8_t *data, uint16_t data_len) {
-    return source_port == SUPERVISOR_UDP_ECHO_PORT &&
-        netstack_send_supervised_udp_reply(dst_ip, dst_mac, source_port,
-                                           destination_port, data, data_len);
-}
-
 static void handle_icmp_packet(uint8_t *packet, uint16_t length,
                                uint32_t src_ip,
                                const uint8_t source_mac[6]) {
@@ -503,37 +475,6 @@ static void handle_icmp_packet(uint8_t *packet, uint16_t length,
             ping_reply_received = true;
         }
     }
-}
-
-static void handle_udp_packet(const ip_header_t *ip, uint8_t *packet,
-                              uint16_t length, uint32_t source_ip,
-                              const uint8_t source_mac[6]) {
-    if (length < sizeof(udp_header_t)) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
-    udp_header_t *udp = (udp_header_t *)packet;
-    uint16_t udp_length = ntohs(udp->length);
-    if (udp_length != length || udp_length < sizeof(udp_header_t)) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
-    uint16_t destination_port = ntohs(udp->dst_port);
-    uint16_t source_port = ntohs(udp->src_port);
-    uint16_t data_length = (uint16_t)(udp_length - sizeof(udp_header_t));
-    uint8_t *data = packet + sizeof(udp_header_t);
-    if (udp->checksum == 0U ||
-        !udp_checksum_valid(ip, udp, data, data_length)) {
-        ++netstack_stats.rx_dropped;
-        return;
-    }
-    /* A healthy supervised service owns its bound ports exclusively.  The
-     * raw-frame handoff is the sole delivery path, so Ring 0 must not also
-     * publish the same datagram through the legacy proposal queue. */
-    if (supervisor_network_udp_service_owns_port(destination_port)) return;
-    if (!supervisor_network_submit_udp(
-            source_ip, source_mac, source_port, destination_port,
-            data, data_length)) ++netstack_stats.rx_dropped;
 }
 
 // =============================================================================
@@ -798,8 +739,9 @@ static void handle_ip_packet(uint8_t *packet, uint16_t length,
             handle_icmp_packet(payload, payload_len, source_ip, source_mac);
             break;
         case IP_PROTOCOL_UDP:
-            handle_udp_packet(ip, payload, payload_len, source_ip,
-                              source_mac);
+            /* UDP input belongs exclusively to the validated Ring-3 frame
+             * handoff. The legacy Ring-0 path fails closed. */
+            ++netstack_stats.rx_dropped;
             break;
         default:
             break;

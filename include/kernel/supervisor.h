@@ -639,9 +639,6 @@ int supervisor_network_dhcp_ingress(
 int supervisor_network_start_dhcp_boot(
     int pid, uint32_t generation,
     const supervisor_dhcp_boot_start_t *request);
-bool supervisor_network_submit_udp_echo(
-    uint32_t source_ip, const uint8_t source_mac[6], uint16_t source_port,
-    uint16_t destination_port, const uint8_t *data, uint16_t data_length);
 int supervisor_network_send_udp_echo_reply(
     int pid, uint32_t generation, const supervisor_udp_echo_reply_t *reply);
 int supervisor_network_udp_bind(
@@ -649,9 +646,6 @@ int supervisor_network_udp_bind(
     supervisor_udp_binding_handle_t *handle_out);
 int supervisor_network_udp_unbind(
     int pid, uint32_t generation, supervisor_udp_binding_handle_t handle);
-bool supervisor_network_submit_udp(
-    uint32_t source_ip, const uint8_t source_mac[6], uint16_t source_port,
-    uint16_t destination_port, const uint8_t *data, uint16_t data_length);
 int supervisor_network_send_udp_reply(
     int pid, uint32_t generation, const supervisor_udp_reply_t *reply);
 int supervisor_network_udp_ingress(
@@ -660,7 +654,6 @@ int supervisor_network_udp_ingress(
 int supervisor_network_cancel_udp_ingress(
     int pid, uint32_t generation, supervisor_udp_binding_handle_t binding,
     uint32_t request_id);
-bool supervisor_network_udp_service_owns_port(uint16_t destination_port);
 int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind);
 int supervisor_register(const char *name, const supervisor_config_t *config,

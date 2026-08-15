@@ -3655,37 +3655,6 @@ int supervisor_network_udp_unbind(
     return result;
 }
 
-bool supervisor_network_udp_service_owns_port(uint16_t destination_port) {
-    if (destination_port < SUPERVISOR_UDP_BINDING_MIN_PORT) return false;
-    uint32_t flags = supervisor_lock();
-    supervisor_probe_control_t control = {0};
-    int result = supervisor_protected_probe_control_read(
-        &probe_runtime.control, &control);
-    bool control_valid = result == 0;
-    bool owned = false;
-    bool integrity_failure = result != 0;
-    for (uint32_t slot = 0U;
-         !integrity_failure && slot < SUPERVISOR_UDP_MAX_BINDINGS; ++slot) {
-        supervisor_udp_binding_t binding = {0};
-        if (udp_binding_read(&probe_runtime.udp_bindings[slot].binding,
-                             &binding) != 0) {
-            integrity_failure = true;
-            break;
-        }
-        /* An active binding remains service-owned while its service is being
-         * fenced.  Falling back to the ambient Ring-0 path in that window
-         * would bypass the failure boundary. */
-        if (binding.active != 0U && binding.port == destination_port) {
-            owned = true;
-            break;
-        }
-    }
-    supervisor_unlock(flags);
-    if (integrity_failure && control_valid)
-        (void)supervisor_force_isolate(control.handle);
-    return owned || integrity_failure;
-}
-
 static bool udp_ingress_drop_is_canonical(
         const supervisor_udp_ingress_t *ingress) {
     if (ingress->binding != 0U || ingress->request_id != 0U ||
@@ -3838,106 +3807,6 @@ int supervisor_network_cancel_udp_ingress(
     return result;
 }
 
-bool supervisor_network_submit_udp(
-        uint32_t source_ip, const uint8_t source_mac[6], uint16_t source_port,
-        uint16_t destination_port, const uint8_t *data,
-        uint16_t data_length) {
-    KASSERT_NOT_IRQ();
-    KASSERT(irq_enabled());
-    if (source_ip == 0U || source_ip == 0xFFFFFFFFU || source_mac == NULL ||
-        (source_mac[0] & 1U) != 0U || source_port == 0U ||
-        destination_port < SUPERVISOR_UDP_BINDING_MIN_PORT ||
-        data_length > SUPERVISOR_UDP_ECHO_MAX_DATA ||
-        (data_length != 0U && data == NULL)) return false;
-    bool nonzero_mac = false;
-    for (uint32_t index = 0U; index < 6U; ++index)
-        if (source_mac[index] != 0U) nonzero_mac = true;
-    if (!nonzero_mac) return false;
-
-    uint32_t flags = supervisor_lock();
-    supervisor_probe_control_t control;
-    int result = supervisor_protected_probe_control_read(
-        &probe_runtime.control, &control);
-    if (result != 0 || control.active == 0U || control.fenced != 0U ||
-        control.healthy == 0U || control.launch_count < 4U ||
-        control.endpoint_handle == IPC_INVALID_HANDLE ||
-        !process_identity_alive(control.pid, control.process_generation)) {
-        supervisor_unlock(flags);
-        return false;
-    }
-    uint32_t binding_slot = SUPERVISOR_UDP_MAX_BINDINGS;
-    supervisor_udp_binding_t binding = {0};
-    for (uint32_t slot = 0U;
-         result == 0 && slot < SUPERVISOR_UDP_MAX_BINDINGS; ++slot) {
-        result = udp_binding_read(&probe_runtime.udp_bindings[slot].binding,
-                                  &binding);
-        if (result == 0 && binding.active != 0U &&
-            binding.process_generation == control.process_generation &&
-            binding.port == destination_port) {
-            binding_slot = slot;
-            break;
-        }
-    }
-    if (result == 0 && binding_slot == SUPERVISOR_UDP_MAX_BINDINGS)
-        result = -2;
-    uint32_t request_id = 0U;
-    if (result == 0)
-        result = supervisor_protected_probe_authority_begin_epoch(
-        &probe_runtime.udp_bindings[binding_slot].authority, pit_monotonic_ms(),
-        SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS, control.process_generation,
-        &request_id);
-    if (result == 0)
-        result = supervisor_protected_udp_echo_context_publish(
-            &probe_runtime.udp_bindings[binding_slot].context, request_id,
-            control.process_generation, source_ip, source_mac, source_port,
-            destination_port, data, data_length);
-    supervisor_unlock(flags);
-    if (result != 0) return false;
-
-    ipc_message_t message = {
-        .version = IPC_MESSAGE_VERSION,
-        .struct_size = sizeof(ipc_message_t),
-        .length = (uint32_t)(28U + data_length),
-        .payload = {'N', 'E', 'T', 'V'},
-    };
-    for (uint32_t index = 0U; index < 4U; ++index) {
-        message.payload[4U + index] = (uint8_t)
-            (udp_binding_handle(binding_slot, binding.generation) >>
-             (index * 8U));
-        message.payload[8U + index] =
-            (uint8_t)(request_id >> (index * 8U));
-        message.payload[12U + index] =
-            (uint8_t)(source_ip >> (24U - index * 8U));
-    }
-    for (uint32_t index = 0U; index < 6U; ++index)
-        message.payload[16U + index] = source_mac[index];
-    message.payload[22] = (uint8_t)(source_port >> 8U);
-    message.payload[23] = (uint8_t)source_port;
-    message.payload[24] = (uint8_t)(destination_port >> 8U);
-    message.payload[25] = (uint8_t)destination_port;
-    message.payload[26] = (uint8_t)data_length;
-    message.payload[27] = (uint8_t)(data_length >> 8U);
-    for (uint32_t index = 0U; index < data_length; ++index)
-        message.payload[28U + index] = data[index];
-    result = ipc_send_external_from_peer(
-        control.pid, control.process_generation, control.endpoint_handle,
-        &message);
-    if (result != 0) {
-        flags = supervisor_lock();
-        (void)supervisor_protected_probe_authority_cancel(
-            &probe_runtime.udp_bindings[binding_slot].authority);
-        (void)supervisor_protected_udp_echo_context_clear(
-            &probe_runtime.udp_bindings[binding_slot].context);
-        supervisor_unlock(flags);
-        network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_QUEUE);
-        return false;
-    }
-    printf(destination_port == SUPERVISOR_UDP_ECHO_PORT
-        ? "REIST_NETWORK UDP_ECHO_QUEUED\n"
-        : "REIST_NETWORK UDP_DATAGRAM_QUEUED\n");
-    return true;
-}
-
 int supervisor_network_send_udp_reply(
         int pid, uint32_t generation,
         const supervisor_udp_reply_t *reply) {
@@ -4006,15 +3875,6 @@ int supervisor_network_send_udp_reply(
         ? "REIST_NETWORK UDP_ECHO_MEDIATED\n"
         : "REIST_NETWORK UDP_DATAGRAM_MEDIATED\n");
     return 0;
-}
-
-bool supervisor_network_submit_udp_echo(
-        uint32_t source_ip, const uint8_t source_mac[6], uint16_t source_port,
-        uint16_t destination_port, const uint8_t *data,
-        uint16_t data_length) {
-    return destination_port == SUPERVISOR_UDP_ECHO_PORT &&
-        supervisor_network_submit_udp(source_ip, source_mac, source_port,
-                                      destination_port, data, data_length);
 }
 
 int supervisor_network_send_udp_echo_reply(
