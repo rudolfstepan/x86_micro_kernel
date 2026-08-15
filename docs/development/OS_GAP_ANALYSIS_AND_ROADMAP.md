@@ -209,6 +209,40 @@ und 10 verbindlich.
     - [ ] S0.3c-6f Medienunabhängiges Undo/COW/Journal mit Flush-/Barrier- und
       Power-Loss-Nachweis für jeden beschreibbaren Datenträger; stärkere
       Wechselmedien-Identität und kontrolliertes Cache-Invalidieren/Remount
+      - [ ] S0.3c-6f1 Explizit markiertes FAT12-Undo-Journal mit redundanten,
+        CRC-geschützten Headern, fester Kapazität, Recovery vor dem Lesen
+        veränderlicher FAT-/Verzeichnismetadaten und fail-closed Verhalten bei
+        beschädigtem oder erschöpftem Journal
+      - [ ] S0.3c-6f2 FAT12-Defektsektorverwaltung: fehlerhafte Datencluster mit
+        dem standardisierten FAT12-Wert `0xFF7` quarantänisieren, Metadaten- und
+        reservierte Sektoren über eine persistente, gespiegelte Remap-Tabelle
+        auf vorab reservierte Ersatzsektoren abbilden und nicht rekonstruierbare
+        Daten eindeutig melden statt stillschweigend zu ersetzen
+      - [ ] S0.3c-6f3 Copy-on-Write beziehungsweise replizierte Daten für
+        kritische FAT12-Dateien, damit ein Lesefehler oder Defektsektor nicht
+        nur erkannt, sondern aus einer validierten Kopie rekonstruiert werden
+        kann; Auswahl über CRC, Sequenz und Dateisysteminvarianten
+      - [ ] S0.3c-6f4 Geordnete FAT12-Schreibtransaktionen für Dateiinhalt,
+        FAT-Kopien und Verzeichniseinträge mit Readback-Verifikation; nach
+        unklarem Abschluss ausschließlich Recovery oder `ONLINE_RO`, niemals
+        blindes Wiederholen eines Writes
+      - [ ] S0.3c-6f5 Deterministische Fault-Injection nach jeder Persistenz-
+        barriere: Teilwrite, beschädigte Journal-Kopie, beide beschädigten
+        Kopien, defekter Daten-/FAT-/Root-Sektor, Medienauswurf und Stromverlust;
+        Host-Imageprüfung plus reale QEMU- und VMware-Reconnect-Abnahme
+      - [ ] S0.3c-6f6 Capability-gebundene Userspace-Wartungswerkzeuge ohne
+        direkten DMA-/Controllerzugriff
+        - [ ] `FDISK.PRG` für validierte Partitionstabellen auf partitionierten
+          Medien; Disketten bleiben standardmäßig partitionslose Superfloppies
+        - [ ] `FORMAT.PRG` für begrenzten FDD-Oberflächentest, FAT12-Erzeugung,
+          Journal-/Ersatzsektorinitialisierung und verifizierendes Readback
+        - [ ] `CHKDSK.PRG` für read-only Analyse sowie explizit bestätigte,
+          transaktionale Reparatur von FAT-Spiegeln, Clusterketten,
+          Verzeichnissen, Journal und Defektsektorkarte
+        - [ ] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
+          Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg
+          kontrolliert remounten; Abbruch lässt das Medium konsistent oder
+          eindeutig read-only zurück
   - [ ] **S0.3c-7 in Arbeit:** Unabhängiger Standby-/Supervisor-Kanal und
     realer Handover
     - [x] S0.3c-7a Statischer Lease-/Epoch-/Fence-Protokollkern mit
@@ -456,6 +490,11 @@ an die unter Präemptionsschutz aufgelöste aktuelle Generation einer Ziel-PID.
 - konsistente Open-Handle-, Delete- und Unmount-Semantik unter Nebenläufigkeit
 - eine generische `block_device`-Schnittstelle mit `read`, `write`, `flush`,
   Sektorgröße und Kapazität statt direkter ATA/FDD-Kopplung
+- persistentes FAT12-Undo-Journal, COW/Replica-Schutz für kritische Daten und
+  eine gespiegelte Defektsektor-/Remap-Tabelle; `0xFF7` allein schützt nur
+  Datencluster und kann verlorene Inhalte nicht rekonstruieren
+- capability-gebundene Ring-3-Werkzeuge `FDISK.PRG`, `FORMAT.PRG` und
+  `CHKDSK.PRG`; kein Userspace erhält direkten FDC-, DMA- oder Portzugriff
 - Partitionen als eigene Blockgeräte; derzeit wird pro physischem Laufwerk nur
   ein gefundenes Dateisystem automatisch gemountet
 - vollständige MBR-Prüfung und später GPT; Partitionsgrenzen bei jeder I/O
@@ -1841,6 +1880,27 @@ kontrollierte Cache-Invalidierung beziehungsweise ein Remount, wenn sich der
 Inhalt außerhalb von REIST bei unverändertem Boot-Fingerprint geändert hat.
 S0.3c-6 bleibt deshalb teilweise offen; S0.3c-7 kann parallel fortgesetzt
 werden.
+
+Die FAT12-Arbeit wird in vier Sicherheitsgrenzen aufgeteilt. Zuerst erhält nur
+ein explizit markiertes natives REIST-FAT12-Image ein fest begrenztes,
+gespiegeltes Undo-Journal; fremde Medien werden dadurch niemals stillschweigend
+umformatiert. Danach folgen eine persistente Defektsektor-/Remap-Tabelle und
+Copy-on-Write beziehungsweise replizierte Inhalte für ausgewählte kritische
+Dateien. Ein FAT12-Bad-Cluster-Marker `0xFF7` verhindert lediglich eine neue
+Belegung des Clusters und ist kein Daten-Recovery-Verfahren. Unlesbare
+Nutzdaten dürfen daher nur aus einer CRC-, Sequenz- und invariantengeprüften
+Kopie rekonstruiert werden; andernfalls wird der Verlust gemeldet und das
+Medium bleibt read-only.
+
+Die Wartung wird ausschließlich über den überwachten Storage-Dienst angeboten.
+`FDISK.PRG` verwaltet Partitionstabellen auf dafür geeigneten Medien,
+`FORMAT.PRG` führt einen begrenzten Oberflächentest durch und erzeugt das
+markierte FAT12-Layout, und `CHKDSK.PRG` trennt read-only Diagnose von einer
+explizit bestätigten Reparatur. Vor jeder Mutation sind exklusives
+Maintenance-Lease, Unmount, Handle-Prüfung und erneute Medienidentifikation
+Pflicht. Jeder Reparaturschritt läuft durch Journal/COW und verifizierendes
+Readback; Auswurf, Timeout oder unklarer Schreibabschluss dürfen höchstens zu
+einem konsistenten alten Zustand oder zu `ONLINE_RO` führen.
 
 **S0.3c-7a ist umgesetzt:** Ein statischer, `critical_object`-geschützter
 Zwei-Knoten-Protokollkern verwaltet aktive und Standby-ID, monotone Lease,
