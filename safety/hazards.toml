@@ -1,0 +1,53 @@
+schema_version = 1
+baseline = "REIST-research"
+status = "partial"
+
+[[hazard]]
+id = "HZ-KERNEL-001"
+title = "Unbekannte Kernel- oder Stackkorruption"
+severity = "catastrophic"
+safe_state = "Alle registrierten Ausgänge sperren, Crashrecord sichern und den Kanal kontrolliert neu starten."
+ftti_ms = 1000
+controls = ["kernel/init/fatal.c", "arch/x86/cpu/isr.asm", "kernel/init/output_fence.c"]
+verification = ["test/test_reist_fatal_containment.py", "test/test_reist_double_fault_recovery.py", "test/test_reist_user_stack_guards.py"]
+residual_risk = "Kontinuität ist ohne unabhängigen zweiten Hardwarekanal nicht nachgewiesen."
+
+[[hazard]]
+id = "HZ-HANDOVER-001"
+title = "Split Brain mit gleichzeitig aktiven Ausgängen"
+severity = "catastrophic"
+safe_state = "Standby bleibt gefencet, bis Active-Ende und extern rückgelesener Fence bestätigt sind."
+ftti_ms = 1000
+controls = ["kernel/init/handover.c", "kernel/init/handover_serial_backend.c", "kernel/init/storage_handover.c"]
+verification = ["test/test_reist_handover_pair.py", "test/test_reist_storage_handover.py"]
+residual_risk = "COM2/QEMU teilen Host, Versorgung und Zeitbasis; Zielhardwarebackend fehlt."
+
+[[hazard]]
+id = "HZ-STORAGE-001"
+title = "Persistente Mutation bei inkonsistentem oder nicht repliziertem Zustand"
+severity = "critical"
+safe_state = "Schreibpfad sperren und Dateisystem nur lesend beziehungsweise degradiert betreiben."
+ftti_ms = 250
+controls = ["kernel/init/storage_safety.c", "kernel/init/filesystem_safety.c", "kernel/init/storage_handover.c"]
+verification = ["test/test_reist_storage_domain.py", "test/test_reist_storage_handover.py"]
+residual_risk = "Bootvolume-Fingerprint schützt noch keine vollständige transaktionale Datenreplikation."
+
+[[hazard]]
+id = "HZ-SERVICE-001"
+title = "Dienst hängt, stürzt ab oder liefert semantisch ungültige Antwort"
+severity = "critical"
+safe_state = "Dienst isolieren, Autoritäten widerrufen, Ausgänge sperren und nur nach Selbsttest reintegrieren."
+ftti_ms = 250
+controls = ["kernel/init/supervisor.c", "kernel/ipc/ipc.c", "kernel/proc/process.c"]
+verification = ["test/test_reist_supervisor.py", "test/test_reist_probe_domain.py", "test/test_reist_ipc.py"]
+residual_risk = "Mehrere Dienste und Treiber verbleiben im modular-monolithischen Kernel."
+
+[[hazard]]
+id = "HZ-METADATA-001"
+title = "Bitfehler in Autoritäts- oder IPC-Metadaten"
+severity = "critical"
+safe_state = "Objekt fail-closed verwerfen, betroffene Autorität widerrufen und Dienst isolieren."
+ftti_ms = 250
+controls = ["kernel/init/critical_object.c", "kernel/ipc/ipc.c"]
+verification = ["test/test_reist_critical_object.py", "test/test_reist_ipc.py"]
+residual_risk = "Software-ECC schützt nicht gegen falsche Adressberechnung oder Common-Cause-CPU-Fehler."

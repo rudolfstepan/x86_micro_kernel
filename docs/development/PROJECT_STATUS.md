@@ -239,6 +239,13 @@ offen.
 Die bisherige Domäne ist noch keine unabhängige Kernel-, CPU- oder
 RAM-Fehlerdomäne.
 
+Das neue versionierte Gefahrenregister unter `safety/hazards.toml` bindet die
+ersten fünf zentralen REIST-Gefahren an positive FTTI, Safe-State, konkrete
+Kontrollen, vorhandene Tests und Restrisiken. Ein Hostvalidator prüft Schema,
+IDs und Referenzen fail-closed. Das Register ist bewusst als `partial`
+gekennzeichnet; vollständige Abdeckung und releasegebundene Testergebnisse
+bleiben Teil von S0.1.
+
 Der zuletzt ausgeführte vollständige Windows-Build bootete in VMware bis zum
 Prompt `C:\>`, mountete `hdd0` als `/`, initialisierte E1000 und erhielt per
 DHCP eine LAN-Adresse. Das eingebettete `HELLO.PRG` wurde bytegenau gegen das

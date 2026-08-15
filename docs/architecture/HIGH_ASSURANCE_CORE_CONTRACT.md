@@ -46,6 +46,17 @@ das entsprechende Profil für ein konkretes Zielsystem ausgewählt wurde.
    atomar, stromausfallsicher und rückfallfähig; Zeit- und Zählerüberläufe
    werden über die vorgesehene Lebensdauer geprüft.
 
+## Gefahrenregister und Traceability
+
+Das maschinenlesbare Register [`safety/hazards.toml`](../../safety/hazards.toml)
+verwendet Schema v1. Jeder Eintrag besitzt eine eindeutige ID, Schweregrad,
+positive FTTI, definierten sicheren Zustand, konkrete Kontrollen,
+Verifikationspfade und sichtbar verbleibendes Restrisiko. Der Validator
+`scripts/validate_hazard_register.py` lehnt unbekannte Versionen, doppelte IDs,
+unsichere Pfade und fehlende Evidenz fail-closed ab. Der Registerstatus bleibt
+`partial`, bis alle Kern-, Geräte- und ausgewählten Profilgefahren erfasst und
+die Testergebnisse automatisiert an eine Release-Baseline gebunden sind.
+
 ## Ziel-Failure-Domains
 
 Der aktuelle Kernel ist noch ein modularer Monolith. Das zentrale

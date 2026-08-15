@@ -94,7 +94,9 @@ und 10 verbindlich.
 
 - [ ] S0.1 Einsatzprofile, Gefahrenregister und vollständiger Assurance Case
   - [x] Generischer High-Assurance-Kernvertrag und getrennte Referenzprofile
-  - [ ] Versioniertes Gefahrenregister mit FTTI und Restrisiken
+  - [x] Maschinenprüfbares Gefahrenregister-v1-Schema mit eindeutigen IDs,
+    FTTI, Safe-State, Restrisiko sowie existierenden Code-/Testreferenzen
+  - [ ] Gefahrenregister für alle Kern-, Geräte- und Profilgefahren
   - [ ] Automatische Traceability von Gefahr bis Testergebnis
 - [ ] S0.2 Vollständiges Stack-, Exception- und Panic-Containment
   - [x] Guardpages, Double-Fault-Notfallpfad, Crashrecord und QEMU-Watchdog
