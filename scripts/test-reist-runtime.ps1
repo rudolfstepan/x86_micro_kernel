@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-udp-parser', 'storage-recovery', 'storage-io-failure', 'handover')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-udp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'handover')]
     [string]$Mode = 'normal'
 )
 
@@ -154,6 +154,13 @@ switch ($Mode) {
             '--nic', 'rtl8139', '--expect-network-frame',
             '--expect-network-ipv4', '--expect-network-udp',
             '--inject-udp-echo'
+        )
+    }
+    'network-udp-ingress' {
+        Invoke-Smoke 'guest-smoke-network-udp-ingress.log' @(
+            '--nic', 'rtl8139', '--expect-network-frame',
+            '--expect-network-ipv4', '--expect-network-udp',
+            '--expect-network-udp-ingress', '--inject-udp-echo'
         )
     }
     'storage-recovery' {

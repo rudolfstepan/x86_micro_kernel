@@ -275,6 +275,8 @@ typedef struct {
 #define SUPERVISOR_UDP_BINDING_VERSION 1U
 #define SUPERVISOR_UDP_BIND_REQUEST_VERSION 1U
 #define SUPERVISOR_UDP_REPLY_VERSION 1U
+#define SUPERVISOR_UDP_INGRESS_VERSION 1U
+#define SUPERVISOR_UDP_DELIVERY_VERSION 1U
 typedef uint32_t supervisor_udp_binding_handle_t;
 
 typedef struct {
@@ -291,6 +293,32 @@ typedef struct {
     supervisor_udp_binding_handle_t binding;
     uint32_t request_id;
 } supervisor_udp_reply_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    supervisor_udp_binding_handle_t binding;
+    uint32_t request_id;
+    uint32_t source_ip;
+    uint32_t destination_ip;
+    uint32_t frame_crc32;
+    uint8_t source_mac[6];
+    uint16_t source_port;
+    uint16_t destination_port;
+    uint16_t data_length;
+} supervisor_udp_ingress_t;
+
+typedef struct {
+    uint32_t active;
+    uint32_t process_generation;
+    uint32_t frame_crc32;
+    uint32_t frame_length;
+    uint64_t deadline_ms;
+} supervisor_udp_delivery_t;
+
+typedef struct {
+    critical_object_t object;
+} supervisor_protected_udp_delivery_t;
 
 typedef struct {
     uint32_t active;
@@ -558,6 +586,13 @@ bool supervisor_network_submit_udp(
     uint16_t destination_port, const uint8_t *data, uint16_t data_length);
 int supervisor_network_send_udp_reply(
     int pid, uint32_t generation, const supervisor_udp_reply_t *reply);
+int supervisor_network_udp_ingress(
+    int pid, uint32_t generation, const supervisor_udp_ingress_t *ingress,
+    const uint8_t *data, uint32_t *request_id_out);
+int supervisor_network_cancel_udp_ingress(
+    int pid, uint32_t generation, supervisor_udp_binding_handle_t binding,
+    uint32_t request_id);
+bool supervisor_network_udp_service_owns_port(uint16_t destination_port);
 int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind);
 int supervisor_register(const char *name, const supervisor_config_t *config,

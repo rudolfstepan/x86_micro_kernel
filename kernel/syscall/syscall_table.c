@@ -412,6 +412,8 @@ _Static_assert(sizeof(supervisor_udp_bind_request_t) == 16U,
                "REIST UDP bind request ABI changed");
 _Static_assert(sizeof(supervisor_udp_reply_t) == 16U,
                "REIST UDP reply ABI changed");
+_Static_assert(sizeof(supervisor_udp_ingress_t) == 40U,
+               "REIST UDP ingress ABI changed");
 
 static int syscall_reist_udp_bind(
         const supervisor_udp_bind_request_t *user_request,
@@ -458,6 +460,52 @@ static int syscall_reist_udp_reply(
     if (copy_from_user(&reply, user_reply, sizeof(reply)) != 0) return -14;
     return supervisor_network_send_udp_reply(
         process->pid, process->generation, &reply);
+}
+
+static int syscall_reist_udp_ingress(
+        supervisor_udp_ingress_t *user_ingress, const uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t ingress_address = (uint32_t)(uintptr_t)user_ingress;
+    if (process == NULL ||
+        !user_range_accessible(directory, ingress_address,
+                               sizeof(*user_ingress), false) ||
+        !user_range_accessible(directory, ingress_address,
+                               sizeof(*user_ingress), true)) return -14;
+
+    supervisor_udp_ingress_t ingress;
+    if (copy_from_user(&ingress, user_ingress, sizeof(ingress)) != 0)
+        return -14;
+    if (ingress.version != SUPERVISOR_UDP_INGRESS_VERSION ||
+        ingress.struct_size != sizeof(ingress) ||
+        ingress.request_id != 0U ||
+        ingress.data_length > SUPERVISOR_UDP_ECHO_MAX_DATA) return -22;
+
+    uint8_t data[SUPERVISOR_UDP_ECHO_MAX_DATA] = {0};
+    const uint8_t *data_argument = NULL;
+    if (ingress.data_length != 0U) {
+        uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+        if (!user_range_accessible(directory, data_address,
+                                   ingress.data_length, false) ||
+            copy_from_user(data, user_data, ingress.data_length) != 0)
+            return -14;
+        data_argument = data;
+    }
+
+    uint32_t request_id = 0U;
+    int result = supervisor_network_udp_ingress(
+        process->pid, process->generation, &ingress, data_argument,
+        &request_id);
+    if (result != 0) return result;
+    ingress.request_id = request_id;
+    if (copy_to_user(user_ingress, &ingress, sizeof(ingress)) != 0) {
+        if (request_id != 0U)
+            (void)supervisor_network_cancel_udp_ingress(
+                process->pid, process->generation, ingress.binding,
+                request_id);
+        return -14;
+    }
+    return 0;
 }
 
 _Static_assert(sizeof(storage_request_submit_t) == 28U,
@@ -1180,6 +1228,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_reist_udp_reply,     // Syscall 77: Reply on UDP binding
     (void*)&syscall_reist_dhcp_renew,    // Syscall 78: Bounded DHCP renew/rebind
     (void*)&syscall_reist_network_frame, // Syscall 79: Bounded raw RX handoff
+    (void*)&syscall_reist_udp_ingress,   // Syscall 80: Validate Ring-3 UDP ingress
     // Add more syscalls here as needed
 };
 
@@ -1562,6 +1611,11 @@ void syscall_handler(Registers* regs) {
         case SYS_REIST_NETWORK_FRAME:
             result = (uint32_t)syscall_reist_network_frame(
                 (supervisor_network_frame_t*)(uintptr_t)arg1);
+            break;
+        case SYS_REIST_UDP_INGRESS:
+            result = (uint32_t)syscall_reist_udp_ingress(
+                (supervisor_udp_ingress_t*)(uintptr_t)arg1,
+                (const uint8_t*)(uintptr_t)arg2);
             break;
         default:
             result = (uint32_t)-1;

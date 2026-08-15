@@ -158,6 +158,11 @@ und 10 verbindlich.
             prüfsumme, exakter Längenkonsistenz und RTL8139-Nachweis ergänzen
           - [ ] S0.3c-5e2b2 UDP-Bindings und DHCP-Eingang aus dem validierten
             Ring-3-Ergebnis speisen und den Ring-0-UDP-Demux entfernen
+            - [x] S0.3c-5e2b2a Dienstgebundene UDP-Ports über einen
+              CRC-/generation-/deadlinegeschützten Ring-3-Entscheid speisen
+              und deren parallele Ring-0-Zustellung unterbinden
+            - [ ] S0.3c-5e2b2b DHCP-Eingang und verbleibenden UDP-Demux aus
+              Ring 0 lösen; Druck-, Restart- und Fehlpfade abnehmen
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -306,24 +311,30 @@ separate Bereinigung der optionalen Legacy-Image-Tests bleiben Folgearbeiten.
 
 ## 5. Fehlende Funktionen nach Subsystem
 
+Dieser Abschnitt ist eine thematische Bestandsaufnahme und keine zweite
+Statusliste. Deshalb verwendet er normale Aufzählungspunkte. Verbindliche
+Erledigt-/Offen-Checkboxen stehen ausschließlich in der Fortschrittsübersicht,
+im schrittweisen Implementierungsplan, in der Arbeitsreihenfolge und in den
+Abnahmechecklisten.
+
 ### Prozess, Scheduler und IPC
 
-- [x] **S0.3a umgesetzt:** 16 statische Endpoints, acht Capabilities je Prozess,
+- **S0.3a umgesetzt:** 16 statische Endpoints, acht Capabilities je Prozess,
   vier Nachrichten je Queue, 128 Byte Nutzlast, blockierendes Send/Receive,
   explizite abschwächende Delegation ohne `CONTROL` und vollständiger
   Exit-Widerruf
-- [x] **umgesetzt:** ein Taskslot, ein Prozessslot und 32 Frames bleiben für
+- **umgesetzt:** ein Taskslot, ein Prozessslot und 32 Frames bleiben für
   explizite Supervisor-Spawns reserviert
-- [x] **umgesetzt:** vollständiges 56-Syscall-Inventar; Default-Deny-Probeprofil
+- **umgesetzt:** vollständiges 56-Syscall-Inventar; Default-Deny-Probeprofil
   und generation-sicheres Child-Kill vor jedem Seiteneffekt
-- [ ] generische Wait-Queues auf weitere Geräte- und Protokollereignisse anwenden
-- [ ] Pipes, Prozessgruppen und ein kleines Signalmodell
-- [ ] `waitpid(-1, ...)`, optionales nichtblockierendes Warten und saubere
+- generische Wait-Queues auf weitere Geräte- und Protokollereignisse anwenden
+- Pipes, Prozessgruppen und ein kleines Signalmodell
+- `waitpid(-1, ...)`, optionales nichtblockierendes Warten und saubere
   Reparenting-/Reaper-Semantik
-- [ ] dynamische oder zumindest deutlich größere Tasktabelle statt `MAX_TASKS 8`
-- [ ] Prioritäten erst nach korrekter Blockierung; Threads und SMP deutlich später
-- [x] echte User-Stack-Guardpages zusätzlich zu den vorhandenen Kernel-Guardpages
-- [ ] aussagekräftigere Prozessstatistiken
+- dynamische oder zumindest deutlich größere Tasktabelle statt `MAX_TASKS 8`
+- Prioritäten erst nach korrekter Blockierung; Threads und SMP deutlich später
+- echte User-Stack-Guardpages zusätzlich zu den vorhandenen Kernel-Guardpages
+- aussagekräftigere Prozessstatistiken
 
 ### Syscall- und Userspace-ABI
 
@@ -353,35 +364,35 @@ versionierte 128-Byte-Nachricht wird vollständig über validierte User-Kopien
 an die unter Präemptionsschutz aufgelöste aktuelle Generation einer Ziel-PID.
 `CONTROL` und Ambient-Spawn-Vererbung sind ausgeschlossen.
 
-- [ ] eine einzige gemeinsame, versionierte Quelle für Syscallnummern und
+- eine einzige gemeinsame, versionierte Quelle für Syscallnummern und
   Fehlercodes
-- [ ] stabile `errno`-ähnliche Fehlersemantik; aktuell werden VFS-Fehler oft auf
+- stabile `errno`-ähnliche Fehlersemantik; aktuell werden VFS-Fehler oft auf
   allgemeine Werte wie `-2`, `-5` oder `-9` reduziert
-- [ ] `open`-Flags (`RDONLY`, `WRONLY`, `RDWR`, `CREATE`, `TRUNC`, `APPEND`)
-- [ ] `lseek`, `fstat`, `truncate`, später `dup`/`dup2`; FAT32/ATA-`fsync` und
+- `open`-Flags (`RDONLY`, `WRONLY`, `RDWR`, `CREATE`, `TRUNC`, `APPEND`)
+- `lseek`, `fstat`, `truncate`, später `dup`/`dup2`; FAT32/ATA-`fsync` und
   Rename sind als erste persistente Spezialfälle vorhanden
-- [ ] echte Deskriptoren 0/1/2 für Standard-Ein-/Ausgabe
-- [ ] ABI-Fähigkeitsabfrage, damit ältere Programme kontrolliert weiterlaufen
+- echte Deskriptoren 0/1/2 für Standard-Ein-/Ausgabe
+- ABI-Fähigkeitsabfrage, damit ältere Programme kontrolliert weiterlaufen
 
 ### VFS, Dateisysteme und Blockgeräte
 
-- [ ] Rename auf FAT12 sowie verzeichnis- und volumenübergreifendes Verschieben;
+- Rename auf FAT12 sowie verzeichnis- und volumenübergreifendes Verschieben;
   FAT32 Same-Directory-Replace ist journalgestützt atomar
-- [ ] konsistente Open-Handle-, Delete- und Unmount-Semantik unter Nebenläufigkeit
-- [ ] eine generische `block_device`-Schnittstelle mit `read`, `write`, `flush`,
+- konsistente Open-Handle-, Delete- und Unmount-Semantik unter Nebenläufigkeit
+- eine generische `block_device`-Schnittstelle mit `read`, `write`, `flush`,
   Sektorgröße und Kapazität statt direkter ATA/FDD-Kopplung
-- [ ] Partitionen als eigene Blockgeräte; derzeit wird pro physischem Laufwerk nur
+- Partitionen als eigene Blockgeräte; derzeit wird pro physischem Laufwerk nur
   ein gefundenes Dateisystem automatisch gemountet
-- [ ] vollständige MBR-Prüfung und später GPT; Partitionsgrenzen bei jeder I/O
+- vollständige MBR-Prüfung und später GPT; Partitionsgrenzen bei jeder I/O
   erzwingen
-- [ ] ATA LBA48 und Multi-Sektor-I/O; aktuell ist der PIO-Treiber auf LBA28
+- ATA LBA48 und Multi-Sektor-I/O; aktuell ist der PIO-Treiber auf LBA28
   begrenzt (`drivers/block/ata.h:25`)
-- [ ] FAT-Schreibreihenfolge, Fehlerpropagation und Power-Loss-Tests
-- [ ] FAT Long File Names und eine definierte Zeichenkodierung
-- [ ] FAT-Zeitstempel über VFS; FAT32 liefert derzeit Nullen
-- [ ] mehrere FAT12-Volumes; der Adapter besitzt aktuell nur einen globalen
+- FAT-Schreibreihenfolge, Fehlerpropagation und Power-Loss-Tests
+- FAT Long File Names und eine definierte Zeichenkodierung
+- FAT-Zeitstempel über VFS; FAT32 liefert derzeit Nullen
+- mehrere FAT12-Volumes; der Adapter besitzt aktuell nur einen globalen
   `mounted_fat12_fs`
-- [ ] EXT2 entweder klar dauerhaft read-only halten oder erst nach den
+- EXT2 entweder klar dauerhaft read-only halten oder erst nach den
   Zuverlässigkeitsarbeiten vollständig schreibbar machen
 
 ### Terminal, Shell und Desktop
@@ -395,71 +406,71 @@ Der Desktop-MVP umgeht die feste Terminalgeometrie für seine Oberfläche über
 Pixelrechtecke und Pixelschrift. Er startet vorhandene Apps jedoch bewusst als
 einzelne Vollbild-Kindprozesse und ist noch kein Fenstersystem.
 
-- [ ] TTY-Abstraktion mit kanonischem/raw Modus, Echo und per-Prozess
+- TTY-Abstraktion mit kanonischem/raw Modus, Echo und per-Prozess
   Vordergrundgruppe
-- [ ] `Ctrl+C` als Signal an die Vordergrundgruppe statt Sonderbehandlung direkt
+- `Ctrl+C` als Signal an die Vordergrundgruppe statt Sonderbehandlung direkt
   im `getchar`-Syscall
-- [ ] dynamische Terminalgröße; mehrere Syscalls prüfen heute fest gegen 80x25,
+- dynamische Terminalgröße; mehrere Syscalls prüfen heute fest gegen 80x25,
   obwohl der Framebuffer andere Größen besitzen kann
-- [ ] Quotes/Escapes, Umgebungsvariablen, Verlauf und Exitcodes in der
+- Quotes/Escapes, Umgebungsvariablen, Verlauf und Exitcodes in der
   Userspace-Shell
-- [ ] Pipes, Ein-/Ausgabeumleitung und Hintergrundjobs nach Fertigstellung von
+- Pipes, Ein-/Ausgabeumleitung und Hintergrundjobs nach Fertigstellung von
   Deskriptoren, Wait-Queues und Signalen
-- [ ] Editor: das sichere `TEMP -> fsync -> close -> rename` ist umgesetzt;
+- Editor: das sichere `TEMP -> fsync -> close -> rename` ist umgesetzt;
   dynamischer Puffer, Suche, Auswahl/Clipboard und die Aufhebung des
   Limits von 200 Zeilen fehlen
-- [ ] ein kleines Ring-3-`init` als PID 1 statt direktem Shellstart durch den Kernel
-- [ ] Mausereignisse, Fokusmodell, Compositor und Windowmanager als getrenntes
+- ein kleines Ring-3-`init` als PID 1 statt direktem Shellstart durch den Kernel
+- Mausereignisse, Fokusmodell, Compositor und Windowmanager als getrenntes
   späteres Paket statt Erweiterung der schmalen Display-ABI
 
 ### Netzwerk
 
-- [ ] ARP-Erneuerung sowie DHCP-Renew/Rebind
-- [ ] robuste IPv4-Fehlerpfade und definierter Umgang mit Fragmenten; aktuell
+- ARP-Erneuerung sowie DHCP-Renew/Rebind
+- robuste IPv4-Fehlerpfade und definierter Umgang mit Fragmenten; aktuell
   werden Fragmente verworfen
-- [ ] nutzbares UDP-Binding: `udp_bind()` ist in
+- nutzbares UDP-Binding: `udp_bind()` ist in
   `drivers/net/netstack.c:961-964` noch ein Stub
-- [ ] Socketobjekte als Dateideskriptoren und Userspace-Syscalls
-- [ ] DNS-Resolver nach funktionierenden UDP-Sockets
-- [ ] TCP mit Zustandsautomat, Sequenznummern, Retransmission, Timern, Fenstern und
+- Socketobjekte als Dateideskriptoren und Userspace-Syscalls
+- DNS-Resolver nach funktionierenden UDP-Sockets
+- TCP mit Zustandsautomat, Sequenznummern, Retransmission, Timern, Fenstern und
   sauberem Verbindungsabbau; alle vier öffentlichen TCP-Funktionen sind derzeit
   Stubs (`drivers/net/netstack.c:966-970`)
-- [ ] erste Anwendungen wie `netcat` und ein kleiner HTTP/1.0-Client
-- [ ] IPv6 erst nach einer belastbaren IPv4-/Socket-Schicht
-- [ ] VMXNET3 nur implementieren, wenn E1000 nicht mehr als VMware-Referenz reicht;
+- erste Anwendungen wie `netcat` und ein kleiner HTTP/1.0-Client
+- IPv6 erst nach einer belastbaren IPv4-/Socket-Schicht
+- VMXNET3 nur implementieren, wenn E1000 nicht mehr als VMware-Referenz reicht;
   der vorhandene Treiber deaktiviert das Gerät absichtlich
 
 ### USB und moderne Hardware
 
-- [ ] DMA-API für physische Adressen, Alignment, 32-Bit-Grenzen und kohärente
+- DMA-API für physische Adressen, Alignment, 32-Bit-Grenzen und kohärente
   Puffer
-- [ ] vollständiger xHCI-Reset und Controllerstart, Command-/Event-/Transfer-Ringe,
+- vollständiger xHCI-Reset und Controllerstart, Command-/Event-/Transfer-Ringe,
   Doorbells und Interrupts
-- [ ] Root-Port-Status, Geräteadressierung, Deskriptoren und Konfiguration
-- [ ] Hub-Unterstützung, danach HID-Tastatur und USB-Massenspeicher
-- [ ] der heutige Code endet nach PCI/BAR/IRQ-Ausgabe und lässt xHCI deaktiviert
+- Root-Port-Status, Geräteadressierung, Deskriptoren und Konfiguration
+- Hub-Unterstützung, danach HID-Tastatur und USB-Massenspeicher
+- der heutige Code endet nach PCI/BAR/IRQ-Ausgabe und lässt xHCI deaktiviert
   (`drivers/usb/xhci.c:4-25`); `hub.c` und `hid_kb.c` sind Platzhalter
-- [ ] zentrale, validierte ACPI-Schicht statt der isolierten experimentellen
+- zentrale, validierte ACPI-Schicht statt der isolierten experimentellen
   HPET-Suche; danach HPET als optionalen Clocksource, IOAPIC und
   Poweroff/Reboot integrieren
-- [ ] AHCI/NVMe erst nach Block- und DMA-Abstraktion
+- AHCI/NVMe erst nach Block- und DMA-Abstraktion
 
 ### Sicherheit, Diagnose und Produktreife
 
-- [ ] dokumentiertes Bedrohungsmodell: vorerst vertrauenswürdiger Single-User oder
+- dokumentiertes Bedrohungsmodell: vorerst vertrauenswürdiger Single-User oder
   später Benutzer/Rechte/Capabilities
-- [x] Prozess-Kill ist generation-sicher auf eigene Kinder bzw. explizite
+- Prozess-Kill ist generation-sicher auf eigene Kinder bzw. explizite
   Supervisor-Autorität begrenzt
-- [ ] Dateirechte und ACLs; FAT besitzt derzeit keine Berechtigungsmetadaten
-- [ ] keine kryptografische Boot-Authentizität: CRC32 erkennt Beschädigung, aber
+- Dateirechte und ACLs; FAT besitzt derzeit keine Berechtigungsmetadaten
+- keine kryptografische Boot-Authentizität: CRC32 erkennt Beschädigung, aber
   keinen absichtlichen Austausch
-- [ ] Zufallsquelle/CSPRNG, ASLR und sichere Netzwerk-Defaults erst bei einem
+- Zufallsquelle/CSPRNG, ASLR und sichere Netzwerk-Defaults erst bei einem
   Sicherheitsziel
-- [ ] optionale Panic-Symbolauflösung zusätzlich zum vorhandenen Register-/CR2-
+- optionale Panic-Symbolauflösung zusätzlich zum vorhandenen Register-/CR2-
   Kontext und der SHA1-Build-ID
-- [ ] Debug-Buildprofil, statische Analyse und hostseitiges Sanitizer-/Fuzzing für
+- Debug-Buildprofil, statische Analyse und hostseitiges Sanitizer-/Fuzzing für
   Parser
-- [ ] reproduzierbare Gasttests und eine kleine Hardwarematrix
+- reproduzierbare Gasttests und eine kleine Hardwarematrix
 
 ## 6. Abhängigkeiten
 
@@ -1515,8 +1526,15 @@ Prüfsumme. Ungerade Nutzdatenlängen sind abgedeckt; das 20-Byte-Ergebnis wird
 bei jedem Fehler vollständig genullt. Der generationsgebundene UDP-
 Liefernachweis ist weiterhin reine Diagnose. Ein realer RTL8139-Lauf bestätigt
 `UDP_PARSED_RING3` sowie im selben Lauf einen vermittelten UDP-Echo-Request.
-S0.3c-5e2b2 muss als Nächstes Binding-/DHCP-Zustand aus diesem Ergebnis speisen,
-bevor der Ring-0-UDP-Demux entfernt werden darf.
+S0.3c-5e2b2a ist ebenfalls umgesetzt: Syscall 80 übernimmt ausschließlich
+einen zum zuletzt ausgelieferten Frame passenden, CRC32-, generation- und
+deadlinegebundenen Ring-3-Entscheid. Gültige Datagramme für aktive
+Dienstbindings erzeugen eine geschützte Einmalautorität; ungültige oder
+ungebundene Datagramme werden kanonisch verworfen. Der Kernel unterdrückt für
+diese dienstbesessenen Ports die parallele Legacy-Zustellung. Der reale
+RTL8139-Lauf bestätigt `UDP_INGRESS_RING3 -> UDP_ECHO_MEDIATED -> TEST_OK`.
+S0.3c-5e2b2b muss als Nächstes DHCP-Eingang und verbleibenden UDP-Demux über
+denselben validierten Ring-3-Pfad führen.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

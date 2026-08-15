@@ -83,7 +83,8 @@ enum {
     X86OS_SYS_REIST_UDP_UNBIND = 76,
     X86OS_SYS_REIST_UDP_REPLY = 77,
     X86OS_SYS_REIST_DHCP_RENEW = 78,
-    X86OS_SYS_REIST_NETWORK_FRAME = 79
+    X86OS_SYS_REIST_NETWORK_FRAME = 79,
+    X86OS_SYS_REIST_UDP_INGRESS = 80
 };
 
 enum {
@@ -237,6 +238,7 @@ typedef struct {
 
 #define X86OS_REIST_UDP_BIND_REQUEST_VERSION 1U
 #define X86OS_REIST_UDP_REPLY_VERSION 1U
+#define X86OS_REIST_UDP_INGRESS_VERSION 1U
 #define X86OS_REIST_UDP_MAX_DATA 32U
 typedef uint32_t x86os_reist_udp_binding_t;
 typedef struct {
@@ -252,6 +254,19 @@ typedef struct {
     x86os_reist_udp_binding_t binding;
     uint32_t request_id;
 } x86os_reist_udp_reply_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_reist_udp_binding_t binding;
+    uint32_t request_id;
+    uint32_t source_ip;
+    uint32_t destination_ip;
+    uint32_t frame_crc32;
+    uint8_t source_mac[6];
+    uint16_t source_port;
+    uint16_t destination_port;
+    uint16_t data_length;
+} x86os_reist_udp_ingress_t;
 
 #define X86OS_STORAGE_REQUEST_VERSION 1U
 #define X86OS_STORAGE_BLOCK_SIZE 512U
@@ -393,6 +408,8 @@ int x86os_reist_udp_bind(const x86os_reist_udp_bind_request_t *request,
                          x86os_reist_udp_binding_t *binding);
 int x86os_reist_udp_unbind(x86os_reist_udp_binding_t binding);
 int x86os_reist_udp_reply(const x86os_reist_udp_reply_t *reply);
+int x86os_reist_udp_ingress(x86os_reist_udp_ingress_t *ingress,
+                            const uint8_t *data);
 int x86os_network_arp_resolve(uint32_t target_ip);
 int x86os_storage_bind(void);
 int x86os_storage_submit(const x86os_storage_submit_t *request,

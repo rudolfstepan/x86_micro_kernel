@@ -27,6 +27,17 @@ static bool checksum_valid(const uint8_t *header, uint16_t length) {
     return (uint16_t)sum == 0xFFFFU;
 }
 
+uint32_t reist_frame_crc32(const uint8_t *frame, uint32_t frame_length) {
+    if (frame == NULL || frame_length > REIST_IPV4_MAX_FRAME_SIZE) return 0U;
+    uint32_t crc = 0xFFFFFFFFU;
+    for (uint32_t index = 0U; index < frame_length; ++index) {
+        crc ^= frame[index];
+        for (uint32_t bit = 0U; bit < 8U; ++bit)
+            crc = (crc >> 1U) ^ (0xEDB88320U & (0U - (crc & 1U)));
+    }
+    return crc ^ 0xFFFFFFFFU;
+}
+
 int reist_ipv4_parse_frame(const uint8_t *frame, uint32_t frame_length,
                            reist_ipv4_parse_result_t *result) {
     if (result == NULL) return REIST_IPV4_PARSE_EINVAL;

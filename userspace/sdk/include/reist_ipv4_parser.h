@@ -32,5 +32,6 @@ _Static_assert(sizeof(reist_ipv4_parse_result_t) ==
 
 int reist_ipv4_parse_frame(const uint8_t *frame, uint32_t frame_length,
                            reist_ipv4_parse_result_t *result);
+uint32_t reist_frame_crc32(const uint8_t *frame, uint32_t frame_length);
 
 #endif

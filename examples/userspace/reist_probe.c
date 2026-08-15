@@ -151,6 +151,16 @@ static bool udp_proposal_valid(const x86os_ipc_message_t *message) {
         message->length == 28U + data_length;
 }
 
+static x86os_reist_udp_binding_t udp_binding_for_port(
+        const x86os_reist_udp_binding_t bindings[4],
+        const uint16_t ports[4], uint16_t destination_port) {
+    for (uint32_t index = 0U; index < 4U; ++index) {
+        if (bindings[index] != 0U && ports[index] == destination_port)
+            return bindings[index];
+    }
+    return 0U;
+}
+
 static const char *network_classification(
         const x86os_ipc_message_t *message) {
     /* NET1/NETR/NETQ followed by one complete Ethernet+ARP header. This deliberately
@@ -332,6 +342,8 @@ int main(int argc, char **argv) {
     if (x86os_reist_udp_unbind(stale_binding) != -9 ||
         x86os_reist_udp_unbind(udp_bindings[3]) != 0 ||
         x86os_reist_udp_unbind(udp_bindings[2]) != 0) return 26;
+    udp_bindings[3] = 0U;
+    udp_bindings[2] = 0U;
 
     uint32_t sequence = 2U;
     uint32_t pending_network_request = 0U;
@@ -376,6 +388,52 @@ int main(int argc, char **argv) {
                                        udp_result.destination_port) != 0)
                     return 34;
                 network_udp_reported = true;
+            }
+            bool raw_udp_delivery = ethertype == 0x0800U &&
+                network_frame.length >= 34U &&
+                network_frame.data[23U] == 17U;
+            if (raw_udp_delivery) {
+                uint32_t frame_crc32 = reist_frame_crc32(
+                    network_frame.data, network_frame.length);
+                x86os_reist_udp_ingress_t ingress = {
+                    .version = X86OS_REIST_UDP_INGRESS_VERSION,
+                    .struct_size = sizeof(ingress),
+                    .frame_crc32 = frame_crc32,
+                };
+                const uint8_t *payload = NULL;
+                if (ipv4_parse == 0 && udp_parse == 0 &&
+                    udp_result.payload_length <= X86OS_REIST_UDP_MAX_DATA) {
+                    ingress.binding = udp_binding_for_port(
+                        udp_bindings, udp_ports,
+                        udp_result.destination_port);
+                    if (ingress.binding != 0U) {
+                        ingress.source_ip = ipv4_result.source_ip;
+                        ingress.destination_ip = ipv4_result.destination_ip;
+                        ingress.source_port = udp_result.source_port;
+                        ingress.destination_port =
+                            udp_result.destination_port;
+                        ingress.data_length = udp_result.payload_length;
+                        for (uint32_t index = 0U; index < 6U; ++index)
+                            ingress.source_mac[index] =
+                                network_frame.data[6U + index];
+                        payload = &network_frame.data[
+                            udp_result.payload_offset];
+                    }
+                }
+                if (x86os_reist_udp_ingress(&ingress, payload) != 0)
+                    return 35;
+                if (ingress.binding != 0U) {
+                    if (ingress.request_id == 0U) return 36;
+                    x86os_reist_udp_reply_t reply = {
+                        .version = X86OS_REIST_UDP_REPLY_VERSION,
+                        .struct_size = sizeof(reply),
+                        .binding = ingress.binding,
+                        .request_id = ingress.request_id,
+                    };
+                    if (x86os_reist_udp_reply(&reply) != 0) return 37;
+                } else if (ingress.request_id != 0U) {
+                    return 38;
+                }
             }
         } else if (frame_result != -11) {
             return 32;

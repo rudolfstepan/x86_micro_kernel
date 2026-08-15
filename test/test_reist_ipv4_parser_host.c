@@ -38,6 +38,11 @@ static void make_frame(uint8_t *frame, uint8_t ihl_words,
 }
 
 int main(void) {
+    static const uint8_t crc_vector[] = "123456789";
+    if (reist_frame_crc32(crc_vector, 9U) != 0xCBF43926U ||
+        reist_frame_crc32(NULL, 0U) != 0U ||
+        reist_frame_crc32(crc_vector, REIST_IPV4_MAX_FRAME_SIZE + 1U) != 0U)
+        return 12;
     uint8_t frame[REIST_IPV4_MAX_FRAME_SIZE];
     reist_ipv4_parse_result_t result;
     make_frame(frame, 5U, 8U);

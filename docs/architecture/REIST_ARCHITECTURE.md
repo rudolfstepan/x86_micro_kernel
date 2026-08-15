@@ -563,6 +563,19 @@ Payloadlänge und Prüfsumme. Eine getrennte PID-/Generationsberechtigung bindet
 Frame. Sie autorisiert weder Demultiplex noch Antwort; diese Zustände wechseln
 erst in S0.3c-5e2b2 aus Ring 0.
 
+S0.3c-5e2b2a macht den ersten UDP-Datenpfad exklusiv dienstbesessen. Nach dem
+Copy-out veröffentlicht der Supervisor für höchstens 250 ms nur CRC32,
+Framegröße und Dienstgeneration als geschütztes Lieferobjekt. Der Ring-3-
+Parser reicht über Syscall 80 einen festen 40-Byte-Entscheid zurück. Kernel und
+SDK prüfen Version, Größe, Userbereiche, Frame-CRC, Dienstgeneration, lokale
+Zieladresse, Quellidentität und das aktive Binding, bevor eine bereits
+vorhandene UDP-Antwortautorität erzeugt wird. Copy-out-Fehler widerrufen diese
+Autorität. Ungültige, zu große oder ungebundene UDP-Frames werden mit einem
+kanonischen Drop-Entscheid konsumiert. `netstack` veröffentlicht Datagramme an
+aktiven Dienstports nicht zusätzlich über den Legacy-Pfad; andere Ports und
+DHCP bleiben bis S0.3c-5e2b2b unverändert. Der RTL8139-Nachweis verlangt
+`UDP_INGRESS_RING3` und die vermittelte Echoantwort bis `TEST_OK`.
+
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau
 einen geschützt gespeicherten Aktivzustand und eine saturierend berechnete

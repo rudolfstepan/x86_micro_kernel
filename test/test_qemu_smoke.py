@@ -260,6 +260,19 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
                                "NOT_UDP_PARSED_RING3"),
             expect_network_udp=True))
 
+    def test_network_udp_ingress_requires_exact_ring3_marker(self) -> None:
+        transcript = "\n".join((
+            RUNNER_MODULE.REIST_NETWORK_UDP_INGRESS_MARKER,
+            "BOOT_OK", "C:\\>", "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_network_udp_ingress=True))
+        self.assertIn("UDP ingress", RUNNER_MODULE.validate(
+            transcript.replace(
+                RUNNER_MODULE.REIST_NETWORK_UDP_INGRESS_MARKER,
+                "NOT_UDP_INGRESS_RING3"),
+            expect_network_udp_ingress=True))
+
     def test_reist_probe_markers_are_required_in_order(self) -> None:
         transcript = "\n".join((
             "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,

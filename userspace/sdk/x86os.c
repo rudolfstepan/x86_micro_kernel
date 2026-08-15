@@ -193,6 +193,8 @@ _Static_assert(sizeof(x86os_reist_udp_bind_request_t) == 16U,
                "REIST UDP bind request ABI size changed");
 _Static_assert(sizeof(x86os_reist_udp_reply_t) == 16U,
                "REIST UDP reply ABI size changed");
+_Static_assert(sizeof(x86os_reist_udp_ingress_t) == 40U,
+               "REIST UDP ingress ABI size changed");
 
 int x86os_reist_udp_bind(const x86os_reist_udp_bind_request_t *request,
                          x86os_reist_udp_binding_t *binding) {
@@ -208,6 +210,13 @@ int x86os_reist_udp_unbind(x86os_reist_udp_binding_t binding) {
 int x86os_reist_udp_reply(const x86os_reist_udp_reply_t *reply) {
     return (int)x86os_syscall(X86OS_SYS_REIST_UDP_REPLY,
                               (uint32_t)(uintptr_t)reply, 0U, 0U);
+}
+
+int x86os_reist_udp_ingress(x86os_reist_udp_ingress_t *ingress,
+                            const uint8_t *data) {
+    return (int)x86os_syscall(X86OS_SYS_REIST_UDP_INGRESS,
+                              (uint32_t)(uintptr_t)ingress,
+                              (uint32_t)(uintptr_t)data, 0U);
 }
 
 int x86os_network_arp_resolve(uint32_t target_ip) {

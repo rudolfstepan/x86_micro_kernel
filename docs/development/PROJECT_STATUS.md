@@ -207,8 +207,15 @@ S0.3c-5e2b1 ist ebenfalls abgeschlossen: Der Ring-3-Dienst validiert UDP-Länge,
 Portpaar und verpflichtende Pseudoheader-Prüfsumme heapfrei und liefert ein
 festes 20-Byte-Ergebnis. Der reale RTL8139-Lauf bestätigt
 `REIST_NETWORK UDP_PARSED_RING3` und einen vermittelten UDP-Echo-Request.
-Weiter offen bleibt S0.3c-5e2b2: Binding-/DHCP-Demux über das validierte
-Ergebnis führen und erst dann den Ring-0-UDP-Parallelpfad abschalten.
+S0.3c-5e2b2a speist nun dienstgebundene UDP-Ports aus genau diesem validierten
+Ergebnis. Der append-only Syscall 80 bindet die Entscheidung über CRC32,
+Dienstgeneration und eine absolute 250-ms-Deadline an den zuletzt gelieferten
+Frame. Nur ein aktives Binding darf eine geschützte Antwortautorität erzeugen;
+ungebundene oder ungültige Datagramme müssen kanonisch verworfen werden. Für
+dienstbesessene Ports ist die parallele Legacy-Zustellung in Ring 0
+unterbunden. Der echte RTL8139-Lauf bestätigt `UDP_INGRESS_RING3`, die
+vermittelte Antwort und `TEST_OK`. Offen bleibt S0.3c-5e2b2b: DHCP-Eingang und
+den verbleibenden UDP-Demux aus Ring 0 lösen.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

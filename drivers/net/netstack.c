@@ -526,12 +526,17 @@ static void handle_udp_packet(const ip_header_t *ip, uint8_t *packet,
     uint16_t data_length = (uint16_t)(udp_length - sizeof(udp_header_t));
     uint8_t *data = packet + sizeof(udp_header_t);
     if (udp->checksum == 0U ||
-        !udp_checksum_valid(ip, udp, data, data_length) ||
-        !supervisor_network_submit_udp(
-            source_ip, source_mac, source_port, destination_port,
-            data, data_length)) {
+        !udp_checksum_valid(ip, udp, data, data_length)) {
         ++netstack_stats.rx_dropped;
+        return;
     }
+    /* A healthy supervised service owns its bound ports exclusively.  The
+     * raw-frame handoff is the sole delivery path, so Ring 0 must not also
+     * publish the same datagram through the legacy proposal queue. */
+    if (supervisor_network_udp_service_owns_port(destination_port)) return;
+    if (!supervisor_network_submit_udp(
+            source_ip, source_mac, source_port, destination_port,
+            data, data_length)) ++netstack_stats.rx_dropped;
 }
 
 // =============================================================================
