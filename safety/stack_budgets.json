@@ -1,0 +1,42 @@
+{
+  "entry_budgets": [
+    {"name": "legacy_irq", "root": "irq_handler", "limit": 7168},
+    {"name": "scheduler_irq", "root": "scheduler_interrupt_handler", "limit": 4096}
+  ],
+  "indirect_calls": {
+    "irq_handler": [
+      "timer_irq_handler",
+      "kb_handler",
+      "hpet_timer_isr",
+      "fdd_irq_handler",
+      "drivers/char/serial.c:serial_com1_irq_handler",
+      "rtl8139_interrupt_handler",
+      "ne2000_irq_handler",
+      "drivers/net/e1000.c:e1000_isr"
+    ]
+  },
+  "registered_irq_handlers": [
+    "timer_irq_handler",
+    "kb_handler",
+    "hpet_timer_isr",
+    "fdd_irq_handler",
+    "serial_com1_irq_handler",
+    "rtl8139_interrupt_handler",
+    "ne2000_irq_handler",
+    "e1000_isr"
+  ],
+  "indirect_costs": {
+    "kernel/init/critical_object.c:copy_check": 1024,
+    "output_fence_all": 1024
+  },
+  "external_costs": {
+    "swtch": 64,
+    "__udivmoddi4": 128
+  },
+  "contract_notes": {
+    "kernel/init/critical_object.c:copy_check": "1024-byte reserve covers the validator callback beneath the 80-byte wrapper",
+    "output_fence_all": "1024-byte reserve covers one sequentially invoked registered fence callback",
+    "swtch": "64-byte conservative assembly transition reserve",
+    "__udivmoddi4": "128-byte compiler-runtime reserve"
+  }
+}

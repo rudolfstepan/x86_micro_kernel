@@ -543,7 +543,8 @@ check-kernel-stack-analysis:
 		STACK_ANALYSIS_FLAGS="-fstack-usage -fcallgraph-info=su"
 	@$(PYTHON) scripts/validate_stack_usage.py \
 		--root $(STACK_ANALYSIS_OUTPUT_DIR) --expected 75 \
-		--local-limit 4096
+		--local-limit 4096 --budget-file safety/stack_budgets.json \
+		--source-root .
 
 # ============================================================================
 # BOOTABLE DISK IMAGE

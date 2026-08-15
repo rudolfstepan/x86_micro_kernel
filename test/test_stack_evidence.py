@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import importlib.util
+import json
 import tempfile
 import unittest
 
@@ -63,6 +64,99 @@ class StackEvidenceTests(unittest.TestCase):
         self.assertNotIn("pci_scan_bus(", function)
         self.assertEqual(1, function.count("pci_scan_function("))
         self.assertIn("for (unsigned int bus = 1; bus < 256; ++bus)", source)
+
+    def test_cumulative_entry_budget_resolves_declared_indirect_call(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "unit.su").write_text(
+                "u.c:1:1:entry\t32\tstatic\n"
+                "u.c:2:1:leaf\t64\tstatic\n", encoding="utf-8")
+            (root / "unit.ci").write_text(
+                'graph: {\n'
+                'node: { title: "entry" label: "entry\\nu.c:1:1\\n32 bytes (static)" }\n'
+                'node: { title: "leaf" label: "leaf\\nu.c:2:1\\n64 bytes (static)" }\n'
+                'node: { title: "__indirect_call" label: "Indirect Call Placeholder" }\n'
+                'edge: { sourcename: "entry" targetname: "__indirect_call" }\n}\n',
+                encoding="utf-8")
+            budget = root / "budgets.json"
+            budget.write_text(json.dumps({
+                "entry_budgets": [
+                    {"name": "irq", "root": "entry", "limit": 96}],
+                "indirect_calls": {"entry": ["leaf"]},
+                "external_costs": {},
+            }), encoding="utf-8")
+            errors, _, summary = VALIDATOR.validate(root, 1, 128, budget)
+        self.assertEqual([], errors)
+        self.assertIn("irq=96/96", summary)
+
+    def test_budget_fails_for_unknown_cost_indirect_or_overrun(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "unit.su").write_text(
+                "u.c:1:1:entry\t32\tstatic\n", encoding="utf-8")
+            (root / "unit.ci").write_text(
+                'graph: {\n'
+                'node: { title: "entry" label: "entry\\nu.c:1:1\\n32 bytes (static)" }\n'
+                'node: { title: "missing" label: "missing" }\n'
+                'node: { title: "__indirect_call" label: "Indirect Call Placeholder" }\n'
+                'edge: { sourcename: "entry" targetname: "missing" }\n'
+                'edge: { sourcename: "entry" targetname: "__indirect_call" }\n}\n',
+                encoding="utf-8")
+            budget = root / "budgets.json"
+            budget.write_text(json.dumps({
+                "entry_budgets": [
+                    {"name": "entry", "root": "entry", "limit": 16}],
+            }), encoding="utf-8")
+            errors, _, _ = VALIDATOR.validate(root, 1, 128, budget)
+        self.assertTrue(any("missing stack cost" in error for error in errors))
+        self.assertTrue(any("unbound indirect call" in error for error in errors))
+        self.assertTrue(any("exceeds" in error for error in errors))
+
+    def test_declared_indirect_cost_is_counted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "unit.su").write_text(
+                "u.c:1:1:entry\t32\tstatic\n", encoding="utf-8")
+            (root / "unit.ci").write_text(
+                'graph: {\n'
+                'node: { title: "entry" label: "entry\\nu.c:1:1\\n32 bytes (static)" }\n'
+                'node: { title: "__indirect_call" label: "Indirect Call Placeholder" }\n'
+                'edge: { sourcename: "entry" targetname: "__indirect_call" }\n}\n',
+                encoding="utf-8")
+            budget = root / "budgets.json"
+            budget.write_text(json.dumps({
+                "entry_budgets": [
+                    {"name": "entry", "root": "entry", "limit": 96}],
+                "indirect_costs": {"entry": 64},
+            }), encoding="utf-8")
+            errors, _, summary = VALIDATOR.validate(root, 1, 128, budget)
+        self.assertEqual([], errors)
+        self.assertIn("entry=96/96", summary)
+
+    def test_registered_irq_handler_drift_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_root = root / "source"
+            source_root.mkdir()
+            (source_root / "irq.c").write_text(
+                "register_interrupt_handler(1, (void*)new_handler);\n",
+                encoding="utf-8")
+            (root / "unit.su").write_text(
+                "u.c:1:1:entry\t32\tstatic\n", encoding="utf-8")
+            (root / "unit.ci").write_text(
+                'graph: { node: { title: "entry" '
+                'label: "entry\\nu.c:1:1\\n32 bytes (static)" } }\n',
+                encoding="utf-8")
+            budget = root / "budgets.json"
+            budget.write_text(json.dumps({
+                "entry_budgets": [
+                    {"name": "entry", "root": "entry", "limit": 32}],
+                "registered_irq_handlers": ["old_handler"],
+            }), encoding="utf-8")
+            errors, _, _ = VALIDATOR.validate(
+                root, 1, 128, budget, source_root)
+        self.assertTrue(any("unbudgeted" in error for error in errors))
+        self.assertTrue(any("stale" in error for error in errors))
 
 
 if __name__ == "__main__":
