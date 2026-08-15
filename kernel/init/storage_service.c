@@ -110,14 +110,19 @@ static bool fingerprint_valid(const void *payload, size_t length) {
            fingerprint->type == DRIVE_TYPE_FDD;
 }
 
-static bool read_boot_sector(uint32_t resource, uint8_t *data) {
+static bool read_boot_sector(uint32_t resource, uint8_t *data,
+                             bool recovery_probe) {
     if (resource >= (uint32_t)drive_count || data == NULL) return false;
     drive_t *drive = &detected_drives[resource];
     if (drive->type == DRIVE_TYPE_ATA)
         return ata_read_sector_fresh(drive->base, 0U, data,
                                      drive->is_master);
-    if (drive->type == DRIVE_TYPE_FDD)
+    if (drive->type == DRIVE_TYPE_FDD) {
+        if (recovery_probe)
+            return fdc_read_sector_recovery(drive->fdd_drive_no, 0U, 0U, 1U,
+                                            data);
         return fdc_read_sector(drive->fdd_drive_no, 0U, 0U, 1U, data);
+    }
     return false;
 }
 
@@ -126,8 +131,8 @@ static bool capture_fingerprint(uint32_t resource) {
         return false;
     drive_t *drive = &detected_drives[resource];
     uint8_t first[SECTOR_SIZE], second[SECTOR_SIZE];
-    if (!read_boot_sector(resource, first) ||
-        !read_boot_sector(resource, second) ||
+    if (!read_boot_sector(resource, first, false) ||
+        !read_boot_sector(resource, second, false) ||
         memcmp(first, second, sizeof(first)) != 0) return false;
     storage_media_fingerprint_t fingerprint = {
         .type = drive->type,
@@ -184,12 +189,12 @@ static bool media_identity_matches(uint32_t resource) {
         if (drive->fdd_drive_no != expected.fdd_drive_no ||
             drive->cylinder != expected.cylinder ||
             drive->head != expected.head || drive->sector != expected.sector ||
-            !fdc_calibrate_drive(drive->fdd_drive_no))
+            !fdc_requalify_drive(drive->fdd_drive_no))
             MEDIA_PROBE_FAIL("FDD_IDENTITY");
     }
     uint8_t first[SECTOR_SIZE], second[SECTOR_SIZE];
-    bool result = read_boot_sector(resource, first) &&
-           read_boot_sector(resource, second) &&
+    bool result = read_boot_sector(resource, first, true) &&
+           read_boot_sector(resource, second, true) &&
            memcmp(first, second, sizeof(first)) == 0 &&
            media_crc32(first, sizeof(first)) == expected.boot_crc32;
     if (!result) MEDIA_PROBE_FAIL("MEDIA");

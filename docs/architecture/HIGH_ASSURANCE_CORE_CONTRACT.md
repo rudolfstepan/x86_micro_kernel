@@ -77,6 +77,10 @@ Die gegenwärtige ATA-/FDD-Implementierung erfüllt Erkennung, Quarantäne,
 begrenzte Requalifizierung und read-only-Degradation. Das persistente
 FAT32/ATA-Undo-Journal deckt markierte Images ab. Ein medienunabhängiges
 Transaktionsprotokoll für FDD/FAT12, EXT2 und künftige Backends ist noch offen.
+Beim FDD melden auch normale FAT12-Lesefehler die konkrete Medienressource.
+Eine Requalifizierung darf die Quarantäne nur in einem internen Probezugriff
+umgehen und muss den FDC zuvor resetten, ausstehende Interruptzustände leeren,
+die Betriebsparameter neu setzen und das Laufwerk kalibrieren.
 
 ## Gefahrenregister und Traceability
 

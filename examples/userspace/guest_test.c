@@ -915,7 +915,52 @@ static int test_storage_service(void) {
     return 0;
 }
 
+static int read_hotplug_file(void) {
+    static const char expected[] = "REIST-HOTPLUG\n";
+    char buffer[sizeof(expected)];
+    int descriptor = x86os_open("/mnt/fdd0/HOTPLUG.TXT");
+    if (descriptor < 0) return -1;
+    int amount = x86os_read(descriptor, buffer, sizeof(expected) - 1U);
+    int closed = x86os_close(descriptor);
+    if (amount != (int)(sizeof(expected) - 1U) || closed != 0) return -1;
+    for (size_t index = 0U; index < sizeof(expected) - 1U; ++index) {
+        if (buffer[index] != expected[index]) return -1;
+    }
+    return 0;
+}
+
+static int fdd_hotplug_main(void) {
+    if (read_hotplug_file() != 0) {
+        x86os_puts("TEST_FAIL FDD_HOTPLUG_INITIAL_READ\n");
+        return 1;
+    }
+    x86os_puts("REIST_FDD HOTPLUG_ARMED\n");
+    if (x86os_sleep_ms(500U) != 0 || read_hotplug_file() == 0) {
+        x86os_puts("TEST_FAIL FDD_DISCONNECT_NOT_DETECTED\n");
+        return 2;
+    }
+    x86os_puts("REIST_FDD DISCONNECT_DETECTED\n");
+
+    uint64_t deadline = 0U;
+    if (x86os_monotonic_ms(&deadline) != 0) return 3;
+    deadline += 15000U;
+    for (;;) {
+        if (read_hotplug_file() == 0) break;
+        uint64_t now = 0U;
+        if (x86os_monotonic_ms(&now) != 0 || now >= deadline ||
+            x86os_sleep_ms(250U) != 0) {
+            x86os_puts("TEST_FAIL FDD_REINTEGRATION_TIMEOUT\n");
+            return 4;
+        }
+    }
+    x86os_puts("TEST_STAGE FDD_HOTPLUG_REINTEGRATED_OK\n");
+    x86os_puts("TEST_OK\n");
+    return 0;
+}
+
 int main(int argc, char **argv) {
+    if (argc == 2 && text_equal(argv[1], "FDD_HOTPLUG"))
+        return fdd_hotplug_main();
     if (argc == 3 && text_equal(argv[1], "IPC_ECHO"))
         return ipc_child_main(argv[1], argv[2]);
     if (argc == 3 && text_equal(argv[1], "IPC_WAIT_CLOSE"))

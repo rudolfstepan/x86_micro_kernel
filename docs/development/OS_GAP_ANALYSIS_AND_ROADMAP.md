@@ -203,10 +203,12 @@ und 10 verbindlich.
       - [x] S0.3c-6d3 Stromverlust während einer persistenten Mutation mit
         Neustart, Journal-Recovery und anschließendem Ring-3-Dienst-Selbsttest
     - [x] S0.3c-6e Automatische ATA-/FDD-Quarantäne und Requalifizierung über
-      Geräteidentität, geschützten Fingerprint und zwei frische Reads; unklare
-      Schreibabschlüsse nur read-only reintegrieren
+      Geräteidentität, geschützten Fingerprint und zwei frische Reads; echter
+      FDD-Disconnect/Reconnect mit Controllerreset und erneutem FAT12-Read;
+      unklare Schreibabschlüsse nur read-only reintegrieren
     - [ ] S0.3c-6f Medienunabhängiges Undo/COW/Journal mit Flush-/Barrier- und
-      Power-Loss-Nachweis für jeden beschreibbaren Datenträger
+      Power-Loss-Nachweis für jeden beschreibbaren Datenträger; stärkere
+      Wechselmedien-Identität und kontrolliertes Cache-Invalidieren/Remount
   - [ ] **S0.3c-7 in Arbeit:** Unabhängiger Standby-/Supervisor-Kanal und
     realer Handover
     - [x] S0.3c-7a Statischer Lease-/Epoch-/Fence-Protokollkern mit
@@ -1810,12 +1812,23 @@ RESOURCE_REINTEGRATED_RW -> STORAGE_MEDIA_REINTEGRATED_OK -> TEST_OK`.
 Unsicher abgeschlossene Schreibzugriffe werden nie blind wiederholt: Sie
 fencen Storage und VFS und erlauben höchstens `ONLINE_RO`.
 
+Das VMware-A:-Reconnect-Problem ist zusätzlich als echter QEMU-QMP-Hotplug-
+Lauf reproduziert und geschlossen. Ein normaler FAT12-Lesefehler meldet die
+FDD-Ressource und quarantänisiert sie. Nach dem Wiedereinlegen setzt die Probe
+den FDC zurück, leert die Reset-Interrupts, programmiert ihn neu, kalibriert
+das Laufwerk und liest das Medium zweimal außerhalb des normalen gesperrten
+Pfads. Erst danach folgen `RESOURCE_REINTEGRATED_RW 1`, eine erneut
+erfolgreiche Lektüre von `HOTPLUG.TXT` und `TEST_OK`.
+
 **S0.3c-6f bleibt offen:** Der Vertrag gilt für alle persistenten Medien, doch
 das persistente Undo-Journal ist derzeit auf markierte FAT32/ATA-Images
 begrenzt. FDD/FAT12, EXT2, fremde sowie künftige USB-/Flash-/NVMe-Backends
 benötigen ein gemeinsames Undo/COW/Journal-Protokoll, geordnete Flush-/Barrier-
 Semantik und echte Power-Loss-Injektion. Vor diesem Nachweis darf ein Medium
 nach unklarem Schreibabschluss nicht automatisch wieder beschreibbar werden.
+Bei Wechselmedien fehlen außerdem noch eine stärkere Ganzmedien-Identität und
+kontrollierte Cache-Invalidierung beziehungsweise ein Remount, wenn sich der
+Inhalt außerhalb von REIST bei unverändertem Boot-Fingerprint geändert hat.
 S0.3c-6 bleibt deshalb teilweise offen; S0.3c-7 kann parallel fortgesetzt
 werden.
 

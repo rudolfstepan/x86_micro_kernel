@@ -43,6 +43,16 @@ verification = ["test/test_reist_supervisor.py", "test/test_reist_probe_domain.p
 residual_risk = "Mehrere Dienste und Treiber verbleiben im modular-monolithischen Kernel."
 
 [[hazard]]
+id = "HZ-MEDIA-001"
+title = "Wechselmedium oder Controller fällt während des Betriebs aus"
+severity = "critical"
+safe_state = "Ressource quarantänisieren, Schreibzugriffe sperren und nur nach Controllerreset sowie doppelter Identitätsprüfung reintegrieren."
+ftti_ms = 4000
+controls = ["drivers/block/fdd.c", "kernel/init/storage_service.c", "kernel/init/storage_safety.c"]
+verification = ["test/test_reist_storage_recovery.py", "test/test_qemu_fdd_hotplug.py"]
+residual_risk = "Boot-Fingerprint erkennt keine extern geänderten Daten bei identischem Bootsektor; Cache-Invalidierung und medienunabhängige Recovery bleiben offen."
+
+[[hazard]]
 id = "HZ-METADATA-001"
 title = "Bitfehler in Autoritäts- oder IPC-Metadaten"
 severity = "critical"

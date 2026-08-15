@@ -113,6 +113,24 @@ class StorageRecoveryContracts(unittest.TestCase):
         self.assertIn("- [x] S0.3c-6e", roadmap)
         self.assertIn("- [ ] S0.3c-6f", roadmap)
 
+    def test_fdd_disconnect_is_reported_and_requalification_resets_controller(self):
+        fdd = read("drivers/block/fdd.c")
+        header = read("drivers/block/fdd.h")
+        service = read("kernel/init/storage_service.c")
+        read_path = fdd[fdd.index("bool fdc_read_sectors("):
+                        fdd.index("bool fdc_read_sector(")]
+        self.assertIn("storage_service_resource_available", read_path)
+        self.assertIn("storage_service_report_io_failure", read_path)
+        self.assertIn("attempted && !result", read_path)
+        recovery = fdd[fdd.index("bool fdc_requalify_drive("):
+                       fdd.index("// =============================================================", fdd.index("bool fdc_requalify_drive("))]
+        self.assertLess(recovery.index("fdc_reset_controller_impl()"),
+                        recovery.index("fdc_calibrate_drive_impl"))
+        self.assertIn("fdc_read_sector_recovery", header)
+        self.assertIn("fdc_requalify_drive", header)
+        self.assertIn("fdc_requalify_drive(drive->fdd_drive_no)", service)
+        self.assertIn("fdc_read_sector_recovery", service)
+
     def test_io_failure_hook_and_runtime_gate_are_isolated(self):
         makefile = read("Makefile")
         windows = read("scripts/build-windows.ps1")

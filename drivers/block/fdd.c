@@ -4,6 +4,7 @@
 #include "drivers/char/io.h"
 #include "include/kernel/panic.h"
 #include "include/kernel/storage_safety.h"
+#include "include/kernel/storage_service.h"
 #include "kernel/sched/scheduler.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
@@ -53,6 +54,14 @@ static bool fdd_motor_running[MAX_FDD_DRIVES];
 static int8_t fdd_cached_track[MAX_FDD_DRIVES] = {-1, -1};
 static uint32_t fdd_last_activity[MAX_FDD_DRIVES];
 static volatile bool fdd_write_fenced;
+
+static int fdd_resource_index(uint8_t drive) {
+    for (short index = 0; index < drive_count; ++index) {
+        if (detected_drives[index].type == DRIVE_TYPE_FDD &&
+            detected_drives[index].fdd_drive_no == drive) return index;
+    }
+    return -1;
+}
 
 /* The FDC command FIFO, DMA channel and completion flag form one synchronous
  * transaction domain.  Keep IRQ6 enabled for completion and prevent another
@@ -257,12 +266,28 @@ uint8_t fdc_read_data() {
 // ============================================================
 // Full controller reset (with CCR setup ✅ FIX)
 // ============================================================
-void fdc_full_reset() {
+static bool fdc_reset_controller_impl(void) {
+    fdc_controller_initialized = false;
     outb(FDD_DOR, 0x00);
     delay_ms(20);
     outb(FDD_DOR, 0x0C);
     delay_ms(20);
-    outb(FDD_CCR, 0x00);  // ✅ 500 kbps (1.44MB drive)
+    outb(FDD_CCR, 0x00);
+
+    for (uint8_t drive = 0; drive < MAX_FDD_DRIVES; ++drive) {
+        fdd_motor_running[drive] = false;
+        fdd_cached_track[drive] = -1;
+    }
+    for (int interrupt = 0; interrupt < 4; ++interrupt) {
+        irq_triggered = false;
+        if (!fdc_send_command(FDC_SENSE_INTERRUPT_CMD)) return false;
+        (void)fdc_read_data();
+        (void)fdc_read_data();
+    }
+    if (!fdc_send_command(0x03) || !fdc_send_command(0xDF) ||
+        !fdc_send_command(0x02)) return false;
+    fdc_controller_initialized = true;
+    return true;
 }
 
 // ============================================================
@@ -309,30 +334,10 @@ static bool fdc_init_controller_impl(void) {
         return false;
     }
 
-    outb(FDD_DOR, 0x00);
-    delay_ms(10);
-    outb(FDD_DOR, 0x0C);
-    delay_ms(10);
-
-    outb(FDD_CCR, 0x00);  // ✅ set 500 kbps data rate
-
-    // Clear post-reset interrupts
-    for (int i = 0; i < 4; i++) {
-        irq_triggered = false;
-        delay_ms(10);
-        fdc_send_command(0x08);
-        fdc_read_data();
-        fdc_read_data();
-    }
-
-    if (!fdc_send_command(0x03) ||
-        !fdc_send_command(0xDF) ||
-        !fdc_send_command(0x02)) {
-        printf("Failed to send SPECIFY command.\n");
+    if (!fdc_reset_controller_impl()) {
+        printf("Failed to reset and configure FDC controller.\n");
         return false;
     }
-
-    fdc_controller_initialized = true;
     printf("FDC controller initialized.\n");
     return true;
 }
@@ -444,8 +449,13 @@ static bool fdc_read_sectors_impl(uint8_t drive, uint8_t head, uint8_t track,
 bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track,
                       uint8_t sector, uint8_t count, void* buffer) {
     fdd_transaction_begin();
-    bool result = fdc_read_sectors_impl(drive, head, track, sector, count,
-                                        buffer);
+    int resource = fdd_resource_index(drive);
+    bool attempted = resource >= 0 &&
+        storage_service_resource_available((uint32_t)resource);
+    bool result = attempted &&
+        fdc_read_sectors_impl(drive, head, track, sector, count, buffer);
+    if (attempted && !result)
+        (void)storage_service_report_io_failure((uint32_t)resource);
     fdd_transaction_end();
     return result;
 }
@@ -454,6 +464,15 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track,
                      uint8_t sector, void* buffer) {
     fdd_transaction_begin();
     bool result = fdc_read_sectors(drive, head, track, sector, 1, buffer);
+    fdd_transaction_end();
+    return result;
+}
+
+bool fdc_read_sector_recovery(uint8_t drive, uint8_t head, uint8_t track,
+                              uint8_t sector, void* buffer) {
+    fdd_transaction_begin();
+    bool result = fdc_read_sectors_impl(drive, head, track, sector, 1U,
+                                        buffer);
     fdd_transaction_end();
     return result;
 }
@@ -507,14 +526,7 @@ static bool fdc_write_sectors_impl(uint8_t drive, uint8_t head, uint8_t track,
 bool fdc_write_sectors(uint8_t drive, uint8_t head, uint8_t track,
                        uint8_t sector, uint8_t count, const void* buffer) {
     fdd_transaction_begin();
-    int resource = -1;
-    for (short index = 0; index < drive_count; ++index) {
-        if (detected_drives[index].type == DRIVE_TYPE_FDD &&
-            detected_drives[index].fdd_drive_no == drive) {
-            resource = index;
-            break;
-        }
-    }
+    int resource = fdd_resource_index(drive);
     bool armed = !fdd_write_fenced && resource >= 0 &&
         storage_write_begin((uint32_t)resource, pit_monotonic_ms());
     bool result = armed && fdc_write_sectors_impl(drive, head, track, sector,
@@ -571,7 +583,7 @@ static bool fdc_calibrate_drive_impl(uint8_t drive) {
             printf("fdc_calibrate_drive: IRQ timeout (attempt %d)\n", attempt);
             fdc_motor_off(drive);
             // Controller might be confused; try a full reset before next attempt
-            fdc_full_reset();
+            (void)fdc_reset_controller_impl();
             continue;
         }
 
@@ -579,7 +591,7 @@ static bool fdc_calibrate_drive_impl(uint8_t drive) {
         if (!fdc_send_command(0x08)) {
             printf("fdc_calibrate_drive: SENSE INTERRUPT send failed (attempt %d)\n", attempt);
             fdc_motor_off(drive);
-            fdc_full_reset();
+            (void)fdc_reset_controller_impl();
             continue;
         }
 
@@ -599,7 +611,7 @@ static bool fdc_calibrate_drive_impl(uint8_t drive) {
                drive, st0, cyl, attempt);
 
         // Try again after a brief pause and controller reset
-        fdc_full_reset();
+        (void)fdc_reset_controller_impl();
         delay_ms(100);
     }
 
@@ -610,6 +622,14 @@ static bool fdc_calibrate_drive_impl(uint8_t drive) {
 bool fdc_calibrate_drive(uint8_t drive) {
     fdd_transaction_begin();
     bool result = fdc_calibrate_drive_impl(drive);
+    fdd_transaction_end();
+    return result;
+}
+
+bool fdc_requalify_drive(uint8_t drive) {
+    fdd_transaction_begin();
+    bool result = drive < MAX_FDD_DRIVES && fdc_reset_controller_impl() &&
+                  fdc_calibrate_drive_impl(drive);
     fdd_transaction_end();
     return result;
 }

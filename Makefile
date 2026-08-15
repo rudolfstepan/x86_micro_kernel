@@ -259,7 +259,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-fdd-hotplug test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -345,6 +345,7 @@ help:
 	@echo "  test-smoke   - Boot QEMU and run the automated Ring-3 guest test"
 	@echo "  test-smoke-pit - Run the guest test with the LAPIC disabled"
 	@echo "  test-smoke-memory - Run guest tests with 32/64/256/1024 MiB RAM"
+	@echo "  test-smoke-fdd-hotplug - Eject and reconnect A: while the guest runs"
 	@echo "  test-smoke-desktop - Boot the framebuffer desktop and capture it"
 	@echo "  test-verbose - Validate disk images with detailed output"
 	@echo "  test-bash    - Run disk image tests (Bash, no Python required)"
@@ -728,6 +729,14 @@ test-smoke-storage-io-failure:
 		--expect-storage-io-failure \
 		--timeout 120 \
 		--log build/storage-io-injection/guest-smoke-storage-io-failure.log
+
+test-smoke-fdd-hotplug: native-image
+	@echo "Running live FDD disconnect/reconnect recovery test..."
+	@$(PYTHON) scripts/run_qemu_fdd_hotplug.py \
+		--qemu $(QEMU) \
+		--image $(OUTPUT_DIR)/reist-os.img \
+		--floppy $(OUTPUT_DIR)/fdd-hotplug.img \
+		--log $(OUTPUT_DIR)/guest-smoke-fdd-hotplug.log
 
 test-smoke-handover:
 	@echo "Building isolated REIST external handover injection image..."

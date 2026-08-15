@@ -831,6 +831,20 @@ Flush-/Barrier-Semantik, Recovery und Fault-Injection medienunabhängig für
 jedes schreibbare Backend nachweisen. Erst dann darf ein solches Medium nach
 einem abgebrochenen Schreibzugriff automatisch wieder `ONLINE_RW` werden.
 
+Der FDD-Pfad behandelt zusätzlich echtes Wechselmedien-Hotplug. Jeder
+fehlgeschlagene normale FAT12-Read meldet die zugehörige Ressourcen-ID und
+beendet nachfolgende Zugriffe vor Hardwarekontakt. Die kontrollierte Probe ist
+der einzige Bypass: Sie setzt den FDC vollständig zurück, leert die
+Reset-Interrupts, programmiert Datenrate und `SPECIFY` neu, kalibriert das
+Laufwerk und führt erst dann die zwei frischen Reads aus. Ein QEMU-QMP-Gate
+liest `HOTPLUG.TXT`, wirft A: im laufenden Gast aus, beobachtet Quarantäne,
+legt dasselbe FAT12-Image wieder ein und verlangt `RESOURCE_REINTEGRATED_RW`
+sowie eine erneut erfolgreiche Datei-Lektüre. Das bestehende Mount bleibt nur
+für das wiedererkannte Medium nutzbar; ein abweichender Boot-Fingerprint bleibt
+quarantänisiert. Stärkere Ganzmedien-Identität und kontrolliertes
+Cache-Invalidieren/Remount bei extern veränderten, aber bootsektorgleichen
+Medien gehören zu S0.3c-6f.
+
 ### Standby-Handover-Protokoll
 
 S0.3c-7a definiert den plattformneutralen Sicherheitskern für zwei Kanäle.

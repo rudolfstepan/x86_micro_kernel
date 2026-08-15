@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'handover')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'handover')]
     [string]$Mode = 'normal'
 )
 
@@ -10,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $Image = Join-Path $RepoRoot 'build\reist-os.img'
 $Runner = Join-Path $RepoRoot 'scripts\run_qemu_smoke.py'
+$FddHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_fdd_hotplug.py'
 $LogRoot = Join-Path $RepoRoot 'build\codex-agent'
 
 function Resolve-NativeTool {
@@ -77,6 +78,37 @@ function Invoke-Smoke(
         Write-Output "RUNTIME FAIL exit=$exitCode elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
         Get-Content -LiteralPath $gateLog -Tail 40
         throw "REIST runtime smoke '$LogName' failed with exit $exitCode."
+    }
+    Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+}
+
+function Invoke-FddHotplug {
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $gateLog = Join-Path $LogRoot "$stamp-runtime-fdd-hotplug"
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $exitCode = 0
+    try {
+        $LASTEXITCODE = 0
+        & $Python $FddHotplugRunner `
+            --qemu $Qemu `
+            --image $Image `
+            --floppy (Join-Path $RepoRoot 'build\fdd-hotplug.img') `
+            --log (Join-Path $RepoRoot 'build\guest-smoke-fdd-hotplug.log') `
+            *> $gateLog
+        $exitCode = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
+    }
+    catch {
+        $exitCode = 1
+        $_ | Out-String | Add-Content -LiteralPath $gateLog
+    }
+    finally {
+        $watch.Stop()
+    }
+    if ($exitCode -ne 0) {
+        Write-Output "RUNTIME FAIL exit=$exitCode elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+        Get-Content -LiteralPath $gateLog -Tail 40
+        throw "REIST runtime smoke 'fdd-hotplug' failed with exit $exitCode."
     }
     Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
 }
@@ -186,6 +218,9 @@ switch ($Mode) {
         Invoke-Smoke 'guest-smoke-storage-io-failure.log' @(
             '--expect-storage-io-failure'
         )
+    }
+    'fdd-hotplug' {
+        Invoke-FddHotplug
     }
     'handover' {
         Invoke-Smoke 'guest-smoke-handover.log' @(

@@ -28,6 +28,7 @@ extern void fdd_irq_handler(uint8_t* r);
 bool fdc_initialize(void);
 bool fdc_init_controller(void);
 bool fdc_calibrate_drive(uint8_t drive);
+bool fdc_requalify_drive(uint8_t drive);
 void fdd_detect_drives(void);
 
 
@@ -39,6 +40,8 @@ bool fdc_write_sectors(uint8_t drive, uint8_t head, uint8_t track,
 void fdd_fence_writes(void);
 bool fdd_writes_quiescent(void);
 bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* buffer);
+bool fdc_read_sector_recovery(uint8_t drive, uint8_t head, uint8_t track,
+                              uint8_t sector, void* buffer);
 bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track,
                       uint8_t sector, uint8_t count, void* buffer);
 

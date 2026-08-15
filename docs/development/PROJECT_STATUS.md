@@ -360,12 +360,24 @@ QEMU-Fehlerlauf belegt `RESOURCE_QUARANTINED ->
 RESOURCE_REINTEGRATED_RW -> TEST_STAGE STORAGE_MEDIA_REINTEGRATED_OK` für
 einen reinen Lesefehler. Blindes Wiederholen von Schreibzugriffen ist verboten.
 
+Der zuvor in VMware reproduzierte A:-Reconnect-Fehler ist behoben und als
+eigenes Laufzeitgate abgedeckt. Normale FDD-/FAT12-Lesefehler melden nun die
+Medienressource, statt den Controller in einem fehlerhaften Befehlszustand
+weiterzuverwenden. Die Wiederanlaufprobe setzt und programmiert den FDC neu,
+kalibriert das Laufwerk und darf anschließend kontrolliert durch die
+Quarantäne lesen. Der QEMU-QMP-Lauf wirft ein gemountetes FAT12-Medium aus,
+beobachtet `RESOURCE_QUARANTINED 1`, legt dasselbe Image wieder ein und endet
+nach `RESOURCE_REINTEGRATED_RW 1` sowie erneut gelesenem `HOTPLUG.TXT` mit
+`TEST_OK`.
+
 S0.3c-6 bleibt wegen S0.3c-6f teilweise offen: Nur markierte FAT32/ATA-Images
 besitzen derzeit ein persistentes Undo-Journal. FDD/FAT12, EXT2, fremde und
 künftige Medien bleiben nach unklarem Schreibabschluss read-only, bis ein
 medienunabhängiges Journal-/COW-Protokoll samt Flush-/Barrier- und
 Power-Loss-Nachweis umgesetzt ist. Die parallele Arbeit an S0.3c-7 bleibt
-davon unabhängig.
+davon unabhängig. Ebenfalls offen sind eine stärkere Ganzmedien-Identität und
+kontrollierte Cache-Invalidierung beziehungsweise Remount, falls ein extern
+verändertes Wechselmedium denselben Boot-Fingerprint behält.
 S0.3c-7a liefert dafür den ersten, noch plattformneutralen Protokollbaustein:
 Aktiv- und Standby-Knoten teilen eine geschützt gespeicherte Lease, Epoche,
 Fence-Epoche und Transitionssequenz. Takeover ist nur nach Leaseablauf und
