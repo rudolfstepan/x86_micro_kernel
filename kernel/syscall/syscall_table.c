@@ -352,6 +352,26 @@ static int syscall_reist_dhcp_commit(
         process->pid, process->generation, &commit);
 }
 
+_Static_assert(sizeof(supervisor_dhcp_renew_request_t) == 16U,
+               "REIST DHCP renew ABI changed");
+
+static int syscall_reist_dhcp_renew(
+        const supervisor_dhcp_renew_request_t *user_request) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_request;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(*user_request),
+                               false)) return -14;
+    supervisor_dhcp_renew_request_t request;
+    if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+        return -14;
+    if (request.version != SUPERVISOR_DHCP_RENEW_REQUEST_VERSION ||
+        request.struct_size < sizeof(request)) return -22;
+    return supervisor_network_request_dhcp_renewal(
+        process->pid, process->generation, &request);
+}
+
 static int syscall_reist_udp_echo_reply(
         const supervisor_udp_echo_reply_t *user_reply) {
     Process *process = scheduler_current_process();
@@ -1138,6 +1158,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_reist_udp_bind,      // Syscall 75: Bind supervised UDP
     (void*)&syscall_reist_udp_unbind,    // Syscall 76: Unbind supervised UDP
     (void*)&syscall_reist_udp_reply,     // Syscall 77: Reply on UDP binding
+    (void*)&syscall_reist_dhcp_renew,    // Syscall 78: Bounded DHCP renew/rebind
     // Add more syscalls here as needed
 };
 
@@ -1512,6 +1533,10 @@ void syscall_handler(Registers* regs) {
         case SYS_REIST_UDP_REPLY:
             result = (uint32_t)syscall_reist_udp_reply(
                 (const supervisor_udp_reply_t*)(uintptr_t)arg1);
+            break;
+        case SYS_REIST_DHCP_RENEW:
+            result = (uint32_t)syscall_reist_dhcp_renew(
+                (const supervisor_dhcp_renew_request_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

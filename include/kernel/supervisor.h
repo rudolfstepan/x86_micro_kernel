@@ -20,6 +20,7 @@ struct Process;
 #define SUPERVISOR_ICMP_ECHO_CONTEXT_VERSION 1U
 #define SUPERVISOR_DHCP_CONTEXT_VERSION 1U
 #define SUPERVISOR_DHCP_LEASE_VERSION 1U
+#define SUPERVISOR_DHCP_RENEWAL_VERSION 1U
 #define SUPERVISOR_UDP_ECHO_CONTEXT_VERSION 1U
 #define SUPERVISOR_PROBE_CONTROL_VERSION 1U
 #define SUPERVISOR_EINTEGRITY (-84)
@@ -208,7 +209,7 @@ typedef struct {
     uint32_t gateway;
     uint32_t dns_server;
     uint32_t lease_seconds;
-    uint32_t reserved;
+    uint32_t operation;
 } supervisor_dhcp_context_t;
 
 typedef struct {
@@ -217,6 +218,16 @@ typedef struct {
 
 #define SUPERVISOR_DHCP_LEASE_MIN_SECONDS 60U
 #define SUPERVISOR_DHCP_LEASE_MAX_SECONDS 604800U
+#define SUPERVISOR_DHCP_RENEW_REQUEST_VERSION 1U
+#define SUPERVISOR_DHCP_RENEW 1U
+#define SUPERVISOR_DHCP_REBIND 2U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t expected_ip;
+} supervisor_dhcp_renew_request_t;
+
 typedef struct {
     uint32_t process_generation;
     uint32_t ip_address;
@@ -228,6 +239,20 @@ typedef struct {
 typedef struct {
     critical_object_t object;
 } supervisor_protected_dhcp_lease_t;
+
+typedef struct {
+    uint32_t active;
+    uint32_t operation;
+    uint32_t process_generation;
+    uint32_t transaction_id;
+    uint32_t ip_address;
+    uint32_t reserved;
+    uint64_t deadline_ms;
+} supervisor_dhcp_renewal_t;
+
+typedef struct {
+    critical_object_t object;
+} supervisor_protected_dhcp_renewal_t;
 
 #define SUPERVISOR_UDP_ECHO_PORT 9000U
 #define SUPERVISOR_UDP_ECHO_MAX_DATA 32U
@@ -426,6 +451,17 @@ int supervisor_protected_dhcp_lease_snapshot(
     supervisor_dhcp_lease_t *snapshot_out);
 int supervisor_protected_dhcp_lease_clear(
     supervisor_protected_dhcp_lease_t *lease);
+int supervisor_protected_dhcp_renewal_init(
+    supervisor_protected_dhcp_renewal_t *renewal);
+int supervisor_protected_dhcp_renewal_publish(
+    supervisor_protected_dhcp_renewal_t *renewal, uint32_t operation,
+    uint32_t process_generation, uint32_t transaction_id,
+    uint32_t ip_address, uint64_t deadline_ms);
+int supervisor_protected_dhcp_renewal_snapshot(
+    supervisor_protected_dhcp_renewal_t *renewal,
+    supervisor_dhcp_renewal_t *snapshot_out);
+int supervisor_protected_dhcp_renewal_clear(
+    supervisor_protected_dhcp_renewal_t *renewal);
 int supervisor_protected_udp_echo_context_init(
     supervisor_protected_udp_echo_context_t *context);
 int supervisor_protected_udp_echo_context_publish(
@@ -482,6 +518,13 @@ bool supervisor_network_submit_dhcp_config(
     uint32_t dns_server, uint32_t lease_seconds);
 int supervisor_network_commit_dhcp_config(
     int pid, uint32_t generation, const supervisor_dhcp_commit_t *commit);
+int supervisor_network_request_dhcp_renewal(
+    int pid, uint32_t generation,
+    const supervisor_dhcp_renew_request_t *request);
+bool supervisor_network_accept_dhcp_renewal(
+    uint32_t transaction_id, uint32_t ip_address, uint32_t netmask,
+    uint32_t gateway, uint32_t dns_server, uint32_t lease_seconds);
+bool supervisor_network_reject_dhcp_renewal(uint32_t transaction_id);
 bool supervisor_network_submit_udp_echo(
     uint32_t source_ip, const uint8_t source_mac[6], uint16_t source_port,
     uint16_t destination_port, const uint8_t *data, uint16_t data_length);

@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "x86os.h"
+#include "reist_dhcp_state.h"
 
 static int text_equal(const char *left, const char *right) {
     while (*left != '\0' && *right != '\0' && *left == *right) {
@@ -106,6 +107,19 @@ static bool dhcp_proposal_valid(const x86os_ipc_message_t *message) {
     return true;
 }
 
+static bool dhcp_schedule_valid(const x86os_ipc_message_t *message) {
+    if (message->length != 28U) return false;
+    uint32_t ip_address = payload_be32(message, 4U);
+    uint32_t lease_ms = payload_be32(message, 8U);
+    uint32_t renew_ms = payload_be32(message, 12U);
+    uint32_t rebind_ms = payload_be32(message, 16U);
+    uint32_t operation = payload_be32(message, 20U);
+    uint32_t request_id = payload_be32(message, 24U);
+    return ip_address != 0U && ip_address != UINT32_MAX &&
+        renew_ms != 0U && renew_ms < rebind_ms && rebind_ms < lease_ms &&
+        operation <= X86OS_REIST_DHCP_REBIND && request_id != 0U;
+}
+
 static bool udp_proposal_valid(const x86os_ipc_message_t *message) {
     if (message->length < 28U || message->length > 60U) return false;
     uint32_t binding = (uint32_t)message->payload[4] |
@@ -143,6 +157,7 @@ static const char *network_classification(
          message->payload[3] != 'A' &&
          message->payload[3] != 'Q' && message->payload[3] != 'I' &&
          message->payload[3] != 'D' &&
+         message->payload[3] != 'L' &&
          message->payload[3] != 'U' && message->payload[3] != 'V' &&
          message->payload[3] != 'X'))
         return NULL;
@@ -171,6 +186,8 @@ static const char *network_classification(
     }
     if (message->payload[3] == 'D')
         return dhcp_proposal_valid(message) ? "REIST_DHCP_CONFIG" : NULL;
+    if (message->payload[3] == 'L')
+        return dhcp_schedule_valid(message) ? "REIST_DHCP_LEASE" : NULL;
     if (message->payload[3] == 'U')
         return NULL;
     if (message->payload[3] == 'V')
@@ -278,6 +295,8 @@ int main(int argc, char **argv) {
     if (!text_equal(argv[1], "healthy")) return 5;
 
     x86os_reist_udp_binding_t udp_bindings[4] = {0U, 0U, 0U, 0U};
+    reist_dhcp_state_t dhcp_state;
+    reist_dhcp_state_init(&dhcp_state);
     const uint16_t udp_ports[4] = {9000U, 9001U, 9002U, 9003U};
     for (uint32_t index = 0U; index < 4U; ++index) {
         x86os_reist_udp_bind_request_t bind = {
@@ -314,6 +333,22 @@ int main(int argc, char **argv) {
     uint32_t pending_network_request = 0U;
     uint32_t pending_network_probe_id = 0U;
     for (;;) {
+        uint64_t now_ms = 0U;
+        if (x86os_monotonic_ms(&now_ms) != 0) return 27;
+        reist_dhcp_action_t dhcp_action =
+            reist_dhcp_state_poll(&dhcp_state, now_ms);
+        if (dhcp_action != REIST_DHCP_ACTION_NONE) {
+            x86os_reist_dhcp_renew_request_t renewal = {
+                .version = X86OS_REIST_DHCP_RENEW_REQUEST_VERSION,
+                .struct_size = sizeof(renewal),
+                .operation = dhcp_action == REIST_DHCP_ACTION_RENEW
+                    ? X86OS_REIST_DHCP_RENEW : X86OS_REIST_DHCP_REBIND,
+                .expected_ip = dhcp_state.ip_address,
+            };
+            int renew_result = x86os_reist_renew_dhcp(&renewal);
+            if (renew_result != 0 && renew_result != -11 &&
+                renew_result != -13 && renew_result != -5) return 28;
+        }
         x86os_ipc_message_t request;
         message_init(&request, "");
         int receive = x86os_ipc_receive_timeout(endpoint, &request, 40U);
@@ -473,6 +508,20 @@ int main(int argc, char **argv) {
                             X86OS_REIST_REPORT_NETWORK_DEGRADED,
                             X86OS_REIST_NETWORK_DEGRADED_SEMANTIC) != 0)
                         return 19;
+                }
+                continue;
+            }
+            if (network != NULL && request.payload[3] == 'L') {
+                if (x86os_monotonic_ms(&now_ms) != 0 ||
+                    reist_dhcp_state_configure(
+                        &dhcp_state, now_ms, payload_be32(&request, 4U),
+                        payload_be32(&request, 12U),
+                        payload_be32(&request, 16U),
+                        payload_be32(&request, 8U)) != 0) {
+                    if (x86os_reist_report(
+                            X86OS_REIST_REPORT_NETWORK_DEGRADED,
+                            X86OS_REIST_NETWORK_DEGRADED_SEMANTIC) != 0)
+                        return 29;
                 }
                 continue;
             }

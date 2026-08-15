@@ -302,6 +302,27 @@ int main(void) {
             &protected_lease, &lease_snapshot) != 0 ||
         lease_snapshot.ip_address != 0U) return 63;
 
+    supervisor_protected_dhcp_renewal_t protected_renewal;
+    supervisor_dhcp_renewal_t renewal_snapshot;
+    if (supervisor_protected_dhcp_renewal_init(&protected_renewal) != 0 ||
+        supervisor_protected_dhcp_renewal_publish(
+            &protected_renewal, SUPERVISOR_DHCP_RENEW, 7U, 23U,
+            0x0A00020FU, 6000U) != 0 ||
+        supervisor_protected_dhcp_renewal_snapshot(
+            &protected_renewal, &renewal_snapshot) != 0 ||
+        renewal_snapshot.active != 1U ||
+        renewal_snapshot.operation != SUPERVISOR_DHCP_RENEW ||
+        renewal_snapshot.process_generation != 7U ||
+        renewal_snapshot.transaction_id != 23U ||
+        renewal_snapshot.ip_address != 0x0A00020FU ||
+        renewal_snapshot.deadline_ms != 6000U ||
+        supervisor_protected_dhcp_renewal_publish(
+            &protected_renewal, 3U, 7U, 23U, 0x0A00020FU, 6000U) != -22 ||
+        supervisor_protected_dhcp_renewal_clear(&protected_renewal) != 0 ||
+        supervisor_protected_dhcp_renewal_snapshot(
+            &protected_renewal, &renewal_snapshot) != 0 ||
+        renewal_snapshot.active != 0U) return 64;
+
     supervisor_protected_udp_echo_context_t protected_udp;
     supervisor_udp_echo_context_t udp_snapshot;
     if (supervisor_protected_udp_echo_context_init(&protected_udp) != 0 ||

@@ -476,7 +476,8 @@ Deadline, Integritätsfehler oder ungültige Semantik erzeugen keine Antwort und
 reaktivieren keinen Kernelpfad. Der RTL8139-Test validiert den tatsächlich am
 QEMU-Socket beobachteten Frame samt UDP-Prüfsumme. Dies ist noch keine Socket-
 ABI. S0.3c-5d2b2a erweitert den Dienstpfad inzwischen um vier statische,
-generationgebundene Port-Bindings; DHCP-Renew/Rebind bleibt S0.3c-5d2b2b.
+generationgebundene Port-Bindings; S0.3c-5d2b2b schließt die zeitgebundene
+Lease-Erneuerung ab.
 
 S0.3c-5d2b1 ergänzt die zeitliche Autoritätsgrenze. Der ACK muss eine
 Leasezeit zwischen 60 Sekunden und sieben Tagen enthalten; Transport,
@@ -488,7 +489,7 @@ Netzmaske, Gateway, DNS und die zugehörige Gateway-Bindung entzogen, ohne
 Renewal im Kernel zu simulieren. Korruption und Dienst-Fence räumen dieselbe
 Autorität fail-closed. Ein ausschließlich im Testbuild aktives 2500-ms-Limit
 beweist den Ablauf mit RTL8139 und weiter betriebsfähiger Shell. Automatisches
-Renew/Rebind folgt in S0.3c-5d2b2b.
+Der nachfolgende Ring-3-Automat S0.3c-5d2b2b erneuert diese Lease vor Ablauf.
 
 S0.3c-5d2b2a verwendet je Binding einen redundanten Descriptor, eine eigene
 Einmalautorität und einen eigenen geschützten Datagrammkontext. Handles tragen
@@ -501,6 +502,26 @@ an Ring 3 und verbraucht Autorität und Kontext vor dem einzigen Sendepunkt.
 Port 9000 bleibt kompatibel, Port 9001 dient als realer Mehrbinding-Nachweis.
 Anwendungs-Sockets und unbeschränkte Port-/Pufferzahlen gehören weiterhin
 nicht zu diesem Safety-Dienstvertrag.
+
+S0.3c-5d2b2b verschiebt die Renew-/Rebind-Entscheidung in einen reinen,
+heapfreien Ring-3-Zustandsautomaten. Ein nach jedem Commit zugestelltes
+`NETL`-Objekt enthält IP, T1, T2, Ablaufintervall, Operation und Request-ID.
+Der Automat verwendet absolute 64-Bit-Monotonzeit, unternimmt höchstens drei
+Versuche je Phase und führt pro Aufruf höchstens einen Zustandsübergang aus.
+Syscall 78 validiert eine versionierte 16-Byte-Anfrage und stößt genau einen
+broadcast DHCPREQUEST an; er wartet weder auf Netzwerk noch auf Timer.
+
+Die zugehörige Kerneltransaktion ist an Dienstgeneration, erwartete IP,
+Operation, monotone Transaktions-ID und eine 1,5-s-Deadline gebunden. Diese
+Metadaten und die Einmalautorität liegen redundant geschützt vor. Der
+Supervisor-Worker prüft pro Durchlauf höchstens ein DHCP-Reply. Ein gültiges
+ACK passiert erneut den bestehenden geschützten Ring-3-Commit; NAK, Timeout,
+Fence und Neustart löschen Autorität und Kontext fail-closed. Das v1-Profil
+sendet Renew und Rebind bewusst als Broadcast und hält deshalb keine weitere
+ungeschützte Serveradresse im Kernel. Ein realer RTL8139-Lauf mit verkürzter
+Testlease bestätigt `DHCP_RENEW_REQUESTED -> DHCP_RENEWED`. Damit ist
+S0.3c-5d2 geschlossen; die verbliebene Ring-0-Protokollzustands- und allgemeine
+Socket-Demultiplexlogik bildet S0.3c-5e.
 
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau

@@ -163,6 +163,15 @@ int x86os_reist_commit_dhcp(const x86os_reist_dhcp_commit_t *commit) {
                               (uint32_t)(uintptr_t)commit, 0U, 0U);
 }
 
+_Static_assert(sizeof(x86os_reist_dhcp_renew_request_t) == 16U,
+               "REIST DHCP renew request ABI size changed");
+
+int x86os_reist_renew_dhcp(
+        const x86os_reist_dhcp_renew_request_t *request) {
+    return (int)x86os_syscall(X86OS_SYS_REIST_DHCP_RENEW,
+                              (uint32_t)(uintptr_t)request, 0U, 0U);
+}
+
 _Static_assert(sizeof(x86os_reist_udp_echo_reply_t) == 16U,
                "REIST UDP echo reply ABI size changed");
 

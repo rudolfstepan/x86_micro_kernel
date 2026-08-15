@@ -9,6 +9,7 @@ param(
     [switch]$StorageIoFaultInjection,
     [switch]$HandoverFaultInjection,
     [switch]$DhcpLeaseFaultInjection,
+    [switch]$DhcpRenewFaultInjection,
     [ValidateRange(0, 3)]
     [int]$HandoverNodeId = 0,
     [switch]$RunTests,
@@ -125,6 +126,9 @@ try {
     }
     if ($DhcpLeaseFaultInjection) {
         $makeArguments += 'DHCP_LEASE_FAULT_INJECTION=1'
+    }
+    if ($DhcpRenewFaultInjection) {
+        $makeArguments += 'DHCP_RENEW_FAULT_INJECTION=1'
     }
     & $Make @makeArguments
     if ($LASTEXITCODE -ne 0) {

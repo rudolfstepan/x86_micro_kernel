@@ -24,6 +24,7 @@ static arp_cache_entry_t arp_cache[ARP_CACHE_SIZE];
 static supervised_arp_cache_t supervised_arp_cache;
 static bool supervised_arp_cache_initialized;
 static uint16_t ip_identification = 0;
+static uint32_t dhcp_runtime_transaction_id;
 
 typedef struct {
     uint32_t rx_arp;
@@ -591,57 +592,60 @@ static int netstack_send_udp_low(uint32_t dst_ip, uint16_t src_port, uint16_t ds
     return nic_send(packet, total_len) ? 0 : -1;
 }
 
+static int netstack_receive_udp_queued(uint16_t port,
+                                       uint16_t expected_src_port,
+                                       void *buffer, size_t buflen,
+                                       uint32_t *src_ip,
+                                       uint16_t *src_port) {
+    uint8_t pkt[1514];
+    int len = nic_recv(pkt, sizeof(pkt));
+    if (len < 42) return -1;
+
+    uint16_t ethertype = (uint16_t)(pkt[12] << 8 | pkt[13]);
+    if (ethertype != 0x0800) return -1;
+
+    ip_header_t *ip = (ip_header_t *)(pkt + 14);
+    int ihl_bytes = (IP_IHL(ip)) * 4;
+    if (ihl_bytes < (int)sizeof(ip_header_t) || (14 + ihl_bytes) > len ||
+        ip->protocol != IP_PROTOCOL_UDP || IP_VERSION(ip) != 4 ||
+        ip_checksum(ip, (uint16_t)ihl_bytes) != 0) return -1;
+
+    uint16_t ip_total = ntohs(ip->total_length);
+    if (ip_total < (uint16_t)ihl_bytes || ip_total > (uint16_t)(len - 14) ||
+        ip_total < (uint16_t)(ihl_bytes + sizeof(udp_header_t)) ||
+        (ntohs(ip->flags_fragment) & 0x3FFFu) != 0) return -1;
+
+    udp_header_t *udp = (udp_header_t *)(pkt + 14 + ihl_bytes);
+    if (ntohs(udp->dst_port) != port) return -1;
+    uint16_t actual_src_port = ntohs(udp->src_port);
+    if (expected_src_port != 0 && actual_src_port != expected_src_port)
+        return -1;
+
+    uint16_t udp_total = ntohs(udp->length);
+    if (udp_total < sizeof(udp_header_t)) return -1;
+    int udp_pl = (int)udp_total - (int)sizeof(udp_header_t);
+    int avail = (int)ip_total - (ihl_bytes + (int)sizeof(udp_header_t));
+    if (udp_pl < 0 || udp_pl > avail) return -1;
+
+    uint8_t *payload = pkt + 14 + ihl_bytes + sizeof(udp_header_t);
+    if (!udp_checksum_valid(ip, udp, payload, (size_t)udp_pl)) return -1;
+    if (src_ip) *src_ip = ntohl(ip->src_ip);
+    if (src_port) *src_port = actual_src_port;
+    int copy = udp_pl < (int)buflen ? udp_pl : (int)buflen;
+    memcpy(buffer, payload, (size_t)copy);
+    return copy;
+}
+
 static int netstack_receive_udp_low(uint16_t port, uint16_t expected_src_port,
                                     void *buffer, size_t buflen,
                                     uint32_t *src_ip, uint16_t *src_port,
                                     int poll_count) {
-    uint8_t pkt[1514];
     for (int i = 0; i < poll_count; ++i) {
         netdev_poll();
-        int len = nic_recv(pkt, sizeof(pkt));
-        if (len <= 0) {
-            pit_delay(1);
-            continue;
-        }
-        if (len < 42) continue; // min eth+ip+udp
-
-        uint16_t ethertype = (uint16_t)(pkt[12] << 8 | pkt[13]);
-        if (ethertype != 0x0800) continue; // IPv4 only
-
-        ip_header_t *ip = (ip_header_t *)(pkt + 14);
-        int ihl_bytes = (IP_IHL(ip)) * 4;
-        if (ihl_bytes < (int)sizeof(ip_header_t) || (14 + ihl_bytes) > len) continue;
-        if (ip->protocol != IP_PROTOCOL_UDP) continue;
-
-        if (IP_VERSION(ip) != 4 || ip_checksum(ip, (uint16_t)ihl_bytes) != 0) {
-            continue;
-        }
-
-        uint16_t ip_total = ntohs(ip->total_length);
-        if (ip_total < (uint16_t)ihl_bytes || ip_total > (uint16_t)(len - 14) ||
-            ip_total < (uint16_t)(ihl_bytes + sizeof(udp_header_t))) continue;
-        if ((ntohs(ip->flags_fragment) & 0x3FFFu) != 0) continue;
-
-        udp_header_t *udp = (udp_header_t *)(pkt + 14 + ihl_bytes);
-        if (ntohs(udp->dst_port) != port) continue;
-        uint16_t actual_src_port = ntohs(udp->src_port);
-        if (expected_src_port != 0 && actual_src_port != expected_src_port) continue;
-
-        uint16_t udp_total = ntohs(udp->length);
-        if (udp_total < sizeof(udp_header_t)) continue;
-        int udp_pl = (int)udp_total - (int)sizeof(udp_header_t);
-        int avail  = (int)ip_total - (ihl_bytes + (int)sizeof(udp_header_t));
-        if (udp_pl < 0 || udp_pl > avail) continue;
-
-        uint8_t *payload = pkt + 14 + ihl_bytes + sizeof(udp_header_t);
-        if (!udp_checksum_valid(ip, udp, payload, (size_t)udp_pl)) continue;
-
-        if (src_ip)   *src_ip   = ntohl(ip->src_ip);
-        if (src_port) *src_port = actual_src_port;
-
-        int copy = udp_pl < (int)buflen ? udp_pl : (int)buflen;
-        memcpy(buffer, payload, (size_t)copy);
-        return copy;
+        int received = netstack_receive_udp_queued(
+            port, expected_src_port, buffer, buflen, src_ip, src_port);
+        if (received >= 0) return received;
+        pit_delay(1);
     }
     return -1;
 }
@@ -655,6 +659,7 @@ static int netstack_receive_udp_low(uint16_t port, uint16_t expected_src_port,
 #define DHCP_OFFER       2
 #define DHCP_REQUEST     3
 #define DHCP_ACK         5
+#define DHCP_NAK         6
 #define DHCP_MAGIC_COOKIE 0x63825363u
 #define DHCP_ATTEMPTS 3
 #define DHCP_REPLY_TIMEOUT_MS 1500
@@ -826,6 +831,78 @@ static bool dhcp_discover_request(uint32_t *out_ip, uint32_t *out_subnet, uint32
     return true;
 }
 
+bool netstack_send_supervised_dhcp_request(uint32_t transaction_id,
+                                           uint32_t ip_address,
+                                           bool rebind) {
+    if (transaction_id == 0U || ip_address == 0U ||
+        ip_address == UINT32_MAX || net_config.ip_address != ip_address)
+        return false;
+    struct dhcp_packet packet;
+    memset(&packet, 0, sizeof(packet));
+    packet.op = 1U;
+    packet.htype = 1U;
+    packet.hlen = 6U;
+    packet.xid = transaction_id;
+    packet.flags = rebind ? htons(0x8000U) : 0U;
+    packet.ciaddr = htonl(ip_address);
+    memcpy(packet.chaddr, net_config.mac_address, 6U);
+
+    uint8_t *option = packet.options;
+    uint32_t cookie = htonl(DHCP_MAGIC_COOKIE);
+    memcpy(option, &cookie, sizeof(cookie));
+    option += sizeof(cookie);
+    option = dhcp_opt_put_u8(option, DHO_MSG_TYPE, DHCP_REQUEST);
+    const uint8_t requested[] = {
+        DHO_SUBNET, DHO_ROUTER, DHO_DNS, DHO_LEASE_TIME, DHO_SERVER_ID
+    };
+    option = dhcp_opt_put_list(option, DHO_PARAM_REQ, requested,
+                               sizeof(requested));
+    *option = DHO_END;
+
+    /* Both bounded phases use a broadcast transport in v1. This avoids an
+     * unprotected server-address cache and lets policy still distinguish T1
+     * renewal from T2 rebinding. One call emits exactly one frame. */
+    if (netstack_send_udp_low(
+            UINT32_MAX, DHCP_CLIENT_PORT, DHCP_SERVER_PORT,
+            &packet, sizeof(packet), false) != 0) return false;
+    dhcp_runtime_transaction_id = transaction_id;
+    return true;
+}
+
+void netstack_dhcp_poll(void) {
+    if (dhcp_runtime_transaction_id == 0U) return;
+    struct dhcp_packet packet;
+    memset(&packet, 0, sizeof(packet));
+    int received = netstack_receive_udp_queued(
+        DHCP_CLIENT_PORT, DHCP_SERVER_PORT, &packet, sizeof(packet),
+        NULL, NULL);
+    if (received < (int)(offsetof(struct dhcp_packet, options) + 4U) ||
+        packet.op != 2U || packet.htype != 1U || packet.hlen != 6U ||
+        packet.xid != dhcp_runtime_transaction_id ||
+        memcmp(packet.chaddr, net_config.mac_address, 6U) != 0) return;
+
+    uint8_t message_type = 0U;
+    uint32_t mask_n = htonl(net_config.netmask);
+    uint32_t gateway_n = htonl(net_config.gateway);
+    uint32_t dns_n = htonl(net_config.dns_server);
+    uint32_t lease_n = 0U;
+    if (!dhcp_parse_opts(&packet, NULL, &mask_n, &gateway_n, &dns_n,
+                         &lease_n, &message_type)) return;
+    uint32_t transaction_id = dhcp_runtime_transaction_id;
+    if (message_type == DHCP_NAK) {
+        dhcp_runtime_transaction_id = 0U;
+        (void)supervisor_network_reject_dhcp_renewal(transaction_id);
+        return;
+    }
+    if (message_type != DHCP_ACK) return;
+    uint32_t ip_address = ntohl(packet.yiaddr);
+    if (ip_address == 0U) ip_address = net_config.ip_address;
+    dhcp_runtime_transaction_id = 0U;
+    (void)supervisor_network_accept_dhcp_renewal(
+        transaction_id, ip_address, ntohl(mask_n), ntohl(gateway_n),
+        ntohl(dns_n), ntohl(lease_n));
+}
+
 // =============================================================================
 // IP/ETH Demux
 // =============================================================================
@@ -934,6 +1011,7 @@ void netstack_init(void) {
     memset(&netstack_stats, 0, sizeof(netstack_stats));
     ping_waiting = false;
     ping_reply_received = false;
+    dhcp_runtime_transaction_id = 0U;
     for (int i = 0; i < ARP_CACHE_SIZE; ++i) arp_cache[i].valid = false;
     if (!netstack_safety_init())
         panic("Unable to initialize protected ARP binding cache");
@@ -1028,6 +1106,7 @@ bool netstack_clear_supervised_dhcp(uint32_t expected_ip) {
     net_config.netmask = 0U;
     net_config.gateway = 0U;
     net_config.dns_server = 0U;
+    dhcp_runtime_transaction_id = 0U;
     return protected_cache_intact;
 }
 

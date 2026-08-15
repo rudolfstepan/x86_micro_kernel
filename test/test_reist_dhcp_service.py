@@ -1,6 +1,10 @@
 """Contracts for generation-scoped Ring-3-mediated DHCP configuration."""
 
 from pathlib import Path
+import os
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -11,6 +15,56 @@ def read(path: str) -> str:
 
 
 class ReistDhcpServiceTests(unittest.TestCase):
+    def test_ring3_state_machine_is_bounded_and_nonblocking(self) -> None:
+        compiler = shutil.which("gcc") or shutil.which("clang")
+        if compiler is None:
+            self.skipTest("host C compiler unavailable")
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / (
+                "dhcp-state.exe" if os.name == "nt" else "dhcp-state")
+            subprocess.run([
+                compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-I", str(ROOT / "userspace/sdk/include"),
+                str(ROOT / "userspace/sdk/reist_dhcp_state.c"),
+                str(ROOT / "test/test_reist_dhcp_state_host.c"),
+                "-o", str(executable),
+            ], check=True, capture_output=True, timeout=30)
+            subprocess.run([str(executable)], check=True, timeout=10)
+
+    def test_renewal_transport_is_single_step_and_asynchronous(self) -> None:
+        netstack = read("drivers/net/netstack.c")
+        supervisor = read("kernel/init/supervisor.c")
+        probe = read("examples/userspace/reist_probe.c")
+        self.assertIn("netstack_send_supervised_dhcp_request", netstack)
+        self.assertIn("void netstack_dhcp_poll(void)", netstack)
+        self.assertIn("supervisor_network_request_dhcp_renewal", supervisor)
+        self.assertIn("supervisor_network_accept_dhcp_renewal", supervisor)
+        self.assertIn("reist_dhcp_state_poll", probe)
+        request = supervisor[supervisor.index(
+            "int supervisor_network_request_dhcp_renewal("):]
+        request = request[:request.index(
+            "bool supervisor_network_accept_dhcp_renewal", 1)]
+        self.assertNotIn("while (", request)
+        self.assertNotIn("pit_delay", request)
+
+    def test_renewal_abi_is_append_only_and_service_only(self) -> None:
+        self.assertIn("SYS_REIST_DHCP_RENEW 78", read("lib/libc/stdlib.h"))
+        self.assertIn("X86OS_SYS_REIST_DHCP_RENEW = 78",
+                      read("userspace/sdk/include/x86os.h"))
+        self.assertIn("case SYS_REIST_DHCP_RENEW",
+                      read("kernel/syscall/syscall_table.c"))
+        self.assertIn("SYS_REIST_DHCP_RENEW", read("kernel/proc/process.c"))
+
+    def test_runtime_proves_real_renewal_without_lease_loss(self) -> None:
+        build = read("scripts/build-windows.ps1")
+        runtime = read("scripts/test-reist-runtime.ps1")
+        runner = read("scripts/run_qemu_smoke.py")
+        self.assertIn("DhcpRenewFaultInjection", build)
+        self.assertIn("REIST_DHCP_RENEW_TEST_MS=5000U", read("Makefile"))
+        self.assertIn("'dhcp-renewal'", runtime)
+        self.assertIn("--expect-dhcp-renewal", runner)
+        self.assertIn("REIST_DHCP_RENEWED_MARKER", runner)
+
     def test_dhcp_transport_only_submits_a_proposal(self) -> None:
         netstack = read("drivers/net/netstack.c")
         start = netstack.index("bool netstack_configure_dhcp(void)")

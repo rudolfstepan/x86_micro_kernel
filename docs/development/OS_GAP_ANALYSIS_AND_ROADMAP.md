@@ -129,18 +129,21 @@ und 10 verbindlich.
       Request/Reply-Nachweis über Ring 3 vermitteln
     - [x] S0.3c-5d1 DHCP-Lease-Konfiguration über einen geschützten,
       generationgebundenen Ring-3-Entscheid und Syscall 73 publizieren
-    - [ ] S0.3c-5d2 UDP-Datenpfad und DHCP-Renew/Rebind schrittweise in den
+    - [x] S0.3c-5d2 UDP-Datenpfad und DHCP-Renew/Rebind schrittweise in den
       überwachten Dienst verlagern
       - [x] S0.3c-5d2a Begrenztes UDP-Echo auf Port 9000 mit 32-Byte-Limit,
         Pflichtprüfsumme und echtem RTL8139-Request/Reply vermitteln
       - [x] S0.3c-5d2b1 DHCP-Leasezeit aus dem ACK übernehmen, redundant
         schützen und die Netzkonfiguration bei Ablauf fail-closed entziehen
-      - [ ] S0.3c-5d2b2 Allgemeine UDP-Bindings sowie DHCP-Renew/Rebind
+      - [x] S0.3c-5d2b2 Allgemeine UDP-Bindings sowie DHCP-Renew/Rebind
         generationgebunden in den Dienst verlagern
         - [x] S0.3c-5d2b2a Vier statische, generationsgebundene
           Dienst-Bindings mit 32-Byte-Datagrammen, Ablauf und Fence-Revoke
-        - [ ] S0.3c-5d2b2b DHCP-Renew/Rebind als begrenzten, nichtblockierenden
-          Ring-3-Zustandsautomaten umsetzen
+        - [x] S0.3c-5d2b2b DHCP-Renew/Rebind als begrenzten, nichtblockierenden
+          Ring-3-Zustandsautomaten mit drei Versuchen je Phase, geschützter
+          Einmaltransaktion und realem RTL8139-Renewal-Nachweis umsetzen
+    - [ ] S0.3c-5e Verbleibende IPv4-/UDP-/DHCP-Protokollzustände und den
+      allgemeinen Socket-Demultiplexer aus Ring 0 in die Dienstgrenze verlagern
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -1436,7 +1439,7 @@ IP, Maske, Gateway und DNS einschließlich der alten Gateway-Bindung; eine
 veraltete Generation kann die Autorität nicht behalten. Das dedizierte
 Buildprofil verkürzt ausschließlich die Testdeadline auf 2500 ms. Der reale
 RTL8139-Lauf verlangt `BOOT_OK -> DHCP_LEASE_EXPIRED` und weist danach noch
-laufenden Kernel und Shell nach. Renew/Rebind bleibt S0.3c-5d2b2b.
+laufenden Kernel und Shell nach.
 
 **S0.3c-5d2b2a ist umgesetzt und abgenommen:** Der überwachte Ring-3-Netzdienst
 kann bis zu vier Ports ab 1024 binden. Ein 24-Bit-Generationsanteil im Handle,
@@ -1450,7 +1453,22 @@ Syscalls 75–77 validieren beide Userbereiche vor Publikation und rollen einen
 Bind bei fehlgeschlagenem Copy-out zurück. Der echte RTL8139-Lauf bindet neben
 Port 9000 auch Port 9001 und prüft dort Request, Ring-3-Revalidierung, Reply,
 Ports, Payload und UDP-Prüfsumme. Das ist bewusst noch keine allgemeine
-Anwendungs-Socket-ABI; DHCP Renew/Rebind folgt als S0.3c-5d2b2b.
+Anwendungs-Socket-ABI.
+
+**S0.3c-5d2b2b ist umgesetzt und abgenommen:** Nach jedem erfolgreichen
+Lease-Commit erhält der Ring-3-Netzdienst ein festes `NETL`-Objekt mit T1,
+T2 und Ablaufdeadline. Ein heapfreier Zustandsautomat verwendet ausschließlich
+absolute monotone Zeit, höchstens drei Versuche pro Renew-/Rebind-Phase und
+keine Polling-Schleife. Der append-only Syscall 78 veröffentlicht genau einen
+DHCPREQUEST; Prozessgeneration, erwartete IP, Operation, Transaktions-ID und
+1,5-s-Deadline liegen bis ACK/NAK in geschützten Supervisorobjekten. Der
+Kernel-Worker verarbeitet pro Durchlauf höchstens ein Reply und übergibt ein
+gültiges ACK erneut an die bestehende Ring-3-Commit-Grenze. NAK, Deadline,
+Fence oder Dienstneustart widerrufen die Transaktion fail-closed. Das
+Testprofil verkürzt nur die effektive Lease auf fünf Sekunden; der reale
+RTL8139-Lauf bestätigt `DHCP_RENEW_REQUESTED -> DHCP_RENEWED` bei weiter
+laufender Shell. S0.3c-5e migriert als Nächstes den verbliebenen allgemeinen
+IPv4-/UDP-/DHCP-Protokollzustand aus Ring 0.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine

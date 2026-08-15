@@ -159,8 +159,7 @@ explizite Kernel-zu-Owner-Ingress und eine generationgebundene 1-s-
 Einmalautorität übergeben die endgültige Lease-Entscheidung an Ring 3. Erst
 Syscall 73 publiziert IP, Netzmaske, Gateway und DNS; der reale RTL8139-Lauf
 beweist `DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED -> BOOT_OK`. Ohne gesunden
-Dienst bleibt das Interface nach festen Deadlines unkonfiguriert. Als Nächstes
-folgen der UDP-Datenpfad sowie DHCP-Renew/Rebind in S0.3c-5d2. Der erste
+Dienst bleibt das Interface nach festen Deadlines unkonfiguriert. Der erste
 Dataplane-Schnitt S0.3c-5d2a ist inzwischen ebenfalls abgenommen: Port 9000
 akzeptiert nur prüfsummengeschützte Datagramme bis 32 Byte, bindet den festen
 `NETU`-Kontext an eine 250-ms-Einmalautorität und erlaubt ausschließlich dem
@@ -171,14 +170,24 @@ geschützter 250-ms-Autorität, 32-Byte-Limit und vollständigem Revoke bei
 Unbind, Fence oder Dienstneustart. Append-only Syscalls 75–77 bilden Bind,
 Unbind und Reply ab. Ein zweiter realer RTL8139-Lauf über Port 9001 beweist,
 dass der Pfad nicht mehr auf den Echo-Port fest verdrahtet ist. Socket-FDs für
-allgemeine Anwendungen und DHCP-Renew/Rebind bleiben offen.
+allgemeine Anwendungen bleiben offen.
 S0.3c-5d2b1 begrenzt nun auch die Lebensdauer der DHCP-Autorität. Option 51
 wird auf 60 Sekunden bis sieben Tage validiert und gemeinsam mit
 Dienstgeneration, IP und absoluter monotoner Deadline redundant geschützt.
 Ablauf, Integritätsfehler oder Service-Fence entziehen IP, Maske, Gateway und
 DNS fail-closed. Ein separates Testprofil verkürzt nur die Testdeadline auf
 2500 ms; der echte RTL8139-Lauf bestätigt den Entzug nach `BOOT_OK` und eine
-weiter laufende Shell. DHCP-Renew/Rebind bleibt offen.
+weiter laufende Shell. S0.3c-5d2b2b ist nun ebenfalls abgenommen: Ein
+heapfreier Ring-3-Zustandsautomat plant T1, T2 und Ablauf über absolute
+Monotonzeit und begrenzt Renew und Rebind auf jeweils drei Versuche. Der neue
+append-only Syscall 78 sendet pro Aufruf genau einen DHCPREQUEST. Eine
+redundant geschützte, generationgebundene 1,5-s-Transaktion korreliert ACK/NAK
+mit Operation und erwarteter IP; Timeout, Fence und Neustart widerrufen sie.
+Der reale RTL8139-Lauf mit fünf Sekunden Testlease bestätigt
+`DHCP_RENEW_REQUESTED -> DHCP_RENEWED` bei weiter laufender Shell. Damit ist
+S0.3c-5d2 abgeschlossen. Als nächstes verlagert S0.3c-5e die verbleibenden
+IPv4-/UDP-/DHCP-Protokollzustände und den allgemeinen Socket-Demultiplexer aus
+Ring 0.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

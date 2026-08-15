@@ -201,6 +201,28 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertIn("lease expiry", RUNNER_MODULE.validate(
             before_prompt, expect_dhcp_expiry=True))
 
+    def test_dhcp_renewal_must_follow_t1_request_after_boot(self) -> None:
+        transcript = "\n".join((
+            RUNNER_MODULE.REIST_DHCP_CONFIG_QUEUED_MARKER,
+            RUNNER_MODULE.REIST_DHCP_CONFIG_MARKER,
+            "BOOT_OK", "C:\\>",
+            RUNNER_MODULE.REIST_DHCP_RENEW_REQUESTED_MARKER,
+            RUNNER_MODULE.REIST_DHCP_RENEWED_MARKER, "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_dhcp_renewal=True))
+        missing = transcript.replace(
+            RUNNER_MODULE.REIST_DHCP_RENEWED_MARKER + "\n", "")
+        self.assertIn("DHCP renewal", RUNNER_MODULE.validate(
+            missing, expect_dhcp_renewal=True))
+
+        prompt_without_newline = transcript.replace(
+            "C:\\>\n" + RUNNER_MODULE.REIST_DHCP_RENEW_REQUESTED_MARKER,
+            "C:\\>" + RUNNER_MODULE.REIST_DHCP_RENEW_REQUESTED_MARKER,
+        )
+        self.assertIsNone(RUNNER_MODULE.validate(
+            prompt_without_newline, expect_dhcp_renewal=True))
+
     def test_reist_probe_markers_are_required_in_order(self) -> None:
         transcript = "\n".join((
             "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,

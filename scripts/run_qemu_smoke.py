@@ -52,6 +52,8 @@ REIST_ICMP_ECHO_MARKER = "REIST_NETWORK ICMP_ECHO_MEDIATED"
 REIST_DHCP_CONFIG_QUEUED_MARKER = "REIST_NETWORK DHCP_CONFIG_QUEUED"
 REIST_DHCP_CONFIG_MARKER = "REIST_NETWORK DHCP_CONFIG_MEDIATED"
 REIST_DHCP_LEASE_EXPIRED_MARKER = "REIST_NETWORK DHCP_LEASE_EXPIRED"
+REIST_DHCP_RENEWED_MARKER = "REIST_NETWORK DHCP_RENEWED"
+REIST_DHCP_RENEW_REQUESTED_MARKER = "REIST_NETWORK DHCP_RENEW_REQUESTED"
 REIST_UDP_ECHO_QUEUED_MARKER = "REIST_NETWORK UDP_ECHO_QUEUED"
 REIST_UDP_ECHO_MARKER = "REIST_NETWORK UDP_ECHO_MEDIATED"
 REIST_UDP_DATAGRAM_QUEUED_MARKER = "REIST_NETWORK UDP_DATAGRAM_QUEUED"
@@ -93,6 +95,7 @@ FAIL_MARKERS = (
     "REIST_NETWORK ARP_REPLY_REJECTED",
     "REIST_NETWORK ICMP_ECHO_REJECTED",
     "REIST_NETWORK DHCP_CONFIG_REJECTED",
+    "REIST_NETWORK DHCP_RENEWAL_REJECTED",
     "REIST_NETWORK UDP_ECHO_REJECTED",
 )
 
@@ -434,6 +437,24 @@ def exact_line_position(text: str, expected: str, after: int = -1) -> int:
     return -1
 
 
+def exact_line_after_prompt_position(
+    text: str, expected: str, after: int = -1
+) -> int:
+    position = exact_line_position(text, expected, after)
+    if position >= 0:
+        return position
+    pattern = re.compile(
+        rf"(?:^|\n){re.escape(SHELL_PROMPT + expected)}\r?(?=\n|$)"
+    )
+    for match in pattern.finditer(text):
+        position = match.start() + (
+            1 if text[match.start():].startswith("\n") else 0
+        ) + len(SHELL_PROMPT)
+        if position > after:
+            return position
+    return -1
+
+
 def failure_marker(text: str) -> str | None:
     for line in text.splitlines():
         clean = line.rstrip("\r")
@@ -513,6 +534,7 @@ def run(
     inject_icmp_echo: bool = False,
     inject_udp_echo: bool = False,
     expect_dhcp_expiry: bool = False,
+    expect_dhcp_renewal: bool = False,
     udp_port: int = 9000,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
@@ -609,6 +631,23 @@ def run(
                         break
                     if process.poll() is not None:
                         error = "QEMU exited immediately after DHCP lease expiry"
+                        break
+                    time.sleep(0.02)
+        elif error is None and expect_dhcp_renewal:
+            error, _ = wait_for_line(
+                process, chunks, transcript, finished,
+                REIST_DHCP_RENEWED_MARKER, deadline,
+            )
+            if error is None:
+                settle_deadline = min(deadline, time.monotonic() + 0.5)
+                while time.monotonic() < settle_deadline:
+                    drain(chunks, transcript)
+                    failed = failure_marker("".join(transcript))
+                    if failed is not None:
+                        error = f"guest emitted failure marker {failed!r}"
+                        break
+                    if process.poll() is not None:
+                        error = "QEMU exited immediately after DHCP renewal"
                         break
                     time.sleep(0.02)
         elif error is None:
@@ -770,6 +809,7 @@ def validate(
     expect_icmp_echo: bool = False,
     expect_dhcp_config: bool = False,
     expect_dhcp_expiry: bool = False,
+    expect_dhcp_renewal: bool = False,
     expect_udp_echo: bool = False,
     expect_udp_binding: bool = False,
 ) -> str | None:
@@ -780,11 +820,11 @@ def validate(
     test = exact_line_position(transcript, TEST_MARKER)
     if boot < 0:
         return f"missing {BOOT_MARKER} marker"
-    if test < 0 and not expect_dhcp_expiry:
+    if test < 0 and not (expect_dhcp_expiry or expect_dhcp_renewal):
         return f"missing {TEST_MARKER} marker"
     if test >= 0 and test < boot:
         return f"{TEST_MARKER} appeared before {BOOT_MARKER}"
-    if not expect_dhcp_expiry and exact_line_position(
+    if not (expect_dhcp_expiry or expect_dhcp_renewal) and exact_line_position(
             transcript, SHELL_PROMPT, after=test) < 0:
         return f"missing {SHELL_PROMPT} prompt after {TEST_MARKER}"
     if expect_fatal_recovery:
@@ -862,6 +902,18 @@ def validate(
         prompt = exact_line_position(transcript, SHELL_PROMPT)
         if committed < 0 or boot < committed or prompt < boot or expired < prompt:
             return "missing ordered fail-closed DHCP lease expiry"
+    if expect_dhcp_renewal:
+        committed = exact_line_position(transcript, REIST_DHCP_CONFIG_MARKER)
+        # The prompt has no trailing newline.  A background supervisor marker
+        # may therefore be appended to the same serial line after the runner
+        # has already observed the complete prompt.
+        prompt = transcript.find(SHELL_PROMPT, boot)
+        requested = exact_line_after_prompt_position(
+            transcript, REIST_DHCP_RENEW_REQUESTED_MARKER)
+        renewed = exact_line_position(transcript, REIST_DHCP_RENEWED_MARKER)
+        if (committed < 0 or boot < committed or prompt < boot or
+                requested < prompt or renewed < requested):
+            return "missing ordered bounded DHCP renewal"
     if expect_udp_echo:
         queued = exact_line_position(transcript,
                                      REIST_UDP_ECHO_QUEUED_MARKER)
@@ -986,6 +1038,11 @@ def main() -> int:
         help="require bounded fail-closed DHCP lease withdrawal after boot",
     )
     parser.add_argument(
+        "--expect-dhcp-renewal",
+        action="store_true",
+        help="require a bounded Ring-3 DHCP renewal after boot",
+    )
+    parser.add_argument(
         "--expect-arp-resolution", action="store_true",
         help="trigger PING and require a mediated outgoing ARP request",
     )
@@ -1029,7 +1086,8 @@ def main() -> int:
         print("guest-smoke: network injection verification requires a NIC",
               file=sys.stderr)
         return 2
-    if (args.expect_dhcp_config or args.expect_dhcp_expiry) and args.nic == "none":
+    if (args.expect_dhcp_config or args.expect_dhcp_expiry or
+            args.expect_dhcp_renewal) and args.nic == "none":
         print("guest-smoke: DHCP mediation requires a NIC", file=sys.stderr)
         return 2
 
@@ -1044,6 +1102,7 @@ def main() -> int:
             args.inject_icmp_echo,
             args.inject_udp_echo,
             args.expect_dhcp_expiry,
+            args.expect_dhcp_renewal,
             args.udp_port,
         )
     except OSError as error:
@@ -1065,6 +1124,7 @@ def main() -> int:
                             args.inject_icmp_echo,
                             args.expect_dhcp_config,
                             args.expect_dhcp_expiry,
+                            args.expect_dhcp_renewal,
                             args.inject_udp_echo and args.udp_port == 9000,
                             args.inject_udp_echo and args.udp_port != 9000)
     if marker_error is None and process_error is None:
@@ -1075,7 +1135,8 @@ def main() -> int:
     print(transcript, end="" if transcript.endswith("\n") else "\n",
           file=sys.stderr)
     detail = process_error or marker_error
-    if not args.expect_dhcp_expiry and TEST_MARKER not in str(detail):
+    if not (args.expect_dhcp_expiry or args.expect_dhcp_renewal) and \
+            TEST_MARKER not in str(detail):
         detail = f"{detail}; missing {TEST_MARKER} marker"
     print(f"guest-smoke: FAIL: {detail}", file=sys.stderr)
     return status or 1
