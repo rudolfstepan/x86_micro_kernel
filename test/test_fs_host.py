@@ -17,6 +17,13 @@ class FilesystemSourceTests(unittest.TestCase):
         source = (ROOT / "fs" / "fat12" / "fat12.c").read_text(encoding="utf-8")
         self.assertNotIn("Reading subdirectory. Start cluster:", source)
 
+    def test_vfs_mount_initializes_maintenance_state(self) -> None:
+        source = (ROOT / "fs" / "vfs" / "vfs.c").read_text(encoding="utf-8")
+        mount = source[source.index("static int vfs_mount_locked"):
+                       source.index("static int vfs_unmount_locked")]
+        self.assertIn("fs->open_nodes = 0", mount)
+        self.assertIn("fs->maintenance_blocked = false", mount)
+
 
 @unittest.skipUnless(GCC, "gcc is required for the C host regressions")
 class FilesystemHostTests(unittest.TestCase):
@@ -92,9 +99,32 @@ class FilesystemHostTests(unittest.TestCase):
             [
                 "test/test_fat12_host.c",
                 "fs/fat12/fat12.c",
+                "fs/fat12/fat12_journal.c",
+                "fs/fat12/fat12_remap.c",
                 "fs/fat12/fat12_vfs_adapter.c",
                 "lib/libc/string.c",
             ],
+        )
+
+    def test_fat12_journal_recovery_and_readback_failure(self) -> None:
+        self.build_and_run(
+            "test_fat12_journal_host",
+            ["test/test_fat12_journal_host.c", "fs/fat12/fat12_journal.c",
+             "lib/libc/string.c"],
+        )
+
+    def test_fat12_remap_persistence_and_duplicate_rejection(self) -> None:
+        self.build_and_run(
+            "test_fat12_remap_host",
+            ["test/test_fat12_remap_host.c", "fs/fat12/fat12_remap.c",
+             "lib/libc/string.c"],
+        )
+
+    def test_fat12_replica_selection_and_conflict_rejection(self) -> None:
+        self.build_and_run(
+            "test_fat12_replica_host",
+            ["test/test_fat12_replica_host.c", "fs/fat12/fat12_replica.c",
+             "lib/libc/string.c"],
         )
 
 

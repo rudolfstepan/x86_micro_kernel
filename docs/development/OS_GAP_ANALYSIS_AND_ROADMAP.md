@@ -1902,6 +1902,246 @@ Pflicht. Jeder Reparaturschritt läuft durch Journal/COW und verifizierendes
 Readback; Auswurf, Timeout oder unklarer Schreibabschluss dürfen höchstens zu
 einem konsistenten alten Zustand oder zu `ONLINE_RO` führen.
 
+### Ausführungsplan S0.3c-6f für kleine Modelle
+
+Dieser Abschnitt ist die verbindliche Arbeitszerlegung für S0.3c-6f. Ein Lauf
+bearbeitet genau ein Paket. Ein Modell darf keine späteren Pakete vorziehen,
+keine Dateiliste selbst erweitern und keine Sicherheitsprüfung durch einen
+Kommentar oder einen Userspace-Workaround ersetzen. Vor jeder Änderung sind
+der Worktree und die bereits vorhandenen Mechanismen zu prüfen. Bei einem
+Widerspruch zwischen diesem Plan und dem High-Assurance-Vertrag gilt der
+strengere Vertrag.
+
+Gemeinsame Regeln für alle Pakete:
+
+- Alle Schleifen, Requests, Wiederholungen und Medienoperationen besitzen eine
+  feste Kapazität oder monotone Deadline.
+- Nur der generationsgebundene Storage-Dienst führt Block-I/O aus. Normale
+  Programme erhalten keinen direkten Controller-, DMA- oder Raw-Blockzugriff.
+- Vor einer Mutation werden Version, Strukturgröße, Resource-ID, Medientyp,
+  Blockbereich, Rechte, Lease und Medienidentität vollständig geprüft.
+- Ein Write gilt erst nach erfolgreichem Readback und Bytevergleich als
+  abgeschlossen. Ein unklarer Abschluss führt zu `ONLINE_RO`.
+- Fremde FAT12-Medien bleiben kompatibel lesbar, erhalten aber weder Journal
+  noch Remap-Tabelle und werden niemals automatisch konvertiert.
+- Es werden keine bestehenden Syscallnummern geändert. Neue Syscalls werden
+  ausschließlich am Ende angefügt.
+- Tests prüfen zuerst die Negativpfade. Source-Pattern-Tests allein gelten
+  nicht als Laufzeitnachweis.
+
+#### S0.3c-6f0 — Vermittelte FDD-Blockoperationen
+
+Ziel: Der überwachte Storage-Dienst kann genau einen 512-Byte-FDD-Block lesen
+oder schreiben. Clients reichen weiterhin Requests über den bestehenden Pool
+ein. Nur das gebundene Storage-Domain-Programm claimt und erfüllt sie.
+
+Erlaubte Dateien: `kernel/syscall/syscall_table.c`, `kernel/proc/process.c`,
+`lib/libc/stdlib.h`, `userspace/sdk/include/x86os.h`,
+`userspace/sdk/x86os.c`, `examples/userspace/storage_service.c`,
+`test/test_fat12_maintenance.py`.
+
+Definition of Done:
+
+- FDD-LBA wird mit der erkannten Geometrie geprüft und deterministisch nach
+  CHS übersetzt.
+- Blockread und Blockwrite lehnen unbekannte, quarantänisierte oder außerhalb
+  der Geometrie liegende Ressourcen vor dem I/O ab.
+- Blockwrite lehnt read-only Ressourcen ab, schreibt genau einen Sektor und
+  verifiziert ihn durch frischen Readback.
+- Readback-Fehler oder Datenabweichung melden einen unklaren Schreibabschluss
+  und degradieren die Ressource.
+- Das Storage-Domain-Profil enthält nur die dafür benötigten append-only
+  Syscalls. Probe- und normale eingeschränkte Profile erhalten sie nicht.
+
+Stop-Bedingung: Wenn der Pfad die bestehende Fence-/Storage-Safety-Schicht
+umgehen müsste, Paket blockieren und keine alternative Direkt-I/O-API bauen.
+
+#### S0.3c-6f1a — Exklusives Maintenance-Lease
+
+Ziel: Mutierende Wartung ist nur mit einem geschützten, generations- und
+mediengebundenen Lease möglich. Das Lease hat eine maximale monotone Laufzeit
+und wird bei Prozessende, Dienstrestart, Auswurf oder Identitätswechsel
+widerrufen.
+
+Erwartete Dateien: `include/kernel/storage_maintenance.h`,
+`kernel/init/storage_maintenance.c`, `include/kernel/storage_service.h`,
+`kernel/init/storage_service.c`, `kernel/proc/process.c`,
+`kernel/syscall/syscall_table.c`, SDK-Dateien und neue Hosttests.
+
+Definition of Done:
+
+- `acquire` prüft Resource-ID, FDD-Typ, aktuellen Fingerprint, Schreibstatus,
+  Mountzustand und offene Handles vor jeder Zustandsänderung.
+- Es existiert höchstens ein Lease pro Ressource; Token enthalten Slot,
+  Generation und Mediengeneration und sind nach Wiederverwendung ungültig.
+- `renew` verlängert nur das eigene, noch gültige Lease bis zu einer festen
+  Höchstdauer. `release` und Cleanup sind idempotent.
+- Mutation beginnt erst nach erfolgreichem Unmount. Remount erfolgt nur nach
+  erfolgreicher Verifikation; sonst bleibt die Ressource `ONLINE_RO`.
+
+Stop-Bedingung: Wenn offene VFS-Handles nicht zuverlässig inventarisiert oder
+ein Mount nicht atomar für neue Opens gesperrt werden kann, Paket blockieren.
+
+#### S0.3c-6f1b — Markiertes FAT12-Layout und Journalformat
+
+Ziel: Nur ein neu formatiertes, explizit als REIST-FAT12 markiertes Medium
+besitzt ein festes Undo-Journal. Marker, Journalbereiche und Ersatzsektoren
+liegen außerhalb aller FAT12-Datencluster und werden im BPB berücksichtigt.
+
+Definition of Done:
+
+- Der Layoutcode berechnet alle Bereiche mit 64-Bit-Zwischenwerten und lehnt
+  Überlauf, Überschneidung oder zu kleine Medien ab.
+- Primär- und Spiegelheader enthalten Magic, Version, Strukturgröße,
+  Medien-ID, Sequenz, Zustand, Eintragszahl und CRC32.
+- Journalkapazität und maximale Zielsektoren sind Compile-Time-Konstanten.
+- Ein einzelner beschädigter Header kann aus der gültigen Kopie rekonstruiert
+  werden. Zwei ungültige oder semantisch widersprüchliche Header führen zu
+  read-only Mount beziehungsweise Mountablehnung.
+- Fremde FAT12-Bootsektoren werden nicht verändert und verwenden weiterhin den
+  bisherigen nicht-journalisierten Kompatibilitätspfad.
+
+#### S0.3c-6f1c — Undo-Transaktion und Boot-Recovery
+
+Ziel: Vor jedem FAT-, Verzeichnis- oder anderen Metadatenwrite wird der alte
+Sektor persistent im Journal gesichert. Recovery läuft vor dem ersten Lesen
+veränderlicher Metadaten.
+
+Persistenzreihenfolge:
+
+1. Alten Zielsektor lesen und CRC berechnen.
+2. Undo-Daten in einen freien festen Slot schreiben und zurücklesen.
+3. Redundanten Header als `ACTIVE` mit monotoner Sequenz schreiben und prüfen.
+4. Zielsektor schreiben und zurücklesen.
+5. Nach vollständiger Transaktion beide Header als `CLEAN` schreiben und
+   prüfen.
+
+Recovery spielt bei `ACTIVE` ausschließlich validierte Undo-Sektoren zurück,
+prüft jeden Readback und markiert erst danach `CLEAN`. Kapazitätserschöpfung,
+ungültige Zielbereiche, doppelte Headerkorruption oder unklare Writes führen
+zu `ONLINE_RO`; es gibt kein blindes Retry.
+
+#### S0.3c-6f2 — Defektsektoren und Remap
+
+Ziel: Datencluster werden bei bestätigtem Defekt mit `0xFF7` dauerhaft von
+neuer Belegung ausgeschlossen. Metadaten-/reservierte Sektoren dürfen nur über
+eine redundante, CRC- und sequenzgeschützte Tabelle auf vorher reservierte
+Ersatzsektoren abgebildet werden.
+
+Ein Defekt gilt erst nach einem begrenzten Wiederholungstest als bestätigt.
+Bestehende Nutzdaten werden nur aus einer validierten Replik rekonstruiert;
+ohne solche Kopie wird Datenverlust gemeldet. Die Remap-Tabelle hat feste
+Kapazität. Erschöpfung führt zu `ONLINE_RO`, niemals zu Überschreiben eines
+anderen Ersatzsektors.
+
+#### S0.3c-6f3/6f4 — Replikation und geordnete Writes
+
+Ziel: Nur explizit markierte kritische 8.3-Dateien erhalten zwei unabhängige
+Datenkopien mit Sequenz, Länge und CRC. Beim Lesen gewinnt nur eine Kopie, die
+CRC, Sequenz und FAT12-Invarianten erfüllt. Bei gleicher Sequenz und
+unterschiedlichem Inhalt wird keine Kopie gewählt.
+
+Geordnete Writes verwenden die Reihenfolge Datencluster, FAT-Spiegel,
+Verzeichniseintrag und Journal-Clean. Jede Stufe besitzt Readback. Abbruch
+liefert entweder den alten konsistenten Zustand oder `ONLINE_RO`.
+
+#### S0.3c-6f5 — Fault-Injection und Laufzeitabnahme
+
+Für jede Persistenzbarriere existiert eine deterministische Injektion. Die
+Matrix umfasst Teilwrite, eine und zwei beschädigte Journal-Kopien, defekten
+Daten-/FAT-/Root-Sektor, Medienauswurf und Stromverlust. Zuerst laufen
+Host-Image-Tests, danach QEMU-FDD und abschließend VMware. Jeder Lauf prüft den
+Medienzustand, den sichtbaren Dateiinhalt und Fortschritt eines unabhängigen
+Ring-3-Prozesses.
+
+#### S0.3c-6f6 — Wartungsprogramme
+
+Die Programme enthalten keine Dateisystem- oder Controllerimplementierung;
+sie validieren Eingaben und senden versionierte Requests an den Storage-Dienst.
+
+- `CHKDSK.PRG` ist standardmäßig read-only und begrenzt Knoten, Pfadlänge und
+  gelesene Bytes. Reparatur benötigt `--repair`, eine interaktive Bestätigung
+  mit Resource-ID und ein gültiges Maintenance-Lease. Jeder Reparaturschritt
+  ist einzeln journalisiert.
+- `FORMAT.PRG` akzeptiert ausschließlich erkannte FDD-Ressourcen. Ohne
+  `--reist-fat12` erzeugt es kein REIST-Journal. Oberflächentest,
+  Layoutberechnung, Initialisierung und vollständiger Metadaten-Readback sind
+  begrenzt; ein Fehler lässt das Medium ungemountet und read-only.
+- `FDISK.PRG` zeigt FDD-Superfloppies nur an und partitioniert sie nicht. Eine
+  Mutation ist ausschließlich auf geeigneten partitionierten Medien erlaubt,
+  benötigt Lease plus explizite Bestätigung und validiert MBR-Bereiche vor dem
+  ersten Write.
+
+Jedes Tool muss in `scripts/build_system_programs.py` registriert sein und mit
+der normalen Ring-3-Toolchain gebaut werden. Erfolgsnachrichten dürfen erst
+nach Kernelantwort, verifiziertem Readback und kontrolliertem Remount erscheinen.
+
+#### Implementierungsstand vom 15. August 2026
+
+Der eingecheckte Zwischenstand enthält die statischen FAT12-Bausteine für
+kritische Bereiche, Undo-Journal, Remap und Replikate samt begrenzten Hosttests.
+Vermittelte Blockoperationen und statische Maintenance-Leases sind über
+versionierte Kernel- und Ring-3-Schnittstellen angebunden. Ein Lease sperrt neue
+VFS-Öffnungen und wird bei Ablauf beziehungsweise Prozessende freigegeben. Die
+Werkzeuge `CHKDSK.PRG`, `FDISK.PRG` und `FORMAT.PRG` werden mit der normalen
+Userspace-Toolchain gebaut und sowohl für A: als auch C: paketiert.
+
+Der aktuelle Funktionsumfang der Werkzeuge ist bewusst enger als das Ziel:
+
+- `CHKDSK.PRG` führt eine begrenzte read-only Bestandsaufnahme aus; der
+  journalisierte Reparaturmodus fehlt noch.
+- `FDISK.PRG` zeigt erkannte Medien read-only an; validierte MBR-Mutationen sind
+  noch nicht implementiert.
+- `FORMAT.PRG` validiert FDD-Ressource, Schalter und Bestätigung und sendet einen
+  begrenzten Storage-Request. Der Storage-Dienst beantwortet diesen Request
+  derzeit fail-closed mit `unsupported`; Oberflächentest, FAT12-Erzeugung,
+  Readback und Remount fehlen noch. Das Programm meldet daher keinen falschen
+  Formatierungserfolg und verändert noch kein Medium.
+
+Die beim Boot von A: beobachtete Panic `Unable to start REIST Ring-3 probe`
+wurde auf ein nicht initialisiertes `maintenance_blocked` im VFS-Mountobjekt
+zurückgeführt und durch deterministische Initialisierung behoben. Ein
+Regressionstest sichert diese Initialisierung ab. Der abschließende Nachweis
+des A:-Boots unter VMware sowie die vollständige Fault-Injection-Matrix in Host,
+QEMU und VMware bleiben offen; daraus wird noch kein Resilienz- oder
+Fail-operational-Claim abgeleitet.
+
+### Abschluss-Arbeitsliste FAT12
+
+Die folgenden Pakete werden strikt in dieser Reihenfolge bearbeitet. Ein Lauf
+bearbeitet genau einen Punkt; ein fehlgeschlagener Punkt blockiert alle späteren
+Punkte.
+
+1. **Build-Basis reparieren:** `-Werror=frame-larger-than` korrekt mit einem
+   Grenzwert konfigurieren und danach Kernel- und Userspace-Build ausführen.
+   Unter Windows ist dafür ausschließlich der in
+   [`BUILD_MODES.md`](BUILD_MODES.md) beschriebene Einstieg
+   `.\scripts\build-windows.ps1` zu verwenden. Ein nacktes `make kernel` ist
+   dort nur mit ausdrücklich gesetzter ELF-i386-Cross-Toolchain zulässig und
+   darf nicht versehentlich den MinGW-PE-Linker verwenden.
+2. **Lease abschließen:** Medien-Fingerprint, Mountzustand, offene Handles,
+   Timeout, Prozessende und idempotentes Release vollständig verbinden.
+3. **REIST-Layout festschreiben:** Journal-, Remap- und Replikatbereiche im
+   BPB reservieren, Überschneidungen ablehnen und Fremdmedien unverändert lassen.
+4. **Undo-Journal fertigstellen:** jeden Header-, Daten- und Zielwrite per
+   Readback prüfen; Erschöpfung und doppelte Korruption führen zu `ONLINE_RO`.
+5. **Remap integrieren:** Defekt durch begrenzte Wiederholungsreads bestätigen,
+   `0xFF7` setzen und Ersatzsektoren für Daten-, FAT- und Rootbereiche nutzen.
+6. **Kritische Replikate integrieren:** nur die Allowlist-Dateien replizieren;
+   gleiche Sequenz mit verschiedenem CRC-/Inhalt fail-closed ablehnen.
+7. **Geordnete Transaktionen integrieren:** Dateiinhalt, FAT-Kopien,
+   Directory-Eintrag und Replikatstatus journalisieren und verifizieren.
+8. **Maintenance-Requests fertigstellen:** versionierte Diagnose-, Format-,
+   Reparatur- und FDISK-Requests ausschließlich über Storage-Service und Lease.
+9. **Tools fertigstellen:** `CHKDSK.PRG` read-only plus bestätigte Reparatur,
+   `FORMAT.PRG` für markierte FAT12-Images und `FDISK.PRG` ohne FDD-Partitionierung.
+10. **Fault-Injection ausführen:** Teilwrites, Headerkorruption, Remap-/Replica-
+    Konflikte, defekte FAT-/Rootsektoren, Auswurf und Stromverlust in Host,
+    QEMU und VMware nachweisen.
+11. **Status synchronisieren:** erst nach allen Gates Roadmap und Projektstatus
+    aktualisieren; keine unbelegten Zertifizierungs- oder Fail-operational-
+    Aussagen ergänzen.
+
 **S0.3c-7a ist umgesetzt:** Ein statischer, `critical_object`-geschützter
 Zwei-Knoten-Protokollkern verwaltet aktive und Standby-ID, monotone Lease,
 64-Bit-Epoche, Fence-Epoche und Transitionssequenz. Nur der aktive Knoten darf

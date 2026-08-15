@@ -15,6 +15,7 @@
 #include "drivers/char/rtc.h"
 #include "drivers/bus/drives.h"
 #include "drivers/block/ata.h"
+#include "drivers/block/fdd.h"
 #include "kernel/time/pit.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/proc/process.h"
@@ -22,6 +23,7 @@
 #include "include/kernel/supervisor.h"
 #include "include/kernel/storage_request_pool.h"
 #include "include/kernel/storage_service.h"
+#include "include/kernel/storage_maintenance.h"
 #include "include/kernel/supervisor.h"
 #include "include/kernel/supervisor.h"
 #include "arch/x86/mm/paging.h"
@@ -681,7 +683,6 @@ static int syscall_storage_block_read(uint32_t resource, uint32_t block,
         !storage_service_authorized(process->pid, process->generation))
         return -13;
     if (resource >= (uint32_t)drive_count ||
-        detected_drives[resource].type != DRIVE_TYPE_ATA ||
         block >= detected_drives[resource].sectors) return -22;
     if (!storage_service_resource_available(resource)) return -112;
     if (!user_range_accessible(directory, data_address,
@@ -701,7 +702,20 @@ static int syscall_storage_block_read(uint32_t resource, uint32_t block,
 #ifdef REIST_STORAGE_IO_FAULT_INJECTION
         if (inject_failure) continue;
 #endif
-        read_ok = ata_read_sector(drive->base, block, data, drive->is_master);
+        if (drive->type == DRIVE_TYPE_ATA) {
+            read_ok = ata_read_sector(drive->base, block, data,
+                                      drive->is_master);
+        } else if (drive->type == DRIVE_TYPE_FDD && drive->sector != 0U &&
+                   drive->head != 0U) {
+            uint32_t track_size = drive->sector * drive->head;
+            uint32_t cylinder = block / track_size;
+            uint32_t within = block % track_size;
+            uint32_t head = within / drive->sector;
+            uint32_t sector = within % drive->sector + 1U;
+            if (cylinder < drive->cylinder)
+                read_ok = fdc_read_sector(drive->fdd_drive_no,
+                    (uint8_t)head, (uint8_t)cylinder, (uint8_t)sector, data);
+        }
     }
     if (!read_ok) {
         (void)storage_service_report_io_failure(resource);
@@ -717,6 +731,104 @@ static int syscall_storage_block_read(uint32_t resource, uint32_t block,
 #endif
     return copy_to_user_space(directory, data_address, data, sizeof(data)) == 0
         ? 0 : -14;
+}
+
+static int syscall_storage_maintenance_acquire(uint32_t resource,
+        uint32_t media_fingerprint, storage_maintenance_token_t *user_token) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t token_address = (uint32_t)(uintptr_t)user_token;
+    if (process == NULL || !storage_service_authorized(process->pid,
+            process->generation) || resource >= (uint32_t)drive_count ||
+        !user_range_accessible(directory, token_address, sizeof(*user_token),
+                                true)) return -14;
+    uint32_t current_fingerprint = 0U;
+    if (!storage_service_media_fingerprint(resource, &current_fingerprint) ||
+        current_fingerprint != media_fingerprint ||
+        !storage_service_resource_available(resource) ||
+        storage_service_resource_read_only(resource)) return -30;
+    storage_maintenance_token_t token = STORAGE_MAINTENANCE_INVALID_TOKEN;
+    int result = storage_maintenance_acquire(process->pid,
+        process->generation, resource, media_fingerprint, pit_monotonic_ms(),
+        &token);
+    if (result != 0) return result;
+    result = vfs_maintenance_acquire(&detected_drives[resource]);
+    if (result != VFS_OK) {
+        (void)storage_maintenance_release(process->pid,
+            process->generation, token);
+        return result == VFS_ERR_BUSY ? -16 : -2;
+    }
+    if (copy_to_user_space(directory, token_address, &token,
+                           sizeof(token)) != 0) {
+        (void)vfs_maintenance_release(&detected_drives[resource]);
+        (void)storage_maintenance_release(process->pid,
+            process->generation, token);
+        return -14;
+    }
+    return 0;
+}
+
+static int syscall_storage_maintenance_renew(uint32_t resource,
+        uint32_t token, uint32_t media_fingerprint) {
+    Process *process = scheduler_current_process();
+    if (process == NULL || !storage_service_authorized(process->pid,
+            process->generation) || resource >= (uint32_t)drive_count)
+        return -13;
+    uint32_t current_fingerprint = 0U;
+    if (!storage_service_media_fingerprint(resource, &current_fingerprint) ||
+        current_fingerprint != media_fingerprint) return -30;
+    return storage_maintenance_renew(process->pid, process->generation, token,
+                                     media_fingerprint, pit_monotonic_ms());
+}
+
+static int syscall_storage_maintenance_release(uint32_t resource,
+        uint32_t token) {
+    Process *process = scheduler_current_process();
+    if (process == NULL || !storage_service_authorized(process->pid,
+            process->generation) || resource >= (uint32_t)drive_count)
+        return -13;
+    int result = storage_maintenance_release(process->pid,
+        process->generation, token);
+    int vfs_result = vfs_maintenance_release(&detected_drives[resource]);
+    if (result != 0) return result;
+    return vfs_result == VFS_OK ? 0 : -2;
+}
+
+static int syscall_storage_block_write(uint32_t resource, uint32_t block,
+                                       const uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+    if (process == NULL ||
+        !storage_service_authorized(process->pid, process->generation))
+        return -13;
+    if (resource >= (uint32_t)drive_count) return -22;
+    drive_t *drive = &detected_drives[resource];
+    if (drive->type != DRIVE_TYPE_FDD || block >= drive->sectors ||
+        drive->sector == 0U || drive->head == 0U) return -22;
+    if (!storage_service_resource_available(resource) ||
+        storage_service_resource_read_only(resource)) return -30;
+    if (!user_range_accessible(directory, data_address,
+                               STORAGE_REQUEST_BLOCK_SIZE, false)) return -14;
+    uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
+    uint8_t verify[STORAGE_REQUEST_BLOCK_SIZE];
+    if (copy_from_user(data, user_data, sizeof(data)) != 0) return -14;
+    uint32_t track_size = drive->sector * drive->head;
+    uint32_t cylinder = block / track_size;
+    uint32_t within = block % track_size;
+    uint32_t head = within / drive->sector;
+    uint32_t sector = within % drive->sector + 1U;
+    if (cylinder >= drive->cylinder) return -22;
+    bool written = fdc_write_sectors(drive->fdd_drive_no, (uint8_t)head,
+        (uint8_t)cylinder, (uint8_t)sector, 1U, data);
+    bool verified = written && fdc_read_sector(drive->fdd_drive_no,
+        (uint8_t)head, (uint8_t)cylinder, (uint8_t)sector, verify) &&
+        memcmp(data, verify, sizeof(data)) == 0;
+    if (!verified) {
+        (void)storage_service_report_media_failure(resource, true);
+        return -5;
+    }
+    return 0;
 }
 
 static int syscall_storage_complete(storage_request_handle_t handle,
@@ -1320,6 +1432,10 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_reist_dhcp_boot_start,// Syscall 82: Start bounded boot DHCP
     (void*)&syscall_reist_icmp_ingress,   // Syscall 83: Validate Ring-3 ICMP ingress
     (void*)&syscall_scheduler_stats,       // Syscall 84: Bounded task-slot metrics
+    (void*)&syscall_storage_block_write,   // Syscall 85: Verified FDD block write
+    (void*)&syscall_storage_maintenance_acquire, // Syscall 86
+    (void*)&syscall_storage_maintenance_renew,   // Syscall 87
+    (void*)&syscall_storage_maintenance_release, // Syscall 88
     // Add more syscalls here as needed
 };
 
@@ -1724,6 +1840,21 @@ void syscall_handler(Registers* regs) {
         case SYS_SCHEDULER_STATS:
             result = (uint32_t)syscall_scheduler_stats(
                 (scheduler_resource_stats_t*)(uintptr_t)arg1, arg2, arg3);
+            break;
+        case SYS_STORAGE_BLOCK_WRITE:
+            result = (uint32_t)syscall_storage_block_write(
+                arg1, arg2, (const uint8_t*)(uintptr_t)arg3);
+            break;
+        case SYS_STORAGE_MAINT_ACQUIRE:
+            result = (uint32_t)syscall_storage_maintenance_acquire(
+                arg1, arg2, (storage_maintenance_token_t*)(uintptr_t)arg3);
+            break;
+        case SYS_STORAGE_MAINT_RENEW:
+            result = (uint32_t)syscall_storage_maintenance_renew(arg1, arg2,
+                                                                  arg3);
+            break;
+        case SYS_STORAGE_MAINT_RELEASE:
+            result = (uint32_t)syscall_storage_maintenance_release(arg1, arg2);
             break;
         default:
             result = (uint32_t)-1;

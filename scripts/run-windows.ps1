@@ -21,13 +21,20 @@ if (-not (Test-Path -LiteralPath $BootImage -PathType Leaf)) {
     throw "Boot image not found: $BootImage"
 }
 
+function Test-NativeQemuPath([string]$Path) {
+    return $Path -and
+        ($Path -notmatch '(?i)[\\/]android-sdk[\\/]emulator[\\/]qemu[\\/]')
+}
+
 $QemuCommand = Get-Command 'qemu-system-i386' -ErrorAction SilentlyContinue
 $Qemu = @(
-    $(if ($QemuCommand) { $QemuCommand.Source }),
     'C:\tmp\qemu-portable\qemu-system-i386.exe',
     'C:\Program Files\qemu\qemu-system-i386.exe',
     'C:\msys64\mingw64\bin\qemu-system-i386.exe'
-) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
+) + @($(if ($QemuCommand -and (Test-NativeQemuPath $QemuCommand.Source)) {
+    $QemuCommand.Source
+})) | Where-Object { (Test-NativeQemuPath $_) -and
+    (Test-Path -LiteralPath $_ -PathType Leaf) } |
     Select-Object -First 1
 if (-not $Qemu) {
     throw 'qemu-system-i386.exe was not found. Install or extract native QEMU first.'

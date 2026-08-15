@@ -327,6 +327,20 @@ bool storage_service_resource_read_only(uint32_t resource) {
     return (control.read_only_resources & (1U << resource)) != 0U;
 }
 
+bool storage_service_media_fingerprint(uint32_t resource, uint32_t *fingerprint) {
+    if (fingerprint == NULL || resource >= MAX_DRIVES || !initialized ||
+        !media_identity_matches(resource)) return false;
+    storage_media_fingerprint_t value;
+    size_t length = 0U;
+    if ((fingerprint_ready_mask & (1U << resource)) == 0U ||
+        critical_object_read(&media_fingerprints[resource],
+            STORAGE_MEDIA_FINGERPRINT_VERSION, &value, sizeof(value),
+            &length, fingerprint_valid) < 0 || length != sizeof(value))
+        return false;
+    *fingerprint = value.boot_crc32;
+    return *fingerprint != 0U;
+}
+
 bool storage_service_report_io_failure(uint32_t resource) {
     return storage_service_report_media_failure(resource, false);
 }

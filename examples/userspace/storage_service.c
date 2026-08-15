@@ -22,6 +22,11 @@ int main(void) {
             result = x86os_storage_block_read(request.resource,
                                                request.offset, data);
         }
+        if (request.operation == X86OS_STORAGE_BLOCK_WRITE &&
+            request.length == X86OS_STORAGE_BLOCK_SIZE) {
+            result = x86os_storage_block_write(request.resource,
+                                                request.offset, data);
+        }
         if (x86os_storage_complete(request.handle, result, data) != 0)
             return 3;
     }

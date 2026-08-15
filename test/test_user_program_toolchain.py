@@ -202,6 +202,9 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "HELLO.PRG", "SYSINFO.PRG", "REPEAT.PRG", "CALC.PRG",
                 "DATE.PRG", "UPTIME.PRG", "MEMINFO.PRG", "ASCII.PRG",
                 "CAT.PRG",
+                "CHKDSK.PRG",
+                "FDISK.PRG",
+                "FORMAT.PRG",
                 "LS.PRG",
                 "SAVE.PRG",
                 "BASIC.PRG",
@@ -247,6 +250,17 @@ class UserProgramToolchainTests(unittest.TestCase):
         )
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertEqual(build_script.count('--data-file "DESKTOP.PRG='), 2)
+
+    def test_fat12_tools_are_packaged_on_floppy_and_native_images(self):
+        build_script = (ROOT / "scripts" / "build-windows.ps1").read_text(
+            encoding="utf-8"
+        )
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        for program in ("CHKDSK.PRG", "FDISK.PRG", "FORMAT.PRG"):
+            self.assertEqual(
+                build_script.count(f'--data-file "{program}='), 2
+            )
+            self.assertEqual(makefile.count(f"--data-file {program}="), 2)
         self.assertEqual(makefile.count("--data-file DESKTOP.PRG="), 2)
 
 

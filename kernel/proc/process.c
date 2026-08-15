@@ -30,10 +30,13 @@ static int load_program_file(const char *program_name, uint8_t **image_out) {
     vfs_node_t* node = NULL;
     int result = vfs_open(program_name, &node);
     if (result != VFS_OK || !node) {
+        printf("Program load open failed: %s (%d)\n", program_name, result);
         return -1;
     }
     if (node->type != VFS_FILE || node->size < sizeof(program_header_t) ||
         node->size > PROGRAM_REGION_SIZE) {
+        printf("Program load metadata invalid: %s (type=%u, size=%u)\n",
+               program_name, (uint32_t)node->type, node->size);
         (void)vfs_close(node);
         return -1;
     }
@@ -41,6 +44,8 @@ static int load_program_file(const char *program_name, uint8_t **image_out) {
     uint32_t loaded_size = node->size;
     uint8_t *image = (uint8_t*)k_malloc(loaded_size);
     if (image == NULL) {
+        printf("Program load allocation failed: %s (%u bytes)\n",
+               program_name, loaded_size);
         (void)vfs_close(node);
         return -1;
     }
@@ -49,13 +54,18 @@ static int load_program_file(const char *program_name, uint8_t **image_out) {
      * each chunk and makes larger programs progressively slower to start. */
     result = vfs_read(node, 0, loaded_size, image);
     if (result != (int)loaded_size) {
+        printf("Program load read failed: %s (%d/%u bytes)\n",
+               program_name, result, loaded_size);
         (void)vfs_close(node);
         k_free(image);
         return -1;
     }
-    if (vfs_close(node) != VFS_OK ||
-        program_image_validate(image, loaded_size,
-                               PROGRAM_REGION_SIZE) != 0) {
+    int close_result = vfs_close(node);
+    int validation_result = program_image_validate(
+        image, loaded_size, PROGRAM_REGION_SIZE);
+    if (close_result != VFS_OK || validation_result != 0) {
+        printf("Program load validation failed: %s (close=%d, image=%d)\n",
+               program_name, close_result, validation_result);
         k_free(image);
         return -1;
     }
@@ -97,6 +107,8 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
         static const uint8_t storage_syscalls[] = {
             SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS, SYS_MONOTONIC_MS,
             SYS_STORAGE_BIND, SYS_STORAGE_CLAIM, SYS_STORAGE_BLOCK_READ,
+            SYS_STORAGE_BLOCK_WRITE, SYS_STORAGE_MAINT_ACQUIRE,
+            SYS_STORAGE_MAINT_RENEW, SYS_STORAGE_MAINT_RELEASE,
             SYS_STORAGE_COMPLETE
         };
         for (size_t index = 0;

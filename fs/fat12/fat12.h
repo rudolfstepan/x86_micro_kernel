@@ -7,6 +7,8 @@
 #include "../../lib/libc/string.h"
 #include "../../lib/libc/stdlib.h"
 #include "../../drivers/block/fdd.h"
+#include "fat12_journal.h"
+#include "fat12_remap.h"
 
 // FAT12 Constants
 #define FAT12_SECTOR_SIZE           512
@@ -106,6 +108,10 @@ typedef struct {
     int root_dir_start;      // Start sector of the Root Directory
     int data_start;          // Start sector of the Data region
     uint8_t* fat;            // Pointer to the FAT table in memory
+    bool journal_enabled;
+    fat12_journal_t journal;
+    bool remap_enabled;
+    fat12_remap_table_t remap;
 } fat12_t;
 #pragma pack(pop)
 

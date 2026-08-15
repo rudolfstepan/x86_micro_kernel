@@ -122,9 +122,10 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->client_generation == 0U ||
         value->deadline_ms == 0U ||
         value->operation < STORAGE_REQUEST_READ ||
-        value->operation > STORAGE_REQUEST_VFS_SYNC) return false;
+        value->operation > STORAGE_REQUEST_FORMAT_FAT12) return false;
     if (value->operation == STORAGE_REQUEST_BLOCK_FLUSH ||
-        value->operation == STORAGE_REQUEST_VFS_SYNC)
+        value->operation == STORAGE_REQUEST_VFS_SYNC ||
+        value->operation == STORAGE_REQUEST_FORMAT_FAT12)
         return value->length == 0U;
     if (value->operation == STORAGE_REQUEST_BLOCK_READ ||
         value->operation == STORAGE_REQUEST_BLOCK_WRITE)
@@ -284,13 +285,14 @@ static int submit_locked(int client_pid, uint32_t client_generation,
         handle_out == NULL || request->version != STORAGE_REQUEST_VERSION ||
         request->struct_size < sizeof(*request) ||
         request->operation < STORAGE_REQUEST_READ ||
-        request->operation > STORAGE_REQUEST_VFS_SYNC ||
+        request->operation > STORAGE_REQUEST_FORMAT_FAT12 ||
         request->timeout_ms == 0U ||
         request->timeout_ms > STORAGE_REQUEST_MAX_TIMEOUT_MS)
         return STORAGE_EINVAL;
     uint32_t expected = request->length;
     if (request->operation == STORAGE_REQUEST_BLOCK_FLUSH ||
-        request->operation == STORAGE_REQUEST_VFS_SYNC) expected = 0U;
+        request->operation == STORAGE_REQUEST_VFS_SYNC ||
+        request->operation == STORAGE_REQUEST_FORMAT_FAT12) expected = 0U;
     if ((request->operation == STORAGE_REQUEST_BLOCK_READ ||
          request->operation == STORAGE_REQUEST_BLOCK_WRITE) &&
         request->length != STORAGE_REQUEST_BLOCK_SIZE) return STORAGE_EMSGSIZE;

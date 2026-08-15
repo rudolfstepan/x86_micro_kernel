@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import binascii
 import struct
 from collections.abc import Mapping
 from pathlib import Path
@@ -58,7 +59,8 @@ def set_fat12_entry(fat: bytearray, cluster: int, value: int) -> None:
 
 
 def create_floppy_image(stage1: bytes, stage2: bytes, kernel: bytes,
-                        data_files: Mapping[str, bytes] | None = None) -> bytes:
+                        data_files: Mapping[str, bytes] | None = None,
+                        reist_fat12: bool = False) -> bytes:
     if len(stage1) != SECTOR_SIZE or stage1[510:] != b"\x55\xaa":
         raise ValueError("floppy stage 1 must be a signed 512-byte boot sector")
     stage2_sectors = sectors_for(len(stage2))
@@ -87,6 +89,10 @@ def create_floppy_image(stage1: bytes, stage2: bytes, kernel: bytes,
     # Keep every boot extent inside the FAT12 reserved area. This produces a
     # hybrid image which the BIOS can boot and the kernel can mount as A:.
     reserved_sectors = kernel_lba + sectors_for(len(kernel))
+    if reist_fat12:
+        reserved_sectors = max(reserved_sectors, 23)
+        if reserved_sectors >= FLOPPY_SECTORS:
+            raise ValueError("REIST FAT12 journal leaves no data area")
     sectors_per_fat = 3
     fat_count = 2
     root_entries = 224
@@ -94,6 +100,23 @@ def create_floppy_image(stage1: bytes, stage2: bytes, kernel: bytes,
     struct.pack_into("<BHHBHHH", image, 16, fat_count, root_entries,
                      FLOPPY_SECTORS, 0xF0, sectors_per_fat, 18, 2)
     struct.pack_into("<II", image, 28, 0, 0)
+    if reist_fat12:
+        image[54:62] = b"REIST12 "
+        struct.pack_into("<I", image, 39, 0x52454953)
+        journal = bytearray(SECTOR_SIZE)
+        struct.pack_into("<IHHIQIII", journal, 0,
+                         0x524A3132, 1, 32, 0x52454953, 1, 0, 0, 0)
+        struct.pack_into("<I", journal, 28,
+                         binascii.crc32(journal) & 0xFFFFFFFF)
+        image[2 * SECTOR_SIZE:3 * SECTOR_SIZE] = journal
+        image[3 * SECTOR_SIZE:4 * SECTOR_SIZE] = journal
+        remap = bytearray(SECTOR_SIZE)
+        struct.pack_into("<IHHIQIII", remap, 0,
+                         0x52504D31, 1, 16, 0x52454953, 1, 0, 0, 0)
+        struct.pack_into("<I", remap, 28,
+                         binascii.crc32(remap) & 0xFFFFFFFF)
+        image[20 * SECTOR_SIZE:21 * SECTOR_SIZE] = remap
+        image[21 * SECTOR_SIZE:22 * SECTOR_SIZE] = remap
     root_sectors = (root_entries * 32 + SECTOR_SIZE - 1) // SECTOR_SIZE
     if reserved_sectors + fat_count * sectors_per_fat + root_sectors >= FLOPPY_SECTORS:
         raise ValueError("kernel leaves no usable FAT12 data area on the floppy")
@@ -142,6 +165,8 @@ def main() -> None:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--data-file", action="append", default=[],
                         metavar="NAME=PATH")
+    parser.add_argument("--reist-fat12", action="store_true",
+                        help="mark image and initialize the fixed REIST journal")
     args = parser.parse_args()
     data_files = {}
     for specification in args.data_file:
@@ -151,7 +176,8 @@ def main() -> None:
         data_files[name] = Path(path).read_bytes()
     image = create_floppy_image(args.stage1.read_bytes(),
                                 args.stage2.read_bytes(),
-                                args.kernel.read_bytes(), data_files)
+                                args.kernel.read_bytes(), data_files,
+                                args.reist_fat12)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(image)
     print(f"Bootable floppy image: {args.output.resolve()} ({len(image)} bytes)")

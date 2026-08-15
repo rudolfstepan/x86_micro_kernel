@@ -98,6 +98,7 @@ typedef struct vfs_filesystem {
     void* fs_data;                    // Filesystem-specific data (boot sector, etc.)
     vfs_node_t* root;                 // Root directory node
     uint32_t open_nodes;              // Nodes currently owned by VFS callers
+    bool maintenance_blocked;         // Reject new opens during exclusive maintenance
 } vfs_filesystem_t;
 
 // ===========================================================================
@@ -145,6 +146,11 @@ int vfs_register_filesystem(const char* name, vfs_filesystem_ops_t* ops);
 // Mount/unmount
 int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path);
 int vfs_unmount(const char* mount_path);
+
+/* Atomically stop new opens after proving that no caller owns a node for the
+   selected drive.  The caller must hold the higher-level maintenance lease. */
+int vfs_maintenance_acquire(drive_t* drive);
+int vfs_maintenance_release(drive_t* drive);
 
 // File operations (path-based)
 int vfs_open(const char* path, vfs_node_t** node);

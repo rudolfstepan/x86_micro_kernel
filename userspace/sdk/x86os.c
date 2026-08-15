@@ -285,6 +285,30 @@ int x86os_storage_block_read(uint32_t resource, uint32_t block, void *data) {
                               (uintptr_t)data);
 }
 
+int x86os_storage_block_write(uint32_t resource, uint32_t block,
+                              const void *data) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_BLOCK_WRITE, resource, block,
+                              (uintptr_t)data);
+}
+
+int x86os_storage_maintenance_acquire(uint32_t resource,
+                                      uint32_t media_fingerprint,
+                                      uint32_t *token) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_MAINT_ACQUIRE, resource,
+                              media_fingerprint, (uintptr_t)token);
+}
+
+int x86os_storage_maintenance_renew(uint32_t resource, uint32_t token,
+                                    uint32_t media_fingerprint) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_MAINT_RENEW, resource, token,
+                              media_fingerprint);
+}
+
+int x86os_storage_maintenance_release(uint32_t resource, uint32_t token) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_MAINT_RELEASE, resource, token,
+                              0);
+}
+
 int x86os_storage_complete(x86os_storage_handle_t handle, int32_t result,
                            const void *data) {
     return (int)x86os_syscall(X86OS_SYS_STORAGE_COMPLETE, handle,

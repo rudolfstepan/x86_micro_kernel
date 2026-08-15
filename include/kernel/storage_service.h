@@ -15,5 +15,6 @@ bool storage_service_report_io_failure(uint32_t resource);
 bool storage_service_report_media_failure(uint32_t resource,
                                           bool write_uncertain);
 bool storage_service_resource_read_only(uint32_t resource);
+bool storage_service_media_fingerprint(uint32_t resource, uint32_t *fingerprint);
 
 #endif

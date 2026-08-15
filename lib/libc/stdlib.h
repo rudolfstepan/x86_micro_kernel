@@ -93,6 +93,10 @@
 #define SYS_REIST_DHCP_BOOT_START 82
 #define SYS_REIST_ICMP_INGRESS 83
 #define SYS_SCHEDULER_STATS 84
+#define SYS_STORAGE_BLOCK_WRITE 85
+#define SYS_STORAGE_MAINT_ACQUIRE 86
+#define SYS_STORAGE_MAINT_RENEW 87
+#define SYS_STORAGE_MAINT_RELEASE 88
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

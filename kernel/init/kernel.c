@@ -28,6 +28,7 @@
 #include "include/kernel/storage_safety.h"
 #include "include/kernel/storage_handover.h"
 #include "include/kernel/storage_service.h"
+#include "include/kernel/storage_maintenance.h"
 #include "include/kernel/handover.h"
 #include "include/kernel/handover_replica.h"
 #include "include/kernel/handover_serial_backend.h"
@@ -560,6 +561,10 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     early_init();
     fatal_boot_recover_record();
     supervisor_init();
+    if (!storage_maintenance_init()) {
+        printf("Kernel: storage maintenance initialization failed.\n");
+        panic("Unable to initialize storage maintenance leases");
+    }
     if (!storage_service_init()) {
         panic("Unable to initialize REIST storage service control");
     }

@@ -214,6 +214,7 @@ static int vfs_mount_locked(drive_t* drive, const char* fs_type,
     fs->fs_data = NULL;
     fs->root = NULL;
     fs->open_nodes = 0;
+    fs->maintenance_blocked = false;
 
     // Allocate the mount record before activating the filesystem so every
     // allocation failure is still side-effect free.
@@ -348,6 +349,7 @@ static int vfs_open_locked(const char* path, vfs_node_t** node) {
     if (!fs) {
         return VFS_ERR_NOT_FOUND;
     }
+    if (fs->maintenance_blocked) return VFS_ERR_BUSY;
     
     const char* relative_path = vfs_get_relative_path_locked(path, fs);
     if (!fs->ops->open) {
@@ -655,6 +657,43 @@ int vfs_unmount(const char* mount_path) {
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_unmount_locked(mount_path) : VFS_ERR_READ_ONLY;
     result = vfs_mutation_finish(armed, result);
+    vfs_operation_end();
+    return result;
+}
+
+static int vfs_maintenance_acquire_locked(drive_t* drive) {
+    if (!drive) return VFS_ERR_INVALID;
+    for (vfs_mount_t* mount = mount_list; mount; mount = mount->next) {
+        if (mount->fs->drive != drive) continue;
+        if (mount->fs->maintenance_blocked || mount->fs->open_nodes != 0U)
+            return VFS_ERR_BUSY;
+        mount->fs->maintenance_blocked = true;
+        return VFS_OK;
+    }
+    return VFS_ERR_NOT_FOUND;
+}
+
+static int vfs_maintenance_release_locked(drive_t* drive) {
+    if (!drive) return VFS_ERR_INVALID;
+    for (vfs_mount_t* mount = mount_list; mount; mount = mount->next) {
+        if (mount->fs->drive != drive) continue;
+        if (!mount->fs->maintenance_blocked) return VFS_OK;
+        mount->fs->maintenance_blocked = false;
+        return VFS_OK;
+    }
+    return VFS_ERR_NOT_FOUND;
+}
+
+int vfs_maintenance_acquire(drive_t* drive) {
+    vfs_operation_begin();
+    int result = vfs_maintenance_acquire_locked(drive);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_maintenance_release(drive_t* drive) {
+    vfs_operation_begin();
+    int result = vfs_maintenance_release_locked(drive);
     vfs_operation_end();
     return result;
 }

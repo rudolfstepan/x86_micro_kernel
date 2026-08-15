@@ -88,7 +88,11 @@ enum {
     X86OS_SYS_REIST_DHCP_INGRESS = 81,
     X86OS_SYS_REIST_DHCP_BOOT_START = 82,
     X86OS_SYS_REIST_ICMP_INGRESS = 83,
-    X86OS_SYS_SCHEDULER_STATS = 84
+    X86OS_SYS_SCHEDULER_STATS = 84,
+    X86OS_SYS_STORAGE_BLOCK_WRITE = 85,
+    X86OS_SYS_STORAGE_MAINT_ACQUIRE = 86,
+    X86OS_SYS_STORAGE_MAINT_RENEW = 87,
+    X86OS_SYS_STORAGE_MAINT_RELEASE = 88
 };
 
 enum {
@@ -345,6 +349,7 @@ typedef struct {
 #define X86OS_STORAGE_VFS_READ 4U
 #define X86OS_STORAGE_VFS_WRITE 5U
 #define X86OS_STORAGE_VFS_SYNC 6U
+#define X86OS_STORAGE_FORMAT_FAT12 7U
 typedef uint32_t x86os_storage_handle_t;
 typedef struct {
     uint32_t version;
@@ -492,6 +497,14 @@ int x86os_storage_submit(const x86os_storage_submit_t *request,
                          const void *data, x86os_storage_handle_t *handle);
 int x86os_storage_claim(x86os_storage_descriptor_t *request, void *data);
 int x86os_storage_block_read(uint32_t resource, uint32_t block, void *data);
+int x86os_storage_block_write(uint32_t resource, uint32_t block,
+                              const void *data);
+int x86os_storage_maintenance_acquire(uint32_t resource,
+                                      uint32_t media_fingerprint,
+                                      uint32_t *token);
+int x86os_storage_maintenance_renew(uint32_t resource, uint32_t token,
+                                    uint32_t media_fingerprint);
+int x86os_storage_maintenance_release(uint32_t resource, uint32_t token);
 int x86os_storage_complete(x86os_storage_handle_t handle, int32_t result,
                            const void *data);
 int x86os_storage_collect(x86os_storage_handle_t handle, int32_t *result,

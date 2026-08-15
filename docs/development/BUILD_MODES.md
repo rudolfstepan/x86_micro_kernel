@@ -4,6 +4,33 @@ Der Kernel kennt drei Zielprofile und zwei Videoausgaben. Die Profile ändern
 Timing- und Validierungsdefinitionen, nicht das CPU-Ziel: Alle Varianten sind
 freestanding i386.
 
+## Verbindlicher Windows-Build
+
+Unter Windows ist `scripts/build-windows.ps1` der verbindliche Einstieg. Das
+Skript sucht die installierte beziehungsweise portable Zig-Toolchain, setzt
+Clang auf das Ziel `x86-freestanding`, verwendet `ld.lld` als ELF-Linker und
+bindet NASM sowie die MSYS-Shell kontrolliert ein. Es führt außerdem den wegen
+der gemeinsam genutzten Objektpfade erforderlichen sauberen Neubau aus.
+
+```powershell
+.\scripts\build-windows.ps1 -Target qemu -Video vga
+.\scripts\build-windows.ps1 -Target vmware -Video vga
+.\scripts\build-windows.ps1 -Target real_hw -Video vga
+.\scripts\build-windows.ps1 -Target qemu -Video framebuffer
+```
+
+Ein nacktes `make kernel` aus einer normalen PowerShell ist **kein**
+gleichwertiger Windows-Build. Es kann `C:\msys64\mingw64\bin\gcc.exe` und
+`ld.exe` auswählen. Dieser MinGW-Linker erzeugt PE-Dateien und unterstützt das
+vom Kernel benötigte Ausgabeformat `elf_i386` nicht. Ein typisches Symptom ist
+eine Linkerfehlermeldung zu einem nicht unterstützten oder unbekannten
+`elf_i386`-Format. In diesem Fall wird weder das Linkerskript noch der
+Kernelcode geändert; der Build wird über `build-windows.ps1` wiederholt.
+
+Direkte Make-Aufrufe sind nur in einer Unix-/CI-Umgebung mit bereits korrekt
+konfigurierter ELF-i386-Cross-Toolchain oder mit ausdrücklich gesetzten,
+ELF-fähigen `CC`- und `LD`-Variablen zulässig.
+
 ## Zielprofile
 
 | `TARGET` | Definitionen | Einsatz |
@@ -33,18 +60,20 @@ Raw-Image, das später auf einen echten Datenträger geschrieben wird, ist
 | `framebuffer` | `USE_FRAMEBUFFER` | experimenteller Grafikweg |
 
 Das Windows-Skript verwendet standardmäßig VGA; `-Video framebuffer` wählt
-denselben optionalen Grafikpfad wie `VIDEO=framebuffer` bei Make:
+den optionalen Grafikpfad:
 
-```bash
-make kernel TARGET=qemu VIDEO=framebuffer
-make run-fb
+```powershell
+.\scripts\build-windows.ps1 -Target qemu -Video framebuffer
 ```
+
+In einer bereits konfigurierten Unix-/CI-Cross-Build-Umgebung entsprechen dem
+die Make-Ziele `make kernel TARGET=qemu VIDEO=framebuffer` und `make run-fb`.
 
 ## Build-Ausgaben
 
 | Befehl | Bootweg | Ergebnis |
 |---|---|---|
-| `build-windows.ps1` | eigener BIOS-/MBR-Loader | Raw-Image, VMDK, VMX und VMware-Paket |
+| `.\scripts\build-windows.ps1` | eigener BIOS-/MBR-Loader | Raw-Image, VMDK, VMX und VMware-Paket |
 | `make all` / `make native-image` | eigener BIOS-Bootloader | natives Raw-Image und VMware-VM |
 | `make run` / `make run-native` | eigener BIOS-Bootloader | natives Image in QEMU |
 
@@ -57,8 +86,9 @@ kann.
 
 Objektpfade werden zwischen Profilen geteilt. Das Makefile verwendet deshalb
 einen Konfigurationsstempel; `build-windows.ps1` führt zusätzlich einen
-sauberen Neubau aus. Bei einem manuellen Profilwechsel ist ebenfalls ein
-Clean-Build sinnvoll:
+sauberen Neubau aus. Unter Windows genügt daher der erneute Skriptaufruf mit
+dem gewünschten Profil. Nur in einer korrekt konfigurierten Unix-/CI-
+Cross-Build-Umgebung wird ein manueller Profilwechsel so durchgeführt:
 
 ```bash
 make clean

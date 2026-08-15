@@ -63,6 +63,8 @@ $MsysShell = Resolve-NativeTool 'sh' @('C:\msys64\usr\bin\sh.exe')
 $MsysBin = Split-Path -Parent $MsysShell
 
 $BuildDir = Join-Path $RepoRoot 'build'
+$ZigLocalCache = Join-Path $BuildDir 'zig-cache'
+$ZigGlobalCache = Join-Path $BuildDir 'zig-global-cache'
 $Stage1 = Join-Path $BuildDir 'stage1_mbr.bin'
 $FloppyStage1 = Join-Path $BuildDir 'stage1_floppy.bin'
 $Stage2 = Join-Path $BuildDir 'stage2_bios.bin'
@@ -77,11 +79,16 @@ $UserProgramDir = Join-Path $BuildDir 'programs'
 $UserPrg = Join-Path $UserProgramDir $ProgramName.ToUpperInvariant()
 
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+New-Item -ItemType Directory -Force -Path $ZigLocalCache, $ZigGlobalCache | Out-Null
 Push-Location $RepoRoot
 try {
     # GNU Make may execute simple recipe commands directly instead of through
     # SHELL, so the native MSYS2 mkdir/rm/touch/cp tools must also be on PATH.
     $env:Path = "$MsysBin;$env:Path"
+    # Keep Zig's compiler caches inside the workspace.  The default cache under
+    # %LOCALAPPDATA% may be inaccessible in restricted Windows environments.
+    $env:ZIG_LOCAL_CACHE_DIR = $ZigLocalCache
+    $env:ZIG_GLOBAL_CACHE_DIR = $ZigGlobalCache
     # Object paths are shared by all compiler frontends.  A clean native build
     # prevents same-target objects from an earlier GCC/WSL invocation being
     # silently reused with Zig on Windows.
@@ -176,6 +183,9 @@ try {
         --data-file "MEMINFO.PRG=$(Join-Path $UserProgramDir 'MEMINFO.PRG')" `
         --data-file "ASCII.PRG=$(Join-Path $UserProgramDir 'ASCII.PRG')" `
         --data-file "CAT.PRG=$(Join-Path $UserProgramDir 'CAT.PRG')" `
+        --data-file "CHKDSK.PRG=$(Join-Path $UserProgramDir 'CHKDSK.PRG')" `
+        --data-file "FDISK.PRG=$(Join-Path $UserProgramDir 'FDISK.PRG')" `
+        --data-file "FORMAT.PRG=$(Join-Path $UserProgramDir 'FORMAT.PRG')" `
         --data-file "LS.PRG=$(Join-Path $UserProgramDir 'LS.PRG')" `
         --data-file "SAVE.PRG=$(Join-Path $UserProgramDir 'SAVE.PRG')" `
         --data-file "BASIC.PRG=$(Join-Path $UserProgramDir 'BASIC.PRG')" `
@@ -223,6 +233,9 @@ try {
         --data-file "MEMINFO.PRG=$(Join-Path $UserProgramDir 'MEMINFO.PRG')" `
         --data-file "ASCII.PRG=$(Join-Path $UserProgramDir 'ASCII.PRG')" `
         --data-file "CAT.PRG=$(Join-Path $UserProgramDir 'CAT.PRG')" `
+        --data-file "CHKDSK.PRG=$(Join-Path $UserProgramDir 'CHKDSK.PRG')" `
+        --data-file "FDISK.PRG=$(Join-Path $UserProgramDir 'FDISK.PRG')" `
+        --data-file "FORMAT.PRG=$(Join-Path $UserProgramDir 'FORMAT.PRG')" `
         --data-file "LS.PRG=$(Join-Path $UserProgramDir 'LS.PRG')" `
         --data-file "SAVE.PRG=$(Join-Path $UserProgramDir 'SAVE.PRG')" `
         --data-file "BASIC.PRG=$(Join-Path $UserProgramDir 'BASIC.PRG')" `

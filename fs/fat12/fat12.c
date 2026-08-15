@@ -21,6 +21,49 @@ static bool fdc_read_logical_range(uint8_t drive, uint32_t logical_sector,
 static bool fdc_write_logical_range(uint8_t drive, uint32_t logical_sector,
                                     uint32_t count, const uint8_t *input);
 
+static bool fat12_journal_read_sector(void *context, uint32_t sector,
+                                      void *buffer) {
+    (void)context;
+    return fdc_read_logical_range(current_fdd_drive, sector, 1U, buffer);
+}
+
+static bool fat12_journal_write_sector(void *context, uint32_t sector,
+                                       const void *buffer) {
+    (void)context;
+    return fdc_write_logical_range(current_fdd_drive, sector, 1U, buffer);
+}
+
+static bool fat12_journal_prepare(void) {
+    if (!fat12 || fat12->boot_sector.reserved_sectors < 20U ||
+        memcmp(fat12->boot_sector.fs_type, "REIST12", 7U) != 0 ||
+        fat12->boot_sector.volume_id == 0U) return true;
+    if (!fat12_journal_format(&fat12->journal, 2U, 3U, 4U,
+                              fat12->boot_sector.volume_id)) return false;
+    uint8_t primary[FAT12_SECTOR_SIZE], mirror[FAT12_SECTOR_SIZE];
+    bool primary_ok = fdc_read_logical_range(current_fdd_drive, 2U, 1U,
+                                             primary);
+    bool mirror_ok = fdc_read_logical_range(current_fdd_drive, 3U, 1U,
+                                            mirror);
+    if (!primary_ok || !mirror_ok || !fat12_journal_load(&fat12->journal,
+            fat12_journal_read_sector, NULL)) return false;
+    if (!fat12_journal_recover(&fat12->journal, fat12_journal_read_sector,
+                               fat12_journal_write_sector, NULL)) return false;
+    if (!fat12_remap_format(&fat12->remap, 20U, 21U, 22U,
+                            fat12->boot_sector.volume_id)) return false;
+    if (!fat12_remap_load(&fat12->remap, fat12_journal_read_sector, NULL))
+        return false;
+    fat12->journal_enabled = true;
+    fat12->remap_enabled = true;
+    return true;
+}
+
+static uint32_t fat12_remap_sector(uint32_t sector) {
+    uint32_t replacement = 0U;
+    return fat12 && fat12->remap_enabled &&
+                   fat12_remap_lookup(&fat12->remap, sector, &replacement)
+        ? replacement : sector;
+}
+
 // Helper: read a single sector using DMA first, then fall back to no-DMA path
 static bool fdc_read_with_fallback(uint8_t drive, uint8_t head, uint8_t track, uint8_t sector, void* out_buf) {
     if (fdc_read_sector(drive, head, track, sector, out_buf)) {
@@ -252,6 +295,11 @@ int read_fat12(uint8_t drive, fat12_t* fat12) {
     printf("  fat_start: %u\n", fat12->fat_start);
     printf("  root_dir_start: %u\n", fat12->root_dir_start);
     printf("  data_start: %u\n", fat12->data_start);
+
+    if (!fat12_journal_prepare()) {
+        printf("ERROR: FAT12 journal recovery failed; refusing mount\n");
+        return false;
+    }
 
     // Allocate and load FAT table into memory
     uint32_t fat_size_bytes = (uint32_t)spf * bps;
@@ -1129,8 +1177,17 @@ bool fat12_read_logical_sectors(uint32_t logical_sector, uint32_t count,
         fat12->boot_sector.total_sectors :
         fat12->boot_sector.total_sectors_large;
     if (logical_sector >= total || count > total - logical_sector) return false;
-    return fdc_read_logical_range(current_fdd_drive, logical_sector, count,
-                                  (uint8_t*)output);
+    if (!fat12->remap_enabled)
+        return fdc_read_logical_range(current_fdd_drive, logical_sector, count,
+                                      (uint8_t*)output);
+    uint8_t *bytes = (uint8_t*)output;
+    for (uint32_t index = 0U; index < count; ++index) {
+        uint32_t physical = fat12_remap_sector(logical_sector + index);
+        if (!fdc_read_logical_range(current_fdd_drive, physical, 1U,
+                                    bytes + index * FAT12_SECTOR_SIZE))
+            return false;
+    }
+    return true;
 }
 
 bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
@@ -1140,8 +1197,32 @@ bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
         fat12->boot_sector.total_sectors :
         fat12->boot_sector.total_sectors_large;
     if (logical_sector >= total || count > total - logical_sector) return false;
-    return fdc_write_logical_range(current_fdd_drive, logical_sector, count,
-                                   (const uint8_t*)input);
+    if (!fat12->journal_enabled)
+        return fdc_write_logical_range(current_fdd_drive, logical_sector, count,
+                                       (const uint8_t*)input);
+    static uint64_t journal_sequence = 1U;
+    if (++journal_sequence == 0U) return false;
+    if (!fat12_journal_begin(&fat12->journal, journal_sequence,
+                             fat12_journal_write_sector, NULL)) return false;
+    const uint8_t *bytes = (const uint8_t*)input;
+    for (uint32_t index = 0U; index < count; ++index) {
+        uint8_t old_sector[FAT12_SECTOR_SIZE];
+        uint8_t verify[FAT12_SECTOR_SIZE];
+        uint32_t physical = fat12_remap_sector(logical_sector + index);
+        if (!fat12_read_logical_sectors(logical_sector + index, 1U,
+                                        old_sector) ||
+            !fat12_journal_record(&fat12->journal, logical_sector + index,
+                                   old_sector, fat12_journal_write_sector,
+                                   NULL) ||
+            !fdc_write_logical_range(current_fdd_drive, physical, 1U,
+                                     bytes + index * FAT12_SECTOR_SIZE) ||
+            !fdc_read_logical_range(current_fdd_drive, physical, 1U, verify) ||
+            memcmp(bytes + index * FAT12_SECTOR_SIZE, verify,
+                   FAT12_SECTOR_SIZE) != 0)
+            return false;
+    }
+    return fat12_journal_commit(&fat12->journal, fat12_journal_write_sector,
+                                NULL);
 }
 
 bool fat12_sync_fat(void) {

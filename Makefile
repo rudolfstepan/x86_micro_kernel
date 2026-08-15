@@ -540,7 +540,7 @@ check-kernel-stack-analysis:
 	@$(MAKE) clean OUTPUT_DIR=$(STACK_ANALYSIS_OUTPUT_DIR)
 	@$(MAKE) check-kernel-stack OUTPUT_DIR=$(STACK_ANALYSIS_OUTPUT_DIR) \
 		CC=$(STACK_ANALYSIS_CC) \
-		FRAME_WARNING_FLAGS="-Wframe-larger-than=4096 -Werror=frame-larger-than=4096" \
+		FRAME_WARNING_FLAGS="-Wframe-larger-than=4096 -Werror=frame-larger-than" \
 		STACK_ANALYSIS_FLAGS="-fstack-usage -fcallgraph-info=su"
 	@$(PYTHON) scripts/validate_stack_usage.py \
 		--root $(STACK_ANALYSIS_OUTPUT_DIR) --expected 75 \
@@ -585,6 +585,9 @@ native-image: floppy-image
 		--data-file MEMINFO.PRG=$(SYSTEM_PROGRAM_DIR)/MEMINFO.PRG \
 		--data-file ASCII.PRG=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG \
 		--data-file CAT.PRG=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
+		--data-file CHKDSK.PRG=$(SYSTEM_PROGRAM_DIR)/CHKDSK.PRG \
+		--data-file FDISK.PRG=$(SYSTEM_PROGRAM_DIR)/FDISK.PRG \
+		--data-file FORMAT.PRG=$(SYSTEM_PROGRAM_DIR)/FORMAT.PRG \
 		--data-file LS.PRG=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
 		--data-file SAVE.PRG=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
 		--data-file BASIC.PRG=$(SYSTEM_PROGRAM_DIR)/BASIC.PRG \
@@ -632,6 +635,9 @@ floppy-image: kernel system-programs user-program
 		--data-file MEMINFO.PRG=$(SYSTEM_PROGRAM_DIR)/MEMINFO.PRG \
 		--data-file ASCII.PRG=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG \
 		--data-file CAT.PRG=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
+		--data-file CHKDSK.PRG=$(SYSTEM_PROGRAM_DIR)/CHKDSK.PRG \
+		--data-file FDISK.PRG=$(SYSTEM_PROGRAM_DIR)/FDISK.PRG \
+		--data-file FORMAT.PRG=$(SYSTEM_PROGRAM_DIR)/FORMAT.PRG \
 		--data-file LS.PRG=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
 		--data-file SAVE.PRG=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
 		--data-file BASIC.PRG=$(SYSTEM_PROGRAM_DIR)/BASIC.PRG \

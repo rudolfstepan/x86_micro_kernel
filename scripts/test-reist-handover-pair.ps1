@@ -13,6 +13,10 @@ $PairDir = Join-Path $RepoRoot 'build\handover-pair'
 function Resolve-NativeTool {
     param([string]$Name, [string[]]$Fallbacks)
     $command = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($Name -eq 'qemu-system-i386' -and $command -and
+        $command.Source -match '(?i)[\\/]android-sdk[\\/]emulator[\\/]qemu[\\/]') {
+        $command = $null
+    }
     if ($command) { return $command.Source }
     foreach ($candidate in $Fallbacks) {
         if (Test-Path -LiteralPath $candidate -PathType Leaf) {
