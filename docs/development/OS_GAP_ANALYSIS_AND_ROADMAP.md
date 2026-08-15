@@ -2093,10 +2093,10 @@ Der aktuelle Funktionsumfang der Werkzeuge ist bewusst enger als das Ziel:
 - `FDISK.PRG` zeigt erkannte Medien read-only an; validierte MBR-Mutationen sind
   noch nicht implementiert.
 - `FORMAT.PRG` validiert FDD-Ressource, Schalter und Bestätigung und sendet einen
-  begrenzten Storage-Request. Der Storage-Dienst beantwortet diesen Request
-  derzeit fail-closed mit `unsupported`; Oberflächentest, FAT12-Erzeugung,
-  Readback und Remount fehlen noch. Das Programm meldet daher keinen falschen
-  Formatierungserfolg und verändert noch kein Medium.
+  begrenzten Storage-Request. Der Storage-Dienst erzeugt nun das feste
+  1,44-MB-FAT12-Layout mit 23 Reserved-Sektoren, zwei FAT-Kopien, Root- und
+  Datenbereich, REIST-Journal-/Remap-Metadaten sowie Bootsektor-Readback. Der
+  abschließende Lease-/Remount-Nachweis und Fehlerrollback bleiben offen.
 
 Die beim Boot von A: beobachtete Panic `Unable to start REIST Ring-3 probe`
 wurde auf ein nicht initialisiertes `maintenance_blocked` im VFS-Mountobjekt

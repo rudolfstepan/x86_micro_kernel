@@ -18,6 +18,7 @@ class Fat12ToolContracts(unittest.TestCase):
 
     def test_format_is_confirmed_bounded_and_service_mediated(self):
         source = self.read("examples/userspace/format.c")
+        service = self.read("examples/userspace/storage_service.c")
         programs = self.read("scripts/build_system_programs.py")
         self.assertIn('"FORMAT.PRG"', programs)
         self.assertIn('"--reist-fat12"', source)
@@ -27,6 +28,9 @@ class Fat12ToolContracts(unittest.TestCase):
         self.assertIn("x86os_storage_submit", source)
         self.assertIn("x86os_storage_collect", source)
         self.assertNotIn("x86os_storage_block_write", source)
+        self.assertIn("FORMAT_FAT12_RESERVED 23U", service)
+        self.assertIn("format_fat12(request.resource)", service)
+        self.assertIn("format_equal(sector, expected", service)
 
     def test_chkdsk_remains_read_only(self):
         chkdsk = self.read("examples/userspace/chkdsk.c")

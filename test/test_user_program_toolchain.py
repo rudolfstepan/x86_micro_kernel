@@ -263,6 +263,13 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertEqual(makefile.count(f"--data-file {program}="), 2)
         self.assertEqual(makefile.count("--data-file DESKTOP.PRG="), 2)
 
+    def test_drives_program_displays_resource_id(self):
+        source = (ROOT / "examples" / "userspace" / "drives.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Resource  Drive  Device  Type", source)
+        self.assertIn("x86os_print_number((int)index)", source)
+
 
 if __name__ == "__main__":
     unittest.main()
