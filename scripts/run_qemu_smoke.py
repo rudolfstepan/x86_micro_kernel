@@ -51,6 +51,8 @@ REIST_ICMP_ECHO_QUEUED_MARKER = "REIST_NETWORK ICMP_ECHO_QUEUED"
 REIST_ICMP_ECHO_MARKER = "REIST_NETWORK ICMP_ECHO_MEDIATED"
 REIST_DHCP_CONFIG_QUEUED_MARKER = "REIST_NETWORK DHCP_CONFIG_QUEUED"
 REIST_DHCP_CONFIG_MARKER = "REIST_NETWORK DHCP_CONFIG_MEDIATED"
+REIST_UDP_ECHO_QUEUED_MARKER = "REIST_NETWORK UDP_ECHO_QUEUED"
+REIST_UDP_ECHO_MARKER = "REIST_NETWORK UDP_ECHO_MEDIATED"
 REIST_NETWORK_CRASH_MARKER = "REIST_NETWORK SERVICE_CRASH_RECOVERED"
 REIST_NETWORK_RECOVERY_MARKER = "TEST_STAGE NETWORK_RECOVERY_OK"
 REIST_NETWORK_PRESSURE_FALLBACK_MARKER = "REIST_NETWORK QUEUE_PRESSURE_FALLBACK"
@@ -88,6 +90,7 @@ FAIL_MARKERS = (
     "REIST_NETWORK ARP_REPLY_REJECTED",
     "REIST_NETWORK ICMP_ECHO_REJECTED",
     "REIST_NETWORK DHCP_CONFIG_REJECTED",
+    "REIST_NETWORK UDP_ECHO_REJECTED",
 )
 
 
@@ -249,6 +252,28 @@ def icmp_echo_request_frame() -> bytes:
         60, b"\x00")
 
 
+def udp_echo_request_frame() -> bytes:
+    source_mac = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x02))
+    destination_mac = b"\xff" * 6
+    source_ip = bytes((10, 0, 2, 99))
+    destination_ip = bytes((10, 0, 2, 15))
+    payload = b"REIST-UDP"
+    udp_length = 8 + len(payload)
+    udp = struct.pack("!HHHH", 40000, 9000, udp_length, 0) + payload
+    pseudo = source_ip + destination_ip + struct.pack("!BBH", 0, 17,
+                                                       udp_length)
+    checksum = internet_checksum(pseudo + udp)
+    udp = udp[:6] + struct.pack("!H", checksum or 0xFFFF) + udp[8:]
+    total_length = 20 + len(udp)
+    ip = struct.pack(
+        "!BBHHHBBH4s4s", 0x45, 0, total_length, 0x5544, 0,
+        64, 17, 0, source_ip, destination_ip,
+    )
+    ip = ip[:10] + struct.pack("!H", internet_checksum(ip)) + ip[12:]
+    return (destination_mac + source_mac + b"\x08\x00" + ip + udp).ljust(
+        60, b"\x00")
+
+
 def inject_ethernet_frame(
     connection: socket.socket, frame: bytes
 ) -> bool:
@@ -327,6 +352,47 @@ def receive_icmp_echo_reply(connection: socket.socket,
         if (icmp[0:2] == b"\x00\x00" and
                 icmp[4:8] == b"\x12\x34\x00\x01" and
                 icmp[8:] == b"REIS" and internet_checksum(icmp) == 0):
+            return True
+    return False
+
+
+def receive_udp_echo_reply(connection: socket.socket,
+                           deadline: float) -> bool:
+    expected_destination = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x02))
+    expected_source_ip = bytes((10, 0, 2, 15))
+    expected_destination_ip = bytes((10, 0, 2, 99))
+    while time.monotonic() < deadline:
+        connection.settimeout(max(0.01, deadline - time.monotonic()))
+        header = receive_exact(connection, 4)
+        if header is None:
+            return False
+        length = struct.unpack("!I", header)[0]
+        if length < 14 or length > 1514:
+            return False
+        frame = receive_exact(connection, length)
+        if frame is None:
+            return False
+        if (len(frame) < 42 or frame[0:6] != expected_destination or
+                frame[12:14] != b"\x08\x00"):
+            continue
+        ihl = (frame[14] & 0x0F) * 4
+        if (ihl < 20 or len(frame) < 14 + ihl + 8 or frame[23] != 17 or
+                frame[26:30] != expected_source_ip or
+                frame[30:34] != expected_destination_ip):
+            continue
+        ip_total = struct.unpack("!H", frame[16:18])[0]
+        udp = frame[14 + ihl:14 + ip_total]
+        if len(udp) < 8:
+            continue
+        source_port, destination_port, udp_length, checksum = struct.unpack(
+            "!HHHH", udp[:8])
+        if (source_port != 9000 or destination_port != 40000 or
+                udp_length != len(udp) or checksum == 0 or
+                udp[8:] != b"REIST-UDP"):
+            continue
+        pseudo = (expected_source_ip + expected_destination_ip +
+                  struct.pack("!BBH", 0, 17, udp_length))
+        if internet_checksum(pseudo + udp) == 0:
             return True
     return False
 
@@ -442,6 +508,7 @@ def run(
     expect_arp_resolution: bool = False,
     expect_handover: bool = False,
     inject_icmp_echo: bool = False,
+    inject_udp_echo: bool = False,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
     injection_connection: socket.socket | None = None
@@ -451,7 +518,8 @@ def run(
     handover_port: int | None = None
     handover_thread: threading.Thread | None = None
     handover_result: list[str | None] = [None]
-    if inject_arp_request or expect_arp_resolution or inject_icmp_echo:
+    if (inject_arp_request or expect_arp_resolution or inject_icmp_echo or
+            inject_udp_echo):
         injection_listener, injection_port = open_injection_listener()
     if expect_handover:
         handover_listener, handover_port = open_injection_listener()
@@ -528,7 +596,7 @@ def run(
                 process.stdin.write(character)
                 process.stdin.flush()
                 time.sleep(0.075)
-            if inject_arp_request or inject_icmp_echo:
+            if inject_arp_request or inject_icmp_echo or inject_udp_echo:
                 error, _ = wait_for_line(
                     process, chunks, transcript, finished,
                     REIST_NETWORK_INJECTION_READY_MARKER, deadline,
@@ -587,6 +655,34 @@ def run(
                 if error is None and not receive_icmp_echo_reply(
                         injection_connection, deadline):
                     error = "mediated ICMP echo reply was not observed on QEMU socket"
+            if error is None and inject_udp_echo:
+                assert injection_connection is not None
+                queued = False
+                for _ in range(3):
+                    if not inject_ethernet_frame(
+                            injection_connection, udp_echo_request_frame()):
+                        error = "unable to inject bounded UDP echo request"
+                        break
+                    confirmation_deadline = min(deadline,
+                                                time.monotonic() + 1.0)
+                    confirmation_error, _ = wait_for_line(
+                        process, chunks, transcript, finished,
+                        REIST_UDP_ECHO_QUEUED_MARKER,
+                        confirmation_deadline,
+                    )
+                    if confirmation_error is None:
+                        queued = True
+                        break
+                if error is None and not queued:
+                    error = "UDP echo request was not queued after 3 bounded attempts"
+                if error is None:
+                    error, _ = wait_for_line(
+                        process, chunks, transcript, finished,
+                        REIST_UDP_ECHO_MARKER, deadline,
+                    )
+                if error is None and not receive_udp_echo_reply(
+                        injection_connection, deadline):
+                    error = "mediated UDP echo reply was not observed on QEMU socket"
             test_position = -1
             if error is None:
                 error, test_position = wait_for_line(
@@ -646,6 +742,7 @@ def validate(
     expect_handover: bool = False,
     expect_icmp_echo: bool = False,
     expect_dhcp_config: bool = False,
+    expect_udp_echo: bool = False,
 ) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
@@ -728,6 +825,12 @@ def validate(
         committed = exact_line_position(transcript, REIST_DHCP_CONFIG_MARKER)
         if queued < 0 or committed < queued or committed > boot:
             return "missing ordered pre-boot mediated DHCP configuration"
+    if expect_udp_echo:
+        queued = exact_line_position(transcript,
+                                     REIST_UDP_ECHO_QUEUED_MARKER)
+        replied = exact_line_position(transcript, REIST_UDP_ECHO_MARKER)
+        if queued < boot or replied < queued or replied > test:
+            return "missing ordered mediated UDP echo markers"
     if expect_storage_recovery:
         crash = exact_line_position(transcript, REIST_STORAGE_CRASH_MARKER)
         failure = exact_line_position(transcript, REIST_STORAGE_FAILURE_MARKER)
@@ -821,6 +924,11 @@ def main() -> int:
         help="inject and verify one bounded Ring-3-mediated ICMP echo",
     )
     parser.add_argument(
+        "--inject-udp-echo",
+        action="store_true",
+        help="inject and verify one bounded Ring-3-mediated UDP echo",
+    )
+    parser.add_argument(
         "--expect-dhcp-config",
         action="store_true",
         help="require a Ring-3-mediated DHCP configuration before boot",
@@ -862,7 +970,7 @@ def main() -> int:
         print("guest-smoke: memory must look like 64M or 1G", file=sys.stderr)
         return 2
     if (args.inject_arp_request or args.expect_arp_resolution or
-            args.inject_icmp_echo) and args.nic == "none":
+            args.inject_icmp_echo or args.inject_udp_echo) and args.nic == "none":
         print("guest-smoke: network injection verification requires a NIC",
               file=sys.stderr)
         return 2
@@ -879,6 +987,7 @@ def main() -> int:
             args.expect_arp_resolution,
             args.expect_handover,
             args.inject_icmp_echo,
+            args.inject_udp_echo,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)
@@ -897,7 +1006,8 @@ def main() -> int:
                             args.expect_storage_self_test,
                             args.expect_handover,
                             args.inject_icmp_echo,
-                            args.expect_dhcp_config)
+                            args.expect_dhcp_config,
+                            args.inject_udp_echo)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")

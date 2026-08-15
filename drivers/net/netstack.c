@@ -425,6 +425,45 @@ bool netstack_send_icmp_echo_reply(uint32_t dst_ip,
     return true;
 }
 
+bool netstack_send_udp_echo_reply(uint32_t dst_ip,
+                                  const uint8_t dst_mac[6],
+                                  uint16_t source_port,
+                                  uint16_t destination_port,
+                                  const uint8_t *data, uint16_t data_len) {
+    if (dst_ip == 0U || dst_ip == 0xFFFFFFFFU || dst_mac == NULL ||
+        source_port != SUPERVISOR_UDP_ECHO_PORT || destination_port == 0U ||
+        data_len > SUPERVISOR_UDP_ECHO_MAX_DATA ||
+        (data_len != 0U && data == NULL) || (dst_mac[0] & 1U) != 0U)
+        return false;
+    uint8_t packet[1514] = {0};
+    eth_header_t *eth = (eth_header_t *)packet;
+    ip_header_t *ip = (ip_header_t *)(packet + sizeof(eth_header_t));
+    udp_header_t *udp = (udp_header_t *)(packet + sizeof(eth_header_t) +
+                                         sizeof(ip_header_t));
+    uint8_t *payload = packet + sizeof(eth_header_t) + sizeof(ip_header_t) +
+                       sizeof(udp_header_t);
+    memcpy(eth->dst_mac, dst_mac, ETH_ADDR_LEN);
+    memcpy(eth->src_mac, net_config.mac_address, ETH_ADDR_LEN);
+    eth->ethertype = htons(ETHERTYPE_IPV4);
+    ip->version_ihl = 0x45;
+    ip->total_length = htons((uint16_t)(sizeof(ip_header_t) +
+                                        sizeof(udp_header_t) + data_len));
+    ip->identification = htons(ip_identification++);
+    ip->ttl = 64;
+    ip->protocol = IP_PROTOCOL_UDP;
+    ip->src_ip = htonl(net_config.ip_address);
+    ip->dst_ip = htonl(dst_ip);
+    ip->header_checksum = htons(ip_checksum(ip, sizeof(ip_header_t)));
+    udp->src_port = htons(source_port);
+    udp->dst_port = htons(destination_port);
+    udp->length = htons((uint16_t)(sizeof(udp_header_t) + data_len));
+    if (data_len != 0U) memcpy(payload, data, data_len);
+    udp->checksum = htons(udp_checksum(ip, udp, payload, data_len));
+    size_t total_len = sizeof(eth_header_t) + sizeof(ip_header_t) +
+                       sizeof(udp_header_t) + data_len;
+    return nic_send(packet, total_len);
+}
+
 static void handle_icmp_packet(uint8_t *packet, uint16_t length,
                                uint32_t src_ip,
                                const uint8_t source_mac[6]) {
@@ -453,6 +492,33 @@ static void handle_icmp_packet(uint8_t *packet, uint16_t length,
             ntohs(icmp->sequence) == ping_expected_seq) {
             ping_reply_received = true;
         }
+    }
+}
+
+static void handle_udp_packet(const ip_header_t *ip, uint8_t *packet,
+                              uint16_t length, uint32_t source_ip,
+                              const uint8_t source_mac[6]) {
+    if (length < sizeof(udp_header_t)) {
+        ++netstack_stats.rx_dropped;
+        return;
+    }
+    udp_header_t *udp = (udp_header_t *)packet;
+    uint16_t udp_length = ntohs(udp->length);
+    if (udp_length != length || udp_length < sizeof(udp_header_t)) {
+        ++netstack_stats.rx_dropped;
+        return;
+    }
+    uint16_t destination_port = ntohs(udp->dst_port);
+    if (destination_port != SUPERVISOR_UDP_ECHO_PORT) return;
+    uint16_t source_port = ntohs(udp->src_port);
+    uint16_t data_length = (uint16_t)(udp_length - sizeof(udp_header_t));
+    uint8_t *data = packet + sizeof(udp_header_t);
+    if (udp->checksum == 0U ||
+        !udp_checksum_valid(ip, udp, data, data_length) ||
+        !supervisor_network_submit_udp_echo(
+            source_ip, source_mac, source_port, destination_port,
+            data, data_length)) {
+        ++netstack_stats.rx_dropped;
     }
 }
 
@@ -800,7 +866,8 @@ static void handle_ip_packet(uint8_t *packet, uint16_t length,
             handle_icmp_packet(payload, payload_len, source_ip, source_mac);
             break;
         case IP_PROTOCOL_UDP:
-            // UDP wird über netstack_receive_udp_low konsumiert
+            handle_udp_packet(ip, payload, payload_len, source_ip,
+                              source_mac);
             break;
         default:
             break;

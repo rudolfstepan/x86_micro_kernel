@@ -281,6 +281,28 @@ int main(void) {
             &protected_dhcp, &dhcp_snapshot) != 0 ||
         dhcp_snapshot.request_id != 0U) return 61;
 
+    supervisor_protected_udp_echo_context_t protected_udp;
+    supervisor_udp_echo_context_t udp_snapshot;
+    if (supervisor_protected_udp_echo_context_init(&protected_udp) != 0 ||
+        supervisor_protected_udp_echo_context_publish(
+            &protected_udp, 19U, 7U, 0x0A000204U, peer_mac, 40000U,
+            SUPERVISOR_UDP_ECHO_PORT, echo_data, sizeof(echo_data)) != 0 ||
+        supervisor_protected_udp_echo_context_snapshot(
+            &protected_udp, &udp_snapshot) != 0 ||
+        udp_snapshot.request_id != 19U ||
+        udp_snapshot.transaction_epoch != 7U ||
+        udp_snapshot.source_port != 40000U ||
+        udp_snapshot.destination_port != SUPERVISOR_UDP_ECHO_PORT ||
+        udp_snapshot.data_length != sizeof(echo_data) ||
+        udp_snapshot.data[3] != 0x53U ||
+        supervisor_protected_udp_echo_context_publish(
+            &protected_udp, 20U, 7U, 0x0A000204U, peer_mac, 0U,
+            SUPERVISOR_UDP_ECHO_PORT, echo_data, sizeof(echo_data)) != -22 ||
+        supervisor_protected_udp_echo_context_clear(&protected_udp) != 0 ||
+        supervisor_protected_udp_echo_context_snapshot(
+            &protected_udp, &udp_snapshot) != 0 ||
+        udp_snapshot.request_id != 0U) return 62;
+
     supervisor_protected_probe_control_t protected_control;
     supervisor_probe_control_t control = {
         .active = 1U,

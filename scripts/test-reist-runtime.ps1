@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'dhcp-config', 'storage-recovery', 'storage-io-failure', 'handover')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'dhcp-config', 'storage-recovery', 'storage-io-failure', 'handover')]
     [string]$Mode = 'normal'
 )
 
@@ -106,6 +106,11 @@ switch ($Mode) {
     'icmp-echo' {
         Invoke-Smoke 'guest-smoke-icmp-echo.log' @(
             '--nic', 'rtl8139', '--inject-icmp-echo'
+        )
+    }
+    'udp-echo' {
+        Invoke-Smoke 'guest-smoke-udp-echo.log' @(
+            '--nic', 'rtl8139', '--inject-udp-echo'
         )
     }
     'dhcp-config' {

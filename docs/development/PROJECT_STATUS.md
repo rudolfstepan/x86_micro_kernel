@@ -160,7 +160,13 @@ Einmalautorität übergeben die endgültige Lease-Entscheidung an Ring 3. Erst
 Syscall 73 publiziert IP, Netzmaske, Gateway und DNS; der reale RTL8139-Lauf
 beweist `DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED -> BOOT_OK`. Ohne gesunden
 Dienst bleibt das Interface nach festen Deadlines unkonfiguriert. Als Nächstes
-folgen der UDP-Datenpfad sowie DHCP-Renew/Rebind in S0.3c-5d2.
+folgen der UDP-Datenpfad sowie DHCP-Renew/Rebind in S0.3c-5d2. Der erste
+Dataplane-Schnitt S0.3c-5d2a ist inzwischen ebenfalls abgenommen: Port 9000
+akzeptiert nur prüfsummengeschützte Datagramme bis 32 Byte, bindet den festen
+`NETU`-Kontext an eine 250-ms-Einmalautorität und erlaubt ausschließlich dem
+gesunden Ring-3-Dienst Syscall 74. Der echte RTL8139-Lauf prüft Request,
+vermittelte Antwort, Ports, Payload und UDP-Prüfsumme. Ein allgemeines UDP-
+Binding, Socket-FDs und DHCP-Renew/Rebind bleiben offen.
 Der erste Teilschritt S0.3c-6a ist abgeschlossen: Storage- und
 Dateisystemtransaktionen besitzen einen geschützt gespeicherten Aktivzustand,
 eine absolute Deadline und lehnen Überlappung vor Seiteneffekten ab; Fehler

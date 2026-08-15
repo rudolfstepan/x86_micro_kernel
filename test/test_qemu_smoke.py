@@ -131,6 +131,26 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertIsNone(RUNNER_MODULE.validate(
             transcript, expect_icmp_echo=True))
 
+    def test_udp_echo_frame_has_valid_checksums_and_bounded_payload(self) -> None:
+        frame = RUNNER_MODULE.udp_echo_request_frame()
+        self.assertEqual(len(frame), 60)
+        self.assertEqual(frame[12:14], b"\x08\x00")
+        self.assertEqual(frame[23], 17)
+        self.assertEqual(RUNNER_MODULE.internet_checksum(frame[14:34]), 0)
+        udp_length = struct.unpack("!H", frame[38:40])[0]
+        udp = frame[34:34 + udp_length]
+        self.assertEqual(struct.unpack("!HH", udp[:4]), (40000, 9000))
+        self.assertEqual(udp[8:], b"REIST-UDP")
+        pseudo = frame[26:34] + struct.pack("!BBH", 0, 17, udp_length)
+        self.assertEqual(RUNNER_MODULE.internet_checksum(pseudo + udp), 0)
+
+        transcript = "\n".join((
+            "BOOT_OK", RUNNER_MODULE.REIST_UDP_ECHO_QUEUED_MARKER,
+            RUNNER_MODULE.REIST_UDP_ECHO_MARKER, "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_udp_echo=True))
+
     def test_dhcp_mediation_must_complete_before_boot(self) -> None:
         transcript = "\n".join((
             RUNNER_MODULE.REIST_DHCP_CONFIG_QUEUED_MARKER,

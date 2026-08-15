@@ -352,6 +352,22 @@ static int syscall_reist_dhcp_commit(
         process->pid, process->generation, &commit);
 }
 
+static int syscall_reist_udp_echo_reply(
+        const supervisor_udp_echo_reply_t *user_reply) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_reply;
+    if (process == NULL ||
+        !user_range_accessible(directory, address, sizeof(*user_reply), false))
+        return -14;
+    supervisor_udp_echo_reply_t reply;
+    if (copy_from_user(&reply, user_reply, sizeof(reply)) != 0) return -14;
+    if (reply.version != SUPERVISOR_UDP_ECHO_REPLY_VERSION ||
+        reply.struct_size < sizeof(reply)) return -22;
+    return supervisor_network_send_udp_echo_reply(
+        process->pid, process->generation, &reply);
+}
+
 _Static_assert(sizeof(storage_request_submit_t) == 28U,
                "storage submit ABI changed");
 _Static_assert(sizeof(storage_request_descriptor_t) == 28U,
@@ -1066,6 +1082,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_storage_collect,    // Syscall 71: Collect storage request
     (void*)&syscall_reist_icmp_echo_reply,// Syscall 72: Mediated ICMP echo
     (void*)&syscall_reist_dhcp_commit,   // Syscall 73: Mediated DHCP config
+    (void*)&syscall_reist_udp_echo_reply,// Syscall 74: Mediated UDP echo
     // Add more syscalls here as needed
 };
 
@@ -1424,6 +1441,10 @@ void syscall_handler(Registers* regs) {
         case SYS_REIST_DHCP_COMMIT:
             result = (uint32_t)syscall_reist_dhcp_commit(
                 (const supervisor_dhcp_commit_t*)(uintptr_t)arg1);
+            break;
+        case SYS_REIST_UDP_ECHO_REPLY:
+            result = (uint32_t)syscall_reist_udp_echo_reply(
+                (const supervisor_udp_echo_reply_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

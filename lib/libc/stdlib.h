@@ -82,6 +82,7 @@
 #define SYS_STORAGE_COLLECT 71
 #define SYS_REIST_ICMP_ECHO_REPLY 72
 #define SYS_REIST_DHCP_COMMIT 73
+#define SYS_REIST_UDP_ECHO_REPLY 74
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

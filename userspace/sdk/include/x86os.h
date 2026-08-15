@@ -77,7 +77,8 @@ enum {
     X86OS_SYS_STORAGE_COMPLETE = 70,
     X86OS_SYS_STORAGE_COLLECT = 71,
     X86OS_SYS_REIST_ICMP_ECHO_REPLY = 72,
-    X86OS_SYS_REIST_DHCP_COMMIT = 73
+    X86OS_SYS_REIST_DHCP_COMMIT = 73,
+    X86OS_SYS_REIST_UDP_ECHO_REPLY = 74
 };
 
 enum {
@@ -196,6 +197,14 @@ typedef struct {
     uint32_t request_id;
     uint32_t reserved;
 } x86os_reist_dhcp_commit_t;
+
+#define X86OS_REIST_UDP_ECHO_REPLY_VERSION 1U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t request_id;
+    uint32_t reserved;
+} x86os_reist_udp_echo_reply_t;
 
 #define X86OS_STORAGE_REQUEST_VERSION 1U
 #define X86OS_STORAGE_BLOCK_SIZE 512U
@@ -328,6 +337,8 @@ int x86os_reist_send_icmp_echo_reply(
     const x86os_reist_icmp_echo_reply_t *reply);
 int x86os_reist_commit_dhcp(
     const x86os_reist_dhcp_commit_t *commit);
+int x86os_reist_send_udp_echo_reply(
+    const x86os_reist_udp_echo_reply_t *reply);
 int x86os_network_arp_resolve(uint32_t target_ip);
 int x86os_storage_bind(void);
 int x86os_storage_submit(const x86os_storage_submit_t *request,

@@ -466,6 +466,18 @@ Der echte RTL8139-Nachweis fordert die Vermittlungsmarker vor `BOOT_OK`.
 UDP-Transport, Lease-Erneuerung und Rebind bleiben noch Kernelaufgaben und
 bilden S0.3c-5d2.
 
+S0.3c-5d2a zieht einen ersten eng begrenzten UDP-Datenschritt über dieselbe
+Grenze: Nur Port 9000, maximal 32 Byte und Datagramme mit vorhandener gültiger
+Prüfsumme werden als festes `NETU`-Objekt angenommen. Quell-IP/-MAC, beide
+Ports und Payload werden redundant geschützt und an eine 250-ms-
+Einmalautorität der aktuellen Dienstgeneration gebunden. Ring 3 prüft die
+gesamte Struktur erneut; Syscall 74 verbraucht Kontext und Autorität, bevor
+der Kernel genau eine Antwort mit vertauschten Ports sendet. Queue-Druck,
+Deadline, Integritätsfehler oder ungültige Semantik erzeugen keine Antwort und
+reaktivieren keinen Kernelpfad. Der RTL8139-Test validiert den tatsächlich am
+QEMU-Socket beobachteten Frame samt UDP-Prüfsumme. Dies ist noch keine Socket-
+ABI: allgemeine Bindings und DHCP-Renew/Rebind bleiben S0.3c-5d2b.
+
 S0.3c-6a härtet vor der Prozessmigration die bestehende persistente
 Fehlerdomäne: Jede Storage-Schreiboperation und jede VFS-Mutation hat genau
 einen geschützt gespeicherten Aktivzustand und eine saturierend berechnete

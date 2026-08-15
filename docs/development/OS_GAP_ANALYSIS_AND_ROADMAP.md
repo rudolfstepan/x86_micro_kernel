@@ -131,6 +131,10 @@ und 10 verbindlich.
       generationgebundenen Ring-3-Entscheid und Syscall 73 publizieren
     - [ ] S0.3c-5d2 UDP-Datenpfad und DHCP-Renew/Rebind schrittweise in den
       überwachten Dienst verlagern
+      - [x] S0.3c-5d2a Begrenztes UDP-Echo auf Port 9000 mit 32-Byte-Limit,
+        Pflichtprüfsumme und echtem RTL8139-Request/Reply vermitteln
+      - [ ] S0.3c-5d2b Allgemeine UDP-Bindings sowie DHCP-Renew/Rebind
+        generationgebunden in den Dienst verlagern
   - [x] S0.3c-6 Storage-/Dateisystemdienst als nächste isolierte Domäne
     - [x] S0.3c-6a Geschützte, nicht überlappende und absolut begrenzte
       Storage-/Dateisystem-Transaktionen mit Fail-Closed-Fence
@@ -1401,6 +1405,19 @@ werden vor der Netzmutation gelöscht. Der reale RTL8139-Modus `dhcp-config`
 verlangt `DHCP_CONFIG_QUEUED -> DHCP_CONFIG_MEDIATED -> BOOT_OK`; Normalbetrieb,
 ARP und ICMP bleiben zusätzlich grün. UDP-Transport, DHCP-Lease-Timer sowie
 Renew/Rebind verbleiben bewusst als S0.3c-5d2 im Kernel.
+
+**S0.3c-5d2a ist umgesetzt und abgenommen:** Als erster echter UDP-
+Dataplane-Schnitt akzeptiert Ring 0 ausschließlich Datagramme an Port 9000,
+mit gültiger IPv4-UDP-Prüfsumme und höchstens 32 Nutzdatenbytes. Quell-IP,
+Quell-MAC, beide Ports und Nutzdaten liegen in einem redundanten Critical
+Object; eine generationgebundene 250-ms-Einmalautorität schützt die Antwort.
+Der Ring-3-Dienst validiert das feste `NETU`-Objekt erneut und darf nur über
+den append-only Syscall 74 antworten. Kontext und Autorität werden vor dem
+einzigen NIC-Sendepunkt verbraucht; es gibt keinen Ring-0-Echo-Fallback. Der
+Runtime-Modus `udp-echo` injiziert ein echtes Datagramm über RTL8139 und prüft
+am QEMU-Socket Ports, IP-Adressen, Payload und Antwortprüfsumme. Allgemeine
+UDP-Bindings, größere Nutzdaten, DHCP-Renew/Rebind und eine Socket-ABI bleiben
+S0.3c-5d2b/R4.1.
 
 **S0.3c-6a ist umgesetzt:** Storage-Schreiboperationen und VFS-Mutationen
 besitzen nun jeweils einen redundant geschützten Aktivzustand und eine
