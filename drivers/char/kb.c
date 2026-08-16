@@ -41,6 +41,7 @@
 #define I8042_CONFIG_PORT1_CLOCK_DISABLED  0x10U
 #define I8042_CONFIG_TRANSLATION           0x40U
 #define I8042_KEYBOARD_SET_SCANCODE        0xF0U
+#define I8042_KEYBOARD_SET_LEDS            0xEDU
 #define I8042_KEYBOARD_DISABLE_SCANNING    0xF5U
 #define I8042_KEYBOARD_ENABLE_SCANNING     0xF4U
 #define I8042_KEYBOARD_ACK                 0xFAU
@@ -51,6 +52,9 @@
 #define I8042_COMMAND_RETRY_LIMIT     2U
 #define KEYBOARD_DRAIN_BUDGET         16U
 #define KEYBOARD_POLL_INTERVAL_MS     10U
+#define KEYBOARD_LED_SCROLL_LOCK      0x01U
+#define KEYBOARD_LED_NUM_LOCK         0x02U
+#define KEYBOARD_LED_CAPS_LOCK        0x04U
 
 #define SC_MAX                  89  // Extended to cover more scancodes
 #define INPUT_QUEUE_SIZE        256
@@ -58,7 +62,8 @@
 // Scancode prefixes
 #define SC_EXTENDED_PREFIX      0xE0  // Extended keys (arrows, etc.)
 #define SC_PAUSE_PREFIX         0xE1  // Pause key (rarely used)
-#define SC_RELEASE_MASK         0x80  // Bit 7 set means key released
+#define SET2_RELEASE_PREFIX     0xF0
+#define SET2_PAUSE_TRAILING_BYTES 7U
 
 // Special scancodes (Set 1)
 #define SC_LEFT_SHIFT           0x2A
@@ -144,6 +149,9 @@ static wait_queue_t input_waiters = WAIT_QUEUE_INIT;
 static bool serial_swallow_line_feed = false;
 static bool keyboard_irq_registered;
 static bool keyboard_scanning_enabled;
+static bool set2_release_pending;
+static uint8_t set2_pause_bytes_remaining;
+static bool keyboard_led_update_pending;
 
 static bool i8042_wait_input_clear(void) {
     for (uint32_t poll = 0U; poll < I8042_POLL_LIMIT; ++poll) {
@@ -420,30 +428,182 @@ static char process_ctrl_combination(char ch) {
     return ch;  // Other keys unchanged
 }
 
+/* Convert a raw scan-set-2 make code to the existing Set-1 semantic key
+ * numbers. Unknown input has one explicit fail-closed result and cannot index
+ * outside fixed storage. */
+static uint8_t set2_to_set1(uint8_t scancode) {
+    switch (scancode) {
+        case 0x01U: return 0x43U; /* F9 */
+        case 0x03U: return 0x3FU; /* F5 */
+        case 0x04U: return 0x3DU; /* F3 */
+        case 0x05U: return 0x3BU; /* F1 */
+        case 0x06U: return 0x3CU; /* F2 */
+        case 0x07U: return 0x58U; /* F12 */
+        case 0x09U: return 0x44U; /* F10 */
+        case 0x0AU: return 0x42U; /* F8 */
+        case 0x0BU: return 0x40U; /* F6 */
+        case 0x0CU: return 0x3EU; /* F4 */
+        case 0x0DU: return SC_TAB;
+        case 0x0EU: return 0x29U; /* grave */
+        case 0x11U: return SC_LEFT_ALT;
+        case 0x12U: return SC_LEFT_SHIFT;
+        case 0x14U: return SC_LEFT_CTRL;
+        case 0x15U: return 0x10U; /* Q */
+        case 0x16U: return 0x02U; /* 1 */
+        case 0x1AU: return 0x2CU; /* Z */
+        case 0x1BU: return 0x1FU; /* S */
+        case 0x1CU: return 0x1EU; /* A */
+        case 0x1DU: return 0x11U; /* W */
+        case 0x1EU: return 0x03U; /* 2 */
+        case 0x21U: return 0x2EU; /* C */
+        case 0x22U: return 0x2DU; /* X */
+        case 0x23U: return 0x20U; /* D */
+        case 0x24U: return 0x12U; /* E */
+        case 0x25U: return 0x05U; /* 4 */
+        case 0x26U: return 0x04U; /* 3 */
+        case 0x29U: return 0x39U; /* space */
+        case 0x2AU: return 0x2FU; /* V */
+        case 0x2BU: return 0x21U; /* F */
+        case 0x2CU: return 0x14U; /* T */
+        case 0x2DU: return 0x13U; /* R */
+        case 0x2EU: return 0x06U; /* 5 */
+        case 0x31U: return 0x31U; /* N */
+        case 0x32U: return 0x30U; /* B */
+        case 0x33U: return 0x23U; /* H */
+        case 0x34U: return 0x22U; /* G */
+        case 0x35U: return 0x15U; /* Y */
+        case 0x36U: return 0x07U; /* 6 */
+        case 0x3AU: return 0x32U; /* M */
+        case 0x3BU: return 0x24U; /* J */
+        case 0x3CU: return 0x16U; /* U */
+        case 0x3DU: return 0x08U; /* 7 */
+        case 0x3EU: return 0x09U; /* 8 */
+        case 0x41U: return 0x33U; /* comma */
+        case 0x42U: return 0x25U; /* K */
+        case 0x43U: return 0x17U; /* I */
+        case 0x44U: return 0x18U; /* O */
+        case 0x45U: return 0x0BU; /* 0 */
+        case 0x46U: return 0x0AU; /* 9 */
+        case 0x49U: return 0x34U; /* period */
+        case 0x4AU: return 0x35U; /* slash */
+        case 0x4BU: return 0x26U; /* L */
+        case 0x4CU: return 0x27U; /* semicolon */
+        case 0x4DU: return 0x19U; /* P */
+        case 0x4EU: return 0x0CU; /* minus */
+        case 0x52U: return 0x28U; /* apostrophe */
+        case 0x54U: return 0x1AU; /* left bracket */
+        case 0x55U: return 0x0DU; /* equals */
+        case 0x58U: return SC_CAPS_LOCK;
+        case 0x59U: return SC_RIGHT_SHIFT;
+        case 0x5AU: return SC_ENTER;
+        case 0x5BU: return 0x1BU; /* right bracket */
+        case 0x5DU: return 0x2BU; /* backslash */
+        case 0x66U: return SC_BACKSPACE;
+        case 0x69U: return SC_EXT_END;
+        case 0x6BU: return SC_EXT_LEFT;
+        case 0x6CU: return SC_EXT_HOME;
+        case 0x70U: return SC_EXT_INSERT;
+        case 0x71U: return SC_EXT_DELETE;
+        case 0x72U: return SC_EXT_DOWN;
+        case 0x73U: return 0x4CU; /* keypad 5 */
+        case 0x74U: return SC_EXT_RIGHT;
+        case 0x75U: return SC_EXT_UP;
+        case 0x76U: return SC_ESCAPE;
+        case 0x77U: return SC_NUM_LOCK;
+        case 0x78U: return 0x57U; /* F11 */
+        case 0x79U: return 0x4EU; /* keypad plus */
+        case 0x7AU: return SC_EXT_PAGE_DOWN;
+        case 0x7BU: return 0x4AU; /* keypad minus */
+        case 0x7CU: return 0x37U; /* keypad multiply */
+        case 0x7DU: return SC_EXT_PAGE_UP;
+        case 0x7EU: return SC_SCROLL_LOCK;
+        case 0x83U: return 0x41U; /* F7 */
+        default: return 0U;
+    }
+}
+
+/* Interpret the non-extended keypad according to NumLock.  Set-2 keypad make
+ * codes are first converted to their Set-1 semantic numbers by the mapping
+ * above, while E0-prefixed navigation keys bypass this function. */
+static bool handle_keypad_key(uint8_t scancode, bool released) {
+    char digit = 0;
+    char navigation = 0;
+
+    switch (scancode) {
+        case 0x37U: digit = '*'; break;
+        case 0x4AU: digit = '-'; break;
+        case 0x4EU: digit = '+'; break;
+        case 0x47U: digit = '7'; navigation = KEY_HOME; break;
+        case 0x48U: digit = '8'; navigation = KEY_UP; break;
+        case 0x49U: digit = '9'; navigation = KEY_PAGE_UP; break;
+        case 0x4BU: digit = '4'; navigation = KEY_LEFT; break;
+        case 0x4CU: digit = '5'; break;
+        case 0x4DU: digit = '6'; navigation = KEY_RIGHT; break;
+        case 0x4FU: digit = '1'; navigation = KEY_END; break;
+        case 0x50U: digit = '2'; navigation = KEY_DOWN; break;
+        case 0x51U: digit = '3'; navigation = KEY_PAGE_DOWN; break;
+        case 0x52U: digit = '0'; navigation = KEY_INSERT; break;
+        case 0x53U: digit = '.'; navigation = KEY_DELETE; break;
+        default: return false;
+    }
+
+    if (released) return true;
+    if (scancode == 0x37U || scancode == 0x4AU || scancode == 0x4EU ||
+        kbd_state.num_lock) {
+        (void)input_queue_push(digit);
+    } else if (navigation != 0) {
+        queue_extended_key(navigation);
+    }
+    return true;
+}
+
 //=============================================================================
 // KEYBOARD INTERRUPT HANDLER
 //=============================================================================
 
 static void kb_process_scancode(uint8_t scancode) {
-    // Handle extended scancode prefix (E0)
+    if (set2_pause_bytes_remaining != 0U) {
+        --set2_pause_bytes_remaining;
+        return;
+    }
+
+    // Handle raw scan-set-2 extended prefix (E0)
     if (scancode == SC_EXTENDED_PREFIX) {
         kbd_state.extended = true;
         return;
     }
-    
-    // Handle Pause key prefix (E1) - just ignore for now
+
+    // Pause is the fixed E1 14 77 E1 F0 14 F0 77 sequence.
     if (scancode == SC_PAUSE_PREFIX) {
-        kbd_state.extended = false;  // Reset state
+        kbd_state.extended = false;
+        set2_release_pending = false;
+        set2_pause_bytes_remaining = SET2_PAUSE_TRAILING_BYTES;
         return;
     }
-    
-    // Determine if this is a key release
-    bool released = (scancode & SC_RELEASE_MASK) != 0;
-    uint8_t base_scancode = scancode & ~SC_RELEASE_MASK;
-    
+
+    if (scancode == SET2_RELEASE_PREFIX) {
+        set2_release_pending = true;
+        return;
+    }
+
+    bool released = set2_release_pending;
+    bool extended = kbd_state.extended;
+    set2_release_pending = false;
+    kbd_state.extended = false;
+
+    uint8_t base_scancode = set2_to_set1(scancode);
+    if (base_scancode == 0U) return;
+
     // Handle extended keys (E0 prefix)
-    if (kbd_state.extended) {
-        kbd_state.extended = false;  // Clear flag
+    if (extended) {
+        if (base_scancode == SC_ENTER) {
+            if (!released) (void)input_queue_push('\n');
+            return;
+        }
+        if (base_scancode == 0x35U) {
+            if (!released) (void)input_queue_push('/');
+            return;
+        }
         char special_key = handle_extended_key(base_scancode, released);
         
         if (special_key != 0 && !released) {
@@ -452,6 +612,8 @@ static void kb_process_scancode(uint8_t scancode) {
         
         return;
     }
+
+    if (handle_keypad_key(base_scancode, released)) return;
     
     // Handle regular modifier keys
     if (!released) {
@@ -471,13 +633,15 @@ static void kb_process_scancode(uint8_t scancode) {
                 break;
             case SC_CAPS_LOCK:
                 kbd_state.caps_lock = !kbd_state.caps_lock;  // Toggle
-                // TODO: Update keyboard LED
+                keyboard_led_update_pending = true;
                 break;
             case SC_NUM_LOCK:
                 kbd_state.num_lock = !kbd_state.num_lock;  // Toggle
+                keyboard_led_update_pending = true;
                 break;
             case SC_SCROLL_LOCK:
                 kbd_state.scroll_lock = !kbd_state.scroll_lock;  // Toggle
+                keyboard_led_update_pending = true;
                 break;
             case SC_ESCAPE:
                 (void)input_queue_push('\x1B');
@@ -527,7 +691,7 @@ static void kb_process_scancode(uint8_t scancode) {
 
 /* Caller keeps IRQs disabled so IRQ1 and the timed polling fallback cannot
  * consume the same output byte.  Mouse/error bytes are discarded rather than
- * being interpreted as Set-1 keyboard input. */
+ * being interpreted as raw Set-2 keyboard input. */
 static void kb_drain_output_locked(uint32_t budget) {
     for (uint32_t count = 0U; count < budget; ++count) {
         uint8_t status = inb(KEYBOARD_STATUS_PORT);
@@ -539,9 +703,31 @@ static void kb_drain_output_locked(uint32_t budget) {
     }
 }
 
+/* The decoder may run in IRQ1 and therefore only records a pending LED state.
+ * The bounded command/ACK exchange is performed by a console reader in task
+ * context with IRQs disabled, so an IRQ handler never waits on the i8042. */
+static void kb_service_leds_locked(void) {
+    KASSERT_IRQ_DISABLED();
+    KASSERT_NOT_IRQ();
+    if (!keyboard_led_update_pending || !keyboard_scanning_enabled) return;
+    if ((inb(KEYBOARD_STATUS_PORT) & I8042_STATUS_OUTPUT_FULL) != 0U) return;
+
+    uint8_t leds = 0U;
+    if (kbd_state.scroll_lock) leds |= KEYBOARD_LED_SCROLL_LOCK;
+    if (kbd_state.num_lock) leds |= KEYBOARD_LED_NUM_LOCK;
+    if (kbd_state.caps_lock) leds |= KEYBOARD_LED_CAPS_LOCK;
+
+    /* Do not retry an ambiguous two-byte transaction automatically: after a
+     * failed data ACK the keyboard's command state is not authoritative. */
+    keyboard_led_update_pending = false;
+    if (!i8042_keyboard_command(I8042_KEYBOARD_SET_LEDS)) return;
+    (void)i8042_keyboard_command(leds);
+}
+
 static void kb_poll_controller(void) {
     uint32_t flags = irq_save();
     kb_drain_output_locked(KEYBOARD_DRAIN_BUDGET);
+    kb_service_leds_locked();
     irq_restore(flags);
 }
 
@@ -599,6 +785,7 @@ char getchar(void) {
     while (1) {
         uint32_t flags = irq_save();
         kb_drain_output_locked(KEYBOARD_DRAIN_BUDGET);
+        kb_service_leds_locked();
 
         // Check serial port first (for nographic mode).
         char ch = read_normalized_serial();
@@ -733,6 +920,9 @@ void kb_install(void) {
     keyboard_irq_registered =
         register_interrupt_handler(1, (void*)kb_handler) == 0;
     keyboard_scanning_enabled = false;
+    set2_release_pending = false;
+    set2_pause_bytes_remaining = 0U;
+    keyboard_led_update_pending = false;
 
     const char *failure_stage = "controller input busy";
     uint8_t response = 0U;
@@ -763,7 +953,7 @@ void kb_install(void) {
     if (!i8042_write_command(I8042_CMD_READ_CONFIG) ||
         !i8042_read_data(&config)) goto install_done;
     config &= (uint8_t)~I8042_CONFIG_PORT1_CLOCK_DISABLED;
-    config |= I8042_CONFIG_TRANSLATION;
+    config &= (uint8_t)~I8042_CONFIG_TRANSLATION;
     if (keyboard_irq_registered) config |= I8042_CONFIG_IRQ1;
     else config &= (uint8_t)~I8042_CONFIG_IRQ1;
 
@@ -771,9 +961,9 @@ void kb_install(void) {
     if (!i8042_write_command(I8042_CMD_WRITE_CONFIG) ||
         !i8042_write_data(config)) goto install_done;
 
-    /* The decoder consumes Set 1.  Physical keyboards normally produce Set 2,
-     * so request it explicitly and let the controller translation bit provide
-     * one deterministic Set-1 stream across BIOS, QEMU and VMware handoffs. */
+    /* Decode the keyboard's native Set 2 directly. Controller-side
+     * translation is not implemented consistently by all physical Super-I/O
+     * controllers even when their configuration bit accepts the write. */
     failure_stage = "disable scanning";
     if (!i8042_keyboard_command(I8042_KEYBOARD_DISABLE_SCANNING))
         goto install_done;
@@ -792,7 +982,8 @@ void kb_install(void) {
 
 install_done:
     if (keyboard_scanning_enabled) {
-        printf("PS/2 keyboard ready: config=0x%02X input=%s\n", config,
+        printf("PS/2 keyboard ready: config=0x%02X scanset=2-raw input=%s\n",
+               config,
                keyboard_irq_registered ? "IRQ1+poll" : "poll-only");
     } else {
         /* Keep the finite poll path active for firmware that left scanning on,

@@ -14,6 +14,7 @@ KEYBOARD_READY_MARKER = "PS/2 keyboard ready:"
 SHELL_PROMPT = "C:\\>"
 SHELL_HELP_MARKER = "Built-ins: cd path pwd help exit"
 PS2_COMMAND = "help"
+LOCK_KEY_COMMANDS = ("sendkey num_lock\n", "sendkey num_lock\n")
 POLL_INTERVAL_SECONDS = 0.02
 KEY_INTERVAL_SECONDS = 0.05
 
@@ -104,7 +105,11 @@ def run(qemu: Path, image: Path, timeout: float) -> tuple[int, str, str]:
             elif process.stdin is None:
                 error = "QEMU monitor input unavailable"
             else:
-                for command in monitor_key_commands(PS2_COMMAND):
+                commands = [
+                    *LOCK_KEY_COMMANDS,
+                    *monitor_key_commands(PS2_COMMAND),
+                ]
+                for command in commands:
                     process.stdin.write(command.encode("ascii"))
                     process.stdin.flush()
                     time.sleep(KEY_INTERVAL_SECONDS)
@@ -137,7 +142,7 @@ def main() -> int:
     if error:
         print(f"ps2-smoke: FAIL: {error}")
         return status
-    print("ps2-smoke: PASS (i8042 command reached userspace shell)")
+    print("ps2-smoke: PASS (NumLock and text reached userspace shell)")
     return 0
 
 

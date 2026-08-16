@@ -1399,22 +1399,27 @@ gehört zur RTL8168-PCIe-Familie und benötigt einen eigenen Treiber. Es darf
 nicht über die inkompatiblen RTL8139-Register angesprochen werden.
 
 Die danach auf dem H81M-K beobachtete fehlende PS/2-Eingabe war ebenfalls kein
-LAN- oder Userspace-Fehler. Die Tastatur funktionierte im BIOS, der bisherige
-Treiber verließ sich beim Übergang an den Kernel jedoch auf den von der Firmware
-hinterlassenen i8042-Zustand: Er aktivierte nur Port und Scanning, programmierte
-weder IRQ1 noch die Set-2-zu-Set-1-Übersetzung und wertete die Keyboard-Antwort
-nicht aus. Die Übernahme ist nun vollständig begrenzt. Sie deaktiviert die
-Ports, leert höchstens eine feste Anzahl Ausgabebytes, prüft Controller und
-ersten Port, setzt Config-Byte, IRQ1 und Translation explizit und akzeptiert
-die Befehle `F5`, `F0 02` und `F4` nur nach `ACK` beziehungsweise begrenztem
-`RESEND`. AUX- sowie Paritäts-/Timeout-Bytes gelangen nicht in den
-Tastaturdecoder. Zusätzlich wacht ein blockierter Console-Leser spätestens
-nach zehn Millisekunden auf und fragt den Controller begrenzt ab; damit bleibt
-Eingabe auch ohne zugestellten Legacy-IRQ1 möglich. Der neue QEMU-i8042-Test
-sendet `help` über HMP-`sendkey` statt COM1 und bestätigt, dass der Befehl die
-Ring-3-Shell erreicht. Der reale H81M-K-Gegenlauf bleibt als Hardwareevidenz
-offen; die frühe Diagnose muss dort `PS/2 keyboard ready: ... input=IRQ1+poll`
-melden oder die exakt fehlgeschlagene Initialisierungsstufe ausgeben.
+LAN- oder Userspace-Fehler. Die Tastatur funktionierte im BIOS, der ursprüngliche
+Treiber verließ sich beim Übergang an den Kernel jedoch vollständig auf den von
+der Firmware hinterlassenen i8042-Zustand. Die erste Korrektur übernahm den
+Controller begrenzt, prüfte `ACK`/`RESEND`, aktivierte IRQ1 und ergänzte einen
+zehn Millisekunden langen Polling-Fallback. Die reale Gegenprobe blieb dennoch
+ohne Eingabe und NumLock-Funktion, obwohl der Controller die Initialisierung
+akzeptiert hatte. Damit war die verbleibende Abhängigkeit von seiner
+Set-2-zu-Set-1-Translation nicht mehr als Hardwareinvariante haltbar.
+
+Der Treiber schaltet die Controller-Translation nun aus, fordert mit `F0 02`
+explizit Scan Set 2 an und wertet Make-, `F0`-Break-, `E0`-Extended- sowie die
+feste Pause-Sequenz selbst aus. Unbekannte oder unvollständige Sequenzen erzeugen
+keine Eingabe. AUX- sowie Paritäts-/Timeout-Bytes bleiben ausgeschlossen. Die
+Lock-Tasten aktualisieren ihre Zustände im Decoder, führen den begrenzten
+`ED`-LED-ACK-Austausch aber verzögert im Taskkontext statt im IRQ-Handler aus.
+NumLock steuert jetzt außerdem tatsächlich Ziffern- beziehungsweise
+Navigationssemantik des Nummernblocks. Der QEMU-i8042-Lauf schaltet NumLock
+zweimal und sendet danach `help`; die Ring-3-Shell antwortet weiterhin. Die
+frühe Diagnose lautet nun
+`PS/2 keyboard ready: config=0x21 scanset=2-raw input=IRQ1+poll`. Eine Aussage
+für das H81M-K bleibt bis zur erneuten realen Abnahme offen.
 
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 

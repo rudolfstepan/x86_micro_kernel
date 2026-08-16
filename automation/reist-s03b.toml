@@ -573,6 +573,54 @@ commit_message = "fix: initialize physical PS2 keyboards deterministically"
 evidence = []
 
 [[packages]]
+id = "S0.3c-hw6"
+status = "done"
+risk = "high"
+title = "Raw Set-2 physical PS/2 input and lock LEDs"
+scope = "Remove the remaining dependency on controller-side Set-2-to-Set-1 translation after the H81M-K accepted keyboard commands but produced no usable input. Keep controller translation disabled, decode bounded raw Set-2 make, break and extended sequences in the driver, update lock LEDs only from task context, enforce NumLock keypad semantics, and prove that QEMU keyboard input still reaches the Ring-3 shell."
+allowed_files = [
+  "drivers/char/kb.c",
+  "drivers/char/kb.h",
+  "scripts/run_qemu_ps2_smoke.py",
+  "test/test_ps2_keyboard_source.py",
+  "test/test_qemu_ps2_smoke.py",
+  "test/test_userspace_file_syscalls_source.py",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "controller translation is disabled before scanning starts",
+  "the keyboard is explicitly commanded to emit scan set 2",
+  "make, F0 break and E0 extended sequences have fixed decoder state",
+  "unknown and incomplete sequences produce no character or modifier authority",
+  "IRQ1 and finite timed polling consume the same raw Set-2 decoder",
+  "LED command waits never execute in hard IRQ context",
+  "NumLock selects keypad digits or navigation before publication",
+  "auxiliary-port and parity or timeout bytes remain excluded"
+]
+targeted_tests = [
+  "python test/test_ps2_keyboard_source.py -q",
+  "python test/test_qemu_ps2_smoke.py -q",
+  "python test/test_userspace_file_syscalls_source.py -q",
+  "python test/test_shell_source.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_ps2_smoke.py --image build/reist-os.img",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --nic none --expect-reist-probe --boot-only"
+]
+stop_conditions = [
+  "the physical controller does not expose standard Set-2 bytes through ports 0x60 and 0x64",
+  "console progress requires an unbounded wait or busy loop",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: decode physical PS2 scan set 2 directly"
+evidence = []
+
+[[packages]]
 id = "S0.3c-6f5"
 status = "active"
 risk = "critical"

@@ -38,10 +38,14 @@ class PhysicalPs2KeyboardContractTests(unittest.TestCase):
         self.assertIn("I8042_CMD_ENABLE_PORT1", install)
         self.assertNotRegex(install, r"while\s*\(\s*inb")
 
-    def test_irq_and_translation_are_explicit_and_acknowledged(self):
+    def test_irq_and_raw_scan_set_are_explicit_and_acknowledged(self):
         install = function(self.source, "void kb_install(")
         self.assertIn("I8042_CONFIG_IRQ1", install)
         self.assertIn("I8042_CONFIG_TRANSLATION", install)
+        self.assertRegex(
+            install,
+            r"config\s*&=\s*\(uint8_t\)~I8042_CONFIG_TRANSLATION",
+        )
         self.assertIn("I8042_CONFIG_PORT1_CLOCK_DISABLED", install)
         self.assertIn("I8042_CMD_WRITE_CONFIG", install)
         self.assertIn("I8042_KEYBOARD_ACK", self.source)
@@ -49,6 +53,42 @@ class PhysicalPs2KeyboardContractTests(unittest.TestCase):
         self.assertIn("i8042_keyboard_command", install)
         self.assertIn("I8042_KEYBOARD_ENABLE_SCANNING", install)
         self.assertIn("PIC1_DATA_PORT", install)
+
+    def test_raw_set2_make_break_and_extended_sequences_are_decoded(self):
+        decoder = function(self.source, "static void kb_process_scancode(")
+        mapping = function(self.source, "static uint8_t set2_to_set1(")
+        self.assertIn("SET2_RELEASE_PREFIX", decoder)
+        self.assertIn("SC_EXTENDED_PREFIX", decoder)
+        self.assertIn("set2_release_pending", decoder)
+        self.assertIn("set2_to_set1", decoder)
+        for raw_code in ("0x1CU", "0x5AU", "0x66U", "0x75U"):
+            self.assertIn(raw_code, mapping)
+        self.assertNotIn("SC_RELEASE_MASK", decoder)
+
+    def test_lock_led_updates_are_deferred_outside_irq_context(self):
+        decoder = function(self.source, "static void kb_process_scancode(")
+        handler = function(self.source, "void kb_handler(")
+        service = function(self.source, "static void kb_service_leds_locked(")
+        blocking = function(self.source, "char getchar(")
+        self.assertIn("keyboard_led_update_pending", decoder)
+        self.assertIn("I8042_KEYBOARD_SET_LEDS", service)
+        self.assertIn("i8042_keyboard_command", service)
+        self.assertIn("KASSERT_NOT_IRQ", service)
+        self.assertNotIn("i8042_keyboard_command", handler)
+        self.assertIn("kb_service_leds_locked", blocking)
+
+    def test_numlock_controls_keypad_digits_and_navigation(self):
+        keypad = function(self.source, "static bool handle_keypad_key(")
+        decoder = function(self.source, "static void kb_process_scancode(")
+        self.assertIn("kbd_state.num_lock", keypad)
+        for digit in ("'0'", "'1'", "'2'", "'3'", "'7'", "'8'", "'9'"):
+            self.assertIn(digit, keypad)
+        for navigation in (
+            "KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT",
+            "KEY_HOME", "KEY_END", "KEY_INSERT", "KEY_DELETE",
+        ):
+            self.assertIn(navigation, keypad)
+        self.assertIn("handle_keypad_key", decoder)
 
     def test_runtime_input_has_bounded_poll_fallback(self):
         handler = function(self.source, "void kb_handler(")
@@ -67,6 +107,7 @@ class PhysicalPs2KeyboardContractTests(unittest.TestCase):
     def test_install_message_distinguishes_verified_irq_and_polling(self):
         install = function(self.source, "void kb_install(")
         self.assertIn("PS/2 keyboard ready", install)
+        self.assertIn("scanset=2-raw", install)
         self.assertIn("IRQ1+poll", install)
         self.assertIn("poll-only", install)
 

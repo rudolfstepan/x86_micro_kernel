@@ -18,6 +18,10 @@ class QemuPs2SmokeContractTests(unittest.TestCase):
             ["sendkey h\n", "sendkey e\n", "sendkey l\n",
              "sendkey p\n", "sendkey ret\n"],
         )
+        self.assertEqual(
+            MODULE.LOCK_KEY_COMMANDS,
+            ("sendkey num_lock\n", "sendkey num_lock\n"),
+        )
 
     def test_qemu_uses_monitor_for_keys_and_file_for_serial(self):
         command = MODULE.qemu_command(
@@ -33,6 +37,7 @@ class QemuPs2SmokeContractTests(unittest.TestCase):
         for marker in (
             "KEYBOARD_READY_MARKER", "SHELL_PROMPT", "SHELL_HELP_MARKER",
             "userspace shell did not receive PS/2 help command",
+            "LOCK_KEY_COMMANDS",
         ):
             self.assertIn(marker, source)
 
