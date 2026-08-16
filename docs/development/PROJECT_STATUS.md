@@ -7,6 +7,36 @@ REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
 vorhandenen Schutzmechanismen dürfen nicht als klinische, industrielle oder
 sonstige sicherheitsbezogene Freigabe verstanden werden.
 
+## Arbeitscheckpoint 16. August 2026
+
+Der heutige Stand endet auf Commit `0a2c08e` mit sauberem Worktree. Das reale
+SATA-Hotplug-Szenario wurde auf Zielhardware erfolgreich durchgeführt:
+
+- `SATAWR.PRG` schrieb synchronisierte Testdaten, während die System-HDD
+  abgezogen und wieder angeschlossen wurde.
+- Der Storage-Service erkannte den I/O-Fehler, quarantänisierte die
+  AHCI-Elternressource und setzte Systemvolume und Treiber fail-closed auf
+  read-only.
+- Nach Reconnect liefen begrenzter AHCI-COMRESET, IDENTIFY, frische
+  Medienidentitätsprüfung und Undo-Journal-Recovery erfolgreich durch.
+- Eine verwaiste Schreiboperation wird erst nach erfolgreicher
+  Journal-Recovery ressourcengebunden beendet. Die Supervisor-IDLE-Meldung ist
+  idempotent, wodurch Storage- und Filesystem-Fences wieder freigegeben werden.
+- Die reale Ausgabe erreichte `RESOURCE_REINTEGRATED_RW 0`; das Volume wurde
+  wieder beschreibbar und der Anwender bestätigte den erfolgreichen Lauf.
+- `DRIVES.PRG` übernimmt für Partitionen den Zustand der Blockgeräte-
+  Elternressource und zeigt `READY`, `READONLY`, `DEGRADED`, `QUARANTINED`,
+  `RECOVERING`, `OFFLINE` oder `UNKNOWN`.
+
+Zugehörige Commits sind `fe53ff3`, `ad89fde`, `bf6d95b`, `f55a024` und
+`0a2c08e`. Das zuletzt erzeugte reale Hardware-Image ist
+`build/reist-os.img` mit Build-ID
+`D531CB4F2886278DC31059E36BC0B91B1BCFC74B`; normaler SATA-QEMU-Gasttest und
+Hosttests waren erfolgreich. Der nächste Arbeitstag setzt bei der aktiven
+Paketqueue in `automation/reist-s03b.toml` fort. Der reale Hotplug-Lauf ist
+positive Hardwareevidenz für diesen getesteten Aufbau, aber keine allgemeine
+SATA-Hardwarefreigabe.
+
 ## Verifizierter Systempfad
 
 - eigener BIOS-/MBR-Bootloader mit Manifest-, ELF32- und CRC32-Prüfung
@@ -23,11 +53,12 @@ sonstige sicherheitsbezogene Freigabe verstanden werden.
 - E1000, RTL8139 und NE2000 hinter einer gemeinsamen Netzgeräteschicht
 - VGA-Text als Standard und optionaler VBE-Framebuffer mit Ring-3-Desktop
 
-Der jüngste SATA-Fix leitet partition-relative Mehrsektorzugriffe anhand des
-Elterntransports an AHCI statt an den ATA-PIO-Kompatibilitätspfad weiter. Der
-vollständige QEMU-SATA-Gastlauf erreicht danach `FILE_IO_OK` und `TEST_OK`.
-Die erneute Abnahme dieses exakten Builds auf jeder realen Zielmaschine bleibt
-eine Hardwareaufgabe.
+Der SATA-Pfad leitet partition-relative Zugriffe anhand des Elterntransports an
+AHCI statt an den ATA-PIO-Kompatibilitätspfad weiter. Der vollständige
+QEMU-SATA-Gastlauf erreicht `FILE_IO_OK` und `TEST_OK`; zusätzlich wurde die
+Abzieh-/Reconnect-Recovery des oben genannten Builds auf einer realen
+Zielmaschine erfolgreich beobachtet. Weitere Zielmaschinen bleiben jeweils
+eine eigene Hardwareabnahme.
 
 ## REIST-Ausbaustand
 
@@ -103,7 +134,7 @@ Schreibunterbrechung nicht automatisch als wieder schreibsicher gelten.
 nur Rettungskonsole. DOS-Laufwerksbuchstaben, kanonische VFS-Pfade,
 laufwerksbezogene Arbeitsverzeichnisse, `PATH`, Verlauf und Tab-Vervollständigung
 sind implementiert. `DRIVES.PRG` zeigt Resource-ID, Laufwerksbuchstaben,
-Gerätenamen und Typ.
+Gerätenamen, Typ und den von der Elternressource geerbten Recovery-Zustand.
 
 Die Buildliste enthält unter anderem `REIST.PRG`, `STORAGE.PRG`, `SHELL.PRG`,
 `DRIVES.PRG`, `CHKDSK.PRG`, `FDISK.PRG`, `FORMAT.PRG`, `BASIC.PRG`,
