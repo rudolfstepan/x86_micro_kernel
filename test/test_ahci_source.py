@@ -33,6 +33,10 @@ class AhciProbeContractTests(unittest.TestCase):
         self.assertIn("IDENTIFY DEVICE", source)
         self.assertIn("prdt_length = 1U", source)
         self.assertIn("byte_count_and_interrupt", source)
+        self.assertIn("AHCI_PORT_CI", source)
+        self.assertIn("AHCI_PORT_IS_TFES", source)
+        self.assertIn("AHCI_COMMAND_TIMEOUT_MS", source)
+        self.assertIn("ahci_stop_port(controller->mmio, port)", source)
         self.assertNotIn("pci_set_bus_master", source)
 
 

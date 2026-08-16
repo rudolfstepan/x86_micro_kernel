@@ -22,6 +22,13 @@
 #define AHCI_PORT_CMD_FRE (1U << 4)
 #define AHCI_PORT_CMD_CR (1U << 15)
 #define AHCI_PORT_CMD_FR (1U << 14)
+#define AHCI_PORT_IS 0x10U
+#define AHCI_PORT_TFD 0x20U
+#define AHCI_PORT_CI 0x38U
+#define AHCI_PORT_IS_TFES (1U << 30)
+#define AHCI_PORT_TFD_BSY (1U << 7)
+#define AHCI_PORT_TFD_ERR (1U << 0)
+#define AHCI_COMMAND_TIMEOUT_MS 2000U
 
 /* These pools are deliberately fixed and identity-mapped. They are only
  * published after address/alignment validation and remain one-slot-per-port
@@ -158,6 +165,41 @@ static bool ahci_build_identify_command(ahci_controller_info_t *controller,
     return true;
 }
 
+static bool ahci_execute_identify(ahci_controller_info_t *controller,
+                                  size_t controller_index, uint32_t port) {
+    if (controller == NULL || controller->mmio == NULL ||
+        controller_index >= AHCI_MAX_CONTROLLERS || port >= AHCI_MAX_PORTS)
+        return false;
+    uint32_t base = AHCI_PORT_BASE + port * AHCI_PORT_STRIDE;
+    uint32_t command = ahci_read(controller->mmio, base + AHCI_PORT_CMD);
+    if ((command & (AHCI_PORT_CMD_CR | AHCI_PORT_CMD_FR)) != 0U ||
+        (ahci_read(controller->mmio, base + AHCI_PORT_CI) & 1U) != 0U)
+        return false;
+    ahci_write(controller->mmio, base + AHCI_PORT_IS, 0xFFFFFFFFU);
+    ahci_write(controller->mmio, base + AHCI_PORT_CMD,
+               command | AHCI_PORT_CMD_FRE | AHCI_PORT_CMD_ST);
+    ahci_write(controller->mmio, base + AHCI_PORT_CI, 1U);
+    uint64_t start = pit_monotonic_ms();
+    bool completed = false;
+    for (uint32_t poll = 0U; poll < AHCI_RESET_MAX_POLLS; ++poll) {
+        uint32_t interrupt_status = ahci_read(controller->mmio,
+                                               base + AHCI_PORT_IS);
+        uint32_t task_status = ahci_read(controller->mmio, base + AHCI_PORT_TFD);
+        if ((interrupt_status & AHCI_PORT_IS_TFES) != 0U ||
+            (task_status & AHCI_PORT_TFD_ERR) != 0U) break;
+        if ((ahci_read(controller->mmio, base + AHCI_PORT_CI) & 1U) == 0U) {
+            completed = (task_status & AHCI_PORT_TFD_BSY) == 0U;
+            break;
+        }
+        uint64_t now = pit_monotonic_ms();
+        if (now < start || now - start >= AHCI_COMMAND_TIMEOUT_MS) break;
+    }
+    bool stopped = ahci_stop_port(controller->mmio, port);
+    if (!stopped || !completed) return false;
+    const uint8_t *identify = identify_buffers[controller_index][port];
+    return identify[0] != 0U || identify[1] != 0U;
+}
+
 static bool ahci_initialize_controller(ahci_controller_info_t *controller,
                                        pci_device_t *device,
                                        size_t controller_index) {
@@ -184,14 +226,18 @@ static bool ahci_initialize_controller(ahci_controller_info_t *controller,
     controller->version = ahci_read(mmio, 0x10U);
     controller->port_count = (uint8_t)port_limit;
     controller->dma_ready_ports = 0U;
+    uint32_t identify_ports = 0U;
     for (uint32_t port = 0U; port < port_limit && port < AHCI_MAX_PORTS;
          ++port) {
         uint32_t bit = 1U << port;
         if ((sata_ports & bit) != 0U &&
             ahci_prepare_port(controller, controller_index, port) &&
-            ahci_build_identify_command(controller, controller_index, port))
+            ahci_build_identify_command(controller, controller_index, port) &&
+            ahci_execute_identify(controller, controller_index, port))
             controller->dma_ready_ports |= bit;
+        if ((controller->dma_ready_ports & bit) != 0U) identify_ports |= bit;
     }
+    controller->dma_ready_ports = identify_ports;
     controller->valid = 1U;
     return true;
 }

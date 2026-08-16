@@ -1248,13 +1248,14 @@ Der AHCI-Pfad erkennt ausschließlich PCI 01/06/01, validiert BAR5, mappt den
 MMIO-Bereich, setzt den Controller mit doppelter Zeit-/Pollgrenze zurück und
 erkennt aktive ATA-SATA-Ports über `PI`, `PxSSTS` und `PxSIG`. Feste DMA-Pools
 für Command-List, Received-FIS und Command-Table sind ausgerichtet und
-adressgeprüft vorbereitet; Bus-Mastering und eigentliche DMA-Kommandos bleiben
-noch deaktiviert. Die VFS-/Storage-Aufrufer sind noch nicht vollständig
-migriert. Ein validierter IDENTIFY-Command wird pro vorbereiteten SATA-Port
-aus Command-Header, 20-Byte-H2D-FIS, einer PRDT und einem festen 512-Byte-
-Puffer aufgebaut; die Ausführung und Completion-Auswertung sind noch
-deaktiviert. Sektor-I/O fehlt. Der Stand ist daher noch keine SATA-
-Unterstützung.
+adressgeprüft vorbereitet. Ein validierter IDENTIFY-Command wird pro
+vorbereiteten SATA-Port aus Command-Header, 20-Byte-H2D-FIS, einer PRDT und
+einem festen 512-Byte-Puffer aufgebaut und mit begrenzter PxCI-/PxIS-/PxTFD-
+Completion sowie Quarantäne bei Fehler oder Timeout ausgeführt. Die
+IDENTIFY-Daten werden noch nicht zu einem Kapazitäts-/Modellprofil geparst;
+SATA-Ressourcen werden noch nicht veröffentlicht, und Sektor-I/O, VFS- sowie
+Storage-Service-Anbindung fehlen weiterhin. Der Stand ist daher noch keine
+produktive SATA-Unterstützung.
 
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 
