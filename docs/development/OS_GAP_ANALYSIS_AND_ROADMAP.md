@@ -1250,8 +1250,11 @@ erkennt aktive ATA-SATA-Ports über `PI`, `PxSSTS` und `PxSIG`. Feste DMA-Pools
 für Command-List, Received-FIS und Command-Table sind ausgerichtet und
 adressgeprüft vorbereitet; Bus-Mastering und eigentliche DMA-Kommandos bleiben
 noch deaktiviert. Die VFS-/Storage-Aufrufer sind noch nicht vollständig
-migriert; IDENTIFY und Sektor-I/O fehlen. Der Stand ist daher noch keine
-SATA-Unterstützung.
+migriert. Ein validierter IDENTIFY-Command wird pro vorbereiteten SATA-Port
+aus Command-Header, 20-Byte-H2D-FIS, einer PRDT und einem festen 512-Byte-
+Puffer aufgebaut; die Ausführung und Completion-Auswertung sind noch
+deaktiviert. Sektor-I/O fehlt. Der Stand ist daher noch keine SATA-
+Unterstützung.
 
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 

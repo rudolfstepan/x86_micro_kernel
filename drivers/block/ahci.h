@@ -14,6 +14,60 @@
 #define AHCI_RECEIVED_FIS_SIZE 256U
 #define AHCI_COMMAND_TABLE_SIZE 256U
 
+#pragma pack(push, 1)
+typedef struct {
+    uint16_t flags;
+    uint16_t prdt_length;
+    uint32_t bytes_transferred;
+    uint32_t command_table_base;
+    uint32_t command_table_base_upper;
+    uint32_t reserved[4];
+} ahci_command_header_t;
+
+typedef struct {
+    uint8_t fis_type;
+    uint8_t flags;
+    uint8_t command;
+    uint8_t feature_low;
+    uint8_t lba0;
+    uint8_t lba1;
+    uint8_t lba2;
+    uint8_t device;
+    uint8_t lba3;
+    uint8_t lba4;
+    uint8_t lba5;
+    uint8_t feature_high;
+    uint8_t count_low;
+    uint8_t count_high;
+    uint8_t icc;
+    uint8_t control;
+    uint8_t reserved[4];
+} ahci_fis_reg_h2d_t;
+
+typedef struct {
+    uint32_t data_base;
+    uint32_t data_base_upper;
+    uint32_t reserved;
+    uint32_t byte_count_and_interrupt;
+} ahci_prdt_entry_t;
+
+typedef struct {
+    uint8_t fis[64];
+    uint8_t atapi_command[16];
+    uint8_t reserved[48];
+    ahci_prdt_entry_t prdt[8];
+} ahci_command_table_t;
+#pragma pack(pop)
+
+_Static_assert(sizeof(ahci_command_header_t) == 32U,
+               "AHCI command header ABI size changed");
+_Static_assert(sizeof(ahci_fis_reg_h2d_t) == 20U,
+               "AHCI H2D FIS ABI size changed");
+_Static_assert(sizeof(ahci_prdt_entry_t) == 16U,
+               "AHCI PRDT ABI size changed");
+_Static_assert(sizeof(ahci_command_table_t) == AHCI_COMMAND_TABLE_SIZE,
+               "AHCI command table ABI size changed");
+
 typedef struct {
     uint64_t abar;
     volatile uint32_t *mmio;

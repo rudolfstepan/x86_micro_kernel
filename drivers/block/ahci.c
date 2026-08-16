@@ -32,6 +32,8 @@ static uint8_t received_fis[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS]
     [AHCI_RECEIVED_FIS_SIZE] __attribute__((aligned(256)));
 static uint8_t command_tables[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS]
     [AHCI_COMMAND_TABLE_SIZE] __attribute__((aligned(128)));
+static uint8_t identify_buffers[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS][512]
+    __attribute__((aligned(2)));
 
 static ahci_controller_info_t controllers[AHCI_MAX_CONTROLLERS];
 static size_t controller_count;
@@ -127,6 +129,35 @@ static bool ahci_prepare_port(ahci_controller_info_t *controller,
     return true;
 }
 
+static bool ahci_build_identify_command(ahci_controller_info_t *controller,
+                                        size_t controller_index,
+                                        uint32_t port) {
+    if (controller == NULL || controller->mmio == NULL ||
+        controller_index >= AHCI_MAX_CONTROLLERS || port >= AHCI_MAX_PORTS ||
+        !ahci_dma_address_valid(identify_buffers[controller_index][port],
+                                512U, 2U)) return false;
+    ahci_command_header_t *header = (ahci_command_header_t *)
+        command_lists[controller_index][port];
+    ahci_command_table_t *table = (ahci_command_table_t *)
+        command_tables[controller_index][port];
+    ahci_fis_reg_h2d_t *fis = (ahci_fis_reg_h2d_t *)table->fis;
+    memset(header, 0, sizeof(*header));
+    memset(table, 0, sizeof(*table));
+    memset(identify_buffers[controller_index][port], 0, 512U);
+    header->flags = 5U; /* 20-byte H2D FIS, read direction */
+    header->prdt_length = 1U;
+    header->command_table_base =
+        (uint32_t)(uintptr_t)command_tables[controller_index][port];
+    fis->fis_type = 0x27U;
+    fis->flags = 0x80U; /* command FIS */
+    fis->command = 0xECU; /* IDENTIFY DEVICE */
+    fis->device = 0xA0U;
+    table->prdt[0].data_base =
+        (uint32_t)(uintptr_t)identify_buffers[controller_index][port];
+    table->prdt[0].byte_count_and_interrupt = 511U | (1U << 31U);
+    return true;
+}
+
 static bool ahci_initialize_controller(ahci_controller_info_t *controller,
                                        pci_device_t *device,
                                        size_t controller_index) {
@@ -157,7 +188,8 @@ static bool ahci_initialize_controller(ahci_controller_info_t *controller,
          ++port) {
         uint32_t bit = 1U << port;
         if ((sata_ports & bit) != 0U &&
-            ahci_prepare_port(controller, controller_index, port))
+            ahci_prepare_port(controller, controller_index, port) &&
+            ahci_build_identify_command(controller, controller_index, port))
             controller->dma_ready_ports |= bit;
     }
     controller->valid = 1U;
