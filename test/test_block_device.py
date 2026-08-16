@@ -15,6 +15,8 @@ class BlockDeviceContractTests(unittest.TestCase):
         self.assertIn("block_device_read_sector", header)
         self.assertIn("block_device_write_sector", header)
         self.assertIn("block_device_flush", header)
+        self.assertIn("block_device_read_sectors", header)
+        self.assertIn("block_device_write_sectors", header)
         self.assertIn("sector < drive->sectors", source)
         self.assertIn("DRIVE_TYPE_ATA", source)
         self.assertIn("DRIVE_TYPE_FDD", source)

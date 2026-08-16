@@ -20,6 +20,10 @@ int block_device_read_sector(const drive_t *drive, uint32_t sector,
                              void *buffer);
 int block_device_write_sector(const drive_t *drive, uint32_t sector,
                               const void *buffer);
+int block_device_read_sectors(const drive_t *drive, uint32_t sector,
+                              uint32_t count, void *buffer);
+int block_device_write_sectors(const drive_t *drive, uint32_t sector,
+                               uint32_t count, const void *buffer);
 int block_device_flush(const drive_t *drive);
 bool block_device_sector_range_valid(const drive_t *drive, uint32_t sector);
 

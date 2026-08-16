@@ -318,7 +318,7 @@ und 10 verbindlich.
 
 - [ ] R2.1 Gemeinsame ABI v1 und vollständige Dateideskriptoren
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
-- [ ] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
+- [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
 - [ ] R3.2 Userspace-Shell und Init-/Service-Management
 - [ ] R4.1 Gehärtetes IPv4/UDP und Socket-ABI
@@ -1185,7 +1185,7 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
   mounten.
 - [x] Bereichsprüfung und `flush` zentral erzwingen.
 - [x] ATA-LBA48 über IDENTIFY und PIO-EXT-Einsektorbefehle ergänzen.
-- [ ] Gebündelte, fest begrenzte ATA-PIO-Transfers ergänzen.
+- [x] Gebündelte, fest begrenzte ATA-PIO-Transfers ergänzen.
 - [x] GPT, AHCI und NVMe als getrennte Folgepakete behandeln; GPT und NVMe
   bleiben bewusst offen.
 
@@ -1200,8 +1200,14 @@ mounten. Der QEMU-AHCI-Gastlauf mit zwei erkannten MBR-Children, FAT32-Root,
 Datei-I/O und vollständigem `TEST_OK` ist abgenommen. ATA-LBA48 validiert die
 IDENTIFY-Fähigkeit und Kapazität, verwendet oberhalb der LBA28-Grenze
 READ/WRITE PIO EXT sowie FLUSH CACHE EXT und lehnt nicht unterstützte hohe
-LBAs vor Port-I/O ab. Gebündelte PIO-Transfers bleiben offen; GPT bleibt
-ausdrücklich ein Folgepaket.
+LBAs vor Port-I/O ab. Gebündelte PIO-Aufträge sind auf 20 Sektoren begrenzt,
+prüfen den vollständigen Bereich vor dem ersten Portzugriff und verwenden
+eine einzige Sector-Count-Programmierung mit DRQ-Deadline je Sektor. Writes
+werden geflusht und vollständig zurückgelesen; journalisierte Bereiche fallen
+innerhalb derselben Supervision auf geordnete Journal-Writes zurück. FAT32-
+Cluster-I/O nutzt diesen Vertrag. Ein vollständiger QEMU-IDE-Gastlauf über den
+ATA-PIO-Pfad erreicht `FILE_IO_OK` und `TEST_OK`. GPT bleibt ausdrücklich ein
+Folgepaket.
 
 #### R2.4 SATA/AHCI-Unterstützung — XL
 
@@ -1402,7 +1408,7 @@ nebenbei in die 32-Bit-Basis eingebaut werden.
 - [ ] **17 · R2.1 ABI und FDs** — Größe L; abhängig vom abgenommenen S0-Gate
 - [ ] **18 · R2.2 VFS/FAT-Zuverlässigkeit** — Größe L; abhängig von R2.1 und
   S0.5
-- [ ] **19 · R2.3 Blockgeräte/Partitionen** — Größe L; abhängig von R1.3 und
+- [x] **19 · R2.3 Blockgeräte/Partitionen** — Größe L; abhängig von R1.3 und
   S0.5
 - [ ] **20+ · R3 bis R6** — Größe L–XL; abhängig vom abgenommenen S0-Gate und
   der jeweiligen Basis

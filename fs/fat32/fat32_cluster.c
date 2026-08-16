@@ -251,31 +251,20 @@ bool write_cluster(struct fat32_boot_sector* boot_sector, unsigned int cluster, 
         cluster_to_sector(boot_sector, cluster);
     if (first_sector_of_cluster == INVALID_CLUSTER) return false;
 
-    for (unsigned int i = 0; i < boot_sector->sectors_per_cluster; i++) {
-        // Calculate sector number to write to
-        unsigned int sector_number = first_sector_of_cluster + i;
-        // Calculate the pointer to the part of the entries buffer to write
-        void* buffer_ptr = ((unsigned char*)entries) + (i * boot_sector->bytes_per_sector);
-        
-        // Write the sector
-        if (!ata_write_sector(ata_base_address, sector_number, buffer_ptr, ata_is_master)) {
-            printf("Error: Failed to write to sector %u.\n", sector_number);
-            return false; // Error writing sector
-        }
-        
-        // Verify the write by reading back the sector
-        unsigned char verify_buffer[SECTOR_SIZE];
-        if (!ata_read_sector(ata_base_address, sector_number, verify_buffer, ata_is_master)) {
-            printf("Error: Failed to read back sector %u for verification\n", sector_number);
+    for (uint32_t offset = 0U; offset < boot_sector->sectors_per_cluster;) {
+        uint32_t remaining = boot_sector->sectors_per_cluster - offset;
+        uint32_t count = remaining > ATA_PIO_MAX_SECTORS
+            ? ATA_PIO_MAX_SECTORS : remaining;
+        uint32_t sector_number = first_sector_of_cluster + offset;
+        const uint8_t *buffer = (const uint8_t *)entries +
+                                offset * boot_sector->bytes_per_sector;
+        if (!ata_write_sectors(ata_base_address, sector_number, count, buffer,
+                               ata_is_master)) {
+            printf("Error: Failed verified cluster write at sector %u.\n",
+                   sector_number);
             return false;
         }
-        
-        // Compare the written data
-        if (memcmp(buffer_ptr, verify_buffer, boot_sector->bytes_per_sector) != 0) {
-            printf("Error: Write verification failed for directory cluster sector %u\n", sector_number);
-            printf("       Possible disk write failure detected\n");
-            return false;
-        }
+        offset += count;
     }
     return true;
 }
@@ -313,12 +302,14 @@ bool read_cluster(struct fat32_boot_sector* boot_sector, unsigned int cluster_nu
         return false;
     }
     
-    for (unsigned int i = 0; i < boot_sector->sectors_per_cluster; ++i) {
-        if (!ata_read_sector(ata_base_address, startSector + i,
-                             (uint8_t*)buffer + (i * SECTOR_SIZE),
-                             ata_is_master)) {
-            return false;
-        }
+    for (uint32_t offset = 0U; offset < boot_sector->sectors_per_cluster;) {
+        uint32_t remaining = boot_sector->sectors_per_cluster - offset;
+        uint32_t count = remaining > ATA_PIO_MAX_SECTORS
+            ? ATA_PIO_MAX_SECTORS : remaining;
+        if (!ata_read_sectors(ata_base_address, startSector + offset, count,
+                              (uint8_t *)buffer + offset * SECTOR_SIZE,
+                              ata_is_master)) return false;
+        offset += count;
     }
     return true;
 }

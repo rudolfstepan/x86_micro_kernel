@@ -100,6 +100,63 @@ int block_device_write_sector(const drive_t *drive, uint32_t sector,
     return BLOCK_DEVICE_UNSUPPORTED;
 }
 
+static bool block_device_range_valid(const drive_t *drive, uint32_t sector,
+                                     uint32_t count) {
+    return drive != NULL && count != 0U && count <= ATA_PIO_MAX_SECTORS &&
+           sector < drive->sectors && count <= drive->sectors - sector;
+}
+
+int block_device_read_sectors(const drive_t *drive, uint32_t sector,
+                              uint32_t count, void *buffer) {
+    if (buffer == NULL || !block_device_range_valid(drive, sector, count))
+        return BLOCK_DEVICE_RANGE;
+    if (drive->type == DRIVE_TYPE_PARTITION) {
+        uint32_t parent_sector;
+        const drive_t *parent = partition_parent(drive, sector,
+                                                  &parent_sector);
+        if (parent == NULL || count > parent->sectors - parent_sector)
+            return BLOCK_DEVICE_RANGE;
+        return block_device_read_sectors(parent, parent_sector, count, buffer);
+    }
+    if (drive->type == DRIVE_TYPE_ATA)
+        return ata_read_sectors(drive->base, sector, count, buffer,
+                                drive->is_master)
+            ? BLOCK_DEVICE_OK : BLOCK_DEVICE_IO;
+    uint8_t *bytes = buffer;
+    for (uint32_t index = 0U; index < count; ++index) {
+        int result = block_device_read_sector(drive, sector + index,
+                                               bytes + index * 512U);
+        if (result != BLOCK_DEVICE_OK) return result;
+    }
+    return BLOCK_DEVICE_OK;
+}
+
+int block_device_write_sectors(const drive_t *drive, uint32_t sector,
+                               uint32_t count, const void *buffer) {
+    if (buffer == NULL || !block_device_range_valid(drive, sector, count))
+        return BLOCK_DEVICE_RANGE;
+    if (drive->type == DRIVE_TYPE_PARTITION) {
+        uint32_t parent_sector;
+        const drive_t *parent = partition_parent(drive, sector,
+                                                  &parent_sector);
+        if (parent == NULL || count > parent->sectors - parent_sector)
+            return BLOCK_DEVICE_RANGE;
+        return block_device_write_sectors(parent, parent_sector, count,
+                                          buffer);
+    }
+    if (drive->type == DRIVE_TYPE_ATA)
+        return ata_write_sectors(drive->base, sector, count, buffer,
+                                 drive->is_master)
+            ? BLOCK_DEVICE_OK : BLOCK_DEVICE_IO;
+    const uint8_t *bytes = buffer;
+    for (uint32_t index = 0U; index < count; ++index) {
+        int result = block_device_write_sector(drive, sector + index,
+                                                bytes + index * 512U);
+        if (result != BLOCK_DEVICE_OK) return result;
+    }
+    return BLOCK_DEVICE_OK;
+}
+
 int block_device_flush(const drive_t *drive) {
     if (drive == NULL) return BLOCK_DEVICE_INVALID;
     if (drive->type == DRIVE_TYPE_PARTITION) {

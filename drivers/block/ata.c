@@ -529,6 +529,99 @@ static bool ata_read_sector_impl(unsigned short base, unsigned int lba,
     return true;
 }
 
+static bool ata_pio_range_valid(drive_t *drive, uint32_t lba,
+                                uint32_t count) {
+    return drive != NULL && count != 0U && count <= ATA_PIO_MAX_SECTORS &&
+           lba < drive->sectors && count <= drive->sectors - lba;
+}
+
+static bool ata_program_pio_batch(unsigned short base, uint32_t lba,
+                                  uint32_t count, bool is_master,
+                                  bool write, bool use_lba48) {
+    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
+    uint8_t head = use_lba48 ? 0x40U :
+        (uint8_t)(0xE0U | ((lba >> 24U) & 0x0FU));
+    head |= is_master ? 0U : 0x10U;
+    outb(ATA_DRIVE_HEAD(base), head);
+    for (volatile int delay = 0; delay < 4; ++delay)
+        (void)inb(ATA_ALT_STATUS(base));
+    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
+    if (use_lba48) {
+        outb(ATA_SECTOR_CNT(base), 0U);
+        outb(ATA_LBA_LOW(base), (uint8_t)(lba >> 24U));
+        outb(ATA_LBA_MID(base), 0U);
+        outb(ATA_LBA_HIGH(base), 0U);
+    }
+    outb(ATA_SECTOR_CNT(base), (uint8_t)count);
+    outb(ATA_LBA_LOW(base), (uint8_t)lba);
+    outb(ATA_LBA_MID(base), (uint8_t)(lba >> 8U));
+    outb(ATA_LBA_HIGH(base), (uint8_t)(lba >> 16U));
+    outb(ATA_COMMAND(base), use_lba48
+        ? (write ? ATA_WRITE_SECTORS_EXT : ATA_READ_SECTORS_EXT)
+        : (write ? ATA_WRITE_SECTORS : ATA_READ_SECTORS));
+    for (volatile int delay = 0; delay < 4; ++delay)
+        (void)inb(ATA_ALT_STATUS(base));
+    return true;
+}
+
+static bool ata_read_sectors_pio_impl(unsigned short base, uint32_t lba,
+                                      uint32_t count, void *buffer,
+                                      bool is_master) {
+    int resource = ata_resource_index(base, is_master);
+    drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
+    if (buffer == NULL || !ata_pio_range_valid(drive, lba, count))
+        return false;
+    uint32_t last = lba + count - 1U;
+    bool use_lba48 = last >= ATA_LBA28_LIMIT;
+    if (use_lba48 && !drive->lba48_supported) return false;
+    if (!ata_program_pio_batch(base, lba, count, is_master, false,
+                               use_lba48)) return false;
+    uint8_t *bytes = buffer;
+    for (uint32_t index = 0U; index < count; ++index) {
+        if (!wait_for_drive_data_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
+        insw(ATA_DATA(base), bytes + index * SECTOR_SIZE, SECTOR_SIZE / 2U);
+        ata_cache_entry_t *cached =
+            ata_cache_slot(base, lba + index, is_master);
+        cached->base = base;
+        cached->lba = lba + index;
+        cached->is_master = is_master;
+        cached->valid = true;
+        memcpy(cached->data, bytes + index * SECTOR_SIZE, SECTOR_SIZE);
+    }
+    consecutive_read_failures = 0U;
+    return wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS);
+}
+
+bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
+                      void *buffer, bool is_master) {
+    drive_t *partition = ata_compat_partition_drive(base);
+    if (partition != NULL) {
+        uint32_t absolute;
+        drive_t *parent = ata_partition_translate(partition, lba, &absolute);
+        return parent != NULL && count != 0U &&
+            count <= partition->sectors - lba &&
+            ata_read_sectors(parent->base, absolute, count, buffer,
+                             parent->is_master);
+    }
+    drive_t *ahci_drive = ata_compat_ahci_drive(base);
+    if (ahci_drive != NULL) {
+        if (buffer == NULL || count == 0U || count > ATA_PIO_MAX_SECTORS ||
+            lba >= ahci_drive->sectors || count > ahci_drive->sectors - lba)
+            return false;
+        uint8_t *bytes = buffer;
+        for (uint32_t index = 0U; index < count; ++index) {
+            if (!ahci_read_sector(ahci_drive, lba + index,
+                                  bytes + index * SECTOR_SIZE)) return false;
+        }
+        return true;
+    }
+    ata_transaction_begin();
+    bool result = ata_read_sectors_pio_impl(base, lba, count, buffer,
+                                            is_master);
+    ata_transaction_end();
+    return result;
+}
+
 bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,
                      bool is_master) {
     drive_t *partition = ata_compat_partition_drive(base);
@@ -662,6 +755,42 @@ static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
     return true;
 }
 
+static uint8_t ata_batch_verify[SECTOR_SIZE];
+
+static bool ata_write_sectors_pio_impl(unsigned short base, uint32_t lba,
+                                       uint32_t count, const void *buffer,
+                                       bool is_master) {
+    int resource = ata_resource_index(base, is_master);
+    drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
+    if (buffer == NULL || !ata_pio_range_valid(drive, lba, count))
+        return false;
+    uint32_t last = lba + count - 1U;
+    bool use_lba48 = last >= ATA_LBA28_LIMIT;
+    if (use_lba48 && !drive->lba48_supported) return false;
+    for (uint32_t index = 0U; index < count; ++index) {
+        ata_cache_entry_t *cached =
+            ata_cache_slot(base, lba + index, is_master);
+        cached->valid = false;
+    }
+    if (!ata_program_pio_batch(base, lba, count, is_master, true,
+                               use_lba48)) return false;
+    const uint8_t *bytes = buffer;
+    for (uint32_t index = 0U; index < count; ++index) {
+        if (!wait_for_drive_data_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
+        outsw(ATA_DATA(base), bytes + index * SECTOR_SIZE, SECTOR_SIZE / 2U);
+    }
+    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
+    outb(ATA_COMMAND(base), use_lba48 ? ATA_FLUSH_CACHE_EXT : 0xE7U);
+    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
+    for (uint32_t index = 0U; index < count; ++index) {
+        if (!ata_read_sector_impl(base, lba + index, ata_batch_verify,
+                                  is_master) ||
+            memcmp(ata_batch_verify, bytes + index * SECTOR_SIZE,
+                   SECTOR_SIZE) != 0) return false;
+    }
+    return true;
+}
+
 static bool ata_journal_write_record(const ata_journal_record_t *record) {
     if (!ata_write_sector_impl(ata_journal.base, ata_journal.header_lba,
                                (void *)record, ata_journal.is_master))
@@ -761,6 +890,16 @@ static bool ata_write_sector_journaled(unsigned short base, unsigned int lba,
 bool ata_journal_attach(unsigned short base, bool is_master,
                         uint32_t partition_lba, uint32_t volume_sectors,
                         uint16_t reserved_sectors) {
+    drive_t *partition = ata_compat_partition_drive(base);
+    if (partition != NULL) {
+        uint32_t absolute;
+        drive_t *parent = ata_partition_translate(partition, partition_lba,
+                                                   &absolute);
+        return parent != NULL && volume_sectors != 0U &&
+            volume_sectors <= partition->sectors - partition_lba &&
+            ata_journal_attach(parent->base, parent->is_master, absolute,
+                               volume_sectors, reserved_sectors);
+    }
     ata_transaction_begin();
     bool result = true;
     ata_journal.enabled = false;
@@ -893,6 +1032,60 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
         storage_write_begin((uint32_t)resource, pit_monotonic_ms());
     bool result = armed &&
                   ata_write_sector_journaled(base, lba, buffer, is_master);
+    if (armed && !storage_write_end(result)) result = false;
+    ata_transaction_end();
+    return result;
+}
+
+bool ata_write_sectors(unsigned short base, uint32_t lba, uint32_t count,
+                       const void *buffer, bool is_master) {
+    drive_t *partition = ata_compat_partition_drive(base);
+    if (partition != NULL) {
+        uint32_t absolute;
+        drive_t *parent = ata_partition_translate(partition, lba, &absolute);
+        return parent != NULL && count != 0U &&
+            count <= partition->sectors - lba &&
+            ata_write_sectors(parent->base, absolute, count, buffer,
+                              parent->is_master);
+    }
+    drive_t *ahci_drive = ata_compat_ahci_drive(base);
+    if (ahci_drive != NULL) {
+        int resource = ata_resource_index(base, is_master);
+        bool valid = buffer != NULL && count != 0U &&
+            count <= ATA_PIO_MAX_SECTORS && lba < ahci_drive->sectors &&
+            count <= ahci_drive->sectors - lba;
+        bool armed = valid && !ata_write_fenced && resource >= 0 &&
+            storage_write_begin((uint32_t)resource, pit_monotonic_ms());
+        bool result = armed;
+        const uint8_t *bytes = buffer;
+        for (uint32_t index = 0U; result && index < count; ++index)
+            result = ahci_write_sector(ahci_drive, lba + index,
+                                       bytes + index * SECTOR_SIZE);
+        if (armed && !storage_write_end(result)) result = false;
+        return result;
+    }
+    ata_transaction_begin();
+    int resource = ata_resource_index(base, is_master);
+    drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
+    bool valid = buffer != NULL && ata_pio_range_valid(drive, lba, count);
+    bool armed = valid && !ata_write_fenced &&
+        storage_write_begin((uint32_t)resource, pit_monotonic_ms());
+    bool result = false;
+    if (armed && ata_journal.enabled && base == ata_journal.base &&
+        is_master == ata_journal.is_master &&
+        lba >= ata_journal.volume_start_lba &&
+        lba < ata_journal.volume_end_lba &&
+        count <= ata_journal.volume_end_lba - lba) {
+        result = ata_journal_transaction_begin();
+        const uint8_t *bytes = buffer;
+        for (uint32_t index = 0U; result && index < count; ++index)
+            result = ata_write_sector_journaled(base, lba + index,
+                (void *)(bytes + index * SECTOR_SIZE), is_master);
+        result = ata_journal_transaction_end(result) && result;
+    } else if (armed) {
+        result = ata_write_sectors_pio_impl(base, lba, count, buffer,
+                                            is_master);
+    }
     if (armed && !storage_write_end(result)) result = false;
     ata_transaction_end();
     return result;

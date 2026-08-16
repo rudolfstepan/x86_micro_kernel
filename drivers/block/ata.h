@@ -40,6 +40,7 @@
 #define MAX_PARTITION_DRIVES 16
 #define MAX_DRIVES          (MAX_ATA_DRIVES + MAX_FDD_DRIVES + MAX_PARTITION_DRIVES)
 #define ATA_LBA28_LIMIT     0x10000000u
+#define ATA_PIO_MAX_SECTORS 20U
 #define SECTOR_SIZE 512
 
 // External declarations
@@ -59,7 +60,11 @@ void ata_reset_error_counter();  // Reset consecutive failure counter
 bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master);
 bool ata_read_sector_fresh(unsigned short base, unsigned int lba, void* buffer,
                            bool is_master);
+bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
+                      void *buffer, bool is_master);
 bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master);
+bool ata_write_sectors(unsigned short base, uint32_t lba, uint32_t count,
+                       const void *buffer, bool is_master);
 bool ata_flush_cache(unsigned short base, bool is_master);
 bool ata_journal_attach(unsigned short base, bool is_master,
                         uint32_t partition_lba, uint32_t volume_sectors,

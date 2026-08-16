@@ -81,6 +81,36 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
     return true;
 }
 
+bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
+                      void *buffer, bool is_master) {
+    uint8_t *bytes = buffer;
+    if (count == 0U || count > ATA_PIO_MAX_SECTORS) return false;
+    for (uint32_t index = 0U; index < count; ++index) {
+        if (!ata_read_sector(base, lba + index,
+                             bytes + index * SECTOR_SIZE, is_master))
+            return false;
+    }
+    return true;
+}
+
+bool ata_write_sectors(unsigned short base, uint32_t lba, uint32_t count,
+                       const void *buffer, bool is_master) {
+    const uint8_t *bytes = buffer;
+    if (count == 0U || count > ATA_PIO_MAX_SECTORS) return false;
+    for (uint32_t index = 0U; index < count; ++index) {
+        if (!ata_write_sector(base, lba + index,
+                              (void *)(bytes + index * SECTOR_SIZE),
+                              is_master)) return false;
+    }
+    uint8_t verify[SECTOR_SIZE];
+    for (uint32_t index = 0U; index < count; ++index) {
+        if (!ata_read_sector(base, lba + index, verify, is_master) ||
+            memcmp(verify, bytes + index * SECTOR_SIZE, SECTOR_SIZE) != 0)
+            return false;
+    }
+    return true;
+}
+
 bool ata_journal_attach(unsigned short base, bool is_master,
                         uint32_t partition_lba, uint32_t volume_sectors,
                         uint16_t reserved_sectors) {
