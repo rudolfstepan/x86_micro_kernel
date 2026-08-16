@@ -1238,14 +1238,17 @@ Regressionstests bleiben vollständig grün. Ohne reale oder emulierte AHCI-
 Laufzeitabnahme gilt SATA nur als Quellcode-Unterstützung, nicht als
 unterstützte Plattform.
 
-**Arbeitsstand 16. August 2026:** Schritt 1 ist als erster Zwischenstand
-umgesetzt. `drivers/block/block_device.[ch]` bietet nun einen festen,
+**Arbeitsstand 16. August 2026:** Schritt 1 und der sichere Probeanteil der
+Schritte 3/5 sind als Zwischenstand umgesetzt.
+`drivers/block/block_device.[ch]` bietet einen festen,
 transportneutralen Einsektor-Vertrag mit Bereichsprüfung, Read, Write und
 Flush. ATA-PIO und FDD werden darüber als bestehende Backends angesprochen;
 ein Host-Vertragstest und der vollständige Windows-Build sind erfolgreich.
-Die VFS-/Storage-Aufrufer sind noch nicht vollständig migriert und AHCI-MMIO,
-DMA sowie SATA-Erkennung sind noch nicht implementiert. Der Stand ist daher
-noch keine SATA-Unterstützung.
+Der AHCI-Pfad erkennt ausschließlich PCI 01/06/01, validiert BAR5, mappt den
+MMIO-Bereich, setzt den Controller mit doppelter Zeit-/Pollgrenze zurück und
+erkennt aktive ATA-SATA-Ports über `PI`, `PxSSTS` und `PxSIG`. Die VFS-/Storage-
+Aufrufer sind noch nicht vollständig migriert; DMA-Speicher, IDENTIFY und
+Sektor-I/O fehlen. Der Stand ist daher noch keine SATA-Unterstützung.
 
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 

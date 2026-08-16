@@ -60,6 +60,7 @@
 
 // Block devices
 #include "drivers/block/ata.h"
+#include "drivers/block/ahci.h"
 #include "drivers/block/fdd.h"
 #include "drivers/bus/drives.h"
 
@@ -161,6 +162,7 @@ static void hardware_init(void) {
     
     // Bus enumeration
     pci_init();  // PCI bus scanning
+    ahci_init(); // Probe AHCI controllers; SATA ports remain unpublished
     usb_init();  // Initialize USB subsystem (probe PCI for HCI)
     printf("Hardware initialization complete\n");
 }
