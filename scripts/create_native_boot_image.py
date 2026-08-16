@@ -393,14 +393,10 @@ ddb.virtualHWVersion = "4"
 
 def write_vmx(path: Path, vmdk_path: Path,
               floppy_path: Path | None = None) -> None:
-    floppy_configuration = (
-        f'''floppy0.present = "TRUE"
-floppy0.fileType = "file"
-floppy0.fileName = "{floppy_path.name}"
-floppy0.startConnected = "FALSE"'''
-        if floppy_path is not None else 'floppy0.present = "FALSE"'
-    )
-    boot_order = "hdd,floppy" if floppy_path is not None else "hdd"
+    # Keep the rescue image in the package, but do not expose an FDC in the
+    # default SATA machine. It can be attached explicitly for recovery.
+    floppy_configuration = 'floppy0.present = "FALSE"'
+    boot_order = "hdd"
     configuration = f'''.encoding = "UTF-8"
 config.version = "8"
 virtualHW.version = "20"

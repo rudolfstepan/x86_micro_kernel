@@ -370,13 +370,12 @@ class NativeBootImageTests(unittest.TestCase):
             write_vmx(vmx, Path("kernel.vmdk"), Path("rescue.img"))
             text = vmx.read_text(encoding="ascii")
         self.assertIn('firmware = "bios"', text)
-        self.assertIn('bios.bootOrder = "hdd,floppy"', text)
+        self.assertIn('bios.bootOrder = "hdd"', text)
         self.assertIn('memsize = "512"', text)
         self.assertIn('sata0:0.fileName = "kernel.vmdk"', text)
         self.assertIn('serial0.fileName = "vmware-serial.log"', text)
         self.assertIn('serial0.tryNoRxLoss = "TRUE"', text)
-        self.assertIn('floppy0.present = "TRUE"', text)
-        self.assertIn('floppy0.fileName = "rescue.img"', text)
+        self.assertIn('floppy0.present = "FALSE"', text)
         self.assertIn('ethernet0.virtualDev = "e1000"', text)
         self.assertIn('ethernet0.connectionType = "custom"', text)
         self.assertIn('ethernet0.vnet = "VMnet0"', text)
@@ -438,13 +437,8 @@ class NativeBootImageTests(unittest.TestCase):
             config = (package / "reist-os.vmx").read_text(
                 encoding="ascii"
             )
-            self.assertIn('bios.bootOrder = "hdd,floppy"', config)
-            self.assertIn('floppy0.present = "TRUE"', config)
-            self.assertIn('floppy0.fileType = "file"', config)
-            self.assertIn(
-                'floppy0.fileName = "reist-os-floppy.img"',
-                config,
-            )
+            self.assertIn('bios.bootOrder = "hdd"', config)
+            self.assertIn('floppy0.present = "FALSE"', config)
             self.assertTrue((package / "START-VMWARE.cmd").is_file())
             self.assertTrue((package / "README-VMWARE.txt").is_file())
             self.assertEqual(

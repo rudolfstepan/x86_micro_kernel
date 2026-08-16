@@ -27,9 +27,11 @@
 #define AHCI_PORT_CMD_FR (1U << 14)
 #define AHCI_PORT_IS 0x10U
 #define AHCI_PORT_TFD 0x20U
+#define AHCI_PORT_SERR 0x30U
 #define AHCI_PORT_CI 0x38U
 #define AHCI_PORT_IS_TFES (1U << 30)
 #define AHCI_PORT_TFD_BSY (1U << 7)
+#define AHCI_PORT_TFD_DRQ (1U << 3)
 #define AHCI_PORT_TFD_ERR (1U << 0)
 #define AHCI_COMMAND_TIMEOUT_MS 2000U
 #define AHCI_ATA_READ_DMA_EXT 0x25U
@@ -282,8 +284,28 @@ static bool ahci_execute_command(ahci_controller_info_t *controller,
         (ahci_read(controller->mmio, base + AHCI_PORT_CI) & 1U) != 0U)
         return false;
     ahci_write(controller->mmio, base + AHCI_PORT_IS, 0xFFFFFFFFU);
+    ahci_write(controller->mmio, base + AHCI_PORT_SERR, 0xFFFFFFFFU);
+    ahci_write(controller->mmio, base + AHCI_PORT_CMD,
+               command | AHCI_PORT_CMD_FRE);
     ahci_write(controller->mmio, base + AHCI_PORT_CMD,
                command | AHCI_PORT_CMD_FRE | AHCI_PORT_CMD_ST);
+    uint64_t ready_start = pit_monotonic_ms();
+    bool ready = false;
+    for (uint32_t poll = 0U; poll < AHCI_RESET_MAX_POLLS; ++poll) {
+        uint32_t task_status = ahci_read(controller->mmio,
+                                         base + AHCI_PORT_TFD);
+        if ((task_status & (AHCI_PORT_TFD_BSY | AHCI_PORT_TFD_DRQ)) == 0U) {
+            ready = true;
+            break;
+        }
+        uint64_t now = pit_monotonic_ms();
+        if (now < ready_start ||
+            now - ready_start >= AHCI_COMMAND_TIMEOUT_MS) break;
+    }
+    if (!ready) {
+        (void)ahci_stop_port(controller->mmio, port);
+        return false;
+    }
     ahci_write(controller->mmio, base + AHCI_PORT_CI, 1U);
     uint64_t start = pit_monotonic_ms();
     bool completed = false;

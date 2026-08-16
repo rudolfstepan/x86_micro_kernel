@@ -122,8 +122,8 @@ Windows-Komplettweg lautet:
 ## SATA/AHCI ausführen
 
 Die generierte VMware-VM bindet das native Bootlaufwerk an `sata0:0` an. Das
-beigepackte Rettungs-Floppy ist standardmäßig getrennt und kann bei Bedarf in
-VMware manuell verbunden werden. QEMU
+beigepackte Rettungs-Floppy ist in der Standard-VM nicht als FDC eingetragen
+und kann bei Bedarf in VMware manuell hinzugefügt werden. QEMU
 behält für Regressionen standardmäßig IDE; der explizite AHCI-Lauf lautet:
 
 ```powershell

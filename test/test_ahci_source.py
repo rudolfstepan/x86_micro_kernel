@@ -35,6 +35,8 @@ class AhciProbeContractTests(unittest.TestCase):
         self.assertIn("byte_count_and_interrupt", source)
         self.assertIn("AHCI_PORT_CI", source)
         self.assertIn("AHCI_PORT_IS_TFES", source)
+        self.assertIn("AHCI_PORT_TFD_DRQ", source)
+        self.assertIn("AHCI_PORT_SERR", source)
         self.assertIn("AHCI_COMMAND_TIMEOUT_MS", source)
         self.assertIn("ahci_stop_port(controller->mmio, port)", source)
         self.assertIn("ahci_identify_word", source)
