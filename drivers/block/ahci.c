@@ -165,6 +165,43 @@ static bool ahci_build_identify_command(ahci_controller_info_t *controller,
     return true;
 }
 
+static uint16_t ahci_identify_word(const uint8_t *identify, uint32_t word) {
+    return (uint16_t)identify[word * 2U] |
+           ((uint16_t)identify[word * 2U + 1U] << 8U);
+}
+
+static bool ahci_parse_identify(ahci_controller_info_t *controller,
+                                size_t controller_index, uint32_t port) {
+    if (controller == NULL || controller_index >= AHCI_MAX_CONTROLLERS ||
+        port >= AHCI_MAX_PORTS) return false;
+    const uint8_t *identify = identify_buffers[controller_index][port];
+    uint64_t sectors = (uint64_t)ahci_identify_word(identify, 60U) |
+        ((uint64_t)ahci_identify_word(identify, 61U) << 16U);
+    uint64_t lba48 = (uint64_t)ahci_identify_word(identify, 100U) |
+        ((uint64_t)ahci_identify_word(identify, 101U) << 16U) |
+        ((uint64_t)ahci_identify_word(identify, 102U) << 32U) |
+        ((uint64_t)ahci_identify_word(identify, 103U) << 48U);
+    if ((ahci_identify_word(identify, 83U) & (1U << 10U)) != 0U)
+        sectors = lba48;
+    if (sectors == 0U || sectors > (UINT64_MAX / 512U)) return false;
+    uint32_t sector_size = 512U;
+    uint16_t sector_info = ahci_identify_word(identify, 106U);
+    if ((sector_info & (1U << 12U)) != 0U) {
+        uint32_t words = (uint32_t)ahci_identify_word(identify, 117U) |
+                         ((uint32_t)ahci_identify_word(identify, 118U) << 16U);
+        if (words != 256U) return false;
+    }
+    for (uint32_t index = 0U; index < 40U; index += 2U) {
+        controller->model[port][index] = (char)identify[54U + index + 1U];
+        controller->model[port][index + 1U] = (char)identify[54U + index];
+    }
+    controller->model[port][40] = '\0';
+    controller->sector_count[port] = sectors;
+    controller->sector_size[port] = sector_size;
+    controller->identify_valid_ports |= 1U << port;
+    return true;
+}
+
 static bool ahci_execute_identify(ahci_controller_info_t *controller,
                                   size_t controller_index, uint32_t port) {
     if (controller == NULL || controller->mmio == NULL ||
@@ -226,6 +263,7 @@ static bool ahci_initialize_controller(ahci_controller_info_t *controller,
     controller->version = ahci_read(mmio, 0x10U);
     controller->port_count = (uint8_t)port_limit;
     controller->dma_ready_ports = 0U;
+    controller->identify_valid_ports = 0U;
     uint32_t identify_ports = 0U;
     for (uint32_t port = 0U; port < port_limit && port < AHCI_MAX_PORTS;
          ++port) {
@@ -233,7 +271,8 @@ static bool ahci_initialize_controller(ahci_controller_info_t *controller,
         if ((sata_ports & bit) != 0U &&
             ahci_prepare_port(controller, controller_index, port) &&
             ahci_build_identify_command(controller, controller_index, port) &&
-            ahci_execute_identify(controller, controller_index, port))
+            ahci_execute_identify(controller, controller_index, port) &&
+            ahci_parse_identify(controller, controller_index, port))
             controller->dma_ready_ports |= bit;
         if ((controller->dma_ready_ports & bit) != 0U) identify_ports |= bit;
     }

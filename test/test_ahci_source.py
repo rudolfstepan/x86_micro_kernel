@@ -37,6 +37,10 @@ class AhciProbeContractTests(unittest.TestCase):
         self.assertIn("AHCI_PORT_IS_TFES", source)
         self.assertIn("AHCI_COMMAND_TIMEOUT_MS", source)
         self.assertIn("ahci_stop_port(controller->mmio, port)", source)
+        self.assertIn("ahci_identify_word", source)
+        self.assertIn("identify_valid_ports", source)
+        self.assertIn("sector_count", header)
+        self.assertIn("sector_size", header)
         self.assertNotIn("pci_set_bus_master", source)
 
 

@@ -76,6 +76,10 @@ typedef struct {
     uint32_t sata_ports;
     uint32_t version;
     uint32_t dma_ready_ports;
+    uint64_t sector_count[AHCI_MAX_PORTS];
+    uint32_t sector_size[AHCI_MAX_PORTS];
+    char model[AHCI_MAX_PORTS][41];
+    uint32_t identify_valid_ports;
     uint8_t bus;
     uint8_t slot;
     uint8_t function;
