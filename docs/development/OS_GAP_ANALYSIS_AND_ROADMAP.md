@@ -225,7 +225,7 @@ und 10 verbindlich.
         kritische FAT12-Dateien, damit ein Lesefehler oder Defektsektor nicht
         nur erkannt, sondern aus einer validierten Kopie rekonstruiert werden
         kann; Auswahl über CRC, Sequenz und Dateisysteminvarianten
-      - [ ] S0.3c-6f4 Geordnete FAT12-Schreibtransaktionen für Dateiinhalt,
+      - [x] S0.3c-6f4 Geordnete FAT12-Schreibtransaktionen für Dateiinhalt,
         FAT-Kopien und Verzeichniseinträge mit Readback-Verifikation; nach
         unklarem Abschluss ausschließlich Recovery oder `ONLINE_RO`, niemals
         blindes Wiederholen eines Writes

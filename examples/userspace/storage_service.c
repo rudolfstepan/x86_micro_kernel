@@ -3,9 +3,19 @@
 #include "x86os.h"
 
 #define FORMAT_FAT12_SECTORS 2880U
-#define FORMAT_FAT12_RESERVED 85U
+#define FORMAT_FAT12_JOURNAL_ENTRIES 64U
+#define FORMAT_FAT12_JOURNAL_SECTORS \
+    (2U + FORMAT_FAT12_JOURNAL_ENTRIES * 2U)
 #define FORMAT_FAT12_REMAP_SPARES 8U
 #define FORMAT_FAT12_REPLICA_SECTORS 54U
+#define FORMAT_FAT12_SAFETY_SECTORS \
+    (FORMAT_FAT12_JOURNAL_SECTORS + 3U + FORMAT_FAT12_REMAP_SPARES + \
+     FORMAT_FAT12_REPLICA_SECTORS)
+#define FORMAT_FAT12_RESERVED (1U + FORMAT_FAT12_SAFETY_SECTORS)
+#define FORMAT_FAT12_LAYOUT_BASE \
+    (FORMAT_FAT12_RESERVED - FORMAT_FAT12_SAFETY_SECTORS)
+#define FORMAT_FAT12_REMAP_BASE \
+    (FORMAT_FAT12_LAYOUT_BASE + FORMAT_FAT12_JOURNAL_SECTORS)
 #define FORMAT_FAT12_FAT_SECTORS 9U
 #define FORMAT_FAT12_ROOT_SECTORS 14U
 #define FORMAT_FAT12_DATA_START (FORMAT_FAT12_RESERVED + \
@@ -64,7 +74,8 @@ static uint32_t format_crc32(const void *data, uint32_t length) {
 
 static void format_metadata_sector(uint8_t *sector, uint32_t sector_number) {
     format_fill(sector, 0U, X86OS_STORAGE_BLOCK_SIZE);
-    if (sector_number == 2U || sector_number == 3U) {
+    if (sector_number == FORMAT_FAT12_LAYOUT_BASE ||
+        sector_number == FORMAT_FAT12_LAYOUT_BASE + 1U) {
         format_journal_header_t header = {
             .magic = 0x524A3132U, .version = 2U,
             .header_size = sizeof(format_journal_header_t),
@@ -74,7 +85,8 @@ static void format_metadata_sector(uint8_t *sector, uint32_t sector_number) {
         header.crc32 = format_crc32(&header, sizeof(header));
         for (uint32_t index = 0U; index < sizeof(header); ++index)
             sector[index] = ((const uint8_t *)&header)[index];
-    } else if (sector_number == 20U || sector_number == 21U) {
+    } else if (sector_number == FORMAT_FAT12_REMAP_BASE ||
+               sector_number == FORMAT_FAT12_REMAP_BASE + 1U) {
         format_remap_header_t header = {
             .magic = 0x52504D31U, .version = 1U,
             .entry_size = 16U, .media_fingerprint = FORMAT_FAT12_VOLUME_ID,
@@ -131,15 +143,17 @@ static int format_fat12(uint32_t resource) {
     if (x86os_drive_info(resource, &drive) <= 0 ||
         drive.type != X86OS_DRIVE_FDD)
         return -22;
-    if (FORMAT_FAT12_RESERVED < 23U + FORMAT_FAT12_REMAP_SPARES +
-                                FORMAT_FAT12_REPLICA_SECTORS)
+    if (FORMAT_FAT12_RESERVED <= FORMAT_FAT12_SAFETY_SECTORS)
         return -22;
 
     /* Write the journal/remap reservation and filesystem contents first. */
     format_fill(sector, 0U, sizeof(sector));
     for (uint32_t index = 1U; index < FORMAT_FAT12_SECTORS; ++index) {
         if (index == FORMAT_FAT12_RESERVED || index == FORMAT_FAT12_DATA_START ||
-            index == 2U || index == 3U || index == 20U || index == 21U) {
+            index == FORMAT_FAT12_LAYOUT_BASE ||
+            index == FORMAT_FAT12_LAYOUT_BASE + 1U ||
+            index == FORMAT_FAT12_REMAP_BASE ||
+            index == FORMAT_FAT12_REMAP_BASE + 1U) {
             format_metadata_sector(sector, index);
         } else {
             format_fill(sector, 0U, sizeof(sector));

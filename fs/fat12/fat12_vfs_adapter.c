@@ -644,12 +644,28 @@ static int fat12_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
         return VFS_ERR_NO_SPACE;
     }
     bool ok = fat12_ensure_chain(&start, required);
+    bool fat_changed = memcmp(original_fat, fat12->fat, fat_bytes) != 0;
+    bool ordered_transaction = false;
+    bool transaction_required = ok && fat12->journal_enabled;
+    if (transaction_required) {
+        uint32_t mutation_start = entry.file_size < offset
+            ? entry.file_size : offset;
+        uint32_t first_sector = mutation_start / FAT12_SECTOR_SIZE;
+        uint32_t last_sector = (end - 1U) / FAT12_SECTOR_SIZE;
+        uint32_t maximum_sectors = last_sector - first_sector + 1U + 1U;
+        if (fat_changed)
+            maximum_sectors += fat12->boot_sector.fat_count *
+                               fat12->boot_sector.sectors_per_fat;
+        if (fat12_is_critical_name((char*)handle->name))
+            maximum_sectors += FAT12_REPLICA_SLOT_SECTORS;
+        ordered_transaction = fat12_transaction_begin(maximum_sectors);
+        ok = ordered_transaction;
+    }
     if (ok && offset > entry.file_size) {
         ok = fat12_zero_range(start, entry.file_size,
                               offset - entry.file_size);
     }
     if (ok) ok = fat12_write_bytes(start, offset, buffer, size);
-    bool fat_changed = memcmp(original_fat, fat12->fat, fat_bytes) != 0;
     if (ok && fat_changed) ok = fat12_sync_fat();
     if (ok) {
         entry.first_cluster_low = start;
@@ -661,8 +677,9 @@ static int fat12_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
         ok = fat12_write_entry(&location, &entry);
     }
     if (!ok) {
+        if (ordered_transaction) fat12_transaction_fail();
         memcpy(fat12->fat, original_fat, fat_bytes);
-        if (fat_changed) (void)fat12_sync_fat();
+        if (fat_changed && !transaction_required) (void)fat12_sync_fat();
         free(original_fat);
         return VFS_ERR_IO;
     }
@@ -685,8 +702,12 @@ static int fat12_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
             fat12_publish_critical_replica((char*)handle->name, replica,
                                            handle->size);
         free(replica);
-        if (!published) return VFS_ERR_IO;
+        if (!published) {
+            if (ordered_transaction) fat12_transaction_fail();
+            return VFS_ERR_IO;
+        }
     }
+    if (ordered_transaction && !fat12_transaction_commit()) return VFS_ERR_IO;
     return (int)size;
 }
 

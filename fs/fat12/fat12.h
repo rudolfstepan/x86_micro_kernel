@@ -27,6 +27,11 @@
 #define FAT12_FREE_CLUSTER          0x000
 #define FAT12_RESERVED_CLUSTER      0x001
 #define FAT12_DEFECT_CONFIRM_READS  3U
+#define FAT12_SAFETY_RESERVED_SECTORS \
+    (2U + FAT12_JOURNAL_MAX_ENTRIES * 2U + 3U + \
+     FAT12_REMAP_SPARE_COUNT + FAT12_REPLICA_RESERVED_SECTORS)
+#define FAT12_MIN_REIST_RESERVED_SECTORS \
+    (1U + FAT12_SAFETY_RESERVED_SECTORS)
 
 // File Attributes
 #define FILE_ATTR_READONLY          0x01
@@ -117,6 +122,8 @@ typedef struct {
     fat12_remap_table_t remap;
     bool replica_enabled;
     fat12_replica_t replicas[FAT12_REPLICA_FILE_COUNT];
+    bool transaction_active;
+    bool write_fenced;
 } fat12_t;
 #pragma pack(pop)
 
@@ -171,5 +178,8 @@ bool fat12_publish_critical_replica(const char *name, const void *data,
                                     size_t length);
 bool fat12_read_critical_replica(const char *name, void *output,
                                  size_t capacity, size_t *length_out);
+bool fat12_transaction_begin(uint32_t maximum_unique_sectors);
+bool fat12_transaction_commit(void);
+void fat12_transaction_fail(void);
 
 #endif // FAT12_H

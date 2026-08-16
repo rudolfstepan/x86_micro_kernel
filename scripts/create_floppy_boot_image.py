@@ -90,7 +90,7 @@ def create_floppy_image(stage1: bytes, stage2: bytes, kernel: bytes,
     # hybrid image which the BIOS can boot and the kernel can mount as A:.
     reserved_sectors = kernel_lba + sectors_for(len(kernel))
     if reist_fat12:
-        reserved_sectors = max(reserved_sectors + 62, 85)
+        reserved_sectors = max(reserved_sectors + 195, 196)
         if reserved_sectors >= FLOPPY_SECTORS:
             raise ValueError("REIST FAT12 journal leaves no data area")
     sectors_per_fat = 3
@@ -101,6 +101,8 @@ def create_floppy_image(stage1: bytes, stage2: bytes, kernel: bytes,
                      FLOPPY_SECTORS, 0xF0, sectors_per_fat, 18, 2)
     struct.pack_into("<II", image, 28, 0, 0)
     if reist_fat12:
+        layout_base = reserved_sectors - 195
+        remap_base = layout_base + 130
         image[54:62] = b"REIST12 "
         struct.pack_into("<I", image, 39, 0x52454953)
         journal = bytearray(SECTOR_SIZE)
@@ -108,15 +110,17 @@ def create_floppy_image(stage1: bytes, stage2: bytes, kernel: bytes,
                          0x524A3132, 2, 32, 0x52454953, 1, 0, 0, 0)
         struct.pack_into("<I", journal, 28,
                          binascii.crc32(journal) & 0xFFFFFFFF)
-        image[2 * SECTOR_SIZE:3 * SECTOR_SIZE] = journal
-        image[3 * SECTOR_SIZE:4 * SECTOR_SIZE] = journal
+        image[layout_base * SECTOR_SIZE:(layout_base + 1) * SECTOR_SIZE] = journal
+        image[(layout_base + 1) * SECTOR_SIZE:
+              (layout_base + 2) * SECTOR_SIZE] = journal
         remap = bytearray(SECTOR_SIZE)
         struct.pack_into("<IHHIQIII", remap, 0,
                          0x52504D31, 1, 16, 0x52454953, 1, 0, 0, 0)
         struct.pack_into("<I", remap, 28,
                          binascii.crc32(remap) & 0xFFFFFFFF)
-        image[20 * SECTOR_SIZE:21 * SECTOR_SIZE] = remap
-        image[21 * SECTOR_SIZE:22 * SECTOR_SIZE] = remap
+        image[remap_base * SECTOR_SIZE:(remap_base + 1) * SECTOR_SIZE] = remap
+        image[(remap_base + 1) * SECTOR_SIZE:
+              (remap_base + 2) * SECTOR_SIZE] = remap
     root_sectors = (root_entries * 32 + SECTOR_SIZE - 1) // SECTOR_SIZE
     if reserved_sectors + fat_count * sectors_per_fat + root_sectors >= FLOPPY_SECTORS:
         raise ValueError("kernel leaves no usable FAT12 data area on the floppy")

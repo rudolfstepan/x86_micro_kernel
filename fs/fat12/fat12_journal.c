@@ -127,11 +127,13 @@ bool fat12_journal_record(fat12_journal_t *journal, uint32_t target_sector,
         ? journal->data_start_sector + FAT12_JOURNAL_MAX_ENTRIES * 2U : 0U;
     if (journal == NULL || old_sector == NULL || read == NULL || write == NULL ||
         journal->header.state != FAT12_JOURNAL_ACTIVE ||
-        journal->header.entry_count >= FAT12_JOURNAL_MAX_ENTRIES ||
         target_sector == journal->primary_header_sector ||
         target_sector == journal->mirror_header_sector ||
         (target_sector >= journal->data_start_sector &&
          target_sector < journal_end)) return false;
+    for (uint32_t index = 0U; index < journal->header.entry_count; ++index)
+        if (journal->entries[index].target_sector == target_sector) return true;
+    if (journal->header.entry_count >= FAT12_JOURNAL_MAX_ENTRIES) return false;
     uint32_t index = journal->header.entry_count;
     fat12_journal_entry_t *entry = &journal->entries[index];
     entry->target_sector = target_sector;

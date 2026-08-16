@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3c-6f"
-active_id = "S0.3c-6f4"
+active_id = "S0.3c-6f5"
 
 [policy]
 one_package_per_run = true
@@ -243,10 +243,14 @@ allowed_files = [
   "fs/fat12/fat12_vfs_adapter.c",
   "examples/userspace/storage_service.c",
   "scripts/create_floppy_boot_image.py",
+  "examples/userspace/storage_service.c",
+  "scripts/create_floppy_boot_image.py",
   "test/test_fat12_replica.py",
   "test/test_fat12_replica_host.c",
   "test/test_fat12_critical.py",
   "test/test_fs_host.py",
+  "test/test_fat12_tools.py",
+  "test/test_floppy_boot_image.py",
   "test/test_fat12_tools.py",
   "test/test_floppy_boot_image.py",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
@@ -288,7 +292,7 @@ evidence = [
 
 [[packages]]
 id = "S0.3c-6f4"
-status = "active"
+status = "done"
 risk = "critical"
 title = "Ordered FAT12 file transactions"
 scope = "Make FAT12 file mutation ordering explicit and bounded: verified data sectors, both FAT copies, directory entry, critical replica publication, then journal CLEAN. A failed or ambiguous stage must keep recovery authoritative and prevent blind retry."
@@ -330,6 +334,58 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: order FAT12 file transactions"
+evidence = [
+  "python test/test_fat12_journal.py -q",
+  "python test/test_fat12_maintenance.py -q",
+  "python test/test_fs_host.py -q",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode fdd-hotplug"
+]
+
+[[packages]]
+id = "S0.3c-6f5"
+status = "active"
+risk = "critical"
+title = "Deterministic FAT12 persistence fault matrix"
+scope = "Add deterministic host fault injection at every FAT12 journal, remap and replica persistence barrier. Cover partial writes, one and two corrupt headers, bad data/FAT/root sectors, media removal and interrupted transactions; verify old-or-new consistency, write fencing and independent progress."
+allowed_files = [
+  "fs/fat12/fat12_journal.c",
+  "fs/fat12/fat12_remap.c",
+  "fs/fat12/fat12_replica.c",
+  "test/test_fat12_journal_host.c",
+  "test/test_fat12_remap_host.c",
+  "test/test_fat12_replica_host.c",
+  "test/test_fat12_fault_matrix.py",
+  "test/test_fs_host.py",
+  "scripts/run_qemu_fdd_hotplug.py",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "each injected persistence barrier has a stable bounded identifier",
+  "an injected partial write is never reported as success",
+  "two invalid redundant headers fail closed",
+  "recovery exposes only the complete old or complete new state",
+  "media removal terminates within a finite deadline",
+  "fault tests never mutate the reference image"
+]
+targeted_tests = [
+  "python test/test_fat12_fault_matrix.py -q",
+  "python test/test_fs_host.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode fdd-hotplug"
+]
+stop_conditions = [
+  "a persistence barrier cannot be injected deterministically",
+  "a fault can publish partially validated state",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "test: add FAT12 persistence fault matrix"
 evidence = []
 
 [[packages]]

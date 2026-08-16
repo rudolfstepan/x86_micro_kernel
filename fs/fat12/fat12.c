@@ -15,6 +15,7 @@ directory_entry* current_dir = NULL;
 static directory_entry current_dir_storage;
 uint8_t* buffer = NULL;
 uint8_t current_fdd_drive = 0;
+static uint64_t fat12_journal_sequence = 1U;
 
 static bool fdc_read_logical_range(uint8_t drive, uint32_t logical_sector,
                                    uint32_t count, uint8_t *output);
@@ -33,29 +34,46 @@ static bool fat12_journal_write_sector(void *context, uint32_t sector,
     return fdc_write_logical_range(current_fdd_drive, sector, 1U, buffer);
 }
 
+static bool fat12_replica_read_sector(void *context, uint32_t sector,
+                                      void *sector_buffer) {
+    (void)context;
+    return fat12_read_logical_sectors(sector, 1U, sector_buffer);
+}
+
+static bool fat12_replica_write_sector(void *context, uint32_t sector,
+                                       const void *sector_buffer) {
+    (void)context;
+    return fat12_write_logical_sectors(sector, 1U, sector_buffer);
+}
+
 static bool fat12_journal_prepare(void) {
     if (!fat12 ||
-        fat12->boot_sector.reserved_sectors < 23U + FAT12_REMAP_SPARE_COUNT +
-                                              FAT12_REPLICA_RESERVED_SECTORS ||
+        fat12->boot_sector.reserved_sectors <
+            FAT12_MIN_REIST_RESERVED_SECTORS ||
         memcmp(fat12->boot_sector.fs_type, "REIST12", 7U) != 0 ||
         fat12->boot_sector.volume_id == 0U) return true;
-    if (!fat12_journal_format(&fat12->journal, 2U, 3U, 4U,
+    uint32_t replica_base = fat12->boot_sector.reserved_sectors -
+                            FAT12_REPLICA_RESERVED_SECTORS;
+    uint32_t remap_base = replica_base - FAT12_REMAP_SPARE_COUNT - 3U;
+    uint32_t journal_base = remap_base -
+        (2U + FAT12_JOURNAL_MAX_ENTRIES * 2U);
+    if (!fat12_journal_format(&fat12->journal, journal_base,
+                              journal_base + 1U, journal_base + 2U,
                               fat12->boot_sector.volume_id)) return false;
     uint8_t primary[FAT12_SECTOR_SIZE], mirror[FAT12_SECTOR_SIZE];
-    bool primary_ok = fdc_read_logical_range(current_fdd_drive, 2U, 1U,
-                                             primary);
-    bool mirror_ok = fdc_read_logical_range(current_fdd_drive, 3U, 1U,
-                                            mirror);
+    bool primary_ok = fdc_read_logical_range(current_fdd_drive,
+        journal_base, 1U, primary);
+    bool mirror_ok = fdc_read_logical_range(current_fdd_drive,
+        journal_base + 1U, 1U, mirror);
     if (!primary_ok || !mirror_ok || !fat12_journal_load(&fat12->journal,
             fat12_journal_read_sector, NULL)) return false;
     if (!fat12_journal_recover(&fat12->journal, fat12_journal_read_sector,
                                fat12_journal_write_sector, NULL)) return false;
-    if (!fat12_remap_format(&fat12->remap, 20U, 21U, 22U,
+    if (!fat12_remap_format(&fat12->remap, remap_base, remap_base + 1U,
+                            remap_base + 2U,
                             fat12->boot_sector.volume_id)) return false;
     if (!fat12_remap_load(&fat12->remap, fat12_journal_read_sector, NULL))
         return false;
-    uint32_t replica_base = fat12->boot_sector.reserved_sectors -
-                            FAT12_REPLICA_RESERVED_SECTORS;
     for (uint32_t slot = 0U; slot < FAT12_REPLICA_FILE_COUNT; ++slot) {
         uint32_t primary = replica_base + slot * FAT12_REPLICA_SLOT_SECTORS;
         if (!fat12_replica_init(&fat12->replicas[slot], primary,
@@ -65,6 +83,9 @@ static bool fat12_journal_prepare(void) {
     fat12->journal_enabled = true;
     fat12->remap_enabled = true;
     fat12->replica_enabled = true;
+    fat12_journal_sequence = fat12->journal.header.sequence;
+    fat12->transaction_active = false;
+    fat12->write_fenced = false;
     return true;
 }
 
@@ -1212,7 +1233,7 @@ bool fat12_read_logical_sectors(uint32_t logical_sector, uint32_t count,
 
 bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
                                  const void* input) {
-    if (!fat12 || !input || count == 0) return false;
+    if (!fat12 || !input || count == 0 || fat12->write_fenced) return false;
     uint32_t total = fat12->boot_sector.total_sectors ?
         fat12->boot_sector.total_sectors :
         fat12->boot_sector.total_sectors_large;
@@ -1222,11 +1243,8 @@ bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
     if (!fat12->journal_enabled)
         return fdc_write_logical_range(current_fdd_drive, logical_sector, count,
                                        (const uint8_t*)input);
-    static uint64_t journal_sequence = 1U;
-    if (++journal_sequence == 0U) return false;
-    if (!fat12_journal_begin(&fat12->journal, journal_sequence,
-                             fat12_journal_read_sector,
-                             fat12_journal_write_sector, NULL)) return false;
+    bool owns_transaction = !fat12->transaction_active;
+    if (owns_transaction && !fat12_transaction_begin(count)) return false;
     const uint8_t *bytes = (const uint8_t*)input;
     for (uint32_t index = 0U; index < count; ++index) {
         uint8_t old_sector[FAT12_SECTOR_SIZE];
@@ -1242,12 +1260,44 @@ bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
                                      bytes + index * FAT12_SECTOR_SIZE) ||
             !fdc_read_logical_range(current_fdd_drive, physical, 1U, verify) ||
             memcmp(bytes + index * FAT12_SECTOR_SIZE, verify,
-                   FAT12_SECTOR_SIZE) != 0)
+                   FAT12_SECTOR_SIZE) != 0) {
+            fat12_transaction_fail();
             return false;
+        }
     }
-    return fat12_journal_commit(&fat12->journal, fat12_journal_read_sector,
-                                fat12_journal_write_sector,
-                                NULL);
+    return !owns_transaction || fat12_transaction_commit();
+}
+
+bool fat12_transaction_begin(uint32_t maximum_unique_sectors) {
+    if (!fat12 || !fat12->journal_enabled || fat12->transaction_active ||
+        fat12->write_fenced || maximum_unique_sectors == 0U ||
+        maximum_unique_sectors > FAT12_JOURNAL_MAX_ENTRIES ||
+        fat12_journal_sequence == UINT64_MAX) return false;
+    ++fat12_journal_sequence;
+    if (!fat12_journal_begin(&fat12->journal, fat12_journal_sequence,
+            fat12_journal_read_sector, fat12_journal_write_sector, NULL)) {
+        fat12->write_fenced = true;
+        return false;
+    }
+    fat12->transaction_active = true;
+    return true;
+}
+
+bool fat12_transaction_commit(void) {
+    if (!fat12 || !fat12->transaction_active || fat12->write_fenced)
+        return false;
+    if (!fat12_journal_commit(&fat12->journal, fat12_journal_read_sector,
+                              fat12_journal_write_sector, NULL)) {
+        fat12_transaction_fail();
+        return false;
+    }
+    fat12->transaction_active = false;
+    return true;
+}
+
+void fat12_transaction_fail(void) {
+    if (!fat12) return;
+    fat12->write_fenced = true;
 }
 
 bool fat12_sync_fat(void) {
@@ -1342,7 +1392,7 @@ bool fat12_publish_critical_replica(const char *name, const void *data,
         length == 0U || length > FAT12_REPLICA_MAX_BYTES) return false;
     fat12_replica_t *replica = &fat12->replicas[slot];
     uint64_t sequence = 1U;
-    if (fat12_replica_load(replica, fat12_journal_read_sector, NULL)) {
+    if (fat12_replica_load(replica, fat12_replica_read_sector, NULL)) {
         sequence = replica->primary_header.sequence >
                    replica->mirror_header.sequence
             ? replica->primary_header.sequence : replica->mirror_header.sequence;
@@ -1350,7 +1400,7 @@ bool fat12_publish_critical_replica(const char *name, const void *data,
         ++sequence;
     }
     return fat12_replica_publish_persistent(replica, data, length, sequence,
-        fat12_journal_read_sector, fat12_journal_write_sector, NULL);
+        fat12_replica_read_sector, fat12_replica_write_sector, NULL);
 }
 
 bool fat12_read_critical_replica(const char *name, void *output,
@@ -1359,7 +1409,7 @@ bool fat12_read_critical_replica(const char *name, void *output,
     if (!fat12 || !fat12->replica_enabled || slot < 0 || output == NULL ||
         length_out == NULL) return false;
     fat12_replica_t *replica = &fat12->replicas[slot];
-    return fat12_replica_load(replica, fat12_journal_read_sector, NULL) &&
+    return fat12_replica_load(replica, fat12_replica_read_sector, NULL) &&
            fat12_replica_select(replica, output, capacity, length_out);
 }
 

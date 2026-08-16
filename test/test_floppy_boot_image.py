@@ -45,13 +45,14 @@ class FloppyBootImageTests(unittest.TestCase):
         image = create_floppy_image(
             stage1, bytes(2048), minimal_kernel(), reist_fat12=True
         )
-        primary = image[2 * 512:3 * 512]
-        mirror = image[3 * 512:4 * 512]
+        reserved = struct.unpack_from("<H", image, 14)[0]
+        layout_base = reserved - 195
+        primary = image[layout_base * 512:(layout_base + 1) * 512]
+        mirror = image[(layout_base + 1) * 512:(layout_base + 2) * 512]
         magic, version = struct.unpack_from("<IH", primary)
         self.assertEqual((magic, version), (0x524A3132, 2))
         self.assertEqual(primary, mirror)
-        reserved = struct.unpack_from("<H", image, 14)[0]
-        self.assertGreaterEqual(reserved, 85)
+        self.assertGreaterEqual(reserved, 196)
 
 
 if __name__ == "__main__":
