@@ -1180,11 +1180,14 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
 
 #### R2.3 Blockgeräte und Partitionen — L
 
-- ATA und FDD hinter eine gemeinsame Blockgeräte-API legen.
-- MBR-Partitionen als Child-Geräte erzeugen und mehrere Partitionen mounten.
-- Bereichsprüfung und `flush` zentral erzwingen.
-- ATA LBA48 und gebündelte PIO-Transfers ergänzen.
-- GPT, AHCI und NVMe als getrennte Folgepakete behandeln.
+- [x] ATA, FDD und AHCI hinter eine gemeinsame Blockgeräte-API legen.
+- [x] MBR-Partitionen als Child-Geräte erzeugen und mehrere Partitionen
+  mounten.
+- [x] Bereichsprüfung und `flush` zentral erzwingen.
+- [x] ATA-LBA48 über IDENTIFY und PIO-EXT-Einsektorbefehle ergänzen.
+- [ ] Gebündelte, fest begrenzte ATA-PIO-Transfers ergänzen.
+- [x] GPT, AHCI und NVMe als getrennte Folgepakete behandeln; GPT und NVMe
+  bleiben bewusst offen.
 
 **Teilstatus 16. August 2026:** Die transportneutrale Einsektor-API umfasst
 ATA, FDD und AHCI. Primäre MBR-Einträge werden nach Signatur-, Bootflag-,
@@ -1194,8 +1197,11 @@ Child-I/O wird vor dem Zugriff auf einen validierten Parent-LBA übersetzt;
 Whole-Disk-Parents mit Kindern werden nicht zusätzlich gemountet. FAT32 und
 EXT2 können dadurch partitionierte ATA-/AHCI-Medien über denselben Vertrag
 mounten. Der QEMU-AHCI-Gastlauf mit zwei erkannten MBR-Children, FAT32-Root,
-Datei-I/O und vollständigem `TEST_OK` ist abgenommen. ATA-LBA48 und gebündelte
-PIO-Transfers bleiben offen; GPT bleibt ausdrücklich ein Folgepaket.
+Datei-I/O und vollständigem `TEST_OK` ist abgenommen. ATA-LBA48 validiert die
+IDENTIFY-Fähigkeit und Kapazität, verwendet oberhalb der LBA28-Grenze
+READ/WRITE PIO EXT sowie FLUSH CACHE EXT und lehnt nicht unterstützte hohe
+LBAs vor Port-I/O ab. Gebündelte PIO-Transfers bleiben offen; GPT bleibt
+ausdrücklich ein Folgepaket.
 
 #### R2.4 SATA/AHCI-Unterstützung — XL
 
@@ -1203,40 +1209,40 @@ SATA wird als AHCI-Folgepaket umgesetzt. Der bestehende ATA-PIO- und FDD-Pfad
 bleibt während jedes Schritts unverändert funktionsfähig. Jeder Schritt ist
 einzeln abnahmefähig; ein fehlgeschlagener Schritt blockiert die folgenden.
 
-1. **Blockgerätevertrag festschreiben:** Eine feste, transportneutrale API für
+1. [x] **Blockgerätevertrag festschreiben:** Eine feste, transportneutrale API für
    `read`, `write`, `flush`, Sektorgröße, Kapazität, Status und Fehler-Fence
    definieren. Keine VFS- oder Userspace-Schicht darf mehr ATA-Ports direkt
    annehmen.
-2. **ATA/FDD migrieren:** Bestehende ATA-PIO- und FDD-Operationen hinter den
+2. [x] **ATA/FDD migrieren:** Bestehende ATA-PIO- und FDD-Operationen hinter den
    Vertrag legen. Alte interne Aufrufer bleiben zunächst als Kompatibilitäts-
    wrapper erhalten. Hosttests müssen identische Fehler- und Boundsregeln
    nachweisen.
-3. **PCI-AHCI erkennen:** PCI-Klasse `01/06/01` und BAR5 sicher validieren;
+3. [x] **PCI-AHCI erkennen:** PCI-Klasse `01/06/01` und BAR5 sicher validieren;
    32-/64-Bit-BARs, nicht unterstützte BAR-Typen, fehlende Ports und
    Controller-Reset-Timeouts fail-closed behandeln. Keine MMIO-Adresse aus
    ungeprüften PCI-Daten verwenden.
-4. **AHCI-Speicher reservieren:** Command List, FIS-Bereich und Command Tables
+4. [x] **AHCI-Speicher reservieren:** Command List, FIS-Bereich und Command Tables
    aus festen, DMA-tauglichen Bereichen zuweisen. Alignment, physische Grenzen,
    Cache-/Ownership-Regeln und maximal einen aktiven Auftrag pro Port prüfen.
-5. **Port initialisieren:** `GHC.HR`, `PxCMD`, `PxSSTS`, `PxSIG` und
+5. [x] **Port initialisieren:** `GHC.HR`, `PxCMD`, `PxSSTS`, `PxSIG` und
    `PxIS/PxIE` mit monotonen Deadlines behandeln. Nur aktive SATA-Ports mit
    gültigem Gerät werden registriert; Linkfehler oder Hängestatus führen zur
    Port-Quarantäne.
-6. **IDENTIFY DEVICE:** Feste ATA-Identifikation über AHCI ausführen, Modell,
+6. [x] **IDENTIFY DEVICE:** Feste ATA-Identifikation über AHCI ausführen, Modell,
    LBA28/LBA48-Kapazität und 512-Byte-Sektorvertrag validieren. Kapazitäts-
    überläufe und Geräte mit nicht unterstützter Sektorgröße werden abgelehnt.
-7. **Sektor-I/O:** `READ DMA EXT`/`WRITE DMA EXT` beziehungsweise den
+7. [x] **Sektor-I/O:** `READ DMA EXT`/`WRITE DMA EXT` beziehungsweise den
    unterstützten AHCI-Befehl mit genau einem begrenzten Command ausführen.
    PRDT-Längen, LBA-Bereich, Busy/DRQ/TFD und Completion-Timeout vor und nach
    jedem Auftrag prüfen; Writes erhalten Readback und Flush-Verifikation.
-8. **Storage-Service anbinden:** SATA-Ressourcen in Fingerprint, Quarantäne,
+8. [x] **Storage-Service anbinden:** SATA-Ressourcen in Fingerprint, Quarantäne,
    Maintenance-Lease, Storage-Request-Pool und Medien-Reintegration aufnehmen.
    ATA-, SATA- und FDD-Fehler dürfen keine unterschiedlichen Sicherheitsregeln
    umgehen.
-9. **VFS und Partitionen anbinden:** MBR-Child-Geräte zuerst, GPT erst in einem
+9. [x] **VFS und Partitionen anbinden:** MBR-Child-Geräte zuerst, GPT erst in einem
    separaten Folgepaket. FAT32/EXT2-Mounts auf SATA testen; FAT12 bleibt auf
    FDD/Superfloppy begrenzt, sofern kein expliziter Layoutvertrag ergänzt wird.
-10. **Abnahme und Fault-Injection:** Hosttests für Register-, Bounds-, DMA-,
+10. [ ] **Abnahme und Fault-Injection:** Hosttests für Register-, Bounds-, DMA-,
     Timeout- und Quarantänefälle; anschließend QEMU-AHCI, VMware-AHCI und, wenn
     verfügbar, reale SATA-Hardware. Nach jedem Fehler müssen Fence, Diagnose und
     unabhängiger Prozessfortschritt nachgewiesen werden.
@@ -1249,8 +1255,10 @@ Regressionstests bleiben vollständig grün. Ohne reale oder emulierte AHCI-
 Laufzeitabnahme gilt SATA nur als Quellcode-Unterstützung, nicht als
 unterstützte Plattform.
 
-**Arbeitsstand 16. August 2026:** Schritt 1 und der sichere Probeanteil der
-Schritte 3/5 sind als Zwischenstand umgesetzt.
+**Arbeitsstand 16. August 2026:** Die Implementierungsschritte 1 bis 9 sind
+umgesetzt. Schritt 10 ist für QEMU einschließlich Timeout-, TFES- und TFD-
+Injektion sowie für den normalen VMware-AHCI-Boot belegt. Offen bleiben die
+reproduzierbare VMware-Fault-Injection und ein Lauf auf realer SATA-Hardware.
 `drivers/block/block_device.[ch]` bietet einen festen,
 transportneutralen Einsektor-Vertrag mit Bereichsprüfung, Read, Write und
 Flush. ATA-PIO und FDD werden darüber als bestehende Backends angesprochen;

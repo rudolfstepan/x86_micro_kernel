@@ -10,6 +10,9 @@
 
 #define ATA_READ_SECTORS    0x20               // Read sectors command
 #define ATA_WRITE_SECTORS   0x30               // Write sectors command
+#define ATA_READ_SECTORS_EXT 0x24              // 48-bit PIO read
+#define ATA_WRITE_SECTORS_EXT 0x34             // 48-bit PIO write
+#define ATA_FLUSH_CACHE_EXT  0xEA
 #define ATA_IDENTIFY        0xEC               // Identify command
 #define ATA_PRIMARY_IO      0x1F0              // Base I/O port for the primary ATA bus
 #define ATA_SECONDARY_IO    0x170              // Base I/O port for the secondary ATA bus

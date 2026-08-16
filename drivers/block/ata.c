@@ -405,7 +405,12 @@ static void ata_soft_reset(unsigned short base, bool is_master) {
 */
 static bool ata_read_sector_impl(unsigned short base, unsigned int lba,
                                  void* buffer, bool is_master) {
-    if (buffer == NULL || lba >= ATA_LBA28_LIMIT ||
+    int resource = ata_resource_index(base, is_master);
+    drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
+    bool use_lba48 = lba >= ATA_LBA28_LIMIT;
+    if (buffer == NULL ||
+        (use_lba48 && (drive == NULL || !drive->lba48_supported)) ||
+        (drive != NULL && lba >= drive->sectors) ||
         (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) {
         return false;
     }
@@ -440,8 +445,9 @@ static bool ata_read_sector_impl(unsigned short base, unsigned int lba,
     //printf("  Step 1: Drive ready OK\n");
 
     // Set the drive/head register for LBA mode FIRST (before other registers)
-    unsigned char drive_head = 0xE0 | ((lba >> 24) & 0x0F); // LBA mode with upper LBA bits
-    drive_head |= is_master ? 0x00 : 0x10; // 0x00 for master, 0x10 for slave
+    unsigned char drive_head = use_lba48 ? 0x40U :
+        (unsigned char)(0xE0U | ((lba >> 24) & 0x0FU));
+    drive_head |= is_master ? 0x00U : 0x10U;
     //printf("  Step 2: Selecting drive (drive_head=0x%02X, is_master=%d)...\n", drive_head, is_master);
     outb(ATA_DRIVE_HEAD(base), drive_head);
     
@@ -460,6 +466,12 @@ static bool ata_read_sector_impl(unsigned short base, unsigned int lba,
     
     // Set up sector count and LBA registers
     //printf("  Step 2: Setting up LBA registers...\n");
+    if (use_lba48) {
+        outb(ATA_SECTOR_CNT(base), 0U);
+        outb(ATA_LBA_LOW(base), (unsigned char)(lba >> 24U));
+        outb(ATA_LBA_MID(base), 0U);
+        outb(ATA_LBA_HIGH(base), 0U);
+    }
     outb(ATA_SECTOR_CNT(base), 1); // Read 1 sector
     outb(ATA_LBA_LOW(base), (unsigned char)(lba & 0xFF));
     outb(ATA_LBA_MID(base), (unsigned char)((lba >> 8) & 0xFF));
@@ -468,7 +480,8 @@ static bool ata_read_sector_impl(unsigned short base, unsigned int lba,
 
     // Send the read command
     //printf("  Step 3: Sending READ command...\n");
-    outb(ATA_COMMAND(base), ATA_READ_SECTORS);
+    outb(ATA_COMMAND(base), use_lba48 ? ATA_READ_SECTORS_EXT :
+                                       ATA_READ_SECTORS);
     
     // Small delay after sending command (required by ATA spec)
     //printf("  Step 3: Delay after command...\n");
@@ -546,7 +559,12 @@ bool ata_read_sector_fresh(unsigned short base, unsigned int lba, void *buffer,
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     if (ahci_drive != NULL) return ahci_read_sector(ahci_drive, lba, buffer);
     ata_transaction_begin();
-    if (buffer == NULL || lba >= ATA_LBA28_LIMIT ||
+    int resource = ata_resource_index(base, is_master);
+    drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
+    if (buffer == NULL ||
+        (lba >= ATA_LBA28_LIMIT &&
+         (drive == NULL || !drive->lba48_supported)) ||
+        (drive != NULL && lba >= drive->sectors) ||
         (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) {
         ata_transaction_end();
         return false;
@@ -574,7 +592,12 @@ void ata_reset_error_counter() {
 */
 static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
                                   void* buffer, bool is_master) {
-    if (buffer == NULL || lba >= ATA_LBA28_LIMIT ||
+    int resource = ata_resource_index(base, is_master);
+    drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
+    bool use_lba48 = lba >= ATA_LBA28_LIMIT;
+    if (buffer == NULL ||
+        (use_lba48 && (drive == NULL || !drive->lba48_supported)) ||
+        (drive != NULL && lba >= drive->sectors) ||
         (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) {
         return false; // Error: Buffer is null
     }
@@ -592,20 +615,28 @@ static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
     }
 
     // Select the target before programming its task-file registers.
-    unsigned char drive_head = 0xE0 | ((lba >> 24) & 0x0F);  // LBA mode with upper LBA bits
-    drive_head |= is_master ? 0x00 : 0x10;  // 0x00 for master, 0x10 for slave
+    unsigned char drive_head = use_lba48 ? 0x40U :
+        (unsigned char)(0xE0U | ((lba >> 24) & 0x0FU));
+    drive_head |= is_master ? 0x00U : 0x10U;
     outb(ATA_DRIVE_HEAD(base), drive_head);
     for (volatile int i = 0; i < 4; ++i) inb(ATA_ALT_STATUS(base));
     if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
 
     // Program the selected device's task-file registers.
+    if (use_lba48) {
+        outb(ATA_SECTOR_CNT(base), 0U);
+        outb(ATA_LBA_LOW(base), (unsigned char)(lba >> 24U));
+        outb(ATA_LBA_MID(base), 0U);
+        outb(ATA_LBA_HIGH(base), 0U);
+    }
     outb(ATA_SECTOR_CNT(base), 1); // Write 1 sector
     outb(ATA_LBA_LOW(base), (unsigned char)(lba & 0xFF));
     outb(ATA_LBA_MID(base), (unsigned char)((lba >> 8) & 0xFF));
     outb(ATA_LBA_HIGH(base), (unsigned char)((lba >> 16) & 0xFF));
 
     // Send the write command
-    outb(ATA_COMMAND(base), ATA_WRITE_SECTORS);
+    outb(ATA_COMMAND(base), use_lba48 ? ATA_WRITE_SECTORS_EXT :
+                                       ATA_WRITE_SECTORS);
 
     // Wait for the drive to signal that it's ready to receive data
     if (!wait_for_drive_data_ready(base, ATA_WAIT_TIMEOUT_MS)) {
@@ -622,7 +653,7 @@ static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
     
     // Flush cache to ensure data is written (critical for filesystem integrity)
     // This prevents data loss on power failure or disk removal
-    outb(ATA_COMMAND(base), 0xE7);  // FLUSH CACHE command
+    outb(ATA_COMMAND(base), use_lba48 ? ATA_FLUSH_CACHE_EXT : 0xE7U);
     if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
         printf("Warning: Cache flush timeout\n");
         return false;
@@ -884,10 +915,12 @@ bool ata_flush_cache(unsigned short base, bool is_master) {
         storage_write_begin((uint32_t)resource, pit_monotonic_ms());
     bool result = false;
     if (armed) {
+        drive_t *drive = &detected_drives[resource];
         outb(ATA_DRIVE_HEAD(base), is_master ? 0xE0U : 0xF0U);
         for (volatile int i = 0; i < 4; ++i) (void)inb(ATA_ALT_STATUS(base));
         if (wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
-            outb(ATA_COMMAND(base), 0xE7U);
+            outb(ATA_COMMAND(base), drive->lba48_supported ?
+                                      ATA_FLUSH_CACHE_EXT : 0xE7U);
             result = wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS);
         }
     }
@@ -964,6 +997,7 @@ static void ata_detect_drives_impl(void) {
 
             // Use a temporary structure to avoid corrupting detected_drives on failure
             drive_t temp_drive;
+            memset(&temp_drive, 0, sizeof(temp_drive));
             temp_drive.base = bases[bus];
             temp_drive.is_master = (drive == 0);  // 0 for master, 1 for slave
 
@@ -1053,8 +1087,20 @@ static bool ata_identify_drive_impl(uint16_t base, uint8_t drive,
         }
     }
 
-    // Get the total sector count (LBA28; words 60-61)
-    drive_info->sectors = identify_data[60] | (identify_data[61] << 16);
+    uint64_t sectors = (uint32_t)identify_data[60] |
+                       ((uint32_t)identify_data[61] << 16U);
+    drive_info->lba48_supported =
+        (identify_data[83] & (1U << 10U)) != 0U;
+    if (drive_info->lba48_supported) {
+        uint64_t lba48 = (uint64_t)identify_data[100] |
+            ((uint64_t)identify_data[101] << 16U) |
+            ((uint64_t)identify_data[102] << 32U) |
+            ((uint64_t)identify_data[103] << 48U);
+        if (lba48 != 0U) sectors = lba48;
+        else drive_info->lba48_supported = false;
+    }
+    drive_info->sectors = sectors > UINT32_MAX ? UINT32_MAX :
+                          (uint32_t)sectors;
 
     // Validate sector count
     if (drive_info->sectors <= 0) {
