@@ -1783,7 +1783,18 @@ int supervisor_report_progress(supervisor_handle_t handle,
 int supervisor_report_idle(supervisor_handle_t handle) {
     uint32_t flags = supervisor_lock();
     supervisor_state_t state;
-    if (resolve(handle, &state) != 0 || state.state != SUPERVISOR_HEALTHY) {
+    if (resolve(handle, &state) != 0) {
+        supervisor_unlock(flags);
+        return -1;
+    }
+    /* Cleanup/recovery paths may converge on IDLE independently.  Treat an
+     * already validated idle state as success without relaxing fenced,
+     * isolated or safe-state transitions. */
+    if (state.state == SUPERVISOR_IDLE) {
+        supervisor_unlock(flags);
+        return 0;
+    }
+    if (state.state != SUPERVISOR_HEALTHY) {
         supervisor_unlock(flags);
         return -1;
     }

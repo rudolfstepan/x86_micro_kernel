@@ -79,6 +79,7 @@ int main(void) {
                             &handle) != 0) return 28;
     if (supervisor_report_progress(handle, 1U, 3001U) != 0 ||
         supervisor_report_idle(handle) != 0 ||
+        supervisor_report_idle(handle) != 0 ||
         !supervisor_output_allowed(handle)) return 29;
     supervisor_clock_tick(UINT64_MAX);
     if (supervisor_poll(UINT64_MAX).type != SUPERVISOR_EVENT_NONE) return 30;

@@ -54,6 +54,7 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertNotIn("supervisor_ack_fenced", header)
         self.assertIn("restart_count >= state.restart_budget", source)
         self.assertIn("state->epoch != handle.epoch", source)
+        self.assertIn("if (state.state == SUPERVISOR_IDLE)", source)
         self.assertNotIn("k_malloc", source)
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
         self.assertIn("supervisor_init();", kernel)
