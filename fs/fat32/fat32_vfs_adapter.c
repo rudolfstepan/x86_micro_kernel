@@ -930,7 +930,8 @@ static int fat32_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
 static int fat32_vfs_sync(vfs_node_t* node) {
     if (!node || !node->fs || !node->fs->drive) return VFS_ERR_INVALID;
     drive_t* drive = node->fs->drive;
-    if (drive->type != DRIVE_TYPE_ATA) return VFS_ERR_UNSUPPORTED;
+    if (drive->type != DRIVE_TYPE_ATA && drive->type != DRIVE_TYPE_AHCI)
+        return VFS_ERR_UNSUPPORTED;
     return ata_flush_cache(drive->base, drive->is_master)
         ? VFS_OK : VFS_ERR_IO;
 }

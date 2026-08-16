@@ -118,3 +118,21 @@ Windows-Komplettweg lautet:
 ```powershell
 .\scripts\build-windows.ps1 -Target vmware -RunTests
 ```
+
+## SATA/AHCI ausführen
+
+Die generierte VMware-VM bindet das native Bootlaufwerk an `sata0:0` an. Das
+beigepackte Rettungs-Floppy ist standardmäßig getrennt und kann bei Bedarf in
+VMware manuell verbunden werden. QEMU
+behält für Regressionen standardmäßig IDE; der explizite AHCI-Lauf lautet:
+
+```powershell
+.\scripts\run-windows.ps1 -NoBuild -Headless -Sata
+```
+
+Der automatisierte serielle AHCI-Smoke-Test verwendet:
+
+```powershell
+python scripts/run_qemu_smoke.py --qemu C:\tmp\qemu-portable\qemu-system-i386.exe `
+  --image build/reist-os.img --timeout 90 --sata
+```

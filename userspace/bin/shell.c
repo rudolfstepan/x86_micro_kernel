@@ -31,7 +31,8 @@ static char drive_letter(const x86os_drive_info_t* drive) {
         return 0;
     }
     if (drive->type == X86OS_DRIVE_FDD) return (char)('A' + drive->name[3] - '0');
-    if (drive->type == X86OS_DRIVE_ATA) return (char)('C' + drive->name[3] - '0');
+    if (drive->type == X86OS_DRIVE_ATA || drive->type == X86OS_DRIVE_AHCI)
+        return (char)('C' + drive->name[3] - '0');
     return 0;
 }
 

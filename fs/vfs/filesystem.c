@@ -70,7 +70,7 @@ void ctor_fat32_class(fat32_class_t* fat32) {
 
 // Function to initialize the file system on a given drive
 void init_fs(drive_t* drive) {
-    if (drive->type == DRIVE_TYPE_ATA) {
+    if (drive->type == DRIVE_TYPE_ATA || drive->type == DRIVE_TYPE_AHCI) {
         printf("Try to Init fs on ATA drive %s: %s with %u sectors\n", drive->name, drive->model, drive->sectors);
         printf("  ATA base: 0x%X, is_master: %d\n", drive->base, drive->is_master);
         
@@ -235,7 +235,8 @@ void auto_mount_all_drives(void) {
         char mount_path[32];
         int result;
         
-        if (drive->type == DRIVE_TYPE_ATA) {
+        if (drive->type == DRIVE_TYPE_ATA ||
+            drive->type == DRIVE_TYPE_AHCI) {
             // Determine filesystem type by reading boot sector
             uint8_t buffer[512];
             const char* fs_type = "fat32";  // Default to FAT32

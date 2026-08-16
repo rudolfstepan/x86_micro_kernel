@@ -124,6 +124,7 @@ def qemu_command(
     persistent: bool = False,
     injection_port: int | None = None,
     handover_port: int | None = None,
+    sata: bool = False,
 ) -> list[str]:
     command = [
         str(qemu),
@@ -132,12 +133,21 @@ def qemu_command(
         "-nodefaults",
         "-m", memory,
         "-boot", "c",
-        "-drive", f"file={image},format=raw,if=ide,index=0,media=disk",
         "-display", "none",
         "-monitor", "none",
         "-serial", "stdio",
         "-no-shutdown",
     ]
+    if sata:
+        command.extend([
+            "-device", "ich9-ahci,id=reistahci",
+            "-drive", f"file={image},format=raw,if=none,id=reistdisk",
+            "-device", "ide-hd,drive=reistdisk,bus=reistahci.0",
+        ])
+    else:
+        command.extend([
+            "-drive", f"file={image},format=raw,if=ide,index=0,media=disk",
+        ])
     if not persistent:
         command.append("-snapshot")
     if not allow_reboot:
@@ -549,6 +559,7 @@ def run(
     expect_dhcp_expiry: bool = False,
     expect_dhcp_renewal: bool = False,
     udp_port: int = 9000,
+    sata: bool = False,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
     injection_connection: socket.socket | None = None
@@ -566,7 +577,7 @@ def run(
     try:
         process = subprocess.Popen(
             qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot,
-                         nic, persistent, injection_port, handover_port),
+                         nic, persistent, injection_port, handover_port, sata),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -1169,6 +1180,10 @@ def main() -> int:
         "--persistent", action="store_true",
         help="allow guest writes to the image (use only with a disposable copy)",
     )
+    parser.add_argument(
+        "--sata", action="store_true",
+        help="attach the boot image through an emulated ICH9 AHCI controller",
+    )
     args = parser.parse_args()
 
     if not args.image.is_file():
@@ -1212,6 +1227,7 @@ def main() -> int:
             args.expect_dhcp_expiry,
             args.expect_dhcp_renewal,
             args.udp_port,
+            args.sata,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)

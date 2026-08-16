@@ -1254,11 +1254,16 @@ einem festen 512-Byte-Puffer aufgebaut und mit begrenzter PxCI-/PxIS-/PxTFD-
 Completion sowie Quarantäne bei Fehler oder Timeout ausgeführt. Die
 IDENTIFY-Daten werden jetzt auf LBA28/LBA48-Kapazität, 512-Byte-Sektoren und
 Modellname geprüft und portbezogen gespeichert. Validierte Ports werden nach
-der ATA-Erkennung als eigene `DRIVE_TYPE_AHCI`-Ressourcen mit `sataN`-Namen
-veröffentlicht; der Blockgerätevertrag hält sie bis zur I/O-Implementierung
-bewusst auf `UNSUPPORTED`. Sektor-I/O, VFS- sowie
-Storage-Service-Anbindung fehlen weiterhin. Der Stand ist daher noch keine
-produktive SATA-Unterstützung.
+der ATA-Erkennung als eigene `DRIVE_TYPE_AHCI`-Ressourcen mit stabiler
+Controller-/Port-Zuordnung veröffentlicht. READ DMA EXT, WRITE DMA EXT und
+FLUSH CACHE EXT verwenden je Port einen festen 512-Byte-Puffer, genau einen
+aktiven Auftrag und monotone Completion-Deadlines. Der Blockgerätevertrag,
+FAT32-VFS, Storage-Fingerprint, Quarantäne/Reintegration und globales
+Write-Fencing sind angebunden. Ein QEMU-ICH9-AHCI-Boot mit FAT32-Datei-I/O,
+Storage-Reintegration und vollständigem `TEST_OK` ist abgenommen. Die
+generierte VMware-Konfiguration nutzt SATA; eine VMware-Laufzeitabnahme und
+Fault-Injection für einzelne AHCI-Timeoutpfade bleiben noch offen. Daher gilt
+QEMU-AHCI als unterstützt, VMware-AHCI vorerst nur als konfiguriert.
 
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 

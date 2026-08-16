@@ -1,8 +1,10 @@
 #include "ahci.h"
 
 #include "arch/x86/mm/paging.h"
+#include "arch/x86/include/interrupt.h"
 #include "drivers/block/ata.h"
 #include "lib/libc/string.h"
+#include "lib/libc/stdio.h"
 #include "kernel/time/pit.h"
 
 #define AHCI_MAX_CONTROLLERS 4U
@@ -30,6 +32,9 @@
 #define AHCI_PORT_TFD_BSY (1U << 7)
 #define AHCI_PORT_TFD_ERR (1U << 0)
 #define AHCI_COMMAND_TIMEOUT_MS 2000U
+#define AHCI_ATA_READ_DMA_EXT 0x25U
+#define AHCI_ATA_WRITE_DMA_EXT 0x35U
+#define AHCI_ATA_FLUSH_CACHE_EXT 0xEAU
 
 /* These pools are deliberately fixed and identity-mapped. They are only
  * published after address/alignment validation and remain one-slot-per-port
@@ -42,6 +47,8 @@ static uint8_t command_tables[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS]
     [AHCI_COMMAND_TABLE_SIZE] __attribute__((aligned(128)));
 static uint8_t identify_buffers[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS][512]
     __attribute__((aligned(2)));
+static bool port_busy[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS];
+static volatile bool writes_fenced;
 
 static ahci_controller_info_t controllers[AHCI_MAX_CONTROLLERS];
 static size_t controller_count;
@@ -82,8 +89,12 @@ static bool ahci_port_is_sata(volatile uint32_t *mmio, uint32_t port) {
     uint32_t status = ahci_read(mmio, base + AHCI_PORT_SSTS);
     uint32_t det = status & 0x0FU;
     uint32_t ipm = (status >> 8U) & 0x0FU;
+    uint32_t signature = ahci_read(mmio, base + AHCI_PORT_SIG);
+    /* Some controllers publish PxSIG only after the receive engine starts.
+     * An all-ones reset value is admitted only as an IDENTIFY candidate; the
+     * port is not published unless IDENTIFY DEVICE subsequently validates. */
     return det == 3U && ipm == 1U &&
-           ahci_read(mmio, base + AHCI_PORT_SIG) == AHCI_SIG_ATA;
+           (signature == AHCI_SIG_ATA || signature == UINT32_MAX);
 }
 
 static bool ahci_dma_address_valid(const void *address, size_t length,
@@ -166,6 +177,40 @@ static bool ahci_build_identify_command(ahci_controller_info_t *controller,
     return true;
 }
 
+static bool ahci_build_io_command(size_t controller_index, uint32_t port,
+                                  uint8_t command, uint32_t sector,
+                                  bool write, bool has_data) {
+    if (controller_index >= AHCI_MAX_CONTROLLERS || port >= AHCI_MAX_PORTS ||
+        (has_data && !ahci_dma_address_valid(
+            identify_buffers[controller_index][port], 512U, 2U))) return false;
+    ahci_command_header_t *header = (ahci_command_header_t *)
+        command_lists[controller_index][port];
+    ahci_command_table_t *table = (ahci_command_table_t *)
+        command_tables[controller_index][port];
+    ahci_fis_reg_h2d_t *fis = (ahci_fis_reg_h2d_t *)table->fis;
+    memset(header, 0, sizeof(*header));
+    memset(table, 0, sizeof(*table));
+    header->flags = (uint16_t)(5U | (write ? (1U << 6U) : 0U));
+    header->prdt_length = has_data ? 1U : 0U;
+    header->command_table_base =
+        (uint32_t)(uintptr_t)command_tables[controller_index][port];
+    fis->fis_type = 0x27U;
+    fis->flags = 0x80U;
+    fis->command = command;
+    fis->device = 0x40U;
+    fis->lba0 = (uint8_t)sector;
+    fis->lba1 = (uint8_t)(sector >> 8U);
+    fis->lba2 = (uint8_t)(sector >> 16U);
+    fis->lba3 = (uint8_t)(sector >> 24U);
+    fis->count_low = has_data ? 1U : 0U;
+    if (has_data) {
+        table->prdt[0].data_base =
+            (uint32_t)(uintptr_t)identify_buffers[controller_index][port];
+        table->prdt[0].byte_count_and_interrupt = 511U | (1U << 31U);
+    }
+    return true;
+}
+
 static uint16_t ahci_identify_word(const uint8_t *identify, uint32_t word) {
     return (uint16_t)identify[word * 2U] |
            ((uint16_t)identify[word * 2U + 1U] << 8U);
@@ -216,14 +261,18 @@ static void ahci_publish_drives(void) {
             drive->sectors = controller->sector_count[port] > UINT32_MAX ?
                              UINT32_MAX : (uint32_t)controller->sector_count[port];
             memcpy(drive->model, controller->model[port], sizeof(drive->model));
-            snprintf(drive->name, sizeof(drive->name), "sata%u",
+            drive->ahci_controller = (uint8_t)index;
+            drive->ahci_port = (uint8_t)port;
+            drive->base = (uint16_t)(AHCI_VIRTUAL_BASE |
+                ((uint16_t)index << 5U) | (uint16_t)port);
+            snprintf(drive->name, sizeof(drive->name), "hdd%u",
                      (unsigned)(drive_count - 1));
         }
     }
 }
 
-static bool ahci_execute_identify(ahci_controller_info_t *controller,
-                                  size_t controller_index, uint32_t port) {
+static bool ahci_execute_command(ahci_controller_info_t *controller,
+                                 size_t controller_index, uint32_t port) {
     if (controller == NULL || controller->mmio == NULL ||
         controller_index >= AHCI_MAX_CONTROLLERS || port >= AHCI_MAX_PORTS)
         return false;
@@ -242,10 +291,10 @@ static bool ahci_execute_identify(ahci_controller_info_t *controller,
         uint32_t interrupt_status = ahci_read(controller->mmio,
                                                base + AHCI_PORT_IS);
         uint32_t task_status = ahci_read(controller->mmio, base + AHCI_PORT_TFD);
-        if ((interrupt_status & AHCI_PORT_IS_TFES) != 0U ||
-            (task_status & AHCI_PORT_TFD_ERR) != 0U) break;
+        if ((interrupt_status & AHCI_PORT_IS_TFES) != 0U) break;
         if ((ahci_read(controller->mmio, base + AHCI_PORT_CI) & 1U) == 0U) {
-            completed = (task_status & AHCI_PORT_TFD_BSY) == 0U;
+            completed = (task_status &
+                (AHCI_PORT_TFD_BSY | AHCI_PORT_TFD_ERR)) == 0U;
             break;
         }
         uint64_t now = pit_monotonic_ms();
@@ -253,8 +302,88 @@ static bool ahci_execute_identify(ahci_controller_info_t *controller,
     }
     bool stopped = ahci_stop_port(controller->mmio, port);
     if (!stopped || !completed) return false;
-    const uint8_t *identify = identify_buffers[controller_index][port];
-    return identify[0] != 0U || identify[1] != 0U;
+    return true;
+}
+
+static bool ahci_port_acquire(size_t controller_index, uint32_t port) {
+    if (controller_index >= controller_count || port >= AHCI_MAX_PORTS)
+        return false;
+    uint32_t flags = irq_save();
+    bool acquired = !port_busy[controller_index][port];
+    if (acquired) port_busy[controller_index][port] = true;
+    irq_restore(flags);
+    return acquired;
+}
+
+static void ahci_port_release(size_t controller_index, uint32_t port) {
+    uint32_t flags = irq_save();
+    port_busy[controller_index][port] = false;
+    irq_restore(flags);
+}
+
+static bool ahci_drive_valid(const drive_t *drive,
+                             ahci_controller_info_t **controller) {
+    if (drive == NULL || controller == NULL ||
+        drive->type != DRIVE_TYPE_AHCI ||
+        drive->ahci_controller >= controller_count ||
+        drive->ahci_port >= AHCI_MAX_PORTS) return false;
+    ahci_controller_info_t *selected = &controllers[drive->ahci_controller];
+    uint32_t bit = 1U << drive->ahci_port;
+    if (selected->valid == 0U ||
+        (selected->identify_valid_ports & bit) == 0U) return false;
+    *controller = selected;
+    return true;
+}
+
+bool ahci_read_sector(const drive_t *drive, uint32_t sector, void *buffer) {
+    ahci_controller_info_t *controller;
+    if (buffer == NULL || !ahci_drive_valid(drive, &controller) ||
+        sector >= drive->sectors ||
+        !ahci_port_acquire(drive->ahci_controller, drive->ahci_port))
+        return false;
+    bool result = ahci_build_io_command(drive->ahci_controller,
+        drive->ahci_port, AHCI_ATA_READ_DMA_EXT, sector, false, true) &&
+        ahci_execute_command(controller, drive->ahci_controller,
+                             drive->ahci_port);
+    if (result) memcpy(buffer,
+        identify_buffers[drive->ahci_controller][drive->ahci_port], 512U);
+    ahci_port_release(drive->ahci_controller, drive->ahci_port);
+    return result;
+}
+
+bool ahci_write_sector(const drive_t *drive, uint32_t sector,
+                       const void *buffer) {
+    ahci_controller_info_t *controller;
+    if (buffer == NULL || writes_fenced ||
+        !ahci_drive_valid(drive, &controller) || sector >= drive->sectors ||
+        !ahci_port_acquire(drive->ahci_controller, drive->ahci_port))
+        return false;
+    memcpy(identify_buffers[drive->ahci_controller][drive->ahci_port],
+           buffer, 512U);
+    bool result = ahci_build_io_command(drive->ahci_controller,
+        drive->ahci_port, AHCI_ATA_WRITE_DMA_EXT, sector, true, true) &&
+        ahci_execute_command(controller, drive->ahci_controller,
+                             drive->ahci_port);
+    ahci_port_release(drive->ahci_controller, drive->ahci_port);
+    return result;
+}
+
+bool ahci_flush(const drive_t *drive) {
+    ahci_controller_info_t *controller;
+    if (!ahci_drive_valid(drive, &controller) ||
+        !ahci_port_acquire(drive->ahci_controller, drive->ahci_port))
+        return false;
+    bool result = ahci_build_io_command(drive->ahci_controller,
+        drive->ahci_port, AHCI_ATA_FLUSH_CACHE_EXT, 0U, false, false) &&
+        ahci_execute_command(controller, drive->ahci_controller,
+                             drive->ahci_port);
+    ahci_port_release(drive->ahci_controller, drive->ahci_port);
+    return result;
+}
+
+void ahci_fence_writes(void) {
+    writes_fenced = true;
+    __asm__ volatile("" ::: "memory");
 }
 
 static bool ahci_initialize_controller(ahci_controller_info_t *controller,
@@ -265,7 +394,11 @@ static bool ahci_initialize_controller(ahci_controller_info_t *controller,
     pci_enable_device(device);
     volatile uint32_t *mmio = map_mmio_region(controller->abar,
                                                AHCI_MMIO_SIZE);
-    if (mmio == NULL || !ahci_reset(mmio)) return false;
+    if (mmio == NULL || !ahci_reset(mmio)) {
+        printf("AHCI: controller %u MMIO/reset failed\n",
+               (unsigned)controller_index);
+        return false;
+    }
     ahci_write(mmio, 0x04U, ahci_read(mmio, 0x04U) | AHCI_GHC_AE);
     uint32_t capability = ahci_read(mmio, 0x00U);
     uint32_t port_limit = (capability & 0x1FU) + 1U;
@@ -273,6 +406,13 @@ static bool ahci_initialize_controller(ahci_controller_info_t *controller,
     uint32_t sata_ports = 0U;
     for (uint32_t port = 0U; port < port_limit && port < 32U; ++port) {
         uint32_t bit = 1U << port;
+        uint32_t port_status = ahci_read(mmio, AHCI_PORT_BASE +
+            port * AHCI_PORT_STRIDE + AHCI_PORT_SSTS);
+        if ((implemented & bit) != 0U && (port_status & 0x0FU) == 3U)
+            printf("AHCI: port %u SSTS=%x SIG=%x\n", (unsigned)port,
+                   port_status,
+                   ahci_read(mmio, AHCI_PORT_BASE + port * AHCI_PORT_STRIDE +
+                                   AHCI_PORT_SIG));
         if ((implemented & bit) != 0U && ahci_port_is_sata(mmio, port))
             sata_ports |= bit;
     }
@@ -284,19 +424,33 @@ static bool ahci_initialize_controller(ahci_controller_info_t *controller,
     controller->port_count = (uint8_t)port_limit;
     controller->dma_ready_ports = 0U;
     controller->identify_valid_ports = 0U;
-    uint32_t identify_ports = 0U;
+    printf("AHCI: controller %u ABAR=%x PI=%x SATA=%x\n",
+           (unsigned)controller_index, (unsigned)controller->abar,
+           implemented, sata_ports);
+    uint32_t prepared_ports = 0U;
     for (uint32_t port = 0U; port < port_limit && port < AHCI_MAX_PORTS;
          ++port) {
         uint32_t bit = 1U << port;
         if ((sata_ports & bit) != 0U &&
             ahci_prepare_port(controller, controller_index, port) &&
-            ahci_build_identify_command(controller, controller_index, port) &&
-            ahci_execute_identify(controller, controller_index, port) &&
+            ahci_build_identify_command(controller, controller_index, port))
+            prepared_ports |= bit;
+    }
+    if (prepared_ports != 0U)
+        pci_set_bus_master(device->bus, device->slot, device->function, 1U);
+    for (uint32_t port = 0U; port < port_limit && port < AHCI_MAX_PORTS;
+         ++port) {
+        uint32_t bit = 1U << port;
+        if ((prepared_ports & bit) != 0U &&
+            ahci_execute_command(controller, controller_index, port) &&
             ahci_parse_identify(controller, controller_index, port))
             controller->dma_ready_ports |= bit;
-        if ((controller->dma_ready_ports & bit) != 0U) identify_ports |= bit;
     }
-    controller->dma_ready_ports = identify_ports;
+    if (controller->dma_ready_ports == 0U)
+        pci_set_bus_master(device->bus, device->slot, device->function, 0U);
+    printf("AHCI: controller %u prepared=%x ready=%x\n",
+           (unsigned)controller_index, prepared_ports,
+           controller->dma_ready_ports);
     controller->valid = 1U;
     return true;
 }
@@ -325,6 +479,8 @@ size_t ahci_probe_controllers(ahci_controller_info_t *output,
 
 void ahci_init(void) {
     memset(controllers, 0, sizeof(controllers));
+    memset(port_busy, 0, sizeof(port_busy));
+    writes_fenced = false;
     controller_count = ahci_probe_controllers(controllers,
                                                AHCI_MAX_CONTROLLERS);
     if (controller_count > AHCI_MAX_CONTROLLERS)

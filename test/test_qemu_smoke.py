@@ -496,6 +496,7 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         memory: str | None = None,
         watchdog: bool = False,
         persistent: bool = False,
+        sata: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["FAKE_QEMU_MODE"] = mode
@@ -518,6 +519,8 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
             command.append("--watchdog")
         if persistent:
             command.append("--persistent")
+        if sata:
+            command.append("--sata")
         return subprocess.run(
             command,
             cwd=ROOT,
@@ -597,6 +600,14 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
                     arguments,
                     rf"(?:^|\s)-m\s+{re.escape(amount)}(?:\s|$)",
                 )
+
+    def test_sata_option_attaches_boot_image_to_ahci(self) -> None:
+        result = self.run_smoke("success", sata=True)
+        self.assertEqual(result.returncode, 0, self.combined_output(result))
+        arguments = self.arguments_file.read_text(encoding="utf-8")
+        self.assertIn("ich9-ahci,id=reistahci", arguments)
+        self.assertIn("if=none,id=reistdisk", arguments)
+        self.assertIn("ide-hd,drive=reistdisk,bus=reistahci.0", arguments)
 
     def test_watchdog_profile_attaches_real_ib700_reset_device(self) -> None:
         result = self.run_smoke("success", watchdog=True)

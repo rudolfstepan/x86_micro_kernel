@@ -18,8 +18,12 @@ class BlockDeviceContractTests(unittest.TestCase):
         self.assertIn("sector < drive->sectors", source)
         self.assertIn("DRIVE_TYPE_ATA", source)
         self.assertIn("DRIVE_TYPE_FDD", source)
+        self.assertIn("DRIVE_TYPE_AHCI", source)
         self.assertIn("ata_read_sector_fresh", source)
         self.assertIn("fdc_read_sector", source)
+        self.assertIn("ahci_read_sector", source)
+        self.assertIn("ahci_write_sector", source)
+        self.assertIn("ahci_flush", source)
 
 
 if __name__ == "__main__":

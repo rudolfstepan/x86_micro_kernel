@@ -43,8 +43,12 @@ class AhciProbeContractTests(unittest.TestCase):
         self.assertIn("sector_size", header)
         self.assertIn("ahci_publish_drives", source)
         self.assertIn("DRIVE_TYPE_AHCI", source)
-        self.assertIn("sata%u", source)
-        self.assertNotIn("pci_set_bus_master", source)
+        self.assertIn("hdd%u", source)
+        self.assertIn("pci_set_bus_master", source)
+        self.assertIn("AHCI_ATA_READ_DMA_EXT", source)
+        self.assertIn("AHCI_ATA_WRITE_DMA_EXT", source)
+        self.assertIn("AHCI_ATA_FLUSH_CACHE_EXT", source)
+        self.assertIn("ahci_port_acquire", source)
 
 
 if __name__ == "__main__":

@@ -22,6 +22,8 @@ typedef struct {
     unsigned int head;      // Number of heads (for FDD)
     unsigned int sector;    // Number of sectors (for FDD)
     uint8_t fdd_drive_no;   // Drive number for FDD, 0 for A:, 1 for B:
+    uint8_t ahci_controller;// AHCI controller index
+    uint8_t ahci_port;      // AHCI port index
     char mount_point[64];   // VFS mount point (e.g., "/", "/mnt/hdd1")
 } drive_t;
 

@@ -422,7 +422,8 @@ typedef struct {
 
 enum {
     X86OS_DRIVE_ATA = 1,
-    X86OS_DRIVE_FDD = 2
+    X86OS_DRIVE_FDD = 2,
+    X86OS_DRIVE_AHCI = 3
 };
 
 typedef struct {

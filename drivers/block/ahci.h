@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "drivers/bus/pci.h"
+#include "drivers/bus/drives.h"
 
 #define AHCI_PCI_CLASS 0x01U
 #define AHCI_PCI_SUBCLASS 0x06U
@@ -13,6 +14,7 @@
 #define AHCI_COMMAND_LIST_SIZE 1024U
 #define AHCI_RECEIVED_FIS_SIZE 256U
 #define AHCI_COMMAND_TABLE_SIZE 256U
+#define AHCI_VIRTUAL_BASE 0xA000U
 
 #pragma pack(push, 1)
 typedef struct {
@@ -92,5 +94,10 @@ typedef struct {
 size_t ahci_probe_controllers(ahci_controller_info_t *output,
                               size_t capacity);
 void ahci_init(void);
+bool ahci_read_sector(const drive_t *drive, uint32_t sector, void *buffer);
+bool ahci_write_sector(const drive_t *drive, uint32_t sector,
+                       const void *buffer);
+bool ahci_flush(const drive_t *drive);
+void ahci_fence_writes(void);
 
 #endif

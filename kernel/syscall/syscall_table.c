@@ -16,6 +16,7 @@
 #include "drivers/bus/drives.h"
 #include "drivers/block/ata.h"
 #include "drivers/block/fdd.h"
+#include "drivers/block/block_device.h"
 #include "kernel/time/pit.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/proc/process.h"
@@ -702,9 +703,10 @@ static int syscall_storage_block_read(uint32_t resource, uint32_t block,
 #ifdef REIST_STORAGE_IO_FAULT_INJECTION
         if (inject_failure) continue;
 #endif
-        if (drive->type == DRIVE_TYPE_ATA) {
-            read_ok = ata_read_sector(drive->base, block, data,
-                                      drive->is_master);
+        if (drive->type == DRIVE_TYPE_ATA ||
+            drive->type == DRIVE_TYPE_AHCI) {
+            read_ok = block_device_read_sector(drive, block, data) ==
+                      BLOCK_DEVICE_OK;
         } else if (drive->type == DRIVE_TYPE_FDD && drive->sector != 0U &&
                    drive->head != 0U) {
             uint32_t track_size = drive->sector * drive->head;

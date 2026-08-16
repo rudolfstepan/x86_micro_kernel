@@ -3,7 +3,8 @@ param(
     [switch]$NoBuild,
     [switch]$Headless,
     [ValidateSet('qemu', 'vmware', 'real_hw')]
-    [string]$Target = 'qemu'
+    [string]$Target = 'qemu',
+    [switch]$Sata
 )
 
 Set-StrictMode -Version Latest
@@ -45,13 +46,21 @@ $arguments = @(
     '-machine', 'pc',
     '-m', '512M',
     '-boot', 'c',
-    '-drive', "file=$BootImage,format=raw,if=ide,index=0,media=disk",
     '-device', 'rtl8139,netdev=net0',
     '-netdev', 'user,id=net0',
     '-vga', 'std',
     '-no-reboot',
     '-no-shutdown'
 )
+if ($Sata) {
+    $arguments += @(
+        '-device', 'ich9-ahci,id=reistahci',
+        '-drive', "file=$BootImage,format=raw,if=none,id=reistdisk",
+        '-device', 'ide-hd,drive=reistdisk,bus=reistahci.0'
+    )
+} else {
+    $arguments += @('-drive', "file=$BootImage,format=raw,if=ide,index=0,media=disk")
+}
 
 $dataDisk = Join-Path $RepoRoot 'disk.img'
 if (Test-Path -LiteralPath $dataDisk -PathType Leaf) {

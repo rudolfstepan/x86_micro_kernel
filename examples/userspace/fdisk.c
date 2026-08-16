@@ -24,6 +24,7 @@ int main(int argc, char **argv) {
         x86os_puts("  ");
         if (drive.type == X86OS_DRIVE_FDD) x86os_puts("FDD");
         else if (drive.type == X86OS_DRIVE_ATA) x86os_puts("ATA");
+        else if (drive.type == X86OS_DRIVE_AHCI) x86os_puts("SATA");
         else { x86os_puts("UNKNOWN("); print_unsigned(drive.type);
                x86os_putchar(')'); }
         x86os_puts("  ");

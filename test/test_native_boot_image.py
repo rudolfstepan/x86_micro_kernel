@@ -364,15 +364,15 @@ class NativeBootImageTests(unittest.TestCase):
                         {"readme.txt": b"replacement"},
                     )
 
-    def test_generated_vmware_machine_uses_bios_ide_and_serial_trace(self):
+    def test_generated_vmware_machine_uses_bios_sata_and_serial_trace(self):
         with tempfile.TemporaryDirectory() as directory:
             vmx = Path(directory) / "kernel.vmx"
             write_vmx(vmx, Path("kernel.vmdk"), Path("rescue.img"))
             text = vmx.read_text(encoding="ascii")
         self.assertIn('firmware = "bios"', text)
-        self.assertIn('bios.bootOrder = "floppy,hdd"', text)
+        self.assertIn('bios.bootOrder = "hdd,floppy"', text)
         self.assertIn('memsize = "512"', text)
-        self.assertIn('ide0:0.fileName = "kernel.vmdk"', text)
+        self.assertIn('sata0:0.fileName = "kernel.vmdk"', text)
         self.assertIn('serial0.fileName = "vmware-serial.log"', text)
         self.assertIn('serial0.tryNoRxLoss = "TRUE"', text)
         self.assertIn('floppy0.present = "TRUE"', text)
@@ -438,7 +438,7 @@ class NativeBootImageTests(unittest.TestCase):
             config = (package / "reist-os.vmx").read_text(
                 encoding="ascii"
             )
-            self.assertIn('bios.bootOrder = "floppy,hdd"', config)
+            self.assertIn('bios.bootOrder = "hdd,floppy"', config)
             self.assertIn('floppy0.present = "TRUE"', config)
             self.assertIn('floppy0.fileType = "file"', config)
             self.assertIn(

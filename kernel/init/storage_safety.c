@@ -1,6 +1,7 @@
 #include "include/kernel/storage_safety.h"
 
 #include "drivers/block/ata.h"
+#include "drivers/block/ahci.h"
 #include "drivers/block/fdd.h"
 #include "include/kernel/critical_object.h"
 #include "include/kernel/supervisor.h"
@@ -49,6 +50,7 @@ static bool storage_control_read(storage_control_t *state) {
         length != sizeof(*state)) {
         storage_integrity_failed = true;
         ata_fence_writes();
+        ahci_fence_writes();
         fdd_fence_writes();
         return false;
     }
@@ -62,6 +64,7 @@ static bool storage_control_write(const storage_control_t *state) {
                                storage_control_valid) != 0) {
         storage_integrity_failed = true;
         ata_fence_writes();
+        ahci_fence_writes();
         fdd_fence_writes();
         return false;
     }
@@ -164,6 +167,7 @@ bool storage_write_end(bool durable_commit) {
 
 void storage_fence_writes(void) {
     storage_force_fenced = true;
+    ahci_fence_writes();
     __asm__ volatile("" ::: "memory");
     storage_control_t state;
     if (storage_control_read(&state)) {

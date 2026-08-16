@@ -1,5 +1,6 @@
 // ATA driver
 #include "ata.h"
+#include "ahci.h"
 #include "../char/io.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
@@ -56,10 +57,22 @@ static volatile bool ata_write_fenced;
 static int ata_resource_index(unsigned short base, bool is_master) {
     for (short index = 0; index < drive_count; ++index) {
         drive_t *drive = &detected_drives[index];
-        if (drive->type == DRIVE_TYPE_ATA && drive->base == base &&
-            drive->is_master == is_master) return index;
+        if (((drive->type == DRIVE_TYPE_ATA &&
+              drive->is_master == is_master) ||
+             drive->type == DRIVE_TYPE_AHCI) && drive->base == base)
+            return index;
     }
     return -1;
+}
+
+static drive_t *ata_compat_ahci_drive(unsigned short base) {
+    if ((base & 0xFFE0U) != AHCI_VIRTUAL_BASE) return NULL;
+    for (short index = 0; index < drive_count; ++index) {
+        drive_t *drive = &detected_drives[index];
+        if (drive->type == DRIVE_TYPE_AHCI && drive->base == base)
+            return drive;
+    }
+    return NULL;
 }
 
 #define ATA_JOURNAL_MAGIC 0x4A545352U /* "RSTJ" */
@@ -480,6 +493,8 @@ static bool ata_read_sector_impl(unsigned short base, unsigned int lba,
 
 bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,
                      bool is_master) {
+    drive_t *ahci_drive = ata_compat_ahci_drive(base);
+    if (ahci_drive != NULL) return ahci_read_sector(ahci_drive, lba, buffer);
     ata_transaction_begin();
     bool result = ata_read_sector_impl(base, lba, buffer, is_master);
     ata_transaction_end();
@@ -488,6 +503,8 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,
 
 bool ata_read_sector_fresh(unsigned short base, unsigned int lba, void *buffer,
                            bool is_master) {
+    drive_t *ahci_drive = ata_compat_ahci_drive(base);
+    if (ahci_drive != NULL) return ahci_read_sector(ahci_drive, lba, buffer);
     ata_transaction_begin();
     if (buffer == NULL || lba >= ATA_LBA28_LIMIT ||
         (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) {
@@ -781,6 +798,16 @@ done:
 
 bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
                       bool is_master) {
+    drive_t *ahci_drive = ata_compat_ahci_drive(base);
+    if (ahci_drive != NULL) {
+        int resource = ata_resource_index(base, is_master);
+        bool armed = !ata_write_fenced && resource >= 0 &&
+            storage_write_begin((uint32_t)resource, pit_monotonic_ms());
+        bool result = armed && ahci_write_sector(ahci_drive, lba, buffer) &&
+                      ahci_flush(ahci_drive);
+        if (armed && !storage_write_end(result)) result = false;
+        return result;
+    }
     ata_transaction_begin();
     int resource = ata_resource_index(base, is_master);
     bool armed = !ata_write_fenced && resource >= 0 &&
@@ -793,6 +820,8 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
 }
 
 bool ata_flush_cache(unsigned short base, bool is_master) {
+    drive_t *ahci_drive = ata_compat_ahci_drive(base);
+    if (ahci_drive != NULL) return ahci_flush(ahci_drive);
     ata_transaction_begin();
     int resource = ata_resource_index(base, is_master);
     bool armed = !ata_write_fenced && resource >= 0 &&

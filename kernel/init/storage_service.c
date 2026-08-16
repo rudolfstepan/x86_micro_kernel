@@ -2,6 +2,7 @@
 
 #include "arch/x86/include/interrupt.h"
 #include "drivers/block/ata.h"
+#include "drivers/block/block_device.h"
 #include "drivers/block/fdd.h"
 #include "include/kernel/critical_object.h"
 #include "include/kernel/filesystem_safety.h"
@@ -107,7 +108,8 @@ static bool fingerprint_valid(const void *payload, size_t length) {
         return false;
     const storage_media_fingerprint_t *fingerprint = payload;
     return fingerprint->type == DRIVE_TYPE_ATA ||
-           fingerprint->type == DRIVE_TYPE_FDD;
+           fingerprint->type == DRIVE_TYPE_FDD ||
+           fingerprint->type == DRIVE_TYPE_AHCI;
 }
 
 static bool read_boot_sector(uint32_t resource, uint8_t *data,
@@ -123,6 +125,8 @@ static bool read_boot_sector(uint32_t resource, uint8_t *data,
                                             data);
         return fdc_read_sector(drive->fdd_drive_no, 0U, 0U, 1U, data);
     }
+    if (drive->type == DRIVE_TYPE_AHCI)
+        return block_device_read_sector(drive, 0U, data) == BLOCK_DEVICE_OK;
     return false;
 }
 
@@ -185,12 +189,21 @@ static bool media_identity_matches(uint32_t resource) {
             memcmp(model_prefix, expected.model_prefix,
                    sizeof(model_prefix)) != 0)
             MEDIA_PROBE_FAIL("ATA_IDENTITY");
-    } else {
+    } else if (drive->type == DRIVE_TYPE_FDD) {
         if (drive->fdd_drive_no != expected.fdd_drive_no ||
             drive->cylinder != expected.cylinder ||
             drive->head != expected.head || drive->sector != expected.sector ||
             !fdc_requalify_drive(drive->fdd_drive_no))
             MEDIA_PROBE_FAIL("FDD_IDENTITY");
+    } else if (drive->type == DRIVE_TYPE_AHCI) {
+        char model_prefix[24];
+        canonical_model_prefix(model_prefix, drive->model);
+        if (drive->sectors != expected.sectors ||
+            memcmp(model_prefix, expected.model_prefix,
+                   sizeof(model_prefix)) != 0)
+            MEDIA_PROBE_FAIL("AHCI_IDENTITY");
+    } else {
+        MEDIA_PROBE_FAIL("TYPE");
     }
     uint8_t first[SECTOR_SIZE], second[SECTOR_SIZE];
     bool result = read_boot_sector(resource, first, true) &&
