@@ -55,14 +55,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--zig", type=Path)
+    parser.add_argument("--incremental", action="store_true")
     args = parser.parse_args()
 
     zig = find_zig(args.zig)
     output_dir = args.output_dir.resolve()
     for name, source in PROGRAMS.items():
         output = output_dir / name
-        build([source], output, zig)
-        print(f"System program: {output}")
+        before = output.stat().st_mtime_ns if output.is_file() else None
+        build([source], output, zig, incremental=args.incremental)
+        action = "Reused" if before is not None and output.stat().st_mtime_ns == before else "Built"
+        print(f"System program ({action}): {output}")
 
 
 if __name__ == "__main__":

@@ -124,7 +124,7 @@ def elf_to_mypr(elf: bytes) -> bytes:
 
 
 def build(sources: list[Path], output: Path, zig: Path,
-          elf_output: Path | None = None) -> None:
+          elf_output: Path | None = None, incremental: bool = False) -> None:
     sdk = ROOT / "userspace" / "sdk"
     linker_script = ROOT / "config" / "user_program.ld"
     all_sources = [sdk / "crt0.c", sdk / "x86os.c",
@@ -139,6 +139,13 @@ def build(sources: list[Path], output: Path, zig: Path,
             raise FileNotFoundError(source)
         if source.suffix.lower() not in (".c", ".s"):
             raise ValueError(f"unsupported source type: {source}")
+
+    dependencies = [*all_sources, linker_script]
+    dependencies.extend((sdk / "include").glob("*.h"))
+    if incremental and output.is_file() and all(
+            dependency.stat().st_mtime_ns <= output.stat().st_mtime_ns
+            for dependency in dependencies):
+        return
 
     with tempfile.TemporaryDirectory(prefix="x86-user-build-") as temporary:
         temporary_path = Path(temporary)
@@ -184,10 +191,12 @@ def main() -> None:
     parser.add_argument("-o", "--output", required=True, type=Path)
     parser.add_argument("--elf-output", type=Path)
     parser.add_argument("--zig", type=Path)
+    parser.add_argument("--incremental", action="store_true")
     args = parser.parse_args()
     zig = find_zig(args.zig)
     build([source.resolve() for source in args.sources], args.output.resolve(),
-          zig, args.elf_output.resolve() if args.elf_output else None)
+          zig, args.elf_output.resolve() if args.elf_output else None,
+          args.incremental)
     print(f"User program: {args.output.resolve()}")
 
 

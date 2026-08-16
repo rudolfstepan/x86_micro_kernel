@@ -15,12 +15,30 @@ SPEC.loader.exec_module(VALIDATOR)
 
 
 class BuildDependencyTests(unittest.TestCase):
+    def test_windows_build_reuses_matching_configuration(self) -> None:
+        script = (ROOT / "scripts/build-windows.ps1").read_text(
+            encoding="utf-8")
+        self.assertIn("[switch]$Clean", script)
+        self.assertIn(".windows-build-config.json", script)
+        self.assertIn("$requiresClean = $Clean -or", script)
+        self.assertIn("--incremental", script)
+        self.assertNotIn("& $Make 'clean' \"SHELL=$(To-MakePath $MsysShell)\"\n    if", script)
+
+    def test_userspace_incremental_dependencies_include_sdk_and_linker(self) -> None:
+        builder = (ROOT / "scripts/build_user_program.py").read_text(
+            encoding="utf-8")
+        self.assertIn("dependencies = [*all_sources, linker_script]", builder)
+        self.assertIn('glob("*.h")', builder)
+        self.assertIn("dependency.stat().st_mtime_ns <=", builder)
+
     def test_make_emits_explicit_dependency_files_for_every_c_rule(self) -> None:
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn("DEPFLAGS = -MMD -MP -MF $(@:.o=.d) -MT $@", makefile)
         self.assertIn("DEPS := $(C_OBJ:.o=.d)", makefile)
         self.assertIn("-include $(DEPS)", makefile)
         self.assertIn("kernel: check-kernel-dependencies", makefile)
+        self.assertIn("$(OUTPUT_DIR)/kernel.bin: $(ALL_OBJ) $(KERNEL_LDSCRIPT)",
+                      makefile)
         self.assertGreaterEqual(
             makefile.count("@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@"), 20)
         self.assertNotIn("@$(CC) $(CFLAGS) $< -o $@", makefile)

@@ -9,14 +9,22 @@ freestanding i386.
 Unter Windows ist `scripts/build-windows.ps1` der verbindliche Einstieg. Das
 Skript sucht die installierte beziehungsweise portable Zig-Toolchain, setzt
 Clang auf das Ziel `x86-freestanding`, verwendet `ld.lld` als ELF-Linker und
-bindet NASM sowie die MSYS-Shell kontrolliert ein. Es führt außerdem den wegen
-der gemeinsam genutzten Objektpfade erforderlichen sauberen Neubau aus.
+bindet NASM sowie die MSYS-Shell kontrolliert ein. Normale Wiederholungen sind
+inkrementell: unveränderte Kernelobjekte und Ring-3-Programme werden
+wiederverwendet. Ein Konfigurationswechsel bei Ziel, Video, Fault-Injection,
+Node-ID oder Toolpfad löst automatisch genau einmal einen sauberen Neubau aus.
 
 ```powershell
 .\scripts\build-windows.ps1 -Target qemu -Video vga
 .\scripts\build-windows.ps1 -Target vmware -Video vga
 .\scripts\build-windows.ps1 -Target real_hw -Video vga
 .\scripts\build-windows.ps1 -Target qemu -Video framebuffer
+```
+
+Ein vollständiger Neubau kann jederzeit ausdrücklich angefordert werden:
+
+```powershell
+.\scripts\build-windows.ps1 -Target qemu -Video vga -Clean
 ```
 
 Ein nacktes `make kernel` aus einer normalen PowerShell ist **kein**
@@ -85,9 +93,10 @@ kann.
 ## Konfigurationswechsel
 
 Objektpfade werden zwischen Profilen geteilt. Das Makefile verwendet deshalb
-einen Konfigurationsstempel; `build-windows.ps1` führt zusätzlich einen
-sauberen Neubau aus. Unter Windows genügt daher der erneute Skriptaufruf mit
-dem gewünschten Profil. Nur in einer korrekt konfigurierten Unix-/CI-
+einen Konfigurationsstempel; `build-windows.ps1` speichert zusätzlich die
+vollständige Windows-Buildkonfiguration unter `build/` und bereinigt nur bei
+einer Änderung oder `-Clean`. Unter Windows genügt daher der erneute
+Skriptaufruf mit dem gewünschten Profil. Nur in einer korrekt konfigurierten Unix-/CI-
 Cross-Build-Umgebung wird ein manueller Profilwechsel so durchgeführt:
 
 ```bash

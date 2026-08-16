@@ -528,7 +528,9 @@ $(BUILD_LIB_DIR)/libk/%.o: $(LIB_DIR)/libk/%.c
 check-kernel-dependencies: $(ALL_OBJ)
 	@$(PYTHON) scripts/validate_build_dependencies.py $(DEPS)
 
-kernel: check-kernel-dependencies
+kernel: check-kernel-dependencies $(OUTPUT_DIR)/kernel.bin
+
+$(OUTPUT_DIR)/kernel.bin: $(ALL_OBJ) $(KERNEL_LDSCRIPT)
 	@echo "Linking kernel..."
 	@$(LD) $(LDFLAGS) -T $(KERNEL_LDSCRIPT) -o $(OUTPUT_DIR)/kernel.bin $(ALL_OBJ)
 	@echo "Release kernel ELF: $(OUTPUT_DIR)/kernel.bin"

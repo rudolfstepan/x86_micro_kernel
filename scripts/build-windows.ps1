@@ -4,6 +4,7 @@ param(
     [string]$Target = 'real_hw',
     [ValidateSet('vga', 'framebuffer')]
     [string]$Video = 'vga',
+    [switch]$Clean,
     [switch]$FaultInjection,
     [switch]$StorageFaultInjection,
     [switch]$StorageIoFaultInjection,
@@ -77,6 +78,7 @@ $VmwareDir = Join-Path $BuildDir 'vmware\reist-os'
 $PackagedVmx = Join-Path $VmwareDir 'reist-os.vmx'
 $UserProgramDir = Join-Path $BuildDir 'programs'
 $UserPrg = Join-Path $UserProgramDir $ProgramName.ToUpperInvariant()
+$BuildConfig = Join-Path $BuildDir '.windows-build-config.json'
 
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 New-Item -ItemType Directory -Force -Path $ZigLocalCache, $ZigGlobalCache | Out-Null
@@ -89,9 +91,8 @@ try {
     # %LOCALAPPDATA% may be inaccessible in restricted Windows environments.
     $env:ZIG_LOCAL_CACHE_DIR = $ZigLocalCache
     $env:ZIG_GLOBAL_CACHE_DIR = $ZigGlobalCache
-    # Object paths are shared by all compiler frontends.  A clean native build
-    # prevents same-target objects from an earlier GCC/WSL invocation being
-    # silently reused with Zig on Windows.
+    # Object paths are shared by all compiler frontends. Reuse them only when
+    # the complete Windows build configuration and tool paths are unchanged.
     $VmrunCommand = Get-Command 'vmrun' -ErrorAction SilentlyContinue
     $Vmrun = @(
         $(if ($VmrunCommand) { $VmrunCommand.Source }),
@@ -105,9 +106,33 @@ try {
             throw "The generated VMware VM is still running. Shut it down before rebuilding: $PackagedVmx"
         }
     }
-    & $Make 'clean' "SHELL=$(To-MakePath $MsysShell)"
-    if ($LASTEXITCODE -ne 0) {
-        throw "Build cleanup failed with exit code $LASTEXITCODE."
+    $configuration = [ordered]@{
+        target = $Target
+        video = $Video
+        fault_injection = [bool]$FaultInjection
+        storage_fault_injection = [bool]$StorageFaultInjection
+        storage_io_fault_injection = [bool]$StorageIoFaultInjection
+        handover_fault_injection = [bool]$HandoverFaultInjection
+        handover_node_id = $HandoverNodeId
+        dhcp_lease_fault_injection = [bool]$DhcpLeaseFaultInjection
+        dhcp_renew_fault_injection = [bool]$DhcpRenewFaultInjection
+        nasm = $Nasm
+        zig = $Zig
+    }
+    $configurationJson = $configuration | ConvertTo-Json -Compress
+    $previousConfiguration = if (Test-Path -LiteralPath $BuildConfig) {
+        Get-Content -LiteralPath $BuildConfig -Raw
+    } else { '' }
+    $requiresClean = $Clean -or $previousConfiguration -ne $configurationJson
+    if ($requiresClean) {
+        Write-Host 'Build configuration changed or -Clean requested; cleaning artifacts...'
+        & $Make 'clean' "SHELL=$(To-MakePath $MsysShell)"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Build cleanup failed with exit code $LASTEXITCODE."
+        }
+        New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+    } else {
+        Write-Host 'Build configuration unchanged; reusing incremental artifacts.'
     }
     $makeArguments = @(
         'kernel',
@@ -141,6 +166,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Kernel build failed with exit code $LASTEXITCODE."
     }
+    Set-Content -LiteralPath $BuildConfig -Value $configurationJson -NoNewline
 
     & $Nasm -f bin 'arch/x86/boot/bios/stage1_mbr.asm' -o $Stage1
     if ($LASTEXITCODE -ne 0) { throw 'Stage 1 assembly failed.' }
@@ -157,13 +183,14 @@ try {
     New-Item -ItemType Directory -Force -Path $UserProgramDir | Out-Null
     & $Python 'scripts/build_system_programs.py' `
         --output-dir $UserProgramDir `
-        --zig $Zig
+        --zig $Zig `
+        --incremental
     if ($LASTEXITCODE -ne 0) {
         throw "System program build failed with exit code $LASTEXITCODE."
     }
     $programBuildArguments = @(
         'scripts/build_user_program.py'
-    ) + $ProgramSource + @('--output', $UserPrg, '--zig', $Zig)
+    ) + $ProgramSource + @('--output', $UserPrg, '--zig', $Zig, '--incremental')
     & $Python @programBuildArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Example user program build failed with exit code $LASTEXITCODE."
