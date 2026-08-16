@@ -76,5 +76,4 @@ echo.
 echo REIST OS was written and verified successfully.
 echo Disconnect the USB adapter, install the SSD in the target PC,
 echo and select the disk as the first legacy BIOS boot device.
-pause
 exit /b 0
