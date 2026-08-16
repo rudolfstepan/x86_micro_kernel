@@ -25,6 +25,10 @@ class AhciProbeContractTests(unittest.TestCase):
         self.assertIn("AHCI_PORT_SSTS", source)
         self.assertIn("AHCI_PORT_SIG", source)
         self.assertIn("AHCI_SIG_ATA", source)
+        self.assertIn("__attribute__((aligned(1024)))", source)
+        self.assertIn("ahci_dma_address_valid", source)
+        self.assertIn("AHCI_PORT_CLB", source)
+        self.assertIn("AHCI_PORT_FB", source)
         self.assertNotIn("pci_set_bus_master", source)
 
 

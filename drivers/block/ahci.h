@@ -9,6 +9,10 @@
 #define AHCI_PCI_CLASS 0x01U
 #define AHCI_PCI_SUBCLASS 0x06U
 #define AHCI_PCI_PROG_IF 0x01U
+#define AHCI_MAX_PORTS 32U
+#define AHCI_COMMAND_LIST_SIZE 1024U
+#define AHCI_RECEIVED_FIS_SIZE 256U
+#define AHCI_COMMAND_TABLE_SIZE 256U
 
 typedef struct {
     uint64_t abar;
@@ -17,6 +21,7 @@ typedef struct {
     uint32_t implemented_ports;
     uint32_t sata_ports;
     uint32_t version;
+    uint32_t dma_ready_ports;
     uint8_t bus;
     uint8_t slot;
     uint8_t function;

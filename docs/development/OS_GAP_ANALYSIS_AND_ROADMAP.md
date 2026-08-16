@@ -1246,9 +1246,12 @@ Flush. ATA-PIO und FDD werden darüber als bestehende Backends angesprochen;
 ein Host-Vertragstest und der vollständige Windows-Build sind erfolgreich.
 Der AHCI-Pfad erkennt ausschließlich PCI 01/06/01, validiert BAR5, mappt den
 MMIO-Bereich, setzt den Controller mit doppelter Zeit-/Pollgrenze zurück und
-erkennt aktive ATA-SATA-Ports über `PI`, `PxSSTS` und `PxSIG`. Die VFS-/Storage-
-Aufrufer sind noch nicht vollständig migriert; DMA-Speicher, IDENTIFY und
-Sektor-I/O fehlen. Der Stand ist daher noch keine SATA-Unterstützung.
+erkennt aktive ATA-SATA-Ports über `PI`, `PxSSTS` und `PxSIG`. Feste DMA-Pools
+für Command-List, Received-FIS und Command-Table sind ausgerichtet und
+adressgeprüft vorbereitet; Bus-Mastering und eigentliche DMA-Kommandos bleiben
+noch deaktiviert. Die VFS-/Storage-Aufrufer sind noch nicht vollständig
+migriert; IDENTIFY und Sektor-I/O fehlen. Der Stand ist daher noch keine
+SATA-Unterstützung.
 
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 
