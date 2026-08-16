@@ -1419,32 +1419,19 @@ Navigationssemantik des Nummernblocks. Der QEMU-i8042-Lauf schaltet NumLock
 zweimal und sendet danach `help`; die Ring-3-Shell antwortet weiterhin. Die
 frühe Diagnose lautet nun
 `PS/2 keyboard ready: config=0x21 scanset=2-raw input=IRQ1+poll`. Eine Aussage
-für das H81M-K bleibt bis zur erneuten realen Abnahme offen.
+für das H81M-K war zu diesem Zeitpunkt noch offen.
 
 Die nächste H81M-K-Abnahme bestätigte zwar reagierende NumLock-LEDs, aber keine
 sichtbaren Zeichen am Userspace-Prompt. Damit sind i8042-Zugriff, mindestens ein
 Lock-Make-Code, der Set-2-Decoder, der periodische Taskpfad und der verzögerte
-`ED`-LED-Befehl nachgewiesen; offen bleibt der Abschnitt zwischen gewöhnlichem
-Make-Code und Shell-Queue. Ein temporärer, fester 16-Einträge-Trace zeichnet
-deshalb unter IRQ-Ausschluss nur Statusbyte, Rohcode, stateless Set-2-Mapping und
-erfolgte Queue-Veröffentlichung auf. IRQ1 formatiert keine Ausgabe. Erst der
-blockierte Console-Task gibt Einträge als
-`[PS2 TRACE st=.. raw=.. map=.. q=.]` aus. Nach 16 Rohbytes stoppt die Erfassung
-endgültig und beeinflusst den Eingabepfad nicht weiter. Im Referenzgast ergeben
-NumLock `raw=77 map=45 q=0` und der Buchstabe `h`
-`raw=33 map=23 q=1`; anschließend antwortet die Ring-3-Shell auf `help`. Der
-reale Trace entscheidet nun zwischen fehlendem Portbyte, gesetztem AUX-/Fehlerbit,
-unbekanntem Mapping und fehlgeschlagener Queue-Veröffentlichung.
-
-Die reale Abnahme am 16. August 2026 lieferte wiederholt gewöhnliche Make- und
-Break-Codes mit `q=1`, darunter `raw=33 map=23 q=1`. Damit ist der komplette
-PS/2-Pfad bis einschließlich Queue-Veröffentlichung nachgewiesen. Dass nach
-genau 16 Zeilen keine weitere Diagnose erschien, war die feste
-`KEYBOARD_TRACE_CAPACITY` und kein Stillstand des Controllers. Die Shell
-verbrauchte die wartenden Bytes nicht, weil der Keyboard-API zusätzlich der
-historische COM1-Eingang vorgeschaltet war. Auf realer Hardware kann ein nicht
-dekodierter Legacy-UART-Bereich ausschließlich Einsen liefern und diesen
-gemischten Eingabepfad dominieren.
+`ED`-LED-Befehl nachgewiesen. Ein temporärer, fest begrenzter Trace wies danach
+auf realer Hardware auch gewöhnliche Make-/Break-Codes und die erfolgreiche
+Queue-Veröffentlichung nach. Das Ende nach genau 16 Einträgen war lediglich die
+Diagnosekapazität und kein Stillstand des Controllers. Damit lag der Fehler
+hinter der PS/2-Queue: Der Keyboard-API war zusätzlich der historische
+COM1-Eingang vorgeschaltet. Auf realer Hardware kann ein nicht dekodierter
+Legacy-UART-Bereich ausschließlich Einsen liefern und diesen gemischten
+Eingabepfad dominieren.
 
 Die Eingabequellen sind deshalb jetzt vollständig getrennt. `getchar`,
 `getchar_nonblocking` und `get_input_line` konsumieren ausschließlich die
@@ -1455,7 +1442,9 @@ bleibt bei fehlgeschlagener Erkennung deaktiviert. Auch der TX-Wait ist fest
 begrenzt. Der automatisierte Gasttest schreibt weiterhin sein Protokoll auf
 COM1, injiziert `GTEST` aber über begrenzte QEMU-`sendkey`-Befehle als echte
 emulierte PS/2-Eingabe. Der QEMU-Gesamtlauf bis `TEST_OK` bestätigt diese
-Trennung; die erneute Abnahme am H81M-K bleibt als Hardware-Nachweis offen.
+Trennung. Die anschließende reale Abnahme bestätigt funktionierende Eingabe an
+der Userspace-Shell. Der nur zur Ursachenanalyse dienende Tastendruck-Trace ist
+deshalb wieder vollständig aus Treiber und Laufzeitausgabe entfernt.
 
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 

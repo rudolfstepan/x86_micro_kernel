@@ -54,7 +54,6 @@
 #define KEYBOARD_LED_SCROLL_LOCK      0x01U
 #define KEYBOARD_LED_NUM_LOCK         0x02U
 #define KEYBOARD_LED_CAPS_LOCK        0x04U
-#define KEYBOARD_TRACE_CAPACITY       16U
 
 #define SC_MAX                  89  // Extended to cover more scancodes
 #define INPUT_QUEUE_SIZE        256
@@ -140,13 +139,6 @@ static volatile kbd_state_t kbd_state = {
     .extended = false
 };
 
-typedef struct {
-    uint8_t status;
-    uint8_t raw;
-    uint8_t mapped;
-    uint8_t queued;
-} keyboard_trace_entry_t;
-
 // Input queue (circular buffer)
 static volatile char input_queue[INPUT_QUEUE_SIZE];
 static volatile int input_queue_head = 0;
@@ -158,12 +150,6 @@ static bool keyboard_scanning_enabled;
 static bool set2_release_pending;
 static uint8_t set2_pause_bytes_remaining;
 static bool keyboard_led_update_pending;
-static keyboard_trace_entry_t keyboard_trace[KEYBOARD_TRACE_CAPACITY];
-static uint8_t keyboard_trace_head;
-static uint8_t keyboard_trace_tail;
-static uint8_t keyboard_trace_count;
-static uint8_t keyboard_trace_recorded;
-static bool keyboard_trace_enabled;
 
 static bool i8042_wait_input_clear(void) {
     for (uint32_t poll = 0U; poll < I8042_POLL_LIMIT; ++poll) {
@@ -503,50 +489,6 @@ static uint8_t set2_to_set1(uint8_t scancode) {
     }
 }
 
-static void kb_trace_enable_locked(void) {
-    KASSERT_IRQ_DISABLED();
-    if (keyboard_trace_enabled) return;
-    keyboard_trace_head = 0U;
-    keyboard_trace_tail = 0U;
-    keyboard_trace_count = 0U;
-    keyboard_trace_recorded = 0U;
-    keyboard_trace_enabled = true;
-}
-
-static void kb_trace_record_locked(uint8_t status, uint8_t raw,
-                                   uint8_t mapped, bool queued) {
-    KASSERT_IRQ_DISABLED();
-    if (!keyboard_trace_enabled ||
-        keyboard_trace_recorded >= KEYBOARD_TRACE_CAPACITY ||
-        keyboard_trace_count >= KEYBOARD_TRACE_CAPACITY) return;
-
-    keyboard_trace_entry_t *entry = &keyboard_trace[keyboard_trace_tail];
-    entry->status = status;
-    entry->raw = raw;
-    entry->mapped = mapped;
-    entry->queued = queued ? 1U : 0U;
-    keyboard_trace_tail = (uint8_t)(
-        (keyboard_trace_tail + 1U) % KEYBOARD_TRACE_CAPACITY);
-    ++keyboard_trace_count;
-    ++keyboard_trace_recorded;
-}
-
-static bool kb_trace_take_locked(keyboard_trace_entry_t *entry_out) {
-    KASSERT_IRQ_DISABLED();
-    if (entry_out == NULL || keyboard_trace_count == 0U) return false;
-    *entry_out = keyboard_trace[keyboard_trace_head];
-    keyboard_trace_head = (uint8_t)(
-        (keyboard_trace_head + 1U) % KEYBOARD_TRACE_CAPACITY);
-    --keyboard_trace_count;
-    return true;
-}
-
-static void kb_trace_print(const keyboard_trace_entry_t *entry) {
-    if (entry == NULL) return;
-    printf("[PS2 TRACE st=%02X raw=%02X map=%02X q=%u]\n",
-           entry->status, entry->raw, entry->mapped, entry->queued);
-}
-
 /* Interpret the non-extended keypad according to NumLock.  Set-2 keypad make
  * codes are first converted to their Set-1 semantic numbers by the mapping
  * above, while E0-prefixed navigation keys bypass this function. */
@@ -722,12 +664,9 @@ static void kb_drain_output_locked(uint32_t budget) {
         uint8_t status = inb(KEYBOARD_STATUS_PORT);
         if ((status & I8042_STATUS_OUTPUT_FULL) == 0U) return;
         uint8_t scancode = inb(KEYBOARD_DATA_PORT);
-        int tail_before = input_queue_tail;
         bool filtered = (status & (I8042_STATUS_AUX_DATA |
                                    I8042_STATUS_ERROR_MASK)) != 0U;
         if (!filtered) kb_process_scancode(scancode);
-        kb_trace_record_locked(status, scancode, set2_to_set1(scancode),
-                               input_queue_tail != tail_before);
     }
 }
 
@@ -810,23 +749,16 @@ char getchar(void) {
     /* Blocking console input must preserve, not silently change, the caller's
      * interrupt contract. */
     KASSERT_CAN_SLEEP();
-    uint32_t setup_flags = irq_save();
-    kb_trace_enable_locked();
-    irq_restore(setup_flags);
 
     while (1) {
         uint32_t flags = irq_save();
         kb_drain_output_locked(KEYBOARD_DRAIN_BUDGET);
         kb_service_leds_locked();
-        keyboard_trace_entry_t trace;
-        bool have_trace = kb_trace_take_locked(&trace);
 
         char ch = input_queue_pop();
-        if (ch != 0 || have_trace) {
+        if (ch != 0) {
             irq_restore(flags);
-            if (have_trace) kb_trace_print(&trace);
-            if (ch != 0) return ch;
-            continue;
+            return ch;
         }
 
         /* The empty check and queue insertion are atomic with the PS/2
@@ -923,9 +855,6 @@ void kb_install(void) {
     set2_release_pending = false;
     set2_pause_bytes_remaining = 0U;
     keyboard_led_update_pending = false;
-    keyboard_trace_enabled = false;
-    keyboard_trace_count = 0U;
-    keyboard_trace_recorded = 0U;
 
     const char *failure_stage = "controller input busy";
     uint8_t response = 0U;

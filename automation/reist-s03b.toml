@@ -709,6 +709,41 @@ commit_message = "fix: prevent absent COM1 from starving PS2 input"
 evidence = []
 
 [[packages]]
+id = "S0.3c-hw9"
+status = "done"
+risk = "low"
+title = "Remove completed physical PS2 trace"
+scope = "Remove the temporary fixed-capacity keypress trace after successful physical keyboard validation without changing i8042 takeover, Set-2 decoding, queue publication or blocking semantics."
+allowed_files = [
+  "drivers/char/kb.c",
+  "test/test_ps2_keyboard_source.py",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "keypresses produce no trace output",
+  "IRQ1 and polling still feed the same PS/2 queue",
+  "temporary trace storage and task-context formatting are absent",
+  "physical validation remains documented"
+]
+targeted_tests = [
+  "python test/test_ps2_keyboard_source.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_ps2_smoke.py --image build/reist-os.img"
+]
+stop_conditions = [
+  "trace removal changes decoder or queue behavior",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "cleanup: remove completed PS2 keypress trace"
+evidence = []
+
+[[packages]]
 id = "S0.3c-6f5"
 status = "active"
 risk = "critical"
