@@ -19,7 +19,7 @@
 #define STORAGE_SERVICE_RESTART_BUDGET 3U
 #define STORAGE_MEDIA_PROBE_INITIAL_MS 250U
 #define STORAGE_MEDIA_PROBE_MAX_MS 30000U
-#define STORAGE_MEDIA_FINGERPRINT_VERSION 2U
+#define STORAGE_MEDIA_FINGERPRINT_VERSION 3U
 
 typedef struct {
     int32_t pid;
@@ -48,7 +48,8 @@ typedef struct __attribute__((packed)) {
     uint8_t parent_resource;
     uint8_t partition_type;
     uint8_t partition_index;
-    uint8_t reserved;
+    uint8_t partition_scheme;
+    uint32_t partition_guid_crc32;
     char model_prefix[24];
 } storage_media_fingerprint_t;
 
@@ -96,6 +97,15 @@ static uint32_t media_crc32(const void *data, size_t length) {
     return crc ^ 0xFFFFFFFFU;
 }
 
+static uint32_t partition_guid_crc32(const drive_t *drive) {
+    uint8_t guids[32];
+    if (drive == NULL || drive->partition_scheme != PARTITION_SCHEME_GPT)
+        return 0U;
+    memcpy(guids, drive->partition_type_guid, 16U);
+    memcpy(guids + 16U, drive->partition_guid, 16U);
+    return media_crc32(guids, sizeof(guids));
+}
+
 static void canonical_model_prefix(char output[24], const char *model) {
     size_t length = 0U;
     memset(output, 0, 24U);
@@ -117,9 +127,12 @@ static bool fingerprint_valid(const void *payload, size_t length) {
            fingerprint->type == DRIVE_TYPE_AHCI ||
            (fingerprint->type == DRIVE_TYPE_PARTITION &&
             fingerprint->parent_resource < MAX_DRIVES &&
-            fingerprint->partition_type != 0U &&
             fingerprint->partition_index >= 1U &&
-            fingerprint->partition_index <= 4U);
+            ((fingerprint->partition_scheme == PARTITION_SCHEME_MBR &&
+              fingerprint->partition_type != 0U &&
+              fingerprint->partition_index <= 4U) ||
+             (fingerprint->partition_scheme == PARTITION_SCHEME_GPT &&
+              fingerprint->partition_index <= 128U)));
 }
 
 static bool read_boot_sector(uint32_t resource, uint8_t *data,
@@ -161,7 +174,9 @@ static bool capture_fingerprint(uint32_t resource) {
         .parent_resource = drive->parent_resource,
         .partition_type = drive->partition_type,
         .partition_index = drive->partition_index,
+        .partition_scheme = drive->partition_scheme,
     };
+    fingerprint.partition_guid_crc32 = partition_guid_crc32(drive);
     canonical_model_prefix(fingerprint.model_prefix, drive->model);
     if (critical_object_init(&media_fingerprints[resource],
             STORAGE_MEDIA_FINGERPRINT_VERSION, &fingerprint,
@@ -219,6 +234,8 @@ static bool media_identity_matches(uint32_t resource) {
         if (drive->parent_resource != expected.parent_resource ||
             drive->partition_type != expected.partition_type ||
             drive->partition_index != expected.partition_index ||
+            drive->partition_scheme != expected.partition_scheme ||
+            partition_guid_crc32(drive) != expected.partition_guid_crc32 ||
             drive->lba_offset != expected.lba_offset ||
             drive->sectors != expected.sectors ||
             drive->parent_resource >= (uint32_t)drive_count ||

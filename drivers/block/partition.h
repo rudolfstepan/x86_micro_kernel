@@ -3,8 +3,7 @@
 
 #include <stddef.h>
 
-/* Discover bounded primary MBR partitions on ATA/AHCI whole-media devices.
- * Invalid, overlapping and protective-GPT layouts publish no child devices. */
-size_t partition_discover_mbr(void);
+/* Discover bounded MBR or CRC-validated GPT partitions on whole media. */
+size_t partition_discover(void);
 
 #endif

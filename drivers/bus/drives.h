@@ -12,6 +12,12 @@ typedef enum {
     DRIVE_TYPE_PARTITION = 4
 } drive_type_t;
 
+typedef enum {
+    PARTITION_SCHEME_NONE = 0,
+    PARTITION_SCHEME_MBR = 1,
+    PARTITION_SCHEME_GPT = 2
+} partition_scheme_t;
+
 typedef struct {
     drive_type_t type;      // Type of drive: ATA or FDD
     uint16_t base;          // Base I/O port (for ATA drives)
@@ -27,7 +33,10 @@ typedef struct {
     uint8_t ahci_port;      // AHCI port index
     uint8_t parent_resource;// Parent resource for partition child devices
     uint8_t partition_type; // MBR partition type, zero for whole media
-    uint8_t partition_index;// One-based primary MBR slot
+    uint8_t partition_index;// One-based MBR/GPT entry index
+    uint8_t partition_scheme;
+    uint8_t partition_type_guid[16];
+    uint8_t partition_guid[16];
     bool has_partitions;    // Whole-media device owns validated children
     bool lba48_supported;   // ATA IDENTIFY word 83 bit 10 validated
     uint32_t lba_offset;    // First parent LBA for partition child devices

@@ -93,6 +93,12 @@ class FilesystemHostTests(unittest.TestCase):
             ["test/test_ext2_host.c", "fs/ext2/ext2.c"],
         )
 
+    def test_crc_validated_gpt_partition_discovery(self) -> None:
+        self.build_and_run(
+            "test_partition_host",
+            ["test/test_partition_host.c", "drivers/block/partition.c"],
+        )
+
     def test_fat12_cluster_chain_seek_and_subdirectory_lifetime(self) -> None:
         self.build_and_run(
             "test_fat12_host",

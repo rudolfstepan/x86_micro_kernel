@@ -1186,13 +1186,14 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
 - [x] Bereichsprüfung und `flush` zentral erzwingen.
 - [x] ATA-LBA48 über IDENTIFY und PIO-EXT-Einsektorbefehle ergänzen.
 - [x] Gebündelte, fest begrenzte ATA-PIO-Transfers ergänzen.
-- [x] GPT, AHCI und NVMe als getrennte Folgepakete behandeln; GPT und NVMe
-  bleiben bewusst offen.
+- [x] GPT, AHCI und NVMe als getrennte Folgepakete behandeln; GPT ist als
+  begrenztes Folgepaket umgesetzt, NVMe bleibt bewusst offen.
 
 **Teilstatus 16. August 2026:** Die transportneutrale Einsektor-API umfasst
 ATA, FDD und AHCI. Primäre MBR-Einträge werden nach Signatur-, Bootflag-,
 Kapazitäts-, Überlauf- und Überlappungsprüfung als feste Child-Geräte
-veröffentlicht. Protective-GPT-MBRs werden fail-closed zurückgewiesen. Jeder
+veröffentlicht. Protective-GPT-MBRs werden nur mit gültigem GPT-Primärheader
+angenommen. Jeder
 Child-I/O wird vor dem Zugriff auf einen validierten Parent-LBA übersetzt;
 Whole-Disk-Parents mit Kindern werden nicht zusätzlich gemountet. FAT32 und
 EXT2 können dadurch partitionierte ATA-/AHCI-Medien über denselben Vertrag
@@ -1206,8 +1207,13 @@ eine einzige Sector-Count-Programmierung mit DRQ-Deadline je Sektor. Writes
 werden geflusht und vollständig zurückgelesen; journalisierte Bereiche fallen
 innerhalb derselben Supervision auf geordnete Journal-Writes zurück. FAT32-
 Cluster-I/O nutzt diesen Vertrag. Ein vollständiger QEMU-IDE-Gastlauf über den
-ATA-PIO-Pfad erreicht `FILE_IO_OK` und `TEST_OK`. GPT bleibt ausdrücklich ein
-Folgepaket.
+ATA-PIO-Pfad erreicht `FILE_IO_OK` und `TEST_OK`. GPT validiert Protective MBR,
+Revision 1.0, Disk-GUID, Header-CRC32, die CRC32 der auf 128 Einträge begrenzten
+Partitionstabelle, eindeutige Partition-GUIDs sowie nutzbare Bereiche und
+Überlappungen. Erst danach werden höchstens 16 feste Child-Geräte
+veröffentlicht; hybride oder teilweise gültige Layouts bleiben fail-closed.
+Der geschützte Storage-Fingerprint bindet GPT-Children über Schema,
+Entry-Index und CRC32 von Typ- und Unique-GUID.
 
 #### R2.4 SATA/AHCI-Unterstützung — XL
 

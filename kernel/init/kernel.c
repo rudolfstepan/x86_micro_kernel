@@ -215,7 +215,7 @@ static void driver_init(void) {
     // Detect floppy drives
     fdd_detect_drives();  // Floppy disk drives
 
-    partition_discover_mbr(); // Publish bounded primary MBR child devices
+    partition_discover(); // Publish bounded CRC-validated partition children
 
     if (!storage_safety_init(pit_monotonic_ms())) {
         panic("Unable to initialize REIST storage write supervision");
