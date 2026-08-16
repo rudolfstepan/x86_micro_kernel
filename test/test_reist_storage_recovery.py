@@ -110,7 +110,7 @@ class StorageRecoveryContracts(unittest.TestCase):
         ordered = [
             "media_identity_matches(resource)",
             "ata_journal_recover_resource(resource)",
-            "storage_restore_writes_after_recovery()",
+            "storage_restore_writes_after_recovery(resource)",
             "filesystem_restore_mutations_after_recovery()",
             "control.read_only_resources &= ~mask",
             "control.quarantined_resources &= ~mask",
@@ -123,6 +123,8 @@ class StorageRecoveryContracts(unittest.TestCase):
             position = next_position
         self.assertIn("ata_read_sector_fresh", service)
         self.assertIn("state.write_fenced = 0U", storage)
+        self.assertIn("state.active_resource != resource", storage)
+        self.assertIn("state.operation_active = 0U", storage)
         self.assertIn("state.read_only = 0U", filesystem)
         self.assertIn("state.mutation_active = 0U", filesystem)
 

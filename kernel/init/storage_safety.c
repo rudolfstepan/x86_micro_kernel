@@ -144,19 +144,21 @@ bool storage_write_begin(uint32_t resource, uint64_t now_ms) {
 bool storage_write_end(bool durable_commit) {
     storage_control_t state;
     if (!storage_supervised) return !storage_integrity_failed;
-    if (!storage_control_read(&state) || state.write_fenced != 0U ||
-        state.operation_active == 0U) return false;
+    if (!storage_control_read(&state) || state.operation_active == 0U)
+        return false;
     uint32_t resource = state.active_resource;
+    bool committed = durable_commit && state.write_fenced == 0U &&
+                     !storage_force_fenced;
     state.operation_active = 0U;
     state.operation_deadline_ms = 0U;
     state.active_resource = UINT32_MAX;
-    if (!durable_commit) state.write_fenced = 1U;
+    if (!committed) state.write_fenced = 1U;
     if (!storage_control_write(&state) ||
         supervisor_report_idle(storage_supervisor_handle) != 0) {
         storage_fence_writes();
         return false;
     }
-    if (!durable_commit) {
+    if (!committed) {
         (void)storage_service_report_media_failure(resource, true);
         filesystem_fence_mutations();
         storage_fence_writes();
@@ -178,11 +180,19 @@ void storage_fence_writes(void) {
     fdd_fence_writes();
 }
 
-bool storage_restore_writes_after_recovery(void) {
+bool storage_restore_writes_after_recovery(uint32_t resource) {
     storage_control_t state;
-    if (!storage_supervised || storage_integrity_failed ||
+    if (resource >= (uint32_t)drive_count || resource >= MAX_DRIVES ||
+        !storage_supervised || storage_integrity_failed ||
         storage_handover_is_held() || !storage_control_read(&state) ||
-        state.operation_active != 0U) return false;
+        (state.operation_active != 0U &&
+         state.active_resource != resource)) return false;
+    /* Journal recovery has already resolved uncertain media effects.  It is
+     * now safe to retire only the matching interrupted operation before the
+     * global and driver fences are released. */
+    state.operation_active = 0U;
+    state.operation_deadline_ms = 0U;
+    state.active_resource = UINT32_MAX;
     state.write_fenced = 0U;
     if (!storage_control_write(&state) ||
         supervisor_report_idle(storage_supervisor_handle) != 0) {

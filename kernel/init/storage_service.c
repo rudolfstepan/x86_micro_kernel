@@ -493,7 +493,7 @@ static void poll_media_reintegration(uint64_t now_ms) {
             } else if (!ata_journal_recover_resource(resource)) {
                 printf("REIST_STORAGE RECOVERY_WAIT_JOURNAL %u\n", resource);
                 recovered = false;
-            } else if (!storage_restore_writes_after_recovery()) {
+            } else if (!storage_restore_writes_after_recovery(resource)) {
                 printf("REIST_STORAGE RECOVERY_WAIT_STORAGE_FENCE %u\n",
                        resource);
                 recovered = false;
