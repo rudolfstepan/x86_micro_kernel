@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import queue
 import socket
@@ -20,6 +21,14 @@ import run_qemu_smoke as smoke
 ARMED = "REIST_FDD HOTPLUG_ARMED"
 DISCONNECTED = "REIST_FDD DISCONNECT_DETECTED"
 REINTEGRATED = "TEST_STAGE FDD_HOTPLUG_REINTEGRATED_OK"
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def create_test_floppy(path: Path) -> None:
@@ -140,6 +149,9 @@ def send_paced(process: subprocess.Popen[str], command: str) -> None:
 
 def run(qemu: Path, image: Path, floppy: Path, timeout: float,
         log: Path) -> int:
+    if image == floppy:
+        raise ValueError("test floppy must not replace the reference image")
+    reference_digest = file_sha256(image)
     create_test_floppy(floppy)
     qmp_port = reserve_port()
     process = subprocess.Popen(
@@ -195,6 +207,9 @@ def run(qemu: Path, image: Path, floppy: Path, timeout: float,
         reader.join(timeout=1.0)
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text("".join(transcript), encoding="utf-8")
+    if file_sha256(image) != reference_digest:
+        print(f"FDD HOTPLUG FAIL: reference image changed; log={log}")
+        return 1
     if error is not None:
         print(f"FDD HOTPLUG FAIL: {error}; log={log}")
         return 1

@@ -232,7 +232,10 @@ und 10 verbindlich.
       - [ ] S0.3c-6f5 Deterministische Fault-Injection nach jeder Persistenz-
         barriere: Teilwrite, beschädigte Journal-Kopie, beide beschädigten
         Kopien, defekter Daten-/FAT-/Root-Sektor, Medienauswurf und Stromverlust;
-        Host-Imageprüfung plus reale QEMU- und VMware-Reconnect-Abnahme
+        - [x] 29 stabile Barrieren und unveränderte Referenzabbilder werden
+          durch die Host-Matrix geprüft
+        - [x] QEMU-FDD-Reconnect-Abnahme als Laufzeitevidenz
+        - [ ] Reale VMware-Reconnect-Abnahme
       - [ ] S0.3c-6f6 Capability-gebundene Userspace-Wartungswerkzeuge ohne
         direkten DMA-/Controllerzugriff
         - [ ] `FDISK.PRG` für validierte Partitionstabellen auf partitionierten
@@ -1283,6 +1286,12 @@ unterstützte Plattform.
 umgesetzt. Schritt 10 ist für QEMU einschließlich Timeout-, TFES- und TFD-
 Injektion sowie für den normalen VMware-AHCI-Boot belegt. Offen bleiben die
 reproduzierbare VMware-Fault-Injection und ein Lauf auf realer SATA-Hardware.
+Für diesen Lauf steht `SATAWR.PRG` bereit: Der begrenzte Ring-3-Test schreibt
+zehn Sekunden lang sequenzierte 512-Byte-Datensätze mit CRC und `fsync`, meldet
+den erwarteten I/O-Abbruch beim Abziehen, wartet höchstens 30 Sekunden auf die
+Reintegration und akzeptiert anschließend nur ein vollständiges altes oder
+ein lückenloses CRC-gültiges Dateipräfix. Partition und Systemprogramm werden
+separat erneut gelesen; reale Ergebnisse bleiben als Hardwareevidenz offen.
 `drivers/block/block_device.[ch]` bietet einen festen,
 transportneutralen Einsektor-Vertrag mit Bereichsprüfung, Read, Write und
 Flush. ATA-PIO und FDD werden darüber als bestehende Backends angesprochen;
@@ -2143,9 +2152,10 @@ Disconnect/Reconnect-Ablauf wurde am 15. August 2026 außerdem manuell unter
 VMware mit erfolgreicher Wiederverwendung von A: bestätigt.
 
 **S0.3c-6f ist teilweise umgesetzt:** Markierte REIST-FAT12-Medien besitzen
-jetzt ein verifiziertes Undo-Journal, begrenzte Remaps, kritische Replikate und
-geordnete Dateitransaktionen. Aktiv bleibt S0.3c-6f5 mit der vollständigen
-Persistenz-/Power-Loss-Fehlermatrix. EXT2, fremde FAT-Volumes sowie künftige
+jetzt ein verifiziertes Undo-Journal, begrenzte Remaps, kritische Replikate,
+geordnete Dateitransaktionen und eine deterministische Host-Fehlermatrix über
+alle 29 Persistenzbarrieren. QEMU-FDD-Reconnect ist abgenommen; reale VMware-
+und Power-Loss-Laufzeitevidenz bleibt offen. EXT2, fremde FAT-Volumes sowie künftige
 USB-/Flash-/NVMe-Backends benötigen weiterhin einen eigenen nachgewiesenen
 Undo/COW/Journal-Vertrag. Vor diesem Nachweis darf ein Medium nach unklarem
 Schreibabschluss nicht automatisch wieder beschreibbar werden.
@@ -2322,12 +2332,19 @@ liefert entweder den alten konsistenten Zustand oder `ONLINE_RO`.
 
 #### S0.3c-6f5 — Fault-Injection und Laufzeitabnahme
 
-Für jede Persistenzbarriere existiert eine deterministische Injektion. Die
-Matrix umfasst Teilwrite, eine und zwei beschädigte Journal-Kopien, defekten
-Daten-/FAT-/Root-Sektor, Medienauswurf und Stromverlust. Zuerst laufen
-Host-Image-Tests, danach QEMU-FDD und abschließend VMware. Jeder Lauf prüft den
-Medienzustand, den sichtbaren Dateiinhalt und Fortschritt eines unabhängigen
-Ring-3-Prozesses.
+Für jede der 8 Journal-, 3 Remap- und 18 Replica-Persistenzbarrieren existiert
+eine stabile, begrenzte Kennung. Die Host-Matrix injiziert an jeder Barriere
+einen vollständigen Schreibfehler, einen per Readback erkannten Teilwrite und
+Medienentfernung. Zusätzlich prüft sie eine und zwei beschädigte redundante
+Kopien, fehlerhafte Undo-/Daten-/FAT-/Root-Sektoren, ausschließlich vollständige
+alte oder neue Zustände, Fail-Closed-Verhalten, begrenzte Schreibarbeit und
+unabhängigen Fortschritt. Das Referenzabbild wird vor und nach der Matrix per
+SHA-256 verglichen; derselbe Schutz umfasst den QEMU-FDD-Hotplug-Lauf. Die
+Zielsektorprüfung erzwingt fehlgeschlagene Readbacks getrennt für Daten-, FAT-
+und Root-Klassen, Replica-Recovery prüft sowohl den Ausfall einer Datenkopie als
+auch beider Datenkopien. QEMU-FDD-Reconnect ist erfolgreich; VMware-Reconnect
+bleibt die nachgelagerte reale Laufzeitabnahme. Ohne diese Evidenz wird keine
+reale Power-Loss-Garantie behauptet.
 
 #### S0.3c-6f6 — Wartungsprogramme
 
@@ -2350,6 +2367,9 @@ sie validieren Eingaben und senden versionierte Requests an den Storage-Dienst.
 Jedes Tool muss in `scripts/build_system_programs.py` registriert sein und mit
 der normalen Ring-3-Toolchain gebaut werden. Erfolgsnachrichten dürfen erst
 nach Kernelantwort, verifiziertem Readback und kontrolliertem Remount erscheinen.
+`SATAWR.PRG` ergänzt diese Werkzeuge als bewusst destruktiver, aber begrenzter
+Hardware-Abnahmetest für das Systemvolume; es besitzt weder direkten
+Controller- noch DMA-Zugriff.
 
 #### Implementierungsstand vom 16. August 2026
 
@@ -2369,7 +2389,8 @@ integriert Defektbestätigung, `0xFF7` und redundante Remaps. S0.3c-6f3
 publiziert verifizierte kritische Replikate, und S0.3c-6f4 erzwingt die
 Reihenfolge Daten, beide FATs, Verzeichniseintrag, Replikat und Journal-Clean.
 Daraus folgt noch kein vollständiger FAT12-Resilienznachweis; die
-Persistenz-Fehlermatrix S0.3c-6f5 ist aktiv.
+Persistenz-Fehlermatrix S0.3c-6f5 ist implementiert, während reale
+Reconnect-/Power-Loss-Evidenz weiterhin aussteht.
 
 Der aktuelle Funktionsumfang der Werkzeuge ist bewusst enger als das Ziel:
 

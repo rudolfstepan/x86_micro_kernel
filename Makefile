@@ -630,7 +630,8 @@ native-image: floppy-image
 		--data-file GTEST.PRG=$(SYSTEM_PROGRAM_DIR)/GTEST.PRG \
 		--data-file REIST.PRG=$(SYSTEM_PROGRAM_DIR)/REIST.PRG \
 		--data-file STORAGE.PRG=$(SYSTEM_PROGRAM_DIR)/STORAGE.PRG \
-		--data-file SLEEPER.PRG=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG
+		--data-file SLEEPER.PRG=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG \
+		--data-file SATAWR.PRG=$(SYSTEM_PROGRAM_DIR)/SATAWR.PRG
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/reist-os.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/reist-os/reist-os.vmx"
 
@@ -680,7 +681,8 @@ floppy-image: kernel system-programs user-program
 		--data-file GTEST.PRG=$(SYSTEM_PROGRAM_DIR)/GTEST.PRG \
 		--data-file REIST.PRG=$(SYSTEM_PROGRAM_DIR)/REIST.PRG \
 		--data-file STORAGE.PRG=$(SYSTEM_PROGRAM_DIR)/STORAGE.PRG \
-		--data-file SLEEPER.PRG=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG
+		--data-file SLEEPER.PRG=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG \
+		--data-file SATAWR.PRG=$(SYSTEM_PROGRAM_DIR)/SATAWR.PRG
 
 # ============================================================================
 # TESTING

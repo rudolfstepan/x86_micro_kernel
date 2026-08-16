@@ -48,6 +48,7 @@ PROGRAMS = {
     "REIST.PRG": ROOT / "examples/userspace/reist_probe.c",
     "STORAGE.PRG": ROOT / "examples/userspace/storage_service.c",
     "SLEEPER.PRG": ROOT / "examples/userspace/sleep_child.c",
+    "SATAWR.PRG": ROOT / "examples/userspace/sata_write_test.c",
 }
 
 

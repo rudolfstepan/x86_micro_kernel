@@ -231,6 +231,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "REIST.PRG",
                 "STORAGE.PRG",
                 "SLEEPER.PRG",
+                "SATAWR.PRG",
             }
             self.assertEqual({path.name for path in output.iterdir()}, expected)
             for name in expected:
@@ -250,6 +251,25 @@ class UserProgramToolchainTests(unittest.TestCase):
         )
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertEqual(build_script.count('--data-file "DESKTOP.PRG='), 2)
+
+    def test_sata_write_probe_is_bounded_and_packaged(self):
+        source = (ROOT / "examples" / "userspace" /
+                  "sata_write_test.c").read_text(encoding="utf-8")
+        build_script = (ROOT / "scripts" / "build-windows.ps1").read_text(
+            encoding="utf-8"
+        )
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn("SATA_WRITE_DURATION_MS 10000U", source)
+        self.assertIn("SATA_RECONNECT_TIMEOUT_MS 30000U", source)
+        self.assertIn("SATA_WRITE_MAX_RECORDS 2048U", source)
+        self.assertIn("x86os_monotonic_ms", source)
+        self.assertIn("x86os_fsync", source)
+        self.assertIn("record_crc32", source)
+        self.assertIn("SATA_WRITE RECOVERY_RW_OK", source)
+        self.assertIn('x86os_open("/SHELL.PRG")', source)
+        self.assertIn("SATA_WRITE TEST_OK", source)
+        self.assertEqual(build_script.count('--data-file "SATAWR.PRG='), 2)
+        self.assertEqual(makefile.count("--data-file SATAWR.PRG="), 2)
 
     def test_fat12_tools_are_packaged_on_floppy_and_native_images(self):
         build_script = (ROOT / "scripts" / "build-windows.ps1").read_text(

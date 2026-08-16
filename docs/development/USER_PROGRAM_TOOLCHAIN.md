@@ -37,6 +37,30 @@ Ohne eigene Parameter wird automatisch
 Ausgabe `USERSPACE-E2E-OK` prüft Code, Konstanten, initialisierte Daten, BSS
 und den Exit-Syscall.
 
+## Begrenzter SATA-Abzieh-/Reconnect-Test
+
+`SATAWR.PRG` prüft das beschreibbare Systemvolume `C:` auf realer ATA-/AHCI-
+Hardware. Das Programm schreibt nach dem Start höchstens zehn Sekunden lang
+maximal 2.048 Datensätze zu je 512 Byte nach `C:\SATAWR.TST`. Jeder Datensatz
+enthält Sequenz, monotone Zeit, deterministische Nutzdaten und CRC32; jeder
+Write wird mit `fsync` abgeschlossen. Während `SATA_WRITE ACTIVE` darf die
+Test-HDD abgezogen und wieder verbunden werden:
+
+```text
+C:\>SATAWR
+SATA_WRITE ACTIVE
+```
+
+Nach einem I/O-Fehler wartet das Programm höchstens 30 Sekunden auf die
+Wiederverfügbarkeit von Systempartition und einem erneut vom Medium gelesenen
+`SHELL.PRG`-Header. Danach akzeptiert es nur eine vollständige Rücknahme der
+Dateierzeugung oder ein lückenloses, CRC-gültiges Präfix der geschriebenen
+Datensätze. Ein zusätzlicher erzeugter, synchronisierter und zurückgelesener
+Datensatz bestätigt `RECOVERY_RW_OK`. Erfolg endet mit
+`SATA_WRITE TEST_OK`; Timeout, Teilrecord oder CRC-/Sequenzfehler endet mit
+`SATA_WRITE TEST_FAIL ...`. Der Test beweist keine Stromausfallsicherheit und
+darf nur auf einem entbehrlichen Testdatenträger ausgeführt werden.
+
 ## Öffentliche C-Schnittstelle
 
 Ein minimales Programm sieht so aus:

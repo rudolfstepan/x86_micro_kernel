@@ -248,7 +248,8 @@ try {
         --data-file "GTEST.PRG=$(Join-Path $UserProgramDir 'GTEST.PRG')" `
         --data-file "REIST.PRG=$(Join-Path $UserProgramDir 'REIST.PRG')" `
         --data-file "STORAGE.PRG=$(Join-Path $UserProgramDir 'STORAGE.PRG')" `
-        --data-file "SLEEPER.PRG=$(Join-Path $UserProgramDir 'SLEEPER.PRG')"
+        --data-file "SLEEPER.PRG=$(Join-Path $UserProgramDir 'SLEEPER.PRG')" `
+        --data-file "SATAWR.PRG=$(Join-Path $UserProgramDir 'SATAWR.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Floppy image creation failed with exit code $LASTEXITCODE."
     }
@@ -298,7 +299,8 @@ try {
         --data-file "GTEST.PRG=$(Join-Path $UserProgramDir 'GTEST.PRG')" `
         --data-file "REIST.PRG=$(Join-Path $UserProgramDir 'REIST.PRG')" `
         --data-file "STORAGE.PRG=$(Join-Path $UserProgramDir 'STORAGE.PRG')" `
-        --data-file "SLEEPER.PRG=$(Join-Path $UserProgramDir 'SLEEPER.PRG')"
+        --data-file "SLEEPER.PRG=$(Join-Path $UserProgramDir 'SLEEPER.PRG')" `
+        --data-file "SATAWR.PRG=$(Join-Path $UserProgramDir 'SATAWR.PRG')"
     if ($LASTEXITCODE -ne 0) {
         throw "Native image creation failed with exit code $LASTEXITCODE."
     }
