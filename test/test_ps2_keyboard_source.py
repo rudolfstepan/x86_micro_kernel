@@ -90,6 +90,26 @@ class PhysicalPs2KeyboardContractTests(unittest.TestCase):
             self.assertIn(navigation, keypad)
         self.assertIn("handle_keypad_key", decoder)
 
+    def test_physical_trace_is_fixed_and_printed_only_from_task_context(self):
+        source = self.source
+        drain = function(source, "static void kb_drain_output_locked(")
+        handler = function(source, "void kb_handler(")
+        blocking = function(source, "char getchar(")
+        printer = function(source, "static void kb_trace_print(")
+        self.assertIn("KEYBOARD_TRACE_CAPACITY", source)
+        self.assertIn("keyboard_trace[KEYBOARD_TRACE_CAPACITY]", source)
+        self.assertIn("kb_trace_record_locked", drain)
+        self.assertIn("set2_to_set1", drain)
+        self.assertNotIn("printf", drain)
+        self.assertNotIn("printf", handler)
+        self.assertIn("kb_trace_take_locked", blocking)
+        self.assertIn("kb_trace_print", blocking)
+        self.assertLess(
+            blocking.index("irq_restore(flags)"),
+            blocking.index("kb_trace_print"),
+        )
+        self.assertIn("PS2 TRACE", printer)
+
     def test_runtime_input_has_bounded_poll_fallback(self):
         handler = function(self.source, "void kb_handler(")
         blocking = function(self.source, "char getchar(")

@@ -1421,6 +1421,21 @@ frühe Diagnose lautet nun
 `PS/2 keyboard ready: config=0x21 scanset=2-raw input=IRQ1+poll`. Eine Aussage
 für das H81M-K bleibt bis zur erneuten realen Abnahme offen.
 
+Die nächste H81M-K-Abnahme bestätigte zwar reagierende NumLock-LEDs, aber keine
+sichtbaren Zeichen am Userspace-Prompt. Damit sind i8042-Zugriff, mindestens ein
+Lock-Make-Code, der Set-2-Decoder, der periodische Taskpfad und der verzögerte
+`ED`-LED-Befehl nachgewiesen; offen bleibt der Abschnitt zwischen gewöhnlichem
+Make-Code und Shell-Queue. Ein temporärer, fester 16-Einträge-Trace zeichnet
+deshalb unter IRQ-Ausschluss nur Statusbyte, Rohcode, stateless Set-2-Mapping und
+erfolgte Queue-Veröffentlichung auf. IRQ1 formatiert keine Ausgabe. Erst der
+blockierte Console-Task gibt Einträge als
+`[PS2 TRACE st=.. raw=.. map=.. q=.]` aus. Nach 16 Rohbytes stoppt die Erfassung
+endgültig und beeinflusst den Eingabepfad nicht weiter. Im Referenzgast ergeben
+NumLock `raw=77 map=45 q=0` und der Buchstabe `h`
+`raw=33 map=23 q=1`; anschließend antwortet die Ring-3-Shell auf `help`. Der
+reale Trace entscheidet nun zwischen fehlendem Portbyte, gesetztem AUX-/Fehlerbit,
+unbekanntem Mapping und fehlgeschlagener Queue-Veröffentlichung.
+
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 
 #### R3.1 Pipes, Signale und TTY — XL

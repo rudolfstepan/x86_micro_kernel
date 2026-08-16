@@ -621,6 +621,46 @@ commit_message = "fix: decode physical PS2 scan set 2 directly"
 evidence = []
 
 [[packages]]
+id = "S0.3c-hw7"
+status = "done"
+risk = "medium"
+title = "Bounded physical PS/2 input trace"
+scope = "Distinguish physical raw-byte, mapping, queue-publication and shell-consumption failures after the H81M-K lock keys worked but ordinary shell input did not. Capture only a fixed number of port status/raw/mapped/queued tuples under IRQ exclusion and print them later from the blocking console task, never from IRQ1."
+allowed_files = [
+  "drivers/char/kb.c",
+  "drivers/char/kb.h",
+  "test/test_ps2_keyboard_source.py",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "the trace has fixed compile-time capacity and stops after that capacity",
+  "IRQ1 and the raw drain path perform no formatted logging",
+  "status, raw byte, stateless mapping and queue publication are captured under IRQ exclusion",
+  "trace output occurs only after restoring the task interrupt state",
+  "trace saturation cannot block or alter keyboard publication"
+]
+targeted_tests = [
+  "python test/test_ps2_keyboard_source.py -q",
+  "python test/test_userspace_file_syscalls_source.py -q",
+  "python test/test_shell_source.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_ps2_smoke.py --image build/reist-os.img"
+]
+stop_conditions = [
+  "diagnostics would require logging or blocking in IRQ1",
+  "trace storage cannot remain fixed capacity",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "diag: trace physical PS2 input publication"
+evidence = []
+
+[[packages]]
 id = "S0.3c-6f5"
 status = "active"
 risk = "critical"
