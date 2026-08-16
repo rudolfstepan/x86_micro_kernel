@@ -64,7 +64,7 @@ static void format_metadata_sector(uint8_t *sector, uint32_t sector_number) {
     format_fill(sector, 0U, X86OS_STORAGE_BLOCK_SIZE);
     if (sector_number == 2U || sector_number == 3U) {
         format_journal_header_t header = {
-            .magic = 0x524A3132U, .version = 1U,
+            .magic = 0x524A3132U, .version = 2U,
             .header_size = sizeof(format_journal_header_t),
             .media_fingerprint = FORMAT_FAT12_VOLUME_ID, .sequence = 1U,
             .state = 0U, .entry_count = 0U, .crc32 = 0U
@@ -86,7 +86,11 @@ static void format_metadata_sector(uint8_t *sector, uint32_t sector_number) {
 
 static int format_write(uint32_t resource, uint32_t sector,
                         const uint8_t *data) {
-    return x86os_storage_block_write(resource, sector, data);
+    uint8_t verify[X86OS_STORAGE_BLOCK_SIZE];
+    if (x86os_storage_block_write(resource, sector, data) != 0 ||
+        x86os_storage_block_read(resource, sector, verify) != 0 ||
+        !format_equal(data, verify, sizeof(verify))) return -84;
+    return 0;
 }
 
 static void format_boot_sector(uint8_t *sector) {

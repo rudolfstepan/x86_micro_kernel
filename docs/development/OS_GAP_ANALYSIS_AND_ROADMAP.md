@@ -2214,6 +2214,14 @@ VFS-Öffnungen und wird bei Ablauf beziehungsweise Prozessende freigegeben. Die
 Werkzeuge `CHKDSK.PRG`, `FDISK.PRG` und `FORMAT.PRG` werden mit der normalen
 Userspace-Toolchain gebaut und sowohl für A: als auch C: paketiert.
 
+Für S0.3c-6f1 liegt ein Verifier-Kandidat für Journalformat Version 2 vor:
+Undo-Daten, Entry-Metadaten sowie beide Header werden nach jedem Write
+zurückgelesen; Entry-Metadaten tragen eine eigene CRC32. Gleich alte, aber
+inhaltlich widersprüchliche Header, nicht monotone Sequenzen, reservierte
+Journalziele und ein unsicherer CLEAN-Abschluss werden fail-closed abgelehnt.
+Der Punkt bleibt bis zum erfolgreichen äußeren Paket- und Power-Loss-Gate
+offen; daraus folgt noch kein vollständiger FAT12-Resilienznachweis.
+
 Der aktuelle Funktionsumfang der Werkzeuge ist bewusst enger als das Ziel:
 
 - `CHKDSK.PRG` führt eine begrenzte read-only Bestandsaufnahme aus; der

@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #define FAT12_JOURNAL_MAGIC 0x524A3132U /* RJ12 */
-#define FAT12_JOURNAL_VERSION 1U
+#define FAT12_JOURNAL_VERSION 2U
 #define FAT12_JOURNAL_MAX_ENTRIES 8U
 #define FAT12_JOURNAL_SECTOR_SIZE 512U
 #define FAT12_JOURNAL_CLEAN 0U
@@ -32,6 +32,7 @@ typedef struct __attribute__((packed)) {
     uint32_t target_sector;
     uint32_t data_crc32;
     uint64_t sequence;
+    uint32_t metadata_crc32;
 } fat12_journal_entry_t;
 
 typedef struct {
@@ -52,11 +53,13 @@ bool fat12_journal_format(fat12_journal_t *journal,
 bool fat12_journal_load(fat12_journal_t *journal, fat12_journal_read_fn read,
                         void *context);
 bool fat12_journal_begin(fat12_journal_t *journal, uint64_t sequence,
+                         fat12_journal_read_fn read,
                          fat12_journal_write_fn write, void *context);
 bool fat12_journal_record(fat12_journal_t *journal, uint32_t target_sector,
-                          const void *old_sector,
+                          const void *old_sector, fat12_journal_read_fn read,
                           fat12_journal_write_fn write, void *context);
 bool fat12_journal_commit(fat12_journal_t *journal,
+                          fat12_journal_read_fn read,
                           fat12_journal_write_fn write, void *context);
 bool fat12_journal_recover(fat12_journal_t *journal, fat12_journal_read_fn read,
                            fat12_journal_write_fn write, void *context);

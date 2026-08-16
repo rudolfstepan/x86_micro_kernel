@@ -32,15 +32,25 @@ static void prepare_header(fat12_journal_header_t *header,
     header->crc32 = fat12_journal_crc32(header, sizeof(*header));
 }
 
+static bool write_verified(fat12_journal_read_fn read,
+        fat12_journal_write_fn write, void *context, uint32_t sector,
+        const void *data) {
+    uint8_t verify[FAT12_JOURNAL_SECTOR_SIZE];
+    return read != NULL && write != NULL &&
+           write(context, sector, data) && read(context, sector, verify) &&
+           memcmp(data, verify, sizeof(verify)) == 0;
+}
+
 static bool write_header(const fat12_journal_t *journal,
+                         fat12_journal_read_fn read,
                          fat12_journal_write_fn write, void *context) {
     uint8_t sector[FAT12_JOURNAL_SECTOR_SIZE];
     memset(sector, 0, sizeof(sector));
     memcpy(sector, &journal->header, sizeof(journal->header));
-    if (!write(context, journal->primary_header_sector, sector)) return false;
-    memset(sector, 0, sizeof(sector));
-    memcpy(sector, &journal->header, sizeof(journal->header));
-    return write(context, journal->mirror_header_sector, sector);
+    if (!write_verified(read, write, context,
+                        journal->primary_header_sector, sector)) return false;
+    return write_verified(read, write, context,
+                          journal->mirror_header_sector, sector);
 }
 
 uint32_t fat12_journal_crc32(const void *data, size_t length) {
@@ -58,9 +68,13 @@ uint32_t fat12_journal_crc32(const void *data, size_t length) {
 bool fat12_journal_format(fat12_journal_t *journal,
         uint32_t primary_header_sector, uint32_t mirror_header_sector,
         uint32_t data_start_sector, uint32_t media_fingerprint) {
+    uint32_t last_header = primary_header_sector > mirror_header_sector
+        ? primary_header_sector : mirror_header_sector;
     if (journal == NULL || media_fingerprint == 0U ||
         primary_header_sector == mirror_header_sector ||
-        data_start_sector <= mirror_header_sector) return false;
+        data_start_sector <= last_header ||
+        data_start_sector > UINT32_MAX - (FAT12_JOURNAL_MAX_ENTRIES * 2U - 1U))
+        return false;
     memset(journal, 0, sizeof(*journal));
     journal->primary_header_sector = primary_header_sector;
     journal->mirror_header_sector = mirror_header_sector;
@@ -85,55 +99,76 @@ bool fat12_journal_load(fat12_journal_t *journal, fat12_journal_read_fn read,
                      (memcpy(&second, mirror, sizeof(second)),
                      header_valid(&second, journal->media_fingerprint));
     if (!first_ok && !second_ok) return false;
+    if (first_ok && second_ok && first.sequence == second.sequence &&
+        memcmp(&first, &second, sizeof(first)) != 0) return false;
     journal->header = !second_ok || (first_ok && first.sequence >= second.sequence)
         ? first : second;
     return true;
 }
 
 bool fat12_journal_begin(fat12_journal_t *journal, uint64_t sequence,
+                         fat12_journal_read_fn read,
                          fat12_journal_write_fn write, void *context) {
-    if (journal == NULL || write == NULL || journal->media_fingerprint == 0U ||
-        journal->header.state == FAT12_JOURNAL_ACTIVE || sequence == 0U)
+    if (journal == NULL || read == NULL || write == NULL ||
+        journal->media_fingerprint == 0U ||
+        journal->header.state == FAT12_JOURNAL_ACTIVE ||
+        sequence <= journal->header.sequence)
         return false;
     memset(journal->entries, 0, sizeof(journal->entries));
     prepare_header(&journal->header, journal->media_fingerprint, sequence,
                    FAT12_JOURNAL_ACTIVE, 0U);
-    return write_header(journal, write, context);
+    return write_header(journal, read, write, context);
 }
 
 bool fat12_journal_record(fat12_journal_t *journal, uint32_t target_sector,
-        const void *old_sector, fat12_journal_write_fn write, void *context) {
-    if (journal == NULL || old_sector == NULL || write == NULL ||
+        const void *old_sector, fat12_journal_read_fn read,
+        fat12_journal_write_fn write, void *context) {
+    uint32_t journal_end = journal != NULL
+        ? journal->data_start_sector + FAT12_JOURNAL_MAX_ENTRIES * 2U : 0U;
+    if (journal == NULL || old_sector == NULL || read == NULL || write == NULL ||
         journal->header.state != FAT12_JOURNAL_ACTIVE ||
         journal->header.entry_count >= FAT12_JOURNAL_MAX_ENTRIES ||
         target_sector == journal->primary_header_sector ||
-        target_sector == journal->mirror_header_sector) return false;
+        target_sector == journal->mirror_header_sector ||
+        (target_sector >= journal->data_start_sector &&
+         target_sector < journal_end)) return false;
     uint32_t index = journal->header.entry_count;
     fat12_journal_entry_t *entry = &journal->entries[index];
     entry->target_sector = target_sector;
     entry->sequence = journal->header.sequence;
     entry->data_crc32 = fat12_journal_crc32(old_sector,
                                              FAT12_JOURNAL_SECTOR_SIZE);
+    entry->metadata_crc32 = 0U;
+    entry->metadata_crc32 = fat12_journal_crc32(entry, sizeof(*entry));
     uint8_t metadata[FAT12_JOURNAL_SECTOR_SIZE];
     memset(metadata, 0, sizeof(metadata));
     memcpy(metadata, entry, sizeof(*entry));
-    if (!write(context, journal->data_start_sector + index * 2U, old_sector) ||
-        !write(context, journal->data_start_sector + index * 2U + 1U,
-               metadata)) return false;
+    if (!write_verified(read, write, context,
+            journal->data_start_sector + index * 2U, old_sector) ||
+        !write_verified(read, write, context,
+            journal->data_start_sector + index * 2U + 1U, metadata))
+        return false;
     ++journal->header.entry_count;
     prepare_header(&journal->header, journal->media_fingerprint,
                    journal->header.sequence, FAT12_JOURNAL_ACTIVE,
                    journal->header.entry_count);
-    return write_header(journal, write, context);
+    return write_header(journal, read, write, context);
 }
 
 bool fat12_journal_commit(fat12_journal_t *journal,
+                          fat12_journal_read_fn read,
                           fat12_journal_write_fn write, void *context) {
-    if (journal == NULL || write == NULL ||
+    if (journal == NULL || read == NULL || write == NULL ||
         journal->header.state != FAT12_JOURNAL_ACTIVE) return false;
+    uint32_t entry_count = journal->header.entry_count;
+    uint64_t sequence = journal->header.sequence;
     prepare_header(&journal->header, journal->media_fingerprint,
-                   journal->header.sequence, FAT12_JOURNAL_CLEAN, 0U);
-    return write_header(journal, write, context);
+                   sequence, FAT12_JOURNAL_CLEAN, 0U);
+    if (write_header(journal, read, write, context)) return true;
+    /* Keep the in-memory volume fenced after an uncertain CLEAN write. */
+    prepare_header(&journal->header, journal->media_fingerprint,
+                   sequence, FAT12_JOURNAL_ACTIVE, entry_count);
+    return false;
 }
 
 bool fat12_journal_recover(fat12_journal_t *journal, fat12_journal_read_fn read,
@@ -150,10 +185,13 @@ bool fat12_journal_recover(fat12_journal_t *journal, fat12_journal_read_fn read,
             !read(context, journal->data_start_sector + index * 2U + 1U,
                  metadata)) return false;
         memcpy(&entry, metadata, sizeof(entry));
+        uint32_t metadata_crc = entry.metadata_crc32;
+        entry.metadata_crc32 = 0U;
         uint8_t verify[FAT12_JOURNAL_SECTOR_SIZE];
         if (entry.target_sector == journal->primary_header_sector ||
             entry.target_sector == journal->mirror_header_sector ||
             entry.sequence != journal->header.sequence ||
+            metadata_crc != fat12_journal_crc32(&entry, sizeof(entry)) ||
             entry.data_crc32 != fat12_journal_crc32(old_sector,
                 FAT12_JOURNAL_SECTOR_SIZE) ||
             !write(context, entry.target_sector, old_sector) ||
@@ -161,5 +199,5 @@ bool fat12_journal_recover(fat12_journal_t *journal, fat12_journal_read_fn read,
             memcmp(old_sector, verify, FAT12_JOURNAL_SECTOR_SIZE) != 0)
             return false;
     }
-    return fat12_journal_commit(journal, write, context);
+    return fat12_journal_commit(journal, read, write, context);
 }

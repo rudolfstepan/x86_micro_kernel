@@ -30,8 +30,10 @@ class Fat12ToolContracts(unittest.TestCase):
         self.assertIn("x86os_storage_collect", source)
         self.assertNotIn("x86os_storage_block_write", source)
         self.assertIn("FORMAT_FAT12_RESERVED 23U", service)
+        self.assertIn(".magic = 0x524A3132U, .version = 2U", service)
         self.assertIn("format_fat12(request.resource)", service)
         self.assertIn("format_equal(sector, expected", service)
+        self.assertIn("x86os_storage_block_read(resource, sector, verify)", service)
 
     def test_chkdsk_remains_read_only(self):
         chkdsk = self.read("examples/userspace/chkdsk.c")

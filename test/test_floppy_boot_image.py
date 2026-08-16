@@ -40,6 +40,17 @@ class FloppyBootImageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "too large"):
             create_floppy_image(stage1, bytes(2048), minimal_kernel(FLOPPY_SIZE))
 
+    def test_reist_fat12_uses_v2_redundant_journal_headers(self):
+        stage1 = bytes(510) + b"\x55\xaa"
+        image = create_floppy_image(
+            stage1, bytes(2048), minimal_kernel(), reist_fat12=True
+        )
+        primary = image[2 * 512:3 * 512]
+        mirror = image[3 * 512:4 * 512]
+        magic, version = struct.unpack_from("<IH", primary)
+        self.assertEqual((magic, version), (0x524A3132, 2))
+        self.assertEqual(primary, mirror)
+
 
 if __name__ == "__main__":
     unittest.main()

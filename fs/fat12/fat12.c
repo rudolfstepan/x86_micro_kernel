@@ -1203,6 +1203,7 @@ bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
     static uint64_t journal_sequence = 1U;
     if (++journal_sequence == 0U) return false;
     if (!fat12_journal_begin(&fat12->journal, journal_sequence,
+                             fat12_journal_read_sector,
                              fat12_journal_write_sector, NULL)) return false;
     const uint8_t *bytes = (const uint8_t*)input;
     for (uint32_t index = 0U; index < count; ++index) {
@@ -1212,7 +1213,8 @@ bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
         if (!fat12_read_logical_sectors(logical_sector + index, 1U,
                                         old_sector) ||
             !fat12_journal_record(&fat12->journal, logical_sector + index,
-                                   old_sector, fat12_journal_write_sector,
+                                   old_sector, fat12_journal_read_sector,
+                                   fat12_journal_write_sector,
                                    NULL) ||
             !fdc_write_logical_range(current_fdd_drive, physical, 1U,
                                      bytes + index * FAT12_SECTOR_SIZE) ||
@@ -1221,7 +1223,8 @@ bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
                    FAT12_SECTOR_SIZE) != 0)
             return false;
     }
-    return fat12_journal_commit(&fat12->journal, fat12_journal_write_sector,
+    return fat12_journal_commit(&fat12->journal, fat12_journal_read_sector,
+                                fat12_journal_write_sector,
                                 NULL);
 }
 

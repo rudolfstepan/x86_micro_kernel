@@ -13,6 +13,8 @@ class Fat12JournalContracts(unittest.TestCase):
         header = self.read("fs/fat12/fat12_journal.h")
         source = self.read("fs/fat12/fat12_journal.c")
         self.assertIn("FAT12_JOURNAL_MAX_ENTRIES 8U", header)
+        self.assertIn("FAT12_JOURNAL_VERSION 2U", header)
+        self.assertIn("metadata_crc32", header)
         self.assertIn("fat12_journal_crc32", source)
         self.assertIn("header_valid", source)
         self.assertIn("primary_header_sector", source)
@@ -27,7 +29,16 @@ class Fat12JournalContracts(unittest.TestCase):
         self.assertIn("FAT12_JOURNAL_SECTOR_SIZE", record)
         self.assertIn("data_crc32 != fat12_journal_crc32", recover)
         self.assertIn("memcmp(old_sector, verify", recover)
+        self.assertIn("metadata_crc != fat12_journal_crc32", recover)
         self.assertIn("FAT12_JOURNAL_CLEAN", recover)
+
+    def test_every_persistent_journal_write_is_read_back(self):
+        source = self.read("fs/fat12/fat12_journal.c")
+        self.assertIn("static bool write_verified", source)
+        self.assertIn("memcmp(data, verify, sizeof(verify)) == 0", source)
+        self.assertIn("write_verified(read, write, context", source)
+        self.assertIn("first.sequence == second.sequence", source)
+        self.assertIn("memcmp(&first, &second, sizeof(first)) != 0", source)
 
     def test_journal_rejects_header_targets(self):
         source = self.read("fs/fat12/fat12_journal.c")

@@ -105,7 +105,7 @@ def create_floppy_image(stage1: bytes, stage2: bytes, kernel: bytes,
         struct.pack_into("<I", image, 39, 0x52454953)
         journal = bytearray(SECTOR_SIZE)
         struct.pack_into("<IHHIQIII", journal, 0,
-                         0x524A3132, 1, 32, 0x52454953, 1, 0, 0, 0)
+                         0x524A3132, 2, 32, 0x52454953, 1, 0, 0, 0)
         struct.pack_into("<I", journal, 28,
                          binascii.crc32(journal) & 0xFFFFFFFF)
         image[2 * SECTOR_SIZE:3 * SECTOR_SIZE] = journal
