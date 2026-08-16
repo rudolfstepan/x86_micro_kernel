@@ -51,6 +51,9 @@ static uint8_t identify_buffers[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS][512]
     __attribute__((aligned(2)));
 static bool port_busy[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS];
 static volatile bool writes_fenced;
+#ifdef REIST_AHCI_FAULT_INJECTION
+static bool ahci_fault_consumed;
+#endif
 
 static ahci_controller_info_t controllers[AHCI_MAX_CONTROLLERS];
 static size_t controller_count;
@@ -294,6 +297,30 @@ static bool ahci_execute_command(ahci_controller_info_t *controller,
         command_tables[controller_index][port];
     const ahci_fis_reg_h2d_t *fis =
         (const ahci_fis_reg_h2d_t *)table->fis;
+    bool injected_timeout = false;
+#ifdef REIST_AHCI_FAULT_INJECTION
+    bool injected_tfes = false;
+    bool injected_tfd_error = false;
+    if (!ahci_fault_consumed && fis->command != 0xECU) {
+        ahci_fault_consumed = true;
+#if defined(REIST_AHCI_FAULT_TFES)
+        injected_tfes = true;
+#elif defined(REIST_AHCI_FAULT_TFD)
+        injected_tfd_error = true;
+#else
+        injected_timeout = true;
+#endif
+        printf("AHCI: injected fault mode=%s port=%u\n",
+#if defined(REIST_AHCI_FAULT_TFES)
+               "tfes",
+#elif defined(REIST_AHCI_FAULT_TFD)
+               "tfd",
+#else
+               "timeout",
+#endif
+               (unsigned)port);
+    }
+#endif
     uint32_t command = ahci_read(controller->mmio, base + AHCI_PORT_CMD);
     bool engine_running = (command &
         (AHCI_PORT_CMD_ST | AHCI_PORT_CMD_FRE)) ==
@@ -335,8 +362,13 @@ static bool ahci_execute_command(ahci_controller_info_t *controller,
         uint32_t interrupt_status = ahci_read(controller->mmio,
                                                base + AHCI_PORT_IS);
         uint32_t task_status = ahci_read(controller->mmio, base + AHCI_PORT_TFD);
+#ifdef REIST_AHCI_FAULT_INJECTION
+        if (injected_tfes) interrupt_status |= AHCI_PORT_IS_TFES;
+        if (injected_tfd_error) task_status |= AHCI_PORT_TFD_ERR;
+#endif
         if ((interrupt_status & AHCI_PORT_IS_TFES) != 0U) break;
-        if ((ahci_read(controller->mmio, base + AHCI_PORT_CI) & 1U) == 0U) {
+        if (!injected_timeout &&
+            (ahci_read(controller->mmio, base + AHCI_PORT_CI) & 1U) == 0U) {
             if ((task_status & AHCI_PORT_TFD_ERR) != 0U) break;
             if ((task_status &
                  (AHCI_PORT_TFD_BSY | AHCI_PORT_TFD_DRQ)) == 0U) {
@@ -536,6 +568,9 @@ void ahci_init(void) {
     memset(controllers, 0, sizeof(controllers));
     memset(port_busy, 0, sizeof(port_busy));
     writes_fenced = false;
+#ifdef REIST_AHCI_FAULT_INJECTION
+    ahci_fault_consumed = false;
+#endif
     controller_count = ahci_probe_controllers(controllers,
                                                AHCI_MAX_CONTROLLERS);
     if (controller_count > AHCI_MAX_CONTROLLERS)

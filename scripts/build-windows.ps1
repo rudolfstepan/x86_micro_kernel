@@ -8,6 +8,9 @@ param(
     [switch]$FaultInjection,
     [switch]$StorageFaultInjection,
     [switch]$StorageIoFaultInjection,
+    [switch]$AhciFaultInjection,
+    [ValidateSet('timeout', 'tfes', 'tfd')]
+    [string]$AhciFaultMode = 'timeout',
     [switch]$HandoverFaultInjection,
     [switch]$DhcpLeaseFaultInjection,
     [switch]$DhcpRenewFaultInjection,
@@ -112,6 +115,8 @@ try {
         fault_injection = [bool]$FaultInjection
         storage_fault_injection = [bool]$StorageFaultInjection
         storage_io_fault_injection = [bool]$StorageIoFaultInjection
+        ahci_fault_injection = [bool]$AhciFaultInjection
+        ahci_fault_mode = $AhciFaultMode
         handover_fault_injection = [bool]$HandoverFaultInjection
         handover_node_id = $HandoverNodeId
         dhcp_lease_fault_injection = [bool]$DhcpLeaseFaultInjection
@@ -151,6 +156,10 @@ try {
     }
     if ($StorageIoFaultInjection) {
         $makeArguments += 'STORAGE_IO_FAULT_INJECTION=1'
+    }
+    if ($AhciFaultInjection) {
+        $makeArguments += 'AHCI_FAULT_INJECTION=1'
+        $makeArguments += "AHCI_FAULT_MODE=$AhciFaultMode"
     }
     if ($HandoverFaultInjection) {
         $makeArguments += 'HANDOVER_FAULT_INJECTION=1'

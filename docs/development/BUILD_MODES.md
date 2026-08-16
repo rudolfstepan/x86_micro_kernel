@@ -136,3 +136,20 @@ Der automatisierte serielle AHCI-Smoke-Test verwendet:
 python scripts/run_qemu_smoke.py --qemu C:\tmp\qemu-portable\qemu-system-i386.exe `
   --image build/reist-os.img --timeout 90 --sata
 ```
+
+Für deterministische AHCI-Fehlerpfade kann zusätzlich eine einmalige
+Fault-Injection in den ersten Nicht-IDENTIFY-Auftrag eingebaut werden. Sie
+ist ausschließlich für Test-Builds gedacht und muss für produktive Images
+deaktiviert bleiben:
+
+```powershell
+.\scripts\build-windows.ps1 -Target qemu -Video vga `
+  -AhciFaultInjection -AhciFaultMode timeout
+```
+
+`-AhciFaultMode` akzeptiert `timeout`, `tfes` oder `tfd`. Alle drei Modi
+führen über die normale begrenzte Fehler- und Port-Stoppbehandlung; erwartet
+wird daher ein abgefangener I/O-Fehler und kein erfolgreicher Storage-Smoke.
+Die Build-Konfiguration wird im Cache berücksichtigt, sodass ein Wechsel
+zwischen Normal- und Fault-Build automatisch neu kompiliert. Anschließend
+für ein normales Image erneut ohne `-AhciFaultInjection` bauen.

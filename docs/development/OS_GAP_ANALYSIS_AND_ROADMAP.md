@@ -1263,8 +1263,12 @@ Write-Fencing sind angebunden. Ein QEMU-ICH9-AHCI-Boot mit FAT32-Datei-I/O,
 Storage-Reintegration und vollständigem `TEST_OK` ist abgenommen. Die
 generierte VMware-Konfiguration nutzt SATA und wurde mit erfolgreichem
 AHCI-Boot, FAT32-Mount und gestarteter Userspace-Shell manuell abgenommen.
-Fault-Injection für einzelne AHCI-Timeoutpfade bleibt noch offen. QEMU-AHCI
-und VMware-AHCI gelten damit für dieses Profil als unterstützt.
+Eine deterministische, einmalige Compile-Time-Fault-Injection für Timeout,
+TFES und TFD-Fehler ist ergänzt; sie nutzt ausschließlich die normale
+begrenzte Completion-/Port-Stoppbehandlung. Der reale QEMU-Nachweis dieser
+drei Fehlerbilder bleibt als Acceptance-Test offen. QEMU-AHCI und
+VMware-AHCI gelten damit für das Erfolgsprofil als unterstützt, nicht jedoch
+als vollständig fehler-injiziert abgenommen.
 
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 
