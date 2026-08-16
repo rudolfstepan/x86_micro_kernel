@@ -97,7 +97,9 @@ und 10 verbindlich.
   - [x] Maschinenprüfbares Gefahrenregister-v1-Schema mit eindeutigen IDs,
     FTTI, Safe-State, Restrisiko sowie existierenden Code-/Testreferenzen
   - [ ] Gefahrenregister für alle Kern-, Geräte- und Profilgefahren
-  - [ ] Automatische Traceability von Gefahr bis Testergebnis
+  - [x] Automatische, SHA-256-gebundene Traceability von Gefahr über konkrete
+    Verifikation bis zum Testergebnis; JSON-Baseline unter
+    `build/codex-agent/hazard-traceability.json`
 - [ ] S0.2 Vollständiges Stack-, Exception- und Panic-Containment
   - [x] Guardpages, Double-Fault-Notfallpfad, Crashrecord und QEMU-Watchdog
   - [ ] Callgraph-Gesamtbudgets und Stack-Watermarks

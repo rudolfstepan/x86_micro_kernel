@@ -90,8 +90,11 @@ positive FTTI, definierten sicheren Zustand, konkrete Kontrollen,
 Verifikationspfade und sichtbar verbleibendes Restrisiko. Der Validator
 `scripts/validate_hazard_register.py` lehnt unbekannte Versionen, doppelte IDs,
 unsichere Pfade und fehlende Evidenz fail-closed ab. Der Registerstatus bleibt
-`partial`, bis alle Kern-, Geräte- und ausgewählten Profilgefahren erfasst und
-die Testergebnisse automatisiert an eine Release-Baseline gebunden sind.
+`partial`, bis alle Kern-, Geräte- und ausgewählten Profilgefahren erfasst
+sind. `scripts/run_hazard_traceability.py` führt jede referenzierte
+Verifikation aus und bindet Register, Testquellen und Ergebnisse per SHA-256
+an eine maschinenlesbare JSON-Baseline. Ein fehlgeschlagener Test lässt alle
+davon abhängigen Gefahren und die Gesamtbaseline fail-closed fehlschlagen.
 
 ## Ressourcenregister
 

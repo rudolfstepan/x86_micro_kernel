@@ -50,8 +50,8 @@ class ReistStorageHandoverTests(unittest.TestCase):
                         fresh.index("ata_read_sector_impl"))
         ata = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
         fdd = (ROOT / "drivers/block/fdd.c").read_text(encoding="utf-8")
-        self.assertIn("storage_write_begin(pit_monotonic_ms())", ata)
-        self.assertIn("storage_write_begin(pit_monotonic_ms())", fdd)
+        self.assertIn("storage_write_begin((uint32_t)resource, pit_monotonic_ms())", ata)
+        self.assertIn("storage_write_begin((uint32_t)resource, pit_monotonic_ms())", fdd)
 
 
 if __name__ == "__main__":

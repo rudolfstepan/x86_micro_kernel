@@ -12,6 +12,12 @@ VALIDATOR = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(VALIDATOR)
 
+TRACE_SPEC = importlib.util.spec_from_file_location(
+    "hazard_traceability", ROOT / "scripts/run_hazard_traceability.py")
+TRACE = importlib.util.module_from_spec(TRACE_SPEC)
+assert TRACE_SPEC.loader is not None
+TRACE_SPEC.loader.exec_module(TRACE)
+
 
 class HazardRegisterTests(unittest.TestCase):
     def test_repository_register_is_traceable(self) -> None:
@@ -67,6 +73,29 @@ residual_risk = "known"
         self.assertTrue(any("positive integer" in error for error in errors))
         self.assertTrue(any("unsafe path" in error for error in errors))
         self.assertTrue(any("must reference test/" in error for error in errors))
+
+    def test_traceability_baseline_binds_register_tests_and_results(self) -> None:
+        baseline = TRACE.build_baseline(
+            ROOT / "safety/hazards.toml", ROOT,
+            lambda path: (True, path.name))
+        self.assertTrue(baseline["passed"])
+        self.assertEqual(64, len(baseline["register_sha256"]))
+        self.assertEqual(6, len(baseline["hazards"]))
+        self.assertTrue(all(len(item["sha256"]) == 64
+                            for item in baseline["tests"].values()))
+
+    def test_failed_verification_fails_hazard_and_baseline(self) -> None:
+        failed_path = "test/test_reist_fatal_containment.py"
+
+        def runner(path: Path) -> tuple[bool, str]:
+            return path.relative_to(ROOT).as_posix() != failed_path, "injected"
+
+        baseline = TRACE.build_baseline(
+            ROOT / "safety/hazards.toml", ROOT, runner)
+        self.assertFalse(baseline["passed"])
+        self.assertEqual({"HZ-KERNEL-001"},
+                         {item["id"] for item in baseline["hazards"]
+                          if not item["passed"]})
 
 
 if __name__ == "__main__":

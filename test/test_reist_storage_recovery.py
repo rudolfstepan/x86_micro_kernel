@@ -23,7 +23,7 @@ class StorageRecoveryContracts(unittest.TestCase):
     def test_fault_hook_is_test_build_only_and_crashes_after_real_read(self):
         source = read("kernel/syscall/syscall_table.c")
         guard = source.index("#ifdef REIST_STORAGE_FAULT_INJECTION")
-        read_position = source.rindex("ata_read_sector", 0, guard)
+        read_position = source.rindex("block_device_read_sector", 0, guard)
         crash = source.index("task_exit_status(201);", guard)
         copyout = source.index("copy_to_user_space", crash)
         self.assertLess(read_position, guard)
@@ -76,7 +76,7 @@ class StorageRecoveryContracts(unittest.TestCase):
         self.assertIn("attempt < 2U && !read_ok", syscall)
         self.assertIn("storage_service_report_io_failure(resource)", syscall)
         available = syscall.index("storage_service_resource_available(resource)")
-        hardware = syscall.index("ata_read_sector", available)
+        hardware = syscall.index("block_device_read_sector", available)
         self.assertLess(available, hardware)
         self.assertIn("critical_object_t protected_control", service)
         self.assertIn("quarantined_resources", service)
