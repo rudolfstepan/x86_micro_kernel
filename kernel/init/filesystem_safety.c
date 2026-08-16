@@ -152,6 +152,23 @@ void filesystem_fence_mutations(void) {
     }
 }
 
+bool filesystem_restore_mutations_after_recovery(void) {
+    filesystem_control_t state;
+    if (!filesystem_supervised || filesystem_integrity_failed ||
+        !filesystem_control_read(&state)) return false;
+    state.read_only = 0U;
+    state.mutation_active = 0U;
+    state.mutation_deadline_ms = 0U;
+    if (!filesystem_control_write(&state) ||
+        supervisor_report_idle(filesystem_supervisor_handle) != 0) {
+        filesystem_fence_mutations();
+        return false;
+    }
+    __asm__ volatile("" ::: "memory");
+    filesystem_force_read_only = false;
+    return true;
+}
+
 bool filesystem_is_read_only(void) {
     if (filesystem_integrity_failed || filesystem_force_read_only) return true;
     filesystem_control_t state;

@@ -2,6 +2,7 @@
 
 #include "arch/x86/include/interrupt.h"
 #include "drivers/block/ata.h"
+#include "drivers/block/ahci.h"
 #include "drivers/block/block_device.h"
 #include "drivers/block/fdd.h"
 #include "include/kernel/critical_object.h"
@@ -147,8 +148,12 @@ static bool read_boot_sector(uint32_t resource, uint8_t *data,
     }
     if (drive->type == DRIVE_TYPE_ATA ||
         drive->type == DRIVE_TYPE_AHCI ||
-        drive->type == DRIVE_TYPE_PARTITION)
+        drive->type == DRIVE_TYPE_PARTITION) {
+        if (recovery_probe)
+            return ata_read_sector_fresh(drive->base, 0U, data,
+                                         drive->is_master);
         return block_device_read_sector(drive, 0U, data) == BLOCK_DEVICE_OK;
+    }
     return false;
 }
 
@@ -225,6 +230,7 @@ static bool media_identity_matches(uint32_t resource) {
             MEDIA_PROBE_FAIL("FDD_IDENTITY");
     } else if (drive->type == DRIVE_TYPE_AHCI) {
         char model_prefix[24];
+        if (!ahci_requalify_drive(drive)) MEDIA_PROBE_FAIL("AHCI_RESET");
         canonical_model_prefix(model_prefix, drive->model);
         if (drive->sectors != expected.sectors ||
             memcmp(model_prefix, expected.model_prefix,
@@ -456,13 +462,29 @@ static void poll_media_reintegration(uint64_t now_ms) {
     if (control_read(&control) != 0 ||
         (control.quarantined_resources & (1U << resource)) == 0U) return;
     if (recovered) {
-        control.quarantined_resources &= ~(1U << resource);
-        control.probe_attempts = 0U;
-        printf("REIST_STORAGE RESOURCE_REINTEGRATED_%s %u\n",
-               (control.read_only_resources & (1U << resource)) != 0U
-                   ? "READ_ONLY" : "RW",
-               resource);
-    } else if (control.probe_attempts != UINT32_MAX) {
+        uint32_t mask = 1U << resource;
+        if ((control.read_only_resources & mask) != 0U) {
+            uint32_t other_unsafe =
+                (control.quarantined_resources |
+                 control.read_only_resources) & ~mask;
+            recovered = other_unsafe == 0U &&
+                ata_journal_recover_resource(resource) &&
+                storage_restore_writes_after_recovery() &&
+                filesystem_restore_mutations_after_recovery();
+            if (!recovered) {
+                storage_fence_writes();
+                filesystem_fence_mutations();
+            } else {
+                control.read_only_resources &= ~mask;
+            }
+        }
+        if (recovered) {
+            control.quarantined_resources &= ~mask;
+            control.probe_attempts = 0U;
+            printf("REIST_STORAGE RESOURCE_REINTEGRATED_RW %u\n", resource);
+        }
+    }
+    if (!recovered && control.probe_attempts != UINT32_MAX) {
         ++control.probe_attempts;
     }
     control.probe_cursor = (resource + 1U) % MAX_DRIVES;

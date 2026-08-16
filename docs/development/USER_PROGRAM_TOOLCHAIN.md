@@ -51,7 +51,7 @@ C:\>SATAWR
 SATA_WRITE ACTIVE
 ```
 
-Nach einem I/O-Fehler wartet das Programm höchstens 30 Sekunden auf die
+Nach einem I/O-Fehler wartet das Programm höchstens 65 Sekunden auf die
 Wiederverfügbarkeit von Systempartition und einem erneut vom Medium gelesenen
 `SHELL.PRG`-Header. Danach akzeptiert es nur eine vollständige Rücknahme der
 Dateierzeugung oder ein lückenloses, CRC-gültiges Präfix der geschriebenen
@@ -60,6 +60,16 @@ Datensatz bestätigt `RECOVERY_RW_OK`. Erfolg endet mit
 `SATA_WRITE TEST_OK`; Timeout, Teilrecord oder CRC-/Sequenzfehler endet mit
 `SATA_WRITE TEST_FAIL ...`. Der Test beweist keine Stromausfallsicherheit und
 darf nur auf einem entbehrlichen Testdatenträger ausgeführt werden.
+Bleibt das Volume nach Ablauf read-only, hat mindestens eine der zwingenden
+Prüfungen – Identität, frische Doppelreads, AHCI-Reinitialisierung oder
+Journal-Recovery – nicht bestanden. Das ist ein Testfehler und darf nicht durch
+manuelles Entsperren umgangen werden.
+
+`DRIVES.PRG` zeigt neben Resource-ID, Laufwerk, Gerät und Typ auch den vom
+Storage-Service gelieferten Zustand an: `READY`, `READONLY`, `DEGRADED`,
+`QUARANTINED`, `OFFLINE` oder `UNKNOWN`. Der Status wird über den
+versionierten, nur lesenden Syscall 89 abgefragt; die bestehende
+`DRIVE_INFO`-ABI bleibt unverändert.
 
 ## Öffentliche C-Schnittstelle
 

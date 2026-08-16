@@ -83,6 +83,21 @@ class AhciProbeContractTests(unittest.TestCase):
             batch_read.index("if (parent->type == DRIVE_TYPE_AHCI)"),
             batch_read.index("ata_read_sectors_pio_impl(parent->base"))
 
+    def test_hotplug_requalification_resets_and_reidentifies_port(self):
+        header = self.read("drivers/block/ahci.h")
+        source = self.read("drivers/block/ahci.c")
+        start = source.index("bool ahci_requalify_drive(")
+        end = source.index("static bool ahci_write_sector_internal", start)
+        recovery = source[start:end]
+        self.assertIn("ahci_stop_port", recovery)
+        self.assertIn("AHCI_PORT_SCTL", recovery)
+        self.assertIn("pit_monotonic_ms", recovery)
+        self.assertIn("AHCI_RESET_TIMEOUT_MS", recovery)
+        self.assertIn("ahci_build_identify_command", recovery)
+        self.assertIn("ahci_parse_identify", recovery)
+        self.assertIn("ahci_requalify_drive", header)
+        self.assertIn("ahci_write_sector_recovery", header)
+
 
 if __name__ == "__main__":
     unittest.main()

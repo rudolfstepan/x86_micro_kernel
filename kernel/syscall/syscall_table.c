@@ -1317,6 +1317,41 @@ static int syscall_drive_info(uint32_t index, void *user_info) {
     return copy_to_user(user_info, &info, sizeof(info)) == 0 ? 1 : -14;
 }
 
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t flags;
+    uint32_t reserved;
+} syscall_drive_status_t;
+
+#define DRIVE_STATUS_VERSION 1U
+#define DRIVE_STATUS_AVAILABLE   (1U << 0)
+#define DRIVE_STATUS_READ_ONLY   (1U << 1)
+#define DRIVE_STATUS_DEGRADED    (1U << 2)
+#define DRIVE_STATUS_QUARANTINED (1U << 3)
+
+static int syscall_drive_status(uint32_t index, void *user_status) {
+    syscall_drive_status_t request;
+    if (index >= (uint32_t)drive_count || user_status == NULL ||
+        copy_from_user(&request, user_status, sizeof(request)) != 0 ||
+        request.version != DRIVE_STATUS_VERSION ||
+        request.struct_size != sizeof(request)) return -22;
+
+    syscall_drive_status_t status = {
+        .version = DRIVE_STATUS_VERSION,
+        .struct_size = sizeof(status),
+        .flags = 0U,
+        .reserved = 0U
+    };
+    bool available = storage_service_resource_available(index);
+    bool read_only = storage_service_resource_read_only(index);
+    if (available) status.flags |= DRIVE_STATUS_AVAILABLE;
+    if (read_only) status.flags |= DRIVE_STATUS_READ_ONLY;
+    if (!available || read_only) status.flags |= DRIVE_STATUS_DEGRADED;
+    if (!available) status.flags |= DRIVE_STATUS_QUARANTINED;
+    return copy_to_user(user_status, &status, sizeof(status)) == 0 ? 0 : -14;
+}
+
 static int syscall_space(const char *user_path, void *user_info) {
     char path[PROCESS_PATH_MAX];
     int result = syscall_copy_path(path, user_path);
@@ -1439,6 +1474,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_storage_maintenance_acquire, // Syscall 86
     (void*)&syscall_storage_maintenance_renew,   // Syscall 87
     (void*)&syscall_storage_maintenance_release, // Syscall 88
+    (void*)&syscall_drive_status,        // Syscall 89: Versioned drive health
     // Add more syscalls here as needed
 };
 
@@ -1858,6 +1894,10 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_STORAGE_MAINT_RELEASE:
             result = (uint32_t)syscall_storage_maintenance_release(arg1, arg2);
+            break;
+        case SYS_DRIVE_STATUS:
+            result = (uint32_t)syscall_drive_status(
+                arg1, (void*)(uintptr_t)arg2);
             break;
         default:
             result = (uint32_t)-1;

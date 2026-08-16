@@ -555,6 +555,11 @@ void fdd_fence_writes(void) {
     }
 }
 
+void fdd_restore_writes_after_recovery(void) {
+    fdd_write_fenced = false;
+    __asm__ volatile("" ::: "memory");
+}
+
 bool fdd_writes_quiescent(void) {
     if (!fdd_write_fenced) return false;
     if (!fdc_controller_initialized) return true;

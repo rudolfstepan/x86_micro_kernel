@@ -508,6 +508,14 @@ int x86os_drive_info(uint32_t index, x86os_drive_info_t* info) {
                               (uintptr_t)info, 0);
 }
 
+int x86os_drive_status(uint32_t index, x86os_drive_status_t* status) {
+    if (status == NULL) return -22;
+    status->version = X86OS_DRIVE_STATUS_VERSION;
+    status->struct_size = sizeof(*status);
+    return (int)x86os_syscall(X86OS_SYS_DRIVE_STATUS, index,
+                              (uintptr_t)status, 0);
+}
+
 int x86os_space(const char* path, x86os_space_info_t* info) {
     return (int)x86os_syscall(X86OS_SYS_SPACE, (uintptr_t)path,
                               (uintptr_t)info, 0);

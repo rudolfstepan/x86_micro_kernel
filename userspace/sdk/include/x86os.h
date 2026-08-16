@@ -92,7 +92,8 @@ enum {
     X86OS_SYS_STORAGE_BLOCK_WRITE = 85,
     X86OS_SYS_STORAGE_MAINT_ACQUIRE = 86,
     X86OS_SYS_STORAGE_MAINT_RENEW = 87,
-    X86OS_SYS_STORAGE_MAINT_RELEASE = 88
+    X86OS_SYS_STORAGE_MAINT_RELEASE = 88,
+    X86OS_SYS_DRIVE_STATUS = 89
 };
 
 enum {
@@ -434,6 +435,18 @@ typedef struct {
     char mount_point[64];
 } x86os_drive_info_t;
 
+#define X86OS_DRIVE_STATUS_VERSION 1U
+#define X86OS_DRIVE_STATUS_AVAILABLE   (1U << 0)
+#define X86OS_DRIVE_STATUS_READ_ONLY   (1U << 1)
+#define X86OS_DRIVE_STATUS_DEGRADED    (1U << 2)
+#define X86OS_DRIVE_STATUS_QUARANTINED (1U << 3)
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t flags;
+    uint32_t reserved;
+} x86os_drive_status_t;
+
 typedef struct {
     uint64_t total_bytes;
     uint64_t free_bytes;
@@ -553,6 +566,7 @@ int x86os_kill(int pid);
 int x86os_getcwd(char* buffer, size_t size);
 int x86os_chdir(const char* path);
 int x86os_drive_info(uint32_t index, x86os_drive_info_t* info);
+int x86os_drive_status(uint32_t index, x86os_drive_status_t* status);
 int x86os_space(const char* path, x86os_space_info_t* info);
 int x86os_mkdir(const char* path);
 int x86os_rmdir(const char* path);

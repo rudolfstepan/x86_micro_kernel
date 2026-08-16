@@ -239,6 +239,30 @@ class UserProgramToolchainTests(unittest.TestCase):
                 self.assertEqual(program[:4], b"MYPR")
                 self.assertGreater(len(program), 28)
 
+    def test_drives_reports_versioned_storage_health(self):
+        header = (ROOT / "userspace" / "sdk" / "include" / "x86os.h").read_text(
+            encoding="utf-8"
+        )
+        sdk = (ROOT / "userspace" / "sdk" / "x86os.c").read_text(
+            encoding="utf-8"
+        )
+        kernel = (ROOT / "kernel" / "syscall" / "syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        drives = (ROOT / "examples" / "userspace" / "drives.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("X86OS_SYS_DRIVE_STATUS = 89", header)
+        self.assertIn("X86OS_DRIVE_STATUS_VERSION", header)
+        self.assertIn("x86os_drive_status", sdk)
+        self.assertIn("request.struct_size != sizeof(request)", kernel)
+        self.assertIn("storage_service_resource_available(index)", kernel)
+        self.assertIn("storage_service_resource_read_only(index)", kernel)
+        self.assertIn("QUARANTINED", drives)
+        self.assertIn("DEGRADED", drives)
+        self.assertIn("READONLY", drives)
+        self.assertIn("READY", drives)
+
     def test_editor_is_packaged_in_both_native_images(self):
         build_script = (ROOT / "scripts" / "build-windows.ps1").read_text(
             encoding="utf-8"
@@ -260,7 +284,7 @@ class UserProgramToolchainTests(unittest.TestCase):
         )
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn("SATA_WRITE_DURATION_MS 10000U", source)
-        self.assertIn("SATA_RECONNECT_TIMEOUT_MS 30000U", source)
+        self.assertIn("SATA_RECONNECT_TIMEOUT_MS 65000U", source)
         self.assertIn("SATA_WRITE_MAX_RECORDS 2048U", source)
         self.assertIn("x86os_monotonic_ms", source)
         self.assertIn("x86os_fsync", source)

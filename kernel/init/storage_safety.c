@@ -178,6 +178,25 @@ void storage_fence_writes(void) {
     fdd_fence_writes();
 }
 
+bool storage_restore_writes_after_recovery(void) {
+    storage_control_t state;
+    if (!storage_supervised || storage_integrity_failed ||
+        storage_handover_is_held() || !storage_control_read(&state) ||
+        state.operation_active != 0U) return false;
+    state.write_fenced = 0U;
+    if (!storage_control_write(&state) ||
+        supervisor_report_idle(storage_supervisor_handle) != 0) {
+        storage_fence_writes();
+        return false;
+    }
+    ata_restore_writes_after_recovery();
+    ahci_restore_writes_after_recovery();
+    fdd_restore_writes_after_recovery();
+    __asm__ volatile("" ::: "memory");
+    storage_force_fenced = false;
+    return true;
+}
+
 bool storage_writes_fenced(void) {
     storage_control_t state;
     bool logical = storage_force_fenced || storage_integrity_failed;

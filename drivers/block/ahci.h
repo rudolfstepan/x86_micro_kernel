@@ -97,9 +97,13 @@ void ahci_init(void);
 /** Packed probe summary: functions, controllers, links, drives. */
 uint32_t ahci_probe_diagnostics(void);
 bool ahci_read_sector(const drive_t *drive, uint32_t sector, void *buffer);
+bool ahci_requalify_drive(const drive_t *drive);
 bool ahci_write_sector(const drive_t *drive, uint32_t sector,
                        const void *buffer);
+bool ahci_write_sector_recovery(const drive_t *drive, uint32_t sector,
+                                const void *buffer);
 bool ahci_flush(const drive_t *drive);
 void ahci_fence_writes(void);
+void ahci_restore_writes_after_recovery(void);
 
 #endif

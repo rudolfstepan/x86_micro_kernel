@@ -38,10 +38,10 @@ class ReistUndoJournalTests(unittest.TestCase):
         body = source[start:end]
         body = body[body.index("uint8_t old_data"):]
         ordered = [
-            "ata_read_sector_impl(base, lba",
-            "ata_write_sector_impl(base, ata_journal.data_lba + slot",
+            "ata_journal_read_transport(base, lba",
+            "ata_journal_write_transport(base, ata_journal.data_lba + slot",
             "ata_journal_write_active()",
-            "ata_write_sector_impl(base, lba, buffer",
+            "ata_journal_write_transport(base, lba, buffer",
             "ata_journal_transaction_end(result)",
         ]
         position = -1
@@ -60,7 +60,7 @@ class ReistUndoJournalTests(unittest.TestCase):
         self.assertIn("ata_journal_record_valid(&record)", body)
         self.assertIn("record.entries[index].data_crc32", body)
         self.assertIn("data_lba + index", body)
-        self.assertIn("ata_write_sector_impl(base, target, data", body)
+        self.assertIn("ata_journal_write_transport(base, target, data", body)
         self.assertIn("if (!result) ata_fence_writes();", body)
 
     def test_vfs_transaction_spans_multiple_unique_sector_updates(self):
@@ -87,6 +87,15 @@ class ReistUndoJournalTests(unittest.TestCase):
         source = (ROOT / "fs/fat32/fat32.c").read_text(encoding="utf-8")
         self.assertLess(source.index("ata_journal_attach("),
                         source.index("candidate_boot.fs_info"))
+
+    def test_ahci_uses_the_same_journal_and_recovery_transport(self):
+        source = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
+        self.assertIn("ahci_write_sector_recovery", source)
+        self.assertIn("ata_journal_recover_resource", source)
+        partition_write = source[source.index("bool ata_write_sector("):
+                                 source.index("bool ata_write_sectors(")]
+        self.assertIn("ata_write_sector_journaled(parent->base", partition_write)
+        self.assertIn("ata_write_sector_journaled(base, lba", partition_write)
 
     def test_power_loss_recovery_is_a_ci_gate(self):
         runner = (ROOT / "scripts/test_journal_recovery.py").read_text(encoding="utf-8")

@@ -100,6 +100,31 @@ class StorageRecoveryContracts(unittest.TestCase):
         self.assertIn("storage_write_end(result)", ata)
         self.assertIn("storage_write_end(result)", fdd)
 
+    def test_uncertain_disk_write_only_returns_rw_after_journal_recovery(self):
+        service = read("kernel/init/storage_service.c")
+        storage = read("kernel/init/storage_safety.c")
+        filesystem = read("kernel/init/filesystem_safety.c")
+        recovery = service[service.index("static void poll_media_reintegration"):
+                           service.index("void storage_service_poll")]
+        ordered = [
+            "media_identity_matches(resource)",
+            "ata_journal_recover_resource(resource)",
+            "storage_restore_writes_after_recovery()",
+            "filesystem_restore_mutations_after_recovery()",
+            "control.read_only_resources &= ~mask",
+            "control.quarantined_resources &= ~mask",
+            "RESOURCE_REINTEGRATED_RW",
+        ]
+        position = -1
+        for token in ordered:
+            next_position = recovery.index(token)
+            self.assertGreater(next_position, position, token)
+            position = next_position
+        self.assertIn("ata_read_sector_fresh", service)
+        self.assertIn("state.write_fenced = 0U", storage)
+        self.assertIn("state.read_only = 0U", filesystem)
+        self.assertIn("state.mutation_active = 0U", filesystem)
+
     def test_all_media_recovery_contract_is_documented_fail_closed(self):
         contract = read("docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md")
         architecture = read("docs/architecture/REIST_ARCHITECTURE.md")

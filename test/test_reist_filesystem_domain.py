@@ -47,7 +47,7 @@ class ReistFilesystemDomainTests(unittest.TestCase):
         self.assertLess(source.index("output_fence_init()"),
                         source.index("output_fence_register(filesystem_fence_mutations)"))
         self.assertLess(source.index("storage_safety_init("),
-                        source.index("auto_mount_all_drives()"))
+                        source.index("auto_mount_all_drives("))
 
 
 if __name__ == "__main__":

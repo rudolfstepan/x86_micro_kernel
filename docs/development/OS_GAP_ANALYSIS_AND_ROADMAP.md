@@ -1288,10 +1288,20 @@ Injektion sowie für den normalen VMware-AHCI-Boot belegt. Offen bleiben die
 reproduzierbare VMware-Fault-Injection und ein Lauf auf realer SATA-Hardware.
 Für diesen Lauf steht `SATAWR.PRG` bereit: Der begrenzte Ring-3-Test schreibt
 zehn Sekunden lang sequenzierte 512-Byte-Datensätze mit CRC und `fsync`, meldet
-den erwarteten I/O-Abbruch beim Abziehen, wartet höchstens 30 Sekunden auf die
+den erwarteten I/O-Abbruch beim Abziehen, wartet höchstens 65 Sekunden auf die
 Reintegration und akzeptiert anschließend nur ein vollständiges altes oder
 ein lückenloses CRC-gültiges Dateipräfix. Partition und Systemprogramm werden
 separat erneut gelesen; reale Ergebnisse bleiben als Hardwareevidenz offen.
+Ein beobachteter permanenter Read-only-Zustand nach erfolgreichem Reconnect
+lag am zuvor nur einseitigen Zustandsübergang: Die Medienquarantäne wurde
+entfernt, Resource-, Storage-, Filesystem- und Controller-Fences blieben nach
+einem unklaren Write jedoch gesetzt. Die Reintegration verwendet nun für
+ATA/AHCI frische, cachefreie Bootsektorreads; AHCI führt begrenzten COMRESET
+und IDENTIFY aus. Nur wenn Fingerprint und Modell unverändert sind und das
+redundante REIST-Undo-Journal den unterbrochenen Write vollständig
+zurückrollt, werden abgebrochene Safety-Operationen bereinigt und alle Fences
+gemeinsam gelöst. Nicht journalisierte oder nicht eindeutig wiederherstellbare
+Volumes bleiben weiterhin fail-closed read-only.
 `drivers/block/block_device.[ch]` bietet einen festen,
 transportneutralen Einsektor-Vertrag mit Bereichsprüfung, Read, Write und
 Flush. ATA-PIO und FDD werden darüber als bestehende Backends angesprochen;

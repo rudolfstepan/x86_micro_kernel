@@ -491,10 +491,55 @@ bool ahci_read_sector(const drive_t *drive, uint32_t sector, void *buffer) {
     return result;
 }
 
-bool ahci_write_sector(const drive_t *drive, uint32_t sector,
-                       const void *buffer) {
+bool ahci_requalify_drive(const drive_t *drive) {
     ahci_controller_info_t *controller;
-    if (buffer == NULL || writes_fenced ||
+    if (!ahci_drive_valid(drive, &controller) ||
+        !ahci_port_acquire(drive->ahci_controller, drive->ahci_port))
+        return false;
+    uint32_t port = drive->ahci_port;
+    uint32_t base = AHCI_PORT_BASE + port * AHCI_PORT_STRIDE;
+    bool result = ahci_stop_port(controller->mmio, port);
+    if (result) {
+        uint32_t command = ahci_read(controller->mmio, base + AHCI_PORT_CMD);
+        ahci_write(controller->mmio, base + AHCI_PORT_CMD,
+                   command | AHCI_PORT_CMD_SUD | AHCI_PORT_CMD_POD);
+        ahci_write(controller->mmio, base + AHCI_PORT_SERR, UINT32_MAX);
+        uint32_t control = ahci_read(controller->mmio, base + AHCI_PORT_SCTL);
+        ahci_write(controller->mmio, base + AHCI_PORT_SCTL,
+                   (control & ~0x0FU) | 1U);
+        pit_delay(1U);
+        ahci_write(controller->mmio, base + AHCI_PORT_SCTL, control & ~0x0FU);
+        uint64_t start = pit_monotonic_ms();
+        result = false;
+        for (uint32_t poll = 0U; poll < AHCI_RESET_MAX_POLLS; ++poll) {
+            uint32_t status = ahci_read(controller->mmio,
+                                        base + AHCI_PORT_SSTS);
+            if ((status & 0x0FU) == 3U && ((status >> 8U) & 0x0FU) == 1U) {
+                result = true;
+                break;
+            }
+            uint64_t now = pit_monotonic_ms();
+            if (now < start || now - start >= AHCI_RESET_TIMEOUT_MS) break;
+        }
+    }
+    if (result) {
+        result = ahci_prepare_port(controller, drive->ahci_controller, port) &&
+            ahci_build_identify_command(controller, drive->ahci_controller,
+                                        port) &&
+            ahci_execute_command(controller, drive->ahci_controller, port) &&
+            ahci_parse_identify(controller, drive->ahci_controller, port);
+    }
+    uint32_t bit = 1U << port;
+    if (result) controller->dma_ready_ports |= bit;
+    else controller->dma_ready_ports &= ~bit;
+    ahci_port_release(drive->ahci_controller, port);
+    return result;
+}
+
+static bool ahci_write_sector_internal(const drive_t *drive, uint32_t sector,
+        const void *buffer, bool recovery) {
+    ahci_controller_info_t *controller;
+    if (buffer == NULL || (writes_fenced && !recovery) ||
         !ahci_drive_valid(drive, &controller) || sector >= drive->sectors ||
         !ahci_port_acquire(drive->ahci_controller, drive->ahci_port))
         return false;
@@ -526,6 +571,16 @@ bool ahci_write_sector(const drive_t *drive, uint32_t sector,
     return result;
 }
 
+bool ahci_write_sector(const drive_t *drive, uint32_t sector,
+                       const void *buffer) {
+    return ahci_write_sector_internal(drive, sector, buffer, false);
+}
+
+bool ahci_write_sector_recovery(const drive_t *drive, uint32_t sector,
+                                const void *buffer) {
+    return ahci_write_sector_internal(drive, sector, buffer, true);
+}
+
 bool ahci_flush(const drive_t *drive) {
     ahci_controller_info_t *controller;
     if (!ahci_drive_valid(drive, &controller) ||
@@ -541,6 +596,11 @@ bool ahci_flush(const drive_t *drive) {
 
 void ahci_fence_writes(void) {
     writes_fenced = true;
+    __asm__ volatile("" ::: "memory");
+}
+
+void ahci_restore_writes_after_recovery(void) {
+    writes_fenced = false;
     __asm__ volatile("" ::: "memory");
 }
 

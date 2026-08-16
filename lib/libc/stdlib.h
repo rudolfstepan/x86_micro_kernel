@@ -97,6 +97,7 @@
 #define SYS_STORAGE_MAINT_ACQUIRE 86
 #define SYS_STORAGE_MAINT_RENEW 87
 #define SYS_STORAGE_MAINT_RELEASE 88
+#define SYS_DRIVE_STATUS 89
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

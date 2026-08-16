@@ -76,7 +76,9 @@ bool ata_journal_attach(unsigned short base, bool is_master,
                         uint16_t reserved_sectors);
 bool ata_journal_transaction_begin(void);
 bool ata_journal_transaction_end(bool commit);
+bool ata_journal_recover_resource(uint32_t resource);
 void ata_fence_writes(void);
+void ata_restore_writes_after_recovery(void);
 bool ata_writes_quiescent(void);
 
 
