@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3c-6f"
-active_id = "S0.3c-6f1"
+active_id = "S0.3c-6f2"
 
 [policy]
 one_package_per_run = true
@@ -122,7 +122,7 @@ evidence = [
 
 [[packages]]
 id = "S0.3c-6f1"
-status = "active"
+status = "done"
 risk = "critical"
 title = "Verified FAT12 undo journal"
 scope = "Complete the fixed-capacity FAT12 undo journal: validate the reserved layout, verify journal data and both redundant headers after every persistent write, recover before mutable FAT metadata is consumed, and fail closed on exhaustion, ambiguous headers or failed readback. Preserve the non-REIST FAT12 compatibility path."
@@ -167,11 +167,16 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: complete verified FAT12 undo recovery"
-evidence = []
+evidence = [
+  "python test/test_fat12_journal.py -q",
+  "python test/test_fs_host.py -q",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode fdd-hotplug"
+]
 
 [[packages]]
 id = "S0.3c-6f2"
-status = "queued"
+status = "active"
 risk = "critical"
 title = "Bounded FAT12 bad-sector quarantine"
 scope = "Integrate bounded defect confirmation and the fixed redundant remap table into FAT12. Mark confirmed defective data clusters with FAT12 value 0xFF7, permit reserved/FAT/root remapping only to distinct pre-reserved replacement sectors, verify every table update, and enter a write-fenced state on ambiguity or capacity exhaustion."

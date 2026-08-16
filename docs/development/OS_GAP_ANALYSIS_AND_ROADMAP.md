@@ -212,7 +212,7 @@ und 10 verbindlich.
     - [ ] S0.3c-6f Medienunabhängiges Undo/COW/Journal mit Flush-/Barrier- und
       Power-Loss-Nachweis für jeden beschreibbaren Datenträger; stärkere
       Wechselmedien-Identität und kontrolliertes Cache-Invalidieren/Remount
-      - [ ] S0.3c-6f1 Explizit markiertes FAT12-Undo-Journal mit redundanten,
+      - [x] S0.3c-6f1 Explizit markiertes FAT12-Undo-Journal mit redundanten,
         CRC-geschützten Headern, fester Kapazität, Recovery vor dem Lesen
         veränderlicher FAT-/Verzeichnismetadaten und fail-closed Verhalten bei
         beschädigtem oder erschöpftem Journal
@@ -2214,13 +2214,14 @@ VFS-Öffnungen und wird bei Ablauf beziehungsweise Prozessende freigegeben. Die
 Werkzeuge `CHKDSK.PRG`, `FDISK.PRG` und `FORMAT.PRG` werden mit der normalen
 Userspace-Toolchain gebaut und sowohl für A: als auch C: paketiert.
 
-Für S0.3c-6f1 liegt ein Verifier-Kandidat für Journalformat Version 2 vor:
+Für S0.3c-6f1 liegt das verifizierte Journalformat Version 2 vor:
 Undo-Daten, Entry-Metadaten sowie beide Header werden nach jedem Write
 zurückgelesen; Entry-Metadaten tragen eine eigene CRC32. Gleich alte, aber
 inhaltlich widersprüchliche Header, nicht monotone Sequenzen, reservierte
 Journalziele und ein unsicherer CLEAN-Abschluss werden fail-closed abgelehnt.
-Der Punkt bleibt bis zum erfolgreichen äußeren Paket- und Power-Loss-Gate
-offen; daraus folgt noch kein vollständiger FAT12-Resilienznachweis.
+Targeted-, QEMU-Paket- und FDD-Hotplug-Gate sind erfolgreich. Daraus folgt
+noch kein vollständiger FAT12-Resilienznachweis; insbesondere bleiben die
+Defektsektor-, Replikat- und Persistenzbarrierenpakete offen.
 
 Der aktuelle Funktionsumfang der Werkzeuge ist bewusst enger als das Ziel:
 
