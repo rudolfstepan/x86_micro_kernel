@@ -337,7 +337,7 @@ und 10 verbindlich.
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
 | Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit explizit delegierten generationsgebundenen Capabilities, endlichen Deadlines, geschützten Steuerdaten, reservierter Restart-Admission, versionierten Domänenprofilen und abgenommener Ring-3-Probe-Recovery | maximal 8 Tasks; produktive Dienste liegen noch im modularen Monolithen |
 | Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, FAT32-Rename/Replace im Undo-Journal, FAT32/ATA-`fsync`, EXT2 lesen | persistenter Editor-Commit vorhanden; ABI, FAT12-Sync und breitere Rename-Semantik fehlen |
-| Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 und COM1 mit blockierendem Console-Wait, RTC, VGA, nativer VBE-RGB-Framebuffer | Referenzhardware gut, moderne Geräte fehlen |
+| Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 und COM1 mit blockierendem Console-Wait, RTC, VGA, nativer VBE-RGB-Framebuffer | Referenzhardware gut, AHCI/SATA und moderne Geräte fehlen |
 | Netzwerk | E1000, RTL8139, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping am besten verifiziert |
 | USB | PCI-Erkennung eines xHCI-Controllers | nur Probe-Gerüst |
 | Userspace | SDK, Shell, Editor, BASIC, zahlreiche Systemprogramme und tastaturbedienter Ring-3-Desktop mit vier App-Karten | brauchbare CLI- und Desktop-MVP-Basis |
@@ -1185,6 +1185,58 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
 - Bereichsprüfung und `flush` zentral erzwingen.
 - ATA LBA48 und gebündelte PIO-Transfers ergänzen.
 - GPT, AHCI und NVMe als getrennte Folgepakete behandeln.
+
+#### R2.4 SATA/AHCI-Unterstützung — XL
+
+SATA wird als AHCI-Folgepaket umgesetzt. Der bestehende ATA-PIO- und FDD-Pfad
+bleibt während jedes Schritts unverändert funktionsfähig. Jeder Schritt ist
+einzeln abnahmefähig; ein fehlgeschlagener Schritt blockiert die folgenden.
+
+1. **Blockgerätevertrag festschreiben:** Eine feste, transportneutrale API für
+   `read`, `write`, `flush`, Sektorgröße, Kapazität, Status und Fehler-Fence
+   definieren. Keine VFS- oder Userspace-Schicht darf mehr ATA-Ports direkt
+   annehmen.
+2. **ATA/FDD migrieren:** Bestehende ATA-PIO- und FDD-Operationen hinter den
+   Vertrag legen. Alte interne Aufrufer bleiben zunächst als Kompatibilitäts-
+   wrapper erhalten. Hosttests müssen identische Fehler- und Boundsregeln
+   nachweisen.
+3. **PCI-AHCI erkennen:** PCI-Klasse `01/06/01` und BAR5 sicher validieren;
+   32-/64-Bit-BARs, nicht unterstützte BAR-Typen, fehlende Ports und
+   Controller-Reset-Timeouts fail-closed behandeln. Keine MMIO-Adresse aus
+   ungeprüften PCI-Daten verwenden.
+4. **AHCI-Speicher reservieren:** Command List, FIS-Bereich und Command Tables
+   aus festen, DMA-tauglichen Bereichen zuweisen. Alignment, physische Grenzen,
+   Cache-/Ownership-Regeln und maximal einen aktiven Auftrag pro Port prüfen.
+5. **Port initialisieren:** `GHC.HR`, `PxCMD`, `PxSSTS`, `PxSIG` und
+   `PxIS/PxIE` mit monotonen Deadlines behandeln. Nur aktive SATA-Ports mit
+   gültigem Gerät werden registriert; Linkfehler oder Hängestatus führen zur
+   Port-Quarantäne.
+6. **IDENTIFY DEVICE:** Feste ATA-Identifikation über AHCI ausführen, Modell,
+   LBA28/LBA48-Kapazität und 512-Byte-Sektorvertrag validieren. Kapazitäts-
+   überläufe und Geräte mit nicht unterstützter Sektorgröße werden abgelehnt.
+7. **Sektor-I/O:** `READ DMA EXT`/`WRITE DMA EXT` beziehungsweise den
+   unterstützten AHCI-Befehl mit genau einem begrenzten Command ausführen.
+   PRDT-Längen, LBA-Bereich, Busy/DRQ/TFD und Completion-Timeout vor und nach
+   jedem Auftrag prüfen; Writes erhalten Readback und Flush-Verifikation.
+8. **Storage-Service anbinden:** SATA-Ressourcen in Fingerprint, Quarantäne,
+   Maintenance-Lease, Storage-Request-Pool und Medien-Reintegration aufnehmen.
+   ATA-, SATA- und FDD-Fehler dürfen keine unterschiedlichen Sicherheitsregeln
+   umgehen.
+9. **VFS und Partitionen anbinden:** MBR-Child-Geräte zuerst, GPT erst in einem
+   separaten Folgepaket. FAT32/EXT2-Mounts auf SATA testen; FAT12 bleibt auf
+   FDD/Superfloppy begrenzt, sofern kein expliziter Layoutvertrag ergänzt wird.
+10. **Abnahme und Fault-Injection:** Hosttests für Register-, Bounds-, DMA-,
+    Timeout- und Quarantänefälle; anschließend QEMU-AHCI, VMware-AHCI und, wenn
+    verfügbar, reale SATA-Hardware. Nach jedem Fehler müssen Fence, Diagnose und
+    unabhängiger Prozessfortschritt nachgewiesen werden.
+
+**Definition of Done für R2.4:** SATA erscheint mit stabiler Resource-ID in
+`DRIVES.PRG`, ein getestetes FAT32- oder EXT2-Dateisystem kann gelesen und
+geschrieben werden, `flush` und Readback sind bestätigt, ein Controller- oder
+Medienfehler quarantänisiert nur die betroffene Ressource, und ATA/FDD-
+Regressionstests bleiben vollständig grün. Ohne reale oder emulierte AHCI-
+Laufzeitabnahme gilt SATA nur als Quellcode-Unterstützung, nicht als
+unterstützte Plattform.
 
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 
