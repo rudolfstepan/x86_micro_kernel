@@ -158,7 +158,7 @@ package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
 ]
 runtime_tests = [
-  ".\\scripts\\test-reist-runtime.ps1 -Mode storage-power-loss"
+  ".\\scripts\\test-reist-runtime.ps1 -Mode fdd-hotplug"
 ]
 stop_conditions = [
   "verified ordering cannot be retained with bounded fixed storage",
