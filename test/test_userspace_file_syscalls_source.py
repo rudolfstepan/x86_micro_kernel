@@ -178,7 +178,8 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         getchar = getchar[:getchar.index("\n}")]
         self.assertIn("KASSERT_CAN_SLEEP();", getchar)
         self.assertNotIn("irq_enable();", getchar)
-        self.assertIn("wait_queue_block_locked", getchar)
+        self.assertIn("wait_queue_block_until_locked", getchar)
+        self.assertIn("KEYBOARD_POLL_INTERVAL_MS", getchar)
         self.assertIn('"hlt"', getchar)
         self.assertIn("wait_queue_wake_all_locked", source)
 

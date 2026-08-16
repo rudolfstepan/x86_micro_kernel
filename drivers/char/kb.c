@@ -7,6 +7,7 @@
 #include "include/kernel/panic.h"
 #include "include/lib/spinlock.h"
 #include "kernel/sched/scheduler.h"
+#include "kernel/time/pit.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
@@ -21,6 +22,35 @@
 
 #define KEYBOARD_DATA_PORT      0x60
 #define KEYBOARD_STATUS_PORT    0x64
+#define PIC1_DATA_PORT          0x21
+
+#define I8042_STATUS_OUTPUT_FULL           0x01U
+#define I8042_STATUS_INPUT_FULL            0x02U
+#define I8042_STATUS_AUX_DATA              0x20U
+#define I8042_STATUS_ERROR_MASK            0xC0U
+#define I8042_CMD_READ_CONFIG              0x20U
+#define I8042_CMD_WRITE_CONFIG             0x60U
+#define I8042_CMD_TEST_CONTROLLER          0xAAU
+#define I8042_CMD_DISABLE_PORT1            0xADU
+#define I8042_CMD_ENABLE_PORT1             0xAEU
+#define I8042_CMD_TEST_PORT1                0xABU
+#define I8042_CMD_DISABLE_PORT2            0xA7U
+#define I8042_CONTROLLER_TEST_OK           0x55U
+#define I8042_PORT_TEST_OK                 0x00U
+#define I8042_CONFIG_IRQ1                  0x01U
+#define I8042_CONFIG_PORT1_CLOCK_DISABLED  0x10U
+#define I8042_CONFIG_TRANSLATION           0x40U
+#define I8042_KEYBOARD_SET_SCANCODE        0xF0U
+#define I8042_KEYBOARD_DISABLE_SCANNING    0xF5U
+#define I8042_KEYBOARD_ENABLE_SCANNING     0xF4U
+#define I8042_KEYBOARD_ACK                 0xFAU
+#define I8042_KEYBOARD_RESEND              0xFEU
+
+#define I8042_POLL_LIMIT              100000U
+#define I8042_FLUSH_BUDGET            32U
+#define I8042_COMMAND_RETRY_LIMIT     2U
+#define KEYBOARD_DRAIN_BUDGET         16U
+#define KEYBOARD_POLL_INTERVAL_MS     10U
 
 #define SC_MAX                  89  // Extended to cover more scancodes
 #define INPUT_QUEUE_SIZE        256
@@ -112,6 +142,72 @@ static volatile int input_queue_tail = 0;
 static spinlock_t input_queue_lock = SPINLOCK_INIT;  // Protect queue access
 static wait_queue_t input_waiters = WAIT_QUEUE_INIT;
 static bool serial_swallow_line_feed = false;
+static bool keyboard_irq_registered;
+static bool keyboard_scanning_enabled;
+
+static bool i8042_wait_input_clear(void) {
+    for (uint32_t poll = 0U; poll < I8042_POLL_LIMIT; ++poll) {
+        if ((inb(KEYBOARD_STATUS_PORT) & I8042_STATUS_INPUT_FULL) == 0U)
+            return true;
+        __asm__ __volatile__("pause");
+    }
+    return false;
+}
+
+static bool i8042_wait_output_full(uint8_t *status_out) {
+    if (status_out == NULL) return false;
+    for (uint32_t poll = 0U; poll < I8042_POLL_LIMIT; ++poll) {
+        uint8_t status = inb(KEYBOARD_STATUS_PORT);
+        if ((status & I8042_STATUS_OUTPUT_FULL) != 0U) {
+            *status_out = status;
+            return true;
+        }
+        __asm__ __volatile__("pause");
+    }
+    return false;
+}
+
+static bool i8042_write_command(uint8_t command) {
+    if (!i8042_wait_input_clear()) return false;
+    outb(KEYBOARD_STATUS_PORT, command);
+    return true;
+}
+
+static bool i8042_write_data(uint8_t value) {
+    if (!i8042_wait_input_clear()) return false;
+    outb(KEYBOARD_DATA_PORT, value);
+    return true;
+}
+
+static bool i8042_read_data(uint8_t *value_out) {
+    uint8_t status = 0U;
+    if (value_out == NULL || !i8042_wait_output_full(&status)) return false;
+    uint8_t value = inb(KEYBOARD_DATA_PORT);
+    if ((status & (I8042_STATUS_AUX_DATA | I8042_STATUS_ERROR_MASK)) != 0U)
+        return false;
+    *value_out = value;
+    return true;
+}
+
+static void i8042_flush_output(void) {
+    for (uint32_t count = 0U; count < I8042_FLUSH_BUDGET; ++count) {
+        if ((inb(KEYBOARD_STATUS_PORT) & I8042_STATUS_OUTPUT_FULL) == 0U)
+            return;
+        (void)inb(KEYBOARD_DATA_PORT);
+    }
+}
+
+static bool i8042_keyboard_command(uint8_t command) {
+    for (uint32_t attempt = 0U;
+         attempt < I8042_COMMAND_RETRY_LIMIT; ++attempt) {
+        uint8_t response = 0U;
+        if (!i8042_write_data(command) || !i8042_read_data(&response))
+            return false;
+        if (response == I8042_KEYBOARD_ACK) return true;
+        if (response != I8042_KEYBOARD_RESEND) return false;
+    }
+    return false;
+}
 
 static char normalize_serial_input(char ch) {
     if (ch == '\r') {
@@ -328,13 +424,7 @@ static char process_ctrl_combination(char ch) {
 // KEYBOARD INTERRUPT HANDLER
 //=============================================================================
 
-/**
- * IRQ1 keyboard interrupt handler
- * Called on every key press and release
- */
-void kb_handler(void* r) {
-    uint8_t scancode = inb(KEYBOARD_DATA_PORT);
-    
+static void kb_process_scancode(uint8_t scancode) {
     // Handle extended scancode prefix (E0)
     if (scancode == SC_EXTENDED_PREFIX) {
         kbd_state.extended = true;
@@ -433,7 +523,35 @@ void kb_handler(void* r) {
                 break;
         }
     }
-    
+}
+
+/* Caller keeps IRQs disabled so IRQ1 and the timed polling fallback cannot
+ * consume the same output byte.  Mouse/error bytes are discarded rather than
+ * being interpreted as Set-1 keyboard input. */
+static void kb_drain_output_locked(uint32_t budget) {
+    for (uint32_t count = 0U; count < budget; ++count) {
+        uint8_t status = inb(KEYBOARD_STATUS_PORT);
+        if ((status & I8042_STATUS_OUTPUT_FULL) == 0U) return;
+        uint8_t scancode = inb(KEYBOARD_DATA_PORT);
+        if ((status & (I8042_STATUS_AUX_DATA |
+                       I8042_STATUS_ERROR_MASK)) != 0U) continue;
+        kb_process_scancode(scancode);
+    }
+}
+
+static void kb_poll_controller(void) {
+    uint32_t flags = irq_save();
+    kb_drain_output_locked(KEYBOARD_DRAIN_BUDGET);
+    irq_restore(flags);
+}
+
+/**
+ * IRQ1 keyboard interrupt handler
+ * Called on every key press and release
+ */
+void kb_handler(void* r) {
+    (void)r;
+    kb_drain_output_locked(KEYBOARD_DRAIN_BUDGET);
 }
 
 /* Queue standard ANSI sequences so PS/2 and serial terminals share one
@@ -480,6 +598,7 @@ char getchar(void) {
     KASSERT_CAN_SLEEP();
     while (1) {
         uint32_t flags = irq_save();
+        kb_drain_output_locked(KEYBOARD_DRAIN_BUDGET);
 
         // Check serial port first (for nographic mode).
         char ch = read_normalized_serial();
@@ -493,10 +612,14 @@ char getchar(void) {
          * producers.  A userspace reader no longer occupies the CPU while it
          * waits; kernel-only/preemption-disabled callers retain the safe HLT
          * fallback used during early boot and driver operations. */
-        int blocked = wait_queue_block_locked(&input_waiters,
-                                              TASK_BLOCK_WAITING);
+        uint64_t now_ms = pit_monotonic_ms();
+        uint64_t deadline_ms = UINT64_MAX - now_ms <
+                KEYBOARD_POLL_INTERVAL_MS
+            ? UINT64_MAX : now_ms + KEYBOARD_POLL_INTERVAL_MS;
+        int blocked = wait_queue_block_until_locked(
+            &input_waiters, TASK_BLOCK_WAITING, deadline_ms);
         irq_restore(flags);
-        if (blocked == 0) continue;
+        if (blocked == 0 || blocked == -110) continue;
 
         __asm__ __volatile__("hlt");
     }
@@ -507,6 +630,8 @@ char getchar(void) {
  * Returns 0 if no input available (checks both serial and keyboard)
  */
 char getchar_nonblocking(void) {
+    kb_poll_controller();
+
     // Check serial port first (for nographic mode)
     char serial_ch = read_normalized_serial();
     if (serial_ch != 0) return serial_ch;
@@ -527,6 +652,8 @@ void get_input_line(char* buffer, int max_len) {
     int index = 0;
 
     while (1) {
+        kb_poll_controller();
+
         // Check serial port first (for nographic mode)
         char ch = read_normalized_serial();
         if (ch != 0) {
@@ -601,36 +728,78 @@ void get_input_line(char* buffer, int max_len) {
  * Install keyboard driver (register IRQ1 handler)
  */
 void kb_install(void) {
-    // Initialize keyboard controller (important for VMware)
-    // Wait for input buffer to be clear
-    while (inb(KEYBOARD_STATUS_PORT) & 0x02);
-    
-    // Send command to controller: enable keyboard
-    outb(KEYBOARD_STATUS_PORT, 0xAE);
-    
-    // Wait for input buffer to be clear
-    while (inb(KEYBOARD_STATUS_PORT) & 0x02);
-    
-    // Send command to keyboard: enable scanning
-    outb(KEYBOARD_DATA_PORT, 0xF4);
-    
-    // Wait for acknowledgment
-    while (!(inb(KEYBOARD_STATUS_PORT) & 0x01));
-    inb(KEYBOARD_DATA_PORT); // Read ACK (should be 0xFA)
-    
     // Kernel drivers register their handlers directly; userspace must never
     // be allowed to install arbitrary Ring-0 interrupt callbacks.
-    if (register_interrupt_handler(1, (void*)kb_handler) != 0) {
-        printf("Keyboard IRQ registration failed\n");
-        return;
+    keyboard_irq_registered =
+        register_interrupt_handler(1, (void*)kb_handler) == 0;
+    keyboard_scanning_enabled = false;
+
+    const char *failure_stage = "controller input busy";
+    uint8_t response = 0U;
+    uint8_t config = 0U;
+    bool controller_ready = i8042_wait_input_clear();
+    if (!controller_ready) goto install_done;
+
+    failure_stage = "disable first port";
+    if (!i8042_write_command(I8042_CMD_DISABLE_PORT1)) goto install_done;
+    failure_stage = "disable second port";
+    if (!i8042_write_command(I8042_CMD_DISABLE_PORT2)) goto install_done;
+    i8042_flush_output();
+
+    failure_stage = "controller self-test";
+    if (!i8042_write_command(I8042_CMD_TEST_CONTROLLER) ||
+        !i8042_read_data(&response) ||
+        response != I8042_CONTROLLER_TEST_OK) goto install_done;
+
+    failure_stage = "first-port self-test";
+    if (!i8042_write_command(I8042_CMD_TEST_PORT1) ||
+        !i8042_read_data(&response) || response != I8042_PORT_TEST_OK)
+        goto install_done;
+
+    failure_stage = "enable first port";
+    if (!i8042_write_command(I8042_CMD_ENABLE_PORT1)) goto install_done;
+
+    failure_stage = "read configuration";
+    if (!i8042_write_command(I8042_CMD_READ_CONFIG) ||
+        !i8042_read_data(&config)) goto install_done;
+    config &= (uint8_t)~I8042_CONFIG_PORT1_CLOCK_DISABLED;
+    config |= I8042_CONFIG_TRANSLATION;
+    if (keyboard_irq_registered) config |= I8042_CONFIG_IRQ1;
+    else config &= (uint8_t)~I8042_CONFIG_IRQ1;
+
+    failure_stage = "write configuration";
+    if (!i8042_write_command(I8042_CMD_WRITE_CONFIG) ||
+        !i8042_write_data(config)) goto install_done;
+
+    /* The decoder consumes Set 1.  Physical keyboards normally produce Set 2,
+     * so request it explicitly and let the controller translation bit provide
+     * one deterministic Set-1 stream across BIOS, QEMU and VMware handoffs. */
+    failure_stage = "disable scanning";
+    if (!i8042_keyboard_command(I8042_KEYBOARD_DISABLE_SCANNING))
+        goto install_done;
+    failure_stage = "select scan set";
+    if (!i8042_keyboard_command(I8042_KEYBOARD_SET_SCANCODE) ||
+        !i8042_keyboard_command(2U)) goto install_done;
+    failure_stage = "enable scanning";
+    if (!i8042_keyboard_command(I8042_KEYBOARD_ENABLE_SCANNING))
+        goto install_done;
+
+    keyboard_scanning_enabled = true;
+    if (keyboard_irq_registered) {
+        uint8_t mask = inb(PIC1_DATA_PORT);
+        outb(PIC1_DATA_PORT, (uint8_t)(mask & (uint8_t)~(1U << 1U)));
     }
-    
-    printf("Keyboard driver installed (enhanced mode)\n");
-    printf("  - Extended scancode support: YES\n");
-    printf("  - Ctrl/Alt tracking: YES\n");
-    printf("  - Arrow keys: YES\n");
-    printf("  - Function keys: YES\n");
-    printf("  - VMware compatible: YES\n");
+
+install_done:
+    if (keyboard_scanning_enabled) {
+        printf("PS/2 keyboard ready: config=0x%02X input=%s\n", config,
+               keyboard_irq_registered ? "IRQ1+poll" : "poll-only");
+    } else {
+        /* Keep the finite poll path active for firmware that left scanning on,
+         * but do not claim a verified keyboard without the final F4 ACK. */
+        printf("PS/2 keyboard unavailable at %s; input=poll-only\n",
+               failure_stage);
+    }
 }
 
 /**

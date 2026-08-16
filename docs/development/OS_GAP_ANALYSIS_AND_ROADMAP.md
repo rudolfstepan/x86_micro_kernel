@@ -1398,6 +1398,24 @@ Controller. REIST unterstützt derzeit RTL8139, E1000 und NE2000; RTL8111G
 gehört zur RTL8168-PCIe-Familie und benötigt einen eigenen Treiber. Es darf
 nicht über die inkompatiblen RTL8139-Register angesprochen werden.
 
+Die danach auf dem H81M-K beobachtete fehlende PS/2-Eingabe war ebenfalls kein
+LAN- oder Userspace-Fehler. Die Tastatur funktionierte im BIOS, der bisherige
+Treiber verließ sich beim Übergang an den Kernel jedoch auf den von der Firmware
+hinterlassenen i8042-Zustand: Er aktivierte nur Port und Scanning, programmierte
+weder IRQ1 noch die Set-2-zu-Set-1-Übersetzung und wertete die Keyboard-Antwort
+nicht aus. Die Übernahme ist nun vollständig begrenzt. Sie deaktiviert die
+Ports, leert höchstens eine feste Anzahl Ausgabebytes, prüft Controller und
+ersten Port, setzt Config-Byte, IRQ1 und Translation explizit und akzeptiert
+die Befehle `F5`, `F0 02` und `F4` nur nach `ACK` beziehungsweise begrenztem
+`RESEND`. AUX- sowie Paritäts-/Timeout-Bytes gelangen nicht in den
+Tastaturdecoder. Zusätzlich wacht ein blockierter Console-Leser spätestens
+nach zehn Millisekunden auf und fragt den Controller begrenzt ab; damit bleibt
+Eingabe auch ohne zugestellten Legacy-IRQ1 möglich. Der neue QEMU-i8042-Test
+sendet `help` über HMP-`sendkey` statt COM1 und bestätigt, dass der Befehl die
+Ring-3-Shell erreicht. Der reale H81M-K-Gegenlauf bleibt als Hardwareevidenz
+offen; die frühe Diagnose muss dort `PS/2 keyboard ready: ... input=IRQ1+poll`
+melden oder die exakt fehlgeschlagene Initialisierungsstufe ausgeben.
+
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 
 #### R3.1 Pipes, Signale und TTY — XL

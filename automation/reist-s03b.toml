@@ -527,6 +527,52 @@ commit_message = "fix: gate shell startup on REIST service readiness"
 evidence = []
 
 [[packages]]
+id = "S0.3c-hw5"
+status = "done"
+risk = "high"
+title = "Bounded physical i8042 PS/2 keyboard takeover"
+scope = "Replace the firmware-dependent keyboard handoff with a bounded i8042 takeover. Validate controller and first-port responses, program IRQ1 and Set-1 translation explicitly, verify keyboard ACK/RESEND responses, unmask IRQ1, and retain a finite timed polling fallback so physical input progresses even when legacy IRQ delivery is absent."
+allowed_files = [
+  "drivers/char/kb.c",
+  "drivers/char/kb.h",
+  "scripts/run_qemu_ps2_smoke.py",
+  "test/test_ps2_keyboard_source.py",
+  "test/test_qemu_ps2_smoke.py",
+  "test/test_userspace_file_syscalls_source.py",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "every i8042 input/output wait has a fixed poll budget",
+  "the driver never claims IRQ operation without a registered handler and enabled IRQ1 configuration bit",
+  "keyboard scanning is accepted only after an explicit ACK",
+  "Set-2 keyboard bytes are translated to the Set-1 decoder explicitly",
+  "a missing IRQ1 cannot block a userspace console reader indefinitely",
+  "auxiliary-port and parity/timeout bytes are never decoded as keyboard input"
+]
+targeted_tests = [
+  "python test/test_ps2_keyboard_source.py -q",
+  "python test/test_qemu_ps2_smoke.py -q",
+  "python test/test_userspace_file_syscalls_source.py -q",
+  "python test/test_shell_source.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_ps2_smoke.py --image build/reist-os.img",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --nic none --expect-reist-probe --boot-only"
+]
+stop_conditions = [
+  "the physical controller requires ACPI or USB legacy ownership not represented by i8042 ports",
+  "console progress requires an unbounded wait or busy loop",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: initialize physical PS2 keyboards deterministically"
+evidence = []
+
+[[packages]]
 id = "S0.3c-6f5"
 status = "active"
 risk = "critical"
