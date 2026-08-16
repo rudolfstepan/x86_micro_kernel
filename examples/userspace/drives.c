@@ -33,6 +33,8 @@ int main(void) {
         x86os_drive_status_t status;
         if (x86os_drive_status(index, &status) != 0) {
             x86os_puts("UNKNOWN");
+        } else if ((status.flags & X86OS_DRIVE_STATUS_RECOVERING) != 0U) {
+            x86os_puts("RECOVERING");
         } else if ((status.flags & X86OS_DRIVE_STATUS_QUARANTINED) != 0U) {
             x86os_puts("QUARANTINED");
         } else if ((status.flags & X86OS_DRIVE_STATUS_DEGRADED) != 0U) {

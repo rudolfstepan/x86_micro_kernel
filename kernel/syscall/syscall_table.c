@@ -1329,6 +1329,7 @@ typedef struct {
 #define DRIVE_STATUS_READ_ONLY   (1U << 1)
 #define DRIVE_STATUS_DEGRADED    (1U << 2)
 #define DRIVE_STATUS_QUARANTINED (1U << 3)
+#define DRIVE_STATUS_RECOVERING  (1U << 4)
 
 static int syscall_drive_status(uint32_t index, void *user_status) {
     syscall_drive_status_t request;
@@ -1343,12 +1344,20 @@ static int syscall_drive_status(uint32_t index, void *user_status) {
         .flags = 0U,
         .reserved = 0U
     };
-    bool available = storage_service_resource_available(index);
-    bool read_only = storage_service_resource_read_only(index);
+    uint32_t health_resource = index;
+    if (detected_drives[index].type == DRIVE_TYPE_PARTITION) {
+        if (detected_drives[index].parent_resource >= (uint32_t)drive_count)
+            return -84;
+        health_resource = detected_drives[index].parent_resource;
+    }
+    bool available = storage_service_resource_available(health_resource);
+    bool read_only = storage_service_resource_read_only(health_resource);
+    bool recovering = storage_service_resource_recovering(health_resource);
     if (available) status.flags |= DRIVE_STATUS_AVAILABLE;
     if (read_only) status.flags |= DRIVE_STATUS_READ_ONLY;
     if (!available || read_only) status.flags |= DRIVE_STATUS_DEGRADED;
     if (!available) status.flags |= DRIVE_STATUS_QUARANTINED;
+    if (recovering) status.flags |= DRIVE_STATUS_RECOVERING;
     return copy_to_user(user_status, &status, sizeof(status)) == 0 ? 0 : -14;
 }
 

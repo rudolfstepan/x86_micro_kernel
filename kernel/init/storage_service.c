@@ -29,6 +29,7 @@ typedef struct {
     uint32_t healthy;
     uint32_t quarantined_resources;
     uint32_t read_only_resources;
+    uint32_t recovering_resources;
     uint32_t probe_cursor;
     uint32_t probe_attempts;
     uint64_t start_deadline_ms;
@@ -75,8 +76,11 @@ static bool control_valid(const void *payload, size_t length) {
         return false;
     const storage_service_control_t *control = payload;
     if (control->healthy > 1U ||
-        ((control->quarantined_resources | control->read_only_resources) &
+        ((control->quarantined_resources | control->read_only_resources |
+          control->recovering_resources) &
          ~((1U << MAX_DRIVES) - 1U)) != 0U ||
+        (control->recovering_resources &
+         ~control->quarantined_resources) != 0U ||
         control->probe_cursor >= MAX_DRIVES ||
         control->launch_count > STORAGE_SERVICE_RESTART_BUDGET + 1U)
         return false;
@@ -386,6 +390,13 @@ bool storage_service_resource_read_only(uint32_t resource) {
     return (control.read_only_resources & (1U << resource)) != 0U;
 }
 
+bool storage_service_resource_recovering(uint32_t resource) {
+    storage_service_control_t control;
+    if (resource >= MAX_DRIVES || !initialized ||
+        control_read(&control) != 0) return false;
+    return (control.recovering_resources & (1U << resource)) != 0U;
+}
+
 bool storage_service_media_fingerprint(uint32_t resource, uint32_t *fingerprint) {
     if (fingerprint == NULL || resource >= MAX_DRIVES || !initialized ||
         !media_identity_matches(resource)) return false;
@@ -418,6 +429,7 @@ bool storage_service_report_media_failure(uint32_t resource,
         control.quarantined_resources |= mask;
         printf("REIST_STORAGE RESOURCE_QUARANTINED %u\n", resource);
     }
+    control.recovering_resources &= ~mask;
     if (write_uncertain) control.read_only_resources |= mask;
     control.probe_attempts = 0U;
     control.next_probe_ms = deadline_after(
@@ -461,16 +473,35 @@ static void poll_media_reintegration(uint64_t now_ms) {
     bool recovered = media_identity_matches(resource);
     if (control_read(&control) != 0 ||
         (control.quarantined_resources & (1U << resource)) == 0U) return;
+    uint32_t mask = 1U << resource;
+    if (recovered) control.recovering_resources |= mask;
+    else control.recovering_resources &= ~mask;
+    if (control_write(&control) != 0) {
+        storage_fence_writes();
+        filesystem_fence_mutations();
+        return;
+    }
     if (recovered) {
-        uint32_t mask = 1U << resource;
         if ((control.read_only_resources & mask) != 0U) {
             uint32_t other_unsafe =
                 (control.quarantined_resources |
                  control.read_only_resources) & ~mask;
-            recovered = other_unsafe == 0U &&
-                ata_journal_recover_resource(resource) &&
-                storage_restore_writes_after_recovery() &&
-                filesystem_restore_mutations_after_recovery();
+            if (other_unsafe != 0U) {
+                printf("REIST_STORAGE RECOVERY_WAIT_OTHER_RESOURCE %u\n",
+                       resource);
+                recovered = false;
+            } else if (!ata_journal_recover_resource(resource)) {
+                printf("REIST_STORAGE RECOVERY_WAIT_JOURNAL %u\n", resource);
+                recovered = false;
+            } else if (!storage_restore_writes_after_recovery()) {
+                printf("REIST_STORAGE RECOVERY_WAIT_STORAGE_FENCE %u\n",
+                       resource);
+                recovered = false;
+            } else if (!filesystem_restore_mutations_after_recovery()) {
+                printf("REIST_STORAGE RECOVERY_WAIT_FILESYSTEM_FENCE %u\n",
+                       resource);
+                recovered = false;
+            }
             if (!recovered) {
                 storage_fence_writes();
                 filesystem_fence_mutations();
@@ -479,6 +510,7 @@ static void poll_media_reintegration(uint64_t now_ms) {
             }
         }
         if (recovered) {
+            control.recovering_resources &= ~mask;
             control.quarantined_resources &= ~mask;
             control.probe_attempts = 0U;
             printf("REIST_STORAGE RESOURCE_REINTEGRATED_RW %u\n", resource);

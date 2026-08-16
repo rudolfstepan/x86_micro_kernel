@@ -67,7 +67,9 @@ manuelles Entsperren umgangen werden.
 
 `DRIVES.PRG` zeigt neben Resource-ID, Laufwerk, Gerät und Typ auch den vom
 Storage-Service gelieferten Zustand an: `READY`, `READONLY`, `DEGRADED`,
-`QUARANTINED`, `OFFLINE` oder `UNKNOWN`. Der Status wird über den
+`QUARANTINED`, `RECOVERING`, `OFFLINE` oder `UNKNOWN`. `RECOVERING` bedeutet,
+dass die Medienidentität wieder bestätigt ist, die Journal- und Fence-Recovery
+aber noch nicht vollständig abgeschlossen wurde. Der Status wird über den
 versionierten, nur lesenden Syscall 89 abgefragt; die bestehende
 `DRIVE_INFO`-ABI bleibt unverändert.
 

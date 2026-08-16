@@ -440,6 +440,7 @@ typedef struct {
 #define X86OS_DRIVE_STATUS_READ_ONLY   (1U << 1)
 #define X86OS_DRIVE_STATUS_DEGRADED    (1U << 2)
 #define X86OS_DRIVE_STATUS_QUARANTINED (1U << 3)
+#define X86OS_DRIVE_STATUS_RECOVERING  (1U << 4)
 typedef struct {
     uint32_t version;
     uint32_t struct_size;

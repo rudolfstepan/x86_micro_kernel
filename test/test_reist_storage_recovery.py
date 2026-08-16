@@ -80,6 +80,7 @@ class StorageRecoveryContracts(unittest.TestCase):
         self.assertLess(available, hardware)
         self.assertIn("critical_object_t protected_control", service)
         self.assertIn("quarantined_resources", service)
+        self.assertIn("recovering_resources", service)
         self.assertIn("RESOURCE_QUARANTINED", service)
         self.assertIn("media_identity_matches(resource)", service)
         self.assertIn("RESOURCE_REINTEGRATED_", service)
