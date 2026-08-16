@@ -102,7 +102,8 @@ und 10 verbindlich.
     `build/codex-agent/hazard-traceability.json`
 - [ ] S0.2 Vollständiges Stack-, Exception- und Panic-Containment
   - [x] Guardpages, Double-Fault-Notfallpfad, Crashrecord und QEMU-Watchdog
-  - [ ] Callgraph-Gesamtbudgets und Stack-Watermarks
+  - [x] Compilerbasierte Callgraph-Gesamtbudgets und Rekursionsgate
+  - [ ] Laufzeit-Stack-Watermarks
   - [ ] Unabhängiger Zielhardware-Watchdog mit rücklesbarem Fencing
 - [x] S0.3a Begrenzte IPC-/Capability-Basis
 - [x] S0.3b Überwachte, neu startbare Least-Privilege-Probedomäne
