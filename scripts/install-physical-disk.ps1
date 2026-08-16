@@ -72,6 +72,20 @@ public static class PhysicalDiskNative
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool FlushFileBuffers(SafeFileHandle handle);
+
+    public static bool BuffersEqual(byte[] expected, byte[] actual, int count)
+    {
+        if (expected == null || actual == null || count < 0 ||
+            count > expected.Length || count > actual.Length) {
+            return false;
+        }
+        for (int index = 0; index < count; ++index) {
+            if (expected[index] != actual[index]) {
+                return false;
+            }
+        }
+        return true;
+    }
 }
 '@
 
@@ -136,20 +150,23 @@ try {
         if ($expectedCount -ne $wanted -or $actualCount -ne $wanted) {
             throw "Short verification read at byte $verified."
         }
-        for ($index = 0; $index -lt $wanted; ++$index) {
-            if ($expected[$index] -ne $actual[$index]) {
-                throw "Verification mismatch at byte $($verified + $index)."
-            }
+        if (-not [PhysicalDiskNative]::BuffersEqual(
+                $expected, $actual, $wanted)) {
+            throw "Verification mismatch in block starting at byte $verified."
         }
         $verified += $wanted
+        Write-Progress -Activity 'Verifying REIST OS' `
+            -Status "$verified of $($image.Length) bytes" `
+            -PercentComplete (($verified * 100) / $image.Length)
     }
+    Write-Progress -Activity 'Verifying REIST OS' -Completed
     Write-Host "Verified $verified image bytes on $devicePath."
     Write-Host 'The disk remains offline. Disconnect it before booting the target PC.'
 }
 finally {
     if ($null -ne $source) { $source.Dispose() }
     if ($null -ne $device) { $device.Dispose() }
-    elseif ($null -ne $handle) { $handle.Dispose() }
+    if ($null -ne $handle) { $handle.Dispose() }
     if ($wasOffline) {
         # Preserve an already-offline state. A newly offlined target deliberately
         # remains offline so Windows cannot mount the freshly written filesystem.
