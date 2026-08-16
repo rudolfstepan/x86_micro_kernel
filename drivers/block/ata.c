@@ -808,13 +808,22 @@ bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
     if (partition != NULL) {
         uint32_t absolute;
         drive_t *parent = ata_partition_translate(partition, lba, &absolute);
-        if (parent == NULL || count == 0U ||
+        if (parent == NULL || buffer == NULL || count == 0U ||
+            count > ATA_PIO_MAX_SECTORS ||
             count > partition->sectors - lba) return false;
+        if (parent->type == DRIVE_TYPE_AHCI) {
+            uint8_t *bytes = buffer;
+            for (uint32_t index = 0U; index < count; ++index) {
+                if (!ahci_read_sector(parent, absolute + index,
+                        bytes + index * SECTOR_SIZE)) return false;
+            }
+            return true;
+        }
         ata_transaction_begin();
-            bool result = ata_read_sectors_pio_impl(parent->base, absolute,
-                count, buffer, parent->is_master);
-            ata_transaction_end();
-            return result;
+        bool result = ata_read_sectors_pio_impl(parent->base, absolute,
+            count, buffer, parent->is_master);
+        ata_transaction_end();
+        return result;
     }
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     if (ahci_drive != NULL) {

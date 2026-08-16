@@ -340,7 +340,7 @@ und 10 verbindlich.
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
 | Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit explizit delegierten generationsgebundenen Capabilities, endlichen Deadlines, geschützten Steuerdaten, reservierter Restart-Admission, versionierten Domänenprofilen und abgenommener Ring-3-Probe-Recovery | maximal 8 Tasks; produktive Dienste liegen noch im modularen Monolithen |
 | Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, FAT32-Rename/Replace im Undo-Journal, FAT32/ATA-`fsync`, EXT2 lesen | persistenter Editor-Commit vorhanden; ABI, FAT12-Sync und breitere Rename-Semantik fehlen |
-| Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 mit blockierendem Console-Wait, output-only COM1-Diagnose, RTC, VGA, nativer VBE-RGB-Framebuffer | Referenzhardware gut, AHCI/SATA und moderne Geräte fehlen |
+| Geräte | PCI, ATA-PIO, AHCI/SATA, FDD-DMA, PS/2 mit blockierendem Console-Wait, output-only COM1-Diagnose, RTC, VGA, nativer VBE-RGB-Framebuffer | QEMU-/VMware-AHCI abgenommen; breitere reale Hardware und moderne Geräte fehlen |
 | Netzwerk | E1000, RTL8139, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping am besten verifiziert; RTL8111G/RTL8168 fehlt |
 | USB | PCI-Erkennung eines xHCI-Controllers | nur Probe-Gerüst |
 | Userspace | SDK, Shell, Editor, BASIC, zahlreiche Systemprogramme und tastaturbedienter Ring-3-Desktop mit vier App-Karten | brauchbare CLI- und Desktop-MVP-Basis |
@@ -1373,6 +1373,19 @@ der Boot nun unmittelbar vor Partition/VFS mit getrennt codierten
 ATA-/AHCI-Probezählern. QEMU-IDE und QEMU-AHCI erreichen anschließend jeweils
 `REIST_PROBE RECOVERY_SEQUENCE_OK`; die erneute H81-/AMD-Abnahme bleibt als
 reale Hardwareevidenz offen.
+
+Nach dem erfolgreichen realen SATA-Boot blieb das FAT32-Systemvolume zunächst
+nur lesbar: `MKDIR.PRG` und der Datei-I/O-Teil von `GTEST.PRG` scheiterten beim
+Lesen des Root-Verzeichnisclusters. Ursache war kein Medien- oder Write-Fence,
+sondern der ATA-Kompatibilitätswrapper. Seine partition-relative
+Mehrsektor-Lesefunktion übersetzte den LBA korrekt zum Elternlaufwerk, leitete
+den Zugriff danach aber bedingungslos an den PIO-IDE-Pfad weiter. Bei einem
+AHCI-Elternlaufwerk wurden dadurch virtuelle Kompatibilitätsports statt
+`READ DMA EXT` verwendet. Der Wrapper wählt nun vor dem PIO-Pfad den validierten
+Transport des Elternlaufwerks und liest eine begrenzte Anzahl von Sektoren über
+AHCI. Der vollständige QEMU-SATA-Gastlauf bestätigt anschließend
+`FILE_IO_OK`, alle Scheduler-/IPC-/Storage-Stufen und `TEST_OK`. Die erneute
+Schreibabnahme auf dem physischen H81M-K bleibt als Hardwareevidenz offen.
 
 Die anschließende H81M-K-Gegenprobe mit Build
 `9C103ECA7A2568136B5B4DB744C9459990E5E781` bestätigt die korrigierte

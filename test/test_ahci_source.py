@@ -73,6 +73,16 @@ class AhciProbeContractTests(unittest.TestCase):
         self.assertIn("write verification failed", source)
         self.assertIn("ahci_probe_diagnostics", source)
 
+    def test_partition_batch_reads_follow_ahci_parent(self):
+        source = self.read("drivers/block/ata.c")
+        batch_read = source.split("bool ata_read_sectors(", 1)[1].split(
+            "bool ata_read_sector(", 1)[0]
+        self.assertIn("if (parent->type == DRIVE_TYPE_AHCI)", batch_read)
+        self.assertIn("ahci_read_sector(parent, absolute + index", batch_read)
+        self.assertLess(
+            batch_read.index("if (parent->type == DRIVE_TYPE_AHCI)"),
+            batch_read.index("ata_read_sectors_pio_impl(parent->base"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -744,6 +744,43 @@ commit_message = "cleanup: remove completed PS2 keypress trace"
 evidence = []
 
 [[packages]]
+id = "S0.3c-hw10"
+status = "done"
+risk = "high"
+title = "Transport-correct AHCI partition batch reads"
+scope = "Fix the physical and emulated SATA filesystem regression in which partition-relative multi-sector reads were always sent to the legacy PIO backend. Route bounded batch reads through the actual AHCI parent before the PIO compatibility path, preserve range and buffer validation, and prove writable FAT32 operation with the complete SATA guest test."
+allowed_files = [
+  "drivers/block/ata.c",
+  "test/test_ahci_source.py",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "partition-relative LBA translation is validated before any backend access",
+  "an AHCI parent is never accessed through legacy PIO ports",
+  "batch count and buffer validation precede every sector transfer",
+  "the existing ATA-PIO partition path remains unchanged",
+  "the SATA FAT32 guest reaches FILE_IO_OK and TEST_OK"
+]
+targeted_tests = [
+  "python test/test_ahci_source.py -q"
+]
+package_tests = [
+  ".\\scripts\\build-windows.ps1 -Target real_hw -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --sata --nic none --expect-reist-probe"
+]
+stop_conditions = [
+  "partition translation cannot identify the authoritative parent transport",
+  "the fix changes legacy ATA-PIO behavior",
+  "a required source lies outside allowed_files",
+  "the SATA guest does not reach FILE_IO_OK"
+]
+commit_message = "fix: route AHCI partition batch reads correctly"
+evidence = []
+
+[[packages]]
 id = "S0.3c-6f5"
 status = "active"
 risk = "critical"
