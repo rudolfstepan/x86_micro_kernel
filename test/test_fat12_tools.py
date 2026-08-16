@@ -25,6 +25,7 @@ class Fat12ToolContracts(unittest.TestCase):
         self.assertIn('"--confirm"', source)
         self.assertIn("X86OS_STORAGE_FORMAT_FAT12", source)
         self.assertIn("FORMAT_TIMEOUT_MS", source)
+        self.assertIn("#define FORMAT_TIMEOUT_MS 30000U", source)
         self.assertIn("x86os_storage_submit", source)
         self.assertIn("x86os_storage_collect", source)
         self.assertNotIn("x86os_storage_block_write", source)

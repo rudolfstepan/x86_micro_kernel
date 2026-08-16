@@ -1,6 +1,6 @@
 #include "x86os.h"
 
-#define FORMAT_TIMEOUT_MS 5000U
+#define FORMAT_TIMEOUT_MS 30000U
 #define FORMAT_POLL_MS 10U
 
 static int equal(const char *left, const char *right) {
