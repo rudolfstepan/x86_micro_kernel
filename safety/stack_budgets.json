@@ -6,6 +6,12 @@
     {"name": "syscall", "root": "syscall_handler", "limit": 7168, "entry_reserve": 128}
   ],
   "indirect_calls": {
+    "fs/fat12/fat12_journal.c:write_header": [
+      "fs/fat12/fat12.c:fat12_journal_write_sector"
+    ],
+    "fat12_journal_record": [
+      "fs/fat12/fat12.c:fat12_journal_write_sector"
+    ],
     "irq_handler": [
       "timer_irq_handler",
       "kb_handler",
@@ -158,7 +164,7 @@
     "ext2_index_visitor"
   ],
   "indirect_costs": {
-    "kernel/init/critical_object.c:copy_check": 1024,
+    "kernel/init/critical_object.c:copy_check": 640,
     "output_fence_all": 1024
   },
   "external_costs": {
@@ -166,7 +172,7 @@
     "__udivmoddi4": 128
   },
   "contract_notes": {
-    "kernel/init/critical_object.c:copy_check": "1024-byte reserve covers the validator callback beneath the 80-byte wrapper",
+    "kernel/init/critical_object.c:copy_check": "640-byte bounded reserve covers the validator callback beneath the 80-byte wrapper",
     "output_fence_all": "1024-byte reserve covers one sequentially invoked registered fence callback",
     "swtch": "64-byte conservative assembly transition reserve",
     "__udivmoddi4": "128-byte compiler-runtime reserve",

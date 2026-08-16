@@ -146,7 +146,8 @@ try {
         "SHELL=$(To-MakePath $MsysShell)",
         "AS=$(To-MakePath $Nasm)",
         "CC=$(To-MakePath $Zig) cc -target x86-freestanding -Wno-unused-command-line-argument",
-        "LD=$(To-MakePath $Zig) ld.lld"
+        "LD=$(To-MakePath $Zig) ld.lld",
+        'FRAME_WARNING_FLAGS=-Wframe-larger-than=4096 -Werror=frame-larger-than='
     )
     if ($FaultInjection) {
         $makeArguments += 'FAULT_INJECTION=1'

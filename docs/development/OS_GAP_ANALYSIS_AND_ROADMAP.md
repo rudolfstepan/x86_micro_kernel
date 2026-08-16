@@ -884,20 +884,24 @@ Reproduzierbarkeit erhöhen.
 Guardpages; der Bootstack eine volle untere Guardpage. `#DF` läuft über eine
 dedizierte TSS und einen unabhängigen Emergency-Stack in einen begrenzten,
 heap-/lockfreien Crashrecord-/COM1-Pfad. Explizite beidseitige
-User-Stack-Guardpages samt Ring-3-Fault-Test sind umgesetzt. Noch offen sind
-Dynamische Frames und compilerseitig erkannte statische Einzelframes über 4096
+User-Stack-Guardpages samt Ring-3-Fault-Test sind umgesetzt. Dynamische Frames
+und compilerseitig erkannte statische Einzelframes über 4096
 Byte brechen jeden Kernelbuild ab. Ein prüfsummengeschützter, redundant in
 reserviertem RAM und CMOS/NVRAM gespeicherter Crashrecord überlebt den nativen
 Reset, wird beim Boot einmal gemeldet und
 der #DF-Pfad fordert begrenzt einen Reset an. Das QEMU-Profil besitzt nun einen
 echten IB700-Watchdog, der nur nach Schedulerfortschritt gefüttert wird und im
-Fatalpfad ausläuft. Noch offen sind Callgraph-Gesamtbudgets, ein von CPU und
-Versorgung unabhängiger Zielhardware-Watchdog samt Fencing. Der echte
+Fatalpfad ausläuft. Ein separater GCC-Stack-/Callgraph-Gate prüft jetzt 83
+C-Objekte, 1279 Stackrecords, 2298 Graphknoten, Rekursionsfreiheit und vier
+kumulative Entry-Budgets; der schlimmste Syscall-Pfad liegt bei 7140/7168 Byte.
+Offen bleiben Laufzeit-Stack-Watermarks sowie ein von CPU und Versorgung
+unabhängiger Zielhardware-Watchdog samt Fencing. Der echte
 Double-Fault-Task-Gate-Pfad wird inzwischen in einem isolierten Testimage bis
 zum Watchdog-Warmstart, Crashrecord-Recovery und anschließenden Gasttest geprüft.
 
 - Nicht gemappte Guardpages für jeden Kernel- und Userstack, statische
-   Stackbudgets, Watermarks und Rekursionsverbote einführen.
+   Stackbudgets und Rekursionsverbote sind umgesetzt; Laufzeit-Watermarks
+   bleiben offen.
 - Einen reservierten Exception-/Double-Fault-/NMI-Notfallstack mit
    vorallokiertem, beschränktem Crashdatensatz bereitstellen.
 - Wiederherstellbare Prozess-/Dienstfehler von möglicher globaler

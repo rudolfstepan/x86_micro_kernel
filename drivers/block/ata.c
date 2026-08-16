@@ -598,10 +598,13 @@ bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
     if (partition != NULL) {
         uint32_t absolute;
         drive_t *parent = ata_partition_translate(partition, lba, &absolute);
-        return parent != NULL && count != 0U &&
-            count <= partition->sectors - lba &&
-            ata_read_sectors(parent->base, absolute, count, buffer,
-                             parent->is_master);
+        if (parent == NULL || count == 0U ||
+            count > partition->sectors - lba) return false;
+        ata_transaction_begin();
+            bool result = ata_read_sectors_pio_impl(parent->base, absolute,
+                count, buffer, parent->is_master);
+            ata_transaction_end();
+            return result;
     }
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     if (ahci_drive != NULL) {
@@ -628,8 +631,14 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,
     if (partition != NULL) {
         uint32_t absolute;
         drive_t *parent = ata_partition_translate(partition, lba, &absolute);
-        return parent != NULL && ata_read_sector(parent->base, absolute, buffer,
-                                                  parent->is_master);
+        if (parent == NULL) return false;
+        if (parent->type == DRIVE_TYPE_AHCI)
+            return ahci_read_sector(parent, absolute, buffer);
+        ata_transaction_begin();
+        bool result = ata_read_sector_impl(parent->base, absolute, buffer,
+                                           parent->is_master);
+        ata_transaction_end();
+        return result;
     }
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     if (ahci_drive != NULL) return ahci_read_sector(ahci_drive, lba, buffer);
@@ -645,9 +654,17 @@ bool ata_read_sector_fresh(unsigned short base, unsigned int lba, void *buffer,
     if (partition != NULL) {
         uint32_t absolute;
         drive_t *parent = ata_partition_translate(partition, lba, &absolute);
-        return parent != NULL && ata_read_sector_fresh(parent->base, absolute,
-                                                        buffer,
-                                                        parent->is_master);
+        if (parent == NULL) return false;
+        if (parent->type == DRIVE_TYPE_AHCI)
+            return ahci_read_sector(parent, absolute, buffer);
+        ata_transaction_begin();
+        ata_cache_entry_t *cached = ata_cache_slot(parent->base, absolute,
+                                                    parent->is_master);
+        cached->valid = false;
+        bool result = ata_read_sector_impl(parent->base, absolute, buffer,
+                                           parent->is_master);
+        ata_transaction_end();
+        return result;
     }
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     if (ahci_drive != NULL) return ahci_read_sector(ahci_drive, lba, buffer);
@@ -887,19 +904,10 @@ static bool ata_write_sector_journaled(unsigned short base, unsigned int lba,
     return result;
 }
 
-bool ata_journal_attach(unsigned short base, bool is_master,
-                        uint32_t partition_lba, uint32_t volume_sectors,
-                        uint16_t reserved_sectors) {
-    drive_t *partition = ata_compat_partition_drive(base);
-    if (partition != NULL) {
-        uint32_t absolute;
-        drive_t *parent = ata_partition_translate(partition, partition_lba,
-                                                   &absolute);
-        return parent != NULL && volume_sectors != 0U &&
-            volume_sectors <= partition->sectors - partition_lba &&
-            ata_journal_attach(parent->base, parent->is_master, absolute,
-                               volume_sectors, reserved_sectors);
-    }
+static bool ata_journal_attach_impl(unsigned short base, bool is_master,
+                                    uint32_t partition_lba,
+                                    uint32_t volume_sectors,
+                                    uint16_t reserved_sectors) {
     ata_transaction_begin();
     bool result = true;
     ata_journal.enabled = false;
@@ -1006,15 +1014,48 @@ done:
     return result;
 }
 
+bool ata_journal_attach(unsigned short base, bool is_master,
+                        uint32_t partition_lba, uint32_t volume_sectors,
+                        uint16_t reserved_sectors) {
+    drive_t *partition = ata_compat_partition_drive(base);
+    if (partition != NULL) {
+        uint32_t absolute;
+        drive_t *parent = ata_partition_translate(partition, partition_lba,
+                                                  &absolute);
+        return parent != NULL && volume_sectors != 0U &&
+            volume_sectors <= partition->sectors - partition_lba &&
+            ata_journal_attach_impl(parent->base, parent->is_master, absolute,
+                                    volume_sectors, reserved_sectors);
+    }
+    return ata_journal_attach_impl(base, is_master, partition_lba,
+                                   volume_sectors, reserved_sectors);
+}
+
 bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
                       bool is_master) {
     drive_t *partition = ata_compat_partition_drive(base);
     if (partition != NULL) {
         uint32_t absolute;
         drive_t *parent = ata_partition_translate(partition, lba, &absolute);
-        return parent != NULL && ata_write_sector(parent->base, absolute,
-                                                   buffer,
-                                                   parent->is_master);
+        if (parent == NULL) return false;
+        if (parent->type == DRIVE_TYPE_AHCI) {
+            int resource = ata_resource_index(parent->base, parent->is_master);
+            bool armed = !ata_write_fenced && resource >= 0 &&
+                storage_write_begin((uint32_t)resource, pit_monotonic_ms());
+            bool result = armed && ahci_write_sector(parent, absolute, buffer) &&
+                ahci_flush(parent);
+            if (armed && !storage_write_end(result)) result = false;
+            return result;
+        }
+        ata_transaction_begin();
+        int resource = ata_resource_index(parent->base, parent->is_master);
+        bool armed = !ata_write_fenced && resource >= 0 &&
+            storage_write_begin((uint32_t)resource, pit_monotonic_ms());
+        bool result = armed && ata_write_sector_journaled(parent->base,
+            absolute, buffer, parent->is_master);
+        if (armed && !storage_write_end(result)) result = false;
+        ata_transaction_end();
+        return result;
     }
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     if (ahci_drive != NULL) {
@@ -1043,10 +1084,15 @@ bool ata_write_sectors(unsigned short base, uint32_t lba, uint32_t count,
     if (partition != NULL) {
         uint32_t absolute;
         drive_t *parent = ata_partition_translate(partition, lba, &absolute);
-        return parent != NULL && count != 0U &&
-            count <= partition->sectors - lba &&
-            ata_write_sectors(parent->base, absolute, count, buffer,
-                              parent->is_master);
+        if (parent == NULL || count == 0U ||
+            count > partition->sectors - lba) return false;
+        const uint8_t *bytes = buffer;
+        for (uint32_t index = 0U; index < count; ++index) {
+            if (!ata_write_sector(parent->base, absolute + index,
+                                  (void *)(bytes + index * SECTOR_SIZE),
+                                  parent->is_master)) return false;
+        }
+        return true;
     }
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     if (ahci_drive != NULL) {
@@ -1097,8 +1143,29 @@ bool ata_flush_cache(unsigned short base, bool is_master) {
         uint32_t absolute;
         drive_t *parent = ata_partition_translate(partition, 0U, &absolute);
         (void)absolute;
-        return parent != NULL && ata_flush_cache(parent->base,
-                                                  parent->is_master);
+        if (parent == NULL) return false;
+        if (parent->type == DRIVE_TYPE_AHCI) return ahci_flush(parent);
+        ata_transaction_begin();
+        int resource = ata_resource_index(parent->base, parent->is_master);
+        bool armed = !ata_write_fenced && resource >= 0 &&
+            storage_write_begin((uint32_t)resource, pit_monotonic_ms());
+        bool result = false;
+        if (armed) {
+            drive_t *drive = parent;
+            outb(ATA_DRIVE_HEAD(parent->base),
+                 parent->is_master ? 0xE0U : 0xF0U);
+            for (volatile int i = 0; i < 4; ++i)
+                (void)inb(ATA_ALT_STATUS(parent->base));
+            if (wait_for_drive_ready(parent->base, ATA_WAIT_TIMEOUT_MS)) {
+                outb(ATA_COMMAND(parent->base), drive->lba48_supported ?
+                    ATA_FLUSH_CACHE_EXT : 0xE7U);
+                result = wait_for_drive_ready(parent->base,
+                                              ATA_WAIT_TIMEOUT_MS);
+            }
+        }
+        if (armed && !storage_write_end(result)) result = false;
+        ata_transaction_end();
+        return result;
     }
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     if (ahci_drive != NULL) return ahci_flush(ahci_drive);

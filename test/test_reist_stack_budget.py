@@ -11,6 +11,8 @@ class ReistStackBudgetTests(unittest.TestCase):
         self.assertIn("-Werror=vla", makefile)
         self.assertIn("-Wframe-larger-than=4096", makefile)
         self.assertIn("-Werror=frame-larger-than=4096", makefile)
+        build = (ROOT / "scripts/build-windows.ps1").read_text(encoding="utf-8")
+        self.assertIn("-Werror=frame-larger-than=", build)
         self.assertIn("check-kernel-stack-c-objects: $(C_OBJ)", makefile)
 
 
