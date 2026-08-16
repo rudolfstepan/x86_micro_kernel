@@ -110,15 +110,24 @@ static bool ahci_dma_address_valid(const void *address, size_t length,
 static bool ahci_stop_port(volatile uint32_t *mmio, uint32_t port) {
     uint32_t base = AHCI_PORT_BASE + port * AHCI_PORT_STRIDE;
     uint32_t command = ahci_read(mmio, base + AHCI_PORT_CMD);
-    ahci_write(mmio, base + AHCI_PORT_CMD,
-               command & ~(AHCI_PORT_CMD_ST | AHCI_PORT_CMD_FRE));
+    ahci_write(mmio, base + AHCI_PORT_CMD, command & ~AHCI_PORT_CMD_ST);
     uint64_t start = pit_monotonic_ms();
     for (uint32_t poll = 0U; poll < AHCI_RESET_MAX_POLLS; ++poll) {
         uint32_t state = ahci_read(mmio, base + AHCI_PORT_CMD);
-        if ((state & (AHCI_PORT_CMD_CR | AHCI_PORT_CMD_FR)) == 0U)
-            return true;
+        if ((state & AHCI_PORT_CMD_CR) == 0U) break;
         uint64_t now = pit_monotonic_ms();
-        if (now < start || now - start >= AHCI_RESET_TIMEOUT_MS) break;
+        if (now < start || now - start >= AHCI_RESET_TIMEOUT_MS) return false;
+    }
+    if ((ahci_read(mmio, base + AHCI_PORT_CMD) & AHCI_PORT_CMD_CR) != 0U)
+        return false;
+    command = ahci_read(mmio, base + AHCI_PORT_CMD);
+    ahci_write(mmio, base + AHCI_PORT_CMD, command & ~AHCI_PORT_CMD_FRE);
+    start = pit_monotonic_ms();
+    for (uint32_t poll = 0U; poll < AHCI_RESET_MAX_POLLS; ++poll) {
+        uint32_t state = ahci_read(mmio, base + AHCI_PORT_CMD);
+        if ((state & AHCI_PORT_CMD_FR) == 0U) return true;
+        uint64_t now = pit_monotonic_ms();
+        if (now < start || now - start >= AHCI_RESET_TIMEOUT_MS) return false;
     }
     return false;
 }
@@ -279,8 +288,18 @@ static bool ahci_execute_command(ahci_controller_info_t *controller,
         controller_index >= AHCI_MAX_CONTROLLERS || port >= AHCI_MAX_PORTS)
         return false;
     uint32_t base = AHCI_PORT_BASE + port * AHCI_PORT_STRIDE;
+    ahci_command_header_t *header = (ahci_command_header_t *)
+        command_lists[controller_index][port];
+    ahci_command_table_t *table = (ahci_command_table_t *)
+        command_tables[controller_index][port];
+    const ahci_fis_reg_h2d_t *fis =
+        (const ahci_fis_reg_h2d_t *)table->fis;
     uint32_t command = ahci_read(controller->mmio, base + AHCI_PORT_CMD);
-    if ((command & (AHCI_PORT_CMD_CR | AHCI_PORT_CMD_FR)) != 0U ||
+    bool engine_running = (command &
+        (AHCI_PORT_CMD_ST | AHCI_PORT_CMD_FRE)) ==
+        (AHCI_PORT_CMD_ST | AHCI_PORT_CMD_FRE);
+    if ((!engine_running &&
+         (command & (AHCI_PORT_CMD_CR | AHCI_PORT_CMD_FR)) != 0U) ||
         (ahci_read(controller->mmio, base + AHCI_PORT_CI) & 1U) != 0U)
         return false;
     ahci_write(controller->mmio, base + AHCI_PORT_IS, 0xFFFFFFFFU);
@@ -303,6 +322,9 @@ static bool ahci_execute_command(ahci_controller_info_t *controller,
             now - ready_start >= AHCI_COMMAND_TIMEOUT_MS) break;
     }
     if (!ready) {
+        printf("AHCI: command %x port %u not ready TFD=%x\n",
+               fis->command, (unsigned)port,
+               ahci_read(controller->mmio, base + AHCI_PORT_TFD));
         (void)ahci_stop_port(controller->mmio, port);
         return false;
     }
@@ -315,15 +337,26 @@ static bool ahci_execute_command(ahci_controller_info_t *controller,
         uint32_t task_status = ahci_read(controller->mmio, base + AHCI_PORT_TFD);
         if ((interrupt_status & AHCI_PORT_IS_TFES) != 0U) break;
         if ((ahci_read(controller->mmio, base + AHCI_PORT_CI) & 1U) == 0U) {
-            completed = (task_status &
-                (AHCI_PORT_TFD_BSY | AHCI_PORT_TFD_ERR)) == 0U;
-            break;
+            if ((task_status & AHCI_PORT_TFD_ERR) != 0U) break;
+            if ((task_status &
+                 (AHCI_PORT_TFD_BSY | AHCI_PORT_TFD_DRQ)) == 0U) {
+                completed = true;
+                break;
+            }
         }
         uint64_t now = pit_monotonic_ms();
         if (now < start || now - start >= AHCI_COMMAND_TIMEOUT_MS) break;
     }
-    bool stopped = ahci_stop_port(controller->mmio, port);
-    if (!stopped || !completed) return false;
+    if (!completed) {
+        printf("AHCI: command %x port %u failed IS=%x TFD=%x CI=%x PRDBC=%u\n",
+               fis->command, (unsigned)port,
+               ahci_read(controller->mmio, base + AHCI_PORT_IS),
+               ahci_read(controller->mmio, base + AHCI_PORT_TFD),
+               ahci_read(controller->mmio, base + AHCI_PORT_CI),
+               header->bytes_transferred);
+        (void)ahci_stop_port(controller->mmio, port);
+        return false;
+    }
     return true;
 }
 

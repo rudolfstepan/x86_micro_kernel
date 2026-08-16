@@ -1261,9 +1261,10 @@ aktiven Auftrag und monotone Completion-Deadlines. Der Blockgerätevertrag,
 FAT32-VFS, Storage-Fingerprint, Quarantäne/Reintegration und globales
 Write-Fencing sind angebunden. Ein QEMU-ICH9-AHCI-Boot mit FAT32-Datei-I/O,
 Storage-Reintegration und vollständigem `TEST_OK` ist abgenommen. Die
-generierte VMware-Konfiguration nutzt SATA; eine VMware-Laufzeitabnahme und
-Fault-Injection für einzelne AHCI-Timeoutpfade bleiben noch offen. Daher gilt
-QEMU-AHCI als unterstützt, VMware-AHCI vorerst nur als konfiguriert.
+generierte VMware-Konfiguration nutzt SATA und wurde mit erfolgreichem
+AHCI-Boot, FAT32-Mount und gestarteter Userspace-Shell manuell abgenommen.
+Fault-Injection für einzelne AHCI-Timeoutpfade bleibt noch offen. QEMU-AHCI
+und VMware-AHCI gelten damit für dieses Profil als unterstützt.
 
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 
