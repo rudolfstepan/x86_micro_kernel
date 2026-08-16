@@ -23,7 +23,7 @@ struct Process;
 #define SUPERVISOR_DHCP_RENEWAL_VERSION 1U
 #define SUPERVISOR_DHCP_BOOT_VERSION 1U
 #define SUPERVISOR_UDP_ECHO_CONTEXT_VERSION 1U
-#define SUPERVISOR_PROBE_CONTROL_VERSION 1U
+#define SUPERVISOR_PROBE_CONTROL_VERSION 2U
 #define SUPERVISOR_EINTEGRITY (-84)
 #define REIST_REPORT_SELF_TEST 1U
 #define REIST_REPORT_PROGRESS 2U
@@ -36,6 +36,7 @@ struct Process;
 #define REIST_REPORT_NETWORK_UDP 9U
 #define REIST_REPORT_NETWORK_DHCP 10U
 #define REIST_REPORT_NETWORK_ICMP 11U
+#define REIST_REPORT_SERVICE_READY 12U
 #define REIST_SERVICE_DIAGNOSTIC 1U
 #define SUPERVISOR_NETWORK_FRAME_VERSION 1U
 #define SUPERVISOR_NETWORK_FRAME_MAX_SIZE 1518U
@@ -78,6 +79,7 @@ typedef struct {
     uint32_t active;
     uint32_t fenced;
     uint32_t healthy;
+    uint32_t service_ready;
     supervisor_handle_t handle;
     int32_t pid;
     uint32_t process_generation;

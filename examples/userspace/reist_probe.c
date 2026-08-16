@@ -356,6 +356,8 @@ int main(int argc, char **argv) {
         x86os_reist_udp_unbind(udp_bindings[2]) != 0) return 26;
     udp_bindings[3] = 0U;
     udp_bindings[2] = 0U;
+    if (x86os_reist_report(X86OS_REIST_REPORT_SERVICE_READY, 1U) != 0)
+        return 43;
 
     uint32_t sequence = 2U;
     uint32_t pending_network_request = 0U;

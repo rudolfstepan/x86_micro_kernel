@@ -323,22 +323,18 @@ static uint64_t kernel_deadline_after(uint64_t now_ms, uint32_t timeout_ms) {
 }
 
 static void configure_network_after_service(void) {
-    if (!netdev_available()) return;
     uint64_t ready_deadline = kernel_deadline_after(
         pit_monotonic_ms(), 10000U);
     while (!supervisor_probe_ready() && pit_monotonic_ms() < ready_deadline)
         __asm__ __volatile__("sti; hlt");
     if (!supervisor_probe_ready()) {
-        printf("Network service not ready; DHCP remains fail-closed\n");
+        panic_context_set_result(-110, 10000U, 0U);
+        panic("REIST Ring-3 service readiness deadline expired");
+    }
+    if (!netdev_available()) {
+        printf("Network hardware unavailable; REIST service ready in local-only mode\n");
         return;
     }
-    /* Health publication precedes the service's receive loop by only a few
-     * instructions. Give the new generation a bounded scheduler window so
-     * startup IPC cannot be mistaken for a DHCP-policy rejection. */
-    uint64_t settle_deadline = kernel_deadline_after(
-        pit_monotonic_ms(), 50U);
-    while (pit_monotonic_ms() < settle_deadline)
-        __asm__ __volatile__("sti; hlt");
     printf("Waiting for supervised Ring-3 DHCP configuration...\n");
     uint64_t commit_deadline = kernel_deadline_after(
         pit_monotonic_ms(), 6000U);

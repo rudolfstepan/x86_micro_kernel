@@ -341,7 +341,7 @@ und 10 verbindlich.
 | Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit explizit delegierten generationsgebundenen Capabilities, endlichen Deadlines, geschützten Steuerdaten, reservierter Restart-Admission, versionierten Domänenprofilen und abgenommener Ring-3-Probe-Recovery | maximal 8 Tasks; produktive Dienste liegen noch im modularen Monolithen |
 | Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, FAT32-Rename/Replace im Undo-Journal, FAT32/ATA-`fsync`, EXT2 lesen | persistenter Editor-Commit vorhanden; ABI, FAT12-Sync und breitere Rename-Semantik fehlen |
 | Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 und COM1 mit blockierendem Console-Wait, RTC, VGA, nativer VBE-RGB-Framebuffer | Referenzhardware gut, AHCI/SATA und moderne Geräte fehlen |
-| Netzwerk | E1000, RTL8139, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping am besten verifiziert |
+| Netzwerk | E1000, RTL8139, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping am besten verifiziert; RTL8111G/RTL8168 fehlt |
 | USB | PCI-Erkennung eines xHCI-Controllers | nur Probe-Gerüst |
 | Userspace | SDK, Shell, Editor, BASIC, zahlreiche Systemprogramme und tastaturbedienter Ring-3-Desktop mit vier App-Karten | brauchbare CLI- und Desktop-MVP-Basis |
 | Qualität | Hosttests, CI-Build, Image-Validatoren, Kontextassertions, fünf Log-Level, Panic-Kontext mit Build-ID sowie serielle QEMU-Ring-3-Tests mit LAPIC/PIT und 32-/64-/256-/512-/1024-MiB-Matrix | breitere Hardware- und Fehler-Injektionsmatrix fehlt |
@@ -554,6 +554,8 @@ einzelne Vollbild-Kindprozesse und ist noch kein Fenstersystem.
   Stubs (`drivers/net/netstack.c:966-970`)
 - erste Anwendungen wie `netcat` und ein kleiner HTTP/1.0-Client
 - IPv6 erst nach einer belastbaren IPv4-/Socket-Schicht
+- eigener begrenzter RTL8111G-/RTL8168-PCIe-Treiber für reale H81-Hardware;
+  der vorhandene RTL8139-Treiber ist register- und DMA-seitig nicht kompatibel
 - VMXNET3 nur implementieren, wenn E1000 nicht mehr als VMware-Referenz reicht;
   der vorhandene Treiber deaktiviert das Gerät absichtlich
 
@@ -1371,6 +1373,30 @@ der Boot nun unmittelbar vor Partition/VFS mit getrennt codierten
 ATA-/AHCI-Probezählern. QEMU-IDE und QEMU-AHCI erreichen anschließend jeweils
 `REIST_PROBE RECOVERY_SEQUENCE_OK`; die erneute H81-/AMD-Abnahme bleibt als
 reale Hardwareevidenz offen.
+
+Die anschließende H81M-K-Gegenprobe mit Build
+`9C103ECA7A2568136B5B4DB744C9459990E5E781` bestätigt die korrigierte
+Storage-Erkennung: Systemvolume, `REIST.PRG`, Storage-Dienst und die komplette
+Recovery-Sequenz starten. Der danach scheinbar bei der zweiten Ausgabe
+`UDP_BOUND 9003` stehende Boot war kein Scheduler- oder Storage-Hänger. Die
+vierte Dienstgeneration hatte ihre UDP-Kapazitäts-, Duplicate- und
+Stale-Handle-Tests beendet und lief anschließend absichtlich in ihrer
+dauerhaften Ereignisschleife. Weil kein unterstütztes NIC-Backend vorhanden
+war, übersprang der Kernel jedoch die Service-Wartebarriere, gab `BOOT_OK` und
+den Shell-Prompt zu früh frei und ließ spätere Dienstdiagnosen den Prompt
+optisch überschreiben.
+
+Die Probe veröffentlicht nun nach den begrenzten UDP-Starttests den neuen,
+append-only Report `SERVICE_READY`. Der geschützte Supervisorzustand bindet
+ihn an PID und Prozessgeneration und löscht ihn bei Fence oder Respawn. Der
+Kernel wartet unabhängig von der NIC-Verfügbarkeit höchstens zehn Sekunden
+auf diesen Zustand; ein Ablauf panikt vor `BOOT_OK`, ein fehlendes NIC wechselt
+danach explizit in `local-only`. Der No-NIC-Gastlauf bestätigt die Reihenfolge
+`RECOVERY_SEQUENCE_OK -> SERVICE_READY -> local-only -> BOOT_OK -> C:\\>`.
+Das ASUS H81M-K besitzt laut Hersteller einen Realtek RTL8111G Gigabit-LAN-
+Controller. REIST unterstützt derzeit RTL8139, E1000 und NE2000; RTL8111G
+gehört zur RTL8168-PCIe-Familie und benötigt einen eigenen Treiber. Es darf
+nicht über die inkompatiblen RTL8139-Register angesprochen werden.
 
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 

@@ -310,8 +310,10 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
 
     def test_reist_probe_markers_are_required_in_order(self) -> None:
         transcript = "\n".join((
-            "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,
+            *RUNNER_MODULE.REIST_PROBE_MARKERS,
             RUNNER_MODULE.REIST_PROBE_COMPLETION_MARKER,
+            RUNNER_MODULE.REIST_NETWORK_SERVICE_READY_MARKER,
+            "BOOT_OK",
             RUNNER_MODULE.REIST_SERVICE_CORRELATION_MARKER,
             RUNNER_MODULE.REIST_ARP_IDENTITY_MARKER,
             RUNNER_MODULE.REIST_ARP_VALIDATION_MARKER,
@@ -326,6 +328,10 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
             RUNNER_MODULE.REIST_PROBE_COMPLETION_MARKER + "\n", "")
         self.assertIn("cumulative REIST probe", RUNNER_MODULE.validate(
             missing, expect_reist_probe=True))
+        no_ready = transcript.replace(
+            RUNNER_MODULE.REIST_NETWORK_SERVICE_READY_MARKER + "\n", "")
+        self.assertIn("service-ready", RUNNER_MODULE.validate(
+            no_ready, expect_reist_probe=True))
         no_service = transcript.replace(
             RUNNER_MODULE.REIST_SERVICE_MARKER + "\n", "")
         self.assertIn("diagnostic-service", RUNNER_MODULE.validate(
@@ -337,8 +343,10 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
 
     def test_real_network_handoff_marker_is_optional_but_enforceable(self):
         transcript = "\n".join((
-            "BOOT_OK", *RUNNER_MODULE.REIST_PROBE_MARKERS,
+            *RUNNER_MODULE.REIST_PROBE_MARKERS,
             RUNNER_MODULE.REIST_PROBE_COMPLETION_MARKER,
+            RUNNER_MODULE.REIST_NETWORK_SERVICE_READY_MARKER,
+            "BOOT_OK",
             RUNNER_MODULE.REIST_SERVICE_CORRELATION_MARKER,
             RUNNER_MODULE.REIST_ARP_IDENTITY_MARKER,
             RUNNER_MODULE.REIST_ARP_VALIDATION_MARKER,
@@ -644,8 +652,9 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, self.combined_output(result))
 
         transcript = "\n".join((
-            "BOOT_OK", "C:\\>",
-            RUNNER_MODULE.REIST_PROBE_COMPLETION_MARKER, "",
+            RUNNER_MODULE.REIST_PROBE_COMPLETION_MARKER,
+            RUNNER_MODULE.REIST_NETWORK_SERVICE_READY_MARKER,
+            "BOOT_OK", "C:\\>", "",
         ))
         self.assertIsNone(RUNNER_MODULE.validate(
             transcript, expect_reist_probe=True, boot_only=True,

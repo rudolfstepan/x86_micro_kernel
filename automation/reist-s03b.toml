@@ -481,6 +481,52 @@ commit_message = "fix: discover physical SATA storage deterministically"
 evidence = []
 
 [[packages]]
+id = "S0.3c-hw4"
+status = "done"
+risk = "high"
+title = "Generation-scoped Ring-3 service-ready boot barrier"
+scope = "Prevent asynchronous REIST probe startup diagnostics from obscuring the userspace shell on physical systems without a supported NIC. Publish an explicit generation-scoped service-ready report only after bounded UDP binding self-tests, wait for it with the existing boot deadline regardless of network availability, and expose local-only network operation before BOOT_OK."
+allowed_files = [
+  "include/kernel/supervisor.h",
+  "userspace/sdk/include/x86os.h",
+  "examples/userspace/reist_probe.c",
+  "kernel/init/supervisor.c",
+  "kernel/init/kernel.c",
+  "scripts/run_qemu_smoke.py",
+  "test/test_boot_service_ready.py",
+  "test/test_qemu_smoke.py",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "BOOT_OK is not published before the fourth probe generation completed its bounded startup self-tests",
+  "service readiness is tied to the current pid and process generation and is cleared on fence or respawn",
+  "systems without a supported NIC still use the bounded service-ready deadline",
+  "network absence enters explicit local-only mode and never blocks shell startup",
+  "the report ABI is append-only"
+]
+targeted_tests = [
+  "python test/test_boot_service_ready.py -q",
+  "python test/test_qemu_smoke.py -q",
+  "python test/test_reist_probe_domain.py -q",
+  "python test/test_reist_udp_service.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --boot-only"
+]
+stop_conditions = [
+  "readiness cannot be represented without weakening generation checks",
+  "the boot wait requires an unbounded delay",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: gate shell startup on REIST service readiness"
+evidence = []
+
+[[packages]]
 id = "S0.3c-6f5"
 status = "active"
 risk = "critical"

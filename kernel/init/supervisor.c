@@ -1391,8 +1391,10 @@ static bool probe_control_valid(const void *payload, size_t length) {
         return false;
     const supervisor_probe_control_t *control = payload;
     if (control->active > 1U || control->fenced > 1U ||
-        control->healthy > 1U ||
-        (control->fenced != 0U && control->healthy != 0U)) return false;
+        control->healthy > 1U || control->service_ready > 1U ||
+        (control->fenced != 0U && control->healthy != 0U) ||
+        (control->service_ready != 0U &&
+         (control->healthy == 0U || control->fenced != 0U))) return false;
     if (control->active == 0U) {
         const supervisor_probe_control_t empty = {0};
         const uint8_t *actual = (const uint8_t *)control;
@@ -1407,6 +1409,7 @@ static bool probe_control_valid(const void *payload, size_t length) {
     if (control->pid == 0)
         return control->process_generation == 0U &&
                control->launch_count == 0U && control->healthy == 0U &&
+               control->service_ready == 0U &&
                control->endpoint_handle == 0U;
     return control->process_generation != 0U && control->launch_count != 0U;
 }
@@ -1887,6 +1890,7 @@ static bool probe_fence_apply(void *context) {
     }
     control.fenced = 1U;
     control.healthy = 0U;
+    control.service_ready = 0U;
     control.network_epoch = 0U;
     if (supervisor_protected_probe_control_write(
             &runtime->control, &control) != 0) {
@@ -2021,6 +2025,7 @@ static bool probe_spawn_next(void) {
     control.pid = pid;
     control.process_generation = generation;
     control.healthy = 0U;
+    control.service_ready = 0U;
     ++control.launch_count;
     if (supervisor_protected_probe_control_write(
             &probe_runtime.control, &control) != 0) {
@@ -2113,6 +2118,7 @@ bool supervisor_probe_ready(void) {
         &probe_runtime.control, &control);
     bool ready = result == 0 && control.active != 0U &&
         control.fenced == 0U && control.healthy != 0U &&
+        control.service_ready != 0U &&
         control.launch_count >= 4U &&
         control.endpoint_handle != IPC_INVALID_HANDLE &&
         process_identity_alive(control.pid, control.process_generation);
@@ -2154,6 +2160,16 @@ int supervisor_probe_report(int pid, uint32_t generation,
                     &probe_runtime.control, &control) != 0) return -1;
         }
         return result;
+    }
+    if (report_type == REIST_REPORT_SERVICE_READY) {
+        if (value != 1U || control.fenced != 0U || control.healthy == 0U ||
+            control.service_ready != 0U || control.launch_count < 4U)
+            return -1;
+        control.service_ready = 1U;
+        if (supervisor_protected_probe_control_write(
+                &probe_runtime.control, &control) != 0) return -1;
+        printf("REIST_NETWORK SERVICE_READY\n");
+        return 0;
     }
     if (report_type == REIST_REPORT_INVALID) {
         (void)supervisor_force_isolate(control.handle);

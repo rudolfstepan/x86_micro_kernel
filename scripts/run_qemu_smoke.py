@@ -32,6 +32,7 @@ REIST_PROBE_MARKERS = (
     "REIST_PROBE REINTEGRATED",
 )
 REIST_PROBE_COMPLETION_MARKER = "REIST_PROBE RECOVERY_SEQUENCE_OK"
+REIST_NETWORK_SERVICE_READY_MARKER = "REIST_NETWORK SERVICE_READY"
 REIST_MEMORY_FAULT_MARKER = "REIST_MEMORY_FAULT_INJECTION_OK"
 REIST_SERVICE_MARKER = "TEST_STAGE DIAGNOSTIC_SERVICE_OK"
 REIST_SERVICE_CORRELATION_MARKER = "TEST_STAGE SERVICE_CORRELATION_OK"
@@ -885,11 +886,15 @@ def validate(
     if boot_only:
         if transcript.find(SHELL_PROMPT, boot) < 0:
             return f"missing {SHELL_PROMPT} prompt after {BOOT_MARKER}"
-        if (expect_reist_probe and
-                exact_line_position(
-                    transcript, REIST_PROBE_COMPLETION_MARKER,
-                    after=boot) < 0):
-            return "missing cumulative REIST probe recovery marker"
+        if expect_reist_probe:
+            completion = exact_line_position(
+                transcript, REIST_PROBE_COMPLETION_MARKER)
+            service_ready = exact_line_position(
+                transcript, REIST_NETWORK_SERVICE_READY_MARKER)
+            if completion < 0:
+                return "missing cumulative REIST probe recovery marker"
+            if service_ready < completion or service_ready > boot:
+                return "missing pre-boot REIST network service-ready marker"
         return None
     if expect_memory_fault:
         memory_fault = exact_line_position(transcript,
@@ -911,8 +916,12 @@ def validate(
     if expect_reist_probe:
         completion = exact_line_position(transcript,
                                          REIST_PROBE_COMPLETION_MARKER)
-        if completion < 0 or completion > test:
+        service_ready = exact_line_position(
+            transcript, REIST_NETWORK_SERVICE_READY_MARKER)
+        if completion < 0 or completion > boot:
             return "missing cumulative REIST probe recovery marker"
+        if service_ready < completion or service_ready > boot:
+            return "missing pre-boot REIST network service-ready marker"
         service = exact_line_position(transcript, REIST_SERVICE_MARKER)
         correlation = exact_line_position(transcript,
                                           REIST_SERVICE_CORRELATION_MARKER)
