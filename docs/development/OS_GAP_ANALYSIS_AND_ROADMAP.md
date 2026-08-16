@@ -340,7 +340,7 @@ und 10 verbindlich.
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
 | Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit explizit delegierten generationsgebundenen Capabilities, endlichen Deadlines, geschützten Steuerdaten, reservierter Restart-Admission, versionierten Domänenprofilen und abgenommener Ring-3-Probe-Recovery | maximal 8 Tasks; produktive Dienste liegen noch im modularen Monolithen |
 | Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, FAT32-Rename/Replace im Undo-Journal, FAT32/ATA-`fsync`, EXT2 lesen | persistenter Editor-Commit vorhanden; ABI, FAT12-Sync und breitere Rename-Semantik fehlen |
-| Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 und COM1 mit blockierendem Console-Wait, RTC, VGA, nativer VBE-RGB-Framebuffer | Referenzhardware gut, AHCI/SATA und moderne Geräte fehlen |
+| Geräte | PCI, ATA-PIO, FDD-DMA, PS/2 mit blockierendem Console-Wait, output-only COM1-Diagnose, RTC, VGA, nativer VBE-RGB-Framebuffer | Referenzhardware gut, AHCI/SATA und moderne Geräte fehlen |
 | Netzwerk | E1000, RTL8139, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping am besten verifiziert; RTL8111G/RTL8168 fehlt |
 | USB | PCI-Erkennung eines xHCI-Controllers | nur Probe-Gerüst |
 | Userspace | SDK, Shell, Editor, BASIC, zahlreiche Systemprogramme und tastaturbedienter Ring-3-Desktop mit vier App-Karten | brauchbare CLI- und Desktop-MVP-Basis |
@@ -516,8 +516,8 @@ an die unter Präemptionsschutz aufgelöste aktuelle Generation einer Ziel-PID.
 
 Die heutige Console-Eingabe vermeidet bereits Busy-Waiting für reguläre
 Ring-3-Tasks: `getchar` prüft den Puffer und reiht den Task atomar auf der
-gemeinsamen Input-Wait-Queue ein; PS/2 und COM1 wecken alle Leser zur erneuten
-Prüfung der level-getriggerten Pufferbereitschaft.
+PS/2-eigenen Input-Wait-Queue ein. COM1 ist bewusst output-only und kann weder
+Tastencodes veröffentlichen noch PS/2-Leser wecken.
 Eine vollständige TTY-Schicht bleibt der nächste darüberliegende Ausbau.
 Der Desktop-MVP umgeht die feste Terminalgeometrie für seine Oberfläche über
 Pixelrechtecke und Pixelschrift. Er startet vorhandene Apps jedoch bewusst als
@@ -692,8 +692,8 @@ unterstützte Variante vor dem Mapping eindeutig abgelehnt wird.
 
 **Status (13. August 2026):** Umgesetzt. `scripts/run_qemu_smoke.py` bootet das
 native Image headless und unveränderlich in QEMU, startet `GTEST.PRG` über
-COM1 und erzwingt die geordnete Markerfolge `BOOT_OK` → `TEST_OK` mit hartem
-Timeout. Der Ring-3-Gasttest prüft 64 Spawn/Wait-Zyklen, genau einmal
+emulierte PS/2-Tasten und erzwingt die über COM1 beobachtete Markerfolge
+`BOOT_OK` → `TEST_OK` mit hartem Timeout. Der Ring-3-Gasttest prüft 64 Spawn/Wait-Zyklen, genau einmal
 konsumierbare Exitstatus, Datei-I/O über mehrere 512-Byte-Syscall-Blöcke sowie
 kontrollierte `#DE`-, `#UD`- und `#PF`-Prozessabbrüche. Makefile und CI führen
 den Test aus und bewahren das serielle Protokoll.
@@ -727,8 +727,8 @@ PIT-Divisor, statt jeden IRQ ungenau als exakt eine Millisekunde zu behandeln.
 Sleep verwendet eine geordnete 64-Bit-Deadline-Queue, setzt den Taskstatus auf
 `TASK_SLEEPING` und gibt den Prozessor ab; `yield` wechselt ohne Pollschleife
 zu einem anderen bereiten Task. Die Console-Eingabe blockiert nach atomarer
-Leerprüfung auf einer gemeinsamen Wait-Queue und wird sowohl durch PS/2- als
-auch COM1-Eingabe geweckt.
+Leerprüfung auf der PS/2-Wait-Queue. COM1 ist davon getrennt und dient nur der
+Diagnoseausgabe.
 
 Der lokale APIC-Timer wird gegen die bereits laufende PIT-Zeit kalibriert und
 treibt danach die Scheduler-Quanten. Fehlt der LAPIC, schedult IRQ0 nach dem
@@ -740,8 +740,8 @@ zurückgestellt.
 - 64-Bit-monotone Zeit und geordnete Deadline-Liste implementieren.
 - `sleep_ms` und `yield` als Syscalls anbieten; `SYS_DELAY` kompatibel darauf
    abbilden.
-- Keyboard-, serielle und später Netzwerk-I/O auf blockierende Events
-   vorbereiten.
+- Keyboard- und später Netzwerk-I/O auf blockierende Events vorbereiten;
+   COM1-Diagnose bleibt output-only.
 - APIC-Timer gegen PIT kalibrieren und bei fehlendem LAPIC einen
    Scheduler-Fallback bereitstellen.
 
@@ -1435,6 +1435,27 @@ NumLock `raw=77 map=45 q=0` und der Buchstabe `h`
 `raw=33 map=23 q=1`; anschließend antwortet die Ring-3-Shell auf `help`. Der
 reale Trace entscheidet nun zwischen fehlendem Portbyte, gesetztem AUX-/Fehlerbit,
 unbekanntem Mapping und fehlgeschlagener Queue-Veröffentlichung.
+
+Die reale Abnahme am 16. August 2026 lieferte wiederholt gewöhnliche Make- und
+Break-Codes mit `q=1`, darunter `raw=33 map=23 q=1`. Damit ist der komplette
+PS/2-Pfad bis einschließlich Queue-Veröffentlichung nachgewiesen. Dass nach
+genau 16 Zeilen keine weitere Diagnose erschien, war die feste
+`KEYBOARD_TRACE_CAPACITY` und kein Stillstand des Controllers. Die Shell
+verbrauchte die wartenden Bytes nicht, weil der Keyboard-API zusätzlich der
+historische COM1-Eingang vorgeschaltet war. Auf realer Hardware kann ein nicht
+dekodierter Legacy-UART-Bereich ausschließlich Einsen liefern und diesen
+gemischten Eingabepfad dominieren.
+
+Die Eingabequellen sind deshalb jetzt vollständig getrennt. `getchar`,
+`getchar_nonblocking` und `get_input_line` konsumieren ausschließlich die
+PS/2-Queue; der serielle Treiber enthält weder RX-Ring noch IRQ4-Handler oder
+Keyboard-Wakeup. COM1 wird vor jeder Nutzung mit zwei Schreib-/Lesemustern im
+Scratch-Register erkannt, stellt dessen ursprünglichen Wert wieder her und
+bleibt bei fehlgeschlagener Erkennung deaktiviert. Auch der TX-Wait ist fest
+begrenzt. Der automatisierte Gasttest schreibt weiterhin sein Protokoll auf
+COM1, injiziert `GTEST` aber über begrenzte QEMU-`sendkey`-Befehle als echte
+emulierte PS/2-Eingabe. Der QEMU-Gesamtlauf bis `TEST_OK` bestätigt diese
+Trennung; die erneute Abnahme am H81M-K bleibt als Hardware-Nachweis offen.
 
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 

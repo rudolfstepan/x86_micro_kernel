@@ -17,18 +17,13 @@ void serial_init(uint16_t port);
 void serial_write_char(uint16_t port, char ch);
 void serial_write_string(uint16_t port, const char* str);
 
-// Read operations
-bool serial_received(uint16_t port);
-char serial_read_char(uint16_t port);
-
 // Status checks
 bool serial_is_transmit_empty(uint16_t port);
 
 // Helper to initialize COM1 (default)
 void serial_init_default(void);
 
-// Install buffered COM1 receive handling on legacy PIC IRQ4.  Call this only
-// after irq_install() has initialized the IRQ dispatcher.
-bool serial_install_rx_irq(void);
+// True only after the side-effect-free COM1 scratch-register probe succeeds.
+bool serial_default_present(void);
 
 #endif // SERIAL_H

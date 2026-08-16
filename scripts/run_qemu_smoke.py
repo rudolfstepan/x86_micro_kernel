@@ -100,6 +100,9 @@ HANDOVER_SERIAL_STATE = 5
 HANDOVER_SERIAL_FRAME = struct.Struct("<IBBHIQI")
 HANDOVER_SERIAL_STATE_FRAME = struct.Struct("<IBBHIIIIQQIII")
 SHELL_PROMPT = "C:\\>"
+PS2_GUEST_COMMAND = "gtest"
+QEMU_MUX_SWITCH = "\x01c"
+KEY_INTERVAL_SECONDS = 0.075
 FAIL_MARKERS = (
     "TEST_FAIL",
     "PANIC:",
@@ -137,7 +140,7 @@ def qemu_command(
         "-boot", "c",
         "-display", "none",
         "-monitor", "none",
-        "-serial", "stdio",
+        "-serial", "mon:stdio",
         "-no-shutdown",
     ]
     if sata:
@@ -194,6 +197,33 @@ def open_injection_listener() -> tuple[socket.socket, int]:
     listener.listen(1)
     listener.settimeout(5.0)
     return listener, int(listener.getsockname()[1])
+
+
+def monitor_key_commands(text: str) -> list[str]:
+    commands: list[str] = []
+    for character in text:
+        if not ("a" <= character <= "z"):
+            raise ValueError("PS/2 guest command must contain lowercase ASCII")
+        commands.append(f"sendkey {character}\n")
+    commands.append("sendkey ret\n")
+    return commands
+
+
+def inject_ps2_command(process: subprocess.Popen[str], text: str) -> None:
+    """Use QEMU's bounded monitor sendkey path; COM1 remains output-only."""
+    if process.stdin is None:
+        raise RuntimeError("QEMU multiplexed monitor input unavailable")
+    process.stdin.write(QEMU_MUX_SWITCH)
+    process.stdin.flush()
+    time.sleep(KEY_INTERVAL_SECONDS)
+    try:
+        for command in monitor_key_commands(text):
+            process.stdin.write(command)
+            process.stdin.flush()
+            time.sleep(KEY_INTERVAL_SECONDS)
+    finally:
+        process.stdin.write(QEMU_MUX_SWITCH)
+        process.stdin.flush()
 
 
 def handover_frame(frame_type: int, active_node: int, epoch: int) -> bytes:
@@ -692,12 +722,7 @@ def run(
         elif error is None and boot_only:
             pass
         elif error is None:
-            # The UART RX path currently drops command bursts.  Pace every
-            # byte so the same runner works on Windows and POSIX hosts.
-            for character in "GTEST\n":
-                process.stdin.write(character)
-                process.stdin.flush()
-                time.sleep(0.075)
+            inject_ps2_command(process, PS2_GUEST_COMMAND)
             if inject_arp_request or inject_icmp_echo or inject_udp_echo:
                 error, _ = wait_for_line(
                     process, chunks, transcript, finished,

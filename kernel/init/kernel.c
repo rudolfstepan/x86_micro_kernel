@@ -139,8 +139,8 @@ static void early_init(void) {
     idt_install();  // Interrupt Descriptor Table
     isr_install();  // CPU exception handlers (0-31)
     irq_install();  // Hardware interrupt handlers (32-47)
-    if (!serial_install_rx_irq()) {
-        printf("COM1 RX IRQ registration failed; using polling fallback\n");
+    if (!serial_default_present()) {
+        printf("COM1 unavailable; serial diagnostics disabled\n");
     }
     
     // Basic hardware

@@ -1,6 +1,5 @@
 #include "kb.h"
 #include "drivers/char/io.h"
-#include "drivers/char/serial.h"
 #include "drivers/video/video.h"
 #include "arch/x86/include/sys.h"
 #include "arch/x86/include/interrupt.h"
@@ -154,7 +153,6 @@ static volatile int input_queue_head = 0;
 static volatile int input_queue_tail = 0;
 static spinlock_t input_queue_lock = SPINLOCK_INIT;  // Protect queue access
 static wait_queue_t input_waiters = WAIT_QUEUE_INIT;
-static bool serial_swallow_line_feed = false;
 static bool keyboard_irq_registered;
 static bool keyboard_scanning_enabled;
 static bool set2_release_pending;
@@ -231,31 +229,6 @@ static bool i8042_keyboard_command(uint8_t command) {
     return false;
 }
 
-static char normalize_serial_input(char ch) {
-    if (ch == '\r') {
-        serial_swallow_line_feed = true;
-        return '\n';
-    }
-    if (ch == '\n' && serial_swallow_line_feed) {
-        serial_swallow_line_feed = false;
-        return 0;
-    }
-    serial_swallow_line_feed = false;
-    return ch == 0x7F ? '\b' : ch;
-}
-
-/* A swallowed LF from a CRLF pair is not the same as an empty UART.  Keep
- * draining so a following byte already buffered by the IRQ handler is not
- * delayed behind network polling or HLT. */
-static char read_normalized_serial(void) {
-    char raw;
-    while ((raw = serial_read_char(SERIAL_COM1)) != 0) {
-        char normalized = normalize_serial_input(raw);
-        if (normalized != 0) return normalized;
-    }
-    return 0;
-}
-
 //=============================================================================
 // INPUT QUEUE OPERATIONS (Thread-Safe)
 //=============================================================================
@@ -285,7 +258,7 @@ static bool input_queue_push_sequence(const char* sequence, size_t length) {
     }
     /* Publish the bytes and wake a reader under the same IRQ-disabled
      * transaction.  This closes the condition-check/block lost-wakeup window
-     * for both PS/2 and serial console input. */
+     * for PS/2 input. */
     spinlock_release(&input_queue_lock);
     /* Readiness is level-triggered: a sequence can satisfy more than one
      * blocked reader.  Wake all and let each reader recheck/consume under the
@@ -325,12 +298,6 @@ char input_queue_pop(void) {
  */
 static bool input_queue_empty(void) {
     return input_queue_head == input_queue_tail;
-}
-
-void kb_notify_input_ready(void) {
-    uint32_t flags = irq_save();
-    (void)wait_queue_wake_all_locked(&input_waiters);
-    irq_restore(flags);
 }
 
 //=============================================================================
@@ -837,7 +804,7 @@ static void queue_extended_key(char key) {
  */
 /**
  * Blocking read of single character
- * Waits until a character is available in the queue or serial port
+ * Waits until a PS/2 character is available in the queue
  */
 char getchar(void) {
     /* Blocking console input must preserve, not silently change, the caller's
@@ -854,9 +821,7 @@ char getchar(void) {
         keyboard_trace_entry_t trace;
         bool have_trace = kb_trace_take_locked(&trace);
 
-        // Check serial port first (for nographic mode).
-        char ch = read_normalized_serial();
-        if (ch == 0) ch = input_queue_pop();
+        char ch = input_queue_pop();
         if (ch != 0 || have_trace) {
             irq_restore(flags);
             if (have_trace) kb_trace_print(&trace);
@@ -864,8 +829,8 @@ char getchar(void) {
             continue;
         }
 
-        /* The empty check and queue insertion are atomic with both input
-         * producers.  A userspace reader no longer occupies the CPU while it
+        /* The empty check and queue insertion are atomic with the PS/2
+         * producer.  A userspace reader no longer occupies the CPU while it
          * waits; kernel-only/preemption-disabled callers retain the safe HLT
          * fallback used during early boot and driver operations. */
         uint64_t now_ms = pit_monotonic_ms();
@@ -883,22 +848,12 @@ char getchar(void) {
 
 /**
  * Non-blocking read of single character
- * Returns 0 if no input available (checks both serial and keyboard)
+ * Returns 0 if no PS/2 input is available
  */
 char getchar_nonblocking(void) {
     kb_poll_controller();
 
-    // Check serial port first (for nographic mode)
-    char serial_ch = read_normalized_serial();
-    if (serial_ch != 0) return serial_ch;
-    
-    // Check keyboard input queue
-    if (!input_queue_empty()) {
-        return input_queue_pop();
-    }
-    
-    // No input available
-    return 0;
+    return input_queue_pop();
 }
 
 /**
@@ -910,11 +865,10 @@ void get_input_line(char* buffer, int max_len) {
     while (1) {
         kb_poll_controller();
 
-        // Check serial port first (for nographic mode)
-        char ch = read_normalized_serial();
+        char ch = input_queue_pop();
         if (ch != 0) {
             
-            // Handle CR (Enter key on serial)
+            // Handle Enter
             if (ch == '\r' || ch == '\n') {
                 buffer[index] = '\0';  // Null-terminate
                 vga_write_char('\n');  // Echo newline
@@ -930,33 +884,8 @@ void get_input_line(char* buffer, int max_len) {
                 continue;
             }
             
-            // Regular character
-            if (index < max_len - 1 && ch >= 32 && ch < 127) {
-                buffer[index++] = ch;
-                vga_write_char(ch);  // Echo character
-            }
-            continue;
-        }
-        
-        // Check keyboard input queue
-        if (!input_queue_empty()) {
-            char ch = input_queue_pop();
-
-            if (ch == '\n') {
-                buffer[index] = '\0';  // Null-terminate
-                return;
-            }
-
-            if (ch == '\b') {
-                if (index > 0) {
-                    index--;
-                    vga_write_char('\b');
-                }
-                continue;
-            }
-
-            // get_input_line has no cursor editor; consume special-key ANSI
-            // sequences instead of returning them as program input.
+            /* get_input_line has no cursor editor; consume special-key ANSI
+             * sequences instead of returning them as program input. */
             if (ch == '\x1B') {
                 if (!input_queue_empty() && input_queue_pop() == '[' &&
                     !input_queue_empty()) {
@@ -969,8 +898,10 @@ void get_input_line(char* buffer, int max_len) {
                 continue;
             }
 
+            // Regular character
             if (index < max_len - 1 && ch >= 32 && ch < 127) {
                 buffer[index++] = ch;
+                vga_write_char(ch);  // Echo character
             }
             continue;
         }

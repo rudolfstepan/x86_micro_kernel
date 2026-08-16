@@ -661,6 +661,54 @@ commit_message = "diag: trace physical PS2 input publication"
 evidence = []
 
 [[packages]]
+id = "S0.3c-hw8"
+status = "done"
+risk = "high"
+title = "Fail-closed output-only COM1 and PS/2 isolation"
+scope = "Fix the physical shell starvation proven by PS/2 q=1 traces. Probe COM1 through the UART scratch register before output, treat failed readback as absent, remove the obsolete COM1 receive/IRQ path from the keyboard subsystem, and make every keyboard API consume only the PS/2 queue. Move automated guest command injection to the emulated PS/2 controller."
+allowed_files = [
+  "drivers/char/serial.c",
+  "drivers/char/serial.h",
+  "drivers/char/kb.c",
+  "drivers/char/kb.h",
+  "kernel/init/kernel.c",
+  "scripts/run_qemu_smoke.py",
+  "test/test_serial_source.py",
+  "test/test_ps2_keyboard_source.py",
+  "test/test_qemu_smoke.py",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "COM1 output remains disabled unless two scratch-register patterns read back",
+  "the original scratch value is restored after probing",
+  "COM1 owns no receive IRQ and has no dependency on the PS/2 driver",
+  "getchar, getchar_nonblocking and get_input_line consume only the PS/2 queue",
+  "QEMU command injection uses bounded monitor sendkey operations while COM1 remains output-only"
+]
+targeted_tests = [
+  "python test/test_serial_source.py -q",
+  "python test/test_ps2_keyboard_source.py -q",
+  "python test/test_userspace_file_syscalls_source.py -q",
+  "python test/test_qemu_smoke.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_ps2_smoke.py --image build/reist-os.img",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --nic none --expect-reist-probe --boot-only"
+]
+stop_conditions = [
+  "COM1 presence cannot be determined without destructive Super-I/O changes",
+  "QEMU command injection cannot be moved to the emulated PS/2 controller",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: prevent absent COM1 from starving PS2 input"
+evidence = []
+
+[[packages]]
 id = "S0.3c-6f5"
 status = "active"
 risk = "critical"

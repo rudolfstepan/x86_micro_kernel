@@ -36,7 +36,7 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         serial_positions = [index for index, argument in enumerate(command)
                             if argument == "-serial"]
         self.assertEqual(len(serial_positions), 2)
-        self.assertEqual(command[serial_positions[0] + 1], "stdio")
+        self.assertEqual(command[serial_positions[0] + 1], "mon:stdio")
         self.assertEqual(command[serial_positions[1] + 1],
                          "tcp:127.0.0.1:32124")
 
@@ -385,8 +385,17 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
     def test_reist_probe_completion_precedes_guest_command(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         completion = source.index("REIST_PROBE_COMPLETION_MARKER, deadline")
-        command = source.index('for character in "GTEST\\n"')
+        command = source.index(
+            "inject_ps2_command(process, PS2_GUEST_COMMAND)")
         self.assertLess(completion, command)
+
+    def test_guest_command_is_injected_through_ps2_not_com1(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        injection = RUNNER_MODULE.monitor_key_commands("gtest")
+        self.assertEqual(injection[-1], "sendkey ret\n")
+        self.assertEqual(len(injection), 6)
+        self.assertIn('"-serial", "mon:stdio"', source)
+        self.assertNotIn('process.stdin.write(character)', source)
 
     def setUp(self) -> None:
         self.assertTrue(
@@ -594,7 +603,7 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertRegex(arguments, r"(?:^|\s)none(?:\s|$)")
         self.assertRegex(arguments, r"(?:^|\s)-monitor(?:\s|$)")
         self.assertRegex(arguments, r"(?:^|\s)-serial(?:\s|$)")
-        self.assertRegex(arguments, r"(?:^|\s)stdio(?:\s|$)")
+        self.assertRegex(arguments, r"(?:^|\s)mon:stdio(?:\s|$)")
         self.assertIn("-nodefaults", arguments)
         self.assertIn("-snapshot", arguments)
         self.assertIn("-no-reboot", arguments)
