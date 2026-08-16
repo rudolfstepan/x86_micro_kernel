@@ -1265,10 +1265,13 @@ generierte VMware-Konfiguration nutzt SATA und wurde mit erfolgreichem
 AHCI-Boot, FAT32-Mount und gestarteter Userspace-Shell manuell abgenommen.
 Eine deterministische, einmalige Compile-Time-Fault-Injection für Timeout,
 TFES und TFD-Fehler ist ergänzt; sie nutzt ausschließlich die normale
-begrenzte Completion-/Port-Stoppbehandlung. Der reale QEMU-Nachweis dieser
-drei Fehlerbilder bleibt als Acceptance-Test offen. QEMU-AHCI und
-VMware-AHCI gelten damit für das Erfolgsprofil als unterstützt, nicht jedoch
-als vollständig fehler-injiziert abgenommen.
+begrenzte Completion-/Port-Stoppbehandlung. Alle drei Fehlerbilder wurden in
+QEMU mit AHCI-Gastlauf nachgewiesen: Der Gast bootet, meldet den begrenzten
+Storage-I/O-Fehler und erreicht keine Kernel-Panic. Der allgemeine Datei-I/O-
+Smoke-Test bleibt in diesen absichtlich fehlerhaften Builds erwartungsgemäß
+negativ. QEMU-AHCI und VMware-AHCI gelten damit für das Erfolgsprofil als
+unterstützt; die Fault-Injection ist für QEMU abgenommen, aber nicht für
+VMware als reproduzierbarer Acceptance-Lauf.
 
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 
