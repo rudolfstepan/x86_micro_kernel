@@ -90,7 +90,7 @@ def create_floppy_image(stage1: bytes, stage2: bytes, kernel: bytes,
     # hybrid image which the BIOS can boot and the kernel can mount as A:.
     reserved_sectors = kernel_lba + sectors_for(len(kernel))
     if reist_fat12:
-        reserved_sectors = max(reserved_sectors + 8, 31)
+        reserved_sectors = max(reserved_sectors + 62, 85)
         if reserved_sectors >= FLOPPY_SECTORS:
             raise ValueError("REIST FAT12 journal leaves no data area")
     sectors_per_fat = 3

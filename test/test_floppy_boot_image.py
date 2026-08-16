@@ -51,7 +51,7 @@ class FloppyBootImageTests(unittest.TestCase):
         self.assertEqual((magic, version), (0x524A3132, 2))
         self.assertEqual(primary, mirror)
         reserved = struct.unpack_from("<H", image, 14)[0]
-        self.assertGreaterEqual(reserved, 31)
+        self.assertGreaterEqual(reserved, 85)
 
 
 if __name__ == "__main__":

@@ -35,7 +35,8 @@ static bool fat12_journal_write_sector(void *context, uint32_t sector,
 
 static bool fat12_journal_prepare(void) {
     if (!fat12 ||
-        fat12->boot_sector.reserved_sectors < 23U + FAT12_REMAP_SPARE_COUNT ||
+        fat12->boot_sector.reserved_sectors < 23U + FAT12_REMAP_SPARE_COUNT +
+                                              FAT12_REPLICA_RESERVED_SECTORS ||
         memcmp(fat12->boot_sector.fs_type, "REIST12", 7U) != 0 ||
         fat12->boot_sector.volume_id == 0U) return true;
     if (!fat12_journal_format(&fat12->journal, 2U, 3U, 4U,
@@ -53,8 +54,17 @@ static bool fat12_journal_prepare(void) {
                             fat12->boot_sector.volume_id)) return false;
     if (!fat12_remap_load(&fat12->remap, fat12_journal_read_sector, NULL))
         return false;
+    uint32_t replica_base = fat12->boot_sector.reserved_sectors -
+                            FAT12_REPLICA_RESERVED_SECTORS;
+    for (uint32_t slot = 0U; slot < FAT12_REPLICA_FILE_COUNT; ++slot) {
+        uint32_t primary = replica_base + slot * FAT12_REPLICA_SLOT_SECTORS;
+        if (!fat12_replica_init(&fat12->replicas[slot], primary,
+                primary + 1U + FAT12_REPLICA_DATA_SECTORS,
+                fat12->boot_sector.volume_id)) return false;
+    }
     fat12->journal_enabled = true;
     fat12->remap_enabled = true;
+    fat12->replica_enabled = true;
     return true;
 }
 
@@ -1282,17 +1292,19 @@ bool fat12_quarantine_data_cluster(uint16_t cluster) {
 bool fat12_install_sector_remap(uint32_t bad_sector,
                                 const void *recovered_sector) {
     if (!fat12 || !recovered_sector || !fat12->remap_enabled ||
-        fat12->boot_sector.reserved_sectors < 23U + FAT12_REMAP_SPARE_COUNT ||
+        fat12->boot_sector.reserved_sectors < 23U + FAT12_REMAP_SPARE_COUNT +
+                                              FAT12_REPLICA_RESERVED_SECTORS ||
         bad_sector < (uint32_t)fat12->fat_start ||
         bad_sector >= (uint32_t)fat12->data_start ||
         !fat12_confirm_sector_defect(bad_sector)) return false;
     uint32_t existing = 0U;
     if (fat12_remap_lookup(&fat12->remap, bad_sector, &existing)) return false;
     uint32_t spare_start = fat12->boot_sector.reserved_sectors -
+                           FAT12_REPLICA_RESERVED_SECTORS -
                            FAT12_REMAP_SPARE_COUNT;
     uint32_t replacement = 0U;
     for (uint32_t candidate = spare_start;
-         candidate < fat12->boot_sector.reserved_sectors; ++candidate) {
+         candidate < spare_start + FAT12_REMAP_SPARE_COUNT; ++candidate) {
         bool used = false;
         for (uint32_t index = 0U; index < fat12->remap.header.entry_count;
              ++index)
@@ -1309,6 +1321,46 @@ bool fat12_install_sector_remap(uint32_t bad_sector,
     return fat12_remap_add(&fat12->remap, bad_sector, replacement,
                            fat12_journal_read_sector,
                            fat12_journal_write_sector, NULL);
+}
+
+static int fat12_critical_replica_slot(const char *name) {
+    static const char *const names[FAT12_REPLICA_FILE_COUNT] = {
+        "REIST.CFG", "STORAGE.CFG", "BOOT.CFG"
+    };
+    if (!fat12_is_critical_name(name)) return -1;
+    for (uint32_t slot = 0U; slot < FAT12_REPLICA_FILE_COUNT; ++slot)
+        if (strlen(name) == strlen(names[slot]) &&
+            strncasecmp(name, names[slot], strlen(names[slot])) == 0)
+            return (int)slot;
+    return -1;
+}
+
+bool fat12_publish_critical_replica(const char *name, const void *data,
+                                    size_t length) {
+    int slot = fat12_critical_replica_slot(name);
+    if (!fat12 || !fat12->replica_enabled || slot < 0 || data == NULL ||
+        length == 0U || length > FAT12_REPLICA_MAX_BYTES) return false;
+    fat12_replica_t *replica = &fat12->replicas[slot];
+    uint64_t sequence = 1U;
+    if (fat12_replica_load(replica, fat12_journal_read_sector, NULL)) {
+        sequence = replica->primary_header.sequence >
+                   replica->mirror_header.sequence
+            ? replica->primary_header.sequence : replica->mirror_header.sequence;
+        if (sequence == UINT64_MAX) return false;
+        ++sequence;
+    }
+    return fat12_replica_publish_persistent(replica, data, length, sequence,
+        fat12_journal_read_sector, fat12_journal_write_sector, NULL);
+}
+
+bool fat12_read_critical_replica(const char *name, void *output,
+                                 size_t capacity, size_t *length_out) {
+    int slot = fat12_critical_replica_slot(name);
+    if (!fat12 || !fat12->replica_enabled || slot < 0 || output == NULL ||
+        length_out == NULL) return false;
+    fat12_replica_t *replica = &fat12->replicas[slot];
+    return fat12_replica_load(replica, fat12_journal_read_sector, NULL) &&
+           fat12_replica_select(replica, output, capacity, length_out);
 }
 
 // Close a file and free its resources

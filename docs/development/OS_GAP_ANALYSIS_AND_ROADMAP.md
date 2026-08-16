@@ -221,7 +221,7 @@ und 10 verbindlich.
         reservierte Sektoren über eine persistente, gespiegelte Remap-Tabelle
         auf vorab reservierte Ersatzsektoren abbilden und nicht rekonstruierbare
         Daten eindeutig melden statt stillschweigend zu ersetzen
-      - [ ] S0.3c-6f3 Copy-on-Write beziehungsweise replizierte Daten für
+      - [x] S0.3c-6f3 Copy-on-Write beziehungsweise replizierte Daten für
         kritische FAT12-Dateien, damit ein Lesefehler oder Defektsektor nicht
         nur erkannt, sondern aus einer validierten Kopie rekonstruiert werden
         kann; Auswahl über CRC, Sequenz und Dateisysteminvarianten

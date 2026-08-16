@@ -107,6 +107,8 @@ class FilesystemHostTests(unittest.TestCase):
                 "fs/fat12/fat12.c",
                 "fs/fat12/fat12_journal.c",
                 "fs/fat12/fat12_remap.c",
+                "fs/fat12/fat12_replica.c",
+                "fs/fat12/fat12_critical.c",
                 "fs/fat12/fat12_vfs_adapter.c",
                 "lib/libc/string.c",
             ],

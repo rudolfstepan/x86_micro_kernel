@@ -587,7 +587,18 @@ static int fat12_vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size,
     file->position = offset;
     uint32_t available = node->size - offset;
     uint32_t amount = size < available ? size : available;
-    return fat12_read_file(file, buffer, size, amount);
+    int result = fat12_read_file(file, buffer, size, amount);
+    if (result == (int)amount || !fat12_is_critical_name((char*)file->name) ||
+        node->size > FAT12_REPLICA_MAX_BYTES) return result;
+    uint8_t* replica = (uint8_t*)malloc(node->size);
+    size_t replica_length = 0U;
+    if (!replica) return VFS_ERR_NO_MEMORY;
+    bool recovered = fat12_read_critical_replica((char*)file->name, replica,
+        node->size, &replica_length) && replica_length == node->size &&
+        offset <= replica_length && amount <= replica_length - offset;
+    if (recovered) memcpy(buffer, replica + offset, amount);
+    free(replica);
+    return recovered ? (int)amount : VFS_ERR_IO;
 }
 
 static int fat12_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
@@ -660,6 +671,22 @@ static int fat12_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
     node->size = entry.file_size;
     handle->start_cluster = start;
     handle->size = entry.file_size;
+    if (fat12_is_critical_name((char*)handle->name)) {
+        if (handle->size == 0U || handle->size > FAT12_REPLICA_MAX_BYTES)
+            return VFS_ERR_IO;
+        uint8_t* replica = (uint8_t*)malloc(handle->size);
+        if (!replica) return VFS_ERR_NO_MEMORY;
+        uint32_t saved_position = handle->position;
+        handle->position = 0U;
+        int replicated = fat12_read_file(handle, replica, handle->size,
+                                         handle->size);
+        handle->position = saved_position;
+        bool published = replicated == (int)handle->size &&
+            fat12_publish_critical_replica((char*)handle->name, replica,
+                                           handle->size);
+        free(replica);
+        if (!published) return VFS_ERR_IO;
+    }
     return (int)size;
 }
 

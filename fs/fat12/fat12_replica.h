@@ -8,6 +8,16 @@
 #define FAT12_REPLICA_MAX_BYTES 4096U
 #define FAT12_REPLICA_MAGIC 0x52504C31U /* RPL1 */
 #define FAT12_REPLICA_VERSION 1U
+#define FAT12_REPLICA_SECTOR_SIZE 512U
+#define FAT12_REPLICA_DATA_SECTORS 8U
+#define FAT12_REPLICA_SLOT_SECTORS 18U
+#define FAT12_REPLICA_FILE_COUNT 3U
+#define FAT12_REPLICA_RESERVED_SECTORS 54U
+
+typedef bool (*fat12_replica_read_fn)(void *context, uint32_t sector,
+                                      void *buffer);
+typedef bool (*fat12_replica_write_fn)(void *context, uint32_t sector,
+                                       const void *buffer);
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -34,6 +44,12 @@ bool fat12_replica_init(fat12_replica_t *replica, uint32_t primary_sector,
                         uint32_t mirror_sector, uint32_t media_fingerprint);
 bool fat12_replica_publish(fat12_replica_t *replica, const void *data,
                            size_t length, uint64_t sequence);
+bool fat12_replica_publish_persistent(fat12_replica_t *replica,
+        const void *data, size_t length, uint64_t sequence,
+        fat12_replica_read_fn read, fat12_replica_write_fn write,
+        void *context);
+bool fat12_replica_load(fat12_replica_t *replica,
+                        fat12_replica_read_fn read, void *context);
 bool fat12_replica_select(const fat12_replica_t *replica, void *output,
                           size_t capacity, size_t *length_out);
 

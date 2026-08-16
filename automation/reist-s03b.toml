@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3c-6f"
-active_id = "S0.3c-6f3"
+active_id = "S0.3c-6f4"
 
 [policy]
 one_package_per_run = true
@@ -229,7 +229,7 @@ evidence = [
 
 [[packages]]
 id = "S0.3c-6f3"
-status = "active"
+status = "done"
 risk = "critical"
 title = "Persistent replicas for critical FAT12 files"
 scope = "Integrate bounded persistent replicas for the explicit FAT12 critical-file allowlist. Publish independent copies with sequence, length and CRC only after verified data writes; select only filesystem-valid copies, reject equal-sequence disagreement, and expose no unvalidated data after a primary read failure."
@@ -241,10 +241,14 @@ allowed_files = [
   "fs/fat12/fat12.h",
   "fs/fat12/fat12.c",
   "fs/fat12/fat12_vfs_adapter.c",
+  "examples/userspace/storage_service.c",
+  "scripts/create_floppy_boot_image.py",
   "test/test_fat12_replica.py",
   "test/test_fat12_replica_host.c",
   "test/test_fat12_critical.py",
   "test/test_fs_host.py",
+  "test/test_fat12_tools.py",
+  "test/test_floppy_boot_image.py",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
   "automation/reist-s03b.toml"
 ]
@@ -274,6 +278,58 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: persist critical FAT12 replicas"
+evidence = [
+  "python test/test_fat12_replica.py -q",
+  "python test/test_fat12_critical.py -q",
+  "python test/test_fs_host.py -q",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode fdd-hotplug"
+]
+
+[[packages]]
+id = "S0.3c-6f4"
+status = "active"
+risk = "critical"
+title = "Ordered FAT12 file transactions"
+scope = "Make FAT12 file mutation ordering explicit and bounded: verified data sectors, both FAT copies, directory entry, critical replica publication, then journal CLEAN. A failed or ambiguous stage must keep recovery authoritative and prevent blind retry."
+allowed_files = [
+  "fs/fat12/fat12_journal.h",
+  "fs/fat12/fat12_journal.c",
+  "fs/fat12/fat12.h",
+  "fs/fat12/fat12.c",
+  "fs/fat12/fat12_vfs_adapter.c",
+  "test/test_fat12_journal.py",
+  "test/test_fat12_maintenance.py",
+  "test/test_fs_host.py",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "transaction capacity is validated before the first persistent side effect",
+  "data precedes FAT copies, directory publication and replica metadata",
+  "every stage is read back before the next stage begins",
+  "journal CLEAN is the final persistent publication",
+  "failure leaves recovery authoritative and blocks blind retry",
+  "all sector sets and rollback work are fixed-capacity"
+]
+targeted_tests = [
+  "python test/test_fat12_journal.py -q",
+  "python test/test_fat12_maintenance.py -q",
+  "python test/test_fs_host.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode fdd-hotplug"
+]
+stop_conditions = [
+  "a mutation can exceed fixed journal capacity after side effects begin",
+  "ordered publication requires an unbounded rollback",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: order FAT12 file transactions"
 evidence = []
 
 [[packages]]

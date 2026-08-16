@@ -9,6 +9,8 @@
 #include "../../drivers/block/fdd.h"
 #include "fat12_journal.h"
 #include "fat12_remap.h"
+#include "fat12_replica.h"
+#include "fat12_critical.h"
 
 // FAT12 Constants
 #define FAT12_SECTOR_SIZE           512
@@ -113,6 +115,8 @@ typedef struct {
     fat12_journal_t journal;
     bool remap_enabled;
     fat12_remap_table_t remap;
+    bool replica_enabled;
+    fat12_replica_t replicas[FAT12_REPLICA_FILE_COUNT];
 } fat12_t;
 #pragma pack(pop)
 
@@ -163,5 +167,9 @@ bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
 bool fat12_quarantine_data_cluster(uint16_t cluster);
 bool fat12_install_sector_remap(uint32_t bad_sector,
                                 const void *recovered_sector);
+bool fat12_publish_critical_replica(const char *name, const void *data,
+                                    size_t length);
+bool fat12_read_critical_replica(const char *name, void *output,
+                                 size_t capacity, size_t *length_out);
 
 #endif // FAT12_H
