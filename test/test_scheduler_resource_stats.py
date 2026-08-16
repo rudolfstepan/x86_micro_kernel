@@ -30,6 +30,9 @@ class SchedulerResourceStatsTests(unittest.TestCase):
         self.assertIn("if (active > peak_active_tasks)", self.scheduler)
         self.assertIn(".task_capacity = MAX_TASKS", self.scheduler)
         self.assertIn(".supervised_reserve = SUPERVISED_TASK_RESERVE", self.scheduler)
+        self.assertIn("KERNEL_STACK_WATERMARK_BYTE", self.scheduler)
+        self.assertIn("kernel_stack_high_water_peak", self.scheduler)
+        self.assertIn(".reserved = kernel_stack_high_water_peak", self.scheduler)
 
     def test_syscall_validates_before_copyout(self) -> None:
         start = self.syscalls.index("static int syscall_scheduler_stats(")

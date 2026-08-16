@@ -41,6 +41,7 @@ _Static_assert(sizeof(scheduler_resource_stats_t) == 32U,
 
 #define SCHEDULER_QUANTUM_MS 10U
 #define KERNEL_STACK_GUARD 0x4B535447U /* "KSTG" */
+#define KERNEL_STACK_WATERMARK_BYTE 0xA5U
 
 extern uint32_t _stack_guard_start;
 extern uint32_t _stack_guard_end;
@@ -53,6 +54,24 @@ typedef struct {
 } kernel_stack_slot_t;
 
 static kernel_stack_slot_t kernel_stack_slots[MAX_TASKS];
+static uint32_t kernel_stack_high_water_peak;
+
+static uint32_t kernel_stack_watermark_bytes(const uint32_t *stack) {
+    const uint8_t *bytes = (const uint8_t *)stack;
+    size_t untouched = 0U;
+    for (size_t index = STACK_SIZE; index != 0U; --index) {
+        if (bytes[index - 1U] != KERNEL_STACK_WATERMARK_BYTE) break;
+        ++untouched;
+    }
+    return (uint32_t)(STACK_SIZE - untouched);
+}
+
+static void record_kernel_stack_watermark(const uint32_t *stack) {
+    if (stack == NULL) return;
+    uint32_t used = kernel_stack_watermark_bytes(stack);
+    if (used > kernel_stack_high_water_peak)
+        kernel_stack_high_water_peak = used;
+}
 
 static task_t *task_from_wait_node(wait_queue_node_t *node) {
     return (task_t*)((uint8_t*)node - offsetof(task_t, wait_node));
@@ -93,7 +112,7 @@ uint32_t *scheduler_allocate_kernel_stack(void) {
         }
         kernel_stack_slots[slot].allocated = true;
         uint32_t *stack = (uint32_t*)(uintptr_t)stack_base;
-        memset(stack, 0, STACK_SIZE);
+        memset(stack, KERNEL_STACK_WATERMARK_BYTE, STACK_SIZE);
         return stack;
     }
     return NULL;
@@ -158,6 +177,7 @@ static void validate_task_stack_or_panic(const task_t *task) {
           (uintptr_t)task->context.esp >= high))) {
         panic("Kernel stack guard or saved ESP corrupted");
     }
+    record_kernel_stack_watermark(task->kernel_stack);
 }
 
 static void validate_running_task_stack_or_panic(const task_t *task) {
@@ -990,7 +1010,7 @@ int scheduler_resource_stats(scheduler_resource_stats_t *stats_out) {
         .peak_active_tasks = peak_active_tasks,
         .capacity_rejections = task_capacity_rejections,
         .supervised_reserve = SUPERVISED_TASK_RESERVE,
-        .reserved = 0U,
+        .reserved = kernel_stack_high_water_peak,
     };
     irq_restore(flags);
     return 0;
