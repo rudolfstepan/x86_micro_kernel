@@ -7,7 +7,8 @@
 typedef enum {
     DRIVE_TYPE_NONE = 0,
     DRIVE_TYPE_ATA = 1,
-    DRIVE_TYPE_FDD = 2
+    DRIVE_TYPE_FDD = 2,
+    DRIVE_TYPE_AHCI = 3
 } drive_type_t;
 
 typedef struct {

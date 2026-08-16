@@ -1,6 +1,7 @@
 #include "ahci.h"
 
 #include "arch/x86/mm/paging.h"
+#include "drivers/block/ata.h"
 #include "lib/libc/string.h"
 #include "kernel/time/pit.h"
 
@@ -202,6 +203,25 @@ static bool ahci_parse_identify(ahci_controller_info_t *controller,
     return true;
 }
 
+static void ahci_publish_drives(void) {
+    for (size_t index = 0U; index < controller_count; ++index) {
+        ahci_controller_info_t *controller = &controllers[index];
+        for (uint32_t port = 0U; port < AHCI_MAX_PORTS; ++port) {
+            uint32_t bit = 1U << port;
+            if ((controller->identify_valid_ports & bit) == 0U ||
+                drive_count < 0 || drive_count >= MAX_DRIVES) continue;
+            drive_t *drive = &detected_drives[drive_count++];
+            memset(drive, 0, sizeof(*drive));
+            drive->type = DRIVE_TYPE_AHCI;
+            drive->sectors = controller->sector_count[port] > UINT32_MAX ?
+                             UINT32_MAX : (uint32_t)controller->sector_count[port];
+            memcpy(drive->model, controller->model[port], sizeof(drive->model));
+            snprintf(drive->name, sizeof(drive->name), "sata%u",
+                     (unsigned)(drive_count - 1));
+        }
+    }
+}
+
 static bool ahci_execute_identify(ahci_controller_info_t *controller,
                                   size_t controller_index, uint32_t port) {
     if (controller == NULL || controller->mmio == NULL ||
@@ -322,4 +342,5 @@ void ahci_init(void) {
             }
         }
     }
+    ahci_publish_drives();
 }

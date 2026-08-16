@@ -41,6 +41,9 @@ class AhciProbeContractTests(unittest.TestCase):
         self.assertIn("identify_valid_ports", source)
         self.assertIn("sector_count", header)
         self.assertIn("sector_size", header)
+        self.assertIn("ahci_publish_drives", source)
+        self.assertIn("DRIVE_TYPE_AHCI", source)
+        self.assertIn("sata%u", source)
         self.assertNotIn("pci_set_bus_master", source)
 
 

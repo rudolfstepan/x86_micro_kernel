@@ -1253,8 +1253,10 @@ vorbereiteten SATA-Port aus Command-Header, 20-Byte-H2D-FIS, einer PRDT und
 einem festen 512-Byte-Puffer aufgebaut und mit begrenzter PxCI-/PxIS-/PxTFD-
 Completion sowie Quarantäne bei Fehler oder Timeout ausgeführt. Die
 IDENTIFY-Daten werden jetzt auf LBA28/LBA48-Kapazität, 512-Byte-Sektoren und
-Modellname geprüft und portbezogen gespeichert. SATA-Ressourcen werden noch
-nicht veröffentlicht, und Sektor-I/O, VFS- sowie
+Modellname geprüft und portbezogen gespeichert. Validierte Ports werden nach
+der ATA-Erkennung als eigene `DRIVE_TYPE_AHCI`-Ressourcen mit `sataN`-Namen
+veröffentlicht; der Blockgerätevertrag hält sie bis zur I/O-Implementierung
+bewusst auf `UNSUPPORTED`. Sektor-I/O, VFS- sowie
 Storage-Service-Anbindung fehlen weiterhin. Der Stand ist daher noch keine
 produktive SATA-Unterstützung.
 

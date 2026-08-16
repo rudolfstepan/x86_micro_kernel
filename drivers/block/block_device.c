@@ -34,6 +34,7 @@ int block_device_read_sector(const drive_t *drive, uint32_t sector,
         return ata_read_sector_fresh(drive->base, sector, buffer,
                                      drive->is_master)
             ? BLOCK_DEVICE_OK : BLOCK_DEVICE_IO;
+    if (drive->type == DRIVE_TYPE_AHCI) return BLOCK_DEVICE_UNSUPPORTED;
     if (drive->type == DRIVE_TYPE_FDD) {
         uint8_t head, track, number;
         int result = fdd_chs(drive, sector, &head, &track, &number);
@@ -52,6 +53,7 @@ int block_device_write_sector(const drive_t *drive, uint32_t sector,
         return ata_write_sector(drive->base, sector, (void *)buffer,
                                 drive->is_master)
             ? BLOCK_DEVICE_OK : BLOCK_DEVICE_IO;
+    if (drive->type == DRIVE_TYPE_AHCI) return BLOCK_DEVICE_UNSUPPORTED;
     if (drive->type == DRIVE_TYPE_FDD) {
         uint8_t head, track, number;
         int result = fdd_chs(drive, sector, &head, &track, &number);
@@ -67,6 +69,7 @@ int block_device_flush(const drive_t *drive) {
     if (drive->type == DRIVE_TYPE_ATA)
         return ata_flush_cache(drive->base, drive->is_master)
             ? BLOCK_DEVICE_OK : BLOCK_DEVICE_IO;
+    if (drive->type == DRIVE_TYPE_AHCI) return BLOCK_DEVICE_UNSUPPORTED;
     if (drive->type == DRIVE_TYPE_FDD) return BLOCK_DEVICE_OK;
     return BLOCK_DEVICE_UNSUPPORTED;
 }

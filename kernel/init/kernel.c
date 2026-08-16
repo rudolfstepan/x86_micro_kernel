@@ -162,7 +162,6 @@ static void hardware_init(void) {
     
     // Bus enumeration
     pci_init();  // PCI bus scanning
-    ahci_init(); // Probe AHCI controllers; SATA ports remain unpublished
     usb_init();  // Initialize USB subsystem (probe PCI for HCI)
     printf("Hardware initialization complete\n");
 }
@@ -209,6 +208,8 @@ static void driver_init(void) {
     
     // Detect storage devices
     ata_detect_drives();  // IDE/SATA hard drives
+
+    ahci_init();           // Publish validated SATA resources after ATA scan
 
     // Detect floppy drives
     fdd_detect_drives();  // Floppy disk drives
