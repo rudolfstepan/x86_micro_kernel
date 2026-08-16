@@ -15,6 +15,8 @@
 #define GNU_BUILD_ID_SHA1_SIZE 20U
 #define GNU_BUILD_ID_NOTE_TYPE 3U
 #define EXCEPTION_KERNEL_FRAME_BYTES 20U
+#define PANIC_CONTEXT_TEXT_CAPACITY 32U
+#define PANIC_CONTEXT_VERSION 1U
 
 extern const uint8_t _kernel_build_id_note_start[];
 extern const uint8_t _kernel_build_id_note_end[];
@@ -23,6 +25,102 @@ extern const uint8_t _kernel_build_id_note_end[];
 static int panic_in_progress = 0;
 static char build_id_text[GNU_BUILD_ID_SHA1_SIZE * 2U + 1U];
 static int build_id_initialized = 0;
+
+typedef struct {
+    uint32_t version;
+    uint32_t sequence;
+    char phase[PANIC_CONTEXT_TEXT_CAPACITY];
+    char component[PANIC_CONTEXT_TEXT_CAPACITY];
+    char operation[PANIC_CONTEXT_TEXT_CAPACITY];
+    char subject[PANIC_CONTEXT_TEXT_CAPACITY];
+    int32_t result;
+    uint32_t detail0;
+    uint32_t detail1;
+    uint32_t has_result;
+    uint32_t checksum;
+} panic_context_record_t;
+
+static panic_context_record_t panic_context_slots[2];
+static volatile uint32_t panic_context_active;
+static uint32_t panic_context_sequence;
+
+static void context_copy_text(char output[PANIC_CONTEXT_TEXT_CAPACITY],
+                              const char *input) {
+    uint32_t index = 0U;
+    if (input != NULL) {
+        while (index + 1U < PANIC_CONTEXT_TEXT_CAPACITY && input[index] != '\0') {
+            output[index] = input[index];
+            ++index;
+        }
+    }
+    output[index] = '\0';
+    for (++index; index < PANIC_CONTEXT_TEXT_CAPACITY; ++index)
+        output[index] = '\0';
+}
+
+static uint32_t context_checksum(const panic_context_record_t *record) {
+    const uint8_t *bytes = (const uint8_t *)record;
+    uint32_t hash = 2166136261U;
+    for (size_t index = 0U; index < offsetof(panic_context_record_t, checksum);
+         ++index) {
+        hash ^= bytes[index];
+        hash *= 16777619U;
+    }
+    return hash;
+}
+
+static bool context_valid(const panic_context_record_t *record) {
+    return record != NULL && record->version == PANIC_CONTEXT_VERSION &&
+           record->sequence != 0U &&
+           record->checksum == context_checksum(record);
+}
+
+static void context_publish(panic_context_record_t *record) {
+    uint32_t next = (panic_context_active ^ 1U) & 1U;
+    record->version = PANIC_CONTEXT_VERSION;
+    ++panic_context_sequence;
+    if (panic_context_sequence == 0U) ++panic_context_sequence;
+    record->sequence = panic_context_sequence;
+    record->checksum = context_checksum(record);
+    panic_context_slots[next] = *record;
+    __asm__ __volatile__("" ::: "memory");
+    panic_context_active = next;
+}
+
+void panic_context_set(const char *phase, const char *component,
+                       const char *operation, const char *subject) {
+    panic_context_record_t record = {0};
+    context_copy_text(record.phase, phase);
+    context_copy_text(record.component, component);
+    context_copy_text(record.operation, operation);
+    context_copy_text(record.subject, subject);
+    uint32_t flags = irq_save();
+    context_publish(&record);
+    irq_restore(flags);
+}
+
+void panic_context_set_result(int32_t result, uint32_t detail0,
+                              uint32_t detail1) {
+    uint32_t flags = irq_save();
+    panic_context_record_t record =
+        panic_context_slots[panic_context_active & 1U];
+    if (!context_valid(&record)) record = (panic_context_record_t){0};
+    record.result = result;
+    record.detail0 = detail0;
+    record.detail1 = detail1;
+    record.has_result = 1U;
+    context_publish(&record);
+    irq_restore(flags);
+}
+
+static bool panic_context_snapshot(panic_context_record_t *output) {
+    if (output == NULL) return false;
+    uint32_t selected = panic_context_active & 1U;
+    *output = panic_context_slots[selected];
+    if (context_valid(output)) return true;
+    *output = panic_context_slots[selected ^ 1U];
+    return context_valid(output);
+}
 
 /**
  * Halt the CPU forever
@@ -146,6 +244,29 @@ static void panic_label(const char *label) {
     display_set_color(WHITE);
 }
 
+static void panic_dump_failure_context(uintptr_t caller) {
+    panic_context_record_t context;
+    panic_label("FAILURE CONTEXT");
+    if (!panic_context_snapshot(&context)) {
+        printf("  Diagnostic context: unavailable\n");
+    } else {
+        printf("  Phase      : %s\n", context.phase[0] ? context.phase : "unknown");
+        printf("  Component  : %s\n",
+               context.component[0] ? context.component : "unknown");
+        printf("  Operation  : %s\n",
+               context.operation[0] ? context.operation : "unknown");
+        printf("  Subject    : %s\n",
+               context.subject[0] ? context.subject : "none");
+        if (context.has_result != 0U) {
+            printf("  Result     : %d\n", context.result);
+            printf("  Details    : 0x%08X 0x%08X\n",
+                   context.detail0, context.detail1);
+        }
+        printf("  Sequence   : %u\n", context.sequence);
+    }
+    if (caller != 0U) printf("  Panic call : 0x%08X\n", (uint32_t)caller);
+}
+
 static void panic_footer(void) {
     printf("\n");
     panic_rule();
@@ -160,6 +281,7 @@ static void panic_footer(void) {
  * Kernel panic - unrecoverable error
  */
 void __attribute__((noreturn)) panic(const char* message) {
+    uintptr_t caller = (uintptr_t)__builtin_return_address(0);
     // Disable interrupts immediately
     irq_disable();
     
@@ -172,6 +294,7 @@ void __attribute__((noreturn)) panic(const char* message) {
     panic_header("KERNEL PANIC");
     panic_label("ERROR");
     printf("  %s\n", message ? message : "Unknown kernel error");
+    panic_dump_failure_context(caller);
     panic_label("CPU STATE");
     panic_dump_exception_context(NULL, read_cr2());
     panic_footer();
@@ -191,6 +314,7 @@ void __attribute__((noreturn)) panic_with_exception(
     panic_header("KERNEL PANIC");
     panic_label("ERROR");
     printf("  %s\n", message ? message : "Unknown CPU exception");
+    panic_dump_failure_context(0U);
     panic_label("CPU STATE");
     panic_dump_exception_context(registers, cr2);
     panic_footer();
@@ -217,6 +341,7 @@ void __attribute__((noreturn)) kassert_fail(const char* expr, const char* file,
     printf("  Expression : %s\n", expr ? expr : "Unknown");
     printf("  Source     : %s:%d\n", file ? file : "Unknown", line);
     printf("  Function   : %s\n", func ? func : "Unknown");
+    panic_dump_failure_context(0U);
     panic_label("CPU STATE");
     panic_dump_exception_context(NULL, read_cr2());
     panic_footer();

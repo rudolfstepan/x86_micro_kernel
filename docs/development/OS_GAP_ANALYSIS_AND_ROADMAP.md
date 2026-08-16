@@ -895,6 +895,9 @@ echten IB700-Watchdog, der nur nach Schedulerfortschritt gefüttert wird und im
 Fatalpfad ausläuft. Ein separater GCC-Stack-/Callgraph-Gate prüft jetzt 83
 C-Objekte, 1279 Stackrecords, 2298 Graphknoten, Rekursionsfreiheit und vier
 kumulative Entry-Budgets; der schlimmste Syscall-Pfad liegt bei 7140/7168 Byte.
+Der Panic-Screen zeigt zusätzlich einen redundanten, prüfsummengeschützten
+Breadcrumb mit Bootphase, Komponente beziehungsweise Treiber, Operation,
+Programm/Objekt, Ergebniscode, PCI-ID/BDF-Details und Panic-Aufrufadresse an.
 Offen bleiben Laufzeit-Stack-Watermarks sowie ein von CPU und Versorgung
 unabhängiger Zielhardware-Watchdog samt Fencing. Der echte
 Double-Fault-Task-Gate-Pfad wird inzwischen in einem isolierten Testimage bis

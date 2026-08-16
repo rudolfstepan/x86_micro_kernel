@@ -693,8 +693,10 @@ int e1000_probe(pci_device_t *pci_dev) {
 void e1000_detect(){
     printf("E1000: Registering 82540EM/82545EM drivers\n");
 
-    pci_register_driver(E1000_VENDOR_ID, E1000_DEVICE_ID_82540EM, e1000_probe);
-    pci_register_driver(E1000_VENDOR_ID, E1000_DEVICE_ID_82545EM, e1000_probe);
+    pci_register_driver_named(E1000_VENDOR_ID, E1000_DEVICE_ID_82540EM,
+                              "Intel E1000 82540EM", e1000_probe);
+    pci_register_driver_named(E1000_VENDOR_ID, E1000_DEVICE_ID_82545EM,
+                              "Intel E1000 82545EM", e1000_probe);
     
     printf("E1000: Driver registered successfully\n");
 }

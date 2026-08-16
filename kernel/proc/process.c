@@ -25,16 +25,23 @@ _Static_assert(USER_STACK_LOWER_GUARD >= USER_HEAP_TOP,
 _Static_assert(USER_STACK_UPPER_GUARD + PAGE_SIZE == USER_TOP,
                "Upper user stack guard must terminate at USER_TOP");
 static int load_program_file(const char *program_name, uint8_t **image_out) {
-    if (image_out == NULL) return -1;
+    panic_context_set("program-load", "program loader", "open",
+                      program_name);
+    if (image_out == NULL) {
+        panic_context_set_result(-22, 0U, 0U);
+        return -1;
+    }
     *image_out = NULL;
     vfs_node_t* node = NULL;
     int result = vfs_open(program_name, &node);
     if (result != VFS_OK || !node) {
+        panic_context_set_result(result, 1U, 0U);
         printf("Program load open failed: %s (%d)\n", program_name, result);
         return -1;
     }
     if (node->type != VFS_FILE || node->size < sizeof(program_header_t) ||
         node->size > PROGRAM_REGION_SIZE) {
+        panic_context_set_result(-8, (uint32_t)node->type, node->size);
         printf("Program load metadata invalid: %s (type=%u, size=%u)\n",
                program_name, (uint32_t)node->type, node->size);
         (void)vfs_close(node);
@@ -42,8 +49,11 @@ static int load_program_file(const char *program_name, uint8_t **image_out) {
     }
 
     uint32_t loaded_size = node->size;
+    panic_context_set("program-load", "program loader", "allocate image",
+                      program_name);
     uint8_t *image = (uint8_t*)k_malloc(loaded_size);
     if (image == NULL) {
+        panic_context_set_result(-12, loaded_size, 0U);
         printf("Program load allocation failed: %s (%u bytes)\n",
                program_name, loaded_size);
         (void)vfs_close(node);
@@ -52,8 +62,11 @@ static int load_program_file(const char *program_name, uint8_t **image_out) {
     /* Read the image sequentially in one VFS operation.  Restarting a FAT
      * read every page would walk the cluster chain from its beginning for
      * each chunk and makes larger programs progressively slower to start. */
+    panic_context_set("program-load", "program loader", "read image",
+                      program_name);
     result = vfs_read(node, 0, loaded_size, image);
     if (result != (int)loaded_size) {
+        panic_context_set_result(result, loaded_size, 0U);
         printf("Program load read failed: %s (%d/%u bytes)\n",
                program_name, result, loaded_size);
         (void)vfs_close(node);
@@ -61,9 +74,13 @@ static int load_program_file(const char *program_name, uint8_t **image_out) {
         return -1;
     }
     int close_result = vfs_close(node);
+    panic_context_set("program-load", "program loader", "validate image",
+                      program_name);
     int validation_result = program_image_validate(
         image, loaded_size, PROGRAM_REGION_SIZE);
     if (close_result != VFS_OK || validation_result != 0) {
+        panic_context_set_result(validation_result, (uint32_t)close_result,
+                                 loaded_size);
         printf("Program load validation failed: %s (close=%d, image=%d)\n",
                program_name, close_result, validation_result);
         k_free(image);

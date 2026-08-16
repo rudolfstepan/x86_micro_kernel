@@ -1,4 +1,5 @@
 #include "pci.h"
+#include "include/kernel/panic.h"
 
 #include "drivers/char/io.h"
 #include "arch/x86/mm/paging.h"
@@ -272,13 +273,22 @@ bool pci_irq_is_valid(uint8_t irq) {
 pci_driver_t pci_drivers[MAX_PCI_DRIVERS];
 size_t pci_driver_count = 0;
 
-void pci_register_driver(uint16_t vendor_id, uint16_t device_id, int (*probe)(pci_device_t *)) {
+void pci_register_driver_named(uint16_t vendor_id, uint16_t device_id,
+                               const char *name,
+                               int (*probe)(pci_device_t *)) {
     if (pci_driver_count < MAX_PCI_DRIVERS) {
         pci_drivers[pci_driver_count].vendor_id = vendor_id;
         pci_drivers[pci_driver_count].device_id = device_id;
+        pci_drivers[pci_driver_count].name = name;
         pci_drivers[pci_driver_count].probe = probe;
         pci_driver_count++;
     }
+}
+
+void pci_register_driver(uint16_t vendor_id, uint16_t device_id,
+                         int (*probe)(pci_device_t *)) {
+    pci_register_driver_named(vendor_id, device_id, "unnamed PCI driver",
+                              probe);
 }
 
 void pci_probe_drivers(void) {
@@ -287,7 +297,16 @@ void pci_probe_drivers(void) {
         for (size_t j = 0; j < pci_driver_count; j++) {
             if (dev->vendor_id == pci_drivers[j].vendor_id &&
                 dev->device_id == pci_drivers[j].device_id) {
-                pci_drivers[j].probe(dev);
+                panic_context_set("driver-init", pci_drivers[j].name,
+                                  "PCI probe", "hardware device");
+                uint32_t identity = ((uint32_t)dev->vendor_id << 16U) |
+                                    dev->device_id;
+                uint32_t location = ((uint32_t)dev->bus << 16U) |
+                                    ((uint32_t)dev->slot << 8U) |
+                                    dev->function;
+                panic_context_set_result(0, identity, location);
+                int result = pci_drivers[j].probe(dev);
+                panic_context_set_result(result, identity, location);
             }
         }
     }

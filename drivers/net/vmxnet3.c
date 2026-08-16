@@ -39,7 +39,8 @@ static int vmxnet3_probe(pci_device_t *pci_dev) {
 }
 
 void vmxnet3_register_driver(void) {
-    pci_register_driver(VMXNET3_VENDOR_ID, VMXNET3_DEVICE_ID, vmxnet3_probe);
+    pci_register_driver_named(VMXNET3_VENDOR_ID, VMXNET3_DEVICE_ID,
+                              "VMware VMXNET3", vmxnet3_probe);
 }
 
 void vmxnet3_setup(void) {

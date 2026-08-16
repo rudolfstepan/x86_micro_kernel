@@ -343,7 +343,8 @@ static int rtl8139_probe(pci_device_t *pci_dev) {
 
 void rtl8139_detect(void) {
     printf("Detecting RTL8139 network card...\n");
-    pci_register_driver(RTL8139_VENDOR_ID, RTL8139_DEVICE_ID, rtl8139_probe);
+    pci_register_driver_named(RTL8139_VENDOR_ID, RTL8139_DEVICE_ID,
+                              "Realtek RTL8139", rtl8139_probe);
 }
 
 int rtl8139_is_initialized(void) {

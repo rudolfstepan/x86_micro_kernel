@@ -107,6 +107,11 @@ static inline uint64_t read_cpu_cycle_counter(void) {
     return ((uint64_t)high << 32) | low;
 }
 
+static void boot_context(const char *phase, const char *component,
+                         const char *operation, const char *subject) {
+    panic_context_set(phase, component, operation, subject);
+}
+
 //---------------------------------------------------------------------------------------------
 // Initialization Stages
 //---------------------------------------------------------------------------------------------
@@ -156,13 +161,17 @@ static void early_init(void) {
  */
 static void hardware_init(void) {
     // Memory subsystem test
+    boot_context("hardware-init", "memory", "self-test", "physical memory");
     test_memory();
     
     // Advanced timing
+    boot_context("hardware-init", "APIC timer", "initialize", "local APIC");
     initialize_apic_timer();  // Local APIC timer
     
     // Bus enumeration
+    boot_context("hardware-init", "PCI", "enumerate", "PCI buses");
     pci_init();  // PCI bus scanning
+    boot_context("hardware-init", "USB", "enumerate", "USB controllers");
     usb_init();  // Initialize USB subsystem (probe PCI for HCI)
     printf("Hardware initialization complete\n");
 }
@@ -196,31 +205,44 @@ static void driver_init(void) {
     
     // Probe PCI devices and initialize registered drivers
     //printf("Initializing network drivers...\n");
+    boot_context("driver-init", "PCI", "probe registered drivers",
+                 "network controllers");
     pci_probe_drivers();
     
     // Enable hardware interrupts
     __asm__ __volatile__("sti");
     
     // Calculate CPU frequency for timing calibration
+    boot_context("driver-init", "CPU timer", "calibrate", "TSC against PIT");
     uint64_t start_cycles = read_cpu_cycle_counter();
     pit_delay(1000);  // 1 second hardware delay
     uint64_t end_cycles = read_cpu_cycle_counter();
     cpu_frequency = end_cycles - start_cycles;
     
     // Detect storage devices
+    boot_context("driver-init", "ATA", "detect", "legacy IDE drives");
     ata_detect_drives();  // IDE/SATA hard drives
 
+    boot_context("driver-init", "AHCI", "initialize", "SATA controllers");
     ahci_init();           // Publish validated SATA resources after ATA scan
 
     // Detect floppy drives
+    boot_context("driver-init", "FDC", "detect", "floppy drives");
     fdd_detect_drives();  // Floppy disk drives
 
+    boot_context("driver-init", "partition", "discover", "block devices");
     partition_discover(); // Publish bounded CRC-validated partition children
 
+    boot_context("storage-init", "storage safety", "initialize",
+                 "write supervision");
     if (!storage_safety_init(pit_monotonic_ms())) {
+        panic_context_set_result(-1, 0U, 0U);
         panic("Unable to initialize REIST storage write supervision");
     }
+    boot_context("storage-init", "storage service", "inventory",
+                 "detected media");
     if (!storage_service_inventory_media()) {
+        panic_context_set_result(-1, (uint32_t)drive_count, 0U);
         panic("Unable to inventory REIST storage media");
     }
 #if defined(REIST_HANDOVER_FAULT_INJECTION) && \
@@ -228,12 +250,16 @@ static void driver_init(void) {
     if (!storage_handover_hold())
         panic("Unable to hold standby storage outputs");
 #endif
+    boot_context("storage-init", "output fence", "register", "storage writes");
     if (!output_fence_register(storage_fence_writes)) {
+        panic_context_set_result(-1, 0U, 0U);
         panic("Unable to register the storage write fence");
     }
 
     // Auto-mount all detected drives
     extern void auto_mount_all_drives(void);
+    boot_context("filesystem-init", "VFS", "auto-mount",
+                 "detected filesystems");
     auto_mount_all_drives();
 
     //printf("Driver initialization complete\n");
@@ -262,9 +288,14 @@ static void system_ready(void) {
 
 static void network_initialize(void) {
     if (netdev_available()) {
+        boot_context("network-init", netdev_backend_name(), "supervise",
+                     "network transmit domain");
         if (!netdev_supervision_init(pit_monotonic_ms())) {
+            panic_context_set_result(-1, 0U, 0U);
             panic("Unable to supervise network transmit domain");
         }
+        boot_context("network-init", netdev_backend_name(), "initialize",
+                     "network stack");
         netstack_init();
         printf("Network stack initialized on %s\n", netdev_backend_name());
     }
@@ -565,21 +596,37 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 
     // Stage 1: Early initialization
     early_init();
+    boot_context("kernel-init", "fatal recovery", "recover",
+                 "persistent crash record");
     fatal_boot_recover_record();
+    boot_context("kernel-init", "supervisor", "initialize", "core domains");
     supervisor_init();
+    boot_context("kernel-init", "storage maintenance", "initialize",
+                 "maintenance leases");
     if (!storage_maintenance_init()) {
+        panic_context_set_result(-1, 0U, 0U);
         printf("Kernel: storage maintenance initialization failed.\n");
         panic("Unable to initialize storage maintenance leases");
     }
+    boot_context("kernel-init", "storage service", "initialize",
+                 "service control");
     if (!storage_service_init()) {
+        panic_context_set_result(-1, 0U, 0U);
         panic("Unable to initialize REIST storage service control");
     }
+    boot_context("kernel-init", "network", "initialize", "protected state");
     if (!netstack_safety_init()) {
+        panic_context_set_result(-1, 0U, 0U);
         panic("Unable to initialize protected network state");
     }
+    boot_context("kernel-init", "IPC", "initialize", "endpoint tables");
     ipc_init();
+    boot_context("kernel-init", "output fence", "initialize", "fence registry");
     output_fence_init();
+    boot_context("kernel-init", "filesystem safety", "initialize",
+                 "mutation supervision");
     if (!filesystem_safety_init(pit_monotonic_ms())) {
+        panic_context_set_result(-1, 0U, 0U);
         panic("Unable to initialize REIST filesystem supervision");
     }
     if (!output_fence_register(filesystem_fence_mutations)) {
@@ -608,15 +655,23 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     }
     printf("REIST_TEST FATAL_RECOVERY_OK\n");
 #endif
+    boot_context("userspace-start", "REIST probe", "spawn", "/REIST.PRG");
     if (!supervisor_start_probe(pit_monotonic_ms())) {
+        panic_context_set_result(-1, 0U, 0U);
         panic("Unable to start REIST Ring-3 probe");
     }
+    boot_context("userspace-start", "storage service", "spawn",
+                 "/STORAGE.PRG");
     if (!storage_service_start(pit_monotonic_ms())) {
+        panic_context_set_result(-1, 0U, 0U);
         panic("Unable to start REIST Ring-3 storage service");
     }
     /* Publish every supervised service before the worker can inspect or
      * restart it.  This removes a boot-time partial-initialization race. */
+    boot_context("userspace-start", "safety supervisor", "spawn",
+                 "kernel worker");
     if (!supervisor_start_worker()) {
+        panic_context_set_result(-1, 0U, 0U);
         panic("Unable to start REIST safety supervisor worker");
     }
     configure_network_after_service();

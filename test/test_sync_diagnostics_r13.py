@@ -523,6 +523,48 @@ class PanicCrashContextContractTests(unittest.TestCase):
         self.assertRegex(self.panic_c, r"#define\s+GNU_BUILD_ID_SHA1_SIZE\s+20U")
         self.assertIn("GNU_BUILD_ID_SHA1_SIZE * 2U", build_id)
 
+    def test_panic_context_is_fixed_redundant_and_checksum_validated(self) -> None:
+        header = compact(self.panic_h)
+        self.assertIn("panic_context_set(", header)
+        self.assertIn("panic_context_set_result(", header)
+        self.assertIn("panic_context_slots[2]", self.panic_c)
+        self.assertIn("context_checksum(", self.panic_c)
+        self.assertIn("context_valid(", self.panic_c)
+        self.assertIn("panic_context_snapshot(", self.panic_c)
+        for forbidden in ("malloc(", "k_malloc(", "vfs_"):
+            context = self.panic_c[
+                self.panic_c.index("void panic_context_set("):
+                self.panic_c.index("const char* kernel_build_id(")
+            ]
+            self.assertNotIn(forbidden, context)
+
+    def test_all_panic_screens_print_failure_context(self) -> None:
+        self.assertIn('panic_label("FAILURE CONTEXT")', self.panic_c)
+        for field in ("Phase", "Component", "Operation", "Subject",
+                      "Result", "Details", "Sequence"):
+            self.assertIn(field, self.panic_c)
+        for signature in (
+            "void __attribute__((noreturn)) panic(",
+            "void __attribute__((noreturn)) kassert_fail(",
+            "void __attribute__((noreturn)) panic_with_exception(",
+        ):
+            with self.subTest(function=signature):
+                block = function_block(self.panic_c, signature)
+                self.assertIn("panic_dump_failure_context(", block)
+
+    def test_boot_pci_and_program_loader_publish_breadcrumbs(self) -> None:
+        kernel = read("kernel/init/kernel.c")
+        process = read("kernel/proc/process.c")
+        pci = read("drivers/bus/pci.c")
+        for component in ('"AHCI"', '"ATA"', '"VFS"', '"REIST probe"'):
+            self.assertIn(component, kernel)
+        self.assertIn('"/REIST.PRG"', kernel)
+        self.assertIn('"program-load"', process)
+        self.assertIn("program_name", process)
+        self.assertIn("pci_register_driver_named", pci)
+        self.assertIn("panic_context_set_result(result, identity, location)",
+                      compact(pci))
+
 
 if __name__ == "__main__":
     unittest.main()

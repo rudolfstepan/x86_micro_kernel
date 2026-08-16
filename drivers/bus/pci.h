@@ -41,6 +41,7 @@ typedef struct {
 typedef struct {
     uint16_t vendor_id;
     uint16_t device_id;
+    const char *name;
     int (*probe)(pci_device_t *dev);
 } pci_driver_t;
 
@@ -72,6 +73,9 @@ volatile uint32_t *map_mmio_region(uint64_t physical_address, size_t length);
 uint8_t pci_configure_irq(pci_device_t *dev);
 bool pci_irq_is_valid(uint8_t irq);
 void pci_register_driver(uint16_t vendor_id, uint16_t device_id, int (*probe)(pci_device_t *));
+void pci_register_driver_named(uint16_t vendor_id, uint16_t device_id,
+                               const char *name,
+                               int (*probe)(pci_device_t *));
 void pci_probe_drivers(void);
 int pci_device_exists(uint16_t vendor_id, uint16_t device_id);
 

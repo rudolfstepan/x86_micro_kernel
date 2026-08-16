@@ -26,6 +26,18 @@ bool scheduler_can_sleep(void);
  */
 void __attribute__((noreturn)) panic(const char* message);
 
+/**
+ * Publish a bounded diagnostic breadcrumb for a later panic. All strings are
+ * copied into fixed kernel storage and may be NULL. This API performs no heap
+ * allocation, logging or I/O and is safe to use before a fallible operation.
+ */
+void panic_context_set(const char *phase, const char *component,
+                       const char *operation, const char *subject);
+
+/** Attach a result code and two subsystem-specific numeric details. */
+void panic_context_set_result(int32_t result, uint32_t detail0,
+                              uint32_t detail1);
+
 /** Return the SHA-1 identifier embedded in the linked kernel image. */
 const char* kernel_build_id(void);
 
