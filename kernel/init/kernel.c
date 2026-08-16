@@ -230,6 +230,17 @@ static void driver_init(const multiboot1_info_t *boot_info) {
     boot_context("driver-init", "FDC", "detect", "floppy drives");
     fdd_detect_drives();  // Floppy disk drives
 
+    if (drive_count <= 0) {
+        uint32_t ata_summary = ata_probe_diagnostics();
+        uint32_t ahci_summary = ahci_probe_diagnostics();
+        boot_context("driver-init", "storage probe", "publish",
+                     "physical block devices");
+        panic_context_set_result(-1, ata_summary, ahci_summary);
+        printf("Storage probe failed: ATA=%08X AHCI=%08X\n",
+               ata_summary, ahci_summary);
+        panic("No physical block storage device detected");
+    }
+
     boot_context("driver-init", "partition", "discover", "block devices");
     partition_discover(); // Publish bounded CRC-validated partition children
 

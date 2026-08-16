@@ -11,17 +11,22 @@
 #define AHCI_MMIO_SIZE 0x1100U
 #define AHCI_RESET_TIMEOUT_MS 1000U
 #define AHCI_RESET_MAX_POLLS 1000000U
+#define AHCI_LINK_TIMEOUT_MS 1500U
+#define AHCI_LINK_POLL_MS 1U
 #define AHCI_GHC_HR (1U << 0)
 #define AHCI_GHC_AE (1U << 31)
 #define AHCI_PORT_BASE 0x100U
 #define AHCI_PORT_STRIDE 0x80U
 #define AHCI_PORT_SIG 0x24U
 #define AHCI_PORT_SSTS 0x28U
+#define AHCI_PORT_SCTL 0x2CU
 #define AHCI_SIG_ATA 0x00000101U
 #define AHCI_PORT_CLB 0x00U
 #define AHCI_PORT_FB 0x08U
 #define AHCI_PORT_CMD 0x18U
 #define AHCI_PORT_CMD_ST (1U << 0)
+#define AHCI_PORT_CMD_SUD (1U << 1)
+#define AHCI_PORT_CMD_POD (1U << 2)
 #define AHCI_PORT_CMD_FRE (1U << 4)
 #define AHCI_PORT_CMD_CR (1U << 15)
 #define AHCI_PORT_CMD_FR (1U << 14)
@@ -59,6 +64,9 @@ static bool ahci_fault_consumed;
 
 static ahci_controller_info_t controllers[AHCI_MAX_CONTROLLERS];
 static size_t controller_count;
+static uint32_t ahci_pci_function_count;
+static uint32_t ahci_link_candidate_count;
+static uint32_t ahci_identified_drive_count;
 
 static int ahci_bar5(const pci_device_t *device, uint64_t *address) {
     if (device == NULL || address == NULL) return -22;
@@ -97,11 +105,53 @@ static bool ahci_port_is_sata(volatile uint32_t *mmio, uint32_t port) {
     uint32_t det = status & 0x0FU;
     uint32_t ipm = (status >> 8U) & 0x0FU;
     uint32_t signature = ahci_read(mmio, base + AHCI_PORT_SIG);
-    /* Some controllers publish PxSIG only after the receive engine starts.
-     * An all-ones reset value is admitted only as an IDENTIFY candidate; the
-     * port is not published unless IDENTIFY DEVICE subsequently validates. */
+    /* Some physical controllers publish PxSIG only after the receive engine
+     * starts. Zero and all-ones reset values are therefore admitted only as
+     * IDENTIFY candidates; no resource is published until IDENTIFY validates
+     * the device. */
     return det == 3U && ipm == 1U &&
-           (signature == AHCI_SIG_ATA || signature == UINT32_MAX);
+           (signature == AHCI_SIG_ATA || signature == 0U ||
+            signature == UINT32_MAX);
+}
+
+static uint32_t ahci_wait_sata_ports(volatile uint32_t *mmio,
+                                     uint32_t implemented,
+                                     uint32_t port_limit) {
+    if (mmio == NULL) return 0U;
+    uint32_t limit = port_limit < AHCI_MAX_PORTS ? port_limit :
+                                                      AHCI_MAX_PORTS;
+    for (uint32_t port = 0U; port < limit; ++port) {
+        uint32_t bit = 1U << port;
+        if ((implemented & bit) == 0U) continue;
+        uint32_t base = AHCI_PORT_BASE + port * AHCI_PORT_STRIDE;
+        uint32_t command = ahci_read(mmio, base + AHCI_PORT_CMD);
+        ahci_write(mmio, base + AHCI_PORT_CMD,
+                   command | AHCI_PORT_CMD_SUD | AHCI_PORT_CMD_POD);
+        ahci_write(mmio, base + AHCI_PORT_SERR, UINT32_MAX);
+        uint32_t status = ahci_read(mmio, base + AHCI_PORT_SSTS);
+        if ((status & 0x0FU) != 3U) {
+            uint32_t control = ahci_read(mmio, base + AHCI_PORT_SCTL);
+            ahci_write(mmio, base + AHCI_PORT_SCTL,
+                       (control & ~0x0FU) | 1U);
+            pit_delay(1U);
+            ahci_write(mmio, base + AHCI_PORT_SCTL, control & ~0x0FU);
+        }
+    }
+
+    uint64_t start = pit_monotonic_ms();
+    uint32_t candidates = 0U;
+    for (uint32_t poll = 0U; poll < AHCI_RESET_MAX_POLLS; ++poll) {
+        for (uint32_t port = 0U; port < limit; ++port) {
+            uint32_t bit = 1U << port;
+            if ((implemented & bit) != 0U &&
+                ahci_port_is_sata(mmio, port)) candidates |= bit;
+        }
+        if ((candidates & implemented) == implemented) break;
+        uint64_t now = pit_monotonic_ms();
+        if (now < start || now - start >= AHCI_LINK_TIMEOUT_MS) break;
+        pit_delay(AHCI_LINK_POLL_MS);
+    }
+    return candidates;
 }
 
 static bool ahci_dma_address_valid(const void *address, size_t length,
@@ -261,6 +311,7 @@ static bool ahci_parse_identify(ahci_controller_info_t *controller,
     controller->sector_count[port] = sectors;
     controller->sector_size[port] = sector_size;
     controller->identify_valid_ports |= 1U << port;
+    ++ahci_identified_drive_count;
     return true;
 }
 
@@ -510,7 +561,7 @@ static bool ahci_initialize_controller(ahci_controller_info_t *controller,
     uint32_t capability = ahci_read(mmio, 0x00U);
     uint32_t port_limit = (capability & 0x1FU) + 1U;
     uint32_t implemented = ahci_read(mmio, 0x0CU);
-    uint32_t sata_ports = 0U;
+    uint32_t sata_ports = ahci_wait_sata_ports(mmio, implemented, port_limit);
     for (uint32_t port = 0U; port < port_limit && port < 32U; ++port) {
         uint32_t bit = 1U << port;
         uint32_t port_status = ahci_read(mmio, AHCI_PORT_BASE +
@@ -520,8 +571,11 @@ static bool ahci_initialize_controller(ahci_controller_info_t *controller,
                    port_status,
                    ahci_read(mmio, AHCI_PORT_BASE + port * AHCI_PORT_STRIDE +
                                    AHCI_PORT_SIG));
-        if ((implemented & bit) != 0U && ahci_port_is_sata(mmio, port))
-            sata_ports |= bit;
+    }
+    uint32_t linked = sata_ports;
+    while (linked != 0U) {
+        ahci_link_candidate_count += linked & 1U;
+        linked >>= 1U;
     }
     controller->mmio = mmio;
     controller->capability = capability;
@@ -565,14 +619,21 @@ static bool ahci_initialize_controller(ahci_controller_info_t *controller,
 size_t ahci_probe_controllers(ahci_controller_info_t *output,
                               size_t capacity) {
     size_t found = 0U;
+    ahci_pci_function_count = 0U;
     if (output == NULL && capacity != 0U) return 0U;
     for (size_t index = 0U; index < pci_device_count; ++index) {
         pci_device_t *device = &pci_devices[index];
         uint64_t abar = 0U;
         if (device->class_code != AHCI_PCI_CLASS ||
             device->subclass_code != AHCI_PCI_SUBCLASS ||
-            device->prog_if != AHCI_PCI_PROG_IF ||
-            ahci_bar5(device, &abar) != 0) continue;
+            device->prog_if != AHCI_PCI_PROG_IF) continue;
+        if (ahci_pci_function_count != UINT32_MAX)
+            ++ahci_pci_function_count;
+        if (ahci_bar5(device, &abar) != 0) {
+            printf("AHCI: PCI function %u:%u.%u has invalid ABAR\n",
+                   device->bus, device->slot, device->function);
+            continue;
+        }
         if (found < capacity) {
             output[found] = (ahci_controller_info_t){
                 .abar = abar, .bus = device->bus, .slot = device->slot,
@@ -588,6 +649,8 @@ void ahci_init(void) {
     memset(controllers, 0, sizeof(controllers));
     memset(port_busy, 0, sizeof(port_busy));
     writes_fenced = false;
+    ahci_link_candidate_count = 0U;
+    ahci_identified_drive_count = 0U;
 #ifdef REIST_AHCI_FAULT_INJECTION
     ahci_fault_consumed = false;
 #endif
@@ -609,4 +672,17 @@ void ahci_init(void) {
         }
     }
     ahci_publish_drives();
+}
+
+uint32_t ahci_probe_diagnostics(void) {
+    uint32_t functions = ahci_pci_function_count > 0xFFU ? 0xFFU :
+                         ahci_pci_function_count;
+    uint32_t initialized = controller_count > 0xFFU ? 0xFFU :
+                           (uint32_t)controller_count;
+    uint32_t links = ahci_link_candidate_count > 0xFFU ? 0xFFU :
+                     ahci_link_candidate_count;
+    uint32_t drives = ahci_identified_drive_count > 0xFFU ? 0xFFU :
+                      ahci_identified_drive_count;
+    return functions | (initialized << 8U) | (links << 16U) |
+           (drives << 24U);
 }

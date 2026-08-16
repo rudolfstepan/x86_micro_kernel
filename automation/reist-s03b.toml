@@ -434,6 +434,53 @@ commit_message = "fix: support PCI IDE compatibility storage"
 evidence = []
 
 [[packages]]
+id = "S0.3c-hw3"
+status = "done"
+risk = "critical"
+title = "Physical SATA discovery across IDE and AHCI controllers"
+scope = "Eliminate the zero-drive physical boot failure confirmed on AMD and Intel H81 boards. Enumerate a fixed number of PCI IDE functions and unique channels instead of selecting only the first function; admit AHCI links whose signature is not published until the receive engine starts; wait for links after HBA reset with one controller-wide deadline; request spin-up through standard PxCMD bits; and publish bounded ATA/AHCI probe summaries before VFS startup."
+allowed_files = [
+  "drivers/block/ata.h",
+  "drivers/block/ata.c",
+  "drivers/block/ahci.h",
+  "drivers/block/ahci.c",
+  "kernel/init/kernel.c",
+  "test/test_ata_pci_ide.py",
+  "test/test_ahci_source.py",
+  "test/test_physical_storage_probe.py",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "all PCI storage scans and channel tables have fixed capacities",
+  "duplicate IDE command/control port pairs are probed at most once",
+  "AHCI link readiness uses one monotonic controller-wide deadline rather than one delay per port",
+  "zero and all-ones pre-engine ATA signatures remain candidates only until IDENTIFY validates the device",
+  "no ATA or AHCI resource is published without a valid IDENTIFY response",
+  "a zero-drive boot fails before VFS startup with separate bounded ATA and AHCI probe summaries"
+]
+targeted_tests = [
+  "python test/test_ata_pci_ide.py -q",
+  "python test/test_ahci_source.py -q",
+  "python test/test_physical_storage_probe.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --boot-only",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --sata --expect-reist-probe --boot-only"
+]
+stop_conditions = [
+  "the physical controller cannot be represented through standard PCI IDE or AHCI registers",
+  "storage discovery requires an unbounded port wait",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: discover physical SATA storage deterministically"
+evidence = []
+
+[[packages]]
 id = "S0.3c-6f5"
 status = "active"
 risk = "critical"

@@ -39,7 +39,8 @@ drive_t* current_drive = NULL;// = {0};  // Current drive (global variable)
 drive_t detected_drives[MAX_DRIVES];  // Global array of detected drives
 short drive_count = 0;  // Number of detected drives
 
-#define ATA_CHANNEL_COUNT 2U
+#define ATA_MAX_PCI_CONTROLLERS 4U
+#define ATA_CHANNEL_CAPACITY (ATA_MAX_PCI_CONTROLLERS * 2U)
 #define ATA_PRIMARY_CONTROL 0x3F6U
 #define ATA_SECONDARY_CONTROL 0x376U
 #define ATA_PCI_CLASS_STORAGE 0x01U
@@ -48,21 +49,34 @@ short drive_count = 0;  // Number of detected drives
 #define ATA_PCI_SECONDARY_NATIVE 0x04U
 #define ATA_DEVICE_CONTROL_NIEN 0x02U
 #define ATA_DEVICE_CONTROL_SRST 0x04U
+#define ATA_PROBE_FLAG_IO_DECODE_FAILED (1U << 0U)
+#define ATA_PROBE_FLAG_INVALID_BAR (1U << 1U)
+#define ATA_PROBE_FLAG_CHANNEL_TRUNCATED (1U << 2U)
+#define ATA_PROBE_FLAG_CONTROLLER_TRUNCATED (1U << 3U)
 
 typedef struct {
     uint16_t command_base;
     uint16_t control_port;
     bool valid;
     bool native_mode;
+    uint8_t bus;
+    uint8_t slot;
+    uint8_t function;
 } ata_channel_t;
 
-static ata_channel_t ata_channels[ATA_CHANNEL_COUNT] = {
-    {ATA_PRIMARY_IO, ATA_PRIMARY_CONTROL, true, false},
-    {ATA_SECONDARY_IO, ATA_SECONDARY_CONTROL, true, false},
+static ata_channel_t ata_channels[ATA_CHANNEL_CAPACITY] = {
+    {ATA_PRIMARY_IO, ATA_PRIMARY_CONTROL, true, false, 0U, 0U, 0U},
+    {ATA_SECONDARY_IO, ATA_SECONDARY_CONTROL, true, false, 0U, 0U, 0U},
 };
+static uint32_t ata_channel_count = 2U;
+static uint32_t ata_pci_storage_function_count;
+static uint32_t ata_pci_ide_function_count;
+static uint32_t ata_identified_drive_count;
+static uint32_t ata_probe_flags;
+static bool ata_first_read_attempted[ATA_CHANNEL_CAPACITY];
 
 static int ata_channel_index(uint16_t base) {
-    for (uint32_t index = 0U; index < ATA_CHANNEL_COUNT; ++index) {
+    for (uint32_t index = 0U; index < ata_channel_count; ++index) {
         if (ata_channels[index].valid &&
             ata_channels[index].command_base == base) return (int)index;
     }
@@ -91,83 +105,141 @@ static bool ata_pci_io_bar(uint32_t raw, uint32_t span,
     return true;
 }
 
-static bool ata_configure_native_channel(const pci_device_t *device,
-                                         uint32_t channel,
-                                         uint32_t command_bar,
-                                         uint32_t control_bar) {
-    uint16_t command_base, control_base;
-    if (device == NULL || channel >= ATA_CHANNEL_COUNT ||
-        !ata_pci_io_bar(device->bar[command_bar], 8U, &command_base) ||
-        !ata_pci_io_bar(device->bar[control_bar], 4U, &control_base) ||
-        control_base > UINT16_MAX - 2U) {
-        ata_channels[channel].valid = false;
+static bool ata_append_channel(uint16_t command_base, uint16_t control_port,
+                               bool native_mode,
+                               const pci_device_t *device) {
+    if (device == NULL || command_base == 0U || control_port == 0U)
+        return false;
+    for (uint32_t index = 0U; index < ata_channel_count; ++index) {
+        if (ata_channels[index].command_base == command_base) {
+            if (ata_channels[index].control_port == control_port) {
+                printf("ATA: duplicate channel %X/%X at %u:%u.%u ignored\n",
+                       command_base, control_port, device->bus, device->slot,
+                       device->function);
+            } else {
+                ata_probe_flags |= ATA_PROBE_FLAG_INVALID_BAR;
+                printf("ATA: conflicting control port for command %X at %u:%u.%u\n",
+                       command_base, device->bus, device->slot,
+                       device->function);
+            }
+            return true;
+        }
+    }
+    if (ata_channel_count >= ATA_CHANNEL_CAPACITY) {
+        ata_probe_flags |= ATA_PROBE_FLAG_CHANNEL_TRUNCATED;
         return false;
     }
-    ata_channels[channel].command_base = command_base;
-    ata_channels[channel].control_port = (uint16_t)(control_base + 2U);
-    ata_channels[channel].valid = true;
-    ata_channels[channel].native_mode = true;
+    ata_channels[ata_channel_count++] = (ata_channel_t){
+        command_base, control_port, true, native_mode,
+        device->bus, device->slot, device->function
+    };
     return true;
 }
 
+static bool ata_configure_controller_channel(const pci_device_t *device,
+                                             uint32_t channel) {
+    if (device == NULL || channel >= 2U) return false;
+    uint8_t native_bit = channel == 0U ? ATA_PCI_PRIMARY_NATIVE :
+                                         ATA_PCI_SECONDARY_NATIVE;
+    if ((device->prog_if & native_bit) == 0U) {
+        return ata_append_channel(
+            channel == 0U ? ATA_PRIMARY_IO : ATA_SECONDARY_IO,
+            channel == 0U ? ATA_PRIMARY_CONTROL : ATA_SECONDARY_CONTROL,
+            false, device);
+    }
+
+    uint32_t command_bar = channel * 2U;
+    uint32_t control_bar = command_bar + 1U;
+    uint16_t command_base, control_base;
+    if (!ata_pci_io_bar(device->bar[command_bar], 8U, &command_base) ||
+        !ata_pci_io_bar(device->bar[control_bar], 4U, &control_base) ||
+        control_base > UINT16_MAX - 2U) {
+        ata_probe_flags |= ATA_PROBE_FLAG_INVALID_BAR;
+        printf("ATA: PCI IDE %u:%u.%u channel %u has invalid native BARs\n",
+               device->bus, device->slot, device->function, channel);
+        return false;
+    }
+    return ata_append_channel(command_base, (uint16_t)(control_base + 2U),
+                              true, device);
+}
+
 static void ata_configure_channels(void) {
-    ata_channels[0] = (ata_channel_t){
-        ATA_PRIMARY_IO, ATA_PRIMARY_CONTROL, true, false
-    };
-    ata_channels[1] = (ata_channel_t){
-        ATA_SECONDARY_IO, ATA_SECONDARY_CONTROL, true, false
-    };
+    memset(ata_channels, 0, sizeof(ata_channels));
+    memset(ata_first_read_attempted, 0, sizeof(ata_first_read_attempted));
+    ata_channel_count = 0U;
+    ata_pci_storage_function_count = 0U;
+    ata_pci_ide_function_count = 0U;
+    ata_identified_drive_count = 0U;
+    ata_probe_flags = 0U;
 
-    const pci_device_t *controller = NULL;
+    uint32_t configured_controllers = 0U;
     for (size_t index = 0U; index < pci_device_count; ++index) {
-        pci_device_t *candidate = &pci_devices[index];
-        if (candidate->class_code == ATA_PCI_CLASS_STORAGE &&
-            candidate->subclass_code == ATA_PCI_SUBCLASS_IDE) {
-            controller = candidate;
-            break;
-        }
-    }
-    if (controller == NULL) {
-        printf("ATA: no PCI IDE function; probing legacy channels\n");
-        return;
-    }
-
-    uint16_t command = pci_read_config_word(
-        controller->bus, controller->slot, controller->function, PCI_COMMAND);
-    if ((command & PCI_COMMAND_IO) == 0U) {
-        pci_write_config_word(controller->bus, controller->slot,
-                              controller->function, PCI_COMMAND,
-                              (uint16_t)(command | PCI_COMMAND_IO));
-        command = pci_read_config_word(controller->bus, controller->slot,
-                                       controller->function, PCI_COMMAND);
-    }
-    if ((command & PCI_COMMAND_IO) == 0U) {
-        ata_channels[0].valid = false;
-        ata_channels[1].valid = false;
-        printf("ATA: PCI IDE I/O decoding could not be enabled\n");
-        return;
-    }
-
-    if ((controller->prog_if & ATA_PCI_PRIMARY_NATIVE) != 0U) {
-        (void)ata_configure_native_channel(controller, 0U, 0U, 1U);
-    }
-    if ((controller->prog_if & ATA_PCI_SECONDARY_NATIVE) != 0U) {
-        (void)ata_configure_native_channel(controller, 1U, 2U, 3U);
-    }
-    printf("ATA: PCI IDE %04X:%04X at %u:%u.%u prog-if=%02X\n",
-           controller->vendor_id, controller->device_id, controller->bus,
-           controller->slot, controller->function, controller->prog_if);
-    for (uint32_t index = 0U; index < ATA_CHANNEL_COUNT; ++index) {
-        if (!ata_channels[index].valid) {
-            printf("ATA: channel %u rejected (invalid native I/O BARs)\n",
-                   index);
+        pci_device_t *controller = &pci_devices[index];
+        if (controller->class_code != ATA_PCI_CLASS_STORAGE) continue;
+        if (ata_pci_storage_function_count != UINT32_MAX)
+            ++ata_pci_storage_function_count;
+        if (controller->subclass_code != ATA_PCI_SUBCLASS_IDE) continue;
+        if (ata_pci_ide_function_count != UINT32_MAX)
+            ++ata_pci_ide_function_count;
+        printf("ATA: PCI IDE %04X:%04X at %u:%u.%u prog-if=%02X\n",
+               controller->vendor_id, controller->device_id, controller->bus,
+               controller->slot, controller->function, controller->prog_if);
+        if (configured_controllers >= ATA_MAX_PCI_CONTROLLERS) {
+            ata_probe_flags |= ATA_PROBE_FLAG_CONTROLLER_TRUNCATED;
             continue;
         }
-        printf("ATA: channel %u command=%X control=%X mode=%s\n", index,
+        ++configured_controllers;
+
+        uint16_t command = pci_read_config_word(
+            controller->bus, controller->slot, controller->function,
+            PCI_COMMAND);
+        if ((command & PCI_COMMAND_IO) == 0U) {
+            pci_write_config_word(controller->bus, controller->slot,
+                                  controller->function, PCI_COMMAND,
+                                  (uint16_t)(command | PCI_COMMAND_IO));
+            command = pci_read_config_word(controller->bus, controller->slot,
+                                           controller->function, PCI_COMMAND);
+        }
+        if ((command & PCI_COMMAND_IO) == 0U) {
+            ata_probe_flags |= ATA_PROBE_FLAG_IO_DECODE_FAILED;
+            printf("ATA: PCI IDE %u:%u.%u I/O decoding unavailable\n",
+                   controller->bus, controller->slot, controller->function);
+            continue;
+        }
+        (void)ata_configure_controller_channel(controller, 0U);
+        (void)ata_configure_controller_channel(controller, 1U);
+    }
+    if (ata_pci_ide_function_count == 0U) {
+        pci_device_t legacy = {0};
+        printf("ATA: no PCI IDE function; probing legacy channels\n");
+        (void)ata_append_channel(ATA_PRIMARY_IO, ATA_PRIMARY_CONTROL, false,
+                                 &legacy);
+        (void)ata_append_channel(ATA_SECONDARY_IO, ATA_SECONDARY_CONTROL,
+                                 false, &legacy);
+    }
+
+    for (uint32_t index = 0U; index < ata_channel_count; ++index) {
+        printf("ATA: channel %u command=%X control=%X mode=%s owner=%u:%u.%u\n",
+               index,
                ata_channels[index].command_base,
                ata_channels[index].control_port,
-               ata_channels[index].native_mode ? "native" : "compat");
+               ata_channels[index].native_mode ? "native" : "compat",
+               ata_channels[index].bus, ata_channels[index].slot,
+               ata_channels[index].function);
     }
+}
+
+uint32_t ata_probe_diagnostics(void) {
+    uint32_t functions = ata_pci_ide_function_count > 0xFFU ? 0xFFU :
+                         ata_pci_ide_function_count;
+    uint32_t channels = ata_channel_count > 0xFFU ? 0xFFU :
+                        ata_channel_count;
+    uint32_t drives = ata_identified_drive_count > 0xFFU ? 0xFFU :
+                      ata_identified_drive_count;
+    uint32_t storage = ata_pci_storage_function_count > 0x0FU ? 0x0FU :
+                       ata_pci_storage_function_count;
+    return functions | (channels << 8U) | (drives << 16U) |
+           (((ata_probe_flags & 0x0FU) | (storage << 4U)) << 24U);
 }
 
 // Track consecutive failures to prevent infinite loops
@@ -592,16 +664,15 @@ static bool ata_read_sector_impl(unsigned short base, unsigned int lba,
 
     // Select the actual target before inspecting channel-global status.  A
     // failed empty-slot IDENTIFY may otherwise leave its ERR bit latched.
-    static bool first_read_attempted[2] = {false, false};  // Track per controller
     int controller_idx = ata_channel_index(base);
     if (controller_idx < 0) return false;
     bool selected = ata_select_target(base, drive_head,
                                       ATA_WAIT_TIMEOUT_MS);
-    if (!selected && !first_read_attempted[controller_idx]) {
+    if (!selected && !ata_first_read_attempted[controller_idx]) {
         ata_soft_reset(base, is_master);
         selected = ata_select_target(base, drive_head, ATA_WAIT_TIMEOUT_MS);
     }
-    first_read_attempted[controller_idx] = true;
+    ata_first_read_attempted[controller_idx] = true;
     if (!selected) {
         consecutive_read_failures++;
         return false;
@@ -1387,7 +1458,7 @@ static void ata_detect_drives_impl(void) {
     //printf("Starting ATA drive detection...\n");
 
     // Detect ATA drives
-    for (uint32_t bus = 0U; bus < ATA_CHANNEL_COUNT; bus++) {
+    for (uint32_t bus = 0U; bus < ata_channel_count; bus++) {
         if (!ata_channels[bus].valid) continue;
         uint16_t base = ata_channels[bus].command_base;
         ata_probe_reset_channel(base);
@@ -1427,6 +1498,7 @@ static void ata_detect_drives_impl(void) {
 
                 // Increment the global drive count after successfully adding a drive
                 drive_count++;
+                ata_identified_drive_count++;
             }
         }
         // Leave a deterministic selection behind.  Every operation still

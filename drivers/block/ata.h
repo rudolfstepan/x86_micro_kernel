@@ -49,6 +49,8 @@ extern drive_t detected_drives[MAX_DRIVES];
 
 /** Resolve the channel's alternate-status/device-control I/O port. */
 uint16_t ata_control_port_for_base(uint16_t base);
+/** Packed probe summary: IDE functions, channels, drives, storage-count/flags. */
+uint32_t ata_probe_diagnostics(void);
 
 bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info);
 

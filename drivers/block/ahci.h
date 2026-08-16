@@ -94,6 +94,8 @@ typedef struct {
 size_t ahci_probe_controllers(ahci_controller_info_t *output,
                               size_t capacity);
 void ahci_init(void);
+/** Packed probe summary: functions, controllers, links, drives. */
+uint32_t ahci_probe_diagnostics(void);
 bool ahci_read_sector(const drive_t *drive, uint32_t sector, void *buffer);
 bool ahci_write_sector(const drive_t *drive, uint32_t sector,
                        const void *buffer);

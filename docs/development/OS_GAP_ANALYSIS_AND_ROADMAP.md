@@ -1349,6 +1349,29 @@ mit nur einer Master-HDD sowie die Zwei-Platten-AHCI-Probe erreichen
 `REIST_PROBE RECOVERY_SEQUENCE_OK`. Die erneute Abnahme auf dem physischen
 AMD-System bleibt offen und ist Voraussetzung für eine Hardwareaussage.
 
+Die physische Gegenprobe mit exakt diesem Build auf einem zweiten Board
+(`ASUS H81M-K`, Intel-H81-PCH) ergab denselben Panic. Der erweiterte Kontext
+`Details 0xFFFFFFFF 0x00000000` bedeutet dabei eindeutig: Es existiert kein
+Root-Resource und `drive_count` ist null. Der MBR-/CSM-Loader und der Kernel
+selbst wurden bereits erfolgreich geladen; ein allgemeiner UEFI-Bootfehler
+ist deshalb ausgeschlossen. Offen war stattdessen die Firmware-abhängige
+Initialisierung des SATA-Controllers vor dem VFS.
+
+Der physische Storage-Probe erfasst nun bis zu vier PCI-IDE-Funktionen und
+acht eindeutige Command-/Control-Kanäle, statt nach der ersten IDE-Funktion
+abzubrechen. Doppelte oder widersprüchliche Portzuordnungen werden nicht
+zweimal veröffentlicht. Für AHCI setzt der Treiber nach dem begrenzten
+HBA-Reset die standardisierten Spin-up-/Power-on-Bits, löst für noch nicht
+verbundene implementierte Ports einmal COMRESET aus und wartet mit einer
+einzigen controllerweiten monotonen Frist auf die Links. Eine vor Start der
+FIS-Engine noch null oder `0xFFFFFFFF` lautende Portsignatur ist nur ein
+IDENTIFY-Kandidat; veröffentlicht wird weiterhin ausschließlich ein gültig
+identifiziertes ATA-Gerät. Bleiben ATA, AHCI und FDD vollständig leer, stoppt
+der Boot nun unmittelbar vor Partition/VFS mit getrennt codierten
+ATA-/AHCI-Probezählern. QEMU-IDE und QEMU-AHCI erreichen anschließend jeweils
+`REIST_PROBE RECOVERY_SEQUENCE_OK`; die erneute H81-/AMD-Abnahme bleibt als
+reale Hardwareevidenz offen.
+
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 
 #### R3.1 Pipes, Signale und TTY — XL

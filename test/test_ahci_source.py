@@ -22,6 +22,12 @@ class AhciProbeContractTests(unittest.TestCase):
         self.assertIn("map_mmio_region(controller->abar", source)
         self.assertIn("AHCI_RESET_TIMEOUT_MS", source)
         self.assertIn("AHCI_RESET_MAX_POLLS", source)
+        self.assertIn("AHCI_LINK_TIMEOUT_MS", source)
+        self.assertIn("ahci_wait_sata_ports", source)
+        self.assertIn("AHCI_PORT_CMD_SUD", source)
+        self.assertIn("AHCI_PORT_CMD_POD", source)
+        self.assertIn("AHCI_PORT_SCTL", source)
+        self.assertIn("signature == 0U", source)
         self.assertIn("AHCI_PORT_SSTS", source)
         self.assertIn("AHCI_PORT_SIG", source)
         self.assertIn("AHCI_SIG_ATA", source)
@@ -65,6 +71,7 @@ class AhciProbeContractTests(unittest.TestCase):
         self.assertIn("write_verify_buffers", source)
         self.assertIn("memcmp(dma_buffer, expected, 512U)", source)
         self.assertIn("write verification failed", source)
+        self.assertIn("ahci_probe_diagnostics", source)
 
 
 if __name__ == "__main__":
