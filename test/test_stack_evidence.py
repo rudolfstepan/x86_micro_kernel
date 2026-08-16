@@ -20,8 +20,11 @@ class StackEvidenceTests(unittest.TestCase):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn("check-kernel-stack-analysis:", makefile)
         self.assertIn("-fstack-usage -fcallgraph-info=su", makefile)
+        self.assertIn("-Werror=frame-larger-than=4096", makefile)
         self.assertIn("scripts/validate_stack_usage.py", makefile)
         self.assertIn("STACK_ANALYSIS_OUTPUT_DIR", makefile)
+        self.assertIn("check-kernel-stack-c-objects: $(C_OBJ)", makefile)
+        self.assertIn("--expected $(words $(C_OBJ))", makefile)
         target = makefile[makefile.index("check-kernel-stack-analysis:"):]
         self.assertLess(target.index("$(MAKE) clean"),
                         target.index("$(MAKE) check-kernel-stack"))

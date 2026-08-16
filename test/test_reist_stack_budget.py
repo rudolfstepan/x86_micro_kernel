@@ -10,8 +10,8 @@ class ReistStackBudgetTests(unittest.TestCase):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn("-Werror=vla", makefile)
         self.assertIn("-Wframe-larger-than=4096", makefile)
-        self.assertIn("-Werror=frame-larger-than", makefile)
-        self.assertIn("check-kernel-stack: $(ALL_OBJ)", makefile)
+        self.assertIn("-Werror=frame-larger-than=4096", makefile)
+        self.assertIn("check-kernel-stack-c-objects: $(C_OBJ)", makefile)
 
 
 if __name__ == "__main__":

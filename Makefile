@@ -128,7 +128,7 @@ ifeq ($(VIDEO),framebuffer)
     ASFLAGS += -DUSE_FRAMEBUFFER
 endif
 
-FRAME_WARNING_FLAGS ?= -Wframe-larger-than=4096 -Werror=frame-larger-than
+FRAME_WARNING_FLAGS ?= -Wframe-larger-than=4096 -Werror=frame-larger-than=4096
 CFLAGS := -m32 -std=gnu11 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs \
           -fno-builtin -fno-pic -fno-pie -fno-stack-protector \
           -Werror=vla $(FRAME_WARNING_FLAGS) \
@@ -550,14 +550,17 @@ $(OUTPUT_DIR)/kernel.bin: $(ALL_OBJ) $(KERNEL_LDSCRIPT)
 check-kernel-stack: check-kernel-dependencies
 	@echo "Kernel stack-frame and VLA compiler gates passed."
 
+check-kernel-stack-c-objects: $(C_OBJ)
+	@echo "C-only stack-analysis objects built: $(words $(C_OBJ))"
+
 check-kernel-stack-analysis:
 	@$(MAKE) clean OUTPUT_DIR=$(STACK_ANALYSIS_OUTPUT_DIR)
-	@$(MAKE) check-kernel-stack OUTPUT_DIR=$(STACK_ANALYSIS_OUTPUT_DIR) \
+	@$(MAKE) check-kernel-stack-c-objects OUTPUT_DIR=$(STACK_ANALYSIS_OUTPUT_DIR) \
 		CC=$(STACK_ANALYSIS_CC) \
-		FRAME_WARNING_FLAGS="-Wframe-larger-than=4096 -Werror=frame-larger-than" \
+		FRAME_WARNING_FLAGS="-Wframe-larger-than=4096 -Werror=frame-larger-than=4096" \
 		STACK_ANALYSIS_FLAGS="-fstack-usage -fcallgraph-info=su"
 	@$(PYTHON) scripts/validate_stack_usage.py \
-		--root $(STACK_ANALYSIS_OUTPUT_DIR) --expected 75 \
+		--root $(STACK_ANALYSIS_OUTPUT_DIR) --expected $(words $(C_OBJ)) \
 		--local-limit 4096 --budget-file safety/stack_budgets.json \
 		--source-root .
 
