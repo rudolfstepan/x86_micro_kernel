@@ -659,12 +659,18 @@ static const char* process_drive_mount(char letter) {
     if (letter >= 'a' && letter <= 'z') letter -= 'a' - 'A';
     for (int index = 0; index < drive_count; ++index) {
         drive_t* drive = &detected_drives[index];
-        if (drive->mount_point[0] == '\0' || strlen(drive->name) != 4U ||
-            drive->name[3] < '0' || drive->name[3] > '9') continue;
+        if (drive->mount_point[0] == '\0') continue;
+        if (strcmp(drive->mount_point, "/") == 0) {
+            if (letter == 'C') return drive->mount_point;
+            continue;
+        }
+        if (strlen(drive->name) != 4U || drive->name[3] < '0' ||
+            drive->name[3] > '9') continue;
         char mapped = 0;
         if (drive->type == DRIVE_TYPE_FDD) {
             mapped = (char)('A' + drive->name[3] - '0');
-        } else if (drive->type == DRIVE_TYPE_ATA) {
+        } else if (drive->type == DRIVE_TYPE_ATA ||
+                   drive->type == DRIVE_TYPE_AHCI) {
             mapped = (char)('C' + drive->name[3] - '0');
         }
         if (mapped == letter) return drive->mount_point;

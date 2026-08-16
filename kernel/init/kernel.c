@@ -62,6 +62,7 @@
 #include "drivers/block/ata.h"
 #include "drivers/block/ahci.h"
 #include "drivers/block/fdd.h"
+#include "drivers/block/partition.h"
 #include "drivers/bus/drives.h"
 
  // Bus enumeration
@@ -213,6 +214,8 @@ static void driver_init(void) {
 
     // Detect floppy drives
     fdd_detect_drives();  // Floppy disk drives
+
+    partition_discover_mbr(); // Publish bounded primary MBR child devices
 
     if (!storage_safety_init(pit_monotonic_ms())) {
         panic("Unable to initialize REIST storage write supervision");

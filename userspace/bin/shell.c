@@ -27,6 +27,8 @@ static int text_equal(const char* left, const char* right) {
 }
 
 static char drive_letter(const x86os_drive_info_t* drive) {
+    if (drive->mount_point[0] == '/' && drive->mount_point[1] == '\0')
+        return 'C';
     if (drive->name[3] < '0' || drive->name[3] > '9' || drive->name[4] != '\0') {
         return 0;
     }

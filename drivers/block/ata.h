@@ -34,7 +34,8 @@
 
 #define MAX_ATA_DRIVES      4      // primary/secondary, master/slave
 #define MAX_FDD_DRIVES      2
-#define MAX_DRIVES          (MAX_ATA_DRIVES + MAX_FDD_DRIVES)
+#define MAX_PARTITION_DRIVES 16
+#define MAX_DRIVES          (MAX_ATA_DRIVES + MAX_FDD_DRIVES + MAX_PARTITION_DRIVES)
 #define ATA_LBA28_LIMIT     0x10000000u
 #define SECTOR_SIZE 512
 

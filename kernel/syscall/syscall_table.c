@@ -704,7 +704,8 @@ static int syscall_storage_block_read(uint32_t resource, uint32_t block,
         if (inject_failure) continue;
 #endif
         if (drive->type == DRIVE_TYPE_ATA ||
-            drive->type == DRIVE_TYPE_AHCI) {
+            drive->type == DRIVE_TYPE_AHCI ||
+            drive->type == DRIVE_TYPE_PARTITION) {
             read_ok = block_device_read_sector(drive, block, data) ==
                       BLOCK_DEVICE_OK;
         } else if (drive->type == DRIVE_TYPE_FDD && drive->sector != 0U &&

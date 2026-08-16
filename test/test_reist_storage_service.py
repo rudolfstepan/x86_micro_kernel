@@ -37,7 +37,8 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("storage_service_authorized", body)
         self.assertIn("resource >= (uint32_t)drive_count", body)
         self.assertIn("block >= detected_drives[resource].sectors", body)
-        self.assertIn("ata_read_sector", body)
+        self.assertIn("block_device_read_sector", body)
+        self.assertIn("DRIVE_TYPE_PARTITION", body)
 
     def test_service_and_image_packaging_exist(self):
         service = read("examples/userspace/storage_service.c")

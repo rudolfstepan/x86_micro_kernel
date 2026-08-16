@@ -1165,7 +1165,9 @@ void cmd_drives(int arg_count, const char** arguments) {
         char label[8];
         shell_drive_label(drive, label);
         const char* type = drive->type == DRIVE_TYPE_ATA ? "HDD" :
-                           drive->type == DRIVE_TYPE_FDD ? "FDD" : "?";
+                           drive->type == DRIVE_TYPE_FDD ? "FDD" :
+                           drive->type == DRIVE_TYPE_AHCI ? "SATA" :
+                           drive->type == DRIVE_TYPE_PARTITION ? "PART" : "?";
         const char* mount = drive->mount_point[0] != '\0'
             ? drive->mount_point : "(not mounted)";
         printf("%c%-5s %-7s %-6s %s\n",

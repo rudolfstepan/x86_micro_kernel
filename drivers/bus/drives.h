@@ -8,7 +8,8 @@ typedef enum {
     DRIVE_TYPE_NONE = 0,
     DRIVE_TYPE_ATA = 1,
     DRIVE_TYPE_FDD = 2,
-    DRIVE_TYPE_AHCI = 3
+    DRIVE_TYPE_AHCI = 3,
+    DRIVE_TYPE_PARTITION = 4
 } drive_type_t;
 
 typedef struct {
@@ -24,6 +25,11 @@ typedef struct {
     uint8_t fdd_drive_no;   // Drive number for FDD, 0 for A:, 1 for B:
     uint8_t ahci_controller;// AHCI controller index
     uint8_t ahci_port;      // AHCI port index
+    uint8_t parent_resource;// Parent resource for partition child devices
+    uint8_t partition_type; // MBR partition type, zero for whole media
+    uint8_t partition_index;// One-based primary MBR slot
+    bool has_partitions;    // Whole-media device owns validated children
+    uint32_t lba_offset;    // First parent LBA for partition child devices
     char mount_point[64];   // VFS mount point (e.g., "/", "/mnt/hdd1")
 } drive_t;
 

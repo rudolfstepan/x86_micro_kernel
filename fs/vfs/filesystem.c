@@ -235,8 +235,13 @@ void auto_mount_all_drives(void) {
         char mount_path[32];
         int result;
         
+        if ((drive->type == DRIVE_TYPE_ATA ||
+             drive->type == DRIVE_TYPE_AHCI) && drive->has_partitions) {
+            continue;
+        }
         if (drive->type == DRIVE_TYPE_ATA ||
-            drive->type == DRIVE_TYPE_AHCI) {
+            drive->type == DRIVE_TYPE_AHCI ||
+            drive->type == DRIVE_TYPE_PARTITION) {
             // Determine filesystem type by reading boot sector
             uint8_t buffer[512];
             const char* fs_type = "fat32";  // Default to FAT32

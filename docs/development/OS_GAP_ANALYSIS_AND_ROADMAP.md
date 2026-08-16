@@ -1186,6 +1186,17 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
 - ATA LBA48 und gebündelte PIO-Transfers ergänzen.
 - GPT, AHCI und NVMe als getrennte Folgepakete behandeln.
 
+**Teilstatus 16. August 2026:** Die transportneutrale Einsektor-API umfasst
+ATA, FDD und AHCI. Primäre MBR-Einträge werden nach Signatur-, Bootflag-,
+Kapazitäts-, Überlauf- und Überlappungsprüfung als feste Child-Geräte
+veröffentlicht. Protective-GPT-MBRs werden fail-closed zurückgewiesen. Jeder
+Child-I/O wird vor dem Zugriff auf einen validierten Parent-LBA übersetzt;
+Whole-Disk-Parents mit Kindern werden nicht zusätzlich gemountet. FAT32 und
+EXT2 können dadurch partitionierte ATA-/AHCI-Medien über denselben Vertrag
+mounten. Der QEMU-AHCI-Gastlauf mit zwei erkannten MBR-Children, FAT32-Root,
+Datei-I/O und vollständigem `TEST_OK` ist abgenommen. ATA-LBA48 und gebündelte
+PIO-Transfers bleiben offen; GPT bleibt ausdrücklich ein Folgepaket.
+
 #### R2.4 SATA/AHCI-Unterstützung — XL
 
 SATA wird als AHCI-Folgepaket umgesetzt. Der bestehende ATA-PIO- und FDD-Pfad

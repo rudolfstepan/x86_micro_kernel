@@ -75,6 +75,31 @@ static drive_t *ata_compat_ahci_drive(unsigned short base) {
     return NULL;
 }
 
+static drive_t *ata_compat_partition_drive(unsigned short base) {
+    if ((base & 0xFFE0U) != 0xB000U) return NULL;
+    for (short index = 0; index < drive_count; ++index) {
+        drive_t *drive = &detected_drives[index];
+        if (drive->type == DRIVE_TYPE_PARTITION && drive->base == base)
+            return drive;
+    }
+    return NULL;
+}
+
+static drive_t *ata_partition_translate(drive_t *partition, uint32_t lba,
+                                        uint32_t *absolute_lba) {
+    if (partition == NULL || absolute_lba == NULL ||
+        partition->type != DRIVE_TYPE_PARTITION ||
+        partition->parent_resource >= (uint32_t)drive_count ||
+        lba >= partition->sectors || lba > UINT32_MAX - partition->lba_offset)
+        return NULL;
+    drive_t *parent = &detected_drives[partition->parent_resource];
+    uint32_t absolute = partition->lba_offset + lba;
+    if (parent->type == DRIVE_TYPE_PARTITION || absolute >= parent->sectors)
+        return NULL;
+    *absolute_lba = absolute;
+    return parent;
+}
+
 #define ATA_JOURNAL_MAGIC 0x4A545352U /* "RSTJ" */
 #define ATA_JOURNAL_VERSION 2U
 #define ATA_JOURNAL_CLEAN 0U
@@ -493,6 +518,13 @@ static bool ata_read_sector_impl(unsigned short base, unsigned int lba,
 
 bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,
                      bool is_master) {
+    drive_t *partition = ata_compat_partition_drive(base);
+    if (partition != NULL) {
+        uint32_t absolute;
+        drive_t *parent = ata_partition_translate(partition, lba, &absolute);
+        return parent != NULL && ata_read_sector(parent->base, absolute, buffer,
+                                                  parent->is_master);
+    }
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     if (ahci_drive != NULL) return ahci_read_sector(ahci_drive, lba, buffer);
     ata_transaction_begin();
@@ -503,6 +535,14 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,
 
 bool ata_read_sector_fresh(unsigned short base, unsigned int lba, void *buffer,
                            bool is_master) {
+    drive_t *partition = ata_compat_partition_drive(base);
+    if (partition != NULL) {
+        uint32_t absolute;
+        drive_t *parent = ata_partition_translate(partition, lba, &absolute);
+        return parent != NULL && ata_read_sector_fresh(parent->base, absolute,
+                                                        buffer,
+                                                        parent->is_master);
+    }
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     if (ahci_drive != NULL) return ahci_read_sector(ahci_drive, lba, buffer);
     ata_transaction_begin();
@@ -798,6 +838,14 @@ done:
 
 bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
                       bool is_master) {
+    drive_t *partition = ata_compat_partition_drive(base);
+    if (partition != NULL) {
+        uint32_t absolute;
+        drive_t *parent = ata_partition_translate(partition, lba, &absolute);
+        return parent != NULL && ata_write_sector(parent->base, absolute,
+                                                   buffer,
+                                                   parent->is_master);
+    }
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     if (ahci_drive != NULL) {
         int resource = ata_resource_index(base, is_master);
@@ -820,6 +868,14 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
 }
 
 bool ata_flush_cache(unsigned short base, bool is_master) {
+    drive_t *partition = ata_compat_partition_drive(base);
+    if (partition != NULL) {
+        uint32_t absolute;
+        drive_t *parent = ata_partition_translate(partition, 0U, &absolute);
+        (void)absolute;
+        return parent != NULL && ata_flush_cache(parent->base,
+                                                  parent->is_master);
+    }
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     if (ahci_drive != NULL) return ahci_flush(ahci_drive);
     ata_transaction_begin();

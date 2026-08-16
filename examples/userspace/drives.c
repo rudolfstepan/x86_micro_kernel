@@ -1,9 +1,12 @@
 #include "x86os.h"
 
 static char drive_letter(const x86os_drive_info_t* drive) {
+    if (drive->mount_point[0] == '/' && drive->mount_point[1] == '\0')
+        return 'C';
     if (drive->name[3] < '0' || drive->name[3] > '9') return '?';
     if (drive->type == X86OS_DRIVE_FDD) return (char)('A' + drive->name[3] - '0');
-    if (drive->type == X86OS_DRIVE_ATA || drive->type == X86OS_DRIVE_AHCI)
+    if (drive->type == X86OS_DRIVE_ATA || drive->type == X86OS_DRIVE_AHCI ||
+        drive->type == X86OS_DRIVE_PARTITION)
         return (char)('C' + drive->name[3] - '0');
     return '?';
 }
@@ -24,6 +27,7 @@ int main(void) {
         x86os_puts("    ");
         if (drive.type == X86OS_DRIVE_FDD) x86os_puts("FDD");
         else if (drive.type == X86OS_DRIVE_AHCI) x86os_puts("SATA");
+        else if (drive.type == X86OS_DRIVE_PARTITION) x86os_puts("PART");
         else x86os_puts("HDD");
         x86os_putchar('\n');
     }

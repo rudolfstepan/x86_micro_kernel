@@ -19,7 +19,7 @@
 #define STORAGE_SERVICE_RESTART_BUDGET 3U
 #define STORAGE_MEDIA_PROBE_INITIAL_MS 250U
 #define STORAGE_MEDIA_PROBE_MAX_MS 30000U
-#define STORAGE_MEDIA_FINGERPRINT_VERSION 1U
+#define STORAGE_MEDIA_FINGERPRINT_VERSION 2U
 
 typedef struct {
     int32_t pid;
@@ -44,6 +44,11 @@ typedef struct __attribute__((packed)) {
     uint32_t head;
     uint32_t sector;
     uint32_t boot_crc32;
+    uint32_t lba_offset;
+    uint8_t parent_resource;
+    uint8_t partition_type;
+    uint8_t partition_index;
+    uint8_t reserved;
     char model_prefix[24];
 } storage_media_fingerprint_t;
 
@@ -109,23 +114,27 @@ static bool fingerprint_valid(const void *payload, size_t length) {
     const storage_media_fingerprint_t *fingerprint = payload;
     return fingerprint->type == DRIVE_TYPE_ATA ||
            fingerprint->type == DRIVE_TYPE_FDD ||
-           fingerprint->type == DRIVE_TYPE_AHCI;
+           fingerprint->type == DRIVE_TYPE_AHCI ||
+           (fingerprint->type == DRIVE_TYPE_PARTITION &&
+            fingerprint->parent_resource < MAX_DRIVES &&
+            fingerprint->partition_type != 0U &&
+            fingerprint->partition_index >= 1U &&
+            fingerprint->partition_index <= 4U);
 }
 
 static bool read_boot_sector(uint32_t resource, uint8_t *data,
                              bool recovery_probe) {
     if (resource >= (uint32_t)drive_count || data == NULL) return false;
     drive_t *drive = &detected_drives[resource];
-    if (drive->type == DRIVE_TYPE_ATA)
-        return ata_read_sector_fresh(drive->base, 0U, data,
-                                     drive->is_master);
     if (drive->type == DRIVE_TYPE_FDD) {
         if (recovery_probe)
             return fdc_read_sector_recovery(drive->fdd_drive_no, 0U, 0U, 1U,
                                             data);
         return fdc_read_sector(drive->fdd_drive_no, 0U, 0U, 1U, data);
     }
-    if (drive->type == DRIVE_TYPE_AHCI)
+    if (drive->type == DRIVE_TYPE_ATA ||
+        drive->type == DRIVE_TYPE_AHCI ||
+        drive->type == DRIVE_TYPE_PARTITION)
         return block_device_read_sector(drive, 0U, data) == BLOCK_DEVICE_OK;
     return false;
 }
@@ -148,6 +157,10 @@ static bool capture_fingerprint(uint32_t resource) {
         .head = drive->head,
         .sector = drive->sector,
         .boot_crc32 = media_crc32(first, sizeof(first)),
+        .lba_offset = drive->lba_offset,
+        .parent_resource = drive->parent_resource,
+        .partition_type = drive->partition_type,
+        .partition_index = drive->partition_index,
     };
     canonical_model_prefix(fingerprint.model_prefix, drive->model);
     if (critical_object_init(&media_fingerprints[resource],
@@ -202,6 +215,16 @@ static bool media_identity_matches(uint32_t resource) {
             memcmp(model_prefix, expected.model_prefix,
                    sizeof(model_prefix)) != 0)
             MEDIA_PROBE_FAIL("AHCI_IDENTITY");
+    } else if (drive->type == DRIVE_TYPE_PARTITION) {
+        if (drive->parent_resource != expected.parent_resource ||
+            drive->partition_type != expected.partition_type ||
+            drive->partition_index != expected.partition_index ||
+            drive->lba_offset != expected.lba_offset ||
+            drive->sectors != expected.sectors ||
+            drive->parent_resource >= (uint32_t)drive_count ||
+            detected_drives[drive->parent_resource].type ==
+                DRIVE_TYPE_PARTITION)
+            MEDIA_PROBE_FAIL("PARTITION_IDENTITY");
     } else {
         MEDIA_PROBE_FAIL("TYPE");
     }
