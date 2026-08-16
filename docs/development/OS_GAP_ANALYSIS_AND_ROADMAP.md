@@ -216,7 +216,7 @@ und 10 verbindlich.
         CRC-geschützten Headern, fester Kapazität, Recovery vor dem Lesen
         veränderlicher FAT-/Verzeichnismetadaten und fail-closed Verhalten bei
         beschädigtem oder erschöpftem Journal
-      - [ ] S0.3c-6f2 FAT12-Defektsektorverwaltung: fehlerhafte Datencluster mit
+      - [x] S0.3c-6f2 FAT12-Defektsektorverwaltung: fehlerhafte Datencluster mit
         dem standardisierten FAT12-Wert `0xFF7` quarantänisieren, Metadaten- und
         reservierte Sektoren über eine persistente, gespiegelte Remap-Tabelle
         auf vorab reservierte Ersatzsektoren abbilden und nicht rekonstruierbare

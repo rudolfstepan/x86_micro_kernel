@@ -34,7 +34,8 @@ static bool fat12_journal_write_sector(void *context, uint32_t sector,
 }
 
 static bool fat12_journal_prepare(void) {
-    if (!fat12 || fat12->boot_sector.reserved_sectors < 20U ||
+    if (!fat12 ||
+        fat12->boot_sector.reserved_sectors < 23U + FAT12_REMAP_SPARE_COUNT ||
         memcmp(fat12->boot_sector.fs_type, "REIST12", 7U) != 0 ||
         fat12->boot_sector.volume_id == 0U) return true;
     if (!fat12_journal_format(&fat12->journal, 2U, 3U, 4U,
@@ -62,6 +63,15 @@ static uint32_t fat12_remap_sector(uint32_t sector) {
     return fat12 && fat12->remap_enabled &&
                    fat12_remap_lookup(&fat12->remap, sector, &replacement)
         ? replacement : sector;
+}
+
+static bool fat12_confirm_sector_defect(uint32_t sector) {
+    uint8_t probe[FAT12_SECTOR_SIZE];
+    for (uint32_t attempt = 0U; attempt < FAT12_DEFECT_CONFIRM_READS;
+         ++attempt)
+        if (fdc_read_logical_range(current_fdd_drive, sector, 1U, probe))
+            return false;
+    return true;
 }
 
 // Helper: read a single sector using DMA first, then fall back to no-DMA path
@@ -1197,6 +1207,8 @@ bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
         fat12->boot_sector.total_sectors :
         fat12->boot_sector.total_sectors_large;
     if (logical_sector >= total || count > total - logical_sector) return false;
+    if (fat12->journal_enabled && count > FAT12_JOURNAL_MAX_ENTRIES)
+        return false;
     if (!fat12->journal_enabled)
         return fdc_write_logical_range(current_fdd_drive, logical_sector, count,
                                        (const uint8_t*)input);
@@ -1233,10 +1245,70 @@ bool fat12_sync_fat(void) {
     uint32_t sectors = fat12->boot_sector.sectors_per_fat;
     for (uint32_t copy = 0; copy < fat12->boot_sector.fat_count; ++copy) {
         uint32_t start = (uint32_t)fat12->fat_start + copy * sectors;
-        if (!fat12_write_logical_sectors(start, sectors, fat12->fat))
-            return false;
+        for (uint32_t offset = 0U; offset < sectors;) {
+            uint32_t batch = sectors - offset;
+            if (batch > FAT12_JOURNAL_MAX_ENTRIES)
+                batch = FAT12_JOURNAL_MAX_ENTRIES;
+            if (!fat12_write_logical_sectors(start + offset, batch,
+                    fat12->fat + offset * FAT12_SECTOR_SIZE)) return false;
+            offset += batch;
+        }
     }
     return true;
+}
+
+bool fat12_quarantine_data_cluster(uint16_t cluster) {
+    if (!fat12 || !fat12->fat || cluster < FAT12_MIN_CLUSTER ||
+        (uint32_t)cluster >= fat12_cluster_count() + 2U) return false;
+    if (fat12_get_fat_entry(cluster) == FAT12_BAD_CLUSTER) return true;
+    uint32_t first_sector = (uint32_t)fat12->data_start +
+        ((uint32_t)cluster - FAT12_MIN_CLUSTER) *
+        fat12->boot_sector.sectors_per_cluster;
+    bool confirmed = false;
+    for (uint32_t index = 0U;
+         index < fat12->boot_sector.sectors_per_cluster; ++index) {
+        if (!fat12_confirm_sector_defect(first_sector + index)) continue;
+        confirmed = true;
+        break;
+    }
+    if (!confirmed) return false;
+    uint16_t previous = fat12_get_fat_entry(cluster);
+    if (!fat12_set_fat_entry(cluster, FAT12_BAD_CLUSTER)) return false;
+    if (fat12_sync_fat()) return true;
+    (void)fat12_set_fat_entry(cluster, previous);
+    return false;
+}
+
+bool fat12_install_sector_remap(uint32_t bad_sector,
+                                const void *recovered_sector) {
+    if (!fat12 || !recovered_sector || !fat12->remap_enabled ||
+        fat12->boot_sector.reserved_sectors < 23U + FAT12_REMAP_SPARE_COUNT ||
+        bad_sector < (uint32_t)fat12->fat_start ||
+        bad_sector >= (uint32_t)fat12->data_start ||
+        !fat12_confirm_sector_defect(bad_sector)) return false;
+    uint32_t existing = 0U;
+    if (fat12_remap_lookup(&fat12->remap, bad_sector, &existing)) return false;
+    uint32_t spare_start = fat12->boot_sector.reserved_sectors -
+                           FAT12_REMAP_SPARE_COUNT;
+    uint32_t replacement = 0U;
+    for (uint32_t candidate = spare_start;
+         candidate < fat12->boot_sector.reserved_sectors; ++candidate) {
+        bool used = false;
+        for (uint32_t index = 0U; index < fat12->remap.header.entry_count;
+             ++index)
+            if (fat12->remap.entries[index].replacement_sector == candidate)
+                used = true;
+        if (!used) { replacement = candidate; break; }
+    }
+    if (replacement == 0U) return false;
+    uint8_t verify[FAT12_SECTOR_SIZE];
+    if (!fdc_write_logical_range(current_fdd_drive, replacement, 1U,
+                                 recovered_sector) ||
+        !fdc_read_logical_range(current_fdd_drive, replacement, 1U, verify) ||
+        memcmp(recovered_sector, verify, sizeof(verify)) != 0) return false;
+    return fat12_remap_add(&fat12->remap, bad_sector, replacement,
+                           fat12_journal_read_sector,
+                           fat12_journal_write_sector, NULL);
 }
 
 // Close a file and free its resources

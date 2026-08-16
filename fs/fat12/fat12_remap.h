@@ -8,6 +8,8 @@
 #define FAT12_REMAP_MAX_ENTRIES 16U
 #define FAT12_REMAP_VERSION 1U
 #define FAT12_REMAP_MAGIC 0x52504D31U /* RPM1 */
+#define FAT12_REMAP_SECTOR_SIZE 512U
+#define FAT12_REMAP_SPARE_COUNT 8U
 
 typedef bool (*fat12_remap_read_fn)(void *context, uint32_t sector,
                                     void *buffer);
@@ -46,8 +48,8 @@ bool fat12_remap_format(fat12_remap_table_t *table, uint32_t primary_sector,
 bool fat12_remap_load(fat12_remap_table_t *table, fat12_remap_read_fn read,
                       void *context);
 bool fat12_remap_add(fat12_remap_table_t *table, uint32_t bad_sector,
-                     uint32_t replacement_sector, fat12_remap_write_fn write,
-                     void *context);
+                     uint32_t replacement_sector, fat12_remap_read_fn read,
+                     fat12_remap_write_fn write, void *context);
 bool fat12_remap_lookup(const fat12_remap_table_t *table, uint32_t bad_sector,
                         uint32_t *replacement_sector);
 

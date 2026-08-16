@@ -24,6 +24,7 @@
 #define FAT12_EOC_MAX               0xFFF  // End of chain maximum
 #define FAT12_FREE_CLUSTER          0x000
 #define FAT12_RESERVED_CLUSTER      0x001
+#define FAT12_DEFECT_CONFIRM_READS  3U
 
 // File Attributes
 #define FILE_ATTR_READONLY          0x01
@@ -159,5 +160,8 @@ bool fat12_read_logical_sectors(uint32_t logical_sector, uint32_t count,
                                 void* output);
 bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
                                  const void* input);
+bool fat12_quarantine_data_cluster(uint16_t cluster);
+bool fat12_install_sector_remap(uint32_t bad_sector,
+                                const void *recovered_sector);
 
 #endif // FAT12_H

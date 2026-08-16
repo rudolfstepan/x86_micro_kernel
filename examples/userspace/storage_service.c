@@ -3,7 +3,8 @@
 #include "x86os.h"
 
 #define FORMAT_FAT12_SECTORS 2880U
-#define FORMAT_FAT12_RESERVED 23U
+#define FORMAT_FAT12_RESERVED 31U
+#define FORMAT_FAT12_REMAP_SPARES 8U
 #define FORMAT_FAT12_FAT_SECTORS 9U
 #define FORMAT_FAT12_ROOT_SECTORS 14U
 #define FORMAT_FAT12_DATA_START (FORMAT_FAT12_RESERVED + \
@@ -128,6 +129,8 @@ static int format_fat12(uint32_t resource) {
     x86os_drive_info_t drive;
     if (x86os_drive_info(resource, &drive) <= 0 ||
         drive.type != X86OS_DRIVE_FDD)
+        return -22;
+    if (FORMAT_FAT12_RESERVED < 23U + FORMAT_FAT12_REMAP_SPARES)
         return -22;
 
     /* Write the journal/remap reservation and filesystem contents first. */
