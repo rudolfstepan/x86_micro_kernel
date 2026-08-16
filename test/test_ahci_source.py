@@ -62,6 +62,9 @@ class AhciProbeContractTests(unittest.TestCase):
         self.assertIn("AHCI_ATA_WRITE_DMA_EXT", source)
         self.assertIn("AHCI_ATA_FLUSH_CACHE_EXT", source)
         self.assertIn("ahci_port_acquire", source)
+        self.assertIn("write_verify_buffers", source)
+        self.assertIn("memcmp(dma_buffer, expected, 512U)", source)
+        self.assertIn("write verification failed", source)
 
 
 if __name__ == "__main__":

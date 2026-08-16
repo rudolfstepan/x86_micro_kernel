@@ -49,6 +49,8 @@ static uint8_t command_tables[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS]
     [AHCI_COMMAND_TABLE_SIZE] __attribute__((aligned(128)));
 static uint8_t identify_buffers[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS][512]
     __attribute__((aligned(2)));
+static uint8_t write_verify_buffers[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS][512]
+    __attribute__((aligned(2)));
 static bool port_busy[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS];
 static volatile bool writes_fenced;
 #ifdef REIST_AHCI_FAULT_INJECTION
@@ -445,12 +447,30 @@ bool ahci_write_sector(const drive_t *drive, uint32_t sector,
         !ahci_drive_valid(drive, &controller) || sector >= drive->sectors ||
         !ahci_port_acquire(drive->ahci_controller, drive->ahci_port))
         return false;
-    memcpy(identify_buffers[drive->ahci_controller][drive->ahci_port],
-           buffer, 512U);
+    uint8_t *dma_buffer =
+        identify_buffers[drive->ahci_controller][drive->ahci_port];
+    uint8_t *expected =
+        write_verify_buffers[drive->ahci_controller][drive->ahci_port];
+    memcpy(expected, buffer, 512U);
+    memcpy(dma_buffer, expected, 512U);
     bool result = ahci_build_io_command(drive->ahci_controller,
         drive->ahci_port, AHCI_ATA_WRITE_DMA_EXT, sector, true, true) &&
         ahci_execute_command(controller, drive->ahci_controller,
+                             drive->ahci_port) &&
+        ahci_build_io_command(drive->ahci_controller, drive->ahci_port,
+                              AHCI_ATA_FLUSH_CACHE_EXT, 0U, false, false) &&
+        ahci_execute_command(controller, drive->ahci_controller,
+                             drive->ahci_port) &&
+        ahci_build_io_command(drive->ahci_controller, drive->ahci_port,
+                              AHCI_ATA_READ_DMA_EXT, sector, false, true) &&
+        ahci_execute_command(controller, drive->ahci_controller,
                              drive->ahci_port);
+    if (result && memcmp(dma_buffer, expected, 512U) != 0) {
+        printf("AHCI: write verification failed port=%u sector=%u\n",
+               (unsigned)drive->ahci_port, (unsigned)sector);
+        (void)ahci_stop_port(controller->mmio, drive->ahci_port);
+        result = false;
+    }
     ahci_port_release(drive->ahci_controller, drive->ahci_port);
     return result;
 }

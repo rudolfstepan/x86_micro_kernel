@@ -1256,8 +1256,11 @@ IDENTIFY-Daten werden jetzt auf LBA28/LBA48-Kapazität, 512-Byte-Sektoren und
 Modellname geprüft und portbezogen gespeichert. Validierte Ports werden nach
 der ATA-Erkennung als eigene `DRIVE_TYPE_AHCI`-Ressourcen mit stabiler
 Controller-/Port-Zuordnung veröffentlicht. READ DMA EXT, WRITE DMA EXT und
-FLUSH CACHE EXT verwenden je Port einen festen 512-Byte-Puffer, genau einen
-aktiven Auftrag und monotone Completion-Deadlines. Der Blockgerätevertrag,
+FLUSH CACHE EXT verwenden je Port feste 512-Byte-Puffer, genau einen aktiven
+Auftrag und monotone Completion-Deadlines. Jeder SATA-Sektorwrite wird unter
+derselben Port-Exklusivität geflusht, erneut gelesen und vollständig mit einer
+festen erwarteten Kopie verglichen; Fehler und Mismatch stoppen den Port und
+werden fail-closed an die Blockschicht gemeldet. Der Blockgerätevertrag,
 FAT32-VFS, Storage-Fingerprint, Quarantäne/Reintegration und globales
 Write-Fencing sind angebunden. Ein QEMU-ICH9-AHCI-Boot mit FAT32-Datei-I/O,
 Storage-Reintegration und vollständigem `TEST_OK` ist abgenommen. Die
