@@ -1,6 +1,6 @@
 version = 1
-program = "S0.3b"
-active_id = ""
+program = "S0.3c-6f"
+active_id = "S0.3c-6f1"
 
 [policy]
 one_package_per_run = true
@@ -119,6 +119,99 @@ evidence = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
   ".\\scripts\\test-reist-runtime.ps1 -Mode normal",
 ]
+
+[[packages]]
+id = "S0.3c-6f1"
+status = "active"
+risk = "critical"
+title = "Verified FAT12 undo journal"
+scope = "Complete the fixed-capacity FAT12 undo journal: validate the reserved layout, verify journal data and both redundant headers after every persistent write, recover before mutable FAT metadata is consumed, and fail closed on exhaustion, ambiguous headers or failed readback. Preserve the non-REIST FAT12 compatibility path."
+allowed_files = [
+  "fs/fat12/fat12_journal.h",
+  "fs/fat12/fat12_journal.c",
+  "fs/fat12/fat12.h",
+  "fs/fat12/fat12.c",
+  "examples/userspace/storage_service.c",
+  "scripts/create_floppy_boot_image.py",
+  "test/test_fat12_journal.py",
+  "test/test_fat12_journal_host.c",
+  "test/test_fs_host.py",
+  "test/test_fat12_tools.py",
+  "test/test_floppy_boot_image.py",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "journal capacity and all sector arithmetic are statically bounded and overflow checked",
+  "undo data is persisted and read back before an ACTIVE header can authorize recovery",
+  "both redundant headers are written and read back before success is reported",
+  "equal-sequence header disagreement is ambiguous and fails closed",
+  "recovery runs before FAT and directory metadata are consumed",
+  "exhaustion or any uncertain persistence result leaves the volume unavailable for writes",
+  "foreign FAT12 volumes remain on the non-journaled compatibility path"
+]
+targeted_tests = [
+  "python test/test_fat12_journal.py -q",
+  "python test/test_fs_host.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode storage-power-loss"
+]
+stop_conditions = [
+  "verified ordering cannot be retained with bounded fixed storage",
+  "a required source lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: complete verified FAT12 undo recovery"
+evidence = []
+
+[[packages]]
+id = "S0.3c-6f2"
+status = "queued"
+risk = "critical"
+title = "Bounded FAT12 bad-sector quarantine"
+scope = "Integrate bounded defect confirmation and the fixed redundant remap table into FAT12. Mark confirmed defective data clusters with FAT12 value 0xFF7, permit reserved/FAT/root remapping only to distinct pre-reserved replacement sectors, verify every table update, and enter a write-fenced state on ambiguity or capacity exhaustion."
+allowed_files = [
+  "fs/fat12/fat12_remap.h",
+  "fs/fat12/fat12_remap.c",
+  "fs/fat12/fat12.h",
+  "fs/fat12/fat12.c",
+  "test/test_fat12_remap.py",
+  "test/test_fat12_remap_host.c",
+  "test/test_fs_host.py",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "defects are confirmed by a fixed retry count before persistent quarantine",
+  "data clusters are marked 0xFF7 before they can be allocated again",
+  "metadata remaps use only distinct pre-reserved replacement sectors",
+  "remap header and table writes are CRC protected and read back",
+  "duplicate targets, cycles, range errors and capacity exhaustion fail closed",
+  "all scans and retries are bounded by compile-time capacities"
+]
+targeted_tests = [
+  "python test/test_fat12_remap.py -q",
+  "python test/test_fs_host.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode fdd-hotplug"
+]
+stop_conditions = [
+  "replacement sectors cannot be proven outside live FAT12 regions",
+  "confirmed defects can re-enter the free-cluster allocator",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add bounded FAT12 defect quarantine"
+evidence = []
 
 [[packages]]
 id = "S0.3b-3"
