@@ -24,6 +24,21 @@ _Static_assert(USER_STACK_LOWER_GUARD >= USER_HEAP_TOP,
                "User stack guards must not overlap the user heap");
 _Static_assert(USER_STACK_UPPER_GUARD + PAGE_SIZE == USER_TOP,
                "Upper user stack guard must terminate at USER_TOP");
+
+static void program_load_root_details(uint32_t *identity,
+                                      uint32_t *location) {
+    if (identity == NULL || location == NULL) return;
+    *identity = UINT32_MAX;
+    *location = (uint32_t)(uint16_t)drive_count;
+    for (short index = 0; index < drive_count; ++index) {
+        drive_t *drive = &detected_drives[index];
+        if (strcmp(drive->mount_point, "/") != 0) continue;
+        *identity = (uint32_t)(uint16_t)index;
+        *location = drive->lba_offset;
+        return;
+    }
+}
+
 static int load_program_file(const char *program_name, uint8_t **image_out) {
     panic_context_set("program-load", "program loader", "open",
                       program_name);
@@ -35,7 +50,9 @@ static int load_program_file(const char *program_name, uint8_t **image_out) {
     vfs_node_t* node = NULL;
     int result = vfs_open(program_name, &node);
     if (result != VFS_OK || !node) {
-        panic_context_set_result(result, 1U, 0U);
+        uint32_t identity, location;
+        program_load_root_details(&identity, &location);
+        panic_context_set_result(result, identity, location);
         printf("Program load open failed: %s (%d)\n", program_name, result);
         return -1;
     }

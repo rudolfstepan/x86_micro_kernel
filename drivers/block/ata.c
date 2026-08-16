@@ -6,6 +6,7 @@
 #include "lib/libc/string.h"
 #include "lib/libc/stdlib.h"
 #include "drivers/block/fdd.h"
+#include "drivers/bus/pci.h"
 #include "include/kernel/panic.h"
 #include "include/kernel/storage_safety.h"
 #include "kernel/sched/scheduler.h"
@@ -37,6 +38,137 @@
 drive_t* current_drive = NULL;// = {0};  // Current drive (global variable)
 drive_t detected_drives[MAX_DRIVES];  // Global array of detected drives
 short drive_count = 0;  // Number of detected drives
+
+#define ATA_CHANNEL_COUNT 2U
+#define ATA_PRIMARY_CONTROL 0x3F6U
+#define ATA_SECONDARY_CONTROL 0x376U
+#define ATA_PCI_CLASS_STORAGE 0x01U
+#define ATA_PCI_SUBCLASS_IDE 0x01U
+#define ATA_PCI_PRIMARY_NATIVE 0x01U
+#define ATA_PCI_SECONDARY_NATIVE 0x04U
+#define ATA_DEVICE_CONTROL_NIEN 0x02U
+#define ATA_DEVICE_CONTROL_SRST 0x04U
+
+typedef struct {
+    uint16_t command_base;
+    uint16_t control_port;
+    bool valid;
+    bool native_mode;
+} ata_channel_t;
+
+static ata_channel_t ata_channels[ATA_CHANNEL_COUNT] = {
+    {ATA_PRIMARY_IO, ATA_PRIMARY_CONTROL, true, false},
+    {ATA_SECONDARY_IO, ATA_SECONDARY_CONTROL, true, false},
+};
+
+static int ata_channel_index(uint16_t base) {
+    for (uint32_t index = 0U; index < ATA_CHANNEL_COUNT; ++index) {
+        if (ata_channels[index].valid &&
+            ata_channels[index].command_base == base) return (int)index;
+    }
+    return -1;
+}
+
+static bool ata_command_base_valid(uint16_t base) {
+    return ata_channel_index(base) >= 0;
+}
+
+uint16_t ata_control_port_for_base(uint16_t base) {
+    int index = ata_channel_index(base);
+    if (index >= 0) return ata_channels[index].control_port;
+    return base == ATA_SECONDARY_IO ? ATA_SECONDARY_CONTROL :
+                                      ATA_PRIMARY_CONTROL;
+}
+
+static bool ata_pci_io_bar(uint32_t raw, uint32_t span,
+                           uint16_t *base) {
+    if (base == NULL || span == 0U || raw == 0U || raw == UINT32_MAX ||
+        (raw & 1U) == 0U) return false;
+    uint32_t port = raw & ~3U;
+    if (port == 0U || port > UINT16_MAX || span - 1U > UINT16_MAX - port ||
+        (port & (span - 1U)) != 0U) return false;
+    *base = (uint16_t)port;
+    return true;
+}
+
+static bool ata_configure_native_channel(const pci_device_t *device,
+                                         uint32_t channel,
+                                         uint32_t command_bar,
+                                         uint32_t control_bar) {
+    uint16_t command_base, control_base;
+    if (device == NULL || channel >= ATA_CHANNEL_COUNT ||
+        !ata_pci_io_bar(device->bar[command_bar], 8U, &command_base) ||
+        !ata_pci_io_bar(device->bar[control_bar], 4U, &control_base) ||
+        control_base > UINT16_MAX - 2U) {
+        ata_channels[channel].valid = false;
+        return false;
+    }
+    ata_channels[channel].command_base = command_base;
+    ata_channels[channel].control_port = (uint16_t)(control_base + 2U);
+    ata_channels[channel].valid = true;
+    ata_channels[channel].native_mode = true;
+    return true;
+}
+
+static void ata_configure_channels(void) {
+    ata_channels[0] = (ata_channel_t){
+        ATA_PRIMARY_IO, ATA_PRIMARY_CONTROL, true, false
+    };
+    ata_channels[1] = (ata_channel_t){
+        ATA_SECONDARY_IO, ATA_SECONDARY_CONTROL, true, false
+    };
+
+    const pci_device_t *controller = NULL;
+    for (size_t index = 0U; index < pci_device_count; ++index) {
+        pci_device_t *candidate = &pci_devices[index];
+        if (candidate->class_code == ATA_PCI_CLASS_STORAGE &&
+            candidate->subclass_code == ATA_PCI_SUBCLASS_IDE) {
+            controller = candidate;
+            break;
+        }
+    }
+    if (controller == NULL) {
+        printf("ATA: no PCI IDE function; probing legacy channels\n");
+        return;
+    }
+
+    uint16_t command = pci_read_config_word(
+        controller->bus, controller->slot, controller->function, PCI_COMMAND);
+    if ((command & PCI_COMMAND_IO) == 0U) {
+        pci_write_config_word(controller->bus, controller->slot,
+                              controller->function, PCI_COMMAND,
+                              (uint16_t)(command | PCI_COMMAND_IO));
+        command = pci_read_config_word(controller->bus, controller->slot,
+                                       controller->function, PCI_COMMAND);
+    }
+    if ((command & PCI_COMMAND_IO) == 0U) {
+        ata_channels[0].valid = false;
+        ata_channels[1].valid = false;
+        printf("ATA: PCI IDE I/O decoding could not be enabled\n");
+        return;
+    }
+
+    if ((controller->prog_if & ATA_PCI_PRIMARY_NATIVE) != 0U) {
+        (void)ata_configure_native_channel(controller, 0U, 0U, 1U);
+    }
+    if ((controller->prog_if & ATA_PCI_SECONDARY_NATIVE) != 0U) {
+        (void)ata_configure_native_channel(controller, 1U, 2U, 3U);
+    }
+    printf("ATA: PCI IDE %04X:%04X at %u:%u.%u prog-if=%02X\n",
+           controller->vendor_id, controller->device_id, controller->bus,
+           controller->slot, controller->function, controller->prog_if);
+    for (uint32_t index = 0U; index < ATA_CHANNEL_COUNT; ++index) {
+        if (!ata_channels[index].valid) {
+            printf("ATA: channel %u rejected (invalid native I/O BARs)\n",
+                   index);
+            continue;
+        }
+        printf("ATA: channel %u command=%X control=%X mode=%s\n", index,
+               ata_channels[index].command_base,
+               ata_channels[index].control_port,
+               ata_channels[index].native_mode ? "native" : "compat");
+    }
+}
 
 // Track consecutive failures to prevent infinite loops
 static unsigned int consecutive_read_failures = 0;
@@ -197,10 +329,43 @@ static void ata_transaction_end(void) {
     scheduler_preempt_enable();
 }
 
+static void ata_selection_delay(uint16_t base) {
+    for (volatile int delay = 0; delay < 4; ++delay)
+        (void)inb(ATA_ALT_STATUS(base));
+}
+
+/*
+ * Device selection is channel-global.  IDENTIFY probing commonly leaves an
+ * absent slave selected with ERR latched.  That ERR belongs to the completed
+ * probe and must not reject a later command for the detected master.  Select
+ * the target first, wait for BSY and DRQ to clear, and let the status after the
+ * new command report any real operation failure.
+ */
+static bool ata_select_target(uint16_t base, uint8_t drive_head,
+                              uint32_t timeout_ms) {
+    if (!ata_command_base_valid(base)) return false;
+    outb(ATA_DRIVE_HEAD(base), drive_head);
+    ata_selection_delay(base);
+
+    uint32_t elapsed = 0U;
+    while (elapsed <= timeout_ms) {
+        uint8_t status = inb(ATA_STATUS(base));
+        if (status == 0U || status == 0xFFU) return false;
+        if ((status & (0x80U | 0x08U)) == 0U) return true;
+        if (elapsed == timeout_ms) break;
+        uint32_t delay = ATA_POLL_DELAY_MS;
+        if (delay > timeout_ms - elapsed) delay = timeout_ms - elapsed;
+        pit_delay(delay);
+        elapsed += delay;
+    }
+    return false;
+}
+
 static ata_cache_entry_t* ata_cache_slot(unsigned short base,
                                          unsigned int lba, bool is_master) {
     unsigned int drive = is_master ? 0U : 1U;
-    unsigned int controller = base == ATA_PRIMARY_IO ? 0U : 2U;
+    int channel = ata_channel_index(base);
+    unsigned int controller = channel >= 0 ? (unsigned int)channel * 2U : 0U;
     unsigned int index = (lba ^ (drive << 4) ^ (controller << 3)) %
                          ATA_READ_CACHE_ENTRIES;
     return &ata_read_cache[index];
@@ -367,17 +532,16 @@ static void ata_soft_reset(unsigned short base, bool is_master) {
     outb(ATA_DRIVE_HEAD(base), drive_select);
     
     // Wait 400ns for drive selection
-    for (volatile int i = 0; i < 4; i++) {
-        inb(ATA_ALT_STATUS(base));
-    }
+    ata_selection_delay(base);
     pit_delay(10);  // Extra delay for drive selection
     
     // Set SRST (Software Reset) bit in Device Control register
-    outb(ATA_CONTROL(base), 0x04);
+    outb(ATA_CONTROL(base), ATA_DEVICE_CONTROL_NIEN |
+                            ATA_DEVICE_CONTROL_SRST);
     pit_delay(10);  // Wait 10ms (increased)
     
-    // Clear SRST bit (enable interrupts again)
-    outb(ATA_CONTROL(base), 0x00);
+    // Clear SRST while retaining polling-only operation (nIEN).
+    outb(ATA_CONTROL(base), ATA_DEVICE_CONTROL_NIEN);
     pit_delay(5);  // Wait 5ms for reset to complete
     
     // Poll for drive ready (don't use wait_for_drive_ready as it may timeout)
@@ -411,7 +575,7 @@ static bool ata_read_sector_impl(unsigned short base, unsigned int lba,
     if (buffer == NULL ||
         (use_lba48 && (drive == NULL || !drive->lba48_supported)) ||
         (drive != NULL && lba >= drive->sectors) ||
-        (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) {
+        !ata_command_base_valid(base)) {
         return false;
     }
     ata_cache_entry_t* cached = ata_cache_slot(base, lba, is_master);
@@ -422,44 +586,23 @@ static bool ata_read_sector_impl(unsigned short base, unsigned int lba,
     }
     //printf("ata_read_sector: base=0x%X, lba=%u, is_master=%d\n", base, lba, is_master);
     
-    // On first read attempt, try a soft reset if drive isn't responding
-    static bool first_read_attempted[2] = {false, false};  // Track per controller
-    int controller_idx = (base == ATA_PRIMARY_IO) ? 0 : 1;
-    
-    if (!first_read_attempted[controller_idx]) {
-        uint8_t status = inb(ATA_STATUS(base));
-        if (status == 0x00 || status == 0xFF) {
-            printf("  Drive status invalid (0x%02X), attempting soft reset...\n", status);
-            ata_soft_reset(base, is_master);
-        }
-        first_read_attempted[controller_idx] = true;
-    }
-    
-    // Wait for the drive to be ready
-    //printf("  Step 1: Waiting for drive ready...\n");
-    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
-        //printf("  ERROR: Drive not ready (timeout)\n");
-        consecutive_read_failures++;
-        return false;  // Drive not ready within the timeout
-    }
-    //printf("  Step 1: Drive ready OK\n");
-
-    // Set the drive/head register for LBA mode FIRST (before other registers)
     unsigned char drive_head = use_lba48 ? 0x40U :
         (unsigned char)(0xE0U | ((lba >> 24) & 0x0FU));
     drive_head |= is_master ? 0x00U : 0x10U;
-    //printf("  Step 2: Selecting drive (drive_head=0x%02X, is_master=%d)...\n", drive_head, is_master);
-    outb(ATA_DRIVE_HEAD(base), drive_head);
-    
-    // Wait 400ns after drive selection (ATA spec requirement)
-    for (volatile int i = 0; i < 4; i++) {
-        inb(ATA_ALT_STATUS(base));  // Read alternate status 4 times for 400ns delay
+
+    // Select the actual target before inspecting channel-global status.  A
+    // failed empty-slot IDENTIFY may otherwise leave its ERR bit latched.
+    static bool first_read_attempted[2] = {false, false};  // Track per controller
+    int controller_idx = ata_channel_index(base);
+    if (controller_idx < 0) return false;
+    bool selected = ata_select_target(base, drive_head,
+                                      ATA_WAIT_TIMEOUT_MS);
+    if (!selected && !first_read_attempted[controller_idx]) {
+        ata_soft_reset(base, is_master);
+        selected = ata_select_target(base, drive_head, ATA_WAIT_TIMEOUT_MS);
     }
-    
-    // Wait for drive to acknowledge selection
-    //printf("  Step 2: Waiting for drive to acknowledge selection...\n");
-    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
-        //printf("  ERROR: Drive not ready after selection\n");
+    first_read_attempted[controller_idx] = true;
+    if (!selected) {
         consecutive_read_failures++;
         return false;
     }
@@ -538,14 +681,10 @@ static bool ata_pio_range_valid(drive_t *drive, uint32_t lba,
 static bool ata_program_pio_batch(unsigned short base, uint32_t lba,
                                   uint32_t count, bool is_master,
                                   bool write, bool use_lba48) {
-    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
     uint8_t head = use_lba48 ? 0x40U :
         (uint8_t)(0xE0U | ((lba >> 24U) & 0x0FU));
     head |= is_master ? 0U : 0x10U;
-    outb(ATA_DRIVE_HEAD(base), head);
-    for (volatile int delay = 0; delay < 4; ++delay)
-        (void)inb(ATA_ALT_STATUS(base));
-    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
+    if (!ata_select_target(base, head, ATA_WAIT_TIMEOUT_MS)) return false;
     if (use_lba48) {
         outb(ATA_SECTOR_CNT(base), 0U);
         outb(ATA_LBA_LOW(base), (uint8_t)(lba >> 24U));
@@ -634,14 +773,14 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,
         if (parent == NULL) return false;
         if (parent->type == DRIVE_TYPE_AHCI)
             return ahci_read_sector(parent, absolute, buffer);
-        ata_transaction_begin();
-        bool result = ata_read_sector_impl(parent->base, absolute, buffer,
-                                           parent->is_master);
-        ata_transaction_end();
-        return result;
+        base = parent->base;
+        lba = absolute;
+        is_master = parent->is_master;
+    } else {
+        drive_t *ahci_drive = ata_compat_ahci_drive(base);
+        if (ahci_drive != NULL)
+            return ahci_read_sector(ahci_drive, lba, buffer);
     }
-    drive_t *ahci_drive = ata_compat_ahci_drive(base);
-    if (ahci_drive != NULL) return ahci_read_sector(ahci_drive, lba, buffer);
     ata_transaction_begin();
     bool result = ata_read_sector_impl(base, lba, buffer, is_master);
     ata_transaction_end();
@@ -675,7 +814,7 @@ bool ata_read_sector_fresh(unsigned short base, unsigned int lba, void *buffer,
         (lba >= ATA_LBA28_LIMIT &&
          (drive == NULL || !drive->lba48_supported)) ||
         (drive != NULL && lba >= drive->sectors) ||
-        (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) {
+        !ata_command_base_valid(base)) {
         ata_transaction_end();
         return false;
     }
@@ -708,7 +847,7 @@ static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
     if (buffer == NULL ||
         (use_lba48 && (drive == NULL || !drive->lba48_supported)) ||
         (drive != NULL && lba >= drive->sectors) ||
-        (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) {
+        !ata_command_base_valid(base)) {
         return false; // Error: Buffer is null
     }
     /* Never serve data cached before a write attempt.  Invalidating first is
@@ -719,18 +858,11 @@ static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
         cached->valid = false;
     }
 
-    // Wait for the drive to be ready
-    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
-        return false;  // Drive not ready within the timeout
-    }
-
     // Select the target before programming its task-file registers.
     unsigned char drive_head = use_lba48 ? 0x40U :
         (unsigned char)(0xE0U | ((lba >> 24) & 0x0FU));
     drive_head |= is_master ? 0x00U : 0x10U;
-    outb(ATA_DRIVE_HEAD(base), drive_head);
-    for (volatile int i = 0; i < 4; ++i) inb(ATA_ALT_STATUS(base));
-    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
+    if (!ata_select_target(base, drive_head, ATA_WAIT_TIMEOUT_MS)) return false;
 
     // Program the selected device's task-file registers.
     if (use_lba48) {
@@ -1047,25 +1179,20 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
             if (armed && !storage_write_end(result)) result = false;
             return result;
         }
-        ata_transaction_begin();
-        int resource = ata_resource_index(parent->base, parent->is_master);
-        bool armed = !ata_write_fenced && resource >= 0 &&
-            storage_write_begin((uint32_t)resource, pit_monotonic_ms());
-        bool result = armed && ata_write_sector_journaled(parent->base,
-            absolute, buffer, parent->is_master);
-        if (armed && !storage_write_end(result)) result = false;
-        ata_transaction_end();
-        return result;
-    }
-    drive_t *ahci_drive = ata_compat_ahci_drive(base);
-    if (ahci_drive != NULL) {
-        int resource = ata_resource_index(base, is_master);
-        bool armed = !ata_write_fenced && resource >= 0 &&
-            storage_write_begin((uint32_t)resource, pit_monotonic_ms());
-        bool result = armed && ahci_write_sector(ahci_drive, lba, buffer) &&
-                      ahci_flush(ahci_drive);
-        if (armed && !storage_write_end(result)) result = false;
-        return result;
+        base = parent->base;
+        lba = absolute;
+        is_master = parent->is_master;
+    } else {
+        drive_t *ahci_drive = ata_compat_ahci_drive(base);
+        if (ahci_drive != NULL) {
+            int resource = ata_resource_index(base, is_master);
+            bool armed = !ata_write_fenced && resource >= 0 &&
+                storage_write_begin((uint32_t)resource, pit_monotonic_ms());
+            bool result = armed && ahci_write_sector(ahci_drive, lba, buffer) &&
+                          ahci_flush(ahci_drive);
+            if (armed && !storage_write_end(result)) result = false;
+            return result;
+        }
     }
     ata_transaction_begin();
     int resource = ata_resource_index(base, is_master);
@@ -1152,11 +1279,9 @@ bool ata_flush_cache(unsigned short base, bool is_master) {
         bool result = false;
         if (armed) {
             drive_t *drive = parent;
-            outb(ATA_DRIVE_HEAD(parent->base),
-                 parent->is_master ? 0xE0U : 0xF0U);
-            for (volatile int i = 0; i < 4; ++i)
-                (void)inb(ATA_ALT_STATUS(parent->base));
-            if (wait_for_drive_ready(parent->base, ATA_WAIT_TIMEOUT_MS)) {
+            if (ata_select_target(parent->base,
+                                  parent->is_master ? 0xE0U : 0xF0U,
+                                  ATA_WAIT_TIMEOUT_MS)) {
                 outb(ATA_COMMAND(parent->base), drive->lba48_supported ?
                     ATA_FLUSH_CACHE_EXT : 0xE7U);
                 result = wait_for_drive_ready(parent->base,
@@ -1176,9 +1301,8 @@ bool ata_flush_cache(unsigned short base, bool is_master) {
     bool result = false;
     if (armed) {
         drive_t *drive = &detected_drives[resource];
-        outb(ATA_DRIVE_HEAD(base), is_master ? 0xE0U : 0xF0U);
-        for (volatile int i = 0; i < 4; ++i) (void)inb(ATA_ALT_STATUS(base));
-        if (wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
+        if (ata_select_target(base, is_master ? 0xE0U : 0xF0U,
+                              ATA_WAIT_TIMEOUT_MS)) {
             outb(ATA_COMMAND(base), drive->lba48_supported ?
                                       ATA_FLUSH_CACHE_EXT : 0xE7U);
             result = wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS);
@@ -1238,17 +1362,35 @@ drive_t* ata_get_first_hdd() {
 }
 
 // Function to detect all ATA drives on the primary and secondary buses
+static void ata_probe_reset_channel(uint16_t base) {
+    if (!ata_command_base_valid(base)) return;
+    uint16_t control = ATA_CONTROL(base);
+    outb(control, ATA_DEVICE_CONTROL_NIEN | ATA_DEVICE_CONTROL_SRST);
+    pit_delay(5U);
+    outb(control, ATA_DEVICE_CONTROL_NIEN);
+    pit_delay(5U);
+    for (uint32_t elapsed = 0U; elapsed < ATA_DETECTION_TIMEOUT_MS;
+         elapsed += ATA_POLL_DELAY_MS) {
+        uint8_t status = inb(ATA_ALT_STATUS(base));
+        if (status == 0U || status == 0xFFU || (status & 0x80U) == 0U) return;
+        pit_delay(ATA_POLL_DELAY_MS);
+    }
+}
+
 static void ata_detect_drives_impl(void) {
-    uint16_t bases[2] = { ATA_PRIMARY_IO, ATA_SECONDARY_IO };
     uint8_t drives[2] = { ATA_MASTER, ATA_SLAVE };
     int drive_name_index = 0;  // For generating names like "hdd1", "hdd2", etc.
 
     drive_count = 0;  // Reset drive count before detection
+    ata_configure_channels();
     
     //printf("Starting ATA drive detection...\n");
 
     // Detect ATA drives
-    for (int bus = 0; bus < 2; bus++) {
+    for (uint32_t bus = 0U; bus < ATA_CHANNEL_COUNT; bus++) {
+        if (!ata_channels[bus].valid) continue;
+        uint16_t base = ata_channels[bus].command_base;
+        ata_probe_reset_channel(base);
         for (int drive = 0; drive < 2; drive++) {
             if (drive_count >= MAX_ATA_DRIVES) {
                // printf("Maximum number of drives reached.\n");
@@ -1258,11 +1400,11 @@ static void ata_detect_drives_impl(void) {
             // Use a temporary structure to avoid corrupting detected_drives on failure
             drive_t temp_drive;
             memset(&temp_drive, 0, sizeof(temp_drive));
-            temp_drive.base = bases[bus];
+            temp_drive.base = base;
             temp_drive.is_master = (drive == 0);  // 0 for master, 1 for slave
 
             // Attempt to identify the drive
-            if (ata_identify_drive(bases[bus], drives[drive], &temp_drive)) {
+            if (ata_identify_drive(base, drives[drive], &temp_drive)) {
 
                 // Trim trailing spaces from the model name
                 trim_trailing_spaces(temp_drive.model);
@@ -1278,13 +1420,22 @@ static void ata_detect_drives_impl(void) {
                 // Copy the successfully identified drive to the detected_drives array
                 detected_drives[drive_count] = temp_drive;
 
+                printf("ATA: resource %d %s model='%s' sectors=%u command=%X control=%X\n",
+                       drive_count, temp_drive.is_master ? "master" : "slave",
+                       temp_drive.model, temp_drive.sectors, temp_drive.base,
+                       ATA_CONTROL(temp_drive.base));
+
                 // Increment the global drive count after successfully adding a drive
                 drive_count++;
             }
         }
+        // Leave a deterministic selection behind.  Every operation still
+        // selects its own target before reading channel-global status.
+        outb(ATA_DRIVE_HEAD(base), ATA_MASTER);
+        ata_selection_delay(base);
     }
 
-    //printf("ATA detection complete. Total ATA drives: %d\n", drive_count);
+    printf("ATA: detected %d PIO drive(s)\n", drive_count);
 }
 
 void ata_detect_drives(void) {
@@ -1293,13 +1444,31 @@ void ata_detect_drives(void) {
     ata_transaction_end();
 }
 
+static bool ata_wait_identify_data(uint16_t base, uint32_t timeout_ms) {
+    uint32_t elapsed = 0U;
+    while (elapsed <= timeout_ms) {
+        uint8_t status = inb(ATA_STATUS(base));
+        if (status == 0U || status == 0xFFU) return false;
+        if ((status & 0x80U) == 0U) {
+            if ((status & (0x01U | 0x20U)) != 0U) return false;
+            if ((status & 0x08U) != 0U) return true;
+        }
+        if (elapsed == timeout_ms) break;
+        uint32_t delay = ATA_POLL_DELAY_MS;
+        if (delay > timeout_ms - elapsed) delay = timeout_ms - elapsed;
+        pit_delay(delay);
+        elapsed += delay;
+    }
+    return false;
+}
+
 static bool ata_identify_drive_impl(uint16_t base, uint8_t drive,
                                     drive_t *drive_info) {
-    if (!drive_info || (base != ATA_PRIMARY_IO && base != ATA_SECONDARY_IO)) return false;
+    if (!drive_info || !ata_command_base_valid(base)) return false;
 
     // Select the drive (master or slave)
     outb(base + 6, drive);
-    for (volatile int i = 0; i < 4; ++i) inb(ATA_ALT_STATUS(base));
+    ata_selection_delay(base);
 
     // IDENTIFY requires the task-file address/count registers to be zero.
     outb(ATA_SECTOR_CNT(base), 0);
@@ -1309,20 +1478,8 @@ static bool ata_identify_drive_impl(uint16_t base, uint8_t drive,
 
     // Send the IDENTIFY command
     outb(base + 7, ATA_IDENTIFY);
-
-    // Wait a bit for the drive to respond
-    if (inb(base + 7) == 0) {
-        return false;  // No drive present
-    }
-
-    // Wait until BSY clears and DRQ sets with timeout
-    if (!wait_for_drive_ready(base, ATA_DETECTION_TIMEOUT_MS)) {
-        return false;  // Timeout waiting for drive
-    }
-    
-    if (!wait_for_drive_data_ready(base, ATA_DETECTION_TIMEOUT_MS)) {
-        return false;  // DRQ not set, not an ATA device
-    }
+    ata_selection_delay(base);
+    if (!ata_wait_identify_data(base, ATA_DETECTION_TIMEOUT_MS)) return false;
 
     // Read the IDENTIFY data
     uint16_t identify_data[256];

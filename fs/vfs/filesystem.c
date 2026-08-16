@@ -16,6 +16,69 @@ extern void fat32_register_vfs(void);
 extern void fat12_register_vfs(void);
 extern bool ext2_register_vfs(void);
 
+#define REIST_SYSTEM_VOLUME_LABEL "X86 SYSTEM "
+
+static bool fat32_partition_type(uint8_t type) {
+    return type == 0x0BU || type == 0x0CU ||
+           type == 0x1BU || type == 0x1CU;
+}
+
+static bool reist_system_volume(const drive_t* drive) {
+    if (drive == NULL || drive->type != DRIVE_TYPE_PARTITION ||
+        !fat32_partition_type(drive->partition_type) || drive->sectors == 0U) {
+        return false;
+    }
+
+    uint8_t sector[SECTOR_SIZE];
+    if (!ata_read_sector(drive->base, 0U, sector, drive->is_master)) {
+        return false;
+    }
+
+    const boot_sector_t* boot = (const boot_sector_t*)sector;
+    uint64_t first_data = (uint64_t)boot->reserved_sector_count +
+        (uint64_t)boot->num_fats * boot->sectors_per_fat_32;
+    return sector[510] == 0x55U && sector[511] == 0xAAU &&
+           boot->bytes_per_sector == SECTOR_SIZE &&
+           boot->sectors_per_cluster != 0U &&
+           (boot->sectors_per_cluster &
+            (boot->sectors_per_cluster - 1U)) == 0U &&
+           boot->reserved_sector_count != 0U &&
+           boot->num_fats != 0U && boot->num_fats <= 2U &&
+           boot->max_root_entries == 0U &&
+           boot->sectors_per_fat_16 == 0U &&
+           boot->sectors_per_fat_32 != 0U &&
+           boot->root_cluster >= 2U &&
+           boot->total_sectors_32 != 0U &&
+           boot->total_sectors_32 <= drive->sectors &&
+           first_data < boot->total_sectors_32 &&
+           boot->boot_signature == 0x29U &&
+           memcmp(boot->file_system_type, "FAT32   ", 8U) == 0 &&
+           memcmp(boot->volume_label, REIST_SYSTEM_VOLUME_LABEL, 11U) == 0;
+}
+
+static int find_reist_system_volume(const drive_t drives[], int count) {
+    int selected = -1;
+    for (int index = 0; index < count; ++index) {
+        if (!reist_system_volume(&drives[index])) continue;
+        if (selected >= 0) return -2;
+        selected = index;
+    }
+    return selected;
+}
+
+static int find_boot_floppy(const drive_t drives[], int count,
+                            int boot_floppy_drive) {
+    if (boot_floppy_drive < 0) return -1;
+    int selected = -1;
+    for (int index = 0; index < count; ++index) {
+        if (drives[index].type != DRIVE_TYPE_FDD ||
+            drives[index].fdd_drive_no != boot_floppy_drive) continue;
+        if (selected >= 0) return -2;
+        selected = index;
+    }
+    return selected;
+}
+
 // initialize the fat32 filesystem class (legacy)
 fat32_class_t fat32;
 
@@ -206,7 +269,7 @@ void print_raw_boot_sector(uint16_t* data, size_t length) {
  * Auto-mount all detected drives using VFS
  * Called during system initialization to ensure filesystems are ready
  */
-void auto_mount_all_drives(void) {
+void auto_mount_all_drives(int boot_floppy_drive) {
     extern drive_t detected_drives[];
     extern short drive_count;
     extern drive_t* current_drive;  // Shell needs this set
@@ -228,9 +291,40 @@ void auto_mount_all_drives(void) {
     int mounted_count = 0;
     int failed_count = 0;
     bool first_drive_set = false;
+    drive_t* default_drive = NULL;
+    int preferred_root = find_boot_floppy(detected_drives, drive_count,
+                                          boot_floppy_drive);
+    bool preferred_is_floppy = preferred_root >= 0;
+    if (preferred_root == -2) {
+        printf("Auto-mount: Duplicate BIOS boot floppy; refusing ambiguous root\n");
+        current_drive = NULL;
+        return;
+    }
+    if (preferred_root < 0) {
+        preferred_root = find_reist_system_volume(detected_drives, drive_count);
+    }
+    if (preferred_root == -2) {
+        printf("Auto-mount: Multiple X86 SYSTEM volumes; refusing ambiguous root\n");
+        current_drive = NULL;
+        return;
+    }
+    if (preferred_root >= 0 && preferred_is_floppy) {
+        printf("Auto-mount: BIOS boot floppy is resource %d (%s)\n",
+               preferred_root, detected_drives[preferred_root].name);
+    } else if (preferred_root >= 0) {
+        printf("Auto-mount: REIST system volume is resource %d (%s)\n",
+               preferred_root, detected_drives[preferred_root].name);
+    }
     
-    // Mount all detected drives using VFS
-    for (int i = 0; i < drive_count; i++) {
+    /* Move the preferred volume to the front of one bounded permutation.
+     * If it cannot be mounted, do not silently publish unrelated media as
+     * root.  Every other resource is still visited exactly once. */
+    for (int order = 0; order < drive_count; ++order) {
+        int i = order;
+        if (preferred_root >= 0) {
+            if (order == 0) i = preferred_root;
+            else if (order <= preferred_root) i = order - 1;
+        }
         drive_t* drive = &detected_drives[i];
         char mount_path[32];
         int result;
@@ -248,6 +342,11 @@ void auto_mount_all_drives(void) {
             
             if (!ata_read_sector(drive->base, 0, buffer, drive->is_master)) {
                 failed_count++;
+                if (preferred_root >= 0 && order == 0) {
+                    printf("Auto-mount: Preferred boot volume read failed; refusing fallback root\n");
+                    current_drive = NULL;
+                    return;
+                }
                 continue;
             }
             
@@ -303,6 +402,7 @@ void auto_mount_all_drives(void) {
                 // Set first mounted drive as current
                 if (!first_drive_set) {
                     current_drive = drive;
+                    default_drive = drive;
                     first_drive_set = true;
                     printf("  -> Set as default drive\n");
                 }
@@ -331,6 +431,7 @@ void auto_mount_all_drives(void) {
                 // Set first mounted drive as current if no HDD
                 if (!first_drive_set) {
                     current_drive = drive;
+                    default_drive = drive;
                     first_drive_set = true;
                 }
                 
@@ -338,6 +439,11 @@ void auto_mount_all_drives(void) {
             } else {
                 failed_count++;
             }
+        }
+        if (preferred_root >= 0 && order == 0 && !first_drive_set) {
+            printf("Auto-mount: Preferred boot volume failed; refusing fallback root\n");
+            current_drive = NULL;
+            return;
         }
     }
     
@@ -353,6 +459,9 @@ void auto_mount_all_drives(void) {
         current_drive = NULL;
     }
     
+    /* Filesystem-specific mount code activates each volume while mounting.
+     * Restore the actual root/default drive after auxiliary mounts. */
+    current_drive = default_drive;
     if (current_drive != NULL) {
         printf("Active drive: %s\n", current_drive->name);
     } else {

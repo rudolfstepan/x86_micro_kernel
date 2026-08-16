@@ -162,42 +162,39 @@ static bool fat32_find_volume(drive_t* drive, uint32_t* partition_lba) {
     return false;
 }
 
-static bool fat32_resolve_entry(vfs_filesystem_t* fs, const char* path,
-                                struct fat32_dir_entry* result,
-                                uint32_t* parent_cluster) {
+static int fat32_resolve_entry(vfs_filesystem_t* fs, const char* path,
+                               struct fat32_dir_entry* result,
+                               uint32_t* parent_cluster) {
     if (!fs || !path || !result || !parent_cluster || strlen(path) >= MAX_PATH_LENGTH) {
-        return false;
+        return VFS_ERR_INVALID;
     }
 
     char copy[MAX_PATH_LENGTH];
     strcpy(copy, path);
     char* cursor = copy;
     while (*cursor == '/') cursor++;
-    if (*cursor == '\0') return false;
+    if (*cursor == '\0') return VFS_ERR_INVALID;
 
     uint32_t directory = ((fat32_vfs_context_t*)fs->fs_data)->boot.root_cluster;
     char* save = NULL;
     char* token = strtok_r(cursor, "/", &save);
     while (token) {
         char* next_token = strtok_r(NULL, "/", &save);
-        struct fat32_dir_entry* found =
-            find_file_in_directory_cluster(directory, token);
-        if (!found) return false;
+        struct fat32_dir_entry found;
+        fat32_lookup_result_t lookup = fat32_lookup_entry_in_directory(
+            directory, token, &found);
+        if (lookup == FAT32_LOOKUP_NOT_FOUND) return VFS_ERR_NOT_FOUND;
+        if (lookup != FAT32_LOOKUP_FOUND) return VFS_ERR_IO;
         if (!next_token) {
-            *result = *found;
+            *result = found;
             *parent_cluster = directory;
-            free(found);
-            return true;
+            return VFS_OK;
         }
-        if (!(found->attr & ATTR_DIRECTORY)) {
-            free(found);
-            return false;
-        }
-        directory = read_start_cluster(found);
-        free(found);
+        if (!(found.attr & ATTR_DIRECTORY)) return VFS_ERR_NOT_DIR;
+        directory = read_start_cluster(&found);
         token = next_token;
     }
-    return false;
+    return VFS_ERR_NOT_FOUND;
 }
 
 static bool fat32_resolve_parent(vfs_filesystem_t* fs, const char* path,
@@ -482,9 +479,9 @@ static int fat32_vfs_open_unlocked(vfs_filesystem_t* fs, const char* path,
     
     struct fat32_dir_entry fat_entry;
     uint32_t parent_cluster;
-    if (!fat32_resolve_entry(fs, path, &fat_entry, &parent_cluster)) {
-        return VFS_ERR_NOT_FOUND;
-    }
+    int resolve_result = fat32_resolve_entry(fs, path, &fat_entry,
+                                             &parent_cluster);
+    if (resolve_result != VFS_OK) return resolve_result;
 
     vfs_node_t* new_node = fat32_make_node(fs, &fat_entry, parent_cluster);
     if (!new_node) {
@@ -857,8 +854,9 @@ static int fat32_vfs_stat_unlocked(vfs_filesystem_t* fs, const char* path,
     fat32_activate(fs);
     struct fat32_dir_entry fat_entry;
     uint32_t parent_cluster;
-    if (!fat32_resolve_entry(fs, path, &fat_entry, &parent_cluster))
-        return VFS_ERR_NOT_FOUND;
+    int resolve_result = fat32_resolve_entry(fs, path, &fat_entry,
+                                             &parent_cluster);
+    if (resolve_result != VFS_OK) return resolve_result;
     (void)parent_cluster;
     fat32_entry_to_vfs_entry(&fat_entry, stat);
     return VFS_OK;

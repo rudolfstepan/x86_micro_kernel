@@ -179,7 +179,7 @@ static void hardware_init(void) {
 /**
  * Driver initialization - Block devices and network adapters
  */
-static void driver_init(void) {
+static void driver_init(const multiboot1_info_t *boot_info) {
     // IMPORTANT: Register network drivers ONLY for detected devices
     // Check PCI bus for network cards and register appropriate drivers
     printf("Detecting network hardware...\n");
@@ -257,10 +257,15 @@ static void driver_init(void) {
     }
 
     // Auto-mount all detected drives
-    extern void auto_mount_all_drives(void);
     boot_context("filesystem-init", "VFS", "auto-mount",
                  "detected filesystems");
-    auto_mount_all_drives();
+    int boot_floppy_drive = -1;
+    if (boot_info != NULL &&
+        (boot_info->flags & MULTIBOOT1_FLAG_BOOT_DEVICE) != 0U) {
+        uint8_t bios_drive = (uint8_t)(boot_info->boot_device >> 24U);
+        if (bios_drive < 0x80U) boot_floppy_drive = bios_drive;
+    }
+    auto_mount_all_drives(boot_floppy_drive);
 
     //printf("Driver initialization complete\n");
 }
@@ -462,40 +467,29 @@ static bool program_path_for_drive(const drive_t *drive,
 static int start_userspace_program(const multiboot1_info_t *boot_info,
                                    const char *filename,
                                    const char *description) {
-    drive_type_t preferred_type = DRIVE_TYPE_NONE;
-    if ((boot_info->flags & MULTIBOOT1_FLAG_BOOT_DEVICE) != 0) {
-        uint8_t bios_drive = (uint8_t)(boot_info->boot_device >> 24);
-        preferred_type = bios_drive < 0x80 ? DRIVE_TYPE_FDD : DRIVE_TYPE_ATA;
-    }
+    (void)boot_info;
+    for (int index = 0; index < drive_count; ++index) {
+        drive_t *drive = &detected_drives[index];
+        if (strcmp(drive->mount_point, "/") != 0) continue;
 
-    for (int pass = 0; pass < 2; ++pass) {
-        for (int index = 0; index < drive_count; ++index) {
-            drive_t *drive = &detected_drives[index];
-            if (drive->mount_point[0] == '\0') continue;
-            bool preferred = preferred_type == DRIVE_TYPE_NONE ||
-                             drive->type == preferred_type;
-            if ((pass == 0) != preferred) continue;
-
-            char program_path[PROCESS_PATH_MAX];
-            if (!program_path_for_drive(drive, filename, program_path)) continue;
-            const char *arguments[] = {filename};
-            /* Publish the READY task and its launch message as one foreground
-             * transaction so the child cannot split the serial log line. */
-            scheduler_preempt_disable();
-            int pid = create_process_for_file_args(
-                program_path, 1, arguments, drive->mount_point);
-            if (pid < 0) {
-                scheduler_preempt_enable();
-                continue;
-            }
-
+        char program_path[PROCESS_PATH_MAX];
+        if (!program_path_for_drive(drive, filename, program_path)) break;
+        const char *arguments[] = {filename};
+        /* System programs are loaded only from the already selected root
+         * volume.  An auxiliary disk must not override the trusted shell by
+         * appearing earlier in controller discovery order. */
+        scheduler_preempt_disable();
+        int pid = create_process_for_file_args(
+            program_path, 1, arguments, drive->mount_point);
+        if (pid >= 0) {
             printf("Starting %s from %s\n", description, program_path);
             scheduler_preempt_enable();
             wait_for_process(pid);
             printf("%s exited.\n", description);
             return 0;
         }
-        if (preferred_type == DRIVE_TYPE_NONE) break;
+        scheduler_preempt_enable();
+        break;
     }
     return -1;
 }
@@ -640,7 +634,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     hardware_init();
     
     // Stage 3: Driver initialization
-    driver_init();
+    driver_init(multiboot_info);
     
     network_initialize();
     watchdog_init();
@@ -657,13 +651,11 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 #endif
     boot_context("userspace-start", "REIST probe", "spawn", "/REIST.PRG");
     if (!supervisor_start_probe(pit_monotonic_ms())) {
-        panic_context_set_result(-1, 0U, 0U);
         panic("Unable to start REIST Ring-3 probe");
     }
     boot_context("userspace-start", "storage service", "spawn",
                  "/STORAGE.PRG");
     if (!storage_service_start(pit_monotonic_ms())) {
-        panic_context_set_result(-1, 0U, 0U);
         panic("Unable to start REIST Ring-3 storage service");
     }
     /* Publish every supervised service before the worker can inspect or

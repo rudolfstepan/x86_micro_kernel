@@ -343,6 +343,97 @@ evidence = [
 ]
 
 [[packages]]
+id = "S0.3c-hw1"
+status = "done"
+risk = "critical"
+title = "Deterministic REIST system-volume selection"
+scope = "Select exactly one validated FAT32 volume labelled X86 SYSTEM as the root filesystem before mounting auxiliary media. Fail closed on duplicate labels or a failed system-volume mount, preserve the selected root drive, distinguish FAT32 lookup I/O errors from absence, and retain the loader's precise panic result. Reproduce the physical multi-disk ordering with two AHCI disks in QEMU."
+allowed_files = [
+  "fs/vfs/filesystem.h",
+  "fs/vfs/filesystem.c",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "kernel/init/kernel.c",
+  "kernel/proc/process.c",
+  "scripts/run_qemu_smoke.py",
+  "test/test_qemu_smoke.py",
+  "test/test_boot_system_volume.py",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "a unique structurally valid FAT32 X86 SYSTEM partition is mounted at root before auxiliary media",
+  "an explicit BIOS floppy boot keeps the matching FAT12 drive as root",
+  "duplicate system labels and a failed system-volume mount fail closed",
+  "mounting auxiliary FAT32 volumes cannot change the default drive",
+  "FAT32 directory I/O failure is never reported as file absence",
+  "a precise program-loader panic result is not overwritten by its caller",
+  "all media scans are bounded by MAX_DRIVES"
+]
+targeted_tests = [
+  "python test/test_boot_system_volume.py -q",
+  "python test/test_qemu_smoke.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --sata --expect-reist-probe"
+]
+stop_conditions = [
+  "system-volume identity cannot be checked before root publication",
+  "an ambiguous system volume can become root",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: select the REIST system volume deterministically"
+evidence = []
+
+[[packages]]
+id = "S0.3c-hw2"
+status = "done"
+risk = "critical"
+title = "Bounded PCI IDE compatibility storage"
+scope = "Support SATA disks exposed by legacy AMD and generic PCI IDE controllers. Discover class 01/01 channels, validate compatibility or native I/O BARs, use the correct command/control ports, reset each channel once with a bounded deadline, probe absent slots silently, and publish explicit controller and drive diagnostics. Preserve ATA/AHCI/FDD behavior and polling-only bounded I/O."
+allowed_files = [
+  "drivers/block/ata.h",
+  "drivers/block/ata.c",
+  "drivers/bus/drives.h",
+  "kernel/init/kernel.c",
+  "test/test_ata_pci_ide.py",
+  "test/test_ata_source.py",
+  "test/test_block_transactions_r13.py",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "PCI IDE discovery accepts only class 01/01 and validated 16-bit I/O BARs",
+  "compatibility channels retain 1F0/3F6 and 170/376",
+  "native channels use BAR0/BAR1 and BAR2/BAR3 with control offset two",
+  "channel reset and every identify wait have finite monotonic or poll bounds",
+  "an absent master or slave is a silent negative probe, not a storage fault",
+  "published drives retain the command and control channel selected during discovery"
+]
+targeted_tests = [
+  "python test/test_ata_pci_ide.py -q",
+  "python test/test_ata_source.py -q",
+  "python test/test_block_transactions_r13.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --boot-only"
+]
+stop_conditions = [
+  "the boot controller cannot be represented with bounded PCI IDE channels",
+  "native channel control ports cannot be validated",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: support PCI IDE compatibility storage"
+evidence = []
+
+[[packages]]
 id = "S0.3c-6f5"
 status = "active"
 risk = "critical"

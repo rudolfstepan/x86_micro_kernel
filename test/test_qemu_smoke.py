@@ -497,6 +497,8 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         watchdog: bool = False,
         persistent: bool = False,
         sata: bool = False,
+        auxiliary_sata_image: Path | None = None,
+        boot_only: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["FAKE_QEMU_MODE"] = mode
@@ -521,6 +523,10 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
             command.append("--persistent")
         if sata:
             command.append("--sata")
+        if auxiliary_sata_image is not None:
+            command.extend(["--aux-sata-image", str(auxiliary_sata_image)])
+        if boot_only:
+            command.append("--boot-only")
         return subprocess.run(
             command,
             cwd=ROOT,
@@ -608,6 +614,42 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertIn("ich9-ahci,id=reistahci", arguments)
         self.assertIn("if=none,id=reistdisk", arguments)
         self.assertIn("ide-hd,drive=reistdisk,bus=reistahci.0", arguments)
+
+    def test_auxiliary_sata_disk_precedes_separately_bootable_system_disk(self) -> None:
+        auxiliary = self.directory / "auxiliary.img"
+        auxiliary.write_bytes(b"foreign test volume")
+        result = self.run_smoke(
+            "success", sata=True, auxiliary_sata_image=auxiliary,
+        )
+        self.assertEqual(result.returncode, 0, self.combined_output(result))
+        arguments = self.arguments_file.read_text(encoding="utf-8")
+        auxiliary_argument = f"file={auxiliary.resolve()}"
+        system_argument = f"file={self.image.resolve()}"
+        self.assertLess(arguments.index(auxiliary_argument),
+                        arguments.index(system_argument))
+        self.assertIn("reistauxdisk,bus=reistahci.0,bootindex=2", arguments)
+        self.assertIn("reistdisk,bus=reistahci.1,bootindex=1", arguments)
+
+    def test_auxiliary_sata_disk_requires_sata_mode(self) -> None:
+        auxiliary = self.directory / "auxiliary.img"
+        auxiliary.write_bytes(b"foreign test volume")
+        result = self.run_smoke(
+            "success", auxiliary_sata_image=auxiliary,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("requires --sata", self.combined_output(result))
+
+    def test_boot_only_does_not_require_guest_file_io_test(self) -> None:
+        result = self.run_smoke("success", boot_only=True)
+        self.assertEqual(result.returncode, 0, self.combined_output(result))
+
+        transcript = "\n".join((
+            "BOOT_OK", "C:\\>",
+            RUNNER_MODULE.REIST_PROBE_COMPLETION_MARKER, "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_reist_probe=True, boot_only=True,
+        ))
 
     def test_watchdog_profile_attaches_real_ib700_reset_device(self) -> None:
         result = self.run_smoke("success", watchdog=True)

@@ -31,9 +31,9 @@
 #define ATA_COMMAND(base)     (base + 7)       // Command register
 
 // Control registers
-#define ATA_ALT_STATUS(base)  ((base) + 0x206) // Alternate status register
-#define ATA_DEV_CTRL(base)    ((base) + 0x206) // Device control register
-#define ATA_CONTROL(base)     ((base) + 0x206) // Device control register (alias)
+#define ATA_ALT_STATUS(base)  ata_control_port_for_base(base)
+#define ATA_DEV_CTRL(base)    ata_control_port_for_base(base)
+#define ATA_CONTROL(base)     ata_control_port_for_base(base)
 
 #define MAX_ATA_DRIVES      4      // primary/secondary, master/slave
 #define MAX_FDD_DRIVES      2
@@ -46,6 +46,9 @@
 // External declarations
 extern short drive_count;
 extern drive_t detected_drives[MAX_DRIVES];
+
+/** Resolve the channel's alternate-status/device-control I/O port. */
+uint16_t ata_control_port_for_base(uint16_t base);
 
 bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info);
 

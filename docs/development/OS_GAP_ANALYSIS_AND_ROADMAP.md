@@ -1317,6 +1317,38 @@ negativ. QEMU-AHCI und VMware-AHCI gelten damit für das Erfolgsprofil als
 unterstützt; die Fault-Injection ist für QEMU abgenommen, aber nicht für
 VMware als reproduzierbarer Acceptance-Lauf.
 
+Ein auf realer Hardware beobachteter Panic beim Öffnen von `/REIST.PRG` wurde
+als nichtdeterministische Root-Volume-Auswahl reproduziert: Bislang wurde das
+erste erfolgreich erkannte Dateisystem als `/` veröffentlicht, unabhängig
+davon, von welchem Datenträger der Kernel gestartet worden war. Der Mountpfad
+validiert nun vor der Veröffentlichung höchstens `MAX_DRIVES` Partitionen und
+zieht genau ein strukturell gültiges FAT32-Volume mit dem exakten Label
+`X86 SYSTEM` vor. Meldet der BIOS-Loader dagegen ein Floppy-Bootlaufwerk,
+bleibt genau dieses FAT12-Laufwerk bevorzugtes Root-Volume. Doppelte
+Systemlabels und ein fehlgeschlagener Mount dieses
+Volumes brechen fail-closed ab; weitere Volumes können das Default-Laufwerk
+und Systemprogramme nicht mehr überschreiben. FAT32-Verzeichnis-I/O-Fehler
+bleiben als `VFS_ERR_IO` von einem fehlenden Namen unterscheidbar. Ein
+Zwei-AHCI-Plattenlauf mit fremdem FAT32 an Port 0 und dem bootfähigen
+REIST-Volume an Port 1 bestätigt Root-Auswahl, `/REIST.PRG`, Shell-Start und
+die vollständige Probe-Recovery-Sequenz.
+
+Das betroffene physische AMD-System bietet im BIOS ausschließlich den
+IDE-Kompatibilitätsmodus für seine einzelne SATA-HDD. Dafür erkennt der
+ATA-Treiber nun begrenzt PCI-Funktionen der Klasse `01/01`, aktiviert und
+prüft deren I/O-Decoding und verwendet entweder die festen
+Kompatibilitätsports `1F0/3F6` und `170/376` oder validierte native I/O-BARs.
+Jeder Kanal wird höchstens einmal mit fester Zeitgrenze zurückgesetzt; leere
+Master-/Slave-Slots sind eine stille negative IDENTIFY-Probe. Entscheidend
+ist, dass jeder nachfolgende PIO-Zugriff zuerst sein tatsächliches Ziel
+auswählt: Ein vom zuletzt geprüften, nicht vorhandenen Slave stammendes
+`ERR` darf den ersten Zugriff auf die vorhandene Master-HDD nicht mehr vor
+der neuen Befehlsausgabe abbrechen. Erst der Status des neu gestarteten
+Lese- oder Schreibbefehls gilt als Gerätefehler. Eine PCI-IDE-QEMU-Bootprobe
+mit nur einer Master-HDD sowie die Zwei-Platten-AHCI-Probe erreichen
+`REIST_PROBE RECOVERY_SEQUENCE_OK`. Die erneute Abnahme auf dem physischen
+AMD-System bleibt offen und ist Voraussetzung für eine Hardwareaussage.
+
 ### Phase 3 — Unix-artige CLI-Grundfunktionen
 
 #### R3.1 Pipes, Signale und TTY — XL

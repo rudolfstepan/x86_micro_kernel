@@ -125,6 +125,7 @@ def qemu_command(
     injection_port: int | None = None,
     handover_port: int | None = None,
     sata: bool = False,
+    auxiliary_sata_image: Path | None = None,
 ) -> list[str]:
     command = [
         str(qemu),
@@ -139,10 +140,20 @@ def qemu_command(
         "-no-shutdown",
     ]
     if sata:
+        command.extend(["-device", "ich9-ahci,id=reistahci"])
+        system_port = 0
+        if auxiliary_sata_image is not None:
+            system_port = 1
+            command.extend([
+                "-drive", (f"file={auxiliary_sata_image},format=raw,"
+                           "if=none,id=reistauxdisk"),
+                "-device", ("ide-hd,drive=reistauxdisk,bus=reistahci.0,"
+                            "bootindex=2"),
+            ])
         command.extend([
-            "-device", "ich9-ahci,id=reistahci",
             "-drive", f"file={image},format=raw,if=none,id=reistdisk",
-            "-device", "ide-hd,drive=reistdisk,bus=reistahci.0",
+            "-device", (f"ide-hd,drive=reistdisk,bus=reistahci.{system_port},"
+                        "bootindex=1"),
         ])
     else:
         command.extend([
@@ -560,6 +571,8 @@ def run(
     expect_dhcp_renewal: bool = False,
     udp_port: int = 9000,
     sata: bool = False,
+    auxiliary_sata_image: Path | None = None,
+    boot_only: bool = False,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
     injection_connection: socket.socket | None = None
@@ -577,7 +590,8 @@ def run(
     try:
         process = subprocess.Popen(
             qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot,
-                         nic, persistent, injection_port, handover_port, sata),
+                         nic, persistent, injection_port, handover_port, sata,
+                         auxiliary_sata_image),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -674,6 +688,8 @@ def run(
                         error = "QEMU exited immediately after DHCP renewal"
                         break
                     time.sleep(0.02)
+        elif error is None and boot_only:
+            pass
         elif error is None:
             # The UART RX path currently drops command bursts.  Pace every
             # byte so the same runner works on Windows and POSIX hosts.
@@ -852,6 +868,7 @@ def validate(
     expect_network_dhcp: bool = False,
     expect_network_udp_ingress: bool = False,
     expect_memory_fault: bool = False,
+    boot_only: bool = False,
 ) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
@@ -860,10 +877,20 @@ def validate(
     test = exact_line_position(transcript, TEST_MARKER)
     if boot < 0:
         return f"missing {BOOT_MARKER} marker"
-    if test < 0 and not (expect_dhcp_expiry or expect_dhcp_renewal):
+    if test < 0 and not (expect_dhcp_expiry or expect_dhcp_renewal or
+                         boot_only):
         return f"missing {TEST_MARKER} marker"
     if test >= 0 and test < boot:
         return f"{TEST_MARKER} appeared before {BOOT_MARKER}"
+    if boot_only:
+        if transcript.find(SHELL_PROMPT, boot) < 0:
+            return f"missing {SHELL_PROMPT} prompt after {BOOT_MARKER}"
+        if (expect_reist_probe and
+                exact_line_position(
+                    transcript, REIST_PROBE_COMPLETION_MARKER,
+                    after=boot) < 0):
+            return "missing cumulative REIST probe recovery marker"
+        return None
     if expect_memory_fault:
         memory_fault = exact_line_position(transcript,
                                            REIST_MEMORY_FAULT_MARKER)
@@ -1184,10 +1211,27 @@ def main() -> int:
         "--sata", action="store_true",
         help="attach the boot image through an emulated ICH9 AHCI controller",
     )
+    parser.add_argument(
+        "--aux-sata-image", type=Path,
+        help=("attach an auxiliary SATA disk before the boot disk to verify "
+              "deterministic system-volume selection"),
+    )
+    parser.add_argument(
+        "--boot-only", action="store_true",
+        help="stop successfully after BOOT_OK, the shell prompt, and requested boot markers",
+    )
     args = parser.parse_args()
 
     if not args.image.is_file():
         print(f"guest-smoke: image not found: {args.image}", file=sys.stderr)
+        return 2
+    if args.aux_sata_image is not None and not args.sata:
+        print("guest-smoke: --aux-sata-image requires --sata", file=sys.stderr)
+        return 2
+    if (args.aux_sata_image is not None and
+            not args.aux_sata_image.is_file()):
+        print(f"guest-smoke: auxiliary image not found: {args.aux_sata_image}",
+              file=sys.stderr)
         return 2
     if args.timeout <= 0:
         print("guest-smoke: timeout must be positive", file=sys.stderr)
@@ -1228,6 +1272,9 @@ def main() -> int:
             args.expect_dhcp_renewal,
             args.udp_port,
             args.sata,
+            (args.aux_sata_image.resolve()
+             if args.aux_sata_image is not None else None),
+            args.boot_only,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)
@@ -1257,7 +1304,8 @@ def main() -> int:
                             args.expect_network_udp,
                             args.expect_network_dhcp,
                             args.expect_network_udp_ingress,
-                            args.expect_memory_fault)
+                            args.expect_memory_fault,
+                            args.boot_only)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")
@@ -1266,7 +1314,8 @@ def main() -> int:
     print(transcript, end="" if transcript.endswith("\n") else "\n",
           file=sys.stderr)
     detail = process_error or marker_error
-    if not (args.expect_dhcp_expiry or args.expect_dhcp_renewal) and \
+    if not (args.expect_dhcp_expiry or args.expect_dhcp_renewal or
+            args.boot_only) and \
             TEST_MARKER not in str(detail):
         detail = f"{detail}; missing {TEST_MARKER} marker"
     print(f"guest-smoke: FAIL: {detail}", file=sys.stderr)
