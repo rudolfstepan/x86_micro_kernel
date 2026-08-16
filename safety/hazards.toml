@@ -61,3 +61,63 @@ ftti_ms = 250
 controls = ["kernel/init/critical_object.c", "kernel/ipc/ipc.c"]
 verification = ["test/test_reist_critical_object.py", "test/test_reist_ipc.py"]
 residual_risk = "Software-ECC schützt nicht gegen falsche Adressberechnung oder Common-Cause-CPU-Fehler."
+
+[[hazard]]
+id = "HZ-MEMORY-001"
+title = "Ungültige Speicherabbildung oder erschöpfte Speicherressource"
+severity = "critical"
+safe_state = "Betroffenen Prozess begrenzen, ungültige Seite sperren und bei Kernpfadfehler kontrolliert stoppen."
+ftti_ms = 250
+controls = ["arch/x86/mm/paging.c", "kernel/proc/process.c", "kernel/init/fatal.c"]
+verification = ["test/test_memory_r12.py", "test/test_memory_fault_injection.py", "test/test_reist_user_stack_guards.py"]
+residual_risk = "Kumulative Speicher- und WCET-Budgets für alle Zielplattformen sind noch nicht vollständig nachgewiesen."
+
+[[hazard]]
+id = "HZ-SCHEDULER-001"
+title = "Verhungern, Deadlineverlust oder Ressourcenüberlast im Scheduler"
+severity = "critical"
+safe_state = "Begrenzte Arbeit verwerfen, Supervisor-Reserve erhalten und Fortschritt über Watchdog überwachen."
+ftti_ms = 1000
+controls = ["kernel/sched/scheduler.c", "kernel/time/pit.c", "kernel/init/supervisor.c"]
+verification = ["test/test_scheduler_time.py", "test/test_scheduler_resource_stats.py", "test/test_reist_watchdog.py"]
+residual_risk = "Vollständige Zielhardware-WCET- und Prioritätsinversionsnachweise fehlen."
+
+[[hazard]]
+id = "HZ-BOOT-001"
+title = "Fehlerhaftes oder inkonsistentes Bootartefakt"
+severity = "catastrophic"
+safe_state = "Boot ablehnen, keine unvalidierte Kernel- oder Dateisystemausführung beginnen und Fehler sichtbar melden."
+ftti_ms = 1000
+controls = ["arch/x86/boot/bios/stage1_mbr.asm", "arch/x86/boot/bios/stage2_bios.asm", "kernel/init/kernel.c"]
+verification = ["test/test_native_boot_image.py", "test/test_floppy_boot_image.py"]
+residual_risk = "Signierte A/B-Images und kryptografische Release-Authentizität sind noch offen."
+
+[[hazard]]
+id = "HZ-AHCI-001"
+title = "AHCI-DMA-, Link- oder Controllerfehler"
+severity = "critical"
+safe_state = "Betroffenen Port stoppen, DMA-Auftrag begrenzen, Ressource quarantänisieren und Schreibpfad sperren."
+ftti_ms = 250
+controls = ["drivers/block/ahci.c", "drivers/block/block_device.c", "kernel/init/storage_service.c"]
+verification = ["test/test_ahci_source.py", "test/test_block_device.py", "test/test_reist_storage_recovery.py"]
+residual_risk = "VMware-Fault-Injection und reale SATA-Hardware sind noch nicht abgenommen."
+
+[[hazard]]
+id = "HZ-FAT12-001"
+title = "Inkonsistente FAT12-Metadaten oder beschädigte Clusterkette"
+severity = "critical"
+safe_state = "Schreibpfad sperren, read-only analysieren und nur nach bestätigter transaktionaler Recovery reparieren."
+ftti_ms = 4000
+controls = ["fs/fat12/fat12.c", "fs/fat12/fat12_journal.c", "fs/fat12/fat12_remap.c", "fs/fat12/fat12_critical.c"]
+verification = ["test/test_fat12_journal.py", "test/test_fat12_remap.py", "test/test_fat12_maintenance.py", "test/test_fat12_critical.py"]
+residual_risk = "Vollständige Power-Loss- und Reconnect-Matrix für FAT12 auf VMware und realer FDD-Hardware fehlt."
+
+[[hazard]]
+id = "HZ-FAT32-001"
+title = "Inkonsistente FAT32- oder VFS-Mutation"
+severity = "critical"
+safe_state = "VFS und Storage auf read-only setzen, aktive Transaktion recovern und weitere Mutationen verweigern."
+ftti_ms = 4000
+controls = ["fs/fat32/fat32.c", "fs/fat32/fat32_vfs_adapter.c", "fs/vfs/filesystem.c", "kernel/init/filesystem_safety.c"]
+verification = ["test/test_vfs_maintenance.py", "test/test_fs_host.py"]
+residual_risk = "Cross-Directory- und Cross-Volume-Transaktionen sowie vollständige Medienmatrix bleiben offen."

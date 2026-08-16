@@ -687,12 +687,13 @@ class DynamicProgramStagingTests(unittest.TestCase):
         self.assertIn("vfs_close(node)", read_failure)
         self.assertIn("k_free(image)", read_failure)
 
-        validation_start = loader.index("if (vfs_close(node) != VFS_OK")
+        self.assertIn("int close_result = vfs_close(node)", loader)
+        self.assertIn("int validation_result = program_image_validate(", loader)
+        validation_start = loader.index("if (close_result != VFS_OK")
         validation_brace = loader.index("{", validation_start)
-        validation_condition = loader[validation_start:validation_brace]
         validation_failure = extract_block(loader, validation_brace)
-        self.assertIn("vfs_close(node)", validation_condition)
-        self.assertIn("program_image_validate(", validation_condition)
+        self.assertIn("vfs_close(node)", loader)
+        self.assertIn("program_image_validate(", loader)
         self.assertIn("k_free(image)", validation_failure)
 
     def test_successful_staging_ownership_is_freed_after_copying(self):

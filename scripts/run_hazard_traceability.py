@@ -20,8 +20,10 @@ def file_sha256(path: Path) -> str:
 
 
 def default_runner(path: Path) -> tuple[bool, str]:
+    pattern = path.name
     result = subprocess.run(
-        [sys.executable, str(path), "-q"], cwd=path.parents[1],
+        [sys.executable, "-m", "unittest", "discover", "-s", "test",
+         "-p", pattern, "-q"], cwd=path.parents[1],
         capture_output=True, text=True, timeout=180,
     )
     lines = (result.stdout + result.stderr).strip().splitlines()
