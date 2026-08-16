@@ -1,158 +1,98 @@
 # VMware Workstation
 
-Der native Windows-Build erzeugt eine vollständige VM, die direkt geöffnet
-und gestartet werden kann. Eine manuelle VM-Erstellung, ein ISO und GRUB sind
-nicht erforderlich.
+Stand: 16. August 2026.
 
-## Erzeugen und starten
+Der native Windows-Build erzeugt eine vollständige Legacy-BIOS-VM. ISO, GRUB
+und manuelles Anlegen einer VM sind nicht erforderlich.
 
 ```powershell
 .\scripts\build-windows.ps1 -Target vmware -RunTests
 .\build\vmware\reist-os\START-VMWARE.cmd
 ```
 
-Alternativ wird diese Datei in VMware Workstation geöffnet:
+Alternativ wird `build/vmware/reist-os/reist-os.vmx` in VMware Workstation
+geöffnet. Vor einem Neubau muss die VM ausgeschaltet sein; der Build verweigert
+das Überschreiben einer über `vmrun` laufenden Paket-VM.
 
-```text
-build/vmware/reist-os/reist-os.vmx
-```
-
-Die VM muss vor einem erneuten Build ausgeschaltet sein. Das Buildskript
-erkennt eine über `vmrun` laufende paketierte VM und bricht ab, bevor deren
-Festplatte überschrieben werden könnte.
-
-## Mitgelieferte Konfiguration
+## Referenzkonfiguration
 
 | Einstellung | Wert |
 |---|---|
 | Firmware | Legacy BIOS |
-| Bootreihenfolge | erste IDE-Festplatte |
-| Hardwareversion | 20 |
-| CPU | 1 vCPU, 1 Kern pro Socket |
-| RAM | 512 MiB |
-| Grafik | VMware SVGA, 3D deaktiviert, Kernel standardmäßig VGA-Text |
-| Festplatte | persistente monolithic-flat IDE-VMDK |
-| Netzwerk | Intel E1000, Custom `VMnet0`, beim Start verbunden |
-| Seriell | COM1 in `vmware-serial.log` |
-| Nicht benötigt | Diskette, Audio, USB, VMware Tools |
+| Boot | `sata0:0` |
+| CPU/RAM | 1 vCPU, 512 MiB |
+| Festplatte | persistente monolithic-flat SATA-VMDK |
+| Grafik | VMware SVGA, 3D aus, standardmäßig VGA-Text |
+| Eingabe | virtuelle PS/2-Tastatur |
+| Netzwerk | Intel E1000 an `VMnet0` |
+| Seriell | COM1-Ausgabe nach `vmware-serial.log` |
+| Deaktiviert | USB, EHCI, xHCI, Audio, VMware Tools |
 
-Descriptor-VMDK, `-flat.vmdk` und VMX müssen im selben Paketordner bleiben.
-Das Raw-Image enthält den eigenen MBR-/Stage-2-Bootloader und eine mountbare
-FAT32-Datenpartition.
+Descriptor-VMDK, `-flat.vmdk` und VMX müssen im Paketordner zusammenbleiben.
+Das Raw-Image enthält MBR, Bootpartition und die FAT32-Systempartition
+`X86 SYSTEM`. Der Kernel erkennt die virtuelle Platte nativ über AHCI.
 
-## LAN-Zugriff
-
-`VMnet0` ist eine VMware-Bridge. Die VM besitzt eine eigene virtuelle MAC und
-bezieht beim Boot automatisch eine IPv4-Konfiguration vom DHCP-Server des
-lokalen Netzes.
+## Funktionstest
 
 ```text
-C:\> GETIP
-C:\> NET STATUS
-C:\> NET DHCP
-C:\> PING 192.168.1.1
-```
-
-Die Gatewayadresse kann vom Beispiel abweichen und wird in der DHCP-Ausgabe
-angezeigt. Der Gast unterstützt derzeit Ethernet, ARP, IPv4, ICMP und DHCP.
-Ein Ping vom Host zum Gast hängt zusätzlich von Host-Firewall, Access Point
-und deren ICMP-Regeln ab.
-
-Wenn mehrere physische Hostadapter existieren, im **Virtual Network Editor**
-`VMnet0` fest dem gewünschten Ethernet- oder WLAN-Adapter zuordnen. Manche
-WLANs erlauben keine zusätzliche MAC-Adresse oder aktivieren
-Client-Isolation. In diesem Fall ist kabelgebundenes Ethernet der verlässlichste
-Bridge-Test.
-
-## Shell- und Programmtest
-
-```text
+C:\> DRIVES
 C:\> DIR
 C:\> TYPE README.TXT
 C:\> RUN HELLO.PRG
+C:\> GTEST
 ```
 
-`DIR` und `TYPE` müssen dieselbe Datei über den gemeinsamen VFS-Pfad sehen.
-Das Beispielprogramm meldet `USERSPACE-E2E-OK`.
+`HELLO.PRG` meldet `USERSPACE-E2E-OK`. `GTEST` prüft Ring-3-, VFS- und
+Recoverypfade und muss bis `TEST_OK` laufen.
+
+## Netzwerk
+
+`VMnet0` ist als Bridge vorgesehen. `REIST.PRG` verwaltet den überwachten
+DHCP-Lease. Bei mehreren Hostadaptern muss `VMnet0` im Virtual Network Editor
+dem gewünschten Adapter zugeordnet werden. WLAN-Client-Isolation oder das
+Verbot zusätzlicher MAC-Adressen kann Bridging verhindern.
+
+```text
+C:\> NET STATUS
+C:\> NET DHCP
+C:\> GETIP
+```
 
 ## Serielles Protokoll
 
-Der VMware-Ordner enthält nach dem Start `vmware-serial.log`. Es protokolliert
-die COM1-Ausgabe und ist die erste Anlaufstelle bei frühem Bootfehler,
-Kernelpanic oder fehlender VGA-Ausgabe. Das Bootloader-Debugport-Protokoll und
-die spätere COM1-Ausgabe sind nicht mit einer interaktiven VMware-Konsole zu
-verwechseln.
+`vmware-serial.log` enthält die COM1-Diagnose für Boot, Treiber, REIST-Marker
+und Panic-Kontext. COM1 ist nicht die interaktive Shell-Eingabe. Bei einem
+Panic sind Phase, Komponente, Operation, Subject, Result, Details, Sequenz und
+Build-ID zu sichern.
 
 ## Fehlerdiagnose
 
-### VM startet nicht
+- kein Boot: Legacy BIOS, `bios.hddOrder = "sata0:0"` und zusammengehörige
+  VMDK-Dateien prüfen
+- kein Root: AHCI-Probe, MBR-Children und eindeutiges `X86 SYSTEM` prüfen
+- keine Tastatur: VM-Fenster fokussieren; PS/2 ist erforderlich, VMware Tools
+  nicht
+- kein LAN: `e1000`, Verbindungsstatus und VMnet0-Zuordnung prüfen
+- frühe Panic: `vmware-serial.log` und erweiterten Panic-Screen vergleichen
 
-- VMware Workstation muss `vmrun.exe` enthalten; andernfalls die VMX manuell öffnen.
-- BIOS statt UEFI verwenden.
-- VMDK nicht von ihrem `-flat.vmdk`-Extent trennen.
-- Prüfen, ob die VM noch läuft oder gesperrte `.lck`-Verzeichnisse besitzt.
-
-### Kein Prompt
-
-- `vmware-serial.log` auf Bootloader- oder Kernelmeldungen prüfen.
-- VM-Konfiguration unverändert mit einer IDE-Platte starten.
-- 3D-Beschleunigung deaktiviert lassen.
-- Das Paket mit `-RunTests` neu bauen.
-
-### Keine Tastatur
-
-- In das VM-Fenster klicken, damit VMware die Eingabe einfängt.
-- PS/2-Standardkonfiguration beibehalten; VMware Tools werden nicht benötigt.
-- Die Shell muss bereits den Prompt anzeigen.
-
-### Kein Netzwerk
-
-- In der VMX muss `ethernet0.virtualDev = "e1000"` stehen.
-- Adapter muss verbunden und `VMnet0` dem richtigen Hostadapter zugeordnet sein.
-- Mit `NET DHCP` den überwachten Lease-Zustand prüfen, danach `GETIP`
-  ausführen. DHCP wird beim Boot automatisch durch `REIST.PRG` ausgehandelt.
-- Bei WLAN-Problemen Ethernet oder testweise eine andere VMware-Netzart verwenden.
-
-## Manuelle Ersatzkonfiguration
-
-Falls das Paket bewusst neu angelegt werden soll:
-
-1. Gasttyp **Other / Other 32-bit** wählen.
-2. Legacy BIOS, eine vCPU und mindestens 512 MiB RAM einstellen.
-3. `build/reist-os.vmdk` als vorhandene IDE-Platte einbinden.
-4. Intel E1000 an `VMnet0` konfigurieren.
-5. Festplatte als erstes Bootgerät wählen.
-
-Die generierte VMX bleibt jedoch die Referenzkonfiguration.
+Eine manuelle Ersatz-VM muss die VMDK als SATA-Festplatte einbinden. Eine IDE-
+Platte ist nur noch ein separater QEMU-/Kompatibilitäts-Regressionspfad.
 
 ## Physisches USB-Diskettenlaufwerk
 
-Ein unter Windows als `A:` eingebundenes USB-FDD kann über VMwares physisches
-Floppy-Backing verwendet werden. Die VM muss dazu vollständig ausgeschaltet
-sein:
+Ein vom Host als `A:` bereitgestelltes USB-FDD kann VMware als klassisches
+FDC-Gerät durchreichen; der Gast benötigt dafür keinen USB-Stack:
 
 ```powershell
 .\scripts\configure-vmware-fdd.ps1 -Mode Physical -Drive A:
 ```
 
-Danach startet die normale `reist-os.vmx` zuerst von der eingelegten
-physischen Diskette und nur als Fallback von der IDE-Festplatte. VMware stellt
-das Hostlaufwerk dem Gast als klassischen Floppy-Controller bereit. Deshalb
-bleiben `usb.present`, EHCI und xHCI deaktiviert; der noch experimentelle
-USB-Mass-Storage-Pfad des Kernels wird hierfür nicht benötigt.
-
-`build-windows.ps1 -Target vmware` trägt ein vorhandenes physisches Laufwerk
-`A:` nach dem Neuaufbau automatisch wieder in beide VMX-Dateien ein. Der Build
-ersetzt die Zuordnung daher nicht mehr unbemerkt durch das Image. Mit
-`-VmwareFloppy Image` kann das Image erzwungen werden; ein anderes Laufwerk
-wird beispielsweise mit `-VmwareFloppy Physical -FloppyDrive B:` gewählt.
-
-Zurück zum mitgelieferten Image geht es ebenfalls nur bei ausgeschalteter VM:
+Zurück zum Image:
 
 ```powershell
 .\scripts\configure-vmware-fdd.ps1 -Mode Image
 ```
 
-Explorer-Fenster und andere Hostprogramme dürfen während des VM-Betriebs nicht
-gleichzeitig auf `A:` zugreifen. Das Laufwerk kann immer nur exklusiv vom Host
-oder von VMware verwendet werden.
+Die VM muss dabei ausgeschaltet sein, und das Hostlaufwerk darf nicht zugleich
+von Explorer oder einem anderen Prozess geöffnet sein. Beim FDD-Boot bleibt
+die SATA-Platte nur Fallback.

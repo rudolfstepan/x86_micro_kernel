@@ -1,88 +1,54 @@
 # Testabdeckung
 
-Stand: 3. August 2026.
+Stand: 16. August 2026.
 
-Die Suite kombiniert reine Python-Tests mit kleinen, gegen ausgewählte
-Kernelquellen kompilierten Host-Harnesses. Dadurch lassen sich Datenstrukturen
-und Fehlerpfade reproduzierbar prüfen, ohne für jeden Fall den Kernel zu
-booten.
+## Host- und Strukturtests
 
-## Abgedeckte Invarianten
-
-### Nativer Bootdatenträger
-
-- gültige MBR-Signatur und zwei nicht überlappende Partitionseinträge
-- additive Manifest-Prüfsumme
-- Kernel-CRC32 im Manifest
-- ELF32-Klasse, i386-Maschine, Entry und `PT_LOAD`-Grenzen
-- FAT32-Bootsektor, FSInfo und identische FAT-Kopien
-- korrekte Datei-Clusterketten einschließlich mehrerer Cluster
-- wachsende Root-Verzeichniskette
-- eindeutige und gültige ASCII-8.3-Namen
-- konsistente VMDK-/VMX- und VMware-Paketdateien
-
-### Dateisystem und VFS
-
-- Mount-/Unmount-Lebenszyklus
-- Auswahl des längsten Mountpfades
-- Pfadgrenzen ohne falsche Präfixtreffer
-- FAT12-Clusterketten und Handle-Lebensdauer
-- FAT32-Schreiben, Truncate, Kettenfreigabe und Verzeichniserweiterung
+- MBR, Manifest, Stage 2, ELF32, CRC32, FAT32-Image, VMDK und SATA-VMX
+- FAT12-Journal, Remap, kritische Replikate und geordnete Transaktionen
+- FAT32-Datei-/Verzeichnis-I/O, Journal, Rename, Replace und Transportwahl
 - EXT2-Partitionen, Verzeichnisse und indirekte Blöcke
-- FAT32-Integration: `readdir` und `open` sehen dieselbe `README.TXT`
+- VFS-Mountregeln, deterministische Systemvolume-Auswahl und DOS-Pfade
+- ATA/PCI-IDE, AHCI, Partitionen, Blocktransaktionen und Storage-Safety
+- Ring-3-MYPR-ABI, Syscalls, Userpointer, Prozesse, IPC und Dienste
+- PS/2-Scan-Set-2, NumLock und Ausschluss serieller Tastaturinjektion
+- Netzwerkparser, Capabilities, UDP-Bindings und DHCP-Zustände
+- Fatalpfad, Panic-Kontext, Crashrecord, Watchdog und Handoverprotokolle
 
-### Shell
+## Gasttests
 
-- DOS-Buchstaben und native Laufwerkspräfixe
-- relative/absolute Pfade, `/`, `\`, `.`, `..`
-- Begrenzung an der Laufwerkswurzel
-- VFS-Mountjoin und DOS-Anzeige
-- Quellschutz: Dateibefehle und Programmlader dürfen nicht wieder auf den
-  früheren globalen FAT32-Direktpfad zurückfallen
+- nativer BIOS-/MBR-Boot bis Ring-3-Shell und `TEST_OK`
+- ATA/IDE-Regression und expliziter AHCI/SATA-Boot
+- FAT32-Datei-I/O über eine AHCI-Partition bis `FILE_IO_OK`
+- überwachte Ring-3-Probe mit Crash-, Hang- und Invalid-Reply-Recovery
+- Storage-Recovery und kontrollierter I/O-Fehler
+- FDD-Auswurf, Quarantäne, Wiedereinlegen und Requalifizierung
+- PS/2-NumLock und Texteingabe über QEMU-`sendkey`
+- Netzwerk-, DHCP-, UDP-, PIT-, Memory-, Watchdog- und Handoverprofile
+- VBE-Framebuffer und erster Ring-3-Desktop-Renderdurchlauf
 
-### Externe Programme
+## Manuell beobachtet
 
-- externe temporäre C- und `.S`-Quellen
-- freestanding i386-Link
-- keine offenen Relokationen
-- korrekter 28-Byte-MYPR-Header
-- Ladebasis, Einstieg, Segmentgrenzen und BSS-Materialisierung
-- Kernelvalidator für beschädigte oder zu große Images
+- VMware-AHCI-Boot, FAT32-Mount und Userspace-Shell
+- physischer Legacy-BIOS-Boot von SATA-Hardware
+- reale PS/2-Tastatureingabe einschließlich NumLock
 
-## Laufzeitsmoke
+Manuelle Beobachtung ist wertvolle Hardwareevidenz, aber keine breite
+Kompatibilitäts- oder Langzeitqualifikation. Der jüngste AHCI-Partition-Batch-
+Fix ist automatisiert in QEMU verifiziert und muss auf den jeweiligen realen
+Zielplatten erneut bestätigt werden.
 
-Zusätzlich zur Hostsuite wurde das erzeugte VMware-Paket headless gestartet.
-Das serielle Protokoll bestätigte:
+## Nicht nachgewiesen
 
-- nativen BIOS-/MBR-Boot
-- Kernelinitialisierung ohne Crash
-- Mount von `hdd0` als `/`
-- E1000-Initialisierung
-- DHCP-Lease im gebridgten LAN
-- Erreichen des Prompts `C:\>`
+- formale Vollständigkeit oder Zertifizierung
+- SMP-/Mehrkern- und umfassende Race-Abdeckung
+- reale Power-Loss-Matrix für jede FAT12-Persistenzstufe
+- unabhängige elektrische Supervisor-/Fence-/Failover-Domäne
+- breite BIOS-, AHCI-, PCI-IDE-, PS/2- und Medienmatrix
+- stabiler USB/xHCI-/Mass-Storage-/Hotplugpfad
+- UEFI, Secure Boot, NVMe, IOMMU und allgemeine DMA-Isolation
+- DNS, TCP, IPv6 und vollständige Internet-Anwendungen
 
-Die Shellbefehle selbst werden in diesem headless Smoke nicht per VMware-
-Tastaturautomation eingegeben. Ihre Pfad-/VFS-Kernlogik wird stattdessen durch
-die Hosttests abgedeckt; ein manueller GUI-Test bleibt für Eingabegeräte und
-Bildschirmdarstellung sinnvoll.
-
-## Nicht abgedeckt
-
-- formaler Beweis von Speicher- oder Prozessisolation
-- SMP und Mehrkern-Rennen
-- lange Hardware-Stressläufe
-- vollständige USB-Gerätematrix
-- alle realen BIOS-/ATA-/WLAN-Kombinationen
-- TCP/DNS, da diese Protokolle noch nicht implementiert sind
-- Fuzzing aller Parser und Dateisystem-Metadaten
-
-## Referenzbefehle
-
-```powershell
-python -m unittest discover -s test -p "test_*.py" -v
-.\scripts\build-windows.ps1 -Target vmware -RunTests
-```
-
-Die tatsächlich ausgegebene Testanzahl ist maßgeblich; sie kann mit neuen
-Testmethoden wachsen und wird deshalb nicht als feste Zahl in der
-Dokumentation eingefroren.
+Die tatsächlich ausgeführte Testanzahl wird nicht eingefroren. Maßgeblich sind
+die Paketqueue, das konkrete Gatekommando, dessen Rückgabecode und das
+zugehörige Log unter `build/codex-agent/`.

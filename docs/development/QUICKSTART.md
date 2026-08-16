@@ -1,5 +1,7 @@
 # Quickstart
 
+Stand: 16. August 2026.
+
 Diese Anleitung beschreibt den bevorzugten, vollständig nativen Windows-Weg.
 WSL, GRUB und ein Cross-GCC sind dafür nicht nötig.
 
@@ -27,10 +29,10 @@ Im Projektstamm:
 .\scripts\build-windows.ps1 -Target vmware -RunTests
 ```
 
-Der Build räumt zunächst die gemeinsamen Objektdateien auf, kompiliert den
-Kernel als freestanding i386-ELF, assembliert beide BIOS-Stufen, baut die
-Systemprogramme einschließlich `DESKTOP.PRG` sowie `HELLO.PRG`, erzeugt das
-Raw-Image und verpackt die VMware-VM.
+Der Build arbeitet inkrementell: unveränderte Kernelobjekte und Ring-3-
+Programme bleiben erhalten. Ein Konfigurationswechsel löst gezielt einen
+sauberen Neubau aus; `-Clean` erzwingt ihn ausdrücklich. Danach werden beide
+BIOS-Stufen, das Raw-Image und das VMware-Paket aktualisiert.
 
 Wichtige Ergebnisse:
 
@@ -57,6 +59,12 @@ QEMU mit bereits gebautem Raw-Image:
 
 ```powershell
 .\scripts\run-windows.ps1 -NoBuild
+```
+
+QEMU über AHCI/SATA:
+
+```powershell
+.\scripts\run-windows.ps1 -NoBuild -Sata
 ```
 
 Ein Headless-QEMU-Start zeigt die Bootloader-Diagnose, stellt aber keine

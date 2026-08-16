@@ -17,7 +17,7 @@ unter Windows mit dem eigenen BIOS-Bootloader, ohne WSL oder ISO.
 Die bestehende öffentliche SDK-ABI behält vorerst ihre `x86os_*`-Symbolnamen,
 damit vorhandene PRG-Programme binär und quelltextlich kompatibel bleiben.
 
-Stand dieser Dokumentation: 13. August 2026.
+Stand dieser Dokumentation: 16. August 2026.
 
 ## Schnellstart unter Windows
 
@@ -35,18 +35,17 @@ Das erzeugt unter anderem:
 - `build/reist-os-floppy.img`: bootfähiges 1,44-MB-FAT12-Diskettenimage
 - `build/reist-os.vmdk` und `.vmx`: VMware-Artefakte
 - `build/vmware/reist-os/`: vollständig startbare VMware-VM
-- `build/programs/`: native Ring-3-Systemprogramme, unter anderem `SYSINFO`,
-  `DATE`, `UPTIME`, `MEMINFO`, `REPEAT`, `CALC`, `ASCII`, `CAT`, `LS`, `SAVE`,
-  `BASIC`, `SPAWN`, `PS`, `KILL`, `PWD`, `EDIT` und `SHELL`
+- `build/programs/`: native Ring-3-Systemprogramme, unter anderem `SHELL`,
+  `REIST`, `STORAGE`, `DRIVES`, `CHKDSK`, `FDISK`, `FORMAT`, `SYSINFO`,
+  `MEMINFO`, `CAT`, `LS`, `SAVE`, `BASIC`, `EDIT`, `SPAWN`, `PS` und `KILL`
 
 Native Programme erhalten klassische `argc`/`argv`-Argumente und erben das
 Arbeitsverzeichnis der Shell. Beispielsweise zeigt `cat README.TXT` eine Datei
 direkt aus dem aktuellen Verzeichnis an.
 
-`EDIT` ist derzeit ein experimenteller, noch nicht fertiggestellter
-Vollbild-Texteditor. Grundlegende Navigation und Bearbeitung funktionieren;
-komfortable Dialoge, robuste Dateiersetzung und weitere Praxistests fehlen
-noch.
+`EDIT` ist ein experimenteller Vollbild-Texteditor. Sein Speichervorgang
+verwendet eine temporäre Datei, `fsync`, Close und atomaren FAT32-Rename;
+komfortable Dialoge und breitere Praxistests fehlen noch.
 
 Nach der Hardware- und Dateisysteminitialisierung startet der Kernel
 `SHELL.PRG` automatisch vom BIOS-Bootlaufwerk. Die ältere Kernel-Shell wird
@@ -54,7 +53,7 @@ nur noch als Rettungskonsole verwendet, falls die Userspace-Shell fehlt oder
 beendet wird.
 
 Die Userspace-Shell zeigt DOS-kompatible Laufwerksbuchstaben (`A:`/`B:` für
-Disketten und ab `C:` für ATA-Laufwerke). Ein Laufwerk wird beispielsweise
+Disketten und ab `C:` für gemountete ATA-/AHCI-Volumes). Ein Laufwerk wird beispielsweise
 mit `A:` oder `C:` gewechselt; interne VFS-Mountpfade bleiben verborgen.
 Dateiverwaltung steht als Ring-3-Programme `MKDIR`, `RMDIR`, `DEL` und `COPY`
 zur Verfügung; DOS-Pfade können dabei auch laufwerksübergreifend verwendet
@@ -123,11 +122,13 @@ BIOS
   -> ELF32-Kernel laden und prüfen
   -> Protected Mode / Multiboot-1-Handoff
   -> Kernelinitialisierung
-  -> FAT32 als Laufwerk C:
+  -> eindeutig markierte FAT32-Systempartition als Laufwerk C:
   -> DOS-artige Shell
 ```
 
-Das Image enthält eine kleine RAW-Bootpartition und eine FAT32-Datenpartition.
+Das Image enthält eine kleine RAW-Bootpartition und eine FAT32-Datenpartition
+mit dem Label `X86 SYSTEM`. QEMU kann den ATA/IDE- oder den expliziten
+AHCI/SATA-Pfad verwenden; das generierte VMware-Paket verwendet AHCI/SATA.
 Der Kernel wird über CRC32 und seine ELF32-Struktur geprüft. `README.TXT` und
 das gebaute `.PRG` liegen auf der Datenpartition. Einen GRUB-/ISO-Buildpfad
 gibt es nicht mehr.
@@ -156,10 +157,10 @@ Beispiele und die genaue Pfadsemantik stehen in
 ## Netzwerk und VMware
 
 Die bereitgestellte VMware-VM verwendet einen Intel-E1000-Adapter an
-`VMnet0` im Bridge-Modus. Beim Boot fordert der Kernel automatisch eine
-IPv4-Konfiguration per DHCP an. Der aktuelle Stack umfasst Ethernet, ARP,
-IPv4, ICMP und DHCP. DNS, TCP und Anwendungen wie HTTP oder SMB sind noch
-nicht vorhanden.
+`VMnet0` im Bridge-Modus. Der überwachte Ring-3-Dienst `REIST.PRG` verarbeitet
+die begrenzten Netzwerkentscheidungen einschließlich DHCP. Der aktuelle Stack
+umfasst Ethernet, ARP, IPv4, ICMP, UDP-Bindings für den Dienst und DHCP. DNS,
+TCP und Anwendungen wie HTTP oder SMB sind noch nicht vorhanden.
 
 ```text
 C:\> GETIP
@@ -183,8 +184,9 @@ make test-unit
 ```
 
 Der vollständige Windows-Build mit `-RunTests` führt die hostseitigen
-Regressionstests aus. Sie prüfen unter anderem Bootimage, FAT12/FAT32, EXT2,
-VFS, Shell-Pfade, PRG-Validierung und die externe C-/Assembly-Toolchain.
+Regressionstests aus. Die REIST-Paket- und Laufzeitgates ergänzen dies um
+echte QEMU-Gastläufe für Ring 3, SATA/AHCI, PS/2, Storage-Recovery,
+FDD-Hotplug und ausgewählte Fault-Injection-Pfade.
 
 ## Quellbaum
 
@@ -212,9 +214,14 @@ Buildschritte müssen explizit ergänzt werden.
   Prozess- und Syscall-API ist jedoch noch klein und besitzt beispielsweise
   keine Pipes, Signale oder allgemeine Socket-Schnittstelle.
 - Das erzeugte FAT32-Image verwendet für eingebettete Dateien ASCII-8.3-Namen.
-- Der Netzwerkstack besitzt noch kein DNS, TCP, UDP-Socket-API oder IPv6.
+- Der Netzwerkstack besitzt noch kein DNS, TCP, allgemeines POSIX-artiges
+  UDP-Socket-API oder IPv6.
 - Der native Bootpfad ist BIOS/MBR-basiert; UEFI ist nicht implementiert.
-- USB/xHCI und Framebuffer sind experimenteller als der VGA-/PS/2-Standardweg.
+- USB/xHCI ist experimentell. VGA/PS/2 ist der robuste Standardweg; der
+  VBE-Framebuffer besitzt einen geprüften QEMU-Desktop-Smoke, aber noch keine
+  breite reale Hardwarematrix.
+- AHCI/SATA ist in QEMU, VMware und auf realer SATA-Hardware gebootet worden;
+  das ist noch keine allgemeine Controller- oder Langzeitqualifikation.
 
 ## Dokumentation
 

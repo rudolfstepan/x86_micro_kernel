@@ -1,105 +1,59 @@
 # VFS-Architektur
 
-Das Virtual File System ist die gemeinsame Schnittstelle zwischen Shell,
-Programmlader und den Dateisystemtreibern. FAT32, FAT12 und EXT2 sind über
-Adapter registriert; frühere direkte Shellaufrufe in globale FAT-Strukturen
-gehören nicht mehr zum aktuellen Design.
+Stand: 16. August 2026.
 
-## Schichten
-
-```text
-Shell / Programmlader / Kernelkomponenten
-                  |
-       kanonischer absoluter VFS-Pfad
-                  |
-     vfs_open/read/write/stat/readdir/...
-                  |
-      Mounttabelle und Adapterauswahl
-          /           |           \
-       FAT32         FAT12         EXT2
-          \           |           /
-              Blockgerät / ATA / FDD
-```
-
-## Öffentliche Operationen
-
-Die aktuelle Schnittstelle umfasst die für den Kernel benötigten
-Datei-/Verzeichnisoperationen, unter anderem:
-
-- Mounten und Unmounten
-- `open`, `close`, `read`, `write`, `seek`
-- `stat`
-- `readdir`
-- `mkdir`, `rmdir`, `create`, `unlink`
-
-Adapter dürfen für nicht unterstützte Operationen einen eindeutigen
-VFS-Fehler zurückgeben. Die Shell übersetzt Fehler wie „nicht gefunden“,
-„bereits vorhanden“, „kein Verzeichnis“, „schreibgeschützt“ oder „Datenträger
-voll“ in lesbare Meldungen.
-
-## Mountregeln
-
-`auto_mount_all_drives()` initialisiert VFS und registriert alle drei
-Dateisystemtypen. Das erste erfolgreiche Laufwerk erhält `/`; weitere werden
-unter `/mnt/<laufwerk>` eingehängt. Der Mountpunkt wird zusätzlich im
-`drive_t` gespeichert, damit die Shell ihren Laufwerkspfad korrekt in einen
-VFS-Pfad übersetzen kann.
-
-Die Mountauswahl muss längste passende Präfixe berücksichtigen: `/mnt/hdd1/x`
-gehört zum Mount `/mnt/hdd1`, nicht zum Root-Mount `/`.
-
-## Pfade
-
-VFS selbst erhält absolute, mit `/` getrennte Pfade. DOS-Syntax gehört in die
-Shellschicht:
+VFS ist die einzige reguläre Dateisystemschnittstelle für Shell,
+Programmlader und Ring-3-Datei-ABI. Direkte globale FAT-Sonderpfade gehören
+nicht zum aktuellen Design.
 
 ```text
-D:\DOCS\A.TXT
-  -> drive=hdd1, drive_path=/DOCS/A.TXT
-  -> /mnt/hdd1/DOCS/A.TXT
+Ring-3-Programm / Shell
+          |
+      Syscall-/FD-Schicht
+          |
+          VFS
+       /   |   \
+   FAT32 FAT12 EXT2
+          |
+  Blockgerät / Partition
+       /    |    \
+   ATA-PIO AHCI  FDD
 ```
 
-Der Resolver normalisiert `.`/`..`, doppelte Separatoren und Laufwerkspräfixe,
-bevor VFS aufgerufen wird. Dadurch verwenden `DIR`, `TYPE`, `COPY` und `RUN`
-dieselbe Dateiidentität.
+## Operationen
+
+Die Adapter stellen die jeweils unterstützten Varianten von `open`, `close`,
+`read`, `write`, `seek`, `stat`, `readdir`, `create`, `mkdir`, `unlink`,
+`rmdir`, `truncate`, `fsync`, `rename` und `replace` bereit. Nicht unterstützte
+Operationen liefern einen eindeutigen Fehler und dürfen keine Teilwirkung
+veröffentlichen.
+
+## Mountvertrag
+
+- Mountpfade und Tabellen sind fest begrenzt.
+- Der längste passende Mountpfad gewinnt; `/mnt/hdd1/X` gehört nicht zu `/`.
+- Die bevorzugte Rootressource wird vor Hilfsmedien gemountet.
+- Ein fehlgeschlagener bevorzugter Mount wird nicht durch ein beliebiges
+  späteres Laufwerk ersetzt.
+- Dateisystemspezifische Aktivierung während weiterer Mounts darf die
+  tatsächliche Root-/Defaultressource nicht überschreiben.
+
+## Fehler- und Schreibgrenze
+
+Userpointer, Größen, Deskriptoren und Pfade werden vor Wirkung validiert.
+Storage-Quarantäne und globales Write-Fencing werden unterhalb von VFS
+durchgesetzt. Markierte FAT32- und FAT12-Volumes besitzen eigene
+Persistenzprotokolle; daraus folgt keine Garantie für EXT2 oder fremde FAT-
+Volumes. Ein unklarer Commit darf nicht als Erfolg erscheinen.
 
 ## Adapterstatus
 
-### FAT32
+- FAT32: Lesen/Schreiben, Verzeichnisse, Truncate, `fsync`, Rename/Replace und
+  Undo-Journal für markierte REIST-Images.
+- FAT12: Lesen/Schreiben, Verzeichnisse, beide FAT-Kopien sowie REIST-Journal,
+  Remap und kritische Replikate auf explizit markierten Medien.
+- EXT2: grundlegende VFS- und indirekte Blockpfade; kein REIST-Journal.
 
-- Verzeichnisauflistung, Lesen und Schreiben
-- Datei- und Verzeichnisoperationen über VFS
-- Clusterketten und case-insensitive 8.3-Suche
-- Hostintegrationstest einschließlich `README.TXT`
-
-### FAT12
-
-- Diskettenabbilder und VFS-Adapter
-- Datei-/Verzeichnisoperationen gemäß Adapterumfang
-- Hosttest auf erzeugtem FAT12-Abbild
-
-### EXT2
-
-- Erkennung als Superblock direkt auf dem Gerät oder in einer Linux-MBR-Partition
-- VFS-Adapter und hostseitiger Regressionstest
-- Funktionsumfang bleibt kleiner als bei einem vollständigen Linux-EXT2-Treiber
-
-Einzelheiten und bekannte Grenzen stehen in den Dateisystemdokumenten.
-
-## Regeln für neue Kernelkomponenten
-
-1. Niemals einen Shellpfad direkt an einen FAT-Treiber geben.
-2. Erst in einen absoluten VFS-Pfad auflösen.
-3. Handles auf jedem Fehlerpfad schließen.
-4. Rückgabewerte vollständig prüfen.
-5. Dateiinhalte nicht als NUL-terminiert annehmen.
-6. Ein partiell erzeugtes Ziel bei fehlgeschlagener Kopie entfernen.
-7. Dateisystemspezifische Annahmen auf den Adapter begrenzen.
-
-## Tests
-
-`test/test_fs_host.py` kompiliert Host-Harnesses für VFS und die
-Dateisystemadapter. `test/test_shell_path_host.c` prüft die reine
-Pfadnormalisierung. Die FAT32-Integration stellt unter anderem sicher, dass
-`readdir` und `open` dieselbe Datei finden und dass unterschiedliche
-Großschreibung akzeptiert wird.
+Hosttests prüfen Mountpräfixe, Lebenszyklen und Adapterinvarianten. QEMU-
+Gasttests bleiben erforderlich, weil nur sie Treiber, Partitionstransport,
+VFS, Syscalls und Ring 3 gemeinsam ausführen.

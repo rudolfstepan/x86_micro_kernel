@@ -3,7 +3,7 @@
 > **Historisches Änderungsprotokoll (Stand November 2025):** Dieses Dokument
 > beschreibt die damalige Version 1.1 und enthält überholte Mount- und
 > Dateisystemhinweise. Die aktuelle Referenz ist
-> [`docs/features/BASIC_INTERPRETER.md`](docs/features/BASIC_INTERPRETER.md)
+> [`BASIC_INTERPRETER.md`](BASIC_INTERPRETER.md)
 > für Version 1.2 mit VFS-basiertem `LOAD` und `SAVE`.
 
 ## Version 1.1 - November 8, 2025

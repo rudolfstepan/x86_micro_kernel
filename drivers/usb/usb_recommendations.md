@@ -68,4 +68,3 @@ void driver_init() {
 1. Consider adding logging levels (info/warning/error)
 2. Implement proper error codes instead of returning generic -1
 3. Document expected PCI device states for each function
-```

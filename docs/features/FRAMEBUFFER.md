@@ -1,5 +1,7 @@
 # Anzeige: VGA, Framebuffer und Desktop-MVP
 
+Stand: 16. August 2026.
+
 VGA-Text bleibt der robuste Standardweg. Ein `VIDEO=framebuffer`-Build richtet
 über den eigenen BIOS-Loader einen linearen RGB-Framebuffer ein und startet
 darauf bevorzugt den grafischen Ring-3-Desktop.

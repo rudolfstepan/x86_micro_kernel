@@ -1,5 +1,7 @@
 # Shell, Befehle und Pfade
 
+Stand: 16. August 2026.
+
 Die Shell orientiert sich bei Navigation und Dateibefehlen an MS-DOS, nutzt
 intern aber ausschließlich kanonische VFS-Pfade. Der Prompt zeigt das aktuelle
 DOS-Laufwerk und Verzeichnis, beispielsweise `C:\TOOLS>`.
@@ -16,8 +18,10 @@ DOS-Laufwerk und Verzeichnis, beispielsweise `C:\TOOLS>`.
 | Datei anzeigen | `TYPE datei`, `OPEN datei` |
 | Datei anlegen/löschen | `MKFILE datei`, `DEL datei`, `ERASE`, `RMFILE` |
 | Kopieren | `COPY quelle ziel` |
-| Laufwerke | `DRIVES`, `MOUNT laufwerk`, `C:`, `hdd0:` |
+| Laufwerke | `DRIVES`, `MOUNT laufwerk`, `C:`, `hdd0p2:` |
 | Programme | `RUN datei.PRG`, `EXEC datei.PRG`, `PS`, `KILL`, `BASIC` |
+| Netzwerk | `GETIP`, `IFCONFIG`, `PING`, `ARP`, `NET` |
+| Diagnose | `MEM`, `DUMP`, `PCI`, `IRQ`, `SYS`, `DATETIME` |
 
 Der reguläre Bootpfad lädt `SHELL.PRG` als Ring-3-Command-Line-Interpreter.
 Die fest einkompilierte Kernel-Shell ist ausschließlich die Rettungskonsole,
@@ -27,8 +31,6 @@ Die Userspace-Shell verwaltet einen eigenen `PATH`. Das aktuelle Verzeichnis
 wird zuerst geprüft, anschließend die mit Semikolon getrennten
 Suchverzeichnisse. Standardmäßig verweist `PATH` auf das Stammverzeichnis des
 Bootlaufwerks.
-| Netzwerk | `GETIP`, `IFCONFIG`, `PING`, `ARP`, `NET` |
-| Diagnose | `MEM`, `DUMP`, `PCI`, `IRQ`, `SYS`, `DATETIME` |
 
 Befehlsnamen sind unabhängig von Groß-/Kleinschreibung. Argumente werden
 nicht pauschal großgeschrieben. Dateinamen auf FAT werden beim Nachschlagen
@@ -45,8 +47,8 @@ README.TXT             relativ zum aktuellen Verzeichnis
 \DOCS\README.TXT       absolut auf aktuellem Laufwerk
 C:\DOCS\README.TXT     DOS-Laufwerk
 C:DOCS\README.TXT      relativ zum gemerkten C:-Verzeichnis
-hdd0:/DOCS/README.TXT  nativer Laufwerksname
-/hdd0/DOCS/README.TXT  ältere kompatible VFS-Schreibweise
+hdd0p2:/DOCS/README.TXT nativer Partitionsname
+/hdd0p2/DOCS/README.TXT ältere kompatible VFS-Schreibweise
 ```
 
 `/` und `\` dürfen gemischt werden. Mehrfache Trennzeichen und `.` werden
@@ -55,10 +57,12 @@ oder ungültiger Pfad wird abgelehnt, nicht abgeschnitten.
 
 ## Laufwerkswechsel
 
-Festplatten werden ab `C:` und Disketten ab `A:` zugeordnet:
+Gemountete Festplatten-/Partitionsvolumes werden ab `C:` und Disketten ab
+`A:` zugeordnet. Das Root-Volume erhält `C:`; konkrete Gerätenamen und
+Resource-IDs werden immer mit `DRIVES` ermittelt:
 
 ```text
-hdd0 -> C:    hdd1 -> D:
+hdd0p2 -> C:  hdd1p1 -> D:
 fdd0 -> A:    fdd1 -> B:
 ```
 

@@ -3,7 +3,7 @@
 Produktname: **REIST OS — Resilient Execution, Isolation and Stability
 Technology**
 
-Stand: 13. August 2026
+Stand: 16. August 2026
 
 Status: optionales Referenzprofil; nur für ausdrücklich ausgewählte
 medizinische Zielsysteme verbindlich

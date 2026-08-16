@@ -1,6 +1,6 @@
 # Dokumentationsindex
 
-Stand: 13. August 2026.
+Stand: 16. August 2026.
 
 Die Dokumentation unterscheidet zwischen aktuellen Referenzen und
 historischen Arbeitsberichten. Für Aufbau, Start und Bedienung sind die hier
@@ -45,6 +45,12 @@ bereits behobene Fehler enthalten.
 
 - [Tests ausführen](../scripts/README_TESTING.md) – aktuelle Befehle
 - [Testabdeckung](../scripts/TESTING_SUMMARY.md) – geprüfte Invarianten und Grenzen
+
+Der derzeitige Referenzdatenträger ist ein BIOS/MBR-Image mit einer markierten
+FAT32-Systempartition. VMware verwendet SATA/AHCI, QEMU hält zusätzlich den
+ATA/IDE-Regressionspfad bereit. Für reale Datenträger dürfen ausschließlich
+die zielgebundenen Installationsskripte nach Prüfung von Modell, Seriennummer
+und Größe verwendet werden.
 
 ## Historische Arbeitsberichte
 

@@ -1,16 +1,21 @@
 # Netzwerkstack
 
+Stand: 16. August 2026.
+
 Der verifizierte VMware-Weg verwendet einen Intel-E1000-Adapter und eine
-Bridge zum lokalen Netz. Der Kernel fordert beim Start per DHCP eine eigene
-IPv4-Konfiguration an. Frühere NE2000-QEMU-Loopback-Probleme sind nicht der
-aktuelle Referenzzustand.
+Bridge zum lokalen Netz. Der überwachte Ring-3-Dienst `REIST.PRG` führt die
+begrenzten DHCP-/Netzwerkentscheidungen aus; der Kernel vermittelt Hardware,
+Capabilities, validierte Übergaben und Commit. Frühere NE2000-QEMU-
+Loopback-Probleme sind nicht der aktuelle Referenzzustand.
 
 ## Architektur
 
 ```text
 Shell: GETIP / IFCONFIG / PING / ARP / NET
                 |
-Ethernet + ARP + IPv4 + ICMP + DHCP
+überwachter REIST.PRG-Netzdienst
+                |
+Ethernet + ARP + IPv4 + ICMP + UDP + DHCP
                 |
        gemeinsame netdev-Schnittstelle
                 |

@@ -1,35 +1,70 @@
-# FAT12-Status
+# FAT12-Status und Resilienz
 
-FAT12 dient primär Diskettenabbildern und ist über VFS registriert. Der
-aktuelle Shellpfad greift nicht direkt auf eine globale FAT12-Instanz zu.
+Stand: 16. August 2026.
 
-## Implementiert und getestet
+FAT12 dient vor allem bootfähigen 1,44-MB-Disketten und läuft vollständig über
+VFS und die gemeinsame Blockgeräteschicht. Klassische fremde FAT12-Medien
+bleiben auf einem Kompatibilitätspfad; zusätzliche REIST-Garantien werden nur
+für explizit markierte, neu formatierte Medien aktiviert.
 
-- Validierung des FAT12-Bootsektors und der 1,44-MiB-Geometrie
-- Lesen von FAT12-Clusterketten
-- Dateihandles mit stabil kopiertem Open-Modus
-- Seek-/Positionsverhalten über Clustergrenzen
-- Unterverzeichnis-Lebensdauer ohne ungültige temporäre Zeiger
-- VFS-Adapter für die von der Shell verwendeten Operationen
-- Hostregression in `test/test_fat12_host.c`
+## Implementierter Grundumfang
 
-Disketten werden als `fdd0`, `fdd1` erkannt und DOS-artig `A:`, `B:`
-zugeordnet. Ist eine Festplatte vorhanden, liegen Disketten typischerweise
-unter `/mnt/fdd0` beziehungsweise `/mnt/fdd1`.
+- strenge BPB-/Geometrie- und Clusterbereichsprüfung
+- Lesen und Schreiben von Dateien und Verzeichnissen
+- beide FAT-Kopien, Kettenallokation/-freigabe und begrenzte Scans
+- Einzelsektor-Fallback, wenn echte FDD-Hardware einen Batchzugriff ablehnt
+- Quarantäne und kontrollierte Requalifizierung nach Medienfehlern/Hotplug
+
+## REIST-FAT12
+
+Die Pakete `S0.3c-6f1` bis `S0.3c-6f4` sind umgesetzt:
+
+1. verifiziertes Undo-Journal mit redundanten CRC-Headern und Recovery vor
+   veränderlicher Metadatennutzung
+2. begrenzte Defektbestätigung, `0xFF7`-Markierung und redundante Remaptabelle
+   mit fest reservierten Ersatzsektoren
+3. persistente, sequenzierte und CRC-geschützte Replikate für die feste Liste
+   kritischer 8.3-Dateien
+4. geordnete Mutation: Daten, beide FATs, Verzeichniseintrag,
+   Replikatpublikation und erst zuletzt Journal-`CLEAN`
+
+Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
+Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen
+zu Write-Fencing statt zu blindem Weiterarbeiten.
+
+## Werkzeuge
+
+`DRIVES` liefert die Resource-ID. Formatierung ist absichtlich explizit und
+akzeptiert derzeit nur eine verfügbare FDD-Ressource:
 
 ```text
 C:\> DRIVES
-C:\> DIR A:\
-C:\> TYPE A:\README.TXT
+C:\> FORMAT --reist-fat12 1 --confirm
 ```
 
-## Grenzen
+Die `1` ist nur ein Beispiel. `FORMAT.PRG` reicht einen generationgebundenen,
+30 Sekunden begrenzten Auftrag an `STORAGE.PRG` weiter. Der Dienst erzeugt
+Metadaten und beide FATs, schreibt den Bootsektor zuletzt und bestätigt Erfolg
+erst nach Readback. Bei unbekanntem Abschluss muss das Medium read-only
+bleiben.
 
-- klassische FAT12-Kapazitäts- und Geometriegrenzen
-- im Kern 8.3-Kurznamen; keine vollständige LFN-Unterstützung
-- keine Journaling- oder Crash-Recovery-Funktionen
-- Verhalten realer Diskettencontroller ist weniger umfassend getestet als
-  die Hostabbilder
+```text
+CHKDSK [pfad]
+FDISK
+```
 
-`FAT12_ANALYSIS.md` bleibt als historischer Detailbericht erhalten und kann
-bereits behobene Probleme beschreiben.
+`CHKDSK.PRG` ist ein begrenzter read-only VFS-Scan; es repariert nichts.
+`FDISK.PRG` zeigt Inventar, verändert aber keine Partitionen. Eine Diskette
+besitzt ohnehin keine MBR-Partitionstabelle.
+
+## Noch offen
+
+- aktives Paket `S0.3c-6f5`: deterministische Write-/Power-Loss-Fehlermatrix
+  für jede persistente Veröffentlichungsstufe
+- kontrollierter, journalisierter CHKDSK-Reparaturmodus
+- vollständiger Maintenance-Lease-, Unmount-, Repair-, Verify- und
+  Remountnachweis
+- breitere echte FDD-/Medienfehler- und Langzeitmatrix
+
+`FAT12_ANALYSIS.md` ist ein historischer Bericht und beschreibt nicht den
+heutigen Implementierungsstand.

@@ -1,5 +1,7 @@
 # Build-Modi
 
+Stand: 16. August 2026.
+
 Der Kernel kennt drei Zielprofile und zwei Videoausgaben. Die Profile ändern
 Timing- und Validierungsdefinitionen, nicht das CPU-Ziel: Alle Varianten sind
 freestanding i386.
@@ -134,7 +136,7 @@ Der automatisierte serielle AHCI-Smoke-Test verwendet:
 
 ```powershell
 python scripts/run_qemu_smoke.py --qemu C:\tmp\qemu-portable\qemu-system-i386.exe `
-  --image build/reist-os.img --timeout 90 --sata
+  --image build/reist-os.img --timeout 90 --sata --expect-reist-probe
 ```
 
 Für deterministische AHCI-Fehlerpfade kann zusätzlich eine einmalige

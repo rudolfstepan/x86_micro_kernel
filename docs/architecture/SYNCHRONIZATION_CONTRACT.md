@@ -1,6 +1,6 @@
 # Synchronisations- und Ausführungskontextvertrag
 
-Stand: 13. August 2026. Dieser Vertrag gilt für den aktuellen
+Stand: 16. August 2026. Dieser Vertrag gilt für den aktuellen
 Uniprozessor-Kernel. Vor der Inbetriebnahme weiterer CPUs müssen Scheduler-
 Zustand, IRQ-Tiefe, Präemptionszähler und Lock-Ownership per CPU geführt werden.
 
@@ -57,10 +57,11 @@ ihnen ist Blockieren bereits ein Vertragsfehler.
   nestbaren Präemption-Guard. Hardware-IRQ-Completion bleibt dadurch möglich.
 - Prozessende schließt Dateien mit IF=1 unter Präemptionsschutz und veröffentlicht
   Exitstatus sowie Waiter-Wakeup erst danach atomar mit IF=0.
-- IRQ-Handler bestätigen Hardware, veröffentlichen nur bounded Zustand und
-  verschieben umfangreiche Verarbeitung in Foreground-Polling. Ein generischer
-  Bottom-Half-Worker ist noch nicht vorhanden; Netzwerk-Polling erfolgt an den
-  bestehenden Shell- und Netzwerk-Fortschrittspunkten.
+- IRQ-Handler bestätigen Hardware, veröffentlichen nur begrenzten Zustand und
+  verschieben umfangreiche Verarbeitung in Foreground-Kontext. Der dedizierte
+  Supervisor-Worker treibt überwachte Dienste, Deadlines und Recovery voran;
+  treiberspezifische Paketarbeit bleibt begrenzt an den vorgesehenen
+  Foreground-/Polling-Fortschrittspunkten.
 
 ## Diagnose
 

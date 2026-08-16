@@ -1,109 +1,68 @@
 # Laufwerke, Mounts und Pfadzuordnung
 
-Dieses Dokument beschreibt den aktuellen Laufwerksweg. Die frühere Shell mit
-Prompt `hdd0>` und separaten FAT-Direktaufrufen wurde durch DOS-Laufwerke und
-eine gemeinsame VFS-Pfadschicht ersetzt.
+Stand: 16. August 2026.
 
-## Automatisches Mounten
+REIST trennt physische Blockressourcen, Partitionen, VFS-Mounts und
+DOS-Laufwerksbuchstaben. Anwendungen arbeiten über VFS; eine Resource-ID ist
+nur für kontrollierte Storage-Werkzeuge wie `FORMAT.PRG` bestimmt.
 
-Beim Kernelstart:
+## Erkennung und Rootauswahl
 
-1. wird VFS initialisiert,
-2. werden FAT32-, FAT12- und EXT2-Adapter registriert,
-3. werden alle erkannten ATA- und Diskettenlaufwerke geprüft,
-4. wird das erste erfolgreich gemountete Laufwerk unter `/` eingehängt,
-5. erhalten weitere Laufwerke Mountpunkte wie `/mnt/hdd1` oder `/mnt/fdd0`,
-6. wird das erste erfolgreiche Laufwerk zum aktiven Shell-Laufwerk.
+1. ATA/PCI-IDE, AHCI/SATA und FDD werden mit festen Kapazitäten erkannt.
+2. MBR-Partitionen erscheinen als eigene Child-Ressourcen, etwa `hdd0p1`.
+3. Partitionierte ATA-/AHCI-Eltern werden nicht zusätzlich direkt gemountet.
+4. FAT32, FAT12 und EXT2 werden als VFS-Adapter registriert.
+5. Ein BIOS-Boot von Diskette bevorzugt genau die entsprechende FDD.
+6. Andernfalls muss genau eine gültige FAT32-Partition `X86 SYSTEM` heißen.
+7. Das bevorzugte Volume wird zuerst als `/` gemountet; ein Fehler erlaubt
+   keinen stillen Wechsel auf ein fremdes Medium.
+8. Weitere gültige Volumes erhalten `/mnt/<device>`.
 
-ATA-Laufwerke werden anhand ihrer Metadaten als FAT32 oder EXT2 erkannt.
-Disketten verwenden FAT12. `MOUNT` bleibt zur manuellen Wiederholung oder für
-später erkannte Laufwerke vorhanden, ist im normalen VMware-Start aber nicht
-nötig.
+Ohne bevorzugtes Volume bleibt nur der Kompatibilitätspfad der begrenzten
+Erkennungsreihenfolge. Produktive Images sollen deshalb immer die eindeutige
+Systemmarkierung tragen.
 
-## Namen und Buchstaben
+## Namen, Resource-IDs und Buchstaben
 
-| Gerät | Nativer Name | DOS-Name |
-|---|---|---|
-| erste Diskette | `fdd0` | `A:` |
-| zweite Diskette | `fdd1` | `B:` |
-| erste Festplatte | `hdd0` | `C:` |
-| zweite Festplatte | `hdd1` | `D:` |
-
-Weitere Festplatten werden fortlaufend ab `E:` zugeordnet. `DRIVES` zeigt
-erkannte Geräte, Typ, Modell, Mountpunkt und aktiven Zustand.
-
-## Shell- und VFS-Sicht
-
-Die Shell hält pro Laufwerk einen Pfad relativ zu dessen Wurzel. Für den
-Benutzer erscheint dieser DOS-artig:
+`DRIVES.PRG` zeigt nur veröffentlichte, gemountete Ressourcen:
 
 ```text
-C:\DOCS>
+Resource  Drive  Device  Type
+-----------------------------
+2         C:     hdd0p2  PART
+3         A:     fdd0    FDD
 ```
 
-Intern verbindet der Resolver den gemerkten Laufwerkspfad mit dem echten
-VFS-Mountpunkt:
+Die Zahlen sind Beispiele. Resource-IDs entstehen aus der erkannten
+Ressourcentabelle und dürfen nicht dauerhaft angenommen werden. Das Root-
+Volume wird als `C:` angezeigt, FDDs beginnen bei `A:`. Weitere Festplatten-
+oder Partitionsnamen werden ab `C:` anhand ihrer Gerätenummer zugeordnet.
+
+## Pfade
 
 ```text
-Benutzer: D:\TOOLS\APP.PRG
-Laufwerk: hdd1
-Laufwerkspfad: /TOOLS/APP.PRG
-Mountpunkt: /mnt/hdd1
-VFS-Pfad: /mnt/hdd1/TOOLS/APP.PRG
+C:\README.TXT
+A:\TOOLS\CHKDSK.PRG
+hdd0p2:/README.TXT
+/mnt/fdd0/TOOLS/CHKDSK.PRG
 ```
 
-Kein Shellbefehl darf selbst Mountpunkte zusammenbauen oder direkt eine
-globale FAT-Instanz auswählen. Dafür existiert
-`kernel/shell/path_resolver.c`.
+DOS-Pfade werden in der Ring-3-Shell kanonisch auf VFS-Pfade abgebildet. Jedes
+Laufwerk behält sein eigenes aktuelles Verzeichnis. Ein fehlgeschlagener `CD`-
+oder Mountvorgang verändert weder aktives Laufwerk noch Arbeitsverzeichnis.
 
-## Wechsel und Direktzugriff
+## Manuelles Mounten
 
-```text
-C:\DOCS> D:
-D:\> hdd0:
-C:\DOCS>
-```
+`MOUNT <device>` ist Diagnose und Kompatibilitätsfunktion. Es darf eine
+fehlgeschlagene eindeutige Rootauswahl nicht umgehen. Bei partitionierten
+Medien wird die Child-Ressource, nicht der physische Elternname, verwendet.
 
-Die Schreibweisen `C:`, `hdd0:` und `hdd0` sind als reiner Laufwerkswechsel
-zulässig. Pfade können ein anderes Laufwerk adressieren:
+## Fehlerdiagnose
 
-```text
-C:\> DIR D:\
-C:\> TYPE D:\INFO.TXT
-C:\> COPY C:\HELLO.PRG D:\HELLO.PRG
-C:\> CD D:\TOOLS
-D:\TOOLS>
-```
-
-Nur ein erfolgreicher `CD`-Aufruf verändert den aktiven Pfad. Ein fehlerhafter
-Zugriff hinterlässt Laufwerk und aktuelles Verzeichnis unverändert.
-
-## Pfadregeln
-
-- `/` und `\` sind Trennzeichen.
-- Ein führendes Trennzeichen bedeutet Wurzel des gewählten Laufwerks.
-- Ohne führendes Trennzeichen wird relativ zum gemerkten Verzeichnis
-  aufgelöst.
-- `.` bleibt im aktuellen Verzeichnis.
-- `..` steigt eine Ebene auf und wird an der Laufwerkswurzel begrenzt.
-- DOS-Buchstaben, `hddN:/...`, `fddN:/...` und `/hddN/...` werden unterstützt.
-- Die maximale normalisierte Pfadlänge beträgt 255 Zeichen plus NUL.
-- Dateisystemgrenzen wie FAT-8.3-Namen bleiben zusätzlich gültig.
-
-## Bootimage
-
-Im nativen 64-MiB-Image liegt die FAT32-Datenpartition ab LBA 8192. Sie wird
-im Ein-Platten-VMware-Paket als `hdd0` erkannt und unter `/` gemountet. Damit
-entspricht sie im Prompt `C:`. Das Image enthält mindestens `README.TXT` und
-das beim Build erzeugte Programm, standardmäßig `HELLO.PRG`.
-
-## Fehlerbilder
-
-- **Kein aktives Laufwerk:** `DRIVES` prüfen; Boot- oder ATA-Meldungen im
-  seriellen Log auswerten.
-- **Laufwerk nicht gemountet:** `MOUNT hdd0` versuchen und Dateisystem prüfen.
-- **DIR sieht Datei, TYPE nicht:** gilt als Regression; beide Befehle müssen
-  denselben VFS-Resolver verwenden und werden durch Hosttests abgedeckt.
-- **Pfad zu lang/ungültig:** Eingabe wird abgelehnt, nicht still gekürzt.
-- **Andere Großschreibung auf FAT:** Suche ist case-insensitiv; das erzeugte
-  Image schreibt 8.3-Namen in Großbuchstaben.
+- `DRIVES` zeigt keine Zeile: Ressource wurde nicht erfolgreich gemountet oder
+  nicht über die ABI veröffentlicht.
+- Mehrere `X86 SYSTEM`-Labels: Rootauswahl wird absichtlich verweigert.
+- `DIR` funktioniert, Schreiben nicht: Read-only-/Quarantäne-/Journalstatus
+  und Transportfehler im seriellen Log prüfen.
+- SATA-Partition liest falsche Daten: Parent-Transport muss AHCI bleiben;
+  partition-relative Batchzugriffe dürfen nicht auf ATA-PIO zurückfallen.

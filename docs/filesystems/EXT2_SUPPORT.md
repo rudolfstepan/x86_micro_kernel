@@ -1,40 +1,29 @@
 # EXT2-Unterstützung
 
-EXT2 ist über einen VFS-Adapter in den Kernel eingebunden. Der automatische
-Mountcode erkennt sowohl ein direkt auf dem ATA-Gerät liegendes
-EXT2-Superblock-Magic als auch Linux-MBR-Partitionen vom Typ `0x83`.
+Stand: 16. August 2026.
 
-## Aktueller Umfang
+EXT2 ist als VFS-Adapter vorhanden. Es kann direkt auf einer veröffentlichten
+Blockressource oder auf einer erkannten Partition liegen; ATA und AHCI werden
+über denselben Blockgerätevertrag angesprochen.
 
-- Superblock- und Geometrieprüfung
-- Pfad- und Verzeichnisauflösung
-- Datei-Lesezugriff
-- direkte und indirekte Blockadressierung gemäß Hosttest
-- VFS-Mount und Verzeichnisoperationen im Umfang des Adapters
+## Verifiziert
 
-Der Regressionstest `test/test_ext2_host.c` prüft Partitionserkennung,
-Verzeichnisse und indirekte Blöcke ohne einen Emulatorstart.
+- Superblock- und Signaturerkennung
+- Partitionsoffsets
+- Verzeichnisauflösung
+- direkte und indirekte Blockadressierung im Host-Harness
+- Mount und die explizit implementierten VFS-Operationen
 
-## Verwendung
-
-Beim Boot werden EXT2, FAT32 und FAT12 registriert. Wird ein zusätzliches
-ATA-Laufwerk als EXT2 erkannt, erscheint es über `DRIVES` und wird unter einem
-VFS-Mountpunkt wie `/mnt/hdd1` verfügbar. In der Shell kann es mit seinem
-DOS-Buchstaben angesprochen werden:
-
-```text
-C:\> DRIVES
-C:\> DIR D:\
-C:\> TYPE D:\DOCS\INFO.TXT
-```
+Zusätzliche EXT2-Volumes werden unter `/mnt/<device>` veröffentlicht und über
+den zugeordneten DOS-Buchstaben erreicht. Die eindeutige FAT32-Systempartition
+bleibt Root und wird nicht durch ein früher erkanntes EXT2-Medium verdrängt.
 
 ## Grenzen
 
-- kein Journaling; EXT2 ist bewusst kein EXT3/EXT4
-- keine dokumentierte Unterstützung für Symlinks, ACLs oder Extended Attributes
-- Schreiboperationen sind nur soweit verlässlich, wie der jeweilige VFS-
-  Adapter sie explizit anbietet
-- keine Hotplug- oder Online-Resize-Unterstützung
+- kein Journal und keine EXT3-/EXT4-Funktionen
+- keine REIST-Persistenzgarantie nach unklarem Schreibabbruch
+- keine zugesicherten Symlinks, ACLs oder Extended Attributes
+- kein Hotplug- oder Online-Resize-Lebenszyklus
 
-Frühere QEMU-/ISO-Beispiele mit manuellen Mountbefehlen sind nicht mehr der
-aktuelle Standardweg.
+EXT2 darf deshalb nach einem unklaren Schreibfehler nicht automatisch als
+`ONLINE_RW` reintegriert werden.

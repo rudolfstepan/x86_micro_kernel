@@ -1,67 +1,76 @@
 # Tests ausführen
 
-Die Tests laufen hostseitig und benötigen für den Kernumfang keinen
-Emulatorstart. Der bevorzugte Windows-Komplettbefehl baut zusätzlich Kernel,
-Bootloader, Programm und VMware-Paket:
+Stand: 16. August 2026.
 
-```powershell
-.\scripts\build-windows.ps1 -Target vmware -RunTests
-```
+REIST trennt hostseitige Quell-/Harness-Tests, den sauberen Paketbuild und
+echte Gast-Laufzeitgates. Keine einzelne Ebene ersetzt die anderen.
 
-Nur die Python-Test-Suite:
+## Schnelle Hostsuite
 
 ```powershell
 python -m unittest discover -s test -p "test_*.py" -v
 ```
 
-Mit Make:
+Sie benötigt Python, einen Host-C-Compiler für Harnesses und Zig/LLD für die
+MYPR-Toolchain. Einzelne optionale Werkzeugtests können bei fehlender
+Abhängigkeit übersprungen werden; der Referenzbuild soll ohne relevante Skips
+laufen.
+
+## Windows-Referenzbuild
+
+```powershell
+.\scripts\build-windows.ps1 -Target vmware -RunTests
+```
+
+Der Build ist inkrementell. Nur bei einem bewusst vollständig frischen Lauf
+wird `-Clean` ergänzt.
+
+## REIST-Paketgate
+
+```powershell
+.\scripts\test-reist-package.ps1 -Target qemu -Video vga
+```
+
+Dieses Gate erzeugt den sauberen Referenzstand und führt die vollständige
+Hostsuite aus. In automatisierten Paketen bestimmt `automation/reist-s03b.toml`
+die eingefrorenen Gates; sie werden nicht ad hoc ersetzt.
+
+## Laufzeitgates
+
+```powershell
+.\scripts\test-reist-runtime.ps1 -Mode normal
+.\scripts\test-reist-runtime.ps1 -Mode storage-recovery
+.\scripts\test-reist-runtime.ps1 -Mode storage-io-failure
+.\scripts\test-reist-runtime.ps1 -Mode fdd-hotplug
+```
+
+Weitere Modi prüfen PIT, Watchdog, Memory, ARP, ICMP, UDP, DHCP,
+Netzwerkparser und Handover. Der explizite SATA-Smoke lautet:
+
+```powershell
+python .\scripts\run_qemu_smoke.py --image build\reist-os.img --sata --expect-reist-probe
+```
+
+PS/2 wird separat über echte QEMU-`sendkey`-Ereignisse geprüft:
+
+```powershell
+python .\scripts\run_qemu_ps2_smoke.py --image build\reist-os.img
+```
+
+## Klassische Make-Ziele
 
 ```bash
 make test-unit
-```
-
-## Abhängigkeiten
-
-- Python 3
-- ein Host-GCC für die C-Harnesses
-- Zig für den End-to-End-Test der externen Programmtoolchain
-- keine Rootrechte und kein gemountetes Image für `test-unit`
-
-Fehlt ein optionales Werkzeug, markiert `unittest` die betroffenen Fälle als
-übersprungen. Der vollständige Windows-Referenzbuild stellt Zig bereit und
-soll ohne Überspringen der Toolchainprüfung laufen.
-
-## Zusätzliche klassische Imageprüfungen
-
-```bash
 make test-images
 make test-all
-make test-verbose
 ```
 
-Diese Ziele prüfen die separaten Legacy-Fixtures `disk.img`, `disk1.img` und
-`floppy.img`, soweit sie vorhanden sind. Sie sind von den selbst erzeugenden
-Tests des nativen 64-MiB-Bootimages zu unterscheiden.
-
-## Testdateien
-
-| Datei | Schwerpunkt |
-|---|---|
-| `test_native_boot_image.py` | MBR, Manifest, ELF, FAT32, VMDK und VMX |
-| `test_disk_image_validator.py` | Fehlerfälle klassischer Images |
-| `test_fs_host.py` | kompiliert und startet C-Harnesses |
-| `test_vfs_host.c` | Mountlebenszyklus und Präfixgrenzen |
-| `test_fat12_host.c` | Ketten, Seek und Verzeichnisse |
-| `test_fat32_host.c` | Schreiben, Truncate und Verzeichniserweiterung |
-| `test_ext2_host.c` | Partition, Verzeichnis und indirekte Blöcke |
-| `test_shell_path_host.c` | DOS-/VFS-Pfadnormalisierung |
-| `test_shell_source.py` | Schutz gegen regressierende Direkt-FAT-Aufrufe |
-| `test_program_image_host.c` | MYPR-Header- und Größenprüfung |
-| `test_user_program_toolchain.py` | externe C- und `.S`-Quellen bis PRG |
+`test-images` bezieht optionale Legacy-Fixtures ein. Es ist nicht mit den
+selbst erzeugenden nativen Image- und Gasttests gleichzusetzen.
 
 ## Interpretation
 
-Ein grüner Hosttest bestätigt die konkret kodierte Invariante. Er beweist
-nicht automatisch Hardwarekompatibilität, Ring-3-Isolation oder fehlerfreien
-Langzeitbetrieb. Deshalb wird zusätzlich ein VMware-Bootsmoke bis zum Prompt,
-Mount und DHCP verwendet.
+Ein grüner Quelltest belegt nur die geprüfte Struktur, ein Host-Harness nur
+sein Modell und ein QEMU-/VMware-Smoke nur das konkrete virtuelle Profil.
+Reale Hardware, Stromunterbrechung, Langzeitlast und unabhängige
+Supervisor-/Fence-Hardware benötigen eigene Evidenz.

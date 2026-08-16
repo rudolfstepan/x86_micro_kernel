@@ -1,63 +1,40 @@
 # FAT32-Status
 
-FAT32 ist das primäre beschreibbare Dateisystem des nativen VMware-Images.
-Die Datenpartition beginnt dort ab LBA 8192 und wird im Ein-Platten-Aufbau als
-`hdd0`, VFS-Root `/` und DOS-Laufwerk `C:` bereitgestellt.
+Stand: 16. August 2026.
 
-## Aktueller Funktionsumfang
+FAT32 ist das Systemdateisystem des nativen Festplattenimages. Die Partition
+beginnt bei LBA 8192, trägt das Label `X86 SYSTEM` und wird bei eindeutiger
+Erkennung als `/` beziehungsweise `C:` gemountet. Auf SATA ist dies
+typischerweise die Partition `hdd0p2`, nicht das physische Elternlaufwerk.
 
-- Bootsektor-, FSInfo- und Geometrieprüfung
-- MBR-Partitionsoffset
-- gespiegelte FAT-Kopien und aktive-FAT-Auswahl
-- Lesen, Schreiben, Seek und Truncate
-- Anlegen und Löschen von Dateien und Verzeichnissen
-- Erweitern von Verzeichnis- und Datei-Clusterketten
-- Freigabe und Rückgewinnung von Ketten auf Fehlerpfaden
-- case-insensitive Suche nach 8.3-Kurznamen
-- VFS-Adapter für Shell und Programmlader
-- Schutz der globalen Volume-Kontexte gegen Timerpräemption
+## Implementiert
 
-## Erzeugtes Image
+- BPB-/FSInfo- und FAT-Konsistenzprüfung
+- Datei-I/O, Seek, Truncate und Freigabe von Clusterketten
+- wachsende Verzeichnisse sowie konsistentes `readdir`/`open`
+- Dateierzeugung, Verzeichnisse, Delete und Copy über VFS
+- Batch-I/O über die gemeinsame Blockgeräteschicht
+- `fsync` mit begrenztem Geräte-Flush und Readback
+- Same-Directory-Rename und Replace
+- redundantes Undo-Journal für markierte REIST-Images
+- Recovery vor normaler Metadatenverwendung
 
-`scripts/create_native_boot_image.py` schreibt eine minimale konsistente
-FAT32-Partition mit:
+Der Editor verwendet eine PID-spezifische 8.3-Tempdatei und veröffentlicht das
+Ziel erst nach erfolgreichem `fsync`, Close und Rename. Ein Fehler vor dem
+Commit lässt die alte Zieldatei unangetastet.
 
-- Haupt- und Backup-Bootsektor
-- Haupt- und Backup-FSInfo
-- zwei identischen FAT-Kopien
-- mehrclustrigen Dateien
-- einer bei vielen Einträgen wachsenden Root-Verzeichniskette
-- `README.TXT` und beliebig vielen eindeutigen `--data-file NAME=PFAD`-Dateien
+## Transport
 
-Eingebettete Namen müssen gültiges ASCII-8.3 sein. Leere Dateien verwenden
-Startcluster 0. Größen werden als 32-Bit-FAT-Dateigröße gespeichert.
-
-## Shelltest
-
-```text
-C:\> DIR
-C:\> TYPE README.TXT
-C:\> MD TEST
-C:\> COPY HELLO.PRG TEST\APP.PRG
-C:\> RUN TEST\APP.PRG
-```
-
-`DIR`, `TYPE` und `RUN` verwenden denselben VFS-Resolver. Dies verhindert den
-früheren Fehler, dass die Verzeichnisauflistung eine Datei fand, der direkte
-FAT-Open-Pfad jedoch nicht.
-
-## Regressionstests
-
-`test/test_fat32_host.c` prüft unter anderem Schreiben, Truncate und
-Verzeichniserweiterung. `test/test_native_boot_image.py` rekonstruiert Dateien
-aus FAT-Ketten, vergleicht beide FAT-Kopien und prüft Root-Kettenwachstum.
-Der VFS-Integrationstest öffnet `README.TXT` sowohl mit originaler als auch
-abweichender Großschreibung.
+Partition-relative Einzel- und Mehrsektorzugriffe werden auf absolute LBAs
+des Elternlaufwerks abgebildet. Der Elterntransport bleibt erhalten: AHCI-
+Partitionen verwenden AHCI, ATA-Partitionen ATA-PIO. Dieser Vertrag wird durch
+Quelltests und einen vollständigen QEMU-SATA-Gastlauf geprüft.
 
 ## Grenzen
 
-- kein vollständiges VFAT-LFN
-- keine Journaling- oder Transaktionsgarantie bei Stromausfall
-- eingebettete Builddateien liegen derzeit nur im Rootverzeichnis
-- ein globaler Volume-Kontext pro aktiver Operation, abgesichert für den
-  aktuellen Uniprozessorbetrieb
+- Das Undo-Journal gilt nur für entsprechend markierte native Images.
+- Cross-Directory- und Cross-Volume-Rename sind nicht zugesichert.
+- Fremde FAT32-Medien bleiben kompatibel, erhalten aber keine implizite
+  REIST-Persistenzgarantie.
+- Ein grüner QEMU-/VMware-Lauf ersetzt keine Stromausfall- oder
+  Controller-Langzeitprüfung auf realer Hardware.

@@ -1,6 +1,6 @@
 # Externe Programme für die Kernel-Shell bauen
 
-Stand: 5. August 2026.
+Stand: 16. August 2026.
 
 Das Projekt enthält eine native Windows-Toolchain, die fremden C-Quelltext in
 das ausführbare `MYPR`-Format übersetzt. WSL, GRUB und ein Cross-GCC werden
@@ -50,15 +50,17 @@ int main(void) {
 }
 ```
 
-`userspace/sdk/include/x86os.h` stellt derzeit diese syscall-basierten
-Funktionen bereit:
+`userspace/sdk/include/x86os.h` stellt versionierte, syscall-basierte
+Funktionen bereit. Dazu gehören:
 
 - `x86os_putchar`, `x86os_puts`, `x86os_print_number`
-- `x86os_delay`, `x86os_getchar`
+- `x86os_delay`, `x86os_sleep_ms`, `x86os_yield`, `x86os_getchar`
 - `x86os_malloc`, `x86os_realloc`, `x86os_free`
 - `x86os_open`, `x86os_read`, `x86os_create`, `x86os_write`, `x86os_close`
-- `x86os_stat`, `x86os_readdir`, `x86os_unlink`
-- `x86os_getpid`, `x86os_spawn`, `x86os_wait`
+- `x86os_stat`, `x86os_readdir_batch`, `x86os_unlink`, Verzeichnisoperationen,
+  `x86os_fsync`, Rename und Replace
+- `x86os_getpid`, `x86os_spawn`, `x86os_wait` und Prozessdiagnose
+- begrenzte IPC-/Capability-, Display-, Drive-Info- und Storage-Service-ABIs
 - `x86os_exit`
 
 Der Startup-Code übergibt `argc` und `argv` an `main` und reicht dessen

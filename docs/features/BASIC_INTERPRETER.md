@@ -1,15 +1,16 @@
 # BASIC-Interpreter
 
-Der eingebaute BASIC-Interpreter wird mit `BASIC` aus der Kernel-Shell
-gestartet. Er läuft derzeit als Kernelkomponente, nicht als isoliertes externes
-MYPR-Programm.
+Stand: 16. August 2026.
+
+`BASIC.PRG` ist ein reguläres MYPR-Programm und läuft in Ring 3 mit dem
+öffentlichen `x86os_*`-SDK. Es ist keine Kernelkomponente.
 
 ```text
 C:\> BASIC
 BASIC Interpreter v1.2
 ```
 
-## Editorbefehle
+## Bedienung
 
 | Befehl | Wirkung |
 |---|---|
@@ -19,67 +20,32 @@ BASIC Interpreter v1.2
 | `LOAD name` | `.BAS`-Datei über VFS laden |
 | `SAVE name` | Programm über VFS speichern |
 | `HELP` oder `?` | Hilfe anzeigen |
-| `EXIT` oder `QUIT` | zur Kernel-Shell zurückkehren |
+| `EXIT` oder `QUIT` | zur Shell zurückkehren |
 
-Editorbefehle sind case-insensitiv. Eine Eingabe mit Zeilennummer speichert
-oder ersetzt die entsprechende Programmzeile.
-
-## Programmsprache
-
-Unterstützte Anweisungen:
-
-- `PRINT`
-- `INPUT`
-- `VAR`
-- `IF`
-- `GOTO`
-- `GOSUB`
-- `RET`
-- `END`
-- `REM`
-
-Beispiel:
+Eine Eingabe mit Zeilennummer speichert oder ersetzt die Programmzeile.
+Unterstützt werden `PRINT`, `INPUT`, `VAR`, `IF`, `GOTO`, `GOSUB`, `RET`,
+`END` und `REM`.
 
 ```text
 10 VAR A=1
-20 PRINT "HALLO"
-30 PRINT A
-40 IF A=5 THEN GOTO 70
-50 VAR A=A+1
-60 GOTO 30
-70 END
+20 PRINT A
+30 VAR A=A+1
+40 IF A=6 THEN GOTO 60
+50 GOTO 20
+60 END
 RUN
 ```
 
-Die genaue Ausdruckssyntax ist bewusst klein und nicht mit einem vollständigen
-Microsoft BASIC gleichzusetzen.
-
-## Laden und Speichern
-
-Der Interpreter hängt bei Bedarf `.BAS` an und verwendet VFS. Die Datei wird
-zeilenweise validiert; zu lange Zeilen, fehlende Zeilennummern, ungültige
-Nummern oder ein zu großes Programm werden abgelehnt. Ein fehlgeschlagener
-Ladevorgang ersetzt das bestehende Programm nicht teilweise.
-
-```text
-SAVE TEST
-NEW
-LOAD TEST
-LIST
-RUN
-```
-
-Die konkreten Dateisystemrechte hängen vom aktiven Mount ab. Im erzeugten
-FAT32-VMware-Image sind Lesen und Schreiben vorgesehen.
+`LOAD` validiert die Datei vollständig, bevor es das laufende Programm
+ersetzt. Zu lange Zeilen, ungültige Nummern und zu große Programme werden
+abgelehnt. `SAVE` und `LOAD` verwenden VFS und hängen bei Bedarf `.BAS` an.
 
 ## Grenzen
 
-- höchstens 100 Programmslots, nutzbare Zeilennummern unter 100
-- höchstens 64 Zeichen interner Zeilenpuffer
-- höchstens 64 Variablen mit kurzen Namen
-- Ganzzahlarithmetik
-- keine Fließkommazahlen, Arrays oder Stringvariablen
-- keine Ring-3-Isolation
+- höchstens 100 Programmslots und Zeilennummern unter 100
+- 64 Zeichen interner Zeilenpuffer
+- höchstens 64 kurze Variablennamen
+- Ganzzahlarithmetik; keine Arrays, Fließkomma- oder Stringvariablen
+- keine Kompatibilitätszusage zu einem vollständigen Microsoft BASIC
 
-`BASIC_INTERPRETER_UPDATES.md` ist ein historisches Änderungsprotokoll und
-nicht die aktuelle Bedienungsreferenz.
+`BASIC_INTERPRETER_UPDATES.md` ist ein historisches Änderungsprotokoll.

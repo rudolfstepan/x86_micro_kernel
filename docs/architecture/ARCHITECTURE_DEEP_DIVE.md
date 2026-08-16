@@ -1,6 +1,6 @@
 # Architekturüberblick
 
-Stand: 13. August 2026
+Stand: 16. August 2026
 
 Dieses Dokument beschreibt die aktuelle 32-Bit-x86-Architektur. Das System
 startet ausschließlich über den eigenen BIOS-Bootloader. Einen alternativen
@@ -47,7 +47,9 @@ oder von Dateisystem, Netzwerk, Desktop bzw. normalem Logging abhängen.
 Desktop, Netzwerk, Massenspeicher und allgemeine Diagnose sind nichtkritische
 Partitionen. Keine profilabhängige Essential Function darf von ihrer
 Verfügbarkeit oder ihrem Timing abhängen. Der Übergang zu diesem Zielmodell ist
-als Sicherheits-Gate S0 in der Roadmap geplant; er ist noch nicht umgesetzt.
+als Sicherheits-Gate S0 in der Roadmap geplant. Wesentliche Mechanismen sind
+umgesetzt, das Gate ist wegen offener Persistenz-, Hardware-Failover- und
+Zielhardware-Nachweise aber noch nicht abgeschlossen.
 
 ## Bootkette
 
@@ -86,10 +88,11 @@ benötigt.
 6. APIC-Timer gegen PIT kalibrieren oder PIT-Scheduler-Fallback wählen sowie
    PCI und experimentelles USB-Probing starten
 7. Netzwerktreiber passend zu erkannten PCI-Geräten registrieren
-8. ATA und Disketten erkennen
-9. VFS initialisieren und Laufwerke automatisch mounten
-10. Netzwerkstack und DHCP starten
-11. bei einem echten Framebuffer `DESKTOP.PRG`, sonst `SHELL.PRG` starten
+8. ATA/PCI-IDE, AHCI/SATA und Disketten erkennen
+9. MBR-Partitionen veröffentlichen, Storage-Safety/-Service initialisieren
+10. VFS initialisieren und bevorzugtes Root-Volume deterministisch mounten
+11. überwachte Ring-3-Dienste und Supervisor-Worker starten
+12. bei einem echten Framebuffer `DESKTOP.PRG`, sonst `SHELL.PRG` starten
 
 COM1 wird früh initialisiert, damit auch Fehler vor der VGA-Shell in einem
 seriellen Log sichtbar bleiben. Die gemeinsame Anzeige spiegelt Console-Text
@@ -302,12 +305,14 @@ noch keine Maus, keinen Compositor, Windowmanager oder Fokusvertrag.
 
 ## Console-Eingabe
 
-PS/2-Tastatur und COM1 speisen die Console-Eingabe. Ein blockierendes
-`getchar` prüft die Eingabepuffer und registriert den Task unter derselben
+Nur die PS/2-Tastatur speist die Console-Eingabe. COM1 ist Diagnoseausgabe und
+injiziert keine Tastencodes. Ein blockierendes `getchar` prüft den
+Eingabepuffer und registriert den Task unter derselben
 IRQ-geschützten Synchronisationsgrenze auf `input_waiters`; dadurch kann
 zwischen Leerprüfung und Blockieren kein Zeichen-Wakeup verloren gehen.
-PS/2-Eingabe und der COM1-RX-IRQ wecken alle Leser; jeder prüft den
-level-getriggerten Pufferzustand erneut und reiht sich bei Bedarf wieder ein. Frühe
+IRQ1 beziehungsweise der begrenzte PS/2-Polling-Fallback wecken die Leser;
+jeder prüft den level-getriggerten Pufferzustand erneut und reiht sich bei
+Bedarf wieder ein. Frühe
 Kernelkontexte oder Aufrufe mit deaktivierter Präemption, die nicht sicher
 blockieren können, behalten einen HLT-basierten Fallback.
 
@@ -318,7 +323,7 @@ Adapter. FAT32, FAT12 und EXT2 werden beim Boot registriert. Shell und
 Programmlader arbeiten mit absoluten VFS-Pfaden; DOS-Laufwerksnotation wird
 vorher im Shellresolver normalisiert.
 
-Öffentliche VFS- sowie synchrone ATA-/FDD-Transaktionen laufen nach dem
+Öffentliche VFS- sowie synchrone ATA-/AHCI-/FDD-Transaktionen laufen nach dem
 [Synchronisationsvertrag](SYNCHRONIZATION_CONTRACT.md) mit aktiven IRQs unter
 einem nestbaren Präemptionsguard. Netzwerk- und HPET-IRQs quittieren nur die
 Hardware und markieren Arbeit; begrenzte Netzwerk-Polling-Pässe verarbeiten
@@ -328,14 +333,15 @@ sie anschließend im Foreground-Kontext.
 
 | Bereich | Aktuelle Komponenten |
 |---|---|
-| Block | ATA/IDE, Floppy |
-| Eingabe | PS/2-Tastatur und COM1 mit gemeinsamer blockierender Console-Wait-Queue, experimentelles USB-HID |
+| Block | ATA/PCI-IDE, AHCI/SATA, MBR-Partitionen, Floppy |
+| Eingabe | PS/2-Tastatur mit IRQ1/Poll-Fallback, experimentelles USB-HID; COM1 nur Ausgabe |
 | Anzeige | VGA-Text, nativer VBE-RGB-Framebuffer, geclippte Ring-3-Display-ABI und Desktop-MVP |
 | Bus | PCI, USB-Hostcontroller-Probing |
 | Netzwerk | E1000, RTL8139, NE2000 über `netdev` |
 | Zeit | monotone 64-Bit-PIT-Zeit, RTC, kalibrierter lokaler APIC-Timer mit PIT-Fallback; HPET noch inaktiv |
 
-Die generierte VMware-Referenzmaschine verwendet IDE, VGA, PS/2 und E1000.
+Die generierte VMware-Referenzmaschine verwendet SATA/AHCI, VGA, PS/2 und
+E1000. QEMU behält ATA/IDE als separaten Regressionspfad.
 
 Der reale QEMU-Framebuffer-Boot bestätigt VBE-Handoff, Kernelinitialisierung
 und den ersten Ring-3-Renderdurchlauf über den seriellen Marker `DESKTOP_OK`.

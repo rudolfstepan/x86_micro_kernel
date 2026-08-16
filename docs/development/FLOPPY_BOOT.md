@@ -1,5 +1,7 @@
 # Bootfähige 1,44-MB-Diskette
 
+Stand: 16. August 2026.
+
 Das Projekt erzeugt zusätzlich zum normalen Festplattenimage ein echtes
 1,44-MB-BIOS-Diskettenimage:
 
@@ -102,6 +104,12 @@ beide FAT-Kopien werden synchron aktualisiert. Schreibzugriffe werden vom
 FDC-Treiber wie Lesezugriffe bis zum Spurende gebündelt; ein vom Controller
 gemeldeter Schreibschutz oder E/A-Fehler wird an den aufrufenden Prozess
 zurückgegeben.
+
+Neu erzeugte Images tragen das markierte REIST-FAT12-Layout mit Undo-Journal,
+Remapbereich und kritischen Replikaten. `DRIVES` zeigt die aktuelle FDD-
+Resource-ID; eine explizite Neuerzeugung erfolgt mit
+`FORMAT --reist-fat12 <resource> --confirm`. `CHKDSK [pfad]` arbeitet
+read-only. Die vollständige Persistenz-Fault-Matrix ist weiterhin offen.
 
 Vorausgesetzt werden ein BIOS mit Floppy-Bootunterstützung, ein
 386-kompatibler 32-Bit-Prozessor und ausreichend RAM für den Kernel.

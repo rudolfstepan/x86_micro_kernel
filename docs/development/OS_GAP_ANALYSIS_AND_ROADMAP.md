@@ -1,6 +1,6 @@
 # Fehlstellenanalyse und Implementierungsfahrplan
 
-Stand: 15. August 2026
+Stand: 16. August 2026
 
 Dieses Dokument beschreibt den anhand des aktuellen Quellstands geprüften
 Ist-Zustand, die wichtigsten noch fehlenden Betriebssystemfunktionen und eine
@@ -2142,12 +2142,13 @@ erfolgreiche Lektüre von `HOTPLUG.TXT` und `TEST_OK`. Der identische
 Disconnect/Reconnect-Ablauf wurde am 15. August 2026 außerdem manuell unter
 VMware mit erfolgreicher Wiederverwendung von A: bestätigt.
 
-**S0.3c-6f bleibt offen:** Der Vertrag gilt für alle persistenten Medien, doch
-das persistente Undo-Journal ist derzeit auf markierte FAT32/ATA-Images
-begrenzt. FDD/FAT12, EXT2, fremde sowie künftige USB-/Flash-/NVMe-Backends
-benötigen ein gemeinsames Undo/COW/Journal-Protokoll, geordnete Flush-/Barrier-
-Semantik und echte Power-Loss-Injektion. Vor diesem Nachweis darf ein Medium
-nach unklarem Schreibabschluss nicht automatisch wieder beschreibbar werden.
+**S0.3c-6f ist teilweise umgesetzt:** Markierte REIST-FAT12-Medien besitzen
+jetzt ein verifiziertes Undo-Journal, begrenzte Remaps, kritische Replikate und
+geordnete Dateitransaktionen. Aktiv bleibt S0.3c-6f5 mit der vollständigen
+Persistenz-/Power-Loss-Fehlermatrix. EXT2, fremde FAT-Volumes sowie künftige
+USB-/Flash-/NVMe-Backends benötigen weiterhin einen eigenen nachgewiesenen
+Undo/COW/Journal-Vertrag. Vor diesem Nachweis darf ein Medium nach unklarem
+Schreibabschluss nicht automatisch wieder beschreibbar werden.
 Bei Wechselmedien fehlen außerdem noch eine stärkere Ganzmedien-Identität und
 kontrollierte Cache-Invalidierung beziehungsweise ein Remount, wenn sich der
 Inhalt außerhalb von REIST bei unverändertem Boot-Fingerprint geändert hat.
@@ -2165,11 +2166,12 @@ Nutzdaten dürfen daher nur aus einer CRC-, Sequenz- und invariantengeprüften
 Kopie rekonstruiert werden; andernfalls wird der Verlust gemeldet und das
 Medium bleibt read-only.
 
-Die Wartung wird ausschließlich über den überwachten Storage-Dienst angeboten.
-`FDISK.PRG` verwaltet Partitionstabellen auf dafür geeigneten Medien,
-`FORMAT.PRG` führt einen begrenzten Oberflächentest durch und erzeugt das
-markierte FAT12-Layout, und `CHKDSK.PRG` trennt read-only Diagnose von einer
-explizit bestätigten Reparatur. Vor jeder Mutation sind exklusives
+Das Zielbild der Wartung führt ausschließlich über den überwachten Storage-
+Dienst. Darin verwaltet `FDISK.PRG` Partitionstabellen nur auf dafür geeigneten
+Medien, `FORMAT.PRG` führt einen begrenzten Oberflächentest durch und erzeugt
+das markierte FAT12-Layout, und `CHKDSK.PRG` trennt read-only Diagnose von
+einer explizit bestätigten Reparatur. Der aktuelle engere Werkzeugstand ist
+unten separat dokumentiert. Vor jeder Mutation sind exklusives
 Maintenance-Lease, Unmount, Handle-Prüfung und erneute Medienidentifikation
 Pflicht. Jeder Reparaturschritt läuft durch Journal/COW und verifizierendes
 Readback; Auswurf, Timeout oder unklarer Schreibabschluss dürfen höchstens zu
@@ -2349,24 +2351,25 @@ Jedes Tool muss in `scripts/build_system_programs.py` registriert sein und mit
 der normalen Ring-3-Toolchain gebaut werden. Erfolgsnachrichten dürfen erst
 nach Kernelantwort, verifiziertem Readback und kontrolliertem Remount erscheinen.
 
-#### Implementierungsstand vom 15. August 2026
+#### Implementierungsstand vom 16. August 2026
 
-Der eingecheckte Zwischenstand enthält die statischen FAT12-Bausteine für
-kritische Bereiche, Undo-Journal, Remap und Replikate samt begrenzten Hosttests.
-Vermittelte Blockoperationen und statische Maintenance-Leases sind über
-versionierte Kernel- und Ring-3-Schnittstellen angebunden. Ein Lease sperrt neue
-VFS-Öffnungen und wird bei Ablauf beziehungsweise Prozessende freigegeben. Die
-Werkzeuge `CHKDSK.PRG`, `FDISK.PRG` und `FORMAT.PRG` werden mit der normalen
-Userspace-Toolchain gebaut und sowohl für A: als auch C: paketiert.
+Die Pakete S0.3c-6f1 bis S0.3c-6f4 sind umgesetzt und durch ihre eingefrorenen
+Host-, Paket- und FDD-Hotplug-Gates abgenommen. Vermittelte Blockoperationen
+und Maintenance-Leases sind über versionierte Kernel- und Ring-3-Schnittstellen
+angebunden. Die Werkzeuge `CHKDSK.PRG`, `FDISK.PRG` und `FORMAT.PRG` werden mit
+der normalen Userspace-Toolchain gebaut und in die Systemimages aufgenommen.
 
 Für S0.3c-6f1 liegt das verifizierte Journalformat Version 2 vor:
 Undo-Daten, Entry-Metadaten sowie beide Header werden nach jedem Write
 zurückgelesen; Entry-Metadaten tragen eine eigene CRC32. Gleich alte, aber
 inhaltlich widersprüchliche Header, nicht monotone Sequenzen, reservierte
 Journalziele und ein unsicherer CLEAN-Abschluss werden fail-closed abgelehnt.
-Targeted-, QEMU-Paket- und FDD-Hotplug-Gate sind erfolgreich. Daraus folgt
-noch kein vollständiger FAT12-Resilienznachweis; insbesondere bleiben die
-Defektsektor-, Replikat- und Persistenzbarrierenpakete offen.
+Targeted-, QEMU-Paket- und FDD-Hotplug-Gate sind erfolgreich. S0.3c-6f2
+integriert Defektbestätigung, `0xFF7` und redundante Remaps. S0.3c-6f3
+publiziert verifizierte kritische Replikate, und S0.3c-6f4 erzwingt die
+Reihenfolge Daten, beide FATs, Verzeichniseintrag, Replikat und Journal-Clean.
+Daraus folgt noch kein vollständiger FAT12-Resilienznachweis; die
+Persistenz-Fehlermatrix S0.3c-6f5 ist aktiv.
 
 Der aktuelle Funktionsumfang der Werkzeuge ist bewusst enger als das Ziel:
 
@@ -2376,16 +2379,17 @@ Der aktuelle Funktionsumfang der Werkzeuge ist bewusst enger als das Ziel:
   noch nicht implementiert.
 - `FORMAT.PRG` validiert FDD-Ressource, Schalter und Bestätigung und sendet einen
   begrenzten Storage-Request. Der Storage-Dienst erzeugt nun das feste
-  1,44-MB-FAT12-Layout mit 23 Reserved-Sektoren, zwei FAT-Kopien, Root- und
-  Datenbereich, REIST-Journal-/Remap-Metadaten sowie Bootsektor-Readback. Der
+  1,44-MB-FAT12-Layout mit fest berechnetem reserviertem Safety-Bereich, zwei
+  FAT-Kopien, Root- und Datenbereich, REIST-Journal-/Remap-/Replikatmetadaten
+  sowie vollständigem Metadaten-Readback. Der
   abschließende Lease-/Remount-Nachweis und Fehlerrollback bleiben offen.
 
 Die beim Boot von A: beobachtete Panic `Unable to start REIST Ring-3 probe`
 wurde auf ein nicht initialisiertes `maintenance_blocked` im VFS-Mountobjekt
 zurückgeführt und durch deterministische Initialisierung behoben. Ein
-Regressionstest sichert diese Initialisierung ab. Der abschließende Nachweis
-des A:-Boots unter VMware sowie die vollständige Fault-Injection-Matrix in Host,
-QEMU und VMware bleiben offen; daraus wird noch kein Resilienz- oder
+Regressionstest sichert diese Initialisierung ab. A:-Boot und Reconnect wurden
+unter VMware beobachtet; die vollständige Fault-Injection-Matrix in Host,
+QEMU und VMware bleibt offen. Daraus wird noch kein Resilienz- oder
 Fail-operational-Claim abgeleitet.
 
 ### Abschluss-Arbeitsliste FAT12

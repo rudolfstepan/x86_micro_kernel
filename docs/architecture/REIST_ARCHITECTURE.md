@@ -1,6 +1,6 @@
 # REIST-OS-Zielarchitektur
 
-Stand: 15. August 2026
+Stand: 16. August 2026
 
 **REIST OS** steht für **Resilient Execution, Isolation and Stability
 Technology**. Das zentrale Architekturprinzip lautet:
@@ -33,7 +33,10 @@ REIST OS
 ```
 
 Dieses Dokument beschreibt die technische Zielarchitektur. Der aktuelle
-32-Bit-Kernel ist noch ein modularer Monolith und erfüllt sie nicht. Die
+32-Bit-Kernel ist weiterhin ein modularer Monolith und erfüllt sie noch nicht
+vollständig. Ring-3-Dienste, Capabilities, Supervisor, Fencing und begrenzte
+Recoverypfade sind bereits ausführbar, bilden aber noch keine unabhängige
+Hardware-Fehlerdomäne. Die
 verbindlichen, profilunabhängigen Regeln stehen im
 [High-Assurance-Core-Vertrag](HIGH_ASSURANCE_CORE_CONTRACT.md). Der
 [Medical-High-Assurance-Vertrag](MEDICAL_HIGH_ASSURANCE_CONTRACT.md) ist nur
@@ -636,11 +639,10 @@ Der Ring-3-Dienst prüft Version, Strukturgröße, Framegrenzen, Padding und
 EtherType erneut. Der Kernel veröffentlicht die einmalige Diagnosebestätigung
 erst nach erfolgreichem Copy-out; der folgende Dienstreport muss PID,
 Generation und EtherType exakt treffen und verbraucht sie. Der RTL8139-Smoke
-verlangt den Marker `REIST_NETWORK FRAME_HANDOFF`. Dieser Nachweis belegt den
-neuen Transport, noch nicht die Entfernung des alten Parsers. S0.3c-5e2 muss
-IPv4-/UDP-/DHCP-Zustand über diesen Pfad übernehmen und darf den parallelen
-Ring-0-Demux erst nach funktional äquivalenten Druck-, Restart- und
-Fault-Injection-Tests entfernen.
+verlangt den Marker `REIST_NETWORK FRAME_HANDOFF`. Dieser Zwischenstand belegte
+zunächst nur den Transport. Die nachfolgenden S0.3c-5e2-Pakete übernahmen
+IPv4-/UDP-/DHCP-Zustand und entfernten den parallelen Ring-0-Demux erst nach
+funktional äquivalenten Druck-, Restart- und Fault-Injection-Tests.
 
 S0.3c-5e2a setzt auf diesem Transport einen ersten begrenzten Ring-3-Parser
 auf. Der heapfreie IPv4-v1-Code akzeptiert nur Ethernet-II/IPv4 bis 1518 Byte,
@@ -733,8 +735,9 @@ Crash, Restart und Queue-Druck. Der anschließende Rückbau entfernt auch den
 allgemeinen Ring-0-UDP-Parser, dessen Legacy-Einspeisung und die unbenutzte
 direkte Echo-Sendehilfe. Der Kernel verwirft UDP-Eingang fail-closed; nur
 `supervisor_network_udp_ingress` darf nach CRC-, Generations-, Deadline- und
-Binding-Prüfung eine Antwortautorität erzeugen. Der Ring-0-IPv4/ICMP-Fallback
-außerhalb des gesunden Dienstpfads bleibt als S0.3c-5e2-Restpaket offen.
+Binding-Prüfung eine Antwortautorität erzeugen. Zu diesem Zwischenstand blieb
+der Ring-0-IPv4/ICMP-Fallback außerhalb des gesunden Dienstpfads offen; das
+nachfolgende S0.3c-5e2c bereitete und vollzog dessen kontrollierten Rückbau.
 
 S0.3c-5e2c bereitet dessen kontrollierten Rückbau vor. Ein separater,
 heapfreier Ring-3-Parser akzeptiert nur vollständig vom IPv4-v1-Parser
@@ -803,9 +806,9 @@ weitere Requests gegen diese Ressource werden ohne Hardwarekontakt mit
 `-EHOSTDOWN` abgeschlossen. Die Quarantäne überlebt Dienstneustarts innerhalb
 desselben Boots und kann daher nicht durch einen Generationstausch umgangen
 werden. Ein separater Build injiziert den Fehler genau einmal; Produktion
-enthält nur Retry, Quarantäne und Fehlerpropagation. Ein kontrolliertes
-Requalifizieren der Ressource ist noch nicht erlaubt und wird erst zusammen
-mit einem verifizierten Medien-Selbsttest eingeführt.
+enthält nur Retry, Quarantäne und Fehlerpropagation. In S0.3c-6d2 war eine
+kontrollierte Requalifizierung noch nicht erlaubt; S0.3c-6e ergänzt sie unten
+zusammen mit dem verifizierten Medien-Selbsttest.
 
 S0.3c-6d3 koppelt persistente Journal-Recovery an die Dienst-Reintegration.
 Der Testdatenträger enthält eine ACTIVE-Transaktion, zwei bereits veränderte
@@ -832,10 +835,12 @@ Storage-/VFS-Schreib-Fence geschlossen. Es gibt keine blinde Wiederholung.
 Dieser Vertrag gilt für alle heutigen und künftigen persistenten Medien. Die
 Zustandsfolge lautet `ONLINE_RW -> QUARANTINED -> PROBING -> ONLINE_RW` bei
 einem verifizierten reinen Lesefehler und `... -> ONLINE_RO` bei unklarem
-Schreibabschluss. Der noch offene Schritt S0.3c-6f muss Undo/COW/Journal,
-Flush-/Barrier-Semantik, Recovery und Fault-Injection medienunabhängig für
-jedes schreibbare Backend nachweisen. Erst dann darf ein solches Medium nach
-einem abgebrochenen Schreibzugriff automatisch wieder `ONLINE_RW` werden.
+Schreibabschluss. S0.3c-6f1 bis S0.3c-6f4 liefern für explizit markierte
+REIST-FAT12-Medien Undo-Journal, Remap, kritische Replikate und geordnete
+Dateitransaktionen. Aktiv ist S0.3c-6f5 mit der deterministischen Persistenz-
+Fehlermatrix. Der medienunabhängige Nachweis für EXT2, fremde FAT-Volumes und
+künftige Backends bleibt offen. Erst ein nachgewiesenes Recoveryprotokoll darf
+ein Medium nach unklarem Schreibabschluss wieder `ONLINE_RW` schalten.
 
 Der FDD-Pfad behandelt zusätzlich echtes Wechselmedien-Hotplug. Jeder
 fehlgeschlagene normale FAT12-Read meldet die zugehörige Ressourcen-ID und
@@ -849,7 +854,7 @@ sowie eine erneut erfolgreiche Datei-Lektüre. Das bestehende Mount bleibt nur
 für das wiedererkannte Medium nutzbar; ein abweichender Boot-Fingerprint bleibt
 quarantänisiert. Stärkere Ganzmedien-Identität und kontrolliertes
 Cache-Invalidieren/Remount bei extern veränderten, aber bootsektorgleichen
-Medien gehören zu S0.3c-6f.
+Medien gehören zum noch offenen FAT12-Maintenance-Abschluss.
 
 ### Standby-Handover-Protokoll
 
@@ -1061,7 +1066,8 @@ das VFS dauerhaft bis zum Neustart auf Read-only; Lese- und Diagnosezugriffe
 bleiben verfügbar. Fatal-Fencing verriegelt sowohl diese VFS-Schranke als auch
 den physischen Storage-Write-Pfad. Der Modus ist bewusst fail-closed und hat
 kein automatisches Restartbudget. Für markierte FAT32-Images umfasst ihn die
-nachfolgende Journaltransaktion; FAT12, EXT2 und fremde Medien besitzen diese
+nachfolgende Journaltransaktion. Markierte REIST-FAT12-Medien besitzen einen
+eigenen begrenzten Transaktionspfad; EXT2 und fremde Medien besitzen diese
 Mehrsektor-Transaktionsgarantie weiterhin nicht.
 
 Auch die Steuerdaten beider Persistenzdomänen sind jetzt `critical_object`s:
