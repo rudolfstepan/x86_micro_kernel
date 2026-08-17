@@ -6,6 +6,7 @@
 #include "drivers/block/block_device.h"
 #include "drivers/block/fdd.h"
 #include "include/kernel/critical_object.h"
+#include "include/kernel/admin_maintenance.h"
 #include "include/kernel/filesystem_safety.h"
 #include "include/kernel/storage_request_pool.h"
 #include "include/kernel/storage_safety.h"
@@ -15,7 +16,7 @@
 #include "lib/libc/string.h"
 #include "kernel/time/pit.h"
 
-#define STORAGE_SERVICE_CONTROL_VERSION 1U
+#define STORAGE_SERVICE_CONTROL_VERSION 2U
 #define STORAGE_SERVICE_START_TIMEOUT_MS 1000U
 #define STORAGE_SERVICE_RESTART_BUDGET 3U
 #define STORAGE_MEDIA_PROBE_INITIAL_MS 250U
@@ -33,6 +34,9 @@ typedef struct {
     uint32_t recovering_resources;
     uint32_t probe_cursor;
     uint32_t probe_attempts;
+    uint32_t admin_down_resources;
+    uint32_t admin_transition_resources;
+    uint32_t admin_failed_resources;
     uint64_t start_deadline_ms;
     uint64_t next_probe_ms;
 } storage_service_control_t;
@@ -76,12 +80,16 @@ static bool control_valid(const void *payload, size_t length) {
     if (payload == NULL || length != sizeof(storage_service_control_t))
         return false;
     const storage_service_control_t *control = payload;
+    uint32_t valid_resources = (1U << MAX_DRIVES) - 1U;
     if (control->healthy > 1U ||
         ((control->quarantined_resources | control->read_only_resources |
-          control->recovering_resources) &
-         ~((1U << MAX_DRIVES) - 1U)) != 0U ||
+          control->recovering_resources | control->admin_down_resources |
+          control->admin_transition_resources |
+          control->admin_failed_resources) & ~valid_resources) != 0U ||
         (control->recovering_resources &
          ~control->quarantined_resources) != 0U ||
+        (control->admin_failed_resources &
+         ~control->admin_down_resources) != 0U ||
         control->probe_cursor >= MAX_DRIVES ||
         control->probe_attempts > STORAGE_MEDIA_PROBE_MAX_ATTEMPTS ||
         control->launch_count > STORAGE_SERVICE_RESTART_BUDGET + 1U)
@@ -352,6 +360,7 @@ bool storage_service_inventory_media(void) {
 
 bool storage_service_start(uint64_t now_ms) {
     if (!initialized || service_starting || service_started) return false;
+    if (!admin_maintenance_init()) return false;
     service_starting = true;
     storage_service_control_t control;
     bool result = control_read(&control) == 0 && control.pid == 0 &&
@@ -394,26 +403,167 @@ bool storage_service_resource_available(uint32_t resource) {
         filesystem_fence_mutations();
         return false;
     }
-    return (control.quarantined_resources & (1U << resource)) == 0U;
+    uint32_t mask = 1U << resource;
+    if (resource < (uint32_t)drive_count &&
+        detected_drives[resource].type == DRIVE_TYPE_PARTITION &&
+        detected_drives[resource].parent_resource < MAX_DRIVES) {
+        mask |= 1U << detected_drives[resource].parent_resource;
+    }
+    return ((control.quarantined_resources |
+             control.admin_down_resources |
+             control.admin_transition_resources) & mask) == 0U;
 }
 
 bool storage_service_resource_read_only(uint32_t resource) {
     storage_service_control_t control;
     if (resource >= MAX_DRIVES || !initialized ||
         control_read(&control) != 0) return true;
-    return (control.read_only_resources & (1U << resource)) != 0U;
+    uint32_t mask = 1U << resource;
+    if (resource < (uint32_t)drive_count &&
+        detected_drives[resource].type == DRIVE_TYPE_PARTITION &&
+        detected_drives[resource].parent_resource < MAX_DRIVES)
+        mask |= 1U << detected_drives[resource].parent_resource;
+    return (control.read_only_resources & mask) != 0U;
 }
 
 bool storage_service_resource_recovering(uint32_t resource) {
     storage_service_control_t control;
     if (resource >= MAX_DRIVES || !initialized ||
         control_read(&control) != 0) return false;
-    return (control.recovering_resources & (1U << resource)) != 0U;
+    uint32_t mask = 1U << resource;
+    if (resource < (uint32_t)drive_count &&
+        detected_drives[resource].type == DRIVE_TYPE_PARTITION &&
+        detected_drives[resource].parent_resource < MAX_DRIVES)
+        mask |= 1U << detected_drives[resource].parent_resource;
+    return (control.recovering_resources & mask) != 0U;
 }
 
-bool storage_service_media_fingerprint(uint32_t resource, uint32_t *fingerprint) {
-    if (fingerprint == NULL || resource >= MAX_DRIVES || !initialized ||
-        !media_identity_matches(resource)) return false;
+static bool admin_resource_mask_valid(uint32_t resource_mask) {
+    if (resource_mask == 0U || drive_count <= 0 || drive_count > MAX_DRIVES)
+        return false;
+    uint32_t present = (1U << (uint32_t)drive_count) - 1U;
+    return (resource_mask & ~present) == 0U;
+}
+
+bool storage_service_admin_begin(uint32_t resource_mask, bool require_down) {
+    if (!initialized || !admin_resource_mask_valid(resource_mask))
+        return false;
+    uint32_t flags = irq_save();
+    storage_service_control_t control;
+    size_t length = 0U;
+    bool valid = critical_object_read(&protected_control,
+        STORAGE_SERVICE_CONTROL_VERSION, &control, sizeof(control), &length,
+        control_valid) >= 0 && length == sizeof(control);
+    if (!valid ||
+        (control.admin_transition_resources & resource_mask) != 0U ||
+        (control.quarantined_resources & resource_mask) != 0U ||
+        (control.read_only_resources & resource_mask) != 0U ||
+        (control.recovering_resources & resource_mask) != 0U ||
+        (require_down
+            ? (control.admin_down_resources & resource_mask) != resource_mask
+            : (control.admin_down_resources & resource_mask) != 0U)) {
+        irq_restore(flags);
+        return false;
+    }
+    control.admin_transition_resources |= resource_mask;
+    valid = critical_object_update(&protected_control,
+        STORAGE_SERVICE_CONTROL_VERSION, &control, sizeof(control),
+        control_valid) == 0;
+    irq_restore(flags);
+    return valid;
+}
+
+static bool storage_service_admin_finish(uint32_t resource_mask,
+                                         uint32_t mode) {
+    if (!initialized || !admin_resource_mask_valid(resource_mask))
+        return false;
+    uint32_t flags = irq_save();
+    storage_service_control_t control;
+    size_t length = 0U;
+    bool valid = critical_object_read(&protected_control,
+        STORAGE_SERVICE_CONTROL_VERSION, &control, sizeof(control), &length,
+        control_valid) >= 0 && length == sizeof(control) &&
+        (control.admin_transition_resources & resource_mask) == resource_mask;
+    if (!valid) {
+        irq_restore(flags);
+        return false;
+    }
+    if (mode == 1U) {
+        control.admin_down_resources |= resource_mask;
+        control.admin_failed_resources &= ~resource_mask;
+    } else if (mode == 2U) {
+        control.admin_down_resources &= ~resource_mask;
+        control.admin_failed_resources &= ~resource_mask;
+    } else if ((control.admin_down_resources & resource_mask) != 0U) {
+        irq_restore(flags);
+        return false;
+    }
+    control.admin_transition_resources &= ~resource_mask;
+    valid = critical_object_update(&protected_control,
+        STORAGE_SERVICE_CONTROL_VERSION, &control, sizeof(control),
+        control_valid) == 0;
+    irq_restore(flags);
+    return valid;
+}
+
+bool storage_service_admin_finish_down(uint32_t resource_mask) {
+    return storage_service_admin_finish(resource_mask, 1U);
+}
+
+bool storage_service_admin_finish_online(uint32_t resource_mask) {
+    return storage_service_admin_finish(resource_mask, 0U);
+}
+
+bool storage_service_admin_finish_up(uint32_t resource_mask) {
+    return storage_service_admin_finish(resource_mask, 2U);
+}
+
+bool storage_service_admin_fail(uint32_t resource_mask) {
+    if (!initialized || !admin_resource_mask_valid(resource_mask))
+        return false;
+    uint32_t flags = irq_save();
+    storage_service_control_t control;
+    size_t length = 0U;
+    bool valid = critical_object_read(&protected_control,
+        STORAGE_SERVICE_CONTROL_VERSION, &control, sizeof(control), &length,
+        control_valid) >= 0 && length == sizeof(control);
+    if (valid) {
+        control.admin_down_resources |= resource_mask;
+        control.admin_failed_resources |= resource_mask;
+        control.admin_transition_resources &= ~resource_mask;
+        valid = critical_object_update(&protected_control,
+            STORAGE_SERVICE_CONTROL_VERSION, &control, sizeof(control),
+            control_valid) == 0;
+    }
+    irq_restore(flags);
+    return valid;
+}
+
+bool storage_service_resource_admin_down(uint32_t resource) {
+    storage_service_control_t control;
+    return resource < MAX_DRIVES && initialized &&
+           control_read(&control) == 0 &&
+           (control.admin_down_resources & (1U << resource)) != 0U;
+}
+
+bool storage_service_resource_admin_transition(uint32_t resource) {
+    storage_service_control_t control;
+    return resource < MAX_DRIVES && initialized &&
+           control_read(&control) == 0 &&
+           (control.admin_transition_resources & (1U << resource)) != 0U;
+}
+
+bool storage_service_resource_admin_failed(uint32_t resource) {
+    storage_service_control_t control;
+    return resource < MAX_DRIVES && initialized &&
+           control_read(&control) == 0 &&
+           (control.admin_failed_resources & (1U << resource)) != 0U;
+}
+
+bool storage_service_expected_fingerprint(uint32_t resource,
+                                          uint32_t *fingerprint) {
+    if (fingerprint == NULL || resource >= MAX_DRIVES || !initialized)
+        return false;
     storage_media_fingerprint_t value;
     size_t length = 0U;
     if ((fingerprint_ready_mask & (1U << resource)) == 0U ||
@@ -423,6 +573,18 @@ bool storage_service_media_fingerprint(uint32_t resource, uint32_t *fingerprint)
         return false;
     *fingerprint = value.boot_crc32;
     return *fingerprint != 0U;
+}
+
+bool storage_service_requalify_media(uint32_t resource,
+                                     uint32_t *fingerprint) {
+    return resource < MAX_DRIVES && initialized &&
+           media_identity_matches(resource) &&
+           storage_service_expected_fingerprint(resource, fingerprint);
+}
+
+bool storage_service_media_fingerprint(uint32_t resource,
+                                       uint32_t *fingerprint) {
+    return storage_service_requalify_media(resource, fingerprint);
 }
 
 bool storage_service_report_io_failure(uint32_t resource) {

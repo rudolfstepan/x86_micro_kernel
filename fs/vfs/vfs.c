@@ -164,13 +164,15 @@ static int vfs_register_filesystem_locked(const char* name,
 // ===========================================================================
 
 static int vfs_mount_locked(drive_t* drive, const char* fs_type,
-                            const char* mount_path) {
+                            const char* mount_path,
+                            bool maintenance_blocked) {
     if (!drive || !fs_type || !mount_path) {
         return VFS_ERR_INVALID;
     }
     
     size_t mount_path_length = strlen(mount_path);
     if (!vfs_valid_absolute_path(mount_path) ||
+        mount_path_length >= sizeof(drive->mount_point) ||
         (mount_path_length > 1 && mount_path[mount_path_length - 1] == '/')) {
         return VFS_ERR_INVALID;
     }
@@ -183,6 +185,9 @@ static int vfs_mount_locked(drive_t* drive, const char* fs_type,
     // mount leaks state and makes unmount order-dependent.
     for (vfs_mount_t* current = mount_list; current; current = current->next) {
         if (strcmp(current->path, mount_path) == 0) {
+            return VFS_ERR_EXISTS;
+        }
+        if (current->fs != NULL && current->fs->drive == drive) {
             return VFS_ERR_EXISTS;
         }
     }
@@ -214,7 +219,7 @@ static int vfs_mount_locked(drive_t* drive, const char* fs_type,
     fs->fs_data = NULL;
     fs->root = NULL;
     fs->open_nodes = 0;
-    fs->maintenance_blocked = false;
+    fs->maintenance_blocked = maintenance_blocked;
 
     // Allocate the mount record before activating the filesystem so every
     // allocation failure is still side-effect free.
@@ -238,6 +243,8 @@ static int vfs_mount_locked(drive_t* drive, const char* fs_type,
     mount->next = mount_list;
     mount_list = mount;
     mount_count++;
+    strncpy(drive->mount_point, mount_path, sizeof(drive->mount_point) - 1U);
+    drive->mount_point[sizeof(drive->mount_point) - 1U] = '\0';
     
     printf("VFS: Successfully mounted %s at %s\n", drive->name, mount_path);
     return VFS_OK;
@@ -267,6 +274,9 @@ static int vfs_unmount_locked(const char* mount_path) {
             
             // Remove from list
             *current = to_remove->next;
+            if (to_remove->fs->drive != NULL) {
+                to_remove->fs->drive->mount_point[0] = '\0';
+            }
             free(to_remove->fs);
             free(to_remove);
             mount_count--;
@@ -647,7 +657,15 @@ int vfs_register_filesystem(const char* name, vfs_filesystem_ops_t* ops) {
 
 int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path) {
     vfs_operation_begin();
-    int result = vfs_mount_locked(drive, fs_type, mount_path);
+    int result = vfs_mount_locked(drive, fs_type, mount_path, false);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_mount_maintenance(drive_t* drive, const char* fs_type,
+                          const char* mount_path) {
+    vfs_operation_begin();
+    int result = vfs_mount_locked(drive, fs_type, mount_path, true);
     vfs_operation_end();
     return result;
 }
@@ -673,6 +691,28 @@ static int vfs_maintenance_acquire_locked(drive_t* drive) {
     return VFS_ERR_NOT_FOUND;
 }
 
+static int vfs_maintenance_begin_locked(drive_t* drive) {
+    if (!drive) return VFS_ERR_INVALID;
+    for (vfs_mount_t* mount = mount_list; mount; mount = mount->next) {
+        if (mount->fs->drive != drive) continue;
+        mount->fs->maintenance_blocked = true;
+        return VFS_OK;
+    }
+    return VFS_ERR_NOT_FOUND;
+}
+
+static int vfs_maintenance_open_count_locked(drive_t* drive,
+                                             uint32_t* open_nodes) {
+    if (!drive || !open_nodes) return VFS_ERR_INVALID;
+    for (vfs_mount_t* mount = mount_list; mount; mount = mount->next) {
+        if (mount->fs->drive != drive) continue;
+        if (!mount->fs->maintenance_blocked) return VFS_ERR_INVALID;
+        *open_nodes = mount->fs->open_nodes;
+        return VFS_OK;
+    }
+    return VFS_ERR_NOT_FOUND;
+}
+
 static int vfs_maintenance_release_locked(drive_t* drive) {
     if (!drive) return VFS_ERR_INVALID;
     for (vfs_mount_t* mount = mount_list; mount; mount = mount->next) {
@@ -691,9 +731,45 @@ int vfs_maintenance_acquire(drive_t* drive) {
     return result;
 }
 
+int vfs_maintenance_begin(drive_t* drive) {
+    vfs_operation_begin();
+    int result = vfs_maintenance_begin_locked(drive);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_maintenance_open_count(drive_t* drive, uint32_t* open_nodes) {
+    vfs_operation_begin();
+    int result = vfs_maintenance_open_count_locked(drive, open_nodes);
+    vfs_operation_end();
+    return result;
+}
+
 int vfs_maintenance_release(drive_t* drive) {
     vfs_operation_begin();
     int result = vfs_maintenance_release_locked(drive);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_get_mount_info(drive_t* drive, vfs_mount_info_t* info) {
+    if (!info) return VFS_ERR_INVALID;
+    vfs_operation_begin();
+    memset(info, 0, sizeof(*info));
+    int result = VFS_ERR_NOT_FOUND;
+    if (drive != NULL) {
+        for (vfs_mount_t* mount = mount_list; mount; mount = mount->next) {
+            if (mount->fs->drive != drive) continue;
+            info->mounted = true;
+            info->maintenance_blocked = mount->fs->maintenance_blocked;
+            info->open_nodes = mount->fs->open_nodes;
+            strncpy(info->path, mount->path, sizeof(info->path) - 1U);
+            strncpy(info->fs_type, mount->fs->name,
+                    sizeof(info->fs_type) - 1U);
+            result = VFS_OK;
+            break;
+        }
+    }
     vfs_operation_end();
     return result;
 }

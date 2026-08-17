@@ -16,6 +16,10 @@ _Static_assert(sizeof(x86os_display_text_t) == 32U,
                "display text ABI size changed");
 _Static_assert(sizeof(x86os_ipc_message_t) == 140U,
                "IPC message ABI size changed");
+_Static_assert(sizeof(x86os_admin_storage_request_t) == 104U,
+               "admin storage request ABI changed");
+_Static_assert(sizeof(x86os_admin_storage_result_t) == 128U,
+               "admin storage result ABI changed");
 
 uintptr_t x86os_syscall(uint32_t number, uintptr_t argument1,
                         uintptr_t argument2, uintptr_t argument3) {
@@ -514,6 +518,13 @@ int x86os_drive_status(uint32_t index, x86os_drive_status_t* status) {
     status->struct_size = sizeof(*status);
     return (int)x86os_syscall(X86OS_SYS_DRIVE_STATUS, index,
                               (uintptr_t)status, 0);
+}
+
+int x86os_admin_storage(const x86os_admin_storage_request_t* request,
+                        x86os_admin_storage_result_t* result) {
+    if (request == NULL || result == NULL) return -22;
+    return (int)x86os_syscall(X86OS_SYS_ADMIN_STORAGE,
+                              (uintptr_t)request, (uintptr_t)result, 0U);
 }
 
 int x86os_space(const char* path, x86os_space_info_t* info) {

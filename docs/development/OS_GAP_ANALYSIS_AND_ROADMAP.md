@@ -1331,14 +1331,17 @@ eingefrorenen Gates und die erneute physische Abnahme stehen noch aus.
 
 #### Administrationspakete
 
-- **S0.3c-admin1 — Storage-Administration (aktiv):** capability- und leasegebundene
+- **S0.3c-admin1 — Storage-Administration (umgesetzt):** capability- und leasegebundene
   Werkzeuge für Status, `device down/up`, `mount` und `umount`. Zunächst sind
   ausschließlich Hilfsvolumes administrierbar; Root-Volume und Storage-Parent
   des laufenden Systems werden abgewiesen. Down sperrt neue Opens, drainiert
   vorhandene Handles begrenzt, flusht oder fencet und unmountet in Child-vor-
   Parent-Reihenfolge. Up verlangt Transport-Requalifizierung, unveränderte
   Medienidentität und Dateisystemprüfung vor Remount und Veröffentlichung.
-- **S0.3c-admin2 — Komponentensteuerung (queued):** feste Registry für ausdrücklich
+  Ein festes, integritätsgeprüftes RAM-Rescue-Abbild hält Shell, Anzeige-,
+  Diagnose- und Storage-Adminprogramme auch nach Verlust des Root-Backends
+  startbar; es enthält keine veränderlichen Nutzdaten.
+- **S0.3c-admin2 — Komponentensteuerung (aktiv):** feste Registry für ausdrücklich
   unterstützte Treiber und überwachte Dienste mit `status`, `down`, `up` und
   einem einzelnen begrenzten `restart`. Kernelcode wird nicht entladen. Jede
   Komponente deklariert Abhängigkeiten, Quiesce-/Fence-Aktion, Selbsttest und

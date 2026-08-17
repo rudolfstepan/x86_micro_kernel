@@ -23,5 +23,7 @@ int storage_maintenance_release(int pid, uint32_t process_generation,
 bool storage_maintenance_valid(int pid, uint32_t process_generation,
                                storage_maintenance_token_t token,
                                uint32_t media_fingerprint, uint64_t now_ms);
+uint32_t storage_maintenance_process_cleanup(int pid,
+                                             uint32_t process_generation);
 
 #endif

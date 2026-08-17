@@ -177,3 +177,30 @@ bool storage_maintenance_valid(int pid, uint32_t process_generation,
            state.media_fingerprint == media_fingerprint &&
            !deadline_expired(state.deadline_ms, now_ms);
 }
+
+uint32_t storage_maintenance_process_cleanup(int pid,
+                                             uint32_t process_generation) {
+    if (!initialized || pid <= 0 || process_generation == 0U) return 0U;
+    uint32_t released = 0U;
+    for (uint32_t slot = 0U; slot < STORAGE_MAINTENANCE_MAX_RESOURCES;
+         ++slot) {
+        storage_maintenance_state_t state;
+        size_t length = 0U;
+        if (critical_object_read(&lease_objects[slot],
+                STORAGE_MAINTENANCE_VERSION, &state, sizeof(state), &length,
+                state_valid) < 0 || length != sizeof(state)) continue;
+        if (state.active == 0U || state.pid != pid ||
+            state.process_generation != process_generation) continue;
+        state.active = 0U;
+        state.pid = 0;
+        state.process_generation = 0U;
+        state.media_fingerprint = 0U;
+        state.deadline_ms = 0U;
+        if (critical_object_update(&lease_objects[slot],
+                STORAGE_MAINTENANCE_VERSION, &state, sizeof(state),
+                state_valid) == 0 && slot < 32U) {
+            released |= 1U << slot;
+        }
+    }
+    return released;
+}

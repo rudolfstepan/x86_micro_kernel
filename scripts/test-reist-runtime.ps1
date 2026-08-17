@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'handover')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'handover')]
     [string]$Mode = 'normal'
 )
 
@@ -12,6 +12,7 @@ $Image = Join-Path $RepoRoot 'build\reist-os.img'
 $Runner = Join-Path $RepoRoot 'scripts\run_qemu_smoke.py'
 $FddHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_fdd_hotplug.py'
 $SataHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_sata_hotplug.py'
+$AdminMaintenanceRunner = Join-Path $RepoRoot 'scripts\run_qemu_admin_maintenance.py'
 $LogRoot = Join-Path $RepoRoot 'build\codex-agent'
 
 function Resolve-NativeTool {
@@ -149,6 +150,38 @@ function Invoke-SataHotplug {
     Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
 }
 
+function Invoke-AdminMaintenance {
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $gateLog = Join-Path $LogRoot "$stamp-runtime-admin-maintenance"
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $exitCode = 0
+    try {
+        $LASTEXITCODE = 0
+        & $Python $AdminMaintenanceRunner `
+            --qemu $Qemu `
+            --image $Image `
+            --disk (Join-Path $RepoRoot 'build\admin-maintenance.img') `
+            --floppy (Join-Path $RepoRoot 'build\admin-maintenance-fdd.img') `
+            --log (Join-Path $RepoRoot 'build\guest-admin-maintenance.log') `
+            *> $gateLog
+        $exitCode = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
+    }
+    catch {
+        $exitCode = 1
+        $_ | Out-String | Add-Content -LiteralPath $gateLog
+    }
+    finally {
+        $watch.Stop()
+    }
+    if ($exitCode -ne 0) {
+        Write-Output "RUNTIME FAIL exit=$exitCode elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+        Get-Content -LiteralPath $gateLog -Tail 40
+        throw "REIST runtime smoke 'admin-maintenance' failed with exit $exitCode."
+    }
+    Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+}
+
 switch ($Mode) {
     'normal' {
         Invoke-Smoke 'guest-smoke.log' @()
@@ -260,6 +293,9 @@ switch ($Mode) {
     }
     'sata-hotplug' {
         Invoke-SataHotplug
+    }
+    'admin-maintenance' {
+        Invoke-AdminMaintenance
     }
     'handover' {
         Invoke-Smoke 'guest-smoke-handover.log' @(

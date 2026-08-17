@@ -25,6 +25,7 @@
 #include "include/kernel/storage_request_pool.h"
 #include "include/kernel/storage_service.h"
 #include "include/kernel/storage_maintenance.h"
+#include "include/kernel/admin_maintenance.h"
 #include "include/kernel/supervisor.h"
 #include "include/kernel/supervisor.h"
 #include "arch/x86/mm/paging.h"
@@ -1344,21 +1345,41 @@ static int syscall_drive_status(uint32_t index, void *user_status) {
         .flags = 0U,
         .reserved = 0U
     };
-    uint32_t health_resource = index;
-    if (detected_drives[index].type == DRIVE_TYPE_PARTITION) {
-        if (detected_drives[index].parent_resource >= (uint32_t)drive_count)
-            return -84;
-        health_resource = detected_drives[index].parent_resource;
-    }
-    bool available = storage_service_resource_available(health_resource);
-    bool read_only = storage_service_resource_read_only(health_resource);
-    bool recovering = storage_service_resource_recovering(health_resource);
+    bool available = storage_service_resource_available(index);
+    bool read_only = storage_service_resource_read_only(index);
+    bool recovering = storage_service_resource_recovering(index);
     if (available) status.flags |= DRIVE_STATUS_AVAILABLE;
     if (read_only) status.flags |= DRIVE_STATUS_READ_ONLY;
     if (!available || read_only) status.flags |= DRIVE_STATUS_DEGRADED;
     if (!available) status.flags |= DRIVE_STATUS_QUARANTINED;
     if (recovering) status.flags |= DRIVE_STATUS_RECOVERING;
     return copy_to_user(user_status, &status, sizeof(status)) == 0 ? 0 : -14;
+}
+
+static int syscall_admin_storage(
+        const admin_storage_request_t *user_request,
+        admin_storage_result_t *user_result) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t request_address = (uint32_t)(uintptr_t)user_request;
+    uint32_t result_address = (uint32_t)(uintptr_t)user_result;
+    if (process == NULL ||
+        process->domain_profile.kind != PROCESS_DOMAIN_ADMIN ||
+        !user_range_accessible(directory, request_address,
+                               sizeof(admin_storage_request_t), false) ||
+        !user_range_accessible(directory, result_address,
+                               sizeof(admin_storage_result_t), true))
+        return -13;
+    admin_storage_request_t request;
+    admin_storage_result_t result;
+    if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+        return -14;
+    int status = admin_maintenance_execute(
+        process->pid, process->generation, &request, &result,
+        pit_monotonic_ms());
+    if (status != 0) return status;
+    return copy_to_user_space(directory, result_address, &result,
+                              sizeof(result)) == 0 ? 0 : -14;
 }
 
 static int syscall_space(const char *user_path, void *user_info) {
@@ -1484,6 +1505,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_storage_maintenance_renew,   // Syscall 87
     (void*)&syscall_storage_maintenance_release, // Syscall 88
     (void*)&syscall_drive_status,        // Syscall 89: Versioned drive health
+    (void*)&syscall_admin_storage,       // Syscall 90: Bounded storage admin
     // Add more syscalls here as needed
 };
 
@@ -1907,6 +1929,11 @@ void syscall_handler(Registers* regs) {
         case SYS_DRIVE_STATUS:
             result = (uint32_t)syscall_drive_status(
                 arg1, (void*)(uintptr_t)arg2);
+            break;
+        case SYS_ADMIN_STORAGE:
+            result = (uint32_t)syscall_admin_storage(
+                (const admin_storage_request_t*)(uintptr_t)arg1,
+                (admin_storage_result_t*)(uintptr_t)arg2);
             break;
         default:
             result = (uint32_t)-1;

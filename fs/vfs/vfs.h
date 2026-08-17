@@ -110,6 +110,14 @@ typedef struct vfs_mount {
     struct vfs_mount* next;           // Next mount point
 } vfs_mount_t;
 
+typedef struct {
+    bool mounted;
+    bool maintenance_blocked;
+    uint32_t open_nodes;
+    char path[256];
+    char fs_type[32];
+} vfs_mount_info_t;
+
 // ===========================================================================
 // VFS Error Codes
 // ===========================================================================
@@ -145,12 +153,17 @@ int vfs_register_filesystem(const char* name, vfs_filesystem_ops_t* ops);
 
 // Mount/unmount
 int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path);
+int vfs_mount_maintenance(drive_t* drive, const char* fs_type,
+                          const char* mount_path);
 int vfs_unmount(const char* mount_path);
 
-/* Atomically stop new opens after proving that no caller owns a node for the
-   selected drive.  The caller must hold the higher-level maintenance lease. */
+/* Atomically stop new opens.  Administrative callers may then wait for the
+   bounded open-node count to drain before detaching the filesystem. */
+int vfs_maintenance_begin(drive_t* drive);
+int vfs_maintenance_open_count(drive_t* drive, uint32_t* open_nodes);
 int vfs_maintenance_acquire(drive_t* drive);
 int vfs_maintenance_release(drive_t* drive);
+int vfs_get_mount_info(drive_t* drive, vfs_mount_info_t* info);
 
 // File operations (path-based)
 int vfs_open(const char* path, vfs_node_t** node);

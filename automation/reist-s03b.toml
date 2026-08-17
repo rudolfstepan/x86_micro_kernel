@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3c-6f"
-active_id = "S0.3c-admin1"
+active_id = "S0.3c-admin2"
 
 [policy]
 one_package_per_run = true
@@ -890,10 +890,10 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-admin1"
-status = "active"
+status = "done"
 risk = "critical"
 title = "Capability-bound storage administration"
-scope = "Add explicit administrative maintenance commands for listing storage state, mounting and unmounting auxiliary filesystems, and taking supported storage resources administratively down or back up. Reuse the generation- and media-bound maintenance lease, reject the live root volume, drain open handles within a monotonic deadline, fence before unmount or device-down side effects, and requalify identity before device-up or remount."
+scope = "Add explicit administrative maintenance commands for listing storage state, mounting and unmounting auxiliary filesystems, and taking supported storage resources administratively down or back up. Reuse the generation- and media-bound maintenance lease, reject the live root volume, drain open handles within a monotonic deadline, fence before unmount or device-down side effects, and requalify identity before device-up or remount. Preload a fixed integrity-checked rescue allowlist so the shell and maintenance commands remain startable after loss of the root block backend."
 allowed_files = [
   "include/kernel/admin_maintenance.h",
   "kernel/init/admin_maintenance.c",
@@ -935,6 +935,7 @@ invariants = [
   "device up performs transport requalification, media identity validation and filesystem validation before publication",
   "mount paths, resource IDs, filesystem types and parent-child topology are validated before state mutation",
   "failed unmount, down, up or mount leaves the resource in one explicit fail-closed state without leaked leases",
+  "the exact rescue-program allowlist is size-bounded, validated at boot and CRC checked against protected metadata before every cached start",
   "all waits, scans and rollback work are bounded by fixed capacity or a monotonic deadline"
 ]
 targeted_tests = [
@@ -961,7 +962,7 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-admin2"
-status = "queued"
+status = "active"
 risk = "critical"
 title = "Static component lifecycle administration"
 scope = "Add a fixed registry and administrative status/down/up/restart state machine for explicitly supported drivers and supervised system services. Down means bounded quiesce, fence, interrupt or producer disable, capability revocation and dependency-aware stop; it never unloads kernel code. Up means hardware or service self-test, generation-safe recreation and reintegration only after all declared dependencies are ready."

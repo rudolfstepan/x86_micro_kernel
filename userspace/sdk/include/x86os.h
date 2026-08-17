@@ -93,7 +93,8 @@ enum {
     X86OS_SYS_STORAGE_MAINT_ACQUIRE = 86,
     X86OS_SYS_STORAGE_MAINT_RENEW = 87,
     X86OS_SYS_STORAGE_MAINT_RELEASE = 88,
-    X86OS_SYS_DRIVE_STATUS = 89
+    X86OS_SYS_DRIVE_STATUS = 89,
+    X86OS_SYS_ADMIN_STORAGE = 90
 };
 
 enum {
@@ -448,6 +449,55 @@ typedef struct {
     uint32_t reserved;
 } x86os_drive_status_t;
 
+#define X86OS_ADMIN_MAINTENANCE_VERSION 1U
+#define X86OS_ADMIN_PATH_MAX 64U
+#define X86OS_ADMIN_FS_MAX 16U
+enum {
+    X86OS_ADMIN_STORAGE_STATUS = 0,
+    X86OS_ADMIN_STORAGE_DEVICE_DOWN = 1,
+    X86OS_ADMIN_STORAGE_DEVICE_UP = 2,
+    X86OS_ADMIN_STORAGE_MOUNT = 3,
+    X86OS_ADMIN_STORAGE_UMOUNT = 4,
+};
+enum {
+    X86OS_ADMIN_RESOURCE_ONLINE = 1,
+    X86OS_ADMIN_RESOURCE_TRANSITION = 2,
+    X86OS_ADMIN_RESOURCE_DOWN = 3,
+    X86OS_ADMIN_RESOURCE_FAILED = 4,
+};
+#define X86OS_ADMIN_RESOURCE_MOUNTED   (1U << 0)
+#define X86OS_ADMIN_RESOURCE_ROOT      (1U << 1)
+#define X86OS_ADMIN_RESOURCE_PARENT    (1U << 2)
+#define X86OS_ADMIN_RESOURCE_BLOCKED   (1U << 3)
+#define X86OS_ADMIN_RESOURCE_AVAILABLE (1U << 4)
+#define X86OS_ADMIN_RESOURCE_READ_ONLY (1U << 5)
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t command;
+    uint32_t resource;
+    uint32_t drain_timeout_ms;
+    uint32_t reserved;
+    char fs_type[X86OS_ADMIN_FS_MAX];
+    char mount_path[X86OS_ADMIN_PATH_MAX];
+} x86os_admin_storage_request_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t resource;
+    uint32_t state;
+    uint32_t generation;
+    uint32_t flags;
+    uint32_t parent_resource;
+    uint32_t open_handles;
+    uint32_t drive_type;
+    uint32_t reserved;
+    char name[8];
+    char fs_type[X86OS_ADMIN_FS_MAX];
+    char mount_path[X86OS_ADMIN_PATH_MAX];
+} x86os_admin_storage_result_t;
+
 typedef struct {
     uint64_t total_bytes;
     uint64_t free_bytes;
@@ -568,6 +618,8 @@ int x86os_getcwd(char* buffer, size_t size);
 int x86os_chdir(const char* path);
 int x86os_drive_info(uint32_t index, x86os_drive_info_t* info);
 int x86os_drive_status(uint32_t index, x86os_drive_status_t* status);
+int x86os_admin_storage(const x86os_admin_storage_request_t* request,
+                        x86os_admin_storage_result_t* result);
 int x86os_space(const char* path, x86os_space_info_t* info);
 int x86os_mkdir(const char* path);
 int x86os_rmdir(const char* path);

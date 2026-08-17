@@ -24,6 +24,7 @@ typedef enum {
     PROCESS_DOMAIN_COMPATIBILITY = 1,
     PROCESS_DOMAIN_PROBE = 2,
     PROCESS_DOMAIN_STORAGE = 3,
+    PROCESS_DOMAIN_ADMIN = 4,
 } process_domain_kind_t;
 
 typedef struct {
@@ -90,6 +91,7 @@ int create_process_for_file(const char *filename);
 int create_process_for_file_args(const char* filename, int argc,
                                  const char* const* argv,
                                  const char* working_directory);
+bool process_cache_rescue_programs(void);
 void wait_for_process(int pid);
 int process_spawn(Process* parent, const char* path);
 int process_spawn_args(Process* parent, const char* path, int argc,
@@ -123,6 +125,8 @@ int process_file_sync(Process* process, int descriptor);
 int process_file_unlink(Process* process, const char* path);
 int process_file_close(Process* process, int descriptor);
 void process_close_all_files(Process* process);
+int process_revoke_files_for_resource(uint32_t resource,
+                                      uint32_t* revoked_out);
 int process_resolve_path(const Process* process, const char* path,
                          char resolved[PROCESS_PATH_MAX]);
 int process_get_working_directory(const Process* process, char* buffer,

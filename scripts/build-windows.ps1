@@ -239,6 +239,9 @@ try {
         --data-file "ECHO.PRG=$(Join-Path $UserProgramDir 'ECHO.PRG')" `
         --data-file "CLS.PRG=$(Join-Path $UserProgramDir 'CLS.PRG')" `
         --data-file "DRIVES.PRG=$(Join-Path $UserProgramDir 'DRIVES.PRG')" `
+        --data-file "DEVCTL.PRG=$(Join-Path $UserProgramDir 'DEVCTL.PRG')" `
+        --data-file "MOUNT.PRG=$(Join-Path $UserProgramDir 'MOUNT.PRG')" `
+        --data-file "UMOUNT.PRG=$(Join-Path $UserProgramDir 'UMOUNT.PRG')" `
         --data-file "EDIT.PRG=$(Join-Path $UserProgramDir 'EDIT.PRG')" `
         --data-file "CHILDEX.PRG=$(Join-Path $UserProgramDir 'CHILDEX.PRG')" `
         --data-file "FAULTDE.PRG=$(Join-Path $UserProgramDir 'FAULTDE.PRG')" `
@@ -290,6 +293,9 @@ try {
         --data-file "ECHO.PRG=$(Join-Path $UserProgramDir 'ECHO.PRG')" `
         --data-file "CLS.PRG=$(Join-Path $UserProgramDir 'CLS.PRG')" `
         --data-file "DRIVES.PRG=$(Join-Path $UserProgramDir 'DRIVES.PRG')" `
+        --data-file "DEVCTL.PRG=$(Join-Path $UserProgramDir 'DEVCTL.PRG')" `
+        --data-file "MOUNT.PRG=$(Join-Path $UserProgramDir 'MOUNT.PRG')" `
+        --data-file "UMOUNT.PRG=$(Join-Path $UserProgramDir 'UMOUNT.PRG')" `
         --data-file "EDIT.PRG=$(Join-Path $UserProgramDir 'EDIT.PRG')" `
         --data-file "CHILDEX.PRG=$(Join-Path $UserProgramDir 'CHILDEX.PRG')" `
         --data-file "FAULTDE.PRG=$(Join-Path $UserProgramDir 'FAULTDE.PRG')" `

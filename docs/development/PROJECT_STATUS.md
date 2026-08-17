@@ -74,17 +74,18 @@ und Reintegrate. Bereits vorhanden sind unter anderem:
 - begrenzte Netzwerkparser, ARP-/IPv4-/ICMP-/UDP-/DHCP-Entscheidungen in der
   überwachten Ring-3-Domäne
 
-S0 ist noch nicht abgeschlossen. Das aktive Paket ist `S0.3c-admin1` für
-capability-gebundene Storage-Administration. `S0.3c-6f5` mit der FAT12-
+S0 ist noch nicht abgeschlossen. Das aktive Paket ist `S0.3c-admin2` für
+statische Komponenten-Lifecycle-Steuerung. `S0.3c-admin1` mit capability-
+gebundener Storage-Administration, `S0.3c-6f5` mit der FAT12-
 Persistenz-Fehlermatrix und `S0.3c-hw11` mit begrenzter SATA-Hotplug-Recovery
 sind abgeschlossen. Aussagen über vollständig nachgewiesene
 Fail-Operationalität oder unabhängige Hardware-Failover-Domänen sind weiterhin
 unzulässig.
 
-`S0.3c-admin1` und das nachfolgend queued `S0.3c-admin2` führen manuelle
-Systemadministration ein: zunächst sichere Storage-Operationen (`device
-down/up`, `mount`, `umount`), danach eine statische,
-abhängigkeitsbewusste Lifecycle-Steuerung für ausdrücklich unterstützte
+`S0.3c-admin1` stellt sichere Storage-Operationen (`device down/up`, `mount`,
+`umount`) und einen festen, integritätsgeprüften RAM-Rescue-Satz aus Shell,
+Anzeige-, Diagnose- und Adminprogrammen bereit. `S0.3c-admin2` ergänzt nun eine
+statische, abhängigkeitsbewusste Lifecycle-Steuerung für ausdrücklich unterstützte
 Treiber und überwachte Dienste. Ein universelles dynamisches Entladen von
 Kernel-Treibern ist nicht vorgesehen.
 

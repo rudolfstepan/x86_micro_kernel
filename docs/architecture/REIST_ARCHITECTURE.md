@@ -842,8 +842,9 @@ S0.3c-6f4 liefern für explizit markierte
 REIST-FAT12-Medien Undo-Journal, Remap, kritische Replikate und geordnete
 Dateitransaktionen. S0.3c-6f5 ergänzt die deterministische Persistenz-
 Fehlermatrix. S0.3c-hw11 begrenzt die physische SATA-Hotplug-Reintegration und
-ergänzt deterministische QEMU-AHCI-Backend-Fault-Injection. Aktiv ist
-S0.3c-admin1 mit capability-gebundener Storage-Administration. Der
+ergänzt deterministische QEMU-AHCI-Backend-Fault-Injection. S0.3c-admin1
+ergänzt capability-gebundene Storage-Administration; aktiv ist S0.3c-admin2
+mit statischer Komponenten-Lifecycle-Steuerung. Der
 medienunabhängige Nachweis für EXT2, fremde FAT-Volumes und künftige Backends
 bleibt offen. Erst ein nachgewiesenes
 Recoveryprotokoll darf ein Medium nach unklarem Schreibabschluss wieder
@@ -870,7 +871,8 @@ Medien gehören zum noch offenen FAT12-Maintenance-Abschluss.
 
 Manuelle Administration verwendet dieselben Sicherheitsgrenzen wie ein
 Fehlerpfad, besitzt aber einen expliziten, autorisierten Ausgangszustand. Die
-geplanten Befehle `DEVCTL.PRG`, `MOUNT.PRG`, `UMOUNT.PRG` und `SVCCTL.PRG`
+Befehle `DEVCTL.PRG`, `MOUNT.PRG`, `UMOUNT.PRG` und das nachfolgend geplante
+`SVCCTL.PRG`
 erhalten keine direkten Port-, DMA- oder Treiberzeiger. Sie senden versionierte
 Requests an eine default-deny Kernel-Schnittstelle und benötigen für
 Storage-Mutationen ein generations- und mediengebundenes Maintenance-Lease.
@@ -882,7 +884,20 @@ einen Selbsttest aus und publiziert die Ressource erst danach. `umount` sperrt
 neue Opens vor der Prüfung vorhandener Handles; `mount` validiert Resource,
 Dateisystemtyp, Pfad und Parent-/Child-Topologie vor jeder Veröffentlichung.
 Das laufende Root-Volume sowie Scheduler, Uhr, Interruptkern und dessen
-Storage-Elternressource sind aus dem laufenden System nicht deaktivierbar.
+Storage-Elternressource sind aus dem laufenden System nicht deaktivierbar. Die
+beim Start bestimmte Root-/Parent-Maske liegt in integritätsgeschützten
+Metadaten und bleibt daher auch dann gesperrt, wenn der Root-Mount nach einem
+Medienausfall nicht mehr inventarisierbar ist.
+
+Damit ein plötzlicher Verlust des Root-Datenträgers nicht zugleich die
+Administrationsfähigkeit entfernt, lädt der Kernel beim Boot ein festes
+Rescue-Allowlist-Abbild in RAM: `SHELL.PRG`, `DEVCTL.PRG`, `MOUNT.PRG`,
+`UMOUNT.PRG`, `DRIVES.PRG`, `LS.PRG`, `CAT.PRG` und `CHKDSK.PRG`. Jedes Image
+ist auf 64 KiB begrenzt, vor der Aufnahme als MYPR-Programm validiert und vor
+jedem Start erneut gegen CRC und redundant geschützte Metadaten geprüft. Nur
+die exakten Root-Pfade dürfen diesen read-only Fallback verwenden. Das ist
+kein Abbild veränderlicher Nutzdaten und keine unabhängige Redundanz: RAM,
+Kernel und CPU bleiben eine gemeinsame Fehlerdomäne.
 
 Systemdienste und Treiber werden nur über eine feste Registry mit stabilen IDs
 und statischen Abhängigkeiten administrierbar. `down`, `up` und `restart`
