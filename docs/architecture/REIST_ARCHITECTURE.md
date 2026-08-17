@@ -835,12 +835,22 @@ Storage-/VFS-Schreib-Fence geschlossen. Es gibt keine blinde Wiederholung.
 Dieser Vertrag gilt für alle heutigen und künftigen persistenten Medien. Die
 Zustandsfolge lautet `ONLINE_RW -> QUARANTINED -> PROBING -> ONLINE_RW` bei
 einem verifizierten reinen Lesefehler und `... -> ONLINE_RO` bei unklarem
-Schreibabschluss. S0.3c-6f1 bis S0.3c-6f4 liefern für explizit markierte
+Schreibabschluss. Automatische Probes besitzen ein festes Versuchslimit; nach
+dessen Erschöpfung endet `PROBING` diagnostizierbar in `ONLINE_RO` oder
+`OFFLINE`, ohne weitere automatische Hardwarezugriffe. S0.3c-6f1 bis
+S0.3c-6f4 liefern für explizit markierte
 REIST-FAT12-Medien Undo-Journal, Remap, kritische Replikate und geordnete
-Dateitransaktionen. Aktiv ist S0.3c-6f5 mit der deterministischen Persistenz-
-Fehlermatrix. Der medienunabhängige Nachweis für EXT2, fremde FAT-Volumes und
-künftige Backends bleibt offen. Erst ein nachgewiesenes Recoveryprotokoll darf
-ein Medium nach unklarem Schreibabschluss wieder `ONLINE_RW` schalten.
+Dateitransaktionen. S0.3c-6f5 ergänzt die deterministische Persistenz-
+Fehlermatrix. S0.3c-hw11 begrenzt die physische SATA-Hotplug-Reintegration und
+ergänzt deterministische QEMU-AHCI-Backend-Fault-Injection. Aktiv ist
+S0.3c-admin1 mit capability-gebundener Storage-Administration. Der
+medienunabhängige Nachweis für EXT2, fremde FAT-Volumes und künftige Backends
+bleibt offen. Erst ein nachgewiesenes
+Recoveryprotokoll darf ein Medium nach unklarem Schreibabschluss wieder
+`ONLINE_RW` schalten. Bei SATA umfasst dies COMRESET, IDENTIFY mit unverändertem
+Modell und unveränderter Kapazität, zwei frische Fingerprint-Reads,
+Undo-Journal-Recovery und einen weiteren frischen Read-Selbsttest vor der
+Fence-Freigabe.
 
 Der FDD-Pfad behandelt zusätzlich echtes Wechselmedien-Hotplug. Jeder
 fehlgeschlagene normale FAT12-Read meldet die zugehörige Ressourcen-ID und
@@ -855,6 +865,31 @@ für das wiedererkannte Medium nutzbar; ein abweichender Boot-Fingerprint bleibt
 quarantänisiert. Stärkere Ganzmedien-Identität und kontrolliertes
 Cache-Invalidieren/Remount bei extern veränderten, aber bootsektorgleichen
 Medien gehören zum noch offenen FAT12-Maintenance-Abschluss.
+
+### Administrative Maintenance
+
+Manuelle Administration verwendet dieselben Sicherheitsgrenzen wie ein
+Fehlerpfad, besitzt aber einen expliziten, autorisierten Ausgangszustand. Die
+geplanten Befehle `DEVCTL.PRG`, `MOUNT.PRG`, `UMOUNT.PRG` und `SVCCTL.PRG`
+erhalten keine direkten Port-, DMA- oder Treiberzeiger. Sie senden versionierte
+Requests an eine default-deny Kernel-Schnittstelle und benötigen für
+Storage-Mutationen ein generations- und mediengebundenes Maintenance-Lease.
+
+`device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
+Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht
+dynamisch entladen. `device up` requalifiziert Transport und Identität, führt
+einen Selbsttest aus und publiziert die Ressource erst danach. `umount` sperrt
+neue Opens vor der Prüfung vorhandener Handles; `mount` validiert Resource,
+Dateisystemtyp, Pfad und Parent-/Child-Topologie vor jeder Veröffentlichung.
+Das laufende Root-Volume sowie Scheduler, Uhr, Interruptkern und dessen
+Storage-Elternressource sind aus dem laufenden System nicht deaktivierbar.
+
+Systemdienste und Treiber werden nur über eine feste Registry mit stabilen IDs
+und statischen Abhängigkeiten administrierbar. `down`, `up` und `restart`
+besitzen je eine monotone Gesamtdauer, generation-scoped Revocation und einen
+terminalen Fail-Closed-Zustand. Nicht registrierte Komponenten lehnen die
+Operation ab; ein dynamischer universeller Treiber-Unloader ist ausdrücklich
+nicht Teil der Architektur.
 
 ### Standby-Handover-Protokoll
 

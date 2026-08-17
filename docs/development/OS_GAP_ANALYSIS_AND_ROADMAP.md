@@ -229,7 +229,7 @@ und 10 verbindlich.
         FAT-Kopien und Verzeichniseinträge mit Readback-Verifikation; nach
         unklarem Abschluss ausschließlich Recovery oder `ONLINE_RO`, niemals
         blindes Wiederholen eines Writes
-      - [ ] S0.3c-6f5 Deterministische Fault-Injection nach jeder Persistenz-
+      - [x] S0.3c-6f5 Deterministische Fault-Injection nach jeder Persistenz-
         barriere: Teilwrite, beschädigte Journal-Kopie, beide beschädigten
         Kopien, defekter Daten-/FAT-/Root-Sektor, Medienauswurf und Stromverlust;
         - [x] 29 stabile Barrieren und unveränderte Referenzabbilder werden
@@ -1302,6 +1302,49 @@ redundante REIST-Undo-Journal den unterbrochenen Write vollständig
 zurückrollt, werden abgebrochene Safety-Operationen bereinigt und alle Fences
 gemeinsam gelöst. Nicht journalisierte oder nicht eindeutig wiederherstellbare
 Volumes bleiben weiterhin fail-closed read-only.
+
+**S0.3c-hw11:** Ein erneut beobachteter Hänger nach dem
+Abziehen und Wiederanstecken der System-HDD während eines Writes wird nicht als
+erfolgreiche Reintegration gewertet. Das Paket ersetzt die derzeit unbegrenzt
+fortgesetzten automatischen Medienprobes durch ein festes Versuchslimit oder
+eine absolute monotone Recovery-Deadline. Danach bleibt die Ressource
+diagnostizierbar `ONLINE_RO` beziehungsweise `OFFLINE`. Vor einer Rückkehr zu
+`ONLINE_RW` müssen COMRESET, IDENTIFY, zwei frische Fingerprint-Reads,
+autoritative Undo-Journal-Recovery und ein Read-Selbsttest erfolgreich sein.
+Ein neues QEMU-AHCI-Backend-Gate verwendet ausschließlich ein Wegwerfabbild und
+weist unabhängigen Gastfortschritt während Backend-Ausfall und Recovery nach.
+
+Der Implementierungskandidat begrenzt automatische Probes auf acht Versuche
+und beendet sie danach mit `RECOVERY_EXHAUSTED`, während Quarantäne und Fences
+geschlossen bleiben. Physische Probeabbrüche tragen nun auch außerhalb von
+Fault-Injection-Builds eine konkrete Stufenkennung. Eine erfolgreiche
+Journal-Recovery wird vor der Fence-Freigabe durch zwei weitere frische
+Bootsektorreads bestätigt. Da der emulierte `ich9-ahci`-Bus Festplatten-
+Frontends nicht hotpluggen kann, deaktiviert der QEMU-Runner stattdessen den
+benannten Blockknoten während `SATAWR.PRG` aktiv schreibt und reaktiviert ihn
+nach dem beobachteten I/O-Abbruch. Das hält Controller-, Port- und Geräte-
+Identität stabil und erzeugt einen deterministischen Backend-Ausfall, ersetzt
+aber ausdrücklich nicht den realen Kabeltest. Der Runner verlangt geordnet
+I/O-Abbruch, `RESOURCE_REINTEGRATED_RW`, Fortschritt eines zuvor gestarteten
+Ring-3-Kindprozesses, verifizierten erneuten Write und `TEST_OK`. Die
+eingefrorenen Gates und die erneute physische Abnahme stehen noch aus.
+
+#### Administrationspakete
+
+- **S0.3c-admin1 — Storage-Administration (aktiv):** capability- und leasegebundene
+  Werkzeuge für Status, `device down/up`, `mount` und `umount`. Zunächst sind
+  ausschließlich Hilfsvolumes administrierbar; Root-Volume und Storage-Parent
+  des laufenden Systems werden abgewiesen. Down sperrt neue Opens, drainiert
+  vorhandene Handles begrenzt, flusht oder fencet und unmountet in Child-vor-
+  Parent-Reihenfolge. Up verlangt Transport-Requalifizierung, unveränderte
+  Medienidentität und Dateisystemprüfung vor Remount und Veröffentlichung.
+- **S0.3c-admin2 — Komponentensteuerung (queued):** feste Registry für ausdrücklich
+  unterstützte Treiber und überwachte Dienste mit `status`, `down`, `up` und
+  einem einzelnen begrenzten `restart`. Kernelcode wird nicht entladen. Jede
+  Komponente deklariert Abhängigkeiten, Quiesce-/Fence-Aktion, Selbsttest und
+  nicht deaktivierbare kritische Basiskomponenten. Teilfehler enden terminal
+  fail-closed statt in automatischen Retry-Schleifen.
+
 `drivers/block/block_device.[ch]` bietet einen festen,
 transportneutralen Einsektor-Vertrag mit Bereichsprüfung, Read, Write und
 Flush. ATA-PIO und FDD werden darüber als bestehende Backends angesprochen;

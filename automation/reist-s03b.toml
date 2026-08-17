@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3c-6f"
-active_id = "S0.3c-6f5"
+active_id = "S0.3c-admin1"
 
 [policy]
 one_package_per_run = true
@@ -782,7 +782,7 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-6f5"
-status = "active"
+status = "done"
 risk = "critical"
 title = "Deterministic FAT12 persistence fault matrix"
 scope = "Add deterministic host fault injection at every FAT12 journal, remap and replica persistence barrier. Cover partial writes, one and two corrupt headers, bad data/FAT/root sectors, media removal and interrupted transactions; verify old-or-new consistency, write fencing and independent progress."
@@ -796,7 +796,9 @@ allowed_files = [
   "test/test_fat12_fault_matrix.py",
   "test/test_fs_host.py",
   "scripts/run_qemu_fdd_hotplug.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
   "automation/reist-s03b.toml"
 ]
 invariants = [
@@ -824,6 +826,201 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "test: add FAT12 persistence fault matrix"
+evidence = []
+
+[[packages]]
+id = "S0.3c-hw11"
+status = "done"
+risk = "critical"
+title = "Bounded physical SATA hotplug reintegration"
+scope = "Make AHCI system-disk removal during a verified write terminate in a bounded, diagnosable state and reliably reintegrate only the same requalified medium after COMRESET, IDENTIFY, fresh fingerprint reads and authoritative undo-journal recovery. Replace indefinite automatic probing with a finite recovery window, prove the failure/recovery sequence through deterministic QEMU block-backend deactivation and reactivation, and retain the physical SATAWR.PRG disconnect/reconnect run as the target-hardware acceptance boundary."
+allowed_files = [
+  "drivers/block/ahci.h",
+  "drivers/block/ahci.c",
+  "drivers/block/ata.h",
+  "drivers/block/ata.c",
+  "include/kernel/storage_service.h",
+  "include/kernel/storage_safety.h",
+  "include/kernel/filesystem_safety.h",
+  "kernel/init/storage_service.c",
+  "kernel/init/storage_safety.c",
+  "kernel/init/filesystem_safety.c",
+  "examples/userspace/sata_write_test.c",
+  "scripts/run_qemu_sata_hotplug.py",
+  "scripts/run_qemu_smoke.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_qemu_sata_hotplug.py",
+  "test/test_reist_storage_recovery.py",
+  "test/test_ahci_source.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "disconnect detection, command abort, COMRESET, IDENTIFY, fingerprint reads and journal recovery each have finite monotonic deadlines and fixed poll bounds",
+  "automatic media probes stop after a fixed attempt count or one absolute recovery deadline and leave the resource quarantined read-only or offline",
+  "no write, flush or journal-clean operation is blindly retried after uncertain completion",
+  "only the same controller, port, model, capacity and fresh boot fingerprint can enter journal recovery",
+  "storage, filesystem and AHCI write fences are released only after authoritative journal recovery and one post-recovery read self-test",
+  "a failed or ambiguous recovery cannot publish RESOURCE_REINTEGRATED_RW",
+  "an unrelated runnable process demonstrates progress throughout backend unavailability and recovery",
+  "the QEMU backend fault test uses a disposable SATA image and never mutates the reference image"
+]
+targeted_tests = [
+  "python test/test_qemu_sata_hotplug.py -q",
+  "python test/test_reist_storage_recovery.py -q",
+  "python test/test_ahci_source.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode sata-hotplug"
+]
+stop_conditions = [
+  "the selected QEMU cannot deactivate and reactivate the disposable system-disk block node deterministically",
+  "recovery requires an unbounded wait or retry loop",
+  "a fence can be released before media identity and journal recovery are both authoritative",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: bound SATA hotplug reintegration"
+evidence = []
+
+[[packages]]
+id = "S0.3c-admin1"
+status = "active"
+risk = "critical"
+title = "Capability-bound storage administration"
+scope = "Add explicit administrative maintenance commands for listing storage state, mounting and unmounting auxiliary filesystems, and taking supported storage resources administratively down or back up. Reuse the generation- and media-bound maintenance lease, reject the live root volume, drain open handles within a monotonic deadline, fence before unmount or device-down side effects, and requalify identity before device-up or remount."
+allowed_files = [
+  "include/kernel/admin_maintenance.h",
+  "kernel/init/admin_maintenance.c",
+  "include/kernel/storage_maintenance.h",
+  "kernel/init/storage_maintenance.c",
+  "include/kernel/storage_service.h",
+  "kernel/init/storage_service.c",
+  "fs/vfs/vfs.h",
+  "fs/vfs/vfs.c",
+  "fs/vfs/filesystem.h",
+  "fs/vfs/filesystem.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "examples/userspace/devctl.c",
+  "examples/userspace/mount.c",
+  "examples/userspace/umount.c",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_admin_maintenance.py",
+  "scripts/test-reist-runtime.ps1",
+  "Makefile",
+  "test/test_admin_maintenance.py",
+  "test/test_qemu_admin_maintenance.py",
+  "test/test_fat12_maintenance.py",
+  "test/test_fs_host.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "administrative mutation requires an explicit default-deny domain right and a generation-bound maintenance lease",
+  "the running root volume and its parent device cannot be unmounted or taken down",
+  "new opens are blocked before bounded open-handle drain and before any unmount or device-down side effect",
+  "device down flushes when safe, fences first on uncertainty, unmounts children before parents and is idempotent",
+  "device up performs transport requalification, media identity validation and filesystem validation before publication",
+  "mount paths, resource IDs, filesystem types and parent-child topology are validated before state mutation",
+  "failed unmount, down, up or mount leaves the resource in one explicit fail-closed state without leaked leases",
+  "all waits, scans and rollback work are bounded by fixed capacity or a monotonic deadline"
+]
+targeted_tests = [
+  "python test/test_admin_maintenance.py -q",
+  "python test/test_qemu_admin_maintenance.py -q",
+  "python test/test_fat12_maintenance.py -q",
+  "python test/test_fs_host.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode admin-maintenance"
+]
+stop_conditions = [
+  "open VFS handles cannot be inventoried and drained without an unbounded wait",
+  "the root volume or a live child can be detached through the administrative API",
+  "device-up can publish a medium before generation and identity revalidation",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add bounded storage administration"
+evidence = []
+
+[[packages]]
+id = "S0.3c-admin2"
+status = "queued"
+risk = "critical"
+title = "Static component lifecycle administration"
+scope = "Add a fixed registry and administrative status/down/up/restart state machine for explicitly supported drivers and supervised system services. Down means bounded quiesce, fence, interrupt or producer disable, capability revocation and dependency-aware stop; it never unloads kernel code. Up means hardware or service self-test, generation-safe recreation and reintegration only after all declared dependencies are ready."
+allowed_files = [
+  "include/kernel/component_control.h",
+  "kernel/init/component_control.c",
+  "include/kernel/supervisor.h",
+  "kernel/init/supervisor.c",
+  "include/kernel/storage_service.h",
+  "kernel/init/storage_service.c",
+  "drivers/net/netdev.h",
+  "drivers/net/netdev.c",
+  "kernel/syscall/syscall_table.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "examples/userspace/svcctl.c",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_component_control.py",
+  "scripts/test-reist-runtime.ps1",
+  "Makefile",
+  "test/test_component_control.py",
+  "test/test_qemu_component_control.py",
+  "test/test_reist_supervisor.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "only statically registered components with fixed IDs and declared dependencies are controllable",
+  "kernel code is never dynamically unloaded and unsupported components reject lifecycle requests",
+  "down closes authority and producers before resource release and reaches a terminal state within one deadline",
+  "up creates a new generation and publishes authority only after dependency and self-test success",
+  "restart is exactly one bounded down/up transaction and never an unbounded retry loop",
+  "critical scheduler, clock, interrupt and root-storage components cannot be disabled from the running system",
+  "caller exit, timeout and partial failure perform idempotent generation-scoped cleanup"
+]
+targeted_tests = [
+  "python test/test_component_control.py -q",
+  "python test/test_qemu_component_control.py -q",
+  "python test/test_reist_supervisor.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode component-control"
+]
+stop_conditions = [
+  "a component cannot quiesce and prove its outputs fenced within a finite deadline",
+  "dependency ordering permits a live consumer to outlast its provider",
+  "generation-safe service recreation cannot be retained",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add bounded component administration"
 evidence = []
 
 [[packages]]

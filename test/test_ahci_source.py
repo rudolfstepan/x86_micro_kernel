@@ -95,8 +95,14 @@ class AhciProbeContractTests(unittest.TestCase):
         self.assertIn("AHCI_RESET_TIMEOUT_MS", recovery)
         self.assertIn("ahci_build_identify_command", recovery)
         self.assertIn("ahci_parse_identify", recovery)
+        self.assertIn("controller->sector_count[port]", recovery)
+        self.assertIn("memcmp(controller->model[port], drive->model", recovery)
         self.assertIn("ahci_requalify_drive", header)
         self.assertIn("ahci_write_sector_recovery", header)
+        self.assertLess(recovery.index("ahci_stop_port"),
+                        recovery.index("ahci_build_identify_command"))
+        self.assertLess(recovery.index("ahci_build_identify_command"),
+                        recovery.index("ahci_parse_identify"))
 
 
 if __name__ == "__main__":

@@ -110,6 +110,7 @@ class StorageRecoveryContracts(unittest.TestCase):
         ordered = [
             "media_identity_matches(resource)",
             "ata_journal_recover_resource(resource)",
+            "media_post_recovery_self_test(resource)",
             "storage_restore_writes_after_recovery(resource)",
             "filesystem_restore_mutations_after_recovery()",
             "control.read_only_resources &= ~mask",
@@ -127,6 +128,22 @@ class StorageRecoveryContracts(unittest.TestCase):
         self.assertIn("state.operation_active = 0U", storage)
         self.assertIn("state.read_only = 0U", filesystem)
         self.assertIn("state.mutation_active = 0U", filesystem)
+
+    def test_media_recovery_has_a_finite_terminal_state(self):
+        service = read("kernel/init/storage_service.c")
+        self.assertIn("STORAGE_MEDIA_PROBE_MAX_ATTEMPTS", service)
+        self.assertIn("control.probe_attempts >=",
+                      service)
+        self.assertIn("control.next_probe_ms = 0U", service)
+        self.assertIn("REIST_STORAGE RECOVERY_EXHAUSTED", service)
+        self.assertNotIn("control.probe_attempts != UINT32_MAX", service)
+
+    def test_physical_probe_failures_are_bounded_diagnostics(self):
+        service = read("kernel/init/storage_service.c")
+        identity = service[service.index("static bool media_identity_matches"):
+                           service.index("static int control_read")]
+        self.assertIn("REIST_STORAGE PROBE_FAIL_", identity)
+        self.assertNotIn("#ifdef REIST_STORAGE_IO_FAULT_INJECTION", identity)
 
     def test_all_media_recovery_contract_is_documented_fail_closed(self):
         contract = read("docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md")

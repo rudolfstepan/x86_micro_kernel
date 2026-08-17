@@ -169,6 +169,12 @@ int main(void) {
         x86os_puts("SATA_WRITE TEST_FAIL clock\n");
         return 1;
     }
+    int progress_pid = x86os_spawn("/SLEEPER.PRG");
+    if (progress_pid <= 0) {
+        (void)x86os_close(descriptor);
+        x86os_puts("SATA_WRITE TEST_FAIL progress_spawn\n");
+        return 1;
+    }
     x86os_puts("SATA_WRITE ACTIVE\n");
     uint32_t sequence = 0U;
     int io_failed = 0;
@@ -201,6 +207,14 @@ int main(void) {
         return 2;
     }
     x86os_puts("SATA_WRITE RECONNECTED PARTITION_OK\n");
+
+    int progress_status = 0;
+    if (x86os_wait(progress_pid, &progress_status) != progress_pid ||
+        progress_status != 41) {
+        x86os_puts("SATA_WRITE TEST_FAIL independent_progress\n");
+        return 3;
+    }
+    x86os_puts("SATA_WRITE INDEPENDENT_PROGRESS_OK\n");
 
     uint32_t verified = 0U;
     int verification = verify_file(&verified);

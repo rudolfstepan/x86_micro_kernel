@@ -283,7 +283,8 @@ static uint16_t ahci_identify_word(const uint8_t *identify, uint32_t word) {
 }
 
 static bool ahci_parse_identify(ahci_controller_info_t *controller,
-                                size_t controller_index, uint32_t port) {
+                                size_t controller_index, uint32_t port,
+                                bool count_drive) {
     if (controller == NULL || controller_index >= AHCI_MAX_CONTROLLERS ||
         port >= AHCI_MAX_PORTS) return false;
     const uint8_t *identify = identify_buffers[controller_index][port];
@@ -311,7 +312,7 @@ static bool ahci_parse_identify(ahci_controller_info_t *controller,
     controller->sector_count[port] = sectors;
     controller->sector_size[port] = sector_size;
     controller->identify_valid_ports |= 1U << port;
-    ++ahci_identified_drive_count;
+    if (count_drive) ++ahci_identified_drive_count;
     return true;
 }
 
@@ -527,7 +528,15 @@ bool ahci_requalify_drive(const drive_t *drive) {
             ahci_build_identify_command(controller, drive->ahci_controller,
                                         port) &&
             ahci_execute_command(controller, drive->ahci_controller, port) &&
-            ahci_parse_identify(controller, drive->ahci_controller, port);
+            ahci_parse_identify(controller, drive->ahci_controller, port,
+                                false);
+    }
+    if (result) {
+        uint32_t sectors = controller->sector_count[port] > UINT32_MAX
+            ? UINT32_MAX : (uint32_t)controller->sector_count[port];
+        result = sectors == drive->sectors &&
+            memcmp(controller->model[port], drive->model,
+                   sizeof(drive->model)) == 0;
     }
     uint32_t bit = 1U << port;
     if (result) controller->dma_ready_ports |= bit;
@@ -664,7 +673,7 @@ static bool ahci_initialize_controller(ahci_controller_info_t *controller,
         uint32_t bit = 1U << port;
         if ((prepared_ports & bit) != 0U &&
             ahci_execute_command(controller, controller_index, port) &&
-            ahci_parse_identify(controller, controller_index, port))
+            ahci_parse_identify(controller, controller_index, port, true))
             controller->dma_ready_ports |= bit;
     }
     if (controller->dma_ready_ports == 0U)

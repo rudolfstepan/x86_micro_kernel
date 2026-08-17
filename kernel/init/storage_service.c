@@ -20,6 +20,7 @@
 #define STORAGE_SERVICE_RESTART_BUDGET 3U
 #define STORAGE_MEDIA_PROBE_INITIAL_MS 250U
 #define STORAGE_MEDIA_PROBE_MAX_MS 30000U
+#define STORAGE_MEDIA_PROBE_MAX_ATTEMPTS 8U
 #define STORAGE_MEDIA_FINGERPRINT_VERSION 3U
 
 typedef struct {
@@ -82,6 +83,7 @@ static bool control_valid(const void *payload, size_t length) {
         (control->recovering_resources &
          ~control->quarantined_resources) != 0U ||
         control->probe_cursor >= MAX_DRIVES ||
+        control->probe_attempts > STORAGE_MEDIA_PROBE_MAX_ATTEMPTS ||
         control->launch_count > STORAGE_SERVICE_RESTART_BUDGET + 1U)
         return false;
     if (control->pid == 0)
@@ -195,14 +197,10 @@ static bool capture_fingerprint(uint32_t resource) {
 }
 
 static bool media_identity_matches(uint32_t resource) {
-#ifdef REIST_STORAGE_IO_FAULT_INJECTION
 #define MEDIA_PROBE_FAIL(stage) do { \
     printf("REIST_STORAGE PROBE_FAIL_%s %u\n", stage, resource); \
     return false; \
 } while (0)
-#else
-#define MEDIA_PROBE_FAIL(stage) return false
-#endif
     if (resource >= (uint32_t)drive_count || resource >= MAX_DRIVES ||
         (fingerprint_ready_mask & (1U << resource)) == 0U)
         MEDIA_PROBE_FAIL("RANGE");
@@ -263,6 +261,22 @@ static bool media_identity_matches(uint32_t resource) {
     if (!result) MEDIA_PROBE_FAIL("MEDIA");
 #undef MEDIA_PROBE_FAIL
     return true;
+}
+
+static bool media_post_recovery_self_test(uint32_t resource) {
+    if (resource >= (uint32_t)drive_count || resource >= MAX_DRIVES ||
+        (fingerprint_ready_mask & (1U << resource)) == 0U) return false;
+    storage_media_fingerprint_t expected;
+    size_t length = 0U;
+    if (critical_object_read(&media_fingerprints[resource],
+            STORAGE_MEDIA_FINGERPRINT_VERSION, &expected, sizeof(expected),
+            &length, fingerprint_valid) < 0 || length != sizeof(expected))
+        return false;
+    uint8_t first[SECTOR_SIZE], second[SECTOR_SIZE];
+    return read_boot_sector(resource, first, true) &&
+           read_boot_sector(resource, second, true) &&
+           memcmp(first, second, sizeof(first)) == 0 &&
+           media_crc32(first, sizeof(first)) == expected.boot_crc32;
 }
 
 static int control_read(storage_service_control_t *control) {
@@ -453,7 +467,7 @@ static void poll_media_reintegration(uint64_t now_ms) {
         filesystem_fence_mutations();
         return;
     }
-    if (control.quarantined_resources == 0U ||
+    if (control.quarantined_resources == 0U || control.next_probe_ms == 0U ||
         now_ms < control.next_probe_ms) return;
     uint32_t resource = 0U;
     bool found = false;
@@ -493,6 +507,10 @@ static void poll_media_reintegration(uint64_t now_ms) {
             } else if (!ata_journal_recover_resource(resource)) {
                 printf("REIST_STORAGE RECOVERY_WAIT_JOURNAL %u\n", resource);
                 recovered = false;
+            } else if (!media_post_recovery_self_test(resource)) {
+                printf("REIST_STORAGE RECOVERY_WAIT_SELF_TEST %u\n",
+                       resource);
+                recovered = false;
             } else if (!storage_restore_writes_after_recovery(resource)) {
                 printf("REIST_STORAGE RECOVERY_WAIT_STORAGE_FENCE %u\n",
                        resource);
@@ -516,10 +534,23 @@ static void poll_media_reintegration(uint64_t now_ms) {
             printf("REIST_STORAGE RESOURCE_REINTEGRATED_RW %u\n", resource);
         }
     }
-    if (!recovered && control.probe_attempts != UINT32_MAX) {
+    if (!recovered &&
+        control.probe_attempts < STORAGE_MEDIA_PROBE_MAX_ATTEMPTS) {
         ++control.probe_attempts;
     }
     control.probe_cursor = (resource + 1U) % MAX_DRIVES;
+    if (!recovered &&
+        control.probe_attempts >= STORAGE_MEDIA_PROBE_MAX_ATTEMPTS) {
+        control.recovering_resources &= ~mask;
+        control.next_probe_ms = 0U;
+        printf("REIST_STORAGE RECOVERY_EXHAUSTED %u attempts=%u\n",
+               resource, control.probe_attempts);
+        if (control_write(&control) != 0) {
+            storage_fence_writes();
+            filesystem_fence_mutations();
+        }
+        return;
+    }
     uint32_t shift = control.probe_attempts > 6U
         ? 6U : control.probe_attempts;
     uint32_t interval = STORAGE_MEDIA_PROBE_INITIAL_MS << shift;
