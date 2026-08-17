@@ -656,12 +656,13 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     }
     printf("REIST_TEST FATAL_RECOVERY_OK\n");
 #endif
-    boot_context("userspace-start", "REIST probe", "spawn", "/REIST.PRG");
+    boot_context("userspace-start", "REIST probe", "spawn",
+                 "/libexec/reist/reist.prg");
     if (!supervisor_start_probe(pit_monotonic_ms())) {
         panic("Unable to start REIST Ring-3 probe");
     }
     boot_context("userspace-start", "storage service", "spawn",
-                 "/STORAGE.PRG");
+                 "/libexec/reist/storage.prg");
     if (!storage_service_start(pit_monotonic_ms())) {
         panic("Unable to start REIST Ring-3 storage service");
     }
@@ -682,17 +683,17 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
      * failed/terminated desktop fall back to the userspace shell. */
 #ifdef USE_FRAMEBUFFER
     if (framebuffer_available()) {
-        if (start_userspace_program(multiboot_info, "DESKTOP.PRG",
+        if (start_userspace_program(multiboot_info, "usr/bin/desktop.prg",
                                     "graphical desktop") == 0) {
             printf("Graphical desktop exited; starting shell fallback.\n");
         } else {
-            printf("Unable to start DESKTOP.PRG; starting shell fallback.\n");
+            printf("Unable to start desktop.prg; starting shell fallback.\n");
         }
     }
 #endif
-    if (start_userspace_program(multiboot_info, "SHELL.PRG",
+    if (start_userspace_program(multiboot_info, "bin/shell.prg",
                                 "userspace command interpreter") < 0) {
-        printf("Unable to start SHELL.PRG; entering rescue shell.\n");
+        printf("Unable to start shell.prg; entering rescue shell.\n");
     }
 
     // Enter the recovery shell (this never returns)

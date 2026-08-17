@@ -38,21 +38,91 @@ typedef struct {
 } rescue_program_meta_t;
 
 static rescue_program_cache_t rescue_program_cache[RESCUE_PROGRAM_CACHE_COUNT] = {
-    {.path = "/SHELL.PRG"},
-    {.path = "/DEVCTL.PRG"},
-    {.path = "/MOUNT.PRG"},
-    {.path = "/UMOUNT.PRG"},
-    {.path = "/SVCCTL.PRG"},
-    {.path = "/STORAGE.PRG"},
-    {.path = "/REIST.PRG"},
-    {.path = "/DRIVES.PRG"},
-    {.path = "/LS.PRG"},
-    {.path = "/CAT.PRG"},
-    {.path = "/CHKDSK.PRG"},
+    {.path = "/bin/shell.prg"},
+    {.path = "/sbin/devctl.prg"},
+    {.path = "/sbin/mount.prg"},
+    {.path = "/sbin/umount.prg"},
+    {.path = "/sbin/svcctl.prg"},
+    {.path = "/libexec/reist/storage.prg"},
+    {.path = "/libexec/reist/reist.prg"},
+    {.path = "/sbin/drives.prg"},
+    {.path = "/bin/ls.prg"},
+    {.path = "/bin/cat.prg"},
+    {.path = "/sbin/chkdsk.prg"},
 };
 static uint8_t rescue_program_pool[RESCUE_PROGRAM_POOL_CAPACITY];
 static critical_object_t rescue_program_meta[RESCUE_PROGRAM_CACHE_COUNT];
 static bool rescue_cache_initialized;
+
+typedef struct {
+    const char *legacy;
+    const char *canonical;
+} program_path_alias_t;
+
+static const program_path_alias_t program_path_aliases[] = {
+    {"/SHELL.PRG", "/bin/shell.prg"},
+    {"/LS.PRG", "/bin/ls.prg"},
+    {"/CAT.PRG", "/bin/cat.prg"},
+    {"/BASIC.PRG", "/bin/basic.prg"},
+    {"/EDIT.PRG", "/bin/edit.prg"},
+    {"/PWD.PRG", "/bin/pwd.prg"},
+    {"/MKDIR.PRG", "/bin/mkdir.prg"},
+    {"/RMDIR.PRG", "/bin/rmdir.prg"},
+    {"/DEL.PRG", "/bin/del.prg"},
+    {"/COPY.PRG", "/bin/copy.prg"},
+    {"/ECHO.PRG", "/bin/echo.prg"},
+    {"/CLS.PRG", "/bin/cls.prg"},
+    {"/SYSINFO.PRG", "/sbin/sysinfo.prg"},
+    {"/MEMINFO.PRG", "/sbin/meminfo.prg"},
+    {"/CHKDSK.PRG", "/sbin/chkdsk.prg"},
+    {"/FDISK.PRG", "/sbin/fdisk.prg"},
+    {"/FORMAT.PRG", "/sbin/format.prg"},
+    {"/PS.PRG", "/sbin/ps.prg"},
+    {"/KILL.PRG", "/sbin/kill.prg"},
+    {"/DRIVES.PRG", "/sbin/drives.prg"},
+    {"/DEVCTL.PRG", "/sbin/devctl.prg"},
+    {"/MOUNT.PRG", "/sbin/mount.prg"},
+    {"/UMOUNT.PRG", "/sbin/umount.prg"},
+    {"/SVCCTL.PRG", "/sbin/svcctl.prg"},
+    {"/HELLO.PRG", "/usr/bin/hello.prg"},
+    {"/REPEAT.PRG", "/usr/bin/repeat.prg"},
+    {"/CALC.PRG", "/usr/bin/calc.prg"},
+    {"/DATE.PRG", "/usr/bin/date.prg"},
+    {"/UPTIME.PRG", "/usr/bin/uptime.prg"},
+    {"/ASCII.PRG", "/usr/bin/ascii.prg"},
+    {"/SAVE.PRG", "/usr/bin/save.prg"},
+    {"/SPAWN.PRG", "/usr/bin/spawn.prg"},
+    {"/DESKTOP.PRG", "/usr/bin/desktop.prg"},
+    {"/CHILDEX.PRG", "/libexec/reist/childex.prg"},
+    {"/FAULTDE.PRG", "/libexec/reist/faultde.prg"},
+    {"/FAULTUD.PRG", "/libexec/reist/faultud.prg"},
+    {"/FAULTPF.PRG", "/libexec/reist/faultpf.prg"},
+    {"/FAULTSTK.PRG", "/libexec/reist/faultstk.prg"},
+    {"/GTEST.PRG", "/libexec/reist/gtest.prg"},
+    {"/REIST.PRG", "/libexec/reist/reist.prg"},
+    {"/STORAGE.PRG", "/libexec/reist/storage.prg"},
+    {"/SLEEPER.PRG", "/libexec/reist/sleeper.prg"},
+    {"/SATAWR.PRG", "/libexec/reist/satawr.prg"},
+};
+
+static bool program_path_equal(const char *left, const char *right) {
+    size_t left_length = strlen(left);
+    size_t right_length = strlen(right);
+    return left_length == right_length &&
+           strncasecmp(left, right, left_length) == 0;
+}
+
+static void canonicalize_program_path(char path[PROCESS_PATH_MAX]) {
+    for (size_t index = 0U;
+         index < sizeof(program_path_aliases) / sizeof(program_path_aliases[0]);
+         ++index) {
+        const program_path_alias_t *alias = &program_path_aliases[index];
+        if (!program_path_equal(path, alias->legacy) &&
+            !program_path_equal(path, alias->canonical)) continue;
+        strcpy(path, alias->canonical);
+        return;
+    }
+}
 
 _Static_assert(sizeof(rescue_program_meta_t) <= CRITICAL_OBJECT_MAX_PAYLOAD,
                "rescue cache metadata exceeds protected object capacity");
@@ -1084,15 +1154,12 @@ int process_spawn_args(Process *parent, const char *path, int argc,
         argc > 32 || argv == NULL) return -1;
     char resolved[PROCESS_PATH_MAX];
     if (process_resolve_path(parent, path, resolved) != 0) return -1;
-    if (strcmp(resolved, "/svcctl.PRG") == 0 ||
-        strcmp(resolved, "/svcctl.prg") == 0 ||
-        strcmp(resolved, "/SVCCTL.prg") == 0)
-        strcpy(resolved, "/SVCCTL.PRG");
-    process_domain_kind_t domain_kind = strcmp(resolved, "/SVCCTL.PRG") == 0
+    canonicalize_program_path(resolved);
+    process_domain_kind_t domain_kind = strcmp(resolved, "/sbin/svcctl.prg") == 0
         ? PROCESS_DOMAIN_COMPONENT_ADMIN :
-        strcmp(resolved, "/DEVCTL.PRG") == 0 ||
-        strcmp(resolved, "/MOUNT.PRG") == 0 ||
-        strcmp(resolved, "/UMOUNT.PRG") == 0
+        strcmp(resolved, "/sbin/devctl.prg") == 0 ||
+        strcmp(resolved, "/sbin/mount.prg") == 0 ||
+        strcmp(resolved, "/sbin/umount.prg") == 0
             ? PROCESS_DOMAIN_ADMIN : PROCESS_DOMAIN_COMPATIBILITY;
     return create_process_for_file_args_owned(
         resolved, argc, argv, parent->working_directory, parent, false,

@@ -66,7 +66,7 @@ class BootServiceReadyContractTests(unittest.TestCase):
         call = self.kernel.index("configure_network_after_service();")
         boot_ok = self.kernel.index('printf("BOOT_OK\\n")', call)
         shell = self.kernel.index(
-            'start_userspace_program(multiboot_info, "SHELL.PRG"', boot_ok)
+            'start_userspace_program(multiboot_info, "bin/shell.prg"', boot_ok)
         self.assertLess(call, boot_ok)
         self.assertLess(boot_ok, shell)
 

@@ -844,7 +844,8 @@ Dateitransaktionen. S0.3c-6f5 ergänzt die deterministische Persistenz-
 Fehlermatrix. S0.3c-hw11 begrenzt die physische SATA-Hotplug-Reintegration und
 ergänzt deterministische QEMU-AHCI-Backend-Fault-Injection. S0.3c-admin1
 ergänzt capability-gebundene Storage-Administration; S0.3c-admin2 ergänzt
-statische Komponenten-Lifecycle-Steuerung. Der
+statische Komponenten-Lifecycle-Steuerung. S0.3c-layout1 ordnet ausführbare
+Systemprogramme in einer begrenzten, kleingeschriebenen Hierarchie. Der
 medienunabhängige Nachweis für EXT2, fremde FAT-Volumes und künftige Backends
 bleibt offen. Erst ein nachgewiesenes
 Recoveryprotokoll darf ein Medium nach unklarem Schreibabschluss wieder
@@ -871,8 +872,8 @@ Medien gehören zum noch offenen FAT12-Maintenance-Abschluss.
 
 Manuelle Administration verwendet dieselben Sicherheitsgrenzen wie ein
 Fehlerpfad, besitzt aber einen expliziten, autorisierten Ausgangszustand. Die
-Befehle `DEVCTL.PRG`, `MOUNT.PRG`, `UMOUNT.PRG` und das nachfolgend geplante
-`SVCCTL.PRG`
+Befehle `/sbin/devctl.prg`, `/sbin/mount.prg`, `/sbin/umount.prg` und
+`/sbin/svcctl.prg`
 erhalten keine direkten Port-, DMA- oder Treiberzeiger. Sie senden versionierte
 Requests an eine default-deny Kernel-Schnittstelle und benötigen für
 Storage-Mutationen ein generations- und mediengebundenes Maintenance-Lease.
@@ -891,13 +892,16 @@ Medienausfall nicht mehr inventarisierbar ist.
 
 Damit ein plötzlicher Verlust des Root-Datenträgers nicht zugleich die
 Administrationsfähigkeit entfernt, lädt der Kernel beim Boot ein festes
-Rescue-Allowlist-Abbild in RAM: `SHELL.PRG`, `DEVCTL.PRG`, `MOUNT.PRG`,
-`UMOUNT.PRG`, `SVCCTL.PRG`, `STORAGE.PRG`, `REIST.PRG`, `DRIVES.PRG`,
-`LS.PRG`, `CAT.PRG` und `CHKDSK.PRG`. Jedes Image ist auf 64 KiB, der gesamte
+Rescue-Allowlist-Abbild in RAM: `/bin/shell.prg`, `/sbin/devctl.prg`,
+`/sbin/mount.prg`, `/sbin/umount.prg`, `/sbin/svcctl.prg`,
+`/libexec/reist/storage.prg`, `/libexec/reist/reist.prg`, `/sbin/drives.prg`,
+`/bin/ls.prg`, `/bin/cat.prg` und `/sbin/chkdsk.prg`. Jedes Image ist auf 64 KiB, der gesamte
 statische Pool auf 128 KiB begrenzt. Die Programme werden vor der Aufnahme als
 MYPR-Abbild validiert und vor jedem Start erneut gegen CRC und redundant
-geschützte Offset-/Größenmetadaten geprüft. Nur die exakten Root-Pfade dürfen
-diesen read-only Fallback verwenden. Das ist
+geschützte Offset-/Größenmetadaten geprüft. Nur die exakten kanonischen Pfade
+dürfen diesen read-only Fallback verwenden. Eine feste vollständige
+Legacy-Tabelle übersetzt alte Root-Pfade ohne ein zweites Programmbild; eine
+basename-basierte Suche verleiht keine Autorität. Das ist
 kein Abbild veränderlicher Nutzdaten und keine unabhängige Redundanz: RAM,
 Kernel und CPU bleiben eine gemeinsame Fehlerdomäne.
 

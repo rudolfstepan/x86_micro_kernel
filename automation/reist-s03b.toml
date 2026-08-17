@@ -1033,6 +1033,87 @@ evidence = [
 ]
 
 [[packages]]
+id = "S0.3c-layout1"
+status = "done"
+risk = "high"
+title = "Lowercase hierarchical system program layout"
+scope = "Move canonical system-program paths from the root directory into a fixed lowercase hierarchy: /bin, /sbin, /usr/bin and /libexec/reist. Extend both generated FAT images with bounded 8.3 directory trees, give the userspace shell a fixed bounded search path, migrate supervised and privileged exact paths, preserve a fixed legacy root-path translation during transition, and retain resident rescue execution after loss of the root backend."
+allowed_files = [
+  "scripts/fat_image_tree.py",
+  "scripts/create_floppy_boot_image.py",
+  "scripts/create_native_boot_image.py",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_system_layout.py",
+  "scripts/test-reist-runtime.ps1",
+  "Makefile",
+  "fs/fat12/fat12_vfs_adapter.c",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "kernel/proc/process.c",
+  "kernel/init/kernel.c",
+  "kernel/init/storage_service.c",
+  "kernel/init/supervisor.c",
+  "kernel/shell/command.c",
+  "userspace/bin/shell.c",
+  "examples/userspace/desktop.c",
+  "examples/userspace/sata_write_test.c",
+  "test/test_system_layout.py",
+  "test/test_qemu_system_layout.py",
+  "test/test_floppy_boot_image.py",
+  "test/test_native_boot_image.py",
+  "test/test_shell_source.py",
+  "test/test_boot_service_ready.py",
+  "test/test_desktop_source.py",
+  "test/test_admin_maintenance.py",
+  "test/test_component_control.py",
+  "test/test_reist_storage_service.py",
+  "test/test_reist_probe_domain.py",
+  "test/test_qemu_sata_hotplug.py",
+  "test/test_user_program_toolchain.py",
+  "test/test_sync_diagnostics_r13.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "all canonical target directories and program filenames are lowercase and use bounded FAT 8.3 components",
+  "image construction rejects traversal, duplicate case-insensitive names, excessive depth and directory overflow before writing output",
+  "shell program lookup examines only the current directory and a fixed-capacity ordered system path",
+  "privileged domain selection follows the canonical validated path and never a basename alone",
+  "supervised services start only from their canonical /libexec/reist paths",
+  "legacy root program paths translate through one fixed bounded table and never duplicate executable image data",
+  "resident rescue programs remain executable by canonical path after root-storage loss"
+]
+targeted_tests = [
+  "python test/test_system_layout.py -q",
+  "python test/test_floppy_boot_image.py -q",
+  "python test/test_native_boot_image.py -q",
+  "python test/test_shell_source.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode system-layout"
+]
+stop_conditions = [
+  "the boot-image formats cannot represent the hierarchy without unbounded allocation or invalid FAT metadata",
+  "a privileged executable can acquire its domain through an unvalidated basename",
+  "root-storage loss prevents a resident administrative tool from starting",
+  "a required source lies outside allowed_files",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add lowercase system program hierarchy"
+evidence = [
+  "python test/test_system_layout.py -q",
+  "python test/test_floppy_boot_image.py -q",
+  "python test/test_native_boot_image.py -q",
+  "python test/test_shell_source.py -q",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode system-layout",
+]
+
+[[packages]]
 id = "S0.3b-3"
 status = "done"
 risk = "high"

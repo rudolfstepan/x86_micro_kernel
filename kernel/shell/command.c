@@ -347,29 +347,63 @@ static bool shell_resolve_path(const char* input,
 static bool try_run_program_without_extension(const char *name, int arg_count,
                                               char *const *arguments) {
     char program_name[MAX_LENGTH];
-    size_t length;
-    shell_resolved_path_t resolved;
-    vfs_node_t *node = NULL;
-
     if (name == NULL || is_program_filename(name)) return false;
-    length = strlen(name);
+    size_t length = strlen(name);
     if (length > sizeof(program_name) - sizeof(".PRG")) return false;
-
     strcpy(program_name, name);
-    strcpy(program_name + length, ".PRG");
-    if (!shell_resolve_path(program_name, &resolved)) return false;
-    if (vfs_open(resolved.vfs_path, &node) != VFS_OK || node == NULL) {
-        return false;
-    }
-    bool executable_file = node->type == VFS_FILE;
-    (void)vfs_close(node);
-    if (!executable_file) return false;
+    strcpy(program_name + length, ".prg");
 
-    const char *program_arguments[MAX_ARGS + 1];
-    program_arguments[0] = program_name;
-    for (int i = 0; i < arg_count; ++i) program_arguments[i + 1] = arguments[i];
-    cmd_run(arg_count + 1, program_arguments);
-    return true;
+    static const char *const search_paths[] = {
+        "", "/bin/", "/sbin/", "/usr/bin/",
+    };
+    for (size_t path_index = 0U;
+         path_index < sizeof(search_paths) / sizeof(search_paths[0]);
+         ++path_index) {
+        char candidate[MAX_LENGTH];
+        size_t prefix_length = strlen(search_paths[path_index]);
+        if (prefix_length + strlen(program_name) + 1U > sizeof(candidate))
+            continue;
+        strcpy(candidate, search_paths[path_index]);
+        strcpy(candidate + prefix_length, program_name);
+        shell_resolved_path_t resolved;
+        vfs_node_t *node = NULL;
+        if (!shell_resolve_path(candidate, &resolved) ||
+            vfs_open(resolved.vfs_path, &node) != VFS_OK || node == NULL)
+            continue;
+        bool executable_file = node->type == VFS_FILE;
+        (void)vfs_close(node);
+        if (!executable_file) continue;
+        const char *program_arguments[MAX_ARGS + 1];
+        program_arguments[0] = candidate;
+        for (int i = 0; i < arg_count; ++i)
+            program_arguments[i + 1] = arguments[i];
+        cmd_run(arg_count + 1, program_arguments);
+        return true;
+    }
+
+    static const struct {
+        const char *command;
+        const char *path;
+    } resident[] = {
+        {"shell", "/bin/shell.prg"}, {"ls", "/bin/ls.prg"},
+        {"cat", "/bin/cat.prg"}, {"devctl", "/sbin/devctl.prg"},
+        {"mount", "/sbin/mount.prg"}, {"umount", "/sbin/umount.prg"},
+        {"svcctl", "/sbin/svcctl.prg"}, {"drives", "/sbin/drives.prg"},
+        {"chkdsk", "/sbin/chkdsk.prg"},
+    };
+    for (size_t index = 0U; index < sizeof(resident) / sizeof(resident[0]);
+         ++index) {
+        size_t command_length = strlen(resident[index].command);
+        if (length != command_length ||
+            strncasecmp(name, resident[index].command, length) != 0) continue;
+        const char *program_arguments[MAX_ARGS + 1];
+        program_arguments[0] = resident[index].path;
+        for (int argument = 0; argument < arg_count; ++argument)
+            program_arguments[argument + 1] = arguments[argument];
+        cmd_run(arg_count + 1, program_arguments);
+        return true;
+    }
+    return false;
 }
 
 static void shell_restore_drive(drive_t* saved_drive) {

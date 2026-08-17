@@ -221,6 +221,10 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "ECHO.PRG",
                 "CLS.PRG",
                 "DRIVES.PRG",
+                "DEVCTL.PRG",
+                "MOUNT.PRG",
+                "UMOUNT.PRG",
+                "SVCCTL.PRG",
                 "EDIT.PRG",
                 "CHILDEX.PRG",
                 "FAULTDE.PRG",
@@ -256,10 +260,9 @@ class UserProgramToolchainTests(unittest.TestCase):
         self.assertIn("X86OS_DRIVE_STATUS_VERSION", header)
         self.assertIn("x86os_drive_status", sdk)
         self.assertIn("request.struct_size != sizeof(request)", kernel)
-        self.assertIn("storage_service_resource_available(health_resource)", kernel)
-        self.assertIn("storage_service_resource_read_only(health_resource)", kernel)
-        self.assertIn("storage_service_resource_recovering(health_resource)", kernel)
-        self.assertIn("health_resource = detected_drives[index].parent_resource", kernel)
+        self.assertIn("storage_service_resource_available(index)", kernel)
+        self.assertIn("storage_service_resource_read_only(index)", kernel)
+        self.assertIn("storage_service_resource_recovering(index)", kernel)
         self.assertIn("RECOVERING", drives)
         self.assertIn("QUARANTINED", drives)
         self.assertIn("DEGRADED", drives)
@@ -270,14 +273,15 @@ class UserProgramToolchainTests(unittest.TestCase):
         build_script = (ROOT / "scripts" / "build-windows.ps1").read_text(
             encoding="utf-8"
         )
-        self.assertEqual(build_script.count('--data-file "EDIT.PRG='), 2)
+        self.assertEqual(build_script.count("'bin/edit.prg'"), 1)
 
     def test_desktop_is_packaged_in_both_native_images(self):
         build_script = (ROOT / "scripts" / "build-windows.ps1").read_text(
             encoding="utf-8"
         )
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-        self.assertEqual(build_script.count('--data-file "DESKTOP.PRG='), 2)
+        self.assertEqual(build_script.count("'usr/bin/desktop.prg'"), 1)
+        self.assertEqual(makefile.count("usr/bin/desktop.prg="), 1)
 
     def test_sata_write_probe_is_bounded_and_packaged(self):
         source = (ROOT / "examples" / "userspace" /
@@ -293,22 +297,20 @@ class UserProgramToolchainTests(unittest.TestCase):
         self.assertIn("x86os_fsync", source)
         self.assertIn("record_crc32", source)
         self.assertIn("SATA_WRITE RECOVERY_RW_OK", source)
-        self.assertIn('x86os_open("/SHELL.PRG")', source)
+        self.assertIn('x86os_open("/bin/shell.prg")', source)
         self.assertIn("SATA_WRITE TEST_OK", source)
-        self.assertEqual(build_script.count('--data-file "SATAWR.PRG='), 2)
-        self.assertEqual(makefile.count("--data-file SATAWR.PRG="), 2)
+        self.assertEqual(build_script.count("'libexec/reist/satawr.prg'"), 1)
+        self.assertEqual(makefile.count("libexec/reist/satawr.prg="), 1)
 
     def test_fat12_tools_are_packaged_on_floppy_and_native_images(self):
         build_script = (ROOT / "scripts" / "build-windows.ps1").read_text(
             encoding="utf-8"
         )
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-        for program in ("CHKDSK.PRG", "FDISK.PRG", "FORMAT.PRG"):
-            self.assertEqual(
-                build_script.count(f'--data-file "{program}='), 2
-            )
-            self.assertEqual(makefile.count(f"--data-file {program}="), 2)
-        self.assertEqual(makefile.count("--data-file DESKTOP.PRG="), 2)
+        for program in ("chkdsk", "fdisk", "format"):
+            self.assertEqual(build_script.count(f"'sbin/{program}.prg'"), 1)
+            self.assertEqual(makefile.count(f"sbin/{program}.prg="), 1)
+        self.assertEqual(makefile.count("usr/bin/desktop.prg="), 1)
 
     def test_drives_program_displays_resource_id(self):
         source = (ROOT / "examples" / "userspace" / "drives.c").read_text(

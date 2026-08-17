@@ -13,17 +13,24 @@ extern directory_entry* entries;
    mount would redirect operations of the first mount to another floppy. */
 static vfs_filesystem_t* mounted_fat12_fs = NULL;
 
+static char fat12_display_character(char value, bool lowercase) {
+    return lowercase && value >= 'A' && value <= 'Z'
+        ? (char)(value + ('a' - 'A')) : value;
+}
+
 static void fat12_entry_name(const directory_entry* entry, char name[13]) {
     uint32_t length = 0;
     for (uint32_t i = 0; i < 8 && entry->filename[i] != ' '; i++)
-        name[length++] = (char)entry->filename[i];
+        name[length++] = fat12_display_character(
+            (char)entry->filename[i], (entry->reserved & 0x08U) != 0U);
     uint32_t extension_length = 0;
     while (extension_length < 3 && entry->extension[extension_length] != ' ')
         extension_length++;
     if (extension_length != 0) {
         name[length++] = '.';
         for (uint32_t i = 0; i < extension_length; i++)
-            name[length++] = entry->extension[i];
+            name[length++] = fat12_display_character(
+                entry->extension[i], (entry->reserved & 0x10U) != 0U);
     }
     name[length] = '\0';
 }

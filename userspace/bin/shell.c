@@ -12,8 +12,10 @@ enum {
     SHELL_KEY_DOWN,
 };
 
-static char search_paths[SHELL_MAX_PATH_ENTRIES][SHELL_PATH_CAPACITY];
-static unsigned search_path_count;
+static char search_paths[SHELL_MAX_PATH_ENTRIES][SHELL_PATH_CAPACITY] = {
+    "/bin", "/sbin", "/usr/bin",
+};
+static unsigned search_path_count = 3U;
 static char command_history[SHELL_HISTORY_CAPACITY][SHELL_LINE_CAPACITY];
 static char history_draft[SHELL_LINE_CAPACITY];
 static unsigned history_count;
@@ -553,22 +555,40 @@ static void show_help(void) {
 }
 
 static const char* program_alias(const char* command) {
-    if (text_equal(command, "dir")) return "LS";
-    if (text_equal(command, "type")) return "CAT";
-    if (text_equal(command, "md")) return "MKDIR";
-    if (text_equal(command, "rd")) return "RMDIR";
-    if (text_equal(command, "erase")) return "DEL";
-    if (text_equal(command, "clear")) return "CLS";
-    /* Administrative profiles are bound to exact validated root paths.
-     * Canonicalize only the fixed built-in tool names; arbitrary paths retain
-     * their spelling and can never acquire admin authority by case folding. */
-    if (text_equal(command, "devctl")) return "DEVCTL";
-    if (text_equal(command, "devctl.prg")) return "DEVCTL.PRG";
-    if (text_equal(command, "mount")) return "MOUNT";
-    if (text_equal(command, "mount.prg")) return "MOUNT.PRG";
-    if (text_equal(command, "umount")) return "UMOUNT";
-    if (text_equal(command, "umount.prg")) return "UMOUNT.PRG";
+    if (text_equal(command, "dir")) return "ls";
+    if (text_equal(command, "type")) return "cat";
+    if (text_equal(command, "md")) return "mkdir";
+    if (text_equal(command, "rd")) return "rmdir";
+    if (text_equal(command, "erase")) return "del";
+    if (text_equal(command, "clear")) return "cls";
+    if (text_equal(command, "storage"))
+        return "/libexec/reist/storage.prg";
     return command;
+}
+
+static const char* resident_program_path(const char* program) {
+    static const struct {
+        const char* name;
+        const char* path;
+        const char* legacy;
+    } resident[] = {
+        {"shell.prg", "/bin/shell.prg", "/shell.prg"},
+        {"ls.prg", "/bin/ls.prg", "/ls.prg"},
+        {"cat.prg", "/bin/cat.prg", "/cat.prg"},
+        {"devctl.prg", "/sbin/devctl.prg", "/devctl.prg"},
+        {"mount.prg", "/sbin/mount.prg", "/mount.prg"},
+        {"umount.prg", "/sbin/umount.prg", "/umount.prg"},
+        {"svcctl.prg", "/sbin/svcctl.prg", "/svcctl.prg"},
+        {"drives.prg", "/sbin/drives.prg", "/drives.prg"},
+        {"chkdsk.prg", "/sbin/chkdsk.prg", "/chkdsk.prg"},
+    };
+    for (unsigned index = 0U;
+         index < sizeof(resident) / sizeof(resident[0]); ++index) {
+        if (text_equal(program, resident[index].name) ||
+            text_equal(program, resident[index].path) ||
+            text_equal(program, resident[index].legacy)) return resident[index].path;
+    }
+    return 0;
 }
 
 static void run_program(int argc, const char* argv[SHELL_MAX_ARGUMENTS]) {
@@ -580,12 +600,15 @@ static void run_program(int argc, const char* argv[SHELL_MAX_ARGUMENTS]) {
         x86os_puts("Command name is too long.\n");
         return;
     }
-    for (unsigned index = 0; index < length; ++index) program[index] = command[index];
+    int explicit_path = explicit_program_path(command);
+    for (unsigned index = 0; index < length; ++index) {
+        program[index] = explicit_path ? command[index] : lower(command[index]);
+    }
     if (suffix != 0U) {
         program[length++] = '.';
-        program[length++] = 'P';
-        program[length++] = 'R';
-        program[length++] = 'G';
+        program[length++] = 'p';
+        program[length++] = 'r';
+        program[length++] = 'g';
     }
     program[length] = '\0';
 
@@ -603,6 +626,14 @@ static void run_program(int argc, const char* argv[SHELL_MAX_ARGUMENTS]) {
                 found = 1;
                 break;
             }
+        }
+    }
+    if (!found) {
+        const char* resident = resident_program_path(program);
+        if (resident != 0 && copy_text(executable, sizeof(executable), resident) == 0) {
+            /* The protected kernel rescue cache can satisfy this spawn even
+             * when root-storage loss makes stat and directory traversal fail. */
+            found = 1;
         }
     }
     if (!found) {
@@ -625,9 +656,6 @@ static void run_program(int argc, const char* argv[SHELL_MAX_ARGUMENTS]) {
 int main(void) {
     char line[SHELL_LINE_CAPACITY];
     const char* argv[SHELL_MAX_ARGUMENTS];
-    if (x86os_getcwd(search_paths[0], sizeof(search_paths[0])) == 0) {
-        search_path_count = 1;
-    }
     x86os_puts("REIST OS userspace shell\nType HELP for available commands.\n\n");
     for (;;) {
         show_prompt();

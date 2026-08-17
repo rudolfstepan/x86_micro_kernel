@@ -1352,6 +1352,14 @@ eingefrorenen Gates und die erneute physische Abnahme stehen noch aus.
   Netzwerkdienst vor dem Netzwerktreiber herunter, startet beide in umgekehrter
   Reihenfolge, startet den Storage-Dienst neu und prüft die sichtbare Diagnose
   eines manuellen `STORAGE.PRG`-Starts.
+- **S0.3c-layout1 — Systemprogramm-Hierarchie (umgesetzt):** FAT12- und
+  FAT32-Systemimages verwenden die begrenzten kleingeschriebenen Verzeichnisse
+  `/bin`, `/sbin`, `/usr/bin` und `/libexec/reist`. Shell und Kernel-Rettungskonsole
+  suchen über eine feste Reihenfolge; privilegierte Profile und das RAM-Rescue-
+  Abbild werden ausschließlich durch exakte kanonische Pfade ausgewählt. Eine
+  feste vollständige Legacy-Tabelle hält alte Root-Aufrufe kompatibel, ohne
+  basename-basierte Autorität oder doppelte Images. Der QEMU-Nachweis prüft
+  Layout, PATH, Administration, Legacy-Aufruf und Storage-Diagnose.
 
 `drivers/block/block_device.[ch]` bietet einen festen,
 transportneutralen Einsektor-Vertrag mit Bereichsprüfung, Read, Write und

@@ -238,6 +238,11 @@ static bool fat32_resolve_parent(vfs_filesystem_t* fs, const char* path,
 // Helper Functions
 // ===========================================================================
 
+static char fat32_display_character(char value, bool lowercase) {
+    return lowercase && value >= 'A' && value <= 'Z'
+        ? (char)(value + ('a' - 'A')) : value;
+}
+
 static void fat32_entry_to_vfs_entry(struct fat32_dir_entry* fat_entry, vfs_dir_entry_t* vfs_entry) {
     if (!fat_entry || !vfs_entry) return;
     
@@ -248,14 +253,16 @@ static void fat32_entry_to_vfs_entry(struct fat32_dir_entry* fat_entry, vfs_dir_
     // Copy filename (skip trailing spaces)
     int i;
     for (i = 0; i < 8 && fat_entry->name[i] != ' '; i++) {
-        name[name_idx++] = fat_entry->name[i];
+        name[name_idx++] = fat32_display_character(
+            fat_entry->name[i], (fat_entry->nt_res & 0x08U) != 0U);
     }
     
     // Add extension if present
     if (fat_entry->name[8] != ' ') {
         name[name_idx++] = '.';
         for (i = 8; i < 11 && fat_entry->name[i] != ' '; i++) {
-            name[name_idx++] = fat_entry->name[i];
+            name[name_idx++] = fat32_display_character(
+                fat_entry->name[i], (fat_entry->nt_res & 0x10U) != 0U);
         }
     }
     name[name_idx] = '\0';

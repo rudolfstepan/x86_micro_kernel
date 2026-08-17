@@ -20,10 +20,10 @@ typedef struct {
 } desktop_app_t;
 
 static const desktop_app_t apps[APP_COUNT] = {
-    {"Shell",   "Terminal und Befehle",   "SHELL.PRG",   0,             0x003B82F6U},
-    {"Dateien", "Dateien und Laufwerke",  "LS.PRG",      0,             0x0010B981U},
-    {"Editor",  "Textdateien bearbeiten", "EDIT.PRG",    "DESKTOP.TXT", 0x00A855F7U},
-    {"System",  "Systeminformationen",    "SYSINFO.PRG", 0,             0x00F59E0BU},
+    {"Shell",   "Terminal und Befehle",   "/bin/shell.prg",       0,             0x003B82F6U},
+    {"Dateien", "Dateien und Laufwerke",  "/bin/ls.prg",          0,             0x0010B981U},
+    {"Editor",  "Textdateien bearbeiten", "/bin/edit.prg",        "desktop.txt", 0x00A855F7U},
+    {"System",  "Systeminformationen",    "/sbin/sysinfo.prg",    0,             0x00F59E0BU},
 };
 
 static const uint32_t color_background = 0x000B1220U;

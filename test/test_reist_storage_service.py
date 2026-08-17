@@ -47,9 +47,10 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("x86os_storage_block_read", service)
         self.assertIn("x86os_storage_complete", service)
         self.assertIn('"STORAGE.PRG"', read("scripts/build_system_programs.py"))
-        self.assertEqual(read("Makefile").count("--data-file STORAGE.PRG="), 2)
+        self.assertEqual(read("Makefile").count(
+            "libexec/reist/storage.prg="), 1)
         self.assertEqual(read("scripts/build-windows.ps1").count(
-            '--data-file "STORAGE.PRG='), 2)
+            "'libexec/reist/storage.prg'"), 1)
 
     def test_guest_exercises_real_mbr_read(self):
         guest = read("examples/userspace/guest_test.c")

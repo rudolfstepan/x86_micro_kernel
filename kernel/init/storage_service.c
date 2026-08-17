@@ -315,8 +315,8 @@ static uint64_t deadline_after(uint64_t now_ms, uint32_t interval_ms) {
 
 static bool spawn_service(storage_service_control_t *control,
                           uint64_t now_ms) {
-    const char *arguments[] = {"STORAGE.PRG"};
-    int pid = supervisor_spawn_service("/STORAGE.PRG", 1, arguments,
+    const char *arguments[] = {"storage.prg"};
+    int pid = supervisor_spawn_service("/libexec/reist/storage.prg", 1, arguments,
                                        PROCESS_DOMAIN_STORAGE);
     uint32_t generation = 0U;
     if (pid <= 0 || process_get_identity(pid, &generation) != 0) return false;

@@ -1,7 +1,11 @@
 import struct
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 from scripts.create_native_boot_image import (
     DATA_PARTITION_START,
@@ -317,7 +321,7 @@ class NativeBootImageTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from("<I", fsinfo, 492)[0], 7)
 
     def test_root_directory_chain_grows_for_many_data_files(self):
-        extra_files = {f"F{index:02}.TXT": b"" for index in range(16)}
+        extra_files = {f"f{index:02}.txt": b"" for index in range(16)}
         with tempfile.TemporaryDirectory() as directory:
             image_path = Path(directory) / "disk.img"
             with image_path.open("w+b") as image:
@@ -353,7 +357,7 @@ class NativeBootImageTests(unittest.TestCase):
                         DATA_PARTITION_START,
                         total,
                         0x12345678,
-                        {"TOO-LONG9.PRG": b"program"},
+                        {"too-long9.prg": b"program"},
                     )
                 with self.assertRaisesRegex(ValueError, "duplicate"):
                     write_fat32_volume(

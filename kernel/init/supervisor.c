@@ -2009,7 +2009,7 @@ static bool probe_spawn_next(void) {
         return false;
     uint32_t mode_index = control.launch_count;
     if (mode_index >= sizeof(modes) / sizeof(modes[0])) mode_index = 3U;
-    const char *arguments[] = {"REIST.PRG", modes[mode_index]};
+    const char *arguments[] = {"reist.prg", modes[mode_index]};
     /* Do not expose frames queued for a previous service generation. */
     netdev_reset_service_frames();
     probe_runtime.frame_delivery_pid = 0;
@@ -2031,7 +2031,7 @@ static bool probe_spawn_next(void) {
     probe_runtime.dhcp_delivery_crc32 = 0U;
     probe_runtime.dhcp_delivery_pending = 0U;
     if (icmp_delivery_clear() != 0 || udp_delivery_clear() != 0) return false;
-    int pid = supervisor_spawn_service("/REIST.PRG", 2, arguments,
+    int pid = supervisor_spawn_service("/libexec/reist/reist.prg", 2, arguments,
                                        PROCESS_DOMAIN_PROBE);
     uint32_t generation = 0U;
     if (pid <= 0 || process_get_identity(pid, &generation) != 0) return false;

@@ -20,19 +20,15 @@ class AdminMaintenanceContracts(unittest.TestCase):
         self.assertIn("SYS_ADMIN_STORAGE", process)
         self.assertIn("syscall_admin_storage", syscall)
 
-    def test_shell_canonicalizes_only_fixed_admin_tool_names(self):
-        shell = self.read("userspace/bin/shell.c")
+    def test_process_canonicalizes_only_fixed_admin_tool_paths(self):
         process = self.read("kernel/proc/process.c")
         for source, canonical in (
-            ("devctl", "DEVCTL"),
-            ("mount", "MOUNT"),
-            ("umount", "UMOUNT"),
+            ("/DEVCTL.PRG", "/sbin/devctl.prg"),
+            ("/MOUNT.PRG", "/sbin/mount.prg"),
+            ("/UMOUNT.PRG", "/sbin/umount.prg"),
         ):
-            self.assertIn(
-                f'if (text_equal(command, "{source}")) return "{canonical}";',
-                shell,
-            )
-        self.assertIn('strcmp(resolved, "/DEVCTL.PRG") == 0', process)
+            self.assertIn(f'{{"{source}", "{canonical}"}}', process)
+        self.assertIn('strcmp(resolved, "/sbin/devctl.prg") == 0', process)
 
     def test_root_and_parent_are_rejected_before_transition(self):
         source = self.read("kernel/init/admin_maintenance.c")
@@ -88,10 +84,14 @@ class AdminMaintenanceContracts(unittest.TestCase):
         programs = self.read("scripts/build_system_programs.py")
         windows = self.read("scripts/build-windows.ps1")
         makefile = self.read("Makefile")
-        for name in ("DEVCTL.PRG", "MOUNT.PRG", "UMOUNT.PRG"):
-            self.assertIn(name, programs)
-            self.assertIn(name, windows)
-            self.assertIn(name, makefile)
+        for host, target in (
+            ("DEVCTL.PRG", "sbin/devctl.prg"),
+            ("MOUNT.PRG", "sbin/mount.prg"),
+            ("UMOUNT.PRG", "sbin/umount.prg"),
+        ):
+            self.assertIn(host, programs)
+            self.assertIn(target, windows)
+            self.assertIn(target, makefile)
 
     def test_admin_tools_are_prevalidated_and_resident_after_root_loss(self):
         process = self.read("kernel/proc/process.c")
@@ -100,12 +100,12 @@ class AdminMaintenanceContracts(unittest.TestCase):
         self.assertIn("critical_object_read(&rescue_program_meta", process)
         self.assertIn("RESCUE_PROGRAM_POOL_CAPACITY", process)
         self.assertIn("rescue_crc32(rescue_program_pool + meta.offset", process)
-        self.assertIn("/SHELL.PRG", process)
-        self.assertIn("/LS.PRG", process)
-        self.assertIn("/CAT.PRG", process)
-        self.assertIn("/DEVCTL.PRG", process)
-        self.assertIn("/MOUNT.PRG", process)
-        self.assertIn("/UMOUNT.PRG", process)
+        self.assertIn("/bin/shell.prg", process)
+        self.assertIn("/bin/ls.prg", process)
+        self.assertIn("/bin/cat.prg", process)
+        self.assertIn("/sbin/devctl.prg", process)
+        self.assertIn("/sbin/mount.prg", process)
+        self.assertIn("/sbin/umount.prg", process)
         self.assertIn("load_program_file_uncached", process)
         self.assertIn("process_cache_rescue_programs", admin)
 

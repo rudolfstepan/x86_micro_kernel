@@ -17,7 +17,8 @@ class QemuSataHotplugTests(unittest.TestCase):
         source = (ROOT / "examples" / "userspace" /
                   "sata_write_test.c").read_text(encoding="utf-8")
         active = source.index('"SATA_WRITE ACTIVE')
-        self.assertLess(source.index('x86os_spawn("/SLEEPER.PRG")'), active)
+        self.assertLess(source.index(
+            'x86os_spawn("/libexec/reist/sleeper.prg")'), active)
         self.assertGreater(source.index("x86os_wait(progress_pid"), active)
         self.assertIn('"SATA_WRITE INDEPENDENT_PROGRESS_OK', source)
 

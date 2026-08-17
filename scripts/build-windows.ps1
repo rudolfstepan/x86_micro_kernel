@@ -206,109 +206,58 @@ try {
         throw "Example user program build failed with exit code $LASTEXITCODE."
     }
 
-    & $Python 'scripts/create_floppy_boot_image.py' `
-        --stage1 $FloppyStage1 `
-        --stage2 $Stage2 `
-        --kernel $Kernel `
-        --output $FloppyImage `
-        --data-file "$ProgramName=$UserPrg" `
-        --data-file "SYSINFO.PRG=$(Join-Path $UserProgramDir 'SYSINFO.PRG')" `
-        --data-file "REPEAT.PRG=$(Join-Path $UserProgramDir 'REPEAT.PRG')" `
-        --data-file "CALC.PRG=$(Join-Path $UserProgramDir 'CALC.PRG')" `
-        --data-file "DATE.PRG=$(Join-Path $UserProgramDir 'DATE.PRG')" `
-        --data-file "UPTIME.PRG=$(Join-Path $UserProgramDir 'UPTIME.PRG')" `
-        --data-file "MEMINFO.PRG=$(Join-Path $UserProgramDir 'MEMINFO.PRG')" `
-        --data-file "ASCII.PRG=$(Join-Path $UserProgramDir 'ASCII.PRG')" `
-        --data-file "CAT.PRG=$(Join-Path $UserProgramDir 'CAT.PRG')" `
-        --data-file "CHKDSK.PRG=$(Join-Path $UserProgramDir 'CHKDSK.PRG')" `
-        --data-file "FDISK.PRG=$(Join-Path $UserProgramDir 'FDISK.PRG')" `
-        --data-file "FORMAT.PRG=$(Join-Path $UserProgramDir 'FORMAT.PRG')" `
-        --data-file "LS.PRG=$(Join-Path $UserProgramDir 'LS.PRG')" `
-        --data-file "SAVE.PRG=$(Join-Path $UserProgramDir 'SAVE.PRG')" `
-        --data-file "BASIC.PRG=$(Join-Path $UserProgramDir 'BASIC.PRG')" `
-        --data-file "SPAWN.PRG=$(Join-Path $UserProgramDir 'SPAWN.PRG')" `
-        --data-file "PS.PRG=$(Join-Path $UserProgramDir 'PS.PRG')" `
-        --data-file "KILL.PRG=$(Join-Path $UserProgramDir 'KILL.PRG')" `
-        --data-file "PWD.PRG=$(Join-Path $UserProgramDir 'PWD.PRG')" `
-        --data-file "SHELL.PRG=$(Join-Path $UserProgramDir 'SHELL.PRG')" `
-        --data-file "DESKTOP.PRG=$(Join-Path $UserProgramDir 'DESKTOP.PRG')" `
-        --data-file "MKDIR.PRG=$(Join-Path $UserProgramDir 'MKDIR.PRG')" `
-        --data-file "RMDIR.PRG=$(Join-Path $UserProgramDir 'RMDIR.PRG')" `
-        --data-file "DEL.PRG=$(Join-Path $UserProgramDir 'DEL.PRG')" `
-        --data-file "COPY.PRG=$(Join-Path $UserProgramDir 'COPY.PRG')" `
-        --data-file "ECHO.PRG=$(Join-Path $UserProgramDir 'ECHO.PRG')" `
-        --data-file "CLS.PRG=$(Join-Path $UserProgramDir 'CLS.PRG')" `
-        --data-file "DRIVES.PRG=$(Join-Path $UserProgramDir 'DRIVES.PRG')" `
-        --data-file "DEVCTL.PRG=$(Join-Path $UserProgramDir 'DEVCTL.PRG')" `
-        --data-file "MOUNT.PRG=$(Join-Path $UserProgramDir 'MOUNT.PRG')" `
-        --data-file "UMOUNT.PRG=$(Join-Path $UserProgramDir 'UMOUNT.PRG')" `
-        --data-file "SVCCTL.PRG=$(Join-Path $UserProgramDir 'SVCCTL.PRG')" `
-        --data-file "EDIT.PRG=$(Join-Path $UserProgramDir 'EDIT.PRG')" `
-        --data-file "CHILDEX.PRG=$(Join-Path $UserProgramDir 'CHILDEX.PRG')" `
-        --data-file "FAULTDE.PRG=$(Join-Path $UserProgramDir 'FAULTDE.PRG')" `
-        --data-file "FAULTUD.PRG=$(Join-Path $UserProgramDir 'FAULTUD.PRG')" `
-        --data-file "FAULTPF.PRG=$(Join-Path $UserProgramDir 'FAULTPF.PRG')" `
-        --data-file "FAULTSTK.PRG=$(Join-Path $UserProgramDir 'FAULTSTK.PRG')" `
-        --data-file "GTEST.PRG=$(Join-Path $UserProgramDir 'GTEST.PRG')" `
-        --data-file "REIST.PRG=$(Join-Path $UserProgramDir 'REIST.PRG')" `
-        --data-file "STORAGE.PRG=$(Join-Path $UserProgramDir 'STORAGE.PRG')" `
-        --data-file "SLEEPER.PRG=$(Join-Path $UserProgramDir 'SLEEPER.PRG')" `
-        --data-file "SATAWR.PRG=$(Join-Path $UserProgramDir 'SATAWR.PRG')"
+    $systemLayout = [ordered]@{
+        'bin/shell.prg' = 'SHELL.PRG'; 'bin/ls.prg' = 'LS.PRG'
+        'bin/cat.prg' = 'CAT.PRG'; 'bin/basic.prg' = 'BASIC.PRG'
+        'bin/edit.prg' = 'EDIT.PRG'; 'bin/pwd.prg' = 'PWD.PRG'
+        'bin/mkdir.prg' = 'MKDIR.PRG'; 'bin/rmdir.prg' = 'RMDIR.PRG'
+        'bin/del.prg' = 'DEL.PRG'; 'bin/copy.prg' = 'COPY.PRG'
+        'bin/echo.prg' = 'ECHO.PRG'; 'bin/cls.prg' = 'CLS.PRG'
+        'sbin/sysinfo.prg' = 'SYSINFO.PRG'; 'sbin/meminfo.prg' = 'MEMINFO.PRG'
+        'sbin/chkdsk.prg' = 'CHKDSK.PRG'; 'sbin/fdisk.prg' = 'FDISK.PRG'
+        'sbin/format.prg' = 'FORMAT.PRG'; 'sbin/ps.prg' = 'PS.PRG'
+        'sbin/kill.prg' = 'KILL.PRG'; 'sbin/drives.prg' = 'DRIVES.PRG'
+        'sbin/devctl.prg' = 'DEVCTL.PRG'; 'sbin/mount.prg' = 'MOUNT.PRG'
+        'sbin/umount.prg' = 'UMOUNT.PRG'; 'sbin/svcctl.prg' = 'SVCCTL.PRG'
+        'usr/bin/repeat.prg' = 'REPEAT.PRG'; 'usr/bin/calc.prg' = 'CALC.PRG'
+        'usr/bin/date.prg' = 'DATE.PRG'; 'usr/bin/uptime.prg' = 'UPTIME.PRG'
+        'usr/bin/ascii.prg' = 'ASCII.PRG'; 'usr/bin/save.prg' = 'SAVE.PRG'
+        'usr/bin/spawn.prg' = 'SPAWN.PRG'; 'usr/bin/desktop.prg' = 'DESKTOP.PRG'
+        'libexec/reist/childex.prg' = 'CHILDEX.PRG'
+        'libexec/reist/faultde.prg' = 'FAULTDE.PRG'
+        'libexec/reist/faultud.prg' = 'FAULTUD.PRG'
+        'libexec/reist/faultpf.prg' = 'FAULTPF.PRG'
+        'libexec/reist/faultstk.prg' = 'FAULTSTK.PRG'
+        'libexec/reist/gtest.prg' = 'GTEST.PRG'
+        'libexec/reist/reist.prg' = 'REIST.PRG'
+        'libexec/reist/storage.prg' = 'STORAGE.PRG'
+        'libexec/reist/sleeper.prg' = 'SLEEPER.PRG'
+        'libexec/reist/satawr.prg' = 'SATAWR.PRG'
+    }
+    $imageDataArguments = @(
+        '--data-file', "usr/bin/$($ProgramName.ToLowerInvariant())=$UserPrg"
+    )
+    foreach ($entry in $systemLayout.GetEnumerator()) {
+        $imageDataArguments += @(
+            '--data-file', "$($entry.Key)=$(Join-Path $UserProgramDir $entry.Value)"
+        )
+    }
+
+    $floppyArguments = @(
+        'scripts/create_floppy_boot_image.py', '--stage1', $FloppyStage1,
+        '--stage2', $Stage2, '--kernel', $Kernel, '--output', $FloppyImage
+    ) + $imageDataArguments
+    & $Python @floppyArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Floppy image creation failed with exit code $LASTEXITCODE."
     }
 
-    & $Python 'scripts/create_native_boot_image.py' `
-        --stage1 $Stage1 `
-        --stage2 $Stage2 `
-        --kernel $Kernel `
-        --output $RawImage `
-        --vmdk $Vmdk `
-        --vmware-dir $VmwareDir `
-        --floppy $FloppyImage `
-        --data-file "$ProgramName=$UserPrg" `
-        --data-file "SYSINFO.PRG=$(Join-Path $UserProgramDir 'SYSINFO.PRG')" `
-        --data-file "REPEAT.PRG=$(Join-Path $UserProgramDir 'REPEAT.PRG')" `
-        --data-file "CALC.PRG=$(Join-Path $UserProgramDir 'CALC.PRG')" `
-        --data-file "DATE.PRG=$(Join-Path $UserProgramDir 'DATE.PRG')" `
-        --data-file "UPTIME.PRG=$(Join-Path $UserProgramDir 'UPTIME.PRG')" `
-        --data-file "MEMINFO.PRG=$(Join-Path $UserProgramDir 'MEMINFO.PRG')" `
-        --data-file "ASCII.PRG=$(Join-Path $UserProgramDir 'ASCII.PRG')" `
-        --data-file "CAT.PRG=$(Join-Path $UserProgramDir 'CAT.PRG')" `
-        --data-file "CHKDSK.PRG=$(Join-Path $UserProgramDir 'CHKDSK.PRG')" `
-        --data-file "FDISK.PRG=$(Join-Path $UserProgramDir 'FDISK.PRG')" `
-        --data-file "FORMAT.PRG=$(Join-Path $UserProgramDir 'FORMAT.PRG')" `
-        --data-file "LS.PRG=$(Join-Path $UserProgramDir 'LS.PRG')" `
-        --data-file "SAVE.PRG=$(Join-Path $UserProgramDir 'SAVE.PRG')" `
-        --data-file "BASIC.PRG=$(Join-Path $UserProgramDir 'BASIC.PRG')" `
-        --data-file "SPAWN.PRG=$(Join-Path $UserProgramDir 'SPAWN.PRG')" `
-        --data-file "PS.PRG=$(Join-Path $UserProgramDir 'PS.PRG')" `
-        --data-file "KILL.PRG=$(Join-Path $UserProgramDir 'KILL.PRG')" `
-        --data-file "PWD.PRG=$(Join-Path $UserProgramDir 'PWD.PRG')" `
-        --data-file "SHELL.PRG=$(Join-Path $UserProgramDir 'SHELL.PRG')" `
-        --data-file "DESKTOP.PRG=$(Join-Path $UserProgramDir 'DESKTOP.PRG')" `
-        --data-file "MKDIR.PRG=$(Join-Path $UserProgramDir 'MKDIR.PRG')" `
-        --data-file "RMDIR.PRG=$(Join-Path $UserProgramDir 'RMDIR.PRG')" `
-        --data-file "DEL.PRG=$(Join-Path $UserProgramDir 'DEL.PRG')" `
-        --data-file "COPY.PRG=$(Join-Path $UserProgramDir 'COPY.PRG')" `
-        --data-file "ECHO.PRG=$(Join-Path $UserProgramDir 'ECHO.PRG')" `
-        --data-file "CLS.PRG=$(Join-Path $UserProgramDir 'CLS.PRG')" `
-        --data-file "DRIVES.PRG=$(Join-Path $UserProgramDir 'DRIVES.PRG')" `
-        --data-file "DEVCTL.PRG=$(Join-Path $UserProgramDir 'DEVCTL.PRG')" `
-        --data-file "MOUNT.PRG=$(Join-Path $UserProgramDir 'MOUNT.PRG')" `
-        --data-file "UMOUNT.PRG=$(Join-Path $UserProgramDir 'UMOUNT.PRG')" `
-        --data-file "SVCCTL.PRG=$(Join-Path $UserProgramDir 'SVCCTL.PRG')" `
-        --data-file "EDIT.PRG=$(Join-Path $UserProgramDir 'EDIT.PRG')" `
-        --data-file "CHILDEX.PRG=$(Join-Path $UserProgramDir 'CHILDEX.PRG')" `
-        --data-file "FAULTDE.PRG=$(Join-Path $UserProgramDir 'FAULTDE.PRG')" `
-        --data-file "FAULTUD.PRG=$(Join-Path $UserProgramDir 'FAULTUD.PRG')" `
-        --data-file "FAULTPF.PRG=$(Join-Path $UserProgramDir 'FAULTPF.PRG')" `
-        --data-file "FAULTSTK.PRG=$(Join-Path $UserProgramDir 'FAULTSTK.PRG')" `
-        --data-file "GTEST.PRG=$(Join-Path $UserProgramDir 'GTEST.PRG')" `
-        --data-file "REIST.PRG=$(Join-Path $UserProgramDir 'REIST.PRG')" `
-        --data-file "STORAGE.PRG=$(Join-Path $UserProgramDir 'STORAGE.PRG')" `
-        --data-file "SLEEPER.PRG=$(Join-Path $UserProgramDir 'SLEEPER.PRG')" `
-        --data-file "SATAWR.PRG=$(Join-Path $UserProgramDir 'SATAWR.PRG')"
+    $nativeArguments = @(
+        'scripts/create_native_boot_image.py', '--stage1', $Stage1,
+        '--stage2', $Stage2, '--kernel', $Kernel, '--output', $RawImage,
+        '--vmdk', $Vmdk, '--vmware-dir', $VmwareDir, '--floppy', $FloppyImage
+    ) + $imageDataArguments
+    & $Python @nativeArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Native image creation failed with exit code $LASTEXITCODE."
     }

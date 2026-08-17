@@ -127,9 +127,10 @@ class ReistProbeDomainContractTests(unittest.TestCase):
         self.assertIn("x86os_reist_report", probe)
         self.assertIn("supervisor_start_probe", read("kernel/init/kernel.c"))
         self.assertIn('"REIST.PRG"', read("scripts/build_system_programs.py"))
-        self.assertEqual(read("Makefile").count("--data-file REIST.PRG="), 2)
+        self.assertEqual(read("Makefile").count(
+            "libexec/reist/reist.prg="), 1)
         self.assertEqual(read("scripts/build-windows.ps1").count(
-            '--data-file "REIST.PRG='), 2)
+            "'libexec/reist/reist.prg'"), 1)
 
     def test_report_syscall_is_append_only_and_probe_only(self):
         self.assertIn("SYS_REIST_REPORT 56", read("lib/libc/stdlib.h"))

@@ -54,7 +54,7 @@ class ComponentControlContracts(unittest.TestCase):
         self.assertIn("COMPONENT_CONTROL_SYSCALL 91U", header)
         self.assertIn("X86OS_SYS_COMPONENT_CONTROL = 91", sdk)
         self.assertIn("PROCESS_DOMAIN_COMPONENT_ADMIN", process)
-        self.assertIn('strcmp(resolved, "/SVCCTL.PRG") == 0', process)
+        self.assertIn('strcmp(resolved, "/sbin/svcctl.prg") == 0', process)
         self.assertIn("SYS_COMPONENT_CONTROL", syscall)
         self.assertIn("syscall_component_control", syscall)
 

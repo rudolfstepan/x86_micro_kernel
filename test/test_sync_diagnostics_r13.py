@@ -558,7 +558,7 @@ class PanicCrashContextContractTests(unittest.TestCase):
         pci = read("drivers/bus/pci.c")
         for component in ('"AHCI"', '"ATA"', '"VFS"', '"REIST probe"'):
             self.assertIn(component, kernel)
-        self.assertIn('"/REIST.PRG"', kernel)
+        self.assertIn('"/libexec/reist/reist.prg"', kernel)
         self.assertIn('"program-load"', process)
         self.assertIn("program_name", process)
         self.assertIn("pci_register_driver_named", pci)

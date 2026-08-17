@@ -28,10 +28,10 @@ class DesktopSourceTests(unittest.TestCase):
     def test_four_required_apps_are_visible_and_launchable(self):
         self.assertIn("#define APP_COUNT 4U", self.source)
         for title, program in (
-            ("Shell", "SHELL.PRG"),
-            ("Dateien", "LS.PRG"),
-            ("Editor", "EDIT.PRG"),
-            ("System", "SYSINFO.PRG"),
+            ("Shell", "/bin/shell.prg"),
+            ("Dateien", "/bin/ls.prg"),
+            ("Editor", "/bin/edit.prg"),
+            ("System", "/sbin/sysinfo.prg"),
         ):
             self.assertIn(f'"{title}"', self.source)
             self.assertIn(f'"{program}"', self.source)
@@ -76,8 +76,8 @@ class DesktopSourceTests(unittest.TestCase):
     def test_editor_receives_a_real_document_argument(self):
         self.assertRegex(
             self.source,
-            r'\{"Editor",\s*"Textdateien bearbeiten",\s*"EDIT\.PRG",'
-            r'\s*"DESKTOP\.TXT"',
+            r'\{"Editor",\s*"Textdateien bearbeiten",\s*"/bin/edit\.prg",'
+            r'\s*"desktop\.txt"',
         )
 
     def test_child_input_is_drained_before_the_desktop_is_redrawn(self):

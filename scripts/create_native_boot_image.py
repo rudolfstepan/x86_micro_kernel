@@ -10,6 +10,11 @@ import struct
 from collections.abc import Mapping
 from pathlib import Path
 
+try:
+    from scripts.fat_image_tree import build_tree, walk_directories
+except ModuleNotFoundError:
+    from fat_image_tree import build_tree, walk_directories
+
 
 SECTOR_SIZE = 512
 IMAGE_SIZE = 64 * 1024 * 1024
@@ -198,7 +203,6 @@ def write_fat32_volume(image, partition_lba: int, total_sectors: int,
     reserved_sectors = 32
     fat_count = 2
     sectors_per_cluster = 1
-    root_cluster = 2
     volume_label = b"X86 SYSTEM "
     fat_sectors, volume_cluster_count = fat32_geometry(total_sectors)
     first_data_sector = reserved_sectors + fat_count * fat_sectors
@@ -208,38 +212,33 @@ def write_fat32_volume(image, partition_lba: int, total_sectors: int,
         b"REIST OS - VMware data volume\r\n"
         b"This FAT32 partition is ready for shell file operations.\r\n"
     )
-    files: list[tuple[bytes, bytes]] = [
-        (fat32_short_name("README.TXT"), readme),
-    ]
-    seen_names = {files[0][0]}
+    files: dict[str, bytes] = {"readme.txt": readme}
     if data_files:
-        for name, contents in data_files.items():
-            short_name = fat32_short_name(name)
-            if short_name in seen_names:
-                raise ValueError(f"duplicate FAT32 filename: {name!r}")
-            if not isinstance(contents, (bytes, bytearray, memoryview)):
-                raise TypeError(f"contents for {name!r} must be bytes-like")
-            contents = bytes(contents)
-            if len(contents) > 0xFFFFFFFF:
-                raise ValueError(f"file is too large for FAT32: {name!r}")
-            seen_names.add(short_name)
-            files.append((short_name, contents))
-
-    # Reserve one entry for the volume label and one end marker.  Growing the
-    # root chain keeps repeated --data-file options from being limited to the
-    # first 16 directory slots.
-    root_entry_bytes = (len(files) + 2) * 32
-    root_cluster_count = max(1, sectors_for(root_entry_bytes))
-    next_cluster = root_cluster
-    root_clusters = list(range(next_cluster, next_cluster + root_cluster_count))
-    next_cluster += root_cluster_count
-
-    file_allocations: list[tuple[bytes, bytes, list[int]]] = []
-    for short_name, contents in files:
-        file_cluster_count = sectors_for(len(contents))
-        clusters = list(range(next_cluster, next_cluster + file_cluster_count))
-        next_cluster += file_cluster_count
-        file_allocations.append((short_name, contents, clusters))
+        if "readme.txt" in data_files:
+            raise ValueError("duplicate FAT32 path: 'readme.txt'")
+        files.update(data_files)
+    tree = build_tree(files)
+    directories = walk_directories(tree)
+    next_cluster = 2
+    for directory in directories:
+        entry_count = len(directory.directories) + len(directory.files) + 1
+        if directory is tree:
+            entry_count += 1  # volume label
+        else:
+            entry_count += 2  # . and ..
+        cluster_count = max(1, sectors_for(entry_count * 32))
+        directory.clusters = list(
+            range(next_cluster, next_cluster + cluster_count)
+        )
+        next_cluster += cluster_count
+    root_cluster = tree.clusters[0]
+    for directory in directories:
+        for file in directory.files:
+            cluster_count = sectors_for(len(file.contents))
+            file.clusters = list(
+                range(next_cluster, next_cluster + cluster_count)
+            )
+            next_cluster += cluster_count
 
     allocated_cluster_count = next_cluster - 2
     if allocated_cluster_count > volume_cluster_count:
@@ -329,9 +328,10 @@ def write_fat32_volume(image, partition_lba: int, total_sectors: int,
             )
             struct.pack_into("<I", fat, cluster * 4, successor)
 
-    link_cluster_chain(root_clusters)
-    for _, _, clusters in file_allocations:
-        link_cluster_chain(clusters)
+    for directory in directories:
+        link_cluster_chain(directory.clusters)
+        for file in directory.files:
+            link_cluster_chain(file.clusters)
     for fat_index in range(fat_count):
         image.seek(
             (partition_lba + reserved_sectors + fat_index * fat_sectors)
@@ -339,29 +339,51 @@ def write_fat32_volume(image, partition_lba: int, total_sectors: int,
         )
         image.write(fat)
 
-    root = bytearray(root_cluster_count * cluster_size)
-    root[0:11] = volume_label
-    root[11] = 0x08
-    for entry_index, (short_name, contents, clusters) in enumerate(
-        file_allocations, start=1
-    ):
-        entry_offset = entry_index * 32
-        root[entry_offset:entry_offset + 11] = short_name
-        root[entry_offset + 11] = 0x20
-        start_cluster = clusters[0] if clusters else 0
-        struct.pack_into("<H", root, entry_offset + 20, start_cluster >> 16)
-        struct.pack_into("<H", root, entry_offset + 26, start_cluster & 0xFFFF)
-        struct.pack_into("<I", root, entry_offset + 28, len(contents))
+    def write_entry(buffer: bytearray, index: int, short_name: bytes,
+                    attributes: int, nt_case: int, start_cluster: int,
+                    size: int) -> None:
+        offset = index * 32
+        buffer[offset:offset + 11] = short_name
+        buffer[offset + 11] = attributes
+        buffer[offset + 12] = nt_case
+        struct.pack_into("<H", buffer, offset + 20, start_cluster >> 16)
+        struct.pack_into("<H", buffer, offset + 26, start_cluster & 0xFFFF)
+        struct.pack_into("<I", buffer, offset + 28, size)
 
-    for index, cluster in enumerate(root_clusters):
-        offset = index * cluster_size
-        write_cluster(cluster, bytes(root[offset:offset + cluster_size]))
-
-    for _, contents, clusters in file_allocations:
-        for index, cluster in enumerate(clusters):
+    for directory in directories:
+        contents = bytearray(len(directory.clusters) * cluster_size)
+        entry_index = 0
+        if directory is tree:
+            contents[0:11] = volume_label
+            contents[11] = 0x08
+            entry_index = 1
+        else:
+            write_entry(contents, entry_index, b".          ", 0x10, 0,
+                        directory.clusters[0], 0)
+            entry_index += 1
+            parent_cluster = directory.parent.clusters[0]
+            write_entry(contents, entry_index, b"..         ", 0x10, 0,
+                        parent_cluster, 0)
+            entry_index += 1
+        for child in directory.directories:
+            write_entry(contents, entry_index, child.short_name, 0x10,
+                        child.nt_case, child.clusters[0], 0)
+            entry_index += 1
+        for file in directory.files:
+            start_cluster = file.clusters[0] if file.clusters else 0
+            write_entry(contents, entry_index, file.short_name, 0x20,
+                        file.nt_case, start_cluster, len(file.contents))
+            entry_index += 1
+        for index, cluster in enumerate(directory.clusters):
             offset = index * cluster_size
-            chunk = contents[offset:offset + cluster_size]
-            write_cluster(cluster, chunk.ljust(cluster_size, b"\0"))
+            write_cluster(cluster, bytes(contents[offset:offset + cluster_size]))
+
+    for directory in directories:
+        for file in directory.files:
+            for index, cluster in enumerate(file.clusters):
+                offset = index * cluster_size
+                chunk = file.contents[offset:offset + cluster_size]
+                write_cluster(cluster, chunk.ljust(cluster_size, b"\0"))
 
 
 def write_vmdk_descriptor(path: Path, raw_image: Path, total_sectors: int,
@@ -613,31 +635,29 @@ def main() -> None:
         "--data-file",
         action="append",
         default=[],
-        metavar="NAME=PATH",
-        help="embed PATH in the FAT32 root directory under an 8.3 NAME",
+        metavar="TARGET=PATH",
+        help="embed PATH at a lowercase FAT32 8.3 hierarchy TARGET",
     )
     args = parser.parse_args()
 
     data_files: dict[str, bytes] = {}
-    seen_names: set[bytes] = set()
     for specification in args.data_file:
         if "=" not in specification:
             parser.error(f"--data-file must use NAME=PATH: {specification!r}")
-        name, path_text = specification.split("=", 1)
-        if not name or not path_text:
+        target, path_text = specification.split("=", 1)
+        if not target or not path_text:
             parser.error(f"--data-file must use NAME=PATH: {specification!r}")
         try:
-            short_name = fat32_short_name(name)
+            build_tree({target: b""})
         except ValueError as error:
             parser.error(str(error))
-        if short_name == fat32_short_name("README.TXT") or short_name in seen_names:
-            parser.error(f"duplicate FAT32 filename: {name!r}")
+        if target == "readme.txt" or target in data_files:
+            parser.error(f"duplicate FAT32 path: {target!r}")
         try:
             contents = Path(path_text).read_bytes()
         except OSError as error:
             parser.error(f"cannot read --data-file {path_text!r}: {error}")
-        seen_names.add(short_name)
-        data_files[name] = contents
+        data_files[target] = contents
 
     build_image(
         args.stage1,

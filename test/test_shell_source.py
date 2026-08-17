@@ -166,20 +166,20 @@ class ShellSourceRegressionTests(unittest.TestCase):
 
     def test_kernel_starts_userspace_shell_before_rescue_shell(self):
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
-        start = kernel.index('start_userspace_program(multiboot_info, "SHELL.PRG"')
+        start = kernel.index('start_userspace_program(multiboot_info, "bin/shell.prg"')
         rescue = kernel.index("command_loop();", start)
         self.assertLess(start, rescue)
-        self.assertIn('"SHELL.PRG"', kernel)
+        self.assertIn('"bin/shell.prg"', kernel)
         self.assertIn("wait_for_process(pid)", kernel)
 
     def test_framebuffer_boot_prefers_desktop_with_shell_fallback(self):
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
         framebuffer = kernel.index("if (framebuffer_available())")
-        desktop = kernel.index('"DESKTOP.PRG"', framebuffer)
-        shell = kernel.index('"SHELL.PRG"', desktop)
+        desktop = kernel.index('"usr/bin/desktop.prg"', framebuffer)
+        shell = kernel.index('"bin/shell.prg"', desktop)
         self.assertLess(framebuffer, desktop)
         self.assertLess(desktop, shell)
-        self.assertIn("Unable to start DESKTOP.PRG; starting shell fallback", kernel)
+        self.assertIn("Unable to start desktop.prg; starting shell fallback", kernel)
 
     def test_prompt_has_no_trailing_space(self):
         self.assertIn('printf("%s:%s>", drive_label, dos_path);', self.source)
@@ -187,7 +187,7 @@ class ShellSourceRegressionTests(unittest.TestCase):
 
     def test_program_extension_is_optional_at_prompt(self):
         self.assertIn("static bool try_run_program_without_extension", self.source)
-        self.assertIn('strcpy(program_name + length, ".PRG");', self.source)
+        self.assertIn('strcpy(program_name + length, ".prg");', self.source)
         self.assertIn(
             "try_run_program_without_extension(original_command,",
             self.source,

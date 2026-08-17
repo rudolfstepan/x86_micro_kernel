@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'handover')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'system-layout', 'handover')]
     [string]$Mode = 'normal'
 )
 
@@ -14,6 +14,7 @@ $FddHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_fdd_hotplug.py'
 $SataHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_sata_hotplug.py'
 $AdminMaintenanceRunner = Join-Path $RepoRoot 'scripts\run_qemu_admin_maintenance.py'
 $ComponentControlRunner = Join-Path $RepoRoot 'scripts\run_qemu_component_control.py'
+$SystemLayoutRunner = Join-Path $RepoRoot 'scripts\run_qemu_system_layout.py'
 $LogRoot = Join-Path $RepoRoot 'build\codex-agent'
 
 function Resolve-NativeTool {
@@ -213,6 +214,36 @@ function Invoke-ComponentControl {
     Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
 }
 
+function Invoke-SystemLayout {
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $gateLog = Join-Path $LogRoot "$stamp-runtime-system-layout"
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $exitCode = 0
+    try {
+        $LASTEXITCODE = 0
+        & $Python $SystemLayoutRunner `
+            --qemu $Qemu `
+            --image $Image `
+            --log (Join-Path $RepoRoot 'build\guest-system-layout.log') `
+            *> $gateLog
+        $exitCode = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
+    }
+    catch {
+        $exitCode = 1
+        $_ | Out-String | Add-Content -LiteralPath $gateLog
+    }
+    finally {
+        $watch.Stop()
+    }
+    if ($exitCode -ne 0) {
+        Write-Output "RUNTIME FAIL exit=$exitCode elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+        Get-Content -LiteralPath $gateLog -Tail 40
+        throw "REIST runtime smoke 'system-layout' failed with exit $exitCode."
+    }
+    Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+}
+
 switch ($Mode) {
     'normal' {
         Invoke-Smoke 'guest-smoke.log' @()
@@ -330,6 +361,9 @@ switch ($Mode) {
     }
     'component-control' {
         Invoke-ComponentControl
+    }
+    'system-layout' {
+        Invoke-SystemLayout
     }
     'handover' {
         Invoke-Smoke 'guest-smoke-handover.log' @(

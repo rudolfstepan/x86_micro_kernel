@@ -78,9 +78,9 @@ static int is_root_disk(void) {
 static int partition_available(void) {
     x86os_file_info_t info;
     uint8_t magic[4];
-    if (x86os_stat("/SHELL.PRG", &info) != 0 || info.type != X86OS_FILE)
+    if (x86os_stat("/bin/shell.prg", &info) != 0 || info.type != X86OS_FILE)
         return 0;
-    int descriptor = x86os_open("/SHELL.PRG");
+    int descriptor = x86os_open("/bin/shell.prg");
     if (descriptor < 0) return 0;
     int amount = x86os_read(descriptor, magic, sizeof(magic));
     int closed = x86os_close(descriptor);
@@ -169,7 +169,7 @@ int main(void) {
         x86os_puts("SATA_WRITE TEST_FAIL clock\n");
         return 1;
     }
-    int progress_pid = x86os_spawn("/SLEEPER.PRG");
+    int progress_pid = x86os_spawn("/libexec/reist/sleeper.prg");
     if (progress_pid <= 0) {
         (void)x86os_close(descriptor);
         x86os_puts("SATA_WRITE TEST_FAIL progress_spawn\n");

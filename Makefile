@@ -568,6 +568,50 @@ check-kernel-stack-analysis:
 # BOOTABLE DISK IMAGE
 # ============================================================================
 
+SYSTEM_IMAGE_FILES := \
+	bin/shell.prg=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG \
+	bin/ls.prg=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
+	bin/cat.prg=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
+	bin/basic.prg=$(SYSTEM_PROGRAM_DIR)/BASIC.PRG \
+	bin/edit.prg=$(SYSTEM_PROGRAM_DIR)/EDIT.PRG \
+	bin/pwd.prg=$(SYSTEM_PROGRAM_DIR)/PWD.PRG \
+	bin/mkdir.prg=$(SYSTEM_PROGRAM_DIR)/MKDIR.PRG \
+	bin/rmdir.prg=$(SYSTEM_PROGRAM_DIR)/RMDIR.PRG \
+	bin/del.prg=$(SYSTEM_PROGRAM_DIR)/DEL.PRG \
+	bin/copy.prg=$(SYSTEM_PROGRAM_DIR)/COPY.PRG \
+	bin/echo.prg=$(SYSTEM_PROGRAM_DIR)/ECHO.PRG \
+	bin/cls.prg=$(SYSTEM_PROGRAM_DIR)/CLS.PRG \
+	sbin/sysinfo.prg=$(SYSTEM_PROGRAM_DIR)/SYSINFO.PRG \
+	sbin/meminfo.prg=$(SYSTEM_PROGRAM_DIR)/MEMINFO.PRG \
+	sbin/chkdsk.prg=$(SYSTEM_PROGRAM_DIR)/CHKDSK.PRG \
+	sbin/fdisk.prg=$(SYSTEM_PROGRAM_DIR)/FDISK.PRG \
+	sbin/format.prg=$(SYSTEM_PROGRAM_DIR)/FORMAT.PRG \
+	sbin/ps.prg=$(SYSTEM_PROGRAM_DIR)/PS.PRG \
+	sbin/kill.prg=$(SYSTEM_PROGRAM_DIR)/KILL.PRG \
+	sbin/drives.prg=$(SYSTEM_PROGRAM_DIR)/DRIVES.PRG \
+	sbin/devctl.prg=$(SYSTEM_PROGRAM_DIR)/DEVCTL.PRG \
+	sbin/mount.prg=$(SYSTEM_PROGRAM_DIR)/MOUNT.PRG \
+	sbin/umount.prg=$(SYSTEM_PROGRAM_DIR)/UMOUNT.PRG \
+	sbin/svcctl.prg=$(SYSTEM_PROGRAM_DIR)/SVCCTL.PRG \
+	usr/bin/repeat.prg=$(SYSTEM_PROGRAM_DIR)/REPEAT.PRG \
+	usr/bin/calc.prg=$(SYSTEM_PROGRAM_DIR)/CALC.PRG \
+	usr/bin/date.prg=$(SYSTEM_PROGRAM_DIR)/DATE.PRG \
+	usr/bin/uptime.prg=$(SYSTEM_PROGRAM_DIR)/UPTIME.PRG \
+	usr/bin/ascii.prg=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG \
+	usr/bin/save.prg=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
+	usr/bin/spawn.prg=$(SYSTEM_PROGRAM_DIR)/SPAWN.PRG \
+	usr/bin/desktop.prg=$(SYSTEM_PROGRAM_DIR)/DESKTOP.PRG \
+	libexec/reist/childex.prg=$(SYSTEM_PROGRAM_DIR)/CHILDEX.PRG \
+	libexec/reist/faultde.prg=$(SYSTEM_PROGRAM_DIR)/FAULTDE.PRG \
+	libexec/reist/faultud.prg=$(SYSTEM_PROGRAM_DIR)/FAULTUD.PRG \
+	libexec/reist/faultpf.prg=$(SYSTEM_PROGRAM_DIR)/FAULTPF.PRG \
+	libexec/reist/faultstk.prg=$(SYSTEM_PROGRAM_DIR)/FAULTSTK.PRG \
+	libexec/reist/gtest.prg=$(SYSTEM_PROGRAM_DIR)/GTEST.PRG \
+	libexec/reist/reist.prg=$(SYSTEM_PROGRAM_DIR)/REIST.PRG \
+	libexec/reist/storage.prg=$(SYSTEM_PROGRAM_DIR)/STORAGE.PRG \
+	libexec/reist/sleeper.prg=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG \
+	libexec/reist/satawr.prg=$(SYSTEM_PROGRAM_DIR)/SATAWR.PRG
+
 bootdisk: native-image
 
 user-program:
@@ -593,49 +637,8 @@ native-image: floppy-image
 		--vmdk $(OUTPUT_DIR)/reist-os.vmdk \
 		--vmware-dir $(OUTPUT_DIR)/vmware/reist-os \
 		--floppy $(OUTPUT_DIR)/reist-os-floppy.img \
-		--data-file HELLO.PRG=$(USER_PROGRAM_OUTPUT) \
-		--data-file SYSINFO.PRG=$(SYSTEM_PROGRAM_DIR)/SYSINFO.PRG \
-		--data-file REPEAT.PRG=$(SYSTEM_PROGRAM_DIR)/REPEAT.PRG \
-		--data-file CALC.PRG=$(SYSTEM_PROGRAM_DIR)/CALC.PRG \
-		--data-file DATE.PRG=$(SYSTEM_PROGRAM_DIR)/DATE.PRG \
-		--data-file UPTIME.PRG=$(SYSTEM_PROGRAM_DIR)/UPTIME.PRG \
-		--data-file MEMINFO.PRG=$(SYSTEM_PROGRAM_DIR)/MEMINFO.PRG \
-		--data-file ASCII.PRG=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG \
-		--data-file CAT.PRG=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
-		--data-file CHKDSK.PRG=$(SYSTEM_PROGRAM_DIR)/CHKDSK.PRG \
-		--data-file FDISK.PRG=$(SYSTEM_PROGRAM_DIR)/FDISK.PRG \
-		--data-file FORMAT.PRG=$(SYSTEM_PROGRAM_DIR)/FORMAT.PRG \
-		--data-file LS.PRG=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
-		--data-file SAVE.PRG=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
-		--data-file BASIC.PRG=$(SYSTEM_PROGRAM_DIR)/BASIC.PRG \
-		--data-file SPAWN.PRG=$(SYSTEM_PROGRAM_DIR)/SPAWN.PRG \
-		--data-file PS.PRG=$(SYSTEM_PROGRAM_DIR)/PS.PRG \
-		--data-file KILL.PRG=$(SYSTEM_PROGRAM_DIR)/KILL.PRG \
-		--data-file PWD.PRG=$(SYSTEM_PROGRAM_DIR)/PWD.PRG \
-		--data-file SHELL.PRG=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG \
-		--data-file DESKTOP.PRG=$(SYSTEM_PROGRAM_DIR)/DESKTOP.PRG \
-		--data-file MKDIR.PRG=$(SYSTEM_PROGRAM_DIR)/MKDIR.PRG \
-		--data-file RMDIR.PRG=$(SYSTEM_PROGRAM_DIR)/RMDIR.PRG \
-		--data-file DEL.PRG=$(SYSTEM_PROGRAM_DIR)/DEL.PRG \
-		--data-file COPY.PRG=$(SYSTEM_PROGRAM_DIR)/COPY.PRG \
-		--data-file ECHO.PRG=$(SYSTEM_PROGRAM_DIR)/ECHO.PRG \
-		--data-file CLS.PRG=$(SYSTEM_PROGRAM_DIR)/CLS.PRG \
-		--data-file DRIVES.PRG=$(SYSTEM_PROGRAM_DIR)/DRIVES.PRG \
-		--data-file DEVCTL.PRG=$(SYSTEM_PROGRAM_DIR)/DEVCTL.PRG \
-		--data-file MOUNT.PRG=$(SYSTEM_PROGRAM_DIR)/MOUNT.PRG \
-		--data-file UMOUNT.PRG=$(SYSTEM_PROGRAM_DIR)/UMOUNT.PRG \
-		--data-file SVCCTL.PRG=$(SYSTEM_PROGRAM_DIR)/SVCCTL.PRG \
-		--data-file EDIT.PRG=$(SYSTEM_PROGRAM_DIR)/EDIT.PRG \
-		--data-file CHILDEX.PRG=$(SYSTEM_PROGRAM_DIR)/CHILDEX.PRG \
-		--data-file FAULTDE.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTDE.PRG \
-		--data-file FAULTUD.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTUD.PRG \
-		--data-file FAULTPF.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTPF.PRG \
-		--data-file FAULTSTK.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTSTK.PRG \
-		--data-file GTEST.PRG=$(SYSTEM_PROGRAM_DIR)/GTEST.PRG \
-		--data-file REIST.PRG=$(SYSTEM_PROGRAM_DIR)/REIST.PRG \
-		--data-file STORAGE.PRG=$(SYSTEM_PROGRAM_DIR)/STORAGE.PRG \
-		--data-file SLEEPER.PRG=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG \
-		--data-file SATAWR.PRG=$(SYSTEM_PROGRAM_DIR)/SATAWR.PRG
+		--data-file usr/bin/hello.prg=$(USER_PROGRAM_OUTPUT) \
+		$(foreach spec,$(SYSTEM_IMAGE_FILES),--data-file $(spec))
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/reist-os.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/reist-os/reist-os.vmx"
 
@@ -648,49 +651,8 @@ floppy-image: kernel system-programs user-program
 		--stage2 $(OUTPUT_DIR)/stage2_bios.bin \
 		--kernel $(OUTPUT_DIR)/kernel.bin \
 		--output $(OUTPUT_DIR)/reist-os-floppy.img \
-		--data-file HELLO.PRG=$(USER_PROGRAM_OUTPUT) \
-		--data-file SYSINFO.PRG=$(SYSTEM_PROGRAM_DIR)/SYSINFO.PRG \
-		--data-file REPEAT.PRG=$(SYSTEM_PROGRAM_DIR)/REPEAT.PRG \
-		--data-file CALC.PRG=$(SYSTEM_PROGRAM_DIR)/CALC.PRG \
-		--data-file DATE.PRG=$(SYSTEM_PROGRAM_DIR)/DATE.PRG \
-		--data-file UPTIME.PRG=$(SYSTEM_PROGRAM_DIR)/UPTIME.PRG \
-		--data-file MEMINFO.PRG=$(SYSTEM_PROGRAM_DIR)/MEMINFO.PRG \
-		--data-file ASCII.PRG=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG \
-		--data-file CAT.PRG=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
-		--data-file CHKDSK.PRG=$(SYSTEM_PROGRAM_DIR)/CHKDSK.PRG \
-		--data-file FDISK.PRG=$(SYSTEM_PROGRAM_DIR)/FDISK.PRG \
-		--data-file FORMAT.PRG=$(SYSTEM_PROGRAM_DIR)/FORMAT.PRG \
-		--data-file LS.PRG=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
-		--data-file SAVE.PRG=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
-		--data-file BASIC.PRG=$(SYSTEM_PROGRAM_DIR)/BASIC.PRG \
-		--data-file SPAWN.PRG=$(SYSTEM_PROGRAM_DIR)/SPAWN.PRG \
-		--data-file PS.PRG=$(SYSTEM_PROGRAM_DIR)/PS.PRG \
-		--data-file KILL.PRG=$(SYSTEM_PROGRAM_DIR)/KILL.PRG \
-		--data-file PWD.PRG=$(SYSTEM_PROGRAM_DIR)/PWD.PRG \
-		--data-file SHELL.PRG=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG \
-		--data-file DESKTOP.PRG=$(SYSTEM_PROGRAM_DIR)/DESKTOP.PRG \
-		--data-file MKDIR.PRG=$(SYSTEM_PROGRAM_DIR)/MKDIR.PRG \
-		--data-file RMDIR.PRG=$(SYSTEM_PROGRAM_DIR)/RMDIR.PRG \
-		--data-file DEL.PRG=$(SYSTEM_PROGRAM_DIR)/DEL.PRG \
-		--data-file COPY.PRG=$(SYSTEM_PROGRAM_DIR)/COPY.PRG \
-		--data-file ECHO.PRG=$(SYSTEM_PROGRAM_DIR)/ECHO.PRG \
-		--data-file CLS.PRG=$(SYSTEM_PROGRAM_DIR)/CLS.PRG \
-		--data-file DRIVES.PRG=$(SYSTEM_PROGRAM_DIR)/DRIVES.PRG \
-		--data-file DEVCTL.PRG=$(SYSTEM_PROGRAM_DIR)/DEVCTL.PRG \
-		--data-file MOUNT.PRG=$(SYSTEM_PROGRAM_DIR)/MOUNT.PRG \
-		--data-file UMOUNT.PRG=$(SYSTEM_PROGRAM_DIR)/UMOUNT.PRG \
-		--data-file SVCCTL.PRG=$(SYSTEM_PROGRAM_DIR)/SVCCTL.PRG \
-		--data-file EDIT.PRG=$(SYSTEM_PROGRAM_DIR)/EDIT.PRG \
-		--data-file CHILDEX.PRG=$(SYSTEM_PROGRAM_DIR)/CHILDEX.PRG \
-		--data-file FAULTDE.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTDE.PRG \
-		--data-file FAULTUD.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTUD.PRG \
-		--data-file FAULTPF.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTPF.PRG \
-		--data-file FAULTSTK.PRG=$(SYSTEM_PROGRAM_DIR)/FAULTSTK.PRG \
-		--data-file GTEST.PRG=$(SYSTEM_PROGRAM_DIR)/GTEST.PRG \
-		--data-file REIST.PRG=$(SYSTEM_PROGRAM_DIR)/REIST.PRG \
-		--data-file STORAGE.PRG=$(SYSTEM_PROGRAM_DIR)/STORAGE.PRG \
-		--data-file SLEEPER.PRG=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG \
-		--data-file SATAWR.PRG=$(SYSTEM_PROGRAM_DIR)/SATAWR.PRG
+		--data-file usr/bin/hello.prg=$(USER_PROGRAM_OUTPUT) \
+		$(foreach spec,$(SYSTEM_IMAGE_FILES),--data-file $(spec))
 
 # ============================================================================
 # TESTING

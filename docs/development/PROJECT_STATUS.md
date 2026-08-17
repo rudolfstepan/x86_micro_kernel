@@ -74,8 +74,9 @@ und Reintegrate. Bereits vorhanden sind unter anderem:
 - begrenzte Netzwerkparser, ARP-/IPv4-/ICMP-/UDP-/DHCP-Entscheidungen in der
   überwachten Ring-3-Domäne
 
-S0 ist noch nicht abgeschlossen. `S0.3c-admin2` mit statischer
-Komponenten-Lifecycle-Steuerung ist umgesetzt. `S0.3c-admin1` mit capability-
+S0 ist noch nicht abgeschlossen. `S0.3c-layout1` mit kleingeschriebener,
+hierarchischer Systemprogrammablage ist umgesetzt. `S0.3c-admin2` mit statischer
+Komponenten-Lifecycle-Steuerung und `S0.3c-admin1` mit capability-
 gebundener Storage-Administration, `S0.3c-6f5` mit der FAT12-
 Persistenz-Fehlermatrix und `S0.3c-hw11` mit begrenzter SATA-Hotplug-Recovery
 sind abgeschlossen. Aussagen über vollständig nachgewiesene
@@ -142,17 +143,22 @@ Schreibunterbrechung nicht automatisch als wieder schreibsicher gelten.
 
 ## Shell und Systemprogramme
 
-`SHELL.PRG` ist der reguläre Ring-3-Command-Interpreter; die Kernel-Shell ist
+`/bin/shell.prg` ist der reguläre Ring-3-Command-Interpreter; die Kernel-Shell ist
 nur Rettungskonsole. DOS-Laufwerksbuchstaben, kanonische VFS-Pfade,
 laufwerksbezogene Arbeitsverzeichnisse, `PATH`, Verlauf und Tab-Vervollständigung
 sind implementiert. Der flüchtige Verlauf ist als fester Ring mit 32 Einträgen
 ausgeführt; Cursor-Up/Down navigiert darin und stellt hinter dem neuesten
-Eintrag den begonnenen Eingabeentwurf wieder her. `DRIVES.PRG` zeigt Resource-ID, Laufwerksbuchstaben,
+Eintrag den begonnenen Eingabeentwurf wieder her. Die feste Standardsuche ist
+`/bin`, `/sbin`, `/usr/bin`; interne Dienste liegen unter `/libexec/reist`.
+FAT12 und FAT32 speichern die Hierarchie begrenzt und zeigen ihre kanonischen
+Namen kleingeschrieben an. Exakte alte Root-Pfade bleiben über eine feste
+Kompatibilitätstabelle nutzbar. `/sbin/drives.prg` zeigt Resource-ID, Laufwerksbuchstaben,
 Gerätenamen, Typ und den von der Elternressource geerbten Recovery-Zustand.
 
-Die Buildliste enthält unter anderem `REIST.PRG`, `STORAGE.PRG`, `SHELL.PRG`,
-`DRIVES.PRG`, `CHKDSK.PRG`, `FDISK.PRG`, `FORMAT.PRG`, `BASIC.PRG`,
-`EDIT.PRG` und die üblichen Datei-/Prozesswerkzeuge. `BASIC.PRG` ist ein
+Die Buildliste enthält unter anderem `/libexec/reist/reist.prg`,
+`/libexec/reist/storage.prg`, `/bin/shell.prg`, `/sbin/drives.prg`,
+`/sbin/chkdsk.prg`, `/sbin/fdisk.prg`, `/sbin/format.prg`, `/bin/basic.prg`,
+`/bin/edit.prg` und die üblichen Datei-/Prozesswerkzeuge. `/bin/basic.prg` ist ein
 normales Ring-3-Programm, keine Kernelkomponente.
 
 ## Eingabe, Diagnose und Panic
