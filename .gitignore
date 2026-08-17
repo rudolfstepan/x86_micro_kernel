@@ -8,3 +8,8 @@ disk.vmdk
 __pycache__/
 *.py[cod]
 .zig-cache
+
+# Private REIST OS project website and its local capture/test tooling.
+website/
+scripts/capture_website_qemu.py
+test/test_website.py
