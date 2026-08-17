@@ -143,7 +143,9 @@ Schreibunterbrechung nicht automatisch als wieder schreibsicher gelten.
 `SHELL.PRG` ist der reguläre Ring-3-Command-Interpreter; die Kernel-Shell ist
 nur Rettungskonsole. DOS-Laufwerksbuchstaben, kanonische VFS-Pfade,
 laufwerksbezogene Arbeitsverzeichnisse, `PATH`, Verlauf und Tab-Vervollständigung
-sind implementiert. `DRIVES.PRG` zeigt Resource-ID, Laufwerksbuchstaben,
+sind implementiert. Der flüchtige Verlauf ist als fester Ring mit 32 Einträgen
+ausgeführt; Cursor-Up/Down navigiert darin und stellt hinter dem neuesten
+Eintrag den begonnenen Eingabeentwurf wieder her. `DRIVES.PRG` zeigt Resource-ID, Laufwerksbuchstaben,
 Gerätenamen, Typ und den von der Elternressource geerbten Recovery-Zustand.
 
 Die Buildliste enthält unter anderem `REIST.PRG`, `STORAGE.PRG`, `SHELL.PRG`,

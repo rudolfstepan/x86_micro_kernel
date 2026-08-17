@@ -140,6 +140,30 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertIn("search_path_count", shell)
         self.assertIn("completion.directory ? '\\\\' : ' '", shell)
 
+    def test_userspace_shell_has_bounded_up_down_history(self):
+        shell = (ROOT / "userspace/bin/shell.c").read_text(encoding="utf-8")
+        self.assertIn("#define SHELL_HISTORY_CAPACITY 32", shell)
+        self.assertIn("command_history[SHELL_HISTORY_CAPACITY]", shell)
+        self.assertIn("static int read_shell_key", shell)
+        self.assertIn("SHELL_KEY_UP", shell)
+        self.assertIn("SHELL_KEY_DOWN", shell)
+        self.assertIn("history_previous(line)", shell)
+        self.assertIn("history_next_line()", shell)
+        self.assertIn("history_draft", shell)
+        self.assertIn("history_add(line);", shell)
+        self.assertGreaterEqual(shell.count("line[length] = '\\0';"), 2)
+        self.assertIn("x86os_putchar(' ');", shell)
+        self.assertNotIn("x86os_malloc", shell)
+
+    def test_sdk_number_output_has_no_kernel_debug_text(self):
+        sdk = (ROOT / "userspace/sdk/x86os.c").read_text(encoding="utf-8")
+        start = sdk.index("void x86os_print_number")
+        end = sdk.index("void x86os_delay", start)
+        formatter = sdk[start:end]
+        self.assertIn("uint32_t magnitude", formatter)
+        self.assertIn("x86os_putchar", formatter)
+        self.assertNotIn("X86OS_SYS_PRINT_NUMBER", formatter)
+
     def test_kernel_starts_userspace_shell_before_rescue_shell(self):
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
         start = kernel.index('start_userspace_program(multiboot_info, "SHELL.PRG"')

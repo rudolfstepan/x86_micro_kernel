@@ -20,6 +20,20 @@ class AdminMaintenanceContracts(unittest.TestCase):
         self.assertIn("SYS_ADMIN_STORAGE", process)
         self.assertIn("syscall_admin_storage", syscall)
 
+    def test_shell_canonicalizes_only_fixed_admin_tool_names(self):
+        shell = self.read("userspace/bin/shell.c")
+        process = self.read("kernel/proc/process.c")
+        for source, canonical in (
+            ("devctl", "DEVCTL"),
+            ("mount", "MOUNT"),
+            ("umount", "UMOUNT"),
+        ):
+            self.assertIn(
+                f'if (text_equal(command, "{source}")) return "{canonical}";',
+                shell,
+            )
+        self.assertIn('strcmp(resolved, "/DEVCTL.PRG") == 0', process)
+
     def test_root_and_parent_are_rejected_before_transition(self):
         source = self.read("kernel/init/admin_maintenance.c")
         validate = source[
@@ -47,7 +61,8 @@ class AdminMaintenanceContracts(unittest.TestCase):
         self.assertIn("pit_monotonic_ms", drain)
         self.assertIn("scheduler_sleep_ms", drain)
         self.assertIn("process_revoke_files_for_resource", drain)
-        self.assertIn("MAX_DRIVES", drain)
+        self.assertIn("(uint32_t)drive_count", drain)
+        self.assertIn("_Static_assert(MAX_DRIVES", source)
 
     def test_mutation_uses_lease_and_fail_closed_storage_state(self):
         source = self.read("kernel/init/admin_maintenance.c")

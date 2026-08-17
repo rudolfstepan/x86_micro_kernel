@@ -4,9 +4,21 @@
 #define SHELL_PATH_CAPACITY 256
 #define SHELL_MAX_ARGUMENTS 16
 #define SHELL_MAX_PATH_ENTRIES 8
+#define SHELL_HISTORY_CAPACITY 32
+
+enum {
+    SHELL_KEY_NONE = 0x100,
+    SHELL_KEY_UP,
+    SHELL_KEY_DOWN,
+};
 
 static char search_paths[SHELL_MAX_PATH_ENTRIES][SHELL_PATH_CAPACITY];
 static unsigned search_path_count;
+static char command_history[SHELL_HISTORY_CAPACITY][SHELL_LINE_CAPACITY];
+static char history_draft[SHELL_LINE_CAPACITY];
+static unsigned history_count;
+static unsigned history_next;
+static int history_cursor = -1;
 
 static unsigned text_length(const char* text) {
     unsigned length = 0;
@@ -142,6 +154,75 @@ static int copy_text(char* output, unsigned capacity, const char* input) {
     if (length + 1U > capacity) return -1;
     for (unsigned index = 0; index <= length; ++index) output[index] = input[index];
     return 0;
+}
+
+static int text_same(const char* left, const char* right) {
+    while (*left != '\0' && *left == *right) {
+        ++left;
+        ++right;
+    }
+    return *left == *right;
+}
+
+static unsigned history_index(unsigned ordinal) {
+    unsigned oldest = (history_next + SHELL_HISTORY_CAPACITY - history_count) %
+                      SHELL_HISTORY_CAPACITY;
+    return (oldest + ordinal) % SHELL_HISTORY_CAPACITY;
+}
+
+static void history_reset_navigation(void) {
+    history_cursor = -1;
+    history_draft[0] = '\0';
+}
+
+static void history_add(const char* line) {
+    if (line[0] == '\0') {
+        history_reset_navigation();
+        return;
+    }
+    if (history_count != 0U) {
+        unsigned newest = history_index(history_count - 1U);
+        if (text_same(command_history[newest], line)) {
+            history_reset_navigation();
+            return;
+        }
+    }
+    if (copy_text(command_history[history_next], SHELL_LINE_CAPACITY, line) != 0)
+        return;
+    history_next = (history_next + 1U) % SHELL_HISTORY_CAPACITY;
+    if (history_count < SHELL_HISTORY_CAPACITY) ++history_count;
+    history_reset_navigation();
+}
+
+static const char* history_previous(const char* current_line) {
+    if (history_count == 0U) return 0;
+    if (history_cursor < 0) {
+        if (copy_text(history_draft, sizeof(history_draft), current_line) != 0)
+            return 0;
+        history_cursor = (int)history_count - 1;
+    } else if (history_cursor > 0) {
+        --history_cursor;
+    }
+    return command_history[history_index((unsigned)history_cursor)];
+}
+
+static const char* history_next_line(void) {
+    if (history_cursor < 0) return 0;
+    if ((unsigned)(history_cursor + 1) < history_count) {
+        ++history_cursor;
+        return command_history[history_index((unsigned)history_cursor)];
+    }
+    history_cursor = -1;
+    return history_draft;
+}
+
+static void history_show(void) {
+    for (unsigned ordinal = 0U; ordinal < history_count; ++ordinal) {
+        x86os_print_number((int)(ordinal + 1U));
+        x86os_puts("  ");
+        x86os_puts(command_history[history_index(ordinal)]);
+        x86os_putchar('\n');
+    }
 }
 
 static int join_program_path(const char* directory, const char* program,
@@ -293,7 +374,7 @@ static void scan_completion_directory(const char* directory,
 
 static void complete_command(const char* prefix, completion_t* completion) {
     static const char* commands[] = {
-        "CD", "CHDIR", "PWD", "HELP", "PATH", "EXIT",
+        "CD", "CHDIR", "PWD", "HELP", "HISTORY", "PATH", "EXIT",
         "DIR", "TYPE", "MD", "RD", "ERASE", "CLEAR"
     };
     for (unsigned index = 0; index < sizeof(commands) / sizeof(commands[0]);
@@ -375,10 +456,52 @@ static void complete_line(char line[SHELL_LINE_CAPACITY], unsigned* length) {
     line[*length] = '\0';
 }
 
+static int read_shell_key(void) {
+    int value = x86os_getchar();
+    if (value != 0x1B) return value;
+    if (x86os_getchar() != '[') return SHELL_KEY_NONE;
+    value = x86os_getchar();
+    if (value == 'A') return SHELL_KEY_UP;
+    if (value == 'B') return SHELL_KEY_DOWN;
+    if (value >= '0' && value <= '9') {
+        (void)x86os_getchar();
+    }
+    return SHELL_KEY_NONE;
+}
+
+static void replace_input_line(char line[SHELL_LINE_CAPACITY],
+                               unsigned* length, const char* replacement) {
+    unsigned replacement_length = text_length(replacement);
+    if (replacement_length >= SHELL_LINE_CAPACITY) return;
+    for (unsigned index = 0U; index < *length; ++index) x86os_putchar('\b');
+    for (unsigned index = 0U; index < *length; ++index) x86os_putchar(' ');
+    for (unsigned index = 0U; index < *length; ++index) x86os_putchar('\b');
+    for (unsigned index = 0U; index < replacement_length; ++index) {
+        line[index] = replacement[index];
+        x86os_putchar(replacement[index]);
+    }
+    line[replacement_length] = '\0';
+    *length = replacement_length;
+}
+
 static void read_line(char line[SHELL_LINE_CAPACITY]) {
     unsigned length = 0;
+    line[0] = '\0';
+    history_reset_navigation();
     for (;;) {
-        char value = (char)x86os_getchar();
+        int key = read_shell_key();
+        if (key == SHELL_KEY_UP) {
+            const char* previous = history_previous(line);
+            if (previous != 0) replace_input_line(line, &length, previous);
+            continue;
+        }
+        if (key == SHELL_KEY_DOWN) {
+            const char* next = history_next_line();
+            if (next != 0) replace_input_line(line, &length, next);
+            continue;
+        }
+        if (key == SHELL_KEY_NONE) continue;
+        char value = (char)key;
         if (value == '\r' || value == '\n') {
             x86os_putchar('\n');
             break;
@@ -386,6 +509,7 @@ static void read_line(char line[SHELL_LINE_CAPACITY]) {
         if (value == '\b' || value == 0x7f) {
             if (length != 0U) {
                 --length;
+                line[length] = '\0';
                 x86os_puts("\b \b");
             }
         } else if (value == '\t') {
@@ -394,6 +518,7 @@ static void read_line(char line[SHELL_LINE_CAPACITY]) {
         } else if (value >= ' ' && value <= '~' &&
                    length + 1U < SHELL_LINE_CAPACITY) {
             line[length++] = value;
+            line[length] = '\0';
             x86os_putchar(value);
         }
     }
@@ -421,8 +546,9 @@ static void show_prompt(void) {
 }
 
 static void show_help(void) {
-    x86os_puts("Built-ins: cd path pwd help exit\n");
+    x86os_puts("Built-ins: cd path pwd history help exit\n");
     x86os_puts("Aliases: dir type md rd erase clear\n");
+    x86os_puts("Use Up/Down to browse command history.\n");
     x86os_puts("Other commands are loaded as .PRG programs.\n");
 }
 
@@ -433,6 +559,15 @@ static const char* program_alias(const char* command) {
     if (text_equal(command, "rd")) return "RMDIR";
     if (text_equal(command, "erase")) return "DEL";
     if (text_equal(command, "clear")) return "CLS";
+    /* Administrative profiles are bound to exact validated root paths.
+     * Canonicalize only the fixed built-in tool names; arbitrary paths retain
+     * their spelling and can never acquire admin authority by case folding. */
+    if (text_equal(command, "devctl")) return "DEVCTL";
+    if (text_equal(command, "devctl.prg")) return "DEVCTL.PRG";
+    if (text_equal(command, "mount")) return "MOUNT";
+    if (text_equal(command, "mount.prg")) return "MOUNT.PRG";
+    if (text_equal(command, "umount")) return "UMOUNT";
+    if (text_equal(command, "umount.prg")) return "UMOUNT.PRG";
     return command;
 }
 
@@ -497,6 +632,7 @@ int main(void) {
     for (;;) {
         show_prompt();
         read_line(line);
+        history_add(line);
         int argc = split_line(line, argv);
         if (argc == 0) continue;
         if (text_equal(argv[0], "exit")) return 0;
@@ -509,6 +645,8 @@ int main(void) {
         }
         if (text_equal(argv[0], "help")) {
             show_help();
+        } else if (text_equal(argv[0], "history")) {
+            history_show();
         } else if (text_equal(argv[0], "path")) {
             if (argc == 1) show_search_path();
             else if (argc == 2) set_search_path(argv[1]);

@@ -532,8 +532,9 @@ einzelne Vollbild-Kindprozesse und ist noch kein Fenstersystem.
   im `getchar`-Syscall
 - dynamische Terminalgröße; mehrere Syscalls prüfen heute fest gegen 80x25,
   obwohl der Framebuffer andere Größen besitzen kann
-- Quotes/Escapes, Umgebungsvariablen, Verlauf und Exitcodes in der
-  Userspace-Shell
+- Quotes/Escapes, Umgebungsvariablen, persistenter Verlauf und Exitcodes in der
+  Userspace-Shell; ein flüchtiger, fester 32-Einträge-Ring mit Cursor-Up/Down
+  und Entwurfswiederherstellung ist umgesetzt
 - Pipes, Ein-/Ausgabeumleitung und Hintergrundjobs nach Fertigstellung von
   Deskriptoren, Wait-Queues und Signalen
 - Editor: das sichere `TEMP -> fsync -> close -> rename` ist umgesetzt;
@@ -1538,7 +1539,8 @@ deshalb wieder vollständig aus Treiber und Laufzeitausgabe entfernt.
 
 - Parser für Quotes und Escapes erstellen.
 - `<`, `>`, `>>` und `|` auf Deskriptoren/Pipes abbilden.
-- Hintergrundjobs, Verlauf, Umgebungsvariablen und Exitcodes ergänzen.
+- Hintergrundjobs, persistenten Verlauf, Umgebungsvariablen und Exitcodes ergänzen;
+  der begrenzte flüchtige Up/Down-Verlauf ist umgesetzt.
 - Ein kleines `INIT.PRG` als Reaper und Starter der Shell einführen.
 
 ### Phase 4 — Netzwerk bis zu Anwendungen

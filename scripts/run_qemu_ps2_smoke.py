@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import time
@@ -12,7 +13,10 @@ import time
 
 KEYBOARD_READY_MARKER = "PS/2 keyboard ready:"
 SHELL_PROMPT = "C:\\>"
-SHELL_HELP_MARKER = "Built-ins: cd path pwd help exit"
+SHELL_HELP_MARKER = "Built-ins: cd path pwd history help exit"
+SHELL_DRAFT_MARKER = "Usage: cd <directory>"
+ADMIN_LIST_MARKER = "ADMIN RESOURCE "
+ROOT_PROTECTED_MARKER = "ADMIN ROOT_PROTECTED"
 PS2_COMMAND = "help"
 LOCK_KEY_COMMANDS = ("sendkey num_lock\n", "sendkey num_lock\n")
 POLL_INTERVAL_SECONDS = 0.02
@@ -22,11 +26,21 @@ KEY_INTERVAL_SECONDS = 0.05
 def monitor_key_commands(text: str) -> list[str]:
     commands: list[str] = []
     for character in text:
-        if not ("a" <= character <= "z"):
-            raise ValueError("PS/2 smoke command must contain lowercase ASCII")
-        commands.append(f"sendkey {character}\n")
+        if "a" <= character <= "z" or "0" <= character <= "9":
+            key = character
+        elif character == " ":
+            key = "spc"
+        else:
+            raise ValueError(
+                "PS/2 smoke command must contain lowercase ASCII or spaces")
+        commands.append(f"sendkey {key}\n")
     commands.append("sendkey ret\n")
     return commands
+
+
+def monitor_text_commands(text: str) -> list[str]:
+    commands = monitor_key_commands(text)
+    return commands[:-1]
 
 
 def qemu_command(qemu: Path, image: Path, serial_log: Path) -> list[str]:
@@ -68,6 +82,31 @@ def wait_for_marker(
     return False, read_transcript(serial_log)
 
 
+def wait_for_marker_count(
+    process: subprocess.Popen[bytes], serial_log: Path, marker: str,
+    expected: int, deadline: float,
+) -> tuple[bool, str]:
+    transcript = ""
+    while time.monotonic() < deadline:
+        transcript = read_transcript(serial_log)
+        if transcript.count(marker) >= expected:
+            return True, transcript
+        if process.poll() is not None:
+            return False, transcript
+        time.sleep(POLL_INTERVAL_SECONDS)
+    return False, read_transcript(serial_log)
+
+
+def send_monitor_commands(process: subprocess.Popen[bytes],
+                          commands: list[str]) -> None:
+    if process.stdin is None:
+        raise RuntimeError("QEMU monitor input unavailable")
+    for command in commands:
+        process.stdin.write(command.encode("ascii"))
+        process.stdin.flush()
+        time.sleep(KEY_INTERVAL_SECONDS)
+
+
 def stop_process(process: subprocess.Popen[bytes]) -> None:
     if process.poll() is not None:
         return
@@ -105,18 +144,60 @@ def run(qemu: Path, image: Path, timeout: float) -> tuple[int, str, str]:
             elif process.stdin is None:
                 error = "QEMU monitor input unavailable"
             else:
-                commands = [
+                first_help_count = transcript.count(SHELL_HELP_MARKER)
+                send_monitor_commands(process, [
                     *LOCK_KEY_COMMANDS,
                     *monitor_key_commands(PS2_COMMAND),
-                ]
-                for command in commands:
-                    process.stdin.write(command.encode("ascii"))
-                    process.stdin.flush()
-                    time.sleep(KEY_INTERVAL_SECONDS)
-                responded, transcript = wait_for_marker(
-                    process, serial_log, SHELL_HELP_MARKER, deadline)
+                ])
+                responded, transcript = wait_for_marker_count(
+                    process, serial_log, SHELL_HELP_MARKER,
+                    first_help_count + 1, deadline)
                 if not responded:
                     error = "userspace shell did not receive PS/2 help command"
+                else:
+                    send_monitor_commands(process, ["sendkey up\n",
+                                                    "sendkey ret\n"])
+                    responded, transcript = wait_for_marker_count(
+                        process, serial_log, SHELL_HELP_MARKER,
+                        first_help_count + 2, deadline)
+                    if not responded:
+                        error = "cursor-up did not recall the previous command"
+                if not error:
+                    draft_count = transcript.count(SHELL_DRAFT_MARKER)
+                    send_monitor_commands(process, [
+                        *monitor_text_commands("cd"),
+                        "sendkey up\n", "sendkey down\n", "sendkey ret\n",
+                    ])
+                    responded, transcript = wait_for_marker_count(
+                        process, serial_log, SHELL_DRAFT_MARKER,
+                        draft_count + 1, deadline)
+                    if not responded:
+                        error = "cursor-down did not restore the input draft"
+                if not error:
+                    admin_count = transcript.count(ADMIN_LIST_MARKER)
+                    send_monitor_commands(
+                        process, monitor_key_commands("devctl list"))
+                    responded, transcript = wait_for_marker_count(
+                        process, serial_log, ADMIN_LIST_MARKER,
+                        admin_count + 1, deadline)
+                    if not responded:
+                        error = "lowercase devctl did not receive admin authority"
+                if not error:
+                    root = re.search(
+                        r"ADMIN RESOURCE (\d+)[^\r\n]*ROOT_PROTECTED",
+                        transcript,
+                    )
+                    if root is None:
+                        error = "devctl list did not identify protected root"
+                    else:
+                        root_count = transcript.count(ROOT_PROTECTED_MARKER)
+                        send_monitor_commands(process, monitor_key_commands(
+                            f"devctl down {root.group(1)}"))
+                        responded, transcript = wait_for_marker_count(
+                            process, serial_log, ROOT_PROTECTED_MARKER,
+                            root_count + 1, deadline)
+                        if not responded:
+                            error = "devctl did not reject protected root"
         finally:
             stop_process(process)
             transcript = read_transcript(serial_log)
@@ -142,7 +223,7 @@ def main() -> int:
     if error:
         print(f"ps2-smoke: FAIL: {error}")
         return status
-    print("ps2-smoke: PASS (NumLock and text reached userspace shell)")
+    print("ps2-smoke: PASS (text and Up/Down history reached userspace shell)")
     return 0
 
 

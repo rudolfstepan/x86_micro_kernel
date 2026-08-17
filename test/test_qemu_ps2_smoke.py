@@ -22,6 +22,29 @@ class QemuPs2SmokeContractTests(unittest.TestCase):
             MODULE.LOCK_KEY_COMMANDS,
             ("sendkey num_lock\n", "sendkey num_lock\n"),
         )
+        self.assertEqual(
+            MODULE.monitor_text_commands("cd"),
+            ["sendkey c\n", "sendkey d\n"],
+        )
+        self.assertEqual(
+            MODULE.monitor_key_commands("devctl list")[-5:],
+            ["sendkey l\n", "sendkey i\n", "sendkey s\n", "sendkey t\n",
+             "sendkey ret\n"],
+        )
+
+    def test_history_uses_physical_cursor_keys_and_draft_marker(self):
+        source = (ROOT / "scripts/run_qemu_ps2_smoke.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"sendkey up\\n"', source)
+        self.assertIn('"sendkey down\\n"', source)
+        self.assertIn("cursor-up did not recall", source)
+        self.assertIn("cursor-down did not restore", source)
+        self.assertEqual(MODULE.SHELL_DRAFT_MARKER, "Usage: cd <directory>")
+        self.assertIn("lowercase devctl did not receive admin authority", source)
+        self.assertIn("devctl did not reject protected root", source)
+        self.assertEqual(MODULE.ADMIN_LIST_MARKER, "ADMIN RESOURCE ")
+        self.assertEqual(MODULE.ROOT_PROTECTED_MARKER, "ADMIN ROOT_PROTECTED")
 
     def test_qemu_uses_monitor_for_keys_and_file_for_serial(self):
         command = MODULE.qemu_command(

@@ -46,7 +46,20 @@ void x86os_puts(const char* text) {
 }
 
 void x86os_print_number(int value) {
-    (void)x86os_syscall(X86OS_SYS_PRINT_NUMBER, (uintptr_t)value, 0, 0);
+    char digits[10];
+    unsigned count = 0U;
+    uint32_t magnitude;
+    if (value < 0) {
+        x86os_putchar('-');
+        magnitude = 0U - (uint32_t)value;
+    } else {
+        magnitude = (uint32_t)value;
+    }
+    do {
+        digits[count++] = (char)('0' + magnitude % 10U);
+        magnitude /= 10U;
+    } while (magnitude != 0U && count < sizeof(digits));
+    while (count != 0U) x86os_putchar(digits[--count]);
 }
 
 void x86os_delay(uint32_t milliseconds) {

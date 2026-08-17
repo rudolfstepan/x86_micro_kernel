@@ -83,19 +83,34 @@ int main(int argc, char **argv) {
     if (argc == 2 && equal(argv[1], "list")) {
         for (uint32_t resource = 0U; resource < RESOURCE_LIMIT; ++resource) {
             int code = status(resource, 1);
-            if (code != 0) break;
+            if (code == 0) continue;
+            if (code != -22) {
+                x86os_puts("ADMIN LIST_FAILED code=");
+                x86os_print_number(code);
+                x86os_putchar('\n');
+                return 1;
+            }
+            break;
         }
         return 0;
     }
     if (argc != 3 ||
         (!equal(argv[1], "status") && !equal(argv[1], "down") &&
          !equal(argv[1], "up"))) {
-        x86os_puts("Usage: devctl list|status|down|up <resource>\n");
+        x86os_puts("Usage: devctl list\n");
+        x86os_puts("       devctl status|down|up <resource>\n");
         return 2;
     }
     uint32_t resource = 0U;
     if (parse_resource(argv[2], &resource) != 0) return 2;
-    if (equal(argv[1], "status")) return status(resource, 0) == 0 ? 0 : 1;
+    if (equal(argv[1], "status")) {
+        int code = status(resource, 0);
+        if (code == 0) return 0;
+        x86os_puts("ADMIN STATUS_FAILED code=");
+        x86os_print_number(code);
+        x86os_putchar('\n');
+        return 1;
+    }
     x86os_admin_storage_request_t request = {0};
     x86os_admin_storage_result_t result;
     request.version = X86OS_ADMIN_MAINTENANCE_VERSION;
