@@ -242,6 +242,7 @@ try {
         --data-file "DEVCTL.PRG=$(Join-Path $UserProgramDir 'DEVCTL.PRG')" `
         --data-file "MOUNT.PRG=$(Join-Path $UserProgramDir 'MOUNT.PRG')" `
         --data-file "UMOUNT.PRG=$(Join-Path $UserProgramDir 'UMOUNT.PRG')" `
+        --data-file "SVCCTL.PRG=$(Join-Path $UserProgramDir 'SVCCTL.PRG')" `
         --data-file "EDIT.PRG=$(Join-Path $UserProgramDir 'EDIT.PRG')" `
         --data-file "CHILDEX.PRG=$(Join-Path $UserProgramDir 'CHILDEX.PRG')" `
         --data-file "FAULTDE.PRG=$(Join-Path $UserProgramDir 'FAULTDE.PRG')" `
@@ -296,6 +297,7 @@ try {
         --data-file "DEVCTL.PRG=$(Join-Path $UserProgramDir 'DEVCTL.PRG')" `
         --data-file "MOUNT.PRG=$(Join-Path $UserProgramDir 'MOUNT.PRG')" `
         --data-file "UMOUNT.PRG=$(Join-Path $UserProgramDir 'UMOUNT.PRG')" `
+        --data-file "SVCCTL.PRG=$(Join-Path $UserProgramDir 'SVCCTL.PRG')" `
         --data-file "EDIT.PRG=$(Join-Path $UserProgramDir 'EDIT.PRG')" `
         --data-file "CHILDEX.PRG=$(Join-Path $UserProgramDir 'CHILDEX.PRG')" `
         --data-file "FAULTDE.PRG=$(Join-Path $UserProgramDir 'FAULTDE.PRG')" `

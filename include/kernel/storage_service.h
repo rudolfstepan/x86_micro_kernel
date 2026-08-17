@@ -29,5 +29,8 @@ bool storage_service_admin_fail(uint32_t resource_mask);
 bool storage_service_resource_admin_down(uint32_t resource);
 bool storage_service_resource_admin_transition(uint32_t resource);
 bool storage_service_resource_admin_failed(uint32_t resource);
+bool storage_service_component_down(uint64_t deadline_ms);
+bool storage_service_component_up(uint64_t deadline_ms);
+bool storage_service_component_ready(void);
 
 #endif

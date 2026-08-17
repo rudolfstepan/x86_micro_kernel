@@ -41,6 +41,7 @@ PROGRAMS = {
     "DEVCTL.PRG": ROOT / "examples/userspace/devctl.c",
     "MOUNT.PRG": ROOT / "examples/userspace/mount.c",
     "UMOUNT.PRG": ROOT / "examples/userspace/umount.c",
+    "SVCCTL.PRG": ROOT / "examples/userspace/svcctl.c",
     "EDIT.PRG": ROOT / "userspace/bin/edit.c",
     "CHILDEX.PRG": ROOT / "examples/userspace/child_exit.c",
     "FAULTDE.PRG": ROOT / "examples/userspace/fault_de.c",

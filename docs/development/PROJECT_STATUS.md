@@ -74,8 +74,8 @@ und Reintegrate. Bereits vorhanden sind unter anderem:
 - begrenzte Netzwerkparser, ARP-/IPv4-/ICMP-/UDP-/DHCP-Entscheidungen in der
   überwachten Ring-3-Domäne
 
-S0 ist noch nicht abgeschlossen. Das aktive Paket ist `S0.3c-admin2` für
-statische Komponenten-Lifecycle-Steuerung. `S0.3c-admin1` mit capability-
+S0 ist noch nicht abgeschlossen. `S0.3c-admin2` mit statischer
+Komponenten-Lifecycle-Steuerung ist umgesetzt. `S0.3c-admin1` mit capability-
 gebundener Storage-Administration, `S0.3c-6f5` mit der FAT12-
 Persistenz-Fehlermatrix und `S0.3c-hw11` mit begrenzter SATA-Hotplug-Recovery
 sind abgeschlossen. Aussagen über vollständig nachgewiesene
@@ -83,11 +83,13 @@ Fail-Operationalität oder unabhängige Hardware-Failover-Domänen sind weiterhi
 unzulässig.
 
 `S0.3c-admin1` stellt sichere Storage-Operationen (`device down/up`, `mount`,
-`umount`) und einen festen, integritätsgeprüften RAM-Rescue-Satz aus Shell,
-Anzeige-, Diagnose- und Adminprogrammen bereit. `S0.3c-admin2` ergänzt nun eine
-statische, abhängigkeitsbewusste Lifecycle-Steuerung für ausdrücklich unterstützte
-Treiber und überwachte Dienste. Ein universelles dynamisches Entladen von
-Kernel-Treibern ist nicht vorgesehen.
+`umount`) und einen festen, integritätsgeprüften 128-KiB-RAM-Rescue-Pool aus
+Shell, Anzeige-, Diagnose-, Dienst- und Adminprogrammen bereit. `S0.3c-admin2`
+ergänzt eine statische, abhängigkeitsbewusste Lifecycle-Steuerung für
+ausdrücklich unterstützte Treiber und überwachte Dienste. Der reale QEMU-Lauf
+weist geschützte Kernkomponenten, Abhängigkeitsreihenfolge sowie Down/Up und
+Restart der unterstützten Komponenten nach. Ein universelles dynamisches
+Entladen von Kernel-Treibern ist nicht vorgesehen.
 
 ## Storage und Dateisysteme
 

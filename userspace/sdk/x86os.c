@@ -20,6 +20,10 @@ _Static_assert(sizeof(x86os_admin_storage_request_t) == 104U,
                "admin storage request ABI changed");
 _Static_assert(sizeof(x86os_admin_storage_result_t) == 128U,
                "admin storage result ABI changed");
+_Static_assert(sizeof(x86os_component_request_t) == 24U,
+               "component control request ABI changed");
+_Static_assert(sizeof(x86os_component_result_t) == 56U,
+               "component control result ABI changed");
 
 uintptr_t x86os_syscall(uint32_t number, uintptr_t argument1,
                         uintptr_t argument2, uintptr_t argument3) {
@@ -537,6 +541,13 @@ int x86os_admin_storage(const x86os_admin_storage_request_t* request,
                         x86os_admin_storage_result_t* result) {
     if (request == NULL || result == NULL) return -22;
     return (int)x86os_syscall(X86OS_SYS_ADMIN_STORAGE,
+                              (uintptr_t)request, (uintptr_t)result, 0U);
+}
+
+int x86os_component_control(const x86os_component_request_t* request,
+                            x86os_component_result_t* result) {
+    if (request == NULL || result == NULL) return -22;
+    return (int)x86os_syscall(X86OS_SYS_COMPONENT_CONTROL,
                               (uintptr_t)request, (uintptr_t)result, 0U);
 }
 

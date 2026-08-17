@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3c-6f"
-active_id = "S0.3c-admin2"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -962,7 +962,7 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-admin2"
-status = "active"
+status = "done"
 risk = "critical"
 title = "Static component lifecycle administration"
 scope = "Add a fixed registry and administrative status/down/up/restart state machine for explicitly supported drivers and supervised system services. Down means bounded quiesce, fence, interrupt or producer disable, capability revocation and dependency-aware stop; it never unloads kernel code. Up means hardware or service self-test, generation-safe recreation and reintegration only after all declared dependencies are ready."
@@ -981,6 +981,7 @@ allowed_files = [
   "userspace/sdk/include/x86os.h",
   "userspace/sdk/x86os.c",
   "examples/userspace/svcctl.c",
+  "examples/userspace/storage_service.c",
   "scripts/build_system_programs.py",
   "scripts/build-windows.ps1",
   "scripts/run_qemu_component_control.py",
@@ -989,6 +990,7 @@ allowed_files = [
   "test/test_component_control.py",
   "test/test_qemu_component_control.py",
   "test/test_reist_supervisor.py",
+  "test/test_admin_maintenance.py",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
   "docs/development/PROJECT_STATUS.md",
@@ -1022,7 +1024,13 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: add bounded component administration"
-evidence = []
+evidence = [
+  "python test/test_component_control.py -q",
+  "python test/test_qemu_component_control.py -q",
+  "python test/test_reist_supervisor.py -q",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode component-control",
+]
 
 [[packages]]
 id = "S0.3b-3"

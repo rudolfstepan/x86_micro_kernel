@@ -15,21 +15,23 @@
 #include "include/kernel/panic.h"
 #include "include/kernel/storage_request_pool.h"
 #include "include/kernel/admin_maintenance.h"
+#include "include/kernel/component_control.h"
 #include "include/kernel/critical_object.h"
 
 #define USER_PROGRAM_ADDRESS PROGRAM_V1_BASE
 #define PROGRAM_REGION_SIZE PROGRAM_V1_REGION_SIZE
 #define RESCUE_PROGRAM_CACHE_VERSION 1U
-#define RESCUE_PROGRAM_CACHE_COUNT 8U
+#define RESCUE_PROGRAM_CACHE_COUNT 11U
 #define RESCUE_PROGRAM_CACHE_CAPACITY (64U * 1024U)
+#define RESCUE_PROGRAM_POOL_CAPACITY (128U * 1024U)
 
 typedef struct {
     const char *path;
-    uint8_t image[RESCUE_PROGRAM_CACHE_CAPACITY];
 } rescue_program_cache_t;
 
 typedef struct {
     uint32_t ready;
+    uint32_t offset;
     uint32_t size;
     uint32_t crc32;
     uint32_t generation;
@@ -40,11 +42,15 @@ static rescue_program_cache_t rescue_program_cache[RESCUE_PROGRAM_CACHE_COUNT] =
     {.path = "/DEVCTL.PRG"},
     {.path = "/MOUNT.PRG"},
     {.path = "/UMOUNT.PRG"},
+    {.path = "/SVCCTL.PRG"},
+    {.path = "/STORAGE.PRG"},
+    {.path = "/REIST.PRG"},
     {.path = "/DRIVES.PRG"},
     {.path = "/LS.PRG"},
     {.path = "/CAT.PRG"},
     {.path = "/CHKDSK.PRG"},
 };
+static uint8_t rescue_program_pool[RESCUE_PROGRAM_POOL_CAPACITY];
 static critical_object_t rescue_program_meta[RESCUE_PROGRAM_CACHE_COUNT];
 static bool rescue_cache_initialized;
 
@@ -57,6 +63,7 @@ static bool rescue_meta_valid(const void *payload, size_t length) {
     const rescue_program_meta_t *meta = payload;
     return meta->ready == 1U && meta->size != 0U &&
            meta->size <= RESCUE_PROGRAM_CACHE_CAPACITY &&
+           meta->offset <= RESCUE_PROGRAM_POOL_CAPACITY - meta->size &&
            meta->crc32 != 0U && meta->generation != 0U;
 }
 
@@ -172,13 +179,14 @@ static int load_program_file(const char *program_name, uint8_t **image_out) {
         if (critical_object_read(&rescue_program_meta[index],
                 RESCUE_PROGRAM_CACHE_VERSION, &meta, sizeof(meta), &length,
                 rescue_meta_valid) < 0 || length != sizeof(meta) ||
-            rescue_crc32(cache->image, meta.size) != meta.crc32) {
+            rescue_crc32(rescue_program_pool + meta.offset,
+                         meta.size) != meta.crc32) {
             printf("REIST_RESCUE CACHE_INTEGRITY_FAIL %s\n", program_name);
             return -1;
         }
         uint8_t *image = (uint8_t*)k_malloc(meta.size);
         if (image == NULL) return -1;
-        memcpy(image, cache->image, meta.size);
+        memcpy(image, rescue_program_pool + meta.offset, meta.size);
         *image_out = image;
         panic_context_set("program-load", "resident rescue cache", "copy",
                           program_name);
@@ -190,27 +198,27 @@ static int load_program_file(const char *program_name, uint8_t **image_out) {
 
 bool process_cache_rescue_programs(void) {
     if (rescue_cache_initialized) return true;
+    uint32_t used = 0U;
     for (uint32_t index = 0U; index < RESCUE_PROGRAM_CACHE_COUNT; ++index) {
         rescue_program_cache_t *cache = &rescue_program_cache[index];
         uint8_t *image = NULL;
         int size = load_program_file_uncached(cache->path, &image);
         if (size <= 0 || (uint32_t)size > RESCUE_PROGRAM_CACHE_CAPACITY ||
+            used > RESCUE_PROGRAM_POOL_CAPACITY - (uint32_t)size ||
             image == NULL) {
             if (image != NULL) k_free(image);
-            for (uint32_t clear = 0U; clear < RESCUE_PROGRAM_CACHE_COUNT;
-                 ++clear) {
-                memset(rescue_program_cache[clear].image, 0,
-                       sizeof(rescue_program_cache[clear].image));
-            }
+            memset(rescue_program_pool, 0, sizeof(rescue_program_pool));
             return false;
         }
-        memcpy(cache->image, image, (size_t)size);
+        memcpy(rescue_program_pool + used, image, (size_t)size);
         rescue_program_meta_t meta = {
             .ready = 1U,
+            .offset = used,
             .size = (uint32_t)size,
-            .crc32 = rescue_crc32(cache->image, (size_t)size),
+            .crc32 = rescue_crc32(rescue_program_pool + used, (size_t)size),
             .generation = 1U,
         };
+        used += (uint32_t)size;
         k_free(image);
         if (critical_object_init(&rescue_program_meta[index],
                 RESCUE_PROGRAM_CACHE_VERSION, &meta, sizeof(meta)) != 0)
@@ -218,7 +226,7 @@ bool process_cache_rescue_programs(void) {
     }
     rescue_cache_initialized = true;
     printf("REIST_RESCUE CACHE_READY programs=%u capacity=%u\n",
-           RESCUE_PROGRAM_CACHE_COUNT, RESCUE_PROGRAM_CACHE_CAPACITY);
+           RESCUE_PROGRAM_CACHE_COUNT, RESCUE_PROGRAM_POOL_CAPACITY);
     return true;
 }
 
@@ -276,6 +284,17 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
              ++index) profile_allow(profile, admin_syscalls[index]);
         return true;
     }
+    if (kind == PROCESS_DOMAIN_COMPONENT_ADMIN) {
+        static const uint8_t component_admin_syscalls[] = {
+            0U, SYS_EXIT, SYS_GETPID, SYS_TERMINAL_WRITE,
+            SYS_MONOTONIC_MS, SYS_COMPONENT_CONTROL
+        };
+        for (size_t index = 0;
+             index < sizeof(component_admin_syscalls) /
+                         sizeof(component_admin_syscalls[0]);
+             ++index) profile_allow(profile, component_admin_syscalls[index]);
+        return true;
+    }
     if (kind != PROCESS_DOMAIN_PROBE) return false;
 
     static const uint8_t probe_syscalls[] = {
@@ -309,7 +328,8 @@ bool process_syscall_allowed(const Process *process, uint32_t syscall_index) {
         (profile->kind != PROCESS_DOMAIN_COMPATIBILITY &&
          profile->kind != PROCESS_DOMAIN_PROBE &&
          profile->kind != PROCESS_DOMAIN_STORAGE &&
-         profile->kind != PROCESS_DOMAIN_ADMIN)) return false;
+         profile->kind != PROCESS_DOMAIN_ADMIN &&
+         profile->kind != PROCESS_DOMAIN_COMPONENT_ADMIN)) return false;
     return (profile->allowed_syscalls[syscall_index / 32U] &
             (1U << (syscall_index % 32U))) != 0U;
 }
@@ -338,6 +358,7 @@ static void release_process_slot(Process *process) {
     ipc_process_cleanup(process->pid, process->generation);
     storage_request_cancel_process(process->pid, process->generation);
     admin_maintenance_process_cleanup(process->pid, process->generation);
+    component_control_process_cleanup(process->pid, process->generation);
     process_close_all_files(process);
     uint32_t flags = irq_save();
     process->is_running = false;
@@ -1063,7 +1084,12 @@ int process_spawn_args(Process *parent, const char *path, int argc,
         argc > 32 || argv == NULL) return -1;
     char resolved[PROCESS_PATH_MAX];
     if (process_resolve_path(parent, path, resolved) != 0) return -1;
-    process_domain_kind_t domain_kind =
+    if (strcmp(resolved, "/svcctl.PRG") == 0 ||
+        strcmp(resolved, "/svcctl.prg") == 0 ||
+        strcmp(resolved, "/SVCCTL.prg") == 0)
+        strcpy(resolved, "/SVCCTL.PRG");
+    process_domain_kind_t domain_kind = strcmp(resolved, "/SVCCTL.PRG") == 0
+        ? PROCESS_DOMAIN_COMPONENT_ADMIN :
         strcmp(resolved, "/DEVCTL.PRG") == 0 ||
         strcmp(resolved, "/MOUNT.PRG") == 0 ||
         strcmp(resolved, "/UMOUNT.PRG") == 0

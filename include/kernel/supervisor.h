@@ -629,6 +629,9 @@ void supervisor_clock_tick(uint64_t now_ms);
 bool supervisor_start_worker(void);
 bool supervisor_start_probe(uint64_t now_ms);
 bool supervisor_probe_ready(void);
+bool supervisor_probe_component_down(uint64_t deadline_ms);
+bool supervisor_probe_component_up(uint64_t deadline_ms);
+bool supervisor_probe_component_ready(void);
 int supervisor_probe_report(int pid, uint32_t generation,
                             uint32_t report_type, uint32_t value,
                             uint64_t now_ms);

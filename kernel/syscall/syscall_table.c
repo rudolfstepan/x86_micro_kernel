@@ -26,7 +26,7 @@
 #include "include/kernel/storage_service.h"
 #include "include/kernel/storage_maintenance.h"
 #include "include/kernel/admin_maintenance.h"
-#include "include/kernel/supervisor.h"
+#include "include/kernel/component_control.h"
 #include "include/kernel/supervisor.h"
 #include "arch/x86/mm/paging.h"
 #include "fs/vfs/vfs.h"
@@ -635,6 +635,7 @@ static int syscall_storage_submit(const storage_request_submit_t *user_request,
             copy_from_user(data, user_data, request.length) != 0) return -14;
         data_argument = data;
     }
+    if (!storage_service_component_ready()) return -112;
     storage_request_handle_t handle = STORAGE_REQUEST_INVALID_HANDLE;
     int result = storage_request_submit(process->pid, process->generation,
                                         &request, data_argument,
@@ -1382,6 +1383,38 @@ static int syscall_admin_storage(
                               sizeof(result)) == 0 ? 0 : -14;
 }
 
+_Static_assert(sizeof(component_control_request_t) == 24U,
+               "component control request ABI changed");
+_Static_assert(sizeof(component_control_result_t) == 56U,
+               "component control result ABI changed");
+
+static int syscall_component_control(
+        const component_control_request_t *user_request,
+        component_control_result_t *user_result) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t request_address = (uint32_t)(uintptr_t)user_request;
+    uint32_t result_address = (uint32_t)(uintptr_t)user_result;
+    if (process == NULL ||
+        process->domain_profile.kind != PROCESS_DOMAIN_COMPONENT_ADMIN)
+        return -13;
+    if (!user_range_accessible(directory, request_address,
+                               sizeof(component_control_request_t), false) ||
+        !user_range_accessible(directory, result_address,
+                               sizeof(component_control_result_t), true))
+        return -14;
+    component_control_request_t request;
+    component_control_result_t result;
+    if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+        return -14;
+    int status = component_control_execute(
+        process->pid, process->generation, &request, &result,
+        pit_monotonic_ms());
+    if (status != 0) return status;
+    return copy_to_user_space(directory, result_address, &result,
+                              sizeof(result)) == 0 ? 0 : -14;
+}
+
 static int syscall_space(const char *user_path, void *user_info) {
     char path[PROCESS_PATH_MAX];
     int result = syscall_copy_path(path, user_path);
@@ -1506,6 +1539,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_storage_maintenance_release, // Syscall 88
     (void*)&syscall_drive_status,        // Syscall 89: Versioned drive health
     (void*)&syscall_admin_storage,       // Syscall 90: Bounded storage admin
+    (void*)&syscall_component_control,   // Syscall 91: Static components
     // Add more syscalls here as needed
 };
 
@@ -1934,6 +1968,11 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)syscall_admin_storage(
                 (const admin_storage_request_t*)(uintptr_t)arg1,
                 (admin_storage_result_t*)(uintptr_t)arg2);
+            break;
+        case SYS_COMPONENT_CONTROL:
+            result = (uint32_t)syscall_component_control(
+                (const component_control_request_t*)(uintptr_t)arg1,
+                (component_control_result_t*)(uintptr_t)arg2);
             break;
         default:
             result = (uint32_t)-1;

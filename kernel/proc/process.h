@@ -25,6 +25,7 @@ typedef enum {
     PROCESS_DOMAIN_PROBE = 2,
     PROCESS_DOMAIN_STORAGE = 3,
     PROCESS_DOMAIN_ADMIN = 4,
+    PROCESS_DOMAIN_COMPONENT_ADMIN = 5,
 } process_domain_kind_t;
 
 typedef struct {

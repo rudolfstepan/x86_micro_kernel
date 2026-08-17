@@ -1342,12 +1342,16 @@ eingefrorenen Gates und die erneute physische Abnahme stehen noch aus.
   Ein festes, integritätsgeprüftes RAM-Rescue-Abbild hält Shell, Anzeige-,
   Diagnose- und Storage-Adminprogramme auch nach Verlust des Root-Backends
   startbar; es enthält keine veränderlichen Nutzdaten.
-- **S0.3c-admin2 — Komponentensteuerung (aktiv):** feste Registry für ausdrücklich
+- **S0.3c-admin2 — Komponentensteuerung (umgesetzt):** feste Registry für ausdrücklich
   unterstützte Treiber und überwachte Dienste mit `status`, `down`, `up` und
   einem einzelnen begrenzten `restart`. Kernelcode wird nicht entladen. Jede
   Komponente deklariert Abhängigkeiten, Quiesce-/Fence-Aktion, Selbsttest und
   nicht deaktivierbare kritische Basiskomponenten. Teilfehler enden terminal
-  fail-closed statt in automatischen Retry-Schleifen.
+  fail-closed statt in automatischen Retry-Schleifen. `SVCCTL.PRG` besitzt ein
+  eigenes default-deny Profil; der reale QEMU-Nachweis fährt den überwachten
+  Netzwerkdienst vor dem Netzwerktreiber herunter, startet beide in umgekehrter
+  Reihenfolge, startet den Storage-Dienst neu und prüft die sichtbare Diagnose
+  eines manuellen `STORAGE.PRG`-Starts.
 
 `drivers/block/block_device.[ch]` bietet einen festen,
 transportneutralen Einsektor-Vertrag mit Bereichsprüfung, Read, Write und

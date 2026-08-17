@@ -3,6 +3,7 @@
 #include "include/kernel/critical_object.h"
 #ifndef REIST_HOST_TEST
 #include "arch/x86/include/interrupt.h"
+#include "include/kernel/component_control.h"
 #include "include/kernel/panic.h"
 #include "include/kernel/output_fence.h"
 #include "include/kernel/storage_service.h"
@@ -150,6 +151,7 @@ typedef struct {
 } supervisor_probe_runtime_t;
 
 static supervisor_probe_runtime_t probe_runtime;
+static volatile bool probe_administratively_enabled = true;
 #endif
 
 static uint32_t supervisor_lock(void) {
@@ -2119,6 +2121,7 @@ bool supervisor_start_probe(uint64_t now_ms) {
         (void)supervisor_force_isolate(control.handle);
         return false;
     }
+    probe_administratively_enabled = true;
     return true;
 }
 
@@ -2135,6 +2138,107 @@ bool supervisor_probe_ready(void) {
         process_identity_alive(control.pid, control.process_generation);
     supervisor_unlock(flags);
     return ready;
+}
+
+static int supervisor_admin_pause(supervisor_handle_t handle) {
+    uint32_t flags = supervisor_lock();
+    supervisor_state_t state;
+    if (resolve(handle, &state) != 0 ||
+        (state.state != SUPERVISOR_HEALTHY &&
+         state.state != SUPERVISOR_STARTING &&
+         state.state != SUPERVISOR_IDLE)) {
+        supervisor_unlock(flags);
+        return -1;
+    }
+    state.state = SUPERVISOR_IDLE;
+    state.deadline_ms = UINT64_MAX;
+    int result = state_write(handle.slot, &state);
+    supervisor_unlock(flags);
+    return result;
+}
+
+static int supervisor_admin_start(supervisor_handle_t handle,
+                                  uint64_t now_ms,
+                                  supervisor_handle_t *updated_out) {
+    if (updated_out == NULL) return -1;
+    uint32_t flags = supervisor_lock();
+    supervisor_state_t state;
+    if (resolve(handle, &state) != 0 || state.state != SUPERVISOR_IDLE) {
+        supervisor_unlock(flags);
+        return -1;
+    }
+    if (state.epoch == UINT32_MAX) {
+        supervisor_unlock(flags);
+        return -1;
+    }
+    ++state.epoch;
+    state.state = SUPERVISOR_STARTING;
+    state.progress_marker = 0U;
+    state.deadline_ms = deadline_after(now_ms, state.recovery_timeout_ms);
+    int result = state_write(handle.slot, &state);
+    if (result == 0) {
+        *updated_out = (supervisor_handle_t){
+            .slot = handle.slot,
+            .generation = state.generation,
+            .epoch = state.epoch,
+        };
+    }
+    supervisor_unlock(flags);
+    return result;
+}
+
+bool supervisor_probe_component_ready(void) {
+    return probe_administratively_enabled && supervisor_probe_ready();
+}
+
+bool supervisor_probe_component_down(uint64_t deadline_ms) {
+    KASSERT_NOT_IRQ();
+    probe_administratively_enabled = false;
+    __asm__ volatile("" ::: "memory");
+    supervisor_probe_control_t control;
+    if (supervisor_protected_probe_control_read(
+            &probe_runtime.control, &control) != 0 || control.active == 0U)
+        return false;
+    bool fenced = control.fenced != 0U &&
+                  !process_identity_alive(control.pid,
+                                          control.process_generation);
+    if (!fenced)
+        fenced = probe_fence_apply(&probe_runtime) &&
+                 probe_fence_verify(&probe_runtime);
+    if (!fenced || supervisor_admin_pause(control.handle) != 0)
+        return false;
+    return pit_monotonic_ms() <= deadline_ms;
+}
+
+bool supervisor_probe_component_up(uint64_t deadline_ms) {
+    KASSERT_NOT_IRQ();
+    if (pit_monotonic_ms() >= deadline_ms) return false;
+    if (supervisor_probe_component_ready()) return true;
+    supervisor_probe_control_t control;
+    if (supervisor_protected_probe_control_read(
+            &probe_runtime.control, &control) != 0 || control.active == 0U ||
+        control.fenced == 0U || process_identity_alive(
+            control.pid, control.process_generation)) return false;
+    supervisor_handle_t updated;
+    if (supervisor_admin_start(control.handle, pit_monotonic_ms(),
+                               &updated) != 0) return false;
+    control.handle = updated;
+    control.endpoint_handle = 0U;
+    if (supervisor_protected_probe_control_write(
+            &probe_runtime.control, &control) != 0) return false;
+    probe_administratively_enabled = true;
+    __asm__ volatile("" ::: "memory");
+    if (!probe_spawn_next()) {
+        probe_administratively_enabled = false;
+        return false;
+    }
+    while (!supervisor_probe_component_ready() &&
+           pit_monotonic_ms() < deadline_ms) {
+        if (scheduler_sleep_ms(5U) != 0) (void)scheduler_yield();
+    }
+    if (supervisor_probe_component_ready()) return true;
+    (void)supervisor_probe_component_down(deadline_ms);
+    return false;
 }
 
 int supervisor_probe_report(int pid, uint32_t generation,
@@ -4138,7 +4242,9 @@ static void supervisor_worker(void) {
          * pending flags, so foreground progress must not depend on a shell
          * command happening to poll the NIC. */
         netdev_poll();
-        storage_service_poll(pit_monotonic_ms());
+        uint64_t component_now_ms = pit_monotonic_ms();
+        storage_service_poll(component_now_ms);
+        component_control_poll(component_now_ms);
         supervisor_probe_control_t control;
         uint32_t transaction_flags = supervisor_lock();
         int control_result = supervisor_protected_probe_control_read(
@@ -4281,7 +4387,8 @@ static void supervisor_worker(void) {
         } else if (udp_expiry_state < 0 && control.active != 0U) {
             (void)supervisor_force_isolate(control.handle);
         }
-        if (control.active != 0U && control.fenced == 0U &&
+        if (probe_administratively_enabled && control.active != 0U &&
+            control.fenced == 0U &&
             !process_identity_alive(control.pid, control.process_generation)) {
             (void)supervisor_force_isolate(control.handle);
         }
@@ -4317,6 +4424,7 @@ static void supervisor_worker(void) {
 }
 
 bool supervisor_start_worker(void) {
+    if (!component_control_init()) return false;
     uint32_t *stack = scheduler_allocate_kernel_stack();
     if (stack == NULL) return false;
     if (create_task(supervisor_worker, stack, NULL) < 0) {
@@ -4353,6 +4461,20 @@ bool supervisor_start_probe(uint64_t now_ms) {
 }
 
 bool supervisor_probe_ready(void) {
+    return false;
+}
+
+bool supervisor_probe_component_down(uint64_t deadline_ms) {
+    (void)deadline_ms;
+    return false;
+}
+
+bool supervisor_probe_component_up(uint64_t deadline_ms) {
+    (void)deadline_ms;
+    return false;
+}
+
+bool supervisor_probe_component_ready(void) {
     return false;
 }
 

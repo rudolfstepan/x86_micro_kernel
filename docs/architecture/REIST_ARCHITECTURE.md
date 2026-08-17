@@ -843,8 +843,8 @@ REIST-FAT12-Medien Undo-Journal, Remap, kritische Replikate und geordnete
 Dateitransaktionen. S0.3c-6f5 ergänzt die deterministische Persistenz-
 Fehlermatrix. S0.3c-hw11 begrenzt die physische SATA-Hotplug-Reintegration und
 ergänzt deterministische QEMU-AHCI-Backend-Fault-Injection. S0.3c-admin1
-ergänzt capability-gebundene Storage-Administration; aktiv ist S0.3c-admin2
-mit statischer Komponenten-Lifecycle-Steuerung. Der
+ergänzt capability-gebundene Storage-Administration; S0.3c-admin2 ergänzt
+statische Komponenten-Lifecycle-Steuerung. Der
 medienunabhängige Nachweis für EXT2, fremde FAT-Volumes und künftige Backends
 bleibt offen. Erst ein nachgewiesenes
 Recoveryprotokoll darf ein Medium nach unklarem Schreibabschluss wieder
@@ -892,10 +892,12 @@ Medienausfall nicht mehr inventarisierbar ist.
 Damit ein plötzlicher Verlust des Root-Datenträgers nicht zugleich die
 Administrationsfähigkeit entfernt, lädt der Kernel beim Boot ein festes
 Rescue-Allowlist-Abbild in RAM: `SHELL.PRG`, `DEVCTL.PRG`, `MOUNT.PRG`,
-`UMOUNT.PRG`, `DRIVES.PRG`, `LS.PRG`, `CAT.PRG` und `CHKDSK.PRG`. Jedes Image
-ist auf 64 KiB begrenzt, vor der Aufnahme als MYPR-Programm validiert und vor
-jedem Start erneut gegen CRC und redundant geschützte Metadaten geprüft. Nur
-die exakten Root-Pfade dürfen diesen read-only Fallback verwenden. Das ist
+`UMOUNT.PRG`, `SVCCTL.PRG`, `STORAGE.PRG`, `REIST.PRG`, `DRIVES.PRG`,
+`LS.PRG`, `CAT.PRG` und `CHKDSK.PRG`. Jedes Image ist auf 64 KiB, der gesamte
+statische Pool auf 128 KiB begrenzt. Die Programme werden vor der Aufnahme als
+MYPR-Abbild validiert und vor jedem Start erneut gegen CRC und redundant
+geschützte Offset-/Größenmetadaten geprüft. Nur die exakten Root-Pfade dürfen
+diesen read-only Fallback verwenden. Das ist
 kein Abbild veränderlicher Nutzdaten und keine unabhängige Redundanz: RAM,
 Kernel und CPU bleiben eine gemeinsame Fehlerdomäne.
 
@@ -904,7 +906,11 @@ und statischen Abhängigkeiten administrierbar. `down`, `up` und `restart`
 besitzen je eine monotone Gesamtdauer, generation-scoped Revocation und einen
 terminalen Fail-Closed-Zustand. Nicht registrierte Komponenten lehnen die
 Operation ab; ein dynamischer universeller Treiber-Unloader ist ausdrücklich
-nicht Teil der Architektur.
+nicht Teil der Architektur. Syscall 91 ist ausschließlich dem default-deny
+Profil von `SVCCTL.PRG` erlaubt. Der Netzwerkdienst muss vor seinem Treiber
+beendet und nach ihm gestartet werden; der Storage-Dienst bleibt an Uhr und
+geschützten Root-Storage gebunden. Generationen laufen bei Erschöpfung nicht
+um, sondern sperren weitere Übergänge fail-closed.
 
 ### Standby-Handover-Protokoll
 

@@ -94,7 +94,8 @@ enum {
     X86OS_SYS_STORAGE_MAINT_RENEW = 87,
     X86OS_SYS_STORAGE_MAINT_RELEASE = 88,
     X86OS_SYS_DRIVE_STATUS = 89,
-    X86OS_SYS_ADMIN_STORAGE = 90
+    X86OS_SYS_ADMIN_STORAGE = 90,
+    X86OS_SYS_COMPONENT_CONTROL = 91
 };
 
 enum {
@@ -498,6 +499,48 @@ typedef struct {
     char mount_path[X86OS_ADMIN_PATH_MAX];
 } x86os_admin_storage_result_t;
 
+#define X86OS_COMPONENT_CONTROL_VERSION 1U
+#define X86OS_COMPONENT_COUNT 7U
+#define X86OS_COMPONENT_NAME_CAPACITY 24U
+enum {
+    X86OS_COMPONENT_STATUS = 0,
+    X86OS_COMPONENT_DOWN = 1,
+    X86OS_COMPONENT_UP = 2,
+    X86OS_COMPONENT_RESTART = 3,
+};
+enum {
+    X86OS_COMPONENT_READY = 1,
+    X86OS_COMPONENT_QUIESCING = 2,
+    X86OS_COMPONENT_OFFLINE = 3,
+    X86OS_COMPONENT_STARTING = 4,
+    X86OS_COMPONENT_FAILED = 5,
+};
+#define X86OS_COMPONENT_MANAGEABLE (1U << 0)
+#define X86OS_COMPONENT_PROTECTED  (1U << 1)
+#define X86OS_COMPONENT_DRIVER     (1U << 2)
+#define X86OS_COMPONENT_SERVICE    (1U << 3)
+#define X86OS_COMPONENT_FENCED     (1U << 4)
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t command;
+    uint32_t component;
+    uint32_t expected_generation;
+    uint32_t timeout_ms;
+} x86os_component_request_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t component;
+    uint32_t state;
+    uint32_t generation;
+    uint32_t flags;
+    uint32_t dependency_mask;
+    int32_t last_error;
+    char name[X86OS_COMPONENT_NAME_CAPACITY];
+} x86os_component_result_t;
+
 typedef struct {
     uint64_t total_bytes;
     uint64_t free_bytes;
@@ -620,6 +663,8 @@ int x86os_drive_info(uint32_t index, x86os_drive_info_t* info);
 int x86os_drive_status(uint32_t index, x86os_drive_status_t* status);
 int x86os_admin_storage(const x86os_admin_storage_request_t* request,
                         x86os_admin_storage_result_t* result);
+int x86os_component_control(const x86os_component_request_t* request,
+                            x86os_component_result_t* result);
 int x86os_space(const char* path, x86os_space_info_t* info);
 int x86os_mkdir(const char* path);
 int x86os_rmdir(const char* path);

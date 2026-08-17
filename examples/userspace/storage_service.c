@@ -179,7 +179,13 @@ static int format_fat12(uint32_t resource) {
 }
 
 int main(void) {
-    if (x86os_storage_bind() != 0) return 1;
+    int bind = x86os_storage_bind();
+    if (bind != 0) {
+        x86os_puts("STORAGE SERVICE_BIND_FAILED code=");
+        x86os_print_number(bind);
+        x86os_puts("\nSTORAGE is an internal service. Use svcctl list/status.\n");
+        return 1;
+    }
     for (;;) {
         x86os_storage_descriptor_t request;
         uint8_t data[X86OS_STORAGE_BLOCK_SIZE];

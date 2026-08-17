@@ -12,6 +12,7 @@
 #include "include/kernel/storage_safety.h"
 #include "include/kernel/supervisor.h"
 #include "kernel/proc/process.h"
+#include "kernel/sched/scheduler.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
 #include "kernel/time/pit.h"
@@ -64,6 +65,7 @@ static critical_object_t protected_control;
 static bool initialized;
 static volatile bool service_starting;
 static volatile bool service_started;
+static volatile bool service_administratively_enabled = true;
 static critical_object_t media_fingerprints[MAX_DRIVES];
 static uint32_t fingerprint_ready_mask;
 
@@ -336,6 +338,7 @@ bool storage_service_init(void) {
     if (critical_object_init(&protected_control,
             STORAGE_SERVICE_CONTROL_VERSION, &control,
             sizeof(control)) != 0) return false;
+    service_administratively_enabled = true;
     initialized = true;
     return true;
 }
@@ -359,7 +362,8 @@ bool storage_service_inventory_media(void) {
 }
 
 bool storage_service_start(uint64_t now_ms) {
-    if (!initialized || service_starting || service_started) return false;
+    if (!initialized || !service_administratively_enabled ||
+        service_starting || service_started) return false;
     if (!admin_maintenance_init()) return false;
     service_starting = true;
     storage_service_control_t control;
@@ -372,7 +376,8 @@ bool storage_service_start(uint64_t now_ms) {
 
 int storage_service_bind(int pid, uint32_t generation) {
     storage_service_control_t control;
-    if (!initialized || control_read(&control) != 0 || control.pid != pid ||
+    if (!initialized || !service_administratively_enabled ||
+        control_read(&control) != 0 || control.pid != pid ||
         control.generation != generation || control.healthy != 0U ||
         !process_identity_alive(pid, generation)) return -13;
     int result = storage_request_bind_service(pid, generation);
@@ -389,7 +394,8 @@ int storage_service_bind(int pid, uint32_t generation) {
 
 bool storage_service_authorized(int pid, uint32_t generation) {
     storage_service_control_t control;
-    return initialized && control_read(&control) == 0 &&
+    return initialized && service_administratively_enabled &&
+           control_read(&control) == 0 &&
            control.healthy != 0U && control.pid == pid &&
            control.generation == generation &&
            process_identity_alive(pid, generation);
@@ -729,6 +735,7 @@ static void poll_media_reintegration(uint64_t now_ms) {
 void storage_service_poll(uint64_t now_ms) {
     if (!initialized) return;
     poll_media_reintegration(now_ms);
+    if (!service_administratively_enabled) return;
     if (!service_started || service_starting) return;
     storage_service_control_t control;
     if (control_read(&control) != 0) {
@@ -759,4 +766,67 @@ void storage_service_poll(uint64_t now_ms) {
     } else if (control.launch_count > 1U) {
         printf("REIST_STORAGE SERVICE_RESTARTED\n");
     }
+}
+
+bool storage_service_component_ready(void) {
+    storage_service_control_t control;
+    return initialized && service_administratively_enabled && service_started &&
+           control_read(&control) == 0 && control.healthy != 0U &&
+           control.pid > 0 && control.generation != 0U &&
+           process_identity_alive(control.pid, control.generation);
+}
+
+bool storage_service_component_down(uint64_t deadline_ms) {
+    (void)deadline_ms;
+    if (!initialized) return false;
+    service_administratively_enabled = false;
+    __asm__ volatile("" ::: "memory");
+    storage_service_control_t control;
+    if (control_read(&control) != 0) return false;
+    if (control.pid > 0) {
+        storage_request_unbind_service(control.pid, control.generation);
+        if (process_identity_alive(control.pid, control.generation) &&
+            process_terminate(control.pid) != 0) return false;
+    }
+    control.pid = 0;
+    control.generation = 0U;
+    control.healthy = 0U;
+    control.start_deadline_ms = 0U;
+    if (control_write(&control) != 0) return false;
+    service_started = false;
+    service_starting = false;
+    return !storage_service_component_ready();
+}
+
+bool storage_service_component_up(uint64_t deadline_ms) {
+    if (!initialized || pit_monotonic_ms() >= deadline_ms) return false;
+    if (storage_service_component_ready()) return true;
+    storage_service_control_t control;
+    if (control_read(&control) != 0) return false;
+    if (control.pid > 0) {
+        storage_request_unbind_service(control.pid, control.generation);
+        if (process_identity_alive(control.pid, control.generation))
+            (void)process_terminate(control.pid);
+    }
+    control.pid = 0;
+    control.generation = 0U;
+    control.healthy = 0U;
+    control.launch_count = 0U;
+    control.start_deadline_ms = 0U;
+    if (control_write(&control) != 0) return false;
+    service_started = false;
+    service_starting = false;
+    service_administratively_enabled = true;
+    __asm__ volatile("" ::: "memory");
+    if (!storage_service_start(pit_monotonic_ms())) {
+        service_administratively_enabled = false;
+        return false;
+    }
+    while (!storage_service_component_ready() &&
+           pit_monotonic_ms() < deadline_ms) {
+        if (scheduler_sleep_ms(5U) != 0) (void)scheduler_yield();
+    }
+    if (storage_service_component_ready()) return true;
+    (void)storage_service_component_down(deadline_ms);
+    return false;
 }

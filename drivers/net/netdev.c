@@ -5,6 +5,7 @@
 #include "drivers/net/rtl8139.h"
 #include "include/kernel/panic.h"
 #include "include/kernel/supervisor.h"
+#include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
@@ -27,6 +28,7 @@ static volatile uint8_t service_queue_tail;
 static volatile uint32_t rx_producer_busy;
 static volatile uint32_t netdev_poll_busy;
 static volatile bool netdev_tx_fenced;
+static volatile bool netdev_administratively_enabled = true;
 static bool netdev_supervised;
 static uint64_t netdev_progress_marker;
 static supervisor_handle_t netdev_supervisor_handle;
@@ -78,7 +80,7 @@ const char* netdev_backend_name(void) {
 }
 
 bool netdev_send(const uint8_t* packet, size_t length) {
-    if (netdev_tx_fenced) return false;
+    if (!netdev_administratively_enabled || netdev_tx_fenced) return false;
     if (!packet || length < 14u || length > NETDEV_MAX_FRAME_SIZE) return false;
     if (netdev_supervised &&
         supervisor_report_progress(netdev_supervisor_handle,
@@ -148,11 +150,16 @@ static void netdev_queue_service_packet(const uint8_t* packet,
 }
 
 void netdev_deliver_rx(const uint8_t* packet, uint16_t length) {
-    if (!packet || length < 14u || length > NETDEV_MAX_FRAME_SIZE) return;
+    if (!netdev_administratively_enabled || !packet || length < 14u ||
+        length > NETDEV_MAX_FRAME_SIZE) return;
     /* IRQ producers cannot nest on this UP kernel, but the deferred NE2000
      * drain runs with interrupts enabled.  Drop rather than spin if an IRQ
      * interrupts that foreground producer. */
     if (__sync_lock_test_and_set(&rx_producer_busy, 1u)) return;
+    if (!netdev_administratively_enabled) {
+        __sync_lock_release(&rx_producer_busy);
+        return;
+    }
     if (length >= 42U) {
         uint8_t service_header[42U];
         memcpy(service_header, packet, sizeof(service_header));
@@ -172,7 +179,12 @@ void netdev_poll(void) {
     /* Multiple foreground callers may be preempted between polling passes.
      * Never spin behind the parked task; the pending device flag will make a
      * later pass retry the work. */
-    if (__sync_lock_test_and_set(&netdev_poll_busy, 1u)) return;
+    if (!netdev_administratively_enabled ||
+        __sync_lock_test_and_set(&netdev_poll_busy, 1u)) return;
+    if (!netdev_administratively_enabled) {
+        __sync_lock_release(&netdev_poll_busy);
+        return;
+    }
     if (e1000_is_initialized()) e1000_poll_rx();
     if (rtl8139_is_initialized()) rtl8139_poll_rx();
     if (ne2000_is_initialized()) ne2000_poll_rx();
@@ -180,6 +192,7 @@ void netdev_poll(void) {
 }
 
 int netdev_receive_frame(uint8_t* buffer, size_t capacity) {
+    if (!netdev_administratively_enabled) return -112;
     uint8_t tail = monitor_queue_tail;
     if (tail == monitor_queue_head) return 0;
 
@@ -197,6 +210,7 @@ int netdev_receive_frame(uint8_t* buffer, size_t capacity) {
 }
 
 int netdev_receive_service_frame(uint8_t* buffer, size_t capacity) {
+    if (!netdev_administratively_enabled) return -112;
     uint8_t tail = service_queue_tail;
     uint8_t head = service_queue_head;
     if (tail >= NETDEV_SERVICE_QUEUE_SIZE || head >= NETDEV_SERVICE_QUEUE_SIZE) {
@@ -226,4 +240,43 @@ void netdev_reset_monitor(void) {
 
 void netdev_reset_service_frames(void) {
     service_queue_tail = service_queue_head;
+}
+
+bool netdev_component_ready(void) {
+    return netdev_administratively_enabled && !netdev_tx_fenced &&
+           netdev_available();
+}
+
+bool netdev_component_down(uint64_t deadline_ms) {
+    KASSERT_NOT_IRQ();
+    netdev_administratively_enabled = false;
+    __asm__ volatile("" ::: "memory");
+    while ((rx_producer_busy != 0U || netdev_poll_busy != 0U) &&
+           pit_monotonic_ms() < deadline_ms) {
+        if (scheduler_sleep_ms(1U) != 0) (void)scheduler_yield();
+    }
+    if (rx_producer_busy != 0U || netdev_poll_busy != 0U) return false;
+    monitor_queue_head = monitor_queue_tail = 0U;
+    service_queue_head = service_queue_tail = 0U;
+    return !netdev_administratively_enabled;
+}
+
+bool netdev_component_up(uint64_t deadline_ms) {
+    KASSERT_NOT_IRQ();
+    if (pit_monotonic_ms() >= deadline_ms || netdev_tx_fenced ||
+        !netdev_available()) return false;
+    uint8_t mac[6];
+    if (!netdev_get_mac_address(mac)) return false;
+    bool all_zero = true;
+    bool all_ones = true;
+    for (uint32_t index = 0U; index < 6U; ++index) {
+        if (mac[index] != 0U) all_zero = false;
+        if (mac[index] != 0xFFU) all_ones = false;
+    }
+    if (all_zero || all_ones) return false;
+    monitor_queue_head = monitor_queue_tail = 0U;
+    service_queue_head = service_queue_tail = 0U;
+    __asm__ volatile("" ::: "memory");
+    netdev_administratively_enabled = true;
+    return netdev_component_ready();
 }

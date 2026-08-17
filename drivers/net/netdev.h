@@ -18,5 +18,8 @@ void netdev_reset_service_frames(void);
 void netdev_fence_outputs(void);
 bool netdev_outputs_fenced(void);
 bool netdev_supervision_init(uint64_t now_ms);
+bool netdev_component_down(uint64_t deadline_ms);
+bool netdev_component_up(uint64_t deadline_ms);
+bool netdev_component_ready(void);
 
 #endif
