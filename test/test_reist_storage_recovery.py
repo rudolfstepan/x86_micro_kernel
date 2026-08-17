@@ -44,7 +44,7 @@ class StorageRecoveryContracts(unittest.TestCase):
         self.assertIn("'storage-recovery'", runtime)
 
     def test_guest_retries_only_once_after_stale_generation(self):
-        guest = read("examples/userspace/guest_test.c")
+        guest = read("userspace/programs/guest_test.c")
         self.assertIn("attempt < 2U", guest)
         self.assertIn("collect == -22 && attempt == 0U", guest)
         self.assertIn("TEST_STAGE STORAGE_RESTART_OK", guest)

@@ -238,14 +238,15 @@ und 10 verbindlich.
         - [ ] Reale VMware-Reconnect-Abnahme
       - [ ] S0.3c-6f6 Capability-gebundene Userspace-Wartungswerkzeuge ohne
         direkten DMA-/Controllerzugriff
-        - [ ] `FDISK.PRG` für validierte Partitionstabellen auf partitionierten
+        - [x] `FDISK.PRG` für validierte Partitionstabellen auf partitionierten
           Medien; Disketten bleiben standardmäßig partitionslose Superfloppies
-        - [ ] `FORMAT.PRG` für begrenzten FDD-Oberflächentest, FAT12-Erzeugung,
-          Journal-/Ersatzsektorinitialisierung und verifizierendes Readback
+        - [x] `FORMAT.PRG` für FAT12-Erzeugung sowie explizites FAT32-Quick- und
+          Fullformat; beide FAT-Kopien werden verifiziert initialisiert, der
+          Full-Modus markiert isolierte Defekte als `0x0FFFFFF7`
         - [ ] `CHKDSK.PRG` für read-only Analyse sowie explizit bestätigte,
           transaktionale Reparatur von FAT-Spiegeln, Clusterketten,
           Verzeichnissen, Journal und Defektsektorkarte
-        - [ ] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
+        - [x] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
           Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg
           kontrolliert remounten; Abbruch lässt das Medium konsistent oder
           eindeutig read-only zurück
@@ -2292,7 +2293,7 @@ ein. Nur das gebundene Storage-Domain-Programm claimt und erfüllt sie.
 
 Erlaubte Dateien: `kernel/syscall/syscall_table.c`, `kernel/proc/process.c`,
 `lib/libc/stdlib.h`, `userspace/sdk/include/x86os.h`,
-`userspace/sdk/x86os.c`, `examples/userspace/storage_service.c`,
+`userspace/sdk/x86os.c`, `userspace/programs/storage_service.c`,
 `test/test_fat12_maintenance.py`.
 
 Definition of Done:

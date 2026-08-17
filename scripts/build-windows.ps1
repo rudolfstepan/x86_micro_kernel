@@ -17,7 +17,7 @@ param(
     [ValidateRange(0, 3)]
     [int]$HandoverNodeId = 0,
     [switch]$RunTests,
-    [string[]]$ProgramSource = @('examples/userspace/hello.c'),
+    [string[]]$ProgramSource = @('userspace/programs/hello.c'),
     [ValidatePattern('^[A-Za-z0-9_]{1,8}\.PRG$')]
     [string]$ProgramName = 'HELLO.PRG',
     [ValidateSet('Auto', 'Physical', 'Image')]

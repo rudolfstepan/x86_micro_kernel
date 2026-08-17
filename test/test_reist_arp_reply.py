@@ -16,7 +16,7 @@ class ReistArpReplyTests(unittest.TestCase):
         sdk_c = read("userspace/sdk/x86os.c")
         process = read("kernel/proc/process.c")
         syscall = read("kernel/syscall/syscall_table.c")
-        guest = read("examples/userspace/guest_test.c")
+        guest = read("userspace/programs/guest_test.c")
         self.assertIn("SYS_REIST_ARP_REPLY 63", libc)
         self.assertIn("X86OS_SYS_REIST_ARP_REPLY = 63", sdk)
         self.assertIn("sizeof(x86os_reist_arp_reply_t) == 24U", sdk_c)
@@ -69,7 +69,7 @@ class ReistArpReplyTests(unittest.TestCase):
         self.assertIn("SUPERVISOR_EINTEGRITY", host)
 
     def test_ring3_validates_request_before_mediated_output(self):
-        service = read("examples/userspace/reist_probe.c")
+        service = read("userspace/programs/reist_probe.c")
         q_parser = service[service.index("if (message->payload[3] == 'Q')"):
                            service.index("} else if (message->payload[3] != '1')")]
         self.assertIn("message->payload[25] != 1U", q_parser)
@@ -86,7 +86,7 @@ class ReistArpReplyTests(unittest.TestCase):
     def test_runner_injects_a_real_bounded_arp_frame(self):
         runner = read("scripts/run_qemu_smoke.py")
         runtime = read("scripts/test-reist-runtime.ps1")
-        guest = read("examples/userspace/guest_test.c")
+        guest = read("userspace/programs/guest_test.c")
         self.assertIn('"--inject-arp-request"', runner)
         self.assertIn("socket,id=reistsocket,connect=127.0.0.1", runner)
         self.assertIn("struct.pack(\"!I\", len(frame)) + frame", runner)

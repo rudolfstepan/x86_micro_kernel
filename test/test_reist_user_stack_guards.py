@@ -16,8 +16,8 @@ class ReistUserStackGuardTests(unittest.TestCase):
         self.assertNotIn("map_page(page_directory, USER_STACK_UPPER_GUARD", process)
 
     def test_guest_fault_targets_guard_and_is_reaped_as_page_fault(self):
-        fault = (ROOT / "examples/userspace/fault_stack.c").read_text(encoding="utf-8")
-        guest = (ROOT / "examples/userspace/guest_test.c").read_text(encoding="utf-8")
+        fault = (ROOT / "userspace/programs/fault_stack.c").read_text(encoding="utf-8")
+        guest = (ROOT / "userspace/programs/guest_test.c").read_text(encoding="utf-8")
         programs = (ROOT / "scripts/build_system_programs.py").read_text(encoding="utf-8")
         self.assertIn("0xBFFF6000U", fault)
         self.assertIn('wait_for_expected("FAULTSTK.PRG", 142)', guest)

@@ -108,7 +108,7 @@ class MemoryMapAndHeapTests(unittest.TestCase):
         cls.parser = (
             ROOT / "arch/x86/boot/multiboot_parser.c"
         ).read_text(encoding="utf-8")
-        cls.guest = (ROOT / "examples/userspace/guest_test.c").read_text(
+        cls.guest = (ROOT / "userspace/programs/guest_test.c").read_text(
             encoding="utf-8"
         )
 
@@ -281,7 +281,7 @@ class KernelStackAndReapingTests(unittest.TestCase):
         cls.bootloader = (
             ROOT / "arch/x86/boot/bootloader.asm"
         ).read_text(encoding="utf-8")
-        cls.guest = (ROOT / "examples/userspace/guest_test.c").read_text(
+        cls.guest = (ROOT / "userspace/programs/guest_test.c").read_text(
             encoding="utf-8"
         )
 

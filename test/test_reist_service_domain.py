@@ -36,8 +36,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("candidate->generation == source_generation", process)
 
     def test_real_ring3_service_has_bounded_request_reply(self):
-        service = read("examples/userspace/reist_probe.c")
-        guest = read("examples/userspace/guest_test.c")
+        service = read("userspace/programs/reist_probe.c")
+        guest = read("userspace/programs/guest_test.c")
         self.assertIn('message_request_is(&request, "DIAG")', service)
         self.assertIn('"REIST_DIAG_OK"', service)
         self.assertIn("x86os_ipc_receive_timeout(endpoint, &request, 40U)",
@@ -58,7 +58,7 @@ class ReistServiceDomainTests(unittest.TestCase):
     def test_client_release_is_distinct_from_owner_destroy(self):
         ipc = read("kernel/ipc/ipc.c")
         sdk = read("userspace/sdk/include/x86os.h")
-        guest = read("examples/userspace/guest_test.c")
+        guest = read("userspace/programs/guest_test.c")
         self.assertIn("int ipc_release(Process *process", ipc)
         start = ipc.index("int ipc_release(Process *process")
         release = ipc[start:ipc.index("void ipc_process_cleanup(", start)]
@@ -69,8 +69,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertGreaterEqual(guest.count("x86os_ipc_release(handle)"), 2)
 
     def test_bounded_network_parser_runs_in_ring3(self):
-        service = read("examples/userspace/reist_probe.c")
-        guest = read("examples/userspace/guest_test.c")
+        service = read("userspace/programs/reist_probe.c")
+        guest = read("userspace/programs/guest_test.c")
         runner = read("scripts/run_qemu_smoke.py")
         self.assertIn("static const char *network_classification(", service)
         self.assertIn("message->length < 18U", service)
@@ -107,8 +107,8 @@ class ReistServiceDomainTests(unittest.TestCase):
     def test_queue_pressure_consumes_probe_and_falls_back(self):
         supervisor = (ROOT / "kernel" / "init" / "supervisor.c").read_text()
         ipc = (ROOT / "kernel" / "ipc" / "ipc.c").read_text()
-        service = (ROOT / "examples" / "userspace" / "reist_probe.c").read_text()
-        guest = (ROOT / "examples" / "userspace" / "guest_test.c").read_text()
+        service = (ROOT / "userspace" / "programs" / "reist_probe.c").read_text()
+        guest = (ROOT / "userspace" / "programs" / "guest_test.c").read_text()
         self.assertIn('message_request_is(&request, "NETPRESSURE")', service)
         self.assertIn('"REIST_PRESSURE_READY"', service)
         self.assertIn("X86OS_IPC_QUEUE_DEPTH", guest)
@@ -126,8 +126,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertNotIn("ipc_send_timeout(", ingress)
 
     def test_arp_structure_validation_runs_only_in_ring3_service(self):
-        service = read("examples/userspace/reist_probe.c")
-        guest = read("examples/userspace/guest_test.c")
+        service = read("userspace/programs/reist_probe.c")
+        guest = read("userspace/programs/guest_test.c")
         self.assertIn("message->length < 46U", service)
         for offset in range(18, 26):
             self.assertIn(f"message->payload[{offset}]", service)
@@ -139,8 +139,8 @@ class ReistServiceDomainTests(unittest.TestCase):
 
     def test_arp_reply_is_bound_to_probe_identity(self):
         supervisor = read("kernel/init/supervisor.c")
-        service = read("examples/userspace/reist_probe.c")
-        guest = read("examples/userspace/guest_test.c")
+        service = read("userspace/programs/reist_probe.c")
+        guest = read("userspace/programs/guest_test.c")
         netstack = read("drivers/net/netstack.c")
         self.assertIn("uint32_t netstack_get_gateway(void)", netstack)
         self.assertIn("supervisor_protected_network_context_prepare(",
@@ -157,8 +157,8 @@ class ReistServiceDomainTests(unittest.TestCase):
 
     def test_real_nic_probe_is_service_scoped_and_rate_limited(self):
         supervisor = read("kernel/init/supervisor.c")
-        service = read("examples/userspace/reist_probe.c")
-        guest = read("examples/userspace/guest_test.c")
+        service = read("userspace/programs/reist_probe.c")
+        guest = read("userspace/programs/guest_test.c")
         sdk = read("userspace/sdk/include/x86os.h")
         probe = supervisor[
             supervisor.index("int supervisor_network_probe_request("):
@@ -183,8 +183,8 @@ class ReistServiceDomainTests(unittest.TestCase):
 
     def test_network_handoff_crash_revokes_and_reconnects(self):
         supervisor = read("kernel/init/supervisor.c")
-        service = read("examples/userspace/reist_probe.c")
-        guest = read("examples/userspace/guest_test.c")
+        service = read("userspace/programs/reist_probe.c")
+        guest = read("userspace/programs/guest_test.c")
         runner = read("scripts/run_qemu_smoke.py")
         self.assertIn('message_request_is(&request, "NETCRASH")', service)
         self.assertIn('volatile("ud2")', service)
@@ -202,8 +202,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         syscall = read("kernel/syscall/syscall_table.c")
         process = read("kernel/proc/process.c")
         sdk = read("userspace/sdk/include/x86os.h")
-        service = read("examples/userspace/reist_probe.c")
-        guest = read("examples/userspace/guest_test.c")
+        service = read("userspace/programs/reist_probe.c")
+        guest = read("userspace/programs/guest_test.c")
         self.assertIn("authority->next_id", supervisor)
         self.assertIn("authority->next_id > UINT32_MAX", supervisor)
         self.assertIn("authority->active_id = probe_id", supervisor)
@@ -231,7 +231,7 @@ class ReistServiceDomainTests(unittest.TestCase):
 
     def test_network_degradation_is_counted_outside_irq_context(self):
         supervisor = read("kernel/init/supervisor.c")
-        service = read("examples/userspace/reist_probe.c")
+        service = read("userspace/programs/reist_probe.c")
         self.assertIn("network_degradation_record(", supervisor)
         self.assertIn("SUPERVISOR_NETWORK_DEGRADED_QUEUE", supervisor)
         self.assertIn("SUPERVISOR_NETWORK_DEGRADED_EXPIRED", supervisor)
@@ -272,8 +272,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         process = read("kernel/proc/process.c")
         supervisor = read("kernel/init/supervisor.c")
         netstack = read("drivers/net/netstack.c")
-        service = read("examples/userspace/reist_probe.c")
-        guest = read("examples/userspace/guest_test.c")
+        service = read("userspace/programs/reist_probe.c")
+        guest = read("userspace/programs/guest_test.c")
         runner = read("scripts/run_qemu_smoke.py")
         self.assertIn("SYS_REIST_ARP_BINDING 62", libc)
         self.assertIn("X86OS_SYS_REIST_ARP_BINDING = 62", sdk)
@@ -310,7 +310,7 @@ class ReistServiceDomainTests(unittest.TestCase):
         libc = read("lib/libc/stdlib.h")
         sdk = read("userspace/sdk/include/x86os.h")
         syscall = read("kernel/syscall/syscall_table.c")
-        guest = read("examples/userspace/guest_test.c")
+        guest = read("userspace/programs/guest_test.c")
         self.assertIn("SYS_NETWORK_PROBE_STATS 61", libc)
         self.assertIn("X86OS_SYS_NETWORK_PROBE_STATS = 61", sdk)
         self.assertIn("X86OS_NETWORK_PROBE_STATS_VERSION 1U", sdk)
@@ -330,8 +330,8 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("queue_fallback <= stats_before.queue_fallback", guest)
 
     def test_service_protocol_correlates_generation_scoped_requests(self):
-        service = read("examples/userspace/reist_probe.c")
-        guest = read("examples/userspace/guest_test.c")
+        service = read("userspace/programs/reist_probe.c")
+        guest = read("userspace/programs/guest_test.c")
         self.assertIn("SERVICE_PROTOCOL_HEADER_SIZE 8U", service)
         self.assertIn("message_request_id", service)
         self.assertIn("response_init(&response, request_id", service)

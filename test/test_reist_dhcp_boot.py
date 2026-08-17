@@ -40,7 +40,7 @@ class ReistDhcpBootTests(unittest.TestCase):
         self.assertIn("netstack_send_supervised_dhcp_discover", body)
 
     def test_ring3_service_drives_three_finite_attempts(self) -> None:
-        probe = read("examples/userspace/reist_probe.c")
+        probe = read("userspace/programs/reist_probe.c")
         self.assertIn("REIST_DHCP_BOOT_MAX_ATTEMPTS 3U", probe)
         self.assertIn("x86os_reist_start_dhcp_boot", probe)
         self.assertIn("dhcp_boot_attempts < REIST_DHCP_BOOT_MAX_ATTEMPTS",

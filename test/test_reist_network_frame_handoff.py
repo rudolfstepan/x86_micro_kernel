@@ -41,7 +41,7 @@ class ReistNetworkFrameHandoffTests(unittest.TestCase):
         self.assertIn("if (length == 0) return -11;", block)
         for forbidden in ("pit_delay", "wait_queue", "k_malloc", "for (;;)"):
             self.assertNotIn(forbidden, block)
-        service = read("examples/userspace/reist_probe.c")
+        service = read("userspace/programs/reist_probe.c")
         self.assertIn("x86os_reist_receive_network_frame", service)
         self.assertIn("network_frame.length < 14U", service)
         self.assertIn("X86OS_REIST_REPORT_NETWORK_FRAME", service)

@@ -95,7 +95,11 @@ enum {
     X86OS_SYS_STORAGE_MAINT_RELEASE = 88,
     X86OS_SYS_DRIVE_STATUS = 89,
     X86OS_SYS_ADMIN_STORAGE = 90,
-    X86OS_SYS_COMPONENT_CONTROL = 91
+      X86OS_SYS_COMPONENT_CONTROL = 91,
+      X86OS_SYS_PARTITION_CREATE = 92,
+      X86OS_SYS_STORAGE_BLOCK_FLUSH = 93,
+      X86OS_SYS_STORAGE_MEDIA_COMMIT = 94,
+      X86OS_SYS_STORAGE_FORMAT_PROBE = 95
 };
 
 enum {
@@ -354,6 +358,9 @@ typedef struct {
 #define X86OS_STORAGE_VFS_WRITE 5U
 #define X86OS_STORAGE_VFS_SYNC 6U
 #define X86OS_STORAGE_FORMAT_FAT12 7U
+#define X86OS_STORAGE_FORMAT_FAT32 8U
+#define X86OS_STORAGE_FORMAT_FAT32_SCAN 9U
+#define X86OS_STORAGE_FORMAT_FAT32_PREPARE 10U
 typedef uint32_t x86os_storage_handle_t;
 typedef struct {
     uint32_t version;
@@ -435,7 +442,19 @@ typedef struct {
     uint32_t type;
     char name[8];
     char mount_point[64];
+    uint32_t sectors;
 } x86os_drive_info_t;
+
+#define X86OS_PARTITION_REQUEST_VERSION 1U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t resource;
+    uint32_t first_lba;
+    uint32_t sectors;
+    uint32_t type;
+    uint32_t confirm;
+} x86os_partition_request_t;
 
 #define X86OS_DRIVE_STATUS_VERSION 1U
 #define X86OS_DRIVE_STATUS_AVAILABLE   (1U << 0)
@@ -608,7 +627,10 @@ int x86os_storage_submit(const x86os_storage_submit_t *request,
 int x86os_storage_claim(x86os_storage_descriptor_t *request, void *data);
 int x86os_storage_block_read(uint32_t resource, uint32_t block, void *data);
 int x86os_storage_block_write(uint32_t resource, uint32_t block,
-                              const void *data);
+                               const void *data);
+int x86os_storage_block_flush(uint32_t resource);
+int x86os_storage_media_commit(uint32_t resource, uint32_t *fingerprint);
+int x86os_storage_format_probe(uint32_t resource, uint32_t sector);
 int x86os_storage_maintenance_acquire(uint32_t resource,
                                       uint32_t media_fingerprint,
                                       uint32_t *token);
@@ -660,6 +682,7 @@ int x86os_kill(int pid);
 int x86os_getcwd(char* buffer, size_t size);
 int x86os_chdir(const char* path);
 int x86os_drive_info(uint32_t index, x86os_drive_info_t* info);
+int x86os_partition_create(const x86os_partition_request_t *request);
 int x86os_drive_status(uint32_t index, x86os_drive_status_t* status);
 int x86os_admin_storage(const x86os_admin_storage_request_t* request,
                         x86os_admin_storage_result_t* result);

@@ -284,7 +284,7 @@ class SchedulerTimeAbiTests(unittest.TestCase):
 
 class SchedulerTimeGuestAndPackagingTests(unittest.TestCase):
     def test_guest_exercises_sleep_yield_time_and_emits_stage_marker(self):
-        guest = (ROOT / "examples/userspace/guest_test.c").read_text(
+        guest = (ROOT / "userspace/programs/guest_test.c").read_text(
             encoding="utf-8"
         )
         for contract in (

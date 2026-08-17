@@ -25,12 +25,12 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("SYS_STORAGE_BLOCK_WRITE", process)
 
     def test_storage_service_mediates_fdd_writes(self):
-        service = self.read("examples/userspace/storage_service.c")
+        service = self.read("userspace/programs/storage_service.c")
         self.assertIn("X86OS_STORAGE_BLOCK_WRITE", service)
         self.assertIn("x86os_storage_block_write", service)
 
     def test_chkdsk_is_read_only_and_bounded(self):
-        source = self.read("examples/userspace/chkdsk.c")
+        source = self.read("userspace/programs/chkdsk.c")
         self.assertIn("MAX_NODES", source)
         self.assertNotIn("x86os_write(", source)
         self.assertNotIn("x86os_unlink(", source)

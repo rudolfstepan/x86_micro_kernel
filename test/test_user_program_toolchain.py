@@ -253,7 +253,7 @@ class UserProgramToolchainTests(unittest.TestCase):
         kernel = (ROOT / "kernel" / "syscall" / "syscall_table.c").read_text(
             encoding="utf-8"
         )
-        drives = (ROOT / "examples" / "userspace" / "drives.c").read_text(
+        drives = (ROOT / "userspace" / "programs" / "drives.c").read_text(
             encoding="utf-8"
         )
         self.assertIn("X86OS_SYS_DRIVE_STATUS = 89", header)
@@ -284,7 +284,7 @@ class UserProgramToolchainTests(unittest.TestCase):
         self.assertEqual(makefile.count("usr/bin/desktop.prg="), 1)
 
     def test_sata_write_probe_is_bounded_and_packaged(self):
-        source = (ROOT / "examples" / "userspace" /
+        source = (ROOT / "userspace" / "programs" /
                   "sata_write_test.c").read_text(encoding="utf-8")
         build_script = (ROOT / "scripts" / "build-windows.ps1").read_text(
             encoding="utf-8"
@@ -313,7 +313,7 @@ class UserProgramToolchainTests(unittest.TestCase):
         self.assertEqual(makefile.count("usr/bin/desktop.prg="), 1)
 
     def test_drives_program_displays_resource_id(self):
-        source = (ROOT / "examples" / "userspace" / "drives.c").read_text(
+        source = (ROOT / "userspace" / "programs" / "drives.c").read_text(
             encoding="utf-8"
         )
         self.assertIn("Resource  Drive  Device  Type", source)

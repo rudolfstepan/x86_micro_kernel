@@ -59,7 +59,7 @@ class ComponentControlContracts(unittest.TestCase):
         self.assertIn("syscall_component_control", syscall)
 
     def test_storage_manual_start_has_a_visible_diagnostic(self):
-        service = self.read("examples/userspace/storage_service.c")
+        service = self.read("userspace/programs/storage_service.c")
         self.assertIn("STORAGE SERVICE_BIND_FAILED code=", service)
         self.assertIn("Use svcctl", service)
 

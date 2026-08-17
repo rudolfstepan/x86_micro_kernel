@@ -29,7 +29,7 @@ class AtaDriverSourceTests(unittest.TestCase):
         fat32 = (ROOT / "fs/fat32/fat32_vfs_adapter.c").read_text(
             encoding="utf-8"
         )
-        ls = (ROOT / "examples/userspace/ls.c").read_text(encoding="utf-8")
+        ls = (ROOT / "userspace/programs/ls.c").read_text(encoding="utf-8")
         self.assertIn("fat32_vfs_readdir_batch_unlocked", fat32)
         self.assertIn(".readdir_batch = fat32_vfs_readdir_batch", fat32)
         self.assertIn("x86os_readdir_batch", ls)

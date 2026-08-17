@@ -41,7 +41,7 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("DRIVE_TYPE_PARTITION", body)
 
     def test_service_and_image_packaging_exist(self):
-        service = read("examples/userspace/storage_service.c")
+        service = read("userspace/programs/storage_service.c")
         self.assertIn("x86os_storage_bind()", service)
         self.assertIn("x86os_storage_claim", service)
         self.assertIn("x86os_storage_block_read", service)
@@ -53,7 +53,7 @@ class ReistStorageServiceTests(unittest.TestCase):
             "'libexec/reist/storage.prg'"), 1)
 
     def test_guest_exercises_real_mbr_read(self):
-        guest = read("examples/userspace/guest_test.c")
+        guest = read("userspace/programs/guest_test.c")
         self.assertIn("TEST_STAGE STORAGE_SERVICE_OK", guest)
         self.assertIn("sector[510] == 0x55U", guest)
         self.assertIn("sector[511] == 0xAAU", guest)

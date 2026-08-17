@@ -39,7 +39,7 @@ class QemuFddHotplugTests(unittest.TestCase):
         self.assertIn("-snapshot", command)
 
     def test_guest_contract_waits_for_real_disconnect_and_reintegration(self):
-        guest = (ROOT / "examples/userspace/guest_test.c").read_text("utf-8")
+        guest = (ROOT / "userspace/programs/guest_test.c").read_text("utf-8")
         self.assertIn('text_equal(argv[1], "FDD_HOTPLUG")', guest)
         armed = guest.index('"REIST_FDD HOTPLUG_ARMED')
         disconnected = guest.index('"REIST_FDD DISCONNECT_DETECTED')

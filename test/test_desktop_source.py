@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DESKTOP = ROOT / "examples" / "userspace" / "desktop.c"
+DESKTOP = ROOT / "userspace" / "programs" / "desktop.c"
 
 
 class DesktopSourceTests(unittest.TestCase):
@@ -15,7 +15,7 @@ class DesktopSourceTests(unittest.TestCase):
         programs = (ROOT / "scripts" / "build_system_programs.py").read_text(
             encoding="utf-8"
         )
-        self.assertIn('"DESKTOP.PRG": ROOT / "examples/userspace/desktop.c"', programs)
+        self.assertIn('"DESKTOP.PRG": ROOT / "userspace/programs/desktop.c"', programs)
 
     def test_launcher_requires_the_pixel_display_abi(self):
         self.assertIn("x86os_display_info(&display)", self.source)

@@ -10,7 +10,7 @@ class ReistArpResolutionContractTests(unittest.TestCase):
     def setUpClass(cls):
         cls.netstack = (ROOT / "drivers/net/netstack.c").read_text()
         cls.supervisor = (ROOT / "kernel/init/supervisor.c").read_text()
-        cls.service = (ROOT / "examples/userspace/reist_probe.c").read_text()
+        cls.service = (ROOT / "userspace/programs/reist_probe.c").read_text()
         cls.syscalls = (ROOT / "kernel/syscall/syscall_table.c").read_text()
         cls.sdk = (ROOT / "userspace/sdk/include/x86os.h").read_text()
         cls.runner = (ROOT / "scripts/run_qemu_smoke.py").read_text()

@@ -56,7 +56,7 @@ class ReistUdpIngressTests(unittest.TestCase):
         self.assertIn("int supervisor_network_udp_ingress(", supervisor)
 
     def test_ring3_parser_accepts_or_canonically_drops_once(self) -> None:
-        service = read("examples/userspace/reist_probe.c")
+        service = read("userspace/programs/reist_probe.c")
         frame_loop = service[service.index("raw_udp_delivery"):]
         frame_loop = frame_loop[:frame_loop.index("} else if (frame_result")]
         self.assertIn(".frame_crc32 = frame_crc32", frame_loop)

@@ -122,10 +122,13 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->client_generation == 0U ||
         value->deadline_ms == 0U ||
         value->operation < STORAGE_REQUEST_READ ||
-        value->operation > STORAGE_REQUEST_FORMAT_FAT12) return false;
+        value->operation > STORAGE_REQUEST_FORMAT_FAT32_PREPARE) return false;
     if (value->operation == STORAGE_REQUEST_BLOCK_FLUSH ||
         value->operation == STORAGE_REQUEST_VFS_SYNC ||
-        value->operation == STORAGE_REQUEST_FORMAT_FAT12)
+        value->operation == STORAGE_REQUEST_FORMAT_FAT12 ||
+        value->operation == STORAGE_REQUEST_FORMAT_FAT32 ||
+        value->operation == STORAGE_REQUEST_FORMAT_FAT32_SCAN ||
+        value->operation == STORAGE_REQUEST_FORMAT_FAT32_PREPARE)
         return value->length == 0U;
     if (value->operation == STORAGE_REQUEST_BLOCK_READ ||
         value->operation == STORAGE_REQUEST_BLOCK_WRITE)
@@ -285,14 +288,17 @@ static int submit_locked(int client_pid, uint32_t client_generation,
         handle_out == NULL || request->version != STORAGE_REQUEST_VERSION ||
         request->struct_size < sizeof(*request) ||
         request->operation < STORAGE_REQUEST_READ ||
-        request->operation > STORAGE_REQUEST_FORMAT_FAT12 ||
+        request->operation > STORAGE_REQUEST_FORMAT_FAT32_PREPARE ||
         request->timeout_ms == 0U ||
         request->timeout_ms > STORAGE_REQUEST_MAX_TIMEOUT_MS)
         return STORAGE_EINVAL;
     uint32_t expected = request->length;
     if (request->operation == STORAGE_REQUEST_BLOCK_FLUSH ||
         request->operation == STORAGE_REQUEST_VFS_SYNC ||
-        request->operation == STORAGE_REQUEST_FORMAT_FAT12) expected = 0U;
+        request->operation == STORAGE_REQUEST_FORMAT_FAT12 ||
+        request->operation == STORAGE_REQUEST_FORMAT_FAT32 ||
+        request->operation == STORAGE_REQUEST_FORMAT_FAT32_SCAN ||
+        request->operation == STORAGE_REQUEST_FORMAT_FAT32_PREPARE) expected = 0U;
     if ((request->operation == STORAGE_REQUEST_BLOCK_READ ||
          request->operation == STORAGE_REQUEST_BLOCK_WRITE) &&
         request->length != STORAGE_REQUEST_BLOCK_SIZE) return STORAGE_EMSGSIZE;
@@ -425,7 +431,7 @@ static int complete_locked(int service_pid, uint32_t service_generation,
 
 static int collect_locked(int client_pid, uint32_t client_generation,
         storage_request_handle_t handle, int32_t *result_out,
-        uint8_t *block_data_out) {
+        uint8_t *block_data_out, uint32_t *data_length_out) {
     if (result_out == NULL) return STORAGE_EINVAL;
     size_t slot;
     storage_slot_metadata_t metadata;
@@ -435,12 +441,15 @@ static int collect_locked(int client_pid, uint32_t client_generation,
         metadata.client_generation != client_generation)
         return STORAGE_EACCES;
     if (metadata.state != STORAGE_SLOT_COMPLETE) return STORAGE_EAGAIN;
+    uint32_t data_length = metadata.result == 0 &&
+        operation_is_read(metadata.operation) ? metadata.length : 0U;
     if (metadata.result == 0 && operation_is_read(metadata.operation)) {
         if (block_data_out == NULL) return STORAGE_EINVAL;
         result = load_data(slot, block_data_out, metadata.length);
         if (result != 0) return result;
     }
     *result_out = metadata.result;
+    if (data_length_out != NULL) *data_length_out = data_length;
     uint32_t generation = metadata.generation;
     metadata = (storage_slot_metadata_t){.generation = generation};
     clear_data(slot);
@@ -514,9 +523,16 @@ int storage_request_complete(int service_pid, uint32_t service_generation,
 int storage_request_collect(int client_pid, uint32_t client_generation,
         storage_request_handle_t handle, int32_t *result_out,
         uint8_t *block_data_out) {
+    return storage_request_collect_ex(client_pid, client_generation, handle,
+                                      result_out, block_data_out, NULL);
+}
+
+int storage_request_collect_ex(int client_pid, uint32_t client_generation,
+        storage_request_handle_t handle, int32_t *result_out,
+        uint8_t *block_data_out, uint32_t *data_length_out) {
     uint32_t flags = storage_pool_lock();
     int result = collect_locked(client_pid, client_generation, handle,
-                                result_out, block_data_out);
+                                result_out, block_data_out, data_length_out);
     storage_pool_unlock(flags);
     return result;
 }

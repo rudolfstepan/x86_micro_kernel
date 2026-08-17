@@ -21,6 +21,9 @@ bool storage_service_expected_fingerprint(uint32_t resource,
                                           uint32_t *fingerprint);
 bool storage_service_requalify_media(uint32_t resource,
                                      uint32_t *fingerprint);
+bool storage_service_accept_formatted_media(uint32_t resource,
+                                            uint32_t *fingerprint);
+bool storage_service_accept_partition_layout(uint32_t parent_resource);
 bool storage_service_admin_begin(uint32_t resource_mask, bool require_down);
 bool storage_service_admin_finish_down(uint32_t resource_mask);
 bool storage_service_admin_finish_online(uint32_t resource_mask);

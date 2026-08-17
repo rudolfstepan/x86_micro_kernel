@@ -236,7 +236,7 @@ class ReistIpcContractTests(unittest.TestCase):
         self.assertIn("ipc_fault_inject(", self.header)
 
     def test_real_guest_exercises_rights_blocking_stale_and_cleanup(self) -> None:
-        guest = read("examples/userspace/guest_test.c")
+        guest = read("userspace/programs/guest_test.c")
         for contract in (
             "x86os_ipc_create(&handle)",
             "x86os_ipc_send(handle, &message)",

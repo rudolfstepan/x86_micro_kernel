@@ -75,7 +75,7 @@ class ReistUdpServiceTests(unittest.TestCase):
             self.assertIn(name, profile)
 
     def test_ring3_revalidates_exact_netv_message_before_reply(self) -> None:
-        probe = read("examples/userspace/reist_probe.c")
+        probe = read("userspace/programs/reist_probe.c")
         self.assertIn("message->payload[3] == 'V'", probe)
         self.assertIn("udp_proposal_valid(message)", probe)
         self.assertIn("destination_port >= 1024U", probe)

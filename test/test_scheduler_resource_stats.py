@@ -15,7 +15,7 @@ class SchedulerResourceStatsTests(unittest.TestCase):
         cls.scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(encoding="utf-8")
         cls.syscalls = (ROOT / "kernel/syscall/syscall_table.c").read_text(encoding="utf-8")
         cls.sdk = (ROOT / "userspace/sdk/include/x86os.h").read_text(encoding="utf-8")
-        cls.guest = (ROOT / "examples/userspace/guest_test.c").read_text(encoding="utf-8")
+        cls.guest = (ROOT / "userspace/programs/guest_test.c").read_text(encoding="utf-8")
 
     def test_versioned_fixed_size_abi_is_append_only(self) -> None:
         self.assertIn("SCHEDULER_RESOURCE_STATS_VERSION 1U", self.header)

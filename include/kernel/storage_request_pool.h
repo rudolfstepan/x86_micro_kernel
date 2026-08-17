@@ -23,6 +23,9 @@ typedef enum {
     STORAGE_REQUEST_VFS_WRITE = 5,
     STORAGE_REQUEST_VFS_SYNC = 6,
     STORAGE_REQUEST_FORMAT_FAT12 = 7,
+    STORAGE_REQUEST_FORMAT_FAT32 = 8,
+    STORAGE_REQUEST_FORMAT_FAT32_SCAN = 9,
+    STORAGE_REQUEST_FORMAT_FAT32_PREPARE = 10,
 } storage_request_operation_t;
 
 #define STORAGE_REQUEST_READ STORAGE_REQUEST_BLOCK_READ
@@ -75,6 +78,10 @@ int storage_request_complete(int service_pid, uint32_t service_generation,
 int storage_request_collect(int client_pid, uint32_t client_generation,
                             storage_request_handle_t handle,
                             int32_t *result_out, uint8_t *block_data_out);
+int storage_request_collect_ex(int client_pid, uint32_t client_generation,
+                               storage_request_handle_t handle,
+                               int32_t *result_out, uint8_t *block_data_out,
+                               uint32_t *data_length_out);
 void storage_request_cancel_process(int pid, uint32_t generation);
 int storage_request_stats(storage_request_stats_t *stats_out);
 

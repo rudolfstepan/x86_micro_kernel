@@ -41,7 +41,7 @@ class ReistUdpParserTests(unittest.TestCase):
             self.assertNotIn(forbidden, source)
 
     def test_ring3_report_is_delivery_and_generation_scoped(self) -> None:
-        service = read("examples/userspace/reist_probe.c")
+        service = read("userspace/programs/reist_probe.c")
         supervisor = read("kernel/init/supervisor.c")
         self.assertIn("reist_udp_parse_frame", service)
         self.assertIn("X86OS_REIST_REPORT_NETWORK_UDP", service)

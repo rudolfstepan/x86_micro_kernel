@@ -34,7 +34,7 @@ class ReistDhcpServiceTests(unittest.TestCase):
     def test_renewal_transport_is_single_step_and_asynchronous(self) -> None:
         netstack = read("drivers/net/netstack.c")
         supervisor = read("kernel/init/supervisor.c")
-        probe = read("examples/userspace/reist_probe.c")
+        probe = read("userspace/programs/reist_probe.c")
         self.assertIn("netstack_send_supervised_dhcp_request", netstack)
         self.assertNotIn("netstack_dhcp_poll", netstack)
         self.assertIn("supervisor_network_request_dhcp_renewal", supervisor)
@@ -115,7 +115,7 @@ class ReistDhcpServiceTests(unittest.TestCase):
         self.assertIn("SYS_REIST_DHCP_COMMIT", read("kernel/proc/process.c"))
 
     def test_service_validates_netd_before_commit(self) -> None:
-        probe = read("examples/userspace/reist_probe.c")
+        probe = read("userspace/programs/reist_probe.c")
         self.assertIn("message->payload[3] == 'D'", probe)
         self.assertIn("dhcp_proposal_valid(message)", probe)
         self.assertIn("host_mask & (host_mask + 1U)", probe)

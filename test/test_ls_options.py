@@ -8,7 +8,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 class LsOptionsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / "examples/userspace/ls.c").read_text(encoding="utf-8")
+        cls.source = (ROOT / "userspace/programs/ls.c").read_text(encoding="utf-8")
 
     def test_compact_columns_are_default_without_paging(self):
         self.assertIn("#define LS_COLUMNS 4U", self.source)

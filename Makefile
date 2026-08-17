@@ -40,7 +40,7 @@ else
 PYTHON ?= python3
 endif
 ZIG ?= zig
-USER_PROGRAM_SOURCE ?= examples/userspace/hello.c
+USER_PROGRAM_SOURCE ?= userspace/programs/hello.c
 USER_PROGRAM_OUTPUT ?= $(OUTPUT_DIR)/programs/HELLO.PRG
 SYSTEM_PROGRAM_DIR := $(OUTPUT_DIR)/programs
 

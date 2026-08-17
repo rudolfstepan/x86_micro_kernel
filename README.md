@@ -200,7 +200,7 @@ fs/                VFS sowie FAT12, FAT32 und EXT2
 drivers/           Block-, Eingabe-, Video-, PCI-, USB- und Netzwerktreiber
 lib/               freestanding libc/libk
 userspace/sdk/     öffentliche API und Startup-Code für externe Programme
-examples/userspace Beispielquellen
+userspace/programs Beispielquellen
 scripts/           Windows-, Image- und Testwerkzeuge
 test/              hostseitige Regressionstests
 docs/              aktuelle Anleitungen und historische Arbeitsberichte

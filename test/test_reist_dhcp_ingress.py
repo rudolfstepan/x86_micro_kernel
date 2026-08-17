@@ -23,7 +23,7 @@ class ReistDhcpIngressTests(unittest.TestCase):
                       read("kernel/proc/process.c"))
 
     def test_service_submits_only_a_successfully_parsed_frame(self) -> None:
-        service = read("examples/userspace/reist_probe.c")
+        service = read("userspace/programs/reist_probe.c")
         self.assertLess(service.index("reist_dhcp_parse_frame"),
                         service.index("x86os_reist_dhcp_ingress"))
         self.assertIn(".frame_crc32 = frame_crc32", service)

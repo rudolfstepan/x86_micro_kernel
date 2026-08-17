@@ -17,6 +17,7 @@
 #include "drivers/block/ata.h"
 #include "drivers/block/fdd.h"
 #include "drivers/block/block_device.h"
+#include "drivers/block/partition.h"
 #include "kernel/time/pit.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/proc/process.h"
@@ -624,6 +625,9 @@ static int syscall_storage_submit(const storage_request_submit_t *user_request,
     storage_request_submit_t request;
     if (copy_from_user(&request, user_request, sizeof(request)) != 0)
         return -14;
+    if (request.operation >= STORAGE_REQUEST_FORMAT_FAT12 &&
+        request.operation <= STORAGE_REQUEST_FORMAT_FAT32_PREPARE &&
+        process->domain_profile.kind != PROCESS_DOMAIN_ADMIN) return -13;
     uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
     const uint8_t *data_argument = NULL;
     if (request.operation == STORAGE_REQUEST_BLOCK_WRITE ||
@@ -809,8 +813,10 @@ static int syscall_storage_block_write(uint32_t resource, uint32_t block,
         return -13;
     if (resource >= (uint32_t)drive_count) return -22;
     drive_t *drive = &detected_drives[resource];
-    if (drive->type != DRIVE_TYPE_FDD || block >= drive->sectors ||
-        drive->sector == 0U || drive->head == 0U) return -22;
+    if (block >= drive->sectors ||
+        (drive->type != DRIVE_TYPE_FDD && drive->type != DRIVE_TYPE_ATA &&
+         drive->type != DRIVE_TYPE_AHCI &&
+         drive->type != DRIVE_TYPE_PARTITION)) return -22;
     if (!storage_service_resource_available(resource) ||
         storage_service_resource_read_only(resource)) return -30;
     if (!user_range_accessible(directory, data_address,
@@ -818,22 +824,90 @@ static int syscall_storage_block_write(uint32_t resource, uint32_t block,
     uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
     uint8_t verify[STORAGE_REQUEST_BLOCK_SIZE];
     if (copy_from_user(data, user_data, sizeof(data)) != 0) return -14;
-    uint32_t track_size = drive->sector * drive->head;
-    uint32_t cylinder = block / track_size;
-    uint32_t within = block % track_size;
-    uint32_t head = within / drive->sector;
-    uint32_t sector = within % drive->sector + 1U;
-    if (cylinder >= drive->cylinder) return -22;
-    bool written = fdc_write_sectors(drive->fdd_drive_no, (uint8_t)head,
-        (uint8_t)cylinder, (uint8_t)sector, 1U, data);
-    bool verified = written && fdc_read_sector(drive->fdd_drive_no,
-        (uint8_t)head, (uint8_t)cylinder, (uint8_t)sector, verify) &&
-        memcmp(data, verify, sizeof(data)) == 0;
+    bool written = false;
+    bool verified = false;
+    if (drive->type == DRIVE_TYPE_FDD) {
+        if (drive->sector == 0U || drive->head == 0U) return -22;
+        uint32_t track_size = drive->sector * drive->head;
+        uint32_t cylinder = block / track_size;
+        uint32_t within = block % track_size;
+        uint32_t head = within / drive->sector;
+        uint32_t sector = within % drive->sector + 1U;
+        if (cylinder >= drive->cylinder) return -22;
+        written = fdc_write_sectors(drive->fdd_drive_no, (uint8_t)head,
+            (uint8_t)cylinder, (uint8_t)sector, 1U, data);
+        verified = written && fdc_read_sector(drive->fdd_drive_no,
+            (uint8_t)head, (uint8_t)cylinder, (uint8_t)sector, verify);
+    } else {
+        written = block_device_write_sector(drive, block, data) ==
+                  BLOCK_DEVICE_OK;
+        if (written) verified = block_device_read_sector(drive, block, verify) ==
+                                BLOCK_DEVICE_OK;
+    }
+    verified = verified && memcmp(data, verify, sizeof(data)) == 0;
     if (!verified) {
         (void)storage_service_report_media_failure(resource, true);
         return -5;
     }
     return 0;
+}
+
+static int syscall_storage_block_flush(uint32_t resource) {
+    Process *process = scheduler_current_process();
+    if (process == NULL || !storage_service_authorized(
+            process->pid, process->generation) ||
+        resource >= (uint32_t)drive_count) return -13;
+    return block_device_flush(&detected_drives[resource]) == BLOCK_DEVICE_OK
+        ? 0 : -5;
+}
+
+static int syscall_storage_media_commit(uint32_t resource,
+                                        uint32_t *user_fingerprint) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_fingerprint;
+    if (process == NULL || !storage_service_authorized(
+            process->pid, process->generation)) return -13;
+    if (!user_range_accessible(directory, address, sizeof(uint32_t), true))
+        return -14;
+    uint32_t fingerprint = 0U;
+    if (!storage_service_accept_formatted_media(resource, &fingerprint))
+        return -5;
+    return copy_to_user_space(directory, address, &fingerprint,
+                              sizeof(fingerprint)) == 0 ? 0 : -14;
+}
+
+static int syscall_storage_format_probe(uint32_t resource, uint32_t block) {
+    Process *process = scheduler_current_process();
+    if (process == NULL || !storage_service_authorized(
+            process->pid, process->generation) ||
+        resource >= (uint32_t)drive_count) return -13;
+    drive_t *drive = &detected_drives[resource];
+    if (drive->type != DRIVE_TYPE_PARTITION || drive->mount_point[0] != '\0' ||
+        block < 2U || block >= drive->sectors ||
+        !storage_service_resource_available(resource) ||
+        storage_service_resource_read_only(resource)) return -30;
+
+    uint8_t zero[STORAGE_REQUEST_BLOCK_SIZE];
+    uint8_t verify[STORAGE_REQUEST_BLOCK_SIZE];
+    memset(zero, 0, sizeof(zero));
+    for (uint32_t attempt = 0U; attempt < 3U; ++attempt) {
+        if (block_device_write_sector(drive, block, zero) == BLOCK_DEVICE_OK &&
+            block_device_read_sector(drive, block, verify) == BLOCK_DEVICE_OK &&
+            memcmp(zero, verify, sizeof(zero)) == 0) return 0;
+    }
+
+    uint8_t primary[STORAGE_REQUEST_BLOCK_SIZE];
+    uint8_t backup[STORAGE_REQUEST_BLOCK_SIZE];
+    bool controls_stable = block_device_flush(drive) == BLOCK_DEVICE_OK &&
+        block_device_read_sector(drive, 0U, primary) == BLOCK_DEVICE_OK &&
+        block_device_read_sector(drive, 6U, backup) == BLOCK_DEVICE_OK &&
+        memcmp(primary, backup, sizeof(primary)) == 0 &&
+        block_device_read_sector(drive, 0U, verify) == BLOCK_DEVICE_OK &&
+        memcmp(primary, verify, sizeof(primary)) == 0;
+    if (controls_stable) return 1;
+    (void)storage_service_report_media_failure(resource, true);
+    return -5;
 }
 
 static int syscall_storage_complete(storage_request_handle_t handle,
@@ -861,22 +935,26 @@ static int syscall_storage_collect(storage_request_handle_t handle,
     Process *process = scheduler_current_process();
     page_directory_t *directory = paging_current_directory();
     uint32_t result_address = (uint32_t)(uintptr_t)user_result;
-    uint32_t data_address = (uint32_t)(uintptr_t)user_data;
     if (process == NULL ||
         !user_range_accessible(directory, result_address,
-                               sizeof(*user_result), true) ||
-        !user_range_accessible(directory, data_address,
-                               STORAGE_REQUEST_BLOCK_SIZE, true)) return -14;
+                               sizeof(*user_result), true)) return -14;
     int32_t result_code = 0;
+    uint32_t data_length = 0U;
     uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
     memset(data, 0, sizeof(data));
-    int result = storage_request_collect(process->pid, process->generation,
-                                         handle, &result_code, data);
+    int result = storage_request_collect_ex(process->pid, process->generation,
+                                            handle, &result_code, data,
+                                            &data_length);
     if (result != 0) return result;
     if (copy_to_user_space(directory, result_address, &result_code,
-                           sizeof(result_code)) != 0 ||
-        (result_code == 0 && copy_to_user_space(
-             directory, data_address, data, sizeof(data)) != 0)) return -14;
+                           sizeof(result_code)) != 0) return -14;
+    if (data_length != 0U) {
+        uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+        if (data_length > sizeof(data) ||
+            !user_range_accessible(directory, data_address, data_length, true) ||
+            copy_to_user_space(directory, data_address, data,
+                               data_length) != 0) return -14;
+    }
     return 0;
 }
 
@@ -1304,19 +1382,54 @@ typedef struct {
     uint32_t type;
     char name[8];
     char mount_point[64];
+    uint32_t sectors;
 } syscall_drive_info_t;
 
 static int syscall_drive_info(uint32_t index, void *user_info) {
     if (index >= (uint32_t)drive_count) return 0;
     drive_t *drive = &detected_drives[index];
-    if (drive->mount_point[0] == '\0') return -2;
     syscall_drive_info_t info;
     memset(&info, 0, sizeof(info));
     info.type = (uint32_t)drive->type;
+    info.sectors = drive->sectors;
     strncpy(info.name, drive->name, sizeof(info.name) - 1U);
     strncpy(info.mount_point, drive->mount_point,
             sizeof(info.mount_point) - 1U);
     return copy_to_user(user_info, &info, sizeof(info)) == 0 ? 1 : -14;
+}
+
+typedef struct {
+    uint32_t version, struct_size, resource, first_lba;
+    uint32_t sectors, type, confirm;
+} syscall_partition_request_t;
+
+static int syscall_partition_create(const void *user_request) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_request;
+    if (process == NULL || process->domain_profile.kind != PROCESS_DOMAIN_ADMIN ||
+        !user_range_accessible(directory, address,
+                               sizeof(syscall_partition_request_t), false)) return -13;
+    syscall_partition_request_t request;
+    if (copy_from_user(&request, user_request, sizeof(request)) != 0 ||
+        request.version != 1U || request.struct_size != sizeof(request) ||
+        request.confirm != 0x52454953U || request.resource >= (uint32_t)drive_count)
+        return -22;
+    drive_t *drive = &detected_drives[request.resource];
+    if ((drive->type != DRIVE_TYPE_ATA && drive->type != DRIVE_TYPE_AHCI) ||
+        drive->has_partitions || drive->mount_point[0] == '/') return -1001;
+    for (uint32_t index = 0U; index < (uint32_t)drive_count; ++index)
+        if (detected_drives[index].type == DRIVE_TYPE_PARTITION &&
+            detected_drives[index].parent_resource == request.resource)
+            return -16;
+    int result = partition_provision_mbr(drive, request.first_lba,
+                                         request.sectors, (uint8_t)request.type);
+    if (result == 0 && (partition_discover() == 0U ||
+        !storage_service_accept_partition_layout(request.resource))) {
+        (void)storage_service_report_media_failure(request.resource, true);
+        return -5;
+    }
+    return result;
 }
 
 typedef struct {
@@ -1540,6 +1653,10 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_drive_status,        // Syscall 89: Versioned drive health
     (void*)&syscall_admin_storage,       // Syscall 90: Bounded storage admin
     (void*)&syscall_component_control,   // Syscall 91: Static components
+    (void*)&syscall_partition_create,    // Syscall 92: Verified MBR create
+    (void*)&syscall_storage_block_flush, // Syscall 93: Explicit write barrier
+    (void*)&syscall_storage_media_commit,// Syscall 94: Accept formatted identity
+    (void*)&syscall_storage_format_probe,// Syscall 95: Isolated sector probe
     // Add more syscalls here as needed
 };
 
@@ -1973,6 +2090,20 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)syscall_component_control(
                 (const component_control_request_t*)(uintptr_t)arg1,
                 (component_control_result_t*)(uintptr_t)arg2);
+            break;
+        case SYS_PARTITION_CREATE:
+            result = (uint32_t)syscall_partition_create(
+                (const void*)(uintptr_t)arg1);
+            break;
+        case SYS_STORAGE_BLOCK_FLUSH:
+            result = (uint32_t)syscall_storage_block_flush(arg1);
+            break;
+        case SYS_STORAGE_MEDIA_COMMIT:
+            result = (uint32_t)syscall_storage_media_commit(
+                arg1, (uint32_t*)(uintptr_t)arg2);
+            break;
+        case SYS_STORAGE_FORMAT_PROBE:
+            result = (uint32_t)syscall_storage_format_probe(arg1, arg2);
             break;
         default:
             result = (uint32_t)-1;

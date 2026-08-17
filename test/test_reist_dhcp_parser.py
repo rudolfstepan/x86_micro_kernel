@@ -43,7 +43,7 @@ class ReistDhcpParserTests(unittest.TestCase):
             self.assertNotIn(forbidden, source)
 
     def test_probe_reports_only_valid_dhcp_delivery(self) -> None:
-        service = read("examples/userspace/reist_probe.c")
+        service = read("userspace/programs/reist_probe.c")
         supervisor = read("kernel/init/supervisor.c")
         self.assertIn("reist_dhcp_parse_frame", service)
         self.assertIn("X86OS_REIST_REPORT_NETWORK_DHCP", service)

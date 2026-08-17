@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'system-layout', 'handover')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'system-layout', 'partition-provisioning', 'partition-full-format', 'handover')]
     [string]$Mode = 'normal'
 )
 
@@ -15,6 +15,7 @@ $SataHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_sata_hotplug.py'
 $AdminMaintenanceRunner = Join-Path $RepoRoot 'scripts\run_qemu_admin_maintenance.py'
 $ComponentControlRunner = Join-Path $RepoRoot 'scripts\run_qemu_component_control.py'
 $SystemLayoutRunner = Join-Path $RepoRoot 'scripts\run_qemu_system_layout.py'
+$PartitionProvisioningRunner = Join-Path $RepoRoot 'scripts\run_qemu_partition_provisioning.py'
 $LogRoot = Join-Path $RepoRoot 'build\codex-agent'
 
 function Resolve-NativeTool {
@@ -364,6 +365,16 @@ switch ($Mode) {
     }
     'system-layout' {
         Invoke-SystemLayout
+    }
+    'partition-provisioning' {
+        $disk = Join-Path $RepoRoot 'build\partition-provisioning.img'
+        & $Python $PartitionProvisioningRunner --qemu $Qemu --image $Image --disk $disk --log (Join-Path $RepoRoot 'build\guest-partition-provisioning.log')
+        if ($LASTEXITCODE -ne 0) { throw "REIST partition provisioning runtime failed." }
+    }
+    'partition-full-format' {
+        $disk = Join-Path $RepoRoot 'build\partition-full-format.img'
+        & $Python $PartitionProvisioningRunner --qemu $Qemu --image $Image --disk $disk --log (Join-Path $RepoRoot 'build\guest-partition-full-format.log') --format-mode full --timeout 600
+        if ($LASTEXITCODE -ne 0) { throw "REIST partition full-format runtime failed." }
     }
     'handover' {
         Invoke-Smoke 'guest-smoke-handover.log' @(

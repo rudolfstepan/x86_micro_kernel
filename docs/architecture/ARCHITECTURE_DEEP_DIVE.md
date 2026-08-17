@@ -394,4 +394,4 @@ User-Stack-Guardpages und ein für harten IRQ-Kontext geeigneter Allocator.
 - `drivers/video/` – VGA, Framebuffer, Console-Spiegelung und Zeichenprimitive
 - `drivers/` – weitere Hardwaretreiber
 - `userspace/sdk/` – externe Programmschnittstelle
-- `examples/userspace/desktop.c` – grafischer Ring-3-Launcher
+- `userspace/programs/desktop.c` – grafischer Ring-3-Launcher

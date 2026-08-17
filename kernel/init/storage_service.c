@@ -593,6 +593,40 @@ bool storage_service_media_fingerprint(uint32_t resource,
     return storage_service_requalify_media(resource, fingerprint);
 }
 
+bool storage_service_accept_formatted_media(uint32_t resource,
+                                            uint32_t *fingerprint) {
+    if (fingerprint == NULL || resource >= (uint32_t)drive_count ||
+        resource >= MAX_DRIVES) return false;
+    drive_t *drive = &detected_drives[resource];
+    uint32_t parent_fingerprint = 0U;
+    if (drive->type != DRIVE_TYPE_PARTITION || drive->mount_point[0] != '\0' ||
+        drive->parent_resource >= (uint32_t)drive_count ||
+        detected_drives[drive->parent_resource].type == DRIVE_TYPE_PARTITION ||
+        !storage_service_requalify_media(drive->parent_resource,
+                                         &parent_fingerprint) ||
+        parent_fingerprint == 0U ||
+        !capture_fingerprint(resource)) return false;
+    return storage_service_expected_fingerprint(resource, fingerprint);
+}
+
+bool storage_service_accept_partition_layout(uint32_t parent_resource) {
+    if (parent_resource >= (uint32_t)drive_count ||
+        parent_resource >= MAX_DRIVES) return false;
+    drive_t *parent = &detected_drives[parent_resource];
+    if ((parent->type != DRIVE_TYPE_ATA && parent->type != DRIVE_TYPE_AHCI) ||
+        !parent->has_partitions || parent->mount_point[0] != '\0' ||
+        !capture_fingerprint(parent_resource)) return false;
+    bool child_found = false;
+    for (uint32_t resource = 0U; resource < (uint32_t)drive_count; ++resource) {
+        drive_t *child = &detected_drives[resource];
+        if (child->type != DRIVE_TYPE_PARTITION ||
+            child->parent_resource != parent_resource) continue;
+        if (!capture_fingerprint(resource)) return false;
+        child_found = true;
+    }
+    return child_found;
+}
+
 bool storage_service_report_io_failure(uint32_t resource) {
     return storage_service_report_media_failure(resource, false);
 }

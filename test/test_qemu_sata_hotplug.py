@@ -14,7 +14,7 @@ RUNNER_PATH = ROOT / "scripts" / "run_qemu_sata_hotplug.py"
 
 class QemuSataHotplugTests(unittest.TestCase):
     def test_guest_proves_independent_ring3_progress(self) -> None:
-        source = (ROOT / "examples" / "userspace" /
+        source = (ROOT / "userspace" / "programs" /
                   "sata_write_test.c").read_text(encoding="utf-8")
         active = source.index('"SATA_WRITE ACTIVE')
         self.assertLess(source.index(

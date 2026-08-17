@@ -141,7 +141,7 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
             encoding="utf-8"
         )
-        ls = (ROOT / "examples/userspace/ls.c").read_text(encoding="utf-8")
+        ls = (ROOT / "userspace/programs/ls.c").read_text(encoding="utf-8")
         self.assertIn("syscall_space", source)
         self.assertIn("vfs_space(path, &info)", source)
         self.assertIn("LS_COLUMNS 4U", ls)

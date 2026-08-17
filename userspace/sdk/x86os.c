@@ -312,6 +312,20 @@ int x86os_storage_block_write(uint32_t resource, uint32_t block,
                               (uintptr_t)data);
 }
 
+int x86os_storage_block_flush(uint32_t resource) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_BLOCK_FLUSH, resource, 0U, 0U);
+}
+
+int x86os_storage_media_commit(uint32_t resource, uint32_t *fingerprint) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_MEDIA_COMMIT, resource,
+                              (uintptr_t)fingerprint, 0U);
+}
+
+int x86os_storage_format_probe(uint32_t resource, uint32_t sector) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_FORMAT_PROBE, resource,
+                              sector, 0U);
+}
+
 int x86os_storage_maintenance_acquire(uint32_t resource,
                                       uint32_t media_fingerprint,
                                       uint32_t *token) {
@@ -527,6 +541,12 @@ int x86os_chdir(const char* path) {
 int x86os_drive_info(uint32_t index, x86os_drive_info_t* info) {
     return (int)x86os_syscall(X86OS_SYS_DRIVE_INFO, index,
                               (uintptr_t)info, 0);
+}
+
+int x86os_partition_create(const x86os_partition_request_t *request) {
+    if (request == NULL) return -22;
+    return (int)x86os_syscall(X86OS_SYS_PARTITION_CREATE,
+                              (uintptr_t)request, 0U, 0U);
 }
 
 int x86os_drive_status(uint32_t index, x86os_drive_status_t* status) {

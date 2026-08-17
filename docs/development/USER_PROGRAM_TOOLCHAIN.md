@@ -33,7 +33,7 @@ C:\> RUN HELLO.PRG
 ```
 
 Ohne eigene Parameter wird automatisch
-`examples/userspace/hello.c` gebaut und als `HELLO.PRG` eingebettet. Seine
+`userspace/programs/hello.c` gebaut und als `HELLO.PRG` eingebettet. Seine
 Ausgabe `USERSPACE-E2E-OK` prüft Code, Konstanten, initialisierte Daten, BSS
 und den Exit-Syscall.
 

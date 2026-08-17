@@ -41,7 +41,7 @@ class ReistIpv4ParserTests(unittest.TestCase):
             self.assertNotIn(forbidden, source)
 
     def test_ring3_consumes_the_raw_frame_before_reporting(self) -> None:
-        service = read("examples/userspace/reist_probe.c")
+        service = read("userspace/programs/reist_probe.c")
         supervisor = read("kernel/init/supervisor.c")
         self.assertIn("reist_ipv4_parse_frame", service)
         self.assertIn("X86OS_REIST_REPORT_NETWORK_IPV4", service)

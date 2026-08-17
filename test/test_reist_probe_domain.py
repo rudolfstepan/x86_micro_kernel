@@ -120,7 +120,7 @@ class ReistProbeDomainContractTests(unittest.TestCase):
         self.assertNotIn("_DETECTED", fence)
 
     def test_probe_program_and_boot_packaging_are_present(self):
-        probe = read("examples/userspace/reist_probe.c")
+        probe = read("userspace/programs/reist_probe.c")
         for mode in ('"crash"', '"hang"', '"invalid"', '"healthy"'):
             self.assertIn(mode, probe)
         self.assertIn('volatile("ud2")', probe)

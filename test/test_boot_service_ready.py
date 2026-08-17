@@ -30,7 +30,7 @@ class BootServiceReadyContractTests(unittest.TestCase):
         cls.supervisor = read("kernel/init/supervisor.c")
         cls.supervisor_h = read("include/kernel/supervisor.h")
         cls.sdk_h = read("userspace/sdk/include/x86os.h")
-        cls.probe = read("examples/userspace/reist_probe.c")
+        cls.probe = read("userspace/programs/reist_probe.c")
 
     def test_report_abi_is_append_only_and_published_after_udp_self_test(self):
         self.assertIn("REIST_REPORT_SERVICE_READY 12U", self.supervisor_h)

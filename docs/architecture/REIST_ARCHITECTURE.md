@@ -845,7 +845,18 @@ Fehlermatrix. S0.3c-hw11 begrenzt die physische SATA-Hotplug-Reintegration und
 ergänzt deterministische QEMU-AHCI-Backend-Fault-Injection. S0.3c-admin1
 ergänzt capability-gebundene Storage-Administration; S0.3c-admin2 ergänzt
 statische Komponenten-Lifecycle-Steuerung. S0.3c-layout1 ordnet ausführbare
-Systemprogramme in einer begrenzten, kleingeschriebenen Hierarchie. Der
+Systemprogramme in einer begrenzten, kleingeschriebenen Hierarchie.
+S0.3c-storage2 ergänzt die laufende Provisionierung: Auf einem leeren,
+ungeschützten ATA-/AHCI-Medium wird eine ausgerichtete MBR-Partition erst nach
+Flush und Readback als Child veröffentlicht. FAT32-Quickformat invalidiert den
+alten Bootsektor, leert beide FATs in festen Chunks und publiziert den gültigen
+BPB erst am Ende. Fullformat scannt danach alle Datencluster in endlichen
+Requests unter einer aus der Mediengröße abgeleiteten monotonen Gesamtfrist.
+Ein dreifach reproduzierbarer Zielsektorfehler bei stabilen primären und
+Backup-Bootsektoren wird in beiden FATs als `0x0FFFFFF7` markiert. Kontroll-,
+Flush- oder Transportfehler quarantänisieren das Medium. Nach Erfolg wird der
+doppelt gelesene Boot-Fingerprint geschützt übernommen; Root- und gemountete
+Ressourcen sind davon ausgeschlossen. Der
 medienunabhängige Nachweis für EXT2, fremde FAT-Volumes und künftige Backends
 bleibt offen. Erst ein nachgewiesenes
 Recoveryprotokoll darf ein Medium nach unklarem Schreibabschluss wieder

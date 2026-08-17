@@ -74,7 +74,7 @@ class ReistIcmpServiceTests(unittest.TestCase):
         self.assertIn("icmp_delivery_clear()", supervisor)
 
     def test_ring3_result_is_only_icmp_ingress_authority_source(self) -> None:
-        probe = read("examples/userspace/reist_probe.c")
+        probe = read("userspace/programs/reist_probe.c")
         supervisor = read("kernel/init/supervisor.c")
         self.assertIn("x86os_reist_icmp_ingress(", probe)
         self.assertIn("X86OS_REIST_ICMP_INGRESS_DROP", probe)
@@ -85,7 +85,7 @@ class ReistIcmpServiceTests(unittest.TestCase):
         self.assertIn("netstack_accept_validated_icmp_echo_reply", supervisor)
 
     def test_ring3_parser_validates_and_authorizes_net_i(self) -> None:
-        probe = read("examples/userspace/reist_probe.c")
+        probe = read("userspace/programs/reist_probe.c")
         self.assertIn("message->payload[3] == 'I'", probe)
         self.assertIn("data_length > 32U", probe)
         self.assertIn("message->length != 24U + data_length", probe)

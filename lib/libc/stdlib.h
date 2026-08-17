@@ -98,6 +98,10 @@
 #define SYS_STORAGE_MAINT_RENEW 87
 #define SYS_STORAGE_MAINT_RELEASE 88
 #define SYS_DRIVE_STATUS 89
+#define SYS_PARTITION_CREATE 92
+#define SYS_STORAGE_BLOCK_FLUSH 93
+#define SYS_STORAGE_MEDIA_COMMIT 94
+#define SYS_STORAGE_FORMAT_PROBE 95
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

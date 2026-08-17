@@ -333,10 +333,12 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
     if (kind == PROCESS_DOMAIN_STORAGE) {
         static const uint8_t storage_syscalls[] = {
             SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS, SYS_MONOTONIC_MS,
+            SYS_DRIVE_INFO,
             SYS_STORAGE_BIND, SYS_STORAGE_CLAIM, SYS_STORAGE_BLOCK_READ,
             SYS_STORAGE_BLOCK_WRITE, SYS_STORAGE_MAINT_ACQUIRE,
             SYS_STORAGE_MAINT_RENEW, SYS_STORAGE_MAINT_RELEASE,
-            SYS_STORAGE_COMPLETE
+            SYS_STORAGE_COMPLETE, SYS_STORAGE_BLOCK_FLUSH,
+            SYS_STORAGE_MEDIA_COMMIT, SYS_STORAGE_FORMAT_PROBE
         };
         for (size_t index = 0;
              index < sizeof(storage_syscalls) / sizeof(storage_syscalls[0]);
@@ -345,9 +347,10 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
     }
     if (kind == PROCESS_DOMAIN_ADMIN) {
         static const uint8_t admin_syscalls[] = {
-            0U, 1U, SYS_EXIT, SYS_GETPID,
+            0U, 1U, SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS,
             SYS_TERMINAL_WRITE, SYS_MONOTONIC_MS, SYS_DRIVE_INFO,
-            SYS_DRIVE_STATUS, SYS_ADMIN_STORAGE
+            SYS_DRIVE_STATUS, SYS_ADMIN_STORAGE, SYS_PARTITION_CREATE,
+            SYS_STORAGE_SUBMIT, SYS_STORAGE_COLLECT
         };
         for (size_t index = 0;
              index < sizeof(admin_syscalls) / sizeof(admin_syscalls[0]);
@@ -1158,6 +1161,8 @@ int process_spawn_args(Process *parent, const char *path, int argc,
     process_domain_kind_t domain_kind = strcmp(resolved, "/sbin/svcctl.prg") == 0
         ? PROCESS_DOMAIN_COMPONENT_ADMIN :
         strcmp(resolved, "/sbin/devctl.prg") == 0 ||
+        strcmp(resolved, "/sbin/fdisk.prg") == 0 ||
+        strcmp(resolved, "/sbin/format.prg") == 0 ||
         strcmp(resolved, "/sbin/mount.prg") == 0 ||
         strcmp(resolved, "/sbin/umount.prg") == 0
             ? PROCESS_DOMAIN_ADMIN : PROCESS_DOMAIN_COMPATIBILITY;

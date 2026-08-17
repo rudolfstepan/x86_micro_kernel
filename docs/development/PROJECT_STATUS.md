@@ -102,7 +102,10 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
 - MBR-Partitionen werden als eigene Child-Ressourcen veröffentlicht.
 - ATA, AHCI, Partitionen und FDD verwenden die gemeinsame Blockgeräteschicht.
 - Der Storage-Service vermittelt generationgebundene Requests, Quarantäne,
-  Requalifizierung, Flush, Schreib-Fencing und FAT12-Formatierung.
+  Requalifizierung, Flush, Schreib-Fencing sowie FAT12-/FAT32-Formatierung.
+- `FDISK.PRG` erzeugt auf leeren, ungeschützten ATA-/AHCI-Medien eine
+  ausgerichtete und rückgelesene MBR-Partition und veröffentlicht sie ohne
+  Neustart. Root- und bereits partitionierte Medien bleiben geschützt.
 
 ### FAT32
 
@@ -111,6 +114,21 @@ Markierte REIST-Images verwenden ein redundantes Undo-Journal. Datei-I/O,
 Verzeichnisse, `fsync`, Same-Directory-Rename und Replace sind angebunden. Der
 Editor speichert über Tempdatei, `fsync`, Close und Rename. Fremde FAT32-Medien
 erhalten nicht automatisch dieselbe Journalgarantie.
+
+`FORMAT.PRG` unterstützt auf einer veröffentlichten, nicht gemounteten
+Partition zwei explizit bestätigte Modi:
+
+```text
+format --reist-fat32 --quick <resource-id> --confirm
+format --reist-fat32 --full  <resource-id> --confirm
+```
+
+Quickformat invalidiert zuerst den alten Bootsektor, leert beide FAT-Kopien in
+begrenzten Chunks und veröffentlicht erst danach BPB, FSInfo, Root und das
+redundante REIST-Journal. Fullformat prüft danach jeden Datencluster durch
+wiederholtes Schreiben und Readback. Reproduzierbar isolierte Defekte werden
+in beiden FATs als `0x0FFFFFF7` markiert; Kontroll- oder Transportfehler
+quarantänisieren das Medium.
 
 ### FAT12
 
@@ -131,9 +149,9 @@ FORMAT --reist-fat12 <resource-id> --confirm
 ```
 
 `CHKDSK.PRG [pfad]` führt einen begrenzten read-only VFS-Scan aus.
-`FDISK.PRG` zeigt derzeit nur Inventar; Partitionsmutation ist absichtlich
-nicht verfügbar. Kontrollierte Reparatur, vollständige Lease-/Remount-
-Abnahme und die aktive Power-Loss-/Write-Fault-Matrix bleiben offen.
+`FDISK.PRG --create <resource-id> <mbr-type> --confirm` richtet ein leeres,
+ungeschütztes ATA-/AHCI-Medium ein. Kontrollierte CHKDSK-Reparatur und die
+reale Hardware-Power-Loss-Matrix bleiben offen.
 
 ### EXT2
 

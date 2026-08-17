@@ -124,7 +124,7 @@ class ReistSupervisorTests(unittest.TestCase):
         process_h = (ROOT / "kernel/proc/process.h").read_text(encoding="utf-8")
         process = (ROOT / "kernel/proc/process.c").read_text(encoding="utf-8")
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
-        guest = (ROOT / "examples/userspace/guest_test.c").read_text(encoding="utf-8")
+        guest = (ROOT / "userspace/programs/guest_test.c").read_text(encoding="utf-8")
         self.assertIn("static void supervisor_worker(void)", source)
         self.assertIn("supervisor_service_one(pit_monotonic_ms())", source)
         self.assertIn("output_fence_all();", source)

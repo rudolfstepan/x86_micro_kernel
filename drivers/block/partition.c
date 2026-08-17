@@ -14,6 +14,7 @@
 #define GPT_MAX_ENTRIES 128U
 #define GPT_MAX_CHILDREN MAX_PARTITION_DRIVES
 #define PARTITION_VIRTUAL_BASE 0xB000U
+#define PARTITION_ALIGN_LBA 2048U
 
 typedef struct {
     uint32_t first_lba, sectors;
@@ -24,6 +25,43 @@ typedef struct {
 static uint32_t read_le32(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8U) |
            ((uint32_t)p[2] << 16U) | ((uint32_t)p[3] << 24U);
+}
+
+static void write_le32(uint8_t *p, uint32_t value) {
+    p[0] = (uint8_t)value;
+    p[1] = (uint8_t)(value >> 8U);
+    p[2] = (uint8_t)(value >> 16U);
+    p[3] = (uint8_t)(value >> 24U);
+}
+
+int partition_provision_mbr(drive_t *drive, uint32_t first_lba,
+                            uint32_t sectors, uint8_t type) {
+    uint8_t mbr[512], verify[512];
+    if (drive == NULL || (drive->type != DRIVE_TYPE_ATA &&
+                          drive->type != DRIVE_TYPE_AHCI) ||
+        drive->sectors < PARTITION_ALIGN_LBA + 1U || type == 0U ||
+        first_lba < PARTITION_ALIGN_LBA ||
+        (first_lba % PARTITION_ALIGN_LBA) != 0U || sectors == 0U ||
+        (uint64_t)first_lba + sectors > drive->sectors ||
+        (sectors % PARTITION_ALIGN_LBA) != 0U) return -22;
+    if (block_device_read_sector(drive, 0U, mbr) != BLOCK_DEVICE_OK)
+        return -5;
+    for (uint32_t slot = 0U; slot < MBR_PRIMARY_COUNT; ++slot) {
+        const uint8_t *entry = mbr + MBR_ENTRY_OFFSET + slot * MBR_ENTRY_SIZE;
+        for (uint32_t byte = 0U; byte < MBR_ENTRY_SIZE; ++byte)
+            if (entry[byte] != 0U) return -16;
+    }
+    memset(mbr, 0, sizeof(mbr));
+    mbr[MBR_ENTRY_OFFSET + 4U] = type;
+    write_le32(mbr + MBR_ENTRY_OFFSET + 8U, first_lba);
+    write_le32(mbr + MBR_ENTRY_OFFSET + 12U, sectors);
+    mbr[MBR_SIGNATURE_OFFSET] = 0x55U;
+    mbr[MBR_SIGNATURE_OFFSET + 1U] = 0xAAU;
+    if (block_device_write_sector(drive, 0U, mbr) != BLOCK_DEVICE_OK ||
+        block_device_flush(drive) != BLOCK_DEVICE_OK ||
+        block_device_read_sector(drive, 0U, verify) != BLOCK_DEVICE_OK ||
+        memcmp(mbr, verify, sizeof(mbr)) != 0) return -5;
+    return 0;
 }
 
 static uint64_t read_le64(const uint8_t *p) {
