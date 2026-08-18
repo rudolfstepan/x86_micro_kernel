@@ -65,6 +65,11 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn("vmware_prepared", self.control)
         self.assertIn("qemu_prepared", self.control)
 
+    def test_failed_activation_reports_pci_graphics_identity(self):
+        self.assertIn("report_unsupported_graphics", self.control)
+        self.assertIn("VGA=%04X:%04X", self.control)
+        self.assertIn("device->bar[5]", self.control)
+
 
 if __name__ == "__main__":
     unittest.main()

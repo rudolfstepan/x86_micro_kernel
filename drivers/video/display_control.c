@@ -138,6 +138,26 @@ static pci_device_t *find_vmware_vga(void) {
     return NULL;
 }
 
+static void report_unsupported_graphics(void) {
+    uint32_t reported = 0U;
+    for (size_t index = 0; index < pci_device_count; ++index) {
+        pci_device_t *device = &pci_devices[index];
+        if (device->class_code != 0x03U) continue;
+        printf("DISPLAY_CONTROL: PCI %u:%u.%u VGA=%04X:%04X "
+               "class=%02X:%02X prog-if=%02X "
+               "BAR=%08X,%08X,%08X,%08X,%08X,%08X\n",
+               (unsigned)device->bus, (unsigned)device->slot,
+               (unsigned)device->function, (unsigned)device->vendor_id,
+               (unsigned)device->device_id, (unsigned)device->class_code,
+               (unsigned)device->subclass_code, (unsigned)device->prog_if,
+               device->bar[0], device->bar[1], device->bar[2],
+               device->bar[3], device->bar[4], device->bar[5]);
+        reported++;
+    }
+    if (reported == 0U)
+        printf("DISPLAY_CONTROL: no PCI display-class device detected\n");
+}
+
 void display_control_prepare(void) {
     uint32_t qemu_lfb = 0U;
     pci_device_t *qemu = find_qemu_vga(&qemu_lfb);
@@ -334,7 +354,10 @@ int display_control_activate(void) {
         if (result != 0) dispi_write(DISPI_ENABLE, 0U);
     }
 activation_done:
-    if (result != 0) printf("DISPLAY_CONTROL: native graphics unavailable\n");
+    if (result != 0) {
+        report_unsupported_graphics();
+        printf("DISPLAY_CONTROL: native graphics unavailable\n");
+    }
     __asm__ __volatile__("cli" ::: "memory");
     activation_busy = false;
     __asm__ __volatile__("push %0\n popf" :: "r"(old_flags) : "memory");
