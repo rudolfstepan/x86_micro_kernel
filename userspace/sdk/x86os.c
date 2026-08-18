@@ -281,6 +281,17 @@ int x86os_network_arp_resolve(uint32_t target_ip) {
                               target_ip, 0, 0);
 }
 
+_Static_assert(sizeof(x86os_network_control_request_t) == 44U,
+               "network control request ABI size changed");
+_Static_assert(sizeof(x86os_network_control_result_t) == 60U,
+               "network control result ABI size changed");
+
+int x86os_network_control(const x86os_network_control_request_t *request,
+                          x86os_network_control_result_t *result) {
+    return (int)x86os_syscall(X86OS_SYS_NETWORK_CONTROL,
+                              (uintptr_t)request, (uintptr_t)result, 0U);
+}
+
 _Static_assert(sizeof(x86os_storage_submit_t) == 28U,
                "storage submit ABI changed");
 _Static_assert(sizeof(x86os_storage_descriptor_t) == 28U,

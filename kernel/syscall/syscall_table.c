@@ -18,6 +18,8 @@
 #include "drivers/block/fdd.h"
 #include "drivers/block/block_device.h"
 #include "drivers/block/partition.h"
+#include "drivers/net/netdev.h"
+#include "drivers/net/netstack.h"
 #include "kernel/time/pit.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/proc/process.h"
@@ -278,6 +280,134 @@ static int syscall_network_probe_stats(syscall_network_probe_stats_t *user_stats
     };
     return copy_to_user_space(directory, address, &result, sizeof(result)) == 0
         ? 0 : -14;
+}
+
+#define NETWORK_CONTROL_VERSION 1U
+#define NETWORK_CONTROL_STATUS 1U
+#define NETWORK_CONTROL_CONFIGURE 2U
+#define NETWORK_CONTROL_PING 3U
+#define NETWORK_CONTROL_ARP_REQUEST 4U
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t reserved;
+    uint32_t ip_address;
+    uint32_t netmask;
+    uint32_t gateway;
+    uint32_t target_ip;
+    uint32_t identifier;
+    uint32_t sequence;
+    uint32_t timeout_ms;
+} network_control_request_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t operation_result;
+    uint32_t available;
+    uint32_t ready;
+    uint32_t configured;
+    uint32_t ip_address;
+    uint32_t netmask;
+    uint32_t gateway;
+    char backend[16];
+    uint8_t mac_address[6];
+    uint8_t reserved[2];
+} network_control_result_t;
+
+_Static_assert(sizeof(network_control_request_t) == 44U,
+               "network control request ABI changed");
+_Static_assert(sizeof(network_control_result_t) == 60U,
+               "network control result ABI changed");
+
+static int syscall_network_control(
+        const network_control_request_t *user_request,
+        network_control_result_t *user_result) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t request_address = (uint32_t)(uintptr_t)user_request;
+    uint32_t result_address = (uint32_t)(uintptr_t)user_result;
+    if (process == NULL ||
+        !user_range_accessible(directory, request_address,
+                               sizeof(network_control_request_t), false) ||
+        !user_range_accessible(directory, result_address,
+                               sizeof(network_control_result_t), true)) {
+        return -14;
+    }
+
+    network_control_request_t request;
+    if (copy_from_user(&request, user_request, sizeof(request)) != 0 ||
+        request.version != NETWORK_CONTROL_VERSION ||
+        request.struct_size != sizeof(request) || request.reserved != 0U) {
+        return -22;
+    }
+
+    network_control_result_t result = {0};
+    result.version = NETWORK_CONTROL_VERSION;
+    result.struct_size = sizeof(result);
+    result.available = netdev_available() ? 1U : 0U;
+    result.ready = netdev_component_ready() ? 1U : 0U;
+    result.configured = netstack_is_configured() ? 1U : 0U;
+    result.ip_address = netstack_get_ip_address();
+    result.netmask = netstack_get_netmask();
+    result.gateway = netstack_get_gateway();
+    (void)netdev_get_mac_address(result.mac_address);
+    const char *backend = netdev_backend_name();
+    size_t backend_index = 0U;
+    while (backend[backend_index] != '\0' &&
+           backend_index + 1U < sizeof(result.backend)) {
+        result.backend[backend_index] = backend[backend_index];
+        ++backend_index;
+    }
+    result.backend[backend_index] = '\0';
+
+    int operation_result = 0;
+    switch (request.operation) {
+        case NETWORK_CONTROL_STATUS:
+            break;
+        case NETWORK_CONTROL_CONFIGURE:
+            if (request.ip_address == 0U || request.netmask == 0U ||
+                request.gateway == 0U) {
+                operation_result = -22;
+            } else if (!netstack_set_config(request.ip_address,
+                                             request.netmask,
+                                             request.gateway)) {
+                operation_result = -5;
+            }
+            break;
+        case NETWORK_CONTROL_PING:
+            if (request.target_ip == 0U || request.timeout_ms == 0U ||
+                request.timeout_ms > 5000U) {
+                operation_result = -22;
+            } else if (!netdev_available() || !netstack_is_configured()) {
+                operation_result = -19;
+            } else if (!netstack_ping(request.target_ip,
+                                      (uint16_t)request.identifier,
+                                      (uint16_t)request.sequence,
+                                      request.timeout_ms)) {
+                operation_result = -110;
+            }
+            break;
+        case NETWORK_CONTROL_ARP_REQUEST:
+            if (request.target_ip == 0U ||
+                !supervisor_network_request_arp_resolution(
+                    request.target_ip)) {
+                operation_result = -11;
+            }
+            break;
+        default:
+            operation_result = -22;
+            break;
+    }
+    result.operation_result = operation_result;
+    result.ip_address = netstack_get_ip_address();
+    result.netmask = netstack_get_netmask();
+    result.configured = netstack_is_configured() ? 1U : 0U;
+    result.gateway = netstack_get_gateway();
+    if (copy_to_user(user_result, &result, sizeof(result)) != 0) return -14;
+    return operation_result;
 }
 
 _Static_assert(sizeof(supervisor_arp_binding_t) == 24U,
@@ -1657,6 +1787,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_storage_block_flush, // Syscall 93: Explicit write barrier
     (void*)&syscall_storage_media_commit,// Syscall 94: Accept formatted identity
     (void*)&syscall_storage_format_probe,// Syscall 95: Isolated sector probe
+    (void*)&syscall_network_control,     // Syscall 96: Userspace LAN control
     // Add more syscalls here as needed
 };
 
@@ -2104,6 +2235,11 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_STORAGE_FORMAT_PROBE:
             result = (uint32_t)syscall_storage_format_probe(arg1, arg2);
+            break;
+        case SYS_NETWORK_CONTROL:
+            result = (uint32_t)syscall_network_control(
+                (const network_control_request_t*)(uintptr_t)arg1,
+                (network_control_result_t*)(uintptr_t)arg2);
             break;
         default:
             result = (uint32_t)-1;

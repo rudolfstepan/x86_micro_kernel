@@ -81,8 +81,8 @@ int main(void) {
 
     length = make_frame(frame, 4U);
     frame[40] = 0U; frame[41] = 0U;
-    if (reist_udp_parse_frame(frame, length, &result) !=
-        REIST_UDP_PARSE_EINTEGRITY) return 5;
+    if (reist_udp_parse_frame(frame, length, &result) != 0 ||
+        result.checksum != 0U) return 5;
 
     length = make_frame(frame, 4U);
     frame[38] = 0U; frame[39] = 9U;

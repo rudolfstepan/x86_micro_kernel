@@ -9,6 +9,8 @@
 
 #define REIST_DHCP_BOOT_MAX_ATTEMPTS 3U
 #define REIST_DHCP_BOOT_RETRY_MS 1600U
+#define REIST_DHCP_BOOT_CYCLE_DELAY_MS 5000U
+#define REIST_NETWORK_RX_BATCH 8U
 
 static uint64_t probe_deadline_after(uint64_t now_ms, uint32_t interval_ms) {
     return UINT64_MAX - now_ms < interval_ms
@@ -186,7 +188,7 @@ static const char *network_classification(
          message->payload[3] != 'X'))
         return NULL;
     if (message->payload[3] == 'A')
-        return message->length == 22U ? "REIST_ARP_RESOLUTION" : NULL;
+        return message->length == 26U ? "REIST_ARP_RESOLUTION" : NULL;
     if (message->payload[3] == 'I') {
         if (message->length < 24U || message->length > 56U) return NULL;
         uint32_t request_id = (uint32_t)message->payload[4] |
@@ -322,6 +324,7 @@ int main(int argc, char **argv) {
     reist_dhcp_state_t dhcp_state;
     reist_dhcp_state_init(&dhcp_state);
     uint32_t dhcp_boot_attempts = 0U;
+    uint64_t dhcp_boot_cycle_after_ms = 0U;
     uint64_t dhcp_boot_next_attempt_ms = 0U;
     const uint16_t udp_ports[4] = {9000U, 9001U, 9002U, 9003U};
     for (uint32_t index = 0U; index < 4U; ++index) {
@@ -368,8 +371,15 @@ int main(int argc, char **argv) {
     bool network_udp_reported = false;
     bool network_dhcp_reported = false;
     for (;;) {
-        int frame_result = x86os_reist_receive_network_frame(&network_frame);
-        if (frame_result == 0) {
+        /* Drain a fixed batch before waiting for control IPC. Real LANs can
+         * fill the bounded RX queue with broadcasts much faster than QEMU's
+         * quiet user network; one frame per 40 ms could otherwise starve a
+         * DHCP OFFER behind unrelated traffic. */
+        for (uint32_t rx_index = 0U; rx_index < REIST_NETWORK_RX_BATCH;
+             ++rx_index) {
+            int frame_result =
+                x86os_reist_receive_network_frame(&network_frame);
+            if (frame_result == 0) {
             if (network_frame.version != X86OS_REIST_NETWORK_FRAME_VERSION ||
                 network_frame.struct_size != sizeof(network_frame) ||
                 network_frame.length < 14U ||
@@ -423,7 +433,12 @@ int main(int argc, char **argv) {
                     .frame_crc32 = frame_crc32,
                 };
                 const uint8_t *payload = NULL;
-                if (icmp_parse == 0) {
+                /* Before a validated lease (or for traffic addressed to a
+                 * different host), submit only the canonical drop decision.
+                 * Treating such normal LAN traffic as an invalid non-drop
+                 * request would unnecessarily restart the service. */
+                if (icmp_parse == 0 && dhcp_state.ip_address != 0U &&
+                    icmp_result.destination_ip == dhcp_state.ip_address) {
                     if (icmp_result.type == 8U &&
                         icmp_result.payload_length <=
                             X86OS_REIST_ICMP_ECHO_MAX_DATA) {
@@ -536,11 +551,23 @@ int main(int argc, char **argv) {
                     return 38;
                 }
             }
-        } else if (frame_result != -11) {
-            return 32;
+            } else if (frame_result == -11) {
+                break;
+            } else {
+                return 32;
+            }
         }
         uint64_t now_ms = 0U;
         if (x86os_monotonic_ms(&now_ms) != 0) return 27;
+        if (dhcp_state.state == REIST_DHCP_STATE_IDLE &&
+            dhcp_boot_attempts >= REIST_DHCP_BOOT_MAX_ATTEMPTS &&
+            now_ms >= dhcp_boot_cycle_after_ms) {
+            /* A missing link or DHCP server must not leave the machine
+             * permanently unconfigured. Restart a new finite transaction
+             * cycle after a bounded quiet interval. */
+            dhcp_boot_attempts = 0U;
+            dhcp_boot_next_attempt_ms = now_ms;
+        }
         if (dhcp_state.state == REIST_DHCP_STATE_IDLE &&
             dhcp_boot_attempts < REIST_DHCP_BOOT_MAX_ATTEMPTS &&
             now_ms >= dhcp_boot_next_attempt_ms) {
@@ -551,6 +578,9 @@ int main(int argc, char **argv) {
             int start_result = x86os_reist_start_dhcp_boot(&start);
             if (start_result == 0) {
                 ++dhcp_boot_attempts;
+                if (dhcp_boot_attempts >= REIST_DHCP_BOOT_MAX_ATTEMPTS)
+                    dhcp_boot_cycle_after_ms = probe_deadline_after(
+                        now_ms, REIST_DHCP_BOOT_CYCLE_DELAY_MS);
                 dhcp_boot_next_attempt_ms = probe_deadline_after(
                     now_ms, REIST_DHCP_BOOT_RETRY_MS);
             } else if (start_result == -11) {
@@ -638,6 +668,7 @@ int main(int argc, char **argv) {
                 continue;
             }
             if (network != NULL && request.payload[3] == 'R') {
+                bool direct_resolution = pending_network_request == 0U;
                 uint32_t ethertype = ((uint32_t)request.payload[16] << 8) |
                                      request.payload[17];
                 x86os_reist_arp_binding_t binding = {
@@ -654,6 +685,10 @@ int main(int argc, char **argv) {
                 if (x86os_reist_commit_arp_binding(&binding) != 0) return 13;
                 if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_HEADER,
                                        ethertype) != 0) return 9;
+                if (direct_resolution) {
+                    pending_network_probe_id = 0U;
+                    continue;
+                }
             }
             if (network != NULL && request.payload[3] == 'Q') {
                 x86os_reist_arp_reply_t reply = {
@@ -679,7 +714,8 @@ int main(int argc, char **argv) {
                 continue;
             }
             if (network != NULL && request.payload[3] == 'A') {
-                if (request.length != 22U) return 16;
+                if (request.length != 26U ||
+                    pending_network_probe_id != 0U) return 16;
                 uint32_t target_ip = ((uint32_t)request.payload[4] << 24U) |
                     ((uint32_t)request.payload[5] << 16U) |
                     ((uint32_t)request.payload[6] << 8U) |
@@ -692,11 +728,17 @@ int main(int argc, char **argv) {
                     ((uint32_t)request.payload[19] << 8U) |
                     ((uint32_t)request.payload[20] << 16U) |
                     ((uint32_t)request.payload[21] << 24U);
+                uint32_t network_probe_id =
+                    (uint32_t)request.payload[22] |
+                    ((uint32_t)request.payload[23] << 8U) |
+                    ((uint32_t)request.payload[24] << 16U) |
+                    ((uint32_t)request.payload[25] << 24U);
                 bool nonzero_mac = false;
                 for (uint32_t index = 0U; index < 6U; ++index)
                     if (request.payload[12U + index] != 0U) nonzero_mac = true;
                 if (target_ip == 0U || target_ip == local_ip ||
-                    request_id == 0U || !nonzero_mac ||
+                    request_id == 0U || network_probe_id == 0U ||
+                    !nonzero_mac ||
                     (request.payload[12] & 1U) != 0U) return 16;
                 x86os_reist_arp_resolution_t resolution = {
                     .version = X86OS_REIST_ARP_RESOLUTION_VERSION,
@@ -705,6 +747,7 @@ int main(int argc, char **argv) {
                     .target_ip = target_ip,
                 };
                 if (x86os_reist_send_arp_request(&resolution) != 0) return 17;
+                pending_network_probe_id = network_probe_id;
                 continue;
             }
             if (network != NULL && request.payload[3] == 'I') {

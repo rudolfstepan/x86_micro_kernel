@@ -159,7 +159,9 @@ Beispiele und die genaue Pfadsemantik stehen in
 ## Netzwerk und VMware
 
 Die bereitgestellte VMware-VM verwendet einen Intel-E1000-Adapter an
-`VMnet0` im Bridge-Modus. Der überwachte Ring-3-Dienst `REIST.PRG` verarbeitet
+`VMnet0` im Bridge-Modus. Für das ASUS H81M-K ist zusätzlich der Realtek-
+RTL8111G/RTL8168-Treiber für PCI-ID `10EC:8168` enthalten. Der überwachte
+Ring-3-Dienst `REIST.PRG` verarbeitet
 die begrenzten Netzwerkentscheidungen einschließlich DHCP. Der aktuelle Stack
 umfasst Ethernet, ARP, IPv4, ICMP, UDP-Bindings für den Dienst und DHCP. DNS,
 TCP und Anwendungen wie HTTP oder SMB sind noch nicht vorhanden.

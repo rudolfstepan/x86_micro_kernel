@@ -381,8 +381,7 @@ class NativeBootImageTests(unittest.TestCase):
         self.assertIn('serial0.tryNoRxLoss = "TRUE"', text)
         self.assertIn('floppy0.present = "FALSE"', text)
         self.assertIn('ethernet0.virtualDev = "e1000"', text)
-        self.assertIn('ethernet0.connectionType = "custom"', text)
-        self.assertIn('ethernet0.vnet = "VMnet0"', text)
+        self.assertIn('ethernet0.connectionType = "nat"', text)
 
     def test_vmware_fdd_switch_uses_legacy_physical_backing(self):
         script = (

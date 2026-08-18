@@ -6,6 +6,7 @@
 #include "drivers/net/netdev.h"
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
+#include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
 #include "include/kernel/arp_binding_cache.h"
 #include "include/kernel/panic.h"
@@ -23,6 +24,16 @@ static supervised_arp_cache_t supervised_arp_cache;
 static bool supervised_arp_cache_initialized;
 static uint16_t ip_identification = 0;
 static uint32_t dhcp_runtime_transaction_id;
+
+static uint64_t netstack_deadline_after(uint64_t now_ms,
+                                        uint32_t timeout_ms) {
+    return UINT64_MAX - now_ms < timeout_ms
+        ? UINT64_MAX : now_ms + timeout_ms;
+}
+
+static void netstack_wait_one_ms(void) {
+    if (scheduler_sleep_ms(1U) != 0) (void)scheduler_yield();
+}
 
 typedef struct {
     uint32_t icmp_echo_requests;
@@ -702,6 +713,10 @@ uint32_t netstack_get_ip_address(void) {
     return net_config.ip_address;
 }
 
+uint32_t netstack_get_netmask(void) {
+    return net_config.netmask;
+}
+
 bool netstack_is_configured(void) {
     return net_config.ip_address != 0U;
 }
@@ -792,19 +807,30 @@ static bool arp_resolve_with_timeout(uint32_t ip, uint8_t mac[ETH_ADDR_LEN],
     if (ip == 0) return false;
     if (arp_lookup(ip, mac)) return true;
 
-    for (uint32_t elapsed = 0; elapsed < timeout_ms; ++elapsed) {
-        if ((elapsed % 500u) == 0) arp_send_request(ip);
+    uint64_t now_ms = pit_monotonic_ms();
+    uint64_t deadline_ms = netstack_deadline_after(now_ms, timeout_ms);
+    uint64_t next_request_ms = now_ms;
+    while ((now_ms = pit_monotonic_ms()) < deadline_ms) {
+        if (now_ms >= next_request_ms) {
+            arp_send_request(ip);
+            next_request_ms = netstack_deadline_after(now_ms, 500U);
+        }
         netdev_poll();
         if (arp_lookup(ip, mac)) return true;
-        pit_delay(1);
+        netstack_wait_one_ms();
     }
     return false;
 }
 
 bool netstack_ping(uint32_t dst_ip, uint16_t id, uint16_t seq,
                    uint32_t timeout_ms) {
-    if (dst_ip == 0 || timeout_ms == 0 ||
-        netstack_get_ip_address() == 0) return false;
+    uint32_t local_ip = netstack_get_ip_address();
+    if (dst_ip == 0 || timeout_ms == 0 || local_ip == 0) return false;
+
+    /* A host's own address is local by definition. Physical NICs and
+     * switches are not required to reflect a frame back to its sender, so a
+     * self-ping must not depend on ARP or external loopback behavior. */
+    if (dst_ip == local_ip) return true;
 
     uint32_t next_hop = netstack_next_hop(dst_ip);
     uint8_t mac[ETH_ADDR_LEN];
@@ -824,13 +850,15 @@ bool netstack_ping(uint32_t dst_ip, uint16_t id, uint16_t seq,
         return false;
     }
 
-    for (uint32_t elapsed = 0; elapsed < timeout_ms; ++elapsed) {
+    uint64_t deadline_ms = netstack_deadline_after(
+        pit_monotonic_ms(), timeout_ms);
+    while (pit_monotonic_ms() < deadline_ms) {
         netdev_poll();
         if (ping_reply_received) {
             ping_waiting = false;
             return true;
         }
-        pit_delay(1);
+        netstack_wait_one_ms();
     }
 
     ping_waiting = false;

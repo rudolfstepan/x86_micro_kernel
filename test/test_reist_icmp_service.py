@@ -84,6 +84,13 @@ class ReistIcmpServiceTests(unittest.TestCase):
         self.assertLess(ingress, submit)
         self.assertIn("netstack_accept_validated_icmp_echo_reply", supervisor)
 
+    def test_foreign_or_prelease_icmp_is_a_canonical_drop(self) -> None:
+        probe = read("userspace/programs/reist_probe.c")
+        self.assertIn("dhcp_state.ip_address != 0U", probe)
+        self.assertIn("icmp_result.destination_ip == dhcp_state.ip_address",
+                      probe)
+        self.assertIn("X86OS_REIST_ICMP_INGRESS_DROP", probe)
+
     def test_ring3_parser_validates_and_authorizes_net_i(self) -> None:
         probe = read("userspace/programs/reist_probe.c")
         self.assertIn("message->payload[3] == 'I'", probe)

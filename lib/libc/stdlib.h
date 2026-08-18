@@ -102,6 +102,7 @@
 #define SYS_STORAGE_BLOCK_FLUSH 93
 #define SYS_STORAGE_MEDIA_COMMIT 94
 #define SYS_STORAGE_FORMAT_PROBE 95
+#define SYS_NETWORK_CONTROL 96
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

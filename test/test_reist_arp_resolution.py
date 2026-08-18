@@ -28,8 +28,19 @@ class ReistArpResolutionContractTests(unittest.TestCase):
 
     def test_service_validates_fixed_neta_request(self):
         self.assertIn("request.payload[3] == 'A'", self.service)
-        self.assertIn("request.length != 22U", self.service)
+        self.assertIn('message->length == 26U ? "REIST_ARP_RESOLUTION"',
+                      self.service)
+        self.assertIn("request.length != 26U", self.service)
+        self.assertIn("network_probe_id =", self.service)
+        self.assertIn("pending_network_probe_id = network_probe_id", self.service)
+        self.assertIn("message.payload[22U + index]", self.supervisor)
         self.assertIn("x86os_reist_send_arp_request", self.service)
+
+    def test_direct_resolution_closes_ring3_correlation_without_reply(self):
+        self.assertIn("bool direct_resolution = pending_network_request == 0U",
+                      self.service)
+        self.assertIn("if (direct_resolution)", self.service)
+        self.assertIn("pending_network_probe_id = 0U", self.service)
 
     def test_abi_is_append_only_and_versioned(self):
         self.assertIn("X86OS_SYS_REIST_ARP_RESOLUTION = 64", self.sdk)

@@ -24,7 +24,7 @@ das Überschreiben einer über `vmrun` laufenden Paket-VM.
 | Festplatte | persistente monolithic-flat SATA-VMDK |
 | Grafik | VMware SVGA, 3D aus, standardmäßig VGA-Text |
 | Eingabe | virtuelle PS/2-Tastatur |
-| Netzwerk | Intel E1000 an `VMnet0` |
+| Netzwerk | Intel E1000 an VMware NAT-DHCP |
 | Seriell | COM1-Ausgabe nach `vmware-serial.log` |
 | Deaktiviert | USB, EHCI, xHCI, Audio, VMware Tools |
 
@@ -47,10 +47,13 @@ Recoverypfade und muss bis `TEST_OK` laufen.
 
 ## Netzwerk
 
-`VMnet0` ist als Bridge vorgesehen. `REIST.PRG` verwaltet den überwachten
-DHCP-Lease. Bei mehreren Hostadaptern muss `VMnet0` im Virtual Network Editor
-dem gewünschten Adapter zugeordnet werden. WLAN-Client-Isolation oder das
-Verbot zusätzlicher MAC-Adressen kann Bridging verhindern.
+Die Standard-VM verwendet VMware NAT mit dem VMware-DHCP-Server. Dadurch ist
+die DHCP-Prüfung unabhängig von der Bridge-Konfiguration des Hosts.
+`REIST.PRG` verwaltet den überwachten DHCP-Lease. Für eine direkte Präsenz im
+physischen LAN kann `ethernet0.connectionType = "custom"` und zusätzlich
+`ethernet0.vnet = "VMnet0"` gesetzt werden. Dann muss VMnet0 im Virtual
+Network Editor dem gewünschten Adapter zugeordnet sein; WLAN-Client-Isolation
+oder das Verbot zusätzlicher MAC-Adressen kann Bridging verhindern.
 
 ```text
 C:\> NET STATUS

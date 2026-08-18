@@ -26,7 +26,6 @@ static void ipc_unlock(uint32_t flags) { irq_restore(flags); }
 #define IPC_EACCES   (-13)
 #define IPC_EINVAL   (-22)
 #define IPC_ENOSPC   (-28)
-#define IPC_EPIPE    (-32)
 #define IPC_EMSGSIZE (-90)
 #define IPC_ETIMEDOUT (-110)
 #define IPC_METADATA_VERSION 1U

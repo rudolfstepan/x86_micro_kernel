@@ -38,6 +38,7 @@ class ReistOutputFenceTests(unittest.TestCase):
         for path, function in (
             ("drivers/net/e1000.c", "e1000_send_packet"),
             ("drivers/net/rtl8139.c", "rtl8139_send_packet"),
+            ("drivers/net/rtl8168.c", "rtl8168_send_packet"),
             ("drivers/net/ne2000.c", "ne2000_send_packet"),
         ):
             source = self.read(path)
@@ -47,6 +48,10 @@ class ReistOutputFenceTests(unittest.TestCase):
     def test_hardware_transmit_is_quiesced(self):
         self.assertIn("~E1000_TCTL_EN", self.read("drivers/net/e1000.c"))
         self.assertIn("~RTL_CMD_TX_ENABLE", self.read("drivers/net/rtl8139.c"))
+        rtl8168 = self.read("drivers/net/rtl8168.c")
+        fence8168 = rtl8168[rtl8168.index("void rtl8168_fence_outputs"):]
+        self.assertIn("RTL8168_INTERRUPT_MASK", fence8168)
+        self.assertIn("RTL8168_CMD_TX_ENABLE", fence8168)
         ne2000 = self.read("drivers/net/ne2000.c")
         fence = ne2000[ne2000.index("void ne2000_fence_outputs"):]
         self.assertIn("NE2000_IMR", fence)

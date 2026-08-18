@@ -2,8 +2,8 @@
 
 Stand: 16. August 2026.
 
-Der verifizierte VMware-Weg verwendet einen Intel-E1000-Adapter und eine
-Bridge zum lokalen Netz. Der überwachte Ring-3-Dienst `REIST.PRG` führt die
+Der verifizierte VMware-Weg verwendet einen Intel-E1000-Adapter und VMware
+NAT-DHCP. Der überwachte Ring-3-Dienst `REIST.PRG` führt die
 begrenzten DHCP-/Netzwerkentscheidungen aus; der Kernel vermittelt Hardware,
 Capabilities, validierte Übergaben und Commit. Frühere NE2000-QEMU-
 Loopback-Probleme sind nicht der aktuelle Referenzzustand.
@@ -37,7 +37,12 @@ permanenten Paket-Debugzeilen mehr auf dem VGA-Terminal aus.
 - ICMP Echo Request/Reply
 - DHCP Discover/Offer/Request/ACK
 - statische IPv4-Konfiguration über die Shell
-- E1000 in der generierten VMware-VM
+- E1000 in der generierten VMware-VM und RTL8168/8111G auf dem ASUS H81M-K
+
+Ein Ping auf die eigene konfigurierte IPv4-Adresse wird lokal beantwortet und
+benötigt weder ARP noch einen Ethernet-Loopback. Fremde oder vor einer
+validierten Lease eintreffende ICMP-Pakete werden kanonisch verworfen, ohne den
+überwachten Netzwerkdienst neu zu starten.
 
 Nicht implementiert sind derzeit DNS, TCP, ein allgemeines UDP-Socket-API,
 IPv6, Routing zwischen mehreren Gastinterfaces sowie Anwendungen wie HTTP,
@@ -88,14 +93,15 @@ C:\> NET SEND
 Das erzeugte Paket setzt:
 
 ```text
-ethernet0.connectionType = "custom"
-ethernet0.vnet = "VMnet0"
+ethernet0.connectionType = "nat"
 ethernet0.virtualDev = "e1000"
 ```
 
-Damit ist der Gast ein eigener Teilnehmer im LAN. Bei mehreren
-Hostschnittstellen muss `VMnet0` im VMware Virtual Network Editor dem
-gewünschten Adapter zugeordnet werden. WLAN-Client-Isolation oder eine
+Damit ist DHCP ohne zusätzliche Hostkonfiguration verfügbar. Für einen
+direkten Teilnehmer im physischen LAN kann die VMX-Datei auf
+`ethernet0.connectionType = "custom"` und `ethernet0.vnet = "VMnet0"`
+umgestellt werden. Dann muss VMnet0 im VMware Virtual Network Editor dem
+gewünschten Adapter zugeordnet werden; WLAN-Client-Isolation oder eine
 Zugangskontrolle für zusätzliche MAC-Adressen kann Bridge-Verkehr verhindern.
 
 ## QEMU

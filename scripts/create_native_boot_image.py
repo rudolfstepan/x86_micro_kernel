@@ -457,8 +457,9 @@ serial0.tryNoRxLoss = "TRUE"
 serial0.yieldOnMsrRead = "TRUE"
 ethernet0.present = "TRUE"
 ethernet0.startConnected = "TRUE"
-ethernet0.connectionType = "custom"
-ethernet0.vnet = "VMnet0"
+# NAT supplies a deterministic VMware DHCP server out of the box. Users who
+# need a layer-2 LAN presence can switch these lines to custom/VMnet0.
+ethernet0.connectionType = "nat"
 ethernet0.virtualDev = "e1000"
 ethernet0.addressType = "generated"
 ethernet0.wakeOnPcktRcv = "FALSE"
@@ -516,20 +517,22 @@ Die VM ist bereits vollständig konfiguriert:
   - Legacy BIOS, zuerst Diskette, danach Fallback auf IDE-Festplatte
   - 1 virtuelle CPU, 512 MiB RAM
   - VGA ohne 3D-Beschleunigung
-  - Intel E1000, ueber VMnet0 direkt mit dem physischen LAN gebridged
+  - Intel E1000, standardmaessig ueber VMware NAT mit DHCP
   - automatische IPv4-Konfiguration per DHCP
   - 60-MiB-FAT32-Datenpartition mit README.TXT und Ring-3-Systemprogrammen
   - COM1-Bootprotokoll in vmware-serial.log
   - bootfähiges 1,44-MB-Floppy-Image, kein USB- oder Audiogerät
 
 Die VMDK-Dateien und die VMX-Datei müssen im selben Ordner bleiben.
-VMnet0 verwendet standardmaessig VMwares automatische Bridge-Auswahl. Falls
-mehrere physische Netzwerkadapter vorhanden sind, in "Virtual Network Editor"
-VMnet0 fest dem gewuenschten Ethernet- oder WLAN-Adapter zuordnen.
+Fuer eine direkte Bridge ins physische LAN in der VMX-Datei
+ethernet0.connectionType auf "custom" setzen und ethernet0.vnet auf
+"VMnet0" ergaenzen. Falls mehrere physische Netzwerkadapter vorhanden sind,
+VMnet0 im "Virtual Network Editor" fest dem gewuenschten Ethernet- oder
+WLAN-Adapter zuordnen.
 
 LAN-Test in der Kernel-Shell:
   getip             zeigt die per DHCP bezogene LAN-Adresse
-  net dhcp          fordert eine neue DHCP-Konfiguration an
+  net dhcp          zeigt den durch REIST.PRG verwalteten DHCP-Status
   ping 192.168.1.1  testet den Router (Adresse ggf. anpassen)
 
 Shell- und Programmtest:

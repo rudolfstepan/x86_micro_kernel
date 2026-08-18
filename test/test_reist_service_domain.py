@@ -100,6 +100,13 @@ class ReistServiceDomainTests(unittest.TestCase):
         self.assertIn("KASSERT(irq_enabled());", handoff)
         self.assertIn("frame[12] != 0x08U", handoff)
         self.assertIn("frame[13] != 0x06U", handoff)
+        self.assertIn("bool arp_reply", handoff)
+        self.assertIn("if (arp_request && !local_request) return false;",
+                      handoff)
+        self.assertIn("control.network_epoch == 0U &&", handoff)
+        self.assertIn("network_context.transaction_epoch == 0U", handoff)
+        self.assertIn("control.network_epoch = 0U;", supervisor)
+        self.assertIn("&probe_runtime.network_probe_authority", supervisor)
         self.assertNotIn("network_probe_authority.active_id", handoff)
         self.assertIn("supervisor_protected_probe_authority_take_epoch(",
                       handoff)
@@ -120,7 +127,10 @@ class ReistServiceDomainTests(unittest.TestCase):
                         ingress.index("return ingress == 0"))
         self.assertIn("for (uint32_t index = 0U; index < 42U; ++index)",
                       supervisor)
+        self.assertIn("probe_network_ingress_send", ingress)
         self.assertIn("ipc_send_external_from_peer(", supervisor)
+        self.assertIn("if (result == IPC_EPIPE)", supervisor)
+        self.assertIn("ipc_send_kernel_to_owner(", supervisor)
         self.assertIn("if (endpoint->count >= IPC_QUEUE_DEPTH)", ipc)
         self.assertIn("peer->holder_pid", ipc)
         self.assertNotIn("ipc_send_timeout(", ingress)

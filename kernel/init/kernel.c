@@ -72,6 +72,7 @@
 // Network subsystem
 #include "drivers/net/e1000.h"
 #include "drivers/net/ne2000.h"
+#include "drivers/net/rtl8168.h"
 #include "drivers/net/rtl8139.h"
 #include "drivers/net/netstack.h"
 #include "drivers/net/netdev.h"
@@ -195,6 +196,12 @@ static void driver_init(const multiboot1_info_t *boot_info) {
     if (pci_device_exists(0x10EC, 0x8139)) {
         printf("  - Realtek RTL8139 detected, registering driver\n");
         rtl8139_detect(); // Register RTL8139 driver
+    }
+
+    // Realtek RTL8111G/RTL8168 (vendor: 0x10EC, device: 0x8168)
+    if (pci_device_exists(0x10EC, 0x8168)) {
+        printf("  - Realtek RTL8111G detected, registering driver\n");
+        rtl8168_detect(); // Register RTL8168/8111G driver
     }
     
     // NE2000 compatible (vendor: 0x10EC, device: 0x8029)

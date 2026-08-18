@@ -345,7 +345,7 @@ und 10 verbindlich.
 | Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit explizit delegierten generationsgebundenen Capabilities, endlichen Deadlines, geschützten Steuerdaten, reservierter Restart-Admission, versionierten Domänenprofilen und abgenommener Ring-3-Probe-Recovery | maximal 8 Tasks; produktive Dienste liegen noch im modularen Monolithen |
 | Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, FAT32-Rename/Replace im Undo-Journal, FAT32/ATA-`fsync`, EXT2 lesen | persistenter Editor-Commit vorhanden; ABI, FAT12-Sync und breitere Rename-Semantik fehlen |
 | Geräte | PCI, ATA-PIO, AHCI/SATA, FDD-DMA, PS/2 mit blockierendem Console-Wait, output-only COM1-Diagnose, RTC, VGA, nativer VBE-RGB-Framebuffer | QEMU-/VMware-AHCI abgenommen; breitere reale Hardware und moderne Geräte fehlen |
-| Netzwerk | E1000, RTL8139, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping am besten verifiziert; RTL8111G/RTL8168 fehlt |
+| Netzwerk | E1000, RTL8139, RTL8168/8111G, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping und RTL8139 am besten verifiziert; reale RTL8168/H81M-K-Gegenprobe fehlt |
 | USB | PCI-Erkennung eines xHCI-Controllers | nur Probe-Gerüst |
 | Userspace | SDK, Shell, Editor, BASIC, zahlreiche Systemprogramme und tastaturbedienter Ring-3-Desktop mit vier App-Karten | brauchbare CLI- und Desktop-MVP-Basis |
 | Qualität | Hosttests, CI-Build, Image-Validatoren, Kontextassertions, fünf Log-Level, Panic-Kontext mit Build-ID sowie serielle QEMU-Ring-3-Tests mit LAPIC/PIT und 32-/64-/256-/512-/1024-MiB-Matrix | breitere Hardware- und Fehler-Injektionsmatrix fehlt |
@@ -559,8 +559,8 @@ einzelne Vollbild-Kindprozesse und ist noch kein Fenstersystem.
   Stubs (`drivers/net/netstack.c:966-970`)
 - erste Anwendungen wie `netcat` und ein kleiner HTTP/1.0-Client
 - IPv6 erst nach einer belastbaren IPv4-/Socket-Schicht
-- eigener begrenzter RTL8111G-/RTL8168-PCIe-Treiber für reale H81-Hardware;
-  der vorhandene RTL8139-Treiber ist register- und DMA-seitig nicht kompatibel
+- reale H81M-K-Gegenprobe des nun vorhandenen RTL8111G-/RTL8168-PCIe-Treibers;
+  die QEMU-Referenz emuliert diesen Controller nicht
 - VMXNET3 nur implementieren, wenn E1000 nicht mehr als VMware-Referenz reicht;
   der vorhandene Treiber deaktiviert das Gerät absichtlich
 
@@ -1486,9 +1486,11 @@ auf diesen Zustand; ein Ablauf panikt vor `BOOT_OK`, ein fehlendes NIC wechselt
 danach explizit in `local-only`. Der No-NIC-Gastlauf bestätigt die Reihenfolge
 `RECOVERY_SEQUENCE_OK -> SERVICE_READY -> local-only -> BOOT_OK -> C:\\>`.
 Das ASUS H81M-K besitzt laut Hersteller einen Realtek RTL8111G Gigabit-LAN-
-Controller. REIST unterstützt derzeit RTL8139, E1000 und NE2000; RTL8111G
-gehört zur RTL8168-PCIe-Familie und benötigt einen eigenen Treiber. Es darf
-nicht über die inkompatiblen RTL8139-Register angesprochen werden.
+Controller. REIST unterstützt RTL8139, E1000, NE2000 und nun den gebundenen
+RTL8168/8111G-Pfad für PCI-ID `10EC:8168`. Der neue Treiber verwendet eigene
+MMIO-Register und eigene feste DMA-Ringe; die inkompatiblen RTL8139-Register
+werden nicht wiederverwendet. Die reale Link-/DHCP-Gegenprobe auf dem H81M-K
+bleibt offen, weil die lokale QEMU-Version kein RTL8168-Modell anbietet.
 
 Die danach auf dem H81M-K beobachtete fehlende PS/2-Eingabe war ebenfalls kein
 LAN- oder Userspace-Fehler. Die Tastatur funktionierte im BIOS, der ursprüngliche
@@ -1947,8 +1949,9 @@ verdeckte Fehler auf: Request-ID und Dienstgeneration waren unzulässig
 gleichgesetzt, und der Ring-3-Parser prüfte die Quell- statt der
 Broadcast-Zieladresse. Hostvertrag, Paketbuild und der echte Runtime-Modus
 `arp-reply` sind grün. **S0.3c-5b2b ist ebenfalls umgesetzt und abgenommen:**
-Ein Cache-Miss veröffentlicht eine feste `NETA`-Nachricht an den überwachten
-Ring-3-Dienst. Eine geschützte, generationgebundene 250-ms-Einmalautorität
+Ein Cache-Miss veröffentlicht eine feste `NETA`-Nachricht mit Request- und
+Probe-ID an den überwachten Ring-3-Dienst. Eine geschützte,
+generationgebundene 250-ms-Einmalautorität
 bindet Request-ID und Zieladresse; erst Syscall 64 darf nach vollständigem
 Abgleich den echten ARP-Request senden. Fehler aktivieren keinen alten
 Ring-0-Fallback. Der RTL8139-QEMU-Lauf fordert die Auflösung über Syscall 65 an

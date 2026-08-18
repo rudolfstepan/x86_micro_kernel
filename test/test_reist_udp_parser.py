@@ -31,10 +31,10 @@ class ReistUdpParserTests(unittest.TestCase):
             ], check=True, capture_output=True, timeout=30)
             subprocess.run([str(executable)], check=True, timeout=10)
 
-    def test_parser_is_bounded_heapfree_and_requires_checksum(self) -> None:
+    def test_parser_is_bounded_heapfree_and_accepts_ipv4_zero_checksum(self) -> None:
         source = read("userspace/sdk/reist_udp_parser.c")
         self.assertIn("udp_length != ipv4.payload_length", source)
-        self.assertIn("checksum == 0U", source)
+        self.assertIn("checksum != 0U && !checksum_valid", source)
         self.assertIn("reist_ipv4_parse_frame", source)
         self.assertIn("*result = (reist_udp_parse_result_t){0};", source)
         for forbidden in ("malloc", "realloc", "for (;;)", "while (true)"):

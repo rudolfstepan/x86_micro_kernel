@@ -57,7 +57,9 @@ int reist_udp_parse_frame(const uint8_t *frame, uint32_t frame_length,
     uint16_t destination_port = read_be16(&udp[2U]);
     if (source_port == 0U || destination_port == 0U)
         return REIST_UDP_PARSE_EINVAL;
-    if (checksum == 0U || !checksum_valid(frame, udp, udp_length))
+    /* RFC 768 permits an all-zero UDP checksum for IPv4. A non-zero value is
+     * mandatory to verify, but zero means that the sender omitted it. */
+    if (checksum != 0U && !checksum_valid(frame, udp, udp_length))
         return REIST_UDP_PARSE_EINTEGRITY;
 
     *result = (reist_udp_parse_result_t){

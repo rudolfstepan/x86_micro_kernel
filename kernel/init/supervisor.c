@@ -2619,6 +2619,19 @@ int supervisor_service_connect(Process *client, uint32_t service_id,
     return result;
 }
 
+static int probe_network_ingress_send(
+        const supervisor_probe_control_t *control,
+        const ipc_message_t *message) {
+    int result = ipc_send_external_from_peer(
+        control->pid, control->process_generation, control->endpoint_handle,
+        message);
+    if (result == IPC_EPIPE)
+        result = ipc_send_kernel_to_owner(
+            control->pid, control->process_generation,
+            control->endpoint_handle, message);
+    return result;
+}
+
 bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     KASSERT_NOT_IRQ();
     KASSERT(irq_enabled());
@@ -2627,11 +2640,20 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     uint32_t local_ip = 0U;
     uint8_t local_mac[6] = {0};
     bool local_identity = netstack_get_local_identity(&local_ip, local_mac);
+    if (frame[14] != 0U || frame[15] != 1U ||
+        frame[16] != 0x08U || frame[17] != 0U ||
+        frame[18] != 6U || frame[19] != 4U) return false;
     bool arp_request = frame[20] == 0U && frame[21] == 1U;
+    bool arp_reply = frame[20] == 0U && frame[21] == 2U;
+    if (!arp_request && !arp_reply) return false;
     uint32_t target_ip = ((uint32_t)frame[38] << 24U) |
                          ((uint32_t)frame[39] << 16U) |
                          ((uint32_t)frame[40] << 8U) | frame[41];
     bool local_request = local_identity && arp_request && target_ip == local_ip;
+    /* Broadcast discovery and gratuitous ARP are normal before DHCP has
+     * established a local identity. They carry no probe authority and must
+     * neither be mediated nor isolate the healthy Ring-3 service. */
+    if (arp_request && !local_request) return false;
 
     uint32_t transaction_flags = supervisor_lock();
     supervisor_probe_control_t control;
@@ -2690,9 +2712,7 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
         for (uint32_t index = 0U; index < 4U; ++index)
             request.payload[56U + index] =
                 (uint8_t)(request_id >> (index * 8U));
-        int ingress = ipc_send_external_from_peer(
-            control.pid, control.process_generation, control.endpoint_handle,
-            &request);
+        int ingress = probe_network_ingress_send(&control, &request);
         if (ingress != 0) {
             transaction_flags = supervisor_lock();
             (void)supervisor_protected_probe_authority_cancel(
@@ -2712,7 +2732,17 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     supervisor_network_probe_context_t network_context;
     int context_result = supervisor_protected_network_context_snapshot(
         &probe_runtime.network_probe_context, &network_context);
-    if (context_result != 0 || control.network_epoch == 0U ||
+    if (context_result != 0) {
+        supervisor_unlock(transaction_flags);
+        (void)supervisor_force_isolate(control.handle);
+        return false;
+    }
+    if (control.network_epoch == 0U &&
+        network_context.transaction_epoch == 0U) {
+        supervisor_unlock(transaction_flags);
+        return false;
+    }
+    if (control.network_epoch == 0U ||
         network_context.transaction_epoch != control.network_epoch) {
         supervisor_unlock(transaction_flags);
         (void)supervisor_force_isolate(control.handle);
@@ -2754,15 +2784,27 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
     for (uint32_t index = 0U; index < 4U; ++index)
         message.payload[60U + index] =
             (uint8_t)(probe_id >> (index * 8U));
-    int ingress = ipc_send_external_from_peer(
-        control.pid, control.process_generation, control.endpoint_handle,
-        &message);
-    /* A matching reply consumes exactly one probe authorization even when
-     * bounded IPC pressure forces the frame back to the kernel path. */
-    if (ingress != 0)
-        (void)supervisor_protected_network_context_consume_epoch(
-            &probe_runtime.network_probe_context, control.network_epoch,
-            probe_id);
+    int ingress = probe_network_ingress_send(&control, &message);
+    /* The authorization was consumed before delivery. If bounded IPC cannot
+     * publish the validated reply, close the matching transaction so a later
+     * unrelated ARP frame cannot inherit stale authority. */
+    if (ingress != 0) {
+        transaction_flags = supervisor_lock();
+        supervisor_probe_control_t current;
+        int cleanup = supervisor_protected_probe_control_read(
+            &probe_runtime.control, &current);
+        if (cleanup == 0 &&
+            current.network_epoch == control.network_epoch) {
+            cleanup = supervisor_protected_network_context_clear(
+                &probe_runtime.network_probe_context);
+            current.network_epoch = 0U;
+            if (cleanup == 0)
+                cleanup = supervisor_protected_probe_control_write(
+                    &probe_runtime.control, &current);
+        }
+        supervisor_unlock(transaction_flags);
+        if (cleanup != 0) (void)supervisor_force_isolate(control.handle);
+    }
     if (ingress == -11) {
         network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_QUEUE);
         printf("REIST_NETWORK QUEUE_PRESSURE_FALLBACK\n");
@@ -2895,10 +2937,17 @@ int supervisor_network_commit_arp_binding(
         result = supervisor_protected_network_context_consume_epoch(
             &probe_runtime.network_probe_context, control.network_epoch,
             binding->probe_id);
+    if (result == 0)
+        result = supervisor_protected_network_context_clear(
+            &probe_runtime.network_probe_context);
+    if (result == 0) {
+        control.network_epoch = 0U;
+        result = supervisor_protected_probe_control_write(
+            &probe_runtime.control, &control);
+    }
     if (result == 0 && !netstack_commit_arp_binding(
             binding->ip, binding->mac, binding->probe_id,
-            pid, generation, pit_monotonic_ms()))
-        result = -22;
+            pid, generation, pit_monotonic_ms())) result = -22;
     supervisor_unlock(transaction_flags);
     if (result == 0)
         printf("REIST_NETWORK PROBE_ID_OK\nREIST_NETWORK ARP_BINDING_OK\n");
@@ -2910,12 +2959,13 @@ bool supervisor_network_request_arp_resolution(uint32_t target_ip) {
     KASSERT(irq_enabled());
     uint32_t local_ip = 0U;
     uint8_t local_mac[6] = {0};
+    bool local_identity = netstack_get_local_identity(&local_ip, local_mac);
     if (target_ip == 0U || target_ip == 0xFFFFFFFFU ||
-        !netstack_get_local_identity(&local_ip, local_mac) ||
+        !local_identity ||
         target_ip == local_ip) return false;
 
     uint32_t flags = supervisor_lock();
-    supervisor_probe_control_t control;
+    supervisor_probe_control_t control = {0};
     int result = supervisor_protected_probe_control_read(
         &probe_runtime.control, &control);
     if (result != 0 || control.active == 0U || control.fenced != 0U ||
@@ -2925,22 +2975,50 @@ bool supervisor_network_request_arp_resolution(uint32_t target_ip) {
         supervisor_unlock(flags);
         return false;
     }
+    uint32_t network_probe_id = 0U;
     uint32_t request_id = 0U;
-    result = supervisor_protected_probe_authority_begin_epoch(
-        &probe_runtime.arp_resolution_authority, pit_monotonic_ms(),
-        SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS, control.process_generation,
-        &request_id);
+    result = supervisor_protected_probe_authority_begin(
+        &probe_runtime.network_probe_authority, pit_monotonic_ms(),
+        SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS, &network_probe_id);
+    if (result == 0)
+        result = supervisor_protected_network_context_prepare_epoch(
+            &probe_runtime.network_probe_context, network_probe_id,
+            target_ip, local_ip, local_mac);
+    if (result == 0)
+        result = supervisor_protected_probe_authority_begin_epoch(
+            &probe_runtime.arp_resolution_authority, pit_monotonic_ms(),
+            SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS, control.process_generation,
+            &request_id);
     if (result == 0)
         result = supervisor_protected_arp_resolution_context_publish(
             &probe_runtime.arp_resolution_context, request_id,
             control.process_generation, target_ip);
+    if (result == 0) {
+        control.network_epoch = network_probe_id;
+        result = supervisor_protected_probe_control_write(
+            &probe_runtime.control, &control);
+    }
+    if (result != 0) {
+        (void)supervisor_protected_probe_authority_cancel(
+            &probe_runtime.network_probe_authority);
+        (void)supervisor_protected_network_context_clear(
+            &probe_runtime.network_probe_context);
+        (void)supervisor_protected_probe_authority_cancel(
+            &probe_runtime.arp_resolution_authority);
+        (void)supervisor_protected_arp_resolution_context_clear(
+            &probe_runtime.arp_resolution_context);
+    }
     supervisor_unlock(flags);
-    if (result != 0) return false;
+    if (result != 0) {
+        if (result == SUPERVISOR_EINTEGRITY)
+            (void)supervisor_force_isolate(control.handle);
+        return false;
+    }
 
     ipc_message_t message = {
         .version = IPC_MESSAGE_VERSION,
         .struct_size = sizeof(ipc_message_t),
-        .length = 22U,
+        .length = 26U,
         .payload = {'N', 'E', 'T', 'A'},
     };
     for (uint32_t index = 0U; index < 4U; ++index) {
@@ -2953,16 +3031,31 @@ bool supervisor_network_request_arp_resolution(uint32_t target_ip) {
     for (uint32_t index = 0U; index < 4U; ++index)
         message.payload[18U + index] =
             (uint8_t)(request_id >> (index * 8U));
-    result = ipc_send_external_from_peer(
-        control.pid, control.process_generation, control.endpoint_handle,
-        &message);
+    for (uint32_t index = 0U; index < 4U; ++index)
+        message.payload[22U + index] =
+            (uint8_t)(network_probe_id >> (index * 8U));
+    result = probe_network_ingress_send(&control, &message);
     if (result != 0) {
         flags = supervisor_lock();
+        supervisor_probe_control_t current;
+        int cleanup = supervisor_protected_probe_control_read(
+            &probe_runtime.control, &current);
         (void)supervisor_protected_probe_authority_cancel(
             &probe_runtime.arp_resolution_authority);
         (void)supervisor_protected_arp_resolution_context_clear(
             &probe_runtime.arp_resolution_context);
+        if (cleanup == 0 && current.network_epoch == network_probe_id) {
+            (void)supervisor_protected_probe_authority_cancel(
+                &probe_runtime.network_probe_authority);
+            cleanup = supervisor_protected_network_context_clear(
+                &probe_runtime.network_probe_context);
+            current.network_epoch = 0U;
+            if (cleanup == 0)
+                cleanup = supervisor_protected_probe_control_write(
+                    &probe_runtime.control, &current);
+        }
         supervisor_unlock(flags);
+        if (cleanup != 0) (void)supervisor_force_isolate(control.handle);
         network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_QUEUE);
         return false;
     }
@@ -2979,8 +3072,9 @@ int supervisor_network_send_arp_request(
         request->target_ip == 0U || request->target_ip == 0xFFFFFFFFU)
         return -22;
     uint32_t flags = supervisor_lock();
-    supervisor_probe_control_t control;
+    supervisor_probe_control_t control = {0};
     supervisor_arp_resolution_context_t context;
+    supervisor_network_probe_context_t network_context;
     int result = supervisor_protected_probe_control_read(
         &probe_runtime.control, &control);
     bool caller_is_service = result == 0 && pid == control.pid &&
@@ -2996,6 +3090,14 @@ int supervisor_network_send_arp_request(
         (context.request_id != request->request_id ||
          context.transaction_epoch != generation ||
          context.target_ip != request->target_ip)) result = -13;
+    if (result == 0)
+        result = supervisor_protected_network_context_snapshot(
+            &probe_runtime.network_probe_context, &network_context);
+    if (result == 0 &&
+        (control.network_epoch == 0U ||
+         network_context.transaction_epoch != control.network_epoch ||
+         network_context.gateway != request->target_ip)) result = -13;
+    uint32_t network_epoch = control.network_epoch;
     uint32_t consumed_id = 0U;
     if (result == 0)
         result = supervisor_protected_probe_authority_take_epoch(
@@ -3010,7 +3112,27 @@ int supervisor_network_send_arp_request(
             printf("REIST_NETWORK ARP_RESOLUTION_REJECTED %d\n", result);
         return result;
     }
-    if (!netstack_send_arp_request(request->target_ip)) return -5;
+    if (!netstack_send_arp_request(request->target_ip)) {
+        flags = supervisor_lock();
+        if (supervisor_protected_probe_control_read(
+                &probe_runtime.control, &control) != 0) {
+            result = SUPERVISOR_EINTEGRITY;
+        } else if (control.network_epoch == network_epoch) {
+            (void)supervisor_protected_probe_authority_cancel(
+                &probe_runtime.network_probe_authority);
+            result = supervisor_protected_network_context_clear(
+                &probe_runtime.network_probe_context);
+            control.network_epoch = 0U;
+            if (result == 0)
+                result = supervisor_protected_probe_control_write(
+                    &probe_runtime.control, &control);
+        } else {
+            result = 0;
+        }
+        supervisor_unlock(flags);
+        if (result != 0) (void)supervisor_force_isolate(control.handle);
+        return -5;
+    }
     printf("REIST_NETWORK ARP_RESOLUTION_MEDIATED\n");
     return 0;
 }
@@ -3137,9 +3259,7 @@ bool supervisor_network_submit_icmp_echo(
     message.payload[23] = (uint8_t)(data_length >> 8U);
     for (uint32_t index = 0U; index < data_length; ++index)
         message.payload[24U + index] = data[index];
-    result = ipc_send_external_from_peer(
-        control.pid, control.process_generation, control.endpoint_handle,
-        &message);
+    result = probe_network_ingress_send(&control, &message);
     if (result != 0) {
         flags = supervisor_lock();
         (void)supervisor_protected_probe_authority_cancel(
@@ -4294,6 +4414,15 @@ static void supervisor_worker(void) {
         int boot_expiry = supervisor_protected_probe_authority_expire_epoch(
             &probe_runtime.dhcp_boot_authority, now_ms,
             control.process_generation);
+        if (authority_expiry == 1) {
+            int cleanup = supervisor_protected_network_context_clear(
+                &probe_runtime.network_probe_context);
+            control.network_epoch = 0U;
+            if (cleanup == 0)
+                cleanup = supervisor_protected_probe_control_write(
+                    &probe_runtime.control, &control);
+            if (cleanup != 0) authority_expiry = cleanup;
+        }
         if (reply_expiry == 1)
             (void)supervisor_protected_arp_reply_context_clear(
                 &probe_runtime.arp_reply_context);

@@ -2,6 +2,7 @@
 
 #include "drivers/net/e1000.h"
 #include "drivers/net/ne2000.h"
+#include "drivers/net/rtl8168.h"
 #include "drivers/net/rtl8139.h"
 #include "include/kernel/panic.h"
 #include "include/kernel/supervisor.h"
@@ -11,7 +12,7 @@
 #include "lib/libc/string.h"
 
 #define NETDEV_MONITOR_QUEUE_SIZE 8
-#define NETDEV_SERVICE_QUEUE_SIZE 8
+#define NETDEV_SERVICE_QUEUE_SIZE 32
 #define NETDEV_MAX_FRAME_SIZE 1518
 
 typedef struct {
@@ -69,18 +70,20 @@ bool netdev_supervision_init(uint64_t now_ms) {
 
 bool netdev_available(void) {
     return e1000_is_initialized() || rtl8139_is_initialized() ||
-           ne2000_is_initialized();
+           rtl8168_is_initialized() || ne2000_is_initialized();
 }
 
 const char* netdev_backend_name(void) {
     if (e1000_is_initialized()) return "E1000";
     if (rtl8139_is_initialized()) return "RTL8139";
+    if (rtl8168_is_initialized()) return "RTL8168/8111G";
     if (ne2000_is_initialized()) return "NE2000";
     return "none";
 }
 
 bool netdev_send(const uint8_t* packet, size_t length) {
-    if (!netdev_administratively_enabled || netdev_tx_fenced) return false;
+    if (netdev_tx_fenced) return false;
+    if (!netdev_administratively_enabled) return false;
     if (!packet || length < 14u || length > NETDEV_MAX_FRAME_SIZE) return false;
     if (netdev_supervised &&
         supervisor_report_progress(netdev_supervisor_handle,
@@ -91,6 +94,8 @@ bool netdev_send(const uint8_t* packet, size_t length) {
         result = e1000_send_packet((void*)packet, length);
     } else if (rtl8139_is_initialized()) {
         result = rtl8139_send_packet((void*)packet, (uint16_t)length);
+    } else if (rtl8168_is_initialized()) {
+        result = rtl8168_send_packet(packet, length);
     } else if (ne2000_is_initialized()) {
         result = ne2000_send_packet((uint8_t*)packet, (uint16_t)length);
     }
@@ -105,18 +110,21 @@ void netdev_fence_outputs(void) {
     __asm__ volatile("" ::: "memory");
     e1000_fence_outputs();
     rtl8139_fence_outputs();
+    rtl8168_fence_outputs();
     ne2000_fence_outputs();
 }
 
 bool netdev_outputs_fenced(void) {
     return netdev_tx_fenced && e1000_outputs_fenced() &&
-           rtl8139_outputs_fenced() && ne2000_outputs_fenced();
+           rtl8139_outputs_fenced() && rtl8168_outputs_fenced() &&
+           ne2000_outputs_fenced();
 }
 
 bool netdev_get_mac_address(uint8_t mac[6]) {
     if (!mac) return false;
     if (e1000_is_initialized()) e1000_get_mac_address(mac);
     else if (rtl8139_is_initialized()) rtl8139_get_mac_address(mac);
+    else if (rtl8168_is_initialized()) rtl8168_get_mac_address(mac);
     else if (ne2000_is_initialized()) ne2000_get_mac_address(mac);
     else {
         memset(mac, 0, 6);
@@ -187,6 +195,7 @@ void netdev_poll(void) {
     }
     if (e1000_is_initialized()) e1000_poll_rx();
     if (rtl8139_is_initialized()) rtl8139_poll_rx();
+    if (rtl8168_is_initialized()) rtl8168_poll_rx();
     if (ne2000_is_initialized()) ne2000_poll_rx();
     __sync_lock_release(&netdev_poll_busy);
 }

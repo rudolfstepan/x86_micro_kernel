@@ -24,7 +24,7 @@ class ReistNetworkFrameHandoffTests(unittest.TestCase):
 
     def test_service_queue_is_static_bounded_and_generation_fresh(self) -> None:
         netdev = read("drivers/net/netdev.c")
-        self.assertIn("NETDEV_SERVICE_QUEUE_SIZE 8", netdev)
+        self.assertIn("NETDEV_SERVICE_QUEUE_SIZE 32", netdev)
         self.assertIn("service_queue[NETDEV_SERVICE_QUEUE_SIZE]", netdev)
         self.assertIn("length > NETDEV_MAX_FRAME_SIZE", netdev)
         self.assertNotIn("k_malloc", netdev)
@@ -43,6 +43,8 @@ class ReistNetworkFrameHandoffTests(unittest.TestCase):
             self.assertNotIn(forbidden, block)
         service = read("userspace/programs/reist_probe.c")
         self.assertIn("x86os_reist_receive_network_frame", service)
+        self.assertIn("REIST_NETWORK_RX_BATCH 8U", service)
+        self.assertIn("rx_index < REIST_NETWORK_RX_BATCH", service)
         self.assertIn("network_frame.length < 14U", service)
         self.assertIn("X86OS_REIST_REPORT_NETWORK_FRAME", service)
         self.assertIn("frame_delivery_pending != 0U", supervisor)

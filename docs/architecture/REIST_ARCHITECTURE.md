@@ -534,8 +534,9 @@ Einmalautorisierungen konkurrieren. Der Runtime-Vertrag verlangt Queue,
 Ring-3-Entscheidung, echten NIC-Send und unabhängigen Gastfortschritt in dieser
 Reihenfolge. Request-ID und Prozessgeneration bleiben dabei getrennte
 monotone Namensräume. S0.3c-5b2b übernimmt auch die ausgehende Auflösung:
-Cache-Misses erzeugen eine feste `NETA`-Nachricht; Zieladresse, Request-ID und
-Dienstgeneration liegen in einem geschützten 250-ms-Einmalvertrag. Nur der
+Cache-Misses erzeugen eine feste `NETA`-Nachricht; Zieladresse, Request-ID,
+Probe-ID und Dienstgeneration liegen in einem geschützten
+250-ms-Einmalvertrag. Nur der
 verifizierte Dienst darf über Syscall 64 den echten Request auslösen. Der
 RTL8139-Lauf prüft den resultierenden Ethernet-Frame am QEMU-Socket. Damit ist
 der lokale ARP-Request-/Reply-Pfad vermittelt; ICMP und die DHCP-
@@ -1075,7 +1076,7 @@ Als erste konkrete S0.3-Sperre besitzt der Kernel eine statische, begrenzte
 Output-Fence-Registry. Ein Fatalereignis verriegelt sie vor jeder Diagnose und
 vor dem Watchdog-Handover dauerhaft bis zum Neustart. Der Netzwerk-Hook sperrt
 alle Software-TX-Pfade und deaktiviert best-effort die Sender von E1000,
-RTL8139 und NE2000; Wiederholung ist wirkungslos und benötigt weder Heap noch
+RTL8139, RTL8168/8111G und NE2000; Wiederholung ist wirkungslos und benötigt weder Heap noch
 Locks. Das verhindert weitere Netzwerkausgabe aus dem fehlerhaften Kanal, ist
 aber kein Ersatz für ein elektrisch unabhängiges Interlock für gefährliche
 Aktoren. Solche Ausgänge benötigen je Hazard einen rücklesbaren, extern
@@ -1112,7 +1113,7 @@ Die erste produktiv verdrahtete Domäne ist `network-tx`. Sie bleibt im
 Leerlauf ohne künstliche Deadline und bewaffnet nur eine aktive
 Sendetransaktion mit 250 ms. Der Fortschrittszähler ist 64 Bit. Ein Timeout
 erlaubt keinen automatischen Restart, setzt das logische TX-Latch, deaktiviert
-die vorhandenen Sender und liest bei E1000, RTL8139 und NE2000 die relevanten
+die vorhandenen Sender und liest bei E1000, RTL8139, RTL8168/8111G und NE2000 die relevanten
 Register zurück. Erst diese Rückleseprüfung bestätigt das Fence; andernfalls
 bleibt die Domäne ebenfalls im global eskalierten Safe State.
 

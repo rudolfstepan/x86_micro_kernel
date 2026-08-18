@@ -99,8 +99,46 @@ enum {
       X86OS_SYS_PARTITION_CREATE = 92,
       X86OS_SYS_STORAGE_BLOCK_FLUSH = 93,
       X86OS_SYS_STORAGE_MEDIA_COMMIT = 94,
-      X86OS_SYS_STORAGE_FORMAT_PROBE = 95
+    X86OS_SYS_STORAGE_FORMAT_PROBE = 95,
+    X86OS_SYS_NETWORK_CONTROL = 96
 };
+
+#define X86OS_NETWORK_CONTROL_VERSION 1U
+enum {
+    X86OS_NETWORK_STATUS = 1U,
+    X86OS_NETWORK_CONFIGURE = 2U,
+    X86OS_NETWORK_PING = 3U,
+    X86OS_NETWORK_ARP_REQUEST = 4U
+};
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t reserved;
+    uint32_t ip_address;
+    uint32_t netmask;
+    uint32_t gateway;
+    uint32_t target_ip;
+    uint32_t identifier;
+    uint32_t sequence;
+    uint32_t timeout_ms;
+} x86os_network_control_request_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t operation_result;
+    uint32_t available;
+    uint32_t ready;
+    uint32_t configured;
+    uint32_t ip_address;
+    uint32_t netmask;
+    uint32_t gateway;
+    char backend[16];
+    uint8_t mac_address[6];
+    uint8_t reserved[2];
+} x86os_network_control_result_t;
 
 enum {
     X86OS_FILE = 1,
@@ -621,6 +659,8 @@ int x86os_reist_dhcp_ingress(
 int x86os_reist_start_dhcp_boot(
     const x86os_reist_dhcp_boot_start_t *request);
 int x86os_network_arp_resolve(uint32_t target_ip);
+int x86os_network_control(const x86os_network_control_request_t *request,
+                          x86os_network_control_result_t *result);
 int x86os_storage_bind(void);
 int x86os_storage_submit(const x86os_storage_submit_t *request,
                          const void *data, x86os_storage_handle_t *handle);

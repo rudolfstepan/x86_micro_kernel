@@ -21,6 +21,7 @@ struct Process;
 
 #define IPC_INVALID_HANDLE 0U
 #define IPC_EINTEGRITY (-84)
+#define IPC_EPIPE (-32)
 
 typedef enum {
     IPC_FAULT_ENDPOINT = 0,

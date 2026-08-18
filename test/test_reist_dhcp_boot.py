@@ -46,6 +46,14 @@ class ReistDhcpBootTests(unittest.TestCase):
         self.assertIn("dhcp_boot_attempts < REIST_DHCP_BOOT_MAX_ATTEMPTS",
                       probe)
 
+    def test_failed_boot_cycles_are_retried_after_a_bounded_delay(self) -> None:
+        probe = read("userspace/programs/reist_probe.c")
+        self.assertIn("REIST_DHCP_BOOT_CYCLE_DELAY_MS 5000U", probe)
+        self.assertIn("dhcp_boot_attempts >= REIST_DHCP_BOOT_MAX_ATTEMPTS",
+                      probe)
+        self.assertIn("dhcp_boot_cycle_after_ms", probe)
+        self.assertIn("dhcp_boot_attempts = 0U", probe)
+
     def test_offer_select_and_ack_are_ring3_mediated(self) -> None:
         supervisor = read("kernel/init/supervisor.c")
         ingress = supervisor[supervisor.index(

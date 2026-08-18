@@ -394,6 +394,9 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         injection = RUNNER_MODULE.monitor_key_commands("gtest")
         self.assertEqual(injection[-1], "sendkey ret\n")
         self.assertEqual(len(injection), 6)
+        ping = RUNNER_MODULE.monitor_key_commands("ping 10.0.2.2")
+        self.assertIn("sendkey spc\n", ping)
+        self.assertEqual(ping.count("sendkey dot\n"), 3)
         self.assertIn('"-serial", "mon:stdio"', source)
         self.assertNotIn('process.stdin.write(character)', source)
 

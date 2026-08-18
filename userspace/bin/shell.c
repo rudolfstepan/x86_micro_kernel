@@ -40,6 +40,222 @@ static int text_equal(const char* left, const char* right) {
     return lower(*left) == lower(*right);
 }
 
+static uint32_t parse_ipv4(const char* text) {
+    if (text == 0 || *text == '\0') return 0U;
+    uint32_t value = 0U;
+    unsigned part = 0U;
+    unsigned digits = 0U;
+    unsigned dots = 0U;
+    for (const char* cursor = text;; ++cursor) {
+        char current = *cursor;
+        if (current >= '0' && current <= '9') {
+            if (digits >= 3U) return 0U;
+            part = part * 10U + (unsigned)(current - '0');
+            if (part > 255U) return 0U;
+            ++digits;
+        } else if (current == '.' || current == '\0') {
+            if (digits == 0U) return 0U;
+            value = (value << 8U) | part;
+            part = 0U;
+            digits = 0U;
+            if (current == '\0') break;
+            if (++dots > 3U) return 0U;
+        } else {
+            return 0U;
+        }
+    }
+    return dots == 3U ? value : 0U;
+}
+
+static void print_ipv4(uint32_t value) {
+    x86os_print_number((int)((value >> 24U) & 0xFFU));
+    x86os_putchar('.');
+    x86os_print_number((int)((value >> 16U) & 0xFFU));
+    x86os_putchar('.');
+    x86os_print_number((int)((value >> 8U) & 0xFFU));
+    x86os_putchar('.');
+    x86os_print_number((int)(value & 0xFFU));
+}
+
+static int network_call(uint32_t operation, uint32_t ip, uint32_t netmask,
+                        uint32_t gateway, uint32_t target, uint32_t id,
+                        uint32_t sequence, uint32_t timeout,
+                        x86os_network_control_result_t* result) {
+    x86os_network_control_request_t request = {0};
+    request.version = X86OS_NETWORK_CONTROL_VERSION;
+    request.struct_size = sizeof(request);
+    request.operation = operation;
+    request.ip_address = ip;
+    request.netmask = netmask;
+    request.gateway = gateway;
+    request.target_ip = target;
+    request.identifier = id;
+    request.sequence = sequence;
+    request.timeout_ms = timeout;
+    return x86os_network_control(&request, result);
+}
+
+static void print_mac(const uint8_t mac[6]) {
+    static const char digits[] = "0123456789ABCDEF";
+    for (unsigned index = 0U; index < 6U; ++index) {
+        if (index != 0U) x86os_putchar(':');
+        x86os_putchar(digits[(mac[index] >> 4U) & 0x0FU]);
+        x86os_putchar(digits[mac[index] & 0x0FU]);
+    }
+}
+
+static int network_status(int detailed) {
+    x86os_network_control_result_t result = {0};
+    int code = network_call(X86OS_NETWORK_STATUS, 0U, 0U, 0U, 0U, 0U,
+                            0U, 0U, &result);
+    if (code != 0) {
+        x86os_puts("NET STATUS failed code=");
+        x86os_print_number(code);
+        x86os_putchar('\n');
+        return code;
+    }
+    x86os_puts("Network: ");
+    x86os_puts(result.available != 0U ? "available" : "not available");
+    x86os_puts(" backend=");
+    x86os_puts(result.backend);
+    x86os_puts(" ready=");
+    x86os_puts(result.ready != 0U ? "yes" : "no");
+    x86os_puts(" configured=");
+    x86os_puts(result.configured != 0U ? "yes\n" : "no\n");
+    x86os_puts("MAC=");
+    print_mac(result.mac_address);
+    x86os_putchar('\n');
+    if (detailed || result.configured != 0U) {
+        x86os_puts("IP=");
+        print_ipv4(result.ip_address);
+        x86os_puts(" MASK=");
+        print_ipv4(result.netmask);
+        x86os_puts(" GW=");
+        print_ipv4(result.gateway);
+        x86os_putchar('\n');
+    }
+    return 0;
+}
+
+static void network_command(int argc, const char* const argv[]) {
+    if (argc == 1 || text_equal(argv[1], "status") ||
+        text_equal(argv[1], "info")) {
+        if (argc > 2) {
+            x86os_puts("Usage: net [status|info|dhcp]\n");
+            return;
+        }
+        (void)network_status(argc > 1 && text_equal(argv[1], "info"));
+        return;
+    }
+    if (text_equal(argv[1], "dhcp")) {
+        x86os_puts("DHCP is supervised by REIST.PRG; current state:\n");
+        (void)network_status(1);
+        return;
+    }
+    x86os_puts("Usage: net [status|info|dhcp]\n");
+}
+
+static void ifconfig_command(int argc, const char* const argv[]) {
+    if (argc == 1 || (argc == 2 && text_equal(argv[1], "dhcp"))) {
+        (void)network_status(1);
+        return;
+    }
+    if (argc != 4) {
+        x86os_puts("Usage: ifconfig <ip> <netmask> <gateway>\n");
+        return;
+    }
+    uint32_t ip = parse_ipv4(argv[1]);
+    uint32_t netmask = parse_ipv4(argv[2]);
+    uint32_t gateway = parse_ipv4(argv[3]);
+    x86os_network_control_result_t result = {0};
+    int code = (ip == 0U || netmask == 0U || gateway == 0U) ? -22 :
+        network_call(X86OS_NETWORK_CONFIGURE, ip, netmask, gateway, 0U,
+                     0U, 0U, 0U, &result);
+    if (code != 0) {
+        x86os_puts("IFCONFIG failed code=");
+        x86os_print_number(code);
+        x86os_putchar('\n');
+        return;
+    }
+    x86os_puts("Network interface configured.\n");
+}
+
+static void ping_command(int argc, const char* const argv[]) {
+    if (argc != 2) {
+        x86os_puts("Usage: ping <ip>\n");
+        return;
+    }
+    uint32_t target = parse_ipv4(argv[1]);
+    if (target == 0U) {
+        x86os_puts("PING: invalid IP address\n");
+        return;
+    }
+    uint32_t sent = 0U;
+    uint32_t received = 0U;
+    uint32_t sequence = 1U;
+    x86os_puts("PING ");
+    x86os_puts(argv[1]);
+    x86os_puts(" (Ctrl+C to stop)\n");
+    for (;;) {
+        x86os_network_control_result_t result = {0};
+        int code = network_call(X86OS_NETWORK_PING, 0U, 0U, 0U, target,
+                                0x1234U, sequence++, 2000U, &result);
+        ++sent;
+        x86os_puts("reply: ");
+        if (code == 0) {
+            ++received;
+            x86os_puts("received\n");
+        } else {
+            x86os_puts("timeout/error code=");
+            x86os_print_number(code);
+            x86os_putchar('\n');
+        }
+        for (uint32_t elapsed = 0U; elapsed < 1000U; elapsed += 10U) {
+            if (x86os_getchar_nonblocking() == 0x03) {
+                x86os_puts("^C\n");
+                x86os_puts("Packets sent=");
+                x86os_print_number((int)sent);
+                x86os_puts(" received=");
+                x86os_print_number((int)received);
+                x86os_putchar('\n');
+                return;
+            }
+            (void)x86os_sleep_ms(10U);
+        }
+    }
+}
+
+static void arp_command(int argc, const char* const argv[]) {
+    if (argc != 2 && !(argc == 3 && text_equal(argv[1], "scan"))) {
+        x86os_puts("Usage: arp <ip>\n");
+        x86os_puts("       arp scan <ip>\n");
+        return;
+    }
+    const char* address = argc == 2 ? argv[1] : argv[2];
+    uint32_t target = parse_ipv4(address);
+    if (target == 0U) {
+        x86os_puts("ARP: invalid IP address\n");
+        return;
+    }
+    x86os_network_control_result_t result = {0};
+    int code = -11;
+    for (unsigned attempt = 0U; attempt < 5U && code == -11; ++attempt) {
+        code = network_call(X86OS_NETWORK_ARP_REQUEST, 0U, 0U, 0U,
+                            target, 0U, 0U, 0U, &result);
+        if (code == -11 && attempt + 1U < 5U)
+            (void)x86os_sleep_ms(250U);
+    }
+    if (code != 0) {
+        x86os_puts("ARP request failed code=");
+        x86os_print_number(code);
+        x86os_putchar('\n');
+        return;
+    }
+    x86os_puts("ARP request queued for ");
+    x86os_puts(address);
+    x86os_putchar('\n');
+}
+
 static char drive_letter(const x86os_drive_info_t* drive) {
     if (drive->mount_point[0] == '/' && drive->mount_point[1] == '\0')
         return 'C';
@@ -377,7 +593,8 @@ static void scan_completion_directory(const char* directory,
 static void complete_command(const char* prefix, completion_t* completion) {
     static const char* commands[] = {
         "CD", "CHDIR", "PWD", "HELP", "HISTORY", "PATH", "EXIT",
-        "DIR", "TYPE", "MD", "RD", "ERASE", "CLEAR"
+        "DIR", "TYPE", "MD", "RD", "ERASE", "CLEAR", "NET",
+        "IFCONFIG", "PING", "ARP", "GETIP"
     };
     for (unsigned index = 0; index < sizeof(commands) / sizeof(commands[0]);
          ++index) {
@@ -458,15 +675,23 @@ static void complete_line(char line[SHELL_LINE_CAPACITY], unsigned* length) {
     line[*length] = '\0';
 }
 
+static int read_shell_input(void) {
+    for (;;) {
+        int value = x86os_getchar_nonblocking();
+        if (value != 0) return value;
+        (void)x86os_sleep_ms(10U);
+    }
+}
+
 static int read_shell_key(void) {
-    int value = x86os_getchar();
+    int value = read_shell_input();
     if (value != 0x1B) return value;
-    if (x86os_getchar() != '[') return SHELL_KEY_NONE;
-    value = x86os_getchar();
+    if (read_shell_input() != '[') return SHELL_KEY_NONE;
+    value = read_shell_input();
     if (value == 'A') return SHELL_KEY_UP;
     if (value == 'B') return SHELL_KEY_DOWN;
     if (value >= '0' && value <= '9') {
-        (void)x86os_getchar();
+        (void)read_shell_input();
     }
     return SHELL_KEY_NONE;
 }
@@ -504,6 +729,11 @@ static void read_line(char line[SHELL_LINE_CAPACITY]) {
         }
         if (key == SHELL_KEY_NONE) continue;
         char value = (char)key;
+        if (value == 0x03) {
+            line[0] = '\0';
+            x86os_puts("^C\n");
+            break;
+        }
         if (value == '\r' || value == '\n') {
             x86os_putchar('\n');
             break;
@@ -550,6 +780,7 @@ static void show_prompt(void) {
 static void show_help(void) {
     x86os_puts("Built-ins: cd path pwd history help exit\n");
     x86os_puts("Aliases: dir type md rd erase clear\n");
+    x86os_puts("Network: net ifconfig ping arp getip\n");
     x86os_puts("Use Up/Down to browse command history.\n");
     x86os_puts("Other commands are loaded as .PRG programs.\n");
 }
@@ -581,6 +812,7 @@ static const char* resident_program_path(const char* program) {
         {"svcctl.prg", "/sbin/svcctl.prg", "/svcctl.prg"},
         {"drives.prg", "/sbin/drives.prg", "/drives.prg"},
         {"chkdsk.prg", "/sbin/chkdsk.prg", "/chkdsk.prg"},
+        {"gtest.prg", "/libexec/reist/gtest.prg", "/gtest.prg"},
     };
     for (unsigned index = 0U;
          index < sizeof(resident) / sizeof(resident[0]); ++index) {
@@ -692,6 +924,16 @@ int main(void) {
                 if (resolve_shell_path(argv[1], path) < 0 ||
                     x86os_chdir(path) < 0) x86os_puts("Directory not found.\n");
             }
+        } else if (text_equal(argv[0], "net")) {
+            network_command(argc, argv);
+        } else if (text_equal(argv[0], "ifconfig")) {
+            ifconfig_command(argc, argv);
+        } else if (text_equal(argv[0], "ping")) {
+            ping_command(argc, argv);
+        } else if (text_equal(argv[0], "arp")) {
+            arp_command(argc, argv);
+        } else if (text_equal(argv[0], "getip")) {
+            (void)network_status(0);
         } else {
             run_program(argc, argv);
         }

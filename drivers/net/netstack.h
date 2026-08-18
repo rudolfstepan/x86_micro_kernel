@@ -170,6 +170,7 @@ bool netstack_apply_supervised_dhcp(uint32_t ip, uint32_t netmask,
                                     uint32_t gateway, uint32_t dns_server);
 bool netstack_clear_supervised_dhcp(uint32_t expected_ip);
 uint32_t netstack_get_ip_address(void);
+uint32_t netstack_get_netmask(void);
 bool netstack_is_configured(void);
 uint32_t netstack_get_gateway(void);
 bool netstack_get_local_identity(uint32_t *ip_out, uint8_t mac_out[6]);

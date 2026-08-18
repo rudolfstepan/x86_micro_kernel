@@ -50,7 +50,8 @@ SATA-Hardwarefreigabe.
 - deterministische Rootauswahl: BIOS-Bootdiskette oder genau eine strukturell
   gültige FAT32-Partition mit Label `X86 SYSTEM`
 - VFS mit FAT12, FAT32 und EXT2 sowie DOS-artiger Ring-3-Shell
-- E1000, RTL8139 und NE2000 hinter einer gemeinsamen Netzgeräteschicht
+- E1000, RTL8139, RTL8168/8111G und NE2000 hinter einer gemeinsamen
+  Netzgeräteschicht
 - VGA-Text als Standard und optionaler VBE-Framebuffer mit Ring-3-Desktop
 
 Der SATA-Pfad leitet partition-relative Zugriffe anhand des Elterntransports an
@@ -192,8 +193,13 @@ und – falls vorhanden – den Registerrahmen.
 
 Der überwachte Ring-3-Dienst `REIST.PRG` übernimmt validierte
 Netzwerkentscheidungen. Vorhanden sind Ethernet, ARP, IPv4, ICMP, begrenzte
-UDP-Bindings und DHCP-Lease-Verwaltung. Nicht vorhanden sind DNS, TCP, IPv6,
-ein allgemeines POSIX-Socketmodell und Anwendungen wie HTTP oder SMB.
+UDP-Bindings und DHCP-Lease-Verwaltung. Der neue RTL8168/8111G-Treiber bindet
+die H81M-K-PCI-ID `10EC:8168` über MMIO, feste TX-/RX-DMA-Ringe und denselben
+Netdev-Fence-Vertrag ein. Link und DHCP wurden auf dem physischen H81M-K
+beobachtet; der ARP-/ICMP-Retest des aktuellen Builds bleibt dort noch offen.
+Die QEMU-Referenz emuliert den Chip nicht. Nicht vorhanden sind
+DNS, TCP, IPv6, ein allgemeines POSIX-Socketmodell und Anwendungen wie HTTP
+oder SMB.
 
 ## Verifikation
 

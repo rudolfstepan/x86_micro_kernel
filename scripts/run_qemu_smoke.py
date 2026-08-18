@@ -101,6 +101,12 @@ HANDOVER_SERIAL_FRAME = struct.Struct("<IBBHIQI")
 HANDOVER_SERIAL_STATE_FRAME = struct.Struct("<IBBHIIIIQQIII")
 SHELL_PROMPT = "C:\\>"
 PS2_GUEST_COMMAND = "gtest"
+OUTBOUND_PING_COMMAND = "ping 10.0.2.98"
+OUTBOUND_PING_REPLY_MARKER = "reply: received"
+OUTBOUND_PING_TARGET = bytes((10, 0, 2, 98))
+OUTBOUND_PING_MAC = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x03))
+GUEST_IP = bytes((10, 0, 2, 15))
+GUEST_MAC = bytes((0x52, 0x54, 0x00, 0x12, 0x34, 0x56))
 QEMU_MUX_SWITCH = "\x01c"
 KEY_INTERVAL_SECONDS = 0.075
 FAIL_MARKERS = (
@@ -202,9 +208,15 @@ def open_injection_listener() -> tuple[socket.socket, int]:
 def monitor_key_commands(text: str) -> list[str]:
     commands: list[str] = []
     for character in text:
-        if not ("a" <= character <= "z"):
-            raise ValueError("PS/2 guest command must contain lowercase ASCII")
-        commands.append(f"sendkey {character}\n")
+        if "a" <= character <= "z" or "0" <= character <= "9":
+            key = character
+        elif character == " ":
+            key = "spc"
+        elif character == ".":
+            key = "dot"
+        else:
+            raise ValueError("unsupported PS/2 guest command character")
+        commands.append(f"sendkey {key}\n")
     commands.append("sendkey ret\n")
     return commands
 
@@ -221,6 +233,21 @@ def inject_ps2_command(process: subprocess.Popen[str], text: str) -> None:
             process.stdin.write(command)
             process.stdin.flush()
             time.sleep(KEY_INTERVAL_SECONDS)
+    finally:
+        process.stdin.write(QEMU_MUX_SWITCH)
+        process.stdin.flush()
+
+
+def inject_ps2_key(process: subprocess.Popen[str], key: str) -> None:
+    if process.stdin is None:
+        raise RuntimeError("QEMU multiplexed monitor input unavailable")
+    process.stdin.write(QEMU_MUX_SWITCH)
+    process.stdin.flush()
+    time.sleep(KEY_INTERVAL_SECONDS)
+    try:
+        process.stdin.write(f"sendkey {key}\n")
+        process.stdin.flush()
+        time.sleep(KEY_INTERVAL_SECONDS)
     finally:
         process.stdin.write(QEMU_MUX_SWITCH)
         process.stdin.flush()
@@ -292,6 +319,15 @@ def arp_request_frame() -> bytes:
         b"\x00\x01", b"\x08\x00", b"\x06\x04", b"\x00\x01",
         source_mac, bytes((10, 0, 2, 99)), b"\x00" * 6,
         bytes((10, 0, 2, 15)),
+    ))
+    return frame.ljust(60, b"\x00")
+
+
+def outbound_ping_arp_reply_frame() -> bytes:
+    frame = b"".join((
+        GUEST_MAC, OUTBOUND_PING_MAC, b"\x08\x06",
+        b"\x00\x01", b"\x08\x00", b"\x06\x04", b"\x00\x02",
+        OUTBOUND_PING_MAC, OUTBOUND_PING_TARGET, GUEST_MAC, GUEST_IP,
     ))
     return frame.ljust(60, b"\x00")
 
@@ -425,6 +461,52 @@ def receive_icmp_echo_reply(connection: socket.socket,
                 icmp[8:] == b"REIS" and internet_checksum(icmp) == 0):
             return True
     return False
+
+
+def receive_icmp_echo_request(
+    connection: socket.socket, deadline: float,
+) -> tuple[int, int, bytes] | None:
+    while time.monotonic() < deadline:
+        connection.settimeout(max(0.01, deadline - time.monotonic()))
+        header = receive_exact(connection, 4)
+        if header is None:
+            return None
+        length = struct.unpack("!I", header)[0]
+        if length < 14 or length > 1514:
+            return None
+        frame = receive_exact(connection, length)
+        if frame is None or len(frame) < 42:
+            return None
+        if (frame[0:6] != OUTBOUND_PING_MAC or
+                frame[12:14] != b"\x08\x00" or frame[23] != 1 or
+                frame[26:30] != GUEST_IP or
+                frame[30:34] != OUTBOUND_PING_TARGET):
+            continue
+        ihl = (frame[14] & 0x0F) * 4
+        ip_total = struct.unpack("!H", frame[16:18])[0]
+        if ihl < 20 or ip_total < ihl + 8 or len(frame) < 14 + ip_total:
+            continue
+        icmp = frame[14 + ihl:14 + ip_total]
+        if icmp[0:2] != b"\x08\x00" or internet_checksum(icmp) != 0:
+            continue
+        identifier, sequence = struct.unpack("!HH", icmp[4:8])
+        return identifier, sequence, icmp[8:]
+    return None
+
+
+def outbound_ping_icmp_reply_frame(
+    identifier: int, sequence: int, payload: bytes,
+) -> bytes:
+    icmp = struct.pack("!BBHHH", 0, 0, 0, identifier, sequence) + payload
+    icmp = icmp[:2] + struct.pack("!H", internet_checksum(icmp)) + icmp[4:]
+    total_length = 20 + len(icmp)
+    ip = struct.pack(
+        "!BBHHHBBH4s4s", 0x45, 0, total_length, 0x5049, 0,
+        64, 1, 0, OUTBOUND_PING_TARGET, GUEST_IP,
+    )
+    ip = ip[:10] + struct.pack("!H", internet_checksum(ip)) + ip[12:]
+    return (GUEST_MAC + OUTBOUND_PING_MAC + b"\x08\x00" + ip + icmp).ljust(
+        60, b"\x00")
 
 
 def receive_udp_echo_reply(connection: socket.socket, deadline: float,
@@ -603,6 +685,7 @@ def run(
     udp_port: int = 9000,
     sata: bool = False,
     auxiliary_sata_image: Path | None = None,
+    expect_outbound_ping: bool = False,
     boot_only: bool = False,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
@@ -613,8 +696,8 @@ def run(
     handover_port: int | None = None
     handover_thread: threading.Thread | None = None
     handover_result: list[str | None] = [None]
-    if (inject_arp_request or expect_arp_resolution or inject_icmp_echo or
-            inject_udp_echo):
+    if (inject_arp_request or expect_arp_resolution or expect_outbound_ping or
+            inject_icmp_echo or inject_udp_echo):
         injection_listener, injection_port = open_injection_listener()
     if expect_handover:
         handover_listener, handover_port = open_injection_listener()
@@ -830,8 +913,9 @@ def run(
                     process, chunks, transcript, finished, TEST_MARKER,
                     deadline,
                 )
+            shell_position = -1
             if error is None:
-                error, _ = wait_for_line(
+                error, shell_position = wait_for_line(
                     process,
                     chunks,
                     transcript,
@@ -852,6 +936,62 @@ def run(
                 if error is None and not receive_arp_request(
                         injection_connection, bytes((10, 0, 2, 99)), deadline):
                     error = "mediated ARP request was not observed on QEMU socket"
+            if error is None and expect_outbound_ping:
+                assert injection_connection is not None
+                inject_ps2_command(process, OUTBOUND_PING_COMMAND)
+                if not receive_arp_request(
+                        injection_connection, OUTBOUND_PING_TARGET, deadline):
+                    error = "outbound PING ARP request was not observed"
+                if error is None and not inject_ethernet_frame(
+                        injection_connection, outbound_ping_arp_reply_frame()):
+                    error = "unable to inject outbound PING ARP reply"
+                if error is None:
+                    error, _ = wait_for_line(
+                        process, chunks, transcript, finished,
+                        REIST_ARP_RESOLUTION_MARKER, deadline,
+                        after=shell_position,
+                    )
+                if error is None:
+                    error, _ = wait_for_line(
+                        process, chunks, transcript, finished,
+                        REIST_ARP_BINDING_MARKER, deadline,
+                        after=shell_position,
+                    )
+                echo = (None if error is not None else
+                        receive_icmp_echo_request(injection_connection,
+                                                  deadline))
+                if error is None and echo is None:
+                    error = "outbound ICMP echo request was not observed"
+                if error is None and echo is not None and \
+                        not inject_ethernet_frame(
+                            injection_connection,
+                            outbound_ping_icmp_reply_frame(*echo)):
+                    error = "unable to inject outbound PING echo reply"
+                ping_position = -1
+                if error is None:
+                    error, ping_position = wait_for_line(
+                        process, chunks, transcript, finished,
+                        OUTBOUND_PING_REPLY_MARKER, deadline,
+                        after=shell_position,
+                    )
+                if error is None:
+                    inject_ps2_key(process, "ctrl-c")
+                    error, prompt_after_ping = wait_for_line(
+                        process, chunks, transcript, finished, SHELL_PROMPT,
+                        deadline, after=ping_position,
+                    )
+                if error is None:
+                    inject_ps2_key(process, "ctrl-c")
+                    error, prompt_after_cancel = wait_for_line(
+                        process, chunks, transcript, finished, SHELL_PROMPT,
+                        deadline, after=prompt_after_ping,
+                    )
+                    if error is None:
+                        drain(chunks, transcript)
+                        cancelled = "".join(transcript)[
+                            prompt_after_ping:prompt_after_cancel]
+                        if "^C" not in cancelled:
+                            error = "shell prompt returned without Ctrl+C acknowledgement"
     finally:
         if injection_connection is not None:
             injection_connection.close()
@@ -1222,6 +1362,10 @@ def main() -> int:
         help="trigger PING and require a mediated outgoing ARP request",
     )
     parser.add_argument(
+        "--expect-outbound-ping", action="store_true",
+        help="run shell PING against the QEMU gateway and keep the shell alive",
+    )
+    parser.add_argument(
         "--expect-storage-recovery", action="store_true",
         help="require an injected storage-service crash and bounded recovery",
     )
@@ -1278,6 +1422,7 @@ def main() -> int:
         print("guest-smoke: memory must look like 64M or 1G", file=sys.stderr)
         return 2
     if (args.inject_arp_request or args.expect_arp_resolution or
+            args.expect_outbound_ping or
             args.inject_icmp_echo or args.inject_udp_echo) and args.nic == "none":
         print("guest-smoke: network injection verification requires a NIC",
               file=sys.stderr)
@@ -1308,6 +1453,7 @@ def main() -> int:
             args.sata,
             (args.aux_sata_image.resolve()
              if args.aux_sata_image is not None else None),
+            args.expect_outbound_ping,
             args.boot_only,
         )
     except OSError as error:
