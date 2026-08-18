@@ -44,6 +44,19 @@ class UsbMouseTests(unittest.TestCase):
         self.assertGreaterEqual(
             source.count("XHCI_IMAN_IP | XHCI_IMAN_IE"), 2
         )
+        self.assertIn("XHCI_COMPLETION_SHORT_PACKET 13U", source)
+        self.assertIn("completion == XHCI_COMPLETION_SHORT_PACKET", source)
+        self.assertIn("xhci_queue_interrupt_report", source)
+
+    def test_desktop_escape_returns_to_parent_shell(self):
+        source = (ROOT / "userspace/programs/desktop.c").read_text(
+            encoding="utf-8")
+        escape = source.index("key == DESKTOP_KEY_ESCAPE")
+        branch = source[escape:source.index("\n        }", escape)]
+        self.assertIn("return 0;", branch)
+        self.assertNotIn("launch_app", branch)
+        self.assertIn('x86os_puts("DESKTOP_MOUSE_OK\\n")', source)
+        self.assertIn('x86os_puts("DESKTOP_EXIT_OK\\n")', branch)
 
     def test_mouse_syscall_is_append_only_and_pointer_checked(self):
         stdlib = (ROOT / "lib/libc/stdlib.h").read_text(encoding="utf-8")

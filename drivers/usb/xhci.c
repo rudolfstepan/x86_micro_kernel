@@ -83,6 +83,7 @@
 #define TRB_EVENT_COMMAND        33U
 #define TRB_EVENT_PORT           34U
 #define XHCI_COMPLETION_SUCCESS  1U
+#define XHCI_COMPLETION_SHORT_PACKET 13U
 
 typedef struct {
     uint32_t d[4];
@@ -266,6 +267,24 @@ static void xhci_ring_doorbell(uint8_t slot, uint8_t endpoint) {
     xhci_write(controller.doorbell_base + (uint32_t)slot * 4U, endpoint);
 }
 
+static void xhci_queue_interrupt_report(void) {
+    uint32_t index = controller.endpoint_index;
+    xhci_trb_t *trb = &interrupt_ring[index];
+    memset(trb, 0, sizeof(*trb));
+    trb->d[0] = xhci_dma32(hid_reports[index]);
+    trb->d[2] = controller.report_size;
+    trb->d[3] = TRB_TYPE(TRB_TRANSFER) | TRB_IOC |
+        (controller.endpoint_cycle ? TRB_CYCLE : 0U);
+    controller.endpoint_index++;
+    if (controller.endpoint_index >= XHCI_ENDPOINT_RING_TRBS - 1U) {
+        interrupt_ring[XHCI_ENDPOINT_RING_TRBS - 1U].d[3] =
+            TRB_TYPE(TRB_LINK) | TRB_ENT |
+            (controller.endpoint_cycle ? TRB_CYCLE : 0U);
+        controller.endpoint_index = 0U;
+        controller.endpoint_cycle = !controller.endpoint_cycle;
+    }
+}
+
 static xhci_trb_t *xhci_command(uint32_t type, uint32_t d0, uint32_t d1,
                                 uint32_t control) {
     uint32_t index = controller.command_index;
@@ -307,9 +326,11 @@ static bool xhci_drain_events(uint32_t limit, uint32_t expected,
             uint32_t first = xhci_dma32(&interrupt_ring[0]);
             uint32_t last = xhci_dma32(
                 &interrupt_ring[XHCI_ENDPOINT_RING_TRBS - 2U]);
+            uint32_t completion = (status >> 24U) & 0xFFU;
             if (pointer >= first && pointer <= last &&
                 ((pointer - first) % sizeof(interrupt_ring[0])) == 0U &&
-                ((status >> 24U) & 0xFFU) == XHCI_COMPLETION_SUCCESS) {
+                (completion == XHCI_COMPLETION_SUCCESS ||
+                 completion == XHCI_COMPLETION_SHORT_PACKET)) {
                 uint32_t index = (pointer - first) / sizeof(interrupt_ring[0]);
                 uint32_t residual = status & 0x00FFFFFFU;
                 size_t actual = residual <= controller.report_size
@@ -320,22 +341,7 @@ static bool xhci_drain_events(uint32_t limit, uint32_t expected,
                 else if (controller.hid_protocol == 2U)
                     (void)hid_mouse_report(controller.generation,
                                             hid_reports[index], actual);
-                if (controller.endpoint_index == 0U) {
-                    interrupt_ring[XHCI_ENDPOINT_RING_TRBS - 1U].d[3] =
-                        TRB_TYPE(TRB_LINK) | TRB_ENT |
-                        (controller.endpoint_cycle ? TRB_CYCLE : 0U);
-                }
-                xhci_trb_t *trb = &interrupt_ring[controller.endpoint_index];
-                memset(trb, 0, sizeof(*trb));
-                trb->d[0] = xhci_dma32(hid_reports[controller.endpoint_index]);
-                trb->d[2] = controller.report_size;
-                trb->d[3] = TRB_TYPE(TRB_TRANSFER) | TRB_IOC |
-                    (controller.endpoint_cycle ? 1U : 0U);
-                controller.endpoint_index++;
-                if (controller.endpoint_index >= XHCI_ENDPOINT_RING_TRBS - 1U) {
-                    controller.endpoint_index = 0U;
-                    controller.endpoint_cycle = !controller.endpoint_cycle;
-                }
+                xhci_queue_interrupt_report();
                 xhci_ring_doorbell(controller.slot_id, controller.endpoint_id);
             }
         } else if (type == TRB_EVENT_PORT) {
@@ -594,10 +600,7 @@ static bool xhci_configure_boot_hid(void) {
     controller.endpoint_index = 0U;
     controller.endpoint_cycle = true;
     memset(hid_reports, 0, sizeof(hid_reports));
-    interrupt_ring[0].d[0] = xhci_dma32(hid_reports[0]);
-    interrupt_ring[0].d[2] = controller.report_size;
-    interrupt_ring[0].d[3] = TRB_TYPE(TRB_TRANSFER) | TRB_IOC | TRB_CYCLE;
-    controller.endpoint_index = 1U;
+    xhci_queue_interrupt_report();
     xhci_ring_doorbell(controller.slot_id, controller.endpoint_id);
     return true;
 }

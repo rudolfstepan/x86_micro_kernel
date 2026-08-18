@@ -288,6 +288,7 @@ int main(void) {
     int32_t pointer_x;
     int32_t pointer_y;
     uint32_t previous_buttons = 0U;
+    unsigned int mouse_confirmed = 0U;
 
     int display_status = x86os_display_info(&display);
     if (display_status != 0) {
@@ -321,6 +322,11 @@ int main(void) {
         if (mouse_status == 0) {
             pointer_x += mouse.delta_x;
             pointer_y += mouse.delta_y;
+            if (!mouse_confirmed &&
+                (mouse.delta_x != 0 || mouse.delta_y != 0)) {
+                x86os_puts("DESKTOP_MOUSE_OK\n");
+                mouse_confirmed = 1U;
+            }
             if (pointer_x < 0) pointer_x = 0;
             if (pointer_y < 0) pointer_y = 0;
             if (pointer_x >= (int32_t)display.width)
@@ -346,9 +352,9 @@ int main(void) {
             launch_app(&display, selected);
             redraw = 1U;
         } else if (key == DESKTOP_KEY_ESCAPE) {
-            selected = 0;
-            launch_app(&display, selected);
-            redraw = 1U;
+            x86os_puts("DESKTOP_EXIT_OK\n");
+            x86os_clear();
+            return 0;
         }
 
         if (selected != previous) redraw = 1U;
