@@ -1,6 +1,6 @@
 # Projektstatus
 
-Stand: 16. August 2026. Maßgeblich sind ausführbarer Code, die Tests und die
+Stand: 18. August 2026. Maßgeblich sind ausführbarer Code, die Tests und die
 aktive Paketqueue in `automation/reist-s03b.toml`.
 
 REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
@@ -9,7 +9,7 @@ sonstige sicherheitsbezogene Freigabe verstanden werden.
 
 ## Arbeitscheckpoint 16. August 2026
 
-Der heutige Stand endet auf Commit `0a2c08e` mit sauberem Worktree. Das reale
+Dieser historische Hardware-Checkpoint basiert auf Commit `0a2c08e`. Das reale
 SATA-Hotplug-Szenario wurde auf Zielhardware erfolgreich durchgeführt:
 
 - `SATAWR.PRG` schrieb synchronisierte Testdaten, während die System-HDD
@@ -116,6 +116,13 @@ Verzeichnisse, `fsync`, Same-Directory-Rename und Replace sind angebunden. Der
 Editor speichert über Tempdatei, `fsync`, Close und Rename. Fremde FAT32-Medien
 erhalten nicht automatisch dieselbe Journalgarantie.
 
+VFAT Long File Names sind für druckbares ASCII bis 255 Zeichen implementiert.
+LFN-Slotfolge, Reihenfolge und 8.3-Prüfsumme werden vor Veröffentlichung
+validiert; ungültige oder nicht unterstützte Unicode-Folgen fallen auf den
+checksum-gebundenen 8.3-Alias zurück. Create, Lookup, `readdir`, Datei-I/O,
+Delete, lange Verzeichnispfade und Same-Directory-Rename sind abgedeckt. Ein
+LFN-Replace auf ein bereits bestehendes Ziel bleibt fail-closed unsupported.
+
 `FORMAT.PRG` unterstützt auf einer veröffentlichten, nicht gemounteten
 Partition zwei explizit bestätigte Modi:
 
@@ -170,7 +177,7 @@ ausgeführt; Cursor-Up/Down navigiert darin und stellt hinter dem neuesten
 Eintrag den begonnenen Eingabeentwurf wieder her. Die feste Standardsuche ist
 `/bin`, `/sbin`, `/usr/bin`; interne Dienste liegen unter `/libexec/reist`.
 FAT12 und FAT32 speichern die Hierarchie begrenzt und zeigen ihre kanonischen
-Namen kleingeschrieben an. Exakte alte Root-Pfade bleiben über eine feste
+Namen kleingeschrieben an; FAT32 erhält dabei validierte lange Namen. Exakte alte Root-Pfade bleiben über eine feste
 Kompatibilitätstabelle nutzbar. `/sbin/drives.prg` zeigt Resource-ID, Laufwerksbuchstaben,
 Gerätenamen, Typ und den von der Elternressource geerbten Recovery-Zustand.
 

@@ -24,6 +24,7 @@
 #define ATTR_READ_ONLY 0x01
 #define ATTR_DIRECTORY 0x10
 #define ATTR_ARCHIVE 0x20
+#define ATTR_LONG_NAME 0x0F
 
 #define FAT32_EOC_MIN 0x0FFFFFF8
 #define FAT32_EOC_MAX 0x0FFFFFFF
@@ -31,6 +32,9 @@
 #define FAT32_BAD_CLUSTER 0x0FFFFFF7
 #define INVALID_CLUSTER 0xFFFFFFFF
 #define MAX_PATH_LENGTH 256
+#define FAT32_MAX_LFN_CHARS 255
+#define FAT32_LFN_CHARS_PER_ENTRY 13
+#define FAT32_MAX_LFN_ENTRIES 20
 
 
 #pragma pack(push, 1)
@@ -48,7 +52,25 @@ struct fat32_dir_entry {
     uint16_t first_cluster_low;   // Low word of the first data cluster number
     uint32_t file_size;           // File size in bytes
 };
+
+/* VFAT long-name slot.  A validated descending slot sequence immediately
+ * preceding its checksum-matched 8.3 entry is the publication unit. */
+struct fat32_lfn_entry {
+    uint8_t order;
+    uint16_t name1[5];
+    uint8_t attr;
+    uint8_t type;
+    uint8_t checksum;
+    uint16_t name2[6];
+    uint16_t first_cluster_low;
+    uint16_t name3[2];
+};
 #pragma pack(pop)
+
+_Static_assert(sizeof(struct fat32_dir_entry) == DIRECTORY_ENTRY_SIZE,
+               "FAT32 short directory entry layout changed");
+_Static_assert(sizeof(struct fat32_lfn_entry) == DIRECTORY_ENTRY_SIZE,
+               "VFAT long-name entry layout changed");
 
 typedef enum {
     FAT32_LOOKUP_ERROR = -1,
@@ -229,6 +251,12 @@ struct fat32_dir_entry* find_file_in_directory_cluster(unsigned int dir_cluster,
 fat32_lookup_result_t fat32_lookup_entry_in_directory(
     unsigned int dir_cluster, const char* filename,
     struct fat32_dir_entry* found);
+fat32_lookup_result_t fat32_lookup_entry_named(
+    unsigned int dir_cluster, const char* filename,
+    struct fat32_dir_entry* found, char resolved_name[MAX_PATH_LENGTH]);
+fat32_lookup_result_t fat32_get_directory_entry(
+    unsigned int dir_cluster, uint32_t visible_index,
+    struct fat32_dir_entry* found, char resolved_name[MAX_PATH_LENGTH]);
 bool fat32_change_directory(const char *path);
 
 // File and Data Management
@@ -242,6 +270,10 @@ void format_filename(char* dest, unsigned char* src);
 void convert_to_83_format(unsigned char* dest, const char* src);
 int compare_names(const char* fat_name, const char* regular_name);
 bool fat32_is_valid_short_name(const char* name);
+bool fat32_is_valid_name(const char* name);
+void fat32_format_short_name(const struct fat32_dir_entry* entry,
+                             char output[13]);
+uint8_t fat32_short_name_checksum(const uint8_t name[11]);
 void set_fat32_time(unsigned short* time, unsigned short* date);
 
 // public functions

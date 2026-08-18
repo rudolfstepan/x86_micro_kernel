@@ -45,6 +45,11 @@ Native Programme erhalten klassische `argc`/`argv`-Argumente und erben das
 Arbeitsverzeichnis der Shell. Beispielsweise zeigt `cat README.TXT` eine Datei
 direkt aus dem aktuellen Verzeichnis an.
 
+FAT32 unterstützt VFAT Long File Names mit bis zu 255 druckbaren ASCII-
+Zeichen. Verzeichnisauflistung, Pfadauflösung, Datei-I/O, Erzeugen, Löschen und
+Same-Directory-Rename verwenden den langen Namen; ein kollisionsgeprüfter
+8.3-`~n`-Alias bleibt für ältere Werkzeuge und Rettungspfade erhalten.
+
 `EDIT` ist ein experimenteller Vollbild-Texteditor. Sein Speichervorgang
 verwendet eine temporäre Datei, `fsync`, Close und atomaren FAT32-Rename;
 komfortable Dialoge und breitere Praxistests fehlen noch.
@@ -219,7 +224,8 @@ Buildschritte müssen explizit ergänzt werden.
 - Externe `.PRG`-Programme laufen in Ring 3 mit eigenen Adressräumen. Die
   Prozess- und Syscall-API ist jedoch noch klein und besitzt beispielsweise
   keine Pipes, Signale oder allgemeine Socket-Schnittstelle.
-- Das erzeugte FAT32-Image verwendet für eingebettete Dateien ASCII-8.3-Namen.
+- FAT32-LFN ist derzeit auf druckbares ASCII begrenzt; vollständiges Unicode
+  samt Normalisierung ist noch nicht implementiert.
 - Der Netzwerkstack besitzt noch kein IPv6, TLS/HTTPS oder vollständiges
   POSIX-Socket-API; die vorhandene UDP-/TCP-ABI ist bewusst klein und begrenzt.
 - Der native Bootpfad ist BIOS/MBR-basiert; UEFI ist nicht implementiert.

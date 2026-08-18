@@ -221,10 +221,81 @@ static int fat32_load_file_sized_unlocked(const char* filename,
 //     free(buffer); // Free the memory after use
 // }
 
-fat32_lookup_result_t fat32_lookup_entry_in_directory(
-        unsigned int dir_cluster, const char* filename,
-        struct fat32_dir_entry* found) {
-    if (!filename || !is_valid_cluster(&boot_sector, dir_cluster)) {
+typedef struct {
+    char name[MAX_PATH_LENGTH];
+    uint8_t checksum;
+    uint8_t expected_order;
+    bool active;
+} fat32_lfn_reader_t;
+
+static void fat32_lfn_reset(fat32_lfn_reader_t* reader) {
+    memset(reader, 0, sizeof(*reader));
+}
+
+static bool fat32_names_equal(const char* left, const char* right) {
+    if (!left || !right) return false;
+    while (*left && *right) {
+        if (tolower((unsigned char)*left++) !=
+            tolower((unsigned char)*right++)) return false;
+    }
+    return *left == '\0' && *right == '\0';
+}
+
+static uint16_t fat32_lfn_character(const struct fat32_lfn_entry* entry,
+                                    uint32_t index) {
+    if (index < 5) return entry->name1[index];
+    if (index < 11) return entry->name2[index - 5];
+    return entry->name3[index - 11];
+}
+
+static void fat32_lfn_consume(fat32_lfn_reader_t* reader,
+                              const struct fat32_lfn_entry* entry) {
+    uint8_t order = entry->order & 0x1FU;
+    bool starts = (entry->order & 0x40U) != 0;
+    if (entry->attr != ATTR_LONG_NAME || entry->type != 0 ||
+        entry->first_cluster_low != 0 || order == 0 ||
+        order > FAT32_MAX_LFN_ENTRIES) {
+        fat32_lfn_reset(reader);
+        return;
+    }
+    if (starts) {
+        fat32_lfn_reset(reader);
+        reader->active = true;
+        reader->checksum = entry->checksum;
+        reader->expected_order = order;
+    }
+    if (!reader->active || reader->checksum != entry->checksum ||
+        reader->expected_order != order) {
+        fat32_lfn_reset(reader);
+        return;
+    }
+    uint32_t base = ((uint32_t)order - 1U) * FAT32_LFN_CHARS_PER_ENTRY;
+    for (uint32_t i = 0; i < FAT32_LFN_CHARS_PER_ENTRY; i++) {
+        uint16_t value = fat32_lfn_character(entry, i);
+        uint32_t position = base + i;
+        if (position >= FAT32_MAX_LFN_CHARS) {
+            if (value == 0x0000U || value == 0xFFFFU) continue;
+            fat32_lfn_reset(reader);
+            return;
+        }
+        if (value == 0x0000U || value == 0xFFFFU) {
+            reader->name[position] = '\0';
+        } else if (value >= 0x20U && value <= 0x7EU) {
+            reader->name[position] = (char)value;
+        } else {
+            fat32_lfn_reset(reader);
+            return;
+        }
+    }
+    reader->expected_order--;
+}
+
+static fat32_lookup_result_t fat32_scan_directory(
+        unsigned int dir_cluster, const char* filename, uint32_t wanted_index,
+        bool by_index, struct fat32_dir_entry* found,
+        char resolved_name[MAX_PATH_LENGTH]) {
+    if ((!by_index && !filename) ||
+        !is_valid_cluster(&boot_sector, dir_cluster)) {
         return FAT32_LOOKUP_ERROR;
     }
 
@@ -232,6 +303,9 @@ fat32_lookup_result_t fat32_lookup_entry_in_directory(
     uint32_t current_cluster = dir_cluster;
     uint32_t traversed = 0;
     uint32_t cluster_limit = get_total_clusters(&boot_sector);
+    uint32_t visible_index = 0;
+    fat32_lfn_reader_t lfn;
+    fat32_lfn_reset(&lfn);
 
     while (is_valid_cluster(&boot_sector, current_cluster) &&
            traversed++ < cluster_limit) {
@@ -252,14 +326,37 @@ fat32_lookup_result_t fat32_lookup_entry_in_directory(
                 if (candidate->name[0] == 0x00) {
                     return FAT32_LOOKUP_NOT_FOUND;
                 }
-                if (candidate->name[0] == 0xE5 ||
-                    (candidate->attr & 0x0F) == 0x0F ||
-                    (candidate->attr & 0x08)) {
+                if (candidate->name[0] == 0xE5) {
+                    fat32_lfn_reset(&lfn);
+                    continue;
+                }
+                if (candidate->attr == ATTR_LONG_NAME) {
+                    fat32_lfn_consume(&lfn,
+                        (const struct fat32_lfn_entry*)candidate);
+                    continue;
+                }
+                if (candidate->attr & 0x08) {
+                    fat32_lfn_reset(&lfn);
                     continue;
                 }
 
-                if (compare_names((const char*)candidate->name, filename) == 0) {
+                char short_name[13];
+                char visible_name[MAX_PATH_LENGTH];
+                fat32_format_short_name(candidate, short_name);
+                strcpy(visible_name, short_name);
+                if (lfn.active && lfn.expected_order == 0 &&
+                    lfn.checksum == fat32_short_name_checksum(candidate->name) &&
+                    fat32_is_valid_name(lfn.name)) {
+                    strcpy(visible_name, lfn.name);
+                }
+                bool match = by_index ? visible_index == wanted_index :
+                    (fat32_names_equal(visible_name, filename) ||
+                     fat32_names_equal(short_name, filename));
+                visible_index++;
+                fat32_lfn_reset(&lfn);
+                if (match) {
                     if (found) *found = *candidate;
+                    if (resolved_name) strcpy(resolved_name, visible_name);
                     return FAT32_LOOKUP_FOUND;
                 }
             }
@@ -274,6 +371,28 @@ fat32_lookup_result_t fat32_lookup_entry_in_directory(
     /* Falling out of the guarded traversal means the directory chain is
      * invalid or cyclic.  It must not be treated as a safe insertion point. */
     return FAT32_LOOKUP_ERROR;
+}
+
+fat32_lookup_result_t fat32_lookup_entry_named(
+        unsigned int dir_cluster, const char* filename,
+        struct fat32_dir_entry* found,
+        char resolved_name[MAX_PATH_LENGTH]) {
+    return fat32_scan_directory(dir_cluster, filename, 0, false, found,
+                                resolved_name);
+}
+
+fat32_lookup_result_t fat32_get_directory_entry(
+        unsigned int dir_cluster, uint32_t visible_index,
+        struct fat32_dir_entry* found,
+        char resolved_name[MAX_PATH_LENGTH]) {
+    return fat32_scan_directory(dir_cluster, NULL, visible_index, true, found,
+                                resolved_name);
+}
+
+fat32_lookup_result_t fat32_lookup_entry_in_directory(
+        unsigned int dir_cluster, const char* filename,
+        struct fat32_dir_entry* found) {
+    return fat32_lookup_entry_named(dir_cluster, filename, found, NULL);
 }
 
 struct fat32_dir_entry* find_file_in_directory_cluster(unsigned int dir_cluster,
@@ -497,7 +616,7 @@ bool update_directory_entry(unsigned int parent_cluster,
 }
 
 static bool fat32_create_file_unlocked(const char* filename) {
-    if (!fat32_is_valid_short_name(filename) ||
+    if (!fat32_is_valid_name(filename) ||
         strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
         return false;
     }
@@ -527,7 +646,7 @@ static bool fat32_create_file_unlocked(const char* filename) {
 }
 
 static bool fat32_delete_file_unlocked(const char* filename) {
-    if (!filename || !fat32_is_valid_short_name(filename) ||
+    if (!filename || !fat32_is_valid_name(filename) ||
         strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
         return false;
     }
@@ -852,7 +971,7 @@ static bool fat32_replace_file_unlocked(const char* filename,
                                         const void* buffer, uint32_t size) {
     if (!filename || (size > 0 && !buffer) ||
         size > 0x7FFFFFFFu ||
-        !fat32_is_valid_short_name(filename) ||
+        !fat32_is_valid_name(filename) ||
         strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
         return false;
     }

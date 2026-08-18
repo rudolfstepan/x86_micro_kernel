@@ -16,7 +16,7 @@ typedef struct {
     unsigned char *ptr;   // Current read/write position
     unsigned int start_cluster;    // start_cluster of the file
     char mode[4];         // Stable copy of the open mode
-    char name[13];        // Stable 8.3 filename copy
+    char name[256];       // Stable VFS/FAT long filename copy
     unsigned int parent_cluster; // Directory containing the file entry
     unsigned int partition_lba;  // FAT32 volume identity for stable handles
     unsigned short device_base;

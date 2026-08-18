@@ -80,7 +80,7 @@ static bool fat32_create_dir_unlocked(const char* dirname) {
 
     if (!dirname) return false;
 
-    if (!fat32_is_valid_short_name(dirname) ||
+    if (!fat32_is_valid_name(dirname) ||
         strcmp(dirname, ".") == 0 || strcmp(dirname, "..") == 0) {
         return false;
     }
@@ -181,6 +181,114 @@ void create_directory_entry(struct fat32_dir_entry* entry, const char* name, uns
     entry->crt_time_tenth = 0;
 }
 
+typedef struct {
+    uint32_t cluster;
+    uint32_t index;
+} fat32_slot_location_t;
+
+static bool fat32_short_case_representable(const char* name,
+                                           uint8_t* nt_case) {
+    bool base_lower = false, base_upper = false;
+    bool ext_lower = false, ext_upper = false;
+    bool extension = false;
+    for (const char* cursor = name; *cursor; cursor++) {
+        if (*cursor == '.') {
+            extension = true;
+            continue;
+        }
+        if (*cursor >= 'a' && *cursor <= 'z') {
+            if (extension) ext_lower = true; else base_lower = true;
+        } else if (*cursor >= 'A' && *cursor <= 'Z') {
+            if (extension) ext_upper = true; else base_upper = true;
+        }
+    }
+    if ((base_lower && base_upper) || (ext_lower && ext_upper)) return false;
+    if (nt_case)
+        *nt_case = (base_lower ? 0x08U : 0U) | (ext_lower ? 0x10U : 0U);
+    return true;
+}
+
+static bool fat32_make_unique_alias(uint32_t parent_cluster, const char* name,
+                                    char alias[13]) {
+    const char* dot = NULL;
+    for (const char* cursor = name; *cursor; cursor++)
+        if (*cursor == '.') dot = cursor;
+    size_t stem_end = dot && dot != name ? (size_t)(dot - name) : strlen(name);
+    char stem[9];
+    char extension[4];
+    size_t stem_used = 0;
+    size_t extension_used = 0;
+    for (size_t i = 0; i < stem_end && stem_used < 8; i++) {
+        unsigned char value = (unsigned char)name[i];
+        if (isalnum(value)) stem[stem_used++] = (char)toupper(value);
+    }
+    if (stem_used == 0) stem[stem_used++] = '_';
+    stem[stem_used] = '\0';
+    if (dot) {
+        for (const char* cursor = dot + 1; *cursor && extension_used < 3;
+             cursor++) {
+            unsigned char value = (unsigned char)*cursor;
+            if (isalnum(value))
+                extension[extension_used++] = (char)toupper(value);
+        }
+    }
+    extension[extension_used] = '\0';
+
+    for (uint32_t sequence = 1; sequence <= 999999U; sequence++) {
+        char digits[7];
+        uint32_t value = sequence;
+        size_t digit_count = 0;
+        do {
+            digits[digit_count++] = (char)('0' + value % 10U);
+            value /= 10U;
+        } while (value && digit_count < sizeof(digits) - 1U);
+        size_t prefix = 8U - digit_count - 1U;
+        if (prefix > stem_used) prefix = stem_used;
+        size_t used = 0;
+        for (size_t i = 0; i < prefix; i++) alias[used++] = stem[i];
+        alias[used++] = '~';
+        while (digit_count) alias[used++] = digits[--digit_count];
+        if (extension_used) {
+            alias[used++] = '.';
+            for (size_t i = 0; i < extension_used; i++)
+                alias[used++] = extension[i];
+        }
+        alias[used] = '\0';
+        struct fat32_dir_entry collision;
+        fat32_lookup_result_t result = fat32_lookup_entry_in_directory(
+            parent_cluster, alias, &collision);
+        if (result == FAT32_LOOKUP_NOT_FOUND) return true;
+        if (result == FAT32_LOOKUP_ERROR) return false;
+    }
+    return false;
+}
+
+static void fat32_set_lfn_character(struct fat32_lfn_entry* entry,
+                                    uint32_t index, uint16_t value) {
+    if (index < 5) entry->name1[index] = value;
+    else if (index < 11) entry->name2[index - 5] = value;
+    else entry->name3[index - 11] = value;
+}
+
+static void fat32_build_lfn_slot(struct fat32_lfn_entry* entry,
+                                 const char* name, uint8_t order,
+                                 uint8_t total, uint8_t checksum) {
+    memset(entry, 0xFF, sizeof(*entry));
+    entry->order = order | (order == total ? 0x40U : 0U);
+    entry->attr = ATTR_LONG_NAME;
+    entry->type = 0;
+    entry->checksum = checksum;
+    entry->first_cluster_low = 0;
+    size_t length = strlen(name);
+    size_t base = ((size_t)order - 1U) * FAT32_LFN_CHARS_PER_ENTRY;
+    for (uint32_t i = 0; i < FAT32_LFN_CHARS_PER_ENTRY; i++) {
+        size_t position = base + i;
+        uint16_t value = position < length ? (uint8_t)name[position] :
+                         position == length ? 0x0000U : 0xFFFFU;
+        fat32_set_lfn_character(entry, i, value);
+    }
+}
+
 bool add_entry_to_directory_checked(struct fat32_boot_sector* bs,
                                     unsigned int parent_cluster,
                                     const char* dirname,
@@ -188,7 +296,7 @@ bool add_entry_to_directory_checked(struct fat32_boot_sector* bs,
                                     unsigned char attributes,
                                     bool* safe_to_reclaim_target) {
     if (safe_to_reclaim_target) *safe_to_reclaim_target = true;
-    if (!bs || !fat32_is_valid_short_name(dirname) ||
+    if (!bs || !fat32_is_valid_name(dirname) ||
         !is_valid_cluster(bs, parent_cluster) ||
         (new_dir_cluster != 0 && !is_valid_cluster(bs, new_dir_cluster))) {
         return false;
@@ -201,10 +309,26 @@ bool add_entry_to_directory_checked(struct fat32_boot_sector* bs,
         return false;
     }
 
+    uint8_t nt_case = 0;
+    bool long_name = !fat32_is_valid_short_name(dirname) ||
+                     !fat32_short_case_representable(dirname, &nt_case);
+    char alias[13];
+    if (long_name) {
+        if (!fat32_make_unique_alias(parent_cluster, dirname, alias))
+            return false;
+    } else {
+        strcpy(alias, dirname);
+    }
     struct fat32_dir_entry new_entry;
-    memset(&new_entry, 0, sizeof(new_entry));  // Initialize new entry to zero
-    // Create the new directory entry for 'dirname'
-    create_directory_entry(&new_entry, dirname, new_dir_cluster, attributes);
+    create_directory_entry(&new_entry, alias, new_dir_cluster, attributes);
+    if (!long_name) new_entry.nt_res = nt_case;
+    uint32_t lfn_count = long_name ?
+        ((uint32_t)strlen(dirname) + FAT32_LFN_CHARS_PER_ENTRY - 1U) /
+            FAT32_LFN_CHARS_PER_ENTRY : 0U;
+    uint32_t needed = lfn_count + 1U;
+    fat32_slot_location_t locations[FAT32_MAX_LFN_ENTRIES + 1U];
+    uint32_t free_run = 0;
+    bool directory_end = false;
 
     unsigned int entries_per_cluster = get_entries_per_cluster(bs);
     size_t entries_size = entries_per_cluster * sizeof(struct fat32_dir_entry);
@@ -225,26 +349,13 @@ bool add_entry_to_directory_checked(struct fat32_boot_sector* bs,
         }
 
         for (unsigned int i = 0; i < entries_per_cluster; ++i) {
-            if (entries[i].name[0] == 0 || entries[i].name[0] == 0xE5) {
-                struct fat32_dir_entry original = entries[i];
-                entries[i] = new_entry;
-                bool ok = write_cluster(bs, current_cluster, entries);
-                if (!ok) {
-                    if (read_cluster(bs, current_cluster, entries)) {
-                        if (memcmp(&entries[i], &new_entry,
-                                   sizeof(new_entry)) == 0) {
-                            ok = true;
-                        } else if (memcmp(&entries[i], &original,
-                                          sizeof(original)) != 0 &&
-                                   safe_to_reclaim_target) {
-                            *safe_to_reclaim_target = false;
-                        }
-                    } else if (safe_to_reclaim_target) {
-                        *safe_to_reclaim_target = false;
-                    }
-                }
-                free(entries);
-                return ok;
+            if (entries[i].name[0] == 0) directory_end = true;
+            if (directory_end || entries[i].name[0] == 0xE5) {
+                locations[free_run].cluster = current_cluster;
+                locations[free_run].index = i;
+                if (++free_run == needed) goto publish_entry;
+            } else {
+                free_run = 0;
             }
         }
 
@@ -261,7 +372,6 @@ bool add_entry_to_directory_checked(struct fat32_boot_sector* bs,
             }
 
             memset(entries, 0, entries_size);
-            entries[0] = new_entry;
             if (!write_cluster(bs, new_cluster, entries)) {
                 mark_cluster_in_fat(bs, new_cluster, 0);
                 free(entries);
@@ -284,14 +394,60 @@ bool add_entry_to_directory_checked(struct fat32_boot_sector* bs,
                     return false;
                 }
             }
-            free(entries);
-            return true;
+            current_cluster = new_cluster;
+            continue;
         }
         current_cluster = next;
     }
 
     free(entries);
     return false;
+
+publish_entry:
+    {
+        struct fat32_dir_entry raw[FAT32_MAX_LFN_ENTRIES + 1U];
+        memset(raw, 0, sizeof(raw));
+        uint8_t checksum = fat32_short_name_checksum(new_entry.name);
+        for (uint32_t i = 0; i < lfn_count; i++) {
+            uint8_t order = (uint8_t)(lfn_count - i);
+            fat32_build_lfn_slot((struct fat32_lfn_entry*)&raw[i], dirname,
+                                 order, (uint8_t)lfn_count, checksum);
+        }
+        raw[lfn_count] = new_entry;
+
+        uint32_t first = 0;
+        while (first < needed) {
+            uint32_t target_cluster = locations[first].cluster;
+            if (!read_cluster(bs, target_cluster, entries)) {
+                if (safe_to_reclaim_target) *safe_to_reclaim_target = false;
+                free(entries);
+                return false;
+            }
+            uint32_t cursor = first;
+            while (cursor < needed &&
+                   locations[cursor].cluster == target_cluster) {
+                entries[locations[cursor].index] = raw[cursor];
+                cursor++;
+            }
+            if (!write_cluster(bs, target_cluster, entries)) {
+                bool committed = read_cluster(bs, target_cluster, entries);
+                for (uint32_t verify = first;
+                     committed && verify < cursor; verify++) {
+                    committed = memcmp(&entries[locations[verify].index],
+                                       &raw[verify], sizeof(raw[verify])) == 0;
+                }
+                if (!committed) {
+                    if (safe_to_reclaim_target)
+                        *safe_to_reclaim_target = false;
+                    free(entries);
+                    return false;
+                }
+            }
+            first = cursor;
+        }
+        free(entries);
+        return true;
+    }
 }
 
 bool add_entry_to_directory(struct fat32_boot_sector* bs,
@@ -364,7 +520,7 @@ bool is_directory_empty(struct fat32_dir_entry* entry) {
 }
 
 static bool fat32_delete_dir_unlocked(const char* dirname) {
-    if (!dirname || !fat32_is_valid_short_name(dirname) ||
+    if (!dirname || !fat32_is_valid_name(dirname) ||
         strcmp(dirname, ".") == 0 || strcmp(dirname, "..") == 0) {
         return false;
     }

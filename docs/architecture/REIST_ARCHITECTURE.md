@@ -1,6 +1,6 @@
 # REIST-OS-Zielarchitektur
 
-Stand: 16. August 2026
+Stand: 18. August 2026
 
 **REIST OS** steht für **Resilient Execution, Isolation and Stability
 Technology**. Das zentrale Architekturprinzip lautet:
@@ -1174,6 +1174,18 @@ Prozess-FD und VFS einen begrenzten ATA-`FLUSH CACHE` an und ersetzt das Ziel
 erst nach erfolgreichem `fsync` und Close per Rename. Ein Fehler vor dem Commit lässt
 die alte Zieldatei unangetastet; FAT12-, Cross-Directory- und Cross-Volume-
 Rename bleiben explizit unsupported.
+
+FAT32-Namen bilden eine begrenzte Veröffentlichungseinheit aus höchstens 20
+absteigenden VFAT-LFN-Slots und genau einem checksum-gebundenen 8.3-Eintrag.
+Lookup und `readdir` akzeptieren den langen Namen nur bei gültiger Reihenfolge,
+Slotanzahl, Attributbelegung, Startcluster-Nullfeld und Prüfsumme; andernfalls
+ist ausschließlich der 8.3-Alias sichtbar. Schreibpfade erzeugen eindeutige
+`~n`-Aliase und schreiben den Kurzeintrag als letzten Publikationsanker. Die
+aktuelle Pfad-ABI bildet druckbares ASCII auf UTF-16LE ab; nicht unterstützte
+Unicode-Namen erhalten keine falsch dekodierte Autorität. LFN-Rename auf einen
+freien Namen ist transaktional geklammert, LFN-Replace eines existierenden
+Ziels bleibt bis zu einem atomaren variablen Slot-Replace fail-closed gesperrt.
+
 Der v2-Superblock liegt redundant in den reservierten Sektoren 8 und 31. Jeder
 Statuswechsel wird primär und gespiegelt mit identischer Sequenz und CRC
 persistiert. Beim Boot gewinnt die höchste gültige Sequenz; bei gleicher

@@ -306,6 +306,59 @@ bool fat32_is_valid_short_name(const char* name) {
     return base_length != 0 && (!extension || extension_length != 0);
 }
 
+bool fat32_is_valid_name(const char* name) {
+    if (!name || name[0] == '\0') return false;
+    size_t length = strlen(name);
+    if (length == 0 || length > FAT32_MAX_LFN_CHARS ||
+        strcmp(name, ".") == 0 || strcmp(name, "..") == 0 ||
+        name[length - 1] == ' ' || name[length - 1] == '.') {
+        return false;
+    }
+    for (size_t i = 0; i < length; i++) {
+        unsigned char value = (unsigned char)name[i];
+        /* REIST currently exposes an ASCII pathname ABI.  Rejecting bytes
+         * outside it avoids silently writing malformed UTF-16 VFAT names. */
+        if (value < 0x20 || value > 0x7E ||
+            strchr("\"*/:<>?\\|", value) != NULL) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void fat32_format_short_name(const struct fat32_dir_entry* entry,
+                             char output[13]) {
+    if (!entry || !output) return;
+    size_t used = 0;
+    for (size_t i = 0; i < 8 && entry->name[i] != ' '; i++) {
+        char value = (char)entry->name[i];
+        if ((entry->nt_res & 0x08U) && value >= 'A' && value <= 'Z')
+            value = (char)(value + ('a' - 'A'));
+        output[used++] = value;
+    }
+    if (entry->name[8] != ' ') {
+        output[used++] = '.';
+        for (size_t i = 8; i < 11 && entry->name[i] != ' '; i++) {
+            char value = (char)entry->name[i];
+            if ((entry->nt_res & 0x10U) && value >= 'A' && value <= 'Z')
+                value = (char)(value + ('a' - 'A'));
+            output[used++] = value;
+        }
+    }
+    output[used] = '\0';
+}
+
+uint8_t fat32_short_name_checksum(const uint8_t name[11]) {
+    uint8_t checksum = 0;
+    if (!name) return 0;
+    for (size_t i = 0; i < 11; i++) {
+        checksum = (uint8_t)(((checksum & 1U) << 7) |
+                             ((checksum & 0xFEU) >> 1));
+        checksum = (uint8_t)(checksum + name[i]);
+    }
+    return checksum;
+}
+
 // ------------------------------------------------------------------
 // Compares a FAT32 8.3 formatted name with a regular string
 // Returns 0 if the names match, -1 otherwise
@@ -439,6 +492,9 @@ bool remove_entry_from_directory(struct fat32_boot_sector* boot_sector, unsigned
     unsigned int current_cluster = parent_cluster;
     unsigned int traversed = 0;
     unsigned int cluster_limit = get_total_clusters(boot_sector);
+    struct { uint32_t cluster; uint32_t index; }
+        slots[FAT32_MAX_LFN_ENTRIES + 1U];
+    uint32_t slot_count = 0;
 
     while (is_valid_cluster(boot_sector, current_cluster) &&
            traversed++ < cluster_limit) {
@@ -448,21 +504,54 @@ bool remove_entry_from_directory(struct fat32_boot_sector* boot_sector, unsigned
         }
 
         for (unsigned int i = 0; i < entries_per_cluster; ++i) {
+            if (entries[i].name[0] == 0xE5 || entries[i].name[0] == 0x00) {
+                slot_count = 0;
+                if (entries[i].name[0] == 0x00) break;
+                continue;
+            }
+            if (entries[i].attr == ATTR_LONG_NAME) {
+                if (slot_count == FAT32_MAX_LFN_ENTRIES) slot_count = 0;
+                slots[slot_count].cluster = current_cluster;
+                slots[slot_count].index = i;
+                slot_count++;
+                continue;
+            }
             if (memcmp(&entries[i], entry, sizeof(struct fat32_dir_entry)) == 0) {
-                // 0xE5 marks a deleted slot.  Zero would incorrectly mark the
-                // end of the entire directory and hide all following entries.
-                entries[i].name[0] = 0xE5;
-                bool ok = write_cluster(boot_sector, current_cluster, entries);
-                if (!ok && read_cluster(boot_sector, current_cluster, entries)) {
-                    const uint8_t* original = (const uint8_t*)entry;
-                    const uint8_t* observed = (const uint8_t*)&entries[i];
-                    ok = observed[0] == 0xE5 &&
-                         memcmp(observed + 1, original + 1,
-                                sizeof(*entry) - 1u) == 0;
+                slots[slot_count].cluster = current_cluster;
+                slots[slot_count].index = i;
+                slot_count++;
+                uint32_t first = 0;
+                while (first < slot_count) {
+                    uint32_t target = slots[first].cluster;
+                    if (!read_cluster(boot_sector, target, entries)) {
+                        free(entries);
+                        return false;
+                    }
+                    uint32_t cursor = first;
+                    while (cursor < slot_count &&
+                           slots[cursor].cluster == target) {
+                        entries[slots[cursor].index].name[0] = 0xE5;
+                        cursor++;
+                    }
+                    if (!write_cluster(boot_sector, target, entries)) {
+                        if (!read_cluster(boot_sector, target, entries)) {
+                            free(entries);
+                            return false;
+                        }
+                        for (uint32_t verify = first; verify < cursor;
+                             verify++) {
+                            if (entries[slots[verify].index].name[0] != 0xE5) {
+                                free(entries);
+                                return false;
+                            }
+                        }
+                    }
+                    first = cursor;
                 }
                 free(entries);
-                return ok;
+                return true;
             }
+            slot_count = 0;
         }
 
         unsigned int next = get_next_cluster_in_chain(boot_sector, current_cluster);

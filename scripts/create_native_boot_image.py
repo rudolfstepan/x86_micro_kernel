@@ -199,7 +199,7 @@ def fat32_short_name(name: str) -> bytes:
 def write_fat32_volume(image, partition_lba: int, total_sectors: int,
                        volume_id: int,
                        data_files: Mapping[str, bytes] | None = None) -> None:
-    """Write a usable FAT32 volume containing README and optional 8.3 files."""
+    """Write a usable FAT32 volume containing README and optional VFAT files."""
     reserved_sectors = 32
     fat_count = 2
     sectors_per_cluster = 1
@@ -221,7 +221,10 @@ def write_fat32_volume(image, partition_lba: int, total_sectors: int,
     directories = walk_directories(tree)
     next_cluster = 2
     for directory in directories:
-        entry_count = len(directory.directories) + len(directory.files) + 1
+        entry_count = sum(
+            1 + ((len(item.name) + 12) // 13 if item.long_name else 0)
+            for item in [*directory.directories, *directory.files]
+        ) + 1
         if directory is tree:
             entry_count += 1  # volume label
         else:
@@ -350,6 +353,36 @@ def write_fat32_volume(image, partition_lba: int, total_sectors: int,
         struct.pack_into("<H", buffer, offset + 26, start_cluster & 0xFFFF)
         struct.pack_into("<I", buffer, offset + 28, size)
 
+    def short_checksum(value: bytes) -> int:
+        checksum = 0
+        for byte in value:
+            checksum = (((checksum & 1) << 7) |
+                        ((checksum & 0xFE) >> 1))
+            checksum = (checksum + byte) & 0xFF
+        return checksum
+
+    def write_lfn_entries(buffer: bytearray, index: int, name: str,
+                          alias: bytes) -> int:
+        encoded = name.encode("utf-16le")
+        units = list(struct.unpack(f"<{len(encoded) // 2}H", encoded))
+        count = (len(units) + 12) // 13
+        units.extend([0x0000])
+        units.extend([0xFFFF] * (count * 13 - len(units)))
+        checksum = short_checksum(alias)
+        for order in range(count, 0, -1):
+            offset = index * 32
+            slot = units[(order - 1) * 13:order * 13]
+            buffer[offset] = order | (0x40 if order == count else 0)
+            struct.pack_into("<5H", buffer, offset + 1, *slot[:5])
+            buffer[offset + 11] = 0x0F
+            buffer[offset + 12] = 0
+            buffer[offset + 13] = checksum
+            struct.pack_into("<6H", buffer, offset + 14, *slot[5:11])
+            struct.pack_into("<H", buffer, offset + 26, 0)
+            struct.pack_into("<2H", buffer, offset + 28, *slot[11:13])
+            index += 1
+        return index
+
     for directory in directories:
         contents = bytearray(len(directory.clusters) * cluster_size)
         entry_index = 0
@@ -366,10 +399,16 @@ def write_fat32_volume(image, partition_lba: int, total_sectors: int,
                         parent_cluster, 0)
             entry_index += 1
         for child in directory.directories:
+            if child.long_name:
+                entry_index = write_lfn_entries(
+                    contents, entry_index, child.name, child.short_name)
             write_entry(contents, entry_index, child.short_name, 0x10,
                         child.nt_case, child.clusters[0], 0)
             entry_index += 1
         for file in directory.files:
+            if file.long_name:
+                entry_index = write_lfn_entries(
+                    contents, entry_index, file.name, file.short_name)
             start_cluster = file.clusters[0] if file.clusters else 0
             write_entry(contents, entry_index, file.short_name, 0x20,
                         file.nt_case, start_cluster, len(file.contents))
@@ -639,7 +678,7 @@ def main() -> None:
         action="append",
         default=[],
         metavar="TARGET=PATH",
-        help="embed PATH at a lowercase FAT32 8.3 hierarchy TARGET",
+        help="embed PATH at a lowercase ASCII VFAT hierarchy TARGET",
     )
     args = parser.parse_args()
 

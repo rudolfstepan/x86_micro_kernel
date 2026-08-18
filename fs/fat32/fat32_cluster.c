@@ -358,53 +358,15 @@ bool is_end_of_cluster_chain(unsigned int cluster) {
 
 // Function to find the next cluster given a directory name and a starting cluster
 unsigned int find_next_cluster(struct fat32_boot_sector* boot_sector, const char* dir_name, unsigned int current_cluster) {
-    struct fat32_dir_entry entries[SECTOR_SIZE / sizeof(struct fat32_dir_entry)];
-    unsigned int nextCluster = INVALID_CLUSTER;
-
-    unsigned int traversed = 0;
-    unsigned int limit = get_total_clusters(boot_sector);
-    while (is_valid_cluster(boot_sector, current_cluster) &&
-           traversed++ < limit) {
-        unsigned int sector = cluster_to_sector(boot_sector, current_cluster);
-        if (sector == INVALID_CLUSTER) return INVALID_CLUSTER;
-        for (unsigned int i = 0; i < boot_sector->sectors_per_cluster; i++) {
-            // Read the entire sector
-            if (!ata_read_sector(ata_base_address, sector + i, entries, ata_is_master)) {
-                // Handle read error
-                return INVALID_CLUSTER;
-            }
-
-            // Parse entries in this sector
-            for (unsigned int j = 0; j < SECTOR_SIZE / sizeof(struct fat32_dir_entry); j++) {
-                struct fat32_dir_entry entry = entries[j];
-
-                // Check for end of directory
-                if (entry.name[0] == 0x00) {
-                    return INVALID_CLUSTER; // No more entries, directory not found
-                }
-                if (entry.name[0] == 0xE5 || (entry.attr & 0x0F) == 0x0F) {
-                    continue; // Skip deleted or LFN entries
-                }
-
-                // Check if this is the directory we're looking for
-                if ((entry.attr & 0x10) && compare_names((const char*)entry.name, dir_name) == 0) {
-                    nextCluster = ((unsigned int)entry.first_cluster_high << 16) | entry.first_cluster_low;
-                    return nextCluster;
-                }
-            }
-        }
-
-        // Move to the next cluster in the chain
-        unsigned int next =
-            get_next_cluster_in_chain(boot_sector, current_cluster);
-        if (next == INVALID_CLUSTER || is_end_of_cluster_chain(next) ||
-            !is_valid_cluster(boot_sector, next)) {
-            return INVALID_CLUSTER;
-        }
-        current_cluster = next;
-    }
-
-    return INVALID_CLUSTER; // Directory not found
+    if (!boot_sector || !dir_name ||
+        !is_valid_cluster(boot_sector, current_cluster))
+        return INVALID_CLUSTER;
+    struct fat32_dir_entry entry;
+    if (fat32_lookup_entry_in_directory(current_cluster, dir_name, &entry) !=
+            FAT32_LOOKUP_FOUND || !(entry.attr & ATTR_DIRECTORY))
+        return INVALID_CLUSTER;
+    unsigned int cluster = read_start_cluster(&entry);
+    return is_valid_cluster(boot_sector, cluster) ? cluster : INVALID_CLUSTER;
 }
 
 // Function to format the filename in the 8.3 format

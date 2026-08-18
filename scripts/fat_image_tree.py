@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded lowercase FAT 8.3 tree used by REIST boot-image builders."""
+"""Bounded lowercase VFAT tree used by REIST boot-image builders."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ class FatFile:
     name: str
     short_name: bytes
     nt_case: int
+    long_name: bool
     contents: bytes
     clusters: list[int] = field(default_factory=list)
 
@@ -25,6 +26,7 @@ class FatDirectory:
     name: str
     short_name: bytes = b""
     nt_case: int = 0
+    long_name: bool = False
     parent: "FatDirectory | None" = None
     directories: list["FatDirectory"] = field(default_factory=list)
     files: list[FatFile] = field(default_factory=list)
@@ -49,6 +51,36 @@ def short_name(component: str) -> bytes:
     )
 
 
+def validate_component(component: str) -> None:
+    if (not component or not component.isascii() or
+            component != component.lower() or len(component) > 255 or
+            component[-1] in " ." or
+            any(ord(value) < 0x20 or value in '\\"*/:<>?|' for value in component)):
+        raise ValueError(f"invalid lowercase VFAT filename: {component!r}")
+
+
+def disk_name(component: str, used: set[bytes]) -> tuple[bytes, bool]:
+    validate_component(component)
+    try:
+        encoded = short_name(component)
+        if encoded not in used:
+            return encoded, False
+    except ValueError:
+        pass
+    stem, dot, extension = component.rpartition(".")
+    if not dot or not stem:
+        stem, extension = component, ""
+    clean_stem = "".join(value for value in stem if value.isalnum()) or "_"
+    clean_extension = "".join(value for value in extension if value.isalnum())[:3]
+    for sequence in range(1, 1_000_000):
+        suffix = f"~{sequence}"
+        base = (clean_stem[:8 - len(suffix)] + suffix).upper().ljust(8)
+        encoded = (base + clean_extension.upper().ljust(3)).encode("ascii")
+        if encoded not in used:
+            return encoded, True
+    raise ValueError("FAT short-name alias space exhausted")
+
+
 def nt_case_flags(component: str) -> int:
     parts = component.split(".")
     flags = 0x08 if any("a" <= value <= "z" for value in parts[0]) else 0
@@ -58,7 +90,8 @@ def nt_case_flags(component: str) -> int:
 
 
 def _entry_count(directory: FatDirectory) -> int:
-    return len(directory.directories) + len(directory.files)
+    return sum(1 + ((len(item.name) + 12) // 13 if item.long_name else 0)
+               for item in [*directory.directories, *directory.files])
 
 
 def build_tree(data_files: Mapping[str, bytes]) -> FatDirectory:
@@ -73,22 +106,30 @@ def build_tree(data_files: Mapping[str, bytes]) -> FatDirectory:
             raise ValueError(f"invalid or excessive FAT path depth: {path!r}")
         directory = root
         for component in components[:-1]:
-            encoded = short_name(component)
-            if any(item.short_name == encoded for item in directory.files):
+            validate_component(component)
+            if any(item.name.lower() == component.lower() for item in directory.files):
                 raise ValueError(f"FAT path collides with file: {path!r}")
             child = next((item for item in directory.directories
-                          if item.short_name == encoded), None)
+                          if item.name.lower() == component.lower()), None)
             if child is None:
                 if _entry_count(directory) >= MAX_DIRECTORY_ENTRIES:
                     raise ValueError("FAT directory entry limit exceeded")
+                used = {item.short_name for item in
+                        [*directory.directories, *directory.files]}
+                encoded, long_name = disk_name(component, used)
+                slots = 1 + ((len(component) + 12) // 13
+                             if long_name else 0)
+                if _entry_count(directory) + slots > MAX_DIRECTORY_ENTRIES:
+                    raise ValueError("FAT directory entry limit exceeded")
                 child = FatDirectory(component, encoded,
-                                     nt_case_flags(component), directory)
+                                     nt_case_flags(component), long_name,
+                                     directory)
                 directory.directories.append(child)
             directory = child
         leaf = components[-1]
-        encoded = short_name(leaf)
-        if (any(item.short_name == encoded for item in directory.directories) or
-                any(item.short_name == encoded for item in directory.files)):
+        validate_component(leaf)
+        if any(item.name.lower() == leaf.lower() for item in
+               [*directory.directories, *directory.files]):
             raise ValueError(f"duplicate FAT path: {path!r}")
         if _entry_count(directory) >= MAX_DIRECTORY_ENTRIES:
             raise ValueError("FAT directory entry limit exceeded")
@@ -97,8 +138,14 @@ def build_tree(data_files: Mapping[str, bytes]) -> FatDirectory:
         contents = bytes(raw_contents)
         if len(contents) > 0xFFFFFFFF:
             raise ValueError(f"file is too large for FAT: {path!r}")
+        used = {item.short_name for item in
+                [*directory.directories, *directory.files]}
+        encoded, long_name = disk_name(leaf, used)
+        slots = 1 + ((len(leaf) + 12) // 13 if long_name else 0)
+        if _entry_count(directory) + slots > MAX_DIRECTORY_ENTRIES:
+            raise ValueError("FAT directory entry limit exceeded")
         directory.files.append(FatFile(leaf, encoded, nt_case_flags(leaf),
-                                       contents))
+                                       long_name, contents))
     return root
 
 

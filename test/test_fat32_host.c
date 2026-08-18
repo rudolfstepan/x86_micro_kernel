@@ -246,13 +246,38 @@ int main(void) {
     CHECK(fat32_is_valid_short_name("HELLO.BAS"));
     CHECK(fat32_is_valid_short_name("A_B.C"));
     CHECK(!fat32_is_valid_short_name("TOO-LONG9.BAS"));
+    CHECK(fat32_is_valid_name("long system component.txt"));
+    CHECK(!fat32_is_valid_name("invalid/name.txt"));
     CHECK(!fat32_is_valid_short_name("BAD..BAS"));
     unsigned char dot_name[11];
     convert_to_83_format(dot_name, "..");
     CHECK(compare_names((const char*)dot_name, "..") == 0);
 
     CHECK(fat32_create_file("OLD.BAS"));
-    CHECK(!fat32_create_file("TOO-LONG9.BAS"));
+    CHECK(fat32_create_file("long system component.txt"));
+    struct fat32_dir_entry long_entry;
+    char resolved_long_name[MAX_PATH_LENGTH];
+    CHECK(fat32_lookup_entry_named(boot_sector.root_cluster,
+                                   "long system component.txt", &long_entry,
+                                   resolved_long_name) == FAT32_LOOKUP_FOUND);
+    CHECK(strcmp(resolved_long_name, "long system component.txt") == 0);
+    CHECK(fat32_lookup_entry_in_directory(boot_sector.root_cluster,
+                                          "LONGSY~1.TXT", NULL) ==
+          FAT32_LOOKUP_FOUND);
+    FILE* long_handle = fat32_open_file("long system component.txt", "w");
+    CHECK(long_handle != NULL);
+    static const char long_payload[] = "lfn-data";
+    CHECK(fat32_write_file(long_handle, long_payload,
+                           sizeof(long_payload) - 1,
+                           sizeof(long_payload) - 1) ==
+          (int)sizeof(long_payload) - 1);
+    free(long_handle);
+    char long_loaded[sizeof(long_payload) - 1];
+    CHECK(fat32_load_file_sized("long system component.txt", long_loaded,
+                                sizeof(long_loaded)) ==
+          (int)sizeof(long_loaded));
+    CHECK(memcmp(long_loaded, long_payload, sizeof(long_loaded)) == 0);
+    CHECK(fat32_delete_file("long system component.txt"));
     FILE* file = fat32_open_file("OLD.BAS", "w");
     CHECK(file != NULL);
     static const char initial[] = "ABCDEFGHIJ";
@@ -578,6 +603,42 @@ int main(void) {
         CHECK(vfs_close(node) == VFS_OK);
     }
     CHECK(cache_flushes == 2);
+
+    CHECK(vfs_create("/long vfs filename.txt") == VFS_OK);
+    CHECK(vfs_readdir("/", 1, &listed) == VFS_OK);
+    CHECK(strcmp(listed.name, "long vfs filename.txt") == 0);
+    vfs_node_t* long_node = NULL;
+    CHECK(vfs_open("/long vfs filename.txt", &long_node) == VFS_OK);
+    CHECK(long_node != NULL && strcmp(long_node->name,
+                                     "long vfs filename.txt") == 0);
+    CHECK(vfs_close(long_node) == VFS_OK);
+    CHECK(vfs_rename("/long vfs filename.txt",
+                     "/renamed long vfs filename.txt") == VFS_OK);
+    CHECK(vfs_stat("/long vfs filename.txt", &listed) == VFS_ERR_NOT_FOUND);
+    CHECK(vfs_stat("/renamed long vfs filename.txt", &listed) == VFS_OK);
+    CHECK(strcmp(listed.name, "renamed long vfs filename.txt") == 0);
+    CHECK(vfs_delete("/renamed long vfs filename.txt") == VFS_OK);
+    CHECK(vfs_create("/lower.txt") == VFS_OK);
+    CHECK(vfs_stat("/LOWER.TXT", &listed) == VFS_OK);
+    CHECK(strcmp(listed.name, "lower.txt") == 0);
+    CHECK(vfs_delete("/lower.txt") == VFS_OK);
+    CHECK(vfs_mkdir("/long directory name") == VFS_OK);
+    CHECK(vfs_create("/long directory name/nested long file.txt") == VFS_OK);
+    CHECK(vfs_stat("/long directory name/nested long file.txt", &listed) ==
+          VFS_OK);
+    CHECK(vfs_delete("/long directory name/nested long file.txt") == VFS_OK);
+    CHECK(vfs_rmdir("/long directory name") == VFS_OK);
+
+    /* A maximum-size slot sequence may cross a one-sector directory-cluster
+     * boundary; lookup and deletion must retain the complete VFAT chain. */
+    char spanning_path[220];
+    spanning_path[0] = '/';
+    for (size_t i = 1; i <= 200; i++) spanning_path[i] = 'a';
+    strcpy(&spanning_path[201], ".txt");
+    CHECK(vfs_create(spanning_path) == VFS_OK);
+    CHECK(vfs_stat(spanning_path, &listed) == VFS_OK);
+    CHECK(strlen(listed.name) == 204);
+    CHECK(vfs_delete(spanning_path) == VFS_OK);
 
     static const char renamed_payload[] = "atomic replacement\r\n";
     CHECK(fat32_replace_file("RST00001.TMP", renamed_payload,

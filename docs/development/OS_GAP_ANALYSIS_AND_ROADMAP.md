@@ -343,7 +343,7 @@ und 10 verbindlich.
 | CPU | GDT/IDT/TSS, Ring 0/3, Exceptions, PIC, gegen PIT kalibrierter lokaler APIC-Timer, PIT-Scheduler-Fallback, `INT 0x80` | funktionsfähiger Single-Core-Pfad |
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
 | Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit explizit delegierten generationsgebundenen Capabilities, endlichen Deadlines, geschützten Steuerdaten, reservierter Restart-Admission, versionierten Domänenprofilen und abgenommener Ring-3-Probe-Recovery | maximal 8 Tasks; produktive Dienste liegen noch im modularen Monolithen |
-| Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, FAT32-Rename/Replace im Undo-Journal, FAT32/ATA-`fsync`, EXT2 lesen | persistenter Editor-Commit vorhanden; ABI, FAT12-Sync und breitere Rename-Semantik fehlen |
+| Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, validierte ASCII-VFAT-LFN bis 255 Zeichen, FAT32-Rename/Replace im Undo-Journal, FAT32/ATA-`fsync`, EXT2 lesen | persistenter Editor-Commit vorhanden; Unicode-Normalisierung, ABI, FAT12-Sync und breitere Rename-Semantik fehlen |
 | Geräte | PCI, ATA-PIO, AHCI/SATA, FDD-DMA, PS/2 mit blockierendem Console-Wait, output-only COM1-Diagnose, RTC, VGA, nativer VBE-RGB-Framebuffer | QEMU-/VMware-AHCI abgenommen; breitere reale Hardware und moderne Geräte fehlen |
 | Netzwerk | E1000, RTL8139, RTL8168/8111G, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping und RTL8139 am besten verifiziert; reale RTL8168/H81M-K-Gegenprobe fehlt |
 | USB | PCI-Erkennung eines xHCI-Controllers | nur Probe-Gerüst |
@@ -509,7 +509,8 @@ an die unter Präemptionsschutz aufgelöste aktuelle Generation einer Ziel-PID.
 - ATA LBA48 und Multi-Sektor-I/O; aktuell ist der PIO-Treiber auf LBA28
   begrenzt (`drivers/block/ata.h:25`)
 - FAT-Schreibreihenfolge, Fehlerpropagation und Power-Loss-Tests
-- FAT Long File Names und eine definierte Zeichenkodierung
+- vollständige Unicode-VFAT-Kodierung und Normalisierung; ASCII-LFN bis 255
+  Zeichen samt checksum-validiertem 8.3-Fallback ist implementiert
 - FAT-Zeitstempel über VFS; FAT32 liefert derzeit Nullen
 - mehrere FAT12-Volumes; der Adapter besitzt aktuell nur einen globalen
   `mounted_fat12_fs`
@@ -1193,11 +1194,14 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    umgesetzt; Cross-Directory, FAT12 und offene Handle-Semantik fehlen.
 - **Teilstatus:** Der Editor nutzt `TEMP -> fsync -> close -> rename`; FAT12
    und künftige Blockgeräte benötigen noch einen gleichwertigen Sync-Vertrag.
+- **Teilstatus:** FAT32-LFN ist für druckbares ASCII bis 255 Zeichen samt
+  checksum-validiertem 8.3-Fallback umgesetzt; Unicode-Normalisierung und
+  atomarer LFN-Replace auf existierende Ziele fehlen.
 - Open/Delete/Unmount-Regeln und Locking vereinheitlichen.
 - Fehler nach jedem einzelnen Sektorwrite injizieren und das resultierende
    Image mit einem Hostprüfer untersuchen.
-- Danach Zeitstempel und LFN ergänzen; EXT2 vorerst ausdrücklich read-only
-   mounten.
+- Danach Zeitstempel und vollständige Unicode-Normalisierung ergänzen; EXT2
+  vorerst ausdrücklich read-only mounten.
 
 #### R2.3 Blockgeräte und Partitionen — L
 

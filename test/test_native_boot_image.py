@@ -138,6 +138,40 @@ def read_fat32_root_files(image, partition_lba):
     return boot, first_fat, root_chain, files
 
 
+def read_fat32_root_long_names(image, partition_lba):
+    image.seek(partition_lba * 512)
+    boot = image.read(512)
+    reserved = struct.unpack_from("<H", boot, 14)[0]
+    fat_sectors = struct.unpack_from("<I", boot, 36)[0]
+    image.seek((partition_lba + reserved) * 512)
+    fat = image.read(fat_sectors * 512)
+    root_cluster = struct.unpack_from("<I", boot, 44)[0]
+    _, root_data = read_fat32_chain(
+        image, partition_lba, boot, fat, root_cluster
+    )
+    names = []
+    slots = {}
+    for offset in range(0, len(root_data), 32):
+        entry = root_data[offset:offset + 32]
+        if entry[0] == 0:
+            break
+        if entry[11] == 0x0F:
+            order = entry[0] & 0x1F
+            units = (struct.unpack_from("<5H", entry, 1) +
+                     struct.unpack_from("<6H", entry, 14) +
+                     struct.unpack_from("<2H", entry, 28))
+            slots[order] = units
+            continue
+        if slots:
+            units = [value for order in sorted(slots)
+                     for value in slots[order]]
+            units = units[:units.index(0)] if 0 in units else units
+            names.append("".join(chr(value) for value in units
+                                 if value != 0xFFFF))
+            slots = {}
+    return names
+
+
 class NativeBootImageTests(unittest.TestCase):
     def test_vmware_bios_reads_resume_with_interrupts_enabled(self):
         """A protected-mode copy must not leave later BIOS I/O with IF=0.
@@ -351,14 +385,21 @@ class NativeBootImageTests(unittest.TestCase):
             with image_path.open("w+b") as image:
                 image.truncate(IMAGE_SIZE)
                 total = IMAGE_SIZE // 512 - DATA_PARTITION_START
-                with self.assertRaisesRegex(ValueError, "8.3"):
-                    write_fat32_volume(
-                        image,
-                        DATA_PARTITION_START,
-                        total,
-                        0x12345678,
-                        {"too-long9.prg": b"program"},
-                    )
+                write_fat32_volume(
+                    image,
+                    DATA_PARTITION_START,
+                    total,
+                    0x12345678,
+                    {"this-is-a-long-filename-for-vfat.prg": b"program"},
+                )
+                _, _, _, files = read_fat32_root_files(
+                    image, DATA_PARTITION_START
+                )
+                self.assertEqual(files[b"THISIS~1PRG"][0], b"program")
+                self.assertIn(
+                    "this-is-a-long-filename-for-vfat.prg",
+                    read_fat32_root_long_names(image, DATA_PARTITION_START),
+                )
                 with self.assertRaisesRegex(ValueError, "duplicate"):
                     write_fat32_volume(
                         image,
