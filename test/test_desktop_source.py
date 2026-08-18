@@ -107,6 +107,14 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertNotRegex(self.source, r"#include\s*<(stdio|stdlib|string)\.h>")
         self.assertNotRegex(self.source, r"\b(printf|strlen|memcpy|malloc|free)\s*\(")
 
+    def test_usb_mouse_moves_a_clipped_visible_pointer(self):
+        self.assertIn("x86os_mouse_event(&mouse)", self.source)
+        self.assertIn("pointer_x += mouse.delta_x", self.source)
+        self.assertIn("pointer_y += mouse.delta_y", self.source)
+        self.assertIn("draw_mouse_pointer(pointer_x, pointer_y)", self.source)
+        self.assertIn("X86OS_MOUSE_BUTTON_LEFT", self.source)
+        self.assertIn("app_at_position", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

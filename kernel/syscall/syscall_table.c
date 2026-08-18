@@ -14,6 +14,8 @@
 #include "drivers/video/display_control.h"
 #include "drivers/char/kb.h"
 #include "drivers/char/rtc.h"
+#include "drivers/usb/hid_mouse.h"
+#include "drivers/usb/xhci.h"
 #include "drivers/bus/drives.h"
 #include "drivers/block/ata.h"
 #include "drivers/block/fdd.h"
@@ -1824,6 +1826,21 @@ static int syscall_display_control(const display_control_request_t *user_request
     return display_control_activate();
 }
 
+static int syscall_mouse_event(hid_mouse_event_t *user_event) {
+    struct {
+        uint32_t version;
+        uint32_t struct_size;
+    } header;
+    if (copy_from_user(&header, user_event, sizeof(header)) != 0) return -14;
+    if (header.version != HID_MOUSE_EVENT_VERSION ||
+        header.struct_size < sizeof(hid_mouse_event_t)) return -22;
+    xhci_poll();
+    hid_mouse_event_t event;
+    int result = hid_mouse_read_event(&event);
+    if (result != 0) return result;
+    return copy_to_user(user_event, &event, sizeof(event)) == 0 ? 0 : -14;
+}
+
 static int syscall_touch(const char *user_path) {
     char path[PROCESS_PATH_MAX];
     int result = syscall_copy_path(path, user_path);
@@ -2289,6 +2306,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_tcp_socket_accept,   // Syscall 107: Bounded accept
     (void*)&syscall_touch,                // Syscall 108: Update file timestamps
     (void*)&syscall_display_control,      // Syscall 109: Native display activation
+    (void*)&syscall_mouse_event,          // Syscall 110: Nonblocking USB mouse
     // Add more syscalls here as needed
 };
 
@@ -2534,6 +2552,10 @@ void syscall_handler(Registers* regs) {
         case SYS_DISPLAY_CONTROL:
             result = (uint32_t)syscall_display_control(
                 (const display_control_request_t*)(uintptr_t)arg1);
+            break;
+        case SYS_MOUSE_EVENT:
+            result = (uint32_t)syscall_mouse_event(
+                (hid_mouse_event_t*)(uintptr_t)arg1);
             break;
         case SYS_FILL_RECT:
             result = (uint32_t)syscall_display_fill_rect(

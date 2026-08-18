@@ -148,6 +148,39 @@ static void render_desktop(const x86os_display_info_t *display,
               help, color_muted, color_background);
 }
 
+static void draw_mouse_pointer(int32_t x, int32_t y) {
+    (void)x86os_fill_rect(x, y, 3U, 16U, 0x00000000U);
+    (void)x86os_fill_rect(x + 3, y + 3, 3U, 10U, 0x00000000U);
+    (void)x86os_fill_rect(x + 6, y + 6, 3U, 7U, 0x00000000U);
+    (void)x86os_fill_rect(x + 1, y + 1, 1U, 13U, 0x00FFFFFFU);
+    (void)x86os_fill_rect(x + 4, y + 4, 1U, 7U, 0x00FFFFFFU);
+}
+
+static int app_at_position(const x86os_display_info_t *display,
+                           int32_t pointer_x, int32_t pointer_y) {
+    uint32_t font_height = max_u32(display->font_height, 16U);
+    uint32_t margin = display->width / 24U;
+    uint32_t topbar_height = max_u32(font_height * 3U, 52U);
+    uint32_t footer_height = max_u32(font_height * 3U, 48U);
+    if (margin < 16U) margin = 16U;
+    uint32_t gap = margin;
+    uint32_t top = topbar_height + margin;
+    uint32_t card_width = (display->width - margin * 2U - gap) / 2U;
+    uint32_t available_height =
+        display->height - top - footer_height - margin;
+    uint32_t card_height = (available_height - gap) / 2U;
+    for (unsigned int index = 0U; index < APP_COUNT; ++index) {
+        uint32_t column = index % 2U;
+        uint32_t row = index / 2U;
+        int32_t x = (int32_t)(margin + column * (card_width + gap));
+        int32_t y = (int32_t)(top + row * (card_height + gap));
+        if (pointer_x >= x && pointer_y >= y &&
+            pointer_x < x + (int32_t)card_width &&
+            pointer_y < y + (int32_t)card_height) return (int)index;
+    }
+    return -1;
+}
+
 static int read_escape_byte(void) {
     for (unsigned int attempt = 0; attempt < 20U; ++attempt) {
         int value = x86os_getchar_nonblocking();
@@ -158,7 +191,8 @@ static int read_escape_byte(void) {
 }
 
 static int read_key(void) {
-    int value = x86os_getchar();
+    int value = x86os_getchar_nonblocking();
+    if (value == 0) return DESKTOP_KEY_NONE;
     if (value != 0x1B) return value;
 
     int prefix = read_escape_byte();
@@ -251,6 +285,9 @@ static void launch_app(const x86os_display_info_t *display,
 int main(void) {
     x86os_display_info_t display;
     unsigned int selected = 0;
+    int32_t pointer_x;
+    int32_t pointer_y;
+    uint32_t previous_buttons = 0U;
 
     int display_status = x86os_display_info(&display);
     if (display_status != 0) {
@@ -266,13 +303,38 @@ int main(void) {
         return 1;
     }
 
+    pointer_x = (int32_t)(display.width / 2U);
+    pointer_y = (int32_t)(display.height / 2U);
     render_desktop(&display, selected);
+    draw_mouse_pointer(pointer_x, pointer_y);
     x86os_puts("DESKTOP_OK\n");
     render_desktop(&display, selected);
+    draw_mouse_pointer(pointer_x, pointer_y);
 
     for (;;) {
         int key = read_key();
         unsigned int previous = selected;
+        unsigned int redraw = 0U;
+        x86os_mouse_event_t mouse;
+        int mouse_status = x86os_mouse_event(&mouse);
+
+        if (mouse_status == 0) {
+            pointer_x += mouse.delta_x;
+            pointer_y += mouse.delta_y;
+            if (pointer_x < 0) pointer_x = 0;
+            if (pointer_y < 0) pointer_y = 0;
+            if (pointer_x >= (int32_t)display.width)
+                pointer_x = (int32_t)display.width - 1;
+            if (pointer_y >= (int32_t)display.height)
+                pointer_y = (int32_t)display.height - 1;
+            if ((mouse.buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U &&
+                (previous_buttons & X86OS_MOUSE_BUTTON_LEFT) == 0U) {
+                int hit = app_at_position(&display, pointer_x, pointer_y);
+                if (hit >= 0) selected = (unsigned int)hit;
+            }
+            previous_buttons = mouse.buttons;
+            redraw = 1U;
+        }
 
         if (key == '\t' || key == DESKTOP_KEY_RIGHT) {
             selected = (selected + 1U) % APP_COUNT;
@@ -282,11 +344,19 @@ int main(void) {
             selected = (selected + 2U) % APP_COUNT;
         } else if (key == '\r' || key == '\n') {
             launch_app(&display, selected);
+            redraw = 1U;
         } else if (key == DESKTOP_KEY_ESCAPE) {
             selected = 0;
             launch_app(&display, selected);
+            redraw = 1U;
         }
 
-        if (selected != previous) render_desktop(&display, selected);
+        if (selected != previous) redraw = 1U;
+        if (redraw) {
+            render_desktop(&display, selected);
+            draw_mouse_pointer(pointer_x, pointer_y);
+        } else {
+            (void)x86os_sleep_ms(5U);
+        }
     }
 }

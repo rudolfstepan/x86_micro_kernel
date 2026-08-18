@@ -12,7 +12,7 @@
 #include "drivers/bus/pci.h"
 #include <stdint.h>
 
-/* Initialise one bounded xHCI root-port HID keyboard instance. */
+/* Initialise one bounded xHCI root-port HID boot keyboard or mouse. */
 int xhci_probe(pci_device_t *dev);
 
 /* Drain deferred port/report work from task context, never from an IRQ. */

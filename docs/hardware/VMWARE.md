@@ -23,7 +23,7 @@ das Überschreiben einer über `vmrun` laufenden Paket-VM.
 | CPU/RAM | 1 vCPU, 512 MiB |
 | Festplatte | persistente monolithic-flat SATA-VMDK |
 | Grafik | VMware SVGA, 3D aus, standardmäßig VGA-Text |
-| Eingabe | virtuelle PS/2-Tastatur |
+| Eingabe | virtuelle PS/2-Tastatur und USB-HID-Maus über xHCI |
 | Netzwerk | Intel E1000 an VMware NAT-DHCP |
 | Seriell | COM1-Ausgabe nach `vmware-serial.log` |
 | Deaktiviert | USB, EHCI, xHCI, Audio, VMware Tools |
@@ -75,6 +75,8 @@ Build-ID zu sichern.
 - kein Root: AHCI-Probe, MBR-Children und eindeutiges `X86 SYSTEM` prüfen
 - keine Tastatur: VM-Fenster fokussieren; PS/2 ist erforderlich, VMware Tools
   nicht
+- keine Maus: `xhci.present`, `mouse.vusb.enable` und die Meldung
+  `USB: xHCI HID mouse ready` im seriellen Log prüfen
 - kein LAN: `e1000`, Verbindungsstatus und VMnet0-Zuordnung prüfen
 - frühe Panic: `vmware-serial.log` und erweiterten Panic-Screen vergleichen
 

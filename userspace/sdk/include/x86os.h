@@ -121,7 +121,8 @@ enum {
     X86OS_SYS_TCP_SOCKET_LISTEN = 106,
     X86OS_SYS_TCP_SOCKET_ACCEPT = 107,
     X86OS_SYS_TOUCH = 108,
-    X86OS_SYS_DISPLAY_CONTROL = 109
+    X86OS_SYS_DISPLAY_CONTROL = 109,
+    X86OS_SYS_MOUSE_EVENT = 110
 };
 
 #define X86OS_TCP_SOCKET_VERSION 1U
@@ -616,6 +617,21 @@ typedef struct {
     uint32_t reserved;
 } x86os_display_control_t;
 
+#define X86OS_MOUSE_EVENT_VERSION 1U
+#define X86OS_MOUSE_BUTTON_LEFT 0x01U
+#define X86OS_MOUSE_BUTTON_RIGHT 0x02U
+#define X86OS_MOUSE_BUTTON_MIDDLE 0x04U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t delta_x;
+    int32_t delta_y;
+    int32_t wheel;
+    uint32_t buttons;
+    uint32_t generation;
+    uint32_t reserved;
+} x86os_mouse_event_t;
+
 enum {
     X86OS_DRIVE_ATA = 1,
     X86OS_DRIVE_FDD = 2,
@@ -859,6 +875,7 @@ int x86os_service_connect(uint32_t service_id,
                           x86os_ipc_handle_t* handle);
 int x86os_display_info(x86os_display_info_t* info);
 int x86os_display_activate(void);
+int x86os_mouse_event(x86os_mouse_event_t* event);
 int x86os_fill_rect(int32_t x, int32_t y, uint32_t width, uint32_t height,
                     uint32_t rgb);
 int x86os_draw_text_pixels(int32_t x, int32_t y, const char* text,

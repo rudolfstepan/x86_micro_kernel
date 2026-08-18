@@ -204,7 +204,7 @@ Tests auf unterstützter Zielhardware.
 
 - überlappende oder frei verschiebbare Fenster
 - Compositor und Hardwarebeschleunigung
-- Mauszeiger, Drag-and-drop und USB-Maus
+- Drag-and-drop und vollständiges GUI-Clientprotokoll
 - frei ladbare Grafiktreiber oder UEFI GOP
 - Auflösungsdialog und beliebige dynamische Modi
 - direktes Framebuffer-Mapping in Userspace
@@ -212,6 +212,12 @@ Tests auf unterstützter Zielhardware.
 
 Diese Funktionen benötigen nach dem stabilen Laufzeit-Moduswechsel eigene,
 begrenzte Arbeitspakete.
+
+Die vom Benutzer freigegebene Erweiterung implementiert zuerst eine
+USB-HID-Boot-Maus über den vorhandenen xHCI-Root-Port. Bewegungen, drei Tasten
+und optionales Mausrad gelangen über eine feste, generationsgebundene Queue
+und den append-only Syscall 110 nach Ring 3. Direkte Hardware- oder
+Framebufferrechte werden dabei nicht an den Desktop übertragen.
 
 ## Erwartetes Restrisiko
 

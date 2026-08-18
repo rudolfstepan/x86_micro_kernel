@@ -648,6 +648,14 @@ int x86os_display_activate(void) {
                               (uintptr_t)&request, 0, 0);
 }
 
+int x86os_mouse_event(x86os_mouse_event_t* event) {
+    if (!event) return -22;
+    event->version = X86OS_MOUSE_EVENT_VERSION;
+    event->struct_size = sizeof(*event);
+    return (int)x86os_syscall(X86OS_SYS_MOUSE_EVENT,
+                              (uintptr_t)event, 0, 0);
+}
+
 int x86os_touch(const char* path) {
     return (int)x86os_syscall(X86OS_SYS_TOUCH, (uintptr_t)path, 0, 0);
 }

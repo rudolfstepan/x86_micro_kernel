@@ -1,0 +1,52 @@
+import shutil
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class UsbMouseTests(unittest.TestCase):
+    def test_hid_boot_mouse_host_behavior(self) -> None:
+        compiler = shutil.which("gcc") or shutil.which("clang")
+        if compiler is None:
+            self.skipTest("host C compiler unavailable")
+        with tempfile.TemporaryDirectory(prefix="reist-usb-mouse-") as temp:
+            executable = Path(temp) / "hid-mouse-test.exe"
+            subprocess.run(
+                [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                 "-DHID_MOUSE_HOST_TEST", "-I.",
+                 "test/test_usb_hid_mouse_host.c",
+                 "drivers/usb/hid_mouse.c", "lib/libc/string.c",
+                 "-o", str(executable)],
+                cwd=ROOT, check=True, capture_output=True, text=True)
+            subprocess.run([str(executable)], cwd=ROOT, check=True,
+                           capture_output=True, text=True, timeout=5)
+
+    def test_xhci_accepts_mouse_protocol_and_matches_transfer_trbs(self):
+        source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
+        self.assertIn("config[offset + 7U] == 2U", source)
+        self.assertIn("hid_mouse_attach(controller.generation)", source)
+        self.assertIn("hid_mouse_report(controller.generation", source)
+        self.assertIn("&interrupt_ring[0]", source)
+        self.assertIn("status & 0x00FFFFFFU", source)
+
+    def test_mouse_syscall_is_append_only_and_pointer_checked(self):
+        stdlib = (ROOT / "lib/libc/stdlib.h").read_text(encoding="utf-8")
+        syscalls = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8")
+        header = (ROOT / "userspace/sdk/include/x86os.h").read_text(
+            encoding="utf-8")
+        self.assertIn("SYS_MOUSE_EVENT 110", stdlib)
+        self.assertIn("X86OS_SYS_MOUSE_EVENT = 110", header)
+        start = syscalls.index("static int syscall_mouse_event")
+        body = syscalls[start:syscalls.index("\n}", start)]
+        self.assertLess(body.index("copy_from_user"),
+                        body.index("hid_mouse_read_event"))
+        self.assertIn("copy_to_user", body)
+
+
+if __name__ == "__main__":
+    unittest.main()
