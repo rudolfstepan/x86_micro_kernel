@@ -65,6 +65,7 @@
 #define TRB_CYCLE                (1U << 0)
 #define TRB_ENT                  (1U << 1)
 #define TRB_IOC                  (1U << 5)
+#define TRB_CHAIN                (1U << 4)
 #define TRB_IDT                  (1U << 6)
 #define TRB_TYPE(type)           ((uint32_t)(type) << 10)
 #define TRB_DIR_IN               (1U << 16)
@@ -406,13 +407,14 @@ static bool xhci_control(uint8_t request_type, uint8_t request,
     uint32_t transfer_type = length == 0U ? 0U :
                              (direction_in ? 3U : 2U);
     setup->d[2] = (transfer_type << 16U) | 8U;
-    setup->d[3] = TRB_TYPE(TRB_SETUP) | TRB_IDT |
+    setup->d[3] = TRB_TYPE(TRB_SETUP) | TRB_IDT | TRB_CHAIN |
         (controller.endpoint_cycle ? 1U : 0U);
     if (length != 0U) {
         memset(data, 0, sizeof(*data));
         data->d[0] = xhci_dma32(buffer);
         data->d[2] = length;
-        data->d[3] = TRB_TYPE(TRB_DATA) | (direction_in ? TRB_DIR_IN : 0U) |
+        data->d[3] = TRB_TYPE(TRB_DATA) | TRB_CHAIN |
+            (direction_in ? TRB_DIR_IN : 0U) |
             (controller.endpoint_cycle ? 1U : 0U);
     }
     memset(status, 0, sizeof(*status));
@@ -496,25 +498,50 @@ static bool xhci_find_boot_hid(uint8_t *config, uint16_t length,
 
 static bool xhci_configure_boot_hid(void) {
     memset(control_buffer, 0, sizeof(control_buffer));
-    if (!xhci_control(0x80U, 6U, 0x0100U, 0U, 8U, true, control_buffer) ||
-        control_buffer[0] < 8U || control_buffer[7] == 0U ||
-        control_buffer[7] != controller.max_packet)
+    if (!xhci_control(0x80U, 6U, 0x0100U, 0U, 8U, true, control_buffer)) {
+        printf("USB: xHCI GET_DESCRIPTOR device-8 failed\n");
         return false;
-    if (!xhci_control(0x80U, 6U, 0x0100U, 0U, 18U, true, control_buffer))
+    }
+    if (controller.max_packet >= 512U && control_buffer[7] > 15U) {
+        printf("USB: xHCI invalid EP0 packet exponent=%u\n",
+               (unsigned)control_buffer[7]);
         return false;
-    if (!xhci_control(0x80U, 6U, 0x0200U, 0U, 9U, true, control_buffer))
+    }
+    uint16_t descriptor_packet = controller.max_packet >= 512U
+        ? (uint16_t)(1U << control_buffer[7]) : control_buffer[7];
+    if (control_buffer[0] < 8U || control_buffer[7] == 0U ||
+        descriptor_packet != controller.max_packet) {
+        printf("USB: xHCI invalid EP0 packet descriptor=%u context=%u\n",
+               (unsigned)descriptor_packet, (unsigned)controller.max_packet);
         return false;
+    }
+    if (!xhci_control(0x80U, 6U, 0x0100U, 0U, 18U, true, control_buffer)) {
+        printf("USB: xHCI GET_DESCRIPTOR device failed\n");
+        return false;
+    }
+    if (!xhci_control(0x80U, 6U, 0x0200U, 0U, 9U, true, control_buffer)) {
+        printf("USB: xHCI GET_DESCRIPTOR config-9 failed\n");
+        return false;
+    }
     uint16_t total = (uint16_t)control_buffer[2] |
                      ((uint16_t)control_buffer[3] << 8U);
-    if (total < 9U || total > XHCI_CONTROL_BYTES) return false;
-    if (!xhci_control(0x80U, 6U, 0x0200U, 0U, total, true, control_buffer))
+    if (total < 9U || total > XHCI_CONTROL_BYTES) {
+        printf("USB: xHCI invalid configuration length=%u\n", (unsigned)total);
         return false;
+    }
+    if (!xhci_control(0x80U, 6U, 0x0200U, 0U, total, true, control_buffer)) {
+        printf("USB: xHCI GET_DESCRIPTOR config failed\n");
+        return false;
+    }
     uint8_t configuration = 0U, interface = 0U, protocol = 0U;
     uint8_t endpoint = 0U, interval = 0U;
     uint16_t packet = 0U;
     if (!xhci_find_boot_hid(control_buffer, total, &configuration, &interface,
                             &protocol, &endpoint, &packet, &interval) ||
-        endpoint == 0U || configuration == 0U) return false;
+        endpoint == 0U || configuration == 0U) {
+        printf("USB: xHCI no HID boot interface\n");
+        return false;
+    }
     controller.endpoint_id = (uint8_t)(endpoint * 2U + 1U);
     controller.interface_number = interface;
     controller.configuration_value = configuration;
@@ -542,9 +569,15 @@ static bool xhci_configure_boot_hid(void) {
     xhci_trb_t *configure = xhci_command(TRB_CONFIGURE_ENDPOINT,
                                            xhci_dma32(input_context), 0U,
                                            (uint32_t)controller.slot_id << 24U);
-    if (!xhci_wait_command(configure, NULL)) return false;
+    if (!xhci_wait_command(configure, NULL)) {
+        printf("USB: xHCI CONFIGURE_ENDPOINT failed\n");
+        return false;
+    }
     if (!xhci_control(0x00U, 9U, configuration, 0U, 0U, false, NULL) ||
-        !xhci_control(0x21U, 0x0BU, 0U, interface, 0U, false, NULL)) return false;
+        !xhci_control(0x21U, 0x0BU, 0U, interface, 0U, false, NULL)) {
+        printf("USB: xHCI SET_CONFIGURATION/PROTOCOL failed\n");
+        return false;
+    }
     controller.endpoint_index = 0U;
     controller.endpoint_cycle = true;
     memset(hid_reports, 0, sizeof(hid_reports));
@@ -589,8 +622,10 @@ static bool xhci_enumerate_root_hid(void) {
         if ((port & XHCI_PORT_PED) != 0U) break;
     }
     if ((port & XHCI_PORT_PED) == 0U) return false;
-    controller.max_packet = 8U;
-    if (!xhci_address_device((uint8_t)((port & XHCI_PORT_SPEED_MASK) >> 10U))) {
+    uint8_t port_speed = (uint8_t)((port & XHCI_PORT_SPEED_MASK) >> 10U);
+    controller.max_packet = port_speed >= 4U ? 512U :
+                            (port_speed == 3U ? 64U : 8U);
+    if (!xhci_address_device(port_speed)) {
         printf("USB: xHCI address-device failed\n");
         return false;
     }
