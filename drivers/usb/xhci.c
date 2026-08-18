@@ -69,6 +69,8 @@
 #define TRB_IDT                  (1U << 6)
 #define TRB_TYPE(type)           ((uint32_t)(type) << 10)
 #define TRB_DIR_IN               (1U << 16)
+#define TRB_TRT_OUT              (2U << 16)
+#define TRB_TRT_IN               (3U << 16)
 #define TRB_LINK                 6U
 #define TRB_TRANSFER             1U
 #define TRB_SETUP                2U
@@ -374,16 +376,20 @@ static bool xhci_wait_command(xhci_trb_t *command, uint8_t *slot_out) {
     return false;
 }
 
-static bool xhci_wait_transfer(xhci_trb_t *status_trb) {
+static bool xhci_wait_transfer(xhci_trb_t *status_trb,
+                               uint32_t *completion_out) {
     uint64_t start = pit_monotonic_ms();
     uint32_t expected = xhci_dma32(status_trb);
     while (1) {
         uint64_t now = pit_monotonic_ms();
         if (now < start || now - start >= XHCI_TIMEOUT_MS) break;
         uint32_t status = 0U;
-        if (xhci_drain_events(32U, expected, NULL, &status))
+        if (xhci_drain_events(32U, expected, NULL, &status)) {
+            if (completion_out != NULL) *completion_out = status;
             return status == XHCI_COMPLETION_SUCCESS;
+        }
     }
+    if (completion_out != NULL) *completion_out = 0U;
     return false;
 }
 
@@ -405,9 +411,10 @@ static bool xhci_control(uint8_t request_type, uint8_t request,
     memset(setup, 0, sizeof(*setup));
     memcpy(setup->d, setup_packet, sizeof(setup_packet));
     uint32_t transfer_type = length == 0U ? 0U :
-                             (direction_in ? 3U : 2U);
-    setup->d[2] = (transfer_type << 16U) | 8U;
+                             (direction_in ? TRB_TRT_IN : TRB_TRT_OUT);
+    setup->d[2] = 8U;
     setup->d[3] = TRB_TYPE(TRB_SETUP) | TRB_IDT | TRB_CHAIN |
+        transfer_type |
         (controller.endpoint_cycle ? 1U : 0U);
     if (length != 0U) {
         memset(data, 0, sizeof(*data));
@@ -422,7 +429,13 @@ static bool xhci_control(uint8_t request_type, uint8_t request,
         (direction_in ? 0U : TRB_DIR_IN) |
         (controller.endpoint_cycle ? 1U : 0U);
     xhci_ring_doorbell(controller.slot_id, 1U);
-    bool result = xhci_wait_transfer(status);
+    uint32_t completion = 0U;
+    bool result = xhci_wait_transfer(status, &completion);
+    if (!result) {
+        printf("USB: xHCI control failed request=%u type=%02X length=%u cc=%u\n",
+               (unsigned)request, (unsigned)request_type, (unsigned)length,
+               (unsigned)completion);
+    }
     controller.endpoint_index = (uint32_t)((status - endpoint0_ring) + 1U);
     if (controller.endpoint_index >= XHCI_ENDPOINT_RING_TRBS - 1U) {
         controller.endpoint_index = 0U;
