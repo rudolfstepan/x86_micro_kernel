@@ -85,7 +85,7 @@ static pci_device_t *find_qemu_vga(uint32_t *lfb_out) {
 static int activate_vmware(pci_device_t *device) {
     uint32_t index_bar = device->bar[0];
     uint32_t framebuffer_bar = device->bar[1];
-    if ((index_bar & 1U) == 0U || (framebuffer_bar & 0x0FU) != 0U ||
+    if ((index_bar & 1U) == 0U || (framebuffer_bar & 0x06U) != 0U ||
         (index_bar & 0xFFFFFFFCU) == 0U ||
         (framebuffer_bar & 0xFFFFFFF0U) == 0U) return -19;
     uint16_t index_port = (uint16_t)(index_bar & 0xFFFCU);
