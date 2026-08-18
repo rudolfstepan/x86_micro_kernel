@@ -2721,8 +2721,6 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
                 &probe_runtime.arp_reply_context);
             supervisor_unlock(transaction_flags);
             network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_QUEUE);
-        } else {
-            printf("REIST_NETWORK ARP_REQUEST_QUEUED\n");
         }
         /* A local request belongs exclusively to the service.  Queue pressure
          * drops it fail-closed instead of reviving the Ring-0 reply path. */
@@ -3195,7 +3193,6 @@ int supervisor_network_send_arp_reply(
         printf("REIST_NETWORK ARP_REPLY_REJECTED -5\n");
         return -5;
     }
-    printf("REIST_NETWORK ARP_REPLY_MEDIATED\n");
     return 0;
 }
 

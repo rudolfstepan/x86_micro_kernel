@@ -45,10 +45,8 @@ REIST_NETWORK_INJECTION_READY_MARKER = "TEST_STAGE NETWORK_INJECTION_READY"
 REIST_NETWORK_PROBE_ID_MARKER = "REIST_NETWORK PROBE_ID_OK"
 REIST_ARP_BINDING_MARKER = "REIST_NETWORK ARP_BINDING_OK"
 REIST_ARP_REVOKED_MARKER = "REIST_NETWORK ARP_BINDINGS_REVOKED"
-REIST_ARP_REQUEST_QUEUED_MARKER = "REIST_NETWORK ARP_REQUEST_QUEUED"
 REIST_ARP_RESOLUTION_QUEUED_MARKER = "REIST_NETWORK ARP_RESOLUTION_QUEUED"
 REIST_ARP_RESOLUTION_MARKER = "REIST_NETWORK ARP_RESOLUTION_MEDIATED"
-REIST_ARP_REPLY_MARKER = "REIST_NETWORK ARP_REPLY_MEDIATED"
 REIST_ICMP_ECHO_QUEUED_MARKER = "REIST_NETWORK ICMP_ECHO_QUEUED"
 REIST_ICMP_ECHO_MARKER = "REIST_NETWORK ICMP_ECHO_MEDIATED"
 REIST_DHCP_CONFIG_QUEUED_MARKER = "REIST_NETWORK DHCP_CONFIG_QUEUED"
@@ -422,6 +420,29 @@ def receive_arp_request(connection: socket.socket, target: bytes,
             return False
         if (len(frame) >= 42 and frame[12:14] == b"\x08\x06" and
                 frame[20:22] == b"\x00\x01" and frame[38:42] == target):
+            return True
+    return False
+
+
+def receive_arp_reply(connection: socket.socket, deadline: float) -> bool:
+    peer_mac = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x01))
+    peer_ip = bytes((10, 0, 2, 99))
+    while time.monotonic() < deadline:
+        connection.settimeout(max(0.01, deadline - time.monotonic()))
+        header = receive_exact(connection, 4)
+        if header is None:
+            return False
+        length = struct.unpack("!I", header)[0]
+        if length < 14 or length > 1514:
+            return False
+        frame = receive_exact(connection, length)
+        if frame is None:
+            return False
+        if (len(frame) >= 42 and frame[0:6] == peer_mac and
+                frame[6:12] == GUEST_MAC and frame[12:14] == b"\x08\x06" and
+                frame[14:22] == b"\x00\x01\x08\x00\x06\x04\x00\x02" and
+                frame[22:28] == GUEST_MAC and frame[28:32] == GUEST_IP and
+                frame[32:38] == peer_mac and frame[38:42] == peer_ip):
             return True
     return False
 
@@ -823,7 +844,7 @@ def run(
             if error is None and inject_arp_request:
                 assert injection_port is not None
                 assert injection_connection is not None
-                queued = False
+                replied = False
                 for _ in range(3):
                     if not inject_ethernet_frame(
                             injection_connection, arp_request_frame()):
@@ -831,21 +852,12 @@ def run(
                         break
                     confirmation_deadline = min(deadline,
                                                 time.monotonic() + 1.0)
-                    confirmation_error, _ = wait_for_line(
-                        process, chunks, transcript, finished,
-                        REIST_ARP_REQUEST_QUEUED_MARKER,
-                        confirmation_deadline,
-                    )
-                    if confirmation_error is None:
-                        queued = True
+                    if receive_arp_reply(injection_connection,
+                                         confirmation_deadline):
+                        replied = True
                         break
-                if error is None and not queued:
-                    error = "ARP request was not queued after 3 bounded attempts"
-                if error is None:
-                    error, _ = wait_for_line(
-                        process, chunks, transcript, finished,
-                        REIST_ARP_REPLY_MARKER, deadline,
-                    )
+                if error is None and not replied:
+                    error = "ARP reply not received after 3 bounded attempts"
             if error is None and inject_icmp_echo:
                 assert injection_connection is not None
                 queued = False
@@ -1125,10 +1137,6 @@ def validate(
                 revoked < pressure or crash < revoked or recovery < crash or
                 recovery > test):
             return "missing ordered network-service crash recovery marker"
-    if expect_arp_reply:
-        arp_reply = exact_line_position(transcript, REIST_ARP_REPLY_MARKER)
-        if arp_reply < boot or arp_reply > test:
-            return "missing mediated ARP reply marker"
     if expect_icmp_echo:
         queued = exact_line_position(transcript,
                                      REIST_ICMP_ECHO_QUEUED_MARKER)

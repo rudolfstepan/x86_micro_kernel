@@ -1942,9 +1942,10 @@ ABI, Autorität, Einzelkorrektur und Doppelkorruption.
 
 **S0.3c-5b2a ist umgesetzt:** Der QEMU-Runner verbindet User-Netzwerk,
 Socket-Injektor und RTL8139 über einen virtuellen Hub. Nach der expliziten
-Gastbereitschaft sendet er höchstens drei einzeln bestätigte, korrekt gerahmte
-ARP-Requests und verlangt die geordnete Kette `ARP_REQUEST_QUEUED ->
-ARP_REPLY_MEDIATED -> TEST_OK`. Der Lauf deckte zwei zuvor synthetisch
+Gastbereitschaft sendet er höchstens drei korrekt gerahmte ARP-Requests und
+verlangt eine am Socket-Injektor empfangene, vollständig validierte
+Ethernet-ARP-Antwort sowie anschließend `TEST_OK`. Erfolgreicher Paketverkehr
+bleibt auf der normalen Konsole still; Ablehnungen bleiben sichtbar. Der Lauf deckte zwei zuvor synthetisch
 verdeckte Fehler auf: Request-ID und Dienstgeneration waren unzulässig
 gleichgesetzt, und der Ring-3-Parser prüfte die Quell- statt der
 Broadcast-Zieladresse. Hostvertrag, Paketbuild und der echte Runtime-Modus
