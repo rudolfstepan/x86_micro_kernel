@@ -1,3 +1,11 @@
+/**
+ * @file mm/kmalloc.h
+ * @brief Kernel-Heap- und Allokationsvertrag.
+ *
+ * Layer: Ring-0 x86 architecture and memory.
+ * Contract: Binärlayouts, Adressgrenzen und Privilegien entsprechen der x86-Hardware-ABI.
+ * Safety: Größe und Alignment werden geprüft; IRQ-/Fatalpfade dürfen den Heap nicht verwenden.
+ */
 #ifndef MEMORY_H
 #define MEMORY_H
 

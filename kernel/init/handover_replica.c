@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/handover_replica.c
+ * @brief Validiert und speichert replizierten Minimalzustand für Handover.
+ *
+ * Layer: Ring-0 replication service.
+ * Contract: Nur passende Versionen, Quellen und steigende Sequenzen werden publiziert.
+ * Safety: CRC- oder Replayfehler verändern den aktiven Zustand nicht.
+ */
 #include "include/kernel/handover_replica.h"
 
 #include <stddef.h>

@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat12/fat12_critical.c
+ * @brief Validierung und Recovery kritischer FAT12-Sektoren.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Doppelkorruption führt read-only statt zu heuristischer Reparatur.
+ */
 #include "fat12_critical.h"
 
 #include "lib/libc/string.h"

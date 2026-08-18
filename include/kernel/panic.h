@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/panic.h
+ * @brief Kernel-Panic-Schnittstelle für nicht fortsetzbare Invariantenverletzungen.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Panic meldet begrenzten Kontext und übergibt an den Fatalpfad.
+ * Safety: Nach unbekannter Kernkorruption findet keine In-place-Reparatur statt.
+ */
 #ifndef PANIC_H
 #define PANIC_H
 

@@ -1,3 +1,11 @@
+/**
+ * @file kernel/shell/command.h
+ * @brief Rettungsshell-Parservertrag.
+ *
+ * Layer: Ring-0 rescue support.
+ * Contract: Überlange oder unbekannte Kommandos bleiben ohne Seiteneffekt.
+ * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
+ */
 #ifndef KERNEL_SHELL_COMMAND_H
 #define KERNEL_SHELL_COMMAND_H
 

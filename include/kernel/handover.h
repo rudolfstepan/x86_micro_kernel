@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/handover.h
+ * @brief Koordiniert Fence, Zustandsübernahme und validierten Rollenwechsel.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Takeover folgt Request, Fence, Validate und Activate.
+ * Safety: Ohne rückgelesene Sperre oder frischen Zustand bleibt der Knoten passiv.
+ */
 #ifndef KERNEL_HANDOVER_H
 #define KERNEL_HANDOVER_H
 

@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/storage_request_pool.h
+ * @brief Fester Request-Pool für begrenzte Storage-Operationen.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Slots folgen definierten Zuständen und bleiben generationsgebunden.
+ * Safety: Keine Heap-Allokation; Erschöpfung und stale Completion werden abgewiesen.
+ */
 #ifndef KERNEL_STORAGE_REQUEST_POOL_H
 #define KERNEL_STORAGE_REQUEST_POOL_H
 

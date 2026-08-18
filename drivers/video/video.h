@@ -1,3 +1,11 @@
+/**
+ * @file drivers/video/video.h
+ * @brief Textmodus-Videovertrag.
+ *
+ * Layer: Ring-0 display driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Koordinaten und Pufferzugriffe bleiben innerhalb der aktiven Geometrie.
+ */
 #ifndef VIDEO_H    /* This is an "include guard" */
 #define VIDEO_H    /* prevents the file from being included twice. */
 

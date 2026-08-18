@@ -1,3 +1,14 @@
+/**
+ * @file kernel/init/supervisor.c
+ * @brief Überwacht isolierte Dienste und vermittelt sicherheitsrelevante Ausgaben.
+ *
+ * Layer: Ring-0 supervision and recovery control.
+ * Contract: Dienstzustand, Autoritäten und Recovery-Kontexte sind an eine
+ *           Generation gebunden und werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Überwachung, Restart-Budgets, Queues und Netzwerktransaktionen sind
+ *         fest begrenzt; ungültiger oder korrupter Zustand führt fail-closed
+ *         zu Fence, Degradation oder kontrollierter Recovery.
+ */
 #include "include/kernel/supervisor.h"
 
 #include "include/kernel/critical_object.h"

@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/storage_handover.h
+ * @brief Koordiniert konsistenten Storage-Zustand während eines Rollenwechsels.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Offene Mutationen werden vor Snapshot oder Takeover beendet oder eingezäunt.
+ * Safety: Unklarer Schreibabschluss verhindert read-write Aktivierung.
+ */
 #ifndef KERNEL_STORAGE_HANDOVER_H
 #define KERNEL_STORAGE_HANDOVER_H
 

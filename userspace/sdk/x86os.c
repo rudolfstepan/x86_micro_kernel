@@ -1,3 +1,11 @@
+/**
+ * @file userspace/sdk/x86os.c
+ * @brief Typsichere Ring-3-Wrapper der REIST-Syscall-ABI.
+ *
+ * Layer: Ring-3 SDK and protocol support.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #include "x86os.h"
 
 _Static_assert(sizeof(x86os_memory_stats_t) == 120U,

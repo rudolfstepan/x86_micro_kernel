@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/arp_binding_cache.h
+ * @brief Begrenzter, generationsgebundener Cache für IPv4-zu-MAC-Bindungen.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Einträge gehören einer Dienstgeneration und verfallen nach monotoner Deadline.
+ * Safety: Stale Generationen und volle Kapazität überschreiben keine bestehenden Bindungen.
+ */
 #ifndef KERNEL_ARP_BINDING_CACHE_H
 #define KERNEL_ARP_BINDING_CACHE_H
 

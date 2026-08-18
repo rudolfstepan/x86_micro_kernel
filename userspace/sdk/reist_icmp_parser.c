@@ -1,3 +1,11 @@
+/**
+ * @file userspace/sdk/reist_icmp_parser.c
+ * @brief Begrenzter ICMP-Nachrichtenparser.
+ *
+ * Layer: Ring-3 SDK and protocol support.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #include "reist_icmp_parser.h"
 
 #include <stddef.h>

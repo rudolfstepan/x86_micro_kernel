@@ -1,3 +1,11 @@
+/**
+ * @file userspace/programs/fault_stack.c
+ * @brief Injiziert einen Userspace-Stackfault.
+ *
+ * Layer: Ring-3 system program or command.
+ * Contract: Argumente und SDK-Rückgaben werden vor weiteren Operationen validiert.
+ * Safety: Ressourcenarbeit ist begrenzt; Fehler werden an die Shell gemeldet und nicht verschleiert.
+ */
 #include "x86os.h"
 
 /* The address is part of the versioned i386 userspace layout.  Touching the

@@ -1,3 +1,11 @@
+/**
+ * @file test/test_arp_binding_cache_host.c
+ * @brief Hostseitiger Regressionstest für arp binding cache.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include "include/kernel/arp_binding_cache.h"
 
 #include <stdint.h>

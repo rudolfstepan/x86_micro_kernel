@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/kernel_log.h
+ * @brief Begrenztes Kernel-Ereignisprotokoll ohne VFS-Abhängigkeit.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Einträge fester Größe werden in kapazitätsbegrenztem Speicher abgelegt.
+ * Safety: Überlauf ist erkennbar; Logging blockiert keine Sicherheitsübergänge.
+ */
 #ifndef KERNEL_LOG_H
 #define KERNEL_LOG_H
 

@@ -1,3 +1,11 @@
+/**
+ * @file fs/vfs/filesystem.h
+ * @brief Dateisystemregistrierungs- und Auto-Mount-Vertrag.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Typ und Probe-Ergebnis müssen zum Medium passen.
+ */
 #ifndef FILESYSTEM_H
 #define FILESYSTEM_H
 

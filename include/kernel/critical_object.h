@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/critical_object.h
+ * @brief Redundant gespeicherte, prüfbare Schutzobjekte für kleinen kritischen Zustand.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Updates publizieren zwei validierbare Kopien mit Version, Sequenz und Prüfsumme.
+ * Safety: Feste Nutzlast; widersprüchliche Doppelkorruption wird gemeldet, nicht repariert.
+ */
 #ifndef KERNEL_CRITICAL_OBJECT_H
 #define KERNEL_CRITICAL_OBJECT_H
 

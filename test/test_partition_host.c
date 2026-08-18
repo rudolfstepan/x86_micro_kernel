@@ -1,3 +1,11 @@
+/**
+ * @file test/test_partition_host.c
+ * @brief Hostseitiger Regressionstest für partition.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>

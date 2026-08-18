@@ -1,3 +1,11 @@
+/**
+ * @file test/test_wait_queue_host.c
+ * @brief Hostseitiger Regressionstest für wait queue.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include "kernel/sched/wait_queue.h"
 
 #include <stdint.h>

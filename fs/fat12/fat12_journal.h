@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat12/fat12_journal.h
+ * @brief FAT12-Undo-Journal und Recoveryvertrag.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Journalzustände und Commitwort bestimmen eindeutig Rollback oder Abschluss.
+ */
 #ifndef FAT12_JOURNAL_H
 #define FAT12_JOURNAL_H
 

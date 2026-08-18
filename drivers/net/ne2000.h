@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/ne2000.h
+ * @brief NE2000-kompatibler NIC-Vertrag.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: Remote-DMA und Seitenring folgen festen Größen und Hardwaretimeouts.
+ */
 #ifndef NE2000_H
 #define NE2000_H
 

@@ -1,3 +1,11 @@
+/**
+ * @file lib/libc/stdlib.h
+ * @brief Freestanding Laufzeit-, Konvertierungs- und Syscallkonstanten.
+ *
+ * Layer: Freestanding kernel/userspace runtime.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #ifndef STDLIB_H    /* This is an "include guard" */
 #define STDLIB_H
 

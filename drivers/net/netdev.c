@@ -1,3 +1,13 @@
+/**
+ * @file drivers/net/netdev.c
+ * @brief Vereinheitlicht NIC-Backends, RX-Übergabe und überwachte TX-Ausgabe.
+ *
+ * Layer: Ring-0 network device mediation.
+ * Contract: Genau ein erkanntes Backend liefert MAC-, RX- und TX-Operationen;
+ *           Frames wechseln nur als vollständige Kopien zwischen festen Queues.
+ * Safety: Framegröße, Queue-Tiefe und Sendedeadline sind begrenzt. Fence oder
+ *         administratives Down unterbindet neue Ausgaben vor dem Backendzugriff.
+ */
 #include "netdev.h"
 
 #include "drivers/net/e1000.h"

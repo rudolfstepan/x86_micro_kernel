@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/netstack.c
+ * @brief Minimaler Ethernet-, ARP- und IPv4-Sendepfad.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: Längen, Checksummen und Nachbarautorität werden vor NIC-Ausgabe geprüft.
+ */
 // drivers/net/netstack.c
 // NE2000-focused improved stack (header-aligned)
 

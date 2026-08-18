@@ -1,3 +1,11 @@
+/**
+ * @file drivers/block/block_device.c
+ * @brief Dispatch und LBA-Übersetzung für Blockgeräte und Partitionen.
+ *
+ * Layer: Ring-0 block and bus driver.
+ * Contract: Ressourcen, LBA-Bereiche und Backendbesitz werden vor jedem Seiteneffekt validiert.
+ * Safety: Bereiche werden vor Backendzugriff überlaufsicher gegen Elternmedien geprüft.
+ */
 #include "block_device.h"
 
 #include "ata.h"
@@ -20,6 +28,8 @@ static const drive_t *partition_parent(const drive_t *drive,
     if (parent->type == DRIVE_TYPE_PARTITION ||
         drive->lba_offset >= parent->sectors ||
         sector > UINT32_MAX - drive->lba_offset) return NULL;
+    /* Prove the addition cannot wrap before translating.  A corrupted child
+     * descriptor therefore cannot escape the parent medium. */
     uint32_t absolute = drive->lba_offset + sector;
     if (!block_device_sector_range_valid(parent, absolute)) return NULL;
     *parent_sector = absolute;

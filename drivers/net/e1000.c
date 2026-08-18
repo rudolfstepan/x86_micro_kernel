@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/e1000.c
+ * @brief e1000-Erkennung, RX/TX-Ringe und Interruptbehandlung.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: Ringgrenzen und Pollbudgets begrenzen Arbeit bei defekter Hardware.
+ */
 #include "e1000.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"

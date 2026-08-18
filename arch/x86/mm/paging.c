@@ -1,3 +1,11 @@
+/**
+ * @file arch/x86/mm/paging.c
+ * @brief Physische Frames, Seitentabellen und Adressraumisolation.
+ *
+ * Layer: Ring-0 x86 architecture and memory.
+ * Contract: Binärlayouts, Adressgrenzen und Privilegien entsprechen der x86-Hardware-ABI.
+ * Safety: Userkopien validieren jede Seite vor Zugriff; Kernelmappings bleiben supervisor-only.
+ */
 #include "arch/x86/mm/paging.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"

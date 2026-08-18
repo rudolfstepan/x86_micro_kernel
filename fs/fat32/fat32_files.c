@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat32/fat32_files.c
+ * @brief FAT32-Datei-, Clusterketten- und Verzeichnisaktualisierung.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Mutationen folgen validierten Clusterketten und geordnetem Metadatencommit.
+ */
 #include "fat32.h"
 #include "lib/libc/stdio.h"
 

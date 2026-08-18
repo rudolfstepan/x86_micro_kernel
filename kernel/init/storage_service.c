@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/storage_service.c
+ * @brief Überwacht Medieninventar, Quarantäne und begrenzte Requalifizierung.
+ *
+ * Layer: Ring-0 supervised storage service.
+ * Contract: Medienidentität und Zustände liegen in validierten Schutzobjekten.
+ * Safety: Unsichere Writes bleiben read-only; Reintegration benötigt Identitätsnachweise.
+ */
 #include "include/kernel/storage_service.h"
 
 #include "arch/x86/include/interrupt.h"
@@ -641,6 +649,9 @@ bool storage_service_report_media_failure(uint32_t resource,
         return false;
     }
     uint32_t mask = 1U << resource;
+    /* Quarantine is published before any recovery work.  In particular an
+     * uncertain write also latches read-only so a later identity match alone
+     * cannot silently restore mutation authority. */
     if ((control.quarantined_resources & mask) == 0U) {
         control.quarantined_resources |= mask;
         printf("REIST_STORAGE RESOURCE_QUARANTINED %u\n", resource);
@@ -671,6 +682,8 @@ static void poll_media_reintegration(uint64_t now_ms) {
     }
     if (control.quarantined_resources == 0U || control.next_probe_ms == 0U ||
         now_ms < control.next_probe_ms) return;
+    /* Probe one resource per poll.  The rotating cursor bounds scheduler work
+     * even when every supported drive is quarantined. */
     uint32_t resource = 0U;
     bool found = false;
     for (uint32_t count = 0U; count < MAX_DRIVES; ++count) {
@@ -699,6 +712,9 @@ static void poll_media_reintegration(uint64_t now_ms) {
     }
     if (recovered) {
         if ((control.read_only_resources & mask) != 0U) {
+            /* A write-uncertain medium regains RW only after all dependent
+             * recovery layers agree.  Each failed stage re-applies both
+             * fences, so a partial recovery cannot leak write authority. */
             uint32_t other_unsafe =
                 (control.quarantined_resources |
                  control.read_only_resources) & ~mask;
@@ -755,6 +771,8 @@ static void poll_media_reintegration(uint64_t now_ms) {
     }
     uint32_t shift = control.probe_attempts > 6U
         ? 6U : control.probe_attempts;
+    /* Saturating exponential backoff keeps retries bounded while avoiding a
+     * tight poll loop against failed or physically absent media. */
     uint32_t interval = STORAGE_MEDIA_PROBE_INITIAL_MS << shift;
     if (interval > STORAGE_MEDIA_PROBE_MAX_MS)
         interval = STORAGE_MEDIA_PROBE_MAX_MS;

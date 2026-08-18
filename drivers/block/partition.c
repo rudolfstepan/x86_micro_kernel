@@ -1,3 +1,11 @@
+/**
+ * @file drivers/block/partition.c
+ * @brief Validiert, erstellt und publiziert MBR/GPT-Partitionen.
+ *
+ * Layer: Ring-0 block and bus driver.
+ * Contract: Ressourcen, LBA-Bereiche und Backendbesitz werden vor jedem Seiteneffekt validiert.
+ * Safety: Kandidaten werden vollständig geprüft, bevor globale Drive-Slots verändert werden.
+ */
 #include "partition.h"
 
 #include "block_device.h"
@@ -57,6 +65,9 @@ int partition_provision_mbr(drive_t *drive, uint32_t first_lba,
     write_le32(mbr + MBR_ENTRY_OFFSET + 12U, sectors);
     mbr[MBR_SIGNATURE_OFFSET] = 0x55U;
     mbr[MBR_SIGNATURE_OFFSET + 1U] = 0xAAU;
+    /* The layout becomes authoritative only after cache flush and
+     * byte-identical readback.  Any failure is an uncertain media mutation;
+     * callers must not publish a child device from this attempt. */
     if (block_device_write_sector(drive, 0U, mbr) != BLOCK_DEVICE_OK ||
         block_device_flush(drive) != BLOCK_DEVICE_OK ||
         block_device_read_sector(drive, 0U, verify) != BLOCK_DEVICE_OK ||
@@ -103,6 +114,8 @@ static size_t publish(uint8_t parent_id, const partition_candidate_t *items,
     drive_t *parent = &detected_drives[parent_id];
     for (size_t i = 0U; i < count; ++i) {
         drive_t *child = &detected_drives[drive_count];
+        /* drive_count is the publication boundary: initialize the unreachable
+         * slot completely, then expose it with the increment below. */
         memset(child, 0, sizeof(*child));
         child->type = DRIVE_TYPE_PARTITION;
         child->base = (uint16_t)(PARTITION_VIRTUAL_BASE | (uint16_t)drive_count);

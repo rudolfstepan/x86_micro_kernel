@@ -1,3 +1,11 @@
+/**
+ * @file lib/libc/stdlib.c
+ * @brief Freestanding Konvertierung und Basis-Laufzeitfunktionen.
+ *
+ * Layer: Freestanding kernel/userspace runtime.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #include <stddef.h>
 #include <stdint.h>
 

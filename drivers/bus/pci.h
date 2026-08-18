@@ -1,3 +1,11 @@
+/**
+ * @file drivers/bus/pci.h
+ * @brief PCI-Geräte-, BAR- und Treiberregistrierungsvertrag.
+ *
+ * Layer: Ring-0 block and bus driver.
+ * Contract: Ressourcen, LBA-Bereiche und Backendbesitz werden vor jedem Seiteneffekt validiert.
+ * Safety: Konfigurationszugriffe prüfen Busadresse und bewahren erkannte Geräteidentität.
+ */
 #ifndef PCI_H
 #define PCI_H
 

@@ -1,3 +1,11 @@
+/**
+ * @file drivers/char/io.h
+ * @brief x86-Port-I/O-Primitiven.
+ *
+ * Layer: Ring-0 platform I/O driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Aufrufer verantworten Portberechtigung und erforderliche Hardwarefolge.
+ */
 // io.h
 #ifndef IO_H
 #define IO_H

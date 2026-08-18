@@ -1,3 +1,11 @@
+/**
+ * @file fs/ext2/ext2.c
+ * @brief EXT2-Probe, Inode-, Verzeichnis- und Blockzugriff.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Ungültige Metadaten oder indirekte Blockbereiche werden fail-closed abgewiesen.
+ */
 #include "ext2.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"

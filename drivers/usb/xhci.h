@@ -1,3 +1,11 @@
+/**
+ * @file drivers/usb/xhci.h
+ * @brief xHCI-Controller-Schnittstelle.
+ *
+ * Layer: Ring-0 USB driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: MMIO-, Ring- und Kontextadressen müssen ausgerichtet und begrenzt sein.
+ */
 #ifndef USB_XHCI_H
 #define USB_XHCI_H
 

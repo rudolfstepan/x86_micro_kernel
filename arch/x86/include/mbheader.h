@@ -1,3 +1,11 @@
+/**
+ * @file arch/x86/include/mbheader.h
+ * @brief Multiboot-Header- und Bootinformationslayout.
+ *
+ * Layer: Ring-0 x86 architecture and memory.
+ * Contract: Binärlayouts, Adressgrenzen und Privilegien entsprechen der x86-Hardware-ABI.
+ * Safety: Bootdaten werden nur innerhalb vom Loader gemeldeter Grenzen gelesen.
+ */
 #ifndef MBHEADER_H
 #define MBHEADER_H
 

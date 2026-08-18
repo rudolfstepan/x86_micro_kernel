@@ -1,3 +1,11 @@
+/**
+ * @file arch/x86/include/sys.h
+ * @brief x86-GDT/IDT/Port- und CPU-Grundtypen.
+ *
+ * Layer: Ring-0 x86 architecture and memory.
+ * Contract: Binärlayouts, Adressgrenzen und Privilegien entsprechen der x86-Hardware-ABI.
+ * Safety: C-Strukturen entsprechen exakt den Assembler- und Hardwarelayouts.
+ */
 #ifndef SYS_H
 #define SYS_H
 

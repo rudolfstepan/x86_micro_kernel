@@ -1,3 +1,11 @@
+/**
+ * @file test/test_vfs_host.c
+ * @brief Hostseitiger Regressionstest für vfs.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include "fs/vfs/vfs.h"
 #include <stdlib.h>
 #include <string.h>

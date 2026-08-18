@@ -1,3 +1,11 @@
+/**
+ * @file userspace/programs/date.c
+ * @brief Zeigt Datum und Uhrzeit.
+ *
+ * Layer: Ring-3 system program or command.
+ * Contract: Argumente und SDK-Rückgaben werden vor weiteren Operationen validiert.
+ * Safety: Ressourcenarbeit ist begrenzt; Fehler werden an die Shell gemeldet und nicht verschleiert.
+ */
 #include "x86os.h"
 
 static void print_two(uint32_t value) {

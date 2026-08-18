@@ -1,3 +1,11 @@
+; @file lib/libc/trycatch.asm
+; @brief Setzt begrenzte Exception-Recovery-Punkte für geschützte Kernelzugriffe.
+;
+; Layer: Freestanding x86 runtime support.
+; Contract: Recovery-Kontext und Stacklayout entsprechen exakt dem C-Aufrufer.
+; Safety: Der Mechanismus fängt nur ausdrücklich erwartete lokale Faults ab und
+;         darf unbekannte Kernkorruption nicht als repariert behandeln.
+;
 [BITS 32]
 global setjmp
 global longjmp

@@ -1,3 +1,13 @@
+/**
+ * @file kernel/ipc/ipc.c
+ * @brief Implementiert capability-geschützte, begrenzte IPC-Endpunkte.
+ *
+ * Layer: Ring-0 IPC service.
+ * Contract: Endpunkt-Handles codieren Slot und Generation; Nachrichten werden
+ *           vollständig validiert und kopiert, bevor sie veröffentlicht werden.
+ * Safety: Endpunkte, Capabilities, Queue-Tiefe, Nachrichtengröße und Wartezeit
+ *         sind fest begrenzt. Stale oder unberechtigte Handles bleiben wirkungslos.
+ */
 #include "include/kernel/ipc.h"
 #include "include/kernel/critical_object.h"
 

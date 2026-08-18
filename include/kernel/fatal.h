@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/fatal.h
+ * @brief Fatalpfad für begrenzte Diagnose, Output-Fencing und kontrollierten Neustart.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Aufruf erfolgt für nicht lokal beherrschbare Kernfehler und kehrt regulär nicht zurück.
+ * Safety: Der Pfad vermeidet Heap, VFS und ungebundene Arbeit.
+ */
 #ifndef KERNEL_FATAL_H
 #define KERNEL_FATAL_H
 

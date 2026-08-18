@@ -1,3 +1,11 @@
+/**
+ * @file test/test_fat12_remap_host.c
+ * @brief Hostseitiger Regressionstest für fat12 remap.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>

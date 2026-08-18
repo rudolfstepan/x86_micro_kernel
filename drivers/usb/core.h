@@ -1,3 +1,11 @@
+/**
+ * @file drivers/usb/core.h
+ * @brief USB-Core-Initialisierungsvertrag.
+ *
+ * Layer: Ring-0 USB driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Geräte werden erst nach erfolgreicher Hostcontrollerinitialisierung sichtbar.
+ */
 #ifndef USB_CORE_H
 #define USB_CORE_H
 

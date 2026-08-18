@@ -1,3 +1,11 @@
+/**
+ * @file test/test_supervisor_host.c
+ * @brief Hostseitiger Regressionstest für supervisor.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include "include/kernel/supervisor.h"
 
 static bool fence_applied;

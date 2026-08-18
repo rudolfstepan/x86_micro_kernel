@@ -1,3 +1,11 @@
+/**
+ * @file kernel/sched/scheduling_policy.c
+ * @brief Begrenzte Scheduling-Auswahl und Budgetlogik.
+ *
+ * Layer: Ring-0 scheduler.
+ * Contract: Die Auswahl iteriert nur über die feste Prozesskapazität.
+ * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
+ */
 #include "kernel/sched/scheduling_policy.h"
 
 #include <limits.h>

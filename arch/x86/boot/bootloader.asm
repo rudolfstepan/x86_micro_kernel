@@ -1,3 +1,10 @@
+; @file arch/x86/boot/bootloader.asm
+; @brief Multiboot-Kernelstart.
+;
+; Layer: x86 boot and privilege-transition assembly.
+; Contract: Initialisiert Minimalzustand und übergibt kontrolliert an den C-Kernel.
+; Safety: Stacklayout, Sektorzahl und Poll-/Retryarbeit bleiben explizit begrenzt.
+;
 [BITS 32]
 global start
 global interrupt

@@ -1,3 +1,11 @@
+/**
+ * @file drivers/block/ahci.c
+ * @brief AHCI-Erkennung, Command-Submission und begrenzte Port-Recovery.
+ *
+ * Layer: Ring-0 block and bus driver.
+ * Contract: Ressourcen, LBA-Bereiche und Backendbesitz werden vor jedem Seiteneffekt validiert.
+ * Safety: Geräte werden erst nach IDENTIFY publiziert; Timeout beendet den Slot fail-closed.
+ */
 #include "ahci.h"
 
 #include "arch/x86/mm/paging.h"

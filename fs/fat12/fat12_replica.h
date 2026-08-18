@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat12/fat12_replica.h
+ * @brief FAT12-Replikatvertrag für kritische Daten.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Replikate tragen Generation und Integritätsnachweis.
+ */
 #ifndef FAT12_REPLICA_H
 #define FAT12_REPLICA_H
 

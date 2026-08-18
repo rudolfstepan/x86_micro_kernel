@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/ethernet.h
+ * @brief Ethernet-II-Frameformat und Parservertrag.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: Parser akzeptieren nur vollständige Header und bekannte Längen.
+ */
 #ifndef ETHERNET_H
 #define ETHERNET_H
 

@@ -1,3 +1,10 @@
+; @file arch/x86/boot/bios/stage1_floppy.asm
+; @brief Disketten-Stage-1-Loader.
+;
+; Layer: x86 boot and privilege-transition assembly.
+; Contract: Konvertiert feste CHS-Geometrie und lädt Stage 2 mit begrenzten BIOS-Retries.
+; Safety: Stacklayout, Sektorzahl und Poll-/Retryarbeit bleiben explizit begrenzt.
+;
 ; 1.44-MB BIOS floppy stage-1 loader (80 cylinders, 2 heads, 18 sectors).
 BITS 16
 ORG 0x7C00

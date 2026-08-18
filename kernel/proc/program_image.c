@@ -1,3 +1,11 @@
+/**
+ * @file kernel/proc/program_image.c
+ * @brief Validierung ausführbarer PRG-Images.
+ *
+ * Layer: Ring-0 process subsystem.
+ * Contract: Header, Bereiche und Überläufe werden vor Paging geprüft.
+ * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
+ */
 #include "kernel/proc/program_image.h"
 
 #include "kernel/init/prg.h"

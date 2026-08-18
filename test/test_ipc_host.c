@@ -1,3 +1,11 @@
+/**
+ * @file test/test_ipc_host.c
+ * @brief Hostseitiger Regressionstest für ipc.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include "include/kernel/ipc.h"
 #include "kernel/proc/process.h"
 #include "kernel/sched/scheduler.h"

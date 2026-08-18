@@ -1,3 +1,11 @@
+/**
+ * @file userspace/bin/date.c
+ * @brief Legacy-Datumsanzeige.
+ *
+ * Layer: Ring-3 interactive user program.
+ * Contract: Eingabe, Pfade und Rückgabewerte werden vor Dispatch oder Dateizugriff geprüft.
+ * Safety: Puffer und History sind fest begrenzt; Fehler beenden nur das aktuelle Kommando.
+ */
 #include "drivers/char/rtc.h"
 #include "lib/libc/stdio.h"
 #include "drivers/video/video.h"

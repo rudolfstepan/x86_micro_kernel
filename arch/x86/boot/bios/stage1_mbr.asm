@@ -1,3 +1,10 @@
+; @file arch/x86/boot/bios/stage1_mbr.asm
+; @brief MBR-Stage-1-Loader.
+;
+; Layer: x86 boot and privilege-transition assembly.
+; Contract: Lädt eine feste Stage-2-Sektormenge und bleibt innerhalb des BIOS-Bootbudgets.
+; Safety: Stacklayout, Sektorzahl und Poll-/Retryarbeit bleiben explizit begrenzt.
+;
 ; Native BIOS stage 1 loader.
 ; The image builder patches the partition table below and places a manifest
 ; in the first sector of the active boot partition.
@@ -175,4 +182,3 @@ times 446 - ($ - $$) db 0
 partition_table:
 times 64 db 0
 dw 0xAA55
-

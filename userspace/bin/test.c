@@ -1,3 +1,11 @@
+/**
+ * @file userspace/bin/test.c
+ * @brief Legacy-Userspace-Selbsttestkommando.
+ *
+ * Layer: Ring-3 interactive user program.
+ * Contract: Eingabe, Pfade und Rückgabewerte werden vor Dispatch oder Dateizugriff geprüft.
+ * Safety: Puffer und History sind fest begrenzt; Fehler beenden nur das aktuelle Kommando.
+ */
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 

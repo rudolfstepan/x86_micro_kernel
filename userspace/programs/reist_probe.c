@@ -1,3 +1,11 @@
+/**
+ * @file userspace/programs/reist_probe.c
+ * @brief Implementiert den überwachten Ring-3-Netzwerkdienst.
+ *
+ * Layer: Ring-3 system program or command.
+ * Contract: Argumente und SDK-Rückgaben werden vor weiteren Operationen validiert.
+ * Safety: Ressourcenarbeit ist begrenzt; Fehler werden an die Shell gemeldet und nicht verschleiert.
+ */
 #include <stdint.h>
 #include <stdbool.h>
 #include "x86os.h"

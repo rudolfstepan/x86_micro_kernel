@@ -1,3 +1,11 @@
+/**
+ * @file test/test_critical_object_host.c
+ * @brief Hostseitiger Regressionstest für critical object.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include "include/kernel/critical_object.h"
 
 #include <stdint.h>

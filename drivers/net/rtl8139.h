@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/rtl8139.h
+ * @brief RTL8139-NIC- und Ringpuffervertrag.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: CAPR/CBR und TX-Slots werden nur in gültiger Hardwarefolge verändert.
+ */
 #ifndef RTL8139_H
 #define RTL8139_H
 

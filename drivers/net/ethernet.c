@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/ethernet.c
+ * @brief Ethernet-II-Validierung und Payload-Demultiplexing.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: Trunkierte oder übergroße Frames werden vor Protokollübergabe verworfen.
+ */
 #include "ethernet.h"
 
 #include "lib/libc/stdio.h"

@@ -1,3 +1,11 @@
+/**
+ * @file drivers/char/kb.c
+ * @brief PS/2-IRQ/Poll-Eingabe und Scancodeübersetzung.
+ *
+ * Layer: Ring-0 platform I/O driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: IRQ-Arbeit bleibt kurz; unbekannte Sequenzen erzeugen keine Tastenereignisse.
+ */
 #include "kb.h"
 #include "drivers/char/io.h"
 #include "drivers/video/video.h"

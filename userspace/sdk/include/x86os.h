@@ -1,3 +1,11 @@
+/**
+ * @file userspace/sdk/include/x86os.h
+ * @brief Versionierte öffentliche REIST-Userspace-ABI.
+ *
+ * Layer: Ring-3 SDK and protocol support.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #ifndef X86OS_USER_API_H
 #define X86OS_USER_API_H
 

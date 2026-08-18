@@ -1,3 +1,11 @@
+/**
+ * @file drivers/char/kb.h
+ * @brief PS/2-Tastatur- und Eingabepuffervertrag.
+ *
+ * Layer: Ring-0 platform I/O driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Scancodes werden begrenzt dekodiert und atomar in den Ringpuffer gestellt.
+ */
 #ifndef KEYBOARD_H    /* This is an "include guard" */
 #define KEYBOARD_H 
 

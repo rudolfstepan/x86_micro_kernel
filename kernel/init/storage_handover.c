@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/storage_handover.c
+ * @brief Synchronisiert Storage-Fences und Replikatzustand beim Handover.
+ *
+ * Layer: Ring-0 storage handover.
+ * Contract: Snapshot und Aktivierung folgen auf beendete oder eingezäunte Writes.
+ * Safety: Unklarer Persistenzzustand verhindert beschreibbare Reintegration.
+ */
 #include "include/kernel/storage_handover.h"
 
 #include <stddef.h>

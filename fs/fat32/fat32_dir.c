@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat32/fat32_dir.c
+ * @brief FAT32-Verzeichnisnavigation und Eintragsverwaltung.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: LFN/8.3-Einträge und Verzeichnisketten werden längenbegrenzt validiert.
+ */
 #include "fat32.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"

@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/ne2000.c
+ * @brief NE2000-Erkennung und begrenzter Remote-DMA-Paketpfad.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: Timeout oder ungültiger Ringstatus verwirft Frames ohne ungebundene Wiederholung.
+ */
 #include "ne2000.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"

@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/fatal.c
+ * @brief Erfasst begrenzte Fataldiagnose und übergibt an Fence und Watchdog.
+ *
+ * Layer: Ring-0 fatal path.
+ * Contract: Der erste Fatalfehler besitzt den Diagnosepfad; Rekursion bleibt begrenzt.
+ * Safety: Ausgänge werden vor Restart eingezäunt; Heap und VFS sind ausgeschlossen.
+ */
 #include "include/kernel/fatal.h"
 
 #include "arch/x86/include/interrupt.h"

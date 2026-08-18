@@ -1,3 +1,11 @@
+/**
+ * @file userspace/programs/guest_test.c
+ * @brief Führt deterministische Gast-Regressionstests aus.
+ *
+ * Layer: Ring-3 system program or command.
+ * Contract: Argumente und SDK-Rückgaben werden vor weiteren Operationen validiert.
+ * Safety: Ressourcenarbeit ist begrenzt; Fehler werden an die Shell gemeldet und nicht verschleiert.
+ */
 #include <stdbool.h>
 
 #include "x86os.h"

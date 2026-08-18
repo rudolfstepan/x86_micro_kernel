@@ -1,3 +1,11 @@
+/**
+ * @file kernel/sched/wait_queue.c
+ * @brief Intrusive deadlinegebundene Wait-Queues.
+ *
+ * Layer: Ring-0 scheduler.
+ * Contract: Knoten gehören höchstens einer Queue; Cleanup ist idempotent.
+ * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
+ */
 #include "kernel/sched/wait_queue.h"
 
 void wait_queue_init(wait_queue_t *queue) {

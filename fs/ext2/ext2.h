@@ -1,3 +1,11 @@
+/**
+ * @file fs/ext2/ext2.h
+ * @brief EXT2-On-Disk- und Read/Write-Vertrag.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Superblock, Gruppen, Inodes und Blockbereiche werden validiert.
+ */
 #ifndef EXT2_H
 #define EXT2_H
 

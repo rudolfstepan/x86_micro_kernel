@@ -1,3 +1,10 @@
+; @file arch/x86/boot/bios/stage2_bios.asm
+; @brief Nativer BIOS-Stage-2-Loader.
+;
+; Layer: x86 boot and privilege-transition assembly.
+; Contract: Liest Kernelmetadaten begrenzt, prüft CRC und lädt nur validierte ELF-Segmente.
+; Safety: Stacklayout, Sektorzahl und Poll-/Retryarbeit bleiben explizit begrenzt.
+;
 ; Native BIOS stage 2 loader for the REIST OS.
 ;
 ; Entry contract from stage 1:

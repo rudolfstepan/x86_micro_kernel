@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/storage_maintenance.h
+ * @brief Administrativer Vertrag für Storage Down/Up, Mount und Medienprüfung.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Anfragen sind ressourcen-, generations- und deadlinegebunden.
+ * Safety: Fehler hinterlassen Ressourcen offline, read-only oder quarantänisiert.
+ */
 #ifndef KERNEL_STORAGE_MAINTENANCE_H
 #define KERNEL_STORAGE_MAINTENANCE_H
 

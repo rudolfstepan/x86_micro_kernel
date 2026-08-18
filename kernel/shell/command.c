@@ -1,3 +1,11 @@
+/**
+ * @file kernel/shell/command.c
+ * @brief Minimale Ring-0-Rettungs- und Diagnose-Shell.
+ *
+ * Layer: Ring-0 rescue support.
+ * Contract: Kommandos und Argumente sind fest begrenzt.
+ * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
+ */
 #include "kernel/shell/command.h"
 #include "kernel/proc/process.h"
 #include "kernel/init/prg.h"

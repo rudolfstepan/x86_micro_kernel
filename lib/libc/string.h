@@ -1,3 +1,11 @@
+/**
+ * @file lib/libc/string.h
+ * @brief Freestanding String-/Speicher-API.
+ *
+ * Layer: Freestanding kernel/userspace runtime.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #ifndef STRINGS_H    /* This is an "include guard" */
 #define STRINGS_H    /* prevents the file from being included twice. */
 

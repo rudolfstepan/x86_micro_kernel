@@ -1,3 +1,11 @@
+/**
+ * @file drivers/video/framebuffer.h
+ * @brief Linearer Framebuffervertrag.
+ *
+ * Layer: Ring-0 display driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Pitch, Pixelformat, Abmessungen und physischer Bereich müssen validiert sein.
+ */
 #ifndef FRAMEBUFFER_H
 #define FRAMEBUFFER_H
 

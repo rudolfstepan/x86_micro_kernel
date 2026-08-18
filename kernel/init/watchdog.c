@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/watchdog.c
+ * @brief Koppelt Hardware-Watchdog-Bedienung an nachgewiesenen Systemfortschritt.
+ *
+ * Layer: Ring-0 liveness monitor.
+ * Contract: Ticks und Fortschrittsmarker verwenden monotone Zeit und feste Intervalle.
+ * Safety: Stillstand führt zur unterlassenen Bedienung oder zum Fatal-Handoff.
+ */
 #include "include/kernel/watchdog.h"
 
 #include "arch/x86/include/interrupt.h"

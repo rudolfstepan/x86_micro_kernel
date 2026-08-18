@@ -1,3 +1,11 @@
+/**
+ * @file test/fixtures/fat12_write_guest.c
+ * @brief Gastfixture für kontrollierte FAT12-Schreib- und Recoverytests.
+ *
+ * Layer: Ring-3 runtime-test fixture.
+ * Contract: Erzeugt ausschließlich das vom Test angeforderte begrenzte Schreibmuster.
+ * Safety: Rückgabestatus macht Teil- oder fehlgeschlagene Writes sichtbar.
+ */
 #include "x86os.h"
 
 static int same_bytes(const char* first, const char* second,

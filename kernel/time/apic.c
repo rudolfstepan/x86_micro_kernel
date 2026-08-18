@@ -1,3 +1,11 @@
+/**
+ * @file kernel/time/apic.c
+ * @brief Lokaler APIC-Timer und Kalibrierung.
+ *
+ * Layer: Ring-0 x86 time backend.
+ * Contract: Erfolgreiche Initialisierung liefert monotone, begrenzte Timerdienste.
+ * Safety: Ungültige Hardwarewerte aktivieren das Backend nicht; PIT bleibt Basis-Fallback.
+ */
 #include "kernel/time/apic.h"
 #include "arch/x86/include/interrupt.h"
 #include "arch/x86/include/sys.h"

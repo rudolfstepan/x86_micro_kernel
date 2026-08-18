@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat12/fat12.c
+ * @brief FAT12-Mount, Verzeichnis- und Dateioperationen.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Clusterketten, Namen und Mutationen sind begrenzt und journalgebunden.
+ */
 #include "fat12.h"
 #include "../../drivers/block/fdd.h"
 #include "../../lib/libc/stdio.h"

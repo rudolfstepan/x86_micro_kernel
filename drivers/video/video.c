@@ -1,3 +1,11 @@
+/**
+ * @file drivers/video/video.c
+ * @brief VGA-Textausgabe und Cursorsteuerung.
+ *
+ * Layer: Ring-0 display driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Scrollen und Schreiben sind an Bildschirmkapazität gebunden.
+ */
 #include "video.h"
 #include "drivers/char/io.h"
 #include "drivers/char/serial.h"

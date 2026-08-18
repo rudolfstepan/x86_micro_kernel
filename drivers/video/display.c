@@ -1,3 +1,11 @@
+/**
+ * @file drivers/video/display.c
+ * @brief Dispatch zwischen VGA-Textmodus und Framebuffer.
+ *
+ * Layer: Ring-0 display driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Nicht initialisierte Backends erhalten keine Ausgabe.
+ */
 #include "display.h"
 
 #ifdef USE_FRAMEBUFFER

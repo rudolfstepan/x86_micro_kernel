@@ -1,3 +1,11 @@
+/**
+ * @file drivers/usb/usb_core.c
+ * @brief PCI-basierte Erkennung unterstützter USB-Hostcontroller.
+ *
+ * Layer: Ring-0 USB driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Nur erkannte und erfolgreich initialisierte Backends werden publiziert.
+ */
 /*
  * Minimal USB core + xHCI probe skeleton for x86_micro_kernel
  *

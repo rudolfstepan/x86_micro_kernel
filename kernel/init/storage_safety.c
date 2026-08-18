@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/storage_safety.c
+ * @brief Verwaltet den globalen und ressourcenbezogenen Schreib-Fence.
+ *
+ * Layer: Ring-0 storage safety service.
+ * Contract: Ein Write besitzt Ressource, Fortschritt und Deadline bis zum Abschluss.
+ * Safety: Timeout oder unklarer Commit verriegelt Writes ohne automatischen Retry.
+ */
 #include "include/kernel/storage_safety.h"
 
 #include "drivers/block/ata.h"

@@ -1,3 +1,11 @@
+/**
+ * @file arch/x86/include/interrupt.h
+ * @brief IRQ-Save/Restore- und Interruptkontextvertrag.
+ *
+ * Layer: Ring-0 x86 architecture and memory.
+ * Contract: Binärlayouts, Adressgrenzen und Privilegien entsprechen der x86-Hardware-ABI.
+ * Safety: Restore verwendet ausschließlich die zum Save gehörenden Flags.
+ */
 #ifndef ARCH_X86_INTERRUPT_H
 #define ARCH_X86_INTERRUPT_H
 

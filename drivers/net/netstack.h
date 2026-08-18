@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/netstack.h
+ * @brief Begrenzter Ring-0-Ethernet/ARP/IPv4-Ausgabevertrag.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: Ring 0 vermittelt Frames, während Protokollentscheidungen dem überwachten Dienst gehören.
+ */
 #ifndef NETSTACK_H
 #define NETSTACK_H
 

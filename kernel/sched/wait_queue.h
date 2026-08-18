@@ -1,3 +1,11 @@
+/**
+ * @file kernel/sched/wait_queue.h
+ * @brief Wait-Node- und Queue-Vertrag.
+ *
+ * Layer: Ring-0 scheduler.
+ * Contract: Doppeltes Enqueue wird ohne Listenbeschädigung abgewiesen.
+ * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
+ */
 #ifndef KERNEL_SCHED_WAIT_QUEUE_H
 #define KERNEL_SCHED_WAIT_QUEUE_H
 

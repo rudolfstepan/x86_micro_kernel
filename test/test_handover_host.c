@@ -1,3 +1,11 @@
+/**
+ * @file test/test_handover_host.c
+ * @brief Hostseitiger Regressionstest für handover.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include "include/kernel/handover.h"
 
 #include <stdint.h>

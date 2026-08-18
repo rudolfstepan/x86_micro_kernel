@@ -1,3 +1,11 @@
+/**
+ * @file drivers/char/rtc.c
+ * @brief RTC-Registerzugriff und Kalenderkonvertierung.
+ *
+ * Layer: Ring-0 platform I/O driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Update-in-progress und BCD-Konvertierung werden begrenzt behandelt.
+ */
 #include "rtc.h"
 
 #include "drivers/char/io.h"

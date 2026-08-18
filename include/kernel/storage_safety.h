@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/storage_safety.h
+ * @brief Medienübergreifender Fence-Vertrag für persistente Schreibvorgänge.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Begin registriert Ressource und Budget; End bestätigt Commit oder Unsicherheit.
+ * Safety: Unklarer Abschluss sperrt Writes und erlaubt keine blinde Wiederholung.
+ */
 #ifndef KERNEL_STORAGE_SAFETY_H
 #define KERNEL_STORAGE_SAFETY_H
 

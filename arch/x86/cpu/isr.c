@@ -1,3 +1,11 @@
+/**
+ * @file arch/x86/cpu/isr.c
+ * @brief C-Dispatch für CPU-Ausnahmen.
+ *
+ * Layer: Ring-0 x86 architecture and memory.
+ * Contract: Binärlayouts, Adressgrenzen und Privilegien entsprechen der x86-Hardware-ABI.
+ * Safety: Userfehler terminieren den Prozess; Kernfehler gehen in den Fatalpfad.
+ */
 #include "arch/x86/include/sys.h"
 #include "arch/x86/include/interrupt.h"
 #include "arch/x86/include/tss.h"

@@ -1,3 +1,11 @@
+/**
+ * @file kernel/proc/process.h
+ * @brief Öffentlicher Prozess-Lifecycle-Vertrag.
+ *
+ * Layer: Ring-0 process subsystem.
+ * Contract: Zustand und Generation werden vor Ressourcenänderungen geprüft.
+ * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
+ */
 #ifndef PROCESS_H
 #define PROCESS_H
 

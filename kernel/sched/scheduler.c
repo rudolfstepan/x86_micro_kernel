@@ -1,3 +1,11 @@
+/**
+ * @file kernel/sched/scheduler.c
+ * @brief Deterministischer Prozess-Scheduler.
+ *
+ * Layer: Ring-0 scheduler.
+ * Contract: Nur READY-Prozesse laufen; Blockierung wahrt Wait-Node-Ownership.
+ * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
+ */
 #include "kernel/sched/scheduler.h"
 
 #include "arch/x86/include/interrupt.h"

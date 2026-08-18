@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/handover_serial_backend.c
+ * @brief Transportiert Handover-Frames über einen begrenzten seriellen Kanal.
+ *
+ * Layer: Ring-0 platform backend.
+ * Contract: I/O folgt festen Frameformaten und monotonen Deadlines.
+ * Safety: Teilübertragung oder ungültige CRC erteilt keine Takeover-Freigabe.
+ */
 #include "include/kernel/handover_serial_backend.h"
 
 #include <stddef.h>

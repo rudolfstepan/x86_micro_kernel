@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/handover.c
+ * @brief Steuert Lease, externes Fencing und Takeover-Epochen.
+ *
+ * Layer: Ring-0 high-availability control.
+ * Contract: Aktivierung benötigt abgelaufene Lease, passende Epoche und Fence.
+ * Safety: Ohne unabhängigen Fence-Readback bleibt Takeover fail-closed.
+ */
 #include "include/kernel/handover.h"
 
 #include <stddef.h>

@@ -1,3 +1,11 @@
+/**
+ * @file kernel/time/apic.h
+ * @brief APIC-Timer-Schnittstelle.
+ *
+ * Layer: Ring-0 x86 time backend.
+ * Contract: Erfolgreiche Initialisierung liefert monotone, begrenzte Timerdienste.
+ * Safety: Ungültige Hardwarewerte aktivieren das Backend nicht; PIT bleibt Basis-Fallback.
+ */
 #ifndef APIC_H
 #define APIC_H
 

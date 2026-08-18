@@ -1,3 +1,10 @@
+; @file arch/x86/cpu/isr.asm
+; @brief CPU-Ausnahme-Stubs.
+;
+; Layer: x86 boot and privilege-transition assembly.
+; Contract: Normalisiert Fehlercode und Vektornummer zu einem gemeinsamen C-Stackframe.
+; Safety: Stacklayout, Sektorzahl und Poll-/Retryarbeit bleiben explizit begrenzt.
+;
 [BITS 32]
 
 extern exception_dispatcher

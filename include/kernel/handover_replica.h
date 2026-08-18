@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/handover_replica.h
+ * @brief Versionierte Replikation des minimalen Zustands für System-Handover.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Frames tragen Quelle, Dienst, Epoche, Sequenz und Integritätsschutz.
+ * Safety: Nur neuere valide Zustände fester Größe werden übernommen.
+ */
 #ifndef KERNEL_HANDOVER_REPLICA_H
 #define KERNEL_HANDOVER_REPLICA_H
 

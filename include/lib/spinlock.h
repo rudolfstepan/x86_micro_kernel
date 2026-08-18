@@ -1,3 +1,11 @@
+/**
+ * @file include/lib/spinlock.h
+ * @brief IRQ-sicherer Spinlock-Vertrag.
+ *
+ * Layer: Ring-0 x86 architecture and memory.
+ * Contract: Binärlayouts, Adressgrenzen und Privilegien entsprechen der x86-Hardware-ABI.
+ * Safety: Lockbesitz und Restore-Flags dürfen nicht zwischen Kontexten vertauscht werden.
+ */
 #ifndef SPINLOCK_H
 #define SPINLOCK_H
 

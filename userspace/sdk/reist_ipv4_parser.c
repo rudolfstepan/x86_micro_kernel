@@ -1,3 +1,11 @@
+/**
+ * @file userspace/sdk/reist_ipv4_parser.c
+ * @brief Begrenzter IPv4-Headerparser.
+ *
+ * Layer: Ring-3 SDK and protocol support.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #include "reist_ipv4_parser.h"
 
 #include <stdbool.h>

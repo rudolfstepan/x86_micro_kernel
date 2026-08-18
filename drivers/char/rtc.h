@@ -1,3 +1,11 @@
+/**
+ * @file drivers/char/rtc.h
+ * @brief CMOS-RTC-Lesevertrag.
+ *
+ * Layer: Ring-0 platform I/O driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Zeitfelder werden aus einem stabilen, konsistenten Snapshot geliefert.
+ */
 #ifndef RTC_H
 #define RTC_H
 

@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/storage_service.h
+ * @brief Überwachter Storage-Dienstvertrag für Inventar, Quarantäne und Requalifizierung.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Medienzustand ist ressourcen- und generationsgebunden; Fingerprints sichern Identität.
+ * Safety: Fehler und unsichere Writes degradieren fail-closed.
+ */
 #ifndef KERNEL_STORAGE_SERVICE_H
 #define KERNEL_STORAGE_SERVICE_H
 

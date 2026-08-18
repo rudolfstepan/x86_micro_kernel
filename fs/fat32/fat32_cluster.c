@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat32/fat32_cluster.c
+ * @brief FAT32-Clusterallokation und FAT-Spiegelpflege.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Zyklische oder außerhalb liegende Clusterketten werden abgebrochen.
+ */
 #include "fat32.h"
 #include "lib/libc/stdio.h"
 #include "drivers/bus/drives.h"

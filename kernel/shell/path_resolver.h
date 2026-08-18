@@ -1,3 +1,11 @@
+/**
+ * @file kernel/shell/path_resolver.h
+ * @brief Shell-Pfadauflösungsvertrag.
+ *
+ * Layer: Ring-0 rescue support.
+ * Contract: Erfolg liefert einen nullterminierten Pfad im Aufruferpuffer.
+ * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
+ */
 #ifndef KERNEL_SHELL_PATH_RESOLVER_H
 #define KERNEL_SHELL_PATH_RESOLVER_H
 

@@ -1,3 +1,11 @@
+/**
+ * @file test/test_scheduling_policy_host.c
+ * @brief Hostseitiger Regressionstest für scheduling policy.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include "kernel/sched/scheduling_policy.h"
 
 #include <stdio.h>

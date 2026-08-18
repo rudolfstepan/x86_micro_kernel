@@ -1,3 +1,11 @@
+/**
+ * @file drivers/block/ata.c
+ * @brief ATA-PIO-Erkennung, Transfer, Reset und persistentes Undo-Journal.
+ *
+ * Layer: Ring-0 block and bus driver.
+ * Contract: Ressourcen, LBA-Bereiche und Backendbesitz werden vor jedem Seiteneffekt validiert.
+ * Safety: Alle Polls sind begrenzt; unklarer Write-Abschluss wird nicht blind wiederholt.
+ */
 // ATA driver
 #include "ata.h"
 #include "ahci.h"

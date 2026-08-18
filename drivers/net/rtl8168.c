@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/rtl8168.c
+ * @brief RTL8168-Erkennung, DMA-Ringe und begrenztes Polling.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: TX/RX-Arbeit und Resetversuche sind durch Ringgröße und Deadline begrenzt.
+ */
 #include "rtl8168.h"
 
 #include "arch/x86/include/interrupt.h"

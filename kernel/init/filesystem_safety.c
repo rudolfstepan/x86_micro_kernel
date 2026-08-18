@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/filesystem_safety.c
+ * @brief Schützt Dateisystemmutationen durch überwachten Transaktionszustand.
+ *
+ * Layer: Ring-0 filesystem safety service.
+ * Contract: Mutation, Deadline und Fence liegen in einem validierten kritischen Objekt.
+ * Safety: Integritätsfehler, Timeout oder unklarer Commit erzwingen read-only.
+ */
 #include "include/kernel/filesystem_safety.h"
 
 #include "include/kernel/critical_object.h"

@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat12/fat12_vfs_adapter.c
+ * @brief VFS-Adapter für resilient FAT12.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: VFS-Mutationen durchlaufen Journal-, Remap- und Critical-Metadata-Verträge.
+ */
 #include "fs/vfs/vfs.h"
 #include "fat12.h"
 #include "lib/libc/string.h"

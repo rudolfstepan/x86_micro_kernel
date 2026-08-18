@@ -1,3 +1,11 @@
+/**
+ * @file kernel/sched/scheduling_policy.h
+ * @brief Schnittstelle der Scheduling-Policy.
+ *
+ * Layer: Ring-0 scheduler.
+ * Contract: Die Policy verändert keine Prozessressourcen.
+ * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
+ */
 #ifndef SCHEDULING_POLICY_H
 #define SCHEDULING_POLICY_H
 

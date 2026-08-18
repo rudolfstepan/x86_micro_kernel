@@ -1,3 +1,11 @@
+/**
+ * @file drivers/video/framebuffer.c
+ * @brief Begrenzte Pixel- und Flächenoperationen auf dem Boot-Framebuffer.
+ *
+ * Layer: Ring-0 display driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Clipping verhindert Writes außerhalb des gemappten Videospeichers.
+ */
 #include "framebuffer.h"
 #include "arch/x86/mm/paging.h"
 #include "lib/libc/string.h"

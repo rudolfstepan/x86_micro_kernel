@@ -1,3 +1,11 @@
+/**
+ * @file drivers/usb/xhci.c
+ * @brief xHCI-Erkennung und derzeit begrenzte Controllerinitialisierung.
+ *
+ * Layer: Ring-0 USB driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Nicht implementierte Enumeration wird sichtbar abgewiesen statt vorgetäuscht.
+ */
 #include "xhci.h"
 #include "lib/libc/stdio.h"
 

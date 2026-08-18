@@ -1,3 +1,11 @@
+/**
+ * @file kernel/shell/path_resolver.c
+ * @brief Kanonische, begrenzte Shell-Pfadauflösung.
+ *
+ * Layer: Ring-0 rescue support.
+ * Contract: Traversal und Pufferüberlauf werden vor VFS-Zugriff abgewiesen.
+ * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
+ */
 #include "kernel/shell/path_resolver.h"
 
 #include "lib/libc/string.h"

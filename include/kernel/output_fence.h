@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/output_fence.h
+ * @brief Zentrale Registrierung und Aktivierung rücklesbarer Ausgabesperren.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Backends liefern versionierte Fence- und Readback-Operationen.
+ * Safety: Unvollständiges Fencing oder fehlender Readback gilt als Fehler.
+ */
 #ifndef KERNEL_OUTPUT_FENCE_H
 #define KERNEL_OUTPUT_FENCE_H
 

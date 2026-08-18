@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat12/fat12_journal.c
+ * @brief Stromausfallsichere FAT12-Metadatenjournalisierung.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Write-Reihenfolge und Flush verhindern unentscheidbare Teiltransaktionen.
+ */
 #include "fat12_journal.h"
 
 #include "lib/libc/string.h"

@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/output_fence.c
+ * @brief Koordiniert Ausgabesperren und deren Rückleseprüfung.
+ *
+ * Layer: Ring-0 safety control.
+ * Contract: Backends werden stabil angewendet und anschließend verifiziert.
+ * Safety: Fehlende Bestätigung lässt den globalen Fence unbestätigt.
+ */
 #include "include/kernel/output_fence.h"
 
 #include <stddef.h>

@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/arp_binding_cache.c
+ * @brief Generationsgebundener ARP-Binding-Cache.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: Nur der aktive Dienst darf frische Bindungen publizieren; stale Generationen werden verworfen.
+ */
 #include "include/kernel/arp_binding_cache.h"
 
 #include <stdbool.h>

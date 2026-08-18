@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/rtl8139.c
+ * @brief RTL8139-Erkennung, RX-Ring und TX-Submission.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: Verlorene Interrupts werden durch begrenztes Polling erkannt, nicht durch Busy-Wait.
+ */
 #include "rtl8139.h"
 
 #include "arch/x86/include/sys.h"

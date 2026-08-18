@@ -1,3 +1,11 @@
+/**
+ * @file lib/libc/string.c
+ * @brief Freestanding String- und Speicherprimitive.
+ *
+ * Layer: Freestanding kernel/userspace runtime.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #include "string.h"
 #include <lib/libc/stdlib.h>
 #include <stdbool.h>

@@ -1,3 +1,13 @@
+/**
+ * @file include/kernel/supervisor.h
+ * @brief Öffentlicher Kernelvertrag für Dienstüberwachung und vermittelte I/O.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Handles und Einmalautoritäten sind generationsgebunden; versionierte
+ *           Strukturen behalten Größe und Feldreihenfolge als interne ABI bei.
+ * Safety: Aufrufer müssen monotone Deadlines und die dokumentierten festen
+ *         Kapazitäten einhalten; Fehler erteilen niemals implizit Autorität.
+ */
 #ifndef KERNEL_SUPERVISOR_H
 #define KERNEL_SUPERVISOR_H
 

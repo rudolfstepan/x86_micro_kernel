@@ -1,3 +1,11 @@
+/**
+ * @file fs/vfs/vfs.c
+ * @brief VFS-Dispatch, Mounttabelle und Pfadauflösung.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Backends werden erst nach vollständigem Mount publiziert; Unmount widerruft Zugriffe.
+ */
 #include "vfs.h"
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"

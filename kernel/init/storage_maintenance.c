@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/storage_maintenance.c
+ * @brief Führt begrenzte administrative Storage- und Mount-Aktionen aus.
+ *
+ * Layer: Ring-0 storage administration.
+ * Contract: Jeder Schritt prüft Ownergeneration, Ressource und Deadline erneut.
+ * Safety: Cleanup ist idempotent und lässt Medien fail-closed.
+ */
 #include "include/kernel/storage_maintenance.h"
 
 #include "include/kernel/critical_object.h"

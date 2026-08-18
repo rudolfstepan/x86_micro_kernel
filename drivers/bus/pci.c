@@ -1,3 +1,11 @@
+/**
+ * @file drivers/bus/pci.c
+ * @brief PCI-Enumeration und gebundener Treiber-Dispatch.
+ *
+ * Layer: Ring-0 block and bus driver.
+ * Contract: Ressourcen, LBA-Bereiche und Backendbesitz werden vor jedem Seiteneffekt validiert.
+ * Safety: Geräte werden erst nach validierter Konfiguration in festen Tabellen publiziert.
+ */
 #include "pci.h"
 #include "include/kernel/panic.h"
 

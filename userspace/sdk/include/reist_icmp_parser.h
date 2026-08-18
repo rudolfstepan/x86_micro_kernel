@@ -1,3 +1,11 @@
+/**
+ * @file userspace/sdk/include/reist_icmp_parser.h
+ * @brief ICMP-Parservertrag für überwachte Netzwerkdienste.
+ *
+ * Layer: Ring-3 SDK and protocol support.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #ifndef REIST_ICMP_PARSER_H
 #define REIST_ICMP_PARSER_H
 

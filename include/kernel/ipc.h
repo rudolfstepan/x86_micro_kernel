@@ -1,3 +1,13 @@
+/**
+ * @file include/kernel/ipc.h
+ * @brief Definiert die versionierte Kernel-IPC-API und ihre Kapazitätsgrenzen.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Nachrichten tragen Version, Strukturgröße und Nutzlänge; Rechte sind
+ *           explizite Bitmasken und werden nie aus Handlebesitz abgeleitet.
+ * Safety: Alle öffentlichen Größen sind hart begrenzt und ungültige Handles
+ *         werden ohne Queue- oder Ownership-Änderung abgewiesen.
+ */
 #ifndef KERNEL_IPC_H
 #define KERNEL_IPC_H
 

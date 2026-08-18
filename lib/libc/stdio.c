@@ -1,3 +1,11 @@
+/**
+ * @file lib/libc/stdio.c
+ * @brief Begrenzte formatierte Kernel-/Userspace-Ausgabe.
+ *
+ * Layer: Freestanding kernel/userspace runtime.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #include "stdio.h"
 #include "string.h"
 #include "stdlib.h"

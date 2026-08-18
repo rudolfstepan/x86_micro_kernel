@@ -1,3 +1,11 @@
+/**
+ * @file userspace/sdk/reist_dhcp_state.c
+ * @brief Deadlinegebundene DHCP-Client-Zustandsmaschine.
+ *
+ * Layer: Ring-3 SDK and protocol support.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #include "reist_dhcp_state.h"
 
 #include <stddef.h>

@@ -1,3 +1,11 @@
+/**
+ * @file test/test_program_image_host.c
+ * @brief Hostseitiger Regressionstest für program image.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include "kernel/proc/program_image.h"
 
 #include "kernel/init/prg.h"

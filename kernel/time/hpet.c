@@ -1,3 +1,11 @@
+/**
+ * @file kernel/time/hpet.c
+ * @brief HPET-Erkennung und Hardwarezeit.
+ *
+ * Layer: Ring-0 x86 time backend.
+ * Contract: Erfolgreiche Initialisierung liefert monotone, begrenzte Timerdienste.
+ * Safety: Ungültige Hardwarewerte aktivieren das Backend nicht; PIT bleibt Basis-Fallback.
+ */
 #include "kernel/time/hpet.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"

@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/vmxnet3.h
+ * @brief VMXNET3-Geräte- und Ringvertrag.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: Descriptor-Ringe, DMA-Adressen und Ownership-Bits müssen konsistent bleiben.
+ */
 #ifndef VMXNET3_H
 #define VMXNET3_H
 

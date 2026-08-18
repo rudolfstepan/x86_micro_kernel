@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat12/fat12_replica.c
+ * @brief Erzeugung und Auswahl begrenzter FAT12-Replikate.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Nur ein frisches, validiertes Replikat darf Primärdaten ersetzen.
+ */
 #include "fat12_replica.h"
 
 #include "lib/libc/string.h"

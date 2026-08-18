@@ -1,3 +1,11 @@
+/**
+ * @file test/test_reist_icmp_parser_host.c
+ * @brief Hostseitiger Regressionstest für reist icmp parser.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include <stdint.h>
 #include <string.h>
 

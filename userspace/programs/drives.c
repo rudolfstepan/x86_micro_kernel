@@ -1,3 +1,11 @@
+/**
+ * @file userspace/programs/drives.c
+ * @brief Listet Blockressourcen und Zustände.
+ *
+ * Layer: Ring-3 system program or command.
+ * Contract: Argumente und SDK-Rückgaben werden vor weiteren Operationen validiert.
+ * Safety: Ressourcenarbeit ist begrenzt; Fehler werden an die Shell gemeldet und nicht verschleiert.
+ */
 #include "x86os.h"
 
 static char drive_letter(const x86os_drive_info_t* drive) {

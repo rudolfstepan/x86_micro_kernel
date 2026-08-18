@@ -1,3 +1,11 @@
+/**
+ * @file drivers/block/partition.h
+ * @brief MBR/GPT-Erkennung und begrenzte Partitionsbereitstellung.
+ *
+ * Layer: Ring-0 block and bus driver.
+ * Contract: Ressourcen, LBA-Bereiche und Backendbesitz werden vor jedem Seiteneffekt validiert.
+ * Safety: Partitionen dürfen nie außerhalb des validierten Elternmediums liegen.
+ */
 #ifndef PARTITION_H
 #define PARTITION_H
 

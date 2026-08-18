@@ -1,3 +1,11 @@
+/**
+ * @file test/test_storage_request_pool_host.c
+ * @brief Hostseitiger Regressionstest für storage request pool.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include <stdint.h>
 #include <string.h>
 

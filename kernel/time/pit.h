@@ -1,3 +1,11 @@
+/**
+ * @file kernel/time/pit.h
+ * @brief PIT- und monotone-Zeit-Schnittstelle.
+ *
+ * Layer: Ring-0 x86 time backend.
+ * Contract: Erfolgreiche Initialisierung liefert monotone, begrenzte Timerdienste.
+ * Safety: Ungültige Hardwarewerte aktivieren das Backend nicht; PIT bleibt Basis-Fallback.
+ */
 #ifndef PIT_H
 #define PIT_H
 

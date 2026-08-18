@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat12/fat12_remap.c
+ * @brief Bad-Sector-Remapping für FAT12.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Ein Sektor wird erst nach bestätigter Ersatzkopie umgeschaltet.
+ */
 #include "fat12_remap.h"
 
 #include "lib/libc/string.h"

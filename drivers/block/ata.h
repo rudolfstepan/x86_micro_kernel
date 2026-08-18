@@ -1,3 +1,11 @@
+/**
+ * @file drivers/block/ata.h
+ * @brief ATA-PIO-, Cache-Flush- und Journalvertrag.
+ *
+ * Layer: Ring-0 block and bus driver.
+ * Contract: Ressourcen, LBA-Bereiche und Backendbesitz werden vor jedem Seiteneffekt validiert.
+ * Safety: Writes gelten erst nach erfolgreichem Flush beziehungsweise Journalabschluss als dauerhaft.
+ */
 #ifndef ATA_H
 #define ATA_H
 

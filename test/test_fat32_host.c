@@ -1,3 +1,11 @@
+/**
+ * @file test/test_fat32_host.c
+ * @brief Hostseitiger Regressionstest für fat32.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include "fs/fat32/fat32.h"
 #include "fs/vfs/vfs.h"
 #include <stdlib.h>

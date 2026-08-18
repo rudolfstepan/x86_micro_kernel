@@ -1,3 +1,11 @@
+/**
+ * @file userspace/sdk/include/reist_dhcp_parser.h
+ * @brief DHCP-Parser- und Optionsvertrag.
+ *
+ * Layer: Ring-3 SDK and protocol support.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #ifndef REIST_DHCP_PARSER_H
 #define REIST_DHCP_PARSER_H
 

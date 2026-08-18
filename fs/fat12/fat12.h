@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat12/fat12.h
+ * @brief FAT12-On-Disk-, Geometrie- und Operationsvertrag.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: 12-Bit-FAT-Zugriffe beachten Sektorgrenzen und feste Mediengeometrie.
+ */
 #ifndef FAT12_H
 #define FAT12_H
 

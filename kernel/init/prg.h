@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/prg.h
+ * @brief PRG-Loader-Vertrag.
+ *
+ * Layer: Ring-0 kernel interface.
+ * Contract: Validiert Images vollständig vor Prozesspublikation.
+ * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
+ */
 #ifndef PRG_H
 #define PRG_H
 

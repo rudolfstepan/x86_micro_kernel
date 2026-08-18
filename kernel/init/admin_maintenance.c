@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/admin_maintenance.c
+ * @brief Verarbeitet autorisierte, generationsgebundene Wartungstransaktionen.
+ *
+ * Layer: Ring-0 administration service.
+ * Contract: Ressourcenreservierung und Cleanup folgen einer festen Zustandsmaschine.
+ * Safety: Kapazität, Rechte und Deadline werden vor Seiteneffekten geprüft.
+ */
 #include "include/kernel/admin_maintenance.h"
 
 #include <stddef.h>

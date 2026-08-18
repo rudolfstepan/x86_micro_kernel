@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/e1000.h
+ * @brief Intel-e1000-Descriptor- und Registervertrag.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: DMA-Ringe bleiben ausgerichtet und hardware-/software-owned getrennt.
+ */
 #ifndef E1000_H
 #define E1000_H
 

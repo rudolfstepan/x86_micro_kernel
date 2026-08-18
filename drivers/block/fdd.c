@@ -1,3 +1,11 @@
+/**
+ * @file drivers/block/fdd.c
+ * @brief FDC-Erkennung, DMA-Transfer und begrenzte Recovery.
+ *
+ * Layer: Ring-0 block and bus driver.
+ * Contract: Ressourcen, LBA-Bereiche und Backendbesitz werden vor jedem Seiteneffekt validiert.
+ * Safety: Timeout und Medienwechsel brechen I/O ab, statt stale Daten zu akzeptieren.
+ */
 #include "fdd.h"
 #include "ata.h"
 #include "arch/x86/include/sys.h"

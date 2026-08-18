@@ -1,3 +1,11 @@
+; @file kernel/sched/switch.asm
+; @brief Sichert und wechselt den privilegierten Scheduler-Kontext.
+;
+; Layer: Ring-0 x86 context switch.
+; Contract: swtch erhält Zeiger auf alten und neuen context_t; Callee-saved
+;           Register und Stackpointer folgen exakt dem C-Strukturlayout.
+; Safety: Aufruf nur bei schedulerseitig kontrolliertem IRQ- und Lockzustand.
+
 global swtch
 
 section .text

@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat32/fat32.h
+ * @brief FAT32-On-Disk- und Operationsvertrag.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Serialisierte Felder, Sektorgröße und Clustergrenzen bleiben ABI-genau.
+ */
 #ifndef FAT32_H    /* This is an "include guard" */
 #define FAT32_H
 

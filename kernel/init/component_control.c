@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/component_control.c
+ * @brief Vermittelt administrative Down/Up-Übergänge registrierter Komponenten.
+ *
+ * Layer: Ring-0 component-control service.
+ * Contract: Eine Operation besitzt genau einen Owner und eine monotone Deadline.
+ * Safety: Timeout führt in einen expliziten Fehlerzustand statt zu implizitem Up.
+ */
 #include "include/kernel/component_control.h"
 
 #include <stddef.h>

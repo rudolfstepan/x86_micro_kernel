@@ -1,3 +1,11 @@
+/**
+ * @file lib/libc/stdio.h
+ * @brief Freestanding formatierte Ausgabe-API.
+ *
+ * Layer: Freestanding kernel/userspace runtime.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #ifndef STDIO_H
 #define STDIO_H
 

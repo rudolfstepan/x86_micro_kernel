@@ -1,3 +1,11 @@
+/**
+ * @file arch/x86/mm/paging.h
+ * @brief x86-Seitentabellen- und Userbereichsvertrag.
+ *
+ * Layer: Ring-0 x86 architecture and memory.
+ * Contract: Binärlayouts, Adressgrenzen und Privilegien entsprechen der x86-Hardware-ABI.
+ * Safety: Mappings prüfen Alignment, Rechte und physische/virtuelle Grenzen.
+ */
 #ifndef PAGING_H
 #define PAGING_H
 

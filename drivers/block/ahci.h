@@ -1,3 +1,11 @@
+/**
+ * @file drivers/block/ahci.h
+ * @brief AHCI-Controller-, Port- und DMA-I/O-Vertrag.
+ *
+ * Layer: Ring-0 block and bus driver.
+ * Contract: Ressourcen, LBA-Bereiche und Backendbesitz werden vor jedem Seiteneffekt validiert.
+ * Safety: Command-Slots und DMA-Puffer bleiben pro Port fest zugeordnet.
+ */
 #ifndef AHCI_H
 #define AHCI_H
 

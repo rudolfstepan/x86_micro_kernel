@@ -1,3 +1,11 @@
+/**
+ * @file kernel/time/hpet.h
+ * @brief Optionale HPET-Zeitquellenschnittstelle.
+ *
+ * Layer: Ring-0 x86 time backend.
+ * Contract: Erfolgreiche Initialisierung liefert monotone, begrenzte Timerdienste.
+ * Safety: Ungültige Hardwarewerte aktivieren das Backend nicht; PIT bleibt Basis-Fallback.
+ */
 #ifndef HPET_H
 #define HPET_H
 

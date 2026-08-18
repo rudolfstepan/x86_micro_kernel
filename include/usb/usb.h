@@ -1,3 +1,11 @@
+/**
+ * @file include/usb/usb.h
+ * @brief Öffentliche USB-Geräte- und Transferstrukturen.
+ *
+ * Layer: Ring-0 USB driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Deskriptorgrößen und Endpunkte werden vor Verwendung validiert.
+ */
 #ifndef USB_H
 #define USB_H
 

@@ -1,3 +1,11 @@
+/**
+ * @file fs/ext2/ext2_vfs_adapter.c
+ * @brief VFS-Adapter für EXT2.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Übersetzt nur vom EXT2-Backend bestätigte Operationen.
+ */
 #include "ext2.h"
 #include "fs/vfs/vfs.h"
 #include "lib/libc/stdio.h"

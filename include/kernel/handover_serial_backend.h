@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/handover_serial_backend.h
+ * @brief Begrenztes serielles Transportbackend für Fence- und Handover-Nachweise.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Frames besitzen feste Version, Größe, Typ und CRC; I/O folgt Deadlines.
+ * Safety: Teilframes, Timeout und Integritätsfehler erteilen keine Takeover-Freigabe.
+ */
 #ifndef KERNEL_HANDOVER_SERIAL_BACKEND_H
 #define KERNEL_HANDOVER_SERIAL_BACKEND_H
 

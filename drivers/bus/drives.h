@@ -1,3 +1,11 @@
+/**
+ * @file drivers/bus/drives.h
+ * @brief Gemeinsames Geräte- und Partitionsmodell für Blockmedien.
+ *
+ * Layer: Ring-0 block and bus driver.
+ * Contract: Ressourcen, LBA-Bereiche und Backendbesitz werden vor jedem Seiteneffekt validiert.
+ * Safety: Ressourcen-IDs, Elternbezug, LBA-Bereich und Mediengeneration bleiben konsistent.
+ */
 #ifndef DRIVES_H
 #define DRIVES_H
 

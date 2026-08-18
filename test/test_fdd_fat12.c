@@ -1,3 +1,11 @@
+/**
+ * @file test/test_fdd_fat12.c
+ * @brief Hostseitiger Regressionstest für fdd fat12.c.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include "../drivers/block/fdd.h"
 #include "../fs/fat12/fat12.h"
 #include "../lib/libc/stdio.h"

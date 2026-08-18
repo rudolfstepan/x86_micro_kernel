@@ -1,3 +1,11 @@
+/**
+ * @file arch/x86/include/tss.h
+ * @brief x86-TSS- und Ring-0-Stackvertrag.
+ *
+ * Layer: Ring-0 x86 architecture and memory.
+ * Contract: Binärlayouts, Adressgrenzen und Privilegien entsprechen der x86-Hardware-ABI.
+ * Safety: esp0 zeigt vor jedem Ringwechsel auf den aktuellen Kernelstack.
+ */
 #ifndef ARCH_X86_TSS_H
 #define ARCH_X86_TSS_H
 

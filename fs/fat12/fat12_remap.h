@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat12/fat12_remap.h
+ * @brief Persistenter FAT12-Sektor-Remap-Vertrag.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Remapkapazität und Zuordnung sind fest und redundant prüfbar.
+ */
 #ifndef FAT12_REMAP_H
 #define FAT12_REMAP_H
 

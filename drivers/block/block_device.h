@@ -1,3 +1,11 @@
+/**
+ * @file drivers/block/block_device.h
+ * @brief Einheitliche Sektor-I/O-Schnittstelle aller Blockbackends.
+ *
+ * Layer: Ring-0 block and bus driver.
+ * Contract: Ressourcen, LBA-Bereiche und Backendbesitz werden vor jedem Seiteneffekt validiert.
+ * Safety: Operationen liefern explizite Statuswerte und respektieren Partitionsgrenzen.
+ */
 #ifndef BLOCK_DEVICE_H
 #define BLOCK_DEVICE_H
 

@@ -1,3 +1,11 @@
+/**
+ * @file test/test_reist_dhcp_state_host.c
+ * @brief Hostseitiger Regressionstest für reist dhcp state.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include "reist_dhcp_state.h"
 
 #include <stdint.h>

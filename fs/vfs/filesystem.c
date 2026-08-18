@@ -1,3 +1,11 @@
+/**
+ * @file fs/vfs/filesystem.c
+ * @brief Dateisystemregistrierung und kontrollierte Mountauswahl.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Fehlgeschlagene Probes verändern weder aktives Laufwerk noch Mounttabelle.
+ */
 #include "filesystem.h"
 #include "vfs.h"
 #include "drivers/block/ata.h"

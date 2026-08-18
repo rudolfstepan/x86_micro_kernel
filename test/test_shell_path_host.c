@@ -1,3 +1,11 @@
+/**
+ * @file test/test_shell_path_host.c
+ * @brief Hostseitiger Regressionstest für shell path.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include "kernel/shell/path_resolver.h"
 
 #include <string.h>

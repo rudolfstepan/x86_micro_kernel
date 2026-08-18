@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat32/fat32.c
+ * @brief FAT32-Probe, Mount und Basissektorzugriff.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: BPB und Mediengeometrie werden vor jedem berechneten Zugriff validiert.
+ */
 #include "fat32.h"
 #include "lib/libc/stdio.h"
 #include "drivers/bus/drives.h"

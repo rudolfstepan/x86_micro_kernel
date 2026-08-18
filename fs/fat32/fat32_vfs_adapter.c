@@ -1,3 +1,11 @@
+/**
+ * @file fs/fat32/fat32_vfs_adapter.c
+ * @brief VFS-Adapter für FAT32.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Übersetzt VFS-Operationen ohne FAT32-Grenzen oder Schreibfences zu umgehen.
+ */
 #include "fs/vfs/vfs.h"
 #include "fat32.h"
 #include "lib/libc/stdio.h"

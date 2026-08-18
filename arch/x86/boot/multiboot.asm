@@ -1,3 +1,10 @@
+; @file arch/x86/boot/multiboot.asm
+; @brief Multiboot-Header und Einstieg.
+;
+; Layer: x86 boot and privilege-transition assembly.
+; Contract: Bewahrt Bootmagic und Informationszeiger für den validierenden C-Parser.
+; Safety: Stacklayout, Sektorzahl und Poll-/Retryarbeit bleiben explizit begrenzt.
+;
 section .multiboot
 align 4
 multiboot_header:

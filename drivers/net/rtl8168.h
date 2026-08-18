@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/rtl8168.h
+ * @brief RTL8111/RTL8168-NIC-Vertrag.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: DMA-Ringe und Descriptorstatus bilden die Backendgrenze.
+ */
 #ifndef RTL8168_H
 #define RTL8168_H
 

@@ -1,3 +1,11 @@
+/**
+ * @file userspace/programs/hello.c
+ * @brief Minimales Userspace-Beispielprogramm.
+ *
+ * Layer: Ring-3 system program or command.
+ * Contract: Argumente und SDK-Rückgaben werden vor weiteren Operationen validiert.
+ * Safety: Ressourcenarbeit ist begrenzt; Fehler werden an die Shell gemeldet und nicht verschleiert.
+ */
 #include "x86os.h"
 
 static volatile uint32_t initialized_value = 41;

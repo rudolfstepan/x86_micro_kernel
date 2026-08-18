@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/admin_maintenance.h
+ * @brief Administrative Geräte-, Mount- und Dienstwartung mit expliziten Rechten.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Operationen sind versions-, generations- und ressourcengebunden; Cleanup ist idempotent.
+ * Safety: Feste Tabellen und Deadlines begrenzen Arbeit; fehlende Autorität wirkt ohne Seiteneffekt.
+ */
 #ifndef KERNEL_ADMIN_MAINTENANCE_H
 #define KERNEL_ADMIN_MAINTENANCE_H
 

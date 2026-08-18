@@ -1,3 +1,11 @@
+/**
+ * @file drivers/net/vmxnet3.c
+ * @brief VMware-VMXNET3-Erkennung und Pakettransport.
+ *
+ * Layer: Ring-0 network driver and mediation.
+ * Contract: Frames und Gerätezustand werden vor Veröffentlichung vollständig validiert.
+ * Safety: Nur vollständig konfigurierte Ringe werden aktiviert; Reset widerruft Ownership.
+ */
 #include "vmxnet3.h"
 
 #include "lib/libc/stdio.h"

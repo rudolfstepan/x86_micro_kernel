@@ -1,3 +1,11 @@
+/**
+ * @file drivers/block/fdd.h
+ * @brief Diskettencontroller- und Medienzugriffsvertrag.
+ *
+ * Layer: Ring-0 block and bus driver.
+ * Contract: Ressourcen, LBA-Bereiche und Backendbesitz werden vor jedem Seiteneffekt validiert.
+ * Safety: Geometrie, DMA-Bereich und Operationen sind fest begrenzt.
+ */
 #ifndef FDD_H
 #define FDD_H
 

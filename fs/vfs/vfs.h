@@ -1,3 +1,11 @@
+/**
+ * @file fs/vfs/vfs.h
+ * @brief Virtuelles Dateisystem und Mountvertrag.
+ *
+ * Layer: Ring-0 virtual filesystem and on-disk format.
+ * Contract: On-Disk-Werte, Pfade und Ressourcenbereiche werden vor I/O validiert.
+ * Safety: Pfade, Mountpunkte, Handles und Backendoperationen besitzen feste Grenzen.
+ */
 #ifndef VFS_H
 #define VFS_H
 

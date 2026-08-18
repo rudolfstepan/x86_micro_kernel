@@ -1,3 +1,11 @@
+/**
+ * @file drivers/video/display.h
+ * @brief Backendunabhängige Displayausgabe.
+ *
+ * Layer: Ring-0 display driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Text- und Framebufferbackend besitzen eine konsistente Cursor- und Clear-Semantik.
+ */
 #ifndef DISPLAY_H
 #define DISPLAY_H
 

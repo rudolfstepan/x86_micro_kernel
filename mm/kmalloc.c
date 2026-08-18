@@ -1,3 +1,11 @@
+/**
+ * @file mm/kmalloc.c
+ * @brief Begrenzter Kernel-Heap mit Split und Coalescing.
+ *
+ * Layer: Ring-0 x86 architecture and memory.
+ * Contract: Binärlayouts, Adressgrenzen und Privilegien entsprechen der x86-Hardware-ABI.
+ * Safety: Metadaten werden vor Publikation validiert; Korruption wird nicht still repariert.
+ */
 #include "mm/kmalloc.h"
 #include "arch/x86/mm/paging.h"
 #include "include/lib/spinlock.h"

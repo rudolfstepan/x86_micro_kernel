@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/kernel_log.c
+ * @brief Speichert feste Diagnoseereignisse in einem begrenzten Ringpuffer.
+ *
+ * Layer: Ring-0 diagnostics.
+ * Contract: Producer publizieren vollständige Einträge; Reader erhalten Snapshots.
+ * Safety: Überlauf blockiert keinen kritischen Pfad.
+ */
 #include "include/kernel/kernel_log.h"
 
 #include <stdarg.h>

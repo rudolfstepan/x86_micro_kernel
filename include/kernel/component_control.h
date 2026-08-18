@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/component_control.h
+ * @brief Einheitlicher Down/Up-Vertrag für administrierbare Systemkomponenten.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Anfragen tragen Prozessgeneration, Komponenten-ID, Aktion und monotone Deadline.
+ * Safety: Nur registrierte, autorisierte Übergänge werden ausgeführt; Timeout bleibt fail-closed.
+ */
 #ifndef KERNEL_COMPONENT_CONTROL_H
 #define KERNEL_COMPONENT_CONTROL_H
 

@@ -1,3 +1,11 @@
+/**
+ * @file drivers/char/serial.c
+ * @brief UART-Initialisierung und begrenzte Diagnoseausgabe.
+ *
+ * Layer: Ring-0 platform I/O driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Defekte UART-Hardware darf Fatal- und Bootpfade nicht unendlich blockieren.
+ */
 #include "serial.h"
 #include "io.h"
 

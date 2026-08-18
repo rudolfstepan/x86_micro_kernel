@@ -1,3 +1,11 @@
+/**
+ * @file lib/libc/definitions.h
+ * @brief Gemeinsame freestanding Typ- und Makrodefinitionen.
+ *
+ * Layer: Freestanding kernel/userspace runtime.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #ifndef DEFINITIONS_H
 #define DEFINITIONS_H
 

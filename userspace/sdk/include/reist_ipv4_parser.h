@@ -1,3 +1,11 @@
+/**
+ * @file userspace/sdk/include/reist_ipv4_parser.h
+ * @brief IPv4-Parservertrag für überwachte Netzwerkdienste.
+ *
+ * Layer: Ring-3 SDK and protocol support.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #ifndef REIST_IPV4_PARSER_H
 #define REIST_IPV4_PARSER_H
 

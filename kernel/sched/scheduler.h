@@ -1,3 +1,11 @@
+/**
+ * @file kernel/sched/scheduler.h
+ * @brief Scheduler- und Kontextwechselvertrag.
+ *
+ * Layer: Ring-0 scheduler.
+ * Contract: Ein Task besitzt höchstens einen aktiven intrinsischen Wait-Node.
+ * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
+ */
 #ifndef SCHEDULER_H
 #define SCHEDULER_H
 

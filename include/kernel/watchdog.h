@@ -1,3 +1,11 @@
+/**
+ * @file include/kernel/watchdog.h
+ * @brief Hardware-Watchdog-Vertrag und Fortschrittskopplung des Kernels.
+ *
+ * Layer: Ring-0 public subsystem interface.
+ * Contract: Nur validierter Fortschritt bedient den Watchdog; Zeitbasis ist monoton.
+ * Safety: Fehlende Hardware oder Fortschritt wird sichtbar, nicht durch Busy-Wait kaschiert.
+ */
 #ifndef KERNEL_WATCHDOG_H
 #define KERNEL_WATCHDOG_H
 

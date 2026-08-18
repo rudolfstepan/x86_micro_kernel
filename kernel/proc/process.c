@@ -1,3 +1,11 @@
+/**
+ * @file kernel/proc/process.c
+ * @brief Prozess-, Adressraum- und Ressourcenverwaltung.
+ *
+ * Layer: Ring-0 process subsystem.
+ * Contract: PID und Generation identifizieren exakt eine Prozessinstanz.
+ * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
+ */
 #include "kernel/proc/process.h"
 #include "kernel/proc/program_image.h"
 #include <stdbool.h>

@@ -1,3 +1,10 @@
+; @file arch/x86/cpu/syscall.asm
+; @brief Ring-3-Syscall-Einstieg.
+;
+; Layer: x86 boot and privilege-transition assembly.
+; Contract: Sichert Userregister, wechselt auf den Kernelkontext und stellt IRET-Frame ABI-genau her.
+; Safety: Stacklayout, Sektorzahl und Poll-/Retryarbeit bleiben explizit begrenzt.
+;
 [BITS 32]
 global syscall_handler_asm
 extern syscall_handler

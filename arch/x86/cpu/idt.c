@@ -1,3 +1,11 @@
+/**
+ * @file arch/x86/cpu/idt.c
+ * @brief Aufbau und Laden der Interrupt Descriptor Table.
+ *
+ * Layer: Ring-0 x86 architecture and memory.
+ * Contract: Binärlayouts, Adressgrenzen und Privilegien entsprechen der x86-Hardware-ABI.
+ * Safety: Gates werden vollständig aufgebaut, bevor IDTR publiziert wird.
+ */
 #include "arch/x86/include/sys.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"

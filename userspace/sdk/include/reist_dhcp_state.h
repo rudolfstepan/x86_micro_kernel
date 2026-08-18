@@ -1,3 +1,11 @@
+/**
+ * @file userspace/sdk/include/reist_dhcp_state.h
+ * @brief DHCP-Zustands- und Leasevertrag.
+ *
+ * Layer: Ring-3 SDK and protocol support.
+ * Contract: Größen, Versionen und Pufferbereiche werden vor Lesen, Schreiben oder Syscall geprüft.
+ * Safety: Parser und Formatierung sind kapazitätsbegrenzt; Fehler erzeugen keine partiellen Ausgaben.
+ */
 #ifndef REIST_DHCP_STATE_H
 #define REIST_DHCP_STATE_H
 

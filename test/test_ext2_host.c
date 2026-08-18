@@ -1,3 +1,11 @@
+/**
+ * @file test/test_ext2_host.c
+ * @brief Hostseitiger Regressionstest für ext2.
+ *
+ * Layer: Host test harness.
+ * Contract: Prüft beobachtbares Verhalten und feste Fehlergrenzen ohne Zielhardware.
+ * Safety: Testdoubles dürfen Produktionsverträge nicht abschwächen oder Erfolg vortäuschen.
+ */
 #include "fs/ext2/ext2.h"
 #include <stdlib.h>
 #include <string.h>

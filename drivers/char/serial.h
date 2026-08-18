@@ -1,3 +1,11 @@
+/**
+ * @file drivers/char/serial.h
+ * @brief Serielle Konsolen- und Diagnose-I/O-Schnittstelle.
+ *
+ * Layer: Ring-0 platform I/O driver.
+ * Contract: Hardwarezustand und Pufferbereiche werden vor sichtbaren Seiteneffekten geprüft.
+ * Safety: Portzugriffe und Polls verwenden feste Budgets.
+ */
 #ifndef SERIAL_H
 #define SERIAL_H
 

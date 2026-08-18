@@ -1,3 +1,12 @@
+; @file kernel/sched/user_entry.asm
+; @brief Betritt Ring 3 mit einem vorbereiteten Userspace-Kontext.
+;
+; Layer: Ring-0/Ring-3 x86 privilege transition.
+; Contract: Selektoren, Userstack, EFLAGS und Entry wurden zuvor validiert;
+;           IRET stellt den vollständigen niedrigprivilegierten Kontext her.
+; Safety: Unvalidierte Adressen oder Kernel-Selektoren dürfen diesen Pfad
+;         nicht erreichen.
+
 [BITS 32]
 global enter_user_mode
 

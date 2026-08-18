@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/storage_request_pool.c
+ * @brief Verwaltet feste Slots für generationsgebundene Storage-Requests.
+ *
+ * Layer: Ring-0 storage request allocator.
+ * Contract: Zustandswechsel akzeptieren nur passende Slotgenerationen.
+ * Safety: Erschöpfung und stale Completion verändern keine fremden Requests.
+ */
 #include "include/kernel/storage_request_pool.h"
 
 #include <stdbool.h>

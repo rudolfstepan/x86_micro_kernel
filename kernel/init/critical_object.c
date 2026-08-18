@@ -1,3 +1,11 @@
+/**
+ * @file kernel/init/critical_object.c
+ * @brief Implementiert redundante Integritätskopien für kleinen kritischen Zustand.
+ *
+ * Layer: Ring-0 integrity primitive.
+ * Contract: Publikation und Auswahl verwenden Version, Sequenz und CRC.
+ * Safety: Doppelkorruption wird gemeldet; die Nutzlast ist fest begrenzt.
+ */
 #include "include/kernel/critical_object.h"
 
 #define WORD_VERSION 0U
@@ -169,6 +177,9 @@ int critical_object_update(critical_object_t *object, uint32_t expected_version,
     critical_object_copy_t candidate;
     copy_build(&candidate, expected_version, sequence, CRITICAL_INTEGRITY_HEALTHY,
                payload, length);
+    /* Publish the shadow first.  A reset between these assignments leaves at
+     * least one complete old or new generation; readers select the newest
+     * independently valid copy and never combine partial payloads. */
     object->shadow = candidate;
     object->primary = candidate;
     return 0;
