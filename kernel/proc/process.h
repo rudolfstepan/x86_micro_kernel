@@ -26,7 +26,7 @@
 #define SUPERVISED_RESTART_FRAME_RESERVE 32U
 #define PROCESS_DOMAIN_PROFILE_VERSION 1U
 #define PROCESS_DOMAIN_SYSCALL_WORDS 4U
-#define PROCESS_DOMAIN_SYSCALL_LIMIT 97U
+#define PROCESS_DOMAIN_SYSCALL_LIMIT 106U
 
 typedef enum {
     PROCESS_DOMAIN_COMPATIBILITY = 1,
@@ -55,9 +55,17 @@ typedef struct {
 typedef struct {
     struct vfs_node *node;
     uint32_t offset;
+    uint32_t resource_handle;
+    uint8_t kind;
     bool in_use;
     bool writable;
 } process_file_t;
+
+enum {
+    PROCESS_DESCRIPTOR_FILE = 1U,
+    PROCESS_DESCRIPTOR_UDP_SOCKET = 2U,
+    PROCESS_DESCRIPTOR_TCP_SOCKET = 3U,
+};
 
 typedef struct Process {
     int pid;
@@ -133,6 +141,11 @@ int process_file_write(Process* process, int descriptor, const void* buffer,
 int process_file_sync(Process* process, int descriptor);
 int process_file_unlink(Process* process, const char* path);
 int process_file_close(Process* process, int descriptor);
+int process_descriptor_install(Process *process, uint8_t kind,
+                               uint32_t resource_handle);
+int process_descriptor_resolve(const Process *process, int descriptor,
+                               uint8_t kind, uint32_t *resource_handle_out);
+int process_descriptor_release(Process *process, int descriptor, uint8_t kind);
 void process_close_all_files(Process* process);
 int process_revoke_files_for_resource(uint32_t resource,
                                       uint32_t* revoked_out);

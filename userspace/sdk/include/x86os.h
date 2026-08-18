@@ -108,10 +108,111 @@ enum {
       X86OS_SYS_STORAGE_BLOCK_FLUSH = 93,
       X86OS_SYS_STORAGE_MEDIA_COMMIT = 94,
     X86OS_SYS_STORAGE_FORMAT_PROBE = 95,
-    X86OS_SYS_NETWORK_CONTROL = 96
+    X86OS_SYS_NETWORK_CONTROL = 96,
+    X86OS_SYS_UDP_SOCKET_CONTROL = 97,
+    X86OS_SYS_UDP_SOCKET_SENDTO = 98,
+    X86OS_SYS_UDP_SOCKET_RECVFROM = 99,
+    X86OS_SYS_UDP_SOCKET_INGRESS = 100,
+    X86OS_SYS_TCP_SOCKET_CONTROL = 101,
+    X86OS_SYS_TCP_SOCKET_CONNECT = 102,
+    X86OS_SYS_TCP_SOCKET_SEND = 103,
+    X86OS_SYS_TCP_SOCKET_RECEIVE = 104,
+    X86OS_SYS_TCP_SOCKET_INGRESS = 105
 };
 
-#define X86OS_NETWORK_CONTROL_VERSION 1U
+#define X86OS_TCP_SOCKET_VERSION 1U
+#define X86OS_TCP_MAX_SEGMENT 512U
+#define X86OS_TCP_RECEIVE_CAPACITY 2048U
+enum {
+    X86OS_TCP_SOCKET_OPEN = 1U,
+    X86OS_TCP_SOCKET_CLOSE = 2U,
+    X86OS_TCP_SOCKET_STATS = 3U,
+};
+typedef uint32_t x86os_tcp_socket_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    x86os_tcp_socket_t socket;
+    uint32_t timeout_ms;
+    uint32_t active_sockets;
+    uint32_t established_sockets;
+    uint32_t retransmissions;
+} x86os_tcp_socket_control_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_tcp_socket_t socket;
+    uint32_t destination_ip;
+    uint16_t destination_port;
+    uint16_t reserved;
+    uint32_t timeout_ms;
+} x86os_tcp_connect_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_tcp_socket_t socket;
+    uint32_t length;
+    uint32_t timeout_ms;
+} x86os_tcp_io_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t source_ip;
+    uint32_t destination_ip;
+    uint32_t sequence;
+    uint32_t acknowledgement;
+    uint16_t source_port;
+    uint16_t destination_port;
+    uint16_t window;
+    uint16_t length;
+    uint8_t flags;
+    uint8_t reserved[3];
+} x86os_tcp_segment_t;
+
+#define X86OS_UDP_SOCKET_VERSION 1U
+#define X86OS_UDP_MAX_DATAGRAM 512U
+enum {
+    X86OS_UDP_SOCKET_OPEN = 1U,
+    X86OS_UDP_SOCKET_BIND = 2U,
+    X86OS_UDP_SOCKET_CLOSE = 3U,
+    X86OS_UDP_SOCKET_STATS = 4U,
+};
+typedef uint32_t x86os_udp_socket_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    x86os_udp_socket_t socket;
+    uint16_t port;
+    uint16_t reserved;
+    uint32_t active_sockets;
+    uint32_t queued_datagrams;
+    uint32_t dropped_datagrams;
+} x86os_udp_socket_control_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_udp_socket_t socket;
+    uint32_t ip;
+    uint16_t source_port;
+    uint16_t destination_port;
+    uint32_t length;
+    uint32_t timeout_ms;
+} x86os_udp_datagram_t;
+
+#define X86OS_DNS_RESULT_VERSION 1U
+#define X86OS_DNS_MAX_NAME 253U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t address;
+    uint32_t ttl_seconds;
+    uint32_t from_cache;
+    char canonical_name[X86OS_DNS_MAX_NAME + 1U];
+} x86os_dns_result_t;
+
+#define X86OS_NETWORK_CONTROL_VERSION 2U
 enum {
     X86OS_NETWORK_STATUS = 1U,
     X86OS_NETWORK_CONFIGURE = 2U,
@@ -146,6 +247,7 @@ typedef struct {
     char backend[16];
     uint8_t mac_address[6];
     uint8_t reserved[2];
+    uint32_t dns_server;
 } x86os_network_control_result_t;
 
 enum {
@@ -669,6 +771,27 @@ int x86os_reist_start_dhcp_boot(
 int x86os_network_arp_resolve(uint32_t target_ip);
 int x86os_network_control(const x86os_network_control_request_t *request,
                           x86os_network_control_result_t *result);
+int x86os_udp_socket_open(x86os_udp_socket_t *socket_out);
+int x86os_udp_socket_bind(x86os_udp_socket_t socket, uint16_t port);
+int x86os_udp_socket_close(x86os_udp_socket_t socket);
+int x86os_udp_socket_stats(x86os_udp_socket_control_t *stats_out);
+int x86os_udp_sendto(const x86os_udp_datagram_t *datagram,
+                     const void *data);
+int x86os_udp_recvfrom(x86os_udp_datagram_t *datagram, void *data);
+int x86os_udp_socket_ingress(const x86os_udp_datagram_t *datagram,
+                             const void *data);
+int x86os_dns_resolve(const char *name, uint32_t timeout_ms,
+                      x86os_dns_result_t *result);
+int x86os_dns_resolve_at(const char *name, uint32_t server,
+                         uint32_t timeout_ms, x86os_dns_result_t *result);
+int x86os_tcp_socket_open(x86os_tcp_socket_t *socket_out);
+int x86os_tcp_socket_close(x86os_tcp_socket_t socket, uint32_t timeout_ms);
+int x86os_tcp_socket_stats(x86os_tcp_socket_control_t *stats_out);
+int x86os_tcp_connect(const x86os_tcp_connect_t *request);
+int x86os_tcp_send(const x86os_tcp_io_t *request, const void *data);
+int x86os_tcp_receive(x86os_tcp_io_t *request, void *data);
+int x86os_tcp_socket_ingress(const x86os_tcp_segment_t *segment,
+                             const void *data);
 int x86os_storage_bind(void);
 int x86os_storage_submit(const x86os_storage_submit_t *request,
                          const void *data, x86os_storage_handle_t *handle);

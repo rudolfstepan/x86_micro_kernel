@@ -103,6 +103,12 @@ OUTBOUND_PING_COMMAND = "ping 10.0.2.98"
 OUTBOUND_PING_REPLY_MARKER = "reply: received"
 OUTBOUND_PING_TARGET = bytes((10, 0, 2, 98))
 OUTBOUND_PING_MAC = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x03))
+TCP_TEST_COMMAND = "nc 10.0.2.99 8080 ping"
+TCP_TEST_TARGET = bytes((10, 0, 2, 99))
+TCP_TEST_MAC = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x04))
+TCP_TEST_REPLY_MARKER = "pong"
+DNS_TEST_COMMAND = "nslookup test.reist 10.0.2.99"
+DNS_TEST_REPLY_MARKER = "address: 10.0.2.77"
 GUEST_IP = bytes((10, 0, 2, 15))
 GUEST_MAC = bytes((0x52, 0x54, 0x00, 0x12, 0x34, 0x56))
 QEMU_MUX_SWITCH = "\x01c"
@@ -330,6 +336,15 @@ def outbound_ping_arp_reply_frame() -> bytes:
     return frame.ljust(60, b"\x00")
 
 
+def tcp_test_arp_reply_frame() -> bytes:
+    frame = b"".join((
+        GUEST_MAC, TCP_TEST_MAC, b"\x08\x06",
+        b"\x00\x01", b"\x08\x00", b"\x06\x04", b"\x00\x02",
+        TCP_TEST_MAC, TCP_TEST_TARGET, GUEST_MAC, GUEST_IP,
+    ))
+    return frame.ljust(60, b"\x00")
+
+
 def internet_checksum(data: bytes) -> int:
     if len(data) & 1:
         data += b"\x00"
@@ -376,6 +391,26 @@ def udp_echo_request_frame(destination_port: int = 9000) -> bytes:
     )
     ip = ip[:10] + struct.pack("!H", internet_checksum(ip)) + ip[12:]
     return (destination_mac + source_mac + b"\x08\x00" + ip + udp).ljust(
+        60, b"\x00")
+
+
+def tcp_test_frame(source_port: int, destination_port: int, sequence: int,
+                   acknowledgement: int, flags: int,
+                   payload: bytes = b"") -> bytes:
+    tcp = struct.pack(
+        "!HHIIBBHHH", source_port, destination_port, sequence,
+        acknowledgement, 5 << 4, flags, 4096, 0, 0,
+    ) + payload
+    pseudo = TCP_TEST_TARGET + GUEST_IP + struct.pack("!BBH", 0, 6, len(tcp))
+    checksum = internet_checksum(pseudo + tcp)
+    tcp = tcp[:16] + struct.pack("!H", checksum) + tcp[18:]
+    total_length = 20 + len(tcp)
+    ip = struct.pack(
+        "!BBHHHBBH4s4s", 0x45, 0, total_length, 0x5443, 0,
+        64, 6, 0, TCP_TEST_TARGET, GUEST_IP,
+    )
+    ip = ip[:10] + struct.pack("!H", internet_checksum(ip)) + ip[12:]
+    return (GUEST_MAC + TCP_TEST_MAC + b"\x08\x00" + ip + tcp).ljust(
         60, b"\x00")
 
 
@@ -571,6 +606,170 @@ def receive_udp_echo_reply(connection: socket.socket, deadline: float,
     return False
 
 
+def receive_tcp_segment(
+    connection: socket.socket, deadline: float,
+) -> tuple[int, int, int, int, int, bytes] | None:
+    while time.monotonic() < deadline:
+        connection.settimeout(max(0.01, deadline - time.monotonic()))
+        header = receive_exact(connection, 4)
+        if header is None:
+            return None
+        length = struct.unpack("!I", header)[0]
+        if length > 1514:
+            return None
+        if length < 54:
+            _ = receive_exact(connection, length)
+            continue
+        frame = receive_exact(connection, length)
+        if frame is None:
+            return None
+        if (len(frame) >= 42 and frame[12:14] == b"\x08\x06" and
+                frame[20:22] == b"\x00\x01" and
+                frame[38:42] == TCP_TEST_TARGET):
+            if not inject_ethernet_frame(connection, tcp_test_arp_reply_frame()):
+                return None
+            continue
+        if frame[12:14] != b"\x08\x00" or frame[23] != 6:
+            continue
+        ihl = (frame[14] & 0x0F) * 4
+        total = struct.unpack("!H", frame[16:18])[0]
+        if (ihl < 20 or total < ihl + 20 or len(frame) < 14 + total or
+                frame[26:30] != GUEST_IP or frame[30:34] != TCP_TEST_TARGET):
+            continue
+        tcp = frame[14 + ihl:14 + total]
+        header_length = (tcp[12] >> 4) * 4
+        if header_length < 20 or header_length > len(tcp):
+            continue
+        pseudo = GUEST_IP + TCP_TEST_TARGET + struct.pack("!BBH", 0, 6,
+                                                           len(tcp))
+        if internet_checksum(pseudo + tcp) != 0:
+            continue
+        source, destination, sequence, acknowledgement = struct.unpack(
+            "!HHII", tcp[:12])
+        return (source, destination, sequence, acknowledgement, tcp[13],
+                tcp[header_length:])
+    return None
+
+
+def serve_tcp_test_client(connection: socket.socket, deadline: float) -> str | None:
+    syn = receive_tcp_segment(connection, deadline)
+    if syn is None or syn[4] != 0x02 or syn[5] != b"":
+        return "valid TCP SYN was not observed"
+    client_port, server_port, client_sequence = syn[0], syn[1], syn[2]
+    server_sequence = 7000
+    if server_port != 8080 or not inject_ethernet_frame(
+            connection, tcp_test_frame(server_port, client_port,
+                                       server_sequence, client_sequence + 1,
+                                       0x12)):
+        return "unable to inject TCP SYN/ACK"
+    payload_segment = None
+    for _ in range(3):
+        segment = receive_tcp_segment(connection, deadline)
+        if segment is None:
+            break
+        if segment[5]:
+            payload_segment = segment
+            break
+    if payload_segment is None or payload_segment[5] != b"ping":
+        return "TCP client payload was not observed"
+    client_next = payload_segment[2] + len(payload_segment[5])
+    server_next = server_sequence + 1
+    if not inject_ethernet_frame(
+            connection, tcp_test_frame(server_port, client_port, server_next,
+                                       client_next, 0x18, b"pong")):
+        return "unable to inject TCP response"
+    server_next += 4
+    fin = None
+    for _ in range(4):
+        segment = receive_tcp_segment(connection, deadline)
+        if segment is None:
+            break
+        if segment[4] & 0x01:
+            fin = segment
+            break
+    if fin is None:
+        return "TCP client FIN was not observed"
+    if not inject_ethernet_frame(
+            connection, tcp_test_frame(server_port, client_port, server_next,
+                                       fin[2] + len(fin[5]) + 1, 0x11)):
+        return "unable to inject TCP FIN/ACK"
+    final_ack = None
+    for _ in range(4):
+        segment = receive_tcp_segment(connection, deadline)
+        if (segment is not None and (segment[4] & 0x10) != 0 and
+                segment[3] == server_next + 1):
+            final_ack = segment
+            break
+    if final_ack is None:
+        return "final TCP ACK was not observed"
+    return None
+
+
+def serve_dns_test_client(connection: socket.socket, deadline: float) -> str | None:
+    """Answer one bounded DNS A query from the guest through the socket hub."""
+    while time.monotonic() < deadline:
+        connection.settimeout(max(0.01, deadline - time.monotonic()))
+        header = receive_exact(connection, 4)
+        if header is None:
+            return "DNS peer frame header was not observed"
+        length = struct.unpack("!I", header)[0]
+        if length > 1514:
+            return "DNS peer emitted an oversized frame"
+        frame = receive_exact(connection, length)
+        if frame is None:
+            return "DNS peer frame was truncated"
+        if (len(frame) >= 42 and frame[12:14] == b"\x08\x06" and
+                frame[20:22] == b"\x00\x01" and
+                frame[38:42] == TCP_TEST_TARGET):
+            if not inject_ethernet_frame(connection, tcp_test_arp_reply_frame()):
+                return "unable to inject DNS peer ARP reply"
+            continue
+        if len(frame) < 42 or frame[12:14] != b"\x08\x00":
+            continue
+        if frame[23] != 17:
+            continue
+        if frame[26:30] != GUEST_IP or frame[30:34] != TCP_TEST_TARGET:
+            continue
+        ihl = (frame[14] & 0x0f) * 4
+        total = struct.unpack("!H", frame[16:18])[0]
+        if ihl < 20 or total < ihl + 20 or len(frame) < 14 + total:
+            continue
+        udp = frame[14 + ihl:14 + total]
+        source_port, destination_port, udp_length, _ = struct.unpack(
+            "!HHHH", udp[:8])
+        query = udp[8:udp_length]
+        if destination_port != 53 or len(query) < 18:
+            continue
+        question_end = 12
+        while question_end < len(query) and query[question_end] != 0:
+            label = query[question_end]
+            if label > 63 or question_end + label + 1 >= len(query):
+                return "guest DNS question is malformed"
+            question_end += label + 1
+        question_end += 5
+        if question_end > len(query):
+            return "guest DNS question is truncated"
+        answer = (query[:2] + b"\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00" +
+                  query[12:question_end] +
+                  b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04" +
+                  bytes((10, 0, 2, 77)))
+        response_udp = struct.pack("!HHHH", 53, source_port,
+                                   8 + len(answer), 0) + answer
+        pseudo = TCP_TEST_TARGET + GUEST_IP + struct.pack(
+            "!BBH", 0, 17, len(response_udp))
+        checksum = internet_checksum(pseudo + response_udp)
+        response_udp = response_udp[:6] + struct.pack(
+            "!H", checksum or 0xffff) + response_udp[8:]
+        ip = struct.pack("!BBHHHBBH4s4s", 0x45, 0, 20 + len(response_udp),
+                         0x444e, 0, 64, 17, 0, TCP_TEST_TARGET, GUEST_IP)
+        ip = ip[:10] + struct.pack("!H", internet_checksum(ip)) + ip[12:]
+        response = (GUEST_MAC + TCP_TEST_MAC + b"\x08\x00" + ip +
+                    response_udp).ljust(60, b"\x00")
+        return None if inject_ethernet_frame(connection, response) else \
+            "unable to inject DNS response"
+    return "guest DNS query was not observed"
+
+
 def reader(
     stream,
     chunks: queue.Queue[str],
@@ -707,6 +906,8 @@ def run(
     sata: bool = False,
     auxiliary_sata_image: Path | None = None,
     expect_outbound_ping: bool = False,
+    expect_tcp_client: bool = False,
+    expect_dns_client: bool = False,
     boot_only: bool = False,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
@@ -718,7 +919,8 @@ def run(
     handover_thread: threading.Thread | None = None
     handover_result: list[str | None] = [None]
     if (inject_arp_request or expect_arp_resolution or expect_outbound_ping or
-            inject_icmp_echo or inject_udp_echo):
+            inject_icmp_echo or inject_udp_echo or expect_tcp_client or
+            expect_dns_client):
         injection_listener, injection_port = open_injection_listener()
     if expect_handover:
         handover_listener, handover_port = open_injection_listener()
@@ -1004,6 +1206,40 @@ def run(
                             prompt_after_ping:prompt_after_cancel]
                         if "^C" not in cancelled:
                             error = "shell prompt returned without Ctrl+C acknowledgement"
+            if error is None and expect_tcp_client:
+                assert injection_connection is not None
+                inject_ps2_command(process, TCP_TEST_COMMAND)
+                if not receive_arp_request(
+                        injection_connection, TCP_TEST_TARGET, deadline):
+                    error = "TCP client ARP request was not observed"
+                if error is None and not inject_ethernet_frame(
+                        injection_connection, tcp_test_arp_reply_frame()):
+                    error = "unable to inject TCP peer ARP reply"
+                if error is None:
+                    error = serve_tcp_test_client(injection_connection,
+                                                  deadline)
+                tcp_position = -1
+                if error is None:
+                    error, tcp_position = wait_for_line(
+                        process, chunks, transcript, finished,
+                        TCP_TEST_REPLY_MARKER, deadline, after=shell_position)
+                if error is None:
+                    error, _ = wait_for_line(
+                        process, chunks, transcript, finished, SHELL_PROMPT,
+                        deadline, after=tcp_position)
+            if error is None and expect_dns_client:
+                assert injection_connection is not None
+                inject_ps2_command(process, DNS_TEST_COMMAND)
+                error = serve_dns_test_client(injection_connection, deadline)
+                dns_position = -1
+                if error is None:
+                    error, dns_position = wait_for_line(
+                        process, chunks, transcript, finished,
+                        DNS_TEST_REPLY_MARKER, deadline, after=shell_position)
+                if error is None:
+                    error, _ = wait_for_line(
+                        process, chunks, transcript, finished, SHELL_PROMPT,
+                        deadline, after=dns_position)
     finally:
         if injection_connection is not None:
             injection_connection.close()
@@ -1374,6 +1610,14 @@ def main() -> int:
         help="run shell PING against the QEMU gateway and keep the shell alive",
     )
     parser.add_argument(
+        "--expect-tcp-client", action="store_true",
+        help="run nc against a deterministic socket-hub TCP peer",
+    )
+    parser.add_argument(
+        "--expect-dns-client", action="store_true",
+        help="run nslookup against a deterministic socket-hub DNS peer",
+    )
+    parser.add_argument(
         "--expect-storage-recovery", action="store_true",
         help="require an injected storage-service crash and bounded recovery",
     )
@@ -1431,7 +1675,9 @@ def main() -> int:
         return 2
     if (args.inject_arp_request or args.expect_arp_resolution or
             args.expect_outbound_ping or
-            args.inject_icmp_echo or args.inject_udp_echo) and args.nic == "none":
+            args.inject_icmp_echo or args.inject_udp_echo or
+            args.expect_tcp_client or args.expect_dns_client) and \
+            args.nic == "none":
         print("guest-smoke: network injection verification requires a NIC",
               file=sys.stderr)
         return 2
@@ -1462,6 +1708,8 @@ def main() -> int:
             (args.aux_sata_image.resolve()
              if args.aux_sata_image is not None else None),
             args.expect_outbound_ping,
+            args.expect_tcp_client,
+            args.expect_dns_client,
             args.boot_only,
         )
     except OSError as error:

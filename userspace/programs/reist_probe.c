@@ -14,6 +14,7 @@
 #include "reist_icmp_parser.h"
 #include "reist_ipv4_parser.h"
 #include "reist_udp_parser.h"
+#include "reist_tcp_parser.h"
 
 #define REIST_DHCP_BOOT_MAX_ATTEMPTS 3U
 #define REIST_DHCP_BOOT_RETRY_MS 1600U
@@ -406,6 +407,9 @@ int main(int argc, char **argv) {
             reist_udp_parse_result_t udp_result;
             int udp_parse = reist_udp_parse_frame(
                 network_frame.data, network_frame.length, &udp_result);
+            reist_tcp_parse_result_t tcp_result;
+            int tcp_parse = reist_tcp_parse_frame(
+                network_frame.data, network_frame.length, &tcp_result);
             reist_dhcp_parse_result_t dhcp_result;
             int dhcp_parse = reist_dhcp_parse_frame(
                 network_frame.data, network_frame.length, &dhcp_result);
@@ -558,6 +562,43 @@ int main(int argc, char **argv) {
                 } else if (ingress.request_id != 0U) {
                     return 38;
                 }
+                if (ipv4_parse == 0 && udp_parse == 0 &&
+                    udp_result.payload_length <= X86OS_UDP_MAX_DATAGRAM) {
+                    x86os_udp_datagram_t datagram = {
+                        .version = X86OS_UDP_SOCKET_VERSION,
+                        .struct_size = sizeof(datagram), .socket = 0U,
+                        .ip = ipv4_result.source_ip,
+                        .source_port = udp_result.source_port,
+                        .destination_port = udp_result.destination_port,
+                        .length = udp_result.payload_length, .timeout_ms = 0U,
+                    };
+                    int socket_result = x86os_udp_socket_ingress(
+                        &datagram,
+                        &network_frame.data[udp_result.payload_offset]);
+                    if (socket_result != 0 && socket_result != -2 &&
+                        socket_result != -105) return 41;
+                }
+            }
+            if (ipv4_parse == 0 && tcp_parse == 0 &&
+                tcp_result.payload_length <= X86OS_TCP_MAX_SEGMENT) {
+                x86os_tcp_segment_t segment = {
+                    .version = X86OS_TCP_SOCKET_VERSION,
+                    .struct_size = sizeof(segment),
+                    .source_ip = ipv4_result.source_ip,
+                    .destination_ip = ipv4_result.destination_ip,
+                    .sequence = tcp_result.sequence,
+                    .acknowledgement = tcp_result.acknowledgement,
+                    .source_port = tcp_result.source_port,
+                    .destination_port = tcp_result.destination_port,
+                    .window = tcp_result.window,
+                    .length = tcp_result.payload_length,
+                    .flags = tcp_result.flags,
+                };
+                int tcp_ingress = x86os_tcp_socket_ingress(
+                    &segment, &network_frame.data[tcp_result.payload_offset]);
+                if (tcp_ingress != 0 && tcp_ingress != -2 &&
+                    tcp_ingress != -11 && tcp_ingress != -84)
+                    return 43;
             }
             } else if (frame_result == -11) {
                 break;

@@ -20,6 +20,8 @@
 #include "drivers/block/partition.h"
 #include "drivers/net/netdev.h"
 #include "drivers/net/netstack.h"
+#include "drivers/net/net_socket.h"
+#include "drivers/net/tcp_socket.h"
 #include "kernel/time/pit.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/proc/process.h"
@@ -282,7 +284,8 @@ static int syscall_network_probe_stats(syscall_network_probe_stats_t *user_stats
         ? 0 : -14;
 }
 
-#define NETWORK_CONTROL_VERSION 1U
+#define NETWORK_CONTROL_VERSION_V1 1U
+#define NETWORK_CONTROL_VERSION 2U
 #define NETWORK_CONTROL_STATUS 1U
 #define NETWORK_CONTROL_CONFIGURE 2U
 #define NETWORK_CONTROL_PING 3U
@@ -315,11 +318,12 @@ typedef struct {
     char backend[16];
     uint8_t mac_address[6];
     uint8_t reserved[2];
+    uint32_t dns_server;
 } network_control_result_t;
 
 _Static_assert(sizeof(network_control_request_t) == 44U,
                "network control request ABI changed");
-_Static_assert(sizeof(network_control_result_t) == 60U,
+_Static_assert(sizeof(network_control_result_t) == 64U,
                "network control result ABI changed");
 
 static int syscall_network_control(
@@ -331,28 +335,32 @@ static int syscall_network_control(
     uint32_t result_address = (uint32_t)(uintptr_t)user_result;
     if (process == NULL ||
         !user_range_accessible(directory, request_address,
-                               sizeof(network_control_request_t), false) ||
-        !user_range_accessible(directory, result_address,
-                               sizeof(network_control_result_t), true)) {
+                               sizeof(network_control_request_t), false)) {
         return -14;
     }
 
     network_control_request_t request;
     if (copy_from_user(&request, user_request, sizeof(request)) != 0 ||
-        request.version != NETWORK_CONTROL_VERSION ||
+        (request.version != NETWORK_CONTROL_VERSION_V1 &&
+         request.version != NETWORK_CONTROL_VERSION) ||
         request.struct_size != sizeof(request) || request.reserved != 0U) {
         return -22;
     }
+    size_t result_size = request.version == NETWORK_CONTROL_VERSION_V1
+        ? 60U : sizeof(network_control_result_t);
+    if (!user_range_accessible(directory, result_address, result_size, true))
+        return -14;
 
     network_control_result_t result = {0};
-    result.version = NETWORK_CONTROL_VERSION;
-    result.struct_size = sizeof(result);
+    result.version = request.version;
+    result.struct_size = (uint32_t)result_size;
     result.available = netdev_available() ? 1U : 0U;
     result.ready = netdev_component_ready() ? 1U : 0U;
     result.configured = netstack_is_configured() ? 1U : 0U;
     result.ip_address = netstack_get_ip_address();
     result.netmask = netstack_get_netmask();
     result.gateway = netstack_get_gateway();
+    result.dns_server = netstack_get_dns_server();
     (void)netdev_get_mac_address(result.mac_address);
     const char *backend = netdev_backend_name();
     size_t backend_index = 0U;
@@ -406,8 +414,383 @@ static int syscall_network_control(
     result.netmask = netstack_get_netmask();
     result.configured = netstack_is_configured() ? 1U : 0U;
     result.gateway = netstack_get_gateway();
-    if (copy_to_user(user_result, &result, sizeof(result)) != 0) return -14;
+    if (copy_to_user(user_result, &result, result_size) != 0) return -14;
     return operation_result;
+}
+
+enum {
+    UDP_SOCKET_CONTROL_OPEN = 1U,
+    UDP_SOCKET_CONTROL_BIND = 2U,
+    UDP_SOCKET_CONTROL_CLOSE = 3U,
+    UDP_SOCKET_CONTROL_STATS = 4U,
+};
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    net_socket_handle_t socket;
+    uint16_t port;
+    uint16_t reserved;
+    uint32_t active_sockets;
+    uint32_t queued_datagrams;
+    uint32_t dropped_datagrams;
+} syscall_udp_socket_control_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    net_socket_handle_t socket;
+    uint32_t ip;
+    uint16_t source_port;
+    uint16_t destination_port;
+    uint32_t length;
+    uint32_t timeout_ms;
+} syscall_udp_datagram_t;
+
+_Static_assert(sizeof(syscall_udp_socket_control_t) == 32U,
+               "UDP socket control ABI changed");
+_Static_assert(sizeof(syscall_udp_datagram_t) == 28U,
+               "UDP datagram ABI changed");
+
+static int syscall_udp_socket_control(syscall_udp_socket_control_t *user) {
+    Process *process = scheduler_current_process();
+    if (process == NULL || user == NULL) return -14;
+    uint32_t address = (uint32_t)(uintptr_t)user;
+    page_directory_t *directory = paging_current_directory();
+    if (!user_range_accessible(directory, address, sizeof(*user), true))
+        return -14;
+    syscall_udp_socket_control_t control;
+    if (copy_from_user(&control, user, sizeof(control)) != 0) return -14;
+    if (control.version != NET_SOCKET_ABI_VERSION ||
+        control.struct_size != sizeof(control) || control.reserved != 0U ||
+        control.active_sockets != 0U || control.queued_datagrams != 0U ||
+        control.dropped_datagrams != 0U) return -22;
+    int result = -22;
+    net_socket_handle_t opened = 0U;
+    if (control.operation == UDP_SOCKET_CONTROL_OPEN && control.socket == 0U &&
+        control.port == 0U) {
+        result = net_socket_open(process->pid, process->generation, &opened);
+        if (result == 0) {
+            int descriptor = process_descriptor_install(
+                process, PROCESS_DESCRIPTOR_UDP_SOCKET, opened);
+            if (descriptor < 0) {
+                (void)net_socket_close(process->pid, process->generation,
+                                       opened);
+                result = descriptor;
+            } else control.socket = (uint32_t)descriptor;
+        }
+    } else if (control.operation == UDP_SOCKET_CONTROL_BIND &&
+               control.port != 0U) {
+        uint32_t handle = 0U;
+        result = process_descriptor_resolve(
+            process, (int)control.socket, PROCESS_DESCRIPTOR_UDP_SOCKET,
+            &handle);
+        if (result == 0)
+        result = net_socket_bind(process->pid, process->generation,
+                                 handle, control.port);
+    } else if (control.operation == UDP_SOCKET_CONTROL_CLOSE &&
+               control.port == 0U) {
+        uint32_t handle = 0U;
+        result = process_descriptor_resolve(
+            process, (int)control.socket, PROCESS_DESCRIPTOR_UDP_SOCKET,
+            &handle);
+        if (result == 0) result = process_file_close(
+            process, (int)control.socket);
+    } else if (control.operation == UDP_SOCKET_CONTROL_STATS &&
+               control.socket == 0U && control.port == 0U) {
+        net_socket_stats_t stats;
+        net_socket_get_stats(&stats);
+        control.active_sockets = stats.active_sockets;
+        control.queued_datagrams = stats.queued_datagrams;
+        control.dropped_datagrams = stats.dropped_datagrams;
+        result = 0;
+    }
+    if (result == 0 && copy_to_user(user, &control, sizeof(control)) != 0) {
+        if (opened != 0U && control.socket != 0U)
+            (void)process_file_close(process, (int)control.socket);
+        return -14;
+    }
+    return result;
+}
+
+static int syscall_udp_socket_sendto(
+        const syscall_udp_datagram_t *user_datagram,
+        const uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    if (process == NULL || user_datagram == NULL) return -14;
+    page_directory_t *directory = paging_current_directory();
+    uint32_t datagram_address = (uint32_t)(uintptr_t)user_datagram;
+    if (!user_range_accessible(directory, datagram_address,
+                               sizeof(*user_datagram), false)) return -14;
+    syscall_udp_datagram_t datagram;
+    if (copy_from_user(&datagram, user_datagram, sizeof(datagram)) != 0)
+        return -14;
+    if (datagram.version != NET_SOCKET_ABI_VERSION ||
+        datagram.struct_size != sizeof(datagram) ||
+        datagram.source_port != 0U || datagram.destination_port == 0U ||
+        datagram.timeout_ms > 10000U ||
+        datagram.length > NET_SOCKET_MAX_DATAGRAM)
+        return -22;
+    uint8_t data[NET_SOCKET_MAX_DATAGRAM];
+    if (datagram.length != 0U) {
+        uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+        if (!user_range_accessible(directory, data_address, datagram.length,
+                                   false) ||
+            copy_from_user(data, user_data, datagram.length) != 0) return -14;
+    }
+    uint32_t handle = 0U;
+    int descriptor_result = process_descriptor_resolve(
+        process, (int)datagram.socket, PROCESS_DESCRIPTOR_UDP_SOCKET, &handle);
+    if (descriptor_result != 0) return descriptor_result;
+    return net_socket_sendto(process->pid, process->generation,
+                             handle, datagram.ip,
+                             datagram.destination_port, data,
+                             datagram.length, datagram.timeout_ms);
+}
+
+static int syscall_udp_socket_recvfrom(syscall_udp_datagram_t *user_datagram,
+                                       uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    if (process == NULL || user_datagram == NULL) return -14;
+    page_directory_t *directory = paging_current_directory();
+    uint32_t datagram_address = (uint32_t)(uintptr_t)user_datagram;
+    if (!user_range_accessible(directory, datagram_address,
+                               sizeof(*user_datagram), true)) return -14;
+    syscall_udp_datagram_t datagram;
+    if (copy_from_user(&datagram, user_datagram, sizeof(datagram)) != 0)
+        return -14;
+    uint32_t capacity = datagram.length;
+    if (datagram.version != NET_SOCKET_ABI_VERSION ||
+        datagram.struct_size != sizeof(datagram) || datagram.ip != 0U ||
+        datagram.source_port != 0U || datagram.destination_port != 0U ||
+        capacity > NET_SOCKET_MAX_DATAGRAM)
+        return -22;
+    uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+    if (capacity != 0U &&
+        !user_range_accessible(directory, data_address, capacity, true))
+        return -14;
+    uint8_t data[NET_SOCKET_MAX_DATAGRAM];
+    net_socket_datagram_t received;
+    uint32_t handle = 0U;
+    int descriptor_result = process_descriptor_resolve(
+        process, (int)datagram.socket, PROCESS_DESCRIPTOR_UDP_SOCKET, &handle);
+    if (descriptor_result != 0) return descriptor_result;
+    int result = net_socket_recvfrom(process->pid, process->generation,
+                                     handle, &received, data,
+                                     capacity, datagram.timeout_ms);
+    if (result < 0) return result;
+    datagram.ip = received.source_ip;
+    datagram.source_port = received.source_port;
+    datagram.destination_port = received.destination_port;
+    datagram.length = received.length;
+    if (received.length != 0U &&
+        copy_to_user(user_data, data, received.length) != 0) return -14;
+    return copy_to_user(user_datagram, &datagram, sizeof(datagram)) == 0
+        ? result : -14;
+}
+
+static int syscall_udp_socket_ingress(
+        const syscall_udp_datagram_t *user_datagram,
+        const uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    if (process == NULL ||
+        process->domain_profile.kind != PROCESS_DOMAIN_PROBE ||
+        user_datagram == NULL) return -13;
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_datagram;
+    if (!user_range_accessible(directory, address, sizeof(*user_datagram),
+                               false)) return -14;
+    syscall_udp_datagram_t datagram;
+    if (copy_from_user(&datagram, user_datagram, sizeof(datagram)) != 0)
+        return -14;
+    if (datagram.version != NET_SOCKET_ABI_VERSION ||
+        datagram.struct_size != sizeof(datagram) || datagram.socket != 0U ||
+        datagram.ip == 0U || datagram.source_port == 0U ||
+        datagram.destination_port == 0U || datagram.timeout_ms != 0U ||
+        datagram.length > NET_SOCKET_MAX_DATAGRAM) return -22;
+    uint8_t data[NET_SOCKET_MAX_DATAGRAM];
+    if (datagram.length != 0U) {
+        uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+        if (!user_range_accessible(directory, data_address, datagram.length,
+                                   false) ||
+            copy_from_user(data, user_data, datagram.length) != 0) return -14;
+    }
+    return net_socket_ingress(datagram.ip, datagram.source_port,
+                              datagram.destination_port, data,
+                              datagram.length);
+}
+
+enum {
+    TCP_SOCKET_CONTROL_OPEN = 1U,
+    TCP_SOCKET_CONTROL_CLOSE = 2U,
+    TCP_SOCKET_CONTROL_STATS = 3U,
+};
+typedef struct {
+    uint32_t version, struct_size, operation;
+    tcp_socket_handle_t socket;
+    uint32_t timeout_ms, active_sockets, established_sockets, retransmissions;
+} syscall_tcp_socket_control_t;
+typedef struct {
+    uint32_t version, struct_size;
+    tcp_socket_handle_t socket;
+    uint32_t destination_ip;
+    uint16_t destination_port, reserved;
+    uint32_t timeout_ms;
+} syscall_tcp_connect_t;
+typedef struct {
+    uint32_t version, struct_size;
+    tcp_socket_handle_t socket;
+    uint32_t length, timeout_ms;
+} syscall_tcp_io_t;
+
+_Static_assert(sizeof(syscall_tcp_socket_control_t) == 32U,
+               "TCP control ABI changed");
+_Static_assert(sizeof(syscall_tcp_connect_t) == 24U,
+               "TCP connect ABI changed");
+_Static_assert(sizeof(syscall_tcp_io_t) == 20U, "TCP I/O ABI changed");
+_Static_assert(sizeof(tcp_socket_segment_t) == 36U,
+               "TCP ingress ABI changed");
+
+static int syscall_tcp_socket_control(syscall_tcp_socket_control_t *user) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    if (process == NULL || user == NULL || !user_range_accessible(
+            directory, (uint32_t)(uintptr_t)user, sizeof(*user), true))
+        return -14;
+    syscall_tcp_socket_control_t control;
+    if (copy_from_user(&control, user, sizeof(control)) != 0) return -14;
+    if (control.version != TCP_SOCKET_ABI_VERSION ||
+        control.struct_size != sizeof(control) || control.active_sockets != 0U ||
+        control.established_sockets != 0U || control.retransmissions != 0U)
+        return -22;
+    int result = -22; tcp_socket_handle_t opened = 0U;
+    if (control.operation == TCP_SOCKET_CONTROL_OPEN && control.socket == 0U &&
+        control.timeout_ms == 0U) {
+        result = tcp_socket_open(process->pid, process->generation, &opened);
+        if (result == 0) {
+            int descriptor = process_descriptor_install(
+                process, PROCESS_DESCRIPTOR_TCP_SOCKET, opened);
+            if (descriptor < 0) {
+                (void)tcp_socket_close(process->pid, process->generation,
+                                       opened, 0U);
+                result = descriptor;
+            } else control.socket = (uint32_t)descriptor;
+        }
+    } else if (control.operation == TCP_SOCKET_CONTROL_CLOSE &&
+               control.socket != 0U) {
+        uint32_t handle = 0U;
+        result = process_descriptor_resolve(
+            process, (int)control.socket, PROCESS_DESCRIPTOR_TCP_SOCKET,
+            &handle);
+        if (result == 0) result = tcp_socket_close(
+            process->pid, process->generation, handle, control.timeout_ms);
+        if (result == 0) result = process_descriptor_release(
+            process, (int)control.socket, PROCESS_DESCRIPTOR_TCP_SOCKET);
+    } else if (control.operation == TCP_SOCKET_CONTROL_STATS &&
+               control.socket == 0U && control.timeout_ms == 0U) {
+        tcp_socket_stats_t stats; tcp_socket_get_stats(&stats);
+        control.active_sockets = stats.active_sockets;
+        control.established_sockets = stats.established_sockets;
+        control.retransmissions = stats.retransmissions; result = 0;
+    }
+    if (result == 0 && copy_to_user(user, &control, sizeof(control)) != 0) {
+        if (opened != 0U && control.socket != 0U)
+            (void)process_file_close(process, (int)control.socket);
+        return -14;
+    }
+    return result;
+}
+
+static int syscall_tcp_socket_connect(const syscall_tcp_connect_t *user) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    if (process == NULL || user == NULL || !user_range_accessible(
+            directory, (uint32_t)(uintptr_t)user, sizeof(*user), false))
+        return -14;
+    syscall_tcp_connect_t request;
+    if (copy_from_user(&request, user, sizeof(request)) != 0) return -14;
+    if (request.version != TCP_SOCKET_ABI_VERSION ||
+        request.struct_size != sizeof(request) || request.reserved != 0U)
+        return -22;
+    uint32_t handle = 0U;
+    int descriptor_result = process_descriptor_resolve(
+        process, (int)request.socket, PROCESS_DESCRIPTOR_TCP_SOCKET, &handle);
+    if (descriptor_result != 0) return descriptor_result;
+    return tcp_socket_connect(process->pid, process->generation,
+                              handle, request.destination_ip,
+                              request.destination_port, request.timeout_ms);
+}
+
+static int syscall_tcp_socket_send(const syscall_tcp_io_t *user,
+                                   const uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    if (process == NULL || user == NULL || !user_range_accessible(
+            directory, (uint32_t)(uintptr_t)user, sizeof(*user), false))
+        return -14;
+    syscall_tcp_io_t request;
+    if (copy_from_user(&request, user, sizeof(request)) != 0) return -14;
+    if (request.version != TCP_SOCKET_ABI_VERSION ||
+        request.struct_size != sizeof(request) || request.length == 0U ||
+        request.length > TCP_SOCKET_MAX_SEGMENT) return -22;
+    uint8_t data[TCP_SOCKET_MAX_SEGMENT];
+    if (!user_range_accessible(directory, (uint32_t)(uintptr_t)user_data,
+                               request.length, false) ||
+        copy_from_user(data, user_data, request.length) != 0) return -14;
+    uint32_t handle = 0U;
+    int descriptor_result = process_descriptor_resolve(
+        process, (int)request.socket, PROCESS_DESCRIPTOR_TCP_SOCKET, &handle);
+    if (descriptor_result != 0) return descriptor_result;
+    return tcp_socket_send(process->pid, process->generation, handle,
+                           data, request.length, request.timeout_ms);
+}
+
+static int syscall_tcp_socket_receive(syscall_tcp_io_t *user,
+                                      uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    if (process == NULL || user == NULL || !user_range_accessible(
+            directory, (uint32_t)(uintptr_t)user, sizeof(*user), true))
+        return -14;
+    syscall_tcp_io_t request;
+    if (copy_from_user(&request, user, sizeof(request)) != 0) return -14;
+    if (request.version != TCP_SOCKET_ABI_VERSION ||
+        request.struct_size != sizeof(request) || request.length == 0U ||
+        request.length > TCP_SOCKET_RECEIVE_CAPACITY) return -22;
+    if (!user_range_accessible(directory, (uint32_t)(uintptr_t)user_data,
+                               request.length, true)) return -14;
+    uint8_t data[TCP_SOCKET_RECEIVE_CAPACITY];
+    uint32_t handle = 0U;
+    int descriptor_result = process_descriptor_resolve(
+        process, (int)request.socket, PROCESS_DESCRIPTOR_TCP_SOCKET, &handle);
+    if (descriptor_result != 0) return descriptor_result;
+    int result = tcp_socket_receive(process->pid, process->generation,
+                                    handle, data, request.length,
+                                    request.timeout_ms);
+    if (result < 0) return result;
+    request.length = (uint32_t)result;
+    if (result != 0 && copy_to_user(user_data, data, (size_t)result) != 0)
+        return -14;
+    return copy_to_user(user, &request, sizeof(request)) == 0 ? result : -14;
+}
+
+static int syscall_tcp_socket_ingress(const tcp_socket_segment_t *user_segment,
+                                      const uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    if (process == NULL ||
+        process->domain_profile.kind != PROCESS_DOMAIN_PROBE) return -13;
+    if (user_segment == NULL || !user_range_accessible(
+            directory, (uint32_t)(uintptr_t)user_segment,
+            sizeof(*user_segment), false)) return -14;
+    tcp_socket_segment_t segment;
+    if (copy_from_user(&segment, user_segment, sizeof(segment)) != 0)
+        return -14;
+    if (segment.length > TCP_SOCKET_MAX_SEGMENT) return -22;
+    uint8_t data[TCP_SOCKET_MAX_SEGMENT];
+    if (segment.length != 0U && (!user_range_accessible(
+            directory, (uint32_t)(uintptr_t)user_data, segment.length, false) ||
+        copy_from_user(data, user_data, segment.length) != 0)) return -14;
+    return tcp_socket_ingress(&segment, data);
 }
 
 _Static_assert(sizeof(supervisor_arp_binding_t) == 24U,
@@ -1788,6 +2171,15 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_storage_media_commit,// Syscall 94: Accept formatted identity
     (void*)&syscall_storage_format_probe,// Syscall 95: Isolated sector probe
     (void*)&syscall_network_control,     // Syscall 96: Userspace LAN control
+    (void*)&syscall_udp_socket_control,  // Syscall 97: Bounded UDP sockets
+    (void*)&syscall_udp_socket_sendto,   // Syscall 98: UDP datagram transmit
+    (void*)&syscall_udp_socket_recvfrom, // Syscall 99: Nonblocking UDP receive
+    (void*)&syscall_udp_socket_ingress,  // Syscall 100: Ring-3 validated ingress
+    (void*)&syscall_tcp_socket_control,  // Syscall 101: Bounded TCP sockets
+    (void*)&syscall_tcp_socket_connect,  // Syscall 102: Active TCP open
+    (void*)&syscall_tcp_socket_send,     // Syscall 103: Acknowledged TCP send
+    (void*)&syscall_tcp_socket_receive,  // Syscall 104: Timed stream receive
+    (void*)&syscall_tcp_socket_ingress,  // Syscall 105: Validated TCP ingress
     // Add more syscalls here as needed
 };
 
@@ -2240,6 +2632,48 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)syscall_network_control(
                 (const network_control_request_t*)(uintptr_t)arg1,
                 (network_control_result_t*)(uintptr_t)arg2);
+            break;
+        case SYS_UDP_SOCKET_CONTROL:
+            result = (uint32_t)syscall_udp_socket_control(
+                (syscall_udp_socket_control_t*)(uintptr_t)arg1);
+            break;
+        case SYS_UDP_SOCKET_SENDTO:
+            result = (uint32_t)syscall_udp_socket_sendto(
+                (const syscall_udp_datagram_t*)(uintptr_t)arg1,
+                (const uint8_t*)(uintptr_t)arg2);
+            break;
+        case SYS_UDP_SOCKET_RECVFROM:
+            result = (uint32_t)syscall_udp_socket_recvfrom(
+                (syscall_udp_datagram_t*)(uintptr_t)arg1,
+                (uint8_t*)(uintptr_t)arg2);
+            break;
+        case SYS_UDP_SOCKET_INGRESS:
+            result = (uint32_t)syscall_udp_socket_ingress(
+                (const syscall_udp_datagram_t*)(uintptr_t)arg1,
+                (const uint8_t*)(uintptr_t)arg2);
+            break;
+        case SYS_TCP_SOCKET_CONTROL:
+            result = (uint32_t)syscall_tcp_socket_control(
+                (syscall_tcp_socket_control_t*)(uintptr_t)arg1);
+            break;
+        case SYS_TCP_SOCKET_CONNECT:
+            result = (uint32_t)syscall_tcp_socket_connect(
+                (const syscall_tcp_connect_t*)(uintptr_t)arg1);
+            break;
+        case SYS_TCP_SOCKET_SEND:
+            result = (uint32_t)syscall_tcp_socket_send(
+                (const syscall_tcp_io_t*)(uintptr_t)arg1,
+                (const uint8_t*)(uintptr_t)arg2);
+            break;
+        case SYS_TCP_SOCKET_RECEIVE:
+            result = (uint32_t)syscall_tcp_socket_receive(
+                (syscall_tcp_io_t*)(uintptr_t)arg1,
+                (uint8_t*)(uintptr_t)arg2);
+            break;
+        case SYS_TCP_SOCKET_INGRESS:
+            result = (uint32_t)syscall_tcp_socket_ingress(
+                (const tcp_socket_segment_t*)(uintptr_t)arg1,
+                (const uint8_t*)(uintptr_t)arg2);
             break;
         default:
             result = (uint32_t)-1;

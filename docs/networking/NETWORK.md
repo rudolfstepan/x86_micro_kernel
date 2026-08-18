@@ -1,6 +1,6 @@
 # Netzwerkstack
 
-Stand: 16. August 2026.
+Stand: 18. August 2026.
 
 Der verifizierte VMware-Weg verwendet einen Intel-E1000-Adapter und VMware
 NAT-DHCP. Der überwachte Ring-3-Dienst `REIST.PRG` führt die
@@ -11,11 +11,13 @@ Loopback-Probleme sind nicht der aktuelle Referenzzustand.
 ## Architektur
 
 ```text
-Shell: GETIP / IFCONFIG / PING / ARP / NET
+Ring-3: ifconfig / ping / netstat / udp / nslookup / nc
                 |
 überwachter REIST.PRG-Netzdienst
                 |
-Ethernet + ARP + IPv4 + ICMP + UDP + DHCP
+begrenzte FD-Sockets + DNS + TCP-Zustandsautomat
+                |
+Ethernet + ARP + IPv4 + ICMP + UDP + DHCP + TCP
                 |
        gemeinsame netdev-Schnittstelle
                 |
@@ -37,6 +39,12 @@ permanenten Paket-Debugzeilen mehr auf dem VGA-Terminal aus.
 - ICMP Echo Request/Reply
 - DHCP Discover/Offer/Request/ACK
 - statische IPv4-Konfiguration über die Shell
+- prozessgebundene UDP- und TCP-Socketdeskriptoren mit Cleanup bei Prozessende
+- UDP `bind`/`sendto`/`recvfrom`, vier Datagramme je Queue, 512 Byte je Paket
+  und eine begrenzte `sendto`-ARP-Wartezeit von maximal zehn Sekunden
+- DNS-A-/CNAME-Auflösung mit begrenzten Kompressionszeigern und vier Cacheplätzen
+- aktiver TCP-Verbindungsaufbau, ACK-/Sequenzprüfung über 32-Bit-Wrap,
+  begrenzte Retransmission, Empfangsfenster sowie aktiver/passiver Close
 - E1000 in der generierten VMware-VM und RTL8168/8111G auf dem ASUS H81M-K
 
 Ein Ping auf die eigene konfigurierte IPv4-Adresse wird lokal beantwortet und
@@ -44,11 +52,30 @@ benötigt weder ARP noch einen Ethernet-Loopback. Fremde oder vor einer
 validierten Lease eintreffende ICMP-Pakete werden kanonisch verworfen, ohne den
 überwachten Netzwerkdienst neu zu starten.
 
-Nicht implementiert sind derzeit DNS, TCP, ein allgemeines UDP-Socket-API,
-IPv6, Routing zwischen mehreren Gastinterfaces sowie Anwendungen wie HTTP,
-FTP oder SMB.
+Noch nicht implementiert sind TCP-Listen/Accept für Server, IPv6, Routing
+zwischen mehreren Gastinterfaces sowie Anwendungen wie HTTP, HTTPS, FTP oder
+SMB. Die DNS-/TCP-Schicht ist hostseitig und in einem deterministischen
+RTL8139-QEMU-Gasttest gegen lokale DNS-/TCP-Testpeers verifiziert.
 
 ## Shellbefehle
+
+Die folgenden Befehle sind eigenständige Ring-3-Programme unter `/sbin`:
+
+```text
+C:\> ifconfig
+C:\> ping 192.168.1.1
+C:\> netstat
+C:\> udp send 192.168.1.20 9000 9001 hello
+C:\> udp recv 9001 3000
+C:\> nslookup example.test
+C:\> nc example.test 80 "GET / HTTP/1.0"
+```
+
+`udp send`, `udp recv`, DNS und `nc` verwenden monotone, begrenzte Deadlines.
+`netstat` zeigt
+neben dem Interfacezustand auch aktive UDP-/TCP-Sockets, Queuefüllung, Drops
+und TCP-Retransmissionen. Die bisherigen Shell-Built-ins bleiben aus
+Kompatibilitätsgründen verfügbar.
 
 Status und DHCP:
 
@@ -127,7 +154,8 @@ Verifiziert sind Initialisierung, DHCP-Lease und das Erreichen des
 Shell-Prompts im gebridgten VMware-Netz. Ob ein konkreter Zielrechner auf Ping
 antwortet, hängt auch von Netzsegment, Gateway, Firewall und WLAN-Regeln ab.
 Der Kernel implementiert noch keinen vollständigen Internet- oder
-Dateifreigabe-Stack.
+Dateifreigabe-Stack. Der deterministische QEMU-Test belegt jedoch DHCP, ARP,
+TCP-Handshake, Datenübertragung und Close sowie DNS-A-Auflösung über UDP.
 
 ## Fehlerdiagnose
 

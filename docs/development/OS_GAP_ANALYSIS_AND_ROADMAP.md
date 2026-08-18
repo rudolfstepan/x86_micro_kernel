@@ -329,8 +329,8 @@ und 10 verbindlich.
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
 - [ ] R3.2 Userspace-Shell und Init-/Service-Management
 - [ ] R4.1 Gehärtetes IPv4/UDP und Socket-ABI
-- [ ] R4.2 DNS
-- [ ] R4.3 TCP
+- [x] R4.2 DNS
+- [x] R4.3 TCP
 - [ ] R5.1 ACPI-, DMA- und Plattformbasis
 - [ ] R5.2 xHCI/USB in überprüfbaren Stufen
 - [ ] R6 Optionale Modernisierung: UEFI, SMP, 64 Bit und Highmem
@@ -550,14 +550,16 @@ einzelne Vollbild-Kindprozesse und ist noch kein Fenstersystem.
 - ARP-Erneuerung sowie DHCP-Renew/Rebind
 - robuste IPv4-Fehlerpfade und definierter Umgang mit Fragmenten; aktuell
   werden Fragmente verworfen
-- nutzbares UDP-Binding: `udp_bind()` ist in
-  `drivers/net/netstack.c:961-964` noch ein Stub
-- Socketobjekte als Dateideskriptoren und Userspace-Syscalls
-- DNS-Resolver nach funktionierenden UDP-Sockets
-- TCP mit Zustandsautomat, Sequenznummern, Retransmission, Timern, Fenstern und
-  sauberem Verbindungsabbau; alle vier öffentlichen TCP-Funktionen sind derzeit
-  Stubs (`drivers/net/netstack.c:966-970`)
-- erste Anwendungen wie `netcat` und ein kleiner HTTP/1.0-Client
+- UDP-Socketobjekte sind als Prozessdeskriptoren mit `bind`, `sendto`,
+  `recvfrom`, begrenzter ARP-/Empfangsdeadline und Cleanup umgesetzt; der
+  QEMU-Datenpfad ist über DNS im kombinierten Gasttest belegt.
+- DNS-A/CNAME, begrenzte Kompressionszeiger und ein kleiner TTL-Cache sind
+  umgesetzt und gegen einen lokalen deterministischen QEMU-Testpeer belegt.
+- Der aktive TCP-Pfad besitzt CCBs, Sequenz-/ACK-Prüfung, Retransmission, RTO,
+  Fenster und aktiven/passiven Close. TCP-Handshake, Nutzdaten und Close sind
+  im QEMU-End-to-End-Test belegt; Listen/Accept bleiben offen.
+- `nc.prg` ist als erster TCP-Client vorhanden; ein kleiner HTTP/1.0-Client ist
+  der nächste Anwendungsschritt.
 - IPv6 erst nach einer belastbaren IPv4-/Socket-Schicht
 - reale H81M-K-Gegenprobe des nun vorhandenen RTL8111G-/RTL8168-PCIe-Treibers;
   die QEMU-Referenz emuliert diesen Controller nicht

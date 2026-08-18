@@ -291,13 +291,116 @@ int x86os_network_arp_resolve(uint32_t target_ip) {
 
 _Static_assert(sizeof(x86os_network_control_request_t) == 44U,
                "network control request ABI size changed");
-_Static_assert(sizeof(x86os_network_control_result_t) == 60U,
+_Static_assert(sizeof(x86os_network_control_result_t) == 64U,
                "network control result ABI size changed");
 
 int x86os_network_control(const x86os_network_control_request_t *request,
                           x86os_network_control_result_t *result) {
     return (int)x86os_syscall(X86OS_SYS_NETWORK_CONTROL,
                               (uintptr_t)request, (uintptr_t)result, 0U);
+}
+
+_Static_assert(sizeof(x86os_udp_socket_control_t) == 32U,
+               "UDP socket control ABI changed");
+_Static_assert(sizeof(x86os_udp_datagram_t) == 28U,
+               "UDP datagram ABI changed");
+
+static int udp_socket_control(uint32_t operation, x86os_udp_socket_t socket,
+                              uint16_t port,
+                              x86os_udp_socket_control_t *result) {
+    x86os_udp_socket_control_t control = {
+        .version = X86OS_UDP_SOCKET_VERSION,
+        .struct_size = sizeof(control), .operation = operation,
+        .socket = socket, .port = port,
+    };
+    int rc = (int)x86os_syscall(X86OS_SYS_UDP_SOCKET_CONTROL,
+                                (uintptr_t)&control, 0U, 0U);
+    if (rc == 0 && result != NULL) *result = control;
+    return rc;
+}
+
+int x86os_udp_socket_open(x86os_udp_socket_t *socket_out) {
+    if (socket_out == NULL) return -22;
+    x86os_udp_socket_control_t result;
+    int rc = udp_socket_control(X86OS_UDP_SOCKET_OPEN, 0U, 0U, &result);
+    if (rc == 0) *socket_out = result.socket;
+    return rc;
+}
+int x86os_udp_socket_bind(x86os_udp_socket_t socket, uint16_t port) {
+    return udp_socket_control(X86OS_UDP_SOCKET_BIND, socket, port, NULL);
+}
+int x86os_udp_socket_close(x86os_udp_socket_t socket) {
+    return udp_socket_control(X86OS_UDP_SOCKET_CLOSE, socket, 0U, NULL);
+}
+int x86os_udp_socket_stats(x86os_udp_socket_control_t *stats_out) {
+    return stats_out == NULL ? -22 :
+        udp_socket_control(X86OS_UDP_SOCKET_STATS, 0U, 0U, stats_out);
+}
+int x86os_udp_sendto(const x86os_udp_datagram_t *datagram,
+                     const void *data) {
+    return (int)x86os_syscall(X86OS_SYS_UDP_SOCKET_SENDTO,
+                              (uintptr_t)datagram, (uintptr_t)data, 0U);
+}
+int x86os_udp_recvfrom(x86os_udp_datagram_t *datagram, void *data) {
+    return (int)x86os_syscall(X86OS_SYS_UDP_SOCKET_RECVFROM,
+                              (uintptr_t)datagram, (uintptr_t)data, 0U);
+}
+int x86os_udp_socket_ingress(const x86os_udp_datagram_t *datagram,
+                             const void *data) {
+    return (int)x86os_syscall(X86OS_SYS_UDP_SOCKET_INGRESS,
+                              (uintptr_t)datagram, (uintptr_t)data, 0U);
+}
+
+_Static_assert(sizeof(x86os_tcp_socket_control_t) == 32U,
+               "TCP socket control ABI changed");
+_Static_assert(sizeof(x86os_tcp_connect_t) == 24U,
+               "TCP connect ABI changed");
+_Static_assert(sizeof(x86os_tcp_io_t) == 20U, "TCP I/O ABI changed");
+_Static_assert(sizeof(x86os_tcp_segment_t) == 36U,
+               "TCP segment ABI changed");
+
+static int tcp_socket_control(uint32_t operation, x86os_tcp_socket_t socket,
+                              uint32_t timeout_ms,
+                              x86os_tcp_socket_control_t *result) {
+    x86os_tcp_socket_control_t control = {
+        .version = X86OS_TCP_SOCKET_VERSION,
+        .struct_size = sizeof(control), .operation = operation,
+        .socket = socket, .timeout_ms = timeout_ms,
+    };
+    int rc = (int)x86os_syscall(X86OS_SYS_TCP_SOCKET_CONTROL,
+                                (uintptr_t)&control, 0U, 0U);
+    if (rc == 0 && result != NULL) *result = control;
+    return rc;
+}
+int x86os_tcp_socket_open(x86os_tcp_socket_t *socket_out) {
+    if (socket_out == NULL) return -22;
+    x86os_tcp_socket_control_t result;
+    int rc = tcp_socket_control(X86OS_TCP_SOCKET_OPEN, 0U, 0U, &result);
+    if (rc == 0) *socket_out = result.socket; return rc;
+}
+int x86os_tcp_socket_close(x86os_tcp_socket_t socket, uint32_t timeout_ms) {
+    return tcp_socket_control(X86OS_TCP_SOCKET_CLOSE, socket, timeout_ms, NULL);
+}
+int x86os_tcp_socket_stats(x86os_tcp_socket_control_t *stats_out) {
+    return stats_out == NULL ? -22 :
+        tcp_socket_control(X86OS_TCP_SOCKET_STATS, 0U, 0U, stats_out);
+}
+int x86os_tcp_connect(const x86os_tcp_connect_t *request) {
+    return (int)x86os_syscall(X86OS_SYS_TCP_SOCKET_CONNECT,
+                              (uintptr_t)request, 0U, 0U);
+}
+int x86os_tcp_send(const x86os_tcp_io_t *request, const void *data) {
+    return (int)x86os_syscall(X86OS_SYS_TCP_SOCKET_SEND,
+                              (uintptr_t)request, (uintptr_t)data, 0U);
+}
+int x86os_tcp_receive(x86os_tcp_io_t *request, void *data) {
+    return (int)x86os_syscall(X86OS_SYS_TCP_SOCKET_RECEIVE,
+                              (uintptr_t)request, (uintptr_t)data, 0U);
+}
+int x86os_tcp_socket_ingress(const x86os_tcp_segment_t *segment,
+                             const void *data) {
+    return (int)x86os_syscall(X86OS_SYS_TCP_SOCKET_INGRESS,
+                              (uintptr_t)segment, (uintptr_t)data, 0U);
 }
 
 _Static_assert(sizeof(x86os_storage_submit_t) == 28U,

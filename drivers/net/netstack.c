@@ -10,6 +10,8 @@
 // NE2000-focused improved stack (header-aligned)
 
 #include "drivers/net/netstack.h"
+#include "drivers/net/net_socket.h"
+#include "drivers/net/tcp_socket.h"
 #include "include/kernel/supervisor.h"
 #include "drivers/net/netdev.h"
 #include "lib/libc/string.h"
@@ -38,7 +40,6 @@ static uint64_t netstack_deadline_after(uint64_t now_ms,
     return UINT64_MAX - now_ms < timeout_ms
         ? UINT64_MAX : now_ms + timeout_ms;
 }
-
 static void netstack_wait_one_ms(void) {
     if (scheduler_sleep_ms(1U) != 0) (void)scheduler_yield();
 }
@@ -188,6 +189,25 @@ static uint16_t udp_checksum(const ip_header_t* ip, const udp_header_t* udp, con
     /* In UDP/IPv4 a computed zero is encoded as all ones; zero means that no
      * checksum was supplied. */
     return checksum ? checksum : 0xFFFFu;
+}
+
+static uint16_t tcp_checksum(const ip_header_t *ip, const tcp_header_t *tcp,
+                             const uint8_t *payload, size_t length) {
+    struct tcp_pseudo {
+        uint32_t source;
+        uint32_t destination;
+        uint8_t zero;
+        uint8_t protocol;
+        uint16_t length;
+    } __attribute__((packed)) pseudo = {
+        ip->src_ip, ip->dst_ip, 0U, IP_PROTOCOL_TCP,
+        htons((uint16_t)(sizeof(*tcp) + length)),
+    };
+    uint32_t sum = checksum_accumulate(&pseudo, sizeof(pseudo), 0U);
+    sum = checksum_accumulate(tcp, sizeof(*tcp), sum);
+    sum = checksum_accumulate(payload, length, sum);
+    uint16_t checksum = fold_checksum(sum);
+    return checksum != 0U ? checksum : 0xffffU;
 }
 
 // =============================================================================
@@ -411,6 +431,45 @@ bool netstack_send_supervised_udp_reply(uint32_t dst_ip,
     size_t total_len = sizeof(eth_header_t) + sizeof(ip_header_t) +
                        sizeof(udp_header_t) + data_len;
     return nic_send(packet, total_len);
+}
+
+bool netstack_send_tcp_segment(uint32_t dst_ip, uint16_t source_port,
+                               uint16_t destination_port, uint32_t sequence,
+                               uint32_t acknowledgement, uint8_t flags,
+                               uint16_t window, const uint8_t *data,
+                               uint16_t data_len) {
+    if (dst_ip == 0U || dst_ip == UINT32_MAX || source_port == 0U ||
+        destination_port == 0U || data_len > 512U ||
+        (data_len != 0U && data == NULL) || (flags & 0xc0U) != 0U)
+        return false;
+    uint32_t next_hop = netstack_next_hop(dst_ip);
+    uint8_t destination_mac[ETH_ADDR_LEN];
+    if (!arp_lookup(next_hop, destination_mac)) {
+        arp_send_request(next_hop); return false;
+    }
+    uint8_t packet[sizeof(eth_header_t) + sizeof(ip_header_t) +
+                   sizeof(tcp_header_t) + 512U] = {0};
+    eth_header_t *ethernet = (eth_header_t *)packet;
+    ip_header_t *ip = (ip_header_t *)(packet + sizeof(*ethernet));
+    tcp_header_t *tcp = (tcp_header_t *)((uint8_t *)ip + sizeof(*ip));
+    uint8_t *payload = (uint8_t *)tcp + sizeof(*tcp);
+    memcpy(ethernet->dst_mac, destination_mac, ETH_ADDR_LEN);
+    memcpy(ethernet->src_mac, net_config.mac_address, ETH_ADDR_LEN);
+    ethernet->ethertype = htons(ETHERTYPE_IPV4);
+    ip->version_ihl = 0x45U;
+    ip->total_length = htons((uint16_t)(sizeof(*ip) + sizeof(*tcp) + data_len));
+    ip->identification = htons(ip_identification++);
+    ip->ttl = 64U; ip->protocol = IP_PROTOCOL_TCP;
+    ip->src_ip = htonl(net_config.ip_address); ip->dst_ip = htonl(dst_ip);
+    ip->header_checksum = htons(ip_checksum(ip, sizeof(*ip)));
+    tcp->src_port = htons(source_port); tcp->dst_port = htons(destination_port);
+    tcp->seq_num = htonl(sequence); tcp->ack_num = htonl(acknowledgement);
+    tcp->data_offset_reserved = (uint8_t)(sizeof(*tcp) / 4U) << 4U;
+    tcp->flags = flags; tcp->window_size = htons(window);
+    if (data_len != 0U) memcpy(payload, data, data_len);
+    tcp->checksum = htons(tcp_checksum(ip, tcp, payload, data_len));
+    return nic_send(packet, sizeof(*ethernet) + sizeof(*ip) + sizeof(*tcp) +
+                    data_len);
 }
 
 // =============================================================================
@@ -642,6 +701,8 @@ bool netstack_accept_validated_icmp_echo_reply(uint32_t source_ip,
 }
 
 void netstack_init(void) {
+    net_socket_init();
+    tcp_socket_init();
     printf("[NET] init...\n");
     memset(&netstack_stats, 0, sizeof(netstack_stats));
     ping_waiting = false;
@@ -731,6 +792,10 @@ bool netstack_is_configured(void) {
 
 uint32_t netstack_get_gateway(void) {
     return net_config.gateway;
+}
+
+uint32_t netstack_get_dns_server(void) {
+    return net_config.dns_server;
 }
 
 bool netstack_get_local_identity(uint32_t *ip_out, uint8_t mac_out[6]) {
@@ -874,17 +939,8 @@ bool netstack_ping(uint32_t dst_ip, uint16_t id, uint16_t seq,
 }
 
 // UDP-Send API (Header-Signatur: data non-const)
-int udp_send(uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, uint8_t *data, uint16_t length) {
-    return netstack_send_udp_low(dst_ip, src_port, dst_port, data, length, /*with_checksum*/false);
+int udp_send(uint32_t dst_ip, uint16_t src_port, uint16_t dst_port,
+             const uint8_t *data, uint16_t length) {
+    return netstack_send_udp_low(dst_ip, src_port, dst_port, (void *)data,
+                                 length, /*with_checksum*/true);
 }
-
-void udp_bind(uint16_t port, udp_callback_t cb) {
-    (void)port; (void)cb;
-    printf("[UDP] bind not implemented\n");
-}
-
-// TCP Stubs
-int  tcp_connect(uint32_t dst_ip, uint16_t dst_port){ (void)dst_ip;(void)dst_port; printf("[TCP] connect n/i\n"); return -1; }
-int  tcp_send(int socket, uint8_t *data, uint16_t length){ (void)socket;(void)data;(void)length; printf("[TCP] send n/i\n"); return -1; }
-int  tcp_recv(int socket, uint8_t *buffer, uint16_t max_length){ (void)socket;(void)buffer;(void)max_length; printf("[TCP] recv n/i\n"); return -1; }
-void tcp_close(int socket){ (void)socket; printf("[TCP] close n/i\n"); }

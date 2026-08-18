@@ -192,14 +192,18 @@ und – falls vorhanden – den Registerrahmen.
 ## Netzwerk
 
 Der überwachte Ring-3-Dienst `REIST.PRG` übernimmt validierte
-Netzwerkentscheidungen. Vorhanden sind Ethernet, ARP, IPv4, ICMP, begrenzte
-UDP-Bindings und DHCP-Lease-Verwaltung. Der neue RTL8168/8111G-Treiber bindet
+Netzwerkentscheidungen. Vorhanden sind Ethernet, ARP, IPv4, ICMP, DHCP,
+prozessgebundene UDP-/TCP-FD-Sockets, DNS-A/CNAME-Auflösung und ein begrenzter
+TCP-Zustandsautomat. Der neue RTL8168/8111G-Treiber bindet
 die H81M-K-PCI-ID `10EC:8168` über MMIO, feste TX-/RX-DMA-Ringe und denselben
 Netdev-Fence-Vertrag ein. Link und DHCP wurden auf dem physischen H81M-K
 beobachtet; der ARP-/ICMP-Retest des aktuellen Builds bleibt dort noch offen.
-Die QEMU-Referenz emuliert den Chip nicht. Nicht vorhanden sind
-DNS, TCP, IPv6, ein allgemeines POSIX-Socketmodell und Anwendungen wie HTTP
-oder SMB.
+Die QEMU-Referenz emuliert den Chip nicht. Die Socket-, DNS- und TCP-Pfade sind
+hostseitig sowie deterministisch mit RTL8139 in QEMU getestet: DHCP und ARP,
+TCP-Handshake/Daten/Close (`pong`) und DNS-A über UDP (`test.reist` auf
+`10.0.2.77`) laufen gemeinsam bis `guest-smoke: PASS`. Nicht vorhanden sind
+TCP-Listen/Accept, IPv6 und Anwendungen
+wie HTTP, HTTPS oder SMB.
 
 ## Verifikation
 

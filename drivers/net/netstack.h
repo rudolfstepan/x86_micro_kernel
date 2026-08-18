@@ -181,6 +181,7 @@ uint32_t netstack_get_ip_address(void);
 uint32_t netstack_get_netmask(void);
 bool netstack_is_configured(void);
 uint32_t netstack_get_gateway(void);
+uint32_t netstack_get_dns_server(void);
 bool netstack_get_local_identity(uint32_t *ip_out, uint8_t mac_out[6]);
 void netstack_record_validated_icmp_echo_request(void);
 bool netstack_accept_validated_icmp_echo_reply(uint32_t source_ip,
@@ -219,18 +220,16 @@ bool netstack_send_supervised_udp_reply(uint32_t dst_ip,
                                         uint16_t destination_port,
                                         const uint8_t *data,
                                         uint16_t data_len);
+bool netstack_send_tcp_segment(uint32_t dst_ip, uint16_t source_port,
+                               uint16_t destination_port, uint32_t sequence,
+                               uint32_t acknowledgement, uint8_t flags,
+                               uint16_t window, const uint8_t *data,
+                               uint16_t data_len);
 void icmp_send_echo_reply(uint32_t dst_ip, uint16_t id, uint16_t seq, uint8_t *data, uint16_t data_len);
 
 // UDP Functions
-int udp_send(uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, uint8_t *data, uint16_t length);
-typedef void (*udp_callback_t)(uint32_t src_ip, uint16_t src_port, uint8_t *data, uint16_t length);
-void udp_bind(uint16_t port, udp_callback_t callback);
-
-// TCP Functions (simplified for now)
-int tcp_connect(uint32_t dst_ip, uint16_t dst_port);
-int tcp_send(int socket, uint8_t *data, uint16_t length);
-int tcp_recv(int socket, uint8_t *buffer, uint16_t max_length);
-void tcp_close(int socket);
+int udp_send(uint32_t dst_ip, uint16_t src_port, uint16_t dst_port,
+             const uint8_t *data, uint16_t length);
 
 // Utility Functions
 uint16_t ip_checksum(void *data, uint16_t length);

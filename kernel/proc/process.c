@@ -24,6 +24,8 @@
 #include "include/kernel/storage_request_pool.h"
 #include "include/kernel/admin_maintenance.h"
 #include "include/kernel/component_control.h"
+#include "drivers/net/net_socket.h"
+#include "drivers/net/tcp_socket.h"
 #include "include/kernel/critical_object.h"
 
 #define USER_PROGRAM_ADDRESS PROGRAM_V1_BASE
@@ -391,7 +393,8 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
         SYS_REIST_UDP_UNBIND, SYS_REIST_UDP_REPLY, SYS_REIST_DHCP_RENEW,
         SYS_REIST_NETWORK_FRAME, SYS_REIST_UDP_INGRESS,
         SYS_REIST_DHCP_INGRESS, SYS_REIST_DHCP_BOOT_START,
-        SYS_REIST_ICMP_INGRESS
+        SYS_REIST_ICMP_INGRESS, SYS_UDP_SOCKET_INGRESS,
+        SYS_TCP_SOCKET_INGRESS
     };
     for (size_t index = 0;
          index < sizeof(probe_syscalls) / sizeof(probe_syscalls[0]); ++index) {
@@ -437,10 +440,12 @@ static int allocate_pid_locked(void) {
 
 static void release_process_slot(Process *process) {
     ipc_process_cleanup(process->pid, process->generation);
+    process_close_all_files(process);
+    net_socket_process_cleanup(process->pid, process->generation);
+    tcp_socket_process_cleanup(process->pid, process->generation);
     storage_request_cancel_process(process->pid, process->generation);
     admin_maintenance_process_cleanup(process->pid, process->generation);
     component_control_process_cleanup(process->pid, process->generation);
-    process_close_all_files(process);
     uint32_t flags = irq_save();
     process->is_running = false;
     process->uses_shared_program_image = false;
@@ -1003,6 +1008,7 @@ int process_file_open(Process *process, const char *path) {
 
     process->files[slot].node = node;
     process->files[slot].offset = 0;
+    process->files[slot].kind = PROCESS_DESCRIPTOR_FILE;
     process->files[slot].in_use = true;
     process->files[slot].writable = false;
     return slot + PROCESS_FD_BASE;
@@ -1013,6 +1019,7 @@ int process_file_read(Process *process, int descriptor, void *buffer,
     int slot = descriptor - PROCESS_FD_BASE;
     if (process == NULL || buffer == NULL || slot < 0 ||
         slot >= MAX_PROCESS_FILES || !process->files[slot].in_use ||
+        process->files[slot].kind != PROCESS_DESCRIPTOR_FILE ||
         size > UINT32_MAX) {
         return -1;
     }
@@ -1044,6 +1051,7 @@ int process_file_create(Process *process, const char *path) {
     }
     process->files[slot].node = node;
     process->files[slot].offset = 0;
+    process->files[slot].kind = PROCESS_DESCRIPTOR_FILE;
     process->files[slot].in_use = true;
     process->files[slot].writable = true;
     return slot + PROCESS_FD_BASE;
@@ -1054,6 +1062,7 @@ int process_file_write(Process *process, int descriptor, const void *buffer,
     int slot = descriptor - PROCESS_FD_BASE;
     if (process == NULL || buffer == NULL || slot < 0 ||
         slot >= MAX_PROCESS_FILES || !process->files[slot].in_use ||
+        process->files[slot].kind != PROCESS_DESCRIPTOR_FILE ||
         !process->files[slot].writable || size > UINT32_MAX) return -1;
     if (size == 0) return 0;
     process_file_t *file = &process->files[slot];
@@ -1068,6 +1077,7 @@ int process_file_sync(Process *process, int descriptor) {
         !process->files[slot].in_use || !process->files[slot].writable) {
         return -1;
     }
+    if (process->files[slot].kind != PROCESS_DESCRIPTOR_FILE) return -1;
     return vfs_sync(process->files[slot].node) == VFS_OK ? 0 : -1;
 }
 
@@ -1086,9 +1096,52 @@ int process_file_close(Process *process, int descriptor) {
     }
 
     process_file_t *file = &process->files[slot];
-    int result = vfs_close(file->node);
-    if (result != VFS_OK) return -1;
+    int result = -1;
+    if (file->kind == PROCESS_DESCRIPTOR_FILE)
+        result = vfs_close(file->node) == VFS_OK ? 0 : -1;
+    else if (file->kind == PROCESS_DESCRIPTOR_UDP_SOCKET)
+        result = net_socket_close(process->pid, process->generation,
+                                  file->resource_handle);
+    else if (file->kind == PROCESS_DESCRIPTOR_TCP_SOCKET)
+        result = tcp_socket_close(process->pid, process->generation,
+                                  file->resource_handle, 0U);
+    if (result != 0) return -1;
     memset(file, 0, sizeof(*file));
+    return 0;
+}
+
+int process_descriptor_install(Process *process, uint8_t kind,
+                               uint32_t resource_handle) {
+    if (process == NULL || resource_handle == 0U ||
+        (kind != PROCESS_DESCRIPTOR_UDP_SOCKET &&
+         kind != PROCESS_DESCRIPTOR_TCP_SOCKET)) return -22;
+    for (int slot = 0; slot < MAX_PROCESS_FILES; ++slot) {
+        if (process->files[slot].in_use) continue;
+        process->files[slot] = (process_file_t){
+            .resource_handle = resource_handle, .kind = kind, .in_use = true,
+        };
+        return slot + PROCESS_FD_BASE;
+    }
+    return -24;
+}
+
+int process_descriptor_resolve(const Process *process, int descriptor,
+                               uint8_t kind, uint32_t *resource_handle_out) {
+    int slot = descriptor - PROCESS_FD_BASE;
+    if (process == NULL || resource_handle_out == NULL || slot < 0 ||
+        slot >= MAX_PROCESS_FILES || !process->files[slot].in_use ||
+        process->files[slot].kind != kind ||
+        process->files[slot].resource_handle == 0U) return -9;
+    *resource_handle_out = process->files[slot].resource_handle; return 0;
+}
+
+int process_descriptor_release(Process *process, int descriptor, uint8_t kind) {
+    uint32_t handle = 0U;
+    if (process_descriptor_resolve(process, descriptor, kind, &handle) != 0)
+        return -9;
+    (void)handle;
+    memset(&process->files[descriptor - PROCESS_FD_BASE], 0,
+           sizeof(process_file_t));
     return 0;
 }
 
@@ -1096,8 +1149,7 @@ void process_close_all_files(Process *process) {
     if (process == NULL) return;
     for (int i = 0; i < MAX_PROCESS_FILES; ++i) {
         if (process->files[i].in_use) {
-            (void)vfs_close(process->files[i].node);
-            memset(&process->files[i], 0, sizeof(process->files[i]));
+            (void)process_file_close(process, i + PROCESS_FD_BASE);
         }
     }
 }
@@ -1116,7 +1168,8 @@ int process_revoke_files_for_resource(uint32_t resource,
         for (int file_index = 0; file_index < MAX_PROCESS_FILES;
              ++file_index) {
             process_file_t *file = &process->files[file_index];
-            if (!file->in_use || file->node == NULL ||
+            if (!file->in_use || file->kind != PROCESS_DESCRIPTOR_FILE ||
+                file->node == NULL ||
                 file->node->fs == NULL || file->node->fs->drive != drive)
                 continue;
             if (vfs_close(file->node) != VFS_OK) {
