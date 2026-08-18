@@ -1817,6 +1817,14 @@ static int syscall_create(const char *user_path) {
     return descriptor < 0 ? -5 : descriptor;
 }
 
+static int syscall_pointer_update(int32_t x, int32_t y, uint32_t visible) {
+    if (visible > 1U) return -22;
+    scheduler_preempt_disable();
+    bool updated = framebuffer_cursor_update(x, y, visible != 0U);
+    scheduler_preempt_enable();
+    return updated ? 0 : -19;
+}
+
 static int syscall_display_control(const display_control_request_t *user_request) {
     display_control_request_t request;
     if (copy_from_user(&request, user_request, sizeof(request)) != 0) return -14;
@@ -2307,6 +2315,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_touch,                // Syscall 108: Update file timestamps
     (void*)&syscall_display_control,      // Syscall 109: Native display activation
     (void*)&syscall_mouse_event,          // Syscall 110: Nonblocking USB mouse
+    (void*)&syscall_pointer_update,       // Syscall 111: Software pointer
     // Add more syscalls here as needed
 };
 
@@ -2556,6 +2565,10 @@ void syscall_handler(Registers* regs) {
         case SYS_MOUSE_EVENT:
             result = (uint32_t)syscall_mouse_event(
                 (hid_mouse_event_t*)(uintptr_t)arg1);
+            break;
+        case SYS_POINTER_UPDATE:
+            result = (uint32_t)syscall_pointer_update(
+                (int32_t)arg1, (int32_t)arg2, arg3);
             break;
         case SYS_FILL_RECT:
             result = (uint32_t)syscall_display_fill_rect(

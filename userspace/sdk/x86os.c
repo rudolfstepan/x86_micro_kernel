@@ -656,6 +656,11 @@ int x86os_mouse_event(x86os_mouse_event_t* event) {
                               (uintptr_t)event, 0, 0);
 }
 
+int x86os_pointer_update(int32_t x, int32_t y, uint32_t visible) {
+    return (int)x86os_syscall(X86OS_SYS_POINTER_UPDATE, (uintptr_t)x,
+                              (uintptr_t)y, visible);
+}
+
 int x86os_touch(const char* path) {
     return (int)x86os_syscall(X86OS_SYS_TOUCH, (uintptr_t)path, 0, 0);
 }

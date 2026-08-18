@@ -122,7 +122,8 @@ enum {
     X86OS_SYS_TCP_SOCKET_ACCEPT = 107,
     X86OS_SYS_TOUCH = 108,
     X86OS_SYS_DISPLAY_CONTROL = 109,
-    X86OS_SYS_MOUSE_EVENT = 110
+    X86OS_SYS_MOUSE_EVENT = 110,
+    X86OS_SYS_POINTER_UPDATE = 111
 };
 
 #define X86OS_TCP_SOCKET_VERSION 1U
@@ -876,6 +877,7 @@ int x86os_service_connect(uint32_t service_id,
 int x86os_display_info(x86os_display_info_t* info);
 int x86os_display_activate(void);
 int x86os_mouse_event(x86os_mouse_event_t* event);
+int x86os_pointer_update(int32_t x, int32_t y, uint32_t visible);
 int x86os_fill_rect(int32_t x, int32_t y, uint32_t width, uint32_t height,
                     uint32_t rgb);
 int x86os_draw_text_pixels(int32_t x, int32_t y, const char* text,

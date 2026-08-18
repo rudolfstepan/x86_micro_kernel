@@ -148,14 +148,6 @@ static void render_desktop(const x86os_display_info_t *display,
               help, color_muted, color_background);
 }
 
-static void draw_mouse_pointer(int32_t x, int32_t y) {
-    (void)x86os_fill_rect(x, y, 3U, 16U, 0x00000000U);
-    (void)x86os_fill_rect(x + 3, y + 3, 3U, 10U, 0x00000000U);
-    (void)x86os_fill_rect(x + 6, y + 6, 3U, 7U, 0x00000000U);
-    (void)x86os_fill_rect(x + 1, y + 1, 1U, 13U, 0x00FFFFFFU);
-    (void)x86os_fill_rect(x + 4, y + 4, 1U, 7U, 0x00FFFFFFU);
-}
-
 static int app_at_position(const x86os_display_info_t *display,
                            int32_t pointer_x, int32_t pointer_y) {
     uint32_t font_height = max_u32(display->font_height, 16U);
@@ -288,7 +280,6 @@ int main(void) {
     int32_t pointer_x;
     int32_t pointer_y;
     uint32_t previous_buttons = 0U;
-    unsigned int mouse_confirmed = 0U;
 
     int display_status = x86os_display_info(&display);
     if (display_status != 0) {
@@ -307,26 +298,20 @@ int main(void) {
     pointer_x = (int32_t)(display.width / 2U);
     pointer_y = (int32_t)(display.height / 2U);
     render_desktop(&display, selected);
-    draw_mouse_pointer(pointer_x, pointer_y);
     x86os_puts("DESKTOP_OK\n");
     render_desktop(&display, selected);
-    draw_mouse_pointer(pointer_x, pointer_y);
+    (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
 
     for (;;) {
         int key = read_key();
         unsigned int previous = selected;
         unsigned int redraw = 0U;
-        x86os_mouse_event_t mouse;
-        int mouse_status = x86os_mouse_event(&mouse);
-
-        if (mouse_status == 0) {
+        unsigned int mouse_events = 0U;
+        for (; mouse_events < 32U; ++mouse_events) {
+            x86os_mouse_event_t mouse;
+            if (x86os_mouse_event(&mouse) != 0) break;
             pointer_x += mouse.delta_x;
             pointer_y += mouse.delta_y;
-            if (!mouse_confirmed &&
-                (mouse.delta_x != 0 || mouse.delta_y != 0)) {
-                x86os_puts("DESKTOP_MOUSE_OK\n");
-                mouse_confirmed = 1U;
-            }
             if (pointer_x < 0) pointer_x = 0;
             if (pointer_y < 0) pointer_y = 0;
             if (pointer_x >= (int32_t)display.width)
@@ -339,7 +324,6 @@ int main(void) {
                 if (hit >= 0) selected = (unsigned int)hit;
             }
             previous_buttons = mouse.buttons;
-            redraw = 1U;
         }
 
         if (key == '\t' || key == DESKTOP_KEY_RIGHT) {
@@ -349,9 +333,11 @@ int main(void) {
         } else if (key == DESKTOP_KEY_UP || key == DESKTOP_KEY_DOWN) {
             selected = (selected + 2U) % APP_COUNT;
         } else if (key == '\r' || key == '\n') {
+            (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
             launch_app(&display, selected);
             redraw = 1U;
         } else if (key == DESKTOP_KEY_ESCAPE) {
+            (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
             x86os_puts("DESKTOP_EXIT_OK\n");
             x86os_clear();
             return 0;
@@ -359,8 +345,11 @@ int main(void) {
 
         if (selected != previous) redraw = 1U;
         if (redraw) {
+            (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
             render_desktop(&display, selected);
-            draw_mouse_pointer(pointer_x, pointer_y);
+            (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
+        } else if (mouse_events != 0U) {
+            (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
         } else {
             (void)x86os_sleep_ms(5U);
         }

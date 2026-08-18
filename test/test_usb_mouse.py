@@ -55,8 +55,14 @@ class UsbMouseTests(unittest.TestCase):
         branch = source[escape:source.index("\n        }", escape)]
         self.assertIn("return 0;", branch)
         self.assertNotIn("launch_app", branch)
-        self.assertIn('x86os_puts("DESKTOP_MOUSE_OK\\n")', source)
         self.assertIn('x86os_puts("DESKTOP_EXIT_OK\\n")', branch)
+
+    def test_desktop_batches_mouse_reports_and_uses_software_pointer(self):
+        source = (ROOT / "userspace/programs/desktop.c").read_text(
+            encoding="utf-8")
+        self.assertIn("mouse_events < 32U", source)
+        self.assertIn("x86os_pointer_update(pointer_x, pointer_y, 1U)", source)
+        self.assertNotIn("draw_mouse_pointer", source)
 
     def test_mouse_syscall_is_append_only_and_pointer_checked(self):
         stdlib = (ROOT / "lib/libc/stdlib.h").read_text(encoding="utf-8")
@@ -66,6 +72,9 @@ class UsbMouseTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("SYS_MOUSE_EVENT 110", stdlib)
         self.assertIn("X86OS_SYS_MOUSE_EVENT = 110", header)
+        self.assertIn("X86OS_SYS_POINTER_UPDATE = 111", header)
+        self.assertIn("SYS_POINTER_UPDATE 111", stdlib)
+        self.assertIn("framebuffer_cursor_update", syscalls)
         start = syscalls.index("static int syscall_mouse_event")
         body = syscalls[start:syscalls.index("\n}", start)]
         self.assertLess(body.index("copy_from_user"),

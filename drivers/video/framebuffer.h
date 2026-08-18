@@ -96,5 +96,6 @@ bool framebuffer_fill_rect(int32_t x, int32_t y, uint32_t width,
 bool framebuffer_draw_text_pixels(int32_t x, int32_t y, const char* text,
                                   size_t length, uint32_t foreground_rgb,
                                   uint32_t background_rgb);
+bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible);
 
 #endif // FRAMEBUFFER_H

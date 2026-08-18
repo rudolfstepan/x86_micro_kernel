@@ -4657,6 +4657,18 @@ static uint64_t framebuffer_channel_mask(uint8_t position, uint8_t size) {
     return (((uint64_t)1u << size) - 1u) << position;
 }
 
+#define FB_POINTER_WIDTH 9U
+#define FB_POINTER_HEIGHT 16U
+#define FB_POINTER_MAX_BYTES 4U
+
+static uint8_t pointer_saved[FB_POINTER_WIDTH * FB_POINTER_HEIGHT *
+                             FB_POINTER_MAX_BYTES];
+static int32_t pointer_x;
+static int32_t pointer_y;
+static uint32_t pointer_width;
+static uint32_t pointer_height;
+static bool pointer_visible;
+
 // Initialize framebuffer
 void framebuffer_init(multiboot_framebuffer_info_t* fb_info) {
     fb_address = NULL;
@@ -4666,6 +4678,8 @@ void framebuffer_init(multiboot_framebuffer_info_t* fb_info) {
     fb_green_position = fb_green_size = 0;
     fb_blue_position = fb_blue_size = 0;
     terminal_cols = terminal_rows = 0;
+    pointer_visible = false;
+    pointer_width = pointer_height = 0U;
     if (!fb_info || fb_info->framebuffer_addr == 0 ||
         fb_info->framebuffer_type != 1 ||
         fb_info->framebuffer_width < FONT_WIDTH ||
@@ -4757,6 +4771,99 @@ static inline void fb_set_pixel(int x, int y, uint32_t color) {
     uint8_t *pixel = fb_address + (uint32_t)y * fb_pitch +
                      (uint32_t)x * fb_bytes_per_pixel;
     framebuffer_store_native(pixel, framebuffer_native_color(color));
+}
+
+static int framebuffer_pointer_color(uint32_t x, uint32_t y) {
+    if ((x == 1U && y >= 1U && y < 14U) ||
+        (x == 4U && y >= 4U && y < 11U)) return 1;
+    if ((x < 3U && y < 16U) ||
+        (x >= 3U && x < 6U && y >= 3U && y < 13U) ||
+        (x >= 6U && x < 9U && y >= 6U && y < 13U)) return 0;
+    return -1;
+}
+
+bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible) {
+    if (!fb_address || fb_bytes_per_pixel == 0U ||
+        fb_bytes_per_pixel > FB_POINTER_MAX_BYTES) return false;
+    if (pointer_visible && visible && x == pointer_x && y == pointer_y)
+        return true;
+
+    int32_t dirty_left = 0;
+    int32_t dirty_top = 0;
+    int32_t dirty_right = 0;
+    int32_t dirty_bottom = 0;
+    bool dirty = false;
+    if (pointer_visible) {
+        dirty_left = pointer_x;
+        dirty_top = pointer_y;
+        dirty_right = pointer_x + (int32_t)pointer_width;
+        dirty_bottom = pointer_y + (int32_t)pointer_height;
+        dirty = true;
+        for (uint32_t row = 0U; row < pointer_height; ++row) {
+            for (uint32_t column = 0U; column < pointer_width; ++column) {
+                uint8_t *pixel = fb_address +
+                    ((uint32_t)pointer_y + row) * fb_pitch +
+                    ((uint32_t)pointer_x + column) * fb_bytes_per_pixel;
+                const uint8_t *saved = &pointer_saved[
+                    (row * FB_POINTER_WIDTH + column) *
+                    FB_POINTER_MAX_BYTES];
+                for (uint8_t byte = 0U; byte < fb_bytes_per_pixel; ++byte)
+                    pixel[byte] = saved[byte];
+            }
+        }
+    }
+
+    pointer_visible = false;
+    pointer_width = pointer_height = 0U;
+    if (visible && x >= 0 && y >= 0 && x < (int32_t)fb_width &&
+        y < (int32_t)fb_height) {
+        uint32_t width = FB_POINTER_WIDTH;
+        uint32_t height = FB_POINTER_HEIGHT;
+        if ((uint32_t)x + width > fb_width) width = fb_width - (uint32_t)x;
+        if ((uint32_t)y + height > fb_height)
+            height = fb_height - (uint32_t)y;
+        if (!dirty) {
+            dirty_left = x;
+            dirty_top = y;
+            dirty_right = x + (int32_t)width;
+            dirty_bottom = y + (int32_t)height;
+            dirty = true;
+        } else {
+            if (x < dirty_left) dirty_left = x;
+            if (y < dirty_top) dirty_top = y;
+            if (x + (int32_t)width > dirty_right)
+                dirty_right = x + (int32_t)width;
+            if (y + (int32_t)height > dirty_bottom)
+                dirty_bottom = y + (int32_t)height;
+        }
+        uint32_t black = framebuffer_native_color(0x00000000U);
+        uint32_t white = framebuffer_native_color(0x00FFFFFFU);
+        for (uint32_t row = 0U; row < height; ++row) {
+            for (uint32_t column = 0U; column < width; ++column) {
+                uint8_t *pixel = fb_address + ((uint32_t)y + row) * fb_pitch +
+                                 ((uint32_t)x + column) * fb_bytes_per_pixel;
+                uint8_t *saved = &pointer_saved[
+                    (row * FB_POINTER_WIDTH + column) *
+                    FB_POINTER_MAX_BYTES];
+                for (uint8_t byte = 0U; byte < fb_bytes_per_pixel; ++byte)
+                    saved[byte] = pixel[byte];
+                int color = framebuffer_pointer_color(column, row);
+                if (color >= 0)
+                    framebuffer_store_native(pixel, color ? white : black);
+            }
+        }
+        pointer_x = x;
+        pointer_y = y;
+        pointer_width = width;
+        pointer_height = height;
+        pointer_visible = true;
+    }
+    if (dirty)
+        display_control_present_rect((uint32_t)dirty_left,
+                                     (uint32_t)dirty_top,
+                                     (uint32_t)(dirty_right - dirty_left),
+                                     (uint32_t)(dirty_bottom - dirty_top));
+    return true;
 }
 
 static void fb_draw_glyph_pixels(char c, int x, int y, uint32_t fg,
@@ -4863,6 +4970,8 @@ bool framebuffer_draw_text_pixels(int32_t x, int32_t y, const char* text,
 // Clear the framebuffer
 void framebuffer_clear() {
     if (!fb_address) return;
+    pointer_visible = false;
+    pointer_width = pointer_height = 0U;
     
     for (uint32_t y = 0; y < fb_height; y++) {
         for (uint32_t x = 0; x < fb_width; x++) {
