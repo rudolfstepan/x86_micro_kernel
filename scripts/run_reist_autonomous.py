@@ -706,6 +706,20 @@ def isolated_checkout(
         temporary.cleanup()
 
 
+@contextlib.contextmanager
+def in_place_checkout(
+    repo: pathlib.Path,
+    baseline: str,
+    evidence_destination: pathlib.Path | None = None,
+):
+    """Expose package edits directly in the user's checked-out worktree."""
+    del evidence_destination
+    assert_clean(repo)
+    if git(repo, "rev-parse", "HEAD") != baseline:
+        raise VerificationError("main HEAD changed before in-place package run")
+    yield repo
+
+
 def prepare_agent_environment(
     worktree: pathlib.Path, environment: dict[str, str]
 ) -> dict[str, str]:
@@ -718,6 +732,7 @@ def prepare_agent_environment(
         exclude.write_text(current_excludes + "/.reist-agent-tmp/\n", "utf-8")
     for name in ("TEMP", "TMP", "TMPDIR"):
         agent_environment[name] = str(temporary)
+    agent_environment["PYTHONDONTWRITEBYTECODE"] = "1"
     return agent_environment
 
 
@@ -760,7 +775,7 @@ def execute(args: argparse.Namespace) -> int:
             f"[{iteration}/{args.max_packages}] {package['id']} at {before_head[:12]}"
         )
         try:
-            with isolated_checkout(repo, before_head, evidence_dir) as worktree:
+            with in_place_checkout(repo, before_head, evidence_dir) as worktree:
                 agent_environment = prepare_agent_environment(worktree, environment)
                 isolated_task_path = worktree / "automation/reist-s03b.toml"
                 isolated_schema_path = (
@@ -837,11 +852,12 @@ commit SHA.
                     )
                 result = json.loads(isolated_result_file.read_text("utf-8"))
                 if (
-                    result.get("status") == "blocked"
+                    result.get("status") in {"blocked", "candidate"}
                     and result.get("commit") == before_head
                 ):
                     result["commit"] = ""
-                    result["passed"] = []
+                    if result.get("status") == "blocked":
+                        result["passed"] = []
                 if result.get("status") == "candidate":
                     materialize_candidate(
                         worktree, before_head, before_task, package,
@@ -940,31 +956,17 @@ within scope, return blocked with one concrete reason.
                             "outer gate order differs from committed evidence"
                         )
                     assert_clean(worktree)
-                assert_clean(repo)
-                if git(repo, "rev-parse", "HEAD") != before_head:
-                    raise VerificationError(
-                        "main HEAD changed during the isolated package run"
-                    )
                 if result["status"] == "committed":
-                    git(
-                        repo,
-                        "fetch",
-                        "--quiet",
-                        "--no-tags",
-                        str(worktree),
-                        verified_head,
-                    )
-                    git(repo, "merge", "--ff-only", verified_head)
                     if git(repo, "rev-parse", "HEAD") != verified_head:
                         raise VerificationError(
-                            "verified package did not fast-forward main HEAD"
+                            "verified in-place package is not main HEAD"
                         )
                     assert_clean(repo)
         except PackageTimeout as error:
-            print(f"blocked: {error}; main worktree unchanged; log={event_log}")
+            print(f"blocked: {error}; in-place edits retained; log={event_log}")
             return 124
         except GateFailure as error:
-            print(f"blocked: {error}; candidate discarded; main worktree unchanged")
+            print(f"blocked: {error}; in-place candidate retained")
             return 2
         except (json.JSONDecodeError, VerificationError) as error:
             print(f"verification failed: {error}; log={event_log}")
@@ -973,7 +975,7 @@ within scope, return blocked with one concrete reason.
         print(f"{result['status']}: {result['summary']}")
         if result["status"] == "blocked":
             if discarded_status:
-                print("discarded isolated edits:")
+                print("retained in-place edits:")
                 for line in discarded_status.splitlines():
                     print(f"  {line}")
             print(f"blocker: {result['blocker']}")

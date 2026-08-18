@@ -66,6 +66,11 @@ trusted gate commands without a shell through `codex sandbox -P :workspace`,
 stops at the first failure and fast-forwards the main branch only after all
 gates pass.
 
+Package agents operate in the visible main worktree so edits appear immediately
+in the user's IDE. Do not create an isolated clone or Git worktree for package
+implementation. The runner records the baseline commit, validates every changed
+path before committing, and leaves in-place edits visible when a run is blocked.
+
 Do not use subagents in autonomous package runs.
 
 ## Non-negotiable engineering rules
