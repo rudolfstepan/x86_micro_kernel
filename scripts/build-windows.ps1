@@ -224,6 +224,7 @@ try {
         'sbin/udp.prg' = 'UDP.PRG'
         'sbin/nslookup.prg' = 'NSLOOKUP.PRG'
         'sbin/nc.prg' = 'NC.PRG'
+        'sbin/httpd.prg' = 'HTTPD.PRG'
         'usr/bin/repeat.prg' = 'REPEAT.PRG'; 'usr/bin/calc.prg' = 'CALC.PRG'
         'usr/bin/date.prg' = 'DATE.PRG'; 'usr/bin/uptime.prg' = 'UPTIME.PRG'
         'usr/bin/ascii.prg' = 'ASCII.PRG'; 'usr/bin/save.prg' = 'SAVE.PRG'
@@ -245,6 +246,12 @@ try {
     foreach ($entry in $systemLayout.GetEnumerator()) {
         $imageDataArguments += @(
             '--data-file', "$($entry.Key)=$(Join-Path $UserProgramDir $entry.Value)"
+        )
+    }
+    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn')) {
+        $demoPath = Join-Path $RepoRoot "htdocs\$demoFile"
+        $imageDataArguments += @(
+            '--data-file', "htdocs/$demoFile=$demoPath"
         )
     }
 

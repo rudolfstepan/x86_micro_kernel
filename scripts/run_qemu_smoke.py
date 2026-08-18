@@ -109,6 +109,11 @@ TCP_TEST_MAC = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x04))
 TCP_TEST_REPLY_MARKER = "pong"
 DNS_TEST_COMMAND = "nslookup test.reist 10.0.2.99"
 DNS_TEST_REPLY_MARKER = "address: 10.0.2.77"
+HTTP_TEST_REQUESTS = 12
+HTTP_TEST_COMMAND = "httpd 8080"
+HTTP_TEST_TARGET = bytes((10, 0, 2, 100))
+HTTP_TEST_MAC = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x05))
+HTTP_TEST_READY_MARKER = "httpd: listening"
 GUEST_IP = bytes((10, 0, 2, 15))
 GUEST_MAC = bytes((0x52, 0x54, 0x00, 0x12, 0x34, 0x56))
 QEMU_MUX_SWITCH = "\x01c"
@@ -242,6 +247,22 @@ def inject_ps2_command(process: subprocess.Popen[str], text: str) -> None:
         process.stdin.flush()
 
 
+def qemu_monitor_command(process: subprocess.Popen[str], command: str) -> None:
+    """Run one bounded HMP command and return the mux to guest serial."""
+    if process.stdin is None or "\n" in command or "\r" in command:
+        raise RuntimeError("invalid QEMU monitor command")
+    process.stdin.write(QEMU_MUX_SWITCH)
+    process.stdin.flush()
+    time.sleep(KEY_INTERVAL_SECONDS)
+    try:
+        process.stdin.write(command + "\n")
+        process.stdin.flush()
+        time.sleep(KEY_INTERVAL_SECONDS)
+    finally:
+        process.stdin.write(QEMU_MUX_SWITCH)
+        process.stdin.flush()
+
+
 def inject_ps2_key(process: subprocess.Popen[str], key: str) -> None:
     if process.stdin is None:
         raise RuntimeError("QEMU multiplexed monitor input unavailable")
@@ -316,13 +337,14 @@ def serve_handover_fence(connection: socket.socket, timeout: float,
         result[0] = f"handover fence channel failed: {error}"
 
 
-def arp_request_frame() -> bytes:
-    source_mac = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x01))
+def arp_request_frame(
+    source_mac: bytes = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x01)),
+    source_ip: bytes = bytes((10, 0, 2, 99)),
+) -> bytes:
     frame = b"".join((
         b"\xff" * 6, source_mac, b"\x08\x06",
         b"\x00\x01", b"\x08\x00", b"\x06\x04", b"\x00\x01",
-        source_mac, bytes((10, 0, 2, 99)), b"\x00" * 6,
-        bytes((10, 0, 2, 15)),
+        source_mac, source_ip, b"\x00" * 6, GUEST_IP,
     ))
     return frame.ljust(60, b"\x00")
 
@@ -341,6 +363,15 @@ def tcp_test_arp_reply_frame() -> bytes:
         GUEST_MAC, TCP_TEST_MAC, b"\x08\x06",
         b"\x00\x01", b"\x08\x00", b"\x06\x04", b"\x00\x02",
         TCP_TEST_MAC, TCP_TEST_TARGET, GUEST_MAC, GUEST_IP,
+    ))
+    return frame.ljust(60, b"\x00")
+
+
+def peer_arp_reply_frame(peer_mac: bytes, peer_ip: bytes) -> bytes:
+    frame = b"".join((
+        GUEST_MAC, peer_mac, b"\x08\x06",
+        b"\x00\x01", b"\x08\x00", b"\x06\x04", b"\x00\x02",
+        peer_mac, peer_ip, GUEST_MAC, GUEST_IP,
     ))
     return frame.ljust(60, b"\x00")
 
@@ -394,24 +425,33 @@ def udp_echo_request_frame(destination_port: int = 9000) -> bytes:
         60, b"\x00")
 
 
-def tcp_test_frame(source_port: int, destination_port: int, sequence: int,
+def tcp_peer_frame(peer_ip: bytes, peer_mac: bytes, source_port: int,
+                   destination_port: int, sequence: int,
                    acknowledgement: int, flags: int,
                    payload: bytes = b"") -> bytes:
     tcp = struct.pack(
         "!HHIIBBHHH", source_port, destination_port, sequence,
         acknowledgement, 5 << 4, flags, 4096, 0, 0,
     ) + payload
-    pseudo = TCP_TEST_TARGET + GUEST_IP + struct.pack("!BBH", 0, 6, len(tcp))
+    pseudo = peer_ip + GUEST_IP + struct.pack("!BBH", 0, 6, len(tcp))
     checksum = internet_checksum(pseudo + tcp)
     tcp = tcp[:16] + struct.pack("!H", checksum) + tcp[18:]
     total_length = 20 + len(tcp)
     ip = struct.pack(
         "!BBHHHBBH4s4s", 0x45, 0, total_length, 0x5443, 0,
-        64, 6, 0, TCP_TEST_TARGET, GUEST_IP,
+        64, 6, 0, peer_ip, GUEST_IP,
     )
     ip = ip[:10] + struct.pack("!H", internet_checksum(ip)) + ip[12:]
-    return (GUEST_MAC + TCP_TEST_MAC + b"\x08\x00" + ip + tcp).ljust(
+    return (GUEST_MAC + peer_mac + b"\x08\x00" + ip + tcp).ljust(
         60, b"\x00")
+
+
+def tcp_test_frame(source_port: int, destination_port: int, sequence: int,
+                   acknowledgement: int, flags: int,
+                   payload: bytes = b"") -> bytes:
+    return tcp_peer_frame(TCP_TEST_TARGET, TCP_TEST_MAC, source_port,
+                          destination_port, sequence, acknowledgement,
+                          flags, payload)
 
 
 def inject_ethernet_frame(
@@ -459,9 +499,11 @@ def receive_arp_request(connection: socket.socket, target: bytes,
     return False
 
 
-def receive_arp_reply(connection: socket.socket, deadline: float) -> bool:
-    peer_mac = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x01))
-    peer_ip = bytes((10, 0, 2, 99))
+def receive_arp_reply(
+    connection: socket.socket, deadline: float,
+    peer_mac: bytes = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x01)),
+    peer_ip: bytes = bytes((10, 0, 2, 99)),
+) -> bool:
     while time.monotonic() < deadline:
         connection.settimeout(max(0.01, deadline - time.monotonic()))
         header = receive_exact(connection, 4)
@@ -608,6 +650,7 @@ def receive_udp_echo_reply(connection: socket.socket, deadline: float,
 
 def receive_tcp_segment(
     connection: socket.socket, deadline: float,
+    peer_ip: bytes = TCP_TEST_TARGET, peer_mac: bytes = TCP_TEST_MAC,
 ) -> tuple[int, int, int, int, int, bytes] | None:
     while time.monotonic() < deadline:
         connection.settimeout(max(0.01, deadline - time.monotonic()))
@@ -625,8 +668,9 @@ def receive_tcp_segment(
             return None
         if (len(frame) >= 42 and frame[12:14] == b"\x08\x06" and
                 frame[20:22] == b"\x00\x01" and
-                frame[38:42] == TCP_TEST_TARGET):
-            if not inject_ethernet_frame(connection, tcp_test_arp_reply_frame()):
+                frame[38:42] == peer_ip):
+            if not inject_ethernet_frame(
+                    connection, peer_arp_reply_frame(peer_mac, peer_ip)):
                 return None
             continue
         if frame[12:14] != b"\x08\x00" or frame[23] != 6:
@@ -634,14 +678,13 @@ def receive_tcp_segment(
         ihl = (frame[14] & 0x0F) * 4
         total = struct.unpack("!H", frame[16:18])[0]
         if (ihl < 20 or total < ihl + 20 or len(frame) < 14 + total or
-                frame[26:30] != GUEST_IP or frame[30:34] != TCP_TEST_TARGET):
+                frame[26:30] != GUEST_IP or frame[30:34] != peer_ip):
             continue
         tcp = frame[14 + ihl:14 + total]
         header_length = (tcp[12] >> 4) * 4
         if header_length < 20 or header_length > len(tcp):
             continue
-        pseudo = GUEST_IP + TCP_TEST_TARGET + struct.pack("!BBH", 0, 6,
-                                                           len(tcp))
+        pseudo = GUEST_IP + peer_ip + struct.pack("!BBH", 0, 6, len(tcp))
         if internet_checksum(pseudo + tcp) != 0:
             continue
         source, destination, sequence, acknowledgement = struct.unpack(
@@ -703,6 +746,93 @@ def serve_tcp_test_client(connection: socket.socket, deadline: float) -> str | N
     if final_ack is None:
         return "final TCP ACK was not observed"
     return None
+
+
+def serve_http_test_client(connection: socket.socket, deadline: float,
+                           request_index: int) -> str | None:
+    """Complete one of several real inbound HTTP/TCP transactions."""
+    client_port = 41000 + request_index
+    client_sequence = 9000 + request_index * 4096
+    if request_index == 0:
+        if not inject_ethernet_frame(
+                connection, arp_request_frame(HTTP_TEST_MAC, HTTP_TEST_TARGET)):
+            return "unable to inject HTTP peer ARP request"
+        if not receive_arp_reply(connection, deadline, HTTP_TEST_MAC,
+                                 HTTP_TEST_TARGET):
+            return "HTTP peer ARP reply was not observed"
+    syn_ack = None
+    for _ in range(3):
+        if not inject_ethernet_frame(
+                connection, tcp_peer_frame(
+                    HTTP_TEST_TARGET, HTTP_TEST_MAC, client_port, 8080,
+                    client_sequence, 0, 0x02)):
+            return "unable to inject HTTP client SYN"
+        attempt_deadline = min(deadline, time.monotonic() + 2.0)
+        syn_ack = receive_tcp_segment(connection, attempt_deadline,
+                                      HTTP_TEST_TARGET, HTTP_TEST_MAC)
+        if syn_ack is not None and syn_ack[4] == 0x12:
+            break
+    if (syn_ack is None or syn_ack[0] != 8080 or
+            syn_ack[1] != client_port or syn_ack[3] != client_sequence + 1 or
+            syn_ack[4] != 0x12 or syn_ack[5] != b""):
+        return "valid HTTP server SYN/ACK was not observed"
+    server_next = syn_ack[2] + 1
+    client_next = client_sequence + 1
+    request = b"GET / HTTP/1.0\r\nHost: test.reist\r\n\r\n"
+    # A valid third handshake ACK may carry application data. One frame makes
+    # the socket-hub proof deterministic and also covers that TCP server path.
+    if not inject_ethernet_frame(
+            connection, tcp_peer_frame(
+                HTTP_TEST_TARGET, HTTP_TEST_MAC, client_port, 8080,
+                client_next, server_next, 0x18, request)):
+        return "unable to complete HTTP handshake with request"
+    client_next += len(request)
+
+    response = bytearray()
+    fin = None
+    for _ in range(12):
+        segment = receive_tcp_segment(connection, deadline, HTTP_TEST_TARGET,
+                                      HTTP_TEST_MAC)
+        if segment is None:
+            break
+        payload = segment[5]
+        if payload:
+            if segment[2] == server_next:
+                response.extend(payload)
+                server_next += len(payload)
+            elif segment[2] + len(payload) > server_next:
+                return "HTTP response TCP sequence was not contiguous"
+            if not inject_ethernet_frame(
+                    connection, tcp_peer_frame(
+                        HTTP_TEST_TARGET, HTTP_TEST_MAC, client_port, 8080,
+                        client_next, server_next, 0x10)):
+                return "unable to acknowledge HTTP response data"
+        if segment[4] & 0x01:
+            if segment[2] + len(payload) != server_next:
+                return "HTTP server FIN sequence was invalid"
+            fin = segment
+            break
+    expected = b"HTTP/1.0 200 OK\r\n"
+    if (not response.startswith(expected) or b"Index of /\n" not in response or
+            b"about.txt\n" not in response or b"status.jsn\n" not in response):
+        return "bounded /htdocs directory listing was not observed"
+    if fin is None:
+        return "HTTP server FIN was not observed"
+    server_next += 1
+    if not inject_ethernet_frame(
+            connection, tcp_peer_frame(
+                HTTP_TEST_TARGET, HTTP_TEST_MAC, client_port, 8080,
+                client_next, server_next, 0x11)):
+        return "unable to close HTTP client connection"
+    final_ack = None
+    for _ in range(4):
+        segment = receive_tcp_segment(connection, deadline, HTTP_TEST_TARGET,
+                                      HTTP_TEST_MAC)
+        if (segment is not None and (segment[4] & 0x10) != 0 and
+                segment[3] == client_next + 1):
+            final_ack = segment
+            break
+    return None if final_ack is not None else "final HTTP TCP ACK was not observed"
 
 
 def serve_dns_test_client(connection: socket.socket, deadline: float) -> str | None:
@@ -908,6 +1038,7 @@ def run(
     expect_outbound_ping: bool = False,
     expect_tcp_client: bool = False,
     expect_dns_client: bool = False,
+    expect_http_server: bool = False,
     boot_only: bool = False,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
@@ -920,7 +1051,7 @@ def run(
     handover_result: list[str | None] = [None]
     if (inject_arp_request or expect_arp_resolution or expect_outbound_ping or
             inject_icmp_echo or inject_udp_echo or expect_tcp_client or
-            expect_dns_client):
+            expect_dns_client or expect_http_server):
         injection_listener, injection_port = open_injection_listener()
     if expect_handover:
         handover_listener, handover_port = open_injection_listener()
@@ -1240,6 +1371,41 @@ def run(
                     error, _ = wait_for_line(
                         process, chunks, transcript, finished, SHELL_PROMPT,
                         deadline, after=dns_position)
+            if error is None and expect_http_server:
+                assert injection_connection is not None
+                # The socket peer deliberately spoofs an on-link host. QEMU's
+                # parallel user backend would also observe the SYN/ACK and
+                # inject a valid RST for that synthetic tuple. DHCP is already
+                # committed here, so detach only the user-facing hub port and
+                # leave the NIC plus deterministic socket peer connected.
+                qemu_monitor_command(process, "netdev_del reistuserport")
+                time.sleep(0.1)
+                inject_ps2_command(process, HTTP_TEST_COMMAND)
+                error, http_ready = wait_for_line(
+                    process, chunks, transcript, finished,
+                    HTTP_TEST_READY_MARKER, deadline, after=shell_position)
+                if error is None:
+                    for request_index in range(HTTP_TEST_REQUESTS):
+                        error = serve_http_test_client(
+                            injection_connection, deadline, request_index)
+                        if error is not None:
+                            break
+                if error is None:
+                    # The default service has no request-count lifetime. It
+                    # must still own the foreground after the stress sequence.
+                    settle_deadline = min(deadline, time.monotonic() + 0.5)
+                    while time.monotonic() < settle_deadline:
+                        drain(chunks, transcript)
+                        time.sleep(0.02)
+                    if exact_line_position(
+                            "".join(transcript), SHELL_PROMPT,
+                            after=http_ready) >= 0:
+                        error = "httpd exited before Ctrl+C"
+                if error is None:
+                    inject_ps2_key(process, "ctrl-c")
+                    error, _ = wait_for_line(
+                        process, chunks, transcript, finished, SHELL_PROMPT,
+                        deadline, after=http_ready)
     finally:
         if injection_connection is not None:
             injection_connection.close()
@@ -1618,6 +1784,10 @@ def main() -> int:
         help="run nslookup against a deterministic socket-hub DNS peer",
     )
     parser.add_argument(
+        "--expect-http-server", action="store_true",
+        help="run httpd and complete twelve inbound socket-hub HTTP requests",
+    )
+    parser.add_argument(
         "--expect-storage-recovery", action="store_true",
         help="require an injected storage-service crash and bounded recovery",
     )
@@ -1676,7 +1846,8 @@ def main() -> int:
     if (args.inject_arp_request or args.expect_arp_resolution or
             args.expect_outbound_ping or
             args.inject_icmp_echo or args.inject_udp_echo or
-            args.expect_tcp_client or args.expect_dns_client) and \
+            args.expect_tcp_client or args.expect_dns_client or
+            args.expect_http_server) and \
             args.nic == "none":
         print("guest-smoke: network injection verification requires a NIC",
               file=sys.stderr)
@@ -1710,6 +1881,7 @@ def main() -> int:
             args.expect_outbound_ping,
             args.expect_tcp_client,
             args.expect_dns_client,
+            args.expect_http_server,
             args.boot_only,
         )
     except OSError as error:

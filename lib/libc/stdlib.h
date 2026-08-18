@@ -120,6 +120,8 @@
 #define SYS_TCP_SOCKET_SEND 103
 #define SYS_TCP_SOCKET_RECEIVE 104
 #define SYS_TCP_SOCKET_INGRESS 105
+#define SYS_TCP_SOCKET_LISTEN 106
+#define SYS_TCP_SOCKET_ACCEPT 107
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

@@ -1,6 +1,6 @@
 /**
  * @file drivers/net/tcp_socket.c
- * @brief Bounded TCP active-open state machine with finite retransmission.
+ * @brief Bounded TCP active/passive state machine with finite retransmission.
  */
 #include "drivers/net/tcp_socket.h"
 
@@ -15,6 +15,8 @@
 #define TCP_RECEIVE_WINDOW TCP_SOCKET_RECEIVE_CAPACITY
 #define TCP_INITIAL_RTO_MS 250U
 #define TCP_MAX_RETRIES 4U
+#define TCP_PASSIVE_HANDSHAKE_MS 5000U
+#define TCP_ACCEPT_QUEUE_MS 30000U
 
 typedef struct {
     bool active;
@@ -31,6 +33,14 @@ typedef struct {
     uint16_t peer_window;
     uint16_t receive_head;
     uint16_t receive_count;
+    uint16_t backlog;
+    /* Zero denotes an independent socket; passive children store the
+     * listener's fixed-array index plus one so slot zero remains representable. */
+    uint8_t listener_slot;
+    /* Ownership transfers to userspace only after accept publishes a process
+     * descriptor. Until then the listener closes and deadline sweeps own it. */
+    bool accepted;
+    uint64_t passive_deadline;
     uint8_t receive_buffer[TCP_SOCKET_RECEIVE_CAPACITY];
     wait_queue_t state_waiters;
     wait_queue_t receive_waiters;
@@ -88,6 +98,31 @@ static void retire_locked(tcp_control_block_t *control) {
     (void)wait_queue_wake_all_locked(&control->receive_waiters);
     memset(control, 0, sizeof(*control)); control->generation = generation;
 }
+
+/* Recycle one fixed slot while advancing its generation, ensuring handles
+ * from a retired connection can never address the newly initialized TCB. */
+static void initialize_control_locked(tcp_control_block_t *control,
+                                      int pid, uint32_t owner_generation) {
+    uint32_t generation = control->generation + 1U;
+    if (generation == 0U || generation > 0x00ffffffU) generation = 1U;
+    memset(control, 0, sizeof(*control));
+    control->active = true; control->generation = generation;
+    control->owner_pid = pid; control->owner_generation = owner_generation;
+    control->state = TCP_CLOSED;
+    wait_queue_init(&control->state_waiters);
+    wait_queue_init(&control->receive_waiters);
+}
+
+/* Bound both incomplete handshakes and established-but-unaccepted children.
+ * The caller holds tcp_lock, so reclamation is atomic with lookup/accept. */
+static void sweep_passive_locked(uint64_t now) {
+    for (uint32_t slot = 0U; slot < TCP_SOCKET_MAX_SOCKETS; ++slot) {
+        tcp_control_block_t *control = &controls[slot];
+        if (control->active && !control->accepted &&
+            control->listener_slot != 0U &&
+            control->passive_deadline <= now) retire_locked(control);
+    }
+}
 static tcp_wire_context_t wire_context(const tcp_control_block_t *control) {
     return (tcp_wire_context_t){
         .remote_ip = control->remote_ip, .receive_next = control->receive_next,
@@ -113,20 +148,83 @@ int tcp_socket_open(int pid, uint32_t process_generation,
                     tcp_socket_handle_t *handle_out) {
     if (pid <= 0 || process_generation == 0U || handle_out == NULL) return -22;
     uint32_t flags = tcp_lock();
+    sweep_passive_locked(pit_monotonic_ms());
     for (uint32_t slot = 0U; slot < TCP_SOCKET_MAX_SOCKETS; ++slot) {
         if (controls[slot].active) continue;
-        uint32_t generation = controls[slot].generation + 1U;
-        if (generation == 0U || generation > 0x00ffffffU) generation = 1U;
-        memset(&controls[slot], 0, sizeof(controls[slot]));
-        controls[slot].active = true; controls[slot].generation = generation;
-        controls[slot].owner_pid = pid;
-        controls[slot].owner_generation = process_generation;
-        controls[slot].state = TCP_CLOSED;
-        wait_queue_init(&controls[slot].state_waiters);
-        wait_queue_init(&controls[slot].receive_waiters);
-        *handle_out = make_handle(slot, generation); tcp_unlock(flags); return 0;
+        initialize_control_locked(&controls[slot], pid, process_generation);
+        *handle_out = make_handle(slot, controls[slot].generation);
+        tcp_unlock(flags); return 0;
     }
     tcp_unlock(flags); return -28;
+}
+
+/* Convert an owned closed socket into the sole listener for a local port. */
+int tcp_socket_listen(int pid, uint32_t process_generation,
+                      tcp_socket_handle_t handle, uint16_t local_port,
+                      uint16_t backlog) {
+    if (local_port == 0U || backlog == 0U ||
+        backlog > TCP_SOCKET_MAX_BACKLOG) return -22;
+    uint32_t flags = tcp_lock();
+    sweep_passive_locked(pit_monotonic_ms());
+    tcp_control_block_t *control = NULL;
+    int result = resolve(pid, process_generation, handle, &control, NULL);
+    if (result == 0 && control->state != TCP_CLOSED) result = -106;
+    for (uint32_t slot = 0U; result == 0 &&
+         slot < TCP_SOCKET_MAX_SOCKETS; ++slot) {
+        if (&controls[slot] != control && controls[slot].active &&
+            controls[slot].state == TCP_LISTEN &&
+            controls[slot].local_port == local_port) result = -98;
+    }
+    if (result == 0) {
+        control->local_port = local_port; control->backlog = backlog;
+        control->state = TCP_LISTEN;
+    }
+    tcp_unlock(flags); return result;
+}
+
+/* Publish one completed passive child. Waiting is bounded by the caller's
+ * deadline and by the earliest pending-child lifetime. */
+int tcp_socket_accept(int pid, uint32_t process_generation,
+                      tcp_socket_handle_t listener,
+                      tcp_socket_handle_t *accepted_out,
+                      uint32_t *peer_ip_out, uint16_t *peer_port_out,
+                      uint32_t timeout_ms) {
+    if (accepted_out == NULL || peer_ip_out == NULL || peer_port_out == NULL ||
+        timeout_ms > TCP_SOCKET_MAX_TIMEOUT_MS) return -22;
+    uint64_t deadline = deadline_after(pit_monotonic_ms(), timeout_ms);
+    for (;;) {
+        uint32_t flags = tcp_lock();
+        uint64_t now = pit_monotonic_ms(); sweep_passive_locked(now);
+        tcp_control_block_t *listener_control = NULL; uint32_t listener_index = 0U;
+        int result = resolve(pid, process_generation, listener,
+                             &listener_control, &listener_index);
+        if (result != 0) { tcp_unlock(flags); return result; }
+        if (listener_control->state != TCP_LISTEN) {
+            tcp_unlock(flags); return -22;
+        }
+        uint64_t wait_deadline = deadline;
+        for (uint32_t slot = 0U; slot < TCP_SOCKET_MAX_SOCKETS; ++slot) {
+            tcp_control_block_t *candidate = &controls[slot];
+            if (!candidate->active || candidate->accepted ||
+                candidate->listener_slot != listener_index + 1U) continue;
+            if (candidate->state == TCP_ESTABLISHED) {
+                candidate->accepted = true; candidate->listener_slot = 0U;
+                candidate->passive_deadline = 0U;
+                *accepted_out = make_handle(slot, candidate->generation);
+                *peer_ip_out = candidate->remote_ip;
+                *peer_port_out = candidate->remote_port;
+                tcp_unlock(flags); return 0;
+            }
+            if (candidate->passive_deadline < wait_deadline)
+                wait_deadline = candidate->passive_deadline;
+        }
+        if (timeout_ms == 0U) { tcp_unlock(flags); return -11; }
+        if (now >= deadline) { tcp_unlock(flags); return -110; }
+        result = wait_queue_block_until_locked(
+            &listener_control->state_waiters, TASK_BLOCK_WAITING, wait_deadline);
+        tcp_unlock(flags);
+        if (result != 0 && result != -110) return -11;
+    }
 }
 
 static int wait_for_ack(int pid, uint32_t process_generation,
@@ -288,6 +386,18 @@ int tcp_socket_close(int pid, uint32_t process_generation,
     uint32_t flags = tcp_lock(); tcp_control_block_t *control = NULL;
     int result = resolve(pid, process_generation, handle, &control, NULL);
     if (result != 0) { tcp_unlock(flags); return result; }
+    if (control->state == TCP_LISTEN) {
+        /* Closing a listener also revokes every child not yet transferred by
+         * accept; already accepted sockets remain independently owned. */
+        uint32_t listener_slot = (uint32_t)(control - controls) + 1U;
+        for (uint32_t slot = 0U; slot < TCP_SOCKET_MAX_SOCKETS; ++slot) {
+            tcp_control_block_t *candidate = &controls[slot];
+            if (candidate->active && !candidate->accepted &&
+                candidate->listener_slot == listener_slot)
+                retire_locked(candidate);
+        }
+        retire_locked(control); tcp_unlock(flags); return 0;
+    }
     if (control->state == TCP_CLOSED || timeout_ms == 0U) {
         bool reset = control->state != TCP_CLOSED;
         tcp_wire_context_t snapshot = wire_context(control);
@@ -366,7 +476,9 @@ int tcp_socket_ingress(const tcp_socket_segment_t *segment,
         (segment->length != 0U && data == NULL)) return -22;
     for (uint32_t index = 0U; index < sizeof(segment->reserved); ++index)
         if (segment->reserved[index] != 0U) return -22;
-    uint32_t flags = tcp_lock(); tcp_control_block_t *control = NULL;
+    uint32_t flags = tcp_lock();
+    uint64_t now = pit_monotonic_ms(); sweep_passive_locked(now);
+    tcp_control_block_t *control = NULL;
     for (uint32_t slot = 0U; slot < TCP_SOCKET_MAX_SOCKETS; ++slot) {
         tcp_control_block_t *candidate = &controls[slot];
         if (candidate->active && candidate->remote_ip == segment->source_ip &&
@@ -375,7 +487,65 @@ int tcp_socket_ingress(const tcp_socket_segment_t *segment,
             control = candidate; break;
         }
     }
-    if (control == NULL) { tcp_unlock(flags); return -2; }
+    if (control == NULL) {
+        /* No established tuple matched. Only a bare SYN may allocate one
+         * fixed passive child, and backlog/capacity are checked first. */
+        tcp_control_block_t *listener = NULL; uint32_t listener_index = 0U;
+        for (uint32_t slot = 0U; slot < TCP_SOCKET_MAX_SOCKETS; ++slot) {
+            if (controls[slot].active && controls[slot].state == TCP_LISTEN &&
+                controls[slot].local_port == segment->destination_port) {
+                listener = &controls[slot]; listener_index = slot; break;
+            }
+        }
+        if (listener == NULL) { tcp_unlock(flags); return -2; }
+        if ((segment->flags & (TCP_FLAG_SYN | TCP_FLAG_ACK | TCP_FLAG_RST |
+                               TCP_FLAG_FIN)) != TCP_FLAG_SYN ||
+            segment->length != 0U) {
+            if (dropped_segments != UINT32_MAX) ++dropped_segments;
+            tcp_unlock(flags); return -84;
+        }
+        uint32_t pending = 0U, child_index = TCP_SOCKET_MAX_SOCKETS;
+        for (uint32_t slot = 0U; slot < TCP_SOCKET_MAX_SOCKETS; ++slot) {
+            if (controls[slot].active && !controls[slot].accepted &&
+                controls[slot].listener_slot == listener_index + 1U) ++pending;
+            if (!controls[slot].active && child_index == TCP_SOCKET_MAX_SOCKETS)
+                child_index = slot;
+        }
+        if (pending >= listener->backlog ||
+            child_index == TCP_SOCKET_MAX_SOCKETS) {
+            if (dropped_segments != UINT32_MAX) ++dropped_segments;
+            tcp_unlock(flags); return -105;
+        }
+        tcp_control_block_t *child = &controls[child_index];
+        int owner_pid = listener->owner_pid;
+        uint32_t owner_generation = listener->owner_generation;
+        initialize_control_locked(child, owner_pid, owner_generation);
+        child->state = TCP_SYN_RECEIVED;
+        child->remote_ip = segment->source_ip;
+        child->remote_port = segment->source_port;
+        child->local_port = segment->destination_port;
+        child->receive_next = segment->sequence + 1U;
+        child->peer_window = segment->window;
+        child->listener_slot = (uint8_t)(listener_index + 1U);
+        child->passive_deadline = deadline_after(now, TCP_PASSIVE_HANDSHAKE_MS);
+        uint32_t initial = (uint32_t)now ^ segment->source_ip ^
+                           ((uint32_t)segment->source_port << 16U) ^
+                           child->generation;
+        if (initial == 0U) initial = 1U;
+        child->send_unacknowledged = initial;
+        child->send_next = initial + 1U;
+        tcp_wire_context_t snapshot = wire_context(child);
+        tcp_socket_handle_t child_handle = make_handle(
+            child_index, child->generation);
+        tcp_unlock(flags);
+        if (send_control(&snapshot, initial, TCP_FLAG_SYN | TCP_FLAG_ACK,
+                         NULL, 0U)) return 0;
+        flags = tcp_lock(); child = NULL;
+        if (resolve(owner_pid, owner_generation, child_handle,
+                    &child, NULL) == 0 &&
+            child->state == TCP_SYN_RECEIVED) retire_locked(child);
+        tcp_unlock(flags); return -11;
+    }
     bool send_ack = false;
     if ((segment->flags & TCP_FLAG_RST) != 0U) {
         control->state = TCP_CLOSED;
@@ -396,6 +566,54 @@ int tcp_socket_ingress(const tcp_socket_segment_t *segment,
         control->peer_window = segment->window;
         control->state = TCP_ESTABLISHED; send_ack = true;
         (void)wait_queue_wake_all_locked(&control->state_waiters);
+    } else if (control->state == TCP_SYN_RECEIVED) {
+        /* A duplicate SYN retransmits the existing SYN/ACK without allocating
+         * another child or changing the initial sequence number. */
+        if ((segment->flags & (TCP_FLAG_SYN | TCP_FLAG_ACK | TCP_FLAG_RST |
+                               TCP_FLAG_FIN)) == TCP_FLAG_SYN &&
+            segment->sequence + 1U == control->receive_next &&
+            segment->length == 0U) {
+            tcp_wire_context_t snapshot = wire_context(control);
+            uint32_t sequence = control->send_unacknowledged;
+            tcp_unlock(flags);
+            return send_control(&snapshot, sequence,
+                                TCP_FLAG_SYN | TCP_FLAG_ACK, NULL, 0U)
+                ? 0 : -11;
+        }
+        if ((segment->flags & (TCP_FLAG_SYN | TCP_FLAG_ACK | TCP_FLAG_RST |
+                               TCP_FLAG_FIN)) != TCP_FLAG_ACK ||
+            segment->sequence != control->receive_next ||
+            segment->acknowledgement != control->send_next) {
+            if (dropped_segments != UINT32_MAX) ++dropped_segments;
+            tcp_unlock(flags); return -84;
+        }
+        control->send_unacknowledged = segment->acknowledgement;
+        control->peer_window = segment->window;
+        control->state = TCP_ESTABLISHED;
+        control->passive_deadline = deadline_after(now, TCP_ACCEPT_QUEUE_MS);
+        if (control->listener_slot != 0U) {
+            tcp_control_block_t *listener =
+                &controls[control->listener_slot - 1U];
+            if (listener->active && listener->state == TCP_LISTEN)
+                (void)wait_queue_wake_all_locked(&listener->state_waiters);
+        }
+        (void)wait_queue_wake_all_locked(&control->state_waiters);
+        /* The final handshake ACK may legally carry the first application
+         * bytes.  Preserve them in the bounded receive queue before waking
+         * accept/receive instead of requiring a separate empty ACK frame. */
+        if (segment->length != 0U) {
+            uint32_t tail = (control->receive_head + control->receive_count) %
+                            TCP_SOCKET_RECEIVE_CAPACITY;
+            for (uint32_t index = 0U; index < segment->length; ++index) {
+                control->receive_buffer[tail] = data[index];
+                tail = (tail + 1U) % TCP_SOCKET_RECEIVE_CAPACITY;
+            }
+            control->receive_count = (uint16_t)(
+                control->receive_count + segment->length);
+            control->receive_next += segment->length;
+            send_ack = true;
+            (void)wait_queue_wake_all_locked(&control->receive_waiters);
+        }
     } else {
         if ((segment->flags & TCP_FLAG_ACK) != 0U) {
             if (sequence_before(segment->acknowledgement,

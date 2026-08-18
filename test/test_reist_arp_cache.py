@@ -44,6 +44,22 @@ class ReistArpCacheTests(unittest.TestCase):
                       source)
         self.assertIn("ARP_BINDING_CORRECTED", source)
 
+    def test_routine_arp_success_trace_is_qemu_or_opt_in_only(self):
+        source = (ROOT / "kernel/init/supervisor.c").read_text(encoding="utf-8")
+        self.assertIn(
+            "#if defined(QEMU_BUILD) || defined(REIST_NETWORK_TRACE)", source)
+        for marker in (
+                "RX_HEADER_ARP", "PROBE_ID_OK", "ARP_BINDING_OK",
+                "ARP_RESOLUTION_QUEUED", "ARP_RESOLUTION_MEDIATED",
+                "ARP_BINDING_EXPIRED"):
+            marker_position = source.index(f"REIST_NETWORK {marker}")
+            call_position = source.rfind("REIST_NETWORK_TRACE_PRINT(",
+                                         0, marker_position)
+            self.assertGreaterEqual(call_position, 0)
+            self.assertLess(marker_position - call_position, 160)
+        self.assertIn('printf("REIST_NETWORK ARP_RESOLUTION_REJECTED', source)
+        self.assertIn('printf("REIST_NETWORK ARP_BINDING_CORRECTED', source)
+
     def test_cache_is_fixed_capacity_and_heap_free(self):
         header = (ROOT / "include/kernel/arp_binding_cache.h").read_text(
             encoding="utf-8")

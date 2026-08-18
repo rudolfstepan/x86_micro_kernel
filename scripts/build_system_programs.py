@@ -48,6 +48,7 @@ PROGRAMS = {
     "UDP.PRG": ROOT / "userspace/programs/udp.c",
     "NSLOOKUP.PRG": ROOT / "userspace/programs/nslookup.c",
     "NC.PRG": ROOT / "userspace/programs/nc.c",
+    "HTTPD.PRG": ROOT / "userspace/programs/httpd.c",
     "EDIT.PRG": ROOT / "userspace/bin/edit.c",
     "CHILDEX.PRG": ROOT / "userspace/programs/child_exit.c",
     "FAULTDE.PRG": ROOT / "userspace/programs/fault_de.c",

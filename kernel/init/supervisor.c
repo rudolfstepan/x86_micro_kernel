@@ -110,6 +110,16 @@ static critical_object_t protected_network_degradation_stats;
 #define SUPERVISOR_DHCP_RENEW_TIMEOUT_MS 1500U
 #define SUPERVISOR_DHCP_BOOT_TIMEOUT_MS 1500U
 
+/* Successful packet-by-packet mediation is useful as deterministic QEMU gate
+ * evidence but floods the operator console on a live network.  Production
+ * profiles retain rejection, integrity, lease-loss and recovery diagnostics;
+ * explicit trace builds can opt back into the successful transaction stream. */
+#if defined(QEMU_BUILD) || defined(REIST_NETWORK_TRACE)
+#define REIST_NETWORK_TRACE_PRINT(...) printf(__VA_ARGS__)
+#else
+#define REIST_NETWORK_TRACE_PRINT(...) ((void)0)
+#endif
+
 #ifndef REIST_HOST_TEST
 typedef struct {
     supervisor_protected_probe_control_t control;
@@ -2303,8 +2313,9 @@ int supervisor_probe_report(int pid, uint32_t generation,
     }
     if (report_type == REIST_REPORT_NETWORK_HEADER) {
         if (value != 0x0800U && value != 0x0806U) return -1;
-        printf(value == 0x0806U ? "REIST_NETWORK RX_HEADER_ARP\n"
-                                : "REIST_NETWORK RX_HEADER_IPV4\n");
+        REIST_NETWORK_TRACE_PRINT(
+            value == 0x0806U ? "REIST_NETWORK RX_HEADER_ARP\n"
+                             : "REIST_NETWORK RX_HEADER_IPV4\n");
         return 0;
     }
     if (report_type == REIST_REPORT_NETWORK_PROBE_ID) {
@@ -2320,7 +2331,7 @@ int supervisor_probe_report(int pid, uint32_t generation,
             : -1;
         supervisor_unlock(transaction_flags);
         if (consume_result != 0) return -1;
-        printf("REIST_NETWORK PROBE_ID_OK\n");
+        REIST_NETWORK_TRACE_PRINT("REIST_NETWORK PROBE_ID_OK\n");
         return 0;
     }
     if (report_type == REIST_REPORT_NETWORK_DEGRADED) {
@@ -2686,6 +2697,7 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
         int begin = supervisor_protected_probe_authority_begin_epoch(
             &probe_runtime.arp_reply_authority, pit_monotonic_ms(),
             SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS, request_epoch, &request_id);
+        bool reply_transaction_started = begin == 0;
         if (begin == 0)
             begin = supervisor_protected_arp_reply_context_publish(
                 &probe_runtime.arp_reply_context, request_id, request_epoch,
@@ -2693,14 +2705,17 @@ bool supervisor_network_submit_header(const uint8_t *frame, uint16_t length) {
                     ((uint32_t)frame[29] << 16U) |
                     ((uint32_t)frame[30] << 8U) | frame[31],
                 &frame[22]);
-        supervisor_unlock(transaction_flags);
-        if (begin != 0) {
-            transaction_flags = supervisor_lock();
+        /* A second ARP request may arrive while Ring 3 is validating the
+         * first.  A busy begin belongs to that older transaction and must not
+         * revoke it; only roll back state allocated by this attempt. */
+        if (begin != 0 && reply_transaction_started) {
             (void)supervisor_protected_probe_authority_cancel(
                 &probe_runtime.arp_reply_authority);
             (void)supervisor_protected_arp_reply_context_clear(
                 &probe_runtime.arp_reply_context);
-            supervisor_unlock(transaction_flags);
+        }
+        supervisor_unlock(transaction_flags);
+        if (begin != 0) {
             if (begin == SUPERVISOR_EINTEGRITY)
                 (void)supervisor_force_isolate(control.handle);
             else
@@ -2959,7 +2974,8 @@ int supervisor_network_commit_arp_binding(
             pid, generation, pit_monotonic_ms())) result = -22;
     supervisor_unlock(transaction_flags);
     if (result == 0)
-        printf("REIST_NETWORK PROBE_ID_OK\nREIST_NETWORK ARP_BINDING_OK\n");
+        REIST_NETWORK_TRACE_PRINT(
+            "REIST_NETWORK PROBE_ID_OK\nREIST_NETWORK ARP_BINDING_OK\n");
     return result;
 }
 
@@ -2986,9 +3002,12 @@ bool supervisor_network_request_arp_resolution(uint32_t target_ip) {
     }
     uint32_t network_probe_id = 0U;
     uint32_t request_id = 0U;
+    bool network_transaction_started = false;
+    bool resolution_transaction_started = false;
     result = supervisor_protected_probe_authority_begin(
         &probe_runtime.network_probe_authority, pit_monotonic_ms(),
         SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS, &network_probe_id);
+    network_transaction_started = result == 0;
     if (result == 0)
         result = supervisor_protected_network_context_prepare_epoch(
             &probe_runtime.network_probe_context, network_probe_id,
@@ -2998,6 +3017,7 @@ bool supervisor_network_request_arp_resolution(uint32_t target_ip) {
             &probe_runtime.arp_resolution_authority, pit_monotonic_ms(),
             SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS, control.process_generation,
             &request_id);
+    resolution_transaction_started = result == 0;
     if (result == 0)
         result = supervisor_protected_arp_resolution_context_publish(
             &probe_runtime.arp_resolution_context, request_id,
@@ -3008,14 +3028,22 @@ bool supervisor_network_request_arp_resolution(uint32_t target_ip) {
             &probe_runtime.control, &control);
     }
     if (result != 0) {
-        (void)supervisor_protected_probe_authority_cancel(
-            &probe_runtime.network_probe_authority);
-        (void)supervisor_protected_network_context_clear(
-            &probe_runtime.network_probe_context);
-        (void)supervisor_protected_probe_authority_cancel(
-            &probe_runtime.arp_resolution_authority);
-        (void)supervisor_protected_arp_resolution_context_clear(
-            &probe_runtime.arp_resolution_context);
+        /* A concurrent cache miss can observe the already active transaction.
+         * Roll back only state allocated by this attempt; cancelling a busy
+         * predecessor would invalidate the NETA message already queued for
+         * Ring 3 and turn its valid response into EACCES. */
+        if (resolution_transaction_started) {
+            (void)supervisor_protected_probe_authority_cancel(
+                &probe_runtime.arp_resolution_authority);
+            (void)supervisor_protected_arp_resolution_context_clear(
+                &probe_runtime.arp_resolution_context);
+        }
+        if (network_transaction_started) {
+            (void)supervisor_protected_probe_authority_cancel(
+                &probe_runtime.network_probe_authority);
+            (void)supervisor_protected_network_context_clear(
+                &probe_runtime.network_probe_context);
+        }
     }
     supervisor_unlock(flags);
     if (result != 0) {
@@ -3068,7 +3096,7 @@ bool supervisor_network_request_arp_resolution(uint32_t target_ip) {
         network_degradation_record(SUPERVISOR_NETWORK_DEGRADED_QUEUE);
         return false;
     }
-    printf("REIST_NETWORK ARP_RESOLUTION_QUEUED\n");
+    REIST_NETWORK_TRACE_PRINT("REIST_NETWORK ARP_RESOLUTION_QUEUED\n");
     return true;
 }
 
@@ -3099,6 +3127,7 @@ int supervisor_network_send_arp_request(
         (context.request_id != request->request_id ||
          context.transaction_epoch != generation ||
          context.target_ip != request->target_ip)) result = -13;
+    bool request_owns_context = result == 0;
     if (result == 0)
         result = supervisor_protected_network_context_snapshot(
             &probe_runtime.network_probe_context, &network_context);
@@ -3113,8 +3142,10 @@ int supervisor_network_send_arp_request(
             &probe_runtime.arp_resolution_authority, pit_monotonic_ms(),
             generation, &consumed_id);
     if (result == 0 && consumed_id != request->request_id) result = -13;
-    (void)supervisor_protected_arp_resolution_context_clear(
-        &probe_runtime.arp_resolution_context);
+    /* A stale response must never erase a newer request's context. */
+    if (request_owns_context)
+        (void)supervisor_protected_arp_resolution_context_clear(
+            &probe_runtime.arp_resolution_context);
     supervisor_unlock(flags);
     if (result != 0) {
         if (caller_is_service)
@@ -3142,7 +3173,7 @@ int supervisor_network_send_arp_request(
         if (result != 0) (void)supervisor_force_isolate(control.handle);
         return -5;
     }
-    printf("REIST_NETWORK ARP_RESOLUTION_MEDIATED\n");
+    REIST_NETWORK_TRACE_PRINT("REIST_NETWORK ARP_RESOLUTION_MEDIATED\n");
     return 0;
 }
 
@@ -3200,6 +3231,17 @@ int supervisor_network_send_arp_reply(
         return result;
     }
     if (result != 0) return result;
+    /* A host normally resolves the server before opening TCP. The request
+     * source tuple has already been checked by Ring 3 and matched against the
+     * generation-scoped reply context above, so publish that bounded neighbor
+     * binding before advertising reachability. This avoids losing the first
+     * passive TCP response while retaining the supervised cache lease. */
+    if (!netstack_commit_arp_binding(
+            reply->target_ip, reply->target_mac, reply->request_id,
+            pid, generation, pit_monotonic_ms())) {
+        printf("REIST_NETWORK ARP_REPLY_REJECTED -5\n");
+        return -5;
+    }
     if (!netstack_send_arp_reply(reply->target_ip, reply->target_mac)) {
         printf("REIST_NETWORK ARP_REPLY_REJECTED -5\n");
         return -5;
@@ -4488,7 +4530,8 @@ static void supervisor_worker(void) {
                     output_fence_all();
             }
             if (expired != 0U)
-                printf("REIST_NETWORK ARP_BINDING_EXPIRED %u\n", expired);
+                REIST_NETWORK_TRACE_PRINT(
+                    "REIST_NETWORK ARP_BINDING_EXPIRED %u\n", expired);
             if (corrected != 0U)
                 printf("REIST_NETWORK ARP_BINDING_CORRECTED %u\n", corrected);
         }

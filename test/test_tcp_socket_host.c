@@ -90,5 +90,54 @@ int main(void) {
     CHECK(received[0] == 'O' && received[1] == 'K');
     CHECK(tcp_socket_close(7, 2U, socket, 2000U) == 0);
     CHECK(tcp_socket_receive(7, 2U, socket, received, sizeof(received), 0U) == -9);
+
+    /* Exercise bounded passive open, backlog pressure and accepted I/O. */
+    tcp_socket_handle_t listener = 0U;
+    CHECK(tcp_socket_open(8, 3U, &listener) == 0);
+    CHECK(tcp_socket_listen(8, 3U, listener, 8080U, 1U) == 0);
+    CHECK(tcp_socket_accept(8, 3U, listener, &socket, &sent_ip,
+                            &sent_destination_port, 0U) == -11);
+    tcp_socket_segment_t syn = {
+        .version = TCP_SOCKET_ABI_VERSION, .struct_size = sizeof(syn),
+        .source_ip = 0x0a000003U, .destination_ip = 0x0a000001U,
+        .sequence = 2000U, .source_port = 40000U,
+        .destination_port = 8080U, .window = 4096U,
+        .flags = TCP_FLAG_SYN,
+    };
+    CHECK(tcp_socket_ingress(&syn, NULL) == 0);
+    CHECK(sent_ip == syn.source_ip && sent_source_port == 8080U &&
+          sent_destination_port == syn.source_port &&
+          sent_acknowledgement == syn.sequence + 1U &&
+          sent_flags == (TCP_FLAG_SYN | TCP_FLAG_ACK));
+    uint32_t server_isn = sent_sequence;
+    pending_reply = false;
+    tcp_socket_segment_t overflow_syn = syn;
+    overflow_syn.source_ip = 0x0a000004U;
+    overflow_syn.source_port = 40001U;
+    CHECK(tcp_socket_ingress(&overflow_syn, NULL) == -105);
+
+    tcp_socket_segment_t handshake = {
+        .version = TCP_SOCKET_ABI_VERSION, .struct_size = sizeof(handshake),
+        .source_ip = syn.source_ip, .destination_ip = syn.destination_ip,
+        .sequence = syn.sequence + 1U, .acknowledgement = server_isn + 1U,
+        .source_port = syn.source_port, .destination_port = syn.destination_port,
+        .window = 4096U, .flags = TCP_FLAG_ACK,
+    };
+    const uint8_t get[] = {'G','E','T'};
+    handshake.length = sizeof(get);
+    handshake.flags |= TCP_FLAG_PSH;
+    CHECK(tcp_socket_ingress(&handshake, get) == 0);
+    uint32_t peer_ip = 0U; uint16_t peer_port = 0U;
+    CHECK(tcp_socket_accept(8, 3U, listener, &socket, &peer_ip,
+                            &peer_port, 0U) == 0);
+    CHECK(peer_ip == syn.source_ip && peer_port == syn.source_port);
+
+    CHECK(tcp_socket_receive(8, 3U, socket, received,
+                             sizeof(received), 0U) == 3);
+    CHECK(memcmp(received, get, sizeof(get)) == 0);
+    const uint8_t ok[] = {'O','K'};
+    CHECK(tcp_socket_send(8, 3U, socket, ok, sizeof(ok), 2000U) == 2);
+    CHECK(tcp_socket_close(8, 3U, socket, 2000U) == 0);
+    CHECK(tcp_socket_close(8, 3U, listener, 0U) == 0);
     return 0;
 }

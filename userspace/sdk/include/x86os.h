@@ -117,12 +117,15 @@ enum {
     X86OS_SYS_TCP_SOCKET_CONNECT = 102,
     X86OS_SYS_TCP_SOCKET_SEND = 103,
     X86OS_SYS_TCP_SOCKET_RECEIVE = 104,
-    X86OS_SYS_TCP_SOCKET_INGRESS = 105
+    X86OS_SYS_TCP_SOCKET_INGRESS = 105,
+    X86OS_SYS_TCP_SOCKET_LISTEN = 106,
+    X86OS_SYS_TCP_SOCKET_ACCEPT = 107
 };
 
 #define X86OS_TCP_SOCKET_VERSION 1U
 #define X86OS_TCP_MAX_SEGMENT 512U
 #define X86OS_TCP_RECEIVE_CAPACITY 2048U
+#define X86OS_TCP_MAX_BACKLOG 2U
 enum {
     X86OS_TCP_SOCKET_OPEN = 1U,
     X86OS_TCP_SOCKET_CLOSE = 2U,
@@ -155,6 +158,26 @@ typedef struct {
     uint32_t length;
     uint32_t timeout_ms;
 } x86os_tcp_io_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_tcp_socket_t socket;
+    uint16_t port;
+    uint16_t backlog;
+    uint32_t reserved;
+} x86os_tcp_listen_t;
+/* On entry only listener and timeout_ms are nonzero. A successful accept fills
+ * socket, peer_ip and peer_port with a newly owned connection descriptor. */
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_tcp_socket_t listener;
+    x86os_tcp_socket_t socket;
+    uint32_t peer_ip;
+    uint16_t peer_port;
+    uint16_t reserved;
+    uint32_t timeout_ms;
+} x86os_tcp_accept_t;
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -788,6 +811,9 @@ int x86os_tcp_socket_open(x86os_tcp_socket_t *socket_out);
 int x86os_tcp_socket_close(x86os_tcp_socket_t socket, uint32_t timeout_ms);
 int x86os_tcp_socket_stats(x86os_tcp_socket_control_t *stats_out);
 int x86os_tcp_connect(const x86os_tcp_connect_t *request);
+/* Passive-open wrappers preserve the versioned fixed-size syscall ABI. */
+int x86os_tcp_listen(const x86os_tcp_listen_t *request);
+int x86os_tcp_accept(x86os_tcp_accept_t *request);
 int x86os_tcp_send(const x86os_tcp_io_t *request, const void *data);
 int x86os_tcp_receive(x86os_tcp_io_t *request, void *data);
 int x86os_tcp_socket_ingress(const x86os_tcp_segment_t *segment,

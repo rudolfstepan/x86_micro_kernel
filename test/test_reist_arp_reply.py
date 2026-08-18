@@ -56,6 +56,13 @@ class ReistArpReplyTests(unittest.TestCase):
         self.assertIn("supervisor_protected_arp_reply_context_t", header)
         self.assertIn("SUPERVISOR_ARP_REPLY_CONTEXT_VERSION", supervisor)
         self.assertIn("SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS", supervisor)
+        handoff = supervisor[
+            supervisor.index("bool supervisor_network_submit_header("):
+            supervisor.index("int supervisor_network_probe_request(")]
+        self.assertIn("bool reply_transaction_started = begin == 0;", handoff)
+        rollback = handoff.index("if (begin != 0 && reply_transaction_started)")
+        unlock = handoff.index("supervisor_unlock(transaction_flags);", rollback)
+        self.assertLess(rollback, unlock)
         mediator = supervisor[
             supervisor.index("int supervisor_network_send_arp_reply("):
             supervisor.index("static void supervisor_worker(")]
@@ -65,6 +72,9 @@ class ReistArpReplyTests(unittest.TestCase):
                       mediator)
         self.assertLess(mediator.index(
                             "supervisor_protected_probe_authority_take_epoch("),
+                        mediator.index("netstack_send_arp_reply("))
+        self.assertIn("netstack_commit_arp_binding(", mediator)
+        self.assertLess(mediator.index("netstack_commit_arp_binding("),
                         mediator.index("netstack_send_arp_reply("))
         self.assertIn("supervisor_test_corrupt_arp_reply_context", host)
         self.assertIn("SUPERVISOR_EINTEGRITY", host)

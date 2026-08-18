@@ -11,7 +11,7 @@ Loopback-Probleme sind nicht der aktuelle Referenzzustand.
 ## Architektur
 
 ```text
-Ring-3: ifconfig / ping / netstat / udp / nslookup / nc
+Ring-3: ifconfig / ping / netstat / udp / nslookup / nc / httpd
                 |
 überwachter REIST.PRG-Netzdienst
                 |
@@ -43,8 +43,11 @@ permanenten Paket-Debugzeilen mehr auf dem VGA-Terminal aus.
 - UDP `bind`/`sendto`/`recvfrom`, vier Datagramme je Queue, 512 Byte je Paket
   und eine begrenzte `sendto`-ARP-Wartezeit von maximal zehn Sekunden
 - DNS-A-/CNAME-Auflösung mit begrenzten Kompressionszeigern und vier Cacheplätzen
-- aktiver TCP-Verbindungsaufbau, ACK-/Sequenzprüfung über 32-Bit-Wrap,
-  begrenzte Retransmission, Empfangsfenster sowie aktiver/passiver Close
+- aktiver und passiver TCP-Verbindungsaufbau mit `listen`/`accept`, kleinem
+  Backlog, ACK-/Sequenzprüfung über 32-Bit-Wrap, begrenzter Retransmission,
+  Empfangsfenster sowie aktivem/passivem Close
+- begrenzter HTTP/1.0-Server für `/htdocs`: `GET`, `HEAD`, statische Dateien
+  bis 4096 Byte und Directory-Listings bis 32 Einträge beziehungsweise 1024 Byte
 - E1000 in der generierten VMware-VM und RTL8168/8111G auf dem ASUS H81M-K
 
 Ein Ping auf die eigene konfigurierte IPv4-Adresse wird lokal beantwortet und
@@ -52,10 +55,10 @@ benötigt weder ARP noch einen Ethernet-Loopback. Fremde oder vor einer
 validierten Lease eintreffende ICMP-Pakete werden kanonisch verworfen, ohne den
 überwachten Netzwerkdienst neu zu starten.
 
-Noch nicht implementiert sind TCP-Listen/Accept für Server, IPv6, Routing
-zwischen mehreren Gastinterfaces sowie Anwendungen wie HTTP, HTTPS, FTP oder
-SMB. Die DNS-/TCP-Schicht ist hostseitig und in einem deterministischen
-RTL8139-QEMU-Gasttest gegen lokale DNS-/TCP-Testpeers verifiziert.
+Noch nicht implementiert sind IPv6, Routing zwischen mehreren Gastinterfaces,
+TLS/HTTPS sowie Anwendungen wie FTP oder SMB. Die DNS-/TCP-Schicht und der
+HTTP-Server sind hostseitig sowie in deterministischen QEMU-Gasttests gegen
+lokale DNS-/TCP-Testpeers verifiziert.
 
 ## Shellbefehle
 
@@ -69,9 +72,14 @@ C:\> udp send 192.168.1.20 9000 9001 hello
 C:\> udp recv 9001 3000
 C:\> nslookup example.test
 C:\> nc example.test 80 "GET / HTTP/1.0"
+C:\> httpd 8080
 ```
 
-`udp send`, `udp recv`, DNS und `nc` verwenden monotone, begrenzte Deadlines.
+`udp send`, `udp recv`, DNS, `nc` und `httpd` verwenden monotone, begrenzte
+Deadlines. `httpd [port]` läuft standardmäßig bis `Strg+C`; ein Leerlauf- oder
+Client-Timeout beendet den Listener nicht. Das optionale Argument
+`httpd [port] [requests]` begrenzt ausschließlich Testläufe auf höchstens 32
+erfolgreiche Anfragen.
 `netstat` zeigt
 neben dem Interfacezustand auch aktive UDP-/TCP-Sockets, Queuefüllung, Drops
 und TCP-Retransmissionen. Die bisherigen Shell-Built-ins bleiben aus
@@ -155,7 +163,8 @@ Shell-Prompts im gebridgten VMware-Netz. Ob ein konkreter Zielrechner auf Ping
 antwortet, hängt auch von Netzsegment, Gateway, Firewall und WLAN-Regeln ab.
 Der Kernel implementiert noch keinen vollständigen Internet- oder
 Dateifreigabe-Stack. Der deterministische QEMU-Test belegt jedoch DHCP, ARP,
-TCP-Handshake, Datenübertragung und Close sowie DNS-A-Auflösung über UDP.
+aktiven und passiven TCP-Handshake, zwölf aufeinanderfolgende HTTP-Verbindungen
+mit Directory-Listing, Datenübertragung und Close sowie DNS-A-Auflösung über UDP.
 
 ## Fehlerdiagnose
 

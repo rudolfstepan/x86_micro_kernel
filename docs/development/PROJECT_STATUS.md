@@ -193,17 +193,20 @@ und – falls vorhanden – den Registerrahmen.
 
 Der überwachte Ring-3-Dienst `REIST.PRG` übernimmt validierte
 Netzwerkentscheidungen. Vorhanden sind Ethernet, ARP, IPv4, ICMP, DHCP,
-prozessgebundene UDP-/TCP-FD-Sockets, DNS-A/CNAME-Auflösung und ein begrenzter
-TCP-Zustandsautomat. Der neue RTL8168/8111G-Treiber bindet
+prozessgebundene UDP-/TCP-FD-Sockets, DNS-A/CNAME-Auflösung, aktives und passives
+TCP mit `listen`/`accept` sowie ein begrenzter HTTP/1.0-Dateiserver mit
+Directory-Listing. Der neue RTL8168/8111G-Treiber bindet
 die H81M-K-PCI-ID `10EC:8168` über MMIO, feste TX-/RX-DMA-Ringe und denselben
 Netdev-Fence-Vertrag ein. Link und DHCP wurden auf dem physischen H81M-K
 beobachtet; der ARP-/ICMP-Retest des aktuellen Builds bleibt dort noch offen.
-Die QEMU-Referenz emuliert den Chip nicht. Die Socket-, DNS- und TCP-Pfade sind
-hostseitig sowie deterministisch mit RTL8139 in QEMU getestet: DHCP und ARP,
-TCP-Handshake/Daten/Close (`pong`) und DNS-A über UDP (`test.reist` auf
-`10.0.2.77`) laufen gemeinsam bis `guest-smoke: PASS`. Nicht vorhanden sind
-TCP-Listen/Accept, IPv6 und Anwendungen
-wie HTTP, HTTPS oder SMB.
+Die QEMU-Referenz emuliert den Chip nicht. Die Socket-, DNS-, TCP- und HTTP-Pfade
+sind hostseitig sowie deterministisch in QEMU getestet: DHCP und ARP, aktiver
+TCP-Handshake/Daten/Close (`pong`), DNS-A über UDP (`test.reist` auf
+`10.0.2.77`) und drei aufeinanderfolgende passive HTTP-Verbindungen mit
+`/htdocs`-Directory-Listing laufen im selben Standard-Serverprozess; erst der
+anschließend injizierte `Strg+C`-Abbruch führt zurück zur Shell und zu
+`guest-smoke: PASS`. Begrenzte Einzel-Timeouts und fehlerhafte Clients beenden
+den Listener nicht. Nicht vorhanden sind IPv6, TLS/HTTPS oder SMB.
 
 ## Verifikation
 

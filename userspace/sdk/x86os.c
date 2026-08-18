@@ -356,6 +356,10 @@ _Static_assert(sizeof(x86os_tcp_socket_control_t) == 32U,
 _Static_assert(sizeof(x86os_tcp_connect_t) == 24U,
                "TCP connect ABI changed");
 _Static_assert(sizeof(x86os_tcp_io_t) == 20U, "TCP I/O ABI changed");
+_Static_assert(sizeof(x86os_tcp_listen_t) == 20U,
+               "TCP listen ABI changed");
+_Static_assert(sizeof(x86os_tcp_accept_t) == 28U,
+               "TCP accept ABI changed");
 _Static_assert(sizeof(x86os_tcp_segment_t) == 36U,
                "TCP segment ABI changed");
 
@@ -387,6 +391,14 @@ int x86os_tcp_socket_stats(x86os_tcp_socket_control_t *stats_out) {
 }
 int x86os_tcp_connect(const x86os_tcp_connect_t *request) {
     return (int)x86os_syscall(X86OS_SYS_TCP_SOCKET_CONNECT,
+                              (uintptr_t)request, 0U, 0U);
+}
+int x86os_tcp_listen(const x86os_tcp_listen_t *request) {
+    return (int)x86os_syscall(X86OS_SYS_TCP_SOCKET_LISTEN,
+                              (uintptr_t)request, 0U, 0U);
+}
+int x86os_tcp_accept(x86os_tcp_accept_t *request) {
+    return (int)x86os_syscall(X86OS_SYS_TCP_SOCKET_ACCEPT,
                               (uintptr_t)request, 0U, 0U);
 }
 int x86os_tcp_send(const x86os_tcp_io_t *request, const void *data) {

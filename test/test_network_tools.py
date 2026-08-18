@@ -14,7 +14,8 @@ class NetworkToolsSourceTests(unittest.TestCase):
         programs = (ROOT / "scripts/build_system_programs.py").read_text()
         makefile = (ROOT / "Makefile").read_text()
         windows = (ROOT / "scripts/build-windows.ps1").read_text()
-        for name in ("ifconfig", "ping", "netstat", "udp", "nslookup", "nc"):
+        for name in ("ifconfig", "ping", "netstat", "udp", "nslookup", "nc",
+                     "httpd"):
             upper = name.upper() + ".PRG"
             source = f'userspace/programs/{name}.c'
             self.assertIn(upper, programs)
@@ -59,7 +60,8 @@ class NetworkToolsSourceTests(unittest.TestCase):
         self.assertIn("socket_result != -105", probe)
         for number, name in enumerate((
             "TCP_SOCKET_CONTROL", "TCP_SOCKET_CONNECT", "TCP_SOCKET_SEND",
-            "TCP_SOCKET_RECEIVE", "TCP_SOCKET_INGRESS"), start=101):
+            "TCP_SOCKET_RECEIVE", "TCP_SOCKET_INGRESS", "TCP_SOCKET_LISTEN",
+            "TCP_SOCKET_ACCEPT"), start=101):
             self.assertIn(f"X86OS_SYS_{name} = {number}", sdk)
             self.assertIn(f"#define SYS_{name} {number}", libc)
         self.assertIn("SYS_TCP_SOCKET_INGRESS", process)
@@ -70,6 +72,43 @@ class NetworkToolsSourceTests(unittest.TestCase):
         self.assertIn("PROCESS_DESCRIPTOR_TCP_SOCKET", process_h)
         self.assertIn("process_descriptor_install", syscalls)
         self.assertIn("process_descriptor_resolve", syscalls)
+        self.assertIn("tcp_socket_listen", syscalls)
+        self.assertIn("tcp_socket_accept", syscalls)
+
+    def test_http_server_is_bounded_and_uses_public_tcp_abi(self):
+        source = (ROOT / "userspace/programs/httpd.c").read_text()
+        self.assertIn("HTTP_MAX_REQUESTS 32U", source)
+        self.assertIn("HTTP_REQUEST_CAPACITY 1024U", source)
+        self.assertIn("HTTP_DIRECTORY_MAX_ENTRIES 32U", source)
+        self.assertIn("HTTP_FILE_MAX_BYTES 4096U", source)
+        self.assertIn("x86os_tcp_listen", source)
+        self.assertIn("x86os_tcp_accept", source)
+        self.assertIn("x86os_readdir_batch", source)
+        self.assertIn('static const char root[] = "/htdocs"', source)
+        self.assertIn("HTTP/1.0 200 OK", source)
+        self.assertIn("port_value = 8080U, requests = 0U", source)
+        self.assertIn("HTTP_ACCEPT_TIMEOUT_MS 250U", source)
+        self.assertIn("x86os_getchar_nonblocking() == 0x03", source)
+        self.assertIn("if (client_result == 0) ++served", source)
+        self.assertNotIn("x86os_syscall(", source)
+        makefile = (ROOT / "Makefile").read_text()
+        windows = (ROOT / "scripts/build-windows.ps1").read_text()
+        for name in ("about.txt", "readme.txt", "status.jsn"):
+            self.assertTrue((ROOT / "htdocs" / name).is_file())
+            self.assertIn(f"htdocs/{name}=htdocs/{name}", makefile)
+            self.assertIn(name, windows)
+        runner = (ROOT / "scripts/run_qemu_smoke.py").read_text()
+        detach = runner.index(
+            'qemu_monitor_command(process, "netdev_del reistuserport")')
+        launch = runner.index("inject_ps2_command(process, HTTP_TEST_COMMAND)")
+        self.assertLess(detach, launch)
+        self.assertIn("def serve_http_test_client(", runner)
+        self.assertIn("HTTP_TEST_REQUESTS = 12", runner)
+        self.assertIn('HTTP_TEST_COMMAND = "httpd 8080"', runner)
+        self.assertIn("for request_index in range(HTTP_TEST_REQUESTS)", runner)
+        self.assertIn('inject_ps2_key(process, "ctrl-c")', runner)
+        self.assertIn('error = "httpd exited before Ctrl+C"', runner)
+        self.assertIn('b"about.txt\\n"', runner)
 
     @unittest.skipUnless(shutil.which("gcc"), "gcc is required")
     def test_dns_cname_and_compression_parser(self):

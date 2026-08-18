@@ -1,6 +1,6 @@
 /**
  * @file drivers/net/tcp_socket.h
- * @brief Fixed-capacity active-open TCP control blocks.
+ * @brief Fixed-capacity active/passive TCP control blocks.
  */
 #ifndef DRIVERS_NET_TCP_SOCKET_H
 #define DRIVERS_NET_TCP_SOCKET_H
@@ -12,6 +12,7 @@
 #define TCP_SOCKET_MAX_SEGMENT 512U
 #define TCP_SOCKET_RECEIVE_CAPACITY 2048U
 #define TCP_SOCKET_MAX_TIMEOUT_MS 30000U
+#define TCP_SOCKET_MAX_BACKLOG 2U
 
 typedef uint32_t tcp_socket_handle_t;
 
@@ -46,6 +47,14 @@ int tcp_socket_open(int pid, uint32_t process_generation,
 int tcp_socket_connect(int pid, uint32_t process_generation,
                        tcp_socket_handle_t handle, uint32_t destination_ip,
                        uint16_t destination_port, uint32_t timeout_ms);
+int tcp_socket_listen(int pid, uint32_t process_generation,
+                      tcp_socket_handle_t handle, uint16_t local_port,
+                      uint16_t backlog);
+int tcp_socket_accept(int pid, uint32_t process_generation,
+                      tcp_socket_handle_t listener,
+                      tcp_socket_handle_t *accepted_out,
+                      uint32_t *peer_ip_out, uint16_t *peer_port_out,
+                      uint32_t timeout_ms);
 int tcp_socket_send(int pid, uint32_t process_generation,
                     tcp_socket_handle_t handle, const uint8_t *data,
                     uint32_t length, uint32_t timeout_ms);

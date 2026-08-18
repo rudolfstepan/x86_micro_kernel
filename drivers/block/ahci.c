@@ -19,6 +19,7 @@
 #define AHCI_MMIO_SIZE 0x1100U
 #define AHCI_RESET_TIMEOUT_MS 1000U
 #define AHCI_RESET_MAX_POLLS 1000000U
+#define AHCI_ACTIVE_POLL_LIMIT 4096U
 #define AHCI_LINK_TIMEOUT_MS 1500U
 #define AHCI_LINK_POLL_MS 1U
 #define AHCI_GHC_HR (1U << 0)
@@ -46,7 +47,7 @@
 #define AHCI_PORT_TFD_BSY (1U << 7)
 #define AHCI_PORT_TFD_DRQ (1U << 3)
 #define AHCI_PORT_TFD_ERR (1U << 0)
-#define AHCI_COMMAND_TIMEOUT_MS 2000U
+#define AHCI_COMMAND_TIMEOUT_MS 5000U
 #define AHCI_ATA_READ_DMA_EXT 0x25U
 #define AHCI_ATA_WRITE_DMA_EXT 0x35U
 #define AHCI_ATA_FLUSH_CACHE_EXT 0xEAU
@@ -96,6 +97,23 @@ static void ahci_write(volatile uint32_t *mmio, uint32_t offset,
     mmio[offset / sizeof(uint32_t)] = value;
 }
 
+/* AHCI completion is observed by polling because this driver deliberately
+ * keeps controller interrupts disabled.  A small fixed grace window preserves
+ * low latency for controllers that complete while their MMIO register is
+ * being sampled.  A command still active after that window yields until the
+ * next hardware interrupt, so a fast CPU cannot exhaust AHCI_RESET_MAX_POLLS
+ * before the monotonic deadline.  IRQ-masked and IRQ-handler callers fail
+ * closed because halting there could deadlock the controller indefinitely. */
+static bool ahci_wait_for_poll_tick(uint32_t poll) {
+    if (!irq_enabled() || irq_in_context()) return false;
+    if (poll < AHCI_ACTIVE_POLL_LIMIT) {
+        __asm__ volatile("pause" ::: "memory");
+        return true;
+    }
+    __asm__ volatile("hlt" ::: "memory");
+    return true;
+}
+
 static bool ahci_reset(volatile uint32_t *mmio) {
     uint64_t start = pit_monotonic_ms();
     ahci_write(mmio, 0x04U, ahci_read(mmio, 0x04U) | AHCI_GHC_HR);
@@ -103,6 +121,7 @@ static bool ahci_reset(volatile uint32_t *mmio) {
         if ((ahci_read(mmio, 0x04U) & AHCI_GHC_HR) == 0U) return true;
         uint64_t now = pit_monotonic_ms();
         if (now < start || now - start >= AHCI_RESET_TIMEOUT_MS) break;
+        if (!ahci_wait_for_poll_tick(poll)) break;
     }
     return false;
 }
@@ -180,6 +199,7 @@ static bool ahci_stop_port(volatile uint32_t *mmio, uint32_t port) {
         if ((state & AHCI_PORT_CMD_CR) == 0U) break;
         uint64_t now = pit_monotonic_ms();
         if (now < start || now - start >= AHCI_RESET_TIMEOUT_MS) return false;
+        if (!ahci_wait_for_poll_tick(poll)) return false;
     }
     if ((ahci_read(mmio, base + AHCI_PORT_CMD) & AHCI_PORT_CMD_CR) != 0U)
         return false;
@@ -191,6 +211,7 @@ static bool ahci_stop_port(volatile uint32_t *mmio, uint32_t port) {
         if ((state & AHCI_PORT_CMD_FR) == 0U) return true;
         uint64_t now = pit_monotonic_ms();
         if (now < start || now - start >= AHCI_RESET_TIMEOUT_MS) return false;
+        if (!ahci_wait_for_poll_tick(poll)) return false;
     }
     return false;
 }
@@ -409,6 +430,7 @@ static bool ahci_execute_command(ahci_controller_info_t *controller,
         uint64_t now = pit_monotonic_ms();
         if (now < ready_start ||
             now - ready_start >= AHCI_COMMAND_TIMEOUT_MS) break;
+        if (!ahci_wait_for_poll_tick(poll)) break;
     }
     if (!ready) {
         printf("AHCI: command %x port %u not ready TFD=%x\n",
@@ -440,6 +462,7 @@ static bool ahci_execute_command(ahci_controller_info_t *controller,
         }
         uint64_t now = pit_monotonic_ms();
         if (now < start || now - start >= AHCI_COMMAND_TIMEOUT_MS) break;
+        if (!ahci_wait_for_poll_tick(poll)) break;
     }
     if (!completed) {
         printf("AHCI: command %x port %u failed IS=%x TFD=%x CI=%x PRDBC=%u\n",
@@ -529,6 +552,7 @@ bool ahci_requalify_drive(const drive_t *drive) {
             }
             uint64_t now = pit_monotonic_ms();
             if (now < start || now - start >= AHCI_RESET_TIMEOUT_MS) break;
+            if (!ahci_wait_for_poll_tick(poll)) break;
         }
     }
     if (result) {

@@ -45,6 +45,21 @@ class AhciProbeContractTests(unittest.TestCase):
         self.assertIn("AHCI_PORT_TFD_BSY | AHCI_PORT_TFD_DRQ", source)
         self.assertIn("AHCI_PORT_SERR", source)
         self.assertIn("AHCI_COMMAND_TIMEOUT_MS", source)
+        self.assertIn("#define AHCI_COMMAND_TIMEOUT_MS 5000U", source)
+        self.assertIn("#define AHCI_ACTIVE_POLL_LIMIT 4096U", source)
+        wait_start = source.index("static bool ahci_wait_for_poll_tick(")
+        wait_end = source.index("static bool ahci_reset(", wait_start)
+        wait = source[wait_start:wait_end]
+        self.assertIn("irq_enabled()", wait)
+        self.assertIn("irq_in_context()", wait)
+        self.assertIn('volatile("pause"', wait)
+        self.assertIn('volatile("hlt"', wait)
+        execute_start = source.index("static bool ahci_execute_command(")
+        execute_end = source.index("static bool ahci_port_acquire(",
+                                   execute_start)
+        execute = source[execute_start:execute_end]
+        self.assertGreaterEqual(
+            execute.count("ahci_wait_for_poll_tick(poll)"), 2)
         self.assertIn("ahci_stop_port(controller->mmio, port)", source)
         self.assertIn("engine_running", source)
         self.assertIn("REIST_AHCI_FAULT_INJECTION", source)

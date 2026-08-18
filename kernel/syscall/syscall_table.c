@@ -641,12 +641,31 @@ typedef struct {
     tcp_socket_handle_t socket;
     uint32_t length, timeout_ms;
 } syscall_tcp_io_t;
+typedef struct {
+    uint32_t version, struct_size;
+    tcp_socket_handle_t socket;
+    uint16_t port, backlog;
+    uint32_t reserved;
+} syscall_tcp_listen_t;
+/* Accept is in/out: the caller supplies only listener and timeout; the kernel
+ * publishes the new descriptor and peer tuple after all validation succeeds. */
+typedef struct {
+    uint32_t version, struct_size;
+    tcp_socket_handle_t listener, socket;
+    uint32_t peer_ip;
+    uint16_t peer_port, reserved;
+    uint32_t timeout_ms;
+} syscall_tcp_accept_t;
 
 _Static_assert(sizeof(syscall_tcp_socket_control_t) == 32U,
                "TCP control ABI changed");
 _Static_assert(sizeof(syscall_tcp_connect_t) == 24U,
                "TCP connect ABI changed");
 _Static_assert(sizeof(syscall_tcp_io_t) == 20U, "TCP I/O ABI changed");
+_Static_assert(sizeof(syscall_tcp_listen_t) == 20U,
+               "TCP listen ABI changed");
+_Static_assert(sizeof(syscall_tcp_accept_t) == 28U,
+               "TCP accept ABI changed");
 _Static_assert(sizeof(tcp_socket_segment_t) == 36U,
                "TCP ingress ABI changed");
 
@@ -718,6 +737,66 @@ static int syscall_tcp_socket_connect(const syscall_tcp_connect_t *user) {
     return tcp_socket_connect(process->pid, process->generation,
                               handle, request.destination_ip,
                               request.destination_port, request.timeout_ms);
+}
+
+static int syscall_tcp_socket_listen(const syscall_tcp_listen_t *user) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    if (process == NULL || user == NULL || !user_range_accessible(
+            directory, (uint32_t)(uintptr_t)user, sizeof(*user), false))
+        return -14;
+    syscall_tcp_listen_t request;
+    if (copy_from_user(&request, user, sizeof(request)) != 0) return -14;
+    if (request.version != TCP_SOCKET_ABI_VERSION ||
+        request.struct_size != sizeof(request) || request.reserved != 0U)
+        return -22;
+    uint32_t handle = 0U;
+    int result = process_descriptor_resolve(
+        process, (int)request.socket, PROCESS_DESCRIPTOR_TCP_SOCKET, &handle);
+    if (result != 0) return result;
+    return tcp_socket_listen(process->pid, process->generation, handle,
+                             request.port, request.backlog);
+}
+
+/* Resolve the listener capability before entering the bounded kernel wait.
+ * A child is installed atomically as a process descriptor; failed copy-out
+ * closes that descriptor so no accepted socket leaks authority. */
+static int syscall_tcp_socket_accept(syscall_tcp_accept_t *user) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    if (process == NULL || user == NULL || !user_range_accessible(
+            directory, (uint32_t)(uintptr_t)user, sizeof(*user), true))
+        return -14;
+    syscall_tcp_accept_t request;
+    if (copy_from_user(&request, user, sizeof(request)) != 0) return -14;
+    if (request.version != TCP_SOCKET_ABI_VERSION ||
+        request.struct_size != sizeof(request) || request.listener == 0U ||
+        request.socket != 0U || request.peer_ip != 0U ||
+        request.peer_port != 0U || request.reserved != 0U ||
+        request.timeout_ms > TCP_SOCKET_MAX_TIMEOUT_MS) return -22;
+    uint32_t listener = 0U;
+    int result = process_descriptor_resolve(
+        process, (int)request.listener, PROCESS_DESCRIPTOR_TCP_SOCKET,
+        &listener);
+    if (result != 0) return result;
+    tcp_socket_handle_t accepted = 0U;
+    result = tcp_socket_accept(process->pid, process->generation, listener,
+                               &accepted, &request.peer_ip,
+                               &request.peer_port, request.timeout_ms);
+    if (result != 0) return result;
+    int descriptor = process_descriptor_install(
+        process, PROCESS_DESCRIPTOR_TCP_SOCKET, accepted);
+    if (descriptor < 0) {
+        (void)tcp_socket_close(process->pid, process->generation,
+                               accepted, 0U);
+        return descriptor;
+    }
+    request.socket = (uint32_t)descriptor;
+    if (copy_to_user(user, &request, sizeof(request)) != 0) {
+        (void)process_file_close(process, descriptor);
+        return -14;
+    }
+    return 0;
 }
 
 static int syscall_tcp_socket_send(const syscall_tcp_io_t *user,
@@ -2180,6 +2259,8 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_tcp_socket_send,     // Syscall 103: Acknowledged TCP send
     (void*)&syscall_tcp_socket_receive,  // Syscall 104: Timed stream receive
     (void*)&syscall_tcp_socket_ingress,  // Syscall 105: Validated TCP ingress
+    (void*)&syscall_tcp_socket_listen,   // Syscall 106: Passive TCP open
+    (void*)&syscall_tcp_socket_accept,   // Syscall 107: Bounded accept
     // Add more syscalls here as needed
 };
 
@@ -2674,6 +2755,14 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)syscall_tcp_socket_ingress(
                 (const tcp_socket_segment_t*)(uintptr_t)arg1,
                 (const uint8_t*)(uintptr_t)arg2);
+            break;
+        case SYS_TCP_SOCKET_LISTEN:
+            result = (uint32_t)syscall_tcp_socket_listen(
+                (const syscall_tcp_listen_t*)(uintptr_t)arg1);
+            break;
+        case SYS_TCP_SOCKET_ACCEPT:
+            result = (uint32_t)syscall_tcp_socket_accept(
+                (syscall_tcp_accept_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

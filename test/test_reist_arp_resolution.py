@@ -55,6 +55,22 @@ class ReistArpResolutionContractTests(unittest.TestCase):
         )[1].split("int supervisor_network_send_arp_request", 1)[0]
         self.assertNotIn("netstack_send_arp_request", request)
 
+    def test_busy_resolution_cannot_cancel_its_active_predecessor(self):
+        request = self.supervisor.split(
+            "bool supervisor_network_request_arp_resolution", 1
+        )[1].split("int supervisor_network_send_arp_request", 1)[0]
+        self.assertIn("bool network_transaction_started = false", request)
+        self.assertIn("bool resolution_transaction_started = false", request)
+        self.assertIn("if (resolution_transaction_started)", request)
+        self.assertIn("if (network_transaction_started)", request)
+
+    def test_stale_response_cannot_clear_a_newer_resolution_context(self):
+        send = self.supervisor.split(
+            "int supervisor_network_send_arp_request", 1
+        )[1].split("int supervisor_network_send_arp_reply", 1)[0]
+        self.assertIn("bool request_owns_context = result == 0", send)
+        self.assertIn("if (request_owns_context)", send)
+
     def test_runtime_requires_real_outgoing_arp_frame(self):
         self.assertIn("--expect-arp-resolution", self.runner)
         self.assertIn("receive_arp_request", self.runner)

@@ -555,11 +555,13 @@ einzelne Vollbild-Kindprozesse und ist noch kein Fenstersystem.
   QEMU-Datenpfad ist über DNS im kombinierten Gasttest belegt.
 - DNS-A/CNAME, begrenzte Kompressionszeiger und ein kleiner TTL-Cache sind
   umgesetzt und gegen einen lokalen deterministischen QEMU-Testpeer belegt.
-- Der aktive TCP-Pfad besitzt CCBs, Sequenz-/ACK-Prüfung, Retransmission, RTO,
-  Fenster und aktiven/passiven Close. TCP-Handshake, Nutzdaten und Close sind
-  im QEMU-End-to-End-Test belegt; Listen/Accept bleiben offen.
-- `nc.prg` ist als erster TCP-Client vorhanden; ein kleiner HTTP/1.0-Client ist
-  der nächste Anwendungsschritt.
+- Der TCP-Pfad besitzt feste CCBs, Sequenz-/ACK-Prüfung, Retransmission, RTO,
+  Fenster, aktiven/passiven Close sowie begrenztes `listen`/`accept` mit kleinem
+  Backlog. Aktiver und passiver TCP-Handshake, Nutzdaten und Close sind im
+  QEMU-End-to-End-Test belegt.
+- `nc.prg` ist als TCP-Client vorhanden. `httpd.prg` bedient begrenzte
+  HTTP/1.0-`GET`-/`HEAD`-Anfragen aus `/htdocs` einschließlich Directory-Listing;
+  TLS/HTTPS bleibt ein eigenes späteres Paket.
 - IPv6 erst nach einer belastbaren IPv4-/Socket-Schicht
 - reale H81M-K-Gegenprobe des nun vorhandenen RTL8111G-/RTL8168-PCIe-Treibers;
   die QEMU-Referenz emuliert diesen Controller nicht

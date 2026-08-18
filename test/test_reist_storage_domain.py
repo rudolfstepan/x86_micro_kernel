@@ -50,7 +50,8 @@ class ReistStorageDomainTests(unittest.TestCase):
         source = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
         self.assertLess(source.index("ata_detect_drives()"), source.index("storage_safety_init("))
         self.assertLess(source.index("fdd_detect_drives()"), source.index("storage_safety_init("))
-        self.assertLess(source.index("storage_safety_init("), source.index("auto_mount_all_drives()"))
+        self.assertLess(source.index("storage_safety_init("),
+                        source.index("auto_mount_all_drives("))
 
 
 if __name__ == "__main__":

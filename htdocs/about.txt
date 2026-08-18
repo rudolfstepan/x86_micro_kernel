@@ -1,0 +1,3 @@
+REIST OS demo HTTP server
+
+This file is served from the read-only /htdocs demo document root.

@@ -161,15 +161,17 @@ Beispiele und die genaue Pfadsemantik stehen in
 Die bereitgestellte VMware-VM verwendet einen Intel-E1000-Adapter an
 `VMnet0` im Bridge-Modus. Für das ASUS H81M-K ist zusätzlich der Realtek-
 RTL8111G/RTL8168-Treiber für PCI-ID `10EC:8168` enthalten. Der überwachte
-Ring-3-Dienst `REIST.PRG` verarbeitet
-die begrenzten Netzwerkentscheidungen einschließlich DHCP. Der aktuelle Stack
-umfasst Ethernet, ARP, IPv4, ICMP, UDP-Bindings für den Dienst und DHCP. DNS,
-TCP und Anwendungen wie HTTP oder SMB sind noch nicht vorhanden.
+Ring-3-Dienst `REIST.PRG` verarbeitet die begrenzten Netzwerkentscheidungen
+einschließlich DHCP. Der aktuelle Stack umfasst Ethernet, ARP, IPv4, ICMP,
+DHCP, prozessgebundene UDP-/TCP-Sockets, DNS sowie aktives und passives TCP.
+`/sbin/httpd.prg` stellt Dateien und begrenzte Directory-Listings aus `/htdocs` bereit;
+TLS/HTTPS und SMB sind noch nicht vorhanden.
 
 ```text
 C:\> GETIP
 C:\> NET DHCP
 C:\> PING 192.168.1.1
+C:\> httpd 8080
 ```
 
 Siehe [VMware](docs/hardware/VMWARE.md) und
@@ -218,8 +220,8 @@ Buildschritte müssen explizit ergänzt werden.
   Prozess- und Syscall-API ist jedoch noch klein und besitzt beispielsweise
   keine Pipes, Signale oder allgemeine Socket-Schnittstelle.
 - Das erzeugte FAT32-Image verwendet für eingebettete Dateien ASCII-8.3-Namen.
-- Der Netzwerkstack besitzt noch kein DNS, TCP, allgemeines POSIX-artiges
-  UDP-Socket-API oder IPv6.
+- Der Netzwerkstack besitzt noch kein IPv6, TLS/HTTPS oder vollständiges
+  POSIX-Socket-API; die vorhandene UDP-/TCP-ABI ist bewusst klein und begrenzt.
 - Der native Bootpfad ist BIOS/MBR-basiert; UEFI ist nicht implementiert.
 - USB/xHCI ist experimentell. VGA/PS/2 ist der robuste Standardweg; der
   VBE-Framebuffer besitzt einen geprüften QEMU-Desktop-Smoke, aber noch keine
