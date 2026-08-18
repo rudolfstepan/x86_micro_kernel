@@ -1,7 +1,7 @@
 # Arbeitspaket: Laufzeitstart des grafischen Desktops aus VGA
 
 Stand: 18. August 2026  
-Status: vorgeschlagen, noch nicht in `automation/reist-s03b.toml` aktiviert
+Status: aktiv, direkte Ausführung im sichtbaren Hauptarbeitsbaum genehmigt
 
 ## Kennung
 
@@ -12,15 +12,19 @@ Status: vorgeschlagen, noch nicht in `automation/reist-s03b.toml` aktiviert
 Ein normal mit VGA-Text gestartetes REIST OS muss den Befehl
 `desktop.prg` aus der Userspace-Shell annehmen können. Das Programm fordert
 über eine versionierte, angehängte Display-ABI einen Grafikmodus an. Ein
-nativer, fest begrenzter Treiber programmiert auf QEMU ausschließlich den
-eindeutig erkannten Standard-VGA-/Bochs-DISPI-Adapter. Erst nach vollständiger
-Registerrücklesung und Validierung wird der lineare Framebuffer veröffentlicht
-und der Desktop im Stil einer klassischen Amiga Workbench gezeichnet.
+nativer, fest begrenzter Treiber programmiert auf QEMU den eindeutig erkannten
+Standard-VGA-/Bochs-DISPI-Adapter und unter VMware den SVGA-II-Adapter. Für
+Legacy-BIOS-Systeme ohne natives Backend darf ausschließlich ein bereits in
+Stage 2 ausgewählter und vollständig validierter VBE-Modus über einen festen
+Kernel-Thunks aktiviert werden. Erst danach wird der lineare Framebuffer
+veröffentlicht und der Desktop im Stil einer klassischen Amiga Workbench
+gezeichnet.
 
 Der bestehende Bootmodus `VIDEO=framebuffer` bleibt kompatibel. Ein nicht
 unterstützter Adapter oder eine fehlgeschlagene Vorprüfung lässt den laufenden
 VGA-Textmodus unverändert; die Shell bleibt bedienbar und erhält einen
-eindeutigen Fehlerstatus. Firmwareaufrufe nach dem Kernelstart sind verboten.
+eindeutigen Fehlerstatus. Escape deaktiviert einen zur Laufzeit aktivierten
+Grafikmodus und stellt die vorhandene VGA-Shell wieder sichtbar her.
 
 ## Ausgangslage
 
@@ -29,8 +33,10 @@ eindeutigen Fehlerstatus. Firmwareaufrufe nach dem Kernelstart sind verboten.
 - Bei `VIDEO=vga` wird kein Framebuffer an den Kernel übergeben.
 - `desktop.prg` benutzt bereits die geclippte Ring-3-Display-ABI, beendet sich
   ohne Framebuffer aber mit „Grafikmodus nicht verfuegbar“.
-- Ein BIOS-Aufruf im laufenden Kernel ist nicht zuverlässig durch eine
-  monotone Deadline abbrechbar und daher für dieses Paket unzulässig.
+- Reale Legacy-BIOS-Grafikkarten besitzen keine einheitliche native
+  Registerschnittstelle. Der vom Benutzer freigegebene Kompatibilitätspfad
+  kapselt deshalb genau VBE `4F02h`, `4F03h` und Mode 03 in Ring 0; beliebige
+  Firmwareaufrufe aus Ring 3 bleiben ausgeschlossen.
 - QEMU Standard VGA stellt eine native, feste Bochs-DISPI-Registerschnittstelle
   und einen PCI-LFB-BAR bereit; andere Adapter sind zunächst nicht unterstützt.
 
@@ -59,6 +65,13 @@ eindeutigen Fehlerstatus. Firmwareaufrufe nach dem Kernelstart sind verboten.
    verändern den VGA-Textmodus nicht. Ein fehlgeschlagenes Register-Readback
    deaktiviert DISPI mit genau einem festen Schreibzugriff und wird seriell
    diagnostiziert.
+8. Stage 2 veröffentlicht bei einem VGA-Boot einen versionierten VBE-Handoff,
+   ohne den Textmodus zu verlassen. Der Kernel akzeptiert nur diesen Modus,
+   dessen Geometrie, Masken, LFB-Bereich und PCI-Display-BAR übereinstimmen.
+9. Die bestehende Display-Control-ABI erhält die append-only Operation
+   `DEACTIVATE`. QEMU, VMware und VBE kehren damit nach Escape in VGA Mode 03
+   beziehungsweise den emulierten Legacy-VGA-Pfad zurück; erst danach wird der
+   Framebufferzustand verworfen.
 
 ## Verbindliche Invarianten
 
@@ -66,10 +79,18 @@ eindeutigen Fehlerstatus. Firmwareaufrufe nach dem Kernelstart sind verboten.
   ihre Strukturen ändern Bedeutung und Layout nicht.
 - Ring 3 erhält weder I/O-Rechte noch ein LFB-Mapping noch eine Firmware-
   Aufrufschnittstelle.
-- Die Laufzeitaktivierung führt keinen BIOS-Aufruf und keinen Real-Mode-
-  Übergang aus.
-- Nur die exakte unterstützte PCI-/DISPI-Identität mit validiertem LFB-BAR ist
-  aktivierbar.
+- Der VBE-Laufzeitpfad ist auf den Loader-Handoff und die festen Operationen
+  Grafikmodus setzen, Modus rücklesen und VGA Mode 03 begrenzt. Ring 3 kann
+  weder Firmwarefunktion noch Modusnummer bestimmen.
+- Vor dem Real-Mode-Aufruf werden der periodische Local-APIC-Timer und beide
+  remappten PICs maskiert. Ihre vollständigen vorherigen Zustände werden vor
+  dem Wiederherstellen der Interrupt-Flags zurückgeschrieben, damit ein
+  firmwareinternes `STI` keinen Kernelvektor über die BIOS-IVT ausführt.
+- Native Backends erfordern die exakte PCI-/Registeridentität. VBE erfordert
+  zusätzlich, dass der vollständige LFB-Bereich innerhalb eines über die
+  standardisierte PCI-BAR-Größenabfrage validierten Display-Class-Memory-BARs
+  liegt; ein LFB darf dabei wie bei NVIDIA-VBIOS üblich innerhalb des BARs
+  beginnen.
 - Pointer, Strukturversion, Strukturgröße, Flags und reservierte Felder werden
   vor jedem Seiteneffekt geprüft.
 - Es gibt höchstens einen Aktivierungsversuch pro explizitem Userspace-Aufruf;
@@ -96,6 +117,10 @@ fixieren. Erwartet werden ausschließlich:
 
 - `drivers/video/framebuffer.h`
 - `drivers/video/framebuffer.c`
+- `Makefile`
+- `arch/x86/boot/bios/stage2_bios.asm`
+- `arch/x86/boot/vbe_runtime.asm`
+- `arch/x86/boot/vbe_runtime.h`
 - neue Display-Control-Dateien unter `drivers/video/`
 - `drivers/video/display.c`
 - `lib/libc/stdlib.h`
@@ -107,6 +132,7 @@ fixieren. Erwartet werden ausschließlich:
 - `userspace/sdk/x86os.c`
 - `userspace/programs/desktop.c`
 - `scripts/build_system_programs.py`
+- `scripts/build-windows.ps1`
 - `scripts/test-reist-runtime.ps1`
 - ein neuer QEMU-Runtime-Runner unter `scripts/`
 - neue paketbezogene Tests unter `test/`
@@ -134,7 +160,9 @@ der Änderung zu stoppen und die Architekturursache zu dokumentieren.
    erweitern.
 7. QEMU-Gastnachweis für den kompletten Ablauf und den erzwungenen
    DISPI-Fehlerpfad ergänzen.
-8. Erst nach bestandenen äußeren Gates Dokumentation und Queue auf den
+8. Einen erzwungenen VBE-Gastnachweis für Aktivierung und Rückkehr nach VGA
+   ergänzen.
+9. Erst nach bestandenen äußeren Gates Dokumentation und Queue auf den
    nächsten Zustand setzen.
 
 ## Akzeptanzkriterien
@@ -149,6 +177,9 @@ der Änderung zu stoppen und die Architekturursache zu dokumentieren.
   Fehler und hinterlässt eine bedienbare VGA-Shell.
 - Ein zweiter Prozess kann während einer laufenden Transition keinen weiteren
   Moduswechsel beginnen.
+- Escape stellt nach einer Laufzeitaktivierung die sichtbare VGA-Shell samt
+  neuem Prompt wieder her.
+- Der erzwungene VBE-Gastnachweis durchläuft VGA, VBE-Desktop und VGA-Rückkehr.
 - Der vorhandene `-Video framebuffer`-Boot startet weiterhin den Desktop.
 - Der normale VGA-Pakettest sowie alle bestehenden Display-, Desktop-, Loader-
   und Syscall-Tests bleiben erfolgreich.
@@ -161,6 +192,7 @@ der Änderung zu stoppen und die Architekturursache zu dokumentieren.
 python test/test_display_abi_minimal.py -q
 python test/test_desktop_source.py -q
 python test/test_runtime_graphics_switch.py -q
+python test/test_bios_vbe_source.py -q
 ```
 
 ### Package
@@ -173,6 +205,7 @@ python test/test_runtime_graphics_switch.py -q
 
 ```powershell
 .\scripts\test-reist-runtime.ps1 -Mode runtime-desktop
+.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-vbe
 .\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-vbe-failure
 ```
 
@@ -190,8 +223,8 @@ Tests auf unterstützter Zielhardware.
 
 - Adapteridentität und LFB-BAR können vor der Programmierung nicht eindeutig
   und begrenzt validiert werden.
-- Ein Moduswechsel wäre nur durch BIOS-Firmware, Real Mode oder allgemeine
-  I/O-Rechte für Ring 3 möglich.
+- Ein Moduswechsel würde eine frei wählbare Firmwarefunktion, einen
+  callergewählten Modus oder allgemeine I/O-Rechte für Ring 3 benötigen.
 - Ein partieller Wechsel könnte unvalidierte Framebuffer-Metadaten sichtbar
   machen.
 - Nicht unterstützte Hardware oder ein Vorprüfungsfehler könnte die laufende
@@ -219,12 +252,31 @@ und optionales Mausrad gelangen über eine feste, generationsgebundene Queue
 und den append-only Syscall 110 nach Ring 3. Direkte Hardware- oder
 Framebufferrechte werden dabei nicht an den Desktop übertragen.
 
+## Physischer Zwischenstand: ASUS/NVIDIA
+
+Der reale Legacy-BIOS-Test auf dem ASUS-Mainboard mit NVIDIA `10DE:1280`
+bestätigt den VBE-Laufzeitpfad für Modus `0x118` bei `1024x768x32`, Pitch
+`4096` und LFB `0xF1000000` innerhalb des vermessenen BAR 3 ab
+`0xF0000000`. Der Desktop wird aus dem VGA-Textmodus gezeichnet; Escape
+beendet ihn und stellt die bedienbare VGA-Shell wieder her.
+
+Dieser Stand ist bewusst noch nicht als Paketabschluss markiert. Auf der
+physischen Zielhardware wird der Desktop flackerig und zäh aufgebaut, und die
+USB-Maus liefert dort noch keine sichtbare Bewegung. QEMU- und VMware-Nachweise
+ersetzen diese beiden offenen Hardwarebefunde nicht. Die nächste Arbeit setzt
+deshalb bei begrenzter Präsentation/Dirty-Region-Ausgabe und bei der
+xHCI-HID-Mausdiagnose auf dem ASUS-System an.
+
 ## Erwartetes Restrisiko
 
-Der native Treiber vergrößert die privilegierte Trusted Computing Base. Für
+Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte
+Trusted Computing Base. Für
 QEMU wird Bochs-DISPI, für VMware Workstation das PCI-Gerät VMware SVGA II
 unterstützt. Beide Backends bleiben bewusst auf einen festen 32-Bit-Modus
-begrenzt; reale Adapter und UEFI GOP benötigen weiterhin eigene Treiber.
+begrenzt. Der VBE-Aufruf selbst kann von fehlerhafter Ziel-Firmware nicht durch
+eine Kernel-Deadline abgebrochen werden und ist deshalb ein expliziter
+Legacy-Kompatibilitätspfad, keine Hochsicherheitsgarantie. UEFI GOP benötigt
+weiterhin einen eigenen Pfad.
 
 Der VMware-Nachweis erfolgt mit dem vorhandenen Legacy-BIOS-Paket:
 

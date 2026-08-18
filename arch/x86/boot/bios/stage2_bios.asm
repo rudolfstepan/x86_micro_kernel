@@ -27,6 +27,7 @@ MMAP_ADDRESS         equ 0x00006000
 E820_TEMP_ADDRESS    equ 0x00007000
 VBE_CTRL_INFO_ADDRESS equ 0x00008000
 VBE_MODE_INFO_ADDRESS equ 0x00008200
+VBE_RUNTIME_INFO_ADDRESS equ 0x00008400
 BOUNCE_SEGMENT       equ 0x7000
 BOUNCE_PHYSICAL      equ 0x00070000
 BOUNCE_SIZE          equ 32768
@@ -55,6 +56,9 @@ VBE_MODE_GRAPHICS    equ 0x0010
 VBE_MODE_LFB         equ 0x0080
 VBE_MEMORY_DIRECT    equ 0x06
 VBE_LFB_REQUEST      equ 0x4000
+VBE_RUNTIME_MAGIC    equ 0x52454256       ; "VBER"
+VBE_RUNTIME_VERSION  equ 1
+VBE_RUNTIME_SIZE     equ 40
 
 ELF_MAGIC            equ 0x464C457F
 ELF_PT_LOAD          equ 1
@@ -169,6 +173,9 @@ start:
     cmp byte [entry_is_executable], 1
     jne elf_error
 
+    ; Probe and validate a fixed runtime VBE mode while BIOS services are
+    ; still directly available.  This does not change the VGA text mode.
+    call prepare_vbe_runtime
     mov si, msg_start
     call print_string
 %ifdef USE_FRAMEBUFFER
@@ -312,41 +319,12 @@ collect_e820:
 .return:
     ret
 
-%ifdef USE_FRAMEBUFFER
 ; Select a linear, direct-colour VBE mode and publish the Multiboot-1
 ; framebuffer extension.  1024x768x32 is preferred; 800x600x32 is the
 ; compatibility fallback.  Any malformed/unsupported response returns to
 ; VGA mode 03 and deliberately leaves the framebuffer flag clear.
 setup_vbe_framebuffer:
-    push cs
-    pop ds
-    cld
-    xor ax, ax
-    mov es, ax
-    mov di, VBE_CTRL_INFO_ADDRESS
-    mov cx, 512 / 2
-    xor ax, ax
-    rep stosw
-    mov dword [es:VBE_CTRL_INFO_ADDRESS], 0x32454256 ; "VBE2"
-    mov di, VBE_CTRL_INFO_ADDRESS
-    mov ax, 0x4F00
-    int 0x10
-    push cs
-    pop ds
-    cmp ax, 0x004F
-    jne .failed
-    xor ax, ax
-    mov es, ax
-    cmp dword [es:VBE_CTRL_INFO_ADDRESS], 0x41534556 ; "VESA"
-    jne .failed
-
-    mov word [vbe_target_width], 1024
-    mov word [vbe_target_height], 768
-    call find_vbe_mode
-    jnc .mode_found
-    mov word [vbe_target_width], 800
-    mov word [vbe_target_height], 600
-    call find_vbe_mode
+    call probe_vbe_mode
     jc .failed
 
 .mode_found:
@@ -406,6 +384,90 @@ setup_vbe_framebuffer:
     xor ax, ax
     cld
     rep stosw
+    ret
+
+; Publish only metadata selected by the same bounded validator used by the
+; framebuffer boot.  The runtime kernel thunk accepts no caller-selected mode.
+prepare_vbe_runtime:
+    push cs
+    pop ds
+    xor ax, ax
+    mov es, ax
+    mov di, VBE_RUNTIME_INFO_ADDRESS
+    mov cx, VBE_RUNTIME_SIZE / 2
+    xor ax, ax
+    cld
+    rep stosw
+    call probe_vbe_mode
+    jc .return
+    xor ax, ax
+    mov es, ax
+    mov dword [es:VBE_RUNTIME_INFO_ADDRESS + 0], VBE_RUNTIME_MAGIC
+    mov dword [es:VBE_RUNTIME_INFO_ADDRESS + 4], VBE_RUNTIME_VERSION
+    mov dword [es:VBE_RUNTIME_INFO_ADDRESS + 8], VBE_RUNTIME_SIZE
+    mov ax, [vbe_selected_mode]
+    mov [es:VBE_RUNTIME_INFO_ADDRESS + 12], ax
+    mov eax, [vbe_selected_address]
+    mov [es:VBE_RUNTIME_INFO_ADDRESS + 16], eax
+    movzx eax, word [vbe_selected_pitch]
+    mov [es:VBE_RUNTIME_INFO_ADDRESS + 20], eax
+    movzx eax, word [vbe_target_width]
+    mov [es:VBE_RUNTIME_INFO_ADDRESS + 24], eax
+    movzx eax, word [vbe_target_height]
+    mov [es:VBE_RUNTIME_INFO_ADDRESS + 28], eax
+    mov byte [es:VBE_RUNTIME_INFO_ADDRESS + 32], 32
+    mov byte [es:VBE_RUNTIME_INFO_ADDRESS + 33], 1
+    mov al, [vbe_red_position]
+    mov [es:VBE_RUNTIME_INFO_ADDRESS + 34], al
+    mov al, [vbe_red_size]
+    mov [es:VBE_RUNTIME_INFO_ADDRESS + 35], al
+    mov al, [vbe_green_position]
+    mov [es:VBE_RUNTIME_INFO_ADDRESS + 36], al
+    mov al, [vbe_green_size]
+    mov [es:VBE_RUNTIME_INFO_ADDRESS + 37], al
+    mov al, [vbe_blue_position]
+    mov [es:VBE_RUNTIME_INFO_ADDRESS + 38], al
+    mov al, [vbe_blue_size]
+    mov [es:VBE_RUNTIME_INFO_ADDRESS + 39], al
+.return:
+    ret
+
+probe_vbe_mode:
+    push cs
+    pop ds
+    cld
+    xor ax, ax
+    mov es, ax
+    mov di, VBE_CTRL_INFO_ADDRESS
+    mov cx, 512 / 2
+    xor ax, ax
+    rep stosw
+    mov dword [es:VBE_CTRL_INFO_ADDRESS], 0x32454256 ; "VBE2"
+    mov di, VBE_CTRL_INFO_ADDRESS
+    mov ax, 0x4F00
+    int 0x10
+    push cs
+    pop ds
+    cmp ax, 0x004F
+    jne .not_found
+    xor ax, ax
+    mov es, ax
+    cmp dword [es:VBE_CTRL_INFO_ADDRESS], 0x41534556 ; "VESA"
+    jne .not_found
+
+    mov word [vbe_target_width], 1024
+    mov word [vbe_target_height], 768
+    call find_vbe_mode
+    jnc .found
+    mov word [vbe_target_width], 800
+    mov word [vbe_target_height], 600
+    call find_vbe_mode
+    jc .not_found
+.found:
+    clc
+    ret
+.not_found:
+    stc
     ret
 
 ; Find a matching 32-bit direct-colour mode in the controller's mode list.
@@ -612,7 +674,6 @@ find_vbe_mode:
 .not_found:
     stc
     ret
-%endif
 
 parse_elf_header:
     mov ax, BOUNCE_SEGMENT
@@ -1203,14 +1264,12 @@ program_header_index   dw 0
 entry_is_executable    db 0
 pm_operation           db 0
 kernel_cached          db 0
-%ifdef USE_FRAMEBUFFER
 vbe_red_size           db 0
 vbe_red_position       db 0
 vbe_green_size         db 0
 vbe_green_position     db 0
 vbe_blue_size          db 0
 vbe_blue_position      db 0
-%endif
 
 align 4
 partition_lba          dd 0
@@ -1237,7 +1296,6 @@ crc_remaining          dd 0
 crc_value              dd 0
 kernel_crc             dd 0
 cache_write_address    dd 0
-%ifdef USE_FRAMEBUFFER
 vbe_selected_address   dd 0
 vbe_mode_list_offset   dw 0
 vbe_mode_list_segment  dw 0
@@ -1250,7 +1308,6 @@ vbe_selected_pitch     dw 0
 vbe_red_end            dw 0
 vbe_green_end          dw 0
 vbe_blue_end           dw 0
-%endif
 crc_chunk_size         dw 0
   crc_sector_count       dw 0
   chs_cylinder           db 0

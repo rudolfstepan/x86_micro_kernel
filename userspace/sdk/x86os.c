@@ -648,6 +648,17 @@ int x86os_display_activate(void) {
                               (uintptr_t)&request, 0, 0);
 }
 
+int x86os_display_deactivate(void) {
+    x86os_display_control_t request = {
+        .version = X86OS_DISPLAY_CONTROL_VERSION,
+        .struct_size = sizeof(request),
+        .operation = X86OS_DISPLAY_DEACTIVATE,
+        .reserved = 0U
+    };
+    return (int)x86os_syscall(X86OS_SYS_DISPLAY_CONTROL,
+                              (uintptr_t)&request, 0, 0);
+}
+
 int x86os_mouse_event(x86os_mouse_event_t* event) {
     if (!event) return -22;
     event->version = X86OS_MOUSE_EVENT_VERSION;

@@ -572,6 +572,7 @@ typedef struct {
 #define X86OS_DISPLAY_MAX_TEXT 256U
 #define X86OS_DISPLAY_CONTROL_VERSION 1U
 #define X86OS_DISPLAY_ACTIVATE 1U
+#define X86OS_DISPLAY_DEACTIVATE 2U
 
 typedef struct {
     uint32_t version;
@@ -876,6 +877,7 @@ int x86os_service_connect(uint32_t service_id,
                           x86os_ipc_handle_t* handle);
 int x86os_display_info(x86os_display_info_t* info);
 int x86os_display_activate(void);
+int x86os_display_deactivate(void);
 int x86os_mouse_event(x86os_mouse_event_t* event);
 int x86os_pointer_update(int32_t x, int32_t y, uint32_t visible);
 int x86os_fill_rect(int32_t x, int32_t y, uint32_t width, uint32_t height,

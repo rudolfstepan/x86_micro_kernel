@@ -1829,9 +1829,13 @@ static int syscall_display_control(const display_control_request_t *user_request
     display_control_request_t request;
     if (copy_from_user(&request, user_request, sizeof(request)) != 0) return -14;
     if (request.version != DISPLAY_CONTROL_ABI_VERSION ||
-        request.struct_size < sizeof(request) || request.reserved != 0U ||
-        request.operation != DISPLAY_CONTROL_ACTIVATE) return -22;
-    return display_control_activate();
+        request.struct_size < sizeof(request) || request.reserved != 0U)
+        return -22;
+    if (request.operation == DISPLAY_CONTROL_ACTIVATE)
+        return display_control_activate();
+    if (request.operation == DISPLAY_CONTROL_DEACTIVATE)
+        return display_control_deactivate();
+    return -22;
 }
 
 static int syscall_mouse_event(hid_mouse_event_t *user_event) {

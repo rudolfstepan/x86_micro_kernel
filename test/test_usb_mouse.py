@@ -60,9 +60,10 @@ class UsbMouseTests(unittest.TestCase):
         source = (ROOT / "userspace/programs/desktop.c").read_text(
             encoding="utf-8")
         escape = source.index("key == DESKTOP_KEY_ESCAPE")
-        branch = source[escape:source.index("\n        }", escape)]
+        branch = source[escape:source.index("\n\n        if (selected", escape)]
         self.assertIn("return 0;", branch)
         self.assertNotIn("launch_app", branch)
+        self.assertIn("x86os_display_deactivate()", branch)
         self.assertIn('x86os_puts("DESKTOP_EXIT_OK\\n")', branch)
 
     def test_desktop_batches_mouse_reports_and_uses_software_pointer(self):

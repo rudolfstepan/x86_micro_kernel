@@ -11,6 +11,9 @@ class BiosVbeSourceTests(unittest.TestCase):
         cls.source = (
             ROOT / "arch/x86/boot/bios/stage2_bios.asm"
         ).read_text(encoding="utf-8")
+        cls.runtime = (
+            ROOT / "arch/x86/boot/vbe_runtime.asm"
+        ).read_text(encoding="utf-8")
 
     def test_vbe_path_is_framebuffer_only_and_runs_at_final_handoff(self):
         start = self.source.split("start:", 1)[1].split("disk_error:", 1)[0]
@@ -88,6 +91,30 @@ class BiosVbeSourceTests(unittest.TestCase):
         self.assertIn("and dword [es:MB_INFO_ADDRESS], 0xFFFFEFFF", failure)
         self.assertIn("mov di, MB_INFO_ADDRESS + 88", failure)
         self.assertIn("mov cx, 28 / 2", failure)
+
+    def test_runtime_handoff_is_probed_without_changing_the_boot_mode(self):
+        start = self.source.split("start:", 1)[1].split("disk_error:", 1)[0]
+        self.assertLess(start.index("call prepare_vbe_runtime"),
+                        start.index("call setup_vbe_framebuffer"))
+        prepare = self.source.split("prepare_vbe_runtime:", 1)[1].split(
+            "probe_vbe_mode:", 1)[0]
+        self.assertIn("VBE_RUNTIME_MAGIC", prepare)
+        self.assertNotIn("mov ax, 0x4F02", prepare)
+
+    def test_runtime_thunk_installs_bios_idt_and_full_low_stack(self):
+        self.assertIn("lidt [REAL_IDTR_ADDRESS]", self.runtime)
+        self.assertIn("mov esp, LOW_REAL_STACK", self.runtime)
+        self.assertIn("int 0x10", self.runtime)
+        self.assertIn("lidt [STATE_IDTR]", self.runtime)
+        self.assertIn("vbe_runtime_set_text_mode", self.runtime)
+
+    def test_runtime_thunk_quiesces_kernel_interrupt_sources(self):
+        self.assertIn("STATE_PIC_MASTER", self.runtime)
+        self.assertIn("STATE_PIC_SLAVE", self.runtime)
+        self.assertIn("STATE_APIC_LVT", self.runtime)
+        self.assertIn("APIC_LVT_MASKED", self.runtime)
+        self.assertIn("mov al, 0xFF", self.runtime)
+        self.assertIn("mov [APIC_TIMER_LVT], eax", self.runtime)
 
     def test_build_frontends_forward_framebuffer_define_to_stage2(self):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")

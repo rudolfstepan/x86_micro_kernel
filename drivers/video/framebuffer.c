@@ -4738,6 +4738,19 @@ void framebuffer_init(multiboot_framebuffer_info_t* fb_info) {
     framebuffer_clear();
 }
 
+void framebuffer_shutdown(void) {
+    fb_address = NULL;
+    fb_width = fb_height = fb_pitch = 0U;
+    fb_bpp = fb_bytes_per_pixel = 0U;
+    fb_red_position = fb_red_size = 0U;
+    fb_green_position = fb_green_size = 0U;
+    fb_blue_position = fb_blue_size = 0U;
+    terminal_cols = terminal_rows = 0;
+    cursor_x = cursor_y = 0;
+    pointer_visible = false;
+    pointer_width = pointer_height = 0U;
+}
+
 // Check if framebuffer is available
 bool framebuffer_available() {
     return (fb_address != NULL);

@@ -14,6 +14,7 @@ param(
     [switch]$HandoverFaultInjection,
     [switch]$DhcpLeaseFaultInjection,
     [switch]$DhcpRenewFaultInjection,
+    [switch]$VbeRuntimeTest,
     [ValidateRange(0, 3)]
     [int]$HandoverNodeId = 0,
     [switch]$RunTests,
@@ -121,6 +122,7 @@ try {
         handover_node_id = $HandoverNodeId
         dhcp_lease_fault_injection = [bool]$DhcpLeaseFaultInjection
         dhcp_renew_fault_injection = [bool]$DhcpRenewFaultInjection
+        vbe_runtime_test = [bool]$VbeRuntimeTest
         nasm = $Nasm
         zig = $Zig
     }
@@ -171,6 +173,9 @@ try {
     }
     if ($DhcpRenewFaultInjection) {
         $makeArguments += 'DHCP_RENEW_FAULT_INJECTION=1'
+    }
+    if ($VbeRuntimeTest) {
+        $makeArguments += 'VBE_RUNTIME_TEST=1'
     }
     & $Make @makeArguments
     if ($LASTEXITCODE -ne 0) {

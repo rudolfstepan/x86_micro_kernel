@@ -51,12 +51,24 @@ def send_command(process: subprocess.Popen[str], command: str) -> None:
     process.stdin.flush()
 
 
+def send_key(process: subprocess.Popen[str], key: str) -> None:
+    if process.stdin is None:
+        raise RuntimeError("QEMU monitor input unavailable")
+    process.stdin.write(QEMU_MUX_SWITCH)
+    process.stdin.flush()
+    time.sleep(0.05)
+    process.stdin.write(f"sendkey {key}\n")
+    process.stdin.flush()
+    time.sleep(0.05)
+    process.stdin.write(QEMU_MUX_SWITCH)
+    process.stdin.flush()
+
+
 def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool) -> int:
     command = [
         str(qemu), "-accel", "tcg", "-machine", "pc", "-nodefaults",
-        "-device", "bochs-display,vgamem=1M" if expect_failure
-        else "bochs-display",
+        "-device", "VGA,vgamem_mb=1" if expect_failure else "VGA",
         "-m", "512M", "-display", "none",
         "-monitor", "none", "-serial", "mon:stdio", "-no-reboot",
         "-snapshot", "-drive", f"file={image},format=raw,if=ide,index=0",
@@ -100,12 +112,24 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     time.sleep(0.05)
                     process.stdin.write(QEMU_MUX_SWITCH)
                     process.stdin.flush()
-                print("runtime-desktop: PASS")
-                return 0
+                send_key(process, "esc")
+                while time.monotonic() < deadline:
+                    drain(output, transcript)
+                    exited = "DESKTOP_EXIT_OK" in "".join(transcript)
+                    if exited:
+                        exit_offset = "".join(transcript).index(
+                            "DESKTOP_EXIT_OK")
+                        if SHELL_PROMPT in "".join(transcript)[exit_offset:]:
+                            print("runtime-desktop: PASS")
+                            return 0
+                    time.sleep(0.02)
+                raise RuntimeError("desktop did not restore the VGA shell")
             if "DISPLAY_CONTROL: native graphics unavailable" in text:
                 raise RuntimeError("native runtime graphics activation failed")
             time.sleep(0.02)
-        raise RuntimeError("DESKTOP_OK marker not observed")
+        drain(output, transcript)
+        tail = "".join(transcript)[-1200:].replace("\r", "")
+        raise RuntimeError(f"DESKTOP_OK marker not observed; guest tail:\n{tail}")
     finally:
         stop_process(process)
 

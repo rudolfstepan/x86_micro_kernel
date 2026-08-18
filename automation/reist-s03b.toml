@@ -1485,8 +1485,12 @@ id = "R1.5-runtime-desktop"
 status = "active"
 risk = "critical"
 title = "Native runtime graphics desktop activation"
-scope = "Allow desktop.prg to request one bounded, privileged transition from a normal VGA text boot into a native QEMU Standard-VGA Bochs-DISPI 32-bit LFB mode without calling BIOS firmware at runtime. Detect the exact PCI adapter and DISPI revision, validate and read back every programmed register, publish the supervisor-only framebuffer last, retain the existing framebuffer boot, fail closed to the operable VGA console on unsupported hardware or validation failure, and render a keyboard-operable Workbench-style desktop."
+scope = "Allow desktop.prg to request one privileged transition from a normal VGA text boot into a validated 32-bit LFB mode through native QEMU Standard-VGA, VMware SVGA-II, or a fixed loader-selected Legacy-BIOS VBE compatibility thunk. Validate and read back every native register or VBE mode result, publish the supervisor-only framebuffer last, restore the visible VGA shell on Escape, retain the existing framebuffer boot, fail closed before unsupported side effects, and render a keyboard- and USB-mouse-operable Workbench-style desktop."
 allowed_files = [
+  "Makefile",
+  "arch/x86/boot/bios/stage2_bios.asm",
+  "arch/x86/boot/vbe_runtime.asm",
+  "arch/x86/boot/vbe_runtime.h",
   "drivers/video/framebuffer.h",
   "drivers/video/framebuffer.c",
   "drivers/video/display_control.h",
@@ -1505,6 +1509,7 @@ allowed_files = [
   "userspace/sdk/x86os.c",
   "userspace/programs/desktop.c",
   "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
   "scripts/test-reist-runtime.ps1",
   "scripts/run_qemu_runtime_desktop.py",
   "scripts/create_native_boot_image.py",
@@ -1526,8 +1531,8 @@ allowed_files = [
 invariants = [
   "display ABI changes are append-only and syscalls 44 through 46 retain their existing layouts and meaning",
   "Ring 3 receives no IO privilege, direct LFB mapping or firmware-call authority",
-  "runtime activation never invokes BIOS firmware or enters real mode",
-  "only the exact supported QEMU Standard-VGA PCI identity with a recognized Bochs-DISPI revision and a validated memory BAR can be activated",
+  "native activation requires an exact supported PCI/register identity; the explicitly approved VBE compatibility path accepts only the mode and LFB metadata validated and sealed by Stage 2",
+  "the fixed VBE thunk exposes no firmware-call or caller-selected mode authority to Ring 3 and restores the kernel GDT, IDT, paging, stack, segments and interrupt flags",
   "all versions, sizes, flags, reserved fields and user pointers are validated before side effects",
   "syscall 109 fits the fixed process-domain bitmap and remains denied to restricted profiles unless explicitly granted",
   "each explicit request performs at most one bounded activation attempt without busy-wait or unbounded retry",
@@ -1536,25 +1541,29 @@ invariants = [
   "unsupported hardware and every pre-publication failure leave the existing VGA console untouched and serially diagnosed",
   "the framebuffer remains supervisor-only and drawing remains clipped and bounded",
   "missing or broken native graphics support cannot prevent a normal VGA boot",
+  "a successful runtime activation can be deactivated back to an operable VGA shell before framebuffer state is withdrawn",
   "the existing framebuffer boot remains compatible"
 ]
 targeted_tests = [
   "python test/test_display_abi_minimal.py -q",
   "python test/test_desktop_source.py -q",
   "python test/test_reist_probe_domain.py -q",
-  "python test/test_runtime_graphics_switch.py -q"
+  "python test/test_runtime_graphics_switch.py -q",
+  "python test/test_bios_vbe_source.py -q"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
-  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
 ]
 runtime_tests = [
   ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-vbe",
   ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-vbe-failure"
 ]
 stop_conditions = [
   "the target adapter cannot be identified and its LFB BAR cannot be bounded before programming",
-  "runtime mode switching requires BIOS firmware, real mode or IO authority in Ring 3",
+  "runtime mode switching requires a caller-selected firmware function, caller-selected mode, or IO authority in Ring 3",
   "a partial transition can publish unvalidated framebuffer metadata",
   "an unsupported adapter or pre-publication failure can disturb the existing VGA console",
   "a required production file lies outside allowed_files",

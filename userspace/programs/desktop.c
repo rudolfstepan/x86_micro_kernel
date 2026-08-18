@@ -280,10 +280,11 @@ int main(void) {
     int32_t pointer_x;
     int32_t pointer_y;
     uint32_t previous_buttons = 0U;
+    unsigned int runtime_activated = 0U;
 
     int display_status = x86os_display_info(&display);
     if (display_status != 0) {
-        (void)x86os_display_activate();
+        if (x86os_display_activate() == 0) runtime_activated = 1U;
         display_status = x86os_display_info(&display);
     }
     if (display_status != 0 ||
@@ -338,8 +339,13 @@ int main(void) {
             redraw = 1U;
         } else if (key == DESKTOP_KEY_ESCAPE) {
             (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
+            if (runtime_activated && x86os_display_deactivate() != 0) {
+                x86os_puts("desktop: VGA-Rueckkehr fehlgeschlagen\n");
+                (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
+                continue;
+            }
+            if (!runtime_activated) x86os_clear();
             x86os_puts("DESKTOP_EXIT_OK\n");
-            x86os_clear();
             return 0;
         }
 

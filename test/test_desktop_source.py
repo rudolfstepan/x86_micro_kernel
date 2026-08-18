@@ -111,7 +111,10 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("x86os_mouse_event(&mouse)", self.source)
         self.assertIn("pointer_x += mouse.delta_x", self.source)
         self.assertIn("pointer_y += mouse.delta_y", self.source)
-        self.assertIn("draw_mouse_pointer(pointer_x, pointer_y)", self.source)
+        self.assertIn(
+            "x86os_pointer_update(pointer_x, pointer_y, 1U)", self.source
+        )
+        self.assertNotIn("draw_mouse_pointer", self.source)
         self.assertIn("X86OS_MOUSE_BUTTON_LEFT", self.source)
         self.assertIn("app_at_position", self.source)
 
