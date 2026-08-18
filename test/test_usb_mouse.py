@@ -41,6 +41,9 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("transfer_type |", source)
         self.assertNotIn("setup->d[2] = (transfer_type << 16U) | 8U", source)
         self.assertIn("port_speed == 3U ? 64U : 8U", source)
+        self.assertGreaterEqual(
+            source.count("XHCI_IMAN_IP | XHCI_IMAN_IE"), 2
+        )
 
     def test_mouse_syscall_is_append_only_and_pointer_checked(self):
         stdlib = (ROOT / "lib/libc/stdlib.h").read_text(encoding="utf-8")

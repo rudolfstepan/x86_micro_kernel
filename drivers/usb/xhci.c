@@ -664,6 +664,11 @@ static void xhci_irq_handler(void *opaque) {
     uint32_t iman = xhci_read(controller.runtime_base + XHCI_RT_IMAN);
     if ((status & XHCI_STS_EINT) == 0U && (iman & XHCI_IMAN_IP) == 0U) return;
     (void)xhci_drain_events(32U, 0U, NULL, NULL);
+    /* IMAN.IP is RW1C.  Leaving it asserted keeps the legacy PCI interrupt
+     * active even after USBSTS.EINT was acknowledged and can starve the
+     * remainder of early boot as soon as the mouse produces reports. */
+    xhci_write(controller.runtime_base + XHCI_RT_IMAN,
+               XHCI_IMAN_IP | XHCI_IMAN_IE);
     xhci_write(controller.op_base + XHCI_USBSTS, XHCI_STS_EINT);
 }
 
@@ -752,7 +757,9 @@ int xhci_probe(pci_device_t *dev) {
         printf("USB: xHCI IRQ setup failed irq=%u\n", (unsigned)controller.irq);
         return -1;
     }
-    xhci_write(controller.runtime_base + XHCI_RT_IMAN, XHCI_IMAN_IE);
+    /* Clear enumeration-time pending state before unmasking the interrupter. */
+    xhci_write(controller.runtime_base + XHCI_RT_IMAN,
+               XHCI_IMAN_IP | XHCI_IMAN_IE);
     xhci_write(controller.op_base + XHCI_USBCMD,
                xhci_read(controller.op_base + XHCI_USBCMD) |
                XHCI_CMD_INTE | XHCI_CMD_RUN);
