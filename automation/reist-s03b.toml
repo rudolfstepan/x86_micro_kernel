@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3c-6f"
-active_id = ""
+active_id = "R1.5-runtime-desktop"
 
 [policy]
 one_package_per_run = true
@@ -1479,3 +1479,76 @@ evidence = [
   ".\\scripts\\test-reist-runtime.ps1 -Mode watchdog",
   ".\\scripts\\test-reist-runtime.ps1 -Mode memory",
 ]
+
+[[packages]]
+id = "R1.5-runtime-desktop"
+status = "active"
+risk = "critical"
+title = "Runtime VGA-to-VBE desktop activation"
+scope = "Allow desktop.prg to request one bounded, privileged transition from a normal VGA text boot into a loader-validated VBE 32-bit direct-color LFB mode. Publish the supervisor-only framebuffer only after complete validation, retain the existing framebuffer boot, provide a deterministic VGA mode-03 fallback, and render a keyboard-operable Workbench-style desktop."
+allowed_files = [
+  "arch/x86/boot/bios/stage2_bios.asm",
+  "arch/x86/boot/multiboot_parser.h",
+  "arch/x86/boot/multiboot_parser.c",
+  "arch/x86/graphics_mode.asm",
+  "arch/x86/graphics_mode.h",
+  "drivers/video/framebuffer.h",
+  "drivers/video/framebuffer.c",
+  "drivers/video/display_control.h",
+  "drivers/video/display_control.c",
+  "kernel/syscall/syscall_table.c",
+  "kernel/init/kernel.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/programs/desktop.c",
+  "scripts/build_system_programs.py",
+  "scripts/test-reist-runtime.ps1",
+  "scripts/run_qemu_runtime_desktop.py",
+  "test/test_bios_vbe_source.py",
+  "test/test_display_abi_minimal.py",
+  "test/test_desktop_source.py",
+  "test/test_runtime_graphics_switch.py",
+  "docs/features/FRAMEBUFFER.md",
+  "docs/development/BUILD_MODES.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/RUNTIME_GRAPHICS_DESKTOP_WORK_PACKAGE.md",
+  "automation/reist-s03b.toml"
+]
+invariants = [
+  "display ABI changes are append-only and syscalls 44 through 46 retain their existing layouts and meaning",
+  "Ring 3 receives no IO privilege, direct LFB mapping or general BIOS-call authority",
+  "only a loader-discovered and kernel-revalidated 32-bit direct-color LFB mode can be activated",
+  "all versions, sizes, flags, reserved fields and user pointers are validated before side effects",
+  "each explicit request performs at most one bounded activation attempt without busy-wait or unbounded retry",
+  "the transition is exclusive and restores CPU, descriptor, interrupt and PIC state on every returning path",
+  "no framebuffer state is published before mode success and complete geometry, mask, range and overflow validation",
+  "failure attempts VGA mode 03 exactly once and leaves a serially diagnosable safe display state",
+  "the framebuffer remains supervisor-only and drawing remains clipped and bounded",
+  "missing or broken VBE support cannot prevent a normal VGA boot",
+  "the existing framebuffer boot remains compatible"
+]
+targeted_tests = [
+  "python test/test_bios_vbe_source.py -q",
+  "python test/test_display_abi_minimal.py -q",
+  "python test/test_desktop_source.py -q",
+  "python test/test_runtime_graphics_switch.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-vbe-failure"
+]
+stop_conditions = [
+  "the BIOS transition cannot restore CPU, descriptor, interrupt or PIC state deterministically within a fixed bound",
+  "runtime mode switching requires general BIOS or IO authority in Ring 3",
+  "a partial transition can publish unvalidated framebuffer metadata",
+  "an ordinary VBE failure cannot return to an operable VGA console",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: activate desktop graphics from VGA runtime"
+evidence = []
