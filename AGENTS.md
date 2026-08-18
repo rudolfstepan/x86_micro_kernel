@@ -58,13 +58,18 @@ package in the same run.
 9. On ambiguity, missing required inputs or a pre-existing source failure: do
    not commit and return `blocked` with one concrete cause.
 
-The outer runner is the only candidate and gate authority. An interactive
-agent may prepare and commit the contract/queue setup, then invoke the runner
-without asking for another routine handoff. The runner validates commit
-topology, scope and queue transition before executing candidate code. It runs
-trusted gate commands without a shell through `codex sandbox -P :workspace`,
-stops at the first failure and fast-forwards the main branch only after all
-gates pass.
+The outer runner is the default candidate and gate authority. When the user
+explicitly requests direct execution without a package agent, the interactive
+agent may implement the active package in the visible main worktree, validate
+the same frozen scope and queue transition, execute each frozen gate exactly
+once, and commit only after all gates pass. It must not start another agent or
+use this exception to skip an invariant, stop condition or gate. Never push.
+Otherwise the interactive agent prepares and commits only contract/queue setup
+and invokes the runner without asking for another routine handoff. The runner
+validates commit topology, scope and queue transition before executing
+candidate code. It runs trusted gate commands without a shell through
+`codex sandbox -P :workspace`, stops at the first failure and fast-forwards the
+main branch only after all gates pass.
 
 Package agents operate in the visible main worktree so edits appear immediately
 in the user's IDE. Do not create an isolated clone or Git worktree for package

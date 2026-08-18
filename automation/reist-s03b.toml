@@ -1491,6 +1491,8 @@ allowed_files = [
   "drivers/video/framebuffer.c",
   "drivers/video/display_control.h",
   "drivers/video/display_control.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
   "kernel/syscall/syscall_table.c",
   "kernel/init/kernel.c",
   "userspace/sdk/include/x86os.h",
@@ -1502,6 +1504,7 @@ allowed_files = [
   "test/test_bios_vbe_source.py",
   "test/test_display_abi_minimal.py",
   "test/test_desktop_source.py",
+  "test/test_reist_probe_domain.py",
   "test/test_runtime_graphics_switch.py",
   "docs/features/FRAMEBUFFER.md",
   "docs/development/BUILD_MODES.md",
@@ -1515,6 +1518,7 @@ invariants = [
   "runtime activation never invokes BIOS firmware or enters real mode",
   "only the exact supported QEMU Standard-VGA PCI identity with a recognized Bochs-DISPI revision and a validated memory BAR can be activated",
   "all versions, sizes, flags, reserved fields and user pointers are validated before side effects",
+  "syscall 109 fits the fixed process-domain bitmap and remains denied to restricted profiles unless explicitly granted",
   "each explicit request performs at most one bounded activation attempt without busy-wait or unbounded retry",
   "the transition is exclusive and uses a fixed register-write and readback sequence",
   "no framebuffer state is published before mode success, register readback and complete geometry, range and overflow validation",
@@ -1526,6 +1530,7 @@ invariants = [
 targeted_tests = [
   "python test/test_display_abi_minimal.py -q",
   "python test/test_desktop_source.py -q",
+  "python test/test_reist_probe_domain.py -q",
   "python test/test_runtime_graphics_switch.py -q"
 ]
 package_tests = [

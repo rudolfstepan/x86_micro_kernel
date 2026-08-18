@@ -97,6 +97,8 @@ fixieren. Erwartet werden ausschließlich:
 - `drivers/video/framebuffer.h`
 - `drivers/video/framebuffer.c`
 - neue Display-Control-Dateien unter `drivers/video/`
+- `kernel/proc/process.h`
+- `kernel/proc/process.c`
 - `kernel/syscall/syscall_table.c`
 - `kernel/init/kernel.c`
 - `userspace/sdk/include/x86os.h`
