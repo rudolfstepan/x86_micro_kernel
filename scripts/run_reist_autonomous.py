@@ -34,6 +34,11 @@ class GateFailure(VerificationError):
         )
 
 
+def copy_result_file(source: pathlib.Path, destination: pathlib.Path) -> None:
+    if source.resolve() != destination.resolve():
+        shutil.copyfile(source, destination)
+
+
 class PackageTimeout(RuntimeError):
     pass
 
@@ -844,7 +849,7 @@ commit SHA.
                     agent_environment,
                 )
                 if isolated_result_file.is_file():
-                    shutil.copyfile(isolated_result_file, result_file)
+                    copy_result_file(isolated_result_file, result_file)
                 if exit_code != 0 or not isolated_result_file.is_file():
                     raise VerificationError(
                         f"agent failed exit={exit_code}; log={event_log}\n"
@@ -866,7 +871,7 @@ commit SHA.
                     isolated_result_file.write_text(
                         json.dumps(result, ensure_ascii=False) + "\n", "utf-8"
                     )
-                    shutil.copyfile(isolated_result_file, result_file)
+                    copy_result_file(isolated_result_file, result_file)
                 discarded_status = (
                     git(worktree, "status", "--short")
                     if result.get("status") == "blocked"
@@ -935,7 +940,7 @@ within scope, return blocked with one concrete reason.
                         isolated_result_file.write_text(
                             json.dumps(result, ensure_ascii=False) + "\n", "utf-8"
                         )
-                        shutil.copyfile(isolated_result_file, result_file)
+                        copy_result_file(isolated_result_file, result_file)
                         verified_head = verify_result(
                             worktree,
                             before_head,
