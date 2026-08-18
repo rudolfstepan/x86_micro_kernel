@@ -54,6 +54,8 @@
 #define SVGA_CMD_UPDATE 1U
 
 static volatile bool activation_busy;
+static bool qemu_prepared;
+static bool vmware_prepared;
 static volatile uint32_t *vmware_fifo;
 static uint16_t vmware_index_port;
 static uint16_t vmware_value_port;
@@ -126,7 +128,62 @@ static pci_device_t *find_qemu_vga(uint32_t *lfb_out) {
     return NULL;
 }
 
+static pci_device_t *find_vmware_vga(void) {
+    for (size_t index = 0; index < pci_device_count; ++index) {
+        pci_device_t *device = &pci_devices[index];
+        if (device->vendor_id == VMWARE_VENDOR &&
+            device->device_id == VMWARE_DEVICE &&
+            device->class_code == 0x03U) return device;
+    }
+    return NULL;
+}
+
+void display_control_prepare(void) {
+    uint32_t qemu_lfb = 0U;
+    pci_device_t *qemu = find_qemu_vga(&qemu_lfb);
+    if (qemu) {
+        uint16_t id = dispi_read(DISPI_ID);
+        uint16_t memory_64k = dispi_read(DISPI_VIDEO_MEMORY_64K);
+        uint32_t length = (uint32_t)memory_64k * 65536U;
+        if (id >= 0xB0C0U && id <= 0xB0C5U && memory_64k != 0U &&
+            length <= 64U * 1024U * 1024U &&
+            map_mmio_region(qemu_lfb, length) != NULL)
+            qemu_prepared = true;
+    }
+
+    pci_device_t *vmware = find_vmware_vga();
+    if (!vmware) return;
+    uint32_t index_bar = vmware->bar[0];
+    if ((index_bar & 1U) == 0U || (index_bar & 0xFFFFFFFCU) == 0U) return;
+    uint16_t index_port = (uint16_t)(index_bar & 0xFFFCU);
+    uint16_t value_port = (uint16_t)(index_port + 1U);
+    pci_enable_device(vmware);
+    svga_write(index_port, value_port, SVGA_REG_ID, SVGA_ID_2);
+    uint32_t id = svga_read(index_port, value_port, SVGA_REG_ID);
+    if (id != SVGA_ID_2) {
+        svga_write(index_port, value_port, SVGA_REG_ID, SVGA_ID_1);
+        id = svga_read(index_port, value_port, SVGA_REG_ID);
+    }
+    if (id != SVGA_ID_1 && id != SVGA_ID_2) return;
+    uint32_t framebuffer_start =
+        svga_read(index_port, value_port, SVGA_REG_FB_START);
+    uint32_t framebuffer_size =
+        svga_read(index_port, value_port, SVGA_REG_FB_SIZE);
+    uint32_t fifo_start = svga_read(index_port, value_port, SVGA_REG_MEM_START);
+    uint32_t fifo_size = svga_read(index_port, value_port, SVGA_REG_MEM_SIZE);
+    if (framebuffer_start == 0U)
+        framebuffer_start = vmware->bar[1] & 0xFFFFFFF0U;
+    if (fifo_start == 0U) fifo_start = vmware->bar[2] & 0xFFFFFFF0U;
+    if (framebuffer_start == 0U || framebuffer_size < 800U * 600U * 4U ||
+        framebuffer_size > 64U * 1024U * 1024U || fifo_start == 0U ||
+        fifo_size < 4096U || fifo_size > 16U * 1024U * 1024U) return;
+    if (map_mmio_region(framebuffer_start, framebuffer_size) == NULL ||
+        map_mmio_region(fifo_start, fifo_size) == NULL) return;
+    vmware_prepared = true;
+}
+
 static int activate_vmware(pci_device_t *device) {
+    if (!vmware_prepared) return -19;
     uint32_t index_bar = device->bar[0];
     uint32_t framebuffer_bar = device->bar[1];
     uint32_t fifo_bar = device->bar[2];
@@ -226,14 +283,10 @@ int display_control_activate(void) {
     uint32_t lfb_address = 0;
     pci_device_t *device = find_qemu_vga(&lfb_address);
     if (!device) {
-        for (size_t index = 0; index < pci_device_count; ++index) {
-            pci_device_t *candidate = &pci_devices[index];
-            if (candidate->vendor_id == VMWARE_VENDOR &&
-                candidate->device_id == VMWARE_DEVICE &&
-                candidate->class_code == 0x03U) {
-                result = activate_vmware(candidate);
-                goto activation_done;
-            }
+        pci_device_t *candidate = find_vmware_vga();
+        if (candidate) {
+            result = activate_vmware(candidate);
+            goto activation_done;
         }
     }
     uint16_t id = dispi_read(DISPI_ID);
@@ -242,7 +295,8 @@ int display_control_activate(void) {
     uint32_t width = memory_64k >= 48U ? 1024U : 800U;
     uint32_t height = memory_64k >= 48U ? 768U : 600U;
     uint64_t required = (uint64_t)width * height * 4U;
-    bool valid = device != NULL && supported_id && memory_64k != 0U &&
+    bool valid = device != NULL && qemu_prepared && supported_id &&
+                 memory_64k != 0U &&
                  required <= (uint64_t)memory_64k * 65536U &&
                  lfb_address != 0U;
     if (valid) {

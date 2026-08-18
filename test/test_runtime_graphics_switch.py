@@ -17,6 +17,7 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         cls.display = (ROOT / "drivers/video/display.c").read_text()
         cls.framebuffer = (ROOT / "drivers/video/framebuffer.c").read_text()
         cls.stdlib = (ROOT / "lib/libc/stdlib.h").read_text()
+        cls.kernel = (ROOT / "kernel/init/kernel.c").read_text()
 
     def test_append_only_control_abi(self):
         self.assertIn("SYS_DISPLAY_CONTROL 109", self.stdlib)
@@ -56,6 +57,13 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn("SVGA_CMD_UPDATE", self.control)
         self.assertIn("SVGA_FIFO_NEXT_CMD", self.control)
         self.assertIn("display_control_present_rect", self.framebuffer)
+
+    def test_runtime_mmio_is_prepared_before_userspace(self):
+        prepare = self.kernel.index("display_control_prepare();")
+        shell = self.kernel.index('start_userspace_program(multiboot_info, "bin/shell.prg"')
+        self.assertLess(prepare, shell)
+        self.assertIn("vmware_prepared", self.control)
+        self.assertIn("qemu_prepared", self.control)
 
 
 if __name__ == "__main__":

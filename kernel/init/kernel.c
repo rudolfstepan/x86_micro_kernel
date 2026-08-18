@@ -54,6 +54,7 @@
 
 // Video subsystem
 #include "drivers/video/display.h"
+#include "drivers/video/display_control.h"
 #ifdef USE_FRAMEBUFFER
 #include "drivers/video/framebuffer.h"
 #endif
@@ -172,6 +173,10 @@ static void hardware_init(void) {
     // Bus enumeration
     boot_context("hardware-init", "PCI", "enumerate", "PCI buses");
     pci_init();  // PCI bus scanning
+    /* Establish runtime graphics MMIO mappings before process page
+     * directories copy the shared high-kernel PDEs.  This does not switch the
+     * VGA mode or publish a framebuffer. */
+    display_control_prepare();
     boot_context("hardware-init", "USB", "enumerate", "USB controllers");
     usb_init();  // Initialize USB subsystem (probe PCI for HCI)
     printf("Hardware initialization complete\n");
