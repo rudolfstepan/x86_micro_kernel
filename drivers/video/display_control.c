@@ -37,6 +37,7 @@
 #define SVGA_REG_BITS_PER_PIXEL 7U
 #define SVGA_REG_BYTES_PER_LINE 12U
 #define SVGA_REG_FB_START 13U
+#define SVGA_REG_FB_OFFSET 14U
 #define SVGA_REG_FB_SIZE 16U
 #define SVGA_ID_2 0x90000002U
 #define SVGA_ID_1 0x90000001U
@@ -120,9 +121,18 @@ static int activate_vmware(pci_device_t *device) {
     uint32_t pitch = svga_read(index_port, value_port, SVGA_REG_BYTES_PER_LINE);
     uint32_t framebuffer_start =
         svga_read(index_port, value_port, SVGA_REG_FB_START);
-    if (pitch < width * 4U || framebuffer_start == 0U) return -19;
+    uint32_t framebuffer_offset =
+        svga_read(index_port, value_port, SVGA_REG_FB_OFFSET);
+    uint64_t visible_bytes = (uint64_t)pitch * height;
+    uint64_t framebuffer_address =
+        (uint64_t)framebuffer_start + framebuffer_offset;
+    if (pitch < width * 4U || framebuffer_start == 0U ||
+        framebuffer_address > UINT32_MAX ||
+        framebuffer_offset > fb_size ||
+        visible_bytes > (uint64_t)fb_size - framebuffer_offset)
+        return -19;
     multiboot_framebuffer_info_t info = {
-        .framebuffer_addr = framebuffer_start,
+        .framebuffer_addr = framebuffer_address,
         .framebuffer_pitch = pitch, .framebuffer_width = width,
         .framebuffer_height = height, .framebuffer_bpp = 32U,
         .framebuffer_type = 1U, .red_field_position = 16U,
