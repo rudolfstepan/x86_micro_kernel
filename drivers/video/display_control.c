@@ -90,7 +90,14 @@ static int activate_vmware(pci_device_t *device) {
         (framebuffer_bar & 0xFFFFFFF0U) == 0U) return -19;
     uint16_t index_port = (uint16_t)(index_bar & 0xFFFCU);
     uint16_t value_port = (uint16_t)(index_port + 1U);
+    /* SVGA-II negotiates the register protocol by writing the requested
+     * version first; a read of the reset value is not a capability probe. */
+    svga_write(index_port, value_port, SVGA_REG_ID, SVGA_ID_2);
     uint32_t id = svga_read(index_port, value_port, SVGA_REG_ID);
+    if (id != SVGA_ID_2) {
+        svga_write(index_port, value_port, SVGA_REG_ID, SVGA_ID_1);
+        id = svga_read(index_port, value_port, SVGA_REG_ID);
+    }
     if (id != SVGA_ID_1 && id != SVGA_ID_2) return -19;
     uint32_t max_width = svga_read(index_port, value_port, SVGA_REG_MAX_WIDTH);
     uint32_t max_height = svga_read(index_port, value_port, SVGA_REG_MAX_HEIGHT);
