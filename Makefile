@@ -271,7 +271,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-fdd-hotplug test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-usb run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-fdd-hotplug test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -340,6 +340,7 @@ help:
 	@echo "Run Targets:"
 	@echo "  run          - Build and run the native image in QEMU"
 	@echo "  run-disk     - Build and run in QEMU (from bootable disk)"
+	@echo "  run-usb      - Build and run QEMU with xHCI and USB keyboard"
 	@echo "  run-debug    - Build and run in QEMU with GDB debugging"
 	@echo ""
 	@echo "Network Adapter Targets:"
@@ -865,6 +866,14 @@ run-disk: run-native
 run-native: native-image
 	@echo "Starting QEMU through the native BIOS/MBR path..."
 	@$(QEMU) $(QEMU_COMMON) \
+		-device rtl8139,netdev=net0 -netdev user,id=net0 \
+		-vga std
+
+run-usb: native-image
+	@echo "Starting QEMU with the xHCI USB keyboard profile..."
+	@$(QEMU) $(QEMU_COMMON) \
+		-device qemu-xhci,id=xhci \
+		-device usb-kbd,bus=xhci.0 \
 		-device rtl8139,netdev=net0 -netdev user,id=net0 \
 		-vga std
 

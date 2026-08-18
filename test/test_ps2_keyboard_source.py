@@ -67,10 +67,11 @@ class PhysicalPs2KeyboardContractTests(unittest.TestCase):
 
     def test_lock_led_updates_are_deferred_outside_irq_context(self):
         decoder = function(self.source, "static void kb_process_scancode(")
+        semantic = function(self.source, "void kb_submit_key_event(")
         handler = function(self.source, "void kb_handler(")
         service = function(self.source, "static void kb_service_leds_locked(")
         blocking = function(self.source, "char getchar(")
-        self.assertIn("keyboard_led_update_pending", decoder)
+        self.assertIn("keyboard_led_update_pending", semantic)
         self.assertIn("I8042_KEYBOARD_SET_LEDS", service)
         self.assertIn("i8042_keyboard_command", service)
         self.assertIn("KASSERT_NOT_IRQ", service)
@@ -79,7 +80,7 @@ class PhysicalPs2KeyboardContractTests(unittest.TestCase):
 
     def test_numlock_controls_keypad_digits_and_navigation(self):
         keypad = function(self.source, "static bool handle_keypad_key(")
-        decoder = function(self.source, "static void kb_process_scancode(")
+        semantic = function(self.source, "void kb_submit_key_event(")
         self.assertIn("kbd_state.num_lock", keypad)
         for digit in ("'0'", "'1'", "'2'", "'3'", "'7'", "'8'", "'9'"):
             self.assertIn(digit, keypad)
@@ -88,7 +89,7 @@ class PhysicalPs2KeyboardContractTests(unittest.TestCase):
             "KEY_HOME", "KEY_END", "KEY_INSERT", "KEY_DELETE",
         ):
             self.assertIn(navigation, keypad)
-        self.assertIn("handle_keypad_key", decoder)
+        self.assertIn("handle_keypad_key", semantic)
 
     def test_temporary_physical_trace_is_removed(self):
         source = self.source

@@ -15,6 +15,7 @@
 #include "include/lib/spinlock.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
+#include "drivers/usb/xhci.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
@@ -536,39 +537,9 @@ static bool handle_keypad_key(uint8_t scancode, bool released) {
 // KEYBOARD INTERRUPT HANDLER
 //=============================================================================
 
-static void kb_process_scancode(uint8_t scancode) {
-    if (set2_pause_bytes_remaining != 0U) {
-        --set2_pause_bytes_remaining;
-        return;
-    }
-
-    // Handle raw scan-set-2 extended prefix (E0)
-    if (scancode == SC_EXTENDED_PREFIX) {
-        kbd_state.extended = true;
-        return;
-    }
-
-    // Pause is the fixed E1 14 77 E1 F0 14 F0 77 sequence.
-    if (scancode == SC_PAUSE_PREFIX) {
-        kbd_state.extended = false;
-        set2_release_pending = false;
-        set2_pause_bytes_remaining = SET2_PAUSE_TRAILING_BYTES;
-        return;
-    }
-
-    if (scancode == SET2_RELEASE_PREFIX) {
-        set2_release_pending = true;
-        return;
-    }
-
-    bool released = set2_release_pending;
-    bool extended = kbd_state.extended;
-    set2_release_pending = false;
-    kbd_state.extended = false;
-
-    uint8_t base_scancode = set2_to_set1(scancode);
-    if (base_scancode == 0U) return;
-
+void kb_submit_key_event(uint8_t base_scancode, bool extended,
+                         bool released) {
+    if (base_scancode == 0U || base_scancode >= SC_MAX) return;
     // Handle extended keys (E0 prefix)
     if (extended) {
         if (base_scancode == SC_ENTER) {
@@ -664,6 +635,33 @@ static void kb_process_scancode(uint8_t scancode) {
     }
 }
 
+static void kb_process_scancode(uint8_t scancode) {
+    if (set2_pause_bytes_remaining != 0U) {
+        --set2_pause_bytes_remaining;
+        return;
+    }
+    if (scancode == SC_EXTENDED_PREFIX) {
+        kbd_state.extended = true;
+        return;
+    }
+    if (scancode == SC_PAUSE_PREFIX) {
+        kbd_state.extended = false;
+        set2_release_pending = false;
+        set2_pause_bytes_remaining = SET2_PAUSE_TRAILING_BYTES;
+        return;
+    }
+    if (scancode == SET2_RELEASE_PREFIX) {
+        set2_release_pending = true;
+        return;
+    }
+
+    bool released = set2_release_pending;
+    bool extended = kbd_state.extended;
+    set2_release_pending = false;
+    kbd_state.extended = false;
+    kb_submit_key_event(set2_to_set1(scancode), extended, released);
+}
+
 /* Caller keeps IRQs disabled so IRQ1 and the timed polling fallback cannot
  * consume the same output byte.  Mouse/error bytes are discarded rather than
  * being interpreted as raw Set-2 keyboard input. */
@@ -704,6 +702,8 @@ static void kb_poll_controller(void) {
     kb_drain_output_locked(KEYBOARD_DRAIN_BUDGET);
     kb_service_leds_locked();
     irq_restore(flags);
+    /* USB report and deferred port work share the console poll fallback. */
+    xhci_poll();
 }
 
 /**

@@ -12,7 +12,10 @@
 #include "drivers/bus/pci.h"
 #include <stdint.h>
 
-/* Returns failure until command/event rings and controller start-up exist. */
+/* Initialise one bounded xHCI root-port HID keyboard instance. */
 int xhci_probe(pci_device_t *dev);
+
+/* Drain deferred port/report work from task context, never from an IRQ. */
+void xhci_poll(void);
 
 #endif /* USB_XHCI_H */

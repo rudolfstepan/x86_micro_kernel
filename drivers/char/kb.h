@@ -73,4 +73,8 @@ bool kb_is_alt_pressed(void);
 bool kb_is_shift_pressed(void);
 kbd_state_t kb_get_state(void);
 
+/* Transport-neutral semantic ingress used by USB HID and future keyboards.
+ * The caller publishes one validated Set-1 key identity and its edge. */
+void kb_submit_key_event(uint8_t set1_scancode, bool extended, bool released);
+
 #endif
