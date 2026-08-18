@@ -264,14 +264,14 @@ static void xhci_ring_doorbell(uint8_t slot, uint8_t endpoint) {
 }
 
 static xhci_trb_t *xhci_command(uint32_t type, uint32_t d0, uint32_t d1,
-                                uint32_t d2) {
+                                uint32_t control) {
     uint32_t index = controller.command_index;
     xhci_trb_t *command = &command_ring[index];
     memset(command, 0, sizeof(*command));
     command->d[0] = d0;
     command->d[1] = d1;
-    command->d[2] = d2;
-    command->d[3] = TRB_TYPE(type) |
+    command->d[2] = 0U;
+    command->d[3] = TRB_TYPE(type) | control |
         (controller.command_cycle ? TRB_CYCLE : 0U);
     controller.command_index++;
     if (controller.command_index >= XHCI_COMMAND_RING_TRBS - 1U) {

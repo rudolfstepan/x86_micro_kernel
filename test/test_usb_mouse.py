@@ -35,6 +35,7 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("controller.command_index++", source)
         self.assertIn("dcbaa[slot] = xhci_dma32(device_context)", source)
         self.assertIn("controller.context_size", source)
+        self.assertIn("command->d[3] = TRB_TYPE(type) | control", source)
 
     def test_mouse_syscall_is_append_only_and_pointer_checked(self):
         stdlib = (ROOT / "lib/libc/stdlib.h").read_text(encoding="utf-8")
