@@ -24,7 +24,11 @@ package in the same run.
 
 ## Autonomous package protocol
 
-1. Require a clean worktree. Stop if unrelated changes overlap allowed files.
+1. Require a clean worktree before candidate implementation. An interactive
+   coordinating agent may first inspect, stage and commit only package-contract,
+   queue or documentation changes that it created for the user's current
+   request. Stop if any unrelated or unattributed change is present, or if a
+   user change overlaps package files.
 2. Read the active package, its listed files and only the relevant doc sections.
 3. Confirm the failure mode and add or tighten a regression test first when
    practical.
@@ -42,17 +46,25 @@ package in the same run.
    to `active`, and update `active_id`. When no queued package remains, set
    `active_id` to the empty string. Leave gate evidence bookkeeping to the
    deterministic outer runner.
-8. Do not stage or commit. Return `candidate` with an empty `commit`, `passed`
-   and `blocker`. The outer runner validates and commits the scoped changes,
-   writes the frozen gate list, executes it, and accepts it as evidence only
-   after success. Never push.
+8. A nested package agent invoked by the outer runner must not stage or commit;
+   it returns `candidate` with empty `commit`, `passed` and `blocker`. The
+   interactive coordinating agent may stage and commit only files it created
+   or edited for an explicit package-definition, queue, contract or
+   documentation request, after inspecting `git status`, `git diff` and
+   `git diff --check`. It must never include unrelated user changes. Candidate
+   implementation commits remain owned by the outer runner, which validates
+   scope, writes the frozen gate list, executes it and accepts it as evidence
+   only after success. Never push.
 9. On ambiguity, missing required inputs or a pre-existing source failure: do
    not commit and return `blocked` with one concrete cause.
 
-The outer runner is the only gate authority. It validates commit topology,
-scope and queue transition before executing candidate code. It runs trusted
-gate commands without a shell through `codex sandbox -P :workspace`, stops at
-the first failure and fast-forwards the main branch only after all gates pass.
+The outer runner is the only candidate and gate authority. An interactive
+agent may prepare and commit the contract/queue setup, then invoke the runner
+without asking for another routine handoff. The runner validates commit
+topology, scope and queue transition before executing candidate code. It runs
+trusted gate commands without a shell through `codex sandbox -P :workspace`,
+stops at the first failure and fast-forwards the main branch only after all
+gates pass.
 
 Do not use subagents in autonomous package runs.
 
