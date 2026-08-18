@@ -1,6 +1,6 @@
 # Externe Programme für die Kernel-Shell bauen
 
-Stand: 16. August 2026.
+Stand: 18. August 2026.
 
 Das Projekt enthält eine native Windows-Toolchain, die fremden C-Quelltext in
 das ausführbare `MYPR`-Format übersetzt. WSL, GRUB und ein Cross-GCC werden
@@ -95,6 +95,9 @@ Funktionen bereit. Dazu gehören:
 - `x86os_open`, `x86os_read`, `x86os_create`, `x86os_write`, `x86os_close`
 - `x86os_stat`, `x86os_readdir_batch`, `x86os_unlink`, Verzeichnisoperationen,
   `x86os_fsync`, Rename und Replace
+- `x86os_touch`; `x86os_file_info_t` liefert Erstellungs-, Änderungs- und
+  Zugriffszeit als Unix-Sekunden. FAT begrenzt die Auflösung auf zwei Sekunden
+  beziehungsweise ein Zugriffsdatum.
 - `x86os_getpid`, `x86os_spawn`, `x86os_wait` und Prozessdiagnose
 - begrenzte IPC-/Capability-, Display-, Drive-Info- und Storage-Service-ABIs
 - `x86os_exit`

@@ -19,7 +19,7 @@ unter Windows mit dem eigenen BIOS-Bootloader, ohne WSL oder ISO.
 Die bestehende öffentliche SDK-ABI behält vorerst ihre `x86os_*`-Symbolnamen,
 damit vorhandene PRG-Programme binär und quelltextlich kompatibel bleiben.
 
-Stand dieser Dokumentation: 16. August 2026.
+Stand dieser Dokumentation: 18. August 2026.
 
 ## Schnellstart unter Windows
 
@@ -39,7 +39,8 @@ Das erzeugt unter anderem:
 - `build/vmware/reist-os/`: vollständig startbare VMware-VM
 - `build/programs/`: native Ring-3-Systemprogramme, unter anderem `SHELL`,
   `REIST`, `STORAGE`, `DRIVES`, `CHKDSK`, `FDISK`, `FORMAT`, `SYSINFO`,
-  `MEMINFO`, `CAT`, `LS`, `SAVE`, `BASIC`, `EDIT`, `SPAWN`, `PS` und `KILL`
+  `MEMINFO`, `CAT`, `LS`, `SAVE`, `BASIC`, `EDIT`, `RENAME`, `STAT`, `DF`,
+  `TOUCH`, `TREE`, `FIND`, `RM`, `SPAWN`, `PS` und `KILL`
 
 Native Programme erhalten klassische `argc`/`argv`-Argumente und erben das
 Arbeitsverzeichnis der Shell. Beispielsweise zeigt `cat README.TXT` eine Datei
@@ -62,7 +63,8 @@ beendet wird.
 Die Userspace-Shell zeigt DOS-kompatible Laufwerksbuchstaben (`A:`/`B:` für
 Disketten und ab `C:` für gemountete ATA-/AHCI-Volumes). Ein Laufwerk wird beispielsweise
 mit `A:` oder `C:` gewechselt; interne VFS-Mountpfade bleiben verborgen.
-Dateiverwaltung steht als Ring-3-Programme `MKDIR`, `RMDIR`, `DEL` und `COPY`
+Dateiverwaltung steht als Ring-3-Programme `MKDIR`, `RMDIR`, `DEL`, `COPY`,
+`RENAME`, `STAT`, `DF`, `TOUCH`, `TREE`, `FIND` und `RM`
 zur Verfügung; DOS-Pfade können dabei auch laufwerksübergreifend verwendet
 werden, etwa `copy A:\README.TXT C:\README.TXT`.
 
@@ -70,6 +72,11 @@ werden, etwa `copy A:\README.TXT C:\README.TXT`.
 danach `PATH`. Beim Start enthält `PATH` das Stammverzeichnis des
 Bootlaufwerks, sodass Befehle auch in Unterverzeichnissen verfügbar bleiben.
 `path` zeigt den Suchpfad an; `path C:\;A:\TOOLS` setzt ihn neu.
+
+`TOUCH` aktualisiert bei FAT12/FAT32 die Änderungs- und Zugriffszeit oder legt
+eine leere Datei an. `STAT` zeigt die drei Dateizeiten als Unix-Sekunden.
+FAT speichert die Änderungszeit mit Zwei-Sekunden-Auflösung und das
+Zugriffsdatum ohne Uhrzeit.
 
 Die DOS-Aliase `DIR`, `TYPE`, `MD`, `RD` und `ERASE` starten die passenden
 Ring-3-Programme. Auch `ECHO`, `CLS` und `DRIVES` sind normale Programme und

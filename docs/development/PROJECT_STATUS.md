@@ -138,6 +138,23 @@ wiederholtes Schreiben und Readback. Reproduzierbar isolierte Defekte werden
 in beiden FATs als `0x0FFFFFF7` markiert; Kontroll- oder Transportfehler
 quarantänisieren das Medium.
 
+### Userspace-Dateisystemwerkzeuge und Zeitstempel
+
+Die erste Linux-artige Werkzeuggruppe ist als Ring-3-Programm in der festen
+Systemhierarchie verfügbar: `/bin/rename.prg`, `/bin/stat.prg`,
+`/bin/df.prg`, `/bin/touch.prg`, `/bin/tree.prg`, `/bin/find.prg` und
+`/bin/rm.prg`. `ren` und `mv` aliasieren `rename`, `cp` aliasiert `copy`.
+`tree`, `find` und `rm --recursive` verwenden feste Grenzen von 16 Ebenen und
+512 besuchten Einträgen; Root-Pfade werden von `rm` nicht akzeptiert.
+
+`vfs_dir_entry_t` und die Userspace-Dateiinformation liefern
+`create_time`, `modify_time` und `access_time` als Sekunden seit
+1970-01-01. FAT12 und FAT32 übersetzen ihre Directory-Felder über den
+gemeinsamen Konverter `fs/vfs/vfs_time.h`; `x86os_touch()` verwendet den
+append-only Syscall 108, um mtime und atime zu aktualisieren. FAT begrenzt
+mtime auf zwei Sekunden und atime auf ein Datum ohne Uhrzeit. EXT2 liefert
+seine vorhandenen Inode-Zeiten, bleibt für `touch` jedoch read-only.
+
 ### FAT12
 
 Für explizit markierte REIST-FAT12-Medien sind umgesetzt:
@@ -184,7 +201,9 @@ Gerätenamen, Typ und den von der Elternressource geerbten Recovery-Zustand.
 Die Buildliste enthält unter anderem `/libexec/reist/reist.prg`,
 `/libexec/reist/storage.prg`, `/bin/shell.prg`, `/sbin/drives.prg`,
 `/sbin/chkdsk.prg`, `/sbin/fdisk.prg`, `/sbin/format.prg`, `/bin/basic.prg`,
-`/bin/edit.prg` und die üblichen Datei-/Prozesswerkzeuge. `/bin/basic.prg` ist ein
+`/bin/edit.prg`, `/bin/rename.prg`, `/bin/stat.prg`, `/bin/df.prg`,
+`/bin/touch.prg`, `/bin/tree.prg`, `/bin/find.prg` und `/bin/rm.prg`.
+`/bin/basic.prg` ist ein
 normales Ring-3-Programm, keine Kernelkomponente.
 
 ## Eingabe, Diagnose und Panic

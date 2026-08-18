@@ -1730,6 +1730,9 @@ typedef struct {
     char name[256];
     uint32_t type;
     uint32_t size;
+    uint32_t create_time;
+    uint32_t modify_time;
+    uint32_t access_time;
 } syscall_file_info_t;
 
 static int syscall_copy_path(char resolved[PROCESS_PATH_MAX],
@@ -1748,6 +1751,9 @@ static int syscall_copy_file_info(void *user_info,
     strncpy(info.name, entry->name, sizeof(info.name) - 1U);
     info.type = (uint32_t)entry->type;
     info.size = entry->size;
+    info.create_time = entry->create_time;
+    info.modify_time = entry->modify_time;
+    info.access_time = entry->access_time;
     return copy_to_user(user_info, &info, sizeof(info)) == 0 ? 0 : -14;
 }
 
@@ -1791,6 +1797,9 @@ static int syscall_readdir_batch(const char *user_path, uint32_t index,
         strncpy(info[i].name, entries[i].name, sizeof(info[i].name) - 1U);
         info[i].type = (uint32_t)entries[i].type;
         info[i].size = entries[i].size;
+        info[i].create_time = entries[i].create_time;
+        info[i].modify_time = entries[i].modify_time;
+        info[i].access_time = entries[i].access_time;
     }
     size_t bytes = (size_t)result * sizeof(info[0]);
     return copy_to_user(user_entries, info, bytes) == 0 ? result : -14;
@@ -1803,6 +1812,13 @@ static int syscall_create(const char *user_path) {
     Process *process = scheduler_current_process();
     int descriptor = process_file_create(process, path);
     return descriptor < 0 ? -5 : descriptor;
+}
+
+static int syscall_touch(const char *user_path) {
+    char path[PROCESS_PATH_MAX];
+    int result = syscall_copy_path(path, user_path);
+    if (result != 0) return result;
+    return vfs_touch(path) == VFS_OK ? 0 : -5;
 }
 
 static int syscall_write(int descriptor, const void *user_buffer, size_t size) {
@@ -2261,6 +2277,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_tcp_socket_ingress,  // Syscall 105: Validated TCP ingress
     (void*)&syscall_tcp_socket_listen,   // Syscall 106: Passive TCP open
     (void*)&syscall_tcp_socket_accept,   // Syscall 107: Bounded accept
+    (void*)&syscall_touch,                // Syscall 108: Update file timestamps
     // Add more syscalls here as needed
 };
 
@@ -2380,6 +2397,11 @@ void syscall_handler(Registers* regs) {
         case SYS_CREATE:
             scheduler_preempt_disable();
             result = (uint32_t)syscall_create((const char*)(uintptr_t)arg1);
+            scheduler_preempt_enable();
+            break;
+        case SYS_TOUCH:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_touch((const char*)(uintptr_t)arg1);
             scheduler_preempt_enable();
             break;
         case SYS_WRITE:

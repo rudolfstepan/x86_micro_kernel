@@ -7,10 +7,12 @@
  * Safety: VFS-Mutationen durchlaufen Journal-, Remap- und Critical-Metadata-Verträge.
  */
 #include "fs/vfs/vfs.h"
+#include "fs/vfs/vfs_time.h"
 #include "fat12.h"
 #include "lib/libc/string.h"
 #include "lib/libc/stdlib.h"
 #include "drivers/bus/drives.h"
+#include "drivers/char/rtc.h"
 
 #define FAT12_VFS_PATH_MAX 256
 
@@ -245,6 +247,20 @@ static void fat12_fill_stat(const directory_entry* source,
     target->size = source->file_size;
     target->inode = source->first_cluster_low;
     target->attributes = source->attributes;
+    target->create_time = vfs_time_from_fat(source->create_date,
+                                             source->create_time);
+    target->modify_time = vfs_time_from_fat(source->last_write_date,
+                                             source->last_write_time);
+    target->access_time = vfs_time_from_fat(source->last_access_date, 0);
+}
+
+static void fat12_set_current_time(directory_entry* entry) {
+    int year, month, day, hours, minutes, seconds;
+    read_date(&year, &month, &day);
+    read_time(&hours, &minutes, &seconds);
+    entry->last_write_date = vfs_fat_date(year, month, day);
+    entry->last_write_time = vfs_fat_time(hours, minutes, seconds);
+    entry->last_access_date = entry->last_write_date;
 }
 
 static int fat12_resolve_parent(const char* path, uint16_t* parent,
@@ -883,6 +899,7 @@ static int fat12_vfs_create(vfs_filesystem_t* fs, const char* path) {
         status = VFS_ERR_IO;
     if (status == VFS_OK) {
         entry.attributes = FILE_ATTR_ARCHIVE;
+        fat12_set_current_time(&entry);
         if (!fat12_write_entry(&slot, &entry)) status = VFS_ERR_IO;
     }
     if (status != VFS_OK) {
@@ -920,6 +937,18 @@ static int fat12_vfs_delete(vfs_filesystem_t* fs, const char* path) {
     }
     free(original_fat);
     return status;
+}
+
+static int fat12_vfs_touch(vfs_filesystem_t* fs, const char* path) {
+    if (!fs || !path || fs != mounted_fat12_fs) return VFS_ERR_INVALID;
+    fat12_entry_location_t location;
+    int status = fat12_resolve_location(path, &location);
+    if (status != VFS_OK) return status;
+    if (location.entry.attributes & FILE_ATTR_DIRECTORY) return VFS_ERR_IS_DIR;
+    if (location.entry.attributes & FILE_ATTR_READONLY)
+        return VFS_ERR_READ_ONLY;
+    fat12_set_current_time(&location.entry);
+    return fat12_write_entry(&location, &location.entry) ? VFS_OK : VFS_ERR_IO;
 }
 
 static int fat12_vfs_stat(vfs_filesystem_t* fs, const char* path,
@@ -988,6 +1017,7 @@ vfs_filesystem_ops_t fat12_vfs_ops = {
     .rmdir = fat12_vfs_rmdir,
     .create = fat12_vfs_create,
     .delete = fat12_vfs_delete,
+    .touch = fat12_vfs_touch,
     .stat = fat12_vfs_stat,
     .space = fat12_vfs_space
 };

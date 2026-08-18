@@ -1,6 +1,6 @@
 # Fehlstellenanalyse und Implementierungsfahrplan
 
-Stand: 16. August 2026
+Stand: 18. August 2026
 
 Dieses Dokument beschreibt den anhand des aktuellen Quellstands geprüften
 Ist-Zustand, die wichtigsten noch fehlenden Betriebssystemfunktionen und eine
@@ -480,6 +480,12 @@ versionierte 128-Byte-Nachricht wird vollständig über validierte User-Kopien
 an die unter Präemptionsschutz aufgelöste aktuelle Generation einer Ziel-PID.
 `CONTROL` und Ambient-Spawn-Vererbung sind ausgeschlossen.
 
+Die Dateiinformationsstruktur führt inzwischen zusätzlich Erstellungs-,
+Änderungs- und Zugriffszeit als Unix-Sekunden. FAT12/FAT32 werden über
+`fs/vfs/vfs_time.h` validiert konvertiert; Syscall 108 (`x86os_touch`) setzt
+mtime/atime. Die Grenzen der FAT-Auflösung (2 Sekunden für mtime, Tagesdatum
+für atime) sowie die fehlende Zeitzonenverwaltung sind dokumentiert.
+
 - eine einzige gemeinsame, versionierte Quelle für Syscallnummern und
   Fehlercodes
 - stabile `errno`-ähnliche Fehlersemantik; aktuell werden VFS-Fehler oft auf
@@ -511,7 +517,8 @@ an die unter Präemptionsschutz aufgelöste aktuelle Generation einer Ziel-PID.
 - FAT-Schreibreihenfolge, Fehlerpropagation und Power-Loss-Tests
 - vollständige Unicode-VFAT-Kodierung und Normalisierung; ASCII-LFN bis 255
   Zeichen samt checksum-validiertem 8.3-Fallback ist implementiert
-- FAT-Zeitstempel über VFS; FAT32 liefert derzeit Nullen
+- FAT-Zeitstempel über VFS; FAT12/FAT32 lesen und aktualisieren Zeitfelder,
+  EXT2 liefert vorhandene Inode-Zeiten, aber kein schreibendes `touch`
 - mehrere FAT12-Volumes; der Adapter besitzt aktuell nur einen globalen
   `mounted_fat12_fs`
 - EXT2 entweder klar dauerhaft read-only halten oder erst nach den

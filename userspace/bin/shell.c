@@ -787,7 +787,7 @@ static void show_prompt(void) {
 
 static void show_help(void) {
     x86os_puts("Built-ins: cd path pwd history help exit\n");
-    x86os_puts("Aliases: dir type md rd erase clear\n");
+    x86os_puts("Aliases: dir type md rd erase clear ren mv cp\n");
     x86os_puts("Network: net ifconfig ping arp getip\n");
     x86os_puts("Use Up/Down to browse command history.\n");
     x86os_puts("Other commands are loaded as .PRG programs.\n");
@@ -800,6 +800,9 @@ static const char* program_alias(const char* command) {
     if (text_equal(command, "rd")) return "rmdir";
     if (text_equal(command, "erase")) return "del";
     if (text_equal(command, "clear")) return "cls";
+    if (text_equal(command, "ren")) return "rename";
+    if (text_equal(command, "mv")) return "rename";
+    if (text_equal(command, "cp")) return "copy";
     if (text_equal(command, "storage"))
         return "/libexec/reist/storage.prg";
     return command;

@@ -646,6 +646,15 @@ static int vfs_rename_locked(const char* old_path, const char* new_path) {
     return old_fs->ops->rename(old_fs, old_relative, new_relative);
 }
 
+static int vfs_touch_locked(const char* path) {
+    if (!path) return VFS_ERR_INVALID;
+    vfs_filesystem_t* fs = vfs_get_filesystem_locked(path);
+    if (!fs) return VFS_ERR_NOT_FOUND;
+    const char* relative_path = vfs_get_relative_path_locked(path, fs);
+    if (!fs->ops->touch) return VFS_ERR_UNSUPPORTED;
+    return fs->ops->touch(fs, relative_path);
+}
+
 // ===========================================================================
 // Public serialized API
 // ===========================================================================
@@ -881,6 +890,15 @@ int vfs_rename(const char* old_path, const char* new_path) {
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_rename_locked(old_path, new_path)
                        : VFS_ERR_READ_ONLY;
+    result = vfs_mutation_finish(armed, result);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_touch(const char* path) {
+    vfs_operation_begin();
+    bool armed = vfs_mutation_begin();
+    int result = armed ? vfs_touch_locked(path) : VFS_ERR_READ_ONLY;
     result = vfs_mutation_finish(armed, result);
     vfs_operation_end();
     return result;

@@ -7,6 +7,7 @@
  * Safety: Übersetzt VFS-Operationen ohne FAT32-Grenzen oder Schreibfences zu umgehen.
  */
 #include "fs/vfs/vfs.h"
+#include "fs/vfs/vfs_time.h"
 #include "fat32.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
@@ -291,10 +292,12 @@ static void fat32_entry_to_vfs_entry(struct fat32_dir_entry* fat_entry, vfs_dir_
     vfs_entry->inode = ((uint32_t)fat_entry->first_cluster_high << 16) | fat_entry->first_cluster_low;
     vfs_entry->attributes = fat_entry->attr;
     
-    // Convert FAT times to Unix-like timestamps (simplified)
-    vfs_entry->create_time = 0;  // TODO: Convert FAT date/time
-    vfs_entry->modify_time = 0;
-    vfs_entry->access_time = 0;
+    // FAT access time has date-only precision; midnight is the defined value.
+    vfs_entry->create_time = vfs_time_from_fat(fat_entry->crt_date,
+                                               fat_entry->crt_time);
+    vfs_entry->modify_time = vfs_time_from_fat(fat_entry->write_date,
+                                               fat_entry->write_time);
+    vfs_entry->access_time = vfs_time_from_fat(fat_entry->last_access_date, 0);
 }
 
 static vfs_node_t* fat32_make_node(vfs_filesystem_t* fs,
@@ -1046,6 +1049,28 @@ static int fat32_vfs_rename(vfs_filesystem_t* fs, const char* old_path,
     return result;
 }
 
+static int fat32_vfs_touch(vfs_filesystem_t* fs, const char* path) {
+    if (!fs || !path) return VFS_ERR_INVALID;
+    uint32_t flags = fat32_operation_begin();
+    fat32_activate(fs);
+    struct fat32_dir_entry entry;
+    uint32_t parent_cluster;
+    int result = fat32_resolve_entry(fs, path, &entry, &parent_cluster);
+    if (result == VFS_OK) {
+        if (entry.attr & ATTR_DIRECTORY) result = VFS_ERR_IS_DIR;
+        else if (entry.attr & ATTR_READ_ONLY) result = VFS_ERR_READ_ONLY;
+        else {
+            set_fat32_time(&entry.write_time, &entry.write_date);
+            set_fat32_time(NULL, &entry.last_access_date);
+            result = update_directory_entry(parent_cluster, entry.name,
+                                            &entry) ? VFS_OK : VFS_ERR_IO;
+            if (result == VFS_OK) fat32_flush_context(fs);
+        }
+    }
+    fat32_operation_end(flags);
+    return result;
+}
+
 static int fat32_vfs_stat(vfs_filesystem_t* fs, const char* path,
                           vfs_dir_entry_t* stat) {
     uint32_t flags = fat32_operation_begin();
@@ -1095,6 +1120,7 @@ vfs_filesystem_ops_t fat32_vfs_ops = {
     .create = fat32_vfs_create,
     .delete = fat32_vfs_delete,
     .rename = fat32_vfs_rename,
+    .touch = fat32_vfs_touch,
     .stat = fat32_vfs_stat,
     .space = fat32_vfs_space
 };

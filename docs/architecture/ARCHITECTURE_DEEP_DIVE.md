@@ -1,6 +1,6 @@
 # Architekturüberblick
 
-Stand: 16. August 2026
+Stand: 18. August 2026
 
 Dieses Dokument beschreibt die aktuelle 32-Bit-x86-Architektur. Das System
 startet ausschließlich über den eigenen BIOS-Bootloader. Einen alternativen
@@ -288,6 +288,12 @@ und Text am sichtbaren Bereich und wandelt `0x00RRGGBB` in das vom
 Bootloader gemeldete Pixelformat. Der lineare Framebuffer bleibt ausschließlich
 Supervisor-MMIO und wird nicht in Ring 3 gemappt.
 
+Die Dateiinformation erweitert den bestehenden Namen/Typ/Größen-Präfix
+append-only um `create_time`, `modify_time` und `access_time`. `stat` sowie
+`readdir_batch` kopieren diese Felder nach Ring 3. Syscall 108,
+`x86os_touch()`, aktualisiert die FAT-Zeitfelder über VFS; die alte
+Syscallnummerierung bleibt unverändert.
+
 ## Grafik und Desktop-MVP
 
 Ein `VIDEO=framebuffer`-Build lässt den nativen BIOS-Loader bevorzugt
@@ -322,6 +328,22 @@ Die VFS-Mounttabelle wählt anhand des längsten passenden Mountpfades einen
 Adapter. FAT32, FAT12 und EXT2 werden beim Boot registriert. Shell und
 Programmlader arbeiten mit absoluten VFS-Pfaden; DOS-Laufwerksnotation wird
 vorher im Shellresolver normalisiert.
+
+### Dateimetadaten und Userspace-Werkzeuge
+
+Die VFS-Eintragsstruktur führt Typ, Größe, Inode, Attribute und drei
+Zeitstempel. `fs/vfs/vfs_time.h` validiert FAT-Kalenderwerte und konvertiert
+sie in Sekunden seit 1970-01-01. Die Konvertierung ist bewusst unabhängig von
+libc und begrenzt; ungültige On-Disk-Werte werden als Zeit `0` gemeldet.
+FAT-Schreibzeiten besitzen die FAT-Auflösung von zwei Sekunden, FAT-
+Zugriffszeiten nur Tagesauflösung. Eine Zeitzonenverwaltung ist nicht Teil des
+aktuellen RTC-Vertrags.
+
+Die Systemprogramme liegen wie bei Linux nach Funktion unter `/bin`, `/sbin`
+und `/usr/bin`. Die Dateiverwaltung umfasst `rename`, `stat`, `df`, `touch`,
+`tree`, `find` und `rm --recursive`; Shell-Aliase sind `ren`, `mv` und `cp`.
+Traversierungen sind auf 16 Ebenen und 512 Einträge begrenzt. `rm` verweigert
+Root-Pfade und löscht Verzeichnisse nur mit explizitem `--recursive`.
 
 Öffentliche VFS- sowie synchrone ATA-/AHCI-/FDD-Transaktionen laufen nach dem
 [Synchronisationsvertrag](SYNCHRONIZATION_CONTRACT.md) mit aktiven IRQs unter

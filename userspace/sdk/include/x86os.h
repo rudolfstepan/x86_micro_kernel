@@ -119,7 +119,8 @@ enum {
     X86OS_SYS_TCP_SOCKET_RECEIVE = 104,
     X86OS_SYS_TCP_SOCKET_INGRESS = 105,
     X86OS_SYS_TCP_SOCKET_LISTEN = 106,
-    X86OS_SYS_TCP_SOCKET_ACCEPT = 107
+    X86OS_SYS_TCP_SOCKET_ACCEPT = 107,
+    X86OS_SYS_TOUCH = 108
 };
 
 #define X86OS_TCP_SOCKET_VERSION 1U
@@ -282,6 +283,9 @@ typedef struct {
     char name[256];
     uint32_t type;
     uint32_t size;
+    uint32_t create_time;
+    uint32_t modify_time;
+    uint32_t access_time;
 } x86os_file_info_t;
 
 enum {
@@ -870,6 +874,7 @@ int x86os_write(int descriptor, const void* buffer, size_t size);
 int x86os_fsync(int descriptor);
 int x86os_unlink(const char* path);
 int x86os_rename(const char* old_path, const char* new_path);
+int x86os_touch(const char* path);
 int x86os_getpid(void);
 int x86os_spawn(const char* path);
 int x86os_spawnv(const char* path, int argc, const char* const* argv);
