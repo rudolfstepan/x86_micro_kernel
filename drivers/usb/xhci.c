@@ -358,7 +358,10 @@ static bool xhci_drain_events(uint32_t limit, uint32_t expected,
             }
         }
 event_done:
-        memset(event, 0, sizeof(*event));
+        /* Do not clear consumed event TRBs.  Their old cycle bit must remain
+         * visible so that, after the consumer-cycle toggle at ring wrap, an
+         * entry is not mistaken for a newly produced event before hardware
+         * has written it with the new producer cycle. */
         controller.event_index++;
         if (controller.event_index >= XHCI_EVENT_RING_TRBS) {
             controller.event_index = 0U;

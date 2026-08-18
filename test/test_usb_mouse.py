@@ -48,6 +48,14 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("completion == XHCI_COMPLETION_SHORT_PACKET", source)
         self.assertIn("xhci_queue_interrupt_report", source)
 
+    def test_xhci_preserves_consumed_event_cycle_bits(self):
+        source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
+        drain_start = source.index("static bool xhci_drain_events")
+        drain_end = source.index("static bool xhci_wait_command", drain_start)
+        drain = source[drain_start:drain_end]
+        self.assertNotIn("memset(event, 0, sizeof(*event))", drain)
+        self.assertIn("controller.event_cycle = !controller.event_cycle", drain)
+
     def test_desktop_escape_returns_to_parent_shell(self):
         source = (ROOT / "userspace/programs/desktop.c").read_text(
             encoding="utf-8")
