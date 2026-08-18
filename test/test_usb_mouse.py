@@ -47,6 +47,14 @@ class UsbMouseTests(unittest.TestCase):
                         body.index("hid_mouse_read_event"))
         self.assertIn("copy_to_user", body)
 
+    def test_vmware_requests_the_actual_xhci_controller_key(self):
+        image = (ROOT / "scripts/create_native_boot_image.py").read_text(
+            encoding="utf-8")
+        self.assertIn('usb_xhci.present = "TRUE"', image)
+        self.assertIn('usb_xhci:4.deviceType = "hid"', image)
+        self.assertIn('mouse.vusb.present = "TRUE"', image)
+        self.assertNotIn('\nxhci.present = "TRUE"', image)
+
 
 if __name__ == "__main__":
     unittest.main()

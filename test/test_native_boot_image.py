@@ -423,7 +423,10 @@ class NativeBootImageTests(unittest.TestCase):
         self.assertIn('floppy0.present = "FALSE"', text)
         self.assertIn('ethernet0.virtualDev = "e1000"', text)
         self.assertIn('ethernet0.connectionType = "nat"', text)
-        self.assertIn('xhci.present = "TRUE"', text)
+        self.assertIn('usb_xhci.present = "TRUE"', text)
+        self.assertIn('usb_xhci:4.deviceType = "hid"', text)
+        self.assertIn('mouse.vusb.present = "TRUE"', text)
+        self.assertNotIn('\nxhci.present = "TRUE"', text)
         self.assertIn('mouse.vusb.enable = "TRUE"', text)
 
     def test_vmware_fdd_switch_uses_legacy_physical_backing(self):
