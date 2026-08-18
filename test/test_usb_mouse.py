@@ -51,6 +51,8 @@ class UsbMouseTests(unittest.TestCase):
         image = (ROOT / "scripts/create_native_boot_image.py").read_text(
             encoding="utf-8")
         self.assertIn('usb_xhci.present = "TRUE"', image)
+        self.assertIn('pciBridge4.virtualDev = "pcieRootPort"', image)
+        self.assertIn('usb_xhci.pciSlotNumber = "160"', image)
         self.assertIn('usb_xhci:4.deviceType = "hid"', image)
         self.assertIn('mouse.vusb.present = "TRUE"', image)
         self.assertNotIn('\nxhci.present = "TRUE"', image)

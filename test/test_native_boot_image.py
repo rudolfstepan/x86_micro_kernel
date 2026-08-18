@@ -424,6 +424,8 @@ class NativeBootImageTests(unittest.TestCase):
         self.assertIn('ethernet0.virtualDev = "e1000"', text)
         self.assertIn('ethernet0.connectionType = "nat"', text)
         self.assertIn('usb_xhci.present = "TRUE"', text)
+        self.assertIn('pciBridge4.virtualDev = "pcieRootPort"', text)
+        self.assertIn('usb_xhci.pciSlotNumber = "160"', text)
         self.assertIn('usb_xhci:4.deviceType = "hid"', text)
         self.assertIn('mouse.vusb.present = "TRUE"', text)
         self.assertNotIn('\nxhci.present = "TRUE"', text)
