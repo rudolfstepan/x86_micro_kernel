@@ -39,11 +39,54 @@
 #define SVGA_REG_FB_START 13U
 #define SVGA_REG_FB_OFFSET 14U
 #define SVGA_REG_FB_SIZE 16U
+#define SVGA_REG_MEM_START 18U
+#define SVGA_REG_MEM_SIZE 19U
+#define SVGA_REG_CONFIG_DONE 20U
+#define SVGA_REG_SYNC 21U
+#define SVGA_REG_MEM_REGS 30U
 #define SVGA_ID_2 0x90000002U
 #define SVGA_ID_1 0x90000001U
 #define SVGA_ENABLE 1U
+#define SVGA_FIFO_MIN 0U
+#define SVGA_FIFO_MAX 1U
+#define SVGA_FIFO_NEXT_CMD 2U
+#define SVGA_FIFO_STOP 3U
+#define SVGA_CMD_UPDATE 1U
 
 static volatile bool activation_busy;
+static volatile uint32_t *vmware_fifo;
+static uint16_t vmware_index_port;
+static uint16_t vmware_value_port;
+
+static void svga_write(uint16_t index_port, uint16_t value_port,
+                       uint32_t index, uint32_t value);
+
+static bool vmware_fifo_write(uint32_t value) {
+    if (!vmware_fifo) return false;
+    uint32_t minimum = vmware_fifo[SVGA_FIFO_MIN];
+    uint32_t maximum = vmware_fifo[SVGA_FIFO_MAX];
+    uint32_t next = vmware_fifo[SVGA_FIFO_NEXT_CMD];
+    uint32_t stop = vmware_fifo[SVGA_FIFO_STOP];
+    if (minimum < 4U * sizeof(uint32_t) || maximum <= minimum ||
+        (minimum & 3U) != 0U || (maximum & 3U) != 0U ||
+        next < minimum || next >= maximum || stop < minimum || stop >= maximum)
+        return false;
+    uint32_t following = next + sizeof(uint32_t);
+    if (following == maximum) following = minimum;
+    if (following == stop) return false;
+    vmware_fifo[next / sizeof(uint32_t)] = value;
+    vmware_fifo[SVGA_FIFO_NEXT_CMD] = following;
+    return true;
+}
+
+void display_control_present_rect(uint32_t x, uint32_t y,
+                                  uint32_t width, uint32_t height) {
+    if (!vmware_fifo || width == 0U || height == 0U) return;
+    if (!vmware_fifo_write(SVGA_CMD_UPDATE) ||
+        !vmware_fifo_write(x) || !vmware_fifo_write(y) ||
+        !vmware_fifo_write(width) || !vmware_fifo_write(height)) return;
+    svga_write(vmware_index_port, vmware_value_port, SVGA_REG_SYNC, 1U);
+}
 
 static uint16_t dispi_read(uint16_t index) {
     outw(DISPI_INDEX, index);
@@ -86,9 +129,12 @@ static pci_device_t *find_qemu_vga(uint32_t *lfb_out) {
 static int activate_vmware(pci_device_t *device) {
     uint32_t index_bar = device->bar[0];
     uint32_t framebuffer_bar = device->bar[1];
+    uint32_t fifo_bar = device->bar[2];
     if ((index_bar & 1U) == 0U || (framebuffer_bar & 0x06U) != 0U ||
+        (fifo_bar & 0x06U) != 0U ||
         (index_bar & 0xFFFFFFFCU) == 0U ||
-        (framebuffer_bar & 0xFFFFFFF0U) == 0U) return -19;
+        (framebuffer_bar & 0xFFFFFFF0U) == 0U ||
+        (fifo_bar & 0xFFFFFFF0U) == 0U) return -19;
     uint16_t index_port = (uint16_t)(index_bar & 0xFFFCU);
     uint16_t value_port = (uint16_t)(index_port + 1U);
     /* SVGA-II negotiates the register protocol by writing the requested
@@ -131,6 +177,22 @@ static int activate_vmware(pci_device_t *device) {
         framebuffer_offset > fb_size ||
         visible_bytes > (uint64_t)fb_size - framebuffer_offset)
         return -19;
+    uint32_t fifo_start = svga_read(index_port, value_port, SVGA_REG_MEM_START);
+    uint32_t fifo_size = svga_read(index_port, value_port, SVGA_REG_MEM_SIZE);
+    uint32_t fifo_registers =
+        svga_read(index_port, value_port, SVGA_REG_MEM_REGS);
+    uint32_t fifo_minimum = fifo_registers * sizeof(uint32_t);
+    if (fifo_start == 0U) fifo_start = fifo_bar & 0xFFFFFFF0U;
+    if (fifo_size < 4096U || fifo_registers < 4U ||
+        fifo_registers > fifo_size / sizeof(uint32_t) ||
+        fifo_minimum > fifo_size - 5U * sizeof(uint32_t)) return -19;
+    volatile uint32_t *fifo = map_mmio_region(fifo_start, fifo_size);
+    if (!fifo) return -19;
+    fifo[SVGA_FIFO_MIN] = fifo_minimum;
+    fifo[SVGA_FIFO_MAX] = fifo_size;
+    fifo[SVGA_FIFO_NEXT_CMD] = fifo_minimum;
+    fifo[SVGA_FIFO_STOP] = fifo_minimum;
+    svga_write(index_port, value_port, SVGA_REG_CONFIG_DONE, 1U);
     multiboot_framebuffer_info_t info = {
         .framebuffer_addr = framebuffer_address,
         .framebuffer_pitch = pitch, .framebuffer_width = width,
@@ -141,7 +203,12 @@ static int activate_vmware(pci_device_t *device) {
         .blue_mask_size = 8U
     };
     framebuffer_init(&info);
-    return framebuffer_available() ? 0 : -19;
+    if (!framebuffer_available()) return -19;
+    vmware_fifo = fifo;
+    vmware_index_port = index_port;
+    vmware_value_port = value_port;
+    display_control_present_rect(0U, 0U, width, height);
+    return 0;
 }
 
 int display_control_activate(void) {

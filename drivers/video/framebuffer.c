@@ -7,6 +7,7 @@
  * Safety: Clipping verhindert Writes außerhalb des gemappten Videospeichers.
  */
 #include "framebuffer.h"
+#include "display_control.h"
 #include "arch/x86/mm/paging.h"
 #include "lib/libc/string.h"
 
@@ -4822,6 +4823,9 @@ bool framebuffer_fill_rect(int32_t x, int32_t y, uint32_t width,
             pixel += fb_bytes_per_pixel;
         }
     }
+    display_control_present_rect((uint32_t)left, (uint32_t)top,
+                                 (uint32_t)(right - left),
+                                 (uint32_t)(bottom - top));
     return true;
 }
 
@@ -4840,6 +4844,18 @@ bool framebuffer_draw_text_pixels(int32_t x, int32_t y, const char* text,
             (int64_t)y + FONT_HEIGHT <= 0) continue;
         fb_draw_glyph_pixels(text[index], (int)glyph_x, (int)y,
                              foreground_rgb, background_rgb);
+    }
+    if (length != 0U) {
+        int64_t left = x < 0 ? 0 : x;
+        int64_t top = y < 0 ? 0 : y;
+        int64_t right = (int64_t)x + (int64_t)length * FONT_WIDTH;
+        int64_t bottom = (int64_t)y + FONT_HEIGHT;
+        if (right > (int64_t)fb_width) right = fb_width;
+        if (bottom > (int64_t)fb_height) bottom = fb_height;
+        if (left < right && top < bottom)
+            display_control_present_rect((uint32_t)left, (uint32_t)top,
+                                         (uint32_t)(right - left),
+                                         (uint32_t)(bottom - top));
     }
     return true;
 }
@@ -4872,6 +4888,7 @@ void framebuffer_scroll() {
             dst[i] = src[i];
         }
     }
+    display_control_present_rect(0U, 0U, fb_width, fb_height);
     
     // Clear the last row
     for (int x = 0; x < terminal_cols; x++) {

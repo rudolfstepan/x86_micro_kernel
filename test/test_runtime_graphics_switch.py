@@ -15,6 +15,7 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         cls.sdk = (ROOT / "userspace/sdk/x86os.c").read_text()
         cls.desktop = (ROOT / "userspace/programs/desktop.c").read_text()
         cls.display = (ROOT / "drivers/video/display.c").read_text()
+        cls.framebuffer = (ROOT / "drivers/video/framebuffer.c").read_text()
         cls.stdlib = (ROOT / "lib/libc/stdlib.h").read_text()
 
     def test_append_only_control_abi(self):
@@ -49,6 +50,12 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
     def test_console_backend_is_runtime_selected(self):
         self.assertIn("framebuffer_available()", self.display)
         self.assertIn("#define USE_FRAMEBUFFER 1", self.display)
+
+    def test_vmware_backend_presents_dirty_rectangles_through_fifo(self):
+        self.assertIn("SVGA_REG_CONFIG_DONE", self.control)
+        self.assertIn("SVGA_CMD_UPDATE", self.control)
+        self.assertIn("SVGA_FIFO_NEXT_CMD", self.control)
+        self.assertIn("display_control_present_rect", self.framebuffer)
 
 
 if __name__ == "__main__":
