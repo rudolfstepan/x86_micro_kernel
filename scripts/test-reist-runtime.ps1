@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'system-layout', 'partition-provisioning', 'partition-full-format', 'handover')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'system-layout', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal'
 )
 
@@ -10,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $Image = Join-Path $RepoRoot 'build\reist-os.img'
 $Runner = Join-Path $RepoRoot 'scripts\run_qemu_smoke.py'
+$RuntimeDesktopRunner = Join-Path $RepoRoot 'scripts\run_qemu_runtime_desktop.py'
 $FddHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_fdd_hotplug.py'
 $SataHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_sata_hotplug.py'
 $AdminMaintenanceRunner = Join-Path $RepoRoot 'scripts\run_qemu_admin_maintenance.py'
@@ -89,6 +90,19 @@ function Invoke-Smoke(
         throw "REIST runtime smoke '$LogName' failed with exit $exitCode."
     }
     Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+}
+
+function Invoke-RuntimeDesktop([bool]$ExpectFailure = $false) {
+    $screenshot = Join-Path $RepoRoot 'build\runtime-desktop.ppm'
+    $arguments = @('--qemu', $Qemu, '--image', $Image,
+        '--screenshot', $screenshot)
+    if ($ExpectFailure) { $arguments += '--expect-failure' }
+    & $Python $RuntimeDesktopRunner @arguments
+    if ($ExpectFailure) {
+        if ($LASTEXITCODE -eq 0) { throw 'Runtime graphics failure was not rejected.' }
+    } elseif ($LASTEXITCODE -ne 0) {
+        throw 'Runtime desktop activation failed.'
+    }
 }
 
 function Invoke-FddHotplug {
@@ -380,5 +394,11 @@ switch ($Mode) {
         Invoke-Smoke 'guest-smoke-handover.log' @(
             '--expect-handover'
         )
+    }
+    'runtime-desktop' {
+        Invoke-RuntimeDesktop
+    }
+    'runtime-desktop-vbe-failure' {
+        Invoke-RuntimeDesktop $true
     }
 }

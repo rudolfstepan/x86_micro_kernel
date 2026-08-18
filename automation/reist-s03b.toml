@@ -1491,6 +1491,8 @@ allowed_files = [
   "drivers/video/framebuffer.c",
   "drivers/video/display_control.h",
   "drivers/video/display_control.c",
+  "drivers/video/display.c",
+  "lib/libc/stdlib.h",
   "kernel/proc/process.h",
   "kernel/proc/process.c",
   "kernel/syscall/syscall_table.c",

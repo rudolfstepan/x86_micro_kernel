@@ -252,7 +252,12 @@ int main(void) {
     x86os_display_info_t display;
     unsigned int selected = 0;
 
-    if (x86os_display_info(&display) != 0 ||
+    int display_status = x86os_display_info(&display);
+    if (display_status != 0) {
+        (void)x86os_display_activate();
+        display_status = x86os_display_info(&display);
+    }
+    if (display_status != 0 ||
         display.version != X86OS_DISPLAY_ABI_VERSION ||
         display.struct_size < sizeof(display) ||
         display.width < 320U || display.height < 240U ||

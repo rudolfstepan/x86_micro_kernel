@@ -97,6 +97,8 @@ fixieren. Erwartet werden ausschließlich:
 - `drivers/video/framebuffer.h`
 - `drivers/video/framebuffer.c`
 - neue Display-Control-Dateien unter `drivers/video/`
+- `drivers/video/display.c`
+- `lib/libc/stdlib.h`
 - `kernel/proc/process.h`
 - `kernel/proc/process.c`
 - `kernel/syscall/syscall_table.c`
@@ -213,8 +215,18 @@ begrenzte Arbeitspakete.
 
 ## Erwartetes Restrisiko
 
-Der native DISPI-Treiber vergrößert die privilegierte Trusted Computing Base
-und unterstützt zunächst nur die exakt geprüfte QEMU-Standard-VGA-Variante.
-Der QEMU-Nachweis belegt keine VMware- oder universelle Hardwarekompatibilität.
-VMware SVGA, reale Adapter und UEFI GOP benötigen eigene begrenzte Treiber und
-separate Arbeitspakete.
+Der native Treiber vergrößert die privilegierte Trusted Computing Base. Für
+QEMU wird Bochs-DISPI, für VMware Workstation das PCI-Gerät VMware SVGA II
+unterstützt. Beide Backends bleiben bewusst auf einen festen 32-Bit-Modus
+begrenzt; reale Adapter und UEFI GOP benötigen weiterhin eigene Treiber.
+
+Der VMware-Nachweis erfolgt mit dem vorhandenen Legacy-BIOS-Paket:
+
+```powershell
+.\scripts\build-windows.ps1 -Target vmware -Video vga
+.\build\vmware\reist-os\START-VMWARE.cmd
+```
+
+Nach dem Boot wird `desktop.prg` an der Shell gestartet. Das serielle
+Protokoll `build\vmware\reist-os\vmware-serial.log` bleibt die Diagnosequelle;
+die VM muss für einen Neubau ausgeschaltet sein.

@@ -11,6 +11,7 @@
 #include "arch/x86/include/sys.h"
 #include "drivers/video/display.h"
 #include "drivers/video/framebuffer.h"
+#include "drivers/video/display_control.h"
 #include "drivers/char/kb.h"
 #include "drivers/char/rtc.h"
 #include "drivers/bus/drives.h"
@@ -1814,6 +1815,15 @@ static int syscall_create(const char *user_path) {
     return descriptor < 0 ? -5 : descriptor;
 }
 
+static int syscall_display_control(const display_control_request_t *user_request) {
+    display_control_request_t request;
+    if (copy_from_user(&request, user_request, sizeof(request)) != 0) return -14;
+    if (request.version != DISPLAY_CONTROL_ABI_VERSION ||
+        request.struct_size < sizeof(request) || request.reserved != 0U ||
+        request.operation != DISPLAY_CONTROL_ACTIVATE) return -22;
+    return display_control_activate();
+}
+
 static int syscall_touch(const char *user_path) {
     char path[PROCESS_PATH_MAX];
     int result = syscall_copy_path(path, user_path);
@@ -2278,6 +2288,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_tcp_socket_listen,   // Syscall 106: Passive TCP open
     (void*)&syscall_tcp_socket_accept,   // Syscall 107: Bounded accept
     (void*)&syscall_touch,                // Syscall 108: Update file timestamps
+    (void*)&syscall_display_control,      // Syscall 109: Native display activation
     // Add more syscalls here as needed
 };
 
@@ -2519,6 +2530,10 @@ void syscall_handler(Registers* regs) {
         case SYS_DISPLAY_INFO:
             result = (uint32_t)syscall_display_info(
                 (framebuffer_display_info_t*)(uintptr_t)arg1);
+            break;
+        case SYS_DISPLAY_CONTROL:
+            result = (uint32_t)syscall_display_control(
+                (const display_control_request_t*)(uintptr_t)arg1);
             break;
         case SYS_FILL_RECT:
             result = (uint32_t)syscall_display_fill_rect(

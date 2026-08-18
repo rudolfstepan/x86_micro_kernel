@@ -120,7 +120,8 @@ enum {
     X86OS_SYS_TCP_SOCKET_INGRESS = 105,
     X86OS_SYS_TCP_SOCKET_LISTEN = 106,
     X86OS_SYS_TCP_SOCKET_ACCEPT = 107,
-    X86OS_SYS_TOUCH = 108
+    X86OS_SYS_TOUCH = 108,
+    X86OS_SYS_DISPLAY_CONTROL = 109
 };
 
 #define X86OS_TCP_SOCKET_VERSION 1U
@@ -567,6 +568,8 @@ typedef struct {
 
 #define X86OS_DISPLAY_ABI_VERSION 1U
 #define X86OS_DISPLAY_MAX_TEXT 256U
+#define X86OS_DISPLAY_CONTROL_VERSION 1U
+#define X86OS_DISPLAY_ACTIVATE 1U
 
 typedef struct {
     uint32_t version;
@@ -605,6 +608,13 @@ typedef struct {
     uint32_t text_address;
     uint32_t text_length;
 } x86os_display_text_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t reserved;
+} x86os_display_control_t;
 
 enum {
     X86OS_DRIVE_ATA = 1,
@@ -848,6 +858,7 @@ int x86os_reist_report(uint32_t report_type, uint32_t value);
 int x86os_service_connect(uint32_t service_id,
                           x86os_ipc_handle_t* handle);
 int x86os_display_info(x86os_display_info_t* info);
+int x86os_display_activate(void);
 int x86os_fill_rect(int32_t x, int32_t y, uint32_t width, uint32_t height,
                     uint32_t rgb);
 int x86os_draw_text_pixels(int32_t x, int32_t y, const char* text,

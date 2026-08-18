@@ -8,6 +8,12 @@
  */
 #include "display.h"
 
+/* The backend is selected at runtime so a VGA boot can activate the native
+ * framebuffer later.  framebuffer_available() remains the fail-closed gate. */
+#ifndef USE_FRAMEBUFFER
+#define USE_FRAMEBUFFER 1
+#endif
+
 #ifdef USE_FRAMEBUFFER
 #include "framebuffer.h"
 #include "drivers/char/serial.h"

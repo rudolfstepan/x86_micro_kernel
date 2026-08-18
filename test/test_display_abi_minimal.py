@@ -72,11 +72,10 @@ class MinimalDisplayAbiTests(unittest.TestCase):
             fields = typedef.group("body")
             self.assertRegex(fields, r"uint32_t\s+version\s*;")
             self.assertRegex(fields, r"uint32_t\s+struct_size\s*;")
-        info = re.search(
-            r"typedef\s+struct\s*\{(?P<body>.*?)\}\s*x86os_display_info_t\s*;",
-            self.user_header,
-            re.S,
-        ).group("body")
+        info_name = "x86os_display_info_t"
+        info_end = self.user_header.index(info_name)
+        info_start = self.user_header.rfind("typedef struct", 0, info_end)
+        info = self.user_header[info_start:info_end]
         self.assertNotRegex(info, r"(?:address|pointer|lfb)")
 
     def test_kernel_copies_and_validates_all_user_requests(self) -> None:
