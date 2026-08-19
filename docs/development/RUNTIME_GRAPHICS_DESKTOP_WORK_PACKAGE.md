@@ -485,8 +485,24 @@ Bootkeyboards nun zusätzlich das standardisierte `SET_IDLE` mit einem
 begrenzten 40-ms-Intervall. Dieser von Referenz-Bootkeyboard-Treibern
 verwendete Startablauf deckt Firmware ab, die vor Interrupt-IN-Reports eine
 explizite Idle-Programmierung verlangt; Mäuse und bereits funktionierende
-einfache Keyboards behalten ihren bisherigen Datenpfad. Der physische
-AULA-Nachweis steht noch aus.
+einfache Keyboards behalten ihren bisherigen Datenpfad.
+
+### Offener Hardwarebug: AULA/BY-Tech `258A:010C`
+
+Der anschließende physische ASUS-Retest blieb auch mit `SET_IDLE` ohne
+verwendbare Eingabe des AULA-Keyboards. Der Fehler ist damit ausdrücklich
+offen; dieser Stand beansprucht keine Unterstützung für dieses Gerät. Die
+USB-Maus und ein anderes einfaches USB-Bootkeyboard funktionieren am selben
+Mainboard, ebenso Tastatur und Maus im QEMU-Dual-HID-Test. Der bestätigte
+allgemeine xHCI-Pfad bleibt deshalb erhalten.
+
+Eine spätere Bearbeitung beginnt nicht mit weiteren Initialisierungsversuchen,
+sondern mit einer festen, begrenzten Diagnose je HID-Ressource: erster
+Interrupt-Completion-Code, Restlänge und höchstens die ersten acht Reportbytes
+für Slot und DCI des AULA-Interface 0. Erst dieser Nachweis entscheidet, ob der
+Controller keinen Transfer abschließt, das Gerät den Bootmodus ignoriert oder
+ein abweichendes Reportformat liefert. Diagnoseausgabe erfolgt weiterhin nur
+aus Task-Kontext; Host-HID-Durchreichung in VMware bleibt verboten.
 
 ## Erwartetes Restrisiko
 
