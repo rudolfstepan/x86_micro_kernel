@@ -48,6 +48,16 @@ class UsbKeyboardTests(unittest.TestCase):
         self.assertIn("generation != active_generation", source)
         self.assertIn("hid_keyboard_detach", source)
 
+    def test_blocking_console_input_polls_xhci_before_queue_lock(self):
+        source = (ROOT / "drivers/char/kb.c").read_text(encoding="utf-8")
+        start = source.index("char getchar(void)")
+        end = source.index("char getchar_nonblocking(void)", start)
+        blocking = source[start:end]
+        self.assertIn("xhci_poll();", blocking)
+        self.assertLess(blocking.index("xhci_poll();"),
+                        blocking.index("uint32_t flags = irq_save();"))
+        self.assertIn("KEYBOARD_POLL_INTERVAL_MS", blocking)
+
 
 if __name__ == "__main__":
     unittest.main()

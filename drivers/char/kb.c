@@ -759,6 +759,13 @@ char getchar(void) {
     KASSERT_CAN_SLEEP();
 
     while (1) {
+        /* A physical xHCI controller may not deliver its legacy PCI IRQ even
+         * though command and transfer rings are operational.  Keep the same
+         * bounded 10-ms fallback used for i8042 input and drain xHCI before
+         * testing the shared keyboard queue.  This must happen before the
+         * queue lock is acquired because a USB report publishes through
+         * kb_submit_key_event() into that queue. */
+        xhci_poll();
         uint32_t flags = irq_save();
         kb_drain_output_locked(KEYBOARD_DRAIN_BUDGET);
         kb_service_leds_locked();

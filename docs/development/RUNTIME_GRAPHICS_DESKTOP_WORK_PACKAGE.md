@@ -371,6 +371,17 @@ bisherigen Größen. Kernel-Rettungsshell und das paketierte
 `/sbin/usbinfo.prg` zeigen dieselben neuen Felder. Der reale ASUS-Nachweis für
 gleichzeitige Tastatur- und Mausreports steht noch aus.
 
+Der erste Lauf dieses Dual-HID-Stands zeigte weiterhin keine Eingabe in der
+normalen Userspace-Shell. Die Enumeration war nicht der einzige Pfadfehler:
+Der blockierende gemeinsame `getchar()`-Leser wartete zwar mit einer
+10-ms-Deadline auf PS/2-Eingabe, rief den vorhandenen xHCI-Poll-Fallback aber
+nicht auf. USB-Tastaturreports hingen damit auf realer Hardware vollständig
+von einem funktionierenden Legacy-PCI-IRQ ab. Der Leser leert nun vor jeder
+atomaren Queue-Prüfung auch den begrenzten xHCI-Eventring; das geschieht vor
+dem Queue-Lock, da die Reportauswertung über `kb_submit_key_event()` in genau
+diese Queue publiziert. IRQ-Betrieb bleibt erhalten, Polling ist nur der
+bereits zeitlich begrenzte Ausweichpfad.
+
 ## Erwartetes Restrisiko
 
 Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte
