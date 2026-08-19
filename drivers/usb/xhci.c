@@ -166,6 +166,15 @@ static bool xhci_dma_valid(const void *address, uint32_t alignment) {
     return value != 0U && (value & (alignment - 1U)) == 0U;
 }
 
+static uint32_t xhci_scratchpad_count(uint32_t hcs2) {
+    /* xHCI HCSPARAMS2 stores bits 9:5 in 25:21 and bits 4:0 in
+     * 31:27. Keeping the halves in their specified order matters on Intel
+     * controllers: swapping them turns four scratchpads into 128. */
+    uint32_t high = (hcs2 >> 21U) & 0x1FU;
+    uint32_t low = (hcs2 >> 27U) & 0x1FU;
+    return (high << 5U) | low;
+}
+
 static uint32_t xhci_read(uint32_t offset) {
     return controller.mmio[offset >> 2U];
 }
@@ -774,12 +783,11 @@ int xhci_probe(pci_device_t *dev) {
     uint32_t hcs2 = xhci_read(8U);
     uint32_t hcc = xhci_read(0x10U);
     controller.op_base = caplength;
-    controller.doorbell_base = xhci_read(0x14U);
-    controller.runtime_base = xhci_read(0x18U);
+    controller.doorbell_base = xhci_read(0x14U) & ~0x3U;
+    controller.runtime_base = xhci_read(0x18U) & ~0x1FU;
     controller.port_count = (hcs1 >> 24U) & 0xFFU;
     diagnostics.port_count = controller.port_count;
-    controller.scratchpad_count = ((hcs2 >> 21U) & 0x1FU) |
-                                  (((hcs2 >> 27U) & 0x1FU) << 5U);
+    controller.scratchpad_count = xhci_scratchpad_count(hcs2);
     if (controller.port_count == 0U || controller.port_count > XHCI_MAX_PORTS ||
         controller.scratchpad_count > XHCI_MAX_SCRATCHPADS ||
         controller.op_base < 0x20U ||

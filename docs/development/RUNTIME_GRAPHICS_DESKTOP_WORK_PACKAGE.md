@@ -307,6 +307,14 @@ unterscheidbar. Der Eintrag in der Kernel-Rettungsshell bleibt nur als
 Fallback; neue Kommandos gelten erst mit nachgewiesener Erreichbarkeit aus der
 normal gestarteten Userspace-Shell als integriert.
 
+Auf dem ASUS/Intel-xHCI-Controller mit 17 Root-Ports deckte `USBINFO` eine
+frühe `capabilities-rejected`-Ablehnung auf. Ursache war die vertauschte
+Dekodierung der beiden nicht zusammenhängenden Scratchpad-Bitfelder in
+`HCSPARAMS2`: Ein kleiner realer Wert wurde dadurch als mindestens 32
+Scratchpads interpretiert. Die High-Bits 25:21 und Low-Bits 31:27 werden nun
+in Spezifikationsreihenfolge zusammengesetzt; die reservierten Niederbits von
+`DBOFF` und `RTSOFF` werden vor der Bereichsprüfung maskiert.
+
 ## Erwartetes Restrisiko
 
 Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte
