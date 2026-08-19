@@ -76,8 +76,9 @@ static uint16_t vmware_value_port;
 static void svga_write(uint16_t index_port, uint16_t value_port,
                        uint32_t index, uint32_t value);
 
-static bool vmware_fifo_write(uint32_t value) {
-    if (!vmware_fifo) return false;
+static bool vmware_fifo_write_batch(const uint32_t *values, uint32_t count) {
+    if (!vmware_fifo || values == NULL || count == 0U ||
+        count > DISPLAY_CONTROL_PRESENT_CAPACITY * 5U) return false;
     uint32_t minimum = vmware_fifo[SVGA_FIFO_MIN];
     uint32_t maximum = vmware_fifo[SVGA_FIFO_MAX];
     uint32_t next = vmware_fifo[SVGA_FIFO_NEXT_CMD];
@@ -86,20 +87,42 @@ static bool vmware_fifo_write(uint32_t value) {
         (minimum & 3U) != 0U || (maximum & 3U) != 0U ||
         next < minimum || next >= maximum || stop < minimum || stop >= maximum)
         return false;
-    uint32_t following = next + sizeof(uint32_t);
-    if (following == maximum) following = minimum;
-    if (following == stop) return false;
-    vmware_fifo[next / sizeof(uint32_t)] = value;
-    vmware_fifo[SVGA_FIFO_NEXT_CMD] = following;
+    uint32_t free_bytes = next >= stop
+        ? (maximum - next) + (stop - minimum) : stop - next;
+    if (free_bytes < sizeof(uint32_t) ||
+        count > (free_bytes - sizeof(uint32_t)) / sizeof(uint32_t))
+        return false;
+    for (uint32_t index = 0U; index < count; ++index) {
+        vmware_fifo[next / sizeof(uint32_t)] = values[index];
+        next += sizeof(uint32_t);
+        if (next == maximum) next = minimum;
+    }
+    vmware_fifo[SVGA_FIFO_NEXT_CMD] = next;
     return true;
 }
 
 void display_control_present_rect(uint32_t x, uint32_t y,
                                   uint32_t width, uint32_t height) {
-    if (!vmware_fifo || width == 0U || height == 0U) return;
-    if (!vmware_fifo_write(SVGA_CMD_UPDATE) ||
-        !vmware_fifo_write(x) || !vmware_fifo_write(y) ||
-        !vmware_fifo_write(width) || !vmware_fifo_write(height)) return;
+    const display_control_rect_t rect = {x, y, width, height};
+    display_control_present_rects(&rect, 1U);
+}
+
+void display_control_present_rects(const display_control_rect_t *rects,
+                                   uint32_t count) {
+    if (!vmware_fifo || rects == NULL || count == 0U ||
+        count > DISPLAY_CONTROL_PRESENT_CAPACITY) return;
+    uint32_t commands[DISPLAY_CONTROL_PRESENT_CAPACITY * 5U];
+    uint32_t command_count = 0U;
+    for (uint32_t index = 0U; index < count; ++index) {
+        if (rects[index].width == 0U || rects[index].height == 0U) continue;
+        commands[command_count++] = SVGA_CMD_UPDATE;
+        commands[command_count++] = rects[index].x;
+        commands[command_count++] = rects[index].y;
+        commands[command_count++] = rects[index].width;
+        commands[command_count++] = rects[index].height;
+    }
+    if (command_count == 0U ||
+        !vmware_fifo_write_batch(commands, command_count)) return;
     svga_write(vmware_index_port, vmware_value_port, SVGA_REG_SYNC, 1U);
 }
 

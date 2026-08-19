@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -37,9 +40,27 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         cls.syscalls = read("kernel/syscall/syscall_table.c")
         cls.framebuffer_h = read("drivers/video/framebuffer.h")
         cls.framebuffer = read("drivers/video/framebuffer.c")
+        cls.display_control_h = read("drivers/video/display_control.h")
+        cls.display_control = read("drivers/video/display_control.c")
+        cls.process = read("kernel/proc/process.c")
+        cls.scheduler = read("kernel/sched/scheduler.c")
         cls.paging_h = read("arch/x86/mm/paging.h")
         cls.paging = read("arch/x86/mm/paging.c")
         cls.display = read("drivers/video/display.c")
+
+    def test_frame_transaction_host_behavior(self) -> None:
+        compiler = shutil.which("gcc") or shutil.which("clang")
+        if compiler is None:
+            self.skipTest("host C compiler unavailable")
+        with tempfile.TemporaryDirectory(prefix="reist-display-frame-") as temp:
+            executable = Path(temp) / "display-frame-test.exe"
+            subprocess.run(
+                [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                 "-I.", "test/test_display_frame_transaction_host.c",
+                 "drivers/video/frame_transaction.c", "-o", str(executable)],
+                cwd=ROOT, check=True, capture_output=True, text=True)
+            subprocess.run([str(executable)], cwd=ROOT, check=True,
+                           capture_output=True, text=True, timeout=5)
 
     def test_syscall_numbers_are_appended_without_renumbering(self) -> None:
         for name, number in (
@@ -158,6 +179,48 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         text = function(self.user_sdk, "int x86os_draw_text_pixels(")
         self.assertIn("length > X86OS_DISPLAY_MAX_TEXT", text)
         self.assertIn("x86os_display_text_t request", text)
+
+    def test_frame_control_is_append_only_owner_bound_and_cleaned_up(self) -> None:
+        for source, prefix in (
+            (self.display_control_h, "DISPLAY_CONTROL_"),
+            (self.user_header, "X86OS_DISPLAY_"),
+        ):
+            self.assertIn(f"#define {prefix}FRAME_BEGIN 3U", source)
+            self.assertIn(f"#define {prefix}FRAME_COMMIT 4U", source)
+            self.assertIn(f"#define {prefix}FRAME_CANCEL 5U", source)
+        control = function(self.syscalls, "static int syscall_display_control(")
+        self.assertIn("process->pid", control)
+        self.assertIn("process->generation", control)
+        self.assertIn("framebuffer_frame_begin", control)
+        self.assertIn("framebuffer_frame_commit", control)
+        self.assertIn("framebuffer_frame_cancel", control)
+        self.assertIn("copy_to_user", control)
+        self.assertIn("framebuffer_frame_process_cleanup", self.process)
+        self.assertEqual(
+            self.scheduler.count("framebuffer_frame_process_cleanup("), 2
+        )
+
+    def test_frame_commit_batches_vmware_updates(self) -> None:
+        publish = function(
+            self.display_control, "void display_control_present_rects("
+        )
+        self.assertIn("DISPLAY_CONTROL_PRESENT_CAPACITY", publish)
+        self.assertIn("SVGA_CMD_UPDATE", publish)
+        self.assertEqual(publish.count("SVGA_REG_SYNC"), 1)
+        commit = function(self.framebuffer, "int framebuffer_frame_commit(")
+        self.assertIn("framebuffer_publish_damage", commit)
+        self.assertIn("display_frame_prepare_commit", commit)
+        framebuffer_publish = function(
+            self.framebuffer, "static void framebuffer_publish_damage("
+        )
+        self.assertIn("display_control_present_rects", framebuffer_publish)
+
+    def test_sdk_exposes_frame_transaction_without_new_syscall_number(self) -> None:
+        for name in ("begin", "commit", "cancel"):
+            wrapper = function(self.user_sdk, f"int x86os_display_frame_{name}(")
+            self.assertIn("X86OS_SYS_DISPLAY_CONTROL", wrapper)
+        begin = function(self.user_sdk, "int x86os_display_frame_begin(")
+        self.assertIn("request.serial", begin)
 
     def test_long_raster_operations_remain_preemptible(self) -> None:
         for signature in (

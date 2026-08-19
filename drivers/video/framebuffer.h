@@ -99,5 +99,17 @@ bool framebuffer_draw_text_pixels(int32_t x, int32_t y, const char* text,
                                   size_t length, uint32_t foreground_rgb,
                                   uint32_t background_rgb);
 bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible);
+int framebuffer_frame_begin(int owner_pid, uint32_t owner_generation,
+                            uint64_t now_ms, uint32_t *serial_out);
+int framebuffer_frame_commit(int owner_pid, uint32_t owner_generation,
+                             uint32_t serial, uint64_t now_ms);
+int framebuffer_frame_cancel(int owner_pid, uint32_t owner_generation,
+                             uint32_t serial);
+int framebuffer_frame_draw_enter(int owner_pid, uint32_t owner_generation,
+                                 uint64_t now_ms);
+int framebuffer_frame_draw_leave(int owner_pid, uint32_t owner_generation,
+                                 uint64_t now_ms);
+void framebuffer_frame_process_cleanup(int owner_pid,
+                                       uint32_t owner_generation);
 
 #endif // FRAMEBUFFER_H

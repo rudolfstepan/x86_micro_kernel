@@ -13,7 +13,7 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         cls.header = (ROOT / "drivers/video/display_control.h").read_text()
         cls.syscalls = (ROOT / "kernel/syscall/syscall_table.c").read_text()
         cls.sdk = (ROOT / "userspace/sdk/x86os.c").read_text()
-        cls.desktop = (ROOT / "userspace/programs/desktop.c").read_text()
+        cls.desktop = (ROOT / "userspace/gui/compositor/desktop.c").read_text()
         cls.display = (ROOT / "drivers/video/display.c").read_text()
         cls.framebuffer = (ROOT / "drivers/video/framebuffer.c").read_text()
         cls.stdlib = (ROOT / "lib/libc/stdlib.h").read_text()

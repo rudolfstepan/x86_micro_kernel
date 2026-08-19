@@ -661,6 +661,53 @@ int x86os_display_deactivate(void) {
                               (uintptr_t)&request, 0, 0);
 }
 
+int x86os_display_frame_begin(uint32_t* serial) {
+    if (!serial) return -22;
+    x86os_display_frame_t request = {
+        .version = X86OS_DISPLAY_CONTROL_VERSION,
+        .struct_size = sizeof(request),
+        .operation = X86OS_DISPLAY_FRAME_BEGIN,
+        .flags = 0U,
+        .serial = 0U,
+        .reserved = 0U
+    };
+    int result = (int)x86os_syscall(X86OS_SYS_DISPLAY_CONTROL,
+                                    (uintptr_t)&request, 0, 0);
+    if (result == 0) {
+        if (request.serial == 0U) return -5;
+        *serial = request.serial;
+    }
+    return result;
+}
+
+int x86os_display_frame_commit(uint32_t serial) {
+    if (serial == 0U) return -22;
+    x86os_display_frame_t request = {
+        .version = X86OS_DISPLAY_CONTROL_VERSION,
+        .struct_size = sizeof(request),
+        .operation = X86OS_DISPLAY_FRAME_COMMIT,
+        .flags = 0U,
+        .serial = serial,
+        .reserved = 0U
+    };
+    return (int)x86os_syscall(X86OS_SYS_DISPLAY_CONTROL,
+                              (uintptr_t)&request, 0, 0);
+}
+
+int x86os_display_frame_cancel(uint32_t serial) {
+    if (serial == 0U) return -22;
+    x86os_display_frame_t request = {
+        .version = X86OS_DISPLAY_CONTROL_VERSION,
+        .struct_size = sizeof(request),
+        .operation = X86OS_DISPLAY_FRAME_CANCEL,
+        .flags = 0U,
+        .serial = serial,
+        .reserved = 0U
+    };
+    return (int)x86os_syscall(X86OS_SYS_DISPLAY_CONTROL,
+                              (uintptr_t)&request, 0, 0);
+}
+
 int x86os_mouse_event(x86os_mouse_event_t* event) {
     if (!event) return -22;
     event->version = X86OS_MOUSE_EVENT_VERSION;

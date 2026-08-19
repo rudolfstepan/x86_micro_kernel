@@ -84,6 +84,7 @@ class SystemLayoutContracts(unittest.TestCase):
             {
                 "sbin/svcctl.prg": b"svcctl",
                 "usr/bin/hello.prg": b"hello",
+                "usr/gui/bin/desktop.prg": b"desktop",
             },
         )
         image.seek(DATA_PARTITION_START * 512)
@@ -108,6 +109,12 @@ class SystemLayoutContracts(unittest.TestCase):
         usr = cluster_entries(usr_cluster)
         bin_cluster = struct.unpack_from("<H", usr[b"BIN        "], 26)[0]
         self.assertEqual(cluster_entries(bin_cluster)[b"HELLO   PRG"][12], 0x18)
+        gui_cluster = struct.unpack_from("<H", usr[b"GUI        "], 26)[0]
+        gui = cluster_entries(gui_cluster)
+        gui_bin_cluster = struct.unpack_from("<H", gui[b"BIN        "], 26)[0]
+        self.assertEqual(
+            cluster_entries(gui_bin_cluster)[b"DESKTOP PRG"][12], 0x18
+        )
 
     def test_builds_and_runtime_use_only_canonical_targets(self):
         makefile = self.read("Makefile")
@@ -127,7 +134,11 @@ class SystemLayoutContracts(unittest.TestCase):
         shell = self.read("userspace/bin/shell.c")
         self.assertIn('{"/SVCCTL.PRG", "/sbin/svcctl.prg"}', process)
         self.assertIn('strcmp(resolved, "/sbin/svcctl.prg")', process)
-        self.assertIn('"/bin", "/sbin", "/usr/bin"', shell)
+        self.assertIn('"/bin", "/sbin", "/usr/bin", "/usr/gui/bin"', shell)
+        self.assertIn('{"/DESKTOP.PRG", "/usr/gui/bin/desktop.prg"}', process)
+        self.assertIn(
+            '{"/usr/bin/desktop.prg", "/usr/gui/bin/desktop.prg"}', process
+        )
         self.assertIn('"/sbin/svcctl.prg"', shell)
         self.assertIn("program[length++] = 'p';", shell)
 

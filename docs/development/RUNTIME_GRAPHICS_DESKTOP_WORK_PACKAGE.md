@@ -77,6 +77,14 @@ Grafikmodus und stellt die vorhandene VGA-Shell wieder sichtbar her.
    `DEACTIVATE`. QEMU, VMware und VBE kehren damit nach Escape in VGA Mode 03
    beziehungsweise den emulierten Legacy-VGA-Pfad zurück; erst danach wird der
    Framebufferzustand verworfen.
+10. Dieselbe Display-Control-ABI erhält append-only `FRAME_BEGIN`,
+    `FRAME_COMMIT` und `FRAME_CANCEL`. Eine feste Lease, Seriennummer sowie PID
+    plus Prozessgeneration binden jeden Frame; Prozessende verwirft oder
+    vervollständigt den bereits validierten Übergang idempotent.
+11. Der Ring-3-Compositor verarbeitet Eingaben über typisierte Events, trennt
+    Pointer- und Keyboard-Fokus und rekonstruiert höchstens acht Dirty Regions
+    mit geclippten Primitiven in Z-Reihenfolge. Controls und externe
+    GUI-Clients bleiben außerhalb dieses Pakets.
 
 ## Verbindliche Invarianten
 
@@ -110,6 +118,12 @@ Grafikmodus und stellt die vorhandene VGA-Shell wieder sichtbar her.
   werden vor dem Mapping auf Überlauf geprüft.
 - Der Framebuffer bleibt Supervisor-only. Zeichenoperationen bleiben
   geclippt, vorzeitig unterbrechbar und größenbegrenzt.
+- Längere Rasteroperationen bleiben präemptibel. Frame-Zustandsübergänge halten
+  nur kurze IRQ-sichere Sperren; ein Task-Ende räumt Draw-Reservation,
+  Transaktion und einen unterbrochenen Publish-/Restore-Übergang anhand von PID
+  und Generation auf.
+- Pointer- und Keyboard-Fokus sind getrennt. Jede Pointer-Button-Sequenz bleibt
+  bis Button-Up implizit an ihr ursprüngliches Ziel gebunden.
 - VGA- und bestehende Framebuffer-Boots bleiben startfähig. Ein fehlender oder
   unbrauchbarer DISPI-Adapter darf den normalen VGA-Boot nicht verhindern.
 - Der Grafikpfad behauptet keine Fail-operational- oder
@@ -122,6 +136,10 @@ fixieren. Erwartet werden ausschließlich:
 
 - `drivers/video/framebuffer.h`
 - `drivers/video/framebuffer.c`
+- `drivers/video/frame_transaction.h`
+- `drivers/video/frame_transaction.c`
+- `drivers/video/display_control.h`
+- `drivers/video/display_control.c`
 - `Makefile`
 - `arch/x86/boot/bios/stage2_bios.asm`
 - `arch/x86/boot/vbe_runtime.asm`
@@ -131,11 +149,18 @@ fixieren. Erwartet werden ausschließlich:
 - `lib/libc/stdlib.h`
 - `kernel/proc/process.h`
 - `kernel/proc/process.c`
+- `kernel/sched/scheduler.c`
 - `kernel/syscall/syscall_table.c`
 - `kernel/init/kernel.c`
 - `userspace/sdk/include/x86os.h`
 - `userspace/sdk/x86os.c`
-- `userspace/programs/desktop.c`
+- `userspace/bin/shell.c`
+- `userspace/gui/README.md`
+- `userspace/gui/compositor/desktop.c`
+- `userspace/gui/compositor/desktop_wm.h`
+- `userspace/gui/compositor/desktop_wm.c`
+- im Zielabbild `/usr/gui/bin/desktop.prg`; `/DESKTOP.PRG` und der bisherige
+  Pfad `/usr/bin/desktop.prg` bleiben ausschließlich feste Kompatibilitätsaliase
 - `scripts/build_system_programs.py`
 - `scripts/build-windows.ps1`
 - `scripts/test-reist-runtime.ps1`

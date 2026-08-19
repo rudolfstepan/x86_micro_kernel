@@ -21,9 +21,9 @@ enum {
 };
 
 static char search_paths[SHELL_MAX_PATH_ENTRIES][SHELL_PATH_CAPACITY] = {
-    "/bin", "/sbin", "/usr/bin",
+    "/bin", "/sbin", "/usr/bin", "/usr/gui/bin",
 };
-static unsigned search_path_count = 3U;
+static unsigned search_path_count = 4U;
 static char command_history[SHELL_HISTORY_CAPACITY][SHELL_LINE_CAPACITY];
 static char history_draft[SHELL_LINE_CAPACITY];
 static unsigned history_count;

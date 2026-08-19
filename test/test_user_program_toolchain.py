@@ -295,8 +295,25 @@ class UserProgramToolchainTests(unittest.TestCase):
             encoding="utf-8"
         )
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-        self.assertEqual(build_script.count("'usr/bin/desktop.prg'"), 1)
-        self.assertEqual(makefile.count("usr/bin/desktop.prg="), 1)
+        self.assertEqual(build_script.count("'usr/gui/bin/desktop.prg'"), 1)
+        self.assertEqual(makefile.count("usr/gui/bin/desktop.prg="), 1)
+        self.assertNotIn("'usr/bin/desktop.prg' = 'DESKTOP.PRG'", build_script)
+        self.assertNotIn("usr/bin/desktop.prg=", makefile)
+
+        shell = (ROOT / "userspace" / "bin" / "shell.c").read_text(
+            encoding="utf-8"
+        )
+        process = (ROOT / "kernel" / "proc" / "process.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"/usr/gui/bin"', shell)
+        self.assertIn("search_path_count = 4U", shell)
+        self.assertIn(
+            '{"/DESKTOP.PRG", "/usr/gui/bin/desktop.prg"}', process
+        )
+        self.assertIn(
+            '{"/usr/bin/desktop.prg", "/usr/gui/bin/desktop.prg"}', process
+        )
 
     def test_usbinfo_is_packaged_in_both_native_images(self):
         build_script = (ROOT / "scripts" / "build-windows.ps1").read_text(
@@ -333,7 +350,7 @@ class UserProgramToolchainTests(unittest.TestCase):
         for program in ("chkdsk", "fdisk", "format"):
             self.assertEqual(build_script.count(f"'sbin/{program}.prg'"), 1)
             self.assertEqual(makefile.count(f"sbin/{program}.prg="), 1)
-        self.assertEqual(makefile.count("usr/bin/desktop.prg="), 1)
+        self.assertEqual(makefile.count("usr/gui/bin/desktop.prg="), 1)
 
     def test_drives_program_displays_resource_id(self):
         source = (ROOT / "userspace" / "programs" / "drives.c").read_text(

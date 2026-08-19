@@ -32,8 +32,8 @@ PROGRAMS = {
     "PWD.PRG": ROOT / "userspace/programs/pwd.c",
     "SHELL.PRG": ROOT / "userspace/bin/shell.c",
     "DESKTOP.PRG": (
-        ROOT / "userspace/programs/desktop.c",
-        ROOT / "userspace/programs/desktop_wm.c",
+        ROOT / "userspace/gui/compositor/desktop.c",
+        ROOT / "userspace/gui/compositor/desktop_wm.c",
     ),
     "MKDIR.PRG": ROOT / "userspace/programs/mkdir.c",
     "RMDIR.PRG": ROOT / "userspace/programs/rmdir.c",

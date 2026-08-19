@@ -26,6 +26,7 @@
 #include "include/kernel/component_control.h"
 #include "drivers/net/net_socket.h"
 #include "drivers/net/tcp_socket.h"
+#include "drivers/video/framebuffer.h"
 #include "include/kernel/critical_object.h"
 
 #define USER_PROGRAM_ADDRESS PROGRAM_V1_BASE
@@ -102,7 +103,8 @@ static const program_path_alias_t program_path_aliases[] = {
     {"/ASCII.PRG", "/usr/bin/ascii.prg"},
     {"/SAVE.PRG", "/usr/bin/save.prg"},
     {"/SPAWN.PRG", "/usr/bin/spawn.prg"},
-    {"/DESKTOP.PRG", "/usr/bin/desktop.prg"},
+    {"/DESKTOP.PRG", "/usr/gui/bin/desktop.prg"},
+    {"/usr/bin/desktop.prg", "/usr/gui/bin/desktop.prg"},
     {"/CHILDEX.PRG", "/libexec/reist/childex.prg"},
     {"/FAULTDE.PRG", "/libexec/reist/faultde.prg"},
     {"/FAULTUD.PRG", "/libexec/reist/faultud.prg"},
@@ -440,6 +442,7 @@ static int allocate_pid_locked(void) {
 
 static void release_process_slot(Process *process) {
     ipc_process_cleanup(process->pid, process->generation);
+    framebuffer_frame_process_cleanup(process->pid, process->generation);
     process_close_all_files(process);
     net_socket_process_cleanup(process->pid, process->generation);
     tcp_socket_process_cleanup(process->pid, process->generation);

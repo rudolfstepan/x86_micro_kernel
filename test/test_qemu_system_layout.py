@@ -14,7 +14,9 @@ class QemuSystemLayoutContracts(unittest.TestCase):
         ast.parse(source)
         self.assertIn("time.monotonic() + timeout", source)
         self.assertIn('nic="e1000"', source)
-        for path in ("/bin", "/sbin", "/usr/bin", "/libexec/reist"):
+        for path in (
+            "/bin", "/sbin", "/usr/bin", "/usr/gui/bin", "/libexec/reist"
+        ):
             self.assertIn(path, source)
         self.assertIn('"/svcctl.prg status 5"', source)
         self.assertIn("STORAGE SERVICE_BIND_FAILED code=-13", source)

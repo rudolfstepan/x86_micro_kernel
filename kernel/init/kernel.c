@@ -695,7 +695,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
      * failed/terminated desktop fall back to the userspace shell. */
 #ifdef USE_FRAMEBUFFER
     if (framebuffer_available()) {
-        if (start_userspace_program(multiboot_info, "usr/bin/desktop.prg",
+        if (start_userspace_program(multiboot_info, "usr/gui/bin/desktop.prg",
                                     "graphical desktop") == 0) {
             printf("Graphical desktop exited; starting shell fallback.\n");
         } else {

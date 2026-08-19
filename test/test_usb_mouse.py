@@ -154,9 +154,9 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn('"USBINFO.PRG"', programs)
         self.assertIn("'sbin/usbinfo.prg'", windows)
         self.assertIn("sbin/usbinfo.prg=", makefile)
-        self.assertIn('"/bin", "/sbin", "/usr/bin"', shell)
+        self.assertIn('"/bin", "/sbin", "/usr/bin", "/usr/gui/bin"', shell)
         self.assertIn("run_program(argc, argv)", shell)
-        self.assertIn('"/bin", "/sbin", "/usr/bin"', shell)
+        self.assertIn('"/bin", "/sbin", "/usr/bin", "/usr/gui/bin"', shell)
         self.assertIn("run_program(argc, argv)", shell)
         self.assertIn("x86os_usb_diagnostics(&status)", program)
         self.assertNotIn("x86os_usb_diagnostics_t status = {0}", program)
@@ -279,17 +279,24 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("(void)xhci_read(offset)", doorbell)
 
     def test_desktop_escape_returns_to_parent_shell(self):
-        source = (ROOT / "userspace/programs/desktop.c").read_text(
+        source = (ROOT / "userspace/gui/compositor/desktop.c").read_text(
             encoding="utf-8")
-        escape = source.index("key == DESKTOP_KEY_ESCAPE")
-        branch = source[escape:source.index("\n\n        if (redraw", escape)]
+        escape = source.index(
+            "if ((actions & DESKTOP_WM_RESULT_EXIT) != 0U)"
+        )
+        branch = source[
+            escape:source.index(
+                "\n\n        if ((actions & DESKTOP_WM_RESULT_LAUNCH)",
+                escape,
+            )
+        ]
         self.assertIn("return 0;", branch)
         self.assertNotIn("launch_app", branch)
         self.assertIn("x86os_display_deactivate()", branch)
         self.assertIn('x86os_puts("DESKTOP_EXIT_OK\\n")', branch)
 
     def test_desktop_batches_mouse_reports_and_uses_software_pointer(self):
-        source = (ROOT / "userspace/programs/desktop.c").read_text(
+        source = (ROOT / "userspace/gui/compositor/desktop.c").read_text(
             encoding="utf-8")
         self.assertIn("mouse_events < 32U", source)
         self.assertIn("x86os_pointer_update(pointer_x, pointer_y, 1U)", source)

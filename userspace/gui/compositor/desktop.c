@@ -1,5 +1,5 @@
 /**
- * @file userspace/programs/desktop.c
+ * @file userspace/gui/compositor/desktop.c
  * @brief Classic Ring-3 desktop and fixed-capacity window-manager frontend.
  *
  * Layer: Ring-3 system program or command.
@@ -51,6 +51,11 @@ static const uint32_t color_client = 0x00E8E8E8U;
 static const uint32_t color_text = 0x00000000U;
 static const uint32_t color_title_text = 0x00FFFFFFU;
 
+typedef struct {
+    const x86os_display_info_t *display;
+    desktop_rect_t clip;
+} desktop_render_context_t;
+
 static size_t bounded_text_length(const char *text, size_t maximum) {
     size_t length = 0U;
     if (text == 0) return 0U;
@@ -66,19 +71,72 @@ static uint32_t min_u32(uint32_t left, uint32_t right) {
     return left < right ? left : right;
 }
 
-static void draw_text_bounded(const x86os_display_info_t *display,
+static uint32_t intersect_rects(desktop_rect_t left, desktop_rect_t right,
+                                desktop_rect_t *intersection) {
+    int64_t x = left.x > right.x ? left.x : right.x;
+    int64_t y = left.y > right.y ? left.y : right.y;
+    int64_t left_right = (int64_t)left.x + left.width;
+    int64_t right_right = (int64_t)right.x + right.width;
+    int64_t left_bottom = (int64_t)left.y + left.height;
+    int64_t right_bottom = (int64_t)right.y + right.height;
+    int64_t maximum_x = left_right < right_right ? left_right : right_right;
+    int64_t maximum_y = left_bottom < right_bottom
+        ? left_bottom : right_bottom;
+    if (x >= maximum_x || y >= maximum_y) return 0U;
+    if (intersection != 0) {
+        *intersection = (desktop_rect_t){
+            (int32_t)x, (int32_t)y,
+            (uint32_t)(maximum_x - x), (uint32_t)(maximum_y - y)
+        };
+    }
+    return 1U;
+}
+
+static void fill_rect_clipped(const desktop_render_context_t *context,
+                              desktop_rect_t rect, uint32_t color) {
+    desktop_rect_t clipped;
+    if (context == 0 || context->display == 0 ||
+        !intersect_rects(rect, context->clip, &clipped)) return;
+    (void)x86os_fill_rect(clipped.x, clipped.y, clipped.width, clipped.height,
+                          color);
+}
+
+static void draw_text_clipped(const desktop_render_context_t *context,
                               int32_t x, int32_t y, const char *text,
                               uint32_t maximum_width, uint32_t foreground,
                               uint32_t background) {
-    if (display == 0 || text == 0 || display->font_width == 0U) return;
+    if (context == 0 || context->display == 0 || text == 0 ||
+        context->display->font_width == 0U ||
+        context->display->font_height == 0U) return;
+    const x86os_display_info_t *display = context->display;
+    int64_t clip_left = context->clip.x;
+    int64_t clip_top = context->clip.y;
+    int64_t clip_right = clip_left + context->clip.width;
+    int64_t clip_bottom = clip_top + context->clip.height;
+    if ((int64_t)y < clip_top ||
+        (int64_t)y + display->font_height > clip_bottom) return;
     size_t capacity = maximum_width / display->font_width;
     if (capacity > X86OS_DISPLAY_MAX_TEXT)
         capacity = X86OS_DISPLAY_MAX_TEXT;
     size_t length = bounded_text_length(text, capacity);
-    if (length != 0U) {
-        (void)x86os_draw_text_pixels(x, y, text, length,
-                                     foreground, background);
+    size_t first = 0U;
+    while (first < length) {
+        int64_t glyph_left = (int64_t)x + first * display->font_width;
+        int64_t glyph_right = glyph_left + display->font_width;
+        if (glyph_left >= clip_left && glyph_right <= clip_right) break;
+        ++first;
     }
+    size_t end = first;
+    while (end < length) {
+        int64_t glyph_left = (int64_t)x + end * display->font_width;
+        int64_t glyph_right = glyph_left + display->font_width;
+        if (glyph_left < clip_left || glyph_right > clip_right) break;
+        ++end;
+    }
+    if (end != first)
+        (void)x86os_draw_text_pixels(
+            x + (int32_t)(first * display->font_width), y,
+            text + first, end - first, foreground, background);
 }
 
 static uint32_t menu_height(const x86os_display_info_t *display) {
@@ -121,24 +179,37 @@ static int desktop_icon_at_position(const x86os_display_info_t *display,
     return DESKTOP_WM_NO_WINDOW;
 }
 
-static void draw_bevel(desktop_rect_t rect, uint32_t face,
+static void draw_bevel(const desktop_render_context_t *context,
+                       desktop_rect_t rect, uint32_t face,
                        uint32_t raised) {
     if (rect.width == 0U || rect.height == 0U) return;
-    (void)x86os_fill_rect(rect.x, rect.y, rect.width, rect.height, face);
+    fill_rect_clipped(context, rect, face);
     if (rect.width < 2U || rect.height < 2U) return;
     uint32_t top_left = raised ? color_light : color_shadow;
     uint32_t bottom_right = raised ? color_shadow : color_light;
-    (void)x86os_fill_rect(rect.x, rect.y, rect.width, 1U, top_left);
-    (void)x86os_fill_rect(rect.x, rect.y, 1U, rect.height, top_left);
-    (void)x86os_fill_rect(rect.x, rect.y + (int32_t)rect.height - 1,
-                          rect.width, 1U, bottom_right);
-    (void)x86os_fill_rect(rect.x + (int32_t)rect.width - 1, rect.y,
-                          1U, rect.height, bottom_right);
+    fill_rect_clipped(context,
+                      (desktop_rect_t){rect.x, rect.y, rect.width, 1U},
+                      top_left);
+    fill_rect_clipped(context,
+                      (desktop_rect_t){rect.x, rect.y, 1U, rect.height},
+                      top_left);
+    fill_rect_clipped(
+        context,
+        (desktop_rect_t){rect.x, rect.y + (int32_t)rect.height - 1,
+                         rect.width, 1U},
+        bottom_right);
+    fill_rect_clipped(
+        context,
+        (desktop_rect_t){rect.x + (int32_t)rect.width - 1, rect.y,
+                         1U, rect.height},
+        bottom_right);
 }
 
-static void render_icon(const x86os_display_info_t *display,
+static void render_icon(const desktop_render_context_t *context,
                         const desktop_wm_t *manager, uint32_t index) {
+    const x86os_display_info_t *display = context->display;
     desktop_rect_t rect = desktop_icon_rect(display, index);
+    if (!intersect_rects(rect, context->clip, 0)) return;
     uint32_t selected = manager->selected == index;
     uint32_t icon_size = min_u32(rect.height > display->font_height + 6U
         ? rect.height - display->font_height - 6U : 12U, 28U);
@@ -148,28 +219,32 @@ static void render_icon(const x86os_display_info_t *display,
         icon_size,
         icon_size
     };
-    if (selected) draw_bevel(rect, color_face, 0U);
-    draw_bevel(symbol, apps[index].accent, 1U);
+    if (selected) draw_bevel(context, rect, color_face, 0U);
+    draw_bevel(context, symbol, apps[index].accent, 1U);
     if (symbol.width > 8U && symbol.height > 8U) {
-        (void)x86os_fill_rect(symbol.x + 4, symbol.y + 4,
-                              symbol.width - 8U, symbol.height - 8U,
-                              color_client);
+        fill_rect_clipped(
+            context,
+            (desktop_rect_t){symbol.x + 4, symbol.y + 4,
+                             symbol.width - 8U, symbol.height - 8U},
+            color_client);
     }
     uint32_t text_y_offset = rect.height > display->font_height + 3U
         ? rect.height - display->font_height - 3U : 0U;
-    draw_text_bounded(display, rect.x + 4,
-                      rect.y + (int32_t)text_y_offset,
-                      apps[index].title, rect.width - 8U,
-                      selected ? color_title_text : color_title_text,
+    draw_text_clipped(context, rect.x + 4,
+                      rect.y + (int32_t)text_y_offset, apps[index].title,
+                      rect.width - 8U, color_title_text,
                       selected ? color_active : color_desktop);
 }
 
-static void render_window(const x86os_display_info_t *display,
+static void render_window(const desktop_render_context_t *context,
                           const desktop_wm_t *manager,
                           uint32_t window_index) {
     if (window_index >= DESKTOP_WM_CAPACITY) return;
+    const x86os_display_info_t *display = context->display;
     const desktop_window_t *window = &manager->windows[window_index];
     if (window->visible == 0U || window->app_index >= APP_COUNT) return;
+    if (!intersect_rects(desktop_wm_window_bounds(manager, window_index),
+                         context->clip, 0)) return;
     uint32_t border = manager->frame_border;
     if (window->width <= border * 2U ||
         window->height <= border * 2U + manager->title_height) return;
@@ -192,34 +267,33 @@ static void render_window(const x86os_display_info_t *display,
         title.width,
         window->height - border * 2U - title.height
     };
-    uint32_t active = manager->focused == (int32_t)window_index;
+    uint32_t active = manager->keyboard_focus == (int32_t)window_index;
     uint32_t title_color = active ? color_active : color_inactive;
 
-    (void)x86os_fill_rect(shadow.x, shadow.y, shadow.width, shadow.height,
-                          color_dark);
-    draw_bevel(frame, color_face, 1U);
-    (void)x86os_fill_rect(title.x, title.y, title.width, title.height,
-                          title_color);
-    (void)x86os_fill_rect(client.x, client.y, client.width, client.height,
-                          color_client);
+    fill_rect_clipped(context, shadow, color_dark);
+    draw_bevel(context, frame, color_face, 1U);
+    fill_rect_clipped(context, title, title_color);
+    fill_rect_clipped(context, client, color_client);
 
     desktop_rect_t close = desktop_wm_close_rect(manager, window_index);
-    draw_bevel(close, color_face, 1U);
+    draw_bevel(context, close, color_face, 1U);
     if (close.width > 8U && close.height > 8U) {
-        (void)x86os_fill_rect(close.x + 4, close.y + 4,
-                              close.width - 8U, close.height - 8U,
-                              color_dark);
+        fill_rect_clipped(
+            context,
+            (desktop_rect_t){close.x + 4, close.y + 4,
+                             close.width - 8U, close.height - 8U},
+            color_dark);
     }
 
     uint32_t title_x = (uint32_t)(close.x - title.x) + close.width + 6U;
     uint32_t title_y = title.height > display->font_height
         ? (title.height - display->font_height) / 2U : 0U;
     if (title_x + 3U < title.width) {
-        draw_text_bounded(display, title.x + (int32_t)title_x,
+        draw_text_clipped(context, title.x + (int32_t)title_x,
                           title.y + (int32_t)title_y,
                           apps[window->app_index].title,
-                          title.width - title_x - 3U,
-                          color_title_text, title_color);
+                          title.width - title_x - 3U, color_title_text,
+                          title_color);
     }
 
     uint32_t padding = 10U;
@@ -228,24 +302,26 @@ static void render_window(const x86os_display_info_t *display,
         uint32_t text_width = client.width - padding * 2U;
         int32_t text_x = client.x + (int32_t)padding;
         int32_t text_y = client.y + (int32_t)padding;
-        draw_text_bounded(display, text_x, text_y,
+        draw_text_clipped(context, text_x, text_y,
                           apps[window->app_index].description, text_width,
                           color_text, color_client);
         if (client.height > padding * 2U + line) {
-            draw_text_bounded(display, text_x, text_y + (int32_t)line,
+            draw_text_clipped(context, text_x, text_y + (int32_t)line,
                               apps[window->app_index].program, text_width,
                               apps[window->app_index].accent, color_client);
         }
         if (client.height > padding * 2U + line * 3U) {
-            draw_text_bounded(display, text_x, text_y + (int32_t)(line * 3U),
-                              "ENTER startet Legacy-App im Vollbild",
-                              text_width, color_shadow, color_client);
+            draw_text_clipped(
+                context, text_x, text_y + (int32_t)(line * 3U),
+                "ENTER startet Legacy-App im Vollbild", text_width,
+                color_shadow, color_client);
         }
     }
 }
 
-static void render_desktop(const x86os_display_info_t *display,
-                           const desktop_wm_t *manager) {
+static void render_desktop_clip(const desktop_render_context_t *context,
+                                const desktop_wm_t *manager) {
+    const x86os_display_info_t *display = context->display;
     uint32_t menu = menu_height(display);
     uint32_t status = status_height(display);
     desktop_rect_t menu_rect = {0, 0, display->width, menu};
@@ -253,31 +329,89 @@ static void render_desktop(const x86os_display_info_t *display,
         0, (int32_t)(display->height - status), display->width, status
     };
 
-    (void)x86os_fill_rect(0, 0, display->width, display->height,
-                          color_desktop);
-    draw_bevel(menu_rect, color_face, 1U);
-    draw_text_bounded(display, 10,
+    fill_rect_clipped(
+        context, (desktop_rect_t){0, 0, display->width, display->height},
+        color_desktop);
+    draw_bevel(context, menu_rect, color_face, 1U);
+    draw_text_clipped(context, 10,
                       (int32_t)((menu - display->font_height) / 2U),
-                      "REIST Desktop   Fenster   Hilfe",
+                      "REIST Workspace   Fenster   Hilfe",
                       display->width > 20U ? display->width - 20U : 1U,
                       color_text, color_face);
 
     for (uint32_t index = 0U; index < APP_COUNT; ++index)
-        render_icon(display, manager, index);
+        render_icon(context, manager, index);
 
     for (uint32_t position = 0U; position < DESKTOP_WM_CAPACITY; ++position) {
         uint32_t window_index = manager->z_order[position];
         if (window_index < DESKTOP_WM_CAPACITY)
-            render_window(display, manager, window_index);
+            render_window(context, manager, window_index);
     }
 
-    draw_bevel(status_rect, color_face, 0U);
-    draw_text_bounded(display, 10,
-                      status_rect.y +
-                          (int32_t)((status - display->font_height) / 2U),
-                      "Maus: Fokus / Ziehen / Schliessen   ENTER: Start   ESC: Shell",
-                      display->width > 20U ? display->width - 20U : 1U,
-                      color_text, color_face);
+    draw_bevel(context, status_rect, color_face, 0U);
+    draw_text_clipped(
+        context, 10,
+        status_rect.y +
+            (int32_t)((status - display->font_height) / 2U),
+        "Maus: Fokus / Ziehen / Schliessen   ENTER: Start   ESC: Shell",
+        display->width > 20U ? display->width - 20U : 1U,
+        color_text, color_face);
+}
+
+static desktop_rect_t expanded_render_clip(
+    const x86os_display_info_t *display, desktop_rect_t dirty) {
+    int64_t left = (int64_t)dirty.x - display->font_width;
+    int64_t top = (int64_t)dirty.y - display->font_height;
+    int64_t right = (int64_t)dirty.x + dirty.width + display->font_width;
+    int64_t bottom = (int64_t)dirty.y + dirty.height + display->font_height;
+    if (left < 0) left = 0;
+    if (top < 0) top = 0;
+    if (right > (int64_t)display->width) right = display->width;
+    if (bottom > (int64_t)display->height) bottom = display->height;
+    if (left >= right || top >= bottom)
+        return (desktop_rect_t){0, 0, 0U, 0U};
+    return (desktop_rect_t){
+        (int32_t)left, (int32_t)top,
+        (uint32_t)(right - left), (uint32_t)(bottom - top)
+    };
+}
+
+static void render_dirty_regions(const x86os_display_info_t *display,
+                                 const desktop_wm_t *manager,
+                                 const desktop_dirty_region_t *dirty) {
+    if (display == 0 || manager == 0 || dirty == 0) return;
+    for (uint32_t index = 0U; index < dirty->count; ++index) {
+        desktop_render_context_t context = {
+            .display = display,
+            .clip = expanded_render_clip(display, dirty->rects[index]),
+        };
+        if (context.clip.width != 0U && context.clip.height != 0U)
+            render_desktop_clip(&context, manager);
+    }
+}
+
+static void render_desktop(const x86os_display_info_t *display,
+                           const desktop_wm_t *manager,
+                           const desktop_dirty_region_t *dirty) {
+    render_dirty_regions(display, manager, dirty);
+}
+
+static void render_desktop_frame(const x86os_display_info_t *display,
+                                 const desktop_wm_t *manager,
+                                 const desktop_dirty_region_t *dirty) {
+    if (dirty == 0 || dirty->count == 0U) return;
+    uint32_t serial = 0U;
+    int begin = x86os_display_frame_begin(&serial);
+    if (begin != 0) {
+        /* Oversized/direct framebuffers retain the compatible immediate path. */
+        render_desktop(display, manager, dirty);
+        return;
+    }
+    render_desktop(display, manager, dirty);
+    if (x86os_display_frame_commit(serial) != 0) {
+        (void)x86os_display_frame_cancel(serial);
+        render_desktop(display, manager, dirty);
+    }
 }
 
 static int read_escape_byte(void) {
@@ -403,6 +537,43 @@ static void move_pointer(const x86os_display_info_t *display,
     clip_pointer(display, pointer_x, pointer_y);
 }
 
+static uint32_t wm_key_from_input(int key) {
+    if (key == '\t' || key == DESKTOP_KEY_RIGHT)
+        return DESKTOP_WM_KEY_RIGHT;
+    if (key == DESKTOP_KEY_LEFT) return DESKTOP_WM_KEY_LEFT;
+    if (key == DESKTOP_KEY_UP) return DESKTOP_WM_KEY_UP;
+    if (key == DESKTOP_KEY_DOWN) return DESKTOP_WM_KEY_DOWN;
+    if (key == '\r' || key == '\n') return DESKTOP_WM_KEY_ENTER;
+    if (key == DESKTOP_KEY_ESCAPE) return DESKTOP_WM_KEY_ESCAPE;
+    return 0U;
+}
+
+static void collect_dispatch_result(
+    const x86os_display_info_t *display, desktop_dirty_region_t *dirty,
+    const desktop_wm_dispatch_result_t *result) {
+    desktop_dirty_add_regions(dirty, &result->dirty);
+    if ((result->flags & DESKTOP_WM_RESULT_SELECTION_CHANGED) != 0U) {
+        if (result->previous_selected < APP_COUNT)
+            desktop_dirty_add(
+                dirty, desktop_icon_rect(display, result->previous_selected));
+        if (result->selected < APP_COUNT)
+            desktop_dirty_add(
+                dirty, desktop_icon_rect(display, result->selected));
+    }
+}
+
+static uint32_t dispatch_desktop_event(
+    desktop_wm_t *manager, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, const desktop_wm_event_t *event,
+    uint32_t *target) {
+    desktop_wm_dispatch_result_t result;
+    if (desktop_wm_dispatch(manager, event, &result) != 0) return 0U;
+    collect_dispatch_result(display, dirty, &result);
+    if ((result.flags & DESKTOP_WM_RESULT_LAUNCH) != 0U && target != 0)
+        *target = result.target;
+    return result.flags;
+}
+
 int main(void) {
     x86os_display_info_t display;
     desktop_wm_t manager;
@@ -434,18 +605,32 @@ int main(void) {
     pointer_x = (int32_t)(display.width / 2U);
     pointer_y = (int32_t)(display.height / 2U);
     x86os_puts("DESKTOP_OK\n");
-    render_desktop(&display, &manager);
+    desktop_dirty_region_t initial_dirty;
+    desktop_dirty_initialize(&initial_dirty, display.width, display.height);
+    desktop_dirty_full(&initial_dirty);
+    render_desktop_frame(&display, &manager, &initial_dirty);
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
 
     for (;;) {
         int key = read_key();
-        unsigned int redraw = 0U;
+        desktop_dirty_region_t dirty;
+        desktop_dirty_initialize(&dirty, display.width, display.height);
+        uint32_t actions = 0U;
+        uint32_t action_target = DESKTOP_WM_NO_TARGET;
         unsigned int mouse_events = 0U;
         for (; mouse_events < 32U; ++mouse_events) {
             x86os_mouse_event_t mouse;
             if (x86os_mouse_event(&mouse) != 0) break;
             move_pointer(&display, &pointer_x, &pointer_y,
                          mouse.delta_x, mouse.delta_y);
+
+            desktop_wm_event_t motion = {
+                .type = DESKTOP_WM_EVENT_POINTER_MOTION,
+                .x = pointer_x,
+                .y = pointer_y,
+            };
+            actions |= dispatch_desktop_event(
+                &manager, &display, &dirty, &motion, &action_target);
 
             uint32_t left_down =
                 (mouse.buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
@@ -454,57 +639,74 @@ int main(void) {
             if (left_down && !left_was_down) {
                 int window = desktop_wm_window_at(&manager,
                                                    pointer_x, pointer_y);
-                if (window != DESKTOP_WM_NO_WINDOW) {
-                    redraw |= desktop_wm_pointer_press(&manager,
-                                                       pointer_x, pointer_y);
-                } else {
+                desktop_wm_event_t press = {
+                    .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
+                    .x = pointer_x,
+                    .y = pointer_y,
+                    .button = DESKTOP_WM_BUTTON_LEFT,
+                    .pressed = 1U,
+                };
+                actions |= dispatch_desktop_event(
+                    &manager, &display, &dirty, &press, &action_target);
+                if (window == DESKTOP_WM_NO_WINDOW) {
                     int icon = desktop_icon_at_position(&display,
                                                         pointer_x, pointer_y);
-                    if (icon != DESKTOP_WM_NO_WINDOW)
-                        redraw |= desktop_wm_open(&manager, (uint32_t)icon);
+                    if (icon != DESKTOP_WM_NO_WINDOW) {
+                        desktop_wm_event_t open = {
+                            .type = DESKTOP_WM_EVENT_OPEN,
+                            .target = (uint32_t)icon,
+                        };
+                        actions |= dispatch_desktop_event(
+                            &manager, &display, &dirty, &open,
+                            &action_target);
+                    }
                 }
-            } else if (left_down) {
-                redraw |= desktop_wm_pointer_motion(&manager,
-                                                     pointer_x, pointer_y);
-            } else if (left_was_down) {
-                redraw |= desktop_wm_pointer_release(&manager,
-                                                      pointer_x, pointer_y);
+            } else if (!left_down && left_was_down) {
+                desktop_wm_event_t release = {
+                    .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
+                    .x = pointer_x,
+                    .y = pointer_y,
+                    .button = DESKTOP_WM_BUTTON_LEFT,
+                    .pressed = 0U,
+                };
+                actions |= dispatch_desktop_event(
+                    &manager, &display, &dirty, &release, &action_target);
             }
             previous_buttons = mouse.buttons;
         }
 
-        if (key == '\t' || key == DESKTOP_KEY_RIGHT) {
-            uint32_t next = (manager.selected + 1U) % APP_COUNT;
-            redraw |= desktop_wm_select(&manager, next);
-        } else if (key == DESKTOP_KEY_LEFT) {
-            uint32_t next = (manager.selected + APP_COUNT - 1U) % APP_COUNT;
-            redraw |= desktop_wm_select(&manager, next);
-        } else if (key == DESKTOP_KEY_UP) {
-            uint32_t next = (manager.selected + APP_COUNT - 2U) % APP_COUNT;
-            redraw |= desktop_wm_select(&manager, next);
-        } else if (key == DESKTOP_KEY_DOWN) {
-            uint32_t next = (manager.selected + 2U) % APP_COUNT;
-            redraw |= desktop_wm_select(&manager, next);
-        } else if (key == '\r' || key == '\n') {
-            redraw |= desktop_wm_open(&manager, manager.selected);
-            (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
-            launch_app(manager.selected);
-            redraw = 1U;
-        } else if (key == DESKTOP_KEY_ESCAPE) {
+        uint32_t wm_key = wm_key_from_input(key);
+        if (wm_key != 0U) {
+            desktop_wm_event_t keyboard = {
+                .type = DESKTOP_WM_EVENT_KEYBOARD,
+                .key = wm_key,
+            };
+            actions |= dispatch_desktop_event(
+                &manager, &display, &dirty, &keyboard, &action_target);
+        }
+
+        if ((actions & DESKTOP_WM_RESULT_EXIT) != 0U) {
             (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
             if (runtime_activated && x86os_display_deactivate() != 0) {
                 x86os_puts("desktop: VGA-Rueckkehr fehlgeschlagen\n");
                 (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
-                continue;
+            } else {
+                if (!runtime_activated) x86os_clear();
+                x86os_puts("DESKTOP_EXIT_OK\n");
+                return 0;
             }
-            if (!runtime_activated) x86os_clear();
-            x86os_puts("DESKTOP_EXIT_OK\n");
-            return 0;
         }
 
-        if (redraw) {
+        if ((actions & DESKTOP_WM_RESULT_LAUNCH) != 0U &&
+            action_target < APP_COUNT) {
             (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
-            render_desktop(&display, &manager);
+            launch_app(action_target);
+            desktop_dirty_full(&dirty);
+        }
+
+        if (dirty.count != 0U) {
+            (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
+            render_desktop_frame(&display, &manager, &dirty);
             (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
         } else if (mouse_events != 0U) {
             (void)x86os_pointer_update(pointer_x, pointer_y, 1U);

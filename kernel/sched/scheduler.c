@@ -19,6 +19,7 @@
 #include "include/kernel/watchdog.h"
 #include "include/kernel/ipc.h"
 #include "include/kernel/storage_request_pool.h"
+#include "drivers/video/framebuffer.h"
 #include "mm/kmalloc.h"
 
 extern void swtch(context_t *old, context_t *new);
@@ -891,6 +892,7 @@ void scheduler_terminate_task(int task_id) {
      * the target slot and generation stable on this UP scheduler. */
     ipc_process_cleanup(process->pid, generation);
     storage_request_cancel_process(process->pid, generation);
+    framebuffer_frame_process_cleanup(process->pid, generation);
     process_close_all_files(process);
     process_orphan_children(process->pid);
 
@@ -930,6 +932,7 @@ void task_exit_status(int status) {
     if (process != NULL) {
         ipc_process_cleanup(process->pid, process_generation);
         storage_request_cancel_process(process->pid, process_generation);
+        framebuffer_frame_process_cleanup(process->pid, process_generation);
         process_close_all_files(process);
         process_orphan_children(process->pid);
     }

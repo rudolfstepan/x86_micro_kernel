@@ -574,6 +574,9 @@ typedef struct {
 #define X86OS_DISPLAY_CONTROL_VERSION 1U
 #define X86OS_DISPLAY_ACTIVATE 1U
 #define X86OS_DISPLAY_DEACTIVATE 2U
+#define X86OS_DISPLAY_FRAME_BEGIN 3U
+#define X86OS_DISPLAY_FRAME_COMMIT 4U
+#define X86OS_DISPLAY_FRAME_CANCEL 5U
 
 typedef struct {
     uint32_t version;
@@ -619,6 +622,15 @@ typedef struct {
     uint32_t operation;
     uint32_t reserved;
 } x86os_display_control_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t flags;
+    uint32_t serial;
+    uint32_t reserved;
+} x86os_display_frame_t;
 
 #define X86OS_MOUSE_EVENT_VERSION 1U
 #define X86OS_MOUSE_BUTTON_LEFT 0x01U
@@ -984,6 +996,9 @@ int x86os_service_connect(uint32_t service_id,
 int x86os_display_info(x86os_display_info_t* info);
 int x86os_display_activate(void);
 int x86os_display_deactivate(void);
+int x86os_display_frame_begin(uint32_t* serial);
+int x86os_display_frame_commit(uint32_t serial);
+int x86os_display_frame_cancel(uint32_t serial);
 int x86os_mouse_event(x86os_mouse_event_t* event);
 int x86os_pointer_update(int32_t x, int32_t y, uint32_t visible);
 int x86os_usb_diagnostics(x86os_usb_diagnostics_t* diagnostics);

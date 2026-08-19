@@ -8,7 +8,9 @@
  */
 #include "framebuffer.h"
 #include "display_control.h"
+#include "frame_transaction.h"
 #include "arch/x86/mm/paging.h"
+#include "include/lib/spinlock.h"
 #include "lib/libc/string.h"
 
 // Framebuffer state
@@ -4679,9 +4681,11 @@ static int32_t pointer_y;
 static uint32_t pointer_width;
 static uint32_t pointer_height;
 static bool pointer_visible;
+static display_frame_transaction_t frame_transaction;
+static spinlock_t frame_transaction_lock = SPINLOCK_INIT;
 
-static void framebuffer_present_rect(uint32_t x, uint32_t y,
-                                     uint32_t width, uint32_t height) {
+static void framebuffer_blit_rect(uint32_t x, uint32_t y,
+                                  uint32_t width, uint32_t height) {
     if (!fb_address || !fb_scanout_address || width == 0U || height == 0U ||
         x >= fb_width || y >= fb_height)
         return;
@@ -4710,12 +4714,191 @@ static void framebuffer_present_rect(uint32_t x, uint32_t y,
         if (fb_scanout_write_combining)
             __asm__ __volatile__("sfence" : : : "memory");
     }
+}
+
+static void framebuffer_restore_shadow_rect(uint32_t x, uint32_t y,
+                                            uint32_t width,
+                                            uint32_t height) {
+    if (!fb_shadow_enabled || !fb_address || !fb_scanout_address ||
+        width == 0U || height == 0U || x >= fb_width || y >= fb_height)
+        return;
+    if (width > fb_width - x) width = fb_width - x;
+    if (height > fb_height - y) height = fb_height - y;
+    uint32_t row_bytes = width * fb_bytes_per_pixel;
+    for (uint32_t row = 0U; row < height; ++row) {
+        uint8_t *destination = fb_address + (y + row) * fb_pitch +
+                               x * fb_bytes_per_pixel;
+        const volatile uint8_t *source =
+            fb_scanout_address + (y + row) * fb_pitch +
+            x * fb_bytes_per_pixel;
+        for (uint32_t byte = 0U; byte < row_bytes; ++byte)
+            destination[byte] = source[byte];
+    }
+}
+
+static void framebuffer_publish_damage(const display_frame_rect_t *damage,
+                                       uint32_t count) {
+    if (damage == NULL || count > DISPLAY_FRAME_DAMAGE_CAPACITY) return;
+    display_control_rect_t updates[DISPLAY_FRAME_DAMAGE_CAPACITY];
+    for (uint32_t index = 0U; index < count; ++index) {
+        framebuffer_blit_rect(damage[index].x, damage[index].y,
+                              damage[index].width, damage[index].height);
+        updates[index] = (display_control_rect_t){
+            .x = damage[index].x,
+            .y = damage[index].y,
+            .width = damage[index].width,
+            .height = damage[index].height,
+        };
+    }
+    display_control_present_rects(updates, count);
+}
+
+static void framebuffer_restore_damage(const display_frame_rect_t *damage,
+                                       uint32_t count) {
+    if (damage == NULL || count > DISPLAY_FRAME_DAMAGE_CAPACITY) return;
+    for (uint32_t index = 0U; index < count; ++index)
+        framebuffer_restore_shadow_rect(damage[index].x, damage[index].y,
+                                        damage[index].width,
+                                        damage[index].height);
+}
+
+static void framebuffer_finish_frame_transition(void) {
+    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
+    display_frame_finish_transition(&frame_transaction);
+    spinlock_release_irq(&frame_transaction_lock, flags);
+}
+
+static int framebuffer_reap_expired_frame(uint64_t now_ms) {
+    display_frame_rect_t damage[DISPLAY_FRAME_DAMAGE_CAPACITY];
+    uint32_t damage_count = 0U;
+    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
+    int result = display_frame_prepare_expired(
+        &frame_transaction, now_ms, damage, &damage_count);
+    spinlock_release_irq(&frame_transaction_lock, flags);
+    if (result == 1) {
+        framebuffer_restore_damage(damage, damage_count);
+        framebuffer_finish_frame_transition();
+    }
+    return result;
+}
+
+static void framebuffer_present_rect(uint32_t x, uint32_t y,
+                                     uint32_t width, uint32_t height) {
+    display_frame_rect_t rect = {x, y, width, height};
+    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
+    bool deferred = display_frame_record_damage(&frame_transaction, rect);
+    bool transition_in_progress = frame_transaction.transitioning;
+    spinlock_release_irq(&frame_transaction_lock, flags);
+    if (deferred || transition_in_progress) return;
+    framebuffer_blit_rect(x, y, width, height);
     display_control_present_rect(x, y, width, height);
+}
+
+int framebuffer_frame_begin(int owner_pid, uint32_t owner_generation,
+                            uint64_t now_ms, uint32_t *serial_out) {
+    if (!fb_address) return -19;
+    if (!fb_shadow_enabled) return -95;
+    (void)framebuffer_reap_expired_frame(now_ms);
+    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
+    int result = display_frame_begin(&frame_transaction, owner_pid,
+                                     owner_generation, now_ms, serial_out);
+    spinlock_release_irq(&frame_transaction_lock, flags);
+    return result;
+}
+
+int framebuffer_frame_commit(int owner_pid, uint32_t owner_generation,
+                             uint32_t serial, uint64_t now_ms) {
+    display_frame_rect_t damage[DISPLAY_FRAME_DAMAGE_CAPACITY];
+    uint32_t damage_count = 0U;
+    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
+    int result = display_frame_prepare_commit(
+        &frame_transaction, owner_pid, owner_generation, serial, now_ms,
+        damage, &damage_count);
+    spinlock_release_irq(&frame_transaction_lock, flags);
+    if (result == -110) (void)framebuffer_reap_expired_frame(now_ms);
+    if (result != 0) return result;
+    framebuffer_publish_damage(damage, damage_count);
+    framebuffer_finish_frame_transition();
+    return 0;
+}
+
+int framebuffer_frame_cancel(int owner_pid, uint32_t owner_generation,
+                             uint32_t serial) {
+    display_frame_rect_t damage[DISPLAY_FRAME_DAMAGE_CAPACITY];
+    uint32_t damage_count = 0U;
+    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
+    int result = display_frame_prepare_cancel(
+        &frame_transaction, owner_pid, owner_generation, serial,
+        damage, &damage_count);
+    spinlock_release_irq(&frame_transaction_lock, flags);
+    if (result != 0) return result;
+    framebuffer_restore_damage(damage, damage_count);
+    framebuffer_finish_frame_transition();
+    return 0;
+}
+
+int framebuffer_frame_draw_enter(int owner_pid, uint32_t owner_generation,
+                                 uint64_t now_ms) {
+    (void)framebuffer_reap_expired_frame(now_ms);
+    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
+    int result = display_frame_draw_enter(
+        &frame_transaction, owner_pid, owner_generation, now_ms);
+    spinlock_release_irq(&frame_transaction_lock, flags);
+    return result;
+}
+
+int framebuffer_frame_draw_leave(int owner_pid, uint32_t owner_generation,
+                                 uint64_t now_ms) {
+    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
+    int result = display_frame_draw_leave(
+        &frame_transaction, owner_pid, owner_generation, now_ms);
+    spinlock_release_irq(&frame_transaction_lock, flags);
+    if (result == -110) (void)framebuffer_reap_expired_frame(now_ms);
+    return result;
+}
+
+void framebuffer_frame_process_cleanup(int owner_pid,
+                                       uint32_t owner_generation) {
+    display_frame_rect_t damage[DISPLAY_FRAME_DAMAGE_CAPACITY];
+    uint32_t damage_count = 0U;
+    uint32_t action = 0U;
+    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
+    int result = display_frame_recover_transition(
+        &frame_transaction, owner_pid, owner_generation,
+        damage, &damage_count, &action);
+    spinlock_release_irq(&frame_transaction_lock, flags);
+    if (result == 1) {
+        if (action == DISPLAY_FRAME_TRANSITION_PUBLISH)
+            framebuffer_publish_damage(damage, damage_count);
+        else
+            framebuffer_restore_damage(damage, damage_count);
+        framebuffer_finish_frame_transition();
+        return;
+    }
+
+    damage_count = 0U;
+    flags = spinlock_acquire_irq(&frame_transaction_lock);
+    result = display_frame_prepare_cleanup(
+        &frame_transaction, owner_pid, owner_generation,
+        damage, &damage_count);
+    spinlock_release_irq(&frame_transaction_lock, flags);
+    if (result == 1) {
+        framebuffer_restore_damage(damage, damage_count);
+        framebuffer_finish_frame_transition();
+    }
+}
+
+static void framebuffer_reset_frame_transaction(uint32_t width,
+                                                uint32_t height) {
+    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
+    display_frame_transaction_init(&frame_transaction, width, height);
+    spinlock_release_irq(&frame_transaction_lock, flags);
 }
 
 // Initialize framebuffer
 static void framebuffer_initialize(multiboot_framebuffer_info_t* fb_info,
                                    bool present_clear) {
+    framebuffer_reset_frame_transaction(0U, 0U);
     fb_address = NULL;
     fb_scanout_address = NULL;
     fb_shadow_enabled = false;
@@ -4788,6 +4971,7 @@ static void framebuffer_initialize(multiboot_framebuffer_info_t* fb_info,
     fb_blue_size = fb_info->blue_mask_size;
     terminal_cols = (int)(fb_width / FONT_WIDTH);
     terminal_rows = (int)(fb_height / FONT_HEIGHT);
+    framebuffer_reset_frame_transaction(fb_width, fb_height);
     
     cursor_x = 0;
     cursor_y = 0;
@@ -4804,6 +4988,7 @@ void framebuffer_init_runtime(multiboot_framebuffer_info_t* fb_info) {
 }
 
 void framebuffer_shutdown(void) {
+    framebuffer_reset_frame_transaction(0U, 0U);
     fb_address = NULL;
     fb_scanout_address = NULL;
     fb_shadow_enabled = false;

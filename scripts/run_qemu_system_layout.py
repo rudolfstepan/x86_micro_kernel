@@ -87,11 +87,12 @@ def run(qemu: Path, image: Path, timeout: float, log: Path) -> int:
             process, chunks, transcript, finished, smoke.SHELL_PROMPT, deadline
         )
         commands = [
-            ("path", "PATH=C:\\bin;C:\\sbin;C:\\usr\\bin"),
+            ("path", "PATH=C:\\bin;C:\\sbin;C:\\usr\\bin;C:\\usr\\gui\\bin"),
             ("ls -1 /", "bin"),
             ("ls -1 /bin", "shell.prg"),
             ("ls -1 /sbin", "svcctl.prg"),
             ("ls -1 /usr/bin", "hello.prg"),
+            ("ls -1 /usr/gui/bin", "desktop.prg"),
             ("ls -1 /libexec/reist", "storage.prg"),
             ("svcctl status 5",
              "COMPONENT STATUS 5 name=storage-service state=READY generation=1"),

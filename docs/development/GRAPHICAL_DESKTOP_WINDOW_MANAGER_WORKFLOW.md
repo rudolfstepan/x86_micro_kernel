@@ -22,6 +22,35 @@ Amiga Workbench und Windows 3.1: Menüleiste, Desktopicons, überlappende Fenste
 deutlich markierte aktive Titelleiste, einfache Rahmen und vorhersehbare
 Tastaturbedienung. Das Erscheinungsbild ändert nicht die Sicherheitsgrenzen.
 
+Der sichtbare Produktname ist **REIST Workspace**. `desktop.prg` bleibt der
+kompatible technische Programmname und `desktop` der Shell-Startbefehl. Der
+Begriff „Windows“ wird nur für die Microsoft-Referenz oder auf Englisch für
+einzelne Fenster verwendet, nicht als Name der REIST-Oberfläche.
+
+## Quell- und Installationsstruktur
+
+GUI-Code wird nicht mit Console- und Shellprogrammen vermischt. Die aktuelle
+und künftige Struktur lautet:
+
+| Quellpfad | Inhalt und Vertrauensgrenze |
+|---|---|
+| `userspace/gui/compositor/` | vertrauenswürdiger Session-Compositor und Window-Manager |
+| `userspace/gui/apps/<name>/` | künftig je ein eigener GUI-Clientprozess pro Anwendung |
+| `userspace/gui/include/reist/gui/` | künftig die einzige versionierte, öffentliche Client-ABI |
+| `userspace/gui/lib/` | künftig begrenzte Clientbibliothek und gemeinsame Controls |
+| `userspace/gui/share/` | künftig versionierte, nur lesbare Icons, Fonts und Themen |
+| `userspace/programs/` | Console- und Systemprogramme ohne GUI-Clientrolle |
+| `userspace/bin/` | interaktive Consoleprogramme wie Shell und Editor |
+
+Im Zielabbild liegen direkt startbare GUI-Programme unter `/usr/gui/bin`,
+Bibliotheken später unter `/usr/gui/lib` und architekturunabhängige Ressourcen
+unter `/usr/gui/share`. Die Ring-3-Shell führt `/usr/gui/bin` in ihrem festen,
+begrenzten Suchpfad. `/DESKTOP.PRG` und `/usr/bin/desktop.prg` bleiben feste
+Kompatibilitätsaliase; neuer Code verwendet ausschließlich
+`/usr/gui/bin/desktop.prg`. Verzeichnisse ohne reale Inhalte werden nicht als
+Platzhalter angelegt. Die vollständige Besitzregel steht zusätzlich in
+`userspace/gui/README.md`.
+
 ## Architektur-Kompatibilitätsprofil
 
 REIST übernimmt das etablierte Wayland/xdg-shell-Modell auf Ebene der
@@ -93,6 +122,38 @@ Semantik ohne diesen Nachweis blockiert die betreffende Checkbox.
   Die VM verwendet ausschließlich virtuelle PS/2-Tastatur und virtuelle
   USB-HID-Maus.
 
+## Multitasking- und Prozessgrenze
+
+Präemptives Multitasking benötigt nicht zwingend mehrere CPU-Kerne. Der
+aktuelle REIST-Kernel plant mehrere Tasks mit Zeitquantum auf einem Kern und
+besitzt getrennte Prozessidentitäten und Adressräume; SMP ist eine davon
+unabhängige spätere Ausbaustufe. Für die GUI genügt diese Aussage allein aber
+nicht als Nachweis vollständiger Diensttrennung.
+
+Der jetzige `desktop.prg` ist noch ein einzelner Session-Compositor-Prozess.
+Seine Rasteroperationen bleiben präemptibel; nur kurze Zustandsübergänge sind
+gesperrt. Offene Frames gehören immer PID plus Prozessgeneration, besitzen
+eine feste Lease und werden sowohl bei normalem Task-Ende als auch bei einer
+erzwungenen Terminierung bereinigt. Dadurch blockiert ein pausierter oder
+beendeter Zeichner weder Scheduler noch Display dauerhaft.
+
+Vor Controls, Dialogen und echten GUI-Anwendungen muss Stufe 3 zusätzlich
+nachweisen:
+
+- Compositor, GUI-Clients und Systemdienste laufen als getrennte Prozesse in
+  getrennten Adressräumen und kommunizieren ausschließlich über validierte,
+  begrenzte IPC.
+- Jeder Client besitzt eigene generationsgebundene Surface-Handles und eine
+  feste Eventqueue; kein Client kann Fokus, Z-Order oder fremde Buffer ändern.
+- Ein blockierter, abgestürzter oder CPU-intensiver Client verhindert weder
+  Eingabe noch Darstellung anderer Clients; Fairness und Cleanup werden im
+  Gast getestet.
+- Keine GUI-Sperre wird über einen blockierenden IPC-Aufruf, einen Wait oder
+  eine lange Rasteroperation gehalten.
+
+Bis diese Nachweise bestehen, wird weder vollständige GUI-Prozessisolation
+noch SMP-Unterstützung behauptet.
+
 ## Stufe 0: belastbare Ausgangslage
 
 - [x] VGA-Boot kann `desktop.prg` starten und VMware SVGA-II aktivieren.
@@ -124,37 +185,63 @@ verschoben und über das Schließfeld geschlossen werden.
   starten und danach die Fensterszene vollständig wiederherstellen.
 - [x] Quell- und Hosttests für Kapazität, Z-Order, Capture und Bounds ergänzen.
 - [x] VMware-Paket erfolgreich bauen.
-- [ ] Manueller VMware-Sichtnachweis durch den Benutzer.
+- [x] Manueller VMware-Sichtnachweis durch den Benutzer.
 
-Zwischenstand vom 19. August 2026: Szene, Fenster, Dekorationen und Pointer
-wurden unter VMware sichtbar bestätigt. Die Interaktionsabnahme bleibt offen,
-bis der anhand von `vmware-serial.log` isolierte xHCI-Port-Reset-Fehler mit dem
-neu gebauten Image als behoben bestätigt ist; reale Hardware wurde für diesen
-Stand noch nicht geprüft.
+Abnahme vom 19. August 2026: Szene, Fenster, Dekorationen und Pointer wurden
+unter VMware sichtbar bestätigt. Der Benutzer hat außerdem Mausbewegung,
+Fokus/Z-Reihenfolge, Fensterziehen sowie Schließen und erneutes Öffnen
+erfolgreich geprüft. Reale Hardware wurde für diesen Window-Manager-Stand noch
+nicht geprüft.
 
 Für diese Stufe ist ein vollständiger Szenenaufbau nach einer geometrischen
 Änderung zulässig. Er ist ausdrücklich nur die sichere Referenz, bis die
 Schadens- und Frame-Publikation aus Stufe 2 verfügbar ist.
 
-## Stufe 2: flüssige, begrenzte Frame-Publikation
+## Stufe 2: Compositor-Kern und flüssige Frame-Publikation
 
 Sichtbares Ergebnis: Ein gezogenes Fenster bewegt sich ohne vollständiges
 Neuzeichnen des Bildschirms und ohne schrittweise sichtbaren Bildaufbau.
 
-- [ ] Feste Liste von höchstens acht Damage-Rechtecken definieren.
-- [ ] Überlappende Schäden begrenzt vereinigen; bei Überlauf kontrolliert auf
+- [x] Typisierten, zentralen Event-Dispatch statt direkter Eingabe-Manipulation
+  des Fensterzustands einführen.
+- [x] Pointer- und Keyboard-Fokus als getrennte Zustände führen.
+- [x] Implizites Pointer-Grab für jede Button-Down-Sequenz bis Button-Up
+  beibehalten, auch außerhalb des Ursprungsfensters.
+- [x] Feste Liste von höchstens acht Damage-Rechtecken definieren.
+- [x] Überlappende Schäden begrenzt vereinigen; bei Überlauf kontrolliert auf
   einen Vollbildschaden zurückfallen.
-- [ ] Alle Desktop- und Fensterprimitive an ein explizites Clip-Rechteck binden.
-- [ ] Kernel-ABI für einen owner- und generationsgebundenen Frame-Beginn/-Commit
-  entwerfen; keine globale, nach Prozessende hängenbleibende Batch-Sperre.
-- [ ] Shadow-Framebuffer während eines Frames beschreiben und den validierten
+- [x] Alle Desktop- und Fensterprimitive an ein explizites Clip-Rechteck binden.
+- [x] Kernel-ABI für owner- und generationsgebundenes
+  Frame-Begin/Commit/Cancel append-only in den vorhandenen Display-Control-
+  Syscall integrieren.
+- [x] Frame-Lease, Seriennummer, Draw-Reservation und Cleanup in beiden
+  Scheduler-Exit-Pfaden umsetzen; keine nach Prozessende hängenbleibende
+  Batch-Sperre.
+- [x] Shadow-Framebuffer während eines Frames beschreiben und den validierten
   Schaden erst beim Commit an VMware SVGA-II präsentieren.
-- [ ] Softwarepointer als oberste Ebene behandeln und vor Szenen-Commit sicher
-  restaurieren.
-- [ ] Alte und neue Fensterposition sowie freigelegte darunterliegende Fenster
+- [x] Höchstens acht VMware-Updates in einem FIFO-Batch mit genau einer
+  abschließenden SVGA-Synchronisation veröffentlichen.
+- [x] Softwarepointer vor dem Szenenaufbau restaurieren und anschließend als
+  oberste Ebene erneut setzen.
+- [x] Alte und neue Fensterposition sowie freigelegte und überdeckte Fenster
+  durch vollständige Back-to-front-Komposition innerhalb der Dirty Regions
   korrekt invalidieren.
+- [x] Hosttests für Dirty-Überlauf, Fokusarten, Event-Dispatch, implizites Grab,
+  Stale-Serial, Timeout und Prozesscleanup ergänzen.
+- [x] VMware-Paket mit Kernel und aktualisiertem `DESKTOP.PRG` bauen.
+- [x] Compositor-Quellen in den eigenen GUI-Baum verschieben und die
+  Zielabbilder unter `/usr/gui/bin` vereinheitlichen.
+- [x] Direkten Start über den begrenzten Userspace-Shell-Pfad sowie feste
+  Legacy-Pfadaliase durch Quell- und Image-Layout-Tests absichern.
 - [ ] Messwerte für Vollbildaufbau und Fensterzug im seriellen Test protokollieren.
 - [ ] VMware-Sichttest ohne Flackern oder stehenbleibende Fensterreste.
+
+Die Frame-ABI ist bewusst eine Publikationsgrenze, keine globale
+Compositor-Sperre. Längere Rechteck- und Textoperationen bleiben präemptibel;
+konkurrierende Zeichner werden begrenzt mit Fehlerstatus abgewiesen. Das
+gegenwärtige Dirty-Redraw zeichnet innerhalb jedes Clips Hintergrund, Icons
+und sichtbare Fenster erneut in Z-Reihenfolge. Damit werden freigelegte Flächen
+korrekt rekonstruiert, ohne den restlichen Bildschirm neu aufzubauen.
 
 ## Stufe 3: versionierte GUI-Client- und Surface-ABI
 

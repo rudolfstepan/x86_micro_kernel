@@ -1621,11 +1621,19 @@ static int syscall_display_fill_rect(const syscall_display_rect_t *user_rect) {
         rect.struct_size < sizeof(rect) ||
         (rect.rgb & 0xFF000000U) != 0) return -22;
 
-    /* Rendering is deliberately preemptible.  The framebuffer geometry is
-     * immutable after boot and occasional visual tearing is preferable to a
-     * Ring-3 caller monopolizing the global UP scheduler. */
+    Process *process = scheduler_current_process();
+    if (process == NULL) return -13;
+    int reservation = framebuffer_frame_draw_enter(
+        process->pid, process->generation, pit_monotonic_ms());
+    if (reservation != 0) return reservation;
+    /* Raster work remains preemptible.  The short owner/generation reservation
+     * prevents another task from interleaving a frame without monopolizing the
+     * scheduler for the duration of a large fill. */
     bool drawn = framebuffer_fill_rect(rect.x, rect.y, rect.width,
                                        rect.height, rect.rgb);
+    int release = framebuffer_frame_draw_leave(
+        process->pid, process->generation, pit_monotonic_ms());
+    if (release != 0) return release;
     return drawn ? 0 : -19;
 }
 
@@ -1646,9 +1654,17 @@ static int syscall_display_draw_text(const syscall_display_text_t *user_text) {
     char text[FRAMEBUFFER_DISPLAY_MAX_TEXT];
     if (copy_from_user(text, (const void*)(uintptr_t)request.text_address,
                        request.text_length) != 0) return -14;
+    Process *process = scheduler_current_process();
+    if (process == NULL) return -13;
+    int reservation = framebuffer_frame_draw_enter(
+        process->pid, process->generation, pit_monotonic_ms());
+    if (reservation != 0) return reservation;
     bool drawn = framebuffer_draw_text_pixels(
         request.x, request.y, text, request.text_length,
         request.foreground_rgb, request.background_rgb);
+    int release = framebuffer_frame_draw_leave(
+        process->pid, process->generation, pit_monotonic_ms());
+    if (release != 0) return release;
     return drawn ? (int)request.text_length : -19;
 }
 
@@ -1819,23 +1835,67 @@ static int syscall_create(const char *user_path) {
 
 static int syscall_pointer_update(int32_t x, int32_t y, uint32_t visible) {
     if (visible > 1U) return -22;
+    Process *process = scheduler_current_process();
+    if (process == NULL) return -13;
+    int reservation = framebuffer_frame_draw_enter(
+        process->pid, process->generation, pit_monotonic_ms());
+    if (reservation != 0) return reservation;
     scheduler_preempt_disable();
     bool updated = framebuffer_cursor_update(x, y, visible != 0U);
     scheduler_preempt_enable();
+    int release = framebuffer_frame_draw_leave(
+        process->pid, process->generation, pit_monotonic_ms());
+    if (release != 0) return release;
     return updated ? 0 : -19;
 }
 
-static int syscall_display_control(const display_control_request_t *user_request) {
-    display_control_request_t request;
-    if (copy_from_user(&request, user_request, sizeof(request)) != 0) return -14;
-    if (request.version != DISPLAY_CONTROL_ABI_VERSION ||
-        request.struct_size < sizeof(request) || request.reserved != 0U)
-        return -22;
-    if (request.operation == DISPLAY_CONTROL_ACTIVATE)
+static int syscall_display_control(display_control_request_t *user_request) {
+    display_control_request_t base;
+    if (copy_from_user(&base, user_request, sizeof(base)) != 0) return -14;
+    if (base.version != DISPLAY_CONTROL_ABI_VERSION ||
+        base.struct_size < sizeof(base) || base.reserved != 0U) return -22;
+    if (base.operation == DISPLAY_CONTROL_ACTIVATE)
         return display_control_activate();
-    if (request.operation == DISPLAY_CONTROL_DEACTIVATE)
+    if (base.operation == DISPLAY_CONTROL_DEACTIVATE)
         return display_control_deactivate();
-    return -22;
+    if (base.operation != DISPLAY_CONTROL_FRAME_BEGIN &&
+        base.operation != DISPLAY_CONTROL_FRAME_COMMIT &&
+        base.operation != DISPLAY_CONTROL_FRAME_CANCEL) return -22;
+
+    display_frame_request_t request;
+    if (base.struct_size < sizeof(request) ||
+        copy_from_user(&request, user_request, sizeof(request)) != 0)
+        return base.struct_size < sizeof(request) ? -22 : -14;
+    if (request.version != DISPLAY_CONTROL_ABI_VERSION ||
+        request.struct_size < sizeof(request) || request.flags != 0U ||
+        request.reserved != 0U) return -22;
+    Process *process = scheduler_current_process();
+    if (process == NULL) return -13;
+    if (request.operation == DISPLAY_CONTROL_FRAME_BEGIN) {
+        if (request.serial != 0U ||
+            !user_range_accessible(
+                paging_current_directory(),
+                (uint32_t)(uintptr_t)user_request, sizeof(request), true))
+            return request.serial != 0U ? -22 : -14;
+        uint32_t serial = 0U;
+        int result = framebuffer_frame_begin(
+            process->pid, process->generation, pit_monotonic_ms(), &serial);
+        if (result != 0) return result;
+        request.serial = serial;
+        if (copy_to_user(user_request, &request, sizeof(request)) != 0) {
+            (void)framebuffer_frame_cancel(
+                process->pid, process->generation, serial);
+            return -14;
+        }
+        return 0;
+    }
+    if (request.serial == 0U) return -22;
+    if (request.operation == DISPLAY_CONTROL_FRAME_COMMIT)
+        return framebuffer_frame_commit(
+            process->pid, process->generation, request.serial,
+            pit_monotonic_ms());
+    return framebuffer_frame_cancel(
+        process->pid, process->generation, request.serial);
 }
 
 static int syscall_mouse_event(hid_mouse_event_t *user_event) {
@@ -2728,7 +2788,7 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_DISPLAY_CONTROL:
             result = (uint32_t)syscall_display_control(
-                (const display_control_request_t*)(uintptr_t)arg1);
+                (display_control_request_t*)(uintptr_t)arg1);
             break;
         case SYS_MOUSE_EVENT:
             result = (uint32_t)syscall_mouse_event(

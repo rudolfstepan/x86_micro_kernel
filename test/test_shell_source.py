@@ -179,7 +179,7 @@ class ShellSourceRegressionTests(unittest.TestCase):
     def test_framebuffer_boot_prefers_desktop_with_shell_fallback(self):
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
         framebuffer = kernel.index("if (framebuffer_available())")
-        desktop = kernel.index('"usr/bin/desktop.prg"', framebuffer)
+        desktop = kernel.index('"usr/gui/bin/desktop.prg"', framebuffer)
         shell = kernel.index('"bin/shell.prg"', desktop)
         self.assertLess(framebuffer, desktop)
         self.assertLess(desktop, shell)
