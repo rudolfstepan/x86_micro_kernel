@@ -18,6 +18,7 @@
 #define DESKTOP_METRICS_VERSION 1U
 #define DESKTOP_RENDER_PROBE_STEPS 8U
 #define DESKTOP_RENDER_PROBE_STEP_X 4
+#define DESKTOP_MOUSE_BATCH_LIMIT 32U
 
 _Static_assert(APP_COUNT == DESKTOP_WM_CAPACITY,
                "desktop app and window capacities must match");
@@ -70,6 +71,12 @@ enum {
     DESKTOP_UI_ACTION_NONE = 0U,
     DESKTOP_UI_ACTION_EXIT,
     DESKTOP_UI_ACTION_OPEN_WINDOW
+};
+
+enum {
+    DESKTOP_MOVE_CACHE_NONE = 0U,
+    DESKTOP_MOVE_CACHE_WINDOW,
+    DESKTOP_MOVE_CACHE_DIALOG
 };
 
 /* Application policy stays outside libreistgui: the library returns these
@@ -173,6 +180,8 @@ static const uint32_t color_title_text = 0x00FFFFFFU;
 typedef struct {
     const x86os_display_info_t *display;
     desktop_rect_t clip;
+    uint32_t omitted_kind;
+    uint32_t omitted_window;
 } desktop_render_context_t;
 
 typedef struct {
@@ -206,6 +215,14 @@ typedef struct {
     uint32_t action;
     uint32_t target;
 } desktop_ui_result_t;
+
+typedef struct {
+    desktop_rect_t source;
+    desktop_rect_t destination;
+    uint32_t kind;
+    uint32_t window_index;
+    uint32_t valid;
+} desktop_move_cache_t;
 
 static size_t bounded_text_length(const char *text, size_t maximum) {
     size_t length = 0U;
@@ -1077,7 +1094,9 @@ static void render_desktop_clip(const desktop_render_context_t *context,
 
     for (uint32_t position = 0U; position < DESKTOP_WM_CAPACITY; ++position) {
         uint32_t window_index = manager->z_order[position];
-        if (window_index < DESKTOP_WM_CAPACITY)
+        if (window_index < DESKTOP_WM_CAPACITY &&
+            (context->omitted_kind != DESKTOP_MOVE_CACHE_WINDOW ||
+             context->omitted_window != window_index))
             render_window(context, manager, window_index);
     }
 
@@ -1090,7 +1109,8 @@ static void render_desktop_clip(const desktop_render_context_t *context,
         display->width > 20U ? display->width - 20U : 1U,
         color_text, color_face);
     render_menu_popup(context, manager, ui);
-    render_system_dialog(context, ui);
+    if (context->omitted_kind != DESKTOP_MOVE_CACHE_DIALOG)
+        render_system_dialog(context, ui);
 }
 
 static desktop_rect_t expanded_render_clip(
@@ -1114,12 +1134,16 @@ static desktop_rect_t expanded_render_clip(
 static void render_dirty_regions(const x86os_display_info_t *display,
                                  const desktop_wm_t *manager,
                                  const desktop_ui_state_t *ui,
-                                 const desktop_dirty_region_t *dirty) {
+                                 const desktop_dirty_region_t *dirty,
+                                 uint32_t omitted_kind,
+                                 uint32_t omitted_window) {
     if (display == 0 || manager == 0 || dirty == 0) return;
     for (uint32_t index = 0U; index < dirty->count; ++index) {
         desktop_render_context_t context = {
             .display = display,
             .clip = expanded_render_clip(display, dirty->rects[index]),
+            .omitted_kind = omitted_kind,
+            .omitted_window = omitted_window,
         };
         if (context.clip.width != 0U && context.clip.height != 0U)
             render_desktop_clip(&context, manager, ui);
@@ -1130,7 +1154,9 @@ static void render_desktop(const x86os_display_info_t *display,
                            const desktop_wm_t *manager,
                            const desktop_ui_state_t *ui,
                            const desktop_dirty_region_t *dirty) {
-    render_dirty_regions(display, manager, ui, dirty);
+    render_dirty_regions(
+        display, manager, ui, dirty,
+        DESKTOP_MOVE_CACHE_NONE, DESKTOP_WM_NO_TARGET);
 }
 
 static uint32_t render_desktop_frame(const x86os_display_info_t *display,
@@ -1146,6 +1172,47 @@ static uint32_t render_desktop_frame(const x86os_display_info_t *display,
         return 1U;
     }
     render_desktop(display, manager, ui, dirty);
+    if (x86os_display_frame_commit(serial) != 0) {
+        (void)x86os_display_frame_cancel(serial);
+        render_desktop(display, manager, ui, dirty);
+        return 1U;
+    }
+    return 0U;
+}
+
+static uint32_t render_desktop_cached_move_frame(
+    const x86os_display_info_t *display, const desktop_wm_t *manager,
+    const desktop_ui_state_t *ui, const desktop_dirty_region_t *dirty,
+    const desktop_move_cache_t *move) {
+    if (move == 0 || !move->valid)
+        return render_desktop_frame(display, manager, ui, dirty);
+    if (move->kind != DESKTOP_MOVE_CACHE_DIALOG &&
+        (move->kind != DESKTOP_MOVE_CACHE_WINDOW ||
+         move->window_index >= DESKTOP_WM_CAPACITY))
+        return render_desktop_frame(display, manager, ui, dirty);
+
+    uint32_t serial = 0U;
+    int begin = x86os_display_frame_begin(&serial);
+    if (begin != 0) {
+        render_desktop(display, manager, ui, dirty);
+        return 1U;
+    }
+    int staged = x86os_display_frame_stage_blit(
+        serial, (uint32_t)move->source.x, (uint32_t)move->source.y,
+        (uint32_t)move->destination.x,
+        (uint32_t)move->destination.y,
+        move->source.width, move->source.height);
+    if (staged != 0) {
+        render_desktop(display, manager, ui, dirty);
+    } else {
+        desktop_dirty_region_t cleanup;
+        desktop_dirty_initialize(
+            &cleanup, display->width, display->height);
+        desktop_dirty_add(&cleanup, move->source);
+        render_dirty_regions(
+            display, manager, ui, &cleanup,
+            move->kind, move->window_index);
+    }
     if (x86os_display_frame_commit(serial) != 0) {
         (void)x86os_display_frame_cancel(serial);
         render_desktop(display, manager, ui, dirty);
@@ -1199,13 +1266,15 @@ static void record_render_metrics(desktop_render_metrics_t *metrics,
 static void render_desktop_measured(
     const x86os_display_info_t *display, const desktop_wm_t *manager,
     const desktop_ui_state_t *ui,
-    const desktop_dirty_region_t *dirty, uint32_t drag, uint32_t resize,
-    desktop_render_metrics_t *metrics) {
+    const desktop_dirty_region_t *dirty,
+    const desktop_move_cache_t *move_cache,
+    uint32_t drag, uint32_t resize, desktop_render_metrics_t *metrics) {
     if (dirty == 0 || dirty->count == 0U) return;
     uint64_t started_ms = 0U;
     uint64_t finished_ms = 0U;
     uint32_t clock_valid = x86os_monotonic_ms(&started_ms) == 0;
-    uint32_t fallback = render_desktop_frame(display, manager, ui, dirty);
+    uint32_t fallback = render_desktop_cached_move_frame(
+        display, manager, ui, dirty, move_cache);
     if (!clock_valid || x86os_monotonic_ms(&finished_ms) != 0 ||
         finished_ms < started_ms) {
         clock_valid = 0U;
@@ -1459,6 +1528,197 @@ static uint32_t apply_desktop_ui_result(
     return actions;
 }
 
+static void accumulate_mouse_delta(int32_t *total, int32_t delta) {
+    if (total == 0) return;
+    int64_t sum = (int64_t)*total + delta;
+    if (sum < INT32_MIN) sum = INT32_MIN;
+    if (sum > INT32_MAX) sum = INT32_MAX;
+    *total = (int32_t)sum;
+}
+
+static uint32_t desktop_move_capture_geometry(
+    const desktop_wm_t *manager, const desktop_ui_state_t *ui,
+    uint32_t *kind, uint32_t *window_index, desktop_rect_t *bounds) {
+    if (manager == 0 || ui == 0 || kind == 0 || window_index == 0 ||
+        bounds == 0) return 0U;
+    if (ui->dialog.visible &&
+        ui->dialog.capture_kind == REIST_GUI_DIALOG_CAPTURE_MOVE) {
+        if (ui->dialog.bounds.x < 0 || ui->dialog.bounds.y < 0 ||
+            ui->dialog.bounds.width > UINT32_MAX - 4U ||
+            ui->dialog.bounds.height > UINT32_MAX - 4U) return 0U;
+        *kind = DESKTOP_MOVE_CACHE_DIALOG;
+        *window_index = DESKTOP_WM_NO_TARGET;
+        *bounds = (desktop_rect_t){
+            ui->dialog.bounds.x, ui->dialog.bounds.y,
+            ui->dialog.bounds.width + 4U,
+            ui->dialog.bounds.height + 4U,
+        };
+        return 1U;
+    }
+    if (manager->capture_kind != DESKTOP_WM_CAPTURE_MOVE ||
+        manager->capture_window < 0 ||
+        manager->capture_window >= (int32_t)DESKTOP_WM_CAPACITY)
+        return 0U;
+    uint32_t index = (uint32_t)manager->capture_window;
+    /* A scene-level pixel cache is valid only for an unobscured top layer.
+     * Modeless dialogs are composed above ordinary windows, so keep using the
+     * general redraw path while one is visible. */
+    if (ui->dialog.visible ||
+        manager->z_order[DESKTOP_WM_CAPACITY - 1U] != index)
+        return 0U;
+    desktop_rect_t rect = desktop_wm_window_bounds(manager, index);
+    if (rect.x < 0 || rect.y < 0) return 0U;
+    *kind = DESKTOP_MOVE_CACHE_WINDOW;
+    *window_index = index;
+    *bounds = rect;
+    return 1U;
+}
+
+static void desktop_move_cache_capture(
+    desktop_move_cache_t *move, uint32_t kind, uint32_t window_index,
+    desktop_rect_t source, desktop_rect_t destination) {
+    if (move == 0 || kind == DESKTOP_MOVE_CACHE_NONE ||
+        source.x < 0 || source.y < 0 || destination.x < 0 ||
+        destination.y < 0 || source.width == 0U || source.height == 0U ||
+        source.width != destination.width ||
+        source.height != destination.height ||
+        (source.x == destination.x && source.y == destination.y)) return;
+    move->source = source;
+    move->destination = destination;
+    move->kind = kind;
+    move->window_index = window_index;
+    move->valid = 1U;
+}
+
+/* Relative USB reports are coalesced until a button edge.  A compositor
+ * needs the latest pointer position for the next frame, not every transient
+ * position that was queued while the previous frame reached scanout.  Button
+ * edges remain strict ordering boundaries, preserving implicit grabs. */
+static uint32_t dispatch_pointer_motion(
+    desktop_wm_t *manager, desktop_ui_state_t *ui,
+    const x86os_display_info_t *display, desktop_dirty_region_t *dirty,
+    int32_t *pointer_x, int32_t *pointer_y,
+    int32_t delta_x, int32_t delta_y, uint32_t *target,
+    uint32_t *drag_render, uint32_t *resize_render,
+    desktop_move_cache_t *move_cache) {
+    if (delta_x == 0 && delta_y == 0) return 0U;
+    move_pointer(display, pointer_x, pointer_y, delta_x, delta_y);
+
+    uint32_t move_kind = DESKTOP_MOVE_CACHE_NONE;
+    uint32_t move_window = DESKTOP_WM_NO_TARGET;
+    desktop_rect_t move_source = {0, 0, 0U, 0U};
+    uint32_t can_cache = dirty->count == 0U &&
+        desktop_move_capture_geometry(
+            manager, ui, &move_kind, &move_window, &move_source);
+
+    if (manager->capture_kind == DESKTOP_WM_CAPTURE_MOVE ||
+        ui->dialog.capture_kind == REIST_GUI_DIALOG_CAPTURE_MOVE)
+        *drag_render = 1U;
+    if (manager->capture_kind == DESKTOP_WM_CAPTURE_RESIZE)
+        *resize_render = 1U;
+
+    uint32_t actions = 0U;
+    uint32_t ui_motion_consumed = 0U;
+    if (manager->capture_kind == DESKTOP_WM_CAPTURE_NONE) {
+        desktop_ui_result_t ui_motion = desktop_ui_pointer_event(
+            ui, display, dirty, *pointer_x, *pointer_y, 0U, 0U);
+        ui_motion_consumed = ui_motion.consumed;
+        actions |= apply_desktop_ui_result(
+            manager, display, dirty, &ui_motion, target);
+    }
+    if (!ui_motion_consumed) {
+        desktop_wm_event_t motion = {
+            .type = DESKTOP_WM_EVENT_POINTER_MOTION,
+            .x = *pointer_x,
+            .y = *pointer_y,
+        };
+        actions |= dispatch_desktop_event(
+            manager, display, dirty, &motion, target);
+    }
+    if (can_cache) {
+        uint32_t destination_kind = DESKTOP_MOVE_CACHE_NONE;
+        uint32_t destination_window = DESKTOP_WM_NO_TARGET;
+        desktop_rect_t destination = {0, 0, 0U, 0U};
+        if (desktop_move_capture_geometry(
+                manager, ui, &destination_kind, &destination_window,
+                &destination) && destination_kind == move_kind &&
+            destination_window == move_window) {
+            desktop_move_cache_capture(
+                move_cache, move_kind, move_window,
+                move_source, destination);
+        }
+    }
+    return actions;
+}
+
+static uint32_t dispatch_pointer_button(
+    desktop_wm_t *manager, desktop_ui_state_t *ui,
+    const x86os_display_info_t *display, desktop_dirty_region_t *dirty,
+    int32_t pointer_x, int32_t pointer_y, uint32_t buttons,
+    uint32_t previous_buttons, uint32_t *target) {
+    uint32_t actions = 0U;
+    uint32_t left_down =
+        (buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
+    uint32_t left_was_down =
+        (previous_buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
+    if (left_down && !left_was_down) {
+        uint32_t ui_press_consumed = 0U;
+        if (manager->capture_kind == DESKTOP_WM_CAPTURE_NONE) {
+            desktop_ui_result_t ui_press = desktop_ui_pointer_event(
+                ui, display, dirty, pointer_x, pointer_y, 1U, 1U);
+            ui_press_consumed = ui_press.consumed;
+            actions |= apply_desktop_ui_result(
+                manager, display, dirty, &ui_press, target);
+        }
+        if (!ui_press_consumed) {
+            int window = desktop_wm_window_at(
+                manager, pointer_x, pointer_y);
+            desktop_wm_event_t press = {
+                .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
+                .x = pointer_x,
+                .y = pointer_y,
+                .button = DESKTOP_WM_BUTTON_LEFT,
+                .pressed = 1U,
+            };
+            actions |= dispatch_desktop_event(
+                manager, display, dirty, &press, target);
+            if (window == DESKTOP_WM_NO_WINDOW) {
+                int icon = desktop_icon_at_position(
+                    display, pointer_x, pointer_y);
+                if (icon != DESKTOP_WM_NO_WINDOW) {
+                    desktop_wm_event_t open = {
+                        .type = DESKTOP_WM_EVENT_OPEN,
+                        .target = (uint32_t)icon,
+                    };
+                    actions |= dispatch_desktop_event(
+                        manager, display, dirty, &open, target);
+                }
+            }
+        }
+    } else if (!left_down && left_was_down) {
+        uint32_t ui_release_consumed = 0U;
+        if (manager->capture_kind == DESKTOP_WM_CAPTURE_NONE) {
+            desktop_ui_result_t ui_release = desktop_ui_pointer_event(
+                ui, display, dirty, pointer_x, pointer_y, 1U, 0U);
+            ui_release_consumed = ui_release.consumed;
+            actions |= apply_desktop_ui_result(
+                manager, display, dirty, &ui_release, target);
+        }
+        if (!ui_release_consumed) {
+            desktop_wm_event_t release = {
+                .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
+                .x = pointer_x,
+                .y = pointer_y,
+                .button = DESKTOP_WM_BUTTON_LEFT,
+                .pressed = 0U,
+            };
+            actions |= dispatch_desktop_event(
+                manager, display, dirty, &release, target);
+        }
+    }
+    return actions;
+}
+
 static void render_probe_error(desktop_render_metrics_t *metrics) {
     if (metrics != 0) saturating_increment(&metrics->probe_errors);
 }
@@ -1615,7 +1875,7 @@ static void run_render_probe(
         }
         (void)x86os_pointer_update(*pointer_x, *pointer_y, 0U);
         render_desktop_measured(
-            display, manager, ui, &dirty, 1U, 0U, metrics);
+            display, manager, ui, &dirty, 0, 1U, 0U, metrics);
         (void)x86os_pointer_update(*pointer_x, *pointer_y, 1U);
     }
     event = (desktop_wm_event_t){
@@ -1660,7 +1920,7 @@ static void run_render_probe(
         }
         (void)x86os_pointer_update(*pointer_x, *pointer_y, 0U);
         render_desktop_measured(
-            display, manager, ui, &dirty, 0U, 1U, metrics);
+            display, manager, ui, &dirty, 0, 0U, 1U, metrics);
         (void)x86os_pointer_update(*pointer_x, *pointer_y, 1U);
     }
     event = (desktop_wm_event_t){
@@ -1738,7 +1998,7 @@ int main(int argc, char **argv) {
     desktop_dirty_initialize(&initial_dirty, display.width, display.height);
     desktop_dirty_full(&initial_dirty);
     render_desktop_measured(
-        &display, &manager, &ui, &initial_dirty, 0U, 0U, &metrics);
+        &display, &manager, &ui, &initial_dirty, 0, 0U, 0U, &metrics);
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
     if (render_probe) {
         run_render_probe(
@@ -1756,105 +2016,39 @@ int main(int argc, char **argv) {
         uint32_t action_target = DESKTOP_WM_NO_TARGET;
         uint32_t drag_render = 0U;
         uint32_t resize_render = 0U;
+        desktop_move_cache_t move_cache = {0};
+        int32_t pending_delta_x = 0;
+        int32_t pending_delta_y = 0;
         unsigned int mouse_events = 0U;
-        for (; mouse_events < 32U; ++mouse_events) {
+        for (; mouse_events < DESKTOP_MOUSE_BATCH_LIMIT; ++mouse_events) {
             x86os_mouse_event_t mouse;
             if (x86os_mouse_event(&mouse) != 0) break;
-            move_pointer(&display, &pointer_x, &pointer_y,
-                         mouse.delta_x, mouse.delta_y);
-
-            if (manager.capture_kind == DESKTOP_WM_CAPTURE_MOVE)
-                drag_render = 1U;
-            if (manager.capture_kind == DESKTOP_WM_CAPTURE_RESIZE)
-                resize_render = 1U;
-            /* Existing WM capture wins; otherwise modal/menu UI gets the
-             * event before ordinary hit-testing and may consume it. */
-            uint32_t ui_motion_consumed = 0U;
-            if (manager.capture_kind == DESKTOP_WM_CAPTURE_NONE) {
-                desktop_ui_result_t ui_motion = desktop_ui_pointer_event(
-                    &ui, &display, &dirty, pointer_x, pointer_y, 0U, 0U);
-                ui_motion_consumed = ui_motion.consumed;
-                actions |= apply_desktop_ui_result(
-                    &manager, &display, &dirty, &ui_motion,
-                    &action_target);
-            }
-            if (!ui_motion_consumed) {
-                desktop_wm_event_t motion = {
-                    .type = DESKTOP_WM_EVENT_POINTER_MOTION,
-                    .x = pointer_x,
-                    .y = pointer_y,
-                };
-                actions |= dispatch_desktop_event(
-                    &manager, &display, &dirty, &motion,
-                    &action_target);
-            }
-
+            accumulate_mouse_delta(&pending_delta_x, mouse.delta_x);
+            accumulate_mouse_delta(&pending_delta_y, mouse.delta_y);
             uint32_t left_down =
                 (mouse.buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
             uint32_t left_was_down =
                 (previous_buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
-            if (left_down && !left_was_down) {
-                uint32_t ui_press_consumed = 0U;
-                if (manager.capture_kind == DESKTOP_WM_CAPTURE_NONE) {
-                    desktop_ui_result_t ui_press = desktop_ui_pointer_event(
-                        &ui, &display, &dirty, pointer_x, pointer_y, 1U, 1U);
-                    ui_press_consumed = ui_press.consumed;
-                    actions |= apply_desktop_ui_result(
-                        &manager, &display, &dirty, &ui_press,
-                        &action_target);
-                }
-                if (!ui_press_consumed) {
-                    int window = desktop_wm_window_at(
-                        &manager, pointer_x, pointer_y);
-                    desktop_wm_event_t press = {
-                        .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
-                        .x = pointer_x,
-                        .y = pointer_y,
-                        .button = DESKTOP_WM_BUTTON_LEFT,
-                        .pressed = 1U,
-                    };
-                    actions |= dispatch_desktop_event(
-                        &manager, &display, &dirty, &press,
-                        &action_target);
-                    if (window == DESKTOP_WM_NO_WINDOW) {
-                        int icon = desktop_icon_at_position(
-                            &display, pointer_x, pointer_y);
-                        if (icon != DESKTOP_WM_NO_WINDOW) {
-                            desktop_wm_event_t open = {
-                                .type = DESKTOP_WM_EVENT_OPEN,
-                                .target = (uint32_t)icon,
-                            };
-                            actions |= dispatch_desktop_event(
-                                &manager, &display, &dirty, &open,
-                                &action_target);
-                        }
-                    }
-                }
-            } else if (!left_down && left_was_down) {
-                uint32_t ui_release_consumed = 0U;
-                if (manager.capture_kind == DESKTOP_WM_CAPTURE_NONE) {
-                    desktop_ui_result_t ui_release = desktop_ui_pointer_event(
-                        &ui, &display, &dirty, pointer_x, pointer_y, 1U, 0U);
-                    ui_release_consumed = ui_release.consumed;
-                    actions |= apply_desktop_ui_result(
-                        &manager, &display, &dirty, &ui_release,
-                        &action_target);
-                }
-                if (!ui_release_consumed) {
-                    desktop_wm_event_t release = {
-                        .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
-                        .x = pointer_x,
-                        .y = pointer_y,
-                        .button = DESKTOP_WM_BUTTON_LEFT,
-                        .pressed = 0U,
-                    };
-                    actions |= dispatch_desktop_event(
-                        &manager, &display, &dirty, &release,
-                        &action_target);
-                }
+            if (left_down != left_was_down) {
+                actions |= dispatch_pointer_motion(
+                    &manager, &ui, &display, &dirty,
+                    &pointer_x, &pointer_y,
+                    pending_delta_x, pending_delta_y, &action_target,
+                    &drag_render, &resize_render, &move_cache);
+                pending_delta_x = 0;
+                pending_delta_y = 0;
+                actions |= dispatch_pointer_button(
+                    &manager, &ui, &display, &dirty,
+                    pointer_x, pointer_y, mouse.buttons,
+                    previous_buttons, &action_target);
             }
             previous_buttons = mouse.buttons;
         }
+        actions |= dispatch_pointer_motion(
+            &manager, &ui, &display, &dirty,
+            &pointer_x, &pointer_y,
+            pending_delta_x, pending_delta_y, &action_target,
+            &drag_render, &resize_render, &move_cache);
 
         desktop_ui_result_t ui_key = desktop_ui_keyboard_event(
             &ui, &display, &dirty, key);
@@ -1886,10 +2080,21 @@ int main(int argc, char **argv) {
             desktop_dirty_full(&dirty);
         }
 
+        /* The cached path represents exactly one unobscured move.  Any
+         * concurrent keyboard/action damage or resize falls back to the
+         * ordinary compositor so unrelated invalid regions are not lost. */
+        if (move_cache.valid &&
+            (!drag_render || resize_render || dirty.full ||
+             key != DESKTOP_KEY_NONE ||
+             (actions & (DESKTOP_WM_RESULT_LAUNCH |
+                         DESKTOP_WM_RESULT_EXIT)) != 0U))
+            move_cache.valid = 0U;
+
         if (dirty.count != 0U) {
             (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
             render_desktop_measured(
                 &display, &manager, &ui, &dirty,
+                move_cache.valid ? &move_cache : 0,
                 drag_render, resize_render, &metrics);
             (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
         } else if (mouse_events != 0U) {

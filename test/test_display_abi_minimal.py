@@ -154,7 +154,16 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         self.assertIn("framebuffer_shadow", self.framebuffer)
         self.assertNotRegex(self.framebuffer, r"(?:malloc|kmalloc)\s*\(")
         self.assertIn("volatile uint32_t *destination", self.framebuffer)
+        self.assertIn("rep movsl", self.framebuffer)
+        self.assertIn("framebuffer_scanout_fence", self.framebuffer)
         self.assertIn("framebuffer_present_rect", self.framebuffer)
+
+    def test_pointer_is_a_bounded_classic_arrow_with_shadow(self) -> None:
+        self.assertIn("FB_POINTER_SHAPE_WIDTH 13U", self.framebuffer)
+        self.assertIn("FB_POINTER_SHAPE_HEIGHT 18U", self.framebuffer)
+        self.assertIn("static const char pointer_shape", self.framebuffer)
+        self.assertIn("framebuffer_pointer_shape_color", self.framebuffer)
+        self.assertIn("shadow", self.framebuffer)
 
     def test_framebuffer_write_combining_is_feature_checked_and_falls_back(self) -> None:
         self.assertIn("map_kernel_write_combining", self.paging_h)
@@ -188,12 +197,14 @@ class MinimalDisplayAbiTests(unittest.TestCase):
             self.assertIn(f"#define {prefix}FRAME_BEGIN 3U", source)
             self.assertIn(f"#define {prefix}FRAME_COMMIT 4U", source)
             self.assertIn(f"#define {prefix}FRAME_CANCEL 5U", source)
+            self.assertIn(f"#define {prefix}FRAME_STAGE_BLIT 6U", source)
         control = function(self.syscalls, "static int syscall_display_control(")
         self.assertIn("process->pid", control)
         self.assertIn("process->generation", control)
         self.assertIn("framebuffer_frame_begin", control)
         self.assertIn("framebuffer_frame_commit", control)
         self.assertIn("framebuffer_frame_cancel", control)
+        self.assertIn("framebuffer_frame_stage_blit", control)
         self.assertIn("copy_to_user", control)
         self.assertIn("framebuffer_frame_process_cleanup", self.process)
         self.assertEqual(
@@ -221,6 +232,10 @@ class MinimalDisplayAbiTests(unittest.TestCase):
             self.assertIn("X86OS_SYS_DISPLAY_CONTROL", wrapper)
         begin = function(self.user_sdk, "int x86os_display_frame_begin(")
         self.assertIn("request.serial", begin)
+        blit = function(self.user_sdk, "int x86os_display_frame_stage_blit(")
+        self.assertIn("X86OS_SYS_DISPLAY_CONTROL", blit)
+        self.assertIn("X86OS_DISPLAY_FRAME_STAGE_BLIT", blit)
+        self.assertIn("x86os_display_blit_t", blit)
 
     def test_long_raster_operations_remain_preemptible(self) -> None:
         for signature in (

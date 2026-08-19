@@ -577,6 +577,7 @@ typedef struct {
 #define X86OS_DISPLAY_FRAME_BEGIN 3U
 #define X86OS_DISPLAY_FRAME_COMMIT 4U
 #define X86OS_DISPLAY_FRAME_CANCEL 5U
+#define X86OS_DISPLAY_FRAME_STAGE_BLIT 6U
 
 typedef struct {
     uint32_t version;
@@ -631,6 +632,21 @@ typedef struct {
     uint32_t serial;
     uint32_t reserved;
 } x86os_display_frame_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t flags;
+    uint32_t serial;
+    uint32_t reserved;
+    uint32_t source_x;
+    uint32_t source_y;
+    uint32_t destination_x;
+    uint32_t destination_y;
+    uint32_t width;
+    uint32_t height;
+} x86os_display_blit_t;
 
 #define X86OS_MOUSE_EVENT_VERSION 1U
 #define X86OS_MOUSE_BUTTON_LEFT 0x01U
@@ -999,6 +1015,21 @@ int x86os_display_deactivate(void);
 int x86os_display_frame_begin(uint32_t* serial);
 int x86os_display_frame_commit(uint32_t serial);
 int x86os_display_frame_cancel(uint32_t serial);
+/**
+ * Cache pixels from the current shadow framebuffer and place them at a new
+ * position when the owning frame is committed.
+ *
+ * The source is captured immediately, while the destination remains hidden
+ * until commit.  Coordinates are half-open framebuffer pixels.  The request
+ * is bound to the caller's process generation and @p serial; only one staged
+ * blit is accepted per frame.  No framebuffer mapping is exposed to Ring 3.
+ * Returns 0 on success or a negative errno-compatible value.
+ */
+int x86os_display_frame_stage_blit(uint32_t serial,
+                                   uint32_t source_x, uint32_t source_y,
+                                   uint32_t destination_x,
+                                   uint32_t destination_y,
+                                   uint32_t width, uint32_t height);
 int x86os_mouse_event(x86os_mouse_event_t* event);
 int x86os_pointer_update(int32_t x, int32_t y, uint32_t visible);
 int x86os_usb_diagnostics(x86os_usb_diagnostics_t* diagnostics);

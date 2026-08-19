@@ -88,5 +88,17 @@ int main(void) {
     assert(display_frame_prepare_cleanup(&state, 11, 5U,
                                          damage, &damage_count) == 1);
     display_frame_finish_transition(&state);
+
+    assert(display_frame_begin(&state, 14, 2U, 500U, &serial) == 0);
+    assert(display_frame_draw_enter(&state, 14, 2U, 500U) == 0);
+    assert(display_frame_record_damage(
+        &state, rect(100U, 100U, 500U, 3U)));
+    assert(display_frame_record_damage(
+        &state, rect(100U, 100U, 3U, 300U)));
+    assert(display_frame_draw_leave(&state, 14, 2U, 500U) == 0);
+    assert(display_frame_prepare_commit(&state, 14, 2U, serial, 500U,
+                                        damage, &damage_count) == 0);
+    assert(damage_count == 2U);
+    display_frame_finish_transition(&state);
     return 0;
 }

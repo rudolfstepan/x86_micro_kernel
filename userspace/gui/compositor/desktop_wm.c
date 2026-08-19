@@ -36,6 +36,20 @@ static desktop_rect_t rect_union(desktop_rect_t left, desktop_rect_t right) {
     return result;
 }
 
+static uint32_t rect_merge_efficient(desktop_rect_t left,
+                                     desktop_rect_t right,
+                                     desktop_rect_t combined) {
+    uint64_t left_area = (uint64_t)left.width * left.height;
+    uint64_t right_area = (uint64_t)right.width * right.height;
+    uint64_t combined_area = (uint64_t)combined.width * combined.height;
+    if (UINT64_MAX - left_area < right_area) return 1U;
+    uint64_t separate_area = left_area + right_area;
+    if (separate_area > UINT64_MAX / 2U) return 1U;
+    /* A bounded amount of overdraw is cheaper than another region. Thin
+     * perpendicular edges, however, must not inflate into a full window. */
+    return combined_area <= separate_area * 2U;
+}
+
 void desktop_dirty_initialize(desktop_dirty_region_t *dirty,
                               uint32_t screen_width,
                               uint32_t screen_height) {
@@ -79,7 +93,12 @@ void desktop_dirty_add(desktop_dirty_region_t *dirty, desktop_rect_t rect) {
             ++index;
             continue;
         }
-        rect = rect_union(rect, dirty->rects[index]);
+        desktop_rect_t combined = rect_union(rect, dirty->rects[index]);
+        if (!rect_merge_efficient(rect, dirty->rects[index], combined)) {
+            ++index;
+            continue;
+        }
+        rect = combined;
         --dirty->count;
         dirty->rects[index] = dirty->rects[dirty->count];
         /* The enlarged union can overlap regions examined earlier. */

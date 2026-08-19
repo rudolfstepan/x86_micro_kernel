@@ -708,6 +708,30 @@ int x86os_display_frame_cancel(uint32_t serial) {
                               (uintptr_t)&request, 0, 0);
 }
 
+int x86os_display_frame_stage_blit(uint32_t serial,
+                                   uint32_t source_x, uint32_t source_y,
+                                   uint32_t destination_x,
+                                   uint32_t destination_y,
+                                   uint32_t width, uint32_t height) {
+    if (serial == 0U || width == 0U || height == 0U) return -22;
+    x86os_display_blit_t request = {
+        .version = X86OS_DISPLAY_CONTROL_VERSION,
+        .struct_size = sizeof(request),
+        .operation = X86OS_DISPLAY_FRAME_STAGE_BLIT,
+        .flags = 0U,
+        .serial = serial,
+        .reserved = 0U,
+        .source_x = source_x,
+        .source_y = source_y,
+        .destination_x = destination_x,
+        .destination_y = destination_y,
+        .width = width,
+        .height = height,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DISPLAY_CONTROL,
+                              (uintptr_t)&request, 0, 0);
+}
+
 int x86os_mouse_event(x86os_mouse_event_t* event) {
     if (!event) return -22;
     event->version = X86OS_MOUSE_EVENT_VERSION;

@@ -1600,6 +1600,8 @@ _Static_assert(sizeof(syscall_display_rect_t) == 28U,
                "display rectangle ABI size changed");
 _Static_assert(sizeof(syscall_display_text_t) == 32U,
                "display text ABI size changed");
+_Static_assert(sizeof(display_frame_blit_request_t) == 48U,
+               "display staged blit ABI size changed");
 
 static int syscall_display_info(framebuffer_display_info_t *user_info) {
     if (!framebuffer_available()) return -19; /* ENODEV */
@@ -1860,7 +1862,26 @@ static int syscall_display_control(display_control_request_t *user_request) {
         return display_control_deactivate();
     if (base.operation != DISPLAY_CONTROL_FRAME_BEGIN &&
         base.operation != DISPLAY_CONTROL_FRAME_COMMIT &&
-        base.operation != DISPLAY_CONTROL_FRAME_CANCEL) return -22;
+        base.operation != DISPLAY_CONTROL_FRAME_CANCEL &&
+        base.operation != DISPLAY_CONTROL_FRAME_STAGE_BLIT) return -22;
+
+    Process *process = scheduler_current_process();
+    if (process == NULL) return -13;
+    if (base.operation == DISPLAY_CONTROL_FRAME_STAGE_BLIT) {
+        display_frame_blit_request_t blit;
+        if (base.struct_size < sizeof(blit) ||
+            copy_from_user(&blit, user_request, sizeof(blit)) != 0)
+            return base.struct_size < sizeof(blit) ? -22 : -14;
+        if (blit.version != DISPLAY_CONTROL_ABI_VERSION ||
+            blit.struct_size < sizeof(blit) || blit.flags != 0U ||
+            blit.reserved != 0U || blit.serial == 0U ||
+            blit.width == 0U || blit.height == 0U) return -22;
+        return framebuffer_frame_stage_blit(
+            process->pid, process->generation, blit.serial,
+            pit_monotonic_ms(), blit.source_x, blit.source_y,
+            blit.destination_x, blit.destination_y,
+            blit.width, blit.height);
+    }
 
     display_frame_request_t request;
     if (base.struct_size < sizeof(request) ||
@@ -1869,8 +1890,6 @@ static int syscall_display_control(display_control_request_t *user_request) {
     if (request.version != DISPLAY_CONTROL_ABI_VERSION ||
         request.struct_size < sizeof(request) || request.flags != 0U ||
         request.reserved != 0U) return -22;
-    Process *process = scheduler_current_process();
-    if (process == NULL) return -13;
     if (request.operation == DISPLAY_CONTROL_FRAME_BEGIN) {
         if (request.serial != 0U ||
             !user_range_accessible(

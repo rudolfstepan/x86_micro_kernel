@@ -59,6 +59,18 @@ static display_frame_rect_t rect_union(const display_frame_rect_t *left,
     return result;
 }
 
+static bool rect_merge_efficient(const display_frame_rect_t *left,
+                                 const display_frame_rect_t *right,
+                                 const display_frame_rect_t *combined) {
+    uint64_t left_area = (uint64_t)left->width * left->height;
+    uint64_t right_area = (uint64_t)right->width * right->height;
+    uint64_t combined_area = (uint64_t)combined->width * combined->height;
+    if (UINT64_MAX - left_area < right_area) return true;
+    uint64_t separate_area = left_area + right_area;
+    if (separate_area > UINT64_MAX / 2U) return true;
+    return combined_area <= separate_area * 2U;
+}
+
 static void set_full_damage(display_frame_transaction_t *state) {
     state->damage[0] = (display_frame_rect_t){
         .x = 0U,
@@ -182,7 +194,14 @@ bool display_frame_record_damage(display_frame_transaction_t *state,
             ++index;
             continue;
         }
-        rect = rect_union(&rect, &state->damage[index]);
+        display_frame_rect_t combined =
+            rect_union(&rect, &state->damage[index]);
+        if (!rect_merge_efficient(
+                &rect, &state->damage[index], &combined)) {
+            ++index;
+            continue;
+        }
+        rect = combined;
         --state->damage_count;
         state->damage[index] = state->damage[state->damage_count];
         /* The union may now intersect an earlier rectangle. */

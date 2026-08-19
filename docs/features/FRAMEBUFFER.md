@@ -44,6 +44,22 @@ Pixelschrift. Console-Ausgaben werden auch im Framebuffer-Modus einmal nach
 COM1 gespiegelt; dadurch bleiben Bootdiagnose und Bereitschaftsmarker headless
 sichtbar.
 
+Für Modi bis 1024x768x32 zeichnet der Treiber zunächst in einen festen
+Shadowbuffer. Ein Frame-Commit überträgt nur die begrenzten Damage-Rechtecke
+zeilenweise mit gebündelten Dword-Kopien in den LFB und führt bei aktivem PAT
+genau eine Write-Combining-Barriere pro Publikation aus. Der Softwarezeiger ist
+ein transparenter klassischer Pfeil mit Kontur, Füllung und Schatten; beim
+Bewegen werden nur seine alte und neue kleine Fläche veröffentlicht.
+
+Die append-only Frame-Operation `FRAME_STAGE_BLIT` unterstützt flüssiges
+Software-Compositing beim Verschieben: Ein geprüftes Quellrechteck wird in
+einen festen Kernel-Puffer kopiert, während Ring 3 den freigelegten Hintergrund
+im Shadowbuffer rekonstruiert. Der Commit trägt den gecachten vollständigen
+Fensterinhalt an der Zielposition ein und veröffentlicht Quell- und Ziel-Damage
+gemeinsam. Der Cache gehört genau einer PID/Generation/Frame-Serial, nimmt nur
+einen Blit pro Frame an und wird bei Cancel, Lease-Ablauf oder Prozessende
+verworfen. Ring 3 erhält dabei weder eine LFB- noch Shadowbuffer-Abbildung.
+
 ## Versionierte Ring-3-Display-ABI
 
 Das SDK kapselt drei angehängte Syscalls. Farben sind unabhängig vom nativen
@@ -99,7 +115,8 @@ Die verbindliche Zuordnung und die schrittweise Umsetzung stehen im
 - noch keine allgemeine Hardwarebeschleunigung
 - kein direktes LFB-Mapping für Ring 3
 - noch kein versioniertes Surface-/GUI-Client-Protokoll
-- geometrische Änderungen zeichnen in diesem Referenz-MVP noch die ganze Szene
+- Resize komponiert die betroffenen Dirty-Clips vollständig; reine
+  Fensterbewegungen verwenden einen atomaren gecachten Vollinhalts-Blit
 - vorhandene Console-Programme laufen weiterhin einzeln im Vollbild
 
 Für frühe Boot- und Hardwarefehlersuche bleibt `VIDEO=vga` der einfachste

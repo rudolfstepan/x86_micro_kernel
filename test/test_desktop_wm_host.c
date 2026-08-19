@@ -23,6 +23,11 @@ static void arrange_overlap(desktop_wm_t *manager) {
 static void test_dirty_regions_and_event_dispatch(void) {
     desktop_dirty_region_t dirty;
     desktop_dirty_initialize(&dirty, 1024U, 768U);
+    desktop_dirty_add(&dirty, (desktop_rect_t){100, 100, 500U, 3U});
+    desktop_dirty_add(&dirty, (desktop_rect_t){100, 100, 3U, 300U});
+    assert(dirty.count == 2U);
+
+    desktop_dirty_initialize(&dirty, 1024U, 768U);
     desktop_dirty_add(&dirty, (desktop_rect_t){10, 10, 20U, 20U});
     desktop_dirty_add(&dirty, (desktop_rect_t){25, 20, 20U, 20U});
     assert(dirty.count == 1U);

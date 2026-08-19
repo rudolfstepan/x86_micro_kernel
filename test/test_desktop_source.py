@@ -120,15 +120,22 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("gui_library", programs)
 
     def test_active_menu_or_dialog_receives_input_before_the_window_manager(self):
-        main = self.source[self.source.index("int main(") :]
+        motion = self.source[
+            self.source.index("static uint32_t dispatch_pointer_motion") :
+            self.source.index("static uint32_t dispatch_pointer_button")
+        ]
+        button = self.source[
+            self.source.index("static uint32_t dispatch_pointer_button") :
+            self.source.index("static void render_probe_error")
+        ]
         self.assertLess(
-            main.index("desktop_ui_pointer_event("),
-            main.index("dispatch_desktop_event("),
+            motion.index("desktop_ui_pointer_event("),
+            motion.index("dispatch_desktop_event("),
         )
-        self.assertIn("if (!ui_motion_consumed)", main)
-        self.assertIn("if (!ui_press_consumed)", main)
-        self.assertIn("if (!ui_release_consumed)", main)
-        self.assertIn("if (!ui_key.consumed)", main)
+        self.assertIn("if (!ui_motion_consumed)", motion)
+        self.assertIn("if (!ui_press_consumed)", button)
+        self.assertIn("if (!ui_release_consumed)", button)
+        self.assertIn("if (!ui_key.consumed)", self.source)
 
     def test_desktop_dialogs_use_the_public_async_controller(self):
         self.assertIn('#include "reist/gui/dialog.h"', self.source)
@@ -286,7 +293,14 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("static void move_pointer", self.source)
         self.assertIn("(int64_t)*pointer_x + delta_x", self.source)
         self.assertIn("(int64_t)*pointer_y + delta_y", self.source)
-        self.assertIn("mouse.delta_x, mouse.delta_y", self.source)
+        self.assertIn(
+            "accumulate_mouse_delta(&pending_delta_x, mouse.delta_x)",
+            self.source,
+        )
+        self.assertIn(
+            "accumulate_mouse_delta(&pending_delta_y, mouse.delta_y)",
+            self.source,
+        )
         self.assertIn(
             "x86os_pointer_update(pointer_x, pointer_y, 1U)", self.source
         )
@@ -302,6 +316,43 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("else if (!left_down && left_was_down)", self.source)
         self.assertNotIn("else if (left_was_down)", self.source)
 
+    def test_mouse_motion_is_coalesced_between_button_edges(self):
+        self.assertIn("#define DESKTOP_MOUSE_BATCH_LIMIT 32U", self.source)
+        self.assertIn("static void accumulate_mouse_delta", self.source)
+        self.assertIn("static uint32_t dispatch_pointer_motion", self.source)
+        self.assertIn("static uint32_t dispatch_pointer_button", self.source)
+        main = self.source[self.source.index("int main(") :]
+        self.assertIn("pending_delta_x", main)
+        self.assertIn("pending_delta_y", main)
+        self.assertIn("mouse_events < DESKTOP_MOUSE_BATCH_LIMIT", main)
+        self.assertLess(
+            main.index("dispatch_pointer_motion("),
+            main.index("dispatch_pointer_button("),
+        )
+        self.assertIn(
+            "ui->dialog.capture_kind == REIST_GUI_DIALOG_CAPTURE_MOVE",
+            self.source,
+        )
+
+    def test_full_content_drag_uses_atomic_cached_shadow_blit(self):
+        self.assertIn("desktop_move_cache_t", self.source)
+        self.assertIn("desktop_move_cache_capture", self.source)
+        self.assertIn("render_desktop_cached_move_frame", self.source)
+        cached = self.source[
+            self.source.index("static uint32_t render_desktop_cached_move_frame") :
+            self.source.index("static void record_render_metrics")
+        ]
+        self.assertIn("x86os_display_frame_begin", cached)
+        self.assertIn("x86os_display_frame_stage_blit", cached)
+        self.assertIn("x86os_display_frame_commit", cached)
+        self.assertIn("render_dirty_regions(", cached)
+        self.assertIn("move->kind, move->window_index", cached)
+        self.assertIn("context->omitted_kind != DESKTOP_MOVE_CACHE_DIALOG", self.source)
+        self.assertIn("context->omitted_kind != DESKTOP_MOVE_CACHE_WINDOW", self.source)
+        self.assertIn("ui->dialog.visible ||", self.source)
+        self.assertIn("manager->z_order[DESKTOP_WM_CAPACITY - 1U]", self.source)
+        self.assertNotIn("desktop_wm_t visual_manager = *manager", cached)
+        self.assertNotIn("render_drag_outline", self.source)
 
 if __name__ == "__main__":
     unittest.main()

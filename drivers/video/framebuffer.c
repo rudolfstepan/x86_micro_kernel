@@ -18,6 +18,8 @@
 
 static uint8_t framebuffer_shadow[FB_SHADOW_CAPACITY]
     __attribute__((aligned(16)));
+static uint8_t framebuffer_staged_blit[FB_SHADOW_CAPACITY]
+    __attribute__((aligned(16)));
 static uint8_t* fb_address = NULL;
 static volatile uint8_t* fb_scanout_address = NULL;
 static bool fb_shadow_enabled;
@@ -4670,9 +4672,36 @@ static uint64_t framebuffer_channel_mask(uint8_t position, uint8_t size) {
     return (((uint64_t)1u << size) - 1u) << position;
 }
 
-#define FB_POINTER_WIDTH 9U
-#define FB_POINTER_HEIGHT 16U
+#define FB_POINTER_SHAPE_WIDTH 13U
+#define FB_POINTER_SHAPE_HEIGHT 18U
+#define FB_POINTER_WIDTH (FB_POINTER_SHAPE_WIDTH + 1U)
+#define FB_POINTER_HEIGHT (FB_POINTER_SHAPE_HEIGHT + 1U)
 #define FB_POINTER_MAX_BYTES 4U
+
+/* Classic high-contrast arrow. B is the black outline, W the white body and
+ * '.' transparent. framebuffer_pointer_color() derives a one-pixel shadow,
+ * so the source remains easy to inspect and adjust without packed bit maths. */
+static const char pointer_shape[FB_POINTER_SHAPE_HEIGHT]
+                               [FB_POINTER_SHAPE_WIDTH + 1U] = {
+    "B............",
+    "BB...........",
+    "BWB..........",
+    "BWWB.........",
+    "BWWWB........",
+    "BWWWWB.......",
+    "BWWWWWB......",
+    "BWWWWWWB.....",
+    "BWWWWWWWB....",
+    "BWWWWWWWWB...",
+    "BWWWWBBBBBB..",
+    "BWWBWB.......",
+    "BWB.WB.......",
+    "BB...WB......",
+    "B....WB......",
+    ".....WB......",
+    ".....BB......",
+    ".............",
+};
 
 static uint8_t pointer_saved[FB_POINTER_WIDTH * FB_POINTER_HEIGHT *
                              FB_POINTER_MAX_BYTES];
@@ -4684,6 +4713,78 @@ static bool pointer_visible;
 static display_frame_transaction_t frame_transaction;
 static spinlock_t frame_transaction_lock = SPINLOCK_INIT;
 
+typedef struct {
+    int owner_pid;
+    uint32_t owner_generation;
+    uint32_t serial;
+    uint32_t destination_x;
+    uint32_t destination_y;
+    uint32_t width;
+    uint32_t height;
+    uint32_t row_bytes;
+    bool active;
+} framebuffer_staged_blit_t;
+
+static framebuffer_staged_blit_t staged_blit;
+
+static void framebuffer_clear_staged_blit(void) {
+    staged_blit = (framebuffer_staged_blit_t){0};
+}
+
+static bool framebuffer_staged_blit_matches(int owner_pid,
+                                             uint32_t owner_generation,
+                                             uint32_t serial) {
+    return staged_blit.active && staged_blit.owner_pid == owner_pid &&
+           staged_blit.owner_generation == owner_generation &&
+           (serial == 0U || staged_blit.serial == serial);
+}
+
+static void framebuffer_apply_staged_blit(int owner_pid,
+                                           uint32_t owner_generation,
+                                           uint32_t serial) {
+    if (!framebuffer_staged_blit_matches(
+            owner_pid, owner_generation, serial)) return;
+    for (uint32_t row = 0U; row < staged_blit.height; ++row) {
+        uint8_t *destination =
+            fb_address + (staged_blit.destination_y + row) * fb_pitch +
+            staged_blit.destination_x * fb_bytes_per_pixel;
+        memcpy(destination,
+               framebuffer_staged_blit + row * staged_blit.row_bytes,
+               staged_blit.row_bytes);
+    }
+    framebuffer_clear_staged_blit();
+}
+
+static void framebuffer_scanout_fence(void) {
+    if (fb_scanout_write_combining)
+        __asm__ __volatile__("sfence" : : : "memory");
+}
+
+static void framebuffer_copy_to_scanout(
+    const uint8_t *source, volatile uint8_t *destination_bytes,
+    uint32_t byte_count) {
+    if (source == NULL || destination_bytes == NULL || byte_count == 0U)
+        return;
+    uint32_t words = byte_count / sizeof(uint32_t);
+    const uint32_t *source_words = (const uint32_t*)source;
+    volatile uint32_t *destination =
+        (volatile uint32_t*)destination_bytes;
+    if (words != 0U) {
+        /* REP MOVSL produces sequential stores without using FPU/SIMD state.
+         * This is materially cheaper than one volatile C store per pixel on
+         * legacy VBE apertures and still works for the uncached fallback. */
+        __asm__ __volatile__("cld\n\trep movsl"
+                             : "+S"(source_words), "+D"(destination),
+                               "+c"(words)
+                             : : "memory");
+    }
+    uint32_t copied = byte_count & ~(uint32_t)(sizeof(uint32_t) - 1U);
+    source = (const uint8_t*)source_words;
+    destination_bytes = (volatile uint8_t*)destination;
+    for (uint32_t byte = copied; byte < byte_count; ++byte)
+        *destination_bytes++ = *source++;
+}
+
 static void framebuffer_blit_rect(uint32_t x, uint32_t y,
                                   uint32_t width, uint32_t height) {
     if (!fb_address || !fb_scanout_address || width == 0U || height == 0U ||
@@ -4693,6 +4794,14 @@ static void framebuffer_blit_rect(uint32_t x, uint32_t y,
     if (height > fb_height - y) height = fb_height - y;
 
     if (fb_shadow_enabled) {
+        uint32_t row_bytes = width * fb_bytes_per_pixel;
+        if (x == 0U && row_bytes == fb_pitch) {
+            framebuffer_copy_to_scanout(
+                fb_address + y * fb_pitch,
+                fb_scanout_address + y * fb_pitch,
+                row_bytes * height);
+            return;
+        }
         for (uint32_t row = 0U; row < height; ++row) {
             const uint8_t *source = fb_address + (y + row) * fb_pitch +
                                     x * fb_bytes_per_pixel;
@@ -4700,19 +4809,13 @@ static void framebuffer_blit_rect(uint32_t x, uint32_t y,
                 fb_scanout_address + (y + row) * fb_pitch +
                 x * fb_bytes_per_pixel;
             if (fb_bytes_per_pixel == sizeof(uint32_t)) {
-                const uint32_t *source_words = (const uint32_t*)source;
-                volatile uint32_t *destination =
-                    (volatile uint32_t*)destination_bytes;
-                for (uint32_t column = 0U; column < width; ++column)
-                    destination[column] = source_words[column];
+                framebuffer_copy_to_scanout(
+                    source, destination_bytes, row_bytes);
             } else {
-                uint32_t row_bytes = width * fb_bytes_per_pixel;
                 for (uint32_t byte = 0U; byte < row_bytes; ++byte)
                     destination_bytes[byte] = source[byte];
             }
         }
-        if (fb_scanout_write_combining)
-            __asm__ __volatile__("sfence" : : : "memory");
     }
 }
 
@@ -4750,6 +4853,7 @@ static void framebuffer_publish_damage(const display_frame_rect_t *damage,
             .height = damage[index].height,
         };
     }
+    framebuffer_scanout_fence();
     display_control_present_rects(updates, count);
 }
 
@@ -4776,6 +4880,10 @@ static int framebuffer_reap_expired_frame(uint64_t now_ms) {
         &frame_transaction, now_ms, damage, &damage_count);
     spinlock_release_irq(&frame_transaction_lock, flags);
     if (result == 1) {
+        if (framebuffer_staged_blit_matches(
+                frame_transaction.transition_owner_pid,
+                frame_transaction.transition_owner_generation, 0U))
+            framebuffer_clear_staged_blit();
         framebuffer_restore_damage(damage, damage_count);
         framebuffer_finish_frame_transition();
     }
@@ -4791,6 +4899,7 @@ static void framebuffer_present_rect(uint32_t x, uint32_t y,
     spinlock_release_irq(&frame_transaction_lock, flags);
     if (deferred || transition_in_progress) return;
     framebuffer_blit_rect(x, y, width, height);
+    framebuffer_scanout_fence();
     display_control_present_rect(x, y, width, height);
 }
 
@@ -4806,6 +4915,81 @@ int framebuffer_frame_begin(int owner_pid, uint32_t owner_generation,
     return result;
 }
 
+int framebuffer_frame_stage_blit(int owner_pid, uint32_t owner_generation,
+                                 uint32_t serial, uint64_t now_ms,
+                                 uint32_t source_x, uint32_t source_y,
+                                 uint32_t destination_x,
+                                 uint32_t destination_y,
+                                 uint32_t width, uint32_t height) {
+    if (!fb_shadow_enabled || !fb_address || fb_bytes_per_pixel == 0U)
+        return -95;
+    if (serial == 0U || width == 0U || height == 0U ||
+        source_x >= fb_width || source_y >= fb_height ||
+        destination_x >= fb_width || destination_y >= fb_height ||
+        width > fb_width - source_x || height > fb_height - source_y ||
+        width > fb_width - destination_x ||
+        height > fb_height - destination_y)
+        return -22;
+    uint64_t row_bytes = (uint64_t)width * fb_bytes_per_pixel;
+    uint64_t total_bytes = row_bytes * height;
+    if (row_bytes == 0U || row_bytes > UINT32_MAX ||
+        total_bytes > sizeof(framebuffer_staged_blit)) return -22;
+
+    (void)framebuffer_reap_expired_frame(now_ms);
+    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
+    int result;
+    if (!frame_transaction.active ||
+        frame_transaction.owner_pid != owner_pid ||
+        frame_transaction.owner_generation != owner_generation) {
+        result = -13;
+    } else if (frame_transaction.serial != serial) {
+        result = -116;
+    } else if (staged_blit.active) {
+        result = -16;
+    } else {
+        result = display_frame_draw_enter(
+            &frame_transaction, owner_pid, owner_generation, now_ms);
+    }
+    spinlock_release_irq(&frame_transaction_lock, flags);
+    if (result != 0) return result;
+
+    uint32_t bytes = (uint32_t)row_bytes;
+    for (uint32_t row = 0U; row < height; ++row) {
+        const uint8_t *source =
+            fb_address + (source_y + row) * fb_pitch +
+            source_x * fb_bytes_per_pixel;
+        memcpy(framebuffer_staged_blit + row * bytes, source, bytes);
+    }
+
+    flags = spinlock_acquire_irq(&frame_transaction_lock);
+    result = display_frame_draw_leave(
+        &frame_transaction, owner_pid, owner_generation, now_ms);
+    if (result == 0 && frame_transaction.active &&
+        frame_transaction.serial == serial) {
+        staged_blit = (framebuffer_staged_blit_t){
+            .owner_pid = owner_pid,
+            .owner_generation = owner_generation,
+            .serial = serial,
+            .destination_x = destination_x,
+            .destination_y = destination_y,
+            .width = width,
+            .height = height,
+            .row_bytes = bytes,
+            .active = true,
+        };
+        if (!display_frame_record_damage(
+                &frame_transaction,
+                (display_frame_rect_t){destination_x, destination_y,
+                                       width, height})) {
+            framebuffer_clear_staged_blit();
+            result = -5;
+        }
+    }
+    spinlock_release_irq(&frame_transaction_lock, flags);
+    if (result == -110) (void)framebuffer_reap_expired_frame(now_ms);
+    return result;
+}
+
 int framebuffer_frame_commit(int owner_pid, uint32_t owner_generation,
                              uint32_t serial, uint64_t now_ms) {
     display_frame_rect_t damage[DISPLAY_FRAME_DAMAGE_CAPACITY];
@@ -4817,6 +5001,7 @@ int framebuffer_frame_commit(int owner_pid, uint32_t owner_generation,
     spinlock_release_irq(&frame_transaction_lock, flags);
     if (result == -110) (void)framebuffer_reap_expired_frame(now_ms);
     if (result != 0) return result;
+    framebuffer_apply_staged_blit(owner_pid, owner_generation, serial);
     framebuffer_publish_damage(damage, damage_count);
     framebuffer_finish_frame_transition();
     return 0;
@@ -4832,6 +5017,9 @@ int framebuffer_frame_cancel(int owner_pid, uint32_t owner_generation,
         damage, &damage_count);
     spinlock_release_irq(&frame_transaction_lock, flags);
     if (result != 0) return result;
+    if (framebuffer_staged_blit_matches(
+            owner_pid, owner_generation, serial))
+        framebuffer_clear_staged_blit();
     framebuffer_restore_damage(damage, damage_count);
     framebuffer_finish_frame_transition();
     return 0;
@@ -4868,10 +5056,16 @@ void framebuffer_frame_process_cleanup(int owner_pid,
         damage, &damage_count, &action);
     spinlock_release_irq(&frame_transaction_lock, flags);
     if (result == 1) {
-        if (action == DISPLAY_FRAME_TRANSITION_PUBLISH)
+        if (action == DISPLAY_FRAME_TRANSITION_PUBLISH) {
+            framebuffer_apply_staged_blit(
+                owner_pid, owner_generation, 0U);
             framebuffer_publish_damage(damage, damage_count);
-        else
+        } else {
+            if (framebuffer_staged_blit_matches(
+                    owner_pid, owner_generation, 0U))
+                framebuffer_clear_staged_blit();
             framebuffer_restore_damage(damage, damage_count);
+        }
         framebuffer_finish_frame_transition();
         return;
     }
@@ -4883,6 +5077,9 @@ void framebuffer_frame_process_cleanup(int owner_pid,
         damage, &damage_count);
     spinlock_release_irq(&frame_transaction_lock, flags);
     if (result == 1) {
+        if (framebuffer_staged_blit_matches(
+                owner_pid, owner_generation, 0U))
+            framebuffer_clear_staged_blit();
         framebuffer_restore_damage(damage, damage_count);
         framebuffer_finish_frame_transition();
     }
@@ -4892,6 +5089,7 @@ static void framebuffer_reset_frame_transaction(uint32_t width,
                                                 uint32_t height) {
     uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
     display_frame_transaction_init(&frame_transaction, width, height);
+    framebuffer_clear_staged_blit();
     spinlock_release_irq(&frame_transaction_lock, flags);
 }
 
@@ -5042,12 +5240,22 @@ static inline void framebuffer_store_native(uint8_t *pixel,
     }
 }
 
+static int framebuffer_pointer_shape_color(uint32_t x, uint32_t y) {
+    if (x >= FB_POINTER_SHAPE_WIDTH || y >= FB_POINTER_SHAPE_HEIGHT)
+        return -1;
+    if (pointer_shape[y][x] == 'B') return 0;
+    if (pointer_shape[y][x] == 'W') return 1;
+    return -1;
+}
+
 static int framebuffer_pointer_color(uint32_t x, uint32_t y) {
-    if ((x == 1U && y >= 1U && y < 14U) ||
-        (x == 4U && y >= 4U && y < 11U)) return 1;
-    if ((x < 3U && y < 16U) ||
-        (x >= 3U && x < 6U && y >= 3U && y < 13U) ||
-        (x >= 6U && x < 9U && y >= 6U && y < 13U)) return 0;
+    int color = framebuffer_pointer_shape_color(x, y);
+    if (color >= 0) return color;
+    /* A transparent pixel one step down/right from the opaque arrow becomes
+     * the subtle shadow.  The result is 2, distinct from black and white. */
+    if (x != 0U && y != 0U &&
+        framebuffer_pointer_shape_color(x - 1U, y - 1U) >= 0)
+        return 2;
     return -1;
 }
 
@@ -5107,6 +5315,7 @@ bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible) {
         }
         uint32_t black = framebuffer_native_color(0x00000000U);
         uint32_t white = framebuffer_native_color(0x00FFFFFFU);
+        uint32_t shadow = framebuffer_native_color(0x00606060U);
         for (uint32_t row = 0U; row < height; ++row) {
             for (uint32_t column = 0U; column < width; ++column) {
                 uint8_t *pixel = fb_address + ((uint32_t)y + row) * fb_pitch +
@@ -5118,7 +5327,9 @@ bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible) {
                     saved[byte] = pixel[byte];
                 int color = framebuffer_pointer_color(column, row);
                 if (color >= 0)
-                    framebuffer_store_native(pixel, color ? white : black);
+                    framebuffer_store_native(
+                        pixel, color == 0 ? black
+                                         : (color == 1 ? white : shadow));
             }
         }
         pointer_x = x;

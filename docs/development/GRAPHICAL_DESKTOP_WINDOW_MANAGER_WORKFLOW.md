@@ -278,7 +278,19 @@ Bildschirms und ohne schrittweise sichtbaren Bildaufbau.
   Legacy-Pfadaliase durch Quell- und Image-Layout-Tests absichern.
 - [x] Versionierte Messwerte für Vollbildaufbau, Fensterzug und Resize im
   seriellen QEMU-Test protokollieren.
+- [x] USB-Motion-Reports innerhalb eines Frames bis zur nächsten Button-Kante
+  zusammenfassen, damit langsamer Scanout nur die letzte Fensterposition und
+  nicht alle während des vorigen Frames aufgelaufenen Zwischenpositionen
+  komponiert.
+- [x] Shadowbuffer-Damage mit gebündelten 32-Bit-Transfers und genau einer
+  Write-Combining-Barriere pro Publikation in den VBE-LFB übertragen.
+- [x] Den vollständigen Inhalt eines bewegten Fensters oder Dialogs aus dem
+  letzten Shadowbuffer-Bild in einen festen Kernel-Cache übernehmen, den
+  freigelegten Hintergrund neu komponieren und beides mit einem Frame-Commit
+  atomar an der Zielposition veröffentlichen.
 - [ ] VMware-Sichttest ohne Flackern oder stehenbleibende Fensterreste.
+- [ ] Dialog-Drag und neuen klassischen Mauszeiger auf dem ASUS/NVIDIA-Ziel
+  visuell und anhand der ausgegebenen Render-Metriken abnehmen.
 
 Die Frame-ABI ist bewusst eine Publikationsgrenze, keine globale
 Compositor-Sperre. Längere Rechteck- und Textoperationen bleiben präemptibel;
@@ -290,6 +302,27 @@ ist bewusst eine serverseitige Top-Level-Operation: Der Compositor besitzt
 Hit-Test, Geometrie und Dekoration; ein späterer Client erhält die neue
 Clientgröße ausschließlich über die versionierte `configure`-/
 `ack_configure`-Grenze aus Stufe 3.
+
+Der interaktive Eingabepfad behandelt Button-Down und Button-Up weiterhin als
+strikte Ordnungsgrenzen. Dazwischen werden die höchstens 32 fest begrenzten
+relativen USB-Motion-Reports eines Schleifendurchlaufs zu genau einer
+Endposition addiert. Das entspricht üblichem Compositor-Frame-Coalescing:
+Pointer-Capture und Klicksemantik bleiben unverändert, während Zwischenstände,
+die nie sichtbar waren, keine wachsende Damage-Fläche mehr erzeugen. Der
+Kernel kopiert die resultierenden Shadowbuffer-Zeilen ohne SIMD-/FPU-Zustand
+per gebündeltem Dword-Transfer und schließt eine Publikation mit einer einzigen
+WC-Barriere ab.
+
+Beim reinen Fensterzug bleibt der vollständige Fensterinhalt sichtbar; es gibt
+bewusst keinen Rahmen- oder Drahtgittermodus. Die angehängte Operation
+`FRAME_STAGE_BLIT` von Syscall 109 kopiert höchstens ein geprüftes Rechteck aus
+dem aktuellen Kernel-Shadowbuffer in einen festen, nicht dynamisch allozierten
+Zwischenspeicher. Sie ist an PID, Prozessgeneration und Frame-Serial gebunden.
+Ring 3 komponiert anschließend nur die am alten Ort freigelegte Szene ohne das
+bewegte Objekt. Erst der Commit setzt den gespeicherten Fensterinhalt an die
+neue Position, vereinigt die begrenzten Damage-Rechtecke und publiziert den
+fertigen Zustand. Bei zusätzlichem Schaden, Resize, ungültiger Geometrie oder
+fehlendem Shadowbuffer wird ohne Zustandsverlust der normale Redraw verwendet.
 
 Automatischer QEMU-Nachweis vom 19. August 2026: ein Vollbildframe, acht
 Move-Frames und acht Resize-Frames; `full_max_ms=7`, `drag_max_ms=80`,
