@@ -125,6 +125,7 @@ static void test_edge_and_corner_resize(void) {
     for (uint32_t index = 1U; index < DESKTOP_WM_CAPACITY; ++index)
         manager.windows[index].visible = 0U;
     desktop_window_t *window = &manager.windows[0];
+    window->visible = 1U;
     window->x = 200;
     window->y = 150;
     window->width = 300U;
@@ -212,10 +213,10 @@ int main(void) {
     desktop_wm_initialize(&manager, 1024U, 768U, 36, 736, 24U);
 
     assert(DESKTOP_WM_CAPACITY == 4U);
-    assert(manager.windows[0].visible == 1U);
-    assert(manager.windows[1].visible == 1U);
+    assert(manager.windows[0].visible == 0U);
+    assert(manager.windows[1].visible == 0U);
     assert(manager.windows[2].visible == 0U);
-    assert(manager.keyboard_focus == 0);
+    assert(manager.keyboard_focus == DESKTOP_WM_NO_WINDOW);
 
     arrange_overlap(&manager);
     assert(desktop_wm_window_at(&manager, 200, 160) == 1);

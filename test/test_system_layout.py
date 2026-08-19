@@ -43,6 +43,24 @@ class SystemLayoutContracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "collides"):
             build_tree({"bin": b"x", "bin/tool.prg": b"y"})
 
+    def test_reist_configuration_defaults_are_versioned_and_bounded(self):
+        required = {
+            "system.conf": "schema=reist.system/1",
+            "input.conf": "schema=reist.input/1",
+            "desktop.conf": "schema=reist.desktop/1",
+        }
+        for name, schema in required.items():
+            text = self.read(f"config/etc/reist/{name}")
+            effective = [
+                line for line in text.splitlines()
+                if line and not line.startswith("#")
+            ]
+            self.assertEqual(effective[0], schema)
+            self.assertLessEqual(len(text.encode("ascii")), 4096)
+            keys = [line.split("=", 1)[0] for line in effective]
+            self.assertEqual(len(keys), len(set(keys)))
+            self.assertTrue(all("=" in line for line in effective))
+
     def test_floppy_contains_lowercase_nested_system_tree(self):
         stage1 = bytes(510) + b"\x55\xaa"
         image = create_floppy_image(
@@ -89,6 +107,7 @@ class SystemLayoutContracts(unittest.TestCase):
                 "usr/bin/hello.prg": b"hello",
                 "usr/gui/bin/desktop.prg": b"desktop",
                 "usr/gui/bin/guidemo.prg": b"guidemo",
+                "etc/reist/input.conf": b"schema=reist.input/1\n",
             },
         )
         image.seek(DATA_PARTITION_START * 512)
@@ -106,6 +125,7 @@ class SystemLayoutContracts(unittest.TestCase):
         root = cluster_entries(struct.unpack_from("<I", boot, 44)[0])
         self.assertEqual(root[b"SBIN       "][12], 0x08)
         self.assertEqual(root[b"USR        "][12], 0x08)
+        self.assertEqual(root[b"ETC        "][12], 0x08)
         sbin_cluster = struct.unpack_from("<H", root[b"SBIN       "], 26)[0]
         sbin = cluster_entries(sbin_cluster)
         self.assertEqual(sbin[b"SVCCTL  PRG"][12], 0x18)
@@ -122,6 +142,16 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertEqual(
             cluster_entries(gui_bin_cluster)[b"GUIDEMO PRG"][12], 0x18
         )
+        etc_cluster = struct.unpack_from("<H", root[b"ETC        "], 26)[0]
+        etc = cluster_entries(etc_cluster)
+        reist_cluster = struct.unpack_from("<H", etc[b"REIST      "], 26)[0]
+        reist = cluster_entries(reist_cluster)
+        input_aliases = [
+            entry for name, entry in reist.items()
+            if name.startswith(b"INPUT") and name[8:11] == b"CON"
+        ]
+        self.assertEqual(len(input_aliases), 1)
+        self.assertEqual(input_aliases[0][12], 0x18)
 
     def test_builds_and_runtime_use_only_canonical_targets(self):
         makefile = self.read("Makefile")
@@ -144,6 +174,11 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn('"/bin", "/sbin", "/usr/bin", "/usr/gui/bin"', shell)
         self.assertIn("usr/gui/bin/guidemo.prg", makefile)
         self.assertIn("'usr/gui/bin/guidemo.prg'", windows)
+        for config in ("system.conf", "input.conf", "desktop.conf"):
+            self.assertIn(
+                f"etc/reist/{config}=config/etc/reist/{config}", makefile
+            )
+        self.assertIn('"etc/reist/$configFile=$configPath"', windows)
         self.assertIn('{"/DESKTOP.PRG", "/usr/gui/bin/desktop.prg"}', process)
         self.assertIn(
             '{"/usr/bin/desktop.prg", "/usr/gui/bin/desktop.prg"}', process

@@ -8,7 +8,7 @@ programs in `userspace/programs` and interactive console programs in
 
 | Path | Responsibility |
 |---|---|
-| `compositor/` | Trusted session compositor and window manager. It alone owns global placement, Z-order, focus, input routing, composition and display publication. |
+| `compositor/` | Trusted session compositor, window manager and bounded Explorer adapter. It alone owns global placement, Z-order, focus, input routing, composition and display publication. |
 | `apps/<name>/` | GUI applications, one directory per program. Until Surface IPC exists, explicitly documented full-screen clients may use only the public display ABI and GUI library. |
 | `examples/` | Small, buildable SDK examples that include only installed public headers. |
 | `include/reist/gui/` | Versioned public C APIs. In-process library APIs and the future cross-process Surface protocol remain explicitly separate. |

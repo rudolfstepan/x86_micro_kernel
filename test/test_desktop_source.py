@@ -37,6 +37,9 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn('"DESKTOP.PRG": (', programs)
         self.assertIn('ROOT / "userspace/gui/compositor/desktop.c"', programs)
         self.assertIn('ROOT / "userspace/gui/compositor/desktop_wm.c"', programs)
+        self.assertIn(
+            'ROOT / "userspace/gui/compositor/desktop_explorer.c"', programs
+        )
 
     def test_launcher_requires_the_pixel_display_abi(self):
         self.assertIn("x86os_display_info(&display)", self.source)
@@ -46,16 +49,13 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertRegex(self.source, r"display\.width\s*<\s*320U")
         self.assertRegex(self.source, r"display\.height\s*<\s*240U")
 
-    def test_four_required_apps_are_visible_and_launchable(self):
-        self.assertIn("#define APP_COUNT 4U", self.source)
-        for title, program in (
-            ("Shell", "/bin/shell.prg"),
-            ("Dateien", "/bin/ls.prg"),
-            ("Editor", "/bin/edit.prg"),
-            ("System", "/sbin/sysinfo.prg"),
-        ):
-            self.assertIn(f'"{title}"', self.source)
-            self.assertIn(f'"{program}"', self.source)
+    def test_root_explorer_replaces_static_launcher_windows(self):
+        self.assertIn('#include "desktop_explorer.h"', self.source)
+        self.assertIn('{"Computer", "/",', self.source)
+        self.assertNotIn("#define APP_COUNT", self.source)
+        self.assertNotIn("static const desktop_app_t", self.source)
+        self.assertIn("desktop_explorer_open", self.source)
+        self.assertIn("desktop_explorer_child_path", self.source)
         self.assertIn("desktop_icon_rect", self.source)
         self.assertIn("render_window", self.source)
 
@@ -68,6 +68,21 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("large cell remains the predictable", render)
         self.assertIn("3U + symbol.height + 3U", render)
         self.assertNotIn("rect.height - display->font_height - 3U", render)
+
+    def test_desktop_and_explorer_icon_content_is_centered(self):
+        self.assertIn("static int32_t centered_text_x", self.source)
+        desktop_icon = self.source[
+            self.source.index("static void render_icon") :
+            self.source.index("static void render_resize_grip")
+        ]
+        explorer_icon = self.source[
+            self.source.index("static void render_explorer_entry") :
+            self.source.index("static void render_window")
+        ]
+        self.assertIn("(rect.width - icon_size) / 2U", desktop_icon)
+        self.assertIn("centered_text_x(", desktop_icon)
+        self.assertIn("(cell.width - symbol_width) / 2U", explorer_icon)
+        self.assertIn("centered_text_x(display, cell", explorer_icon)
 
     def test_window_manager_has_fixed_z_order_focus_and_capture(self):
         header = WM_HEADER.read_text(encoding="utf-8")
@@ -113,8 +128,8 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("render_system_dialog", self.source)
         self.assertIn("DESKTOP_MENU_ACTION_HELP", self.source)
         self.assertIn("DESKTOP_MENU_ACTION_ABOUT", self.source)
-        self.assertIn("DESKTOP_WM_EVENT_SELECT", self.source)
         self.assertIn("DESKTOP_WM_EVENT_OPEN", self.source)
+        self.assertIn("DESKTOP_WM_EVENT_CLOSE", self.source)
         self.assertIn(
             'GUI_PROGRAMS = {"DESKTOP.PRG", "GUIDEMO.PRG"}', programs)
         self.assertIn("gui_library", programs)
@@ -163,14 +178,14 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("desktop_dirty_full(dirty)", collect)
         self.assertIn("explicit glyph clip rectangle", collect)
 
-    def test_tab_and_ansi_arrow_keys_change_selection(self):
-        self.assertIn("key == '\\t'", self.source)
+    def test_ansi_arrow_keys_change_explorer_selection(self):
+        self.assertIn("desktop_explorer_keyboard", self.source)
         for suffix in ("UP", "DOWN", "LEFT", "RIGHT"):
             self.assertIn(f"DESKTOP_KEY_{suffix}", self.source)
         for ansi in ("'A'", "'B'", "'C'", "'D'"):
             self.assertIn(ansi, self.source)
 
-    def test_only_a_bare_escape_launches_shell(self):
+    def test_only_a_bare_escape_leaves_the_desktop(self):
         decoder = self.source[self.source.index("static int read_key") :]
         decoder = decoder[: decoder.index("\n}") + 2]
         self.assertIn("if (prefix == 0) return DESKTOP_KEY_ESCAPE;", decoder)
@@ -179,49 +194,58 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertGreaterEqual(decoder.count("return DESKTOP_KEY_NONE;"), 3)
         self.assertEqual(decoder.count("return DESKTOP_KEY_ESCAPE;"), 1)
 
-    def test_enter_spawns_and_waits_for_the_selected_child(self):
-        launch = self.source[self.source.index("static void launch_app") :]
+    def test_program_activation_spawns_and_waits_for_the_selected_child(self):
+        launch = self.source[self.source.index("static int launch_program") :]
         launch = launch[: launch.index("\n}") + 2]
-        self.assertIn("x86os_spawn(apps[index].program)", launch)
-        self.assertIn("x86os_spawnv(apps[index].program, 2, arguments)", launch)
+        self.assertIn("x86os_spawn(program)", launch)
         self.assertIn("x86os_wait(pid, &status)", launch)
-        self.assertIn('x86os_puts("DESKTOP_LAUNCH:")', launch)
-        self.assertLess(launch.index("x86os_clear();"), launch.index("x86os_spawn"))
+        self.assertNotIn("x86os_puts", launch)
+        self.assertNotIn("x86os_clear", launch)
 
     def test_wait_failure_terminates_and_reaps_child_before_input_returns(self):
-        launch = self.source[self.source.index("static void launch_app") :]
+        launch = self.source[self.source.index("static int launch_program") :]
         wait_check = launch.index("if (wait_result != pid)")
         kill = launch.index("x86os_kill(pid)", wait_check)
         reap = launch.index("x86os_wait(pid, &status)", kill)
-        pause = launch.index("(void)x86os_getchar();", reap)
         self.assertLess(wait_check, kill)
         self.assertLess(kill, reap)
-        self.assertLess(reap, pause)
 
-    def test_editor_receives_a_real_document_argument(self):
-        self.assertRegex(
-            self.source,
-            r'\{"Editor",\s*"Textdateien bearbeiten",\s*"/bin/edit\.prg",'
-            r'\s*"desktop\.txt"',
-        )
+    def test_double_click_opens_folders_or_programs(self):
+        self.assertIn("result->activated", self.source)
+        self.assertIn("X86OS_DIRECTORY", self.source)
+        self.assertIn("has_program_extension", self.source)
+        self.assertIn("open_explorer_path", self.source)
+        self.assertIn("launch_program(path)", self.source)
 
-    def test_child_input_is_drained_before_the_desktop_is_redrawn(self):
-        launch = self.source[self.source.index("static void launch_app") :]
+    def test_child_returns_directly_to_graphical_desktop(self):
+        launch = self.source[self.source.index("static int launch_program") :]
         launch = launch[: launch.index("\n}") + 2]
-        self.assertLess(launch.index("x86os_wait"), launch.index("drain_input();"))
-        self.assertLess(
-            launch.index('x86os_puts("\\nTaste zum Desktop...")'),
-            launch.index("(void)x86os_getchar();"),
-        )
-        self.assertLess(launch.index("(void)x86os_getchar();"), launch.index("drain_input();"))
         self.assertNotIn("render_desktop", launch)
-        drain = self.source[self.source.index("static void drain_input") :]
-        self.assertIn("x86os_getchar_nonblocking()", drain)
+        self.assertNotIn("Taste zum Desktop", launch)
+        self.assertNotIn("x86os_getchar", launch)
+        activation = self.source[
+            self.source.index("static uint32_t apply_desktop_activation") :
+            self.source.index("static uint32_t apply_desktop_ui_result")
+        ]
+        self.assertIn("desktop_dirty_full(dirty)", activation)
 
-    def test_spawn_failure_reports_its_status_before_waiting(self):
-        launch = self.source[self.source.index("static void launch_app") :]
-        self.assertIn('x86os_puts("Start fehlgeschlagen (Status ")', launch)
-        self.assertIn("print_integer(pid);", launch)
+    def test_spawn_failure_returns_status_for_the_modal_error(self):
+        launch = self.source[self.source.index("static int launch_program") :]
+        self.assertIn("return pid;", launch)
+        self.assertNotIn("print_integer", launch)
+
+    def test_explorer_errors_use_an_application_modal_dialog(self):
+        self.assertIn("DESKTOP_DIALOG_ERROR", self.source)
+        self.assertIn("static void desktop_ui_open_error", self.source)
+        self.assertIn('"Keine Dateizuordnung vorhanden."', self.source)
+        self.assertIn('"Ordner kann nicht geoeffnet werden."', self.source)
+        self.assertIn('"Programm konnte nicht gestartet werden."', self.source)
+        activation = self.source[
+            self.source.index("static uint32_t apply_desktop_activation") :
+            self.source.index("static uint32_t apply_desktop_ui_result")
+        ]
+        self.assertIn("desktop_ui_open_error(", activation)
+        self.assertNotIn('x86os_puts("desktop: Keine Dateizuordnung', activation)
 
     def test_first_render_emits_the_desktop_ready_marker(self):
         main = self.source[self.source.index("int main(") :]
@@ -252,7 +276,7 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("DESKTOP_WM_CAPTURE_RESIZE", self.source)
         self.assertIn("resize_render = 1U", self.source)
         self.assertIn(
-            "&display, &manager, &ui, &dirty,",
+            "&display, &manager, &explorer, &ui, &dirty,",
             self.source,
         )
 

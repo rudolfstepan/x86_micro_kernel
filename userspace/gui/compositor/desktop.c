@@ -8,11 +8,12 @@
  * bounded. Legacy console applications intentionally run full-screen.
  */
 #include "x86os.h"
+#include "desktop_explorer.h"
 #include "desktop_wm.h"
 #include "reist/gui/dialog.h"
 #include "reist/gui/menu.h"
 
-#define APP_COUNT 4U
+#define DESKTOP_ICON_COUNT 1U
 #define DESKTOP_ARGUMENT_LIMIT 32U
 #define DESKTOP_MENU_COUNT 3U
 #define DESKTOP_METRICS_VERSION 1U
@@ -20,8 +21,8 @@
 #define DESKTOP_RENDER_PROBE_STEP_X 4
 #define DESKTOP_MOUSE_BATCH_LIMIT 32U
 
-_Static_assert(APP_COUNT == DESKTOP_WM_CAPACITY,
-               "desktop app and window capacities must match");
+_Static_assert(DESKTOP_EXPLORER_WINDOW_CAPACITY == DESKTOP_WM_CAPACITY,
+               "explorer and window-manager capacities must match");
 
 enum {
     DESKTOP_KEY_NONE = 0x100,
@@ -34,17 +35,12 @@ enum {
 
 typedef struct {
     const char *title;
-    const char *description;
-    const char *program;
-    const char *argument;
+    const char *path;
     uint32_t accent;
-} desktop_app_t;
+} desktop_icon_t;
 
-static const desktop_app_t apps[APP_COUNT] = {
-    {"Shell",   "Terminal und Befehle",   "/bin/shell.prg",    0,             0x0000479DU},
-    {"Dateien", "Dateien und Laufwerke",  "/bin/ls.prg",       0,             0x00008844U},
-    {"Editor",  "Textdateien bearbeiten", "/bin/edit.prg",     "desktop.txt", 0x00900080U},
-    {"System",  "Systeminformationen",    "/sbin/sysinfo.prg", 0,             0x00A06000U},
+static const desktop_icon_t desktop_icons[DESKTOP_ICON_COUNT] = {
+    {"Computer", "/", 0x0000479DU},
 };
 
 enum {
@@ -57,20 +53,23 @@ enum {
     DESKTOP_MENU_ACTION_NONE = 0U,
     DESKTOP_MENU_ACTION_ABOUT,
     DESKTOP_MENU_ACTION_EXIT,
-    DESKTOP_MENU_ACTION_WINDOW,
+    DESKTOP_MENU_ACTION_OPEN_ROOT,
+    DESKTOP_MENU_ACTION_CLOSE_ALL,
     DESKTOP_MENU_ACTION_HELP
 };
 
 enum {
     DESKTOP_DIALOG_NONE = 0U,
     DESKTOP_DIALOG_HELP,
-    DESKTOP_DIALOG_ABOUT
+    DESKTOP_DIALOG_ABOUT,
+    DESKTOP_DIALOG_ERROR
 };
 
 enum {
     DESKTOP_UI_ACTION_NONE = 0U,
     DESKTOP_UI_ACTION_EXIT,
-    DESKTOP_UI_ACTION_OPEN_WINDOW
+    DESKTOP_UI_ACTION_OPEN_ROOT,
+    DESKTOP_UI_ACTION_CLOSE_ALL
 };
 
 enum {
@@ -82,15 +81,14 @@ enum {
 /* Application policy stays outside libreistgui: the library returns these
  * opaque IDs while this compositor translates them into typed WM actions. */
 static const reist_gui_menu_item_t workspace_menu_items[] = {
+    {"Computer oeffnen", DESKTOP_MENU_ACTION_OPEN_ROOT, 0U, 0U, 0U},
     {"Ueber REIST Workspace", DESKTOP_MENU_ACTION_ABOUT, 0U, 0U, 0U},
     {"Desktop beenden", DESKTOP_MENU_ACTION_EXIT, 0U, 0U, 0U},
 };
 
 static const reist_gui_menu_item_t window_menu_items[] = {
-    {"Shell", DESKTOP_MENU_ACTION_WINDOW, 0U, 0U, 0U},
-    {"Dateien", DESKTOP_MENU_ACTION_WINDOW, 1U, 0U, 0U},
-    {"Editor", DESKTOP_MENU_ACTION_WINDOW, 2U, 0U, 0U},
-    {"System", DESKTOP_MENU_ACTION_WINDOW, 3U, 0U, 0U},
+    {"Neues Stammfenster", DESKTOP_MENU_ACTION_OPEN_ROOT, 0U, 0U, 0U},
+    {"Alle Fenster schliessen", DESKTOP_MENU_ACTION_CLOSE_ALL, 0U, 0U, 0U},
 };
 
 static const reist_gui_menu_item_t help_menu_items[] = {
@@ -120,6 +118,11 @@ static const reist_gui_dialog_button_t help_dialog_buttons[] = {
 };
 
 static const reist_gui_dialog_button_t about_dialog_buttons[] = {
+    {"OK", REIST_GUI_DIALOG_RESPONSE_OK,
+     REIST_GUI_DIALOG_ROLE_ACCEPT, 0U, 0U},
+};
+
+static const reist_gui_dialog_button_t error_dialog_buttons[] = {
     {"OK", REIST_GUI_DIALOG_RESPONSE_OK,
      REIST_GUI_DIALOG_ROLE_ACCEPT, 0U, 0U},
 };
@@ -157,9 +160,6 @@ static const reist_gui_dialog_model_t about_dialog_model = {
     .flags = REIST_GUI_DIALOG_MOVABLE | REIST_GUI_DIALOG_CLOSE_BUTTON,
 };
 
-_Static_assert(
-    sizeof(window_menu_items) / sizeof(window_menu_items[0]) == APP_COUNT,
-    "window menu and application capacities must match");
 _Static_assert(
     sizeof(window_menu_items) / sizeof(window_menu_items[0]) <=
         REIST_GUI_MENU_MAX_ITEMS,
@@ -208,6 +208,8 @@ typedef struct {
     reist_gui_menu_state_t menu;
     reist_gui_dialog_state_t dialog;
     uint32_t dialog_kind;
+    reist_gui_dialog_model_t error_model;
+    char error_detail[REIST_GUI_DIALOG_TEXT_LIMIT];
 } desktop_ui_state_t;
 
 typedef struct {
@@ -223,6 +225,13 @@ typedef struct {
     uint32_t window_index;
     uint32_t valid;
 } desktop_move_cache_t;
+
+typedef struct {
+    uint32_t valid;
+    uint32_t root;
+    uint32_t window_index;
+    uint32_t entry_index;
+} desktop_activation_t;
 
 static size_t bounded_text_length(const char *text, size_t maximum) {
     size_t length = 0U;
@@ -365,12 +374,28 @@ static void desktop_ui_initialize(desktop_ui_state_t *ui) {
     reist_gui_menu_state_initialize(&ui->menu);
     reist_gui_dialog_state_initialize(&ui->dialog);
     ui->dialog_kind = DESKTOP_DIALOG_NONE;
+    ui->error_detail[0] = '\0';
+    ui->error_model = (reist_gui_dialog_model_t){
+        .version = REIST_GUI_DIALOG_API_VERSION,
+        .struct_size = sizeof(reist_gui_dialog_model_t),
+        .title = "Fehler",
+        .message = "Der Vorgang ist fehlgeschlagen.",
+        .detail = ui->error_detail,
+        .buttons = error_dialog_buttons,
+        .button_count = 1U,
+        .modality = REIST_GUI_DIALOG_APPLICATION_MODAL,
+        .default_response = REIST_GUI_DIALOG_RESPONSE_OK,
+        .cancel_response = REIST_GUI_DIALOG_RESPONSE_OK,
+        .owner_id = REIST_GUI_DIALOG_NO_OWNER,
+        .flags = REIST_GUI_DIALOG_MOVABLE | REIST_GUI_DIALOG_CLOSE_BUTTON,
+    };
 }
 
 static const reist_gui_dialog_model_t *desktop_dialog_model(
-    uint32_t kind) {
+    const desktop_ui_state_t *ui, uint32_t kind) {
     if (kind == DESKTOP_DIALOG_HELP) return &help_dialog_model;
     if (kind == DESKTOP_DIALOG_ABOUT) return &about_dialog_model;
+    if (kind == DESKTOP_DIALOG_ERROR && ui != 0) return &ui->error_model;
     return 0;
 }
 
@@ -452,13 +477,13 @@ static desktop_ui_result_t desktop_ui_result_none(void) {
 static void desktop_ui_open_dialog(
     desktop_ui_state_t *ui, const x86os_display_info_t *display,
     desktop_dirty_region_t *dirty, uint32_t kind) {
-    const reist_gui_dialog_model_t *model = desktop_dialog_model(kind);
+    const reist_gui_dialog_model_t *model = desktop_dialog_model(ui, kind);
     reist_gui_dialog_layout_t layout = desktop_dialog_layout(display);
     if (model == 0) return;
 
     if (ui->dialog.visible) {
         const reist_gui_dialog_model_t *previous =
-            desktop_dialog_model(ui->dialog_kind);
+            desktop_dialog_model(ui, ui->dialog_kind);
         reist_gui_dialog_result_t closed;
         reist_gui_dialog_result_initialize(&closed);
         if (previous == 0 || reist_gui_dialog_complete(
@@ -483,6 +508,24 @@ static void desktop_ui_open_dialog(
         return;
     }
     collect_dialog_damage(dirty, &opened);
+}
+
+static void desktop_ui_open_error(
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, const char *message, const char *detail) {
+    if (ui == 0 || display == 0 || dirty == 0 || message == 0) return;
+    uint32_t index = 0U;
+    if (detail != 0) {
+        while (index + 1U < sizeof(ui->error_detail) &&
+               detail[index] != '\0') {
+            ui->error_detail[index] = detail[index];
+            ++index;
+        }
+    }
+    ui->error_detail[index] = '\0';
+    ui->error_model.message = message;
+    desktop_ui_open_dialog(
+        ui, display, dirty, DESKTOP_DIALOG_ERROR);
 }
 
 static desktop_ui_result_t desktop_ui_apply_dialog_result(
@@ -512,10 +555,10 @@ static desktop_ui_result_t desktop_ui_apply_menu_result(
                 ? DESKTOP_DIALOG_HELP : DESKTOP_DIALOG_ABOUT);
     } else if (menu_result->action == DESKTOP_MENU_ACTION_EXIT) {
         result.action = DESKTOP_UI_ACTION_EXIT;
-    } else if (menu_result->action == DESKTOP_MENU_ACTION_WINDOW &&
-               menu_result->target < APP_COUNT) {
-        result.action = DESKTOP_UI_ACTION_OPEN_WINDOW;
-        result.target = menu_result->target;
+    } else if (menu_result->action == DESKTOP_MENU_ACTION_OPEN_ROOT) {
+        result.action = DESKTOP_UI_ACTION_OPEN_ROOT;
+    } else if (menu_result->action == DESKTOP_MENU_ACTION_CLOSE_ALL) {
+        result.action = DESKTOP_UI_ACTION_CLOSE_ALL;
     }
     return result;
 }
@@ -547,7 +590,7 @@ static desktop_ui_result_t desktop_ui_dispatch_dialog_pointer(
     uint32_t button_event, uint32_t pressed) {
     desktop_ui_result_t result = desktop_ui_result_none();
     const reist_gui_dialog_model_t *model =
-        desktop_dialog_model(ui->dialog_kind);
+        desktop_dialog_model(ui, ui->dialog_kind);
     reist_gui_dialog_layout_t layout = desktop_dialog_layout(display);
     reist_gui_dialog_event_t event;
     reist_gui_dialog_event_initialize(&event);
@@ -630,7 +673,7 @@ static desktop_ui_result_t desktop_ui_keyboard_event(
         uint32_t dialog_key = desktop_dialog_key_from_input(key);
         if (dialog_key != 0U) {
             const reist_gui_dialog_model_t *model =
-                desktop_dialog_model(ui->dialog_kind);
+                desktop_dialog_model(ui, ui->dialog_kind);
             reist_gui_dialog_layout_t layout =
                 desktop_dialog_layout(display);
             reist_gui_dialog_event_t event;
@@ -673,22 +716,18 @@ static desktop_ui_result_t desktop_ui_keyboard_event(
 static desktop_rect_t desktop_icon_rect(const x86os_display_info_t *display,
                                         uint32_t index) {
     desktop_rect_t rect = {0, 0, 0U, 0U};
-    uint32_t top = menu_height(display) + 6U;
-    uint32_t bottom = display->height - status_height(display) - 6U;
-    uint32_t available = bottom > top ? bottom - top : 1U;
-    uint32_t gap = 4U;
-    uint32_t height = available > gap * (APP_COUNT - 1U)
-        ? (available - gap * (APP_COUNT - 1U)) / APP_COUNT : 1U;
+    if (index >= DESKTOP_ICON_COUNT) return rect;
+    uint32_t top = menu_height(display) + 8U;
     rect.x = 8;
-    rect.y = (int32_t)(top + index * (height + gap));
+    rect.y = (int32_t)top;
     rect.width = min_u32(124U, display->width > 16U ? display->width - 16U : 1U);
-    rect.height = height;
+    rect.height = max_u32(display->font_height + 42U, 68U);
     return rect;
 }
 
 static int desktop_icon_at_position(const x86os_display_info_t *display,
                                     int32_t x, int32_t y) {
-    for (uint32_t index = 0U; index < APP_COUNT; ++index) {
+    for (uint32_t index = 0U; index < DESKTOP_ICON_COUNT; ++index) {
         if (point_in_rect(desktop_icon_rect(display, index), x, y))
             return (int)index;
     }
@@ -721,16 +760,32 @@ static void draw_bevel(const desktop_render_context_t *context,
         bottom_right);
 }
 
+static int32_t centered_text_x(
+    const x86os_display_info_t *display, desktop_rect_t bounds,
+    const char *text, uint32_t horizontal_padding) {
+    if (display == 0 || text == 0 || display->font_width == 0U ||
+        bounds.width <= horizontal_padding * 2U)
+        return bounds.x;
+    uint32_t usable = bounds.width - horizontal_padding * 2U;
+    size_t maximum_chars = usable / display->font_width;
+    size_t length = bounded_text_length(text, maximum_chars + 1U);
+    if (length > maximum_chars)
+        return bounds.x + (int32_t)horizontal_padding;
+    uint32_t text_width = (uint32_t)length * display->font_width;
+    return bounds.x + (int32_t)horizontal_padding +
+        (int32_t)((usable - text_width) / 2U);
+}
+
 static void render_icon(const desktop_render_context_t *context,
-                        const desktop_wm_t *manager, uint32_t index) {
+                        const desktop_explorer_t *explorer, uint32_t index) {
     const x86os_display_info_t *display = context->display;
     desktop_rect_t rect = desktop_icon_rect(display, index);
     if (!intersect_rects(rect, context->clip, 0)) return;
-    uint32_t selected = manager->selected == index;
+    uint32_t selected = explorer != 0 && explorer->desktop_selected;
     uint32_t icon_size = min_u32(rect.height > display->font_height + 6U
         ? rect.height - display->font_height - 6U : 12U, 28U);
     desktop_rect_t symbol = {
-        rect.x + 5,
+        rect.x + (int32_t)((rect.width - icon_size) / 2U),
         rect.y + 3,
         icon_size,
         icon_size
@@ -745,7 +800,7 @@ static void render_icon(const desktop_render_context_t *context,
      * focus is deliberately compact; otherwise sparse desktop rows look like
      * selected panels instead of selected icons. */
     if (selected) draw_bevel(context, focus, color_face, 0U);
-    draw_bevel(context, symbol, apps[index].accent, 1U);
+    draw_bevel(context, symbol, desktop_icons[index].accent, 1U);
     if (symbol.width > 8U && symbol.height > 8U) {
         fill_rect_clipped(
             context,
@@ -761,8 +816,12 @@ static void render_icon(const desktop_render_context_t *context,
         text_y_offset = rect.height > display->font_height
             ? rect.height - display->font_height : 0U;
     }
-    draw_text_clipped(context, rect.x + 4,
-                      rect.y + (int32_t)text_y_offset, apps[index].title,
+    draw_text_clipped(
+                      context,
+                      centered_text_x(
+                          display, rect, desktop_icons[index].title, 4U),
+                      rect.y + (int32_t)text_y_offset,
+                      desktop_icons[index].title,
                       rect.width - 8U, color_title_text,
                       selected ? color_active : color_desktop);
 }
@@ -784,13 +843,85 @@ static void render_resize_grip(const desktop_render_context_t *context,
     }
 }
 
+static desktop_rect_t desktop_window_client_rect(
+    const desktop_wm_t *manager, uint32_t window_index) {
+    desktop_rect_t empty = {0, 0, 0U, 0U};
+    if (manager == 0 || window_index >= DESKTOP_WM_CAPACITY) return empty;
+    const desktop_window_t *window = &manager->windows[window_index];
+    uint32_t border = manager->frame_border;
+    if (window->width <= border * 2U ||
+        window->height <= border * 2U + manager->title_height) return empty;
+    return (desktop_rect_t){
+        window->x + (int32_t)border,
+        window->y + (int32_t)border + (int32_t)manager->title_height,
+        window->width - border * 2U,
+        window->height - border * 2U - manager->title_height,
+    };
+}
+
+static void render_explorer_entry(
+    const desktop_render_context_t *context,
+    const desktop_explorer_window_t *explorer_window,
+    desktop_rect_t client, uint32_t entry_index) {
+    desktop_rect_t cell = desktop_explorer_entry_rect(
+        explorer_window, client, entry_index);
+    if (cell.width == 0U || cell.height == 0U ||
+        !intersect_rects(cell, context->clip, 0)) return;
+    const x86os_display_info_t *display = context->display;
+    const x86os_file_info_t *entry = &explorer_window->entries[entry_index];
+    uint32_t selected = explorer_window->selected == entry_index;
+    uint32_t symbol_width = min_u32(34U, cell.width > 12U ? cell.width - 12U : 1U);
+    uint32_t symbol_height = min_u32(28U,
+        cell.height > display->font_height + 12U
+            ? cell.height - display->font_height - 12U : 1U);
+    desktop_rect_t symbol = {
+        cell.x + (int32_t)((cell.width - symbol_width) / 2U),
+        cell.y + 5,
+        symbol_width,
+        symbol_height,
+    };
+    desktop_rect_t focus = {
+        symbol.x - 3, symbol.y - 3,
+        symbol.width + 6U,
+        symbol.height + display->font_height + 10U,
+    };
+    if (selected) draw_bevel(context, focus, color_face, 0U);
+    uint32_t accent = entry->type == X86OS_DIRECTORY
+        ? 0x00C09000U : 0x0000479DU;
+    draw_bevel(context, symbol, accent, 1U);
+    if (entry->type == X86OS_DIRECTORY && symbol.width > 10U) {
+        fill_rect_clipped(
+            context,
+            (desktop_rect_t){symbol.x + 3, symbol.y - 3,
+                             symbol.width / 2U, 5U},
+            accent);
+    } else if (symbol.width > 8U && symbol.height > 8U) {
+        fill_rect_clipped(
+            context,
+            (desktop_rect_t){symbol.x + 4, symbol.y + 4,
+                             symbol.width - 8U, symbol.height - 8U},
+            color_client);
+    }
+    int32_t label_y = symbol.y + (int32_t)symbol.height + 5;
+    uint32_t label_width = cell.width > 6U ? cell.width - 6U : 1U;
+    draw_text_clipped(
+        context, centered_text_x(display, cell, entry->name, 3U),
+        label_y, entry->name, label_width,
+        selected ? color_title_text : color_text,
+        selected ? color_active : color_client);
+}
+
 static void render_window(const desktop_render_context_t *context,
                           const desktop_wm_t *manager,
+                          const desktop_explorer_t *explorer,
                           uint32_t window_index) {
     if (window_index >= DESKTOP_WM_CAPACITY) return;
     const x86os_display_info_t *display = context->display;
     const desktop_window_t *window = &manager->windows[window_index];
-    if (window->visible == 0U || window->app_index >= APP_COUNT) return;
+    if (window->visible == 0U || explorer == 0 ||
+        !explorer->windows[window_index].active) return;
+    const desktop_explorer_window_t *explorer_window =
+        &explorer->windows[window_index];
     if (!intersect_rects(desktop_wm_window_bounds(manager, window_index),
                          context->clip, 0)) return;
     uint32_t border = manager->frame_border;
@@ -809,12 +940,7 @@ static void render_window(const desktop_render_context_t *context,
         window->width - border * 2U,
         manager->title_height
     };
-    desktop_rect_t client = {
-        title.x,
-        title.y + (int32_t)title.height,
-        title.width,
-        window->height - border * 2U - title.height
-    };
+    desktop_rect_t client = desktop_window_client_rect(manager, window_index);
     uint32_t active = manager->keyboard_focus == (int32_t)window_index;
     uint32_t title_color = active ? color_active : color_inactive;
 
@@ -839,32 +965,21 @@ static void render_window(const desktop_render_context_t *context,
     if (title_x + 3U < title.width) {
         draw_text_clipped(context, title.x + (int32_t)title_x,
                           title.y + (int32_t)title_y,
-                          apps[window->app_index].title,
+                          explorer_window->path,
                           title.width - title_x - 3U, color_title_text,
                           title_color);
     }
 
-    uint32_t padding = 10U;
-    uint32_t line = max_u32(display->font_height + 5U, 18U);
-    if (client.width > padding * 2U && client.height > padding * 2U) {
-        uint32_t text_width = client.width - padding * 2U;
-        int32_t text_x = client.x + (int32_t)padding;
-        int32_t text_y = client.y + (int32_t)padding;
-        draw_text_clipped(context, text_x, text_y,
-                          apps[window->app_index].description, text_width,
-                          color_text, color_client);
-        if (client.height > padding * 2U + line) {
-            draw_text_clipped(context, text_x, text_y + (int32_t)line,
-                              apps[window->app_index].program, text_width,
-                              apps[window->app_index].accent, color_client);
-        }
-        if (client.height > padding * 2U + line * 3U) {
-            draw_text_clipped(
-                context, text_x, text_y + (int32_t)(line * 3U),
-                "ENTER startet Legacy-App im Vollbild", text_width,
-                color_shadow, color_client);
-        }
-    }
+    for (uint32_t entry = 0U; entry < explorer_window->entry_count; ++entry)
+        render_explorer_entry(
+            context, explorer_window, client, entry);
+    if (explorer_window->truncated && client.height > display->font_height + 4U)
+        draw_text_clipped(
+            context, client.x + 4,
+            client.y + (int32_t)client.height -
+                (int32_t)display->font_height - 3,
+            "Weitere Eintraege nicht angezeigt", client.width - 8U,
+            color_shadow, color_client);
     render_resize_grip(context, window);
 }
 
@@ -973,7 +1088,7 @@ static void render_system_dialog(const desktop_render_context_t *context,
     if (ui == 0 || !ui->dialog.visible) return;
     const x86os_display_info_t *display = context->display;
     const reist_gui_dialog_model_t *model =
-        desktop_dialog_model(ui->dialog_kind);
+        desktop_dialog_model(ui, ui->dialog_kind);
     reist_gui_dialog_layout_t layout = desktop_dialog_layout(display);
     reist_gui_rect_t gui_dialog;
     reist_gui_rect_t gui_title;
@@ -1077,7 +1192,8 @@ static void render_system_dialog(const desktop_render_context_t *context,
 
 static void render_desktop_clip(const desktop_render_context_t *context,
                                 const desktop_wm_t *manager,
-    const desktop_ui_state_t *ui) {
+                                const desktop_explorer_t *explorer,
+                                const desktop_ui_state_t *ui) {
     const x86os_display_info_t *display = context->display;
     uint32_t status = status_height(display);
     desktop_rect_t status_rect = {
@@ -1089,15 +1205,15 @@ static void render_desktop_clip(const desktop_render_context_t *context,
         color_desktop);
     render_menu_bar(context, ui);
 
-    for (uint32_t index = 0U; index < APP_COUNT; ++index)
-        render_icon(context, manager, index);
+    for (uint32_t index = 0U; index < DESKTOP_ICON_COUNT; ++index)
+        render_icon(context, explorer, index);
 
     for (uint32_t position = 0U; position < DESKTOP_WM_CAPACITY; ++position) {
         uint32_t window_index = manager->z_order[position];
         if (window_index < DESKTOP_WM_CAPACITY &&
             (context->omitted_kind != DESKTOP_MOVE_CACHE_WINDOW ||
              context->omitted_window != window_index))
-            render_window(context, manager, window_index);
+            render_window(context, manager, explorer, window_index);
     }
 
     draw_bevel(context, status_rect, color_face, 0U);
@@ -1133,6 +1249,7 @@ static desktop_rect_t expanded_render_clip(
 
 static void render_dirty_regions(const x86os_display_info_t *display,
                                  const desktop_wm_t *manager,
+                                 const desktop_explorer_t *explorer,
                                  const desktop_ui_state_t *ui,
                                  const desktop_dirty_region_t *dirty,
                                  uint32_t omitted_kind,
@@ -1146,21 +1263,23 @@ static void render_dirty_regions(const x86os_display_info_t *display,
             .omitted_window = omitted_window,
         };
         if (context.clip.width != 0U && context.clip.height != 0U)
-            render_desktop_clip(&context, manager, ui);
+            render_desktop_clip(&context, manager, explorer, ui);
     }
 }
 
 static void render_desktop(const x86os_display_info_t *display,
                            const desktop_wm_t *manager,
+                           const desktop_explorer_t *explorer,
                            const desktop_ui_state_t *ui,
                            const desktop_dirty_region_t *dirty) {
     render_dirty_regions(
-        display, manager, ui, dirty,
+        display, manager, explorer, ui, dirty,
         DESKTOP_MOVE_CACHE_NONE, DESKTOP_WM_NO_TARGET);
 }
 
 static uint32_t render_desktop_frame(const x86os_display_info_t *display,
                                      const desktop_wm_t *manager,
+                                     const desktop_explorer_t *explorer,
                                      const desktop_ui_state_t *ui,
                                      const desktop_dirty_region_t *dirty) {
     if (dirty == 0 || dirty->count == 0U) return 0U;
@@ -1168,13 +1287,13 @@ static uint32_t render_desktop_frame(const x86os_display_info_t *display,
     int begin = x86os_display_frame_begin(&serial);
     if (begin != 0) {
         /* Oversized/direct framebuffers retain the compatible immediate path. */
-        render_desktop(display, manager, ui, dirty);
+        render_desktop(display, manager, explorer, ui, dirty);
         return 1U;
     }
-    render_desktop(display, manager, ui, dirty);
+    render_desktop(display, manager, explorer, ui, dirty);
     if (x86os_display_frame_commit(serial) != 0) {
         (void)x86os_display_frame_cancel(serial);
-        render_desktop(display, manager, ui, dirty);
+        render_desktop(display, manager, explorer, ui, dirty);
         return 1U;
     }
     return 0U;
@@ -1182,19 +1301,20 @@ static uint32_t render_desktop_frame(const x86os_display_info_t *display,
 
 static uint32_t render_desktop_cached_move_frame(
     const x86os_display_info_t *display, const desktop_wm_t *manager,
-    const desktop_ui_state_t *ui, const desktop_dirty_region_t *dirty,
+    const desktop_explorer_t *explorer, const desktop_ui_state_t *ui,
+    const desktop_dirty_region_t *dirty,
     const desktop_move_cache_t *move) {
     if (move == 0 || !move->valid)
-        return render_desktop_frame(display, manager, ui, dirty);
+        return render_desktop_frame(display, manager, explorer, ui, dirty);
     if (move->kind != DESKTOP_MOVE_CACHE_DIALOG &&
         (move->kind != DESKTOP_MOVE_CACHE_WINDOW ||
          move->window_index >= DESKTOP_WM_CAPACITY))
-        return render_desktop_frame(display, manager, ui, dirty);
+        return render_desktop_frame(display, manager, explorer, ui, dirty);
 
     uint32_t serial = 0U;
     int begin = x86os_display_frame_begin(&serial);
     if (begin != 0) {
-        render_desktop(display, manager, ui, dirty);
+        render_desktop(display, manager, explorer, ui, dirty);
         return 1U;
     }
     int staged = x86os_display_frame_stage_blit(
@@ -1203,19 +1323,19 @@ static uint32_t render_desktop_cached_move_frame(
         (uint32_t)move->destination.y,
         move->source.width, move->source.height);
     if (staged != 0) {
-        render_desktop(display, manager, ui, dirty);
+        render_desktop(display, manager, explorer, ui, dirty);
     } else {
         desktop_dirty_region_t cleanup;
         desktop_dirty_initialize(
             &cleanup, display->width, display->height);
         desktop_dirty_add(&cleanup, move->source);
         render_dirty_regions(
-            display, manager, ui, &cleanup,
+            display, manager, explorer, ui, &cleanup,
             move->kind, move->window_index);
     }
     if (x86os_display_frame_commit(serial) != 0) {
         (void)x86os_display_frame_cancel(serial);
-        render_desktop(display, manager, ui, dirty);
+        render_desktop(display, manager, explorer, ui, dirty);
         return 1U;
     }
     return 0U;
@@ -1265,7 +1385,7 @@ static void record_render_metrics(desktop_render_metrics_t *metrics,
 
 static void render_desktop_measured(
     const x86os_display_info_t *display, const desktop_wm_t *manager,
-    const desktop_ui_state_t *ui,
+    const desktop_explorer_t *explorer, const desktop_ui_state_t *ui,
     const desktop_dirty_region_t *dirty,
     const desktop_move_cache_t *move_cache,
     uint32_t drag, uint32_t resize, desktop_render_metrics_t *metrics) {
@@ -1274,7 +1394,7 @@ static void render_desktop_measured(
     uint64_t finished_ms = 0U;
     uint32_t clock_valid = x86os_monotonic_ms(&started_ms) == 0;
     uint32_t fallback = render_desktop_cached_move_frame(
-        display, manager, ui, dirty, move_cache);
+        display, manager, explorer, ui, dirty, move_cache);
     if (!clock_valid || x86os_monotonic_ms(&finished_ms) != 0 ||
         finished_ms < started_ms) {
         clock_valid = 0U;
@@ -1316,29 +1436,6 @@ static int read_key(void) {
         return DESKTOP_KEY_NONE;
     }
     return DESKTOP_KEY_NONE;
-}
-
-static void drain_input(void) {
-    for (unsigned int byte = 0U; byte < 256U; ++byte) {
-        if (x86os_getchar_nonblocking() == 0) return;
-    }
-}
-
-static void print_integer(int value) {
-    char digits[12];
-    unsigned int count = 0U;
-    unsigned int magnitude;
-    if (value < 0) {
-        x86os_putchar('-');
-        magnitude = 0U - (unsigned int)value;
-    } else {
-        magnitude = (unsigned int)value;
-    }
-    do {
-        digits[count++] = (char)('0' + magnitude % 10U);
-        magnitude /= 10U;
-    } while (magnitude != 0U);
-    while (count != 0U) x86os_putchar(digits[--count]);
 }
 
 static void print_unsigned(uint32_t value) {
@@ -1397,48 +1494,26 @@ static uint32_t desktop_try_exit(
     return 1U;
 }
 
-static void launch_app(unsigned int index) {
+static int launch_program(const char *program) {
     int status = 0;
     int pid;
-    x86os_puts("DESKTOP_LAUNCH:");
-    x86os_puts(apps[index].program);
-    x86os_putchar('\n');
-    x86os_clear();
-
-    if (apps[index].argument != 0) {
-        const char *arguments[2] = {
-            apps[index].program,
-            apps[index].argument,
-        };
-        pid = x86os_spawnv(apps[index].program, 2, arguments);
-    } else {
-        pid = x86os_spawn(apps[index].program);
-    }
+    if (program == 0 || program[0] == '\0') return -22;
+    /* Until client surfaces are available, a child temporarily owns the
+     * display while the desktop remains the supervising parent.  Returning
+     * from the child immediately recomposes the desktop; no shell prompt or
+     * extra key acknowledgement is inserted into the graphical session. */
+    pid = x86os_spawn(program);
     if (pid >= 0) {
         int wait_result = x86os_wait(pid, &status);
         if (wait_result != pid) {
-            x86os_puts("Warten fehlgeschlagen (Status ");
-            print_integer(wait_result);
-            x86os_puts("); Kind wird beendet.\n");
-
-            int kill_result = x86os_kill(pid);
-            int reap_result = x86os_wait(pid, &status);
-            if (reap_result != pid) {
-                x86os_puts("Kindbereinigung fehlgeschlagen (Kill ");
-                print_integer(kill_result);
-                x86os_puts(", Wait ");
-                print_integer(reap_result);
-                x86os_puts(").\n");
-            }
+            (void)x86os_kill(pid);
+            (void)x86os_wait(pid, &status);
+            return -5;
         }
     } else {
-        x86os_puts("Start fehlgeschlagen (Status ");
-        print_integer(pid);
-        x86os_puts(").\n");
+        return pid;
     }
-    x86os_puts("\nTaste zum Desktop...");
-    (void)x86os_getchar();
-    drain_input();
+    return 0;
 }
 
 static void clip_pointer(const x86os_display_info_t *display,
@@ -1465,29 +1540,20 @@ static void move_pointer(const x86os_display_info_t *display,
     clip_pointer(display, pointer_x, pointer_y);
 }
 
-static uint32_t wm_key_from_input(int key) {
-    if (key == '\t' || key == DESKTOP_KEY_RIGHT)
-        return DESKTOP_WM_KEY_RIGHT;
-    if (key == DESKTOP_KEY_LEFT) return DESKTOP_WM_KEY_LEFT;
-    if (key == DESKTOP_KEY_UP) return DESKTOP_WM_KEY_UP;
-    if (key == DESKTOP_KEY_DOWN) return DESKTOP_WM_KEY_DOWN;
-    if (key == '\r' || key == '\n') return DESKTOP_WM_KEY_ENTER;
-    if (key == DESKTOP_KEY_ESCAPE) return DESKTOP_WM_KEY_ESCAPE;
+static uint32_t explorer_key_from_input(int key) {
+    if (key == DESKTOP_KEY_LEFT) return DESKTOP_EXPLORER_KEY_LEFT;
+    if (key == DESKTOP_KEY_RIGHT) return DESKTOP_EXPLORER_KEY_RIGHT;
+    if (key == DESKTOP_KEY_UP) return DESKTOP_EXPLORER_KEY_UP;
+    if (key == DESKTOP_KEY_DOWN) return DESKTOP_EXPLORER_KEY_DOWN;
+    if (key == '\r' || key == '\n') return DESKTOP_EXPLORER_KEY_ENTER;
     return 0U;
 }
 
 static void collect_dispatch_result(
     const x86os_display_info_t *display, desktop_dirty_region_t *dirty,
     const desktop_wm_dispatch_result_t *result) {
+    (void)display;
     desktop_dirty_add_regions(dirty, &result->dirty);
-    if ((result->flags & DESKTOP_WM_RESULT_SELECTION_CHANGED) != 0U) {
-        if (result->previous_selected < APP_COUNT)
-            desktop_dirty_add(
-                dirty, desktop_icon_rect(display, result->previous_selected));
-        if (result->selected < APP_COUNT)
-            desktop_dirty_add(
-                dirty, desktop_icon_rect(display, result->selected));
-    }
 }
 
 static uint32_t dispatch_desktop_event(
@@ -1502,30 +1568,119 @@ static uint32_t dispatch_desktop_event(
     return result.flags;
 }
 
+static uint32_t open_explorer_path(
+    desktop_wm_t *manager, desktop_explorer_t *explorer,
+    desktop_ui_state_t *ui,
+    const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, const char *path, uint32_t *target) {
+    uint32_t slot = desktop_explorer_free_window(explorer);
+    if (slot >= DESKTOP_WM_CAPACITY) {
+        desktop_ui_open_error(
+            ui, display, dirty, "Kein weiteres Fenster verfuegbar.", path);
+        return 0U;
+    }
+    if (desktop_explorer_open(explorer, slot, path) !=
+        DESKTOP_EXPLORER_OK) {
+        desktop_ui_open_error(
+            ui, display, dirty, "Ordner kann nicht geoeffnet werden.", path);
+        return 0U;
+    }
+    desktop_wm_event_t open = {
+        .type = DESKTOP_WM_EVENT_OPEN,
+        .target = slot,
+    };
+    return dispatch_desktop_event(
+        manager, display, dirty, &open, target);
+}
+
+static uint32_t close_all_explorer_windows(
+    desktop_wm_t *manager, desktop_explorer_t *explorer,
+    const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, uint32_t *target) {
+    uint32_t actions = 0U;
+    for (uint32_t index = 0U; index < DESKTOP_WM_CAPACITY; ++index) {
+        if (!explorer->windows[index].active) continue;
+        desktop_wm_event_t close = {
+            .type = DESKTOP_WM_EVENT_CLOSE,
+            .target = index,
+        };
+        actions |= dispatch_desktop_event(
+            manager, display, dirty, &close, target);
+        desktop_explorer_close(explorer, index);
+    }
+    return actions;
+}
+
+static uint32_t has_program_extension(const char *path) {
+    uint32_t length = 0U;
+    if (path == 0) return 0U;
+    while (length < DESKTOP_EXPLORER_PATH_CAPACITY && path[length] != '\0')
+        ++length;
+    if (length < 4U || length == DESKTOP_EXPLORER_PATH_CAPACITY) return 0U;
+    const char *extension = &path[length - 4U];
+    return extension[0] == '.' &&
+        (extension[1] == 'p' || extension[1] == 'P') &&
+        (extension[2] == 'r' || extension[2] == 'R') &&
+        (extension[3] == 'g' || extension[3] == 'G');
+}
+
+static uint32_t apply_desktop_activation(
+    desktop_wm_t *manager, desktop_explorer_t *explorer,
+    desktop_ui_state_t *ui,
+    const x86os_display_info_t *display, desktop_dirty_region_t *dirty,
+    desktop_activation_t *activation, uint32_t *target,
+    int32_t pointer_x, int32_t pointer_y) {
+    if (activation == 0 || !activation->valid) return 0U;
+    activation->valid = 0U;
+    if (activation->root)
+        return open_explorer_path(
+            manager, explorer, ui, display, dirty, "/", target);
+    if (activation->window_index >= DESKTOP_WM_CAPACITY ||
+        !explorer->windows[activation->window_index].active ||
+        activation->entry_index >=
+            explorer->windows[activation->window_index].entry_count)
+        return 0U;
+
+    desktop_explorer_window_t *window =
+        &explorer->windows[activation->window_index];
+    char path[DESKTOP_EXPLORER_PATH_CAPACITY];
+    if (desktop_explorer_child_path(
+            window, activation->entry_index, path, sizeof(path)) !=
+        DESKTOP_EXPLORER_OK) return 0U;
+    if (window->entries[activation->entry_index].type == X86OS_DIRECTORY)
+        return open_explorer_path(
+            manager, explorer, ui, display, dirty, path, target);
+    if (!has_program_extension(path)) {
+        desktop_ui_open_error(
+            ui, display, dirty, "Keine Dateizuordnung vorhanden.", path);
+        return 0U;
+    }
+    (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
+    int launch_status = launch_program(path);
+    desktop_dirty_full(dirty);
+    if (launch_status != 0)
+        desktop_ui_open_error(
+            ui, display, dirty, "Programm konnte nicht gestartet werden.",
+            path);
+    return 0U;
+}
+
 static uint32_t apply_desktop_ui_result(
-    desktop_wm_t *manager, const x86os_display_info_t *display,
+    desktop_wm_t *manager, desktop_explorer_t *explorer,
+    desktop_ui_state_t *ui,
+    const x86os_display_info_t *display,
     desktop_dirty_region_t *dirty, const desktop_ui_result_t *ui_result,
     uint32_t *target) {
     if (ui_result == 0) return 0U;
     if (ui_result->action == DESKTOP_UI_ACTION_EXIT)
         return DESKTOP_WM_RESULT_EXIT;
-    if (ui_result->action != DESKTOP_UI_ACTION_OPEN_WINDOW ||
-        ui_result->target >= DESKTOP_WM_CAPACITY) return 0U;
-
-    /* Menus have no privileged back door into mutable WM state. */
-    desktop_wm_event_t select = {
-        .type = DESKTOP_WM_EVENT_SELECT,
-        .target = ui_result->target,
-    };
-    uint32_t actions = dispatch_desktop_event(
-        manager, display, dirty, &select, target);
-    desktop_wm_event_t open = {
-        .type = DESKTOP_WM_EVENT_OPEN,
-        .target = ui_result->target,
-    };
-    actions |= dispatch_desktop_event(
-        manager, display, dirty, &open, target);
-    return actions;
+    if (ui_result->action == DESKTOP_UI_ACTION_OPEN_ROOT)
+        return open_explorer_path(
+            manager, explorer, ui, display, dirty, "/", target);
+    if (ui_result->action == DESKTOP_UI_ACTION_CLOSE_ALL)
+        return close_all_explorer_windows(
+            manager, explorer, display, dirty, target);
+    return 0U;
 }
 
 static void accumulate_mouse_delta(int32_t *total, int32_t delta) {
@@ -1595,7 +1750,8 @@ static void desktop_move_cache_capture(
  * position that was queued while the previous frame reached scanout.  Button
  * edges remain strict ordering boundaries, preserving implicit grabs. */
 static uint32_t dispatch_pointer_motion(
-    desktop_wm_t *manager, desktop_ui_state_t *ui,
+    desktop_wm_t *manager, desktop_explorer_t *explorer,
+    desktop_ui_state_t *ui,
     const x86os_display_info_t *display, desktop_dirty_region_t *dirty,
     int32_t *pointer_x, int32_t *pointer_y,
     int32_t delta_x, int32_t delta_y, uint32_t *target,
@@ -1624,7 +1780,7 @@ static uint32_t dispatch_pointer_motion(
             ui, display, dirty, *pointer_x, *pointer_y, 0U, 0U);
         ui_motion_consumed = ui_motion.consumed;
         actions |= apply_desktop_ui_result(
-            manager, display, dirty, &ui_motion, target);
+            manager, explorer, ui, display, dirty, &ui_motion, target);
     }
     if (!ui_motion_consumed) {
         desktop_wm_event_t motion = {
@@ -1651,11 +1807,35 @@ static uint32_t dispatch_pointer_motion(
     return actions;
 }
 
+static void collect_explorer_pointer_result(
+    const x86os_display_info_t *display, const desktop_wm_t *manager,
+    desktop_dirty_region_t *dirty,
+    const desktop_explorer_result_t *result, uint32_t root,
+    desktop_activation_t *activation) {
+    if (result == 0) return;
+    if (result->selection_changed) {
+        if (root) {
+            desktop_dirty_add(dirty, desktop_icon_rect(display, 0U));
+        } else if (result->window_index < DESKTOP_WM_CAPACITY) {
+            desktop_dirty_add(
+                dirty, desktop_wm_window_bounds(
+                    manager, result->window_index));
+        }
+    }
+    if (!result->activated || activation == 0 || activation->valid) return;
+    activation->valid = 1U;
+    activation->root = root;
+    activation->window_index = result->window_index;
+    activation->entry_index = result->entry_index;
+}
+
 static uint32_t dispatch_pointer_button(
-    desktop_wm_t *manager, desktop_ui_state_t *ui,
+    desktop_wm_t *manager, desktop_explorer_t *explorer,
+    desktop_ui_state_t *ui,
     const x86os_display_info_t *display, desktop_dirty_region_t *dirty,
     int32_t pointer_x, int32_t pointer_y, uint32_t buttons,
-    uint32_t previous_buttons, uint32_t *target) {
+    uint32_t previous_buttons, uint32_t *target,
+    desktop_activation_t *activation) {
     uint32_t actions = 0U;
     uint32_t left_down =
         (buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
@@ -1668,7 +1848,7 @@ static uint32_t dispatch_pointer_button(
                 ui, display, dirty, pointer_x, pointer_y, 1U, 1U);
             ui_press_consumed = ui_press.consumed;
             actions |= apply_desktop_ui_result(
-                manager, display, dirty, &ui_press, target);
+                manager, explorer, ui, display, dirty, &ui_press, target);
         }
         if (!ui_press_consumed) {
             int window = desktop_wm_window_at(
@@ -1682,29 +1862,64 @@ static uint32_t dispatch_pointer_button(
             };
             actions |= dispatch_desktop_event(
                 manager, display, dirty, &press, target);
-            if (window == DESKTOP_WM_NO_WINDOW) {
-                int icon = desktop_icon_at_position(
-                    display, pointer_x, pointer_y);
-                if (icon != DESKTOP_WM_NO_WINDOW) {
-                    desktop_wm_event_t open = {
-                        .type = DESKTOP_WM_EVENT_OPEN,
-                        .target = (uint32_t)icon,
-                    };
-                    actions |= dispatch_desktop_event(
-                        manager, display, dirty, &open, target);
-                }
+            desktop_explorer_result_t explorer_result;
+            desktop_explorer_result_initialize(&explorer_result);
+            if (window >= 0 &&
+                manager->capture_kind == DESKTOP_WM_CAPTURE_CLIENT &&
+                manager->capture_window == window) {
+                (void)desktop_explorer_pointer_press(
+                    explorer, (uint32_t)window,
+                    desktop_window_client_rect(manager, (uint32_t)window),
+                    pointer_x, pointer_y, &explorer_result);
+                collect_explorer_pointer_result(
+                    display, manager, dirty, &explorer_result, 0U,
+                    activation);
+            } else if (window == DESKTOP_WM_NO_WINDOW) {
+                uint32_t hit = desktop_icon_at_position(
+                    display, pointer_x, pointer_y) == 0;
+                desktop_explorer_desktop_press(
+                    explorer, hit, &explorer_result);
+                collect_explorer_pointer_result(
+                    display, manager, dirty, &explorer_result, 1U,
+                    activation);
             }
         }
     } else if (!left_down && left_was_down) {
+        uint32_t captured_kind = manager->capture_kind;
+        int32_t captured_window = manager->capture_window;
         uint32_t ui_release_consumed = 0U;
         if (manager->capture_kind == DESKTOP_WM_CAPTURE_NONE) {
             desktop_ui_result_t ui_release = desktop_ui_pointer_event(
                 ui, display, dirty, pointer_x, pointer_y, 1U, 0U);
             ui_release_consumed = ui_release.consumed;
             actions |= apply_desktop_ui_result(
-                manager, display, dirty, &ui_release, target);
+                manager, explorer, ui, display, dirty, &ui_release, target);
         }
         if (!ui_release_consumed) {
+            desktop_explorer_result_t explorer_result;
+            desktop_explorer_result_initialize(&explorer_result);
+            uint64_t now_ms = 0U;
+            (void)x86os_monotonic_ms(&now_ms);
+            if (captured_kind == DESKTOP_WM_CAPTURE_CLIENT &&
+                captured_window >= 0 &&
+                captured_window < (int32_t)DESKTOP_WM_CAPACITY) {
+                (void)desktop_explorer_pointer_release(
+                    explorer, (uint32_t)captured_window,
+                    desktop_window_client_rect(
+                        manager, (uint32_t)captured_window),
+                    pointer_x, pointer_y, now_ms, &explorer_result);
+                collect_explorer_pointer_result(
+                    display, manager, dirty, &explorer_result, 0U,
+                    activation);
+            } else if (captured_kind == DESKTOP_WM_CAPTURE_NONE) {
+                uint32_t hit = desktop_icon_at_position(
+                    display, pointer_x, pointer_y) == 0;
+                desktop_explorer_desktop_release(
+                    explorer, hit, now_ms, &explorer_result);
+                collect_explorer_pointer_result(
+                    display, manager, dirty, &explorer_result, 1U,
+                    activation);
+            }
             desktop_wm_event_t release = {
                 .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
                 .x = pointer_x,
@@ -1714,6 +1929,12 @@ static uint32_t dispatch_pointer_button(
             };
             actions |= dispatch_desktop_event(
                 manager, display, dirty, &release, target);
+            if (captured_kind == DESKTOP_WM_CAPTURE_CLOSE &&
+                captured_window >= 0 &&
+                captured_window < (int32_t)DESKTOP_WM_CAPACITY &&
+                manager->windows[captured_window].visible == 0U)
+                desktop_explorer_close(
+                    explorer, (uint32_t)captured_window);
         }
     }
     return actions;
@@ -1830,11 +2051,13 @@ static void run_menu_probe(const x86os_display_info_t *display,
 
 static void run_render_probe(
     const x86os_display_info_t *display, desktop_wm_t *manager,
-    desktop_ui_state_t *ui,
+    desktop_explorer_t *explorer, desktop_ui_state_t *ui,
     int32_t *pointer_x, int32_t *pointer_y,
     desktop_render_metrics_t *metrics) {
-    if (display == 0 || manager == 0 || pointer_x == 0 || pointer_y == 0 ||
-        metrics == 0 || manager->windows[0].visible == 0U) {
+    if (display == 0 || manager == 0 || explorer == 0 ||
+        pointer_x == 0 || pointer_y == 0 || metrics == 0 ||
+        manager->windows[0].visible == 0U ||
+        !explorer->windows[0].active) {
         render_probe_error(metrics);
         return;
     }
@@ -1875,7 +2098,7 @@ static void run_render_probe(
         }
         (void)x86os_pointer_update(*pointer_x, *pointer_y, 0U);
         render_desktop_measured(
-            display, manager, ui, &dirty, 0, 1U, 0U, metrics);
+            display, manager, explorer, ui, &dirty, 0, 1U, 0U, metrics);
         (void)x86os_pointer_update(*pointer_x, *pointer_y, 1U);
     }
     event = (desktop_wm_event_t){
@@ -1920,7 +2143,7 @@ static void run_render_probe(
         }
         (void)x86os_pointer_update(*pointer_x, *pointer_y, 0U);
         render_desktop_measured(
-            display, manager, ui, &dirty, 0, 0U, 1U, metrics);
+            display, manager, explorer, ui, &dirty, 0, 0U, 1U, metrics);
         (void)x86os_pointer_update(*pointer_x, *pointer_y, 1U);
     }
     event = (desktop_wm_event_t){
@@ -1942,6 +2165,7 @@ static void run_render_probe(
 int main(int argc, char **argv) {
     x86os_display_info_t display;
     desktop_wm_t manager;
+    static desktop_explorer_t explorer;
     desktop_ui_state_t ui;
     desktop_render_metrics_t metrics = {0};
     int32_t pointer_x;
@@ -1982,7 +2206,9 @@ int main(int argc, char **argv) {
         reist_gui_dialog_validate(
             &help_dialog_model, &dialog_layout, &ui.dialog) != 0 ||
         reist_gui_dialog_validate(
-            &about_dialog_model, &dialog_layout, &ui.dialog) != 0) {
+            &about_dialog_model, &dialog_layout, &ui.dialog) != 0 ||
+        reist_gui_dialog_validate(
+            &ui.error_model, &dialog_layout, &ui.dialog) != 0) {
         if (runtime_activated) (void)x86os_display_deactivate();
         x86os_puts("desktop: GUI-API/Layout nicht kompatibel\n");
         return 1;
@@ -1991,18 +2217,25 @@ int main(int argc, char **argv) {
                           (int32_t)menu + 4,
                           (int32_t)(display.height - status - 4U),
                           max_u32(display.font_height + 8U, 24U));
+    desktop_explorer_initialize(&explorer);
     pointer_x = (int32_t)(display.width / 2U);
     pointer_y = (int32_t)(display.height / 2U);
     x86os_puts("DESKTOP_OK\n");
     desktop_dirty_region_t initial_dirty;
     desktop_dirty_initialize(&initial_dirty, display.width, display.height);
+    uint32_t initial_target = DESKTOP_WM_NO_TARGET;
+    (void)open_explorer_path(
+        &manager, &explorer, &ui, &display,
+        &initial_dirty, "/", &initial_target);
     desktop_dirty_full(&initial_dirty);
     render_desktop_measured(
-        &display, &manager, &ui, &initial_dirty, 0, 0U, 0U, &metrics);
+        &display, &manager, &explorer, &ui,
+        &initial_dirty, 0, 0U, 0U, &metrics);
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
     if (render_probe) {
         run_render_probe(
-            &display, &manager, &ui, &pointer_x, &pointer_y, &metrics);
+            &display, &manager, &explorer, &ui,
+            &pointer_x, &pointer_y, &metrics);
         if (desktop_try_exit(
                 pointer_x, pointer_y, runtime_activated, &metrics)) return 0;
         render_probe_error(&metrics);
@@ -2017,6 +2250,10 @@ int main(int argc, char **argv) {
         uint32_t drag_render = 0U;
         uint32_t resize_render = 0U;
         desktop_move_cache_t move_cache = {0};
+        desktop_activation_t activation = {
+            .window_index = DESKTOP_WM_NO_TARGET,
+            .entry_index = DESKTOP_EXPLORER_NO_ENTRY,
+        };
         int32_t pending_delta_x = 0;
         int32_t pending_delta_y = 0;
         unsigned int mouse_events = 0U;
@@ -2031,21 +2268,21 @@ int main(int argc, char **argv) {
                 (previous_buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
             if (left_down != left_was_down) {
                 actions |= dispatch_pointer_motion(
-                    &manager, &ui, &display, &dirty,
+                    &manager, &explorer, &ui, &display, &dirty,
                     &pointer_x, &pointer_y,
                     pending_delta_x, pending_delta_y, &action_target,
                     &drag_render, &resize_render, &move_cache);
                 pending_delta_x = 0;
                 pending_delta_y = 0;
                 actions |= dispatch_pointer_button(
-                    &manager, &ui, &display, &dirty,
+                    &manager, &explorer, &ui, &display, &dirty,
                     pointer_x, pointer_y, mouse.buttons,
-                    previous_buttons, &action_target);
+                    previous_buttons, &action_target, &activation);
             }
             previous_buttons = mouse.buttons;
         }
         actions |= dispatch_pointer_motion(
-            &manager, &ui, &display, &dirty,
+            &manager, &explorer, &ui, &display, &dirty,
             &pointer_x, &pointer_y,
             pending_delta_x, pending_delta_y, &action_target,
             &drag_render, &resize_render, &move_cache);
@@ -2053,13 +2290,29 @@ int main(int argc, char **argv) {
         desktop_ui_result_t ui_key = desktop_ui_keyboard_event(
             &ui, &display, &dirty, key);
         actions |= apply_desktop_ui_result(
-            &manager, &display, &dirty, &ui_key, &action_target);
+            &manager, &explorer, &ui, &display, &dirty,
+            &ui_key, &action_target);
         if (!ui_key.consumed) {
-            uint32_t wm_key = wm_key_from_input(key);
-            if (wm_key != 0U) {
+            uint32_t explorer_key = explorer_key_from_input(key);
+            if (explorer_key != 0U && manager.keyboard_focus >= 0 &&
+                manager.keyboard_focus < (int32_t)DESKTOP_WM_CAPACITY) {
+                uint32_t focused = (uint32_t)manager.keyboard_focus;
+                desktop_rect_t client = desktop_window_client_rect(
+                    &manager, focused);
+                uint32_t columns = client.width /
+                    DESKTOP_EXPLORER_ICON_WIDTH;
+                desktop_explorer_result_t explorer_result;
+                desktop_explorer_result_initialize(&explorer_result);
+                (void)desktop_explorer_keyboard(
+                    &explorer, focused, columns != 0U ? columns : 1U,
+                    explorer_key, &explorer_result);
+                collect_explorer_pointer_result(
+                    &display, &manager, &dirty, &explorer_result, 0U,
+                    &activation);
+            } else if (key == DESKTOP_KEY_ESCAPE) {
                 desktop_wm_event_t keyboard = {
                     .type = DESKTOP_WM_EVENT_KEYBOARD,
-                    .key = wm_key,
+                    .key = DESKTOP_WM_KEY_ESCAPE,
                 };
                 actions |= dispatch_desktop_event(
                     &manager, &display, &dirty, &keyboard,
@@ -2073,12 +2326,9 @@ int main(int argc, char **argv) {
                 return 0;
         }
 
-        if ((actions & DESKTOP_WM_RESULT_LAUNCH) != 0U &&
-            action_target < APP_COUNT) {
-            (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
-            launch_app(action_target);
-            desktop_dirty_full(&dirty);
-        }
+        actions |= apply_desktop_activation(
+            &manager, &explorer, &ui, &display, &dirty,
+            &activation, &action_target, pointer_x, pointer_y);
 
         /* The cached path represents exactly one unobscured move.  Any
          * concurrent keyboard/action damage or resize falls back to the
@@ -2093,7 +2343,7 @@ int main(int argc, char **argv) {
         if (dirty.count != 0U) {
             (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
             render_desktop_measured(
-                &display, &manager, &ui, &dirty,
+                &display, &manager, &explorer, &ui, &dirty,
                 move_cache.valid ? &move_cache : 0,
                 drag_render, resize_render, &metrics);
             (void)x86os_pointer_update(pointer_x, pointer_y, 1U);

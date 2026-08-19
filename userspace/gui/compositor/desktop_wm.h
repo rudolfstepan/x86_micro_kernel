@@ -43,7 +43,8 @@ enum desktop_wm_event_type {
     DESKTOP_WM_EVENT_POINTER_BUTTON,     /**< Pointer button edge. */
     DESKTOP_WM_EVENT_KEYBOARD,           /**< Focused keyboard action. */
     DESKTOP_WM_EVENT_OPEN,               /**< Show one indexed window. */
-    DESKTOP_WM_EVENT_SELECT              /**< Select one indexed window. */
+    DESKTOP_WM_EVENT_SELECT,             /**< Select one indexed window. */
+    DESKTOP_WM_EVENT_CLOSE               /**< Hide one indexed window. */
 };
 
 /** Renderer-neutral keyboard actions understood by the desktop policy. */
@@ -112,7 +113,7 @@ typedef struct desktop_window {
     int32_t y;         /**< Global top edge. */
     uint32_t width;    /**< Decorated width. */
     uint32_t height;   /**< Decorated height. */
-    uint32_t app_index; /**< Immutable application table index. */
+    uint32_t content_id; /**< Compositor-owned content-slot identity. */
     uint32_t visible;  /**< Nonzero while included in composition. */
 } desktop_window_t;
 
@@ -190,6 +191,8 @@ uint32_t desktop_wm_resize_edges_at(const desktop_wm_t *manager,
 /* Low-level transitions retained for focused host tests; runtime input uses
  * desktop_wm_dispatch() so state mutation and damage collection stay atomic. */
 uint32_t desktop_wm_open(desktop_wm_t *manager, uint32_t window_index);
+/** Hide one window and transfer focus to the highest visible window. */
+uint32_t desktop_wm_close(desktop_wm_t *manager, uint32_t window_index);
 uint32_t desktop_wm_select(desktop_wm_t *manager, uint32_t window_index);
 uint32_t desktop_wm_pointer_press(desktop_wm_t *manager,
                                   int32_t x, int32_t y);

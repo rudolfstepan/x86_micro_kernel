@@ -358,13 +358,15 @@ void desktop_wm_initialize(desktop_wm_t *manager, uint32_t screen_width,
         window->y = base_y + (int32_t)(index * 28U);
         window->width = window_width;
         window->height = window_height;
-        window->app_index = index;
-        window->visible = index < 2U ? 1U : 0U;
+        window->content_id = index;
+        /* Slots are geometry only until a compositor client publishes valid
+         * content and explicitly opens one.  This prevents placeholder
+         * windows from becoming visible without a backing application. */
+        window->visible = 0U;
         manager->z_order[index] = index;
         clamp_window(manager, window);
     }
-    manager->keyboard_focus = 0;
-    (void)raise_window(manager, 0U);
+    manager->keyboard_focus = DESKTOP_WM_NO_WINDOW;
 }
 
 int desktop_wm_window_at(const desktop_wm_t *manager, int32_t x, int32_t y) {
@@ -384,6 +386,17 @@ uint32_t desktop_wm_open(desktop_wm_t *manager, uint32_t window_index) {
     uint32_t changed = manager->windows[window_index].visible == 0U;
     manager->windows[window_index].visible = 1U;
     return changed | focus_window(manager, window_index);
+}
+
+uint32_t desktop_wm_close(desktop_wm_t *manager, uint32_t window_index) {
+    if (manager == 0 || window_index >= DESKTOP_WM_CAPACITY ||
+        manager->windows[window_index].visible == 0U) return 0U;
+    manager->windows[window_index].visible = 0U;
+    if (manager->keyboard_focus == (int32_t)window_index)
+        focus_top_visible(manager);
+    if (manager->pointer_focus == (int32_t)window_index)
+        manager->pointer_focus = DESKTOP_WM_NO_WINDOW;
+    return 1U;
 }
 
 uint32_t desktop_wm_select(desktop_wm_t *manager, uint32_t window_index) {
@@ -474,9 +487,7 @@ uint32_t desktop_wm_pointer_release(desktop_wm_t *manager,
         manager->windows[captured].visible &&
         point_in_rect(desktop_wm_close_rect(manager, (uint32_t)captured),
                       x, y)) {
-        manager->windows[captured].visible = 0U;
-        changed = 1U;
-        if (manager->keyboard_focus == captured) focus_top_visible(manager);
+        changed = desktop_wm_close(manager, (uint32_t)captured);
     }
     manager->pointer_focus = desktop_wm_window_at(manager, x, y);
     return changed;
@@ -585,6 +596,9 @@ int desktop_wm_dispatch(desktop_wm_t *manager,
     } else if (event->type == DESKTOP_WM_EVENT_SELECT) {
         if (event->target >= DESKTOP_WM_CAPACITY) return -22;
         (void)desktop_wm_select(manager, event->target);
+    } else if (event->type == DESKTOP_WM_EVENT_CLOSE) {
+        if (event->target >= DESKTOP_WM_CAPACITY) return -22;
+        (void)desktop_wm_close(manager, event->target);
     } else if (event->type == DESKTOP_WM_EVENT_KEYBOARD) {
         uint32_t next = manager->selected;
         if (event->key == DESKTOP_WM_KEY_TAB ||

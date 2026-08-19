@@ -578,6 +578,9 @@ check-kernel-stack-analysis:
 # ============================================================================
 
 SYSTEM_IMAGE_FILES := \
+	etc/reist/system.conf=config/etc/reist/system.conf \
+	etc/reist/input.conf=config/etc/reist/input.conf \
+	etc/reist/desktop.conf=config/etc/reist/desktop.conf \
 	bin/shell.prg=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG \
 	bin/ls.prg=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
 	bin/cat.prg=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
@@ -701,6 +704,7 @@ test-unit:
 test-desktop-host:
 	@$(PYTHON) test/test_display_abi_minimal.py -q
 	@$(PYTHON) test/test_desktop_source.py -q
+	@$(PYTHON) test/test_desktop_explorer_source.py -q
 	@$(PYTHON) test/test_gui_menu_source.py -q
 	@$(PYTHON) test/test_gui_dialog_source.py -q
 	@$(PYTHON) test/test_gui_control_source.py -q

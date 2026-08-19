@@ -38,6 +38,7 @@ PROGRAMS = {
     "DESKTOP.PRG": (
         ROOT / "userspace/gui/compositor/desktop.c",
         ROOT / "userspace/gui/compositor/desktop_wm.c",
+        ROOT / "userspace/gui/compositor/desktop_explorer.c",
     ),
     "GUIDEMO.PRG": ROOT / "userspace/gui/apps/control_gallery/main.c",
     "MKDIR.PRG": ROOT / "userspace/programs/mkdir.c",

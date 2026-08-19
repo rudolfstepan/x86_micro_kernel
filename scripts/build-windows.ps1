@@ -266,6 +266,12 @@ try {
             '--data-file', "$($entry.Key)=$(Join-Path $UserProgramDir $entry.Value)"
         )
     }
+    foreach ($configFile in @('system.conf', 'input.conf', 'desktop.conf')) {
+        $configPath = Join-Path $RepoRoot "config\etc\reist\$configFile"
+        $imageDataArguments += @(
+            '--data-file', "etc/reist/$configFile=$configPath"
+        )
+    }
     foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn')) {
         $demoPath = Join-Path $RepoRoot "htdocs\$demoFile"
         $imageDataArguments += @(

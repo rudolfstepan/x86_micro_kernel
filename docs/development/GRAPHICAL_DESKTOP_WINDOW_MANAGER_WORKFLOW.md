@@ -226,6 +226,10 @@ Fokus/Z-Reihenfolge, Fensterziehen sowie Schließen und erneutes Öffnen
 erfolgreich geprüft. Reale Hardware wurde für diesen Window-Manager-Stand noch
 nicht geprüft.
 
+Der damalige statische Vier-Programm-Launcher wurde danach ersetzt. Sichtbare
+Top-Level-Slots besitzen nun immer einen gültigen Explorer-Snapshot; der WM
+erzeugt beim Start keine inhaltslosen Platzhalterfenster mehr.
+
 Für diese Stufe ist ein vollständiger Szenenaufbau nach einer geometrischen
 Änderung zulässig. Er ist ausdrücklich nur die sichere Referenz, bis die
 Schadens- und Frame-Publikation aus Stufe 2 verfügbar ist.
@@ -391,12 +395,38 @@ inkompatibler Fensterrahmen.
 ## Stufe 5: echte Desktopprogramme
 
 - [ ] Systeminformationen als erster read-only GUI-Client.
-- [ ] Dateimanager mit Laufwerksicons, Verzeichnisliste und Fehleranzeige.
+- [x] Erste begrenzte Dateimanager-Schicht mit Root-Icon, atomarem
+  Verzeichnis-Snapshot, Ordner-/Dateiicons und neuen Ordnerfenstern.
 - [ ] Editor mit begrenztem Textpuffer, Speichern und klarer Dirty-Anzeige.
 - [ ] Terminalemulator als eigener GUI-Client statt globaler Console-Ausgabe.
-- [ ] Programmstart aus Dateimanager und Desktopicons über kanonische Pfade.
+- [x] Verzeichnisse per Doppelklick/Enter in einem neuen Fenster öffnen und
+  `.PRG`-Dateien über ihren kanonischen VFS-Pfad starten.
+- [x] Explorer-, Dateizuordnungs- und Programmstartfehler als verschiebbare
+  application-modale Dialoge mit begrenztem Pfaddetail anzeigen; keine
+  Konsolenausgabe darf die grafische Desktopfläche überschreiben.
 - [ ] Legacy-Vollbildbrücke erst entfernen, wenn alle vier Kernprogramme eine
   getestete GUI-Variante besitzen.
+
+Der aktuelle Explorer ist bewusst compositorintern und auf vier Fenster sowie
+32 Einträge je Snapshot begrenzt. Ein vollständiger Client/Server-Dateimanager
+folgt erst mit Surface-IPC. Bis dahin kann ein gestartetes Legacy-Programm den
+Bildschirm temporär verwenden; der Desktop bleibt Elternprozess und setzt
+seine Szene nach `wait` ohne Shellwechsel oder zusätzlichen Tastendialog neu
+zusammen.
+
+## Systemkonfiguration
+
+- [x] `/etc/reist` als systemweiten, administrierbaren Namensraum festlegen.
+- [x] Versionierte Standarddateien für System/Sprache, Eingabe und Desktop in
+  Windows- und Makefile-Systemabbilder paketieren.
+- [x] `/usr/share/reist/defaults`, `/var/lib/reist` und spätere
+  `$HOME/.config/reist`-Überschreibungen voneinander abgrenzen.
+- [ ] Gemeinsamen fest begrenzten Ring-3-Parser und atomaren Writer bauen.
+- [ ] Sprache, Tastatur, Maus und Desktop über einen berechtigten Systemdienst
+  und grafische Einstellungswerkzeuge änderbar machen.
+
+Der Format- und Pfadvertrag steht in
+[`SYSTEM_CONFIGURATION.md`](../architecture/SYSTEM_CONFIGURATION.md).
 
 ## Stufe 6: vollständige klassische Desktopfunktionen
 
