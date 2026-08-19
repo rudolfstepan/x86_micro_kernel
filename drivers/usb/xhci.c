@@ -74,6 +74,9 @@
 #define XHCI_IMAN_IE             (1U << 1)
 #define XHCI_LEGACY_BIOS_OWNED   (1U << 16U)
 #define XHCI_LEGACY_OS_OWNED     (1U << 24U)
+#define XHCI_LEGACY_SMI_ENABLES  ((1U << 0U) | (1U << 4U) | (7U << 13U))
+#define XHCI_LEGACY_SMI_PRESERVE ((7U << 1U) | (0xFFU << 5U) | (7U << 17U))
+#define XHCI_LEGACY_SMI_EVENTS   (7U << 29U)
 
 #define TRB_CYCLE                (1U << 0)
 #define TRB_ENT                  (1U << 1)
@@ -129,6 +132,7 @@ typedef struct {
     uint32_t command_index;
     uint32_t event_index;
     uint32_t endpoint_index;
+    uint32_t start_attempts;
     bool command_cycle;
     bool event_cycle;
     bool endpoint_cycle;
@@ -217,7 +221,9 @@ static bool xhci_legacy_handoff(void) {
     uint32_t extended = (hcc >> 16U) << 2U;
     uint32_t visited = 0U;
     while (extended != 0U && visited++ < 32U) {
+        if (extended > XHCI_MMIO_SIZE - 8U) return false;
         uint32_t header = xhci_read(extended);
+        if (header == UINT32_MAX) return false;
         uint8_t id = (uint8_t)header;
         uint8_t next = (uint8_t)(header >> 8U);
         if (id == 1U) {
@@ -228,11 +234,22 @@ static bool xhci_legacy_handoff(void) {
                 if (!xhci_wait_until(extended, XHCI_LEGACY_BIOS_OWNED, 0U,
                                      XHCI_TIMEOUT_MS)) return false;
             }
-            return true;
+            uint32_t smi_before = xhci_read(extended + 4U);
+            uint32_t smi_disable =
+                (smi_before & XHCI_LEGACY_SMI_PRESERVE) |
+                XHCI_LEGACY_SMI_EVENTS;
+            xhci_write(extended + 4U, smi_disable);
+            uint32_t smi_after = xhci_read(extended + 4U);
+            printf("USB: xHCI legacy SMI before=%08X after=%08X\n",
+                   (unsigned)smi_before, (unsigned)smi_after);
+            return (smi_after & XHCI_LEGACY_SMI_ENABLES) == 0U;
         }
-        extended = (uint32_t)next << 2U;
+        if (next == 0U) return true;
+        uint32_t increment = (uint32_t)next << 2U;
+        if (increment > UINT32_MAX - extended) return false;
+        extended += increment;
     }
-    return true;
+    return extended == 0U;
 }
 
 static bool xhci_has_intel_ehci(void) {
@@ -314,16 +331,36 @@ static bool xhci_route_intel_ports(const pci_device_t *dev) {
     return true;
 }
 
-static bool xhci_reset_controller(void) {
+static bool xhci_reset_controller(bool trace) {
     uint32_t command = xhci_read(controller.op_base + XHCI_USBCMD);
+    if (trace)
+        printf("USB: xHCI reset stage=halt-request cmd=%08X sts=%08X\n",
+               (unsigned)command,
+               (unsigned)xhci_read(controller.op_base + XHCI_USBSTS));
     xhci_write(controller.op_base + XHCI_USBCMD, command & ~XHCI_CMD_RUN);
     if (!xhci_wait_until(controller.op_base + XHCI_USBSTS, XHCI_STS_HCH,
-                         XHCI_STS_HCH, XHCI_TIMEOUT_MS)) return false;
+                         XHCI_STS_HCH, XHCI_TIMEOUT_MS)) {
+        if (trace)
+            printf("USB: xHCI reset stage=halt-timeout sts=%08X\n",
+                   (unsigned)xhci_read(controller.op_base + XHCI_USBSTS));
+        return false;
+    }
+    if (trace) printf("USB: xHCI reset stage=host-reset-request\n");
     xhci_write(controller.op_base + XHCI_USBCMD, XHCI_CMD_RESET);
     if (!xhci_wait_until(controller.op_base + XHCI_USBCMD, XHCI_CMD_RESET,
-                         0U, XHCI_TIMEOUT_MS)) return false;
-    return xhci_wait_until(controller.op_base + XHCI_USBSTS, XHCI_STS_CNR,
-                           0U, XHCI_TIMEOUT_MS);
+                         0U, XHCI_TIMEOUT_MS)) {
+        if (trace)
+            printf("USB: xHCI reset stage=host-reset-timeout cmd=%08X\n",
+                   (unsigned)xhci_read(controller.op_base + XHCI_USBCMD));
+        return false;
+    }
+    if (trace) printf("USB: xHCI reset stage=controller-ready-wait\n");
+    bool ready = xhci_wait_until(controller.op_base + XHCI_USBSTS,
+                                 XHCI_STS_CNR, 0U, XHCI_TIMEOUT_MS);
+    if (trace)
+        printf("USB: xHCI reset stage=%s\n",
+               ready ? "complete" : "controller-ready-timeout");
+    return ready;
 }
 
 static void xhci_prepare_rings(void) {
@@ -757,7 +794,8 @@ static bool xhci_configure_boot_hid(void) {
 }
 
 static bool xhci_start_controller(uint32_t max_slots) {
-    if (!xhci_reset_controller()) return false;
+    bool trace = controller.start_attempts++ == 0U;
+    if (!xhci_reset_controller(trace)) return false;
     xhci_prepare_rings();
     xhci_write(controller.op_base + XHCI_CONFIG,
                max_slots > 31U ? 31U : max_slots);
@@ -934,6 +972,15 @@ int xhci_probe(pci_device_t *dev) {
                (unsigned)diagnostics.intel_routing_flags);
         diagnostics.state = XHCI_DIAG_PORT_ROUTING_FAILED;
         return -1;
+    }
+    if ((diagnostics.intel_routing_flags &
+         XHCI_INTEL_ROUTE_ATTEMPTED) != 0U) {
+        printf("USB: Intel xHCI routing usb2=%08X/%08X usb3=%08X/%08X flags=%X\n",
+               (unsigned)diagnostics.usb2_routing_mask,
+               (unsigned)diagnostics.usb2_routing,
+               (unsigned)diagnostics.usb3_routing_mask,
+               (unsigned)diagnostics.usb3_routing,
+               (unsigned)diagnostics.intel_routing_flags);
     }
     if (!xhci_dma_valid(dcbaa, 64U) || !xhci_dma_valid(command_ring, 64U) ||
         !xhci_dma_valid(event_ring, 64U) ||

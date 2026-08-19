@@ -338,6 +338,20 @@ Umschalten ausgelöste Neuverbindung. Diagnose-ABI Version 3 hängt PCI-ID,
 Routingflags sowie Soll- und Istmasken an; Versionen 1 und 2 behalten ihre
 bisherigen Größen von 96 und 120 Byte.
 
+Der erste Lauf mit aktivierter Intel-Portübergabe identifizierte den realen
+Controller als `8086:8C31`, blieb aber unmittelbar vor dem ersten xHCI-Reset
+stehen. Der Ownership-Handoff adressierte nun zwar korrekt `USBLEGSUP`, ließ
+jedoch die SMI-Enable-Bits im direkt folgenden `USBLEGCTLSTS` aktiv. Vor der
+Portübergabe werden deshalb USB-, Hostfehler-, Ownership-, PCI-Command- und
+BAR-SMIs abgeschaltet, die drei RW1C-Ereignisse quittiert und das Ergebnis
+rückgelesen. Reservierte und schreibgeschützte Felder bleiben gemäß xHCI-
+Legacy-Vertrag erhalten. Gleichzeitig folgt die Suche nach erweiterten
+Capabilities nun dem relativ zur aktuellen Capability kodierten Next-Zeiger
+mit MMIO- und Besuchsgrenze. Der erste Controllerreset protokolliert
+`halt-request`, `host-reset-request`, `controller-ready-wait` und `complete`,
+sodass ein verbleibender physischer Stillstand ohne weiteren Verdachtslauf
+einer exakten Registerphase zugeordnet werden kann.
+
 ## Erwartetes Restrisiko
 
 Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte
