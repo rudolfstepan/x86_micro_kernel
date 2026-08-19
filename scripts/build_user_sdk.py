@@ -40,6 +40,10 @@ NETWORK_PARSER_SOURCES = (
 GUI_LIBRARY_SOURCES = (
     ROOT / "userspace" / "gui" / "lib" / "menu.c",
     ROOT / "userspace" / "gui" / "lib" / "dialog.c",
+    ROOT / "userspace" / "gui" / "lib" / "control.c",
+    ROOT / "userspace" / "gui" / "lib" / "container.c",
+    ROOT / "userspace" / "gui" / "lib" / "tabs.c",
+    ROOT / "userspace" / "gui" / "lib" / "value_controls.c",
 )
 STARTUP_SOURCE = CORE_ROOT / "crt0.c"
 

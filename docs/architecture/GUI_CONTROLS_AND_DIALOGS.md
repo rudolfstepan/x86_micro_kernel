@@ -59,23 +59,26 @@ der betroffenen Surface an.
 | Top-Level-Fensterrahmen | nein, serverseitig | ja | Fokus, Move, Resize, Close | Fokus/Open | [x] compositorintern |
 | Alert-/Message-Dialog | ja | Desktop-Theme | Buttons, Close, Move | Fokus, Enter, Esc | [x] Basis-API |
 | allgemeiner Dialogcontainer | Basis vorhanden | Basis vorhanden | modal/modeless | Ergebnisdispatch | [ ] Clientinhalt fehlt |
-| Label | nein | Textprimitive vorhanden | n/a | n/a | [ ] API definieren |
-| Push Button | nur Dialogbutton | ja | Capture/Aktivierung | Fokus/Enter | [ ] allgemeines Control extrahieren |
-| Checkbox, Radio Button | nein | nein | nein | nein | [ ] geplant |
-| einzeiliges Textfeld | nein | nein | nein | nein | [ ] geplant |
+| Label | ja | Control Gallery | n/a | n/a | [x] semantischer Name und lokale Geometrie |
+| Push Button | ja | Control Gallery/Dialog | Capture/Aktivierung | Tab, Space, Enter | [x] allgemeines Control |
+| Checkbox | ja | Control Gallery | Capture/Umschalten | Tab, Space | [x] zwei- und dreistufiger Zustand |
+| Radio Button | ja | Control Gallery | Capture/Auswahl | Tab, Space, Pfeile | [x] exklusive Gruppe |
+| verschachtelte Container | ja | Control Gallery | adressierter Eventpfad | Parent-Capture/Target/Bubble | [x] Parent-lokale Geometrie und Ancestry-Clip |
+| Tabs | ja | Control Gallery | Capture/Auswahl | Links/Rechts, Home/End, Enter/Space | [x] vier interaktive Seiten |
+| einzeiliges Textfeld | ja | Control Gallery | Fokus/Cursor-Capture | Cursor, Editieren, Enter | [x] begrenztes ASCII-v1-Textfeld |
 | mehrzeiliger Texteditor | nein | Legacy-Vollbildeditor | nein | Legacy | [ ] als GUI-Control neu bauen |
-| Liste und Listenauswahl | nein | nein | nein | nein | [ ] geplant |
-| Scrollbar und ScrollView | nein | nein | nein | nein | [ ] geplant |
+| Liste und Listenauswahl | ja | Control Gallery | Capture/Auswahl | Pfeile, Home/End, Page, Enter | [x] feste Itemkapazität |
+| Scrollbar | ja | Control Gallery | Drag-Capture | Pfeile, Page, Home/End | [x] gemeinsame Range-API |
+| ScrollView | nein | nein | nein | nein | [ ] Containerkopplung noch offen |
 | Baumansicht | nein | nein | nein | nein | [ ] für Dateimanager geplant |
 | ComboBox | nein | Popup-Menü wiederverwendbar | nein | nein | [ ] geplant |
-| Tabs | nein | nein | nein | nein | [ ] geplant |
-| Slider und SpinBox | nein | nein | nein | nein | [ ] geplant |
-| Fortschrittsanzeige | nein | nein | n/a | n/a | [ ] geplant |
+| Slider und SpinBox | ja | Control Gallery | Drag-Capture | Pfeile, Page, Home/End | [x] gemeinsame Range-API |
+| Fortschrittsanzeige | ja | Control Gallery | n/a | n/a | [x] read-only Range-Control |
 | Toolbar und Statusbar | nein | Desktopleisten vorhanden | nein | nein | [ ] API definieren |
 | Tooltip | nein | nein | nein | n/a | [ ] erst mit monotonem Timer |
 | Kontextmenü | Menücontroller verwendbar | ja | Capture | Pfeile/Enter/Esc | [ ] öffentlicher Öffnungsanker fehlt |
 | Dateiauswahl-, Farb- und Fontdialog | nein | nein | nein | nein | [ ] spätere Systemdienste |
-| interaktive Control Gallery | Menü- und Dialog-API | ja | ja | ja | [x] `/usr/gui/bin/guidemo.prg` |
+| interaktive Control Gallery | Menü-, Dialog- und Basis-Control-API | ja | ja | ja | [x] `/usr/gui/bin/guidemo.prg` |
 
 ## Interaktive Referenzanwendung
 
@@ -83,17 +86,97 @@ der betroffenen Surface an.
 den aktuell freigegebenen API-Umfang. Beide Image-Builds installieren sie als
 `/usr/gui/bin/guidemo.prg`; der begrenzte Standard-Suchpfad der Ring-3-Shell
 macht sie mit `guidemo` direkt startbar. Die Anwendung bindet ausschließlich
-`x86os.h`, `<reist/gui/menu.h>` und `<reist/gui/dialog.h>` ein und besitzt
+`x86os.h`, `<reist/gui/menu.h>`, `<reist/gui/dialog.h>` und
+`<reist/gui/control.h>` ein und besitzt
 keinen Zugriff auf private Compositor-Header.
 
-Interaktiv nachweisbar sind Menüleiste, Popup-Menü, modeless und
+Interaktiv nachweisbar sind verschachtelte Page-/Gruppencontainer, Tabs,
+Label, Pushbutton, Checkbox, exklusive Radiogruppe, einzeiliges Textfeld,
+Liste, Scrollbar, Slider, SpinBox, Fortschrittsanzeige, Menüleiste, Popup-Menü, modeless und
 application-modal Dialoge, semantische Responses, Default-/Cancel-Buttons,
 Tastaturfokus, Enter/Escape, Schließfeld und Verschieben per Pointer-Capture.
-Noch nicht implementierte Controls stehen getrennt als deaktivierte
-Planungsliste in der Anwendung. Eine gezeichnete Attrappe wird dadurch nicht
-mit einer vorhandenen API verwechselt. Bis Stufe 3 des Desktop-Workflows eine
+Komplexe noch nicht implementierte Controls werden nicht als Attrappen
+gezeichnet. Bis Stufe 3 des Desktop-Workflows eine
 Surface-IPC bereitstellt, läuft die Galerie bewusst als temporärer
 Vollbildclient.
+
+## Vertrag der Basis-Controls
+
+`<reist/gui/control.h>` fasst Label, Pushbutton, Checkbox und Radio Button
+unter gemeinsamen, rendererunabhängigen Zuständen zusammen. Das lehnt sich an
+den gemeinsamen Button-Unterbau von
+[Qt `QAbstractButton`](https://doc.qt.io/qt-6/qabstractbutton.html) an, ohne
+dessen Klassen- oder Signal-ABI zu übernehmen. Ein Descriptor enthält stabile
+ID, semantische Rolle, zugänglichen Namen, lokale Geometrie, Aktion und Flags;
+der caller-owned State enthält ausschließlich Fokus, Hover, Pointer-Capture
+und Werte für höchstens 16 Controls.
+
+- Button-Down bindet genau ein aktiviertes Control bis Button-Up oder Cancel.
+  Nur ein Release innerhalb desselben Controls aktiviert die Aktion.
+- Space aktiviert das fokussierte Button-Control. Enter aktiviert einen
+  fokussierten Pushbutton oder den einzigen expliziten Default-Pushbutton.
+- Checkboxen folgen dem
+  [W3C Checkbox Pattern](https://www.w3.org/WAI/ARIA/apg/patterns/checkbox/)
+  mit `unchecked`, `checked` und optionalem `mixed`. Eine Benutzeraktivierung
+  führt `mixed` nach `checked`; Anwendungen dürfen alle drei Zustände
+  programmatisch setzen.
+- Radiogruppen folgen dem
+  [W3C Radio Group Pattern](https://www.w3.org/WAI/ARIA/apg/patterns/radio/):
+  höchstens ein Eintrag ist ausgewählt, Tab behandelt die Gruppe als einen
+  Fokus-Stopp und Pfeiltasten verschieben Fokus und Auswahl mit Wrap-around.
+- Unsichtbare oder deaktivierte Controls nehmen weder an Hit-Test noch Fokus
+  oder Aktivierung teil. Label sind grundsätzlich nicht interaktiv.
+- Jede Operation validiert Version, Strukturgröße, Reserved-Felder,
+  Geometrie, IDs, Rollen und Radio-Exklusivität vor der Mutation. Damage ist
+  auf acht lokale Rechtecke begrenzt und fällt kontrolliert auf die ganze
+  caller-owned Surface zurück.
+
+## Container, Tabs und Eventkommunikation
+
+`<reist/gui/container.h>` beschreibt einen festen Widgetbaum mit höchstens 32
+Nodes. Node null ist der Root-Container; jeder weitere Node verweist nur auf
+einen bereits definierten Parent-Container. Dadurch sind Container in
+Containern ausdrücklich erlaubt, während Zyklen und verwaiste Children ohne
+rekursive Suche abgewiesen werden. Child-Geometrie ist parent-lokal. Die
+aufgelöste Clipregion ist der Schnitt aller Containergrenzen der Elternkette.
+
+Controls kommunizieren nicht über globales Message-Broadcasting und kennen
+keine Geschwister. Der Baum erzeugt für einen Pointertreffer genau einen
+adressierten Pfad `Root -> ... -> Target`. Die Anwendung kann diesen Pfad in
+drei festen Phasen bearbeiten: Parent-Capture, genau ein Target und
+Parent-Bubbling. Ein Handler darf die Weitergabe beenden. Das typisierte
+Controlresultat (`changed`, `activated`, ID, Wert und Damage) geht an den
+Anwendungs-Controller; nur dieser aktualisiert abhängige Modelle gezielt. In
+der Galerie setzt zum Beispiel ein Slider-Resultat die Fortschrittsanzeige.
+Unbeteiligte Geschwister erhalten kein Ereignis.
+
+`<reist/gui/tabs.h>` trennt Tab-Leiste und Page-Container. Genau eine
+aktivierte Seite ist sichtbar. Links/Rechts navigieren mit Wrap-around,
+Home/End wählen die Ränder und Enter/Space aktivieren. Da die lokalen Seiten
+ohne Ladezeit vorliegen, folgt die Auswahl dem Tastaturfokus automatisch. Das
+entspricht dem [W3C Tabs Pattern](https://www.w3.org/WAI/ARIA/apg/patterns/tabs/)
+und der üblichen Trennung von Tab-Bar und Page-Stack, ohne eine fremde ABI zu
+behaupten.
+
+## Text-, Listen- und Range-Controls
+
+`<reist/gui/value_controls.h>` stellt drei begrenzte Zustandsautomaten bereit:
+
+- Das einzeilige Textfeld besitzt einen caller-owned Puffer mit höchstens 64
+  Bytes, Cursor, Fokus und Pointer-Capture. Version 1 akzeptiert bewusst nur
+  druckbares ASCII. Clipboard, UTF-8-Grapheme und IME-Komposition bleiben eine
+  explizite spätere ABI-Grenze und werden nicht vorgetäuscht.
+- Die Liste enthält höchstens 32 caller-owned Items mit stabiler ID,
+  semantischem Label, Enabled-Zustand, Auswahl und begrenztem Viewport.
+- Slider, vertikale/horizontale Scrollbar, SpinBox und read-only
+  Fortschrittsanzeige teilen einen geprüften Integerbereich mit Minimum,
+  Maximum, Step und Page-Step. Pointerwerte und Tastaturschritte werden mit
+  64-Bit-Zwischenwerten begrenzt berechnet.
+
+Alle Modelle bleiben rendererunabhängig, heap-frei und ohne Geräte- oder
+Framebufferzugriff. Jedes sichtbare Element trägt einen semantischen Namen;
+`guidemo.prg` ordnet sie auf den Tabs `Basis`, `Eingabe`, `Auswahl` und
+`Werte` an.
 
 ## Dialogvertrag
 
@@ -183,11 +266,14 @@ Layout bleiben explizit offen.
 - [x] Dialogcontroller mit Modalität, Responses, Buttonrollen und Move-Capture bereitstellen.
 - [x] Desktop-Hilfe und About auf den öffentlichen Dialogcontroller migrieren.
 - [x] Alle freigegebenen Controls in `guidemo.prg` interaktiv demonstrieren.
-- [ ] Allgemeines Button- und Label-Control aus dem Dialogrenderer lösen.
-- [ ] Fokusgruppe mit Tab/Shift-Tab und semantischer Focus-Reason definieren.
-- [ ] Box-/Grid-/Stack-Layout mit festen Kapazitäten bereitstellen.
-- [ ] Textfeld samt Cursor, Auswahl, Clipboard- und IME-Grenze spezifizieren.
-- [ ] Liste, Scrollbar und ScrollView gemeinsam implementieren.
+- [x] Allgemeines Button- und Label-Control aus dem Dialogrenderer lösen.
+- [x] Fokusgruppe mit Tab/Shift-Tab und semantischer Focus-Reason definieren.
+- [x] Verschachtelbaren Containerbaum mit fester Kapazität, Parent-Geometrie,
+  Ancestry-Clipping und adressiertem Eventpfad bereitstellen.
+- [ ] Automatische Box-/Grid-/Stack-Layoutalgorithmen bereitstellen.
+- [x] Einzeiliges Textfeld samt Cursor und expliziter Clipboard-/IME-Grenze spezifizieren.
+- [x] Liste, Scrollbar, Slider, SpinBox und Progress gemeinsam implementieren.
+- [ ] ScrollView aus Container, Viewport und Scrollbar zusammensetzen.
 - [ ] Surface-/Event-IPC generationsgebunden veröffentlichen.
 - [ ] Accessibility-Baum und assistive Eventausgabe versionieren.
 - [ ] Theme-, Font-, Icon- und Lokalisierungsressourcen versionieren.

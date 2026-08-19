@@ -156,14 +156,29 @@ python scripts/build_user_program.py userspace/gui/examples/menu_controller.c `
 python scripts/build_user_program.py userspace/gui/examples/dialog_controller.c `
   --output build/programs/DIALOGDEMO.PRG `
   --sysroot build/sdk -l reistgui
+python scripts/build_user_program.py userspace/gui/examples/basic_controls.c `
+  --output build/programs/CONTROLDEMO.PRG `
+  --sysroot build/sdk -l reistgui
+python scripts/build_user_program.py userspace/gui/examples/nested_containers.c `
+  --output build/programs/CONTAINERDEMO.PRG `
+  --sysroot build/sdk -l reistgui
+python scripts/build_user_program.py userspace/gui/examples/tab_sheet.c `
+  --output build/programs/TABSDEMO.PRG `
+  --sysroot build/sdk -l reistgui
+python scripts/build_user_program.py userspace/gui/examples/value_controls.c `
+  --output build/programs/VALUESDEMO.PRG `
+  --sysroot build/sdk -l reistgui
 ```
 
 `--sysroot` wählt öffentliche Header, Startobjekt und Basisbibliothek aus.
 Weitere standardmäßige Suchpfade und Archive werden mit `-I`, `-L` und `-l`
 angegeben. Die öffentlichen Header `<reist/gui/types.h>`,
-`<reist/gui/menu.h>` und `<reist/gui/dialog.h>` dokumentieren Felder,
-Ownership, Lebensdauer, Capture, Modalität, Responses, Fehler und Rückgabewerte
-inline. Sie bilden eine in-process C-Quell-API; eine dynamische Binär-ABI oder
+`<reist/gui/menu.h>`, `<reist/gui/dialog.h>`, `<reist/gui/control.h>`,
+`<reist/gui/container.h>`, `<reist/gui/tabs.h>` und
+`<reist/gui/value_controls.h>`
+dokumentieren Felder, Ownership, Lebensdauer, Capture, Fokus, Modalität,
+Responses, Fehler und Rückgabewerte inline. Sie bilden eine in-process
+C-Quell-API; eine dynamische Binär-ABI oder
 das künftige prozessübergreifende Surface-Protokoll wird damit nicht behauptet.
 
 Der Systemprogrammbuild erzeugt außerdem `GUIDEMO.PRG` aus

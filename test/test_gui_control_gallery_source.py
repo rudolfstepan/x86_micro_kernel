@@ -17,19 +17,26 @@ class GuiControlGallerySourceTests(unittest.TestCase):
         self.assertIn('#include "x86os.h"', self.source)
         self.assertIn('#include "reist/gui/menu.h"', self.source)
         self.assertIn('#include "reist/gui/dialog.h"', self.source)
+        self.assertIn('#include "reist/gui/control.h"', self.source)
+        self.assertIn('#include "reist/gui/container.h"', self.source)
+        self.assertIn('#include "reist/gui/tabs.h"', self.source)
+        self.assertIn('#include "reist/gui/value_controls.h"', self.source)
         self.assertNotIn("desktop_wm", self.source)
         self.assertNotRegex(
             self.source, r"\b(malloc|calloc|realloc|free)\s*\(")
         self.assertIn("temporary full-screen graphical client", self.source)
 
-    def test_gallery_demonstrates_real_modalities_and_marks_planned_controls(self):
+    def test_gallery_demonstrates_real_dialogs_and_basic_controls(self):
         self.assertIn("REIST_GUI_DIALOG_MODELESS", self.source)
         self.assertIn("REIST_GUI_DIALOG_APPLICATION_MODAL", self.source)
         self.assertIn("reist_gui_dialog_open", self.source)
         self.assertIn("reist_gui_dialog_dispatch", self.source)
         self.assertIn("reist_gui_menu_dispatch", self.source)
-        self.assertIn("[x] Modal/modeless Dialog + Response", self.source)
-        self.assertIn("[ ] Checkbox, Radio, Textfeld, TextArea", self.source)
+        self.assertIn("reist_gui_control_configure", self.source)
+        self.assertIn("reist_gui_control_dispatch", self.source)
+        self.assertIn("REIST_GUI_CONTROL_ROLE_PUSH_BUTTON", self.source)
+        self.assertIn("REIST_GUI_CONTROL_ROLE_CHECKBOX", self.source)
+        self.assertIn("REIST_GUI_CONTROL_ROLE_RADIO_BUTTON", self.source)
         self.assertIn("Keine geplante Komponente wird als fertig", self.source)
 
     def test_gallery_lifecycle_and_input_work_are_bounded(self):
@@ -42,6 +49,26 @@ class GuiControlGallerySourceTests(unittest.TestCase):
         self.assertIn("mouse_count < 32U", self.source)
         self.assertIn("consumed < 4U", self.source)
         self.assertIn("x86os_sleep_ms(5U)", self.source)
+
+    def test_basic_control_layout_has_one_label_and_outline_only_focus(self):
+        self.assertNotIn("Implementierte Basis-Controls", self.source)
+        self.assertIn("static void outline(", self.source)
+        self.assertIn("marker.width + 8U + focus_text_width + 4U", self.source)
+        self.assertNotIn("bevel(focus, color_dark", self.source)
+
+    def test_gallery_groups_labelled_controls_on_real_tab_pages(self):
+        for label in ("Basis", "Eingabe", "Auswahl", "Werte",
+                      "Einzeiliges Textfeld", "Liste: Theme-Auswahl",
+                      "Slider: Lautstaerke", "SpinBox: Anzahl",
+                      "Fortschrittsanzeige"):
+            self.assertIn(label, self.source)
+        self.assertIn("reist_gui_tabs_dispatch", self.source)
+        self.assertIn("reist_gui_tree_validate", self.source)
+        self.assertIn("reist_gui_text_dispatch", self.source)
+        self.assertIn("reist_gui_list_dispatch", self.source)
+        self.assertIn("reist_gui_range_dispatch", self.source)
+        self.assertIn("GALLERY_NODE_INPUT_GROUP", self.source)
+        self.assertIn("GALLERY_NODE_VALUES_GROUP", self.source)
 
     def test_gallery_is_packaged_as_userspace_shell_command(self):
         programs = (ROOT / "scripts/build_system_programs.py").read_text(

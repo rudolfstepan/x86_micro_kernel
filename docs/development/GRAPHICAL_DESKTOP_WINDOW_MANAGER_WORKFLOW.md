@@ -339,8 +339,18 @@ inkompatibler Fensterrahmen.
 - [x] `guidemo.prg` als interaktive Referenz für alle derzeit öffentlichen
   Controls in beiden Image-Layouts paketieren und aus der Ring-3-Shell
   erreichbar machen.
-- [ ] Controls für Label, Button, Textfeld, Liste und Scrollbar definieren.
-- [ ] Fokusreihenfolge und Aktivierung vollständig per Tastatur ermöglichen.
+- [x] Rendererunabhängige Controls für Label, Pushbutton, Checkbox und
+  exklusive Radiogruppen mit fester Kapazität bereitstellen.
+- [x] Tab-Fokusreihenfolge, Space/Enter-Aktivierung und Pfeilnavigation für
+  die implementierten Basis-Controls bereitstellen.
+- [x] Verschachtelbaren Containerbaum mit Parent-lokaler Geometrie,
+  Ancestry-Clipping und adressiertem Capture/Target/Bubble-Pfad definieren.
+- [x] Tabsheet mit genau einer sichtbaren Page, Pointer-Capture und
+  Links/Rechts/Home/End-Navigation implementieren.
+- [x] Controls für einzeiliges Textfeld, Liste, Scrollbar, Slider, SpinBox und
+  Fortschrittsanzeige definieren und in `guidemo.prg` interaktiv zeigen.
+- [ ] Mehrzeileneditor, ScrollView, TreeView und ComboBox auf den vorhandenen
+  Container-, Menü- und Value-Verträgen aufbauen.
 - [ ] Fensterrahmen, Titel, Schließen, Minimieren und Größenänderung bleiben
   serverseitig; Clients zeichnen keine konkurrierenden Dekorationen.
 - [ ] Farb- und Metrikthema zentral versionieren.

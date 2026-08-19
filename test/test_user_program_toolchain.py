@@ -180,6 +180,10 @@ class UserProgramToolchainTests(unittest.TestCase):
             sdk = temporary / "sdk"
             output = temporary / "MENUDEMO.PRG"
             dialog_output = temporary / "DIALOGDEMO.PRG"
+            control_output = temporary / "CONTROLDEMO.PRG"
+            container_output = temporary / "CONTAINERDEMO.PRG"
+            tabs_output = temporary / "TABSDEMO.PRG"
+            values_output = temporary / "VALUESDEMO.PRG"
             subprocess.run(
                 [
                     sys.executable,
@@ -195,6 +199,11 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertTrue((include / "reist/gui/types.h").is_file())
             self.assertTrue((include / "reist/gui/menu.h").is_file())
             self.assertTrue((include / "reist/gui/dialog.h").is_file())
+            self.assertTrue((include / "reist/gui/control.h").is_file())
+            self.assertTrue((include / "reist/gui/container.h").is_file())
+            self.assertTrue((include / "reist/gui/tabs.h").is_file())
+            self.assertTrue(
+                (include / "reist/gui/value_controls.h").is_file())
             self.assertTrue((library / "crt0.o").is_file())
             self.assertEqual(
                 (library / "libreistos.a").read_bytes()[:8], b"!<arch>\n"
@@ -262,6 +271,58 @@ class UserProgramToolchainTests(unittest.TestCase):
                 cwd=ROOT, check=True, capture_output=True, timeout=60,
             )
             self.assertEqual(dialog_output.read_bytes()[:4], b"MYPR")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "build_user_program.py"),
+                    str(ROOT / "userspace/gui/examples/basic_controls.c"),
+                    "--output", str(control_output),
+                    "--zig", str(ZIG),
+                    "--sysroot", str(sdk),
+                    "-l", "reistgui",
+                ],
+                cwd=ROOT, check=True, capture_output=True, timeout=60,
+            )
+            self.assertEqual(control_output.read_bytes()[:4], b"MYPR")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "build_user_program.py"),
+                    str(ROOT / "userspace/gui/examples/nested_containers.c"),
+                    "--output", str(container_output),
+                    "--zig", str(ZIG),
+                    "--sysroot", str(sdk),
+                    "-l", "reistgui",
+                ],
+                cwd=ROOT, check=True, capture_output=True, timeout=60,
+            )
+            self.assertEqual(container_output.read_bytes()[:4], b"MYPR")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "build_user_program.py"),
+                    str(ROOT / "userspace/gui/examples/tab_sheet.c"),
+                    "--output", str(tabs_output),
+                    "--zig", str(ZIG),
+                    "--sysroot", str(sdk),
+                    "-l", "reistgui",
+                ],
+                cwd=ROOT, check=True, capture_output=True, timeout=60,
+            )
+            self.assertEqual(tabs_output.read_bytes()[:4], b"MYPR")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "build_user_program.py"),
+                    str(ROOT / "userspace/gui/examples/value_controls.c"),
+                    "--output", str(values_output),
+                    "--zig", str(ZIG),
+                    "--sysroot", str(sdk),
+                    "-l", "reistgui",
+                ],
+                cwd=ROOT, check=True, capture_output=True, timeout=60,
+            )
+            self.assertEqual(values_output.read_bytes()[:4], b"MYPR")
 
     def test_external_c_source_builds_a_valid_mypr_image(self):
         with tempfile.TemporaryDirectory() as directory:

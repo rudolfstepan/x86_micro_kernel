@@ -12,7 +12,7 @@ programs in `userspace/programs` and interactive console programs in
 | `apps/<name>/` | GUI applications, one directory per program. Until Surface IPC exists, explicitly documented full-screen clients may use only the public display ABI and GUI library. |
 | `examples/` | Small, buildable SDK examples that include only installed public headers. |
 | `include/reist/gui/` | Versioned public C APIs. In-process library APIs and the future cross-process Surface protocol remain explicitly separate. |
-| `lib/` | Bounded, reusable Ring-3 GUI components. Menu and dialog state machines are renderer-independent static-library components. |
+| `lib/` | Bounded, reusable Ring-3 GUI components. Menu, dialog, container, tab and control state machines are renderer-independent static-library components. |
 | `share/` | Future versioned themes, fonts, icons and other read-only GUI resources. |
 
 Directories are created when their first real source or resource is added.
@@ -43,7 +43,9 @@ in the desktop workflow.
 ## Public API and build contract
 
 The installed component APIs currently comprise `<reist/gui/types.h>`,
-`<reist/gui/menu.h>` and `<reist/gui/dialog.h>`. They supply fixed-capacity,
+`<reist/gui/menu.h>`, `<reist/gui/dialog.h>`,
+`<reist/gui/control.h>`, `<reist/gui/container.h>`,
+`<reist/gui/tabs.h>` and `<reist/gui/value_controls.h>`. They supply fixed-capacity,
 heap-free state machines,
 local geometry queries, implicit pointer capture, keyboard navigation and
 bounded damage output. The dialog API additionally models owner identity,
@@ -65,10 +67,12 @@ C:\>guidemo
 
 The gallery exercises every currently public interactive component: menu bar,
 popup menu, modeless dialog, application-modal dialog, semantic dialog
-responses, buttons, keyboard focus, Enter/Escape handling, close action and
-title dragging with pointer capture. Components that do not yet have a public
-implementation are listed as disabled plans and are not drawn as misleading
-mock controls. Until the versioned Surface IPC exists, the gallery is a
+responses, nested page/group containers, tabs, label, general pushbutton,
+checkbox, exclusive radio group, text field, list selection, scrollbar,
+slider, spin box, progress indicator, keyboard focus, Enter/Escape handling,
+close action and title dragging with pointer capture. Components without a
+public implementation are not drawn as misleading mock controls. Until the
+versioned Surface IPC exists, the gallery is a
 full-screen display client; it is not presented as an isolated compositor
 surface.
 
@@ -83,6 +87,18 @@ python scripts/build_user_program.py userspace/gui/examples/menu_controller.c `
 python scripts/build_user_program.py userspace/gui/examples/dialog_controller.c `
   --output build/programs/DIALOGDEMO.PRG `
   --sysroot build/sdk -l reistgui
+python scripts/build_user_program.py userspace/gui/examples/basic_controls.c `
+  --output build/programs/CONTROLDEMO.PRG `
+  --sysroot build/sdk -l reistgui
+python scripts/build_user_program.py userspace/gui/examples/nested_containers.c `
+  --output build/programs/CONTAINERDEMO.PRG `
+  --sysroot build/sdk -l reistgui
+python scripts/build_user_program.py userspace/gui/examples/tab_sheet.c `
+  --output build/programs/TABSDEMO.PRG `
+  --sysroot build/sdk -l reistgui
+python scripts/build_user_program.py userspace/gui/examples/value_controls.c `
+  --output build/programs/VALUESDEMO.PRG `
+  --sysroot build/sdk -l reistgui
 ```
 
 The resulting sysroot contains:
@@ -92,6 +108,10 @@ build/sdk/usr/include/x86os.h
 build/sdk/usr/include/reist/gui/types.h
 build/sdk/usr/include/reist/gui/menu.h
 build/sdk/usr/include/reist/gui/dialog.h
+build/sdk/usr/include/reist/gui/control.h
+build/sdk/usr/include/reist/gui/container.h
+build/sdk/usr/include/reist/gui/tabs.h
+build/sdk/usr/include/reist/gui/value_controls.h
 build/sdk/usr/lib/crt0.o
 build/sdk/usr/lib/libreistos.a
 build/sdk/usr/lib/libreistnetparse.a

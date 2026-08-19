@@ -67,8 +67,10 @@ eigener, getesteter Schritt.
 ## API, ABI und Protokoll sind verschiedene Verträge
 
 - Eine **Quell-API** sind Header, Namen und Semantik, gegen die ein Programm neu
-  kompiliert wird. `<reist/gui/types.h>`, `<reist/gui/menu.h>` und
-  `<reist/gui/dialog.h>` sind heute solche APIs.
+  kompiliert wird. `<reist/gui/types.h>`, `<reist/gui/menu.h>`,
+  `<reist/gui/dialog.h>`, `<reist/gui/control.h>`,
+  `<reist/gui/container.h>`, `<reist/gui/tabs.h>` und
+  `<reist/gui/value_controls.h>` sind heute solche APIs.
 - Eine **binäre ABI** fixiert zusätzlich Datendarstellung, Aufrufkonvention,
   Symbolauflösung und Lebenszyklus bereits kompilierter Objekte. Ohne
   dynamischen Loader behauptet REIST keine Shared-Library-ABI.
