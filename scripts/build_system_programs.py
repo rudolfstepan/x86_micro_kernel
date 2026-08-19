@@ -12,6 +12,7 @@ from build_user_program import ROOT, build, find_zig
 PROGRAMS = {
     "HELLO.PRG": ROOT / "userspace/programs/hello.c",
     "SYSINFO.PRG": ROOT / "userspace/programs/sysinfo.c",
+    "USBINFO.PRG": ROOT / "userspace/programs/usbinfo.c",
     "REPEAT.PRG": ROOT / "userspace/programs/repeat.c",
     "CALC.PRG": ROOT / "userspace/programs/calc.c",
     "DATE.PRG": ROOT / "userspace/programs/date.c",

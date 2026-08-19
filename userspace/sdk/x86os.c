@@ -22,6 +22,8 @@ _Static_assert(sizeof(x86os_display_rect_t) == 28U,
                "display rectangle ABI size changed");
 _Static_assert(sizeof(x86os_display_text_t) == 32U,
                "display text ABI size changed");
+_Static_assert(sizeof(x86os_usb_diagnostics_t) == 96U,
+               "USB diagnostics ABI size changed");
 _Static_assert(sizeof(x86os_ipc_message_t) == 140U,
                "IPC message ABI size changed");
 _Static_assert(sizeof(x86os_admin_storage_request_t) == 104U,
@@ -670,6 +672,14 @@ int x86os_mouse_event(x86os_mouse_event_t* event) {
 int x86os_pointer_update(int32_t x, int32_t y, uint32_t visible) {
     return (int)x86os_syscall(X86OS_SYS_POINTER_UPDATE, (uintptr_t)x,
                               (uintptr_t)y, visible);
+}
+
+int x86os_usb_diagnostics(x86os_usb_diagnostics_t* diagnostics) {
+    if (!diagnostics) return -22;
+    diagnostics->version = X86OS_USB_DIAGNOSTICS_VERSION;
+    diagnostics->struct_size = sizeof(*diagnostics);
+    return (int)x86os_syscall(X86OS_SYS_USB_DIAGNOSTICS,
+                              (uintptr_t)diagnostics, 0, 0);
 }
 
 int x86os_touch(const char* path) {

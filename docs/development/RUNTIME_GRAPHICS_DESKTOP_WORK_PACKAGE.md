@@ -297,11 +297,15 @@ Control-Transfer-Deadlines begrenzt.
 
 Da die frühen USB-Meldungen auf realer Hardware vor der Eingabeaufforderung
 wegscrollen, hält xHCI zusätzlich einen festen Diagnose-Snapshot ohne Heap und
-ohne formatierte IRQ-Ausgabe. Der Shell-Befehl `USBINFO` zeigt später
-Controllerarten, letzten xHCI-Zustand, verbundene Root-Port-Maske,
-Geräteauswahl, IRQ sowie Transfer-, akzeptierte und verworfene Mausreports.
-Damit sind insbesondere ein reines EHCI-System, eine fehlende Root-Port-Maus
-und ein konfiguriertes Gerät ohne Interruptreports eindeutig unterscheidbar.
+ohne formatierte IRQ-Ausgabe. Das als `/sbin/usbinfo.prg` in beiden Imagepfaden
+paketierte Ring-3-Kommando `USBINFO` liest über einen append-only, rein lesenden
+Diagnose-Syscall Controllerarten, letzten xHCI-Zustand, verbundene
+Root-Port-Maske, Geräteauswahl, IRQ sowie Transfer-, akzeptierte und verworfene
+Mausreports. Damit sind insbesondere ein reines EHCI-System, eine fehlende
+Root-Port-Maus und ein konfiguriertes Gerät ohne Interruptreports eindeutig
+unterscheidbar. Der Eintrag in der Kernel-Rettungsshell bleibt nur als
+Fallback; neue Kommandos gelten erst mit nachgewiesener Erreichbarkeit aus der
+normal gestarteten Userspace-Shell als integriert.
 
 ## Erwartetes Restrisiko
 

@@ -126,6 +126,7 @@
 #define SYS_DISPLAY_CONTROL 109
 #define SYS_MOUSE_EVENT 110
 #define SYS_POINTER_UPDATE 111
+#define SYS_USB_DIAGNOSTICS 112
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

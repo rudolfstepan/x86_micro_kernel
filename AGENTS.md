@@ -115,3 +115,12 @@ result, elapsed time and the last relevant lines of a failure.
 
 Use concise German. Lead with outcome, commit, passed gates and any remaining
 risk. Do not repeat the roadmap or include routine tool transcripts.
+
+## Shell command integration
+
+The normal interactive command interpreter is `/bin/shell.prg` in Ring 3; the
+kernel command loop is only a rescue shell. Every new shell command must be
+reachable from the userspace shell, either as a built-in or as a packaged
+`.PRG` on its search path. Verify the userspace dispatch, both Windows and
+Makefile image layouts, and a regression test for command resolution. A
+kernel-rescue-shell entry alone does not satisfy the command requirement.

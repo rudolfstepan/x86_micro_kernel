@@ -1487,6 +1487,7 @@ risk = "critical"
 title = "Native runtime graphics desktop activation"
 scope = "Allow desktop.prg to request one privileged transition from a normal VGA text boot into a validated 32-bit LFB mode through native QEMU Standard-VGA, VMware SVGA-II, or a fixed loader-selected Legacy-BIOS VBE compatibility thunk. Validate and read back every native register or VBE mode result, publish the supervisor-only framebuffer last, restore the visible VGA shell on Escape, retain the existing framebuffer boot, fail closed before unsupported side effects, and render a keyboard- and USB-mouse-operable Workbench-style desktop."
 allowed_files = [
+  "AGENTS.md",
   "Makefile",
   "arch/x86/boot/bios/stage2_bios.asm",
   "arch/x86/boot/vbe_runtime.asm",
@@ -1511,6 +1512,7 @@ allowed_files = [
   "userspace/sdk/include/x86os.h",
   "userspace/sdk/x86os.c",
   "userspace/programs/desktop.c",
+  "userspace/programs/usbinfo.c",
   "scripts/build_system_programs.py",
   "scripts/build-windows.ps1",
   "scripts/test-reist-runtime.ps1",
@@ -1523,6 +1525,7 @@ allowed_files = [
   "test/test_runtime_graphics_switch.py",
   "test/test_usb_hid_mouse_host.c",
   "test/test_usb_mouse.py",
+  "test/test_user_program_toolchain.py",
   "test/test_native_boot_image.py",
   "docs/features/FRAMEBUFFER.md",
   "docs/development/BUILD_MODES.md",
@@ -1538,6 +1541,7 @@ invariants = [
   "the fixed VBE thunk exposes no firmware-call or caller-selected mode authority to Ring 3 and restores the kernel GDT, IDT, paging, stack, segments and interrupt flags",
   "all versions, sizes, flags, reserved fields and user pointers are validated before side effects",
   "syscall 109 fits the fixed process-domain bitmap and remains denied to restricted profiles unless explicitly granted",
+  "read-only syscall 112 copies only fixed USB diagnostics to compatibility-domain Ring 3 and remains denied to restricted profiles",
   "each explicit request performs at most one bounded activation attempt without busy-wait or unbounded retry",
   "the transition is exclusive and uses a fixed register-write and readback sequence",
   "no framebuffer state is published before mode success, register readback and complete geometry, range and overflow validation",
@@ -1554,7 +1558,9 @@ targeted_tests = [
   "python test/test_desktop_source.py -q",
   "python test/test_reist_probe_domain.py -q",
   "python test/test_runtime_graphics_switch.py -q",
-  "python test/test_bios_vbe_source.py -q"
+  "python test/test_bios_vbe_source.py -q",
+  "python test/test_usb_mouse.py -q",
+  "python test/test_user_program_toolchain.py -q"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",

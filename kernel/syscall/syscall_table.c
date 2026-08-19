@@ -1853,6 +1853,84 @@ static int syscall_mouse_event(hid_mouse_event_t *user_event) {
     return copy_to_user(user_event, &event, sizeof(event)) == 0 ? 0 : -14;
 }
 
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t state;
+    uint32_t uhci_controllers;
+    uint32_t ohci_controllers;
+    uint32_t ehci_controllers;
+    uint32_t xhci_controllers;
+    uint32_t other_controllers;
+    uint32_t port_count;
+    uint32_t connected_ports;
+    uint32_t attempts;
+    uint32_t selected_port;
+    uint32_t hid_protocol;
+    uint32_t endpoint_id;
+    uint32_t report_size;
+    uint32_t irq;
+    uint32_t transfer_events;
+    uint32_t mouse_reports;
+    uint32_t rejected_mouse_reports;
+    uint32_t last_completion;
+    uint32_t last_actual_length;
+    uint32_t bus;
+    uint32_t slot;
+    uint32_t function;
+} syscall_usb_diagnostics_t;
+
+_Static_assert(sizeof(syscall_usb_diagnostics_t) == 96U,
+               "USB diagnostics syscall ABI size changed");
+_Static_assert(XHCI_DIAG_DISCONNECTED == 13U,
+               "USB diagnostics state ABI changed");
+
+static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
+    struct {
+        uint32_t version;
+        uint32_t struct_size;
+    } header;
+    if (copy_from_user(&header, user_status, sizeof(header)) != 0) return -14;
+    if (header.version != XHCI_DIAGNOSTICS_VERSION ||
+        header.struct_size < sizeof(syscall_usb_diagnostics_t)) return -22;
+
+    xhci_poll();
+    xhci_diagnostics_t xhci_status;
+    if (!xhci_get_diagnostics(&xhci_status)) return -19;
+
+    syscall_usb_diagnostics_t result = {0};
+    result.version = XHCI_DIAGNOSTICS_VERSION;
+    result.struct_size = sizeof(result);
+    result.state = xhci_status.state;
+    for (size_t index = 0U; index < pci_device_count; ++index) {
+        const pci_device_t *device = &pci_devices[index];
+        if (device->class_code != 0x0CU || device->subclass_code != 0x03U)
+            continue;
+        if (device->prog_if == 0x00U) result.uhci_controllers++;
+        else if (device->prog_if == 0x10U) result.ohci_controllers++;
+        else if (device->prog_if == 0x20U) result.ehci_controllers++;
+        else if (device->prog_if == 0x30U) result.xhci_controllers++;
+        else result.other_controllers++;
+    }
+    result.port_count = xhci_status.port_count;
+    result.connected_ports = xhci_status.connected_ports;
+    result.attempts = xhci_status.attempts;
+    result.selected_port = xhci_status.selected_port;
+    result.hid_protocol = xhci_status.hid_protocol;
+    result.endpoint_id = xhci_status.endpoint_id;
+    result.report_size = xhci_status.report_size;
+    result.irq = xhci_status.irq;
+    result.transfer_events = xhci_status.transfer_events;
+    result.mouse_reports = xhci_status.mouse_reports;
+    result.rejected_mouse_reports = xhci_status.rejected_mouse_reports;
+    result.last_completion = xhci_status.last_completion;
+    result.last_actual_length = xhci_status.last_actual_length;
+    result.bus = xhci_status.bus;
+    result.slot = xhci_status.slot;
+    result.function = xhci_status.function;
+    return copy_to_user(user_status, &result, sizeof(result)) == 0 ? 0 : -14;
+}
+
 static int syscall_touch(const char *user_path) {
     char path[PROCESS_PATH_MAX];
     int result = syscall_copy_path(path, user_path);
@@ -2320,6 +2398,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_display_control,      // Syscall 109: Native display activation
     (void*)&syscall_mouse_event,          // Syscall 110: Nonblocking USB mouse
     (void*)&syscall_pointer_update,       // Syscall 111: Software pointer
+    (void*)&syscall_usb_diagnostics,      // Syscall 112: Read USB diagnostics
     // Add more syscalls here as needed
 };
 
@@ -2573,6 +2652,10 @@ void syscall_handler(Registers* regs) {
         case SYS_POINTER_UPDATE:
             result = (uint32_t)syscall_pointer_update(
                 (int32_t)arg1, (int32_t)arg2, arg3);
+            break;
+        case SYS_USB_DIAGNOSTICS:
+            result = (uint32_t)syscall_usb_diagnostics(
+                (syscall_usb_diagnostics_t*)(uintptr_t)arg1);
             break;
         case SYS_FILL_RECT:
             result = (uint32_t)syscall_display_fill_rect(

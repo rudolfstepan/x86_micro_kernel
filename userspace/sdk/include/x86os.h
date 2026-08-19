@@ -123,7 +123,8 @@ enum {
     X86OS_SYS_TOUCH = 108,
     X86OS_SYS_DISPLAY_CONTROL = 109,
     X86OS_SYS_MOUSE_EVENT = 110,
-    X86OS_SYS_POINTER_UPDATE = 111
+    X86OS_SYS_POINTER_UPDATE = 111,
+    X86OS_SYS_USB_DIAGNOSTICS = 112
 };
 
 #define X86OS_TCP_SOCKET_VERSION 1U
@@ -634,6 +635,51 @@ typedef struct {
     uint32_t reserved;
 } x86os_mouse_event_t;
 
+#define X86OS_USB_DIAGNOSTICS_VERSION 1U
+enum {
+    X86OS_USB_STATE_NOT_PROBED = 0U,
+    X86OS_USB_STATE_PROBING,
+    X86OS_USB_STATE_INVALID_BAR,
+    X86OS_USB_STATE_MMIO_FAILED,
+    X86OS_USB_STATE_CAPABILITIES_REJECTED,
+    X86OS_USB_STATE_HANDOFF_FAILED,
+    X86OS_USB_STATE_DMA_REJECTED,
+    X86OS_USB_STATE_START_FAILED,
+    X86OS_USB_STATE_NO_CONNECTED_PORT,
+    X86OS_USB_STATE_NO_SUPPORTED_HID,
+    X86OS_USB_STATE_IRQ_FAILED,
+    X86OS_USB_STATE_KEYBOARD_READY,
+    X86OS_USB_STATE_MOUSE_READY,
+    X86OS_USB_STATE_DISCONNECTED
+};
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t state;
+    uint32_t uhci_controllers;
+    uint32_t ohci_controllers;
+    uint32_t ehci_controllers;
+    uint32_t xhci_controllers;
+    uint32_t other_controllers;
+    uint32_t port_count;
+    uint32_t connected_ports;
+    uint32_t attempts;
+    uint32_t selected_port;
+    uint32_t hid_protocol;
+    uint32_t endpoint_id;
+    uint32_t report_size;
+    uint32_t irq;
+    uint32_t transfer_events;
+    uint32_t mouse_reports;
+    uint32_t rejected_mouse_reports;
+    uint32_t last_completion;
+    uint32_t last_actual_length;
+    uint32_t bus;
+    uint32_t slot;
+    uint32_t function;
+} x86os_usb_diagnostics_t;
+
 enum {
     X86OS_DRIVE_ATA = 1,
     X86OS_DRIVE_FDD = 2,
@@ -880,6 +926,7 @@ int x86os_display_activate(void);
 int x86os_display_deactivate(void);
 int x86os_mouse_event(x86os_mouse_event_t* event);
 int x86os_pointer_update(int32_t x, int32_t y, uint32_t visible);
+int x86os_usb_diagnostics(x86os_usb_diagnostics_t* diagnostics);
 int x86os_fill_rect(int32_t x, int32_t y, uint32_t width, uint32_t height,
                     uint32_t rgb);
 int x86os_draw_text_pixels(int32_t x, int32_t y, const char* text,

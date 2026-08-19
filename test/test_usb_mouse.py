@@ -71,6 +71,40 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("XHCI_DIAG_MOUSE_READY", header)
         self.assertIn("xhci_diagnostics_t", header)
 
+    def test_usbinfo_is_reachable_from_the_normal_userspace_shell(self):
+        program = (ROOT / "userspace/programs/usbinfo.c").read_text(
+            encoding="utf-8")
+        programs = (ROOT / "scripts/build_system_programs.py").read_text(
+            encoding="utf-8")
+        windows = (ROOT / "scripts/build-windows.ps1").read_text(
+            encoding="utf-8")
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        shell = (ROOT / "userspace/bin/shell.c").read_text(encoding="utf-8")
+        shell = (ROOT / "userspace/bin/shell.c").read_text(encoding="utf-8")
+        sdk_header = (ROOT / "userspace/sdk/include/x86os.h").read_text(
+            encoding="utf-8")
+        sdk = (ROOT / "userspace/sdk/x86os.c").read_text(encoding="utf-8")
+        syscalls = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8")
+        self.assertIn('"USBINFO.PRG"', programs)
+        self.assertIn("'sbin/usbinfo.prg'", windows)
+        self.assertIn("sbin/usbinfo.prg=", makefile)
+        self.assertIn('"/bin", "/sbin", "/usr/bin"', shell)
+        self.assertIn("run_program(argc, argv)", shell)
+        self.assertIn('"/bin", "/sbin", "/usr/bin"', shell)
+        self.assertIn("run_program(argc, argv)", shell)
+        self.assertIn("x86os_usb_diagnostics(&status)", program)
+        self.assertIn("X86OS_SYS_USB_DIAGNOSTICS = 112", sdk_header)
+        self.assertIn("X86OS_USB_DIAGNOSTICS_VERSION", sdk_header)
+        self.assertIn("int x86os_usb_diagnostics", sdk)
+        self.assertIn("case SYS_USB_DIAGNOSTICS:", syscalls)
+        function_start = syscalls.index("static int syscall_usb_diagnostics")
+        function_end = syscalls.index("\n}", function_start)
+        function = syscalls[function_start:function_end]
+        self.assertLess(function.index("copy_from_user"),
+                        function.index("xhci_poll()"))
+        self.assertIn("copy_to_user", function)
+
     def test_xhci_preserves_consumed_event_cycle_bits(self):
         source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
         drain_start = source.index("static bool xhci_drain_events")

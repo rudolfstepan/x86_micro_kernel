@@ -595,6 +595,7 @@ SYSTEM_IMAGE_FILES := \
 	bin/echo.prg=$(SYSTEM_PROGRAM_DIR)/ECHO.PRG \
 	bin/cls.prg=$(SYSTEM_PROGRAM_DIR)/CLS.PRG \
 	sbin/sysinfo.prg=$(SYSTEM_PROGRAM_DIR)/SYSINFO.PRG \
+	sbin/usbinfo.prg=$(SYSTEM_PROGRAM_DIR)/USBINFO.PRG \
 	sbin/meminfo.prg=$(SYSTEM_PROGRAM_DIR)/MEMINFO.PRG \
 	sbin/chkdsk.prg=$(SYSTEM_PROGRAM_DIR)/CHKDSK.PRG \
 	sbin/fdisk.prg=$(SYSTEM_PROGRAM_DIR)/FDISK.PRG \

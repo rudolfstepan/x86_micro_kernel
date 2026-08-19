@@ -199,7 +199,8 @@ class UserProgramToolchainTests(unittest.TestCase):
                 timeout=120,
             )
             expected = {
-                "HELLO.PRG", "SYSINFO.PRG", "REPEAT.PRG", "CALC.PRG",
+                "HELLO.PRG", "SYSINFO.PRG", "USBINFO.PRG", "REPEAT.PRG",
+                "CALC.PRG",
                 "DATE.PRG", "UPTIME.PRG", "MEMINFO.PRG", "ASCII.PRG",
                 "CAT.PRG",
                 "CHKDSK.PRG",
@@ -296,6 +297,14 @@ class UserProgramToolchainTests(unittest.TestCase):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertEqual(build_script.count("'usr/bin/desktop.prg'"), 1)
         self.assertEqual(makefile.count("usr/bin/desktop.prg="), 1)
+
+    def test_usbinfo_is_packaged_in_both_native_images(self):
+        build_script = (ROOT / "scripts" / "build-windows.ps1").read_text(
+            encoding="utf-8"
+        )
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertEqual(build_script.count("'sbin/usbinfo.prg'"), 1)
+        self.assertEqual(makefile.count("sbin/usbinfo.prg="), 1)
 
     def test_sata_write_probe_is_bounded_and_packaged(self):
         source = (ROOT / "userspace" / "programs" /
