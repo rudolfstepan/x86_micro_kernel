@@ -2266,6 +2266,8 @@ static const char *xhci_diagnostic_state(uint32_t state) {
         case XHCI_DIAG_DISCONNECTED: return "disconnected";
         case XHCI_DIAG_PORT_ROUTING_FAILED:
             return "intel-port-routing-failed";
+        case XHCI_DIAG_KEYBOARD_MOUSE_READY:
+            return "keyboard-mouse-ready";
         default: return "unknown";
     }
 }
@@ -2303,8 +2305,17 @@ void cmd_usbinfo(int arg_count, const char **args) {
            (unsigned)status.selected_port, (unsigned)status.hid_protocol,
            (unsigned)status.endpoint_id, (unsigned)status.report_size,
            (unsigned)status.irq);
-    printf("     transfers=%u mouse=%u rejected=%u last-cc=%u last-len=%u\n",
-           (unsigned)status.transfer_events, (unsigned)status.mouse_reports,
+    printf("     keyboard port=%u slot=%u endpoint=%u"
+           " mouse port=%u slot=%u endpoint=%u\n",
+           (unsigned)status.keyboard_port, (unsigned)status.keyboard_slot,
+           (unsigned)status.keyboard_endpoint, (unsigned)status.mouse_port,
+           (unsigned)status.mouse_slot, (unsigned)status.mouse_endpoint);
+    printf("     transfers=%u keyboard=%u key-rejected=%u"
+           " mouse=%u rejected=%u last-cc=%u last-len=%u\n",
+           (unsigned)status.transfer_events,
+           (unsigned)status.keyboard_reports,
+           (unsigned)status.rejected_keyboard_reports,
+           (unsigned)status.mouse_reports,
            (unsigned)status.rejected_mouse_reports,
            (unsigned)status.last_completion,
            (unsigned)status.last_actual_length);
@@ -2322,7 +2333,13 @@ void cmd_usbinfo(int arg_count, const char **args) {
            (unsigned)status.usb2_routing,
            (unsigned)status.usb3_routing_mask,
            (unsigned)status.usb3_routing);
-    if (status.state == XHCI_DIAG_MOUSE_READY && status.mouse_reports == 0U)
+    if (status.state == XHCI_DIAG_KEYBOARD_MOUSE_READY &&
+        status.mouse_reports == 0U)
+        printf("Result: keyboard and mouse configured; no mouse reports yet.\n");
+    else if (status.state == XHCI_DIAG_KEYBOARD_MOUSE_READY)
+        printf("Result: xHCI keyboard and mouse are ready.\n");
+    else if (status.state == XHCI_DIAG_MOUSE_READY &&
+             status.mouse_reports == 0U)
         printf("Result: mouse configured, but no interrupt reports received.\n");
     else if (status.state == XHCI_DIAG_MOUSE_READY)
         printf("Result: xHCI mouse reports are reaching the kernel.\n");
@@ -2331,6 +2348,6 @@ void cmd_usbinfo(int arg_count, const char **args) {
     else if (status.state == XHCI_DIAG_KEYBOARD_READY)
         printf("Result: only a boot keyboard was selected; no root-port mouse.\n");
     else
-        printf("Result: xHCI mouse is not ready; state above is the failure stage.\n");
+        printf("Result: xHCI boot HID is not ready; state above is the failure stage.\n");
     printf("\n");
 }

@@ -31,7 +31,13 @@ class UsbKeyboardTests(unittest.TestCase):
         self.assertIn("pci_set_bus_master(dev->bus, dev->slot, dev->function, 1U)", source)
         self.assertIn("TRB_ENABLE_SLOT", source)
         self.assertIn("TRB_CONFIGURE_ENDPOINT", source)
-        self.assertIn("hid_keyboard_attach(controller.generation)", source)
+        self.assertIn("hid_keyboard_attach(hid->generation)", source)
+        self.assertIn("hid_keyboard_report(hid->generation", source)
+        self.assertIn("diagnostics.keyboard_reports++", source)
+        self.assertIn("diagnostics.rejected_keyboard_reports++", source)
+        self.assertIn("XHCI_HID_KEYBOARD_MASK", source)
+        self.assertIn("XHCI_HID_MOUSE_MASK", source)
+        self.assertIn("xhci_release_candidate", source)
         self.assertIn("return -1", source)
 
     def test_hid_parser_rejects_rollover_and_stale_generations(self):

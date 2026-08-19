@@ -352,6 +352,25 @@ mit MMIO- und Besuchsgrenze. Der erste Controllerreset protokolliert
 sodass ein verbleibender physischer Stillstand ohne weiteren Verdachtslauf
 einer exakten Registerphase zugeordnet werden kann.
 
+Nach erfolgreicher Portübergabe fiel die USB-Tastatur aus, weil der damalige
+xHCI-Vertrag nur ein einziges Boot-HID veröffentlichte und die Maus bevorzugte.
+Außerdem setzte die Portsuche den gesamten Controller zwischen Kandidaten
+zurück und verwarf damit ein bereits adressiertes Gerät. Der Treiber verwaltet
+nun zwei feste, heapfreie HID-Ressourcensätze mit getrennten Slots, Device-
+Contexts, EP0-/Interrupt-Ringen und Reports: höchstens eine Boot-Tastatur und
+eine Boot-Maus an getrennten Root-Ports. Der Controller wird für die gesamte
+Suche nur einmal gestartet; nicht passende Kandidaten werden mit `Disable
+Slot` nach bestätigtem Command-Completion freigegeben. Das 500-ms-Fenster nach
+Intel-Routing sammelt alle sichtbar werdenden Root-Ports, statt beim ersten
+Gerät vorzeitig zurückzukehren.
+
+Diagnose-ABI Version 4 hängt für Tastatur und Maus jeweils Root-Port, Slot und
+Endpoint sowie Zähler für akzeptierte und verworfene Tastaturreports an und
+besitzt den Zustand `keyboard-mouse-ready`. Versionen 1 bis 3 behalten ihre
+bisherigen Größen. Kernel-Rettungsshell und das paketierte
+`/sbin/usbinfo.prg` zeigen dieselben neuen Felder. Der reale ASUS-Nachweis für
+gleichzeitige Tastatur- und Mausreports steht noch aus.
+
 ## Erwartetes Restrisiko
 
 Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte

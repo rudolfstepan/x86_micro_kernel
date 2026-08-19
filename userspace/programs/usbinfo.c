@@ -1,6 +1,6 @@
 /**
  * @file userspace/programs/usbinfo.c
- * @brief Zeigt den persistenten USB/xHCI-Mausdiagnose-Snapshot.
+ * @brief Zeigt den persistenten USB/xHCI-HID-Diagnose-Snapshot.
  *
  * Layer: Ring-3 system program or command.
  * Contract: Nur die versionierte, vom Kernel kopierte Diagnose-ABI wird gelesen.
@@ -45,6 +45,8 @@ static const char *state_name(uint32_t state) {
         case X86OS_USB_STATE_DISCONNECTED: return "disconnected";
         case X86OS_USB_STATE_PORT_ROUTING_FAILED:
             return "intel-port-routing-failed";
+        case X86OS_USB_STATE_KEYBOARD_MOUSE_READY:
+            return "keyboard-mouse-ready";
         default: return "unknown";
     }
 }
@@ -101,8 +103,26 @@ int main(void) {
     print_unsigned(status.irq);
     x86os_putchar('\n');
 
+    x86os_puts("     keyboard port=");
+    print_unsigned(status.keyboard_port);
+    x86os_puts(" slot=");
+    print_unsigned(status.keyboard_slot);
+    x86os_puts(" endpoint=");
+    print_unsigned(status.keyboard_endpoint);
+    x86os_puts(" mouse port=");
+    print_unsigned(status.mouse_port);
+    x86os_puts(" slot=");
+    print_unsigned(status.mouse_slot);
+    x86os_puts(" endpoint=");
+    print_unsigned(status.mouse_endpoint);
+    x86os_putchar('\n');
+
     x86os_puts("     transfers=");
     print_unsigned(status.transfer_events);
+    x86os_puts(" keyboard=");
+    print_unsigned(status.keyboard_reports);
+    x86os_puts(" key-rejected=");
+    print_unsigned(status.rejected_keyboard_reports);
     x86os_puts(" mouse=");
     print_unsigned(status.mouse_reports);
     x86os_puts(" rejected=");
@@ -144,7 +164,12 @@ int main(void) {
     print_hex32(status.usb3_routing);
     x86os_putchar('\n');
 
-    if (status.state == X86OS_USB_STATE_MOUSE_READY &&
+    if (status.state == X86OS_USB_STATE_KEYBOARD_MOUSE_READY &&
+        status.mouse_reports == 0U) {
+        x86os_puts("Result: keyboard and mouse configured; no mouse reports yet.\n");
+    } else if (status.state == X86OS_USB_STATE_KEYBOARD_MOUSE_READY) {
+        x86os_puts("Result: xHCI keyboard and mouse are ready.\n");
+    } else if (status.state == X86OS_USB_STATE_MOUSE_READY &&
         status.mouse_reports == 0U) {
         x86os_puts("Result: mouse configured, no interrupt reports received.\n");
     } else if (status.state == X86OS_USB_STATE_MOUSE_READY) {
@@ -157,7 +182,7 @@ int main(void) {
     } else if (status.state == X86OS_USB_STATE_KEYBOARD_READY) {
         x86os_puts("Result: boot keyboard selected, no root-port mouse.\n");
     } else {
-        x86os_puts("Result: xHCI mouse not ready; state is failure stage.\n");
+        x86os_puts("Result: xHCI boot HID not ready; state is failure stage.\n");
     }
     return 0;
 }

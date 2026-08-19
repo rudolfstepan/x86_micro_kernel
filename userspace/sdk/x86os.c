@@ -22,7 +22,7 @@ _Static_assert(sizeof(x86os_display_rect_t) == 28U,
                "display rectangle ABI size changed");
 _Static_assert(sizeof(x86os_display_text_t) == 32U,
                "display text ABI size changed");
-_Static_assert(sizeof(x86os_usb_diagnostics_t) == 148U,
+_Static_assert(sizeof(x86os_usb_diagnostics_t) == 180U,
                "USB diagnostics ABI size changed");
 _Static_assert(sizeof(x86os_ipc_message_t) == 140U,
                "IPC message ABI size changed");

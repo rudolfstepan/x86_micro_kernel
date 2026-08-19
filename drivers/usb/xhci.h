@@ -13,7 +13,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define XHCI_DIAGNOSTICS_VERSION 3U
+#define XHCI_DIAGNOSTICS_VERSION 4U
 
 #define XHCI_CAP_REJECT_PORT_COUNT       (1U << 0U)
 #define XHCI_CAP_REJECT_SCRATCHPADS      (1U << 1U)
@@ -46,7 +46,8 @@ enum {
     XHCI_DIAG_KEYBOARD_READY,
     XHCI_DIAG_MOUSE_READY,
     XHCI_DIAG_DISCONNECTED,
-    XHCI_DIAG_PORT_ROUTING_FAILED
+    XHCI_DIAG_PORT_ROUTING_FAILED,
+    XHCI_DIAG_KEYBOARD_MOUSE_READY
 };
 
 typedef struct {
@@ -82,9 +83,17 @@ typedef struct {
     uint32_t usb2_routing;
     uint32_t usb3_routing_mask;
     uint32_t usb3_routing;
+    uint32_t keyboard_port;
+    uint32_t keyboard_slot;
+    uint32_t keyboard_endpoint;
+    uint32_t mouse_port;
+    uint32_t mouse_slot;
+    uint32_t mouse_endpoint;
+    uint32_t keyboard_reports;
+    uint32_t rejected_keyboard_reports;
 } xhci_diagnostics_t;
 
-/* Initialise one bounded xHCI root-port HID boot keyboard or mouse. */
+/* Initialise at most one bounded boot keyboard and one boot mouse. */
 int xhci_probe(pci_device_t *dev);
 
 /* Drain deferred port/report work from task context, never from an IRQ. */
