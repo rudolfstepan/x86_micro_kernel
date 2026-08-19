@@ -415,9 +415,7 @@ vollständig entfernt: Sie konnte Host-Tastatur und -Maus exklusiv an die VM
 binden und damit das Beenden einer fehlerhaften Gastinstanz verhindern. Die
 generierte VMX erzwingt `usb.generic.allowHID=FALSE`, enthält weder Autoconnect-
 noch HID-Quirk-Regeln und verwendet ausschließlich die virtuelle PS/2-Tastatur
-sowie VMwares virtuelle xHCI-Maus. Der kombinierte HID-Parser priorisiert bei
-gleichzeitig angebotenen Boot-Protokollen weiterhin die Tastatur, ohne daraus
-eine Host-Geräteübernahme abzuleiten. Intels `8086:8c31`-Register, Timing und
+sowie VMwares virtuelle xHCI-Maus. Intels `8086:8c31`-Register, Timing und
 physische HID-Geräte bleiben prinzipbedingt Nachweise auf dem ASUS-Board.
 
 Das am Entwicklungsrechner verifizierte reale Testkeyboard meldet sich als
@@ -456,6 +454,25 @@ Data- und Status-Ereignissen sowie einem Speicherbarriere-geschützten Cycle-
 Handoff ab. Doorbell-Schreibzugriffe werden rückgelesen. Rest- und Istlängen
 bleiben begrenzt validiert, und der IN-Puffer wird vor jeder Übertragung
 gelöscht.
+
+Nach dieser Korrektur meldete der ASUS-Lauf zwar
+`ready port=3 slot=1 endpoint=5`, aber auch nach Tastendrücken weiterhin
+`reports=0`. Endpoint 5 ist der xHCI-DCI für USB-Endpoint `0x82`; genau diesen
+verwendet die Boot-Keyboard-Nebenschnittstelle der Composite-Gaming-Maus
+`258A:0027`, während deren primäre Schnittstelle 0 eine Boot-Maus ist. Der
+bisherige Parser bevorzugte auf einem Gerät bedingungslos jedes gefundene
+Keyboard-Protokoll und belegte deshalb die einzige Tastaturressource mit den
+Zusatzknöpfen der Maus. Das eigentliche Keyboard am zweiten Root-Port wurde
+anschließend übersprungen. Sind Maus und Tastatur auf demselben Composite-
+Gerät noch beide zulässig, wird nun die primäre, niedriger nummerierte Boot-
+Schnittstelle gewählt. Damit belegt Port 3 die Mausressource und die Suche
+kann das echte Keyboard am nächsten Root-Port veröffentlichen. Einzelne
+Keyboard- oder Mausgeräte bleiben unverändert. Interrupt-IN-TRBs tragen
+außerdem wie Control-IN-TRBs `ISP`, damit auch kurze HID-Reports sicher ein
+Transferereignis erzeugen. Der anschließende QEMU-Dual-HID-Nachweis mit rein
+virtueller USB-Tastatur und -Maus erreichte 17 Transfers, 16 akzeptierte
+Tastaturreports und einen akzeptierten Mausreport ohne Verwerfung. Es wurde
+kein Host-HID-Gerät durchgereicht.
 
 ## Erwartetes Restrisiko
 

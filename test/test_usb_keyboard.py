@@ -37,7 +37,7 @@ class UsbKeyboardTests(unittest.TestCase):
         self.assertIn("diagnostics.rejected_keyboard_reports++", source)
         self.assertIn("XHCI_HID_KEYBOARD_MASK", source)
         self.assertIn("XHCI_HID_MOUSE_MASK", source)
-        self.assertIn("Publish its keyboard first", source)
+        self.assertIn("lowest-numbered boot interface", source)
         self.assertIn("xhci_release_candidate", source)
         self.assertIn("static uint8_t xhci_periodic_interval", source)
         self.assertIn("memcpy(saved_slot, xhci_device_context(hid)", source)

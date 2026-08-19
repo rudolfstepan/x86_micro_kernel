@@ -1524,6 +1524,7 @@ allowed_files = [
   "test/test_reist_probe_domain.py",
   "test/test_runtime_graphics_switch.py",
   "test/test_usb_hid_mouse_host.c",
+  "test/test_usb_keyboard.py",
   "test/test_usb_mouse.py",
   "test/test_user_program_toolchain.py",
   "test/test_native_boot_image.py",
@@ -1559,6 +1560,7 @@ targeted_tests = [
   "python test/test_reist_probe_domain.py -q",
   "python test/test_runtime_graphics_switch.py -q",
   "python test/test_bios_vbe_source.py -q",
+  "python test/test_usb_keyboard.py -q",
   "python test/test_usb_mouse.py -q",
   "python test/test_user_program_toolchain.py -q"
 ]

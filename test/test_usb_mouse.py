@@ -107,11 +107,23 @@ class UsbMouseTests(unittest.TestCase):
         handoff = source.index("if (!xhci_legacy_handoff())")
         routing = source.index("if (!xhci_route_intel_ports(dev))", handoff)
         self.assertLess(handoff, routing)
-        self.assertIn("if (keyboard_found)", source)
-        self.assertIn("if (!mouse_found) return false", source)
-        keyboard_choice = source.index("if (keyboard_found)")
-        mouse_choice = source.index("if (!mouse_found) return false")
-        self.assertLess(keyboard_choice, mouse_choice)
+        self.assertIn(
+            "mouse_found && (!keyboard_found || "
+            "mouse_interface < keyboard_interface)",
+            source,
+        )
+        self.assertIn("if (!keyboard_found) return false", source)
+        mouse_choice = source.index(
+            "mouse_found && (!keyboard_found || "
+            "mouse_interface < keyboard_interface)"
+        )
+        keyboard_choice = source.index("if (!keyboard_found) return false")
+        self.assertLess(mouse_choice, keyboard_choice)
+        interrupt_start = source.index("static void xhci_queue_interrupt_report")
+        interrupt_end = source.index("static xhci_trb_t *xhci_command",
+                                     interrupt_start)
+        interrupt = source[interrupt_start:interrupt_end]
+        self.assertIn("TRB_TYPE(TRB_TRANSFER) | TRB_ISP | TRB_IOC", interrupt)
 
     def test_usbinfo_persists_boot_diagnostics_for_the_shell(self):
         shell = (ROOT / "kernel/shell/command.c").read_text(encoding="utf-8")

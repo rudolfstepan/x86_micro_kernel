@@ -497,7 +497,7 @@ static void xhci_queue_interrupt_report(xhci_hid_device_t *hid) {
     memset(trb, 0, sizeof(*trb));
     trb->d[0] = xhci_dma32(reports[index]);
     trb->d[2] = hid->report_size;
-    trb->d[3] = TRB_TYPE(TRB_TRANSFER) | TRB_IOC |
+    trb->d[3] = TRB_TYPE(TRB_TRANSFER) | TRB_ISP | TRB_IOC |
         (hid->endpoint_cycle ? TRB_CYCLE : 0U);
     hid->endpoint_index++;
     if (hid->endpoint_index >= XHCI_ENDPOINT_RING_TRBS - 1U) {
@@ -1018,26 +1018,26 @@ static bool xhci_find_boot_hid(uint8_t *config, uint16_t length,
         offset = (uint16_t)(offset + item_length);
     }
     if (configuration_value == 0U) return false;
-    /* A wireless receiver can expose both boot protocols in one USB device.
-     * Publish its keyboard first so console input is never hidden by the
-     * mouse interface; a separate mouse candidate can then fill the second
-     * fixed HID resource. */
-    if (keyboard_found) {
+    /* A composite mouse can expose a later boot-keyboard interface for
+     * auxiliary buttons.  Select the lowest-numbered boot interface while
+     * both fixed protocol resources are free, then let a separate root-port
+     * candidate fill the remaining resource. */
+    if (mouse_found && (!keyboard_found || mouse_interface < keyboard_interface)) {
         *configuration = configuration_value;
-        *interface = keyboard_interface;
-        *protocol = 1U;
-        *endpoint = keyboard_endpoint;
-        *packet = keyboard_packet;
-        *interval = keyboard_interval;
+        *interface = mouse_interface;
+        *protocol = 2U;
+        *endpoint = mouse_endpoint;
+        *packet = mouse_packet;
+        *interval = mouse_interval;
         return true;
     }
-    if (!mouse_found) return false;
+    if (!keyboard_found) return false;
     *configuration = configuration_value;
-    *interface = mouse_interface;
-    *protocol = 2U;
-    *endpoint = mouse_endpoint;
-    *packet = mouse_packet;
-    *interval = mouse_interval;
+    *interface = keyboard_interface;
+    *protocol = 1U;
+    *endpoint = keyboard_endpoint;
+    *packet = keyboard_packet;
+    *interval = keyboard_interval;
     return true;
 }
 
