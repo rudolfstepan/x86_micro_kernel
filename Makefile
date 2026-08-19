@@ -61,6 +61,8 @@ HANDOVER_FAULT_INJECTION ?= 0
 DHCP_LEASE_FAULT_INJECTION ?= 0
 HANDOVER_NODE_ID ?= 0
 VBE_RUNTIME_TEST ?= 0
+VMWARE_USB_KEYBOARD ?= 046d:c548
+VMWARE_USB_MOUSE ?= 258a:0027
 
 # Target-specific defines
 ifeq ($(TARGET),real_hw)
@@ -661,6 +663,8 @@ native-image: floppy-image
 		--vmdk $(OUTPUT_DIR)/reist-os.vmdk \
 		--vmware-dir $(OUTPUT_DIR)/vmware/reist-os \
 		--floppy $(OUTPUT_DIR)/reist-os-floppy.img \
+		--vmware-usb-keyboard $(VMWARE_USB_KEYBOARD) \
+		--vmware-usb-mouse $(VMWARE_USB_MOUSE) \
 		--data-file usr/bin/hello.prg=$(USER_PROGRAM_OUTPUT) \
 		$(foreach spec,$(SYSTEM_IMAGE_FILES),--data-file $(spec))
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/reist-os.img"

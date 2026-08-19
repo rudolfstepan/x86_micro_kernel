@@ -13,7 +13,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define XHCI_DIAGNOSTICS_VERSION 4U
+#define XHCI_DIAGNOSTICS_VERSION 5U
 
 #define XHCI_CAP_REJECT_PORT_COUNT       (1U << 0U)
 #define XHCI_CAP_REJECT_SCRATCHPADS      (1U << 1U)
@@ -48,6 +48,22 @@ enum {
     XHCI_DIAG_DISCONNECTED,
     XHCI_DIAG_PORT_ROUTING_FAILED,
     XHCI_DIAG_KEYBOARD_MOUSE_READY
+};
+
+enum {
+    XHCI_FAILURE_NONE = 0U,
+    XHCI_FAILURE_PORT_RESET,
+    XHCI_FAILURE_ADDRESS_DEVICE,
+    XHCI_FAILURE_DEVICE_DESCRIPTOR_8,
+    XHCI_FAILURE_EP0_DESCRIPTOR,
+    XHCI_FAILURE_DEVICE_DESCRIPTOR,
+    XHCI_FAILURE_CONFIG_HEADER,
+    XHCI_FAILURE_CONFIG_LENGTH,
+    XHCI_FAILURE_CONFIG_DESCRIPTOR,
+    XHCI_FAILURE_NO_BOOT_HID,
+    XHCI_FAILURE_CONFIGURE_ENDPOINT,
+    XHCI_FAILURE_SET_CONFIGURATION,
+    XHCI_FAILURE_RELEASE_SLOT
 };
 
 typedef struct {
@@ -91,6 +107,13 @@ typedef struct {
     uint32_t mouse_endpoint;
     uint32_t keyboard_reports;
     uint32_t rejected_keyboard_reports;
+    uint32_t failure_stage;
+    uint32_t candidate_port;
+    uint32_t candidate_speed;
+    uint32_t device_class;
+    uint32_t device_subclass;
+    uint32_t device_protocol;
+    uint32_t configuration_length;
 } xhci_diagnostics_t;
 
 /* Initialise at most one bounded boot keyboard and one boot mouse. */

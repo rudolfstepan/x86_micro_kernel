@@ -51,6 +51,27 @@ static const char *state_name(uint32_t state) {
     }
 }
 
+static const char *failure_name(uint32_t stage) {
+    switch (stage) {
+        case X86OS_USB_FAILURE_NONE: return "none";
+        case X86OS_USB_FAILURE_PORT_RESET: return "port-reset";
+        case X86OS_USB_FAILURE_ADDRESS_DEVICE: return "address-device";
+        case X86OS_USB_FAILURE_DEVICE_DESCRIPTOR_8: return "device-desc-8";
+        case X86OS_USB_FAILURE_EP0_DESCRIPTOR: return "ep0-desc";
+        case X86OS_USB_FAILURE_DEVICE_DESCRIPTOR: return "device-desc";
+        case X86OS_USB_FAILURE_CONFIG_HEADER: return "config-header";
+        case X86OS_USB_FAILURE_CONFIG_LENGTH: return "config-length";
+        case X86OS_USB_FAILURE_CONFIG_DESCRIPTOR: return "config-desc";
+        case X86OS_USB_FAILURE_NO_BOOT_HID: return "no-boot-hid";
+        case X86OS_USB_FAILURE_CONFIGURE_ENDPOINT:
+            return "configure-endpoint";
+        case X86OS_USB_FAILURE_SET_CONFIGURATION:
+            return "set-configuration";
+        case X86OS_USB_FAILURE_RELEASE_SLOT: return "release-slot";
+        default: return "unknown";
+    }
+}
+
 static void print_controller_counts(const x86os_usb_diagnostics_t *status) {
     x86os_puts("USB host controllers: xHCI=");
     print_unsigned(status->xhci_controllers);
@@ -89,6 +110,22 @@ int main(void) {
     print_hex32(status.connected_ports);
     x86os_puts(" attempts=");
     print_unsigned(status.attempts);
+    x86os_putchar('\n');
+
+    x86os_puts("     failure=");
+    x86os_puts(failure_name(status.failure_stage));
+    x86os_puts(" candidate-port=");
+    print_unsigned(status.candidate_port);
+    x86os_puts(" speed=");
+    print_unsigned(status.candidate_speed);
+    x86os_puts(" class=");
+    print_unsigned(status.device_class);
+    x86os_putchar('/');
+    print_unsigned(status.device_subclass);
+    x86os_putchar('/');
+    print_unsigned(status.device_protocol);
+    x86os_puts(" config-len=");
+    print_unsigned(status.configuration_length);
     x86os_putchar('\n');
 
     x86os_puts("     selected=");

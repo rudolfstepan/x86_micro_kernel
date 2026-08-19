@@ -785,6 +785,27 @@ static void show_prompt(void) {
     x86os_putchar('>');
 }
 
+static const char *usb_failure_name(uint32_t stage) {
+    switch (stage) {
+        case X86OS_USB_FAILURE_NONE: return "none";
+        case X86OS_USB_FAILURE_PORT_RESET: return "port-reset";
+        case X86OS_USB_FAILURE_ADDRESS_DEVICE: return "address-device";
+        case X86OS_USB_FAILURE_DEVICE_DESCRIPTOR_8: return "device-desc-8";
+        case X86OS_USB_FAILURE_EP0_DESCRIPTOR: return "ep0-desc";
+        case X86OS_USB_FAILURE_DEVICE_DESCRIPTOR: return "device-desc";
+        case X86OS_USB_FAILURE_CONFIG_HEADER: return "config-header";
+        case X86OS_USB_FAILURE_CONFIG_LENGTH: return "config-length";
+        case X86OS_USB_FAILURE_CONFIG_DESCRIPTOR: return "config-desc";
+        case X86OS_USB_FAILURE_NO_BOOT_HID: return "no-boot-hid";
+        case X86OS_USB_FAILURE_CONFIGURE_ENDPOINT:
+            return "configure-endpoint";
+        case X86OS_USB_FAILURE_SET_CONFIGURATION:
+            return "set-configuration";
+        case X86OS_USB_FAILURE_RELEASE_SLOT: return "release-slot";
+        default: return "unknown";
+    }
+}
+
 static void show_usb_keyboard_startup(void) {
     x86os_usb_diagnostics_t status;
     if (x86os_usb_diagnostics(&status) != 0 ||
@@ -814,6 +835,23 @@ static void show_usb_keyboard_startup(void) {
         x86os_print_number((int)status.connected_ports);
         x86os_puts(" attempts=");
         x86os_print_number((int)status.attempts);
+        x86os_puts(" failure=");
+        x86os_puts(usb_failure_name(status.failure_stage));
+        x86os_putchar('\n');
+        x86os_puts("  candidate port=");
+        x86os_print_number((int)status.candidate_port);
+        x86os_puts(" speed=");
+        x86os_print_number((int)status.candidate_speed);
+        x86os_puts(" class=");
+        x86os_print_number((int)status.device_class);
+        x86os_putchar('/');
+        x86os_print_number((int)status.device_subclass);
+        x86os_putchar('/');
+        x86os_print_number((int)status.device_protocol);
+        x86os_puts(" config=");
+        x86os_print_number((int)status.configuration_length);
+        x86os_puts(" cc=");
+        x86os_print_number((int)status.last_completion);
     }
     x86os_putchar('\n');
 }

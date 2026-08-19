@@ -1899,14 +1899,22 @@ typedef struct {
     uint32_t mouse_endpoint;
     uint32_t keyboard_reports;
     uint32_t rejected_keyboard_reports;
+    uint32_t failure_stage;
+    uint32_t candidate_port;
+    uint32_t candidate_speed;
+    uint32_t device_class;
+    uint32_t device_subclass;
+    uint32_t device_protocol;
+    uint32_t configuration_length;
 } syscall_usb_diagnostics_t;
 
-#define SYSCALL_USB_DIAGNOSTICS_VERSION 4U
+#define SYSCALL_USB_DIAGNOSTICS_VERSION 5U
 #define SYSCALL_USB_DIAGNOSTICS_V1_SIZE 96U
 #define SYSCALL_USB_DIAGNOSTICS_V2_SIZE 120U
 #define SYSCALL_USB_DIAGNOSTICS_V3_SIZE 148U
+#define SYSCALL_USB_DIAGNOSTICS_V4_SIZE 180U
 
-_Static_assert(sizeof(syscall_usb_diagnostics_t) == 180U,
+_Static_assert(sizeof(syscall_usb_diagnostics_t) == 208U,
                "USB diagnostics syscall ABI size changed");
 _Static_assert(XHCI_DIAG_DISCONNECTED == 13U,
                "USB diagnostics state ABI changed");
@@ -1914,6 +1922,8 @@ _Static_assert(XHCI_DIAG_PORT_ROUTING_FAILED == 14U,
                "USB diagnostics routing state ABI changed");
 _Static_assert(XHCI_DIAG_KEYBOARD_MOUSE_READY == 15U,
                "USB diagnostics dual-HID state ABI changed");
+_Static_assert(XHCI_FAILURE_RELEASE_SLOT == 12U,
+               "USB diagnostics failure-stage ABI changed");
 
 static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
     struct {
@@ -1931,6 +1941,9 @@ static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
     } else if (header.version == 3U &&
                header.struct_size >= SYSCALL_USB_DIAGNOSTICS_V3_SIZE) {
         result_size = SYSCALL_USB_DIAGNOSTICS_V3_SIZE;
+    } else if (header.version == 4U &&
+               header.struct_size >= SYSCALL_USB_DIAGNOSTICS_V4_SIZE) {
+        result_size = SYSCALL_USB_DIAGNOSTICS_V4_SIZE;
     } else if (header.version == SYSCALL_USB_DIAGNOSTICS_VERSION &&
                header.struct_size >= sizeof(syscall_usb_diagnostics_t)) {
         result_size = sizeof(syscall_usb_diagnostics_t);
@@ -1993,6 +2006,13 @@ static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
     result.mouse_endpoint = xhci_status.mouse_endpoint;
     result.keyboard_reports = xhci_status.keyboard_reports;
     result.rejected_keyboard_reports = xhci_status.rejected_keyboard_reports;
+    result.failure_stage = xhci_status.failure_stage;
+    result.candidate_port = xhci_status.candidate_port;
+    result.candidate_speed = xhci_status.candidate_speed;
+    result.device_class = xhci_status.device_class;
+    result.device_subclass = xhci_status.device_subclass;
+    result.device_protocol = xhci_status.device_protocol;
+    result.configuration_length = xhci_status.configuration_length;
     return copy_to_user(user_status, &result, result_size) == 0 ? 0 : -14;
 }
 

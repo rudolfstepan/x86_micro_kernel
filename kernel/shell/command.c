@@ -2272,6 +2272,25 @@ static const char *xhci_diagnostic_state(uint32_t state) {
     }
 }
 
+static const char *xhci_failure_stage(uint32_t stage) {
+    switch (stage) {
+        case XHCI_FAILURE_NONE: return "none";
+        case XHCI_FAILURE_PORT_RESET: return "port-reset";
+        case XHCI_FAILURE_ADDRESS_DEVICE: return "address-device";
+        case XHCI_FAILURE_DEVICE_DESCRIPTOR_8: return "device-desc-8";
+        case XHCI_FAILURE_EP0_DESCRIPTOR: return "ep0-desc";
+        case XHCI_FAILURE_DEVICE_DESCRIPTOR: return "device-desc";
+        case XHCI_FAILURE_CONFIG_HEADER: return "config-header";
+        case XHCI_FAILURE_CONFIG_LENGTH: return "config-length";
+        case XHCI_FAILURE_CONFIG_DESCRIPTOR: return "config-desc";
+        case XHCI_FAILURE_NO_BOOT_HID: return "no-boot-hid";
+        case XHCI_FAILURE_CONFIGURE_ENDPOINT: return "configure-endpoint";
+        case XHCI_FAILURE_SET_CONFIGURATION: return "set-configuration";
+        case XHCI_FAILURE_RELEASE_SLOT: return "release-slot";
+        default: return "unknown";
+    }
+}
+
 void cmd_usbinfo(int arg_count, const char **args) {
     (void)arg_count;
     (void)args;
@@ -2301,6 +2320,15 @@ void cmd_usbinfo(int arg_count, const char **args) {
            (unsigned)status.slot, (unsigned)status.function,
            (unsigned)status.port_count, (unsigned)status.connected_ports,
            (unsigned)status.attempts);
+    printf("     failure=%s candidate-port=%u speed=%u"
+           " class=%u/%u/%u config-len=%u\n",
+           xhci_failure_stage(status.failure_stage),
+           (unsigned)status.candidate_port,
+           (unsigned)status.candidate_speed,
+           (unsigned)status.device_class,
+           (unsigned)status.device_subclass,
+           (unsigned)status.device_protocol,
+           (unsigned)status.configuration_length);
     printf("     selected=%u protocol=%u endpoint=%u report=%u irq=%u\n",
            (unsigned)status.selected_port, (unsigned)status.hid_protocol,
            (unsigned)status.endpoint_id, (unsigned)status.report_size,

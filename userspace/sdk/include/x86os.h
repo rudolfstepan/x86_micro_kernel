@@ -635,7 +635,7 @@ typedef struct {
     uint32_t reserved;
 } x86os_mouse_event_t;
 
-#define X86OS_USB_DIAGNOSTICS_VERSION 4U
+#define X86OS_USB_DIAGNOSTICS_VERSION 5U
 #define X86OS_USB_CAP_REJECT_PORT_COUNT       (1U << 0U)
 #define X86OS_USB_CAP_REJECT_SCRATCHPADS      (1U << 1U)
 #define X86OS_USB_CAP_REJECT_CAPLENGTH        (1U << 2U)
@@ -667,6 +667,22 @@ enum {
     X86OS_USB_STATE_DISCONNECTED,
     X86OS_USB_STATE_PORT_ROUTING_FAILED,
     X86OS_USB_STATE_KEYBOARD_MOUSE_READY
+};
+
+enum {
+    X86OS_USB_FAILURE_NONE = 0U,
+    X86OS_USB_FAILURE_PORT_RESET,
+    X86OS_USB_FAILURE_ADDRESS_DEVICE,
+    X86OS_USB_FAILURE_DEVICE_DESCRIPTOR_8,
+    X86OS_USB_FAILURE_EP0_DESCRIPTOR,
+    X86OS_USB_FAILURE_DEVICE_DESCRIPTOR,
+    X86OS_USB_FAILURE_CONFIG_HEADER,
+    X86OS_USB_FAILURE_CONFIG_LENGTH,
+    X86OS_USB_FAILURE_CONFIG_DESCRIPTOR,
+    X86OS_USB_FAILURE_NO_BOOT_HID,
+    X86OS_USB_FAILURE_CONFIGURE_ENDPOINT,
+    X86OS_USB_FAILURE_SET_CONFIGURATION,
+    X86OS_USB_FAILURE_RELEASE_SLOT
 };
 
 typedef struct {
@@ -715,6 +731,13 @@ typedef struct {
     uint32_t mouse_endpoint;
     uint32_t keyboard_reports;
     uint32_t rejected_keyboard_reports;
+    uint32_t failure_stage;
+    uint32_t candidate_port;
+    uint32_t candidate_speed;
+    uint32_t device_class;
+    uint32_t device_subclass;
+    uint32_t device_protocol;
+    uint32_t configuration_length;
 } x86os_usb_diagnostics_t;
 
 enum {

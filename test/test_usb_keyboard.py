@@ -37,7 +37,17 @@ class UsbKeyboardTests(unittest.TestCase):
         self.assertIn("diagnostics.rejected_keyboard_reports++", source)
         self.assertIn("XHCI_HID_KEYBOARD_MASK", source)
         self.assertIn("XHCI_HID_MOUSE_MASK", source)
+        self.assertIn("Publish its keyboard first", source)
         self.assertIn("xhci_release_candidate", source)
+        self.assertIn("static uint8_t xhci_periodic_interval", source)
+        self.assertIn("memcpy(saved_slot, xhci_device_context(hid)", source)
+        self.assertIn("((uint32_t)hid->endpoint_id << 27U)", source)
+        self.assertIn(
+            "ep[4] = (uint32_t)packet | ((uint32_t)packet << 16U)",
+            source)
+        self.assertNotIn(
+            "memcpy(saved_slot, input_context + controller.context_size",
+            source)
         self.assertIn("return -1", source)
 
     def test_hid_parser_rejects_rollover_and_stale_generations(self):
@@ -64,6 +74,8 @@ class UsbKeyboardTests(unittest.TestCase):
         self.assertIn("x86os_usb_diagnostics(&status)", source)
         self.assertIn("status.keyboard_port", source)
         self.assertIn("status.keyboard_reports", source)
+        self.assertIn("usb_failure_name(status.failure_stage)", source)
+        self.assertIn("status.configuration_length", source)
         main = source[source.index("int main(void)"):]
         self.assertLess(main.index("show_usb_keyboard_startup();"),
                         main.index("for (;;)"))

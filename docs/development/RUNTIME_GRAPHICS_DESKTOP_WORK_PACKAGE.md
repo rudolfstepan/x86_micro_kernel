@@ -389,6 +389,41 @@ Slot, Endpoint sowie akzeptierte und verworfene Reports; andernfalls Zustand,
 verbundene Portmaske und Anzahl der Enumerationsversuche. Dafür ist kein
 Tastendruck und keine Rettungsshell erforderlich.
 
+Der darauf folgende reale Lauf blieb ebenfalls ohne USB-Tastatureingabe. Eine
+Prüfung der HID-Interrupt-Endpunktkonfiguration gegen den xHCI-Vertrag zeigte
+vier zusammenhängende Fehler, die ein emulierter Controller tolerieren kann:
+Der Slot-Kontext wurde aus dem alten Input- statt aus dem vom Controller
+aktualisierten Device-Kontext kopiert, `Context Entries` blieb trotz neuem
+HID-Endpunkt auf EP0 begrenzt, `Max ESIT Payload` war null und `bInterval`
+wurde ohne geschwindigkeitsabhängige Umrechnung als xHCI-Exponent verwendet.
+Die Konfiguration kopiert nun den autoritativen Output-Slot-Kontext, setzt den
+höchsten gültigen Device Context Index, trägt die begrenzte Paketgröße als
+periodische ESIT-Nutzlast ein und kodiert High-/Super-Speed sowie
+Full-/Low-Speed-Intervalle nach ihren jeweiligen Regeln.
+
+Diagnose-ABI Version 5 hängt die genaue Enumerationsfehlerstufe, den zuletzt
+untersuchten Root-Port samt Geschwindigkeit, die Geräteklasse und die Länge
+des Konfigurationsdeskriptors an. Version 4 behält dabei unverändert ihre
+Größe von 180 Bytes. Die normale Userspace-Shell zeigt diese Werte bereits vor
+dem ersten Prompt; `usbinfo.prg` und der gleichnamige Befehl der
+Kernel-Rettungsshell liefern dieselbe Diagnose. Damit unterscheidet der nächste
+reale Lauf ohne Tastatureingabe unmittelbar zwischen Portreset, Address Device,
+Deskriptorabruf, HID-Erkennung, Endpoint-Konfiguration und Set Configuration.
+
+Das erzeugte VMware-Profil verwendet für die USB-Regression nicht länger nur
+VMwares virtuelle Maus bei gleichzeitiger PS/2-Tastatur. Der Windows-Build
+reicht standardmäßig den vorhandenen Logitech-Empfänger `046d:c548` und die
+kabelgebundene Maus `258a:0027` direkt an den virtuellen xHCI durch und schaltet
+die virtuelle USB-Maus ab. Ein explizites `VmwareHid=Virtual` erhält das
+portable Fallbackprofil. Die reale HID-Durchreichung prüft echte Deskriptoren
+und die Mehrgeräte-Enumeration früh in VMware; Intels `8086:8c31`-Register und
+Timing sowie die NVIDIA-Grafik bleiben prinzipbedingt physische Nachweise.
+Da der Logitech-Empfänger Tastatur- und Mausinterfaces in einem Gerät anbietet,
+wählt der begrenzte Parser bei gleichzeitig offenen Protokollen daraus zuerst
+die Boot-Tastatur. Die separat durchgereichte kabelgebundene Maus belegt danach
+die zweite HID-Ressource; Konsoleneingabe kann somit nicht erneut durch die
+Mauspriorität verdeckt werden.
+
 ## Erwartetes Restrisiko
 
 Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte

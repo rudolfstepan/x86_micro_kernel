@@ -452,12 +452,70 @@ ddb.virtualHWVersion = "4"
     path.write_text(descriptor, encoding="ascii", newline="\n")
 
 
+def vmware_usb_id(value: str | None) -> tuple[str, str] | None:
+    if value is None:
+        return None
+    parts = value.lower().split(":")
+    if (len(parts) != 2 or any(len(part) != 4 for part in parts) or
+            any(character not in "0123456789abcdef"
+                for part in parts for character in part)):
+        raise ValueError(f"invalid VMware USB VID:PID: {value!r}")
+    return parts[0], parts[1]
+
+
 def write_vmx(path: Path, vmdk_path: Path,
-              floppy_path: Path | None = None) -> None:
+              floppy_path: Path | None = None,
+              usb_keyboard: str | None = None,
+              usb_mouse: str | None = None) -> None:
     # Keep the rescue image in the package, but do not expose an FDC in the
     # default SATA machine. It can be attached explicitly for recovery.
     floppy_configuration = 'floppy0.present = "FALSE"'
     boot_order = "hdd"
+    keyboard_id = vmware_usb_id(usb_keyboard)
+    mouse_id = vmware_usb_id(usb_mouse)
+    physical_hid = keyboard_id is not None or mouse_id is not None
+    display_profile = (
+        "Native BIOS - physical USB HID" if physical_hid else "Native BIOS"
+    )
+    annotation = (
+        "REIST OS H81/Legacy-BIOS approximation with physical USB HID"
+        if physical_hid else
+        "REIST OS with its own BIOS MBR and ELF32 loader"
+    )
+    hid_lines = []
+    if physical_hid:
+        hid_lines.extend([
+            'usb.generic.allowHID = "TRUE"',
+            # Keep at least one host HID under host control. This prevents an
+            # accidental loss of all host-side input while still allowing the
+            # explicitly selected test keyboard and mouse to be passed through.
+            'usb.generic.allowLastHID = "FALSE"',
+        ])
+        for index, identifier in enumerate(
+                item for item in (keyboard_id, mouse_id) if item is not None):
+            vendor, product = identifier
+            hid_lines.append(
+                f'usb.quirks.device{index} = '
+                f'"0x{vendor}:0x{product} allow"')
+            hid_lines.append(
+                f'usb.autoConnect.device{index} = '
+                f'"vid:{vendor} pid:{product} autoclean:0"')
+    if mouse_id is None:
+        hid_lines.extend([
+            'usb_xhci:4.present = "TRUE"',
+            'usb_xhci:4.deviceType = "hid"',
+            'usb_xhci:4.port = "4"',
+            'usb_xhci:4.parent = "-1"',
+            'mouse.vusb.present = "TRUE"',
+            'mouse.vusb.enable = "TRUE"',
+            'mouse.vusb.useBasicMouse = "TRUE"',
+        ])
+    else:
+        hid_lines.extend([
+            'mouse.vusb.present = "FALSE"',
+            'mouse.vusb.enable = "FALSE"',
+        ])
+    hid_configuration = "\n".join(hid_lines)
     configuration = f'''.encoding = "UTF-8"
 config.version = "8"
 virtualHW.version = "20"
@@ -467,8 +525,8 @@ pciBridge4.present = "TRUE"
 pciBridge4.virtualDev = "pcieRootPort"
 pciBridge4.functions = "8"
 pciBridge4.pciSlotNumber = "21"
-displayName = "REIST OS (Native BIOS)"
-annotation = "REIST OS with its own BIOS MBR and ELF32 loader"
+displayName = "REIST OS ({display_profile})"
+annotation = "{annotation}"
 guestOS = "other"
 firmware = "bios"
 bios.bootOrder = "{boot_order}"
@@ -490,14 +548,7 @@ usb.present = "TRUE"
 ehci.present = "TRUE"
 usb_xhci.present = "TRUE"
 usb_xhci.pciSlotNumber = "160"
-usb_xhci:4.present = "TRUE"
-usb_xhci:4.deviceType = "hid"
-usb_xhci:4.port = "4"
-usb_xhci:4.parent = "-1"
-mouse.vusb.present = "TRUE"
-mouse.vusb.enable = "TRUE"
-mouse.vusb.useBasicMouse = "TRUE"
-usb.generic.allowHID = "TRUE"
+{hid_configuration}
 svga.present = "TRUE"
 svga.autodetect = "TRUE"
 mks.enable3d = "FALSE"
@@ -526,7 +577,9 @@ tools.upgrade.policy = "manual"
 
 def write_vmware_package(vm_directory: Path, raw_image: Path,
                          total_sectors: int, content_id: int,
-                         floppy_image: Path | None = None) -> Path:
+                         floppy_image: Path | None = None,
+                         usb_keyboard: str | None = None,
+                         usb_mouse: str | None = None) -> Path:
     vm_directory.mkdir(parents=True, exist_ok=True)
     flat_extent = vm_directory / f"{VMWARE_BASENAME}-flat.vmdk"
     descriptor = vm_directory / f"{VMWARE_BASENAME}.vmdk"
@@ -537,7 +590,7 @@ def write_vmware_package(vm_directory: Path, raw_image: Path,
     if floppy_image is not None:
         packaged_floppy = vm_directory / "reist-os-floppy.img"
         shutil.copyfile(floppy_image, packaged_floppy)
-    write_vmx(vmx, descriptor, packaged_floppy)
+    write_vmx(vmx, descriptor, packaged_floppy, usb_keyboard, usb_mouse)
 
     launcher = r'''@echo off
 setlocal
@@ -560,7 +613,13 @@ endlocal
     (vm_directory / "START-VMWARE.cmd").write_text(
         launcher, encoding="ascii", newline="\r\n"
     )
-    readme = """REIST OS - fertige VMware-VM
+    hid_readme = (
+        f"Physische USB-HID-Durchreichung: Tastatur {usb_keyboard or '-'}, "
+        f"Maus {usb_mouse or '-'}"
+        if usb_keyboard is not None or usb_mouse is not None
+        else "Eingabe: virtuelle PS/2-Tastatur und virtuelle USB-Maus"
+    )
+    readme = f"""REIST OS - fertige VMware-VM
 
 Start:
   1. START-VMWARE.cmd doppelklicken, oder
@@ -574,7 +633,12 @@ Die VM ist bereits vollständig konfiguriert:
   - automatische IPv4-Konfiguration per DHCP
   - 60-MiB-FAT32-Datenpartition mit README.TXT und Ring-3-Systemprogrammen
   - COM1-Bootprotokoll in vmware-serial.log
-  - bootfähiges 1,44-MB-Floppy-Image, kein USB- oder Audiogerät
+  - {hid_readme}
+  - bootfähiges 1,44-MB-Floppy-Image, kein Audiogerät
+
+Die physische HID-Durchreichung trennt die ausgewählten Geräte beim VM-Start
+vom Host. usb.generic.allowLastHID=FALSE hält mindestens ein Eingabegerät beim
+Host. Falls eines der Geräte nicht verbunden ist, bleibt dessen xHCI-Port leer.
 
 Die VMDK-Dateien und die VMX-Datei müssen im selben Ordner bleiben.
 Fuer eine direkte Bridge ins physische LAN in der VMX-Datei
@@ -613,7 +677,9 @@ def build_image(stage1_path: Path, stage2_path: Path, kernel_path: Path,
                  output_path: Path, vmdk_path: Path,
                  vmware_directory: Path | None = None,
                  data_files: Mapping[str, bytes] | None = None,
-                 floppy_image: Path | None = None) -> None:
+                 floppy_image: Path | None = None,
+                 vmware_usb_keyboard: str | None = None,
+                 vmware_usb_mouse: str | None = None) -> None:
     stage1 = stage1_path.read_bytes()
     stage2 = stage2_path.read_bytes()
     kernel = kernel_path.read_bytes()
@@ -657,12 +723,13 @@ def build_image(stage1_path: Path, stage2_path: Path, kernel_path: Path,
     kernel_crc = binascii.crc32(kernel) & 0xFFFFFFFF
     write_vmdk_descriptor(vmdk_path, output_path, total_sectors, kernel_crc)
     vmx_path = vmdk_path.with_suffix(".vmx")
-    write_vmx(vmx_path, vmdk_path, floppy_image)
+    write_vmx(vmx_path, vmdk_path, floppy_image,
+              vmware_usb_keyboard, vmware_usb_mouse)
     packaged_vmx = None
     if vmware_directory is not None:
         packaged_vmx = write_vmware_package(
             vmware_directory, output_path, total_sectors, kernel_crc,
-            floppy_image
+            floppy_image, vmware_usb_keyboard, vmware_usb_mouse
         )
     messages = [
         f"Native BIOS image: {output_path} ({IMAGE_SIZE // (1024 * 1024)} MiB)",
@@ -687,6 +754,8 @@ def main() -> None:
     parser.add_argument("--vmdk", required=True, type=Path)
     parser.add_argument("--vmware-dir", type=Path)
     parser.add_argument("--floppy", type=Path)
+    parser.add_argument("--vmware-usb-keyboard", metavar="VID:PID")
+    parser.add_argument("--vmware-usb-mouse", metavar="VID:PID")
     parser.add_argument(
         "--data-file",
         action="append",
@@ -724,6 +793,8 @@ def main() -> None:
         args.vmware_dir,
         data_files,
         args.floppy,
+        args.vmware_usb_keyboard,
+        args.vmware_usb_mouse,
     )
 
 

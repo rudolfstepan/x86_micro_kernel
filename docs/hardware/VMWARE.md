@@ -23,14 +23,38 @@ das Überschreiben einer über `vmrun` laufenden Paket-VM.
 | CPU/RAM | 1 vCPU, 512 MiB |
 | Festplatte | persistente monolithic-flat SATA-VMDK |
 | Grafik | VMware SVGA, 3D aus, standardmäßig VGA-Text |
-| Eingabe | virtuelle PS/2-Tastatur und USB-HID-Maus über xHCI |
+| Eingabe | physische Logitech-USB-Tastatur/Receiver `046d:c548` und Maus `258a:0027` direkt über xHCI; PS/2-Konsole bleibt Fallback |
 | Netzwerk | Intel E1000 an VMware NAT-DHCP |
 | Seriell | COM1-Ausgabe nach `vmware-serial.log` |
-| Deaktiviert | USB, EHCI, xHCI, Audio, VMware Tools |
+| Deaktiviert | Audio, VMware Tools, virtuelle USB-Maus im physischen HID-Profil |
 
 Descriptor-VMDK, `-flat.vmdk` und VMX müssen im Paketordner zusammenbleiben.
 Das Raw-Image enthält MBR, Bootpartition und die FAT32-Systempartition
 `X86 SYSTEM`. Der Kernel erkennt die virtuelle Platte nativ über AHCI.
+
+Das Windows-Buildprofil `VmwareHid=Physical` reicht standardmäßig die aktuell
+verwendeten Geräte `046d:c548` und `258a:0027` direkt durch. Dadurch sieht der
+Gast reale Geräte-, Konfigurations-, Interface- und Endpointdeskriptoren statt
+nur die tolerante virtuelle VMware-Maus. VMware trennt diese beiden Geräte
+beim VM-Start vom Host; `usb.generic.allowLastHID=FALSE` schützt das letzte
+verbleibende Host-Eingabegerät. Andere Kennungen werden beim Build angegeben:
+
+```powershell
+.\scripts\build-windows.ps1 -Target vmware `
+  -VmwareUsbKeyboard 1234:5678 -VmwareUsbMouse abcd:0123
+```
+
+Für das portable alte Profil ohne physische Durchreichung:
+
+```powershell
+.\scripts\build-windows.ps1 -Target vmware -VmwareHid Virtual
+```
+
+VMware kann weder Intels realen `8086:8c31`-Controller noch die NVIDIA-Karte
+`10de:1280` emulieren. Legacy-BIOS, SATA, ein xHCI-Pfad, EHCI-Präsenz, eine
+einzelne CPU und die direkt durchgereichten HID-Geräte bilden die sinnvoll
+testbare Annäherung; Intel-spezifische Register- und Timingfehler bleiben ein
+Nachweis auf dem ASUS-Board.
 
 ## Funktionstest
 

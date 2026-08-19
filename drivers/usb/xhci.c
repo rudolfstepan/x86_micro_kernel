@@ -125,6 +125,7 @@ typedef struct {
     uint8_t configuration_value;
     uint8_t hid_protocol;
     uint8_t report_size;
+    uint8_t port_speed;
     uint16_t max_packet;
     bool endpoint_cycle;
     bool online;
@@ -652,9 +653,12 @@ static bool xhci_wait_command(xhci_trb_t *command, uint8_t *slot_out) {
     while (1) {
         uint64_t now = pit_monotonic_ms();
         if (now < start || now - start >= XHCI_TIMEOUT_MS) break;
-        if (xhci_drain_events(32U, xhci_dma32(command), slot_out, &status))
+        if (xhci_drain_events(32U, xhci_dma32(command), slot_out, &status)) {
+            diagnostics.last_completion = status;
             return status == XHCI_COMPLETION_SUCCESS;
+        }
     }
+    diagnostics.last_completion = 0U;
     return false;
 }
 
@@ -667,10 +671,12 @@ static bool xhci_wait_transfer(xhci_trb_t *status_trb,
         if (now < start || now - start >= XHCI_TIMEOUT_MS) break;
         uint32_t status = 0U;
         if (xhci_drain_events(32U, expected, NULL, &status)) {
+            diagnostics.last_completion = status;
             if (completion_out != NULL) *completion_out = status;
             return status == XHCI_COMPLETION_SUCCESS;
         }
     }
+    diagnostics.last_completion = 0U;
     if (completion_out != NULL) *completion_out = 0U;
     return false;
 }
@@ -766,9 +772,14 @@ static bool xhci_release_candidate(xhci_hid_device_t *hid) {
     if (hid == NULL || hid->online) return false;
     uint8_t slot = hid->slot_id;
     if (slot != 0U) {
+        uint32_t failure_completion = diagnostics.last_completion;
         xhci_trb_t *disable = xhci_command(
             TRB_DISABLE_SLOT, 0U, 0U, (uint32_t)slot << 24U);
         if (!xhci_wait_command(disable, NULL)) return false;
+        /* Successful cleanup must not hide the completion code of the
+         * enumeration command or transfer that actually failed. */
+        if (diagnostics.failure_stage != XHCI_FAILURE_NONE)
+            diagnostics.last_completion = failure_completion;
         dcbaa[slot] = 0U;
     }
     uint32_t resource = xhci_hid_index(hid);
@@ -804,6 +815,11 @@ static bool xhci_find_boot_hid(uint8_t *config, uint16_t length,
     uint8_t keyboard_endpoint = 0U;
     uint8_t keyboard_interval = 0U;
     uint16_t keyboard_packet = 0U;
+    bool mouse_found = false;
+    uint8_t mouse_interface = 0U;
+    uint8_t mouse_endpoint = 0U;
+    uint8_t mouse_interval = 0U;
+    uint16_t mouse_packet = 0U;
     while (offset + 2U <= length) {
         uint8_t item_length = config[offset];
         uint8_t item_type = config[offset + 1U];
@@ -830,15 +846,13 @@ static bool xhci_find_boot_hid(uint8_t *config, uint16_t length,
             uint8_t endpoint_number = config[offset + 2U] & 0x0FU;
             uint8_t endpoint_interval =
                 config[offset + 6U] == 0U ? 1U : config[offset + 6U];
-            if (current_protocol == 2U &&
+            if (current_protocol == 2U && !mouse_found &&
                 (protocol_mask & XHCI_HID_MOUSE_MASK) != 0U) {
-                *configuration = configuration_value;
-                *interface = current_interface;
-                *protocol = current_protocol;
-                *endpoint = endpoint_number;
-                *packet = max_packet;
-                *interval = endpoint_interval;
-                return configuration_value != 0U;
+                mouse_found = true;
+                mouse_interface = current_interface;
+                mouse_endpoint = endpoint_number;
+                mouse_packet = max_packet;
+                mouse_interval = endpoint_interval;
             }
             if (current_protocol == 1U && !keyboard_found &&
                 (protocol_mask & XHCI_HID_KEYBOARD_MASK) != 0U) {
@@ -851,14 +865,51 @@ static bool xhci_find_boot_hid(uint8_t *config, uint16_t length,
         }
         offset = (uint16_t)(offset + item_length);
     }
-    if (!keyboard_found || configuration_value == 0U) return false;
+    if (configuration_value == 0U) return false;
+    /* A wireless receiver can expose both boot protocols in one USB device.
+     * Publish its keyboard first so console input is never hidden by the
+     * mouse interface; a separate mouse candidate can then fill the second
+     * fixed HID resource. */
+    if (keyboard_found) {
+        *configuration = configuration_value;
+        *interface = keyboard_interface;
+        *protocol = 1U;
+        *endpoint = keyboard_endpoint;
+        *packet = keyboard_packet;
+        *interval = keyboard_interval;
+        return true;
+    }
+    if (!mouse_found) return false;
     *configuration = configuration_value;
-    *interface = keyboard_interface;
-    *protocol = 1U;
-    *endpoint = keyboard_endpoint;
-    *packet = keyboard_packet;
-    *interval = keyboard_interval;
+    *interface = mouse_interface;
+    *protocol = 2U;
+    *endpoint = mouse_endpoint;
+    *packet = mouse_packet;
+    *interval = mouse_interval;
     return true;
+}
+
+static uint8_t xhci_periodic_interval(uint8_t port_speed,
+                                      uint8_t descriptor_interval) {
+    if (port_speed >= 3U) {
+        uint8_t bounded = descriptor_interval;
+        if (bounded < 1U) bounded = 1U;
+        if (bounded > 16U) bounded = 16U;
+        return (uint8_t)(bounded - 1U);
+    }
+
+    /* Full-/Low-Speed bInterval is expressed in 1-ms frames.  The xHCI
+     * endpoint context uses an exponent of 125-us microframes, so encode
+     * floor(log2(bInterval * 8)) and keep the range required for FS/LS. */
+    uint32_t microframes = (uint32_t)descriptor_interval * 8U;
+    uint8_t exponent = 0U;
+    while (microframes > 1U && exponent < 15U) {
+        microframes >>= 1U;
+        exponent++;
+    }
+    if (exponent < 3U) exponent = 3U;
+    if (exponent > 10U) exponent = 10U;
+    return exponent;
 }
 
 static bool xhci_configure_boot_hid(xhci_hid_device_t *hid,
@@ -867,10 +918,12 @@ static bool xhci_configure_boot_hid(xhci_hid_device_t *hid,
     memset(control_buffer, 0, sizeof(control_buffer));
     if (!xhci_control(hid, 0x80U, 6U, 0x0100U, 0U, 8U, true,
                       control_buffer)) {
+        diagnostics.failure_stage = XHCI_FAILURE_DEVICE_DESCRIPTOR_8;
         printf("USB: xHCI GET_DESCRIPTOR device-8 failed\n");
         return false;
     }
     if (hid->max_packet >= 512U && control_buffer[7] > 15U) {
+        diagnostics.failure_stage = XHCI_FAILURE_EP0_DESCRIPTOR;
         printf("USB: xHCI invalid EP0 packet exponent=%u\n",
                (unsigned)control_buffer[7]);
         return false;
@@ -879,28 +932,37 @@ static bool xhci_configure_boot_hid(xhci_hid_device_t *hid,
         ? (uint16_t)(1U << control_buffer[7]) : control_buffer[7];
     if (control_buffer[0] < 8U || control_buffer[7] == 0U ||
         descriptor_packet != hid->max_packet) {
+        diagnostics.failure_stage = XHCI_FAILURE_EP0_DESCRIPTOR;
         printf("USB: xHCI invalid EP0 packet descriptor=%u context=%u\n",
                (unsigned)descriptor_packet, (unsigned)hid->max_packet);
         return false;
     }
     if (!xhci_control(hid, 0x80U, 6U, 0x0100U, 0U, 18U, true,
                       control_buffer)) {
+        diagnostics.failure_stage = XHCI_FAILURE_DEVICE_DESCRIPTOR;
         printf("USB: xHCI GET_DESCRIPTOR device failed\n");
         return false;
     }
+    diagnostics.device_class = control_buffer[4];
+    diagnostics.device_subclass = control_buffer[5];
+    diagnostics.device_protocol = control_buffer[6];
     if (!xhci_control(hid, 0x80U, 6U, 0x0200U, 0U, 9U, true,
                       control_buffer)) {
+        diagnostics.failure_stage = XHCI_FAILURE_CONFIG_HEADER;
         printf("USB: xHCI GET_DESCRIPTOR config-9 failed\n");
         return false;
     }
     uint16_t total = (uint16_t)control_buffer[2] |
                      ((uint16_t)control_buffer[3] << 8U);
+    diagnostics.configuration_length = total;
     if (total < 9U || total > XHCI_CONTROL_BYTES) {
+        diagnostics.failure_stage = XHCI_FAILURE_CONFIG_LENGTH;
         printf("USB: xHCI invalid configuration length=%u\n", (unsigned)total);
         return false;
     }
     if (!xhci_control(hid, 0x80U, 6U, 0x0200U, 0U, total, true,
                       control_buffer)) {
+        diagnostics.failure_stage = XHCI_FAILURE_CONFIG_DESCRIPTOR;
         printf("USB: xHCI GET_DESCRIPTOR config failed\n");
         return false;
     }
@@ -911,6 +973,7 @@ static bool xhci_configure_boot_hid(xhci_hid_device_t *hid,
                             &configuration, &interface, &protocol, &endpoint,
                             &packet, &interval) ||
         endpoint == 0U || configuration == 0U) {
+        diagnostics.failure_stage = XHCI_FAILURE_NO_BOOT_HID;
         printf("USB: xHCI no HID boot interface\n");
         return false;
     }
@@ -920,11 +983,16 @@ static bool xhci_configure_boot_hid(xhci_hid_device_t *hid,
     hid->max_packet = packet;
     hid->hid_protocol = protocol;
     hid->report_size = protocol == 1U ? 8U : (packet >= 4U ? 4U : 3U);
-    if (packet < hid->report_size) return false;
+    if (packet < hid->report_size) {
+        diagnostics.failure_stage = XHCI_FAILURE_NO_BOOT_HID;
+        return false;
+    }
     uint8_t saved_slot[XHCI_CONTEXT_BYTES];
     memset(saved_slot, 0, sizeof(saved_slot));
-    memcpy(saved_slot, input_context + controller.context_size,
-           controller.context_size);
+    /* Address Device publishes the authoritative Slot Context in the output
+     * Device Context.  Configure Endpoint must start from that controller-
+     * updated state, not from the stale Address Device input copy. */
+    memcpy(saved_slot, xhci_device_context(hid), controller.context_size);
     memset(input_context, 0, sizeof(input_context));
     uint32_t *control = (uint32_t *)input_context;
     uint32_t *slot = (uint32_t *)(input_context + controller.context_size);
@@ -933,19 +1001,28 @@ static bool xhci_configure_boot_hid(xhci_hid_device_t *hid,
                                 controller.context_size);
     control[1] = (1U << 0U) | (1U << hid->endpoint_id);
     memcpy(slot, saved_slot, controller.context_size);
-    ep[0] = (uint32_t)interval << 16U;
+    /* Context Entries is the highest valid Device Context Index.  Leaving it
+     * at one makes a strict controller ignore the newly added HID endpoint. */
+    slot[0] = (slot[0] & ~(0x1FU << 27U)) |
+              ((uint32_t)hid->endpoint_id << 27U);
+    ep[0] = (uint32_t)xhci_periodic_interval(hid->port_speed, interval) << 16U;
     ep[1] = (3U << 1U) | (7U << 3U) | ((uint32_t)packet << 16U);
     ep[2] = xhci_dma32(xhci_interrupt_ring(hid)) | 1U;
-    ep[4] = hid->report_size;
+    /* Interrupt endpoints are periodic: Max ESIT Payload must describe the
+     * bytes available per service interval.  Average TRB Length uses the same
+     * bounded packet size, matching the reference xHCI endpoint setup. */
+    ep[4] = (uint32_t)packet | ((uint32_t)packet << 16U);
     xhci_trb_t *configure = xhci_command(TRB_CONFIGURE_ENDPOINT,
                                            xhci_dma32(input_context), 0U,
                                            (uint32_t)hid->slot_id << 24U);
     if (!xhci_wait_command(configure, NULL)) {
+        diagnostics.failure_stage = XHCI_FAILURE_CONFIGURE_ENDPOINT;
         printf("USB: xHCI CONFIGURE_ENDPOINT failed\n");
         return false;
     }
     if (!xhci_control(hid, 0x00U, 9U, configuration, 0U, 0U, false, NULL) ||
         !xhci_control(hid, 0x21U, 0x0BU, 0U, interface, 0U, false, NULL)) {
+        diagnostics.failure_stage = XHCI_FAILURE_SET_CONFIGURATION;
         printf("USB: xHCI SET_CONFIGURATION/PROTOCOL failed\n");
         return false;
     }
@@ -955,6 +1032,7 @@ static bool xhci_configure_boot_hid(xhci_hid_device_t *hid,
            sizeof(hid_reports[xhci_hid_index(hid)]));
     xhci_queue_interrupt_report(hid);
     xhci_ring_doorbell(hid->slot_id, hid->endpoint_id);
+    diagnostics.failure_stage = XHCI_FAILURE_NONE;
     return true;
 }
 
@@ -1001,6 +1079,13 @@ static bool xhci_enumerate_root_hid(xhci_hid_device_t *hid,
     if (hid == NULL || root_port == 0U ||
         root_port > controller.port_count || protocol_mask == 0U)
         return false;
+    diagnostics.failure_stage = XHCI_FAILURE_NONE;
+    diagnostics.candidate_port = root_port;
+    diagnostics.candidate_speed = 0U;
+    diagnostics.device_class = 0U;
+    diagnostics.device_subclass = 0U;
+    diagnostics.device_protocol = 0U;
+    diagnostics.configuration_length = 0U;
     hid->root_port = root_port;
     uint32_t port_offset = controller.op_base + XHCI_PORTSC_BASE +
         (root_port - 1U) * XHCI_PORTSC_STRIDE;
@@ -1018,11 +1103,17 @@ static bool xhci_enumerate_root_hid(xhci_hid_device_t *hid,
         port = xhci_read(port_offset);
         if ((port & XHCI_PORT_PED) != 0U) break;
     }
-    if ((port & XHCI_PORT_PED) == 0U) return false;
+    if ((port & XHCI_PORT_PED) == 0U) {
+        diagnostics.failure_stage = XHCI_FAILURE_PORT_RESET;
+        return false;
+    }
     uint8_t port_speed = (uint8_t)((port & XHCI_PORT_SPEED_MASK) >> 10U);
+    diagnostics.candidate_speed = port_speed;
+    hid->port_speed = port_speed;
     hid->max_packet = port_speed >= 4U ? 512U :
                       (port_speed == 3U ? 64U : 8U);
     if (!xhci_address_device(hid, port_speed)) {
+        diagnostics.failure_stage = XHCI_FAILURE_ADDRESS_DEVICE;
         printf("USB: xHCI address-device failed\n");
         return false;
     }
@@ -1201,6 +1292,7 @@ int xhci_probe(pci_device_t *dev) {
         diagnostics.attempts = attempts;
         if (!xhci_enumerate_root_hid(hid, root_port, protocol_mask)) {
             if (!xhci_release_candidate(hid)) {
+                diagnostics.failure_stage = XHCI_FAILURE_RELEASE_SLOT;
                 release_failed = true;
                 printf("USB: xHCI failed to release HID candidate port=%u\n",
                        (unsigned)root_port);
@@ -1209,7 +1301,10 @@ int xhci_probe(pci_device_t *dev) {
             continue;
         }
         if (!xhci_publish_hid(hid)) {
-            if (!xhci_release_candidate(hid)) release_failed = true;
+            if (!xhci_release_candidate(hid)) {
+                diagnostics.failure_stage = XHCI_FAILURE_RELEASE_SLOT;
+                release_failed = true;
+            }
             break;
         }
     }
