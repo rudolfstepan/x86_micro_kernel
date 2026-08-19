@@ -23,12 +23,6 @@ param(
     [string]$ProgramName = 'HELLO.PRG',
     [ValidateSet('Auto', 'Physical', 'Image')]
     [string]$VmwareFloppy = 'Auto',
-    [ValidateSet('Physical', 'Virtual')]
-    [string]$VmwareHid = 'Physical',
-    [ValidatePattern('^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$')]
-    [string]$VmwareUsbKeyboard = '046d:c548',
-    [ValidatePattern('^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$')]
-    [string]$VmwareUsbMouse = '258a:0027',
     [ValidatePattern('^[A-Za-z]:$')]
     [string]$FloppyDrive = 'A:'
 )
@@ -129,9 +123,6 @@ try {
         dhcp_lease_fault_injection = [bool]$DhcpLeaseFaultInjection
         dhcp_renew_fault_injection = [bool]$DhcpRenewFaultInjection
         vbe_runtime_test = [bool]$VbeRuntimeTest
-        vmware_hid = $VmwareHid
-        vmware_usb_keyboard = $VmwareUsbKeyboard
-        vmware_usb_mouse = $VmwareUsbMouse
         nasm = $Nasm
         zig = $Zig
     }
@@ -288,12 +279,6 @@ try {
         '--stage2', $Stage2, '--kernel', $Kernel, '--output', $RawImage,
         '--vmdk', $Vmdk, '--vmware-dir', $VmwareDir, '--floppy', $FloppyImage
     ) + $imageDataArguments
-    if ($VmwareHid -eq 'Physical') {
-        $nativeArguments += @(
-            '--vmware-usb-keyboard', $VmwareUsbKeyboard,
-            '--vmware-usb-mouse', $VmwareUsbMouse
-        )
-    }
     & $Python @nativeArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Native image creation failed with exit code $LASTEXITCODE."

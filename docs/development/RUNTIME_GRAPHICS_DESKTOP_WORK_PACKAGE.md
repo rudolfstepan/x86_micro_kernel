@@ -410,19 +410,15 @@ Kernel-Rettungsshell liefern dieselbe Diagnose. Damit unterscheidet der nächste
 reale Lauf ohne Tastatureingabe unmittelbar zwischen Portreset, Address Device,
 Deskriptorabruf, HID-Erkennung, Endpoint-Konfiguration und Set Configuration.
 
-Das erzeugte VMware-Profil verwendet für die USB-Regression nicht länger nur
-VMwares virtuelle Maus bei gleichzeitiger PS/2-Tastatur. Der Windows-Build
-reicht standardmäßig den vorhandenen Logitech-Empfänger `046d:c548` und die
-kabelgebundene Maus `258a:0027` direkt an den virtuellen xHCI durch und schaltet
-die virtuelle USB-Maus ab. Ein explizites `VmwareHid=Virtual` erhält das
-portable Fallbackprofil. Die reale HID-Durchreichung prüft echte Deskriptoren
-und die Mehrgeräte-Enumeration früh in VMware; Intels `8086:8c31`-Register und
-Timing sowie die NVIDIA-Grafik bleiben prinzipbedingt physische Nachweise.
-Da der Logitech-Empfänger Tastatur- und Mausinterfaces in einem Gerät anbietet,
-wählt der begrenzte Parser bei gleichzeitig offenen Protokollen daraus zuerst
-die Boot-Tastatur. Die separat durchgereichte kabelgebundene Maus belegt danach
-die zweite HID-Ressource; Konsoleneingabe kann somit nicht erneut durch die
-Mauspriorität verdeckt werden.
+Eine zwischenzeitlich ergänzte physische VMware-HID-Durchreichung wurde wieder
+vollständig entfernt: Sie konnte Host-Tastatur und -Maus exklusiv an die VM
+binden und damit das Beenden einer fehlerhaften Gastinstanz verhindern. Die
+generierte VMX erzwingt `usb.generic.allowHID=FALSE`, enthält weder Autoconnect-
+noch HID-Quirk-Regeln und verwendet ausschließlich die virtuelle PS/2-Tastatur
+sowie VMwares virtuelle xHCI-Maus. Der kombinierte HID-Parser priorisiert bei
+gleichzeitig angebotenen Boot-Protokollen weiterhin die Tastatur, ohne daraus
+eine Host-Geräteübernahme abzuleiten. Intels `8086:8c31`-Register, Timing und
+physische HID-Geräte bleiben prinzipbedingt Nachweise auf dem ASUS-Board.
 
 ## Erwartetes Restrisiko
 

@@ -430,34 +430,10 @@ class NativeBootImageTests(unittest.TestCase):
         self.assertIn('mouse.vusb.present = "TRUE"', text)
         self.assertNotIn('\nxhci.present = "TRUE"', text)
         self.assertIn('mouse.vusb.enable = "TRUE"', text)
-
-    def test_vmware_physical_hid_profile_autoconnects_real_devices(self):
-        with tempfile.TemporaryDirectory() as directory:
-            vmx = Path(directory) / "kernel.vmx"
-            write_vmx(
-                vmx,
-                Path("kernel.vmdk"),
-                Path("rescue.img"),
-                "046D:C548",
-                "258A:0027",
-            )
-            text = vmx.read_text(encoding="ascii")
-        self.assertIn('usb.generic.allowHID = "TRUE"', text)
+        self.assertIn('usb.generic.allowHID = "FALSE"', text)
         self.assertIn('usb.generic.allowLastHID = "FALSE"', text)
-        self.assertIn(
-            'usb.autoConnect.device0 = '
-            '"vid:046d pid:c548 autoclean:0"', text)
-        self.assertIn(
-            'usb.autoConnect.device1 = '
-            '"vid:258a pid:0027 autoclean:0"', text)
-        self.assertIn('mouse.vusb.present = "FALSE"', text)
-        self.assertNotIn('usb_xhci:4.deviceType = "hid"', text)
-
-    def test_vmware_usb_id_validation_is_fail_closed(self):
-        with tempfile.TemporaryDirectory() as directory:
-            vmx = Path(directory) / "kernel.vmx"
-            with self.assertRaisesRegex(ValueError, "VID:PID"):
-                write_vmx(vmx, Path("kernel.vmdk"), usb_keyboard="05ac")
+        self.assertNotIn("usb.autoConnect", text)
+        self.assertNotIn("usb.quirks", text)
 
     def test_vmware_fdd_switch_uses_legacy_physical_backing(self):
         script = (
