@@ -1,10 +1,11 @@
 @echo off
 setlocal EnableExtensions
 
-rem Exact approved target. Do not generalize these values.
+rem Exact approved target as exposed by the current USB adapter.
+rem Do not generalize these values.
 set "DISK_NUMBER=3"
-set "EXPECTED_SERIAL=FAFFFFF0FFF14CFEACB08796F"
-set "EXPECTED_SIZE=120034123776"
+set "EXPECTED_SERIAL=000000001F4C"
+set "EXPECTED_SIZE=120034121728"
 
 for %%I in ("%~dp0..") do set "PROJECT_ROOT=%%~fI"
 set "IMAGE=%PROJECT_ROOT%\build\reist-os.img"
