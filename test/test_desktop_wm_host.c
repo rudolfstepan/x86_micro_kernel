@@ -114,8 +114,95 @@ static void test_dirty_regions_and_event_dispatch(void) {
     assert(result.target == manager.selected);
 }
 
+static void test_edge_and_corner_resize(void) {
+    desktop_wm_t manager;
+    desktop_wm_initialize(&manager, 1024U, 768U, 36, 736, 24U);
+    for (uint32_t index = 1U; index < DESKTOP_WM_CAPACITY; ++index)
+        manager.windows[index].visible = 0U;
+    desktop_window_t *window = &manager.windows[0];
+    window->x = 200;
+    window->y = 150;
+    window->width = 300U;
+    window->height = 220U;
+
+    int32_t right = window->x + (int32_t)window->width - 1;
+    int32_t bottom = window->y + (int32_t)window->height - 1;
+    int32_t center_x = window->x + (int32_t)(window->width / 2U);
+    int32_t center_y = window->y + (int32_t)(window->height / 2U);
+    const struct {
+        int32_t x;
+        int32_t y;
+        uint32_t edges;
+    } hit_cases[] = {
+        {window->x, center_y, DESKTOP_WM_RESIZE_LEFT},
+        {right, center_y, DESKTOP_WM_RESIZE_RIGHT},
+        {center_x, window->y, DESKTOP_WM_RESIZE_TOP},
+        {center_x, bottom, DESKTOP_WM_RESIZE_BOTTOM},
+        {window->x, window->y,
+         DESKTOP_WM_RESIZE_LEFT | DESKTOP_WM_RESIZE_TOP},
+        {right, window->y,
+         DESKTOP_WM_RESIZE_RIGHT | DESKTOP_WM_RESIZE_TOP},
+        {window->x, bottom,
+         DESKTOP_WM_RESIZE_LEFT | DESKTOP_WM_RESIZE_BOTTOM},
+        {right, bottom,
+         DESKTOP_WM_RESIZE_RIGHT | DESKTOP_WM_RESIZE_BOTTOM},
+    };
+    for (uint32_t index = 0U;
+         index < sizeof(hit_cases) / sizeof(hit_cases[0]); ++index) {
+        assert(desktop_wm_resize_edges_at(
+                   &manager, 0U, hit_cases[index].x, hit_cases[index].y) ==
+               hit_cases[index].edges);
+    }
+    assert(desktop_wm_resize_edges_at(&manager, 0U, right, bottom) ==
+           (DESKTOP_WM_RESIZE_RIGHT | DESKTOP_WM_RESIZE_BOTTOM));
+    desktop_wm_event_t press = {
+        .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
+        .x = right,
+        .y = bottom,
+        .button = DESKTOP_WM_BUTTON_LEFT,
+        .pressed = 1U,
+    };
+    desktop_wm_dispatch_result_t result;
+    assert(desktop_wm_dispatch(&manager, &press, &result) == 0);
+    assert(manager.capture_kind == DESKTOP_WM_CAPTURE_RESIZE);
+    assert(manager.resize_edges ==
+           (DESKTOP_WM_RESIZE_RIGHT | DESKTOP_WM_RESIZE_BOTTOM));
+    desktop_wm_event_t grow = {
+        .type = DESKTOP_WM_EVENT_POINTER_MOTION,
+        .x = 2000,
+        .y = 2000,
+    };
+    assert(desktop_wm_dispatch(&manager, &grow, &result) == 0);
+    assert(result.flags & DESKTOP_WM_RESULT_REDRAW);
+    assert(result.dirty.count != 0U);
+    assert(window->x + (int32_t)window->width == manager.work_right);
+    assert(window->y + (int32_t)window->height == manager.work_bottom);
+    assert(desktop_wm_pointer_release(&manager, 2000, 2000) == 0U);
+
+    window->x = 200;
+    window->y = 150;
+    window->width = 300U;
+    window->height = 220U;
+    int32_t fixed_right = window->x + (int32_t)window->width;
+    int32_t fixed_bottom = window->y + (int32_t)window->height;
+    assert(desktop_wm_resize_edges_at(&manager, 0U,
+                                      window->x, window->y) ==
+           (DESKTOP_WM_RESIZE_LEFT | DESKTOP_WM_RESIZE_TOP));
+    assert(desktop_wm_pointer_press(&manager, window->x, window->y) == 0U);
+    assert(manager.capture_kind == DESKTOP_WM_CAPTURE_RESIZE);
+    assert(desktop_wm_pointer_motion(&manager, 2000, 2000) != 0U);
+    assert(window->width == manager.minimum_width);
+    assert(window->height == manager.minimum_height);
+    assert(window->x + (int32_t)window->width == fixed_right);
+    assert(window->y + (int32_t)window->height == fixed_bottom);
+    assert(desktop_wm_pointer_release(&manager, 2000, 2000) == 0U);
+    assert(manager.capture_kind == DESKTOP_WM_CAPTURE_NONE);
+    assert(manager.resize_edges == 0U);
+}
+
 int main(void) {
     test_dirty_regions_and_event_dispatch();
+    test_edge_and_corner_resize();
     desktop_wm_t manager;
     desktop_wm_initialize(&manager, 1024U, 768U, 36, 736, 24U);
 

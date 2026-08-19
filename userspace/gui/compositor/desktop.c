@@ -11,6 +11,10 @@
 #include "desktop_wm.h"
 
 #define APP_COUNT 4U
+#define DESKTOP_ARGUMENT_LIMIT 32U
+#define DESKTOP_METRICS_VERSION 1U
+#define DESKTOP_RENDER_PROBE_STEPS 8U
+#define DESKTOP_RENDER_PROBE_STEP_X 4
 
 _Static_assert(APP_COUNT == DESKTOP_WM_CAPACITY,
                "desktop app and window capacities must match");
@@ -56,11 +60,48 @@ typedef struct {
     desktop_rect_t clip;
 } desktop_render_context_t;
 
+typedef struct {
+    uint32_t full_frames;
+    uint32_t full_total_ms;
+    uint32_t full_max_ms;
+    uint32_t dirty_frames;
+    uint32_t dirty_total_ms;
+    uint32_t dirty_max_ms;
+    uint32_t drag_frames;
+    uint32_t drag_total_ms;
+    uint32_t drag_max_ms;
+    uint32_t resize_frames;
+    uint32_t resize_total_ms;
+    uint32_t resize_max_ms;
+    uint32_t fallback_frames;
+    uint32_t damage_regions;
+    uint32_t damage_max;
+    uint32_t clock_errors;
+    uint32_t probe_errors;
+} desktop_render_metrics_t;
+
 static size_t bounded_text_length(const char *text, size_t maximum) {
     size_t length = 0U;
     if (text == 0) return 0U;
     while (length < maximum && text[length] != '\0') ++length;
     return length;
+}
+
+static uint32_t text_equal(const char *left, const char *right) {
+    if (left == 0 || right == 0) return 0U;
+    for (uint32_t index = 0U; index < DESKTOP_ARGUMENT_LIMIT; ++index) {
+        if (left[index] != right[index]) return 0U;
+        if (left[index] == '\0') return 1U;
+    }
+    return 0U;
+}
+
+static uint32_t saturating_add_u32(uint32_t left, uint32_t right) {
+    return left > UINT32_MAX - right ? UINT32_MAX : left + right;
+}
+
+static void saturating_increment(uint32_t *value) {
+    if (value != 0 && *value != UINT32_MAX) ++*value;
 }
 
 static uint32_t max_u32(uint32_t left, uint32_t right) {
@@ -236,6 +277,23 @@ static void render_icon(const desktop_render_context_t *context,
                       selected ? color_active : color_desktop);
 }
 
+static void render_resize_grip(const desktop_render_context_t *context,
+                               const desktop_window_t *window) {
+    if (window == 0 || window->width < 16U || window->height < 16U) return;
+    int32_t right = window->x + (int32_t)window->width;
+    int32_t bottom = window->y + (int32_t)window->height;
+    for (uint32_t row = 0U; row < 3U; ++row) {
+        for (uint32_t column = 0U; column <= row; ++column) {
+            fill_rect_clipped(
+                context,
+                (desktop_rect_t){right - 4 - (int32_t)(column * 4U),
+                                 bottom - 4 - (int32_t)((row - column) * 4U),
+                                 2U, 2U},
+                color_shadow);
+        }
+    }
+}
+
 static void render_window(const desktop_render_context_t *context,
                           const desktop_wm_t *manager,
                           uint32_t window_index) {
@@ -317,6 +375,7 @@ static void render_window(const desktop_render_context_t *context,
                 color_shadow, color_client);
         }
     }
+    render_resize_grip(context, window);
 }
 
 static void render_desktop_clip(const desktop_render_context_t *context,
@@ -353,7 +412,7 @@ static void render_desktop_clip(const desktop_render_context_t *context,
         context, 10,
         status_rect.y +
             (int32_t)((status - display->font_height) / 2U),
-        "Maus: Fokus / Ziehen / Schliessen   ENTER: Start   ESC: Shell",
+        "Maus: Fokus / Verschieben / Groesse / Schliessen   ENTER: Start   ESC: Shell",
         display->width > 20U ? display->width - 20U : 1U,
         color_text, color_face);
 }
@@ -396,22 +455,86 @@ static void render_desktop(const x86os_display_info_t *display,
     render_dirty_regions(display, manager, dirty);
 }
 
-static void render_desktop_frame(const x86os_display_info_t *display,
-                                 const desktop_wm_t *manager,
-                                 const desktop_dirty_region_t *dirty) {
-    if (dirty == 0 || dirty->count == 0U) return;
+static uint32_t render_desktop_frame(const x86os_display_info_t *display,
+                                     const desktop_wm_t *manager,
+                                     const desktop_dirty_region_t *dirty) {
+    if (dirty == 0 || dirty->count == 0U) return 0U;
     uint32_t serial = 0U;
     int begin = x86os_display_frame_begin(&serial);
     if (begin != 0) {
         /* Oversized/direct framebuffers retain the compatible immediate path. */
         render_desktop(display, manager, dirty);
-        return;
+        return 1U;
     }
     render_desktop(display, manager, dirty);
     if (x86os_display_frame_commit(serial) != 0) {
         (void)x86os_display_frame_cancel(serial);
         render_desktop(display, manager, dirty);
+        return 1U;
     }
+    return 0U;
+}
+
+static void record_render_metrics(desktop_render_metrics_t *metrics,
+                                  const desktop_dirty_region_t *dirty,
+                                  uint32_t drag, uint32_t resize,
+                                  uint32_t fallback,
+                                  uint32_t clock_valid,
+                                  uint32_t elapsed_ms) {
+    if (metrics == 0 || dirty == 0) return;
+    metrics->damage_regions = saturating_add_u32(
+        metrics->damage_regions, dirty->count);
+    if (dirty->count > metrics->damage_max)
+        metrics->damage_max = dirty->count;
+    if (fallback) saturating_increment(&metrics->fallback_frames);
+
+    uint32_t *frames = dirty->full
+        ? &metrics->full_frames : &metrics->dirty_frames;
+    uint32_t *total = dirty->full
+        ? &metrics->full_total_ms : &metrics->dirty_total_ms;
+    uint32_t *maximum = dirty->full
+        ? &metrics->full_max_ms : &metrics->dirty_max_ms;
+    saturating_increment(frames);
+    if (drag) saturating_increment(&metrics->drag_frames);
+    if (resize) saturating_increment(&metrics->resize_frames);
+    if (!clock_valid) {
+        saturating_increment(&metrics->clock_errors);
+        return;
+    }
+    *total = saturating_add_u32(*total, elapsed_ms);
+    if (elapsed_ms > *maximum) *maximum = elapsed_ms;
+    if (drag) {
+        metrics->drag_total_ms = saturating_add_u32(
+            metrics->drag_total_ms, elapsed_ms);
+        if (elapsed_ms > metrics->drag_max_ms)
+            metrics->drag_max_ms = elapsed_ms;
+    }
+    if (resize) {
+        metrics->resize_total_ms = saturating_add_u32(
+            metrics->resize_total_ms, elapsed_ms);
+        if (elapsed_ms > metrics->resize_max_ms)
+            metrics->resize_max_ms = elapsed_ms;
+    }
+}
+
+static void render_desktop_measured(
+    const x86os_display_info_t *display, const desktop_wm_t *manager,
+    const desktop_dirty_region_t *dirty, uint32_t drag, uint32_t resize,
+    desktop_render_metrics_t *metrics) {
+    if (dirty == 0 || dirty->count == 0U) return;
+    uint64_t started_ms = 0U;
+    uint64_t finished_ms = 0U;
+    uint32_t clock_valid = x86os_monotonic_ms(&started_ms) == 0;
+    uint32_t fallback = render_desktop_frame(display, manager, dirty);
+    if (!clock_valid || x86os_monotonic_ms(&finished_ms) != 0 ||
+        finished_ms < started_ms) {
+        clock_valid = 0U;
+    }
+    uint64_t elapsed = clock_valid ? finished_ms - started_ms : 0U;
+    uint32_t elapsed_ms = elapsed > UINT32_MAX
+        ? UINT32_MAX : (uint32_t)elapsed;
+    record_render_metrics(metrics, dirty, drag, resize, fallback,
+                          clock_valid, elapsed_ms);
 }
 
 static int read_escape_byte(void) {
@@ -467,6 +590,62 @@ static void print_integer(int value) {
         magnitude /= 10U;
     } while (magnitude != 0U);
     while (count != 0U) x86os_putchar(digits[--count]);
+}
+
+static void print_unsigned(uint32_t value) {
+    char digits[10];
+    uint32_t count = 0U;
+    do {
+        digits[count++] = (char)('0' + value % 10U);
+        value /= 10U;
+    } while (value != 0U && count < sizeof(digits));
+    while (count != 0U) x86os_putchar(digits[--count]);
+}
+
+static void print_metric(const char *name, uint32_t value) {
+    x86os_putchar(' ');
+    x86os_puts(name);
+    x86os_putchar('=');
+    print_unsigned(value);
+}
+
+static void print_render_metrics(const desktop_render_metrics_t *metrics) {
+    if (metrics == 0) return;
+    x86os_puts("DESKTOP_METRICS");
+    print_metric("version", DESKTOP_METRICS_VERSION);
+    print_metric("full_frames", metrics->full_frames);
+    print_metric("full_total_ms", metrics->full_total_ms);
+    print_metric("full_max_ms", metrics->full_max_ms);
+    print_metric("dirty_frames", metrics->dirty_frames);
+    print_metric("dirty_total_ms", metrics->dirty_total_ms);
+    print_metric("dirty_max_ms", metrics->dirty_max_ms);
+    print_metric("drag_frames", metrics->drag_frames);
+    print_metric("drag_total_ms", metrics->drag_total_ms);
+    print_metric("drag_max_ms", metrics->drag_max_ms);
+    print_metric("resize_frames", metrics->resize_frames);
+    print_metric("resize_total_ms", metrics->resize_total_ms);
+    print_metric("resize_max_ms", metrics->resize_max_ms);
+    print_metric("fallback_frames", metrics->fallback_frames);
+    print_metric("damage_regions", metrics->damage_regions);
+    print_metric("damage_max", metrics->damage_max);
+    print_metric("clock_errors", metrics->clock_errors);
+    print_metric("probe_errors", metrics->probe_errors);
+    x86os_putchar('\n');
+}
+
+static uint32_t desktop_try_exit(
+    int32_t pointer_x, int32_t pointer_y, uint32_t runtime_activated,
+    const desktop_render_metrics_t *metrics) {
+    (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
+    if (runtime_activated && x86os_display_deactivate() != 0) {
+        x86os_puts("desktop: VGA-Rueckkehr fehlgeschlagen\n");
+        (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
+        return 0U;
+    }
+    if (!runtime_activated) x86os_clear();
+    print_render_metrics(metrics);
+    x86os_puts("DESKTOP_EXIT_OK\n");
+    return 1U;
 }
 
 static void launch_app(unsigned int index) {
@@ -574,13 +753,133 @@ static uint32_t dispatch_desktop_event(
     return result.flags;
 }
 
-int main(void) {
+static void render_probe_error(desktop_render_metrics_t *metrics) {
+    if (metrics != 0) saturating_increment(&metrics->probe_errors);
+}
+
+static void run_render_probe(
+    const x86os_display_info_t *display, desktop_wm_t *manager,
+    int32_t *pointer_x, int32_t *pointer_y,
+    desktop_render_metrics_t *metrics) {
+    if (display == 0 || manager == 0 || pointer_x == 0 || pointer_y == 0 ||
+        metrics == 0 || manager->windows[0].visible == 0U) {
+        render_probe_error(metrics);
+        return;
+    }
+    desktop_window_t *window = &manager->windows[0];
+    *pointer_x = window->x + (int32_t)(window->width / 2U);
+    *pointer_y = window->y + (int32_t)manager->frame_border +
+                 (int32_t)(manager->title_height / 2U);
+    clip_pointer(display, pointer_x, pointer_y);
+    (void)x86os_pointer_update(*pointer_x, *pointer_y, 1U);
+
+    desktop_dirty_region_t dirty;
+    uint32_t target = DESKTOP_WM_NO_TARGET;
+    desktop_wm_event_t event = {
+        .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
+        .x = *pointer_x,
+        .y = *pointer_y,
+        .button = DESKTOP_WM_BUTTON_LEFT,
+        .pressed = 1U,
+    };
+    desktop_dirty_initialize(&dirty, display->width, display->height);
+    (void)dispatch_desktop_event(manager, display, &dirty, &event, &target);
+    if (manager->capture_kind != DESKTOP_WM_CAPTURE_MOVE)
+        render_probe_error(metrics);
+    for (uint32_t step = 0U; step < DESKTOP_RENDER_PROBE_STEPS; ++step) {
+        move_pointer(display, pointer_x, pointer_y,
+                     DESKTOP_RENDER_PROBE_STEP_X, 0);
+        desktop_dirty_initialize(&dirty, display->width, display->height);
+        event = (desktop_wm_event_t){
+            .type = DESKTOP_WM_EVENT_POINTER_MOTION,
+            .x = *pointer_x,
+            .y = *pointer_y,
+        };
+        (void)dispatch_desktop_event(
+            manager, display, &dirty, &event, &target);
+        if (dirty.count == 0U) {
+            render_probe_error(metrics);
+            continue;
+        }
+        (void)x86os_pointer_update(*pointer_x, *pointer_y, 0U);
+        render_desktop_measured(display, manager, &dirty, 1U, 0U, metrics);
+        (void)x86os_pointer_update(*pointer_x, *pointer_y, 1U);
+    }
+    event = (desktop_wm_event_t){
+        .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
+        .x = *pointer_x,
+        .y = *pointer_y,
+        .button = DESKTOP_WM_BUTTON_LEFT,
+        .pressed = 0U,
+    };
+    desktop_dirty_initialize(&dirty, display->width, display->height);
+    (void)dispatch_desktop_event(manager, display, &dirty, &event, &target);
+
+    *pointer_x = window->x + (int32_t)window->width - 1;
+    *pointer_y = window->y + (int32_t)window->height - 1;
+    clip_pointer(display, pointer_x, pointer_y);
+    (void)x86os_pointer_update(*pointer_x, *pointer_y, 1U);
+    event = (desktop_wm_event_t){
+        .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
+        .x = *pointer_x,
+        .y = *pointer_y,
+        .button = DESKTOP_WM_BUTTON_LEFT,
+        .pressed = 1U,
+    };
+    desktop_dirty_initialize(&dirty, display->width, display->height);
+    (void)dispatch_desktop_event(manager, display, &dirty, &event, &target);
+    if (manager->capture_kind != DESKTOP_WM_CAPTURE_RESIZE)
+        render_probe_error(metrics);
+    for (uint32_t step = 0U; step < DESKTOP_RENDER_PROBE_STEPS; ++step) {
+        move_pointer(display, pointer_x, pointer_y,
+                     DESKTOP_RENDER_PROBE_STEP_X, 2);
+        desktop_dirty_initialize(&dirty, display->width, display->height);
+        event = (desktop_wm_event_t){
+            .type = DESKTOP_WM_EVENT_POINTER_MOTION,
+            .x = *pointer_x,
+            .y = *pointer_y,
+        };
+        (void)dispatch_desktop_event(
+            manager, display, &dirty, &event, &target);
+        if (dirty.count == 0U) {
+            render_probe_error(metrics);
+            continue;
+        }
+        (void)x86os_pointer_update(*pointer_x, *pointer_y, 0U);
+        render_desktop_measured(display, manager, &dirty, 0U, 1U, metrics);
+        (void)x86os_pointer_update(*pointer_x, *pointer_y, 1U);
+    }
+    event = (desktop_wm_event_t){
+        .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
+        .x = *pointer_x,
+        .y = *pointer_y,
+        .button = DESKTOP_WM_BUTTON_LEFT,
+        .pressed = 0U,
+    };
+    desktop_dirty_initialize(&dirty, display->width, display->height);
+    (void)dispatch_desktop_event(manager, display, &dirty, &event, &target);
+    if (metrics->drag_frames != DESKTOP_RENDER_PROBE_STEPS ||
+        metrics->resize_frames != DESKTOP_RENDER_PROBE_STEPS ||
+        manager->capture_kind != DESKTOP_WM_CAPTURE_NONE)
+        render_probe_error(metrics);
+}
+
+int main(int argc, char **argv) {
     x86os_display_info_t display;
     desktop_wm_t manager;
+    desktop_render_metrics_t metrics = {0};
     int32_t pointer_x;
     int32_t pointer_y;
     uint32_t previous_buttons = 0U;
     unsigned int runtime_activated = 0U;
+    uint32_t render_probe = 0U;
+
+    if (argc == 2 && argv != 0 && text_equal(argv[1], "--render-probe")) {
+        render_probe = 1U;
+    } else if (argc != 1) {
+        x86os_puts("Usage: desktop [--render-probe]\n");
+        return 2;
+    }
 
     int display_status = x86os_display_info(&display);
     if (display_status != 0) {
@@ -608,8 +907,16 @@ int main(void) {
     desktop_dirty_region_t initial_dirty;
     desktop_dirty_initialize(&initial_dirty, display.width, display.height);
     desktop_dirty_full(&initial_dirty);
-    render_desktop_frame(&display, &manager, &initial_dirty);
+    render_desktop_measured(
+        &display, &manager, &initial_dirty, 0U, 0U, &metrics);
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
+    if (render_probe) {
+        run_render_probe(
+            &display, &manager, &pointer_x, &pointer_y, &metrics);
+        if (desktop_try_exit(
+                pointer_x, pointer_y, runtime_activated, &metrics)) return 0;
+        render_probe_error(&metrics);
+    }
 
     for (;;) {
         int key = read_key();
@@ -617,6 +924,8 @@ int main(void) {
         desktop_dirty_initialize(&dirty, display.width, display.height);
         uint32_t actions = 0U;
         uint32_t action_target = DESKTOP_WM_NO_TARGET;
+        uint32_t drag_render = 0U;
+        uint32_t resize_render = 0U;
         unsigned int mouse_events = 0U;
         for (; mouse_events < 32U; ++mouse_events) {
             x86os_mouse_event_t mouse;
@@ -629,6 +938,10 @@ int main(void) {
                 .x = pointer_x,
                 .y = pointer_y,
             };
+            if (manager.capture_kind == DESKTOP_WM_CAPTURE_MOVE)
+                drag_render = 1U;
+            if (manager.capture_kind == DESKTOP_WM_CAPTURE_RESIZE)
+                resize_render = 1U;
             actions |= dispatch_desktop_event(
                 &manager, &display, &dirty, &motion, &action_target);
 
@@ -686,15 +999,9 @@ int main(void) {
         }
 
         if ((actions & DESKTOP_WM_RESULT_EXIT) != 0U) {
-            (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
-            if (runtime_activated && x86os_display_deactivate() != 0) {
-                x86os_puts("desktop: VGA-Rueckkehr fehlgeschlagen\n");
-                (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
-            } else {
-                if (!runtime_activated) x86os_clear();
-                x86os_puts("DESKTOP_EXIT_OK\n");
+            if (desktop_try_exit(
+                    pointer_x, pointer_y, runtime_activated, &metrics))
                 return 0;
-            }
         }
 
         if ((actions & DESKTOP_WM_RESULT_LAUNCH) != 0U &&
@@ -706,7 +1013,9 @@ int main(void) {
 
         if (dirty.count != 0U) {
             (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
-            render_desktop_frame(&display, &manager, &dirty);
+            render_desktop_measured(
+                &display, &manager, &dirty, drag_render, resize_render,
+                &metrics);
             (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
         } else if (mouse_events != 0U) {
             (void)x86os_pointer_update(pointer_x, pointer_y, 1U);

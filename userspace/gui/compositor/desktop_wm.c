@@ -125,6 +125,31 @@ desktop_rect_t desktop_wm_window_bounds(const desktop_wm_t *manager,
     return rect;
 }
 
+uint32_t desktop_wm_resize_edges_at(const desktop_wm_t *manager,
+                                    uint32_t window_index,
+                                    int32_t x, int32_t y) {
+    if (manager == 0 || window_index >= DESKTOP_WM_CAPACITY ||
+        manager->windows[window_index].visible == 0U) return 0U;
+    const desktop_window_t *window = &manager->windows[window_index];
+    desktop_rect_t bounds = window_rect(window);
+    if (!point_in_rect(bounds, x, y)) return 0U;
+    int64_t left = window->x;
+    int64_t top = window->y;
+    int64_t right = left + window->width;
+    int64_t bottom = top + window->height;
+    uint32_t margin = manager->resize_margin;
+    uint32_t edges = 0U;
+    if ((int64_t)x < left + margin)
+        edges |= DESKTOP_WM_RESIZE_LEFT;
+    else if ((int64_t)x >= right - margin)
+        edges |= DESKTOP_WM_RESIZE_RIGHT;
+    if ((int64_t)y < top + margin)
+        edges |= DESKTOP_WM_RESIZE_TOP;
+    else if ((int64_t)y >= bottom - margin)
+        edges |= DESKTOP_WM_RESIZE_BOTTOM;
+    return edges;
+}
+
 static desktop_rect_t title_rect(const desktop_wm_t *manager,
                                  uint32_t window_index) {
     desktop_rect_t rect = {0, 0, 0U, 0U};
@@ -162,6 +187,51 @@ static void clamp_window(desktop_wm_t *manager, desktop_window_t *window) {
     if (window->y < manager->work_top) window->y = manager->work_top;
     if (window->x > maximum_x) window->x = maximum_x;
     if (window->y > maximum_y) window->y = maximum_y;
+}
+
+static uint32_t resize_window(desktop_wm_t *manager,
+                              desktop_window_t *window,
+                              int32_t pointer_x, int32_t pointer_y) {
+    int64_t left = manager->resize_window_x;
+    int64_t top = manager->resize_window_y;
+    int64_t right = left + manager->resize_window_width;
+    int64_t bottom = top + manager->resize_window_height;
+    int64_t delta_x = (int64_t)pointer_x - manager->resize_start_x;
+    int64_t delta_y = (int64_t)pointer_y - manager->resize_start_y;
+    if (manager->resize_edges & DESKTOP_WM_RESIZE_LEFT) left += delta_x;
+    if (manager->resize_edges & DESKTOP_WM_RESIZE_RIGHT) right += delta_x;
+    if (manager->resize_edges & DESKTOP_WM_RESIZE_TOP) top += delta_y;
+    if (manager->resize_edges & DESKTOP_WM_RESIZE_BOTTOM) bottom += delta_y;
+
+    if (manager->resize_edges & DESKTOP_WM_RESIZE_LEFT) {
+        int64_t maximum_left = right - manager->minimum_width;
+        if (left < manager->work_left) left = manager->work_left;
+        if (left > maximum_left) left = maximum_left;
+    } else if (manager->resize_edges & DESKTOP_WM_RESIZE_RIGHT) {
+        int64_t minimum_right = left + manager->minimum_width;
+        if (right > manager->work_right) right = manager->work_right;
+        if (right < minimum_right) right = minimum_right;
+    }
+    if (manager->resize_edges & DESKTOP_WM_RESIZE_TOP) {
+        int64_t maximum_top = bottom - manager->minimum_height;
+        if (top < manager->work_top) top = manager->work_top;
+        if (top > maximum_top) top = maximum_top;
+    } else if (manager->resize_edges & DESKTOP_WM_RESIZE_BOTTOM) {
+        int64_t minimum_bottom = top + manager->minimum_height;
+        if (bottom > manager->work_bottom) bottom = manager->work_bottom;
+        if (bottom < minimum_bottom) bottom = minimum_bottom;
+    }
+
+    int32_t old_x = window->x;
+    int32_t old_y = window->y;
+    uint32_t old_width = window->width;
+    uint32_t old_height = window->height;
+    window->x = (int32_t)left;
+    window->y = (int32_t)top;
+    window->width = (uint32_t)(right - left);
+    window->height = (uint32_t)(bottom - top);
+    return old_x != window->x || old_y != window->y ||
+           old_width != window->width || old_height != window->height;
 }
 
 static uint32_t raise_window(desktop_wm_t *manager, uint32_t window_index) {
@@ -226,16 +296,31 @@ void desktop_wm_initialize(desktop_wm_t *manager, uint32_t screen_width,
     manager->capture_window = DESKTOP_WM_NO_WINDOW;
     manager->drag_offset_x = 0;
     manager->drag_offset_y = 0;
+    manager->resize_edges = 0U;
+    manager->resize_start_x = 0;
+    manager->resize_start_y = 0;
+    manager->resize_window_x = 0;
+    manager->resize_window_y = 0;
+    manager->resize_window_width = 0U;
+    manager->resize_window_height = 0U;
+    manager->resize_margin = 6U;
 
     uint32_t available_width = manager->work_right > manager->work_left
         ? (uint32_t)(manager->work_right - manager->work_left) : 1U;
     uint32_t available_height = manager->work_bottom > manager->work_top
         ? (uint32_t)(manager->work_bottom - manager->work_top) : 1U;
+    manager->minimum_width = available_width < 160U
+        ? available_width : 160U;
+    uint32_t desired_minimum_height =
+        manager->title_height > UINT32_MAX - 64U
+            ? UINT32_MAX : manager->title_height + 64U;
+    manager->minimum_height = available_height < desired_minimum_height
+        ? available_height : desired_minimum_height;
     uint32_t window_width = (available_width / 5U) * 3U;
     uint32_t window_height = (available_height / 5U) * 3U;
-    uint32_t minimum_height = manager->title_height + 64U;
-    if (window_width < 160U) window_width = available_width;
-    if (window_height < minimum_height) window_height = available_height;
+    if (window_width < manager->minimum_width) window_width = available_width;
+    if (window_height < manager->minimum_height)
+        window_height = available_height;
     if (window_width > available_width) window_width = available_width;
     if (window_height > available_height) window_height = available_height;
 
@@ -296,6 +381,17 @@ uint32_t desktop_wm_pointer_press(desktop_wm_t *manager,
     if (point_in_rect(desktop_wm_close_rect(manager, index), x, y)) {
         manager->capture_kind = DESKTOP_WM_CAPTURE_CLOSE;
         manager->capture_window = window_index;
+    } else if ((manager->resize_edges = desktop_wm_resize_edges_at(
+                    manager, index, x, y)) != 0U) {
+        const desktop_window_t *window = &manager->windows[index];
+        manager->capture_kind = DESKTOP_WM_CAPTURE_RESIZE;
+        manager->capture_window = window_index;
+        manager->resize_start_x = x;
+        manager->resize_start_y = y;
+        manager->resize_window_x = window->x;
+        manager->resize_window_y = window->y;
+        manager->resize_window_width = window->width;
+        manager->resize_window_height = window->height;
     } else if (point_in_rect(title_rect(manager, index), x, y)) {
         manager->capture_kind = DESKTOP_WM_CAPTURE_MOVE;
         manager->capture_window = window_index;
@@ -318,10 +414,12 @@ uint32_t desktop_wm_pointer_motion(desktop_wm_t *manager,
         return 0U;
     }
     manager->pointer_focus = manager->capture_window;
-    if (manager->capture_kind != DESKTOP_WM_CAPTURE_MOVE ||
-        manager->capture_window < 0 ||
+    if (manager->capture_window < 0 ||
         manager->capture_window >= (int32_t)DESKTOP_WM_CAPACITY) return 0U;
     desktop_window_t *window = &manager->windows[manager->capture_window];
+    if (manager->capture_kind == DESKTOP_WM_CAPTURE_RESIZE)
+        return resize_window(manager, window, x, y);
+    if (manager->capture_kind != DESKTOP_WM_CAPTURE_MOVE) return 0U;
     int64_t proposed_x = (int64_t)x - manager->drag_offset_x;
     int64_t proposed_y = (int64_t)y - manager->drag_offset_y;
     int32_t old_x = window->x;
@@ -342,6 +440,7 @@ uint32_t desktop_wm_pointer_release(desktop_wm_t *manager,
     uint32_t capture_kind = manager->capture_kind;
     manager->capture_kind = DESKTOP_WM_CAPTURE_NONE;
     manager->capture_window = DESKTOP_WM_NO_WINDOW;
+    manager->resize_edges = 0U;
     if (capture_kind == DESKTOP_WM_CAPTURE_CLOSE && captured >= 0 &&
         captured < (int32_t)DESKTOP_WM_CAPACITY &&
         manager->windows[captured].visible &&

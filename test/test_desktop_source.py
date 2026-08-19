@@ -67,7 +67,14 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("z_order[DESKTOP_WM_CAPACITY]", header)
         self.assertIn("DESKTOP_WM_CAPTURE_MOVE", header)
         self.assertIn("DESKTOP_WM_CAPTURE_CLOSE", header)
+        self.assertIn("DESKTOP_WM_CAPTURE_RESIZE", header)
+        for edge in ("LEFT", "RIGHT", "TOP", "BOTTOM"):
+            self.assertIn(f"DESKTOP_WM_RESIZE_{edge}", header)
+        self.assertIn("minimum_width", header)
+        self.assertIn("minimum_height", header)
         self.assertIn("desktop_wm_window_at", model)
+        self.assertIn("desktop_wm_resize_edges_at", model)
+        self.assertIn("static uint32_t resize_window", model)
         self.assertIn("desktop_wm_pointer_press", model)
         self.assertIn("desktop_wm_pointer_motion", model)
         self.assertIn("desktop_wm_pointer_release", model)
@@ -79,7 +86,7 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("keyboard_focus", header)
         self.assertIn("pointer_focus", header)
         self.assertIn("desktop_wm_dispatch", self.source)
-        main = self.source[self.source.index("int main(void)") :]
+        main = self.source[self.source.index("int main(") :]
         self.assertNotIn("desktop_wm_pointer_press(&manager", main)
         self.assertNotIn("desktop_wm_pointer_motion(&manager", main)
         self.assertNotIn("desktop_wm_pointer_release(&manager", main)
@@ -153,18 +160,16 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("print_integer(pid);", launch)
 
     def test_first_render_emits_the_desktop_ready_marker(self):
-        main = self.source[self.source.index("int main(void)") :]
-        first_render = main.index("render_desktop_frame(&display, &manager,")
+        main = self.source[self.source.index("int main(") :]
+        first_render = main.index("render_desktop_measured(")
         marker = main.index('x86os_puts("DESKTOP_OK\\n")')
         self.assertLess(marker, first_render)
         startup = main[:main.index("for (;;)")]
-        self.assertEqual(
-            startup.count("render_desktop_frame(&display, &manager,"), 1
-        )
+        self.assertEqual(startup.count("render_desktop_measured("), 1)
 
     def test_scene_redraw_uses_a_bounded_frame_transaction(self):
         redraw = self.source[
-            self.source.index("static void render_desktop_frame") :
+            self.source.index("static uint32_t render_desktop_frame") :
         ]
         redraw = redraw[: redraw.index("\n}") + 2]
         self.assertIn("x86os_display_frame_begin", redraw)
@@ -174,6 +179,46 @@ class DesktopSourceTests(unittest.TestCase):
                         redraw.index("render_desktop("))
         self.assertLess(redraw.index("render_desktop("),
                         redraw.index("x86os_display_frame_commit"))
+
+    def test_resize_has_a_visible_grip_and_uses_dirty_redraw(self):
+        grip = self.source[self.source.index("static void render_resize_grip") :]
+        grip = grip[: grip.index("\n}") + 2]
+        self.assertIn("fill_rect_clipped", grip)
+        self.assertIn("render_resize_grip(context, window)", self.source)
+        self.assertIn("DESKTOP_WM_CAPTURE_RESIZE", self.source)
+        self.assertIn("resize_render = 1U", self.source)
+        self.assertIn(
+            "&display, &manager, &dirty, drag_render, resize_render",
+            self.source,
+        )
+
+    def test_render_probe_is_fixed_bounded_and_reports_versioned_metrics(self):
+        self.assertIn("#define DESKTOP_METRICS_VERSION 1U", self.source)
+        self.assertIn("#define DESKTOP_RENDER_PROBE_STEPS 8U", self.source)
+        self.assertIn("#define DESKTOP_ARGUMENT_LIMIT 32U", self.source)
+        self.assertIn('text_equal(argv[1], "--render-probe")', self.source)
+        probe = self.source[self.source.index("static void run_render_probe") :]
+        probe = probe[: probe.index("\n}\n\nint main") + 2]
+        self.assertIn("DESKTOP_WM_CAPTURE_MOVE", probe)
+        self.assertIn("DESKTOP_WM_CAPTURE_RESIZE", probe)
+        self.assertEqual(probe.count("< DESKTOP_RENDER_PROBE_STEPS"), 2)
+        self.assertIn("render_desktop_measured", probe)
+        measured = self.source[
+            self.source.index("static void render_desktop_measured") :
+            self.source.index("static int read_escape_byte")
+        ]
+        self.assertGreaterEqual(measured.count("x86os_monotonic_ms"), 2)
+        self.assertNotIn("x86os_puts", measured)
+        metrics = self.source[
+            self.source.index("static void print_render_metrics") :
+            self.source.index("static uint32_t desktop_try_exit")
+        ]
+        for field in (
+            "version", "full_frames", "dirty_frames", "drag_frames",
+            "resize_frames", "fallback_frames", "damage_regions",
+            "clock_errors", "probe_errors",
+        ):
+            self.assertIn(f'print_metric("{field}"', metrics)
 
     def test_launcher_is_freestanding_and_has_no_host_libc_dependency(self):
         self.assertNotRegex(self.source, r"#include\s*<(stdio|stdlib|string)\.h>")

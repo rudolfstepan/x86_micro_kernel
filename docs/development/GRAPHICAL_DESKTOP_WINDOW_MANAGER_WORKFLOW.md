@@ -199,8 +199,9 @@ Schadens- und Frame-Publikation aus Stufe 2 verfügbar ist.
 
 ## Stufe 2: Compositor-Kern und flüssige Frame-Publikation
 
-Sichtbares Ergebnis: Ein gezogenes Fenster bewegt sich ohne vollständiges
-Neuzeichnen des Bildschirms und ohne schrittweise sichtbaren Bildaufbau.
+Sichtbares Ergebnis: Ein gezogenes oder an Kante beziehungsweise Ecke in der
+Größe geändertes Fenster bewegt sich ohne vollständiges Neuzeichnen des
+Bildschirms und ohne schrittweise sichtbaren Bildaufbau.
 
 - [x] Typisierten, zentralen Event-Dispatch statt direkter Eingabe-Manipulation
   des Fensterzustands einführen.
@@ -226,14 +227,24 @@ Neuzeichnen des Bildschirms und ohne schrittweise sichtbaren Bildaufbau.
 - [x] Alte und neue Fensterposition sowie freigelegte und überdeckte Fenster
   durch vollständige Back-to-front-Komposition innerhalb der Dirty Regions
   korrekt invalidieren.
+- [x] Serverseitigen Resize-Hit-Test für vier Kanten und vier Ecken mit fester
+  sechs Pixel breiter Dekorationszone umsetzen; das Schließfeld behält Vorrang.
+- [x] Resize vom Button-Down bis Button-Up unter demselben impliziten Capture
+  halten und Pointerbewegungen nicht an ein anderes Fenster umleiten.
+- [x] Gegenüberliegende Kante beim Ziehen festhalten, Mindestgröße erzwingen
+  und jede Geometrie auf den nutzbaren Arbeitsbereich begrenzen.
+- [x] Alte und neue Resize-Geometrie als Dirty Regions rekonstruieren und eine
+  sichtbare Griffmarkierung in der rechten unteren Ecke zeichnen.
 - [x] Hosttests für Dirty-Überlauf, Fokusarten, Event-Dispatch, implizites Grab,
-  Stale-Serial, Timeout und Prozesscleanup ergänzen.
+  Kanten-/Ecken-Resize, Mindestgröße, Bounds, Stale-Serial, Timeout und
+  Prozesscleanup ergänzen.
 - [x] VMware-Paket mit Kernel und aktualisiertem `DESKTOP.PRG` bauen.
 - [x] Compositor-Quellen in den eigenen GUI-Baum verschieben und die
   Zielabbilder unter `/usr/gui/bin` vereinheitlichen.
 - [x] Direkten Start über den begrenzten Userspace-Shell-Pfad sowie feste
   Legacy-Pfadaliase durch Quell- und Image-Layout-Tests absichern.
-- [ ] Messwerte für Vollbildaufbau und Fensterzug im seriellen Test protokollieren.
+- [x] Versionierte Messwerte für Vollbildaufbau, Fensterzug und Resize im
+  seriellen QEMU-Test protokollieren.
 - [ ] VMware-Sichttest ohne Flackern oder stehenbleibende Fensterreste.
 
 Die Frame-ABI ist bewusst eine Publikationsgrenze, keine globale
@@ -241,7 +252,17 @@ Compositor-Sperre. Längere Rechteck- und Textoperationen bleiben präemptibel;
 konkurrierende Zeichner werden begrenzt mit Fehlerstatus abgewiesen. Das
 gegenwärtige Dirty-Redraw zeichnet innerhalb jedes Clips Hintergrund, Icons
 und sichtbare Fenster erneut in Z-Reihenfolge. Damit werden freigelegte Flächen
-korrekt rekonstruiert, ohne den restlichen Bildschirm neu aufzubauen.
+korrekt rekonstruiert, ohne den restlichen Bildschirm neu aufzubauen. Resize
+ist bewusst eine serverseitige Top-Level-Operation: Der Compositor besitzt
+Hit-Test, Geometrie und Dekoration; ein späterer Client erhält die neue
+Clientgröße ausschließlich über die versionierte `configure`-/
+`ack_configure`-Grenze aus Stufe 3.
+
+Automatischer QEMU-Nachweis vom 19. August 2026: ein Vollbildframe, acht
+Move-Frames und acht Resize-Frames; `full_max_ms=7`, `drag_max_ms=80`,
+`resize_max_ms=84`, `damage_max=1`, keine Immediate-Fallbacks sowie keine
+Zeitquellen- oder Probe-Fehler. Das vollständige Laufprotokoll liegt unter
+`build/codex-agent/20260819-154449-runtime-desktop-metrics.log`.
 
 ## Stufe 3: versionierte GUI-Client- und Surface-ABI
 
@@ -294,7 +315,8 @@ inkompatibler Fensterrahmen.
 
 ## Stufe 6: vollständige klassische Desktopfunktionen
 
-- [ ] Größenänderung mit Mindestgröße und Pointer-Capture.
+- [x] Größenänderung mit Mindestgröße und Pointer-Capture (in Stufe 2
+  vorgezogen, weil sie zur Geometrie- und Damage-Architektur gehört).
 - [ ] Minimieren und Wiederherstellen über eine feste Fensterleiste.
 - [ ] Maximieren und exakte Rückkehr zur vorherigen Geometrie.
 - [ ] Menüleiste mit Desktop-, Fenster- und Hilfeaktionen.
@@ -338,13 +360,29 @@ Nach dem Shell-Prompt:
 C:\> desktop
 ```
 
-Für Stufe 1 sind genau diese Handlungen abzunehmen:
+Für den aktuellen Stand sind genau diese Handlungen abzunehmen:
 
 1. Beide sichtbaren Startfenster abwechselnd anklicken; die aktive Titelleiste
    und Z-Order müssen wechseln.
 2. Jedes Fenster an der Titelleiste bis an alle Arbeitsbereichsgrenzen ziehen.
-3. Ein Fenster über das linke Schließfeld schließen und über sein Desktopicon
+3. Ein Fenster nacheinander an jeder Kante und jeder Ecke vergrößern und
+   verkleinern; es darf weder kleiner als die Mindestgröße noch aus dem
+   Arbeitsbereich gezogen werden.
+4. Ein Fenster über das linke Schließfeld schließen und über sein Desktopicon
    erneut öffnen.
-4. Eine Legacy-App mit Enter öffnen, beenden und die
+5. Eine Legacy-App mit Enter öffnen, beenden und die
    unveränderte Fensterszene wiedersehen.
-5. Escape drücken und die bedienbare VGA-Shell erhalten.
+6. Escape drücken und die bedienbare VGA-Shell erhalten.
+
+Der reproduzierbare Gastnachweis für Frame-Publikation und Resize verwendet
+keine reale Host-Eingabe und führt jeweils genau acht Move- und Resize-Frames
+aus:
+
+```powershell
+.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-metrics
+```
+
+Er akzeptiert ausschließlich den vollständigen Metrikvertrag Version 1,
+keinen Immediate-Fallback, keine Zeitquellen- oder Probe-Fehler und höchstens
+acht Damage-Rechtecke je Frame. Die manuelle VMware-Checkbox bleibt davon
+getrennt, weil nur sie die sichtbare Interaktion und Flüssigkeit belegt.

@@ -292,8 +292,16 @@ class UsbMouseTests(unittest.TestCase):
         ]
         self.assertIn("return 0;", branch)
         self.assertNotIn("launch_app", branch)
-        self.assertIn("x86os_display_deactivate()", branch)
-        self.assertIn('x86os_puts("DESKTOP_EXIT_OK\\n")', branch)
+        self.assertIn("desktop_try_exit(", branch)
+        exit_helper = source[
+            source.index("static uint32_t desktop_try_exit") :
+            source.index("static void launch_app")
+        ]
+        deactivate = exit_helper.index("x86os_display_deactivate()")
+        metrics = exit_helper.index("print_render_metrics(metrics)")
+        marker = exit_helper.index('x86os_puts("DESKTOP_EXIT_OK\\n")')
+        self.assertLess(deactivate, metrics)
+        self.assertLess(metrics, marker)
 
     def test_desktop_batches_mouse_reports_and_uses_software_pointer(self):
         source = (ROOT / "userspace/gui/compositor/desktop.c").read_text(

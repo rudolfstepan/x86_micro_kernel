@@ -1,9 +1,16 @@
 """Source contracts for native runtime graphics activation."""
 
+import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from run_qemu_runtime_desktop import (
+    desktop_monitor_key_commands,
+    parse_render_metrics,
+)
 
 
 class RuntimeGraphicsSwitchTests(unittest.TestCase):
@@ -19,6 +26,12 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         cls.stdlib = (ROOT / "lib/libc/stdlib.h").read_text()
         cls.kernel = (ROOT / "kernel/init/kernel.c").read_text()
         cls.vbe_runtime = (ROOT / "arch/x86/boot/vbe_runtime.asm").read_text()
+        cls.runtime_runner = (
+            ROOT / "scripts/run_qemu_runtime_desktop.py"
+        ).read_text()
+        cls.runtime_script = (
+            ROOT / "scripts/test-reist-runtime.ps1"
+        ).read_text()
 
     def test_append_only_control_abi(self):
         self.assertIn("SYS_DISPLAY_CONTROL 109", self.stdlib)
@@ -89,6 +102,40 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn("report_unsupported_graphics", self.control)
         self.assertIn("VGA=%04X:%04X", self.control)
         self.assertIn("device->bar[5]", self.control)
+
+    def test_desktop_metrics_parser_accepts_only_complete_bounded_probe(self):
+        line = (
+            "DESKTOP_METRICS version=1 full_frames=1 full_total_ms=10 "
+            "full_max_ms=10 dirty_frames=16 dirty_total_ms=80 "
+            "dirty_max_ms=10 drag_frames=8 drag_total_ms=40 "
+            "drag_max_ms=10 resize_frames=8 resize_total_ms=40 "
+            "resize_max_ms=10 fallback_frames=0 damage_regions=32 "
+            "damage_max=2 clock_errors=0 probe_errors=0"
+        )
+        metrics, normalized = parse_render_metrics(line.replace(" ", "\n"))
+        self.assertEqual(metrics["resize_frames"], 8)
+        self.assertEqual(metrics["damage_max"], 2)
+        self.assertTrue(normalized.startswith("DESKTOP_METRICS version=1"))
+
+        with self.assertRaises(RuntimeError):
+            parse_render_metrics(line.replace("resize_frames=8",
+                                              "resize_frames=7"))
+        with self.assertRaises(RuntimeError):
+            parse_render_metrics(line.replace("full_frames=1",
+                                              "full_frames=2"))
+        with self.assertRaises(RuntimeError):
+            parse_render_metrics(line.replace("probe_errors=0",
+                                              "probe_errors=1"))
+
+    def test_runtime_metrics_mode_runs_the_fixed_desktop_probe(self):
+        self.assertIn("runtime-desktop-metrics", self.runtime_script)
+        self.assertIn("Invoke-RuntimeDesktop $false $true",
+                      self.runtime_script)
+        self.assertIn('"desktop.prg --render-probe"', self.runtime_runner)
+        self.assertIn("--metrics-log", self.runtime_runner)
+        keys = desktop_monitor_key_commands("desktop.prg --render-probe")
+        self.assertEqual(keys.count("sendkey minus\n"), 3)
+        self.assertEqual(keys[-1], "sendkey ret\n")
 
 
 if __name__ == "__main__":

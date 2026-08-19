@@ -85,6 +85,12 @@ Grafikmodus und stellt die vorhandene VGA-Shell wieder sichtbar her.
     Pointer- und Keyboard-Fokus und rekonstruiert höchstens acht Dirty Regions
     mit geclippten Primitiven in Z-Reihenfolge. Controls und externe
     GUI-Clients bleiben außerhalb dieses Pakets.
+12. Top-Level-Fenster lassen sich an vier Kanten und vier Ecken unter einem
+    impliziten Pointer-Capture in der Größe ändern. Der Window-Manager hält die
+    gegenüberliegende Kante fest, erzwingt eine feste Mindestgröße und begrenzt
+    die Geometrie auf den Arbeitsbereich. Ein deterministischer Gastlauf misst
+    genau acht Move- und acht Resize-Frames mit einem versionierten,
+    saturierenden Metrikformat.
 
 ## Verbindliche Invarianten
 
@@ -124,6 +130,9 @@ Grafikmodus und stellt die vorhandene VGA-Shell wieder sichtbar her.
   und Generation auf.
 - Pointer- und Keyboard-Fokus sind getrennt. Jede Pointer-Button-Sequenz bleibt
   bis Button-Up implizit an ihr ursprüngliches Ziel gebunden.
+- Serverseitiger Resize-Hit-Test, Mindestgröße und Arbeitsbereichsgrenzen
+  werden vor der Veröffentlichung jeder neuen Fenstergeometrie angewandt; ein
+  Button-Up beendet das implizite Capture unabhängig von der Pointerposition.
 - VGA- und bestehende Framebuffer-Boots bleiben startfähig. Ein fehlender oder
   unbrauchbarer DISPI-Adapter darf den normalen VGA-Boot nicht verhindern.
 - Der Grafikpfad behauptet keine Fail-operational- oder
@@ -235,6 +244,7 @@ python test/test_bios_vbe_source.py -q
 
 ```powershell
 .\scripts\test-reist-runtime.ps1 -Mode runtime-desktop
+.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-metrics
 .\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-vbe
 .\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-vbe-failure
 ```
@@ -265,9 +275,9 @@ Tests auf unterstützter Zielhardware.
 
 ## Nicht Bestandteil dieses Pakets
 
-- überlappende oder frei verschiebbare Fenster
-- Compositor und Hardwarebeschleunigung
-- Drag-and-drop und vollständiges GUI-Clientprotokoll
+- separate GUI-Clientprozesse und eine öffentliche Surface-/Fenster-ABI
+- Controls, Dialoge, Drag-and-drop und vollständiges GUI-Clientprotokoll
+- GPU-Beschleunigung oder ein frei programmierbarer Grafiktreiber
 - frei ladbare Grafiktreiber oder UEFI GOP
 - Auflösungsdialog und beliebige dynamische Modi
 - direktes Framebuffer-Mapping in Userspace

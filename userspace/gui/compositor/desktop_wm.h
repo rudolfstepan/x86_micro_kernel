@@ -16,8 +16,14 @@ enum {
     DESKTOP_WM_CAPTURE_NONE = 0U,
     DESKTOP_WM_CAPTURE_MOVE,
     DESKTOP_WM_CAPTURE_CLOSE,
-    DESKTOP_WM_CAPTURE_CLIENT
+    DESKTOP_WM_CAPTURE_CLIENT,
+    DESKTOP_WM_CAPTURE_RESIZE
 };
+
+#define DESKTOP_WM_RESIZE_LEFT (1U << 0)
+#define DESKTOP_WM_RESIZE_RIGHT (1U << 1)
+#define DESKTOP_WM_RESIZE_TOP (1U << 2)
+#define DESKTOP_WM_RESIZE_BOTTOM (1U << 3)
 
 enum {
     DESKTOP_WM_EVENT_POINTER_MOTION = 1U,
@@ -96,12 +102,22 @@ typedef struct {
     int32_t capture_window;
     int32_t drag_offset_x;
     int32_t drag_offset_y;
+    uint32_t resize_edges;
+    int32_t resize_start_x;
+    int32_t resize_start_y;
+    int32_t resize_window_x;
+    int32_t resize_window_y;
+    uint32_t resize_window_width;
+    uint32_t resize_window_height;
     int32_t work_left;
     int32_t work_top;
     int32_t work_right;
     int32_t work_bottom;
     uint32_t title_height;
     uint32_t frame_border;
+    uint32_t resize_margin;
+    uint32_t minimum_width;
+    uint32_t minimum_height;
     uint32_t screen_width;
     uint32_t screen_height;
 } desktop_wm_t;
@@ -122,6 +138,9 @@ desktop_rect_t desktop_wm_close_rect(const desktop_wm_t *manager,
                                      uint32_t window_index);
 desktop_rect_t desktop_wm_window_bounds(const desktop_wm_t *manager,
                                         uint32_t window_index);
+uint32_t desktop_wm_resize_edges_at(const desktop_wm_t *manager,
+                                    uint32_t window_index,
+                                    int32_t x, int32_t y);
 uint32_t desktop_wm_open(desktop_wm_t *manager, uint32_t window_index);
 uint32_t desktop_wm_select(desktop_wm_t *manager, uint32_t window_index);
 uint32_t desktop_wm_pointer_press(desktop_wm_t *manager,

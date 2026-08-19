@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'system-layout', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'system-layout', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal'
 )
 
@@ -93,11 +93,23 @@ function Invoke-Smoke(
     Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
 }
 
-function Invoke-RuntimeDesktop([bool]$ExpectFailure = $false) {
+function Invoke-RuntimeDesktop(
+    [bool]$ExpectFailure = $false,
+    [bool]$RenderProbe = $false
+) {
+    if ($ExpectFailure -and $RenderProbe) {
+        throw 'Runtime desktop failure and render probe modes are exclusive.'
+    }
     $screenshot = Join-Path $RepoRoot 'build\runtime-desktop.ppm'
     $arguments = @('--qemu', $Qemu, '--image', $Image,
         '--screenshot', $screenshot)
     if ($ExpectFailure) { $arguments += '--expect-failure' }
+    if ($RenderProbe) {
+        New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+        $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $metricsLog = Join-Path $LogRoot "$stamp-runtime-desktop-metrics.log"
+        $arguments += @('--render-probe', '--metrics-log', $metricsLog)
+    }
     & $Python $RuntimeDesktopRunner @arguments
     if ($ExpectFailure) {
         if ($LASTEXITCODE -eq 0) { throw 'Runtime graphics failure was not rejected.' }
@@ -398,6 +410,9 @@ switch ($Mode) {
     }
     'runtime-desktop' {
         Invoke-RuntimeDesktop
+    }
+    'runtime-desktop-metrics' {
+        Invoke-RuntimeDesktop $false $true
     }
     'runtime-desktop-vbe' {
         & $BuildScript -Target qemu -Video vga -VbeRuntimeTest
