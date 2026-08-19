@@ -97,6 +97,7 @@
 #define TRB_DISABLE_SLOT         10U
 #define TRB_ADDRESS_DEVICE       11U
 #define TRB_CONFIGURE_ENDPOINT   12U
+#define TRB_EVALUATE_CONTEXT     13U
 #define TRB_EVENT_TRANSFER       32U
 #define TRB_EVENT_COMMAND        33U
 #define TRB_EVENT_PORT           34U
@@ -768,6 +769,51 @@ static bool xhci_address_device(xhci_hid_device_t *hid, uint8_t port_speed) {
            completed_slot == slot;
 }
 
+static bool xhci_ep0_packet_valid(uint8_t port_speed, uint16_t max_packet) {
+    if (port_speed == 1U)
+        return max_packet == 8U || max_packet == 16U ||
+               max_packet == 32U || max_packet == 64U;
+    if (port_speed == 2U) return max_packet == 8U;
+    if (port_speed == 3U) return max_packet == 64U;
+    if (port_speed >= 4U) return max_packet == 512U;
+    return false;
+}
+
+static bool xhci_update_ep0_max_packet(xhci_hid_device_t *hid,
+                                        uint16_t max_packet) {
+    if (hid == NULL || hid->slot_id == 0U ||
+        !xhci_ep0_packet_valid(hid->port_speed, max_packet))
+        return false;
+    if (max_packet == hid->max_packet) return true;
+
+    uint8_t saved_ep0[XHCI_CONTEXT_BYTES];
+    memset(saved_ep0, 0, sizeof(saved_ep0));
+    memcpy(saved_ep0,
+           xhci_device_context(hid) + controller.context_size,
+           controller.context_size);
+    memset(input_context, 0, sizeof(input_context));
+    uint32_t *control = (uint32_t *)input_context;
+    uint32_t *ep0 = (uint32_t *)(input_context +
+                                  2U * controller.context_size);
+    control[1] = (1U << 1U);
+    memcpy(ep0, saved_ep0, controller.context_size);
+    /* An input endpoint context must not carry the controller-owned state
+     * from the output context.  Preserve the dequeue state and update only
+     * Max Packet Size before asking xHCI to evaluate EP0. */
+    ep0[0] &= ~0x7U;
+    ep0[1] = (ep0[1] & ~(0xFFFFU << 16U)) |
+             ((uint32_t)max_packet << 16U);
+    xhci_trb_t *evaluate = xhci_command(TRB_EVALUATE_CONTEXT,
+                                         xhci_dma32(input_context), 0U,
+                                         (uint32_t)hid->slot_id << 24U);
+    uint8_t completed_slot = 0U;
+    if (!xhci_wait_command(evaluate, &completed_slot) ||
+        completed_slot != hid->slot_id)
+        return false;
+    hid->max_packet = max_packet;
+    return true;
+}
+
 static bool xhci_release_candidate(xhci_hid_device_t *hid) {
     if (hid == NULL || hid->online) return false;
     uint8_t slot = hid->slot_id;
@@ -922,21 +968,32 @@ static bool xhci_configure_boot_hid(xhci_hid_device_t *hid,
         printf("USB: xHCI GET_DESCRIPTOR device-8 failed\n");
         return false;
     }
-    if (hid->max_packet >= 512U && control_buffer[7] > 15U) {
+    if (hid->port_speed >= 4U && control_buffer[7] > 15U) {
         diagnostics.failure_stage = XHCI_FAILURE_EP0_DESCRIPTOR;
         printf("USB: xHCI invalid EP0 packet exponent=%u\n",
                (unsigned)control_buffer[7]);
         return false;
     }
-    uint16_t descriptor_packet = hid->max_packet >= 512U
+    uint16_t descriptor_packet = hid->port_speed >= 4U
         ? (uint16_t)(1U << control_buffer[7]) : control_buffer[7];
     if (control_buffer[0] < 8U || control_buffer[7] == 0U ||
-        descriptor_packet != hid->max_packet) {
+        !xhci_ep0_packet_valid(hid->port_speed, descriptor_packet)) {
         diagnostics.failure_stage = XHCI_FAILURE_EP0_DESCRIPTOR;
         printf("USB: xHCI invalid EP0 packet descriptor=%u context=%u\n",
                (unsigned)descriptor_packet, (unsigned)hid->max_packet);
         return false;
     }
+    uint16_t addressed_packet = hid->max_packet;
+    if (!xhci_update_ep0_max_packet(hid, descriptor_packet)) {
+        diagnostics.failure_stage = XHCI_FAILURE_EP0_DESCRIPTOR;
+        printf("USB: xHCI EVALUATE_CONTEXT EP0 failed packet=%u cc=%u\n",
+               (unsigned)descriptor_packet,
+               (unsigned)diagnostics.last_completion);
+        return false;
+    }
+    if (descriptor_packet != addressed_packet)
+        printf("USB: xHCI EP0 packet updated %u->%u\n",
+               (unsigned)addressed_packet, (unsigned)descriptor_packet);
     if (!xhci_control(hid, 0x80U, 6U, 0x0100U, 0U, 18U, true,
                       control_buffer)) {
         diagnostics.failure_stage = XHCI_FAILURE_DEVICE_DESCRIPTOR;

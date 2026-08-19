@@ -420,6 +420,20 @@ gleichzeitig angebotenen Boot-Protokollen weiterhin die Tastatur, ohne daraus
 eine Host-Geräteübernahme abzuleiten. Intels `8086:8c31`-Register, Timing und
 physische HID-Geräte bleiben prinzipbedingt Nachweise auf dem ASUS-Board.
 
+Das am Entwicklungsrechner verifizierte reale Testkeyboard meldet sich als
+BY-Tech/AULA-Gaming-Keyboard `258A:010C` mit 12 Mbit/s. Es ist ein
+Composite-Gerät: Interface 0 ist HID Boot Keyboard (`03/01/01`), Interface 1
+ist ein zusätzliches HID für LED-Steuerung, Lautstärkedrehregler und weitere
+Herstellerfunktionen. Der Basistreiber wählt ausschließlich Interface 0 und
+ignoriert das Zusatzinterface zunächst. Für Full-Speed-Geräte liest xHCI den
+Gerätedeskriptor zuerst mit einer EP0-Paketgröße von acht Bytes. Weicht das
+dort gelieferte `bMaxPacketSize0` ab, kopiert der Treiber nun den
+controllerseitigen EP0-Output-Kontext, löscht dessen Endpoint-State-Bits,
+aktualisiert nur die Paketgröße und führt den begrenzten xHCI-Befehl
+`Evaluate Context` aus. Damit bleibt EP0 auf strengen Intel-Controllern aktiv;
+Completion Code 12 (`Endpoint Not Enabled`) wird nicht mehr durch eine
+fehlende Paketgrößenaktualisierung provoziert.
+
 ## Erwartetes Restrisiko
 
 Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte

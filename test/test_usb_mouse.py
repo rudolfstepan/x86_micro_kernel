@@ -188,6 +188,22 @@ class UsbMouseTests(unittest.TestCase):
         self.assertNotIn("memset(event, 0, sizeof(*event))", drain)
         self.assertIn("controller.event_cycle = !controller.event_cycle", drain)
 
+    def test_xhci_evaluates_changed_full_speed_ep0_packet_size(self):
+        source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
+        self.assertIn("TRB_EVALUATE_CONTEXT", source)
+        start = source.index("static bool xhci_update_ep0_max_packet")
+        end = source.index("static bool xhci_release_candidate", start)
+        helper = source[start:end]
+        self.assertIn("xhci_device_context(hid) + controller.context_size",
+                      helper)
+        self.assertIn("control[1] = (1U << 1U)", helper)
+        self.assertIn("ep0[0] &= ~0x7U", helper)
+        self.assertIn("~(0xFFFFU << 16U)", helper)
+        self.assertIn("xhci_command(TRB_EVALUATE_CONTEXT", helper)
+        self.assertIn("completed_slot != hid->slot_id", helper)
+        self.assertIn("xhci_update_ep0_max_packet(hid, descriptor_packet)",
+                      source)
+
     def test_desktop_escape_returns_to_parent_shell(self):
         source = (ROOT / "userspace/programs/desktop.c").read_text(
             encoding="utf-8")
