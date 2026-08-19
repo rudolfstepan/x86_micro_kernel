@@ -785,6 +785,39 @@ static void show_prompt(void) {
     x86os_putchar('>');
 }
 
+static void show_usb_keyboard_startup(void) {
+    x86os_usb_diagnostics_t status;
+    if (x86os_usb_diagnostics(&status) != 0 ||
+        status.version != X86OS_USB_DIAGNOSTICS_VERSION ||
+        status.struct_size != sizeof(status)) {
+        x86os_puts("USB keyboard: diagnostics unavailable\n");
+        return;
+    }
+    x86os_puts("USB keyboard: ");
+    if ((status.state == X86OS_USB_STATE_KEYBOARD_READY ||
+         status.state == X86OS_USB_STATE_KEYBOARD_MOUSE_READY) &&
+        status.keyboard_port != 0U) {
+        x86os_puts("ready port=");
+        x86os_print_number((int)status.keyboard_port);
+        x86os_puts(" slot=");
+        x86os_print_number((int)status.keyboard_slot);
+        x86os_puts(" endpoint=");
+        x86os_print_number((int)status.keyboard_endpoint);
+        x86os_puts(" reports=");
+        x86os_print_number((int)status.keyboard_reports);
+        x86os_puts(" rejected=");
+        x86os_print_number((int)status.rejected_keyboard_reports);
+    } else {
+        x86os_puts("not ready state=");
+        x86os_print_number((int)status.state);
+        x86os_puts(" connected=");
+        x86os_print_number((int)status.connected_ports);
+        x86os_puts(" attempts=");
+        x86os_print_number((int)status.attempts);
+    }
+    x86os_putchar('\n');
+}
+
 static void show_help(void) {
     x86os_puts("Built-ins: cd path pwd history help exit\n");
     x86os_puts("Aliases: dir type md rd erase clear ren mv cp\n");
@@ -899,7 +932,9 @@ static void run_program(int argc, const char* argv[SHELL_MAX_ARGUMENTS]) {
 int main(void) {
     char line[SHELL_LINE_CAPACITY];
     const char* argv[SHELL_MAX_ARGUMENTS];
-    x86os_puts("REIST OS userspace shell\nType HELP for available commands.\n\n");
+    x86os_puts("REIST OS userspace shell\nType HELP for available commands.\n");
+    show_usb_keyboard_startup();
+    x86os_putchar('\n');
     for (;;) {
         show_prompt();
         read_line(line);

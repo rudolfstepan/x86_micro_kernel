@@ -58,6 +58,16 @@ class UsbKeyboardTests(unittest.TestCase):
                         blocking.index("uint32_t flags = irq_save();"))
         self.assertIn("KEYBOARD_POLL_INTERVAL_MS", blocking)
 
+    def test_userspace_shell_prints_usb_keyboard_state_without_input(self):
+        source = (ROOT / "userspace/bin/shell.c").read_text(encoding="utf-8")
+        self.assertIn("static void show_usb_keyboard_startup(void)", source)
+        self.assertIn("x86os_usb_diagnostics(&status)", source)
+        self.assertIn("status.keyboard_port", source)
+        self.assertIn("status.keyboard_reports", source)
+        main = source[source.index("int main(void)"):]
+        self.assertLess(main.index("show_usb_keyboard_startup();"),
+                        main.index("for (;;)"))
+
 
 if __name__ == "__main__":
     unittest.main()

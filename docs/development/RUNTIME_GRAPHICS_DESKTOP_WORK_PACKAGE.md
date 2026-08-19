@@ -382,6 +382,13 @@ dem Queue-Lock, da die Reportauswertung über `kb_submit_key_event()` in genau
 diese Queue publiziert. IRQ-Betrieb bleibt erhalten, Polling ist nur der
 bereits zeitlich begrenzte Ausweichpfad.
 
+Damit ein weiterer realer Lauf auch bei ausbleibender Eingabe verwertbar ist,
+zeigt die normale Userspace-Shell vor dem ersten Prompt selbsttätig eine
+kompakte USB-Tastaturdiagnose. Bei erfolgreicher Enumeration enthält sie Port,
+Slot, Endpoint sowie akzeptierte und verworfene Reports; andernfalls Zustand,
+verbundene Portmaske und Anzahl der Enumerationsversuche. Dafür ist kein
+Tastendruck und keine Rettungsshell erforderlich.
+
 ## Erwartetes Restrisiko
 
 Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte
