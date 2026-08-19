@@ -39,8 +39,10 @@ PROGRAMS = {
         ROOT / "userspace/gui/compositor/desktop.c",
         ROOT / "userspace/gui/compositor/desktop_wm.c",
         ROOT / "userspace/gui/compositor/desktop_explorer.c",
+        ROOT / "userspace/gui/compositor/desktop_filetypes.c",
     ),
     "GUIDEMO.PRG": ROOT / "userspace/gui/apps/control_gallery/main.c",
+    "NOTEPAD.PRG": ROOT / "userspace/gui/apps/notepad/main.c",
     "MKDIR.PRG": ROOT / "userspace/programs/mkdir.c",
     "RMDIR.PRG": ROOT / "userspace/programs/rmdir.c",
     "DEL.PRG": ROOT / "userspace/programs/del.c",
@@ -79,7 +81,7 @@ PROGRAMS = {
     "SATAWR.PRG": ROOT / "userspace/programs/sata_write_test.c",
 }
 
-GUI_PROGRAMS = {"DESKTOP.PRG", "GUIDEMO.PRG"}
+GUI_PROGRAMS = {"DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG"}
 NETWORK_PARSER_PROGRAMS = {"REIST.PRG"}
 MAX_SYSTEM_BUILD_WORKERS = 8
 DEFAULT_SYSTEM_BUILD_WORKERS = min(

@@ -581,6 +581,7 @@ SYSTEM_IMAGE_FILES := \
 	etc/reist/system.conf=config/etc/reist/system.conf \
 	etc/reist/input.conf=config/etc/reist/input.conf \
 	etc/reist/desktop.conf=config/etc/reist/desktop.conf \
+	etc/reist/filetypes.conf=config/etc/reist/filetypes.conf \
 	bin/shell.prg=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG \
 	bin/ls.prg=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
 	bin/cat.prg=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
@@ -632,6 +633,7 @@ SYSTEM_IMAGE_FILES := \
 	usr/bin/spawn.prg=$(SYSTEM_PROGRAM_DIR)/SPAWN.PRG \
 	usr/gui/bin/desktop.prg=$(SYSTEM_PROGRAM_DIR)/DESKTOP.PRG \
 	usr/gui/bin/guidemo.prg=$(SYSTEM_PROGRAM_DIR)/GUIDEMO.PRG \
+	usr/gui/bin/notepad.prg=$(SYSTEM_PROGRAM_DIR)/NOTEPAD.PRG \
 	libexec/reist/childex.prg=$(SYSTEM_PROGRAM_DIR)/CHILDEX.PRG \
 	libexec/reist/faultde.prg=$(SYSTEM_PROGRAM_DIR)/FAULTDE.PRG \
 	libexec/reist/faultud.prg=$(SYSTEM_PROGRAM_DIR)/FAULTUD.PRG \
@@ -705,13 +707,16 @@ test-desktop-host:
 	@$(PYTHON) test/test_display_abi_minimal.py -q
 	@$(PYTHON) test/test_desktop_source.py -q
 	@$(PYTHON) test/test_desktop_explorer_source.py -q
+	@$(PYTHON) test/test_desktop_filetypes_source.py -q
 	@$(PYTHON) test/test_gui_menu_source.py -q
 	@$(PYTHON) test/test_gui_dialog_source.py -q
 	@$(PYTHON) test/test_gui_control_source.py -q
 	@$(PYTHON) test/test_gui_container_source.py -q
 	@$(PYTHON) test/test_gui_tabs_source.py -q
 	@$(PYTHON) test/test_gui_value_controls_source.py -q
+	@$(PYTHON) test/test_gui_text_editor_source.py -q
 	@$(PYTHON) test/test_gui_control_gallery_source.py -q
+	@$(PYTHON) test/test_gui_notepad_source.py -q
 
 # Full integration tests additionally require generated disk images.
 test-all: test-unit test-images

@@ -66,7 +66,7 @@ der betroffenen Surface an.
 | verschachtelte Container | ja | Control Gallery | adressierter Eventpfad | Parent-Capture/Target/Bubble | [x] Parent-lokale Geometrie und Ancestry-Clip |
 | Tabs | ja | Control Gallery | Capture/Auswahl | Links/Rechts, Home/End, Enter/Space | [x] vier interaktive Seiten |
 | einzeiliges Textfeld | ja | Control Gallery | Fokus/Cursor-Capture | Cursor, Editieren, Enter | [x] begrenztes ASCII-v1-Textfeld |
-| mehrzeiliger Texteditor | nein | Legacy-Vollbildeditor | nein | Legacy | [ ] als GUI-Control neu bauen |
+| mehrzeiliger Texteditor | ja | REIST Editor | Click/Cursor | Cursor, Editieren, Zeilenwechsel | [x] fester ASCII/LF-Puffer, Laden/Speichern und Dirty-State |
 | Liste und Listenauswahl | ja | Control Gallery | Capture/Auswahl | Pfeile, Home/End, Page, Enter | [x] feste Itemkapazität |
 | Scrollbar | ja | Control Gallery | Drag-Capture | Pfeile, Page, Home/End | [x] gemeinsame Range-API |
 | ScrollView | nein | nein | nein | nein | [ ] Containerkopplung noch offen |
@@ -79,6 +79,7 @@ der betroffenen Surface an.
 | Kontextmenü | Menücontroller verwendbar | ja | Capture | Pfeile/Enter/Esc | [ ] öffentlicher Öffnungsanker fehlt |
 | Dateiauswahl-, Farb- und Fontdialog | nein | nein | nein | nein | [ ] spätere Systemdienste |
 | interaktive Control Gallery | Menü-, Dialog- und Basis-Control-API | ja | ja | ja | [x] `/usr/gui/bin/guidemo.prg` |
+| grafischer Texteditor | Texteditor-, Menü- und Dialog-API | ja | Cursorplatzierung | Editieren/Navigation/Save | [x] `/usr/gui/bin/notepad.prg` |
 
 ## Interaktive Referenzanwendung
 
@@ -178,6 +179,14 @@ Framebufferzugriff. Jedes sichtbare Element trägt einen semantischen Namen;
 `guidemo.prg` ordnet sie auf den Tabs `Basis`, `Eingabe`, `Auswahl` und
 `Werte` an.
 
+`<reist/gui/text_editor.h>` erweitert diesen Vertrag um ein mehrzeiliges,
+caller-owned Dokument mit höchstens 200 Zeilen zu je 255 ASCII-Zeichen,
+Cursor, horizontalem/vertikalem Viewport, Pointer-Capture und explizitem
+Dirty-State. Persistenz bleibt Anwendungsverantwortung; erst nach erfolgreichem
+`fsync` und Rename ruft `notepad.prg` `reist_gui_text_editor_mark_saved()` auf.
+Damit kann ein fehlgeschlagener Schreibpfad den sichtbaren Dirty-State nicht
+fälschlich löschen.
+
 ## Dialogvertrag
 
 Die REIST-Dialog-API folgt den gemeinsamen, weiterhin aktuellen Mustern von
@@ -273,11 +282,14 @@ Layout bleiben explizit offen.
 - [ ] Automatische Box-/Grid-/Stack-Layoutalgorithmen bereitstellen.
 - [x] Einzeiliges Textfeld samt Cursor und expliziter Clipboard-/IME-Grenze spezifizieren.
 - [x] Liste, Scrollbar, Slider, SpinBox und Progress gemeinsam implementieren.
+- [x] Mehrzeiligen Texteditor mit realer GUI-App, Dirty-State, modalen
+  Save/Discard/Cancel-Dialogen und begrenzter Persistenz bereitstellen.
 - [ ] ScrollView aus Container, Viewport und Scrollbar zusammensetzen.
 - [ ] Surface-/Event-IPC generationsgebunden veröffentlichen.
 - [ ] Accessibility-Baum und assistive Eventausgabe versionieren.
 - [ ] Theme-, Font-, Icon- und Lokalisierungsressourcen versionieren.
-- [ ] Dateimanager, Editor, Terminal und Systeminfo als getrennte GUI-Clients portieren.
+- [ ] Dateimanager, Terminal und Systeminfo als getrennte GUI-Clients portieren;
+  der Editor ist bis zur Surface-IPC ein öffentlicher Vollbild-GUI-Client.
 
 ## Definition of Done für ein Control
 

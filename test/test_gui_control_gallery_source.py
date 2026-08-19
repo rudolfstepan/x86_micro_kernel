@@ -81,7 +81,10 @@ class GuiControlGallerySourceTests(unittest.TestCase):
             ROOT / "scripts/run_qemu_system_layout.py"
         ).read_text(encoding="utf-8")
         self.assertIn('"GUIDEMO.PRG"', programs)
-        self.assertIn('GUI_PROGRAMS = {"DESKTOP.PRG", "GUIDEMO.PRG"}', programs)
+        self.assertIn(
+            'GUI_PROGRAMS = {"DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG"}',
+            programs,
+        )
         self.assertEqual(windows.count("'usr/gui/bin/guidemo.prg'"), 1)
         self.assertEqual(makefile.count("usr/gui/bin/guidemo.prg="), 1)
         self.assertIn('"/usr/gui/bin"', shell)

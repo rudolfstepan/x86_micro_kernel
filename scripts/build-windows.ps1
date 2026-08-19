@@ -247,6 +247,7 @@ try {
         'usr/bin/spawn.prg' = 'SPAWN.PRG'
         'usr/gui/bin/desktop.prg' = 'DESKTOP.PRG'
         'usr/gui/bin/guidemo.prg' = 'GUIDEMO.PRG'
+        'usr/gui/bin/notepad.prg' = 'NOTEPAD.PRG'
         'libexec/reist/childex.prg' = 'CHILDEX.PRG'
         'libexec/reist/faultde.prg' = 'FAULTDE.PRG'
         'libexec/reist/faultud.prg' = 'FAULTUD.PRG'
@@ -266,7 +267,7 @@ try {
             '--data-file', "$($entry.Key)=$(Join-Path $UserProgramDir $entry.Value)"
         )
     }
-    foreach ($configFile in @('system.conf', 'input.conf', 'desktop.conf')) {
+    foreach ($configFile in @('system.conf', 'input.conf', 'desktop.conf', 'filetypes.conf')) {
         $configPath = Join-Path $RepoRoot "config\etc\reist\$configFile"
         $imageDataArguments += @(
             '--data-file', "etc/reist/$configFile=$configPath"

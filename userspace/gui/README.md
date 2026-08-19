@@ -12,7 +12,7 @@ programs in `userspace/programs` and interactive console programs in
 | `apps/<name>/` | GUI applications, one directory per program. Until Surface IPC exists, explicitly documented full-screen clients may use only the public display ABI and GUI library. |
 | `examples/` | Small, buildable SDK examples that include only installed public headers. |
 | `include/reist/gui/` | Versioned public C APIs. In-process library APIs and the future cross-process Surface protocol remain explicitly separate. |
-| `lib/` | Bounded, reusable Ring-3 GUI components. Menu, dialog, container, tab and control state machines are renderer-independent static-library components. |
+| `lib/` | Bounded, reusable Ring-3 GUI components. Menu, dialog, container, tab, value-control and multiline text-editor state machines are renderer-independent static-library components. |
 | `share/` | Future versioned themes, fonts, icons and other read-only GUI resources. |
 
 Directories are created when their first real source or resource is added.
@@ -22,6 +22,7 @@ This avoids placeholder modules and keeps the current trust boundary visible.
 
 - `/usr/gui/bin/desktop.prg` contains the trusted session compositor.
 - `/usr/gui/bin/guidemo.prg` is the interactive control and dialog gallery.
+- `/usr/gui/bin/notepad.prg` is the bounded graphical text editor.
 - `/usr/gui/bin/*.prg` contains directly launchable GUI applications.
 - The development sysroot installs public headers under `/usr/include` and
   static archives under `/usr/lib`, following conventional compiler lookup
@@ -31,7 +32,7 @@ This avoids placeholder modules and keeps the current trust boundary visible.
   resources until its target-image contract is fixed.
 
 The Ring-3 shell includes `/usr/gui/bin` in its bounded default search path, so
-`desktop` and `guidemo` are directly launchable. `/DESKTOP.PRG` and the previous
+`desktop`, `guidemo` and `notepad` are directly launchable. `/DESKTOP.PRG` and the previous
 `/usr/bin/desktop.prg` path remain compatibility aliases, but new code must use
 the installed canonical path.
 
@@ -45,7 +46,8 @@ in the desktop workflow.
 The installed component APIs currently comprise `<reist/gui/types.h>`,
 `<reist/gui/menu.h>`, `<reist/gui/dialog.h>`,
 `<reist/gui/control.h>`, `<reist/gui/container.h>`,
-`<reist/gui/tabs.h>` and `<reist/gui/value_controls.h>`. They supply fixed-capacity,
+`<reist/gui/tabs.h>`, `<reist/gui/value_controls.h>` and
+`<reist/gui/text_editor.h>`. They supply fixed-capacity,
 heap-free state machines,
 local geometry queries, implicit pointer capture, keyboard navigation and
 bounded damage output. The dialog API additionally models owner identity,
@@ -75,6 +77,24 @@ public implementation are not drawn as misleading mock controls. Until the
 versioned Surface IPC exists, the gallery is a
 full-screen display client; it is not presented as an isolated compositor
 surface.
+
+## Graphical text editor
+
+`userspace/gui/apps/notepad/main.c` builds as `NOTEPAD.PRG` and is installed
+as `/usr/gui/bin/notepad.prg`. It can be started directly or through the
+desktop's validated `/etc/reist/filetypes.conf` associations:
+
+```text
+C:\>notepad /readme.txt
+```
+
+The application uses the public multiline controller, menu and asynchronous
+dialog APIs. It loads at most the documented fixed document capacity, shows a
+dirty marker, supports pointer cursor placement and keyboard navigation, and
+saves through a process-unique temporary file, `fsync` and same-directory
+rename. Save/discard/cancel on exit is application-modal. Until Surface IPC is
+available, it temporarily occupies the complete graphical display while the
+desktop remains its supervising parent and recomposes after child exit.
 
 Build the SDK and the documented example with the repository's upstream
 Zig/LLVM toolchain integration:
@@ -112,6 +132,7 @@ build/sdk/usr/include/reist/gui/control.h
 build/sdk/usr/include/reist/gui/container.h
 build/sdk/usr/include/reist/gui/tabs.h
 build/sdk/usr/include/reist/gui/value_controls.h
+build/sdk/usr/include/reist/gui/text_editor.h
 build/sdk/usr/lib/crt0.o
 build/sdk/usr/lib/libreistos.a
 build/sdk/usr/lib/libreistnetparse.a

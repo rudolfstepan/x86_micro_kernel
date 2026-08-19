@@ -48,6 +48,7 @@ class SystemLayoutContracts(unittest.TestCase):
             "system.conf": "schema=reist.system/1",
             "input.conf": "schema=reist.input/1",
             "desktop.conf": "schema=reist.desktop/1",
+            "filetypes.conf": "schema=reist.filetypes/1",
         }
         for name, schema in required.items():
             text = self.read(f"config/etc/reist/{name}")
@@ -107,7 +108,9 @@ class SystemLayoutContracts(unittest.TestCase):
                 "usr/bin/hello.prg": b"hello",
                 "usr/gui/bin/desktop.prg": b"desktop",
                 "usr/gui/bin/guidemo.prg": b"guidemo",
+                "usr/gui/bin/notepad.prg": b"notepad",
                 "etc/reist/input.conf": b"schema=reist.input/1\n",
+                "etc/reist/filetypes.conf": b"schema=reist.filetypes/1\n",
             },
         )
         image.seek(DATA_PARTITION_START * 512)
@@ -142,6 +145,9 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertEqual(
             cluster_entries(gui_bin_cluster)[b"GUIDEMO PRG"][12], 0x18
         )
+        self.assertEqual(
+            cluster_entries(gui_bin_cluster)[b"NOTEPAD PRG"][12], 0x18
+        )
         etc_cluster = struct.unpack_from("<H", root[b"ETC        "], 26)[0]
         etc = cluster_entries(etc_cluster)
         reist_cluster = struct.unpack_from("<H", etc[b"REIST      "], 26)[0]
@@ -174,11 +180,15 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn('"/bin", "/sbin", "/usr/bin", "/usr/gui/bin"', shell)
         self.assertIn("usr/gui/bin/guidemo.prg", makefile)
         self.assertIn("'usr/gui/bin/guidemo.prg'", windows)
-        for config in ("system.conf", "input.conf", "desktop.conf"):
+        for config in (
+            "system.conf", "input.conf", "desktop.conf", "filetypes.conf"
+        ):
             self.assertIn(
                 f"etc/reist/{config}=config/etc/reist/{config}", makefile
             )
         self.assertIn('"etc/reist/$configFile=$configPath"', windows)
+        self.assertIn("usr/gui/bin/notepad.prg", makefile)
+        self.assertIn("'usr/gui/bin/notepad.prg'", windows)
         self.assertIn('{"/DESKTOP.PRG", "/usr/gui/bin/desktop.prg"}', process)
         self.assertIn(
             '{"/usr/bin/desktop.prg", "/usr/gui/bin/desktop.prg"}', process

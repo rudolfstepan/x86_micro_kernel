@@ -9,6 +9,7 @@
  */
 #include "x86os.h"
 #include "desktop_explorer.h"
+#include "desktop_filetypes.h"
 #include "desktop_wm.h"
 #include "reist/gui/dialog.h"
 #include "reist/gui/menu.h"
@@ -1494,7 +1495,33 @@ static uint32_t desktop_try_exit(
     return 1U;
 }
 
-static int launch_program(const char *program) {
+static char filetypes_config[DESKTOP_FILETYPES_CONFIG_CAPACITY + 1U];
+
+static int load_filetypes(desktop_filetypes_t *filetypes) {
+    desktop_filetypes_initialize(filetypes);
+    int descriptor = x86os_open("/etc/reist/filetypes.conf");
+    if (descriptor < 0) return -1;
+    size_t used = 0U;
+    while (used < DESKTOP_FILETYPES_CONFIG_CAPACITY) {
+        int amount = x86os_read(
+            descriptor, filetypes_config + used,
+            DESKTOP_FILETYPES_CONFIG_CAPACITY - used);
+        if (amount < 0) {
+            (void)x86os_close(descriptor);
+            return -1;
+        }
+        if (amount == 0) break;
+        used += (size_t)amount;
+    }
+    char extra;
+    int extra_read = x86os_read(descriptor, &extra, 1U);
+    int close_status = x86os_close(descriptor);
+    if (extra_read != 0 || close_status < 0 || used == 0U) return -1;
+    return desktop_filetypes_parse(filetypes, filetypes_config, used) == 0
+        ? 0 : -1;
+}
+
+static int launch_program(const char *program, const char *document) {
     int status = 0;
     int pid;
     if (program == 0 || program[0] == '\0') return -22;
@@ -1502,7 +1529,10 @@ static int launch_program(const char *program) {
      * display while the desktop remains the supervising parent.  Returning
      * from the child immediately recomposes the desktop; no shell prompt or
      * extra key acknowledgement is inserted into the graphical session. */
-    pid = x86os_spawn(program);
+    if (document != 0) {
+        const char *arguments[] = {program, document};
+        pid = x86os_spawnv(program, 2, arguments);
+    } else pid = x86os_spawn(program);
     if (pid >= 0) {
         int wait_result = x86os_wait(pid, &status);
         if (wait_result != pid) {
@@ -1626,6 +1656,7 @@ static uint32_t has_program_extension(const char *path) {
 
 static uint32_t apply_desktop_activation(
     desktop_wm_t *manager, desktop_explorer_t *explorer,
+    const desktop_filetypes_t *filetypes,
     desktop_ui_state_t *ui,
     const x86os_display_info_t *display, desktop_dirty_region_t *dirty,
     desktop_activation_t *activation, uint32_t *target,
@@ -1650,13 +1681,18 @@ static uint32_t apply_desktop_activation(
     if (window->entries[activation->entry_index].type == X86OS_DIRECTORY)
         return open_explorer_path(
             manager, explorer, ui, display, dirty, path, target);
+    const char *program = path;
+    const char *document = 0;
     if (!has_program_extension(path)) {
-        desktop_ui_open_error(
-            ui, display, dirty, "Keine Dateizuordnung vorhanden.", path);
-        return 0U;
+        if (desktop_filetypes_lookup(filetypes, path, &program) != 0) {
+            desktop_ui_open_error(
+                ui, display, dirty, "Keine Dateizuordnung vorhanden.", path);
+            return 0U;
+        }
+        document = path;
     }
     (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
-    int launch_status = launch_program(path);
+    int launch_status = launch_program(program, document);
     desktop_dirty_full(dirty);
     if (launch_status != 0)
         desktop_ui_open_error(
@@ -2166,6 +2202,7 @@ int main(int argc, char **argv) {
     x86os_display_info_t display;
     desktop_wm_t manager;
     static desktop_explorer_t explorer;
+    static desktop_filetypes_t filetypes;
     desktop_ui_state_t ui;
     desktop_render_metrics_t metrics = {0};
     int32_t pointer_x;
@@ -2218,6 +2255,7 @@ int main(int argc, char **argv) {
                           (int32_t)(display.height - status - 4U),
                           max_u32(display.font_height + 8U, 24U));
     desktop_explorer_initialize(&explorer);
+    int filetypes_status = load_filetypes(&filetypes);
     pointer_x = (int32_t)(display.width / 2U);
     pointer_y = (int32_t)(display.height / 2U);
     x86os_puts("DESKTOP_OK\n");
@@ -2227,6 +2265,11 @@ int main(int argc, char **argv) {
     (void)open_explorer_path(
         &manager, &explorer, &ui, &display,
         &initial_dirty, "/", &initial_target);
+    if (filetypes_status != 0)
+        desktop_ui_open_error(
+            &ui, &display, &initial_dirty,
+            "Dateizuordnungen sind ungueltig.",
+            "/etc/reist/filetypes.conf");
     desktop_dirty_full(&initial_dirty);
     render_desktop_measured(
         &display, &manager, &explorer, &ui,
@@ -2327,7 +2370,7 @@ int main(int argc, char **argv) {
         }
 
         actions |= apply_desktop_activation(
-            &manager, &explorer, &ui, &display, &dirty,
+            &manager, &explorer, &filetypes, &ui, &display, &dirty,
             &activation, &action_target, pointer_x, pointer_y);
 
         /* The cached path represents exactly one unobscured move.  Any

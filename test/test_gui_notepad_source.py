@@ -1,0 +1,75 @@
+import shutil
+import subprocess
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE = ROOT / "userspace/gui/apps/notepad/main.c"
+
+
+class GuiNotepadSourceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = SOURCE.read_text(encoding="utf-8")
+
+    def test_app_uses_only_public_gui_and_system_interfaces(self):
+        for include in (
+            '#include "x86os.h"',
+            '#include "reist/gui/dialog.h"',
+            '#include "reist/gui/menu.h"',
+            '#include "reist/gui/text_editor.h"',
+        ):
+            self.assertIn(include, self.source)
+        self.assertNotIn("desktop_wm", self.source)
+        self.assertNotRegex(
+            self.source, r"\b(malloc|calloc|realloc|free)\s*\(")
+        self.assertIn("temporary full-screen GUI client", self.source)
+
+    def test_app_has_real_editing_persistence_and_dialog_flows(self):
+        for contract in (
+            "reist_gui_text_editor_dispatch",
+            "reist_gui_text_editor_set_text",
+            "reist_gui_text_editor_get_text",
+            "reist_gui_text_editor_mark_saved",
+            "x86os_fsync",
+            "x86os_rename",
+            "REIST_GUI_DIALOG_RESPONSE_SAVE",
+            "REIST_GUI_DIALOG_RESPONSE_DISCARD",
+            "REIST_GUI_DIALOG_RESPONSE_CANCEL",
+            "reist_gui_menu_dispatch",
+            "x86os_display_frame_begin",
+            "x86os_display_frame_commit",
+        ):
+            self.assertIn(contract, self.source)
+        self.assertIn("NOTEPAD_MOUSE_BATCH_LIMIT 32U", self.source)
+        self.assertIn('"/untitled.txt"', self.source)
+
+    def test_source_is_valid_freestanding_c11(self):
+        compiler = shutil.which("gcc") or shutil.which("clang")
+        if compiler is None:
+            self.skipTest("host C compiler unavailable")
+        subprocess.run(
+            [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+             "-fsyntax-only", "-Iuserspace/sdk/include",
+             "-Iuserspace/gui/include", str(SOURCE)],
+            cwd=ROOT, check=True, capture_output=True, text=True,
+        )
+
+    def test_builds_package_notepad_as_a_gui_program(self):
+        programs = (ROOT / "scripts/build_system_programs.py").read_text(
+            encoding="utf-8")
+        windows = (ROOT / "scripts/build-windows.ps1").read_text(
+            encoding="utf-8")
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        runtime = (ROOT / "scripts/run_qemu_system_layout.py").read_text(
+            encoding="utf-8")
+        self.assertIn('"NOTEPAD.PRG"', programs)
+        self.assertIn('"NOTEPAD.PRG"', programs.split("GUI_PROGRAMS", 1)[1])
+        self.assertEqual(windows.count("'usr/gui/bin/notepad.prg'"), 1)
+        self.assertEqual(makefile.count("usr/gui/bin/notepad.prg="), 1)
+        self.assertIn('(\"notepad --help\", \"Usage: notepad\")', runtime)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -131,7 +131,9 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("DESKTOP_WM_EVENT_OPEN", self.source)
         self.assertIn("DESKTOP_WM_EVENT_CLOSE", self.source)
         self.assertIn(
-            'GUI_PROGRAMS = {"DESKTOP.PRG", "GUIDEMO.PRG"}', programs)
+            'GUI_PROGRAMS = {"DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG"}',
+            programs,
+        )
         self.assertIn("gui_library", programs)
 
     def test_active_menu_or_dialog_receives_input_before_the_window_manager(self):
@@ -215,7 +217,7 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("X86OS_DIRECTORY", self.source)
         self.assertIn("has_program_extension", self.source)
         self.assertIn("open_explorer_path", self.source)
-        self.assertIn("launch_program(path)", self.source)
+        self.assertIn("launch_program(program, document)", self.source)
 
     def test_child_returns_directly_to_graphical_desktop(self):
         launch = self.source[self.source.index("static int launch_program") :]
@@ -311,6 +313,15 @@ class DesktopSourceTests(unittest.TestCase):
     def test_launcher_is_freestanding_and_has_no_host_libc_dependency(self):
         self.assertNotRegex(self.source, r"#include\s*<(stdio|stdlib|string)\.h>")
         self.assertNotRegex(self.source, r"\b(printf|strlen|memcpy|malloc|free)\s*\(")
+
+    def test_file_associations_are_bounded_and_pass_the_document_as_argv(self):
+        self.assertIn('#include "desktop_filetypes.h"', self.source)
+        self.assertIn('x86os_open("/etc/reist/filetypes.conf")', self.source)
+        self.assertIn("DESKTOP_FILETYPES_CONFIG_CAPACITY", self.source)
+        self.assertIn("desktop_filetypes_parse", self.source)
+        self.assertIn("desktop_filetypes_lookup", self.source)
+        self.assertIn("x86os_spawnv(program, 2, arguments)", self.source)
+        self.assertIn('"Keine Dateizuordnung vorhanden."', self.source)
 
     def test_usb_mouse_moves_a_clipped_visible_pointer(self):
         self.assertIn("x86os_mouse_event(&mouse)", self.source)

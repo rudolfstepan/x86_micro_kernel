@@ -386,8 +386,12 @@ inkompatibler Fensterrahmen.
   Links/Rechts/Home/End-Navigation implementieren.
 - [x] Controls für einzeiliges Textfeld, Liste, Scrollbar, Slider, SpinBox und
   Fortschrittsanzeige definieren und in `guidemo.prg` interaktiv zeigen.
-- [ ] Mehrzeileneditor, ScrollView, TreeView und ComboBox auf den vorhandenen
-  Container-, Menü- und Value-Verträgen aufbauen.
+- [x] Rendererunabhängiges Mehrzeilen-Textmodell mit festem, vom Aufrufer
+  besessenem Puffer, Cursor, Viewport und begrenztem Eventdispatch bauen.
+- [x] Mehrzeileneditor an einen echten öffentlichen GUI-Client mit Rendering,
+  Dirty-State, Laden, atomarem Speichern und modalen Exit-Dialogen anbinden.
+- [ ] Selection/Clipboard und eine allgemeine ScrollView ergänzen; TreeView
+  und ComboBox folgen später.
 - [ ] Fensterrahmen, Titel, Schließen, Minimieren und Größenänderung bleiben
   serverseitig; Clients zeichnen keine konkurrierenden Dekorationen.
 - [ ] Farb- und Metrikthema zentral versionieren.
@@ -397,10 +401,13 @@ inkompatibler Fensterrahmen.
 - [ ] Systeminformationen als erster read-only GUI-Client.
 - [x] Erste begrenzte Dateimanager-Schicht mit Root-Icon, atomarem
   Verzeichnis-Snapshot, Ordner-/Dateiicons und neuen Ordnerfenstern.
-- [ ] Editor mit begrenztem Textpuffer, Speichern und klarer Dirty-Anzeige.
+- [x] Editor mit begrenztem Textpuffer, Speichern und klarer Dirty-Anzeige.
 - [ ] Terminalemulator als eigener GUI-Client statt globaler Console-Ausgabe.
 - [x] Verzeichnisse per Doppelklick/Enter in einem neuen Fenster öffnen und
   `.PRG`-Dateien über ihren kanonischen VFS-Pfad starten.
+- [x] Versionierte, fest begrenzte Dateizuordnungen aus
+  `/etc/reist/filetypes.conf` laden und den Dateipfad per `argv[1]` an das
+  zugeordnete GUI-Programm übergeben.
 - [x] Explorer-, Dateizuordnungs- und Programmstartfehler als verschiebbare
   application-modale Dialoge mit begrenztem Pfaddetail anzeigen; keine
   Konsolenausgabe darf die grafische Desktopfläche überschreiben.
@@ -417,8 +424,8 @@ zusammen.
 ## Systemkonfiguration
 
 - [x] `/etc/reist` als systemweiten, administrierbaren Namensraum festlegen.
-- [x] Versionierte Standarddateien für System/Sprache, Eingabe und Desktop in
-  Windows- und Makefile-Systemabbilder paketieren.
+- [x] Versionierte Standarddateien für System/Sprache, Eingabe, Desktop und
+  Dateizuordnungen in Windows- und Makefile-Systemabbilder paketieren.
 - [x] `/usr/share/reist/defaults`, `/var/lib/reist` und spätere
   `$HOME/.config/reist`-Überschreibungen voneinander abgrenzen.
 - [ ] Gemeinsamen fest begrenzten Ring-3-Parser und atomaren Writer bauen.

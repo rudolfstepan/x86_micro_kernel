@@ -14,6 +14,7 @@ getrennt.
 | `/etc/reist/system.conf` | Sprache, Ersatzsprache und Zeitzone | Systemverwaltung |
 | `/etc/reist/input.conf` | Tastatur, Maus und Eingabeverhalten | Systemverwaltung |
 | `/etc/reist/desktop.conf` | Desktop-, Theme- und Explorer-Vorgaben | Systemverwaltung |
+| `/etc/reist/filetypes.conf` | Dateiendungen und zugeordnete GUI-Programme | Systemverwaltung |
 | `/usr/share/reist/defaults/` | spaetere unveraenderliche Herstellerwerte | nur Systemabbild |
 | `/var/lib/reist/` | spaetere dauerhafte Laufzeitdaten, keine Konfiguration | jeweiliger Dienst |
 | `$HOME/.config/reist/` | spaetere benutzerspezifische Ueberschreibungen | jeweiliger Benutzer |
@@ -55,9 +56,31 @@ validierte, bekannte Schluessel. Fehlerhafte oder fehlende Dateien fuehren zu
 fest eingebauten sicheren Rueckfallwerten und einer begrenzten Diagnose, nicht
 zu teilweise uebernommenen Einstellungen.
 
-Der aktuelle Stand verpackt die drei systemweiten Standarddateien in das
-FAT-Systemabbild. Der gemeinsame Ring-3-Parser, ein Systemdienst fuer
-berechtigte Aenderungen sowie grafische Werkzeuge fuer Sprache, Tastatur und
-Maus sind getrennte Folgeschritte. Bis dahin bleiben die bestehenden
-festen Laufzeitwerte massgeblich; das Vorhandensein einer Datei behauptet noch
-nicht, dass ein Treiber sie bereits auswertet.
+## Dateizuordnungen
+
+`filetypes.conf` verwendet `schema=reist.filetypes/1`. Danach bildet jede
+Zeile genau eine kleingeschriebene Erweiterung auf einen kanonischen absoluten
+PRG-Pfad ab:
+
+```text
+schema=reist.filetypes/1
+.txt=/usr/gui/bin/notepad.prg
+.conf=/usr/gui/bin/notepad.prg
+```
+
+Der Desktop liest hoechstens 4096 Bytes und veroeffentlicht maximal 16
+Zuordnungen erst nach vollstaendiger Validierung. Erweiterungen werden beim
+Lookup ASCII-unabhaengig von Gross-/Kleinschreibung verglichen. Programme
+muessen absolute `.prg`-Pfade ohne Traversal oder leere Pfadsegmente sein. Eine
+ungueltige Datei aktiviert keine teilweise gelesene Zuordnung und erzeugt
+einen modalen Desktopfehler. Ausfuehrbare `.prg`-Dateien bleiben eine feste
+Dateiklasse und werden nicht durch Konfiguration umgedeutet. Das zugeordnete
+Programm erhaelt den kanonischen Dateipfad als `argv[1]`.
+
+Der aktuelle Stand verpackt die vier systemweiten Standarddateien in das
+FAT-Systemabbild. Der Dateitypvertrag besitzt bereits einen eigenen begrenzten
+Ring-3-Parser. Der gemeinsame Parser fuer die uebrigen Einstellungen, ein
+Systemdienst fuer berechtigte Aenderungen sowie grafische Werkzeuge fuer
+Sprache, Tastatur und Maus sind getrennte Folgeschritte. Bis dahin bleiben die
+bestehenden festen Laufzeitwerte massgeblich; das Vorhandensein einer Datei
+behauptet noch nicht, dass ein Treiber sie bereits auswertet.
