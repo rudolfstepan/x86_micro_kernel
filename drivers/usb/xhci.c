@@ -592,7 +592,8 @@ static void xhci_detach_hid(xhci_hid_device_t *hid) {
 }
 
 static bool xhci_drain_events(uint32_t limit, uint32_t expected,
-                              uint8_t *slot_out, uint32_t *status_out) {
+                              uint8_t *slot_out, uint32_t *status_out,
+                              uint32_t *residual_out) {
     bool found = false;
     for (uint32_t count = 0U; count < limit; ++count) {
         xhci_trb_t *event = &event_ring[controller.event_index];
@@ -603,10 +604,13 @@ static bool xhci_drain_events(uint32_t limit, uint32_t expected,
         if (type == TRB_EVENT_COMMAND && pointer == expected) {
             if (slot_out != NULL) *slot_out = (uint8_t)(event->d[3] >> 24U);
             if (status_out != NULL) *status_out = (status >> 24U) & 0xFFU;
+            if (residual_out != NULL) *residual_out = 0U;
             found = true;
         } else if (type == TRB_EVENT_TRANSFER) {
             if (pointer == expected) {
                 if (status_out != NULL) *status_out = (status >> 24U) & 0xFFU;
+                if (residual_out != NULL)
+                    *residual_out = status & 0x00FFFFFFU;
                 found = true;
             }
             uint32_t completion = (status >> 24U) & 0xFFU;
@@ -672,7 +676,8 @@ static bool xhci_wait_command(xhci_trb_t *command, uint8_t *slot_out) {
     while (1) {
         uint64_t now = pit_monotonic_ms();
         if (now < start || now - start >= XHCI_TIMEOUT_MS) break;
-        if (xhci_drain_events(32U, xhci_dma32(command), slot_out, &status)) {
+        if (xhci_drain_events(32U, xhci_dma32(command), slot_out, &status,
+                              NULL)) {
             diagnostics.last_completion = status;
             return status == XHCI_COMPLETION_SUCCESS;
         }
@@ -682,6 +687,8 @@ static bool xhci_wait_command(xhci_trb_t *command, uint8_t *slot_out) {
 }
 
 static bool xhci_wait_transfer(xhci_trb_t *status_trb,
+                               uint32_t requested_length,
+                               bool allow_short,
                                uint32_t *completion_out) {
     uint64_t start = pit_monotonic_ms();
     uint32_t expected = xhci_dma32(status_trb);
@@ -689,13 +696,23 @@ static bool xhci_wait_transfer(xhci_trb_t *status_trb,
         uint64_t now = pit_monotonic_ms();
         if (now < start || now - start >= XHCI_TIMEOUT_MS) break;
         uint32_t status = 0U;
-        if (xhci_drain_events(32U, expected, NULL, &status)) {
+        uint32_t residual = 0U;
+        if (xhci_drain_events(32U, expected, NULL, &status, &residual)) {
             diagnostics.last_completion = status;
             if (completion_out != NULL) *completion_out = status;
-            return status == XHCI_COMPLETION_SUCCESS;
+            if (residual > requested_length) {
+                diagnostics.last_actual_length = 0U;
+                return false;
+            }
+            uint32_t actual = requested_length - residual;
+            diagnostics.last_actual_length = actual;
+            bool completed = status == XHCI_COMPLETION_SUCCESS ||
+                (allow_short && status == XHCI_COMPLETION_SHORT_PACKET);
+            return completed && actual == requested_length;
         }
     }
     diagnostics.last_completion = 0U;
+    diagnostics.last_actual_length = 0U;
     if (completion_out != NULL) *completion_out = 0U;
     return false;
 }
@@ -707,6 +724,7 @@ static bool xhci_control(xhci_hid_device_t *hid,
     if (hid == NULL || length > XHCI_CONTROL_BYTES ||
         (length != 0U && buffer == NULL))
         return false;
+    if (direction_in && length != 0U) memset(buffer, 0, length);
     xhci_trb_t *ring = xhci_endpoint0_ring(hid);
     xhci_trb_t *setup = &ring[hid->endpoint_index];
     xhci_trb_t *data = &ring[(hid->endpoint_index + 1U) %
@@ -740,7 +758,9 @@ static bool xhci_control(xhci_hid_device_t *hid,
         (hid->endpoint_cycle ? 1U : 0U);
     xhci_ring_doorbell(hid->slot_id, 1U);
     uint32_t completion = 0U;
-    bool result = xhci_wait_transfer(status, &completion);
+    bool result = xhci_wait_transfer(status, length,
+                                     direction_in && length != 0U,
+                                     &completion);
     if (!result) {
         printf("USB: xHCI control failed request=%u type=%02X length=%u cc=%u\n",
                (unsigned)request, (unsigned)request_type, (unsigned)length,
@@ -1293,7 +1313,7 @@ static void xhci_irq_handler(void *opaque) {
     uint32_t status = xhci_read(controller.op_base + XHCI_USBSTS);
     uint32_t iman = xhci_read(controller.runtime_base + XHCI_RT_IMAN);
     if ((status & XHCI_STS_EINT) == 0U && (iman & XHCI_IMAN_IP) == 0U) return;
-    (void)xhci_drain_events(32U, 0U, NULL, NULL);
+    (void)xhci_drain_events(32U, 0U, NULL, NULL, NULL);
     /* IMAN.IP is RW1C.  Leaving it asserted keeps the legacy PCI interrupt
      * active even after USBSTS.EINT was acknowledged and can starve the
      * remainder of early boot as soon as the mouse produces reports. */
@@ -1499,7 +1519,7 @@ void xhci_poll(void) {
     if (controller.mmio == NULL || irq_in_context()) return;
     uint32_t flags = irq_save();
     if (xhci_any_hid_online())
-        (void)xhci_drain_events(16U, 0U, NULL, NULL);
+        (void)xhci_drain_events(16U, 0U, NULL, NULL, NULL);
     irq_restore(flags);
 }
 

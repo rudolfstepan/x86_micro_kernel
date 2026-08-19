@@ -222,6 +222,27 @@ class UsbMouseTests(unittest.TestCase):
             "(port & ~(XHCI_PORT_CSC | XHCI_PORT_PRC))", source
         )
 
+    def test_xhci_accepts_complete_control_short_packet_events(self):
+        source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
+        start = source.index("static bool xhci_wait_transfer")
+        end = source.index("static bool xhci_control", start)
+        helper = source[start:end]
+        self.assertIn("uint32_t requested_length", helper)
+        self.assertIn("bool allow_short", helper)
+        self.assertIn("residual > requested_length", helper)
+        self.assertIn("requested_length - residual", helper)
+        self.assertIn("status == XHCI_COMPLETION_SUCCESS ||", helper)
+        self.assertIn(
+            "allow_short && status == XHCI_COMPLETION_SHORT_PACKET", helper
+        )
+        self.assertIn("actual == requested_length", helper)
+        control_start = source.index("static bool xhci_control")
+        control_end = source.index("static bool xhci_address_device",
+                                   control_start)
+        control = source[control_start:control_end]
+        self.assertIn("direction_in && length != 0U", control)
+        self.assertIn("diagnostics.last_actual_length", helper)
+
     def test_desktop_escape_returns_to_parent_shell(self):
         source = (ROOT / "userspace/programs/desktop.c").read_text(
             encoding="utf-8")

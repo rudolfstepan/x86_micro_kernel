@@ -442,6 +442,17 @@ gesetzte Änderungsbits, wartet begrenzt auf `PR=0`, `PRC=1`, `PED=1` und `CCS=1
 und hält danach die vorgeschriebene 10-ms-Recovery-Zeit ein. Erst dann darf die
 Slot-Adressierung starten.
 
+Der darauffolgende ASUS-Lauf erreichte beide verbundenen Geräte und grenzte den
+Fehler auf `GET_DESCRIPTOR(Device, 8)` ein: Port 4 meldete Full-Speed, der
+Transfer endete jedoch mit Completion Code 13 (`Short Packet`). Der generische
+Eventpfad akzeptierte diesen Abschluss bereits für HID-Reports, während der
+Control-Pfad ausschließlich Code 1 als Erfolg behandelte. Control-IN akzeptiert
+Code 13 nun ebenfalls, aber nur mit einer Restlänge innerhalb des angeforderten
+Puffers und nur wenn die daraus berechnete Istlänge der für die anschließende
+Deskriptorprüfung benötigten Länge entspricht. Der Zielpuffer wird vor jedem
+IN-Transfer gelöscht; unvollständige oder widersprüchliche Antworten bleiben
+damit geschlossen abgewiesen.
+
 ## Erwartetes Restrisiko
 
 Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte
