@@ -295,6 +295,14 @@ Boot-Maus; nur wenn keine gefunden wird, wird die erste Boot-Tastatur erneut
 konfiguriert. Jeder Versuch bleibt durch die bestehenden monotonen
 Control-Transfer-Deadlines begrenzt.
 
+Da die frühen USB-Meldungen auf realer Hardware vor der Eingabeaufforderung
+wegscrollen, hält xHCI zusätzlich einen festen Diagnose-Snapshot ohne Heap und
+ohne formatierte IRQ-Ausgabe. Der Shell-Befehl `USBINFO` zeigt später
+Controllerarten, letzten xHCI-Zustand, verbundene Root-Port-Maske,
+Geräteauswahl, IRQ sowie Transfer-, akzeptierte und verworfene Mausreports.
+Damit sind insbesondere ein reines EHCI-System, eine fehlende Root-Port-Maus
+und ein konfiguriertes Gerät ohne Interruptreports eindeutig unterscheidbar.
+
 ## Erwartetes Restrisiko
 
 Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte

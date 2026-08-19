@@ -149,6 +149,11 @@ static uint8_t hid_reports[XHCI_ENDPOINT_RING_TRBS][8]
     __attribute__((aligned(64)));
 static xhci_state_t controller;
 static uint32_t root_port_status;
+static xhci_diagnostics_t diagnostics = {
+    .version = XHCI_DIAGNOSTICS_VERSION,
+    .struct_size = sizeof(xhci_diagnostics_t),
+    .state = XHCI_DIAG_NOT_PROBED
+};
 
 static uint32_t xhci_dma32(const void *address) {
     uintptr_t value = (uintptr_t)address;
@@ -336,12 +341,19 @@ static bool xhci_drain_events(uint32_t limit, uint32_t expected,
                 uint32_t residual = status & 0x00FFFFFFU;
                 size_t actual = residual <= controller.report_size
                     ? controller.report_size - residual : 0U;
+                diagnostics.transfer_events++;
+                diagnostics.last_completion = completion;
+                diagnostics.last_actual_length = (uint32_t)actual;
                 if (controller.hid_protocol == 1U)
                     (void)hid_keyboard_report(controller.generation,
                                                hid_reports[index], actual);
-                else if (controller.hid_protocol == 2U)
-                    (void)hid_mouse_report(controller.generation,
-                                            hid_reports[index], actual);
+                else if (controller.hid_protocol == 2U) {
+                    if (hid_mouse_report(controller.generation,
+                                         hid_reports[index], actual))
+                        diagnostics.mouse_reports++;
+                    else
+                        diagnostics.rejected_mouse_reports++;
+                }
                 xhci_queue_interrupt_report();
                 xhci_ring_doorbell(controller.slot_id, controller.endpoint_id);
             }
@@ -356,6 +368,7 @@ static bool xhci_drain_events(uint32_t limit, uint32_t expected,
                 else if (controller.hid_protocol == 2U)
                     hid_mouse_detach(controller.generation);
                 controller.online = false;
+                diagnostics.state = XHCI_DIAG_DISCONNECTED;
             }
         }
 event_done:
@@ -734,10 +747,18 @@ int xhci_probe(pci_device_t *dev) {
         printf("USB: xHCI HID already active; preserving controller\n");
         return 0;
     }
+    memset(&diagnostics, 0, sizeof(diagnostics));
+    diagnostics.version = XHCI_DIAGNOSTICS_VERSION;
+    diagnostics.struct_size = sizeof(diagnostics);
+    diagnostics.state = XHCI_DIAG_PROBING;
+    diagnostics.bus = dev->bus;
+    diagnostics.slot = dev->slot;
+    diagnostics.function = dev->function;
     uint32_t bar = pci_read_bar(dev, 0U);
     if (bar == 0U || bar == UINT32_MAX || (bar & 1U) != 0U ||
         ((bar & 6U) == 4U && dev->bar[1] != 0U)) {
         printf("USB: xHCI invalid BAR0=%08X BAR1=%08X\n", bar, dev->bar[1]);
+        diagnostics.state = XHCI_DIAG_INVALID_BAR;
         return -1;
     }
     pci_enable_device(dev);
@@ -745,6 +766,7 @@ int xhci_probe(pci_device_t *dev) {
     controller.mmio = map_mmio_region((uint64_t)(bar & ~0x0FU), XHCI_MMIO_SIZE);
     if (controller.mmio == NULL) {
         printf("USB: xHCI MMIO mapping failed BAR0=%08X\n", bar);
+        diagnostics.state = XHCI_DIAG_MMIO_FAILED;
         return -1;
     }
     uint32_t caplength = xhci_read(0U) & 0xFFU;
@@ -755,6 +777,7 @@ int xhci_probe(pci_device_t *dev) {
     controller.doorbell_base = xhci_read(0x14U);
     controller.runtime_base = xhci_read(0x18U);
     controller.port_count = (hcs1 >> 24U) & 0xFFU;
+    diagnostics.port_count = controller.port_count;
     controller.scratchpad_count = ((hcs2 >> 21U) & 0x1FU) |
                                   (((hcs2 >> 27U) & 0x1FU) << 5U);
     if (controller.port_count == 0U || controller.port_count > XHCI_MAX_PORTS ||
@@ -769,17 +792,20 @@ int xhci_probe(pci_device_t *dev) {
                (unsigned)controller.scratchpad_count,
                (unsigned)controller.doorbell_base,
                (unsigned)controller.runtime_base);
+        diagnostics.state = XHCI_DIAG_CAPABILITIES_REJECTED;
         return -1;
     }
     controller.context_size = (hcc & (1U << 2U)) != 0U ? 64U : 32U;
     if (!xhci_legacy_handoff()) {
         printf("USB: xHCI legacy handoff failed\n");
+        diagnostics.state = XHCI_DIAG_HANDOFF_FAILED;
         return -1;
     }
     if (!xhci_dma_valid(dcbaa, 64U) || !xhci_dma_valid(command_ring, 64U) ||
         !xhci_dma_valid(event_ring, 64U) ||
         !xhci_dma_valid(input_context, 4096U)) {
         printf("USB: xHCI DMA alignment rejected\n");
+        diagnostics.state = XHCI_DIAG_DMA_REJECTED;
         return -1;
     }
     pci_set_bus_master(dev->bus, dev->slot, dev->function, 1U);
@@ -787,11 +813,13 @@ int xhci_probe(pci_device_t *dev) {
     if (max_slots == 0U) max_slots = 1U;
     if (!xhci_start_controller(max_slots)) {
         printf("USB: xHCI controller did not enter run state\n");
+        diagnostics.state = XHCI_DIAG_START_FAILED;
         pci_set_bus_master(dev->bus, dev->slot, dev->function, 0U);
         return -1;
     }
 
     uint32_t connected_ports = xhci_connected_ports();
+    diagnostics.connected_ports = connected_ports;
     printf("USB: xHCI root ports=%u connected=%08X\n",
            (unsigned)controller.port_count, (unsigned)connected_ports);
     uint32_t keyboard_port = 0U;
@@ -803,6 +831,7 @@ int xhci_probe(pci_device_t *dev) {
          ++root_port) {
         if ((connected_ports & (1U << (root_port - 1U))) == 0U) continue;
         if (attempts++ != 0U && !xhci_start_controller(max_slots)) break;
+        diagnostics.attempts = attempts;
         if (!xhci_enumerate_root_hid(root_port)) continue;
         if (controller.hid_protocol == 2U) {
             selected = true;
@@ -819,6 +848,8 @@ int xhci_probe(pci_device_t *dev) {
     if (!selected) {
         printf("USB: xHCI no supported root-port boot HID after %u attempts\n",
                (unsigned)attempts);
+        diagnostics.state = connected_ports == 0U
+            ? XHCI_DIAG_NO_CONNECTED_PORT : XHCI_DIAG_NO_SUPPORTED_HID;
         xhci_write(controller.op_base + XHCI_USBCMD,
                    xhci_read(controller.op_base + XHCI_USBCMD) &
                    ~(XHCI_CMD_RUN | XHCI_CMD_INTE));
@@ -826,6 +857,10 @@ int xhci_probe(pci_device_t *dev) {
         return -1;
     }
     xhci_publish_hid();
+    diagnostics.selected_port = controller.root_port;
+    diagnostics.hid_protocol = controller.hid_protocol;
+    diagnostics.endpoint_id = controller.endpoint_id;
+    diagnostics.report_size = controller.report_size;
     controller.irq = pci_configure_irq(dev);
     if (!pci_irq_is_valid(controller.irq) ||
         register_interrupt_handler(controller.irq, (void *)xhci_irq_handler) != 0) {
@@ -839,6 +874,8 @@ int xhci_probe(pci_device_t *dev) {
                    ~(XHCI_CMD_RUN | XHCI_CMD_INTE));
         pci_set_bus_master(dev->bus, dev->slot, dev->function, 0U);
         printf("USB: xHCI IRQ setup failed irq=%u\n", (unsigned)controller.irq);
+        diagnostics.irq = controller.irq;
+        diagnostics.state = XHCI_DIAG_IRQ_FAILED;
         return -1;
     }
     /* Clear enumeration-time pending state before unmasking the interrupter. */
@@ -850,6 +887,9 @@ int xhci_probe(pci_device_t *dev) {
     printf("USB: xHCI HID %s ready port=%u irq=%u\n",
            controller.hid_protocol == 2U ? "mouse" : "keyboard",
            (unsigned)controller.root_port, (unsigned)controller.irq);
+    diagnostics.irq = controller.irq;
+    diagnostics.state = controller.hid_protocol == 2U
+        ? XHCI_DIAG_MOUSE_READY : XHCI_DIAG_KEYBOARD_READY;
     return 0;
 }
 
@@ -859,4 +899,13 @@ void xhci_poll(void) {
     uint32_t flags = irq_save();
     if (controller.online) (void)xhci_drain_events(16U, 0U, NULL, NULL);
     irq_restore(flags);
+}
+
+bool xhci_get_diagnostics(xhci_diagnostics_t *snapshot) {
+    if (snapshot == NULL) return false;
+    uint32_t flags = irq_save();
+    *snapshot = diagnostics;
+    irq_restore(flags);
+    return snapshot->version == XHCI_DIAGNOSTICS_VERSION &&
+           snapshot->struct_size == sizeof(*snapshot);
 }

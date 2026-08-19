@@ -1502,6 +1502,7 @@ allowed_files = [
   "drivers/usb/xhci.c",
   "drivers/usb/hid_mouse.h",
   "drivers/usb/hid_mouse.c",
+  "kernel/shell/command.c",
   "lib/libc/stdlib.h",
   "kernel/proc/process.h",
   "kernel/proc/process.c",

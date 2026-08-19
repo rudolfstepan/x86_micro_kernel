@@ -55,9 +55,21 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("attempts < XHCI_MAX_HID_CANDIDATES", source)
         self.assertIn("xhci_enumerate_root_hid(root_port)", source)
         self.assertIn("keyboard_port", source)
+        self.assertIn("xhci_get_diagnostics", source)
+        self.assertIn("diagnostics.mouse_reports++", source)
         mouse_choice = source.index("current_protocol == 2U")
         keyboard_choice = source.index("current_protocol == 1U", mouse_choice)
         self.assertLess(mouse_choice, keyboard_choice)
+
+    def test_usbinfo_persists_boot_diagnostics_for_the_shell(self):
+        shell = (ROOT / "kernel/shell/command.c").read_text(encoding="utf-8")
+        header = (ROOT / "drivers/usb/xhci.h").read_text(encoding="utf-8")
+        self.assertIn('{"USBINFO", cmd_usbinfo}', shell)
+        self.assertIn("void cmd_usbinfo", shell)
+        self.assertIn("xHCI state=%s", shell)
+        self.assertIn("transfers=%u mouse=%u rejected=%u", shell)
+        self.assertIn("XHCI_DIAG_MOUSE_READY", header)
+        self.assertIn("xhci_diagnostics_t", header)
 
     def test_xhci_preserves_consumed_event_cycle_bits(self):
         source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")

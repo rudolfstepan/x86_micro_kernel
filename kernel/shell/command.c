@@ -19,6 +19,7 @@
 #include "drivers/block/fdd.h"
 #include "drivers/bus/drives.h"
 #include "drivers/bus/pci.h"
+#include "drivers/usb/xhci.h"
 
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
@@ -95,6 +96,7 @@ void cmd_ls(int cnt, const char **args);
 void cmd_cd(int cnt, const char **args);
 void cmd_drives(int cnt, const char **args);
 void cmd_pci(int cnt, const char **args);
+void cmd_usbinfo(int cnt, const char **args);
 void cmd_mount(int cnt, const char **args);
 void cmd_mkdir(int cnt, const char **args);
 void cmd_rmdir(int cnt, const char **args);
@@ -168,6 +170,7 @@ static const command_t command_table[MAX_COMMANDS] = {
     {"ARP", cmd_arp},
     {"HISTORY", cmd_history},
     {"PCI", cmd_pci},
+    {"USBINFO", cmd_usbinfo},
     {"GETIP", cmd_get_ip},
     {NULL, NULL} // End marker
 };
@@ -1148,7 +1151,7 @@ void cmd_help(int arg_count, const char **args) {
     printf("  ECHO [text]      Display text\n");
     printf("  C: / HDD0:       Change drive\n");
     printf("\nSystem commands:\n");
-    printf("  DRIVES  MOUNT  MEM  DUMP  PCI  IRQ  DATETIME\n");
+    printf("  DRIVES  MOUNT  MEM  DUMP  PCI  USBINFO  IRQ  DATETIME\n");
     printf("  RUN     EXEC   PS   KILL  BASIC  HISTORY\n");
     printf("  NET     IFCONFIG  PING  ARP  GETIP\n");
     printf("\nPaths accept both \\ and /, plus the . and .. components.\n");
@@ -2243,4 +2246,75 @@ void cmd_get_ip(int argc, const char **argv) {
 
     for (const char *p = ip_str; *p; ++p) putchar(*p);
     putchar('\n');
+}
+
+static const char *xhci_diagnostic_state(uint32_t state) {
+    switch (state) {
+        case XHCI_DIAG_NOT_PROBED: return "not-probed";
+        case XHCI_DIAG_PROBING: return "probing";
+        case XHCI_DIAG_INVALID_BAR: return "invalid-bar";
+        case XHCI_DIAG_MMIO_FAILED: return "mmio-failed";
+        case XHCI_DIAG_CAPABILITIES_REJECTED: return "capabilities-rejected";
+        case XHCI_DIAG_HANDOFF_FAILED: return "bios-handoff-failed";
+        case XHCI_DIAG_DMA_REJECTED: return "dma-rejected";
+        case XHCI_DIAG_START_FAILED: return "controller-start-failed";
+        case XHCI_DIAG_NO_CONNECTED_PORT: return "no-connected-root-port";
+        case XHCI_DIAG_NO_SUPPORTED_HID: return "no-supported-boot-hid";
+        case XHCI_DIAG_IRQ_FAILED: return "irq-failed";
+        case XHCI_DIAG_KEYBOARD_READY: return "keyboard-ready";
+        case XHCI_DIAG_MOUSE_READY: return "mouse-ready";
+        case XHCI_DIAG_DISCONNECTED: return "disconnected";
+        default: return "unknown";
+    }
+}
+
+void cmd_usbinfo(int arg_count, const char **args) {
+    (void)arg_count;
+    (void)args;
+    uint32_t uhci = 0U, ohci = 0U, ehci = 0U, xhci = 0U, other = 0U;
+    for (size_t index = 0U; index < pci_device_count; ++index) {
+        pci_device_t *device = &pci_devices[index];
+        if (device->class_code != 0x0CU || device->subclass_code != 0x03U)
+            continue;
+        if (device->prog_if == 0x00U) uhci++;
+        else if (device->prog_if == 0x10U) ohci++;
+        else if (device->prog_if == 0x20U) ehci++;
+        else if (device->prog_if == 0x30U) xhci++;
+        else other++;
+    }
+
+    printf("\nUSB host controllers: xHCI=%u EHCI=%u OHCI=%u UHCI=%u other=%u\n",
+           (unsigned)xhci, (unsigned)ehci, (unsigned)ohci,
+           (unsigned)uhci, (unsigned)other);
+    xhci_poll();
+    xhci_diagnostics_t status;
+    if (!xhci_get_diagnostics(&status)) {
+        printf("xHCI diagnostics unavailable\n\n");
+        return;
+    }
+    printf("xHCI state=%s bdf=%u:%u.%u ports=%u connected=%08X attempts=%u\n",
+           xhci_diagnostic_state(status.state), (unsigned)status.bus,
+           (unsigned)status.slot, (unsigned)status.function,
+           (unsigned)status.port_count, (unsigned)status.connected_ports,
+           (unsigned)status.attempts);
+    printf("     selected=%u protocol=%u endpoint=%u report=%u irq=%u\n",
+           (unsigned)status.selected_port, (unsigned)status.hid_protocol,
+           (unsigned)status.endpoint_id, (unsigned)status.report_size,
+           (unsigned)status.irq);
+    printf("     transfers=%u mouse=%u rejected=%u last-cc=%u last-len=%u\n",
+           (unsigned)status.transfer_events, (unsigned)status.mouse_reports,
+           (unsigned)status.rejected_mouse_reports,
+           (unsigned)status.last_completion,
+           (unsigned)status.last_actual_length);
+    if (status.state == XHCI_DIAG_MOUSE_READY && status.mouse_reports == 0U)
+        printf("Result: mouse configured, but no interrupt reports received.\n");
+    else if (status.state == XHCI_DIAG_MOUSE_READY)
+        printf("Result: xHCI mouse reports are reaching the kernel.\n");
+    else if (xhci == 0U && (ehci != 0U || ohci != 0U || uhci != 0U))
+        printf("Result: only unsupported legacy USB controllers detected.\n");
+    else if (status.state == XHCI_DIAG_KEYBOARD_READY)
+        printf("Result: only a boot keyboard was selected; no root-port mouse.\n");
+    else
+        printf("Result: xHCI mouse is not ready; state above is the failure stage.\n");
+    printf("\n");
 }
