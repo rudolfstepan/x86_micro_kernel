@@ -424,15 +424,23 @@ Das am Entwicklungsrechner verifizierte reale Testkeyboard meldet sich als
 BY-Tech/AULA-Gaming-Keyboard `258A:010C` mit 12 Mbit/s. Es ist ein
 Composite-Gerät: Interface 0 ist HID Boot Keyboard (`03/01/01`), Interface 1
 ist ein zusätzliches HID für LED-Steuerung, Lautstärkedrehregler und weitere
-Herstellerfunktionen. Der Basistreiber wählt ausschließlich Interface 0 und
-ignoriert das Zusatzinterface zunächst. Für Full-Speed-Geräte liest xHCI den
-Gerätedeskriptor zuerst mit einer EP0-Paketgröße von acht Bytes. Weicht das
-dort gelieferte `bMaxPacketSize0` ab, kopiert der Treiber nun den
-controllerseitigen EP0-Output-Kontext, löscht dessen Endpoint-State-Bits,
-aktualisiert nur die Paketgröße und führt den begrenzten xHCI-Befehl
-`Evaluate Context` aus. Damit bleibt EP0 auf strengen Intel-Controllern aktiv;
-Completion Code 12 (`Endpoint Not Enabled`) wird nicht mehr durch eine
-fehlende Paketgrößenaktualisierung provoziert.
+Herstellerfunktionen. Interface 0 verwendet Interrupt-IN `0x81` mit acht
+Bytes, Interface 1 Interrupt-IN `0x82` mit 16 Bytes; der Konfigurationsdeskriptor
+ist 59 Bytes lang. Der Basistreiber wählt ausschließlich Interface 0 und
+ignoriert das Zusatzinterface zunächst. Das Gerät meldet bereits
+`bMaxPacketSize0=8`; `Evaluate Context` ist für dieses konkrete Keyboard daher
+nicht erforderlich. Weicht die gemeldete Größe bei einem anderen Full-Speed-
+Gerät ab, bleibt die zuvor ergänzte, begrenzte EP0-Aktualisierung aktiv.
+
+Der auf dem ASUS-System beobachtete Completion Code 12 kann außerdem entstehen,
+wenn `Address Device` beginnt, während der physische USB2-Port noch im Reset
+steht. Der alte Pfad wartete nur auf `PED`; dieses Bit konnte bereits vor dem
+Reset gesetzt sein. Zusätzlich schrieb er den vollständigen `PORTSC`-Snapshot
+zurück, obwohl `PED` ein RW1CS- und die Änderungsfelder RW1C-Bits sind. Der
+Portreset verwendet nun einen neutralisierten Kontrollwert, löscht nur wirklich
+gesetzte Änderungsbits, wartet begrenzt auf `PR=0`, `PRC=1`, `PED=1` und `CCS=1`
+und hält danach die vorgeschriebene 10-ms-Recovery-Zeit ein. Erst dann darf die
+Slot-Adressierung starten.
 
 ## Erwartetes Restrisiko
 

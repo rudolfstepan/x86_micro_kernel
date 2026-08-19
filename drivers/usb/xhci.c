@@ -35,6 +35,8 @@
 #define XHCI_MAX_SCRATCHPADS    32U
 #define XHCI_CONTROL_BYTES      256U
 #define XHCI_PORT_SETTLE_MS     500U
+#define XHCI_PORT_POWER_SETTLE_MS 20U
+#define XHCI_PORT_RESET_RECOVERY_MS 10U
 
 #define XHCI_INTEL_VENDOR_ID       0x8086U
 #define XHCI_SONY_VENDOR_ID        0x104DU
@@ -66,11 +68,27 @@
 #define XHCI_STS_CNR            (1U << 11)
 #define XHCI_PORT_CCS           (1U << 0)
 #define XHCI_PORT_PED           (1U << 1)
+#define XHCI_PORT_OCA           (1U << 3)
 #define XHCI_PORT_PR            (1U << 4)
+#define XHCI_PORT_PLS_MASK      (0xFU << 5)
 #define XHCI_PORT_PP            (1U << 9)
 #define XHCI_PORT_SPEED_MASK    (0xFU << 10)
 #define XHCI_PORT_CSC           (1U << 17)
+#define XHCI_PORT_PEC           (1U << 18)
+#define XHCI_PORT_WRC           (1U << 19)
+#define XHCI_PORT_OCC           (1U << 20)
 #define XHCI_PORT_PRC           (1U << 21)
+#define XHCI_PORT_PLC           (1U << 22)
+#define XHCI_PORT_CEC           (1U << 23)
+#define XHCI_PORT_WAKE_BITS     (7U << 25)
+#define XHCI_PORT_CHANGE_BITS   (XHCI_PORT_CSC | XHCI_PORT_PEC | \
+                                  XHCI_PORT_WRC | XHCI_PORT_OCC | \
+                                  XHCI_PORT_PRC | XHCI_PORT_PLC | \
+                                  XHCI_PORT_CEC)
+#define XHCI_PORT_RO_BITS       (XHCI_PORT_CCS | XHCI_PORT_OCA | \
+                                  XHCI_PORT_SPEED_MASK)
+#define XHCI_PORT_RWS_BITS      (XHCI_PORT_PLS_MASK | XHCI_PORT_PP | \
+                                  XHCI_PORT_WAKE_BITS)
 #define XHCI_IMAN_IP             (1U << 0)
 #define XHCI_IMAN_IE             (1U << 1)
 #define XHCI_LEGACY_BIOS_OWNED   (1U << 16U)
@@ -1130,6 +1148,88 @@ static uint32_t xhci_wait_connected_ports(uint32_t timeout_ms) {
     return observed;
 }
 
+/* PORTSC contains several RW1C/RW1S fields.  A raw read-modify-write would
+ * write PED back as one and can disable an already enabled port.  Keep only
+ * read-only and read/write-sticky fields when composing a control write. */
+static uint32_t xhci_port_neutral(uint32_t port) {
+    return port & (XHCI_PORT_RO_BITS | XHCI_PORT_RWS_BITS);
+}
+
+static bool xhci_wait_port_recovery(uint32_t delay_ms) {
+    uint64_t start = pit_monotonic_ms();
+    for (uint32_t poll = 0U; poll < XHCI_POLL_LIMIT; ++poll) {
+        uint64_t now = pit_monotonic_ms();
+        if (now < start) return false;
+        if (now - start >= delay_ms) return true;
+        if ((poll & 0x3FFU) == 0U) __asm__ __volatile__("pause");
+    }
+    return false;
+}
+
+static bool xhci_reset_root_port(uint32_t root_port, uint32_t port_offset,
+                                 uint32_t *status) {
+    if (status == NULL) return false;
+    uint32_t port = xhci_read(port_offset);
+    *status = port;
+    if ((port & XHCI_PORT_CCS) == 0U) return false;
+
+    if ((port & XHCI_PORT_PP) == 0U) {
+        xhci_write(port_offset, xhci_port_neutral(port) | XHCI_PORT_PP);
+        (void)xhci_read(port_offset);
+        if (!xhci_wait_port_recovery(XHCI_PORT_POWER_SETTLE_MS)) return false;
+        port = xhci_read(port_offset);
+        *status = port;
+        if ((port & XHCI_PORT_CCS) == 0U) return false;
+    }
+
+    /* A one clears only change bits which were actually observed.  In
+     * particular, do not write the RW1CS PED bit back from the snapshot. */
+    xhci_write(port_offset, xhci_port_neutral(port) |
+               (port & XHCI_PORT_CHANGE_BITS));
+    (void)xhci_read(port_offset);
+    port = xhci_read(port_offset);
+    xhci_write(port_offset,
+               xhci_port_neutral(port) | XHCI_PORT_PP | XHCI_PORT_PR);
+    (void)xhci_read(port_offset);
+
+    bool complete = false;
+    uint64_t start = pit_monotonic_ms();
+    for (uint32_t poll = 0U; poll < XHCI_POLL_LIMIT; ++poll) {
+        port = xhci_read(port_offset);
+        if ((port & XHCI_PORT_CCS) == 0U) break;
+        if ((port & XHCI_PORT_PR) == 0U &&
+            (port & XHCI_PORT_PRC) != 0U &&
+            (port & XHCI_PORT_PED) != 0U) {
+            complete = true;
+            break;
+        }
+        uint64_t now = pit_monotonic_ms();
+        if (now < start || now - start >= XHCI_TIMEOUT_MS) break;
+        if ((poll & 0x3FFU) == 0U) __asm__ __volatile__("pause");
+    }
+    *status = port;
+    if (!complete) {
+        printf("USB: xHCI port=%u reset incomplete status=%08X\n",
+               (unsigned)root_port, (unsigned)port);
+        return false;
+    }
+
+    xhci_write(port_offset, xhci_port_neutral(port) |
+               (port & XHCI_PORT_CHANGE_BITS));
+    (void)xhci_read(port_offset);
+    if (!xhci_wait_port_recovery(XHCI_PORT_RESET_RECOVERY_MS)) return false;
+
+    port = xhci_read(port_offset);
+    *status = port;
+    if ((port & (XHCI_PORT_CCS | XHCI_PORT_PED | XHCI_PORT_PR)) !=
+        (XHCI_PORT_CCS | XHCI_PORT_PED)) {
+        printf("USB: xHCI port=%u unstable after reset status=%08X\n",
+               (unsigned)root_port, (unsigned)port);
+        return false;
+    }
+    return true;
+}
+
 static bool xhci_enumerate_root_hid(xhci_hid_device_t *hid,
                                     uint32_t root_port,
                                     uint32_t protocol_mask) {
@@ -1146,21 +1246,8 @@ static bool xhci_enumerate_root_hid(xhci_hid_device_t *hid,
     hid->root_port = root_port;
     uint32_t port_offset = controller.op_base + XHCI_PORTSC_BASE +
         (root_port - 1U) * XHCI_PORTSC_STRIDE;
-    uint32_t port = xhci_read(port_offset);
-    if ((port & XHCI_PORT_CCS) == 0U) return false;
-    xhci_write(port_offset,
-               (port & ~(XHCI_PORT_CSC | XHCI_PORT_PRC)) | XHCI_PORT_PP);
-    xhci_write(port_offset,
-               (port & ~(XHCI_PORT_CSC | XHCI_PORT_PRC)) | XHCI_PORT_PP |
-               XHCI_PORT_PR);
-    uint64_t start = pit_monotonic_ms();
-    while (1) {
-        uint64_t now = pit_monotonic_ms();
-        if (now < start || now - start >= XHCI_TIMEOUT_MS) break;
-        port = xhci_read(port_offset);
-        if ((port & XHCI_PORT_PED) != 0U) break;
-    }
-    if ((port & XHCI_PORT_PED) == 0U) {
+    uint32_t port = 0U;
+    if (!xhci_reset_root_port(root_port, port_offset, &port)) {
         diagnostics.failure_stage = XHCI_FAILURE_PORT_RESET;
         return false;
     }

@@ -204,6 +204,24 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("xhci_update_ep0_max_packet(hid, descriptor_packet)",
                       source)
 
+    def test_xhci_waits_for_physical_port_reset_completion(self):
+        source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
+        self.assertIn("static uint32_t xhci_port_neutral", source)
+        self.assertIn("static bool xhci_reset_root_port", source)
+        start = source.index("static bool xhci_reset_root_port")
+        end = source.index("static bool xhci_enumerate_root_hid", start)
+        helper = source[start:end]
+        self.assertIn("port & XHCI_PORT_CHANGE_BITS", helper)
+        self.assertIn("(port & XHCI_PORT_PR) == 0U", helper)
+        self.assertIn("(port & XHCI_PORT_PRC) != 0U", helper)
+        self.assertIn("(port & XHCI_PORT_PED) != 0U", helper)
+        self.assertIn(
+            "xhci_wait_port_recovery(XHCI_PORT_RESET_RECOVERY_MS)", helper
+        )
+        self.assertNotIn(
+            "(port & ~(XHCI_PORT_CSC | XHCI_PORT_PRC))", source
+        )
+
     def test_desktop_escape_returns_to_parent_shell(self):
         source = (ROOT / "userspace/programs/desktop.c").read_text(
             encoding="utf-8")
