@@ -36,7 +36,7 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("dcbaa[slot] = xhci_dma32(device_context)", source)
         self.assertIn("controller.context_size", source)
         self.assertIn("command->d[3] = TRB_TYPE(type) | control", source)
-        self.assertIn("TRB_TYPE(TRB_SETUP) | TRB_IDT | TRB_CHAIN", source)
+        self.assertIn("TRB_TYPE(TRB_SETUP) | TRB_IDT", source)
         self.assertIn("setup->d[2] = 8U", source)
         self.assertIn("transfer_type |", source)
         self.assertNotIn("setup->d[2] = (transfer_type << 16U) | 8U", source)
@@ -222,26 +222,42 @@ class UsbMouseTests(unittest.TestCase):
             "(port & ~(XHCI_PORT_CSC | XHCI_PORT_PRC))", source
         )
 
-    def test_xhci_accepts_complete_control_short_packet_events(self):
+    def test_xhci_control_td_matches_physical_controller_contract(self):
         source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
-        start = source.index("static bool xhci_wait_transfer")
+        self.assertIn("#define TRB_ISP", source)
+        start = source.index("static bool xhci_wait_control_transfer")
         end = source.index("static bool xhci_control", start)
         helper = source[start:end]
         self.assertIn("uint32_t requested_length", helper)
-        self.assertIn("bool allow_short", helper)
+        self.assertIn("uint32_t data_pointer", helper)
+        self.assertIn("uint32_t status_pointer", helper)
+        self.assertIn("pointer == data_pointer", helper)
+        self.assertIn("pointer == status_pointer", helper)
+        self.assertIn("saw_data_short = true", helper)
+        self.assertIn("completion != XHCI_COMPLETION_SHORT_PACKET", helper)
+        self.assertIn("completion == XHCI_COMPLETION_SUCCESS", helper)
         self.assertIn("residual > requested_length", helper)
         self.assertIn("requested_length - residual", helper)
-        self.assertIn("status == XHCI_COMPLETION_SUCCESS ||", helper)
-        self.assertIn(
-            "allow_short && status == XHCI_COMPLETION_SHORT_PACKET", helper
-        )
         self.assertIn("actual == requested_length", helper)
         control_start = source.index("static bool xhci_control")
         control_end = source.index("static bool xhci_address_device",
                                    control_start)
         control = source[control_start:control_end]
-        self.assertIn("direction_in && length != 0U", control)
+        self.assertIn("direction_in ? TRB_DIR_IN | TRB_ISP : 0U", control)
+        self.assertNotIn("TRB_TYPE(TRB_SETUP) | TRB_IDT | TRB_CHAIN",
+                         control)
+        self.assertNotIn("TRB_TYPE(TRB_DATA) | TRB_CHAIN", control)
+        self.assertIn("setup->d[3] = setup_control ^ TRB_CYCLE", control)
+        self.assertIn("xhci_dma_write_barrier();\n    setup->d[3] = setup_control",
+                      control)
+        self.assertIn("xhci_wait_control_transfer(data_trb, status", control)
         self.assertIn("diagnostics.last_actual_length", helper)
+        doorbell_start = source.index("static void xhci_ring_doorbell")
+        doorbell_end = source.index("static void xhci_queue_interrupt_report",
+                                    doorbell_start)
+        doorbell = source[doorbell_start:doorbell_end]
+        self.assertIn("xhci_dma_write_barrier()", doorbell)
+        self.assertIn("(void)xhci_read(offset)", doorbell)
 
     def test_desktop_escape_returns_to_parent_shell(self):
         source = (ROOT / "userspace/programs/desktop.c").read_text(

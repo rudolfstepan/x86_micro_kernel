@@ -443,15 +443,19 @@ und hält danach die vorgeschriebene 10-ms-Recovery-Zeit ein. Erst dann darf die
 Slot-Adressierung starten.
 
 Der darauffolgende ASUS-Lauf erreichte beide verbundenen Geräte und grenzte den
-Fehler auf `GET_DESCRIPTOR(Device, 8)` ein: Port 4 meldete Full-Speed, der
-Transfer endete jedoch mit Completion Code 13 (`Short Packet`). Der generische
-Eventpfad akzeptierte diesen Abschluss bereits für HID-Reports, während der
-Control-Pfad ausschließlich Code 1 als Erfolg behandelte. Control-IN akzeptiert
-Code 13 nun ebenfalls, aber nur mit einer Restlänge innerhalb des angeforderten
-Puffers und nur wenn die daraus berechnete Istlänge der für die anschließende
-Deskriptorprüfung benötigten Länge entspricht. Der Zielpuffer wird vor jedem
-IN-Transfer gelöscht; unvollständige oder widersprüchliche Antworten bleiben
-damit geschlossen abgewiesen.
+Fehler auf `GET_DESCRIPTOR(Device, 8)` ein: Port 4 meldete Full-Speed, zunächst
+erschien Completion Code 13 (`Short Packet`), nach einer unvollständigen
+Einzelkorrektur nur noch ein Timeout (`cc=0`). Der vollständige Vergleich mit
+den Linux- und U-Boot-xHCI-Pfaden zeigte daraufhin vier zusammenhängende
+Abweichungen im Control-TD-Vertrag: Setup und Data trugen fälschlich `CHAIN`,
+dem IN-Data-TRB fehlte `ISP`, ein Short-Packet-Ereignis am Data Stage wurde
+verworfen statt bis zum Status Stage weiterverfolgt, und Setup wurde nicht als
+letztes atomar an den Controller übergeben. Der Pfad bildet nun die feste
+Setup/Data/Status-Folge ohne `CHAIN`, mit `ISP` für IN, getrennt ausgewerteten
+Data- und Status-Ereignissen sowie einem Speicherbarriere-geschützten Cycle-
+Handoff ab. Doorbell-Schreibzugriffe werden rückgelesen. Rest- und Istlängen
+bleiben begrenzt validiert, und der IN-Puffer wird vor jeder Übertragung
+gelöscht.
 
 ## Erwartetes Restrisiko
 
