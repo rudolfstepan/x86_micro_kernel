@@ -277,6 +277,24 @@ auf den direkten, geclippten Pfad zurück. Der Leistungsgewinn auf dem
 ASUS/NVIDIA-System bleibt durch einen erneuten Hardwarelauf zu bestätigen;
 PAT/MTRR-Write-Combining ist noch nicht Bestandteil dieses Schritts.
 
+Der anschließende physische Lauf bestätigte den Backbuffer-Gewinn, zeigte aber
+weiterhin begrenzte LFB-Übertragungsrate. Der Framebuffer versucht deshalb nun
+einen separaten Write-Combining-Pagingpfad. Dieser schaltet PAT-Eintrag 1 nur
+nach CPUID-Nachweis für MSR, PAT und SSE auf WC, ordnet die Schreibzugriffe mit
+`SFENCE` und fällt auf das unveränderte uncached MMIO-Mapping zurück, wenn die
+CPU den Vertrag nicht erfüllt. Der allgemeine MMIO-Pfad bleibt unverändert.
+
+Für das reale ASUS-System akzeptiert der weiter fest begrenzte xHCI-Pfad nun
+bis zu 32 Root-Ports, protokolliert die verbundene Portmaske, bewahrt einen
+bereits aktiven Controller vor späterem Überschreiben und bevorzugt bei einem
+Composite-Boot-HID die Maus-Schnittstelle. Boot-HID-Endpunkte dürfen bis zu 64
+Byte Paketgröße ankündigen; ausgewertet werden weiterhin höchstens acht Byte.
+Statt nur das erste belegte Root-Port-Gerät zu verwenden, prüft die
+Initialisierung höchstens acht verbundene Ports und wählt zuerst eine
+Boot-Maus; nur wenn keine gefunden wird, wird die erste Boot-Tastatur erneut
+konfiguriert. Jeder Versuch bleibt durch die bestehenden monotonen
+Control-Transfer-Deadlines begrenzt.
+
 ## Erwartetes Restrisiko
 
 Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte

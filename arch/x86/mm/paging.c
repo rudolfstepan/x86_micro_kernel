@@ -34,6 +34,17 @@ static uint32_t local_apic_page_table[PAGE_TABLE_ENTRIES]
     __attribute__((aligned(PAGE_SIZE)));
 static page_directory_t *current_directory;
 static bool paging_enabled;
+static bool pat_checked;
+static bool pat_write_combining;
+
+#define IA32_PAT_MSR 0x277U
+#define CR0_CACHE_DISABLE (1U << 30U)
+#define CR0_NOT_WRITE_THROUGH (1U << 29U)
+#define CPUID_FEATURE_MSR (1U << 5U)
+#define CPUID_FEATURE_PAT (1U << 16U)
+#define CPUID_FEATURE_SSE (1U << 25U)
+#define PAT_ENTRY_WIDTH 8U
+#define PAT_WRITE_COMBINING 1U
 
 extern uint8_t _stack_guard_start;
 
@@ -55,6 +66,69 @@ static inline void flush_tlb(void) {
     uint32_t cr3;
     __asm__ __volatile__("mov %%cr3, %0" : "=r"(cr3));
     load_cr3(cr3);
+}
+
+static inline uint64_t read_msr(uint32_t msr) {
+    uint32_t low;
+    uint32_t high;
+    __asm__ __volatile__("rdmsr" : "=a"(low), "=d"(high) : "c"(msr));
+    return ((uint64_t)high << 32U) | low;
+}
+
+static inline void write_msr(uint32_t msr, uint64_t value) {
+    __asm__ __volatile__("wrmsr" : : "c"(msr), "a"((uint32_t)value),
+                         "d"((uint32_t)(value >> 32U)) : "memory");
+}
+
+static bool prepare_pat_write_combining(void) {
+    if (pat_checked) return pat_write_combining;
+    pat_checked = true;
+
+    uint32_t maximum_leaf;
+    uint32_t unused_b;
+    uint32_t unused_c;
+    uint32_t unused_d;
+    __asm__ __volatile__("cpuid"
+                         : "=a"(maximum_leaf), "=b"(unused_b),
+                           "=c"(unused_c), "=d"(unused_d)
+                         : "a"(0U));
+    if (maximum_leaf < 1U) return false;
+
+    uint32_t features;
+    __asm__ __volatile__("cpuid"
+                         : "=a"(unused_b), "=b"(unused_c),
+                           "=c"(unused_d), "=d"(features)
+                         : "a"(1U));
+    uint32_t required = CPUID_FEATURE_MSR | CPUID_FEATURE_PAT |
+                        CPUID_FEATURE_SSE;
+    if ((features & required) != required) return false;
+
+    uint64_t original = read_msr(IA32_PAT_MSR);
+    uint64_t replacement =
+        (original & ~((uint64_t)0xFFU << PAT_ENTRY_WIDTH)) |
+        ((uint64_t)PAT_WRITE_COMBINING << PAT_ENTRY_WIDTH);
+    if (replacement != original) {
+        uint32_t flags;
+        __asm__ __volatile__("pushf\n pop %0\n cli"
+                             : "=r"(flags) : : "memory");
+        uint32_t original_cr0 = read_cr0();
+        write_cr0((original_cr0 | CR0_CACHE_DISABLE) &
+                  ~CR0_NOT_WRITE_THROUGH);
+        __asm__ __volatile__("wbinvd" : : : "memory");
+        flush_tlb();
+        write_msr(IA32_PAT_MSR, replacement);
+        __asm__ __volatile__("wbinvd" : : : "memory");
+        write_cr0(original_cr0);
+        flush_tlb();
+        __asm__ __volatile__("push %0\n popf"
+                             : : "r"(flags) : "memory");
+    }
+    pat_write_combining =
+        ((read_msr(IA32_PAT_MSR) >> PAT_ENTRY_WIDTH) & 0xFFU) ==
+        PAT_WRITE_COMBINING;
+    if (pat_write_combining)
+        printf("PAGING: PAT write-combining enabled\n");
+    return pat_write_combining;
 }
 
 static void *allocate_page(void) {
@@ -344,6 +418,32 @@ void *map_kernel_mmio(uint32_t physical_address, size_t length) {
     return (void*)(uintptr_t)physical_address;
 }
 
+void *map_kernel_write_combining(uint32_t physical_address, size_t length) {
+    if (!prepare_pat_write_combining() || length == 0U ||
+        length > UINT32_MAX - physical_address) return NULL;
+
+    uint32_t final_address = physical_address + (uint32_t)length - 1U;
+    if ((physical_address >= USER_BASE && physical_address < USER_TOP) ||
+        (final_address >= USER_BASE && final_address < USER_TOP) ||
+        (physical_address < USER_BASE && final_address >= USER_BASE)) {
+        return NULL;
+    }
+
+    uint32_t first = physical_address & ~(PAGE_SIZE - 1U);
+    uint32_t last = final_address & ~(PAGE_SIZE - 1U);
+    __asm__ __volatile__("wbinvd" : : : "memory");
+    for (uint32_t page = first;; page += PAGE_SIZE) {
+        if (map_page(paging_kernel_directory(), page, page,
+                     PAGE_RW | PAGE_PAT_INDEX_1) != 0) {
+            return NULL;
+        }
+        if (page == last) break;
+        if (page > UINT32_MAX - PAGE_SIZE) return NULL;
+    }
+    __asm__ __volatile__("wbinvd" : : : "memory");
+    return (void*)(uintptr_t)physical_address;
+}
+
 int map_page(page_directory_t *pd, uint32_t virtual_address,
              uint32_t physical_address, uint32_t flags) {
     if (pd == NULL || (virtual_address & (PAGE_SIZE - 1U)) != 0 ||
@@ -381,7 +481,8 @@ int map_page(page_directory_t *pd, uint32_t virtual_address,
     }
 
     table[table_index] = physical_address | PAGE_PRESENT |
-                         (flags & (PAGE_RW | PAGE_USER | PAGE_CACHE_DISABLE));
+                         (flags & (PAGE_RW | PAGE_USER | PAGE_PAT_INDEX_1 |
+                                   PAGE_CACHE_DISABLE));
     flush_tlb();
     return 0;
 }

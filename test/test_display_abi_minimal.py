@@ -37,6 +37,8 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         cls.syscalls = read("kernel/syscall/syscall_table.c")
         cls.framebuffer_h = read("drivers/video/framebuffer.h")
         cls.framebuffer = read("drivers/video/framebuffer.c")
+        cls.paging_h = read("arch/x86/mm/paging.h")
+        cls.paging = read("arch/x86/mm/paging.c")
         cls.display = read("drivers/video/display.c")
 
     def test_syscall_numbers_are_appended_without_renumbering(self) -> None:
@@ -132,6 +134,20 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         self.assertNotRegex(self.framebuffer, r"(?:malloc|kmalloc)\s*\(")
         self.assertIn("volatile uint32_t *destination", self.framebuffer)
         self.assertIn("framebuffer_present_rect", self.framebuffer)
+
+    def test_framebuffer_write_combining_is_feature_checked_and_falls_back(self) -> None:
+        self.assertIn("map_kernel_write_combining", self.paging_h)
+        self.assertIn("CPUID_FEATURE_PAT", self.paging)
+        self.assertIn("CPUID_FEATURE_MSR", self.paging)
+        self.assertIn("CPUID_FEATURE_SSE", self.paging)
+        self.assertIn("IA32_PAT_MSR", self.paging)
+        self.assertIn("PAGE_PAT_INDEX_1", self.paging)
+        mapping = function(self.framebuffer, "static void framebuffer_initialize(")
+        self.assertLess(mapping.index("map_kernel_write_combining("),
+                        mapping.index("map_kernel_mmio("))
+        self.assertIn("if (mapping != NULL) fb_scanout_write_combining = true",
+                      mapping)
+        self.assertIn('__volatile__("sfence"', self.framebuffer)
 
     def test_sdk_hides_request_marshalling(self) -> None:
         info = function(self.user_sdk, "int x86os_display_info(")

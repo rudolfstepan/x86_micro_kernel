@@ -1491,6 +1491,8 @@ allowed_files = [
   "arch/x86/boot/bios/stage2_bios.asm",
   "arch/x86/boot/vbe_runtime.asm",
   "arch/x86/boot/vbe_runtime.h",
+  "arch/x86/mm/paging.h",
+  "arch/x86/mm/paging.c",
   "drivers/video/framebuffer.h",
   "drivers/video/framebuffer.c",
   "drivers/video/display_control.h",
@@ -1541,6 +1543,7 @@ invariants = [
   "unsupported hardware and every pre-publication failure leave the existing VGA console untouched and serially diagnosed",
   "the framebuffer remains supervisor-only and drawing remains clipped and bounded",
   "the fixed framebuffer shadow uses no heap and oversized modes fall back to bounded direct rendering",
+  "framebuffer write-combining is enabled only after CPUID PAT, MSR and SSE validation and otherwise falls back to the unchanged uncached MMIO mapping",
   "missing or broken native graphics support cannot prevent a normal VGA boot",
   "a successful runtime activation can be deactivated back to an operable VGA shell before framebuffer state is withdrawn",
   "the existing framebuffer boot remains compatible"

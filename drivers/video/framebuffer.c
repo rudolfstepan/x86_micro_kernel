@@ -19,6 +19,7 @@ static uint8_t framebuffer_shadow[FB_SHADOW_CAPACITY]
 static uint8_t* fb_address = NULL;
 static volatile uint8_t* fb_scanout_address = NULL;
 static bool fb_shadow_enabled;
+static bool fb_scanout_write_combining;
 static uint32_t fb_width = 0;
 static uint32_t fb_height = 0;
 static uint32_t fb_pitch = 0;
@@ -4706,6 +4707,8 @@ static void framebuffer_present_rect(uint32_t x, uint32_t y,
                     destination_bytes[byte] = source[byte];
             }
         }
+        if (fb_scanout_write_combining)
+            __asm__ __volatile__("sfence" : : : "memory");
     }
     display_control_present_rect(x, y, width, height);
 }
@@ -4716,6 +4719,7 @@ static void framebuffer_initialize(multiboot_framebuffer_info_t* fb_info,
     fb_address = NULL;
     fb_scanout_address = NULL;
     fb_shadow_enabled = false;
+    fb_scanout_write_combining = false;
     fb_width = fb_height = fb_pitch = 0;
     fb_bpp = fb_bytes_per_pixel = 0;
     fb_red_position = fb_red_size = 0;
@@ -4758,8 +4762,11 @@ static void framebuffer_initialize(multiboot_framebuffer_info_t* fb_info,
         fb_info->framebuffer_addr > 0xFFFFFFFFULL ||
         fb_info->framebuffer_addr + framebuffer_size > 0x100000000ULL) return;
 
-    void *mapping = map_kernel_mmio((uint32_t)fb_info->framebuffer_addr,
-                                    (size_t)framebuffer_size);
+    void *mapping = map_kernel_write_combining(
+        (uint32_t)fb_info->framebuffer_addr, (size_t)framebuffer_size);
+    if (mapping != NULL) fb_scanout_write_combining = true;
+    else mapping = map_kernel_mmio((uint32_t)fb_info->framebuffer_addr,
+                                   (size_t)framebuffer_size);
     if (mapping == NULL) return;
     fb_scanout_address = (volatile uint8_t*)mapping;
     if (framebuffer_size <= FB_SHADOW_CAPACITY) {
@@ -4800,6 +4807,7 @@ void framebuffer_shutdown(void) {
     fb_address = NULL;
     fb_scanout_address = NULL;
     fb_shadow_enabled = false;
+    fb_scanout_write_combining = false;
     fb_width = fb_height = fb_pitch = 0U;
     fb_bpp = fb_bytes_per_pixel = 0U;
     fb_red_position = fb_red_size = 0U;

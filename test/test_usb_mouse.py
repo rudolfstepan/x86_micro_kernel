@@ -47,6 +47,17 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("XHCI_COMPLETION_SHORT_PACKET 13U", source)
         self.assertIn("completion == XHCI_COMPLETION_SHORT_PACKET", source)
         self.assertIn("xhci_queue_interrupt_report", source)
+        self.assertIn("#define XHCI_MAX_PORTS          32U", source)
+        self.assertIn("max_packet > 64U", source)
+        self.assertIn("xHCI HID already active; preserving controller", source)
+        self.assertIn("connected=%08X", source)
+        self.assertIn("#define XHCI_MAX_HID_CANDIDATES 8U", source)
+        self.assertIn("attempts < XHCI_MAX_HID_CANDIDATES", source)
+        self.assertIn("xhci_enumerate_root_hid(root_port)", source)
+        self.assertIn("keyboard_port", source)
+        mouse_choice = source.index("current_protocol == 2U")
+        keyboard_choice = source.index("current_protocol == 1U", mouse_choice)
+        self.assertLess(mouse_choice, keyboard_choice)
 
     def test_xhci_preserves_consumed_event_cycle_bits(self):
         source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")

@@ -49,6 +49,7 @@
 #define PAGE_PRESENT 0x1
 #define PAGE_RW 0x2
 #define PAGE_USER 0x4
+#define PAGE_PAT_INDEX_1 0x8
 #define PAGE_CACHE_DISABLE 0x10
 
 #include <stdbool.h>
@@ -113,6 +114,7 @@ int copy_to_user_space(page_directory_t* pd, uint32_t user_destination,
 int copy_string_from_user(char* destination, size_t capacity,
                           const char* user_source);
 void* map_kernel_mmio(uint32_t physical_address, size_t length);
+void* map_kernel_write_combining(uint32_t physical_address, size_t length);
 int unmap_kernel_page(uint32_t virtual_address, bool free_physical_frame);
 bool paging_kernel_page_present(uint32_t virtual_address);
 bool paging_is_enabled(void);

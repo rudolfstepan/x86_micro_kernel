@@ -25,7 +25,8 @@
 #define XHCI_MMIO_SIZE          0x10000U
 #define XHCI_TIMEOUT_MS         1000U
 #define XHCI_POLL_LIMIT         1000000U
-#define XHCI_MAX_PORTS          8U
+#define XHCI_MAX_PORTS          32U
+#define XHCI_MAX_HID_CANDIDATES 8U
 #define XHCI_COMMAND_RING_TRBS  64U
 #define XHCI_EVENT_RING_TRBS    128U
 #define XHCI_ENDPOINT_RING_TRBS 32U
@@ -488,34 +489,67 @@ static bool xhci_find_boot_hid(uint8_t *config, uint16_t length,
                                uint16_t *packet, uint8_t *interval) {
     uint16_t offset = 0U;
     bool boot_hid = false;
+    bool keyboard_found = false;
+    uint8_t configuration_value = 0U;
+    uint8_t current_interface = 0U;
+    uint8_t current_protocol = 0U;
+    uint8_t keyboard_interface = 0U;
+    uint8_t keyboard_endpoint = 0U;
+    uint8_t keyboard_interval = 0U;
+    uint16_t keyboard_packet = 0U;
     while (offset + 2U <= length) {
         uint8_t item_length = config[offset];
         uint8_t item_type = config[offset + 1U];
         if (item_length < 2U || offset + item_length > length) return false;
-        if (item_type == 2U && item_length >= 6U) *configuration = config[offset + 5U];
+        if (item_type == 2U && item_length >= 6U)
+            configuration_value = config[offset + 5U];
         if (item_type == 4U && item_length >= 9U) {
             boot_hid = config[offset + 5U] == 3U &&
                        config[offset + 6U] == 1U &&
                        (config[offset + 7U] == 1U ||
                         config[offset + 7U] == 2U);
             if (boot_hid) {
-                *interface = config[offset + 2U];
-                *protocol = config[offset + 7U];
+                current_interface = config[offset + 2U];
+                current_protocol = config[offset + 7U];
             }
         } else if (item_type == 5U && boot_hid && item_length >= 7U &&
                    (config[offset + 2U] & 0x80U) != 0U &&
                    (config[offset + 3U] & 3U) == 3U) {
             uint16_t max_packet = (uint16_t)config[offset + 4U] |
                                   ((uint16_t)config[offset + 5U] << 8U);
-            if (max_packet == 0U || max_packet > 8U) return false;
-            *endpoint = config[offset + 2U] & 0x0FU;
-            *packet = max_packet;
-            *interval = config[offset + 6U] == 0U ? 1U : config[offset + 6U];
-            return true;
+            /* Boot protocol limits the consumed report to 8 bytes, but a
+             * real interrupt endpoint may advertise a larger packet. */
+            if (max_packet == 0U || max_packet > 64U) return false;
+            uint8_t endpoint_number = config[offset + 2U] & 0x0FU;
+            uint8_t endpoint_interval =
+                config[offset + 6U] == 0U ? 1U : config[offset + 6U];
+            if (current_protocol == 2U) {
+                *configuration = configuration_value;
+                *interface = current_interface;
+                *protocol = current_protocol;
+                *endpoint = endpoint_number;
+                *packet = max_packet;
+                *interval = endpoint_interval;
+                return configuration_value != 0U;
+            }
+            if (current_protocol == 1U && !keyboard_found) {
+                keyboard_found = true;
+                keyboard_interface = current_interface;
+                keyboard_endpoint = endpoint_number;
+                keyboard_packet = max_packet;
+                keyboard_interval = endpoint_interval;
+            }
         }
         offset = (uint16_t)(offset + item_length);
     }
-    return false;
+    if (!keyboard_found || configuration_value == 0U) return false;
+    *configuration = configuration_value;
+    *interface = keyboard_interface;
+    *protocol = 1U;
+    *endpoint = keyboard_endpoint;
+    *packet = keyboard_packet;
+    *interval = keyboard_interval;
+    return true;
 }
 
 static bool xhci_configure_boot_hid(void) {
@@ -608,26 +642,37 @@ static bool xhci_configure_boot_hid(void) {
     return true;
 }
 
-static bool xhci_enumerate_root_hid(void) {
-    uint32_t port = 0U;
-    uint32_t port_offset = 0U;
-    controller.root_port = 0U;
+static bool xhci_start_controller(uint32_t max_slots) {
+    if (!xhci_reset_controller()) return false;
+    xhci_prepare_rings();
+    xhci_write(controller.op_base + XHCI_CONFIG,
+               max_slots > 31U ? 31U : max_slots);
+    xhci_write(controller.runtime_base + XHCI_RT_IMAN, 0U);
+    xhci_write(controller.op_base + XHCI_USBCMD,
+               xhci_read(controller.op_base + XHCI_USBCMD) | XHCI_CMD_RUN);
+    return xhci_wait_until(controller.op_base + XHCI_USBSTS, XHCI_STS_HCH,
+                           0U, XHCI_TIMEOUT_MS);
+}
+
+static uint32_t xhci_connected_ports(void) {
+    uint32_t connected = 0U;
     for (uint32_t candidate = 1U; candidate <= controller.port_count;
          ++candidate) {
         uint32_t offset = controller.op_base + XHCI_PORTSC_BASE +
             (candidate - 1U) * XHCI_PORTSC_STRIDE;
-        uint32_t status = xhci_read(offset);
-        if ((status & XHCI_PORT_CCS) != 0U) {
-            controller.root_port = candidate;
-            port_offset = offset;
-            port = status;
-            break;
-        }
+        if ((xhci_read(offset) & XHCI_PORT_CCS) != 0U)
+            connected |= 1U << (candidate - 1U);
     }
-    if (controller.root_port == 0U) {
-        printf("USB: xHCI no connected root-port HID\n");
-        return false;
-    }
+    return connected;
+}
+
+static bool xhci_enumerate_root_hid(uint32_t root_port) {
+    if (root_port == 0U || root_port > controller.port_count) return false;
+    controller.root_port = root_port;
+    uint32_t port_offset = controller.op_base + XHCI_PORTSC_BASE +
+        (root_port - 1U) * XHCI_PORTSC_STRIDE;
+    uint32_t port = xhci_read(port_offset);
+    if ((port & XHCI_PORT_CCS) == 0U) return false;
     xhci_write(port_offset,
                (port & ~(XHCI_PORT_CSC | XHCI_PORT_PRC)) | XHCI_PORT_PP);
     xhci_write(port_offset,
@@ -649,18 +694,23 @@ static bool xhci_enumerate_root_hid(void) {
         return false;
     }
     if (!xhci_configure_boot_hid()) {
-        printf("USB: xHCI HID configuration failed\n");
+        printf("USB: xHCI port=%u HID configuration failed\n",
+               (unsigned)root_port);
         return false;
     }
+    printf("USB: xHCI port=%u HID %s candidate\n", (unsigned)root_port,
+           controller.hid_protocol == 2U ? "mouse" : "keyboard");
+    return controller.hid_protocol == 1U || controller.hid_protocol == 2U;
+}
+
+static void xhci_publish_hid(void) {
     controller.generation++;
     if (controller.generation == 0U) controller.generation = 1U;
     if (controller.hid_protocol == 1U)
         hid_keyboard_attach(controller.generation);
     else if (controller.hid_protocol == 2U)
         hid_mouse_attach(controller.generation);
-    else return false;
     controller.online = true;
-    return true;
 }
 
 static void xhci_irq_handler(void *opaque) {
@@ -680,6 +730,10 @@ static void xhci_irq_handler(void *opaque) {
 
 int xhci_probe(pci_device_t *dev) {
     if (dev == NULL || dev->prog_if != 0x30U) return -1;
+    if (controller.online) {
+        printf("USB: xHCI HID already active; preserving controller\n");
+        return 0;
+    }
     uint32_t bar = pci_read_bar(dev, 0U);
     if (bar == 0U || bar == UINT32_MAX || (bar & 1U) != 0U ||
         ((bar & 6U) == 4U && dev->bar[1] != 0U)) {
@@ -705,8 +759,10 @@ int xhci_probe(pci_device_t *dev) {
                                   (((hcs2 >> 27U) & 0x1FU) << 5U);
     if (controller.port_count == 0U || controller.port_count > XHCI_MAX_PORTS ||
         controller.scratchpad_count > XHCI_MAX_SCRATCHPADS ||
+        controller.op_base < 0x20U ||
+        controller.op_base + XHCI_PORTSC_BASE +
+            controller.port_count * XHCI_PORTSC_STRIDE > XHCI_MMIO_SIZE ||
         controller.doorbell_base >= XHCI_MMIO_SIZE ||
-        controller.runtime_base >= XHCI_MMIO_SIZE ||
         controller.runtime_base >= XHCI_MMIO_SIZE) {
         printf("USB: xHCI capabilities rejected ports=%u scratch=%u db=%X rt=%X\n",
                (unsigned)controller.port_count,
@@ -720,11 +776,6 @@ int xhci_probe(pci_device_t *dev) {
         printf("USB: xHCI legacy handoff failed\n");
         return -1;
     }
-    if (!xhci_reset_controller()) {
-        printf("USB: xHCI controller reset failed\n");
-        return -1;
-    }
-    xhci_prepare_rings();
     if (!xhci_dma_valid(dcbaa, 64U) || !xhci_dma_valid(command_ring, 64U) ||
         !xhci_dma_valid(event_ring, 64U) ||
         !xhci_dma_valid(input_context, 4096U)) {
@@ -734,20 +785,47 @@ int xhci_probe(pci_device_t *dev) {
     pci_set_bus_master(dev->bus, dev->slot, dev->function, 1U);
     uint32_t max_slots = hcs1 & 0xFFU;
     if (max_slots == 0U) max_slots = 1U;
-    xhci_write(controller.op_base + XHCI_CONFIG, max_slots > 31U ? 31U : max_slots);
-    xhci_write(controller.runtime_base + XHCI_RT_IMAN, 0U);
-    xhci_write(controller.op_base + XHCI_USBCMD,
-               xhci_read(controller.op_base + XHCI_USBCMD) | XHCI_CMD_RUN);
-    if (!xhci_wait_until(controller.op_base + XHCI_USBSTS, XHCI_STS_HCH,
-                         0U, XHCI_TIMEOUT_MS)) {
+    if (!xhci_start_controller(max_slots)) {
         printf("USB: xHCI controller did not enter run state\n");
         pci_set_bus_master(dev->bus, dev->slot, dev->function, 0U);
         return -1;
     }
-    if (!xhci_enumerate_root_hid()) {
+
+    uint32_t connected_ports = xhci_connected_ports();
+    printf("USB: xHCI root ports=%u connected=%08X\n",
+           (unsigned)controller.port_count, (unsigned)connected_ports);
+    uint32_t keyboard_port = 0U;
+    uint32_t attempts = 0U;
+    bool selected = false;
+    for (uint32_t root_port = 1U;
+         root_port <= controller.port_count &&
+         attempts < XHCI_MAX_HID_CANDIDATES;
+         ++root_port) {
+        if ((connected_ports & (1U << (root_port - 1U))) == 0U) continue;
+        if (attempts++ != 0U && !xhci_start_controller(max_slots)) break;
+        if (!xhci_enumerate_root_hid(root_port)) continue;
+        if (controller.hid_protocol == 2U) {
+            selected = true;
+            break;
+        }
+        if (controller.hid_protocol == 1U && keyboard_port == 0U)
+            keyboard_port = root_port;
+    }
+    if (!selected && keyboard_port != 0U &&
+        xhci_start_controller(max_slots) &&
+        xhci_enumerate_root_hid(keyboard_port)) {
+        selected = controller.hid_protocol == 1U;
+    }
+    if (!selected) {
+        printf("USB: xHCI no supported root-port boot HID after %u attempts\n",
+               (unsigned)attempts);
+        xhci_write(controller.op_base + XHCI_USBCMD,
+                   xhci_read(controller.op_base + XHCI_USBCMD) &
+                   ~(XHCI_CMD_RUN | XHCI_CMD_INTE));
         pci_set_bus_master(dev->bus, dev->slot, dev->function, 0U);
         return -1;
     }
+    xhci_publish_hid();
     controller.irq = pci_configure_irq(dev);
     if (!pci_irq_is_valid(controller.irq) ||
         register_interrupt_handler(controller.irq, (void *)xhci_irq_handler) != 0) {
