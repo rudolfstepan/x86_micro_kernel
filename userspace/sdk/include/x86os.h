@@ -635,13 +635,21 @@ typedef struct {
     uint32_t reserved;
 } x86os_mouse_event_t;
 
-#define X86OS_USB_DIAGNOSTICS_VERSION 2U
+#define X86OS_USB_DIAGNOSTICS_VERSION 3U
 #define X86OS_USB_CAP_REJECT_PORT_COUNT       (1U << 0U)
 #define X86OS_USB_CAP_REJECT_SCRATCHPADS      (1U << 1U)
 #define X86OS_USB_CAP_REJECT_CAPLENGTH        (1U << 2U)
 #define X86OS_USB_CAP_REJECT_PORT_RANGE       (1U << 3U)
 #define X86OS_USB_CAP_REJECT_DOORBELL_RANGE   (1U << 4U)
 #define X86OS_USB_CAP_REJECT_RUNTIME_RANGE    (1U << 5U)
+#define X86OS_USB_INTEL_ROUTE_EHCI_FOUND      (1U << 0U)
+#define X86OS_USB_INTEL_ROUTE_ATTEMPTED       (1U << 1U)
+#define X86OS_USB_INTEL_ROUTE_USB3_VERIFIED   (1U << 2U)
+#define X86OS_USB_INTEL_ROUTE_USB2_VERIFIED   (1U << 3U)
+#define X86OS_USB_INTEL_ROUTE_NO_MASK         (1U << 4U)
+#define X86OS_USB_INTEL_ROUTE_INVALID_CONFIG  (1U << 5U)
+#define X86OS_USB_INTEL_ROUTE_VERIFY_FAILED   (1U << 6U)
+#define X86OS_USB_INTEL_ROUTE_SKIPPED_QUIRK   (1U << 7U)
 enum {
     X86OS_USB_STATE_NOT_PROBED = 0U,
     X86OS_USB_STATE_PROBING,
@@ -656,7 +664,8 @@ enum {
     X86OS_USB_STATE_IRQ_FAILED,
     X86OS_USB_STATE_KEYBOARD_READY,
     X86OS_USB_STATE_MOUSE_READY,
-    X86OS_USB_STATE_DISCONNECTED
+    X86OS_USB_STATE_DISCONNECTED,
+    X86OS_USB_STATE_PORT_ROUTING_FAILED
 };
 
 typedef struct {
@@ -690,6 +699,13 @@ typedef struct {
     uint32_t doorbell_offset;
     uint32_t runtime_offset;
     uint32_t capability_rejections;
+    uint32_t vendor_id;
+    uint32_t device_id;
+    uint32_t intel_routing_flags;
+    uint32_t usb2_routing_mask;
+    uint32_t usb2_routing;
+    uint32_t usb3_routing_mask;
+    uint32_t usb3_routing;
 } x86os_usb_diagnostics_t;
 
 enum {

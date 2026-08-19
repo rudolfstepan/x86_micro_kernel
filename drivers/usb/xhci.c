@@ -33,6 +33,16 @@
 #define XHCI_CONTEXT_BYTES      64U
 #define XHCI_MAX_SCRATCHPADS    32U
 #define XHCI_CONTROL_BYTES      256U
+#define XHCI_PORT_SETTLE_MS     500U
+
+#define XHCI_INTEL_VENDOR_ID       0x8086U
+#define XHCI_SONY_VENDOR_ID        0x104DU
+#define XHCI_SONY_VAIO_SUBDEVICE   0x90A8U
+#define XHCI_PCI_SUBSYSTEM_IDS     0x2CU
+#define XHCI_INTEL_XUSB2PR         0xD0U
+#define XHCI_INTEL_USB2PRM         0xD4U
+#define XHCI_INTEL_USB3_PSSEN      0xD8U
+#define XHCI_INTEL_USB3PRM         0xDCU
 
 #define XHCI_USBCMD             0x00U
 #define XHCI_USBSTS             0x04U
@@ -62,6 +72,8 @@
 #define XHCI_PORT_PRC           (1U << 21)
 #define XHCI_IMAN_IP             (1U << 0)
 #define XHCI_IMAN_IE             (1U << 1)
+#define XHCI_LEGACY_BIOS_OWNED   (1U << 16U)
+#define XHCI_LEGACY_OS_OWNED     (1U << 24U)
 
 #define TRB_CYCLE                (1U << 0)
 #define TRB_ENT                  (1U << 1)
@@ -209,16 +221,96 @@ static bool xhci_legacy_handoff(void) {
         uint8_t id = (uint8_t)header;
         uint8_t next = (uint8_t)(header >> 8U);
         if (id == 1U) {
-            uint32_t legacy = xhci_read(extended + 4U);
-            if ((legacy & (1U << 24U)) == 0U) {
-                xhci_write(extended + 4U, legacy | (1U << 24U));
-                if (!xhci_wait_until(extended + 4U, 1U << 16U, 0U,
+            /* The BIOS/OS ownership semaphores are in the capability header;
+             * the following dword is the legacy SMI control/status register. */
+            if ((header & XHCI_LEGACY_BIOS_OWNED) != 0U) {
+                xhci_write(extended, header | XHCI_LEGACY_OS_OWNED);
+                if (!xhci_wait_until(extended, XHCI_LEGACY_BIOS_OWNED, 0U,
                                      XHCI_TIMEOUT_MS)) return false;
             }
             return true;
         }
         extended = (uint32_t)next << 2U;
     }
+    return true;
+}
+
+static bool xhci_has_intel_ehci(void) {
+    for (size_t index = 0U; index < pci_device_count; ++index) {
+        const pci_device_t *candidate = &pci_devices[index];
+        if (candidate->vendor_id == XHCI_INTEL_VENDOR_ID &&
+            candidate->class_code == 0x0CU &&
+            candidate->subclass_code == 0x03U &&
+            candidate->prog_if == 0x20U) return true;
+    }
+    return false;
+}
+
+static void xhci_pci_write32(const pci_device_t *dev, uint8_t offset,
+                             uint32_t value) {
+    pci_write(dev->bus, dev->slot, dev->function, offset, 4U, value);
+}
+
+static bool xhci_route_intel_ports(const pci_device_t *dev) {
+    if (dev->vendor_id != XHCI_INTEL_VENDOR_ID || !xhci_has_intel_ehci())
+        return true;
+
+    diagnostics.intel_routing_flags |= XHCI_INTEL_ROUTE_EHCI_FOUND;
+    uint32_t subsystem = pci_read_config_dword(dev->bus, dev->slot,
+                                               dev->function,
+                                               XHCI_PCI_SUBSYSTEM_IDS);
+    if ((subsystem & 0xFFFFU) == XHCI_SONY_VENDOR_ID &&
+        (subsystem >> 16U) == XHCI_SONY_VAIO_SUBDEVICE) {
+        diagnostics.intel_routing_flags |= XHCI_INTEL_ROUTE_SKIPPED_QUIRK;
+        return true;
+    }
+
+    uint32_t original_usb2 = pci_read_config_dword(
+        dev->bus, dev->slot, dev->function, XHCI_INTEL_XUSB2PR);
+    uint32_t original_usb3 = pci_read_config_dword(
+        dev->bus, dev->slot, dev->function, XHCI_INTEL_USB3_PSSEN);
+    uint32_t usb2_mask = pci_read_config_dword(
+        dev->bus, dev->slot, dev->function, XHCI_INTEL_USB2PRM);
+    uint32_t usb3_mask = pci_read_config_dword(
+        dev->bus, dev->slot, dev->function, XHCI_INTEL_USB3PRM);
+    diagnostics.usb2_routing_mask = usb2_mask;
+    diagnostics.usb2_routing = original_usb2;
+    diagnostics.usb3_routing_mask = usb3_mask;
+    diagnostics.usb3_routing = original_usb3;
+    if (original_usb2 == UINT32_MAX || original_usb3 == UINT32_MAX ||
+        usb2_mask == UINT32_MAX || usb3_mask == UINT32_MAX) {
+        diagnostics.intel_routing_flags |= XHCI_INTEL_ROUTE_INVALID_CONFIG;
+        return false;
+    }
+    if ((usb2_mask | usb3_mask) == 0U) {
+        diagnostics.intel_routing_flags |= XHCI_INTEL_ROUTE_NO_MASK;
+        return true;
+    }
+
+    diagnostics.intel_routing_flags |= XHCI_INTEL_ROUTE_ATTEMPTED;
+    /* Enable SuperSpeed terminations before moving the USB2 data wires. */
+    xhci_pci_write32(dev, XHCI_INTEL_USB3_PSSEN, usb3_mask);
+    uint32_t usb3_routing = pci_read_config_dword(
+        dev->bus, dev->slot, dev->function, XHCI_INTEL_USB3_PSSEN);
+    diagnostics.usb3_routing = usb3_routing;
+    if ((usb3_routing & usb3_mask) != usb3_mask) {
+        diagnostics.intel_routing_flags |= XHCI_INTEL_ROUTE_VERIFY_FAILED;
+        xhci_pci_write32(dev, XHCI_INTEL_USB3_PSSEN, original_usb3);
+        return false;
+    }
+    diagnostics.intel_routing_flags |= XHCI_INTEL_ROUTE_USB3_VERIFIED;
+
+    xhci_pci_write32(dev, XHCI_INTEL_XUSB2PR, usb2_mask);
+    uint32_t usb2_routing = pci_read_config_dword(
+        dev->bus, dev->slot, dev->function, XHCI_INTEL_XUSB2PR);
+    diagnostics.usb2_routing = usb2_routing;
+    if ((usb2_routing & usb2_mask) != usb2_mask) {
+        diagnostics.intel_routing_flags |= XHCI_INTEL_ROUTE_VERIFY_FAILED;
+        xhci_pci_write32(dev, XHCI_INTEL_XUSB2PR, original_usb2);
+        xhci_pci_write32(dev, XHCI_INTEL_USB3_PSSEN, original_usb3);
+        return false;
+    }
+    diagnostics.intel_routing_flags |= XHCI_INTEL_ROUTE_USB2_VERIFIED;
     return true;
 }
 
@@ -688,6 +780,18 @@ static uint32_t xhci_connected_ports(void) {
     return connected;
 }
 
+static uint32_t xhci_wait_connected_ports(uint32_t timeout_ms) {
+    uint64_t start = pit_monotonic_ms();
+    for (uint32_t poll = 0U; poll < XHCI_POLL_LIMIT; ++poll) {
+        uint32_t connected = xhci_connected_ports();
+        if (connected != 0U) return connected;
+        uint64_t now = pit_monotonic_ms();
+        if (now < start || now - start >= timeout_ms) return 0U;
+        if ((poll & 0x3FFU) == 0U) __asm__ __volatile__("pause");
+    }
+    return 0U;
+}
+
 static bool xhci_enumerate_root_hid(uint32_t root_port) {
     if (root_port == 0U || root_port > controller.port_count) return false;
     controller.root_port = root_port;
@@ -763,6 +867,8 @@ int xhci_probe(pci_device_t *dev) {
     diagnostics.bus = dev->bus;
     diagnostics.slot = dev->slot;
     diagnostics.function = dev->function;
+    diagnostics.vendor_id = dev->vendor_id;
+    diagnostics.device_id = dev->device_id;
     uint32_t bar = pci_read_bar(dev, 0U);
     if (bar == 0U || bar == UINT32_MAX || (bar & 1U) != 0U ||
         ((bar & 6U) == 4U && dev->bar[1] != 0U)) {
@@ -823,6 +929,12 @@ int xhci_probe(pci_device_t *dev) {
         diagnostics.state = XHCI_DIAG_HANDOFF_FAILED;
         return -1;
     }
+    if (!xhci_route_intel_ports(dev)) {
+        printf("USB: Intel xHCI port routing failed flags=%X\n",
+               (unsigned)diagnostics.intel_routing_flags);
+        diagnostics.state = XHCI_DIAG_PORT_ROUTING_FAILED;
+        return -1;
+    }
     if (!xhci_dma_valid(dcbaa, 64U) || !xhci_dma_valid(command_ring, 64U) ||
         !xhci_dma_valid(event_ring, 64U) ||
         !xhci_dma_valid(input_context, 4096U)) {
@@ -840,7 +952,10 @@ int xhci_probe(pci_device_t *dev) {
         return -1;
     }
 
-    uint32_t connected_ports = xhci_connected_ports();
+    uint32_t connected_ports =
+        (diagnostics.intel_routing_flags & XHCI_INTEL_ROUTE_ATTEMPTED) != 0U
+        ? xhci_wait_connected_ports(XHCI_PORT_SETTLE_MS)
+        : xhci_connected_ports();
     diagnostics.connected_ports = connected_ports;
     printf("USB: xHCI root ports=%u connected=%08X\n",
            (unsigned)controller.port_count, (unsigned)connected_ports);

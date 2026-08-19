@@ -13,7 +13,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define XHCI_DIAGNOSTICS_VERSION 2U
+#define XHCI_DIAGNOSTICS_VERSION 3U
 
 #define XHCI_CAP_REJECT_PORT_COUNT       (1U << 0U)
 #define XHCI_CAP_REJECT_SCRATCHPADS      (1U << 1U)
@@ -21,6 +21,15 @@
 #define XHCI_CAP_REJECT_PORT_RANGE       (1U << 3U)
 #define XHCI_CAP_REJECT_DOORBELL_RANGE   (1U << 4U)
 #define XHCI_CAP_REJECT_RUNTIME_RANGE    (1U << 5U)
+
+#define XHCI_INTEL_ROUTE_EHCI_FOUND      (1U << 0U)
+#define XHCI_INTEL_ROUTE_ATTEMPTED       (1U << 1U)
+#define XHCI_INTEL_ROUTE_USB3_VERIFIED   (1U << 2U)
+#define XHCI_INTEL_ROUTE_USB2_VERIFIED   (1U << 3U)
+#define XHCI_INTEL_ROUTE_NO_MASK         (1U << 4U)
+#define XHCI_INTEL_ROUTE_INVALID_CONFIG  (1U << 5U)
+#define XHCI_INTEL_ROUTE_VERIFY_FAILED   (1U << 6U)
+#define XHCI_INTEL_ROUTE_SKIPPED_QUIRK   (1U << 7U)
 
 enum {
     XHCI_DIAG_NOT_PROBED = 0U,
@@ -36,7 +45,8 @@ enum {
     XHCI_DIAG_IRQ_FAILED,
     XHCI_DIAG_KEYBOARD_READY,
     XHCI_DIAG_MOUSE_READY,
-    XHCI_DIAG_DISCONNECTED
+    XHCI_DIAG_DISCONNECTED,
+    XHCI_DIAG_PORT_ROUTING_FAILED
 };
 
 typedef struct {
@@ -65,6 +75,13 @@ typedef struct {
     uint32_t doorbell_offset;
     uint32_t runtime_offset;
     uint32_t capability_rejections;
+    uint32_t vendor_id;
+    uint32_t device_id;
+    uint32_t intel_routing_flags;
+    uint32_t usb2_routing_mask;
+    uint32_t usb2_routing;
+    uint32_t usb3_routing_mask;
+    uint32_t usb3_routing;
 } xhci_diagnostics_t;
 
 /* Initialise one bounded xHCI root-port HID boot keyboard or mouse. */

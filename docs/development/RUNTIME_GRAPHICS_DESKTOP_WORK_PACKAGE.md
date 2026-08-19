@@ -323,6 +323,21 @@ Version 2 hängt `CAPLENGTH`, `MaxSlots`, die dekodierte Scratchpad-Anzahl,
 `DBOFF`, `RTSOFF` und eine bitgenaue Ablehnungsmaske an. Version-1-Aufrufer
 erhalten weiterhin exakt den bisherigen 96-Byte-Snapshot.
 
+Der folgende Hardwarelauf erreichte den Controllerstart (`reject=0`), meldete
+aber bei zwei vorhandenen EHCI-Controllern alle 17 xHCI-Root-Ports als
+getrennt. Für Intel-Controller mit erkanntem Intel-EHCI-Companion übernimmt
+der xHCI-Pfad deshalb vor dem Controllerstart die umschaltbaren Ports über die
+PCI-Konfigurationsregister `USB3PRM`/`USB3_PSSEN` und
+`USB2PRM`/`XUSB2PR`. SuperSpeed-Terminierungen werden zuerst aktiviert, erst
+danach folgen die USB-2-Datenleitungen. Alle Masken werden vor dem Schreiben
+gelesen, nach dem Schreiben rückgelesen und bei fehlender Bestätigung wird der
+Start mit eigenem Diagnosezustand geschlossen abgebrochen. Die bekannte
+Sony-VAIO-Ausnahme `104D:90A8` bleibt unangetastet. Ein monoton und zusätzlich
+durch Pollanzahl begrenztes 500-ms-Fenster erlaubt anschließend die durch das
+Umschalten ausgelöste Neuverbindung. Diagnose-ABI Version 3 hängt PCI-ID,
+Routingflags sowie Soll- und Istmasken an; Versionen 1 und 2 behalten ihre
+bisherigen Größen von 96 und 120 Byte.
+
 ## Erwartetes Restrisiko
 
 Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte

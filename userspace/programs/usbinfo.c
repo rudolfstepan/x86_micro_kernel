@@ -43,6 +43,8 @@ static const char *state_name(uint32_t state) {
         case X86OS_USB_STATE_KEYBOARD_READY: return "keyboard-ready";
         case X86OS_USB_STATE_MOUSE_READY: return "mouse-ready";
         case X86OS_USB_STATE_DISCONNECTED: return "disconnected";
+        case X86OS_USB_STATE_PORT_ROUTING_FAILED:
+            return "intel-port-routing-failed";
         default: return "unknown";
     }
 }
@@ -62,7 +64,7 @@ static void print_controller_counts(const x86os_usb_diagnostics_t *status) {
 }
 
 int main(void) {
-    x86os_usb_diagnostics_t status = {0};
+    x86os_usb_diagnostics_t status;
     if (x86os_usb_diagnostics(&status) != 0 ||
         status.version != X86OS_USB_DIAGNOSTICS_VERSION ||
         status.struct_size != sizeof(status)) {
@@ -123,6 +125,23 @@ int main(void) {
     print_hex32(status.runtime_offset);
     x86os_puts(" reject=");
     print_hex32(status.capability_rejections);
+    x86os_putchar('\n');
+
+    x86os_puts("     pci=");
+    print_hex32(status.vendor_id);
+    x86os_putchar(':');
+    print_hex32(status.device_id);
+    x86os_puts(" route-flags=");
+    print_hex32(status.intel_routing_flags);
+    x86os_putchar('\n');
+    x86os_puts("     usb2-mask=");
+    print_hex32(status.usb2_routing_mask);
+    x86os_puts(" routed=");
+    print_hex32(status.usb2_routing);
+    x86os_puts(" usb3-mask=");
+    print_hex32(status.usb3_routing_mask);
+    x86os_puts(" enabled=");
+    print_hex32(status.usb3_routing);
     x86os_putchar('\n');
 
     if (status.state == X86OS_USB_STATE_MOUSE_READY &&

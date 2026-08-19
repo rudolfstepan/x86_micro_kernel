@@ -2264,6 +2264,8 @@ static const char *xhci_diagnostic_state(uint32_t state) {
         case XHCI_DIAG_KEYBOARD_READY: return "keyboard-ready";
         case XHCI_DIAG_MOUSE_READY: return "mouse-ready";
         case XHCI_DIAG_DISCONNECTED: return "disconnected";
+        case XHCI_DIAG_PORT_ROUTING_FAILED:
+            return "intel-port-routing-failed";
         default: return "unknown";
     }
 }
@@ -2312,6 +2314,14 @@ void cmd_usbinfo(int arg_count, const char **args) {
            (unsigned)status.doorbell_offset,
            (unsigned)status.runtime_offset,
            (unsigned)status.capability_rejections);
+    printf("     pci=%X:%X route-flags=%X\n",
+           (unsigned)status.vendor_id, (unsigned)status.device_id,
+           (unsigned)status.intel_routing_flags);
+    printf("     usb2-mask=%X routed=%X usb3-mask=%X enabled=%X\n",
+           (unsigned)status.usb2_routing_mask,
+           (unsigned)status.usb2_routing,
+           (unsigned)status.usb3_routing_mask,
+           (unsigned)status.usb3_routing);
     if (status.state == XHCI_DIAG_MOUSE_READY && status.mouse_reports == 0U)
         printf("Result: mouse configured, but no interrupt reports received.\n");
     else if (status.state == XHCI_DIAG_MOUSE_READY)

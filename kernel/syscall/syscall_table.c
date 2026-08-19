@@ -1884,15 +1884,25 @@ typedef struct {
     uint32_t doorbell_offset;
     uint32_t runtime_offset;
     uint32_t capability_rejections;
+    uint32_t vendor_id;
+    uint32_t device_id;
+    uint32_t intel_routing_flags;
+    uint32_t usb2_routing_mask;
+    uint32_t usb2_routing;
+    uint32_t usb3_routing_mask;
+    uint32_t usb3_routing;
 } syscall_usb_diagnostics_t;
 
-#define SYSCALL_USB_DIAGNOSTICS_VERSION 2U
+#define SYSCALL_USB_DIAGNOSTICS_VERSION 3U
 #define SYSCALL_USB_DIAGNOSTICS_V1_SIZE 96U
+#define SYSCALL_USB_DIAGNOSTICS_V2_SIZE 120U
 
-_Static_assert(sizeof(syscall_usb_diagnostics_t) == 120U,
+_Static_assert(sizeof(syscall_usb_diagnostics_t) == 148U,
                "USB diagnostics syscall ABI size changed");
 _Static_assert(XHCI_DIAG_DISCONNECTED == 13U,
                "USB diagnostics state ABI changed");
+_Static_assert(XHCI_DIAG_PORT_ROUTING_FAILED == 14U,
+               "USB diagnostics routing state ABI changed");
 
 static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
     struct {
@@ -1904,6 +1914,9 @@ static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
     if (header.version == 1U &&
         header.struct_size >= SYSCALL_USB_DIAGNOSTICS_V1_SIZE) {
         result_size = SYSCALL_USB_DIAGNOSTICS_V1_SIZE;
+    } else if (header.version == 2U &&
+               header.struct_size >= SYSCALL_USB_DIAGNOSTICS_V2_SIZE) {
+        result_size = SYSCALL_USB_DIAGNOSTICS_V2_SIZE;
     } else if (header.version == SYSCALL_USB_DIAGNOSTICS_VERSION &&
                header.struct_size >= sizeof(syscall_usb_diagnostics_t)) {
         result_size = sizeof(syscall_usb_diagnostics_t);
@@ -1951,6 +1964,13 @@ static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
     result.doorbell_offset = xhci_status.doorbell_offset;
     result.runtime_offset = xhci_status.runtime_offset;
     result.capability_rejections = xhci_status.capability_rejections;
+    result.vendor_id = xhci_status.vendor_id;
+    result.device_id = xhci_status.device_id;
+    result.intel_routing_flags = xhci_status.intel_routing_flags;
+    result.usb2_routing_mask = xhci_status.usb2_routing_mask;
+    result.usb2_routing = xhci_status.usb2_routing;
+    result.usb3_routing_mask = xhci_status.usb3_routing_mask;
+    result.usb3_routing = xhci_status.usb3_routing;
     return copy_to_user(user_status, &result, result_size) == 0 ? 0 : -14;
 }
 
