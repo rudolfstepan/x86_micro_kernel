@@ -20,6 +20,11 @@ Kernel-Thunks aktiviert werden. Erst danach wird der lineare Framebuffer
 veröffentlicht und der Desktop im Stil einer klassischen Amiga Workbench
 gezeichnet.
 
+Der weitere, unter VMware sichtbar abgearbeitete Ausbau von Window-Manager,
+Compositor und späterer GUI-Client-ABI wird in
+[`GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md`](GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md)
+mit verbindlichen Checkboxen geführt.
+
 Der bestehende Bootmodus `VIDEO=framebuffer` bleibt kompatibel. Ein nicht
 unterstützter Adapter oder eine fehlgeschlagene Vorprüfung lässt den laufenden
 VGA-Textmodus unverändert; die Shell bleibt bedienbar und erhält einen

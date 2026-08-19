@@ -1,14 +1,19 @@
 /**
  * @file userspace/programs/desktop.c
- * @brief Startet die grafische Userspace-Oberfläche.
+ * @brief Classic Ring-3 desktop and fixed-capacity window-manager frontend.
  *
  * Layer: Ring-3 system program or command.
- * Contract: Argumente und SDK-Rückgaben werden vor weiteren Operationen validiert.
- * Safety: Ressourcenarbeit ist begrenzt; Fehler werden an die Shell gemeldet und nicht verschleiert.
+ * Contract: Display/input results and all geometry are validated or bounded.
+ * Safety: Window state is fixed-capacity; child cleanup and event work are
+ * bounded. Legacy console applications intentionally run full-screen.
  */
 #include "x86os.h"
+#include "desktop_wm.h"
 
 #define APP_COUNT 4U
+
+_Static_assert(APP_COUNT == DESKTOP_WM_CAPACITY,
+               "desktop app and window capacities must match");
 
 enum {
     DESKTOP_KEY_NONE = 0x100,
@@ -28,153 +33,255 @@ typedef struct {
 } desktop_app_t;
 
 static const desktop_app_t apps[APP_COUNT] = {
-    {"Shell",   "Terminal und Befehle",   "/bin/shell.prg",       0,             0x003B82F6U},
-    {"Dateien", "Dateien und Laufwerke",  "/bin/ls.prg",          0,             0x0010B981U},
-    {"Editor",  "Textdateien bearbeiten", "/bin/edit.prg",        "desktop.txt", 0x00A855F7U},
-    {"System",  "Systeminformationen",    "/sbin/sysinfo.prg",    0,             0x00F59E0BU},
+    {"Shell",   "Terminal und Befehle",   "/bin/shell.prg",    0,             0x0000479DU},
+    {"Dateien", "Dateien und Laufwerke",  "/bin/ls.prg",       0,             0x00008844U},
+    {"Editor",  "Textdateien bearbeiten", "/bin/edit.prg",     "desktop.txt", 0x00900080U},
+    {"System",  "Systeminformationen",    "/sbin/sysinfo.prg", 0,             0x00A06000U},
 };
 
-static const uint32_t color_background = 0x000B1220U;
-static const uint32_t color_topbar = 0x00111B2EU;
-static const uint32_t color_card = 0x0018263BU;
-static const uint32_t color_card_selected = 0x00223552U;
-static const uint32_t color_border = 0x00344A67U;
-static const uint32_t color_text = 0x00F8FAFCU;
-static const uint32_t color_muted = 0x009FB0C5U;
+/* Deliberately small, high-contrast palette inspired by classic desktops. */
+static const uint32_t color_desktop = 0x00006E8EU;
+static const uint32_t color_face = 0x00C8C8C8U;
+static const uint32_t color_light = 0x00FFFFFFU;
+static const uint32_t color_shadow = 0x00606060U;
+static const uint32_t color_dark = 0x00181818U;
+static const uint32_t color_active = 0x00000088U;
+static const uint32_t color_inactive = 0x00787878U;
+static const uint32_t color_client = 0x00E8E8E8U;
+static const uint32_t color_text = 0x00000000U;
+static const uint32_t color_title_text = 0x00FFFFFFU;
 
-static size_t text_length(const char *text) {
-    size_t length = 0;
-    while (text[length] != '\0') ++length;
+static size_t bounded_text_length(const char *text, size_t maximum) {
+    size_t length = 0U;
+    if (text == 0) return 0U;
+    while (length < maximum && text[length] != '\0') ++length;
     return length;
-}
-
-static void draw_text(int32_t x, int32_t y, const char *text,
-                      uint32_t foreground, uint32_t background) {
-    (void)x86os_draw_text_pixels(x, y, text, text_length(text),
-                                 foreground, background);
 }
 
 static uint32_t max_u32(uint32_t left, uint32_t right) {
     return left > right ? left : right;
 }
 
-static void render_card(const x86os_display_info_t *display,
-                        unsigned int index, unsigned int selected,
-                        uint32_t margin, uint32_t top, uint32_t gap,
-                        uint32_t card_width, uint32_t card_height) {
-    uint32_t column = index % 2U;
-    uint32_t row = index / 2U;
-    int32_t x = (int32_t)(margin + column * (card_width + gap));
-    int32_t y = (int32_t)(top + row * (card_height + gap));
-    uint32_t background = index == selected ? color_card_selected : color_card;
-    uint32_t font_width = max_u32(display->font_width, 8U);
-    uint32_t font_height = max_u32(display->font_height, 16U);
-    uint32_t padding = max_u32(margin / 3U, 6U);
+static uint32_t min_u32(uint32_t left, uint32_t right) {
+    return left < right ? left : right;
+}
 
-    (void)x86os_fill_rect(x + 4, y + 5, card_width, card_height, 0x00060B13U);
-    (void)x86os_fill_rect(x, y, card_width, card_height,
-                          index == selected ? apps[index].accent : color_border);
-    (void)x86os_fill_rect(x + 2, y + 2, card_width - 4U, card_height - 4U,
-                          background);
-    (void)x86os_fill_rect(x + 2, y + 2, 7U, card_height - 4U,
-                          apps[index].accent);
-
-    draw_text(x + (int32_t)padding, y + (int32_t)padding,
-              apps[index].title, color_text, background);
-    if (card_height >= padding * 2U + font_height * 4U) {
-        draw_text(x + (int32_t)padding,
-                  y + (int32_t)(padding + font_height * 2U),
-                  apps[index].description, color_muted, background);
+static void draw_text_bounded(const x86os_display_info_t *display,
+                              int32_t x, int32_t y, const char *text,
+                              uint32_t maximum_width, uint32_t foreground,
+                              uint32_t background) {
+    if (display == 0 || text == 0 || display->font_width == 0U) return;
+    size_t capacity = maximum_width / display->font_width;
+    if (capacity > X86OS_DISPLAY_MAX_TEXT)
+        capacity = X86OS_DISPLAY_MAX_TEXT;
+    size_t length = bounded_text_length(text, capacity);
+    if (length != 0U) {
+        (void)x86os_draw_text_pixels(x, y, text, length,
+                                     foreground, background);
     }
-    draw_text(x + (int32_t)padding,
-              y + (int32_t)(card_height - padding - font_height),
-              apps[index].program,
-              index == selected ? apps[index].accent : color_muted,
-              background);
+}
 
-    if (index == selected && card_width > 24U * font_width) {
-        const char *action = "ENTER: STARTEN";
-        uint32_t action_width = (uint32_t)text_length(action) * font_width;
-        draw_text(x + (int32_t)(card_width - padding - action_width),
-                  y + (int32_t)(card_height - padding - font_height),
-                  action, color_text, background);
+static uint32_t menu_height(const x86os_display_info_t *display) {
+    return max_u32(display->font_height + 12U, 30U);
+}
+
+static uint32_t status_height(const x86os_display_info_t *display) {
+    return max_u32(display->font_height + 10U, 28U);
+}
+
+static uint32_t point_in_rect(desktop_rect_t rect, int32_t x, int32_t y) {
+    int64_t right = (int64_t)rect.x + rect.width;
+    int64_t bottom = (int64_t)rect.y + rect.height;
+    return x >= rect.x && y >= rect.y &&
+           (int64_t)x < right && (int64_t)y < bottom;
+}
+
+static desktop_rect_t desktop_icon_rect(const x86os_display_info_t *display,
+                                        uint32_t index) {
+    desktop_rect_t rect = {0, 0, 0U, 0U};
+    uint32_t top = menu_height(display) + 6U;
+    uint32_t bottom = display->height - status_height(display) - 6U;
+    uint32_t available = bottom > top ? bottom - top : 1U;
+    uint32_t gap = 4U;
+    uint32_t height = available > gap * (APP_COUNT - 1U)
+        ? (available - gap * (APP_COUNT - 1U)) / APP_COUNT : 1U;
+    rect.x = 8;
+    rect.y = (int32_t)(top + index * (height + gap));
+    rect.width = min_u32(124U, display->width > 16U ? display->width - 16U : 1U);
+    rect.height = height;
+    return rect;
+}
+
+static int desktop_icon_at_position(const x86os_display_info_t *display,
+                                    int32_t x, int32_t y) {
+    for (uint32_t index = 0U; index < APP_COUNT; ++index) {
+        if (point_in_rect(desktop_icon_rect(display, index), x, y))
+            return (int)index;
+    }
+    return DESKTOP_WM_NO_WINDOW;
+}
+
+static void draw_bevel(desktop_rect_t rect, uint32_t face,
+                       uint32_t raised) {
+    if (rect.width == 0U || rect.height == 0U) return;
+    (void)x86os_fill_rect(rect.x, rect.y, rect.width, rect.height, face);
+    if (rect.width < 2U || rect.height < 2U) return;
+    uint32_t top_left = raised ? color_light : color_shadow;
+    uint32_t bottom_right = raised ? color_shadow : color_light;
+    (void)x86os_fill_rect(rect.x, rect.y, rect.width, 1U, top_left);
+    (void)x86os_fill_rect(rect.x, rect.y, 1U, rect.height, top_left);
+    (void)x86os_fill_rect(rect.x, rect.y + (int32_t)rect.height - 1,
+                          rect.width, 1U, bottom_right);
+    (void)x86os_fill_rect(rect.x + (int32_t)rect.width - 1, rect.y,
+                          1U, rect.height, bottom_right);
+}
+
+static void render_icon(const x86os_display_info_t *display,
+                        const desktop_wm_t *manager, uint32_t index) {
+    desktop_rect_t rect = desktop_icon_rect(display, index);
+    uint32_t selected = manager->selected == index;
+    uint32_t icon_size = min_u32(rect.height > display->font_height + 6U
+        ? rect.height - display->font_height - 6U : 12U, 28U);
+    desktop_rect_t symbol = {
+        rect.x + 5,
+        rect.y + 3,
+        icon_size,
+        icon_size
+    };
+    if (selected) draw_bevel(rect, color_face, 0U);
+    draw_bevel(symbol, apps[index].accent, 1U);
+    if (symbol.width > 8U && symbol.height > 8U) {
+        (void)x86os_fill_rect(symbol.x + 4, symbol.y + 4,
+                              symbol.width - 8U, symbol.height - 8U,
+                              color_client);
+    }
+    uint32_t text_y_offset = rect.height > display->font_height + 3U
+        ? rect.height - display->font_height - 3U : 0U;
+    draw_text_bounded(display, rect.x + 4,
+                      rect.y + (int32_t)text_y_offset,
+                      apps[index].title, rect.width - 8U,
+                      selected ? color_title_text : color_title_text,
+                      selected ? color_active : color_desktop);
+}
+
+static void render_window(const x86os_display_info_t *display,
+                          const desktop_wm_t *manager,
+                          uint32_t window_index) {
+    if (window_index >= DESKTOP_WM_CAPACITY) return;
+    const desktop_window_t *window = &manager->windows[window_index];
+    if (window->visible == 0U || window->app_index >= APP_COUNT) return;
+    uint32_t border = manager->frame_border;
+    if (window->width <= border * 2U ||
+        window->height <= border * 2U + manager->title_height) return;
+
+    desktop_rect_t shadow = {
+        window->x + 4, window->y + 4, window->width, window->height
+    };
+    desktop_rect_t frame = {
+        window->x, window->y, window->width, window->height
+    };
+    desktop_rect_t title = {
+        window->x + (int32_t)border,
+        window->y + (int32_t)border,
+        window->width - border * 2U,
+        manager->title_height
+    };
+    desktop_rect_t client = {
+        title.x,
+        title.y + (int32_t)title.height,
+        title.width,
+        window->height - border * 2U - title.height
+    };
+    uint32_t active = manager->focused == (int32_t)window_index;
+    uint32_t title_color = active ? color_active : color_inactive;
+
+    (void)x86os_fill_rect(shadow.x, shadow.y, shadow.width, shadow.height,
+                          color_dark);
+    draw_bevel(frame, color_face, 1U);
+    (void)x86os_fill_rect(title.x, title.y, title.width, title.height,
+                          title_color);
+    (void)x86os_fill_rect(client.x, client.y, client.width, client.height,
+                          color_client);
+
+    desktop_rect_t close = desktop_wm_close_rect(manager, window_index);
+    draw_bevel(close, color_face, 1U);
+    if (close.width > 8U && close.height > 8U) {
+        (void)x86os_fill_rect(close.x + 4, close.y + 4,
+                              close.width - 8U, close.height - 8U,
+                              color_dark);
+    }
+
+    uint32_t title_x = (uint32_t)(close.x - title.x) + close.width + 6U;
+    uint32_t title_y = title.height > display->font_height
+        ? (title.height - display->font_height) / 2U : 0U;
+    if (title_x + 3U < title.width) {
+        draw_text_bounded(display, title.x + (int32_t)title_x,
+                          title.y + (int32_t)title_y,
+                          apps[window->app_index].title,
+                          title.width - title_x - 3U,
+                          color_title_text, title_color);
+    }
+
+    uint32_t padding = 10U;
+    uint32_t line = max_u32(display->font_height + 5U, 18U);
+    if (client.width > padding * 2U && client.height > padding * 2U) {
+        uint32_t text_width = client.width - padding * 2U;
+        int32_t text_x = client.x + (int32_t)padding;
+        int32_t text_y = client.y + (int32_t)padding;
+        draw_text_bounded(display, text_x, text_y,
+                          apps[window->app_index].description, text_width,
+                          color_text, color_client);
+        if (client.height > padding * 2U + line) {
+            draw_text_bounded(display, text_x, text_y + (int32_t)line,
+                              apps[window->app_index].program, text_width,
+                              apps[window->app_index].accent, color_client);
+        }
+        if (client.height > padding * 2U + line * 3U) {
+            draw_text_bounded(display, text_x, text_y + (int32_t)(line * 3U),
+                              "ENTER startet Legacy-App im Vollbild",
+                              text_width, color_shadow, color_client);
+        }
     }
 }
 
 static void render_desktop(const x86os_display_info_t *display,
-                           unsigned int selected) {
-    uint32_t font_width = max_u32(display->font_width, 8U);
-    uint32_t font_height = max_u32(display->font_height, 16U);
-    uint32_t margin = display->width / 24U;
-    uint32_t topbar_height = max_u32(font_height * 3U, 52U);
-    uint32_t footer_height = max_u32(font_height * 3U, 48U);
-    uint32_t gap;
-    uint32_t top;
-    uint32_t available_height;
-    uint32_t card_width;
-    uint32_t card_height;
-    const char *status = "RING 3  |  BEREIT";
-    const char *help = "TAB / PFEILE: AUSWAHL    ENTER: START    ESC: SHELL";
-    uint32_t status_width = (uint32_t)text_length(status) * font_width;
-
-    if (margin < 16U) margin = 16U;
-    gap = margin;
-    top = topbar_height + margin;
-    card_width = (display->width - margin * 2U - gap) / 2U;
-    available_height = display->height - top - footer_height - margin;
-    card_height = (available_height - gap) / 2U;
+                           const desktop_wm_t *manager) {
+    uint32_t menu = menu_height(display);
+    uint32_t status = status_height(display);
+    desktop_rect_t menu_rect = {0, 0, display->width, menu};
+    desktop_rect_t status_rect = {
+        0, (int32_t)(display->height - status), display->width, status
+    };
 
     (void)x86os_fill_rect(0, 0, display->width, display->height,
-                          color_background);
-    (void)x86os_fill_rect(0, 0, display->width, topbar_height, color_topbar);
-    (void)x86os_fill_rect(0, (int32_t)topbar_height - 2,
-                          display->width, 2U, apps[selected].accent);
-    draw_text((int32_t)margin,
-              (int32_t)((topbar_height - font_height) / 2U),
-              "REIST OS Desktop", color_text, color_topbar);
-    if (status_width + margin < display->width) {
-        draw_text((int32_t)(display->width - margin - status_width),
-                  (int32_t)((topbar_height - font_height) / 2U),
-                  status, color_muted, color_topbar);
+                          color_desktop);
+    draw_bevel(menu_rect, color_face, 1U);
+    draw_text_bounded(display, 10,
+                      (int32_t)((menu - display->font_height) / 2U),
+                      "REIST Desktop   Fenster   Hilfe",
+                      display->width > 20U ? display->width - 20U : 1U,
+                      color_text, color_face);
+
+    for (uint32_t index = 0U; index < APP_COUNT; ++index)
+        render_icon(display, manager, index);
+
+    for (uint32_t position = 0U; position < DESKTOP_WM_CAPACITY; ++position) {
+        uint32_t window_index = manager->z_order[position];
+        if (window_index < DESKTOP_WM_CAPACITY)
+            render_window(display, manager, window_index);
     }
 
-    for (unsigned int index = 0; index < APP_COUNT; ++index) {
-        render_card(display, index, selected, margin, top, gap,
-                    card_width, card_height);
-    }
-
-    draw_text((int32_t)margin,
-              (int32_t)(display->height - footer_height + font_height),
-              help, color_muted, color_background);
-}
-
-static int app_at_position(const x86os_display_info_t *display,
-                           int32_t pointer_x, int32_t pointer_y) {
-    uint32_t font_height = max_u32(display->font_height, 16U);
-    uint32_t margin = display->width / 24U;
-    uint32_t topbar_height = max_u32(font_height * 3U, 52U);
-    uint32_t footer_height = max_u32(font_height * 3U, 48U);
-    if (margin < 16U) margin = 16U;
-    uint32_t gap = margin;
-    uint32_t top = topbar_height + margin;
-    uint32_t card_width = (display->width - margin * 2U - gap) / 2U;
-    uint32_t available_height =
-        display->height - top - footer_height - margin;
-    uint32_t card_height = (available_height - gap) / 2U;
-    for (unsigned int index = 0U; index < APP_COUNT; ++index) {
-        uint32_t column = index % 2U;
-        uint32_t row = index / 2U;
-        int32_t x = (int32_t)(margin + column * (card_width + gap));
-        int32_t y = (int32_t)(top + row * (card_height + gap));
-        if (pointer_x >= x && pointer_y >= y &&
-            pointer_x < x + (int32_t)card_width &&
-            pointer_y < y + (int32_t)card_height) return (int)index;
-    }
-    return -1;
+    draw_bevel(status_rect, color_face, 0U);
+    draw_text_bounded(display, 10,
+                      status_rect.y +
+                          (int32_t)((status - display->font_height) / 2U),
+                      "Maus: Fokus / Ziehen / Schliessen   ENTER: Start   ESC: Shell",
+                      display->width > 20U ? display->width - 20U : 1U,
+                      color_text, color_face);
 }
 
 static int read_escape_byte(void) {
-    for (unsigned int attempt = 0; attempt < 20U; ++attempt) {
+    for (unsigned int attempt = 0U; attempt < 20U; ++attempt) {
         int value = x86os_getchar_nonblocking();
         if (value != 0) return value;
         (void)x86os_sleep_ms(1U);
@@ -191,10 +298,8 @@ static int read_key(void) {
     if (prefix == 0) return DESKTOP_KEY_ESCAPE;
     if (prefix != '[') return DESKTOP_KEY_NONE;
 
-    /* A CSI sequence ends at its first 0x40..0x7e byte.  Consume unknown
-     * sequences completely so Home/PageUp/F-keys cannot leak a trailing '~'
-     * into a child or be mistaken for the desktop's bare-Escape shortcut. */
-    for (;;) {
+    /* Consume a complete ANSI CSI sequence. Only a bare Escape exits. */
+    for (unsigned int byte = 0U; byte < 16U; ++byte) {
         value = read_escape_byte();
         if (value == 0) return DESKTOP_KEY_NONE;
         if (value < 0x40 || value > 0x7E) continue;
@@ -204,16 +309,18 @@ static int read_key(void) {
         if (value == 'D') return DESKTOP_KEY_LEFT;
         return DESKTOP_KEY_NONE;
     }
+    return DESKTOP_KEY_NONE;
 }
 
 static void drain_input(void) {
-    while (x86os_getchar_nonblocking() != 0) {
+    for (unsigned int byte = 0U; byte < 256U; ++byte) {
+        if (x86os_getchar_nonblocking() == 0) return;
     }
 }
 
 static void print_integer(int value) {
     char digits[12];
-    unsigned int count = 0;
+    unsigned int count = 0U;
     unsigned int magnitude;
     if (value < 0) {
         x86os_putchar('-');
@@ -228,8 +335,7 @@ static void print_integer(int value) {
     while (count != 0U) x86os_putchar(digits[--count]);
 }
 
-static void launch_app(const x86os_display_info_t *display,
-                       unsigned int index) {
+static void launch_app(unsigned int index) {
     int status = 0;
     int pid;
     x86os_puts("DESKTOP_LAUNCH:");
@@ -271,12 +377,35 @@ static void launch_app(const x86os_display_info_t *display,
     x86os_puts("\nTaste zum Desktop...");
     (void)x86os_getchar();
     drain_input();
-    render_desktop(display, index);
+}
+
+static void clip_pointer(const x86os_display_info_t *display,
+                         int32_t *pointer_x, int32_t *pointer_y) {
+    if (*pointer_x < 0) *pointer_x = 0;
+    if (*pointer_y < 0) *pointer_y = 0;
+    if (*pointer_x >= (int32_t)display->width)
+        *pointer_x = (int32_t)display->width - 1;
+    if (*pointer_y >= (int32_t)display->height)
+        *pointer_y = (int32_t)display->height - 1;
+}
+
+static void move_pointer(const x86os_display_info_t *display,
+                         int32_t *pointer_x, int32_t *pointer_y,
+                         int32_t delta_x, int32_t delta_y) {
+    int64_t next_x = (int64_t)*pointer_x + delta_x;
+    int64_t next_y = (int64_t)*pointer_y + delta_y;
+    if (next_x < INT32_MIN) next_x = INT32_MIN;
+    if (next_x > INT32_MAX) next_x = INT32_MAX;
+    if (next_y < INT32_MIN) next_y = INT32_MIN;
+    if (next_y > INT32_MAX) next_y = INT32_MAX;
+    *pointer_x = (int32_t)next_x;
+    *pointer_y = (int32_t)next_y;
+    clip_pointer(display, pointer_x, pointer_y);
 }
 
 int main(void) {
     x86os_display_info_t display;
-    unsigned int selected = 0;
+    desktop_wm_t manager;
     int32_t pointer_x;
     int32_t pointer_y;
     uint32_t previous_buttons = 0U;
@@ -296,45 +425,70 @@ int main(void) {
         return 1;
     }
 
+    uint32_t menu = menu_height(&display);
+    uint32_t status = status_height(&display);
+    desktop_wm_initialize(&manager, display.width, display.height,
+                          (int32_t)menu + 4,
+                          (int32_t)(display.height - status - 4U),
+                          max_u32(display.font_height + 8U, 24U));
     pointer_x = (int32_t)(display.width / 2U);
     pointer_y = (int32_t)(display.height / 2U);
     x86os_puts("DESKTOP_OK\n");
-    render_desktop(&display, selected);
+    render_desktop(&display, &manager);
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
 
     for (;;) {
         int key = read_key();
-        unsigned int previous = selected;
         unsigned int redraw = 0U;
         unsigned int mouse_events = 0U;
         for (; mouse_events < 32U; ++mouse_events) {
             x86os_mouse_event_t mouse;
             if (x86os_mouse_event(&mouse) != 0) break;
-            pointer_x += mouse.delta_x;
-            pointer_y += mouse.delta_y;
-            if (pointer_x < 0) pointer_x = 0;
-            if (pointer_y < 0) pointer_y = 0;
-            if (pointer_x >= (int32_t)display.width)
-                pointer_x = (int32_t)display.width - 1;
-            if (pointer_y >= (int32_t)display.height)
-                pointer_y = (int32_t)display.height - 1;
-            if ((mouse.buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U &&
-                (previous_buttons & X86OS_MOUSE_BUTTON_LEFT) == 0U) {
-                int hit = app_at_position(&display, pointer_x, pointer_y);
-                if (hit >= 0) selected = (unsigned int)hit;
+            move_pointer(&display, &pointer_x, &pointer_y,
+                         mouse.delta_x, mouse.delta_y);
+
+            uint32_t left_down =
+                (mouse.buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
+            uint32_t left_was_down =
+                (previous_buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
+            if (left_down && !left_was_down) {
+                int window = desktop_wm_window_at(&manager,
+                                                   pointer_x, pointer_y);
+                if (window != DESKTOP_WM_NO_WINDOW) {
+                    redraw |= desktop_wm_pointer_press(&manager,
+                                                       pointer_x, pointer_y);
+                } else {
+                    int icon = desktop_icon_at_position(&display,
+                                                        pointer_x, pointer_y);
+                    if (icon != DESKTOP_WM_NO_WINDOW)
+                        redraw |= desktop_wm_open(&manager, (uint32_t)icon);
+                }
+            } else if (left_down) {
+                redraw |= desktop_wm_pointer_motion(&manager,
+                                                     pointer_x, pointer_y);
+            } else if (left_was_down) {
+                redraw |= desktop_wm_pointer_release(&manager,
+                                                      pointer_x, pointer_y);
             }
             previous_buttons = mouse.buttons;
         }
 
         if (key == '\t' || key == DESKTOP_KEY_RIGHT) {
-            selected = (selected + 1U) % APP_COUNT;
+            uint32_t next = (manager.selected + 1U) % APP_COUNT;
+            redraw |= desktop_wm_select(&manager, next);
         } else if (key == DESKTOP_KEY_LEFT) {
-            selected = (selected + APP_COUNT - 1U) % APP_COUNT;
-        } else if (key == DESKTOP_KEY_UP || key == DESKTOP_KEY_DOWN) {
-            selected = (selected + 2U) % APP_COUNT;
+            uint32_t next = (manager.selected + APP_COUNT - 1U) % APP_COUNT;
+            redraw |= desktop_wm_select(&manager, next);
+        } else if (key == DESKTOP_KEY_UP) {
+            uint32_t next = (manager.selected + APP_COUNT - 2U) % APP_COUNT;
+            redraw |= desktop_wm_select(&manager, next);
+        } else if (key == DESKTOP_KEY_DOWN) {
+            uint32_t next = (manager.selected + 2U) % APP_COUNT;
+            redraw |= desktop_wm_select(&manager, next);
         } else if (key == '\r' || key == '\n') {
+            redraw |= desktop_wm_open(&manager, manager.selected);
             (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
-            launch_app(&display, selected);
+            launch_app(manager.selected);
             redraw = 1U;
         } else if (key == DESKTOP_KEY_ESCAPE) {
             (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
@@ -348,10 +502,9 @@ int main(void) {
             return 0;
         }
 
-        if (selected != previous) redraw = 1U;
         if (redraw) {
             (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
-            render_desktop(&display, selected);
+            render_desktop(&display, &manager);
             (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
         } else if (mouse_events != 0U) {
             (void)x86os_pointer_update(pointer_x, pointer_y, 1U);

@@ -31,7 +31,10 @@ PROGRAMS = {
     "KILL.PRG": ROOT / "userspace/programs/kill.c",
     "PWD.PRG": ROOT / "userspace/programs/pwd.c",
     "SHELL.PRG": ROOT / "userspace/bin/shell.c",
-    "DESKTOP.PRG": ROOT / "userspace/programs/desktop.c",
+    "DESKTOP.PRG": (
+        ROOT / "userspace/programs/desktop.c",
+        ROOT / "userspace/programs/desktop_wm.c",
+    ),
     "MKDIR.PRG": ROOT / "userspace/programs/mkdir.c",
     "RMDIR.PRG": ROOT / "userspace/programs/rmdir.c",
     "DEL.PRG": ROOT / "userspace/programs/del.c",
@@ -83,7 +86,8 @@ def main() -> None:
     for name, source in PROGRAMS.items():
         output = output_dir / name
         before = output.stat().st_mtime_ns if output.is_file() else None
-        build([source], output, zig, incremental=args.incremental)
+        sources = list(source) if isinstance(source, tuple) else [source]
+        build(sources, output, zig, incremental=args.incremental)
         action = "Reused" if before is not None and output.stat().st_mtime_ns == before else "Built"
         print(f"System program ({action}): {output}")
 

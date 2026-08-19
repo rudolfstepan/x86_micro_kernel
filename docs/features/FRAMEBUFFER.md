@@ -1,6 +1,6 @@
 # Anzeige: VGA, Framebuffer und Desktop-MVP
 
-Stand: 16. August 2026.
+Stand: 19. August 2026.
 
 VGA-Text bleibt der robuste Standardweg. Ein `VIDEO=framebuffer`-Build richtet
 über den eigenen BIOS-Loader einen linearen RGB-Framebuffer ein und startet
@@ -59,28 +59,48 @@ Alle Übergabestrukturen tragen `version` und `struct_size`; Pointer und Text
 werden mit den geprüften User-Copy-Hilfen übertragen. Ring-3-Programme erhalten
 bewusst kein direktes Mapping des linearen Framebuffers.
 
-## Desktop-MVP
+## Desktop- und Window-Manager-MVP
 
 Bei einem tatsächlich initialisierten Framebuffer startet der Kernel
-`DESKTOP.PRG` vor `SHELL.PRG`. Der Desktop zeigt vier App-Karten:
+`DESKTOP.PRG` vor `SHELL.PRG`. Nach einem VGA-Textboot kann derselbe Desktop
+aus der Ring-3-Shell gestartet werden; er fordert dann einmalig den validierten
+VMware-SVGA-II-, QEMU-DISPI- oder vorbereiteten VBE-Grafikpfad an.
+
+Der Desktop besitzt ein festes Ring-3-Fenstermodell für vier Anwendungen:
 
 - Shell (`SHELL.PRG`)
 - Dateien (`LS.PRG`)
 - Editor (`EDIT.PRG`)
 - Systeminformationen (`SYSINFO.PRG`)
 
+Zwei überlappende Fenster sind beim Start sichtbar. Der Manager besitzt eine
+explizite Z-Order, genau einen Fokus und ein implizites Pointer-Capture von
+Button-Down bis Button-Up. Ein Fenster kann fokussiert, nach vorne geholt, an
+der Titelleiste innerhalb des Arbeitsbereichs verschoben und am linken Gadget
+geschlossen werden; das zugehörige Desktopicon öffnet es wieder. Zustand und
+Darstellung liegen in getrennten Modulen und verwenden weder Heap noch eine
+unbegrenzte Eventqueue.
+
 `Tab` und die Pfeiltasten ändern die Auswahl, `Enter` startet die gewählte App
-und `Esc` die Shell. Eine App läuft als Vollbild-Kindprozess; der Desktop wartet
-auf ihr Ende, leert verbliebene Eingabe und zeichnet sich neu. Der serielle
-Marker `DESKTOP_OK` bestätigt den ersten erfolgreichen Renderdurchlauf.
+und `Esc` stellt nach einer Laufzeitaktivierung die VGA-Shell wieder her. Die
+vorhandenen Console-Programme sind noch keine GUI-Clients: Sie laufen bewusst
+als Vollbild-Kindprozess. Der Desktop wartet auf ihr reguläres Ende, erzwingt
+bei einem Wait-Fehler Kill/Reap, leert verbliebene Eingabe und stellt danach
+dieselbe Fensterszene wieder her. Der serielle Marker `DESKTOP_OK` bestätigt
+den ersten erfolgreichen Renderdurchlauf.
+
+Die weitere Architektur folgt dem Surface-/Commit- und Eingabemodell von
+Wayland/xdg-shell, ohne schon Protokoll- oder Binärkompatibilität zu behaupten.
+Die verbindliche Zuordnung und die schrittweise Umsetzung stehen im
+[Window-Manager-Workflow](../development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md).
 
 ## Grenzen
 
-- keine Hardwarebeschleunigung oder dynamische Modusumschaltung
+- noch keine allgemeine Hardwarebeschleunigung
 - kein direktes LFB-Mapping für Ring 3
-- keine Maus
-- kein Compositor, Windowmanager oder Fenster-/Fokusmodell
-- genau eine Vordergrund-App; vorhandene Console-Programme laufen im Vollbild
+- noch kein versioniertes Surface-/GUI-Client-Protokoll
+- geometrische Änderungen zeichnen in diesem Referenz-MVP noch die ganze Szene
+- vorhandene Console-Programme laufen weiterhin einzeln im Vollbild
 
 Für frühe Boot- und Hardwarefehlersuche bleibt `VIDEO=vga` der einfachste
 Referenzpfad.

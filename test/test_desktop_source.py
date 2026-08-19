@@ -1,9 +1,14 @@
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DESKTOP = ROOT / "userspace" / "programs" / "desktop.c"
+WM_SOURCE = ROOT / "userspace" / "programs" / "desktop_wm.c"
+WM_HEADER = ROOT / "userspace" / "programs" / "desktop_wm.h"
 
 
 class DesktopSourceTests(unittest.TestCase):
@@ -11,11 +16,27 @@ class DesktopSourceTests(unittest.TestCase):
     def setUpClass(cls):
         cls.source = DESKTOP.read_text(encoding="utf-8")
 
+    def test_window_manager_model_host_behavior(self):
+        compiler = shutil.which("gcc") or shutil.which("clang")
+        if compiler is None:
+            self.skipTest("host C compiler unavailable")
+        with tempfile.TemporaryDirectory(prefix="reist-desktop-wm-") as temp:
+            executable = Path(temp) / "desktop-wm-test.exe"
+            subprocess.run(
+                [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                 "-I.", "test/test_desktop_wm_host.c",
+                 "userspace/programs/desktop_wm.c", "-o", str(executable)],
+                cwd=ROOT, check=True, capture_output=True, text=True)
+            subprocess.run([str(executable)], cwd=ROOT, check=True,
+                           capture_output=True, text=True, timeout=5)
+
     def test_desktop_is_part_of_the_system_program_image(self):
         programs = (ROOT / "scripts" / "build_system_programs.py").read_text(
             encoding="utf-8"
         )
-        self.assertIn('"DESKTOP.PRG": ROOT / "userspace/programs/desktop.c"', programs)
+        self.assertIn('"DESKTOP.PRG": (', programs)
+        self.assertIn('ROOT / "userspace/programs/desktop.c"', programs)
+        self.assertIn('ROOT / "userspace/programs/desktop_wm.c"', programs)
 
     def test_launcher_requires_the_pixel_display_abi(self):
         self.assertIn("x86os_display_info(&display)", self.source)
@@ -35,8 +56,22 @@ class DesktopSourceTests(unittest.TestCase):
         ):
             self.assertIn(f'"{title}"', self.source)
             self.assertIn(f'"{program}"', self.source)
-        self.assertIn("index % 2U", self.source)
-        self.assertIn("index / 2U", self.source)
+        self.assertIn("desktop_icon_rect", self.source)
+        self.assertIn("render_window", self.source)
+
+    def test_window_manager_has_fixed_z_order_focus_and_capture(self):
+        header = WM_HEADER.read_text(encoding="utf-8")
+        model = WM_SOURCE.read_text(encoding="utf-8")
+        self.assertIn("#define DESKTOP_WM_CAPACITY 4U", header)
+        self.assertIn("windows[DESKTOP_WM_CAPACITY]", header)
+        self.assertIn("z_order[DESKTOP_WM_CAPACITY]", header)
+        self.assertIn("DESKTOP_WM_CAPTURE_MOVE", header)
+        self.assertIn("DESKTOP_WM_CAPTURE_CLOSE", header)
+        self.assertIn("desktop_wm_window_at", model)
+        self.assertIn("desktop_wm_pointer_press", model)
+        self.assertIn("desktop_wm_pointer_motion", model)
+        self.assertIn("desktop_wm_pointer_release", model)
+        self.assertNotRegex(model, r"\b(malloc|free)\s*\(")
 
     def test_tab_and_ansi_arrow_keys_change_selection(self):
         self.assertIn("key == '\\t'", self.source)
@@ -82,13 +117,14 @@ class DesktopSourceTests(unittest.TestCase):
 
     def test_child_input_is_drained_before_the_desktop_is_redrawn(self):
         launch = self.source[self.source.index("static void launch_app") :]
+        launch = launch[: launch.index("\n}") + 2]
         self.assertLess(launch.index("x86os_wait"), launch.index("drain_input();"))
         self.assertLess(
             launch.index('x86os_puts("\\nTaste zum Desktop...")'),
             launch.index("(void)x86os_getchar();"),
         )
         self.assertLess(launch.index("(void)x86os_getchar();"), launch.index("drain_input();"))
-        self.assertLess(launch.index("drain_input();"), launch.index("render_desktop"))
+        self.assertNotIn("render_desktop", launch)
         drain = self.source[self.source.index("static void drain_input") :]
         self.assertIn("x86os_getchar_nonblocking()", drain)
 
@@ -99,11 +135,11 @@ class DesktopSourceTests(unittest.TestCase):
 
     def test_first_render_emits_the_desktop_ready_marker(self):
         main = self.source[self.source.index("int main(void)") :]
-        first_render = main.index("render_desktop(&display, selected)")
+        first_render = main.index("render_desktop(&display, &manager)")
         marker = main.index('x86os_puts("DESKTOP_OK\\n")')
         self.assertLess(marker, first_render)
         startup = main[:main.index("for (;;)")]
-        self.assertEqual(startup.count("render_desktop(&display, selected)"), 1)
+        self.assertEqual(startup.count("render_desktop(&display, &manager)"), 1)
 
     def test_launcher_is_freestanding_and_has_no_host_libc_dependency(self):
         self.assertNotRegex(self.source, r"#include\s*<(stdio|stdlib|string)\.h>")
@@ -111,14 +147,19 @@ class DesktopSourceTests(unittest.TestCase):
 
     def test_usb_mouse_moves_a_clipped_visible_pointer(self):
         self.assertIn("x86os_mouse_event(&mouse)", self.source)
-        self.assertIn("pointer_x += mouse.delta_x", self.source)
-        self.assertIn("pointer_y += mouse.delta_y", self.source)
+        self.assertIn("static void move_pointer", self.source)
+        self.assertIn("(int64_t)*pointer_x + delta_x", self.source)
+        self.assertIn("(int64_t)*pointer_y + delta_y", self.source)
+        self.assertIn("mouse.delta_x, mouse.delta_y", self.source)
         self.assertIn(
             "x86os_pointer_update(pointer_x, pointer_y, 1U)", self.source
         )
         self.assertNotIn("draw_mouse_pointer", self.source)
         self.assertIn("X86OS_MOUSE_BUTTON_LEFT", self.source)
-        self.assertIn("app_at_position", self.source)
+        self.assertIn("desktop_wm_pointer_press", self.source)
+        self.assertIn("desktop_wm_pointer_motion", self.source)
+        self.assertIn("desktop_wm_pointer_release", self.source)
+        self.assertIn("desktop_icon_at_position", self.source)
 
 
 if __name__ == "__main__":
