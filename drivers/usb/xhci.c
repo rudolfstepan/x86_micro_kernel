@@ -37,6 +37,7 @@
 #define XHCI_PORT_SETTLE_MS     500U
 #define XHCI_PORT_POWER_SETTLE_MS 20U
 #define XHCI_PORT_RESET_RECOVERY_MS 10U
+#define XHCI_PORT_MAX_RECOVERY_MS XHCI_PORT_POWER_SETTLE_MS
 
 #define XHCI_INTEL_VENDOR_ID       0x8086U
 #define XHCI_SONY_VENDOR_ID        0x104DU
@@ -1247,14 +1248,9 @@ static uint32_t xhci_port_neutral(uint32_t port) {
 }
 
 static bool xhci_wait_port_recovery(uint32_t delay_ms) {
-    uint64_t start = pit_monotonic_ms();
-    for (uint32_t poll = 0U; poll < XHCI_POLL_LIMIT; ++poll) {
-        uint64_t now = pit_monotonic_ms();
-        if (now < start) return false;
-        if (now - start >= delay_ms) return true;
-        if ((poll & 0x3FFU) == 0U) __asm__ __volatile__("pause");
-    }
-    return false;
+    if (delay_ms > XHCI_PORT_MAX_RECOVERY_MS) return false;
+    pit_delay(delay_ms);
+    return true;
 }
 
 static bool xhci_reset_root_port(uint32_t root_port, uint32_t port_offset,

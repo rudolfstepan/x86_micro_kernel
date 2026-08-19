@@ -126,6 +126,12 @@ verschoben und über das Schließfeld geschlossen werden.
 - [x] VMware-Paket erfolgreich bauen.
 - [ ] Manueller VMware-Sichtnachweis durch den Benutzer.
 
+Zwischenstand vom 19. August 2026: Szene, Fenster, Dekorationen und Pointer
+wurden unter VMware sichtbar bestätigt. Die Interaktionsabnahme bleibt offen,
+bis der anhand von `vmware-serial.log` isolierte xHCI-Port-Reset-Fehler mit dem
+neu gebauten Image als behoben bestätigt ist; reale Hardware wurde für diesen
+Stand noch nicht geprüft.
+
 Für diese Stufe ist ein vollständiger Szenenaufbau nach einer geometrischen
 Änderung zulässig. Er ist ausdrücklich nur die sichere Referenz, bis die
 Schadens- und Frame-Publikation aus Stufe 2 verfügbar ist.

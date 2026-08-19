@@ -220,6 +220,13 @@ class UsbMouseTests(unittest.TestCase):
         source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
         self.assertIn("static uint32_t xhci_port_neutral", source)
         self.assertIn("static bool xhci_reset_root_port", source)
+        settle_start = source.index("static bool xhci_wait_port_recovery")
+        settle_end = source.index("static bool xhci_reset_root_port",
+                                  settle_start)
+        settle = source[settle_start:settle_end]
+        self.assertIn("pit_delay(delay_ms);", settle)
+        self.assertIn("XHCI_PORT_MAX_RECOVERY_MS", settle)
+        self.assertNotIn("XHCI_POLL_LIMIT", settle)
         start = source.index("static bool xhci_reset_root_port")
         end = source.index("static bool xhci_enumerate_root_hid", start)
         helper = source[start:end]
@@ -275,7 +282,7 @@ class UsbMouseTests(unittest.TestCase):
         source = (ROOT / "userspace/programs/desktop.c").read_text(
             encoding="utf-8")
         escape = source.index("key == DESKTOP_KEY_ESCAPE")
-        branch = source[escape:source.index("\n\n        if (selected", escape)]
+        branch = source[escape:source.index("\n\n        if (redraw", escape)]
         self.assertIn("return 0;", branch)
         self.assertNotIn("launch_app", branch)
         self.assertIn("x86os_display_deactivate()", branch)

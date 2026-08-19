@@ -1,6 +1,6 @@
 # VMware Workstation
 
-Stand: 16. August 2026.
+Stand: 19. August 2026.
 
 Der native Windows-Build erzeugt eine vollständige Legacy-BIOS-VM. ISO, GRUB
 und manuelles Anlegen einer VM sind nicht erforderlich.
@@ -88,6 +88,11 @@ Build-ID zu sichern.
   nicht
 - keine Maus: `usb_xhci.present`, `mouse.vusb.enable` und die Meldung
   `USB: xHCI HID mouse ready` im seriellen Log prüfen
+- `connected` zeigt den virtuellen Maus-Port, aber `failure=port-reset`:
+  keine Host-HID- oder VMX-Ausweichregel ergänzen. Der xHCI-Treiber muss die
+  begrenzten 20 ms nach Port-Power und 10 ms nach USB2-Reset über die monotone
+  PIT-Zeit vollständig einhalten; ein CPU-abhängiger Poll-Zähler ist dafür
+  unzulässig.
 - kein LAN: `e1000`, Verbindungsstatus und VMnet0-Zuordnung prüfen
 - frühe Panic: `vmware-serial.log` und erweiterten Panic-Screen vergleichen
 
