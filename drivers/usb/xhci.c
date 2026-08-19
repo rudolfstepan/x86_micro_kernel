@@ -1184,9 +1184,12 @@ static bool xhci_configure_boot_hid(xhci_hid_device_t *hid,
         return false;
     }
     if (!xhci_control(hid, 0x00U, 9U, configuration, 0U, 0U, false, NULL) ||
-        !xhci_control(hid, 0x21U, 0x0BU, 0U, interface, 0U, false, NULL)) {
+        !xhci_control(hid, 0x21U, 0x0BU, 0U, interface, 0U, false, NULL) ||
+        (protocol == 1U &&
+         !xhci_control(hid, 0x21U, 0x0AU, 10U << 8U, interface, 0U,
+                       false, NULL))) {
         diagnostics.failure_stage = XHCI_FAILURE_SET_CONFIGURATION;
-        printf("USB: xHCI SET_CONFIGURATION/PROTOCOL failed\n");
+        printf("USB: xHCI SET_CONFIGURATION/PROTOCOL/IDLE failed\n");
         return false;
     }
     hid->endpoint_index = 0U;

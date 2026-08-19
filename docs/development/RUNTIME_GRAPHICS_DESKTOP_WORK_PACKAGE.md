@@ -474,6 +474,20 @@ virtueller USB-Tastatur und -Maus erreichte 17 Transfers, 16 akzeptierte
 Tastaturreports und einen akzeptierten Mausreport ohne Verwerfung. Es wurde
 kein Host-HID-Gerät durchgereicht.
 
+Ein zweites, einfaches USB-Bootkeyboard funktionierte auf demselben ASUS-
+Stand, während das AULA/BY-Tech-Composite-Keyboard `258A:010C` weiterhin
+keine Tastendrücke lieferte. Damit sind Controller, zweiter HID-Ressourcensatz
+und Keyboard-Reportparser praktisch bestätigt; die Abweichung liegt in der
+geräteabhängigen HID-Initialisierung. Interface 0 des AULA meldet den
+standardmäßigen acht Byte langen Bootkeyboard-Report. Nach
+`SET_CONFIGURATION` und `SET_PROTOCOL(Boot)` sendet der Treiber für
+Bootkeyboards nun zusätzlich das standardisierte `SET_IDLE` mit einem
+begrenzten 40-ms-Intervall. Dieser von Referenz-Bootkeyboard-Treibern
+verwendete Startablauf deckt Firmware ab, die vor Interrupt-IN-Reports eine
+explizite Idle-Programmierung verlangt; Mäuse und bereits funktionierende
+einfache Keyboards behalten ihren bisherigen Datenpfad. Der physische
+AULA-Nachweis steht noch aus.
+
 ## Erwartetes Restrisiko
 
 Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte
