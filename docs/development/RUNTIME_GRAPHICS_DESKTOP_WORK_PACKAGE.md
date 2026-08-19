@@ -267,6 +267,16 @@ ersetzen diese beiden offenen Hardwarebefunde nicht. Die nächste Arbeit setzt
 deshalb bei begrenzter Präsentation/Dirty-Region-Ausgabe und bei der
 xHCI-HID-Mausdiagnose auf dem ASUS-System an.
 
+Die erste Renderoptimierung hält nun bis zu `1024x768x32` in einem festen,
+heapfreien Kernel-Backbuffer. Flächen, Glyphen und Cursor werden im normalen
+RAM aufgebaut und als geclippte Dirty Rectangles mit 32-Bit-Schreibzugriffen
+in den sichtbaren LFB übertragen. Der Laufzeitpfad präsentiert den schwarzen
+Initialpuffer nicht mehr unnötig, und `desktop.prg` zeichnet den ersten Frame
+nur noch einmal. Größere oder ungewöhnliche Boot-Framebuffer fallen weiterhin
+auf den direkten, geclippten Pfad zurück. Der Leistungsgewinn auf dem
+ASUS/NVIDIA-System bleibt durch einen erneuten Hardwarelauf zu bestätigen;
+PAT/MTRR-Write-Combining ist noch nicht Bestandteil dieses Schritts.
+
 ## Erwartetes Restrisiko
 
 Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte

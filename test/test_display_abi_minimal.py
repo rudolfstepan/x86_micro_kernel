@@ -126,6 +126,13 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         self.assertIn("fb_height", glyphs)
         self.assertIn("fb_draw_glyph_pixels(", glyphs)
 
+    def test_driver_renders_into_a_fixed_shadow_and_blits_dwords(self) -> None:
+        self.assertIn("FB_SHADOW_CAPACITY", self.framebuffer)
+        self.assertIn("framebuffer_shadow", self.framebuffer)
+        self.assertNotRegex(self.framebuffer, r"(?:malloc|kmalloc)\s*\(")
+        self.assertIn("volatile uint32_t *destination", self.framebuffer)
+        self.assertIn("framebuffer_present_rect", self.framebuffer)
+
     def test_sdk_hides_request_marshalling(self) -> None:
         info = function(self.user_sdk, "int x86os_display_info(")
         self.assertIn("X86OS_DISPLAY_ABI_VERSION", info)

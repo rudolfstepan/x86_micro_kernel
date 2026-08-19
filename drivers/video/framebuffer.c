@@ -12,7 +12,13 @@
 #include "lib/libc/string.h"
 
 // Framebuffer state
+#define FB_SHADOW_CAPACITY ((size_t)FB_WIDTH * FB_HEIGHT * (FB_BPP / 8U))
+
+static uint8_t framebuffer_shadow[FB_SHADOW_CAPACITY]
+    __attribute__((aligned(16)));
 static uint8_t* fb_address = NULL;
+static volatile uint8_t* fb_scanout_address = NULL;
+static bool fb_shadow_enabled;
 static uint32_t fb_width = 0;
 static uint32_t fb_height = 0;
 static uint32_t fb_pitch = 0;
@@ -32,6 +38,10 @@ static int cursor_x = 0;
 static int cursor_y = 0;
 static uint32_t fg_color = FB_COLOR_WHITE;
 static uint32_t bg_color = FB_COLOR_BLACK;
+
+static void framebuffer_clear_internal(bool present);
+static void framebuffer_present_rect(uint32_t x, uint32_t y,
+                                     uint32_t width, uint32_t height);
 
 // Simple 8x16 bitmap font (subset of characters)
 // Each character is 16 bytes (16 rows of 8 pixels)
@@ -4669,9 +4679,43 @@ static uint32_t pointer_width;
 static uint32_t pointer_height;
 static bool pointer_visible;
 
+static void framebuffer_present_rect(uint32_t x, uint32_t y,
+                                     uint32_t width, uint32_t height) {
+    if (!fb_address || !fb_scanout_address || width == 0U || height == 0U ||
+        x >= fb_width || y >= fb_height)
+        return;
+    if (width > fb_width - x) width = fb_width - x;
+    if (height > fb_height - y) height = fb_height - y;
+
+    if (fb_shadow_enabled) {
+        for (uint32_t row = 0U; row < height; ++row) {
+            const uint8_t *source = fb_address + (y + row) * fb_pitch +
+                                    x * fb_bytes_per_pixel;
+            volatile uint8_t *destination_bytes =
+                fb_scanout_address + (y + row) * fb_pitch +
+                x * fb_bytes_per_pixel;
+            if (fb_bytes_per_pixel == sizeof(uint32_t)) {
+                const uint32_t *source_words = (const uint32_t*)source;
+                volatile uint32_t *destination =
+                    (volatile uint32_t*)destination_bytes;
+                for (uint32_t column = 0U; column < width; ++column)
+                    destination[column] = source_words[column];
+            } else {
+                uint32_t row_bytes = width * fb_bytes_per_pixel;
+                for (uint32_t byte = 0U; byte < row_bytes; ++byte)
+                    destination_bytes[byte] = source[byte];
+            }
+        }
+    }
+    display_control_present_rect(x, y, width, height);
+}
+
 // Initialize framebuffer
-void framebuffer_init(multiboot_framebuffer_info_t* fb_info) {
+static void framebuffer_initialize(multiboot_framebuffer_info_t* fb_info,
+                                   bool present_clear) {
     fb_address = NULL;
+    fb_scanout_address = NULL;
+    fb_shadow_enabled = false;
     fb_width = fb_height = fb_pitch = 0;
     fb_bpp = fb_bytes_per_pixel = 0;
     fb_red_position = fb_red_size = 0;
@@ -4717,7 +4761,13 @@ void framebuffer_init(multiboot_framebuffer_info_t* fb_info) {
     void *mapping = map_kernel_mmio((uint32_t)fb_info->framebuffer_addr,
                                     (size_t)framebuffer_size);
     if (mapping == NULL) return;
-    fb_address = (uint8_t*)mapping;
+    fb_scanout_address = (volatile uint8_t*)mapping;
+    if (framebuffer_size <= FB_SHADOW_CAPACITY) {
+        fb_address = framebuffer_shadow;
+        fb_shadow_enabled = true;
+    } else {
+        fb_address = (uint8_t*)mapping;
+    }
     fb_width = fb_info->framebuffer_width;
     fb_height = fb_info->framebuffer_height;
     fb_pitch = fb_info->framebuffer_pitch;
@@ -4735,11 +4785,21 @@ void framebuffer_init(multiboot_framebuffer_info_t* fb_info) {
     cursor_x = 0;
     cursor_y = 0;
     
-    framebuffer_clear();
+    framebuffer_clear_internal(present_clear || !fb_shadow_enabled);
+}
+
+void framebuffer_init(multiboot_framebuffer_info_t* fb_info) {
+    framebuffer_initialize(fb_info, true);
+}
+
+void framebuffer_init_runtime(multiboot_framebuffer_info_t* fb_info) {
+    framebuffer_initialize(fb_info, false);
 }
 
 void framebuffer_shutdown(void) {
     fb_address = NULL;
+    fb_scanout_address = NULL;
+    fb_shadow_enabled = false;
     fb_width = fb_height = fb_pitch = 0U;
     fb_bpp = fb_bytes_per_pixel = 0U;
     fb_red_position = fb_red_size = 0U;
@@ -4773,17 +4833,20 @@ static uint32_t framebuffer_native_color(uint32_t rgb) {
 
 static inline void framebuffer_store_native(uint8_t *pixel,
                                             uint32_t native_color) {
-    for (uint8_t byte = 0; byte < fb_bytes_per_pixel; ++byte)
-        pixel[byte] = (uint8_t)(native_color >> (byte * 8u));
-}
-
-// Set pixel at position
-static inline void fb_set_pixel(int x, int y, uint32_t color) {
-    if (x < 0 || x >= (int)fb_width || y < 0 || y >= (int)fb_height) return;
-
-    uint8_t *pixel = fb_address + (uint32_t)y * fb_pitch +
-                     (uint32_t)x * fb_bytes_per_pixel;
-    framebuffer_store_native(pixel, framebuffer_native_color(color));
+    if (fb_bytes_per_pixel == sizeof(uint32_t)) {
+        if (fb_shadow_enabled)
+            *(uint32_t*)pixel = native_color;
+        else
+            *(volatile uint32_t*)pixel = native_color;
+        return;
+    }
+    for (uint8_t byte = 0; byte < fb_bytes_per_pixel; ++byte) {
+        if (fb_shadow_enabled)
+            pixel[byte] = (uint8_t)(native_color >> (byte * 8u));
+        else
+            ((volatile uint8_t*)pixel)[byte] =
+                (uint8_t)(native_color >> (byte * 8u));
+    }
 }
 
 static int framebuffer_pointer_color(uint32_t x, uint32_t y) {
@@ -4872,25 +4935,31 @@ bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible) {
         pointer_visible = true;
     }
     if (dirty)
-        display_control_present_rect((uint32_t)dirty_left,
-                                     (uint32_t)dirty_top,
-                                     (uint32_t)(dirty_right - dirty_left),
-                                     (uint32_t)(dirty_bottom - dirty_top));
+        framebuffer_present_rect((uint32_t)dirty_left,
+                                 (uint32_t)dirty_top,
+                                 (uint32_t)(dirty_right - dirty_left),
+                                 (uint32_t)(dirty_bottom - dirty_top));
     return true;
 }
 
 static void fb_draw_glyph_pixels(char c, int x, int y, uint32_t fg,
                                  uint32_t bg) {
     const uint8_t* glyph = &font_8x16[(unsigned char)c * FONT_HEIGHT];
+    uint32_t native_foreground = framebuffer_native_color(fg);
+    uint32_t native_background = framebuffer_native_color(bg);
 
     for (int row = 0; row < FONT_HEIGHT; row++) {
+        int pixel_y = y + row;
+        if (pixel_y < 0 || pixel_y >= (int)fb_height) continue;
         uint8_t line = glyph[row];
         for (int col = 0; col < FONT_WIDTH; col++) {
-            if (line & (0x80 >> col)) {
-                fb_set_pixel(x + col, y + row, fg);
-            } else {
-                fb_set_pixel(x + col, y + row, bg);
-            }
+            int pixel_x = x + col;
+            if (pixel_x < 0 || pixel_x >= (int)fb_width) continue;
+            uint8_t *pixel = fb_address + (uint32_t)pixel_y * fb_pitch +
+                             (uint32_t)pixel_x * fb_bytes_per_pixel;
+            framebuffer_store_native(
+                pixel, (line & (0x80 >> col))
+                    ? native_foreground : native_background);
         }
     }
 }
@@ -4938,14 +5007,27 @@ bool framebuffer_fill_rect(int32_t x, int32_t y, uint32_t width,
     for (int64_t pixel_y = top; pixel_y < bottom; ++pixel_y) {
         uint8_t *pixel = fb_address + (uint32_t)pixel_y * fb_pitch +
                          (uint32_t)left * fb_bytes_per_pixel;
-        for (int64_t pixel_x = left; pixel_x < right; ++pixel_x) {
-            framebuffer_store_native(pixel, native_color);
-            pixel += fb_bytes_per_pixel;
+        if (fb_bytes_per_pixel == sizeof(uint32_t)) {
+            uint32_t columns = (uint32_t)(right - left);
+            if (fb_shadow_enabled) {
+                uint32_t *words = (uint32_t*)pixel;
+                for (uint32_t column = 0U; column < columns; ++column)
+                    words[column] = native_color;
+            } else {
+                volatile uint32_t *words = (volatile uint32_t*)pixel;
+                for (uint32_t column = 0U; column < columns; ++column)
+                    words[column] = native_color;
+            }
+        } else {
+            for (int64_t pixel_x = left; pixel_x < right; ++pixel_x) {
+                framebuffer_store_native(pixel, native_color);
+                pixel += fb_bytes_per_pixel;
+            }
         }
     }
-    display_control_present_rect((uint32_t)left, (uint32_t)top,
-                                 (uint32_t)(right - left),
-                                 (uint32_t)(bottom - top));
+    framebuffer_present_rect((uint32_t)left, (uint32_t)top,
+                             (uint32_t)(right - left),
+                             (uint32_t)(bottom - top));
     return true;
 }
 
@@ -4973,27 +5055,47 @@ bool framebuffer_draw_text_pixels(int32_t x, int32_t y, const char* text,
         if (right > (int64_t)fb_width) right = fb_width;
         if (bottom > (int64_t)fb_height) bottom = fb_height;
         if (left < right && top < bottom)
-            display_control_present_rect((uint32_t)left, (uint32_t)top,
-                                         (uint32_t)(right - left),
-                                         (uint32_t)(bottom - top));
+            framebuffer_present_rect((uint32_t)left, (uint32_t)top,
+                                     (uint32_t)(right - left),
+                                     (uint32_t)(bottom - top));
     }
     return true;
 }
 
-// Clear the framebuffer
-void framebuffer_clear() {
+static void framebuffer_clear_internal(bool present) {
     if (!fb_address) return;
     pointer_visible = false;
     pointer_width = pointer_height = 0U;
-    
+
+    uint32_t native_color = framebuffer_native_color(bg_color);
     for (uint32_t y = 0; y < fb_height; y++) {
-        for (uint32_t x = 0; x < fb_width; x++) {
-            fb_set_pixel(x, y, bg_color);
+        uint8_t *pixel = fb_address + y * fb_pitch;
+        if (fb_bytes_per_pixel == sizeof(uint32_t)) {
+            if (fb_shadow_enabled) {
+                uint32_t *words = (uint32_t*)pixel;
+                for (uint32_t x = 0U; x < fb_width; ++x)
+                    words[x] = native_color;
+            } else {
+                volatile uint32_t *words = (volatile uint32_t*)pixel;
+                for (uint32_t x = 0U; x < fb_width; ++x)
+                    words[x] = native_color;
+            }
+        } else {
+            for (uint32_t x = 0; x < fb_width; x++) {
+                framebuffer_store_native(pixel, native_color);
+                pixel += fb_bytes_per_pixel;
+            }
         }
     }
-    
+
     cursor_x = 0;
     cursor_y = 0;
+    if (present) framebuffer_present_rect(0U, 0U, fb_width, fb_height);
+}
+
+// Clear the framebuffer
+void framebuffer_clear() {
+    framebuffer_clear_internal(true);
 }
 
 // Scroll the screen up one line
@@ -5010,18 +5112,20 @@ void framebuffer_scroll() {
             dst[i] = src[i];
         }
     }
-    display_control_present_rect(0U, 0U, fb_width, fb_height);
-    
     // Clear the last row
     for (int x = 0; x < terminal_cols; x++) {
         fb_draw_char(' ', x, terminal_rows - 1, fg_color, bg_color);
     }
+    framebuffer_present_rect(0U, 0U, fb_width, fb_height);
 }
 
 // Put a character at current cursor position
 void framebuffer_putchar(char c) {
     if (!fb_address) return;
-    
+
+    bool glyph_dirty = false;
+    int glyph_x = 0;
+    int glyph_y = 0;
     if (c == '\n') {
         cursor_x = 0;
         cursor_y++;
@@ -5032,10 +5136,16 @@ void framebuffer_putchar(char c) {
     } else if (c == '\b') {
         if (cursor_x > 0) {
             cursor_x--;
+            glyph_x = cursor_x;
+            glyph_y = cursor_y;
             fb_draw_char(' ', cursor_x, cursor_y, fg_color, bg_color);
+            glyph_dirty = true;
         }
     } else {
+        glyph_x = cursor_x;
+        glyph_y = cursor_y;
         fb_draw_char(c, cursor_x, cursor_y, fg_color, bg_color);
+        glyph_dirty = true;
         cursor_x++;
     }
     
@@ -5049,7 +5159,12 @@ void framebuffer_putchar(char c) {
     if (cursor_y >= terminal_rows) {
         framebuffer_scroll();
         cursor_y = terminal_rows - 1;
+        glyph_dirty = false;
     }
+    if (glyph_dirty)
+        framebuffer_present_rect((uint32_t)(glyph_x * FONT_WIDTH),
+                                 (uint32_t)(glyph_y * FONT_HEIGHT),
+                                 FONT_WIDTH, FONT_HEIGHT);
 }
 
 // Write a string

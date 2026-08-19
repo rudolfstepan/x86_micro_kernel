@@ -408,7 +408,7 @@ static int activate_vbe(void) {
         .blue_field_position = vbe_runtime_info.blue_position,
         .blue_mask_size = vbe_runtime_info.blue_size
     };
-    framebuffer_init(&info);
+    framebuffer_init_runtime(&info);
     if (!framebuffer_available()) {
         printf("DISPLAY_CONTROL: VBE framebuffer publication failed\n");
         (void)vbe_runtime_set_text_mode();
@@ -502,13 +502,12 @@ static int activate_vmware(pci_device_t *device) {
         .green_mask_size = 8U, .blue_field_position = 0U,
         .blue_mask_size = 8U
     };
-    framebuffer_init(&info);
+    framebuffer_init_runtime(&info);
     if (!framebuffer_available()) goto vmware_disable_fifo;
     vmware_fifo = fifo;
     vmware_index_port = index_port;
     vmware_value_port = value_port;
     active_backend = DISPLAY_BACKEND_VMWARE;
-    display_control_present_rect(0U, 0U, width, height);
     return 0;
 
 vmware_disable_fifo:
@@ -588,7 +587,7 @@ int display_control_activate(void) {
                 .green_field_position = 8U, .green_mask_size = 8U,
                 .blue_field_position = 0U, .blue_mask_size = 8U
             };
-            framebuffer_init(&info);
+            framebuffer_init_runtime(&info);
             if (framebuffer_available()) {
                 active_backend = DISPLAY_BACKEND_QEMU;
                 result = 0;

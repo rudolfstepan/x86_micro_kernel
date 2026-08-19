@@ -298,7 +298,6 @@ int main(void) {
 
     pointer_x = (int32_t)(display.width / 2U);
     pointer_y = (int32_t)(display.height / 2U);
-    render_desktop(&display, selected);
     x86os_puts("DESKTOP_OK\n");
     render_desktop(&display, selected);
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);

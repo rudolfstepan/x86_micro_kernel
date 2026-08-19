@@ -103,6 +103,11 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     print("runtime-desktop: FAIL: unsupported mode was accepted",
                           file=sys.stderr)
                     return 1
+                # The marker is emitted immediately before the single
+                # backbuffer render so it is overwritten by the desktop.
+                # Give the guest a bounded interval to finish that frame
+                # before capturing it or injecting Escape.
+                time.sleep(0.2)
                 if process.stdin is not None:
                     process.stdin.write(QEMU_MUX_SWITCH)
                     process.stdin.flush()

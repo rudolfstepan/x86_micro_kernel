@@ -80,6 +80,7 @@ typedef struct {
 
 // Function prototypes
 void framebuffer_init(multiboot_framebuffer_info_t* fb_info);
+void framebuffer_init_runtime(multiboot_framebuffer_info_t* fb_info);
 void framebuffer_shutdown(void);
 void framebuffer_clear();
 void framebuffer_putchar(char c);

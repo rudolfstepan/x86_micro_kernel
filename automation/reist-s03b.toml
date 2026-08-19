@@ -1540,6 +1540,7 @@ invariants = [
   "no framebuffer state is published before mode success, register readback and complete geometry, range and overflow validation",
   "unsupported hardware and every pre-publication failure leave the existing VGA console untouched and serially diagnosed",
   "the framebuffer remains supervisor-only and drawing remains clipped and bounded",
+  "the fixed framebuffer shadow uses no heap and oversized modes fall back to bounded direct rendering",
   "missing or broken native graphics support cannot prevent a normal VGA boot",
   "a successful runtime activation can be deactivated back to an operable VGA shell before framebuffer state is withdrawn",
   "the existing framebuffer boot remains compatible"

@@ -35,7 +35,7 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn("0x01CFU", self.control)
         self.assertIn("0x1234U", self.control)
         self.assertIn("0x1111U", self.control)
-        self.assertIn("framebuffer_init(&info)", self.control)
+        self.assertIn("framebuffer_init_runtime(&info)", self.control)
 
     def test_activation_is_validated_before_mode_enable(self):
         self.assertLess(

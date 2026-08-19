@@ -101,7 +101,9 @@ class DesktopSourceTests(unittest.TestCase):
         main = self.source[self.source.index("int main(void)") :]
         first_render = main.index("render_desktop(&display, selected)")
         marker = main.index('x86os_puts("DESKTOP_OK\\n")')
-        self.assertLess(first_render, marker)
+        self.assertLess(marker, first_render)
+        startup = main[:main.index("for (;;)")]
+        self.assertEqual(startup.count("render_desktop(&display, selected)"), 1)
 
     def test_launcher_is_freestanding_and_has_no_host_libc_dependency(self):
         self.assertNotRegex(self.source, r"#include\s*<(stdio|stdlib|string)\.h>")
