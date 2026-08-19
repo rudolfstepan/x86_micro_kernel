@@ -4,9 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import os
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from build_user_program import ROOT, build, find_zig
+from build_user_sdk import CORE_INCLUDE_ROOT, GUI_INCLUDE_ROOT, build_sdk
 
 
 PROGRAMS = {
@@ -35,6 +39,7 @@ PROGRAMS = {
         ROOT / "userspace/gui/compositor/desktop.c",
         ROOT / "userspace/gui/compositor/desktop_wm.c",
     ),
+    "GUIDEMO.PRG": ROOT / "userspace/gui/apps/control_gallery/main.c",
     "MKDIR.PRG": ROOT / "userspace/programs/mkdir.c",
     "RMDIR.PRG": ROOT / "userspace/programs/rmdir.c",
     "DEL.PRG": ROOT / "userspace/programs/del.c",
@@ -73,23 +78,72 @@ PROGRAMS = {
     "SATAWR.PRG": ROOT / "userspace/programs/sata_write_test.c",
 }
 
+GUI_PROGRAMS = {"DESKTOP.PRG", "GUIDEMO.PRG"}
+NETWORK_PARSER_PROGRAMS = {"REIST.PRG"}
+MAX_SYSTEM_BUILD_WORKERS = 8
+DEFAULT_SYSTEM_BUILD_WORKERS = min(
+    MAX_SYSTEM_BUILD_WORKERS, max(1, os.cpu_count() or 1))
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--zig", type=Path)
     parser.add_argument("--incremental", action="store_true")
+    parser.add_argument(
+        "-j", "--jobs", type=int, default=DEFAULT_SYSTEM_BUILD_WORKERS,
+        help=("parallel PRG builds (default: up to 8 logical CPUs; "
+              "accepted range: 1..8)"),
+    )
     args = parser.parse_args()
+    if not 1 <= args.jobs <= MAX_SYSTEM_BUILD_WORKERS:
+        parser.error("--jobs must be between 1 and 8")
 
     zig = find_zig(args.zig)
     output_dir = args.output_dir.resolve()
-    for name, source in PROGRAMS.items():
-        output = output_dir / name
-        before = output.stat().st_mtime_ns if output.is_file() else None
-        sources = list(source) if isinstance(source, tuple) else [source]
-        build(sources, output, zig, incremental=args.incremental)
-        action = "Reused" if before is not None and output.stat().st_mtime_ns == before else "Built"
-        print(f"System program ({action}): {output}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="reist-system-cache-") as cache:
+        cache_directory = Path(cache)
+        global_cache_directory = cache_directory / "zig-global-shared"
+        sdk = build_sdk(
+            output_dir.parent / "sdk", zig, incremental=args.incremental,
+            cache_directory=global_cache_directory)
+        core_headers = list(CORE_INCLUDE_ROOT.rglob("*.h"))
+        gui_headers = list(GUI_INCLUDE_ROOT.rglob("*.h"))
+
+        def build_one(item: tuple[str, object]) -> str:
+            """Build one independent PRG under the shared read-only SDK."""
+            name, source = item
+            output = output_dir / name
+            before = output.stat().st_mtime_ns if output.is_file() else None
+            sources = list(source) if isinstance(source, tuple) else [source]
+            runtime_libraries = [sdk.core_library]
+            if name in NETWORK_PARSER_PROGRAMS:
+                runtime_libraries.append(sdk.network_parser_library)
+            dependency_files = [*core_headers]
+            if name in GUI_PROGRAMS:
+                dependency_files.extend(gui_headers)
+            build(
+                sources, output, zig, incremental=args.incremental,
+                include_dirs=[sdk.include_dir],
+                libraries=[sdk.gui_library] if name in GUI_PROGRAMS else None,
+                runtime_objects=[sdk.startup_object],
+                runtime_libraries=runtime_libraries,
+                cache_directory=global_cache_directory,
+                dependency_files=dependency_files,
+            )
+            reused = before is not None and \
+                output.stat().st_mtime_ns == before
+            action = "Reused" if reused else "Built"
+            return f"System program ({action}): {output}"
+
+        # Zig's content-addressed global cache is safe to share and avoids
+        # rebuilding compiler artifacts for every PRG. build() still creates
+        # one isolated local cache per job. executor.map preserves PROGRAMS
+        # order for deterministic diagnostics.
+        with ThreadPoolExecutor(max_workers=args.jobs) as executor:
+            for message in executor.map(build_one, PROGRAMS.items()):
+                print(message)
 
 
 if __name__ == "__main__":

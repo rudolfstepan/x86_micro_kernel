@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Build external C/assembly sources into the kernel's fixed-address MYPR format."""
+"""Build C/assembly sources with Zig/LLVM and package their ELF as MYPR.
+
+Compilation, assembly, static archives and ELF linking stay with the upstream
+toolchain. This script implements only the REIST-specific target profile and
+the validated conversion from a fixed-address ELF32 executable to MYPR v1.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,69 @@ PAYLOAD_BASE = PROGRAM_BASE + PROGRAM_HEADER.size
 ELF_HEADER = struct.Struct("<16sHHIIIIIHHHHHH")
 ELF_PROGRAM_HEADER = struct.Struct("<IIIIIIII")
 ELF_SECTION_HEADER = struct.Struct("<IIIIIIIIII")
+
+
+def freestanding_compile_prefix(
+    zig: Path, include_dirs: list[Path] | None = None,
+    include_repository_sdk: bool = True,
+) -> list[str]:
+    """Return the shared upstream compiler invocation for Ring-3 objects."""
+    sdk_include = ROOT / "userspace" / "sdk" / "include"
+    directories = [
+        *([sdk_include] if include_repository_sdk else []),
+        *(include_dirs or []),
+    ]
+    command = [
+        str(zig), "cc", "-target", "x86-freestanding", "-march=i386",
+        "-O2", "-DNDEBUG", "-ffreestanding", "-fno-builtin",
+        "-fno-pic", "-fno-pie", "-fno-stack-protector",
+        "-fno-asynchronous-unwind-tables", "-fno-unwind-tables",
+        "-mno-sse", "-mno-sse2", "-mno-mmx", "-Wall", "-Wextra",
+    ]
+    for directory in directories:
+        command.extend(["-I", str(directory)])
+    return command
+
+
+def resolve_static_libraries(
+    names: list[str], library_dirs: list[Path]
+) -> list[Path]:
+    """Resolve conventional ``-l name`` requests to validated archives."""
+    libraries: list[Path] = []
+    for name in names:
+        if not name or any(
+            character not in
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_+-"
+            for character in name
+        ):
+            raise ValueError(f"invalid static library name: {name!r}")
+        for directory in library_dirs:
+            candidate = directory / f"lib{name}.a"
+            if candidate.is_file():
+                libraries.append(candidate.resolve())
+                break
+        else:
+            raise FileNotFoundError(f"static library lib{name}.a was not found")
+    return libraries
+
+
+def resolve_sysroot_runtime(
+    sysroot: Path, include_network_parsers: bool = False
+) -> tuple[Path, Path, list[Path]]:
+    """Resolve the conventional startup object and base archives in a sysroot."""
+    root = sysroot.resolve()
+    include_dir = root / "usr" / "include"
+    library_dir = root / "usr" / "lib"
+    startup = library_dir / "crt0.o"
+    libraries = [library_dir / "libreistos.a"]
+    if include_network_parsers:
+        libraries.append(library_dir / "libreistnetparse.a")
+    if not include_dir.is_dir():
+        raise FileNotFoundError(include_dir)
+    if not startup.is_file() or any(not library.is_file()
+                                    for library in libraries):
+        raise FileNotFoundError("REIST sysroot runtime artifacts are incomplete")
+    return include_dir, startup, libraries
 
 
 def find_zig(explicit: Path | None = None) -> Path:
@@ -124,25 +192,72 @@ def elf_to_mypr(elf: bytes) -> bytes:
 
 
 def build(sources: list[Path], output: Path, zig: Path,
-          elf_output: Path | None = None, incremental: bool = False) -> None:
+          elf_output: Path | None = None, incremental: bool = False,
+          include_dirs: list[Path] | None = None,
+          libraries: list[Path] | None = None,
+          runtime_objects: list[Path] | None = None,
+          runtime_libraries: list[Path] | None = None,
+          cache_directory: Path | None = None,
+          dependency_files: list[Path] | None = None) -> None:
+    """Compile, statically link and package one fixed-address Ring-3 program."""
     sdk = ROOT / "userspace" / "sdk"
     linker_script = ROOT / "config" / "user_program.ld"
-    all_sources = [sdk / "crt0.c", sdk / "x86os.c",
-                   sdk / "reist_dhcp_state.c", sdk / "reist_dns.c", *sources]
-    if any(source.name == "reist_probe.c" for source in sources):
-        all_sources.insert(3, sdk / "reist_ipv4_parser.c")
-        all_sources.insert(4, sdk / "reist_icmp_parser.c")
-        all_sources.insert(5, sdk / "reist_udp_parser.c")
-        all_sources.insert(6, sdk / "reist_dhcp_parser.c")
-        all_sources.insert(7, sdk / "reist_tcp_parser.c")
+    include_dirs = [directory.resolve() for directory in (include_dirs or [])]
+    libraries = [library.resolve() for library in (libraries or [])]
+    explicit_dependencies = dependency_files is not None
+    dependency_files = [
+        dependency.resolve() for dependency in (dependency_files or [])]
+    prebuilt_runtime = runtime_objects is not None or runtime_libraries is not None
+    runtime_objects = [
+        runtime_object.resolve()
+        for runtime_object in (runtime_objects or [])
+    ]
+    runtime_libraries = [
+        library.resolve() for library in (runtime_libraries or [])
+    ]
+    for directory in include_dirs:
+        if not directory.is_dir():
+            raise FileNotFoundError(directory)
+    for runtime_object in runtime_objects:
+        if not runtime_object.is_file() or runtime_object.suffix.lower() != ".o":
+            raise FileNotFoundError(runtime_object)
+    for library in [*libraries, *runtime_libraries]:
+        if not library.is_file() or library.suffix.lower() != ".a":
+            raise FileNotFoundError(library)
+    for dependency in dependency_files:
+        if not dependency.is_file():
+            raise FileNotFoundError(dependency)
+    if prebuilt_runtime:
+        if not runtime_objects or not runtime_libraries:
+            raise ValueError("prebuilt runtime requires startup and base library")
+        all_sources = [*sources]
+    else:
+        all_sources = [sdk / "crt0.c", sdk / "x86os.c",
+                       sdk / "reist_dhcp_state.c", sdk / "reist_dns.c",
+                       *sources]
+        if any(source.name == "reist_probe.c" for source in sources):
+            all_sources.insert(3, sdk / "reist_ipv4_parser.c")
+            all_sources.insert(4, sdk / "reist_icmp_parser.c")
+            all_sources.insert(5, sdk / "reist_udp_parser.c")
+            all_sources.insert(6, sdk / "reist_dhcp_parser.c")
+            all_sources.insert(7, sdk / "reist_tcp_parser.c")
     for source in all_sources:
         if not source.is_file():
             raise FileNotFoundError(source)
         if source.suffix.lower() not in (".c", ".s"):
             raise ValueError(f"unsupported source type: {source}")
 
-    dependencies = [*all_sources, linker_script]
+    dependencies = [
+        *all_sources, *runtime_objects, *runtime_libraries, linker_script]
+    for source in all_sources:
+        dependencies.extend(source.parent.glob("*.h"))
     dependencies.extend((sdk / "include").glob("*.h"))
+    if explicit_dependencies:
+        dependencies.extend(dependency_files)
+    else:
+        for directory in include_dirs:
+            dependencies.extend(directory.rglob("*.h"))
+    dependencies.extend(libraries)
     if incremental and output.is_file() and all(
             dependency.stat().st_mtime_ns <= output.stat().st_mtime_ns
             for dependency in dependencies):
@@ -150,18 +265,15 @@ def build(sources: list[Path], output: Path, zig: Path,
 
     with tempfile.TemporaryDirectory(prefix="x86-user-build-") as temporary:
         temporary_path = Path(temporary)
+        cache_root = cache_directory.resolve() \
+            if cache_directory is not None else temporary_path
+        cache_root.mkdir(parents=True, exist_ok=True)
         environment = os.environ.copy()
-        environment["ZIG_GLOBAL_CACHE_DIR"] = str(temporary_path / "zig-global")
+        environment["ZIG_GLOBAL_CACHE_DIR"] = str(cache_root / "zig-global")
         environment["ZIG_LOCAL_CACHE_DIR"] = str(temporary_path / "zig-local")
         objects: list[Path] = []
-        common_flags = [
-            str(zig), "cc", "-target", "x86-freestanding", "-march=i386",
-            "-O2", "-DNDEBUG", "-ffreestanding", "-fno-builtin",
-            "-fno-pic", "-fno-pie", "-fno-stack-protector",
-            "-fno-asynchronous-unwind-tables", "-fno-unwind-tables",
-            "-mno-sse", "-mno-sse2", "-mno-mmx", "-Wall", "-Wextra",
-            "-I", str(sdk / "include"),
-        ]
+        common_flags = freestanding_compile_prefix(
+            zig, include_dirs, include_repository_sdk=not prebuilt_runtime)
         for index, source in enumerate(all_sources):
             object_path = temporary_path / f"source-{index}.o"
             language_flags = ["-std=c11"] if source.suffix.lower() == ".c" else []
@@ -173,7 +285,10 @@ def build(sources: list[Path], output: Path, zig: Path,
         run([
             str(zig), "ld.lld", "-m", "elf_i386", "-T", str(linker_script),
             "--gc-sections", "--strip-all", "-o", str(elf_path),
+            *(str(value) for value in runtime_objects),
             *(str(value) for value in objects),
+            *(str(value) for value in libraries),
+            *(str(value) for value in runtime_libraries),
         ], environment)
         elf = elf_path.read_bytes()
         program = elf_to_mypr(elf)
@@ -192,12 +307,33 @@ def main() -> None:
     parser.add_argument("-o", "--output", required=True, type=Path)
     parser.add_argument("--elf-output", type=Path)
     parser.add_argument("--zig", type=Path)
+    parser.add_argument("--sysroot", type=Path)
     parser.add_argument("--incremental", action="store_true")
+    parser.add_argument("-I", dest="include_dirs", action="append",
+                        default=[], type=Path)
+    parser.add_argument("-L", dest="library_dirs", action="append",
+                        default=[], type=Path)
+    parser.add_argument("-l", dest="library_names", action="append",
+                        default=[])
     args = parser.parse_args()
     zig = find_zig(args.zig)
+    include_dirs = [directory.resolve() for directory in args.include_dirs]
+    library_dirs = [directory.resolve() for directory in args.library_dirs]
+    runtime_objects = None
+    runtime_libraries = None
+    if args.sysroot is not None:
+        include_dir, startup, runtime_libraries = resolve_sysroot_runtime(
+            args.sysroot,
+            any(source.name == "reist_probe.c" for source in args.sources),
+        )
+        include_dirs.append(include_dir)
+        library_dirs.append(args.sysroot.resolve() / "usr" / "lib")
+        runtime_objects = [startup]
+    libraries = resolve_static_libraries(args.library_names, library_dirs)
     build([source.resolve() for source in args.sources], args.output.resolve(),
           zig, args.elf_output.resolve() if args.elf_output else None,
-          args.incremental)
+          args.incremental, include_dirs, libraries,
+          runtime_objects, runtime_libraries)
     print(f"User program: {args.output.resolve()}")
 
 

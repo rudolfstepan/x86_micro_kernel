@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.create_floppy_boot_image import (
+    FAT12_SECTORS_PER_FAT,
     FLOPPY_SIZE,
     MANIFEST_LBA,
     create_floppy_image,
@@ -35,9 +36,25 @@ class FloppyBootImageTests(unittest.TestCase):
         self.assertGreater(reserved, 128)
         self.assertEqual(image[reserved * 512:reserved * 512 + 3],
                          b"\xf0\xff\xff")
-        root_sector = reserved + 6
+        sectors_per_fat = struct.unpack_from("<H", image, 22)[0]
+        self.assertEqual(sectors_per_fat, FAT12_SECTORS_PER_FAT)
+        root_sector = reserved + image[16] * sectors_per_fat
         self.assertEqual(image[root_sector * 512:root_sector * 512 + 11],
                          b"README  TXT")
+
+    def test_fat_covers_more_than_the_old_1024_cluster_limit(self):
+        stage1 = bytes(510) + b"\x55\xaa"
+        image = create_floppy_image(
+            stage1,
+            bytes(2048),
+            minimal_kernel(),
+            {"large.bin": bytes(1100 * 512)},
+        )
+        self.assertEqual(len(image), FLOPPY_SIZE)
+        self.assertEqual(
+            struct.unpack_from("<H", image, 22)[0],
+            FAT12_SECTORS_PER_FAT,
+        )
 
     def test_rejects_kernel_that_does_not_fit(self):
         stage1 = bytes(510) + b"\x55\xaa"

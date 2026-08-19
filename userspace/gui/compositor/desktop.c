@@ -9,9 +9,12 @@
  */
 #include "x86os.h"
 #include "desktop_wm.h"
+#include "reist/gui/dialog.h"
+#include "reist/gui/menu.h"
 
 #define APP_COUNT 4U
 #define DESKTOP_ARGUMENT_LIMIT 32U
+#define DESKTOP_MENU_COUNT 3U
 #define DESKTOP_METRICS_VERSION 1U
 #define DESKTOP_RENDER_PROBE_STEPS 8U
 #define DESKTOP_RENDER_PROBE_STEP_X 4
@@ -42,6 +45,118 @@ static const desktop_app_t apps[APP_COUNT] = {
     {"Editor",  "Textdateien bearbeiten", "/bin/edit.prg",     "desktop.txt", 0x00900080U},
     {"System",  "Systeminformationen",    "/sbin/sysinfo.prg", 0,             0x00A06000U},
 };
+
+enum {
+    DESKTOP_MENU_WORKSPACE = 0U,
+    DESKTOP_MENU_WINDOWS,
+    DESKTOP_MENU_HELP
+};
+
+enum {
+    DESKTOP_MENU_ACTION_NONE = 0U,
+    DESKTOP_MENU_ACTION_ABOUT,
+    DESKTOP_MENU_ACTION_EXIT,
+    DESKTOP_MENU_ACTION_WINDOW,
+    DESKTOP_MENU_ACTION_HELP
+};
+
+enum {
+    DESKTOP_DIALOG_NONE = 0U,
+    DESKTOP_DIALOG_HELP,
+    DESKTOP_DIALOG_ABOUT
+};
+
+enum {
+    DESKTOP_UI_ACTION_NONE = 0U,
+    DESKTOP_UI_ACTION_EXIT,
+    DESKTOP_UI_ACTION_OPEN_WINDOW
+};
+
+/* Application policy stays outside libreistgui: the library returns these
+ * opaque IDs while this compositor translates them into typed WM actions. */
+static const reist_gui_menu_item_t workspace_menu_items[] = {
+    {"Ueber REIST Workspace", DESKTOP_MENU_ACTION_ABOUT, 0U, 0U, 0U},
+    {"Desktop beenden", DESKTOP_MENU_ACTION_EXIT, 0U, 0U, 0U},
+};
+
+static const reist_gui_menu_item_t window_menu_items[] = {
+    {"Shell", DESKTOP_MENU_ACTION_WINDOW, 0U, 0U, 0U},
+    {"Dateien", DESKTOP_MENU_ACTION_WINDOW, 1U, 0U, 0U},
+    {"Editor", DESKTOP_MENU_ACTION_WINDOW, 2U, 0U, 0U},
+    {"System", DESKTOP_MENU_ACTION_WINDOW, 3U, 0U, 0U},
+};
+
+static const reist_gui_menu_item_t help_menu_items[] = {
+    {"Desktop-Hilfe", DESKTOP_MENU_ACTION_HELP, 0U, 0U, 0U},
+    {"Ueber REIST Workspace", DESKTOP_MENU_ACTION_ABOUT, 0U, 0U, 0U},
+};
+
+static const reist_gui_menu_t desktop_menus[DESKTOP_MENU_COUNT] = {
+    {"REIST Workspace", workspace_menu_items,
+     sizeof(workspace_menu_items) / sizeof(workspace_menu_items[0]), 0U, 0U},
+    {"Fenster", window_menu_items,
+     sizeof(window_menu_items) / sizeof(window_menu_items[0]), 0U, 0U},
+    {"Hilfe", help_menu_items,
+     sizeof(help_menu_items) / sizeof(help_menu_items[0]), 0U, 0U},
+};
+
+static const reist_gui_menu_model_t desktop_menu_model = {
+    .version = REIST_GUI_MENU_API_VERSION,
+    .struct_size = sizeof(reist_gui_menu_model_t),
+    .menus = desktop_menus,
+    .menu_count = DESKTOP_MENU_COUNT,
+};
+
+static const reist_gui_dialog_button_t help_dialog_buttons[] = {
+    {"Schliessen", REIST_GUI_DIALOG_RESPONSE_CLOSE,
+     REIST_GUI_DIALOG_ROLE_REJECT, 0U, 0U},
+};
+
+static const reist_gui_dialog_button_t about_dialog_buttons[] = {
+    {"OK", REIST_GUI_DIALOG_RESPONSE_OK,
+     REIST_GUI_DIALOG_ROLE_ACCEPT, 0U, 0U},
+};
+
+/* Help is intentionally modeless so its outside events can continue to the
+ * desktop. About is application-modal and makes every underlying target
+ * inert. Both use the same public asynchronous controller. */
+static const reist_gui_dialog_model_t help_dialog_model = {
+    .version = REIST_GUI_DIALOG_API_VERSION,
+    .struct_size = sizeof(reist_gui_dialog_model_t),
+    .title = "Desktop-Hilfe",
+    .message = "Menues: Klick, Pfeile und Enter",
+    .detail = "Fenster: Titelleiste/Rand ziehen; ESC schliesst",
+    .buttons = help_dialog_buttons,
+    .button_count = 1U,
+    .modality = REIST_GUI_DIALOG_MODELESS,
+    .default_response = REIST_GUI_DIALOG_RESPONSE_CLOSE,
+    .cancel_response = REIST_GUI_DIALOG_RESPONSE_CLOSE,
+    .owner_id = REIST_GUI_DIALOG_NO_OWNER,
+    .flags = REIST_GUI_DIALOG_MOVABLE | REIST_GUI_DIALOG_CLOSE_BUTTON,
+};
+
+static const reist_gui_dialog_model_t about_dialog_model = {
+    .version = REIST_GUI_DIALOG_API_VERSION,
+    .struct_size = sizeof(reist_gui_dialog_model_t),
+    .title = "Ueber REIST Workspace",
+    .message = "REIST Workspace",
+    .detail = "Modularer Ring-3 Desktop; GUI-API Version 1",
+    .buttons = about_dialog_buttons,
+    .button_count = 1U,
+    .modality = REIST_GUI_DIALOG_APPLICATION_MODAL,
+    .default_response = REIST_GUI_DIALOG_RESPONSE_OK,
+    .cancel_response = REIST_GUI_DIALOG_RESPONSE_OK,
+    .owner_id = REIST_GUI_DIALOG_NO_OWNER,
+    .flags = REIST_GUI_DIALOG_MOVABLE | REIST_GUI_DIALOG_CLOSE_BUTTON,
+};
+
+_Static_assert(
+    sizeof(window_menu_items) / sizeof(window_menu_items[0]) == APP_COUNT,
+    "window menu and application capacities must match");
+_Static_assert(
+    sizeof(window_menu_items) / sizeof(window_menu_items[0]) <=
+        REIST_GUI_MENU_MAX_ITEMS,
+    "window menu exceeds fixed item capacity");
 
 /* Deliberately small, high-contrast palette inspired by classic desktops. */
 static const uint32_t color_desktop = 0x00006E8EU;
@@ -79,6 +194,18 @@ typedef struct {
     uint32_t clock_errors;
     uint32_t probe_errors;
 } desktop_render_metrics_t;
+
+typedef struct {
+    reist_gui_menu_state_t menu;
+    reist_gui_dialog_state_t dialog;
+    uint32_t dialog_kind;
+} desktop_ui_state_t;
+
+typedef struct {
+    uint32_t consumed;
+    uint32_t action;
+    uint32_t target;
+} desktop_ui_result_t;
 
 static size_t bounded_text_length(const char *text, size_t maximum) {
     size_t length = 0U;
@@ -195,6 +322,337 @@ static uint32_t point_in_rect(desktop_rect_t rect, int32_t x, int32_t y) {
            (int64_t)x < right && (int64_t)y < bottom;
 }
 
+static desktop_rect_t desktop_rect_from_gui(reist_gui_rect_t rect) {
+    return (desktop_rect_t){rect.x, rect.y, rect.width, rect.height};
+}
+
+static reist_gui_menu_layout_t desktop_menu_layout(
+    const x86os_display_info_t *display) {
+    return (reist_gui_menu_layout_t){
+        .version = REIST_GUI_MENU_API_VERSION,
+        .struct_size = sizeof(reist_gui_menu_layout_t),
+        .surface_width = display->width,
+        .surface_height = display->height,
+        .bar = {0, 0, display->width, menu_height(display)},
+        .font_width = display->font_width,
+        .font_height = display->font_height,
+        .title_padding_x = 8U,
+        .item_padding_x = 8U,
+        .item_padding_y = 4U,
+        .damage_margin = 6U,
+    };
+}
+
+static void desktop_ui_initialize(desktop_ui_state_t *ui) {
+    if (ui == 0) return;
+    reist_gui_menu_state_initialize(&ui->menu);
+    reist_gui_dialog_state_initialize(&ui->dialog);
+    ui->dialog_kind = DESKTOP_DIALOG_NONE;
+}
+
+static const reist_gui_dialog_model_t *desktop_dialog_model(
+    uint32_t kind) {
+    if (kind == DESKTOP_DIALOG_HELP) return &help_dialog_model;
+    if (kind == DESKTOP_DIALOG_ABOUT) return &about_dialog_model;
+    return 0;
+}
+
+static reist_gui_dialog_layout_t desktop_dialog_layout(
+    const x86os_display_info_t *display) {
+    uint32_t top = menu_height(display) + 12U;
+    uint32_t bottom = display->height > status_height(display) + 12U
+        ? display->height - status_height(display) - 12U : top + 1U;
+    uint32_t available_height = bottom > top ? bottom - top : 1U;
+    uint32_t width = display->width > 32U ? display->width - 32U : 1U;
+    if (width > 560U) width = 560U;
+    uint32_t line = max_u32(display->font_height + 6U, 18U);
+    uint32_t height = menu_height(display) + line * 6U +
+                      display->font_height + 38U;
+    if (height > available_height) height = available_height;
+    uint32_t button_height = max_u32(display->font_height + 10U, 24U);
+    return (reist_gui_dialog_layout_t){
+        .version = REIST_GUI_DIALOG_API_VERSION,
+        .struct_size = sizeof(reist_gui_dialog_layout_t),
+        .surface_width = display->width,
+        .surface_height = display->height,
+        .work_area = {0, (int32_t)top, display->width, available_height},
+        .initial_bounds = {
+            (int32_t)((display->width - width) / 2U),
+            (int32_t)(top + (available_height - height) / 2U),
+            width, height,
+        },
+        .title_height = menu_height(display),
+        .border_width = 3U,
+        .font_width = display->font_width,
+        .font_height = display->font_height,
+        .button_min_width = 80U,
+        .button_height = button_height,
+        .button_gap = 8U,
+        .button_padding_x = 8U,
+        .content_padding = 10U,
+        .damage_margin = 6U,
+    };
+}
+
+static void collect_menu_damage(
+    desktop_dirty_region_t *dirty,
+    const reist_gui_menu_result_t *menu_result) {
+    if (dirty == 0 || menu_result == 0) return;
+    if (menu_result->full_redraw || menu_result->damage_count != 0U) {
+        /* The current text syscall clips only at the screen edge. Repainting
+         * a narrow scene region can therefore clear half of a glyph while
+         * draw_text_clipped() correctly refuses to draw that partial glyph.
+         * Publish one atomic full scene for visible menu state changes until
+         * the raster ABI provides an explicit glyph clip rectangle. Motion
+         * inside an unchanged item reports no damage and remains redraw-free. */
+        desktop_dirty_full(dirty);
+    }
+}
+
+static void collect_dialog_damage(
+    desktop_dirty_region_t *dirty,
+    const reist_gui_dialog_result_t *dialog_result) {
+    if (dirty == 0 || dialog_result == 0) return;
+    if (dialog_result->full_redraw) {
+        desktop_dirty_full(dirty);
+        return;
+    }
+    for (uint32_t index = 0U;
+         index < dialog_result->damage_count; ++index) {
+        desktop_dirty_add(
+            dirty, desktop_rect_from_gui(dialog_result->damage[index]));
+    }
+}
+
+static desktop_ui_result_t desktop_ui_result_none(void) {
+    return (desktop_ui_result_t){
+        .consumed = 0U,
+        .action = DESKTOP_UI_ACTION_NONE,
+        .target = DESKTOP_WM_NO_TARGET,
+    };
+}
+
+static void desktop_ui_open_dialog(
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, uint32_t kind) {
+    const reist_gui_dialog_model_t *model = desktop_dialog_model(kind);
+    reist_gui_dialog_layout_t layout = desktop_dialog_layout(display);
+    if (model == 0) return;
+
+    if (ui->dialog.visible) {
+        const reist_gui_dialog_model_t *previous =
+            desktop_dialog_model(ui->dialog_kind);
+        reist_gui_dialog_result_t closed;
+        reist_gui_dialog_result_initialize(&closed);
+        if (previous == 0 || reist_gui_dialog_complete(
+                previous, &layout, &ui->dialog,
+                previous->cancel_response, &closed) != 0) {
+            reist_gui_dialog_state_initialize(&ui->dialog);
+            ui->dialog_kind = DESKTOP_DIALOG_NONE;
+            desktop_dirty_full(dirty);
+        } else {
+            collect_dialog_damage(dirty, &closed);
+        }
+    }
+
+    reist_gui_dialog_result_t opened;
+    reist_gui_dialog_result_initialize(&opened);
+    ui->dialog_kind = kind;
+    if (reist_gui_dialog_open(
+            model, &layout, &ui->dialog, &opened) != 0) {
+        reist_gui_dialog_state_initialize(&ui->dialog);
+        ui->dialog_kind = DESKTOP_DIALOG_NONE;
+        desktop_dirty_full(dirty);
+        return;
+    }
+    collect_dialog_damage(dirty, &opened);
+}
+
+static desktop_ui_result_t desktop_ui_apply_dialog_result(
+    desktop_ui_state_t *ui, desktop_dirty_region_t *dirty,
+    const reist_gui_dialog_result_t *dialog_result) {
+    desktop_ui_result_t result = desktop_ui_result_none();
+    result.consumed = dialog_result->consumed;
+    collect_dialog_damage(dirty, dialog_result);
+    if (dialog_result->completed)
+        ui->dialog_kind = DESKTOP_DIALOG_NONE;
+    return result;
+}
+
+static desktop_ui_result_t desktop_ui_apply_menu_result(
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty,
+    const reist_gui_menu_result_t *menu_result) {
+    desktop_ui_result_t result = desktop_ui_result_none();
+    result.consumed = menu_result->consumed;
+    collect_menu_damage(dirty, menu_result);
+    if (!menu_result->activated) return result;
+    if (menu_result->action == DESKTOP_MENU_ACTION_HELP ||
+        menu_result->action == DESKTOP_MENU_ACTION_ABOUT) {
+        desktop_ui_open_dialog(
+            ui, display, dirty,
+            menu_result->action == DESKTOP_MENU_ACTION_HELP
+                ? DESKTOP_DIALOG_HELP : DESKTOP_DIALOG_ABOUT);
+    } else if (menu_result->action == DESKTOP_MENU_ACTION_EXIT) {
+        result.action = DESKTOP_UI_ACTION_EXIT;
+    } else if (menu_result->action == DESKTOP_MENU_ACTION_WINDOW &&
+               menu_result->target < APP_COUNT) {
+        result.action = DESKTOP_UI_ACTION_OPEN_WINDOW;
+        result.target = menu_result->target;
+    }
+    return result;
+}
+
+static desktop_ui_result_t desktop_ui_dispatch_menu(
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty,
+    const reist_gui_menu_event_t *event) {
+    desktop_ui_result_t result = desktop_ui_result_none();
+    reist_gui_menu_layout_t layout = desktop_menu_layout(display);
+    reist_gui_menu_result_t menu_result;
+    reist_gui_menu_result_initialize(&menu_result);
+    /* A corrupt API state is reset closed and never forwarded to the WM. */
+    if (reist_gui_menu_dispatch(
+            &desktop_menu_model, &layout, &ui->menu,
+            event, &menu_result) != 0) {
+        result.consumed = 1U;
+        desktop_dirty_full(dirty);
+        desktop_ui_initialize(ui);
+        return result;
+    }
+    return desktop_ui_apply_menu_result(
+        ui, display, dirty, &menu_result);
+}
+
+static desktop_ui_result_t desktop_ui_dispatch_dialog_pointer(
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, int32_t x, int32_t y,
+    uint32_t button_event, uint32_t pressed) {
+    desktop_ui_result_t result = desktop_ui_result_none();
+    const reist_gui_dialog_model_t *model =
+        desktop_dialog_model(ui->dialog_kind);
+    reist_gui_dialog_layout_t layout = desktop_dialog_layout(display);
+    reist_gui_dialog_event_t event;
+    reist_gui_dialog_event_initialize(&event);
+    event.type = button_event
+        ? REIST_GUI_DIALOG_EVENT_POINTER_BUTTON
+        : REIST_GUI_DIALOG_EVENT_POINTER_MOTION;
+    event.x = x;
+    event.y = y;
+    event.button = button_event ? REIST_GUI_DIALOG_BUTTON_LEFT : 0U;
+    event.pressed = pressed;
+    reist_gui_dialog_result_t dialog_result;
+    reist_gui_dialog_result_initialize(&dialog_result);
+    if (model == 0 || reist_gui_dialog_dispatch(
+            model, &layout, &ui->dialog, &event, &dialog_result) != 0) {
+        result.consumed = 1U;
+        reist_gui_dialog_state_initialize(&ui->dialog);
+        ui->dialog_kind = DESKTOP_DIALOG_NONE;
+        desktop_dirty_full(dirty);
+        return result;
+    }
+    return desktop_ui_apply_dialog_result(ui, dirty, &dialog_result);
+}
+
+static desktop_ui_result_t desktop_ui_pointer_event(
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, int32_t x, int32_t y,
+    uint32_t button_event, uint32_t pressed) {
+    if (ui->dialog.visible) {
+        desktop_ui_result_t dialog_result =
+            desktop_ui_dispatch_dialog_pointer(
+            ui, display, dirty, x, y, button_event, pressed);
+        if (dialog_result.consumed) return dialog_result;
+    }
+    reist_gui_menu_event_t event;
+    reist_gui_menu_event_initialize(&event);
+    event.type = button_event
+        ? REIST_GUI_MENU_EVENT_POINTER_BUTTON
+        : REIST_GUI_MENU_EVENT_POINTER_MOTION;
+    event.x = x;
+    event.y = y;
+    event.button = button_event ? REIST_GUI_MENU_BUTTON_LEFT : 0U;
+    event.pressed = pressed;
+    return desktop_ui_dispatch_menu(ui, display, dirty, &event);
+}
+
+static uint32_t desktop_ui_owns_pointer(const desktop_ui_state_t *ui) {
+    return (ui->dialog.visible &&
+            (ui->dialog.capture_kind != REIST_GUI_DIALOG_CAPTURE_NONE ||
+             ui->dialog.modality != REIST_GUI_DIALOG_MODELESS)) ||
+           ui->menu.open_menu != REIST_GUI_MENU_NO_INDEX ||
+           ui->menu.capture_kind != REIST_GUI_MENU_CAPTURE_NONE;
+}
+
+static uint32_t desktop_menu_key_from_input(int key) {
+    if (key == DESKTOP_KEY_LEFT) return REIST_GUI_MENU_KEY_LEFT;
+    if (key == DESKTOP_KEY_RIGHT || key == '\t')
+        return REIST_GUI_MENU_KEY_RIGHT;
+    if (key == DESKTOP_KEY_UP) return REIST_GUI_MENU_KEY_UP;
+    if (key == DESKTOP_KEY_DOWN) return REIST_GUI_MENU_KEY_DOWN;
+    if (key == '\r' || key == '\n') return REIST_GUI_MENU_KEY_ENTER;
+    if (key == DESKTOP_KEY_ESCAPE) return REIST_GUI_MENU_KEY_ESCAPE;
+    return 0U;
+}
+
+static uint32_t desktop_dialog_key_from_input(int key) {
+    if (key == DESKTOP_KEY_LEFT || key == DESKTOP_KEY_UP)
+        return REIST_GUI_DIALOG_KEY_PREVIOUS;
+    if (key == DESKTOP_KEY_RIGHT || key == DESKTOP_KEY_DOWN || key == '\t')
+        return REIST_GUI_DIALOG_KEY_NEXT;
+    if (key == '\r' || key == '\n') return REIST_GUI_DIALOG_KEY_ENTER;
+    if (key == DESKTOP_KEY_ESCAPE) return REIST_GUI_DIALOG_KEY_ESCAPE;
+    return 0U;
+}
+
+static desktop_ui_result_t desktop_ui_keyboard_event(
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, int key) {
+    desktop_ui_result_t result = desktop_ui_result_none();
+    if (ui->dialog.visible) {
+        uint32_t dialog_key = desktop_dialog_key_from_input(key);
+        if (dialog_key != 0U) {
+            const reist_gui_dialog_model_t *model =
+                desktop_dialog_model(ui->dialog_kind);
+            reist_gui_dialog_layout_t layout =
+                desktop_dialog_layout(display);
+            reist_gui_dialog_event_t event;
+            reist_gui_dialog_event_initialize(&event);
+            event.type = REIST_GUI_DIALOG_EVENT_KEYBOARD;
+            event.key = dialog_key;
+            reist_gui_dialog_result_t dialog_result;
+            reist_gui_dialog_result_initialize(&dialog_result);
+            if (model == 0 || reist_gui_dialog_dispatch(
+                    model, &layout, &ui->dialog,
+                    &event, &dialog_result) != 0) {
+                result.consumed = 1U;
+                reist_gui_dialog_state_initialize(&ui->dialog);
+                ui->dialog_kind = DESKTOP_DIALOG_NONE;
+                desktop_dirty_full(dirty);
+                return result;
+            }
+            result = desktop_ui_apply_dialog_result(
+                ui, dirty, &dialog_result);
+        } else {
+            result.consumed =
+                ui->dialog.modality != REIST_GUI_DIALOG_MODELESS ||
+                ui->dialog.active;
+        }
+        if (result.consumed) return result;
+    }
+    if (ui->menu.open_menu == REIST_GUI_MENU_NO_INDEX) return result;
+    uint32_t menu_key = desktop_menu_key_from_input(key);
+    if (menu_key == 0U) {
+        result.consumed = 1U;
+        return result;
+    }
+    reist_gui_menu_event_t event;
+    reist_gui_menu_event_initialize(&event);
+    event.type = REIST_GUI_MENU_EVENT_KEYBOARD;
+    event.key = menu_key;
+    return desktop_ui_dispatch_menu(ui, display, dirty, &event);
+}
+
 static desktop_rect_t desktop_icon_rect(const x86os_display_info_t *display,
                                         uint32_t index) {
     desktop_rect_t rect = {0, 0, 0U, 0U};
@@ -260,7 +718,16 @@ static void render_icon(const desktop_render_context_t *context,
         icon_size,
         icon_size
     };
-    if (selected) draw_bevel(context, rect, color_face, 0U);
+    desktop_rect_t focus = {
+        symbol.x - 2,
+        symbol.y - 2,
+        symbol.width + 4U,
+        symbol.height + 4U
+    };
+    /* The large cell remains the predictable mouse/keyboard target. Visual
+     * focus is deliberately compact; otherwise sparse desktop rows look like
+     * selected panels instead of selected icons. */
+    if (selected) draw_bevel(context, focus, color_face, 0U);
     draw_bevel(context, symbol, apps[index].accent, 1U);
     if (symbol.width > 8U && symbol.height > 8U) {
         fill_rect_clipped(
@@ -269,8 +736,14 @@ static void render_icon(const desktop_render_context_t *context,
                              symbol.width - 8U, symbol.height - 8U},
             color_client);
     }
-    uint32_t text_y_offset = rect.height > display->font_height + 3U
-        ? rect.height - display->font_height - 3U : 0U;
+    /* Anchor the caption to the visible symbol, not to the bottom of the
+     * deliberately tall hit cell.  This keeps icon and title recognizable as
+     * one desktop object while preserving the generous input target. */
+    uint32_t text_y_offset = 3U + symbol.height + 3U;
+    if (text_y_offset + display->font_height > rect.height) {
+        text_y_offset = rect.height > display->font_height
+            ? rect.height - display->font_height : 0U;
+    }
     draw_text_clipped(context, rect.x + 4,
                       rect.y + (int32_t)text_y_offset, apps[index].title,
                       rect.width - 8U, color_title_text,
@@ -378,12 +851,218 @@ static void render_window(const desktop_render_context_t *context,
     render_resize_grip(context, window);
 }
 
-static void render_desktop_clip(const desktop_render_context_t *context,
-                                const desktop_wm_t *manager) {
+static void render_menu_bar(const desktop_render_context_t *context,
+                            const desktop_ui_state_t *ui) {
     const x86os_display_info_t *display = context->display;
-    uint32_t menu = menu_height(display);
+    reist_gui_menu_layout_t layout = desktop_menu_layout(display);
+    desktop_rect_t bar = desktop_rect_from_gui(layout.bar);
+    draw_bevel(context, bar, color_face, 1U);
+    for (uint32_t index = 0U; index < desktop_menu_model.menu_count;
+         ++index) {
+        reist_gui_rect_t gui_title;
+        if (reist_gui_menu_title_rect(
+                &desktop_menu_model, &layout, index, &gui_title) != 0)
+            continue;
+        desktop_rect_t title = desktop_rect_from_gui(gui_title);
+        uint32_t active = ui != 0 && ui->menu.open_menu == index;
+        uint32_t background = active ? color_active : color_face;
+        uint32_t foreground = active ? color_title_text : color_text;
+        if (active) fill_rect_clipped(context, title, background);
+        uint32_t text_y = title.height > display->font_height
+            ? (title.height - display->font_height) / 2U : 0U;
+        draw_text_clipped(
+            context,
+            title.x + (int32_t)layout.title_padding_x,
+            title.y + (int32_t)text_y,
+            desktop_menu_model.menus[index].label,
+            title.width > layout.title_padding_x * 2U
+                ? title.width - layout.title_padding_x * 2U : 1U,
+            foreground, background);
+    }
+}
+
+static void render_menu_popup(const desktop_render_context_t *context,
+                              const desktop_wm_t *manager,
+                              const desktop_ui_state_t *ui) {
+    if (ui == 0 || ui->menu.open_menu == REIST_GUI_MENU_NO_INDEX ||
+        ui->menu.open_menu >= desktop_menu_model.menu_count) return;
+    const x86os_display_info_t *display = context->display;
+    reist_gui_menu_layout_t layout = desktop_menu_layout(display);
+    uint32_t menu_index = ui->menu.open_menu;
+    reist_gui_rect_t gui_popup;
+    if (reist_gui_menu_popup_rect(
+            &desktop_menu_model, &layout, menu_index, &gui_popup) != 0)
+        return;
+    desktop_rect_t popup = desktop_rect_from_gui(gui_popup);
+    /* Popup and shadow are composed after all ordinary windows. */
+    fill_rect_clipped(
+        context,
+        (desktop_rect_t){popup.x + 4, popup.y + 4,
+                         popup.width, popup.height},
+        color_dark);
+    draw_bevel(context, popup, color_face, 1U);
+
+    const reist_gui_menu_t *menu_model =
+        &desktop_menu_model.menus[menu_index];
+    for (uint32_t item_index = 0U;
+         item_index < menu_model->item_count; ++item_index) {
+        reist_gui_rect_t gui_item;
+        if (reist_gui_menu_item_rect(
+                &desktop_menu_model, &layout, menu_index,
+                item_index, &gui_item) != 0)
+            continue;
+        desktop_rect_t item = desktop_rect_from_gui(gui_item);
+        const reist_gui_menu_item_t *model_item =
+            &menu_model->items[item_index];
+        uint32_t disabled =
+            (model_item->flags & REIST_GUI_MENU_ITEM_DISABLED) != 0U;
+        uint32_t hot = !disabled && ui->menu.hot_item == item_index;
+        uint32_t pressed = hot &&
+            ui->menu.capture_kind == REIST_GUI_MENU_CAPTURE_ITEM &&
+            ui->menu.capture_menu == menu_index &&
+            ui->menu.capture_item == item_index;
+        uint32_t background = hot ? color_active : color_face;
+        uint32_t foreground = disabled
+            ? color_shadow : (hot ? color_title_text : color_text);
+        if (hot) {
+            fill_rect_clipped(context, item, background);
+            if (pressed) draw_bevel(context, item, background, 0U);
+        }
+        uint32_t text_y = item.height > display->font_height
+            ? (item.height - display->font_height) / 2U : 0U;
+        int32_t marker_x = item.x + (int32_t)layout.item_padding_x;
+        int32_t label_x = marker_x + (int32_t)(display->font_width * 2U);
+        if (menu_index == DESKTOP_MENU_WINDOWS &&
+            model_item->target < DESKTOP_WM_CAPACITY &&
+            manager->windows[model_item->target].visible != 0U) {
+            const char *marker = manager->keyboard_focus ==
+                    (int32_t)model_item->target ? "*" : "+";
+            draw_text_clipped(
+                context, marker_x, item.y + (int32_t)text_y, marker,
+                display->font_width, foreground, background);
+        }
+        uint32_t used = layout.item_padding_x * 2U +
+                        display->font_width * 2U;
+        draw_text_clipped(
+            context, label_x, item.y + (int32_t)text_y,
+            model_item->label,
+            item.width > used ? item.width - used : 1U,
+            foreground, background);
+    }
+}
+
+static void render_system_dialog(const desktop_render_context_t *context,
+                                 const desktop_ui_state_t *ui) {
+    if (ui == 0 || !ui->dialog.visible) return;
+    const x86os_display_info_t *display = context->display;
+    const reist_gui_dialog_model_t *model =
+        desktop_dialog_model(ui->dialog_kind);
+    reist_gui_dialog_layout_t layout = desktop_dialog_layout(display);
+    reist_gui_rect_t gui_dialog;
+    reist_gui_rect_t gui_title;
+    reist_gui_rect_t gui_close;
+    if (model == 0 || reist_gui_dialog_frame_rect(
+            model, &layout, &ui->dialog, &gui_dialog) != 0 ||
+        reist_gui_dialog_title_rect(
+            model, &layout, &ui->dialog, &gui_title) != 0 ||
+        reist_gui_dialog_close_rect(
+            model, &layout, &ui->dialog, &gui_close) != 0)
+        return;
+    desktop_rect_t dialog = desktop_rect_from_gui(gui_dialog);
+    desktop_rect_t title = desktop_rect_from_gui(gui_title);
+    desktop_rect_t close = desktop_rect_from_gui(gui_close);
+    /* Dialogs remain the final scene layer below the hardware pointer. */
+    fill_rect_clipped(
+        context,
+        (desktop_rect_t){dialog.x + 4, dialog.y + 4,
+                         dialog.width, dialog.height},
+        color_dark);
+    draw_bevel(context, dialog, color_face, 1U);
+    uint32_t title_color = ui->dialog.active
+        ? color_active : color_inactive;
+    fill_rect_clipped(context, title, title_color);
+    draw_bevel(
+        context, close, color_face,
+        ui->dialog.capture_kind != REIST_GUI_DIALOG_CAPTURE_CLOSE);
+    if (close.width > 8U && close.height > 8U) {
+        fill_rect_clipped(
+            context,
+            (desktop_rect_t){close.x + 4, close.y + 4,
+                             close.width - 8U, close.height - 8U},
+            color_dark);
+    }
+    uint32_t title_offset = close.width + 8U;
+    uint32_t title_y = title.height > display->font_height
+        ? (title.height - display->font_height) / 2U : 0U;
+    draw_text_clipped(
+        context, title.x + (int32_t)title_offset,
+        title.y + (int32_t)title_y, model->title,
+        title.width > title_offset + 4U
+            ? title.width - title_offset - 4U : 1U,
+        color_title_text, title_color);
+
+    uint32_t padding = 14U;
+    uint32_t line = max_u32(display->font_height + 6U, 18U);
+    int32_t text_x = dialog.x + (int32_t)padding;
+    int32_t text_y = title.y + (int32_t)title.height + 12;
+    uint32_t text_width = dialog.width > padding * 2U
+        ? dialog.width - padding * 2U : 1U;
+    reist_gui_rect_t first_button;
+    if (reist_gui_dialog_button_rect(
+            model, &layout, &ui->dialog, 0U, &first_button) == 0) {
+        draw_text_clipped(
+            context, text_x, text_y, model->message, text_width,
+            color_text, color_face);
+        if (model->detail != 0 &&
+            (int64_t)text_y + line + display->font_height <=
+                first_button.y - 6)
+            draw_text_clipped(
+                context, text_x, text_y + (int32_t)line,
+                model->detail, text_width, color_shadow, color_face);
+    }
+
+    for (uint32_t index = 0U; index < model->button_count; ++index) {
+        reist_gui_rect_t gui_button;
+        if (reist_gui_dialog_button_rect(
+                model, &layout, &ui->dialog, index, &gui_button) != 0)
+            continue;
+        desktop_rect_t button = desktop_rect_from_gui(gui_button);
+        uint32_t pressed =
+            ui->dialog.capture_kind == REIST_GUI_DIALOG_CAPTURE_BUTTON &&
+            ui->dialog.capture_button == index &&
+            ui->dialog.hot_button == index;
+        if (ui->dialog.focused_button == index) {
+            desktop_rect_t focus = {
+                button.x - 2, button.y - 2,
+                button.width + 4U, button.height + 4U,
+            };
+            draw_bevel(context, focus, color_dark, 0U);
+        }
+        draw_bevel(context, button, color_face, !pressed);
+        size_t label_length = bounded_text_length(
+            model->buttons[index].label, REIST_GUI_DIALOG_LABEL_LIMIT);
+        uint64_t measured = (uint64_t)label_length * display->font_width;
+        uint32_t label_width = measured > UINT32_MAX
+            ? UINT32_MAX : (uint32_t)measured;
+        int32_t label_x = button.x + (int32_t)((button.width > label_width
+            ? button.width - label_width : 0U) / 2U);
+        int32_t label_y = button.y + (int32_t)((
+            button.height > display->font_height
+                ? button.height - display->font_height : 0U) / 2U);
+        uint32_t disabled =
+            (model->buttons[index].flags &
+             REIST_GUI_DIALOG_BUTTON_DISABLED) != 0U;
+        draw_text_clipped(
+            context, label_x, label_y, model->buttons[index].label,
+            button.width, disabled ? color_shadow : color_text, color_face);
+    }
+}
+
+static void render_desktop_clip(const desktop_render_context_t *context,
+                                const desktop_wm_t *manager,
+    const desktop_ui_state_t *ui) {
+    const x86os_display_info_t *display = context->display;
     uint32_t status = status_height(display);
-    desktop_rect_t menu_rect = {0, 0, display->width, menu};
     desktop_rect_t status_rect = {
         0, (int32_t)(display->height - status), display->width, status
     };
@@ -391,12 +1070,7 @@ static void render_desktop_clip(const desktop_render_context_t *context,
     fill_rect_clipped(
         context, (desktop_rect_t){0, 0, display->width, display->height},
         color_desktop);
-    draw_bevel(context, menu_rect, color_face, 1U);
-    draw_text_clipped(context, 10,
-                      (int32_t)((menu - display->font_height) / 2U),
-                      "REIST Workspace   Fenster   Hilfe",
-                      display->width > 20U ? display->width - 20U : 1U,
-                      color_text, color_face);
+    render_menu_bar(context, ui);
 
     for (uint32_t index = 0U; index < APP_COUNT; ++index)
         render_icon(context, manager, index);
@@ -412,9 +1086,11 @@ static void render_desktop_clip(const desktop_render_context_t *context,
         context, 10,
         status_rect.y +
             (int32_t)((status - display->font_height) / 2U),
-        "Maus: Fokus / Verschieben / Groesse / Schliessen   ENTER: Start   ESC: Shell",
+        "Menue: Klick/Pfeile/ENTER   Fenster: Ziehen/Groesse   ESC: Zurueck/Shell",
         display->width > 20U ? display->width - 20U : 1U,
         color_text, color_face);
+    render_menu_popup(context, manager, ui);
+    render_system_dialog(context, ui);
 }
 
 static desktop_rect_t expanded_render_clip(
@@ -437,6 +1113,7 @@ static desktop_rect_t expanded_render_clip(
 
 static void render_dirty_regions(const x86os_display_info_t *display,
                                  const desktop_wm_t *manager,
+                                 const desktop_ui_state_t *ui,
                                  const desktop_dirty_region_t *dirty) {
     if (display == 0 || manager == 0 || dirty == 0) return;
     for (uint32_t index = 0U; index < dirty->count; ++index) {
@@ -445,31 +1122,33 @@ static void render_dirty_regions(const x86os_display_info_t *display,
             .clip = expanded_render_clip(display, dirty->rects[index]),
         };
         if (context.clip.width != 0U && context.clip.height != 0U)
-            render_desktop_clip(&context, manager);
+            render_desktop_clip(&context, manager, ui);
     }
 }
 
 static void render_desktop(const x86os_display_info_t *display,
                            const desktop_wm_t *manager,
+                           const desktop_ui_state_t *ui,
                            const desktop_dirty_region_t *dirty) {
-    render_dirty_regions(display, manager, dirty);
+    render_dirty_regions(display, manager, ui, dirty);
 }
 
 static uint32_t render_desktop_frame(const x86os_display_info_t *display,
                                      const desktop_wm_t *manager,
+                                     const desktop_ui_state_t *ui,
                                      const desktop_dirty_region_t *dirty) {
     if (dirty == 0 || dirty->count == 0U) return 0U;
     uint32_t serial = 0U;
     int begin = x86os_display_frame_begin(&serial);
     if (begin != 0) {
         /* Oversized/direct framebuffers retain the compatible immediate path. */
-        render_desktop(display, manager, dirty);
+        render_desktop(display, manager, ui, dirty);
         return 1U;
     }
-    render_desktop(display, manager, dirty);
+    render_desktop(display, manager, ui, dirty);
     if (x86os_display_frame_commit(serial) != 0) {
         (void)x86os_display_frame_cancel(serial);
-        render_desktop(display, manager, dirty);
+        render_desktop(display, manager, ui, dirty);
         return 1U;
     }
     return 0U;
@@ -519,13 +1198,14 @@ static void record_render_metrics(desktop_render_metrics_t *metrics,
 
 static void render_desktop_measured(
     const x86os_display_info_t *display, const desktop_wm_t *manager,
+    const desktop_ui_state_t *ui,
     const desktop_dirty_region_t *dirty, uint32_t drag, uint32_t resize,
     desktop_render_metrics_t *metrics) {
     if (dirty == 0 || dirty->count == 0U) return;
     uint64_t started_ms = 0U;
     uint64_t finished_ms = 0U;
     uint32_t clock_valid = x86os_monotonic_ms(&started_ms) == 0;
-    uint32_t fallback = render_desktop_frame(display, manager, dirty);
+    uint32_t fallback = render_desktop_frame(display, manager, ui, dirty);
     if (!clock_valid || x86os_monotonic_ms(&finished_ms) != 0 ||
         finished_ms < started_ms) {
         clock_valid = 0U;
@@ -753,12 +1433,144 @@ static uint32_t dispatch_desktop_event(
     return result.flags;
 }
 
+static uint32_t apply_desktop_ui_result(
+    desktop_wm_t *manager, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, const desktop_ui_result_t *ui_result,
+    uint32_t *target) {
+    if (ui_result == 0) return 0U;
+    if (ui_result->action == DESKTOP_UI_ACTION_EXIT)
+        return DESKTOP_WM_RESULT_EXIT;
+    if (ui_result->action != DESKTOP_UI_ACTION_OPEN_WINDOW ||
+        ui_result->target >= DESKTOP_WM_CAPACITY) return 0U;
+
+    /* Menus have no privileged back door into mutable WM state. */
+    desktop_wm_event_t select = {
+        .type = DESKTOP_WM_EVENT_SELECT,
+        .target = ui_result->target,
+    };
+    uint32_t actions = dispatch_desktop_event(
+        manager, display, dirty, &select, target);
+    desktop_wm_event_t open = {
+        .type = DESKTOP_WM_EVENT_OPEN,
+        .target = ui_result->target,
+    };
+    actions |= dispatch_desktop_event(
+        manager, display, dirty, &open, target);
+    return actions;
+}
+
 static void render_probe_error(desktop_render_metrics_t *metrics) {
     if (metrics != 0) saturating_increment(&metrics->probe_errors);
 }
 
+static void run_menu_probe(const x86os_display_info_t *display,
+                           desktop_ui_state_t *ui,
+                           desktop_render_metrics_t *metrics) {
+    if (display == 0 || ui == 0 || metrics == 0) {
+        render_probe_error(metrics);
+        return;
+    }
+    reist_gui_menu_layout_t layout = desktop_menu_layout(display);
+    reist_gui_rect_t help_title;
+    reist_gui_rect_t help_item;
+    if (reist_gui_menu_validate(
+            &desktop_menu_model, &layout, &ui->menu) != 0 ||
+        reist_gui_menu_title_rect(
+            &desktop_menu_model, &layout, DESKTOP_MENU_HELP,
+            &help_title) != 0 ||
+        reist_gui_menu_item_rect(
+            &desktop_menu_model, &layout, DESKTOP_MENU_HELP, 0U,
+            &help_item) != 0) {
+        render_probe_error(metrics);
+        desktop_ui_initialize(ui);
+        return;
+    }
+
+    desktop_dirty_region_t dirty;
+    desktop_dirty_initialize(&dirty, display->width, display->height);
+    desktop_ui_result_t result = desktop_ui_pointer_event(
+        ui, display, &dirty, help_title.x + 2, help_title.y + 2,
+        1U, 1U);
+    if (!result.consumed || ui->menu.open_menu != DESKTOP_MENU_HELP)
+        render_probe_error(metrics);
+    desktop_dirty_initialize(&dirty, display->width, display->height);
+    result = desktop_ui_pointer_event(
+        ui, display, &dirty, help_title.x + 2, help_title.y + 2,
+        1U, 0U);
+    if (!result.consumed ||
+        ui->menu.capture_kind != REIST_GUI_MENU_CAPTURE_NONE)
+        render_probe_error(metrics);
+
+    desktop_dirty_initialize(&dirty, display->width, display->height);
+    result = desktop_ui_pointer_event(
+        ui, display, &dirty, help_item.x + 2, help_item.y + 2,
+        1U, 1U);
+    if (!result.consumed ||
+        ui->menu.capture_kind != REIST_GUI_MENU_CAPTURE_ITEM)
+        render_probe_error(metrics);
+    desktop_dirty_initialize(&dirty, display->width, display->height);
+    result = desktop_ui_pointer_event(
+        ui, display, &dirty, help_item.x + 2, help_item.y + 2,
+        1U, 0U);
+    if (!result.consumed || ui->dialog_kind != DESKTOP_DIALOG_HELP ||
+        !ui->dialog.visible ||
+        ui->menu.open_menu != REIST_GUI_MENU_NO_INDEX)
+        render_probe_error(metrics);
+
+    reist_gui_dialog_layout_t dialog_layout =
+        desktop_dialog_layout(display);
+    reist_gui_rect_t dialog_frame;
+    reist_gui_rect_t dialog_title;
+    reist_gui_rect_t dialog_close;
+    if (reist_gui_dialog_frame_rect(
+            &help_dialog_model, &dialog_layout, &ui->dialog,
+            &dialog_frame) != 0 ||
+        reist_gui_dialog_title_rect(
+            &help_dialog_model, &dialog_layout, &ui->dialog,
+            &dialog_title) != 0 ||
+        reist_gui_dialog_close_rect(
+            &help_dialog_model, &dialog_layout, &ui->dialog,
+            &dialog_close) != 0) {
+        render_probe_error(metrics);
+    } else {
+        int32_t drag_x = dialog_close.x +
+            (int32_t)dialog_close.width + 8;
+        int32_t drag_y = dialog_title.y + 3;
+        desktop_dirty_initialize(&dirty, display->width, display->height);
+        result = desktop_ui_pointer_event(
+            ui, display, &dirty, drag_x, drag_y, 1U, 1U);
+        if (!result.consumed ||
+            ui->dialog.capture_kind != REIST_GUI_DIALOG_CAPTURE_MOVE)
+            render_probe_error(metrics);
+        desktop_dirty_initialize(&dirty, display->width, display->height);
+        result = desktop_ui_pointer_event(
+            ui, display, &dirty, drag_x + 12, drag_y + 8, 0U, 0U);
+        if (!result.consumed || ui->dialog.bounds.x == dialog_frame.x ||
+            ui->dialog.bounds.y == dialog_frame.y)
+            render_probe_error(metrics);
+        desktop_dirty_initialize(&dirty, display->width, display->height);
+        result = desktop_ui_pointer_event(
+            ui, display, &dirty, drag_x + 12, drag_y + 8, 1U, 0U);
+        if (!result.consumed ||
+            ui->dialog.capture_kind != REIST_GUI_DIALOG_CAPTURE_NONE)
+            render_probe_error(metrics);
+    }
+
+    desktop_dirty_initialize(&dirty, display->width, display->height);
+    result = desktop_ui_keyboard_event(
+        ui, display, &dirty, DESKTOP_KEY_ESCAPE);
+    uint32_t response = REIST_GUI_DIALOG_RESPONSE_NONE;
+    if (!result.consumed || ui->dialog_kind != DESKTOP_DIALOG_NONE ||
+        ui->dialog.visible ||
+        reist_gui_dialog_response(&ui->dialog, &response) != 0 ||
+        response != REIST_GUI_DIALOG_RESPONSE_CLOSE ||
+        desktop_ui_owns_pointer(ui))
+        render_probe_error(metrics);
+}
+
 static void run_render_probe(
     const x86os_display_info_t *display, desktop_wm_t *manager,
+    desktop_ui_state_t *ui,
     int32_t *pointer_x, int32_t *pointer_y,
     desktop_render_metrics_t *metrics) {
     if (display == 0 || manager == 0 || pointer_x == 0 || pointer_y == 0 ||
@@ -802,7 +1614,8 @@ static void run_render_probe(
             continue;
         }
         (void)x86os_pointer_update(*pointer_x, *pointer_y, 0U);
-        render_desktop_measured(display, manager, &dirty, 1U, 0U, metrics);
+        render_desktop_measured(
+            display, manager, ui, &dirty, 1U, 0U, metrics);
         (void)x86os_pointer_update(*pointer_x, *pointer_y, 1U);
     }
     event = (desktop_wm_event_t){
@@ -846,7 +1659,8 @@ static void run_render_probe(
             continue;
         }
         (void)x86os_pointer_update(*pointer_x, *pointer_y, 0U);
-        render_desktop_measured(display, manager, &dirty, 0U, 1U, metrics);
+        render_desktop_measured(
+            display, manager, ui, &dirty, 0U, 1U, metrics);
         (void)x86os_pointer_update(*pointer_x, *pointer_y, 1U);
     }
     event = (desktop_wm_event_t){
@@ -862,11 +1676,13 @@ static void run_render_probe(
         metrics->resize_frames != DESKTOP_RENDER_PROBE_STEPS ||
         manager->capture_kind != DESKTOP_WM_CAPTURE_NONE)
         render_probe_error(metrics);
+    run_menu_probe(display, ui, metrics);
 }
 
 int main(int argc, char **argv) {
     x86os_display_info_t display;
     desktop_wm_t manager;
+    desktop_ui_state_t ui;
     desktop_render_metrics_t metrics = {0};
     int32_t pointer_x;
     int32_t pointer_y;
@@ -897,6 +1713,20 @@ int main(int argc, char **argv) {
 
     uint32_t menu = menu_height(&display);
     uint32_t status = status_height(&display);
+    desktop_ui_initialize(&ui);
+    reist_gui_menu_layout_t menu_layout = desktop_menu_layout(&display);
+    reist_gui_dialog_layout_t dialog_layout =
+        desktop_dialog_layout(&display);
+    if (reist_gui_menu_validate(
+            &desktop_menu_model, &menu_layout, &ui.menu) != 0 ||
+        reist_gui_dialog_validate(
+            &help_dialog_model, &dialog_layout, &ui.dialog) != 0 ||
+        reist_gui_dialog_validate(
+            &about_dialog_model, &dialog_layout, &ui.dialog) != 0) {
+        if (runtime_activated) (void)x86os_display_deactivate();
+        x86os_puts("desktop: GUI-API/Layout nicht kompatibel\n");
+        return 1;
+    }
     desktop_wm_initialize(&manager, display.width, display.height,
                           (int32_t)menu + 4,
                           (int32_t)(display.height - status - 4U),
@@ -908,11 +1738,11 @@ int main(int argc, char **argv) {
     desktop_dirty_initialize(&initial_dirty, display.width, display.height);
     desktop_dirty_full(&initial_dirty);
     render_desktop_measured(
-        &display, &manager, &initial_dirty, 0U, 0U, &metrics);
+        &display, &manager, &ui, &initial_dirty, 0U, 0U, &metrics);
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
     if (render_probe) {
         run_render_probe(
-            &display, &manager, &pointer_x, &pointer_y, &metrics);
+            &display, &manager, &ui, &pointer_x, &pointer_y, &metrics);
         if (desktop_try_exit(
                 pointer_x, pointer_y, runtime_activated, &metrics)) return 0;
         render_probe_error(&metrics);
@@ -933,69 +1763,114 @@ int main(int argc, char **argv) {
             move_pointer(&display, &pointer_x, &pointer_y,
                          mouse.delta_x, mouse.delta_y);
 
-            desktop_wm_event_t motion = {
-                .type = DESKTOP_WM_EVENT_POINTER_MOTION,
-                .x = pointer_x,
-                .y = pointer_y,
-            };
             if (manager.capture_kind == DESKTOP_WM_CAPTURE_MOVE)
                 drag_render = 1U;
             if (manager.capture_kind == DESKTOP_WM_CAPTURE_RESIZE)
                 resize_render = 1U;
-            actions |= dispatch_desktop_event(
-                &manager, &display, &dirty, &motion, &action_target);
+            /* Existing WM capture wins; otherwise modal/menu UI gets the
+             * event before ordinary hit-testing and may consume it. */
+            uint32_t ui_motion_consumed = 0U;
+            if (manager.capture_kind == DESKTOP_WM_CAPTURE_NONE) {
+                desktop_ui_result_t ui_motion = desktop_ui_pointer_event(
+                    &ui, &display, &dirty, pointer_x, pointer_y, 0U, 0U);
+                ui_motion_consumed = ui_motion.consumed;
+                actions |= apply_desktop_ui_result(
+                    &manager, &display, &dirty, &ui_motion,
+                    &action_target);
+            }
+            if (!ui_motion_consumed) {
+                desktop_wm_event_t motion = {
+                    .type = DESKTOP_WM_EVENT_POINTER_MOTION,
+                    .x = pointer_x,
+                    .y = pointer_y,
+                };
+                actions |= dispatch_desktop_event(
+                    &manager, &display, &dirty, &motion,
+                    &action_target);
+            }
 
             uint32_t left_down =
                 (mouse.buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
             uint32_t left_was_down =
                 (previous_buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
             if (left_down && !left_was_down) {
-                int window = desktop_wm_window_at(&manager,
-                                                   pointer_x, pointer_y);
-                desktop_wm_event_t press = {
-                    .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
-                    .x = pointer_x,
-                    .y = pointer_y,
-                    .button = DESKTOP_WM_BUTTON_LEFT,
-                    .pressed = 1U,
-                };
-                actions |= dispatch_desktop_event(
-                    &manager, &display, &dirty, &press, &action_target);
-                if (window == DESKTOP_WM_NO_WINDOW) {
-                    int icon = desktop_icon_at_position(&display,
-                                                        pointer_x, pointer_y);
-                    if (icon != DESKTOP_WM_NO_WINDOW) {
-                        desktop_wm_event_t open = {
-                            .type = DESKTOP_WM_EVENT_OPEN,
-                            .target = (uint32_t)icon,
-                        };
-                        actions |= dispatch_desktop_event(
-                            &manager, &display, &dirty, &open,
-                            &action_target);
+                uint32_t ui_press_consumed = 0U;
+                if (manager.capture_kind == DESKTOP_WM_CAPTURE_NONE) {
+                    desktop_ui_result_t ui_press = desktop_ui_pointer_event(
+                        &ui, &display, &dirty, pointer_x, pointer_y, 1U, 1U);
+                    ui_press_consumed = ui_press.consumed;
+                    actions |= apply_desktop_ui_result(
+                        &manager, &display, &dirty, &ui_press,
+                        &action_target);
+                }
+                if (!ui_press_consumed) {
+                    int window = desktop_wm_window_at(
+                        &manager, pointer_x, pointer_y);
+                    desktop_wm_event_t press = {
+                        .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
+                        .x = pointer_x,
+                        .y = pointer_y,
+                        .button = DESKTOP_WM_BUTTON_LEFT,
+                        .pressed = 1U,
+                    };
+                    actions |= dispatch_desktop_event(
+                        &manager, &display, &dirty, &press,
+                        &action_target);
+                    if (window == DESKTOP_WM_NO_WINDOW) {
+                        int icon = desktop_icon_at_position(
+                            &display, pointer_x, pointer_y);
+                        if (icon != DESKTOP_WM_NO_WINDOW) {
+                            desktop_wm_event_t open = {
+                                .type = DESKTOP_WM_EVENT_OPEN,
+                                .target = (uint32_t)icon,
+                            };
+                            actions |= dispatch_desktop_event(
+                                &manager, &display, &dirty, &open,
+                                &action_target);
+                        }
                     }
                 }
             } else if (!left_down && left_was_down) {
-                desktop_wm_event_t release = {
-                    .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
-                    .x = pointer_x,
-                    .y = pointer_y,
-                    .button = DESKTOP_WM_BUTTON_LEFT,
-                    .pressed = 0U,
-                };
-                actions |= dispatch_desktop_event(
-                    &manager, &display, &dirty, &release, &action_target);
+                uint32_t ui_release_consumed = 0U;
+                if (manager.capture_kind == DESKTOP_WM_CAPTURE_NONE) {
+                    desktop_ui_result_t ui_release = desktop_ui_pointer_event(
+                        &ui, &display, &dirty, pointer_x, pointer_y, 1U, 0U);
+                    ui_release_consumed = ui_release.consumed;
+                    actions |= apply_desktop_ui_result(
+                        &manager, &display, &dirty, &ui_release,
+                        &action_target);
+                }
+                if (!ui_release_consumed) {
+                    desktop_wm_event_t release = {
+                        .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
+                        .x = pointer_x,
+                        .y = pointer_y,
+                        .button = DESKTOP_WM_BUTTON_LEFT,
+                        .pressed = 0U,
+                    };
+                    actions |= dispatch_desktop_event(
+                        &manager, &display, &dirty, &release,
+                        &action_target);
+                }
             }
             previous_buttons = mouse.buttons;
         }
 
-        uint32_t wm_key = wm_key_from_input(key);
-        if (wm_key != 0U) {
-            desktop_wm_event_t keyboard = {
-                .type = DESKTOP_WM_EVENT_KEYBOARD,
-                .key = wm_key,
-            };
-            actions |= dispatch_desktop_event(
-                &manager, &display, &dirty, &keyboard, &action_target);
+        desktop_ui_result_t ui_key = desktop_ui_keyboard_event(
+            &ui, &display, &dirty, key);
+        actions |= apply_desktop_ui_result(
+            &manager, &display, &dirty, &ui_key, &action_target);
+        if (!ui_key.consumed) {
+            uint32_t wm_key = wm_key_from_input(key);
+            if (wm_key != 0U) {
+                desktop_wm_event_t keyboard = {
+                    .type = DESKTOP_WM_EVENT_KEYBOARD,
+                    .key = wm_key,
+                };
+                actions |= dispatch_desktop_event(
+                    &manager, &display, &dirty, &keyboard,
+                    &action_target);
+            }
         }
 
         if ((actions & DESKTOP_WM_RESULT_EXIT) != 0U) {
@@ -1014,8 +1889,8 @@ int main(int argc, char **argv) {
         if (dirty.count != 0U) {
             (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
             render_desktop_measured(
-                &display, &manager, &dirty, drag_render, resize_render,
-                &metrics);
+                &display, &manager, &ui, &dirty,
+                drag_render, resize_render, &metrics);
             (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
         } else if (mouse_events != 0U) {
             (void)x86os_pointer_update(pointer_x, pointer_y, 1U);

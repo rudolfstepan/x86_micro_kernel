@@ -1,6 +1,11 @@
 /**
  * @file userspace/gui/compositor/desktop_wm.c
  * @brief Bounded Z-order, focus and pointer-capture state transitions.
+ *
+ * Input policy and geometry are independent of rendering. The dispatcher
+ * snapshots the small fixed state, applies one transition and derives damage
+ * from the before/after states, so callers never guess which covered pixels
+ * became visible.
  */
 #include "desktop_wm.h"
 
@@ -77,6 +82,7 @@ void desktop_dirty_add(desktop_dirty_region_t *dirty, desktop_rect_t rect) {
         rect = rect_union(rect, dirty->rects[index]);
         --dirty->count;
         dirty->rects[index] = dirty->rects[dirty->count];
+        /* The enlarged union can overlap regions examined earlier. */
         index = 0U;
     }
     if (dirty->count == DESKTOP_WM_DIRTY_CAPACITY) {
@@ -203,6 +209,7 @@ static uint32_t resize_window(desktop_wm_t *manager,
     if (manager->resize_edges & DESKTOP_WM_RESIZE_TOP) top += delta_y;
     if (manager->resize_edges & DESKTOP_WM_RESIZE_BOTTOM) bottom += delta_y;
 
+    /* Clamp only the dragged edge; its opposite edge remains invariant. */
     if (manager->resize_edges & DESKTOP_WM_RESIZE_LEFT) {
         int64_t maximum_left = right - manager->minimum_width;
         if (left < manager->work_left) left = manager->work_left;
@@ -378,6 +385,7 @@ uint32_t desktop_wm_pointer_press(desktop_wm_t *manager,
     if (window_index == DESKTOP_WM_NO_WINDOW) return 0U;
     uint32_t index = (uint32_t)window_index;
     uint32_t changed = focus_window(manager, index);
+    /* Hit-test precedence is close, resize edge, title, then client area. */
     if (point_in_rect(desktop_wm_close_rect(manager, index), x, y)) {
         manager->capture_kind = DESKTOP_WM_CAPTURE_CLOSE;
         manager->capture_window = window_index;
@@ -436,6 +444,7 @@ uint32_t desktop_wm_pointer_release(desktop_wm_t *manager,
                                     int32_t x, int32_t y) {
     if (manager == 0) return 0U;
     uint32_t changed = 0U;
+    /* Release belongs to the button-down owner, never the current hover. */
     int32_t captured = manager->capture_window;
     uint32_t capture_kind = manager->capture_kind;
     manager->capture_kind = DESKTOP_WM_CAPTURE_NONE;
@@ -507,6 +516,7 @@ static void collect_state_damage(const desktop_wm_t *manager,
         uint32_t focus_changed =
             (before->keyboard_focus == (int32_t)index) !=
             (manager->keyboard_focus == (int32_t)index);
+        /* Recompose both sides of geometry, order and focus transitions. */
         if (old_window->visible &&
             (geometry_changed || order_changed || focus_changed)) {
             desktop_dirty_add(&result->dirty,

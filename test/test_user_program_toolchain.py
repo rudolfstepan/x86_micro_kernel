@@ -1,3 +1,4 @@
+import os
 import shutil
 import struct
 import subprocess
@@ -129,6 +130,139 @@ class UserProgramToolchainTests(unittest.TestCase):
         self.assertIn('"-O2", "-DNDEBUG"', source)
         self.assertIn('"--gc-sections", "--strip-all"', source)
 
+    def test_sdk_uses_standard_compiler_linker_and_archive_interfaces(self):
+        program_builder = (
+            ROOT / "scripts" / "build_user_program.py"
+        ).read_text(encoding="utf-8")
+        sdk_builder = (ROOT / "scripts" / "build_user_sdk.py").read_text(
+            encoding="utf-8"
+        )
+        system_builder = (
+            ROOT / "scripts" / "build_system_programs.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('str(zig), "cc"', program_builder)
+        self.assertIn('str(zig), "ld.lld"', program_builder)
+        self.assertIn('parser.add_argument("-I"', program_builder)
+        self.assertIn('parser.add_argument("-L"', program_builder)
+        self.assertIn('parser.add_argument("-l"', program_builder)
+        self.assertIn('parser.add_argument("--sysroot"', program_builder)
+        self.assertIn('[str(zig), "ar", "rcs"', sdk_builder)
+        self.assertIn('"usr" / "include"', sdk_builder)
+        self.assertIn('library_dir / "libreistos.a"', sdk_builder)
+        self.assertIn('library_dir / "libreistgui.a"', sdk_builder)
+        self.assertIn("MAX_SYSTEM_BUILD_WORKERS = 8", system_builder)
+        self.assertIn("DEFAULT_SYSTEM_BUILD_WORKERS = min(", system_builder)
+        self.assertIn('"-j", "--jobs"', system_builder)
+        self.assertIn("ThreadPoolExecutor", system_builder)
+        self.assertIn("zig-global-shared", system_builder)
+        self.assertIn('temporary_path / "zig-local"', program_builder)
+
+    def test_sdk_documentation_matches_the_installed_modular_layout(self):
+        documentation = (
+            ROOT / "docs/development/USER_PROGRAM_TOOLCHAIN.md"
+        ).read_text(encoding="utf-8")
+        architecture = (
+            ROOT / "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md"
+        ).read_text(encoding="utf-8")
+        for artifact in (
+            "crt0.o", "libreistos.a", "libreistnetparse.a",
+            "libreistgui.a",
+        ):
+            self.assertIn(artifact, documentation)
+            self.assertIn(artifact, architecture)
+        self.assertIn("--sysroot build/sdk -l reistgui", documentation)
+        self.assertIn("C11-Quellportabilität", architecture)
+        self.assertIn("keine Shared-Library-ABI", architecture)
+
+    def test_installed_gui_sdk_builds_the_documented_external_example(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            sdk = temporary / "sdk"
+            output = temporary / "MENUDEMO.PRG"
+            dialog_output = temporary / "DIALOGDEMO.PRG"
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "build_user_sdk.py"),
+                    "--output-dir", str(sdk),
+                    "--zig", str(ZIG),
+                ],
+                cwd=ROOT, check=True, capture_output=True, timeout=60,
+            )
+            include = sdk / "usr" / "include"
+            library = sdk / "usr" / "lib"
+            self.assertTrue((include / "x86os.h").is_file())
+            self.assertTrue((include / "reist/gui/types.h").is_file())
+            self.assertTrue((include / "reist/gui/menu.h").is_file())
+            self.assertTrue((include / "reist/gui/dialog.h").is_file())
+            self.assertTrue((library / "crt0.o").is_file())
+            self.assertEqual(
+                (library / "libreistos.a").read_bytes()[:8], b"!<arch>\n"
+            )
+            self.assertEqual(
+                (library / "libreistgui.a").read_bytes()[:8], b"!<arch>\n"
+            )
+            package = (
+                library / "pkgconfig" / "reist-gui.pc"
+            ).read_text(encoding="ascii")
+            self.assertIn("Cflags: -I${includedir}", package)
+            self.assertIn("Libs: -L${libdir} -lreistgui", package)
+
+            stable_artifacts = [
+                library / "crt0.o",
+                library / "libreistos.a",
+                library / "libreistnetparse.a",
+            ]
+            stable_times = {
+                artifact: artifact.stat().st_mtime_ns
+                for artifact in stable_artifacts
+            }
+            gui_library = library / "libreistgui.a"
+            os.utime(gui_library, ns=(1, 1))
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "build_user_sdk.py"),
+                    "--output-dir", str(sdk),
+                    "--zig", str(ZIG),
+                    "--incremental",
+                ],
+                cwd=ROOT, check=True, capture_output=True, timeout=60,
+            )
+            self.assertGreater(gui_library.stat().st_mtime_ns, 1)
+            self.assertEqual(
+                stable_times,
+                {artifact: artifact.stat().st_mtime_ns
+                 for artifact in stable_artifacts},
+            )
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "build_user_program.py"),
+                    str(ROOT / "userspace/gui/examples/menu_controller.c"),
+                    "--output", str(output),
+                    "--zig", str(ZIG),
+                    "--sysroot", str(sdk),
+                    "-l", "reistgui",
+                ],
+                cwd=ROOT, check=True, capture_output=True, timeout=60,
+            )
+            self.assertEqual(output.read_bytes()[:4], b"MYPR")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "build_user_program.py"),
+                    str(ROOT / "userspace/gui/examples/dialog_controller.c"),
+                    "--output", str(dialog_output),
+                    "--zig", str(ZIG),
+                    "--sysroot", str(sdk),
+                    "-l", "reistgui",
+                ],
+                cwd=ROOT, check=True, capture_output=True, timeout=60,
+            )
+            self.assertEqual(dialog_output.read_bytes()[:4], b"MYPR")
+
     def test_external_c_source_builds_a_valid_mypr_image(self):
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
@@ -196,7 +330,11 @@ class UserProgramToolchainTests(unittest.TestCase):
                 cwd=ROOT,
                 check=True,
                 capture_output=True,
-                timeout=120,
+                # This is a correctness build, not a wall-clock benchmark.
+                # Windows antivirus and cold temporary Zig caches can create
+                # rare >120 s outliers; rebuild selectivity is asserted by
+                # the dedicated incremental tests below.
+                timeout=240,
             )
             expected = {
                 "HELLO.PRG", "SYSINFO.PRG", "USBINFO.PRG", "REPEAT.PRG",
@@ -215,6 +353,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "PWD.PRG",
                 "SHELL.PRG",
                 "DESKTOP.PRG",
+                "GUIDEMO.PRG",
                 "MKDIR.PRG",
                 "RMDIR.PRG",
                 "DEL.PRG",
@@ -258,6 +397,32 @@ class UserProgramToolchainTests(unittest.TestCase):
                 self.assertEqual(program[:4], b"MYPR")
                 self.assertGreater(len(program), 28)
 
+            original_times = {
+                name: (output / name).stat().st_mtime_ns
+                for name in expected
+            }
+            gui_library = output.parent / "sdk/usr/lib/libreistgui.a"
+            future = max(original_times.values()) + 2_000_000_000
+            os.utime(gui_library, ns=(future, future))
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "build_system_programs.py"),
+                    "--output-dir", str(output),
+                    "--zig", str(ZIG),
+                    "--incremental",
+                ],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                timeout=30,
+            )
+            rebuilt = {
+                name for name in expected
+                if (output / name).stat().st_mtime_ns != original_times[name]
+            }
+            self.assertEqual(rebuilt, {"DESKTOP.PRG", "GUIDEMO.PRG"})
+
     def test_drives_reports_versioned_storage_health(self):
         header = (ROOT / "userspace" / "sdk" / "include" / "x86os.h").read_text(
             encoding="utf-8"
@@ -297,6 +462,8 @@ class UserProgramToolchainTests(unittest.TestCase):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertEqual(build_script.count("'usr/gui/bin/desktop.prg'"), 1)
         self.assertEqual(makefile.count("usr/gui/bin/desktop.prg="), 1)
+        self.assertEqual(build_script.count("'usr/gui/bin/guidemo.prg'"), 1)
+        self.assertEqual(makefile.count("usr/gui/bin/guidemo.prg="), 1)
         self.assertNotIn("'usr/bin/desktop.prg' = 'DESKTOP.PRG'", build_script)
         self.assertNotIn("usr/bin/desktop.prg=", makefile)
 

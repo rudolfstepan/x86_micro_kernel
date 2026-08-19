@@ -83,9 +83,17 @@ class BootSystemVolumeTests(unittest.TestCase):
         details = function(self.process, "static void program_load_root_details(")
         self.assertIn('strcmp(drive->mount_point, "/")', details)
         self.assertIn("drive->lba_offset", details)
+        uncached = function(
+            self.process, "static int load_program_file_uncached(")
+        self.assertIn(
+            "program_load_root_details(&identity, &location)", uncached)
+        self.assertIn(
+            "panic_context_set_result(result, identity, location)", uncached)
         loader = function(self.process, "static int load_program_file(")
-        self.assertIn("program_load_root_details(&identity, &location)", loader)
-        self.assertIn("panic_context_set_result(result, identity, location)", loader)
+        self.assertIn(
+            "return load_program_file_uncached(program_name, image_out)",
+            loader,
+        )
 
         main = function(self.kernel, "void kernel_main(")
         probe_start = main.index("if (!supervisor_start_probe(")

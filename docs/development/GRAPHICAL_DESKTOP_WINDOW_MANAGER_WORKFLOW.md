@@ -36,20 +36,53 @@ und künftige Struktur lautet:
 |---|---|
 | `userspace/gui/compositor/` | vertrauenswürdiger Session-Compositor und Window-Manager |
 | `userspace/gui/apps/<name>/` | künftig je ein eigener GUI-Clientprozess pro Anwendung |
-| `userspace/gui/include/reist/gui/` | künftig die einzige versionierte, öffentliche Client-ABI |
-| `userspace/gui/lib/` | künftig begrenzte Clientbibliothek und gemeinsame Controls |
+| `userspace/gui/examples/` | kleine, gegen das installierte SDK baubare Beispiele |
+| `userspace/gui/include/reist/gui/` | versionierte öffentliche C-APIs; künftige IPC-Protokolle bleiben davon getrennt |
+| `userspace/gui/lib/` | begrenzte wiederverwendbare Komponenten; begonnen mit dem Menücontroller |
 | `userspace/gui/share/` | künftig versionierte, nur lesbare Icons, Fonts und Themen |
 | `userspace/programs/` | Console- und Systemprogramme ohne GUI-Clientrolle |
 | `userspace/bin/` | interaktive Consoleprogramme wie Shell und Editor |
 
-Im Zielabbild liegen direkt startbare GUI-Programme unter `/usr/gui/bin`,
-Bibliotheken später unter `/usr/gui/lib` und architekturunabhängige Ressourcen
-unter `/usr/gui/share`. Die Ring-3-Shell führt `/usr/gui/bin` in ihrem festen,
-begrenzten Suchpfad. `/DESKTOP.PRG` und `/usr/bin/desktop.prg` bleiben feste
-Kompatibilitätsaliase; neuer Code verwendet ausschließlich
-`/usr/gui/bin/desktop.prg`. Verzeichnisse ohne reale Inhalte werden nicht als
-Platzhalter angelegt. Die vollständige Besitzregel steht zusätzlich in
+Im Zielabbild liegen direkt startbare GUI-Programme unter `/usr/gui/bin` und
+architekturunabhängige Ressourcen künftig unter `/usr/gui/share`. Das
+Entwicklungs-SDK verwendet dagegen den üblichen Sysroot-Aufbau `/usr/include`
+und `/usr/lib`; eine dynamische Runtime-Bibliotheks-ABI wird erst mit einem
+versionierten Loader festgelegt. Die Ring-3-Shell führt `/usr/gui/bin` in ihrem
+festen, begrenzten Suchpfad. `/DESKTOP.PRG` und `/usr/bin/desktop.prg` bleiben
+feste Kompatibilitätsaliase; neuer Code verwendet ausschließlich
+`/usr/gui/bin/desktop.prg`. Die vollständige Besitzregel steht zusätzlich in
 `userspace/gui/README.md`.
+
+## Toolchain-, SDK- und Dokumentationsprofil
+
+REIST implementiert weder Compiler noch Assembler, Linker, Archivformat oder
+eine eigene C-Sprache. C11 wird freestanding mit Zig/Clang übersetzt, BIOS-
+und Bootassembler mit NASM, ELF32 mit LLD gelinkt und `libreistgui.a` mit dem
+gewöhnlichen `ar`-Format erzeugt. Externe Programme verwenden `-I`, `-L` und
+`-l`; nur die streng geprüfte Verpackung des festen ELF32-Ergebnisses als MYPR
+v1 ist betriebssystemspezifisch.
+
+`crt0.o`, `libreistos.a`, `libreistnetparse.a` und `libreistgui.a` werden pro
+Systembuild einmal erzeugt. Danach bauen höchstens acht feste Worker die
+voneinander unabhängigen PRGs; `--jobs` kann diese Grenze weiter reduzieren.
+Der inhaltsadressierte globale Zig-Cache wird
+geteilt, jeder Übersetzungslauf behält jedoch seinen isolierten lokalen Cache;
+die Ergebnisreihenfolge bleibt deterministisch. Damit ist Modularität auch ein
+ausgeführter Buildvertrag und nicht nur eine geplante Verzeichnisstruktur.
+SDK-Archive behalten bei Änderungen fremder Komponenten ihren Zeitstempel;
+Core-Programme beobachten keine GUI-Header. Dadurch baut eine GUI-Änderung
+inkrementell nur `libreistgui.a` und die davon abhängigen `DESKTOP.PRG` und
+`GUIDEMO.PRG`, während vollständige
+Host-, Paket- und Laufzeitgates weiterhin an ihren festgelegten Grenzen laufen.
+
+Das verbindliche Schichten-, Portabilitäts- und Dokumentationsmodell steht in
+[Userspace-SDK, Toolchain und Portabilitätsvertrag](../architecture/USERSPACE_SDK_AND_PORTABILITY.md).
+Öffentliche Header sind Doxygen-kompatibel und dokumentieren Ownership,
+Lebensdauer, Versionen, Einheiten, Kapazitäten, Seiteneffekte und Fehler. Zu
+jeder Bibliothek gehören ein baubares Beispiel, Host-Verhaltenstest und ein
+Buildtest gegen das installierte Sysroot. Diese Unterlagen werden zugleich so
+geführt, dass sie später als technische Quellenbasis für das Buch *Writing a
+Graphical Operating System from Scratch* dienen können.
 
 ## Architektur-Kompatibilitätsprofil
 
@@ -137,8 +170,8 @@ eine feste Lease und werden sowohl bei normalem Task-Ende als auch bei einer
 erzwungenen Terminierung bereinigt. Dadurch blockiert ein pausierter oder
 beendeter Zeichner weder Scheduler noch Display dauerhaft.
 
-Vor Controls, Dialogen und echten GUI-Anwendungen muss Stufe 3 zusätzlich
-nachweisen:
+Vor client-eigenen Controls, client-eigenen modalen Dialogen und echten
+GUI-Anwendungen muss Stufe 3 zusätzlich nachweisen:
 
 - Compositor, GUI-Clients und Systemdienste laufen als getrennte Prozesse in
   getrennten Adressräumen und kommunizieren ausschließlich über validierte,
@@ -297,7 +330,16 @@ inkompatibler Fensterrahmen.
 
 - [ ] Clientbibliothek für Surface-Lebenszyklus und Eventdispatch bereitstellen.
 - [ ] Geclippte Zeichenprimitive, Schrift und Layoutmetriken kapseln.
-- [ ] Controls für Label, Button, Textfeld, Liste, Scrollbar und Menü definieren.
+- [x] Rendererunabhängigen, versionierten Menücontroller mit festen
+  Kapazitäten, lokaler Geometrie, implizitem Capture, Tastaturnavigation und
+  begrenzten Damage-Rechtecken als `libreistgui.a` bereitstellen.
+- [x] Asynchronen Dialogcontroller mit modeless/window-modal/application-modal,
+  Besitzer plus Generation, semantischen Responses, Default/Cancel,
+  Buttonfokus und Move-Capture bereitstellen.
+- [x] `guidemo.prg` als interaktive Referenz für alle derzeit öffentlichen
+  Controls in beiden Image-Layouts paketieren und aus der Ring-3-Shell
+  erreichbar machen.
+- [ ] Controls für Label, Button, Textfeld, Liste und Scrollbar definieren.
 - [ ] Fokusreihenfolge und Aktivierung vollständig per Tastatur ermöglichen.
 - [ ] Fensterrahmen, Titel, Schließen, Minimieren und Größenänderung bleiben
   serverseitig; Clients zeichnen keine konkurrierenden Dekorationen.
@@ -319,11 +361,44 @@ inkompatibler Fensterrahmen.
   vorgezogen, weil sie zur Geometrie- und Damage-Architektur gehört).
 - [ ] Minimieren und Wiederherstellen über eine feste Fensterleiste.
 - [ ] Maximieren und exakte Rückkehr zur vorherigen Geometrie.
-- [ ] Menüleiste mit Desktop-, Fenster- und Hilfeaktionen.
+- [x] Menüleiste mit Desktop-, Fenster- und Hilfeaktionen über die öffentliche
+  Menü-API implementieren; Fensteraktionen laufen über typisierte WM-Events.
+- [x] Compositor-eigene Hilfe als modeless und Info als application-modal über
+  die öffentliche Dialog-API zeichnen; Responses und Pointer-Capture bleiben
+  im Controller gebunden.
 - [ ] Modale Dialoge bleiben an ihren Besitzer gebunden und darüber gestapelt.
 - [ ] Tastaturkürzel für Fensterwechsel, Schließen und Menübedienung.
+- [ ] Klick-, Popup-, Dialog- und Tastaturnachweis manuell unter VMware führen.
 - [ ] Optionales Double-Click erst mit monotoner Zeit und fester Schwelle.
 - [ ] Fensterplatzierung bleibt nach Auflösungswechsel im Arbeitsbereich.
+
+Automatischer Nachweis vom 19. August 2026: Menü- und Dialog-Hosttests prüfen
+Titelwechsel, implizites Capture, Maus- und Tastaturaktivierung, deaktivierte
+Einträge, Modalität, Responses, Titel-Drag sowie ungültigen State. Die
+`guidemo.prg`-Quell- und Buildtests prüfen zusätzlich die alleinige Nutzung
+öffentlicher Header, beide Imagepfade und die Erreichbarkeit aus der
+Ring-3-Shell. Der Gast-Renderprobe öffnet das Hilfe-Menü, aktiviert den
+modeless Hilfe-Dialog, verschiebt ihn und schließt ihn per Escape, ohne die
+feste Anzahl von acht Move- und acht Resize-Frames zu
+verändern. `runtime-desktop-metrics` bestand mit `full_max_ms=8`,
+`drag_max_ms=82`, `resize_max_ms=4` und ohne Probe-Fehler. Der manuelle
+VMware-Sicht- und Klicktest bleibt bewusst offen.
+
+Die derzeitige Text-ABI besitzt noch kein frei wählbares Glyphen-Cliprechteck.
+Ein enger partieller Szenen-Redraw könnte deshalb einen Glyphenteil löschen,
+ohne ihn legal neu zeichnen zu können. Sichtbare Menü-Zustandswechsel werden
+bis zur versionierten Clip-Erweiterung konservativ als atomarer Vollbild-Frame
+publiziert; Pointerbewegungen innerhalb desselben Eintrags erzeugen weiterhin
+keinen Redraw. Damit bleiben Menü-Header und benachbarte Titel korrekt, ohne
+eine nicht vorhandene Clipping-Fähigkeit vorzutäuschen.
+
+Desktop-Icons trennen außerdem Layout-/Hit-Zelle und sichtbaren Fokus: Die
+große, feste Zelle bleibt ein gut bedienbares Maus- und Tastaturziel, während
+nur ein kompakter Rahmen um das Symbol sowie die Beschriftung den aktiven
+Eintrag markieren. Dadurch wird eine ausgewählte Anwendung nicht irrtümlich
+als großflächiges Panel dargestellt. Die Beschriftung ist an der Unterkante
+des sichtbaren Symbols verankert und steht damit unmittelbar beim zugehörigen
+Icon; die Höhe der unsichtbaren Hit-Zelle beeinflusst ihre Position nicht.
 
 ## Stufe 7: Robustheit und Abnahme
 

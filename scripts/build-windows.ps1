@@ -130,14 +130,20 @@ try {
     $previousConfiguration = if (Test-Path -LiteralPath $BuildConfig) {
         Get-Content -LiteralPath $BuildConfig -Raw
     } else { '' }
-    $requiresClean = $Clean -or $previousConfiguration -ne $configurationJson
-    if ($requiresClean) {
-        Write-Host 'Build configuration changed or -Clean requested; cleaning artifacts...'
+    $configurationChanged = $previousConfiguration -ne $configurationJson
+    if ($Clean) {
+        Write-Host 'Full clean requested; removing all generated artifacts...'
         & $Make 'clean' "SHELL=$(To-MakePath $MsysShell)"
         if ($LASTEXITCODE -ne 0) {
             throw "Build cleanup failed with exit code $LASTEXITCODE."
         }
         New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+    } elseif ($configurationChanged) {
+        Write-Host 'Build configuration changed; invalidating kernel objects while preserving the userspace SDK and PRGs...'
+        Get-ChildItem -LiteralPath $BuildDir -Filter '.config-*' -File |
+            ForEach-Object {
+                Remove-Item -LiteralPath $_.FullName -Force
+            }
     } else {
         Write-Host 'Build configuration unchanged; reusing incremental artifacts.'
     }
@@ -240,6 +246,7 @@ try {
         'usr/bin/ascii.prg' = 'ASCII.PRG'; 'usr/bin/save.prg' = 'SAVE.PRG'
         'usr/bin/spawn.prg' = 'SPAWN.PRG'
         'usr/gui/bin/desktop.prg' = 'DESKTOP.PRG'
+        'usr/gui/bin/guidemo.prg' = 'GUIDEMO.PRG'
         'libexec/reist/childex.prg' = 'CHILDEX.PRG'
         'libexec/reist/faultde.prg' = 'FAULTDE.PRG'
         'libexec/reist/faultud.prg' = 'FAULTUD.PRG'

@@ -304,6 +304,8 @@ class CodexOrchestrationTests(unittest.TestCase):
     def test_package_gate_is_single_pass_and_log_compacted(self):
         gate = (ROOT / "scripts/test-reist-package.ps1").read_text("utf-8")
         self.assertIn("build-windows.ps1", gate)
+        self.assertIn("[switch]$RunHostTests", gate)
+        self.assertIn("if ($RunHostTests)", gate)
         self.assertIn("-RunTests", gate)
         self.assertIn("*> $log", gate)
         self.assertIn("catch {", gate)
@@ -313,9 +315,13 @@ class CodexOrchestrationTests(unittest.TestCase):
         task = tomllib.loads(
             (ROOT / "automation/reist-s03b.toml").read_text("utf-8")
         )
-        for package in task["packages"]:
-            self.assertEqual(len(package["package_tests"]), 1)
-            self.assertIn("test-reist-package.ps1", package["package_tests"][0])
+        active = next(
+            package for package in task["packages"]
+            if package["id"] == task["active_id"]
+        )
+        self.assertGreaterEqual(len(active["package_tests"]), 1)
+        for command in active["package_tests"]:
+            self.assertIn("test-reist-package.ps1", command)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_package_gate_prints_tail_when_build_script_throws(self):

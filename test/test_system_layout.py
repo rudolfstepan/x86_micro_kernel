@@ -55,9 +55,12 @@ class SystemLayoutContracts(unittest.TestCase):
             },
         )
         reserved = struct.unpack_from("<H", image, 14)[0]
+        fat_count = image[16]
+        fat_sectors = struct.unpack_from("<H", image, 22)[0]
+        root_start = reserved + fat_count * fat_sectors
         root_sectors = 14
-        data_start = reserved + 6 + root_sectors
-        root = image[(reserved + 6) * 512:data_start * 512]
+        data_start = root_start + root_sectors
+        root = image[root_start * 512:data_start * 512]
         root_entries = directory_entries(root)
         self.assertEqual(root_entries[b"BIN        "][12], 0x08)
         self.assertEqual(root_entries[b"LIBEXEC    "][12], 0x08)
@@ -85,6 +88,7 @@ class SystemLayoutContracts(unittest.TestCase):
                 "sbin/svcctl.prg": b"svcctl",
                 "usr/bin/hello.prg": b"hello",
                 "usr/gui/bin/desktop.prg": b"desktop",
+                "usr/gui/bin/guidemo.prg": b"guidemo",
             },
         )
         image.seek(DATA_PARTITION_START * 512)
@@ -115,6 +119,9 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertEqual(
             cluster_entries(gui_bin_cluster)[b"DESKTOP PRG"][12], 0x18
         )
+        self.assertEqual(
+            cluster_entries(gui_bin_cluster)[b"GUIDEMO PRG"][12], 0x18
+        )
 
     def test_builds_and_runtime_use_only_canonical_targets(self):
         makefile = self.read("Makefile")
@@ -135,6 +142,8 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn('{"/SVCCTL.PRG", "/sbin/svcctl.prg"}', process)
         self.assertIn('strcmp(resolved, "/sbin/svcctl.prg")', process)
         self.assertIn('"/bin", "/sbin", "/usr/bin", "/usr/gui/bin"', shell)
+        self.assertIn("usr/gui/bin/guidemo.prg", makefile)
+        self.assertIn("'usr/gui/bin/guidemo.prg'", windows)
         self.assertIn('{"/DESKTOP.PRG", "/usr/gui/bin/desktop.prg"}', process)
         self.assertIn(
             '{"/usr/bin/desktop.prg", "/usr/gui/bin/desktop.prg"}', process

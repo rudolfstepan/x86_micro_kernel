@@ -103,10 +103,14 @@ Do not use subagents in autonomous package runs.
 
 - Targeted: package-specific host/source tests.
 - Package: `.\scripts\test-reist-package.ps1 -Target qemu -Video vga` runs
-  the clean reference build and complete host suite once.
+  the configured reference build and validates its required artifacts. The
+  already frozen targeted tests are not repeated for every hardware/video
+  variant. Pass `-RunHostTests` only for an explicit standalone full-host
+  verification.
 - Runtime: the package-specific `test-reist-runtime.ps1` mode.
-- Milestone: VMware reference package plus PIT, watchdog, recovery, memory and
-  framebuffer smokes. Run only when the task file requests it.
+- Milestone: the complete host suite once, VMware reference package plus PIT,
+  watchdog, recovery, memory and framebuffer smokes. Run only when the task
+  file requests it.
 
 Full logs belong under ignored `build/codex-agent/`. Report only command,
 result, elapsed time and the last relevant lines of a failure.

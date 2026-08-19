@@ -35,6 +35,7 @@ except ModuleNotFoundError:
 FLOPPY_SECTORS = 2880
 FLOPPY_SIZE = FLOPPY_SECTORS * SECTOR_SIZE
 MANIFEST_LBA = 1
+FAT12_SECTORS_PER_FAT = 9
 
 
 def encode_83(name: str) -> bytes:
@@ -95,7 +96,10 @@ def create_floppy_image(stage1: bytes, stage2: bytes, kernel: bytes,
         reserved_sectors = max(reserved_sectors + 195, 196)
         if reserved_sectors >= FLOPPY_SECTORS:
             raise ValueError("REIST FAT12 journal leaves no data area")
-    sectors_per_fat = 3
+    # A standard 1.44-MiB FAT12 medium uses nine sectors per FAT.  The old
+    # three-sector table described less than half of the otherwise available
+    # data clusters and could therefore overflow before the volume was full.
+    sectors_per_fat = FAT12_SECTORS_PER_FAT
     fat_count = 2
     root_entries = 224
     struct.pack_into("<HBH", image, 11, SECTOR_SIZE, 1, reserved_sectors)
@@ -150,6 +154,9 @@ def create_floppy_image(stage1: bytes, stage2: bytes, kernel: bytes,
             needed = max(1, sectors_for(len(file.contents)))
             file.clusters = list(range(next_cluster, next_cluster + needed))
             next_cluster += needed
+    fat_cluster_capacity = len(fat) * 2 // 3
+    if next_cluster > fat_cluster_capacity or next_cluster > 0xFF0:
+        raise ValueError("system tree exceeds the FAT12 table capacity")
     if len(tree.directories) + len(tree.files) > root_entries or \
             data_start + next_cluster - 2 > FLOPPY_SECTORS:
         raise ValueError("system tree does not fit on rescue floppy")

@@ -42,6 +42,8 @@ endif
 ZIG ?= zig
 USER_PROGRAM_SOURCE ?= userspace/programs/hello.c
 USER_PROGRAM_OUTPUT ?= $(OUTPUT_DIR)/programs/HELLO.PRG
+USER_PROGRAM_LIBS ?=
+USER_SDK_DIR ?= $(OUTPUT_DIR)/sdk
 SYSTEM_PROGRAM_DIR := $(OUTPUT_DIR)/programs
 
 # Build target selection (default: qemu)
@@ -276,7 +278,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-usb run-floppy run-fb help format-disks test test-unit test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-fdd-hotplug test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-sdk user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-usb run-floppy run-fb help format-disks test test-unit test-desktop-host test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-fdd-hotplug test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -336,6 +338,7 @@ help:
 	@echo "  build-vmware - Build for VMware Workstation (E1000 network)"
 	@echo "  build-real-hw - Build for real hardware (strict ATA timing)"
 	@echo "  kernel       - Build kernel binary only"
+	@echo "  user-sdk     - Build conventional REIST headers and static libraries"
 	@echo "  user-program - Compile USER_PROGRAM_SOURCE into a loadable MYPR file"
 	@echo "  system-programs - Build the native Ring-3 system tool collection"
 	@echo "  bootdisk     - Create native BIOS disk image"
@@ -625,6 +628,7 @@ SYSTEM_IMAGE_FILES := \
 	usr/bin/save.prg=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
 	usr/bin/spawn.prg=$(SYSTEM_PROGRAM_DIR)/SPAWN.PRG \
 	usr/gui/bin/desktop.prg=$(SYSTEM_PROGRAM_DIR)/DESKTOP.PRG \
+	usr/gui/bin/guidemo.prg=$(SYSTEM_PROGRAM_DIR)/GUIDEMO.PRG \
 	libexec/reist/childex.prg=$(SYSTEM_PROGRAM_DIR)/CHILDEX.PRG \
 	libexec/reist/faultde.prg=$(SYSTEM_PROGRAM_DIR)/FAULTDE.PRG \
 	libexec/reist/faultud.prg=$(SYSTEM_PROGRAM_DIR)/FAULTUD.PRG \
@@ -638,11 +642,15 @@ SYSTEM_IMAGE_FILES := \
 
 bootdisk: native-image
 
-user-program:
+user-sdk:
+	@$(PYTHON) scripts/build_user_sdk.py --output-dir $(USER_SDK_DIR) --zig $(ZIG) --incremental
+
+user-program: user-sdk
 	@echo "Building external user program $(USER_PROGRAM_SOURCE)..."
 	@$(PYTHON) -c "from pathlib import Path; Path('$(USER_PROGRAM_OUTPUT)').parent.mkdir(parents=True, exist_ok=True)"
 	@$(PYTHON) scripts/build_user_program.py $(USER_PROGRAM_SOURCE) \
-		--output $(USER_PROGRAM_OUTPUT) --zig $(ZIG)
+		--output $(USER_PROGRAM_OUTPUT) --zig $(ZIG) \
+		--sysroot $(USER_SDK_DIR) $(USER_PROGRAM_LIBS)
 
 system-programs:
 	@echo "Building standard Ring-3 system programs..."
@@ -682,12 +690,20 @@ floppy-image: kernel system-programs user-program
 # TESTING
 # ============================================================================
 
-# Fast, fixture-independent regression tests.
+# Complete fixture-independent host suite for CI and milestone validation.
 test: test-unit
 
 test-unit:
 	@echo "Running host-side unit tests..."
 	@$(PYTHON) -m unittest discover -s test -p "test_*.py" -v
+
+# Bounded inner loop for desktop/menu implementation work.
+test-desktop-host:
+	@$(PYTHON) test/test_display_abi_minimal.py -q
+	@$(PYTHON) test/test_desktop_source.py -q
+	@$(PYTHON) test/test_gui_menu_source.py -q
+	@$(PYTHON) test/test_gui_dialog_source.py -q
+	@$(PYTHON) test/test_gui_control_gallery_source.py -q
 
 # Full integration tests additionally require generated disk images.
 test-all: test-unit test-images

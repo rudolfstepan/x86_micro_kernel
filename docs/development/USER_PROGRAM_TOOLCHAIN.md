@@ -1,11 +1,17 @@
 # Externe Programme für die Kernel-Shell bauen
 
-Stand: 18. August 2026.
+Stand: 19. August 2026.
 
 Das Projekt enthält eine native Windows-Toolchain, die fremden C-Quelltext in
 das ausführbare `MYPR`-Format übersetzt. WSL, GRUB und ein Cross-GCC werden
 nicht benötigt; der Build verwendet Zig/Clang, LLD und den Python-Packer aus
 diesem Repository.
+
+Compiler, Assembler, Linker und statisches Archivformat sind unveränderte
+Upstream-Werkzeuge. Der Python-Anteil validiert und verpackt ausschließlich das
+fertig gelinkte ELF32 in den vorhandenen MYPR-v1-Container. Der vollständige
+Schichten- und Portabilitätsvertrag steht unter
+[Userspace-SDK, Toolchain und Portabilität](../architecture/USERSPACE_SDK_AND_PORTABILITY.md).
 
 ## Schnelltest unter Windows
 
@@ -117,6 +123,53 @@ Mehrere C- oder präprozessierte Assembly-Quellen (`.S`) können gemeinsam
   -Source .\app.c,.\helper.c,.\start.S `
   -Output .\build\programs\APP.PRG
 ```
+
+## Modulares SDK und statische Bibliotheken
+
+Das SDK wird als übliches Sysroot erzeugt:
+
+```powershell
+python scripts/build_user_sdk.py --output-dir build/sdk
+```
+
+Es enthält die öffentlichen Header unter `usr/include`, das Startobjekt
+`usr/lib/crt0.o` sowie `libreistos.a`, `libreistnetparse.a` und
+`libreistgui.a` unter `usr/lib`. `pkgconfig`-Metadaten beschreiben die
+öffentlichen Basis- und GUI-Bibliotheken. Der Systemprogrammbuild kompiliert
+diese gemeinsamen Module einmal und linkt alle PRGs danach gegen dieselben
+Archive. Höchstens acht feste Buildworker teilen den inhaltsadressierten
+globalen Zig-Cache, während jeder Lauf einen getrennten temporären lokalen
+Cache besitzt; `--jobs` begrenzt die Parallelität bei Bedarf weiter.
+
+Die Inkrementalgrenze folgt den Modulabhängigkeiten: `crt0.o`, Core-, Parser-
+und GUI-Archiv werden unabhängig geprüft und nur bei eigener Änderung ersetzt.
+Console-PRGs hängen nicht von GUI-Headern oder `libreistgui.a` ab. Ein Wechsel
+zwischen QEMU, VMware und realer Hardware invalidiert die Kernelkonfiguration,
+löscht aber nicht mehr das zielunabhängige SDK und alle Ring-3-Programme.
+
+Ein GUI-API-Beispiel lässt sich ohne private Compositorheader bauen:
+
+```powershell
+python scripts/build_user_program.py userspace/gui/examples/menu_controller.c `
+  --output build/programs/MENUDEMO.PRG `
+  --sysroot build/sdk -l reistgui
+python scripts/build_user_program.py userspace/gui/examples/dialog_controller.c `
+  --output build/programs/DIALOGDEMO.PRG `
+  --sysroot build/sdk -l reistgui
+```
+
+`--sysroot` wählt öffentliche Header, Startobjekt und Basisbibliothek aus.
+Weitere standardmäßige Suchpfade und Archive werden mit `-I`, `-L` und `-l`
+angegeben. Die öffentlichen Header `<reist/gui/types.h>`,
+`<reist/gui/menu.h>` und `<reist/gui/dialog.h>` dokumentieren Felder,
+Ownership, Lebensdauer, Capture, Modalität, Responses, Fehler und Rückgabewerte
+inline. Sie bilden eine in-process C-Quell-API; eine dynamische Binär-ABI oder
+das künftige prozessübergreifende Surface-Protokoll wird damit nicht behauptet.
+
+Der Systemprogrammbuild erzeugt außerdem `GUIDEMO.PRG` aus
+`userspace/gui/apps/control_gallery/main.c`. Beide Imagepfade installieren es
+als `/usr/gui/bin/guidemo.prg`; der Standardpfad der Userspace-Shell erlaubt
+den direkten Start mit `guidemo`.
 
 ## Format und ABI
 

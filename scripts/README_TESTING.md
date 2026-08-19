@@ -5,16 +5,16 @@ Stand: 16. August 2026.
 REIST trennt hostseitige Quell-/Harness-Tests, den sauberen Paketbuild und
 echte Gast-Laufzeitgates. Keine einzelne Ebene ersetzt die anderen.
 
-## Schnelle Hostsuite
+## Vollständige Hostsuite
 
 ```powershell
 python -m unittest discover -s test -p "test_*.py" -v
 ```
 
-Sie benötigt Python, einen Host-C-Compiler für Harnesses und Zig/LLD für die
-MYPR-Toolchain. Einzelne optionale Werkzeugtests können bei fehlender
-Abhängigkeit übersprungen werden; der Referenzbuild soll ohne relevante Skips
-laufen.
+Sie umfasst derzeit mehr als hundert Testmodule einschließlich Toolchain- und
+Orchestrierungs-Selbsttests. Sie benötigt Python, einen Host-C-Compiler für
+Harnesses und Zig/LLD für die MYPR-Toolchain und ist ein bewusstes CI- bzw.
+Milestone-Gate, kein Schritt nach jeder grafischen Änderung.
 
 ## Windows-Referenzbuild
 
@@ -22,8 +22,18 @@ laufen.
 .\scripts\build-windows.ps1 -Target vmware -RunTests
 ```
 
-Der Build ist inkrementell. Nur bei einem bewusst vollständig frischen Lauf
-wird `-Clean` ergänzt.
+Der Build ist inkrementell. Ohne `-RunTests` entsteht schnell ein direkt
+testbares Image; paketbezogene Quelltests werden separat aus der eingefrorenen
+Paketliste ausgeführt. Nur bei einem bewusst vollständig frischen Lauf wird
+`-Clean` ergänzt. Ein Zielwechsel invalidiert Kernelobjekte, erhält aber das
+zielunabhängige Userspace-SDK und unveränderte PRGs.
+
+Für die aktuelle Desktop-/Menü-Entwicklung steht der begrenzte innere
+Testzyklus bereit:
+
+```powershell
+make test-desktop-host
+```
 
 ## REIST-Paketgate
 
@@ -31,9 +41,15 @@ wird `-Clean` ergänzt.
 .\scripts\test-reist-package.ps1 -Target qemu -Video vga
 ```
 
-Dieses Gate erzeugt den sauberen Referenzstand und führt die vollständige
-Hostsuite aus. In automatisierten Paketen bestimmt `automation/reist-s03b.toml`
-die eingefrorenen Gates; sie werden nicht ad hoc ersetzt.
+Dieses Gate erzeugt den konfigurierten Referenzstand und prüft dessen feste
+Artefakte. In automatisierten Paketen bestimmt `automation/reist-s03b.toml`
+die einmal auszuführenden gezielten Tests; sie werden nicht in jeder QEMU-,
+Framebuffer- und VMware-Variante wiederholt. Nur der ausdrücklich angeforderte
+Standalone-Lauf ergänzt die Vollsuite:
+
+```powershell
+.\scripts\test-reist-package.ps1 -Target qemu -Video vga -RunHostTests
+```
 
 ## Laufzeitgates
 

@@ -59,6 +59,16 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("desktop_icon_rect", self.source)
         self.assertIn("render_window", self.source)
 
+    def test_icon_focus_is_compact_and_does_not_fill_the_hit_cell(self):
+        render = self.source[self.source.index("static void render_icon") :]
+        render = render[: render.index("\n}") + 2]
+        self.assertIn("desktop_rect_t focus", render)
+        self.assertIn("draw_bevel(context, focus", render)
+        self.assertNotIn("draw_bevel(context, rect", render)
+        self.assertIn("large cell remains the predictable", render)
+        self.assertIn("3U + symbol.height + 3U", render)
+        self.assertNotIn("rect.height - display->font_height - 3U", render)
+
     def test_window_manager_has_fixed_z_order_focus_and_capture(self):
         header = WM_HEADER.read_text(encoding="utf-8")
         model = WM_SOURCE.read_text(encoding="utf-8")
@@ -91,6 +101,46 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertNotIn("desktop_wm_pointer_motion(&manager", main)
         self.assertNotIn("desktop_wm_pointer_release(&manager", main)
 
+    def test_system_bar_uses_the_public_menu_api_and_typed_window_actions(self):
+        programs = (ROOT / "scripts" / "build_system_programs.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('#include "reist/gui/menu.h"', self.source)
+        self.assertIn("static const reist_gui_menu_model_t", self.source)
+        self.assertIn("reist_gui_menu_dispatch", self.source)
+        self.assertIn("render_menu_bar", self.source)
+        self.assertIn("render_menu_popup", self.source)
+        self.assertIn("render_system_dialog", self.source)
+        self.assertIn("DESKTOP_MENU_ACTION_HELP", self.source)
+        self.assertIn("DESKTOP_MENU_ACTION_ABOUT", self.source)
+        self.assertIn("DESKTOP_WM_EVENT_SELECT", self.source)
+        self.assertIn("DESKTOP_WM_EVENT_OPEN", self.source)
+        self.assertIn(
+            'GUI_PROGRAMS = {"DESKTOP.PRG", "GUIDEMO.PRG"}', programs)
+        self.assertIn("gui_library", programs)
+
+    def test_active_menu_or_dialog_receives_input_before_the_window_manager(self):
+        main = self.source[self.source.index("int main(") :]
+        self.assertLess(
+            main.index("desktop_ui_pointer_event("),
+            main.index("dispatch_desktop_event("),
+        )
+        self.assertIn("if (!ui_motion_consumed)", main)
+        self.assertIn("if (!ui_press_consumed)", main)
+        self.assertIn("if (!ui_release_consumed)", main)
+        self.assertIn("if (!ui_key.consumed)", main)
+
+    def test_desktop_dialogs_use_the_public_async_controller(self):
+        self.assertIn('#include "reist/gui/dialog.h"', self.source)
+        self.assertIn("REIST_GUI_DIALOG_MODELESS", self.source)
+        self.assertIn("REIST_GUI_DIALOG_APPLICATION_MODAL", self.source)
+        self.assertIn("reist_gui_dialog_open", self.source)
+        self.assertIn("reist_gui_dialog_dispatch", self.source)
+        self.assertIn("reist_gui_dialog_response", self.source)
+        self.assertGreaterEqual(self.source.count("reist_gui_dialog_validate"), 2)
+        self.assertIn("REIST_GUI_DIALOG_CAPTURE_MOVE", self.source)
+        self.assertNotIn("DESKTOP_DIALOG_CAPTURE_", self.source)
+
     def test_redraw_is_driven_by_fixed_dirty_regions_and_clips_primitives(self):
         header = WM_HEADER.read_text(encoding="utf-8")
         self.assertIn("#define DESKTOP_WM_DIRTY_CAPACITY 8U", header)
@@ -98,6 +148,13 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("static void render_dirty_regions", self.source)
         self.assertIn("fill_rect_clipped", self.source)
         self.assertIn("draw_text_clipped", self.source)
+
+    def test_menu_state_changes_use_an_atomic_frame_without_partial_glyphs(self):
+        collect = self.source[self.source.index("static void collect_menu_damage") :]
+        collect = collect[: collect.index("\n}") + 2]
+        self.assertIn("menu_result->damage_count != 0U", collect)
+        self.assertIn("desktop_dirty_full(dirty)", collect)
+        self.assertIn("explicit glyph clip rectangle", collect)
 
     def test_tab_and_ansi_arrow_keys_change_selection(self):
         self.assertIn("key == '\\t'", self.source)
@@ -188,7 +245,7 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("DESKTOP_WM_CAPTURE_RESIZE", self.source)
         self.assertIn("resize_render = 1U", self.source)
         self.assertIn(
-            "&display, &manager, &dirty, drag_render, resize_render",
+            "&display, &manager, &ui, &dirty,",
             self.source,
         )
 

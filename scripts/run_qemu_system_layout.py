@@ -93,6 +93,7 @@ def run(qemu: Path, image: Path, timeout: float, log: Path) -> int:
             ("ls -1 /sbin", "svcctl.prg"),
             ("ls -1 /usr/bin", "hello.prg"),
             ("ls -1 /usr/gui/bin", "desktop.prg"),
+            ("guidemo --help", "Usage: guidemo"),
             ("ls -1 /libexec/reist", "storage.prg"),
             ("svcctl status 5",
              "COMPONENT STATUS 5 name=storage-service state=READY generation=1"),

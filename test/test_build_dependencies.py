@@ -20,15 +20,29 @@ class BuildDependencyTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("[switch]$Clean", script)
         self.assertIn(".windows-build-config.json", script)
-        self.assertIn("$requiresClean = $Clean -or", script)
+        self.assertIn("$configurationChanged =", script)
+        self.assertIn("if ($Clean)", script)
+        self.assertIn("invalidating kernel objects while preserving", script)
+        self.assertIn("-Filter '.config-*'", script)
+        self.assertNotIn("$requiresClean = $Clean -or", script)
         self.assertIn("--incremental", script)
-        self.assertNotIn("& $Make 'clean' \"SHELL=$(To-MakePath $MsysShell)\"\n    if", script)
 
     def test_userspace_incremental_dependencies_include_sdk_and_linker(self) -> None:
         builder = (ROOT / "scripts/build_user_program.py").read_text(
             encoding="utf-8")
-        self.assertIn("dependencies = [*all_sources, linker_script]", builder)
-        self.assertIn('glob("*.h")', builder)
+        system = (ROOT / "scripts/build_system_programs.py").read_text(
+            encoding="utf-8")
+        sdk = (ROOT / "scripts/build_user_sdk.py").read_text(
+            encoding="utf-8")
+        self.assertIn("*runtime_objects, *runtime_libraries, linker_script", builder)
+        self.assertIn('source.parent.glob("*.h")', builder)
+        self.assertIn("explicit_dependencies", builder)
+        self.assertIn("dependency_files=dependency_files", system)
+        self.assertIn("core_headers", system)
+        self.assertIn("gui_headers", system)
+        self.assertIn("artifact_requires_rebuild", sdk)
+        self.assertIn("startup_stale", sdk)
+        self.assertIn("gui_stale", sdk)
         self.assertIn("dependency.stat().st_mtime_ns <=", builder)
 
     def test_make_emits_explicit_dependency_files_for_every_c_rule(self) -> None:

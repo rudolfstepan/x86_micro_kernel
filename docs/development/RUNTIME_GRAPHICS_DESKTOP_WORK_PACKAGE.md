@@ -83,14 +83,26 @@ Grafikmodus und stellt die vorhandene VGA-Shell wieder sichtbar her.
     vervollständigt den bereits validierten Übergang idempotent.
 11. Der Ring-3-Compositor verarbeitet Eingaben über typisierte Events, trennt
     Pointer- und Keyboard-Fokus und rekonstruiert höchstens acht Dirty Regions
-    mit geclippten Primitiven in Z-Reihenfolge. Controls und externe
-    GUI-Clients bleiben außerhalb dieses Pakets.
+    mit geclippten Primitiven in Z-Reihenfolge. Ein wiederverwendbarer
+    in-process Menü- und Dialogcontroller sowie echte Systemmenüs liegen
+    innerhalb der genehmigten Erweiterung; das prozessübergreifende
+    Surface-Protokoll bleibt außerhalb dieses Pakets.
 12. Top-Level-Fenster lassen sich an vier Kanten und vier Ecken unter einem
     impliziten Pointer-Capture in der Größe ändern. Der Window-Manager hält die
     gegenüberliegende Kante fest, erzwingt eine feste Mindestgröße und begrenzt
     die Geometrie auf den Arbeitsbereich. Ein deterministischer Gastlauf misst
     genau acht Move- und acht Resize-Frames mit einem versionierten,
     saturierenden Metrikformat.
+13. Das GUI-SDK wird als normales Sysroot mit öffentlichen, inline
+    dokumentierten C-Headern und `libreistgui.a` erzeugt. Zig/Clang, LLD und
+    `ar` bleiben unverändert die Toolchain; nur die validierte MYPR-Verpackung
+    ist REIST-spezifisch. Ein Beispielprogramm muss ausschließlich gegen das
+    installierte `--sysroot` und `-lreistgui` bauen; zusätzliche Header- und
+    Bibliothekswege bleiben über `-I`, `-L` und `-l` verfügbar.
+14. `GUIDEMO.PRG` demonstriert alle derzeit öffentlichen Menü- und
+    Dialogfunktionen als begrenzte Ring-3-Referenzanwendung. Beide Imagepfade
+    installieren sie unter `/usr/gui/bin/guidemo.prg`; die normale
+    Userspace-Shell findet sie über ihren festen Standardsuchpfad.
 
 ## Verbindliche Invarianten
 
@@ -130,6 +142,27 @@ Grafikmodus und stellt die vorhandene VGA-Shell wieder sichtbar her.
   und Generation auf.
 - Pointer- und Keyboard-Fokus sind getrennt. Jede Pointer-Button-Sequenz bleibt
   bis Button-Up implizit an ihr ursprüngliches Ziel gebunden.
+- Menümodell, Menüstate und Damage-Ausgabe sind versioniert, lokal zur
+  aufrufereigenen Fläche und fest kapazitätsbegrenzt. Die Bibliothek besitzt
+  weder Framebuffer-, Eingabe-, Prozess- noch Allokatorautorität.
+- Aktive Menüs und Dialoge erhalten Eingaben vor dem Window-Manager.
+  Modeless-Ereignisse außerhalb des Dialogs dürfen weiterlaufen; modale
+  Ereignisse bleiben bis zur einmaligen Response konsumiert. Fensteraktionen
+  aus einem Menü werden ausschließlich als typisierte Select-/Open-Events in
+  den Window-Manager eingespeist.
+- Dialogmodell, Zustand, Modalität, owner- und generationsgebundene Identität,
+  Responses und Damage-Ausgabe sind versioniert und fest begrenzt. `open`,
+  `dispatch` und `complete` starten keine verschachtelte Eventloop.
+- Öffentliche GUI-Header dokumentieren Ownership, Lebensdauer, Koordinaten,
+  Felder, Fehler und Capture inline; ein installiertes Beispiel und ein
+  Host-Verhaltenstest halten diese Dokumentation ausführbar.
+- Compiler, Assembler, Linker und Archivformat werden nicht neu implementiert.
+  Der SDK-Build verwendet die konventionellen Upstream-Schnittstellen und den
+  Sysroot-Aufbau `usr/include`/`usr/lib`.
+- Startobjekt, System-API, Netzwerkparser und GUI-Komponenten werden einmal als
+  wiederverwendbare Artefakte gebaut. Der Systemprogrammbuild verwendet
+  höchstens acht isolierte Buildjobs und sammelt Ergebnisse in fester
+  Reihenfolge ein.
 - Serverseitiger Resize-Hit-Test, Mindestgröße und Arbeitsbereichsgrenzen
   werden vor der Veröffentlichung jeder neuen Fenstergeometrie angewandt; ein
   Button-Up beendet das implizite Capture unabhängig von der Pointerposition.
@@ -168,13 +201,34 @@ fixieren. Erwartet werden ausschließlich:
 - `userspace/gui/compositor/desktop.c`
 - `userspace/gui/compositor/desktop_wm.h`
 - `userspace/gui/compositor/desktop_wm.c`
+- `userspace/gui/include/reist/gui/menu.h`
+- `userspace/gui/include/reist/gui/types.h`
+- `userspace/gui/include/reist/gui/dialog.h`
+- `userspace/gui/lib/menu.c`
+- `userspace/gui/lib/dialog.c`
+- `userspace/gui/examples/menu_controller.c`
+- `userspace/gui/examples/dialog_controller.c`
+- `userspace/gui/apps/control_gallery/main.c`
 - im Zielabbild `/usr/gui/bin/desktop.prg`; `/DESKTOP.PRG` und der bisherige
   Pfad `/usr/bin/desktop.prg` bleiben ausschließlich feste Kompatibilitätsaliase
 - `scripts/build_system_programs.py`
+- `scripts/build_user_program.py`
+- `scripts/build_user_sdk.py`
 - `scripts/build-windows.ps1`
+- `scripts/create_floppy_boot_image.py`
 - `scripts/test-reist-runtime.ps1`
 - ein neuer QEMU-Runtime-Runner unter `scripts/`
 - neue paketbezogene Tests unter `test/`
+- `test/test_gui_menu_source.py`
+- `test/test_gui_menu_host.c`
+- `test/test_gui_dialog_source.py`
+- `test/test_gui_dialog_host.c`
+- `test/test_gui_control_gallery_source.py`
+- `test/test_floppy_boot_image.py`
+- `docs/architecture/GUI_CONTROLS_AND_DIALOGS.md`
+- `docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md`
+- `docs/README.md`
+- `docs/development/USER_PROGRAM_TOOLCHAIN.md`
 - `docs/features/FRAMEBUFFER.md`
 - `docs/development/BUILD_MODES.md`
 - `docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md`
@@ -201,7 +255,10 @@ der Änderung zu stoppen und die Architekturursache zu dokumentieren.
    DISPI-Fehlerpfad ergänzen.
 8. Einen erzwungenen VBE-Gastnachweis für Aktivierung und Rückkehr nach VGA
    ergänzen.
-9. Erst nach bestandenen äußeren Gates Dokumentation und Queue auf den
+9. Öffentliche Menü- und Dialog-API, statische GUI-Bibliothek, Sysroot und
+   externe Beispiele aufbauen; Desktop und `GUIDEMO.PRG` verwenden exakt
+   dieselben installierten Komponenten.
+10. Erst nach bestandenen äußeren Gates Dokumentation und Queue auf den
    nächsten Zustand setzen.
 
 ## Akzeptanzkriterien
@@ -212,6 +269,13 @@ der Änderung zu stoppen und die Architekturursache zu dokumentieren.
 - Der serielle Ablauf enthält in dieser Reihenfolge eindeutige Marker für
   VGA-Shell, Modusanforderung, erfolgreichen Framebuffer und `DESKTOP_OK`.
 - Die Workbench-artige Oberfläche wird in einem QEMU-Screenshot nachgewiesen.
+- Desktop-, Fenster- und Hilfe-Menüs öffnen per Maus, routen Fensteraktionen
+  typisiert und zeigen Hilfe beziehungsweise Info als modale oberste Ebene.
+- Der dokumentierte Beispielclient baut gegen das installierte Sysroot und
+  `libreistgui.a`, ohne Compositor- oder Framebufferheader einzubinden.
+- `guidemo` ist aus der normalen Ring-3-Shell erreichbar und demonstriert
+  Menü, Popup, modeless/application-modal Dialog, Responses, Buttonfokus,
+  Enter/Escape, Schließen und Titel-Drag ohne private Compositorheader.
 - Ein absichtlich fehlgeschlagener DISPI-Wechsel liefert einen dokumentierten
   Fehler und hinterlässt eine bedienbare VGA-Shell.
 - Ein zweiter Prozess kann während einer laufenden Transition keinen weiteren
@@ -230,6 +294,10 @@ der Änderung zu stoppen und die Architekturursache zu dokumentieren.
 ```powershell
 python test/test_display_abi_minimal.py -q
 python test/test_desktop_source.py -q
+python test/test_gui_menu_source.py -q
+python test/test_gui_dialog_source.py -q
+python test/test_gui_control_gallery_source.py -q
+python test/test_floppy_boot_image.py -q
 python test/test_runtime_graphics_switch.py -q
 python test/test_bios_vbe_source.py -q
 ```
@@ -275,8 +343,9 @@ Tests auf unterstützter Zielhardware.
 
 ## Nicht Bestandteil dieses Pakets
 
-- separate GUI-Clientprozesse und eine öffentliche Surface-/Fenster-ABI
-- Controls, Dialoge, Drag-and-drop und vollständiges GUI-Clientprotokoll
+- getrennte GUI-Clientprozesse und eine öffentliche Surface-/Fenster-ABI
+- allgemeine Controls jenseits von Menü und Dialog, Drag-and-drop und das
+  vollständige GUI-Clientprotokoll
 - GPU-Beschleunigung oder ein frei programmierbarer Grafiktreiber
 - frei ladbare Grafiktreiber oder UEFI GOP
 - Auflösungsdialog und beliebige dynamische Modi

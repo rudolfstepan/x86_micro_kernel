@@ -1,6 +1,6 @@
 # Dokumentationsindex
 
-Stand: 18. August 2026.
+Stand: 19. August 2026.
 
 Die Dokumentation unterscheidet zwischen aktuellen Referenzen und
 historischen Arbeitsberichten. Für Aufbau, Start und Bedienung sind die hier
@@ -21,6 +21,9 @@ bereits behobene Fehler enthalten.
 - [Nativer Bootdatenträger](development/BOOTABLE_DISK.md) – BIOS/MBR, Stage 2 und FAT32-Image
 - [Bootfähige Diskette](development/FLOPPY_BOOT.md) – 1,44-MB-CHS-Image für echte BIOS-PCs
 - [Externe Programme](development/USER_PROGRAM_TOOLCHAIN.md) – SDK, ABI und MYPR-Toolchain
+- [Userspace-SDK und Portabilität](architecture/USERSPACE_SDK_AND_PORTABILITY.md) – modulare Bibliotheken, Upstream-Toolchain und API-Dokumentationsvertrag
+- [GUI-Komponenten, Controls und Dialoge](architecture/GUI_CONTROLS_AND_DIALOGS.md) – unterstützte UI-Bausteine, Dialogstandard und schrittweise Control-Roadmap
+- [Grafischer Desktop-Workflow](development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md) – Window-Manager-, Surface-, GUI-SDK- und VMware-Arbeitsschritte
 - [Userspace-Dateisystemwerkzeuge](development/USERSPACE_FILESYSTEM_TOOLS.md) –
   Werkzeuginventar, Systemhierarchie und Timestamp-Vertrag
 - [Synchronisationsvertrag](architecture/SYNCHRONIZATION_CONTRACT.md) – Ausführungskontexte, Lock-Reihenfolge und Diagnose

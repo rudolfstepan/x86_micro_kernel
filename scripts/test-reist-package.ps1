@@ -4,6 +4,7 @@ param(
     [string]$Target = 'qemu',
     [ValidateSet('vga', 'framebuffer')]
     [string]$Video = 'vga',
+    [switch]$RunHostTests,
     [string]$BuildScript = '',
     [string]$LogRoot = ''
 )
@@ -26,7 +27,11 @@ $watch = [System.Diagnostics.Stopwatch]::StartNew()
 $exitCode = 0
 try {
     $LASTEXITCODE = 0
-    & $BuildScript -Target $Target -Video $Video -RunTests *> $log
+    if ($RunHostTests) {
+        & $BuildScript -Target $Target -Video $Video -RunTests *> $log
+    } else {
+        & $BuildScript -Target $Target -Video $Video *> $log
+    }
     $exitCode = $LASTEXITCODE
 }
 catch {
