@@ -315,6 +315,14 @@ Scratchpads interpretiert. Die High-Bits 25:21 und Low-Bits 31:27 werden nun
 in Spezifikationsreihenfolge zusammengesetzt; die reservierten Niederbits von
 `DBOFF` und `RTSOFF` werden vor der Bereichsprüfung maskiert.
 
+Da derselbe Controller anschließend weiterhin an der Capability-Grenze
+abgewiesen wurde, unterstützt der feste Scratchpad-Pool nun bis zu 32 statt
+acht Seiten. Das bleibt statisch und kapazitätsbegrenzt, deckt aber frühe
+Intel-xHCI-Implementierungen mit mehr als acht Scratchpads ab. Diagnose-ABI
+Version 2 hängt `CAPLENGTH`, `MaxSlots`, die dekodierte Scratchpad-Anzahl,
+`DBOFF`, `RTSOFF` und eine bitgenaue Ablehnungsmaske an. Version-1-Aufrufer
+erhalten weiterhin exakt den bisherigen 96-Byte-Snapshot.
+
 ## Erwartetes Restrisiko
 
 Der native Treiber und der feste VBE-Thunks vergrößern die privilegierte

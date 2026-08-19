@@ -64,6 +64,9 @@ class UsbMouseTests(unittest.TestCase):
         self.assertNotIn("((hcs2 >> 21U) & 0x1FU) |", source)
         self.assertIn("xhci_read(0x14U) & ~0x3U", source)
         self.assertIn("xhci_read(0x18U) & ~0x1FU", source)
+        self.assertIn("#define XHCI_MAX_SCRATCHPADS    32U", source)
+        self.assertIn("diagnostics.capability_rejections", source)
+        self.assertIn("XHCI_CAP_REJECT_SCRATCHPADS", source)
         mouse_choice = source.index("current_protocol == 2U")
         keyboard_choice = source.index("current_protocol == 1U", mouse_choice)
         self.assertLess(mouse_choice, keyboard_choice)
@@ -102,15 +105,21 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("run_program(argc, argv)", shell)
         self.assertIn("x86os_usb_diagnostics(&status)", program)
         self.assertIn("X86OS_SYS_USB_DIAGNOSTICS = 112", sdk_header)
-        self.assertIn("X86OS_USB_DIAGNOSTICS_VERSION", sdk_header)
+        self.assertIn("X86OS_USB_DIAGNOSTICS_VERSION 2U", sdk_header)
+        self.assertIn("uint32_t capability_rejections", sdk_header)
         self.assertIn("int x86os_usb_diagnostics", sdk)
         self.assertIn("case SYS_USB_DIAGNOSTICS:", syscalls)
+        self.assertIn("SYSCALL_USB_DIAGNOSTICS_V1_SIZE 96U", syscalls)
+        self.assertIn("sizeof(syscall_usb_diagnostics_t) == 120U", syscalls)
         function_start = syscalls.index("static int syscall_usb_diagnostics")
         function_end = syscalls.index("\n}", function_start)
         function = syscalls[function_start:function_end]
         self.assertLess(function.index("copy_from_user"),
                         function.index("xhci_poll()"))
         self.assertIn("copy_to_user", function)
+        self.assertIn("result_size", function)
+        self.assertIn("result.capability_rejections", function)
+        self.assertIn('x86os_puts(" reject=")', program)
 
     def test_xhci_preserves_consumed_event_cycle_bits(self):
         source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")

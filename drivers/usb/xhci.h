@@ -13,7 +13,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define XHCI_DIAGNOSTICS_VERSION 1U
+#define XHCI_DIAGNOSTICS_VERSION 2U
+
+#define XHCI_CAP_REJECT_PORT_COUNT       (1U << 0U)
+#define XHCI_CAP_REJECT_SCRATCHPADS      (1U << 1U)
+#define XHCI_CAP_REJECT_CAPLENGTH        (1U << 2U)
+#define XHCI_CAP_REJECT_PORT_RANGE       (1U << 3U)
+#define XHCI_CAP_REJECT_DOORBELL_RANGE   (1U << 4U)
+#define XHCI_CAP_REJECT_RUNTIME_RANGE    (1U << 5U)
 
 enum {
     XHCI_DIAG_NOT_PROBED = 0U,
@@ -52,6 +59,12 @@ typedef struct {
     uint32_t bus;
     uint32_t slot;
     uint32_t function;
+    uint32_t cap_length;
+    uint32_t max_slots;
+    uint32_t scratchpad_count;
+    uint32_t doorbell_offset;
+    uint32_t runtime_offset;
+    uint32_t capability_rejections;
 } xhci_diagnostics_t;
 
 /* Initialise one bounded xHCI root-port HID boot keyboard or mouse. */

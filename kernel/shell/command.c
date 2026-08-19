@@ -2306,6 +2306,12 @@ void cmd_usbinfo(int arg_count, const char **args) {
            (unsigned)status.rejected_mouse_reports,
            (unsigned)status.last_completion,
            (unsigned)status.last_actual_length);
+    printf("     caplen=%u slots=%u scratch=%u db=%X rt=%X reject=%X\n",
+           (unsigned)status.cap_length, (unsigned)status.max_slots,
+           (unsigned)status.scratchpad_count,
+           (unsigned)status.doorbell_offset,
+           (unsigned)status.runtime_offset,
+           (unsigned)status.capability_rejections);
     if (status.state == XHCI_DIAG_MOUSE_READY && status.mouse_reports == 0U)
         printf("Result: mouse configured, but no interrupt reports received.\n");
     else if (status.state == XHCI_DIAG_MOUSE_READY)

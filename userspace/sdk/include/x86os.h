@@ -635,7 +635,13 @@ typedef struct {
     uint32_t reserved;
 } x86os_mouse_event_t;
 
-#define X86OS_USB_DIAGNOSTICS_VERSION 1U
+#define X86OS_USB_DIAGNOSTICS_VERSION 2U
+#define X86OS_USB_CAP_REJECT_PORT_COUNT       (1U << 0U)
+#define X86OS_USB_CAP_REJECT_SCRATCHPADS      (1U << 1U)
+#define X86OS_USB_CAP_REJECT_CAPLENGTH        (1U << 2U)
+#define X86OS_USB_CAP_REJECT_PORT_RANGE       (1U << 3U)
+#define X86OS_USB_CAP_REJECT_DOORBELL_RANGE   (1U << 4U)
+#define X86OS_USB_CAP_REJECT_RUNTIME_RANGE    (1U << 5U)
 enum {
     X86OS_USB_STATE_NOT_PROBED = 0U,
     X86OS_USB_STATE_PROBING,
@@ -678,6 +684,12 @@ typedef struct {
     uint32_t bus;
     uint32_t slot;
     uint32_t function;
+    uint32_t cap_length;
+    uint32_t max_slots;
+    uint32_t scratchpad_count;
+    uint32_t doorbell_offset;
+    uint32_t runtime_offset;
+    uint32_t capability_rejections;
 } x86os_usb_diagnostics_t;
 
 enum {

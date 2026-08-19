@@ -1878,9 +1878,18 @@ typedef struct {
     uint32_t bus;
     uint32_t slot;
     uint32_t function;
+    uint32_t cap_length;
+    uint32_t max_slots;
+    uint32_t scratchpad_count;
+    uint32_t doorbell_offset;
+    uint32_t runtime_offset;
+    uint32_t capability_rejections;
 } syscall_usb_diagnostics_t;
 
-_Static_assert(sizeof(syscall_usb_diagnostics_t) == 96U,
+#define SYSCALL_USB_DIAGNOSTICS_VERSION 2U
+#define SYSCALL_USB_DIAGNOSTICS_V1_SIZE 96U
+
+_Static_assert(sizeof(syscall_usb_diagnostics_t) == 120U,
                "USB diagnostics syscall ABI size changed");
 _Static_assert(XHCI_DIAG_DISCONNECTED == 13U,
                "USB diagnostics state ABI changed");
@@ -1891,16 +1900,24 @@ static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
         uint32_t struct_size;
     } header;
     if (copy_from_user(&header, user_status, sizeof(header)) != 0) return -14;
-    if (header.version != XHCI_DIAGNOSTICS_VERSION ||
-        header.struct_size < sizeof(syscall_usb_diagnostics_t)) return -22;
+    size_t result_size;
+    if (header.version == 1U &&
+        header.struct_size >= SYSCALL_USB_DIAGNOSTICS_V1_SIZE) {
+        result_size = SYSCALL_USB_DIAGNOSTICS_V1_SIZE;
+    } else if (header.version == SYSCALL_USB_DIAGNOSTICS_VERSION &&
+               header.struct_size >= sizeof(syscall_usb_diagnostics_t)) {
+        result_size = sizeof(syscall_usb_diagnostics_t);
+    } else {
+        return -22;
+    }
 
     xhci_poll();
     xhci_diagnostics_t xhci_status;
     if (!xhci_get_diagnostics(&xhci_status)) return -19;
 
     syscall_usb_diagnostics_t result = {0};
-    result.version = XHCI_DIAGNOSTICS_VERSION;
-    result.struct_size = sizeof(result);
+    result.version = header.version;
+    result.struct_size = (uint32_t)result_size;
     result.state = xhci_status.state;
     for (size_t index = 0U; index < pci_device_count; ++index) {
         const pci_device_t *device = &pci_devices[index];
@@ -1928,7 +1945,13 @@ static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
     result.bus = xhci_status.bus;
     result.slot = xhci_status.slot;
     result.function = xhci_status.function;
-    return copy_to_user(user_status, &result, sizeof(result)) == 0 ? 0 : -14;
+    result.cap_length = xhci_status.cap_length;
+    result.max_slots = xhci_status.max_slots;
+    result.scratchpad_count = xhci_status.scratchpad_count;
+    result.doorbell_offset = xhci_status.doorbell_offset;
+    result.runtime_offset = xhci_status.runtime_offset;
+    result.capability_rejections = xhci_status.capability_rejections;
+    return copy_to_user(user_status, &result, result_size) == 0 ? 0 : -14;
 }
 
 static int syscall_touch(const char *user_path) {

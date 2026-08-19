@@ -31,7 +31,7 @@
 #define XHCI_EVENT_RING_TRBS    128U
 #define XHCI_ENDPOINT_RING_TRBS 32U
 #define XHCI_CONTEXT_BYTES      64U
-#define XHCI_MAX_SCRATCHPADS     8U
+#define XHCI_MAX_SCRATCHPADS    32U
 #define XHCI_CONTROL_BYTES      256U
 
 #define XHCI_USBCMD             0x00U
@@ -788,13 +788,27 @@ int xhci_probe(pci_device_t *dev) {
     controller.port_count = (hcs1 >> 24U) & 0xFFU;
     diagnostics.port_count = controller.port_count;
     controller.scratchpad_count = xhci_scratchpad_count(hcs2);
-    if (controller.port_count == 0U || controller.port_count > XHCI_MAX_PORTS ||
-        controller.scratchpad_count > XHCI_MAX_SCRATCHPADS ||
-        controller.op_base < 0x20U ||
-        controller.op_base + XHCI_PORTSC_BASE +
-            controller.port_count * XHCI_PORTSC_STRIDE > XHCI_MMIO_SIZE ||
-        controller.doorbell_base >= XHCI_MMIO_SIZE ||
-        controller.runtime_base >= XHCI_MMIO_SIZE) {
+    diagnostics.cap_length = caplength;
+    diagnostics.max_slots = hcs1 & 0xFFU;
+    diagnostics.scratchpad_count = controller.scratchpad_count;
+    diagnostics.doorbell_offset = controller.doorbell_base;
+    diagnostics.runtime_offset = controller.runtime_base;
+    uint32_t capability_rejections = 0U;
+    if (controller.port_count == 0U || controller.port_count > XHCI_MAX_PORTS)
+        capability_rejections |= XHCI_CAP_REJECT_PORT_COUNT;
+    if (controller.scratchpad_count > XHCI_MAX_SCRATCHPADS)
+        capability_rejections |= XHCI_CAP_REJECT_SCRATCHPADS;
+    if (controller.op_base < 0x20U)
+        capability_rejections |= XHCI_CAP_REJECT_CAPLENGTH;
+    if (controller.op_base + XHCI_PORTSC_BASE +
+            controller.port_count * XHCI_PORTSC_STRIDE > XHCI_MMIO_SIZE)
+        capability_rejections |= XHCI_CAP_REJECT_PORT_RANGE;
+    if (controller.doorbell_base >= XHCI_MMIO_SIZE)
+        capability_rejections |= XHCI_CAP_REJECT_DOORBELL_RANGE;
+    if (controller.runtime_base >= XHCI_MMIO_SIZE)
+        capability_rejections |= XHCI_CAP_REJECT_RUNTIME_RANGE;
+    diagnostics.capability_rejections = capability_rejections;
+    if (capability_rejections != 0U) {
         printf("USB: xHCI capabilities rejected ports=%u scratch=%u db=%X rt=%X\n",
                (unsigned)controller.port_count,
                (unsigned)controller.scratchpad_count,
@@ -817,7 +831,7 @@ int xhci_probe(pci_device_t *dev) {
         return -1;
     }
     pci_set_bus_master(dev->bus, dev->slot, dev->function, 1U);
-    uint32_t max_slots = hcs1 & 0xFFU;
+    uint32_t max_slots = diagnostics.max_slots;
     if (max_slots == 0U) max_slots = 1U;
     if (!xhci_start_controller(max_slots)) {
         printf("USB: xHCI controller did not enter run state\n");

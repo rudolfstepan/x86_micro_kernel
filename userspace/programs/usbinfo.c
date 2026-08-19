@@ -111,6 +111,20 @@ int main(void) {
     print_unsigned(status.last_actual_length);
     x86os_putchar('\n');
 
+    x86os_puts("     caplen=");
+    print_unsigned(status.cap_length);
+    x86os_puts(" slots=");
+    print_unsigned(status.max_slots);
+    x86os_puts(" scratch=");
+    print_unsigned(status.scratchpad_count);
+    x86os_puts(" db=");
+    print_hex32(status.doorbell_offset);
+    x86os_puts(" rt=");
+    print_hex32(status.runtime_offset);
+    x86os_puts(" reject=");
+    print_hex32(status.capability_rejections);
+    x86os_putchar('\n');
+
     if (status.state == X86OS_USB_STATE_MOUSE_READY &&
         status.mouse_reports == 0U) {
         x86os_puts("Result: mouse configured, no interrupt reports received.\n");
