@@ -79,10 +79,20 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn("#define USE_FRAMEBUFFER 1", self.display)
 
     def test_vmware_backend_presents_dirty_rectangles_through_fifo(self):
+        self.assertIn("VMWARE_DEVICE_SVGA2 0x0405U", self.control)
+        self.assertIn("VMWARE_DEVICE_SVGA 0x0710U", self.control)
         self.assertIn("SVGA_REG_CONFIG_DONE", self.control)
         self.assertIn("SVGA_CMD_UPDATE", self.control)
         self.assertIn("SVGA_FIFO_NEXT_CMD", self.control)
         self.assertIn("display_control_present_rect", self.framebuffer)
+
+    def test_unknown_vmware_display_never_enters_runtime_vbe(self):
+        self.assertIn("find_vmware_display", self.control)
+        self.assertIn("VBE runtime transition suppressed", self.control)
+        guard = self.control.index("candidate = find_vmware_display();")
+        vbe = self.control.index(
+            "if (result != 0 && vbe_prepared) result = activate_vbe();")
+        self.assertLess(guard, vbe)
 
     def test_runtime_mmio_is_prepared_before_userspace(self):
         prepare = self.kernel.index("display_control_prepare();")

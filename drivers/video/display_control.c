@@ -29,7 +29,8 @@
 /* VMware SVGA II (legacy BIOS Workstation device).  The device exposes an
  * indexed register pair in BAR0 and its linear framebuffer in BAR1. */
 #define VMWARE_VENDOR 0x15ADU
-#define VMWARE_DEVICE 0x0405U
+#define VMWARE_DEVICE_SVGA2 0x0405U
+#define VMWARE_DEVICE_SVGA 0x0710U
 #define SVGA_REG_ID 0U
 #define SVGA_REG_ENABLE 1U
 #define SVGA_REG_WIDTH 2U
@@ -168,7 +169,17 @@ static pci_device_t *find_vmware_vga(void) {
     for (size_t index = 0; index < pci_device_count; ++index) {
         pci_device_t *device = &pci_devices[index];
         if (device->vendor_id == VMWARE_VENDOR &&
-            device->device_id == VMWARE_DEVICE &&
+            (device->device_id == VMWARE_DEVICE_SVGA2 ||
+             device->device_id == VMWARE_DEVICE_SVGA) &&
+            device->class_code == 0x03U) return device;
+    }
+    return NULL;
+}
+
+static pci_device_t *find_vmware_display(void) {
+    for (size_t index = 0; index < pci_device_count; ++index) {
+        pci_device_t *device = &pci_devices[index];
+        if (device->vendor_id == VMWARE_VENDOR &&
             device->class_code == 0x03U) return device;
     }
     return NULL;
@@ -294,8 +305,10 @@ static bool vbe_address_matches_display_bar(uint32_t address,
             if (bar_end >= bar_base && range_end >= address &&
                 address >= bar_base && range_end <= bar_end) {
                 printf("DISPLAY_CONTROL: VBE LFB inside BAR%u "
-                       "base=%08X size=%u MiB\n",
-                       (unsigned)candidate_index, (unsigned)bar_base,
+                       "VGA=%04X:%04X base=%08X size=%u MiB\n",
+                       (unsigned)candidate_index,
+                       (unsigned)device->vendor_id,
+                       (unsigned)device->device_id, (unsigned)bar_base,
                        (unsigned)(bar_size / (1024U * 1024U)));
                 return true;
             }
@@ -563,6 +576,14 @@ int display_control_activate(void) {
         pci_device_t *candidate = find_vmware_vga();
         if (candidate) {
             result = activate_vmware(candidate);
+            goto activation_done;
+        }
+        candidate = find_vmware_display();
+        if (candidate) {
+            printf("DISPLAY_CONTROL: unsupported VMware VGA=%04X:%04X; "
+                   "VBE runtime transition suppressed\n",
+                   (unsigned)candidate->vendor_id,
+                   (unsigned)candidate->device_id);
             goto activation_done;
         }
     }

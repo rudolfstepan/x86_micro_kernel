@@ -43,6 +43,14 @@ VMware kann weder Intels realen `8086:8c31`-Controller noch die NVIDIA-Karte
 einzelne CPU bilden die sicher testbare Annäherung; Intel-spezifische Register-,
 Timing- und physische HID-Fehler bleiben ein Nachweis auf dem ASUS-Board.
 
+Der Runtime-Grafikpfad akzeptiert ausschließlich die VMware-SVGA-PCI-IDs
+`15ad:0405` (SVGA II) und `15ad:0710` (Legacy SVGA) mit passendem I/O-BAR und
+erfolgreicher Register-ID-Aushandlung. Ein anderer VMware-Displayadapter darf
+nicht in den Legacy-VBE-Runtime-Thunk fallen: Er wird vor jeder Modusänderung
+mit `VBE runtime transition suppressed` abgelehnt. Das verhindert einen
+VMware-Monitor-Panic durch eine Real-Mode-Ausführung auf einer inkompatiblen
+virtuellen Grafikgeneration.
+
 ## Funktionstest
 
 ```text
@@ -93,6 +101,10 @@ Build-ID zu sichern.
   begrenzten 20 ms nach Port-Power und 10 ms nach USB2-Reset über die monotone
   PIT-Zeit vollständig einhalten; ein CPU-abhängiger Poll-Zähler ist dafür
   unzulässig.
+- VMware meldet beim Start von `desktop` oder `guidemo` einen vCPU-Fehler:
+  `vmware-serial.log` muss nun entweder einen validierten SVGA-Erfolg oder
+  `VBE runtime transition suppressed` enthalten; ein VBE-Aufruf nach einer
+  erkannten, nicht unterstützten VMware-Grafik-ID ist ein Kernelregressionsfehler.
 - kein LAN: `e1000`, Verbindungsstatus und VMnet0-Zuordnung prüfen
 - frühe Panic: `vmware-serial.log` und erweiterten Panic-Screen vergleichen
 
