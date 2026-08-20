@@ -206,9 +206,45 @@ static void test_edge_and_corner_resize(void) {
     assert(manager.resize_edges == 0U);
 }
 
+static uint32_t dirty_contains(const desktop_dirty_region_t *dirty,
+                               int32_t x, int32_t y) {
+    for (uint32_t index = 0U; index < dirty->count; ++index) {
+        const desktop_rect_t rect = dirty->rects[index];
+        if (x >= rect.x && y >= rect.y &&
+            (int64_t)x < (int64_t)rect.x + rect.width &&
+            (int64_t)y < (int64_t)rect.y + rect.height) return 1U;
+    }
+    return 0U;
+}
+
+static void test_shrink_invalidates_complete_resize_sweep(void) {
+    desktop_wm_t manager;
+    desktop_wm_initialize(&manager, 1024U, 768U, 32, 744, 24U);
+    assert(desktop_wm_open(&manager, 0U) != 0U);
+    desktop_window_t *window = &manager.windows[0];
+    int32_t original_right = window->x + (int32_t)window->width - 1;
+    int32_t original_bottom = window->y + (int32_t)window->height - 1;
+    desktop_wm_event_t press = {
+        DESKTOP_WM_EVENT_POINTER_BUTTON, original_right, original_bottom,
+        DESKTOP_WM_BUTTON_LEFT, 1U, 0U, 0U};
+    desktop_wm_dispatch_result_t result;
+    assert(desktop_wm_dispatch(&manager, &press, &result) == 0);
+    assert(manager.capture_kind == DESKTOP_WM_CAPTURE_RESIZE);
+    desktop_wm_event_t shrink = {
+        DESKTOP_WM_EVENT_POINTER_MOTION,
+        original_right - 180, original_bottom - 120, 0U, 0U, 0U, 0U};
+    assert(desktop_wm_dispatch(&manager, &shrink, &result) == 0);
+    assert(dirty_contains(&result.dirty, original_right, original_bottom));
+    shrink.x -= 80;
+    shrink.y -= 60;
+    assert(desktop_wm_dispatch(&manager, &shrink, &result) == 0);
+    assert(dirty_contains(&result.dirty, original_right, original_bottom));
+}
+
 int main(void) {
     test_dirty_regions_and_event_dispatch();
     test_edge_and_corner_resize();
+    test_shrink_invalidates_complete_resize_sweep();
     desktop_wm_t manager;
     desktop_wm_initialize(&manager, 1024U, 768U, 36, 736, 24U);
 

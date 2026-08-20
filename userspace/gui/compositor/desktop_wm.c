@@ -557,6 +557,24 @@ static void collect_state_damage(const desktop_wm_t *manager,
             desktop_dirty_add(&result->dirty,
                               desktop_wm_window_bounds(manager, index));
         }
+        if (geometry_changed &&
+            manager->capture_kind == DESKTOP_WM_CAPTURE_RESIZE &&
+            manager->capture_window == (int32_t)index) {
+            /* Live resize can coalesce many pointer reports into one frame.
+             * Recompose the complete sweep from the button-down geometry to
+             * the current geometry. This closes a major invalidation gap;
+             * final framebuffer publication artifacts are tracked
+             * separately by the manual VMware resize test. */
+            desktop_window_t resize_origin = {
+                .x = manager->resize_window_x,
+                .y = manager->resize_window_y,
+                .width = manager->resize_window_width,
+                .height = manager->resize_window_height,
+                .visible = 1U,
+            };
+            desktop_dirty_add(
+                &result->dirty, snapshot_window_bounds(&resize_origin));
+        }
     }
     if (before->selected != manager->selected) {
         result->flags |= DESKTOP_WM_RESULT_SELECTION_CHANGED;

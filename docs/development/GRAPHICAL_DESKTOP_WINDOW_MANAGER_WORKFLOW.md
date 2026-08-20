@@ -270,8 +270,11 @@ Bildschirms und ohne schrittweise sichtbaren Bildaufbau.
   halten und Pointerbewegungen nicht an ein anderes Fenster umleiten.
 - [x] Gegenüberliegende Kante beim Ziehen festhalten, Mindestgröße erzwingen
   und jede Geometrie auf den nutzbaren Arbeitsbereich begrenzen.
-- [x] Alte und neue Resize-Geometrie als Dirty Regions rekonstruieren und eine
-  sichtbare Griffmarkierung in der rechten unteren Ecke zeichnen.
+- [x] Alte und neue Resize-Geometrie als Dirty Regions rekonstruieren, während
+  eines Live-Resize zusätzlich den vollständigen Bereich der Button-Down-
+  Geometrie invalidieren und eine sichtbare Griffmarkierung zeichnen. Dies
+  reduziert Zwischenbilder bei zusammengefassten Pointer-Reports; der unten
+  dokumentierte VMware-Restfehler bleibt offen.
 - [x] Hosttests für Dirty-Überlauf, Fokusarten, Event-Dispatch, implizites Grab,
   Kanten-/Ecken-Resize, Mindestgröße, Bounds, Stale-Serial, Timeout und
   Prozesscleanup ergänzen.
@@ -361,11 +364,14 @@ zeichnet darin und erhält nur die für ihn bestimmten lokalen Eingaben.
 - [x] Für die erste isolierte Fensteranwendung einen mediierten, retained
   Zeichenstrom festlegen: maximal 192 lokale Fill-/Text-Kommandos werden in
   einer Pending-Liste validiert und erst mit `paint_commit` atomar sichtbar.
-  Gemeinsam genutzte Pixelbuffer bleiben eine spätere, getrennte ABI-Stufe.
-- [ ] Optionalen Pixelbuffer-Transport fertigstellen: generationengebundene
-  Descriptoren für Größe, Pitch, Format und Release sind vorhanden, aber noch
-  nicht auf gemeinsam nutzbaren Speicher abgebildet. Der aktuelle Editor nutzt
-  deshalb ausschließlich den mediierten Paint-Strom ohne Framebufferrecht.
+  Der Editor nutzt diesen Strom weiterhin ohne Framebufferrecht.
+- [x] Pixelbuffer-Transport für Rasteranwendungen fertigstellen: Der Client
+  lädt einen vollständig validierten, unveränderlichen XRGB8888-Puffer in eine
+  auf acht MiB begrenzte, statische 4-KiB-Blockressource ohne Kernel-Heap. Nur
+  der generationsgenaue
+  Eltern-Compositor darf daraus geclippte Teilrechtecke zeichnen. Es gibt kein
+  LFB-Mapping und kein veränderliches Shared Memory; `attach`, `damage`,
+  `commit` und Release bleiben getrennte, bestätigte Zustände.
 - [x] Gemeinsame, zugriffsfreie Descriptor-Validierung in der GUI-Library
   bereitstellen.
 - [x] Surface-Protokoll für Buffer-Create/Destroy auf Version 2 anheben; alte
@@ -373,6 +379,8 @@ zeichnet darin und erhält nur die für ihn bestimmten lokalen Eingaben.
 - [x] Surface-Protokoll für atomare Paint-Listen, Fenstertitel und
   Resize-Configure auf Version 3 anheben; unbekannte ältere Wire-Versionen
   bleiben fail-closed.
+- [x] Surface-Protokoll auf Version 4 anheben und Buffer-Release erst nach dem
+  atomaren Austausch des vorherigen Compositor-Puffers melden.
 - [x] Client kennt nur lokale Koordinaten; Platzierung und Dekoration bleiben
   vollständig beim Compositor.
 - [x] Keyboardfokus und Pointerfokus getrennt und generationsgebunden an den
@@ -575,6 +583,17 @@ Für den aktuellen Stand sind genau diese Handlungen abzunehmen:
 5. Eine Legacy-App mit Enter öffnen, beenden und die
    unveränderte Fensterszene wiedersehen.
 6. Escape drücken und die bedienbare VGA-Shell erhalten.
+
+### Offener Resize-Redraw-Bug
+
+Beim schnellen oder mehrfachen Verkleinern eines Surface-Fensters können in
+VMware weiterhin vereinzelt Fragmente älterer Fenstergrößen im freigelegten
+Desktopbereich stehen bleiben. Die Invalidierung umfasst bereits die alte,
+neue und ursprüngliche Button-Down-Geometrie und verhindert den Großteil der
+Artefakte, der manuelle Sichttest ist aber noch nicht vollständig bestanden.
+Der Fehler bleibt deshalb ausdrücklich offen; als nächste Untersuchung sind
+Damage-Coalescing, Shadow-Framebuffer-Publikation und die Reihenfolge von
+Configure/Commit während Live-Resize gegeneinander zu instrumentieren.
 
 Der reproduzierbare Gastnachweis für Frame-Publikation und Resize verwendet
 keine reale Host-Eingabe und führt jeweils genau acht Move- und Resize-Frames
