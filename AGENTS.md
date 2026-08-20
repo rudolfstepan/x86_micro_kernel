@@ -7,6 +7,32 @@ system. Preserve stability, isolation, diagnosability and recoverability ahead
 of throughput or feature count. Do not claim certification or fail-operational
 behavior that has not been demonstrated on the target system.
 
+## Highest architecture rule
+
+The microkernel is the protected failure-containment boundary. Ring 0 contains
+only mechanisms required for scheduling, address spaces, IPC, capabilities,
+interrupt entry, bounded device-resource mediation, fencing, watchdog and
+supervisor transitions. Filesystems, protocol stacks, policy, complex parsers,
+device drivers, system services, GUI components and applications belong in
+separate Ring-3 processes. A crash, hang, invalid reply or quota violation in
+one such process must be containable without kernel corruption or loss of
+unrelated essential functions.
+
+Every Ring-3 component has a generation-scoped lifecycle, fixed resource and
+restart budgets, a health/self-test contract and explicit dependencies.
+Recovery is `detect -> isolate -> fence/revoke -> reap -> recreate -> self-test
+-> reintegrate`; exhaustion enters the profile-defined degraded or safe state.
+Automatic restart and manual `svcctl` recovery use the same state machine and
+never bypass fencing, generation checks or validation.
+
+Do not add a new complex in-kernel driver as a shortcut. A hardware package
+that lacks safe Ring-3 IRQ, MMIO/PIO and DMA mediation first adds that bounded
+microkernel mechanism and its fault-injection proof. On hardware without an
+IOMMU, never claim DMA fault isolation merely because driver code executes in
+Ring 3; use a kernel-owned validated DMA mediator or declare the platform
+unsupported for that assurance profile. Existing monolithic drivers are
+visible migration debt, not architectural precedent.
+
 ## Sources of truth
 
 Read only the material needed for the active package, in this order:
@@ -80,6 +106,24 @@ Do not use subagents in autonomous package runs.
 
 ## Non-negotiable engineering rules
 
+- Preserve the microkernel failure boundary above every feature goal. A
+  service or driver feature is incomplete until its Ring-3 crash, hang and
+  restart behavior is bounded and tested; normal component failure must not
+  panic, corrupt or require rebooting the kernel.
+- Design every public ABI, API, protocol, device abstraction, executable and
+  persistent format standard-first. Name the applicable established reference
+  standard and preserve its terminology, state model, units, error semantics
+  and conventional toolchain integration wherever they fit the system. Do not
+  claim source, binary or protocol compatibility until tested. A REIST-specific
+  deviation is permitted only when isolation, bounded execution, diagnosability
+  or recovery requires it; document the deviation, version it append-only and
+  cover it with a regression test. Never silently reuse a standard name with
+  incompatible semantics. Adopt mature observable contracts and best practices,
+  not historical baggage such as unbounded waits, implicit global ownership,
+  unchecked raw pointers, direct device authority or compatibility aliases that
+  have no current use. Keep deliberate simplifications behind documented
+  adapters so future source ports do not inherit obsolete implementation
+  constraints.
 - All waits, retries, queues and device operations are bounded by capacity or a
   monotonic deadline. No busy-wait in a userspace-facing safety path.
 - Fail closed before side effects. Validate versions, sizes, generations,

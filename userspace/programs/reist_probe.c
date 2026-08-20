@@ -309,7 +309,51 @@ static int message_is_network_ingress(const x86os_ipc_message_t *message) {
         message->payload[3] == 'R';
 }
 
+/* The supervisor is the only authority that can launch this binary with the
+ * DRIVER profile.  This fixed fault client exercises the generic lifecycle in
+ * a QEMU fault build; normal PROBE launches are denied DEVICE_CONTROL and
+ * continue into the network service below. */
+static int run_driver_domain_fault_client(
+        const x86os_device_driver_bootstrap_t *bootstrap) {
+    if (bootstrap == NULL || bootstrap->version != X86OS_DEVICE_ABI_VERSION ||
+        bootstrap->struct_size != sizeof(*bootstrap) ||
+        bootstrap->device == 0U || bootstrap->session_epoch == 0U) return 50;
+    uint32_t fixture = bootstrap->device & 0xFFU;
+    if (fixture != 1U && fixture != 2U) return 51;
+
+    if (fixture == 1U && bootstrap->session_epoch == 4U) {
+        if (x86os_device_driver_report(
+                bootstrap, X86OS_DEVICE_DRIVER_REPORT_SELF_TEST, 0U) != -5)
+            return 52;
+        for (;;) (void)x86os_sleep_ms(1000U);
+    }
+    if (x86os_device_driver_report(
+            bootstrap, X86OS_DEVICE_DRIVER_REPORT_SELF_TEST, 1U) != 0 ||
+        x86os_device_driver_report(
+            bootstrap, X86OS_DEVICE_DRIVER_REPORT_PROGRESS, 1U) != 0)
+        return 53;
+    (void)x86os_sleep_ms(30U);
+
+    if (fixture == 2U || bootstrap->session_epoch == 1U) {
+        __asm__ volatile("ud2");
+        return 54;
+    }
+    if (bootstrap->session_epoch == 2U) {
+        for (;;) (void)x86os_sleep_ms(1000U);
+    }
+    if (bootstrap->session_epoch == 3U) {
+        x86os_device_driver_bootstrap_t stale = *bootstrap;
+        --stale.session_epoch;
+        return x86os_device_driver_report(
+            &stale, X86OS_DEVICE_DRIVER_REPORT_PROGRESS, 2U) == -13 ? 55 : 56;
+    }
+    return 57;
+}
+
 int main(int argc, char **argv) {
+    x86os_device_driver_bootstrap_t driver_bootstrap = {0};
+    if (x86os_device_driver_bootstrap(&driver_bootstrap) == 0)
+        return run_driver_domain_fault_client(&driver_bootstrap);
     if (argc != 2) return 2;
     x86os_ipc_handle_t endpoint = 0U;
     if (report_startup(&endpoint) != 0) return 3;

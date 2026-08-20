@@ -34,6 +34,42 @@ _Static_assert(sizeof(x86os_component_request_t) == 24U,
                "component control request ABI changed");
 _Static_assert(sizeof(x86os_component_result_t) == 56U,
                "component control result ABI changed");
+_Static_assert(sizeof(x86os_device_region_request_t) == 32U,
+               "device region request ABI changed");
+_Static_assert(sizeof(x86os_device_region_info_t) == 48U,
+               "device region info ABI changed");
+_Static_assert(sizeof(x86os_device_irq_request_t) == 32U,
+               "device IRQ request ABI changed");
+_Static_assert(sizeof(x86os_device_dma_request_t) == 32U,
+               "device DMA request ABI changed");
+_Static_assert(sizeof(x86os_device_action_request_t) == 32U,
+               "device action request ABI changed");
+_Static_assert(sizeof(x86os_device_resource_request_t) == 32U,
+               "device resource request ABI changed");
+_Static_assert(sizeof(x86os_device_resource_result_t) == 32U,
+               "device resource result ABI changed");
+_Static_assert(sizeof(x86os_device_irq_message_t) == 32U,
+               "device IRQ message ABI changed");
+_Static_assert(sizeof(x86os_device_irq_completion_t) == 32U,
+               "device IRQ completion ABI changed");
+_Static_assert(sizeof(x86os_device_dma_transfer_t) == 32U,
+               "device DMA transfer ABI changed");
+_Static_assert(sizeof(x86os_device_dma_info_t) == 32U,
+               "device DMA info ABI changed");
+_Static_assert(sizeof(x86os_device_region_access_t) == 32U,
+               "device region access ABI changed");
+_Static_assert(sizeof(x86os_device_region_value_t) == 32U,
+               "device region value ABI changed");
+_Static_assert(sizeof(x86os_device_region_dma_address_t) == 32U,
+               "device region DMA address ABI changed");
+_Static_assert(sizeof(x86os_device_driver_bootstrap_t) == 32U,
+               "device driver bootstrap ABI changed");
+_Static_assert(sizeof(x86os_device_driver_report_t) == 32U,
+               "device driver report ABI changed");
+_Static_assert(sizeof(x86os_device_resource_status_t) == 40U,
+               "device resource status ABI changed");
+_Static_assert(sizeof(x86os_device_iommu_status_t) == 36U,
+               "device IOMMU status ABI changed");
 
 uintptr_t x86os_syscall(uint32_t number, uintptr_t argument1,
                         uintptr_t argument2, uintptr_t argument3) {
@@ -823,6 +859,245 @@ int x86os_component_control(const x86os_component_request_t* request,
     if (request == NULL || result == NULL) return -22;
     return (int)x86os_syscall(X86OS_SYS_COMPONENT_CONTROL,
                               (uintptr_t)request, (uintptr_t)result, 0U);
+}
+
+int x86os_device_open_region(x86os_device_handle_t device,
+                             uint32_t region_index, uint32_t rights,
+                             x86os_device_region_info_t *region) {
+    if (device == 0U || region == NULL) return -22;
+    const x86os_device_region_request_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .device = device,
+        .region_index = region_index,
+        .rights = rights,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_REGION_OPEN, (uintptr_t)&request,
+        (uintptr_t)region);
+}
+
+int x86os_device_bind_irq(x86os_device_handle_t device,
+                          x86os_ipc_handle_t endpoint,
+                          x86os_device_resource_result_t *resource) {
+    if (device == 0U || endpoint == 0U || resource == NULL) return -22;
+    const x86os_device_irq_request_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .device = device,
+        .endpoint_capability = endpoint,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_IRQ_BIND, (uintptr_t)&request,
+        (uintptr_t)resource);
+}
+
+int x86os_device_bind_dma(x86os_device_handle_t device,
+                          uint32_t dma_capability,
+                          x86os_device_resource_result_t *resource) {
+    return x86os_device_bind_dma_direction(
+        device, dma_capability,
+        X86OS_DEVICE_DMA_TO_DEVICE | X86OS_DEVICE_DMA_FROM_DEVICE, resource);
+}
+
+int x86os_device_bind_dma_direction(
+        x86os_device_handle_t device, uint32_t dma_capability,
+        uint32_t direction, x86os_device_resource_result_t *resource) {
+    if (device == 0U || resource == NULL || direction == 0U ||
+        (direction & ~(X86OS_DEVICE_DMA_TO_DEVICE |
+                       X86OS_DEVICE_DMA_FROM_DEVICE)) != 0U) return -22;
+    const x86os_device_dma_request_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .device = device,
+        .dma_capability = dma_capability,
+        .flags = direction,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_DMA_BIND, (uintptr_t)&request,
+        (uintptr_t)resource);
+}
+
+int x86os_device_activate(x86os_device_handle_t device) {
+    if (device == 0U) return -22;
+    const x86os_device_action_request_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .device = device,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_ACTIVATE, (uintptr_t)&request, 0U);
+}
+
+int x86os_device_resource_status(x86os_device_resource_t resource,
+                                 x86os_device_resource_status_t *status) {
+    if (resource == 0U || status == NULL) return -22;
+    const x86os_device_resource_request_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .resource = resource,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_RESOURCE_STATUS, (uintptr_t)&request,
+        (uintptr_t)status);
+}
+
+int x86os_device_irq_complete(x86os_device_resource_t resource,
+                              x86os_device_irq_completion_t *completion) {
+    if (resource == 0U || completion == NULL) return -22;
+    const x86os_device_resource_request_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .resource = resource,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_IRQ_COMPLETE, (uintptr_t)&request,
+        (uintptr_t)completion);
+}
+
+int x86os_device_dma_info(x86os_device_resource_t resource,
+                          x86os_device_dma_info_t *info) {
+    if (resource == 0U || info == NULL) return -22;
+    const x86os_device_resource_request_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .resource = resource,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_DMA_INFO, (uintptr_t)&request,
+        (uintptr_t)info);
+}
+
+static int x86os_device_dma_transfer(
+        uint32_t command, x86os_device_resource_t resource, uint32_t offset,
+        void *data, uint32_t length) {
+    uintptr_t address = (uintptr_t)data;
+    if ((command != X86OS_DEVICE_CONTROL_DMA_WRITE &&
+         command != X86OS_DEVICE_CONTROL_DMA_READ) || resource == 0U ||
+        data == NULL || address > UINT32_MAX || length == 0U ||
+        length > X86OS_DEVICE_DMA_TRANSFER_MAX) return -22;
+    const x86os_device_dma_transfer_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .resource = resource,
+        .offset = offset,
+        .length = length,
+        .user_buffer = (uint32_t)address,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL, command,
+                              (uintptr_t)&request, 0U);
+}
+
+int x86os_device_dma_write(x86os_device_resource_t resource, uint32_t offset,
+                           const void *data, uint32_t length) {
+    return x86os_device_dma_transfer(X86OS_DEVICE_CONTROL_DMA_WRITE, resource,
+                                     offset, (void *)data, length);
+}
+
+int x86os_device_dma_read(x86os_device_resource_t resource, uint32_t offset,
+                          void *data, uint32_t length) {
+    return x86os_device_dma_transfer(X86OS_DEVICE_CONTROL_DMA_READ, resource,
+                                     offset, data, length);
+}
+
+static int x86os_device_region_access_valid(
+        x86os_device_resource_t region, uint32_t offset, uint32_t width) {
+    return region != 0U &&
+        (width == 1U || width == 2U || width == 4U) &&
+        (offset & (width - 1U)) == 0U;
+}
+
+int x86os_device_region_read(x86os_device_resource_t region, uint32_t offset,
+                             uint32_t width, uint32_t *value) {
+    if (!x86os_device_region_access_valid(region, offset, width) ||
+        value == NULL) return -22;
+    const x86os_device_region_access_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .region = region,
+        .offset = offset,
+        .width = width,
+    };
+    x86os_device_region_value_t result = {0};
+    int status = (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_REGION_READ, (uintptr_t)&request,
+        (uintptr_t)&result);
+    if (status != 0) return status;
+    if (result.version != X86OS_DEVICE_ABI_VERSION ||
+        result.struct_size != sizeof(result) || result.region != region ||
+        result.offset != offset || result.width != width ||
+        result.reserved[0] != 0U || result.reserved[1] != 0U) return -84;
+    *value = result.value;
+    return 0;
+}
+
+int x86os_device_region_write(x86os_device_resource_t region, uint32_t offset,
+                              uint32_t width, uint32_t value) {
+    if (!x86os_device_region_access_valid(region, offset, width)) return -22;
+    const x86os_device_region_access_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .region = region,
+        .offset = offset,
+        .width = width,
+        .value = value,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_REGION_WRITE, (uintptr_t)&request, 0U);
+}
+
+int x86os_device_region_bind_dma(x86os_device_resource_t region,
+                                 x86os_device_resource_t dma,
+                                 uint32_t register_offset,
+                                 uint32_t buffer_offset) {
+    if (region == 0U || dma == 0U ||
+        (buffer_offset & (X86OS_DEVICE_DMA_ADDRESS_ALIGNMENT - 1U)) != 0U)
+        return -22;
+    const x86os_device_region_dma_address_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .region = region,
+        .dma = dma,
+        .register_offset = register_offset,
+        .buffer_offset = buffer_offset,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_REGION_BIND_DMA, (uintptr_t)&request, 0U);
+}
+
+int x86os_device_driver_bootstrap(
+        x86os_device_driver_bootstrap_t *bootstrap) {
+    if (bootstrap == NULL) return -22;
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_DRIVER_BOOTSTRAP, 0U, (uintptr_t)bootstrap);
+}
+
+int x86os_device_driver_report(
+        const x86os_device_driver_bootstrap_t *bootstrap,
+        uint32_t report_type, uint32_t value) {
+    if (bootstrap == NULL || bootstrap->version != X86OS_DEVICE_ABI_VERSION ||
+        bootstrap->struct_size != sizeof(*bootstrap) ||
+        bootstrap->session_generation == 0U ||
+        bootstrap->session_epoch == 0U ||
+        (report_type != X86OS_DEVICE_DRIVER_REPORT_SELF_TEST &&
+         report_type != X86OS_DEVICE_DRIVER_REPORT_PROGRESS)) return -22;
+    const x86os_device_driver_report_t report = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(report),
+        .session_slot = bootstrap->session_slot,
+        .session_generation = bootstrap->session_generation,
+        .session_epoch = bootstrap->session_epoch,
+        .report_type = report_type,
+        .value = value,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_DRIVER_REPORT, (uintptr_t)&report, 0U);
+}
+
+int x86os_device_iommu_status(x86os_device_iommu_status_t *status) {
+    if (status == NULL) return -22;
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_IOMMU_STATUS, 0U, (uintptr_t)status);
 }
 
 int x86os_space(const char* path, x86os_space_info_t* info) {

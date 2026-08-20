@@ -7,6 +7,32 @@ entwickelt, veröffentlicht und dokumentiert. Ziel ist Quellportabilität durch
 erneutes Kompilieren, nicht die Neuerfindung einer Toolchain und nicht die
 vorschnelle Behauptung von POSIX-, Wayland- oder Binärkompatibilität.
 
+## Standard-first-API-Vertrag
+
+Jede wiederverwendbare Bibliothek beginnt beim nächstliegenden etablierten API-
+und Datenmodellstandard. Namen, Frame-/Byte-Einheiten, Objektlebensdauer,
+Zustandsübergänge, negative Fehlercodes und gewöhnliche Compiler-/Linker-
+Integration bleiben vertraut, damit portable Software einen Adapter statt
+einer Neuentwicklung benötigt. Beispiele sind POSIX-artige Datei- und
+Prozessfehler, konventionelle `usr/include`- und `usr/lib`-Layouts,
+Wayland-inspirierte Surface-Commits und ALSA-inspirierte PCM-Zustände sowie
+frameorientierte Transfers.
+
+Das ist architektonische Annäherung und keine automatische
+Kompatibilitätsbehauptung. Header verwenden den `reist_`-Namensraum, bis
+Quellkompatibilität vollständig implementiert und getestet ist. Kernel-ABIs
+bleiben fest groß, versioniert und append-only. Jede bewusste Abweichung für
+endliche Deadlines, Capability-Besitz, Prozessgenerationen oder
+Fail-closed-Recovery ist in der Signatur sichtbar und direkt an der API
+dokumentiert; Standardnamen werden nicht mit stillschweigend anderer Semantik
+verwendet.
+
+Damit bleibt REIST gegenüber gewachsenen Ökosystemen anschlussfähig, ohne deren
+historische Implementierungslasten zum Kernelvertrag zu machen. Kompatible
+Adapter dürfen verbreitete Quell-APIs abbilden; der native `reist_`-Kern bleibt
+klein, explizit besessen, kapazitätsbegrenzt und mit endlichen Deadlines
+versehen.
+
 ## Grundentscheidung
 
 REIST übernimmt bewährte, frei verfügbare Buildbausteine, solange sie das

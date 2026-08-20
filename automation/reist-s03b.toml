@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3c-6f"
-active_id = "R1.5-runtime-desktop"
+active_id = "R1.7-pci-audio"
 
 [policy]
 one_package_per_run = true
@@ -494,6 +494,7 @@ allowed_files = [
   "fs/vfs/filesystem.c",
   "fs/fat32/fat32_vfs_adapter.c",
   "kernel/init/kernel.c",
+  "kernel/proc/process.h",
   "kernel/proc/process.c",
   "scripts/run_qemu_smoke.py",
   "test/test_qemu_smoke.py",
@@ -1048,6 +1049,7 @@ allowed_files = [
   "fs/vfs/filesystem.c",
   "kernel/proc/process.h",
   "kernel/proc/process.c",
+  "kernel/sched/scheduler.c",
   "kernel/syscall/syscall_table.c",
   "userspace/sdk/include/x86os.h",
   "userspace/sdk/x86os.c",
@@ -1482,7 +1484,7 @@ evidence = [
 
 [[packages]]
 id = "R1.5-runtime-desktop"
-status = "active"
+status = "done"
 risk = "critical"
 title = "Native runtime graphics desktop activation"
 scope = "Allow desktop.prg to request one privileged transition from a normal VGA text boot into a validated 32-bit LFB mode through native QEMU Standard-VGA, VMware SVGA-II, or a fixed loader-selected Legacy-BIOS VBE compatibility thunk. Validate and read back every native register or VBE mode result, publish the supervisor-only framebuffer last, restore the visible VGA shell on Escape, retain the existing framebuffer boot, fail closed before unsupported side effects, and render a keyboard- and USB-mouse-operable Workbench-style desktop with bounded movable and resizable top-level windows plus real system menus backed by a documented reusable Ring-3 GUI library and conventional incrementally built SDK sysroot."
@@ -1709,4 +1711,196 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: activate desktop graphics from VGA runtime"
+evidence = []
+
+[[packages]]
+id = "R1.6-driver-domain-foundation"
+status = "done"
+risk = "critical"
+title = "Capability-scoped Ring-3 PCI driver domains"
+scope = "Create the generic failure-containment foundation required before any new PCI driver: fixed PCI isolation-group ownership, generation-scoped device/region/IRQ/DMA capabilities, fail-closed bus mastering, bounded IRQ notification, IOMMU-gated direct assignment or fully mediated DMA, and supervisor-controlled fence/revoke/reap/reset/self-test/reintegrate. Prove crash, hang, stale generation, partial initialization and exhausted restart-budget behavior while the microkernel and unrelated Ring-3 processes retain progress. Do not add a device-specific state machine in Ring 0."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "AGENTS.md",
+  "Makefile",
+  "arch/x86/platform/acpi.c",
+  "arch/x86/platform/acpi.h",
+  "arch/x86/cpu/irq.c",
+  "arch/x86/include/sys.h",
+  "arch/x86/mm/paging.h",
+  "arch/x86/mm/paging.c",
+  "drivers/bus/pci.h",
+  "drivers/bus/pci.c",
+  "include/kernel/device_domain.h",
+  "include/kernel/ipc.h",
+  "kernel/init/device_domain.c",
+  "kernel/init/kernel.c",
+  "include/kernel/supervisor.h",
+  "kernel/init/supervisor.c",
+  "kernel/ipc/ipc.c",
+  "include/kernel/component_control.h",
+  "kernel/init/component_control.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "kernel/sched/scheduler.c",
+  "kernel/syscall/syscall_table.c",
+  "lib/libc/stdlib.h",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/programs/reist_probe.c",
+  "scripts/build_system_programs.py",
+  "scripts/test-reist-runtime.ps1",
+  "scripts/run_qemu_driver_domain.py",
+  "test/test_acpi_iommu_host.c",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_reist_supervisor.py",
+  "test/test_component_control.py",
+  "test/test_qemu_driver_domain.py",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/RESILIENCE_AND_DEGRADATION_CONTRACT.md",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/development/USERSPACE_DRIVER_DOMAIN_WORK_PACKAGE.md",
+  "docs/README.md"
+]
+invariants = [
+  "Ring 0 contains only generic device-resource and recovery mechanisms and no device-specific state machine",
+  "the minimum ownership unit is a validated PCI isolation group and it has at most one live DMA owner",
+  "bus mastering remains disabled until IRQ ownership and an isolated or mediated DMA space are valid",
+  "direct DMA-capable assignment is rejected when the platform cannot prove IOMMU isolation",
+  "every device, region, IRQ and DMA handle is capability- and generation-scoped and stale authority never revives",
+  "IRQ work in Ring 0 is bounded to mask, acknowledge, count, notify and EOI",
+  "crash, hang and partial initialization perform idempotent fence, revoke, DMA stop, reset and cleanup",
+  "automatic and manual restart use one bounded supervisor transaction and reserved restart capacity",
+  "failed reset, failed self-test or exhausted restart budget reaches the declared degraded or safe state",
+  "fault injection proves the microkernel and unrelated Ring-3 work retain progress"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -q",
+  "python test/test_reist_supervisor.py -q",
+  "python test/test_component_control.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode driver-domain"
+]
+stop_conditions = [
+  "a required PCI isolation group cannot be derived or conservatively represented",
+  "the target exposes DMA without an IOMMU and the operation cannot be fully mediated",
+  "fencing cannot disable bus mastering and IRQ publication before process cleanup",
+  "a driver-specific parser or state machine would be required in Ring 0",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add supervised Ring-3 driver domains"
+evidence = []
+
+[[packages]]
+id = "R1.7-pci-audio"
+status = "active"
+risk = "high"
+title = "Supervised Ring-3 PCI audio domain and userspace library"
+scope = "Add Intel High Definition Audio only behind the global microkernel failure-domain contract: the HDA controller and codec state machine run in a supervised Ring-3 driver domain, PCM policy runs in a separate Ring-3 audio service, and Ring 0 provides only generic bounded capability, IRQ and device-resource mediation. Require proven IOMMU isolation or fully kernel-owned validated DMA publication; otherwise reject the device for that assurance profile. Add conventional libreistaudio, shell-visible diagnostics and bounded playback, then prove crash, hang, stale-generation and restart-budget behavior without loss of microkernel or unrelated Ring-3 progress."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "AGENTS.md",
+  "Makefile",
+  "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c",
+  "include/kernel/supervisor.h",
+  "kernel/init/supervisor.c",
+  "kernel/init/audio_device_profile.h",
+  "kernel/init/audio_device_profile.c",
+  "kernel/init/kernel.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "kernel/syscall/syscall_table.c",
+  "lib/libc/stdlib.h",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/drivers/audio/hda_driver.h",
+  "userspace/drivers/audio/hda_driver.c",
+  "userspace/services/audio/audio_service.h",
+  "userspace/services/audio/audio_service.c",
+  "userspace/audio/include/reist/audio.h",
+  "userspace/audio/lib/audio.c",
+  "userspace/programs/audioinfo.c",
+  "userspace/programs/audiotest.c",
+  "userspace/bin/shell.c",
+  "scripts/build_user_sdk.py",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "scripts/create_native_boot_image.py",
+  "scripts/run_qemu_system_layout.py",
+  "scripts/run_qemu_pci_audio.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_audio_host.c",
+  "test/test_audio_source.py",
+  "test/test_audio_sdk_host.c",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_user_program_toolchain.py",
+  "test/test_shell_source.py",
+  "test/test_system_layout.py",
+  "test/test_qemu_system_layout.py",
+  "test/test_qemu_pci_audio.py",
+  "test/test_native_boot_image.py",
+  "docs/architecture/AUDIO_SUBSYSTEM.md",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/RESILIENCE_AND_DEGRADATION_CONTRACT.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/development/PCI_AUDIO_WORK_PACKAGE.md",
+  "docs/development/USER_PROGRAM_TOOLCHAIN.md",
+  "docs/README.md",
+  "docs/hardware/PCI_DEVICES.md",
+  "docs/hardware/VMWARE.md"
+]
+invariants = [
+  "the HDA controller and codec state machine do not execute in Ring 0",
+  "the PCM audio service and HDA device driver are separate generation-scoped Ring-3 failure domains",
+  "a driver or service crash, hang, invalid reply or exhausted restart budget cannot panic the kernel or stop unrelated Ring-3 progress",
+  "automatic and manual restart use the same bounded fence, revoke, reap, self-test and reintegration transaction",
+  "without proven IOMMU isolation, the kernel owns and validates every DMA publication or the target profile rejects the device",
+  "PCI class discovery never implies register compatibility; a backend binds only after exact controller validation",
+  "applications receive no port IO, MMIO, DMA address or interrupt authority; a driver domain receives only explicit device capabilities",
+  "all stream handles are generation scoped to one live PID and stale handles never regain authority",
+  "the playback format is exactly signed 16-bit little-endian stereo PCM at 48000 Hz until another version is added",
+  "all DMA storage, stream slots, queues and IRQ work are fixed capacity and below the 32-bit DMA ceiling",
+  "syscalls validate ABI version, size, reserved fields and complete user ranges before state mutation or sample publication",
+  "audio writes are nonblocking and bounded; queue pressure returns EAGAIN without partial hidden side effects",
+  "device reset, codec verbs and stream transitions use finite poll counts and fail closed with bus mastering disabled",
+  "process teardown stops and releases owned streams idempotently by PID plus process generation",
+  "audioinfo and audiotest are packaged PRGs reachable from /bin/shell.prg in both Makefile and Windows images",
+  "VMware audio uses only a virtual HDA device and never enables physical host HID passthrough"
+]
+targeted_tests = [
+  "python test/test_audio_source.py -q",
+  "python test/test_user_program_toolchain.py -q",
+  "python test/test_shell_source.py -q",
+  "python test/test_system_layout.py -q",
+  "python test/test_native_boot_image.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode pci-audio"
+]
+stop_conditions = [
+  "the controller or codec cannot be reset and identified with bounded polling",
+  "DMA memory cannot be proven addressable by the selected controller",
+  "a syscall path can overwrite a buffer still owned by DMA",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add bounded PCI audio playback"
 evidence = []

@@ -2,6 +2,32 @@
 
 Stand: 18. August 2026
 
+## Standard-first-Kompatibilitätsregel
+
+REIST verwendet etablierte Schnittstellen als Architekturgrundlage, statt
+unverwandte Gegenstücke neu zu erfinden. Öffentliche APIs, ABIs, Protokolle,
+Dateiformate, Gerätemodelle und Buildartefakte behalten Terminologie,
+Zustandsübergänge, Einheiten und Fehlerkonventionen ihres Referenzstandards,
+soweit diese mit begrenzter und isolierter Ausführung vereinbar sind.
+
+Die Subsystemdokumentation nennt den jeweiligen Referenzstandard. REIST
+behauptet erst dann Quell-, Binär- oder Protokollkompatibilität, wenn ein
+ausführbarer Test sie nachweist. Sicherheitsbedingte Abweichungen erhalten
+einen REIST-Namensraum, eine explizite Version und append-only Evolution; Grund
+und beobachtbares Verhalten werden dokumentiert und durch Regressionstests
+abgedeckt. Insbesondere wird ein unendliches Standard-Warten als
+REIST-Operation mit endlicher Deadline abgebildet und nie unter einem
+Standardnamen mit stillschweigend anderer Semantik veröffentlicht.
+
+„Standard-first“ bedeutet keine blinde Übernahme gewachsener Altlasten. REIST
+übernimmt stabile Begriffe, Datenmodelle, Einheiten und beobachtbares Verhalten,
+wenn sie Portierung und Wartung erleichtern. Unbegrenzte Wartepfade, impliziter
+globaler Besitz, ungeprüfte rohe Pointer, direkte Geräteautorität und nur noch
+historisch notwendige Alias- oder Sonderpfade werden nicht in neue
+Kernschnittstellen kopiert. Wo bestehende Software solche Eigenschaften
+erwartet, kapselt ein dokumentierter Userspace-Adapter die Differenz; der
+begrenzte Kernelvertrag bleibt eindeutig und klein.
+
 **REIST OS** steht für **Resilient Execution, Isolation and Stability
 Technology**. Das zentrale Architekturprinzip lautet:
 
@@ -44,6 +70,14 @@ ein optionales Referenzprofil.
 
 ## Minimaler REIST-Kern
 
+Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein
+gewöhnlicher Fehler in einem Treiber, Dienst, Prozess oder Programm darf weder
+den Kernel beenden noch unabhängige Essential Functions verlieren lassen. Alle
+solchen Komponenten laufen als getrennte Ring-3-Fehlerdomänen und werden über
+versionierte IPC- und Capability-Verträge angebunden. Das messbare Versprechen,
+die Restartbudgets und terminalen Zustände definiert der
+[Resilienz- und Degradierungsvertrag](RESILIENCE_AND_DEGRADATION_CONTRACT.md).
+
 Langfristig verbleiben nur Mechanismen mit globaler Schutzwirkung in Ring 0:
 
 ```text
@@ -58,8 +92,10 @@ REIST Kernel
 └── Recovery-, Fencing- und Watchdog-Primitiven
 ```
 
-Dateisysteme, Netzwerk, GUI und komplexe Treiber werden schrittweise in eigene
-Adressräume verlagert. Der Bootcode wird nach dem Handoff unzugänglich gemacht
+Dateisysteme, Netzwerk, GUI und alle Gerätetreiber werden in eigene Adressräume
+verlagert. In Ring 0 verbleiben nur minimale, geräteunabhängige IRQ-,
+MMIO/PIO-, DMA- und Reset-Mediatoren, soweit diese für die Isolation auf der
+jeweiligen Plattform zwingend sind. Der Bootcode wird nach dem Handoff unzugänglich gemacht
 oder verworfen. Paging und getrennte Kernel-/Userräume werden früh aktiviert;
 NX, SMEP/SMAP, IOMMU und später CET werden nur auf Zielplattformen verwendet,
 die diese Funktionen nachweislich besitzen. Für den aktuellen i386-Pfad sind

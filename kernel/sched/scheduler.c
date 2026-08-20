@@ -18,6 +18,7 @@
 #include "kernel/time/pit.h"
 #include "include/kernel/watchdog.h"
 #include "include/kernel/ipc.h"
+#include "include/kernel/device_domain.h"
 #include "include/kernel/storage_request_pool.h"
 #include "drivers/video/framebuffer.h"
 #include "mm/kmalloc.h"
@@ -890,6 +891,9 @@ void scheduler_terminate_task(int task_id) {
     /* VFS teardown may reach block drivers and must run with IF=1, outside the
      * scheduler's IRQ-disabled commit.  The caller's preemption guard keeps
      * the target slot and generation stable on this UP scheduler. */
+    /* Revoke DMA and mask device IRQs before any capability or address-space
+     * teardown. The later process-slot cleanup is deliberately idempotent. */
+    device_domain_process_cleanup(process->pid, generation);
     ipc_process_cleanup(process->pid, generation);
     storage_request_cancel_process(process->pid, generation);
     framebuffer_frame_process_cleanup(process->pid, generation);
@@ -930,6 +934,7 @@ void task_exit_status(int status) {
      * temporarily enabling device IRQs for VFS/block-driver cleanup. */
     irq_enable();
     if (process != NULL) {
+        device_domain_process_cleanup(process->pid, process_generation);
         ipc_process_cleanup(process->pid, process_generation);
         storage_request_cancel_process(process->pid, process_generation);
         framebuffer_frame_process_cleanup(process->pid, process_generation);

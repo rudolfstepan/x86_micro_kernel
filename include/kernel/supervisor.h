@@ -14,11 +14,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "include/kernel/critical_object.h"
+#include "include/kernel/device_domain.h"
 
 struct Process;
 
 #define SUPERVISOR_MAX_DOMAINS 8U
 #define SUPERVISOR_NAME_CAPACITY 16U
+#define SUPERVISOR_DRIVER_PATH_CAPACITY 96U
+#define SUPERVISOR_MAX_DEVICE_DRIVERS 4U
 #define SUPERVISOR_STATE_VERSION 1U
 #define SUPERVISOR_FENCE_OPS_VERSION 1U
 #define SUPERVISOR_DESCRIPTOR_VERSION 1U
@@ -708,6 +711,23 @@ int supervisor_network_cancel_udp_ingress(
     uint32_t request_id);
 int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind);
+int supervisor_start_device_driver(
+    const char *name, const char *path, uint32_t device_index, uint32_t mode,
+    const supervisor_config_t *config, uint64_t now_ms,
+    supervisor_handle_t *handle_out);
+int supervisor_device_driver_bootstrap(
+    int pid, uint32_t process_generation,
+    device_domain_driver_bootstrap_t *bootstrap);
+int supervisor_device_driver_report(
+    int pid, uint32_t process_generation,
+    const device_domain_driver_report_t *report, uint64_t now_ms);
+bool supervisor_device_driver_output_allowed(
+    int pid, uint32_t process_generation, device_domain_handle_t device);
+bool supervisor_device_driver_component_down(uint32_t device_index,
+                                             uint64_t deadline_ms);
+bool supervisor_device_driver_component_up(uint32_t device_index,
+                                           uint64_t deadline_ms);
+bool supervisor_device_driver_component_ready(uint32_t device_index);
 int supervisor_register(const char *name, const supervisor_config_t *config,
                         const supervisor_fence_ops_t *fence_ops,
                         uint64_t now_ms, supervisor_handle_t *handle_out);

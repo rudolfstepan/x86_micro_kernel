@@ -27,24 +27,34 @@ das entsprechende Profil für ein konkretes Zielsystem ausgewählt wurde.
 
 ## Verbindliche Kernprinzipien
 
-1. **Fehler als Normalfall:** Jeder externe Eingang, jedes Gerät und jeder
+1. **Geschützte Microkernel-Grenze:** Ring 0 enthält ausschließlich minimale
+   Schutz-, Zeit-, IPC-, Capability-, Interrupt-, Fencing-, Watchdog- und
+   Recoverymechanismen. Treiber, Dienste, Dateisysteme, Protokollstacks, GUI
+   und Anwendungen laufen in getrennten Ring-3-Fehlerdomänen. Ihr Crash, Hang
+   oder ungültiges Ergebnis darf den Kern und unabhängige Essential Functions
+   nicht beenden.
+2. **Fehler als Normalfall:** Jeder externe Eingang, jedes Gerät und jeder
    Dienst kann ausfallen, hängen oder inkonsistente Daten liefern.
-2. **Begrenzung vor Reparatur:** `Detect -> Contain -> Recover -> Validate ->
+3. **Begrenzung vor Reparatur:** `Detect -> Contain -> Recover -> Validate ->
    Reintegrate`; gelingt dies nicht innerhalb des Budgets, folgt `Degrade ->
    Safe State -> Controlled Restart`.
-3. **Unabhängige Fehlerdomänen:** Redundanz auf demselben Kernel, derselben CPU,
+4. **Unabhängige Fehlerdomänen:** Redundanz auf demselben Kernel, derselben CPU,
    demselben RAM oder derselben Versorgung ist keine unabhängige Redundanz.
-4. **Fail-closed Steuerung:** Gefährliche Ausgänge werden vor Diagnose,
+5. **Fail-closed Steuerung:** Gefährliche Ausgänge werden vor Diagnose,
    Restart oder Reintegration gesperrt und rücklesbar verifiziert.
-5. **Gebundene Laufzeit:** Safety-Pfade besitzen feste Speicher-, CPU-, Queue-,
+6. **Gebundene Laufzeit:** Safety-Pfade besitzen feste Speicher-, CPU-, Queue-,
    Lock-, I/O- und Zeitbudgets; unbegrenztes Warten ist verboten.
-6. **Keine Fortsetzung nach unbekannter Kernkorruption:** Ein beschädigter
+7. **Keine Fortsetzung nach unbekannter Kernkorruption:** Ein beschädigter
    Rechnerkanal wird eingezäunt und ersetzt oder kontrolliert neu gestartet.
-7. **Nachweisbarkeit:** Anforderung, Gefahr, Kontrolle, Code, Test und Ergebnis
+8. **Nachweisbarkeit:** Anforderung, Gefahr, Kontrolle, Code, Test und Ergebnis
    sind bidirektional rückverfolgbar; bekannte Abweichungen bleiben sichtbar.
-8. **Langlebigkeit:** Formate und ABI sind versioniert; Updates sind signiert,
+9. **Langlebigkeit:** Formate und ABI sind versioniert; Updates sind signiert,
    atomar, stromausfallsicher und rückfallfähig; Zeit- und Zählerüberläufe
    werden über die vorgesehene Lebensdauer geprüft.
+
+Das konkrete Resilienzversprechen, die Restartregeln und die terminalen
+Degradierungsstufen definiert der
+[Resilienz- und Degradierungsvertrag](RESILIENCE_AND_DEGRADATION_CONTRACT.md).
 
 ## Medienübergreifender Schreib- und Wiederanlaufvertrag
 

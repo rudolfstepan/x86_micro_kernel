@@ -23,8 +23,37 @@
 #define PCI_COMMAND_IO 0x01
 #define PCI_COMMAND_MEMORY 0x02
 #define PCI_COMMAND_BUS_MASTER 0x04
+#define PCI_COMMAND_INTERRUPT_DISABLE 0x0400U
+#define PCI_STATUS_CAPABILITIES_LIST 0x0010U
+#define PCI_CAPABILITY_PCIE 0x10U
+#define PCI_PCIE_DEVICE_CAP_FLR (1U << 28U)
+#define PCI_PCIE_DEVICE_CONTROL_FLR (1U << 15U)
 #define PCI_IRQ_INVALID 0xFF
 #define PCI_LEGACY_IRQ_COUNT 16
+
+enum {
+    PCI_OWNER_UNBOUND = 0U,
+    PCI_OWNER_KERNEL = 1U,
+    PCI_OWNER_DRIVER_DOMAIN = 2U,
+};
+
+enum {
+    PCI_BAR_INFO_MMIO = 1U << 0U,
+    PCI_BAR_INFO_PIO = 1U << 1U,
+    PCI_BAR_INFO_64BIT = 1U << 2U,
+    PCI_BAR_INFO_PREFETCHABLE = 1U << 3U,
+};
+
+typedef struct {
+    uint32_t index;
+    uint32_t flags;
+    uint32_t base_low;
+    uint32_t base_high;
+    uint32_t size_low;
+    uint32_t size_high;
+} pci_bar_info_t;
+
+_Static_assert(sizeof(pci_bar_info_t) == 24U, "PCI BAR info ABI changed");
 
 // PCI-Konfigurationsregister-Offsets
 #pragma pack(push, 1)
@@ -42,6 +71,7 @@ typedef struct {
     uint8_t subclass_code;      // Subclass code (e.g., Ethernet controller)
     uint8_t prog_if;            // Programming interface
     uint8_t revision_id;        // Revision ID of the device
+    uint8_t owner;              // Exclusive kernel/domain binding state
 } pci_device_t;
 #pragma pack(pop)
 
@@ -63,6 +93,19 @@ uint32_t pci_read(uint8_t bus, uint8_t device, uint8_t function, uint8_t offset)
 void pci_write(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset,
                uint8_t size, uint32_t value);
 void pci_set_bus_master(uint8_t bus, uint8_t slot, uint8_t function, uint8_t enable);
+bool pci_set_bus_master_verified(const pci_device_t *device, bool enabled);
+bool pci_set_intx_disabled_verified(const pci_device_t *device, bool disabled);
+/** Perform PCIe Function Level Reset with a monotonic total deadline. */
+bool pci_function_reset_verified(const pci_device_t *device,
+                                 uint64_t deadline_ms);
+const pci_device_t *pci_find_location(uint32_t pci_location);
+uint32_t pci_location(const pci_device_t *device);
+bool pci_claim_for_driver_domain(uint32_t pci_location, uint16_t vendor_id,
+                                 uint16_t device_id, uint8_t class_code,
+                                 uint8_t subclass_code, uint8_t prog_if);
+/** Size one BAR with decoding disabled and verified configuration restore. */
+bool pci_describe_bar(const pci_device_t *device, uint32_t bar_index,
+                      pci_bar_info_t *info);
 uint32_t get_io_base(uint8_t bus, uint8_t device, uint8_t function);
 
 void pci_init(void);

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'system-layout', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal'
 )
 
@@ -16,6 +16,7 @@ $FddHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_fdd_hotplug.py'
 $SataHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_sata_hotplug.py'
 $AdminMaintenanceRunner = Join-Path $RepoRoot 'scripts\run_qemu_admin_maintenance.py'
 $ComponentControlRunner = Join-Path $RepoRoot 'scripts\run_qemu_component_control.py'
+$DriverDomainRunner = Join-Path $RepoRoot 'scripts\run_qemu_driver_domain.py'
 $SystemLayoutRunner = Join-Path $RepoRoot 'scripts\run_qemu_system_layout.py'
 $PartitionProvisioningRunner = Join-Path $RepoRoot 'scripts\run_qemu_partition_provisioning.py'
 $LogRoot = Join-Path $RepoRoot 'build\codex-agent'
@@ -45,8 +46,15 @@ $Qemu = Resolve-NativeTool 'qemu-system-i386' @(
     'C:\Program Files\qemu\qemu-system-i386.exe',
     'C:\msys64\mingw64\bin\qemu-system-i386.exe'
 )
+$Make = if ($Mode -eq 'driver-domain') {
+    Resolve-NativeTool 'make' @(
+        'C:\msys64\usr\bin\make.exe',
+        'C:\msys64\mingw64\bin\mingw32-make.exe'
+    )
+} else { $null }
 
-if (!(Test-Path -LiteralPath $Image -PathType Leaf)) {
+if ($Mode -ne 'driver-domain' -and
+    !(Test-Path -LiteralPath $Image -PathType Leaf)) {
     throw 'build\reist-os.img is missing; run build-windows.ps1 first.'
 }
 
@@ -242,6 +250,41 @@ function Invoke-ComponentControl {
     Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
 }
 
+function Invoke-DriverDomain {
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $gateLog = Join-Path $LogRoot "$stamp-runtime-driver-domain"
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $exitCode = 0
+    try {
+        $LASTEXITCODE = 0
+        & $Make native-image TARGET=qemu VIDEO=vga `
+            DRIVER_DOMAIN_FAULT_INJECTION=1 *> $gateLog
+        $exitCode = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
+        if ($exitCode -eq 0) {
+            & $Python $DriverDomainRunner `
+                --qemu $Qemu `
+                --image $Image `
+                --log (Join-Path $RepoRoot 'build\guest-driver-domain.log') `
+                *>> $gateLog
+            $exitCode = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
+        }
+    }
+    catch {
+        $exitCode = 1
+        $_ | Out-String | Add-Content -LiteralPath $gateLog
+    }
+    finally {
+        $watch.Stop()
+    }
+    if ($exitCode -ne 0) {
+        Write-Output "RUNTIME FAIL exit=$exitCode elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+        Get-Content -LiteralPath $gateLog -Tail 40
+        throw "REIST runtime smoke 'driver-domain' failed with exit $exitCode."
+    }
+    Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+}
+
 function Invoke-SystemLayout {
     New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -389,6 +432,9 @@ switch ($Mode) {
     }
     'component-control' {
         Invoke-ComponentControl
+    }
+    'driver-domain' {
+        Invoke-DriverDomain
     }
     'system-layout' {
         Invoke-SystemLayout

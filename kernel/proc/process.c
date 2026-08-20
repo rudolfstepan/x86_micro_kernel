@@ -24,6 +24,7 @@
 #include "include/kernel/storage_request_pool.h"
 #include "include/kernel/admin_maintenance.h"
 #include "include/kernel/component_control.h"
+#include "include/kernel/device_domain.h"
 #include "drivers/net/net_socket.h"
 #include "drivers/net/tcp_socket.h"
 #include "drivers/video/framebuffer.h"
@@ -380,6 +381,21 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
              ++index) profile_allow(profile, component_admin_syscalls[index]);
         return true;
     }
+    if (kind == PROCESS_DOMAIN_DRIVER) {
+        /* Device authority is granted separately through generation-scoped
+         * capabilities. The launch profile starts with only lifecycle, time
+         * and bounded IPC; it has no filesystem, network or display access. */
+        static const uint8_t driver_syscalls[] = {
+            SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS, SYS_MONOTONIC_MS,
+            SYS_IPC_CREATE, SYS_IPC_SEND, SYS_IPC_RECEIVE, SYS_IPC_CLOSE,
+            SYS_IPC_SEND_TIMEOUT, SYS_IPC_RECEIVE_TIMEOUT,
+            SYS_DEVICE_CONTROL
+        };
+        for (size_t index = 0;
+             index < sizeof(driver_syscalls) / sizeof(driver_syscalls[0]);
+             ++index) profile_allow(profile, driver_syscalls[index]);
+        return true;
+    }
     if (kind != PROCESS_DOMAIN_PROBE) return false;
 
     static const uint8_t probe_syscalls[] = {
@@ -415,7 +431,8 @@ bool process_syscall_allowed(const Process *process, uint32_t syscall_index) {
          profile->kind != PROCESS_DOMAIN_PROBE &&
          profile->kind != PROCESS_DOMAIN_STORAGE &&
          profile->kind != PROCESS_DOMAIN_ADMIN &&
-         profile->kind != PROCESS_DOMAIN_COMPONENT_ADMIN)) return false;
+         profile->kind != PROCESS_DOMAIN_COMPONENT_ADMIN &&
+         profile->kind != PROCESS_DOMAIN_DRIVER)) return false;
     return (profile->allowed_syscalls[syscall_index / 32U] &
             (1U << (syscall_index % 32U))) != 0U;
 }
@@ -441,6 +458,9 @@ static int allocate_pid_locked(void) {
 }
 
 static void release_process_slot(Process *process) {
+    /* Fence device output before IPC/capability teardown. Reset and
+     * reintegration remain a bounded supervisor transaction. */
+    device_domain_process_cleanup(process->pid, process->generation);
     ipc_process_cleanup(process->pid, process->generation);
     framebuffer_frame_process_cleanup(process->pid, process->generation);
     process_close_all_files(process);

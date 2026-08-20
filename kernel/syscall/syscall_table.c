@@ -35,7 +35,7 @@
 #include "include/kernel/storage_maintenance.h"
 #include "include/kernel/admin_maintenance.h"
 #include "include/kernel/component_control.h"
-#include "include/kernel/supervisor.h"
+#include "include/kernel/device_domain.h"
 #include "arch/x86/mm/paging.h"
 #include "fs/vfs/vfs.h"
 #include "mm/kmalloc.h"
@@ -2417,6 +2417,232 @@ static int syscall_component_control(
                               sizeof(result)) == 0 ? 0 : -14;
 }
 
+static bool device_output_accessible(page_directory_t *directory,
+                                     const void *output, size_t size) {
+    return output != NULL && user_range_accessible(
+        directory, (uint32_t)(uintptr_t)output, size, true);
+}
+
+static int syscall_device_control(uint32_t command, const void *user_request,
+                                  void *user_result) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    if (process == NULL || directory == NULL ||
+        process->domain_profile.kind != PROCESS_DOMAIN_DRIVER) return -13;
+
+    if (command == DEVICE_DOMAIN_CONTROL_REGION_OPEN) {
+        if (!device_output_accessible(
+                directory, user_result, sizeof(device_domain_region_info_t)))
+            return -14;
+        device_domain_region_request_t request;
+        device_domain_region_info_t result;
+        if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        int status = device_domain_open_region(
+            process->pid, process->generation, &request, &result);
+        if (status != 0) return status;
+        return copy_to_user_space(directory, (uint32_t)(uintptr_t)user_result,
+                                  &result, sizeof(result)) == 0 ? 0 : -14;
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_IRQ_BIND ||
+        command == DEVICE_DOMAIN_CONTROL_DMA_BIND) {
+        if (!device_output_accessible(directory, user_result,
+                                      sizeof(device_domain_resource_result_t)))
+            return -14;
+        device_domain_resource_handle_t resource = 0U;
+        int status;
+        uint32_t kind;
+        if (command == DEVICE_DOMAIN_CONTROL_IRQ_BIND) {
+            device_domain_irq_request_t request;
+            if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+                return -14;
+            status = device_domain_bind_irq(
+                process->pid, process->generation, &request, &resource);
+            kind = DEVICE_DOMAIN_RESOURCE_IRQ;
+        } else {
+            device_domain_dma_request_t request;
+            if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+                return -14;
+            status = device_domain_bind_dma(
+                process->pid, process->generation, &request, &resource);
+            kind = DEVICE_DOMAIN_RESOURCE_DMA;
+        }
+        if (status != 0) return status;
+        const device_domain_resource_result_t result = {
+            .version = DEVICE_DOMAIN_ABI_VERSION,
+            .struct_size = sizeof(result),
+            .resource = resource,
+            .kind = kind,
+        };
+        return copy_to_user_space(directory, (uint32_t)(uintptr_t)user_result,
+                                  &result, sizeof(result)) == 0 ? 0 : -14;
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_ACTIVATE) {
+        device_domain_action_request_t request;
+        if (user_result != NULL ||
+            copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        if (request.version != DEVICE_DOMAIN_ABI_VERSION ||
+            request.struct_size != sizeof(request) || request.flags != 0U ||
+            request.reserved[0] != 0U || request.reserved[1] != 0U ||
+            request.reserved[2] != 0U || request.reserved[3] != 0U)
+            return -22;
+        if (!supervisor_device_driver_output_allowed(
+                process->pid, process->generation, request.device))
+            return -13;
+        return device_domain_activate(
+            process->pid, process->generation, request.device);
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_RESOURCE_STATUS) {
+        if (!device_output_accessible(
+                directory, user_result,
+                sizeof(device_domain_resource_status_t))) return -14;
+        device_domain_resource_request_t request;
+        device_domain_resource_status_t result;
+        if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        if (request.version != DEVICE_DOMAIN_ABI_VERSION ||
+            request.struct_size != sizeof(request) || request.flags != 0U ||
+            request.reserved[0] != 0U || request.reserved[1] != 0U ||
+            request.reserved[2] != 0U || request.reserved[3] != 0U)
+            return -22;
+        int status = device_domain_resource_status(
+            process->pid, process->generation, request.resource, &result);
+        if (status != 0) return status;
+        return copy_to_user_space(directory, (uint32_t)(uintptr_t)user_result,
+                                  &result, sizeof(result)) == 0 ? 0 : -14;
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_IRQ_COMPLETE) {
+        if (!device_output_accessible(
+                directory, user_result,
+                sizeof(device_domain_irq_completion_t))) return -14;
+        device_domain_resource_request_t request;
+        device_domain_irq_completion_t result;
+        if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        if (request.version != DEVICE_DOMAIN_ABI_VERSION ||
+            request.struct_size != sizeof(request) || request.flags != 0U ||
+            request.reserved[0] != 0U || request.reserved[1] != 0U ||
+            request.reserved[2] != 0U || request.reserved[3] != 0U)
+            return -22;
+        int status = device_domain_irq_complete(
+            process->pid, process->generation, request.resource, &result);
+        if (status != 0) return status;
+        return copy_to_user_space(directory, (uint32_t)(uintptr_t)user_result,
+                                  &result, sizeof(result)) == 0 ? 0 : -14;
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_DMA_INFO) {
+        if (!device_output_accessible(
+                directory, user_result, sizeof(device_domain_dma_info_t)))
+            return -14;
+        device_domain_resource_request_t request;
+        device_domain_dma_info_t result;
+        if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        if (request.version != DEVICE_DOMAIN_ABI_VERSION ||
+            request.struct_size != sizeof(request) || request.flags != 0U ||
+            request.reserved[0] != 0U || request.reserved[1] != 0U ||
+            request.reserved[2] != 0U || request.reserved[3] != 0U)
+            return -22;
+        int status = device_domain_dma_info(
+            process->pid, process->generation, request.resource, &result);
+        if (status != 0) return status;
+        return copy_to_user_space(directory, (uint32_t)(uintptr_t)user_result,
+                                  &result, sizeof(result)) == 0 ? 0 : -14;
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_DMA_WRITE ||
+        command == DEVICE_DOMAIN_CONTROL_DMA_READ) {
+        if (user_result != NULL) return -22;
+        device_domain_dma_transfer_t request;
+        if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        if (request.version != DEVICE_DOMAIN_ABI_VERSION ||
+            request.struct_size != sizeof(request) || request.flags != 0U ||
+            request.reserved != 0U || request.resource == 0U ||
+            request.user_buffer == 0U || request.length == 0U ||
+            request.length > DEVICE_DOMAIN_DMA_TRANSFER_MAX) return -22;
+        if (!user_range_accessible(directory, request.user_buffer,
+                request.length,
+                command == DEVICE_DOMAIN_CONTROL_DMA_READ)) return -14;
+        uint8_t payload[DEVICE_DOMAIN_DMA_TRANSFER_MAX];
+        if (command == DEVICE_DOMAIN_CONTROL_DMA_WRITE) {
+            if (copy_from_user(payload,
+                    (const void *)(uintptr_t)request.user_buffer,
+                    request.length) != 0) return -14;
+            return device_domain_dma_write(
+                process->pid, process->generation, request.resource,
+                request.offset, payload, request.length);
+        }
+        int status = device_domain_dma_read(
+            process->pid, process->generation, request.resource,
+            request.offset, payload, request.length);
+        if (status != 0) return status;
+        return copy_to_user_space(directory, request.user_buffer, payload,
+                                  request.length) == 0 ? 0 : -14;
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_REGION_READ) {
+        if (!device_output_accessible(
+                directory, user_result,
+                sizeof(device_domain_region_value_t))) return -14;
+        device_domain_region_access_t request;
+        device_domain_region_value_t result;
+        if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        int status = device_domain_region_read(
+            process->pid, process->generation, &request, &result);
+        if (status != 0) return status;
+        return copy_to_user_space(directory, (uint32_t)(uintptr_t)user_result,
+                                  &result, sizeof(result)) == 0 ? 0 : -14;
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_REGION_WRITE) {
+        if (user_result != NULL) return -22;
+        device_domain_region_access_t request;
+        if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        return device_domain_region_write(
+            process->pid, process->generation, &request);
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_REGION_BIND_DMA) {
+        if (user_result != NULL) return -22;
+        device_domain_region_dma_address_t request;
+        if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        return device_domain_region_bind_dma(
+            process->pid, process->generation, &request);
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_DRIVER_BOOTSTRAP) {
+        if (user_request != NULL || !device_output_accessible(
+                directory, user_result,
+                sizeof(device_domain_driver_bootstrap_t))) return -14;
+        device_domain_driver_bootstrap_t result;
+        int status = supervisor_device_driver_bootstrap(
+            process->pid, process->generation, &result);
+        if (status != 0) return status;
+        return copy_to_user_space(directory, (uint32_t)(uintptr_t)user_result,
+                                  &result, sizeof(result)) == 0 ? 0 : -14;
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_DRIVER_REPORT) {
+        if (user_result != NULL) return -22;
+        device_domain_driver_report_t request;
+        if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        return supervisor_device_driver_report(
+            process->pid, process->generation, &request,
+            pit_monotonic_ms());
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_IOMMU_STATUS) {
+        if (user_request != NULL || !device_output_accessible(
+                directory, user_result,
+                sizeof(device_domain_iommu_status_t))) return -14;
+        device_domain_iommu_status_t result;
+        int status = device_domain_iommu_status(&result);
+        if (status != 0) return status;
+        return copy_to_user_space(directory, (uint32_t)(uintptr_t)user_result,
+                                  &result, sizeof(result)) == 0 ? 0 : -14;
+    }
+    return -22;
+}
+
 static int syscall_space(const char *user_path, void *user_info) {
     char path[PROCESS_PATH_MAX];
     int result = syscall_copy_path(path, user_path);
@@ -2563,6 +2789,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_mouse_event,          // Syscall 110: Nonblocking USB mouse
     (void*)&syscall_pointer_update,       // Syscall 111: Software pointer
     (void*)&syscall_usb_diagnostics,      // Syscall 112: Read USB diagnostics
+    (void*)&syscall_device_control,       // Syscall 113: Driver resources
     // Add more syscalls here as needed
 };
 
@@ -2820,6 +3047,11 @@ void syscall_handler(Registers* regs) {
         case SYS_USB_DIAGNOSTICS:
             result = (uint32_t)syscall_usb_diagnostics(
                 (syscall_usb_diagnostics_t*)(uintptr_t)arg1);
+            break;
+        case SYS_DEVICE_CONTROL:
+            result = (uint32_t)syscall_device_control(
+                arg1, (const void*)(uintptr_t)arg2,
+                (void*)(uintptr_t)arg3);
             break;
         case SYS_FILL_RECT:
             result = (uint32_t)syscall_display_fill_rect(

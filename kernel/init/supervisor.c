@@ -15,6 +15,7 @@
 #ifndef REIST_HOST_TEST
 #include "arch/x86/include/interrupt.h"
 #include "include/kernel/component_control.h"
+#include "include/kernel/device_domain.h"
 #include "include/kernel/panic.h"
 #include "include/kernel/output_fence.h"
 #include "include/kernel/storage_service.h"
@@ -24,6 +25,7 @@
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
 #include "lib/libc/stdio.h"
+#include "lib/libc/string.h"
 #endif
 
 typedef struct {
@@ -109,6 +111,7 @@ static critical_object_t protected_network_degradation_stats;
 #define SUPERVISOR_DHCP_COMMIT_TIMEOUT_MS 1000U
 #define SUPERVISOR_DHCP_RENEW_TIMEOUT_MS 1500U
 #define SUPERVISOR_DHCP_BOOT_TIMEOUT_MS 1500U
+#define SUPERVISOR_DRIVER_CONTROL_VERSION 1U
 
 /* Successful packet-by-packet mediation is useful as deterministic QEMU gate
  * evidence but floods the operator console on a live network.  Production
@@ -173,6 +176,31 @@ typedef struct {
 
 static supervisor_probe_runtime_t probe_runtime;
 static volatile bool probe_administratively_enabled = true;
+
+typedef struct {
+    uint32_t active;
+    uint32_t administratively_enabled;
+    uint32_t fenced;
+    uint32_t device_index;
+    uint32_t mode;
+    int32_t pid;
+    uint32_t process_generation;
+    device_domain_handle_t device;
+    supervisor_handle_t supervisor;
+} supervisor_driver_control_t;
+
+typedef struct {
+    critical_object_t control;
+    supervisor_config_t config;
+    char name[SUPERVISOR_NAME_CAPACITY];
+    char path[SUPERVISOR_DRIVER_PATH_CAPACITY];
+} supervisor_driver_runtime_t;
+
+static supervisor_driver_runtime_t
+    driver_runtimes[SUPERVISOR_MAX_DEVICE_DRIVERS];
+#ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
+static volatile uint32_t driver_fault_markers;
+#endif
 #endif
 
 static uint32_t supervisor_lock(void) {
@@ -1613,6 +1641,54 @@ static supervisor_event_t event(supervisor_event_type_t type, uint32_t slot,
     return result;
 }
 
+#ifndef REIST_HOST_TEST
+_Static_assert(sizeof(supervisor_driver_control_t) <=
+                   CRITICAL_OBJECT_MAX_PAYLOAD,
+               "driver control exceeds protected payload");
+
+static bool driver_control_valid(const void *payload, size_t length) {
+    if (payload == NULL || length != sizeof(supervisor_driver_control_t))
+        return false;
+    const supervisor_driver_control_t *control = payload;
+    if (control->active > 1U || control->administratively_enabled > 1U ||
+        control->fenced > 1U) return false;
+    if (control->active == 0U)
+        return control->administratively_enabled == 0U &&
+            control->fenced == 0U && control->pid == 0 &&
+            control->process_generation == 0U && control->device == 0U;
+    if (control->device_index >= DEVICE_DOMAIN_MAX_DEVICES ||
+        (control->mode != DEVICE_DOMAIN_MODE_MEDIATED &&
+         control->mode != DEVICE_DOMAIN_MODE_IOMMU_DIRECT) ||
+        control->supervisor.generation == 0U ||
+        control->supervisor.epoch == 0U) return false;
+    bool process_present = control->pid > 0 &&
+        control->process_generation != 0U && control->device != 0U;
+    bool process_absent = control->pid == 0 &&
+        control->process_generation == 0U && control->device == 0U;
+    return process_present != process_absent &&
+        (process_present || control->fenced != 0U);
+}
+
+static int driver_control_read(supervisor_driver_runtime_t *runtime,
+                               supervisor_driver_control_t *control) {
+    if (runtime == NULL || control == NULL) return -22;
+    size_t length = 0U;
+    return critical_object_read(
+        &runtime->control, SUPERVISOR_DRIVER_CONTROL_VERSION, control,
+        sizeof(*control), &length, driver_control_valid) < 0 ||
+        length != sizeof(*control) ? SUPERVISOR_EINTEGRITY : 0;
+}
+
+static int driver_control_write(supervisor_driver_runtime_t *runtime,
+                                const supervisor_driver_control_t *control) {
+    if (runtime == NULL || control == NULL) return -22;
+    return critical_object_update(
+        &runtime->control, SUPERVISOR_DRIVER_CONTROL_VERSION, control,
+        sizeof(*control), driver_control_valid) == 0
+            ? 0 : SUPERVISOR_EINTEGRITY;
+}
+#endif
+
 void supervisor_init(void) {
     uint32_t flags = supervisor_lock();
     supervisor_descriptor_t empty = {0};
@@ -1638,6 +1714,18 @@ void supervisor_init(void) {
 #endif
     }
 #ifndef REIST_HOST_TEST
+    supervisor_driver_control_t empty_driver = {0};
+#ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
+    driver_fault_markers = 0U;
+#endif
+    for (uint32_t slot = 0U; slot < SUPERVISOR_MAX_DEVICE_DRIVERS; ++slot) {
+        memset(&driver_runtimes[slot], 0, sizeof(driver_runtimes[slot]));
+        if (critical_object_init(
+                &driver_runtimes[slot].control,
+                SUPERVISOR_DRIVER_CONTROL_VERSION, &empty_driver,
+                sizeof(empty_driver)) != 0)
+            panic("Unable to initialize protected driver runtime");
+    }
     supervisor_icmp_delivery_t empty_icmp_delivery = {0};
     supervisor_udp_delivery_t empty_udp_delivery = {0};
     if (critical_object_init(&probe_runtime.icmp_ingress_delivery.object,
@@ -4405,6 +4493,360 @@ int supervisor_network_send_udp_echo_reply(
     return supervisor_network_send_udp_reply(pid, generation, &generic);
 }
 
+static supervisor_driver_runtime_t *driver_runtime_for_identity(
+        int pid, uint32_t process_generation,
+        supervisor_driver_control_t *control_out) {
+    for (uint32_t slot = 0U; slot < SUPERVISOR_MAX_DEVICE_DRIVERS; ++slot) {
+        supervisor_driver_control_t control;
+        if (driver_control_read(&driver_runtimes[slot], &control) != 0 ||
+            control.active == 0U || control.pid != pid ||
+            control.process_generation != process_generation) continue;
+        if (control_out != NULL) *control_out = control;
+        return &driver_runtimes[slot];
+    }
+    return NULL;
+}
+
+static supervisor_driver_runtime_t *driver_runtime_for_handle(
+        supervisor_handle_t handle, supervisor_driver_control_t *control_out) {
+    for (uint32_t slot = 0U; slot < SUPERVISOR_MAX_DEVICE_DRIVERS; ++slot) {
+        supervisor_driver_control_t control;
+        if (driver_control_read(&driver_runtimes[slot], &control) != 0 ||
+            control.active == 0U ||
+            control.supervisor.slot != handle.slot ||
+            control.supervisor.generation != handle.generation) continue;
+        if (control_out != NULL) *control_out = control;
+        return &driver_runtimes[slot];
+    }
+    return NULL;
+}
+
+static bool copy_driver_string(char *destination, size_t capacity,
+                               const char *source) {
+    if (destination == NULL || capacity < 2U || source == NULL) return false;
+    size_t length = 0U;
+    while (length < capacity && source[length] != '\0') ++length;
+    if (length == 0U || length >= capacity) return false;
+    memcpy(destination, source, length);
+    destination[length] = '\0';
+    return true;
+}
+
+static bool driver_spawn_next(supervisor_driver_runtime_t *runtime,
+                              supervisor_handle_t supervisor_handle) {
+    supervisor_driver_control_t control;
+    if (runtime == NULL || driver_control_read(runtime, &control) != 0 ||
+        control.active == 0U || control.administratively_enabled == 0U ||
+        control.pid != 0 || control.device != 0U) return false;
+    const char *arguments[] = {runtime->path};
+    int pid = supervisor_spawn_service(runtime->path, 1, arguments,
+                                       PROCESS_DOMAIN_DRIVER);
+    uint32_t generation = 0U;
+    device_domain_handle_t device = 0U;
+    if (pid <= 0 || process_get_identity(pid, &generation) != 0 ||
+        device_domain_claim(pid, generation, control.device_index,
+                            control.mode, &device) != 0) {
+        if (pid > 0) (void)process_terminate(pid);
+        return false;
+    }
+    control.pid = pid;
+    control.process_generation = generation;
+    control.device = device;
+    control.supervisor = supervisor_handle;
+    control.fenced = 1U;
+    if (driver_control_write(runtime, &control) != 0) {
+        (void)device_domain_fence(pid, generation, device);
+        (void)process_terminate(pid);
+        uint64_t now_ms = pit_monotonic_ms();
+        (void)device_domain_recover_owner(
+            pid, generation, deadline_after(
+                now_ms, runtime->config.recovery_timeout_ms));
+        return false;
+    }
+    return true;
+}
+
+static bool driver_fence_until(supervisor_driver_runtime_t *runtime,
+                               uint64_t deadline_ms) {
+    supervisor_driver_control_t control;
+    if (runtime == NULL || driver_control_read(runtime, &control) != 0 ||
+        control.active == 0U) return false;
+    if (control.pid == 0)
+        return control.fenced != 0U && control.device == 0U;
+    if (deadline_ms == 0U || pit_monotonic_ms() >= deadline_ms) return false;
+    bool fenced = device_domain_fence(
+        control.pid, control.process_generation, control.device) == 0;
+    bool stopped = !process_identity_alive(
+        control.pid, control.process_generation) ||
+        process_terminate(control.pid) == 0;
+    bool recovered = fenced && stopped &&
+        device_domain_recover_owner(control.pid, control.process_generation,
+                                    deadline_ms) == 0;
+    if (!recovered) return false;
+    control.pid = 0;
+    control.process_generation = 0U;
+    control.device = 0U;
+    control.fenced = 1U;
+    return driver_control_write(runtime, &control) == 0;
+}
+
+static bool driver_fence_apply(void *context) {
+    supervisor_driver_runtime_t *runtime = context;
+    uint64_t now_ms = pit_monotonic_ms();
+    return runtime != NULL && driver_fence_until(
+        runtime, deadline_after(now_ms, runtime->config.recovery_timeout_ms));
+}
+
+static bool driver_fence_verify(void *context) {
+    supervisor_driver_runtime_t *runtime = context;
+    supervisor_driver_control_t control;
+    device_domain_status_t status;
+    return runtime != NULL && driver_control_read(runtime, &control) == 0 &&
+        control.active != 0U && control.fenced != 0U && control.pid == 0 &&
+        control.process_generation == 0U && control.device == 0U &&
+        device_domain_status(control.device_index, &status) == 0 &&
+        status.state == DEVICE_DOMAIN_AVAILABLE && status.owner_pid == 0 &&
+        status.owner_generation == 0U;
+}
+
+int supervisor_start_device_driver(
+        const char *name, const char *path, uint32_t device_index,
+        uint32_t mode, const supervisor_config_t *config, uint64_t now_ms,
+        supervisor_handle_t *handle_out) {
+    if (name == NULL || path == NULL || config == NULL || handle_out == NULL ||
+        device_index >= DEVICE_DOMAIN_MAX_DEVICES ||
+        (mode != DEVICE_DOMAIN_MODE_MEDIATED &&
+         mode != DEVICE_DOMAIN_MODE_IOMMU_DIRECT) ||
+        config->heartbeat_timeout_ms == 0U ||
+        config->recovery_timeout_ms == 0U) return -22;
+    supervisor_driver_runtime_t *runtime = NULL;
+    for (uint32_t slot = 0U; slot < SUPERVISOR_MAX_DEVICE_DRIVERS; ++slot) {
+        supervisor_driver_control_t control;
+        if (driver_control_read(&driver_runtimes[slot], &control) == 0 &&
+            control.active == 0U) {
+            runtime = &driver_runtimes[slot];
+            break;
+        }
+    }
+    if (runtime == NULL) return -28;
+    memset(runtime->name, 0, sizeof(runtime->name));
+    memset(runtime->path, 0, sizeof(runtime->path));
+    if (!copy_driver_string(runtime->name, sizeof(runtime->name), name) ||
+        !copy_driver_string(runtime->path, sizeof(runtime->path), path))
+        return -36;
+    runtime->config = *config;
+    supervisor_fence_ops_t fence = {
+        .apply = driver_fence_apply,
+        .verify = driver_fence_verify,
+        .context = runtime,
+    };
+    supervisor_handle_t handle;
+    if (supervisor_register(name, config, &fence, now_ms, &handle) != 0)
+        return -5;
+    supervisor_driver_control_t control = {
+        .active = 1U,
+        .administratively_enabled = 1U,
+        .fenced = 1U,
+        .device_index = device_index,
+        .mode = mode,
+        .supervisor = handle,
+    };
+    if (driver_control_write(runtime, &control) != 0 ||
+        !driver_spawn_next(runtime, handle)) {
+        (void)supervisor_force_isolate(handle);
+        return -5;
+    }
+    *handle_out = handle;
+    return 0;
+}
+
+int supervisor_device_driver_bootstrap(
+        int pid, uint32_t process_generation,
+        device_domain_driver_bootstrap_t *bootstrap) {
+    if (pid <= 0 || process_generation == 0U || bootstrap == NULL) return -22;
+    supervisor_driver_control_t control;
+    if (driver_runtime_for_identity(pid, process_generation, &control) == NULL ||
+        !process_identity_alive(pid, process_generation)) return -11;
+    *bootstrap = (device_domain_driver_bootstrap_t){
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(*bootstrap),
+        .device = control.device,
+        .mode = control.mode,
+        .session_slot = control.supervisor.slot,
+        .session_generation = control.supervisor.generation,
+        .session_epoch = control.supervisor.epoch,
+    };
+    return 0;
+}
+
+int supervisor_device_driver_report(
+        int pid, uint32_t process_generation,
+        const device_domain_driver_report_t *report, uint64_t now_ms) {
+    if (pid <= 0 || process_generation == 0U || report == NULL ||
+        report->version != DEVICE_DOMAIN_ABI_VERSION ||
+        report->struct_size != sizeof(*report) || report->flags != 0U ||
+        (report->report_type != DEVICE_DOMAIN_DRIVER_REPORT_SELF_TEST &&
+         report->report_type != DEVICE_DOMAIN_DRIVER_REPORT_PROGRESS))
+        return -22;
+    supervisor_driver_control_t control;
+    supervisor_driver_runtime_t *runtime = driver_runtime_for_identity(
+        pid, process_generation, &control);
+    if (runtime == NULL || report->session_slot != control.supervisor.slot ||
+        report->session_generation != control.supervisor.generation ||
+        report->session_epoch != control.supervisor.epoch) return -13;
+    int result;
+    if (report->report_type == DEVICE_DOMAIN_DRIVER_REPORT_SELF_TEST) {
+        result = report->value == 1U
+            ? supervisor_report_self_test(control.supervisor, true, now_ms)
+            : -5;
+    } else {
+        result = report->value != 0U
+            ? supervisor_report_progress(
+                control.supervisor, report->value, now_ms) : -22;
+        if (result == 0 && control.fenced != 0U) {
+            control.fenced = 0U;
+            result = driver_control_write(runtime, &control);
+        }
+    }
+    if (result != 0) (void)supervisor_force_isolate(control.supervisor);
+    return result;
+}
+
+bool supervisor_device_driver_output_allowed(
+        int pid, uint32_t process_generation, device_domain_handle_t device) {
+    supervisor_driver_control_t control;
+    return driver_runtime_for_identity(pid, process_generation, &control) !=
+            NULL && control.device == device && control.fenced == 0U &&
+        supervisor_output_allowed(control.supervisor);
+}
+
+static supervisor_driver_runtime_t *driver_runtime_for_device(
+        uint32_t device_index, supervisor_driver_control_t *control_out) {
+    for (uint32_t slot = 0U; slot < SUPERVISOR_MAX_DEVICE_DRIVERS; ++slot) {
+        supervisor_driver_control_t control;
+        if (driver_control_read(&driver_runtimes[slot], &control) != 0 ||
+            control.active == 0U || control.device_index != device_index)
+            continue;
+        if (control_out != NULL) *control_out = control;
+        return &driver_runtimes[slot];
+    }
+    return NULL;
+}
+
+bool supervisor_device_driver_component_ready(uint32_t device_index) {
+    supervisor_driver_control_t control;
+    return driver_runtime_for_device(device_index, &control) != NULL &&
+        control.administratively_enabled != 0U && control.fenced == 0U &&
+        control.pid > 0 && process_identity_alive(
+            control.pid, control.process_generation) &&
+        supervisor_output_allowed(control.supervisor);
+}
+
+bool supervisor_device_driver_component_down(uint32_t device_index,
+                                             uint64_t deadline_ms) {
+    supervisor_driver_control_t control;
+    supervisor_driver_runtime_t *runtime = driver_runtime_for_device(
+        device_index, &control);
+    if (runtime == NULL || deadline_ms == 0U ||
+        pit_monotonic_ms() >= deadline_ms) return false;
+    if (control.pid == 0 && control.fenced != 0U) {
+        control.administratively_enabled = 0U;
+        return driver_control_write(runtime, &control) == 0 &&
+            supervisor_admin_pause(control.supervisor) == 0;
+    }
+    control.administratively_enabled = 0U;
+    if (driver_control_write(runtime, &control) != 0 ||
+        !driver_fence_until(runtime, deadline_ms) ||
+        driver_control_read(runtime, &control) != 0 ||
+        supervisor_admin_pause(control.supervisor) != 0)
+        return false;
+    return pit_monotonic_ms() <= deadline_ms;
+}
+
+bool supervisor_device_driver_component_up(uint32_t device_index,
+                                           uint64_t deadline_ms) {
+    if (supervisor_device_driver_component_ready(device_index)) return true;
+    supervisor_driver_control_t control;
+    supervisor_driver_runtime_t *runtime = driver_runtime_for_device(
+        device_index, &control);
+    if (runtime == NULL || deadline_ms == 0U ||
+        pit_monotonic_ms() >= deadline_ms || control.pid != 0 ||
+        control.device != 0U || control.fenced == 0U) return false;
+    supervisor_handle_t updated;
+    if (supervisor_admin_start(control.supervisor, pit_monotonic_ms(),
+                               &updated) != 0) return false;
+    control.supervisor = updated;
+    control.administratively_enabled = 1U;
+    if (driver_control_write(runtime, &control) != 0 ||
+        !driver_spawn_next(runtime, updated)) {
+        (void)supervisor_force_isolate(updated);
+        return false;
+    }
+    while (!supervisor_device_driver_component_ready(device_index) &&
+           pit_monotonic_ms() < deadline_ms) {
+        if (scheduler_sleep_ms(5U) != 0) (void)scheduler_yield();
+    }
+    if (supervisor_device_driver_component_ready(device_index)) return true;
+    (void)supervisor_device_driver_component_down(device_index, deadline_ms);
+    return false;
+}
+
+static void driver_monitor_processes(void) {
+    for (uint32_t slot = 0U; slot < SUPERVISOR_MAX_DEVICE_DRIVERS; ++slot) {
+        supervisor_driver_control_t control;
+        if (driver_control_read(&driver_runtimes[slot], &control) != 0 ||
+            control.active == 0U || control.pid <= 0) continue;
+        if (!process_identity_alive(control.pid, control.process_generation))
+            (void)supervisor_force_isolate(control.supervisor);
+    }
+}
+
+static bool driver_service_event(supervisor_event_t event) {
+    supervisor_driver_control_t control;
+    supervisor_driver_runtime_t *runtime = driver_runtime_for_handle(
+        event.handle, &control);
+    if (runtime == NULL) return false;
+    if (event.type == SUPERVISOR_EVENT_RESTART_REQUIRED) {
+        control.supervisor = event.handle;
+        bool restarted = driver_control_write(runtime, &control) == 0 &&
+            driver_spawn_next(runtime, event.handle);
+        if (!restarted)
+            (void)supervisor_force_isolate(event.handle);
+#ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
+        if (restarted && strcmp(runtime->name,
+                               "driver-fault-recovery") == 0) {
+            uint32_t marker = event.handle.epoch == 2U ? 1U :
+                event.handle.epoch == 3U ? 2U :
+                event.handle.epoch == 4U ? 4U : 0U;
+            if (marker != 0U &&
+                (__sync_fetch_and_or(&driver_fault_markers, marker) &
+                 marker) == 0U) {
+                printf(event.handle.epoch == 2U
+                    ? "DRIVER_DOMAIN CRASH_RECOVERED\n"
+                    : event.handle.epoch == 3U
+                        ? "DRIVER_DOMAIN HANG_RECOVERED\n"
+                        : "DRIVER_DOMAIN STALE_GENERATION_REJECTED\n");
+            }
+        }
+#endif
+    }
+#ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
+    if (event.type == SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) {
+        uint32_t marker = strcmp(runtime->name,
+            "driver-fault-recovery") == 0 ? 8U :
+            strcmp(runtime->name, "driver-fault-reset") == 0 ? 16U : 0U;
+        if (marker != 0U &&
+            (__sync_fetch_and_or(&driver_fault_markers, marker) & marker) ==
+                0U) {
+            printf(marker == 8U
+                ? "DRIVER_DOMAIN RESTART_BUDGET_EXHAUSTED\n"
+                : "DRIVER_DOMAIN RESET_FAILURE_FENCED\n");
+        }
+    }
+#endif
+    return true;
+}
+
 static void supervisor_worker(void) {
     static uint64_t next_arp_scrub_ms;
     for (;;) {
@@ -4413,8 +4855,10 @@ static void supervisor_worker(void) {
          * command happening to poll the NIC. */
         netdev_poll();
         uint64_t component_now_ms = pit_monotonic_ms();
+        device_domain_poll(component_now_ms);
         storage_service_poll(component_now_ms);
         component_control_poll(component_now_ms);
+        driver_monitor_processes();
         supervisor_probe_control_t control;
         uint32_t transaction_flags = supervisor_lock();
         int control_result = supervisor_protected_probe_control_read(
@@ -4573,6 +5017,7 @@ static void supervisor_worker(void) {
             (void)supervisor_force_isolate(control.handle);
         }
         supervisor_event_t result = supervisor_service_one(pit_monotonic_ms());
+        bool driver_event = driver_service_event(result);
         if (control.active != 0U &&
             result.type == SUPERVISOR_EVENT_RESTART_REQUIRED &&
             result.handle.slot == control.handle.slot &&
@@ -4593,7 +5038,8 @@ static void supervisor_worker(void) {
                 (void)supervisor_force_isolate(control.handle);
             }
         }
-        if (result.type == SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) {
+        if (result.type == SUPERVISOR_EVENT_SAFE_STATE_REQUIRED &&
+            !driver_event) {
             /* Until per-hazard external interlocks are registered, the
              * conservative system response revokes every known output. */
             output_fence_all();
@@ -4617,7 +5063,8 @@ bool supervisor_start_worker(void) {
 int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind) {
     if (domain_kind != PROCESS_DOMAIN_PROBE &&
-        domain_kind != PROCESS_DOMAIN_STORAGE) return -1;
+        domain_kind != PROCESS_DOMAIN_STORAGE &&
+        domain_kind != PROCESS_DOMAIN_DRIVER) return -1;
     return process_spawn_supervised(path, argc, argv,
                                     (process_domain_kind_t)domain_kind);
 }
@@ -4633,6 +5080,52 @@ int supervisor_spawn_service(const char *path, int argc,
     (void)argv;
     (void)domain_kind;
     return -1;
+}
+
+int supervisor_start_device_driver(
+        const char *name, const char *path, uint32_t device_index,
+        uint32_t mode, const supervisor_config_t *config, uint64_t now_ms,
+        supervisor_handle_t *handle_out) {
+    (void)name; (void)path; (void)device_index; (void)mode; (void)config;
+    (void)now_ms; (void)handle_out;
+    return -1;
+}
+
+int supervisor_device_driver_bootstrap(
+        int pid, uint32_t process_generation,
+        device_domain_driver_bootstrap_t *bootstrap) {
+    (void)pid; (void)process_generation; (void)bootstrap;
+    return -1;
+}
+
+int supervisor_device_driver_report(
+        int pid, uint32_t process_generation,
+        const device_domain_driver_report_t *report, uint64_t now_ms) {
+    (void)pid; (void)process_generation; (void)report; (void)now_ms;
+    return -1;
+}
+
+bool supervisor_device_driver_output_allowed(
+        int pid, uint32_t process_generation, device_domain_handle_t device) {
+    (void)pid; (void)process_generation; (void)device;
+    return false;
+}
+
+bool supervisor_device_driver_component_down(uint32_t device_index,
+                                             uint64_t deadline_ms) {
+    (void)device_index; (void)deadline_ms;
+    return false;
+}
+
+bool supervisor_device_driver_component_up(uint32_t device_index,
+                                           uint64_t deadline_ms) {
+    (void)device_index; (void)deadline_ms;
+    return false;
+}
+
+bool supervisor_device_driver_component_ready(uint32_t device_index) {
+    (void)device_index;
+    return false;
 }
 
 bool supervisor_start_probe(uint64_t now_ms) {

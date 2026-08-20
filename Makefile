@@ -61,8 +61,10 @@ AHCI_FAULT_INJECTION ?= 0
 AHCI_FAULT_MODE ?= timeout
 HANDOVER_FAULT_INJECTION ?= 0
 DHCP_LEASE_FAULT_INJECTION ?= 0
+DHCP_RENEW_FAULT_INJECTION ?= 0
 HANDOVER_NODE_ID ?= 0
 VBE_RUNTIME_TEST ?= 0
+DRIVER_DOMAIN_FAULT_INJECTION ?= 0
 
 # Target-specific defines
 ifeq ($(TARGET),real_hw)
@@ -116,6 +118,10 @@ ifeq ($(VBE_RUNTIME_TEST),1)
     SAFETY_TEST_DEFINES += -DREIST_VBE_RUNTIME_TEST
 endif
 
+ifeq ($(DRIVER_DOMAIN_FAULT_INJECTION),1)
+    SAFETY_TEST_DEFINES += -DREIST_DRIVER_DOMAIN_FAULT_INJECTION
+endif
+
 ifeq ($(DHCP_RENEW_FAULT_INJECTION),1)
     SAFETY_TEST_DEFINES += -DREIST_DHCP_RENEW_TEST_MS=5000U
 endif
@@ -166,6 +172,7 @@ ARCH_BOOT_C := $(wildcard $(ARCH_DIR)/boot/*.c)
 ARCH_CPU_ASM := $(wildcard $(ARCH_DIR)/cpu/*.asm)
 ARCH_CPU_C := $(wildcard $(ARCH_DIR)/cpu/*.c)
 ARCH_MM_C := $(wildcard $(ARCH_DIR)/mm/*.c)
+ARCH_PLATFORM_C := $(wildcard $(ARCH_DIR)/platform/*.c)
 
 # Kernel sources
 KERNEL_INIT_C := $(wildcard $(KERNEL_DIR)/init/*.c)
@@ -199,7 +206,8 @@ LIB_LIBC_C := $(wildcard $(LIB_DIR)/libc/*.c)
 LIB_LIBC_ASM := $(wildcard $(LIB_DIR)/libc/*.asm)
 LIB_LIBK_C := $(wildcard $(LIB_DIR)/libk/*.c)
 
-CONFIG_STAMP := $(OUTPUT_DIR)/.config-$(TARGET)-$(VIDEO)
+CONFIG_VARIANT := f$(FAULT_INJECTION)-m$(MEMORY_FAULT_INJECTION)-s$(STORAGE_FAULT_INJECTION)-io$(STORAGE_IO_FAULT_INJECTION)-a$(AHCI_FAULT_INJECTION)-$(AHCI_FAULT_MODE)-h$(HANDOVER_FAULT_INJECTION)-n$(HANDOVER_NODE_ID)-dl$(DHCP_LEASE_FAULT_INJECTION)-dr$(DHCP_RENEW_FAULT_INJECTION)-v$(VBE_RUNTIME_TEST)-dd$(DRIVER_DOMAIN_FAULT_INJECTION)
+CONFIG_STAMP := $(OUTPUT_DIR)/.config-$(TARGET)-$(VIDEO)-$(CONFIG_VARIANT)
 
 # ============================================================================
 # OBJECT FILES
@@ -211,6 +219,7 @@ ARCH_BOOT_C_OBJ := $(patsubst $(ARCH_DIR)/boot/%.c,$(BUILD_ARCH_DIR)/boot/%.o,$(
 ARCH_CPU_ASM_OBJ := $(patsubst $(ARCH_DIR)/cpu/%.asm,$(BUILD_ARCH_DIR)/cpu/%_asm.o,$(ARCH_CPU_ASM))
 ARCH_CPU_C_OBJ := $(patsubst $(ARCH_DIR)/cpu/%.c,$(BUILD_ARCH_DIR)/cpu/%.o,$(ARCH_CPU_C))
 ARCH_MM_OBJ := $(patsubst $(ARCH_DIR)/mm/%.c,$(BUILD_ARCH_DIR)/mm/%.o,$(ARCH_MM_C))
+ARCH_PLATFORM_OBJ := $(patsubst $(ARCH_DIR)/platform/%.c,$(BUILD_ARCH_DIR)/platform/%.o,$(ARCH_PLATFORM_C))
 
 # Kernel objects
 KERNEL_INIT_OBJ := $(patsubst $(KERNEL_DIR)/init/%.c,$(BUILD_KERNEL_DIR)/init/%.o,$(KERNEL_INIT_C))
@@ -245,7 +254,7 @@ LIB_LIBC_ASM_OBJ := $(patsubst $(LIB_DIR)/libc/%.asm,$(BUILD_LIB_DIR)/libc/%.o,$
 LIB_LIBK_OBJ := $(patsubst $(LIB_DIR)/libk/%.c,$(BUILD_LIB_DIR)/libk/%.o,$(LIB_LIBK_C))
 
 # Aggregate objects for linking
-ARCH_OBJ := $(ARCH_BOOT_ASM_OBJ) $(ARCH_BOOT_C_OBJ) $(ARCH_CPU_ASM_OBJ) $(ARCH_CPU_C_OBJ) $(ARCH_MM_OBJ)
+ARCH_OBJ := $(ARCH_BOOT_ASM_OBJ) $(ARCH_BOOT_C_OBJ) $(ARCH_CPU_ASM_OBJ) $(ARCH_CPU_C_OBJ) $(ARCH_MM_OBJ) $(ARCH_PLATFORM_OBJ)
 KERNEL_OBJ := $(KERNEL_INIT_OBJ) $(KERNEL_SYSCALL_OBJ) $(KERNEL_PROC_OBJ) \
               $(KERNEL_IPC_OBJ) \
               $(KERNEL_SCHED_C_OBJ) $(KERNEL_SCHED_ASM_OBJ) $(KERNEL_TIME_OBJ) \
@@ -256,7 +265,7 @@ DRIVERS_OBJ := $(DRIVERS_BLOCK_OBJ) $(DRIVERS_CHAR_OBJ) $(DRIVERS_VIDEO_OBJ) \
 LIB_OBJ := $(LIB_LIBC_C_OBJ) $(LIB_LIBC_ASM_OBJ) $(LIB_LIBK_OBJ)
 
 ALL_OBJ := $(ARCH_OBJ) $(KERNEL_OBJ) $(MM_OBJ) $(FS_OBJ) $(DRIVERS_OBJ) $(LIB_OBJ)
-C_OBJ := $(ARCH_BOOT_C_OBJ) $(ARCH_CPU_C_OBJ) $(ARCH_MM_OBJ) \
+C_OBJ := $(ARCH_BOOT_C_OBJ) $(ARCH_CPU_C_OBJ) $(ARCH_MM_OBJ) $(ARCH_PLATFORM_OBJ) \
          $(KERNEL_INIT_OBJ) $(KERNEL_SYSCALL_OBJ) $(KERNEL_PROC_OBJ) \
          $(KERNEL_IPC_OBJ) $(KERNEL_SCHED_C_OBJ) $(KERNEL_TIME_OBJ) \
          $(KERNEL_SHELL_OBJ) $(MM_OBJ) $(FS_OBJ) $(DRIVERS_OBJ) \
@@ -401,7 +410,7 @@ clean:
 
 prepare:
 	@echo "Creating build directories..."
-	@$(PYTHON) -c "from pathlib import Path; [Path(p).mkdir(parents=True, exist_ok=True) for p in '$(BUILD_ARCH_DIR)/boot $(BUILD_ARCH_DIR)/cpu $(BUILD_ARCH_DIR)/mm $(BUILD_KERNEL_DIR)/init $(BUILD_KERNEL_DIR)/syscall $(BUILD_KERNEL_DIR)/proc $(BUILD_KERNEL_DIR)/ipc $(BUILD_KERNEL_DIR)/sched $(BUILD_KERNEL_DIR)/time $(BUILD_KERNEL_DIR)/shell $(BUILD_MM_DIR) $(BUILD_FS_DIR)/vfs $(BUILD_FS_DIR)/fat12 $(BUILD_FS_DIR)/fat32 $(BUILD_FS_DIR)/ext2 $(BUILD_DRIVERS_DIR)/block $(BUILD_DRIVERS_DIR)/char $(BUILD_DRIVERS_DIR)/video $(BUILD_DRIVERS_DIR)/net $(BUILD_DRIVERS_DIR)/bus $(BUILD_DRIVERS_DIR)/usb $(BUILD_LIB_DIR)/libc $(BUILD_LIB_DIR)/libk $(BUILD_USERSPACE_DIR)/bin'.split()]"
+	@$(PYTHON) -c "from pathlib import Path; [Path(p).mkdir(parents=True, exist_ok=True) for p in '$(BUILD_ARCH_DIR)/boot $(BUILD_ARCH_DIR)/cpu $(BUILD_ARCH_DIR)/mm $(BUILD_ARCH_DIR)/platform $(BUILD_KERNEL_DIR)/init $(BUILD_KERNEL_DIR)/syscall $(BUILD_KERNEL_DIR)/proc $(BUILD_KERNEL_DIR)/ipc $(BUILD_KERNEL_DIR)/sched $(BUILD_KERNEL_DIR)/time $(BUILD_KERNEL_DIR)/shell $(BUILD_MM_DIR) $(BUILD_FS_DIR)/vfs $(BUILD_FS_DIR)/fat12 $(BUILD_FS_DIR)/fat32 $(BUILD_FS_DIR)/ext2 $(BUILD_DRIVERS_DIR)/block $(BUILD_DRIVERS_DIR)/char $(BUILD_DRIVERS_DIR)/video $(BUILD_DRIVERS_DIR)/net $(BUILD_DRIVERS_DIR)/bus $(BUILD_DRIVERS_DIR)/usb $(BUILD_LIB_DIR)/libc $(BUILD_LIB_DIR)/libk $(BUILD_USERSPACE_DIR)/bin'.split()]"
 
 # ============================================================================
 # COMPILATION RULES
@@ -429,6 +438,11 @@ $(BUILD_ARCH_DIR)/cpu/%.o: $(ARCH_DIR)/cpu/%.c
 
 # Architecture - Memory management
 $(BUILD_ARCH_DIR)/mm/%.o: $(ARCH_DIR)/mm/%.c
+	@echo "  CC    $<"
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
+
+# Architecture - platform firmware discovery
+$(BUILD_ARCH_DIR)/platform/%.o: $(ARCH_DIR)/platform/%.c
 	@echo "  CC    $<"
 	@$(CC) $(CFLAGS) $(DEPFLAGS) $< -o $@
 
@@ -655,12 +669,12 @@ user-program: user-sdk
 	@$(PYTHON) -c "from pathlib import Path; Path('$(USER_PROGRAM_OUTPUT)').parent.mkdir(parents=True, exist_ok=True)"
 	@$(PYTHON) scripts/build_user_program.py $(USER_PROGRAM_SOURCE) \
 		--output $(USER_PROGRAM_OUTPUT) --zig $(ZIG) \
-		--sysroot $(USER_SDK_DIR) $(USER_PROGRAM_LIBS)
+		--sysroot $(USER_SDK_DIR) --incremental $(USER_PROGRAM_LIBS)
 
 system-programs:
 	@echo "Building standard Ring-3 system programs..."
 	@$(PYTHON) scripts/build_system_programs.py \
-		--output-dir $(SYSTEM_PROGRAM_DIR) --zig $(ZIG)
+		--output-dir $(SYSTEM_PROGRAM_DIR) --zig $(ZIG) --incremental
 
 native-image: floppy-image
 	@echo "Creating native BIOS disk image..."

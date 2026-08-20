@@ -55,6 +55,7 @@
 // Video subsystem
 #include "drivers/video/display.h"
 #include "drivers/video/display_control.h"
+#include "include/kernel/device_domain.h"
 #ifdef USE_FRAMEBUFFER
 #include "drivers/video/framebuffer.h"
 #endif
@@ -93,6 +94,11 @@
 //---------------------------------------------------------------------------------------------
 
 volatile uint64_t cpu_frequency = 0;  // CPU speed in Hz (calculated at boot)
+
+#ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
+static uint32_t driver_fault_recovery_device = UINT32_MAX;
+static uint32_t driver_fault_reset_device = UINT32_MAX;
+#endif
 
 
 //---------------------------------------------------------------------------------------------
@@ -173,6 +179,17 @@ static void hardware_init(void) {
     // Bus enumeration
     boot_context("hardware-init", "PCI", "enumerate", "PCI buses");
     pci_init();  // PCI bus scanning
+    boot_context("hardware-init", "driver domains", "bootstrap",
+                 "fail-closed PCI resource mediator");
+    if (!device_domain_bootstrap())
+        printf("DEVICE_DOMAIN: unavailable; Ring-3 device claims disabled\n");
+#ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
+    if (device_domain_fault_test_register(
+            &driver_fault_recovery_device,
+            &driver_fault_reset_device) != 0) {
+        panic("Unable to register driver-domain fault fixtures");
+    }
+#endif
     /* Establish runtime graphics MMIO mappings before process page
      * directories copy the shared high-kernel PDEs.  This does not switch the
      * VGA mode or publish a framebuffer. */
@@ -678,6 +695,35 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     if (!storage_service_start(pit_monotonic_ms())) {
         panic("Unable to start REIST Ring-3 storage service");
     }
+#ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
+    const supervisor_config_t driver_fault_config = {
+        .heartbeat_timeout_ms = 150U,
+        .recovery_timeout_ms = 750U,
+        .restart_budget = 3U,
+    };
+    supervisor_handle_t driver_fault_handle;
+    if (supervisor_start_device_driver(
+            "driver-fault-recovery", "/libexec/reist/reist.prg",
+            driver_fault_recovery_device, DEVICE_DOMAIN_MODE_MEDIATED,
+            &driver_fault_config, pit_monotonic_ms(),
+            &driver_fault_handle) != 0) {
+        panic("Unable to start recoverable driver-domain fixture");
+    }
+    const supervisor_config_t reset_fault_config = {
+        .heartbeat_timeout_ms = 150U,
+        .recovery_timeout_ms = 750U,
+        .restart_budget = 1U,
+    };
+    supervisor_handle_t reset_fault_handle;
+    if (supervisor_start_device_driver(
+            "driver-fault-reset", "/libexec/reist/reist.prg",
+            driver_fault_reset_device, DEVICE_DOMAIN_MODE_MEDIATED,
+            &reset_fault_config, pit_monotonic_ms(),
+            &reset_fault_handle) != 0) {
+        panic("Unable to start reset-failure driver-domain fixture");
+    }
+    printf("DRIVER_DOMAIN TEST_STARTED\n");
+#endif
     /* Publish every supervised service before the worker can inspect or
      * restart it.  This removes a boot-time partial-initialization race. */
     boot_context("userspace-start", "safety supervisor", "spawn",

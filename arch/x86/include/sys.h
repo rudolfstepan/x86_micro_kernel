@@ -10,6 +10,7 @@
 #define SYS_H
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 // Structure for the registers
@@ -52,7 +53,10 @@ extern void isr_install();
 extern void irq_install();
 extern void irq_handler(Registers* r);
 extern int register_interrupt_handler(int irq, void* r);
+extern int unregister_interrupt_handler(int irq, void* r);
 void irq_uninstall_handler(int irq);
+bool irq_pic_mask_line(uint8_t irq);
+bool irq_pic_unmask_line(uint8_t irq);
 
 extern volatile uint64_t cpu_frequency; // Global CPU frequency
 

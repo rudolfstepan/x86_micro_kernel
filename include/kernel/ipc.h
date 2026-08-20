@@ -83,6 +83,10 @@ int ipc_send_external_from_peer(int owner_pid, uint32_t owner_generation,
 int ipc_send_kernel_to_owner(int owner_pid, uint32_t owner_generation,
                              ipc_handle_t handle,
                              const ipc_message_t *message);
+/** Validate that one live identity owns an endpoint with all requested rights. */
+int ipc_capability_validate_owner(int owner_pid, uint32_t owner_generation,
+                                  ipc_handle_t handle,
+                                  uint32_t required_rights);
 int ipc_receive(struct Process *receiver, ipc_handle_t handle,
                 ipc_message_t *message);
 int ipc_receive_timeout(struct Process *receiver, ipc_handle_t handle,

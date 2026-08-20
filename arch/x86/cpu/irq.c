@@ -81,6 +81,20 @@ int register_interrupt_handler(int irq, void* r) {
     return -1;
 }
 
+int unregister_interrupt_handler(int irq, void *r) {
+    if (irq < 0 || irq >= IRQ_ROUTINE_COUNT || r == NULL) return -1;
+    uint32_t flags = irq_save();
+    for (int slot = 0; slot < IRQ_HANDLERS_PER_LINE; ++slot) {
+        if (irq_routines[irq][slot] == r) {
+            irq_routines[irq][slot] = NULL;
+            irq_restore(flags);
+            return 0;
+        }
+    }
+    irq_restore(flags);
+    return -1;
+}
+
 // Function to uninstall an IRQ handler
 void irq_uninstall_handler(int irq) {
     if (irq < 0 || irq >= IRQ_ROUTINE_COUNT) {
@@ -91,6 +105,29 @@ void irq_uninstall_handler(int irq) {
         irq_routines[irq][slot] = NULL;
     }
     irq_restore(flags);
+}
+
+static bool irq_pic_update_line(uint8_t irq, bool masked) {
+    if (irq >= IRQ_ROUTINE_COUNT) return false;
+    uint16_t port = irq < 8U ? 0x21U : 0xA1U;
+    uint8_t bit = irq < 8U ? irq : (uint8_t)(irq - 8U);
+    uint32_t flags = irq_save();
+    uint8_t value = inb(port);
+    if (masked) value |= (uint8_t)(1U << bit);
+    else value &= (uint8_t)~(1U << bit);
+    outb(port, value);
+    bool updated = (inb(port) & (uint8_t)(1U << bit)) ==
+        (masked ? (uint8_t)(1U << bit) : 0U);
+    irq_restore(flags);
+    return updated;
+}
+
+bool irq_pic_mask_line(uint8_t irq) {
+    return irq_pic_update_line(irq, true);
+}
+
+bool irq_pic_unmask_line(uint8_t irq) {
+    return irq_pic_update_line(irq, false);
 }
 
 // Remaps IRQs 0-15 to interrupt vectors 0x20-0x2F

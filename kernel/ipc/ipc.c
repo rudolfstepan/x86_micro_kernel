@@ -893,6 +893,51 @@ int ipc_send_kernel_to_owner(int owner_pid, uint32_t owner_generation,
     return result;
 }
 
+int ipc_capability_validate_owner(int owner_pid, uint32_t owner_generation,
+                                  ipc_handle_t handle,
+                                  uint32_t required_rights) {
+    const uint32_t all_rights =
+        IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE | IPC_RIGHT_CONTROL;
+    size_t endpoint_slot = 0U;
+    uint32_t generation = 0U;
+    if (owner_pid <= 0 || owner_generation == 0U ||
+        required_rights == 0U || (required_rights & ~all_rights) != 0U ||
+        decode_handle(handle, &endpoint_slot, &generation) != 0)
+        return IPC_EINVAL;
+
+    uint32_t flags = ipc_lock();
+    Process *holder = NULL;
+    for (size_t index = 0U; index < IPC_MAX_CAPABILITY_RECORDS; ++index) {
+        if (load_capability(index) != 0) {
+            quarantine_endpoint_locked(endpoint_slot);
+            ipc_unlock(flags);
+            return IPC_EINTEGRITY;
+        }
+        ipc_capability_record_t *record = &ipc_capability_records[index];
+        if (!record->active || record->handle != handle ||
+            record->holder_pid != owner_pid ||
+            record->holder_generation != owner_generation) continue;
+        if (holder != NULL || record->holder == NULL ||
+            (record->rights & required_rights) != required_rights) {
+            ipc_unlock(flags);
+            return holder != NULL ? IPC_EINTEGRITY : IPC_EACCES;
+        }
+        holder = record->holder;
+    }
+    if (holder == NULL || !holder->is_running || holder->pid != owner_pid ||
+        holder->generation != owner_generation) {
+        ipc_unlock(flags);
+        return IPC_EBADF;
+    }
+    ipc_endpoint_t *endpoint = NULL;
+    int result = resolve_capability(holder, handle, required_rights,
+                                    &endpoint, NULL);
+    if (result == 0 && (endpoint->owner_pid != owner_pid ||
+        endpoint->owner_generation != owner_generation)) result = IPC_EACCES;
+    ipc_unlock(flags);
+    return result;
+}
+
 int ipc_receive_timeout(Process *receiver, ipc_handle_t handle,
                         ipc_message_t *message, uint32_t timeout_ms) {
     if (!message_valid(message)) return IPC_EINVAL;

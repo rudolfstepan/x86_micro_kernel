@@ -124,7 +124,8 @@ enum {
     X86OS_SYS_DISPLAY_CONTROL = 109,
     X86OS_SYS_MOUSE_EVENT = 110,
     X86OS_SYS_POINTER_UPDATE = 111,
-    X86OS_SYS_USB_DIAGNOSTICS = 112
+    X86OS_SYS_USB_DIAGNOSTICS = 112,
+    X86OS_SYS_DEVICE_CONTROL = 113
 };
 
 #define X86OS_TCP_SOCKET_VERSION 1U
@@ -897,6 +898,220 @@ typedef struct {
     char name[X86OS_COMPONENT_NAME_CAPACITY];
 } x86os_component_result_t;
 
+#define X86OS_DEVICE_ABI_VERSION 1U
+#define X86OS_DEVICE_DMA_TRANSFER_MAX 1024U
+#define X86OS_DEVICE_DMA_ADDRESS_ALIGNMENT 128U
+typedef uint32_t x86os_device_handle_t;
+typedef uint32_t x86os_device_resource_t;
+enum {
+    X86OS_DEVICE_CONTROL_REGION_OPEN = 1U,
+    X86OS_DEVICE_CONTROL_IRQ_BIND = 2U,
+    X86OS_DEVICE_CONTROL_DMA_BIND = 3U,
+    X86OS_DEVICE_CONTROL_ACTIVATE = 4U,
+    X86OS_DEVICE_CONTROL_RESOURCE_STATUS = 5U,
+    X86OS_DEVICE_CONTROL_IOMMU_STATUS = 6U,
+    X86OS_DEVICE_CONTROL_IRQ_COMPLETE = 7U,
+    X86OS_DEVICE_CONTROL_DMA_INFO = 8U,
+    X86OS_DEVICE_CONTROL_DMA_WRITE = 9U,
+    X86OS_DEVICE_CONTROL_DMA_READ = 10U,
+    X86OS_DEVICE_CONTROL_DRIVER_BOOTSTRAP = 11U,
+    X86OS_DEVICE_CONTROL_DRIVER_REPORT = 12U,
+    X86OS_DEVICE_CONTROL_REGION_READ = 13U,
+    X86OS_DEVICE_CONTROL_REGION_WRITE = 14U,
+    X86OS_DEVICE_CONTROL_REGION_BIND_DMA = 15U,
+};
+enum {
+    X86OS_DEVICE_RESOURCE_REGION = 1U,
+    X86OS_DEVICE_RESOURCE_IRQ = 2U,
+    X86OS_DEVICE_RESOURCE_DMA = 3U,
+};
+enum {
+    X86OS_DEVICE_DMA_TO_DEVICE = 1U << 0U,
+    X86OS_DEVICE_DMA_FROM_DEVICE = 1U << 1U,
+};
+enum {
+    X86OS_DEVICE_DRIVER_REPORT_SELF_TEST = 1U,
+    X86OS_DEVICE_DRIVER_REPORT_PROGRESS = 2U,
+};
+enum {
+    X86OS_DEVICE_REGION_MMIO = 1U << 0U,
+    X86OS_DEVICE_REGION_PIO = 1U << 1U,
+    X86OS_DEVICE_REGION_64BIT = 1U << 2U,
+    X86OS_DEVICE_REGION_PREFETCHABLE = 1U << 3U,
+};
+enum {
+    X86OS_DEVICE_REGION_DESCRIBE = 1U << 0U,
+    X86OS_DEVICE_REGION_MAP_READ = 1U << 1U,
+    X86OS_DEVICE_REGION_MAP_WRITE = 1U << 2U,
+    X86OS_DEVICE_REGION_ACCESS_READ = 1U << 3U,
+    X86OS_DEVICE_REGION_ACCESS_WRITE = 1U << 4U,
+};
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_handle_t device;
+    uint32_t region_index;
+    uint32_t rights;
+    uint32_t flags;
+    uint32_t reserved[2];
+} x86os_device_region_request_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_resource_t resource;
+    uint32_t region_index;
+    uint32_t flags;
+    uint32_t base_low;
+    uint32_t base_high;
+    uint32_t length_low;
+    uint32_t length_high;
+    uint32_t rights;
+    uint32_t reserved[2];
+} x86os_device_region_info_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_handle_t device;
+    x86os_ipc_handle_t endpoint_capability;
+    uint32_t flags;
+    uint32_t reserved[3];
+} x86os_device_irq_request_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_handle_t device;
+    uint32_t dma_capability;
+    uint32_t flags;
+    uint32_t reserved[3];
+} x86os_device_dma_request_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_handle_t device;
+    uint32_t flags;
+    uint32_t reserved[4];
+} x86os_device_action_request_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_resource_t resource;
+    uint32_t flags;
+    uint32_t reserved[4];
+} x86os_device_resource_request_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_resource_t resource;
+    uint32_t kind;
+    uint32_t reserved[4];
+} x86os_device_resource_result_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_resource_t resource;
+    uint32_t sequence;
+    uint32_t pending_count;
+    uint32_t reserved[3];
+} x86os_device_irq_message_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_resource_t resource;
+    uint32_t sequence;
+    uint32_t completed_count;
+    uint32_t reserved[3];
+} x86os_device_irq_completion_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_resource_t resource;
+    uint32_t offset;
+    uint32_t length;
+    uint32_t user_buffer;
+    uint32_t flags;
+    uint32_t reserved;
+} x86os_device_dma_transfer_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_resource_t resource;
+    uint32_t capacity;
+    uint32_t alignment;
+    uint32_t direction;
+    uint32_t reserved[2];
+} x86os_device_dma_info_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_resource_t region;
+    uint32_t offset;
+    uint32_t width;
+    uint32_t value;
+    uint32_t flags;
+    uint32_t reserved;
+} x86os_device_region_access_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_resource_t region;
+    uint32_t offset;
+    uint32_t width;
+    uint32_t value;
+    uint32_t reserved[2];
+} x86os_device_region_value_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_resource_t region;
+    x86os_device_resource_t dma;
+    uint32_t register_offset;
+    uint32_t buffer_offset;
+    uint32_t flags;
+    uint32_t reserved;
+} x86os_device_region_dma_address_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_handle_t device;
+    uint32_t mode;
+    uint32_t session_slot;
+    uint32_t session_generation;
+    uint32_t session_epoch;
+    uint32_t reserved;
+} x86os_device_driver_bootstrap_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t session_slot;
+    uint32_t session_generation;
+    uint32_t session_epoch;
+    uint32_t report_type;
+    uint32_t value;
+    uint32_t flags;
+} x86os_device_driver_report_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t kind;
+    uint32_t generation;
+    x86os_device_handle_t device;
+    int32_t owner_pid;
+    uint32_t owner_generation;
+    uint32_t platform_capability;
+    uint32_t reserved[2];
+} x86os_device_resource_status_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t firmware_root_valid;
+    uint32_t dmar_present;
+    uint32_t dmar_valid;
+    uint32_t remapping_unit_count;
+    uint32_t interrupt_remapping_reported;
+    uint32_t translation_enabled;
+    uint32_t direct_assignment_ready;
+} x86os_device_iommu_status_t;
+
 typedef struct {
     uint64_t total_bytes;
     uint64_t free_bytes;
@@ -1075,6 +1290,46 @@ int x86os_admin_storage(const x86os_admin_storage_request_t* request,
                         x86os_admin_storage_result_t* result);
 int x86os_component_control(const x86os_component_request_t* request,
                             x86os_component_result_t* result);
+int x86os_device_open_region(x86os_device_handle_t device,
+                             uint32_t region_index, uint32_t rights,
+                             x86os_device_region_info_t *region);
+int x86os_device_bind_irq(x86os_device_handle_t device,
+                          x86os_ipc_handle_t endpoint,
+                          x86os_device_resource_result_t *resource);
+int x86os_device_bind_dma(x86os_device_handle_t device,
+                          uint32_t dma_capability,
+                          x86os_device_resource_result_t *resource);
+int x86os_device_bind_dma_direction(
+    x86os_device_handle_t device, uint32_t dma_capability,
+    uint32_t direction, x86os_device_resource_result_t *resource);
+int x86os_device_activate(x86os_device_handle_t device);
+int x86os_device_resource_status(x86os_device_resource_t resource,
+                                 x86os_device_resource_status_t *status);
+int x86os_device_irq_complete(x86os_device_resource_t resource,
+                              x86os_device_irq_completion_t *completion);
+int x86os_device_dma_info(x86os_device_resource_t resource,
+                          x86os_device_dma_info_t *info);
+int x86os_device_dma_write(x86os_device_resource_t resource, uint32_t offset,
+                           const void *data, uint32_t length);
+int x86os_device_dma_read(x86os_device_resource_t resource, uint32_t offset,
+                          void *data, uint32_t length);
+/** Read one aligned 8-, 16- or 32-bit value through the installed policy. */
+int x86os_device_region_read(x86os_device_resource_t region, uint32_t offset,
+                             uint32_t width, uint32_t *value);
+/** Write one whitelisted register value; arbitrary MMIO mapping is forbidden. */
+int x86os_device_region_write(x86os_device_resource_t region, uint32_t offset,
+                              uint32_t width, uint32_t value);
+/** Publish a kernel-owned DMA buffer address only into a whitelisted register. */
+int x86os_device_region_bind_dma(x86os_device_resource_t region,
+                                 x86os_device_resource_t dma,
+                                 uint32_t register_offset,
+                                 uint32_t buffer_offset);
+int x86os_device_driver_bootstrap(
+    x86os_device_driver_bootstrap_t *bootstrap);
+int x86os_device_driver_report(
+    const x86os_device_driver_bootstrap_t *bootstrap, uint32_t report_type,
+    uint32_t value);
+int x86os_device_iommu_status(x86os_device_iommu_status_t *status);
 int x86os_space(const char* path, x86os_space_info_t* info);
 int x86os_mkdir(const char* path);
 int x86os_rmdir(const char* path);
