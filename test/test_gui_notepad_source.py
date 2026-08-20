@@ -50,6 +50,9 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("NOTEPAD_SURFACE_HOVER_READY", self.source)
         self.assertIn("NOTEPAD_PAINT_RETRY_LIMIT 3U", self.source)
         self.assertIn("paint_status_retryable", self.source)
+        self.assertIn(
+            "paint_surface != 0 ? color_face : color_desktop", self.source
+        )
 
     def test_app_has_real_editing_persistence_and_dialog_flows(self):
         for contract in (

@@ -629,7 +629,7 @@ static void render_file_dialog(const x86os_display_info_t *display,
 static void render_scene(const x86os_display_info_t *display,
                          const notepad_state_t *state) {
     fill((reist_gui_rect_t){0, 0, display->width, display->height},
-         color_desktop);
+         paint_surface != 0 ? color_face : color_desktop);
     render_editor(display, state);
     render_menu(display, state);
     render_dialog(display, state);

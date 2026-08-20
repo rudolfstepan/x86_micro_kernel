@@ -273,8 +273,7 @@ Bildschirms und ohne schrittweise sichtbaren Bildaufbau.
 - [x] Alte und neue Resize-Geometrie als Dirty Regions rekonstruieren, während
   eines Live-Resize zusätzlich den vollständigen Bereich der Button-Down-
   Geometrie invalidieren und eine sichtbare Griffmarkierung zeichnen. Dies
-  reduziert Zwischenbilder bei zusammengefassten Pointer-Reports; der unten
-  dokumentierte VMware-Restfehler bleibt offen.
+  reduziert Zwischenbilder bei zusammengefassten Pointer-Reports.
 - [x] Hosttests für Dirty-Überlauf, Fokusarten, Event-Dispatch, implizites Grab,
   Kanten-/Ecken-Resize, Mindestgröße, Bounds, Stale-Serial, Timeout und
   Prozesscleanup ergänzen.
@@ -298,7 +297,7 @@ Bildschirms und ohne schrittweise sichtbaren Bildaufbau.
 - [x] Zeichen inklusive ihrer Hintergrundpixel an der exakten Dirty Region
   clippen, damit Fensterbewegungen keine Explorer-Labels über Damage- und
   Z-Order-Grenzen hinweg beschädigen.
-- [ ] VMware-Sichttest ohne Flackern oder stehenbleibende Fensterreste.
+- [x] VMware-Sichttest ohne Flackern oder stehenbleibende Fensterreste.
 - [ ] Dialog-Drag und neuen klassischen Mauszeiger auf dem ASUS/NVIDIA-Ziel
   visuell und anhand der ausgegebenen Render-Metriken abnehmen.
 
@@ -584,16 +583,15 @@ Für den aktuellen Stand sind genau diese Handlungen abzunehmen:
    unveränderte Fensterszene wiedersehen.
 6. Escape drücken und die bedienbare VGA-Shell erhalten.
 
-### Offener Resize-Redraw-Bug
+### Abgenommener Resize-Redraw-Fix
 
-Beim schnellen oder mehrfachen Verkleinern eines Surface-Fensters können in
-VMware weiterhin vereinzelt Fragmente älterer Fenstergrößen im freigelegten
-Desktopbereich stehen bleiben. Die Invalidierung umfasst bereits die alte,
-neue und ursprüngliche Button-Down-Geometrie und verhindert den Großteil der
-Artefakte, der manuelle Sichttest ist aber noch nicht vollständig bestanden.
-Der Fehler bleibt deshalb ausdrücklich offen; als nächste Untersuchung sind
-Damage-Coalescing, Shadow-Framebuffer-Publikation und die Reihenfolge von
-Configure/Commit während Live-Resize gegeneinander zu instrumentieren.
+Der beim schnellen oder mehrfachen Verkleinern des Editors sichtbare Restinhalt
+wurde auf dessen retained Fill-/Text-Pfad eingegrenzt: Alte lokale
+Paint-Rechtecke konnten über die bereits verkleinerte Clientfläche hinaus
+gerendert werden. Der Compositor clippt diese Kommandos nun zusätzlich auf die
+aktuelle Clientgeometrie; der störende grüne Editor-Surface-Rand wurde entfernt.
+Der anschließende manuelle VMware-Sichttest mit dem neu gebauten Image wurde am
+20. August 2026 erfolgreich abgenommen.
 
 Der reproduzierbare Gastnachweis für Frame-Publikation und Resize verwendet
 keine reale Host-Eingabe und führt jeweils genau acht Move- und Resize-Frames

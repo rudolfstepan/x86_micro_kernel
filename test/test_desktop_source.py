@@ -318,6 +318,24 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("sync_surface_windows", self.source)
         self.assertIn("desktop_surface_runtime_send_close", self.source)
 
+    def test_retained_surface_paint_is_clipped_to_current_client(self):
+        render_window = self.source[
+            self.source.index("static void render_window") :
+            self.source.index("static void render_menu_bar")
+        ]
+        self.assertIn(
+            "intersect_rects(client, context->clip, &surface_clip)",
+            render_window,
+        )
+        self.assertIn("surface_context.clip = surface_clip", render_window)
+        self.assertIn(
+            "fill_rect_clipped(\n                    &surface_context",
+            render_window,
+        )
+        self.assertIn(
+            "&surface_context, bounds.x, bounds.y", render_window
+        )
+
     def test_render_probe_is_fixed_bounded_and_reports_versioned_metrics(self):
         self.assertIn("#define DESKTOP_METRICS_VERSION 1U", self.source)
         self.assertIn("#define DESKTOP_RENDER_PROBE_STEPS 8U", self.source)

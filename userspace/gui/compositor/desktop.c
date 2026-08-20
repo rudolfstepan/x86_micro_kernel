@@ -1010,21 +1010,24 @@ static void render_window(const desktop_render_context_t *context,
                           title_color);
     }
 
-    if (surface != 0 && surface->committed &&
+    desktop_rect_t surface_clip = {0, 0, 0U, 0U};
+    uint32_t surface_visible = surface != 0 &&
+        intersect_rects(client, context->clip, &surface_clip);
+    desktop_render_context_t surface_context = *context;
+    surface_context.clip = surface_clip;
+    if (surface_visible && surface->committed &&
         surface->committed_buffer != 0U) {
-        desktop_rect_t visible;
-        if (intersect_rects(client, context->clip, &visible)) {
             (void)x86os_display_surface_buffer_draw(
                 (int)surface->owner.pid,
                 surface->owner.process_generation,
                 surface->committed_buffer,
                 surface->committed_buffer_generation,
-                (uint32_t)(visible.x - client.x),
-                (uint32_t)(visible.y - client.y),
-                visible.x, visible.y, visible.width, visible.height);
-        }
+                (uint32_t)(surface_clip.x - client.x),
+                (uint32_t)(surface_clip.y - client.y),
+                surface_clip.x, surface_clip.y,
+                surface_clip.width, surface_clip.height);
     }
-    if (surface != 0)
+    if (surface_visible)
         for (uint32_t index = 0U;
              index < surface->committed_paint_count; ++index) {
             const desktop_surface_paint_command_t *command =
@@ -1035,10 +1038,11 @@ static void render_window(const desktop_render_context_t *context,
                 command->rect.width, command->rect.height,
             };
             if (command->type == DESKTOP_SURFACE_PAINT_FILL)
-                fill_rect_clipped(context, bounds, command->foreground);
+                fill_rect_clipped(
+                    &surface_context, bounds, command->foreground);
             else if (command->type == DESKTOP_SURFACE_PAINT_TEXT)
                 draw_text_clipped(
-                    context, bounds.x, bounds.y, command->text,
+                    &surface_context, bounds.x, bounds.y, command->text,
                     bounds.width, command->foreground,
                     command->background);
         }
