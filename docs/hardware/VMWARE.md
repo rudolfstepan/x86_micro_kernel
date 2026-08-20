@@ -1,6 +1,6 @@
 # VMware Workstation
 
-Stand: 19. August 2026.
+Stand: 20. August 2026.
 
 Der native Windows-Build erzeugt eine vollständige Legacy-BIOS-VM. ISO, GRUB
 und manuelles Anlegen einer VM sind nicht erforderlich.
@@ -25,8 +25,9 @@ das Überschreiben einer über `vmrun` laufenden Paket-VM.
 | Grafik | VMware SVGA, 3D aus, standardmäßig VGA-Text |
 | Eingabe | virtuelle PS/2-Tastatur und virtuelle USB-HID-Maus über xHCI |
 | Netzwerk | Intel E1000 an VMware NAT-DHCP |
+| Audio | virtuelles Intel HDA (`hdaudio`), Start verbunden |
 | Seriell | COM1-Ausgabe nach `vmware-serial.log` |
-| Deaktiviert | physisches HID-Passthrough, Audio, VMware Tools |
+| Deaktiviert | physisches HID-Passthrough, VMware Tools |
 
 Descriptor-VMDK, `-flat.vmdk` und VMX müssen im Paketordner zusammenbleiben.
 Das Raw-Image enthält MBR, Bootpartition und die FAT32-Systempartition
@@ -63,6 +64,19 @@ C:\> GTEST
 
 `HELLO.PRG` meldet `USERSPACE-E2E-OK`. `GTEST` prüft Ring-3-, VFS- und
 Recoverypfade und muss bis `TEST_OK` laufen.
+
+Der Audiofunktionstest verwendet ausschließlich die virtuelle Soundkarte; er
+übernimmt keine Host-Maus oder -Tastatur:
+
+```text
+C:\> AUDIOINFO
+C:\> AUDIOTEST
+```
+
+`AUDIOINFO` muss den überwachten Intel-HDA-Ring-3-Backendstatus melden.
+`AUDIOTEST` spielt einen begrenzten 440-Hz-Testton und muss mit
+`Audio test complete.` enden. Ein erfolgreicher VM-Boot allein ist noch kein
+Nachweis hörbarer Hostausgabe.
 
 ## Netzwerk
 
@@ -106,6 +120,8 @@ Build-ID zu sichern.
   `VBE runtime transition suppressed` enthalten; ein VBE-Aufruf nach einer
   erkannten, nicht unterstützten VMware-Grafik-ID ist ein Kernelregressionsfehler.
 - kein LAN: `e1000`, Verbindungsstatus und VMnet0-Zuordnung prüfen
+- kein Audio: `sound.present`, `sound.virtualDev = "hdaudio"`, danach
+  `AUDIOINFO` und die HDA-/Audio-Service-Meldungen im seriellen Log prüfen
 - frühe Panic: `vmware-serial.log` und erweiterten Panic-Screen vergleichen
 
 Eine manuelle Ersatz-VM muss die VMDK als SATA-Festplatte einbinden. Eine IDE-

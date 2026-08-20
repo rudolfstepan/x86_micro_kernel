@@ -307,7 +307,7 @@ static void test_mediated_lifecycle_and_stale_handle(void) {
         .version = DEVICE_DOMAIN_ABI_VERSION,
         .struct_size = sizeof(policy),
         .readable_bytes = {0x100U},
-        .rule_count = 2U,
+        .rule_count = 3U,
         .rules = {
             {
                 .region_index = 0U,
@@ -321,6 +321,12 @@ static void test_mediated_lifecycle_and_stale_handle(void) {
                 .offset = 0x18U,
                 .width = 8U,
                 .kind = DEVICE_DOMAIN_REGION_RULE_DMA_ADDRESS,
+            },
+            {
+                .region_index = 0U,
+                .offset = 0x28U,
+                .width = 8U,
+                .kind = DEVICE_DOMAIN_REGION_RULE_DMA_DESCRIPTOR_ADDRESS,
             },
         },
     };
@@ -384,29 +390,51 @@ static void test_mediated_lifecycle_and_stale_handle(void) {
     assert(bind_irq_resource(7, 3U, handle, 11U, &irq_resource) == 0);
     assert(bind_dma_resource(7, 3U, handle, 99U, &dma_resource) == -22);
     assert(bind_dma_resource(7, 3U, handle, 0U, &dma_resource) == 0);
-    const device_domain_region_dma_address_t dma_address = {
+    device_domain_region_dma_address_t dma_address = {
         .version = DEVICE_DOMAIN_ABI_VERSION,
         .struct_size = sizeof(dma_address),
         .region = region.resource,
         .dma = dma_resource,
         .register_offset = 0x18U,
-        .buffer_offset = 0U,
+        .buffer_offset = DEVICE_DOMAIN_DMA_DATA_OFFSET,
     };
     assert(device_domain_region_bind_dma(7, 3U, &dma_address) == 0);
     assert(dma_address_writes == 1U);
+    dma_address.register_offset = 0x28U;
+    dma_address.buffer_offset = 0U;
+    assert(device_domain_region_bind_dma(7, 3U, &dma_address) == 0);
+    assert(dma_address_writes == 2U);
     device_domain_dma_info_t dma_info;
     assert(device_domain_dma_info(7, 3U, dma_resource, &dma_info) == 0);
     assert(dma_info.capacity == DEVICE_DOMAIN_DMA_POOL_BYTES);
     assert(dma_info.alignment == 4096U);
     assert(dma_info.direction == (DEVICE_DOMAIN_DMA_TO_DEVICE |
                                   DEVICE_DOMAIN_DMA_FROM_DEVICE));
+    assert(dma_info.reserved[0] == 0U && dma_info.reserved[1] == 0U);
     const uint8_t dma_input[8] = {1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U};
     uint8_t dma_output[8] = {0};
     assert(device_domain_dma_write(
-        7, 3U, dma_resource, 32U, dma_input, sizeof(dma_input)) == 0);
+        7, 3U, dma_resource, 0U, dma_input, sizeof(dma_input)) == -22);
     assert(device_domain_dma_read(
-        7, 3U, dma_resource, 32U, dma_output, sizeof(dma_output)) == 0);
+        7, 3U, dma_resource, 0U, dma_output, sizeof(dma_output)) == -22);
+    assert(device_domain_dma_write(
+        7, 3U, dma_resource, DEVICE_DOMAIN_DMA_DATA_OFFSET + 32U,
+        dma_input, sizeof(dma_input)) == 0);
+    assert(device_domain_dma_read(
+        7, 3U, dma_resource, DEVICE_DOMAIN_DMA_DATA_OFFSET + 32U,
+        dma_output, sizeof(dma_output)) == 0);
     assert(memcmp(dma_input, dma_output, sizeof(dma_input)) == 0);
+    const device_domain_dma_descriptor_t descriptor = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(descriptor),
+        .dma = dma_resource,
+        .descriptor_index = 0U,
+        .buffer_offset = DEVICE_DOMAIN_DMA_DATA_OFFSET,
+        .length = 128U,
+        .flags = DEVICE_DOMAIN_DMA_DESCRIPTOR_INTERRUPT,
+    };
+    assert(device_domain_dma_descriptor_set(
+        7, 3U, &descriptor) == 0);
     device_domain_resource_status_t resource_status;
     assert(device_domain_resource_status(
         7, 3U, irq_resource, &resource_status) == 0);
@@ -414,9 +442,25 @@ static void test_mediated_lifecycle_and_stale_handle(void) {
     assert(device_domain_resource_status(
         7, 3U, dma_resource, &resource_status) == 0);
     assert(resource_status.kind == DEVICE_DOMAIN_RESOURCE_DMA);
+    device_domain_status_t status;
     assert(device_domain_activate(7, 3U, handle) == 0);
     assert(enable_calls == 1U);
     assert(unmask_calls == 1U);
+    assert(device_domain_dma_write(
+        7, 3U, dma_resource, DEVICE_DOMAIN_DMA_DATA_OFFSET,
+        dma_input, sizeof(dma_input)) == -16);
+    assert(device_domain_dma_descriptor_set(7, 3U, &descriptor) == -16);
+    assert(device_domain_deactivate(7, 3U, handle) == 0);
+    assert(mask_calls == 2U && disable_calls == 2U);
+    assert(device_domain_status(device, &status) == 0);
+    assert(status.state == DEVICE_DOMAIN_DMA_BOUND);
+    assert(device_domain_dma_write(
+        7, 3U, dma_resource, DEVICE_DOMAIN_DMA_DATA_OFFSET,
+        dma_input, sizeof(dma_input)) == 0);
+    assert(device_domain_dma_descriptor_set(7, 3U, &descriptor) == 0);
+    assert(device_domain_deactivate(7, 3U, handle) == 0);
+    assert(device_domain_activate(7, 3U, handle) == 0);
+    assert(enable_calls == 2U && unmask_calls == 2U);
 
     device_domain_test_raise_irq(5U);
     device_domain_poll(20U);
@@ -429,9 +473,8 @@ static void test_mediated_lifecycle_and_stale_handle(void) {
         7, 3U, irq_resource, &completion) == 0);
     assert(completion.resource == irq_resource);
     assert(completion.sequence == 1U && completion.completed_count == 1U);
-    assert(unmask_calls == 2U);
+    assert(unmask_calls == 3U);
 
-    device_domain_status_t status;
     assert(device_domain_status(device, &status) == 0);
     assert(status.state == DEVICE_DOMAIN_ACTIVE);
     assert(status.owner_pid == 7 && status.owner_generation == 3U);

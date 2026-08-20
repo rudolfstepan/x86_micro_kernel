@@ -2477,7 +2477,8 @@ static int syscall_device_control(uint32_t command, const void *user_request,
         return copy_to_user_space(directory, (uint32_t)(uintptr_t)user_result,
                                   &result, sizeof(result)) == 0 ? 0 : -14;
     }
-    if (command == DEVICE_DOMAIN_CONTROL_ACTIVATE) {
+    if (command == DEVICE_DOMAIN_CONTROL_ACTIVATE ||
+        command == DEVICE_DOMAIN_CONTROL_DEACTIVATE) {
         device_domain_action_request_t request;
         if (user_result != NULL ||
             copy_from_user(&request, user_request, sizeof(request)) != 0)
@@ -2490,8 +2491,11 @@ static int syscall_device_control(uint32_t command, const void *user_request,
         if (!supervisor_device_driver_output_allowed(
                 process->pid, process->generation, request.device))
             return -13;
-        return device_domain_activate(
-            process->pid, process->generation, request.device);
+        return command == DEVICE_DOMAIN_CONTROL_ACTIVATE
+            ? device_domain_activate(
+                process->pid, process->generation, request.device)
+            : device_domain_deactivate(
+                process->pid, process->generation, request.device);
     }
     if (command == DEVICE_DOMAIN_CONTROL_RESOURCE_STATUS) {
         if (!device_output_accessible(
@@ -2579,6 +2583,14 @@ static int syscall_device_control(uint32_t command, const void *user_request,
         if (status != 0) return status;
         return copy_to_user_space(directory, request.user_buffer, payload,
                                   request.length) == 0 ? 0 : -14;
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_DMA_DESCRIPTOR_SET) {
+        if (user_result != NULL) return -22;
+        device_domain_dma_descriptor_t request;
+        if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        return device_domain_dma_descriptor_set(
+            process->pid, process->generation, &request);
     }
     if (command == DEVICE_DOMAIN_CONTROL_REGION_READ) {
         if (!device_output_accessible(

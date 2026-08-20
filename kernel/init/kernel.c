@@ -56,6 +56,7 @@
 #include "drivers/video/display.h"
 #include "drivers/video/display_control.h"
 #include "include/kernel/device_domain.h"
+#include "kernel/init/audio_device_profile.h"
 #ifdef USE_FRAMEBUFFER
 #include "drivers/video/framebuffer.h"
 #endif
@@ -99,6 +100,8 @@ volatile uint64_t cpu_frequency = 0;  // CPU speed in Hz (calculated at boot)
 static uint32_t driver_fault_recovery_device = UINT32_MAX;
 static uint32_t driver_fault_reset_device = UINT32_MAX;
 #endif
+static audio_device_profile_info_t audio_device_info;
+static bool audio_device_available;
 
 
 //---------------------------------------------------------------------------------------------
@@ -181,8 +184,21 @@ static void hardware_init(void) {
     pci_init();  // PCI bus scanning
     boot_context("hardware-init", "driver domains", "bootstrap",
                  "fail-closed PCI resource mediator");
-    if (!device_domain_bootstrap())
+    if (!device_domain_bootstrap()) {
         printf("DEVICE_DOMAIN: unavailable; Ring-3 device claims disabled\n");
+    } else {
+        int audio_result = audio_device_profile_discover(&audio_device_info);
+        if (audio_result == 1) {
+            audio_device_available = true;
+            printf("REIST_AUDIO HDA_PROFILE pci=%04X:%04X streams=%u\n",
+                   audio_device_info.vendor_id, audio_device_info.device_id,
+                   audio_device_info.output_streams);
+        } else if (audio_result < 0) {
+            printf("REIST_AUDIO HDA_REJECTED result=%d\n", audio_result);
+        } else {
+            printf("REIST_AUDIO HDA_NOT_PRESENT\n");
+        }
+    }
 #ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
     if (device_domain_fault_test_register(
             &driver_fault_recovery_device,
@@ -694,6 +710,30 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
                  "/libexec/reist/storage.prg");
     if (!storage_service_start(pit_monotonic_ms())) {
         panic("Unable to start REIST Ring-3 storage service");
+    }
+    if (audio_device_available) {
+        const supervisor_config_t audio_driver_config = {
+            .heartbeat_timeout_ms = 2000U,
+            .recovery_timeout_ms = 1000U,
+            .restart_budget = 3U,
+        };
+        supervisor_handle_t audio_driver_handle;
+        boot_context("userspace-start", "HDA driver", "spawn",
+                     "/libexec/reist/hda.prg");
+        int audio_driver_result = supervisor_start_device_driver(
+            "hda-ring3", "/libexec/reist/hda.prg",
+            audio_device_info.device_index, DEVICE_DOMAIN_MODE_MEDIATED,
+            &audio_driver_config, pit_monotonic_ms(), &audio_driver_handle);
+        if (audio_driver_result != 0) {
+            printf("REIST_AUDIO DRIVER_DEGRADED result=%d\n",
+                   audio_driver_result);
+        } else {
+            boot_context("userspace-start", "audio service", "spawn",
+                         "/libexec/reist/audio.prg");
+            if (!supervisor_start_audio_service(
+                    audio_device_info.device_index, pit_monotonic_ms()))
+                printf("REIST_AUDIO SERVICE_DEGRADED result=-1\n");
+        }
     }
 #ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
     const supervisor_config_t driver_fault_config = {

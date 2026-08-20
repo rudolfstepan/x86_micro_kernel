@@ -105,11 +105,19 @@ Schreibregister und zulässige 64-Bit-DMA-Adressregister. Der Mediator löst ers
 beim Schreiben ein generationgebundenes DMA-Token in die tatsächliche Adresse
 auf. Fehler beim Registerzugriff fence'n das Gerät.
 
-Diese Version deckt lineare DMA-Bereiche ab. Controller, die indirekte
-Deskriptortabellen auswerten, bleiben so lange `UNSUPPORTED`, bis der Kernel
-auch deren adresshaltige Einträge aus Tokens konstruiert und gegen spätere
-Ring-3-Änderung versiegelt. Insbesondere darf HDA nicht mit frei beschreibbaren
-BDL-Adressen aktiviert werden.
+Die mediated-DMA-ABI reserviert die ersten 4 KiB des Pools als ausschließlich
+kernelbeschreibbaren Deskriptorbereich. Ring 3 benennt für einen Eintrag nur
+Datenoffset, Länge und erlaubte Flags. Der Mediator validiert Bereich,
+Ausrichtung, Anzahl und Generation, konstruiert daraus einen versiegelten
+16-Byte-Deskriptor mit physischer Adresse und veröffentlicht ausschließlich
+dessen DMA-Token. Der übrige Pool bleibt der beschreibbare Datenbereich.
+
+Damit kann das HDA-Profil genau eine geprüfte BDL-Zeile verwenden, ohne Ring 3
+eine adresshaltige Tabelle zu überlassen. `ACTIVE` sperrt weitere DMA-Writes;
+ein explizites Deaktivieren maskiert IRQ und Bus-Mastering und führt zurück zu
+`DMA_BOUND`, bevor der Datenbereich erneut befüllt werden darf. Andere
+indirekte Controllerformate bleiben `UNSUPPORTED`, bis ihr eigenes
+unveränderliches Profil dieselbe Konstruktion vollständig beschreibt.
 
 ## Versionierte öffentliche Objekte
 

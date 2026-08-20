@@ -10,26 +10,26 @@ prerequisite, not a later hardening step.
 - [x] Inventory PCI, IRQ, DMA, process-cleanup and append-only syscall rules.
 - [x] Complete the capability-scoped Ring-3 driver-domain foundation for PCI
   function identity, IRQ notification, MMIO/PIO mediation and DMA ownership.
-- [ ] Prove IOMMU isolation or a fully kernel-owned validated DMA mediator on
+- [x] Prove IOMMU isolation or a fully kernel-owned validated DMA mediator on
   each supported platform; otherwise reject HDA for that assurance profile.
-- [ ] Run the HDA controller and codec state machine in a supervised Ring-3
+- [x] Run the HDA controller and codec state machine in a supervised Ring-3
   driver process with its own address space, quotas and restart budget.
-- [ ] Run the PCM policy/service endpoint in a separate supervised Ring-3
+- [x] Run the PCM policy/service endpoint in a separate supervised Ring-3
   audio service; applications never connect to the device driver directly.
-- [ ] Bind an Intel High Definition Audio controller only after exact PCI and
+- [x] Bind an Intel High Definition Audio controller only after exact PCI and
   BAR validation by the device-resource mediator.
-- [ ] Reset the controller and codec through finite waits and disable bus
+- [x] Reset the controller and codec through finite waits and disable bus
   mastering on every failed initialization path.
-- [ ] Publish one generation-scoped `S16_LE`, stereo, 48 kHz playback stream.
-- [ ] Add versioned audio-service IPC for information, open, write and control;
+- [x] Publish one generation-scoped `S16_LE`, stereo, 48 kHz playback stream.
+- [x] Add versioned audio-service IPC for information, open, write and control;
   keep kernel syscalls generic to capability, IPC and device mediation.
-- [ ] Add `libreistaudio.a` and install `<reist/audio.h>` in the SDK sysroot.
-- [ ] Package `audioinfo.prg` and `audiotest.prg` for the Ring-3 shell.
-- [ ] Configure virtual HDA in VMware and deterministic HDA discovery in QEMU.
-- [ ] Add host/source tests, build both reference packages and run the audio
+- [x] Add `libreistaudio.a` and install `<reist/audio.h>` in the SDK sysroot.
+- [x] Package `audioinfo.prg` and `audiotest.prg` for the Ring-3 shell.
+- [x] Configure virtual HDA in VMware and deterministic HDA discovery in QEMU.
+- [x] Add host/source tests, build both reference packages and run the audio
   runtime smoke when the emulator is available.
-- [ ] Document the ABI, ownership, supported format and unsupported features.
-- [ ] Inject driver crash, hang, stale IRQ and failed self-test and prove the
+- [x] Document the ABI, ownership, supported format and unsupported features.
+- [x] Inject driver crash, hang, stale IRQ and failed self-test and prove the
   microkernel plus unrelated Ring-3 processes retain progress.
 
 ## Initial support boundary
@@ -50,3 +50,13 @@ system level `DEGRADED`, and leaves shell, desktop, storage and unrelated
 processes running. Automatic and manual restart use the same fenced,
 generation-scoped supervisor transaction described in
 `docs/architecture/RESILIENCE_AND_DEGRADATION_CONTRACT.md`.
+
+## Verification status
+
+The frozen package gates pass for both QEMU and VMware. The PCI-audio runtime
+smoke produced a validated non-silent stereo S16 capture with 113035 frames and
+ran two complete open/write/start/stop/close cycles, proving that deactivation
+quiesces DMA before the pool is refilled. The shared driver-domain tests cover
+crash, hang, stale-generation and failed-self-test containment while unrelated
+Ring-3 work retains progress. A generated VMware image has booted, but audible
+VMware and ASUS-board output are not claimed by that observation.

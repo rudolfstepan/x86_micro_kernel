@@ -50,7 +50,10 @@ struct Process;
 #define REIST_REPORT_NETWORK_DHCP 10U
 #define REIST_REPORT_NETWORK_ICMP 11U
 #define REIST_REPORT_SERVICE_READY 12U
+#define REIST_REPORT_DIAGNOSTIC 13U
 #define REIST_SERVICE_DIAGNOSTIC 1U
+#define REIST_SERVICE_AUDIO 2U
+#define REIST_SERVICE_AUDIO_DRIVER_INTERNAL 0x80000001U
 #define SUPERVISOR_NETWORK_FRAME_VERSION 1U
 #define SUPERVISOR_NETWORK_FRAME_MAX_SIZE 1518U
 
@@ -641,6 +644,8 @@ void supervisor_init(void);
 void supervisor_clock_tick(uint64_t now_ms);
 bool supervisor_start_worker(void);
 bool supervisor_start_probe(uint64_t now_ms);
+/** Start the isolated PCM policy service after its HDA driver was spawned. */
+bool supervisor_start_audio_service(uint32_t device_index, uint64_t now_ms);
 bool supervisor_probe_ready(void);
 bool supervisor_probe_component_down(uint64_t deadline_ms);
 bool supervisor_probe_component_up(uint64_t deadline_ms);

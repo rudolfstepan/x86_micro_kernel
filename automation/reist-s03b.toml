@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3c-6f"
-active_id = "R1.7-pci-audio"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -1802,7 +1802,7 @@ evidence = []
 
 [[packages]]
 id = "R1.7-pci-audio"
-status = "active"
+status = "done"
 risk = "high"
 title = "Supervised Ring-3 PCI audio domain and userspace library"
 scope = "Add Intel High Definition Audio only behind the global microkernel failure-domain contract: the HDA controller and codec state machine run in a supervised Ring-3 driver domain, PCM policy runs in a separate Ring-3 audio service, and Ring 0 provides only generic bounded capability, IRQ and device-resource mediation. Require proven IOMMU isolation or fully kernel-owned validated DMA publication; otherwise reject the device for that assurance profile. Add conventional libreistaudio, shell-visible diagnostics and bounded playback, then prove crash, hang, stale-generation and restart-budget behavior without loss of microkernel or unrelated Ring-3 progress."

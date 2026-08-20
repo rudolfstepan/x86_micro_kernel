@@ -165,6 +165,8 @@ class SystemLayoutContracts(unittest.TestCase):
         for target in (
             "bin/shell.prg", "sbin/svcctl.prg",
             "libexec/reist/storage.prg",
+            "sbin/audioinfo.prg", "usr/bin/audiotest.prg",
+            "libexec/reist/hda.prg", "libexec/reist/audio.prg",
         ):
             self.assertIn(target, makefile)
             self.assertIn(target, windows)

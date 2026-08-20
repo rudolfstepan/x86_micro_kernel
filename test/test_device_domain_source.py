@@ -68,6 +68,8 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("bool device_domain_bootstrap(void)", source)
         self.assertIn("device_domain_init(&ops, false)", source)
         self.assertIn("inventory.dmar_valid", source)
+        self.assertNotIn("x86_acpi_iommu_inventory(&inventory)", source)
+        self.assertIn("safe physical-memory ACPI snapshot", source)
         self.assertIn(".direct_assignment_ready = iommu_ready ? 1U : 0U",
                       source)
         self.assertIn("ipc_capability_validate_owner", source)
@@ -84,6 +86,14 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("device_domain_region_write", source)
         self.assertIn("device_domain_region_bind_dma", source)
         self.assertIn("DEVICE_DOMAIN_REGION_RULE_DMA_ADDRESS", header)
+        self.assertIn("DEVICE_DOMAIN_REGION_RULE_DMA_DESCRIPTOR_ADDRESS",
+                      header)
+        self.assertIn("DEVICE_DOMAIN_DMA_DATA_OFFSET", header)
+        self.assertIn("device_domain_dma_descriptor_set", source)
+        self.assertIn("device_domain_deactivate", source)
+        self.assertIn("device->state = DEVICE_DOMAIN_DMA_BOUND", source)
+        self.assertIn("request->buffer_offset < DEVICE_DOMAIN_DMA_DATA_OFFSET",
+                      source)
         self.assertIn("map_requested", source)
         self.assertIn("platform_ops.write_dma_address", source)
         self.assertNotIn("k_malloc", source)

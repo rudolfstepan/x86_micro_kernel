@@ -112,6 +112,8 @@ static critical_object_t protected_network_degradation_stats;
 #define SUPERVISOR_DHCP_RENEW_TIMEOUT_MS 1500U
 #define SUPERVISOR_DHCP_BOOT_TIMEOUT_MS 1500U
 #define SUPERVISOR_DRIVER_CONTROL_VERSION 1U
+#define SUPERVISOR_AUDIO_SERVICE_CONTROL_VERSION 1U
+#define SUPERVISOR_AUDIO_SERVICE_PATH "/libexec/reist/audio.prg"
 
 /* Successful packet-by-packet mediation is useful as deterministic QEMU gate
  * evidence but floods the operator console on a live network.  Production
@@ -186,6 +188,7 @@ typedef struct {
     int32_t pid;
     uint32_t process_generation;
     device_domain_handle_t device;
+    ipc_handle_t channel;
     supervisor_handle_t supervisor;
 } supervisor_driver_control_t;
 
@@ -194,10 +197,38 @@ typedef struct {
     supervisor_config_t config;
     char name[SUPERVISOR_NAME_CAPACITY];
     char path[SUPERVISOR_DRIVER_PATH_CAPACITY];
+    uint32_t reported_safe_generation;
+    uint32_t reported_safe_epoch;
 } supervisor_driver_runtime_t;
 
 static supervisor_driver_runtime_t
     driver_runtimes[SUPERVISOR_MAX_DEVICE_DRIVERS];
+
+typedef struct {
+    uint32_t active;
+    uint32_t fenced;
+    uint32_t healthy;
+    uint32_t ready;
+    uint32_t device_index;
+    int32_t pid;
+    uint32_t process_generation;
+    ipc_handle_t endpoint;
+    int32_t client_pid;
+    uint32_t client_generation;
+    supervisor_handle_t supervisor;
+} supervisor_audio_service_control_t;
+
+typedef struct {
+    critical_object_t control;
+    supervisor_config_t config;
+    uint32_t reported_safe_generation;
+    uint32_t reported_safe_epoch;
+} supervisor_audio_service_runtime_t;
+
+static supervisor_audio_service_runtime_t audio_service_runtime;
+static int audio_service_report_if_identity(
+    int pid, uint32_t generation, uint32_t report_type, uint32_t value,
+    uint64_t now_ms, bool *matched);
 #ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
 static volatile uint32_t driver_fault_markers;
 #endif
@@ -1655,7 +1686,8 @@ static bool driver_control_valid(const void *payload, size_t length) {
     if (control->active == 0U)
         return control->administratively_enabled == 0U &&
             control->fenced == 0U && control->pid == 0 &&
-            control->process_generation == 0U && control->device == 0U;
+            control->process_generation == 0U && control->device == 0U &&
+            control->channel == 0U;
     if (control->device_index >= DEVICE_DOMAIN_MAX_DEVICES ||
         (control->mode != DEVICE_DOMAIN_MODE_MEDIATED &&
          control->mode != DEVICE_DOMAIN_MODE_IOMMU_DIRECT) ||
@@ -1664,7 +1696,8 @@ static bool driver_control_valid(const void *payload, size_t length) {
     bool process_present = control->pid > 0 &&
         control->process_generation != 0U && control->device != 0U;
     bool process_absent = control->pid == 0 &&
-        control->process_generation == 0U && control->device == 0U;
+        control->process_generation == 0U && control->device == 0U &&
+        control->channel == 0U;
     return process_present != process_absent &&
         (process_present || control->fenced != 0U);
 }
@@ -1686,6 +1719,63 @@ static int driver_control_write(supervisor_driver_runtime_t *runtime,
         &runtime->control, SUPERVISOR_DRIVER_CONTROL_VERSION, control,
         sizeof(*control), driver_control_valid) == 0
             ? 0 : SUPERVISOR_EINTEGRITY;
+}
+
+_Static_assert(sizeof(supervisor_audio_service_control_t) <=
+                   CRITICAL_OBJECT_MAX_PAYLOAD,
+               "audio service control exceeds protected payload");
+
+static bool audio_service_control_valid(const void *payload, size_t length) {
+    if (payload == NULL ||
+        length != sizeof(supervisor_audio_service_control_t)) return false;
+    const supervisor_audio_service_control_t *control = payload;
+    if (control->active > 1U || control->fenced > 1U ||
+        control->healthy > 1U || control->ready > 1U) return false;
+    if (control->active == 0U)
+        return control->fenced == 0U && control->healthy == 0U &&
+            control->ready == 0U && control->device_index == 0U &&
+            control->pid == 0 && control->process_generation == 0U &&
+            control->endpoint == 0U && control->client_pid == 0 &&
+            control->client_generation == 0U &&
+            control->supervisor.slot == 0U &&
+            control->supervisor.generation == 0U &&
+            control->supervisor.epoch == 0U;
+    if (control->device_index >= DEVICE_DOMAIN_MAX_DEVICES ||
+        control->supervisor.generation == 0U ||
+        control->supervisor.epoch == 0U ||
+        (control->healthy != 0U && control->fenced != 0U) ||
+        (control->ready != 0U &&
+         (control->healthy == 0U || control->endpoint == 0U))) return false;
+    bool present = control->pid > 0 && control->process_generation != 0U;
+    bool absent = control->pid == 0 && control->process_generation == 0U &&
+        control->endpoint == 0U && control->fenced != 0U &&
+        control->healthy == 0U && control->ready == 0U &&
+        control->client_pid == 0 && control->client_generation == 0U;
+    bool client_present = control->client_pid > 0 &&
+        control->client_generation != 0U;
+    bool client_absent = control->client_pid == 0 &&
+        control->client_generation == 0U;
+    return present != absent && client_present != client_absent;
+}
+
+static int audio_service_control_read(
+        supervisor_audio_service_control_t *control) {
+    if (control == NULL) return -22;
+    size_t length = 0U;
+    return critical_object_read(
+        &audio_service_runtime.control,
+        SUPERVISOR_AUDIO_SERVICE_CONTROL_VERSION, control, sizeof(*control),
+        &length, audio_service_control_valid) < 0 ||
+        length != sizeof(*control) ? SUPERVISOR_EINTEGRITY : 0;
+}
+
+static int audio_service_control_write(
+        const supervisor_audio_service_control_t *control) {
+    if (control == NULL) return -22;
+    return critical_object_update(
+        &audio_service_runtime.control,
+        SUPERVISOR_AUDIO_SERVICE_CONTROL_VERSION, control, sizeof(*control),
+        audio_service_control_valid) == 0 ? 0 : SUPERVISOR_EINTEGRITY;
 }
 #endif
 
@@ -1726,6 +1816,13 @@ void supervisor_init(void) {
                 sizeof(empty_driver)) != 0)
             panic("Unable to initialize protected driver runtime");
     }
+    supervisor_audio_service_control_t empty_audio_service = {0};
+    memset(&audio_service_runtime, 0, sizeof(audio_service_runtime));
+    if (critical_object_init(
+            &audio_service_runtime.control,
+            SUPERVISOR_AUDIO_SERVICE_CONTROL_VERSION, &empty_audio_service,
+            sizeof(empty_audio_service)) != 0)
+        panic("Unable to initialize protected audio service runtime");
     supervisor_icmp_delivery_t empty_icmp_delivery = {0};
     supervisor_udp_delivery_t empty_udp_delivery = {0};
     if (critical_object_init(&probe_runtime.icmp_ingress_delivery.object,
@@ -2353,6 +2450,10 @@ bool supervisor_probe_component_up(uint64_t deadline_ms) {
 int supervisor_probe_report(int pid, uint32_t generation,
                             uint32_t report_type, uint32_t value,
                             uint64_t now_ms) {
+    bool audio_service_match = false;
+    int audio_service_result = audio_service_report_if_identity(
+        pid, generation, report_type, value, now_ms, &audio_service_match);
+    if (audio_service_match) return audio_service_result;
     supervisor_probe_control_t control;
     if (supervisor_protected_probe_control_read(
             &probe_runtime.control, &control) != 0 || control.active == 0U ||
@@ -2711,9 +2812,95 @@ int supervisor_network_confirm_frame_delivery(
 
 int supervisor_service_connect(Process *client, uint32_t service_id,
                                uint32_t *handle_out) {
+    if (client == NULL || handle_out == NULL) return -22;
+
+    if (service_id == REIST_SERVICE_AUDIO) {
+        supervisor_audio_service_control_t audio;
+        uint32_t flags = supervisor_lock();
+        int control_result = audio_service_control_read(&audio);
+        if (control_result != 0 || audio.active == 0U ||
+            audio.fenced != 0U || audio.healthy == 0U || audio.ready == 0U ||
+            audio.endpoint == IPC_INVALID_HANDLE || audio.pid <= 0 ||
+            !process_identity_alive(audio.pid, audio.process_generation)) {
+            supervisor_unlock(flags);
+            return -11;
+        }
+        if (audio.client_pid != 0) {
+            bool client_alive = process_identity_alive(
+                audio.client_pid, audio.client_generation);
+            supervisor_handle_t handle = audio.supervisor;
+            supervisor_unlock(flags);
+            if (client_alive) return -16;
+            /* Never delegate an endpoint containing responses from a dead
+             * client to a new identity. Revoke the complete service endpoint
+             * and let the bounded supervisor restart create a clean one. */
+            (void)supervisor_force_isolate(handle);
+            return -11;
+        }
+        audio.client_pid = client->pid;
+        audio.client_generation = client->generation;
+        control_result = audio_service_control_write(&audio);
+        supervisor_unlock(flags);
+        if (control_result != 0) {
+            (void)supervisor_force_isolate(audio.supervisor);
+            return SUPERVISOR_EINTEGRITY;
+        }
+        int result = process_ipc_delegate_identity(
+            audio.pid, audio.process_generation, audio.endpoint, client,
+            IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE);
+        if (result == 0) {
+            *handle_out = audio.endpoint;
+        } else {
+            supervisor_audio_service_control_t current;
+            bool rollback_integrity_failure = false;
+            supervisor_handle_t rollback_handle = audio.supervisor;
+            flags = supervisor_lock();
+            if (audio_service_control_read(&current) == 0 &&
+                current.client_pid == client->pid &&
+                current.client_generation == client->generation) {
+                current.client_pid = 0;
+                current.client_generation = 0U;
+                rollback_handle = current.supervisor;
+                rollback_integrity_failure =
+                    audio_service_control_write(&current) != 0;
+            }
+            supervisor_unlock(flags);
+            if (rollback_integrity_failure)
+                (void)supervisor_force_isolate(rollback_handle);
+        }
+        return result;
+    }
+
+    if (service_id == REIST_SERVICE_AUDIO_DRIVER_INTERNAL) {
+        supervisor_audio_service_control_t audio;
+        if (client->domain_profile.kind != PROCESS_DOMAIN_AUDIO_SERVICE ||
+            audio_service_control_read(&audio) != 0 || audio.active == 0U ||
+            audio.pid != client->pid ||
+            audio.process_generation != client->generation ||
+            !process_identity_alive(audio.pid, audio.process_generation))
+            return -13;
+        for (uint32_t slot = 0U; slot < SUPERVISOR_MAX_DEVICE_DRIVERS;
+             ++slot) {
+            supervisor_driver_control_t driver;
+            if (driver_control_read(&driver_runtimes[slot], &driver) != 0 ||
+                driver.active == 0U ||
+                driver.device_index != audio.device_index) continue;
+            if (driver.fenced != 0U || driver.pid <= 0 ||
+                driver.channel == IPC_INVALID_HANDLE ||
+                !process_identity_alive(
+                    driver.pid, driver.process_generation) ||
+                !supervisor_output_allowed(driver.supervisor)) return -11;
+            int result = process_ipc_delegate_identity(
+                driver.pid, driver.process_generation, driver.channel,
+                client, IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE);
+            if (result == 0) *handle_out = driver.channel;
+            return result;
+        }
+        return -19;
+    }
+
     supervisor_probe_control_t control;
-    if (client == NULL || handle_out == NULL ||
-        service_id != REIST_SERVICE_DIAGNOSTIC ||
+    if (service_id != REIST_SERVICE_DIAGNOSTIC ||
         supervisor_protected_probe_control_read(
             &probe_runtime.control, &control) != 0 || control.active == 0U ||
         control.fenced != 0U || control.healthy == 0U ||
@@ -4537,7 +4724,8 @@ static bool driver_spawn_next(supervisor_driver_runtime_t *runtime,
     supervisor_driver_control_t control;
     if (runtime == NULL || driver_control_read(runtime, &control) != 0 ||
         control.active == 0U || control.administratively_enabled == 0U ||
-        control.pid != 0 || control.device != 0U) return false;
+        control.pid != 0 || control.device != 0U || control.channel != 0U)
+        return false;
     const char *arguments[] = {runtime->path};
     int pid = supervisor_spawn_service(runtime->path, 1, arguments,
                                        PROCESS_DOMAIN_DRIVER);
@@ -4586,6 +4774,7 @@ static bool driver_fence_until(supervisor_driver_runtime_t *runtime,
     control.pid = 0;
     control.process_generation = 0U;
     control.device = 0U;
+    control.channel = 0U;
     control.fenced = 1U;
     return driver_control_write(runtime, &control) == 0;
 }
@@ -4686,7 +4875,9 @@ int supervisor_device_driver_report(
         report->version != DEVICE_DOMAIN_ABI_VERSION ||
         report->struct_size != sizeof(*report) || report->flags != 0U ||
         (report->report_type != DEVICE_DOMAIN_DRIVER_REPORT_SELF_TEST &&
-         report->report_type != DEVICE_DOMAIN_DRIVER_REPORT_PROGRESS))
+         report->report_type != DEVICE_DOMAIN_DRIVER_REPORT_PROGRESS &&
+         report->report_type != DEVICE_DOMAIN_DRIVER_REPORT_CHANNEL &&
+         report->report_type != DEVICE_DOMAIN_DRIVER_REPORT_DIAGNOSTIC))
         return -22;
     supervisor_driver_control_t control;
     supervisor_driver_runtime_t *runtime = driver_runtime_for_identity(
@@ -4695,11 +4886,29 @@ int supervisor_device_driver_report(
         report->session_generation != control.supervisor.generation ||
         report->session_epoch != control.supervisor.epoch) return -13;
     int result;
-    if (report->report_type == DEVICE_DOMAIN_DRIVER_REPORT_SELF_TEST) {
-        result = report->value == 1U
+    if (report->report_type == DEVICE_DOMAIN_DRIVER_REPORT_DIAGNOSTIC) {
+        if (report->value == 0U) result = -22;
+        else {
+            printf("REIST_DRIVER DIAGNOSTIC name=%s value=%08X\n",
+                   runtime->name, report->value);
+            result = 0;
+        }
+    } else if (report->report_type == DEVICE_DOMAIN_DRIVER_REPORT_CHANNEL) {
+        if (report->value == IPC_INVALID_HANDLE || control.channel != 0U ||
+            ipc_capability_validate_owner(
+                pid, process_generation, report->value,
+                IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE | IPC_RIGHT_CONTROL) != 0)
+            result = -13;
+        else {
+            control.channel = report->value;
+            result = driver_control_write(runtime, &control);
+        }
+    } else if (report->report_type == DEVICE_DOMAIN_DRIVER_REPORT_SELF_TEST) {
+        result = (report->value == 1U && control.channel != 0U)
             ? supervisor_report_self_test(control.supervisor, true, now_ms)
             : -5;
     } else {
+        bool became_ready = control.fenced != 0U;
         result = report->value != 0U
             ? supervisor_report_progress(
                 control.supervisor, report->value, now_ms) : -22;
@@ -4707,6 +4916,8 @@ int supervisor_device_driver_report(
             control.fenced = 0U;
             result = driver_control_write(runtime, &control);
         }
+        if (result == 0 && became_ready)
+            printf("REIST_DRIVER READY name=%s\n", runtime->name);
     }
     if (result != 0) (void)supervisor_force_isolate(control.supervisor);
     return result;
@@ -4791,6 +5002,183 @@ bool supervisor_device_driver_component_up(uint32_t device_index,
     return false;
 }
 
+static bool audio_service_spawn_next(supervisor_handle_t handle) {
+    supervisor_audio_service_control_t control;
+    if (audio_service_control_read(&control) != 0 || control.active == 0U ||
+        control.pid != 0 || control.endpoint != 0U || control.fenced == 0U)
+        return false;
+    const char *arguments[] = {SUPERVISOR_AUDIO_SERVICE_PATH};
+    int pid = supervisor_spawn_service(
+        SUPERVISOR_AUDIO_SERVICE_PATH, 1, arguments,
+        PROCESS_DOMAIN_AUDIO_SERVICE);
+    uint32_t generation = 0U;
+    if (pid <= 0 || process_get_identity(pid, &generation) != 0) {
+        if (pid > 0) (void)process_terminate(pid);
+        return false;
+    }
+    control.pid = pid;
+    control.process_generation = generation;
+    control.endpoint = 0U;
+    control.client_pid = 0;
+    control.client_generation = 0U;
+    control.healthy = 0U;
+    control.ready = 0U;
+    control.fenced = 1U;
+    control.supervisor = handle;
+    if (audio_service_control_write(&control) != 0) {
+        (void)process_terminate(pid);
+        return false;
+    }
+    return true;
+}
+
+static bool audio_service_fence_apply(void *context) {
+    (void)context;
+    supervisor_audio_service_control_t control;
+    if (audio_service_control_read(&control) != 0 || control.active == 0U)
+        return false;
+    if (control.pid > 0 && process_identity_alive(
+            control.pid, control.process_generation))
+        (void)process_terminate(control.pid);
+    control.pid = 0;
+    control.process_generation = 0U;
+    control.endpoint = 0U;
+    control.client_pid = 0;
+    control.client_generation = 0U;
+    control.healthy = 0U;
+    control.ready = 0U;
+    control.fenced = 1U;
+    return audio_service_control_write(&control) == 0;
+}
+
+static bool audio_service_fence_verify(void *context) {
+    (void)context;
+    supervisor_audio_service_control_t control;
+    return audio_service_control_read(&control) == 0 &&
+        control.active != 0U && control.fenced != 0U &&
+        control.pid == 0 && control.process_generation == 0U &&
+        control.endpoint == 0U && control.healthy == 0U &&
+        control.ready == 0U;
+}
+
+bool supervisor_start_audio_service(uint32_t device_index, uint64_t now_ms) {
+    if (device_index >= DEVICE_DOMAIN_MAX_DEVICES) return false;
+    supervisor_audio_service_control_t control;
+    if (audio_service_control_read(&control) != 0 || control.active != 0U)
+        return false;
+    const supervisor_config_t config = {
+        .heartbeat_timeout_ms = 2000U,
+        .recovery_timeout_ms = 1000U,
+        .restart_budget = 3U,
+    };
+    const supervisor_fence_ops_t fence = {
+        .apply = audio_service_fence_apply,
+        .verify = audio_service_fence_verify,
+        .context = &audio_service_runtime,
+    };
+    supervisor_handle_t handle;
+    if (supervisor_register("audio-service", &config, &fence, now_ms,
+                            &handle) != 0) return false;
+    audio_service_runtime.config = config;
+    control = (supervisor_audio_service_control_t){
+        .active = 1U,
+        .fenced = 1U,
+        .device_index = device_index,
+        .supervisor = handle,
+    };
+    if (audio_service_control_write(&control) != 0 ||
+        !audio_service_spawn_next(handle)) {
+        (void)supervisor_force_isolate(handle);
+        return false;
+    }
+    return true;
+}
+
+static int audio_service_report_if_identity(
+        int pid, uint32_t generation, uint32_t report_type, uint32_t value,
+        uint64_t now_ms, bool *matched) {
+    if (matched == NULL) return -22;
+    *matched = false;
+    supervisor_audio_service_control_t control;
+    if (audio_service_control_read(&control) != 0 || control.active == 0U ||
+        control.pid != pid || control.process_generation != generation)
+        return -9;
+    *matched = true;
+    if (!process_identity_alive(pid, generation)) return -9;
+    int result = -22;
+    if (report_type == REIST_REPORT_DIAGNOSTIC) {
+        if (value == 0U) result = -22;
+        else {
+            printf("REIST_AUDIO SERVICE_DIAGNOSTIC value=%08X\n", value);
+            result = 0;
+        }
+    } else if (report_type == REIST_REPORT_SELF_TEST) {
+        if (value == IPC_INVALID_HANDLE || control.endpoint != 0U ||
+            ipc_capability_validate_owner(
+                pid, generation, value,
+                IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE | IPC_RIGHT_CONTROL) != 0)
+            result = -13;
+        else {
+            control.endpoint = value;
+            result = audio_service_control_write(&control);
+            if (result == 0)
+                result = supervisor_report_self_test(
+                    control.supervisor, true, now_ms);
+        }
+    } else if (report_type == REIST_REPORT_PROGRESS) {
+        result = value == 0U ? -22 : supervisor_report_progress(
+            control.supervisor, value, now_ms);
+        if (result == 0 && control.fenced != 0U) {
+            control.fenced = 0U;
+            control.healthy = 1U;
+            result = audio_service_control_write(&control);
+        }
+    } else if (report_type == REIST_REPORT_SERVICE_READY) {
+        if (value != 1U || control.fenced != 0U ||
+            control.healthy == 0U || control.ready != 0U ||
+            control.endpoint == IPC_INVALID_HANDLE) result = -13;
+        else {
+            control.ready = 1U;
+            result = audio_service_control_write(&control);
+            if (result == 0) printf("REIST_AUDIO SERVICE_READY\n");
+        }
+    }
+    if (result != 0) (void)supervisor_force_isolate(control.supervisor);
+    return result;
+}
+
+static void audio_service_monitor_process(void) {
+    supervisor_audio_service_control_t control;
+    if (audio_service_control_read(&control) == 0 && control.active != 0U &&
+        control.pid > 0 &&
+        !process_identity_alive(control.pid, control.process_generation))
+        (void)supervisor_force_isolate(control.supervisor);
+}
+
+static bool audio_service_event(supervisor_event_t event) {
+    supervisor_audio_service_control_t control;
+    if (audio_service_control_read(&control) != 0 || control.active == 0U ||
+        event.handle.slot != control.supervisor.slot ||
+        event.handle.generation != control.supervisor.generation) return false;
+    if (event.type == SUPERVISOR_EVENT_RESTART_REQUIRED) {
+        control.supervisor = event.handle;
+        bool restarted = audio_service_control_write(&control) == 0 &&
+            audio_service_spawn_next(event.handle);
+        if (!restarted) (void)supervisor_force_isolate(event.handle);
+        else printf("REIST_AUDIO SERVICE_RESTARTED\n");
+    } else if (event.type == SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) {
+        if (audio_service_runtime.reported_safe_generation !=
+                event.handle.generation ||
+            audio_service_runtime.reported_safe_epoch != event.handle.epoch) {
+            audio_service_runtime.reported_safe_generation =
+                event.handle.generation;
+            audio_service_runtime.reported_safe_epoch = event.handle.epoch;
+            printf("REIST_AUDIO SERVICE_DEGRADED\n");
+        }
+    }
+    return true;
+}
+
 static void driver_monitor_processes(void) {
     for (uint32_t slot = 0U; slot < SUPERVISOR_MAX_DEVICE_DRIVERS; ++slot) {
         supervisor_driver_control_t control;
@@ -4812,6 +5200,8 @@ static bool driver_service_event(supervisor_event_t event) {
             driver_spawn_next(runtime, event.handle);
         if (!restarted)
             (void)supervisor_force_isolate(event.handle);
+        else if (strcmp(runtime->name, "hda-ring3") == 0)
+            printf("REIST_AUDIO DRIVER_RESTARTED\n");
 #ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
         if (restarted && strcmp(runtime->name,
                                "driver-fault-recovery") == 0) {
@@ -4830,8 +5220,8 @@ static bool driver_service_event(supervisor_event_t event) {
         }
 #endif
     }
-#ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
     if (event.type == SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) {
+#ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
         uint32_t marker = strcmp(runtime->name,
             "driver-fault-recovery") == 0 ? 8U :
             strcmp(runtime->name, "driver-fault-reset") == 0 ? 16U : 0U;
@@ -4842,8 +5232,15 @@ static bool driver_service_event(supervisor_event_t event) {
                 ? "DRIVER_DOMAIN RESTART_BUDGET_EXHAUSTED\n"
                 : "DRIVER_DOMAIN RESET_FAILURE_FENCED\n");
         }
-    }
 #endif
+        if (strcmp(runtime->name, "hda-ring3") == 0 &&
+            (runtime->reported_safe_generation != event.handle.generation ||
+             runtime->reported_safe_epoch != event.handle.epoch)) {
+            runtime->reported_safe_generation = event.handle.generation;
+            runtime->reported_safe_epoch = event.handle.epoch;
+            printf("REIST_AUDIO DRIVER_DEGRADED\n");
+        }
+    }
     return true;
 }
 
@@ -4859,6 +5256,7 @@ static void supervisor_worker(void) {
         storage_service_poll(component_now_ms);
         component_control_poll(component_now_ms);
         driver_monitor_processes();
+        audio_service_monitor_process();
         supervisor_probe_control_t control;
         uint32_t transaction_flags = supervisor_lock();
         int control_result = supervisor_protected_probe_control_read(
@@ -5018,6 +5416,7 @@ static void supervisor_worker(void) {
         }
         supervisor_event_t result = supervisor_service_one(pit_monotonic_ms());
         bool driver_event = driver_service_event(result);
+        bool audio_event = audio_service_event(result);
         if (control.active != 0U &&
             result.type == SUPERVISOR_EVENT_RESTART_REQUIRED &&
             result.handle.slot == control.handle.slot &&
@@ -5039,7 +5438,7 @@ static void supervisor_worker(void) {
             }
         }
         if (result.type == SUPERVISOR_EVENT_SAFE_STATE_REQUIRED &&
-            !driver_event) {
+            !driver_event && !audio_event) {
             /* Until per-hazard external interlocks are registered, the
              * conservative system response revokes every known output. */
             output_fence_all();
@@ -5064,7 +5463,8 @@ int supervisor_spawn_service(const char *path, int argc,
                              const char *const *argv, uint32_t domain_kind) {
     if (domain_kind != PROCESS_DOMAIN_PROBE &&
         domain_kind != PROCESS_DOMAIN_STORAGE &&
-        domain_kind != PROCESS_DOMAIN_DRIVER) return -1;
+        domain_kind != PROCESS_DOMAIN_DRIVER &&
+        domain_kind != PROCESS_DOMAIN_AUDIO_SERVICE) return -1;
     return process_spawn_supervised(path, argc, argv,
                                     (process_domain_kind_t)domain_kind);
 }
@@ -5089,6 +5489,12 @@ int supervisor_start_device_driver(
     (void)name; (void)path; (void)device_index; (void)mode; (void)config;
     (void)now_ms; (void)handle_out;
     return -1;
+}
+
+bool supervisor_start_audio_service(uint32_t device_index, uint64_t now_ms) {
+    (void)device_index;
+    (void)now_ms;
+    return false;
 }
 
 int supervisor_device_driver_bootstrap(

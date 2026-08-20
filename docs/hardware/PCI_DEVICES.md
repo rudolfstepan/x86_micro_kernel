@@ -27,7 +27,7 @@ publizieren ein Gerät erst nach vollständiger Validierung.
 | `02` Network | `00` Ethernet | PCI/PCIe-Netzwerkkarte | ausgewählte IDs unterstützt |
 | `03` Display | `00` VGA | VGA-kompatible Grafikkarte | VGA-Text; ausgewählte Runtime-Grafikbackends |
 | `04` Multimedia | `01` Audio | AC'97/ältere PCI-Audiokarte | enumeriert, kein Backend |
-| `04` Multimedia | `03/00` HDA | Intel High Definition Audio | aktives Paket `R1.7-pci-audio` |
+| `04` Multimedia | `03/00` HDA | Intel High Definition Audio | Ring-3-Backend; QEMU-Wiedergabe nachgewiesen |
 | `06` Bridge | diverse | Host-, PCI-, ISA- und PCIe-Bridges | enumeriert; Firmwarekonfiguration wird beibehalten |
 | `0C` Serial Bus | `03/00` UHCI | USB 1.x | erkannt, nicht unterstützt |
 | `0C` Serial Bus | `03/10` OHCI | USB 1.x | erkannt, nicht unterstützt |
@@ -91,11 +91,18 @@ Transfers sind noch nicht freigegeben.
 
 ### Audio
 
-PCI-Audio wird durch das aktive Paket `R1.7-pci-audio` eingeführt. Die erste
+PCI-Audio wird durch Paket `R1.7-pci-audio` eingeführt. Die erste
 Unterstützungsgrenze ist HDA-Klasse `04:03:00` mit validiertem MMIO-BAR,
 Controller-Reset, Codec-Erkennung und einem begrenzten PCM-Wiedergabestream.
-Bis Probe und Laufzeittest erfolgreich sind, ist HDA in dieser Tabelle als
-**in Arbeit**, nicht als betriebsbereit, gekennzeichnet.
+QEMUs `intel-hda` mit `hda-output` erzeugt über den vollständigen Gastpfad eine
+validierte, nicht stumme Stereo-S16-Aufzeichnung. VMware ist mit virtuellem
+`hdaudio` konfiguriert; hörbare VMware-Ausgabe und reale Codec-/Pinvarianten auf
+dem ASUS-Board sind noch kein abgeschlossener Hardware-Nachweis.
+
+HDA-Treiber und PCM-Service laufen in getrennten überwachten Ring-3-Domänen.
+Der Kernel konstruiert die adresshaltige BDL aus geprüften DMA-Tokens und gibt
+Bus-Mastering erst nach vollständiger Bindung frei. Anwendungen greifen über
+`libreistaudio` auf den Service zu und erhalten keine Gerätecapability.
 
 AC'97 (`04:01`), Ensoniq ES1370/ES1371, Sound Blaster, USB Audio Class und
 HDMI/DisplayPort-Audio benötigen jeweils eigene Backends. Sie können später

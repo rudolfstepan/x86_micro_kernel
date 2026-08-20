@@ -104,7 +104,7 @@ try {
         'C:\Program Files (x86)\VMware\VMware Workstation\vmrun.exe'
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
         Select-Object -First 1
-    if ($Vmrun) {
+    if ($Target -ne 'qemu' -and $Vmrun) {
         $runningVms = & $Vmrun -T ws list 2>$null
         if ($runningVms | Select-String -SimpleMatch $PackagedVmx -Quiet) {
             throw "The generated VMware VM is still running. Shut it down before rebuilding: $PackagedVmx"
@@ -229,6 +229,7 @@ try {
         'bin/rm.prg' = 'RM.PRG'
         'bin/echo.prg' = 'ECHO.PRG'; 'bin/cls.prg' = 'CLS.PRG'
         'sbin/sysinfo.prg' = 'SYSINFO.PRG'; 'sbin/usbinfo.prg' = 'USBINFO.PRG'
+        'sbin/audioinfo.prg' = 'AUDIOINFO.PRG'
         'sbin/meminfo.prg' = 'MEMINFO.PRG'
         'sbin/chkdsk.prg' = 'CHKDSK.PRG'; 'sbin/fdisk.prg' = 'FDISK.PRG'
         'sbin/format.prg' = 'FORMAT.PRG'; 'sbin/ps.prg' = 'PS.PRG'
@@ -245,6 +246,7 @@ try {
         'usr/bin/date.prg' = 'DATE.PRG'; 'usr/bin/uptime.prg' = 'UPTIME.PRG'
         'usr/bin/ascii.prg' = 'ASCII.PRG'; 'usr/bin/save.prg' = 'SAVE.PRG'
         'usr/bin/spawn.prg' = 'SPAWN.PRG'
+        'usr/bin/audiotest.prg' = 'AUDIOTEST.PRG'
         'usr/gui/bin/desktop.prg' = 'DESKTOP.PRG'
         'usr/gui/bin/guidemo.prg' = 'GUIDEMO.PRG'
         'usr/gui/bin/notepad.prg' = 'NOTEPAD.PRG'
@@ -256,20 +258,37 @@ try {
         'libexec/reist/gtest.prg' = 'GTEST.PRG'
         'libexec/reist/reist.prg' = 'REIST.PRG'
         'libexec/reist/storage.prg' = 'STORAGE.PRG'
+        'libexec/reist/hda.prg' = 'HDA.PRG'
+        'libexec/reist/audio.prg' = 'AUDIO.PRG'
         'libexec/reist/sleeper.prg' = 'SLEEPER.PRG'
         'libexec/reist/satawr.prg' = 'SATAWR.PRG'
     }
     $imageDataArguments = @(
         '--data-file', "usr/bin/$($ProgramName.ToLowerInvariant())=$UserPrg"
     )
+    $floppyDataArguments = @(
+        '--data-file', "usr/bin/$($ProgramName.ToLowerInvariant())=$UserPrg"
+    )
+    $floppyExcluded = @(
+        'sbin/audioinfo.prg', 'usr/bin/audiotest.prg',
+        'libexec/reist/hda.prg', 'libexec/reist/audio.prg'
+    )
     foreach ($entry in $systemLayout.GetEnumerator()) {
         $imageDataArguments += @(
             '--data-file', "$($entry.Key)=$(Join-Path $UserProgramDir $entry.Value)"
         )
+        if ($entry.Key -notin $floppyExcluded) {
+            $floppyDataArguments += @(
+                '--data-file', "$($entry.Key)=$(Join-Path $UserProgramDir $entry.Value)"
+            )
+        }
     }
     foreach ($configFile in @('system.conf', 'input.conf', 'desktop.conf', 'filetypes.conf')) {
         $configPath = Join-Path $RepoRoot "config\etc\reist\$configFile"
         $imageDataArguments += @(
+            '--data-file', "etc/reist/$configFile=$configPath"
+        )
+        $floppyDataArguments += @(
             '--data-file', "etc/reist/$configFile=$configPath"
         )
     }
@@ -278,12 +297,15 @@ try {
         $imageDataArguments += @(
             '--data-file', "htdocs/$demoFile=$demoPath"
         )
+        $floppyDataArguments += @(
+            '--data-file', "htdocs/$demoFile=$demoPath"
+        )
     }
 
     $floppyArguments = @(
         'scripts/create_floppy_boot_image.py', '--stage1', $FloppyStage1,
         '--stage2', $Stage2, '--kernel', $Kernel, '--output', $FloppyImage
-    ) + $imageDataArguments
+    ) + $floppyDataArguments
     & $Python @floppyArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Floppy image creation failed with exit code $LASTEXITCODE."
@@ -292,8 +314,11 @@ try {
     $nativeArguments = @(
         'scripts/create_native_boot_image.py', '--stage1', $Stage1,
         '--stage2', $Stage2, '--kernel', $Kernel, '--output', $RawImage,
-        '--vmdk', $Vmdk, '--vmware-dir', $VmwareDir, '--floppy', $FloppyImage
+        '--vmdk', $Vmdk, '--floppy', $FloppyImage
     ) + $imageDataArguments
+    if ($Target -ne 'qemu') {
+        $nativeArguments += @('--vmware-dir', $VmwareDir)
+    }
     & $Python @nativeArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Native image creation failed with exit code $LASTEXITCODE."
@@ -338,6 +363,8 @@ Write-Host "  Raw BIOS disk: $RawImage"
 Write-Host "  BIOS floppy:   $FloppyImage"
 Write-Host "  VMware disk:   $Vmdk"
 Write-Host "  VMware VM:     $Vmx"
-Write-Host "  Complete VM:   $PackagedVmx" -ForegroundColor Cyan
 Write-Host "  User PRG:      $UserPrg"
-Write-Host "  Double-click:  $(Join-Path $VmwareDir 'START-VMWARE.cmd')"
+if ($Target -ne 'qemu') {
+    Write-Host "  Complete VM:   $PackagedVmx" -ForegroundColor Cyan
+    Write-Host "  Double-click:  $(Join-Path $VmwareDir 'START-VMWARE.cmd')"
+}

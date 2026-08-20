@@ -617,6 +617,7 @@ SYSTEM_IMAGE_FILES := \
 	bin/cls.prg=$(SYSTEM_PROGRAM_DIR)/CLS.PRG \
 	sbin/sysinfo.prg=$(SYSTEM_PROGRAM_DIR)/SYSINFO.PRG \
 	sbin/usbinfo.prg=$(SYSTEM_PROGRAM_DIR)/USBINFO.PRG \
+	sbin/audioinfo.prg=$(SYSTEM_PROGRAM_DIR)/AUDIOINFO.PRG \
 	sbin/meminfo.prg=$(SYSTEM_PROGRAM_DIR)/MEMINFO.PRG \
 	sbin/chkdsk.prg=$(SYSTEM_PROGRAM_DIR)/CHKDSK.PRG \
 	sbin/fdisk.prg=$(SYSTEM_PROGRAM_DIR)/FDISK.PRG \
@@ -645,6 +646,7 @@ SYSTEM_IMAGE_FILES := \
 	usr/bin/ascii.prg=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG \
 	usr/bin/save.prg=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
 	usr/bin/spawn.prg=$(SYSTEM_PROGRAM_DIR)/SPAWN.PRG \
+	usr/bin/audiotest.prg=$(SYSTEM_PROGRAM_DIR)/AUDIOTEST.PRG \
 	usr/gui/bin/desktop.prg=$(SYSTEM_PROGRAM_DIR)/DESKTOP.PRG \
 	usr/gui/bin/guidemo.prg=$(SYSTEM_PROGRAM_DIR)/GUIDEMO.PRG \
 	usr/gui/bin/notepad.prg=$(SYSTEM_PROGRAM_DIR)/NOTEPAD.PRG \
@@ -656,8 +658,17 @@ SYSTEM_IMAGE_FILES := \
 	libexec/reist/gtest.prg=$(SYSTEM_PROGRAM_DIR)/GTEST.PRG \
 	libexec/reist/reist.prg=$(SYSTEM_PROGRAM_DIR)/REIST.PRG \
 	libexec/reist/storage.prg=$(SYSTEM_PROGRAM_DIR)/STORAGE.PRG \
+	libexec/reist/hda.prg=$(SYSTEM_PROGRAM_DIR)/HDA.PRG \
+	libexec/reist/audio.prg=$(SYSTEM_PROGRAM_DIR)/AUDIO.PRG \
 	libexec/reist/sleeper.prg=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG \
 	libexec/reist/satawr.prg=$(SYSTEM_PROGRAM_DIR)/SATAWR.PRG
+
+# The rescue floppy intentionally omits optional audio components.  The full
+# HDD/VMware image remains authoritative; a 1.44-MiB recovery medium must keep
+# enough free space for filesystem metadata and emergency tools.
+FLOPPY_IMAGE_FILES := $(filter-out \
+	sbin/audioinfo.prg=% usr/bin/audiotest.prg=% \
+	libexec/reist/hda.prg=% libexec/reist/audio.prg=%,$(SYSTEM_IMAGE_FILES))
 
 bootdisk: native-image
 
@@ -703,7 +714,7 @@ floppy-image: kernel system-programs user-program
 		--kernel $(OUTPUT_DIR)/kernel.bin \
 		--output $(OUTPUT_DIR)/reist-os-floppy.img \
 		--data-file usr/bin/hello.prg=$(USER_PROGRAM_OUTPUT) \
-		$(foreach spec,$(SYSTEM_IMAGE_FILES),--data-file $(spec))
+		$(foreach spec,$(FLOPPY_IMAGE_FILES),--data-file $(spec))
 
 # ============================================================================
 # TESTING

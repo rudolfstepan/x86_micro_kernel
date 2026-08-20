@@ -1,6 +1,6 @@
 # Userspace-SDK, Toolchain und Portabilitätsvertrag
 
-Stand: 19. August 2026.
+Stand: 20. August 2026.
 
 Dieses Dokument legt fest, wie REIST wiederverwendbare Userspace-Komponenten
 entwickelt, veröffentlicht und dokumentiert. Ziel ist Quellportabilität durch
@@ -59,11 +59,11 @@ nicht stillschweigend geforkt.
 ## Schichten und Abhängigkeiten
 
 ```text
-GUI-Anwendung
-  -> öffentliche Komponenten-APIs (zum Beispiel libreistgui)
-     -> REIST-System-API (x86os; künftig als eigene Basisbibliothek)
-        -> versionierte Syscalls / künftig begrenzte IPC-Protokolle
-           -> Kernel und Ring-3-Systemdienste
+Anwendung
+  -> öffentliche Komponenten-API (libreistgui oder libreistaudio)
+     -> REIST-System-API (libreistos)
+        -> versionierte Syscalls und begrenzte IPC-Protokolle
+           -> Kernel und getrennte Ring-3-Systemdienste
 ```
 
 Abhängigkeiten verlaufen nur nach unten. Eine allgemeine GUI-Komponente darf
@@ -72,7 +72,7 @@ Framebuffer kennen. Der Compositor darf öffentliche Komponenten verwenden,
 bleibt aber deren Host und nicht Teil ihrer Client-API.
 
 Der aktuelle Stand trennt `crt0.o`, `libreistos.a`,
-`libreistnetparse.a` und `libreistgui.a` als echte wiederverwendbare
+`libreistnetparse.a`, `libreistgui.a` und `libreistaudio.a` als echte wiederverwendbare
 Buildartefakte. Der Systemprogrammbuild kompiliert diese Module einmal und
 linkt danach jedes PRG gegen dieselben Archive. Unabhängige PRGs werden mit
 höchstens acht Buildworkern gebaut; der Standard nutzt bis zu acht verfügbare
@@ -82,8 +82,9 @@ isolierten temporären lokalen Cache; Ergebnisprüfung und Ausgabe bleiben in
 der festen Programmlistenfolge.
 Jedes Archiv besitzt eine eigene Abhängigkeitsmenge und behält seinen
 Zeitstempel, wenn nur eine andere Komponente geändert wurde. Systemprogramme
-beobachten Core- und lokale Header; nur GUI-Programme beobachten zusätzlich
-die öffentlichen GUI-Header. Eine Änderung an GUI-Komponentencode oder
+beobachten Core- und lokale Header. GUI- beziehungsweise Audioprogramme
+beobachten zusätzlich nur die öffentlichen Header und das Archiv ihres Moduls.
+Eine Änderung an GUI-Komponentencode oder
 `desktop.c` übersetzt daher ausschließlich `libreistgui.a` sowie die
 tatsächlich abhängigen `DESKTOP.PRG`/`GUIDEMO.PRG`.
 Eine spätere feinere Zerlegung
@@ -158,7 +159,9 @@ separat nachzuweisende Ziele.
 <sysroot>/usr/lib/libreistos.a
 <sysroot>/usr/lib/libreistnetparse.a
 <sysroot>/usr/lib/libreistgui.a
+<sysroot>/usr/lib/libreistaudio.a
 <sysroot>/usr/lib/pkgconfig/reist-gui.pc
+<sysroot>/usr/lib/pkgconfig/reist-audio.pc
 ```
 
 Ein Client verwendet normale Suchoptionen:
@@ -170,6 +173,9 @@ python scripts/build_user_program.py userspace/gui/examples/menu_controller.c `
 python scripts/build_user_program.py userspace/gui/examples/dialog_controller.c `
   --output build/programs/DIALOGDEMO.PRG `
   --sysroot build/sdk -l reistgui
+python scripts/build_user_program.py userspace/programs/audioinfo.c `
+  --output build/programs/AUDIOINFO.PRG `
+  --sysroot build/sdk -l reistaudio
 ```
 
 `--sysroot` wählt installierte Header, Startobjekt und Basisbibliothek aus.

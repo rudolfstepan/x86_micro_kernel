@@ -133,16 +133,17 @@ python scripts/build_user_sdk.py --output-dir build/sdk
 ```
 
 Es enthält die öffentlichen Header unter `usr/include`, das Startobjekt
-`usr/lib/crt0.o` sowie `libreistos.a`, `libreistnetparse.a` und
-`libreistgui.a` unter `usr/lib`. `pkgconfig`-Metadaten beschreiben die
-öffentlichen Basis- und GUI-Bibliotheken. Der Systemprogrammbuild kompiliert
+`usr/lib/crt0.o` sowie `libreistos.a`, `libreistnetparse.a`,
+`libreistgui.a` und `libreistaudio.a` unter `usr/lib`.
+`pkgconfig`-Metadaten beschreiben die öffentlichen Basis-, GUI- und
+Audiobibliotheken. Der Systemprogrammbuild kompiliert
 diese gemeinsamen Module einmal und linkt alle PRGs danach gegen dieselben
 Archive. Höchstens acht feste Buildworker teilen den inhaltsadressierten
 globalen Zig-Cache, während jeder Lauf einen getrennten temporären lokalen
 Cache besitzt; `--jobs` begrenzt die Parallelität bei Bedarf weiter.
 
 Die Inkrementalgrenze folgt den Modulabhängigkeiten: `crt0.o`, Core-, Parser-
-und GUI-Archiv werden unabhängig geprüft und nur bei eigener Änderung ersetzt.
+GUI- und Audioarchiv werden unabhängig geprüft und nur bei eigener Änderung ersetzt.
 Console-PRGs hängen nicht von GUI-Headern oder `libreistgui.a` ab. Ein Wechsel
 zwischen QEMU, VMware und realer Hardware invalidiert die Kernelkonfiguration,
 löscht aber nicht mehr das zielunabhängige SDK und alle Ring-3-Programme.
@@ -168,6 +169,9 @@ python scripts/build_user_program.py userspace/gui/examples/tab_sheet.c `
 python scripts/build_user_program.py userspace/gui/examples/value_controls.c `
   --output build/programs/VALUESDEMO.PRG `
   --sysroot build/sdk -l reistgui
+python scripts/build_user_program.py userspace/programs/audioinfo.c `
+  --output build/programs/AUDIOINFO.PRG `
+  --sysroot build/sdk -l reistaudio
 ```
 
 `--sysroot` wählt öffentliche Header, Startobjekt und Basisbibliothek aus.

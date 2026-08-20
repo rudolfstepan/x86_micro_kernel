@@ -366,6 +366,9 @@ typedef struct {
 #define X86OS_REIST_REPORT_NETWORK_DHCP 10U
 #define X86OS_REIST_REPORT_NETWORK_ICMP 11U
 #define X86OS_REIST_REPORT_SERVICE_READY 12U
+#define X86OS_REIST_REPORT_DIAGNOSTIC 13U
+#define X86OS_SERVICE_AUDIO 2U
+#define X86OS_SERVICE_AUDIO_DRIVER_INTERNAL 0x80000001U
 #define X86OS_REIST_NETWORK_DEGRADED_SEMANTIC 3U
 #define X86OS_SERVICE_DIAGNOSTIC 1U
 
@@ -901,6 +904,8 @@ typedef struct {
 #define X86OS_DEVICE_ABI_VERSION 1U
 #define X86OS_DEVICE_DMA_TRANSFER_MAX 1024U
 #define X86OS_DEVICE_DMA_ADDRESS_ALIGNMENT 128U
+#define X86OS_DEVICE_DMA_DATA_OFFSET 4096U
+#define X86OS_DEVICE_DMA_DESCRIPTOR_CAPACITY 256U
 typedef uint32_t x86os_device_handle_t;
 typedef uint32_t x86os_device_resource_t;
 enum {
@@ -919,6 +924,8 @@ enum {
     X86OS_DEVICE_CONTROL_REGION_READ = 13U,
     X86OS_DEVICE_CONTROL_REGION_WRITE = 14U,
     X86OS_DEVICE_CONTROL_REGION_BIND_DMA = 15U,
+    X86OS_DEVICE_CONTROL_DMA_DESCRIPTOR_SET = 16U,
+    X86OS_DEVICE_CONTROL_DEACTIVATE = 17U,
 };
 enum {
     X86OS_DEVICE_RESOURCE_REGION = 1U,
@@ -930,8 +937,17 @@ enum {
     X86OS_DEVICE_DMA_FROM_DEVICE = 1U << 1U,
 };
 enum {
+    X86OS_DEVICE_MODE_MEDIATED = 1U,
+    X86OS_DEVICE_MODE_IOMMU_DIRECT = 2U,
+};
+enum {
+    X86OS_DEVICE_DMA_DESCRIPTOR_INTERRUPT = 1U << 0U,
+};
+enum {
     X86OS_DEVICE_DRIVER_REPORT_SELF_TEST = 1U,
     X86OS_DEVICE_DRIVER_REPORT_PROGRESS = 2U,
+    X86OS_DEVICE_DRIVER_REPORT_CHANNEL = 3U,
+    X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC = 4U,
 };
 enum {
     X86OS_DEVICE_REGION_MMIO = 1U << 0U,
@@ -1040,6 +1056,16 @@ typedef struct {
     uint32_t direction;
     uint32_t reserved[2];
 } x86os_device_dma_info_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_resource_t dma;
+    uint32_t descriptor_index;
+    uint32_t buffer_offset;
+    uint32_t length;
+    uint32_t flags;
+    uint32_t reserved;
+} x86os_device_dma_descriptor_t;
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -1303,6 +1329,8 @@ int x86os_device_bind_dma_direction(
     x86os_device_handle_t device, uint32_t dma_capability,
     uint32_t direction, x86os_device_resource_result_t *resource);
 int x86os_device_activate(x86os_device_handle_t device);
+/** Stop DMA authority while retaining the driver's mediated resources. */
+int x86os_device_deactivate(x86os_device_handle_t device);
 int x86os_device_resource_status(x86os_device_resource_t resource,
                                  x86os_device_resource_status_t *status);
 int x86os_device_irq_complete(x86os_device_resource_t resource,
@@ -1313,6 +1341,11 @@ int x86os_device_dma_write(x86os_device_resource_t resource, uint32_t offset,
                            const void *data, uint32_t length);
 int x86os_device_dma_read(x86os_device_resource_t resource, uint32_t offset,
                           void *data, uint32_t length);
+/** Build one sealed DMA descriptor without exposing its physical address. */
+int x86os_device_dma_descriptor_set(x86os_device_resource_t dma,
+                                    uint32_t descriptor_index,
+                                    uint32_t buffer_offset,
+                                    uint32_t length, uint32_t flags);
 /** Read one aligned 8-, 16- or 32-bit value through the installed policy. */
 int x86os_device_region_read(x86os_device_resource_t region, uint32_t offset,
                              uint32_t width, uint32_t *value);

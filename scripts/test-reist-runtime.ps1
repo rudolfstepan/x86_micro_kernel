@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal'
 )
 
@@ -18,6 +18,7 @@ $AdminMaintenanceRunner = Join-Path $RepoRoot 'scripts\run_qemu_admin_maintenanc
 $ComponentControlRunner = Join-Path $RepoRoot 'scripts\run_qemu_component_control.py'
 $DriverDomainRunner = Join-Path $RepoRoot 'scripts\run_qemu_driver_domain.py'
 $SystemLayoutRunner = Join-Path $RepoRoot 'scripts\run_qemu_system_layout.py'
+$PciAudioRunner = Join-Path $RepoRoot 'scripts\run_qemu_pci_audio.py'
 $PartitionProvisioningRunner = Join-Path $RepoRoot 'scripts\run_qemu_partition_provisioning.py'
 $LogRoot = Join-Path $RepoRoot 'build\codex-agent'
 
@@ -438,6 +439,16 @@ switch ($Mode) {
     }
     'system-layout' {
         Invoke-SystemLayout
+    }
+    'pci-audio' {
+        $wav = Join-Path $RepoRoot 'build\pci-audio.wav'
+        $audioLog = Join-Path $RepoRoot 'build\guest-pci-audio.log'
+        & $Python $PciAudioRunner --qemu $Qemu --image $Image `
+            --wav $wav --log $audioLog
+        if ($LASTEXITCODE -ne 0) {
+            Get-Content -LiteralPath $audioLog -Tail 40
+            throw 'REIST PCI audio runtime failed.'
+        }
     }
     'partition-provisioning' {
         $disk = Join-Path $RepoRoot 'build\partition-provisioning.img'

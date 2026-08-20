@@ -17,6 +17,8 @@ bereits behobene Fehler enthalten.
 - [REIST High-Assurance Core Contract](architecture/HIGH_ASSURANCE_CORE_CONTRACT.md) – verbindliche, branchenunabhängige Regeln für Fehlerbegrenzung, Recovery und Nachweisführung
 - [Resilienz- und Degradierungsvertrag](architecture/RESILIENCE_AND_DEGRADATION_CONTRACT.md) – globales Stabilitätsversprechen, Restartbudgets und terminale Systemzustände
 - [Ring-3-Treibermodell](architecture/USERSPACE_DRIVER_MODEL.md) – Gerätebesitz, IRQ-, MMIO-/PIO- und DMA-Grenzen für neu startbare Treiber
+- [Audiosubsystem](architecture/AUDIO_SUBSYSTEM.md) – Ring-3-HDA-Treiber,
+  PCM-Service, `libreistaudio` und vollständig vermitteltes DMA
 - [Medical Reference Profile](architecture/MEDICAL_HIGH_ASSURANCE_CONTRACT.md) – optionale medizinische Verschärfung; keine klinische Freigabe
 - [REIST-Zielarchitektur](architecture/REIST_ARCHITECTURE.md) – Detect, Contain, Recover, Validate und Reintegrate als technisches Systemmodell
 - [Build-Modi](development/BUILD_MODES.md) – `qemu`, `vmware`, `real_hw` und Videoauswahl
@@ -44,6 +46,8 @@ bereits behobene Fehler enthalten.
 
 - [PCI-Geräte und Treiberstatus](hardware/PCI_DEVICES.md) – übliche PCI-Klassen,
   erkannte Geräte und tatsächlich unterstützte REIST-Treiber
+- [PCI-Audio-Arbeitspaket](development/PCI_AUDIO_WORK_PACKAGE.md) –
+  Implementierungsfolge und Abnahmegrenzen der ersten HDA-Wiedergabe
 - [Fertige VMware-VM](hardware/VMWARE.md) – VMX/VMDK, LAN-Bridge und Fehlerdiagnose
 - [Netzwerkstack](networking/NETWORK.md) – E1000, DHCP, ARP und ICMP
 - [TAP-Netzwerk](networking/TAP_NETWORKING.md) – optionaler Linux/QEMU-Testweg

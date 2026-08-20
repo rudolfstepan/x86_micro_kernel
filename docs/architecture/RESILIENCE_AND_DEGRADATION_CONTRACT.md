@@ -128,6 +128,11 @@ Vor dem Start erhält jede Komponente genau eine Konsequenzklasse:
 Die Beispiele sind Standardwerte. Ein konkretes Einsatzprofil darf dasselbe
 Subsystem anders klassifizieren.
 
+Das erste [Audiosubsystem](AUDIO_SUBSYSTEM.md) ist eine konkrete optionale
+Komponente: HDA-Treiber und PCM-Service sind getrennte Ring-3-Fehlerdomänen.
+Nach erschöpftem Restartbudget werden Geräte- und Streamgenerationen entzogen;
+Shell, Desktop und Storage laufen im Zustand `DEGRADED` weiter.
+
 ## Systemweite Degradierungsstufen
 
 REIST verwendet eine monotone Leiter abnehmender Funktionalität:

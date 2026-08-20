@@ -10,7 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from build_user_program import ROOT, build, find_zig
-from build_user_sdk import CORE_INCLUDE_ROOT, GUI_INCLUDE_ROOT, build_sdk
+from build_user_sdk import (
+    AUDIO_INCLUDE_ROOT, CORE_INCLUDE_ROOT, GUI_INCLUDE_ROOT, build_sdk,
+)
 
 
 PROGRAMS = {
@@ -77,12 +79,20 @@ PROGRAMS = {
     "GTEST.PRG": ROOT / "userspace/programs/guest_test.c",
     "REIST.PRG": ROOT / "userspace/programs/reist_probe.c",
     "STORAGE.PRG": ROOT / "userspace/programs/storage_service.c",
+    "HDA.PRG": ROOT / "userspace/drivers/audio/hda_driver.c",
+    "AUDIO.PRG": ROOT / "userspace/services/audio/audio_service.c",
+    "AUDIOINFO.PRG": ROOT / "userspace/programs/audioinfo.c",
+    "AUDIOTEST.PRG": ROOT / "userspace/programs/audiotest.c",
     "SLEEPER.PRG": ROOT / "userspace/programs/sleep_child.c",
     "SATAWR.PRG": ROOT / "userspace/programs/sata_write_test.c",
 }
 
 GUI_PROGRAMS = {"DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG"}
 NETWORK_PARSER_PROGRAMS = {"REIST.PRG"}
+AUDIO_PROGRAMS = {
+    "HDA.PRG", "AUDIO.PRG", "AUDIOINFO.PRG", "AUDIOTEST.PRG",
+}
+AUDIO_CLIENT_PROGRAMS = {"AUDIOINFO.PRG", "AUDIOTEST.PRG"}
 MAX_SYSTEM_BUILD_WORKERS = 8
 DEFAULT_SYSTEM_BUILD_WORKERS = min(
     MAX_SYSTEM_BUILD_WORKERS, max(1, os.cpu_count() or 1))
@@ -113,6 +123,7 @@ def main() -> None:
             cache_directory=global_cache_directory)
         core_headers = list(CORE_INCLUDE_ROOT.rglob("*.h"))
         gui_headers = list(GUI_INCLUDE_ROOT.rglob("*.h"))
+        audio_headers = list(AUDIO_INCLUDE_ROOT.rglob("*.h"))
 
         def build_one(item: tuple[str, object]) -> str:
             """Build one independent PRG under the shared read-only SDK."""
@@ -123,13 +134,20 @@ def main() -> None:
             runtime_libraries = [sdk.core_library]
             if name in NETWORK_PARSER_PROGRAMS:
                 runtime_libraries.append(sdk.network_parser_library)
+            link_libraries = []
+            if name in GUI_PROGRAMS:
+                link_libraries.append(sdk.gui_library)
+            if name in AUDIO_CLIENT_PROGRAMS:
+                link_libraries.append(sdk.audio_library)
             dependency_files = [*core_headers]
             if name in GUI_PROGRAMS:
                 dependency_files.extend(gui_headers)
+            if name in AUDIO_PROGRAMS:
+                dependency_files.extend(audio_headers)
             build(
                 sources, output, zig, incremental=args.incremental,
                 include_dirs=[sdk.include_dir],
-                libraries=[sdk.gui_library] if name in GUI_PROGRAMS else None,
+                libraries=link_libraries or None,
                 runtime_objects=[sdk.startup_object],
                 runtime_libraries=runtime_libraries,
                 cache_directory=global_cache_directory,

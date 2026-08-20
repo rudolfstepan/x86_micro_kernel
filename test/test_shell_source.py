@@ -133,6 +133,22 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertIn("return x86os_getchar();", editor)
         self.assertNotIn("x86os_getchar_nonblocking", editor)
 
+    def test_audio_tools_are_reachable_from_the_userspace_shell(self):
+        programs = (ROOT / "scripts/build_system_programs.py").read_text(
+            encoding="utf-8"
+        )
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        windows = (ROOT / "scripts/build-windows.ps1").read_text(
+            encoding="utf-8"
+        )
+        shell = (ROOT / "userspace/bin/shell.c").read_text(encoding="utf-8")
+        for program in ("AUDIOINFO.PRG", "AUDIOTEST.PRG"):
+            self.assertIn(f'"{program}"', programs)
+        for target in ("sbin/audioinfo.prg", "usr/bin/audiotest.prg"):
+            self.assertIn(target, makefile)
+            self.assertIn(f"'{target}'", windows)
+        self.assertIn('"/bin", "/sbin", "/usr/bin", "/usr/gui/bin"', shell)
+
     def test_tab_completes_commands_and_file_names(self):
         shell = (ROOT / "userspace/bin/shell.c").read_text(encoding="utf-8")
         self.assertIn("complete_line(line, &length)", shell)

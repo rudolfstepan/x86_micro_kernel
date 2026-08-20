@@ -23,7 +23,8 @@ from build_user_program import ROOT, find_zig, freestanding_compile_prefix
 CORE_ROOT = ROOT / "userspace" / "sdk"
 CORE_INCLUDE_ROOT = CORE_ROOT / "include"
 GUI_INCLUDE_ROOT = ROOT / "userspace" / "gui" / "include"
-PUBLIC_INCLUDE_ROOTS = (CORE_INCLUDE_ROOT, GUI_INCLUDE_ROOT)
+AUDIO_INCLUDE_ROOT = ROOT / "userspace" / "audio" / "include"
+PUBLIC_INCLUDE_ROOTS = (CORE_INCLUDE_ROOT, GUI_INCLUDE_ROOT, AUDIO_INCLUDE_ROOT)
 
 CORE_LIBRARY_SOURCES = (
     CORE_ROOT / "x86os.c",
@@ -46,6 +47,9 @@ GUI_LIBRARY_SOURCES = (
     ROOT / "userspace" / "gui" / "lib" / "value_controls.c",
     ROOT / "userspace" / "gui" / "lib" / "text_editor.c",
 )
+AUDIO_LIBRARY_SOURCES = (
+    ROOT / "userspace" / "audio" / "lib" / "audio.c",
+)
 STARTUP_SOURCE = CORE_ROOT / "crt0.c"
 
 
@@ -60,6 +64,7 @@ class SdkArtifacts:
     core_library: Path
     network_parser_library: Path
     gui_library: Path
+    audio_library: Path
 
 
 def sdk_artifacts(output: Path) -> SdkArtifacts:
@@ -74,6 +79,7 @@ def sdk_artifacts(output: Path) -> SdkArtifacts:
         core_library=library_dir / "libreistos.a",
         network_parser_library=library_dir / "libreistnetparse.a",
         gui_library=library_dir / "libreistgui.a",
+        audio_library=library_dir / "libreistaudio.a",
     )
 
 
@@ -109,6 +115,15 @@ def write_pkg_config(library_dir: Path) -> None:
         "Version: 1.0.0\n"
         "Cflags: -I${includedir}\n"
         "Libs: -L${libdir} -lreistgui\n",
+    )
+    write_if_changed(
+        library_dir / "pkgconfig/reist-audio.pc",
+        common +
+        "Name: reist-audio\n"
+        "Description: Bounded REIST Ring-3 PCM playback API\n"
+        "Version: 1.0.0\n"
+        "Cflags: -I${includedir}\n"
+        "Libs: -L${libdir} -lreistaudio -lreistos\n",
     )
 
 
@@ -174,13 +189,18 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
     gui_headers = tuple(
         header for root, header in public_headers
         if root == GUI_INCLUDE_ROOT)
+    audio_headers = tuple(
+        header for root, header in public_headers
+        if root == AUDIO_INCLUDE_ROOT)
     all_sources = (
         STARTUP_SOURCE, *CORE_LIBRARY_SOURCES,
         *NETWORK_PARSER_SOURCES, *GUI_LIBRARY_SOURCES,
+        *AUDIO_LIBRARY_SOURCES,
     )
-    if not core_headers or not gui_headers or any(
+    if not core_headers or not gui_headers or not audio_headers or any(
             not source.is_file()
-            for source in (*all_sources, *core_headers, *gui_headers)):
+            for source in (
+                *all_sources, *core_headers, *gui_headers, *audio_headers)):
         raise FileNotFoundError("REIST SDK sources are incomplete")
 
     for root, header in public_headers:
@@ -204,7 +224,11 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
     gui_stale = artifact_requires_rebuild(
         artifacts.gui_library,
         (*GUI_LIBRARY_SOURCES, *core_headers, *gui_headers), incremental)
-    if not (startup_stale or core_stale or parser_stale or gui_stale):
+    audio_stale = artifact_requires_rebuild(
+        artifacts.audio_library,
+        (*AUDIO_LIBRARY_SOURCES, *core_headers, *audio_headers), incremental)
+    if not (startup_stale or core_stale or parser_stale or gui_stale or
+            audio_stale):
         return artifacts
 
     with tempfile.TemporaryDirectory(prefix="reist-user-sdk-") as temporary:
@@ -217,7 +241,8 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
             cache_root / "zig-global")
         environment["ZIG_LOCAL_CACHE_DIR"] = str(
             temporary_path / "zig-local")
-        prefix = freestanding_compile_prefix(zig, [GUI_INCLUDE_ROOT])
+        prefix = freestanding_compile_prefix(
+            zig, [GUI_INCLUDE_ROOT, AUDIO_INCLUDE_ROOT])
 
         if startup_stale:
             startup = compile_objects(
@@ -245,6 +270,13 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
             create_archive(
                 zig, artifacts.gui_library, gui_objects,
                 temporary_path, environment)
+        if audio_stale:
+            audio_objects = compile_objects(
+                AUDIO_LIBRARY_SOURCES, prefix, temporary_path, "audio",
+                environment)
+            create_archive(
+                zig, artifacts.audio_library, audio_objects,
+                temporary_path, environment)
     return artifacts
 
 
@@ -261,6 +293,7 @@ def main() -> None:
     print(f"REIST SDK core library: {artifacts.core_library}")
     print(f"REIST SDK parser library: {artifacts.network_parser_library}")
     print(f"REIST SDK GUI library: {artifacts.gui_library}")
+    print(f"REIST SDK audio library: {artifacts.audio_library}")
 
 
 if __name__ == "__main__":

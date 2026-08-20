@@ -150,6 +150,7 @@ class UserProgramToolchainTests(unittest.TestCase):
         self.assertIn('"usr" / "include"', sdk_builder)
         self.assertIn('library_dir / "libreistos.a"', sdk_builder)
         self.assertIn('library_dir / "libreistgui.a"', sdk_builder)
+        self.assertIn('library_dir / "libreistaudio.a"', sdk_builder)
         self.assertIn("MAX_SYSTEM_BUILD_WORKERS = 8", system_builder)
         self.assertIn("DEFAULT_SYSTEM_BUILD_WORKERS = min(", system_builder)
         self.assertIn('"-j", "--jobs"', system_builder)
@@ -166,7 +167,7 @@ class UserProgramToolchainTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         for artifact in (
             "crt0.o", "libreistos.a", "libreistnetparse.a",
-            "libreistgui.a",
+            "libreistgui.a", "libreistaudio.a",
         ):
             self.assertIn(artifact, documentation)
             self.assertIn(artifact, architecture)
@@ -184,6 +185,7 @@ class UserProgramToolchainTests(unittest.TestCase):
             container_output = temporary / "CONTAINERDEMO.PRG"
             tabs_output = temporary / "TABSDEMO.PRG"
             values_output = temporary / "VALUESDEMO.PRG"
+            audio_output = temporary / "AUDIOINFO.PRG"
             subprocess.run(
                 [
                     sys.executable,
@@ -204,6 +206,7 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertTrue((include / "reist/gui/tabs.h").is_file())
             self.assertTrue(
                 (include / "reist/gui/value_controls.h").is_file())
+            self.assertTrue((include / "reist/audio.h").is_file())
             self.assertTrue((library / "crt0.o").is_file())
             self.assertEqual(
                 (library / "libreistos.a").read_bytes()[:8], b"!<arch>\n"
@@ -211,16 +214,28 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertEqual(
                 (library / "libreistgui.a").read_bytes()[:8], b"!<arch>\n"
             )
+            self.assertEqual(
+                (library / "libreistaudio.a").read_bytes()[:8], b"!<arch>\n"
+            )
             package = (
                 library / "pkgconfig" / "reist-gui.pc"
             ).read_text(encoding="ascii")
             self.assertIn("Cflags: -I${includedir}", package)
             self.assertIn("Libs: -L${libdir} -lreistgui", package)
+            audio_package = (
+                library / "pkgconfig" / "reist-audio.pc"
+            ).read_text(encoding="ascii")
+            self.assertIn("Cflags: -I${includedir}", audio_package)
+            self.assertIn(
+                "Libs: -L${libdir} -lreistaudio -lreistos",
+                audio_package,
+            )
 
             stable_artifacts = [
                 library / "crt0.o",
                 library / "libreistos.a",
                 library / "libreistnetparse.a",
+                library / "libreistaudio.a",
             ]
             stable_times = {
                 artifact: artifact.stat().st_mtime_ns
@@ -323,6 +338,19 @@ class UserProgramToolchainTests(unittest.TestCase):
                 cwd=ROOT, check=True, capture_output=True, timeout=60,
             )
             self.assertEqual(values_output.read_bytes()[:4], b"MYPR")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "build_user_program.py"),
+                    str(ROOT / "userspace/programs/audioinfo.c"),
+                    "--output", str(audio_output),
+                    "--zig", str(ZIG),
+                    "--sysroot", str(sdk),
+                    "-l", "reistaudio",
+                ],
+                cwd=ROOT, check=True, capture_output=True, timeout=60,
+            )
+            self.assertEqual(audio_output.read_bytes()[:4], b"MYPR")
 
     def test_external_c_source_builds_a_valid_mypr_image(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -450,6 +478,10 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "GTEST.PRG",
                 "REIST.PRG",
                 "STORAGE.PRG",
+                "HDA.PRG",
+                "AUDIO.PRG",
+                "AUDIOINFO.PRG",
+                "AUDIOTEST.PRG",
                 "SLEEPER.PRG",
                 "SATAWR.PRG",
             }

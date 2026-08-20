@@ -56,6 +56,8 @@ _Static_assert(sizeof(x86os_device_dma_transfer_t) == 32U,
                "device DMA transfer ABI changed");
 _Static_assert(sizeof(x86os_device_dma_info_t) == 32U,
                "device DMA info ABI changed");
+_Static_assert(sizeof(x86os_device_dma_descriptor_t) == 32U,
+               "device DMA descriptor ABI changed");
 _Static_assert(sizeof(x86os_device_region_access_t) == 32U,
                "device region access ABI changed");
 _Static_assert(sizeof(x86os_device_region_value_t) == 32U,
@@ -929,6 +931,17 @@ int x86os_device_activate(x86os_device_handle_t device) {
         X86OS_DEVICE_CONTROL_ACTIVATE, (uintptr_t)&request, 0U);
 }
 
+int x86os_device_deactivate(x86os_device_handle_t device) {
+    if (device == 0U) return -22;
+    const x86os_device_action_request_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .device = device,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_DEACTIVATE, (uintptr_t)&request, 0U);
+}
+
 int x86os_device_resource_status(x86os_device_resource_t resource,
                                  x86os_device_resource_status_t *status) {
     if (resource == 0U || status == NULL) return -22;
@@ -975,7 +988,8 @@ static int x86os_device_dma_transfer(
     if ((command != X86OS_DEVICE_CONTROL_DMA_WRITE &&
          command != X86OS_DEVICE_CONTROL_DMA_READ) || resource == 0U ||
         data == NULL || address > UINT32_MAX || length == 0U ||
-        length > X86OS_DEVICE_DMA_TRANSFER_MAX) return -22;
+        length > X86OS_DEVICE_DMA_TRANSFER_MAX ||
+        offset < X86OS_DEVICE_DMA_DATA_OFFSET) return -22;
     const x86os_device_dma_transfer_t request = {
         .version = X86OS_DEVICE_ABI_VERSION,
         .struct_size = sizeof(request),
@@ -998,6 +1012,30 @@ int x86os_device_dma_read(x86os_device_resource_t resource, uint32_t offset,
                           void *data, uint32_t length) {
     return x86os_device_dma_transfer(X86OS_DEVICE_CONTROL_DMA_READ, resource,
                                      offset, data, length);
+}
+
+int x86os_device_dma_descriptor_set(x86os_device_resource_t dma,
+                                    uint32_t descriptor_index,
+                                    uint32_t buffer_offset,
+                                    uint32_t length, uint32_t flags) {
+    if (dma == 0U ||
+        descriptor_index >= X86OS_DEVICE_DMA_DESCRIPTOR_CAPACITY ||
+        buffer_offset < X86OS_DEVICE_DMA_DATA_OFFSET ||
+        (buffer_offset &
+         (X86OS_DEVICE_DMA_ADDRESS_ALIGNMENT - 1U)) != 0U ||
+        length == 0U || (length & 3U) != 0U ||
+        (flags & ~X86OS_DEVICE_DMA_DESCRIPTOR_INTERRUPT) != 0U) return -22;
+    const x86os_device_dma_descriptor_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .dma = dma,
+        .descriptor_index = descriptor_index,
+        .buffer_offset = buffer_offset,
+        .length = length,
+        .flags = flags,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_DMA_DESCRIPTOR_SET, (uintptr_t)&request, 0U);
 }
 
 static int x86os_device_region_access_valid(
@@ -1080,7 +1118,9 @@ int x86os_device_driver_report(
         bootstrap->session_generation == 0U ||
         bootstrap->session_epoch == 0U ||
         (report_type != X86OS_DEVICE_DRIVER_REPORT_SELF_TEST &&
-         report_type != X86OS_DEVICE_DRIVER_REPORT_PROGRESS)) return -22;
+         report_type != X86OS_DEVICE_DRIVER_REPORT_PROGRESS &&
+         report_type != X86OS_DEVICE_DRIVER_REPORT_CHANNEL &&
+         report_type != X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC)) return -22;
     const x86os_device_driver_report_t report = {
         .version = X86OS_DEVICE_ABI_VERSION,
         .struct_size = sizeof(report),

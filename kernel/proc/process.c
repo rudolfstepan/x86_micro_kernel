@@ -35,7 +35,7 @@
 #define RESCUE_PROGRAM_CACHE_VERSION 1U
 #define RESCUE_PROGRAM_CACHE_COUNT 11U
 #define RESCUE_PROGRAM_CACHE_CAPACITY (64U * 1024U)
-#define RESCUE_PROGRAM_POOL_CAPACITY (128U * 1024U)
+#define RESCUE_PROGRAM_POOL_CAPACITY (192U * 1024U)
 
 typedef struct {
     const char *path;
@@ -289,6 +289,9 @@ bool process_cache_rescue_programs(void) {
         if (size <= 0 || (uint32_t)size > RESCUE_PROGRAM_CACHE_CAPACITY ||
             used > RESCUE_PROGRAM_POOL_CAPACITY - (uint32_t)size ||
             image == NULL) {
+            printf("REIST_RESCUE CACHE_BUILD_FAIL path=%s size=%d used=%u "
+                   "capacity=%u\n", cache->path, size, used,
+                   RESCUE_PROGRAM_POOL_CAPACITY);
             if (image != NULL) k_free(image);
             memset(rescue_program_pool, 0, sizeof(rescue_program_pool));
             return false;
@@ -396,6 +399,21 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
              ++index) profile_allow(profile, driver_syscalls[index]);
         return true;
     }
+    if (kind == PROCESS_DOMAIN_AUDIO_SERVICE) {
+        /* The PCM policy service owns no MMIO, IRQ or DMA authority. It can
+         * communicate only through bounded IPC and supervisor reports. */
+        static const uint8_t audio_service_syscalls[] = {
+            SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS, SYS_MONOTONIC_MS,
+            SYS_IPC_CREATE, SYS_IPC_SEND, SYS_IPC_RECEIVE, SYS_IPC_CLOSE,
+            SYS_IPC_RELEASE, SYS_IPC_SEND_TIMEOUT, SYS_IPC_RECEIVE_TIMEOUT,
+            SYS_REIST_REPORT, SYS_SERVICE_CONNECT
+        };
+        for (size_t index = 0;
+             index < sizeof(audio_service_syscalls) /
+                         sizeof(audio_service_syscalls[0]);
+             ++index) profile_allow(profile, audio_service_syscalls[index]);
+        return true;
+    }
     if (kind != PROCESS_DOMAIN_PROBE) return false;
 
     static const uint8_t probe_syscalls[] = {
@@ -432,7 +450,8 @@ bool process_syscall_allowed(const Process *process, uint32_t syscall_index) {
          profile->kind != PROCESS_DOMAIN_STORAGE &&
          profile->kind != PROCESS_DOMAIN_ADMIN &&
          profile->kind != PROCESS_DOMAIN_COMPONENT_ADMIN &&
-         profile->kind != PROCESS_DOMAIN_DRIVER)) return false;
+         profile->kind != PROCESS_DOMAIN_DRIVER &&
+         profile->kind != PROCESS_DOMAIN_AUDIO_SERVICE)) return false;
     return (profile->allowed_syscalls[syscall_index / 32U] &
             (1U << (syscall_index % 32U))) != 0U;
 }

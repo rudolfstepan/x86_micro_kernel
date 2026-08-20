@@ -23,6 +23,11 @@
 #define DEVICE_DOMAIN_DMA_POOL_COUNT 4U
 #define DEVICE_DOMAIN_DMA_POOL_BYTES (64U * 1024U)
 #define DEVICE_DOMAIN_DMA_TRANSFER_MAX 1024U
+#define DEVICE_DOMAIN_DMA_DESCRIPTOR_BYTES 4096U
+#define DEVICE_DOMAIN_DMA_DESCRIPTOR_STRIDE 16U
+#define DEVICE_DOMAIN_DMA_DESCRIPTOR_CAPACITY \
+    (DEVICE_DOMAIN_DMA_DESCRIPTOR_BYTES / DEVICE_DOMAIN_DMA_DESCRIPTOR_STRIDE)
+#define DEVICE_DOMAIN_DMA_DATA_OFFSET DEVICE_DOMAIN_DMA_DESCRIPTOR_BYTES
 #define DEVICE_DOMAIN_MAX_REGION_RULES 32U
 #define DEVICE_DOMAIN_MAX_REGION_BYTES (1024U * 1024U)
 #define DEVICE_DOMAIN_DMA_ADDRESS_ALIGNMENT 128U
@@ -49,6 +54,8 @@ enum {
     DEVICE_DOMAIN_CONTROL_REGION_READ = 13U,
     DEVICE_DOMAIN_CONTROL_REGION_WRITE = 14U,
     DEVICE_DOMAIN_CONTROL_REGION_BIND_DMA = 15U,
+    DEVICE_DOMAIN_CONTROL_DMA_DESCRIPTOR_SET = 16U,
+    DEVICE_DOMAIN_CONTROL_DEACTIVATE = 17U,
 };
 
 enum {
@@ -60,6 +67,8 @@ enum {
 enum {
     DEVICE_DOMAIN_DRIVER_REPORT_SELF_TEST = 1U,
     DEVICE_DOMAIN_DRIVER_REPORT_PROGRESS = 2U,
+    DEVICE_DOMAIN_DRIVER_REPORT_CHANNEL = 3U,
+    DEVICE_DOMAIN_DRIVER_REPORT_DIAGNOSTIC = 4U,
 };
 
 enum {
@@ -80,6 +89,7 @@ enum {
 enum {
     DEVICE_DOMAIN_REGION_RULE_VALUE = 1U,
     DEVICE_DOMAIN_REGION_RULE_DMA_ADDRESS = 2U,
+    DEVICE_DOMAIN_REGION_RULE_DMA_DESCRIPTOR_ADDRESS = 3U,
 };
 
 enum {
@@ -262,6 +272,21 @@ typedef struct {
     uint32_t reserved[2];
 } device_domain_dma_info_t;
 
+enum {
+    DEVICE_DOMAIN_DMA_DESCRIPTOR_INTERRUPT = 1U << 0U,
+};
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    device_domain_resource_handle_t dma;
+    uint32_t descriptor_index;
+    uint32_t buffer_offset;
+    uint32_t length;
+    uint32_t flags;
+    uint32_t reserved;
+} device_domain_dma_descriptor_t;
+
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -397,6 +422,8 @@ _Static_assert(sizeof(device_domain_driver_bootstrap_t) == 32U,
                "device-domain driver bootstrap ABI changed");
 _Static_assert(sizeof(device_domain_driver_report_t) == 32U,
                "device-domain driver report ABI changed");
+_Static_assert(sizeof(device_domain_dma_descriptor_t) == 32U,
+               "device-domain DMA descriptor ABI changed");
 _Static_assert(sizeof(device_domain_region_rule_t) == 24U,
                "device-domain region rule ABI changed");
 _Static_assert(sizeof(device_domain_region_policy_t) == 808U,
@@ -446,6 +473,12 @@ int device_domain_bind_dma(int pid, uint32_t process_generation,
 /** Enable device production only after IRQ and DMA ownership are complete. */
 int device_domain_activate(int pid, uint32_t process_generation,
                            device_domain_handle_t handle);
+/**
+ * Mask IRQ and disable bus mastering while retaining generation-scoped
+ * resources so a mediated DMA pool can be safely refilled.
+ */
+int device_domain_deactivate(int pid, uint32_t process_generation,
+                             device_domain_handle_t handle);
 /** Mask IRQ and disable bus mastering before any owner cleanup. */
 int device_domain_fence(int pid, uint32_t process_generation,
                         device_domain_handle_t handle);
@@ -483,6 +516,10 @@ int device_domain_dma_write(int pid, uint32_t process_generation,
 int device_domain_dma_read(int pid, uint32_t process_generation,
                            device_domain_resource_handle_t resource,
                            uint32_t offset, void *data, uint32_t length);
+/** Construct one sealed 64-bit-address/32-bit-length/32-bit-flags entry. */
+int device_domain_dma_descriptor_set(
+    int pid, uint32_t process_generation,
+    const device_domain_dma_descriptor_t *request);
 int device_domain_region_read(int pid, uint32_t process_generation,
                               const device_domain_region_access_t *request,
                               device_domain_region_value_t *result);

@@ -352,10 +352,13 @@ bool device_domain_bootstrap(void) {
         .revoke_dma = revoke_dma_fail_closed,
         .reset = pci_generic_reset,
     };
+    /* The legacy ACPI scanner dereferences the BIOS data area and firmware
+     * tables through physical identity addresses.  The null page is already
+     * deliberately absent at this point, so invoking it here would turn a
+     * diagnostic inventory into a kernel page fault.  Until boot publishes a
+     * safe physical-memory ACPI snapshot, report no IOMMU and retain fully
+     * mediated DMA.  Never weaken the null-page guard for diagnostics. */
     x86_acpi_iommu_inventory_t inventory = {0};
-#ifndef REIST_HOST_TEST
-    (void)x86_acpi_iommu_inventory(&inventory);
-#endif
     /* A valid DMAR table is inventory, not proof that translation has been
      * enabled or that every requester belongs to a validated isolation group.
      * Direct assignment therefore remains disabled. */
@@ -672,7 +675,9 @@ static bool region_rule_struct_valid(const device_domain_region_rule_t *rule) {
         return (rule->offset & (rule->width - 1U)) == 0U &&
             (rule->writable_mask & ~width_mask) == 0U;
     }
-    return rule->kind == DEVICE_DOMAIN_REGION_RULE_DMA_ADDRESS &&
+    return (rule->kind == DEVICE_DOMAIN_REGION_RULE_DMA_ADDRESS ||
+            rule->kind ==
+                DEVICE_DOMAIN_REGION_RULE_DMA_DESCRIPTOR_ADDRESS) &&
         rule->width == 8U && (rule->offset & 7U) == 0U &&
         rule->writable_mask == 0U;
 }
@@ -684,13 +689,13 @@ int device_domain_install_region_policy(
         policy->struct_size != sizeof(*policy) ||
         policy->rule_count > DEVICE_DOMAIN_MAX_REGION_RULES ||
         policy->reserved != 0U) return -22;
+    for (uint32_t rule = 0U; rule < policy->rule_count; ++rule)
+        if (!region_rule_struct_valid(&policy->rules[rule])) return -22;
     for (uint32_t first = 0U; first < policy->rule_count; ++first) {
         const device_domain_region_rule_t *rule = &policy->rules[first];
-        if (!region_rule_struct_valid(rule)) return -22;
         for (uint32_t second = first + 1U; second < policy->rule_count;
              ++second) {
             const device_domain_region_rule_t *other = &policy->rules[second];
-            if (!region_rule_struct_valid(other)) return -22;
             if (rule->region_index != other->region_index) continue;
             uint32_t rule_end = rule->offset + rule->width;
             uint32_t other_end = other->offset + other->width;
@@ -738,7 +743,9 @@ int device_domain_install_region_policy(
             &regions[entry->region_index];
         if (entry->offset > region->length_low ||
             entry->width > region->length_low - entry->offset ||
-            (entry->kind == DEVICE_DOMAIN_REGION_RULE_DMA_ADDRESS &&
+            ((entry->kind == DEVICE_DOMAIN_REGION_RULE_DMA_ADDRESS ||
+              entry->kind ==
+                  DEVICE_DOMAIN_REGION_RULE_DMA_DESCRIPTOR_ADDRESS) &&
              (region->flags & DEVICE_DOMAIN_REGION_MMIO) == 0U)) valid = false;
     }
     for (uint32_t region = 0U; valid && region < 6U; ++region)
@@ -1002,6 +1009,39 @@ int device_domain_activate(int pid, uint32_t process_generation,
         return -5;
     }
     device->state = DEVICE_DOMAIN_ACTIVE;
+    end_operation();
+    return 0;
+}
+
+int device_domain_deactivate(int pid, uint32_t process_generation,
+                             device_domain_handle_t handle) {
+    if (!begin_operation()) return -16;
+    device_slot_t *device = owned_slot(pid, process_generation, handle);
+    if (device == NULL) {
+        end_operation();
+        return -9;
+    }
+    if (device->state == DEVICE_DOMAIN_DMA_BOUND) {
+        end_operation();
+        return 0;
+    }
+    if (device->state != DEVICE_DOMAIN_ACTIVE || device->irq_bound == 0U ||
+        device->dma_bound == 0U) {
+        end_operation();
+        return -22;
+    }
+    bool irq_masked = platform_ops.mask_irq(device->pci_location);
+    bool mastering_disabled =
+        platform_ops.set_bus_master(device->pci_location, false);
+    if (!irq_masked || !mastering_disabled) {
+        (void)fence_slot(device);
+        end_operation();
+        return -5;
+    }
+    device->irq_pending_count = 0U;
+    device->irq_notification_sent = 0U;
+    device->irq_deadline_ms = 0U;
+    device->state = DEVICE_DOMAIN_DMA_BOUND;
     end_operation();
     return 0;
 }
@@ -1360,6 +1400,7 @@ static int dma_transfer_locked(int pid, uint32_t process_generation,
         uint32_t length, bool write_to_device) {
     if (data == NULL || length == 0U ||
         length > DEVICE_DOMAIN_DMA_TRANSFER_MAX ||
+        offset < DEVICE_DOMAIN_DMA_DATA_OFFSET ||
         offset > DEVICE_DOMAIN_DMA_POOL_BYTES ||
         length > DEVICE_DOMAIN_DMA_POOL_BYTES - offset) return -22;
     resource_slot_t *resource = owned_resource_locked(
@@ -1369,6 +1410,8 @@ static int dma_transfer_locked(int pid, uint32_t process_generation,
     const uint32_t needed = write_to_device
         ? DEVICE_DOMAIN_DMA_TO_DEVICE : DEVICE_DOMAIN_DMA_FROM_DEVICE;
     if ((pool->direction & needed) == 0U) return -13;
+    device_slot_t *device = &devices[resource->device_slot];
+    if (write_to_device && device->state == DEVICE_DOMAIN_ACTIVE) return -16;
     uint32_t pool_index = resource->platform_capability - 1U;
     if (write_to_device)
         memcpy(&dma_pool_storage[pool_index][offset], data, length);
@@ -1398,6 +1441,54 @@ int device_domain_dma_read(int pid, uint32_t process_generation,
                                      data, length, false);
     end_operation();
     return result;
+}
+
+int device_domain_dma_descriptor_set(
+        int pid, uint32_t process_generation,
+        const device_domain_dma_descriptor_t *request) {
+    if (!initialized || pid <= 0 || process_generation == 0U ||
+        request == NULL || request->version != DEVICE_DOMAIN_ABI_VERSION ||
+        request->struct_size != sizeof(*request) || request->dma == 0U ||
+        request->descriptor_index >= DEVICE_DOMAIN_DMA_DESCRIPTOR_CAPACITY ||
+        request->buffer_offset < DEVICE_DOMAIN_DMA_DATA_OFFSET ||
+        (request->buffer_offset &
+         (DEVICE_DOMAIN_DMA_ADDRESS_ALIGNMENT - 1U)) != 0U ||
+        request->length == 0U || (request->length & 3U) != 0U ||
+        request->buffer_offset >= DEVICE_DOMAIN_DMA_POOL_BYTES ||
+        request->length >
+            DEVICE_DOMAIN_DMA_POOL_BYTES - request->buffer_offset ||
+        (request->flags & ~DEVICE_DOMAIN_DMA_DESCRIPTOR_INTERRUPT) != 0U ||
+        request->reserved != 0U) return -22;
+    if (!begin_operation()) return -16;
+    resource_slot_t *resource = owned_resource_locked(
+        pid, process_generation, request->dma, DEVICE_DOMAIN_RESOURCE_DMA);
+    dma_pool_slot_t *pool = dma_pool_for_resource(resource);
+    if (pool == NULL) {
+        end_operation();
+        return resource == NULL ? -9 : -95;
+    }
+    device_slot_t *device = &devices[resource->device_slot];
+    if ((pool->direction & DEVICE_DOMAIN_DMA_TO_DEVICE) == 0U) {
+        end_operation();
+        return -13;
+    }
+    if (device->state != DEVICE_DOMAIN_DMA_BOUND) {
+        end_operation();
+        return -16;
+    }
+    uint32_t pool_index = resource->platform_capability - 1U;
+    uint32_t descriptor_offset = request->descriptor_index *
+        DEVICE_DOMAIN_DMA_DESCRIPTOR_STRIDE;
+    uint64_t address = (uint64_t)(uintptr_t)&dma_pool_storage[pool_index]
+                                                   [request->buffer_offset];
+    memcpy(&dma_pool_storage[pool_index][descriptor_offset], &address,
+           sizeof(address));
+    memcpy(&dma_pool_storage[pool_index][descriptor_offset + 8U],
+           &request->length, sizeof(request->length));
+    memcpy(&dma_pool_storage[pool_index][descriptor_offset + 12U],
+           &request->flags, sizeof(request->flags));
+    end_operation();
+    return 0;
 }
 
 static const device_domain_region_rule_t *region_write_rule(
@@ -1523,10 +1614,23 @@ int device_domain_region_bind_dma(
     const device_domain_region_rule_t *rule = region_write_rule(
         device, region->region.region_index, request->register_offset, 8U,
         DEVICE_DOMAIN_REGION_RULE_DMA_ADDRESS);
+    bool descriptor_address = false;
+    if (rule == NULL) {
+        rule = region_write_rule(
+            device, region->region.region_index, request->register_offset, 8U,
+            DEVICE_DOMAIN_REGION_RULE_DMA_DESCRIPTOR_ADDRESS);
+        descriptor_address = rule != NULL;
+    }
     dma_pool_slot_t *pool = dma_pool_for_resource(dma);
     if (rule == NULL || pool == NULL) {
         end_operation();
         return rule == NULL ? -13 : -95;
+    }
+    if ((descriptor_address && request->buffer_offset != 0U) ||
+        (!descriptor_address &&
+         request->buffer_offset < DEVICE_DOMAIN_DMA_DATA_OFFSET)) {
+        end_operation();
+        return -13;
     }
     uint32_t pool_index = dma->platform_capability - 1U;
     uintptr_t address = (uintptr_t)&dma_pool_storage[pool_index]

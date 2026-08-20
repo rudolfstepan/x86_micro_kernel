@@ -78,6 +78,9 @@ versionierte IPC- und Capability-Verträge angebunden. Das messbare Versprechen,
 die Restartbudgets und terminalen Zustände definiert der
 [Resilienz- und Degradierungsvertrag](RESILIENCE_AND_DEGRADATION_CONTRACT.md).
 
+Das erste PCI-Audio-Backend setzt diese Grenze konkret als getrennten
+[HDA-Treiber und PCM-Service](AUDIO_SUBSYSTEM.md) mit kernelvermitteltem DMA um.
+
 Langfristig verbleiben nur Mechanismen mit globaler Schutzwirkung in Ring 0:
 
 ```text
