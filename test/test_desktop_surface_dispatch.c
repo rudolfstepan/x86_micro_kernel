@@ -22,6 +22,18 @@ int main(void) {
     request.serial = response.serial;
     assert(desktop_surface_dispatch_message(
         &manager, owner, &request, &response) == 0);
+    request.type = REIST_GUI_SURFACE_PAINT_BEGIN;
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
+    request.type = REIST_GUI_SURFACE_PAINT_FILL;
+    request.damage = (reist_gui_rect_t){0, 0, 200U, 120U};
+    request.flags = 0x00c8c8c8U;
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
+    request.type = REIST_GUI_SURFACE_PAINT_COMMIT;
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
+    assert(response.type == REIST_GUI_SURFACE_PAINT_COMMIT);
     request.type = REIST_GUI_SURFACE_BUFFER_CREATE;
     request.buffer_id = 1U;
     request.buffer_generation = 1U;

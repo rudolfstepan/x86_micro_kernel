@@ -77,9 +77,9 @@ static int send_message(reist_gui_surface_client_t *client,
     return x86os_ipc_send_timeout(client->endpoint, &ipc, 500U);
 }
 
-static int receive_message(reist_gui_surface_client_t *client,
-                           reist_gui_surface_message_t *message,
-                           uint32_t timeout_ms) {
+static int receive_wire_message(reist_gui_surface_client_t *client,
+                                reist_gui_surface_message_t *message,
+                                uint32_t timeout_ms) {
     if (!valid_client(client) || !message) return -22;
     x86os_ipc_message_t ipc;
     clear_bytes(&ipc, sizeof(ipc));
@@ -94,6 +94,63 @@ static int receive_message(reist_gui_surface_client_t *client,
         destination[i] = ipc.payload[i];
     return message->protocol_version == REIST_GUI_SURFACE_PROTOCOL_VERSION &&
         message->message_size == sizeof(*message) ? 0 : -84;
+}
+
+static int defer_message(reist_gui_surface_client_t *client,
+                         const reist_gui_surface_message_t *message) {
+    if (!valid_client(client) || message == 0) return -22;
+    if (client->deferred_count >= REIST_GUI_SURFACE_MAX_PENDING_EVENTS)
+        return -75;
+    uint32_t tail = (client->deferred_head + client->deferred_count) %
+        REIST_GUI_SURFACE_MAX_PENDING_EVENTS;
+    client->deferred[tail] = *message;
+    ++client->deferred_count;
+    return 0;
+}
+
+static int receive_message(reist_gui_surface_client_t *client,
+                           reist_gui_surface_message_t *message,
+                           uint32_t timeout_ms) {
+    if (!valid_client(client) || message == 0) return -22;
+    if (client->deferred_count != 0U) {
+        *message = client->deferred[client->deferred_head];
+        client->deferred_head = (client->deferred_head + 1U) %
+            REIST_GUI_SURFACE_MAX_PENDING_EVENTS;
+        --client->deferred_count;
+        return 0;
+    }
+    return receive_wire_message(client, message, timeout_ms);
+}
+
+static int transact(reist_gui_surface_client_t *client,
+                    const reist_gui_surface_message_t *request,
+                    uint32_t expected_type) {
+    int result = send_message(client, request);
+    if (result != 0) return result;
+    for (uint32_t attempt = 0U;
+         attempt <= REIST_GUI_SURFACE_MAX_PENDING_EVENTS; ++attempt) {
+        reist_gui_surface_message_t response;
+        result = receive_wire_message(client, &response, 500U);
+        if (result != 0) return result;
+        if (response.type == expected_type &&
+            response.surface.id == client->surface.id &&
+            response.surface.generation == client->surface.generation)
+            return (int32_t)response.flags;
+        if (response.type != REIST_GUI_SURFACE_INPUT &&
+            response.type != REIST_GUI_SURFACE_CLOSE &&
+            response.type != REIST_GUI_SURFACE_CONFIGURE)
+            return -84;
+        result = defer_message(client, &response);
+        if (result != 0) return result;
+    }
+    return -75;
+}
+
+static uint32_t bounded_text_length(const char *text, uint32_t capacity) {
+    uint32_t length = 0U;
+    if (text == 0) return 0U;
+    while (length < capacity && text[length] != '\0') ++length;
+    return length;
 }
 
 int reist_gui_surface_client_init(reist_gui_surface_client_t *client,
@@ -147,17 +204,129 @@ int reist_gui_surface_client_ack_configure(reist_gui_surface_client_t *client,
      * queue: wait until the compositor has validated and applied it.  This
      * also consumes the protocol reply so it cannot be mistaken for a later
      * input event on the bidirectional endpoint. */
-    reist_gui_surface_message_t response;
-    result = receive_message(client, &response, 500U);
-    if (result != 0) return result;
-    if (response.type != REIST_GUI_SURFACE_ACK_CONFIGURE ||
-        response.surface.id != client->surface.id ||
-        response.surface.generation != client->surface.generation ||
-        response.serial != serial)
-        return -84;
-    result = (int32_t)response.flags;
-    if (result == 0) client->acknowledged_serial = serial;
+    for (uint32_t attempt = 0U;
+         attempt <= REIST_GUI_SURFACE_MAX_PENDING_EVENTS; ++attempt) {
+        reist_gui_surface_message_t response;
+        result = receive_wire_message(client, &response, 500U);
+        if (result != 0) return result;
+        if (response.type == REIST_GUI_SURFACE_ACK_CONFIGURE &&
+            response.surface.id == client->surface.id &&
+            response.surface.generation == client->surface.generation &&
+            response.serial == serial) {
+            result = (int32_t)response.flags;
+            if (result == 0) client->acknowledged_serial = serial;
+            return result;
+        }
+        if (response.type != REIST_GUI_SURFACE_INPUT &&
+            response.type != REIST_GUI_SURFACE_CLOSE &&
+            response.type != REIST_GUI_SURFACE_CONFIGURE)
+            return -84;
+        result = defer_message(client, &response);
+        if (result != 0) return result;
+    }
+    return -75;
+}
+
+int reist_gui_surface_client_accept_configure(
+    reist_gui_surface_client_t *client,
+    const reist_gui_surface_message_t *configure) {
+    if (!valid_client(client) || configure == 0 ||
+        configure->type != REIST_GUI_SURFACE_CONFIGURE ||
+        configure->surface.id != client->surface.id ||
+        configure->surface.generation != client->surface.generation ||
+        configure->serial == 0U || configure->width == 0U ||
+        configure->height == 0U ||
+        configure->width > REIST_GUI_SURFACE_MAX_WIDTH ||
+        configure->height > REIST_GUI_SURFACE_MAX_HEIGHT)
+        return -22;
+    uint32_t old_serial = client->configured_serial;
+    uint32_t old_width = client->width;
+    uint32_t old_height = client->height;
+    client->configured_serial = configure->serial;
+    client->width = configure->width;
+    client->height = configure->height;
+    int result = reist_gui_surface_client_ack_configure(
+        client, configure->serial);
+    if (result != 0) {
+        client->configured_serial = old_serial;
+        client->width = old_width;
+        client->height = old_height;
+    }
     return result;
+}
+
+int reist_gui_surface_client_set_title(reist_gui_surface_client_t *client,
+                                       const char *title) {
+    uint32_t length = bounded_text_length(
+        title, REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY);
+    if (!valid_client(client) || title == 0 || length == 0U ||
+        length >= REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY)
+        return -22;
+    reist_gui_surface_message_t request;
+    prepare(&request, REIST_GUI_SURFACE_SET_TITLE, client);
+    request.byte_size = length;
+    uint8_t *destination = (uint8_t *)&request.input;
+    for (uint32_t i = 0U; i < length; ++i)
+        destination[i] = (uint8_t)title[i];
+    return transact(client, &request, REIST_GUI_SURFACE_SET_TITLE);
+}
+
+int reist_gui_surface_client_paint_begin(reist_gui_surface_client_t *client) {
+    if (!valid_client(client) || client->acknowledged_serial == 0U)
+        return -22;
+    reist_gui_surface_message_t request;
+    prepare(&request, REIST_GUI_SURFACE_PAINT_BEGIN, client);
+    return transact(client, &request, REIST_GUI_SURFACE_PAINT_BEGIN);
+}
+
+int reist_gui_surface_client_paint_fill(reist_gui_surface_client_t *client,
+                                        reist_gui_rect_t rect,
+                                        uint32_t color) {
+    if (!valid_client(client) || rect.x < 0 || rect.y < 0 ||
+        rect.width == 0U || rect.height == 0U ||
+        (uint32_t)rect.x >= client->width ||
+        (uint32_t)rect.y >= client->height ||
+        rect.width > client->width - (uint32_t)rect.x ||
+        rect.height > client->height - (uint32_t)rect.y)
+        return -22;
+    reist_gui_surface_message_t request;
+    prepare(&request, REIST_GUI_SURFACE_PAINT_FILL, client);
+    request.damage = rect;
+    request.flags = color;
+    return send_message(client, &request);
+}
+
+int reist_gui_surface_client_paint_text(reist_gui_surface_client_t *client,
+                                        int32_t x, int32_t y,
+                                        uint32_t maximum_width,
+                                        const char *text_value,
+                                        uint32_t length,
+                                        uint32_t foreground,
+                                        uint32_t background) {
+    if (!valid_client(client) || text_value == 0 || length == 0U ||
+        length >= REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY || x < 0 || y < 0 ||
+        maximum_width == 0U || (uint32_t)x >= client->width ||
+        (uint32_t)y >= client->height ||
+        maximum_width > client->width - (uint32_t)x)
+        return -22;
+    reist_gui_surface_message_t request;
+    prepare(&request, REIST_GUI_SURFACE_PAINT_TEXT, client);
+    request.damage = (reist_gui_rect_t){x, y, maximum_width, 1U};
+    request.flags = foreground;
+    request.buffer_id = background;
+    request.byte_size = length;
+    uint8_t *destination = (uint8_t *)&request.input;
+    for (uint32_t i = 0U; i < length; ++i)
+        destination[i] = (uint8_t)text_value[i];
+    return send_message(client, &request);
+}
+
+int reist_gui_surface_client_paint_commit(reist_gui_surface_client_t *client) {
+    if (!valid_client(client) || client->acknowledged_serial == 0U)
+        return -22;
+    reist_gui_surface_message_t request;
+    prepare(&request, REIST_GUI_SURFACE_PAINT_COMMIT, client);
+    return transact(client, &request, REIST_GUI_SURFACE_PAINT_COMMIT);
 }
 
 int reist_gui_surface_client_buffer_create(

@@ -13,6 +13,19 @@ int main(void) {
         &handle, &configure) == 0);
     assert(desktop_surface_ack_configure(&manager, owner, handle,
         configure.serial) == 0);
+    assert(desktop_surface_set_title(
+        &manager, owner, handle, "Editor", 6U) == 0);
+    assert(desktop_surface_paint_begin(&manager, owner, handle) == 0);
+    assert(desktop_surface_paint_fill(
+        &manager, owner, handle,
+        (reist_gui_rect_t){0, 0, 320U, 200U}, 0x00ffffffU) == 0);
+    assert(desktop_surface_paint_text(
+        &manager, owner, handle,
+        (reist_gui_rect_t){8, 8, 120U, 1U}, 0U, 0x00ffffffU,
+        "Document", 8U) == 0);
+    assert(desktop_surface_paint_commit(&manager, owner, handle) == 0);
+    assert(manager.slots[handle.id - 1U].committed_paint_count == 2U);
+    assert(manager.slots[handle.id - 1U].paint_generation != 0U);
     reist_gui_surface_input_t input = {
         REIST_GUI_SURFACE_INPUT_POINTER_MOTION, 1U, 12, 8,
         1, -1, 0U, 0U, 0U, 0U};
@@ -24,6 +37,8 @@ int main(void) {
     assert(desktop_surface_input_dequeue(
         &manager, owner, handle, &received_input) == 0);
     assert(received_input.serial == 1U && received_input.x == 12);
+    input.type = REIST_GUI_SURFACE_INPUT_KEYBOARD;
+    input.key = 'a';
     for (uint32_t event_index = 0U;
          event_index < REIST_GUI_SURFACE_MAX_PENDING_EVENTS; ++event_index) {
         input.serial = event_index + 2U;
@@ -50,8 +65,15 @@ int main(void) {
     assert(desktop_surface_commit(&manager, owner, handle, &result) == 0);
     assert(result.committed == 1U && result.damage.count == 1U);
     assert(desktop_surface_buffer_destroy(&manager, owner, 1U, 1U) == 0);
+    reist_gui_surface_configure_t resized;
+    assert(desktop_surface_reconfigure(
+        &manager, owner, handle, 400U, 260U, &resized) == 0);
+    assert(resized.width == 400U && resized.height == 260U);
+    assert(manager.slots[handle.id - 1U].configure_sent == 0U);
+    assert(desktop_surface_ack_configure(
+        &manager, owner, handle, resized.serial) == 0);
     assert(desktop_surface_ack_configure(&manager, owner, handle,
-        configure.serial + 1U) < 0);
+        resized.serial + 1U) < 0);
     assert(desktop_surface_destroy(&manager, owner, handle) == 0);
     assert(desktop_surface_destroy(&manager, owner, handle) < 0);
 

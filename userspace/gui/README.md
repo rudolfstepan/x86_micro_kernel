@@ -9,9 +9,9 @@ programs in `userspace/programs` and interactive console programs in
 | Path | Responsibility |
 |---|---|
 | `compositor/` | Trusted session compositor, window manager and bounded Explorer adapter. It alone owns global placement, Z-order, focus, input routing, composition and display publication. |
-| `apps/<name>/` | GUI applications, one directory per program. Until Surface IPC exists, explicitly documented full-screen clients may use only the public display ABI and GUI library. |
+| `apps/<name>/` | GUI applications, one directory per program. Migrated clients use only local Surface paint/input APIs; explicitly documented legacy clients may still use the public full-screen display ABI. |
 | `examples/` | Small, buildable SDK examples that include only installed public headers. |
-| `include/reist/gui/` | Versioned public C APIs. In-process library APIs and the future cross-process Surface protocol remain explicitly separate. |
+| `include/reist/gui/` | Versioned public C APIs. In-process component APIs and the cross-process Surface protocol remain explicitly separate. |
 | `lib/` | Bounded, reusable Ring-3 GUI components. Menu, dialog, container, tab, value-control and multiline text-editor state machines are renderer-independent static-library components. |
 | `share/` | Future versioned themes, fonts, icons and other read-only GUI resources. |
 
@@ -37,16 +37,20 @@ The Ring-3 shell includes `/usr/gui/bin` in its bounded default search path, so
 `/usr/bin/desktop.prg` path remain compatibility aliases, but new code must use
 the installed canonical path.
 
-`desktop.prg` is currently a single compositor process. Moving its sources and
-using `libreistgui.a` does not claim that GUI clients are isolated already;
-that boundary begins with the versioned Surface and event protocol described
-in the desktop workflow.
+`desktop.prg` is the session compositor. Migrated applications such as
+`notepad.prg` remain separate Ring-3 processes and communicate through the
+versioned Surface/event protocol; legacy full-screen clients are called out
+explicitly until they are ported.
 
 The Surface lifecycle is strict: the desktop delegates a generation-scoped
-endpoint, the client acknowledges configure, validates its buffer descriptor,
-then attach/damage/commit are checked before the compositor emits
-`BUFFER_RELEASE`. Process exit or a broken IPC channel revokes the endpoint and
-surfaces; a recycled PID alone never restores authority.
+endpoint, the client acknowledges configure and submits a bounded pending
+paint list. Only `paint_commit` replaces the retained visible list. Fill and
+text geometry is client-local and clipped by the compositor. Resize uses a new
+configure serial and acknowledgement. Process exit or a broken IPC channel
+revokes endpoint and surfaces; a recycled PID alone never restores authority.
+The broker drains the four-message IPC queue in a fixed 64-round cooperative
+round-robin budget, so large retained frames cannot starve another client or
+turn ordinary menu hover into a send timeout.
 
 ## Public API and build contract
 
@@ -54,8 +58,8 @@ The installed component APIs currently comprise `<reist/gui/types.h>` and the
 initial cross-process contract `<reist/gui/surface.h>`,
 `<reist/gui/menu.h>`, `<reist/gui/dialog.h>`,
 `<reist/gui/control.h>`, `<reist/gui/container.h>`,
-`<reist/gui/tabs.h>`, `<reist/gui/value_controls.h>` and
-`<reist/gui/text_editor.h>`. They supply fixed-capacity,
+`<reist/gui/tabs.h>`, `<reist/gui/value_controls.h>`,
+`<reist/gui/text_editor.h>` and `<reist/gui/file_dialog.h>`. They supply fixed-capacity,
 heap-free state machines,
 local geometry queries, implicit pointer capture, keyboard navigation and
 bounded damage output. The dialog API additionally models owner identity,
@@ -96,13 +100,15 @@ desktop's validated `/etc/reist/filetypes.conf` associations:
 C:\>notepad /readme.txt
 ```
 
-The application uses the public multiline controller, menu and asynchronous
-dialog APIs. It loads at most the documented fixed document capacity, shows a
+The application uses the public multiline controller, menu, asynchronous
+dialog and file-dialog APIs. The File menu provides Open, Save and Save As;
+the application validates the selected absolute path and retains ownership of
+all VFS operations. It loads at most the documented fixed document capacity, shows a
 dirty marker, supports pointer cursor placement and keyboard navigation, and
 saves through a process-unique temporary file, `fsync` and same-directory
-rename. Save/discard/cancel on exit is application-modal. Until Surface IPC is
-available, it temporarily occupies the complete graphical display while the
-desktop remains its supervising parent and recomposes after child exit.
+rename. Save/discard/cancel on exit is application-modal. From the desktop it
+runs asynchronously in a compositor-decorated, movable and resizable Surface
+window. Direct shell invocation retains a compatibility full-screen path.
 
 ## Graphical sound player
 
@@ -116,14 +122,15 @@ loads at most 15360 frames; streaming and progress seeking require a later
 versioned queue ABI. Like Notepad, the player remains a supervised display
 client until Surface IPC permits independently composed application windows.
 
-## First isolated window client
+## Isolated window clients
 
 `/usr/gui/bin/surfacedemo.prg` is the first program that remains a separate
 Ring-3 process while the desktop continues composing. The desktop reserves an
 IPC endpoint before spawning it, delegates only that endpoint to the exact
 process generation, and owns placement, focus, movement, resizing, decoration
-and close delivery. The initial client area is a server-rendered diagnostic
-placeholder; applications still receive no direct framebuffer authority.
+and close delivery. `notepad.prg` uses the same public contract for real
+application rendering and local input. Applications receive no direct
+framebuffer authority.
 
 ## Graphical image viewer
 
@@ -171,6 +178,7 @@ build/sdk/usr/include/reist/gui/container.h
 build/sdk/usr/include/reist/gui/tabs.h
 build/sdk/usr/include/reist/gui/value_controls.h
 build/sdk/usr/include/reist/gui/text_editor.h
+build/sdk/usr/include/reist/gui/file_dialog.h
 build/sdk/usr/lib/crt0.o
 build/sdk/usr/lib/libreistos.a
 build/sdk/usr/lib/libreistnetparse.a

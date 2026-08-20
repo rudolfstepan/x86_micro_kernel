@@ -21,6 +21,10 @@ typedef struct reist_gui_surface_client {
     uint32_t width;
     uint32_t height;
     uint32_t connected;
+    reist_gui_surface_message_t deferred[
+        REIST_GUI_SURFACE_MAX_PENDING_EVENTS];
+    uint32_t deferred_head;
+    uint32_t deferred_count;
 } reist_gui_surface_client_t;
 
 /** Initialize a client around a capability delegated by the compositor. */
@@ -37,6 +41,28 @@ int reist_gui_surface_client_create(reist_gui_surface_client_t *client,
                                     uint32_t height);
 int reist_gui_surface_client_ack_configure(reist_gui_surface_client_t *client,
                                            uint32_t serial);
+/** Validate, adopt and acknowledge a later compositor resize configure. */
+int reist_gui_surface_client_accept_configure(
+    reist_gui_surface_client_t *client,
+    const reist_gui_surface_message_t *configure);
+/** Set the bounded server-decoration title for this toplevel. */
+int reist_gui_surface_client_set_title(reist_gui_surface_client_t *client,
+                                       const char *title);
+/** Start an atomic retained paint frame, replacing no visible content yet. */
+int reist_gui_surface_client_paint_begin(reist_gui_surface_client_t *client);
+/** Append one clipped client-local solid rectangle to the pending frame. */
+int reist_gui_surface_client_paint_fill(reist_gui_surface_client_t *client,
+                                        reist_gui_rect_t rect,
+                                        uint32_t color);
+/** Append one bounded client-local text run to the pending frame. */
+int reist_gui_surface_client_paint_text(reist_gui_surface_client_t *client,
+                                        int32_t x, int32_t y,
+                                        uint32_t maximum_width,
+                                        const char *text, uint32_t length,
+                                        uint32_t foreground,
+                                        uint32_t background);
+/** Atomically publish the complete pending paint frame. */
+int reist_gui_surface_client_paint_commit(reist_gui_surface_client_t *client);
 int reist_gui_surface_client_buffer_create(
     reist_gui_surface_client_t *client,
     const reist_gui_surface_buffer_t *buffer);

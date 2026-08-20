@@ -744,6 +744,7 @@ test-desktop-host:
 	@$(PYTHON) test/test_desktop_filetypes_source.py -q
 	@$(PYTHON) test/test_gui_menu_source.py -q
 	@$(PYTHON) test/test_gui_dialog_source.py -q
+	@$(PYTHON) test/test_gui_file_dialog_source.py -q
 	@$(PYTHON) test/test_gui_control_source.py -q
 	@$(PYTHON) test/test_gui_container_source.py -q
 	@$(PYTHON) test/test_gui_tabs_source.py -q

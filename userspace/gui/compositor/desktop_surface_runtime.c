@@ -99,7 +99,11 @@ static int poll_client(desktop_surface_runtime_client_t *client, desktop_surface
     if (status != 0) return status;
     if (ipc.version!=X86OS_IPC_MESSAGE_VERSION || ipc.struct_size!=sizeof(ipc) || ipc.length!=sizeof(reist_gui_surface_message_t)) return DESKTOP_SURFACE_EINVAL;
     reist_gui_surface_message_t request,response; uint8_t *d=(uint8_t *)&request; for (uint32_t i=0;i<sizeof(request);++i) d[i]=ipc.payload[i]; clear_bytes(&response,sizeof(response));
-    status=desktop_surface_dispatch_message(manager,client->owner,&request,&response); response.flags=(uint32_t)status; (void)send_response(client->endpoint,&response); return status;
+    status=desktop_surface_dispatch_message(manager,client->owner,&request,&response); response.flags=(uint32_t)status;
+    if ((request.type != REIST_GUI_SURFACE_PAINT_FILL &&
+         request.type != REIST_GUI_SURFACE_PAINT_TEXT) || status != 0)
+        (void)send_response(client->endpoint,&response);
+    return status == 0 ? 1 : status;
 }
 static int send_pending_input(desktop_surface_runtime_client_t *client,
                               desktop_surface_manager_t *manager) {
@@ -129,21 +133,44 @@ static int send_pending_input(desktop_surface_runtime_client_t *client,
 int desktop_surface_runtime_poll(desktop_surface_runtime_t *runtime, desktop_surface_manager_t *manager) {
     if (runtime == 0 || manager == 0) return DESKTOP_SURFACE_EINVAL;
     int result = 0;
-    for (uint32_t i = 0U; i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i) {
-        if (runtime->clients[i].active == 1U) {
-            int status = poll_client(&runtime->clients[i], manager);
-            if (status == 0)
-                status = send_pending_input(&runtime->clients[i], manager);
+    for (uint32_t round = 0U;
+         round < DESKTOP_SURFACE_RUNTIME_DRAIN_ROUNDS; ++round) {
+        uint32_t processed_round = 0U;
+        for (uint32_t i = 0U;
+             i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i) {
+            if (runtime->clients[i].active != 1U) continue;
+            int status = 0;
+            uint32_t processed_client = 0U;
+            for (uint32_t request = 0U;
+                 request < X86OS_IPC_QUEUE_DEPTH; ++request) {
+                status = poll_client(&runtime->clients[i], manager);
+                if (status == 1) {
+                    processed_client = 1U;
+                    processed_round = 1U;
+                    continue;
+                }
+                break;
+            }
+            if (status == 1) status = 0;
             if (status == -32) {
                 desktop_surface_revoke_owner(manager,
                     runtime->clients[i].owner);
                 (void)x86os_ipc_close(runtime->clients[i].endpoint);
                 runtime->clients[i].endpoint = 0U;
                 runtime->clients[i].active = 0U;
+            } else if (status == 0 && !processed_client) {
+                status = send_pending_input(
+                    &runtime->clients[i], manager);
+                if (status != 0 && result == 0) result = status;
             } else if (status != 0 && result == 0) {
                 result = status;
             }
         }
+        if (!processed_round || result != 0) break;
+        /* Every active client received one fair queue-depth-sized slice.
+         * Yield once so blocked producers can refill before the next round. */
+        if (round + 1U < DESKTOP_SURFACE_RUNTIME_DRAIN_ROUNDS)
+            (void)x86os_yield();
     }
     return result;
 }
@@ -164,6 +191,33 @@ int desktop_surface_runtime_send_close(
         message.message_size = sizeof(message);
         message.type = REIST_GUI_SURFACE_CLOSE;
         message.surface = surface;
+        return send_response(client->endpoint, &message);
+    }
+    return DESKTOP_SURFACE_ESTALE;
+}
+int desktop_surface_runtime_send_configure(
+    desktop_surface_runtime_t *runtime, reist_gui_surface_owner_t owner,
+    reist_gui_surface_handle_t surface,
+    const reist_gui_surface_configure_t *configure) {
+    if (runtime == 0 || configure == 0 || owner.pid == 0U ||
+        owner.process_generation == 0U || surface.id == 0U ||
+        surface.generation == 0U || configure->serial == 0U ||
+        configure->width == 0U || configure->height == 0U)
+        return DESKTOP_SURFACE_EINVAL;
+    for (uint32_t i = 0U; i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i) {
+        desktop_surface_runtime_client_t *client = &runtime->clients[i];
+        if (client->active != 1U || client->owner.pid != owner.pid ||
+            client->owner.process_generation != owner.process_generation)
+            continue;
+        reist_gui_surface_message_t message;
+        clear_bytes(&message, sizeof(message));
+        message.protocol_version = REIST_GUI_SURFACE_PROTOCOL_VERSION;
+        message.message_size = sizeof(message);
+        message.type = REIST_GUI_SURFACE_CONFIGURE;
+        message.surface = surface;
+        message.serial = configure->serial;
+        message.width = configure->width;
+        message.height = configure->height;
         return send_response(client->endpoint, &message);
     }
     return DESKTOP_SURFACE_ESTALE;

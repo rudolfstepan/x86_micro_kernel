@@ -24,6 +24,23 @@ static uint32_t next_nonzero(uint32_t *value) {
     return *value;
 }
 
+static int valid_local_rect(const desktop_surface_slot_t *slot,
+                            reist_gui_rect_t rect) {
+    return slot != 0 && rect.x >= 0 && rect.y >= 0 && rect.width != 0U &&
+        rect.height != 0U && (uint32_t)rect.x < slot->width &&
+        (uint32_t)rect.y < slot->height &&
+        rect.width <= slot->width - (uint32_t)rect.x &&
+        rect.height <= slot->height - (uint32_t)rect.y;
+}
+
+static void copy_bounded_text(char *destination, const char *source,
+                              uint32_t length) {
+    uint32_t index = 0U;
+    for (; index < length; ++index) destination[index] = source[index];
+    for (; index < REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY; ++index)
+        destination[index] = '\0';
+}
+
 static int valid_buffer(const reist_gui_surface_buffer_t *buffer) {
     return buffer && buffer->version == REIST_GUI_SURFACE_BUFFER_API_VERSION &&
         buffer->struct_size == sizeof(*buffer) && buffer->capability_id != 0U &&
@@ -152,10 +169,12 @@ int desktop_surface_create(desktop_surface_manager_t *manager,
         slot->height = height;
         slot->configured_serial = next_nonzero(&manager->next_configure_serial);
         slot->acknowledged_serial = 0U;
+        slot->configure_sent = 1U;
         slot->attached = 0U;
         slot->committed = 0U;
         slot->window_index = DESKTOP_SURFACE_NO_SLOT;
         slot->close_sent = 0U;
+        copy_bounded_text(slot->title, "Application", 11U);
         slot->damage.count = 0U;
         slot->damage.reserved = 0U;
         *handle = slot->handle;
@@ -175,6 +194,32 @@ int desktop_surface_ack_configure(desktop_surface_manager_t *manager,
         serial != manager->slots[index].configured_serial)
         return DESKTOP_SURFACE_ESTALE;
     manager->slots[index].acknowledged_serial = serial;
+    manager->slots[index].configure_sent = 1U;
+    return DESKTOP_SURFACE_OK;
+}
+
+int desktop_surface_reconfigure(desktop_surface_manager_t *manager,
+                                reist_gui_surface_owner_t owner,
+                                reist_gui_surface_handle_t handle,
+                                uint32_t width, uint32_t height,
+                                reist_gui_surface_configure_t *configure) {
+    int index = find_slot(manager, owner, handle);
+    if (index < 0 || configure == 0 || width == 0U || height == 0U ||
+        width > REIST_GUI_SURFACE_MAX_WIDTH ||
+        height > REIST_GUI_SURFACE_MAX_HEIGHT)
+        return DESKTOP_SURFACE_EINVAL;
+    desktop_surface_slot_t *slot = &manager->slots[index];
+    if (slot->acknowledged_serial != slot->configured_serial)
+        return DESKTOP_SURFACE_ESTATE;
+    slot->width = width;
+    slot->height = height;
+    slot->configured_serial = next_nonzero(&manager->next_configure_serial);
+    slot->acknowledged_serial = 0U;
+    slot->configure_sent = 0U;
+    slot->pending_paint_count = 0U;
+    slot->paint_active = 0U;
+    *configure = (reist_gui_surface_configure_t){
+        slot->configured_serial, width, height, 0U, 0U};
     return DESKTOP_SURFACE_OK;
 }
 
@@ -225,6 +270,23 @@ int desktop_surface_input_enqueue(desktop_surface_manager_t *manager,
     if (event->type == REIST_GUI_SURFACE_INPUT_POINTER_BUTTON &&
         event->button == 0U)
         return DESKTOP_SURFACE_EINVAL;
+    if (event->type == REIST_GUI_SURFACE_INPUT_POINTER_MOTION &&
+        slot->event_count != 0U) {
+        uint32_t last = (slot->event_head + slot->event_count - 1U) %
+            REIST_GUI_SURFACE_MAX_PENDING_EVENTS;
+        if (slot->pending_events[last].type ==
+                REIST_GUI_SURFACE_INPUT_POINTER_MOTION) {
+            slot->pending_events[last] = *event;
+            return DESKTOP_SURFACE_OK;
+        }
+    }
+    if (slot->event_count >= REIST_GUI_SURFACE_MAX_PENDING_EVENTS &&
+        slot->pending_events[slot->event_head].type ==
+            REIST_GUI_SURFACE_INPUT_POINTER_MOTION) {
+        slot->event_head = (slot->event_head + 1U) %
+            REIST_GUI_SURFACE_MAX_PENDING_EVENTS;
+        --slot->event_count;
+    }
     if (slot->event_count >= REIST_GUI_SURFACE_MAX_PENDING_EVENTS)
         return DESKTOP_SURFACE_ECAPACITY;
     uint32_t tail = (slot->event_head + slot->event_count) %
@@ -246,6 +308,96 @@ int desktop_surface_input_dequeue(desktop_surface_manager_t *manager,
     slot->event_head = (slot->event_head + 1U) %
         REIST_GUI_SURFACE_MAX_PENDING_EVENTS;
     --slot->event_count;
+    return DESKTOP_SURFACE_OK;
+}
+
+int desktop_surface_set_title(desktop_surface_manager_t *manager,
+                              reist_gui_surface_owner_t owner,
+                              reist_gui_surface_handle_t handle,
+                              const char *title, uint32_t length) {
+    int index = find_slot(manager, owner, handle);
+    if (index < 0 || title == 0 || length == 0U ||
+        length >= REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY)
+        return DESKTOP_SURFACE_EINVAL;
+    copy_bounded_text(manager->slots[index].title, title, length);
+    return DESKTOP_SURFACE_OK;
+}
+
+int desktop_surface_paint_begin(desktop_surface_manager_t *manager,
+                                reist_gui_surface_owner_t owner,
+                                reist_gui_surface_handle_t handle) {
+    int index = find_slot(manager, owner, handle);
+    if (index < 0 || manager->slots[index].acknowledged_serial == 0U)
+        return DESKTOP_SURFACE_ESTATE;
+    desktop_surface_slot_t *slot = &manager->slots[index];
+    slot->pending_paint_count = 0U;
+    slot->paint_active = 1U;
+    return DESKTOP_SURFACE_OK;
+}
+
+static desktop_surface_paint_command_t *reserve_paint_command(
+    desktop_surface_slot_t *slot) {
+    if (slot == 0 || !slot->paint_active ||
+        slot->pending_paint_count >= REIST_GUI_SURFACE_MAX_PAINT_COMMANDS)
+        return 0;
+    return &slot->pending_paint[slot->pending_paint_count++];
+}
+
+int desktop_surface_paint_fill(desktop_surface_manager_t *manager,
+                               reist_gui_surface_owner_t owner,
+                               reist_gui_surface_handle_t handle,
+                               reist_gui_rect_t rect, uint32_t color) {
+    int index = find_slot(manager, owner, handle);
+    if (index < 0 || !valid_local_rect(&manager->slots[index], rect))
+        return DESKTOP_SURFACE_EINVAL;
+    desktop_surface_paint_command_t *command =
+        reserve_paint_command(&manager->slots[index]);
+    if (command == 0) return DESKTOP_SURFACE_ECAPACITY;
+    command->type = DESKTOP_SURFACE_PAINT_FILL;
+    command->rect = rect;
+    command->foreground = color;
+    command->background = 0U;
+    command->text_length = 0U;
+    copy_bounded_text(command->text, "", 0U);
+    return DESKTOP_SURFACE_OK;
+}
+
+int desktop_surface_paint_text(desktop_surface_manager_t *manager,
+                               reist_gui_surface_owner_t owner,
+                               reist_gui_surface_handle_t handle,
+                               reist_gui_rect_t rect, uint32_t foreground,
+                               uint32_t background, const char *text,
+                               uint32_t length) {
+    int index = find_slot(manager, owner, handle);
+    if (index < 0 || text == 0 || length == 0U ||
+        length >= REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY ||
+        !valid_local_rect(&manager->slots[index], rect))
+        return DESKTOP_SURFACE_EINVAL;
+    desktop_surface_paint_command_t *command =
+        reserve_paint_command(&manager->slots[index]);
+    if (command == 0) return DESKTOP_SURFACE_ECAPACITY;
+    command->type = DESKTOP_SURFACE_PAINT_TEXT;
+    command->rect = rect;
+    command->foreground = foreground;
+    command->background = background;
+    command->text_length = length;
+    copy_bounded_text(command->text, text, length);
+    return DESKTOP_SURFACE_OK;
+}
+
+int desktop_surface_paint_commit(desktop_surface_manager_t *manager,
+                                 reist_gui_surface_owner_t owner,
+                                 reist_gui_surface_handle_t handle) {
+    int index = find_slot(manager, owner, handle);
+    if (index < 0 || !manager->slots[index].paint_active)
+        return DESKTOP_SURFACE_ESTATE;
+    desktop_surface_slot_t *slot = &manager->slots[index];
+    for (uint32_t command = 0U; command < slot->pending_paint_count;
+         ++command)
+        slot->committed_paint[command] = slot->pending_paint[command];
+    slot->committed_paint_count = slot->pending_paint_count;
+    slot->paint_active = 0U;
+    slot->paint_generation = next_nonzero(&slot->paint_generation);
     return DESKTOP_SURFACE_OK;
 }
 
@@ -348,6 +500,30 @@ int desktop_surface_dispatch_message(
             manager, owner, request->buffer_id,
             request->buffer_generation);
         response->type = REIST_GUI_SURFACE_BUFFER_DESTROY;
+    } else if (request->type == REIST_GUI_SURFACE_SET_TITLE) {
+        result = desktop_surface_set_title(
+            manager, owner, request->surface,
+            (const char *)&request->input, request->byte_size);
+        response->type = REIST_GUI_SURFACE_SET_TITLE;
+    } else if (request->type == REIST_GUI_SURFACE_PAINT_BEGIN) {
+        result = desktop_surface_paint_begin(
+            manager, owner, request->surface);
+        response->type = REIST_GUI_SURFACE_PAINT_BEGIN;
+    } else if (request->type == REIST_GUI_SURFACE_PAINT_FILL) {
+        result = desktop_surface_paint_fill(
+            manager, owner, request->surface, request->damage,
+            request->flags);
+        response->type = REIST_GUI_SURFACE_PAINT_FILL;
+    } else if (request->type == REIST_GUI_SURFACE_PAINT_TEXT) {
+        result = desktop_surface_paint_text(
+            manager, owner, request->surface, request->damage,
+            request->flags, request->buffer_id,
+            (const char *)&request->input, request->byte_size);
+        response->type = REIST_GUI_SURFACE_PAINT_TEXT;
+    } else if (request->type == REIST_GUI_SURFACE_PAINT_COMMIT) {
+        result = desktop_surface_paint_commit(
+            manager, owner, request->surface);
+        response->type = REIST_GUI_SURFACE_PAINT_COMMIT;
     } else if (request->type == REIST_GUI_SURFACE_ATTACH) {
         result = desktop_surface_attach(
             manager, owner, request->surface, request->buffer_id,

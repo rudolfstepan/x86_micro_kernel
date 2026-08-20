@@ -300,6 +300,19 @@ class DesktopSourceTests(unittest.TestCase):
 
     def test_surface_program_is_async_and_owned_by_the_compositor(self):
         self.assertIn('"/usr/gui/bin/surfacedemo.prg"', self.source)
+        self.assertIn('"/usr/gui/bin/notepad.prg"', self.source)
+        self.assertIn(
+            '&surface_runtime, "/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT"',
+            self.source,
+        )
+        self.assertIn("program_uses_surface", self.source)
+        self.assertIn("path_equal_ascii_case", self.source)
+        surface_classifier = self.source[
+            self.source.index("static uint32_t program_uses_surface") :
+            self.source.index("static int launch_program")
+        ]
+        self.assertNotIn("text_equal(program", surface_classifier)
+        self.assertEqual(surface_classifier.count("path_equal_ascii_case"), 2)
         self.assertIn("desktop_surface_runtime_reserve", self.source)
         self.assertIn("desktop_surface_runtime_bind", self.source)
         self.assertIn("sync_surface_windows", self.source)
@@ -348,12 +361,13 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("desktop_filetypes_lookup", self.source)
         self.assertIn("static char launch_program_path", self.source)
         self.assertIn("static char launch_document_path", self.source)
-        self.assertIn("static const char *launch_arguments[2]", self.source)
+        self.assertIn("static const char *launch_arguments[3]", self.source)
         self.assertIn("copy_launch_text", self.source)
         self.assertIn(
             "x86os_spawnv(launch_program_path, 2, launch_arguments)",
             self.source,
         )
+        self.assertIn("argument_count = 3", self.source)
         self.assertIn('"Keine Dateizuordnung vorhanden."', self.source)
 
     def test_usb_mouse_moves_a_clipped_visible_pointer(self):

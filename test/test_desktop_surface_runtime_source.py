@@ -18,7 +18,7 @@ def test_runtime_is_bounded_and_nonblocking():
     assert "ipc.version = X86OS_IPC_MESSAGE_VERSION" in SOURCE
     assert "ipc.struct_size = sizeof(ipc)" in SOURCE
     assert "if (status == -11) return 0;" in SOURCE
-    assert "active == 1U" in SOURCE
+    assert "active != 1U" in SOURCE
 
 
 def test_runtime_has_explicit_lifecycle():
@@ -29,6 +29,9 @@ def test_runtime_has_explicit_lifecycle():
     assert "desktop_surface_runtime_reserve" in HEADER
     assert "desktop_surface_runtime_bind" in HEADER
     assert "desktop_surface_runtime_cancel" in HEADER
+    assert "DESKTOP_SURFACE_RUNTIME_DRAIN_ROUNDS 64U" in HEADER
+    assert "request < X86OS_IPC_QUEUE_DEPTH" in SOURCE
+    assert "x86os_yield()" in SOURCE
     assert "active = 2U" in SOURCE
 
 

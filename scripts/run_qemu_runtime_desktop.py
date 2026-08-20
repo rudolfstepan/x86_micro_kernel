@@ -250,7 +250,21 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                             raise RuntimeError(
                                 f"Surface probe failed: {marker}"
                             )
-                        if "DESKTOP_SURFACE_OK" in probe_text:
+                        if "notepad: Surface" in probe_text:
+                            marker = re.findall(
+                                r"notepad: Surface[^\r\n]*", probe_text
+                            )[-1]
+                            raise RuntimeError(
+                                f"Editor Surface failed: {marker}"
+                            )
+                        if ("DESKTOP_SURFACE_OK" in probe_text and
+                                "NOTEPAD_SURFACE_READY" in probe_text and
+                                "NOTEPAD_SURFACE_DOCUMENT_READY" in
+                                probe_text and
+                                "NOTEPAD_SURFACE_MENU_READY" in probe_text and
+                                "NOTEPAD_SURFACE_FILE_DIALOG_READY" in
+                                probe_text and
+                                "NOTEPAD_SURFACE_HOVER_READY" in probe_text):
                             time.sleep(0.2)
                             if process.stdin is None:
                                 raise RuntimeError(

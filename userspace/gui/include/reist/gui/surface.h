@@ -17,12 +17,14 @@
 extern "C" {
 #endif
 
-#define REIST_GUI_SURFACE_API_VERSION 1U
-#define REIST_GUI_SURFACE_PROTOCOL_VERSION 2U
+#define REIST_GUI_SURFACE_API_VERSION 2U
+#define REIST_GUI_SURFACE_PROTOCOL_VERSION 3U
 #define REIST_GUI_SURFACE_MAX_DAMAGE 8U
 #define REIST_GUI_SURFACE_MAX_PENDING_EVENTS 16U
 #define REIST_GUI_SURFACE_MAX_CLIENTS 8U
 #define REIST_GUI_SURFACE_MAX_SURFACES 8U
+#define REIST_GUI_SURFACE_MAX_PAINT_COMMANDS 192U
+#define REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY 40U
 #define REIST_GUI_SURFACE_MAX_WIDTH 1024U
 #define REIST_GUI_SURFACE_MAX_HEIGHT 768U
 #define REIST_GUI_SURFACE_MAX_BUFFER_BYTES (1024U * 768U * 4U)
@@ -41,6 +43,11 @@ enum reist_gui_surface_message_type {
     REIST_GUI_SURFACE_ACK_CONFIGURE,
     REIST_GUI_SURFACE_BUFFER_CREATE,
     REIST_GUI_SURFACE_BUFFER_DESTROY,
+    REIST_GUI_SURFACE_SET_TITLE,
+    REIST_GUI_SURFACE_PAINT_BEGIN,
+    REIST_GUI_SURFACE_PAINT_FILL,
+    REIST_GUI_SURFACE_PAINT_TEXT,
+    REIST_GUI_SURFACE_PAINT_COMMIT,
     REIST_GUI_SURFACE_CONFIGURE = 0x80U,
     REIST_GUI_SURFACE_INPUT,
     REIST_GUI_SURFACE_CLOSE,
@@ -135,6 +142,19 @@ typedef struct reist_gui_surface_message {
     reist_gui_rect_t damage;
     reist_gui_surface_input_t input;
 } reist_gui_surface_message_t;
+
+/**
+ * Paint-command wire mapping used by the public client wrapper.
+ *
+ * The fixed envelope is deliberately reused instead of exposing a global
+ * framebuffer mapping. For PAINT_FILL and PAINT_TEXT, ``damage`` contains
+ * client-local geometry, ``flags`` the foreground/fill color and
+ * ``buffer_id`` the text background color. PAINT_TEXT stores at most
+ * REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY bytes in ``input`` and records the
+ * exact byte count in ``byte_size``. SET_TITLE uses the same bounded byte
+ * storage. Applications must use surface_client.h rather than constructing
+ * this representation themselves.
+ */
 
 #ifdef __cplusplus
 static_assert(sizeof(reist_gui_surface_message_t) <= 128U,

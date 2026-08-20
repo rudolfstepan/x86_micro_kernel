@@ -5,6 +5,10 @@
 #include "x86os.h"
 #include "desktop_surface.h"
 #define DESKTOP_SURFACE_RUNTIME_CAPACITY REIST_GUI_SURFACE_MAX_CLIENTS
+/* One retained paint frame contains at most 192 commands. The IPC queue holds
+ * four messages, therefore 64 cooperative refill rounds cover one complete
+ * frame plus transaction messages without making broker work unbounded. */
+#define DESKTOP_SURFACE_RUNTIME_DRAIN_ROUNDS 64U
 typedef struct desktop_surface_runtime_client {
     x86os_ipc_handle_t endpoint;
     reist_gui_surface_owner_t owner;
@@ -29,5 +33,10 @@ int desktop_surface_runtime_send_close(
     desktop_surface_runtime_t *runtime,
     reist_gui_surface_owner_t owner,
     reist_gui_surface_handle_t surface);
+int desktop_surface_runtime_send_configure(
+    desktop_surface_runtime_t *runtime,
+    reist_gui_surface_owner_t owner,
+    reist_gui_surface_handle_t surface,
+    const reist_gui_surface_configure_t *configure);
 void desktop_surface_runtime_shutdown(desktop_surface_runtime_t *runtime);
 #endif

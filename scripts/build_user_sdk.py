@@ -44,6 +44,7 @@ NETWORK_PARSER_SOURCES = (
 GUI_LIBRARY_SOURCES = (
     ROOT / "userspace" / "gui" / "lib" / "menu.c",
     ROOT / "userspace" / "gui" / "lib" / "dialog.c",
+    ROOT / "userspace" / "gui" / "lib" / "file_dialog.c",
     ROOT / "userspace" / "gui" / "lib" / "surface_client.c",
     ROOT / "userspace" / "gui" / "lib" / "control.c",
     ROOT / "userspace" / "gui" / "lib" / "container.c",

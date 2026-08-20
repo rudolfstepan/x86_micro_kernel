@@ -252,6 +252,27 @@ static uint32_t text_equal(const char *left, const char *right) {
     return 0U;
 }
 
+/* FAT directory entries and aliases may preserve or synthesize different
+ * ASCII case than the canonical paths in /etc/reist/filetypes.conf. Program
+ * classification must therefore follow the filesystem's case-insensitive
+ * naming contract; otherwise a GUI executable silently falls back to the
+ * synchronous full-screen launcher. */
+static uint32_t path_equal_ascii_case(const char *left, const char *right) {
+    if (left == 0 || right == 0) return 0U;
+    for (uint32_t index = 0U;
+         index < DESKTOP_EXPLORER_PATH_CAPACITY; ++index) {
+        char left_value = left[index];
+        char right_value = right[index];
+        if (left_value >= 'A' && left_value <= 'Z')
+            left_value = (char)(left_value + ('a' - 'A'));
+        if (right_value >= 'A' && right_value <= 'Z')
+            right_value = (char)(right_value + ('a' - 'A'));
+        if (left_value != right_value) return 0U;
+        if (left_value == '\0') return 1U;
+    }
+    return 0U;
+}
+
 static uint32_t saturating_add_u32(uint32_t left, uint32_t right) {
     return left > UINT32_MAX - right ? UINT32_MAX : left + right;
 }
@@ -984,22 +1005,29 @@ static void render_window(const desktop_render_context_t *context,
         draw_text_clipped(context, title.x + (int32_t)title_x,
                           title.y + (int32_t)title_y,
                           explorer_window != 0 ? explorer_window->path
-                                               : "Surface Demo",
+                                               : surface->title,
                           title.width - title_x - 3U, color_title_text,
                           title_color);
     }
 
-    if (surface != 0) {
-        draw_text_clipped(context, client.x + 14, client.y + 18,
-                          "Echtes Ring-3 Surface-Fenster",
-                          client.width > 28U ? client.width - 28U : 1U,
-                          color_text, color_client);
-        draw_text_clipped(context, client.x + 14,
-                          client.y + 18 + (int32_t)display->font_height + 8,
-                          "Vom Desktop-Compositor verwaltet",
-                          client.width > 28U ? client.width - 28U : 1U,
-                          color_shadow, color_client);
-    }
+    if (surface != 0)
+        for (uint32_t index = 0U;
+             index < surface->committed_paint_count; ++index) {
+            const desktop_surface_paint_command_t *command =
+                &surface->committed_paint[index];
+            desktop_rect_t bounds = {
+                client.x + command->rect.x,
+                client.y + command->rect.y,
+                command->rect.width, command->rect.height,
+            };
+            if (command->type == DESKTOP_SURFACE_PAINT_FILL)
+                fill_rect_clipped(context, bounds, command->foreground);
+            else if (command->type == DESKTOP_SURFACE_PAINT_TEXT)
+                draw_text_clipped(
+                    context, bounds.x, bounds.y, command->text,
+                    bounds.width, command->foreground,
+                    command->background);
+        }
     if (explorer_window != 0)
         for (uint32_t entry = 0U; entry < explorer_window->entry_count; ++entry)
             render_explorer_entry(context, explorer_window, client, entry);
@@ -1473,6 +1501,77 @@ static uint32_t surface_uses_window(
     return 0U;
 }
 
+static desktop_surface_slot_t *surface_for_window(
+    desktop_surface_manager_t *surfaces, uint32_t window_index) {
+    if (surfaces == 0 || window_index >= DESKTOP_WM_CAPACITY) return 0;
+    for (uint32_t index = 0U; index < DESKTOP_SURFACE_CAPACITY; ++index)
+        if (surfaces->slots[index].active &&
+            surfaces->slots[index].window_index == window_index)
+            return &surfaces->slots[index];
+    return 0;
+}
+
+static uint32_t next_surface_input_serial(void) {
+    static uint32_t serial;
+    ++serial;
+    if (serial == 0U) ++serial;
+    return serial;
+}
+
+static uint32_t enqueue_surface_pointer(
+    const desktop_wm_t *manager, desktop_surface_manager_t *surfaces,
+    int32_t window_index, uint32_t type, int32_t pointer_x,
+    int32_t pointer_y, int32_t delta_x, int32_t delta_y,
+    uint32_t pressed, uint32_t allow_outside) {
+    if (manager == 0 || surfaces == 0 || window_index < 0 ||
+        window_index >= (int32_t)DESKTOP_WM_CAPACITY) return 0U;
+    desktop_surface_slot_t *surface = surface_for_window(
+        surfaces, (uint32_t)window_index);
+    if (surface == 0) return 0U;
+    desktop_rect_t client = desktop_window_client_rect(
+        manager, (uint32_t)window_index);
+    if (!allow_outside &&
+        (pointer_x < client.x || pointer_y < client.y ||
+        pointer_x >= client.x + (int32_t)client.width ||
+        pointer_y >= client.y + (int32_t)client.height))
+        return 0U;
+    int32_t local_x = pointer_x - client.x;
+    int32_t local_y = pointer_y - client.y;
+    if (local_x < 0) local_x = 0;
+    if (local_y < 0) local_y = 0;
+    if (local_x >= (int32_t)client.width)
+        local_x = (int32_t)client.width - 1;
+    if (local_y >= (int32_t)client.height)
+        local_y = (int32_t)client.height - 1;
+    reist_gui_surface_input_t event = {
+        type, next_surface_input_serial(),
+        local_x, local_y,
+        delta_x, delta_y,
+        type == REIST_GUI_SURFACE_INPUT_POINTER_BUTTON ? 1U : 0U,
+        pressed, 0U, 0U,
+    };
+    return desktop_surface_input_enqueue(
+        surfaces, surface->owner, surface->handle, &event) == 0;
+}
+
+static uint32_t enqueue_surface_keyboard(
+    const desktop_wm_t *manager, desktop_surface_manager_t *surfaces,
+    int key) {
+    if (manager == 0 || surfaces == 0 || key == DESKTOP_KEY_NONE ||
+        manager->keyboard_focus < 0 ||
+        manager->keyboard_focus >= (int32_t)DESKTOP_WM_CAPACITY)
+        return 0U;
+    desktop_surface_slot_t *surface = surface_for_window(
+        surfaces, (uint32_t)manager->keyboard_focus);
+    if (surface == 0) return 0U;
+    reist_gui_surface_input_t event = {
+        REIST_GUI_SURFACE_INPUT_KEYBOARD, next_surface_input_serial(),
+        0, 0, 0, 0, 0U, 1U, (uint32_t)key, 0U,
+    };
+    return desktop_surface_input_enqueue(
+        surfaces, surface->owner, surface->handle, &event) == 0;
+}
+
 /** Publish acknowledged Ring-3 surfaces as ordinary server-decorated windows. */
 static void sync_surface_windows(
     desktop_wm_t *manager, const desktop_explorer_t *explorer,
@@ -1490,18 +1589,64 @@ static void sync_surface_windows(
     }
     for (uint32_t index = 0U; index < DESKTOP_SURFACE_CAPACITY; ++index) {
         desktop_surface_slot_t *surface = &surfaces->slots[index];
-        if (!surface->active || surface->acknowledged_serial == 0U)
-            continue;
+        if (!surface->active) continue;
         if (surface->window_index != DESKTOP_SURFACE_NO_SLOT) {
+            if (surface->window_index < DESKTOP_WM_CAPACITY &&
+                manager->windows[surface->window_index].visible &&
+                !surface->close_sent) {
+                desktop_rect_t client = desktop_window_client_rect(
+                    manager, surface->window_index);
+                if (surface->acknowledged_serial ==
+                        surface->configured_serial &&
+                    (surface->width != client.width ||
+                     surface->height != client.height)) {
+                    reist_gui_surface_configure_t configure;
+                    (void)desktop_surface_reconfigure(
+                        surfaces, surface->owner, surface->handle,
+                        client.width, client.height, &configure);
+                }
+                if (surface->acknowledged_serial !=
+                        surface->configured_serial &&
+                    !surface->configure_sent) {
+                    reist_gui_surface_configure_t configure = {
+                        surface->configured_serial, surface->width,
+                        surface->height, 0U, 0U,
+                    };
+                    if (desktop_surface_runtime_send_configure(
+                            runtime, surface->owner, surface->handle,
+                            &configure) == 0)
+                        surface->configure_sent = 1U;
+                }
+            }
+            if (surface->paint_generation !=
+                surface->presented_generation &&
+                surface->window_index < DESKTOP_WM_CAPACITY) {
+                desktop_dirty_add(
+                    dirty, desktop_wm_window_bounds(
+                        manager, surface->window_index));
+                surface->presented_generation = surface->paint_generation;
+            }
             if (surface->window_index < DESKTOP_WM_CAPACITY &&
                 !manager->windows[surface->window_index].visible &&
                 !surface->close_sent) {
                 if (desktop_surface_runtime_send_close(
-                        runtime, surface->owner, surface->handle) == 0)
+                        runtime, surface->owner, surface->handle) == 0) {
                     surface->close_sent = 1U;
+                    /* Closing a client surface is negotiated. Keep the
+                     * window visible while the application presents a save
+                     * confirmation, and remove it only after DESTROY or
+                     * process revocation. */
+                    (void)desktop_wm_open(
+                        manager, surface->window_index);
+                    surface->close_sent = 0U;
+                    desktop_dirty_add(
+                        dirty, desktop_wm_window_bounds(
+                            manager, surface->window_index));
+                }
             }
             continue;
         }
+        if (surface->acknowledged_serial == 0U) continue;
         if (surface->close_sent) continue;
         uint32_t chosen = DESKTOP_WM_CAPACITY;
         for (uint32_t candidate = 0U;
@@ -1605,7 +1750,7 @@ static char filetypes_config[DESKTOP_FILETYPES_CONFIG_CAPACITY + 1U];
 static char launch_program_path[DESKTOP_FILETYPES_PROGRAM_CAPACITY];
 static char launch_document_path[DESKTOP_EXPLORER_PATH_CAPACITY];
 static char launch_surface_argument[40];
-static const char *launch_arguments[2];
+static const char *launch_arguments[3];
 
 static int copy_launch_text(char *destination, uint32_t capacity,
                             const char *source) {
@@ -1664,6 +1809,11 @@ static int format_surface_argument(x86os_ipc_handle_t endpoint) {
     return 0;
 }
 
+static uint32_t program_uses_surface(const char *program) {
+    return path_equal_ascii_case(program, "/usr/gui/bin/surfacedemo.prg") ||
+        path_equal_ascii_case(program, "/usr/gui/bin/notepad.prg");
+}
+
 static int launch_program(desktop_surface_runtime_t *surface_runtime,
                           const char *program, const char *document) {
     int status = 0;
@@ -1672,8 +1822,7 @@ static int launch_program(desktop_surface_runtime_t *surface_runtime,
     int copy_status = copy_launch_text(
         launch_program_path, sizeof(launch_program_path), program);
     if (copy_status != 0) return copy_status;
-    if (surface_runtime != 0 && document == 0 &&
-        text_equal(program, "/usr/gui/bin/surfacedemo.prg")) {
+    if (surface_runtime != 0 && program_uses_surface(program)) {
         x86os_ipc_handle_t endpoint = 0U;
         int reserve = desktop_surface_runtime_reserve(
             surface_runtime, &endpoint);
@@ -1685,7 +1834,19 @@ static int launch_program(desktop_surface_runtime_t *surface_runtime,
         }
         launch_arguments[0] = launch_program_path;
         launch_arguments[1] = launch_surface_argument;
-        pid = x86os_spawnv(launch_program_path, 2, launch_arguments);
+        int argument_count = 2;
+        if (document != 0) {
+            copy_status = copy_launch_text(
+                launch_document_path, sizeof(launch_document_path), document);
+            if (copy_status != 0) {
+                desktop_surface_runtime_cancel(surface_runtime, endpoint);
+                return copy_status;
+            }
+            launch_arguments[2] = launch_document_path;
+            argument_count = 3;
+        }
+        pid = x86os_spawnv(
+            launch_program_path, argument_count, launch_arguments);
         if (pid < 0) {
             desktop_surface_runtime_cancel(surface_runtime, endpoint);
             return pid;
@@ -2425,7 +2586,7 @@ static void run_render_probe(
 int main(int argc, char **argv) {
     x86os_display_info_t display;
     desktop_wm_t manager;
-    desktop_surface_manager_t surfaces;
+    static desktop_surface_manager_t surfaces;
     desktop_surface_runtime_t surface_runtime;
     static desktop_explorer_t explorer;
     static desktop_filetypes_t filetypes;
@@ -2515,7 +2676,19 @@ int main(int argc, char **argv) {
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
     if (surface_probe) {
         int probe_status = launch_program(
-            &surface_runtime, "/usr/gui/bin/surfacedemo.prg", 0);
+            &surface_runtime, "/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT");
+        if (probe_status == 0)
+            probe_status = launch_program(
+                &surface_runtime, "/USR/GUI/BIN/NOTEPAD.PRG",
+                "--menu-probe");
+        if (probe_status == 0)
+            probe_status = launch_program(
+                &surface_runtime, "/USR/GUI/BIN/NOTEPAD.PRG",
+                "--file-dialog-probe");
+        if (probe_status == 0)
+            probe_status = launch_program(
+                &surface_runtime, "/USR/GUI/BIN/NOTEPAD.PRG",
+                "--hover-probe");
         if (probe_status != 0) {
             x86os_puts("DESKTOP_SURFACE_FAIL launch\n");
             desktop_surface_runtime_shutdown(&surface_runtime);
@@ -2540,7 +2713,9 @@ int main(int argc, char **argv) {
         int surface_poll_status = desktop_surface_runtime_poll(
             &surface_runtime, &surfaces);
         if (surface_probe && surface_poll_status != 0) {
-            x86os_puts("DESKTOP_SURFACE_FAIL protocol\n");
+            x86os_puts("DESKTOP_SURFACE_FAIL protocol status=");
+            x86os_print_number(surface_poll_status);
+            x86os_putchar('\n');
             desktop_surface_runtime_shutdown(&surface_runtime);
             if (runtime_activated) (void)x86os_display_deactivate();
             return 1;
@@ -2597,10 +2772,19 @@ int main(int argc, char **argv) {
                     &drag_render, &resize_render, &move_cache);
                 pending_delta_x = 0;
                 pending_delta_y = 0;
+                int32_t captured_surface_window = manager.capture_window;
                 actions |= dispatch_pointer_button(
                     &manager, &explorer, &ui, &display, &dirty,
                     pointer_x, pointer_y, mouse.buttons,
                     previous_buttons, &action_target, &activation);
+                int32_t surface_button_window = left_down
+                    ? manager.capture_window : captured_surface_window;
+                (void)enqueue_surface_pointer(
+                    &manager, &surfaces, surface_button_window,
+                    REIST_GUI_SURFACE_INPUT_POINTER_BUTTON,
+                    pointer_x, pointer_y, 0, 0, left_down,
+                    !left_down || manager.capture_kind ==
+                        DESKTOP_WM_CAPTURE_CLIENT);
             }
             previous_buttons = mouse.buttons;
         }
@@ -2609,6 +2793,17 @@ int main(int argc, char **argv) {
             &pointer_x, &pointer_y,
             pending_delta_x, pending_delta_y, &action_target,
             &drag_render, &resize_render, &move_cache);
+        if (pending_delta_x != 0 || pending_delta_y != 0) {
+            int32_t surface_motion_window = manager.capture_kind ==
+                DESKTOP_WM_CAPTURE_CLIENT ? manager.capture_window
+                                          : desktop_wm_window_at(
+                                                &manager, pointer_x, pointer_y);
+            (void)enqueue_surface_pointer(
+                &manager, &surfaces, surface_motion_window,
+                REIST_GUI_SURFACE_INPUT_POINTER_MOTION,
+                pointer_x, pointer_y, pending_delta_x, pending_delta_y, 0U,
+                manager.capture_kind == DESKTOP_WM_CAPTURE_CLIENT);
+        }
 
         desktop_ui_result_t ui_key = desktop_ui_keyboard_event(
             &ui, &display, &dirty, key);
@@ -2616,8 +2811,11 @@ int main(int argc, char **argv) {
             &manager, &explorer, &ui, &display, &dirty,
             &ui_key, &action_target);
         if (!ui_key.consumed) {
+            uint32_t surface_key_consumed = enqueue_surface_keyboard(
+                &manager, &surfaces, key);
             uint32_t explorer_key = explorer_key_from_input(key);
-            if (explorer_key != 0U && manager.keyboard_focus >= 0 &&
+            if (!surface_key_consumed && explorer_key != 0U &&
+                manager.keyboard_focus >= 0 &&
                 manager.keyboard_focus < (int32_t)DESKTOP_WM_CAPACITY) {
                 uint32_t focused = (uint32_t)manager.keyboard_focus;
                 desktop_rect_t client = desktop_window_client_rect(
@@ -2632,7 +2830,7 @@ int main(int argc, char **argv) {
                 collect_explorer_pointer_result(
                     &display, &manager, &dirty, &explorer_result, 0U,
                     &activation);
-            } else if (key == DESKTOP_KEY_ESCAPE) {
+            } else if (!surface_key_consumed && key == DESKTOP_KEY_ESCAPE) {
                 desktop_wm_event_t keyboard = {
                     .type = DESKTOP_WM_EVENT_KEYBOARD,
                     .key = DESKTOP_WM_KEY_ESCAPE,

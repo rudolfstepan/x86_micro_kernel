@@ -286,7 +286,7 @@ class UsbMouseTests(unittest.TestCase):
         )
         branch = source[
             escape:source.index(
-                "\n\n        if ((actions & DESKTOP_WM_RESULT_LAUNCH)",
+                "\n\n        actions |= apply_desktop_activation(",
                 escape,
             )
         ]
@@ -295,7 +295,7 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("desktop_try_exit(", branch)
         exit_helper = source[
             source.index("static uint32_t desktop_try_exit") :
-            source.index("static void launch_app")
+            source.index("static int launch_program")
         ]
         deactivate = exit_helper.index("x86os_display_deactivate()")
         metrics = exit_helper.index("print_render_metrics(metrics)")
@@ -306,7 +306,8 @@ class UsbMouseTests(unittest.TestCase):
     def test_desktop_batches_mouse_reports_and_uses_software_pointer(self):
         source = (ROOT / "userspace/gui/compositor/desktop.c").read_text(
             encoding="utf-8")
-        self.assertIn("mouse_events < 32U", source)
+        self.assertIn("#define DESKTOP_MOUSE_BATCH_LIMIT 32U", source)
+        self.assertIn("mouse_events < DESKTOP_MOUSE_BATCH_LIMIT", source)
         self.assertIn("x86os_pointer_update(pointer_x, pointer_y, 1U)", source)
         self.assertNotIn("draw_mouse_pointer", source)
 

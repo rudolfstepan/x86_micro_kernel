@@ -17,14 +17,39 @@ class GuiNotepadSourceTests(unittest.TestCase):
         for include in (
             '#include "x86os.h"',
             '#include "reist/gui/dialog.h"',
+            '#include "reist/gui/file_dialog.h"',
             '#include "reist/gui/menu.h"',
+            '#include "reist/gui/surface_client.h"',
             '#include "reist/gui/text_editor.h"',
         ):
             self.assertIn(include, self.source)
         self.assertNotIn("desktop_wm", self.source)
         self.assertNotRegex(
             self.source, r"\b(malloc|calloc|realloc|free)\s*\(")
-        self.assertIn("temporary full-screen GUI client", self.source)
+        self.assertIn("this process owns a compositor Surface", self.source)
+
+    def test_desktop_mode_uses_surface_paint_and_local_events(self):
+        for contract in (
+            "reist_gui_surface_endpoint_from_argv",
+            "reist_gui_surface_client_create",
+            "reist_gui_surface_client_ack_configure",
+            "reist_gui_surface_client_set_title",
+            "reist_gui_surface_client_paint_begin",
+            "reist_gui_surface_client_paint_fill",
+            "reist_gui_surface_client_paint_text",
+            "reist_gui_surface_client_paint_commit",
+            "REIST_GUI_SURFACE_INPUT_POINTER_MOTION",
+            "REIST_GUI_SURFACE_INPUT_KEYBOARD",
+        ):
+            self.assertIn(contract, self.source)
+        self.assertIn("if (!surface_mode && x86os_display_activate() == 0)",
+                      self.source)
+        self.assertIn("NOTEPAD_SURFACE_DOCUMENT_READY", self.source)
+        self.assertIn("NOTEPAD_SURFACE_MENU_READY", self.source)
+        self.assertIn("NOTEPAD_SURFACE_FILE_DIALOG_READY", self.source)
+        self.assertIn("NOTEPAD_SURFACE_HOVER_READY", self.source)
+        self.assertIn("NOTEPAD_PAINT_RETRY_LIMIT 3U", self.source)
+        self.assertIn("paint_status_retryable", self.source)
 
     def test_app_has_real_editing_persistence_and_dialog_flows(self):
         for contract in (
@@ -37,6 +62,10 @@ class GuiNotepadSourceTests(unittest.TestCase):
             "REIST_GUI_DIALOG_RESPONSE_SAVE",
             "REIST_GUI_DIALOG_RESPONSE_DISCARD",
             "REIST_GUI_DIALOG_RESPONSE_CANCEL",
+            "NOTEPAD_ACTION_OPEN",
+            "NOTEPAD_ACTION_SAVE_AS",
+            "reist_gui_file_dialog_open",
+            "reist_gui_file_dialog_dispatch",
             "reist_gui_menu_dispatch",
             "x86os_display_frame_begin",
             "x86os_display_frame_commit",

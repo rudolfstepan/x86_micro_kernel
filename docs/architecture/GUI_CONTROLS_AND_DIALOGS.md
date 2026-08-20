@@ -77,7 +77,8 @@ der betroffenen Surface an.
 | Toolbar und Statusbar | nein | Desktopleisten vorhanden | nein | nein | [ ] API definieren |
 | Tooltip | nein | nein | nein | n/a | [ ] erst mit monotonem Timer |
 | Kontextmenü | Menücontroller verwendbar | ja | Capture | Pfeile/Enter/Esc | [ ] öffentlicher Öffnungsanker fehlt |
-| Dateiauswahl-, Farb- und Fontdialog | nein | nein | nein | nein | [ ] spätere Systemdienste |
+| Datei-Öffnen-/Speichern-Dialog | ja | REIST Editor | modal, Pfadfeld und Buttons | Tab, Editieren, Enter/Escape | [x] asynchroner absoluter Pfad-Chooser v1 |
+| Farb- und Fontdialog | nein | nein | nein | nein | [ ] spätere Systemdienste |
 | interaktive Control Gallery | Menü-, Dialog- und Basis-Control-API | ja | ja | ja | [x] `/usr/gui/bin/guidemo.prg` |
 | grafischer Texteditor | Texteditor-, Menü- und Dialog-API | ja | Cursorplatzierung | Editieren/Navigation/Save | [x] `/usr/gui/bin/notepad.prg` |
 
@@ -187,6 +188,18 @@ Dirty-State. Persistenz bleibt Anwendungsverantwortung; erst nach erfolgreichem
 Damit kann ein fehlgeschlagener Schreibpfad den sichtbaren Dirty-State nicht
 fälschlich löschen.
 
+`<reist/gui/file_dialog.h>` stellt dazu einen wiederverwendbaren,
+rendererneutralen Datei-Öffnen-/Speichern-Controller bereit. Er folgt demselben
+asynchronen `open`/`dispatch`/`complete`-Muster wie die übrigen Dialoge und
+startet weder eine verschachtelte Eventloop noch blockierende VFS-Operationen.
+Version 1 bearbeitet einen absoluten ASCII-Pfad mit Tastaturfokus,
+Pointer-Capture, Enter als Accept und Escape als Cancel. Der Controller
+liefert ausschließlich eine kopierte Pfadauswahl; Existenzprüfung, Laden,
+atomarer Speicherpfad, Überschreibpolitik und Fehlermeldungen bleiben beim
+aufrufenden Programm. Eine spätere visuelle Verzeichnisliste wird als
+versionierte, durch einen Dateisystemdienst gelieferte Erweiterung ergänzt und
+nicht durch versteckte VFS-Zugriffe in einem Control vorgetäuscht.
+
 ## Dialogvertrag
 
 Die REIST-Dialog-API folgt den gemeinsamen, weiterhin aktuellen Mustern von
@@ -285,11 +298,12 @@ Layout bleiben explizit offen.
 - [x] Mehrzeiligen Texteditor mit realer GUI-App, Dirty-State, modalen
   Save/Discard/Cancel-Dialogen und begrenzter Persistenz bereitstellen.
 - [ ] ScrollView aus Container, Viewport und Scrollbar zusammensetzen.
-- [ ] Surface-/Event-IPC generationsgebunden veröffentlichen.
+- [x] Surface-/Event-IPC generationsgebunden veröffentlichen; lokale
+  Fill-/Text-Paintframes werden begrenzt und atomar committed.
 - [ ] Accessibility-Baum und assistive Eventausgabe versionieren.
 - [ ] Theme-, Font-, Icon- und Lokalisierungsressourcen versionieren.
 - [ ] Dateimanager, Terminal und Systeminfo als getrennte GUI-Clients portieren;
-  der Editor ist bis zur Surface-IPC ein öffentlicher Vollbild-GUI-Client.
+  der Editor ist bereits ein separater Surface-Client mit Vollbild-Fallback.
 
 ## Definition of Done für ein Control
 

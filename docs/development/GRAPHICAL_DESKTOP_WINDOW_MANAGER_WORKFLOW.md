@@ -358,29 +358,39 @@ zeichnet darin und erhält nur die für ihn bestimmten lokalen Eingaben.
   festlegen und vor Seiteneffekten prüfen.
 - [x] Requests mindestens für `create`, `destroy`, `attach`, `damage_buffer`,
   `commit`, `configure`, `ack_configure` und `buffer_release` versionieren.
-- [ ] Entscheidung zwischen mediiertem Zeichenstrom und gemeinsamem
-  Surface-Speicher erst nach Prüfung der vorhandenen Memory-Capabilities treffen.
-- [x] Pixel-Transport festlegen: bevorzugt generationengebundener, compositor-
-  kontrollierter Buffer-Capability statt direkter Framebuffer-Zugriffe; dabei
-  Größe, Pitch, Format, Release und Prozessende als einen Vertrag definieren.
+- [x] Für die erste isolierte Fensteranwendung einen mediierten, retained
+  Zeichenstrom festlegen: maximal 192 lokale Fill-/Text-Kommandos werden in
+  einer Pending-Liste validiert und erst mit `paint_commit` atomar sichtbar.
+  Gemeinsam genutzte Pixelbuffer bleiben eine spätere, getrennte ABI-Stufe.
+- [ ] Optionalen Pixelbuffer-Transport fertigstellen: generationengebundene
+  Descriptoren für Größe, Pitch, Format und Release sind vorhanden, aber noch
+  nicht auf gemeinsam nutzbaren Speicher abgebildet. Der aktuelle Editor nutzt
+  deshalb ausschließlich den mediierten Paint-Strom ohne Framebufferrecht.
 - [x] Gemeinsame, zugriffsfreie Descriptor-Validierung in der GUI-Library
   bereitstellen.
 - [x] Surface-Protokoll für Buffer-Create/Destroy auf Version 2 anheben; alte
   Nachrichten werden anhand Version und Strukturgröße abgewiesen.
+- [x] Surface-Protokoll für atomare Paint-Listen, Fenstertitel und
+  Resize-Configure auf Version 3 anheben; unbekannte ältere Wire-Versionen
+  bleiben fail-closed.
 - [x] Client kennt nur lokale Koordinaten; Platzierung und Dekoration bleiben
   vollständig beim Compositor.
-- [ ] Keyboardfokus und Pointerfokus getrennt und generationsgebunden routen.
-- [ ] Pointer-Button-Sequenzen erhalten ein implizites Grab bis Button-Up.
+- [x] Keyboardfokus und Pointerfokus getrennt und generationsgebunden an den
+  Besitzer der fokussierten beziehungsweise getroffenen Surface routen.
+- [x] Pointer-Button-Sequenzen erhalten über das WM-Client-Capture ein
+  implizites Grab bis Button-Up.
 - [ ] Veraltete Handles, falsche Besitzer, ungültige Größen und unbestätigte
   Commits ohne sichtbare Teilwirkung ablehnen.
-- [ ] Prozessende räumt Fenster, Surfaces, Fokus und Capture idempotent auf.
+- [x] Prozessende oder gebrochener IPC-Kanal widerruft Besitzer-Surfaces und
+  entfernt ihre WM-Fenster idempotent beim nächsten Synchronisationsschritt.
 - [ ] Ein absichtlich abgestürzter Client beschädigt weder Desktop noch andere
   Fenster.
 - [x] `surfacedemo.prg` als ersten separaten Ring-3-Client asynchron starten,
   nach Prozessgeneration an den Broker binden und als verschiebbares,
-  skalierbares sowie schließbares WM-Fenster darstellen. Der derzeitige
-  Inhalt ist bewusst compositorseitiger Platzhalter; clientgelieferte Pixel
-  folgen erst nach Abschluss der Buffer-Capability-Abbildung.
+  skalierbares sowie schließbares WM-Fenster darstellen.
+- [x] Clientgelieferten Inhalt mit atomaren, doppelt gepufferten Paint-Listen
+  darstellen; Fensterbewegung und Überdeckung verwenden ausschließlich den
+  committed Frame. Resize wird per `configure`/`ack_configure` ausgehandelt.
 - [x] Acht feste WM-/Explorer-Slots bereitstellen, damit die Navigation bis
   `/usr/gui/bin` nicht bereits alle Fensterplätze vor dem Clientstart belegt.
 
@@ -392,7 +402,8 @@ inkompatibler Fensterrahmen.
 - [x] Clientbibliothek für Surface-Lebenszyklus und Eventdispatch bereitstellen.
 - [x] Einen bounded Endpoint-Bootstrap für GUI-Programme definieren
   (`--reist-surface=<handle>`); ungültige Werte werden abgewiesen.
-- [ ] Geclippte Zeichenprimitive, Schrift und Layoutmetriken kapseln.
+- [x] Geclippte lokale Fill-/Text-Primitive im Surface-Clientwrapper kapseln;
+  globale Koordinaten oder Framebufferrechte überschreiten die ABI nicht.
 - [x] Rendererunabhängigen, versionierten Menücontroller mit festen
   Kapazitäten, lokaler Geometrie, implizitem Capture, Tastaturnavigation und
   begrenzten Damage-Rechtecken als `libreistgui.a` bereitstellen.
@@ -416,10 +427,17 @@ inkompatibler Fensterrahmen.
   besessenem Puffer, Cursor, Viewport und begrenztem Eventdispatch bauen.
 - [x] Mehrzeileneditor an einen echten öffentlichen GUI-Client mit Rendering,
   Dirty-State, Laden, atomarem Speichern und modalen Exit-Dialogen anbinden.
+- [x] Asynchrones Datei-Öffnen-/Speichern-Control mit absolutem Pfad,
+  Pointer-/Tastaturbedienung und typisiertem Accept/Cancel bereitstellen;
+  der Editor bietet Öffnen, Speichern und Speichern unter.
+- [x] Menü- und Dateidialog-Aktivierung im echten Surface-Gastpfad prüfen;
+  vorübergehende Paint-Backpressure verwendet begrenzte Einzeloperationen mit
+  5-ms-Backoff und beendet den Client nicht. Der Broker leert die vierfache
+  IPC-Queue in höchstens 64 fairen Round-Robin-Runden je Desktopzyklus.
 - [ ] Selection/Clipboard und eine allgemeine ScrollView ergänzen; TreeView
   und ComboBox folgen später.
-- [ ] Fensterrahmen, Titel, Schließen, Minimieren und Größenänderung bleiben
-  serverseitig; Clients zeichnen keine konkurrierenden Dekorationen.
+- [x] Fensterrahmen, Titel, Schließen und Größenänderung bleiben serverseitig;
+  Clients zeichnen keine konkurrierenden Dekorationen.
 - [ ] Farb- und Metrikthema zentral versionieren.
 
 ## Stufe 5: echte Desktopprogramme
@@ -427,7 +445,9 @@ inkompatibler Fensterrahmen.
 - [ ] Systeminformationen als erster read-only GUI-Client.
 - [x] Erste begrenzte Dateimanager-Schicht mit Root-Icon, atomarem
   Verzeichnis-Snapshot, Ordner-/Dateiicons und neuen Ordnerfenstern.
-- [x] Editor mit begrenztem Textpuffer, Speichern und klarer Dirty-Anzeige.
+- [x] Editor als separaten, asynchronen Surface-Client mit begrenztem
+  Textpuffer, Speichern, Dirty-Anzeige, lokalen Eingaben, Resize-Configure und
+  modalem Close-/Save-Vertrag betreiben.
 - [ ] Terminalemulator als eigener GUI-Client statt globaler Console-Ausgabe.
 - [x] Verzeichnisse per Doppelklick/Enter in einem neuen Fenster öffnen und
   `.PRG`-Dateien über ihren kanonischen VFS-Pfad starten.
@@ -440,9 +460,10 @@ inkompatibler Fensterrahmen.
 - [ ] Legacy-Vollbildbrücke erst entfernen, wenn alle vier Kernprogramme eine
   getestete GUI-Variante besitzen.
 
-Der aktuelle Explorer ist bewusst compositorintern und auf vier Fenster sowie
+Der aktuelle Explorer ist bewusst compositorintern und auf acht Fenster sowie
 32 Einträge je Snapshot begrenzt. Ein vollständiger Client/Server-Dateimanager
-folgt erst mit Surface-IPC. Bis dahin kann ein gestartetes Legacy-Programm den
+folgt als eigener Client in einer späteren Stufe. Noch nicht migrierte
+Legacy-Programme können den
 Bildschirm temporär verwenden; der Desktop bleibt Elternprozess und setzt
 seine Szene nach `wait` ohne Shellwechsel oder zusätzlichen Tastendialog neu
 zusammen.

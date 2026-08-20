@@ -23,6 +23,21 @@ enum desktop_surface_status {
     DESKTOP_SURFACE_ESTATE = -114
 };
 
+enum desktop_surface_paint_type {
+    DESKTOP_SURFACE_PAINT_NONE = 0U,
+    DESKTOP_SURFACE_PAINT_FILL,
+    DESKTOP_SURFACE_PAINT_TEXT
+};
+
+typedef struct desktop_surface_paint_command {
+    uint32_t type;
+    reist_gui_rect_t rect;
+    uint32_t foreground;
+    uint32_t background;
+    uint32_t text_length;
+    char text[REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY];
+} desktop_surface_paint_command_t;
+
 typedef struct desktop_surface_slot {
     uint32_t active;
     reist_gui_surface_owner_t owner;
@@ -30,6 +45,7 @@ typedef struct desktop_surface_slot {
     uint32_t role;
     uint32_t configured_serial;
     uint32_t acknowledged_serial;
+    uint32_t configure_sent;
     uint32_t width;
     uint32_t height;
     uint32_t attached_buffer;
@@ -38,6 +54,16 @@ typedef struct desktop_surface_slot {
     uint32_t committed;
     uint32_t window_index;
     uint32_t close_sent;
+    char title[REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY];
+    desktop_surface_paint_command_t pending_paint[
+        REIST_GUI_SURFACE_MAX_PAINT_COMMANDS];
+    desktop_surface_paint_command_t committed_paint[
+        REIST_GUI_SURFACE_MAX_PAINT_COMMANDS];
+    uint32_t pending_paint_count;
+    uint32_t committed_paint_count;
+    uint32_t paint_active;
+    uint32_t paint_generation;
+    uint32_t presented_generation;
     reist_gui_surface_damage_t damage;
     reist_gui_surface_input_t pending_events[
         REIST_GUI_SURFACE_MAX_PENDING_EVENTS];
@@ -73,6 +99,11 @@ int desktop_surface_ack_configure(desktop_surface_manager_t *manager,
                                   reist_gui_surface_owner_t owner,
                                   reist_gui_surface_handle_t handle,
                                   uint32_t serial);
+int desktop_surface_reconfigure(desktop_surface_manager_t *manager,
+                                reist_gui_surface_owner_t owner,
+                                reist_gui_surface_handle_t handle,
+                                uint32_t width, uint32_t height,
+                                reist_gui_surface_configure_t *configure);
 int desktop_surface_attach(desktop_surface_manager_t *manager,
                            reist_gui_surface_owner_t owner,
                            reist_gui_surface_handle_t handle,
@@ -106,6 +137,26 @@ int desktop_surface_input_dequeue(desktop_surface_manager_t *manager,
                                   reist_gui_surface_owner_t owner,
                                   reist_gui_surface_handle_t handle,
                                   reist_gui_surface_input_t *event);
+int desktop_surface_set_title(desktop_surface_manager_t *manager,
+                              reist_gui_surface_owner_t owner,
+                              reist_gui_surface_handle_t handle,
+                              const char *title, uint32_t length);
+int desktop_surface_paint_begin(desktop_surface_manager_t *manager,
+                                reist_gui_surface_owner_t owner,
+                                reist_gui_surface_handle_t handle);
+int desktop_surface_paint_fill(desktop_surface_manager_t *manager,
+                               reist_gui_surface_owner_t owner,
+                               reist_gui_surface_handle_t handle,
+                               reist_gui_rect_t rect, uint32_t color);
+int desktop_surface_paint_text(desktop_surface_manager_t *manager,
+                               reist_gui_surface_owner_t owner,
+                               reist_gui_surface_handle_t handle,
+                               reist_gui_rect_t rect, uint32_t foreground,
+                               uint32_t background, const char *text,
+                               uint32_t length);
+int desktop_surface_paint_commit(desktop_surface_manager_t *manager,
+                                 reist_gui_surface_owner_t owner,
+                                 reist_gui_surface_handle_t handle);
 
 /** Validate and apply one complete wire message without partial mutation. */
 int desktop_surface_dispatch_message(
