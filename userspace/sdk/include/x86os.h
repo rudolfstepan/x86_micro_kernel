@@ -593,6 +593,9 @@ typedef struct {
 #define X86OS_DISPLAY_FRAME_CANCEL 5U
 #define X86OS_DISPLAY_FRAME_STAGE_BLIT 6U
 #define X86OS_DISPLAY_DRAW_PIXELS 7U
+#define X86OS_DISPLAY_SURFACE_BUFFER_CREATE 8U
+#define X86OS_DISPLAY_SURFACE_BUFFER_DESTROY 9U
+#define X86OS_DISPLAY_SURFACE_BUFFER_DRAW 10U
 
 typedef struct {
     uint32_t version;
@@ -701,6 +704,40 @@ typedef struct {
     uint32_t pixel_count;
     uint32_t reserved;
 } x86os_display_pixels_t;
+
+/** Immutable compositor pixel resource. CREATE fills id and generation. */
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t flags;
+    uint32_t buffer_id;
+    uint32_t buffer_generation;
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride_pixels;
+    uint32_t pixels_address;
+    uint32_t pixel_count;
+    uint32_t reserved;
+} x86os_display_surface_buffer_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t flags;
+    uint32_t buffer_id;
+    uint32_t buffer_generation;
+    int32_t owner_pid;
+    uint32_t owner_generation;
+    uint32_t source_x;
+    uint32_t source_y;
+    int32_t destination_x;
+    int32_t destination_y;
+    uint32_t width;
+    uint32_t height;
+    uint32_t reserved[2];
+} x86os_display_surface_buffer_draw_t;
 
 #define X86OS_MOUSE_EVENT_VERSION 1U
 #define X86OS_MOUSE_BUTTON_LEFT 0x01U
@@ -1324,6 +1361,25 @@ int x86os_display_frame_stage_blit(uint32_t serial,
 /** Uploads one validated packed-XRGB8888 rectangle in a single presentation. */
 int x86os_draw_pixels(int32_t x, int32_t y, uint32_t width, uint32_t height,
                       const uint32_t *pixels, uint32_t stride_pixels);
+/**
+ * Copy one complete immutable XRGB8888 surface into a generation-scoped
+ * kernel resource. The creating process remains owner; only its live parent
+ * process may consume the resource. No framebuffer mapping is exposed.
+ */
+int x86os_display_surface_buffer_create(
+    uint32_t width, uint32_t height, const uint32_t *pixels,
+    uint32_t stride_pixels, uint32_t *buffer_id,
+    uint32_t *buffer_generation);
+int x86os_display_surface_buffer_destroy(
+    uint32_t buffer_id, uint32_t buffer_generation);
+/** Draw a clipped subrectangle; authorization is checked against owner and
+ * consumer process generations before any framebuffer side effect. */
+int x86os_display_surface_buffer_draw(
+    int owner_pid, uint32_t owner_generation,
+    uint32_t buffer_id, uint32_t buffer_generation,
+    uint32_t source_x, uint32_t source_y,
+    int32_t destination_x, int32_t destination_y,
+    uint32_t width, uint32_t height);
 int x86os_mouse_event(x86os_mouse_event_t* event);
 int x86os_pointer_update(int32_t x, int32_t y, uint32_t visible);
 int x86os_usb_diagnostics(x86os_usb_diagnostics_t* diagnostics);

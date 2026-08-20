@@ -122,9 +122,10 @@ static int receive_message(reist_gui_surface_client_t *client,
     return receive_wire_message(client, message, timeout_ms);
 }
 
-static int transact(reist_gui_surface_client_t *client,
-                    const reist_gui_surface_message_t *request,
-                    uint32_t expected_type) {
+static int transact_response(reist_gui_surface_client_t *client,
+                             const reist_gui_surface_message_t *request,
+                             uint32_t expected_type,
+                             reist_gui_surface_message_t *response_out) {
     int result = send_message(client, request);
     if (result != 0) return result;
     for (uint32_t attempt = 0U;
@@ -134,8 +135,10 @@ static int transact(reist_gui_surface_client_t *client,
         if (result != 0) return result;
         if (response.type == expected_type &&
             response.surface.id == client->surface.id &&
-            response.surface.generation == client->surface.generation)
+            response.surface.generation == client->surface.generation) {
+            if (response_out != 0) *response_out = response;
             return (int32_t)response.flags;
+        }
         if (response.type != REIST_GUI_SURFACE_INPUT &&
             response.type != REIST_GUI_SURFACE_CLOSE &&
             response.type != REIST_GUI_SURFACE_CONFIGURE)
@@ -144,6 +147,12 @@ static int transact(reist_gui_surface_client_t *client,
         if (result != 0) return result;
     }
     return -75;
+}
+
+static int transact(reist_gui_surface_client_t *client,
+                    const reist_gui_surface_message_t *request,
+                    uint32_t expected_type) {
+    return transact_response(client, request, expected_type, 0);
 }
 
 static uint32_t bounded_text_length(const char *text, uint32_t capacity) {
@@ -343,7 +352,7 @@ int reist_gui_surface_client_buffer_create(
     message.stride_bytes = buffer->stride_bytes;
     message.format = buffer->format;
     message.byte_size = buffer->byte_size;
-    return send_message(client, &message);
+    return transact(client, &message, REIST_GUI_SURFACE_BUFFER_CREATE);
 }
 
 int reist_gui_surface_client_buffer_destroy(
@@ -355,7 +364,7 @@ int reist_gui_surface_client_buffer_destroy(
     prepare(&message, REIST_GUI_SURFACE_BUFFER_DESTROY, client);
     message.buffer_id = capability_id;
     message.buffer_generation = capability_generation;
-    return send_message(client, &message);
+    return transact(client, &message, REIST_GUI_SURFACE_BUFFER_DESTROY);
 }
 
 int reist_gui_surface_client_attach(reist_gui_surface_client_t *client,
@@ -369,7 +378,7 @@ int reist_gui_surface_client_attach(reist_gui_surface_client_t *client,
     message.buffer_generation = buffer_generation;
     message.width = client->width;
     message.height = client->height;
-    return send_message(client, &message);
+    return transact(client, &message, REIST_GUI_SURFACE_ATTACH);
 }
 
 int reist_gui_surface_client_damage(reist_gui_surface_client_t *client,
@@ -383,14 +392,31 @@ int reist_gui_surface_client_damage(reist_gui_surface_client_t *client,
     reist_gui_surface_message_t message;
     prepare(&message, REIST_GUI_SURFACE_DAMAGE, client);
     message.damage = damage;
-    return send_message(client, &message);
+    return transact(client, &message, REIST_GUI_SURFACE_DAMAGE);
 }
 
 int reist_gui_surface_client_commit(reist_gui_surface_client_t *client) {
+    return reist_gui_surface_client_commit_with_release(client, 0, 0);
+}
+
+int reist_gui_surface_client_commit_with_release(
+    reist_gui_surface_client_t *client, uint32_t *released_buffer_id,
+    uint32_t *released_buffer_generation) {
     if (!valid_client(client) || client->acknowledged_serial == 0U) return -22;
     reist_gui_surface_message_t message;
     prepare(&message, REIST_GUI_SURFACE_COMMIT, client);
-    return send_message(client, &message);
+    reist_gui_surface_message_t response;
+    int result = transact_response(
+        client, &message, REIST_GUI_SURFACE_BUFFER_RELEASE, &response);
+    if (result == 0) {
+        if ((response.buffer_id == 0U) !=
+            (response.buffer_generation == 0U)) return -84;
+        if (released_buffer_id != 0)
+            *released_buffer_id = response.buffer_id;
+        if (released_buffer_generation != 0)
+            *released_buffer_generation = response.buffer_generation;
+    }
+    return result;
 }
 
 int reist_gui_surface_client_receive(reist_gui_surface_client_t *client,

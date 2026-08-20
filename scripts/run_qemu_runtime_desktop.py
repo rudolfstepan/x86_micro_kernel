@@ -258,7 +258,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                                 f"Editor Surface failed: {marker}"
                             )
                         if ("DESKTOP_SURFACE_OK" in probe_text and
-                                "NOTEPAD_SURFACE_READY" in probe_text and
+                            "NOTEPAD_SURFACE_READY" in probe_text and
+                            "IMAGEVIEWER_SURFACE_READY" in probe_text and
                                 "NOTEPAD_SURFACE_DOCUMENT_READY" in
                                 probe_text and
                                 "NOTEPAD_SURFACE_MENU_READY" in probe_text and

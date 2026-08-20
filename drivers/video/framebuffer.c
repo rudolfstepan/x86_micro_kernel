@@ -38,6 +38,41 @@ static uint8_t fb_blue_size = 0;
 static int terminal_cols = 0;
 static int terminal_rows = 0;
 
+#define FB_SURFACE_BUFFER_CAPACITY 8U
+#define FB_SURFACE_BUFFER_TOTAL_BYTES (8U * 1024U * 1024U)
+#define FB_SURFACE_BUFFER_BLOCK_BYTES 4096U
+#define FB_SURFACE_BUFFER_BLOCK_COUNT \
+    (FB_SURFACE_BUFFER_TOTAL_BYTES / FB_SURFACE_BUFFER_BLOCK_BYTES)
+#define FB_SURFACE_BUFFER_BITMAP_WORDS \
+    (FB_SURFACE_BUFFER_BLOCK_COUNT / 32U)
+
+typedef struct {
+    bool active;
+    bool constructing;
+    bool revoked;
+    int owner_pid;
+    uint32_t owner_generation;
+    int consumer_pid;
+    uint32_t consumer_generation;
+    uint32_t generation;
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride_pixels;
+    uint32_t byte_size;
+    uint32_t first_block;
+    uint32_t block_count;
+    uint32_t references;
+    uint32_t *pixels;
+} framebuffer_surface_buffer_t;
+
+static framebuffer_surface_buffer_t
+    surface_buffers[FB_SURFACE_BUFFER_CAPACITY];
+static uint32_t surface_buffer_storage[
+    FB_SURFACE_BUFFER_TOTAL_BYTES / sizeof(uint32_t)]
+    __attribute__((aligned(FB_SURFACE_BUFFER_BLOCK_BYTES)));
+static uint32_t surface_buffer_block_bitmap[FB_SURFACE_BUFFER_BITMAP_WORDS];
+static spinlock_t surface_buffer_lock = SPINLOCK_INIT;
+
 // Terminal state
 static int cursor_x = 0;
 static int cursor_y = 0;
@@ -47,6 +82,8 @@ static uint32_t bg_color = FB_COLOR_BLACK;
 static void framebuffer_clear_internal(bool present);
 static void framebuffer_present_rect(uint32_t x, uint32_t y,
                                      uint32_t width, uint32_t height);
+static void framebuffer_surface_buffer_process_cleanup(
+    int pid, uint32_t generation);
 
 // Simple 8x16 bitmap font (subset of characters)
 // Each character is 16 bytes (16 rows of 8 pixels)
@@ -5047,6 +5084,8 @@ int framebuffer_frame_draw_leave(int owner_pid, uint32_t owner_generation,
 
 void framebuffer_frame_process_cleanup(int owner_pid,
                                        uint32_t owner_generation) {
+    framebuffer_surface_buffer_process_cleanup(
+        owner_pid, owner_generation);
     display_frame_rect_t damage[DISPLAY_FRAME_DAMAGE_CAPACITY];
     uint32_t damage_count = 0U;
     uint32_t action = 0U;
@@ -5496,6 +5535,249 @@ bool framebuffer_present_pixels(uint32_t x, uint32_t y,
         return false;
     framebuffer_present_rect(x, y, width, height);
     return true;
+}
+
+static bool surface_buffer_block_used(uint32_t block) {
+    return (surface_buffer_block_bitmap[block / 32U] &
+            (1U << (block % 32U))) != 0U;
+}
+
+static void surface_buffer_mark_blocks(uint32_t first_block,
+                                       uint32_t block_count,
+                                       bool used) {
+    for (uint32_t offset = 0U; offset < block_count; ++offset) {
+        uint32_t block = first_block + offset;
+        uint32_t mask = 1U << (block % 32U);
+        if (used)
+            surface_buffer_block_bitmap[block / 32U] |= mask;
+        else
+            surface_buffer_block_bitmap[block / 32U] &= ~mask;
+    }
+}
+
+static bool surface_buffer_allocate_blocks(uint32_t byte_size,
+                                           uint32_t *first_block,
+                                           uint32_t *block_count) {
+    uint32_t required =
+        (byte_size + FB_SURFACE_BUFFER_BLOCK_BYTES - 1U) /
+        FB_SURFACE_BUFFER_BLOCK_BYTES;
+    if (required == 0U || required > FB_SURFACE_BUFFER_BLOCK_COUNT)
+        return false;
+    uint32_t run_start = 0U;
+    uint32_t run_length = 0U;
+    for (uint32_t block = 0U; block < FB_SURFACE_BUFFER_BLOCK_COUNT;
+         ++block) {
+        if (!surface_buffer_block_used(block)) {
+            if (run_length == 0U) run_start = block;
+            if (++run_length == required) {
+                surface_buffer_mark_blocks(run_start, required, true);
+                *first_block = run_start;
+                *block_count = required;
+                return true;
+            }
+        } else {
+            run_length = 0U;
+        }
+    }
+    return false;
+}
+
+static void surface_buffer_release_storage(
+    framebuffer_surface_buffer_t *buffer) {
+    if (buffer == NULL || buffer->pixels == NULL || buffer->block_count == 0U)
+        return;
+    surface_buffer_mark_blocks(buffer->first_block, buffer->block_count, false);
+    buffer->pixels = NULL;
+    buffer->byte_size = 0U;
+    buffer->first_block = 0U;
+    buffer->block_count = 0U;
+    buffer->revoked = false;
+}
+
+static void surface_buffer_release_reference(
+    framebuffer_surface_buffer_t *buffer) {
+    uint32_t flags = spinlock_acquire_irq(&surface_buffer_lock);
+    if (buffer != NULL && buffer->references != 0U) --buffer->references;
+    if (buffer != NULL && buffer->references == 0U && buffer->revoked &&
+        buffer->pixels != NULL)
+        surface_buffer_release_storage(buffer);
+    spinlock_release_irq(&surface_buffer_lock, flags);
+}
+
+int framebuffer_surface_buffer_create(
+    int owner_pid, uint32_t owner_generation,
+    int consumer_pid, uint32_t consumer_generation,
+    uint32_t width, uint32_t height, uint32_t stride_pixels,
+    const uint32_t *pixels, uint32_t pixel_count,
+    uint32_t *buffer_id, uint32_t *buffer_generation) {
+    if (owner_pid <= 0 || owner_generation == 0U || consumer_pid <= 0 ||
+        consumer_generation == 0U || width == 0U || height == 0U ||
+        width > FB_WIDTH || height > FB_HEIGHT || stride_pixels < width ||
+        pixels == NULL || buffer_id == NULL || buffer_generation == NULL ||
+        height > UINT32_MAX / stride_pixels ||
+        pixel_count != stride_pixels * height ||
+        pixel_count > FB_SHADOW_CAPACITY / sizeof(uint32_t)) return -22;
+    uint32_t byte_size = pixel_count * sizeof(uint32_t);
+    int selected = -1;
+    uint32_t first_block = 0U;
+    uint32_t block_count = 0U;
+    uint32_t flags = spinlock_acquire_irq(&surface_buffer_lock);
+    for (uint32_t index = 0U; index < FB_SURFACE_BUFFER_CAPACITY; ++index) {
+        if (!surface_buffers[index].active &&
+            !surface_buffers[index].constructing &&
+            surface_buffers[index].pixels == NULL) {
+            selected = (int)index;
+            break;
+        }
+    }
+    if (selected >= 0 &&
+        surface_buffer_allocate_blocks(byte_size, &first_block,
+                                       &block_count)) {
+        framebuffer_surface_buffer_t *buffer = &surface_buffers[selected];
+        ++buffer->generation;
+        if (buffer->generation == 0U) ++buffer->generation;
+        buffer->active = false;
+        buffer->constructing = true;
+        buffer->revoked = false;
+        buffer->owner_pid = owner_pid;
+        buffer->owner_generation = owner_generation;
+        buffer->consumer_pid = consumer_pid;
+        buffer->consumer_generation = consumer_generation;
+        buffer->width = width;
+        buffer->height = height;
+        buffer->stride_pixels = stride_pixels;
+        buffer->byte_size = byte_size;
+        buffer->first_block = first_block;
+        buffer->block_count = block_count;
+        buffer->references = 0U;
+        buffer->pixels = surface_buffer_storage +
+            (first_block * FB_SURFACE_BUFFER_BLOCK_BYTES) /
+                sizeof(uint32_t);
+    } else {
+        selected = -1;
+    }
+    spinlock_release_irq(&surface_buffer_lock, flags);
+    if (selected < 0) return -75;
+    framebuffer_surface_buffer_t *buffer = &surface_buffers[selected];
+    bool valid = true;
+    for (uint32_t index = 0U; index < pixel_count; ++index) {
+        uint32_t pixel = pixels[index];
+        if ((pixel & 0xFF000000U) != 0U) {
+            valid = false;
+            break;
+        }
+        buffer->pixels[index] = pixel;
+    }
+    flags = spinlock_acquire_irq(&surface_buffer_lock);
+    if (!valid || buffer->revoked || !buffer->constructing) {
+        surface_buffer_release_storage(buffer);
+        buffer->active = false;
+        buffer->constructing = false;
+        spinlock_release_irq(&surface_buffer_lock, flags);
+        return valid ? -116 : -22;
+    }
+    buffer->constructing = false;
+    buffer->active = true;
+    *buffer_id = (uint32_t)selected + 1U;
+    *buffer_generation = buffer->generation;
+    spinlock_release_irq(&surface_buffer_lock, flags);
+    return 0;
+}
+
+int framebuffer_surface_buffer_destroy(
+    int owner_pid, uint32_t owner_generation,
+    uint32_t buffer_id, uint32_t buffer_generation) {
+    if (owner_pid <= 0 || owner_generation == 0U || buffer_id == 0U ||
+        buffer_id > FB_SURFACE_BUFFER_CAPACITY ||
+        buffer_generation == 0U) return -22;
+    uint32_t flags = spinlock_acquire_irq(&surface_buffer_lock);
+    framebuffer_surface_buffer_t *buffer = &surface_buffers[buffer_id - 1U];
+    if (!buffer->active || buffer->generation != buffer_generation ||
+        buffer->owner_pid != owner_pid ||
+        buffer->owner_generation != owner_generation) {
+        spinlock_release_irq(&surface_buffer_lock, flags);
+        return -116;
+    }
+    buffer->active = false;
+    buffer->revoked = true;
+    if (buffer->references == 0U) surface_buffer_release_storage(buffer);
+    spinlock_release_irq(&surface_buffer_lock, flags);
+    return 0;
+}
+
+int framebuffer_surface_buffer_draw(
+    int consumer_pid, uint32_t consumer_generation,
+    int owner_pid, uint32_t owner_generation,
+    uint32_t buffer_id, uint32_t buffer_generation,
+    uint32_t source_x, uint32_t source_y,
+    int32_t destination_x, int32_t destination_y,
+    uint32_t width, uint32_t height, uint64_t now_ms) {
+    if (!fb_address || consumer_pid <= 0 || consumer_generation == 0U ||
+        owner_pid <= 0 || owner_generation == 0U || buffer_id == 0U ||
+        buffer_id > FB_SURFACE_BUFFER_CAPACITY ||
+        buffer_generation == 0U || destination_x < 0 || destination_y < 0 ||
+        width == 0U || height == 0U ||
+        (uint32_t)destination_x >= fb_width ||
+        (uint32_t)destination_y >= fb_height ||
+        width > fb_width - (uint32_t)destination_x ||
+        height > fb_height - (uint32_t)destination_y) return -22;
+
+    uint32_t flags = spinlock_acquire_irq(&surface_buffer_lock);
+    framebuffer_surface_buffer_t *buffer = &surface_buffers[buffer_id - 1U];
+    if (!buffer->active || buffer->generation != buffer_generation ||
+        buffer->owner_pid != owner_pid ||
+        buffer->owner_generation != owner_generation ||
+        buffer->consumer_pid != consumer_pid ||
+        buffer->consumer_generation != consumer_generation ||
+        source_x >= buffer->width || source_y >= buffer->height ||
+        width > buffer->width - source_x ||
+        height > buffer->height - source_y || buffer->pixels == NULL) {
+        spinlock_release_irq(&surface_buffer_lock, flags);
+        return -13;
+    }
+    ++buffer->references;
+    uint32_t *source = buffer->pixels;
+    uint32_t stride = buffer->stride_pixels;
+    spinlock_release_irq(&surface_buffer_lock, flags);
+
+    int result = framebuffer_frame_draw_enter(
+        consumer_pid, consumer_generation, now_ms);
+    if (result == 0) {
+        for (uint32_t row = 0U; row < height && result == 0; ++row) {
+            const uint32_t *span = source +
+                (source_y + row) * stride + source_x;
+            if (!framebuffer_write_xrgb8888_span(
+                    (uint32_t)destination_x,
+                    (uint32_t)destination_y + row, span, width))
+                result = -19;
+        }
+        if (result == 0 && !framebuffer_present_pixels(
+                (uint32_t)destination_x, (uint32_t)destination_y,
+                width, height)) result = -19;
+        int leave = framebuffer_frame_draw_leave(
+            consumer_pid, consumer_generation, now_ms);
+        if (result == 0) result = leave;
+    }
+    surface_buffer_release_reference(buffer);
+    return result;
+}
+
+static void framebuffer_surface_buffer_process_cleanup(
+    int pid, uint32_t generation) {
+    uint32_t flags = spinlock_acquire_irq(&surface_buffer_lock);
+    for (uint32_t index = 0U; index < FB_SURFACE_BUFFER_CAPACITY; ++index) {
+        framebuffer_surface_buffer_t *buffer = &surface_buffers[index];
+        if ((!buffer->active && !buffer->constructing) ||
+            !((buffer->owner_pid == pid &&
+               buffer->owner_generation == generation) ||
+              (buffer->consumer_pid == pid &&
+               buffer->consumer_generation == generation))) continue;
+        buffer->active = false;
+        buffer->revoked = true;
+        if (!buffer->constructing && buffer->references == 0U)
+            surface_buffer_release_storage(buffer);
+    }
+    spinlock_release_irq(&surface_buffer_lock, flags);
 }
 
 bool framebuffer_draw_text_pixels(int32_t x, int32_t y, const char* text,

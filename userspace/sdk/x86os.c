@@ -821,6 +821,84 @@ int x86os_draw_pixels(int32_t x, int32_t y, uint32_t width, uint32_t height,
                               (uintptr_t)&request, 0, 0);
 }
 
+int x86os_display_surface_buffer_create(
+    uint32_t width, uint32_t height, const uint32_t *pixels,
+    uint32_t stride_pixels, uint32_t *buffer_id,
+    uint32_t *buffer_generation) {
+    if (!pixels || !buffer_id || !buffer_generation || width == 0U ||
+        height == 0U || stride_pixels < width ||
+        (uint64_t)stride_pixels * height > UINT32_MAX) return -22;
+    x86os_display_surface_buffer_t request = {
+        .version = X86OS_DISPLAY_CONTROL_VERSION,
+        .struct_size = sizeof(request),
+        .operation = X86OS_DISPLAY_SURFACE_BUFFER_CREATE,
+        .flags = 0U,
+        .buffer_id = 0U,
+        .buffer_generation = 0U,
+        .width = width,
+        .height = height,
+        .stride_pixels = stride_pixels,
+        .pixels_address = (uint32_t)(uintptr_t)pixels,
+        .pixel_count = stride_pixels * height,
+        .reserved = 0U,
+    };
+    int result = (int)x86os_syscall(
+        X86OS_SYS_DISPLAY_CONTROL, (uintptr_t)&request, 0, 0);
+    if (result == 0) {
+        if (request.buffer_id == 0U || request.buffer_generation == 0U)
+            return -5;
+        *buffer_id = request.buffer_id;
+        *buffer_generation = request.buffer_generation;
+    }
+    return result;
+}
+
+int x86os_display_surface_buffer_destroy(
+    uint32_t buffer_id, uint32_t buffer_generation) {
+    if (buffer_id == 0U || buffer_generation == 0U) return -22;
+    x86os_display_surface_buffer_t request = {
+        .version = X86OS_DISPLAY_CONTROL_VERSION,
+        .struct_size = sizeof(request),
+        .operation = X86OS_DISPLAY_SURFACE_BUFFER_DESTROY,
+        .flags = 0U,
+        .buffer_id = buffer_id,
+        .buffer_generation = buffer_generation,
+        .reserved = 0U,
+    };
+    return (int)x86os_syscall(
+        X86OS_SYS_DISPLAY_CONTROL, (uintptr_t)&request, 0, 0);
+}
+
+int x86os_display_surface_buffer_draw(
+    int owner_pid, uint32_t owner_generation,
+    uint32_t buffer_id, uint32_t buffer_generation,
+    uint32_t source_x, uint32_t source_y,
+    int32_t destination_x, int32_t destination_y,
+    uint32_t width, uint32_t height) {
+    if (owner_pid <= 0 || owner_generation == 0U || buffer_id == 0U ||
+        buffer_generation == 0U || destination_x < 0 || destination_y < 0 ||
+        width == 0U || height == 0U) return -22;
+    x86os_display_surface_buffer_draw_t request = {
+        .version = X86OS_DISPLAY_CONTROL_VERSION,
+        .struct_size = sizeof(request),
+        .operation = X86OS_DISPLAY_SURFACE_BUFFER_DRAW,
+        .flags = 0U,
+        .buffer_id = buffer_id,
+        .buffer_generation = buffer_generation,
+        .owner_pid = owner_pid,
+        .owner_generation = owner_generation,
+        .source_x = source_x,
+        .source_y = source_y,
+        .destination_x = destination_x,
+        .destination_y = destination_y,
+        .width = width,
+        .height = height,
+        .reserved = {0U, 0U},
+    };
+    return (int)x86os_syscall(
+        X86OS_SYS_DISPLAY_CONTROL, (uintptr_t)&request, 0, 0);
+}
+
 int x86os_mouse_event(x86os_mouse_event_t* event) {
     if (!event) return -22;
     event->version = X86OS_MOUSE_EVENT_VERSION;

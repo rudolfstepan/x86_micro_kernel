@@ -52,6 +52,8 @@ typedef struct desktop_surface_slot {
     uint32_t attached_generation;
     uint32_t attached;
     uint32_t committed;
+    uint32_t committed_buffer;
+    uint32_t committed_buffer_generation;
     uint32_t window_index;
     uint32_t close_sent;
     char title[REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY];
@@ -86,6 +88,8 @@ typedef struct desktop_surface_commit_result {
     uint32_t committed;
     uint32_t buffer_id;
     uint32_t buffer_generation;
+    uint32_t released_buffer_id;
+    uint32_t released_buffer_generation;
     reist_gui_surface_damage_t damage;
 } desktop_surface_commit_result_t;
 

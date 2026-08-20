@@ -139,7 +139,10 @@ installed as `/usr/gui/bin/imageviewer.prg`. Desktop associations for `.bmp`
 and `.gif` launch it without leaving the graphical session. Image parsing is
 provided exclusively by the public, reentrant `libreistimage` API; the viewer
 does not duplicate codec logic. Demo images are installed below
-`/usr/share/images`.
+`/usr/share/images`. The viewer publishes immutable XRGB8888 buffers through
+the Surface attach/damage/commit contract; only its generation-bound parent
+compositor can draw clipped pixels from that resource. Resize replaces the
+buffer atomically and releases the old generation afterwards.
 
 Build the SDK and the documented example with the repository's upstream
 Zig/LLVM toolchain integration:

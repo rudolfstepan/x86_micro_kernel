@@ -64,6 +64,17 @@ int main(void) {
     desktop_surface_commit_result_t result;
     assert(desktop_surface_commit(&manager, owner, handle, &result) == 0);
     assert(result.committed == 1U && result.damage.count == 1U);
+    assert(result.released_buffer_id == 0U);
+    assert(desktop_surface_buffer_destroy(&manager, owner, 1U, 1U) < 0);
+    buffer.capability_id = 3U;
+    assert(desktop_surface_buffer_create(&manager, owner, &buffer) == 0);
+    assert(desktop_surface_attach(&manager, owner, handle,
+        3U, 1U, 320U, 200U) == 0);
+    assert(desktop_surface_damage(&manager, owner, handle,
+        (reist_gui_rect_t){0, 0, 320U, 200U}) == 0);
+    assert(desktop_surface_commit(&manager, owner, handle, &result) == 0);
+    assert(result.released_buffer_id == 1U &&
+           result.released_buffer_generation == 1U);
     assert(desktop_surface_buffer_destroy(&manager, owner, 1U, 1U) == 0);
     reist_gui_surface_configure_t resized;
     assert(desktop_surface_reconfigure(
@@ -75,6 +86,7 @@ int main(void) {
     assert(desktop_surface_ack_configure(&manager, owner, handle,
         resized.serial + 1U) < 0);
     assert(desktop_surface_destroy(&manager, owner, handle) == 0);
+    assert(desktop_surface_buffer_destroy(&manager, owner, 3U, 1U) == 0);
     assert(desktop_surface_destroy(&manager, owner, handle) < 0);
 
     reist_gui_surface_handle_t bounded_handle;

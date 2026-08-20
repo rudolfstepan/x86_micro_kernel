@@ -1010,6 +1010,20 @@ static void render_window(const desktop_render_context_t *context,
                           title_color);
     }
 
+    if (surface != 0 && surface->committed &&
+        surface->committed_buffer != 0U) {
+        desktop_rect_t visible;
+        if (intersect_rects(client, context->clip, &visible)) {
+            (void)x86os_display_surface_buffer_draw(
+                (int)surface->owner.pid,
+                surface->owner.process_generation,
+                surface->committed_buffer,
+                surface->committed_buffer_generation,
+                (uint32_t)(visible.x - client.x),
+                (uint32_t)(visible.y - client.y),
+                visible.x, visible.y, visible.width, visible.height);
+        }
+    }
     if (surface != 0)
         for (uint32_t index = 0U;
              index < surface->committed_paint_count; ++index) {
@@ -1811,7 +1825,8 @@ static int format_surface_argument(x86os_ipc_handle_t endpoint) {
 
 static uint32_t program_uses_surface(const char *program) {
     return path_equal_ascii_case(program, "/usr/gui/bin/surfacedemo.prg") ||
-        path_equal_ascii_case(program, "/usr/gui/bin/notepad.prg");
+        path_equal_ascii_case(program, "/usr/gui/bin/notepad.prg") ||
+        path_equal_ascii_case(program, "/usr/gui/bin/imageviewer.prg");
 }
 
 static int launch_program(desktop_surface_runtime_t *surface_runtime,
@@ -1882,6 +1897,34 @@ static int launch_program(desktop_surface_runtime_t *surface_runtime,
         return pid;
     }
     return 0;
+}
+
+static uint32_t active_surface_count(
+    const desktop_surface_manager_t *surfaces) {
+    uint32_t count = 0U;
+    for (uint32_t index = 0U; index < DESKTOP_SURFACE_CAPACITY; ++index)
+        if (surfaces->slots[index].active) ++count;
+    return count;
+}
+
+static int launch_surface_probe_client(
+    desktop_surface_runtime_t *runtime,
+    desktop_surface_manager_t *surfaces,
+    const char *program, const char *argument,
+    uint32_t expected_surface_count) {
+    int result = launch_program(runtime, program, argument);
+    if (result != 0) return result;
+    /* The probe starts several clients without user input between launches.
+     * Service each new endpoint before launching the next process so a client
+     * cannot exhaust its bounded configure timeout behind later spawns. */
+    for (uint32_t attempt = 0U; attempt < 250U; ++attempt) {
+        result = desktop_surface_runtime_poll(runtime, surfaces);
+        if (result != 0) return result;
+        if (active_surface_count(surfaces) >= expected_surface_count)
+            return 0;
+        (void)x86os_sleep_ms(1U);
+    }
+    return -110;
 }
 
 static void clip_pointer(const x86os_display_info_t *display,
@@ -2675,20 +2718,26 @@ int main(int argc, char **argv) {
         &initial_dirty, 0, 0U, 0U, &metrics);
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
     if (surface_probe) {
-        int probe_status = launch_program(
-            &surface_runtime, "/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT");
+        int probe_status = launch_surface_probe_client(
+            &surface_runtime, &surfaces,
+            "/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT", 1U);
         if (probe_status == 0)
-            probe_status = launch_program(
-                &surface_runtime, "/USR/GUI/BIN/NOTEPAD.PRG",
-                "--menu-probe");
+            probe_status = launch_surface_probe_client(
+                &surface_runtime, &surfaces,
+                "/USR/GUI/BIN/NOTEPAD.PRG", "--menu-probe", 2U);
         if (probe_status == 0)
-            probe_status = launch_program(
-                &surface_runtime, "/USR/GUI/BIN/NOTEPAD.PRG",
-                "--file-dialog-probe");
+            probe_status = launch_surface_probe_client(
+                &surface_runtime, &surfaces,
+                "/USR/GUI/BIN/NOTEPAD.PRG", "--file-dialog-probe", 3U);
         if (probe_status == 0)
-            probe_status = launch_program(
-                &surface_runtime, "/USR/GUI/BIN/NOTEPAD.PRG",
-                "--hover-probe");
+            probe_status = launch_surface_probe_client(
+                &surface_runtime, &surfaces,
+                "/USR/GUI/BIN/NOTEPAD.PRG", "--hover-probe", 4U);
+        if (probe_status == 0)
+            probe_status = launch_surface_probe_client(
+                &surface_runtime, &surfaces,
+                "/USR/GUI/BIN/IMAGEVIEWER.PRG",
+                "/USR/SHARE/IMAGES/DEMO-COLORS.GIF", 5U);
         if (probe_status != 0) {
             x86os_puts("DESKTOP_SURFACE_FAIL launch\n");
             desktop_surface_runtime_shutdown(&surface_runtime);

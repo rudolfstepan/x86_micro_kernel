@@ -106,6 +106,14 @@ int desktop_surface_buffer_destroy(desktop_surface_manager_t *manager,
             manager->slots[i].attached_buffer == capability_id &&
             manager->slots[i].attached_generation == capability_generation)
             return DESKTOP_SURFACE_ESTATE;
+        if (manager->slots[i].active && manager->slots[i].committed &&
+            manager->slots[i].owner.pid == owner.pid &&
+            manager->slots[i].owner.process_generation ==
+                owner.process_generation &&
+            manager->slots[i].committed_buffer == capability_id &&
+            manager->slots[i].committed_buffer_generation ==
+                capability_generation)
+            return DESKTOP_SURFACE_ESTATE;
     }
     uint8_t *bytes = (uint8_t *)&manager->buffers[index];
     for (uint32_t i = 0U; i < sizeof(manager->buffers[index]); ++i)
@@ -432,11 +440,17 @@ int desktop_surface_commit(desktop_surface_manager_t *manager,
     result->committed = 1U;
     result->buffer_id = slot->attached_buffer;
     result->buffer_generation = slot->attached_generation;
+    result->released_buffer_id = slot->committed_buffer;
+    result->released_buffer_generation =
+        slot->committed_buffer_generation;
     result->damage.count = slot->damage.count;
     result->damage.reserved = slot->damage.reserved;
     for (uint32_t i = 0U; i < slot->damage.count; ++i)
         result->damage.rects[i] = slot->damage.rects[i];
     slot->committed = 1U;
+    slot->committed_buffer = slot->attached_buffer;
+    slot->committed_buffer_generation = slot->attached_generation;
+    slot->paint_generation = next_nonzero(&slot->paint_generation);
     slot->damage.count = 0U;
     slot->attached_buffer = 0U;
     slot->attached_generation = 0U;
@@ -539,8 +553,9 @@ int desktop_surface_dispatch_message(
             manager, owner, request->surface, &committed);
         response->type = REIST_GUI_SURFACE_BUFFER_RELEASE;
         if (result == DESKTOP_SURFACE_OK) {
-            response->buffer_id = committed.buffer_id;
-            response->buffer_generation = committed.buffer_generation;
+            response->buffer_id = committed.released_buffer_id;
+            response->buffer_generation =
+                committed.released_buffer_generation;
             response->damage = committed.damage.rects[0];
         }
     } else if (request->type == REIST_GUI_SURFACE_DESTROY) {

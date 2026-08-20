@@ -301,10 +301,10 @@ class DesktopSourceTests(unittest.TestCase):
     def test_surface_program_is_async_and_owned_by_the_compositor(self):
         self.assertIn('"/usr/gui/bin/surfacedemo.prg"', self.source)
         self.assertIn('"/usr/gui/bin/notepad.prg"', self.source)
-        self.assertIn(
-            '&surface_runtime, "/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT"',
-            self.source,
-        )
+        self.assertIn('"/usr/gui/bin/imageviewer.prg"', self.source)
+        self.assertIn("launch_surface_probe_client", self.source)
+        self.assertIn('"/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT", 1U',
+                      self.source)
         self.assertIn("program_uses_surface", self.source)
         self.assertIn("path_equal_ascii_case", self.source)
         surface_classifier = self.source[
@@ -312,7 +312,7 @@ class DesktopSourceTests(unittest.TestCase):
             self.source.index("static int launch_program")
         ]
         self.assertNotIn("text_equal(program", surface_classifier)
-        self.assertEqual(surface_classifier.count("path_equal_ascii_case"), 2)
+        self.assertEqual(surface_classifier.count("path_equal_ascii_case"), 3)
         self.assertIn("desktop_surface_runtime_reserve", self.source)
         self.assertIn("desktop_surface_runtime_bind", self.source)
         self.assertIn("sync_surface_windows", self.source)

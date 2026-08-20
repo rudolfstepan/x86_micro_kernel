@@ -47,13 +47,20 @@ Mitgelieferte Beispiele liegen unter:
 - `/usr/share/images/demo-desktop.bmp`
 - `/usr/share/images/demo-colors.gif`
 
-Der Viewer skaliert große Bilder seitenverhältnisgetreu in den sichtbaren
-Bereich. Die append-only Display-Control-Operation `DRAW_PIXELS` überträgt ein
-vollständiges XRGB8888-Rechteck über die SDK-Funktion `x86os_draw_pixels()`.
-Der Kernel validiert Quelle, Maße, Stride und jeden Farbwert vor dem ersten
-Schreibzugriff, kopiert anschließend in kapazitätsbegrenzten Blöcken und
-veröffentlicht genau ein Damage-Rechteck. Dadurch benötigt der Viewer für die
-Bildfläche einen statt potenziell hunderttausender Zeichen-Syscalls.
+Der Viewer ist im Desktop ein eigener Ring-3-Surface-Client. Er skaliert Bilder
+seitenverhältnisgetreu in seine jeweils bestätigte Clientgröße und publiziert
+einen unveränderlichen XRGB8888-Puffer über `attach`, `damage` und `commit`.
+Der Kernel validiert Quelle, Maße, Stride und jeden Farbwert, bevor die
+generationengebundene Ressource sichtbar wird. Nur der Desktopprozess, der den
+Viewer gestartet hat, darf daraus geclippte Pixel in die Szene übernehmen;
+Anwendung und Codec kennen weder globale Koordinaten noch den Framebuffer.
+Beim Resize wird zuerst der neue Puffer atomar übernommen und erst danach der
+alte Puffer zur Freigabe gemeldet. Prozessende widerruft beide Seiten
+idempotent.
+
+Beim direkten Start aus der Shell bleibt der kompatible Vollbildpfad erhalten.
+Dort überträgt die append-only Display-Control-Operation `DRAW_PIXELS` ein
+vollständiges XRGB8888-Rechteck über `x86os_draw_pixels()`.
 Bei der üblichen nativen XRGB8888-Anordnung von VMware SVGA, VBE und linearen
 PC-Framebuffern werden bereits validierte Pixel zeilenweise direkt in den
 Shadow-Framebuffer kopiert. Die generische Kanalumrechnung bleibt als

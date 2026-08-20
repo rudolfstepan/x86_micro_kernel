@@ -12,6 +12,9 @@
 #define DISPLAY_CONTROL_FRAME_CANCEL 5U
 #define DISPLAY_CONTROL_FRAME_STAGE_BLIT 6U
 #define DISPLAY_CONTROL_DRAW_PIXELS 7U
+#define DISPLAY_CONTROL_SURFACE_BUFFER_CREATE 8U
+#define DISPLAY_CONTROL_SURFACE_BUFFER_DESTROY 9U
+#define DISPLAY_CONTROL_SURFACE_BUFFER_DRAW 10U
 #define DISPLAY_CONTROL_PRESENT_CAPACITY 8U
 
 typedef struct {
@@ -62,6 +65,42 @@ typedef struct {
     uint32_t pixel_count;
     uint32_t reserved;
 } display_pixels_request_t;
+
+/* Immutable, parent-consumer-bound pixel resource used by the Ring-3
+ * compositor.  CREATE copies and validates the complete client buffer before
+ * publishing its generation. */
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t flags;
+    uint32_t buffer_id;
+    uint32_t buffer_generation;
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride_pixels;
+    uint32_t pixels_address;
+    uint32_t pixel_count;
+    uint32_t reserved;
+} display_surface_buffer_request_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t flags;
+    uint32_t buffer_id;
+    uint32_t buffer_generation;
+    int32_t owner_pid;
+    uint32_t owner_generation;
+    uint32_t source_x;
+    uint32_t source_y;
+    int32_t destination_x;
+    int32_t destination_y;
+    uint32_t width;
+    uint32_t height;
+    uint32_t reserved[2];
+} display_surface_buffer_draw_request_t;
 
 typedef struct {
     uint32_t x;

@@ -59,6 +59,10 @@ int main(void) {
     assert(desktop_surface_dispatch_message(
         &manager, owner, &request, &response) == 0);
     assert(response.type == REIST_GUI_SURFACE_BUFFER_RELEASE);
+    assert(response.buffer_id == 0U && response.buffer_generation == 0U);
+    request.type = REIST_GUI_SURFACE_DESTROY;
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
     request.type = REIST_GUI_SURFACE_BUFFER_DESTROY;
     request.buffer_id = 1U;
     request.buffer_generation = 1U;

@@ -102,6 +102,22 @@ bool framebuffer_write_xrgb8888_span(uint32_t x, uint32_t y,
                                      const uint32_t *pixels, uint32_t count);
 bool framebuffer_present_pixels(uint32_t x, uint32_t y,
                                 uint32_t width, uint32_t height);
+int framebuffer_surface_buffer_create(
+    int owner_pid, uint32_t owner_generation,
+    int consumer_pid, uint32_t consumer_generation,
+    uint32_t width, uint32_t height, uint32_t stride_pixels,
+    const uint32_t *pixels, uint32_t pixel_count,
+    uint32_t *buffer_id, uint32_t *buffer_generation);
+int framebuffer_surface_buffer_destroy(
+    int owner_pid, uint32_t owner_generation,
+    uint32_t buffer_id, uint32_t buffer_generation);
+int framebuffer_surface_buffer_draw(
+    int consumer_pid, uint32_t consumer_generation,
+    int owner_pid, uint32_t owner_generation,
+    uint32_t buffer_id, uint32_t buffer_generation,
+    uint32_t source_x, uint32_t source_y,
+    int32_t destination_x, int32_t destination_y,
+    uint32_t width, uint32_t height, uint64_t now_ms);
 bool framebuffer_draw_text_pixels(int32_t x, int32_t y, const char* text,
                                   size_t length, uint32_t foreground_rgb,
                                   uint32_t background_rgb);

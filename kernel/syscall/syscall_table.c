@@ -1921,7 +1921,10 @@ static int syscall_display_control(display_control_request_t *user_request) {
         base.operation != DISPLAY_CONTROL_FRAME_COMMIT &&
         base.operation != DISPLAY_CONTROL_FRAME_CANCEL &&
         base.operation != DISPLAY_CONTROL_FRAME_STAGE_BLIT &&
-        base.operation != DISPLAY_CONTROL_DRAW_PIXELS) return -22;
+        base.operation != DISPLAY_CONTROL_DRAW_PIXELS &&
+        base.operation != DISPLAY_CONTROL_SURFACE_BUFFER_CREATE &&
+        base.operation != DISPLAY_CONTROL_SURFACE_BUFFER_DESTROY &&
+        base.operation != DISPLAY_CONTROL_SURFACE_BUFFER_DRAW) return -22;
 
     Process *process = scheduler_current_process();
     if (process == NULL) return -13;
@@ -1983,6 +1986,73 @@ static int syscall_display_control(display_control_request_t *user_request) {
         int release = framebuffer_frame_draw_leave(
             process->pid, process->generation, pit_monotonic_ms());
         return result != 0 ? result : release;
+    }
+    if (base.operation == DISPLAY_CONTROL_SURFACE_BUFFER_CREATE ||
+        base.operation == DISPLAY_CONTROL_SURFACE_BUFFER_DESTROY) {
+        display_surface_buffer_request_t request;
+        if (base.struct_size < sizeof(request) ||
+            copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return base.struct_size < sizeof(request) ? -22 : -14;
+        if (request.version != DISPLAY_CONTROL_ABI_VERSION ||
+            request.struct_size < sizeof(request) || request.flags != 0U ||
+            request.reserved != 0U) return -22;
+        if (base.operation == DISPLAY_CONTROL_SURFACE_BUFFER_DESTROY) {
+            if (request.buffer_id == 0U ||
+                request.buffer_generation == 0U || request.width != 0U ||
+                request.height != 0U || request.stride_pixels != 0U ||
+                request.pixels_address != 0U || request.pixel_count != 0U)
+                return -22;
+            return framebuffer_surface_buffer_destroy(
+                process->pid, process->generation, request.buffer_id,
+                request.buffer_generation);
+        }
+        uint64_t pixel_count =
+            (uint64_t)request.stride_pixels * request.height;
+        uint64_t byte_count = pixel_count * sizeof(uint32_t);
+        if (request.buffer_id != 0U ||
+            request.buffer_generation != 0U || request.width == 0U ||
+            request.height == 0U || request.stride_pixels < request.width ||
+            pixel_count != request.pixel_count || byte_count > UINT32_MAX ||
+            request.pixels_address == 0U || process->parent_pid <= 0 ||
+            process->parent_generation == 0U ||
+            !process_identity_alive(process->parent_pid,
+                                    process->parent_generation) ||
+            !user_range_accessible(
+                paging_current_directory(), request.pixels_address,
+                (uint32_t)byte_count, false)) return -22;
+        const uint32_t *source =
+            (const uint32_t *)(uintptr_t)request.pixels_address;
+        int result = framebuffer_surface_buffer_create(
+            process->pid, process->generation,
+            process->parent_pid, process->parent_generation,
+            request.width, request.height, request.stride_pixels,
+            source, request.pixel_count, &request.buffer_id,
+            &request.buffer_generation);
+        if (result != 0) return result;
+        if (copy_to_user(user_request, &request, sizeof(request)) != 0) {
+            (void)framebuffer_surface_buffer_destroy(
+                process->pid, process->generation, request.buffer_id,
+                request.buffer_generation);
+            return -14;
+        }
+        return 0;
+    }
+    if (base.operation == DISPLAY_CONTROL_SURFACE_BUFFER_DRAW) {
+        display_surface_buffer_draw_request_t request;
+        if (base.struct_size < sizeof(request) ||
+            copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return base.struct_size < sizeof(request) ? -22 : -14;
+        if (request.version != DISPLAY_CONTROL_ABI_VERSION ||
+            request.struct_size < sizeof(request) || request.flags != 0U ||
+            request.reserved[0] != 0U || request.reserved[1] != 0U)
+            return -22;
+        return framebuffer_surface_buffer_draw(
+            process->pid, process->generation,
+            request.owner_pid, request.owner_generation,
+            request.buffer_id, request.buffer_generation,
+            request.source_x, request.source_y,
+            request.destination_x, request.destination_y,
+            request.width, request.height, pit_monotonic_ms());
     }
     if (base.operation == DISPLAY_CONTROL_FRAME_STAGE_BLIT) {
         display_frame_blit_request_t blit;

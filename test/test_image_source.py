@@ -34,6 +34,14 @@ class ImageLibraryTests(unittest.TestCase):
         self.assertIn('#include "reist/image.h"', viewer)
         self.assertIn("reist_image_decode", viewer)
         self.assertIn("x86os_draw_pixels", viewer)
+        self.assertIn("reist_gui_surface_endpoint_from_argv", viewer)
+        self.assertIn("x86os_display_surface_buffer_create", viewer)
+        self.assertIn("reist_gui_surface_client_commit_with_release", viewer)
+        self.assertIn("IMAGEVIEWER_SURFACE_READY", viewer)
+        surface_viewer = viewer[
+            viewer.index("static int run_surface_viewer"):
+            viewer.index("static int draw_fullscreen")]
+        self.assertNotIn("x86os_draw_pixels", surface_viewer)
         self.assertNotIn("while (x < draw_width)", viewer)
         self.assertNotIn("decode_bmp", viewer)
         self.assertNotIn("gif_lzw", viewer)
@@ -42,6 +50,7 @@ class ImageLibraryTests(unittest.TestCase):
         self.assertIn(".bmp=/usr/gui/bin/imageviewer.prg", associations)
         self.assertIn(".gif=/usr/gui/bin/imageviewer.prg", associations)
         self.assertIn("FILE_READ_CHUNK_CAPACITY = 16U * 1024U", syscalls)
+        self.assertIn("DISPLAY_CONTROL_SURFACE_BUFFER_CREATE", syscalls)
 
 
 if __name__ == "__main__":

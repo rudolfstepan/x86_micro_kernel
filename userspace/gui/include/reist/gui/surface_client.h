@@ -75,6 +75,11 @@ int reist_gui_surface_client_attach(reist_gui_surface_client_t *client,
 int reist_gui_surface_client_damage(reist_gui_surface_client_t *client,
                                     reist_gui_rect_t damage);
 int reist_gui_surface_client_commit(reist_gui_surface_client_t *client);
+/** Commit and return the previously committed buffer once the compositor no
+ * longer references it. Zero/zero means that no older buffer was released. */
+int reist_gui_surface_client_commit_with_release(
+    reist_gui_surface_client_t *client, uint32_t *released_buffer_id,
+    uint32_t *released_buffer_generation);
 /** Receive one compositor event; timeout zero performs a nonblocking poll. */
 int reist_gui_surface_client_receive(reist_gui_surface_client_t *client,
                                      reist_gui_surface_message_t *message,
