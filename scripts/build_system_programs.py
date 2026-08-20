@@ -11,7 +11,8 @@ from pathlib import Path
 
 from build_user_program import ROOT, build, find_zig
 from build_user_sdk import (
-    AUDIO_INCLUDE_ROOT, CORE_INCLUDE_ROOT, GUI_INCLUDE_ROOT, build_sdk,
+    AUDIO_INCLUDE_ROOT, CORE_INCLUDE_ROOT, GUI_INCLUDE_ROOT,
+    IMAGE_INCLUDE_ROOT, build_sdk,
 )
 
 
@@ -46,6 +47,7 @@ PROGRAMS = {
     "GUIDEMO.PRG": ROOT / "userspace/gui/apps/control_gallery/main.c",
     "NOTEPAD.PRG": ROOT / "userspace/gui/apps/notepad/main.c",
     "SOUNDPLAYER.PRG": ROOT / "userspace/gui/apps/sound_player/main.c",
+    "IMAGEVIEWER.PRG": ROOT / "userspace/gui/apps/image_viewer/main.c",
     "MKDIR.PRG": ROOT / "userspace/programs/mkdir.c",
     "RMDIR.PRG": ROOT / "userspace/programs/rmdir.c",
     "DEL.PRG": ROOT / "userspace/programs/del.c",
@@ -91,7 +93,9 @@ PROGRAMS = {
 
 GUI_PROGRAMS = {
     "DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG", "SOUNDPLAYER.PRG",
+    "IMAGEVIEWER.PRG",
 }
+IMAGE_PROGRAMS = {"IMAGEVIEWER.PRG"}
 NETWORK_PARSER_PROGRAMS = {"REIST.PRG"}
 AUDIO_PROGRAMS = {
     "HDA.PRG", "AUDIO.PRG", "AUDIOINFO.PRG", "AUDIOTEST.PRG",
@@ -131,6 +135,7 @@ def main() -> None:
         core_headers = list(CORE_INCLUDE_ROOT.rglob("*.h"))
         gui_headers = list(GUI_INCLUDE_ROOT.rglob("*.h"))
         audio_headers = list(AUDIO_INCLUDE_ROOT.rglob("*.h"))
+        image_headers = list(IMAGE_INCLUDE_ROOT.rglob("*.h"))
 
         def build_one(item: tuple[str, object]) -> str:
             """Build one independent PRG under the shared read-only SDK."""
@@ -146,11 +151,15 @@ def main() -> None:
                 link_libraries.append(sdk.gui_library)
             if name in AUDIO_CLIENT_PROGRAMS:
                 link_libraries.append(sdk.audio_library)
+            if name in IMAGE_PROGRAMS:
+                link_libraries.append(sdk.image_library)
             dependency_files = [*core_headers]
             if name in GUI_PROGRAMS:
                 dependency_files.extend(gui_headers)
             if name in AUDIO_PROGRAMS:
                 dependency_files.extend(audio_headers)
+            if name in IMAGE_PROGRAMS:
+                dependency_files.extend(image_headers)
             build(
                 sources, output, zig, incremental=args.incremental,
                 include_dirs=[sdk.include_dir],

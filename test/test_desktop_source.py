@@ -132,7 +132,7 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("DESKTOP_WM_EVENT_CLOSE", self.source)
         gui_programs = programs.split("GUI_PROGRAMS", 1)[1]
         for program in ("DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG",
-                        "SOUNDPLAYER.PRG"):
+                        "SOUNDPLAYER.PRG", "IMAGEVIEWER.PRG"):
             self.assertIn(f'"{program}"', gui_programs)
         self.assertIn("gui_library", programs)
 

@@ -198,6 +198,7 @@ class MinimalDisplayAbiTests(unittest.TestCase):
             self.assertIn(f"#define {prefix}FRAME_COMMIT 4U", source)
             self.assertIn(f"#define {prefix}FRAME_CANCEL 5U", source)
             self.assertIn(f"#define {prefix}FRAME_STAGE_BLIT 6U", source)
+            self.assertIn(f"#define {prefix}DRAW_PIXELS 7U", source)
         control = function(self.syscalls, "static int syscall_display_control(")
         self.assertIn("process->pid", control)
         self.assertIn("process->generation", control)
@@ -205,6 +206,9 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         self.assertIn("framebuffer_frame_commit", control)
         self.assertIn("framebuffer_frame_cancel", control)
         self.assertIn("framebuffer_frame_stage_blit", control)
+        self.assertIn("framebuffer_write_xrgb8888_span", control)
+        self.assertIn("framebuffer_present_pixels", control)
+        self.assertIn("PIXEL_CHUNK_CAPACITY = 256", control)
         self.assertIn("copy_to_user", control)
         self.assertIn("framebuffer_frame_process_cleanup", self.process)
         self.assertEqual(
@@ -236,6 +240,9 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         self.assertIn("X86OS_SYS_DISPLAY_CONTROL", blit)
         self.assertIn("X86OS_DISPLAY_FRAME_STAGE_BLIT", blit)
         self.assertIn("x86os_display_blit_t", blit)
+        pixels = function(self.user_sdk, "int x86os_draw_pixels(")
+        self.assertIn("X86OS_SYS_DISPLAY_CONTROL", pixels)
+        self.assertIn("X86OS_DISPLAY_DRAW_PIXELS", pixels)
 
     def test_long_raster_operations_remain_preemptible(self) -> None:
         for signature in (
@@ -249,11 +256,19 @@ class MinimalDisplayAbiTests(unittest.TestCase):
     def test_framebuffer_console_mirrors_serial_once(self) -> None:
         putchar = function(self.display, "void display_putchar(")
         self.assertIn("serial_write_char(SERIAL_COM1, c);", putchar)
+        self.assertIn("display_control_graphics_active", putchar)
         self.assertIn("else {\n        vga_write_char(c);", putchar)
         self.assertNotRegex(
             putchar,
             r"vga_write_char\s*\(\s*c\s*\)\s*;\s*serial_write_char",
         )
+
+    def test_xrgb_upload_has_native_fast_path(self) -> None:
+        upload = function(
+            self.framebuffer, "bool framebuffer_write_xrgb8888_span("
+        )
+        self.assertIn("fb_red_position == 16U", upload)
+        self.assertIn("memcpy(destination, pixels", upload)
 
 
 if __name__ == "__main__":

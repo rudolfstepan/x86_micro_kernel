@@ -705,3 +705,7 @@ int display_control_deactivate(void) {
     __asm__ __volatile__("push %0\n popf" :: "r"(old_flags) : "memory");
     return result;
 }
+
+bool display_control_graphics_active(void) {
+    return active_backend != DISPLAY_BACKEND_NONE && framebuffer_available();
+}

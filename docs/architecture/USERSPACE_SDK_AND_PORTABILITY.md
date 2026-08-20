@@ -61,6 +61,7 @@ nicht stillschweigend geforkt.
 ```text
 Anwendung
   -> öffentliche Komponenten-API (libreistgui oder libreistaudio)
+     sowie formatunabhängige Codec-API (libreistimage)
      -> REIST-System-API (libreistos)
         -> versionierte Syscalls und begrenzte IPC-Protokolle
            -> Kernel und getrennte Ring-3-Systemdienste
@@ -72,7 +73,8 @@ Framebuffer kennen. Der Compositor darf öffentliche Komponenten verwenden,
 bleibt aber deren Host und nicht Teil ihrer Client-API.
 
 Der aktuelle Stand trennt `crt0.o`, `libreistos.a`,
-`libreistnetparse.a`, `libreistgui.a` und `libreistaudio.a` als echte wiederverwendbare
+`libreistnetparse.a`, `libreistgui.a`, `libreistaudio.a` und
+`libreistimage.a` als echte wiederverwendbare
 Buildartefakte. Der Systemprogrammbuild kompiliert diese Module einmal und
 linkt danach jedes PRG gegen dieselben Archive. Unabhängige PRGs werden mit
 höchstens acht Buildworkern gebaut; der Standard nutzt bis zu acht verfügbare
@@ -160,6 +162,7 @@ separat nachzuweisende Ziele.
 <sysroot>/usr/lib/libreistnetparse.a
 <sysroot>/usr/lib/libreistgui.a
 <sysroot>/usr/lib/libreistaudio.a
+<sysroot>/usr/lib/libreistimage.a
 <sysroot>/usr/lib/pkgconfig/reist-gui.pc
 <sysroot>/usr/lib/pkgconfig/reist-audio.pc
 ```

@@ -252,6 +252,7 @@ try {
         'usr/gui/bin/guidemo.prg' = 'GUIDEMO.PRG'
         'usr/gui/bin/notepad.prg' = 'NOTEPAD.PRG'
         'usr/gui/bin/soundplayer.prg' = 'SOUNDPLAYER.PRG'
+        'usr/gui/bin/imageviewer.prg' = 'IMAGEVIEWER.PRG'
         'libexec/reist/childex.prg' = 'CHILDEX.PRG'
         'libexec/reist/faultde.prg' = 'FAULTDE.PRG'
         'libexec/reist/faultud.prg' = 'FAULTUD.PRG'
@@ -271,13 +272,15 @@ try {
     $testTonePath = Join-Path $RepoRoot 'assets\audio\testtone-440hz-mono-48k-s16.wav'
     $imageDataArguments += @(
         '--data-file', "usr/share/sounds/440hz.wav=$testTonePath"
+        '--data-file', "usr/share/images/demo-desktop.bmp=$(Join-Path $RepoRoot 'assets\images\demo-desktop.bmp')"
+        '--data-file', "usr/share/images/demo-colors.gif=$(Join-Path $RepoRoot 'assets\images\demo-colors.gif')"
     )
     $floppyDataArguments = @(
         '--data-file', "usr/bin/$($ProgramName.ToLowerInvariant())=$UserPrg"
     )
     $floppyExcluded = @(
         'sbin/audioinfo.prg', 'usr/bin/audiotest.prg', 'usr/bin/wavplay.prg',
-        'usr/gui/bin/soundplayer.prg',
+        'usr/gui/bin/soundplayer.prg', 'usr/gui/bin/imageviewer.prg',
         'libexec/reist/hda.prg', 'libexec/reist/audio.prg'
     )
     foreach ($entry in $systemLayout.GetEnumerator()) {

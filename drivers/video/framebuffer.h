@@ -95,6 +95,13 @@ bool framebuffer_available();
 bool framebuffer_get_display_info(framebuffer_display_info_t* info);
 bool framebuffer_fill_rect(int32_t x, int32_t y, uint32_t width,
                            uint32_t height, uint32_t rgb);
+/* Internal trusted-buffer helpers used by the bounded pixel-upload syscall.
+ * Span writes modify the shadow framebuffer; presentation is explicit so a
+ * complete image becomes visible in one damage update. */
+bool framebuffer_write_xrgb8888_span(uint32_t x, uint32_t y,
+                                     const uint32_t *pixels, uint32_t count);
+bool framebuffer_present_pixels(uint32_t x, uint32_t y,
+                                uint32_t width, uint32_t height);
 bool framebuffer_draw_text_pixels(int32_t x, int32_t y, const char* text,
                                   size_t length, uint32_t foreground_rgb,
                                   uint32_t background_rgb);

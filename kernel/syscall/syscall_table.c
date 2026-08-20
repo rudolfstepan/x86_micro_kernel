@@ -1724,18 +1724,21 @@ static int syscall_read(int descriptor, void *user_buffer, size_t size) {
         return -14; /* EFAULT */
     }
 
-    uint8_t buffer[512];
+    /* The complete destination range belongs to the current process and was
+     * validated writable above; REIST currently has no concurrent threads
+     * that can mutate that process mapping during this syscall.  Bounded
+     * direct transfers avoid an 8-KiB kernel-stack bounce buffer and, more
+     * importantly, repeated FAT chain walks for every disk sector. */
+    enum { FILE_READ_CHUNK_CAPACITY = 16U * 1024U };
     size_t total = 0;
     while (total < size) {
         size_t amount = size - total;
-        if (amount > sizeof(buffer)) amount = sizeof(buffer);
-        int result = process_file_read(process, descriptor, buffer, amount);
+        if (amount > FILE_READ_CHUNK_CAPACITY)
+            amount = FILE_READ_CHUNK_CAPACITY;
+        int result = process_file_read(
+            process, descriptor, (uint8_t*)user_buffer + total, amount);
         if (result < 0) return total != 0 ? (int)total : -9;
         if (result == 0) break;
-        if (copy_to_user((uint8_t*)user_buffer + total, buffer,
-                         (size_t)result) != 0) {
-            return -14;
-        }
         total += (size_t)result;
         if ((size_t)result < amount) break;
     }
@@ -1863,10 +1866,70 @@ static int syscall_display_control(display_control_request_t *user_request) {
     if (base.operation != DISPLAY_CONTROL_FRAME_BEGIN &&
         base.operation != DISPLAY_CONTROL_FRAME_COMMIT &&
         base.operation != DISPLAY_CONTROL_FRAME_CANCEL &&
-        base.operation != DISPLAY_CONTROL_FRAME_STAGE_BLIT) return -22;
+        base.operation != DISPLAY_CONTROL_FRAME_STAGE_BLIT &&
+        base.operation != DISPLAY_CONTROL_DRAW_PIXELS) return -22;
 
     Process *process = scheduler_current_process();
     if (process == NULL) return -13;
+    if (base.operation == DISPLAY_CONTROL_DRAW_PIXELS) {
+        enum { PIXEL_CHUNK_CAPACITY = 256 };
+        display_pixels_request_t request;
+        framebuffer_display_info_t display;
+        if (base.struct_size < sizeof(request) ||
+            copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return base.struct_size < sizeof(request) ? -22 : -14;
+        uint64_t pixel_count = (uint64_t)request.stride_pixels * request.height;
+        uint64_t byte_count = pixel_count * sizeof(uint32_t);
+        if (request.version != DISPLAY_CONTROL_ABI_VERSION ||
+            request.struct_size < sizeof(request) || request.flags != 0U ||
+            request.reserved != 0U || request.x < 0 || request.y < 0 ||
+            request.width == 0U || request.height == 0U ||
+            request.stride_pixels < request.width ||
+            pixel_count != request.pixel_count || byte_count > UINT32_MAX ||
+            request.pixels_address == 0U ||
+            !framebuffer_get_display_info(&display) ||
+            (uint32_t)request.x >= display.width ||
+            (uint32_t)request.y >= display.height ||
+            request.width > display.width - (uint32_t)request.x ||
+            request.height > display.height - (uint32_t)request.y ||
+            !user_range_accessible(paging_current_directory(),
+                request.pixels_address, (uint32_t)byte_count, false)) return -22;
+        const uint32_t *source_pixels =
+            (const uint32_t *)(uintptr_t)request.pixels_address;
+
+        /* Validate all source pixels before touching the shadow framebuffer. */
+        for (uint32_t row = 0U; row < request.height; ++row) {
+            uint32_t offset = row * request.stride_pixels;
+            for (uint32_t column = 0U; column < request.width; ++column)
+                if ((source_pixels[offset + column] & 0xFF000000U) != 0U)
+                    return -22;
+        }
+        int reservation = framebuffer_frame_draw_enter(
+            process->pid, process->generation, pit_monotonic_ms());
+        if (reservation != 0) return reservation;
+        int result = 0;
+        for (uint32_t row = 0U; row < request.height && result == 0; ++row) {
+            uint32_t offset = row * request.stride_pixels;
+            for (uint32_t column = 0U; column < request.width;) {
+                uint32_t count = request.width - column;
+                if (count > PIXEL_CHUNK_CAPACITY) count = PIXEL_CHUNK_CAPACITY;
+                if (!framebuffer_write_xrgb8888_span(
+                        (uint32_t)request.x + column,
+                        (uint32_t)request.y + row,
+                        &source_pixels[offset + column], count)) {
+                    result = -19;
+                    break;
+                }
+                column += count;
+            }
+        }
+        if (result == 0 && !framebuffer_present_pixels(
+                (uint32_t)request.x, (uint32_t)request.y,
+                request.width, request.height)) result = -19;
+        int release = framebuffer_frame_draw_leave(
+            process->pid, process->generation, pit_monotonic_ms());
+        return result != 0 ? result : release;
+    }
     if (base.operation == DISPLAY_CONTROL_FRAME_STAGE_BLIT) {
         display_frame_blit_request_t blit;
         if (base.struct_size < sizeof(blit) ||

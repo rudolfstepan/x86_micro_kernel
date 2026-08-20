@@ -151,6 +151,7 @@ class UserProgramToolchainTests(unittest.TestCase):
         self.assertIn('library_dir / "libreistos.a"', sdk_builder)
         self.assertIn('library_dir / "libreistgui.a"', sdk_builder)
         self.assertIn('library_dir / "libreistaudio.a"', sdk_builder)
+        self.assertIn('library_dir / "libreistimage.a"', sdk_builder)
         self.assertIn("MAX_SYSTEM_BUILD_WORKERS = 8", system_builder)
         self.assertIn("DEFAULT_SYSTEM_BUILD_WORKERS = min(", system_builder)
         self.assertIn('"-j", "--jobs"', system_builder)
@@ -167,7 +168,7 @@ class UserProgramToolchainTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         for artifact in (
             "crt0.o", "libreistos.a", "libreistnetparse.a",
-            "libreistgui.a", "libreistaudio.a",
+            "libreistgui.a", "libreistaudio.a", "libreistimage.a",
         ):
             self.assertIn(artifact, documentation)
             self.assertIn(artifact, architecture)
@@ -207,6 +208,7 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertTrue(
                 (include / "reist/gui/value_controls.h").is_file())
             self.assertTrue((include / "reist/audio.h").is_file())
+            self.assertTrue((include / "reist/image.h").is_file())
             self.assertTrue((library / "crt0.o").is_file())
             self.assertEqual(
                 (library / "libreistos.a").read_bytes()[:8], b"!<arch>\n"
@@ -216,6 +218,9 @@ class UserProgramToolchainTests(unittest.TestCase):
             )
             self.assertEqual(
                 (library / "libreistaudio.a").read_bytes()[:8], b"!<arch>\n"
+            )
+            self.assertEqual(
+                (library / "libreistimage.a").read_bytes()[:8], b"!<arch>\n"
             )
             package = (
                 library / "pkgconfig" / "reist-gui.pc"
@@ -445,6 +450,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "GUIDEMO.PRG",
                 "NOTEPAD.PRG",
                 "SOUNDPLAYER.PRG",
+                "IMAGEVIEWER.PRG",
                 "MKDIR.PRG",
                 "RMDIR.PRG",
                 "DEL.PRG",
@@ -519,7 +525,7 @@ class UserProgramToolchainTests(unittest.TestCase):
             }
             self.assertEqual(
                 rebuilt, {"DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG",
-                          "SOUNDPLAYER.PRG"}
+                          "SOUNDPLAYER.PRG", "IMAGEVIEWER.PRG"}
             )
 
     def test_drives_reports_versioned_storage_health(self):

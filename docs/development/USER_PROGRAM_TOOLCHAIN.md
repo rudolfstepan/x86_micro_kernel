@@ -134,7 +134,7 @@ python scripts/build_user_sdk.py --output-dir build/sdk
 
 Es enthält die öffentlichen Header unter `usr/include`, das Startobjekt
 `usr/lib/crt0.o` sowie `libreistos.a`, `libreistnetparse.a`,
-`libreistgui.a` und `libreistaudio.a` unter `usr/lib`.
+`libreistgui.a`, `libreistaudio.a` und `libreistimage.a` unter `usr/lib`.
 `pkgconfig`-Metadaten beschreiben die öffentlichen Basis-, GUI- und
 Audiobibliotheken. Der Systemprogrammbuild kompiliert
 diese gemeinsamen Module einmal und linkt alle PRGs danach gegen dieselben

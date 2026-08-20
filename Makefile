@@ -597,6 +597,8 @@ SYSTEM_IMAGE_FILES := \
 	etc/reist/desktop.conf=config/etc/reist/desktop.conf \
 	etc/reist/filetypes.conf=config/etc/reist/filetypes.conf \
 	usr/share/sounds/440hz.wav=assets/audio/testtone-440hz-mono-48k-s16.wav \
+	usr/share/images/demo-desktop.bmp=assets/images/demo-desktop.bmp \
+	usr/share/images/demo-colors.gif=assets/images/demo-colors.gif \
 	bin/shell.prg=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG \
 	bin/ls.prg=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
 	bin/cat.prg=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
@@ -653,6 +655,7 @@ SYSTEM_IMAGE_FILES := \
 	usr/gui/bin/guidemo.prg=$(SYSTEM_PROGRAM_DIR)/GUIDEMO.PRG \
 	usr/gui/bin/notepad.prg=$(SYSTEM_PROGRAM_DIR)/NOTEPAD.PRG \
 	usr/gui/bin/soundplayer.prg=$(SYSTEM_PROGRAM_DIR)/SOUNDPLAYER.PRG \
+	usr/gui/bin/imageviewer.prg=$(SYSTEM_PROGRAM_DIR)/IMAGEVIEWER.PRG \
 	libexec/reist/childex.prg=$(SYSTEM_PROGRAM_DIR)/CHILDEX.PRG \
 	libexec/reist/faultde.prg=$(SYSTEM_PROGRAM_DIR)/FAULTDE.PRG \
 	libexec/reist/faultud.prg=$(SYSTEM_PROGRAM_DIR)/FAULTUD.PRG \
@@ -671,8 +674,9 @@ SYSTEM_IMAGE_FILES := \
 # enough free space for filesystem metadata and emergency tools.
 FLOPPY_IMAGE_FILES := $(filter-out \
 	sbin/audioinfo.prg=% usr/bin/audiotest.prg=% usr/bin/wavplay.prg=% \
-	usr/gui/bin/soundplayer.prg=% \
-	usr/share/sounds/440hz.wav=% \
+	usr/gui/bin/soundplayer.prg=% usr/gui/bin/imageviewer.prg=% \
+	usr/share/sounds/440hz.wav=% usr/share/images/demo-desktop.bmp=% \
+	usr/share/images/demo-colors.gif=% \
 	libexec/reist/hda.prg=% libexec/reist/audio.prg=%,$(SYSTEM_IMAGE_FILES))
 
 bootdisk: native-image

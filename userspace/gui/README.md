@@ -109,6 +109,15 @@ loads at most 15360 frames; streaming and progress seeking require a later
 versioned queue ABI. Like Notepad, the player remains a supervised display
 client until Surface IPC permits independently composed application windows.
 
+## Graphical image viewer
+
+`userspace/gui/apps/image_viewer/main.c` builds as `IMAGEVIEWER.PRG` and is
+installed as `/usr/gui/bin/imageviewer.prg`. Desktop associations for `.bmp`
+and `.gif` launch it without leaving the graphical session. Image parsing is
+provided exclusively by the public, reentrant `libreistimage` API; the viewer
+does not duplicate codec logic. Demo images are installed below
+`/usr/share/images`.
+
 Build the SDK and the documented example with the repository's upstream
 Zig/LLVM toolchain integration:
 

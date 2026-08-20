@@ -110,7 +110,10 @@ class SystemLayoutContracts(unittest.TestCase):
                 "usr/gui/bin/guidemo.prg": b"guidemo",
                 "usr/gui/bin/notepad.prg": b"notepad",
                 "usr/gui/bin/soundplayer.prg": b"soundplayer",
+                "usr/gui/bin/imageviewer.prg": b"imageviewer",
                 "usr/share/sounds/440hz.wav": b"wave",
+                "usr/share/images/demo-desktop.bmp": b"bmp",
+                "usr/share/images/demo-colors.gif": b"gif",
                 "etc/reist/input.conf": b"schema=reist.input/1\n",
                 "etc/reist/filetypes.conf": b"schema=reist.filetypes/1\n",
             },
@@ -156,6 +159,9 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertEqual(
             cluster_entries(gui_bin_cluster)[b"NOTEPAD PRG"][12], 0x18
         )
+        self.assertEqual(
+            cluster_entries(gui_bin_cluster)[b"IMAGEV~1PRG"][12], 0x18
+        )
         etc_cluster = struct.unpack_from("<H", root[b"ETC        "], 26)[0]
         etc = cluster_entries(etc_cluster)
         reist_cluster = struct.unpack_from("<H", etc[b"REIST      "], 26)[0]
@@ -176,6 +182,9 @@ class SystemLayoutContracts(unittest.TestCase):
             "sbin/audioinfo.prg", "usr/bin/audiotest.prg",
             "usr/bin/wavplay.prg", "usr/share/sounds/440hz.wav",
             "usr/gui/bin/soundplayer.prg",
+            "usr/gui/bin/imageviewer.prg",
+            "usr/share/images/demo-desktop.bmp",
+            "usr/share/images/demo-colors.gif",
             "libexec/reist/hda.prg", "libexec/reist/audio.prg",
         ):
             self.assertIn(target, makefile)

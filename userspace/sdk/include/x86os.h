@@ -582,6 +582,7 @@ typedef struct {
 #define X86OS_DISPLAY_FRAME_COMMIT 4U
 #define X86OS_DISPLAY_FRAME_CANCEL 5U
 #define X86OS_DISPLAY_FRAME_STAGE_BLIT 6U
+#define X86OS_DISPLAY_DRAW_PIXELS 7U
 
 typedef struct {
     uint32_t version;
@@ -651,6 +652,21 @@ typedef struct {
     uint32_t width;
     uint32_t height;
 } x86os_display_blit_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t flags;
+    int32_t x;
+    int32_t y;
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride_pixels;
+    uint32_t pixels_address;
+    uint32_t pixel_count;
+    uint32_t reserved;
+} x86os_display_pixels_t;
 
 #define X86OS_MOUSE_EVENT_VERSION 1U
 #define X86OS_MOUSE_BUTTON_LEFT 0x01U
@@ -1271,6 +1287,9 @@ int x86os_display_frame_stage_blit(uint32_t serial,
                                    uint32_t destination_x,
                                    uint32_t destination_y,
                                    uint32_t width, uint32_t height);
+/** Uploads one validated packed-XRGB8888 rectangle in a single presentation. */
+int x86os_draw_pixels(int32_t x, int32_t y, uint32_t width, uint32_t height,
+                      const uint32_t *pixels, uint32_t stride_pixels);
 int x86os_mouse_event(x86os_mouse_event_t* event);
 int x86os_pointer_update(int32_t x, int32_t y, uint32_t visible);
 int x86os_usb_diagnostics(x86os_usb_diagnostics_t* diagnostics);

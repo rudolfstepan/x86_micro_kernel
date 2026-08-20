@@ -143,7 +143,7 @@ class ShellSourceRegressionTests(unittest.TestCase):
         )
         shell = (ROOT / "userspace/bin/shell.c").read_text(encoding="utf-8")
         for program in ("AUDIOINFO.PRG", "AUDIOTEST.PRG", "WAVPLAY.PRG",
-                        "SOUNDPLAYER.PRG"):
+                        "SOUNDPLAYER.PRG", "IMAGEVIEWER.PRG"):
             self.assertIn(f'"{program}"', programs)
         for target in ("sbin/audioinfo.prg", "usr/bin/audiotest.prg",
                        "usr/bin/wavplay.prg", "usr/gui/bin/soundplayer.prg"):

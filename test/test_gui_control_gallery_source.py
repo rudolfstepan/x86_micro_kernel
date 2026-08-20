@@ -83,7 +83,7 @@ class GuiControlGallerySourceTests(unittest.TestCase):
         self.assertIn('"GUIDEMO.PRG"', programs)
         gui_programs = programs.split("GUI_PROGRAMS", 1)[1]
         for program in ("DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG",
-                        "SOUNDPLAYER.PRG"):
+                        "SOUNDPLAYER.PRG", "IMAGEVIEWER.PRG"):
             self.assertIn(f'"{program}"', gui_programs)
         self.assertEqual(windows.count("'usr/gui/bin/guidemo.prg'"), 1)
         self.assertEqual(makefile.count("usr/gui/bin/guidemo.prg="), 1)

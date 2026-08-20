@@ -5208,6 +5208,7 @@ bool framebuffer_available() {
 }
 
 static uint32_t framebuffer_scale_channel(uint8_t value, uint8_t bits) {
+    if (bits == 8U) return value;
     uint64_t maximum = ((uint64_t)1u << bits) - 1u;
     return (uint32_t)(((uint64_t)value * maximum + 127u) / 255u);
 }
@@ -5432,6 +5433,45 @@ bool framebuffer_fill_rect(int32_t x, int32_t y, uint32_t width,
     framebuffer_present_rect((uint32_t)left, (uint32_t)top,
                              (uint32_t)(right - left),
                              (uint32_t)(bottom - top));
+    return true;
+}
+
+bool framebuffer_write_xrgb8888_span(uint32_t x, uint32_t y,
+                                     const uint32_t *pixels, uint32_t count) {
+    if (!fb_address || !pixels || count == 0U || y >= fb_height ||
+        x >= fb_width || count > fb_width - x) return false;
+    uint8_t *destination = fb_address + y * fb_pitch +
+                           x * fb_bytes_per_pixel;
+    /* VMware SVGA, VBE and the common PC linear framebuffer all expose this
+     * native layout.  XRGB8888 can therefore be copied verbatim instead of
+     * performing three generic channel conversions for every pixel. */
+    if (fb_bytes_per_pixel == sizeof(uint32_t) && fb_red_position == 16U &&
+        fb_red_size == 8U && fb_green_position == 8U &&
+        fb_green_size == 8U && fb_blue_position == 0U &&
+        fb_blue_size == 8U) {
+        if (fb_shadow_enabled) {
+            memcpy(destination, pixels, (size_t)count * sizeof(uint32_t));
+        } else {
+            volatile uint32_t *words = (volatile uint32_t*)destination;
+            for (uint32_t index = 0U; index < count; ++index)
+                words[index] = pixels[index];
+        }
+        return true;
+    }
+    for (uint32_t index = 0U; index < count; ++index) {
+        framebuffer_store_native(
+            destination, framebuffer_native_color(pixels[index]));
+        destination += fb_bytes_per_pixel;
+    }
+    return true;
+}
+
+bool framebuffer_present_pixels(uint32_t x, uint32_t y,
+                                uint32_t width, uint32_t height) {
+    if (!fb_address || width == 0U || height == 0U || x >= fb_width ||
+        y >= fb_height || width > fb_width - x || height > fb_height - y)
+        return false;
+    framebuffer_present_rect(x, y, width, height);
     return true;
 }
 

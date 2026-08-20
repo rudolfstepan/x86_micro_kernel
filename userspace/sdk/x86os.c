@@ -22,6 +22,8 @@ _Static_assert(sizeof(x86os_display_rect_t) == 28U,
                "display rectangle ABI size changed");
 _Static_assert(sizeof(x86os_display_text_t) == 32U,
                "display text ABI size changed");
+_Static_assert(sizeof(x86os_display_pixels_t) == 48U,
+               "display pixels ABI size changed");
 _Static_assert(sizeof(x86os_usb_diagnostics_t) == 208U,
                "USB diagnostics ABI size changed");
 _Static_assert(sizeof(x86os_ipc_message_t) == 140U,
@@ -765,6 +767,28 @@ int x86os_display_frame_stage_blit(uint32_t serial,
         .destination_y = destination_y,
         .width = width,
         .height = height,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DISPLAY_CONTROL,
+                              (uintptr_t)&request, 0, 0);
+}
+
+int x86os_draw_pixels(int32_t x, int32_t y, uint32_t width, uint32_t height,
+                      const uint32_t *pixels, uint32_t stride_pixels) {
+    if (!pixels || width == 0U || height == 0U || stride_pixels < width ||
+        (uint64_t)stride_pixels * height > UINT32_MAX) return -22;
+    x86os_display_pixels_t request = {
+        .version = X86OS_DISPLAY_CONTROL_VERSION,
+        .struct_size = sizeof(request),
+        .operation = X86OS_DISPLAY_DRAW_PIXELS,
+        .flags = 0U,
+        .x = x,
+        .y = y,
+        .width = width,
+        .height = height,
+        .stride_pixels = stride_pixels,
+        .pixels_address = (uint32_t)(uintptr_t)pixels,
+        .pixel_count = stride_pixels * height,
+        .reserved = 0U
     };
     return (int)x86os_syscall(X86OS_SYS_DISPLAY_CONTROL,
                               (uintptr_t)&request, 0, 0);

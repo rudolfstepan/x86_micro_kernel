@@ -16,6 +16,7 @@
 
 #ifdef USE_FRAMEBUFFER
 #include "framebuffer.h"
+#include "display_control.h"
 #include "drivers/char/serial.h"
 #endif
 #include "video.h"
@@ -62,7 +63,9 @@ void display_init() {
 
 void display_clear() {
 #ifdef USE_FRAMEBUFFER
-    if (framebuffer_available()) framebuffer_clear();
+    if (framebuffer_available()) {
+        if (!display_control_graphics_active()) framebuffer_clear();
+    }
     else clear_screen();
 #else
     clear_screen();
@@ -76,7 +79,7 @@ void display_putchar(char c) {
     }
 #ifdef USE_FRAMEBUFFER
     if (framebuffer_available()) {
-        framebuffer_putchar(c);
+        if (!display_control_graphics_active()) framebuffer_putchar(c);
         serial_write_char(SERIAL_COM1, c);
     } else {
         vga_write_char(c);
@@ -89,7 +92,7 @@ void display_putchar(char c) {
 void display_write(const char* str) {
 #ifdef USE_FRAMEBUFFER
     if (framebuffer_available()) {
-        framebuffer_write_string(str);
+        if (!display_control_graphics_active()) framebuffer_write_string(str);
         serial_write_string(SERIAL_COM1, str);
     } else while (*str) vga_write_char(*str++);
 #else
@@ -121,9 +124,11 @@ void display_write_at(int x, int y, const char* text, unsigned int length) {
     if (!text) return;
 #ifdef USE_FRAMEBUFFER
     if (framebuffer_available()) {
-        framebuffer_set_cursor(x, y);
-        for (unsigned int index = 0; index < length; ++index)
-            framebuffer_putchar(text[index]);
+        if (!display_control_graphics_active()) {
+            framebuffer_set_cursor(x, y);
+            for (unsigned int index = 0; index < length; ++index)
+                framebuffer_putchar(text[index]);
+        }
     } else {
         vga_write_at(x, y, text, length);
     }
@@ -135,7 +140,7 @@ void display_write_at(int x, int y, const char* text, unsigned int length) {
 void display_backspace() {
 #ifdef USE_FRAMEBUFFER
     if (framebuffer_available()) {
-        framebuffer_putchar('\b');
+        if (!display_control_graphics_active()) framebuffer_putchar('\b');
         serial_write_char(SERIAL_COM1, '\b');
     }
     else vga_backspace();

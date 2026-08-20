@@ -2,6 +2,7 @@
 #define REIST_DISPLAY_CONTROL_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #define DISPLAY_CONTROL_ABI_VERSION 1U
 #define DISPLAY_CONTROL_ACTIVATE 1U
@@ -10,6 +11,7 @@
 #define DISPLAY_CONTROL_FRAME_COMMIT 4U
 #define DISPLAY_CONTROL_FRAME_CANCEL 5U
 #define DISPLAY_CONTROL_FRAME_STAGE_BLIT 6U
+#define DISPLAY_CONTROL_DRAW_PIXELS 7U
 #define DISPLAY_CONTROL_PRESENT_CAPACITY 8U
 
 typedef struct {
@@ -45,6 +47,22 @@ typedef struct {
     uint32_t height;
 } display_frame_blit_request_t;
 
+/* Append-only syscall-109 payload for one packed XRGB8888 image upload. */
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t flags;
+    int32_t x;
+    int32_t y;
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride_pixels;
+    uint32_t pixels_address;
+    uint32_t pixel_count;
+    uint32_t reserved;
+} display_pixels_request_t;
+
 typedef struct {
     uint32_t x;
     uint32_t y;
@@ -59,5 +77,6 @@ void display_control_present_rect(uint32_t x, uint32_t y,
                                   uint32_t width, uint32_t height);
 void display_control_present_rects(const display_control_rect_t *rects,
                                    uint32_t count);
+bool display_control_graphics_active(void);
 
 #endif
