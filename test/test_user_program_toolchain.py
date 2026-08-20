@@ -482,6 +482,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "AUDIO.PRG",
                 "AUDIOINFO.PRG",
                 "AUDIOTEST.PRG",
+                "WAVPLAY.PRG",
                 "SLEEPER.PRG",
                 "SATAWR.PRG",
             }

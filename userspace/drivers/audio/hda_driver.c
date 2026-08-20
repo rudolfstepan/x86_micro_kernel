@@ -58,18 +58,26 @@
 #define HDA_PARAMETER_FUNCTION_GROUP_TYPE 0x05U
 #define HDA_PARAMETER_AUDIO_WIDGET_CAPS 0x09U
 #define HDA_PARAMETER_PIN_CAPS 0x0CU
+#define HDA_PARAMETER_INPUT_AMP_CAPS 0x0DU
 #define HDA_PARAMETER_CONNECTION_LIST_LENGTH 0x0EU
 #define HDA_PARAMETER_OUTPUT_AMP_CAPS 0x12U
 #define HDA_FUNCTION_GROUP_AUDIO 0x01U
 #define HDA_WIDGET_AUDIO_OUTPUT 0x00U
+#define HDA_WIDGET_AUDIO_MIXER 0x02U
+#define HDA_WIDGET_AUDIO_SELECTOR 0x03U
 #define HDA_WIDGET_PIN_COMPLEX 0x04U
+#define HDA_WIDGET_CAP_INPUT_AMP (1U << 1U)
 #define HDA_WIDGET_CAP_OUTPUT_AMP (1U << 2U)
+#define HDA_WIDGET_CAP_AMP_OVERRIDE (1U << 3U)
 #define HDA_WIDGET_CAP_CONNECTION_LIST (1U << 8U)
 #define HDA_PIN_CAP_OUTPUT (1U << 4U)
 #define HDA_PIN_CAP_EAPD (1U << 16U)
 #define HDA_AMP_SET_OUTPUT (1U << 15U)
 #define HDA_AMP_SET_LEFT (1U << 13U)
 #define HDA_AMP_SET_RIGHT (1U << 12U)
+#define HDA_AMP_SET_INDEX_SHIFT 8U
+#define HDA_PLAYBACK_BOOST_QUARTER_DB 24U
+#define HDA_CONNECTION_CAPACITY 16U
 
 typedef struct {
     x86os_device_driver_bootstrap_t bootstrap;
@@ -86,8 +94,19 @@ typedef struct {
     uint32_t pin_node;
     uint32_t dac_gain_0db;
     uint32_t dac_has_output_amp;
+    uint32_t pin_gain_0db;
+    uint32_t pin_has_output_amp;
     uint32_t pin_caps;
     uint32_t pin_connection_count;
+    uint32_t pin_connection_index;
+    uint32_t path_node;
+    uint32_t path_type;
+    uint32_t path_connection_count;
+    uint32_t path_connection_index;
+    uint32_t path_input_gain;
+    uint32_t path_has_input_amp;
+    uint32_t path_output_gain;
+    uint32_t path_has_output_amp;
     uint32_t stream_id;
     uint32_t stream_generation;
     uint32_t buffered_frames;
@@ -115,6 +134,20 @@ bool reist_hda_amp_0db_gain(uint32_t capabilities, uint8_t *gain) {
     uint32_t steps = (capabilities >> 8U) & 0x7FU;
     if (offset > steps) return false;
     *gain = (uint8_t)offset;
+    return true;
+}
+
+/** Select a capability-bounded gain above the codec-declared 0-dB offset. */
+bool reist_hda_amp_playback_gain(uint32_t capabilities, uint8_t *gain) {
+    if (gain == NULL) return false;
+    uint32_t offset = capabilities & 0x7FU;
+    uint32_t steps = (capabilities >> 8U) & 0x7FU;
+    uint32_t step_quarter_db = ((capabilities >> 16U) & 0x7FU) + 1U;
+    if (offset > steps) return false;
+    uint32_t boost_steps =
+        HDA_PLAYBACK_BOOST_QUARTER_DB / step_quarter_db;
+    if (boost_steps > steps - offset) boost_steps = steps - offset;
+    *gain = (uint8_t)(offset + boost_steps);
     return true;
 }
 
@@ -206,6 +239,125 @@ static int parameter(const hda_driver_t *driver, uint32_t node,
         hda_verb12(driver->codec, node, 0xF00U, parameter_id), response);
 }
 
+/** Decode one bounded HDA connection list, including standard range entries. */
+static int connection_list(const hda_driver_t *driver, uint32_t node,
+                           uint8_t nodes[HDA_CONNECTION_CAPACITY],
+                           uint32_t *node_count) {
+    uint32_t length_response = 0U;
+    if (nodes == NULL || node_count == NULL ||
+        parameter(driver, node, HDA_PARAMETER_CONNECTION_LIST_LENGTH,
+                  &length_response) != 0) return -5;
+    uint32_t raw_count = length_response & 0x7FU;
+    uint32_t long_form = (length_response >> 7U) & 1U;
+    if (raw_count == 0U || raw_count > HDA_CONNECTION_CAPACITY) return -95;
+
+    uint32_t completed = 0U;
+    uint32_t expanded = 0U;
+    uint32_t previous = 0U;
+    int have_previous = 0;
+    while (completed < raw_count) {
+        uint32_t response = 0U;
+        if (immediate_verb(driver,
+                hda_verb12(driver->codec, node, 0xF02U, completed),
+                &response) != 0) return -5;
+        uint32_t per_response = long_form != 0U ? 2U : 4U;
+        uint32_t value_mask = long_form != 0U ? 0x7FFFU : 0x7FU;
+        uint32_t range_mask = long_form != 0U ? 0x8000U : 0x80U;
+        uint32_t shift_step = long_form != 0U ? 16U : 8U;
+        for (uint32_t slot = 0U;
+             slot < per_response && completed < raw_count;
+             ++slot, ++completed) {
+            uint32_t entry = (response >> (slot * shift_step)) &
+                (value_mask | range_mask);
+            uint32_t target = entry & value_mask;
+            if (target == 0U || target > 255U) return -84;
+            if ((entry & range_mask) != 0U) {
+                if (!have_previous || target <= previous) return -84;
+                for (uint32_t ranged = previous + 1U; ranged <= target;
+                     ++ranged) {
+                    if (expanded >= HDA_CONNECTION_CAPACITY) return -95;
+                    nodes[expanded++] = (uint8_t)ranged;
+                }
+            } else {
+                if (expanded >= HDA_CONNECTION_CAPACITY) return -95;
+                nodes[expanded++] = (uint8_t)target;
+            }
+            previous = target;
+            have_previous = 1;
+        }
+    }
+    *node_count = expanded;
+    return 0;
+}
+
+static int widget_amp_gain(const hda_driver_t *driver,
+                           uint32_t function_group, uint32_t node,
+                           uint32_t widget_caps, uint32_t parameter_id,
+                           uint32_t *gain) {
+    uint32_t amp_caps = 0U;
+    uint32_t amp_node =
+        (widget_caps & HDA_WIDGET_CAP_AMP_OVERRIDE) != 0U
+        ? node : function_group;
+    if (parameter(driver, amp_node, parameter_id, &amp_caps) != 0) return -5;
+    uint8_t selected = 0U;
+    if (!reist_hda_amp_playback_gain(amp_caps, &selected)) return -84;
+    *gain = selected;
+    return 0;
+}
+
+/** Select a direct path or one standard mixer/selector between DAC and pin. */
+static int playback_path_discover(hda_driver_t *driver,
+                                  uint32_t function_group) {
+    uint8_t pin_sources[HDA_CONNECTION_CAPACITY];
+    uint32_t pin_source_count = 0U;
+    int result = connection_list(
+        driver, driver->pin_node, pin_sources, &pin_source_count);
+    if (result != 0) return result;
+    driver->pin_connection_count = pin_source_count;
+    for (uint32_t pin_index = 0U; pin_index < pin_source_count; ++pin_index) {
+        uint32_t source = pin_sources[pin_index];
+        if (source == driver->dac_node) {
+            driver->pin_connection_index = pin_index;
+            return 0;
+        }
+        uint32_t widget_caps = 0U;
+        if (parameter(driver, source, HDA_PARAMETER_AUDIO_WIDGET_CAPS,
+                      &widget_caps) != 0) continue;
+        uint32_t type = (widget_caps >> 20U) & 0x0FU;
+        if (type != HDA_WIDGET_AUDIO_MIXER &&
+            type != HDA_WIDGET_AUDIO_SELECTOR) continue;
+        uint8_t path_sources[HDA_CONNECTION_CAPACITY];
+        uint32_t path_source_count = 0U;
+        if (connection_list(driver, source, path_sources,
+                            &path_source_count) != 0) continue;
+        for (uint32_t path_index = 0U; path_index < path_source_count;
+             ++path_index) {
+            if (path_sources[path_index] != driver->dac_node) continue;
+            driver->pin_connection_index = pin_index;
+            driver->path_node = source;
+            driver->path_type = type;
+            driver->path_connection_count = path_source_count;
+            driver->path_connection_index = path_index;
+            if ((widget_caps & HDA_WIDGET_CAP_INPUT_AMP) != 0U) {
+                result = widget_amp_gain(
+                    driver, function_group, source, widget_caps,
+                    HDA_PARAMETER_INPUT_AMP_CAPS, &driver->path_input_gain);
+                if (result != 0) return result;
+                driver->path_has_input_amp = 1U;
+            }
+            if ((widget_caps & HDA_WIDGET_CAP_OUTPUT_AMP) != 0U) {
+                result = widget_amp_gain(
+                    driver, function_group, source, widget_caps,
+                    HDA_PARAMETER_OUTPUT_AMP_CAPS, &driver->path_output_gain);
+                if (result != 0) return result;
+                driver->path_has_output_amp = 1U;
+            }
+            return 0;
+        }
+    }
+    return -19;
+}
+
 static int controller_reset(hda_driver_t *driver) {
     if (register_write(driver, HDA_GCTL, 4U, 0U) != 0) return -5;
     int result = poll_bit(driver, HDA_GCTL, 4U, HDA_GCTL_RESET, 0U,
@@ -259,12 +411,10 @@ static int codec_discover(hda_driver_t *driver) {
         if (type == HDA_WIDGET_AUDIO_OUTPUT && driver->dac_node == 0U) {
             driver->dac_node = node;
             if ((response & HDA_WIDGET_CAP_OUTPUT_AMP) != 0U) {
-                uint32_t amp_caps = 0U;
-                if (parameter(driver, node, HDA_PARAMETER_OUTPUT_AMP_CAPS,
-                              &amp_caps) != 0) return -5;
-                uint8_t gain = 0U;
-                if (!reist_hda_amp_0db_gain(amp_caps, &gain)) return -84;
-                driver->dac_gain_0db = gain;
+                int result = widget_amp_gain(
+                    driver, function_group, node, response,
+                    HDA_PARAMETER_OUTPUT_AMP_CAPS, &driver->dac_gain_0db);
+                if (result != 0) return result;
                 driver->dac_has_output_amp = 1U;
             }
         }
@@ -275,17 +425,19 @@ static int codec_discover(hda_driver_t *driver) {
                 (pin_caps & HDA_PIN_CAP_OUTPUT) != 0U) {
                 driver->pin_node = node;
                 driver->pin_caps = pin_caps;
-                if ((response & HDA_WIDGET_CAP_CONNECTION_LIST) != 0U) {
-                    uint32_t list_length = 0U;
-                    if (parameter(driver, node,
-                                  HDA_PARAMETER_CONNECTION_LIST_LENGTH,
-                                  &list_length) != 0) return -5;
-                    driver->pin_connection_count = list_length & 0x7FU;
+                if ((response & HDA_WIDGET_CAP_OUTPUT_AMP) != 0U) {
+                    int result = widget_amp_gain(
+                        driver, function_group, node, response,
+                        HDA_PARAMETER_OUTPUT_AMP_CAPS,
+                        &driver->pin_gain_0db);
+                    if (result != 0) return result;
+                    driver->pin_has_output_amp = 1U;
                 }
             }
         }
     }
-    return driver->dac_node != 0U && driver->pin_node != 0U ? 0 : -19;
+    if (driver->dac_node == 0U || driver->pin_node == 0U) return -19;
+    return playback_path_discover(driver, function_group);
 }
 
 static int codec_configure(const hda_driver_t *driver) {
@@ -303,10 +455,21 @@ static int codec_configure(const hda_driver_t *driver) {
          index < sizeof(required_verbs) / sizeof(required_verbs[0]); ++index)
         if (immediate_verb(driver, required_verbs[index], &ignored) != 0)
             return -5;
+    if (driver->path_node != 0U &&
+        immediate_verb(driver,
+            hda_verb12(driver->codec, driver->path_node, 0x705U, 0U),
+            &ignored) != 0) return -5;
     /* A single hard-wired connection has no Connection Select Control. */
     if (driver->pin_connection_count > 1U &&
         immediate_verb(driver,
-            hda_verb12(driver->codec, driver->pin_node, 0x701U, 0U),
+            hda_verb12(driver->codec, driver->pin_node, 0x701U,
+                       driver->pin_connection_index),
+            &ignored) != 0) return -5;
+    if (driver->path_type == HDA_WIDGET_AUDIO_SELECTOR &&
+        driver->path_connection_count > 1U &&
+        immediate_verb(driver,
+            hda_verb12(driver->codec, driver->path_node, 0x701U,
+                       driver->path_connection_index),
             &ignored) != 0) return -5;
     if ((driver->pin_caps & HDA_PIN_CAP_EAPD) != 0U &&
         immediate_verb(driver,
@@ -317,6 +480,28 @@ static int codec_configure(const hda_driver_t *driver) {
             HDA_AMP_SET_RIGHT | driver->dac_gain_0db;
         if (immediate_verb(driver,
                 hda_verb4(driver->codec, driver->dac_node, 0x3U, payload),
+                &ignored) != 0) return -5;
+    }
+    if (driver->pin_has_output_amp != 0U) {
+        uint32_t payload = HDA_AMP_SET_OUTPUT | HDA_AMP_SET_LEFT |
+            HDA_AMP_SET_RIGHT | driver->pin_gain_0db;
+        if (immediate_verb(driver,
+                hda_verb4(driver->codec, driver->pin_node, 0x3U, payload),
+                &ignored) != 0) return -5;
+    }
+    if (driver->path_has_output_amp != 0U) {
+        uint32_t payload = HDA_AMP_SET_OUTPUT | HDA_AMP_SET_LEFT |
+            HDA_AMP_SET_RIGHT | driver->path_output_gain;
+        if (immediate_verb(driver,
+                hda_verb4(driver->codec, driver->path_node, 0x3U, payload),
+                &ignored) != 0) return -5;
+    }
+    if (driver->path_has_input_amp != 0U) {
+        uint32_t payload = HDA_AMP_SET_LEFT | HDA_AMP_SET_RIGHT |
+            (driver->path_connection_index << HDA_AMP_SET_INDEX_SHIFT) |
+            driver->path_input_gain;
+        if (immediate_verb(driver,
+                hda_verb4(driver->codec, driver->path_node, 0x3U, payload),
                 &ignored) != 0) return -5;
     }
     return 0;

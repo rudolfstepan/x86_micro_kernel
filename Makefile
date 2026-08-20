@@ -596,6 +596,7 @@ SYSTEM_IMAGE_FILES := \
 	etc/reist/input.conf=config/etc/reist/input.conf \
 	etc/reist/desktop.conf=config/etc/reist/desktop.conf \
 	etc/reist/filetypes.conf=config/etc/reist/filetypes.conf \
+	usr/share/sounds/440hz.wav=assets/audio/testtone-440hz-mono-48k-s16.wav \
 	bin/shell.prg=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG \
 	bin/ls.prg=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
 	bin/cat.prg=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
@@ -647,6 +648,7 @@ SYSTEM_IMAGE_FILES := \
 	usr/bin/save.prg=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
 	usr/bin/spawn.prg=$(SYSTEM_PROGRAM_DIR)/SPAWN.PRG \
 	usr/bin/audiotest.prg=$(SYSTEM_PROGRAM_DIR)/AUDIOTEST.PRG \
+	usr/bin/wavplay.prg=$(SYSTEM_PROGRAM_DIR)/WAVPLAY.PRG \
 	usr/gui/bin/desktop.prg=$(SYSTEM_PROGRAM_DIR)/DESKTOP.PRG \
 	usr/gui/bin/guidemo.prg=$(SYSTEM_PROGRAM_DIR)/GUIDEMO.PRG \
 	usr/gui/bin/notepad.prg=$(SYSTEM_PROGRAM_DIR)/NOTEPAD.PRG \
@@ -667,7 +669,8 @@ SYSTEM_IMAGE_FILES := \
 # HDD/VMware image remains authoritative; a 1.44-MiB recovery medium must keep
 # enough free space for filesystem metadata and emergency tools.
 FLOPPY_IMAGE_FILES := $(filter-out \
-	sbin/audioinfo.prg=% usr/bin/audiotest.prg=% \
+	sbin/audioinfo.prg=% usr/bin/audiotest.prg=% usr/bin/wavplay.prg=% \
+	usr/share/sounds/440hz.wav=% \
 	libexec/reist/hda.prg=% libexec/reist/audio.prg=%,$(SYSTEM_IMAGE_FILES))
 
 bootdisk: native-image

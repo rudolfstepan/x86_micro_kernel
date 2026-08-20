@@ -23,6 +23,7 @@ das Überschreiben einer über `vmrun` laufenden Paket-VM.
 | CPU/RAM | 1 vCPU, 512 MiB |
 | Festplatte | persistente monolithic-flat SATA-VMDK |
 | Grafik | VMware SVGA, 3D aus, standardmäßig VGA-Text |
+| Skalierung | Free Stretch (`gui.stretchGuestMode=fullfill`) |
 | Eingabe | virtuelle PS/2-Tastatur und virtuelle USB-HID-Maus über xHCI |
 | Netzwerk | Intel E1000 an VMware NAT-DHCP |
 | Audio | virtuelles HDA `15ad:1977`, Slot 34, Start verbunden |
@@ -32,6 +33,10 @@ das Überschreiben einer über `vmrun` laufenden Paket-VM.
 Descriptor-VMDK, `-flat.vmdk` und VMX müssen im Paketordner zusammenbleiben.
 Das Raw-Image enthält MBR, Bootpartition und die FAT32-Systempartition
 `X86 SYSTEM`. Der Kernel erkennt die virtuelle Platte nativ über AHCI.
+
+Die generierte VMX aktiviert VMwares „Free Stretch“. Das Gastbild füllt damit
+das VMware-Fenster auch ohne VMware Tools und ohne Änderung der vom Gast
+gesetzten Auflösung; das Seitenverhältnis wird dabei nicht erzwungen.
 
 Die generierte VMX setzt `usb.generic.allowHID=FALSE`, enthält keine
 `usb.autoConnect`- oder HID-Quirk-Regel und bietet keine Buildoption für
@@ -77,12 +82,20 @@ Der Audiofunktionstest verwendet ausschließlich die virtuelle Soundkarte; er
 ```text
 C:\> AUDIOINFO
 C:\> AUDIOTEST
+C:\> WAVPLAY
 ```
 
 `AUDIOINFO` muss den überwachten Intel-HDA-Ring-3-Backendstatus melden.
 `AUDIOTEST` spielt einen begrenzten 440-Hz-Testton und muss mit
 `Audio test complete.` enden. Ein erfolgreicher VM-Boot allein ist noch kein
-Nachweis hörbarer Hostausgabe.
+Nachweis hörbarer Hostausgabe. `WAVPLAY` verwendet zusätzlich die unveränderte
+PCM-Testdatei `/usr/share/sounds/440hz.wav` und muss mit
+`WAV playback complete.` enden. Dieser manuelle Hörtest ist der maßgebliche
+VMware-Nachweis; die VM wird durch den automatischen Build nicht gestartet.
+Am 20. August 2026 wurde die Wiedergabe mit hörbarem 440-Hz-Ton und passendem
+Pegel bestätigt. Der HDA-Treiber aktiviert dazu neben DAC und Pin auch den
+tatsächlich verbundenen Eingang eines dazwischenliegenden Mixers oder
+Selectors; das PCM selbst bleibt ohne digitales Clipping.
 
 ## Netzwerk
 

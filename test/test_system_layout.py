@@ -109,6 +109,7 @@ class SystemLayoutContracts(unittest.TestCase):
                 "usr/gui/bin/desktop.prg": b"desktop",
                 "usr/gui/bin/guidemo.prg": b"guidemo",
                 "usr/gui/bin/notepad.prg": b"notepad",
+                "usr/share/sounds/440hz.wav": b"wave",
                 "etc/reist/input.conf": b"schema=reist.input/1\n",
                 "etc/reist/filetypes.conf": b"schema=reist.filetypes/1\n",
             },
@@ -136,6 +137,12 @@ class SystemLayoutContracts(unittest.TestCase):
         usr = cluster_entries(usr_cluster)
         bin_cluster = struct.unpack_from("<H", usr[b"BIN        "], 26)[0]
         self.assertEqual(cluster_entries(bin_cluster)[b"HELLO   PRG"][12], 0x18)
+        share_cluster = struct.unpack_from("<H", usr[b"SHARE      "], 26)[0]
+        share = cluster_entries(share_cluster)
+        sounds_cluster = struct.unpack_from("<H", share[b"SOUNDS     "], 26)[0]
+        self.assertEqual(
+            cluster_entries(sounds_cluster)[b"440HZ   WAV"][12], 0x18
+        )
         gui_cluster = struct.unpack_from("<H", usr[b"GUI        "], 26)[0]
         gui = cluster_entries(gui_cluster)
         gui_bin_cluster = struct.unpack_from("<H", gui[b"BIN        "], 26)[0]
@@ -166,6 +173,7 @@ class SystemLayoutContracts(unittest.TestCase):
             "bin/shell.prg", "sbin/svcctl.prg",
             "libexec/reist/storage.prg",
             "sbin/audioinfo.prg", "usr/bin/audiotest.prg",
+            "usr/bin/wavplay.prg", "usr/share/sounds/440hz.wav",
             "libexec/reist/hda.prg", "libexec/reist/audio.prg",
         ):
             self.assertIn(target, makefile)

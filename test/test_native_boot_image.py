@@ -436,6 +436,8 @@ class NativeBootImageTests(unittest.TestCase):
         self.assertIn('mouse.vusb.enable = "TRUE"', text)
         self.assertIn('usb.generic.allowHID = "FALSE"', text)
         self.assertIn('usb.generic.allowLastHID = "FALSE"', text)
+        self.assertIn('gui.enableStretchGuest = "TRUE"', text)
+        self.assertIn('gui.stretchGuestMode = "fullfill"', text)
         self.assertNotIn("usb.autoConnect", text)
         self.assertNotIn("usb.quirks", text)
 
@@ -498,6 +500,8 @@ class NativeBootImageTests(unittest.TestCase):
             )
             self.assertIn('bios.bootOrder = "hdd"', config)
             self.assertIn('floppy0.present = "FALSE"', config)
+            self.assertIn('gui.enableStretchGuest = "TRUE"', config)
+            self.assertIn('gui.stretchGuestMode = "fullfill"', config)
             self.assertTrue((package / "START-VMWARE.cmd").is_file())
             self.assertTrue((package / "README-VMWARE.txt").is_file())
             readme = (package / "README-VMWARE.txt").read_text(

@@ -247,6 +247,7 @@ try {
         'usr/bin/ascii.prg' = 'ASCII.PRG'; 'usr/bin/save.prg' = 'SAVE.PRG'
         'usr/bin/spawn.prg' = 'SPAWN.PRG'
         'usr/bin/audiotest.prg' = 'AUDIOTEST.PRG'
+        'usr/bin/wavplay.prg' = 'WAVPLAY.PRG'
         'usr/gui/bin/desktop.prg' = 'DESKTOP.PRG'
         'usr/gui/bin/guidemo.prg' = 'GUIDEMO.PRG'
         'usr/gui/bin/notepad.prg' = 'NOTEPAD.PRG'
@@ -266,11 +267,15 @@ try {
     $imageDataArguments = @(
         '--data-file', "usr/bin/$($ProgramName.ToLowerInvariant())=$UserPrg"
     )
+    $testTonePath = Join-Path $RepoRoot 'assets\audio\testtone-440hz-mono-48k-s16.wav'
+    $imageDataArguments += @(
+        '--data-file', "usr/share/sounds/440hz.wav=$testTonePath"
+    )
     $floppyDataArguments = @(
         '--data-file', "usr/bin/$($ProgramName.ToLowerInvariant())=$UserPrg"
     )
     $floppyExcluded = @(
-        'sbin/audioinfo.prg', 'usr/bin/audiotest.prg',
+        'sbin/audioinfo.prg', 'usr/bin/audiotest.prg', 'usr/bin/wavplay.prg',
         'libexec/reist/hda.prg', 'libexec/reist/audio.prg'
     )
     foreach ($entry in $systemLayout.GetEnumerator()) {

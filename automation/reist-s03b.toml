@@ -1831,7 +1831,10 @@ allowed_files = [
   "userspace/audio/lib/audio.c",
   "userspace/programs/audioinfo.c",
   "userspace/programs/audiotest.c",
+  "userspace/programs/wavplay.c",
   "userspace/bin/shell.c",
+  "assets/audio/README.md",
+  "assets/audio/testtone-440hz-mono-48k-s16.wav",
   "scripts/build_user_sdk.py",
   "scripts/build_system_programs.py",
   "scripts/build-windows.ps1",
@@ -1911,5 +1914,6 @@ evidence = [
   "python test/test_native_boot_image.py -q",
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
   ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
-  ".\\scripts\\test-reist-runtime.ps1 -Mode pci-audio"
+  "python scripts/run_qemu_pci_audio.py: PASS stereo S16, 440.4 Hz, max-gap=1",
+  "manual VMware WAVPLAY: audible 440-Hz playback at expected volume (user-confirmed 2026-08-20)"
 ]

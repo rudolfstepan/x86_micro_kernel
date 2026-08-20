@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import array
+import itertools
 import subprocess
+import sys
 import threading
 import time
 import wave
@@ -31,6 +34,11 @@ FAIL_MARKERS = (
 )
 
 QEMU_WAVE_HEADER_BYTES = 44
+PITCH_ANALYSIS_FRAMES = 24000
+PITCH_SEARCH_MIN_HZ = 360
+PITCH_SEARCH_MAX_HZ = 520
+PITCH_ACCEPT_MIN_HZ = 435.0
+PITCH_ACCEPT_MAX_HZ = 445.0
 
 
 def audio_qemu_command(qemu: Path, image: Path, wav_path: Path) -> list[str]:
@@ -48,24 +56,79 @@ def audio_qemu_command(qemu: Path, image: Path, wav_path: Path) -> list[str]:
     return command
 
 
+def estimate_pitch_hz(samples, rate: int) -> float | None:
+    """Estimate the fundamental period with bounded difference correlation.
+
+    QEMU's HDA model can introduce a one-sample discontinuity when the cyclic
+    BDL wraps.  Counting zero crossings turns each sparse discontinuity into a
+    false period.  Comparing samples at candidate period lags keeps those
+    isolated boundary artifacts from biasing the 440-Hz measurement.
+    """
+    count = min(len(samples), PITCH_ANALYSIS_FRAMES)
+    if rate <= 0 or count < PITCH_ANALYSIS_FRAMES:
+        return None
+    minimum_lag = max(1, rate // PITCH_SEARCH_MAX_HZ)
+    maximum_lag = (rate + PITCH_SEARCH_MIN_HZ - 1) // PITCH_SEARCH_MIN_HZ
+    best_lag = 0
+    best_total = 0
+    best_count = 1
+    for lag in range(minimum_lag, maximum_lag + 1):
+        compared = count - lag
+        total = sum(abs(samples[index] - samples[index - lag])
+                    for index in range(lag, count))
+        if (best_lag == 0 or
+                total * best_count < best_total * compared):
+            best_lag = lag
+            best_total = total
+            best_count = compared
+    if best_lag == 0:
+        return None
+    return rate / best_lag
+
+
 def validate_wave(path: Path) -> tuple[bool, str]:
-    """Require a stereo 16-bit capture containing at least one audible sample."""
+    """Require gap-free stereo S16 output at the requested 440-Hz pitch."""
     if not path.is_file():
         return False, "QEMU did not create the audio capture"
     try:
         with wave.open(str(path), "rb") as capture:
             channels = capture.getnchannels()
             width = capture.getsampwidth()
+            rate = capture.getframerate()
             frames = capture.getnframes()
             payload = capture.readframes(frames)
     except (OSError, EOFError, wave.Error) as error:
         return False, f"invalid WAV capture: {error}"
-    if channels != 2 or width != 2 or frames == 0:
+    if (channels != 2 or width != 2 or rate != 48000 or frames == 0):
         return False, (f"unexpected WAV format channels={channels} "
-                       f"width={width} frames={frames}")
+                       f"width={width} rate={rate} frames={frames}")
     if not any(payload):
         return False, "WAV capture contains silence only"
-    return True, f"stereo S16 capture frames={frames} bytes={len(payload)}"
+    samples = array.array("h")
+    samples.frombytes(payload)
+    if sys.byteorder != "little":
+        samples.byteswap()
+    left = samples[0::channels]
+    first = next((index for index, value in enumerate(left) if value != 0), -1)
+    last = next((len(left) - 1 - index for index, value in
+                 enumerate(reversed(left)) if value != 0), -1)
+    if first < 0 or last <= first:
+        return False, "WAV capture has no bounded active interval"
+    active = left[first:last + 1]
+    estimated_hz = estimate_pitch_hz(active, rate)
+    if estimated_hz is None:
+        return False, f"audio interval too short: {len(active)} frames"
+    if (estimated_hz < PITCH_ACCEPT_MIN_HZ or
+            estimated_hz > PITCH_ACCEPT_MAX_HZ):
+        return False, f"unexpected test-tone pitch: {estimated_hz:.1f} Hz"
+    longest_zero_run = max(
+        (sum(1 for _ in group) for zero, group in itertools.groupby(
+            active, key=lambda value: value == 0) if zero), default=0)
+    if longest_zero_run > rate // 1000:
+        return False, ("audio capture contains an interior underrun of "
+                       f"{longest_zero_run} frames")
+    return True, (f"stereo S16 capture frames={frames} "
+                  f"tone={estimated_hz:.1f}Hz max-gap={longest_zero_run}")
 
 
 def finalize_qemu_wave(path: Path) -> tuple[bool, str]:

@@ -1,3 +1,5 @@
+import array
+import math
 import tempfile
 import unittest
 import wave
@@ -8,8 +10,18 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.run_qemu_pci_audio import (
-    AUDIO_TEST_CYCLES, audio_qemu_command, finalize_qemu_wave, validate_wave,
+    AUDIO_TEST_CYCLES, audio_qemu_command, estimate_pitch_hz,
+    finalize_qemu_wave, validate_wave,
 )
+
+
+def stereo_tone(frequency: float, frames: int = 48000) -> bytes:
+    samples = array.array("h")
+    for frame in range(frames):
+        sample = int(6000.0 * math.sin(
+            2.0 * math.pi * frequency * frame / 48000.0))
+        samples.extend((sample, sample))
+    return samples.tobytes()
 
 
 class PciAudioRunnerTests(unittest.TestCase):
@@ -37,8 +49,34 @@ class PciAudioRunnerTests(unittest.TestCase):
                 output.setnchannels(2)
                 output.setsampwidth(2)
                 output.setframerate(48000)
-                output.writeframes(b"\x01\0\x01\0" * 16)
+                output.writeframes(stereo_tone(440.0))
             self.assertTrue(validate_wave(path)[0])
+
+    def test_wave_validator_rejects_wrong_pitch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "capture.wav"
+            with wave.open(str(path), "wb") as output:
+                output.setnchannels(2)
+                output.setsampwidth(2)
+                output.setframerate(48000)
+                output.writeframes(stereo_tone(400.0))
+            valid, detail = validate_wave(path)
+            self.assertFalse(valid)
+            self.assertIn("pitch", detail)
+
+    def test_pitch_estimator_ignores_sparse_hda_ring_artifacts(self):
+        mono = array.array("h")
+        for frame in range(48000):
+            sample = int(6000.0 * math.sin(
+                2.0 * math.pi * 440.0 * frame / 48000.0))
+            mono.append(sample)
+        for boundary in range(2400, len(mono), 2400):
+            mono[boundary] = 5440
+            mono[boundary + 1] = -220
+        estimated = estimate_pitch_hz(mono, 48000)
+        self.assertIsNotNone(estimated)
+        self.assertGreaterEqual(estimated, 435.0)
+        self.assertLessEqual(estimated, 445.0)
 
     def test_qemu_zero_length_wave_header_is_finalized_narrowly(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -47,7 +85,7 @@ class PciAudioRunnerTests(unittest.TestCase):
                 output.setnchannels(2)
                 output.setsampwidth(2)
                 output.setframerate(48000)
-                output.writeframes(b"\x01\0\x01\0" * 16)
+                output.writeframes(stereo_tone(440.0))
             contents = bytearray(path.read_bytes())
             contents[4:8] = b"\0" * 4
             contents[40:44] = b"\0" * 4

@@ -25,6 +25,8 @@ prerequisite, not a later hardening step.
   keep kernel syscalls generic to capability, IPC and device mediation.
 - [x] Add `libreistaudio.a` and install `<reist/audio.h>` in the SDK sysroot.
 - [x] Package `audioinfo.prg` and `audiotest.prg` for the Ring-3 shell.
+- [x] Package a CC0 PCM fixture and a bounded `wavplay.prg` parser/player for
+  an independent, manually audible playback check.
 - [x] Configure virtual HDA in VMware and deterministic HDA discovery in QEMU.
 - [x] Add host/source tests, build both reference packages and run the audio
   runtime smoke when the emulator is available.
@@ -53,14 +55,21 @@ generation-scoped supervisor transaction described in
 
 ## Verification status
 
-The frozen package gates pass for both QEMU and VMware. The PCI-audio runtime
-smoke produced a validated non-silent stereo S16 capture with 271865 frames and
-ran five complete open/write/start/stop/close cycles. This exceeds the service
-fault-restart budget and proves that normal short-lived clients rotate a clean
-endpoint generation without causing degradation, while deactivation quiesces
-DMA before the pool is refilled. The shared driver-domain tests cover
-crash, hang, stale-generation and failed-self-test containment while unrelated
-Ring-3 work retains progress. The VMware runtime additionally requires the
-profile-scoped Legacy-INTx fallback, `HDA_PROFILE pci=15AD:1977` and
-`REIST_AUDIO SERVICE_READY` from a new headless boot. Audible VMware and
-ASUS-board output are not claimed by service readiness alone.
+The frozen package builds pass for both QEMU and VMware. The latest PCI-audio
+QEMU run produced a validated non-silent stereo S16 capture with 281530 frames,
+an estimated fundamental of 440.4 Hz and no interior gap longer than one frame.
+It ran five complete open/write/start/stop/close cycles without driver or
+service degradation. This exceeds the service fault-restart budget and proves
+that normal short-lived clients rotate a clean endpoint generation without
+causing degradation, while deactivation quiesces DMA before the pool is
+refilled. The shared driver-domain tests cover crash, hang, stale-generation
+and failed-self-test containment while unrelated Ring-3 work retains progress.
+
+The VMware boot reached the profile-scoped Legacy-INTx fallback,
+`HDA_PROFILE pci=15AD:1977` and `REIST_AUDIO SERVICE_READY` without
+`HDA_REJECTED`. The user confirmed clearly audible VMware playback at the
+expected volume with the packaged CC0 fixture and `wavplay.prg` on 20 August
+2026. Correct volume required bounded traversal of the standard HDA route
+`DAC -> mixer/selector -> output pin` and activation of only the selected mixer
+input; merely raising the already near-full-scale PCM samples was rejected.
+ASUS-board output remains a separate physical-hardware proof.

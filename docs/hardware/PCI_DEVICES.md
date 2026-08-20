@@ -96,8 +96,11 @@ Unterstützungsgrenze ist HDA-Klasse `04:03:00` mit validiertem MMIO-BAR,
 Controller-Reset, Codec-Erkennung und einem begrenzten PCM-Wiedergabestream.
 QEMUs `intel-hda` mit `hda-output` erzeugt über den vollständigen Gastpfad eine
 validierte, nicht stumme Stereo-S16-Aufzeichnung. VMware ist mit virtuellem
-`hdaudio` konfiguriert; hörbare VMware-Ausgabe und reale Codec-/Pinvarianten auf
-dem ASUS-Board sind noch kein abgeschlossener Hardware-Nachweis.
+`hdaudio` konfiguriert. Die hörbare Ausgabe und der erwartete Pegel wurden mit
+der paketierten 440-Hz-WAV-Datei manuell bestätigt. Der Treiber aktiviert dafür
+den begrenzt ermittelten Standardpfad `DAC -> Mixer/Selector -> Ausgangspin`.
+Reale Codec-/Pinvarianten auf dem ASUS-Board sind weiterhin kein
+abgeschlossener Hardware-Nachweis.
 
 HDA-Treiber und PCM-Service laufen in getrennten überwachten Ring-3-Domänen.
 Der Kernel konstruiert die adresshaltige BDL aus geprüften DMA-Tokens und gibt

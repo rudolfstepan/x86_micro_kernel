@@ -109,10 +109,24 @@ nicht; Bus-Mastering bleibt unabhängig davon immer verifiziert abgeschaltet.
 
 Der HDA-Treiber prüft Controller-Version, GCAP, Outputstreams, Codecpräsenz und
 Widgettopologie. Reset-, Codecverb- und Stream-Waits besitzen feste Pollgrenzen
-und geben bei Fristablauf einen Fehler zurück. Der Ausgangsverstärker wird über
-den standardisierten Parameter `Output Amplifier Capabilities` abgefragt; der
-Offset der Capability bestimmt den gültigen 0-dB-Gain. Es wird kein
-codec- oder emulatorabhängiger Lautstärkewert fest eingebaut.
+und geben bei Fristablauf einen Fehler zurück. Die Ausgangsverstärker von DAC
+und Pin werden über den standardisierten Parameter
+`Output Amplifier Capabilities` abgefragt; der Offset der Capability bestimmt
+den gültigen 0-dB-Gain. Für die erste Wiedergabe wird jeder vorhandene
+Ausgangsverstärker innerhalb seiner gemeldeten Schrittweite um höchstens 6 dB
+angehoben; unterstützt ein Codec keinen positiven Gain, bleibt er bei 0 dB.
+Wenn ein Widget keine eigenen Verstärkerparameter
+überschreibt, werden sie entsprechend der HDA-Spezifikation vom Audio Function
+Group übernommen. Es wird kein codec- oder emulatorabhängiger Lautstärkewert
+fest eingebaut und PCM nicht digital übersteuert.
+
+Die Wiedergaberoute wird nicht als feste Codec-Node-ID angenommen. Der Treiber
+liest eine auf 16 Einträge begrenzte HDA-Connection-List und akzeptiert einen
+direkten Pfad oder genau einen standardisierten Mixer/Selector zwischen DAC
+und Ausgangspin. Bei einem Mixer wird nur der zum gewählten DAC gehörende
+Input-Amp entstummt; andere Quellen bleiben unverändert. Tiefere oder
+mehrdeutige Topologien werden in dieser Version abgewiesen, statt unbegrenzt
+durch den Codecgraphen zu laufen.
 
 Grundlage ist die
 [Intel High Definition Audio Specification](https://www.intel.com/content/dam/www/public/us/en/documents/product-specifications/high-definition-audio-specification.pdf).
@@ -133,22 +147,40 @@ usr/lib/pkgconfig/reist-audio.pc
 
 Die Systempartition enthält `/libexec/reist/hda.prg`,
 `/libexec/reist/audio.prg`, `/sbin/audioinfo.prg` und
-`/usr/bin/audiotest.prg`. Beide Diagnoseprogramme sind über die normale
+`/usr/bin/audiotest.prg`, `/usr/bin/wavplay.prg` sowie die Testdatei
+`/usr/share/sounds/440hz.wav`. Die Diagnoseprogramme sind über die normale
 Ring-3-Shell erreichbar:
 
 ```text
 C:\> AUDIOINFO
 C:\> AUDIOTEST
+C:\> WAVPLAY
+C:\> WAVPLAY /usr/share/sounds/440hz.wav
 ```
 
 `AUDIOTEST` erzeugt einen begrenzten 440-Hz-Testton, startet und stoppt den
-Stream und schließt ihn anschließend. Der QEMU-Runtimetest führt diese Folge
+Stream und schließt ihn anschließend. Sein 50-ms-Ring enthält 22 vollständige
+Perioden einer ganzzahlig erzeugten Dreieckswelle. Damit bleibt der zyklische
+HDA-Puffer an seiner Grenze phasenstetig und ist größer als ein 20-ms-
+VMware-Hostblock. Der QEMU-Runtimetest führt diese Folge
 fünfmal und damit häufiger als das Fehler-Restart-Budget aus. Normale
 Clientwechsel rotieren den Dienst-Endpunkt administrativ, ohne als
 Dienstfehler zu zählen. Der Test akzeptiert nur eine korrekt formatierte,
-nicht stumme Stereo-S16-Aufzeichnung. VMware stellt ein virtuelles `hdaudio`
+unterbrechungsfreie Stereo-S16-Aufzeichnung mit 435 bis 445 Hz. VMware stellt
+ein virtuelles `hdaudio`
 bereit; reale Codecs und physische Ausgänge benötigen weiterhin einen eigenen
 Hardwaretest.
+
+`WAVPLAY` liest RIFF/WAVE-PCM mit ein oder zwei Kanälen, 16 Bit Little Endian
+und 48 kHz. Mono wird kontrolliert auf die zwei Kanäle der öffentlichen ABI
+dupliziert. Der Parser untersucht höchstens 512 Headerbytes und 16 Chunks;
+komprimierte, gleitkommacodierte, falsch ausgerichtete oder anders abgetastete
+Dateien werden abgewiesen. Wegen des zyklischen ABI-v1-DMA-Puffers kopiert der
+Player höchstens 2400 Frames in statischen Ring-3-Speicher und wiederholt diese
+Vorschau zwei Sekunden. Streaming, Resampling und ein allgemeiner Decoder sind
+damit ausdrücklich noch nicht behauptet. Die unveränderte fünfsekündige
+440-Hz-Testdatei stammt aus dem unter CC0-1.0 veröffentlichten Projekt
+[TestToneSet](https://github.com/AkiyukiOkayasu/TestToneSet).
 
 ## Nachweis und verbleibende Risiken
 
@@ -158,6 +190,9 @@ Default-Deny-Domänen, vollständig vermitteltes DMA, Shell-Erreichbarkeit und
 identische QEMU-/VMware-Systemlayouts. Ein headless VMware-Bootsmoke verlangt
 das HDA-Profil und `REIST_AUDIO SERVICE_READY`. Der QEMU-Gastnachweis prüft
 tatsächliche nicht stumme PCM-Ausgabe und die Wiederverwendung nach `stop`.
+Der manuelle VMware-Nachweis vom 20. August 2026 bestätigt mit der paketierten
+440-Hz-WAV-Datei sowohl hörbare Ausgabe als auch den erwarteten Pegel über den
+vollständig aktivierten DAC-/Mixer-/Pin-Pfad.
 
 Noch nicht nachgewiesen sind hörbare Ausgabe auf dem ASUS-Zielsystem,
 codec-spezifische Pin-Routing-Varianten, MSI, IOMMU-Direktzuweisung und die oben

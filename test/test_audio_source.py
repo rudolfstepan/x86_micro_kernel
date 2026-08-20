@@ -1,7 +1,9 @@
+import hashlib
 import shutil
 import subprocess
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 
 
@@ -38,9 +40,26 @@ class AudioSubsystemTests(unittest.TestCase):
         self.compile_and_run(
             "audio-hda-test.exe",
             ["userspace/drivers/audio/hda_driver.c",
+             "userspace/programs/audiotest.c",
+             "userspace/programs/wavplay.c",
              "test/test_audio_host.c"],
-            ["-DREIST_HDA_DRIVER_HELPERS_ONLY"],
+            ["-DREIST_HDA_DRIVER_HELPERS_ONLY",
+             "-DREIST_AUDIOTEST_HELPERS_ONLY",
+             "-DREIST_WAVPLAY_HELPERS_ONLY"],
         )
+
+    def test_downloaded_wave_asset_is_exact_bounded_pcm_fixture(self):
+        path = ROOT / "assets/audio/testtone-440hz-mono-48k-s16.wav"
+        self.assertEqual(
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+            "0bd661e92a15bf4d3f14385725c42cc03ee14315dce1fc06a3e735c237799efa",
+        )
+        with wave.open(str(path), "rb") as fixture:
+            self.assertEqual(fixture.getnchannels(), 1)
+            self.assertEqual(fixture.getsampwidth(), 2)
+            self.assertEqual(fixture.getframerate(), 48000)
+            self.assertEqual(fixture.getnframes(), 240000)
+            self.assertEqual(fixture.getcomptype(), "NONE")
 
     def test_public_audio_sdk_behavior(self):
         self.compile_and_run(
@@ -124,7 +143,16 @@ class AudioSubsystemTests(unittest.TestCase):
                       "HDA_STREAM_POLLS 100U"):
             self.assertIn(bound, driver)
         self.assertIn("reist_hda_amp_0db_gain", driver)
+        self.assertIn("reist_hda_amp_playback_gain", driver)
+        self.assertIn("HDA_PLAYBACK_BOOST_QUARTER_DB 24U", driver)
         self.assertIn("HDA_PARAMETER_OUTPUT_AMP_CAPS", driver)
+        self.assertIn("HDA_WIDGET_CAP_AMP_OVERRIDE", driver)
+        self.assertIn("driver->pin_gain_0db", driver)
+        self.assertIn("driver->pin_has_output_amp", driver)
+        self.assertIn("HDA_CONNECTION_CAPACITY 16U", driver)
+        self.assertIn("playback_path_discover", driver)
+        self.assertIn("driver->path_has_input_amp", driver)
+        self.assertIn("driver->path_connection_index <<", driver)
         self.assertIn("driver->fatal", driver)
         self.assertNotIn("k_malloc", driver)
 
@@ -133,16 +161,28 @@ class AudioSubsystemTests(unittest.TestCase):
         windows = self.read("scripts/build-windows.ps1")
         sdk = self.read("scripts/build_user_sdk.py")
         runner = self.read("scripts/run_qemu_pci_audio.py")
+        audiotest = self.read("userspace/programs/audiotest.c")
+        wavplay = self.read("userspace/programs/wavplay.c")
         vmware = self.read("scripts/create_native_boot_image.py")
         for path in ("sbin/audioinfo.prg", "usr/bin/audiotest.prg",
+                     "usr/bin/wavplay.prg",
                      "libexec/reist/hda.prg", "libexec/reist/audio.prg"):
             self.assertIn(path, makefile)
             self.assertIn(f"'{path}'", windows)
+        self.assertIn("usr/share/sounds/440hz.wav", makefile)
+        self.assertIn("usr/share/sounds/440hz.wav", windows)
         self.assertIn("libreistaudio.a", sdk)
         self.assertIn("reist-audio.pc", sdk)
         self.assertIn("intel-hda,msi=off,debug=1", runner)
         self.assertIn("hda-output,audiodev=reistaudio,debug=1", runner)
         self.assertIn("AUDIO_TEST_CYCLES = 5", runner)
+        self.assertIn("TEST_TONE_FRAMES 2400U", audiotest)
+        self.assertIn("exactly 22 periods", audiotest)
+        self.assertIn("WAVPLAY_DEFAULT_PATH \"/usr/share/sounds/440hz.wav\"",
+                      wavplay)
+        self.assertIn("WAVPLAY_CHUNK_LIMIT 16U", wavplay)
+        self.assertIn("WAVPLAY_PREVIEW_FRAMES 2400U", wavplay)
+        self.assertNotIn("malloc", wavplay)
         self.assertIn('sound.virtualDev = "hdaudio"', vmware)
         self.assertIn('sound.pciSlotNumber = "34"', vmware)
         self.assertIn('usb.generic.allowHID = "FALSE"', vmware)

@@ -512,6 +512,10 @@ usb.generic.allowLastHID = "FALSE"
 svga.present = "TRUE"
 svga.autodetect = "TRUE"
 mks.enable3d = "FALSE"
+# VMware calls the unrestricted, aspect-ratio-independent scaling mode
+# "Free Stretch" in the UI and stores it as "fullfill" in the VMX.
+gui.enableStretchGuest = "TRUE"
+gui.stretchGuestMode = "fullfill"
 gui.fullScreenAtPowerOn = "FALSE"
 serial0.present = "TRUE"
 serial0.fileType = "file"

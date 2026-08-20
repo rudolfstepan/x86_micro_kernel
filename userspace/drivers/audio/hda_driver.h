@@ -12,5 +12,7 @@ bool reist_hda_decode_nodes(uint32_t response, uint8_t *start_node,
                             uint8_t *node_count);
 /** Extract the valid 0-dB gain step from an HDA amp-capability response. */
 bool reist_hda_amp_0db_gain(uint32_t capabilities, uint8_t *gain);
+/** Select at most +6 dB within an HDA amp-capability response. */
+bool reist_hda_amp_playback_gain(uint32_t capabilities, uint8_t *gain);
 
 #endif

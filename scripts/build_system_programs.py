@@ -83,6 +83,7 @@ PROGRAMS = {
     "AUDIO.PRG": ROOT / "userspace/services/audio/audio_service.c",
     "AUDIOINFO.PRG": ROOT / "userspace/programs/audioinfo.c",
     "AUDIOTEST.PRG": ROOT / "userspace/programs/audiotest.c",
+    "WAVPLAY.PRG": ROOT / "userspace/programs/wavplay.c",
     "SLEEPER.PRG": ROOT / "userspace/programs/sleep_child.c",
     "SATAWR.PRG": ROOT / "userspace/programs/sata_write_test.c",
 }
@@ -91,8 +92,9 @@ GUI_PROGRAMS = {"DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG"}
 NETWORK_PARSER_PROGRAMS = {"REIST.PRG"}
 AUDIO_PROGRAMS = {
     "HDA.PRG", "AUDIO.PRG", "AUDIOINFO.PRG", "AUDIOTEST.PRG",
+    "WAVPLAY.PRG",
 }
-AUDIO_CLIENT_PROGRAMS = {"AUDIOINFO.PRG", "AUDIOTEST.PRG"}
+AUDIO_CLIENT_PROGRAMS = {"AUDIOINFO.PRG", "AUDIOTEST.PRG", "WAVPLAY.PRG"}
 MAX_SYSTEM_BUILD_WORKERS = 8
 DEFAULT_SYSTEM_BUILD_WORKERS = min(
     MAX_SYSTEM_BUILD_WORKERS, max(1, os.cpu_count() or 1))
