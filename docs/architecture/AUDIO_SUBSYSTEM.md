@@ -141,6 +141,7 @@ Das SDK installiert:
 
 ```text
 usr/include/reist/audio.h
+usr/include/reist/audio_wave.h
 usr/lib/libreistaudio.a
 usr/lib/pkgconfig/reist-audio.pc
 ```
@@ -148,7 +149,8 @@ usr/lib/pkgconfig/reist-audio.pc
 Die Systempartition enthält `/libexec/reist/hda.prg`,
 `/libexec/reist/audio.prg`, `/sbin/audioinfo.prg` und
 `/usr/bin/audiotest.prg`, `/usr/bin/wavplay.prg` sowie die Testdatei
-`/usr/share/sounds/440hz.wav`. Die Diagnoseprogramme sind über die normale
+`/usr/share/sounds/440hz.wav`. Der grafische Client liegt unter
+`/usr/gui/bin/soundplayer.prg`. Die Programme sind über die normale
 Ring-3-Shell erreichbar:
 
 ```text
@@ -156,6 +158,7 @@ C:\> AUDIOINFO
 C:\> AUDIOTEST
 C:\> WAVPLAY
 C:\> WAVPLAY /usr/share/sounds/440hz.wav
+C:\> SOUNDPLAYER /usr/share/sounds/440hz.wav
 ```
 
 `AUDIOTEST` erzeugt einen begrenzten 440-Hz-Testton, startet und stoppt den
@@ -181,6 +184,14 @@ Vorschau zwei Sekunden. Streaming, Resampling und ein allgemeiner Decoder sind
 damit ausdrücklich noch nicht behauptet. Die unveränderte fünfsekündige
 440-Hz-Testdatei stammt aus dem unter CC0-1.0 veröffentlichten Projekt
 [TestToneSet](https://github.com/AkiyukiOkayasu/TestToneSet).
+
+Parser und bounded Preview-Loader gehören zur öffentlichen
+`<reist/audio_wave.h>`-Schicht und werden von `WAVPLAY` und `SOUNDPLAYER`
+gemeinsam verwendet. Die Desktop-Dateizuordnung `.wav` startet den grafischen
+Player mit dem kanonischen Dateipfad. Dieser bietet Abspielen, Stoppen und
+Schließen, hält aber dieselben Format- und Kapazitätsgrenzen ein. Bis zum
+Surface-IPC-Vertrag ist er wie der Editor ein vom Desktop überwachter
+Display-Client und noch kein unabhängig komponiertes Fenster.
 
 ## Nachweis und verbleibende Risiken
 

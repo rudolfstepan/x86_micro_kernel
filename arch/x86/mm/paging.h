@@ -25,12 +25,13 @@
 #define KERNEL_IDENTITY_LIMIT (KERNEL_PAGE_ENTRIES * PAGE_TABLE_ENTRIES * PAGE_SIZE)
 
 /* Reserved supervisor-only VA window for fault-contained task stacks.
- * Each of MAX_TASKS slots is [guard][8 KiB stack][guard].  The corresponding
+ * Each scheduler slot is [guard][8 KiB stack][guard].  The corresponding
  * identity-mapped physical range is reserved before the PMM is initialized so
  * an unmapped guard VA can never hide an allocatable direct-map frame. */
 #define KERNEL_STACK_ARENA_BASE 0x3FF00000U
 #define KERNEL_STACK_SLOT_SIZE  (4U * PAGE_SIZE)
-#define KERNEL_STACK_ARENA_SIZE (8U * KERNEL_STACK_SLOT_SIZE)
+#define KERNEL_STACK_SLOT_COUNT 32U
+#define KERNEL_STACK_ARENA_SIZE (KERNEL_STACK_SLOT_COUNT * KERNEL_STACK_SLOT_SIZE)
 
 #define USER_BASE 0x40000000U               // User address spaces start at 1 GiB
 #define USER_TOP  0xC0000000U               // Exclusive upper user-space bound

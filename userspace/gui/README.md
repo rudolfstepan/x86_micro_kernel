@@ -23,6 +23,7 @@ This avoids placeholder modules and keeps the current trust boundary visible.
 - `/usr/gui/bin/desktop.prg` contains the trusted session compositor.
 - `/usr/gui/bin/guidemo.prg` is the interactive control and dialog gallery.
 - `/usr/gui/bin/notepad.prg` is the bounded graphical text editor.
+- `/usr/gui/bin/soundplayer.prg` is the bounded graphical WAV player.
 - `/usr/gui/bin/*.prg` contains directly launchable GUI applications.
 - The development sysroot installs public headers under `/usr/include` and
   static archives under `/usr/lib`, following conventional compiler lookup
@@ -32,7 +33,7 @@ This avoids placeholder modules and keeps the current trust boundary visible.
   resources until its target-image contract is fixed.
 
 The Ring-3 shell includes `/usr/gui/bin` in its bounded default search path, so
-`desktop`, `guidemo` and `notepad` are directly launchable. `/DESKTOP.PRG` and the previous
+`desktop`, `guidemo`, `notepad` and `soundplayer` are directly launchable. `/DESKTOP.PRG` and the previous
 `/usr/bin/desktop.prg` path remain compatibility aliases, but new code must use
 the installed canonical path.
 
@@ -95,6 +96,18 @@ saves through a process-unique temporary file, `fsync` and same-directory
 rename. Save/discard/cancel on exit is application-modal. Until Surface IPC is
 available, it temporarily occupies the complete graphical display while the
 desktop remains its supervising parent and recomposes after child exit.
+
+## Graphical sound player
+
+`userspace/gui/apps/sound_player/main.c` builds as `SOUNDPLAYER.PRG` and is
+installed as `/usr/gui/bin/soundplayer.prg`. The validated
+`/etc/reist/filetypes.conf` association starts it when a `.wav` icon is opened
+in Explorer. It uses only the public `libreistgui` and `libreistaudio` APIs and
+offers keyboard- and mouse-operable Abspielen, Stop and Schliessen controls.
+Audio cleanup is idempotent on every exit path. The current cyclic audio ABI
+loads at most 15360 frames; streaming and progress seeking require a later
+versioned queue ABI. Like Notepad, the player remains a supervised display
+client until Surface IPC permits independently composed application windows.
 
 Build the SDK and the documented example with the repository's upstream
 Zig/LLVM toolchain integration:

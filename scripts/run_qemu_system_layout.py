@@ -95,6 +95,7 @@ def run(qemu: Path, image: Path, timeout: float, log: Path) -> int:
             ("ls -1 /usr/gui/bin", "desktop.prg"),
             ("guidemo --help", "Usage: guidemo"),
             ("notepad --help", "Usage: notepad"),
+            ("soundplayer --help", "Usage: soundplayer"),
             ("ls -1 /libexec/reist", "storage.prg"),
             ("svcctl status 5",
              "COMPONENT STATUS 5 name=storage-service state=READY generation=1"),

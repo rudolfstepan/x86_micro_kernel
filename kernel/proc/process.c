@@ -630,7 +630,7 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
                                                bool supervised,
                                                process_domain_kind_t domain_kind) {
     if (filename == NULL || *filename == '\0') {
-        return -1;
+        return -22;
     }
 
     /* Reclaim stacks and address spaces before this spawn needs new frames.
@@ -647,14 +647,15 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
                                   parent_generation, supervised, domain_kind);
     if (slot < 0) {
         printf("Error: Maximum number of running programs reached.\n");
-        return -1;
+        return -11;
     }
 
     Process *process = &process_list[slot];
     if (working_directory == NULL || working_directory[0] != '/' ||
         strlen(working_directory) >= sizeof(process->working_directory)) {
         release_process_slot(process);
-        return -1;
+        printf("PROGRAM_SPAWN_FAIL stage=working-directory path=%s\n", filename);
+        return -22;
     }
     strcpy(process->working_directory, working_directory);
     int pid = process->pid;
@@ -663,7 +664,7 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
     if (loaded_size < 0) {
         printf("Unable to load valid program '%s'\n", filename);
         release_process_slot(process);
-        return -1;
+        return -2;
     }
 
     program_header_t* header = (program_header_t*)program_image;
@@ -684,14 +685,16 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
         memory_stats.free_frame_bytes / PAGE_SIZE) {
         release_admission_image(&program_image);
         release_process_slot(process);
-        return -1;
+        printf("PROGRAM_SPAWN_FAIL stage=frame-admission path=%s\n", filename);
+        return -12;
     }
 
     page_directory_t *page_directory = create_page_directory();
     if (page_directory == NULL) {
         k_free(program_image);
         release_process_slot(process);
-        return -1;
+        printf("PROGRAM_SPAWN_FAIL stage=page-directory path=%s\n", filename);
+        return -12;
     }
 
     uint32_t mapped_size = (memory_image_size + PAGE_SIZE - 1U) &
@@ -705,7 +708,8 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
             free_page_directory(page_directory);
             k_free(program_image);
             release_process_slot(process);
-            return -1;
+            printf("PROGRAM_SPAWN_FAIL stage=program-map path=%s\n", filename);
+            return -12;
         }
         memset((void*)(uintptr_t)frame, 0, PAGE_SIZE);
         uint32_t amount = 0;
@@ -728,7 +732,8 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
             free_page_directory(page_directory);
             k_free(program_image);
             release_process_slot(process);
-            return -1;
+            printf("PROGRAM_SPAWN_FAIL stage=stack-map path=%s\n", filename);
+            return -12;
         }
         memset((void*)(uintptr_t)frame, 0, PAGE_SIZE);
     }
@@ -738,7 +743,8 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
     if (kernel_stack == NULL) {
         free_page_directory(page_directory);
         release_process_slot(process);
-        return -1;
+        printf("PROGRAM_SPAWN_FAIL stage=kernel-stack path=%s\n", filename);
+        return -12;
     }
 
     uint32_t user_stack;
@@ -746,7 +752,9 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
         scheduler_free_kernel_stack(kernel_stack);
         free_page_directory(page_directory);
         release_process_slot(process);
-        return -1;
+        printf("PROGRAM_SPAWN_FAIL stage=arguments path=%s argc=%d\n",
+               filename, argc);
+        return -14;
     }
 
     int task_id = (supervised ? create_supervised_user_task : create_user_task)(
@@ -756,7 +764,8 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
         scheduler_free_kernel_stack(kernel_stack);
         free_page_directory(page_directory);
         release_process_slot(process);
-        return -1;
+        printf("PROGRAM_SPAWN_FAIL stage=task-capacity path=%s\n", filename);
+        return -16;
     }
     return pid;
 }
@@ -1257,9 +1266,13 @@ int process_spawn(Process *parent, const char *path) {
 int process_spawn_args(Process *parent, const char *path, int argc,
                        const char *const *argv) {
     if (parent == NULL || path == NULL || *path == '\0' || argc < 1 ||
-        argc > 32 || argv == NULL) return -1;
+        argc > 32 || argv == NULL) return -22;
     char resolved[PROCESS_PATH_MAX];
-    if (process_resolve_path(parent, path, resolved) != 0) return -1;
+    if (process_resolve_path(parent, path, resolved) != 0) {
+        printf("PROGRAM_SPAWN_FAIL stage=resolve pid=%d path=%s\n",
+               parent->pid, path);
+        return -36;
+    }
     canonicalize_program_path(resolved);
     process_domain_kind_t domain_kind = strcmp(resolved, "/sbin/svcctl.prg") == 0
         ? PROCESS_DOMAIN_COMPONENT_ADMIN :

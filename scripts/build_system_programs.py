@@ -45,6 +45,7 @@ PROGRAMS = {
     ),
     "GUIDEMO.PRG": ROOT / "userspace/gui/apps/control_gallery/main.c",
     "NOTEPAD.PRG": ROOT / "userspace/gui/apps/notepad/main.c",
+    "SOUNDPLAYER.PRG": ROOT / "userspace/gui/apps/sound_player/main.c",
     "MKDIR.PRG": ROOT / "userspace/programs/mkdir.c",
     "RMDIR.PRG": ROOT / "userspace/programs/rmdir.c",
     "DEL.PRG": ROOT / "userspace/programs/del.c",
@@ -88,13 +89,17 @@ PROGRAMS = {
     "SATAWR.PRG": ROOT / "userspace/programs/sata_write_test.c",
 }
 
-GUI_PROGRAMS = {"DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG"}
+GUI_PROGRAMS = {
+    "DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG", "SOUNDPLAYER.PRG",
+}
 NETWORK_PARSER_PROGRAMS = {"REIST.PRG"}
 AUDIO_PROGRAMS = {
     "HDA.PRG", "AUDIO.PRG", "AUDIOINFO.PRG", "AUDIOTEST.PRG",
-    "WAVPLAY.PRG",
+    "WAVPLAY.PRG", "SOUNDPLAYER.PRG",
 }
-AUDIO_CLIENT_PROGRAMS = {"AUDIOINFO.PRG", "AUDIOTEST.PRG", "WAVPLAY.PRG"}
+AUDIO_CLIENT_PROGRAMS = {
+    "AUDIOINFO.PRG", "AUDIOTEST.PRG", "WAVPLAY.PRG", "SOUNDPLAYER.PRG",
+}
 MAX_SYSTEM_BUILD_WORKERS = 8
 DEFAULT_SYSTEM_BUILD_WORKERS = min(
     MAX_SYSTEM_BUILD_WORKERS, max(1, os.cpu_count() or 1))

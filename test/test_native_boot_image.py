@@ -502,7 +502,14 @@ class NativeBootImageTests(unittest.TestCase):
             self.assertIn('floppy0.present = "FALSE"', config)
             self.assertIn('gui.enableStretchGuest = "TRUE"', config)
             self.assertIn('gui.stretchGuestMode = "fullfill"', config)
-            self.assertTrue((package / "START-VMWARE.cmd").is_file())
+            launcher = (package / "START-VMWARE.cmd").read_text(
+                encoding="ascii"
+            )
+            self.assertIn(
+                'if exist "%~dp0vmware-serial.log" del /q '
+                '"%~dp0vmware-serial.log"',
+                launcher,
+            )
             self.assertTrue((package / "README-VMWARE.txt").is_file())
             readme = (package / "README-VMWARE.txt").read_text(
                 encoding="utf-8")

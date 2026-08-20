@@ -83,6 +83,7 @@ Der Audiofunktionstest verwendet ausschließlich die virtuelle Soundkarte; er
 C:\> AUDIOINFO
 C:\> AUDIOTEST
 C:\> WAVPLAY
+C:\> SOUNDPLAYER /usr/share/sounds/440hz.wav
 ```
 
 `AUDIOINFO` muss den überwachten Intel-HDA-Ring-3-Backendstatus melden.
@@ -96,6 +97,9 @@ Am 20. August 2026 wurde die Wiedergabe mit hörbarem 440-Hz-Ton und passendem
 Pegel bestätigt. Der HDA-Treiber aktiviert dazu neben DAC und Pin auch den
 tatsächlich verbundenen Eingang eines dazwischenliegenden Mixers oder
 Selectors; das PCM selbst bleibt ohne digitales Clipping.
+Die grafische Variante verwendet denselben WAV-Loader und Audiopfad; sie kann
+im Desktop durch Doppelklick auf `440hz.wav` oder mit obigem Shell-Aufruf
+gestartet werden. Der VMware-Hörtest bleibt eine manuelle Prüfung.
 
 ## Netzwerk
 
@@ -119,6 +123,10 @@ C:\> GETIP
 und Panic-Kontext. COM1 ist nicht die interaktive Shell-Eingabe. Bei einem
 Panic sind Phase, Komponente, Operation, Subject, Result, Details, Sequenz und
 Build-ID zu sichern.
+
+`START-VMWARE.cmd` beginnt automatisch eine neue Diagnosesitzung und entfernt
+vor dem Start ausschließlich das zuvor erzeugte `vmware-serial.log`. Dadurch
+erscheint der VMware-Dialog zum Ersetzen oder Anhängen der Datei nicht.
 
 ## Fehlerdiagnose
 

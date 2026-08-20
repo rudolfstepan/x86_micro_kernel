@@ -109,6 +109,7 @@ class SystemLayoutContracts(unittest.TestCase):
                 "usr/gui/bin/desktop.prg": b"desktop",
                 "usr/gui/bin/guidemo.prg": b"guidemo",
                 "usr/gui/bin/notepad.prg": b"notepad",
+                "usr/gui/bin/soundplayer.prg": b"soundplayer",
                 "usr/share/sounds/440hz.wav": b"wave",
                 "etc/reist/input.conf": b"schema=reist.input/1\n",
                 "etc/reist/filetypes.conf": b"schema=reist.filetypes/1\n",
@@ -174,6 +175,7 @@ class SystemLayoutContracts(unittest.TestCase):
             "libexec/reist/storage.prg",
             "sbin/audioinfo.prg", "usr/bin/audiotest.prg",
             "usr/bin/wavplay.prg", "usr/share/sounds/440hz.wav",
+            "usr/gui/bin/soundplayer.prg",
             "libexec/reist/hda.prg", "libexec/reist/audio.prg",
         ):
             self.assertIn(target, makefile)
@@ -199,6 +201,8 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn('"etc/reist/$configFile=$configPath"', windows)
         self.assertIn("usr/gui/bin/notepad.prg", makefile)
         self.assertIn("'usr/gui/bin/notepad.prg'", windows)
+        self.assertIn("usr/gui/bin/soundplayer.prg", makefile)
+        self.assertIn("'usr/gui/bin/soundplayer.prg'", windows)
         self.assertIn('{"/DESKTOP.PRG", "/usr/gui/bin/desktop.prg"}', process)
         self.assertIn(
             '{"/usr/bin/desktop.prg", "/usr/gui/bin/desktop.prg"}', process

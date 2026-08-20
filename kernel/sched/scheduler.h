@@ -19,8 +19,10 @@
 #include "kernel/sched/wait_queue.h"
 #include "arch/x86/mm/paging.h"
 
-// Maximale Anzahl von Tasks
-#define MAX_TASKS 8
+/* Fixed capacity keeps scheduler scans and stack storage bounded.  Thirty-two
+ * slots leave room for supervised services, the shell, the desktop and its
+ * applications while preserving the dedicated recovery reserve. */
+#define MAX_TASKS 32
 #define SUPERVISED_TASK_RESERVE 1U
 
 #define TASK_READY 0

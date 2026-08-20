@@ -652,6 +652,7 @@ SYSTEM_IMAGE_FILES := \
 	usr/gui/bin/desktop.prg=$(SYSTEM_PROGRAM_DIR)/DESKTOP.PRG \
 	usr/gui/bin/guidemo.prg=$(SYSTEM_PROGRAM_DIR)/GUIDEMO.PRG \
 	usr/gui/bin/notepad.prg=$(SYSTEM_PROGRAM_DIR)/NOTEPAD.PRG \
+	usr/gui/bin/soundplayer.prg=$(SYSTEM_PROGRAM_DIR)/SOUNDPLAYER.PRG \
 	libexec/reist/childex.prg=$(SYSTEM_PROGRAM_DIR)/CHILDEX.PRG \
 	libexec/reist/faultde.prg=$(SYSTEM_PROGRAM_DIR)/FAULTDE.PRG \
 	libexec/reist/faultud.prg=$(SYSTEM_PROGRAM_DIR)/FAULTUD.PRG \
@@ -670,6 +671,7 @@ SYSTEM_IMAGE_FILES := \
 # enough free space for filesystem metadata and emergency tools.
 FLOPPY_IMAGE_FILES := $(filter-out \
 	sbin/audioinfo.prg=% usr/bin/audiotest.prg=% usr/bin/wavplay.prg=% \
+	usr/gui/bin/soundplayer.prg=% \
 	usr/share/sounds/440hz.wav=% \
 	libexec/reist/hda.prg=% libexec/reist/audio.prg=%,$(SYSTEM_IMAGE_FILES))
 

@@ -7,9 +7,9 @@
 
 uint32_t reist_audiotest_buffer_frames(void);
 int16_t reist_audiotest_sample_for_phase(uint32_t phase);
-int reist_wavplay_parse_header(const uint8_t *bytes, uint32_t available,
-                               uint32_t file_size, uint32_t *data_offset,
-                               uint32_t *data_bytes, uint16_t *channels);
+int reist_audio_wave_parse_header(const uint8_t *bytes, uint32_t available,
+                                  uint32_t file_size, uint32_t *data_offset,
+                                  uint32_t *data_bytes, uint16_t *channels);
 
 static void test_bounded_wave_header_parser(void) {
     static const uint8_t valid_wave[48] = {
@@ -24,7 +24,7 @@ static void test_bounded_wave_header_parser(void) {
     uint32_t data_offset = 0U;
     uint32_t data_bytes = 0U;
     uint16_t channels = 0U;
-    assert(reist_wavplay_parse_header(
+    assert(reist_audio_wave_parse_header(
         valid_wave, 44U, sizeof(valid_wave), &data_offset, &data_bytes,
         &channels) == 0);
     assert(data_offset == 44U);
@@ -35,12 +35,12 @@ static void test_bounded_wave_header_parser(void) {
     memcpy(malformed, valid_wave, sizeof(malformed));
     malformed[24] = 0x44U; /* Unsupported 44100-Hz rate. */
     malformed[25] = 0xACU;
-    assert(reist_wavplay_parse_header(
+    assert(reist_audio_wave_parse_header(
         malformed, sizeof(malformed), sizeof(valid_wave), 0, 0, 0) != 0);
 
     memcpy(malformed, valid_wave, sizeof(malformed));
     malformed[40] = 3U; /* Data is not aligned to a complete mono frame. */
-    assert(reist_wavplay_parse_header(
+    assert(reist_audio_wave_parse_header(
         malformed, sizeof(malformed), sizeof(valid_wave), 0, 0, 0) != 0);
 }
 

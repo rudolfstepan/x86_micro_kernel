@@ -46,6 +46,8 @@ static uint32_t task_capacity_rejections;
 
 _Static_assert(MAX_TASKS <= SCHEDULER_POLICY_MAX_CANDIDATES,
                "scheduler policy candidate capacity is too small");
+_Static_assert(MAX_TASKS == KERNEL_STACK_SLOT_COUNT,
+               "scheduler and kernel-stack capacities differ");
 _Static_assert(sizeof(scheduler_resource_stats_t) == 32U,
                "scheduler statistics ABI size changed");
 

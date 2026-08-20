@@ -251,6 +251,7 @@ try {
         'usr/gui/bin/desktop.prg' = 'DESKTOP.PRG'
         'usr/gui/bin/guidemo.prg' = 'GUIDEMO.PRG'
         'usr/gui/bin/notepad.prg' = 'NOTEPAD.PRG'
+        'usr/gui/bin/soundplayer.prg' = 'SOUNDPLAYER.PRG'
         'libexec/reist/childex.prg' = 'CHILDEX.PRG'
         'libexec/reist/faultde.prg' = 'FAULTDE.PRG'
         'libexec/reist/faultud.prg' = 'FAULTUD.PRG'
@@ -276,6 +277,7 @@ try {
     )
     $floppyExcluded = @(
         'sbin/audioinfo.prg', 'usr/bin/audiotest.prg', 'usr/bin/wavplay.prg',
+        'usr/gui/bin/soundplayer.prg',
         'libexec/reist/hda.prg', 'libexec/reist/audio.prg'
     )
     foreach ($entry in $systemLayout.GetEnumerator()) {

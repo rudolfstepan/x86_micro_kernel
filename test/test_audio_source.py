@@ -41,11 +41,11 @@ class AudioSubsystemTests(unittest.TestCase):
             "audio-hda-test.exe",
             ["userspace/drivers/audio/hda_driver.c",
              "userspace/programs/audiotest.c",
-             "userspace/programs/wavplay.c",
+             "userspace/audio/lib/audio_wave.c",
              "test/test_audio_host.c"],
             ["-DREIST_HDA_DRIVER_HELPERS_ONLY",
              "-DREIST_AUDIOTEST_HELPERS_ONLY",
-             "-DREIST_WAVPLAY_HELPERS_ONLY"],
+             "-DREIST_AUDIO_WAVE_HELPERS_ONLY"],
         )
 
     def test_downloaded_wave_asset_is_exact_bounded_pcm_fixture(self):
@@ -163,6 +163,8 @@ class AudioSubsystemTests(unittest.TestCase):
         runner = self.read("scripts/run_qemu_pci_audio.py")
         audiotest = self.read("userspace/programs/audiotest.c")
         wavplay = self.read("userspace/programs/wavplay.c")
+        soundplayer = self.read("userspace/gui/apps/sound_player/main.c")
+        wave = self.read("userspace/audio/lib/audio_wave.c")
         vmware = self.read("scripts/create_native_boot_image.py")
         for path in ("sbin/audioinfo.prg", "usr/bin/audiotest.prg",
                      "usr/bin/wavplay.prg",
@@ -180,9 +182,29 @@ class AudioSubsystemTests(unittest.TestCase):
         self.assertIn("exactly 22 periods", audiotest)
         self.assertIn("WAVPLAY_DEFAULT_PATH \"/usr/share/sounds/440hz.wav\"",
                       wavplay)
-        self.assertIn("WAVPLAY_CHUNK_LIMIT 16U", wavplay)
+        self.assertIn("REIST_AUDIO_WAVE_CHUNK_LIMIT 16U",
+                      self.read("userspace/audio/include/reist/audio_wave.h"))
         self.assertIn("WAVPLAY_PREVIEW_FRAMES 2400U", wavplay)
         self.assertNotIn("malloc", wavplay)
+        self.assertIn("REIST_AUDIO_WAVE_CHUNK_LIMIT", wave)
+        self.assertIn("reist_audio_wave_load_preview", wavplay)
+        self.assertIn("reist_audio_wave_load_preview", soundplayer)
+        self.assertIn("reist_gui_control_dispatch", soundplayer)
+        self.assertIn("PLAYER_MOUSE_BATCH_LIMIT 32U", soundplayer)
+        stop = soundplayer[soundplayer.index("static int stop_audio"):
+                           soundplayer.index("static void shutdown_audio")]
+        self.assertIn("reist_audio_stop", stop)
+        self.assertIn("reist_audio_close", stop)
+        self.assertNotIn("reist_audio_shutdown", stop)
+        shutdown = soundplayer[soundplayer.index("static void shutdown_audio"):
+                               soundplayer.index("static int begin_audio")]
+        self.assertIn("reist_audio_shutdown", shutdown)
+        self.assertIn("if (!state->audio_initialized)", soundplayer)
+        self.assertIn("static void pump_audio", soundplayer)
+        self.assertIn("remaining < REIST_AUDIO_MESSAGE_FRAMES", soundplayer)
+        self.assertIn("pump_audio(&state)", soundplayer)
+        self.assertIn("else if (!state.uploading)", soundplayer)
+        self.assertNotIn("malloc", soundplayer)
         self.assertIn('sound.virtualDev = "hdaudio"', vmware)
         self.assertIn('sound.pciSlotNumber = "34"', vmware)
         self.assertIn('usb.generic.allowHID = "FALSE"', vmware)

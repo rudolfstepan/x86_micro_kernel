@@ -444,6 +444,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "DESKTOP.PRG",
                 "GUIDEMO.PRG",
                 "NOTEPAD.PRG",
+                "SOUNDPLAYER.PRG",
                 "MKDIR.PRG",
                 "RMDIR.PRG",
                 "DEL.PRG",
@@ -517,7 +518,8 @@ class UserProgramToolchainTests(unittest.TestCase):
                 if (output / name).stat().st_mtime_ns != original_times[name]
             }
             self.assertEqual(
-                rebuilt, {"DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG"}
+                rebuilt, {"DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG",
+                          "SOUNDPLAYER.PRG"}
             )
 
     def test_drives_reports_versioned_storage_health(self):

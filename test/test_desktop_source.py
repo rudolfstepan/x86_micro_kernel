@@ -130,10 +130,10 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("DESKTOP_MENU_ACTION_ABOUT", self.source)
         self.assertIn("DESKTOP_WM_EVENT_OPEN", self.source)
         self.assertIn("DESKTOP_WM_EVENT_CLOSE", self.source)
-        self.assertIn(
-            'GUI_PROGRAMS = {"DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG"}',
-            programs,
-        )
+        gui_programs = programs.split("GUI_PROGRAMS", 1)[1]
+        for program in ("DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG",
+                        "SOUNDPLAYER.PRG"):
+            self.assertIn(f'"{program}"', gui_programs)
         self.assertIn("gui_library", programs)
 
     def test_active_menu_or_dialog_receives_input_before_the_window_manager(self):
@@ -199,7 +199,7 @@ class DesktopSourceTests(unittest.TestCase):
     def test_program_activation_spawns_and_waits_for_the_selected_child(self):
         launch = self.source[self.source.index("static int launch_program") :]
         launch = launch[: launch.index("\n}") + 2]
-        self.assertIn("x86os_spawn(program)", launch)
+        self.assertIn("x86os_spawn(launch_program_path)", launch)
         self.assertIn("x86os_wait(pid, &status)", launch)
         self.assertNotIn("x86os_puts", launch)
         self.assertNotIn("x86os_clear", launch)
@@ -240,6 +240,11 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("DESKTOP_DIALOG_ERROR", self.source)
         self.assertIn("static void desktop_ui_open_error", self.source)
         self.assertIn('"Keine Dateizuordnung vorhanden."', self.source)
+        self.assertIn('"Programmargumente konnten nicht uebergeben werden."',
+                      self.source)
+        self.assertIn('"Kein freier Scheduler-Task verfuegbar."', self.source)
+        self.assertIn('"Programmdatei nicht gefunden oder ungueltig."',
+                      self.source)
         self.assertIn('"Ordner kann nicht geoeffnet werden."', self.source)
         self.assertIn('"Programm konnte nicht gestartet werden."', self.source)
         activation = self.source[
@@ -320,7 +325,14 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("DESKTOP_FILETYPES_CONFIG_CAPACITY", self.source)
         self.assertIn("desktop_filetypes_parse", self.source)
         self.assertIn("desktop_filetypes_lookup", self.source)
-        self.assertIn("x86os_spawnv(program, 2, arguments)", self.source)
+        self.assertIn("static char launch_program_path", self.source)
+        self.assertIn("static char launch_document_path", self.source)
+        self.assertIn("static const char *launch_arguments[2]", self.source)
+        self.assertIn("copy_launch_text", self.source)
+        self.assertIn(
+            "x86os_spawnv(launch_program_path, 2, launch_arguments)",
+            self.source,
+        )
         self.assertIn('"Keine Dateizuordnung vorhanden."', self.source)
 
     def test_usb_mouse_moves_a_clipped_visible_pointer(self):

@@ -49,6 +49,7 @@ GUI_LIBRARY_SOURCES = (
 )
 AUDIO_LIBRARY_SOURCES = (
     ROOT / "userspace" / "audio" / "lib" / "audio.c",
+    ROOT / "userspace" / "audio" / "lib" / "audio_wave.c",
 )
 STARTUP_SOURCE = CORE_ROOT / "crt0.c"
 

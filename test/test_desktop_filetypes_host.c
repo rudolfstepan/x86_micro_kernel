@@ -8,14 +8,17 @@ int main(void) {
         "# associations\r\n"
         "schema=reist.filetypes/1\r\n"
         ".txt=/usr/gui/bin/notepad.prg\r\n"
-        ".conf=/usr/gui/bin/notepad.prg\r\n";
+        ".conf=/usr/gui/bin/notepad.prg\r\n"
+        ".wav=/usr/gui/bin/soundplayer.prg\r\n";
     desktop_filetypes_t table;
     desktop_filetypes_initialize(&table);
     assert(desktop_filetypes_parse(&table, valid, sizeof(valid) - 1U) == 0);
-    assert(table.entry_count == 2U);
+    assert(table.entry_count == 3U);
     const char *program = 0;
     assert(desktop_filetypes_lookup(&table, "/README.TXT", &program) == 0);
     assert(strcmp(program, "/usr/gui/bin/notepad.prg") == 0);
+    assert(desktop_filetypes_lookup(&table, "/sounds/TONE.WAV", &program) == 0);
+    assert(strcmp(program, "/usr/gui/bin/soundplayer.prg") == 0);
     assert(desktop_filetypes_lookup(&table, "/archive.txt/file", &program) ==
            DESKTOP_FILETYPES_ENOTFOUND);
     assert(desktop_filetypes_lookup(&table, "/bin/demo.prg", &program) ==

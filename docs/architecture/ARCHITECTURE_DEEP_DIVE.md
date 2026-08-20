@@ -192,7 +192,7 @@ als die gesamte Heap-Kapazität sein.
 Für `*_locked`-, Präemptions- und Sleep-APIs gilt der
 [Synchronisationsvertrag](SYNCHRONIZATION_CONTRACT.md).
 
-Der Scheduler verwaltet bis zu acht Tasks mit je 8 KiB Stack und den Zuständen
+Der Scheduler verwaltet bis zu 32 Tasks mit je 8 KiB Stack und den Zuständen
 ready, running, sleeping, waiting, finished und dem internen Übergangszustand
 reaping. Ein Prozessdatensatz ordnet PID, Generation, Task-ID, Namen und
 Programmbild zu. Timerpräemption kann für kritische Operationen vorübergehend
@@ -389,7 +389,7 @@ User-Stack-Guardpages und ein für harten IRQ-Kontext geeigneter Allocator.
 - BIOS/MBR statt UEFI
 - i386 statt x86-64
 - kein SMP-Scheduler
-- feste Obergrenze von acht Tasks und genau ein Wait-Ereignis pro Task
+- feste Obergrenze von 32 Tasks und genau ein Wait-Ereignis pro Task
 - der Frame-Allocator verwaltet höchstens die ersten 1 GiB; höherer
   E820-Speicher wird bis zu einer Highmem-/`kmap`-Lösung nur erkannt
 - Kernel-Heap-Operationen sind nicht für harten IRQ-Kontext bestimmt

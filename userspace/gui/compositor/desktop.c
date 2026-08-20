@@ -1496,6 +1496,26 @@ static uint32_t desktop_try_exit(
 }
 
 static char filetypes_config[DESKTOP_FILETYPES_CONFIG_CAPACITY + 1U];
+/* The syscall copies argv synchronously, but keeping the launch handoff in
+ * fixed application storage avoids exposing deep compositor stack frames as
+ * cross-boundary string/vector inputs. The desktop event loop is serialized,
+ * so exactly one launch transaction can own these buffers at a time. */
+static char launch_program_path[DESKTOP_FILETYPES_PROGRAM_CAPACITY];
+static char launch_document_path[DESKTOP_EXPLORER_PATH_CAPACITY];
+static const char *launch_arguments[2];
+
+static int copy_launch_text(char *destination, uint32_t capacity,
+                            const char *source) {
+    if (destination == 0 || source == 0 || capacity == 0U) return -22;
+    uint32_t index = 0U;
+    while (index + 1U < capacity && source[index] != '\0') {
+        destination[index] = source[index];
+        ++index;
+    }
+    if (source[index] != '\0') return -36;
+    destination[index] = '\0';
+    return 0;
+}
 
 static int load_filetypes(desktop_filetypes_t *filetypes) {
     desktop_filetypes_initialize(filetypes);
@@ -1525,14 +1545,21 @@ static int launch_program(const char *program, const char *document) {
     int status = 0;
     int pid;
     if (program == 0 || program[0] == '\0') return -22;
+    int copy_status = copy_launch_text(
+        launch_program_path, sizeof(launch_program_path), program);
+    if (copy_status != 0) return copy_status;
     /* Until client surfaces are available, a child temporarily owns the
      * display while the desktop remains the supervising parent.  Returning
      * from the child immediately recomposes the desktop; no shell prompt or
      * extra key acknowledgement is inserted into the graphical session. */
     if (document != 0) {
-        const char *arguments[] = {program, document};
-        pid = x86os_spawnv(program, 2, arguments);
-    } else pid = x86os_spawn(program);
+        copy_status = copy_launch_text(
+            launch_document_path, sizeof(launch_document_path), document);
+        if (copy_status != 0) return copy_status;
+        launch_arguments[0] = launch_program_path;
+        launch_arguments[1] = launch_document_path;
+        pid = x86os_spawnv(launch_program_path, 2, launch_arguments);
+    } else pid = x86os_spawn(launch_program_path);
     if (pid >= 0) {
         int wait_result = x86os_wait(pid, &status);
         if (wait_result != pid) {
@@ -1694,10 +1721,23 @@ static uint32_t apply_desktop_activation(
     (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
     int launch_status = launch_program(program, document);
     desktop_dirty_full(dirty);
-    if (launch_status != 0)
+    if (launch_status != 0) {
+        const char *message = "Programm konnte nicht gestartet werden.";
+        if (launch_status == -2)
+            message = "Programmdatei nicht gefunden oder ungueltig.";
+        else if (launch_status == -11)
+            message = "Kein freier Prozessplatz verfuegbar.";
+        else if (launch_status == -12)
+            message = "Nicht genug Speicher fuer das Programm.";
+        else if (launch_status == -14)
+            message = "Programmargumente konnten nicht uebergeben werden.";
+        else if (launch_status == -16)
+            message = "Kein freier Scheduler-Task verfuegbar.";
+        else if (launch_status == -22 || launch_status == -36)
+            message = "Programmpfad ist ungueltig oder zu lang.";
         desktop_ui_open_error(
-            ui, display, dirty, "Programm konnte nicht gestartet werden.",
-            path);
+            ui, display, dirty, message, path);
+    }
     return 0U;
 }
 

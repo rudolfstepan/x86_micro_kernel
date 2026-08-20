@@ -564,6 +564,9 @@ if not exist "%VMRUN%" (
   pause
   exit /b 1
 )
+rem VMware prompts when a serial output file already exists.  Each launcher
+rem run starts a fresh diagnostic session, so remove only this generated log.
+if exist "%~dp0vmware-serial.log" del /q "%~dp0vmware-serial.log"
 "%VMRUN%" -T ws start "%~dp0reist-os.vmx" gui
 if errorlevel 1 (
   echo VMware could not start the virtual machine.
