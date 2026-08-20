@@ -1594,12 +1594,31 @@ typedef struct {
     uint32_t text_length;
 } syscall_display_text_t;
 
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t x;
+    int32_t y;
+    uint32_t foreground_rgb;
+    uint32_t background_rgb;
+    uint32_t text_address;
+    uint32_t text_length;
+    int32_t clip_x;
+    int32_t clip_y;
+    uint32_t clip_width;
+    uint32_t clip_height;
+} syscall_display_text_clipped_t;
+
+#define SYSCALL_DISPLAY_TEXT_CLIPPED_VERSION 1U
+
 _Static_assert(sizeof(framebuffer_display_info_t) == 56U,
                "display information ABI size changed");
 _Static_assert(sizeof(syscall_display_rect_t) == 28U,
                "display rectangle ABI size changed");
 _Static_assert(sizeof(syscall_display_text_t) == 32U,
                "display text ABI size changed");
+_Static_assert(sizeof(syscall_display_text_clipped_t) == 48U,
+               "clipped display text ABI size changed");
 _Static_assert(sizeof(display_frame_blit_request_t) == 48U,
                "display staged blit ABI size changed");
 
@@ -1664,6 +1683,41 @@ static int syscall_display_draw_text(const syscall_display_text_t *user_text) {
     bool drawn = framebuffer_draw_text_pixels(
         request.x, request.y, text, request.text_length,
         request.foreground_rgb, request.background_rgb);
+    int release = framebuffer_frame_draw_leave(
+        process->pid, process->generation, pit_monotonic_ms());
+    if (release != 0) return release;
+    return drawn ? (int)request.text_length : -19;
+}
+
+static int syscall_display_draw_text_clipped(
+    const syscall_display_text_clipped_t *user_text) {
+    if (!framebuffer_available()) return -19; /* ENODEV */
+    syscall_display_text_clipped_t request;
+    if (copy_from_user(&request, user_text, sizeof(request)) != 0) return -14;
+    if (request.version != SYSCALL_DISPLAY_TEXT_CLIPPED_VERSION ||
+        request.struct_size < sizeof(request) ||
+        request.text_length > FRAMEBUFFER_DISPLAY_MAX_TEXT ||
+        (request.foreground_rgb & 0xFF000000U) != 0U ||
+        (request.background_rgb & 0xFF000000U) != 0U) return -22;
+    if (request.text_length == 0U || request.clip_width == 0U ||
+        request.clip_height == 0U) return 0;
+    if (!user_range_accessible(paging_current_directory(),
+                               request.text_address, request.text_length,
+                               false)) return -14;
+
+    char text[FRAMEBUFFER_DISPLAY_MAX_TEXT];
+    if (copy_from_user(text, (const void*)(uintptr_t)request.text_address,
+                       request.text_length) != 0) return -14;
+    Process *process = scheduler_current_process();
+    if (process == NULL) return -13;
+    int reservation = framebuffer_frame_draw_enter(
+        process->pid, process->generation, pit_monotonic_ms());
+    if (reservation != 0) return reservation;
+    bool drawn = framebuffer_draw_text_pixels_clipped(
+        request.x, request.y, text, request.text_length,
+        request.foreground_rgb, request.background_rgb,
+        request.clip_x, request.clip_y,
+        request.clip_width, request.clip_height);
     int release = framebuffer_frame_draw_leave(
         process->pid, process->generation, pit_monotonic_ms());
     if (release != 0) return release;
@@ -2894,6 +2948,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_usb_diagnostics,      // Syscall 112: Read USB diagnostics
     (void*)&syscall_device_control,       // Syscall 113: Driver resources
     (void*)&syscall_process_identity,     // Syscall 114: Calling identity
+    (void*)&syscall_display_draw_text_clipped, // Syscall 115: Damage-safe text
     // Add more syscalls here as needed
 };
 
@@ -3171,6 +3226,10 @@ void syscall_handler(Registers* regs) {
         case SYS_DRAW_TEXT:
             result = (uint32_t)syscall_display_draw_text(
                 (const syscall_display_text_t*)(uintptr_t)arg1);
+            break;
+        case SYS_DRAW_TEXT_CLIPPED:
+            result = (uint32_t)syscall_display_draw_text_clipped(
+                (const syscall_display_text_clipped_t*)(uintptr_t)arg1);
             break;
         case SYS_RENAME:
             scheduler_preempt_disable();

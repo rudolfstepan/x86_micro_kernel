@@ -121,6 +121,45 @@ def send_key(process: subprocess.Popen[str], key: str) -> None:
     process.stdin.flush()
 
 
+def screenshot_has_menu_text(path: pathlib.Path) -> bool:
+    """Require dark glyph pixels inside the otherwise gray desktop menu bar."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return False
+    header = re.match(
+        rb"P6[ \t\r\n]+([0-9]+)[ \t\r\n]+([0-9]+)"
+        rb"[ \t\r\n]+255[ \t\r\n]",
+        data,
+    )
+    if header is None:
+        return False
+    width = int(header.group(1))
+    height = int(header.group(2))
+    offset = header.end()
+    if width < 460 or height < 30 or len(data) < offset + width * height * 3:
+        return False
+
+    dark_pixels = 0
+    for y in range(8, 24):
+        row = offset + y * width * 3
+        for x in range(10, 450):
+            pixel = row + x * 3
+            if (data[pixel] < 96 and data[pixel + 1] < 96 and
+                    data[pixel + 2] < 96):
+                dark_pixels += 1
+    return dark_pixels >= 64
+
+
+def require_screenshot_menu_text(path: pathlib.Path,
+                                 deadline: float) -> None:
+    while time.monotonic() < deadline:
+        if screenshot_has_menu_text(path):
+            return
+        time.sleep(0.02)
+    raise RuntimeError("desktop screenshot contains no menu text")
+
+
 def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool, render_probe: bool,
         surface_probe: bool, metrics_log: pathlib.Path | None) -> int:
@@ -227,6 +266,10 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                             time.sleep(0.1)
                             process.stdin.write(QEMU_MUX_SWITCH)
                             process.stdin.flush()
+                            require_screenshot_menu_text(
+                                screenshot,
+                                min(deadline, time.monotonic() + 1.0),
+                            )
                             print("runtime-desktop-surface: PASS")
                             return 0
                         time.sleep(0.02)
@@ -249,6 +292,10 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     time.sleep(0.05)
                     process.stdin.write(QEMU_MUX_SWITCH)
                     process.stdin.flush()
+                    require_screenshot_menu_text(
+                        screenshot,
+                        min(deadline, time.monotonic() + 1.0),
+                    )
                 send_key(process, "esc")
                 while time.monotonic() < deadline:
                     drain(output, transcript)

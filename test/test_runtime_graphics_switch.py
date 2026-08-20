@@ -153,6 +153,9 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
                       self.runtime_script)
         self.assertIn('"desktop.prg --surface-probe"', self.runtime_runner)
         self.assertIn("DESKTOP_SURFACE_OK", self.runtime_runner)
+        self.assertIn("screenshot_has_menu_text", self.runtime_runner)
+        self.assertIn("desktop screenshot contains no menu text",
+                      self.runtime_runner)
 
 
 if __name__ == "__main__":

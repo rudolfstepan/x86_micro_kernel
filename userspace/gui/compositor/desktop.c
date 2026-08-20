@@ -310,8 +310,9 @@ static void draw_text_clipped(const desktop_render_context_t *context,
     int64_t clip_top = context->clip.y;
     int64_t clip_right = clip_left + context->clip.width;
     int64_t clip_bottom = clip_top + context->clip.height;
-    if ((int64_t)y < clip_top ||
-        (int64_t)y + display->font_height > clip_bottom) return;
+    int64_t text_top = y;
+    int64_t text_bottom = text_top + display->font_height;
+    if (text_top >= clip_bottom || text_bottom <= clip_top) return;
     size_t capacity = maximum_width / display->font_width;
     if (capacity > X86OS_DISPLAY_MAX_TEXT)
         capacity = X86OS_DISPLAY_MAX_TEXT;
@@ -320,20 +321,22 @@ static void draw_text_clipped(const desktop_render_context_t *context,
     while (first < length) {
         int64_t glyph_left = (int64_t)x + first * display->font_width;
         int64_t glyph_right = glyph_left + display->font_width;
-        if (glyph_left >= clip_left && glyph_right <= clip_right) break;
+        if (glyph_left < clip_right && glyph_right > clip_left) break;
         ++first;
     }
     size_t end = first;
     while (end < length) {
         int64_t glyph_left = (int64_t)x + end * display->font_width;
         int64_t glyph_right = glyph_left + display->font_width;
-        if (glyph_left < clip_left || glyph_right > clip_right) break;
+        if (glyph_left >= clip_right || glyph_right <= clip_left) break;
         ++end;
     }
     if (end != first)
-        (void)x86os_draw_text_pixels(
+        (void)x86os_draw_text_pixels_clipped(
             x + (int32_t)(first * display->font_width), y,
-            text + first, end - first, foreground, background);
+            text + first, end - first, foreground, background,
+            context->clip.x, context->clip.y,
+            context->clip.width, context->clip.height);
 }
 
 static uint32_t menu_height(const x86os_display_info_t *display) {
@@ -1258,24 +1261,6 @@ static void render_desktop_clip(const desktop_render_context_t *context,
         render_system_dialog(context, ui);
 }
 
-static desktop_rect_t expanded_render_clip(
-    const x86os_display_info_t *display, desktop_rect_t dirty) {
-    int64_t left = (int64_t)dirty.x - display->font_width;
-    int64_t top = (int64_t)dirty.y - display->font_height;
-    int64_t right = (int64_t)dirty.x + dirty.width + display->font_width;
-    int64_t bottom = (int64_t)dirty.y + dirty.height + display->font_height;
-    if (left < 0) left = 0;
-    if (top < 0) top = 0;
-    if (right > (int64_t)display->width) right = display->width;
-    if (bottom > (int64_t)display->height) bottom = display->height;
-    if (left >= right || top >= bottom)
-        return (desktop_rect_t){0, 0, 0U, 0U};
-    return (desktop_rect_t){
-        (int32_t)left, (int32_t)top,
-        (uint32_t)(right - left), (uint32_t)(bottom - top)
-    };
-}
-
 static void render_dirty_regions(const x86os_display_info_t *display,
                                  const desktop_wm_t *manager,
                                  const desktop_explorer_t *explorer,
@@ -1288,7 +1273,10 @@ static void render_dirty_regions(const x86os_display_info_t *display,
     for (uint32_t index = 0U; index < dirty->count; ++index) {
         desktop_render_context_t context = {
             .display = display,
-            .clip = expanded_render_clip(display, dirty->rects[index]),
+            /* Every primitive, including glyph foreground and background,
+             * is clipped to this exact invalid region. Nothing can leak over
+             * a damage edge and violate the scene's z-order. */
+            .clip = dirty->rects[index],
             .omitted_kind = omitted_kind,
             .omitted_window = omitted_window,
         };
@@ -2331,6 +2319,13 @@ static void run_render_probe(
     if (manager->capture_kind != DESKTOP_WM_CAPTURE_MOVE)
         render_probe_error(metrics);
     for (uint32_t step = 0U; step < DESKTOP_RENDER_PROBE_STEPS; ++step) {
+        uint32_t move_kind = DESKTOP_MOVE_CACHE_NONE;
+        uint32_t move_window = DESKTOP_WM_NO_TARGET;
+        desktop_rect_t move_source = {0, 0, 0U, 0U};
+        desktop_move_cache_t move_cache = {0};
+        if (!desktop_move_capture_geometry(
+                manager, ui, &move_kind, &move_window, &move_source))
+            render_probe_error(metrics);
         move_pointer(display, pointer_x, pointer_y,
                      DESKTOP_RENDER_PROBE_STEP_X, 0);
         desktop_dirty_initialize(&dirty, display->width, display->height);
@@ -2341,13 +2336,29 @@ static void run_render_probe(
         };
         (void)dispatch_desktop_event(
             manager, display, &dirty, &event, &target);
+        uint32_t destination_kind = DESKTOP_MOVE_CACHE_NONE;
+        uint32_t destination_window = DESKTOP_WM_NO_TARGET;
+        desktop_rect_t destination = {0, 0, 0U, 0U};
+        if (!desktop_move_capture_geometry(
+                manager, ui, &destination_kind, &destination_window,
+                &destination) || destination_kind != move_kind ||
+            destination_window != move_window) {
+            render_probe_error(metrics);
+        } else {
+            desktop_move_cache_capture(
+                &move_cache, move_kind, move_window,
+                move_source, destination);
+        }
         if (dirty.count == 0U) {
             render_probe_error(metrics);
             continue;
         }
+        if (!move_cache.valid) render_probe_error(metrics);
         (void)x86os_pointer_update(*pointer_x, *pointer_y, 0U);
         render_desktop_measured(
-            display, manager, explorer, 0, ui, &dirty, 0, 1U, 0U, metrics);
+            display, manager, explorer, 0, ui, &dirty,
+            move_cache.valid ? &move_cache : 0,
+            1U, 0U, metrics);
         (void)x86os_pointer_update(*pointer_x, *pointer_y, 1U);
     }
     event = (desktop_wm_event_t){

@@ -34,7 +34,7 @@ class ReistProbeDomainContractTests(unittest.TestCase):
 
     def test_profile_is_versioned_fixed_and_attached_before_publication(self):
         self.assertIn("PROCESS_DOMAIN_PROFILE_VERSION 1U", self.process_h)
-        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 115U", self.process_h)
+        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 116U", self.process_h)
         self.assertIn("PROCESS_DOMAIN_SYSCALL_WORDS 4U", self.process_h)
         for field in ("version", "struct_size", "kind", "allowed_syscalls"):
             self.assertIn(field, self.process_h)
@@ -65,6 +65,7 @@ class ReistProbeDomainContractTests(unittest.TestCase):
         for denied in (
             "SYS_KILL", "SYS_SPAWN", "SYS_OPEN", "SYS_CREATE",
             "SYS_WRITE", "SYS_FILL_RECT", "SYS_DRAW_TEXT",
+            "SYS_DRAW_TEXT_CLIPPED",
             "SYS_PROCESS_INFO", "SYS_IPC_DELEGATE",
         ):
             self.assertNotIn(denied, probe)

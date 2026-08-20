@@ -103,10 +103,10 @@ enum {
     X86OS_SYS_STORAGE_MAINT_RELEASE = 88,
     X86OS_SYS_DRIVE_STATUS = 89,
     X86OS_SYS_ADMIN_STORAGE = 90,
-      X86OS_SYS_COMPONENT_CONTROL = 91,
-      X86OS_SYS_PARTITION_CREATE = 92,
-      X86OS_SYS_STORAGE_BLOCK_FLUSH = 93,
-      X86OS_SYS_STORAGE_MEDIA_COMMIT = 94,
+    X86OS_SYS_COMPONENT_CONTROL = 91,
+    X86OS_SYS_PARTITION_CREATE = 92,
+    X86OS_SYS_STORAGE_BLOCK_FLUSH = 93,
+    X86OS_SYS_STORAGE_MEDIA_COMMIT = 94,
     X86OS_SYS_STORAGE_FORMAT_PROBE = 95,
     X86OS_SYS_NETWORK_CONTROL = 96,
     X86OS_SYS_UDP_SOCKET_CONTROL = 97,
@@ -126,7 +126,8 @@ enum {
     X86OS_SYS_POINTER_UPDATE = 111,
     X86OS_SYS_USB_DIAGNOSTICS = 112,
     X86OS_SYS_DEVICE_CONTROL = 113,
-    X86OS_SYS_PROCESS_IDENTITY = 114
+    X86OS_SYS_PROCESS_IDENTITY = 114,
+    X86OS_SYS_DRAW_TEXT_CLIPPED = 115
 };
 
 #define X86OS_TCP_SOCKET_VERSION 1U
@@ -630,6 +631,30 @@ typedef struct {
     uint32_t text_address;
     uint32_t text_length;
 } x86os_display_text_t;
+
+/**
+ * Versioned request for damage-safe text rasterization.
+ *
+ * The clip rectangle uses framebuffer pixel coordinates. Pixels outside it
+ * are never modified, including glyph background pixels. This is required by
+ * compositors performing partial redraws; the legacy text call remains ABI
+ * compatible and clips only against the physical display.
+ */
+#define X86OS_DISPLAY_TEXT_CLIPPED_VERSION 1U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t x;
+    int32_t y;
+    uint32_t foreground_rgb;
+    uint32_t background_rgb;
+    uint32_t text_address;
+    uint32_t text_length;
+    int32_t clip_x;
+    int32_t clip_y;
+    uint32_t clip_width;
+    uint32_t clip_height;
+} x86os_display_text_clipped_t;
 
 typedef struct {
     uint32_t version;
@@ -1307,6 +1332,12 @@ int x86os_fill_rect(int32_t x, int32_t y, uint32_t width, uint32_t height,
 int x86os_draw_text_pixels(int32_t x, int32_t y, const char* text,
                            size_t length, uint32_t foreground_rgb,
                            uint32_t background_rgb);
+/** Draw text while modifying only pixels inside the supplied clip rectangle. */
+int x86os_draw_text_pixels_clipped(
+    int32_t x, int32_t y, const char *text, size_t length,
+    uint32_t foreground_rgb, uint32_t background_rgb,
+    int32_t clip_x, int32_t clip_y, uint32_t clip_width,
+    uint32_t clip_height);
 int x86os_getchar(void);
 int x86os_getchar_nonblocking(void);
 void* x86os_malloc(size_t size);

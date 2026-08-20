@@ -268,6 +268,7 @@ umzunummerieren:
 | 44 | `x86os_display_info(x86os_display_info_t *)` | versionierte Framebuffergeometrie, RGB-Masken und Schriftmetrik |
 | 45 | `x86os_fill_rect(...)` | geclipptes Rechteck in `0x00RRGGBB` |
 | 46 | `x86os_draw_text_pixels(...)` | geclippte Pixelschrift mit höchstens 256 Zeichen je Aufruf |
+| 115 | `x86os_draw_text_pixels_clipped(...)` | pixelgenauer Textclip für partielle Compositor-Redraws |
 
 Der generische Syscall-Rückgabekanal bleibt 32 Bit breit. Die monotone
 64-Bit-Zeit wird deshalb mit `copy_to_user` in einen zuvor validierten
@@ -285,7 +286,9 @@ kompatible Syscall 13 ausschließlich die verwalteten KiB liefert.
 Die Display-ABI v1 verwendet ebenfalls `version` und `struct_size`. Der Kernel
 kopiert Requests und Text über die geprüften User-Copy-Hilfen, clippt Rechtecke
 und Text am sichtbaren Bereich und wandelt `0x00RRGGBB` in das vom
-Bootloader gemeldete Pixelformat. Der lineare Framebuffer bleibt ausschließlich
+Bootloader gemeldete Pixelformat. Der append-only Textclip-Syscall 115 bewahrt
+die alte 32-Byte-Textrequest-ABI und ergänzt eine eigene 48-Byte-Requeststruktur
+mit geprüftem Clip-Rechteck. Der lineare Framebuffer bleibt ausschließlich
 Supervisor-MMIO und wird nicht in Ring 3 gemappt.
 
 Die Dateiinformation erweitert den bestehenden Namen/Typ/Größen-Präfix

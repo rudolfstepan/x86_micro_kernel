@@ -292,6 +292,9 @@ Bildschirms und ohne schrittweise sichtbaren Bildaufbau.
   letzten Shadowbuffer-Bild in einen festen Kernel-Cache übernehmen, den
   freigelegten Hintergrund neu komponieren und beides mit einem Frame-Commit
   atomar an der Zielposition veröffentlichen.
+- [x] Zeichen inklusive ihrer Hintergrundpixel an der exakten Dirty Region
+  clippen, damit Fensterbewegungen keine Explorer-Labels über Damage- und
+  Z-Order-Grenzen hinweg beschädigen.
 - [ ] VMware-Sichttest ohne Flackern oder stehenbleibende Fensterreste.
 - [ ] Dialog-Drag und neuen klassischen Mauszeiger auf dem ASUS/NVIDIA-Ziel
   visuell und anhand der ausgegebenen Render-Metriken abnehmen.

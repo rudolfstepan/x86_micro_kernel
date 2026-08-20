@@ -129,6 +129,7 @@
 #define SYS_USB_DIAGNOSTICS 112
 #define SYS_DEVICE_CONTROL 113
 #define SYS_PROCESS_IDENTITY 114
+#define SYS_DRAW_TEXT_CLIPPED 115
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

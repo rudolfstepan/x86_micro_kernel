@@ -62,14 +62,21 @@ verworfen. Ring 3 erhält dabei weder eine LFB- noch Shadowbuffer-Abbildung.
 
 ## Versionierte Ring-3-Display-ABI
 
-Das SDK kapselt drei angehängte Syscalls. Farben sind unabhängig vom nativen
-Pixelformat als `0x00RRGGBB` angegeben.
+Das SDK kapselt die append-only erweiterten Display-Syscalls. Farben sind
+unabhängig vom nativen Pixelformat als `0x00RRGGBB` angegeben.
 
 | Syscall | SDK-Funktion | Vertrag |
 |---:|---|---|
 | 44 | `x86os_display_info()` | versionierte Geometrie-, Pitch-, RGB- und Schriftmetrik-Ausgabe |
 | 45 | `x86os_fill_rect()` | an den sichtbaren Bereich geclipptes Rechteck |
-| 46 | `x86os_draw_text_pixels()` | geclippte Pixelschrift, höchstens 256 Zeichen pro Aufruf |
+| 46 | `x86os_draw_text_pixels()` | gegen den Bildschirm geclippte Pixelschrift, höchstens 256 Zeichen pro Aufruf |
+| 115 | `x86os_draw_text_pixels_clipped()` | Pixelschrift mit zusätzlichem pixelgenauem Damage-Clip |
+
+Syscall 115 lässt auch Hintergrundpixel angeschnittener Zeichen niemals über
+das übergebene Clip-Rechteck hinausschreiben. Der Compositor kann dadurch eine
+Dirty Region vollständig back-to-front rekonstruieren, ohne außerhalb dieser
+Region Texte aus tieferen Z-Ebenen über bereits korrekte Fenster zu zeichnen.
+Syscall 46 bleibt für bestehende Programme binär unverändert.
 
 Alle Übergabestrukturen tragen `version` und `struct_size`; Pointer und Text
 werden mit den geprüften User-Copy-Hilfen übertragen. Ring-3-Programme erhalten

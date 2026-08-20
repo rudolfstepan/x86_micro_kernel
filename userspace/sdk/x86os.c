@@ -22,6 +22,8 @@ _Static_assert(sizeof(x86os_display_rect_t) == 28U,
                "display rectangle ABI size changed");
 _Static_assert(sizeof(x86os_display_text_t) == 32U,
                "display text ABI size changed");
+_Static_assert(sizeof(x86os_display_text_clipped_t) == 48U,
+               "clipped display text ABI size changed");
 _Static_assert(sizeof(x86os_display_pixels_t) == 48U,
                "display pixels ABI size changed");
 _Static_assert(sizeof(x86os_usb_diagnostics_t) == 208U,
@@ -586,6 +588,31 @@ int x86os_draw_text_pixels(int32_t x, int32_t y, const char* text,
         .text_length = (uint32_t)length
     };
     return (int)x86os_syscall(X86OS_SYS_DRAW_TEXT,
+                              (uintptr_t)&request, 0, 0);
+}
+
+int x86os_draw_text_pixels_clipped(
+    int32_t x, int32_t y, const char *text, size_t length,
+    uint32_t foreground_rgb, uint32_t background_rgb,
+    int32_t clip_x, int32_t clip_y, uint32_t clip_width,
+    uint32_t clip_height) {
+    if ((!text && length != 0U) || length > X86OS_DISPLAY_MAX_TEXT)
+        return -22;
+    x86os_display_text_clipped_t request = {
+        .version = X86OS_DISPLAY_TEXT_CLIPPED_VERSION,
+        .struct_size = sizeof(request),
+        .x = x,
+        .y = y,
+        .foreground_rgb = foreground_rgb,
+        .background_rgb = background_rgb,
+        .text_address = (uint32_t)(uintptr_t)text,
+        .text_length = (uint32_t)length,
+        .clip_x = clip_x,
+        .clip_y = clip_y,
+        .clip_width = clip_width,
+        .clip_height = clip_height,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DRAW_TEXT_CLIPPED,
                               (uintptr_t)&request, 0, 0);
 }
 

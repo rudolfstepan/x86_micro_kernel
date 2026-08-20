@@ -67,6 +67,7 @@ class MinimalDisplayAbiTests(unittest.TestCase):
             ("DISPLAY_INFO", 44),
             ("FILL_RECT", 45),
             ("DRAW_TEXT", 46),
+            ("DRAW_TEXT_CLIPPED", 115),
         ):
             with self.subTest(name=name):
                 self.assertRegex(
@@ -78,6 +79,9 @@ class MinimalDisplayAbiTests(unittest.TestCase):
                     rf"\bX86OS_SYS_{name}\s*=\s*{number}\b",
                 )
                 self.assertIn(f"case SYS_{name}:", self.syscalls)
+        self.assertIn(
+            "(void*)&syscall_display_draw_text_clipped", self.syscalls
+        )
 
     def test_public_structs_are_versioned_and_do_not_expose_the_lfb(self) -> None:
         self.assertIn("#define X86OS_DISPLAY_ABI_VERSION 1U", self.user_header)
@@ -85,6 +89,7 @@ class MinimalDisplayAbiTests(unittest.TestCase):
             "x86os_display_info_t",
             "x86os_display_rect_t",
             "x86os_display_text_t",
+            "x86os_display_text_clipped_t",
         ):
             typedef = re.search(
                 rf"typedef\s+struct\s*\{{(?P<body>.*?)\}}\s*{type_name}\s*;",
@@ -121,12 +126,20 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         self.assertIn("request.text_length > FRAMEBUFFER_DISPLAY_MAX_TEXT", text)
         self.assertIn("user_range_accessible(", text)
         self.assertIn("framebuffer_draw_text_pixels(", text)
+        clipped = function(
+            self.syscalls, "static int syscall_display_draw_text_clipped("
+        )
+        self.assertGreaterEqual(clipped.count("copy_from_user("), 2)
+        self.assertIn("request.struct_size < sizeof(request)", clipped)
+        self.assertIn("user_range_accessible(", clipped)
+        self.assertIn("framebuffer_draw_text_pixels_clipped(", clipped)
 
     def test_no_framebuffer_reports_enodev(self) -> None:
         for signature in (
             "static int syscall_display_info(",
             "static int syscall_display_fill_rect(",
             "static int syscall_display_draw_text(",
+            "static int syscall_display_draw_text_clipped(",
         ):
             with self.subTest(signature=signature):
                 block = function(self.syscalls, signature)
@@ -148,6 +161,15 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         self.assertIn("fb_width", glyphs)
         self.assertIn("fb_height", glyphs)
         self.assertIn("fb_draw_glyph_pixels(", glyphs)
+        clipped_glyphs = function(
+            self.framebuffer, "bool framebuffer_draw_text_pixels_clipped("
+        )
+        for boundary in (
+            "pixel_x < clip_left", "pixel_x >= clip_right",
+            "pixel_y < clip_top", "pixel_y >= clip_bottom",
+        ):
+            self.assertIn(boundary, self.framebuffer)
+        self.assertIn("framebuffer_present_rect(", clipped_glyphs)
 
     def test_driver_renders_into_a_fixed_shadow_and_blits_dwords(self) -> None:
         self.assertIn("FB_SHADOW_CAPACITY", self.framebuffer)
@@ -188,6 +210,12 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         text = function(self.user_sdk, "int x86os_draw_text_pixels(")
         self.assertIn("length > X86OS_DISPLAY_MAX_TEXT", text)
         self.assertIn("x86os_display_text_t request", text)
+        clipped = function(
+            self.user_sdk, "int x86os_draw_text_pixels_clipped("
+        )
+        self.assertIn("length > X86OS_DISPLAY_MAX_TEXT", clipped)
+        self.assertIn("x86os_display_text_clipped_t request", clipped)
+        self.assertIn("X86OS_SYS_DRAW_TEXT_CLIPPED", clipped)
 
     def test_frame_control_is_append_only_owner_bound_and_cleaned_up(self) -> None:
         for source, prefix in (

@@ -105,6 +105,11 @@ bool framebuffer_present_pixels(uint32_t x, uint32_t y,
 bool framebuffer_draw_text_pixels(int32_t x, int32_t y, const char* text,
                                   size_t length, uint32_t foreground_rgb,
                                   uint32_t background_rgb);
+bool framebuffer_draw_text_pixels_clipped(
+    int32_t x, int32_t y, const char *text, size_t length,
+    uint32_t foreground_rgb, uint32_t background_rgb,
+    int32_t clip_x, int32_t clip_y, uint32_t clip_width,
+    uint32_t clip_height);
 bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible);
 int framebuffer_frame_begin(int owner_pid, uint32_t owner_generation,
                             uint64_t now_ms, uint32_t *serial_out);

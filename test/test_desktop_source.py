@@ -316,6 +316,9 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("DESKTOP_WM_CAPTURE_RESIZE", probe)
         self.assertEqual(probe.count("< DESKTOP_RENDER_PROBE_STEPS"), 2)
         self.assertIn("render_desktop_measured", probe)
+        self.assertIn("desktop_move_capture_geometry", probe)
+        self.assertIn("desktop_move_cache_capture", probe)
+        self.assertIn("move_cache.valid ? &move_cache : 0", probe)
         measured = self.source[
             self.source.index("static void render_desktop_measured") :
             self.source.index("static int read_escape_byte")
@@ -418,6 +421,34 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("manager->z_order[DESKTOP_WM_CAPACITY - 1U]", self.source)
         self.assertNotIn("desktop_wm_t visual_manager = *manager", cached)
         self.assertNotIn("render_drag_outline", self.source)
+
+    def test_dirty_redraw_preserves_glyphs_crossing_damage_edges(self):
+        text_draw = self.source[
+            self.source.index("static void draw_text_clipped") :
+            self.source.index("static uint32_t menu_height")
+        ]
+        self.assertIn(
+            "text_top >= clip_bottom || text_bottom <= clip_top", text_draw
+        )
+        self.assertIn(
+            "glyph_left < clip_right && glyph_right > clip_left", text_draw
+        )
+        self.assertIn(
+            "glyph_left >= clip_right || glyph_right <= clip_left", text_draw
+        )
+        self.assertNotIn(
+            "glyph_left >= clip_left && glyph_right <= clip_right", text_draw
+        )
+        self.assertIn("x86os_draw_text_pixels_clipped(", text_draw)
+        self.assertIn("context->clip.width, context->clip.height", text_draw)
+        self.assertNotIn("x86os_draw_text_pixels(", text_draw)
+
+        dirty_start = self.source.index("static void render_dirty_regions")
+        dirty_redraw = self.source[
+            dirty_start : self.source.index("static void render_desktop(", dirty_start)
+        ]
+        self.assertIn(".clip = dirty->rects[index]", dirty_redraw)
+        self.assertNotIn("expanded_render_clip", self.source)
 
 if __name__ == "__main__":
     unittest.main()
