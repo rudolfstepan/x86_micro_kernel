@@ -13,3 +13,4 @@ __pycache__/
 website/
 scripts/capture_website_qemu.py
 test/test_website.py
+docs/manual
