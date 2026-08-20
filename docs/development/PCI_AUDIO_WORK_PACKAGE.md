@@ -54,9 +54,13 @@ generation-scoped supervisor transaction described in
 ## Verification status
 
 The frozen package gates pass for both QEMU and VMware. The PCI-audio runtime
-smoke produced a validated non-silent stereo S16 capture with 113035 frames and
-ran two complete open/write/start/stop/close cycles, proving that deactivation
-quiesces DMA before the pool is refilled. The shared driver-domain tests cover
+smoke produced a validated non-silent stereo S16 capture with 271865 frames and
+ran five complete open/write/start/stop/close cycles. This exceeds the service
+fault-restart budget and proves that normal short-lived clients rotate a clean
+endpoint generation without causing degradation, while deactivation quiesces
+DMA before the pool is refilled. The shared driver-domain tests cover
 crash, hang, stale-generation and failed-self-test containment while unrelated
-Ring-3 work retains progress. A generated VMware image has booted, but audible
-VMware and ASUS-board output are not claimed by that observation.
+Ring-3 work retains progress. The VMware runtime additionally requires the
+profile-scoped Legacy-INTx fallback, `HDA_PROFILE pci=15AD:1977` and
+`REIST_AUDIO SERVICE_READY` from a new headless boot. Audible VMware and
+ASUS-board output are not claimed by service readiness alone.

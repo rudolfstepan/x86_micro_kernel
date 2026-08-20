@@ -36,6 +36,8 @@ enum {
     DEVICE_DOMAIN_PROFILE_MEDIATED_DMA = 1U << 0U,
     DEVICE_DOMAIN_PROFILE_IOMMU_DIRECT = 1U << 1U,
     DEVICE_DOMAIN_PROFILE_GROUP_ISOLATED = 1U << 2U,
+    /** Vetted legacy endpoint may use a line-level PIC mask for INTx. */
+    DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC = 1U << 3U,
 };
 
 enum {

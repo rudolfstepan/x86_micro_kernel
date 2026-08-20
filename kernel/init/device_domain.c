@@ -12,6 +12,7 @@
 #ifndef REIST_HOST_TEST
 #include "arch/x86/mm/paging.h"
 #include "drivers/char/io.h"
+#include "lib/libc/stdio.h"
 #include "kernel/time/pit.h"
 #endif
 
@@ -26,6 +27,7 @@ typedef struct {
     uint32_t mode;
     uint8_t irq_bound;
     uint8_t dma_bound;
+    uint8_t irq_pic_fallback;
     uint32_t irq_capability;
     uint32_t dma_capability;
     device_domain_resource_handle_t irq_resource;
@@ -293,8 +295,19 @@ static bool pci_revoke_irq(uint32_t location, int pid,
     (void)process_generation;
     (void)capability;
     const pci_device_t *device = pci_find_location(location);
-    bool masked = device != NULL && pci_mask_intx(location);
     if (device == NULL || !pci_irq_is_valid(device->irq_line)) return false;
+    bool pic_fallback_allowed = false;
+    for (uint32_t index = 0U; index < device_count; ++index) {
+        if (devices[index].registered != 0U &&
+            devices[index].pci_location == location &&
+            devices[index].irq_pic_fallback != 0U) {
+            pic_fallback_allowed = true;
+            break;
+        }
+    }
+    bool masked = pci_mask_intx(location);
+    if (!masked && pic_fallback_allowed)
+        masked = irq_pic_mask_line(device->irq_line);
     uint8_t irq = device->irq_line;
     if (irq_line_bindings[irq] == 0U) return masked;
     if (irq_line_bindings[irq] > 1U) {
@@ -504,13 +517,16 @@ static void retire_device_resources(uint32_t device_index,
 static bool profile_valid(const device_domain_profile_t *profile) {
     const uint32_t known_flags = DEVICE_DOMAIN_PROFILE_MEDIATED_DMA |
         DEVICE_DOMAIN_PROFILE_IOMMU_DIRECT |
-        DEVICE_DOMAIN_PROFILE_GROUP_ISOLATED;
+        DEVICE_DOMAIN_PROFILE_GROUP_ISOLATED |
+        DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC;
     return profile != NULL && profile->version == DEVICE_DOMAIN_ABI_VERSION &&
         profile->struct_size == sizeof(*profile) &&
         profile->isolation_group < DEVICE_DOMAIN_MAX_GROUPS &&
         profile->isolation_group != 0U && profile->vendor_id != 0U &&
         profile->vendor_id != 0xFFFFU && profile->device_id != 0xFFFFU &&
         (profile->flags & ~known_flags) == 0U &&
+        ((profile->flags & DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC) == 0U ||
+         (profile->flags & DEVICE_DOMAIN_PROFILE_MEDIATED_DMA) != 0U) &&
         profile->reserved_byte == 0U && profile->reserved[0] == 0U &&
         profile->reserved[1] == 0U && profile->reserved[2] == 0U;
 }
@@ -570,8 +586,37 @@ static bool mode_allowed(const device_slot_t *device, uint32_t mode) {
         (device->profile.flags & DEVICE_DOMAIN_PROFILE_GROUP_ISOLATED) != 0U;
 }
 
+static bool pic_mask_location(uint32_t pci_location) {
+    const pci_device_t *device = pci_find_location(pci_location);
+    return device != NULL && pci_irq_is_valid(device->irq_line) &&
+        irq_pic_mask_line(device->irq_line);
+}
+
+static bool pic_unmask_location(uint32_t pci_location) {
+    const pci_device_t *device = pci_find_location(pci_location);
+    return device != NULL && pci_irq_is_valid(device->irq_line) &&
+        irq_pic_unmask_line(device->irq_line);
+}
+
+static bool mask_device_irq(const device_slot_t *device) {
+    if (device == NULL) return false;
+    return device->irq_pic_fallback != 0U
+        ? pic_mask_location(device->pci_location)
+        : platform_ops.mask_irq(device->pci_location);
+}
+
+static bool unmask_device_irq(const device_slot_t *device) {
+    if (device == NULL) return false;
+    if (device->irq_pic_fallback == 0U)
+        return platform_ops.unmask_irq(device->pci_location);
+    /* Clear INTx-disable if the endpoint implements it, then release the
+     * line-level mask selected by the immutable profile. */
+    return platform_ops.unmask_irq(device->pci_location) &&
+        pic_unmask_location(device->pci_location);
+}
+
 static bool fence_slot(device_slot_t *device) {
-    bool irq_masked = platform_ops.mask_irq(device->pci_location);
+    bool irq_masked = mask_device_irq(device);
     bool mastering_disabled =
         platform_ops.set_bus_master(device->pci_location, false);
     bool irq_revoked = device->irq_bound == 0U || platform_ops.revoke_irq(
@@ -648,8 +693,26 @@ int device_domain_register(const device_domain_profile_t *profile,
         end_operation();
         return -16;
     }
-    bool irq_masked = platform_ops.mask_irq(pci_location);
+    bool intx_disabled = platform_ops.mask_irq(pci_location);
+    bool irq_pic_fallback = false;
+    bool irq_masked = intx_disabled;
+    if (!irq_masked &&
+        (profile->flags & DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC) != 0U) {
+        irq_pic_fallback = pic_mask_location(pci_location);
+        irq_masked = irq_pic_fallback;
+#ifndef REIST_HOST_TEST
+        if (irq_pic_fallback)
+            printf("DEVICE_DOMAIN: legacy INTx PIC fallback pci=%08X\n",
+                   pci_location);
+#endif
+    }
     bool mastering_disabled = platform_ops.set_bus_master(pci_location, false);
+#ifndef REIST_HOST_TEST
+    if (!irq_masked || !mastering_disabled)
+        printf("DEVICE_DOMAIN: initial fence pci=%08X intx=%u busmaster=%u\n",
+               pci_location, intx_disabled ? 1U : 0U,
+               mastering_disabled ? 1U : 0U);
+#endif
     uint32_t index = device_count++;
     devices[index] = (device_slot_t){
         .registered = 1U,
@@ -658,6 +721,7 @@ int device_domain_register(const device_domain_profile_t *profile,
         .state = irq_masked && mastering_disabled
             ? DEVICE_DOMAIN_AVAILABLE : DEVICE_DOMAIN_UNSUPPORTED,
         .generation = 1U,
+        .irq_pic_fallback = irq_pic_fallback ? 1U : 0U,
     };
     *device_out = index;
     end_operation();
@@ -1003,7 +1067,7 @@ int device_domain_activate(int pid, uint32_t process_generation,
         return device == NULL ? -9 : -22;
     }
     if (!platform_ops.set_bus_master(device->pci_location, true) ||
-        !platform_ops.unmask_irq(device->pci_location)) {
+        !unmask_device_irq(device)) {
         (void)fence_slot(device);
         end_operation();
         return -5;
@@ -1030,7 +1094,7 @@ int device_domain_deactivate(int pid, uint32_t process_generation,
         end_operation();
         return -22;
     }
-    bool irq_masked = platform_ops.mask_irq(device->pci_location);
+    bool irq_masked = mask_device_irq(device);
     bool mastering_disabled =
         platform_ops.set_bus_master(device->pci_location, false);
     if (!irq_masked || !mastering_disabled) {
@@ -1241,6 +1305,7 @@ void device_domain_poll(uint64_t now_ms) {
         uint32_t bit = 1U << irq;
         if ((lines & bit) == 0U) continue;
         bool matched = false;
+        bool hold_pic_line = false;
         for (uint32_t index = 0U; index < device_count; ++index) {
             device_slot_t *device = &devices[index];
             const pci_device_t *pci = pci_find_location(device->pci_location);
@@ -1248,7 +1313,8 @@ void device_domain_poll(uint64_t now_ms) {
                 device->irq_bound == 0U || pci == NULL ||
                 pci->irq_line != irq) continue;
             matched = true;
-            if (!platform_ops.mask_irq(device->pci_location) ||
+            if (device->irq_pic_fallback != 0U) hold_pic_line = true;
+            if (!mask_device_irq(device) ||
                 device->irq_resource == DEVICE_DOMAIN_INVALID_HANDLE ||
                 device->irq_sequence == DEVICE_DOMAIN_HANDLE_GENERATION_MAX) {
                 (void)fence_slot(device);
@@ -1266,6 +1332,7 @@ void device_domain_poll(uint64_t now_ms) {
             }
         }
         if ((pending_irq_lines & bit) == 0U &&
+            !hold_pic_line &&
             !irq_pic_unmask_line((uint8_t)irq)) {
             (void)__sync_fetch_and_or(&pending_irq_lines, bit);
             for (uint32_t index = 0U; index < device_count; ++index) {
@@ -1347,7 +1414,7 @@ int device_domain_irq_complete(int pid, uint32_t process_generation,
     device->irq_pending_count = 0U;
     device->irq_notification_sent = 0U;
     device->irq_deadline_ms = 0U;
-    if (!platform_ops.unmask_irq(device->pci_location)) {
+    if (!unmask_device_irq(device)) {
         (void)fence_slot(device);
         end_operation();
         return -5;

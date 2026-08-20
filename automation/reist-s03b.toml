@@ -1903,4 +1903,13 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: add bounded PCI audio playback"
-evidence = []
+evidence = [
+  "python test/test_audio_source.py -q",
+  "python test/test_user_program_toolchain.py -q",
+  "python test/test_shell_source.py -q",
+  "python test/test_system_layout.py -q",
+  "python test/test_native_boot_image.py -q",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode pci-audio"
+]

@@ -229,6 +229,7 @@ static supervisor_audio_service_runtime_t audio_service_runtime;
 static int audio_service_report_if_identity(
     int pid, uint32_t generation, uint32_t report_type, uint32_t value,
     uint64_t now_ms, bool *matched);
+static bool audio_service_rotate_session(supervisor_handle_t handle);
 #ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
 static volatile uint32_t driver_fault_markers;
 #endif
@@ -2829,12 +2830,24 @@ int supervisor_service_connect(Process *client, uint32_t service_id,
             bool client_alive = process_identity_alive(
                 audio.client_pid, audio.client_generation);
             supervisor_handle_t handle = audio.supervisor;
+            if (!client_alive) {
+                /* Serialize the administrative endpoint rotation.  Other
+                 * clients see EAGAIN until a fresh service generation has
+                 * completed self-test and published a clean endpoint. */
+                audio.ready = 0U;
+                control_result = audio_service_control_write(&audio);
+            }
             supervisor_unlock(flags);
             if (client_alive) return -16;
+            if (control_result != 0) {
+                (void)supervisor_force_isolate(handle);
+                return SUPERVISOR_EINTEGRITY;
+            }
             /* Never delegate an endpoint containing responses from a dead
              * client to a new identity. Revoke the complete service endpoint
-             * and let the bounded supervisor restart create a clean one. */
-            (void)supervisor_force_isolate(handle);
+             * and create a clean generation as an expected session change,
+             * without consuming the service fault-restart budget. */
+            (void)audio_service_rotate_session(handle);
             return -11;
         }
         audio.client_pid = client->pid;
@@ -5003,10 +5016,16 @@ bool supervisor_device_driver_component_up(uint32_t device_index,
 }
 
 static bool audio_service_spawn_next(supervisor_handle_t handle) {
+    /* A newly created task is runnable immediately.  Keep preemption disabled
+     * until its PID, generation and supervisor epoch are published so its
+     * first self-test report cannot race an incomplete control record. */
+    scheduler_preempt_disable();
     supervisor_audio_service_control_t control;
     if (audio_service_control_read(&control) != 0 || control.active == 0U ||
-        control.pid != 0 || control.endpoint != 0U || control.fenced == 0U)
+        control.pid != 0 || control.endpoint != 0U || control.fenced == 0U) {
+        scheduler_preempt_enable();
         return false;
+    }
     const char *arguments[] = {SUPERVISOR_AUDIO_SERVICE_PATH};
     int pid = supervisor_spawn_service(
         SUPERVISOR_AUDIO_SERVICE_PATH, 1, arguments,
@@ -5014,6 +5033,7 @@ static bool audio_service_spawn_next(supervisor_handle_t handle) {
     uint32_t generation = 0U;
     if (pid <= 0 || process_get_identity(pid, &generation) != 0) {
         if (pid > 0) (void)process_terminate(pid);
+        scheduler_preempt_enable();
         return false;
     }
     control.pid = pid;
@@ -5027,8 +5047,10 @@ static bool audio_service_spawn_next(supervisor_handle_t handle) {
     control.supervisor = handle;
     if (audio_service_control_write(&control) != 0) {
         (void)process_terminate(pid);
+        scheduler_preempt_enable();
         return false;
     }
+    scheduler_preempt_enable();
     return true;
 }
 
@@ -5059,6 +5081,42 @@ static bool audio_service_fence_verify(void *context) {
         control.pid == 0 && control.process_generation == 0U &&
         control.endpoint == 0U && control.healthy == 0U &&
         control.ready == 0U;
+}
+
+/* Rotate a completed client session without classifying normal application
+ * lifetime as an audio-service failure.  The old service process is still
+ * fenced and reaped before a new generation is published, so queued replies
+ * and delegated endpoint rights can never cross client identities. */
+static bool audio_service_rotate_session(supervisor_handle_t handle) {
+    supervisor_handle_t isolate_handle = handle;
+    supervisor_handle_t updated = {0};
+    supervisor_audio_service_control_t control;
+    bool rotated = false;
+
+    scheduler_preempt_disable();
+    if (!audio_service_fence_apply(&audio_service_runtime) ||
+        !audio_service_fence_verify(&audio_service_runtime) ||
+        supervisor_admin_pause(handle) != 0 ||
+        supervisor_admin_start(handle, pit_monotonic_ms(), &updated) != 0)
+        goto done;
+    isolate_handle = updated;
+    if (audio_service_control_read(&control) != 0 ||
+        control.active == 0U || control.fenced == 0U || control.pid != 0)
+        goto done;
+    control.supervisor = updated;
+    if (audio_service_control_write(&control) != 0 ||
+        !audio_service_spawn_next(updated))
+        goto done;
+    rotated = true;
+
+done:
+    scheduler_preempt_enable();
+    if (!rotated) {
+        (void)supervisor_force_isolate(isolate_handle);
+        return false;
+    }
+    printf("REIST_AUDIO SERVICE_SESSION_ROTATED\n");
+    return true;
 }
 
 bool supervisor_start_audio_service(uint32_t device_index, uint64_t now_ms) {

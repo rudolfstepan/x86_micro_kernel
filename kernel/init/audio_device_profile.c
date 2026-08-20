@@ -31,6 +31,8 @@
 #define HDA_SD_FMT 0x12U
 #define HDA_SD_BDL 0x18U
 #define HDA_PROFILE_MAP_BYTES 4096U
+#define HDA_VMWARE_VENDOR_ID 0x15ADU
+#define HDA_VMWARE_DEVICE_ID 0x1977U
 
 static uint16_t hda_read16(const volatile uint8_t *base, uint32_t offset) {
     return *(const volatile uint16_t *)(base + offset);
@@ -78,7 +80,10 @@ int audio_device_profile_discover(audio_device_profile_info_t *info) {
             .version = DEVICE_DOMAIN_ABI_VERSION,
             .struct_size = sizeof(profile),
             .isolation_group = DEVICE_DOMAIN_MAX_GROUPS - 1U,
-            .flags = DEVICE_DOMAIN_PROFILE_MEDIATED_DMA,
+            .flags = DEVICE_DOMAIN_PROFILE_MEDIATED_DMA |
+                ((device->vendor_id == HDA_VMWARE_VENDOR_ID &&
+                  device->device_id == HDA_VMWARE_DEVICE_ID)
+                    ? DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC : 0U),
             .vendor_id = device->vendor_id,
             .device_id = device->device_id,
             .class_code = device->class_code,

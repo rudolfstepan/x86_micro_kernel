@@ -25,6 +25,17 @@ static device_domain_irq_message_t last_notification;
 static uint32_t region_write_calls;
 static uint32_t dma_address_writes;
 static uint32_t last_region_value;
+static uint32_t pic_mask_calls;
+static uint32_t pic_unmask_calls;
+
+pci_device_t pci_devices[2] = {
+    {
+        .vendor_id = 0x8086U, .device_id = 0x2668U,
+        .bus = 0U, .slot = 27U, .function = 0U,
+        .irq_line = 5U,
+    },
+};
+size_t pci_device_count = 1U;
 
 int register_interrupt_handler(int irq, void *handler) {
     return irq >= 0 && irq < PCI_LEGACY_IRQ_COUNT && handler != NULL ? 0 : -1;
@@ -35,10 +46,12 @@ int unregister_interrupt_handler(int irq, void *handler) {
 }
 
 bool irq_pic_mask_line(uint8_t irq) {
+    ++pic_mask_calls;
     return irq < PCI_LEGACY_IRQ_COUNT;
 }
 
 bool irq_pic_unmask_line(uint8_t irq) {
+    ++pic_unmask_calls;
     return irq < PCI_LEGACY_IRQ_COUNT;
 }
 
@@ -63,12 +76,13 @@ static uint64_t monotonic_ms(void) {
 }
 
 const pci_device_t *pci_find_location(uint32_t location) {
-    static const pci_device_t device = {
-        .vendor_id = 0x8086U, .device_id = 0x2668U,
-        .bus = 0U, .slot = 27U, .function = 0U,
-        .irq_line = 5U,
-    };
-    return location == 0x00001B00U ? &device : NULL;
+    for (size_t index = 0U; index < pci_device_count; ++index) {
+        const pci_device_t *device = &pci_devices[index];
+        uint32_t candidate = ((uint32_t)device->bus << 16U) |
+            ((uint32_t)device->slot << 8U) | device->function;
+        if (candidate == location) return device;
+    }
+    return NULL;
 }
 
 bool pci_irq_is_valid(uint8_t irq) {
@@ -270,6 +284,84 @@ static void reset_counters(void) {
     region_write_calls = 0U;
     dma_address_writes = 0U;
     last_region_value = 0U;
+    pic_mask_calls = 0U;
+    pic_unmask_calls = 0U;
+    pci_device_count = 1U;
+    pci_devices[0].irq_line = 5U;
+    pci_devices[1] = (pci_device_t){0};
+}
+
+static device_domain_platform_ops_t test_platform_ops(void) {
+    return (device_domain_platform_ops_t){
+        .monotonic_ms = monotonic_ms,
+        .claim_device = claim_device,
+        .set_bus_master = set_bus_master,
+        .mask_irq = mask_irq,
+        .unmask_irq = unmask_irq,
+        .describe_region = describe_region,
+        .prepare_region = prepare_region,
+        .read_region = read_region,
+        .write_region = write_region,
+        .write_dma_address = write_dma_address,
+        .bind_irq = bind_irq,
+        .revoke_irq = revoke_irq,
+        .bind_dma = bind_dma,
+        .revoke_dma = revoke_dma,
+        .reset = reset_device,
+    };
+}
+
+static void test_legacy_pic_fallback_masks_shared_irq(void) {
+    reset_counters();
+    mask_result = false;
+    device_domain_platform_ops_t ops = test_platform_ops();
+    assert(device_domain_init(&ops, false));
+    device_domain_profile_t hda = profile(
+        7U, DEVICE_DOMAIN_PROFILE_MEDIATED_DMA |
+            DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC);
+    uint32_t device = UINT32_MAX;
+    assert(device_domain_register(&hda, 0x00001B00U, &device) == 0);
+    assert(device == 0U && pic_mask_calls == 1U);
+
+    const device_domain_region_policy_t policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(policy),
+        .readable_bytes = {0x100U},
+        .rule_count = 1U,
+        .rules = {{0U, 0x08U, 4U, DEVICE_DOMAIN_REGION_RULE_VALUE,
+                   0x03U, 0U}},
+    };
+    assert(device_domain_install_region_policy(device, &policy) == 0);
+    device_domain_handle_t handle = DEVICE_DOMAIN_INVALID_HANDLE;
+    assert(device_domain_claim(17, 11U, device,
+        DEVICE_DOMAIN_MODE_MEDIATED, &handle) == 0);
+    device_domain_resource_handle_t irq_resource = 0U;
+    device_domain_resource_handle_t dma_resource = 0U;
+    assert(bind_irq_resource(17, 11U, handle, 11U, &irq_resource) == 0);
+    assert(bind_dma_resource(17, 11U, handle, 0U, &dma_resource) == 0);
+    assert(device_domain_activate(17, 11U, handle) == 0);
+    assert(pic_unmask_calls == 1U);
+    device_domain_test_raise_irq(5U);
+    device_domain_poll(20U);
+    assert(kernel_notifications == 1U);
+    assert(pic_mask_calls == 2U && pic_unmask_calls == 1U);
+    device_domain_irq_completion_t completion;
+    assert(device_domain_irq_complete(
+        17, 11U, irq_resource, &completion) == 0);
+    assert(pic_unmask_calls == 2U);
+    assert(device_domain_deactivate(17, 11U, handle) == 0);
+    assert(pic_mask_calls == 3U);
+
+    reset_counters();
+    mask_result = false;
+    pci_devices[1] = pci_devices[0];
+    pci_devices[1].slot = 26U;
+    pci_device_count = 2U;
+    ops = test_platform_ops();
+    assert(device_domain_init(&ops, false));
+    device = UINT32_MAX;
+    assert(device_domain_register(&hda, 0x00001B00U, &device) == 0);
+    assert(device == 0U && pic_mask_calls == 1U);
 }
 
 static void test_mediated_lifecycle_and_stale_handle(void) {
@@ -734,6 +826,7 @@ static void test_owner_recovery_is_atomic_and_deadline_bounded(void) {
 }
 
 int main(void) {
+    test_legacy_pic_fallback_masks_shared_irq();
     test_mediated_lifecycle_and_stale_handle();
     test_group_exclusivity_and_failed_reset();
     test_direct_assignment_requires_both_proofs();

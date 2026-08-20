@@ -8,11 +8,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.run_qemu_pci_audio import (
-    audio_qemu_command, finalize_qemu_wave, validate_wave,
+    AUDIO_TEST_CYCLES, audio_qemu_command, finalize_qemu_wave, validate_wave,
 )
 
 
 class PciAudioRunnerTests(unittest.TestCase):
+    def test_runtime_exceeds_service_fault_restart_budget(self):
+        self.assertGreater(AUDIO_TEST_CYCLES, 3)
+
     def test_qemu_configuration_uses_virtual_hda_and_wav_capture(self):
         command = audio_qemu_command(
             Path("qemu-system-i386"), Path("reist.img"), Path("audio.wav"))

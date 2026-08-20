@@ -24,6 +24,7 @@ SHELL_PROMPT = "C:\\>"
 AUDIO_READY = "REIST_AUDIO SERVICE_READY"
 AUDIOINFO_OK = "REIST audio: ready"
 AUDIOTEST_OK = "Audio test complete."
+AUDIO_TEST_CYCLES = 5
 FAIL_MARKERS = (
     "PANIC:", "KERNEL ASSERTION FAILED", "Kernel exception:",
     "REIST_AUDIO DRIVER_DEGRADED", "REIST_AUDIO SERVICE_DEGRADED",
@@ -161,16 +162,15 @@ def main() -> int:
             if not wait_for(transcript, AUDIOINFO_OK, deadline):
                 detail = "audioinfo did not confirm the PCM service"
             else:
-                inject_ps2_command(process, "audiotest")
-                if not wait_for(transcript, AUDIOTEST_OK, deadline):
-                    detail = "audiotest did not complete"
-                else:
-                    # A second complete cycle proves that stop quiesces DMA,
-                    # the sealed pool can be refilled and activation is reusable.
+                # More cycles than the service restart budget prove that
+                # normal short-lived clients rotate their endpoint generation
+                # without being misclassified as service failures.
+                for cycle in range(1, AUDIO_TEST_CYCLES + 1):
                     inject_ps2_command(process, "audiotest")
                     if not wait_for_count(
-                            transcript, AUDIOTEST_OK, 2, deadline):
-                        detail = "second audiotest cycle did not complete"
+                            transcript, AUDIOTEST_OK, cycle, deadline):
+                        detail = f"audiotest cycle {cycle} did not complete"
+                        break
     finally:
         if process.poll() is None:
             try:

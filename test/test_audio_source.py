@@ -84,6 +84,27 @@ class AudioSubsystemTests(unittest.TestCase):
         self.assertIn("client_pid", supervisor)
         self.assertIn("Never delegate an endpoint containing responses",
                       supervisor)
+        self.assertIn("audio_service_rotate_session(handle)", supervisor)
+        self.assertIn("without consuming the service fault-restart budget",
+                      supervisor)
+        self.assertIn("supervisor_admin_pause(handle)", supervisor)
+        self.assertIn("supervisor_admin_start(handle", supervisor)
+        spawn = supervisor.split(
+            "static bool audio_service_spawn_next", 1)[1]
+        spawn = spawn.split("static bool audio_service_fence_apply", 1)[0]
+        self.assertIn("scheduler_preempt_disable();", spawn)
+        self.assertIn("scheduler_preempt_enable();", spawn)
+
+    def test_vmware_legacy_intx_fallback_is_profile_scoped(self):
+        profile = self.read("kernel/init/audio_device_profile.c")
+        domain = self.read("kernel/init/device_domain.c")
+        header = self.read("include/kernel/device_domain.h")
+        self.assertIn("HDA_VMWARE_VENDOR_ID 0x15ADU", profile)
+        self.assertIn("HDA_VMWARE_DEVICE_ID 0x1977U", profile)
+        self.assertIn("DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC", profile)
+        self.assertIn("DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC", header)
+        self.assertIn("irq_pic_fallback", domain)
+        self.assertIn("hold_pic_line", domain)
 
     def test_dma_publication_is_kernel_owned_sealed_and_reusable(self):
         domain = self.read("kernel/init/device_domain.c")
@@ -121,8 +142,20 @@ class AudioSubsystemTests(unittest.TestCase):
         self.assertIn("reist-audio.pc", sdk)
         self.assertIn("intel-hda,msi=off,debug=1", runner)
         self.assertIn("hda-output,audiodev=reistaudio,debug=1", runner)
+        self.assertIn("AUDIO_TEST_CYCLES = 5", runner)
         self.assertIn('sound.virtualDev = "hdaudio"', vmware)
+        self.assertIn('sound.pciSlotNumber = "34"', vmware)
         self.assertIn('usb.generic.allowHID = "FALSE"', vmware)
+        runtime = self.read("scripts/test-reist-runtime.ps1")
+        self.assertIn("function Invoke-VmwareAudioService", runtime)
+        self.assertIn("$attempt -le 2", runtime)
+        self.assertIn("$startFailures", runtime)
+        self.assertIn("[System.Diagnostics.ProcessStartInfo]::new()", runtime)
+        self.assertIn("WaitForExit(15000)", runtime)
+        self.assertIn("VMWARE AUDIO PASS", runtime)
+        audio_mode = runtime[runtime.index("'pci-audio' {"):]
+        self.assertLess(audio_mode.index("Invoke-VmwareAudioService"),
+                        audio_mode.index("& $Python $PciAudioRunner"))
 
     def test_architecture_and_work_package_document_support_boundary(self):
         architecture = self.read("docs/architecture/AUDIO_SUBSYSTEM.md")

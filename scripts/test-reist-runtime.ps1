@@ -316,6 +316,149 @@ function Invoke-SystemLayout {
     Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
 }
 
+function Invoke-VmwareAudioService {
+    $vmrun = $null
+    foreach ($candidate in @(
+        'C:\Program Files\VMware\VMware Workstation\vmrun.exe',
+        'C:\Program Files (x86)\VMware\VMware Workstation\vmrun.exe'
+    )) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            $vmrun = $candidate
+            break
+        }
+    }
+    if ($null -eq $vmrun) {
+        Write-Output 'VMWARE AUDIO SKIP vmrun unavailable'
+        return
+    }
+
+    $vmx = Join-Path $RepoRoot 'build\vmware\reist-os\reist-os.vmx'
+    $serial = Join-Path $RepoRoot 'build\vmware\reist-os\vmware-serial.log'
+    if (!(Test-Path -LiteralPath $vmx -PathType Leaf)) {
+        throw 'VMware package is missing; build target vmware first.'
+    }
+    $configuration = Get-Content -LiteralPath $vmx -Raw
+    foreach ($required in @(
+        'sound.virtualDev = "hdaudio"',
+        'sound.pciSlotNumber = "34"',
+        'usb.generic.allowHID = "FALSE"',
+        'usb.generic.allowLastHID = "FALSE"'
+    )) {
+        if (!$configuration.Contains($required)) {
+            throw "VMware audio safety configuration missing: $required"
+        }
+    }
+    $running = & $vmrun -T ws list 2>$null
+    if ($running | Where-Object { $_.Trim() -ieq $vmx }) {
+        throw 'VMware package VM is already running.'
+    }
+
+    $beforeFallback = @(Select-String -LiteralPath $serial -SimpleMatch `
+        'DEVICE_DOMAIN: legacy INTx PIC fallback' `
+        -ErrorAction SilentlyContinue).Count
+    $beforeProfile = @(Select-String -LiteralPath $serial -SimpleMatch `
+        'REIST_AUDIO HDA_PROFILE pci=15AD:1977' `
+        -ErrorAction SilentlyContinue).Count
+    $beforeReady = @(Select-String -LiteralPath $serial -SimpleMatch `
+        'REIST_AUDIO SERVICE_READY' -ErrorAction SilentlyContinue).Count
+    $beforeRejected = @(Select-String -LiteralPath $serial -SimpleMatch `
+        'REIST_AUDIO HDA_REJECTED' -ErrorAction SilentlyContinue).Count
+    $started = $false
+    $passed = $false
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $startFailures = @()
+        for ($attempt = 1; $attempt -le 2; ++$attempt) {
+            $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+            $startInfo.FileName = $vmrun
+            $startInfo.Arguments = "-T ws start `"$vmx`" nogui"
+            $startInfo.UseShellExecute = $false
+            $startInfo.CreateNoWindow = $true
+            $startInfo.RedirectStandardOutput = $true
+            $startInfo.RedirectStandardError = $true
+            $startProcess = [System.Diagnostics.Process]::new()
+            $startProcess.StartInfo = $startInfo
+            try {
+                [void]$startProcess.Start()
+            }
+            catch {
+                $startFailures += "attempt=$attempt launch=$($_.Exception.Message)"
+                if ($attempt -lt 2) { Start-Sleep -Milliseconds 500 }
+                continue
+            }
+            $stdout = $startProcess.StandardOutput.ReadToEndAsync()
+            $stderr = $startProcess.StandardError.ReadToEndAsync()
+            if (!$startProcess.WaitForExit(15000)) {
+                $startProcess.Kill()
+                [void]$startProcess.WaitForExit(2000)
+                $startFailures += "attempt=$attempt exit=timeout"
+                if ($attempt -lt 2) { Start-Sleep -Milliseconds 500 }
+                continue
+            }
+            $startExit = $startProcess.ExitCode
+            $startOutput = @(
+                $stdout.GetAwaiter().GetResult(),
+                $stderr.GetAwaiter().GetResult()
+            )
+            if ($startExit -eq 0) {
+                $started = $true
+                break
+            }
+
+            # vmrun can return before the Workstation service has published
+            # the VM. Accept only a positively listed VM, otherwise make one
+            # bounded retry and retain the native diagnostic for the gate log.
+            Start-Sleep -Milliseconds 500
+            $runningAfterStart = & $vmrun -T ws list 2>$null
+            if ($runningAfterStart |
+                    Where-Object { $_.Trim() -ieq $vmx }) {
+                $started = $true
+                break
+            }
+            $detail = ($startOutput | ForEach-Object {
+                $_.ToString().Trim()
+            } | Where-Object { $_ }) -join ' '
+            if (!$detail) { $detail = 'no vmrun diagnostic' }
+            $startFailures += "attempt=$attempt exit=$startExit $detail"
+            if ($attempt -lt 2) { Start-Sleep -Milliseconds 500 }
+        }
+        if (!$started) {
+            throw ('Unable to start VMware audio smoke: ' +
+                ($startFailures -join '; '))
+        }
+        $deadline = (Get-Date).AddSeconds(45)
+        do {
+            $rejected = @(Select-String -LiteralPath $serial -SimpleMatch `
+                'REIST_AUDIO HDA_REJECTED' -ErrorAction SilentlyContinue).Count
+            if ($rejected -gt $beforeRejected) {
+                throw 'VMware rejected the HDA safety profile.'
+            }
+            $fallback = @(Select-String -LiteralPath $serial -SimpleMatch `
+                'DEVICE_DOMAIN: legacy INTx PIC fallback' `
+                -ErrorAction SilentlyContinue).Count
+            $profile = @(Select-String -LiteralPath $serial -SimpleMatch `
+                'REIST_AUDIO HDA_PROFILE pci=15AD:1977' `
+                -ErrorAction SilentlyContinue).Count
+            $ready = @(Select-String -LiteralPath $serial -SimpleMatch `
+                'REIST_AUDIO SERVICE_READY' -ErrorAction SilentlyContinue).Count
+            if ($fallback -gt $beforeFallback -and
+                $profile -gt $beforeProfile -and $ready -gt $beforeReady) {
+                $passed = $true
+                break
+            }
+            Start-Sleep -Milliseconds 250
+        } while ((Get-Date) -lt $deadline)
+        if (!$passed) { throw 'VMware audio service readiness timed out.' }
+    }
+    finally {
+        if ($started) {
+            & $vmrun -T ws stop $vmx hard 2>$null | Out-Null
+        }
+        $watch.Stop()
+    }
+    Write-Output "VMWARE AUDIO PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s"
+}
+
 switch ($Mode) {
     'normal' {
         Invoke-Smoke 'guest-smoke.log' @()
@@ -441,6 +584,10 @@ switch ($Mode) {
         Invoke-SystemLayout
     }
     'pci-audio' {
+        # Prove VMware readiness before the independent QEMU TCG capture.
+        # Some Workstation hosts transiently reject vmrun directly after the
+        # QEMU audio process exits even though no QEMU process remains.
+        Invoke-VmwareAudioService
         $wav = Join-Path $RepoRoot 'build\pci-audio.wav'
         $audioLog = Join-Path $RepoRoot 'build\guest-pci-audio.log'
         & $Python $PciAudioRunner --qemu $Qemu --image $Image `

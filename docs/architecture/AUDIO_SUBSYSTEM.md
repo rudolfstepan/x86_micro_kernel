@@ -96,6 +96,15 @@ Treiber das Gerät wieder bis `DMA_BOUND`, sodass der Pool ohne laufendes DMA
 neu befüllt werden kann. Fehler bei Aktivierung, MMIO oder Deaktivierung
 maskieren IRQs, nehmen Bus-Mastering zurück und fence'n die Gerätegeneration.
 
+PCI-2.3-Endpunkte müssen das verifizierte `INTx Disable`-Bit verwenden. Das
+VMware-HDA-Modell `15AD:1977` ignoriert dieses Bit jedoch. Ausschließlich sein
+unveränderliches Geräteprofil erlaubt deshalb einen Legacy-PIC-Fallback: Die
+gemeinsam genutzte IRQ-Leitung wird im Hard-IRQ-Pfad maskiert, alle
+registrierten Shared-IRQ-Handler werden ausgeführt und die Leitung erst nach
+dem generationstreuen Ring-3-Acknowledge wieder freigegeben. Ein Timeout hält
+die Leitung fail-closed maskiert. Andere PCI-Modelle erhalten diese Ausnahme
+nicht; Bus-Mastering bleibt unabhängig davon immer verifiziert abgeschaltet.
+
 ## HDA-Zustandsautomat
 
 Der HDA-Treiber prüft Controller-Version, GCAP, Outputstreams, Codecpräsenz und
@@ -134,17 +143,21 @@ C:\> AUDIOTEST
 
 `AUDIOTEST` erzeugt einen begrenzten 440-Hz-Testton, startet und stoppt den
 Stream und schließt ihn anschließend. Der QEMU-Runtimetest führt diese Folge
-zweimal aus und akzeptiert nur eine korrekt formatierte, nicht stumme
-Stereo-S16-Aufzeichnung. VMware stellt ein virtuelles `hdaudio` bereit; reale
-Codecs und physische Ausgänge benötigen weiterhin einen eigenen Hardwaretest.
+fünfmal und damit häufiger als das Fehler-Restart-Budget aus. Normale
+Clientwechsel rotieren den Dienst-Endpunkt administrativ, ohne als
+Dienstfehler zu zählen. Der Test akzeptiert nur eine korrekt formatierte,
+nicht stumme Stereo-S16-Aufzeichnung. VMware stellt ein virtuelles `hdaudio`
+bereit; reale Codecs und physische Ausgänge benötigen weiterhin einen eigenen
+Hardwaretest.
 
 ## Nachweis und verbleibende Risiken
 
 Hosttests prüfen ABI-Größen, Request-Korrelation, Short Writes,
 Parameterdekodierung und 0-dB-Gain. Source- und Pakettests prüfen
 Default-Deny-Domänen, vollständig vermitteltes DMA, Shell-Erreichbarkeit und
-identische QEMU-/VMware-Systemlayouts. Der Gastnachweis prüft tatsächliche
-nicht stumme PCM-Ausgabe und die Wiederverwendung nach `stop`.
+identische QEMU-/VMware-Systemlayouts. Ein headless VMware-Bootsmoke verlangt
+das HDA-Profil und `REIST_AUDIO SERVICE_READY`. Der QEMU-Gastnachweis prüft
+tatsächliche nicht stumme PCM-Ausgabe und die Wiederverwendung nach `stop`.
 
 Noch nicht nachgewiesen sind hörbare Ausgabe auf dem ASUS-Zielsystem,
 codec-spezifische Pin-Routing-Varianten, MSI, IOMMU-Direktzuweisung und die oben

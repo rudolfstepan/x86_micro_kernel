@@ -25,7 +25,7 @@ das Überschreiben einer über `vmrun` laufenden Paket-VM.
 | Grafik | VMware SVGA, 3D aus, standardmäßig VGA-Text |
 | Eingabe | virtuelle PS/2-Tastatur und virtuelle USB-HID-Maus über xHCI |
 | Netzwerk | Intel E1000 an VMware NAT-DHCP |
-| Audio | virtuelles Intel HDA (`hdaudio`), Start verbunden |
+| Audio | virtuelles HDA `15ad:1977`, Slot 34, Start verbunden |
 | Seriell | COM1-Ausgabe nach `vmware-serial.log` |
 | Deaktiviert | physisches HID-Passthrough, VMware Tools |
 
@@ -43,6 +43,12 @@ VMware kann weder Intels realen `8086:8c31`-Controller noch die NVIDIA-Karte
 `10de:1280` emulieren. Legacy-BIOS, SATA, ein xHCI-Pfad, EHCI-Präsenz und eine
 einzelne CPU bilden die sicher testbare Annäherung; Intel-spezifische Register-,
 Timing- und physische HID-Fehler bleiben ein Nachweis auf dem ASUS-Board.
+
+VMwares HDA-Modell implementiert das PCI-2.3-`INTx Disable`-Bit nicht. Sein
+exaktes Profil verwendet daher den begrenzten Legacy-PIC-Fallback des
+Device-Domain-Mediators. Die generierte VMX fixiert HDA auf PCI-Slot 34; IRQ 9
+wird bis zum Ring-3-Acknowledge maskiert. Diese Ausnahme gilt nicht für andere
+PCI-Audiogeräte und verändert weder DMA- noch Bus-Mastering-Prüfungen.
 
 Der Runtime-Grafikpfad akzeptiert ausschließlich die VMware-SVGA-PCI-IDs
 `15ad:0405` (SVGA II) und `15ad:0710` (Legacy SVGA) mit passendem I/O-BAR und
@@ -121,7 +127,9 @@ Build-ID zu sichern.
   erkannten, nicht unterstützten VMware-Grafik-ID ist ein Kernelregressionsfehler.
 - kein LAN: `e1000`, Verbindungsstatus und VMnet0-Zuordnung prüfen
 - kein Audio: `sound.present`, `sound.virtualDev = "hdaudio"`, danach
-  `AUDIOINFO` und die HDA-/Audio-Service-Meldungen im seriellen Log prüfen
+  `AUDIOINFO` und die HDA-/Audio-Service-Meldungen im seriellen Log prüfen.
+  Erwartet werden `legacy INTx PIC fallback`, `HDA_PROFILE pci=15AD:1977`
+  und `REIST_AUDIO SERVICE_READY`; `HDA_REJECTED result=-5` ist ein Fehler.
 - frühe Panic: `vmware-serial.log` und erweiterten Panic-Screen vergleichen
 
 Eine manuelle Ersatz-VM muss die VMDK als SATA-Festplatte einbinden. Eine IDE-

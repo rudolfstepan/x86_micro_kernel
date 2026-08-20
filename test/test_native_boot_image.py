@@ -427,6 +427,7 @@ class NativeBootImageTests(unittest.TestCase):
         self.assertIn('sound.present = "TRUE"', text)
         self.assertIn('sound.virtualDev = "hdaudio"', text)
         self.assertIn('sound.fileName = "-1"', text)
+        self.assertIn('sound.pciSlotNumber = "34"', text)
         self.assertIn('pciBridge4.virtualDev = "pcieRootPort"', text)
         self.assertIn('usb_xhci.pciSlotNumber = "160"', text)
         self.assertIn('usb_xhci:4.deviceType = "hid"', text)
@@ -499,6 +500,10 @@ class NativeBootImageTests(unittest.TestCase):
             self.assertIn('floppy0.present = "FALSE"', config)
             self.assertTrue((package / "START-VMWARE.cmd").is_file())
             self.assertTrue((package / "README-VMWARE.txt").is_file())
+            readme = (package / "README-VMWARE.txt").read_text(
+                encoding="utf-8")
+            self.assertIn("Intel-HDA-Audiogerät", readme)
+            self.assertNotIn("kein Audiogerät", readme)
             self.assertEqual(
                 (package / "reist-os-floppy.img").read_bytes(),
                 floppy.read_bytes(),

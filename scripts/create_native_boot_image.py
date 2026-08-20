@@ -490,6 +490,9 @@ sound.startConnected = "TRUE"
 sound.autodetect = "TRUE"
 sound.virtualDev = "hdaudio"
 sound.fileName = "-1"
+# Keep VMware HDA on the deterministic slot whose legacy IRQ is shared only
+# with the non-interrupt-driven SVGA path, not E1000 or xHCI.
+sound.pciSlotNumber = "34"
 usb.present = "TRUE"
 ehci.present = "TRUE"
 usb_xhci.present = "TRUE"
@@ -583,7 +586,8 @@ Die VM ist bereits vollständig konfiguriert:
   - 60-MiB-FAT32-Datenpartition mit README.TXT und Ring-3-Systemprogrammen
   - COM1-Bootprotokoll in vmware-serial.log
   - virtuelle PS/2-Tastatur und virtuelle USB-Maus
-  - bootfähiges 1,44-MB-Floppy-Image, kein Audiogerät
+  - virtuelles Intel-HDA-Audiogerät für AUDIOINFO und AUDIOTEST
+  - bootfähiges 1,44-MB-Floppy-Image
 
 Physische Host-Tastaturen und -Mäuse werden niemals an die VM durchgereicht.
 Die VMX-Datei verbietet generisches HID-Passthrough ausdrücklich.
