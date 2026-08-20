@@ -40,6 +40,11 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn(
             'ROOT / "userspace/gui/compositor/desktop_explorer.c"', programs
         )
+        self.assertIn(
+            'ROOT / "userspace/gui/compositor/desktop_surface.c"', programs
+        )
+        self.assertIn('#include "desktop_surface.h"', self.source)
+        self.assertIn("desktop_surface_initialize(&surfaces)", self.source)
 
     def test_launcher_requires_the_pixel_display_abi(self):
         self.assertIn("x86os_display_info(&display)", self.source)
@@ -87,7 +92,7 @@ class DesktopSourceTests(unittest.TestCase):
     def test_window_manager_has_fixed_z_order_focus_and_capture(self):
         header = WM_HEADER.read_text(encoding="utf-8")
         model = WM_SOURCE.read_text(encoding="utf-8")
-        self.assertIn("#define DESKTOP_WM_CAPACITY 4U", header)
+        self.assertIn("#define DESKTOP_WM_CAPACITY 8U", header)
         self.assertIn("windows[DESKTOP_WM_CAPACITY]", header)
         self.assertIn("z_order[DESKTOP_WM_CAPACITY]", header)
         self.assertIn("DESKTOP_WM_CAPTURE_MOVE", header)
@@ -217,7 +222,8 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("X86OS_DIRECTORY", self.source)
         self.assertIn("has_program_extension", self.source)
         self.assertIn("open_explorer_path", self.source)
-        self.assertIn("launch_program(program, document)", self.source)
+        self.assertIn(
+            "launch_program(surface_runtime, program, document)", self.source)
 
     def test_child_returns_directly_to_graphical_desktop(self):
         launch = self.source[self.source.index("static int launch_program") :]
@@ -243,6 +249,11 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn('"Programmargumente konnten nicht uebergeben werden."',
                       self.source)
         self.assertIn('"Kein freier Scheduler-Task verfuegbar."', self.source)
+        self.assertIn('"Keine freie IPC-Ressource verfuegbar."', self.source)
+        self.assertIn('"Surface-Endpunkt ist beim Besitzer ungueltig (-9)."',
+                      self.source)
+        self.assertIn('"Surface-Delegation wurde verweigert (-13)."',
+                      self.source)
         self.assertIn('"Programmdatei nicht gefunden oder ungueltig."',
                       self.source)
         self.assertIn('"Ordner kann nicht geoeffnet werden."', self.source)
@@ -283,9 +294,16 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("DESKTOP_WM_CAPTURE_RESIZE", self.source)
         self.assertIn("resize_render = 1U", self.source)
         self.assertIn(
-            "&display, &manager, &explorer, &ui, &dirty,",
+            "&display, &manager, &explorer, &surfaces, &ui, &dirty,",
             self.source,
         )
+
+    def test_surface_program_is_async_and_owned_by_the_compositor(self):
+        self.assertIn('"/usr/gui/bin/surfacedemo.prg"', self.source)
+        self.assertIn("desktop_surface_runtime_reserve", self.source)
+        self.assertIn("desktop_surface_runtime_bind", self.source)
+        self.assertIn("sync_surface_windows", self.source)
+        self.assertIn("desktop_surface_runtime_send_close", self.source)
 
     def test_render_probe_is_fixed_bounded_and_reports_versioned_metrics(self):
         self.assertIn("#define DESKTOP_METRICS_VERSION 1U", self.source)

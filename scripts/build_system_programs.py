@@ -43,11 +43,14 @@ PROGRAMS = {
         ROOT / "userspace/gui/compositor/desktop_wm.c",
         ROOT / "userspace/gui/compositor/desktop_explorer.c",
         ROOT / "userspace/gui/compositor/desktop_filetypes.c",
+        ROOT / "userspace/gui/compositor/desktop_surface.c",
+        ROOT / "userspace/gui/compositor/desktop_surface_runtime.c",
     ),
     "GUIDEMO.PRG": ROOT / "userspace/gui/apps/control_gallery/main.c",
     "NOTEPAD.PRG": ROOT / "userspace/gui/apps/notepad/main.c",
     "SOUNDPLAYER.PRG": ROOT / "userspace/gui/apps/sound_player/main.c",
     "IMAGEVIEWER.PRG": ROOT / "userspace/gui/apps/image_viewer/main.c",
+    "SURFACEDEMO.PRG": ROOT / "userspace/gui/apps/surface_demo/main.c",
     "MKDIR.PRG": ROOT / "userspace/programs/mkdir.c",
     "RMDIR.PRG": ROOT / "userspace/programs/rmdir.c",
     "DEL.PRG": ROOT / "userspace/programs/del.c",
@@ -93,7 +96,7 @@ PROGRAMS = {
 
 GUI_PROGRAMS = {
     "DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG", "SOUNDPLAYER.PRG",
-    "IMAGEVIEWER.PRG",
+    "IMAGEVIEWER.PRG", "SURFACEDEMO.PRG",
 }
 IMAGE_PROGRAMS = {"IMAGEVIEWER.PRG"}
 NETWORK_PARSER_PROGRAMS = {"REIST.PRG"}

@@ -212,7 +212,7 @@ int main(void) {
     desktop_wm_t manager;
     desktop_wm_initialize(&manager, 1024U, 768U, 36, 736, 24U);
 
-    assert(DESKTOP_WM_CAPACITY == 4U);
+    assert(DESKTOP_WM_CAPACITY == 8U);
     assert(manager.windows[0].visible == 0U);
     assert(manager.windows[1].visible == 0U);
     assert(manager.windows[2].visible == 0U);

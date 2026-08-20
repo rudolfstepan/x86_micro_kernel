@@ -42,9 +42,16 @@ using `libreistgui.a` does not claim that GUI clients are isolated already;
 that boundary begins with the versioned Surface and event protocol described
 in the desktop workflow.
 
+The Surface lifecycle is strict: the desktop delegates a generation-scoped
+endpoint, the client acknowledges configure, validates its buffer descriptor,
+then attach/damage/commit are checked before the compositor emits
+`BUFFER_RELEASE`. Process exit or a broken IPC channel revokes the endpoint and
+surfaces; a recycled PID alone never restores authority.
+
 ## Public API and build contract
 
-The installed component APIs currently comprise `<reist/gui/types.h>`,
+The installed component APIs currently comprise `<reist/gui/types.h>` and the
+initial cross-process contract `<reist/gui/surface.h>`,
 `<reist/gui/menu.h>`, `<reist/gui/dialog.h>`,
 `<reist/gui/control.h>`, `<reist/gui/container.h>`,
 `<reist/gui/tabs.h>`, `<reist/gui/value_controls.h>` and
@@ -108,6 +115,15 @@ Audio cleanup is idempotent on every exit path. The current cyclic audio ABI
 loads at most 15360 frames; streaming and progress seeking require a later
 versioned queue ABI. Like Notepad, the player remains a supervised display
 client until Surface IPC permits independently composed application windows.
+
+## First isolated window client
+
+`/usr/gui/bin/surfacedemo.prg` is the first program that remains a separate
+Ring-3 process while the desktop continues composing. The desktop reserves an
+IPC endpoint before spawning it, delegates only that endpoint to the exact
+process generation, and owns placement, focus, movement, resizing, decoration
+and close delivery. The initial client area is a server-rendered diagnostic
+placeholder; applications still receive no direct framebuffer authority.
 
 ## Graphical image viewer
 

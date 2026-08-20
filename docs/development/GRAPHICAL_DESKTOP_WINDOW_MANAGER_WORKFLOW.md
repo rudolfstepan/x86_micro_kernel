@@ -341,16 +341,30 @@ zeichnet darin und erhält nur die für ihn bestimmten lokalen Eingaben.
 
 - [ ] Vor der Implementierung einen eigenen, begrenzten Arbeitspaketvertrag
   mit den benötigten IPC-, Speicher- und Prozessdateien festlegen.
+- [x] Den initialen festen Surface-/Event-ABI-Entwurf in
+  `<reist/gui/surface.h>` dokumentieren; er gewährt noch keinen
+  Displayzugriff und wird erst nach dem Capability-Nachweis aktiviert.
+- [x] Einen nichtblockierenden, kapazitätsbegrenzten Desktop-IPC-Broker
+  implementieren; der Broker bleibt bis zur Client-Delegation desktop-owned.
+- [x] Broker-Lifecycle, Nonblocking-Polling und fehlende Display-Seiteneffekte
+  mit einem Source-Regressionstest absichern.
 - [ ] Semantik-Matrix zu Wayland Core und stabilem xdg-shell vollständig
   ausfüllen; jede bewusste Abweichung mit Sicherheitsgrund und Test versehen.
-- [ ] Feste Surface-Handles mit Generation, Besitzer-PID und Rechten definieren.
-- [ ] Höchstzahlen für Clients, Fenster, Surfacebytes und ausstehende Requests
+- [x] Feste Surface-Handles mit Generation, Besitzer-PID und Rechten definieren.
+- [x] Höchstzahlen für Clients, Fenster, Surfacebytes und ausstehende Requests
   festlegen und vor Seiteneffekten prüfen.
-- [ ] Requests mindestens für `create`, `destroy`, `attach`, `damage_buffer`,
+- [x] Requests mindestens für `create`, `destroy`, `attach`, `damage_buffer`,
   `commit`, `configure`, `ack_configure` und `buffer_release` versionieren.
 - [ ] Entscheidung zwischen mediiertem Zeichenstrom und gemeinsamem
   Surface-Speicher erst nach Prüfung der vorhandenen Memory-Capabilities treffen.
-- [ ] Client kennt nur lokale Koordinaten; Platzierung und Dekoration bleiben
+- [x] Pixel-Transport festlegen: bevorzugt generationengebundener, compositor-
+  kontrollierter Buffer-Capability statt direkter Framebuffer-Zugriffe; dabei
+  Größe, Pitch, Format, Release und Prozessende als einen Vertrag definieren.
+- [x] Gemeinsame, zugriffsfreie Descriptor-Validierung in der GUI-Library
+  bereitstellen.
+- [x] Surface-Protokoll für Buffer-Create/Destroy auf Version 2 anheben; alte
+  Nachrichten werden anhand Version und Strukturgröße abgewiesen.
+- [x] Client kennt nur lokale Koordinaten; Platzierung und Dekoration bleiben
   vollständig beim Compositor.
 - [ ] Keyboardfokus und Pointerfokus getrennt und generationsgebunden routen.
 - [ ] Pointer-Button-Sequenzen erhalten ein implizites Grab bis Button-Up.
@@ -359,13 +373,22 @@ zeichnet darin und erhält nur die für ihn bestimmten lokalen Eingaben.
 - [ ] Prozessende räumt Fenster, Surfaces, Fokus und Capture idempotent auf.
 - [ ] Ein absichtlich abgestürzter Client beschädigt weder Desktop noch andere
   Fenster.
+- [x] `surfacedemo.prg` als ersten separaten Ring-3-Client asynchron starten,
+  nach Prozessgeneration an den Broker binden und als verschiebbares,
+  skalierbares sowie schließbares WM-Fenster darstellen. Der derzeitige
+  Inhalt ist bewusst compositorseitiger Platzhalter; clientgelieferte Pixel
+  folgen erst nach Abschluss der Buffer-Capability-Abbildung.
+- [x] Acht feste WM-/Explorer-Slots bereitstellen, damit die Navigation bis
+  `/usr/gui/bin` nicht bereits alle Fensterplätze vor dem Clientstart belegt.
 
 ## Stufe 4: kleine GUI-Bibliothek
 
 Sichtbares Ergebnis: GUI-Programme verwenden gemeinsame Controls statt eigener,
 inkompatibler Fensterrahmen.
 
-- [ ] Clientbibliothek für Surface-Lebenszyklus und Eventdispatch bereitstellen.
+- [x] Clientbibliothek für Surface-Lebenszyklus und Eventdispatch bereitstellen.
+- [x] Einen bounded Endpoint-Bootstrap für GUI-Programme definieren
+  (`--reist-surface=<handle>`); ungültige Werte werden abgewiesen.
 - [ ] Geclippte Zeichenprimitive, Schrift und Layoutmetriken kapseln.
 - [x] Rendererunabhängigen, versionierten Menücontroller mit festen
   Kapazitäten, lokaler Geometrie, implizitem Capture, Tastaturnavigation und

@@ -253,6 +253,7 @@ try {
         'usr/gui/bin/notepad.prg' = 'NOTEPAD.PRG'
         'usr/gui/bin/soundplayer.prg' = 'SOUNDPLAYER.PRG'
         'usr/gui/bin/imageviewer.prg' = 'IMAGEVIEWER.PRG'
+        'usr/gui/bin/surfacedemo.prg' = 'SURFACEDEMO.PRG'
         'libexec/reist/childex.prg' = 'CHILDEX.PRG'
         'libexec/reist/faultde.prg' = 'FAULTDE.PRG'
         'libexec/reist/faultud.prg' = 'FAULTUD.PRG'
@@ -312,20 +313,27 @@ try {
         )
     }
 
-    $floppyArguments = @(
-        'scripts/create_floppy_boot_image.py', '--stage1', $FloppyStage1,
-        '--stage2', $Stage2, '--kernel', $Kernel, '--output', $FloppyImage
-    ) + $floppyDataArguments
-    & $Python @floppyArguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "Floppy image creation failed with exit code $LASTEXITCODE."
-    }
-
     $nativeArguments = @(
         'scripts/create_native_boot_image.py', '--stage1', $Stage1,
         '--stage2', $Stage2, '--kernel', $Kernel, '--output', $RawImage,
-        '--vmdk', $Vmdk, '--floppy', $FloppyImage
+        '--vmdk', $Vmdk
     ) + $imageDataArguments
+    if ($Target -eq 'qemu') {
+        $floppyArguments = @(
+            'scripts/create_floppy_boot_image.py', '--stage1', $FloppyStage1,
+            '--stage2', $Stage2, '--kernel', $Kernel, '--output', $FloppyImage
+        ) + $floppyDataArguments
+        & $Python @floppyArguments
+        if ($LASTEXITCODE -eq 0) {
+            $nativeArguments += @('--floppy', $FloppyImage)
+        } else {
+            # The native HDD image is the QEMU acceptance artifact.  A
+            # capacity-limited rescue floppy is optional and must not prevent
+            # rebuilding/testing the complete system once its payload grows
+            # beyond 1.44 MiB.
+            Write-Warning "Rescue floppy does not fit; continuing with the native QEMU disk image."
+        }
+    }
     if ($Target -ne 'qemu') {
         $nativeArguments += @('--vmware-dir', $VmwareDir)
     }

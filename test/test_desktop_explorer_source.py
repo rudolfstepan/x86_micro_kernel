@@ -15,7 +15,7 @@ class DesktopExplorerSourceTests(unittest.TestCase):
     def test_explorer_is_fixed_capacity_and_vfs_backed(self):
         header = HEADER.read_text(encoding="utf-8")
         source = SOURCE.read_text(encoding="utf-8")
-        self.assertIn("DESKTOP_EXPLORER_WINDOW_CAPACITY 4U", header)
+        self.assertIn("DESKTOP_EXPLORER_WINDOW_CAPACITY 8U", header)
         self.assertIn("DESKTOP_EXPLORER_ENTRY_CAPACITY 32U", header)
         self.assertIn("DESKTOP_EXPLORER_DOUBLE_CLICK_MS 500U", header)
         self.assertIn("x86os_readdir_batch", source)

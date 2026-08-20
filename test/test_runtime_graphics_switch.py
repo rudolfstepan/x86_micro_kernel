@@ -147,6 +147,13 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertEqual(keys.count("sendkey minus\n"), 3)
         self.assertEqual(keys[-1], "sendkey ret\n")
 
+    def test_runtime_surface_mode_starts_a_real_ring3_window(self):
+        self.assertIn("runtime-desktop-surface", self.runtime_script)
+        self.assertIn("Invoke-RuntimeDesktop $false $false $true",
+                      self.runtime_script)
+        self.assertIn('"desktop.prg --surface-probe"', self.runtime_runner)
+        self.assertIn("DESKTOP_SURFACE_OK", self.runtime_runner)
+
 
 if __name__ == "__main__":
     unittest.main()

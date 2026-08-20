@@ -859,6 +859,18 @@ int x86os_drive_info(uint32_t index, x86os_drive_info_t* info) {
                               (uintptr_t)info, 0);
 }
 
+int x86os_process_identity(x86os_process_identity_t* identity) {
+    if (identity == NULL) return -22;
+    return (int)x86os_syscall(X86OS_SYS_PROCESS_IDENTITY,
+                              (uintptr_t)identity, 0U, 0U);
+}
+
+int x86os_process_identity_of(int pid, x86os_process_identity_t* identity) {
+    if (pid <= 0 || identity == NULL) return -22;
+    return (int)x86os_syscall(X86OS_SYS_PROCESS_IDENTITY,
+                              (uintptr_t)identity, (uintptr_t)pid, 0U);
+}
+
 int x86os_partition_create(const x86os_partition_request_t *request) {
     if (request == NULL) return -22;
     return (int)x86os_syscall(X86OS_SYS_PARTITION_CREATE,

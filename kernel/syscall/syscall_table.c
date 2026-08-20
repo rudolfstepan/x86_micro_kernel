@@ -2313,6 +2313,34 @@ static int syscall_kill(int pid) {
     return process_terminate_authorized(caller, pid) == 0 ? 0 : -13;
 }
 
+static int syscall_process_identity(void *user_identity) {
+    Process *process = scheduler_current_process();
+    if (process == NULL || user_identity == NULL) return -22;
+    struct {
+        uint32_t version;
+        uint32_t struct_size;
+        int32_t pid;
+        uint32_t generation;
+    } identity = {1U, sizeof(identity), process->pid, process->generation};
+    return copy_to_user(user_identity, &identity, sizeof(identity)) == 0
+               ? 0 : -14;
+}
+
+static int syscall_process_identity_of(int pid, void *user_identity) {
+    if (pid <= 0 || user_identity == NULL) return -22;
+    uint32_t generation = 0U;
+    if (process_get_identity(pid, &generation) != 0 || generation == 0U)
+        return -3;
+    struct {
+        uint32_t version;
+        uint32_t struct_size;
+        int32_t pid;
+        uint32_t generation;
+    } identity = {1U, sizeof(identity), pid, generation};
+    return copy_to_user(user_identity, &identity, sizeof(identity)) == 0
+               ? 0 : -14;
+}
+
 static int syscall_getcwd(void *user_buffer, size_t size) {
     if (size == 0 || size > PROCESS_PATH_MAX) return -22;
     char path[PROCESS_PATH_MAX];
@@ -2865,6 +2893,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_pointer_update,       // Syscall 111: Software pointer
     (void*)&syscall_usb_diagnostics,      // Syscall 112: Read USB diagnostics
     (void*)&syscall_device_control,       // Syscall 113: Driver resources
+    (void*)&syscall_process_identity,     // Syscall 114: Calling identity
     // Add more syscalls here as needed
 };
 
@@ -3127,6 +3156,13 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)syscall_device_control(
                 arg1, (const void*)(uintptr_t)arg2,
                 (void*)(uintptr_t)arg3);
+            break;
+        case SYS_PROCESS_IDENTITY:
+            result = arg2 == 0U
+                ? (uint32_t)syscall_process_identity(
+                    (void*)(uintptr_t)arg1)
+                : (uint32_t)syscall_process_identity_of(
+                    (int)arg2, (void*)(uintptr_t)arg1);
             break;
         case SYS_FILL_RECT:
             result = (uint32_t)syscall_display_fill_rect(

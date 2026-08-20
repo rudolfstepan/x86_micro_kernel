@@ -123,7 +123,7 @@ def send_key(process: subprocess.Popen[str], key: str) -> None:
 
 def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool, render_probe: bool,
-        metrics_log: pathlib.Path | None) -> int:
+        surface_probe: bool, metrics_log: pathlib.Path | None) -> int:
     command = [
         str(qemu), "-accel", "tcg", "-machine", "pc", "-nodefaults",
         "-device", "VGA,vgamem_mb=1" if expect_failure else "VGA",
@@ -149,7 +149,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
             text = "".join(transcript)
             if SHELL_PROMPT in text:
                 command_name = "desktop.prg --render-probe" if render_probe \
-                    else "desktop.prg"
+                    else ("desktop.prg --surface-probe" if surface_probe
+                          else "desktop.prg")
                 send_command(process, command_name)
                 break
             time.sleep(0.02)
@@ -191,6 +192,48 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                         time.sleep(0.02)
                     raise RuntimeError(
                         "desktop render probe did not restore the VGA shell"
+                    )
+                if surface_probe:
+                    while time.monotonic() < deadline:
+                        drain(output, transcript)
+                        probe_text = "".join(transcript)
+                        if "SURFACE_DEMO_FAIL" in probe_text:
+                            marker = re.findall(
+                                r"SURFACE_DEMO_FAIL[^\r\n]*", probe_text
+                            )[-1]
+                            raise RuntimeError(
+                                f"Surface client failed: {marker}"
+                            )
+                        if "DESKTOP_SURFACE_FAIL" in probe_text:
+                            marker = re.findall(
+                                r"DESKTOP_SURFACE_FAIL[^\r\n]*", probe_text
+                            )[-1]
+                            raise RuntimeError(
+                                f"Surface probe failed: {marker}"
+                            )
+                        if "DESKTOP_SURFACE_OK" in probe_text:
+                            time.sleep(0.2)
+                            if process.stdin is None:
+                                raise RuntimeError(
+                                    "QEMU monitor input unavailable"
+                                )
+                            process.stdin.write(QEMU_MUX_SWITCH)
+                            process.stdin.flush()
+                            time.sleep(0.05)
+                            process.stdin.write(
+                                f"screendump {screenshot}\n"
+                            )
+                            process.stdin.flush()
+                            time.sleep(0.1)
+                            process.stdin.write(QEMU_MUX_SWITCH)
+                            process.stdin.flush()
+                            print("runtime-desktop-surface: PASS")
+                            return 0
+                        time.sleep(0.02)
+                    tail = "".join(transcript)[-1600:].replace("\r", "")
+                    raise RuntimeError(
+                        "Surface client did not publish a visible window; "
+                        f"guest tail:\n{tail}"
                     )
                 # The marker is emitted immediately before the single
                 # backbuffer render so it is overwritten by the desktop.
@@ -236,15 +279,17 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=90.0)
     parser.add_argument("--expect-failure", action="store_true")
     parser.add_argument("--render-probe", action="store_true")
+    parser.add_argument("--surface-probe", action="store_true")
     parser.add_argument("--metrics-log", type=pathlib.Path)
     args = parser.parse_args()
-    if args.expect_failure and args.render_probe:
-        parser.error("--expect-failure and --render-probe are exclusive")
+    if sum((args.expect_failure, args.render_probe, args.surface_probe)) > 1:
+        parser.error("desktop probe modes are mutually exclusive")
     if args.metrics_log is not None and not args.render_probe:
         parser.error("--metrics-log requires --render-probe")
     try:
         return run(args.qemu, args.image, args.screenshot, args.timeout,
-                   args.expect_failure, args.render_probe, args.metrics_log)
+                   args.expect_failure, args.render_probe,
+                   args.surface_probe, args.metrics_log)
     except (OSError, RuntimeError) as error:
         print(f"runtime-desktop: FAIL: {error}", file=sys.stderr)
         return 1

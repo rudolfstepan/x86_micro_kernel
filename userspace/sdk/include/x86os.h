@@ -125,7 +125,8 @@ enum {
     X86OS_SYS_MOUSE_EVENT = 110,
     X86OS_SYS_POINTER_UPDATE = 111,
     X86OS_SYS_USB_DIAGNOSTICS = 112,
-    X86OS_SYS_DEVICE_CONTROL = 113
+    X86OS_SYS_DEVICE_CONTROL = 113,
+    X86OS_SYS_PROCESS_IDENTITY = 114
 };
 
 #define X86OS_TCP_SOCKET_VERSION 1U
@@ -308,6 +309,14 @@ typedef struct {
     int32_t exit_status;
     char name[32];
 } x86os_process_info_t;
+
+/** Stable identity of the calling process for generation-scoped IPC. */
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t pid;
+    uint32_t generation;
+} x86os_process_identity_t;
 
 typedef struct {
     uint32_t version;
@@ -1325,6 +1334,9 @@ int x86os_spawn(const char* path);
 int x86os_spawnv(const char* path, int argc, const char* const* argv);
 int x86os_wait(int pid, int* status);
 int x86os_process_info(uint32_t index, x86os_process_info_t* info);
+int x86os_process_identity(x86os_process_identity_t* identity);
+int x86os_process_identity_of(int pid,
+                              x86os_process_identity_t* identity);
 int x86os_kill(int pid);
 int x86os_getcwd(char* buffer, size_t size);
 int x86os_chdir(const char* path);

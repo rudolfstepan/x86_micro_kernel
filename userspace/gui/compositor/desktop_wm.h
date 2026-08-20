@@ -14,7 +14,7 @@
 #include <stdint.h>
 
 /** Maximum number of top-level windows in the current desktop session. */
-#define DESKTOP_WM_CAPACITY 4U
+#define DESKTOP_WM_CAPACITY 8U
 /** Maximum damage rectangles before controlled full-screen fallback. */
 #define DESKTOP_WM_DIRTY_CAPACITY 8U
 /** Sentinel returned by signed window hit tests. */
