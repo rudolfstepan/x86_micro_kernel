@@ -1,6 +1,8 @@
 """Source contracts for native runtime graphics activation."""
 
 import sys
+import struct
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -8,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from run_qemu_runtime_desktop import (
+    convert_screenshot_if_png,
     desktop_monitor_key_commands,
     parse_render_metrics,
 )
@@ -31,6 +34,9 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         ).read_text()
         cls.runtime_script = (
             ROOT / "scripts/test-reist-runtime.ps1"
+        ).read_text()
+        cls.documentation_capture = (
+            ROOT / "scripts/capture-documentation.ps1"
         ).read_text()
 
     def test_append_only_control_abi(self):
@@ -156,6 +162,36 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn("screenshot_has_menu_text", self.runtime_runner)
         self.assertIn("desktop screenshot contains no menu text",
                       self.runtime_runner)
+
+    def test_documentation_capture_uses_runtime_vga_proofs(self):
+        self.assertIn("-Target qemu -Video vga", self.documentation_capture)
+        self.assertIn("reist-desktop.png", self.documentation_capture)
+        self.assertIn("reist-desktop-apps.png", self.documentation_capture)
+        self.assertIn("reist-notepad.png", self.documentation_capture)
+        self.assertIn("--surface-probe", self.documentation_capture)
+        self.assertIn("--notepad-probe", self.documentation_capture)
+
+    def test_runtime_notepad_mode_starts_a_visible_document_window(self):
+        self.assertIn('"desktop.prg --notepad-probe"', self.runtime_runner)
+        self.assertIn("NOTEPAD_SURFACE_DOCUMENT_READY", self.runtime_runner)
+        self.assertIn("runtime-desktop-notepad", self.runtime_runner)
+
+    def test_png_capture_conversion_preserves_dimensions(self):
+        with tempfile.TemporaryDirectory(prefix="reist-doc-shot-") as temp:
+            path = Path(temp) / "capture.png"
+            path.write_bytes(b"P6\n2 2\n255\n" + bytes(range(12)))
+            convert_screenshot_if_png(path)
+            data = path.read_bytes()
+            self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+            self.assertEqual(struct.unpack(">II", data[16:24]), (2, 2))
+
+    def test_documentation_desktop_images_are_versioned_pngs(self):
+        directory = ROOT / "docs/assets/screenshots"
+        for name in ("reist-desktop.png", "reist-desktop-apps.png",
+                     "reist-notepad.png"):
+            data = (directory / name).read_bytes()
+            self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+            self.assertEqual(struct.unpack(">II", data[16:24]), (1024, 768))
 
 
 if __name__ == "__main__":

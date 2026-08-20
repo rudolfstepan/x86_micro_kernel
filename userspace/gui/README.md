@@ -24,6 +24,7 @@ This avoids placeholder modules and keeps the current trust boundary visible.
 - `/usr/gui/bin/guidemo.prg` is the interactive control and dialog gallery.
 - `/usr/gui/bin/notepad.prg` is the bounded graphical text editor.
 - `/usr/gui/bin/soundplayer.prg` is the bounded graphical WAV player.
+- `/usr/gui/bin/imageviewer.prg` is the bounded BMP/GIF image viewer.
 - `/usr/gui/bin/*.prg` contains directly launchable GUI applications.
 - The development sysroot installs public headers under `/usr/include` and
   static archives under `/usr/lib`, following conventional compiler lookup
@@ -85,10 +86,9 @@ responses, nested page/group containers, tabs, label, general pushbutton,
 checkbox, exclusive radio group, text field, list selection, scrollbar,
 slider, spin box, progress indicator, keyboard focus, Enter/Escape handling,
 close action and title dragging with pointer capture. Components without a
-public implementation are not drawn as misleading mock controls. Until the
-versioned Surface IPC exists, the gallery is a
-full-screen display client; it is not presented as an isolated compositor
-surface.
+public implementation are not drawn as misleading mock controls. The
+versioned Surface IPC exists, but the gallery has not yet been migrated and
+therefore remains an explicitly documented full-screen compatibility client.
 
 ## Graphical text editor
 
@@ -119,8 +119,9 @@ in Explorer. It uses only the public `libreistgui` and `libreistaudio` APIs and
 offers keyboard- and mouse-operable Abspielen, Stop and Schliessen controls.
 Audio cleanup is idempotent on every exit path. The current cyclic audio ABI
 loads at most 15360 frames; streaming and progress seeking require a later
-versioned queue ABI. Like Notepad, the player remains a supervised display
-client until Surface IPC permits independently composed application windows.
+versioned queue ABI. Unlike the migrated Notepad and Image Viewer, the player
+still uses the supervised full-screen compatibility path; its Surface-client
+migration remains open.
 
 ## Isolated window clients
 
@@ -174,6 +175,8 @@ The resulting sysroot contains:
 ```text
 build/sdk/usr/include/x86os.h
 build/sdk/usr/include/reist/gui/types.h
+build/sdk/usr/include/reist/gui/surface.h
+build/sdk/usr/include/reist/gui/surface_client.h
 build/sdk/usr/include/reist/gui/menu.h
 build/sdk/usr/include/reist/gui/dialog.h
 build/sdk/usr/include/reist/gui/control.h
@@ -182,11 +185,14 @@ build/sdk/usr/include/reist/gui/tabs.h
 build/sdk/usr/include/reist/gui/value_controls.h
 build/sdk/usr/include/reist/gui/text_editor.h
 build/sdk/usr/include/reist/gui/file_dialog.h
+build/sdk/usr/include/reist/image.h
 build/sdk/usr/lib/crt0.o
 build/sdk/usr/lib/libreistos.a
 build/sdk/usr/lib/libreistnetparse.a
 build/sdk/usr/lib/libreistgui.a
+build/sdk/usr/lib/libreistimage.a
 build/sdk/usr/lib/pkgconfig/reist-gui.pc
+build/sdk/usr/lib/pkgconfig/reist-image.pc
 ```
 
 Compilation uses upstream `zig cc`/Clang, ELF linking uses LLD and the static

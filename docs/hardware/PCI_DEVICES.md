@@ -32,7 +32,7 @@ publizieren ein Gerät erst nach vollständiger Validierung.
 | `0C` Serial Bus | `03/00` UHCI | USB 1.x | erkannt, nicht unterstützt |
 | `0C` Serial Bus | `03/10` OHCI | USB 1.x | erkannt, nicht unterstützt |
 | `0C` Serial Bus | `03/20` EHCI | USB 2.0 | erkannt, nicht unterstützt |
-| `0C` Serial Bus | `03/30` xHCI | USB 3.x | experimentelles HID-Backend |
+| `0C` Serial Bus | `03/30` xHCI | USB 3.x | begrenztes HID-Tastatur-/Mausbackend |
 | `0C` Serial Bus | `05` SMBus | Sensoren/Boardverwaltung | enumeriert, kein Backend |
 
 Andere häufige Klassen wie FireWire (`0C:00`), SD Host (`08:05`),

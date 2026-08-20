@@ -1,6 +1,6 @@
 # Anzeige: VGA, Framebuffer und Desktop-MVP
 
-Stand: 19. August 2026.
+Stand: 20. August 2026.
 
 VGA-Text bleibt der robuste Standardweg. Ein `VIDEO=framebuffer`-Build richtet
 über den eigenen BIOS-Loader einen linearen RGB-Framebuffer ein und startet
@@ -89,42 +89,42 @@ Bei einem tatsächlich initialisierten Framebuffer startet der Kernel
 aus der Ring-3-Shell gestartet werden; er fordert dann einmalig den validierten
 VMware-SVGA-II-, QEMU-DISPI- oder vorbereiteten VBE-Grafikpfad an.
 
-Der Desktop besitzt ein festes Ring-3-Fenstermodell für vier Anwendungen:
+Der Desktop ist ein Ring-3-Session-Compositor mit Explorer. Ordner werden als
+überlappende Fenster und ihre Einträge als zentrierte Icons dargestellt;
+Doppelklick öffnet einen Unterordner oder startet das über
+`/etc/reist/filetypes.conf` zugeordnete Programm. Der Manager besitzt
+explizite Z-Order, Keyboard-Fokus, implizites Pointer-Capture, Drag und
+achtseitiges Resize mit Mindestgrößen und Arbeitsbereichsgrenzen.
 
-- Shell (`SHELL.PRG`)
-- Dateien (`LS.PRG`)
-- Editor (`EDIT.PRG`)
-- Systeminformationen (`SYSINFO.PRG`)
+Die versionierte Surface-/Event-Grenze lehnt sich an die Besitz- und
+Commitregeln von Wayland/xdg-shell an, ohne Protokoll- oder
+Binärkompatibilität zu behaupten. Der Desktop delegiert genau einen
+generationengebundenen IPC-Endpunkt an den gestarteten Client. Configure,
+Ack, Retained-Fill/Text beziehungsweise XRGB8888-Buffer, Damage und Commit
+sind fest begrenzt; Prozessende widerruft Endpoint und Surfaces idempotent.
+Notepad und Image Viewer laufen auf diesem Weg als getrennte, verschieb- und
+skalierbare Ring-3-Fenster. Anwendungen erhalten weder globale Koordinaten
+noch direkten Framebufferzugriff.
 
-Zwei überlappende Fenster sind beim Start sichtbar. Der Manager besitzt eine
-explizite Z-Order, genau einen Fokus und ein implizites Pointer-Capture von
-Button-Down bis Button-Up. Ein Fenster kann fokussiert, nach vorne geholt, an
-der Titelleiste innerhalb des Arbeitsbereichs verschoben und am linken Gadget
-geschlossen werden; das zugehörige Desktopicon öffnet es wieder. Zustand und
-Darstellung liegen in getrennten Modulen und verwenden weder Heap noch eine
-unbegrenzte Eventqueue.
-
-`Tab` und die Pfeiltasten ändern die Auswahl, `Enter` startet die gewählte App
-und `Esc` stellt nach einer Laufzeitaktivierung die VGA-Shell wieder her. Die
-vorhandenen Console-Programme sind noch keine GUI-Clients: Sie laufen bewusst
-als Vollbild-Kindprozess. Der Desktop wartet auf ihr reguläres Ende, erzwingt
-bei einem Wait-Fehler Kill/Reap, leert verbliebene Eingabe und stellt danach
-dieselbe Fensterszene wieder her. Der serielle Marker `DESKTOP_OK` bestätigt
-den ersten erfolgreichen Renderdurchlauf.
-
-Die weitere Architektur folgt dem Surface-/Commit- und Eingabemodell von
-Wayland/xdg-shell, ohne schon Protokoll- oder Binärkompatibilität zu behaupten.
-Die verbindliche Zuordnung und die schrittweise Umsetzung stehen im
+Noch nicht migrierte Programme laufen über die geprüfte Vollbildbrücke. Der
+Desktop wartet begrenzt, erzwingt bei einem Wait-Fehler Kill/Reap, leert
+verbliebene Eingabe und stellt danach dieselbe Fensterszene wieder her. `Esc`
+stellt nach einer Laufzeitaktivierung die VGA-Shell wieder her. Die seriellen
+Marker `DESKTOP_OK` und `DESKTOP_SURFACE_OK` bestätigen Render- und
+Surface-Gastnachweis. Die verbindliche Zuordnung und weitere Umsetzung stehen im
 [Window-Manager-Workflow](../development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md).
 
 ## Grenzen
 
 - noch keine allgemeine Hardwarebeschleunigung
 - kein direktes LFB-Mapping für Ring 3
-- noch kein versioniertes Surface-/GUI-Client-Protokoll
+- Surface-Clients sind auf feste Kapazitäten und die derzeitigen Fill-, Text-
+  und XRGB8888-Bufferoperationen begrenzt; Shared Memory, GPU-Buffer und frei
+  wählbare Glyphen-Cliprechtecke fehlen
 - Resize komponiert die betroffenen Dirty-Clips vollständig; reine
   Fensterbewegungen verwenden einen atomaren gecachten Vollinhalts-Blit
-- vorhandene Console-Programme laufen weiterhin einzeln im Vollbild
+- Control Gallery, Sound Player, Terminal und Systemwerkzeuge laufen bis zur
+  Migration weiterhin einzeln im Vollbild
 
 Für frühe Boot- und Hardwarefehlersuche bleibt `VIDEO=vga` der einfachste
 Referenzpfad.

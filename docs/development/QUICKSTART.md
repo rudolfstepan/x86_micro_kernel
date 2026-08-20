@@ -1,6 +1,6 @@
 # Quickstart
 
-Stand: 16. August 2026.
+Stand: 20. August 2026.
 
 Diese Anleitung beschreibt den bevorzugten, vollständig nativen Windows-Weg.
 WSL, GRUB und ein Cross-GCC sind dafür nicht nötig.
@@ -43,6 +43,9 @@ build/stage2_bios.bin
 build/reist-os.img
 build/programs/HELLO.PRG
 build/programs/DESKTOP.PRG
+build/programs/NOTEPAD.PRG
+build/programs/IMAGEVIEWER.PRG
+build/programs/SOUNDPLAYER.PRG
 build/vmware/reist-os/reist-os.vmx
 build/vmware/reist-os/START-VMWARE.cmd
 ```
@@ -76,7 +79,14 @@ interaktive VGA-Shell auf der Konsole bereit:
 
 ## Grafischen Desktop starten
 
-Der Desktop benötigt einen nativen Framebuffer-Build:
+Der normale VMware- und QEMU-Entwicklungsweg darf im VGA-Textmodus booten.
+Aus der Ring-3-Shell aktiviert `desktop` den geprüften Grafikpfad zur Laufzeit:
+
+```text
+C:\> desktop
+```
+
+Ein Framebuffer-Build startet den Desktop dagegen bereits nach dem Boot:
 
 ```powershell
 .\scripts\build-windows.ps1 -Target qemu -Video framebuffer -RunTests
@@ -84,13 +94,19 @@ Der Desktop benötigt einen nativen Framebuffer-Build:
 ```
 
 Stage 2 bevorzugt VBE 1024x768x32 und versucht danach 800x600x32. Bei Erfolg
-startet `DESKTOP.PRG`; `Tab` oder die Pfeiltasten wählen eine der vier
-App-Karten, `Enter` startet sie und `Esc` öffnet die Shell. Die gestartete App
-läuft im Vollbild. Nach ihrem Ende zeichnet der Desktop sich neu.
+startet `/usr/gui/bin/desktop.prg`. Der Desktop zeigt einen Explorer mit
+verschieb- und skalierbaren Ordnerfenstern. Ein Doppelklick öffnet Ordner oder
+startet eine validierte Dateizuordnung. Notepad und Image Viewer bleiben als
+getrennte Ring-3-Surface-Fenster gleichzeitig mit dem Desktop aktiv;
+`surfacedemo` prüft denselben öffentlichen Clientvertrag. Noch nicht migrierte
+Programme verwenden den Vollbild-Kompatibilitätspfad und kehren danach in die
+unveränderte Desktopsitzung zurück. `Esc` beendet die Laufzeitsitzung und
+stellt die VGA-Shell wieder her.
 
-Ist kein geeigneter VBE-Modus vorhanden, fällt der Bootvorgang sicher auf
-VGA-Text und `SHELL.PRG` zurück. `DESKTOP_OK` im seriellen Log bestätigt einen
-erfolgreichen ersten Desktop-Renderdurchlauf.
+Ist kein geeignetes natives oder vorbereitetes VBE-Backend vorhanden, bleibt
+VGA-Text aktiv und `desktop` meldet den Fehler ohne eine unvollständige
+Grafiksitzung zu veröffentlichen. `DESKTOP_OK` und `DESKTOP_SURFACE_OK` im
+seriellen Log bestätigen Render- beziehungsweise Surface-Gastnachweis.
 
 ## Erster Funktionstest
 

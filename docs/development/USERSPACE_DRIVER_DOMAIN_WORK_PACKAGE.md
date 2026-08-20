@@ -1,5 +1,10 @@
 # Ring-3 device-domain foundation work package
 
+Stand: 20. August 2026
+
+Status: abgeschlossenes Arbeitspaket; normativer Vertrag in
+[`../architecture/USERSPACE_DRIVER_MODEL.md`](../architecture/USERSPACE_DRIVER_MODEL.md)
+
 Dieses Arbeitspaket schafft die generische, geräteunabhängige Voraussetzung
 für PCI-Audio und alle späteren Ring-3-Treiber. Es implementiert noch keinen
 HDA-Zustandsautomaten.

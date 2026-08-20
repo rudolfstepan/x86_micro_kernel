@@ -1,11 +1,12 @@
-# REIST USB-Tastatur – Umsetzungsplan
+# REIST USB-HID über xHCI – Umsetzungsplan
 
-Stand: 18. August 2026
+Stand: 20. August 2026
 
 ## Ziel
 
-REIST soll USB-Tastaturen über xHCI erkennen und Eingaben über denselben
-Eingabepfad wie PS/2 an Shell und Konsolenprogramme liefern. Die
+REIST erkennt begrenzte USB-HID-Boot-Tastaturen und -Mäuse über xHCI.
+Tastaturen liefern Ereignisse über denselben semantischen Eingabepfad wie
+PS/2; Mäuse speisen die feste Desktop-Reportqueue. Die
 Implementierung bleibt statisch, begrenzt und fail-closed. Ein nicht
 unterstütztes oder fehlerhaftes USB-Gerät darf weder die PS/2-Tastatur noch
 den restlichen Bootvorgang beeinträchtigen.
@@ -16,11 +17,10 @@ den restlichen Bootvorgang beeinträchtigen.
 PCI / BIOS
     -> xHCI-Hostcontroller (Ring 0)
     -> Root-Port und USB-Geräte-Enumeration
-    -> USB-HID-Boot-Keyboard (Klasse 03, Subklasse 01, Protokoll 01)
-    -> 8-Byte-Interrupt-Reports
-    -> semantische Tastaturereignisse
-    -> gemeinsame PS/2-/USB-Eingabequeue
-    -> getchar(), Shell, History und Cursorsteuerung
+    -> USB-HID Boot Protocol (Klasse 03, Subklasse 01)
+       -> Keyboard Protokoll 01 -> semantische Tastaturereignisse
+          -> gemeinsame PS/2-/USB-Eingabequeue -> Shell
+       -> Mouse Protokoll 02 -> feste Mausreportqueue -> Desktop
 ```
 
 Die HID-Schicht übersetzt keine ASCII-Zeichen selbst. Sie liefert Set-1-
@@ -28,26 +28,27 @@ Die HID-Schicht übersetzt keine ASCII-Zeichen selbst. Sie liefert Set-1-
 Modifier, Caps-/NumLock, ANSI-Cursorfolgen, Ctrl-Kombinationen und die
 bestehende Shell an einer Stelle konsistent.
 
-## Ausgangslage
-
 ## Umsetzungsstand
 
-Der erste Implementierungsschritt ist im Quellbaum umgesetzt:
+Der begrenzte xHCI-HID-Pfad ist im Quellbaum umgesetzt:
 
 - xHCI besitzt statische DCBAA-, Command-, Event-, EP0- und Interrupt-Ringe.
 - BIOS-Ownership, Controller-Reset, Root-Port-Reset und begrenzte
   Descriptor-Enumeration sind angebunden.
-- USB-HID-Boot-Keyboards werden anhand von Klasse, Subklasse, Protokoll und
-  Interrupt-IN-Endpunkt geprüft.
-- HID-Reports werden generationgebunden in die gemeinsame PS/2-/USB-
-  Eingabequeue weitergeleitet.
+- USB-HID-Boot-Keyboards und -Mäuse werden anhand von Klasse, Subklasse,
+  Protokoll und Interrupt-IN-Endpunkt geprüft.
+- HID-Reports werden generationgebunden an Keyboard- oder Mausqueue
+  weitergeleitet; beide Geräte können gleichzeitig aktiv bleiben.
+- Intel-xHCI-Routing, Composite-Interface-Auswahl, vollständige Control-TDs,
+  Short-Packet-Regeln und Event-Ring-Cycle-State sind implementiert.
+- `/sbin/usbinfo.prg` macht den persistenten Zustand in der normalen
+  Userspace-Shell sichtbar und ist in Windows- und Makefile-Images paketiert.
 - `make run-usb` stellt das QEMU-Profil mit `qemu-xhci` und `usb-kbd` bereit.
-- Der HID-Hosttest und die PS/2-Quelltests sind grün; die drei geänderten
-  Treiber kompilieren mit den Kernel-Warn-/Fehlerflags.
-
-Der vollständige Kernel-/QEMU-Nachweis steht noch aus, weil in der aktuellen
-Arbeitsumgebung weder `nasm` noch `qemu-system-i386` verfügbar ist. Deshalb
-wird an dieser Stelle keine QEMU-Funktion behauptet.
+- HID-Keyboard-/Maus-Hosttests und Quelltests prüfen Report-, Generation-,
+  Ring-, Descriptor-, Routing- und Imageverträge.
+- VMware verwendet eine virtuelle xHCI-Maus, übernimmt aber niemals physische
+  Host-HID-Geräte. Auf dem ASUS-System wurden einfache USB-Tastatur und Maus
+  verwendet.
 
 Bereits vorhanden:
 
@@ -60,12 +61,9 @@ Bereits vorhanden:
 - `kernel/init/kernel.c` ruft `usb_init()` nach der PCI-Erkennung auf.
 - Das Makefile nimmt die USB-Quellen bereits in den Kernel-Build auf.
 
-Noch offen:
-
-- Der aktuelle xHCI-Treiber ist nur ein Probe-Platzhalter.
-- USB-Core, Hub-Lifecycle und Hotplug sind noch nicht vollständig verbunden.
-- Es gibt noch keinen reproduzierbaren QEMU-Test mit `qemu-xhci` und
-  `usb-kbd`.
+Noch offen sind ein automatisierter QEMU-USB-Tastatur-Gasttest, allgemeiner
+Hub-/Hotplug-Lifecycle, Nicht-Boot-HID, Mass Storage und die gerätespezifische
+Initialisierung des AULA/BY-Tech-Composite-Keyboards `258A:010C`.
 
 ## Arbeitspakete
 
@@ -86,20 +84,22 @@ Controller, IRQ und erfolgreich vorbereitete Ringe.
 
 ### 2. Begrenzte USB-Enumeration
 
-- Root-Portstatus lesen und nur einen Port im MVP bearbeiten.
+- Root-Portstatus in fester Controllerkapazität lesen und nur begrenzt viele
+  HID-Kandidaten veröffentlichen.
 - Verbindung, Reset, Geschwindigkeit und Port-Enable mit festen Grenzen prüfen.
 - Slot aktivieren, Device Address setzen und Device Descriptor lesen.
 - Configuration Descriptor ausschließlich innerhalb eines festen Puffers
   und einer festen Maximallänge analysieren.
-- Nur vollständige HID-Boot-Keyboard-Interfaces akzeptieren:
-  `class=03`, `subclass=01`, `protocol=01`.
+- Nur vollständige HID-Boot-Interfaces akzeptieren: `class=03`,
+  `subclass=01`, `protocol=01` für Tastatur oder `protocol=02` für Maus.
 - Interrupt-IN-Endpunkt mit gültiger Adresse, Paketgröße und Intervall
   validieren.
 - `SET_CONFIGURATION` und `SET_PROTOCOL(boot)` mit begrenzten Control-
   Transfers ausführen.
 
-Abnahmekriterium: Ein USB-Massenspeicher oder eine Maus wird abgewiesen,
-ohne dass Speicher außerhalb der festen Deskriptorgrenzen gelesen wird.
+Abnahmekriterium: Ein USB-Massenspeicher oder unbekanntes Interface wird
+abgewiesen, ohne dass Speicher außerhalb der festen Deskriptorgrenzen gelesen
+wird; Tastatur und Maus können unabhängig gewählt werden.
 
 ### 3. HID-Reportpfad
 
@@ -170,17 +170,20 @@ ASUS-H81M-K bleibt eine eigene Hardwareabnahme erforderlich.
 
 ## Bewusste Abgrenzung
 
-Der erste Abschluss umfasst nur xHCI und USB-HID-Boot-Keyboard. EHCI, OHCI,
-UHCI, USB-Mass-Storage, HID-Report-Deskriptoren für Nicht-Boot-Layouts,
+Der aktuelle Abschluss umfasst nur xHCI und USB-HID-Boot-Keyboard/-Maus. EHCI,
+OHCI, UHCI, USB-Mass-Storage, HID-Report-Deskriptoren für Nicht-Boot-Layouts,
 SMP-/IOMMU-DMA-Isolation und USB-Hubs hinter externen Hubs sind separate
 Arbeitspakete.
 
 ## Definition of Done
 
-- xHCI initialisiert in QEMU mit festen Ringen und funktionierendem IRQ.
-- Ein USB-Boot-Keyboard kann die REIST-Shell bedienen.
-- PS/2 funktioniert unverändert ohne USB-Gerät.
-- Fehlerhafte, fremde oder entfernte USB-Geräte werden begrenzt abgewiesen.
-- Hosttests und der QEMU-USB-Smoke sind reproduzierbar grün.
-- Architektur-, Projektstatus- und Testdokumentation spiegeln den tatsächlich
-  verifizierten Stand wider.
+- [x] xHCI verwendet feste Ringe, endliche Deadlines und einen begrenzten IRQ-
+  beziehungsweise Pollpfad.
+- [x] Einfache reale USB-Boot-Tastatur und -Maus können REIST bedienen.
+- [x] PS/2 funktioniert unabhängig ohne USB-Gerät.
+- [x] Fehlerhafte oder fremde Interfaces werden begrenzt abgewiesen.
+- [x] Keyboard-/Maus-Hosttests und Imageverträge sind reproduzierbar grün.
+- [ ] Ein automatisierter QEMU-Gasttest gibt ein Shellkommando über `usb-kbd`
+  ein und prüft den anschließenden PS/2-Fallback.
+- [ ] Das AULA/BY-Tech-Composite-Keyboard `258A:010C` liefert nach
+  vollständiger, gerätekonformer Initialisierung verwendbare Reports.

@@ -1,6 +1,6 @@
 # Shell, Befehle und Pfade
 
-Stand: 16. August 2026.
+Stand: 20. August 2026.
 
 Die Shell orientiert sich bei Navigation und Dateibefehlen an MS-DOS, nutzt
 intern aber ausschließlich kanonische VFS-Pfade. Der Prompt zeigt das aktuelle
@@ -10,18 +10,19 @@ DOS-Laufwerk und Verzeichnis, beispielsweise `C:\TOOLS>`.
 
 | Zweck | Befehl und Alias |
 |---|---|
+| Built-ins | `HELP`, `CD`, `CHDIR`, `PWD`, `HISTORY`, `PATH`, `EXIT` |
 | Hilfe/Bildschirm | `HELP`, `CLS`, `CLEAR`, `ECHO` |
 | Auflisten | `DIR [pfad]`, `LS [pfad]` |
 | Verzeichnis wechseln | `CD [pfad]`, `CHDIR [pfad]` |
 | Verzeichnis anlegen | `MD pfad`, `MKDIR pfad` |
 | Verzeichnis entfernen | `RD pfad`, `RMDIR pfad` |
 | Datei anzeigen | `TYPE datei`, `OPEN datei` |
-| Datei anlegen/löschen | `MKFILE datei`, `DEL datei`, `ERASE`, `RMFILE` |
-| Kopieren | `COPY quelle ziel` |
+| Datei anlegen/löschen | `TOUCH datei`, `DEL datei`, `ERASE`, `RM datei` |
+| Kopieren/Umbenennen | `COPY`, `CP`, `RENAME`, `REN`, `MV` |
 | Laufwerke | `DRIVES`, `MOUNT laufwerk`, `C:`, `hdd0p2:` |
-| Programme | `RUN datei.PRG`, `EXEC datei.PRG`, `PS`, `KILL`, `BASIC` |
+| Programme | direkter Name oder Pfad, `PS`, `KILL`, `BASIC`, `DESKTOP` |
 | Netzwerk | `GETIP`, `IFCONFIG`, `PING`, `ARP`, `NET` |
-| Diagnose | `MEM`, `DUMP`, `PCI`, `IRQ`, `SYS`, `DATETIME` |
+| Diagnose | `MEMINFO`, `SYSINFO`, `DRIVES`, `USBINFO`, `AUDIOINFO`, `DATETIME` |
 
 Der reguläre Bootpfad lädt `SHELL.PRG` als Ring-3-Command-Line-Interpreter.
 Die fest einkompilierte Kernel-Shell ist ausschließlich die Rettungskonsole,
@@ -29,8 +30,14 @@ falls das Userspace-Programm nicht geladen werden kann oder beendet wird.
 
 Die Userspace-Shell verwaltet einen eigenen `PATH`. Das aktuelle Verzeichnis
 wird zuerst geprüft, anschließend die mit Semikolon getrennten
-Suchverzeichnisse. Standardmäßig verweist `PATH` auf das Stammverzeichnis des
-Bootlaufwerks.
+Suchverzeichnisse. Standardmäßig enthält `PATH` die kanonischen Verzeichnisse
+`/bin`, `/sbin`, `/usr/bin` und `/usr/gui/bin`. Interne Dienste unter
+`/libexec/reist` sind nicht Teil des allgemeinen Suchpfads.
+
+Die Tabelle beschreibt ausschließlich Built-ins, Aliase und paketierte
+`.PRG`-Programme der normalen Ring-3-Shell. Gleichnamige Diagnosefunktionen der
+Kernel-Rettungsshell, etwa der historische `PCI`-Befehl, gelten nicht als
+reguläre Benutzerbefehle.
 
 Befehlsnamen sind unabhängig von Groß-/Kleinschreibung. Argumente werden
 nicht pauschal großgeschrieben. Dateinamen auf FAT werden beim Nachschlagen

@@ -1,7 +1,9 @@
 # Arbeitspaket: Laufzeitstart des grafischen Desktops aus VGA
 
-Stand: 18. August 2026  
-Status: aktiv, direkte Ausführung im sichtbaren Hauptarbeitsbaum genehmigt
+Stand: 20. August 2026
+
+Status: abgeschlossenes Arbeitspaket; aktueller Desktopstand im
+[`GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md`](GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md)
 
 ## Kennung
 
@@ -20,8 +22,8 @@ Kernel-Thunks aktiviert werden. Erst danach wird der lineare Framebuffer
 veröffentlicht und der Desktop im Stil einer klassischen Amiga Workbench
 gezeichnet.
 
-Der weitere, unter VMware sichtbar abgearbeitete Ausbau von Window-Manager,
-Compositor und späterer GUI-Client-ABI wird in
+Der anschließende, unter VMware sichtbar abgearbeitete Ausbau von
+Window-Manager, Compositor und GUI-Client-ABI wird in
 [`GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md`](GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md)
 mit verbindlichen Checkboxen geführt.
 

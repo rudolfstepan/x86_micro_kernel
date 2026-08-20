@@ -1,6 +1,6 @@
 # System- und Programmkonfiguration
 
-Stand: 19. August 2026.
+Stand: 20. August 2026.
 
 REIST OS verwendet fuer systemweit veraenderbare Einstellungen das Verzeichnis
 `/etc/reist`. Die Konfiguration bleibt damit von Programmen unter `/usr`,
@@ -65,7 +65,12 @@ PRG-Pfad ab:
 ```text
 schema=reist.filetypes/1
 .txt=/usr/gui/bin/notepad.prg
+.log=/usr/gui/bin/notepad.prg
 .conf=/usr/gui/bin/notepad.prg
+.md=/usr/gui/bin/notepad.prg
+.wav=/usr/gui/bin/soundplayer.prg
+.bmp=/usr/gui/bin/imageviewer.prg
+.gif=/usr/gui/bin/imageviewer.prg
 ```
 
 Der Desktop liest hoechstens 4096 Bytes und veroeffentlicht maximal 16

@@ -1,6 +1,6 @@
 # Testabdeckung
 
-Stand: 16. August 2026.
+Stand: 20. August 2026.
 
 ## Host- und Strukturtests
 
@@ -14,6 +14,9 @@ Stand: 16. August 2026.
 - PS/2-Scan-Set-2, NumLock und Ausschluss serieller Tastaturinjektion
 - Netzwerkparser, Capabilities, UDP-Bindings und DHCP-Zustände
 - Fatalpfad, Panic-Kontext, Crashrecord, Watchdog und Handoverprotokolle
+- xHCI-HID-Tastatur/-Maus, Ring-/TRB-Regeln und sichere VMware-HID-Konfiguration
+- Window Manager, Explorer, Surface-Lifecycle, Notepad, GUI-Controls und Dialoge
+- HDA-Geräteprofil, Audio-SDK/WAV-Loader sowie BMP-/GIF-Decoder und Image Viewer
 
 ## Gasttests
 
@@ -25,13 +28,22 @@ Stand: 16. August 2026.
 - FDD-Auswurf, Quarantäne, Wiedereinlegen und Requalifizierung
 - PS/2-NumLock und Texteingabe über QEMU-`sendkey`
 - Netzwerk-, DHCP-, UDP-, PIT-, Memory-, Watchdog- und Handoverprofile
-- VBE-Framebuffer und erster Ring-3-Desktop-Renderdurchlauf
+- VBE-/Runtime-Grafik, Desktop-Rendermetriken sowie sichtbare Notepad- und
+  Image-Viewer-Surface-Clients
+- PCI-HDA mit aufgezeichneter, validierter und nicht stummer Stereoausgabe
+- aktives/passives TCP, DNS-A und zwölf HTTP/1.0-Testverbindungen
 
 ## Manuell beobachtet
 
 - VMware-AHCI-Boot, FAT32-Mount und Userspace-Shell
 - physischer Legacy-BIOS-Boot von SATA-Hardware
 - reale PS/2-Tastatureingabe einschließlich NumLock
+- VMware-Desktop mit Maus, Drag/Resize, Notepad- und Image-Viewer-Surfaces
+  einschließlich des korrigierten Resize-Clippings
+- hörbare VMware-HDA-Wiedergabe der paketierten 440-Hz-WAV-Datei mit
+  bestätigtem Pegel
+- USB-Maus und einfache USB-Boot-Tastatur auf dem ASUS H81M-K; das
+  AULA/BY-Tech-Composite-Keyboard bleibt ausgenommen
 
 Manuelle Beobachtung ist wertvolle Hardwareevidenz, aber keine breite
 Kompatibilitäts- oder Langzeitqualifikation. Der jüngste AHCI-Partition-Batch-
@@ -45,9 +57,10 @@ Zielplatten erneut bestätigt werden.
 - reale Power-Loss-Matrix für jede FAT12-Persistenzstufe
 - unabhängige elektrische Supervisor-/Fence-/Failover-Domäne
 - breite BIOS-, AHCI-, PCI-IDE-, PS/2- und Medienmatrix
-- stabiler USB/xHCI-/Mass-Storage-/Hotplugpfad
+- allgemeiner USB/xHCI-/Composite-HID-/Mass-Storage-/Hotplugpfad
 - UEFI, Secure Boot, NVMe, IOMMU und allgemeine DMA-Isolation
-- DNS, TCP, IPv6 und vollständige Internet-Anwendungen
+- IPv6, TLS/HTTPS, vollständige POSIX-Sockets und allgemeine
+  Internet-Anwendungen
 
 Die tatsächlich ausgeführte Testanzahl wird nicht eingefroren. Maßgeblich sind
 die Paketqueue, das konkrete Gatekommando, dessen Rückgabecode und das

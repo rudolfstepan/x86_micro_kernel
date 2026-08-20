@@ -1,5 +1,7 @@
 # REIST Image-Library und Bildbetrachter
 
+Stand: 20. August 2026.
+
 ## Schichten und Verantwortung
 
 `libreistimage.a` ist die wiederverwendbare, darstellungsunabhängige

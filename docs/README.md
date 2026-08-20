@@ -1,12 +1,57 @@
 # Dokumentationsindex
 
-Stand: 19. August 2026.
+Stand: 20. August 2026.
 
 Die Dokumentation unterscheidet zwischen aktuellen Referenzen und
 historischen Arbeitsberichten. Für Aufbau, Start und Bedienung sind die hier
 als **aktuell** bezeichneten Dokumente maßgeblich. Historische Berichte
 erklären frühere Entscheidungen, können aber alte Dateipfade, Befehle oder
 bereits behobene Fehler enthalten.
+
+## Globale Struktur und Zuständigkeit
+
+Jede Information besitzt genau einen fachlich autoritativen Ort. Andere
+Dokumente geben nur eine kurze Einordnung und verlinken dorthin; sie kopieren
+keine vollständigen Statuslisten, ABI-Tabellen oder Bedienungsabläufe.
+
+| Ort | Einzige Aufgabe | Darf nicht duplizieren |
+|---|---|---|
+| `README.md` | Projekteinstieg, kleinster Schnellstart, wichtigste Grenzen | vollständige Architektur- oder Subsystemverträge |
+| `docs/README.md` | globaler Index, Dokumentrollen und Aktualitätsregeln | Subsystemdetails |
+| `docs/development/PROJECT_STATUS.md` | kompakter, belegter Ist-Stand und offene Systemgrenzen | Implementierungsanleitungen und ABI-Definitionen |
+| `docs/architecture/` | normative, versionierte Architektur-, Sicherheits- und API-Verträge | historische Arbeitsprotokolle |
+| `docs/features/`, `docs/filesystems/`, `docs/hardware/`, `docs/networking/` | aktuelles beobachtbares Verhalten je Fachgebiet | globale Roadmap und Paketqueue |
+| `docs/development/` | Build-/Testworkflows, Roadmap und klar markierte Arbeitspakete | normative API-Verträge |
+| `userspace/*/README.md`, `assets/*/README.md`, `scripts/*.md` | lokale Quellbaum-, Asset- oder Werkzeugreferenz | globalen Projektstatus |
+
+Für konkurrierende Aussagen gilt folgende Reihenfolge:
+
+1. ausführbarer Code und bestandene Tests;
+2. `automation/reist-s03b.toml` für Paketstatus und aktiven Scope;
+3. normative Architektur- und Subsystemreferenz;
+4. `PROJECT_STATUS.md` als komprimierter Snapshot;
+5. Roadmap und abgeschlossene Arbeitspakete;
+6. historische Berichte.
+
+Pflegevorgaben:
+
+- Ein Statuswort wie **aktiv** darf nur die Paketqueue ableiten. Abgeschlossene
+  Pakete tragen Datum und Status **abgeschlossen**.
+- Aktuelle, statusabhängige Zentralreferenzen tragen einen `Stand:`.
+  Historische Dokumente beginnen mit einem deutlich sichtbaren Hinweis und
+  werden inhaltlich nicht auf einen heutigen Betriebsweg umgedeutet.
+- Öffentliche ABI/API-Details stehen im zuständigen Architekturvertrag und in
+  den inline dokumentierten Headern. Quickstarts und Statusseiten verlinken
+  dorthin.
+- Befehle werden in der normalen Ring-3-Shell und in beiden Image-Layouts
+  geprüft; ein Rescue-Shell-Befehl allein wird nicht als reguläre Funktion
+  dokumentiert.
+- Hardwarebeobachtung, Hosttest, QEMU-/VMware-Gasttest und allgemeine
+  Unterstützung bleiben sprachlich getrennte Evidenzstufen.
+- Screenshots werden mit dem versionierten
+  [QEMU-Capture](assets/screenshots/README.md) erzeugt, nur an fachlich
+  passenden Stellen eingebunden und enthalten keine alleinige Status- oder
+  ABI-Aussage.
 
 ## Einstieg und aktueller Stand
 
@@ -27,6 +72,10 @@ bereits behobene Fehler enthalten.
 - [Externe Programme](development/USER_PROGRAM_TOOLCHAIN.md) – SDK, ABI und MYPR-Toolchain
 - [Userspace-SDK und Portabilität](architecture/USERSPACE_SDK_AND_PORTABILITY.md) – modulare Bibliotheken, Upstream-Toolchain und API-Dokumentationsvertrag
 - [GUI-Komponenten, Controls und Dialoge](architecture/GUI_CONTROLS_AND_DIALOGS.md) – unterstützte UI-Bausteine, Dialogstandard und schrittweise Control-Roadmap
+- [GUI-Quellbaum und installierte Anwendungen](../userspace/gui/README.md) –
+  Compositor, Surface-Clients, SDK-Beispiele und kanonische Imagepfade
+- [Image-Library und Bildbetrachter](architecture/IMAGE_SUBSYSTEM.md) –
+  wiederverwendbare BMP-/GIF-Decoder und der windowed Surface-Client
 - [System- und Programmkonfiguration](architecture/SYSTEM_CONFIGURATION.md) – `/etc/reist`, versionierte Einstellungsdateien und sichere Rückfallwerte
 - [Grafischer Desktop-Workflow](development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md) – Window-Manager-, Surface-, GUI-SDK- und VMware-Arbeitsschritte
 - [Userspace-Dateisystemwerkzeuge](development/USERSPACE_FILESYSTEM_TOOLS.md) –
@@ -47,11 +96,13 @@ bereits behobene Fehler enthalten.
 - [PCI-Geräte und Treiberstatus](hardware/PCI_DEVICES.md) – übliche PCI-Klassen,
   erkannte Geräte und tatsächlich unterstützte REIST-Treiber
 - [PCI-Audio-Arbeitspaket](development/PCI_AUDIO_WORK_PACKAGE.md) –
-  Implementierungsfolge und Abnahmegrenzen der ersten HDA-Wiedergabe
+  abgeschlossenes Implementierungsprotokoll der ersten HDA-Wiedergabe
 - [Fertige VMware-VM](hardware/VMWARE.md) – VMX/VMDK, LAN-Bridge und Fehlerdiagnose
-- [Netzwerkstack](networking/NETWORK.md) – E1000, DHCP, ARP und ICMP
+- [Netzwerkstack](networking/NETWORK.md) – Ethernet-Treiber, DHCP, ARP,
+  IPv4/ICMP, UDP, DNS, TCP und HTTP/1.0
 - [TAP-Netzwerk](networking/TAP_NETWORKING.md) – optionaler Linux/QEMU-Testweg
-- [USB-Design](hardware/USB_DESIGN.md) – experimenteller USB-/xHCI-Stand
+- [USB-Design](hardware/USB_DESIGN.md) – begrenzter xHCI-/HID-Stand und
+  offene Geräteklassen
 - [EXT2](filesystems/EXT2_SUPPORT.md), [FAT12](filesystems/FAT12_IMPROVEMENTS.md) und
   [FAT32](filesystems/FAT32_OPTIMIZATIONS.md) – Dateisystemstatus und Grenzen
 
@@ -84,5 +135,9 @@ beschreibt:
 - `features/BASIC_INTERPRETER_UPDATES.md`
 - `filesystems/FAT12_ANALYSIS.md`
 
-Bei Widersprüchen gilt in dieser Reihenfolge: ausführbarer Code und Tests,
-aktuelle Referenzdokumente, historische Berichte.
+Abgeschlossene Arbeitspakete wie
+`development/RUNTIME_GRAPHICS_DESKTOP_WORK_PACKAGE.md`,
+`development/USERSPACE_DRIVER_DOMAIN_WORK_PACKAGE.md` und
+`development/PCI_AUDIO_WORK_PACKAGE.md` dokumentieren Scope und Abnahme eines
+bestimmten Entwicklungsstands. Für den heutigen Betriebsweg gelten die oben
+verlinkten Referenzdokumente.

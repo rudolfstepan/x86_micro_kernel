@@ -86,9 +86,10 @@ Jedes Archiv besitzt eine eigene Abhängigkeitsmenge und behält seinen
 Zeitstempel, wenn nur eine andere Komponente geändert wurde. Systemprogramme
 beobachten Core- und lokale Header. GUI- beziehungsweise Audioprogramme
 beobachten zusätzlich nur die öffentlichen Header und das Archiv ihres Moduls.
-Eine Änderung an GUI-Komponentencode oder
-`desktop.c` übersetzt daher ausschließlich `libreistgui.a` sowie die
-tatsächlich abhängigen `DESKTOP.PRG`/`GUIDEMO.PRG`.
+Eine Änderung an GUI-Komponentencode oder `desktop.c` übersetzt daher
+`libreistgui.a` sowie nur die tatsächlich von den geänderten Quellen oder
+Headern abhängigen GUI-Programme. Unveränderte Audio-, Image- und
+Consoleprogramme behalten ihre Artefakte.
 Eine spätere feinere Zerlegung
 der noch großen System-API oder eine dynamische Shared-Library-ABI bleibt ein
 eigener, getesteter Schritt.
@@ -99,13 +100,18 @@ eigener, getesteter Schritt.
   kompiliert wird. `<reist/gui/types.h>`, `<reist/gui/menu.h>`,
   `<reist/gui/dialog.h>`, `<reist/gui/control.h>`,
   `<reist/gui/container.h>`, `<reist/gui/tabs.h>` und
-  `<reist/gui/value_controls.h>` sind heute solche APIs.
+  `<reist/gui/value_controls.h>`, `<reist/gui/text_editor.h>`,
+  `<reist/gui/file_dialog.h>`, `<reist/gui/surface.h>` und
+  `<reist/gui/surface_client.h>` sind heute solche APIs. Dasselbe gilt für
+  `<reist/audio.h>`, `<reist/audio_wave.h>` und `<reist/image.h>` in ihren
+  jeweiligen Modulen.
 - Eine **binäre ABI** fixiert zusätzlich Datendarstellung, Aufrufkonvention,
   Symbolauflösung und Lebenszyklus bereits kompilierter Objekte. Ohne
   dynamischen Loader behauptet REIST keine Shared-Library-ABI.
 - Ein **IPC-Protokoll** überträgt validierte Nachrichten zwischen Prozessen.
-  Die geplante Surface-/Event-Grenze wird unabhängig von der in-process
-  Control-Bibliothek versioniert und generationsgebunden.
+  Die implementierte Surface-/Event-Grenze ist unabhängig von der in-process
+  Control-Bibliothek versioniert, generationsgebunden und auf feste
+  Nachrichtengrößen sowie Kapazitäten begrenzt.
 
 Diese Trennung verhindert, dass interne Zeigerstrukturen versehentlich als
 Prozessprotokoll veröffentlicht werden. Prozessübergreifende Strukturen dürfen
@@ -165,6 +171,7 @@ separat nachzuweisende Ziele.
 <sysroot>/usr/lib/libreistimage.a
 <sysroot>/usr/lib/pkgconfig/reist-gui.pc
 <sysroot>/usr/lib/pkgconfig/reist-audio.pc
+<sysroot>/usr/lib/pkgconfig/reist-image.pc
 ```
 
 Ein Client verwendet normale Suchoptionen:

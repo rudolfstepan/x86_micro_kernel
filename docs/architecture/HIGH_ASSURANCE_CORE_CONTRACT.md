@@ -1,6 +1,6 @@
 # REIST High-Assurance Core Contract
 
-Stand: 16. August 2026
+Stand: 20. August 2026
 
 REIST OS ist ein **High-Assurance Research Operating System for
 Fault-Tolerant and Fail-Operational Computing**. Dieser Vertrag definiert die
@@ -87,8 +87,9 @@ Die gegenwärtige ATA-/AHCI-/FDD-Implementierung erfüllt Erkennung, Quarantäne
 begrenzte Requalifizierung und read-only-Degradation. Persistente
 Undo-Journale decken markierte native FAT32- und REIST-FAT12-Images ab; FAT12
 besitzt zusätzlich begrenzte Remaps, kritische Replikate und geordnete
-Dateitransaktionen. Die vollständige FAT12-Persistenz-Fehlermatrix ist aktiv
-in Arbeit. Ein medienunabhängiger Nachweis für EXT2, fremde FAT-Volumes und
+Dateitransaktionen. Die deterministische FAT12-Persistenz-Fehlermatrix über 29
+stabile Barrieren ist umgesetzt; reale Power-Loss-/Reconnect-Evidenz bleibt
+begrenzt. Ein medienunabhängiger Nachweis für EXT2, fremde FAT-Volumes und
 künftige Backends bleibt offen.
 Beim FDD melden auch normale FAT12-Lesefehler die konkrete Medienressource.
 Eine Requalifizierung darf die Quarantäne nur in einem internen Probezugriff

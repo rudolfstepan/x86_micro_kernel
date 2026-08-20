@@ -189,9 +189,11 @@ Parser und bounded Preview-Loader gehören zur öffentlichen
 `<reist/audio_wave.h>`-Schicht und werden von `WAVPLAY` und `SOUNDPLAYER`
 gemeinsam verwendet. Die Desktop-Dateizuordnung `.wav` startet den grafischen
 Player mit dem kanonischen Dateipfad. Dieser bietet Abspielen, Stoppen und
-Schließen, hält aber dieselben Format- und Kapazitätsgrenzen ein. Bis zum
-Surface-IPC-Vertrag ist er wie der Editor ein vom Desktop überwachter
-Display-Client und noch kein unabhängig komponiertes Fenster.
+Schließen, hält aber dieselben Format- und Kapazitätsgrenzen ein. Die
+Surface-IPC ist vorhanden, der Sound Player wurde jedoch noch nicht darauf
+migriert. Anders als Notepad und Image Viewer verwendet er deshalb weiterhin
+die überwachte Vollbild-Kompatibilitätsbrücke und ist noch kein unabhängig
+komponiertes Fenster.
 
 ## Nachweis und verbleibende Risiken
 

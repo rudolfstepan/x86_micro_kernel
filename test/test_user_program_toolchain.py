@@ -451,6 +451,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "NOTEPAD.PRG",
                 "SOUNDPLAYER.PRG",
                 "IMAGEVIEWER.PRG",
+                "SURFACEDEMO.PRG",
                 "MKDIR.PRG",
                 "RMDIR.PRG",
                 "DEL.PRG",
@@ -525,7 +526,8 @@ class UserProgramToolchainTests(unittest.TestCase):
             }
             self.assertEqual(
                 rebuilt, {"DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG",
-                          "SOUNDPLAYER.PRG", "IMAGEVIEWER.PRG"}
+                          "SOUNDPLAYER.PRG", "IMAGEVIEWER.PRG",
+                          "SURFACEDEMO.PRG"}
             )
 
     def test_drives_reports_versioned_storage_health(self):

@@ -1,6 +1,6 @@
 # Projektstatus
 
-Stand: 18. August 2026. Maßgeblich sind ausführbarer Code, die Tests und die
+Stand: 20. August 2026. Maßgeblich sind ausführbarer Code, die Tests und die
 aktive Paketqueue in `automation/reist-s03b.toml`.
 
 REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
@@ -83,6 +83,12 @@ Persistenz-Fehlermatrix und `S0.3c-hw11` mit begrenzter SATA-Hotplug-Recovery
 sind abgeschlossen. Aussagen über vollständig nachgewiesene
 Fail-Operationalität oder unabhängige Hardware-Failover-Domänen sind weiterhin
 unzulässig.
+
+Die Queue besitzt derzeit kein aktives Paket (`active_id = ""`). Die direkt
+umgesetzten Meilensteine `R1.5-runtime-desktop`,
+`R1.6-driver-domain-foundation` und `R1.7-pci-audio` sind als `done`
+eingetragen. Ein neuer autonomer Paketlauf benötigt deshalb zuerst einen
+explizit definierten, begrenzten Scope.
 
 `S0.3c-admin1` stellt sichere Storage-Operationen (`device down/up`, `mount`,
 `umount`) und einen festen, integritätsgeprüften 128-KiB-RAM-Rescue-Pool aus
@@ -192,7 +198,8 @@ laufwerksbezogene Arbeitsverzeichnisse, `PATH`, Verlauf und Tab-Vervollständigu
 sind implementiert. Der flüchtige Verlauf ist als fester Ring mit 32 Einträgen
 ausgeführt; Cursor-Up/Down navigiert darin und stellt hinter dem neuesten
 Eintrag den begonnenen Eingabeentwurf wieder her. Die feste Standardsuche ist
-`/bin`, `/sbin`, `/usr/bin`; interne Dienste liegen unter `/libexec/reist`.
+`/bin`, `/sbin`, `/usr/bin`, `/usr/gui/bin`; interne Dienste liegen unter
+`/libexec/reist`.
 FAT12 und FAT32 speichern die Hierarchie begrenzt und zeigen ihre kanonischen
 Namen kleingeschrieben an; FAT32 erhält dabei validierte lange Namen. Exakte alte Root-Pfade bleiben über eine feste
 Kompatibilitätstabelle nutzbar. `/sbin/drives.prg` zeigt Resource-ID, Laufwerksbuchstaben,
@@ -206,6 +213,12 @@ Die Buildliste enthält unter anderem `/libexec/reist/reist.prg`,
 `/bin/basic.prg` ist ein
 normales Ring-3-Programm, keine Kernelkomponente.
 
+Grafische Programme sind getrennt unter `/usr/gui/bin`: Der Desktop ist der
+Session-Compositor, Notepad und Image Viewer sind eigenständige
+Ring-3-Surface-Clients, Sound Player und Control Gallery verwenden derzeit
+noch die Vollbild-Kompatibilitätsbrücke. `/etc/reist/filetypes.conf` ordnet
+Text-, WAV-, BMP- und GIF-Dateien ihren Anwendungen zu.
+
 ## Eingabe, Diagnose und Panic
 
 Der i8042-Treiber arbeitet mit rohem Scan-Set 2, IRQ1 und einem begrenzten
@@ -214,6 +227,25 @@ Die frühere per COM1 injizierte Tastatureingabe ist entfernt; COM1 dient nur
 der begrenzten Diagnoseausgabe. Der Panic-Screen zeigt Phase, Komponente,
 Operation, Subjekt, Ergebnis, Details, Sequenz, Panic-Aufrufadresse, Build-ID
 und – falls vorhanden – den Registerrahmen.
+
+USB/xHCI unterstützt begrenzt HID-Boot-Tastatur und -Maus; PS/2 bleibt der
+unabhängige Fallback. Allgemeine USB-Unterstützung und das
+AULA/BY-Tech-Composite-Keyboard `258A:010C` bleiben offen. Verifizierte
+Evidenz und VMware-Sicherheitsgrenze stehen in
+[USB-Design](../hardware/USB_DESIGN.md) und [VMware](../hardware/VMWARE.md).
+
+## Grafik, Audio und Medien
+
+- Laufzeitgrafik, Explorer und Surface-Compositor sind umgesetzt; Notepad und
+  Image Viewer laufen als echte externe Fensterclients. Details und offene
+  Migrationen stehen ausschließlich im
+  [Desktop-Workflow](GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md), in der
+  [Framebuffer-Referenz](../features/FRAMEBUFFER.md) und im
+  [Image-Vertrag](../architecture/IMAGE_SUBSYSTEM.md).
+- PCI-HDA läuft über getrennte überwachte Ring-3-Domänen; QEMU prüft den
+  PCM-Pfad, VMware-Wiedergabe und Pegel wurden manuell bestätigt. Format,
+  Lifecycle und Hardwaregrenzen stehen im
+  [Audiovertrag](../architecture/AUDIO_SUBSYSTEM.md).
 
 ## Netzwerk
 
@@ -246,16 +278,19 @@ python .\scripts\run_qemu_smoke.py --image build\reist-os.img --sata --expect-re
 ```
 
 Paketabhängig kommen FDD-Hotplug, PS/2, Netzwerkparser, Storage-Recovery,
-Fault-Injection, Framebuffer, Watchdog und Handover hinzu. Ein grüner Host- oder
-QEMU-Test ersetzt keine Langzeit-, EMV-, Stromausfall- oder breite
-Zielhardwarequalifikation.
+Fault-Injection, Framebuffer/Surface, PCI-Audio, Watchdog und Handover hinzu.
+Ein grüner Host- oder QEMU-Test ersetzt keine Langzeit-, EMV-, Stromausfall-
+oder breite Zielhardwarequalifikation.
 
 ## Wichtigste offene Grenzen
 
-- FAT12-Persistenz-Fehlermatrix und kontrollierter Reparatur-/Remountpfad
+- reale FAT12-Power-Loss-/Reconnect-Matrix und kontrollierter
+  Reparatur-/Remountpfad
 - medienunabhängige Persistenzgarantie für EXT2 und fremde FAT-Volumes
 - unabhängige Supervisor-, Fence- und Failover-Hardware
 - breite reale AHCI-/PCI-IDE-/PS/2-/BIOS-Kompatibilitätsmatrix
-- stabiler USB/xHCI-, Mass-Storage- und Hotplug-Lebenszyklus
+- allgemeiner USB/xHCI-, Composite-HID-, Mass-Storage- und Hotplug-Lebenszyklus
+- Migration der verbleibenden GUI-Programme auf Surface-Clients sowie
+  hardwarebeschleunigte Grafik
 - SMP, IOMMU/DMA-Isolation, UEFI, Secure Boot und NVMe
 - formale Nachweise, Langzeit-Stresstests und Zertifizierung

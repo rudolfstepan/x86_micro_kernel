@@ -2645,6 +2645,7 @@ int main(int argc, char **argv) {
     unsigned int runtime_activated = 0U;
     uint32_t render_probe = 0U;
     uint32_t surface_probe = 0U;
+    uint32_t notepad_probe = 0U;
     uint32_t surface_probe_reported = 0U;
     uint32_t surface_probe_created_reported = 0U;
 
@@ -2653,8 +2654,13 @@ int main(int argc, char **argv) {
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--surface-probe")) {
         surface_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--notepad-probe")) {
+        notepad_probe = 1U;
     } else if (argc != 1) {
-        x86os_puts("Usage: desktop [--render-probe|--surface-probe]\n");
+        x86os_puts(
+            "Usage: desktop [--render-probe|--surface-probe|"
+            "--notepad-probe]\n");
         return 2;
     }
 
@@ -2721,34 +2727,40 @@ int main(int argc, char **argv) {
         &display, &manager, &explorer, &surfaces, &ui,
         &initial_dirty, 0, 0U, 0U, &metrics);
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
-    if (surface_probe) {
+    if (surface_probe || notepad_probe) {
         int probe_status = launch_surface_probe_client(
             &surface_runtime, &surfaces,
             "/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT", 1U);
-        if (probe_status == 0)
-            probe_status = launch_surface_probe_client(
-                &surface_runtime, &surfaces,
-                "/USR/GUI/BIN/NOTEPAD.PRG", "--menu-probe", 2U);
-        if (probe_status == 0)
-            probe_status = launch_surface_probe_client(
-                &surface_runtime, &surfaces,
-                "/USR/GUI/BIN/NOTEPAD.PRG", "--file-dialog-probe", 3U);
-        if (probe_status == 0)
-            probe_status = launch_surface_probe_client(
-                &surface_runtime, &surfaces,
-                "/USR/GUI/BIN/NOTEPAD.PRG", "--hover-probe", 4U);
-        if (probe_status == 0)
-            probe_status = launch_surface_probe_client(
-                &surface_runtime, &surfaces,
-                "/USR/GUI/BIN/IMAGEVIEWER.PRG",
-                "/USR/SHARE/IMAGES/DEMO-COLORS.GIF", 5U);
+        if (surface_probe) {
+            if (probe_status == 0)
+                probe_status = launch_surface_probe_client(
+                    &surface_runtime, &surfaces,
+                    "/USR/GUI/BIN/NOTEPAD.PRG", "--menu-probe", 2U);
+            if (probe_status == 0)
+                probe_status = launch_surface_probe_client(
+                    &surface_runtime, &surfaces,
+                    "/USR/GUI/BIN/NOTEPAD.PRG", "--file-dialog-probe", 3U);
+            if (probe_status == 0)
+                probe_status = launch_surface_probe_client(
+                    &surface_runtime, &surfaces,
+                    "/USR/GUI/BIN/NOTEPAD.PRG", "--hover-probe", 4U);
+            if (probe_status == 0)
+                probe_status = launch_surface_probe_client(
+                    &surface_runtime, &surfaces,
+                    "/USR/GUI/BIN/IMAGEVIEWER.PRG",
+                    "/USR/SHARE/IMAGES/DEMO-COLORS.GIF", 5U);
+        }
         if (probe_status != 0) {
-            x86os_puts("DESKTOP_SURFACE_FAIL launch\n");
+            x86os_puts(surface_probe
+                ? "DESKTOP_SURFACE_FAIL launch\n"
+                : "DESKTOP_NOTEPAD_FAIL launch\n");
             desktop_surface_runtime_shutdown(&surface_runtime);
             if (runtime_activated) (void)x86os_display_deactivate();
             return 1;
         }
-        x86os_puts("DESKTOP_SURFACE_STAGE client-bound\n");
+        x86os_puts(surface_probe
+            ? "DESKTOP_SURFACE_STAGE client-bound\n"
+            : "DESKTOP_NOTEPAD_STAGE client-bound\n");
     }
     if (render_probe) {
         run_render_probe(

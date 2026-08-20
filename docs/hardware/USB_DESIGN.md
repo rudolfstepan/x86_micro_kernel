@@ -1,45 +1,72 @@
 # USB-/xHCI-Status und Design
 
-Stand: 16. August 2026.
+Stand: 20. August 2026.
 
-USB bleibt experimentell. Der Build nimmt `drivers/usb/` auf und probiert
-PCI-USB-Controller, aber daraus folgt kein freigegebener End-to-End-Stack. Die
-VMware-Referenz deaktiviert USB und verwendet PS/2-Eingabe sowie SATA/AHCI-
-Storage. Ein physisches USB-FDD wird von VMware als klassischer FDC emuliert.
+USB bleibt experimentell, ist aber kein reiner Probe-Platzhalter mehr. Der
+aktuelle xHCI-Pfad enumeriert begrenzt HID-Boot-Tastaturen und -Mäuse, richtet
+Interrupt-IN-Endpunkte ein und speist beide Geräte in die vorhandenen
+Eingabeschnittstellen ein. Daraus folgt weder eine allgemeine USB-Freigabe noch
+Unterstützung für Mass Storage, Audio oder beliebige Composite-Geräte.
 
-## Vorhandene Bausteine
-
-- USB-Core-Strukturen und PCI-Probing
-- xHCI-MMIO-/Controllergrundlagen
-- Hub- und HID-Tastaturquellen
-- Einbindung der USB-Quellen in den Kernelbuild
-
-## Noch erforderlicher Vertrag
+## Implementierter Pfad
 
 ```text
-PCI -> xHCI -> USB-Core -> Hub/Port -> Klasse -> HID oder Mass Storage
+PCI 0c:03:30
+  -> validierter xHCI-MMIO-BAR und BIOS/OS-Handoff
+  -> statische DCBAA-, Command-, Event-, EP0- und Interrupt-Ringe
+  -> begrenzter Root-Port-Reset und Descriptor-Transfer
+  -> HID Boot Protocol keyboard/mouse
+  -> gemeinsame Keyboard-Queue beziehungsweise feste Mausreport-Queue
+  -> Shell oder Desktop
 ```
 
-Erforderlich sind validierte MMIO-BARs, Bus Mastering, korrekt ausgerichtete
-DMA-Strukturen, Cycle-Bit-Ringe, endliche Reset-/Transferdeadlines, sauberer
-Disconnect, begrenzte Fehlerdiagnose und eine Blockgeräteanbindung ohne
-Umgehung von Quarantäne, Fingerprint, Flush oder Write-Fencing.
+Vorhanden sind:
 
-## Verifikationsreihenfolge
+- endliche Controller-, Port- und Transferdeadlines;
+- statische, ausgerichtete DMA-Strukturen und spätes Bus-Mastering;
+- Intel-Port-Routing vom EHCI-Begleitcontroller mit Readback;
+- generationgebundene Attach-/Detach- und Reportpfade;
+- gleichzeitige Tastatur- und Mausendpunkte an unterschiedlichen Root-Ports;
+- persistente Diagnose über `/sbin/usbinfo.prg` in der normalen Ring-3-Shell;
+- Hosttests für HID-Tastatur, Maus, Ring-/TRB-Regeln und Imagepaketierung;
+- QEMUs manuelles `make run-usb`-Profil mit `qemu-xhci` und `usb-kbd`.
 
-1. Controller, BAR und Interruptweg eindeutig erkennen.
-2. Reset und Ringinitialisierung mit Deadlines ausführen.
-3. Root-Port und Deskriptoren lesen.
-4. HID-Bootkeyboard getrennt vom verifizierten PS/2-Pfad testen.
-5. Bulk-Only/SCSI-Mass-Storage an die Blockgeräteschicht anbinden.
-6. VFS-Mount, I/O-Fehler, Abziehen und Reintegrationsregeln prüfen.
+## VMware- und Hardwaregrenze
+
+Die VMware-Referenz aktiviert einen virtuellen xHCI-Controller und genau eine
+virtuelle HID-Maus. Die Tastatur bleibt virtuell PS/2. Physisches Host-HID-
+Passthrough ist mit `usb.generic.allowHID = "FALSE"` und
+`usb.generic.allowLastHID = "FALSE"` verboten, damit der Host immer bedienbar
+bleibt.
+
+Auf dem ASUS H81M-K wurden eine einfache USB-Boot-Tastatur und die USB-Maus
+erfolgreich verwendet. Das AULA/BY-Tech-Composite-Keyboard `258A:010C` mit
+LED-Steuerung und Lautstärkedrehregler wird zwar erkannt, liefert aber noch
+keine verwendbare Tastatureingabe. Dieser gerätespezifische Fehler bleibt offen
+und darf nicht als allgemeines xHCI- oder HID-Funktionieren umgedeutet werden.
 
 ## Offene Grenzen
 
-- kein stabil freigegebener xHCI-End-to-End-Pfad
-- kein dokumentierter USB-Mass-Storage-Mount
-- kein abgeschlossener Hotplug-/Disconnect-Lebenszyklus
-- keine IOMMU-/DMA-Isolation
-- keine EHCI/OHCI/UHCI-Kompatibilitätszusage
+- kein allgemeiner HID-Report-Descriptorparser und keine Nicht-Boot-Layouts;
+- keine vollständige Initialisierung vendor-spezifischer Composite-HID-Geräte;
+- kein beliebig tiefer Hub-, Hotplug- und Reconnect-Lebenszyklus;
+- kein EHCI/OHCI/UHCI-Backend;
+- kein USB-Mass-Storage, USB Audio oder isochroner Transferpfad;
+- keine IOMMU-basierte DMA-Isolation und keine breite Controller-/Gerätematrix;
+- kein automatisierter QEMU-Gasttest, der ein echtes Shellkommando über
+  `usb-kbd` eingibt; `make run-usb` ist derzeit ein manueller Lauf.
 
-`drivers/usb/usb_recommendations.md` ist eine historische Entwurfsnotiz.
+## Diagnose
+
+```text
+C:\> USBINFO
+```
+
+Die Ausgabe trennt Controllerzustand, verbundene Root-Ports,
+Enumerationsversuche, ausgewählte Tastatur-/Mausendpunkte, Reportzähler,
+abgewiesene Reports und den letzten Completion Code. Bootmeldungen sind nicht
+die einzige Evidenzquelle; der Status bleibt nach dem schnellen Boot abrufbar.
+
+`drivers/usb/usb_recommendations.md` ist eine historische Entwurfsnotiz. Der
+offene Arbeitsumfang und die Sicherheitsregeln stehen zusätzlich im
+[USB-Tastatur-Plan](../development/USB_KEYBOARD_IMPLEMENTATION_PLAN.md).

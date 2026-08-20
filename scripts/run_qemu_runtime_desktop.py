@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import binascii
 import pathlib
 import queue
 import re
+import struct
 import subprocess
 import sys
 import threading
 import time
+import zlib
 
 from run_qemu_smoke import (
     QEMU_MUX_SWITCH,
@@ -29,6 +32,7 @@ METRIC_KEYS = {
     "fallback_frames", "damage_regions", "damage_max",
     "clock_errors", "probe_errors",
 }
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 def parse_render_metrics(text: str) -> tuple[dict[str, int], str]:
@@ -121,34 +125,74 @@ def send_key(process: subprocess.Popen[str], key: str) -> None:
     process.stdin.flush()
 
 
-def screenshot_has_menu_text(path: pathlib.Path) -> bool:
-    """Require dark glyph pixels inside the otherwise gray desktop menu bar."""
+def read_ppm(path: pathlib.Path) -> tuple[int, int, bytes] | None:
+    """Read the bounded P6 format emitted by QEMU's screendump command."""
     try:
         data = path.read_bytes()
     except OSError:
-        return False
+        return None
     header = re.match(
         rb"P6[ \t\r\n]+([0-9]+)[ \t\r\n]+([0-9]+)"
         rb"[ \t\r\n]+255[ \t\r\n]",
         data,
     )
     if header is None:
-        return False
+        return None
     width = int(header.group(1))
     height = int(header.group(2))
     offset = header.end()
-    if width < 460 or height < 30 or len(data) < offset + width * height * 3:
+    expected = width * height * 3
+    if width <= 0 or height <= 0 or len(data) != offset + expected:
+        return None
+    return width, height, data[offset:]
+
+
+def screenshot_has_menu_text(path: pathlib.Path) -> bool:
+    """Require dark glyph pixels inside the otherwise gray desktop menu bar."""
+    ppm = read_ppm(path)
+    if ppm is None:
+        return False
+    width, height, pixels = ppm
+    if width < 460 or height < 30:
         return False
 
     dark_pixels = 0
     for y in range(8, 24):
-        row = offset + y * width * 3
+        row = y * width * 3
         for x in range(10, 450):
             pixel = row + x * 3
-            if (data[pixel] < 96 and data[pixel + 1] < 96 and
-                    data[pixel + 2] < 96):
+            if (pixels[pixel] < 96 and pixels[pixel + 1] < 96 and
+                    pixels[pixel + 2] < 96):
                 dark_pixels += 1
     return dark_pixels >= 64
+
+
+def png_chunk(kind: bytes, payload: bytes) -> bytes:
+    checksum = binascii.crc32(kind)
+    checksum = binascii.crc32(payload, checksum) & 0xFFFFFFFF
+    return (struct.pack(">I", len(payload)) + kind + payload +
+            struct.pack(">I", checksum))
+
+
+def convert_screenshot_if_png(path: pathlib.Path) -> None:
+    """Convert QEMU P6 output only when the requested suffix is ``.png``."""
+    if path.suffix.lower() != ".png":
+        return
+    ppm = read_ppm(path)
+    if ppm is None:
+        raise RuntimeError("QEMU screenshot is not a valid P6 image")
+    width, height, pixels = ppm
+    scanlines = b"".join(
+        b"\0" + pixels[row * width * 3:(row + 1) * width * 3]
+        for row in range(height)
+    )
+    png = bytearray(PNG_SIGNATURE)
+    png.extend(png_chunk(
+        b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    ))
+    png.extend(png_chunk(b"IDAT", zlib.compress(scanlines, level=9)))
+    png.extend(png_chunk(b"IEND", b""))
+    path.write_bytes(png)
 
 
 def require_screenshot_menu_text(path: pathlib.Path,
@@ -160,9 +204,30 @@ def require_screenshot_menu_text(path: pathlib.Path,
     raise RuntimeError("desktop screenshot contains no menu text")
 
 
+def capture_screenshot(process: subprocess.Popen[str],
+                       screenshot: pathlib.Path,
+                       deadline: float) -> None:
+    """Capture, validate and optionally convert one bounded guest frame."""
+    if process.stdin is None:
+        raise RuntimeError("QEMU monitor input unavailable")
+    process.stdin.write(QEMU_MUX_SWITCH)
+    process.stdin.flush()
+    time.sleep(0.05)
+    process.stdin.write(f"screendump {screenshot}\n")
+    process.stdin.flush()
+    time.sleep(0.1)
+    process.stdin.write(QEMU_MUX_SWITCH)
+    process.stdin.flush()
+    require_screenshot_menu_text(
+        screenshot, min(deadline, time.monotonic() + 1.0)
+    )
+    convert_screenshot_if_png(screenshot)
+
+
 def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool, render_probe: bool,
-        surface_probe: bool, metrics_log: pathlib.Path | None) -> int:
+        surface_probe: bool, notepad_probe: bool,
+        metrics_log: pathlib.Path | None) -> int:
     command = [
         str(qemu), "-accel", "tcg", "-machine", "pc", "-nodefaults",
         "-device", "VGA,vgamem_mb=1" if expect_failure else "VGA",
@@ -189,7 +254,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
             if SHELL_PROMPT in text:
                 command_name = "desktop.prg --render-probe" if render_probe \
                     else ("desktop.prg --surface-probe" if surface_probe
-                          else "desktop.prg")
+                          else ("desktop.prg --notepad-probe"
+                                if notepad_probe else "desktop.prg"))
                 send_command(process, command_name)
                 break
             time.sleep(0.02)
@@ -267,24 +333,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                                 probe_text and
                                 "NOTEPAD_SURFACE_HOVER_READY" in probe_text):
                             time.sleep(0.2)
-                            if process.stdin is None:
-                                raise RuntimeError(
-                                    "QEMU monitor input unavailable"
-                                )
-                            process.stdin.write(QEMU_MUX_SWITCH)
-                            process.stdin.flush()
-                            time.sleep(0.05)
-                            process.stdin.write(
-                                f"screendump {screenshot}\n"
-                            )
-                            process.stdin.flush()
-                            time.sleep(0.1)
-                            process.stdin.write(QEMU_MUX_SWITCH)
-                            process.stdin.flush()
-                            require_screenshot_menu_text(
-                                screenshot,
-                                min(deadline, time.monotonic() + 1.0),
-                            )
+                            capture_screenshot(process, screenshot, deadline)
                             print("runtime-desktop-surface: PASS")
                             return 0
                         time.sleep(0.02)
@@ -293,24 +342,36 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                         "Surface client did not publish a visible window; "
                         f"guest tail:\n{tail}"
                     )
+                if notepad_probe:
+                    while time.monotonic() < deadline:
+                        drain(output, transcript)
+                        probe_text = "".join(transcript)
+                        if "DESKTOP_NOTEPAD_FAIL" in probe_text:
+                            raise RuntimeError("Notepad probe launch failed")
+                        if "notepad: Surface" in probe_text:
+                            marker = re.findall(
+                                r"notepad: Surface[^\r\n]*", probe_text
+                            )[-1]
+                            raise RuntimeError(
+                                f"Editor Surface failed: {marker}"
+                            )
+                        if ("NOTEPAD_SURFACE_READY" in probe_text and
+                                "NOTEPAD_SURFACE_DOCUMENT_READY" in
+                                probe_text):
+                            time.sleep(0.2)
+                            capture_screenshot(process, screenshot, deadline)
+                            print("runtime-desktop-notepad: PASS")
+                            return 0
+                        time.sleep(0.02)
+                    raise RuntimeError(
+                        "Notepad did not publish a visible document window"
+                    )
                 # The marker is emitted immediately before the single
                 # backbuffer render so it is overwritten by the desktop.
                 # Give the guest a bounded interval to finish that frame
                 # before capturing it or injecting Escape.
                 time.sleep(0.2)
-                if process.stdin is not None:
-                    process.stdin.write(QEMU_MUX_SWITCH)
-                    process.stdin.flush()
-                    time.sleep(0.05)
-                    process.stdin.write(f"screendump {screenshot}\n")
-                    process.stdin.flush()
-                    time.sleep(0.05)
-                    process.stdin.write(QEMU_MUX_SWITCH)
-                    process.stdin.flush()
-                    require_screenshot_menu_text(
-                        screenshot,
-                        min(deadline, time.monotonic() + 1.0),
-                    )
+                capture_screenshot(process, screenshot, deadline)
                 send_key(process, "esc")
                 while time.monotonic() < deadline:
                     drain(output, transcript)
@@ -342,16 +403,18 @@ def main() -> int:
     parser.add_argument("--expect-failure", action="store_true")
     parser.add_argument("--render-probe", action="store_true")
     parser.add_argument("--surface-probe", action="store_true")
+    parser.add_argument("--notepad-probe", action="store_true")
     parser.add_argument("--metrics-log", type=pathlib.Path)
     args = parser.parse_args()
-    if sum((args.expect_failure, args.render_probe, args.surface_probe)) > 1:
+    if sum((args.expect_failure, args.render_probe, args.surface_probe,
+            args.notepad_probe)) > 1:
         parser.error("desktop probe modes are mutually exclusive")
     if args.metrics_log is not None and not args.render_probe:
         parser.error("--metrics-log requires --render-probe")
     try:
         return run(args.qemu, args.image, args.screenshot, args.timeout,
                    args.expect_failure, args.render_probe,
-                   args.surface_probe, args.metrics_log)
+                   args.surface_probe, args.notepad_probe, args.metrics_log)
     except (OSError, RuntimeError) as error:
         print(f"runtime-desktop: FAIL: {error}", file=sys.stderr)
         return 1

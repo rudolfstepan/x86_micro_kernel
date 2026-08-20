@@ -1,6 +1,6 @@
 # Architekturüberblick
 
-Stand: 18. August 2026
+Stand: 20. August 2026
 
 Dieses Dokument beschreibt die aktuelle 32-Bit-x86-Architektur. Das System
 startet ausschließlich über den eigenen BIOS-Bootloader. Einen alternativen
@@ -176,7 +176,8 @@ nullt BSS und gibt den Stagingpuffer auf Erfolgs- und Fehlerpfaden wieder frei.
 Der Ring-3-Start hängt deshalb nicht mehr von einem festen physischen
 Stagingbereich ab und funktioniert auch in der 32-MiB-Testkonfiguration.
 
-Programmtasks laufen in Ring 3 mit eigener Seitentabelle und Userstack. Der
+Programmtasks laufen in Ring 3 mit eigener Seitentabelle und Userstack. Zwei
+nicht-präsente Guardpages begrenzen jeden Userstack nach unten und oben. Der
 gemeinsam eingeblendete Kernelanteil bleibt Supervisor-only. Syscall-Pointer
 werden vor Zugriffen bereichsweise geprüft und über Kopierfunktionen zwischen
 User- und Kerneladressraum übertragen.
@@ -297,20 +298,29 @@ append-only um `create_time`, `modify_time` und `access_time`. `stat` sowie
 `x86os_touch()`, aktualisiert die FAT-Zeitfelder über VFS; die alte
 Syscallnummerierung bleibt unverändert.
 
-## Grafik und Desktop-MVP
+## Grafik, Desktop und Surface-Clients
 
 Ein `VIDEO=framebuffer`-Build lässt den nativen BIOS-Loader bevorzugt
 1024x768x32 und danach 800x600x32 anfordern. Nur ein erfolgreich gesetzter
 linearer Direct-Color-Modus aktiviert den Framebuffertreiber. Ohne ihn bleibt
 VGA-Text aktiv und der normale Shellstart unverändert.
 
-Auf einem echten Framebuffer startet der Kernel `DESKTOP.PRG` vor
-`SHELL.PRG`. Dieser Ring-3-Launcher zeichnet Hintergrund, Statusleiste und vier
-Karten für Shell, Dateiliste, Editor und Systeminformationen ausschließlich
-über die Display-Syscalls. Tastaturauswahl und `Enter` starten jeweils einen
-Vollbild-Kindprozess; der Desktop wartet mit `spawn`/`wait`, leert danach
-verbliebene Eingabe und zeichnet sich neu. `Esc` startet die Shell. Es gibt
-noch keine Maus, keinen Compositor, Windowmanager oder Fokusvertrag.
+Auf einem echten Framebuffer startet der Kernel den kanonischen
+`/usr/gui/bin/desktop.prg` vor `SHELL.PRG`; nach einem VGA-Textboot kann die
+Ring-3-Shell denselben Compositor starten und damit den validierten QEMU-,
+VMware- oder vorbereiteten VBE-Pfad aktivieren. `Esc` deaktiviert eine solche
+Laufzeitsitzung und stellt VGA samt Shell wieder her.
+
+Der Desktop besitzt Maus- und Tastaturfokus, Z-Order, implizites
+Pointer-Capture, verschiebbare und achtseitig skalierbare Fenster sowie einen
+begrenzten Explorer. Ordnerinhalte werden als Icons gerendert;
+Dateizuordnungen stammen aus `/etc/reist/filetypes.conf`. Notepad und Image
+Viewer bleiben als separate Ring-3-Prozesse in compositorverwalteten Fenstern
+aktiv. Die versionierte, generationsgebundene Surface-/Event-IPC kennt
+Configure/Ack, Retained-Fill/Text, XRGB8888-Buffer, Damage, Commit und Close.
+Der Compositor allein besitzt globale Platzierung und Displaypublikation;
+Clients erhalten weder Framebufferautorität noch globale Koordinaten. Noch
+nicht migrierte Programme verwenden eine begrenzte Vollbildbrücke.
 
 ## Console-Eingabe
 
@@ -359,14 +369,18 @@ sie anschließend im Foreground-Kontext.
 | Bereich | Aktuelle Komponenten |
 |---|---|
 | Block | ATA/PCI-IDE, AHCI/SATA, MBR-Partitionen, Floppy |
-| Eingabe | PS/2-Tastatur mit IRQ1/Poll-Fallback, experimentelles USB-HID; COM1 nur Ausgabe |
-| Anzeige | VGA-Text, nativer VBE-RGB-Framebuffer, geclippte Ring-3-Display-ABI und Desktop-MVP |
+| Eingabe | PS/2-Tastatur mit IRQ1/Poll-Fallback, experimentelles xHCI-HID für Boot-Tastatur und -Maus; COM1 nur Ausgabe |
+| Anzeige | VGA-Text, VBE/QEMU-DISPI/VMware-SVGA, Shadowbuffer, Damage-/Frame-ABI und Ring-3-Surface-Compositor |
 | Bus | PCI, USB-Hostcontroller-Probing |
-| Netzwerk | E1000, RTL8139, NE2000 über `netdev` |
+| Netzwerk | E1000, RTL8139, RTL8168/8111G und NE2000 über `netdev` |
+| Audio | kernelvermitteltes PCI-HDA-Geräteprofil, Ring-3-HDA-Treiber und getrennter PCM-Service |
 | Zeit | monotone 64-Bit-PIT-Zeit, RTC, kalibrierter lokaler APIC-Timer mit PIT-Fallback; HPET noch inaktiv |
 
-Die generierte VMware-Referenzmaschine verwendet SATA/AHCI, VGA, PS/2 und
-E1000. QEMU behält ATA/IDE als separaten Regressionspfad.
+Die generierte VMware-Referenzmaschine verwendet SATA/AHCI, VMware SVGA,
+PS/2-Tastatur, eine virtuelle xHCI-HID-Maus, E1000 und HDA. Physisches
+HID-Passthrough ist ausdrücklich deaktiviert. QEMU behält ATA/IDE als
+separaten Regressionspfad und stellt zusätzliche Grafik-, Surface- und
+Audio-Gastnachweise bereit.
 
 Der reale QEMU-Framebuffer-Boot bestätigt VBE-Handoff, Kernelinitialisierung
 und den ersten Ring-3-Renderdurchlauf über den seriellen Marker `DESKTOP_OK`.
@@ -384,8 +398,8 @@ PIT-Scheduler-Fallback ausgeführt; der High-Frame-Selbsttest schreibt und liest
 zusätzlich einen Frame ab 256 MiB.
 
 Noch nicht enthalten sind systematische Failure-Injection für jede einzelne
-Teilallokation, ein Highmem-/`kmap`-Fenster für Speicher oberhalb 1 GiB,
-User-Stack-Guardpages und ein für harten IRQ-Kontext geeigneter Allocator.
+Teilallokation, ein Highmem-/`kmap`-Fenster für Speicher oberhalb 1 GiB und ein
+für harten IRQ-Kontext geeigneter Allocator.
 
 ## Wichtige Grenzen
 
@@ -396,11 +410,12 @@ User-Stack-Guardpages und ein für harten IRQ-Kontext geeigneter Allocator.
 - der Frame-Allocator verwaltet höchstens die ersten 1 GiB; höherer
   E820-Speicher wird bis zu einer Highmem-/`kmap`-Lösung nur erkannt
 - Kernel-Heap-Operationen sind nicht für harten IRQ-Kontext bestimmt
-- Kernelstacks besitzen Guardpages; Userstacks noch nicht
-- Minimalnetzwerk ohne TCP/DNS/IPv6
+- Kernel- und Userstacks besitzen Guardpages; dynamisches Stackwachstum fehlt
+- begrenzte UDP-/TCP-/DNS-ABI statt vollständiger POSIX-Sockets; kein IPv6
 - HPET und IOAPIC warten auf die validierte ACPI-/Plattformschicht
-- der Desktop ist ein tastaturbedienter Vollbild-Launcher ohne Maus,
-  Compositor, Windowmanager oder Fokusmodell
+- Surface-IPC und Window Manager sind vorhanden, aber erst Notepad und Image
+  Viewer sind echte externe Fensterclients; weitere GUI-Programme verwenden
+  noch die Vollbildbrücke
 - USB und unterschiedliche reale VBE-Implementierungen sind nicht so
   umfassend verifiziert wie der VMware-VGA-/PS/2-/E1000-Weg
 
@@ -419,6 +434,6 @@ User-Stack-Guardpages und ein für harten IRQ-Kontext geeigneter Allocator.
 - `drivers/video/` – VGA, Framebuffer, Console-Spiegelung und Zeichenprimitive
 - `drivers/` – weitere Hardwaretreiber
 - `userspace/sdk/` – externe Programmschnittstelle
-- `userspace/gui/` – Session-Compositor, künftige GUI-Client-ABI,
-  Bibliothek, Anwendungen und Ressourcen; der aktuelle Compositor liegt unter
+- `userspace/gui/` – Session-Compositor, versionierte Control- und Surface-
+  APIs, Bibliotheken, Anwendungen und Ressourcen; der Compositor liegt unter
   `userspace/gui/compositor/`

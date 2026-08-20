@@ -1,6 +1,6 @@
 # Fehlstellenanalyse und Implementierungsfahrplan
 
-Stand: 18. August 2026
+Stand: 20. August 2026
 
 Dieses Dokument beschreibt den anhand des aktuellen Quellstands geprüften
 Ist-Zustand, die wichtigsten noch fehlenden Betriebssystemfunktionen und eine
@@ -64,18 +64,24 @@ Tasks außerhalb langer IRQ-Sperrabschnitte auf. R1.3 definiert nun die
 IRQ-, Präemptions-, Schlaf- und Lockverträge, serialisiert VFS und
 ATA-/FDD-Zugriffe und verlagert Netzwerk- sowie HPET-Arbeit aus dem harten
 IRQ-Kontext. Strukturierte Logs und vollständige Panic-Diagnosen schließen
-den Meilenstein ab. R1.4 ergänzt den nativen VBE-Handoff, eine schmale
-versionierte Ring-3-Display-ABI und `DESKTOP.PRG`. Vor jedem weiteren regulären
-Funktionspaket steht das Sicherheits-Gate S0. Wesentliche Grundlagen aus S0.1
-und S0.2 sowie S0.3a und S0.3b sind umgesetzt; aktiv ist die schrittweise
-Migration des Netzwerkdienstes in S0.3c. Die noch offenen Nachweise aus S0.1
-und S0.2 bleiben sichtbar und werden nicht durch spätere Teilpakete ersetzt.
+den Meilenstein ab. R1.4 ergänzte den nativen VBE-Handoff und die erste
+Ring-3-Display-ABI. Danach wurden Laufzeitgrafik, Window Manager, Explorer und
+eine generationsgebundene Surface-/Event-Grenze aufgebaut; Notepad und Image
+Viewer sind echte externe Fensterclients. Die abgeschlossenen Pakete R1.6 und
+R1.7 ergänzen kernelvermittelte Ring-3-Gerätedomänen und HDA-Audio mit
+Userspacebibliothek. Vor jedem weiteren regulären Funktionspaket steht das
+Sicherheits-Gate S0. Wesentliche Grundlagen aus S0.1 und S0.2 sowie S0.3a und
+S0.3b sind umgesetzt; S0.3c bleibt als Gesamtmeilenstein teilweise offen. Die
+ausführbare Queue besitzt derzeit kein aktives Paket. Die noch offenen
+Nachweise aus S0.1 und S0.2 bleiben sichtbar und werden nicht durch spätere
+Teilpakete ersetzt.
 
 ### 2.1 Fortschrittsübersicht
 
 Diese Liste ist der schnelle Einstieg in den Arbeitsstand. `[x]` bedeutet
 umgesetzt und mit den im Paket genannten Tests abgenommen. `[ ]` bedeutet
-offen; der Zusatz **in Arbeit** kennzeichnet genau das aktuelle Paket.
+offen. Ein Zusatz **in Arbeit** ist nur zulässig, wenn `active_id` in
+`automation/reist-s03b.toml` auf genau dieses Paket zeigt; derzeit ist er leer.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 
@@ -250,7 +256,7 @@ und 10 verbindlich.
           Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg
           kontrolliert remounten; Abbruch lässt das Medium konsistent oder
           eindeutig read-only zurück
-  - [ ] **S0.3c-7 in Arbeit:** Unabhängiger Standby-/Supervisor-Kanal und
+  - [ ] **S0.3c-7 teilweise:** Unabhängiger Standby-/Supervisor-Kanal und
     realer Handover
     - [x] S0.3c-7a Statischer Lease-/Epoch-/Fence-Protokollkern mit
       Split-Brain-, Stale-Epoch- und Integritäts-Fault-Tests
@@ -342,13 +348,13 @@ und 10 verbindlich.
 | Boot | BIOS/MBR, zweistufiger Loader, E820, A20, ELF32-Prüfung, Kernel-CRC32, FAT12-Floppy, optionaler nativer VBE-LFB-Handoff | stabiler Referenzpfad mit VGA-Rückfall |
 | CPU | GDT/IDT/TSS, Ring 0/3, Exceptions, PIC, gegen PIT kalibrierter lokaler APIC-Timer, PIT-Scheduler-Fallback, `INT 0x80` | funktionsfähiger Single-Core-Pfad |
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
-| Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, generische Wait-Queues, Sleep/Yield, Prozessliste, eigenes CWD sowie statische IPC-v1-Endpoints mit explizit delegierten generationsgebundenen Capabilities, endlichen Deadlines, geschützten Steuerdaten, reservierter Restart-Admission, versionierten Domänenprofilen und abgenommener Ring-3-Probe-Recovery | maximal 8 Tasks; produktive Dienste liegen noch im modularen Monolithen |
-| Dateien | VFS, Mounts, FAT12/FAT32 lesen und schreiben, validierte ASCII-VFAT-LFN bis 255 Zeichen, FAT32-Rename/Replace im Undo-Journal, FAT32/ATA-`fsync`, EXT2 lesen | persistenter Editor-Commit vorhanden; Unicode-Normalisierung, ABI, FAT12-Sync und breitere Rename-Semantik fehlen |
-| Geräte | PCI, ATA-PIO, AHCI/SATA, FDD-DMA, PS/2 mit blockierendem Console-Wait, output-only COM1-Diagnose, RTC, VGA, nativer VBE-RGB-Framebuffer | QEMU-/VMware-AHCI abgenommen; breitere reale Hardware und moderne Geräte fehlen |
-| Netzwerk | E1000, RTL8139, RTL8168/8111G, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, internes UDP-Senden | E1000/DHCP/Ping und RTL8139 am besten verifiziert; reale RTL8168/H81M-K-Gegenprobe fehlt |
-| USB | PCI-Erkennung eines xHCI-Controllers | nur Probe-Gerüst |
-| Userspace | SDK, Shell, Editor, BASIC, zahlreiche Systemprogramme und tastaturbedienter Ring-3-Desktop mit vier App-Karten | brauchbare CLI- und Desktop-MVP-Basis |
-| Qualität | Hosttests, CI-Build, Image-Validatoren, Kontextassertions, fünf Log-Level, Panic-Kontext mit Build-ID sowie serielle QEMU-Ring-3-Tests mit LAPIC/PIT und 32-/64-/256-/512-/1024-MiB-Matrix | breitere Hardware- und Fehler-Injektionsmatrix fehlt |
+| Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, Wait-Queues, Sleep/Yield, eigenes CWD, IPC-v1, generationsgebundene Capabilities, endliche Deadlines, Restartreserve und überwachte Ring-3-Domänen | 32 feste Taskslots; SMP und dynamisch erweiterbare Taskkapazität fehlen |
+| Dateien | VFS, FAT12/FAT32 read/write, ASCII-VFAT-LFN, Undo-Journale, FAT12-Remap/Replikate/Fehlermatrix, `fsync`, Same-Directory-Rename/Replace, EXT2 read-only | Unicode-Normalisierung, allgemeiner transaktionaler Reparaturpfad und medienunabhängige Persistenz fehlen |
+| Geräte | PCI, ATA/IDE, AHCI/SATA, FDD, PS/2, experimentelles xHCI-HID, VGA/VBE/QEMU-DISPI/VMware-SVGA und kernelvermitteltes HDA | mehrere QEMU-/VMware- und einzelne reale Nachweise; breite Hardware-, IOMMU- und Hotplugmatrix fehlt |
+| Netzwerk | E1000, RTL8139, RTL8168/8111G, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, UDP-/TCP-FD-Sockets, DNS und HTTP/1.0 | Host- und QEMU-Nachweise vorhanden; kein IPv6, TLS oder vollständiges POSIX-Socketmodell |
+| USB | xHCI-Initialisierung, Root-Port-/Descriptorpfad und HID-Boot-Tastatur/-Maus | einfache reale Geräte und VMware-Maus beobachtet; Composite-AULA, allgemeiner Hotplug und Mass Storage offen |
+| Userspace | SDK mit getrennten GUI-/Audio-/Image-Bibliotheken, Ring-3-Shell, Systemprogramme, Surface-Compositor, Explorer, Notepad und Image Viewer als Fensterclients | Sound Player, Control Gallery, Terminal und Systemwerkzeuge noch nicht als Surface-Clients migriert |
+| Qualität | Host-/Quelltests, Imagevalidatoren, QEMU-Runtimeprofile für Ring 3, Netzwerk, Storage, Handover, Grafik/Surface und PCI-Audio sowie manuelle VMware-/Hardwareevidenz | breite Hardware-, Langzeit-, EMV- und reale Power-Loss-Matrix fehlt |
 
 Maßgebliche Quellen sind der ausführbare Code und die Tests. Der aktuelle
 Architekturüberblick in `docs/architecture/ARCHITECTURE_DEEP_DIVE.md` beschreibt
@@ -441,15 +447,18 @@ Abnahmechecklisten.
   Exit-Widerruf
 - **umgesetzt:** ein Taskslot, ein Prozessslot und 32 Frames bleiben für
   explizite Supervisor-Spawns reserviert
-- **umgesetzt:** vollständiges 56-Syscall-Inventar; Default-Deny-Probeprofil
-  und generation-sicheres Child-Kill vor jedem Seiteneffekt
+- **umgesetzt:** vollständiges append-only Syscall-Inventar bis Nummer 115;
+  Default-Deny-Probeprofil und generation-sicheres Child-Kill vor jedem
+  Seiteneffekt
 - generische Wait-Queues auf weitere Geräte- und Protokollereignisse anwenden
 - Pipes, Prozessgruppen und ein kleines Signalmodell
 - `waitpid(-1, ...)`, optionales nichtblockierendes Warten und saubere
   Reparenting-/Reaper-Semantik
-- dynamische oder zumindest deutlich größere Tasktabelle statt `MAX_TASKS 8`
+- dynamische oder zumindest deutlich größere Tasktabelle über die aktuelle
+  feste Grenze von `MAX_TASKS 32` hinaus
 - Prioritäten erst nach korrekter Blockierung; Threads und SMP deutlich später
-- echte User-Stack-Guardpages zusätzlich zu den vorhandenen Kernel-Guardpages
+- Guardpage-Abdeckung auf weitere benutzergesteuerte Abbildungen ausweiten;
+  User- und Kernel-Stacks besitzen bereits feste Guardpages
 - aussagekräftigere Prozessstatistiken
 
 ### Syscall- und Userspace-ABI
@@ -531,9 +540,14 @@ Ring-3-Tasks: `getchar` prüft den Puffer und reiht den Task atomar auf der
 PS/2-eigenen Input-Wait-Queue ein. COM1 ist bewusst output-only und kann weder
 Tastencodes veröffentlichen noch PS/2-Leser wecken.
 Eine vollständige TTY-Schicht bleibt der nächste darüberliegende Ausbau.
-Der Desktop-MVP umgeht die feste Terminalgeometrie für seine Oberfläche über
-Pixelrechtecke und Pixelschrift. Er startet vorhandene Apps jedoch bewusst als
-einzelne Vollbild-Kindprozesse und ist noch kein Fenstersystem.
+Der Desktop umgeht die feste Terminalgeometrie über Pixelrechtecke,
+Pixelschrift und eine versionierte Frame-ABI. Window Manager, Explorer,
+Maus-/Tastaturfokus, Drag/Resize, Dirty Regions und eine
+generationengebundene Surface-/Event-IPC sind umgesetzt. Notepad und Image
+Viewer laufen als getrennte Ring-3-Fensterclients; Control Gallery, Sound
+Player, Terminal und Systemwerkzeuge verwenden noch die begrenzte
+Vollbildbrücke. Eine vollständige TTY- und Terminal-Clientarchitektur bleibt
+offen.
 
 - TTY-Abstraktion mit kanonischem/raw Modus, Echo und per-Prozess
   Vordergrundgruppe
@@ -880,6 +894,11 @@ Systeminformationen als Vollbild-Kindprozess. Der Desktop wartet auf dessen
 Ende und zeichnet sich danach neu. Ein realer QEMU-Lauf erreicht den seriellen
 Marker `DESKTOP_OK`. Maus, Compositor, Windowmanager und Fokusmodell gehören
 ausdrücklich nicht zu diesem MVP.
+
+Dieser Absatz hält die Abnahmegrenze von R1.4 fest. Der aktuelle Stand ist
+weiterentwickelt: `desktop` kann Grafik aus VGA-Text aktivieren und besitzt
+Explorer, Maus, Window Manager und externe Surface-Clients. Maßgeblich ist der
+[grafische Desktop-Workflow](GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md).
 
 ### Sicherheits-Gate S0 — vor weiterer Funktionsentwicklung
 
@@ -1644,6 +1663,12 @@ nebenbei in die 32-Bit-Basis eingebaut werden.
 - [x] **6 · R1.2 Speicherverwaltung** — Größe L; abhängig von R0.4
 - [x] **7 · R1.3 Synchronisation/Diagnose** — Größe M; abhängig von R1.1
 - [x] **8 · R1.4 Grafischer Desktop-MVP** — Größe M; abhängig von R0.4 und R1.1
+- [x] **8a · R1.5 Laufzeitgrafik und Desktop aus VGA** — Größe L; abhängig
+  von R1.4
+- [x] **8b · R1.6 kernelvermittelte Ring-3-Gerätedomänen** — Größe XL;
+  abhängig von S0.3b
+- [x] **8c · R1.7 PCI-HDA und Userspace-Audiobibliothek** — Größe XL;
+  abhängig von R1.6
 - [ ] **9 · S0.1 Profil/Gefahren/Assurance Case (teilweise)** — Größe M;
   abhängig von R1.3
 - [ ] **10 · S0.2 Stack/Exception/Panic-Containment (teilweise)** — Größe L;
@@ -1652,7 +1677,7 @@ nebenbei in die 32-Bit-Basis eingebaut werden.
   S0.1 und S0.2
 - [x] **12 · S0.3b Supervised Userspace Probe Domain** — Größe L; abhängig
   von S0.3a
-- [ ] **13 · S0.3c Dienstmigration/Redundanz (in Arbeit)** — Größe XL;
+- [ ] **13 · S0.3c Dienstmigration/Redundanz (teilweise)** — Größe XL;
   abhängig von S0.3b
 - [ ] **14 · S0.4 Determinismus/Ressourcengarantie** — Größe L; abhängig von
   S0.1 und S0.3
@@ -2461,7 +2486,13 @@ nach Kernelantwort, verifiziertem Readback und kontrolliertem Remount erscheinen
 Hardware-Abnahmetest für das Systemvolume; es besitzt weder direkten
 Controller- noch DMA-Zugriff.
 
-#### Implementierungsstand vom 16. August 2026
+#### Historischer Implementierungsstand vom 16. August 2026
+
+Dieser Snapshot bleibt zur Nachvollziehbarkeit erhalten und ist durch die
+später abgeschlossenen Pakete `S0.3c-6f5` und die Partitionierungs-/
+Formatierungsarbeit teilweise überholt. Der aktuelle Betriebsstand steht in
+[`PROJECT_STATUS.md`](PROJECT_STATUS.md) und
+[`../filesystems/FAT12_IMPROVEMENTS.md`](../filesystems/FAT12_IMPROVEMENTS.md).
 
 Die Pakete S0.3c-6f1 bis S0.3c-6f4 sind umgesetzt und durch ihre eingefrorenen
 Host-, Paket- und FDD-Hotplug-Gates abgenommen. Vermittelte Blockoperationen
@@ -2482,7 +2513,7 @@ Daraus folgt noch kein vollständiger FAT12-Resilienznachweis; die
 Persistenz-Fehlermatrix S0.3c-6f5 ist implementiert, während reale
 Reconnect-/Power-Loss-Evidenz weiterhin aussteht.
 
-Der aktuelle Funktionsumfang der Werkzeuge ist bewusst enger als das Ziel:
+Der damalige Funktionsumfang der Werkzeuge war bewusst enger als das Ziel:
 
 - `CHKDSK.PRG` führt eine begrenzte read-only Bestandsaufnahme aus; der
   journalisierte Reparaturmodus fehlt noch.

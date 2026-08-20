@@ -1,5 +1,10 @@
 # PCI audio work package
 
+Stand: 20. August 2026
+
+Status: abgeschlossenes Arbeitspaket; aktuelle Laufzeitreferenz in
+[`../architecture/AUDIO_SUBSYSTEM.md`](../architecture/AUDIO_SUBSYSTEM.md)
+
 This package introduces the first bounded playback path for REIST OS without
 granting applications direct device access and without adding a complex HDA
 state machine to Ring 0. The resilience and degradation contract is a hard

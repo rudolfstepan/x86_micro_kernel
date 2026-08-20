@@ -1,6 +1,6 @@
 # Externe Programme für die Kernel-Shell bauen
 
-Stand: 19. August 2026.
+Stand: 20. August 2026.
 
 Das Projekt enthält eine native Windows-Toolchain, die fremden C-Quelltext in
 das ausführbare `MYPR`-Format übersetzt. WSL, GRUB und ein Cross-GCC werden
@@ -135,8 +135,8 @@ python scripts/build_user_sdk.py --output-dir build/sdk
 Es enthält die öffentlichen Header unter `usr/include`, das Startobjekt
 `usr/lib/crt0.o` sowie `libreistos.a`, `libreistnetparse.a`,
 `libreistgui.a`, `libreistaudio.a` und `libreistimage.a` unter `usr/lib`.
-`pkgconfig`-Metadaten beschreiben die öffentlichen Basis-, GUI- und
-Audiobibliotheken. Der Systemprogrammbuild kompiliert
+`pkgconfig`-Metadaten beschreiben die öffentlichen Basis-, GUI-, Audio- und
+Imagebibliotheken. Der Systemprogrammbuild kompiliert
 diese gemeinsamen Module einmal und linkt alle PRGs danach gegen dieselben
 Archive. Höchstens acht feste Buildworker teilen den inhaltsadressierten
 globalen Zig-Cache, während jeder Lauf einen getrennten temporären lokalen
@@ -178,12 +178,16 @@ python scripts/build_user_program.py userspace/programs/audioinfo.c `
 Weitere standardmäßige Suchpfade und Archive werden mit `-I`, `-L` und `-l`
 angegeben. Die öffentlichen Header `<reist/gui/types.h>`,
 `<reist/gui/menu.h>`, `<reist/gui/dialog.h>`, `<reist/gui/control.h>`,
-`<reist/gui/container.h>`, `<reist/gui/tabs.h>` und
-`<reist/gui/value_controls.h>`
+`<reist/gui/container.h>`, `<reist/gui/tabs.h>`,
+`<reist/gui/value_controls.h>`, `<reist/gui/text_editor.h>`,
+`<reist/gui/file_dialog.h>`, `<reist/gui/surface.h>` und
+`<reist/gui/surface_client.h>`
 dokumentieren Felder, Ownership, Lebensdauer, Capture, Fokus, Modalität,
-Responses, Fehler und Rückgabewerte inline. Sie bilden eine in-process
-C-Quell-API; eine dynamische Binär-ABI oder
-das künftige prozessübergreifende Surface-Protokoll wird damit nicht behauptet.
+Responses, Fehler und Rückgabewerte inline. Controls bilden eine in-process
+C-Quell-API; das getrennte, bereits implementierte Surface-/Event-Protokoll
+transportiert ausschließlich pointerfreie, versionierte Nachrichten zwischen
+Client und Compositor. Eine dynamische Shared-Library-ABI oder
+Wayland-Wire-Kompatibilität wird nicht behauptet.
 
 Der Systemprogrammbuild erzeugt außerdem `GUIDEMO.PRG` aus
 `userspace/gui/apps/control_gallery/main.c`. Beide Imagepfade installieren es

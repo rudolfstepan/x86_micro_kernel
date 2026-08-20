@@ -1,6 +1,6 @@
 # GUI-Komponenten, Controls und Dialoge
 
-Stand: 19. August 2026.
+Stand: 20. August 2026.
 
 Dieses Dokument ist der technische Katalog für sichtbare und interaktive
 REIST-GUI-Komponenten. Es trennt bereits nutzbare API von compositorinternen
@@ -14,8 +14,9 @@ REIST übernimmt etablierte Interaktionsmodelle, aber behauptet keine
 Binärkompatibilität zu Win32, Qt, GTK oder Wayland. Wiederverwendbare Controls
 sind rendererunabhängige, versionierte C11-Zustandsautomaten in
 `libreistgui.a`. Der Compositor besitzt globale Platzierung, Z-Order,
-Fensterdekoration und Eingaberouting. Ein späterer GUI-Client besitzt nur
-seine lokale Surface und die Controls darin.
+Fensterdekoration und Eingaberouting. Ein Surface-Client besitzt nur seine
+lokale Oberfläche und die Controls darin; Notepad und Image Viewer verwenden
+diesen Vertrag bereits produktiv.
 
 ```text
 GUI-Anwendung
@@ -81,6 +82,13 @@ der betroffenen Surface an.
 | Farb- und Fontdialog | nein | nein | nein | nein | [ ] spätere Systemdienste |
 | interaktive Control Gallery | Menü-, Dialog- und Basis-Control-API | ja | ja | ja | [x] `/usr/gui/bin/guidemo.prg` |
 | grafischer Texteditor | Texteditor-, Menü- und Dialog-API | ja | Cursorplatzierung | Editieren/Navigation/Save | [x] `/usr/gui/bin/notepad.prg` |
+| Bildbetrachter | Surface-Client- und Image-API | XRGB8888-Buffer | Fensterinteraktion | Close | [x] `/usr/gui/bin/imageviewer.prg` |
+| Sound Player | GUI- und Audio-API | Vollbildbrücke | Buttons | Aktivierung/Close | [x] `/usr/gui/bin/soundplayer.prg`, Surface-Migration offen |
+
+![Grafischer REIST Editor als windowed Surface-Client](../assets/screenshots/reist-notepad.png)
+
+*Automatischer QEMU-Nachweis: Notepad zeigt `/readme.txt` in einem vom
+Desktop-Compositor verwalteten Ring-3-Fenster.*
 
 ## Interaktive Referenzanwendung
 
@@ -98,9 +106,10 @@ Liste, Scrollbar, Slider, SpinBox, Fortschrittsanzeige, Menüleiste, Popup-Menü
 application-modal Dialoge, semantische Responses, Default-/Cancel-Buttons,
 Tastaturfokus, Enter/Escape, Schließfeld und Verschieben per Pointer-Capture.
 Komplexe noch nicht implementierte Controls werden nicht als Attrappen
-gezeichnet. Bis Stufe 3 des Desktop-Workflows eine
-Surface-IPC bereitstellt, läuft die Galerie bewusst als temporärer
-Vollbildclient.
+gezeichnet. Die Surface-IPC ist vorhanden; die Galerie wurde aber noch nicht
+darauf migriert und läuft deshalb weiterhin ausdrücklich über die begrenzte
+Vollbildbrücke. Dieser Kompatibilitätsmodus ist keine Eigenschaft der
+Control-API.
 
 ## Vertrag der Basis-Controls
 

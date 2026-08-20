@@ -1,6 +1,6 @@
 # Tests ausführen
 
-Stand: 16. August 2026.
+Stand: 20. August 2026.
 
 REIST trennt hostseitige Quell-/Harness-Tests, den sauberen Paketbuild und
 echte Gast-Laufzeitgates. Keine einzelne Ebene ersetzt die anderen.
@@ -61,7 +61,21 @@ Standalone-Lauf ergänzt die Vollsuite:
 ```
 
 Weitere Modi prüfen PIT, Watchdog, Memory, ARP, ICMP, UDP, DHCP,
-Netzwerkparser und Handover. Der explizite SATA-Smoke lautet:
+Netzwerkparser, Handover, PCI-Audio sowie Runtime-Grafik und Surface-Clients.
+Die aktuellen Desktopgates lauten:
+
+```powershell
+.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop
+.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-metrics
+.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-surface
+```
+
+Die öffentlichen Desktop-, Surface- und Notepad-Aufnahmen werden über
+`.\scripts\capture-documentation.ps1` aus denselben Runtime-Probes erzeugt.
+Ablage, Bildaussage und Aktualisierungsregeln stehen ausschließlich im
+[Screenshot-Vertrag](../docs/assets/screenshots/README.md).
+
+Der explizite SATA-Smoke lautet:
 
 ```powershell
 python .\scripts\run_qemu_smoke.py --image build\reist-os.img --sata --expect-reist-probe

@@ -1,6 +1,6 @@
 # Grafischer Desktop und Window-Manager: VMware-Workflow
 
-Stand: 19. August 2026.
+Stand: 20. August 2026.
 
 Dieses Dokument ist die schrittweise Arbeitsliste für den sichtbaren Ausbau
 des REIST-Desktops unter VMware Workstation. Eine Checkbox wird erst nach
@@ -10,10 +10,10 @@ der IDE sichtbar ist.
 
 ## Zielbild
 
-`desktop.prg` wird zunächst zum festen Ring-3-Session-Compositor und
-Window-Manager. Er besitzt als einzige Desktopkomponente globale
+`desktop.prg` ist der feste Ring-3-Session-Compositor und Window-Manager. Er
+besitzt als einzige Desktopkomponente globale
 Fensterpositionen, Z-Order, Fokus, Pointer-Capture und die Zusammenstellung des
-sichtbaren Bildes. Spätere GUI-Programme liefern ausschließlich Inhalt für
+sichtbaren Bildes. Migrierte GUI-Programme liefern ausschließlich Inhalt für
 ihre lokale Clientfläche und erhalten weder den linearen Framebuffer noch
 globale Fensterkoordinaten oder fremde Eingaben.
 
@@ -21,6 +21,11 @@ Die Gestaltung orientiert sich an klassischen, klar lesbaren Oberflächen wie
 Amiga Workbench und Windows 3.1: Menüleiste, Desktopicons, überlappende Fenster,
 deutlich markierte aktive Titelleiste, einfache Rahmen und vorhersehbare
 Tastaturbedienung. Das Erscheinungsbild ändert nicht die Sicherheitsgrenzen.
+
+![Windowed Surface-Clients im REIST Workspace](../assets/screenshots/reist-desktop-apps.png)
+
+*Automatischer QEMU-Nachweis: Desktop-Compositor mit getrennten
+Ring-3-Surface-Clients.*
 
 Der sichtbare Produktname ist **REIST Workspace**. `desktop.prg` bleibt der
 kompatible technische Programmname und `desktop` der Shell-Startbefehl. Der
@@ -35,11 +40,11 @@ und künftige Struktur lautet:
 | Quellpfad | Inhalt und Vertrauensgrenze |
 |---|---|
 | `userspace/gui/compositor/` | vertrauenswürdiger Session-Compositor und Window-Manager |
-| `userspace/gui/apps/<name>/` | künftig je ein eigener GUI-Clientprozess pro Anwendung |
+| `userspace/gui/apps/<name>/` | je ein eigener GUI-Clientprozess pro Anwendung; migrierte Programme verwenden Surface IPC |
 | `userspace/gui/examples/` | kleine, gegen das installierte SDK baubare Beispiele |
-| `userspace/gui/include/reist/gui/` | versionierte öffentliche C-APIs; künftige IPC-Protokolle bleiben davon getrennt |
-| `userspace/gui/lib/` | begrenzte wiederverwendbare Komponenten; begonnen mit dem Menücontroller |
-| `userspace/gui/share/` | künftig versionierte, nur lesbare Icons, Fonts und Themen |
+| `userspace/gui/include/reist/gui/` | versionierte öffentliche C-APIs; In-Process-Controls und Surface IPC bleiben getrennte Schichten |
+| `userspace/gui/lib/` | begrenzte wiederverwendbare Controls, Dialoge, Surface-Client- und Zeichenkomponenten |
+| `userspace/gui/share/` | versionierte, nur lesbare GUI-Ressourcen; weitere Icons, Fonts und Themen folgen hier |
 | `userspace/programs/` | Console- und Systemprogramme ohne GUI-Clientrolle |
 | `userspace/bin/` | interaktive Consoleprogramme wie Shell und Editor |
 
@@ -145,12 +150,12 @@ Semantik ohne diesen Nachweis blockiert die betreffende Checkbox.
 - Ring 3 erhält kein LFB-Mapping und keine I/O-Rechte. Der Kernel validiert
   weiterhin jede Displayoperation und der Compositor ist der einzige
   Desktopprozess, der die Pixel-ABI verwenden darf.
-- Eine Clientoberfläche wird später erst durch einen validierten `commit`
+- Eine Clientoberfläche wird erst durch einen validierten `commit`
   sichtbar. Unvollständige oder veraltete Generationen dürfen nie teilweise
   publiziert werden.
-- Bestehende Console-Programme werden nicht als Fensterprogramme ausgegeben.
-  Bis zur GUI-Client-ABI starten sie bewusst im Vollbild und kehren danach zum
-  Desktop zurück.
+- Bestehende Console-Programme werden nicht fälschlich als Fensterprogramme
+  ausgegeben. Die GUI-Client-ABI ist vorhanden; nicht migrierte Programme
+  starten bewusst über die Vollbildbrücke und kehren danach zum Desktop zurück.
 - Physische Host-Tastatur und -Maus werden niemals an VMware durchgereicht.
   Die VM verwendet ausschließlich virtuelle PS/2-Tastatur und virtuelle
   USB-HID-Maus.
@@ -170,8 +175,8 @@ eine feste Lease und werden sowohl bei normalem Task-Ende als auch bei einer
 erzwungenen Terminierung bereinigt. Dadurch blockiert ein pausierter oder
 beendeter Zeichner weder Scheduler noch Display dauerhaft.
 
-Vor client-eigenen Controls, client-eigenen modalen Dialogen und echten
-GUI-Anwendungen muss Stufe 3 zusätzlich nachweisen:
+Stufe 3 hat für client-eigene Controls, modale Dialoge und echte
+GUI-Anwendungen insbesondere nachgewiesen:
 
 - Compositor, GUI-Clients und Systemdienste laufen als getrennte Prozesse in
   getrennten Adressräumen und kommunizieren ausschließlich über validierte,
@@ -455,6 +460,9 @@ inkompatibler Fensterrahmen.
 - [x] Editor als separaten, asynchronen Surface-Client mit begrenztem
   Textpuffer, Speichern, Dirty-Anzeige, lokalen Eingaben, Resize-Configure und
   modalem Close-/Save-Vertrag betreiben.
+- [x] Bildbetrachter als separaten Surface-Client mit validierten,
+  generationengebundenen XRGB8888-Buffern betreiben.
+- [ ] Sound Player und Control Gallery auf Surface-Clients migrieren.
 - [ ] Terminalemulator als eigener GUI-Client statt globaler Console-Ausgabe.
 - [x] Verzeichnisse per Doppelklick/Enter in einem neuen Fenster öffnen und
   `.PRG`-Dateien über ihren kanonischen VFS-Pfad starten.

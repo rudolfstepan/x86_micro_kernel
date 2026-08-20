@@ -1,6 +1,6 @@
 # FAT12-Status und Resilienz
 
-Stand: 16. August 2026.
+Stand: 20. August 2026.
 
 FAT12 dient vor allem bootfähigen 1,44-MB-Disketten und läuft vollständig über
 VFS und die gemeinsame Blockgeräteschicht. Klassische fremde FAT12-Medien
@@ -17,7 +17,7 @@ für explizit markierte, neu formatierte Medien aktiviert.
 
 ## REIST-FAT12
 
-Die Pakete `S0.3c-6f1` bis `S0.3c-6f4` sind umgesetzt:
+Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sind umgesetzt:
 
 1. verifiziertes Undo-Journal mit redundanten CRC-Headern und Recovery vor
    veränderlicher Metadatennutzung
@@ -27,6 +27,8 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f4` sind umgesetzt:
    kritischer 8.3-Dateien
 4. geordnete Mutation: Daten, beide FATs, Verzeichniseintrag,
    Replikatpublikation und erst zuletzt Journal-`CLEAN`
+5. deterministische Host-Fehlermatrix über 29 stabile Persistenzbarrieren und
+   QEMU-FDD-Reconnect-Nachweis ohne Veränderung des Referenzabbilds
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen
@@ -54,13 +56,14 @@ FDISK
 ```
 
 `CHKDSK.PRG` ist ein begrenzter read-only VFS-Scan; es repariert nichts.
-`FDISK.PRG` zeigt Inventar, verändert aber keine Partitionen. Eine Diskette
-besitzt ohnehin keine MBR-Partitionstabelle.
+`FDISK.PRG` kann auf explizit freigegebenen, leeren ATA-/AHCI-Medien eine
+validierte MBR-Partition erzeugen. Eine Diskette bleibt eine partitionslose
+Superfloppy und wird von `FDISK` niemals partitioniert.
 
 ## Noch offen
 
-- aktives Paket `S0.3c-6f5`: deterministische Write-/Power-Loss-Fehlermatrix
-  für jede persistente Veröffentlichungsstufe
+- reale FDD-/VMware-Power-Loss- und Reconnect-Matrix über die bereits
+  deterministisch geprüften Veröffentlichungsstufen
 - kontrollierter, journalisierter CHKDSK-Reparaturmodus
 - vollständiger Maintenance-Lease-, Unmount-, Repair-, Verify- und
   Remountnachweis

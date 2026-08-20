@@ -5,21 +5,28 @@
 Projektwebsite: [https://reist-os.intracom.at](https://reist-os.intracom.at)
 
 Ein freestanding 32-Bit-x86-Betriebssystem mit eigenem BIOS-Bootloader,
-Kernel-Shell, VFS, FAT-Dateisystemen, Netzwerkstack und einer kleinen
-Toolchain für externe Programme. Der bevorzugte Entwicklungsweg läuft nativ
-unter Windows mit dem eigenen BIOS-Bootloader, ohne WSL oder ISO.
+Ring-3-Shell, VFS, FAT-Dateisystemen, Netzwerkstack, Audio- und Grafikdiensten
+sowie einer kleinen Toolchain für externe Programme. Der bevorzugte
+Entwicklungsweg läuft nativ unter Windows mit dem eigenen BIOS-Bootloader,
+ohne WSL oder ISO.
 
-> **Safety-Status:** Das Projekt verfolgt neu ein medizinisches
-> High-Assurance-Ziel, ist aktuell aber ein Forschungsprototyp, nicht
-> zertifiziert, nicht klinisch validiert und nicht für medizinische Verwendung
-> freigegeben. Verbindliche Anforderungen und Übergangsgates stehen im
-> [Medical-High-Assurance-Vertrag](docs/architecture/MEDICAL_HIGH_ASSURANCE_CONTRACT.md)
-> und in der [Roadmap](docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md).
+![REIST Workspace mit Explorer und windowed Ring-3-Image-Viewer in QEMU](docs/assets/screenshots/reist-desktop-apps.png)
+
+*Automatisch aus dem aktuellen QEMU-Gast aufgenommen; kein Mock-up.*
+
+> **Safety-Status:** REIST verfolgt einen generischen High-Assurance-Kern mit
+> getrennten Referenzprofilen. Das System ist ein Forschungsprototyp, nicht
+> zertifiziert und nicht für medizinische, industrielle oder andere
+> sicherheitskritische Produktion freigegeben. Verbindlich sind der
+> [High-Assurance-Core-Vertrag](docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md),
+> der [Resilienz- und Degradierungsvertrag](docs/architecture/RESILIENCE_AND_DEGRADATION_CONTRACT.md)
+> und die [Roadmap](docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md). Das
+> medizinische Dokument ist ausschließlich ein optionales Referenzprofil.
 
 Die bestehende öffentliche SDK-ABI behält vorerst ihre `x86os_*`-Symbolnamen,
 damit vorhandene PRG-Programme binär und quelltextlich kompatibel bleiben.
 
-Stand dieser Dokumentation: 18. August 2026.
+Stand dieser Dokumentation: 20. August 2026.
 
 ## Schnellstart unter Windows
 
@@ -41,6 +48,8 @@ Das erzeugt unter anderem:
   `REIST`, `STORAGE`, `DRIVES`, `CHKDSK`, `FDISK`, `FORMAT`, `SYSINFO`,
   `MEMINFO`, `CAT`, `LS`, `SAVE`, `BASIC`, `EDIT`, `RENAME`, `STAT`, `DF`,
   `TOUCH`, `TREE`, `FIND`, `RM`, `SPAWN`, `PS` und `KILL`
+- `build/programs/DESKTOP.PRG`, `NOTEPAD.PRG`, `IMAGEVIEWER.PRG`,
+  `SOUNDPLAYER.PRG` und `GUIDEMO.PRG`: grafische Session und Anwendungen
 
 Native Programme erhalten klassische `argc`/`argv`-Argumente und erben das
 Arbeitsverzeichnis der Shell. Beispielsweise zeigt `cat README.TXT` eine Datei
@@ -51,14 +60,21 @@ Zeichen. Verzeichnisauflistung, Pfadauflösung, Datei-I/O, Erzeugen, Löschen un
 Same-Directory-Rename verwenden den langen Namen; ein kollisionsgeprüfter
 8.3-`~n`-Alias bleibt für ältere Werkzeuge und Rettungspfade erhalten.
 
-`EDIT` ist ein experimenteller Vollbild-Texteditor. Sein Speichervorgang
-verwendet eine temporäre Datei, `fsync`, Close und atomaren FAT32-Rename;
-komfortable Dialoge und breitere Praxistests fehlen noch.
+`EDIT` bleibt der kleine Console-Texteditor. Der grafische
+`/usr/gui/bin/notepad.prg` läuft aus dem Desktop als separates, verschieb- und
+skalierbares Surface-Fenster, besitzt Öffnen-/Speichern-Dialoge und speichert
+über temporäre Datei, `fsync`, Close und atomaren Same-Directory-Rename.
 
 Nach der Hardware- und Dateisysteminitialisierung startet der Kernel
 `SHELL.PRG` automatisch vom BIOS-Bootlaufwerk. Die ältere Kernel-Shell wird
 nur noch als Rettungskonsole verwendet, falls die Userspace-Shell fehlt oder
 beendet wird.
+
+`desktop` kann direkt aus dem VGA-Textbetrieb den validierten QEMU-, VMware-
+oder vorbereiteten VBE-Grafikpfad aktivieren. Explorerfenster bleiben dabei im
+Desktop; Notepad und Image Viewer laufen als getrennte Ring-3-Surface-Clients.
+Noch nicht migrierte GUI-/Console-Programme verwenden vorübergehend den
+dokumentierten Vollbild-Kompatibilitätspfad.
 
 Die Userspace-Shell zeigt DOS-kompatible Laufwerksbuchstaben (`A:`/`B:` für
 Disketten und ab `C:` für gemountete ATA-/AHCI-Volumes). Ein Laufwerk wird beispielsweise
@@ -69,9 +85,10 @@ zur Verfügung; DOS-Pfade können dabei auch laufwerksübergreifend verwendet
 werden, etwa `copy A:\README.TXT C:\README.TXT`.
 
 `SHELL.PRG` durchsucht bei Programmnamen zuerst das aktuelle Verzeichnis und
-danach `PATH`. Beim Start enthält `PATH` das Stammverzeichnis des
-Bootlaufwerks, sodass Befehle auch in Unterverzeichnissen verfügbar bleiben.
-`path` zeigt den Suchpfad an; `path C:\;A:\TOOLS` setzt ihn neu.
+danach `PATH`. Beim Start enthält `PATH` `/bin`, `/sbin`, `/usr/bin` und
+`/usr/gui/bin`; interne Dienste unter `/libexec/reist` werden nur über ihre
+festen Pfade gestartet. `path` zeigt den Suchpfad an; `path C:\;A:\TOOLS`
+setzt ihn neu.
 
 `TOUCH` aktualisiert bei FAT12/FAT32 die Änderungs- und Zugriffszeit oder legt
 eine leere Datei an. `STAT` zeigt die drei Dateizeiten als Unix-Sekunden.
@@ -163,7 +180,7 @@ Wichtige Befehle:
 | Verzeichnisse | `MD`, `MKDIR`, `RD`, `RMDIR` |
 | Programme | `RUN`, `EXEC`, `PS`, `KILL`, `BASIC` |
 | Netzwerk | `GETIP`, `IFCONFIG`, `PING`, `ARP`, `NET` |
-| System | `HELP`, `CLS`, `MEM`, `PCI`, `IRQ`, `DATETIME` |
+| System | `HELP`, `CLS`, `MEMINFO`, `SYSINFO`, `USBINFO`, `AUDIOINFO`, `DATETIME` |
 
 Beispiele und die genaue Pfadsemantik stehen in
 [Shell und Pfade](docs/features/SHELL_ENHANCEMENTS.md).
@@ -216,7 +233,10 @@ fs/                VFS sowie FAT12, FAT32 und EXT2
 drivers/           Block-, Eingabe-, Video-, PCI-, USB- und Netzwerktreiber
 lib/               freestanding libc/libk
 userspace/sdk/     öffentliche API und Startup-Code für externe Programme
-userspace/programs Beispielquellen
+userspace/gui/     Compositor, GUI-SDK, Controls und grafische Anwendungen
+userspace/audio/   öffentliche Audio-API und WAV-Hilfsbibliothek
+userspace/image/   öffentliche BMP-/GIF-Rasterbibliothek
+userspace/programs Console- und Systemprogramme
 scripts/           Windows-, Image- und Testwerkzeuge
 test/              hostseitige Regressionstests
 docs/              aktuelle Anleitungen und historische Arbeitsberichte
@@ -236,9 +256,15 @@ Buildschritte müssen explizit ergänzt werden.
 - Der Netzwerkstack besitzt noch kein IPv6, TLS/HTTPS oder vollständiges
   POSIX-Socket-API; die vorhandene UDP-/TCP-ABI ist bewusst klein und begrenzt.
 - Der native Bootpfad ist BIOS/MBR-basiert; UEFI ist nicht implementiert.
-- USB/xHCI ist experimentell. VGA/PS/2 ist der robuste Standardweg; der
-  VBE-Framebuffer besitzt einen geprüften QEMU-Desktop-Smoke, aber noch keine
+- USB/xHCI-HID für Boot-Tastatur und -Maus ist experimentell. VMware nutzt
+  eine virtuelle xHCI-Maus ohne physisches HID-Passthrough; einfache reale
+  Boot-Keyboards und die Maus wurden auf dem ASUS-System beobachtet. Das
+  AULA/BY-Tech-Composite-Keyboard `258A:010C` bleibt ein offener Gerätebug.
+  PS/2 ist der robuste Eingabefallback; Grafik und VBE besitzen noch keine
   breite reale Hardwarematrix.
+- Der Desktop besitzt eine versionierte, generationsgebundene Surface-/Event-
+  Grenze. Notepad und Image Viewer sind migriert; Control Gallery, Sound
+  Player, Terminal und Systemwerkzeuge benötigen noch eigene Surface-Clients.
 - AHCI/SATA ist in QEMU, VMware und auf realer SATA-Hardware gebootet worden;
   das ist noch keine allgemeine Controller- oder Langzeitqualifikation.
 
