@@ -116,6 +116,7 @@ class SystemLayoutContracts(unittest.TestCase):
                 "usr/share/sounds/440hz.wav": b"wave",
                 "usr/share/images/demo-desktop.bmp": b"bmp",
                 "usr/share/images/demo-colors.gif": b"gif",
+                "usr/share/icons/program.ico": b"ico",
                 "etc/reist/input.conf": b"schema=reist.input/1\n",
                 "etc/reist/filetypes.conf": b"schema=reist.filetypes/1\n",
             },
@@ -200,6 +201,18 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn("usr/bin/$($ProgramName.ToLowerInvariant())", windows)
         self.assertNotIn("--data-file SHELL.PRG=", makefile)
         self.assertNotIn('--data-file "SHELL.PRG=', windows)
+        for icon in (
+            "folder-empty", "folder-full", "program", "text",
+            "audio", "image", "settings", "unknown",
+        ):
+            self.assertIn(
+                f"usr/share/icons/{icon}.ico=assets/icons/{icon}.ico",
+                makefile,
+            )
+            self.assertIn(f"'{icon}'", windows)
+        self.assertIn(
+            '"usr/share/icons/$iconName.ico=$iconPath"', windows
+        )
 
         process = self.read("kernel/proc/process.c")
         shell = self.read("userspace/bin/shell.c")

@@ -13,6 +13,7 @@
 #include "desktop_wm.h"
 #include "desktop_surface.h"
 #include "desktop_surface_runtime.h"
+#include "reist/image.h"
 #include "reist/gui/dialog.h"
 #include "reist/gui/menu.h"
 
@@ -24,6 +25,10 @@
 #define DESKTOP_RENDER_PROBE_STEPS 8U
 #define DESKTOP_RENDER_PROBE_STEP_X 4
 #define DESKTOP_MOUSE_BATCH_LIMIT 32U
+#define DESKTOP_FILE_ICON_SIZE 32U
+#define DESKTOP_FILE_ICON_PIXELS \
+    (DESKTOP_FILE_ICON_SIZE * DESKTOP_FILE_ICON_SIZE)
+#define DESKTOP_FILE_ICON_ENCODED_CAPACITY 8192U
 
 _Static_assert(DESKTOP_EXPLORER_WINDOW_CAPACITY == DESKTOP_WM_CAPACITY,
                "explorer and window-manager capacities must match");
@@ -186,6 +191,34 @@ static const uint32_t color_client = 0x00E8E8E8U;
 static const uint32_t color_text = 0x00000000U;
 static const uint32_t color_title_text = 0x00FFFFFFU;
 
+typedef struct desktop_file_icon_cache_entry {
+    uint32_t valid;
+    uint32_t client[DESKTOP_FILE_ICON_PIXELS];
+    uint32_t selected[DESKTOP_FILE_ICON_PIXELS];
+    uint32_t desktop[DESKTOP_FILE_ICON_PIXELS];
+} desktop_file_icon_cache_entry_t;
+
+static desktop_file_icon_cache_entry_t
+    desktop_file_icon_cache[DESKTOP_EXPLORER_ICON_COUNT];
+static uint8_t desktop_file_icon_encoded[DESKTOP_FILE_ICON_ENCODED_CAPACITY];
+static uint32_t desktop_file_icon_decoded[DESKTOP_FILE_ICON_PIXELS];
+static const char *const desktop_file_icon_paths[
+    DESKTOP_EXPLORER_ICON_COUNT] = {
+        "/usr/share/icons/folder-empty.ico",
+        "/usr/share/icons/folder-full.ico",
+        "/usr/share/icons/program.ico",
+        "/usr/share/icons/text.ico",
+        "/usr/share/icons/audio.ico",
+        "/usr/share/icons/image.ico",
+        "/usr/share/icons/settings.ico",
+        "/usr/share/icons/unknown.ico",
+};
+
+_Static_assert(sizeof(desktop_file_icon_paths) /
+                   sizeof(desktop_file_icon_paths[0]) ==
+                   DESKTOP_EXPLORER_ICON_COUNT,
+               "file icon path table is incomplete");
+
 typedef struct {
     const x86os_display_info_t *display;
     desktop_rect_t clip;
@@ -313,6 +346,94 @@ static uint32_t intersect_rects(desktop_rect_t left, desktop_rect_t right,
             (uint32_t)(maximum_x - x), (uint32_t)(maximum_y - y)
         };
     }
+    return 1U;
+}
+
+static int read_file_bounded(const char *path, uint8_t *bytes,
+                             size_t capacity, size_t *size_out) {
+    if (path == 0 || bytes == 0 || capacity == 0U || size_out == 0) return -22;
+    int descriptor = x86os_open(path);
+    if (descriptor < 0) return descriptor;
+    size_t used = 0U;
+    while (used < capacity) {
+        int amount = x86os_read(descriptor, bytes + used, capacity - used);
+        if (amount < 0 || (size_t)amount > capacity - used) {
+            (void)x86os_close(descriptor);
+            return -5;
+        }
+        if (amount == 0) break;
+        used += (size_t)amount;
+    }
+    uint8_t extra = 0U;
+    int extra_read = x86os_read(descriptor, &extra, 1U);
+    int close_status = x86os_close(descriptor);
+    if (extra_read != 0 || close_status < 0 || used == 0U) return -75;
+    *size_out = used;
+    return 0;
+}
+
+static uint32_t compose_icon_pixel(uint32_t argb, uint32_t background) {
+    uint32_t alpha = argb >> 24U;
+    uint32_t inverse = 255U - alpha;
+    uint32_t red = (((argb >> 16U) & 0xFFU) * alpha +
+                    ((background >> 16U) & 0xFFU) * inverse + 127U) / 255U;
+    uint32_t green = (((argb >> 8U) & 0xFFU) * alpha +
+                      ((background >> 8U) & 0xFFU) * inverse + 127U) / 255U;
+    uint32_t blue = ((argb & 0xFFU) * alpha +
+                     (background & 0xFFU) * inverse + 127U) / 255U;
+    return (red << 16U) | (green << 8U) | blue;
+}
+
+static void desktop_file_icon_cache_initialize(void) {
+    for (uint32_t kind = 0U; kind < DESKTOP_EXPLORER_ICON_COUNT; ++kind) {
+        desktop_file_icon_cache[kind].valid = 0U;
+        size_t encoded_size = 0U;
+        if (read_file_bounded(
+                desktop_file_icon_paths[kind], desktop_file_icon_encoded,
+                sizeof(desktop_file_icon_encoded), &encoded_size) != 0)
+            continue;
+        reist_image_info_t info;
+        if (reist_image_decode_ico(
+                desktop_file_icon_encoded, encoded_size,
+                desktop_file_icon_decoded, DESKTOP_FILE_ICON_PIXELS,
+                &info) != 0 || info.width != DESKTOP_FILE_ICON_SIZE ||
+            info.height != DESKTOP_FILE_ICON_SIZE ||
+            info.stride_pixels != DESKTOP_FILE_ICON_SIZE ||
+            info.format != REIST_IMAGE_FORMAT_ICO ||
+            (info.flags & REIST_IMAGE_FLAG_ALPHA) == 0U)
+            continue;
+        for (uint32_t pixel = 0U; pixel < DESKTOP_FILE_ICON_PIXELS; ++pixel) {
+            uint32_t argb = desktop_file_icon_decoded[pixel];
+            desktop_file_icon_cache[kind].client[pixel] =
+                compose_icon_pixel(argb, color_client);
+            desktop_file_icon_cache[kind].selected[pixel] =
+                compose_icon_pixel(argb, color_face);
+            desktop_file_icon_cache[kind].desktop[pixel] =
+                compose_icon_pixel(argb, color_desktop);
+        }
+        desktop_file_icon_cache[kind].valid = 1U;
+    }
+}
+
+static uint32_t draw_cached_file_icon(
+    const desktop_render_context_t *context, desktop_rect_t bounds,
+    uint32_t kind, uint32_t selected, uint32_t desktop_background) {
+    if (context == 0 || kind >= DESKTOP_EXPLORER_ICON_COUNT ||
+        bounds.width != DESKTOP_FILE_ICON_SIZE ||
+        bounds.height != DESKTOP_FILE_ICON_SIZE ||
+        !desktop_file_icon_cache[kind].valid) return 0U;
+    desktop_rect_t clipped;
+    if (!intersect_rects(bounds, context->clip, &clipped)) return 1U;
+    const uint32_t *pixels = selected
+        ? desktop_file_icon_cache[kind].selected
+        : desktop_background ? desktop_file_icon_cache[kind].desktop
+                             : desktop_file_icon_cache[kind].client;
+    uint32_t source_x = (uint32_t)(clipped.x - bounds.x);
+    uint32_t source_y = (uint32_t)(clipped.y - bounds.y);
+    (void)x86os_draw_pixels(
+        clipped.x, clipped.y, clipped.width, clipped.height,
+        pixels + (size_t)source_y * DESKTOP_FILE_ICON_SIZE + source_x,
+        DESKTOP_FILE_ICON_SIZE);
     return 1U;
 }
 
@@ -796,6 +917,58 @@ static void draw_bevel(const desktop_render_context_t *context,
         bottom_right);
 }
 
+static void draw_file_icon_fallback(
+    const desktop_render_context_t *context, desktop_rect_t symbol,
+    uint32_t kind) {
+    static const uint32_t accents[DESKTOP_EXPLORER_ICON_COUNT] = {
+        0x00C58A18U, 0x00D29A20U, 0x00007896U, 0x00E4E0D2U,
+        0x00513A8CU, 0x002B8A68U, 0x00808A96U, 0x0096A0ACU,
+    };
+    if (kind >= DESKTOP_EXPLORER_ICON_COUNT) kind =
+        DESKTOP_EXPLORER_ICON_UNKNOWN;
+    uint32_t accent = accents[kind];
+    draw_bevel(context, symbol, accent, 1U);
+    if (symbol.width < 16U || symbol.height < 16U) return;
+    if (kind == DESKTOP_EXPLORER_ICON_FOLDER_EMPTY ||
+        kind == DESKTOP_EXPLORER_ICON_FOLDER_FULL) {
+        fill_rect_clipped(context,
+            (desktop_rect_t){symbol.x + 3, symbol.y - 2,
+                             symbol.width / 2U, 5U}, accent);
+        if (kind == DESKTOP_EXPLORER_ICON_FOLDER_FULL)
+            fill_rect_clipped(context,
+                (desktop_rect_t){symbol.x + 9, symbol.y + 7,
+                                 symbol.width - 13U, symbol.height - 11U},
+                color_light);
+    } else if (kind == DESKTOP_EXPLORER_ICON_PROGRAM) {
+        fill_rect_clipped(context,
+            (desktop_rect_t){symbol.x + 5, symbol.y + 5,
+                             symbol.width - 10U, symbol.height - 12U},
+            0x0000A8C8U);
+        fill_rect_clipped(context,
+            (desktop_rect_t){symbol.x + 11,
+                             symbol.y + (int32_t)symbol.height - 5,
+                             symbol.width - 22U, 3U}, color_dark);
+    } else if (kind == DESKTOP_EXPLORER_ICON_TEXT ||
+               kind == DESKTOP_EXPLORER_ICON_SETTINGS ||
+               kind == DESKTOP_EXPLORER_ICON_UNKNOWN) {
+        for (uint32_t line = 0U; line < 3U; ++line)
+            fill_rect_clipped(context,
+                (desktop_rect_t){symbol.x + 6,
+                                 symbol.y + 7 + (int32_t)(line * 6U),
+                                 symbol.width - 12U, 2U}, color_dark);
+    } else if (kind == DESKTOP_EXPLORER_ICON_AUDIO) {
+        fill_rect_clipped(context,
+            (desktop_rect_t){symbol.x + 7, symbol.y + 7,
+                             symbol.width - 14U, symbol.height - 14U},
+            color_dark);
+    } else {
+        fill_rect_clipped(context,
+            (desktop_rect_t){symbol.x + 5, symbol.y + 5,
+                             symbol.width - 10U, symbol.height - 10U},
+            0x0000A070U);
+    }
+}
+
 static int32_t centered_text_x(
     const x86os_display_info_t *display, desktop_rect_t bounds,
     const char *text, uint32_t horizontal_padding) {
@@ -821,7 +994,8 @@ static void render_icon(const desktop_render_context_t *context,
         ? explorer != 0 && explorer->desktop_selected
         : control_panel_selected;
     uint32_t icon_size = min_u32(rect.height > display->font_height + 6U
-        ? rect.height - display->font_height - 6U : 12U, 28U);
+        ? rect.height - display->font_height - 6U : 12U,
+        DESKTOP_FILE_ICON_SIZE);
     desktop_rect_t symbol = {
         rect.x + (int32_t)((rect.width - icon_size) / 2U),
         rect.y + 3,
@@ -838,14 +1012,10 @@ static void render_icon(const desktop_render_context_t *context,
      * focus is deliberately compact; otherwise sparse desktop rows look like
      * selected panels instead of selected icons. */
     if (selected) draw_bevel(context, focus, color_face, 0U);
-    draw_bevel(context, symbol, desktop_icons[index].accent, 1U);
-    if (symbol.width > 8U && symbol.height > 8U) {
-        fill_rect_clipped(
-            context,
-            (desktop_rect_t){symbol.x + 4, symbol.y + 4,
-                             symbol.width - 8U, symbol.height - 8U},
-            color_client);
-    }
+    uint32_t kind = index == 0U ? DESKTOP_EXPLORER_ICON_FOLDER_FULL
+                                : DESKTOP_EXPLORER_ICON_SETTINGS;
+    if (!draw_cached_file_icon(context, symbol, kind, selected, 1U))
+        draw_file_icon_fallback(context, symbol, kind);
     /* Anchor the caption to the visible symbol, not to the bottom of the
      * deliberately tall hit cell.  This keeps icon and title recognizable as
      * one desktop object while preserving the generous input target. */
@@ -908,8 +1078,9 @@ static void render_explorer_entry(
     const x86os_display_info_t *display = context->display;
     const x86os_file_info_t *entry = &explorer_window->entries[entry_index];
     uint32_t selected = explorer_window->selected == entry_index;
-    uint32_t symbol_width = min_u32(34U, cell.width > 12U ? cell.width - 12U : 1U);
-    uint32_t symbol_height = min_u32(28U,
+    uint32_t symbol_width = min_u32(DESKTOP_FILE_ICON_SIZE,
+        cell.width > 12U ? cell.width - 12U : 1U);
+    uint32_t symbol_height = min_u32(DESKTOP_FILE_ICON_SIZE,
         cell.height > display->font_height + 12U
             ? cell.height - display->font_height - 12U : 1U);
     desktop_rect_t symbol = {
@@ -924,22 +1095,10 @@ static void render_explorer_entry(
         symbol.height + display->font_height + 10U,
     };
     if (selected) draw_bevel(context, focus, color_face, 0U);
-    uint32_t accent = entry->type == X86OS_DIRECTORY
-        ? 0x00C09000U : 0x0000479DU;
-    draw_bevel(context, symbol, accent, 1U);
-    if (entry->type == X86OS_DIRECTORY && symbol.width > 10U) {
-        fill_rect_clipped(
-            context,
-            (desktop_rect_t){symbol.x + 3, symbol.y - 3,
-                             symbol.width / 2U, 5U},
-            accent);
-    } else if (symbol.width > 8U && symbol.height > 8U) {
-        fill_rect_clipped(
-            context,
-            (desktop_rect_t){symbol.x + 4, symbol.y + 4,
-                             symbol.width - 8U, symbol.height - 8U},
-            color_client);
-    }
+    uint32_t kind = desktop_explorer_icon_kind(
+        entry, explorer_window->directory_nonempty[entry_index]);
+    if (!draw_cached_file_icon(context, symbol, kind, selected, 0U))
+        draw_file_icon_fallback(context, symbol, kind);
     int32_t label_y = symbol.y + (int32_t)symbol.height + 5;
     uint32_t label_width = cell.width > 6U ? cell.width - 6U : 1U;
     draw_text_clipped(
@@ -2774,6 +2933,9 @@ int main(int argc, char **argv) {
         return 1;
     }
     desktop_explorer_initialize(&explorer);
+    /* Optional assets are read and decoded exactly once before the first
+     * frame. Missing or malformed files leave fixed-cost vector fallbacks. */
+    desktop_file_icon_cache_initialize();
     int filetypes_status = load_filetypes(&filetypes);
     pointer_x = (int32_t)(display.width / 2U);
     pointer_y = (int32_t)(display.height / 2U);

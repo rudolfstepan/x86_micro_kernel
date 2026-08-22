@@ -227,7 +227,7 @@ static int decode_gif(const uint8_t *b, size_t n, uint32_t *pixels,
     }
     if (frames == 0U) return -84;
     publish(info, canvas_width, canvas_height, REIST_IMAGE_FORMAT_GIF,
-            frames, frames > 1U ? 1U : 0U);
+            frames, frames > 1U ? REIST_IMAGE_FLAG_ANIMATED : 0U);
     return 0;
 }
 
@@ -244,5 +244,9 @@ int reist_image_decode(const uint8_t *encoded, size_t encoded_size,
         encoded[2] == 'F')
         return decode_gif(encoded, encoded_size, pixels, pixel_capacity,
                           workspace, info);
+    if (encoded_size >= 6U && encoded[0] == 0U && encoded[1] == 0U &&
+        encoded[2] == 1U && encoded[3] == 0U)
+        return reist_image_decode_ico(encoded, encoded_size, pixels,
+                                      pixel_capacity, info);
     return -95;
 }

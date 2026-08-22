@@ -44,6 +44,62 @@ static uint8_t fold_ascii(uint8_t value) {
                                         : value;
 }
 
+static uint32_t entry_is_dot_name(const x86os_file_info_t *entry) {
+    return entry != 0 && entry->name[0] == '.' &&
+        (entry->name[1] == '\0' ||
+         (entry->name[1] == '.' && entry->name[2] == '\0'));
+}
+
+static uint32_t extension_equal(const char *extension, const char *expected) {
+    if (extension == 0 || expected == 0) return 0U;
+    for (uint32_t index = 0U;
+         index < sizeof(((x86os_file_info_t *)0)->name); ++index) {
+        uint8_t left = fold_ascii((uint8_t)extension[index]);
+        uint8_t right = (uint8_t)expected[index];
+        if (left != right) return 0U;
+        if (left == 0U) return 1U;
+    }
+    return 0U;
+}
+
+uint32_t desktop_explorer_icon_kind(const x86os_file_info_t *entry,
+                                    uint32_t directory_nonempty) {
+    if (entry == 0) return DESKTOP_EXPLORER_ICON_UNKNOWN;
+    if (entry->type == X86OS_DIRECTORY)
+        return directory_nonempty != 0U
+            ? DESKTOP_EXPLORER_ICON_FOLDER_FULL
+            : DESKTOP_EXPLORER_ICON_FOLDER_EMPTY;
+    if (entry->type != X86OS_FILE) return DESKTOP_EXPLORER_ICON_UNKNOWN;
+    uint32_t name_length = 0U;
+    if (!text_length(entry->name, sizeof(entry->name), &name_length))
+        return DESKTOP_EXPLORER_ICON_UNKNOWN;
+    const char *extension = 0;
+    for (uint32_t index = 0U; index + 1U < name_length; ++index) {
+        if (entry->name[index] == '.')
+            extension = &entry->name[index + 1U];
+    }
+    if (extension == 0) return DESKTOP_EXPLORER_ICON_UNKNOWN;
+    if (extension_equal(extension, "prg"))
+        return DESKTOP_EXPLORER_ICON_PROGRAM;
+    if (extension_equal(extension, "txt") ||
+        extension_equal(extension, "md") ||
+        extension_equal(extension, "log") ||
+        extension_equal(extension, "c") ||
+        extension_equal(extension, "h"))
+        return DESKTOP_EXPLORER_ICON_TEXT;
+    if (extension_equal(extension, "conf") ||
+        extension_equal(extension, "cfg") ||
+        extension_equal(extension, "ini"))
+        return DESKTOP_EXPLORER_ICON_SETTINGS;
+    if (extension_equal(extension, "wav"))
+        return DESKTOP_EXPLORER_ICON_AUDIO;
+    if (extension_equal(extension, "bmp") ||
+        extension_equal(extension, "gif") ||
+        extension_equal(extension, "ico"))
+        return DESKTOP_EXPLORER_ICON_IMAGE;
+    return DESKTOP_EXPLORER_ICON_UNKNOWN;
+}
+
 static int compare_entries(const x86os_file_info_t *left,
                            const x86os_file_info_t *right) {
     if (left->type == X86OS_DIRECTORY && right->type != X86OS_DIRECTORY)
@@ -70,9 +126,15 @@ static void sort_staging(desktop_explorer_t *explorer) {
                 &explorer->staging[position - 1U]) < 0) {
             x86os_file_info_t temporary;
             copy_entry(&temporary, &explorer->staging[position - 1U]);
+            uint8_t temporary_nonempty =
+                explorer->staging_directory_nonempty[position - 1U];
             copy_entry(&explorer->staging[position - 1U],
                        &explorer->staging[position]);
+            explorer->staging_directory_nonempty[position - 1U] =
+                explorer->staging_directory_nonempty[position];
             copy_entry(&explorer->staging[position], &temporary);
+            explorer->staging_directory_nonempty[position] =
+                temporary_nonempty;
             --position;
         }
     }
@@ -84,6 +146,51 @@ static uint32_t entry_name_valid(const x86os_file_info_t *entry) {
            text_length(entry->name, sizeof(entry->name), &length) &&
            length != 0U && entry->type >= X86OS_FILE &&
            entry->type <= X86OS_DIRECTORY;
+}
+
+static int build_child_path(const char *parent, const char *name,
+                            char *path, uint32_t capacity) {
+    uint32_t parent_length = 0U;
+    uint32_t name_length = 0U;
+    if (path == 0 || capacity == 0U ||
+        !text_length(parent, DESKTOP_EXPLORER_PATH_CAPACITY, &parent_length) ||
+        !text_length(name, sizeof(((x86os_file_info_t *)0)->name),
+                     &name_length)) return DESKTOP_EXPLORER_EINVAL;
+    uint32_t separator = parent_length != 0U &&
+        parent[parent_length - 1U] != '/' ? 1U : 0U;
+    uint64_t required = (uint64_t)parent_length + separator + name_length + 1U;
+    if (required > capacity) return DESKTOP_EXPLORER_ECAPACITY;
+    uint32_t offset = 0U;
+    for (; offset < parent_length; ++offset) path[offset] = parent[offset];
+    if (separator) path[offset++] = '/';
+    for (uint32_t index = 0U; index < name_length; ++index)
+        path[offset++] = name[index];
+    path[offset] = '\0';
+    return DESKTOP_EXPLORER_OK;
+}
+
+static uint8_t probe_directory_nonempty(const char *parent,
+                                        const x86os_file_info_t *entry) {
+    char path[DESKTOP_EXPLORER_PATH_CAPACITY];
+    if (entry == 0 || entry->type != X86OS_DIRECTORY ||
+        build_child_path(parent, entry->name, path, sizeof(path)) !=
+            DESKTOP_EXPLORER_OK) return 1U;
+    uint32_t offset = 0U;
+    for (uint32_t attempt = 0U;
+         attempt < DESKTOP_EXPLORER_DIRECTORY_PROBE_BATCHES; ++attempt) {
+        x86os_file_info_t batch[X86OS_READDIR_BATCH_CAPACITY];
+        int count = x86os_readdir_batch(path, offset, batch);
+        if (count < 0 || (uint32_t)count > X86OS_READDIR_BATCH_CAPACITY)
+            return 1U;
+        if (count == 0) return 0U;
+        for (int index = 0; index < count; ++index) {
+            if (!entry_name_valid(&batch[index])) return 1U;
+            if (!entry_is_dot_name(&batch[index])) return 1U;
+        }
+        if (offset > UINT32_MAX - (uint32_t)count) return 1U;
+        offset += (uint32_t)count;
+    }
+    return 1U;
 }
 
 void desktop_explorer_initialize(desktop_explorer_t *explorer) {
@@ -158,9 +265,13 @@ static int stage_directory(desktop_explorer_t *explorer, const char *path) {
         for (int index = 0; index < count; ++index) {
             if (!entry_name_valid(&batch[index]))
                 return DESKTOP_EXPLORER_EIO;
+            if (entry_is_dot_name(&batch[index])) continue;
             if (explorer->staging_count < DESKTOP_EXPLORER_ENTRY_CAPACITY) {
-                copy_entry(&explorer->staging[explorer->staging_count],
-                           &batch[index]);
+                uint32_t staging_index = explorer->staging_count;
+                copy_entry(&explorer->staging[staging_index], &batch[index]);
+                explorer->staging_directory_nonempty[staging_index] =
+                    batch[index].type == X86OS_DIRECTORY
+                        ? probe_directory_nonempty(path, &batch[index]) : 0U;
                 ++explorer->staging_count;
             } else explorer->staging_truncated = 1U;
         }
@@ -196,8 +307,11 @@ int desktop_explorer_open(desktop_explorer_t *explorer,
                       DESKTOP_EXPLORER_PATH_CAPACITY, &path_length);
     for (uint32_t index = 0U; index <= path_length; ++index)
         window->path[index] = explorer->staging_path[index];
-    for (uint32_t index = 0U; index < window->entry_count; ++index)
+    for (uint32_t index = 0U; index < window->entry_count; ++index) {
         copy_entry(&window->entries[index], &explorer->staging[index]);
+        window->directory_nonempty[index] =
+            explorer->staging_directory_nonempty[index];
+    }
     return DESKTOP_EXPLORER_OK;
 }
 
@@ -226,24 +340,8 @@ int desktop_explorer_child_path(const desktop_explorer_window_t *window,
     if (window == 0 || !window->active || path == 0 || capacity == 0U ||
         entry_index >= window->entry_count)
         return DESKTOP_EXPLORER_EINVAL;
-    uint32_t parent_length = 0U;
-    uint32_t name_length = 0U;
-    if (!text_length(window->path, DESKTOP_EXPLORER_PATH_CAPACITY,
-                     &parent_length) ||
-        !text_length(window->entries[entry_index].name,
-                     sizeof(window->entries[entry_index].name),
-                     &name_length)) return DESKTOP_EXPLORER_EINVAL;
-    uint32_t separator = parent_length != 0U &&
-        window->path[parent_length - 1U] != '/' ? 1U : 0U;
-    uint64_t required = (uint64_t)parent_length + separator + name_length + 1U;
-    if (required > capacity) return DESKTOP_EXPLORER_ECAPACITY;
-    uint32_t offset = 0U;
-    for (; offset < parent_length; ++offset) path[offset] = window->path[offset];
-    if (separator) path[offset++] = '/';
-    for (uint32_t index = 0U; index < name_length; ++index)
-        path[offset++] = window->entries[entry_index].name[index];
-    path[offset] = '\0';
-    return DESKTOP_EXPLORER_OK;
+    return build_child_path(window->path, window->entries[entry_index].name,
+                            path, capacity);
 }
 
 desktop_rect_t desktop_explorer_entry_rect(

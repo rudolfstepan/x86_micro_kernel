@@ -281,6 +281,14 @@ try {
     $floppyDataArguments = @(
         '--data-file', "usr/bin/$($ProgramName.ToLowerInvariant())=$UserPrg"
     )
+    foreach ($iconName in @(
+        'folder-empty', 'folder-full', 'program', 'text',
+        'audio', 'image', 'settings', 'unknown'
+    )) {
+        $iconPath = Join-Path $RepoRoot "assets\icons\$iconName.ico"
+        $iconSpec = "usr/share/icons/$iconName.ico=$iconPath"
+        $imageDataArguments += @('--data-file', $iconSpec)
+    }
     $floppyExcluded = @(
         'sbin/audioinfo.prg', 'usr/bin/audiotest.prg', 'usr/bin/wavplay.prg',
         'usr/gui/bin/soundplayer.prg', 'usr/gui/bin/imageviewer.prg',

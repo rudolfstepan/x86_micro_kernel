@@ -5,6 +5,8 @@
 #include "desktop_explorer.h"
 
 static const x86os_file_info_t root_entries[] = {
+    {".", X86OS_DIRECTORY, 0U, 0U, 0U, 0U},
+    {"..", X86OS_DIRECTORY, 0U, 0U, 0U, 0U},
     {"ZETA.TXT", X86OS_FILE, 10U, 0U, 0U, 0U},
     {"BIN", X86OS_DIRECTORY, 0U, 0U, 0U, 0U},
     {"alpha.prg", X86OS_FILE, 20U, 0U, 0U, 0U},
@@ -12,7 +14,8 @@ static const x86os_file_info_t root_entries[] = {
 };
 
 int x86os_stat(const char *path, x86os_file_info_t *info) {
-    if (strcmp(path, "/") != 0 && strcmp(path, "/Docs") != 0) return -1;
+    if (strcmp(path, "/") != 0 && strcmp(path, "/Docs") != 0 &&
+        strcmp(path, "/BIN") != 0) return -1;
     memset(info, 0, sizeof(*info));
     strcpy(info->name, path);
     info->type = X86OS_DIRECTORY;
@@ -22,8 +25,14 @@ int x86os_stat(const char *path, x86os_file_info_t *info) {
 int x86os_readdir_batch(const char *path, uint32_t index,
                         x86os_file_info_t *entries) {
     if (strcmp(path, "/Docs") == 0) return 0;
-    if (strcmp(path, "/") != 0 || index >= 4U) return 0;
-    uint32_t count = 4U - index;
+    if (strcmp(path, "/BIN") == 0) {
+        if (index != 0U) return 0;
+        entries[0] = (x86os_file_info_t){
+            "TOOL.PRG", X86OS_FILE, 1U, 0U, 0U, 0U};
+        return 1;
+    }
+    if (strcmp(path, "/") != 0 || index >= 6U) return 0;
+    uint32_t count = 6U - index;
     if (count > X86OS_READDIR_BATCH_CAPACITY)
         count = X86OS_READDIR_BATCH_CAPACITY;
     for (uint32_t item = 0U; item < count; ++item)
@@ -41,9 +50,39 @@ static void test_directory_snapshot_is_sorted_and_atomic(void) {
     assert(strcmp(window->entries[1].name, "Docs") == 0);
     assert(strcmp(window->entries[2].name, "alpha.prg") == 0);
     assert(strcmp(window->entries[3].name, "ZETA.TXT") == 0);
+    assert(window->directory_nonempty[0] == 1U);
+    assert(window->directory_nonempty[1] == 0U);
+    assert(desktop_explorer_icon_kind(&window->entries[0],
+        window->directory_nonempty[0]) == DESKTOP_EXPLORER_ICON_FOLDER_FULL);
+    assert(desktop_explorer_icon_kind(&window->entries[1],
+        window->directory_nonempty[1]) == DESKTOP_EXPLORER_ICON_FOLDER_EMPTY);
     assert(desktop_explorer_open(&explorer, 0U, "/missing") ==
            DESKTOP_EXPLORER_ENOENT);
     assert(strcmp(explorer.windows[0].path, "/") == 0);
+}
+
+static void test_extension_icons_are_case_insensitive(void) {
+    static const struct {
+        const char *name;
+        uint32_t expected;
+    } cases[] = {
+        {"APP.PRG", DESKTOP_EXPLORER_ICON_PROGRAM},
+        {"notes.Txt", DESKTOP_EXPLORER_ICON_TEXT},
+        {"system.CONF", DESKTOP_EXPLORER_ICON_SETTINGS},
+        {"sound.WAV", DESKTOP_EXPLORER_ICON_AUDIO},
+        {"photo.BMP", DESKTOP_EXPLORER_ICON_IMAGE},
+        {"anim.gif", DESKTOP_EXPLORER_ICON_IMAGE},
+        {"native.ico", DESKTOP_EXPLORER_ICON_IMAGE},
+        {"archive.bin", DESKTOP_EXPLORER_ICON_UNKNOWN},
+        {"no-extension", DESKTOP_EXPLORER_ICON_UNKNOWN},
+    };
+    x86os_file_info_t entry = {0};
+    entry.type = X86OS_FILE;
+    for (uint32_t index = 0U; index < sizeof(cases) / sizeof(cases[0]); ++index) {
+        memset(entry.name, 0, sizeof(entry.name));
+        strcpy(entry.name, cases[index].name);
+        assert(desktop_explorer_icon_kind(&entry, 0U) == cases[index].expected);
+    }
 }
 
 static void test_child_path_and_window_capacity(void) {
@@ -108,6 +147,7 @@ static void test_keyboard_grid_navigation_and_activation(void) {
 
 int main(void) {
     test_directory_snapshot_is_sorted_and_atomic();
+    test_extension_icons_are_case_insensitive();
     test_child_path_and_window_capacity();
     test_same_item_double_click_activates_once();
     test_keyboard_grid_navigation_and_activation();

@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3c-6f"
-active_id = "R1.9-file-icons"
+active_id = "R1.10-desktop-trash"
 
 [policy]
 one_package_per_run = true
@@ -263,10 +263,10 @@ evidence = []
 
 [[packages]]
 id = "R1.9-file-icons"
-status = "active"
+status = "done"
 risk = "medium"
 title = "Cached file-type icons and bounded ICO decoding"
-scope = "Replace generic Explorer rectangles with distinct polished low-cost icons for folders, programs, text/configuration, audio, bitmap/GIF/ICO images and unknown files. Add a strictly bounded read-only ICO decoder only for uncompressed 16x16 and 32x32 32-bit BGRA entries, reject ambiguous or oversized directory/bitmap metadata before allocation or publication, and decode each fixed built-in or file-provided icon at most once into a fixed-capacity cache. Preserve deterministic fallback vector icons and prove that redraw performs no file I/O, parsing, allocation or unbounded work."
+scope = "Replace generic Explorer rectangles with distinct polished low-cost icons for proven-empty and non-empty/unreadable folders, programs, text/configuration, audio, bitmap/GIF/ICO images and unknown files. Filter synthetic dot and dot-dot entries from Explorer snapshots. Add a strictly bounded read-only ICO decoder only for uncompressed 16x16 and 32x32 32-bit BGRA entries, reject ambiguous or oversized directory/bitmap metadata before allocation or publication, and decode each fixed built-in or file-provided icon at most once into a fixed-capacity cache. Preserve deterministic fallback vector icons and prove that redraw performs no file I/O, parsing, allocation or unbounded work."
 allowed_files = [
   "automation/reist-s03b.toml",
   "Makefile",
@@ -277,7 +277,8 @@ allowed_files = [
   "userspace/image/lib/image.c",
   "userspace/image/lib/image_ico.c",
   "assets/icons/README.md",
-  "assets/icons/folder.ico",
+  "assets/icons/folder-empty.ico",
+  "assets/icons/folder-full.ico",
   "assets/icons/program.ico",
   "assets/icons/text.ico",
   "assets/icons/audio.ico",
@@ -285,6 +286,7 @@ allowed_files = [
   "assets/icons/settings.ico",
   "assets/icons/unknown.ico",
   "scripts/build_user_sdk.py",
+  "scripts/build_system_programs.py",
   "scripts/build-windows.ps1",
   "scripts/create_native_boot_image.py",
   "test/test_desktop_explorer_source.py",
@@ -298,7 +300,8 @@ allowed_files = [
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
 ]
 invariants = [
-  "file type selection is a bounded ASCII extension lookup with deterministic folder, program, text/config, audio, image and unknown fallbacks",
+  "file type selection is a bounded ASCII extension lookup with deterministic empty-folder, non-empty-folder, program, text/config, audio, image and unknown fallbacks",
+  "dot and dot-dot never enter an Explorer snapshot, and folder emptiness is probed only while refreshing with two bounded directory reads; an unreadable or inconclusive folder is conservatively shown as non-empty",
   "ICO parsing accepts only one fully validated uncompressed 32-bit BGRA 16x16 or 32x32 entry and rejects PNG payloads, compression, masks outside bounds, arithmetic overflow and trailing ambiguity",
   "decoded icons occupy a compile-time fixed cache and no redraw path performs VFS access, parsing, heap allocation or retry",
   "an invalid, missing or unsupported icon selects the corresponding built-in fixed-cost fallback without hiding the file entry",
@@ -327,6 +330,75 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: add cached file type icons"
+evidence = [
+  "python test/test_image_ico_source.py -q",
+  "python test/test_desktop_explorer_source.py -q",
+  "python test/test_user_program_toolchain.py -q",
+  "python test/test_system_layout.py -q",
+  "python test/test_native_boot_image.py -q",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop"
+]
+
+[[packages]]
+id = "R1.10-desktop-trash"
+status = "active"
+risk = "high"
+title = "Recoverable desktop trash with bounded drag and drop"
+scope = "Add empty/full desktop trash icons and bounded pointer-captured drag and drop from Explorer entries. A drop moves one validated file or directory by same-filesystem atomic rename into the single-user REIST trash namespace with bounded collision handling and metadata sufficient for later restoration; cross-volume copy-delete, recursive immediate deletion and drops from the trash itself fail closed. Opening the trash uses the existing Explorer snapshot path. Document the deliberate single-user adaptation of the freedesktop.org Trash specification and keep permanent deletion as a separate explicit confirmation path."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_explorer.h",
+  "userspace/gui/compositor/desktop_explorer.c",
+  "userspace/gui/compositor/desktop_trash.h",
+  "userspace/gui/compositor/desktop_trash.c",
+  "assets/icons/README.md",
+  "assets/icons/trash-empty.ico",
+  "assets/icons/trash-full.ico",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "test/test_desktop_trash_source.py",
+  "test/test_desktop_trash_host.c",
+  "test/test_desktop_explorer_source.py",
+  "test/test_user_program_toolchain.py",
+  "test/test_system_layout.py",
+  "test/test_native_boot_image.py",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "drag capture identifies exactly one generation-stable Explorer entry and a drop mutates nothing unless source, trash root and destination name are fully validated",
+  "trash insertion uses same-filesystem atomic rename with a fixed collision-attempt bound and never falls back to copy-delete or recursive deletion",
+  "the trash namespace cannot be dragged into itself and root, dot, dot-dot, mount roots and protected system paths cannot become drag sources",
+  "failed or ambiguous mutations preserve the source and report a bounded graphical error before refreshing affected snapshots",
+  "trash empty/full state is refreshed outside redraw and icon rendering performs no VFS access, allocation or unbounded work",
+  "the single-user Trash-spec adaptation, metadata format and unsupported restoration/permanent-delete behavior are explicit and versioned"
+]
+targeted_tests = [
+  "python test/test_desktop_trash_source.py -q",
+  "python test/test_desktop_explorer_source.py -q",
+  "python test/test_user_program_toolchain.py -q",
+  "python test/test_system_layout.py -q",
+  "python test/test_native_boot_image.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop"
+]
+stop_conditions = [
+  "the move cannot be made atomic on the source filesystem",
+  "drag identity cannot remain bound to one current Explorer snapshot entry",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add recoverable desktop trash"
 evidence = []
 
 [[packages]]

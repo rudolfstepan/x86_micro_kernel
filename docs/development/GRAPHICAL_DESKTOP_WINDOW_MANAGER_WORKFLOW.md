@@ -483,6 +483,14 @@ Bildschirm temporär verwenden; der Desktop bleibt Elternprozess und setzt
 seine Szene nach `wait` ohne Shellwechsel oder zusätzlichen Tastendialog neu
 zusammen.
 
+Explorer-Snapshots blenden die synthetischen Einträge `.` und `..` aus, weil
+jeder Ordner in einem eigenen Fenster geöffnet wird. Dateisymbole werden über
+eine begrenzte, ASCII-groß-/kleinschreibungsunabhängige Endungstabelle gewählt:
+`.PRG`, Text, Konfiguration, WAVE sowie BMP/GIF/ICO besitzen eigene Motive.
+Verzeichnisse werden beim Snapshot mit höchstens zwei zusätzlichen Batches als
+nachweislich leer oder als belegt/unlesbar klassifiziert. Während eines
+Redraws erfolgen weder Verzeichniszugriffe noch Dateidekodierung.
+
 ## Systemkonfiguration
 
 - [x] `/etc/reist` als systemweiten, administrierbaren Namensraum festlegen.
@@ -543,6 +551,15 @@ Eintrag markieren. Dadurch wird eine ausgewählte Anwendung nicht irrtümlich
 als großflächiges Panel dargestellt. Die Beschriftung ist an der Unterkante
 des sichtbaren Symbols verankert und steht damit unmittelbar beim zugehörigen
 Icon; die Höhe der unsichtbaren Hit-Zelle beeinflusst ihre Position nicht.
+Die 32x32-Symbole liegen als einfache unkomprimierte 32-Bit-ICO-DIBs vor. Der
+Desktop validiert und dekodiert jedes optionale Asset genau einmal vor dem
+ersten Frame und komponiert feste Varianten für Desktop-, Client- und
+Auswahlhintergrund vor. Ungültige oder fehlende Dateien aktivieren begrenzte
+Vektor-Fallbacks; der Zeichenpfad führt nur einen geclippten Pixel-Upload aus.
+
+- [ ] Papierkorb als eigener Desktop-Workflow: Drag-and-drop verschiebt erst
+  in einen begrenzten Trash-Namensraum, prüft Quelle/Ziel vor jeder Mutation
+  und trennt Wiederherstellen beziehungsweise endgültiges Leeren.
 
 ## Stufe 7: Robustheit und Abnahme
 

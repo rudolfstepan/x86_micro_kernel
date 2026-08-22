@@ -22,6 +22,7 @@
 #define DESKTOP_EXPLORER_DOUBLE_CLICK_MS 500U
 #define DESKTOP_EXPLORER_ICON_WIDTH 104U
 #define DESKTOP_EXPLORER_ICON_HEIGHT 76U
+#define DESKTOP_EXPLORER_DIRECTORY_PROBE_BATCHES 2U
 
 enum desktop_explorer_status {
     DESKTOP_EXPLORER_OK = 0,
@@ -40,10 +41,23 @@ enum desktop_explorer_key {
     DESKTOP_EXPLORER_KEY_ENTER
 };
 
+enum desktop_explorer_icon {
+    DESKTOP_EXPLORER_ICON_FOLDER_EMPTY = 0U,
+    DESKTOP_EXPLORER_ICON_FOLDER_FULL,
+    DESKTOP_EXPLORER_ICON_PROGRAM,
+    DESKTOP_EXPLORER_ICON_TEXT,
+    DESKTOP_EXPLORER_ICON_AUDIO,
+    DESKTOP_EXPLORER_ICON_IMAGE,
+    DESKTOP_EXPLORER_ICON_SETTINGS,
+    DESKTOP_EXPLORER_ICON_UNKNOWN,
+    DESKTOP_EXPLORER_ICON_COUNT
+};
+
 typedef struct desktop_explorer_window {
     uint32_t active;
     char path[DESKTOP_EXPLORER_PATH_CAPACITY];
     x86os_file_info_t entries[DESKTOP_EXPLORER_ENTRY_CAPACITY];
+    uint8_t directory_nonempty[DESKTOP_EXPLORER_ENTRY_CAPACITY];
     uint32_t entry_count;
     uint32_t truncated;
     uint32_t selected;
@@ -55,6 +69,7 @@ typedef struct desktop_explorer_window {
 typedef struct desktop_explorer {
     desktop_explorer_window_t windows[DESKTOP_EXPLORER_WINDOW_CAPACITY];
     x86os_file_info_t staging[DESKTOP_EXPLORER_ENTRY_CAPACITY];
+    uint8_t staging_directory_nonempty[DESKTOP_EXPLORER_ENTRY_CAPACITY];
     char staging_path[DESKTOP_EXPLORER_PATH_CAPACITY];
     uint32_t staging_count;
     uint32_t staging_truncated;
@@ -73,6 +88,9 @@ typedef struct desktop_explorer_result {
 
 void desktop_explorer_initialize(desktop_explorer_t *explorer);
 void desktop_explorer_result_initialize(desktop_explorer_result_t *result);
+/** Classify one snapshot entry with a bounded case-insensitive extension. */
+uint32_t desktop_explorer_icon_kind(const x86os_file_info_t *entry,
+                                    uint32_t directory_nonempty);
 /** Track the single bounded root-volume desktop icon. */
 void desktop_explorer_desktop_press(desktop_explorer_t *explorer,
                                     uint32_t hit,

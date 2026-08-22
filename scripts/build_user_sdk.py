@@ -61,6 +61,7 @@ AUDIO_LIBRARY_SOURCES = (
 )
 IMAGE_LIBRARY_SOURCES = (
     ROOT / "userspace" / "image" / "lib" / "image.c",
+    ROOT / "userspace" / "image" / "lib" / "image_ico.c",
 )
 STARTUP_SOURCE = CORE_ROOT / "crt0.c"
 

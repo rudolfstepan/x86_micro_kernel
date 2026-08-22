@@ -545,6 +545,12 @@ Pixelschrift und eine versionierte Frame-ABI. Window Manager, Explorer,
 Maus-/Tastaturfokus, Drag/Resize, Dirty Regions und eine
 generationengebundene Surface-/Event-IPC sind umgesetzt. Notepad, Image
 Viewer und die Systemsteuerung laufen als getrennte Ring-3-Fensterclients.
+Der compositorinterne Explorer verwendet einmalig geladene 32x32-ICO-Assets
+mit festen Cachevarianten und unterscheidet `.PRG`, Text/Konfiguration, WAVE,
+BMP/GIF/ICO, unbekannte Dateien sowie nachweislich leere und nichtleere
+Ordner. `.` und `..` werden aus dem begrenzten Snapshot entfernt; Rendering
+führt keine VFS-Zugriffe oder Dekodierung aus. Ein wiederherstellbarer
+Papierkorb mit geprüftem Drag-and-drop bleibt ein getrennter Folgeschritt.
 Control Gallery, Sound Player und Terminal verwenden noch die begrenzte
 Vollbildbrücke. Eine vollständige TTY- und Terminal-Clientarchitektur bleibt
 offen. Die Systemsteuerung persistiert vier begrenzte Einstellungsgruppen über

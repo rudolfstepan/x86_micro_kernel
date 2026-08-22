@@ -152,6 +152,11 @@ class UserProgramToolchainTests(unittest.TestCase):
         self.assertIn('library_dir / "libreistgui.a"', sdk_builder)
         self.assertIn('library_dir / "libreistaudio.a"', sdk_builder)
         self.assertIn('library_dir / "libreistimage.a"', sdk_builder)
+        self.assertIn('"image_ico.c"', sdk_builder)
+        self.assertIn(
+            'IMAGE_PROGRAMS = {"DESKTOP.PRG", "IMAGEVIEWER.PRG"}',
+            system_builder,
+        )
         self.assertIn("MAX_SYSTEM_BUILD_WORKERS = 8", system_builder)
         self.assertIn("DEFAULT_SYSTEM_BUILD_WORKERS = min(", system_builder)
         self.assertIn('"-j", "--jobs"', system_builder)
