@@ -25,14 +25,17 @@ CORE_INCLUDE_ROOT = CORE_ROOT / "include"
 GUI_INCLUDE_ROOT = ROOT / "userspace" / "gui" / "include"
 AUDIO_INCLUDE_ROOT = ROOT / "userspace" / "audio" / "include"
 IMAGE_INCLUDE_ROOT = ROOT / "userspace" / "image" / "include"
+CONFIG_INCLUDE_ROOT = ROOT / "userspace" / "config" / "include"
 PUBLIC_INCLUDE_ROOTS = (
     CORE_INCLUDE_ROOT, GUI_INCLUDE_ROOT, AUDIO_INCLUDE_ROOT, IMAGE_INCLUDE_ROOT,
+    CONFIG_INCLUDE_ROOT,
 )
 
 CORE_LIBRARY_SOURCES = (
     CORE_ROOT / "x86os.c",
     CORE_ROOT / "reist_dhcp_state.c",
     CORE_ROOT / "reist_dns.c",
+    ROOT / "userspace" / "config" / "lib" / "config.c",
 )
 NETWORK_PARSER_SOURCES = (
     CORE_ROOT / "reist_ipv4_parser.c",
@@ -215,6 +218,9 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
     image_headers = tuple(
         header for root, header in public_headers
         if root == IMAGE_INCLUDE_ROOT)
+    config_headers = tuple(
+        header for root, header in public_headers
+        if root == CONFIG_INCLUDE_ROOT)
     all_sources = (
         STARTUP_SOURCE, *CORE_LIBRARY_SOURCES,
         *NETWORK_PARSER_SOURCES, *GUI_LIBRARY_SOURCES,
@@ -222,10 +228,10 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
         *IMAGE_LIBRARY_SOURCES,
     )
     if (not core_headers or not gui_headers or not audio_headers or
-            not image_headers or any(
+            not image_headers or not config_headers or any(
             not source.is_file()
             for source in (*all_sources, *core_headers, *gui_headers,
-                           *audio_headers, *image_headers))):
+                           *audio_headers, *image_headers, *config_headers))):
         raise FileNotFoundError("REIST SDK sources are incomplete")
 
     for root, header in public_headers:
@@ -242,7 +248,7 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
         (STARTUP_SOURCE, *core_headers), incremental)
     core_stale = artifact_requires_rebuild(
         artifacts.core_library,
-        (*CORE_LIBRARY_SOURCES, *core_headers), incremental)
+        (*CORE_LIBRARY_SOURCES, *core_headers, *config_headers), incremental)
     parser_stale = artifact_requires_rebuild(
         artifacts.network_parser_library,
         (*NETWORK_PARSER_SOURCES, *core_headers), incremental)
@@ -270,7 +276,8 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
         environment["ZIG_LOCAL_CACHE_DIR"] = str(
             temporary_path / "zig-local")
         prefix = freestanding_compile_prefix(
-            zig, [GUI_INCLUDE_ROOT, AUDIO_INCLUDE_ROOT, IMAGE_INCLUDE_ROOT])
+            zig, [GUI_INCLUDE_ROOT, AUDIO_INCLUDE_ROOT, IMAGE_INCLUDE_ROOT,
+                  CONFIG_INCLUDE_ROOT])
 
         if startup_stale:
             startup = compile_objects(

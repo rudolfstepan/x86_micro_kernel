@@ -490,9 +490,11 @@ zusammen.
   Dateizuordnungen in Windows- und Makefile-Systemabbilder paketieren.
 - [x] `/usr/share/reist/defaults`, `/var/lib/reist` und spätere
   `$HOME/.config/reist`-Überschreibungen voneinander abgrenzen.
-- [ ] Gemeinsamen fest begrenzten Ring-3-Parser und atomaren Writer bauen.
-- [ ] Sprache, Tastatur, Maus und Desktop über einen berechtigten Systemdienst
-  und grafische Einstellungswerkzeuge änderbar machen.
+- [x] Gemeinsamen fest begrenzten Ring-3-Parser und atomaren Writer bauen.
+- [x] Tastatur, Maus, System und Desktop über eine getrennte Ring-3-
+  Mutationsgrenze und ein grafisches Surface-Fenster persistent änderbar
+  machen. Die Laufzeit-Neukonfiguration bestehender Treiber bleibt getrennt;
+  die Oberfläche meldet bis dahin ausdrücklich die Neustartwirkung.
 
 Der Format- und Pfadvertrag steht in
 [`SYSTEM_CONFIGURATION.md`](../architecture/SYSTEM_CONFIGURATION.md).

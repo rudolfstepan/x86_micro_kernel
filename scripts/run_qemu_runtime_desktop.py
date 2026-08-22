@@ -227,6 +227,7 @@ def capture_screenshot(process: subprocess.Popen[str],
 def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool, render_probe: bool,
         surface_probe: bool, notepad_probe: bool,
+        control_probe: bool,
         metrics_log: pathlib.Path | None) -> int:
     command = [
         str(qemu), "-accel", "tcg", "-machine", "pc", "-nodefaults",
@@ -255,7 +256,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                 command_name = "desktop.prg --render-probe" if render_probe \
                     else ("desktop.prg --surface-probe" if surface_probe
                           else ("desktop.prg --notepad-probe"
-                                if notepad_probe else "desktop.prg"))
+                                if notepad_probe else
+                                ("desktop.prg --control-probe"
+                                 if control_probe else "desktop.prg")))
                 send_command(process, command_name)
                 break
             time.sleep(0.02)
@@ -366,6 +369,22 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     raise RuntimeError(
                         "Notepad did not publish a visible document window"
                     )
+                if control_probe:
+                    while time.monotonic() < deadline:
+                        drain(output, transcript)
+                        probe_text = "".join(transcript)
+                        if "DESKTOP_CONTROL_FAIL" in probe_text:
+                            raise RuntimeError("Control Panel probe launch failed")
+                        if ("DESKTOP_CONTROL_OK" in probe_text and
+                                "CONTROL_PANEL_READY" in probe_text):
+                            time.sleep(0.2)
+                            capture_screenshot(process, screenshot, deadline)
+                            print("runtime-desktop-control: PASS")
+                            return 0
+                        time.sleep(0.02)
+                    raise RuntimeError(
+                        "Control Panel did not publish a visible window"
+                    )
                 # The marker is emitted immediately before the single
                 # backbuffer render so it is overwritten by the desktop.
                 # Give the guest a bounded interval to finish that frame
@@ -404,17 +423,19 @@ def main() -> int:
     parser.add_argument("--render-probe", action="store_true")
     parser.add_argument("--surface-probe", action="store_true")
     parser.add_argument("--notepad-probe", action="store_true")
+    parser.add_argument("--control-probe", action="store_true")
     parser.add_argument("--metrics-log", type=pathlib.Path)
     args = parser.parse_args()
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
-            args.notepad_probe)) > 1:
+            args.notepad_probe, args.control_probe)) > 1:
         parser.error("desktop probe modes are mutually exclusive")
     if args.metrics_log is not None and not args.render_probe:
         parser.error("--metrics-log requires --render-probe")
     try:
         return run(args.qemu, args.image, args.screenshot, args.timeout,
                    args.expect_failure, args.render_probe,
-                   args.surface_probe, args.notepad_probe, args.metrics_log)
+                   args.surface_probe, args.notepad_probe, args.control_probe,
+                   args.metrics_log)
     except (OSError, RuntimeError) as error:
         print(f"runtime-desktop: FAIL: {error}", file=sys.stderr)
         return 1

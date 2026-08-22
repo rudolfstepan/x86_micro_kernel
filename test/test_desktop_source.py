@@ -312,7 +312,7 @@ class DesktopSourceTests(unittest.TestCase):
             self.source.index("static int launch_program")
         ]
         self.assertNotIn("text_equal(program", surface_classifier)
-        self.assertEqual(surface_classifier.count("path_equal_ascii_case"), 3)
+        self.assertEqual(surface_classifier.count("path_equal_ascii_case"), 4)
         self.assertIn("desktop_surface_runtime_reserve", self.source)
         self.assertIn("desktop_surface_runtime_bind", self.source)
         self.assertIn("sync_surface_windows", self.source)

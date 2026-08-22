@@ -105,9 +105,11 @@ function Invoke-Smoke(
 function Invoke-RuntimeDesktop(
     [bool]$ExpectFailure = $false,
     [bool]$RenderProbe = $false,
-    [bool]$SurfaceProbe = $false
+    [bool]$SurfaceProbe = $false,
+    [bool]$ControlProbe = $false
 ) {
-    if (([int]$ExpectFailure + [int]$RenderProbe + [int]$SurfaceProbe) -gt 1) {
+    if (([int]$ExpectFailure + [int]$RenderProbe + [int]$SurfaceProbe +
+            [int]$ControlProbe) -gt 1) {
         throw 'Runtime desktop probe modes are exclusive.'
     }
     $screenshot = Join-Path $RepoRoot 'build\runtime-desktop.ppm'
@@ -121,6 +123,7 @@ function Invoke-RuntimeDesktop(
         $arguments += @('--render-probe', '--metrics-log', $metricsLog)
     }
     if ($SurfaceProbe) { $arguments += '--surface-probe' }
+    if ($ControlProbe) { $arguments += '--control-probe' }
     & $Python $RuntimeDesktopRunner @arguments
     if ($ExpectFailure) {
         if ($LASTEXITCODE -eq 0) { throw 'Runtime graphics failure was not rejected.' }
@@ -615,7 +618,7 @@ switch ($Mode) {
         )
     }
     'runtime-desktop' {
-        Invoke-RuntimeDesktop
+        Invoke-RuntimeDesktop $false $false $false $true
     }
     'runtime-desktop-metrics' {
         Invoke-RuntimeDesktop $false $true

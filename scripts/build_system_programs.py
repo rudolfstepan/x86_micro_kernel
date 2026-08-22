@@ -11,7 +11,7 @@ from pathlib import Path
 
 from build_user_program import ROOT, build, find_zig
 from build_user_sdk import (
-    AUDIO_INCLUDE_ROOT, CORE_INCLUDE_ROOT, GUI_INCLUDE_ROOT,
+    AUDIO_INCLUDE_ROOT, CONFIG_INCLUDE_ROOT, CORE_INCLUDE_ROOT, GUI_INCLUDE_ROOT,
     IMAGE_INCLUDE_ROOT, build_sdk,
 )
 
@@ -51,6 +51,8 @@ PROGRAMS = {
     "SOUNDPLAYER.PRG": ROOT / "userspace/gui/apps/sound_player/main.c",
     "IMAGEVIEWER.PRG": ROOT / "userspace/gui/apps/image_viewer/main.c",
     "SURFACEDEMO.PRG": ROOT / "userspace/gui/apps/surface_demo/main.c",
+    "CONTROL.PRG": ROOT / "userspace/gui/apps/control_panel/main.c",
+    "CONFIG.PRG": ROOT / "userspace/services/config/config_service.c",
     "MKDIR.PRG": ROOT / "userspace/programs/mkdir.c",
     "RMDIR.PRG": ROOT / "userspace/programs/rmdir.c",
     "DEL.PRG": ROOT / "userspace/programs/del.c",
@@ -96,7 +98,7 @@ PROGRAMS = {
 
 GUI_PROGRAMS = {
     "DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG", "SOUNDPLAYER.PRG",
-    "IMAGEVIEWER.PRG", "SURFACEDEMO.PRG",
+    "IMAGEVIEWER.PRG", "SURFACEDEMO.PRG", "CONTROL.PRG",
 }
 IMAGE_PROGRAMS = {"IMAGEVIEWER.PRG"}
 NETWORK_PARSER_PROGRAMS = {"REIST.PRG"}
@@ -139,6 +141,7 @@ def main() -> None:
         gui_headers = list(GUI_INCLUDE_ROOT.rglob("*.h"))
         audio_headers = list(AUDIO_INCLUDE_ROOT.rglob("*.h"))
         image_headers = list(IMAGE_INCLUDE_ROOT.rglob("*.h"))
+        config_headers = list(CONFIG_INCLUDE_ROOT.rglob("*.h"))
 
         def build_one(item: tuple[str, object]) -> str:
             """Build one independent PRG under the shared read-only SDK."""
@@ -157,6 +160,8 @@ def main() -> None:
             if name in IMAGE_PROGRAMS:
                 link_libraries.append(sdk.image_library)
             dependency_files = [*core_headers]
+            if name in {"CONTROL.PRG", "CONFIG.PRG"}:
+                dependency_files.extend(config_headers)
             if name in GUI_PROGRAMS:
                 dependency_files.extend(gui_headers)
             if name in AUDIO_PROGRAMS:

@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3c-6f"
-active_id = "R1.8-control-panel"
+active_id = "R1.9-file-icons"
 
 [policy]
 one_package_per_run = true
@@ -259,6 +259,74 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: add partition and FAT32 provisioning"
+evidence = []
+
+[[packages]]
+id = "R1.9-file-icons"
+status = "active"
+risk = "medium"
+title = "Cached file-type icons and bounded ICO decoding"
+scope = "Replace generic Explorer rectangles with distinct polished low-cost icons for folders, programs, text/configuration, audio, bitmap/GIF/ICO images and unknown files. Add a strictly bounded read-only ICO decoder only for uncompressed 16x16 and 32x32 32-bit BGRA entries, reject ambiguous or oversized directory/bitmap metadata before allocation or publication, and decode each fixed built-in or file-provided icon at most once into a fixed-capacity cache. Preserve deterministic fallback vector icons and prove that redraw performs no file I/O, parsing, allocation or unbounded work."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_explorer.h",
+  "userspace/gui/compositor/desktop_explorer.c",
+  "userspace/image/include/reist/image.h",
+  "userspace/image/lib/image.c",
+  "userspace/image/lib/image_ico.c",
+  "assets/icons/README.md",
+  "assets/icons/folder.ico",
+  "assets/icons/program.ico",
+  "assets/icons/text.ico",
+  "assets/icons/audio.ico",
+  "assets/icons/image.ico",
+  "assets/icons/settings.ico",
+  "assets/icons/unknown.ico",
+  "scripts/build_user_sdk.py",
+  "scripts/build-windows.ps1",
+  "scripts/create_native_boot_image.py",
+  "test/test_desktop_explorer_source.py",
+  "test/test_desktop_explorer_host.c",
+  "test/test_image_ico_source.py",
+  "test/test_image_ico_host.c",
+  "test/test_user_program_toolchain.py",
+  "test/test_system_layout.py",
+  "test/test_native_boot_image.py",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "file type selection is a bounded ASCII extension lookup with deterministic folder, program, text/config, audio, image and unknown fallbacks",
+  "ICO parsing accepts only one fully validated uncompressed 32-bit BGRA 16x16 or 32x32 entry and rejects PNG payloads, compression, masks outside bounds, arithmetic overflow and trailing ambiguity",
+  "decoded icons occupy a compile-time fixed cache and no redraw path performs VFS access, parsing, heap allocation or retry",
+  "an invalid, missing or unsupported icon selects the corresponding built-in fixed-cost fallback without hiding the file entry",
+  "icon alpha composition and scaling have fixed pixel bounds and cannot escape the Explorer cell clip",
+  "all generated icon assets are packaged identically by Makefile and Windows image builders and remain optional to desktop availability"
+]
+targeted_tests = [
+  "python test/test_image_ico_source.py -q",
+  "python test/test_desktop_explorer_source.py -q",
+  "python test/test_user_program_toolchain.py -q",
+  "python test/test_system_layout.py -q",
+  "python test/test_native_boot_image.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop"
+]
+stop_conditions = [
+  "ICO metadata cannot be validated before pixel decode",
+  "the icon cache would require heap allocation or redraw-time file access",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add cached file type icons"
 evidence = []
 
 [[packages]]
@@ -1920,7 +1988,7 @@ evidence = [
 
 [[packages]]
 id = "R1.8-control-panel"
-status = "active"
+status = "done"
 risk = "medium"
 title = "Graphical system control panel"
 scope = "Add a separate Ring-3 Control Panel Surface client and a new desktop icon that opens it. Present fixed-capacity Keyboard, Mouse, System and Desktop applets with complete keyboard and pointer navigation. Implement the shared bounded reist.config/1 parser and atomic writer required to load and persist only the documented /etc/reist settings through an explicit privileged configuration-service boundary; invalid, stale or partially written settings fail closed without changing live state. Package the client and defaults identically in Makefile and Windows images and prove desktop launch, applet navigation, validation and persistence behavior."

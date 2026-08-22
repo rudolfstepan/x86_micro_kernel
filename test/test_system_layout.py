@@ -105,12 +105,14 @@ class SystemLayoutContracts(unittest.TestCase):
             0x12345678,
             {
                 "sbin/svcctl.prg": b"svcctl",
+                "sbin/config.prg": b"config",
                 "usr/bin/hello.prg": b"hello",
                 "usr/gui/bin/desktop.prg": b"desktop",
                 "usr/gui/bin/guidemo.prg": b"guidemo",
                 "usr/gui/bin/notepad.prg": b"notepad",
                 "usr/gui/bin/soundplayer.prg": b"soundplayer",
                 "usr/gui/bin/imageviewer.prg": b"imageviewer",
+                "usr/gui/bin/control.prg": b"control",
                 "usr/share/sounds/440hz.wav": b"wave",
                 "usr/share/images/demo-desktop.bmp": b"bmp",
                 "usr/share/images/demo-colors.gif": b"gif",
@@ -137,6 +139,7 @@ class SystemLayoutContracts(unittest.TestCase):
         sbin_cluster = struct.unpack_from("<H", root[b"SBIN       "], 26)[0]
         sbin = cluster_entries(sbin_cluster)
         self.assertEqual(sbin[b"SVCCTL  PRG"][12], 0x18)
+        self.assertEqual(sbin[b"CONFIG  PRG"][12], 0x18)
         usr_cluster = struct.unpack_from("<H", root[b"USR        "], 26)[0]
         usr = cluster_entries(usr_cluster)
         bin_cluster = struct.unpack_from("<H", usr[b"BIN        "], 26)[0]
@@ -162,6 +165,9 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertEqual(
             cluster_entries(gui_bin_cluster)[b"IMAGEV~1PRG"][12], 0x18
         )
+        self.assertEqual(
+            cluster_entries(gui_bin_cluster)[b"CONTROL PRG"][12], 0x18
+        )
         etc_cluster = struct.unpack_from("<H", root[b"ETC        "], 26)[0]
         etc = cluster_entries(etc_cluster)
         reist_cluster = struct.unpack_from("<H", etc[b"REIST      "], 26)[0]
@@ -183,6 +189,7 @@ class SystemLayoutContracts(unittest.TestCase):
             "usr/bin/wavplay.prg", "usr/share/sounds/440hz.wav",
             "usr/gui/bin/soundplayer.prg",
             "usr/gui/bin/imageviewer.prg",
+            "usr/gui/bin/control.prg", "sbin/config.prg",
             "usr/share/images/demo-desktop.bmp",
             "usr/share/images/demo-colors.gif",
             "libexec/reist/hda.prg", "libexec/reist/audio.prg",

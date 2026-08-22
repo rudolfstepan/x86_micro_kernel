@@ -16,7 +16,8 @@
 #include "reist/gui/dialog.h"
 #include "reist/gui/menu.h"
 
-#define DESKTOP_ICON_COUNT 1U
+#define DESKTOP_ICON_COUNT 2U
+#define DESKTOP_ICON_WIDTH 176U
 #define DESKTOP_ARGUMENT_LIMIT 32U
 #define DESKTOP_MENU_COUNT 3U
 #define DESKTOP_METRICS_VERSION 1U
@@ -44,7 +45,12 @@ typedef struct {
 
 static const desktop_icon_t desktop_icons[DESKTOP_ICON_COUNT] = {
     {"Computer", "/", 0x0000479DU},
+    {"Systemsteuerung", "/usr/gui/bin/control.prg", 0x00806020U},
 };
+
+static uint32_t control_panel_selected;
+static uint32_t control_panel_pressed;
+static uint64_t control_panel_last_click_ms;
 
 enum {
     DESKTOP_MENU_WORKSPACE = 0U,
@@ -746,8 +752,11 @@ static desktop_rect_t desktop_icon_rect(const x86os_display_info_t *display,
     if (index >= DESKTOP_ICON_COUNT) return rect;
     uint32_t top = menu_height(display) + 8U;
     rect.x = 8;
-    rect.y = (int32_t)top;
-    rect.width = min_u32(124U, display->width > 16U ? display->width - 16U : 1U);
+    rect.y = (int32_t)(top + index *
+        max_u32(display->font_height + 42U, 68U));
+    rect.width = min_u32(
+        DESKTOP_ICON_WIDTH,
+        display->width > 16U ? display->width - 16U : 1U);
     rect.height = max_u32(display->font_height + 42U, 68U);
     return rect;
 }
@@ -808,7 +817,9 @@ static void render_icon(const desktop_render_context_t *context,
     const x86os_display_info_t *display = context->display;
     desktop_rect_t rect = desktop_icon_rect(display, index);
     if (!intersect_rects(rect, context->clip, 0)) return;
-    uint32_t selected = explorer != 0 && explorer->desktop_selected;
+    uint32_t selected = index == 0U
+        ? explorer != 0 && explorer->desktop_selected
+        : control_panel_selected;
     uint32_t icon_size = min_u32(rect.height > display->font_height + 6U
         ? rect.height - display->font_height - 6U : 12U, 28U);
     desktop_rect_t symbol = {
@@ -1830,7 +1841,8 @@ static int format_surface_argument(x86os_ipc_handle_t endpoint) {
 static uint32_t program_uses_surface(const char *program) {
     return path_equal_ascii_case(program, "/usr/gui/bin/surfacedemo.prg") ||
         path_equal_ascii_case(program, "/usr/gui/bin/notepad.prg") ||
-        path_equal_ascii_case(program, "/usr/gui/bin/imageviewer.prg");
+        path_equal_ascii_case(program, "/usr/gui/bin/imageviewer.prg") ||
+        path_equal_ascii_case(program, "/usr/gui/bin/control.prg");
 }
 
 static int launch_program(desktop_surface_runtime_t *surface_runtime,
@@ -2110,6 +2122,20 @@ static uint32_t apply_desktop_activation(
     return 0U;
 }
 
+static void apply_control_panel_activation(
+    desktop_surface_runtime_t *surface_runtime, desktop_ui_state_t *ui,
+    const x86os_display_info_t *display, desktop_dirty_region_t *dirty,
+    int32_t pointer_x, int32_t pointer_y) {
+    static const char path[] = "/usr/gui/bin/control.prg";
+    (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
+    int launch_status = launch_program(surface_runtime, path, 0);
+    desktop_dirty_full(dirty);
+    if (launch_status != 0)
+        desktop_ui_open_error(
+            ui, display, dirty,
+            "Systemsteuerung konnte nicht gestartet werden.", path);
+}
+
 static uint32_t apply_desktop_ui_result(
     desktop_wm_t *manager, desktop_explorer_t *explorer,
     desktop_ui_state_t *ui,
@@ -2272,6 +2298,43 @@ static void collect_explorer_pointer_result(
     activation->root = root;
     activation->window_index = result->window_index;
     activation->entry_index = result->entry_index;
+}
+
+static uint32_t control_panel_pointer_button(
+    desktop_explorer_t *explorer, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, int32_t pointer_x, int32_t pointer_y,
+    uint32_t buttons, uint32_t previous_buttons) {
+    uint32_t left_down =
+        (buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
+    uint32_t left_was_down =
+        (previous_buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
+    uint32_t hit = desktop_icon_at_position(
+        display, pointer_x, pointer_y) == 1;
+    if (left_down && !left_was_down) {
+        uint32_t old_selected = control_panel_selected;
+        control_panel_selected = hit;
+        control_panel_pressed = hit;
+        if (hit && explorer != 0) explorer->desktop_selected = 0U;
+        if (old_selected != control_panel_selected || hit)
+            desktop_dirty_add(dirty, desktop_icon_rect(display, 1U));
+        return 0U;
+    }
+    if (!left_down && left_was_down) {
+        uint32_t activate = 0U;
+        if (control_panel_pressed && hit) {
+            uint64_t now_ms = 0U;
+            if (x86os_monotonic_ms(&now_ms) == 0 &&
+                control_panel_last_click_ms != 0U &&
+                now_ms >= control_panel_last_click_ms &&
+                now_ms - control_panel_last_click_ms <=
+                    DESKTOP_EXPLORER_DOUBLE_CLICK_MS)
+                activate = 1U;
+            control_panel_last_click_ms = now_ms;
+        }
+        control_panel_pressed = 0U;
+        return activate;
+    }
+    return 0U;
 }
 
 static uint32_t dispatch_pointer_button(
@@ -2646,6 +2709,7 @@ int main(int argc, char **argv) {
     uint32_t render_probe = 0U;
     uint32_t surface_probe = 0U;
     uint32_t notepad_probe = 0U;
+    uint32_t control_probe = 0U;
     uint32_t surface_probe_reported = 0U;
     uint32_t surface_probe_created_reported = 0U;
 
@@ -2657,10 +2721,13 @@ int main(int argc, char **argv) {
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--notepad-probe")) {
         notepad_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--control-probe")) {
+        control_probe = 1U;
     } else if (argc != 1) {
         x86os_puts(
             "Usage: desktop [--render-probe|--surface-probe|"
-            "--notepad-probe]\n");
+            "--notepad-probe|--control-probe]\n");
         return 2;
     }
 
@@ -2727,10 +2794,14 @@ int main(int argc, char **argv) {
         &display, &manager, &explorer, &surfaces, &ui,
         &initial_dirty, 0, 0U, 0U, &metrics);
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
-    if (surface_probe || notepad_probe) {
-        int probe_status = launch_surface_probe_client(
-            &surface_runtime, &surfaces,
-            "/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT", 1U);
+    if (surface_probe || notepad_probe || control_probe) {
+        int probe_status = control_probe
+            ? launch_surface_probe_client(
+                &surface_runtime, &surfaces,
+                "/USR/GUI/BIN/CONTROL.PRG", 0, 1U)
+            : launch_surface_probe_client(
+                &surface_runtime, &surfaces,
+                "/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT", 1U);
         if (surface_probe) {
             if (probe_status == 0)
                 probe_status = launch_surface_probe_client(
@@ -2751,16 +2822,20 @@ int main(int argc, char **argv) {
                     "/USR/SHARE/IMAGES/DEMO-COLORS.GIF", 5U);
         }
         if (probe_status != 0) {
-            x86os_puts(surface_probe
-                ? "DESKTOP_SURFACE_FAIL launch\n"
-                : "DESKTOP_NOTEPAD_FAIL launch\n");
+            x86os_puts(control_probe
+                ? "DESKTOP_CONTROL_FAIL launch\n"
+                : (surface_probe
+                    ? "DESKTOP_SURFACE_FAIL launch\n"
+                    : "DESKTOP_NOTEPAD_FAIL launch\n"));
             desktop_surface_runtime_shutdown(&surface_runtime);
             if (runtime_activated) (void)x86os_display_deactivate();
             return 1;
         }
-        x86os_puts(surface_probe
-            ? "DESKTOP_SURFACE_STAGE client-bound\n"
-            : "DESKTOP_NOTEPAD_STAGE client-bound\n");
+        x86os_puts(control_probe
+            ? "DESKTOP_CONTROL_STAGE client-bound\n"
+            : (surface_probe
+                ? "DESKTOP_SURFACE_STAGE client-bound\n"
+                : "DESKTOP_NOTEPAD_STAGE client-bound\n"));
     }
     if (render_probe) {
         run_render_probe(
@@ -2790,7 +2865,7 @@ int main(int argc, char **argv) {
         desktop_dirty_initialize(&dirty, display.width, display.height);
         sync_surface_windows(
             &manager, &explorer, &surfaces, &surface_runtime, &dirty);
-        if (surface_probe && !surface_probe_reported) {
+        if ((surface_probe || control_probe) && !surface_probe_reported) {
             for (uint32_t surface_index = 0U;
                  surface_index < DESKTOP_SURFACE_CAPACITY; ++surface_index) {
                 if (surfaces.slots[surface_index].active &&
@@ -2802,7 +2877,9 @@ int main(int argc, char **argv) {
                     surfaces.slots[surface_index].acknowledged_serial != 0U &&
                     surfaces.slots[surface_index].window_index !=
                         DESKTOP_SURFACE_NO_SLOT) {
-                    x86os_puts("DESKTOP_SURFACE_OK\n");
+                    x86os_puts(control_probe
+                        ? "DESKTOP_CONTROL_OK\n"
+                        : "DESKTOP_SURFACE_OK\n");
                     surface_probe_reported = 1U;
                     break;
                 }
@@ -2817,6 +2894,7 @@ int main(int argc, char **argv) {
             .window_index = DESKTOP_WM_NO_TARGET,
             .entry_index = DESKTOP_EXPLORER_NO_ENTRY,
         };
+        uint32_t control_panel_activate = 0U;
         int32_t pending_delta_x = 0;
         int32_t pending_delta_y = 0;
         unsigned int mouse_events = 0U;
@@ -2837,6 +2915,15 @@ int main(int argc, char **argv) {
                     &drag_render, &resize_render, &move_cache);
                 pending_delta_x = 0;
                 pending_delta_y = 0;
+                if (!ui.dialog.visible &&
+                    manager.capture_kind == DESKTOP_WM_CAPTURE_NONE &&
+                    desktop_wm_window_at(
+                        &manager, pointer_x, pointer_y) ==
+                            DESKTOP_WM_NO_WINDOW)
+                    control_panel_activate |= control_panel_pointer_button(
+                        &explorer, &display, &dirty,
+                        pointer_x, pointer_y, mouse.buttons,
+                        previous_buttons);
                 int32_t captured_surface_window = manager.capture_window;
                 actions |= dispatch_pointer_button(
                     &manager, &explorer, &ui, &display, &dirty,
@@ -2918,6 +3005,10 @@ int main(int argc, char **argv) {
             &manager, &explorer, &filetypes, &surface_runtime,
             &ui, &display, &dirty,
             &activation, &action_target, pointer_x, pointer_y);
+        if (control_panel_activate)
+            apply_control_panel_activation(
+                &surface_runtime, &ui, &display, &dirty,
+                pointer_x, pointer_y);
         sync_surface_windows(
             &manager, &explorer, &surfaces, &surface_runtime, &dirty);
 

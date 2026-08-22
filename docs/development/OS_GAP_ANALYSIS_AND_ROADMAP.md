@@ -543,11 +543,13 @@ Eine vollständige TTY-Schicht bleibt der nächste darüberliegende Ausbau.
 Der Desktop umgeht die feste Terminalgeometrie über Pixelrechtecke,
 Pixelschrift und eine versionierte Frame-ABI. Window Manager, Explorer,
 Maus-/Tastaturfokus, Drag/Resize, Dirty Regions und eine
-generationengebundene Surface-/Event-IPC sind umgesetzt. Notepad und Image
-Viewer laufen als getrennte Ring-3-Fensterclients; Control Gallery, Sound
-Player, Terminal und Systemwerkzeuge verwenden noch die begrenzte
+generationengebundene Surface-/Event-IPC sind umgesetzt. Notepad, Image
+Viewer und die Systemsteuerung laufen als getrennte Ring-3-Fensterclients.
+Control Gallery, Sound Player und Terminal verwenden noch die begrenzte
 Vollbildbrücke. Eine vollständige TTY- und Terminal-Clientarchitektur bleibt
-offen.
+offen. Die Systemsteuerung persistiert vier begrenzte Einstellungsgruppen über
+einen separaten Ring-3-Prozess; dynamisches Neuladen durch bestehende Treiber
+ist noch offen und wird nicht behauptet.
 
 - TTY-Abstraktion mit kanonischem/raw Modus, Echo und per-Prozess
   Vordergrundgruppe

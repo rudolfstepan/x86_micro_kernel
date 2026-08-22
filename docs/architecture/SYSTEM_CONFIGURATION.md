@@ -83,9 +83,19 @@ Dateiklasse und werden nicht durch Konfiguration umgedeutet. Das zugeordnete
 Programm erhaelt den kanonischen Dateipfad als `argv[1]`.
 
 Der aktuelle Stand verpackt die vier systemweiten Standarddateien in das
-FAT-Systemabbild. Der Dateitypvertrag besitzt bereits einen eigenen begrenzten
-Ring-3-Parser. Der gemeinsame Parser fuer die uebrigen Einstellungen, ein
-Systemdienst fuer berechtigte Aenderungen sowie grafische Werkzeuge fuer
-Sprache, Tastatur und Maus sind getrennte Folgeschritte. Bis dahin bleiben die
-bestehenden festen Laufzeitwerte massgeblich; das Vorhandensein einer Datei
-behauptet noch nicht, dass ein Treiber sie bereits auswertet.
+FAT-Systemabbild. `libreistos` enthaelt einen gemeinsamen Parser mit 4096 Byte
+Dateigroesse, 160 Byte Zeilenlaenge, 32 Eintraegen sowie festen Schluessel- und
+Wertgrenzen. `config.prg` ist die einzige von der grafischen Systemsteuerung
+verwendete Mutationsgrenze. Jede Anforderung laeuft in einer frischen
+Ring-3-Prozessgeneration und akzeptiert nur die dokumentierten Dateien,
+Schluessel und Werte. Sie validiert zuerst die vollstaendige vorhandene Datei
+und publiziert dann ueber `TEMP -> fsync -> close -> rename`. Unbekannte
+Eintraege einer gueltigen Version bleiben beim Umschreiben erhalten.
+
+`control.prg` zeigt Tastatur, Maus, System und Desktop als vier feste Applets
+in einem getrennten Surface-Fenster. Ohne gueltige Konfiguration oder
+erfolgreiche Schreibberechtigung bleibt es im Nur-Lese-Modus. Die aktuell
+ausgewaehlten Werte werden persistent geaendert, aber noch nicht von allen
+laufenden Treibern und Diensten dynamisch neu geladen; das Fenster bezeichnet
+solche Aenderungen daher ehrlich als nach einem Neustart wirksam. Das
+Vorhandensein einer Datei behauptet keine bereits erfolgte Live-Anwendung.
