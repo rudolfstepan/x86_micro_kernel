@@ -553,8 +553,14 @@ Der compositorinterne Explorer verwendet einmalig geladene 32x32-ICO-Assets
 mit festen Cachevarianten und unterscheidet `.PRG`, Text/Konfiguration, WAVE,
 BMP/GIF/ICO, unbekannte Dateien sowie nachweislich leere und nichtleere
 Ordner. `.` und `..` werden aus dem begrenzten Snapshot entfernt; Rendering
-führt keine VFS-Zugriffe oder Dekodierung aus. Ein wiederherstellbarer
-Papierkorb mit geprüftem Drag-and-drop bleibt ein getrennter Folgeschritt.
+führt keine VFS-Zugriffe oder Dekodierung aus. Der Desktop besitzt nun eine
+feste, erweiterbare DragSource/Object/DropTarget/Operation-Schicht und einen
+wiederherstellbaren Single-User-Papierkorb. Explorer-Objekte werden an ihren
+Snapshot gebunden und erst nach erneuter Identitätsprüfung per atomarem
+Same-Filesystem-Rename zusammen mit `.trashinfo`-Metadaten abgelegt;
+Cross-Volume-Copy/Delete und geschützte Systempfade scheitern geschlossen.
+Eine Wiederherstellen-Oberfläche und bestätigtes endgültiges Leeren bleiben
+getrennte Folgeschritte.
 Control Gallery, Sound Player und Terminal verwenden noch die begrenzte
 Vollbildbrücke. Eine vollständige TTY- und Terminal-Clientarchitektur bleibt
 offen. Die Systemsteuerung persistiert vier begrenzte Einstellungsgruppen über

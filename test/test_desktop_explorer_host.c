@@ -145,11 +145,36 @@ static void test_keyboard_grid_navigation_and_activation(void) {
     assert(result.activated && result.entry_index == 2U);
 }
 
+static void test_drag_object_is_bound_to_snapshot_generation(void) {
+    desktop_explorer_t explorer;
+    desktop_drag_object_t object;
+    desktop_explorer_drag_file_t file;
+    desktop_explorer_initialize(&explorer);
+    assert(desktop_explorer_open(&explorer, 0U, "/") == 0);
+    uint32_t generation = explorer.windows[0].snapshot_generation;
+    assert(generation != 0U);
+    assert(desktop_explorer_drag_object(
+               &explorer, 0U, 2U, &object) == DESKTOP_EXPLORER_OK);
+    assert(object.kind == DESKTOP_DRAG_OBJECT_FILE);
+    assert(object.operations == (DESKTOP_DRAG_OPERATION_MOVE |
+                                  DESKTOP_DRAG_OPERATION_COPY |
+                                  DESKTOP_DRAG_OPERATION_LINK));
+    assert(object.source_generation == generation);
+    assert(desktop_explorer_drag_validate(
+               &explorer, &object, &file) == DESKTOP_EXPLORER_OK);
+    assert(strcmp(file.path, "/alpha.prg") == 0);
+    assert(desktop_explorer_open(&explorer, 0U, "/") == 0);
+    assert(explorer.windows[0].snapshot_generation != generation);
+    assert(desktop_explorer_drag_validate(
+               &explorer, &object, &file) == DESKTOP_EXPLORER_ESTALE);
+}
+
 int main(void) {
     test_directory_snapshot_is_sorted_and_atomic();
     test_extension_icons_are_case_insensitive();
     test_child_path_and_window_capacity();
     test_same_item_double_click_activates_once();
     test_keyboard_grid_navigation_and_activation();
+    test_drag_object_is_bound_to_snapshot_generation();
     return 0;
 }

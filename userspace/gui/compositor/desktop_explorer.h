@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 
+#include "desktop_drag.h"
 #include "desktop_wm.h"
 #include "x86os.h"
 
@@ -30,7 +31,8 @@ enum desktop_explorer_status {
     DESKTOP_EXPLORER_ENOENT = -2,
     DESKTOP_EXPLORER_ENOTDIR = -20,
     DESKTOP_EXPLORER_EIO = -5,
-    DESKTOP_EXPLORER_ECAPACITY = -75
+    DESKTOP_EXPLORER_ECAPACITY = -75,
+    DESKTOP_EXPLORER_ESTALE = -116
 };
 
 enum desktop_explorer_key {
@@ -55,6 +57,7 @@ enum desktop_explorer_icon {
 
 typedef struct desktop_explorer_window {
     uint32_t active;
+    uint32_t snapshot_generation;
     char path[DESKTOP_EXPLORER_PATH_CAPACITY];
     x86os_file_info_t entries[DESKTOP_EXPLORER_ENTRY_CAPACITY];
     uint8_t directory_nonempty[DESKTOP_EXPLORER_ENTRY_CAPACITY];
@@ -73,10 +76,24 @@ typedef struct desktop_explorer {
     char staging_path[DESKTOP_EXPLORER_PATH_CAPACITY];
     uint32_t staging_count;
     uint32_t staging_truncated;
+    uint32_t next_snapshot_generation;
     uint32_t desktop_selected;
     uint32_t desktop_pressed;
     uint64_t desktop_last_click_ms;
 } desktop_explorer_t;
+
+typedef struct desktop_explorer_drag_file {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t window_index;
+    uint32_t entry_index;
+    uint32_t snapshot_generation;
+    uint32_t reserved[3];
+    x86os_file_info_t identity;
+    char path[DESKTOP_EXPLORER_PATH_CAPACITY];
+} desktop_explorer_drag_file_t;
+
+#define DESKTOP_EXPLORER_DRAG_FILE_VERSION 1U
 
 typedef struct desktop_explorer_result {
     uint32_t consumed;
@@ -132,6 +149,17 @@ int desktop_explorer_pointer_release(
     desktop_explorer_t *explorer, uint32_t window_index,
     desktop_rect_t client, int32_t x, int32_t y, uint64_t now_ms,
     desktop_explorer_result_t *result);
+/** Cancel an entry press after the drag controller owns button release. */
+void desktop_explorer_pointer_cancel(desktop_explorer_t *explorer,
+                                     uint32_t window_index);
+/** Publish one generation-bound Explorer entry as a generic file object. */
+int desktop_explorer_drag_object(const desktop_explorer_t *explorer,
+                                 uint32_t window_index, uint32_t entry_index,
+                                 desktop_drag_object_t *object);
+/** Validate and decode a file object against the current Explorer snapshot. */
+int desktop_explorer_drag_validate(
+    const desktop_explorer_t *explorer, const desktop_drag_object_t *object,
+    desktop_explorer_drag_file_t *file);
 /** Move selection in the visible icon grid or activate it with Enter. */
 int desktop_explorer_keyboard(
     desktop_explorer_t *explorer, uint32_t window_index,

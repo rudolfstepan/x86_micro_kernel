@@ -604,6 +604,8 @@ SYSTEM_IMAGE_FILES := \
 	usr/share/icons/image.ico=assets/icons/image.ico \
 	usr/share/icons/settings.ico=assets/icons/settings.ico \
 	usr/share/icons/unknown.ico=assets/icons/unknown.ico \
+	usr/share/icons/trash-empty.ico=assets/icons/trash-empty.ico \
+	usr/share/icons/trash-full.ico=assets/icons/trash-full.ico \
 	usr/share/sounds/440hz.wav=assets/audio/testtone-440hz-mono-48k-s16.wav \
 	usr/share/images/demo-desktop.bmp=assets/images/demo-desktop.bmp \
 	usr/share/images/demo-colors.gif=assets/images/demo-colors.gif \
@@ -691,6 +693,7 @@ FLOPPY_IMAGE_FILES := $(filter-out \
 	usr/share/icons/program.ico=% usr/share/icons/text.ico=% \
 	usr/share/icons/audio.ico=% usr/share/icons/image.ico=% \
 	usr/share/icons/settings.ico=% usr/share/icons/unknown.ico=% \
+	usr/share/icons/trash-empty.ico=% usr/share/icons/trash-full.ico=% \
 	libexec/reist/hda.prg=% libexec/reist/audio.prg=%,$(SYSTEM_IMAGE_FILES))
 
 bootdisk: native-image

@@ -40,8 +40,10 @@ PROGRAMS = {
     "SHELL.PRG": ROOT / "userspace/bin/shell.c",
     "DESKTOP.PRG": (
         ROOT / "userspace/gui/compositor/desktop.c",
+        ROOT / "userspace/gui/compositor/desktop_drag.c",
         ROOT / "userspace/gui/compositor/desktop_wm.c",
         ROOT / "userspace/gui/compositor/desktop_explorer.c",
+        ROOT / "userspace/gui/compositor/desktop_trash.c",
         ROOT / "userspace/gui/compositor/desktop_filetypes.c",
         ROOT / "userspace/gui/compositor/desktop_surface.c",
         ROOT / "userspace/gui/compositor/desktop_surface_runtime.c",

@@ -1,5 +1,9 @@
 #include "desktop_explorer.h"
 
+_Static_assert(sizeof(desktop_explorer_drag_file_t) <=
+                   DESKTOP_DRAG_DATA_CAPACITY,
+               "Explorer drag file exceeds generic drag data capacity");
+
 static void clear_bytes(void *value, uint32_t size) {
     volatile uint8_t *bytes = (volatile uint8_t *)value;
     for (uint32_t index = 0U; index < size; ++index) bytes[index] = 0U;
@@ -37,6 +41,35 @@ static void copy_entry(x86os_file_info_t *destination,
     destination->create_time = source->create_time;
     destination->modify_time = source->modify_time;
     destination->access_time = source->access_time;
+}
+
+static uint32_t entries_equal(const x86os_file_info_t *left,
+                              const x86os_file_info_t *right) {
+    if (left == 0 || right == 0 || left->type != right->type ||
+        left->size != right->size ||
+        left->create_time != right->create_time ||
+        left->modify_time != right->modify_time ||
+        left->access_time != right->access_time) return 0U;
+    for (uint32_t index = 0U; index < sizeof(left->name); ++index) {
+        if (left->name[index] != right->name[index]) return 0U;
+        if (left->name[index] == '\0') return 1U;
+    }
+    return 0U;
+}
+
+static uint32_t path_equal(const char *left, const char *right) {
+    for (uint32_t index = 0U;
+         index < DESKTOP_EXPLORER_PATH_CAPACITY; ++index) {
+        if (left[index] != right[index]) return 0U;
+        if (left[index] == '\0') return 1U;
+    }
+    return 0U;
+}
+
+static void copy_bytes(uint8_t *destination, const uint8_t *source,
+                       uint32_t size) {
+    for (uint32_t index = 0U; index < size; ++index)
+        destination[index] = source[index];
 }
 
 static uint8_t fold_ascii(uint8_t value) {
@@ -297,6 +330,9 @@ int desktop_explorer_open(desktop_explorer_t *explorer,
     desktop_explorer_window_t *window = &explorer->windows[window_index];
     clear_bytes(window, sizeof(*window));
     window->active = 1U;
+    if (++explorer->next_snapshot_generation == 0U)
+        explorer->next_snapshot_generation = 1U;
+    window->snapshot_generation = explorer->next_snapshot_generation;
     window->entry_count = explorer->staging_count;
     window->truncated = explorer->staging_truncated;
     window->selected = DESKTOP_EXPLORER_NO_ENTRY;
@@ -446,6 +482,79 @@ int desktop_explorer_pointer_release(
         window->last_click = released;
         window->last_click_ms = now_ms;
     }
+    return DESKTOP_EXPLORER_OK;
+}
+
+void desktop_explorer_pointer_cancel(desktop_explorer_t *explorer,
+                                     uint32_t window_index) {
+    if (explorer == 0 || window_index >= DESKTOP_EXPLORER_WINDOW_CAPACITY ||
+        !explorer->windows[window_index].active) return;
+    explorer->windows[window_index].pressed = DESKTOP_EXPLORER_NO_ENTRY;
+    explorer->windows[window_index].last_click = DESKTOP_EXPLORER_NO_ENTRY;
+    explorer->windows[window_index].last_click_ms = 0U;
+}
+
+int desktop_explorer_drag_object(const desktop_explorer_t *explorer,
+                                 uint32_t window_index, uint32_t entry_index,
+                                 desktop_drag_object_t *object) {
+    if (explorer == 0 || object == 0 ||
+        window_index >= DESKTOP_EXPLORER_WINDOW_CAPACITY)
+        return DESKTOP_EXPLORER_EINVAL;
+    const desktop_explorer_window_t *window =
+        &explorer->windows[window_index];
+    if (!window->active || window->snapshot_generation == 0U ||
+        entry_index >= window->entry_count)
+        return DESKTOP_EXPLORER_EINVAL;
+    desktop_explorer_drag_file_t file;
+    clear_bytes(&file, sizeof(file));
+    file.version = DESKTOP_EXPLORER_DRAG_FILE_VERSION;
+    file.struct_size = sizeof(file);
+    file.window_index = window_index;
+    file.entry_index = entry_index;
+    file.snapshot_generation = window->snapshot_generation;
+    copy_entry(&file.identity, &window->entries[entry_index]);
+    if (desktop_explorer_child_path(
+            window, entry_index, file.path, sizeof(file.path)) !=
+        DESKTOP_EXPLORER_OK) return DESKTOP_EXPLORER_ECAPACITY;
+    desktop_drag_object_initialize(object);
+    object->kind = DESKTOP_DRAG_OBJECT_FILE;
+    object->operations = DESKTOP_DRAG_OPERATION_ALL;
+    object->source_id = window_index;
+    object->source_generation = window->snapshot_generation;
+    object->data_size = sizeof(file);
+    copy_bytes(object->data, (const uint8_t *)&file, sizeof(file));
+    return DESKTOP_EXPLORER_OK;
+}
+
+int desktop_explorer_drag_validate(
+    const desktop_explorer_t *explorer, const desktop_drag_object_t *object,
+    desktop_explorer_drag_file_t *file) {
+    if (explorer == 0 || file == 0 ||
+        desktop_drag_validate_object(object) != DESKTOP_DRAG_OK ||
+        object->kind != DESKTOP_DRAG_OBJECT_FILE ||
+        object->data_size != sizeof(*file)) return DESKTOP_EXPLORER_EINVAL;
+    copy_bytes((uint8_t *)file, object->data, sizeof(*file));
+    if (file->version != DESKTOP_EXPLORER_DRAG_FILE_VERSION ||
+        file->struct_size != sizeof(*file) ||
+        file->window_index != object->source_id ||
+        file->snapshot_generation != object->source_generation ||
+        file->window_index >= DESKTOP_EXPLORER_WINDOW_CAPACITY ||
+        file->reserved[0] != 0U || file->reserved[1] != 0U ||
+        file->reserved[2] != 0U)
+        return DESKTOP_EXPLORER_EINVAL;
+    const desktop_explorer_window_t *window =
+        &explorer->windows[file->window_index];
+    if (!window->active ||
+        window->snapshot_generation != file->snapshot_generation ||
+        file->entry_index >= window->entry_count ||
+        !entries_equal(&window->entries[file->entry_index], &file->identity))
+        return DESKTOP_EXPLORER_ESTALE;
+    char current_path[DESKTOP_EXPLORER_PATH_CAPACITY];
+    if (desktop_explorer_child_path(
+            window, file->entry_index, current_path,
+            sizeof(current_path)) != DESKTOP_EXPLORER_OK ||
+        !path_equal(current_path, file->path))
+        return DESKTOP_EXPLORER_ESTALE;
     return DESKTOP_EXPLORER_OK;
 }
 

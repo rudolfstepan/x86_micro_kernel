@@ -563,9 +563,23 @@ ersten Frame und komponiert feste Varianten für Desktop-, Client- und
 Auswahlhintergrund vor. Ungültige oder fehlende Dateien aktivieren begrenzte
 Vektor-Fallbacks; der Zeichenpfad führt nur einen geclippten Pixel-Upload aus.
 
-- [ ] Papierkorb als eigener Desktop-Workflow: Drag-and-drop verschiebt erst
-  in einen begrenzten Trash-Namensraum, prüft Quelle/Ziel vor jeder Mutation
-  und trennt Wiederherstellen beziehungsweise endgültiges Leeren.
+- [x] Papierkorb als eigener Desktop-Workflow: Eine feste
+  `DragSource -> DragObject/Data -> DropTarget -> Operation`-Schicht trägt
+  generationengebundene Dateiobjekte und die Operationen Move, Copy und Link.
+  Der erste konkrete Drop-Target ist Move-only: Der Desktop markiert den
+  Papierkorb grün, verweigert andere Ziele sichtbar und verschiebt erst nach
+  erneuter Quellprüfung per atomarem Same-Filesystem-Rename nach
+  `/trash/files`. Leere und gefüllte Zustände besitzen getrennte, einmalig
+  geladene ICO-Assets; Rendering führt weder VFS-Zugriffe noch Dekodierung aus.
+
+  Der Namensraum ist eine bewusst eingeschränkte Single-User-Adaption der
+  freedesktop.org Trash Specification. Zu jedem Objekt liegt unter
+  `/trash/info` eine versionierte `.trashinfo`-Datei mit ursprünglichem Pfad
+  und Löschzeitpunkt. Pfade werden derzeit als validierte lokale ASCII-Pfade
+  und nicht URL-kodiert gespeichert; benutzerspezifische Top-/Mount-Trashes,
+  eine Wiederherstellen-Oberfläche und endgültiges Leeren sind noch nicht
+  implementiert. Cross-Volume-Copy/Delete und Drops aus dem Papierkorb selbst
+  scheitern geschlossen, sodass ein abgelehnter Drop die Quelle nicht ändert.
 
 ## Stufe 7: Robustheit und Abnahme
 

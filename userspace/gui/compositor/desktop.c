@@ -8,8 +8,10 @@
  * bounded. Legacy console applications intentionally run full-screen.
  */
 #include "x86os.h"
+#include "desktop_drag.h"
 #include "desktop_explorer.h"
 #include "desktop_filetypes.h"
+#include "desktop_trash.h"
 #include "desktop_wm.h"
 #include "desktop_surface.h"
 #include "desktop_surface_runtime.h"
@@ -17,7 +19,7 @@
 #include "reist/gui/dialog.h"
 #include "reist/gui/menu.h"
 
-#define DESKTOP_ICON_COUNT 2U
+#define DESKTOP_ICON_COUNT 3U
 #define DESKTOP_ICON_WIDTH 176U
 #define DESKTOP_ARGUMENT_LIMIT 32U
 #define DESKTOP_MENU_COUNT 1U
@@ -34,6 +36,9 @@
 #define DESKTOP_CLOCK_FALLBACK_POLLS 200U
 #define DESKTOP_ACTION_OPEN_CONTROL_PANEL (1U << 16)
 #define DESKTOP_TASKBAR_CAPTURE_BACKGROUND DESKTOP_WM_CAPACITY
+#define DESKTOP_TRASH_TARGET_ID 1U
+#define DESKTOP_TRASH_ICON_COUNT 2U
+#define DESKTOP_DRAG_FEEDBACK_SIZE 34U
 
 _Static_assert(DESKTOP_EXPLORER_WINDOW_CAPACITY == DESKTOP_WM_CAPACITY,
                "explorer and window-manager capacities must match");
@@ -56,11 +61,17 @@ typedef struct {
 static const desktop_icon_t desktop_icons[DESKTOP_ICON_COUNT] = {
     {"Computer", "/", 0x0000479DU},
     {"Systemsteuerung", "/usr/gui/bin/control.prg", 0x00806020U},
+    {"Papierkorb", DESKTOP_TRASH_FILES_PATH, 0x00607080U},
 };
 
 static uint32_t control_panel_selected;
 static uint32_t control_panel_pressed;
 static uint64_t control_panel_last_click_ms;
+static uint32_t trash_selected;
+static uint32_t trash_pressed;
+static uint64_t trash_last_click_ms;
+static desktop_drag_state_t desktop_drag;
+static desktop_trash_state_t desktop_trash;
 
 enum {
     DESKTOP_MENU_START = 0U
@@ -194,6 +205,8 @@ typedef struct desktop_file_icon_cache_entry {
 
 static desktop_file_icon_cache_entry_t
     desktop_file_icon_cache[DESKTOP_EXPLORER_ICON_COUNT];
+static desktop_file_icon_cache_entry_t
+    desktop_trash_icon_cache[DESKTOP_TRASH_ICON_COUNT];
 static uint8_t desktop_file_icon_encoded[DESKTOP_FILE_ICON_ENCODED_CAPACITY];
 static uint32_t desktop_file_icon_decoded[DESKTOP_FILE_ICON_PIXELS];
 static const char *const desktop_file_icon_paths[
@@ -206,6 +219,10 @@ static const char *const desktop_file_icon_paths[
         "/usr/share/icons/image.ico",
         "/usr/share/icons/settings.ico",
         "/usr/share/icons/unknown.ico",
+};
+static const char *const desktop_trash_icon_paths[DESKTOP_TRASH_ICON_COUNT] = {
+    "/usr/share/icons/trash-empty.ico",
+    "/usr/share/icons/trash-full.ico",
 };
 
 _Static_assert(sizeof(desktop_file_icon_paths) /
@@ -316,6 +333,24 @@ static uint32_t path_equal_ascii_case(const char *left, const char *right) {
     return 0U;
 }
 
+static uint32_t path_has_prefix_ascii_case(const char *path,
+                                           const char *prefix) {
+    if (path == 0 || prefix == 0) return 0U;
+    for (uint32_t index = 0U;
+         index < DESKTOP_EXPLORER_PATH_CAPACITY; ++index) {
+        char path_value = path[index];
+        char prefix_value = prefix[index];
+        if (path_value >= 'A' && path_value <= 'Z')
+            path_value = (char)(path_value + ('a' - 'A'));
+        if (prefix_value >= 'A' && prefix_value <= 'Z')
+            prefix_value = (char)(prefix_value + ('a' - 'A'));
+        if (prefix_value == '\0')
+            return path_value == '\0' || path_value == '/';
+        if (path_value != prefix_value) return 0U;
+    }
+    return 0U;
+}
+
 static uint32_t saturating_add_u32(uint32_t left, uint32_t right) {
     return left > UINT32_MAX - right ? UINT32_MAX : left + right;
 }
@@ -388,35 +423,41 @@ static uint32_t compose_icon_pixel(uint32_t argb, uint32_t background) {
     return (red << 16U) | (green << 8U) | blue;
 }
 
-static void desktop_file_icon_cache_initialize(void) {
-    for (uint32_t kind = 0U; kind < DESKTOP_EXPLORER_ICON_COUNT; ++kind) {
-        desktop_file_icon_cache[kind].valid = 0U;
-        size_t encoded_size = 0U;
-        if (read_file_bounded(
-                desktop_file_icon_paths[kind], desktop_file_icon_encoded,
-                sizeof(desktop_file_icon_encoded), &encoded_size) != 0)
-            continue;
-        reist_image_info_t info;
-        if (reist_image_decode_ico(
-                desktop_file_icon_encoded, encoded_size,
-                desktop_file_icon_decoded, DESKTOP_FILE_ICON_PIXELS,
-                &info) != 0 || info.width != DESKTOP_FILE_ICON_SIZE ||
-            info.height != DESKTOP_FILE_ICON_SIZE ||
-            info.stride_pixels != DESKTOP_FILE_ICON_SIZE ||
-            info.format != REIST_IMAGE_FORMAT_ICO ||
-            (info.flags & REIST_IMAGE_FLAG_ALPHA) == 0U)
-            continue;
-        for (uint32_t pixel = 0U; pixel < DESKTOP_FILE_ICON_PIXELS; ++pixel) {
-            uint32_t argb = desktop_file_icon_decoded[pixel];
-            desktop_file_icon_cache[kind].client[pixel] =
-                compose_icon_pixel(argb, color_client);
-            desktop_file_icon_cache[kind].selected[pixel] =
-                compose_icon_pixel(argb, color_face);
-            desktop_file_icon_cache[kind].desktop[pixel] =
-                compose_icon_pixel(argb, color_desktop);
-        }
-        desktop_file_icon_cache[kind].valid = 1U;
+static void desktop_icon_cache_load(desktop_file_icon_cache_entry_t *entry,
+                                    const char *path) {
+    if (entry == 0 || path == 0) return;
+    entry->valid = 0U;
+    size_t encoded_size = 0U;
+    if (read_file_bounded(
+            path, desktop_file_icon_encoded,
+            sizeof(desktop_file_icon_encoded), &encoded_size) != 0)
+        return;
+    reist_image_info_t info;
+    if (reist_image_decode_ico(
+            desktop_file_icon_encoded, encoded_size,
+            desktop_file_icon_decoded, DESKTOP_FILE_ICON_PIXELS,
+            &info) != 0 || info.width != DESKTOP_FILE_ICON_SIZE ||
+        info.height != DESKTOP_FILE_ICON_SIZE ||
+        info.stride_pixels != DESKTOP_FILE_ICON_SIZE ||
+        info.format != REIST_IMAGE_FORMAT_ICO ||
+        (info.flags & REIST_IMAGE_FLAG_ALPHA) == 0U)
+        return;
+    for (uint32_t pixel = 0U; pixel < DESKTOP_FILE_ICON_PIXELS; ++pixel) {
+        uint32_t argb = desktop_file_icon_decoded[pixel];
+        entry->client[pixel] = compose_icon_pixel(argb, color_client);
+        entry->selected[pixel] = compose_icon_pixel(argb, color_face);
+        entry->desktop[pixel] = compose_icon_pixel(argb, color_desktop);
     }
+    entry->valid = 1U;
+}
+
+static void desktop_file_icon_cache_initialize(void) {
+    for (uint32_t kind = 0U; kind < DESKTOP_EXPLORER_ICON_COUNT; ++kind)
+        desktop_icon_cache_load(
+            &desktop_file_icon_cache[kind], desktop_file_icon_paths[kind]);
+    for (uint32_t kind = 0U; kind < DESKTOP_TRASH_ICON_COUNT; ++kind)
+        desktop_icon_cache_load(
+            &desktop_trash_icon_cache[kind], desktop_trash_icon_paths[kind]);
 }
 
 static uint32_t draw_cached_file_icon(
@@ -432,6 +473,27 @@ static uint32_t draw_cached_file_icon(
         ? desktop_file_icon_cache[kind].selected
         : desktop_background ? desktop_file_icon_cache[kind].desktop
                              : desktop_file_icon_cache[kind].client;
+    uint32_t source_x = (uint32_t)(clipped.x - bounds.x);
+    uint32_t source_y = (uint32_t)(clipped.y - bounds.y);
+    (void)x86os_draw_pixels(
+        clipped.x, clipped.y, clipped.width, clipped.height,
+        pixels + (size_t)source_y * DESKTOP_FILE_ICON_SIZE + source_x,
+        DESKTOP_FILE_ICON_SIZE);
+    return 1U;
+}
+
+static uint32_t draw_cached_trash_icon(
+    const desktop_render_context_t *context, desktop_rect_t bounds,
+    uint32_t full, uint32_t selected) {
+    uint32_t kind = full ? 1U : 0U;
+    if (context == 0 || bounds.width != DESKTOP_FILE_ICON_SIZE ||
+        bounds.height != DESKTOP_FILE_ICON_SIZE ||
+        !desktop_trash_icon_cache[kind].valid) return 0U;
+    desktop_rect_t clipped;
+    if (!intersect_rects(bounds, context->clip, &clipped)) return 1U;
+    const uint32_t *pixels = selected
+        ? desktop_trash_icon_cache[kind].selected
+        : desktop_trash_icon_cache[kind].desktop;
     uint32_t source_x = (uint32_t)(clipped.x - bounds.x);
     uint32_t source_y = (uint32_t)(clipped.y - bounds.y);
     (void)x86os_draw_pixels(
@@ -1080,6 +1142,36 @@ static int desktop_icon_at_position(const x86os_display_info_t *display,
     return DESKTOP_WM_NO_WINDOW;
 }
 
+static desktop_rect_t desktop_drag_feedback_rect(void) {
+    if (desktop_drag.phase != DESKTOP_DRAG_PHASE_DRAGGING)
+        return (desktop_rect_t){0, 0, 0U, 0U};
+    return (desktop_rect_t){
+        desktop_drag.current_x + 6, desktop_drag.current_y + 6,
+        DESKTOP_DRAG_FEEDBACK_SIZE, DESKTOP_DRAG_FEEDBACK_SIZE
+    };
+}
+
+static uint32_t desktop_trash_drop_target(
+    const desktop_wm_t *manager, const desktop_ui_state_t *ui,
+    const x86os_display_info_t *display, int32_t x, int32_t y,
+    desktop_drag_target_t *target) {
+    if (manager == 0 || ui == 0 || display == 0 || target == 0 ||
+        !desktop_trash.available || ui->dialog.visible ||
+        ui->menu.open_menu != REIST_GUI_MENU_NO_INDEX ||
+        ui->taskbar_capture_slot != DESKTOP_WM_NO_TARGET ||
+        desktop_wm_window_at(manager, x, y) != DESKTOP_WM_NO_WINDOW ||
+        desktop_icon_at_position(display, x, y) != 2)
+        return 0U;
+    desktop_drag_target_initialize(target);
+    target->bounds = desktop_icon_rect(display, 2U);
+    target->accepted_kinds =
+        DESKTOP_DRAG_KIND_MASK(DESKTOP_DRAG_OBJECT_FILE);
+    target->operations = DESKTOP_DRAG_OPERATION_MOVE;
+    target->target_id = DESKTOP_TRASH_TARGET_ID;
+    target->target_generation = desktop_trash.generation;
+    return 1U;
+}
+
 static void draw_bevel(const desktop_render_context_t *context,
                        desktop_rect_t rect, uint32_t face,
                        uint32_t raised) {
@@ -1158,6 +1250,47 @@ static void draw_file_icon_fallback(
     }
 }
 
+static void draw_trash_icon_fallback(
+    const desktop_render_context_t *context, desktop_rect_t symbol,
+    uint32_t full) {
+    if (symbol.width < 18U || symbol.height < 18U) {
+        draw_bevel(context, symbol, 0x0090A0A8U, 1U);
+        return;
+    }
+    uint32_t body_width = symbol.width - 12U;
+    uint32_t body_height = symbol.height - 12U;
+    desktop_rect_t body = {
+        symbol.x + 6, symbol.y + 9, body_width, body_height
+    };
+    fill_rect_clipped(context, body, 0x00B8C2C8U);
+    fill_rect_clipped(context,
+        (desktop_rect_t){body.x, body.y, body.width, 2U}, color_light);
+    fill_rect_clipped(context,
+        (desktop_rect_t){body.x, body.y, 2U, body.height}, color_light);
+    fill_rect_clipped(context,
+        (desktop_rect_t){body.x + (int32_t)body.width - 2, body.y,
+                         2U, body.height}, color_shadow);
+    fill_rect_clipped(context,
+        (desktop_rect_t){symbol.x + 3, symbol.y + 6,
+                         symbol.width - 6U, 3U}, 0x00808C94U);
+    fill_rect_clipped(context,
+        (desktop_rect_t){symbol.x + 11, symbol.y + 3,
+                         symbol.width - 22U, 3U}, 0x00808C94U);
+    for (uint32_t line = 0U; line < 3U; ++line)
+        fill_rect_clipped(context,
+            (desktop_rect_t){body.x + 4 + (int32_t)(line * 5U), body.y + 4,
+                             2U, body.height > 8U ? body.height - 8U : 1U},
+            0x00748088U);
+    if (full) {
+        fill_rect_clipped(context,
+            (desktop_rect_t){symbol.x + 8, symbol.y + 2, 7U, 9U},
+            0x00F0E8D0U);
+        fill_rect_clipped(context,
+            (desktop_rect_t){symbol.x + 17, symbol.y + 1, 7U, 10U},
+            0x00D8E8F0U);
+    }
+}
+
 static int32_t centered_text_x(
     const x86os_display_info_t *display, desktop_rect_t bounds,
     const char *text, uint32_t horizontal_padding) {
@@ -1179,9 +1312,13 @@ static void render_icon(const desktop_render_context_t *context,
     const x86os_display_info_t *display = context->display;
     desktop_rect_t rect = desktop_icon_rect(display, index);
     if (!intersect_rects(rect, context->clip, 0)) return;
+    uint32_t target_hot = index == 2U &&
+        desktop_drag.phase == DESKTOP_DRAG_PHASE_DRAGGING &&
+        desktop_drag.feedback == DESKTOP_DRAG_FEEDBACK_VALID &&
+        desktop_drag.target_id == DESKTOP_TRASH_TARGET_ID;
     uint32_t selected = index == 0U
         ? explorer != 0 && explorer->desktop_selected
-        : control_panel_selected;
+        : index == 1U ? control_panel_selected : trash_selected;
     uint32_t icon_size = min_u32(rect.height > display->font_height + 6U
         ? rect.height - display->font_height - 6U : 12U,
         DESKTOP_FILE_ICON_SIZE);
@@ -1200,11 +1337,20 @@ static void render_icon(const desktop_render_context_t *context,
     /* The large cell remains the predictable mouse/keyboard target. Visual
      * focus is deliberately compact; otherwise sparse desktop rows look like
      * selected panels instead of selected icons. */
-    if (selected) draw_bevel(context, focus, color_face, 0U);
+    if (selected || target_hot)
+        draw_bevel(context, focus,
+                   target_hot ? 0x0068B878U : color_face, 0U);
+    if (index == 2U) {
+        if (!draw_cached_trash_icon(
+                context, symbol, desktop_trash.full,
+                selected || target_hot))
+            draw_trash_icon_fallback(context, symbol, desktop_trash.full);
+    } else {
     uint32_t kind = index == 0U ? DESKTOP_EXPLORER_ICON_FOLDER_FULL
                                 : DESKTOP_EXPLORER_ICON_SETTINGS;
     if (!draw_cached_file_icon(context, symbol, kind, selected, 1U))
         draw_file_icon_fallback(context, symbol, kind);
+    }
     /* Anchor the caption to the visible symbol, not to the bottom of the
      * deliberately tall hit cell.  This keeps icon and title recognizable as
      * one desktop object while preserving the generous input target. */
@@ -1220,7 +1366,49 @@ static void render_icon(const desktop_render_context_t *context,
                       rect.y + (int32_t)text_y_offset,
                       desktop_icons[index].title,
                       rect.width - 8U, color_title_text,
-                      selected ? color_active : color_desktop);
+                      selected || target_hot ? color_active : color_desktop);
+}
+
+static void render_drag_feedback(
+    const desktop_render_context_t *context) {
+    if (context == 0 ||
+        desktop_drag.phase != DESKTOP_DRAG_PHASE_DRAGGING) return;
+    desktop_rect_t feedback = desktop_drag_feedback_rect();
+    desktop_rect_t symbol = {
+        feedback.x + 2, feedback.y + 2,
+        DESKTOP_FILE_ICON_SIZE, DESKTOP_FILE_ICON_SIZE
+    };
+    if (!draw_cached_file_icon(
+            context, symbol, DESKTOP_EXPLORER_ICON_UNKNOWN, 0U, 1U))
+        draw_file_icon_fallback(
+            context, symbol, DESKTOP_EXPLORER_ICON_UNKNOWN);
+    desktop_rect_t badge = {
+        feedback.x, feedback.y,
+        12U, 12U
+    };
+    uint32_t valid =
+        desktop_drag.feedback == DESKTOP_DRAG_FEEDBACK_VALID;
+    fill_rect_clipped(context, badge,
+                      valid ? 0x00009030U : 0x00B02020U);
+    if (valid) {
+        fill_rect_clipped(context,
+            (desktop_rect_t){badge.x + 3, badge.y + 6, 2U, 3U}, color_light);
+        fill_rect_clipped(context,
+            (desktop_rect_t){badge.x + 5, badge.y + 8, 2U, 2U}, color_light);
+        fill_rect_clipped(context,
+            (desktop_rect_t){badge.x + 7, badge.y + 4, 2U, 5U}, color_light);
+    } else {
+        for (uint32_t offset = 0U; offset < 6U; ++offset) {
+            fill_rect_clipped(context,
+                (desktop_rect_t){badge.x + 3 + (int32_t)offset,
+                                 badge.y + 3 + (int32_t)offset, 1U, 1U},
+                color_light);
+            fill_rect_clipped(context,
+                (desktop_rect_t){badge.x + 8 - (int32_t)offset,
+                                 badge.y + 3 + (int32_t)offset, 1U, 1U},
+                color_light);
+        }
+    }
 }
 
 static void render_resize_grip(const desktop_render_context_t *context,
@@ -1694,6 +1882,7 @@ static void render_desktop_clip(const desktop_render_context_t *context,
     render_menu_popup(context, ui);
     if (context->omitted_kind != DESKTOP_MOVE_CACHE_DIALOG)
         render_system_dialog(context, ui);
+    render_drag_feedback(context);
 }
 
 static void render_dirty_regions(const x86os_display_info_t *display,
@@ -2665,6 +2854,28 @@ static uint32_t dispatch_pointer_motion(
         *resize_render = 1U;
 
     uint32_t actions = 0U;
+    if (desktop_drag.phase != DESKTOP_DRAG_PHASE_IDLE) {
+        desktop_rect_t old_feedback = desktop_drag_feedback_rect();
+        uint32_t old_feedback_kind = desktop_drag.feedback;
+        uint32_t old_target = desktop_drag.target_id;
+        desktop_drag_target_t trash_target;
+        const desktop_drag_target_t *drop_target = 0;
+        if (desktop_trash_drop_target(
+                manager, ui, display, *pointer_x, *pointer_y,
+                &trash_target))
+            drop_target = &trash_target;
+        (void)desktop_drag_motion(
+            &desktop_drag, *pointer_x, *pointer_y, drop_target,
+            DESKTOP_DRAG_OPERATION_MOVE);
+        desktop_rect_t new_feedback = desktop_drag_feedback_rect();
+        desktop_dirty_add(dirty, old_feedback);
+        desktop_dirty_add(dirty, new_feedback);
+        if (old_feedback_kind != desktop_drag.feedback ||
+            old_target != desktop_drag.target_id)
+            desktop_dirty_add(dirty, desktop_icon_rect(display, 2U));
+        if (desktop_drag.phase == DESKTOP_DRAG_PHASE_DRAGGING)
+            return actions;
+    }
     uint32_t ui_motion_consumed = 0U;
     if (manager->capture_kind == DESKTOP_WM_CAPTURE_NONE) {
         desktop_ui_result_t ui_motion = desktop_ui_pointer_event(
@@ -2734,11 +2945,17 @@ static uint32_t control_panel_pointer_button(
         display, pointer_x, pointer_y) == 1;
     if (left_down && !left_was_down) {
         uint32_t old_selected = control_panel_selected;
+        uint32_t old_trash_selected = trash_selected;
         control_panel_selected = hit;
         control_panel_pressed = hit;
-        if (hit && explorer != 0) explorer->desktop_selected = 0U;
+        if (hit) {
+            trash_selected = 0U;
+            if (explorer != 0) explorer->desktop_selected = 0U;
+        }
         if (old_selected != control_panel_selected || hit)
             desktop_dirty_add(dirty, desktop_icon_rect(display, 1U));
+        if (old_trash_selected != trash_selected)
+            desktop_dirty_add(dirty, desktop_icon_rect(display, 2U));
         return 0U;
     }
     if (!left_down && left_was_down) {
@@ -2757,6 +2974,162 @@ static uint32_t control_panel_pointer_button(
         return activate;
     }
     return 0U;
+}
+
+static uint32_t trash_pointer_button(
+    desktop_explorer_t *explorer, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, int32_t pointer_x, int32_t pointer_y,
+    uint32_t buttons, uint32_t previous_buttons) {
+    uint32_t left_down =
+        (buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
+    uint32_t left_was_down =
+        (previous_buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
+    uint32_t hit = desktop_icon_at_position(
+        display, pointer_x, pointer_y) == 2;
+    if (left_down && !left_was_down) {
+        uint32_t old_selected = trash_selected;
+        uint32_t old_control_selected = control_panel_selected;
+        trash_selected = hit;
+        trash_pressed = hit;
+        if (hit) {
+            control_panel_selected = 0U;
+            if (explorer != 0) explorer->desktop_selected = 0U;
+        }
+        if (old_selected != trash_selected || hit)
+            desktop_dirty_add(dirty, desktop_icon_rect(display, 2U));
+        if (old_control_selected != control_panel_selected)
+            desktop_dirty_add(dirty, desktop_icon_rect(display, 1U));
+        return 0U;
+    }
+    if (!left_down && left_was_down) {
+        uint32_t activate = 0U;
+        if (trash_pressed && hit) {
+            uint64_t now_ms = 0U;
+            if (x86os_monotonic_ms(&now_ms) == 0 &&
+                trash_last_click_ms != 0U &&
+                now_ms >= trash_last_click_ms &&
+                now_ms - trash_last_click_ms <=
+                    DESKTOP_EXPLORER_DOUBLE_CLICK_MS)
+                activate = 1U;
+            trash_last_click_ms = now_ms;
+        }
+        trash_pressed = 0U;
+        return activate;
+    }
+    return 0U;
+}
+
+static uint32_t refresh_explorer_snapshot(
+    desktop_explorer_t *explorer, const desktop_wm_t *manager,
+    desktop_dirty_region_t *dirty, uint32_t window_index) {
+    if (explorer == 0 || manager == 0 || dirty == 0 ||
+        window_index >= DESKTOP_WM_CAPACITY ||
+        !explorer->windows[window_index].active) return 0U;
+    char path[DESKTOP_EXPLORER_PATH_CAPACITY];
+    size_t length = bounded_text_length(
+        explorer->windows[window_index].path, sizeof(path));
+    if (length == sizeof(path)) return 0U;
+    for (size_t index = 0U; index <= length; ++index)
+        path[index] = explorer->windows[window_index].path[index];
+    if (desktop_explorer_open(explorer, window_index, path) !=
+        DESKTOP_EXPLORER_OK) return 0U;
+    desktop_dirty_add(
+        dirty, desktop_wm_window_bounds(manager, window_index));
+    return 1U;
+}
+
+static void apply_trash_drop(
+    desktop_explorer_t *explorer, desktop_wm_t *manager,
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, const desktop_drag_result_t *drop) {
+    if (explorer == 0 || manager == 0 || ui == 0 || display == 0 ||
+        dirty == 0 || drop == 0 || !drop->accepted ||
+        drop->operation != DESKTOP_DRAG_OPERATION_MOVE ||
+        drop->target_id != DESKTOP_TRASH_TARGET_ID ||
+        drop->target_generation != desktop_trash.generation)
+        return;
+    desktop_explorer_drag_file_t file;
+    int validation = desktop_explorer_drag_validate(
+        explorer, &drop->object, &file);
+    if (validation != DESKTOP_EXPLORER_OK) {
+        desktop_ui_open_error(
+            ui, display, dirty,
+            "Datei wurde inzwischen veraendert.", "Drop abgebrochen");
+        return;
+    }
+    desktop_trash_request_t request;
+    desktop_trash_request_initialize(&request);
+    size_t length = bounded_text_length(file.path, sizeof(request.source_path));
+    if (length == sizeof(request.source_path)) {
+        desktop_ui_open_error(
+            ui, display, dirty,
+            "Dateipfad ist zu lang.", "Drop abgebrochen");
+        return;
+    }
+    for (size_t index = 0U; index <= length; ++index)
+        request.source_path[index] = file.path[index];
+    size_t name_length = bounded_text_length(
+        file.identity.name, sizeof(request.identity.name));
+    if (name_length == sizeof(request.identity.name)) {
+        desktop_ui_open_error(
+            ui, display, dirty,
+            "Dateiname ist ungueltig.", "Drop abgebrochen");
+        return;
+    }
+    for (size_t index = 0U; index <= name_length; ++index)
+        request.identity.name[index] = file.identity.name[index];
+    request.identity.type = file.identity.type;
+    request.identity.size = file.identity.size;
+    request.identity.create_time = file.identity.create_time;
+    request.identity.modify_time = file.identity.modify_time;
+    request.identity.access_time = file.identity.access_time;
+    desktop_trash_result_t trash_result;
+    int status = desktop_trash_move(
+        &desktop_trash, &request, &trash_result);
+    desktop_dirty_add(dirty, desktop_icon_rect(display, 2U));
+    if (status != DESKTOP_TRASH_OK || !trash_result.moved) {
+        const char *message = status == DESKTOP_TRASH_ESTALE
+            ? "Datei wurde inzwischen veraendert."
+            : status == DESKTOP_TRASH_EPROTECTED
+                ? "Systemdatei darf nicht verschoben werden."
+                : "Datei konnte nicht in den Papierkorb verschoben werden.";
+        desktop_ui_open_error(ui, display, dirty, message, file.path);
+        return;
+    }
+
+    uint32_t refreshed = refresh_explorer_snapshot(
+        explorer, manager, dirty, file.window_index);
+    if (file.identity.type == X86OS_DIRECTORY) {
+        for (uint32_t index = 0U; index < DESKTOP_WM_CAPACITY; ++index) {
+            if (index == file.window_index ||
+                !explorer->windows[index].active ||
+                !path_has_prefix_ascii_case(
+                    explorer->windows[index].path, file.path))
+                continue;
+            desktop_wm_event_t close = {
+                .type = DESKTOP_WM_EVENT_CLOSE,
+                .target = index,
+            };
+            uint32_t ignored_target = DESKTOP_WM_NO_TARGET;
+            (void)dispatch_desktop_event(
+                manager, display, dirty, &close, &ignored_target);
+            desktop_explorer_close(explorer, index);
+        }
+    }
+    for (uint32_t index = 0U; index < DESKTOP_WM_CAPACITY; ++index) {
+        if (index == file.window_index ||
+            !explorer->windows[index].active ||
+            !path_equal_ascii_case(
+                explorer->windows[index].path, DESKTOP_TRASH_FILES_PATH))
+            continue;
+        if (!refresh_explorer_snapshot(explorer, manager, dirty, index))
+            refreshed = 0U;
+    }
+    if (!refreshed)
+        desktop_ui_open_error(
+            ui, display, dirty,
+            "Papierkorb wurde aktualisiert; Ansicht ist veraltet.",
+            trash_result.stored_path);
 }
 
 static uint32_t dispatch_pointer_button(
@@ -2801,13 +3174,29 @@ static uint32_t dispatch_pointer_button(
             if (window >= 0 &&
                 manager->capture_kind == DESKTOP_WM_CAPTURE_CLIENT &&
                 manager->capture_window == window) {
-                (void)desktop_explorer_pointer_press(
+                int explorer_status = desktop_explorer_pointer_press(
                     explorer, (uint32_t)window,
                     desktop_window_client_rect(manager, (uint32_t)window),
                     pointer_x, pointer_y, &explorer_result);
                 collect_explorer_pointer_result(
                     display, manager, dirty, &explorer_result, 0U,
                     activation);
+                if (explorer_status == DESKTOP_EXPLORER_OK &&
+                    explorer_result.entry_index !=
+                        DESKTOP_EXPLORER_NO_ENTRY) {
+                    desktop_drag_object_t object;
+                    desktop_explorer_drag_file_t file;
+                    if (desktop_explorer_drag_object(
+                            explorer, (uint32_t)window,
+                            explorer_result.entry_index, &object) ==
+                            DESKTOP_EXPLORER_OK &&
+                        desktop_explorer_drag_validate(
+                            explorer, &object, &file) ==
+                            DESKTOP_EXPLORER_OK &&
+                        desktop_trash_source_allowed(file.path))
+                        (void)desktop_drag_arm(
+                            &desktop_drag, &object, pointer_x, pointer_y);
+                }
             } else if (window == DESKTOP_WM_NO_WINDOW) {
                 uint32_t hit = desktop_icon_at_position(
                     display, pointer_x, pointer_y) == 0;
@@ -2821,6 +3210,39 @@ static uint32_t dispatch_pointer_button(
     } else if (!left_down && left_was_down) {
         uint32_t captured_kind = manager->capture_kind;
         int32_t captured_window = manager->capture_window;
+        if (desktop_drag.phase == DESKTOP_DRAG_PHASE_DRAGGING) {
+            desktop_rect_t old_feedback = desktop_drag_feedback_rect();
+            uint32_t source_window = desktop_drag.object.source_id;
+            desktop_drag_target_t trash_target;
+            const desktop_drag_target_t *drop_target = 0;
+            if (desktop_trash_drop_target(
+                    manager, ui, display, pointer_x, pointer_y,
+                    &trash_target))
+                drop_target = &trash_target;
+            desktop_drag_result_t drop;
+            desktop_drag_result_initialize(&drop);
+            (void)desktop_drag_drop(
+                &desktop_drag, pointer_x, pointer_y, drop_target,
+                DESKTOP_DRAG_OPERATION_MOVE, &drop);
+            desktop_dirty_add(dirty, old_feedback);
+            desktop_dirty_add(dirty, desktop_icon_rect(display, 2U));
+            if (source_window < DESKTOP_WM_CAPACITY)
+                desktop_explorer_pointer_cancel(explorer, source_window);
+            desktop_wm_event_t release = {
+                .type = DESKTOP_WM_EVENT_POINTER_BUTTON,
+                .x = pointer_x,
+                .y = pointer_y,
+                .button = DESKTOP_WM_BUTTON_LEFT,
+                .pressed = 0U,
+            };
+            actions |= dispatch_desktop_event(
+                manager, display, dirty, &release, target);
+            apply_trash_drop(
+                explorer, manager, ui, display, dirty, &drop);
+            return actions;
+        }
+        if (desktop_drag.phase == DESKTOP_DRAG_PHASE_ARMED)
+            desktop_drag_cancel(&desktop_drag);
         uint32_t ui_release_consumed = 0U;
         if (manager->capture_kind == DESKTOP_WM_CAPTURE_NONE) {
             desktop_ui_result_t ui_release = desktop_ui_pointer_event(
@@ -3203,6 +3625,9 @@ int main(int argc, char **argv) {
         return 1;
     }
     desktop_explorer_initialize(&explorer);
+    desktop_drag_state_initialize(&desktop_drag);
+    desktop_trash_state_initialize(&desktop_trash);
+    int trash_status = desktop_trash_prepare(&desktop_trash);
     /* Optional assets are read and decoded exactly once before the first
      * frame. Missing or malformed files leave fixed-cost vector fallbacks. */
     desktop_file_icon_cache_initialize();
@@ -3221,6 +3646,10 @@ int main(int argc, char **argv) {
             &ui, &display, &initial_dirty,
             "Dateizuordnungen sind ungueltig.",
             "/etc/reist/filetypes.conf");
+    if (trash_status != DESKTOP_TRASH_OK)
+        desktop_ui_open_error(
+            &ui, &display, &initial_dirty,
+            "Papierkorb ist nicht verfuegbar.", DESKTOP_TRASH_ROOT_PATH);
     desktop_clock_refresh(&display, &initial_dirty, 1U);
     desktop_dirty_full(&initial_dirty);
     render_desktop_measured(
@@ -3329,6 +3758,7 @@ int main(int argc, char **argv) {
             .entry_index = DESKTOP_EXPLORER_NO_ENTRY,
         };
         uint32_t control_panel_activate = 0U;
+        uint32_t trash_activate = 0U;
         int32_t pending_delta_x = 0;
         int32_t pending_delta_y = 0;
         unsigned int mouse_events = 0U;
@@ -3356,6 +3786,16 @@ int main(int argc, char **argv) {
                         &manager, pointer_x, pointer_y) ==
                             DESKTOP_WM_NO_WINDOW)
                     control_panel_activate |= control_panel_pointer_button(
+                        &explorer, &display, &dirty,
+                        pointer_x, pointer_y, mouse.buttons,
+                        previous_buttons);
+                if (!ui.dialog.visible &&
+                    manager.capture_kind == DESKTOP_WM_CAPTURE_NONE &&
+                    pointer_y < desktop_taskbar_rect(&display).y &&
+                    desktop_wm_window_at(
+                        &manager, pointer_x, pointer_y) ==
+                            DESKTOP_WM_NO_WINDOW)
+                    trash_activate |= trash_pointer_button(
                         &explorer, &display, &dirty,
                         pointer_x, pointer_y, mouse.buttons,
                         previous_buttons);
@@ -3392,8 +3832,21 @@ int main(int argc, char **argv) {
                 manager.capture_kind == DESKTOP_WM_CAPTURE_CLIENT);
         }
 
-        desktop_ui_result_t ui_key = desktop_ui_keyboard_event(
-            &ui, &display, &dirty, key);
+        uint32_t drag_key_consumed = 0U;
+        if (key == DESKTOP_KEY_ESCAPE &&
+            desktop_drag.phase != DESKTOP_DRAG_PHASE_IDLE) {
+            desktop_dirty_add(&dirty, desktop_drag_feedback_rect());
+            desktop_dirty_add(&dirty, desktop_icon_rect(&display, 2U));
+            if (desktop_drag.object.source_id < DESKTOP_WM_CAPACITY)
+                desktop_explorer_pointer_cancel(
+                    &explorer, desktop_drag.object.source_id);
+            desktop_drag_cancel(&desktop_drag);
+            drag_key_consumed = 1U;
+        }
+        desktop_ui_result_t ui_key = drag_key_consumed
+            ? desktop_ui_result_none()
+            : desktop_ui_keyboard_event(&ui, &display, &dirty, key);
+        if (drag_key_consumed) ui_key.consumed = 1U;
         actions |= apply_desktop_ui_result(
             &manager, &explorer, &ui, &display, &dirty,
             &ui_key, &action_target);
@@ -3449,6 +3902,10 @@ int main(int argc, char **argv) {
             apply_control_panel_activation(
                 &surface_runtime, &ui, &display, &dirty,
                 pointer_x, pointer_y);
+        if (trash_activate)
+            actions |= open_explorer_path(
+                &manager, &explorer, &ui, &display, &dirty,
+                DESKTOP_TRASH_FILES_PATH, &action_target);
         sync_surface_windows(
             &manager, &explorer, &surfaces, &surface_runtime, &dirty);
 

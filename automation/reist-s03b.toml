@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3c-6f"
-active_id = "R1.10-desktop-trash"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -343,14 +343,16 @@ evidence = [
 
 [[packages]]
 id = "R1.10-desktop-trash"
-status = "active"
+status = "done"
 risk = "high"
 title = "Recoverable desktop trash with bounded drag and drop"
-scope = "Add empty/full desktop trash icons and bounded pointer-captured drag and drop from Explorer entries. A drop moves one validated file or directory by same-filesystem atomic rename into the single-user REIST trash namespace with bounded collision handling and metadata sufficient for later restoration; cross-volume copy-delete, recursive immediate deletion and drops from the trash itself fail closed. Opening the trash uses the existing Explorer snapshot path. Document the deliberate single-user adaptation of the freedesktop.org Trash specification and keep permanent deletion as a separate explicit confirmation path."
+scope = "Add empty/full desktop trash icons and a reusable bounded Source -> Object/Data -> DropTarget -> Operation controller with MOVE, COPY and LINK vocabulary. Explorer file and directory entries become the first drag source; the trash is a MOVE-only file-object target with visible valid/invalid feedback. A successful drop moves one validated entry by same-filesystem atomic rename into the single-user REIST trash namespace with bounded collision handling and metadata sufficient for later restoration; cross-volume copy-delete, recursive immediate deletion and drops from the trash itself fail closed. Opening the trash uses the existing Explorer snapshot path. Document the deliberate single-user adaptation of the freedesktop.org Trash specification and keep permanent deletion as a separate explicit confirmation path."
 allowed_files = [
   "automation/reist-s03b.toml",
   "Makefile",
   "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_drag.h",
+  "userspace/gui/compositor/desktop_drag.c",
   "userspace/gui/compositor/desktop_explorer.h",
   "userspace/gui/compositor/desktop_explorer.c",
   "userspace/gui/compositor/desktop_trash.h",
@@ -362,6 +364,8 @@ allowed_files = [
   "scripts/build-windows.ps1",
   "test/test_desktop_trash_source.py",
   "test/test_desktop_trash_host.c",
+  "test/test_desktop_drag_source.py",
+  "test/test_desktop_drag_host.c",
   "test/test_desktop_explorer_source.py",
   "test/test_user_program_toolchain.py",
   "test/test_system_layout.py",
@@ -370,6 +374,8 @@ allowed_files = [
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
 ]
 invariants = [
+  "the drag controller separates producer identity, fixed-capacity object data, target acceptance and selected MOVE/COPY/LINK operation without heap allocation or target side effects during hover",
+  "drag rendering visibly distinguishes a valid trash target from an invalid destination and a rejected drop performs no filesystem mutation",
   "drag capture identifies exactly one generation-stable Explorer entry and a drop mutates nothing unless source, trash root and destination name are fully validated",
   "trash insertion uses same-filesystem atomic rename with a fixed collision-attempt bound and never falls back to copy-delete or recursive deletion",
   "the trash namespace cannot be dragged into itself and root, dot, dot-dot, mount roots and protected system paths cannot become drag sources",
@@ -378,6 +384,7 @@ invariants = [
   "the single-user Trash-spec adaptation, metadata format and unsupported restoration/permanent-delete behavior are explicit and versioned"
 ]
 targeted_tests = [
+  "python test/test_desktop_drag_source.py -q",
   "python test/test_desktop_trash_source.py -q",
   "python test/test_desktop_explorer_source.py -q",
   "python test/test_user_program_toolchain.py -q",
