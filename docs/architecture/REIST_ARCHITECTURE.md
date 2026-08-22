@@ -1221,6 +1221,15 @@ Elternverzeichnis veröffentlicht. Ein zentraler, leerer Katalogmarker unter
 Original- und Storage-Pfad zusammen. Explorer blendet ausschließlich die
 vollständige reservierte Namensklasse aus. Dadurch führt ein Papierkorb-Drop
 weder einen Cross-Directory-Rename noch einen Copy/Delete-Fallback aus.
+Wiederherstellung akzeptiert ausschließlich den aktuellen Katalogmarker und
+ein exakt geparstes Version-2-Metadatum. Original- und reservierter Storage-
+Pfad müssen kanonisch sein und dasselbe Elternverzeichnis besitzen; ein
+belegtes Originalziel wird niemals ersetzt. Erst der erfolgreiche atomare
+Rename veröffentlicht die Nutzdaten wieder, danach werden Marker und Metadaten
+entfernt. Endgültiges Leeren folgt denselben Metadatenbindungen und läuft erst
+nach expliziter Bestätigung mit festen Katalog-, Tiefen- und Objektbudgets;
+Kapazitätserschöpfung meldet einen sichtbaren Teilfortschritt statt ungebunden
+weiterzulaufen.
 
 FAT32-Namen bilden eine begrenzte Veröffentlichungseinheit aus höchstens 20
 absteigenden VFAT-LFN-Slots und genau einem checksum-gebundenen 8.3-Eintrag.

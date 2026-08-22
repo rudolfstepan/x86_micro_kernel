@@ -2274,3 +2274,57 @@ stop_conditions = [
 ]
 commit_message = "feat: add graphical system control panel"
 evidence = []
+
+[[packages]]
+id = "R1.10b-desktop-trash-restore-empty"
+status = "done"
+risk = "high"
+title = "Bounded trash restore and confirmed empty"
+scope = "Complete the recoverable desktop trash workflow. Parse only the bounded append-only Version-2 metadata schema, restore one generation-bound catalog entry by a collision-free same-directory atomic rename to its validated original path, and remove catalog artifacts only after the payload is restored. Add a visible Restore action in trash Explorer windows with pointer, double-click and Enter activation. Add a right-click trash context menu with Open and Empty Trash; permanent emptying requires an application-modal Yes/No confirmation and deletes only metadata-bound reserved payload paths through fixed depth and entry budgets."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_trash.h",
+  "userspace/gui/compositor/desktop_trash.c",
+  "test/test_desktop_trash_source.py",
+  "test/test_desktop_trash_host.c",
+  "test/test_desktop_source.py",
+  "test/test_user_program_toolchain.py",
+  "test/test_system_layout.py",
+  "test/test_native_boot_image.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "restore accepts only an exact current catalog marker and strict Version-2 metadata whose original and reserved storage paths are canonical and share one parent",
+  "an occupied original path, malformed metadata, missing payload or stale marker fails before rename and never overwrites an existing object",
+  "successful restore uses one journal-backed same-directory rename and removes marker and metadata only after the payload is committed at its original path",
+  "the trash Explorer exposes a visible Restore action while double-click and Enter use the same validated restore path",
+  "right-click context input is bounded, rendered above ordinary windows, and Empty Trash cannot mutate storage before an explicit Yes response from an application-modal dialog",
+  "permanent deletion follows only validated metadata-bound reserved storage paths and has fixed catalog, tree-depth and entry budgets with explicit partial-completion reporting",
+  "no render path performs VFS work and no heap allocation, cross-directory rename, copy-delete fallback or unbounded scan is introduced"
+]
+targeted_tests = [
+  "python test/test_desktop_trash_source.py -q",
+  "python test/test_desktop_source.py -q",
+  "python test/test_user_program_toolchain.py -q",
+  "python test/test_system_layout.py -q",
+  "python test/test_native_boot_image.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop"
+]
+stop_conditions = [
+  "metadata cannot bind a catalog marker to one safe same-parent reserved payload path",
+  "confirmed emptying would require an unbounded recursive walk",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add trash restore and confirmed empty"
+evidence = []

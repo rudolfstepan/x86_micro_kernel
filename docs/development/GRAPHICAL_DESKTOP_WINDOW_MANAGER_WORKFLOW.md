@@ -580,9 +580,14 @@ Vektor-Fallbacks; der Zeichenpfad führt nur einen geclippten Pixel-Upload aus.
   `/trash/info` eine versionierte `.trashinfo`-Datei mit ursprünglichem Pfad,
   tatsächlichem `StoragePath` und Löschzeitpunkt. Formatversion 2 trennt damit
   Katalog und Nutzdaten explizit. Pfade werden als validierte lokale ASCII-Pfade
-  und nicht URL-kodiert gespeichert; benutzerspezifische Top-/Mount-Trashes,
-  eine Wiederherstellen-Oberfläche und endgültiges Leeren sind noch nicht
-  implementiert. Cross-Volume-Copy/Delete und Drops aus dem Papierkorb selbst
+  und nicht URL-kodiert gespeichert. Das Papierkorbfenster reserviert eine
+  sichtbare Aktion `Wiederherstellen`; Button, Doppelklick und Enter führen
+  denselben generationengebundenen Restore aus. Ein vorhandenes Originalziel
+  wird nicht überschrieben. Rechtsklick auf das Desktop-Icon öffnet ein echtes
+  Kontextmenü mit `Oeffnen` und `Papierkorb leeren`; Leeren mutiert erst nach
+  einer applikationsmodalen Ja/Nein-Sicherheitsfrage und bleibt durch feste
+  Katalog-, Tiefen- und Objektbudgets begrenzt. Benutzerspezifische
+  Top-/Mount-Trashes bleiben unsupported. Cross-Volume-Copy/Delete und Drops aus dem Papierkorb selbst
   scheitern geschlossen, sodass ein abgelehnter Drop die Quelle nicht ändert.
 
 ## Stufe 7: Robustheit und Abnahme

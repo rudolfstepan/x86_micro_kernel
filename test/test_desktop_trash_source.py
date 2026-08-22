@@ -20,8 +20,12 @@ class DesktopTrashSourceTests(unittest.TestCase):
             "DESKTOP_TRASH_FILES_PATH", "DESKTOP_TRASH_INFO_PATH",
             "DESKTOP_TRASH_STORAGE_PREFIX", "catalog_path",
             "DESKTOP_TRASH_COLLISION_LIMIT", "desktop_trash_move",
+            "desktop_trash_restore", "desktop_trash_empty",
+            "DESKTOP_TRASH_DELETE_DEPTH_LIMIT",
+            "DESKTOP_TRASH_DELETE_ENTRY_LIMIT",
             "desktop_trash_refresh", "desktop_trash_source_allowed",
             "x86os_create", "x86os_rename", "x86os_fsync", "DeletionDate=",
+            "x86os_open", "x86os_read", "x86os_rmdir",
             "[Trash Info]", "Version=2", "StoragePath=",
         ):
             self.assertIn(token, header + source)
@@ -31,6 +35,11 @@ class DesktopTrashSourceTests(unittest.TestCase):
         self.assertIn('"Papierkorb"', desktop)
         self.assertIn("DESKTOP_DRAG_FEEDBACK_VALID", desktop)
         self.assertIn("render_drag_feedback", desktop)
+        self.assertIn('"Wiederherstellen"', desktop)
+        self.assertIn('"Papierkorb leeren"', desktop)
+        self.assertIn("X86OS_MOUSE_BUTTON_RIGHT", desktop)
+        self.assertIn("DESKTOP_DIALOG_EMPTY_TRASH", desktop)
+        self.assertIn("REIST_GUI_DIALOG_ROLE_DESTRUCTIVE", desktop)
 
     def test_trash_sources_and_icons_are_packaged_in_both_images(self):
         programs = (ROOT / "scripts/build_system_programs.py").read_text(

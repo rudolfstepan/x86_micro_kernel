@@ -193,6 +193,17 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("REIST_GUI_DIALOG_CAPTURE_MOVE", self.source)
         self.assertNotIn("DESKTOP_DIALOG_CAPTURE_", self.source)
 
+    def test_trash_context_menu_and_restore_action_are_explicit(self):
+        self.assertIn("trash_context_menu_model", self.source)
+        self.assertIn("render_trash_context_popup", self.source)
+        self.assertIn("X86OS_MOUSE_BUTTON_RIGHT", self.source)
+        self.assertIn('"Papierkorb leeren"', self.source)
+        self.assertIn('"Wiederherstellen"', self.source)
+        self.assertIn("DESKTOP_DIALOG_EMPTY_TRASH", self.source)
+        self.assertIn("REIST_GUI_DIALOG_RESPONSE_YES", self.source)
+        self.assertIn("apply_trash_restore", self.source)
+        self.assertIn("apply_trash_empty", self.source)
+
     def test_redraw_is_driven_by_fixed_dirty_regions_and_clips_primitives(self):
         header = WM_HEADER.read_text(encoding="utf-8")
         self.assertIn("#define DESKTOP_WM_DIRTY_CAPACITY 8U", header)

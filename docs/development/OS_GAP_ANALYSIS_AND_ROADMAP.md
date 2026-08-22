@@ -562,8 +562,11 @@ verschoben. Ein zentraler Katalogmarker und `.trashinfo`-Metadaten mit Original-
 und Storage-Pfad machen den Eintrag im Papierkorb sichtbar, ohne die bewusst
 unsupported Cross-Directory-Rename-Grenze von FAT32 zu umgehen;
 Cross-Volume-Copy/Delete und geschützte Systempfade scheitern geschlossen.
-Eine Wiederherstellen-Oberfläche und bestätigtes endgültiges Leeren bleiben
-getrennte Folgeschritte.
+Das Papierkorbfenster bietet nun eine sichtbare Wiederherstellen-Aktion sowie
+Doppelklick/Enter; Zielkollision oder manipulierte Metadaten scheitern vor dem
+Rename. Ein Rechtsklick auf das Desktop-Icon öffnet ein begrenztes Kontextmenü
+mit Öffnen und Papierkorb leeren. Endgültiges Leeren benötigt eine
+applikationsmodale Ja/Nein-Bestätigung und verwendet feste Traversierungsbudgets.
 Control Gallery, Sound Player und Terminal verwenden noch die begrenzte
 Vollbildbrücke. Eine vollständige TTY- und Terminal-Clientarchitektur bleibt
 offen. Die Systemsteuerung persistiert vier begrenzte Einstellungsgruppen über

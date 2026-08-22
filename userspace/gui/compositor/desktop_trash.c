@@ -108,6 +108,21 @@ void desktop_trash_result_initialize(desktop_trash_result_t *result) {
     if (result != 0) clear_bytes(result, sizeof(*result));
 }
 
+void desktop_trash_restore_request_initialize(
+    desktop_trash_restore_request_t *request) {
+    if (request != 0) clear_bytes(request, sizeof(*request));
+}
+
+void desktop_trash_restore_result_initialize(
+    desktop_trash_restore_result_t *result) {
+    if (result != 0) clear_bytes(result, sizeof(*result));
+}
+
+void desktop_trash_empty_result_initialize(
+    desktop_trash_empty_result_t *result) {
+    if (result != 0) clear_bytes(result, sizeof(*result));
+}
+
 static int ensure_directory(const char *path) {
     x86os_file_info_t info;
     int status = x86os_stat(path, &info);
@@ -464,4 +479,352 @@ int desktop_trash_move(desktop_trash_state_t *state,
     state->full = 1U;
     bump_generation(state);
     return DESKTOP_TRASH_OK;
+}
+
+typedef struct desktop_trash_metadata {
+    char original_path[DESKTOP_TRASH_PATH_CAPACITY];
+    char stored_path[DESKTOP_TRASH_PATH_CAPACITY];
+} desktop_trash_metadata_t;
+
+static uint32_t copy_text(char *destination, uint32_t capacity,
+                          const char *source) {
+    uint32_t length = 0U;
+    if (destination == 0 || capacity == 0U ||
+        !text_length(source, capacity, &length)) return 0U;
+    for (uint32_t index = 0U; index <= length; ++index)
+        destination[index] = source[index];
+    return 1U;
+}
+
+static int catalog_info_path(const char *catalog_path, char *info_path) {
+    static const char prefix[] = DESKTOP_TRASH_FILES_PATH "/";
+    uint32_t catalog_length = 0U;
+    uint32_t prefix_length = sizeof(prefix) - 1U;
+    if (!canonical_absolute_path(catalog_path, &catalog_length) ||
+        catalog_length <= prefix_length) return DESKTOP_TRASH_EINVAL;
+    for (uint32_t index = 0U; index < prefix_length; ++index)
+        if (fold_ascii((uint8_t)catalog_path[index]) !=
+            fold_ascii((uint8_t)prefix[index])) return DESKTOP_TRASH_EINVAL;
+    const char *name = &catalog_path[prefix_length];
+    for (uint32_t index = 0U; name[index] != '\0'; ++index)
+        if (name[index] == '/') return DESKTOP_TRASH_EINVAL;
+    uint32_t used = 0U;
+    if (!append_text(info_path, DESKTOP_TRASH_PATH_CAPACITY, &used,
+                     DESKTOP_TRASH_INFO_PATH "/") ||
+        !append_text(info_path, DESKTOP_TRASH_PATH_CAPACITY, &used, name) ||
+        !append_text(info_path, DESKTOP_TRASH_PATH_CAPACITY, &used,
+                     ".trashinfo")) return DESKTOP_TRASH_ECAPACITY;
+    return DESKTOP_TRASH_OK;
+}
+
+static int read_metadata_file(const char *info_path, char *metadata,
+                              uint32_t *size_out) {
+    int descriptor = x86os_open(info_path);
+    if (descriptor < 0) return DESKTOP_TRASH_ENOENT;
+    uint32_t used = 0U;
+    int status = DESKTOP_TRASH_OK;
+    while (used + 1U < DESKTOP_TRASH_METADATA_CAPACITY) {
+        uint32_t remaining = DESKTOP_TRASH_METADATA_CAPACITY - 1U - used;
+        int count = x86os_read(descriptor, metadata + used, remaining);
+        if (count < 0 || (uint32_t)count > remaining) {
+            status = DESKTOP_TRASH_EIO;
+            break;
+        }
+        if (count == 0) break;
+        used += (uint32_t)count;
+    }
+    if (status == DESKTOP_TRASH_OK &&
+        used + 1U == DESKTOP_TRASH_METADATA_CAPACITY) {
+        char extra = 0;
+        int count = x86os_read(descriptor, &extra, 1U);
+        if (count < 0 || count > 1) status = DESKTOP_TRASH_EIO;
+        else if (count != 0) status = DESKTOP_TRASH_ECAPACITY;
+    }
+    if (x86os_close(descriptor) != 0 && status == DESKTOP_TRASH_OK)
+        status = DESKTOP_TRASH_EIO;
+    if (status != DESKTOP_TRASH_OK) return status;
+    metadata[used] = '\0';
+    *size_out = used;
+    return DESKTOP_TRASH_OK;
+}
+
+static uint32_t consume_literal(const char *metadata, uint32_t size,
+                                uint32_t *offset, const char *literal) {
+    uint32_t length = 0U;
+    if (!text_length(literal, DESKTOP_TRASH_METADATA_CAPACITY, &length) ||
+        *offset > size || length > size - *offset) return 0U;
+    for (uint32_t index = 0U; index < length; ++index)
+        if (metadata[*offset + index] != literal[index]) return 0U;
+    *offset += length;
+    return 1U;
+}
+
+static uint32_t consume_path_line(const char *metadata, uint32_t size,
+                                  uint32_t *offset, char *path) {
+    uint32_t used = 0U;
+    while (*offset < size && metadata[*offset] != '\n') {
+        char value = metadata[(*offset)++];
+        if (value == '\0' || value == '\r' ||
+            used + 1U >= DESKTOP_TRASH_PATH_CAPACITY) return 0U;
+        path[used++] = value;
+    }
+    if (used == 0U || *offset >= size || metadata[*offset] != '\n')
+        return 0U;
+    ++*offset;
+    path[used] = '\0';
+    return 1U;
+}
+
+static uint32_t deletion_date_line_valid(const char *metadata,
+                                         uint32_t size,
+                                         uint32_t *offset) {
+    static const uint8_t separators[19] = {
+        0U, 0U, 0U, 0U, '-', 0U, 0U, '-', 0U, 0U,
+        'T', 0U, 0U, ':', 0U, 0U, ':', 0U, 0U,
+    };
+    if (*offset > size || 20U > size - *offset) return 0U;
+    for (uint32_t index = 0U; index < 19U; ++index) {
+        uint8_t value = (uint8_t)metadata[*offset + index];
+        if (separators[index] != 0U) {
+            if (value != separators[index]) return 0U;
+        } else if (value < '0' || value > '9') return 0U;
+    }
+    if (metadata[*offset + 19U] != '\n') return 0U;
+    *offset += 20U;
+    return 1U;
+}
+
+static uint32_t same_parent_storage(const char *original,
+                                    const char *stored) {
+    uint32_t original_length = 0U;
+    uint32_t stored_length = 0U;
+    if (!canonical_absolute_path(original, &original_length) ||
+        !canonical_absolute_path(stored, &stored_length)) return 0U;
+    uint32_t original_name = original_length;
+    uint32_t stored_name = stored_length;
+    while (original_name != 0U && original[original_name - 1U] != '/')
+        --original_name;
+    while (stored_name != 0U && stored[stored_name - 1U] != '/')
+        --stored_name;
+    if (original_name != stored_name ||
+        !storage_name(&stored[stored_name])) return 0U;
+    for (uint32_t index = 0U; index < original_name; ++index)
+        if (fold_ascii((uint8_t)original[index]) !=
+            fold_ascii((uint8_t)stored[index])) return 0U;
+    return desktop_trash_source_allowed(original);
+}
+
+static int parse_metadata(const char *metadata, uint32_t size,
+                          desktop_trash_metadata_t *parsed) {
+    uint32_t offset = 0U;
+    clear_bytes(parsed, sizeof(*parsed));
+    if (!consume_literal(metadata, size, &offset,
+                         "[Trash Info]\nVersion=2\nPath=") ||
+        !consume_path_line(metadata, size, &offset,
+                           parsed->original_path) ||
+        !consume_literal(metadata, size, &offset, "StoragePath=") ||
+        !consume_path_line(metadata, size, &offset,
+                           parsed->stored_path) ||
+        !consume_literal(metadata, size, &offset, "DeletionDate=") ||
+        !deletion_date_line_valid(metadata, size, &offset) ||
+        offset != size ||
+        !same_parent_storage(parsed->original_path, parsed->stored_path))
+        return DESKTOP_TRASH_EINVAL;
+    return DESKTOP_TRASH_OK;
+}
+
+static int load_catalog_metadata(
+    const char *catalog_path, const x86os_file_info_t *identity,
+    desktop_trash_metadata_t *metadata, char *info_path) {
+    x86os_file_info_t current;
+    if (catalog_info_path(catalog_path, info_path) != DESKTOP_TRASH_OK)
+        return DESKTOP_TRASH_EINVAL;
+    if (x86os_stat(catalog_path, &current) != 0 ||
+        current.type != X86OS_FILE) return DESKTOP_TRASH_ENOENT;
+    if (identity != 0 && !identity_equal(identity, &current))
+        return DESKTOP_TRASH_ESTALE;
+    char encoded[DESKTOP_TRASH_METADATA_CAPACITY];
+    uint32_t encoded_size = 0U;
+    int status = read_metadata_file(info_path, encoded, &encoded_size);
+    if (status != DESKTOP_TRASH_OK) return status;
+    status = parse_metadata(encoded, encoded_size, metadata);
+    if (status != DESKTOP_TRASH_OK) return status;
+    x86os_file_info_t stored;
+    if (x86os_stat(metadata->stored_path, &stored) != 0 ||
+        (stored.type != X86OS_FILE && stored.type != X86OS_DIRECTORY))
+        return DESKTOP_TRASH_ENOENT;
+    return DESKTOP_TRASH_OK;
+}
+
+int desktop_trash_restore(desktop_trash_state_t *state,
+                          const desktop_trash_restore_request_t *request,
+                          desktop_trash_restore_result_t *result) {
+    if (state == 0 || request == 0 || result == 0)
+        return DESKTOP_TRASH_EINVAL;
+    desktop_trash_restore_result_initialize(result);
+    desktop_trash_metadata_t metadata;
+    int status = load_catalog_metadata(
+        request->catalog_path, &request->identity, &metadata,
+        result->info_path);
+    if (status != DESKTOP_TRASH_OK) return status;
+    if (!copy_text(result->original_path, sizeof(result->original_path),
+                   metadata.original_path) ||
+        !copy_text(result->stored_path, sizeof(result->stored_path),
+                   metadata.stored_path)) return DESKTOP_TRASH_ECAPACITY;
+    x86os_file_info_t collision;
+    status = x86os_stat(metadata.original_path, &collision);
+    if (status == 0) return DESKTOP_TRASH_ECOLLISION;
+    if (status != DESKTOP_TRASH_ENOENT) return DESKTOP_TRASH_EIO;
+    if (x86os_rename(metadata.stored_path, metadata.original_path) != 0)
+        return DESKTOP_TRASH_ERENAME;
+    result->restored = 1U;
+    int catalog_cleanup = x86os_unlink(request->catalog_path);
+    int info_cleanup = catalog_cleanup == 0
+        ? x86os_unlink(result->info_path) : DESKTOP_TRASH_EIO;
+    result->cleanup_complete =
+        catalog_cleanup == 0 && info_cleanup == 0;
+    int refresh_status = desktop_trash_refresh(state);
+    if (!result->cleanup_complete || refresh_status != DESKTOP_TRASH_OK)
+        return DESKTOP_TRASH_EIO;
+    return DESKTOP_TRASH_OK;
+}
+
+static uint32_t safe_entry_name(const char *name) {
+    uint32_t length = 0U;
+    if (!text_length(name, sizeof(((x86os_file_info_t *)0)->name), &length) ||
+        length == 0U || dot_name(name)) return 0U;
+    for (uint32_t index = 0U; index < length; ++index)
+        if (name[index] == '/') return 0U;
+    return 1U;
+}
+
+static int append_child_path(const char *parent, const char *name,
+                             char *child) {
+    uint32_t used = 0U;
+    if (!safe_entry_name(name) ||
+        !append_text(child, DESKTOP_TRASH_PATH_CAPACITY, &used, parent) ||
+        !append_text(child, DESKTOP_TRASH_PATH_CAPACITY, &used, "/") ||
+        !append_text(child, DESKTOP_TRASH_PATH_CAPACITY, &used, name))
+        return DESKTOP_TRASH_ECAPACITY;
+    return DESKTOP_TRASH_OK;
+}
+
+static int remove_tree(const char *path, uint32_t depth,
+                       uint32_t *remaining) {
+    if (remaining == 0 || *remaining == 0U)
+        return DESKTOP_TRASH_ECAPACITY;
+    x86os_file_info_t info;
+    if (x86os_stat(path, &info) != 0) return DESKTOP_TRASH_ENOENT;
+    if (info.type == X86OS_FILE) {
+        --*remaining;
+        return x86os_unlink(path) == 0
+            ? DESKTOP_TRASH_OK : DESKTOP_TRASH_EIO;
+    }
+    if (info.type != X86OS_DIRECTORY) return DESKTOP_TRASH_EINVAL;
+    if (depth >= DESKTOP_TRASH_DELETE_DEPTH_LIMIT)
+        return DESKTOP_TRASH_ECAPACITY;
+    while (*remaining != 0U) {
+        x86os_file_info_t entries[X86OS_READDIR_BATCH_CAPACITY];
+        int count = x86os_readdir_batch(path, 0U, entries);
+        if (count < 0 || (uint32_t)count > X86OS_READDIR_BATCH_CAPACITY)
+            return DESKTOP_TRASH_EIO;
+        const char *child_name = 0;
+        for (int index = 0; index < count; ++index) {
+            if (dot_name(entries[index].name)) continue;
+            if (!safe_entry_name(entries[index].name))
+                return DESKTOP_TRASH_EINVAL;
+            child_name = entries[index].name;
+            break;
+        }
+        if (child_name == 0) {
+            --*remaining;
+            return x86os_rmdir(path) == 0
+                ? DESKTOP_TRASH_OK : DESKTOP_TRASH_EIO;
+        }
+        char child[DESKTOP_TRASH_PATH_CAPACITY];
+        int status = append_child_path(path, child_name, child);
+        if (status != DESKTOP_TRASH_OK) return status;
+        status = remove_tree(child, depth + 1U, remaining);
+        if (status != DESKTOP_TRASH_OK) return status;
+    }
+    return DESKTOP_TRASH_ECAPACITY;
+}
+
+static int first_catalog_entry(x86os_file_info_t *entry,
+                               char *catalog_path) {
+    uint32_t offset = 0U;
+    for (uint32_t batch = 0U;
+         batch < DESKTOP_TRASH_SCAN_BATCHES; ++batch) {
+        x86os_file_info_t entries[X86OS_READDIR_BATCH_CAPACITY];
+        int count = x86os_readdir_batch(
+            DESKTOP_TRASH_FILES_PATH, offset, entries);
+        if (count < 0 || (uint32_t)count > X86OS_READDIR_BATCH_CAPACITY)
+            return DESKTOP_TRASH_EIO;
+        if (count == 0) return DESKTOP_TRASH_ENOENT;
+        for (int index = 0; index < count; ++index) {
+            if (dot_name(entries[index].name)) continue;
+            if (!safe_entry_name(entries[index].name))
+                return DESKTOP_TRASH_EINVAL;
+            clear_bytes(entry, sizeof(*entry));
+            uint32_t name_length = 0U;
+            (void)text_length(
+                entries[index].name, sizeof(entries[index].name),
+                &name_length);
+            for (uint32_t name_index = 0U;
+                 name_index <= name_length; ++name_index)
+                entry->name[name_index] = entries[index].name[name_index];
+            entry->type = entries[index].type;
+            entry->size = entries[index].size;
+            entry->create_time = entries[index].create_time;
+            entry->modify_time = entries[index].modify_time;
+            entry->access_time = entries[index].access_time;
+            return append_child_path(
+                DESKTOP_TRASH_FILES_PATH, entries[index].name,
+                catalog_path);
+        }
+        offset += (uint32_t)count;
+    }
+    return DESKTOP_TRASH_ECAPACITY;
+}
+
+int desktop_trash_empty(desktop_trash_state_t *state,
+                        desktop_trash_empty_result_t *result) {
+    if (state == 0 || result == 0) return DESKTOP_TRASH_EINVAL;
+    desktop_trash_empty_result_initialize(result);
+    if (desktop_trash_prepare(state) != DESKTOP_TRASH_OK)
+        return DESKTOP_TRASH_EIO;
+    uint32_t remaining = DESKTOP_TRASH_DELETE_ENTRY_LIMIT;
+    for (uint32_t item = 0U;
+         item < DESKTOP_TRASH_EMPTY_CATALOG_LIMIT; ++item) {
+        x86os_file_info_t catalog_identity;
+        char catalog_path[DESKTOP_TRASH_PATH_CAPACITY];
+        int status = first_catalog_entry(&catalog_identity, catalog_path);
+        if (status == DESKTOP_TRASH_ENOENT) {
+            (void)desktop_trash_refresh(state);
+            return DESKTOP_TRASH_OK;
+        }
+        if (status != DESKTOP_TRASH_OK) {
+            result->incomplete = 1U;
+            (void)desktop_trash_refresh(state);
+            return status;
+        }
+        desktop_trash_metadata_t metadata;
+        char info_path[DESKTOP_TRASH_PATH_CAPACITY];
+        status = load_catalog_metadata(
+            catalog_path, &catalog_identity, &metadata, info_path);
+        if (status == DESKTOP_TRASH_OK)
+            status = remove_tree(metadata.stored_path, 0U, &remaining);
+        if (status != DESKTOP_TRASH_OK ||
+            x86os_unlink(catalog_path) != 0 ||
+            x86os_unlink(info_path) != 0) {
+            result->incomplete = 1U;
+            (void)desktop_trash_refresh(state);
+            return status == DESKTOP_TRASH_OK
+                ? DESKTOP_TRASH_EIO : status;
+        }
+        ++result->removed_count;
+    }
+    result->incomplete = 1U;
+    (void)desktop_trash_refresh(state);
+    return DESKTOP_TRASH_ECAPACITY;
 }

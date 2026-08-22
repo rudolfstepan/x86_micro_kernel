@@ -35,10 +35,13 @@
 #define DESKTOP_CLOCK_POLL_MS 1000U
 #define DESKTOP_CLOCK_FALLBACK_POLLS 200U
 #define DESKTOP_ACTION_OPEN_CONTROL_PANEL (1U << 16)
+#define DESKTOP_ACTION_OPEN_TRASH (1U << 17)
+#define DESKTOP_ACTION_EMPTY_TRASH (1U << 18)
 #define DESKTOP_TASKBAR_CAPTURE_BACKGROUND DESKTOP_WM_CAPACITY
 #define DESKTOP_TRASH_TARGET_ID 1U
 #define DESKTOP_TRASH_ICON_COUNT 2U
 #define DESKTOP_DRAG_FEEDBACK_SIZE 34U
+#define DESKTOP_TRASH_ACTION_HEIGHT 34U
 
 _Static_assert(DESKTOP_EXPLORER_WINDOW_CAPACITY == DESKTOP_WM_CAPACITY,
                "explorer and window-manager capacities must match");
@@ -72,6 +75,7 @@ static uint32_t trash_pressed;
 static uint64_t trash_last_click_ms;
 static desktop_drag_state_t desktop_drag;
 static desktop_trash_state_t desktop_trash;
+static uint32_t trash_restore_pressed_window = DESKTOP_WM_NO_TARGET;
 
 enum {
     DESKTOP_MENU_START = 0U
@@ -88,10 +92,16 @@ enum {
 };
 
 enum {
+    DESKTOP_TRASH_MENU_ACTION_OPEN = 1U,
+    DESKTOP_TRASH_MENU_ACTION_EMPTY
+};
+
+enum {
     DESKTOP_DIALOG_NONE = 0U,
     DESKTOP_DIALOG_HELP,
     DESKTOP_DIALOG_ABOUT,
-    DESKTOP_DIALOG_ERROR
+    DESKTOP_DIALOG_ERROR,
+    DESKTOP_DIALOG_EMPTY_TRASH
 };
 
 enum {
@@ -99,7 +109,9 @@ enum {
     DESKTOP_UI_ACTION_EXIT,
     DESKTOP_UI_ACTION_OPEN_ROOT,
     DESKTOP_UI_ACTION_CLOSE_ALL,
-    DESKTOP_UI_ACTION_OPEN_CONTROL_PANEL
+    DESKTOP_UI_ACTION_OPEN_CONTROL_PANEL,
+    DESKTOP_UI_ACTION_OPEN_TRASH,
+    DESKTOP_UI_ACTION_EMPTY_TRASH
 };
 
 enum {
@@ -132,6 +144,39 @@ static const reist_gui_menu_model_t desktop_menu_model = {
     .menu_count = DESKTOP_MENU_COUNT,
 };
 
+static const reist_gui_menu_item_t trash_context_items[] = {
+    {"Oeffnen", DESKTOP_TRASH_MENU_ACTION_OPEN, 0U, 0U, 0U},
+    {"Papierkorb leeren", DESKTOP_TRASH_MENU_ACTION_EMPTY, 0U, 0U, 0U},
+};
+
+static const reist_gui_menu_item_t trash_context_empty_items[] = {
+    {"Oeffnen", DESKTOP_TRASH_MENU_ACTION_OPEN, 0U, 0U, 0U},
+    {"Papierkorb leeren", DESKTOP_TRASH_MENU_ACTION_EMPTY, 0U,
+     REIST_GUI_MENU_ITEM_DISABLED, 0U},
+};
+
+static const reist_gui_menu_t trash_context_menus[] = {
+    {"Papierkorb", trash_context_items, 2U, 0U, 0U},
+};
+
+static const reist_gui_menu_t trash_context_empty_menus[] = {
+    {"Papierkorb", trash_context_empty_items, 2U, 0U, 0U},
+};
+
+static const reist_gui_menu_model_t trash_context_menu_model = {
+    .version = REIST_GUI_MENU_API_VERSION,
+    .struct_size = sizeof(reist_gui_menu_model_t),
+    .menus = trash_context_menus,
+    .menu_count = 1U,
+};
+
+static const reist_gui_menu_model_t trash_context_empty_menu_model = {
+    .version = REIST_GUI_MENU_API_VERSION,
+    .struct_size = sizeof(reist_gui_menu_model_t),
+    .menus = trash_context_empty_menus,
+    .menu_count = 1U,
+};
+
 static const reist_gui_dialog_button_t help_dialog_buttons[] = {
     {"Schliessen", REIST_GUI_DIALOG_RESPONSE_CLOSE,
      REIST_GUI_DIALOG_ROLE_REJECT, 0U, 0U},
@@ -145,6 +190,13 @@ static const reist_gui_dialog_button_t about_dialog_buttons[] = {
 static const reist_gui_dialog_button_t error_dialog_buttons[] = {
     {"OK", REIST_GUI_DIALOG_RESPONSE_OK,
      REIST_GUI_DIALOG_ROLE_ACCEPT, 0U, 0U},
+};
+
+static const reist_gui_dialog_button_t empty_trash_dialog_buttons[] = {
+    {"Ja, leeren", REIST_GUI_DIALOG_RESPONSE_YES,
+     REIST_GUI_DIALOG_ROLE_DESTRUCTIVE, 0U, 0U},
+    {"Nein", REIST_GUI_DIALOG_RESPONSE_NO,
+     REIST_GUI_DIALOG_ROLE_REJECT, 0U, 0U},
 };
 
 /* Help is intentionally modeless so its outside events can continue to the
@@ -176,6 +228,21 @@ static const reist_gui_dialog_model_t about_dialog_model = {
     .modality = REIST_GUI_DIALOG_APPLICATION_MODAL,
     .default_response = REIST_GUI_DIALOG_RESPONSE_OK,
     .cancel_response = REIST_GUI_DIALOG_RESPONSE_OK,
+    .owner_id = REIST_GUI_DIALOG_NO_OWNER,
+    .flags = REIST_GUI_DIALOG_MOVABLE | REIST_GUI_DIALOG_CLOSE_BUTTON,
+};
+
+static const reist_gui_dialog_model_t empty_trash_dialog_model = {
+    .version = REIST_GUI_DIALOG_API_VERSION,
+    .struct_size = sizeof(reist_gui_dialog_model_t),
+    .title = "Papierkorb leeren",
+    .message = "Alle Dateien endgueltig loeschen?",
+    .detail = "Dieser Vorgang kann nicht rueckgaengig gemacht werden.",
+    .buttons = empty_trash_dialog_buttons,
+    .button_count = 2U,
+    .modality = REIST_GUI_DIALOG_APPLICATION_MODAL,
+    .default_response = REIST_GUI_DIALOG_RESPONSE_NO,
+    .cancel_response = REIST_GUI_DIALOG_RESPONSE_NO,
     .owner_id = REIST_GUI_DIALOG_NO_OWNER,
     .flags = REIST_GUI_DIALOG_MOVABLE | REIST_GUI_DIALOG_CLOSE_BUTTON,
 };
@@ -259,9 +326,13 @@ typedef struct {
 
 typedef struct {
     reist_gui_menu_state_t menu;
+    reist_gui_menu_state_t trash_menu;
     reist_gui_dialog_state_t dialog;
     uint32_t taskbar_capture_slot;
     uint32_t dialog_kind;
+    uint32_t trash_menu_can_empty;
+    int32_t trash_menu_x;
+    int32_t trash_menu_y;
     reist_gui_dialog_model_t error_model;
     char error_detail[REIST_GUI_DIALOG_TEXT_LIMIT];
 } desktop_ui_state_t;
@@ -603,6 +674,62 @@ static reist_gui_menu_layout_t desktop_menu_layout(
     };
 }
 
+static const reist_gui_menu_model_t *trash_context_model(
+    const desktop_ui_state_t *ui) {
+    return ui != 0 && ui->trash_menu_can_empty
+        ? &trash_context_menu_model : &trash_context_empty_menu_model;
+}
+
+static reist_gui_menu_layout_t trash_context_layout(
+    const desktop_ui_state_t *ui, const x86os_display_info_t *display) {
+    uint32_t title_padding = 4U;
+    uint32_t item_padding_y = 4U;
+    uint32_t bar_height = max_u32(display->font_height, 1U);
+    uint32_t title_width = display->font_width * 10U + title_padding * 2U;
+    if (title_width > display->width) title_width = display->width;
+    uint32_t popup_height = 4U + 2U *
+        (display->font_height + item_padding_y * 2U);
+    int32_t anchor_x = ui != 0 ? ui->trash_menu_x : 0;
+    int32_t anchor_y = ui != 0 ? ui->trash_menu_y : 0;
+    if (anchor_x < 0) anchor_x = 0;
+    if ((uint64_t)(uint32_t)anchor_x + title_width > display->width)
+        anchor_x = (int32_t)(display->width - title_width);
+    if (anchor_y < 0) anchor_y = 0;
+    if ((uint32_t)anchor_y > display->height)
+        anchor_y = (int32_t)display->height;
+    uint32_t below = (uint64_t)(uint32_t)anchor_y + popup_height <=
+        display->height;
+    int32_t bar_y;
+    uint32_t direction;
+    if (below) {
+        bar_y = anchor_y >= (int32_t)bar_height
+            ? anchor_y - (int32_t)bar_height : 0;
+        direction = REIST_GUI_MENU_POPUP_BELOW;
+    } else {
+        uint32_t maximum_y = display->height > bar_height
+            ? display->height - bar_height : 0U;
+        bar_y = anchor_y > (int32_t)maximum_y
+            ? (int32_t)maximum_y : anchor_y;
+        if (bar_y < (int32_t)popup_height)
+            bar_y = (int32_t)popup_height;
+        direction = REIST_GUI_MENU_POPUP_ABOVE;
+    }
+    return (reist_gui_menu_layout_t){
+        .version = REIST_GUI_MENU_API_VERSION,
+        .struct_size = sizeof(reist_gui_menu_layout_t),
+        .surface_width = display->width,
+        .surface_height = display->height,
+        .bar = {anchor_x, bar_y, title_width, bar_height},
+        .font_width = display->font_width,
+        .font_height = display->font_height,
+        .title_padding_x = title_padding,
+        .item_padding_x = 8U,
+        .item_padding_y = item_padding_y,
+        .damage_margin = 6U,
+        .popup_direction = direction,
+    };
+}
+
 static desktop_rect_t desktop_taskbar_rect(
     const x86os_display_info_t *display) {
     uint32_t height = taskbar_height(display);
@@ -772,9 +899,13 @@ static void desktop_clock_refresh(
 static void desktop_ui_initialize(desktop_ui_state_t *ui) {
     if (ui == 0) return;
     reist_gui_menu_state_initialize(&ui->menu);
+    reist_gui_menu_state_initialize(&ui->trash_menu);
     reist_gui_dialog_state_initialize(&ui->dialog);
     ui->taskbar_capture_slot = DESKTOP_WM_NO_TARGET;
     ui->dialog_kind = DESKTOP_DIALOG_NONE;
+    ui->trash_menu_can_empty = 0U;
+    ui->trash_menu_x = 0;
+    ui->trash_menu_y = 0;
     ui->error_detail[0] = '\0';
     ui->error_model = (reist_gui_dialog_model_t){
         .version = REIST_GUI_DIALOG_API_VERSION,
@@ -797,6 +928,8 @@ static const reist_gui_dialog_model_t *desktop_dialog_model(
     if (kind == DESKTOP_DIALOG_HELP) return &help_dialog_model;
     if (kind == DESKTOP_DIALOG_ABOUT) return &about_dialog_model;
     if (kind == DESKTOP_DIALOG_ERROR && ui != 0) return &ui->error_model;
+    if (kind == DESKTOP_DIALOG_EMPTY_TRASH)
+        return &empty_trash_dialog_model;
     return 0;
 }
 
@@ -929,15 +1062,79 @@ static void desktop_ui_open_error(
         ui, display, dirty, DESKTOP_DIALOG_ERROR);
 }
 
+static void desktop_ui_open_trash_context(
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, int32_t x, int32_t y,
+    uint32_t can_empty) {
+    if (ui == 0 || display == 0 || dirty == 0 || ui->dialog.visible) return;
+    reist_gui_menu_state_initialize(&ui->menu);
+    reist_gui_menu_state_initialize(&ui->trash_menu);
+    ui->trash_menu_can_empty = can_empty != 0U;
+    ui->trash_menu_x = x;
+    ui->trash_menu_y = y;
+    ui->trash_menu.open_menu = 0U;
+    reist_gui_menu_layout_t layout = trash_context_layout(ui, display);
+    if (reist_gui_menu_validate(
+            trash_context_model(ui), &layout, &ui->trash_menu) != 0) {
+        reist_gui_menu_state_initialize(&ui->trash_menu);
+        return;
+    }
+    desktop_dirty_full(dirty);
+}
+
 static desktop_ui_result_t desktop_ui_apply_dialog_result(
     desktop_ui_state_t *ui, desktop_dirty_region_t *dirty,
     const reist_gui_dialog_result_t *dialog_result) {
     desktop_ui_result_t result = desktop_ui_result_none();
     result.consumed = dialog_result->consumed;
     collect_dialog_damage(dirty, dialog_result);
-    if (dialog_result->completed)
+    if (dialog_result->completed) {
+        uint32_t response = REIST_GUI_DIALOG_RESPONSE_NONE;
+        if (ui->dialog_kind == DESKTOP_DIALOG_EMPTY_TRASH &&
+            reist_gui_dialog_response(&ui->dialog, &response) == 0 &&
+            response == REIST_GUI_DIALOG_RESPONSE_YES)
+            result.action = DESKTOP_UI_ACTION_EMPTY_TRASH;
         ui->dialog_kind = DESKTOP_DIALOG_NONE;
+    }
     return result;
+}
+
+static desktop_ui_result_t desktop_ui_apply_trash_menu_result(
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty,
+    const reist_gui_menu_result_t *menu_result) {
+    desktop_ui_result_t result = desktop_ui_result_none();
+    result.consumed = menu_result->consumed;
+    collect_menu_damage(dirty, menu_result);
+    if (!menu_result->activated) return result;
+    if (menu_result->action == DESKTOP_TRASH_MENU_ACTION_OPEN) {
+        result.action = DESKTOP_UI_ACTION_OPEN_TRASH;
+    } else if (menu_result->action == DESKTOP_TRASH_MENU_ACTION_EMPTY &&
+               ui->trash_menu_can_empty) {
+        desktop_ui_open_dialog(
+            ui, display, dirty, DESKTOP_DIALOG_EMPTY_TRASH);
+    }
+    return result;
+}
+
+static desktop_ui_result_t desktop_ui_dispatch_trash_menu(
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty,
+    const reist_gui_menu_event_t *event) {
+    desktop_ui_result_t result = desktop_ui_result_none();
+    reist_gui_menu_layout_t layout = trash_context_layout(ui, display);
+    reist_gui_menu_result_t menu_result;
+    reist_gui_menu_result_initialize(&menu_result);
+    if (reist_gui_menu_dispatch(
+            trash_context_model(ui), &layout, &ui->trash_menu,
+            event, &menu_result) != 0) {
+        result.consumed = 1U;
+        reist_gui_menu_state_initialize(&ui->trash_menu);
+        desktop_dirty_full(dirty);
+        return result;
+    }
+    return desktop_ui_apply_trash_menu_result(
+        ui, display, dirty, &menu_result);
 }
 
 static desktop_ui_result_t desktop_ui_apply_menu_result(
@@ -1037,6 +1234,13 @@ static desktop_ui_result_t desktop_ui_pointer_event(
     event.y = y;
     event.button = button_event ? REIST_GUI_MENU_BUTTON_LEFT : 0U;
     event.pressed = pressed;
+    if (ui->trash_menu.open_menu != REIST_GUI_MENU_NO_INDEX ||
+        ui->trash_menu.capture_kind != REIST_GUI_MENU_CAPTURE_NONE) {
+        desktop_ui_result_t context_result =
+            desktop_ui_dispatch_trash_menu(
+                ui, display, dirty, &event);
+        if (context_result.consumed) return context_result;
+    }
     return desktop_ui_dispatch_menu(ui, display, dirty, &event);
 }
 
@@ -1046,6 +1250,8 @@ static uint32_t desktop_ui_owns_pointer(const desktop_ui_state_t *ui) {
              ui->dialog.modality != REIST_GUI_DIALOG_MODELESS)) ||
            ui->menu.open_menu != REIST_GUI_MENU_NO_INDEX ||
            ui->menu.capture_kind != REIST_GUI_MENU_CAPTURE_NONE ||
+           ui->trash_menu.open_menu != REIST_GUI_MENU_NO_INDEX ||
+           ui->trash_menu.capture_kind != REIST_GUI_MENU_CAPTURE_NONE ||
            ui->taskbar_capture_slot != DESKTOP_WM_NO_TARGET;
 }
 
@@ -1105,8 +1311,20 @@ static desktop_ui_result_t desktop_ui_keyboard_event(
         }
         if (result.consumed) return result;
     }
-    if (ui->menu.open_menu == REIST_GUI_MENU_NO_INDEX) return result;
     uint32_t menu_key = desktop_menu_key_from_input(key);
+    if (ui->trash_menu.open_menu != REIST_GUI_MENU_NO_INDEX) {
+        if (menu_key == 0U) {
+            result.consumed = 1U;
+            return result;
+        }
+        reist_gui_menu_event_t context_event;
+        reist_gui_menu_event_initialize(&context_event);
+        context_event.type = REIST_GUI_MENU_EVENT_KEYBOARD;
+        context_event.key = menu_key;
+        return desktop_ui_dispatch_trash_menu(
+            ui, display, dirty, &context_event);
+    }
+    if (ui->menu.open_menu == REIST_GUI_MENU_NO_INDEX) return result;
     if (menu_key == 0U) {
         result.consumed = 1U;
         return result;
@@ -1444,6 +1662,46 @@ static desktop_rect_t desktop_window_client_rect(
     };
 }
 
+static uint32_t desktop_window_is_trash(
+    const desktop_explorer_t *explorer, uint32_t window_index) {
+    return explorer != 0 && window_index < DESKTOP_WM_CAPACITY &&
+        explorer->windows[window_index].active &&
+        path_equal_ascii_case(
+            explorer->windows[window_index].path,
+            DESKTOP_TRASH_FILES_PATH);
+}
+
+static desktop_rect_t desktop_explorer_content_rect(
+    const desktop_wm_t *manager, const desktop_explorer_t *explorer,
+    uint32_t window_index) {
+    desktop_rect_t client = desktop_window_client_rect(manager, window_index);
+    if (desktop_window_is_trash(explorer, window_index)) {
+        uint32_t reserved = min_u32(client.height,
+                                    DESKTOP_TRASH_ACTION_HEIGHT);
+        client.height -= reserved;
+    }
+    return client;
+}
+
+static desktop_rect_t desktop_trash_restore_rect(
+    const desktop_wm_t *manager, const desktop_explorer_t *explorer,
+    uint32_t window_index) {
+    desktop_rect_t empty = {0, 0, 0U, 0U};
+    if (!desktop_window_is_trash(explorer, window_index)) return empty;
+    desktop_rect_t client = desktop_window_client_rect(manager, window_index);
+    if (client.height < DESKTOP_TRASH_ACTION_HEIGHT) return empty;
+    uint32_t width = min_u32(client.width > 16U ? client.width - 16U : 1U,
+                             190U);
+    uint32_t height = DESKTOP_TRASH_ACTION_HEIGHT > 8U
+        ? DESKTOP_TRASH_ACTION_HEIGHT - 8U : 1U;
+    return (desktop_rect_t){
+        client.x + (int32_t)((client.width - width) / 2U),
+        client.y + (int32_t)client.height -
+            (int32_t)DESKTOP_TRASH_ACTION_HEIGHT + 4,
+        width, height,
+    };
+}
+
 static void render_explorer_entry(
     const desktop_render_context_t *context,
     const desktop_explorer_window_t *explorer_window,
@@ -1527,6 +1785,8 @@ static void render_window(const desktop_render_context_t *context,
         manager->title_height
     };
     desktop_rect_t client = desktop_window_client_rect(manager, window_index);
+    desktop_rect_t explorer_client = desktop_explorer_content_rect(
+        manager, explorer, window_index);
     uint32_t active = manager->keyboard_focus == (int32_t)window_index;
     uint32_t title_color = active ? color_active : color_inactive;
 
@@ -1595,15 +1855,38 @@ static void render_window(const desktop_render_context_t *context,
         }
     if (explorer_window != 0)
         for (uint32_t entry = 0U; entry < explorer_window->entry_count; ++entry)
-            render_explorer_entry(context, explorer_window, client, entry);
+            render_explorer_entry(
+                context, explorer_window, explorer_client, entry);
     if (explorer_window != 0 && explorer_window->truncated &&
-        client.height > display->font_height + 4U)
+        explorer_client.height > display->font_height + 4U)
         draw_text_clipped(
-            context, client.x + 4,
-            client.y + (int32_t)client.height -
+            context, explorer_client.x + 4,
+            explorer_client.y + (int32_t)explorer_client.height -
                 (int32_t)display->font_height - 3,
-            "Weitere Eintraege nicht angezeigt", client.width - 8U,
+            "Weitere Eintraege nicht angezeigt",
+            explorer_client.width > 8U ? explorer_client.width - 8U : 1U,
             color_shadow, color_client);
+    if (explorer_window != 0 &&
+        desktop_window_is_trash(explorer, window_index)) {
+        desktop_rect_t action = desktop_trash_restore_rect(
+            manager, explorer, window_index);
+        uint32_t enabled = explorer_window->selected <
+            explorer_window->entry_count;
+        uint32_t pressed = enabled &&
+            trash_restore_pressed_window == window_index;
+        draw_bevel(context, action, color_face, !pressed);
+        const char *label = "Wiederherstellen";
+        size_t label_length = bounded_text_length(label, 32U);
+        uint32_t label_width = (uint32_t)label_length * display->font_width;
+        int32_t label_x = action.x + (int32_t)((action.width > label_width
+            ? action.width - label_width : 0U) / 2U);
+        int32_t label_y = action.y + (int32_t)((action.height >
+            display->font_height ? action.height - display->font_height
+                                 : 0U) / 2U);
+        draw_text_clipped(
+            context, label_x, label_y, label, action.width,
+            enabled ? color_text : color_shadow, color_face);
+    }
     render_resize_grip(context, window);
 }
 
@@ -1689,16 +1972,19 @@ static void render_taskbar(
         color_text, color_face);
 }
 
-static void render_menu_popup(const desktop_render_context_t *context,
-                              const desktop_ui_state_t *ui) {
-    if (ui == 0 || ui->menu.open_menu == REIST_GUI_MENU_NO_INDEX ||
-        ui->menu.open_menu >= desktop_menu_model.menu_count) return;
+static void render_menu_popup_model(
+    const desktop_render_context_t *context,
+    const reist_gui_menu_model_t *model,
+    const reist_gui_menu_layout_t *layout,
+    const reist_gui_menu_state_t *state) {
+    if (model == 0 || layout == 0 || state == 0 ||
+        state->open_menu == REIST_GUI_MENU_NO_INDEX ||
+        state->open_menu >= model->menu_count) return;
     const x86os_display_info_t *display = context->display;
-    reist_gui_menu_layout_t layout = desktop_menu_layout(display);
-    uint32_t menu_index = ui->menu.open_menu;
+    uint32_t menu_index = state->open_menu;
     reist_gui_rect_t gui_popup;
     if (reist_gui_menu_popup_rect(
-            &desktop_menu_model, &layout, menu_index, &gui_popup) != 0)
+            model, layout, menu_index, &gui_popup) != 0)
         return;
     desktop_rect_t popup = desktop_rect_from_gui(gui_popup);
     /* Popup and shadow are composed after all ordinary windows. */
@@ -1710,12 +1996,12 @@ static void render_menu_popup(const desktop_render_context_t *context,
     draw_bevel(context, popup, color_face, 1U);
 
     const reist_gui_menu_t *menu_model =
-        &desktop_menu_model.menus[menu_index];
+        &model->menus[menu_index];
     for (uint32_t item_index = 0U;
          item_index < menu_model->item_count; ++item_index) {
         reist_gui_rect_t gui_item;
         if (reist_gui_menu_item_rect(
-                &desktop_menu_model, &layout, menu_index,
+                model, layout, menu_index,
                 item_index, &gui_item) != 0)
             continue;
         desktop_rect_t item = desktop_rect_from_gui(gui_item);
@@ -1723,11 +2009,11 @@ static void render_menu_popup(const desktop_render_context_t *context,
             &menu_model->items[item_index];
         uint32_t disabled =
             (model_item->flags & REIST_GUI_MENU_ITEM_DISABLED) != 0U;
-        uint32_t hot = !disabled && ui->menu.hot_item == item_index;
+        uint32_t hot = !disabled && state->hot_item == item_index;
         uint32_t pressed = hot &&
-            ui->menu.capture_kind == REIST_GUI_MENU_CAPTURE_ITEM &&
-            ui->menu.capture_menu == menu_index &&
-            ui->menu.capture_item == item_index;
+            state->capture_kind == REIST_GUI_MENU_CAPTURE_ITEM &&
+            state->capture_menu == menu_index &&
+            state->capture_item == item_index;
         uint32_t background = hot ? color_active : color_face;
         uint32_t foreground = disabled
             ? color_shadow : (hot ? color_title_text : color_text);
@@ -1737,9 +2023,9 @@ static void render_menu_popup(const desktop_render_context_t *context,
         }
         uint32_t text_y = item.height > display->font_height
             ? (item.height - display->font_height) / 2U : 0U;
-        int32_t marker_x = item.x + (int32_t)layout.item_padding_x;
+        int32_t marker_x = item.x + (int32_t)layout->item_padding_x;
         int32_t label_x = marker_x + (int32_t)(display->font_width * 2U);
-        uint32_t used = layout.item_padding_x * 2U +
+        uint32_t used = layout->item_padding_x * 2U +
                         display->font_width * 2U;
         draw_text_clipped(
             context, label_x, item.y + (int32_t)text_y,
@@ -1747,6 +2033,24 @@ static void render_menu_popup(const desktop_render_context_t *context,
             item.width > used ? item.width - used : 1U,
             foreground, background);
     }
+}
+
+static void render_menu_popup(const desktop_render_context_t *context,
+                              const desktop_ui_state_t *ui) {
+    if (ui == 0) return;
+    reist_gui_menu_layout_t layout = desktop_menu_layout(context->display);
+    render_menu_popup_model(
+        context, &desktop_menu_model, &layout, &ui->menu);
+}
+
+static void render_trash_context_popup(
+    const desktop_render_context_t *context,
+    const desktop_ui_state_t *ui) {
+    if (ui == 0) return;
+    reist_gui_menu_layout_t layout =
+        trash_context_layout(ui, context->display);
+    render_menu_popup_model(
+        context, trash_context_model(ui), &layout, &ui->trash_menu);
 }
 
 static void render_system_dialog(const desktop_render_context_t *context,
@@ -1880,6 +2184,7 @@ static void render_desktop_clip(const desktop_render_context_t *context,
 
     render_taskbar(context, manager, explorer, surfaces, ui);
     render_menu_popup(context, ui);
+    render_trash_context_popup(context, ui);
     if (context->omitted_kind != DESKTOP_MOVE_CACHE_DIALOG)
         render_system_dialog(context, ui);
     render_drag_feedback(context);
@@ -2624,6 +2929,115 @@ static uint32_t has_program_extension(const char *path) {
         (extension[3] == 'g' || extension[3] == 'G');
 }
 
+static uint32_t parent_path_of(const char *path, char *parent) {
+    size_t length = bounded_text_length(
+        path, DESKTOP_EXPLORER_PATH_CAPACITY);
+    if (length < 2U || length == DESKTOP_EXPLORER_PATH_CAPACITY)
+        return 0U;
+    size_t slash = length;
+    while (slash != 0U && path[slash - 1U] != '/') --slash;
+    if (slash == 0U) return 0U;
+    size_t parent_length = slash == 1U ? 1U : slash - 1U;
+    for (size_t index = 0U; index < parent_length; ++index)
+        parent[index] = path[index];
+    parent[parent_length] = '\0';
+    return 1U;
+}
+
+static uint32_t apply_trash_restore(
+    desktop_wm_t *manager, desktop_explorer_t *explorer,
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, uint32_t window_index,
+    uint32_t entry_index) {
+    if (manager == 0 || explorer == 0 || ui == 0 || display == 0 ||
+        dirty == 0 || window_index >= DESKTOP_WM_CAPACITY ||
+        !desktop_window_is_trash(explorer, window_index) ||
+        entry_index >= explorer->windows[window_index].entry_count)
+        return 0U;
+    desktop_trash_restore_request_t request;
+    desktop_trash_restore_request_initialize(&request);
+    if (desktop_explorer_child_path(
+            &explorer->windows[window_index], entry_index,
+            request.catalog_path, sizeof(request.catalog_path)) !=
+        DESKTOP_EXPLORER_OK) {
+        desktop_ui_open_error(
+            ui, display, dirty, "Papierkorbpfad ist ungueltig.",
+            DESKTOP_TRASH_FILES_PATH);
+        return 0U;
+    }
+    const x86os_file_info_t *selected =
+        &explorer->windows[window_index].entries[entry_index];
+    size_t name_length = bounded_text_length(
+        selected->name, sizeof(request.identity.name));
+    if (name_length == sizeof(request.identity.name)) {
+        desktop_ui_open_error(
+            ui, display, dirty, "Papierkorbeintrag ist ungueltig.",
+            request.catalog_path);
+        return 0U;
+    }
+    for (size_t index = 0U; index <= name_length; ++index)
+        request.identity.name[index] = selected->name[index];
+    request.identity.type = selected->type;
+    request.identity.size = selected->size;
+    request.identity.create_time = selected->create_time;
+    request.identity.modify_time = selected->modify_time;
+    request.identity.access_time = selected->access_time;
+    desktop_trash_restore_result_t result;
+    desktop_trash_restore_result_initialize(&result);
+    int status = desktop_trash_restore(&desktop_trash, &request, &result);
+    desktop_dirty_add(dirty, desktop_icon_rect(display, 2U));
+    if (status != DESKTOP_TRASH_OK && !result.restored) {
+        const char *message = status == DESKTOP_TRASH_ECOLLISION
+            ? "Am urspruenglichen Ort existiert bereits ein Eintrag."
+            : status == DESKTOP_TRASH_ESTALE
+                ? "Papierkorbeintrag wurde inzwischen veraendert."
+                : status == DESKTOP_TRASH_EINVAL
+                    ? "Wiederherstellungsdaten sind ungueltig."
+                    : "Datei konnte nicht wiederhergestellt werden.";
+        desktop_ui_open_error(
+            ui, display, dirty, message, request.catalog_path);
+        return 0U;
+    }
+
+    char original_parent[DESKTOP_EXPLORER_PATH_CAPACITY];
+    uint32_t parent_valid = parent_path_of(
+        result.original_path, original_parent);
+    uint32_t refreshed = 1U;
+    for (uint32_t index = 0U; index < DESKTOP_WM_CAPACITY; ++index) {
+        if (!explorer->windows[index].active ||
+            (!path_equal_ascii_case(
+                 explorer->windows[index].path,
+                 DESKTOP_TRASH_FILES_PATH) &&
+             (!parent_valid || !path_equal_ascii_case(
+                 explorer->windows[index].path, original_parent))))
+            continue;
+        char current[DESKTOP_EXPLORER_PATH_CAPACITY];
+        size_t length = bounded_text_length(
+            explorer->windows[index].path, sizeof(current));
+        if (length == sizeof(current)) {
+            refreshed = 0U;
+            continue;
+        }
+        for (size_t offset = 0U; offset <= length; ++offset)
+            current[offset] = explorer->windows[index].path[offset];
+        if (desktop_explorer_open(explorer, index, current) !=
+            DESKTOP_EXPLORER_OK) refreshed = 0U;
+        desktop_dirty_add(
+            dirty, desktop_wm_window_bounds(manager, index));
+    }
+    if (status != DESKTOP_TRASH_OK || !result.cleanup_complete)
+        desktop_ui_open_error(
+            ui, display, dirty,
+            "Datei ist wiederhergestellt; Katalogbereinigung ist fehlgeschlagen.",
+            result.original_path);
+    else if (!refreshed)
+        desktop_ui_open_error(
+            ui, display, dirty,
+            "Datei ist wiederhergestellt; Ansicht ist veraltet.",
+            result.original_path);
+    return 0U;
+}
+
 static uint32_t apply_desktop_activation(
     desktop_wm_t *manager, desktop_explorer_t *explorer,
     const desktop_filetypes_t *filetypes,
@@ -2645,6 +3059,10 @@ static uint32_t apply_desktop_activation(
 
     desktop_explorer_window_t *window =
         &explorer->windows[activation->window_index];
+    if (desktop_window_is_trash(explorer, activation->window_index))
+        return apply_trash_restore(
+            manager, explorer, ui, display, dirty,
+            activation->window_index, activation->entry_index);
     char path[DESKTOP_EXPLORER_PATH_CAPACITY];
     if (desktop_explorer_child_path(
             window, activation->entry_index, path, sizeof(path)) !=
@@ -2726,6 +3144,10 @@ static uint32_t apply_desktop_ui_result(
             manager, explorer, display, dirty, target);
     if (ui_result->action == DESKTOP_UI_ACTION_OPEN_CONTROL_PANEL)
         return DESKTOP_ACTION_OPEN_CONTROL_PANEL;
+    if (ui_result->action == DESKTOP_UI_ACTION_OPEN_TRASH)
+        return DESKTOP_ACTION_OPEN_TRASH;
+    if (ui_result->action == DESKTOP_UI_ACTION_EMPTY_TRASH)
+        return DESKTOP_ACTION_EMPTY_TRASH;
     return 0U;
 }
 
@@ -3132,6 +3554,42 @@ static void apply_trash_drop(
             trash_result.stored_path);
 }
 
+static void apply_trash_empty(
+    desktop_explorer_t *explorer, desktop_wm_t *manager,
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty) {
+    if (explorer == 0 || manager == 0 || ui == 0 || display == 0 ||
+        dirty == 0) return;
+    desktop_trash_empty_result_t result;
+    desktop_trash_empty_result_initialize(&result);
+    int status = desktop_trash_empty(&desktop_trash, &result);
+    desktop_dirty_add(dirty, desktop_icon_rect(display, 2U));
+    uint32_t refreshed = 1U;
+    for (uint32_t index = 0U; index < DESKTOP_WM_CAPACITY; ++index) {
+        if (!desktop_window_is_trash(explorer, index)) continue;
+        if (desktop_explorer_open(
+                explorer, index, DESKTOP_TRASH_FILES_PATH) !=
+            DESKTOP_EXPLORER_OK) refreshed = 0U;
+        desktop_dirty_add(
+            dirty, desktop_wm_window_bounds(manager, index));
+    }
+    if (status != DESKTOP_TRASH_OK || result.incomplete) {
+        desktop_ui_open_error(
+            ui, display, dirty,
+            result.removed_count != 0U
+                ? "Papierkorb wurde nur teilweise geleert."
+                : "Papierkorb konnte nicht geleert werden.",
+            status == DESKTOP_TRASH_ECAPACITY
+                ? "Sicherheitsgrenze erreicht; Vorgang erneut ausfuehren."
+                : DESKTOP_TRASH_FILES_PATH);
+    } else if (!refreshed) {
+        desktop_ui_open_error(
+            ui, display, dirty,
+            "Papierkorb wurde geleert; Ansicht ist veraltet.",
+            DESKTOP_TRASH_FILES_PATH);
+    }
+}
+
 static uint32_t dispatch_pointer_button(
     desktop_wm_t *manager, desktop_explorer_t *explorer,
     desktop_ui_state_t *ui,
@@ -3158,6 +3616,28 @@ static uint32_t dispatch_pointer_button(
                     1U, &actions, target);
         }
         if (!ui_press_consumed) {
+            int restore_window = desktop_wm_window_at(
+                manager, pointer_x, pointer_y);
+            if (restore_window >= 0 &&
+                restore_window < (int32_t)DESKTOP_WM_CAPACITY &&
+                point_in_rect(
+                    desktop_trash_restore_rect(
+                        manager, explorer, (uint32_t)restore_window),
+                    pointer_x, pointer_y)) {
+                desktop_wm_event_t select = {
+                    .type = DESKTOP_WM_EVENT_SELECT,
+                    .target = (uint32_t)restore_window,
+                };
+                actions |= dispatch_desktop_event(
+                    manager, display, dirty, &select, target);
+                trash_restore_pressed_window = (uint32_t)restore_window;
+                desktop_dirty_add(
+                    dirty, desktop_wm_window_bounds(
+                        manager, (uint32_t)restore_window));
+                ui_press_consumed = 1U;
+            }
+        }
+        if (!ui_press_consumed) {
             int window = desktop_wm_window_at(
                 manager, pointer_x, pointer_y);
             desktop_wm_event_t press = {
@@ -3176,7 +3656,8 @@ static uint32_t dispatch_pointer_button(
                 manager->capture_window == window) {
                 int explorer_status = desktop_explorer_pointer_press(
                     explorer, (uint32_t)window,
-                    desktop_window_client_rect(manager, (uint32_t)window),
+                    desktop_explorer_content_rect(
+                        manager, explorer, (uint32_t)window),
                     pointer_x, pointer_y, &explorer_result);
                 collect_explorer_pointer_result(
                     display, manager, dirty, &explorer_result, 0U,
@@ -3208,6 +3689,31 @@ static uint32_t dispatch_pointer_button(
             }
         }
     } else if (!left_down && left_was_down) {
+        if (trash_restore_pressed_window != DESKTOP_WM_NO_TARGET) {
+            uint32_t restore_window = trash_restore_pressed_window;
+            trash_restore_pressed_window = DESKTOP_WM_NO_TARGET;
+            if (restore_window < DESKTOP_WM_CAPACITY) {
+                desktop_dirty_add(
+                    dirty, desktop_wm_window_bounds(
+                        manager, restore_window));
+                desktop_explorer_window_t *restore_explorer =
+                    &explorer->windows[restore_window];
+                if (point_in_rect(
+                        desktop_trash_restore_rect(
+                            manager, explorer, restore_window),
+                        pointer_x, pointer_y) &&
+                    restore_explorer->active &&
+                    restore_explorer->selected <
+                        restore_explorer->entry_count &&
+                    activation != 0 && !activation->valid) {
+                    activation->valid = 1U;
+                    activation->root = 0U;
+                    activation->window_index = restore_window;
+                    activation->entry_index = restore_explorer->selected;
+                }
+            }
+            return actions;
+        }
         uint32_t captured_kind = manager->capture_kind;
         int32_t captured_window = manager->capture_window;
         if (desktop_drag.phase == DESKTOP_DRAG_PHASE_DRAGGING) {
@@ -3265,8 +3771,8 @@ static uint32_t dispatch_pointer_button(
                 captured_window < (int32_t)DESKTOP_WM_CAPACITY) {
                 (void)desktop_explorer_pointer_release(
                     explorer, (uint32_t)captured_window,
-                    desktop_window_client_rect(
-                        manager, (uint32_t)captured_window),
+                    desktop_explorer_content_rect(
+                        manager, explorer, (uint32_t)captured_window),
                     pointer_x, pointer_y, now_ms, &explorer_result);
                 collect_explorer_pointer_result(
                     display, manager, dirty, &explorer_result, 0U,
@@ -3602,12 +4108,19 @@ int main(int argc, char **argv) {
     reist_gui_menu_layout_t menu_layout = desktop_menu_layout(&display);
     reist_gui_dialog_layout_t dialog_layout =
         desktop_dialog_layout(&display);
+    reist_gui_menu_layout_t trash_menu_layout =
+        trash_context_layout(&ui, &display);
     if (reist_gui_menu_validate(
             &desktop_menu_model, &menu_layout, &ui.menu) != 0 ||
+        reist_gui_menu_validate(
+            trash_context_model(&ui), &trash_menu_layout,
+            &ui.trash_menu) != 0 ||
         reist_gui_dialog_validate(
             &help_dialog_model, &dialog_layout, &ui.dialog) != 0 ||
         reist_gui_dialog_validate(
             &about_dialog_model, &dialog_layout, &ui.dialog) != 0 ||
+        reist_gui_dialog_validate(
+            &empty_trash_dialog_model, &dialog_layout, &ui.dialog) != 0 ||
         reist_gui_dialog_validate(
             &ui.error_model, &dialog_layout, &ui.dialog) != 0) {
         if (runtime_activated) (void)x86os_display_deactivate();
@@ -3771,7 +4284,12 @@ int main(int argc, char **argv) {
                 (mouse.buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
             uint32_t left_was_down =
                 (previous_buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
-            if (left_down != left_was_down) {
+            uint32_t right_down =
+                (mouse.buttons & X86OS_MOUSE_BUTTON_RIGHT) != 0U;
+            uint32_t right_was_down =
+                (previous_buttons & X86OS_MOUSE_BUTTON_RIGHT) != 0U;
+            if (left_down != left_was_down ||
+                right_down != right_was_down) {
                 actions |= dispatch_pointer_motion(
                     &manager, &explorer, &ui, &display, &dirty,
                     &pointer_x, &pointer_y,
@@ -3779,39 +4297,64 @@ int main(int argc, char **argv) {
                     &drag_render, &resize_render, &move_cache);
                 pending_delta_x = 0;
                 pending_delta_y = 0;
-                if (!ui.dialog.visible &&
-                    manager.capture_kind == DESKTOP_WM_CAPTURE_NONE &&
-                    pointer_y < desktop_taskbar_rect(&display).y &&
-                    desktop_wm_window_at(
-                        &manager, pointer_x, pointer_y) ==
-                            DESKTOP_WM_NO_WINDOW)
-                    control_panel_activate |= control_panel_pointer_button(
-                        &explorer, &display, &dirty,
+                if (right_down && !right_was_down) {
+                    uint32_t trash_hit = !ui.dialog.visible &&
+                        manager.capture_kind == DESKTOP_WM_CAPTURE_NONE &&
+                        desktop_wm_window_at(
+                            &manager, pointer_x, pointer_y) ==
+                                DESKTOP_WM_NO_WINDOW &&
+                        desktop_icon_at_position(
+                            &display, pointer_x, pointer_y) == 2;
+                    if (trash_hit) {
+                        trash_selected = 1U;
+                        control_panel_selected = 0U;
+                        explorer.desktop_selected = 0U;
+                        desktop_dirty_add(
+                            &dirty, desktop_icon_rect(&display, 2U));
+                        desktop_ui_open_trash_context(
+                            &ui, &display, &dirty, pointer_x, pointer_y,
+                            desktop_trash.full);
+                    } else if (ui.trash_menu.open_menu !=
+                               REIST_GUI_MENU_NO_INDEX) {
+                        reist_gui_menu_state_initialize(&ui.trash_menu);
+                        desktop_dirty_full(&dirty);
+                    }
+                }
+                if (left_down != left_was_down) {
+                    if (!desktop_ui_owns_pointer(&ui) &&
+                        manager.capture_kind == DESKTOP_WM_CAPTURE_NONE &&
+                        pointer_y < desktop_taskbar_rect(&display).y &&
+                        desktop_wm_window_at(
+                            &manager, pointer_x, pointer_y) ==
+                                DESKTOP_WM_NO_WINDOW)
+                        control_panel_activate |= control_panel_pointer_button(
+                            &explorer, &display, &dirty,
+                            pointer_x, pointer_y, mouse.buttons,
+                            previous_buttons);
+                    if (!desktop_ui_owns_pointer(&ui) &&
+                        manager.capture_kind == DESKTOP_WM_CAPTURE_NONE &&
+                        pointer_y < desktop_taskbar_rect(&display).y &&
+                        desktop_wm_window_at(
+                            &manager, pointer_x, pointer_y) ==
+                                DESKTOP_WM_NO_WINDOW)
+                        trash_activate |= trash_pointer_button(
+                            &explorer, &display, &dirty,
+                            pointer_x, pointer_y, mouse.buttons,
+                            previous_buttons);
+                    int32_t captured_surface_window = manager.capture_window;
+                    actions |= dispatch_pointer_button(
+                        &manager, &explorer, &ui, &display, &dirty,
                         pointer_x, pointer_y, mouse.buttons,
-                        previous_buttons);
-                if (!ui.dialog.visible &&
-                    manager.capture_kind == DESKTOP_WM_CAPTURE_NONE &&
-                    pointer_y < desktop_taskbar_rect(&display).y &&
-                    desktop_wm_window_at(
-                        &manager, pointer_x, pointer_y) ==
-                            DESKTOP_WM_NO_WINDOW)
-                    trash_activate |= trash_pointer_button(
-                        &explorer, &display, &dirty,
-                        pointer_x, pointer_y, mouse.buttons,
-                        previous_buttons);
-                int32_t captured_surface_window = manager.capture_window;
-                actions |= dispatch_pointer_button(
-                    &manager, &explorer, &ui, &display, &dirty,
-                    pointer_x, pointer_y, mouse.buttons,
-                    previous_buttons, &action_target, &activation);
-                int32_t surface_button_window = left_down
-                    ? manager.capture_window : captured_surface_window;
-                (void)enqueue_surface_pointer(
-                    &manager, &surfaces, surface_button_window,
-                    REIST_GUI_SURFACE_INPUT_POINTER_BUTTON,
-                    pointer_x, pointer_y, 0, 0, left_down,
-                    !left_down || manager.capture_kind ==
-                        DESKTOP_WM_CAPTURE_CLIENT);
+                        previous_buttons, &action_target, &activation);
+                    int32_t surface_button_window = left_down
+                        ? manager.capture_window : captured_surface_window;
+                    (void)enqueue_surface_pointer(
+                        &manager, &surfaces, surface_button_window,
+                        REIST_GUI_SURFACE_INPUT_POINTER_BUTTON,
+                        pointer_x, pointer_y, 0, 0, left_down,
+                        !left_down || manager.capture_kind ==
+                            DESKTOP_WM_CAPTURE_CLIENT);
+                }
             }
             previous_buttons = mouse.buttons;
         }
@@ -3858,8 +4401,8 @@ int main(int argc, char **argv) {
                 manager.keyboard_focus >= 0 &&
                 manager.keyboard_focus < (int32_t)DESKTOP_WM_CAPACITY) {
                 uint32_t focused = (uint32_t)manager.keyboard_focus;
-                desktop_rect_t client = desktop_window_client_rect(
-                    &manager, focused);
+                desktop_rect_t client = desktop_explorer_content_rect(
+                    &manager, &explorer, focused);
                 uint32_t columns = client.width /
                     DESKTOP_EXPLORER_ICON_WIDTH;
                 desktop_explorer_result_t explorer_result;
@@ -3884,6 +4427,15 @@ int main(int argc, char **argv) {
         if ((actions & DESKTOP_ACTION_OPEN_CONTROL_PANEL) != 0U) {
             control_panel_activate = 1U;
             actions &= ~DESKTOP_ACTION_OPEN_CONTROL_PANEL;
+        }
+        if ((actions & DESKTOP_ACTION_OPEN_TRASH) != 0U) {
+            trash_activate = 1U;
+            actions &= ~DESKTOP_ACTION_OPEN_TRASH;
+        }
+        if ((actions & DESKTOP_ACTION_EMPTY_TRASH) != 0U) {
+            actions &= ~DESKTOP_ACTION_EMPTY_TRASH;
+            apply_trash_empty(
+                &explorer, &manager, &ui, &display, &dirty);
         }
 
         if ((actions & DESKTOP_WM_RESULT_EXIT) != 0U) {

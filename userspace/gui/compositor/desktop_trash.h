@@ -25,12 +25,16 @@
 #define DESKTOP_TRASH_METADATA_CAPACITY 640U
 #define DESKTOP_TRASH_COLLISION_LIMIT 32U
 #define DESKTOP_TRASH_SCAN_BATCHES 2U
+#define DESKTOP_TRASH_DELETE_DEPTH_LIMIT 8U
+#define DESKTOP_TRASH_DELETE_ENTRY_LIMIT 128U
+#define DESKTOP_TRASH_EMPTY_CATALOG_LIMIT 64U
 
 enum desktop_trash_status {
     DESKTOP_TRASH_OK = 0,
     DESKTOP_TRASH_ENOENT = -2,
     DESKTOP_TRASH_EIO = -5,
     DESKTOP_TRASH_EPROTECTED = -13,
+    DESKTOP_TRASH_ECOLLISION = -17,
     DESKTOP_TRASH_ERENAME = -18,
     DESKTOP_TRASH_EINVAL = -22,
     DESKTOP_TRASH_ECAPACITY = -75,
@@ -55,9 +59,33 @@ typedef struct desktop_trash_result {
     char info_path[DESKTOP_TRASH_PATH_CAPACITY];
 } desktop_trash_result_t;
 
+typedef struct desktop_trash_restore_request {
+    char catalog_path[DESKTOP_TRASH_PATH_CAPACITY];
+    x86os_file_info_t identity;
+} desktop_trash_restore_request_t;
+
+typedef struct desktop_trash_restore_result {
+    uint32_t restored;
+    uint32_t cleanup_complete;
+    char original_path[DESKTOP_TRASH_PATH_CAPACITY];
+    char stored_path[DESKTOP_TRASH_PATH_CAPACITY];
+    char info_path[DESKTOP_TRASH_PATH_CAPACITY];
+} desktop_trash_restore_result_t;
+
+typedef struct desktop_trash_empty_result {
+    uint32_t removed_count;
+    uint32_t incomplete;
+} desktop_trash_empty_result_t;
+
 void desktop_trash_state_initialize(desktop_trash_state_t *state);
 void desktop_trash_request_initialize(desktop_trash_request_t *request);
 void desktop_trash_result_initialize(desktop_trash_result_t *result);
+void desktop_trash_restore_request_initialize(
+    desktop_trash_restore_request_t *request);
+void desktop_trash_restore_result_initialize(
+    desktop_trash_restore_result_t *result);
+void desktop_trash_empty_result_initialize(
+    desktop_trash_empty_result_t *result);
 /** Return one only for canonical, non-system, non-trash source paths. */
 uint32_t desktop_trash_source_allowed(const char *path);
 /** Ensure and validate the fixed trash directories, then refresh state. */
@@ -68,5 +96,12 @@ int desktop_trash_refresh(desktop_trash_state_t *state);
 int desktop_trash_move(desktop_trash_state_t *state,
                        const desktop_trash_request_t *request,
                        desktop_trash_result_t *result);
+/** Restore one current catalog entry without replacing its original target. */
+int desktop_trash_restore(desktop_trash_state_t *state,
+                          const desktop_trash_restore_request_t *request,
+                          desktop_trash_restore_result_t *result);
+/** Permanently remove metadata-bound entries under fixed traversal budgets. */
+int desktop_trash_empty(desktop_trash_state_t *state,
+                        desktop_trash_empty_result_t *result);
 
 #endif

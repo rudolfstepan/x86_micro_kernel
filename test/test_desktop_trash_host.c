@@ -14,6 +14,7 @@ static uint32_t metadata_exists;
 static uint32_t fail_rename;
 static uint32_t fail_catalog_create;
 static uint32_t rename_calls;
+static uint32_t metadata_read_offset;
 static char metadata[DESKTOP_TRASH_METADATA_CAPACITY];
 static uint32_t metadata_size;
 static x86os_file_info_t source_info;
@@ -91,11 +92,29 @@ int x86os_write(int descriptor, const void *buffer, size_t size) {
     return (int)size;
 }
 
+int x86os_open(const char *path) {
+    if (!starts_with(path, DESKTOP_TRASH_INFO_PATH "/") ||
+        !metadata_exists) return -1;
+    metadata_read_offset = 0U;
+    return 6;
+}
+
+int x86os_read(int descriptor, void *buffer, size_t size) {
+    if (descriptor != 6) return -1;
+    uint32_t remaining = metadata_size - metadata_read_offset;
+    uint32_t count = size < remaining ? (uint32_t)size : remaining;
+    char *bytes = (char *)buffer;
+    for (uint32_t index = 0U; index < count; ++index)
+        bytes[index] = metadata[metadata_read_offset + index];
+    metadata_read_offset += count;
+    return (int)count;
+}
+
 int x86os_fsync(int descriptor) {
     return descriptor == 4 || descriptor == 5 ? 0 : -1;
 }
 int x86os_close(int descriptor) {
-    return descriptor == 4 || descriptor == 5 ? 0 : -1;
+    return descriptor == 4 || descriptor == 5 || descriptor == 6 ? 0 : -1;
 }
 
 int x86os_unlink(const char *path) {
@@ -108,18 +127,36 @@ int x86os_unlink(const char *path) {
         catalog_exists = 0U;
         return 0;
     }
+    if (starts_with(path, "/RT") && starts_with(path + 9U, ".TRS")) {
+        storage_exists = 0U;
+        return 0;
+    }
+    return -1;
+}
+
+int x86os_rmdir(const char *path) {
+    (void)path;
     return -1;
 }
 
 int x86os_rename(const char *old_path, const char *new_path) {
     ++rename_calls;
-    if (fail_rename || !equal_text(old_path, "/readme.txt") ||
-        !starts_with(new_path, "/RT") ||
-        !starts_with(new_path + 9U, ".TRS") || new_path[13] != '\0')
-        return -1;
-    source_exists = 0U;
-    storage_exists = 1U;
-    return 0;
+    if (fail_rename) return -1;
+    if (equal_text(old_path, "/readme.txt") &&
+        starts_with(new_path, "/RT") &&
+        starts_with(new_path + 9U, ".TRS") && new_path[13] == '\0') {
+        source_exists = 0U;
+        storage_exists = 1U;
+        return 0;
+    }
+    if (starts_with(old_path, "/RT") &&
+        starts_with(old_path + 9U, ".TRS") && old_path[13] == '\0' &&
+        equal_text(new_path, "/readme.txt")) {
+        storage_exists = 0U;
+        source_exists = 1U;
+        return 0;
+    }
+    return -1;
 }
 
 int x86os_readdir_batch(const char *path, uint32_t index,
@@ -150,6 +187,7 @@ static void reset_fake_fs(void) {
     source_exists = 1U;
     storage_exists = catalog_exists = metadata_exists = 0U;
     fail_rename = fail_catalog_create = rename_calls = metadata_size = 0U;
+    metadata_read_offset = 0U;
     source_info = (x86os_file_info_t){0};
     source_info.type = X86OS_FILE;
     source_info.size = 42U;
@@ -184,6 +222,95 @@ int main(void) {
     assert(metadata_contains("Path=/readme.txt\n"));
     assert(metadata_contains("StoragePath=/RT"));
     assert(metadata_contains("DeletionDate=2026-08-22T19:45:07\n"));
+
+    desktop_trash_restore_request_t restore_request;
+    desktop_trash_restore_request_initialize(&restore_request);
+    for (uint32_t index = 0U;
+         result.catalog_path[index] != '\0'; ++index)
+        restore_request.catalog_path[index] = result.catalog_path[index];
+    assert(x86os_stat(result.catalog_path, &restore_request.identity) == 0);
+    desktop_trash_restore_result_t restore_result;
+    desktop_trash_restore_result_initialize(&restore_result);
+    assert(desktop_trash_restore(
+               &state, &restore_request, &restore_result) ==
+           DESKTOP_TRASH_OK);
+    assert(restore_result.restored == 1U &&
+           restore_result.cleanup_complete == 1U);
+    assert(source_exists == 1U && storage_exists == 0U &&
+           catalog_exists == 0U && metadata_exists == 0U);
+    assert(state.full == 0U);
+
+    reset_fake_fs();
+    desktop_trash_state_initialize(&state);
+    request.identity = source_info;
+    desktop_trash_result_initialize(&result);
+    assert(desktop_trash_move(&state, &request, &result) == DESKTOP_TRASH_OK);
+    desktop_trash_restore_request_initialize(&restore_request);
+    for (uint32_t index = 0U;
+         result.catalog_path[index] != '\0'; ++index)
+        restore_request.catalog_path[index] = result.catalog_path[index];
+    assert(x86os_stat(result.catalog_path, &restore_request.identity) == 0);
+    source_exists = 1U;
+    desktop_trash_restore_result_initialize(&restore_result);
+    assert(desktop_trash_restore(
+               &state, &restore_request, &restore_result) ==
+           DESKTOP_TRASH_ECOLLISION);
+    assert(restore_result.restored == 0U && storage_exists == 1U &&
+           catalog_exists == 1U && metadata_exists == 1U);
+
+    reset_fake_fs();
+    desktop_trash_state_initialize(&state);
+    request.identity = source_info;
+    desktop_trash_result_initialize(&result);
+    assert(desktop_trash_move(&state, &request, &result) == DESKTOP_TRASH_OK);
+    desktop_trash_restore_request_initialize(&restore_request);
+    for (uint32_t index = 0U;
+         result.catalog_path[index] != '\0'; ++index)
+        restore_request.catalog_path[index] = result.catalog_path[index];
+    assert(x86os_stat(result.catalog_path, &restore_request.identity) == 0);
+    for (uint32_t index = 0U; index + 9U < metadata_size; ++index) {
+        if (starts_with(&metadata[index], "Version=2")) {
+            metadata[index + 8U] = '9';
+            break;
+        }
+    }
+    desktop_trash_restore_result_initialize(&restore_result);
+    assert(desktop_trash_restore(
+               &state, &restore_request, &restore_result) ==
+           DESKTOP_TRASH_EINVAL);
+    assert(source_exists == 0U && storage_exists == 1U &&
+           catalog_exists == 1U && metadata_exists == 1U);
+
+    reset_fake_fs();
+    desktop_trash_state_initialize(&state);
+    request.identity = source_info;
+    desktop_trash_result_initialize(&result);
+    assert(desktop_trash_move(&state, &request, &result) == DESKTOP_TRASH_OK);
+    desktop_trash_restore_request_initialize(&restore_request);
+    for (uint32_t index = 0U;
+         result.catalog_path[index] != '\0'; ++index)
+        restore_request.catalog_path[index] = result.catalog_path[index];
+    assert(x86os_stat(result.catalog_path, &restore_request.identity) == 0);
+    fail_rename = 1U;
+    desktop_trash_restore_result_initialize(&restore_result);
+    assert(desktop_trash_restore(
+               &state, &restore_request, &restore_result) ==
+           DESKTOP_TRASH_ERENAME);
+    assert(source_exists == 0U && storage_exists == 1U &&
+           catalog_exists == 1U && metadata_exists == 1U);
+
+    reset_fake_fs();
+    desktop_trash_state_initialize(&state);
+    request.identity = source_info;
+    desktop_trash_result_initialize(&result);
+    assert(desktop_trash_move(&state, &request, &result) == DESKTOP_TRASH_OK);
+    desktop_trash_empty_result_t empty_result;
+    desktop_trash_empty_result_initialize(&empty_result);
+    assert(desktop_trash_empty(&state, &empty_result) == DESKTOP_TRASH_OK);
+    assert(empty_result.removed_count == 1U && empty_result.incomplete == 0U);
+    assert(source_exists == 0U && storage_exists == 0U &&
+           catalog_exists == 0U && metadata_exists == 0U &&
+           state.full == 0U);
 
     reset_fake_fs();
     desktop_trash_state_initialize(&state);
