@@ -204,6 +204,18 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("apply_trash_restore", self.source)
         self.assertIn("apply_trash_empty", self.source)
 
+    def test_trash_documentation_probes_use_a_real_bounded_trash_object(self):
+        self.assertIn("prepare_trash_documentation_probe", self.source)
+        self.assertIn('"--trash-context-probe"', self.source)
+        self.assertIn('"--trash-confirm-probe"', self.source)
+        self.assertIn('"/trash-demo.txt"', self.source)
+        self.assertIn("desktop_trash_move(", self.source)
+        self.assertIn("DESKTOP_TRASH_CONTEXT_READY", self.source)
+        self.assertIn("DESKTOP_TRASH_CONFIRM_READY", self.source)
+        self.assertIn(
+            "DESKTOP_DIALOG_EMPTY_TRASH", self.source
+        )
+
     def test_redraw_is_driven_by_fixed_dirty_regions_and_clips_primitives(self):
         header = WM_HEADER.read_text(encoding="utf-8")
         self.assertIn("#define DESKTOP_WM_DIRTY_CAPACITY 8U", header)

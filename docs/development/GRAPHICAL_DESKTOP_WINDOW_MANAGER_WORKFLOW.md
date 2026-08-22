@@ -1,6 +1,6 @@
 # Grafischer Desktop und Window-Manager: VMware-Workflow
 
-Stand: 20. August 2026.
+Stand: 22. August 2026.
 
 Dieses Dokument ist die schrittweise Arbeitsliste für den sichtbaren Ausbau
 des REIST-Desktops unter VMware Workstation. Eine Checkbox wird erst nach
@@ -583,12 +583,26 @@ Vektor-Fallbacks; der Zeichenpfad führt nur einen geclippten Pixel-Upload aus.
   und nicht URL-kodiert gespeichert. Das Papierkorbfenster reserviert eine
   sichtbare Aktion `Wiederherstellen`; Button, Doppelklick und Enter führen
   denselben generationengebundenen Restore aus. Ein vorhandenes Originalziel
-  wird nicht überschrieben. Rechtsklick auf das Desktop-Icon öffnet ein echtes
+  wird nicht überschrieben.
+
+  ![Gefüllter REIST-Papierkorb mit Wiederherstellen und Kontextmenü](../assets/screenshots/reist-trash-context.png)
+
+  *Automatischer QEMU-Snapshot-Nachweis: Ein echtes Dateiobjekt liegt im
+  geöffneten Papierkorb, ist für `Wiederherstellen` ausgewählt und das
+  Rechtsklick-Kontextmenü bietet `Oeffnen` sowie `Papierkorb leeren` an.*
+
+  Rechtsklick auf das Desktop-Icon öffnet ein echtes
   Kontextmenü mit `Oeffnen` und `Papierkorb leeren`; Leeren mutiert erst nach
   einer applikationsmodalen Ja/Nein-Sicherheitsfrage und bleibt durch feste
   Katalog-, Tiefen- und Objektbudgets begrenzt. Benutzerspezifische
   Top-/Mount-Trashes bleiben unsupported. Cross-Volume-Copy/Delete und Drops aus dem Papierkorb selbst
   scheitern geschlossen, sodass ein abgelehnter Drop die Quelle nicht ändert.
+
+  ![Sicherheitsfrage vor dem endgültigen Leeren des REIST-Papierkorbs](../assets/screenshots/reist-trash-confirm.png)
+
+  *Die Sicherheitsfrage blockiert darunterliegende Ziele; `Nein` ist die
+  sichere Standardantwort. Die Aufnahme dokumentiert den sichtbaren Zustand,
+  während Quell-, Host- und Laufzeittests die begrenzte Mutation belegen.*
 
 ## Stufe 7: Robustheit und Abnahme
 

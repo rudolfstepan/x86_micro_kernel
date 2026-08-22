@@ -227,7 +227,8 @@ def capture_screenshot(process: subprocess.Popen[str],
 def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool, render_probe: bool,
         surface_probe: bool, notepad_probe: bool,
-        control_probe: bool,
+        control_probe: bool, trash_context_probe: bool,
+        trash_confirm_probe: bool,
         metrics_log: pathlib.Path | None) -> int:
     command = [
         str(qemu), "-accel", "tcg", "-machine", "pc", "-nodefaults",
@@ -258,7 +259,12 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                           else ("desktop.prg --notepad-probe"
                                 if notepad_probe else
                                 ("desktop.prg --control-probe"
-                                 if control_probe else "desktop.prg")))
+                                 if control_probe else
+                                 ("desktop.prg --trash-context-probe"
+                                  if trash_context_probe else
+                                  ("desktop.prg --trash-confirm-probe"
+                                   if trash_confirm_probe else
+                                   "desktop.prg")))))
                 send_command(process, command_name)
                 break
             time.sleep(0.02)
@@ -385,6 +391,32 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     raise RuntimeError(
                         "Control Panel did not publish a visible window"
                     )
+                if trash_context_probe or trash_confirm_probe:
+                    ready_marker = (
+                        "DESKTOP_TRASH_CONTEXT_READY"
+                        if trash_context_probe
+                        else "DESKTOP_TRASH_CONFIRM_READY"
+                    )
+                    while time.monotonic() < deadline:
+                        drain(output, transcript)
+                        probe_text = "".join(transcript)
+                        if "DESKTOP_TRASH_PROBE_FAIL" in probe_text:
+                            raise RuntimeError(
+                                "Trash documentation probe setup failed"
+                            )
+                        if ready_marker in probe_text:
+                            time.sleep(0.2)
+                            capture_screenshot(process, screenshot, deadline)
+                            print(
+                                "runtime-desktop-trash-context: PASS"
+                                if trash_context_probe else
+                                "runtime-desktop-trash-confirm: PASS"
+                            )
+                            return 0
+                        time.sleep(0.02)
+                    raise RuntimeError(
+                        "Trash documentation state was not published"
+                    )
                 # The marker is emitted immediately before the single
                 # backbuffer render so it is overwritten by the desktop.
                 # Give the guest a bounded interval to finish that frame
@@ -424,10 +456,13 @@ def main() -> int:
     parser.add_argument("--surface-probe", action="store_true")
     parser.add_argument("--notepad-probe", action="store_true")
     parser.add_argument("--control-probe", action="store_true")
+    parser.add_argument("--trash-context-probe", action="store_true")
+    parser.add_argument("--trash-confirm-probe", action="store_true")
     parser.add_argument("--metrics-log", type=pathlib.Path)
     args = parser.parse_args()
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
-            args.notepad_probe, args.control_probe)) > 1:
+            args.notepad_probe, args.control_probe,
+            args.trash_context_probe, args.trash_confirm_probe)) > 1:
         parser.error("desktop probe modes are mutually exclusive")
     if args.metrics_log is not None and not args.render_probe:
         parser.error("--metrics-log requires --render-probe")
@@ -435,6 +470,7 @@ def main() -> int:
         return run(args.qemu, args.image, args.screenshot, args.timeout,
                    args.expect_failure, args.render_probe,
                    args.surface_probe, args.notepad_probe, args.control_probe,
+                   args.trash_context_probe, args.trash_confirm_probe,
                    args.metrics_log)
     except (OSError, RuntimeError) as error:
         print(f"runtime-desktop: FAIL: {error}", file=sys.stderr)

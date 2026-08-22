@@ -4051,6 +4051,85 @@ static void run_render_probe(
     run_menu_probe(display, ui, metrics);
 }
 
+/* Documentation probes run only in the QEMU runner's immutable -snapshot
+ * guest.  They still build their visible state through the production trash
+ * adapter, so the captured catalog entry is restorable rather than painted
+ * test data. */
+static int prepare_trash_documentation_probe(
+    desktop_wm_t *manager, desktop_explorer_t *explorer,
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, uint32_t show_confirmation,
+    uint32_t *target) {
+    static const char sample_path[] = "/trash-demo.txt";
+    static const char sample_text[] =
+        "REIST Workspace Papierkorb-Dokumentationsprobe\n";
+    x86os_file_info_t existing;
+    if (desktop_trash.available == 0U ||
+        x86os_stat(sample_path, &existing) != DESKTOP_TRASH_ENOENT)
+        return -1;
+
+    int descriptor = x86os_create(sample_path);
+    if (descriptor < 0) return -1;
+    uint32_t written = 0U;
+    while (written + 1U < sizeof(sample_text)) {
+        int amount = x86os_write(
+            descriptor, sample_text + written,
+            sizeof(sample_text) - 1U - written);
+        if (amount <= 0 ||
+            (uint32_t)amount > sizeof(sample_text) - 1U - written) {
+            (void)x86os_close(descriptor);
+            (void)x86os_unlink(sample_path);
+            return -1;
+        }
+        written += (uint32_t)amount;
+    }
+    int sync_status = x86os_fsync(descriptor);
+    int close_status = x86os_close(descriptor);
+    if (sync_status != 0 || close_status != 0) {
+        (void)x86os_unlink(sample_path);
+        return -1;
+    }
+
+    desktop_trash_request_t request;
+    desktop_trash_request_initialize(&request);
+    for (uint32_t index = 0U; index < sizeof(sample_path); ++index)
+        request.source_path[index] = sample_path[index];
+    if (x86os_stat(sample_path, &request.identity) != 0) {
+        (void)x86os_unlink(sample_path);
+        return -1;
+    }
+    desktop_trash_result_t result;
+    desktop_trash_result_initialize(&result);
+    if (desktop_trash_move(&desktop_trash, &request, &result) !=
+            DESKTOP_TRASH_OK ||
+        result.moved == 0U)
+        return -1;
+
+    uint32_t trash_window = desktop_explorer_free_window(explorer);
+    if (trash_window >= DESKTOP_WM_CAPACITY) return -1;
+    (void)open_explorer_path(
+        manager, explorer, ui, display, dirty,
+        DESKTOP_TRASH_FILES_PATH, target);
+    if (!explorer->windows[trash_window].active ||
+        explorer->windows[trash_window].entry_count == 0U)
+        return -1;
+    explorer->windows[trash_window].selected = 0U;
+    explorer->desktop_selected = 0U;
+    control_panel_selected = 0U;
+    trash_selected = 1U;
+    if (show_confirmation) {
+        desktop_ui_open_dialog(
+            ui, display, dirty, DESKTOP_DIALOG_EMPTY_TRASH);
+    } else {
+        desktop_ui_open_trash_context(
+            ui, display, dirty,
+            (int32_t)(display->width * 3U / 4U),
+            (int32_t)(display->height / 3U), 1U);
+    }
+    desktop_dirty_full(dirty);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     x86os_display_info_t display;
     desktop_wm_t manager;
@@ -4068,6 +4147,8 @@ int main(int argc, char **argv) {
     uint32_t surface_probe = 0U;
     uint32_t notepad_probe = 0U;
     uint32_t control_probe = 0U;
+    uint32_t trash_context_probe = 0U;
+    uint32_t trash_confirm_probe = 0U;
     uint32_t surface_probe_reported = 0U;
     uint32_t surface_probe_created_reported = 0U;
 
@@ -4082,10 +4163,17 @@ int main(int argc, char **argv) {
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--control-probe")) {
         control_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--trash-context-probe")) {
+        trash_context_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--trash-confirm-probe")) {
+        trash_confirm_probe = 1U;
     } else if (argc != 1) {
         x86os_puts(
             "Usage: desktop [--render-probe|--surface-probe|"
-            "--notepad-probe|--control-probe]\n");
+            "--notepad-probe|--control-probe|--trash-context-probe|"
+            "--trash-confirm-probe]\n");
         return 2;
     }
 
@@ -4163,12 +4251,25 @@ int main(int argc, char **argv) {
         desktop_ui_open_error(
             &ui, &display, &initial_dirty,
             "Papierkorb ist nicht verfuegbar.", DESKTOP_TRASH_ROOT_PATH);
+    if ((trash_context_probe || trash_confirm_probe) &&
+        prepare_trash_documentation_probe(
+            &manager, &explorer, &ui, &display, &initial_dirty,
+            trash_confirm_probe, &initial_target) != 0) {
+        x86os_puts("DESKTOP_TRASH_PROBE_FAIL setup\n");
+        desktop_surface_runtime_shutdown(&surface_runtime);
+        if (runtime_activated) (void)x86os_display_deactivate();
+        return 1;
+    }
     desktop_clock_refresh(&display, &initial_dirty, 1U);
     desktop_dirty_full(&initial_dirty);
     render_desktop_measured(
         &display, &manager, &explorer, &surfaces, &ui,
         &initial_dirty, 0, 0U, 0U, &metrics);
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
+    if (trash_context_probe)
+        x86os_puts("DESKTOP_TRASH_CONTEXT_READY\n");
+    if (trash_confirm_probe)
+        x86os_puts("DESKTOP_TRASH_CONFIRM_READY\n");
     if (surface_probe || notepad_probe || control_probe) {
         int probe_status = control_probe
             ? launch_surface_probe_client(

@@ -168,8 +168,20 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn("reist-desktop.png", self.documentation_capture)
         self.assertIn("reist-desktop-apps.png", self.documentation_capture)
         self.assertIn("reist-notepad.png", self.documentation_capture)
+        self.assertIn("reist-trash-context.png", self.documentation_capture)
+        self.assertIn("reist-trash-confirm.png", self.documentation_capture)
         self.assertIn("--surface-probe", self.documentation_capture)
         self.assertIn("--notepad-probe", self.documentation_capture)
+        self.assertIn("--trash-context-probe", self.documentation_capture)
+        self.assertIn("--trash-confirm-probe", self.documentation_capture)
+        self.assertIn(
+            '"desktop.prg --trash-context-probe"', self.runtime_runner
+        )
+        self.assertIn(
+            '"desktop.prg --trash-confirm-probe"', self.runtime_runner
+        )
+        self.assertIn("DESKTOP_TRASH_CONTEXT_READY", self.runtime_runner)
+        self.assertIn("DESKTOP_TRASH_CONFIRM_READY", self.runtime_runner)
 
     def test_runtime_notepad_mode_starts_a_visible_document_window(self):
         self.assertIn('"desktop.prg --notepad-probe"', self.runtime_runner)
@@ -188,7 +200,8 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
     def test_documentation_desktop_images_are_versioned_pngs(self):
         directory = ROOT / "docs/assets/screenshots"
         for name in ("reist-desktop.png", "reist-desktop-apps.png",
-                     "reist-notepad.png"):
+                     "reist-notepad.png", "reist-trash-context.png",
+                     "reist-trash-confirm.png"):
             data = (directory / name).read_bytes()
             self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
             self.assertEqual(struct.unpack(">II", data[16:24]), (1024, 768))

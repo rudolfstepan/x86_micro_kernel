@@ -2328,3 +2328,57 @@ stop_conditions = [
 ]
 commit_message = "feat: add trash restore and confirmed empty"
 evidence = []
+
+[[packages]]
+id = "R1.10c-desktop-trash-documentation"
+status = "done"
+risk = "low"
+title = "Runtime screenshots for the completed trash workflow"
+scope = "Add deterministic QEMU snapshot-only documentation probes for a real populated trash catalog, its Restore action, right-click context menu and application-modal Empty Trash confirmation. Capture versioned PNG evidence from the final VGA image and link the images from the graphical desktop workflow without presenting screenshots as the sole behavioral proof."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/capture-documentation.ps1",
+  "test/test_desktop_source.py",
+  "test/test_runtime_graphics_switch.py",
+  "docs/assets/screenshots/README.md",
+  "docs/assets/screenshots/reist-desktop.png",
+  "docs/assets/screenshots/reist-desktop-apps.png",
+  "docs/assets/screenshots/reist-notepad.png",
+  "docs/assets/screenshots/reist-trash-context.png",
+  "docs/assets/screenshots/reist-trash-confirm.png",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md"
+]
+invariants = [
+  "documentation captures come from the real QEMU VGA guest under -snapshot and never mutate the source image",
+  "the probe creates one bounded real file object and moves it through desktop_trash_move before exposing the trash window",
+  "the selected catalog entry, Restore action and enabled context-menu Empty action are rendered by the production desktop paths",
+  "the confirmation capture uses the same application-modal Empty Trash dialog with the non-destructive response selected by default",
+  "probe setup is explicit, fixed-capacity and fails closed before publishing a ready marker",
+  "screenshots supplement source, host and runtime evidence and are not presented as behavioral proof by themselves"
+]
+targeted_tests = [
+  "python test/test_desktop_source.py -q",
+  "python test/test_runtime_graphics_switch.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\capture-documentation.ps1 -SkipBuild"
+]
+stop_conditions = [
+  "a real populated trash state cannot be prepared without touching the base image",
+  "the captured frame cannot be validated as the requested 1024x768 runtime state",
+  "a required file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "docs: capture completed trash workflow"
+evidence = [
+  "python test/test_desktop_source.py -q",
+  "python test/test_runtime_graphics_switch.py -q",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\capture-documentation.ps1 -SkipBuild"
+]

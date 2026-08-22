@@ -54,6 +54,14 @@ $Captures = @(
     @{
         Name = 'reist-notepad.png'
         Probe = @('--notepad-probe')
+    },
+    @{
+        Name = 'reist-trash-context.png'
+        Probe = @('--trash-context-probe')
+    },
+    @{
+        Name = 'reist-trash-confirm.png'
+        Probe = @('--trash-confirm-probe')
     }
 )
 
