@@ -409,6 +409,63 @@ commit_message = "feat: add recoverable desktop trash"
 evidence = []
 
 [[packages]]
+id = "R1.10a-desktop-trash-storage"
+status = "done"
+risk = "high"
+title = "Journal-compatible desktop trash storage"
+scope = "Repair desktop trash insertion on native FAT32 without weakening the documented cross-directory rename boundary. Rename each validated source to a bounded reserved 8.3 storage name in its current parent directory, hide only that exact reserved name class from Explorer snapshots, and publish a bounded central marker plus versioned metadata containing both original and storage paths. Permit journal-backed same-directory directory rename while retaining cross-directory and cross-volume fail-closed behavior. Failed setup or rename removes only newly created catalog artifacts and preserves the source."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop_trash.h",
+  "userspace/gui/compositor/desktop_trash.c",
+  "userspace/gui/compositor/desktop_explorer.c",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "test/test_desktop_trash_source.py",
+  "test/test_desktop_trash_host.c",
+  "test/test_desktop_explorer_source.py",
+  "test/test_desktop_explorer_host.c",
+  "test/test_reist_atomic_rename.py",
+  "test/test_fs_host.py",
+  "test/test_fat32_host.c",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/architecture/REIST_ARCHITECTURE.md"
+]
+invariants = [
+  "payload rename remains one journal-backed same-directory VFS mutation and cross-directory or cross-volume rename remains unsupported",
+  "reserved storage names are fixed 8.3 names, collision handling is bounded, and Explorer hides only names matching the complete reserved syntax",
+  "central catalog marker and metadata are durable before payload rename; a rename failure preserves the source, performs bounded cleanup, and refreshes visible state after any cleanup ambiguity",
+  "metadata records the original path and actual storage path with an explicit append-only format version",
+  "same-directory directory rename never replaces an existing directory and does not require dot-dot repair",
+  "no render path performs VFS work and no new heap allocation or unbounded scan is introduced"
+]
+targeted_tests = [
+  "python test/test_desktop_trash_source.py -q",
+  "python test/test_desktop_explorer_source.py -q",
+  "python test/test_reist_atomic_rename.py -q",
+  "python test/test_fs_host.py FilesystemHostTests.test_fat32_write_truncate_and_directory_extension -q",
+  "python test/test_user_program_toolchain.py -q",
+  "python test/test_system_layout.py -q",
+  "python test/test_native_boot_image.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop"
+]
+stop_conditions = [
+  "the payload cannot be committed by one same-directory journal-backed rename",
+  "catalog publication can destroy or overwrite a pre-existing entry",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: keep trash moves within journal boundary"
+evidence = []
+
+[[packages]]
 id = "R1.11-desktop-taskbar"
 status = "done"
 risk = "medium"

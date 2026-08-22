@@ -25,6 +25,7 @@ class DesktopExplorerSourceTests(unittest.TestCase):
         self.assertIn("if (explorer->staging_truncated) break", source)
         self.assertIn("DESKTOP_EXPLORER_DIRECTORY_PROBE_BATCHES 2U", header)
         self.assertIn("entry_is_dot_name", source)
+        self.assertIn("entry_is_trash_storage_name", source)
         self.assertIn("desktop_explorer_icon_kind", source)
         self.assertIn("snapshot_generation", header)
         self.assertIn("desktop_explorer_drag_object", header)

@@ -52,6 +52,27 @@ static uint32_t canonical_absolute_path(const char *path, uint32_t *length) {
     return 1U;
 }
 
+static uint32_t hex_digit(uint8_t value) {
+    value = fold_ascii(value);
+    return (value >= '0' && value <= '9') ||
+        (value >= 'a' && value <= 'f');
+}
+
+static uint32_t storage_name(const char *name) {
+    uint32_t length = 0U;
+    if (!text_length(name, DESKTOP_TRASH_STORAGE_NAME_LENGTH + 1U,
+                     &length) ||
+        length != DESKTOP_TRASH_STORAGE_NAME_LENGTH ||
+        fold_ascii((uint8_t)name[0]) != 'r' ||
+        fold_ascii((uint8_t)name[1]) != 't') return 0U;
+    for (uint32_t index = 2U; index < 8U; ++index)
+        if (!hex_digit((uint8_t)name[index])) return 0U;
+    return name[8] == '.' &&
+        fold_ascii((uint8_t)name[9]) == 't' &&
+        fold_ascii((uint8_t)name[10]) == 'r' &&
+        fold_ascii((uint8_t)name[11]) == 's' && name[12] == '\0';
+}
+
 uint32_t desktop_trash_source_allowed(const char *path) {
     static const char *const protected_roots[] = {
         DESKTOP_TRASH_ROOT_PATH, "/bin", "/sbin", "/libexec", "/etc",
@@ -60,7 +81,9 @@ uint32_t desktop_trash_source_allowed(const char *path) {
     };
     uint32_t length = 0U;
     if (!canonical_absolute_path(path, &length)) return 0U;
-    (void)length;
+    uint32_t name_offset = length;
+    while (name_offset != 0U && path[name_offset - 1U] != '/') --name_offset;
+    if (storage_name(&path[name_offset])) return 0U;
     for (uint32_t index = 0U;
          index < sizeof(protected_roots) / sizeof(protected_roots[0]); ++index)
         if (path_has_prefix(path, protected_roots[index])) return 0U;
@@ -190,23 +213,23 @@ static uint32_t append_number(char *destination, uint32_t capacity,
     return 1U;
 }
 
-static int build_candidate(const char *name, uint32_t attempt,
-                           char *stored_path, char *info_path) {
-    uint32_t stored_used = 0U;
+static int build_catalog_candidate(const char *name, uint32_t attempt,
+                                   char *catalog_path, char *info_path) {
+    uint32_t catalog_used = 0U;
     uint32_t info_used = 0U;
-    if (!append_text(stored_path, DESKTOP_TRASH_PATH_CAPACITY, &stored_used,
+    if (!append_text(catalog_path, DESKTOP_TRASH_PATH_CAPACITY, &catalog_used,
                      DESKTOP_TRASH_FILES_PATH "/") ||
-        !append_text(stored_path, DESKTOP_TRASH_PATH_CAPACITY, &stored_used,
+        !append_text(catalog_path, DESKTOP_TRASH_PATH_CAPACITY, &catalog_used,
                      name) ||
         !append_text(info_path, DESKTOP_TRASH_PATH_CAPACITY, &info_used,
                      DESKTOP_TRASH_INFO_PATH "/") ||
         !append_text(info_path, DESKTOP_TRASH_PATH_CAPACITY, &info_used,
                      name)) return DESKTOP_TRASH_ECAPACITY;
     if (attempt != 0U) {
-        if (!append_text(stored_path, DESKTOP_TRASH_PATH_CAPACITY,
-                         &stored_used, ".") ||
-            !append_number(stored_path, DESKTOP_TRASH_PATH_CAPACITY,
-                           &stored_used, attempt) ||
+        if (!append_text(catalog_path, DESKTOP_TRASH_PATH_CAPACITY,
+                         &catalog_used, ".") ||
+            !append_number(catalog_path, DESKTOP_TRASH_PATH_CAPACITY,
+                           &catalog_used, attempt) ||
             !append_text(info_path, DESKTOP_TRASH_PATH_CAPACITY,
                          &info_used, ".") ||
             !append_number(info_path, DESKTOP_TRASH_PATH_CAPACITY,
@@ -214,6 +237,56 @@ static int build_candidate(const char *name, uint32_t attempt,
     }
     if (!append_text(info_path, DESKTOP_TRASH_PATH_CAPACITY, &info_used,
                      ".trashinfo")) return DESKTOP_TRASH_ECAPACITY;
+    return DESKTOP_TRASH_OK;
+}
+
+static uint32_t hash_u32(uint32_t hash, uint32_t value) {
+    for (uint32_t byte = 0U; byte < 4U; ++byte) {
+        hash ^= (value >> (byte * 8U)) & 0xFFU;
+        hash *= 16777619U;
+    }
+    return hash;
+}
+
+static int build_storage_path(const desktop_trash_request_t *request,
+                              uint32_t attempt, char *stored_path) {
+    uint32_t source_length = 0U;
+    if (request == 0 || stored_path == 0 ||
+        !text_length(request->source_path, DESKTOP_TRASH_PATH_CAPACITY,
+                     &source_length)) return DESKTOP_TRASH_EINVAL;
+    uint32_t name_offset = source_length;
+    while (name_offset != 0U && request->source_path[name_offset - 1U] != '/')
+        --name_offset;
+    if (name_offset + DESKTOP_TRASH_STORAGE_NAME_LENGTH + 1U >
+        DESKTOP_TRASH_PATH_CAPACITY) return DESKTOP_TRASH_ECAPACITY;
+
+    uint32_t hash = 2166136261U;
+    for (uint32_t index = 0U; index < source_length; ++index) {
+        hash ^= (uint8_t)request->source_path[index];
+        hash *= 16777619U;
+    }
+    hash = hash_u32(hash, request->identity.type);
+    hash = hash_u32(hash, request->identity.size);
+    hash = hash_u32(hash, request->identity.create_time);
+    hash = hash_u32(hash, request->identity.modify_time);
+    hash = hash_u32(hash, request->identity.access_time);
+    hash = hash_u32(hash, attempt);
+
+    for (uint32_t index = 0U; index < name_offset; ++index)
+        stored_path[index] = request->source_path[index];
+    uint32_t used = name_offset;
+    stored_path[used++] = 'R';
+    stored_path[used++] = 'T';
+    static const char digits[] = "0123456789ABCDEF";
+    for (uint32_t digit = 0U; digit < 6U; ++digit) {
+        uint32_t shift = (5U - digit) * 4U;
+        stored_path[used++] = digits[(hash >> shift) & 0xFU];
+    }
+    stored_path[used++] = '.';
+    stored_path[used++] = 'T';
+    stored_path[used++] = 'R';
+    stored_path[used++] = 'S';
+    stored_path[used] = '\0';
     return DESKTOP_TRASH_OK;
 }
 
@@ -272,14 +345,17 @@ static void deletion_date(char *text) {
     text[19] = '\0';
 }
 
-static int write_metadata(const char *info_path, const char *source_path) {
+static int write_metadata(const char *info_path, const char *source_path,
+                          const char *storage_path) {
     char metadata[DESKTOP_TRASH_METADATA_CAPACITY];
     char date[20];
     uint32_t used = 0U;
     deletion_date(date);
     if (!append_text(metadata, sizeof(metadata), &used,
-                     "[Trash Info]\nVersion=1\nPath=") ||
+                     "[Trash Info]\nVersion=2\nPath=") ||
         !append_text(metadata, sizeof(metadata), &used, source_path) ||
+        !append_text(metadata, sizeof(metadata), &used, "\nStoragePath=") ||
+        !append_text(metadata, sizeof(metadata), &used, storage_path) ||
         !append_text(metadata, sizeof(metadata), &used, "\nDeletionDate=") ||
         !append_text(metadata, sizeof(metadata), &used, date) ||
         !append_text(metadata, sizeof(metadata), &used, "\n"))
@@ -300,6 +376,18 @@ static int write_metadata(const char *info_path, const char *source_path) {
     int close_status = x86os_close(descriptor);
     if (sync_status != 0 || close_status != 0) {
         (void)x86os_unlink(info_path);
+        return DESKTOP_TRASH_EIO;
+    }
+    return DESKTOP_TRASH_OK;
+}
+
+static int create_catalog_marker(const char *catalog_path) {
+    int descriptor = x86os_create(catalog_path);
+    if (descriptor < 0) return DESKTOP_TRASH_EIO;
+    int sync_status = x86os_fsync(descriptor);
+    int close_status = x86os_close(descriptor);
+    if (sync_status != 0 || close_status != 0) {
+        (void)x86os_unlink(catalog_path);
         return DESKTOP_TRASH_EIO;
     }
     return DESKTOP_TRASH_OK;
@@ -334,27 +422,42 @@ int desktop_trash_move(desktop_trash_state_t *state,
     int candidate_status = DESKTOP_TRASH_ECAPACITY;
     for (uint32_t attempt = 0U;
          attempt < DESKTOP_TRASH_COLLISION_LIMIT; ++attempt) {
-        candidate_status = build_candidate(
-            name, attempt, result->stored_path, result->info_path);
+        candidate_status = build_catalog_candidate(
+            name, attempt, result->catalog_path, result->info_path);
+        if (candidate_status == DESKTOP_TRASH_OK)
+            candidate_status = build_storage_path(
+                request, attempt, result->stored_path);
         if (candidate_status != DESKTOP_TRASH_OK) return candidate_status;
         x86os_file_info_t collision;
         int stored_status = x86os_stat(result->stored_path, &collision);
+        int catalog_status = x86os_stat(result->catalog_path, &collision);
         int info_status = x86os_stat(result->info_path, &collision);
         if (stored_status == DESKTOP_TRASH_ENOENT &&
+            catalog_status == DESKTOP_TRASH_ENOENT &&
             info_status == DESKTOP_TRASH_ENOENT) break;
         if ((stored_status != 0 && stored_status != DESKTOP_TRASH_ENOENT) ||
+            (catalog_status != 0 &&
+             catalog_status != DESKTOP_TRASH_ENOENT) ||
             (info_status != 0 && info_status != DESKTOP_TRASH_ENOENT))
             return DESKTOP_TRASH_EIO;
         if (attempt + 1U == DESKTOP_TRASH_COLLISION_LIMIT)
             return DESKTOP_TRASH_ECAPACITY;
     }
     int metadata_status = write_metadata(
-        result->info_path, request->source_path);
+        result->info_path, request->source_path, result->stored_path);
     if (metadata_status != DESKTOP_TRASH_OK) return metadata_status;
-    if (x86os_rename(request->source_path, result->stored_path) != 0) {
+    if (create_catalog_marker(result->catalog_path) != DESKTOP_TRASH_OK) {
         (void)x86os_unlink(result->info_path);
         desktop_trash_result_initialize(result);
-        return DESKTOP_TRASH_ERENAME;
+        return DESKTOP_TRASH_EIO;
+    }
+    if (x86os_rename(request->source_path, result->stored_path) != 0) {
+        int catalog_cleanup = x86os_unlink(result->catalog_path);
+        int info_cleanup = x86os_unlink(result->info_path);
+        desktop_trash_result_initialize(result);
+        (void)desktop_trash_refresh(state);
+        return catalog_cleanup == 0 && info_cleanup == 0
+            ? DESKTOP_TRASH_ERENAME : DESKTOP_TRASH_EIO;
     }
     result->moved = 1U;
     state->available = 1U;

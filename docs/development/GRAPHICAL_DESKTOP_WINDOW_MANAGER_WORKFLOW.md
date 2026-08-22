@@ -568,14 +568,18 @@ Vektor-Fallbacks; der Zeichenpfad führt nur einen geclippten Pixel-Upload aus.
   generationengebundene Dateiobjekte und die Operationen Move, Copy und Link.
   Der erste konkrete Drop-Target ist Move-only: Der Desktop markiert den
   Papierkorb grün, verweigert andere Ziele sichtbar und verschiebt erst nach
-  erneuter Quellprüfung per atomarem Same-Filesystem-Rename nach
-  `/trash/files`. Leere und gefüllte Zustände besitzen getrennte, einmalig
+  erneuter Quellprüfung per atomarem Same-Directory-Rename auf einen
+  reservierten 8.3-Namen im bisherigen Quellverzeichnis. `/trash/files`
+  enthält einen gleichnamigen sichtbaren Katalogmarker; Explorer blendet nur
+  die vollständige reservierte Syntax `RTxxxxxx.TRS` am tatsächlichen
+  Speicherort aus. Leere und gefüllte Zustände besitzen getrennte, einmalig
   geladene ICO-Assets; Rendering führt weder VFS-Zugriffe noch Dekodierung aus.
 
   Der Namensraum ist eine bewusst eingeschränkte Single-User-Adaption der
   freedesktop.org Trash Specification. Zu jedem Objekt liegt unter
-  `/trash/info` eine versionierte `.trashinfo`-Datei mit ursprünglichem Pfad
-  und Löschzeitpunkt. Pfade werden derzeit als validierte lokale ASCII-Pfade
+  `/trash/info` eine versionierte `.trashinfo`-Datei mit ursprünglichem Pfad,
+  tatsächlichem `StoragePath` und Löschzeitpunkt. Formatversion 2 trennt damit
+  Katalog und Nutzdaten explizit. Pfade werden als validierte lokale ASCII-Pfade
   und nicht URL-kodiert gespeichert; benutzerspezifische Top-/Mount-Trashes,
   eine Wiederherstellen-Oberfläche und endgültiges Leeren sind noch nicht
   implementiert. Cross-Volume-Copy/Delete und Drops aus dem Papierkorb selbst

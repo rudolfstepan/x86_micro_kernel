@@ -815,7 +815,6 @@ static int fat32_vfs_rename_unlocked(vfs_filesystem_t* fs,
         old_parent, old_leaf, &source);
     if (source_result == FAT32_LOOKUP_NOT_FOUND) return VFS_ERR_NOT_FOUND;
     if (source_result != FAT32_LOOKUP_FOUND) return VFS_ERR_IO;
-    if (source.attr & ATTR_DIRECTORY) return VFS_ERR_IS_DIR;
     if (source.attr & ATTR_READ_ONLY) return VFS_ERR_READ_ONLY;
 
     struct fat32_dir_entry destination;
@@ -826,6 +825,13 @@ static int fat32_vfs_rename_unlocked(vfs_filesystem_t* fs,
         (destination.attr & ATTR_DIRECTORY)) return VFS_ERR_IS_DIR;
     if (destination_result == FAT32_LOOKUP_FOUND &&
         (destination.attr & ATTR_READ_ONLY)) return VFS_ERR_READ_ONLY;
+    /* A directory may be renamed inside its current parent without changing
+     * either dot entry. Replacing any existing entry remains fail-closed;
+     * cross-parent directory moves are rejected above because they would
+     * require a bounded update of the child's dot-dot authority. */
+    if ((source.attr & ATTR_DIRECTORY) &&
+        destination_result == FAT32_LOOKUP_FOUND)
+        return VFS_ERR_UNSUPPORTED;
     if (destination_result == FAT32_LOOKUP_FOUND &&
         memcmp(&source, &destination, sizeof(source)) == 0)
         return VFS_OK;

@@ -18,13 +18,15 @@ class DesktopTrashSourceTests(unittest.TestCase):
         desktop = DESKTOP.read_text(encoding="utf-8")
         for token in (
             "DESKTOP_TRASH_FILES_PATH", "DESKTOP_TRASH_INFO_PATH",
+            "DESKTOP_TRASH_STORAGE_PREFIX", "catalog_path",
             "DESKTOP_TRASH_COLLISION_LIMIT", "desktop_trash_move",
             "desktop_trash_refresh", "desktop_trash_source_allowed",
             "x86os_create", "x86os_rename", "x86os_fsync", "DeletionDate=",
-            "[Trash Info]", "Version=1",
+            "[Trash Info]", "Version=2", "StoragePath=",
         ):
             self.assertIn(token, header + source)
         self.assertNotIn("x86os_unlink(request->source_path", source)
+        self.assertIn("build_storage_path", source)
         self.assertNotRegex(source, r"\b(malloc|calloc|realloc|free)\s*\(")
         self.assertIn('"Papierkorb"', desktop)
         self.assertIn("DESKTOP_DRAG_FEEDBACK_VALID", desktop)

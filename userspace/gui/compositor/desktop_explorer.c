@@ -1,4 +1,5 @@
 #include "desktop_explorer.h"
+#include "desktop_trash.h"
 
 _Static_assert(sizeof(desktop_explorer_drag_file_t) <=
                    DESKTOP_DRAG_DATA_CAPACITY,
@@ -81,6 +82,29 @@ static uint32_t entry_is_dot_name(const x86os_file_info_t *entry) {
     return entry != 0 && entry->name[0] == '.' &&
         (entry->name[1] == '\0' ||
          (entry->name[1] == '.' && entry->name[2] == '\0'));
+}
+
+static uint32_t explorer_hex_digit(uint8_t value) {
+    value = fold_ascii(value);
+    return (value >= '0' && value <= '9') ||
+        (value >= 'a' && value <= 'f');
+}
+
+static uint32_t entry_is_trash_storage_name(
+    const x86os_file_info_t *entry) {
+    if (entry == 0 || fold_ascii((uint8_t)entry->name[0]) != 'r' ||
+        fold_ascii((uint8_t)entry->name[1]) != 't') return 0U;
+    for (uint32_t index = 2U; index < 8U; ++index)
+        if (!explorer_hex_digit((uint8_t)entry->name[index])) return 0U;
+    return entry->name[8] == '.' &&
+        fold_ascii((uint8_t)entry->name[9]) == 't' &&
+        fold_ascii((uint8_t)entry->name[10]) == 'r' &&
+        fold_ascii((uint8_t)entry->name[11]) == 's' &&
+        entry->name[DESKTOP_TRASH_STORAGE_NAME_LENGTH] == '\0';
+}
+
+static uint32_t entry_is_hidden_name(const x86os_file_info_t *entry) {
+    return entry_is_dot_name(entry) || entry_is_trash_storage_name(entry);
 }
 
 static uint32_t extension_equal(const char *extension, const char *expected) {
@@ -218,7 +242,7 @@ static uint8_t probe_directory_nonempty(const char *parent,
         if (count == 0) return 0U;
         for (int index = 0; index < count; ++index) {
             if (!entry_name_valid(&batch[index])) return 1U;
-            if (!entry_is_dot_name(&batch[index])) return 1U;
+            if (!entry_is_hidden_name(&batch[index])) return 1U;
         }
         if (offset > UINT32_MAX - (uint32_t)count) return 1U;
         offset += (uint32_t)count;
@@ -298,7 +322,7 @@ static int stage_directory(desktop_explorer_t *explorer, const char *path) {
         for (int index = 0; index < count; ++index) {
             if (!entry_name_valid(&batch[index]))
                 return DESKTOP_EXPLORER_EIO;
-            if (entry_is_dot_name(&batch[index])) continue;
+            if (entry_is_hidden_name(&batch[index])) continue;
             if (explorer->staging_count < DESKTOP_EXPLORER_ENTRY_CAPACITY) {
                 uint32_t staging_index = explorer->staging_count;
                 copy_entry(&explorer->staging[staging_index], &batch[index]);

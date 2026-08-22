@@ -1214,6 +1214,14 @@ erst nach erfolgreichem `fsync` und Close per Rename. Ein Fehler vor dem Commit 
 die alte Zieldatei unangetastet; FAT12-, Cross-Directory- und Cross-Volume-
 Rename bleiben explizit unsupported.
 
+Der Desktop-Papierkorb respektiert diese Grenze: Nutzdaten werden durch genau
+einen Same-Directory-Rename auf einen reservierten 8.3-Namen im bisherigen
+Elternverzeichnis veröffentlicht. Ein zentraler, leerer Katalogmarker unter
+`/trash/files` ist keine zweite Datenkopie; die versionierten Metadaten führen
+Original- und Storage-Pfad zusammen. Explorer blendet ausschließlich die
+vollständige reservierte Namensklasse aus. Dadurch führt ein Papierkorb-Drop
+weder einen Cross-Directory-Rename noch einen Copy/Delete-Fallback aus.
+
 FAT32-Namen bilden eine begrenzte Veröffentlichungseinheit aus höchstens 20
 absteigenden VFAT-LFN-Slots und genau einem checksum-gebundenen 8.3-Eintrag.
 Lookup und `readdir` akzeptieren den langen Namen nur bei gültiger Reihenfolge,

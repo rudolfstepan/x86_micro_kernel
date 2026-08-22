@@ -3,8 +3,10 @@
  * @brief Bounded recoverable trash adapter for the Ring-3 desktop.
  *
  * REIST currently has one local user and one root-filesystem trash namespace.
- * Entries are moved atomically into /trash/files and receive restoration
- * metadata in /trash/info. Cross-filesystem copy/delete is never attempted.
+ * Payloads receive a reserved 8.3 name in their existing parent so the native
+ * FAT32 journal can commit one same-directory rename. /trash/files stores
+ * visible catalog markers and /trash/info stores restoration metadata.
+ * Cross-directory/cross-filesystem copy-delete is never attempted.
  */
 #ifndef USERSPACE_DESKTOP_TRASH_H
 #define USERSPACE_DESKTOP_TRASH_H
@@ -16,8 +18,11 @@
 #define DESKTOP_TRASH_ROOT_PATH "/trash"
 #define DESKTOP_TRASH_FILES_PATH "/trash/files"
 #define DESKTOP_TRASH_INFO_PATH "/trash/info"
+#define DESKTOP_TRASH_STORAGE_PREFIX "RT"
+#define DESKTOP_TRASH_STORAGE_SUFFIX ".TRS"
+#define DESKTOP_TRASH_STORAGE_NAME_LENGTH 12U
 #define DESKTOP_TRASH_PATH_CAPACITY 256U
-#define DESKTOP_TRASH_METADATA_CAPACITY 384U
+#define DESKTOP_TRASH_METADATA_CAPACITY 640U
 #define DESKTOP_TRASH_COLLISION_LIMIT 32U
 #define DESKTOP_TRASH_SCAN_BATCHES 2U
 
@@ -46,6 +51,7 @@ typedef struct desktop_trash_request {
 typedef struct desktop_trash_result {
     uint32_t moved;
     char stored_path[DESKTOP_TRASH_PATH_CAPACITY];
+    char catalog_path[DESKTOP_TRASH_PATH_CAPACITY];
     char info_path[DESKTOP_TRASH_PATH_CAPACITY];
 } desktop_trash_result_t;
 
@@ -58,7 +64,7 @@ uint32_t desktop_trash_source_allowed(const char *path);
 int desktop_trash_prepare(desktop_trash_state_t *state);
 /** Refresh empty/full state with a fixed number of directory batches. */
 int desktop_trash_refresh(desktop_trash_state_t *state);
-/** Persist restoration metadata, then atomically rename one current source. */
+/** Publish catalog metadata, then atomically rename within the source parent. */
 int desktop_trash_move(desktop_trash_state_t *state,
                        const desktop_trash_request_t *request,
                        desktop_trash_result_t *result);

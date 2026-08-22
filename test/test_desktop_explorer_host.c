@@ -11,6 +11,7 @@ static const x86os_file_info_t root_entries[] = {
     {"BIN", X86OS_DIRECTORY, 0U, 0U, 0U, 0U},
     {"alpha.prg", X86OS_FILE, 20U, 0U, 0U, 0U},
     {"Docs", X86OS_DIRECTORY, 0U, 0U, 0U, 0U},
+    {"RT12AB34.TRS", X86OS_FILE, 42U, 0U, 0U, 0U},
 };
 
 int x86os_stat(const char *path, x86os_file_info_t *info) {
@@ -31,8 +32,8 @@ int x86os_readdir_batch(const char *path, uint32_t index,
             "TOOL.PRG", X86OS_FILE, 1U, 0U, 0U, 0U};
         return 1;
     }
-    if (strcmp(path, "/") != 0 || index >= 6U) return 0;
-    uint32_t count = 6U - index;
+    if (strcmp(path, "/") != 0 || index >= 7U) return 0;
+    uint32_t count = 7U - index;
     if (count > X86OS_READDIR_BATCH_CAPACITY)
         count = X86OS_READDIR_BATCH_CAPACITY;
     for (uint32_t item = 0U; item < count; ++item)

@@ -557,7 +557,10 @@ führt keine VFS-Zugriffe oder Dekodierung aus. Der Desktop besitzt nun eine
 feste, erweiterbare DragSource/Object/DropTarget/Operation-Schicht und einen
 wiederherstellbaren Single-User-Papierkorb. Explorer-Objekte werden an ihren
 Snapshot gebunden und erst nach erneuter Identitätsprüfung per atomarem
-Same-Filesystem-Rename zusammen mit `.trashinfo`-Metadaten abgelegt;
+Same-Directory-Rename auf einen reservierten, ausgeblendeten 8.3-Namen
+verschoben. Ein zentraler Katalogmarker und `.trashinfo`-Metadaten mit Original-
+und Storage-Pfad machen den Eintrag im Papierkorb sichtbar, ohne die bewusst
+unsupported Cross-Directory-Rename-Grenze von FAT32 zu umgehen;
 Cross-Volume-Copy/Delete und geschützte Systempfade scheitern geschlossen.
 Eine Wiederherstellen-Oberfläche und bestätigtes endgültiges Leeren bleiben
 getrennte Folgeschritte.

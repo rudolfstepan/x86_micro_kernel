@@ -50,6 +50,9 @@ class ReistAtomicRenameTests(unittest.TestCase):
         self.assertLess(destination, tombstone)
         self.assertLess(tombstone, reclaim)
         self.assertIn("old_parent != new_parent", rename)
+        self.assertNotIn(
+            "if (source.attr & ATTR_DIRECTORY) return VFS_ERR_IS_DIR", rename
+        )
 
     def test_editor_never_unlinks_original_before_commit(self) -> None:
         editor = read("userspace/bin/edit.c")
@@ -70,6 +73,7 @@ class ReistAtomicRenameTests(unittest.TestCase):
         vfs = read("fs/vfs/vfs.c")
         fat32 = read("fs/fat32/fat32_vfs_adapter.c")
         ata = read("drivers/block/ata.c")
+        safety = read("kernel/init/storage_safety.c")
         self.assertIn("#define SYS_FSYNC 48", kernel_h)
         self.assertIn("X86OS_SYS_FSYNC = 48", sdk_h)
         self.assertIn("process_file_sync", process)
@@ -78,7 +82,10 @@ class ReistAtomicRenameTests(unittest.TestCase):
         self.assertIn("ata_flush_cache(drive->base, drive->is_master)", fat32)
         self.assertIn("bool ata_flush_cache(unsigned short base", ata)
         self.assertIn("ATA_WAIT_TIMEOUT_MS", ata)
-        self.assertIn("if (!result) storage_fence_writes();", ata)
+        self.assertIn("storage_write_end(result)", ata)
+        self.assertIn("if (!committed)", safety)
+        self.assertIn("filesystem_fence_mutations();", safety)
+        self.assertIn("storage_fence_writes();", safety)
         self.assertIn("filesystem_fence_mutations();", vfs)
 
 

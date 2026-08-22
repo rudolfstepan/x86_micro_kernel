@@ -656,6 +656,28 @@ int main(void) {
     CHECK(memcmp(replaced_contents, renamed_payload,
                  sizeof(replaced_contents)) == 0);
     CHECK(vfs_close(replaced) == VFS_OK);
+
+    /* Trash storage uses one same-parent directory rename. The child path
+     * remains reachable under the new name, while cross-parent rename keeps
+     * the architecture's explicit fail-closed boundary. */
+    CHECK(vfs_mkdir("/TRASHDIR") == VFS_OK);
+    CHECK(vfs_create("/TRASHDIR/CHILD.TXT") == VFS_OK);
+    CHECK(vfs_rename("/TRASHDIR", "/RT123456.TRS") == VFS_OK);
+    CHECK(vfs_stat("/TRASHDIR", &listed) == VFS_ERR_NOT_FOUND);
+    CHECK(vfs_stat("/RT123456.TRS", &listed) == VFS_OK);
+    CHECK(listed.type == VFS_DIRECTORY);
+    CHECK(vfs_stat("/RT123456.TRS/CHILD.TXT", &listed) == VFS_OK);
+    CHECK(vfs_delete("/RT123456.TRS/CHILD.TXT") == VFS_OK);
+    CHECK(vfs_rmdir("/RT123456.TRS") == VFS_OK);
+    CHECK(vfs_mkdir("/SOURCE") == VFS_OK);
+    CHECK(vfs_mkdir("/TARGET") == VFS_OK);
+    CHECK(vfs_create("/SOURCE/FILE.TXT") == VFS_OK);
+    CHECK(vfs_rename("/SOURCE/FILE.TXT", "/TARGET/FILE.TXT") ==
+          VFS_ERR_UNSUPPORTED);
+    CHECK(vfs_stat("/SOURCE/FILE.TXT", &listed) == VFS_OK);
+    CHECK(vfs_delete("/SOURCE/FILE.TXT") == VFS_OK);
+    CHECK(vfs_rmdir("/SOURCE") == VFS_OK);
+    CHECK(vfs_rmdir("/TARGET") == VFS_OK);
     CHECK(vfs_unmount("/") == VFS_OK);
     return 0;
 }
