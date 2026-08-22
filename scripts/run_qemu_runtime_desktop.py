@@ -148,18 +148,18 @@ def read_ppm(path: pathlib.Path) -> tuple[int, int, bytes] | None:
 
 
 def screenshot_has_menu_text(path: pathlib.Path) -> bool:
-    """Require dark glyph pixels inside the otherwise gray desktop menu bar."""
+    """Require dark glyph pixels inside the classic bottom taskbar."""
     ppm = read_ppm(path)
     if ppm is None:
         return False
     width, height, pixels = ppm
-    if width < 460 or height < 30:
+    if width < 320 or height < 30:
         return False
 
     dark_pixels = 0
-    for y in range(8, 24):
+    for y in range(height - 24, height - 6):
         row = y * width * 3
-        for x in range(10, 450):
+        for x in range(6, width - 6):
             pixel = row + x * 3
             if (pixels[pixel] < 96 and pixels[pixel + 1] < 96 and
                     pixels[pixel + 2] < 96):

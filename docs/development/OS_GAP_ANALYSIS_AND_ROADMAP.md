@@ -545,6 +545,10 @@ Pixelschrift und eine versionierte Frame-ABI. Window Manager, Explorer,
 Maus-/Tastaturfokus, Drag/Resize, Dirty Regions und eine
 generationengebundene Surface-/Event-IPC sind umgesetzt. Notepad, Image
 Viewer und die Systemsteuerung laufen als getrennte Ring-3-Fensterclients.
+Eine feste klassische Taskbar bietet ein aufwärts öffnendes Startmenü,
+kapazitätsbegrenzte Fensterbuttons und eine validierte Datums-/Minutenuhr;
+Fensteraktivierung bleibt ein typisiertes WM-Ereignis und die Uhr invalidiert
+nur bei geändertem Anzeigetext ihre eigene Fläche.
 Der compositorinterne Explorer verwendet einmalig geladene 32x32-ICO-Assets
 mit festen Cachevarianten und unterscheidet `.PRG`, Text/Konfiguration, WAVE,
 BMP/GIF/ICO, unbekannte Dateien sowie nachweislich leere und nichtleere

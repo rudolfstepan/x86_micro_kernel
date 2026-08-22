@@ -20,7 +20,7 @@
 #define DESKTOP_ICON_COUNT 2U
 #define DESKTOP_ICON_WIDTH 176U
 #define DESKTOP_ARGUMENT_LIMIT 32U
-#define DESKTOP_MENU_COUNT 3U
+#define DESKTOP_MENU_COUNT 1U
 #define DESKTOP_METRICS_VERSION 1U
 #define DESKTOP_RENDER_PROBE_STEPS 8U
 #define DESKTOP_RENDER_PROBE_STEP_X 4
@@ -29,6 +29,11 @@
 #define DESKTOP_FILE_ICON_PIXELS \
     (DESKTOP_FILE_ICON_SIZE * DESKTOP_FILE_ICON_SIZE)
 #define DESKTOP_FILE_ICON_ENCODED_CAPACITY 8192U
+#define DESKTOP_CLOCK_TEXT_CAPACITY 17U
+#define DESKTOP_CLOCK_POLL_MS 1000U
+#define DESKTOP_CLOCK_FALLBACK_POLLS 200U
+#define DESKTOP_ACTION_OPEN_CONTROL_PANEL (1U << 16)
+#define DESKTOP_TASKBAR_CAPTURE_BACKGROUND DESKTOP_WM_CAPACITY
 
 _Static_assert(DESKTOP_EXPLORER_WINDOW_CAPACITY == DESKTOP_WM_CAPACITY,
                "explorer and window-manager capacities must match");
@@ -58,9 +63,7 @@ static uint32_t control_panel_pressed;
 static uint64_t control_panel_last_click_ms;
 
 enum {
-    DESKTOP_MENU_WORKSPACE = 0U,
-    DESKTOP_MENU_WINDOWS,
-    DESKTOP_MENU_HELP
+    DESKTOP_MENU_START = 0U
 };
 
 enum {
@@ -69,7 +72,8 @@ enum {
     DESKTOP_MENU_ACTION_EXIT,
     DESKTOP_MENU_ACTION_OPEN_ROOT,
     DESKTOP_MENU_ACTION_CLOSE_ALL,
-    DESKTOP_MENU_ACTION_HELP
+    DESKTOP_MENU_ACTION_HELP,
+    DESKTOP_MENU_ACTION_OPEN_CONTROL_PANEL
 };
 
 enum {
@@ -83,7 +87,8 @@ enum {
     DESKTOP_UI_ACTION_NONE = 0U,
     DESKTOP_UI_ACTION_EXIT,
     DESKTOP_UI_ACTION_OPEN_ROOT,
-    DESKTOP_UI_ACTION_CLOSE_ALL
+    DESKTOP_UI_ACTION_CLOSE_ALL,
+    DESKTOP_UI_ACTION_OPEN_CONTROL_PANEL
 };
 
 enum {
@@ -94,29 +99,19 @@ enum {
 
 /* Application policy stays outside libreistgui: the library returns these
  * opaque IDs while this compositor translates them into typed WM actions. */
-static const reist_gui_menu_item_t workspace_menu_items[] = {
+static const reist_gui_menu_item_t start_menu_items[] = {
     {"Computer oeffnen", DESKTOP_MENU_ACTION_OPEN_ROOT, 0U, 0U, 0U},
+    {"Systemsteuerung", DESKTOP_MENU_ACTION_OPEN_CONTROL_PANEL,
+     0U, 0U, 0U},
+    {"Alle Fenster schliessen", DESKTOP_MENU_ACTION_CLOSE_ALL, 0U, 0U, 0U},
+    {"Desktop-Hilfe", DESKTOP_MENU_ACTION_HELP, 0U, 0U, 0U},
     {"Ueber REIST Workspace", DESKTOP_MENU_ACTION_ABOUT, 0U, 0U, 0U},
     {"Desktop beenden", DESKTOP_MENU_ACTION_EXIT, 0U, 0U, 0U},
 };
 
-static const reist_gui_menu_item_t window_menu_items[] = {
-    {"Neues Stammfenster", DESKTOP_MENU_ACTION_OPEN_ROOT, 0U, 0U, 0U},
-    {"Alle Fenster schliessen", DESKTOP_MENU_ACTION_CLOSE_ALL, 0U, 0U, 0U},
-};
-
-static const reist_gui_menu_item_t help_menu_items[] = {
-    {"Desktop-Hilfe", DESKTOP_MENU_ACTION_HELP, 0U, 0U, 0U},
-    {"Ueber REIST Workspace", DESKTOP_MENU_ACTION_ABOUT, 0U, 0U, 0U},
-};
-
 static const reist_gui_menu_t desktop_menus[DESKTOP_MENU_COUNT] = {
-    {"REIST Workspace", workspace_menu_items,
-     sizeof(workspace_menu_items) / sizeof(workspace_menu_items[0]), 0U, 0U},
-    {"Fenster", window_menu_items,
-     sizeof(window_menu_items) / sizeof(window_menu_items[0]), 0U, 0U},
-    {"Hilfe", help_menu_items,
-     sizeof(help_menu_items) / sizeof(help_menu_items[0]), 0U, 0U},
+    {"Start", start_menu_items,
+     sizeof(start_menu_items) / sizeof(start_menu_items[0]), 0U, 0U},
 };
 
 static const reist_gui_menu_model_t desktop_menu_model = {
@@ -148,7 +143,7 @@ static const reist_gui_dialog_model_t help_dialog_model = {
     .version = REIST_GUI_DIALOG_API_VERSION,
     .struct_size = sizeof(reist_gui_dialog_model_t),
     .title = "Desktop-Hilfe",
-    .message = "Menues: Klick, Pfeile und Enter",
+    .message = "Startmenue: Klick, Pfeile und Enter",
     .detail = "Fenster: Titelleiste/Rand ziehen; ESC schliesst",
     .buttons = help_dialog_buttons,
     .button_count = 1U,
@@ -174,10 +169,9 @@ static const reist_gui_dialog_model_t about_dialog_model = {
     .flags = REIST_GUI_DIALOG_MOVABLE | REIST_GUI_DIALOG_CLOSE_BUTTON,
 };
 
-_Static_assert(
-    sizeof(window_menu_items) / sizeof(window_menu_items[0]) <=
-        REIST_GUI_MENU_MAX_ITEMS,
-    "window menu exceeds fixed item capacity");
+_Static_assert(sizeof(start_menu_items) / sizeof(start_menu_items[0]) <=
+                   REIST_GUI_MENU_MAX_ITEMS,
+               "Start menu exceeds fixed item capacity");
 
 /* Deliberately small, high-contrast palette inspired by classic desktops. */
 static const uint32_t color_desktop = 0x00006E8EU;
@@ -249,10 +243,20 @@ typedef struct {
 typedef struct {
     reist_gui_menu_state_t menu;
     reist_gui_dialog_state_t dialog;
+    uint32_t taskbar_capture_slot;
     uint32_t dialog_kind;
     reist_gui_dialog_model_t error_model;
     char error_detail[REIST_GUI_DIALOG_TEXT_LIMIT];
 } desktop_ui_state_t;
+
+typedef struct {
+    char text[DESKTOP_CLOCK_TEXT_CAPACITY];
+    uint64_t next_poll_ms;
+    uint32_t fallback_polls;
+    uint32_t initialized;
+} desktop_clock_state_t;
+
+static desktop_clock_state_t desktop_clock;
 
 typedef struct {
     uint32_t consumed;
@@ -491,8 +495,12 @@ static uint32_t menu_height(const x86os_display_info_t *display) {
     return max_u32(display->font_height + 12U, 30U);
 }
 
-static uint32_t status_height(const x86os_display_info_t *display) {
-    return max_u32(display->font_height + 10U, 28U);
+static uint32_t taskbar_height(const x86os_display_info_t *display) {
+    uint64_t preferred = (uint64_t)display->font_height + 12U;
+    uint32_t height = preferred > UINT32_MAX
+        ? UINT32_MAX : (uint32_t)preferred;
+    height = max_u32(height, 30U);
+    return min_u32(height, display->height);
 }
 
 static uint32_t point_in_rect(desktop_rect_t rect, int32_t x, int32_t y) {
@@ -508,25 +516,190 @@ static desktop_rect_t desktop_rect_from_gui(reist_gui_rect_t rect) {
 
 static reist_gui_menu_layout_t desktop_menu_layout(
     const x86os_display_info_t *display) {
+    uint32_t height = taskbar_height(display);
+    uint64_t preferred_width = (uint64_t)display->font_width * 5U + 32U;
+    uint32_t button_width = preferred_width > display->width
+        ? display->width : (uint32_t)preferred_width;
     return (reist_gui_menu_layout_t){
         .version = REIST_GUI_MENU_API_VERSION,
         .struct_size = sizeof(reist_gui_menu_layout_t),
         .surface_width = display->width,
         .surface_height = display->height,
-        .bar = {0, 0, display->width, menu_height(display)},
+        .bar = {
+            4,
+            (int32_t)(display->height - height + 3U),
+            button_width,
+            height > 6U ? height - 6U : height,
+        },
         .font_width = display->font_width,
         .font_height = display->font_height,
-        .title_padding_x = 8U,
+        .title_padding_x = 16U,
         .item_padding_x = 8U,
         .item_padding_y = 4U,
         .damage_margin = 6U,
+        .popup_direction = REIST_GUI_MENU_POPUP_ABOVE,
     };
+}
+
+static desktop_rect_t desktop_taskbar_rect(
+    const x86os_display_info_t *display) {
+    uint32_t height = taskbar_height(display);
+    return (desktop_rect_t){
+        0, (int32_t)(display->height - height), display->width, height
+    };
+}
+
+static desktop_rect_t desktop_clock_rect(
+    const x86os_display_info_t *display) {
+    desktop_rect_t taskbar = desktop_taskbar_rect(display);
+    uint64_t preferred_width =
+        (uint64_t)(DESKTOP_CLOCK_TEXT_CAPACITY - 1U) *
+            display->font_width + 12U;
+    uint32_t maximum = display->width / 2U;
+    uint32_t width = preferred_width > maximum
+        ? maximum : (uint32_t)preferred_width;
+    return (desktop_rect_t){
+        (int32_t)(display->width - width - 4U), taskbar.y + 3,
+        width, taskbar.height > 6U ? taskbar.height - 6U : taskbar.height,
+    };
+}
+
+static desktop_rect_t desktop_task_button_rect(
+    const x86os_display_info_t *display, const desktop_wm_t *manager,
+    uint32_t window_index) {
+    desktop_rect_t empty = {0, 0, 0U, 0U};
+    if (display == 0 || manager == 0 ||
+        window_index >= DESKTOP_WM_CAPACITY ||
+        !manager->windows[window_index].visible) return empty;
+    reist_gui_menu_layout_t menu = desktop_menu_layout(display);
+    desktop_rect_t clock = desktop_clock_rect(display);
+    uint32_t visible = 0U;
+    uint32_t ordinal = 0U;
+    for (uint32_t index = 0U; index < DESKTOP_WM_CAPACITY; ++index) {
+        if (!manager->windows[index].visible) continue;
+        if (index == window_index) ordinal = visible;
+        ++visible;
+    }
+    int32_t left = menu.bar.x + (int32_t)menu.bar.width + 4;
+    int32_t right = clock.x - 4;
+    if (visible == 0U || right <= left) return empty;
+    uint32_t available = (uint32_t)(right - left);
+    uint32_t x0 = (uint32_t)left +
+        (uint32_t)((uint64_t)available * ordinal / visible);
+    uint32_t x1 = (uint32_t)left +
+        (uint32_t)((uint64_t)available * (ordinal + 1U) / visible);
+    if (x1 <= x0 + 2U) return empty;
+    desktop_rect_t taskbar = desktop_taskbar_rect(display);
+    return (desktop_rect_t){
+        (int32_t)x0, taskbar.y + 3, x1 - x0 - 2U,
+        taskbar.height > 6U ? taskbar.height - 6U : taskbar.height,
+    };
+}
+
+static uint32_t desktop_taskbar_window_at(
+    const x86os_display_info_t *display, const desktop_wm_t *manager,
+    int32_t x, int32_t y) {
+    if (display == 0 || manager == 0) return DESKTOP_WM_NO_TARGET;
+    for (uint32_t index = 0U; index < DESKTOP_WM_CAPACITY; ++index) {
+        desktop_rect_t button = desktop_task_button_rect(
+            display, manager, index);
+        if (button.width != 0U && point_in_rect(button, x, y)) return index;
+    }
+    return DESKTOP_WM_NO_TARGET;
+}
+
+static uint32_t desktop_clock_days_in_month(uint32_t year, uint32_t month) {
+    static const uint8_t days[12] = {
+        31U, 28U, 31U, 30U, 31U, 30U,
+        31U, 31U, 30U, 31U, 30U, 31U,
+    };
+    if (month == 0U || month > 12U) return 0U;
+    uint32_t result = days[month - 1U];
+    if (month == 2U &&
+        ((year % 4U == 0U && year % 100U != 0U) || year % 400U == 0U))
+        ++result;
+    return result;
+}
+
+static uint32_t desktop_clock_fields_valid(uint32_t year, uint32_t month,
+                                           uint32_t day, uint32_t hour,
+                                           uint32_t minute,
+                                           uint32_t second) {
+    uint32_t month_days = desktop_clock_days_in_month(year, month);
+    return year >= 1970U && year <= 9999U && month_days != 0U &&
+        day != 0U && day <= month_days && hour < 24U && minute < 60U &&
+        second < 60U;
+}
+
+static void desktop_clock_two(char *text, uint32_t offset, uint32_t value) {
+    text[offset] = (char)('0' + (value / 10U) % 10U);
+    text[offset + 1U] = (char)('0' + value % 10U);
+}
+
+static void desktop_clock_format(char *text, uint32_t date, uint32_t time) {
+    uint32_t year = date >> 16U;
+    uint32_t month = (date >> 8U) & 0xFFU;
+    uint32_t day = date & 0xFFU;
+    uint32_t hour = (time >> 16U) & 0xFFU;
+    uint32_t minute = (time >> 8U) & 0xFFU;
+    uint32_t second = time & 0xFFU;
+    if (!desktop_clock_fields_valid(
+            year, month, day, hour, minute, second)) {
+        static const char invalid[DESKTOP_CLOCK_TEXT_CAPACITY] =
+            "---- -- -- --:--";
+        for (uint32_t index = 0U;
+             index < DESKTOP_CLOCK_TEXT_CAPACITY; ++index)
+            text[index] = invalid[index];
+        return;
+    }
+    text[0] = (char)('0' + (year / 1000U) % 10U);
+    text[1] = (char)('0' + (year / 100U) % 10U);
+    text[2] = (char)('0' + (year / 10U) % 10U);
+    text[3] = (char)('0' + year % 10U);
+    text[4] = '-';
+    desktop_clock_two(text, 5U, month);
+    text[7] = '-';
+    desktop_clock_two(text, 8U, day);
+    text[10] = ' ';
+    desktop_clock_two(text, 11U, hour);
+    text[13] = ':';
+    desktop_clock_two(text, 14U, minute);
+    text[16] = '\0';
+}
+
+static void desktop_clock_refresh(
+    const x86os_display_info_t *display, desktop_dirty_region_t *dirty,
+    uint32_t force) {
+    uint64_t now_ms = 0U;
+    if (x86os_monotonic_ms(&now_ms) == 0) {
+        if (!force && desktop_clock.initialized &&
+            now_ms < desktop_clock.next_poll_ms) return;
+        desktop_clock.next_poll_ms = now_ms > UINT64_MAX -
+                DESKTOP_CLOCK_POLL_MS
+            ? UINT64_MAX : now_ms + DESKTOP_CLOCK_POLL_MS;
+        desktop_clock.fallback_polls = 0U;
+    } else if (!force && desktop_clock.initialized) {
+        if (++desktop_clock.fallback_polls < DESKTOP_CLOCK_FALLBACK_POLLS)
+            return;
+        desktop_clock.fallback_polls = 0U;
+    }
+    char next[DESKTOP_CLOCK_TEXT_CAPACITY];
+    desktop_clock_format(next, x86os_get_date(), x86os_get_time());
+    uint32_t changed = !desktop_clock.initialized;
+    for (uint32_t index = 0U; index < DESKTOP_CLOCK_TEXT_CAPACITY; ++index) {
+        if (desktop_clock.text[index] != next[index]) changed = 1U;
+        desktop_clock.text[index] = next[index];
+    }
+    desktop_clock.initialized = 1U;
+    if (changed && display != 0 && dirty != 0)
+        desktop_dirty_add(dirty, desktop_clock_rect(display));
 }
 
 static void desktop_ui_initialize(desktop_ui_state_t *ui) {
     if (ui == 0) return;
     reist_gui_menu_state_initialize(&ui->menu);
     reist_gui_dialog_state_initialize(&ui->dialog);
+    ui->taskbar_capture_slot = DESKTOP_WM_NO_TARGET;
     ui->dialog_kind = DESKTOP_DIALOG_NONE;
     ui->error_detail[0] = '\0';
     ui->error_model = (reist_gui_dialog_model_t){
@@ -555,9 +728,9 @@ static const reist_gui_dialog_model_t *desktop_dialog_model(
 
 static reist_gui_dialog_layout_t desktop_dialog_layout(
     const x86os_display_info_t *display) {
-    uint32_t top = menu_height(display) + 12U;
-    uint32_t bottom = display->height > status_height(display) + 12U
-        ? display->height - status_height(display) - 12U : top + 1U;
+    uint32_t top = 12U;
+    uint32_t bottom = display->height > taskbar_height(display) + 12U
+        ? display->height - taskbar_height(display) - 12U : top + 1U;
     uint32_t available_height = bottom > top ? bottom - top : 1U;
     uint32_t width = display->width > 32U ? display->width - 32U : 1U;
     if (width > 560U) width = 560U;
@@ -713,6 +886,9 @@ static desktop_ui_result_t desktop_ui_apply_menu_result(
         result.action = DESKTOP_UI_ACTION_OPEN_ROOT;
     } else if (menu_result->action == DESKTOP_MENU_ACTION_CLOSE_ALL) {
         result.action = DESKTOP_UI_ACTION_CLOSE_ALL;
+    } else if (menu_result->action ==
+               DESKTOP_MENU_ACTION_OPEN_CONTROL_PANEL) {
+        result.action = DESKTOP_UI_ACTION_OPEN_CONTROL_PANEL;
     }
     return result;
 }
@@ -795,7 +971,8 @@ static uint32_t desktop_ui_owns_pointer(const desktop_ui_state_t *ui) {
             (ui->dialog.capture_kind != REIST_GUI_DIALOG_CAPTURE_NONE ||
              ui->dialog.modality != REIST_GUI_DIALOG_MODELESS)) ||
            ui->menu.open_menu != REIST_GUI_MENU_NO_INDEX ||
-           ui->menu.capture_kind != REIST_GUI_MENU_CAPTURE_NONE;
+           ui->menu.capture_kind != REIST_GUI_MENU_CAPTURE_NONE ||
+           ui->taskbar_capture_slot != DESKTOP_WM_NO_TARGET;
 }
 
 static uint32_t desktop_menu_key_from_input(int key) {
@@ -871,7 +1048,7 @@ static desktop_rect_t desktop_icon_rect(const x86os_display_info_t *display,
                                         uint32_t index) {
     desktop_rect_t rect = {0, 0, 0U, 0U};
     if (index >= DESKTOP_ICON_COUNT) return rect;
-    uint32_t top = menu_height(display) + 8U;
+    uint32_t top = 8U;
     rect.x = 8;
     rect.y = (int32_t)(top + index *
         max_u32(display->font_height + 42U, 68U));
@@ -1230,38 +1407,89 @@ static void render_window(const desktop_render_context_t *context,
     render_resize_grip(context, window);
 }
 
-static void render_menu_bar(const desktop_render_context_t *context,
-                            const desktop_ui_state_t *ui) {
+static const char *desktop_task_title(
+    const desktop_explorer_t *explorer,
+    const desktop_surface_manager_t *surfaces, uint32_t window_index) {
+    if (explorer != 0 && window_index < DESKTOP_EXPLORER_WINDOW_CAPACITY &&
+        explorer->windows[window_index].active) {
+        if (explorer->windows[window_index].path[0] == '/' &&
+            explorer->windows[window_index].path[1] == '\0') return "Computer";
+        return explorer->windows[window_index].path;
+    }
+    if (surfaces != 0)
+        for (uint32_t index = 0U; index < DESKTOP_SURFACE_CAPACITY; ++index)
+            if (surfaces->slots[index].active &&
+                surfaces->slots[index].window_index == window_index)
+                return surfaces->slots[index].title;
+    return "Fenster";
+}
+
+static void render_taskbar(
+    const desktop_render_context_t *context, const desktop_wm_t *manager,
+    const desktop_explorer_t *explorer,
+    const desktop_surface_manager_t *surfaces,
+    const desktop_ui_state_t *ui) {
     const x86os_display_info_t *display = context->display;
     reist_gui_menu_layout_t layout = desktop_menu_layout(display);
-    desktop_rect_t bar = desktop_rect_from_gui(layout.bar);
-    draw_bevel(context, bar, color_face, 1U);
-    for (uint32_t index = 0U; index < desktop_menu_model.menu_count;
-         ++index) {
-        reist_gui_rect_t gui_title;
-        if (reist_gui_menu_title_rect(
-                &desktop_menu_model, &layout, index, &gui_title) != 0)
-            continue;
-        desktop_rect_t title = desktop_rect_from_gui(gui_title);
-        uint32_t active = ui != 0 && ui->menu.open_menu == index;
+    desktop_rect_t taskbar = desktop_taskbar_rect(display);
+    draw_bevel(context, taskbar, color_face, 1U);
+
+    reist_gui_rect_t gui_start;
+    if (reist_gui_menu_title_rect(
+            &desktop_menu_model, &layout, DESKTOP_MENU_START,
+            &gui_start) == 0) {
+        desktop_rect_t start = desktop_rect_from_gui(gui_start);
+        uint32_t active = ui != 0 &&
+            ui->menu.open_menu == DESKTOP_MENU_START;
+        draw_bevel(context, start, color_face, active ? 0U : 1U);
+        int32_t logo_x = start.x + 5;
+        int32_t logo_y = start.y +
+            (int32_t)((start.height > 10U ? start.height - 10U : 0U) / 2U);
+        fill_rect_clipped(context,
+            (desktop_rect_t){logo_x, logo_y, 4U, 4U}, 0x0000479DU);
+        fill_rect_clipped(context,
+            (desktop_rect_t){logo_x + 5, logo_y, 4U, 4U}, 0x00806020U);
+        fill_rect_clipped(context,
+            (desktop_rect_t){logo_x, logo_y + 5, 4U, 4U}, 0x00C09000U);
+        fill_rect_clipped(context,
+            (desktop_rect_t){logo_x + 5, logo_y + 5, 4U, 4U}, 0x00800080U);
+        uint32_t text_y = start.height > display->font_height
+            ? (start.height - display->font_height) / 2U : 0U;
+        draw_text_clipped(
+            context, start.x + 18, start.y + (int32_t)text_y, "Start",
+            start.width > 22U ? start.width - 22U : 1U,
+            color_text, color_face);
+    }
+
+    for (uint32_t index = 0U; index < DESKTOP_WM_CAPACITY; ++index) {
+        desktop_rect_t button = desktop_task_button_rect(
+            display, manager, index);
+        if (button.width == 0U) continue;
+        uint32_t active = manager->keyboard_focus == (int32_t)index ||
+            (ui != 0 && ui->taskbar_capture_slot == index);
         uint32_t background = active ? color_active : color_face;
         uint32_t foreground = active ? color_title_text : color_text;
-        if (active) fill_rect_clipped(context, title, background);
-        uint32_t text_y = title.height > display->font_height
-            ? (title.height - display->font_height) / 2U : 0U;
+        draw_bevel(context, button, background, active ? 0U : 1U);
+        uint32_t text_y = button.height > display->font_height
+            ? (button.height - display->font_height) / 2U : 0U;
         draw_text_clipped(
-            context,
-            title.x + (int32_t)layout.title_padding_x,
-            title.y + (int32_t)text_y,
-            desktop_menu_model.menus[index].label,
-            title.width > layout.title_padding_x * 2U
-                ? title.width - layout.title_padding_x * 2U : 1U,
+            context, button.x + 5, button.y + (int32_t)text_y,
+            desktop_task_title(explorer, surfaces, index),
+            button.width > 10U ? button.width - 10U : 1U,
             foreground, background);
     }
+
+    desktop_rect_t clock = desktop_clock_rect(display);
+    draw_bevel(context, clock, color_face, 0U);
+    uint32_t clock_y = clock.height > display->font_height
+        ? (clock.height - display->font_height) / 2U : 0U;
+    draw_text_clipped(
+        context, clock.x + 6, clock.y + (int32_t)clock_y,
+        desktop_clock.text, clock.width > 12U ? clock.width - 12U : 1U,
+        color_text, color_face);
 }
 
 static void render_menu_popup(const desktop_render_context_t *context,
-                              const desktop_wm_t *manager,
                               const desktop_ui_state_t *ui) {
     if (ui == 0 || ui->menu.open_menu == REIST_GUI_MENU_NO_INDEX ||
         ui->menu.open_menu >= desktop_menu_model.menu_count) return;
@@ -1311,15 +1539,6 @@ static void render_menu_popup(const desktop_render_context_t *context,
             ? (item.height - display->font_height) / 2U : 0U;
         int32_t marker_x = item.x + (int32_t)layout.item_padding_x;
         int32_t label_x = marker_x + (int32_t)(display->font_width * 2U);
-        if (menu_index == DESKTOP_MENU_WINDOWS &&
-            model_item->target < DESKTOP_WM_CAPACITY &&
-            manager->windows[model_item->target].visible != 0U) {
-            const char *marker = manager->keyboard_focus ==
-                    (int32_t)model_item->target ? "*" : "+";
-            draw_text_clipped(
-                context, marker_x, item.y + (int32_t)text_y, marker,
-                display->font_width, foreground, background);
-        }
         uint32_t used = layout.item_padding_x * 2U +
                         display->font_width * 2U;
         draw_text_clipped(
@@ -1443,15 +1662,10 @@ static void render_desktop_clip(const desktop_render_context_t *context,
                                 const desktop_surface_manager_t *surfaces,
                                 const desktop_ui_state_t *ui) {
     const x86os_display_info_t *display = context->display;
-    uint32_t status = status_height(display);
-    desktop_rect_t status_rect = {
-        0, (int32_t)(display->height - status), display->width, status
-    };
 
     fill_rect_clipped(
         context, (desktop_rect_t){0, 0, display->width, display->height},
         color_desktop);
-    render_menu_bar(context, ui);
 
     for (uint32_t index = 0U; index < DESKTOP_ICON_COUNT; ++index)
         render_icon(context, explorer, index);
@@ -1464,15 +1678,8 @@ static void render_desktop_clip(const desktop_render_context_t *context,
             render_window(context, manager, explorer, surfaces, window_index);
     }
 
-    draw_bevel(context, status_rect, color_face, 0U);
-    draw_text_clipped(
-        context, 10,
-        status_rect.y +
-            (int32_t)((status - display->font_height) / 2U),
-        "Menue: Klick/Pfeile/ENTER   Fenster: Ziehen/Groesse   ESC: Zurueck/Shell",
-        display->width > 20U ? display->width - 20U : 1U,
-        color_text, color_face);
-    render_menu_popup(context, manager, ui);
+    render_taskbar(context, manager, explorer, surfaces, ui);
+    render_menu_popup(context, ui);
     if (context->omitted_kind != DESKTOP_MOVE_CACHE_DIALOG)
         render_system_dialog(context, ui);
 }
@@ -2149,6 +2356,12 @@ static uint32_t dispatch_desktop_event(
     desktop_wm_dispatch_result_t result;
     if (desktop_wm_dispatch(manager, event, &result) != 0) return 0U;
     collect_dispatch_result(display, dirty, &result);
+    if ((result.flags & DESKTOP_WM_RESULT_REDRAW) != 0U &&
+        (event->type == DESKTOP_WM_EVENT_OPEN ||
+         event->type == DESKTOP_WM_EVENT_CLOSE ||
+         event->type == DESKTOP_WM_EVENT_SELECT ||
+         event->type == DESKTOP_WM_EVENT_POINTER_BUTTON))
+        desktop_dirty_add(dirty, desktop_taskbar_rect(display));
     if ((result.flags & DESKTOP_WM_RESULT_LAUNCH) != 0U && target != 0)
         *target = result.target;
     return result.flags;
@@ -2310,7 +2523,43 @@ static uint32_t apply_desktop_ui_result(
     if (ui_result->action == DESKTOP_UI_ACTION_CLOSE_ALL)
         return close_all_explorer_windows(
             manager, explorer, display, dirty, target);
+    if (ui_result->action == DESKTOP_UI_ACTION_OPEN_CONTROL_PANEL)
+        return DESKTOP_ACTION_OPEN_CONTROL_PANEL;
     return 0U;
+}
+
+static uint32_t desktop_taskbar_pointer_button(
+    desktop_wm_t *manager, desktop_ui_state_t *ui,
+    const x86os_display_info_t *display, desktop_dirty_region_t *dirty,
+    int32_t x, int32_t y, uint32_t pressed, uint32_t *actions,
+    uint32_t *target) {
+    if (manager == 0 || ui == 0 || display == 0 || dirty == 0 ||
+        actions == 0) return 0U;
+    if (pressed) {
+        if (!point_in_rect(desktop_taskbar_rect(display), x, y)) return 0U;
+        uint32_t slot = desktop_taskbar_window_at(display, manager, x, y);
+        ui->taskbar_capture_slot = slot == DESKTOP_WM_NO_TARGET
+            ? DESKTOP_TASKBAR_CAPTURE_BACKGROUND : slot;
+        if (slot != DESKTOP_WM_NO_TARGET)
+            desktop_dirty_add(
+                dirty, desktop_task_button_rect(display, manager, slot));
+        return 1U;
+    }
+    if (ui->taskbar_capture_slot == DESKTOP_WM_NO_TARGET) return 0U;
+    uint32_t captured = ui->taskbar_capture_slot;
+    ui->taskbar_capture_slot = DESKTOP_WM_NO_TARGET;
+    uint32_t released = desktop_taskbar_window_at(display, manager, x, y);
+    desktop_dirty_add(dirty, desktop_taskbar_rect(display));
+    if (released == captured && captured < DESKTOP_WM_CAPACITY &&
+        manager->windows[captured].visible) {
+        desktop_wm_event_t select = {
+            .type = DESKTOP_WM_EVENT_SELECT,
+            .target = captured,
+        };
+        *actions |= dispatch_desktop_event(
+            manager, display, dirty, &select, target);
+    }
+    return 1U;
 }
 
 static void accumulate_mouse_delta(int32_t *total, int32_t delta) {
@@ -2411,6 +2660,8 @@ static uint32_t dispatch_pointer_motion(
         ui_motion_consumed = ui_motion.consumed;
         actions |= apply_desktop_ui_result(
             manager, explorer, ui, display, dirty, &ui_motion, target);
+        if (ui->taskbar_capture_slot != DESKTOP_WM_NO_TARGET)
+            ui_motion_consumed = 1U;
     }
     if (!ui_motion_consumed) {
         desktop_wm_event_t motion = {
@@ -2516,6 +2767,10 @@ static uint32_t dispatch_pointer_button(
             ui_press_consumed = ui_press.consumed;
             actions |= apply_desktop_ui_result(
                 manager, explorer, ui, display, dirty, &ui_press, target);
+            if (!ui_press_consumed)
+                ui_press_consumed = desktop_taskbar_pointer_button(
+                    manager, ui, display, dirty, pointer_x, pointer_y,
+                    1U, &actions, target);
         }
         if (!ui_press_consumed) {
             int window = desktop_wm_window_at(
@@ -2561,6 +2816,10 @@ static uint32_t dispatch_pointer_button(
             ui_release_consumed = ui_release.consumed;
             actions |= apply_desktop_ui_result(
                 manager, explorer, ui, display, dirty, &ui_release, target);
+            if (!ui_release_consumed)
+                ui_release_consumed = desktop_taskbar_pointer_button(
+                    manager, ui, display, dirty, pointer_x, pointer_y,
+                    0U, &actions, target);
         }
         if (!ui_release_consumed) {
             desktop_explorer_result_t explorer_result;
@@ -2624,10 +2883,10 @@ static void run_menu_probe(const x86os_display_info_t *display,
     if (reist_gui_menu_validate(
             &desktop_menu_model, &layout, &ui->menu) != 0 ||
         reist_gui_menu_title_rect(
-            &desktop_menu_model, &layout, DESKTOP_MENU_HELP,
+            &desktop_menu_model, &layout, DESKTOP_MENU_START,
             &help_title) != 0 ||
         reist_gui_menu_item_rect(
-            &desktop_menu_model, &layout, DESKTOP_MENU_HELP, 0U,
+            &desktop_menu_model, &layout, DESKTOP_MENU_START, 3U,
             &help_item) != 0) {
         render_probe_error(metrics);
         desktop_ui_initialize(ui);
@@ -2639,7 +2898,7 @@ static void run_menu_probe(const x86os_display_info_t *display,
     desktop_ui_result_t result = desktop_ui_pointer_event(
         ui, display, &dirty, help_title.x + 2, help_title.y + 2,
         1U, 1U);
-    if (!result.consumed || ui->menu.open_menu != DESKTOP_MENU_HELP)
+    if (!result.consumed || ui->menu.open_menu != DESKTOP_MENU_START)
         render_probe_error(metrics);
     desktop_dirty_initialize(&dirty, display->width, display->height);
     result = desktop_ui_pointer_event(
@@ -2904,8 +3163,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    uint32_t menu = menu_height(&display);
-    uint32_t status = status_height(&display);
+    uint32_t taskbar = taskbar_height(&display);
     desktop_ui_initialize(&ui);
     reist_gui_menu_layout_t menu_layout = desktop_menu_layout(&display);
     reist_gui_dialog_layout_t dialog_layout =
@@ -2923,8 +3181,8 @@ int main(int argc, char **argv) {
         return 1;
     }
     desktop_wm_initialize(&manager, display.width, display.height,
-                          (int32_t)menu + 4,
-                          (int32_t)(display.height - status - 4U),
+                          4,
+                          (int32_t)(display.height - taskbar - 4U),
                           max_u32(display.font_height + 8U, 24U));
     desktop_surface_initialize(&surfaces);
     if (desktop_surface_runtime_initialize(&surface_runtime) != 0) {
@@ -2951,6 +3209,7 @@ int main(int argc, char **argv) {
             &ui, &display, &initial_dirty,
             "Dateizuordnungen sind ungueltig.",
             "/etc/reist/filetypes.conf");
+    desktop_clock_refresh(&display, &initial_dirty, 1U);
     desktop_dirty_full(&initial_dirty);
     render_desktop_measured(
         &display, &manager, &explorer, &surfaces, &ui,
@@ -3025,6 +3284,7 @@ int main(int argc, char **argv) {
         int key = read_key();
         desktop_dirty_region_t dirty;
         desktop_dirty_initialize(&dirty, display.width, display.height);
+        desktop_clock_refresh(&display, &dirty, 0U);
         sync_surface_windows(
             &manager, &explorer, &surfaces, &surface_runtime, &dirty);
         if ((surface_probe || control_probe) && !surface_probe_reported) {
@@ -3079,6 +3339,7 @@ int main(int argc, char **argv) {
                 pending_delta_y = 0;
                 if (!ui.dialog.visible &&
                     manager.capture_kind == DESKTOP_WM_CAPTURE_NONE &&
+                    pointer_y < desktop_taskbar_rect(&display).y &&
                     desktop_wm_window_at(
                         &manager, pointer_x, pointer_y) ==
                             DESKTOP_WM_NO_WINDOW)
@@ -3153,6 +3414,11 @@ int main(int argc, char **argv) {
                     &manager, &display, &dirty, &keyboard,
                     &action_target);
             }
+        }
+
+        if ((actions & DESKTOP_ACTION_OPEN_CONTROL_PANEL) != 0U) {
+            control_panel_activate = 1U;
+            actions &= ~DESKTOP_ACTION_OPEN_CONTROL_PANEL;
         }
 
         if ((actions & DESKTOP_WM_RESULT_EXIT) != 0U) {

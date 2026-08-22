@@ -513,8 +513,14 @@ Der Format- und Pfadvertrag steht in
   vorgezogen, weil sie zur Geometrie- und Damage-Architektur gehört).
 - [ ] Minimieren und Wiederherstellen über eine feste Fensterleiste.
 - [ ] Maximieren und exakte Rückkehr zur vorherigen Geometrie.
-- [x] Menüleiste mit Desktop-, Fenster- und Hilfeaktionen über die öffentliche
-  Menü-API implementieren; Fensteraktionen laufen über typisierte WM-Events.
+- [x] Klassische Taskbar mit Startbutton, einem festen Button je sichtbarem
+  WM-Slot und typisierter Fensteraktivierung über `DESKTOP_WM_EVENT_SELECT`.
+- [x] Startmenü mit Computer, Systemsteuerung, Hilfe, Info und Beenden über die
+  öffentliche Menü-API; die append-only Popup-Richtung erhält für alte
+  Layoutgrößen die bisherige Abwärtsgeometrie.
+- [x] Rechtsbündige Datums-/Minutenuhr aus validierten RTC-Feldern; der
+  begrenzte Pollpfad invalidiert ausschließlich die Uhrfläche und nur bei
+  geändertem Anzeigetext.
 - [x] Compositor-eigene Hilfe als modeless und Info als application-modal über
   die öffentliche Dialog-API zeichnen; Responses und Pointer-Capture bleiben
   im Controller gebunden.
@@ -529,7 +535,7 @@ Titelwechsel, implizites Capture, Maus- und Tastaturaktivierung, deaktivierte
 Einträge, Modalität, Responses, Titel-Drag sowie ungültigen State. Die
 `guidemo.prg`-Quell- und Buildtests prüfen zusätzlich die alleinige Nutzung
 öffentlicher Header, beide Imagepfade und die Erreichbarkeit aus der
-Ring-3-Shell. Der Gast-Renderprobe öffnet das Hilfe-Menü, aktiviert den
+Ring-3-Shell. Der Gast-Renderprobe öffnet das Startmenü, aktiviert daraus den
 modeless Hilfe-Dialog, verschiebt ihn und schließt ihn per Escape, ohne die
 feste Anzahl von acht Move- und acht Resize-Frames zu
 verändern. `runtime-desktop-metrics` bestand mit `full_max_ms=8`,

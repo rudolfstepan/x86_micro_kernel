@@ -121,25 +121,46 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertNotIn("desktop_wm_pointer_motion(&manager", main)
         self.assertNotIn("desktop_wm_pointer_release(&manager", main)
 
-    def test_system_bar_uses_the_public_menu_api_and_typed_window_actions(self):
+    def test_taskbar_uses_the_public_menu_api_and_typed_window_actions(self):
         programs = (ROOT / "scripts" / "build_system_programs.py").read_text(
             encoding="utf-8"
         )
         self.assertIn('#include "reist/gui/menu.h"', self.source)
         self.assertIn("static const reist_gui_menu_model_t", self.source)
         self.assertIn("reist_gui_menu_dispatch", self.source)
-        self.assertIn("render_menu_bar", self.source)
+        self.assertIn("render_taskbar", self.source)
         self.assertIn("render_menu_popup", self.source)
         self.assertIn("render_system_dialog", self.source)
         self.assertIn("DESKTOP_MENU_ACTION_HELP", self.source)
         self.assertIn("DESKTOP_MENU_ACTION_ABOUT", self.source)
         self.assertIn("DESKTOP_WM_EVENT_OPEN", self.source)
         self.assertIn("DESKTOP_WM_EVENT_CLOSE", self.source)
+        self.assertIn("DESKTOP_WM_EVENT_SELECT", self.source)
         gui_programs = programs.split("GUI_PROGRAMS", 1)[1]
         for program in ("DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG",
                         "SOUNDPLAYER.PRG", "IMAGEVIEWER.PRG"):
             self.assertIn(f'"{program}"', gui_programs)
         self.assertIn("gui_library", programs)
+
+    def test_taskbar_has_start_tasks_and_validated_minute_clock(self):
+        self.assertIn("static uint32_t taskbar_height", self.source)
+        self.assertIn('"Start"', self.source)
+        self.assertIn('"Computer oeffnen"', self.source)
+        self.assertIn('"Systemsteuerung"', self.source)
+        self.assertIn("REIST_GUI_MENU_POPUP_ABOVE", self.source)
+        self.assertIn("desktop_task_button_rect", self.source)
+        self.assertIn("desktop_taskbar_window_at", self.source)
+        self.assertIn("DESKTOP_TASKBAR_CAPTURE_BACKGROUND", self.source)
+        self.assertIn("DESKTOP_WM_CAPACITY", self.source)
+        self.assertIn("x86os_get_date()", self.source)
+        self.assertIn("x86os_get_time()", self.source)
+        self.assertIn("desktop_clock_refresh", self.source)
+        self.assertIn("DESKTOP_CLOCK_POLL_MS 1000U", self.source)
+        self.assertIn("desktop_clock_rect", self.source)
+        self.assertNotIn(
+            '"Menue: Klick/Pfeile/ENTER   Fenster: Ziehen/Groesse',
+            self.source,
+        )
 
     def test_active_menu_or_dialog_receives_input_before_the_window_manager(self):
         motion = self.source[
@@ -321,7 +342,7 @@ class DesktopSourceTests(unittest.TestCase):
     def test_retained_surface_paint_is_clipped_to_current_client(self):
         render_window = self.source[
             self.source.index("static void render_window") :
-            self.source.index("static void render_menu_bar")
+            self.source.index("static void render_taskbar")
         ]
         self.assertIn(
             "intersect_rects(client, context->clip, &surface_clip)",

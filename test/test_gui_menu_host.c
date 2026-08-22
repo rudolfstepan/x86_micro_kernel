@@ -84,6 +84,27 @@ int main(void) {
     reist_gui_menu_state_initialize(&state);
     assert(reist_gui_menu_validate(
                &menu_model, &menu_layout, &state) == 0);
+
+    /* Version-1-sized callers retain the original downward popup contract. */
+    reist_gui_rect_t popup;
+    menu_layout.struct_size = REIST_GUI_MENU_LAYOUT_V1_SIZE;
+    menu_layout.popup_direction = REIST_GUI_MENU_POPUP_ABOVE;
+    assert(reist_gui_menu_popup_rect(
+               &menu_model, &menu_layout, 0U, &popup) == 0);
+    assert(popup.y == menu_layout.bar.y + (int32_t)menu_layout.bar.height);
+    menu_layout = layout();
+
+    /* Appended geometry requests may place a taskbar popup above its title. */
+    menu_layout.bar = (reist_gui_rect_t){0, 450, 640U, 30U};
+    menu_layout.popup_direction = REIST_GUI_MENU_POPUP_ABOVE;
+    assert(reist_gui_menu_popup_rect(
+               &menu_model, &menu_layout, 0U, &popup) == 0);
+    assert(popup.y >= 0);
+    assert((uint32_t)popup.y + popup.height == (uint32_t)menu_layout.bar.y);
+    menu_layout.popup_direction = 2U;
+    assert(reist_gui_menu_validate(
+               &menu_model, &menu_layout, &state) == REIST_GUI_MENU_EINVAL);
+    menu_layout = layout();
     state.capture_menu = 0U;
     assert(reist_gui_menu_validate(
                &menu_model, &menu_layout, &state) ==

@@ -402,6 +402,53 @@ commit_message = "feat: add recoverable desktop trash"
 evidence = []
 
 [[packages]]
+id = "R1.11-desktop-taskbar"
+status = "done"
+risk = "medium"
+title = "Desktop taskbar, Start menu and bounded clock"
+scope = "Replace the bottom instructional status strip with a classic fixed-height taskbar. Provide a left Start button backed by the public menu controller with an append-only upward-popup layout option, bounded menu actions for Computer, Systemsteuerung, Help, About and desktop exit, one fixed-capacity task button per visible WM slot, and a right-aligned validated YYYY-MM-DD and HH:MM clock. Task-button activation selects and raises the existing window through typed WM events. Refresh the clock only when the displayed minute changes, damage only the taskbar clock region, and keep all formatting, hit-testing and rendering allocation-free and bounded."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/include/reist/gui/menu.h",
+  "userspace/gui/lib/menu.c",
+  "test/test_gui_menu_source.py",
+  "test/test_gui_menu_host.c",
+  "test/test_desktop_source.py",
+  "scripts/run_qemu_runtime_desktop.py",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the public menu layout remains backward compatible: callers with the version-1 layout size retain downward popups and only an appended validated field may request upward geometry",
+  "the Start popup, every task button and the clock stay within the fixed taskbar/surface bounds under all supported display and font geometries",
+  "task buttons are derived from at most DESKTOP_WM_CAPACITY visible slots and activate only a validated current slot through DESKTOP_WM_EVENT_SELECT",
+  "date and time fields are range validated before fixed-capacity formatting; invalid RTC values display a deterministic placeholder without overflow",
+  "the event loop checks time with a bounded cadence and adds clock damage only when the rendered minute changes; rendering performs no allocation, VFS access, wait or unbounded work",
+  "active menus and dialogs retain input precedence over taskbar buttons and taskbar clicks never leak into desktop or window pointer handling"
+]
+targeted_tests = [
+  "python test/test_gui_menu_source.py -q",
+  "python test/test_desktop_source.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop"
+]
+stop_conditions = [
+  "upward popup support would break an existing public menu layout caller",
+  "taskbar input cannot be ordered ahead of ordinary WM hit testing without capture ambiguity",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add desktop taskbar and start menu"
+evidence = []
+
+[[packages]]
 id = "S0.3c-6f1"
 status = "done"
 risk = "critical"

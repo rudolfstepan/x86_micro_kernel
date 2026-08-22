@@ -10,8 +10,13 @@
 #include "reist/gui/menu.h"
 
 #include <limits.h>
+#include <stddef.h>
 
 #define REIST_GUI_MENU_BORDER 2U
+
+_Static_assert(offsetof(reist_gui_menu_layout_t, popup_direction) ==
+                   REIST_GUI_MENU_LAYOUT_V1_SIZE,
+               "version-1 menu layout prefix changed");
 
 static uint32_t reserved_zero(const uint32_t *reserved, uint32_t count) {
     if (reserved == 0) return 0U;
@@ -44,10 +49,16 @@ static uint32_t item_row_height(const reist_gui_menu_layout_t *layout) {
     return layout->font_height + layout->item_padding_y * 2U;
 }
 
+static uint32_t layout_popup_direction(
+    const reist_gui_menu_layout_t *layout) {
+    return layout->struct_size >= sizeof(*layout)
+        ? layout->popup_direction : REIST_GUI_MENU_POPUP_BELOW;
+}
+
 /* Validate every arithmetic and surface bound before geometry is computed. */
 static int validate_layout(const reist_gui_menu_layout_t *layout) {
     if (layout == 0 || layout->version != REIST_GUI_MENU_API_VERSION ||
-        layout->struct_size < sizeof(*layout) ||
+        layout->struct_size < REIST_GUI_MENU_LAYOUT_V1_SIZE ||
         !reserved_zero(layout->reserved, 4U) ||
         layout->surface_width == 0U || layout->surface_height == 0U ||
         layout->surface_width > INT32_MAX ||
@@ -60,6 +71,8 @@ static int validate_layout(const reist_gui_menu_layout_t *layout) {
         layout->bar.x < 0 || layout->bar.y < 0 ||
         layout->bar.width == 0U || layout->bar.height == 0U ||
         layout->bar.height < layout->font_height)
+        return REIST_GUI_MENU_EINVAL;
+    if (layout_popup_direction(layout) > REIST_GUI_MENU_POPUP_ABOVE)
         return REIST_GUI_MENU_EINVAL;
     int64_t right = (int64_t)layout->bar.x + layout->bar.width;
     int64_t bottom = (int64_t)layout->bar.y + layout->bar.height;
@@ -82,8 +95,11 @@ static int validate_model(const reist_gui_menu_model_t *model,
 
     uint64_t title_total = 0U;
     uint32_t row_height = item_row_height(layout);
-    uint64_t available_height = layout->surface_height -
-        ((uint64_t)layout->bar.y + layout->bar.height);
+    uint64_t available_height =
+        layout_popup_direction(layout) == REIST_GUI_MENU_POPUP_ABOVE
+            ? (uint64_t)(uint32_t)layout->bar.y
+            : layout->surface_height -
+                ((uint64_t)(uint32_t)layout->bar.y + layout->bar.height);
     for (uint32_t menu_index = 0U;
          menu_index < model->menu_count; ++menu_index) {
         const reist_gui_menu_t *menu = &model->menus[menu_index];
@@ -262,11 +278,12 @@ static int popup_rect_unchecked(const reist_gui_menu_model_t *model,
         x = (int64_t)layout->surface_width - width;
     uint64_t height = REIST_GUI_MENU_BORDER * 2U +
         (uint64_t)menu->item_count * item_row_height(layout);
+    int32_t y = layout_popup_direction(layout) ==
+            REIST_GUI_MENU_POPUP_ABOVE
+        ? layout->bar.y - (int32_t)height
+        : layout->bar.y + (int32_t)layout->bar.height;
     *rect = (reist_gui_rect_t){
-        (int32_t)x,
-        layout->bar.y + (int32_t)layout->bar.height,
-        (uint32_t)width,
-        (uint32_t)height,
+        (int32_t)x, y, (uint32_t)width, (uint32_t)height,
     };
     return 0;
 }

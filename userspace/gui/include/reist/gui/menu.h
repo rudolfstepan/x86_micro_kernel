@@ -40,6 +40,12 @@ extern "C" {
 #define REIST_GUI_MENU_DAMAGE_CAPACITY 4U
 /** Sentinel used when no menu or item is selected. */
 #define REIST_GUI_MENU_NO_INDEX UINT32_MAX
+/** Byte size of the original version-1 layout prefix. */
+#define REIST_GUI_MENU_LAYOUT_V1_SIZE 72U
+/** Default popup direction retained by old and zero-initialized callers. */
+#define REIST_GUI_MENU_POPUP_BELOW 0U
+/** Place the popup immediately above the menu title/bar. */
+#define REIST_GUI_MENU_POPUP_ABOVE 1U
 
 /** Successful operation. */
 #define REIST_GUI_MENU_OK 0
@@ -131,6 +137,11 @@ typedef struct reist_gui_menu_layout {
     uint32_t item_padding_y;  /**< Vertical item padding per side. */
     uint32_t damage_margin;   /**< Extra redraw margin, at most 16 pixels. */
     uint32_t reserved[4];     /**< Must be initialized to zero. */
+    /**
+     * Appended direction field. Read only when struct_size reaches this
+     * member; a version-1-sized layout behaves as POPUP_BELOW.
+     */
+    uint32_t popup_direction; /**< REIST_GUI_MENU_POPUP_* value. */
 } reist_gui_menu_layout_t;
 
 /** Caller-owned mutable interaction state; initialize before first use. */
