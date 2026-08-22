@@ -449,6 +449,38 @@ commit_message = "feat: add desktop taskbar and start menu"
 evidence = []
 
 [[packages]]
+id = "R1.12-desktop-taskbar-division"
+status = "done"
+risk = "low"
+title = "Freestanding 32-bit taskbar partition arithmetic"
+scope = "Remove the accidental compiler-runtime dependency introduced by 64-bit task-button partition division. Preserve the exact bounded slot geometry using validated 32-bit quotient/remainder arithmetic and prove that a clean native Windows system-program build links DESKTOP.PRG without __udivdi3."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_desktop_source.py"
+]
+invariants = [
+  "task-button partition offsets remain monotonic, within available width and identical at partition boundaries for at most DESKTOP_WM_CAPACITY slots",
+  "desktop taskbar geometry performs no 64-bit division and introduces no compiler runtime helper dependency",
+  "the clean freestanding 32-bit Windows build links every system program including DESKTOP.PRG"
+]
+targeted_tests = [
+  "python test/test_desktop_source.py -q"
+]
+package_tests = [
+  ".\\scripts\\build-windows.ps1 -Target real_hw -Video vga -Clean"
+]
+runtime_tests = []
+stop_conditions = [
+  "equivalent bounded 32-bit partition geometry cannot be expressed without overflow",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: avoid 64-bit desktop division"
+evidence = []
+
+[[packages]]
 id = "S0.3c-6f1"
 status = "done"
 risk = "critical"

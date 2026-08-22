@@ -150,6 +150,8 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("REIST_GUI_MENU_POPUP_ABOVE", self.source)
         self.assertIn("desktop_task_button_rect", self.source)
         self.assertIn("desktop_taskbar_window_at", self.source)
+        self.assertIn("desktop_partition_offset", self.source)
+        self.assertNotIn("(uint64_t)available *", self.source)
         self.assertIn("DESKTOP_TASKBAR_CAPTURE_BACKGROUND", self.source)
         self.assertIn("DESKTOP_WM_CAPACITY", self.source)
         self.assertIn("x86os_get_date()", self.source)

@@ -564,6 +564,18 @@ static desktop_rect_t desktop_clock_rect(
     };
 }
 
+static uint32_t desktop_partition_offset(
+    uint32_t width, uint32_t part, uint32_t count) {
+    if (count == 0U || count > DESKTOP_WM_CAPACITY || part > count)
+        return width;
+    uint32_t quotient = width / count;
+    uint32_t remainder = width % count;
+    /* remainder and part are both bounded by DESKTOP_WM_CAPACITY, while
+     * quotient * part cannot exceed width. This preserves floor(width *
+     * part / count) without a 64-bit compiler-runtime division helper. */
+    return quotient * part + remainder * part / count;
+}
+
 static desktop_rect_t desktop_task_button_rect(
     const x86os_display_info_t *display, const desktop_wm_t *manager,
     uint32_t window_index) {
@@ -585,9 +597,9 @@ static desktop_rect_t desktop_task_button_rect(
     if (visible == 0U || right <= left) return empty;
     uint32_t available = (uint32_t)(right - left);
     uint32_t x0 = (uint32_t)left +
-        (uint32_t)((uint64_t)available * ordinal / visible);
+        desktop_partition_offset(available, ordinal, visible);
     uint32_t x1 = (uint32_t)left +
-        (uint32_t)((uint64_t)available * (ordinal + 1U) / visible);
+        desktop_partition_offset(available, ordinal + 1U, visible);
     if (x1 <= x0 + 2U) return empty;
     desktop_rect_t taskbar = desktop_taskbar_rect(display);
     return (desktop_rect_t){
