@@ -1,6 +1,6 @@
 version = 1
 program = "S0.3c-6f"
-active_id = ""
+active_id = "R1.8-control-panel"
 
 [policy]
 one_package_per_run = true
@@ -1917,3 +1917,77 @@ evidence = [
   "python scripts/run_qemu_pci_audio.py: PASS stereo S16, 440.4 Hz, max-gap=1",
   "manual VMware WAVPLAY: audible 440-Hz playback at expected volume (user-confirmed 2026-08-20)"
 ]
+
+[[packages]]
+id = "R1.8-control-panel"
+status = "active"
+risk = "medium"
+title = "Graphical system control panel"
+scope = "Add a separate Ring-3 Control Panel Surface client and a new desktop icon that opens it. Present fixed-capacity Keyboard, Mouse, System and Desktop applets with complete keyboard and pointer navigation. Implement the shared bounded reist.config/1 parser and atomic writer required to load and persist only the documented /etc/reist settings through an explicit privileged configuration-service boundary; invalid, stale or partially written settings fail closed without changing live state. Package the client and defaults identically in Makefile and Windows images and prove desktop launch, applet navigation, validation and persistence behavior."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/apps/control_panel/main.c",
+  "userspace/config/include/reist/config.h",
+  "userspace/config/lib/config.c",
+  "userspace/services/config/config_service.h",
+  "userspace/services/config/config_service.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/bin/shell.c",
+  "scripts/build_user_sdk.py",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "scripts/create_native_boot_image.py",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_reist_config_source.py",
+  "test/test_reist_config_host.c",
+  "test/test_gui_control_panel_source.py",
+  "test/test_desktop_source.py",
+  "test/test_user_program_toolchain.py",
+  "test/test_shell_source.py",
+  "test/test_system_layout.py",
+  "test/test_native_boot_image.py",
+  "docs/architecture/SYSTEM_CONFIGURATION.md",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the control panel and configuration service execute entirely in generation-scoped Ring-3 processes",
+  "the desktop exposes a distinct Systemsteuerung icon and launches exactly the packaged Surface client through the existing bounded Surface runtime",
+  "Keyboard, Mouse, System and Desktop applets are reachable by pointer and keyboard and never require direct device authority",
+  "reist.config/1 input has fixed line, key, value and entry capacities and rejects unknown schema versions, duplicate keys, malformed values and trailing partial records",
+  "settings are validated completely before publication and persistence uses write, fsync and same-directory rename without exposing a partial file",
+  "only documented keys and bounded value ranges can be changed; reserved or unknown keys fail closed",
+  "a failed write, stale service generation or invalid reply leaves both live state and the prior persistent file unchanged",
+  "the client remains usable for read-only inspection when mutation authorization or the configuration service is unavailable",
+  "all loops, queues, retries and waits are fixed-capacity or deadline bounded and no input path allocates dynamically",
+  "CONTROL.PRG and CONFIG.PRG are packaged consistently and control is reachable from /bin/shell.prg in Makefile and Windows images"
+]
+targeted_tests = [
+  "python test/test_reist_config_source.py -q",
+  "python test/test_gui_control_panel_source.py -q",
+  "python test/test_desktop_source.py -q",
+  "python test/test_user_program_toolchain.py -q",
+  "python test/test_shell_source.py -q",
+  "python test/test_system_layout.py -q",
+  "python test/test_native_boot_image.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop"
+]
+stop_conditions = [
+  "safe persistence cannot be expressed with the existing VFS rename and fsync contracts",
+  "desktop activation would require bypassing the Surface runtime or granting device authority to the client",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add graphical system control panel"
+evidence = []
