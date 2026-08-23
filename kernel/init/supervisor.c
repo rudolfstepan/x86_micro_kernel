@@ -21,6 +21,7 @@
 #include "include/kernel/storage_service.h"
 #include "drivers/net/netstack.h"
 #include "drivers/net/netdev.h"
+#include "drivers/video/display_control.h"
 #include "kernel/proc/process.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
@@ -2947,6 +2948,32 @@ int supervisor_service_connect(Process *client, uint32_t service_id,
         return -19;
     }
 
+    if (service_id == REIST_SERVICE_DISPLAY_DRIVER) {
+        if (client->domain_profile.kind != PROCESS_DOMAIN_COMPATIBILITY ||
+            strcmp(client->name, "/usr/gui/bin/desktop.prg") != 0)
+            return -13;
+        for (uint32_t slot = 0U; slot < SUPERVISOR_MAX_DEVICE_DRIVERS;
+             ++slot) {
+            supervisor_driver_control_t driver;
+            if (strcmp(driver_runtimes[slot].name, "svga2d-ring3") != 0 ||
+                driver_control_read(&driver_runtimes[slot], &driver) != 0 ||
+                driver.active == 0U)
+                continue;
+            if (driver.fenced != 0U || driver.pid <= 0 ||
+                driver.channel == IPC_INVALID_HANDLE ||
+                !process_identity_alive(driver.pid,
+                                        driver.process_generation) ||
+                !supervisor_output_allowed(driver.supervisor))
+                return -11;
+            int result = process_ipc_delegate_identity(
+                driver.pid, driver.process_generation, driver.channel,
+                client, IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE);
+            if (result == 0) *handle_out = driver.channel;
+            return result;
+        }
+        return -19;
+    }
+
     supervisor_probe_control_t control;
     if (service_id != REIST_SERVICE_DIAGNOSTIC ||
         supervisor_protected_probe_control_read(
@@ -4810,6 +4837,15 @@ static bool driver_fence_until(supervisor_driver_runtime_t *runtime,
     if (control.pid == 0)
         return control.fenced != 0U && control.device == 0U;
     if (deadline_ms == 0U || pit_monotonic_ms() >= deadline_ms) return false;
+    if (strcmp(runtime->name, "svga2d-ring3") == 0) {
+        if (display_control_graphics_active() &&
+            display_control_deactivate() != 0)
+            return false;
+        if (device_domain_mark_mediated_io_quiesced(
+                control.pid, control.process_generation,
+                control.device) != 0)
+            return false;
+    }
     bool fenced = device_domain_fence(
         control.pid, control.process_generation, control.device) == 0;
     bool stopped = !process_identity_alive(
@@ -4964,8 +5000,11 @@ int supervisor_device_driver_report(
             control.fenced = 0U;
             result = driver_control_write(runtime, &control);
         }
-        if (result == 0 && became_ready)
+        if (result == 0 && became_ready) {
             printf("REIST_DRIVER READY name=%s\n", runtime->name);
+            if (strcmp(runtime->name, "svga2d-ring3") == 0)
+                printf("REIST_VIDEO SVGA2D_READY\n");
+        }
     }
     if (result != 0) (void)supervisor_force_isolate(control.supervisor);
     return result;
@@ -4977,6 +5016,17 @@ bool supervisor_device_driver_output_allowed(
     return driver_runtime_for_identity(pid, process_generation, &control) !=
             NULL && control.device == device && control.fenced == 0U &&
         supervisor_output_allowed(control.supervisor);
+}
+
+bool supervisor_device_driver_command_allowed(
+        int pid, uint32_t process_generation, device_domain_handle_t device) {
+    supervisor_driver_control_t control;
+    supervisor_driver_runtime_t *runtime = driver_runtime_for_identity(
+        pid, process_generation, &control);
+    return runtime != NULL && strcmp(runtime->name, "svga2d-ring3") == 0 &&
+        control.device == device && control.pid == pid &&
+        control.process_generation == process_generation &&
+        process_identity_alive(pid, process_generation);
 }
 
 static supervisor_driver_runtime_t *driver_runtime_for_device(
@@ -5277,8 +5327,9 @@ static void driver_monitor_processes(void) {
         supervisor_driver_control_t control;
         if (driver_control_read(&driver_runtimes[slot], &control) != 0 ||
             control.active == 0U || control.pid <= 0) continue;
-        if (!process_identity_alive(control.pid, control.process_generation))
+        if (!process_identity_alive(control.pid, control.process_generation)) {
             (void)supervisor_force_isolate(control.supervisor);
+        }
     }
 }
 
@@ -5295,6 +5346,8 @@ static bool driver_service_event(supervisor_event_t event) {
             (void)supervisor_force_isolate(event.handle);
         else if (strcmp(runtime->name, "hda-ring3") == 0)
             printf("REIST_AUDIO DRIVER_RESTARTED\n");
+        else if (restarted && strcmp(runtime->name, "svga2d-ring3") == 0)
+            printf("REIST_VIDEO DRIVER_RESTARTED\n");
 #ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
         if (restarted && strcmp(runtime->name,
                                "driver-fault-recovery") == 0) {
@@ -5605,6 +5658,12 @@ int supervisor_device_driver_report(
 }
 
 bool supervisor_device_driver_output_allowed(
+        int pid, uint32_t process_generation, device_domain_handle_t device) {
+    (void)pid; (void)process_generation; (void)device;
+    return false;
+}
+
+bool supervisor_device_driver_command_allowed(
         int pid, uint32_t process_generation, device_domain_handle_t device) {
     (void)pid; (void)process_generation; (void)device;
     return false;

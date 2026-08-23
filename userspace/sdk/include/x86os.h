@@ -396,6 +396,7 @@ typedef struct {
 #define X86OS_REIST_REPORT_WCET_BASELINE 14U
 #define X86OS_REIST_REPORT_WCET_REJECT 15U
 #define X86OS_SERVICE_AUDIO 2U
+#define X86OS_SERVICE_DISPLAY_DRIVER 3U
 #define X86OS_SERVICE_AUDIO_DRIVER_INTERNAL 0x80000001U
 #define X86OS_REIST_NETWORK_DEGRADED_SEMANTIC 3U
 #define X86OS_SERVICE_DIAGNOSTIC 1U
@@ -664,6 +665,16 @@ typedef struct {
 #define X86OS_DISPLAY_SURFACE_BUFFER_CREATE 8U
 #define X86OS_DISPLAY_SURFACE_BUFFER_DESTROY 9U
 #define X86OS_DISPLAY_SURFACE_BUFFER_DRAW 10U
+#define X86OS_DISPLAY_DRIVER_COMMAND 11U
+#define X86OS_DISPLAY_FRAME_MARK_ACCELERATED 12U
+
+#define X86OS_DISPLAY_DRIVER_ACTIVATE 1U
+#define X86OS_DISPLAY_DRIVER_DEACTIVATE 2U
+#define X86OS_DISPLAY_DRIVER_RECT_FILL 3U
+#define X86OS_DISPLAY_DRIVER_RECT_COPY 4U
+#define X86OS_DISPLAY_DRIVER_BUSY_QUERY 5U
+#define X86OS_DISPLAY_DRIVER_CAP_RECT_FILL (1U << 0U)
+#define X86OS_DISPLAY_DRIVER_CAP_RECT_COPY (1U << 1U)
 
 typedef struct {
     uint32_t version;
@@ -806,6 +817,29 @@ typedef struct {
     uint32_t height;
     uint32_t reserved[2];
 } x86os_display_surface_buffer_draw_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t flags;
+    uint32_t device;
+    uint32_t command;
+    uint32_t source_x;
+    uint32_t source_y;
+    uint32_t destination_x;
+    uint32_t destination_y;
+    uint32_t width;
+    uint32_t height;
+    uint32_t color;
+    uint32_t capabilities;
+    uint32_t busy;
+    int32_t status;
+    uint32_t reserved[4];
+} x86os_display_driver_request_t;
+
+_Static_assert(sizeof(x86os_display_driver_request_t) == 80U,
+               "display driver request ABI changed");
 
 #define X86OS_MOUSE_EVENT_VERSION 1U
 #define X86OS_MOUSE_BUTTON_LEFT 0x01U
@@ -1461,6 +1495,9 @@ int x86os_display_frame_stage_blit(uint32_t serial,
                                    uint32_t destination_x,
                                    uint32_t destination_y,
                                    uint32_t width, uint32_t height);
+int x86os_display_frame_mark_accelerated(uint32_t serial);
+/** Supervised display-driver entry; unavailable to normal applications. */
+int x86os_display_driver_command(x86os_display_driver_request_t *request);
 /** Uploads one validated packed-XRGB8888 rectangle in a single presentation. */
 int x86os_draw_pixels(int32_t x, int32_t y, uint32_t width, uint32_t height,
                       const uint32_t *pixels, uint32_t stride_pixels);

@@ -139,6 +139,9 @@ int framebuffer_frame_stage_blit(int owner_pid, uint32_t owner_generation,
                                  uint32_t destination_x,
                                  uint32_t destination_y,
                                  uint32_t width, uint32_t height);
+int framebuffer_frame_mark_accelerated(int owner_pid,
+                                       uint32_t owner_generation,
+                                       uint32_t serial);
 int framebuffer_frame_draw_enter(int owner_pid, uint32_t owner_generation,
                                  uint64_t now_ms);
 int framebuffer_frame_draw_leave(int owner_pid, uint32_t owner_generation,

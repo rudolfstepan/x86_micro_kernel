@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -26,6 +26,7 @@ $ComponentControlRunner = Join-Path $RepoRoot 'scripts\run_qemu_component_contro
 $DriverDomainRunner = Join-Path $RepoRoot 'scripts\run_qemu_driver_domain.py'
 $SystemLayoutRunner = Join-Path $RepoRoot 'scripts\run_qemu_system_layout.py'
 $PciAudioRunner = Join-Path $RepoRoot 'scripts\run_qemu_pci_audio.py'
+$VmwareSvga2dRunner = Join-Path $RepoRoot 'scripts\run_vmware_svga2d.ps1'
 $PartitionProvisioningRunner = Join-Path $RepoRoot 'scripts\run_qemu_partition_provisioning.py'
 $LogRoot = Join-Path $RepoRoot 'build\codex-agent'
 $WcetBudget = Join-Path $RepoRoot 'safety\wcet_budgets.json'
@@ -987,6 +988,16 @@ switch ($Mode) {
         Invoke-Smoke 'guest-smoke-handover.log' @(
             '--expect-handover'
         )
+    }
+    'vmware-svga2d' {
+        if ($Target -eq 'qemu') {
+            Invoke-Smoke 'guest-smoke-svga2d.log' @(
+                '--vmware-vga', '--expect-svga2d', '--boot-only'
+            ) $false
+        } else {
+            & $VmwareSvga2dRunner
+            if ($LASTEXITCODE -ne 0) { throw 'VMware SVGA2D runtime failed.' }
+        }
     }
     'runtime-desktop' {
         Invoke-RuntimeDesktop $false $false $false $true

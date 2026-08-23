@@ -494,6 +494,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "REIST.PRG",
                 "STORAGE.PRG",
                 "HDA.PRG",
+                "SVGA2D.PRG",
                 "AUDIO.PRG",
                 "AUDIOINFO.PRG",
                 "AUDIOTEST.PRG",

@@ -421,6 +421,12 @@ Evidenz und VMware-Sicherheitsgrenze stehen in
   [Desktop-Workflow](GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md), in der
   [Framebuffer-Referenz](../features/FRAMEBUFFER.md) und im
   [Image-Vertrag](../architecture/IMAGE_SUBSYSTEM.md).
+- VMware SVGA-II `15ad:0405`/`15ad:0710` besitzt einen überwachten Ring-3-
+  2D-Treiber mit festem Kernelmediator. QEMU und VMware Workstation bestätigen
+  `RECT_COPY`, Treiber-READY und `BOOT_OK`; der Compositor behält bei jeder
+  Ablehnung den CPU-/Shadow-Framebuffer-Pfad. DMA, GMR, 3D und beliebige FIFO-
+  oder BAR-Autorität sind nicht Bestandteil des Profils. Details stehen im
+  [Videovertrag](../architecture/VIDEO_SUBSYSTEM.md).
 - PCI-HDA läuft über getrennte überwachte Ring-3-Domänen; QEMU prüft den
   PCM-Pfad, VMware-Wiedergabe und Pegel wurden manuell bestätigt. Format,
   Lifecycle und Hardwaregrenzen stehen im
@@ -529,6 +535,6 @@ Zertifizierung bleiben offene manuelle oder produktbezogene Nachweise.
 - breite reale AHCI-/PCI-IDE-/PS/2-/BIOS-Kompatibilitätsmatrix
 - allgemeiner USB/xHCI-, Composite-HID-, Mass-Storage- und Hotplug-Lebenszyklus
 - Migration der verbleibenden GUI-Programme auf Surface-Clients sowie
-  hardwarebeschleunigte Grafik
+  allgemeine 3D-/Multi-Monitor-Grafikbeschleunigung
 - SMP, IOMMU/DMA-Isolation, UEFI, Secure Boot und NVMe
 - formale Nachweise, Langzeit-Stresstests und Zertifizierung

@@ -161,11 +161,14 @@ class DeviceDomainTests(unittest.TestCase):
         profile = process[process.index("if (kind == PROCESS_DOMAIN_DRIVER)"):]
         profile = profile[:profile.index("if (kind != PROCESS_DOMAIN_PROBE)")]
         for syscall in ("SYS_IPC_CREATE", "SYS_IPC_SEND_TIMEOUT",
-                        "SYS_MONOTONIC_MS", "SYS_DEVICE_CONTROL"):
+                        "SYS_MONOTONIC_MS", "SYS_DEVICE_CONTROL",
+                        "SYS_DISPLAY_CONTROL"):
             self.assertIn(syscall, profile)
-        for syscall in ("SYS_OPEN", "SYS_WRITE", "SYS_DISPLAY_CONTROL",
-                        "SYS_NETWORK_CONTROL"):
+        for syscall in ("SYS_OPEN", "SYS_WRITE", "SYS_NETWORK_CONTROL"):
             self.assertNotIn(syscall, profile)
+        self.assertIn("DISPLAY_CONTROL_DRIVER_COMMAND", (
+            ROOT / "kernel/syscall/syscall_table.c").read_text(
+                encoding="utf-8"))
         self.assertIn("domain_kind != PROCESS_DOMAIN_DRIVER", supervisor)
 
     def test_task_exit_fences_devices_before_capability_cleanup(self):

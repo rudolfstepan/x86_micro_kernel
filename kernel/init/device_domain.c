@@ -28,6 +28,7 @@ typedef struct {
     uint8_t irq_bound;
     uint8_t dma_bound;
     uint8_t irq_pic_fallback;
+    uint8_t mediated_io_quiesced;
     uint32_t irq_capability;
     uint32_t dma_capability;
     device_domain_resource_handle_t irq_resource;
@@ -571,7 +572,8 @@ static bool profile_valid(const device_domain_profile_t *profile) {
     const uint32_t known_flags = DEVICE_DOMAIN_PROFILE_MEDIATED_DMA |
         DEVICE_DOMAIN_PROFILE_IOMMU_DIRECT |
         DEVICE_DOMAIN_PROFILE_GROUP_ISOLATED |
-        DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC;
+        DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC |
+        DEVICE_DOMAIN_PROFILE_MEDIATED_IO;
     return profile != NULL && profile->version == DEVICE_DOMAIN_ABI_VERSION &&
         profile->struct_size == sizeof(*profile) &&
         profile->isolation_group < DEVICE_DOMAIN_MAX_GROUPS &&
@@ -634,7 +636,8 @@ static void release_mediated_dma_pool(device_slot_t *device) {
 
 static bool mode_allowed(const device_slot_t *device, uint32_t mode) {
     if (mode == DEVICE_DOMAIN_MODE_MEDIATED)
-        return (device->profile.flags & DEVICE_DOMAIN_PROFILE_MEDIATED_DMA) != 0U;
+        return (device->profile.flags & (DEVICE_DOMAIN_PROFILE_MEDIATED_DMA |
+                                         DEVICE_DOMAIN_PROFILE_MEDIATED_IO)) != 0U;
     if (mode != DEVICE_DOMAIN_MODE_IOMMU_DIRECT) return false;
     return platform_iommu_ready &&
         (device->profile.flags & DEVICE_DOMAIN_PROFILE_IOMMU_DIRECT) != 0U &&
@@ -660,6 +663,15 @@ static bool mask_device_irq(const device_slot_t *device) {
         : platform_ops.mask_irq(device->pci_location);
 }
 
+static bool profile_is_irqless_mediated_io(
+        const device_domain_profile_t *profile) {
+    return profile != NULL &&
+        (profile->flags & DEVICE_DOMAIN_PROFILE_MEDIATED_IO) != 0U &&
+        (profile->flags & (DEVICE_DOMAIN_PROFILE_MEDIATED_DMA |
+                           DEVICE_DOMAIN_PROFILE_IOMMU_DIRECT |
+                           DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC)) == 0U;
+}
+
 static bool unmask_device_irq(const device_slot_t *device) {
     if (device == NULL) return false;
     if (device->irq_pic_fallback == 0U)
@@ -671,7 +683,8 @@ static bool unmask_device_irq(const device_slot_t *device) {
 }
 
 static bool fence_slot(device_slot_t *device) {
-    bool irq_masked = mask_device_irq(device);
+    bool irq_masked = profile_is_irqless_mediated_io(&device->profile) ||
+        mask_device_irq(device);
     bool mastering_disabled =
         platform_ops.set_bus_master(device->pci_location, false);
     bool irq_revoked = device->irq_bound == 0U || platform_ops.revoke_irq(
@@ -756,7 +769,8 @@ int device_domain_register(const device_domain_profile_t *profile,
         end_operation();
         return -16;
     }
-    bool intx_disabled = platform_ops.mask_irq(pci_location);
+    bool irqless_io = profile_is_irqless_mediated_io(profile);
+    bool intx_disabled = irqless_io || platform_ops.mask_irq(pci_location);
     bool irq_pic_fallback = false;
     bool irq_masked = intx_disabled;
     if (!irq_masked &&
@@ -921,6 +935,7 @@ int device_domain_claim(int pid, uint32_t process_generation, uint32_t device,
     slot->owner_pid = pid;
     slot->owner_generation = process_generation;
     slot->mode = mode;
+    slot->mediated_io_quiesced = 0U;
     slot->state = DEVICE_DOMAIN_CLAIMED;
     *handle_out = make_handle(device, slot->generation);
     end_operation();
@@ -1199,6 +1214,22 @@ int device_domain_fence(int pid, uint32_t process_generation,
     return fenced ? 0 : -5;
 }
 
+int device_domain_mark_mediated_io_quiesced(
+        int pid, uint32_t process_generation, device_domain_handle_t handle) {
+    if (!begin_operation()) return -16;
+    device_slot_t *device = owned_slot(pid, process_generation, handle);
+    if (device == NULL ||
+        !profile_is_irqless_mediated_io(&device->profile)) {
+        end_operation();
+        return device == NULL ? -9 : -95;
+    }
+    bool mastering_disabled =
+        platform_ops.set_bus_master(device->pci_location, false);
+    if (mastering_disabled) device->mediated_io_quiesced = 1U;
+    end_operation();
+    return mastering_disabled ? 0 : -5;
+}
+
 int device_domain_release(int pid, uint32_t process_generation,
                           device_domain_handle_t handle,
                           uint64_t deadline_ms) {
@@ -1212,8 +1243,11 @@ int device_domain_release(int pid, uint32_t process_generation,
     }
     bool fenced = device->state == DEVICE_DOMAIN_FENCED
         ? true : fence_slot(device);
+    bool mediated_reset = profile_is_irqless_mediated_io(&device->profile) &&
+        device->mediated_io_quiesced != 0U;
     bool reset = fenced && platform_ops.monotonic_ms() < deadline_ms &&
-        platform_ops.reset(device->pci_location, deadline_ms) &&
+        (mediated_reset ||
+         platform_ops.reset(device->pci_location, deadline_ms)) &&
         platform_ops.monotonic_ms() < deadline_ms;
     if (!reset) {
         device->state = DEVICE_DOMAIN_FENCED;
@@ -1232,6 +1266,7 @@ int device_domain_release(int pid, uint32_t process_generation,
     device->owner_pid = 0;
     device->owner_generation = 0U;
     device->mode = 0U;
+    device->mediated_io_quiesced = 0U;
     if (device->generation == DEVICE_DOMAIN_HANDLE_GENERATION_MAX) {
         device->state = DEVICE_DOMAIN_UNSUPPORTED;
         end_operation();
@@ -1313,8 +1348,12 @@ int device_domain_recover_owner(int pid, uint32_t process_generation,
         device_slot_t *device = &devices[index];
         if (device->owner_pid != pid ||
             device->owner_generation != process_generation) continue;
+        bool mediated_reset =
+            profile_is_irqless_mediated_io(&device->profile) &&
+            device->mediated_io_quiesced != 0U;
         if (platform_ops.monotonic_ms() >= deadline_ms ||
-            !platform_ops.reset(device->pci_location, deadline_ms)) {
+            (!mediated_reset &&
+             !platform_ops.reset(device->pci_location, deadline_ms))) {
             reset = false;
         }
     }
@@ -1335,6 +1374,7 @@ int device_domain_recover_owner(int pid, uint32_t process_generation,
         device->owner_pid = 0;
         device->owner_generation = 0U;
         device->mode = 0U;
+        device->mediated_io_quiesced = 0U;
         ++device->generation;
         device->state = DEVICE_DOMAIN_AVAILABLE;
     }

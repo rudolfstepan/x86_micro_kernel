@@ -687,6 +687,7 @@ SYSTEM_IMAGE_FILES := \
 	libexec/reist/reist.prg=$(SYSTEM_PROGRAM_DIR)/REIST.PRG \
 	libexec/reist/storage.prg=$(SYSTEM_PROGRAM_DIR)/STORAGE.PRG \
 	libexec/reist/hda.prg=$(SYSTEM_PROGRAM_DIR)/HDA.PRG \
+	libexec/reist/svga2d.prg=$(SYSTEM_PROGRAM_DIR)/SVGA2D.PRG \
 	libexec/reist/audio.prg=$(SYSTEM_PROGRAM_DIR)/AUDIO.PRG \
 	libexec/reist/sleeper.prg=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG \
 	libexec/reist/satawr.prg=$(SYSTEM_PROGRAM_DIR)/SATAWR.PRG
@@ -704,7 +705,8 @@ FLOPPY_IMAGE_FILES := $(filter-out \
 	usr/share/icons/audio.ico=% usr/share/icons/image.ico=% \
 	usr/share/icons/settings.ico=% usr/share/icons/unknown.ico=% \
 	usr/share/icons/trash-empty.ico=% usr/share/icons/trash-full.ico=% \
-	libexec/reist/hda.prg=% libexec/reist/audio.prg=%,$(SYSTEM_IMAGE_FILES))
+	libexec/reist/hda.prg=% libexec/reist/audio.prg=% \
+	libexec/reist/svga2d.prg=%,$(SYSTEM_IMAGE_FILES))
 
 bootdisk: native-image
 

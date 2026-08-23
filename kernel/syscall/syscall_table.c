@@ -1970,6 +1970,46 @@ static int syscall_display_control(display_control_request_t *user_request) {
         return display_control_activate();
     if (base.operation == DISPLAY_CONTROL_DEACTIVATE)
         return display_control_deactivate();
+    if (base.operation == DISPLAY_CONTROL_DRIVER_COMMAND) {
+        display_driver_request_t request;
+        if (base.struct_size < sizeof(request) ||
+            copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return base.struct_size < sizeof(request) ? -22 : -14;
+        Process *driver = scheduler_current_process();
+        if (driver == NULL ||
+            driver->domain_profile.kind != PROCESS_DOMAIN_DRIVER)
+            return -13;
+        if (request.version != DISPLAY_CONTROL_ABI_VERSION ||
+            request.struct_size < sizeof(request) || request.flags != 0U ||
+            request.device == 0U || request.command == 0U ||
+            request.capabilities != 0U || request.busy != 0U ||
+            request.status != 0 || request.reserved[0] != 0U ||
+            request.reserved[1] != 0U || request.reserved[2] != 0U ||
+            request.reserved[3] != 0U ||
+            !supervisor_device_driver_command_allowed(
+                driver->pid, driver->generation, request.device))
+            return -13;
+        int result = display_control_driver_command(&request);
+        if (copy_to_user(user_request, &request, sizeof(request)) != 0)
+            return -14;
+        return result;
+    }
+    if (base.operation == DISPLAY_CONTROL_FRAME_MARK_ACCELERATED) {
+        display_frame_request_t request;
+        Process *desktop = scheduler_current_process();
+        if (desktop == NULL ||
+            strcmp(desktop->name, "/usr/gui/bin/desktop.prg") != 0)
+            return -13;
+        if (base.struct_size < sizeof(request) ||
+            copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return base.struct_size < sizeof(request) ? -22 : -14;
+        if (request.version != DISPLAY_CONTROL_ABI_VERSION ||
+            request.struct_size < sizeof(request) || request.flags != 0U ||
+            request.serial == 0U || request.reserved != 0U)
+            return -22;
+        return framebuffer_frame_mark_accelerated(
+            desktop->pid, desktop->generation, request.serial);
+    }
     if (base.operation != DISPLAY_CONTROL_FRAME_BEGIN &&
         base.operation != DISPLAY_CONTROL_FRAME_COMMIT &&
         base.operation != DISPLAY_CONTROL_FRAME_CANCEL &&

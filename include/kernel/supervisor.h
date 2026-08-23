@@ -55,6 +55,7 @@ struct Process;
 #define REIST_REPORT_WCET_REJECT 15U
 #define REIST_SERVICE_DIAGNOSTIC 1U
 #define REIST_SERVICE_AUDIO 2U
+#define REIST_SERVICE_DISPLAY_DRIVER 3U
 #define REIST_SERVICE_AUDIO_DRIVER_INTERNAL 0x80000001U
 #define SUPERVISOR_NETWORK_FRAME_VERSION 1U
 #define SUPERVISOR_NETWORK_FRAME_MAX_SIZE 1518U
@@ -729,6 +730,9 @@ int supervisor_device_driver_report(
     int pid, uint32_t process_generation,
     const device_domain_driver_report_t *report, uint64_t now_ms);
 bool supervisor_device_driver_output_allowed(
+    int pid, uint32_t process_generation, device_domain_handle_t device);
+/** Authorize one fixed mediator command during self-test or healthy service. */
+bool supervisor_device_driver_command_allowed(
     int pid, uint32_t process_generation, device_domain_handle_t device);
 bool supervisor_device_driver_component_down(uint32_t device_index,
                                              uint64_t deadline_ms);

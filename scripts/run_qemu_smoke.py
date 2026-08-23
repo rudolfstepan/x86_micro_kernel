@@ -164,6 +164,7 @@ def qemu_command(
     handover_port: int | None = None,
     sata: bool = False,
     auxiliary_sata_image: Path | None = None,
+    vmware_vga: bool = False,
 ) -> list[str]:
     command = [
         str(qemu),
@@ -177,6 +178,8 @@ def qemu_command(
         "-serial", "mon:stdio",
         "-no-shutdown",
     ]
+    if vmware_vga:
+        command.extend(["-vga", "vmware"])
     if sata:
         command.extend(["-device", "ich9-ahci,id=reistahci"])
         system_port = 0
@@ -1107,6 +1110,7 @@ def run(
     expect_http_server: bool = False,
     boot_only: bool = False,
     expect_wcet_baseline: bool = False,
+    vmware_vga: bool = False,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
     injection_connection: socket.socket | None = None
@@ -1126,7 +1130,7 @@ def run(
         process = subprocess.Popen(
             qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot,
                          nic, persistent, injection_port, handover_port, sata,
-                         auxiliary_sata_image),
+                         auxiliary_sata_image, vmware_vga),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -1955,6 +1959,14 @@ def main() -> int:
         "--boot-only", action="store_true",
         help="stop successfully after BOOT_OK, the shell prompt, and requested boot markers",
     )
+    parser.add_argument(
+        "--vmware-vga", action="store_true",
+        help="attach QEMU's VMware SVGA-II compatible PCI display",
+    )
+    parser.add_argument(
+        "--expect-svga2d", action="store_true",
+        help="require supervised VMware SVGA-II activation and RECT_COPY",
+    )
     args = parser.parse_args()
 
     if args.qemu == Path("qemu-system-i386"):
@@ -2033,6 +2045,7 @@ def main() -> int:
             args.expect_http_server,
             args.boot_only,
             args.expect_wcet_baseline,
+            args.vmware_vga,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)
@@ -2080,6 +2093,13 @@ def main() -> int:
                             args.expect_runtime_degradation,
                             args.boot_only,
                             wcet_budget)
+    if marker_error is None and args.expect_svga2d:
+        for marker in ("REIST_VIDEO SVGA2D_ACTIVE",
+                       "REIST_VIDEO SVGA2D_RECT_COPY_OK",
+                       "REIST_VIDEO SVGA2D_READY"):
+            if marker not in transcript:
+                marker_error = f"missing {marker} marker"
+                break
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")

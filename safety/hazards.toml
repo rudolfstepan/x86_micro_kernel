@@ -393,7 +393,7 @@ title = "Grafik- oder GUI-Fehler blockiert Essential Functions oder erhält glob
 category = "service"
 components = ["CMP-DISPLAY-GUI"]
 essential_functions = ["EF-ISOLATION-001", "EF-RECOVERY-001"]
-causes = ["ungültige Geometrie", "hängender Client", "stale Fenstergeneration", "Framebufferüberlauf"]
+causes = ["ungültige Geometrie", "hängender Client", "stale Fenstergeneration", "Framebufferüberlauf", "stale SVGA-FIFO-Generation"]
 effects = ["Speicherüberschreibung", "Eingabe an falschen Client", "Blockierung anderer Dienste"]
 phases = ["graphics-activate", "surface-publish", "input", "client-exit"]
 severity = "major"
@@ -402,14 +402,14 @@ safe_state = "Displayautorität entziehen; GUI bleibt nicht essenziell."
 ftti_ms = 1000
 ftti_rationale = "Isolation und VGA-Rückkehr müssen im allgemeinen Recoverybudget enden."
 requirements = ["REQ-ISO-001", "REQ-REC-001", "REQ-RES-001"]
-design = ["docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md", "docs/architecture/RESILIENCE_AND_DEGRADATION_CONTRACT.md"]
-controls = ["drivers/video/display_control.c", "drivers/video/frame_transaction.c", "userspace/gui/compositor/desktop.c"]
-verification = ["test/test_display_abi_minimal.py", "test/test_desktop_source.py", "test/test_desktop_surface_runtime_source.py", "test/test_runtime_graphics_switch.py"]
+design = ["docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md", "docs/architecture/VIDEO_SUBSYSTEM.md", "docs/architecture/RESILIENCE_AND_DEGRADATION_CONTRACT.md"]
+controls = ["drivers/video/display_control.c", "drivers/video/frame_transaction.c", "kernel/init/video_device_profile.c", "userspace/drivers/video/vmware_svga2d.c", "userspace/gui/compositor/desktop.c"]
+verification = ["test/test_display_abi_minimal.py", "test/test_desktop_source.py", "test/test_desktop_surface_runtime_source.py", "test/test_runtime_graphics_switch.py", "test/test_vmware_svga2d.py"]
 acceptance_criteria = ["Geometrie, Generation und Framegrenze werden vor Publikation geprüft.", "GUI verbraucht keine Recoveryreserve."]
 owner = "REIST GUI team"
 status = "partially_verified"
 assumptions = ["VGA-Text und seriell bleiben Rescuepfade."]
-residual_risk = "Vollständige Compositor-Fault-Injection bleibt offen."
+residual_risk = "Vollständige Compositor-Fault-Injection sowie 3D, GMR/DMA und breite reale Gerätevarianten bleiben offen."
 
 [[hazard]]
 id = "HZ-AUDIO-001"

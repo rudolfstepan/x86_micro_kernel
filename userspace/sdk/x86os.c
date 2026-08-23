@@ -811,6 +811,32 @@ int x86os_display_frame_stage_blit(uint32_t serial,
                               (uintptr_t)&request, 0, 0);
 }
 
+int x86os_display_frame_mark_accelerated(uint32_t serial) {
+    if (serial == 0U) return -22;
+    x86os_display_frame_t request = {
+        .version = X86OS_DISPLAY_CONTROL_VERSION,
+        .struct_size = sizeof(request),
+        .operation = X86OS_DISPLAY_FRAME_MARK_ACCELERATED,
+        .flags = 0U,
+        .serial = serial,
+        .reserved = 0U,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DISPLAY_CONTROL,
+                              (uintptr_t)&request, 0, 0);
+}
+
+int x86os_display_driver_command(x86os_display_driver_request_t *request) {
+    if (request == NULL ||
+        request->version != X86OS_DISPLAY_CONTROL_VERSION ||
+        request->struct_size < sizeof(*request) ||
+        request->operation != X86OS_DISPLAY_DRIVER_COMMAND ||
+        request->flags != 0U || request->device == 0U ||
+        request->command == 0U)
+        return -22;
+    return (int)x86os_syscall(X86OS_SYS_DISPLAY_CONTROL,
+                              (uintptr_t)request, 0, 0);
+}
+
 int x86os_draw_pixels(int32_t x, int32_t y, uint32_t width, uint32_t height,
                       const uint32_t *pixels, uint32_t stride_pixels) {
     if (!pixels || width == 0U || height == 0U || stride_pixels < width ||

@@ -4754,12 +4754,15 @@ typedef struct {
     int owner_pid;
     uint32_t owner_generation;
     uint32_t serial;
+    uint32_t source_x;
+    uint32_t source_y;
     uint32_t destination_x;
     uint32_t destination_y;
     uint32_t width;
     uint32_t height;
     uint32_t row_bytes;
     bool active;
+    bool accelerated;
 } framebuffer_staged_blit_t;
 
 static framebuffer_staged_blit_t staged_blit;
@@ -4876,13 +4879,20 @@ static void framebuffer_restore_shadow_rect(uint32_t x, uint32_t y,
     }
 }
 
-static void framebuffer_publish_damage(const display_frame_rect_t *damage,
-                                       uint32_t count) {
+static void framebuffer_publish_damage(
+        const display_frame_rect_t *damage, uint32_t count,
+        const display_frame_rect_t *accelerated) {
     if (damage == NULL || count > DISPLAY_FRAME_DAMAGE_CAPACITY) return;
     display_control_rect_t updates[DISPLAY_FRAME_DAMAGE_CAPACITY];
     for (uint32_t index = 0U; index < count; ++index) {
-        framebuffer_blit_rect(damage[index].x, damage[index].y,
-                              damage[index].width, damage[index].height);
+        bool skip = accelerated != NULL &&
+            damage[index].x == accelerated->x &&
+            damage[index].y == accelerated->y &&
+            damage[index].width == accelerated->width &&
+            damage[index].height == accelerated->height;
+        if (!skip)
+            framebuffer_blit_rect(damage[index].x, damage[index].y,
+                                  damage[index].width, damage[index].height);
         updates[index] = (display_control_rect_t){
             .x = damage[index].x,
             .y = damage[index].y,
@@ -5007,12 +5017,15 @@ int framebuffer_frame_stage_blit(int owner_pid, uint32_t owner_generation,
             .owner_pid = owner_pid,
             .owner_generation = owner_generation,
             .serial = serial,
+            .source_x = source_x,
+            .source_y = source_y,
             .destination_x = destination_x,
             .destination_y = destination_y,
             .width = width,
             .height = height,
             .row_bytes = bytes,
             .active = true,
+            .accelerated = false,
         };
         if (!display_frame_record_damage(
                 &frame_transaction,
@@ -5027,6 +5040,24 @@ int framebuffer_frame_stage_blit(int owner_pid, uint32_t owner_generation,
     return result;
 }
 
+int framebuffer_frame_mark_accelerated(int owner_pid,
+                                       uint32_t owner_generation,
+                                       uint32_t serial) {
+    if (serial == 0U || !display_control_vmware_acceleration_active())
+        return -95;
+    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
+    int result = 0;
+    if (!framebuffer_staged_blit_matches(
+            owner_pid, owner_generation, serial) ||
+        !frame_transaction.active || frame_transaction.serial != serial) {
+        result = -116;
+    } else {
+        staged_blit.accelerated = true;
+    }
+    spinlock_release_irq(&frame_transaction_lock, flags);
+    return result;
+}
+
 int framebuffer_frame_commit(int owner_pid, uint32_t owner_generation,
                              uint32_t serial, uint64_t now_ms) {
     display_frame_rect_t damage[DISPLAY_FRAME_DAMAGE_CAPACITY];
@@ -5038,8 +5069,18 @@ int framebuffer_frame_commit(int owner_pid, uint32_t owner_generation,
     spinlock_release_irq(&frame_transaction_lock, flags);
     if (result == -110) (void)framebuffer_reap_expired_frame(now_ms);
     if (result != 0) return result;
+    display_frame_rect_t accelerated;
+    const display_frame_rect_t *accelerated_ptr = NULL;
+    if (framebuffer_staged_blit_matches(
+            owner_pid, owner_generation, serial) && staged_blit.accelerated) {
+        accelerated = (display_frame_rect_t){
+            staged_blit.destination_x, staged_blit.destination_y,
+            staged_blit.width, staged_blit.height,
+        };
+        accelerated_ptr = &accelerated;
+    }
     framebuffer_apply_staged_blit(owner_pid, owner_generation, serial);
-    framebuffer_publish_damage(damage, damage_count);
+    framebuffer_publish_damage(damage, damage_count, accelerated_ptr);
     framebuffer_finish_frame_transition();
     return 0;
 }
@@ -5098,7 +5139,7 @@ void framebuffer_frame_process_cleanup(int owner_pid,
         if (action == DISPLAY_FRAME_TRANSITION_PUBLISH) {
             framebuffer_apply_staged_blit(
                 owner_pid, owner_generation, 0U);
-            framebuffer_publish_damage(damage, damage_count);
+            framebuffer_publish_damage(damage, damage_count, NULL);
         } else {
             if (framebuffer_staged_blit_matches(
                     owner_pid, owner_generation, 0U))

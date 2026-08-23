@@ -409,7 +409,7 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
             SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS, SYS_MONOTONIC_MS,
             SYS_IPC_CREATE, SYS_IPC_SEND, SYS_IPC_RECEIVE, SYS_IPC_CLOSE,
             SYS_IPC_SEND_TIMEOUT, SYS_IPC_RECEIVE_TIMEOUT,
-            SYS_DEVICE_CONTROL
+            SYS_DEVICE_CONTROL, SYS_DISPLAY_CONTROL
         };
         for (size_t index = 0;
              index < sizeof(driver_syscalls) / sizeof(driver_syscalls[0]);

@@ -40,6 +40,8 @@ enum {
     DEVICE_DOMAIN_PROFILE_GROUP_ISOLATED = 1U << 2U,
     /** Vetted legacy endpoint may use a line-level PIC mask for INTx. */
     DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC = 1U << 3U,
+    /** Fixed command mediator; grants neither DMA nor raw region mappings. */
+    DEVICE_DOMAIN_PROFILE_MEDIATED_IO = 1U << 4U,
 };
 
 enum {
@@ -500,6 +502,9 @@ int device_domain_deactivate(int pid, uint32_t process_generation,
 /** Mask IRQ and disable bus mastering before any owner cleanup. */
 int device_domain_fence(int pid, uint32_t process_generation,
                         device_domain_handle_t handle);
+/** Record completion of a kernel-owned fixed-command I/O quiesce. */
+int device_domain_mark_mediated_io_quiesced(
+    int pid, uint32_t process_generation, device_domain_handle_t handle);
 /** Fence, reset and release one device before publishing a new generation. */
 int device_domain_release(int pid, uint32_t process_generation,
                           device_domain_handle_t handle,

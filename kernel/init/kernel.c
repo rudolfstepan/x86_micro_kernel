@@ -58,6 +58,7 @@
 #include "drivers/video/display_control.h"
 #include "include/kernel/device_domain.h"
 #include "kernel/init/audio_device_profile.h"
+#include "kernel/init/video_device_profile.h"
 #ifdef USE_FRAMEBUFFER
 #include "drivers/video/framebuffer.h"
 #endif
@@ -103,6 +104,8 @@ static uint32_t driver_fault_reset_device = UINT32_MAX;
 #endif
 static audio_device_profile_info_t audio_device_info;
 static bool audio_device_available;
+static video_device_profile_info_t video_device_info;
+static bool video_device_available;
 
 
 //---------------------------------------------------------------------------------------------
@@ -188,6 +191,14 @@ static void hardware_init(void) {
     if (!device_domain_bootstrap()) {
         printf("DEVICE_DOMAIN: unavailable; Ring-3 device claims disabled\n");
     } else {
+        int video_result = video_device_profile_discover(&video_device_info);
+        if (video_result == 1) {
+            video_device_available = true;
+            printf("REIST_VIDEO SVGA2D_PROFILE pci=%04X:%04X\n",
+                   video_device_info.vendor_id, video_device_info.device_id);
+        } else if (video_result < 0) {
+            printf("REIST_VIDEO SVGA2D_REJECTED result=%d\n", video_result);
+        }
         int audio_result = audio_device_profile_discover(&audio_device_info);
         if (audio_result == 1) {
             audio_device_available = true;
@@ -721,6 +732,23 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
                  "/libexec/reist/storage.prg");
     if (!storage_service_start(pit_monotonic_ms())) {
         panic("Unable to start REIST Ring-3 storage service");
+    }
+    if (video_device_available) {
+        const supervisor_config_t video_driver_config = {
+            .heartbeat_timeout_ms = 2000U,
+            .recovery_timeout_ms = 1000U,
+            .restart_budget = 3U,
+        };
+        supervisor_handle_t video_driver_handle;
+        boot_context("userspace-start", "SVGA-II driver", "spawn",
+                     "/libexec/reist/svga2d.prg");
+        int video_driver_result = supervisor_start_device_driver(
+            "svga2d-ring3", "/libexec/reist/svga2d.prg",
+            video_device_info.device_index, DEVICE_DOMAIN_MODE_MEDIATED,
+            &video_driver_config, pit_monotonic_ms(), &video_driver_handle);
+        if (video_driver_result != 0)
+            printf("REIST_VIDEO DRIVER_DEGRADED result=%d\n",
+                   video_driver_result);
     }
     if (audio_device_available) {
         const supervisor_config_t audio_driver_config = {

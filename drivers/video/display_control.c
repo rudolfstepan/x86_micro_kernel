@@ -42,10 +42,12 @@
 #define SVGA_REG_FB_START 13U
 #define SVGA_REG_FB_OFFSET 14U
 #define SVGA_REG_FB_SIZE 16U
+#define SVGA_REG_CAPABILITIES 17U
 #define SVGA_REG_MEM_START 18U
 #define SVGA_REG_MEM_SIZE 19U
 #define SVGA_REG_CONFIG_DONE 20U
 #define SVGA_REG_SYNC 21U
+#define SVGA_REG_BUSY 22U
 #define SVGA_REG_MEM_REGS 30U
 #define SVGA_ID_2 0x90000002U
 #define SVGA_ID_1 0x90000001U
@@ -55,6 +57,10 @@
 #define SVGA_FIFO_NEXT_CMD 2U
 #define SVGA_FIFO_STOP 3U
 #define SVGA_CMD_UPDATE 1U
+#define SVGA_CMD_RECT_FILL 2U
+#define SVGA_CMD_RECT_COPY 3U
+#define SVGA_CAP_RECT_FILL (1U << 0U)
+#define SVGA_CAP_RECT_COPY (1U << 1U)
 
 typedef enum {
     DISPLAY_BACKEND_NONE = 0,
@@ -66,6 +72,7 @@ typedef enum {
 static volatile bool activation_busy;
 static bool qemu_prepared;
 static bool vmware_prepared;
+static bool vmware_supervised;
 static bool vbe_prepared;
 static vbe_runtime_info_t vbe_runtime_info;
 static uint32_t vbe_reject_reason;
@@ -73,6 +80,11 @@ static display_backend_t active_backend;
 static volatile uint32_t *vmware_fifo;
 static uint16_t vmware_index_port;
 static uint16_t vmware_value_port;
+static uint32_t vmware_capabilities;
+static uint32_t vmware_width;
+static uint32_t vmware_height;
+static bool vmware_rect_copy_reported;
+static spinlock_t vmware_fifo_lock;
 
 static void svga_write(uint16_t index_port, uint16_t value_port,
                        uint32_t index, uint32_t value);
@@ -122,9 +134,19 @@ void display_control_present_rects(const display_control_rect_t *rects,
         commands[command_count++] = rects[index].width;
         commands[command_count++] = rects[index].height;
     }
-    if (command_count == 0U ||
-        !vmware_fifo_write_batch(commands, command_count)) return;
-    svga_write(vmware_index_port, vmware_value_port, SVGA_REG_SYNC, 1U);
+    if (command_count == 0U) return;
+    uint32_t flags = spinlock_acquire_irq(&vmware_fifo_lock);
+    bool submitted = vmware_fifo_write_batch(commands, command_count);
+    if (submitted)
+        svga_write(vmware_index_port, vmware_value_port, SVGA_REG_SYNC, 1U);
+    spinlock_release_irq(&vmware_fifo_lock, flags);
+}
+
+static bool vmware_rect_valid(uint32_t x, uint32_t y,
+                              uint32_t width, uint32_t height) {
+    return active_backend == DISPLAY_BACKEND_VMWARE && vmware_fifo != NULL &&
+        width != 0U && height != 0U && x < vmware_width && y < vmware_height &&
+        width <= vmware_width - x && height <= vmware_height - y;
 }
 
 static uint16_t dispi_read(uint16_t index) {
@@ -384,6 +406,7 @@ void display_control_prepare(void) {
 
     pci_device_t *vmware = find_vmware_vga();
     if (vmware) {
+        vmware_supervised = true;
         uint32_t index_bar = vmware->bar[0];
         if ((index_bar & 1U) != 0U &&
             (index_bar & 0xFFFFFFFCU) != 0U) {
@@ -405,6 +428,11 @@ void display_control_prepare(void) {
                     svga_read(index_port, value_port, SVGA_REG_MEM_START);
                 uint32_t fifo_size =
                     svga_read(index_port, value_port, SVGA_REG_MEM_SIZE);
+                printf("REIST_VIDEO SVGA2D_PROBE id=%08X "
+                       "fb=%08X/%u fifo=%08X/%u bars=%08X,%08X,%08X\n",
+                       id, framebuffer_start, framebuffer_size,
+                       fifo_start, fifo_size, vmware->bar[0],
+                       vmware->bar[1], vmware->bar[2]);
                 if (framebuffer_start == 0U)
                     framebuffer_start = vmware->bar[1] & 0xFFFFFFF0U;
                 if (fifo_start == 0U)
@@ -487,6 +515,8 @@ static int activate_vmware(pci_device_t *device) {
     uint32_t height = max_height >= 768U ? 768U : 600U;
     uint64_t required = (uint64_t)width * height * 4U;
     uint32_t fb_size = svga_read(index_port, value_port, SVGA_REG_FB_SIZE);
+    printf("REIST_VIDEO SVGA2D_MODE max=%ux%u fbsize=%u\n",
+           (unsigned)max_width, (unsigned)max_height, (unsigned)fb_size);
     if (max_width < 800U || max_height < 600U || required > fb_size) return -19;
     pci_enable_device(device);
     svga_write(index_port, value_port, SVGA_REG_ENABLE, 0U);
@@ -507,6 +537,8 @@ static int activate_vmware(pci_device_t *device) {
     uint64_t visible_bytes = (uint64_t)pitch * height;
     uint64_t framebuffer_address =
         (uint64_t)framebuffer_start + framebuffer_offset;
+    printf("REIST_VIDEO SVGA2D_SCANOUT pitch=%u start=%08X offset=%u\n",
+           (unsigned)pitch, framebuffer_start, (unsigned)framebuffer_offset);
     if (pitch < width * 4U || framebuffer_start == 0U ||
         framebuffer_address > UINT32_MAX ||
         framebuffer_offset > fb_size ||
@@ -516,7 +548,12 @@ static int activate_vmware(pci_device_t *device) {
     uint32_t fifo_size = svga_read(index_port, value_port, SVGA_REG_MEM_SIZE);
     uint32_t fifo_registers =
         svga_read(index_port, value_port, SVGA_REG_MEM_REGS);
+    /* SVGA-II ID2 permits legacy implementations to omit MEM_REGS.  The
+     * mandatory FIFO header is still MIN/MAX/NEXT_CMD/STOP (four dwords). */
+    if (fifo_registers == 0U) fifo_registers = 4U;
     uint32_t fifo_minimum = fifo_registers * sizeof(uint32_t);
+    printf("REIST_VIDEO SVGA2D_FIFO start=%08X size=%u regs=%u\n",
+           fifo_start, (unsigned)fifo_size, (unsigned)fifo_registers);
     if (fifo_start == 0U) fifo_start = fifo_bar & 0xFFFFFFF0U;
     if (fifo_size < 4096U || fifo_registers < 4U ||
         fifo_registers > fifo_size / sizeof(uint32_t) ||
@@ -543,7 +580,14 @@ static int activate_vmware(pci_device_t *device) {
     vmware_fifo = fifo;
     vmware_index_port = index_port;
     vmware_value_port = value_port;
+    vmware_capabilities = svga_read(
+        index_port, value_port, SVGA_REG_CAPABILITIES) &
+        (SVGA_CAP_RECT_FILL | SVGA_CAP_RECT_COPY);
+    vmware_width = width;
+    vmware_height = height;
     active_backend = DISPLAY_BACKEND_VMWARE;
+    printf("REIST_VIDEO SVGA2D_ACTIVE caps=%X geometry=%ux%u\n",
+           (unsigned)vmware_capabilities, (unsigned)width, (unsigned)height);
     return 0;
 
 vmware_disable_fifo:
@@ -575,7 +619,13 @@ int display_control_activate(void) {
     if (!device) {
         pci_device_t *candidate = find_vmware_vga();
         if (candidate) {
-            result = activate_vmware(candidate);
+            if (vmware_supervised) {
+                printf("DISPLAY_CONTROL: VMware activation requires "
+                       "supervised svga2d-ring3\n");
+                result = -13;
+            } else {
+                result = activate_vmware(candidate);
+            }
             goto activation_done;
         }
         candidate = find_vmware_display();
@@ -698,6 +748,10 @@ int display_control_deactivate(void) {
         vmware_fifo = NULL;
         vmware_index_port = 0U;
         vmware_value_port = 0U;
+        vmware_capabilities = 0U;
+        vmware_width = 0U;
+        vmware_height = 0U;
+        vmware_rect_copy_reported = false;
         active_backend = DISPLAY_BACKEND_NONE;
     }
     __asm__ __volatile__("cli" ::: "memory");
@@ -708,4 +762,83 @@ int display_control_deactivate(void) {
 
 bool display_control_graphics_active(void) {
     return active_backend != DISPLAY_BACKEND_NONE && framebuffer_available();
+}
+
+bool display_control_vmware_acceleration_active(void) {
+    return active_backend == DISPLAY_BACKEND_VMWARE && vmware_fifo != NULL &&
+        (vmware_capabilities & SVGA_CAP_RECT_COPY) != 0U;
+}
+
+int display_control_driver_command(display_driver_request_t *request) {
+    if (request == NULL) return -22;
+    int result = -22;
+    if (request->command == DISPLAY_DRIVER_ACTIVATE) {
+        pci_device_t *device = find_vmware_vga();
+        result = active_backend == DISPLAY_BACKEND_VMWARE
+            ? 0 : device != NULL ? activate_vmware(device) : -19;
+    } else if (request->command == DISPLAY_DRIVER_DEACTIVATE) {
+        result = active_backend == DISPLAY_BACKEND_VMWARE
+            ? display_control_deactivate() : -19;
+    } else if (request->command == DISPLAY_DRIVER_BUSY_QUERY) {
+        if (active_backend != DISPLAY_BACKEND_VMWARE ||
+            vmware_index_port == 0U || vmware_value_port == 0U) {
+            result = -19;
+        } else {
+            request->busy = svga_read(vmware_index_port, vmware_value_port,
+                                      SVGA_REG_BUSY) != 0U ? 1U : 0U;
+            result = 0;
+        }
+    } else {
+        uint32_t commands[7U];
+        uint32_t command_count = 0U;
+        if (request->command == DISPLAY_DRIVER_RECT_FILL) {
+            if ((vmware_capabilities & SVGA_CAP_RECT_FILL) == 0U)
+                return -95;
+            if (!vmware_rect_valid(request->destination_x,
+                                   request->destination_y,
+                                   request->width, request->height))
+                return -22;
+            commands[command_count++] = SVGA_CMD_RECT_FILL;
+            commands[command_count++] = request->color;
+            commands[command_count++] = request->destination_x;
+            commands[command_count++] = request->destination_y;
+            commands[command_count++] = request->width;
+            commands[command_count++] = request->height;
+        } else if (request->command == DISPLAY_DRIVER_RECT_COPY) {
+            if ((vmware_capabilities & SVGA_CAP_RECT_COPY) == 0U)
+                return -95;
+            if (!vmware_rect_valid(request->source_x, request->source_y,
+                                   request->width, request->height) ||
+                !vmware_rect_valid(request->destination_x,
+                                   request->destination_y,
+                                   request->width, request->height))
+                return -22;
+            commands[command_count++] = SVGA_CMD_RECT_COPY;
+            commands[command_count++] = request->source_x;
+            commands[command_count++] = request->source_y;
+            commands[command_count++] = request->destination_x;
+            commands[command_count++] = request->destination_y;
+            commands[command_count++] = request->width;
+            commands[command_count++] = request->height;
+        }
+        if (command_count != 0U) {
+            uint32_t flags = spinlock_acquire_irq(&vmware_fifo_lock);
+            bool submitted = vmware_fifo_write_batch(commands, command_count);
+            if (submitted)
+                svga_write(vmware_index_port, vmware_value_port,
+                           SVGA_REG_SYNC, 1U);
+            spinlock_release_irq(&vmware_fifo_lock, flags);
+            result = submitted ? 0 : -11;
+            if (submitted && request->command == DISPLAY_DRIVER_RECT_COPY &&
+                !vmware_rect_copy_reported) {
+                vmware_rect_copy_reported = true;
+                printf("REIST_VIDEO SVGA2D_RECT_COPY_OK\n");
+            }
+        }
+    }
+    request->capabilities = vmware_capabilities;
+    request->width = vmware_width;
+    request->height = vmware_height;
+    request->status = result;
+    return result;
 }

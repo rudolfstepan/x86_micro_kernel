@@ -18,6 +18,7 @@
 #include "reist/image.h"
 #include "reist/gui/dialog.h"
 #include "reist/gui/menu.h"
+#include "../../video/include/reist/svga2d.h"
 
 #define DESKTOP_ICON_COUNT 3U
 #define DESKTOP_ICON_WIDTH 176U
@@ -76,6 +77,73 @@ static uint64_t trash_last_click_ms;
 static desktop_drag_state_t desktop_drag;
 static desktop_trash_state_t desktop_trash;
 static uint32_t trash_restore_pressed_window = DESKTOP_WM_NO_TARGET;
+static x86os_ipc_handle_t desktop_svga2d_endpoint;
+static uint32_t desktop_svga2d_request_id;
+static uint32_t desktop_svga2d_capabilities;
+
+static int desktop_svga2d_transact(reist_svga2d_message_t *wire) {
+    if (wire == 0 || desktop_svga2d_endpoint == X86OS_IPC_INVALID_HANDLE)
+        return -19;
+    if (++desktop_svga2d_request_id == 0U) desktop_svga2d_request_id = 1U;
+    wire->version = REIST_SVGA2D_ABI_VERSION;
+    wire->struct_size = sizeof(*wire);
+    wire->request_id = desktop_svga2d_request_id;
+    x86os_ipc_message_t ipc = {
+        .version = X86OS_IPC_MESSAGE_VERSION,
+        .struct_size = sizeof(ipc),
+        .length = sizeof(*wire),
+    };
+    for (uint32_t index = 0U; index < sizeof(*wire); ++index)
+        ipc.payload[index] = ((const uint8_t *)wire)[index];
+    if (x86os_ipc_send_timeout(desktop_svga2d_endpoint, &ipc, 50U) != 0)
+        return -11;
+    ipc.version = X86OS_IPC_MESSAGE_VERSION;
+    ipc.struct_size = sizeof(ipc);
+    if (x86os_ipc_receive_timeout(desktop_svga2d_endpoint, &ipc, 100U) != 0 ||
+        ipc.version != X86OS_IPC_MESSAGE_VERSION ||
+        ipc.struct_size != sizeof(ipc) || ipc.length != sizeof(*wire))
+        return -11;
+    reist_svga2d_message_t response;
+    for (uint32_t index = 0U; index < sizeof(response); ++index)
+        ((uint8_t *)&response)[index] = ipc.payload[index];
+    if (response.version != REIST_SVGA2D_ABI_VERSION ||
+        response.struct_size != sizeof(response) ||
+        response.request_id != desktop_svga2d_request_id ||
+        response.operation != wire->operation ||
+        response.flags != REIST_SVGA2D_FLAG_RESPONSE)
+        return -84;
+    *wire = response;
+    desktop_svga2d_capabilities = response.capabilities;
+    return response.status;
+}
+
+static int desktop_svga2d_connect(uint32_t activate) {
+    if (desktop_svga2d_endpoint == X86OS_IPC_INVALID_HANDLE &&
+        x86os_service_connect(X86OS_SERVICE_DISPLAY_DRIVER,
+                              &desktop_svga2d_endpoint) != 0)
+        return -19;
+    reist_svga2d_message_t request = {0};
+    request.operation = activate != 0U
+        ? REIST_SVGA2D_ACTIVATE : REIST_SVGA2D_INFO;
+    return desktop_svga2d_transact(&request);
+}
+
+static int desktop_svga2d_rect_copy(uint32_t source_x, uint32_t source_y,
+                                    uint32_t destination_x,
+                                    uint32_t destination_y,
+                                    uint32_t width, uint32_t height) {
+    if ((desktop_svga2d_capabilities & REIST_SVGA2D_CAP_RECT_COPY) == 0U)
+        return -95;
+    reist_svga2d_message_t request = {0};
+    request.operation = REIST_SVGA2D_RECT_COPY;
+    request.source_x = source_x;
+    request.source_y = source_y;
+    request.destination_x = destination_x;
+    request.destination_y = destination_y;
+    request.width = width;
+    request.height = height;
+    return desktop_svga2d_transact(&request);
+}
 
 enum {
     DESKTOP_MENU_START = 0U
@@ -2276,6 +2344,12 @@ static uint32_t render_desktop_cached_move_frame(
     if (staged != 0) {
         render_desktop(display, manager, explorer, surfaces, ui, dirty);
     } else {
+        if (desktop_svga2d_rect_copy(
+                (uint32_t)move->source.x, (uint32_t)move->source.y,
+                (uint32_t)move->destination.x,
+                (uint32_t)move->destination.y,
+                move->source.width, move->source.height) == 0)
+            (void)x86os_display_frame_mark_accelerated(serial);
         desktop_dirty_region_t cleanup;
         desktop_dirty_initialize(
             &cleanup, display->width, display->height);
@@ -4179,7 +4253,9 @@ int main(int argc, char **argv) {
 
     int display_status = x86os_display_info(&display);
     if (display_status != 0) {
-        if (x86os_display_activate() == 0) runtime_activated = 1U;
+        if (desktop_svga2d_connect(1U) == 0 ||
+            x86os_display_activate() == 0)
+            runtime_activated = 1U;
         display_status = x86os_display_info(&display);
     }
     if (display_status != 0 ||
@@ -4190,6 +4266,7 @@ int main(int argc, char **argv) {
         x86os_puts("desktop: Grafikmodus nicht verfuegbar\n");
         return 1;
     }
+    (void)desktop_svga2d_connect(0U);
 
     uint32_t taskbar = taskbar_height(&display);
     desktop_ui_initialize(&ui);

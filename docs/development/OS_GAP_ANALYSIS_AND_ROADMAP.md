@@ -464,7 +464,7 @@ und 10 verbindlich.
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
 | Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, Wait-Queues, Sleep/Yield, eigenes CWD, IPC-v1, generationsgebundene Capabilities, endliche Deadlines, Restartreserve und überwachte Ring-3-Domänen | 32 feste Taskslots; SMP und dynamisch erweiterbare Taskkapazität fehlen |
 | Dateien | VFS, REIST-FAT12/FAT32 read/write, fremde FAT12/FAT32 read-only, ASCII-VFAT-LFN, Undo-Journale, FAT12-Remap/Replikate/Fehlermatrix, `fsync`, Same-Directory-Rename/Replace, EXT2 read-only | Unicode-Normalisierung, allgemeiner transaktionaler Reparaturpfad und medienunabhängige Persistenz fehlen |
-| Geräte | PCI, ATA/IDE, AHCI/SATA, FDD, PS/2, experimentelles xHCI-HID, VGA/VBE/QEMU-DISPI/VMware-SVGA und kernelvermitteltes HDA | mehrere QEMU-/VMware- und einzelne reale Nachweise; breite Hardware-, IOMMU- und Hotplugmatrix fehlt |
+| Geräte | PCI, ATA/IDE, AHCI/SATA, FDD, PS/2, experimentelles xHCI-HID, VGA/VBE/QEMU-DISPI, überwachtes Ring-3-VMware-SVGA-II-2D und kernelvermitteltes HDA | mehrere QEMU-/VMware- und einzelne reale Nachweise; breite Hardware-, IOMMU- und Hotplugmatrix fehlt |
 | Netzwerk | E1000, RTL8139, RTL8168/8111G, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, UDP-/TCP-FD-Sockets, DNS und HTTP/1.0 | Host- und QEMU-Nachweise vorhanden; kein IPv6, TLS oder vollständiges POSIX-Socketmodell |
 | USB | xHCI-Initialisierung, Root-Port-/Descriptorpfad und HID-Boot-Tastatur/-Maus | einfache reale Geräte und VMware-Maus beobachtet; Composite-AULA, allgemeiner Hotplug und Mass Storage offen |
 | Userspace | SDK mit getrennten GUI-/Audio-/Image-Bibliotheken, Ring-3-Shell, Systemprogramme, Surface-Compositor, Explorer, Notepad und Image Viewer als Fensterclients | Sound Player, Control Gallery, Terminal und Systemwerkzeuge noch nicht als Surface-Clients migriert |
@@ -1919,8 +1919,7 @@ Erst nach den vorherigen Meilensteinen einzeln entscheiden:
 - Mehrbenutzer-Identitäten, Dateirechte/ACLs und kryptografisch verifizierter
   Boot; dies ist getrennt von der bereits begonnenen Kernel-Capability-Basis
 - dynamischer Linker, Shared Libraries, Paketverwaltung
-- vollständiges Grafik-/Fenstersystem mit Compositor und Maus sowie Audio und
-  WLAN
+- allgemeine 3D-/Multi-Monitor-Grafikbeschleunigung sowie WLAN
 
 Diese Punkte sind groß genug für eigene Entwurfsdokumente und sollten nicht
 nebenbei in die 32-Bit-Basis eingebaut werden.
@@ -1941,6 +1940,8 @@ nebenbei in die 32-Bit-Basis eingebaut werden.
   abhängig von S0.3b
 - [x] **8c · R1.7 PCI-HDA und Userspace-Audiobibliothek** — Größe XL;
   abhängig von R1.6
+- [x] **8d · R1.8 Überwachter VMware-SVGA-II-2D-Treiber** — Größe L;
+  `RECT_COPY` und Software-Fallback in QEMU und VMware abgenommen, ohne DMA
 - [x] **9 · S0.1 Profil/Gefahren/Assurance Case** — Größe M;
   abhängig von R1.3
 - [x] **10 · S0.2 Stack/Exception/Panic-Containment (QEMU/VMware)** — Größe L;
@@ -2024,6 +2025,14 @@ prüft der Benutzer manuell und QEMU-/Hostevidenz ersetzt diese Auswahl nicht.
 Als nächstes kann R2.1 für die generische Forschungsbaseline beginnen. Die
 folgende Detailchronik dokumentiert die abgeschlossenen IPC-, Dienst-,
 Netzwerk- und Storage-Inkremente.
+
+R1.8 ist ebenfalls abgeschlossen: Der generationsgebundene Ring-3-SVGA-II-
+Treiber nutzt ausschließlich den festen Kernelmediator für Aktivierung,
+`UPDATE`, `RECT_FILL` und capability-geprüftes `RECT_COPY`. QEMU und VMware
+Workstation bestätigen Aktivierung, Kopier-Selbsttest und `BOOT_OK`; bei
+fehlender Capability oder Treiberfehler bleibt der Shadow-Framebuffer-
+Softwarepfad maßgeblich. Direkte FIFO-/Framebuffer-Mappings, DMA, GMR, 3D und
+Multi-Monitor bleiben ausgeschlossen.
 
 Phase 0, R1.1 bis R1.4, **S0.3a Bounded IPC/Capabilities v1** und
 **S0.3b Supervised Userspace Probe Domain** sind umgesetzt und abgenommen.
