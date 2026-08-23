@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.4c-2c2b2-emulator-wcet-baselines"
 
 [policy]
 one_package_per_run = true
@@ -1158,6 +1158,65 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "storage: finish bounded FAT12 persistence recovery"
+evidence = []
+
+[[packages]]
+id = "S0.4c-2c2b2-emulator-wcet-baselines"
+status = "active"
+risk = "high"
+title = "Bounded scheduler and INT-80 timing baselines on QEMU and VMware"
+scope = "Add versioned, allocation-free and saturating cycle diagnostics for the bounded scheduler-decision path and one nonblocking INT-80 probe path; expose them through an append-only Ring-3 ABI, publish a bounded supervised-service marker, validate machine-readable empirical limits, and capture fresh QEMU and VMware evidence. These emulator baselines are regression bounds, not target-hardware WCET guarantees; physical hardware execution remains the user's manual acceptance item."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "arch/x86/cpu/syscall.asm",
+  "arch/x86/include/sys.h",
+  "kernel/sched/scheduler.h",
+  "kernel/sched/scheduler.c",
+  "kernel/syscall/syscall_table.c",
+  "lib/libc/stdlib.h",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/programs/reist_probe.c",
+  "safety/wcet_budgets.json",
+  "scripts/validate_wcet_budgets.py",
+  "scripts/run_qemu_smoke.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_reist_wcet.py",
+  "test/test_qemu_smoke.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "timing diagnostics never allocate block or influence scheduling and authority decisions",
+  "cycle samples counters maxima and clock anomalies are fixed-size saturating and IRQ-safe",
+  "only a nonblocking diagnostic INT-80 path is timed so sleeps waits and off-CPU intervals cannot contaminate the baseline",
+  "scheduler timing ends before every context switch and therefore measures bounded decision work rather than task suspension",
+  "QEMU and VMware each provide fresh ordered evidence with finite startup and sample deadlines",
+  "machine-readable limits identify the platform and are empirical regression bounds rather than certification or physical-hardware WCET claims"
+]
+targeted_tests = [
+  "python scripts/validate_wcet_budgets.py",
+  "python test/test_reist_wcet.py -v",
+  "python test/test_qemu_smoke.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode wcet-baseline",
+  ".\\scripts\\test-reist-runtime.ps1 -Target vmware -Video vga -Mode wcet-baseline"
+]
+stop_conditions = [
+  "the selected cycle source is absent non-monotonic or cannot be normalized against a finite calibrated frequency",
+  "a measured path includes blocking waiting sleeping or time after a context switch",
+  "a regression limit cannot tolerate normal emulator jitter without becoming meaningless",
+  "a required production automation contract or test file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "sched: add bounded emulator WCET baselines"
 evidence = []
 
 [[packages]]
