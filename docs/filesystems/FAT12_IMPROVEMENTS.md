@@ -58,6 +58,9 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sowie der erste
 15. bestätigtes Auflösen reiner, mehrfach benötigter regulärer Dateiketten
     durch vollständig verifizierte Kopien in höchstens 48 freie Cluster;
     Directory-Beteiligung und Mischdiagnosen bleiben gesperrt
+16. bestätigtes Trennen reiner Same-Parent-Crosslinks strikt leerer,
+    einclusteriger Unterverzeichnisse durch Kopie, korrigierten `.`-Self und
+    atomare Umbindung des späteren Parent-Eintrags
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen
@@ -97,6 +100,7 @@ C:\> CHKDSK --fat12 1 --repair-zero-start --confirm
 C:\> CHKDSK --fat12 1 --repair-dot-size --confirm
 C:\> CHKDSK --fat12 1 --repair-dot-cluster --confirm
 C:\> CHKDSK --fat12 1 --repair-required-crosslinks --confirm
+C:\> CHKDSK --fat12 1 --repair-directory-crosslinks --confirm
 FDISK
 ```
 
@@ -174,6 +178,18 @@ referenzierte eindeutige Präfixcluster werden freigegeben; gemeinsame
 Quellcluster und Dateiinhalte bleiben unverändert. Fehlender Freiraum,
 Directory-Beteiligung, Kandidaten- oder Journalerschöpfung verweigern die
 Transaktion vor Seiteneffekten.
+`--repair-directory-crosslinks --confirm` akzeptiert nur die reine
+`CHAIN_CROSSLINK`-Diagnose, wenn jeder mehrfach benötigte Cluster ein strikt
+leeres, einclusteriges und normal EOC-terminiertes Unterverzeichnis beschreibt
+und alle Aliase denselben Parent besitzen. Strikt leer bedeutet: gültiger `.`-
+Eintrag, gültiger `..`-Eintrag und unmittelbar danach der FAT-Endmarker des
+Verzeichnisses. Der erste Alias bleibt kanonisch. Jeder spätere Alias erhält
+einen eigenen freien Cluster mit verifizierter Inhaltskopie, in der nur der
+niedrige Self-Cluster von `.` angepasst wird; anschließend werden beide FATs
+und zuletzt nur der niedrige Startcluster des zugehörigen Parent-Eintrags
+publiziert. Zielsektor, FAT-Sektoren und Parent-Sektoren liegen vorher
+gemeinsam im Undo-Journal. `..`, Namen, Attribute, Zeitfelder und alle übrigen
+Directory-Bytes bleiben unverändert.
 `--repair-dir-size --confirm` korrigiert ausschließlich Unterverzeichnisse mit
 gültigen Attributen und gültigem Startcluster, deren FAT-Größenfeld entgegen
 der Spezifikation nicht null ist. Der Scanner traversiert ihren Inhalt trotz
@@ -221,8 +237,9 @@ Superfloppy und wird von `FDISK` niemals partitioniert.
 
 - reale FDD-/VMware-Power-Loss- und Reconnect-Matrix über die bereits
   deterministisch geprüften Veröffentlichungsstufen
-- CHKDSK-Reparatur von Directory-Crosslinks und allgemeinen
-  Verzeichnisschäden jenseits der eng begrenzten Feldreparaturen, Journal-,
+- CHKDSK-Reparatur nichtleerer, mehrclusteriger oder parentübergreifender
+  Directory-Crosslinks und allgemeiner Verzeichnisschäden jenseits der eng
+  begrenzten Feldreparaturen, Journal-,
   Remap- und Defektsektorkarte sowie Datenrettung von Orphans statt ihres
   expliziten Verwerfens
 - QEMU-Laufzeitnachweis für Maintenance-Lease, Unmount, FAT-Spiegel-Reparatur,

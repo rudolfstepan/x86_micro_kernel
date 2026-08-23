@@ -1008,6 +1008,18 @@ Nur danach unreferenzierte Originalcluster werden freigegeben. Fehlender
 Freiraum, Kandidaten-/Journalerschöpfung, Directory-Crosslinks oder jede
 zusätzliche Diagnose bleiben fail-closed. Erfolg verlangt einen sauberen
 Vollscan vor Journal-`CLEAN`.
+Ein weiterer getrennter Pfad deckt ausschließlich Same-Parent-Crosslinks
+strikt leerer Unterverzeichnisse ab. Ein fester Kandidat bindet Parent-Sektor,
+Parent-Offset, Parent-Cluster und den genau einen EOC-terminierten
+Directory-Cluster. Der Inhalt muss mit gültigem `.` und `..` beginnen und am
+dritten Slot enden. Die erste Scanreihenfolge-Instanz bleibt kanonisch; jede
+weitere erhält einen eigenen freien Cluster. In dessen verifizierter Kopie
+ändert sich nur der niedrige Self-Cluster von `.`, anschließend werden beide
+FATs und zuletzt ausschließlich der niedrige Startcluster des gebundenen
+Parent-Eintrags publiziert. Alle Ziel-, FAT- und Parent-Sektoren liegen vor dem
+ersten Write im Undo-Journal. Unterschiedliche Parents, nichtleere oder
+mehrclusterige Verzeichnisse, reguläre Dateibeteiligung und Mischdiagnosen
+bleiben fail-closed, weil sie rekursive Topologieklonung erfordern.
 Ein Unterverzeichniseintrag mit gültigen Attributen, null im hohen
 Clusterwort, gültigem Startcluster und unzulässiger Größe ungleich null bleibt
 für die Inhaltsdiagnose traversierbar. Nur bei der exakten Gesamtdiagnose

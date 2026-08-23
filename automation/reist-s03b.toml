@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.3c-6f6p-chkdsk-empty-directory-crosslinks"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -956,7 +956,7 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-6f6p-chkdsk-empty-directory-crosslinks"
-status = "active"
+status = "done"
 risk = "high"
 title = "Repair same-parent FAT12 empty-directory crosslinks"
 scope = "Record fixed descriptors for strict empty leaf subdirectories whose chain is exactly one EOC-terminated cluster and whose first entries are valid dot and dot-dot records. Add an explicitly confirmed operation for the exact CHAIN_CROSSLINK-only diagnosis when every multiply required cluster belongs exclusively to such descriptors and all aliases have the same deterministic parent. Preserve the first scan-order directory, clone every later alias into one distinct free cluster, change only the cloned dot entry's low self cluster and the corresponding parent directory entry's low start cluster, and preserve dot-dot, names, attributes and payload bytes. Journal every destination data sector, changed FAT sector and parent directory sector before mutation; non-empty, multi-cluster, cross-parent, regular-file, mixed or capacity-exhausted cases remain fail-closed."

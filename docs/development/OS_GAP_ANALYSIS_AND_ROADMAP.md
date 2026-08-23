@@ -302,7 +302,11 @@ und 10 verbindlich.
           vollständiges verifiziertes Klonen späterer Sollketten in höchstens
           48 freie Cluster auflösen; Daten, beide FATs und Directory-Publikation
           gemeinsam undo-journalisieren
-        - [ ] `CHKDSK.PRG` für Directory-Crosslinks, allgemeine
+        - [x] Reine Same-Parent-Crosslinks strikt leerer, einclusteriger
+          Unterverzeichnisse durch verifizierte Kopie, korrigierten `.`-Self
+          und atomare Parent-Umbindung trennen
+        - [ ] `CHKDSK.PRG` für nichtleere, mehrclusterige oder
+          parentübergreifende Directory-Crosslinks, allgemeine
           Verzeichnisschäden jenseits der eng begrenzten Feldreparaturen,
           Orphan-Datenrettung, Journal und Defektsektorkarte
         - [x] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
@@ -2605,8 +2609,14 @@ sie validieren Eingaben und senden versionierte Requests an den Storage-Dienst.
   bleibt kanonisch, spätere kollidierende Dateien werden vollständig und mit
   verifiziertem Readback in höchstens 48 freie Cluster kopiert; Ziel-Daten,
   beide FATs und Directory-Sektoren liegen vor dem ersten Write gemeinsam im
-  64-Einträge-Undo-Journal. Directory-Crosslinks, Orphan-Datenrettung sowie
-  allgemeine Verzeichnis-, Journal- und Remap-Reparatur bleiben offen.
+  64-Einträge-Undo-Journal.
+  `--repair-directory-crosslinks --confirm` trennt bei reiner Diagnose nur
+  Same-Parent-Aliase strikt leerer, einclusteriger Unterverzeichnisse. Die
+  verifizierte Kopie ändert ausschließlich ihren `.`-Self; beide FATs und der
+  gebundene Parent-Startcluster werden danach journalisiert publiziert.
+  Nichtleere, mehrclusterige oder parentübergreifende Directory-Crosslinks,
+  Orphan-Datenrettung sowie allgemeine Verzeichnis-, Journal- und Remap-
+  Reparatur bleiben offen.
   `--repair-dir-size --confirm` traversiert
   ansonsten gültige Unterverzeichnisse trotz unzulässiger Größe und setzt bei
   reiner Diagnose ausschließlich dieses Feld auf null.
