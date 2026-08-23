@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.5b2-boot-control-transaction"
 
 [policy]
 one_package_per_run = true
@@ -259,6 +259,67 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: add partition and FAT32 provisioning"
+evidence = []
+
+[[packages]]
+id = "S0.5b2-boot-control-transaction"
+status = "active"
+risk = "high"
+title = "Add redundant boot-control records and pending-slot transaction"
+scope = "Add a REIST-specific, versioned 512-byte boot-control record in two fixed HDD sectors at boot-partition-relative LBAs 97 and 98 because legacy BIOS has no suitable standard atomic A/B state format. Each copy carries CRC32, a monotonic 64-bit sequence, active and pending slot, a bounded remaining-attempt count and successful-slot mask. The image builder initializes matching records for confirmed slot A; the independent validator accepts one valid copy or two equal/adjacent consistent copies and rejects ambiguity. Add an offline updater that verifies an RSA-PSS-signed ELF, writes and durably verifies only inactive slot B, then publishes pending B by writing the older control copy before the newer copy. Stage 2 validates both records before manifest selection, durably decrements at most two pending-B attempts before execution, selects B while attempts remain, rolls back to A after exhaustion, and immediately records rollback before trying A when pending B fails. The floppy remains record-free. This package deliberately does not add the Ring-3 boot-success acknowledgement, update distribution, anti-rollback counter or production key custody; therefore a pending B returns to confirmed A after its bounded trial boots even when B starts successfully. Host power-loss injection covers every durable update boundary and QEMU proves persistent selection, decrement and rollback without waiting for full guest initialization."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "arch/x86/boot/bios/stage2_bios.asm",
+  "scripts/create_native_boot_image.py",
+  "scripts/validate_boot_manifest.py",
+  "scripts/update_native_boot_slot.py",
+  "scripts/run_qemu_boot_control.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_boot_control.py",
+  "test/test_boot_ab.py",
+  "test/test_boot_manifest.py",
+  "test/test_native_boot_image.py",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/MEDICAL_HIGH_ASSURANCE_CONTRACT.md",
+  "docs/development/BOOTABLE_DISK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "safety/hazards.toml"
+]
+invariants = [
+  "control records occupy only fixed LBAs 97 and 98 between manifest B and kernel A and the floppy layout remains unchanged",
+  "record parsing validates magic, version, exact header size, reserved zero bytes, CRC32, slots, sequence and attempt bounds before any field influences boot",
+  "one valid record is recoverable; two valid equal-sequence records must be byte-identical; adjacent sequences select the newer semantic state; larger or wrapped gaps fail closed",
+  "the updater verifies ELF and the policy-pinned RSA-PSS signature before copying and never mutates its source image or active slot A",
+  "kernel B and manifest B are durably written and independently revalidated before either control record can advertise pending B",
+  "each control transition writes and read-back verifies the older copy first and never publishes a sequence after UINT64_MAX",
+  "stage 2 performs at most two pending-B trials, persists each decrement before B execution and records rollback before executing A after B failure or exhausted attempts",
+  "stage-2 record reads, writes, retries and read-back verification are fixed-capacity and bounded and a write or ambiguous-state failure stops before kernel entry",
+  "this increment makes no boot-success acknowledgement, anti-rollback, immutable recovery, update-distribution or production-trust claim"
+]
+targeted_tests = [
+  "python test/test_boot_control.py -v",
+  "python test/test_boot_ab.py -v",
+  "python test/test_boot_manifest.py -v",
+  "python test/test_native_boot_image.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode boot-control"
+]
+stop_conditions = [
+  "the control format cannot distinguish a torn copy from an authoritative newer state",
+  "stage 2 would execute pending B before its decremented attempt state is durably read back",
+  "an update path could overwrite active slot A or publish pending B before complete signature and image validation",
+  "a BIOS write path would be unbounded, target a manifest/kernel/FAT32 extent or lack read-back verification",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "boot: add redundant pending-slot control transaction"
 evidence = []
 
 [[packages]]
