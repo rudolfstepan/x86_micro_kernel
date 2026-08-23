@@ -1,6 +1,6 @@
 version = 1
-program = "S0.1-completion"
-active_id = ""
+program = "S0-assurance-completion"
+active_id = "S0.2a-external-monitor-contract"
 
 [policy]
 one_package_per_run = true
@@ -2447,3 +2447,57 @@ evidence = [
   ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
   ".\\scripts\\test-reist-runtime.ps1 -Mode normal"
 ]
+
+[[packages]]
+id = "S0.2a-external-monitor-contract"
+status = "active"
+risk = "high"
+title = "Freeze the external watchdog and readback-interlock acceptance contract"
+scope = "Define the first S0.2 increment without pretending that emulator or host evidence qualifies physical independence. Add a versioned machine-readable external safety-monitor profile and fail-closed validator covering a named target/device identity, separate power and clock domains, bounded heartbeat and reset behavior, a latched hazard-output fence with independent readback, protocol integrity/freshness, failure semantics, FTTI allocation, physical fault-injection evidence and explicit unqualified/qualified lifecycle states. The repository baseline starts unbound because no concrete external monitor hardware is selected. Bind the generic research hazard and assurance records to this contract, document the exact production integration and physical acceptance boundary, and keep S0.2 partial until a later hardware-specific package supplies and passes the frozen evidence. Do not add an unused production driver or weaken the existing QEMU IB700 watchdog path."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "safety/external_safety_monitor.toml",
+  "safety/assurance_scope.toml",
+  "safety/hazards.toml",
+  "scripts/validate_external_safety_monitor.py",
+  "test/test_external_safety_monitor_contract.py",
+  "docs/architecture/EXTERNAL_SAFETY_MONITOR_CONTRACT.md",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "host processes, QEMU devices, same-board software timers and same-supply chipset watchdogs never satisfy the separately powered and independently clocked target-monitor claim",
+  "the machine-readable lifecycle starts unbound and qualified status is impossible without one concrete immutable target and monitor identity plus physical evidence files inside the repository",
+  "a valid monitor contract has fixed heartbeat, watchdog, reset, fence-apply and fence-readback deadlines whose total allocation does not exceed the linked hazard FTTI",
+  "fence success requires independent electrical readback of the latched safe output state; a command echo, software latch or watchdog-arm acknowledgement is insufficient",
+  "all frames have fixed version and size, integrity protection, monotonically fresh challenge or sequence data and explicit replay, corruption, timeout and reset handling",
+  "loss of transport, monitor power, monitor clock, heartbeat, readback or target reset acknowledgement fails closed and cannot publish reintegration authority",
+  "physical acceptance includes heartbeat loss, stuck CPU, transport loss, corrupt/replayed frames, fence-driver fault, readback disagreement, target-reset failure and monitor power-domain tests repeated by a fixed campaign count",
+  "S0.2 and the overall S0 gate remain incomplete after this contract-only package; no target-hardware or fail-operational claim is added",
+  "the existing QEMU IB700 watchdog runtime proof remains green and is labelled emulator evidence only"
+]
+targeted_tests = [
+  "python test/test_external_safety_monitor_contract.py -q",
+  "python scripts/validate_external_safety_monitor.py",
+  "python scripts/validate_hazard_register.py",
+  "python scripts/run_hazard_traceability.py"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target real_hw -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode watchdog"
+]
+stop_conditions = [
+  "the contract could reach qualified without physical target evidence or with only emulator, host or source-pattern evidence",
+  "the contract conflates watchdog reset, output fencing and fence readback into one unverified acknowledgement",
+  "a required production implementation is introduced before a concrete monitor target and transport are selected",
+  "a required file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "safety: freeze S0.2 external monitor contract"
+evidence = []
