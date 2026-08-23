@@ -101,6 +101,7 @@ C:\> CHKDSK --fat12 1 --repair-dot-size --confirm
 C:\> CHKDSK --fat12 1 --repair-dot-cluster --confirm
 C:\> CHKDSK --fat12 1 --repair-required-crosslinks --confirm
 C:\> CHKDSK --fat12 1 --repair-directory-crosslinks --confirm
+C:\> CHKDSK --fat12 1 --repair-directory-topology --confirm
 FDISK
 ```
 
@@ -190,6 +191,17 @@ und zuletzt nur der niedrige Startcluster des zugehörigen Parent-Eintrags
 publiziert. Zielsektor, FAT-Sektoren und Parent-Sektoren liegen vorher
 gemeinsam im Undo-Journal. `..`, Namen, Attribute, Zeitfelder und alle übrigen
 Directory-Bytes bleiben unverändert.
+`--repair-directory-topology --confirm` deckt in einer gemeinsamen begrenzten
+Operation nichtleere, mehrclusterige, Same-Parent- und parentübergreifende
+Directory-Aliase ab. Der gültige `..`-Eintrag bestimmt bei unterschiedlichen
+Parents genau einen kanonischen Alias; bei identischem Parent bleibt der erste
+Scanreihenfolge-Eintrag erhalten. Spätere Alias-Einträge und ihre nach
+VFAT-Ordinalfolge und Short-Name-Prüfsumme eindeutig gebundenen LFN-Slots
+werden nach CRC32-Revalidierung als gelöscht markiert. Die Verzeichniskette,
+FAT, Dateien und Unterverzeichnisse werden nicht kopiert oder verändert. Alle
+geänderten Parent-Sektoren liegen vor dem ersten Write im Undo-Journal; eine
+mehrdeutige Parentbeziehung, Teilkettenüberlappung, reguläre Dateibeteiligung,
+fremde Diagnose oder Kapazitätserschöpfung verweigert die Transaktion.
 `--repair-dir-size --confirm` korrigiert ausschließlich Unterverzeichnisse mit
 gültigen Attributen und gültigem Startcluster, deren FAT-Größenfeld entgegen
 der Spezifikation nicht null ist. Der Scanner traversiert ihren Inhalt trotz
@@ -237,9 +249,8 @@ Superfloppy und wird von `FDISK` niemals partitioniert.
 
 - reale FDD-/VMware-Power-Loss- und Reconnect-Matrix über die bereits
   deterministisch geprüften Veröffentlichungsstufen
-- CHKDSK-Reparatur nichtleerer, mehrclusteriger oder parentübergreifender
-  Directory-Crosslinks und allgemeiner Verzeichnisschäden jenseits der eng
-  begrenzten Feldreparaturen, Journal-,
+- allgemeine Verzeichnisschäden jenseits eindeutig attribuierbarer Aliase und
+  der eng begrenzten Feldreparaturen, Journal-,
   Remap- und Defektsektorkarte sowie Datenrettung von Orphans statt ihres
   expliziten Verwerfens
 - QEMU-Laufzeitnachweis für Maintenance-Lease, Unmount, FAT-Spiegel-Reparatur,

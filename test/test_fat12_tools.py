@@ -60,6 +60,8 @@ class Fat12ToolContracts(unittest.TestCase):
             "X86OS_STORAGE_REPAIR_FAT12_REQUIRED_CROSSLINKS", chkdsk)
         self.assertIn(
             "X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_CROSSLINKS", chkdsk)
+        self.assertIn(
+            "X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_TOPOLOGY", chkdsk)
         self.assertIn('"--repair"', chkdsk)
         self.assertIn('"--repair-chains"', chkdsk)
         self.assertIn('"--repair-short"', chkdsk)
@@ -76,6 +78,7 @@ class Fat12ToolContracts(unittest.TestCase):
         self.assertIn('"--repair-dot-cluster"', chkdsk)
         self.assertIn('"--repair-required-crosslinks"', chkdsk)
         self.assertIn('"--repair-directory-crosslinks"', chkdsk)
+        self.assertIn('"--repair-directory-topology"', chkdsk)
         self.assertIn('"--confirm"', chkdsk)
         self.assertNotIn("x86os_storage_block_read", chkdsk)
         self.assertNotIn("x86os_storage_block_write", chkdsk)

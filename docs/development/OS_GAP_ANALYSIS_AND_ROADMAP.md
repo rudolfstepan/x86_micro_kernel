@@ -305,7 +305,7 @@ und 10 verbindlich.
         - [x] Reine Same-Parent-Crosslinks strikt leerer, einclusteriger
           Unterverzeichnisse durch verifizierte Kopie, korrigierten `.`-Self
           und atomare Parent-Umbindung trennen
-        - [ ] **S0.3c-6f6q gebündelt:** `CHKDSK.PRG` für alle eindeutig
+        - [x] **S0.3c-6f6q gebündelt:** `CHKDSK.PRG` für alle eindeutig
           attribuierbaren nichtleeren, mehrclusterigen, Same-Parent- und
           parentübergreifenden Directory-Crosslinks sowie zusammengehörige
           Verzeichnis-Topologiefelder; mehrdeutige Topologien bleiben
@@ -2622,9 +2622,13 @@ sie validieren Eingaben und senden versionierte Requests an den Storage-Dienst.
   Same-Parent-Aliase strikt leerer, einclusteriger Unterverzeichnisse. Die
   verifizierte Kopie ändert ausschließlich ihren `.`-Self; beide FATs und der
   gebundene Parent-Startcluster werden danach journalisiert publiziert.
-  Nichtleere, mehrclusterige oder parentübergreifende Directory-Crosslinks,
-  Orphan-Datenrettung sowie allgemeine Verzeichnis-, Journal- und Remap-
-  Reparatur bleiben offen.
+  `--repair-directory-topology --confirm` reduziert zusätzlich vollständig
+  attribuierte nichtleere, mehrclusterige, Same-Parent- und
+  parentübergreifende Aliasgruppen auf den über `..` eindeutig bestimmten
+  kanonischen Parent. Spätere Short-Einträge und streng gebundene VFAT-LFN-
+  Slots werden gemeinsam journalisiert gelöscht; Verzeichniskette, FAT und
+  Inhalte bleiben unverändert. Orphan-Datenrettung sowie mehrdeutige
+  Verzeichnis-, Journal- und Remap-Reparatur bleiben offen.
   `--repair-dir-size --confirm` traversiert
   ansonsten gültige Unterverzeichnisse trotz unzulässiger Größe und setzt bei
   reiner Diagnose ausschließlich dieses Feld auf null.

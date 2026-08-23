@@ -54,6 +54,7 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_DOT_CLUSTER", source)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_REQUIRED_CROSSLINKS", source)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_CROSSLINKS", source)
+        self.assertIn("X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_TOPOLOGY", source)
         self.assertIn('"--repair-chains"', source)
         self.assertIn('"--repair-short"', source)
         self.assertIn('"--reclaim-orphans"', source)
@@ -69,6 +70,7 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn('"--repair-dot-cluster"', source)
         self.assertIn('"--repair-required-crosslinks"', source)
         self.assertIn('"--repair-directory-crosslinks"', source)
+        self.assertIn('"--repair-directory-topology"', source)
         self.assertIn("x86os_storage_submit", source)
         self.assertIn("x86os_storage_collect", source)
         self.assertNotIn("x86os_storage_block_read", source)
@@ -112,6 +114,8 @@ class Fat12MaintenanceContracts(unittest.TestCase):
             "STORAGE_REQUEST_REPAIR_FAT12_REQUIRED_CROSSLINKS = 26", header)
         self.assertIn(
             "STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_CROSSLINKS = 27", header)
+        self.assertIn(
+            "STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_TOPOLOGY = 28", header)
         self.assertIn("X86OS_STORAGE_CHECK_FAT12 11U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_MIRROR 12U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_CHAINS 13U", sdk)
@@ -131,7 +135,10 @@ class Fat12MaintenanceContracts(unittest.TestCase):
             "X86OS_STORAGE_REPAIR_FAT12_REQUIRED_CROSSLINKS 26U", sdk)
         self.assertIn(
             "X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_CROSSLINKS 27U", sdk)
+        self.assertIn(
+            "X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_TOPOLOGY 28U", sdk)
         self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_CROSSLINKS", pool)
+        self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_TOPOLOGY", pool)
         self.assertIn("request.operation >= STORAGE_REQUEST_CHECK_FAT12", syscall)
         self.assertIn("process->domain_profile.kind != "
                       "PROCESS_DOMAIN_MAINTENANCE", syscall)
@@ -179,6 +186,7 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("FAT12_MAX_DOT_CLUSTER_REPAIRS 128U", service)
         self.assertIn("FAT12_MAX_REQUIRED_CROSSLINK_FILES 128U", service)
         self.assertIn("FAT12_MAX_EMPTY_DIRECTORY_CROSSLINKS 128U", service)
+        self.assertIn("FAT12_MAX_DIRECTORY_TOPOLOGY_REPAIRS 128U", service)
         self.assertIn("FAT12_MAX_CLONE_CLUSTERS 48U", service)
         self.assertIn("FAT12_MAX_DIRECTORY_REPAIR_SECTORS 64U", service)
         self.assertIn("fat12_cluster_owner[FAT12_CLUSTER_INDEX_CAPACITY]",
@@ -439,6 +447,41 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("fat12_check_volume(resource, &layout) != 0", repair)
         self.assertIn(
             "X86OS_FAT12_RESULT_DIRECTORY_CROSSLINKS_REPAIRED", repair)
+
+    def test_directory_topology_repair_is_bounded_attributed_and_journaled(self):
+        service = self.read("userspace/programs/storage_service.c")
+        repair = service[service.index(
+            "static uint8_t fat12_lfn_checksum"):
+            service.index("static int fat12_apply_loop_repairs")]
+        self.assertIn("FAT12_MAX_DIRECTORY_TOPOLOGY_REPAIRS", repair)
+        self.assertIn("FAT12_MAX_LFN_SLOTS", repair)
+        self.assertIn("fat12_read_directory_header", repair)
+        self.assertIn("matching_parent != 1U", repair)
+        self.assertIn("same_parent && first_parent == dot_parent", repair)
+        self.assertIn("fat12_cluster_references[cluster] != aliases", repair)
+        self.assertIn("fat12_cluster_required[cluster] != aliases", repair)
+        self.assertIn("fat12_directory_invalid_issue_count != expected_invalid",
+                      repair)
+        self.assertIn("fat12_collect_bound_lfn", repair)
+        self.assertIn("entry[13U] != expected_checksum", repair)
+        self.assertIn("format_crc32(entry, 32U) != repair->short_crc32",
+                      repair)
+        self.assertIn("if (apply) entry[0] = 0xE5U", repair)
+        journal = repair.index(
+            "fat12_record_old_sector(resource, &journal, sector")
+        mutation = repair.index(
+            "fat12_update_directory_topology_sector(sector, sector_data, 1)")
+        self.assertLess(journal, mutation)
+        self.assertIn("FORMAT_FAT12_JOURNAL_ENTRIES", repair)
+        self.assertIn("FAT12_JOURNAL_ACTIVE", repair)
+        self.assertIn("FAT12_JOURNAL_CLEAN", repair)
+        self.assertIn("x86os_storage_maintenance_acquire", repair)
+        self.assertIn("x86os_storage_maintenance_renew", repair)
+        self.assertIn("x86os_storage_block_flush", repair)
+        self.assertIn("fat12_check_volume(resource, &layout) != 0", repair)
+        self.assertNotIn("fat12_set_entry", repair)
+        self.assertIn(
+            "X86OS_FAT12_RESULT_DIRECTORY_TOPOLOGY_REPAIRED", repair)
 
     def test_directory_size_repair_scans_contents_and_changes_only_size(self):
         service = self.read("userspace/programs/storage_service.c")

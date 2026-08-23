@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.3c-6f6q-chkdsk-directory-topology"
+active_id = "S0.3c-6f6r-chkdsk-orphan-salvage"
 
 [policy]
 one_package_per_run = true
@@ -1008,7 +1008,7 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-6f6q-chkdsk-directory-topology"
-status = "active"
+status = "done"
 risk = "high"
 title = "Repair attributable FAT12 directory topology in one bounded operation"
 scope = "Replace the former sequence of directory micro-repairs with one append-only, explicitly confirmed CHKDSK operation for every bounded and unambiguously attributable directory crosslink: non-empty, multi-cluster, same-parent and cross-parent aliases. Determine the canonical parent from valid dot-dot topology, retain exactly one canonical entry, remove later aliases together with any strictly bound LFN slots, and scan the unique subtree once. Repair coupled dot self/parent fields only when their intended values are uniquely derivable. Journal every changed directory sector before mutation, revalidate all bound entries under the maintenance lease, flush, and require a completely clean rescan. Ambiguous parents, malformed chains, mixed file/directory ownership, capacity overflow or any unrelated diagnosis remain fail-closed before side effects. Preserve operation 27 and append the broader ABI operation."
@@ -1058,7 +1058,7 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-6f6r-chkdsk-orphan-salvage"
-status = "queued"
+status = "active"
 risk = "high"
 title = "Salvage bounded FAT12 orphan chains"
 scope = "Implement one confirmed recovery transaction for every structurally valid, bounded orphan chain: create or reuse a validated standard-style FOUND.000 directory, publish deterministic FILEnnnn.CHK entries with provenance metadata available to CHKDSK, and preserve bytes instead of freeing them. Handle multiple chains in one fixed-capacity transaction; malformed, looping, ambiguous, capacity-exhausted or colliding cases fail closed before writes. Keep the explicit discard operation separate."

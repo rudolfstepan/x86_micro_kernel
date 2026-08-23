@@ -230,6 +230,8 @@ static int format_fat32_scan(uint32_t resource, uint32_t start_cluster) {
 #define FAT12_MAX_DIRECTORY_REPAIR_SECTORS 64U
 #define FAT12_MAX_REQUIRED_CROSSLINK_FILES 128U
 #define FAT12_MAX_EMPTY_DIRECTORY_CROSSLINKS 128U
+#define FAT12_MAX_DIRECTORY_TOPOLOGY_REPAIRS 128U
+#define FAT12_MAX_LFN_SLOTS 20U
 #define FAT12_MAX_CLONE_CLUSTERS 48U
 
 typedef struct __attribute__((packed)) {
@@ -454,6 +456,22 @@ typedef struct {
     uint16_t replacement_start;
 } fat12_empty_directory_crosslink_t;
 
+typedef struct {
+    uint32_t sector;
+    uint32_t crc32;
+    uint16_t offset;
+} fat12_directory_slot_t;
+
+typedef struct {
+    uint32_t parent_directory_sector;
+    uint32_t short_crc32;
+    uint16_t parent_entry_offset;
+    uint16_t start_cluster;
+    uint16_t parent_cluster;
+    uint16_t lfn_count;
+    fat12_directory_slot_t lfn[FAT12_MAX_LFN_SLOTS];
+} fat12_directory_topology_repair_t;
+
 static fat12_directory_work_t fat12_directory_queue[FAT12_MAX_DIRECTORIES];
 static fat12_chain_repair_t fat12_chain_repairs[FAT12_MAX_CHAIN_REPAIRS];
 static fat12_short_repair_t fat12_short_repairs[FAT12_MAX_SHORT_REPAIRS];
@@ -478,6 +496,8 @@ static fat12_required_crosslink_file_t fat12_required_crosslink_files[
     FAT12_MAX_REQUIRED_CROSSLINK_FILES];
 static fat12_empty_directory_crosslink_t fat12_empty_directory_crosslinks[
     FAT12_MAX_EMPTY_DIRECTORY_CROSSLINKS];
+static fat12_directory_topology_repair_t fat12_directory_topology_repairs[
+    FAT12_MAX_DIRECTORY_TOPOLOGY_REPAIRS];
 static uint16_t fat12_clone_source[FAT12_MAX_CLONE_CLUSTERS];
 static uint16_t fat12_clone_destination[FAT12_MAX_CLONE_CLUSTERS];
 static uint8_t fat12_clone_claimed[FAT12_CLUSTER_INDEX_CAPACITY];
@@ -504,6 +524,8 @@ static uint32_t fat12_required_crosslink_file_count;
 static uint32_t fat12_required_crosslink_file_overflow;
 static uint32_t fat12_empty_directory_crosslink_count;
 static uint32_t fat12_empty_directory_crosslink_overflow;
+static uint32_t fat12_directory_count;
+static uint32_t fat12_directory_topology_repair_count;
 static uint32_t fat12_clone_cluster_count;
 static uint32_t fat12_directory_invalid_issue_count;
 
@@ -1296,6 +1318,8 @@ static int fat12_scan_chains(uint32_t resource,
     fat12_required_crosslink_file_overflow = 0U;
     fat12_empty_directory_crosslink_count = 0U;
     fat12_empty_directory_crosslink_overflow = 0U;
+    fat12_directory_count = 0U;
+    fat12_directory_topology_repair_count = 0U;
     fat12_clone_cluster_count = 0U;
     fat12_directory_invalid_issue_count = 0U;
     fat12_scan_state_t state = {
@@ -1364,6 +1388,7 @@ static int fat12_scan_chains(uint32_t resource,
         state.empty_directory_crosslink_count;
     fat12_empty_directory_crosslink_overflow =
         state.empty_directory_crosslink_overflow;
+    fat12_directory_count = state.directory_count;
     fat12_directory_invalid_issue_count =
         state.directory_invalid_issue_count;
     return (int)state.flags;
@@ -2423,6 +2448,387 @@ static int fat12_repair_empty_directory_crosslinks(uint32_t resource) {
         result = -5;
     return result == 0 ? diagnosis |
         (int)X86OS_FAT12_RESULT_DIRECTORY_CROSSLINKS_REPAIRED : result;
+}
+
+static uint8_t fat12_lfn_checksum(const uint8_t *short_entry) {
+    uint8_t checksum = 0U;
+    for (uint32_t index = 0U; index < 11U; ++index)
+        checksum = (uint8_t)(((checksum & 1U) << 7U) |
+                            (checksum >> 1U)) + short_entry[index];
+    return checksum;
+}
+
+static int fat12_previous_directory_slot(
+        const fat12_check_layout_t *layout, uint32_t sector,
+        uint32_t offset, uint32_t parent_cluster,
+        uint32_t *previous_sector, uint16_t *previous_offset) {
+    if (layout == 0 || previous_sector == 0 || previous_offset == 0 ||
+        offset > X86OS_STORAGE_BLOCK_SIZE - 32U || (offset & 31U) != 0U)
+        return -84;
+    if (offset >= 32U) {
+        *previous_sector = sector;
+        *previous_offset = (uint16_t)(offset - 32U);
+        return 1;
+    }
+    if (parent_cluster == 0U) {
+        uint32_t root_start = layout->reserved_sectors +
+                              2U * layout->fat_sectors;
+        if (sector < root_start ||
+            sector >= root_start + layout->root_sectors) return -84;
+        if (sector == root_start) return 0;
+        *previous_sector = sector - 1U;
+        *previous_offset = X86OS_STORAGE_BLOCK_SIZE - 32U;
+        return 1;
+    }
+
+    uint32_t last_cluster = layout->cluster_count + 1U;
+    uint32_t cluster = parent_cluster;
+    uint32_t prior = UINT32_MAX;
+    for (uint32_t steps = 0U; steps < layout->cluster_count; ++steps) {
+        if (cluster < 2U || cluster > last_cluster) return -84;
+        uint32_t first = layout->data_start +
+            (cluster - 2U) * layout->sectors_per_cluster;
+        for (uint32_t index = 0U;
+             index < layout->sectors_per_cluster; ++index) {
+            uint32_t current = first + index;
+            if (current == sector) {
+                if (prior == UINT32_MAX) return 0;
+                *previous_sector = prior;
+                *previous_offset = X86OS_STORAGE_BLOCK_SIZE - 32U;
+                return 1;
+            }
+            prior = current;
+        }
+        uint32_t next = fat12_entry(fat12_copies[0], cluster);
+        if (fat12_is_eoc(next)) break;
+        if (next == 0U || next == 1U || next == 0x0FF7U ||
+            next < 2U || next > last_cluster) return -84;
+        cluster = next;
+    }
+    return -84;
+}
+
+static int fat12_collect_bound_lfn(uint32_t resource,
+        const fat12_check_layout_t *layout,
+        fat12_directory_topology_repair_t *repair,
+        const uint8_t *short_entry) {
+    uint32_t sector = repair->parent_directory_sector;
+    uint32_t offset = repair->parent_entry_offset;
+    uint8_t expected_checksum = fat12_lfn_checksum(short_entry);
+    repair->lfn_count = 0U;
+    for (;;) {
+        uint32_t previous_sector = 0U;
+        uint16_t previous_offset = 0U;
+        int previous = fat12_previous_directory_slot(layout, sector, offset,
+            repair->parent_cluster, &previous_sector, &previous_offset);
+        if (previous < 0) return previous;
+        if (previous == 0) break;
+        uint8_t data[X86OS_STORAGE_BLOCK_SIZE];
+        if (x86os_storage_block_read(resource, previous_sector, data) != 0)
+            return -5;
+        const uint8_t *entry = data + previous_offset;
+        if (entry[0] == 0U || entry[0] == 0xE5U || entry[11U] != 0x0FU)
+            break;
+        if (repair->lfn_count >= FAT12_MAX_LFN_SLOTS) return -28;
+        fat12_directory_slot_t *slot =
+            &repair->lfn[repair->lfn_count++];
+        slot->sector = previous_sector;
+        slot->offset = previous_offset;
+        slot->crc32 = format_crc32(entry, 32U);
+        sector = previous_sector;
+        offset = previous_offset;
+    }
+    for (uint32_t index = 0U; index < repair->lfn_count; ++index) {
+        uint8_t data[X86OS_STORAGE_BLOCK_SIZE];
+        const fat12_directory_slot_t *slot = &repair->lfn[index];
+        if (x86os_storage_block_read(resource, slot->sector, data) != 0)
+            return -5;
+        const uint8_t *entry = data + slot->offset;
+        uint32_t ordinal = entry[0];
+        uint32_t expected_ordinal = index + 1U;
+        int last = expected_ordinal == repair->lfn_count;
+        if ((ordinal & 0x1FU) != expected_ordinal ||
+            (ordinal & 0xA0U) != 0U ||
+            ((ordinal & 0x40U) != 0U) != last ||
+            entry[11U] != 0x0FU || entry[12U] != 0U ||
+            entry[13U] != expected_checksum || get16(entry + 26U) != 0U)
+            return -84;
+    }
+    return 0;
+}
+
+static int fat12_read_directory_header(uint32_t resource,
+        const fat12_check_layout_t *layout, uint32_t start_cluster,
+        uint16_t *dot_parent) {
+    if (start_cluster < 2U ||
+        start_cluster > layout->cluster_count + 1U || dot_parent == 0)
+        return -84;
+    uint32_t sector = layout->data_start +
+        (start_cluster - 2U) * layout->sectors_per_cluster;
+    uint8_t data[X86OS_STORAGE_BLOCK_SIZE];
+    if (x86os_storage_block_read(resource, sector, data) != 0) return -5;
+    uint32_t parent = get16(data + 32U + 26U);
+    if (parent != 0U &&
+        (parent < 2U || parent > layout->cluster_count + 1U)) return -84;
+    if (!fat12_empty_directory_entry_valid(data, 1U, start_cluster) ||
+        !fat12_empty_directory_entry_valid(data + 32U, 2U, parent))
+        return -84;
+    *dot_parent = (uint16_t)parent;
+    return 0;
+}
+
+static int fat12_read_topology_parent_entry(uint32_t resource,
+        const fat12_directory_work_t *work, uint8_t *sector_data,
+        const uint8_t **entry_out) {
+    if (work->parent_entry_offset > X86OS_STORAGE_BLOCK_SIZE - 32U ||
+        (work->parent_entry_offset & 31U) != 0U ||
+        x86os_storage_block_read(resource, work->parent_directory_sector,
+                                 sector_data) != 0) return -5;
+    const uint8_t *entry = sector_data + work->parent_entry_offset;
+    uint32_t attributes = entry[11U];
+    if (entry[0] == 0U || entry[0] == 0xE5U ||
+        fat12_dot_entry_kind(entry) != 0 || attributes == 0x0FU ||
+        (attributes & 0xC0U) != 0U ||
+        (attributes & 0x18U) != 0x10U ||
+        get16(entry + 20U) != 0U ||
+        get16(entry + 26U) != work->start_cluster ||
+        get32(entry + 28U) != 0U) return -84;
+    if (entry_out != 0) *entry_out = entry;
+    return 0;
+}
+
+static int fat12_plan_directory_topology(uint32_t resource,
+        const fat12_check_layout_t *layout, int diagnosis) {
+    uint32_t last_cluster = layout->cluster_count + 1U;
+    fat12_directory_topology_repair_count = 0U;
+    for (uint32_t cluster = 0U; cluster <= last_cluster; ++cluster)
+        fat12_clone_claimed[cluster] = 0U;
+    uint32_t expected_invalid = 0U;
+
+    for (uint32_t first = 0U; first < fat12_directory_count; ++first) {
+        uint32_t start = fat12_directory_queue[first].start_cluster;
+        if ((fat12_clone_claimed[start] & 1U) != 0U) continue;
+        fat12_clone_claimed[start] |= 1U;
+        uint32_t aliases = 0U;
+        uint32_t matching_parent = 0U;
+        uint32_t canonical = UINT32_MAX;
+        uint32_t first_parent = fat12_directory_queue[first].parent_cluster;
+        int same_parent = 1;
+        uint16_t dot_parent = 0U;
+        if (fat12_read_directory_header(resource, layout, start,
+                                        &dot_parent) != 0) return -84;
+        for (uint32_t index = first; index < fat12_directory_count; ++index) {
+            const fat12_directory_work_t *work =
+                &fat12_directory_queue[index];
+            if (work->start_cluster != start) continue;
+            ++aliases;
+            if (work->parent_cluster != first_parent) same_parent = 0;
+            if (work->parent_cluster == dot_parent) {
+                ++matching_parent;
+                canonical = index;
+            }
+        }
+        if (aliases < 2U) continue;
+        if (same_parent && first_parent == dot_parent)
+            canonical = first;
+        else if (matching_parent != 1U)
+            return -84;
+        if (fat12_directory_queue[first].parent_cluster != dot_parent)
+            ++expected_invalid;
+
+        for (uint32_t index = first; index < fat12_directory_count; ++index) {
+            const fat12_directory_work_t *work =
+                &fat12_directory_queue[index];
+            if (work->start_cluster != start) continue;
+            uint8_t parent_data[X86OS_STORAGE_BLOCK_SIZE];
+            const uint8_t *parent_entry = 0;
+            if (fat12_read_topology_parent_entry(resource, work, parent_data,
+                                                  &parent_entry) != 0)
+                return -84;
+            if (index == canonical) continue;
+            if (fat12_directory_topology_repair_count >=
+                FAT12_MAX_DIRECTORY_TOPOLOGY_REPAIRS) return -28;
+            fat12_directory_topology_repair_t *repair =
+                &fat12_directory_topology_repairs[
+                    fat12_directory_topology_repair_count++];
+            repair->parent_directory_sector = work->parent_directory_sector;
+            repair->short_crc32 = format_crc32(parent_entry, 32U);
+            repair->parent_entry_offset = work->parent_entry_offset;
+            repair->start_cluster = work->start_cluster;
+            repair->parent_cluster = work->parent_cluster;
+            repair->lfn_count = 0U;
+            int lfn = fat12_collect_bound_lfn(resource, layout, repair,
+                                               parent_entry);
+            if (lfn != 0) return lfn;
+        }
+
+        uint32_t cluster = start;
+        for (uint32_t steps = 0U; steps < layout->cluster_count; ++steps) {
+            if (cluster < 2U || cluster > last_cluster ||
+                fat12_cluster_references[cluster] != aliases ||
+                fat12_cluster_required[cluster] != aliases ||
+                (fat12_clone_claimed[cluster] & 2U) != 0U) return -84;
+            fat12_clone_claimed[cluster] |= 2U;
+            uint32_t next = fat12_entry(fat12_copies[0], cluster);
+            if (fat12_is_eoc(next)) break;
+            if (next == 0U || next == 1U || next == 0x0FF7U ||
+                next < 2U || next > last_cluster) return -84;
+            cluster = next;
+            if (steps + 1U == layout->cluster_count) return -84;
+        }
+    }
+    for (uint32_t cluster = 2U; cluster <= last_cluster; ++cluster)
+        if (fat12_cluster_required[cluster] > 1U &&
+            (fat12_clone_claimed[cluster] & 2U) == 0U) return -84;
+    uint32_t expected_diagnosis = X86OS_FAT12_RESULT_CHAIN_CROSSLINK |
+        (expected_invalid != 0U ? X86OS_FAT12_RESULT_DIRECTORY_INVALID : 0U);
+    if (fat12_directory_topology_repair_count == 0U ||
+        fat12_directory_invalid_issue_count != expected_invalid ||
+        diagnosis != (int)expected_diagnosis) return -84;
+    return 0;
+}
+
+static int fat12_collect_directory_topology_sectors(void) {
+    fat12_directory_repair_sector_count = 0U;
+    for (uint32_t index = 0U;
+         index < fat12_directory_topology_repair_count; ++index) {
+        const fat12_directory_topology_repair_t *repair =
+            &fat12_directory_topology_repairs[index];
+        for (uint32_t slot_index = 0U;
+             slot_index <= repair->lfn_count; ++slot_index) {
+            uint32_t sector = slot_index == 0U
+                ? repair->parent_directory_sector
+                : repair->lfn[slot_index - 1U].sector;
+            int known = 0;
+            for (uint32_t known_index = 0U;
+                 known_index < fat12_directory_repair_sector_count;
+                 ++known_index)
+                if (fat12_directory_repair_sectors[known_index] == sector) {
+                    known = 1;
+                    break;
+                }
+            if (known) continue;
+            if (fat12_directory_repair_sector_count >=
+                FAT12_MAX_DIRECTORY_REPAIR_SECTORS) return -28;
+            fat12_directory_repair_sectors[
+                fat12_directory_repair_sector_count++] = sector;
+        }
+    }
+    return fat12_directory_repair_sector_count == 0U ? -84 : 0;
+}
+
+static int fat12_update_directory_topology_sector(uint32_t sector,
+        uint8_t *data, int apply) {
+    uint32_t matches = 0U;
+    for (uint32_t index = 0U;
+         index < fat12_directory_topology_repair_count; ++index) {
+        const fat12_directory_topology_repair_t *repair =
+            &fat12_directory_topology_repairs[index];
+        if (repair->parent_directory_sector == sector) {
+            uint8_t *entry = data + repair->parent_entry_offset;
+            uint32_t attributes = entry[11U];
+            if (format_crc32(entry, 32U) != repair->short_crc32 ||
+                entry[0] == 0U || entry[0] == 0xE5U ||
+                fat12_dot_entry_kind(entry) != 0 || attributes == 0x0FU ||
+                (attributes & 0xC0U) != 0U ||
+                (attributes & 0x18U) != 0x10U ||
+                get16(entry + 20U) != 0U ||
+                get16(entry + 26U) != repair->start_cluster ||
+                get32(entry + 28U) != 0U) return -84;
+            if (apply) entry[0] = 0xE5U;
+            ++matches;
+        }
+        for (uint32_t lfn_index = 0U;
+             lfn_index < repair->lfn_count; ++lfn_index) {
+            const fat12_directory_slot_t *slot = &repair->lfn[lfn_index];
+            if (slot->sector != sector) continue;
+            uint8_t *entry = data + slot->offset;
+            if (entry[0] == 0U || entry[0] == 0xE5U ||
+                entry[11U] != 0x0FU ||
+                format_crc32(entry, 32U) != slot->crc32) return -84;
+            if (apply) entry[0] = 0xE5U;
+            ++matches;
+        }
+    }
+    return matches == 0U ? -84 : 0;
+}
+
+static int fat12_repair_directory_topology(uint32_t resource) {
+    fat12_check_layout_t layout;
+    int diagnosis = fat12_check_volume(resource, &layout);
+    if (diagnosis < 0 || !layout.reist_layout ||
+        fat12_plan_directory_topology(resource, &layout, diagnosis) != 0)
+        return -84;
+
+    uint32_t token = 0U;
+    if (x86os_storage_maintenance_acquire(resource, 0U, &token) != 0 ||
+        token == 0U) return -30;
+    int result = fat12_check_volume(resource, &layout);
+    if (result != diagnosis || !layout.reist_layout)
+        result = -84;
+    if (result == diagnosis)
+        result = fat12_plan_directory_topology(resource, &layout, diagnosis);
+    if (result == 0)
+        result = fat12_collect_directory_topology_sectors();
+    if (result == 0 &&
+        fat12_directory_repair_sector_count > FORMAT_FAT12_JOURNAL_ENTRIES)
+        result = -28;
+
+    format_journal_header_t journal;
+    if (result == 0 &&
+        fat12_load_clean_journal(resource, &layout, &journal) != 0)
+        result = -84;
+    if (result == 0) {
+        fat12_prepare_journal_header(&journal, layout.volume_id,
+            journal.sequence + 1U, FAT12_JOURNAL_ACTIVE, 0U);
+        result = fat12_write_journal_header(resource, &journal);
+    }
+
+    uint8_t sector_data[X86OS_STORAGE_BLOCK_SIZE];
+    for (uint32_t index = 0U; result == 0;
+         ++index) {
+        if (index >= fat12_directory_repair_sector_count) break;
+        uint32_t sector = fat12_directory_repair_sectors[index];
+        if (x86os_storage_block_read(resource, sector, sector_data) != 0 ||
+            fat12_update_directory_topology_sector(sector, sector_data, 0) != 0)
+            result = -84;
+        if (result == 0)
+            result = fat12_record_old_sector(resource, &journal, sector,
+                                             sector_data);
+        if (result == 0 &&
+            x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+            result = -30;
+    }
+    if (result == 0 && x86os_storage_block_flush(resource) != 0) result = -5;
+    if (result == 0 &&
+        x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+        result = -30;
+
+    for (uint32_t index = 0U; result == 0;
+         ++index) {
+        if (index >= fat12_directory_repair_sector_count) break;
+        uint32_t sector = fat12_directory_repair_sectors[index];
+        if (x86os_storage_block_read(resource, sector, sector_data) != 0 ||
+            fat12_update_directory_topology_sector(sector, sector_data, 1) != 0 ||
+            format_write(resource, sector, sector_data) != 0) result = -84;
+        if (result == 0 &&
+            x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+            result = -30;
+    }
+    if (result == 0 && x86os_storage_block_flush(resource) != 0) result = -5;
+    if (result == 0 && fat12_check_volume(resource, &layout) != 0) result = -84;
+    if (result == 0 &&
+        x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+        result = -30;
+    if (result == 0) {
+        fat12_prepare_journal_header(&journal, layout.volume_id,
+            journal.sequence, FAT12_JOURNAL_CLEAN, 0U);
+        result = fat12_write_journal_header(resource, &journal);
+    }
+    if (x86os_storage_maintenance_release(resource, token) != 0 && result == 0)
+        result = -5;
+    return result == 0 ? diagnosis |
+        (int)X86OS_FAT12_RESULT_DIRECTORY_TOPOLOGY_REPAIRED : result;
 }
 
 static int fat12_apply_loop_repairs(const fat12_check_layout_t *layout) {
@@ -4163,6 +4569,10 @@ int main(void) {
                 X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_CROSSLINKS &&
             request.length == 0U)
             result = fat12_repair_empty_directory_crosslinks(request.resource);
+        if (request.operation ==
+                X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_TOPOLOGY &&
+            request.length == 0U)
+            result = fat12_repair_directory_topology(request.resource);
         if (x86os_storage_complete(request.handle, result, data) != 0)
             return 3;
     }

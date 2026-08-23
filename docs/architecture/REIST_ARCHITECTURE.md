@@ -1020,6 +1020,21 @@ Parent-Eintrags publiziert. Alle Ziel-, FAT- und Parent-Sektoren liegen vor dem
 ersten Write im Undo-Journal. Unterschiedliche Parents, nichtleere oder
 mehrclusterige Verzeichnisse, reguläre Dateibeteiligung und Mischdiagnosen
 bleiben fail-closed, weil sie rekursive Topologieklonung erfordern.
+Der append-only Nachfolgepfad
+`--repair-directory-topology --confirm` vermeidet rekursive Klone: Für eine
+vollständig attribuierte Aliasgruppe bleibt genau der Parent-Eintrag kanonisch,
+der zum validierten `..`-Parent des gemeinsamen Verzeichnisses passt;
+Same-Parent-Aliase verwenden deterministisch den ersten Eintrag. Alle weiteren
+Aliase werden nach erneuter CRC32-Identitätsprüfung als gelöscht markiert. Nach
+Microsoft-FAT/VFAT-Terminologie streng gebundene LFN-Slots werden über
+Ordinalfolge, Short-Name-Prüfsumme, Typ und Nullcluster validiert und in
+derselben Transaktion entfernt. Damit bleiben die gemeinsame nichtleere oder
+mehrclusterige Verzeichniskette, Unterinhalte und FAT unverändert. Sämtliche
+betroffenen Parent-Sektoren liegen vor der ersten Mutation im festen
+Undo-Journal; ein sauberer Vollscan ist Voraussetzung für Journal-`CLEAN`.
+Fehlende oder mehrdeutige `..`-Zuordnung, überlappende Teilketten,
+reguläre Dateibeteiligung, fremde Diagnosen und Kapazitätserschöpfung bleiben
+vor Seiteneffekten gesperrt.
 Ein Unterverzeichniseintrag mit gültigen Attributen, null im hohen
 Clusterwort, gültigem Startcluster und unzulässiger Größe ungleich null bleibt
 für die Inhaltsdiagnose traversierbar. Nur bei der exakten Gesamtdiagnose

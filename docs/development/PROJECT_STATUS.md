@@ -222,19 +222,23 @@ FAT12-Modi `--repair`, `--repair-chains`, `--repair-short`,
 `--repair-short-loops`, `--repair-crosslinks`, `--repair-dir-size` und
 `--repair-volume-label`, `--repair-zero-files`, `--repair-zero-start` sowie
 `--repair-dot-size`, `--repair-dot-cluster` und
-`--repair-required-crosslinks` sowie `--repair-directory-crosslinks`
+`--repair-required-crosslinks`, `--repair-directory-crosslinks` sowie
+`--repair-directory-topology`
 benötigen jeweils `--confirm`, laufen ausschließlich im Storage-Dienst unter
 Maintenance-Lease und melden Erfolg erst nach Undo-Journal, Readback und
 sauberem Vollscan. Der Reclaim-Modus verwirft unerreichbare Inhalte
 ausdrücklich und ist keine Datenrettung. Reine Pflicht-Crosslinks regulärer
 Dateien werden durch vollständige Kopien in höchstens 48 freie Cluster
 getrennt. Same-Parent-Aliase strikt leerer einclusteriger Unterverzeichnisse
-werden ebenfalls verifiziert kopiert und umgebunden; nichtleere,
-mehrclusterige, parentübergreifende oder gemischte Fälle bleiben gesperrt.
+werden ebenfalls verifiziert kopiert und umgebunden. Der gebündelte
+Topologiepfad entfernt darüber hinaus eindeutig attribuierbare nichtleere,
+mehrclusterige, Same-Parent- und parentübergreifende Alias-Einträge samt streng
+gebundenen VFAT-LFN-Slots, ohne die gemeinsame Kette oder FAT zu verändern;
+mehrdeutige Parentbeziehungen, Teilketten und gemischte Datei-/Directory-Fälle
+bleiben gesperrt.
 `FDISK.PRG --create <resource-id> <mbr-type> --confirm` richtet ein leeres,
-ungeschütztes ATA-/AHCI-Medium ein. Nichtleere, mehrclusterige oder
-parentübergreifende Directory-Crosslink-, Orphan-Datenrettungs- und
-weitergehende Verzeichnisreparatur sowie die reale Hardware-Power-Loss-Matrix
+ungeschütztes ATA-/AHCI-Medium ein. Orphan-Datenrettung, nicht eindeutig
+attribuierbare Verzeichnisschäden und die reale Hardware-Power-Loss-Matrix
 bleiben offen.
 
 ### EXT2
@@ -355,9 +359,10 @@ oder breite Zielhardwarequalifikation.
   werden bei reiner Short-Diagnose auf null begrenzt. Reine mehrfach benötigte
   reguläre Dateiketten können vollständig in freie Cluster kopiert und so
   getrennt werden. Reine Same-Parent-Crosslinks strikt leerer einclusteriger
-  Unterverzeichnisse lassen sich ebenso kopieren und umbinden. Nichtleere,
-  mehrclusterige oder parentübergreifende Directory-Crosslinks,
-  Orphan-Datenrettung, weitergehende Verzeichnis-, Journal-, Remap- und
+  Unterverzeichnisse lassen sich ebenso kopieren und umbinden. Eindeutig
+  attribuierbare nichtleere, mehrclusterige und parentübergreifende
+  Directory-Aliase werden ohne Kettenänderung auf genau einen kanonischen
+  Parent reduziert. Orphan-Datenrettung, mehrdeutige Verzeichnis-, Journal-, Remap- und
   Defektsektorreparatur sowie der QEMU-Remountnachweis sind noch offen
 - reale FAT12-Power-Loss-/Reconnect-Matrix für VMware und Zielhardware
 - medienunabhängige Persistenzgarantie für EXT2 und fremde FAT-Volumes
