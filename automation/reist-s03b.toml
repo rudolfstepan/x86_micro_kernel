@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R1.8-vmware-svga2d-ring3"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,91 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R1.8-vmware-svga2d-ring3"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Supervised VMware SVGA-II Ring-3 driver with bounded 2D acceleration"
+scope = "Replace the kernel-only VMware SVGA-II policy path with one supervised Ring-3 driver controlling a small kernel-owned resource mediator. The exact VMware PCI identities 15ad:0405 and 15ad:0710 may expose only validated mode activation, UPDATE, RECT_FILL and capability-gated RECT_COPY packets. The compositor uses synchronous RECT_COPY for cached window moves and retains the existing shadow-buffer software path on every unsupported capability, stale driver generation, timeout, queue-pressure or recovery transition. FIFO words, dimensions, arithmetic, process/device generations and service identity are validated before side effects; waits and retries use monotonic finite deadlines. Driver crash or malformed reply fences its device generation, preserves kernel integrity and degrades to the existing software renderer. Add QEMU vmware-vga and VMware Workstation runtime evidence. Do not add 3D, GMR/DMA, arbitrary FIFO access, multi-monitor, host clipboard, guest tools branding or a physical-hardware claim. Use the official open-vm-tools device identities and upstream vmwgfx/SVGA terminology without copying unrelated guest-tools services."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c",
+  "kernel/init/video_device_profile.h",
+  "kernel/init/video_device_profile.c",
+  "kernel/init/kernel.c",
+  "include/kernel/supervisor.h",
+  "kernel/init/supervisor.c",
+  "kernel/proc/process.c",
+  "drivers/video/display_control.h",
+  "drivers/video/display_control.c",
+  "drivers/video/framebuffer.h",
+  "drivers/video/framebuffer.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/video/include/reist/svga2d.h",
+  "userspace/drivers/video/vmware_svga2d.c",
+  "userspace/gui/compositor/desktop.c",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_smoke.py",
+  "scripts/run_vmware_svga2d.ps1",
+  "scripts/test-reist-runtime.ps1",
+  "Makefile",
+  "test/test_vmware_svga2d.py",
+  "test/test_vmware_svga2d_host.c",
+  "test/test_display_abi_minimal.py",
+  "test/test_device_domain_source.py",
+  "test/test_runtime_graphics_switch.py",
+  "test/test_user_program_toolchain.py",
+  "scripts/validate_automated_s0_gate.py",
+  "test/test_automated_s0_gate.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "safety/hazards.toml"
+]
+invariants = [
+  "only exact PCI display identities 15ad:0405 and 15ad:0710 can register the SVGA-II profile",
+  "the Ring-3 driver receives no raw framebuffer mapping DMA authority or arbitrary FIFO packet interface",
+  "the kernel mediator accepts only UPDATE RECT_FILL and capability-gated RECT_COPY with complete geometry and overflow validation",
+  "FIFO metadata and free space are revalidated before each bounded packet and queue pressure returns EAGAIN without partial publication",
+  "accelerated copy updates the shadow framebuffer consistently and falls back to the existing software blit on any driver or capability failure",
+  "FIFO completion uses a monotonic deadline with sleep or single-status polling and never an unbounded busy-wait",
+  "the driver endpoint is generation-scoped and delegated only to the exact desktop program identity",
+  "driver crash hang invalid response stale generation and restart are contained by the existing device-domain lifecycle",
+  "QEMU vmware-vga and VMware Workstation prove capability discovery one accelerated copy software fallback and clean desktop recovery",
+  "no 3D GMR DMA multi-monitor host integration or physical-hardware assurance claim is introduced"
+]
+targeted_tests = [
+  "python test/test_vmware_svga2d.py -v",
+  "python test/test_display_abi_minimal.py -v",
+  "python test/test_device_domain_source.py -v",
+  "python test/test_runtime_graphics_switch.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode vmware-svga2d",
+  ".\\scripts\\test-reist-runtime.ps1 -Target vmware -Video vga -Mode vmware-svga2d"
+]
+stop_conditions = [
+  "2D acceleration would require direct unvalidated Ring-3 FIFO or framebuffer mapping",
+  "the shadow framebuffer can diverge from accelerated scanout after timeout crash or overlap",
+  "VMware does not expose RECT_COPY or the bounded software fallback cannot preserve desktop correctness",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "feat: add supervised VMware SVGA-II 2D driver"
+evidence = []
 
 [[packages]]
 id = "S0.3b-1"

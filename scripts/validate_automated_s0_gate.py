@@ -139,14 +139,29 @@ def validate_gate(gate_path: Path, scope_path: Path, queue_path: Path) -> int:
         status = package.get("status")
         if package_id == GATE_PACKAGE:
             continue
+        if package.get("phase") == "post-s0":
+            if status not in {"queued", "active", "done", "cancelled"}:
+                raise ValueError(
+                    f"post-S0 package has invalid status: {package_id}")
+            continue
         if status == "cancelled" and package_id in CANCELLED:
             continue
         if status != "done":
             raise ValueError(f"predecessor package is not closed: {package_id}")
     gate_status = package_by_id[GATE_PACKAGE].get("status")
     active_id = queue.get("active_id")
-    if not ((gate_status == "active" and active_id == GATE_PACKAGE) or
-            (gate_status == "done" and active_id == "")):
+    post_s0_active = [
+        package_id for package_id, package in package_by_id.items()
+        if package.get("phase") == "post-s0" and
+        package.get("status") == "active"
+    ]
+    gate_active = gate_status == "active" and active_id == GATE_PACKAGE and \
+        not post_s0_active
+    gate_done = gate_status == "done" and (
+        (active_id == "" and not post_s0_active) or
+        (len(post_s0_active) == 1 and active_id == post_s0_active[0])
+    )
+    if not (gate_active or gate_done):
         raise ValueError("gate package is not the sole active or final done package")
 
     evidence = gate["evidence"]

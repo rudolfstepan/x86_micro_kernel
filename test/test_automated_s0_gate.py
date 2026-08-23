@@ -56,6 +56,21 @@ class AutomatedS0GateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "sole active"):
             self._validate_mutated_queue(queue)
 
+    def test_explicit_post_s0_package_may_be_active(self):
+        queue = self._load(self.queue_path)
+        active = next(
+            item for item in queue["packages"]
+            if item.get("phase") == "post-s0" and item["status"] == "active"
+        )
+        self.assertEqual(queue["active_id"], active["id"])
+        self.assertEqual(
+            validate_gate(self.gate_path, self.scope_path, self.queue_path),
+            len(EVIDENCE),
+        )
+        active.pop("phase")
+        with self.assertRaisesRegex(ValueError, "predecessor"):
+            self._validate_mutated_queue(queue)
+
     def test_validator_does_not_import_gate_data_as_code(self):
         source = (ROOT / "scripts/validate_automated_s0_gate.py").read_text("utf-8")
         self.assertNotIn("import automated_s0_gate", source)
@@ -111,6 +126,8 @@ class AutomatedS0GateTests(unittest.TestCase):
             lines += ["", "[[packages]]",
                       f"id = {cls._quote(package['id'])}",
                       f"status = {cls._quote(package['status'])}"]
+            if "phase" in package:
+                lines.append(f"phase = {cls._quote(package['phase'])}")
             if package["id"] == "S0.6c-automated-research-gate":
                 for key in ("targeted_tests", "package_tests", "runtime_tests"):
                     values = ", ".join(cls._quote(item) for item in package[key])
