@@ -291,6 +291,16 @@ Quellobjekt gehörende Evidenz verhindert den Link. Damit darf eine ABI- oder
 Strukturänderung keinen inkrementellen Mischbuild aus alten und neuen
 Objektlayouts erzeugen.
 
+Hostseitige Parser-Fault-Kampagnen besitzen ebenfalls feste Ressourcenbudgets.
+Die S0.6a-Referenz akzeptiert ausschließlich 16 bis 128 Fälle und einen
+expliziten 32-Bit-Seed. Sie kombiniert einen festen strukturierten Korpus mit
+genau einer Einbitmutation je Zusatzfall, verwendet nur ein automatisch
+entferntes Temp-Verzeichnis und ruft den realen Bundle-zu-Update-Einstieg auf.
+Ein erwarteter Parserfehler genügt nicht: Es darf kein Output-Image existieren,
+und Quellimage sowie signierte Eingaben müssen nach der Gesamtkampagne
+SHA-256-identisch sein. Daraus folgt keine Aussage über vollständige Coverage,
+Langzeitbetrieb oder Hardwarefehlerabdeckung.
+
 ## Ziel-Failure-Domains
 
 Der aktuelle Kernel ist noch ein modularer Monolith. Das zentrale

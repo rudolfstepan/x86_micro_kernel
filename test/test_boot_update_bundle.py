@@ -27,6 +27,7 @@ from scripts.create_native_boot_image import (
     create_manifest,
 )
 from scripts.sign_boot_artifact import sign_artifact
+from scripts.run_boot_update_fault_campaign import run_fault_campaign
 from scripts.update_native_boot_slot import update_inactive_slot_from_bundle
 from scripts.validate_boot_manifest import validate_image
 from scripts.verify_boot_update_bundle import verify_update_bundle
@@ -233,6 +234,50 @@ class BootUpdateBundleTests(unittest.TestCase):
         self.assertNotIn("create_boot_update_bundle", consumer)
         self.assertNotIn("active_slot", producer)
         self.assertNotIn("pending_slot", producer)
+
+    def test_bounded_fault_campaign_is_deterministic_and_non_mutating(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.img"
+            original = base_image(
+                self.kernel.read_bytes(), self.signature.read_bytes()
+            )
+            source.write_bytes(original)
+            first = run_fault_campaign(
+                source, self.kernel, self.signature, POLICY,
+                self.openssl, ROOT, 20, 0x53403614,
+            )
+            second = run_fault_campaign(
+                source, self.kernel, self.signature, POLICY,
+                self.openssl, ROOT, 20, 0x53403614,
+            )
+            self.assertEqual(first, second)
+            self.assertEqual(first.structured_cases, 16)
+            self.assertEqual(first.random_cases, 4)
+            self.assertEqual(source.read_bytes(), original)
+
+    def test_fault_campaign_rejects_unbounded_cases_and_seed(self):
+        for cases, seed in ((15, 0), (129, 0), (16, -1), (16, 0x100000000)):
+            with self.subTest(cases=cases, seed=seed):
+                with self.assertRaises(ValueError):
+                    run_fault_campaign(
+                        Path("missing.img"), Path("missing.bin"),
+                        Path("missing.sig"), POLICY, self.openssl, ROOT,
+                        cases, seed,
+                    )
+
+    def test_fault_campaign_rejects_oversized_kernel_before_reading_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.img"
+            kernel = Path(directory) / "oversized.bin"
+            source.write_bytes(base_image(
+                self.kernel.read_bytes(), self.signature.read_bytes()
+            ))
+            kernel.write_bytes(bytes(BUNDLE_KERNEL_CAPACITY + 1))
+            with self.assertRaisesRegex(ValueError, "slot capacity"):
+                run_fault_campaign(
+                    source, kernel, self.signature, POLICY,
+                    self.openssl, ROOT, 16, 0,
+                )
 
 
 if __name__ == "__main__":

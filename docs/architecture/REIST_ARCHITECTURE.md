@@ -1607,6 +1607,15 @@ sicher reintegriert? Die Schnittstelle ist in Produktionsimages entfernt oder
 kryptografisch und physisch kontrolliert; sie darf keine Wartungs-Backdoor
 werden.
 
+Der hostseitige S0.6a-Runner ist keine Produktschnittstelle. Er erzeugt ein
+gültig authentifiziertes Offline-Update-Bundle und mutiert in einem festen
+Temp-Verzeichnis höchstens 128 deterministische Fälle. Ein fester strukturierter
+Korpus deckt jede autoritative Feldklasse sowie Truncation und Nachlaufdaten
+ab; zusätzliche Fälle wählen per explizitem 32-Bit-Seed genau ein Eingangsbit.
+Jeder Fall verwendet den echten Bundle-zu-Inactive-Slot-Einstieg und ist nur
+erfolgreich abgelehnt, wenn kein Output-Image existiert. Eingangsartefakte
+werden vor und nach der Kampagne mit SHA-256 verglichen.
+
 ## Übergang vom heutigen Kernel
 
 1. Einsatzprofil, Hazards, Essential Functions, FTTI und Recoveryziele festlegen.

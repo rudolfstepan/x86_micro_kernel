@@ -431,6 +431,9 @@ und 10 verbindlich.
       Strukturparser, policy-gepinnter RSA-PSS-Prüfung und Nutzung des
       bestehenden atomaren A/B-Pfads in beiden Richtungen
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
+  - [x] S0.6a Deterministische, auf 16 bis 128 Fälle begrenzte
+    Boot-Update-Bundle-Kampagne mit strukturierten Fehlerklassen,
+    seed-gebundenen Einbitmutationen und nachgewiesenem Fail-before-output
 
 #### Funktionsroadmap nach dem S0-Gate
 
@@ -1422,6 +1425,17 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    Zustandskompatibilität, Vorabnachweis und sicherem Rollback.
 
 #### S0.6 Verifikation und Langzeitbetrieb — XL
+
+`S0.6a` ergänzt einen deterministischen Host-Campaign-Runner für den realen
+Offline-Bundle-Consumer. Der Gate-Lauf erzeugt aus dem Referenzkernel ein
+gültiges Bundle und führt mit festem 32-Bit-Seed genau 64 Fälle aus: 16
+strukturierte Fehler für Format, Geometrie, Algorithmus, Flags, Reserven,
+CRC32, SHA-256, Signatur, Policy-Fingerprint, Payload und Länge sowie 48
+Einbitmutationen über den gesamten Eingang. Jeder Fall läuft durch den echten
+Bundle-zu-Inactive-Slot-Einstieg und muss vor Erzeugung eines Output-Images
+scheitern; Image, Kernel und Signatur bleiben hashidentisch. Das ist ein
+kurzer reproduzierbarer Parser-/Seiteneffekt-Nachweis, keine Zufallsabdeckung,
+Langzeit-, Gast-, VMware- oder Zielhardwarekampagne.
 
 - Statische Stack-/Code-/WCET-Analyse, Fuzzing, modellbasierte Tests und
    unabhängige Reviews als Gates einführen.

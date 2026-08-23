@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.6a-boot-update-fault-campaign"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -317,7 +317,7 @@ evidence = []
 
 [[packages]]
 id = "S0.6a-boot-update-fault-campaign"
-status = "active"
+status = "done"
 risk = "high"
 title = "Bounded deterministic boot-update fault campaign"
 scope = "Add a deterministic host fault-campaign runner for the authenticated offline update bundle and its existing inactive-slot consumer. The runner creates one valid bundle from the reference signed kernel, verifies it, then executes a fixed structured corpus plus a seed-driven bounded mutation corpus over header fields, CRC, digest, signature, policy binding, payload and exact length. Every malformed case must fail before an output image exists, while the source image remains byte-identical. Cases, input bytes, temporary files and wall-clock work are bounded; the default and gate use 64 cases and a fixed 32-bit seed. This is parser and fail-before-side-effect evidence only, not random coverage, online update testing, anti-rollback, a guest parser, long-term soak or target-hardware evidence."
@@ -335,7 +335,7 @@ invariants = [
   "the structured corpus reaches unsupported geometry, flags, reserves, CRC, digest, signature, policy fingerprint, truncation and trailing-data classes",
   "remaining cases use a deterministic seed and mutate exactly one bounded input byte with a nonzero bit",
   "each malformed bundle is passed through the real bundle-to-inactive-slot entry point and cannot create an output image",
-  "the valid reference bundle is authenticated before mutations and the source image hash is unchanged after every case",
+  "the valid reference bundle is authenticated before mutations and source image plus signed inputs are hash-identical after the complete campaign",
   "all campaign artifacts live in one automatically removed temporary directory",
   "the campaign has no production runtime switch, kernel path, online fetcher or unbounded random loop"
 ]

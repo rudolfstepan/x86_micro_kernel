@@ -460,6 +460,14 @@ Fault-Injection, Framebuffer/Surface, PCI-Audio, Watchdog und Handover hinzu.
 Ein grüner Host- oder QEMU-Test ersetzt keine Langzeit-, EMV-, Stromausfall-
 oder breite Zielhardwarequalifikation.
 
+`S0.6a` führt die erste fest begrenzte Update-Parser-Kampagne aus. Mit einem
+expliziten 32-Bit-Seed werden 16 strukturierte und 48 Einbitfehler gegen den
+echten Offline-Bundle-Consumer und Inactive-Slot-Einstieg geprüft. Alle 64
+Fälle scheitern vor einem Output-Image; Quellimage, signierter Kernel und
+Signatur bleiben SHA-256-identisch. Die Kampagne ist deterministisch und auf
+höchstens 128 Fälle begrenzt. Sie ersetzt weder Coverage-gesteuertes Fuzzing
+noch Soak-, VMware- oder Hardwareevidenz.
+
 ## Wichtigste offene Grenzen
 
 - `CHKDSK.PRG` besitzt capability-gebundene, bestätigte und journalisierte
