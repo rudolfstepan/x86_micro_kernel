@@ -50,8 +50,8 @@ def _load_policy(path: Path) -> dict[str, object]:
             raise ValueError(f"trust-policy {name} is missing")
     if policy.get("release_requires_external_key") is not True:
         raise ValueError("trust-policy must require an external release key")
-    if policy.get("stage2_signature_verification") is not False:
-        raise ValueError("host policy must not claim stage-2 signature verification")
+    if policy.get("stage2_signature_verification") is not True:
+        raise ValueError("trust-policy must require stage-2 signature verification")
     return policy
 
 

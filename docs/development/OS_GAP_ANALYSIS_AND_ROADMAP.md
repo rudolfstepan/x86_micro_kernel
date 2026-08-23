@@ -401,7 +401,7 @@ und 10 verbindlich.
   - [ ] S0.5a3 Signierte Artefakte und gebundener Vertrauensanker
     - [x] S0.5a3a Hostseitige RSA-2048-PSS/SHA-256-Kernelsignatur mit
       gepinntem Research-Public-Key und fail-closed Buildgate
-    - [ ] S0.5a3b Signatur und Vertrauensanker in Stage 2 binden
+    - [x] S0.5a3b Signatur und Vertrauensanker in Stage 2 binden
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
 
 #### Funktionsroadmap nach dem S0-Gate
@@ -1311,25 +1311,31 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
 
 #### S0.5 Datenintegrität, Boot und unterbrechungsarme Updates — XL
 
-- [x] Das BIOS-Bootmanifest ist als v2 mit festem 80-Byte-Header versioniert
+- [x] Das BIOS-Bootmanifest ist als v3 mit festem 336-Byte-Header versioniert
   und bindet den exakten Kernelinhalt über SHA-256 gemäß NIST FIPS 180-4. Ein
   vom Imageerzeuger unabhängiger Hostvalidator prüft HDD und Floppy nach jedem
   Build einschließlich Layout, Grenzen, Manifest-Prüfsumme, SHA-256 und CRC32.
-  Die BIOS-Stufen akzeptieren nur v2. Stage 2 berechnet SHA-256 und CRC32 in
+  Der Header behält die bisherigen Feldpositionen bei und bettet ab Offset 80
+  die verpflichtende 256-Byte-Signatur ein. Die BIOS-Stufen akzeptieren nur
+  v3. Stage 2 berechnet SHA-256 und CRC32 in
   einem einzigen begrenzten Kernel-Lesedurchlauf mit ausschließlich festen
   Puffern und prüft den Digest vor ELF-Parsing oder Kernelstart. Ein negativer
   QEMU-Lauf verändert den Kernel bei weiterhin gültiger CRC32 und
   Manifest-Prüfsumme und wird ausschließlich am SHA-256-Vergleich gestoppt.
-  Dies beweist Integrität, aber keine Authentizität: Signaturprüfung und ein
-  gebundener Vertrauensanker bleiben offen.
+  Ein zweiter negativer Lauf verändert ausschließlich die eingebettete
+  Signatur bei reparierter Manifest-Prüfsumme und muss vor `BOOT_OK` am
+  RSA-PSS-Fehlerpfad stoppen.
 - [x] Der Host-Build signiert das exakte `kernel.bin` nach RFC 8017 mit
   RSA-2048-PSS, SHA-256, MGF1-SHA-256 und 32-Byte-Salt. Ein unabhängiger
   Validator pinnt Version, Algorithmus, Parameter und den SHA-256-Fingerprint
   des DER-SubjectPublicKeyInfo, bevor ein Image veröffentlicht wird. Der
   eingecheckte private Schlüssel ist nur eine reproduzierbare Research-
-  Testfixture und wird vom Release-Modus abgelehnt. Da Stage 2 die
-  256-Byte-Signatur noch nicht prüft, ist der Loader-Vertrauensanker weiterhin
-  offen und es besteht noch kein authentifizierter Boot.
+  Testfixture und wird vom Release-Modus abgelehnt. Stage 2 bindet Modulus und
+  Exponent 65537 fest ein und prüft die Signatur mit begrenzter
+  RSA-2048-PSS-/MGF1-SHA-256-Logik vor dem ELF-Parser. Das authentifiziert den
+  Kernel relativ zu Stage 2. Weil Stage 1 und Stage 2 auf dem beschreibbaren
+  Medium verbleiben, entsteht daraus weder Secure Boot noch ein
+  unveränderlicher Plattformvertrauensanker oder Anti-Rollback.
 - Sicherheitsrelevanten Zustand transaktional, checksummiert, versioniert und
    redundant speichern; Stromausfall an jeder Commitstelle injizieren.
 - Verifizierten Boot, signierte Artefakte, reproduzierbare Builds, Provenienz

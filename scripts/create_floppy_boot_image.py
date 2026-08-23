@@ -62,6 +62,7 @@ def set_fat12_entry(fat: bytearray, cluster: int, value: int) -> None:
 
 
 def create_floppy_image(stage1: bytes, stage2: bytes, kernel: bytes,
+                        signature: bytes,
                         data_files: Mapping[str, bytes] | None = None,
                         reist_fat12: bool = False) -> bytes:
     if len(stage1) != SECTOR_SIZE or stage1[510:] != b"\x55\xaa":
@@ -83,8 +84,9 @@ def create_floppy_image(stage1: bytes, stage2: bytes, kernel: bytes,
 
     image = bytearray(FLOPPY_SIZE)
     image[:SECTOR_SIZE] = stage1
-    manifest = create_manifest(stage2_sectors, kernel,
-                               FLOPPY_SECTORS - MANIFEST_LBA)
+    manifest = create_manifest(
+        stage2_sectors, kernel, FLOPPY_SECTORS - MANIFEST_LBA, signature
+    )
     image[MANIFEST_LBA * SECTOR_SIZE:(MANIFEST_LBA + 1) * SECTOR_SIZE] = manifest
     image[stage2_lba * SECTOR_SIZE:stage2_lba * SECTOR_SIZE + len(stage2)] = stage2
     image[kernel_lba * SECTOR_SIZE:kernel_lba * SECTOR_SIZE + len(kernel)] = kernel
@@ -231,6 +233,7 @@ def main() -> None:
     parser.add_argument("--stage1", required=True, type=Path)
     parser.add_argument("--stage2", required=True, type=Path)
     parser.add_argument("--kernel", required=True, type=Path)
+    parser.add_argument("--signature", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--data-file", action="append", default=[],
                         metavar="NAME=PATH")
@@ -245,7 +248,8 @@ def main() -> None:
         data_files[name] = Path(path).read_bytes()
     image = create_floppy_image(args.stage1.read_bytes(),
                                 args.stage2.read_bytes(),
-                                args.kernel.read_bytes(), data_files,
+                                args.kernel.read_bytes(),
+                                args.signature.read_bytes(), data_files,
                                 args.reist_fat12)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(image)

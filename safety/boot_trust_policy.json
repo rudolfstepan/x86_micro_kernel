@@ -11,5 +11,5 @@
   "development_key_spki_sha256": "e17d4d5aefad94e85333abcd417260e0c35e080b083f86c9b3beb71b68bbc51e",
   "development_private_key": "test/fixtures/reist-research-dev-private.pem",
   "release_requires_external_key": true,
-  "stage2_signature_verification": false
+  "stage2_signature_verification": true
 }

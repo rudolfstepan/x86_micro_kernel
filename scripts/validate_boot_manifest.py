@@ -13,8 +13,11 @@ from pathlib import Path
 
 SECTOR_SIZE = 512
 MANIFEST_MAGIC = b"X86BOOT2"
-MANIFEST_VERSION = 2
-MANIFEST_HEADER_SIZE = 80
+MANIFEST_VERSION = 3
+MANIFEST_HEADER_SIZE = 336
+MANIFEST_FLAG_SIGNED = 0x00000001
+MANIFEST_SIGNATURE_OFFSET = 80
+MANIFEST_SIGNATURE_SIZE = 256
 MANIFEST_LBA_FLOPPY = 1
 BOOT_PARTITION_TYPE = 0xDA
 STAGE2_RELATIVE_LBA = 1
@@ -32,6 +35,7 @@ class ManifestInfo:
     partition_sectors: int
     kernel_size: int
     kernel_sha256: str
+    signature_sha256: str
 
 
 def _additive_checksum_valid(sector: bytes) -> bool:
@@ -93,8 +97,8 @@ def validate_image(path: Path, layout: str = "auto") -> ManifestInfo:
             raise ValueError("manifest magic is not X86BOOT2")
         if version != MANIFEST_VERSION or header_size != MANIFEST_HEADER_SIZE:
             raise ValueError("manifest version or header size is unsupported")
-        if flags != 0:
-            raise ValueError("manifest reserved flags are non-zero")
+        if flags != MANIFEST_FLAG_SIGNED:
+            raise ValueError("manifest does not require the signed-kernel profile")
         if not _additive_checksum_valid(manifest):
             raise ValueError("manifest additive checksum is invalid")
         if partition_sectors != expected_partition_sectors:
@@ -118,6 +122,13 @@ def validate_image(path: Path, layout: str = "auto") -> ManifestInfo:
         expected_digest = manifest[48:80]
         if expected_digest == bytes(32):
             raise ValueError("manifest SHA-256 digest is missing")
+        signature = manifest[
+            MANIFEST_SIGNATURE_OFFSET:
+            MANIFEST_SIGNATURE_OFFSET + MANIFEST_SIGNATURE_SIZE
+        ]
+        if len(signature) != MANIFEST_SIGNATURE_SIZE or \
+                signature == bytes(MANIFEST_SIGNATURE_SIZE):
+            raise ValueError("manifest RSA-PSS signature is missing")
         kernel_offset = (partition_lba + kernel_lba) * SECTOR_SIZE
         if kernel_offset + kernel_size > size:
             raise ValueError("kernel payload is truncated")
@@ -140,7 +151,7 @@ def validate_image(path: Path, layout: str = "auto") -> ManifestInfo:
 
     return ManifestInfo(
         actual_layout, partition_lba, partition_sectors, kernel_size,
-        actual_digest.hex()
+        actual_digest.hex(), hashlib.sha256(signature).hexdigest()
     )
 
 
@@ -156,7 +167,7 @@ def main() -> int:
         return 1
     print(
         f"BOOT MANIFEST PASS: layout={info.layout} kernel={info.kernel_size} "
-        f"sha256={info.kernel_sha256}"
+        f"sha256={info.kernel_sha256} signature_sha256={info.signature_sha256}"
     )
     return 0
 

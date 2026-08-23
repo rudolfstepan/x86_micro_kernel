@@ -68,6 +68,7 @@ class SystemLayoutContracts(unittest.TestCase):
             stage1,
             bytes(2048),
             minimal_kernel(),
+            bytes((index * 31 + 1) & 0xFF for index in range(256)),
             {
                 "bin/shell.prg": b"shell",
                 "libexec/reist/storage.prg": b"storage",

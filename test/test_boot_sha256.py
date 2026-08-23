@@ -10,7 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.create_native_boot_image import create_manifest
-from scripts.run_qemu_boot_integrity import create_crc_valid_sha_mismatch
+from scripts.run_qemu_boot_integrity import (
+    create_crc_valid_sha_mismatch,
+    create_signature_mismatch,
+)
 from scripts.validate_boot_manifest import validate_image
 
 
@@ -18,6 +21,7 @@ SECTOR_SIZE = 512
 PARTITION_LBA = 1
 PARTITION_SECTORS = 256
 KERNEL_LBA = 128
+TEST_SIGNATURE = bytes((index * 7 + 3) & 0xFF for index in range(256))
 
 
 def image_with_kernel(kernel: bytes) -> bytearray:
@@ -29,7 +33,7 @@ def image_with_kernel(kernel: bytes) -> bytearray:
         "<II", image, 454, PARTITION_LBA, PARTITION_SECTORS
     )
     image[SECTOR_SIZE:2 * SECTOR_SIZE] = create_manifest(
-        4, kernel, PARTITION_SECTORS
+        4, kernel, PARTITION_SECTORS, TEST_SIGNATURE
     )
     offset = (PARTITION_LBA + KERNEL_LBA) * SECTOR_SIZE
     image[offset:offset + len(kernel)] = kernel
@@ -37,6 +41,30 @@ def image_with_kernel(kernel: bytes) -> bytearray:
 
 
 class BootSha256Tests(unittest.TestCase):
+    def test_signature_fixture_changes_only_checksummed_signature(self):
+        kernel = bytes((index * 43 + 17) & 0xFF for index in range(4096))
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.img"
+            output = Path(directory) / "signature.img"
+            source.write_bytes(image_with_kernel(kernel))
+            mutation_offset = create_signature_mismatch(source, output)
+            before = source.read_bytes()
+            after = output.read_bytes()
+            manifest_start = PARTITION_LBA * SECTOR_SIZE
+            before_manifest = before[manifest_start:manifest_start + SECTOR_SIZE]
+            after_manifest = after[manifest_start:manifest_start + SECTOR_SIZE]
+            self.assertEqual(before_manifest[48:80], after_manifest[48:80])
+            self.assertNotEqual(before_manifest[80:336], after_manifest[80:336])
+            self.assertEqual(
+                sum(struct.unpack("<128I", after_manifest)) & 0xFFFFFFFF, 0
+            )
+            kernel_start = (PARTITION_LBA + KERNEL_LBA) * SECTOR_SIZE
+            self.assertEqual(
+                before[kernel_start:kernel_start + len(kernel)],
+                after[kernel_start:kernel_start + len(kernel)],
+            )
+            self.assertEqual(mutation_offset, 208)
+
     def test_negative_fixture_changes_sha_but_preserves_crc_and_manifest_checksum(self):
         kernel = bytes((index * 37 + 9) & 0xFF for index in range(4096))
         with tempfile.TemporaryDirectory() as directory:
@@ -94,7 +122,7 @@ class BootSha256Tests(unittest.TestCase):
         )
         self.assertIn("'boot-integrity'", runtime)
         self.assertIn("run_qemu_boot_integrity.py", runtime)
-        self.assertIn("timeout=args.timeout", runner)
+        self.assertIn("timeout=timeout", runner)
         self.assertIn("BOOT_MARKER in transcript", runner)
 
 

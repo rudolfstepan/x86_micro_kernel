@@ -104,19 +104,21 @@ NX, SMEP/SMAP, IOMMU und später CET werden nur auf Zielplattformen verwendet,
 die diese Funktionen nachweislich besitzen. Für den aktuellen i386-Pfad sind
 fehlende Hardwareeigenschaften explizite Grenzen, keine stillen Annahmen.
 
-Der aktuelle BIOS-Referenzpfad verwendet ein festes Manifest v2. Es bindet das
-Kernelartefakt mit SHA-256 gemäß NIST FIPS 180-4; ein unabhängiger Hostvalidator
-prüft nach der Erzeugung Manifest, Datenträgergrenzen und tatsächliche
-Kernelbytes für HDD und Floppy. Stage 2 berechnet SHA-256 mit festen Puffern im
-selben begrenzten Lesedurchlauf wie die nur noch diagnostische CRC32 und prüft
-den Digest vor ELF-Parsing und Kernelstart. Da weder Signaturprüfung noch ein
-gebundener Loader-Vertrauensanker vorhanden sind, entsteht daraus keine Boot-
-Authentizität und kein Verified-/Secure-Boot-Claim. Der Host-Build besitzt
-bereits eine versionierte RFC-8017-RSA-PSS-Policy mit gepinntem Public-Key-
-Fingerprint und unabhängiger Prüfung des exakten Kernelartefakts. Der
-eingecheckte private Research-Schlüssel ist ausdrücklich kein Produktions-
-Secret; Release-Policies müssen ihn ablehnen. Die Vertrauensgrenze wird erst
-angehoben, wenn Stage 2 Signatur und Schlüsselanker selbst fail-closed prüft.
+Der aktuelle BIOS-Referenzpfad verwendet ein festes Manifest v3 mit
+unveränderten bisherigen Feldpositionen, 336-Byte-Header und eingebetteter
+256-Byte-Kernelsignatur. Es bindet das Kernelartefakt mit SHA-256 gemäß NIST
+FIPS 180-4; ein unabhängiger Hostvalidator prüft nach der Erzeugung Manifest,
+Datenträgergrenzen und tatsächliche Kernelbytes für HDD und Floppy. Stage 2
+berechnet SHA-256 mit festen Puffern im selben begrenzten Lesedurchlauf wie die
+nur noch diagnostische CRC32. Danach prüft es vor ELF-Parsing und Kernelstart
+RSA-2048-PSS/SHA-256 gemäß RFC 8017 mit MGF1-SHA-256, exakt 32 Byte Salt und
+dem fest einkompilierten Research-Modulus für Exponent 65537. Der eingecheckte
+private Research-Schlüssel ist ausdrücklich kein Produktions-Secret;
+Release-Policies müssen ihn ablehnen. Damit ist das Kernelartefakt relativ zur
+ausgewählten Stage-2-Vertrauensgrenze authentifiziert. Stage 1 und Stage 2
+selbst sind auf dem beschreibbaren Medium jedoch nicht durch einen
+unveränderlichen Firmwareanker geschützt; daraus folgen weder Secure Boot,
+Anti-Rollback noch eine physische Plattformqualifikation.
 
 Der entscheidende nächste Architekturwechsel ist damit ausdrücklich:
 

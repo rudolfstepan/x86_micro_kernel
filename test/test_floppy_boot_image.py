@@ -15,6 +15,8 @@ from scripts.create_floppy_boot_image import (
 )
 from test_native_boot_image import minimal_kernel
 
+TEST_SIGNATURE = bytes((index * 23 + 9) & 0xFF for index in range(256))
+
 
 class FloppyBootImageTests(unittest.TestCase):
     def test_kernel_is_compiled_and_linked_as_release(self):
@@ -27,13 +29,16 @@ class FloppyBootImageTests(unittest.TestCase):
 
     def test_creates_exact_1440_kib_signed_image(self):
         stage1 = bytes(510) + b"\x55\xaa"
-        image = create_floppy_image(stage1, bytes(2048), minimal_kernel())
+        image = create_floppy_image(
+            stage1, bytes(2048), minimal_kernel(), TEST_SIGNATURE
+        )
         self.assertEqual(len(image), FLOPPY_SIZE)
         self.assertEqual(image[510:512], b"\x55\xaa")
         manifest = image[MANIFEST_LBA * 512:(MANIFEST_LBA + 1) * 512]
         self.assertEqual(manifest[:8], b"X86BOOT2")
-        self.assertEqual(struct.unpack_from("<II", manifest, 8), (2, 80))
+        self.assertEqual(struct.unpack_from("<II", manifest, 8), (3, 336))
         self.assertEqual(manifest[48:80], hashlib.sha256(minimal_kernel()).digest())
+        self.assertEqual(manifest[80:336], TEST_SIGNATURE)
         self.assertEqual(sum(struct.unpack("<128I", manifest)) & 0xFFFFFFFF, 0)
         reserved = struct.unpack_from("<H", image, 14)[0]
         self.assertGreater(reserved, 128)
@@ -51,6 +56,7 @@ class FloppyBootImageTests(unittest.TestCase):
             stage1,
             bytes(2048),
             minimal_kernel(),
+            TEST_SIGNATURE,
             {"large.bin": bytes(1100 * 512)},
         )
         self.assertEqual(len(image), FLOPPY_SIZE)
@@ -62,12 +68,15 @@ class FloppyBootImageTests(unittest.TestCase):
     def test_rejects_kernel_that_does_not_fit(self):
         stage1 = bytes(510) + b"\x55\xaa"
         with self.assertRaisesRegex(ValueError, "too large"):
-            create_floppy_image(stage1, bytes(2048), minimal_kernel(FLOPPY_SIZE))
+            create_floppy_image(
+                stage1, bytes(2048), minimal_kernel(FLOPPY_SIZE), TEST_SIGNATURE
+            )
 
     def test_reist_fat12_uses_v2_redundant_journal_headers(self):
         stage1 = bytes(510) + b"\x55\xaa"
         image = create_floppy_image(
-            stage1, bytes(2048), minimal_kernel(), reist_fat12=True
+            stage1, bytes(2048), minimal_kernel(), TEST_SIGNATURE,
+            reist_fat12=True
         )
         reserved = struct.unpack_from("<H", image, 14)[0]
         layout_base = reserved - 195

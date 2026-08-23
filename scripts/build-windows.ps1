@@ -381,13 +381,14 @@ try {
 
     $nativeArguments = @(
         'scripts/create_native_boot_image.py', '--stage1', $Stage1,
-        '--stage2', $Stage2, '--kernel', $Kernel, '--output', $RawImage,
-        '--vmdk', $Vmdk
+        '--stage2', $Stage2, '--kernel', $Kernel,
+        '--signature', $KernelSignature, '--output', $RawImage, '--vmdk', $Vmdk
     ) + $imageDataArguments
     if ($Target -eq 'qemu') {
         $floppyArguments = @(
             'scripts/create_floppy_boot_image.py', '--stage1', $FloppyStage1,
-            '--stage2', $Stage2, '--kernel', $Kernel, '--output', $FloppyImage
+            '--stage2', $Stage2, '--kernel', $Kernel,
+            '--signature', $KernelSignature, '--output', $FloppyImage
         ) + $floppyDataArguments
         if (Test-Path -LiteralPath $FloppyImage -PathType Leaf) {
             Remove-Item -LiteralPath $FloppyImage -Force

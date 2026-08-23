@@ -39,8 +39,9 @@ SATA-Hardwarefreigabe.
 
 ## Verifizierter Systempfad
 
-- eigener BIOS-/MBR-Bootloader mit Manifest-v2-, ELF32- und CRC32-Prüfung;
-  unabhängiges Imagegate bindet den Kernel zusätzlich exakt per SHA-256
+- eigener BIOS-/MBR-Bootloader mit Manifest-v3-, ELF32-, SHA-256- und
+  RSA-2048-PSS-Prüfung; ein unabhängiges Imagegate validiert das signierte
+  Kernelartefakt zusätzlich
 - 32-Bit-i386-Kernel mit Paging, Ring-3-Prozessen, präemptivem Scheduler,
   endlichen Waits und versionierter Syscall-/MYPR-ABI
 - inkrementeller Windows-Build für `qemu`, `vmware` und `real_hw`
@@ -122,25 +123,28 @@ Versorgung/Zeitbasis, Reset- und Interlockverdrahtung wird erst nach einer
 manuellen Auswahl angebunden; ohne diese Identität wird kein Produktionstreiber
 erfunden und keine Hardwarequalifikation behauptet.
 
-S0.5 umfasst nun die eng abgegrenzten Pakete `S0.5a1`, `S0.5a2` und
-`S0.5a3a`. Das native BIOS-Manifest v2 enthält den SHA-256-Digest des exakten Kernelartefakts; Windows-
+S0.5 umfasst nun die abgeschlossenen Pakete `S0.5a1`, `S0.5a2`, `S0.5a3a`
+und `S0.5a3b`. Das native BIOS-Manifest v3 enthält SHA-256 und die
+256-Byte-RSA-PSS-Signatur des exakten Kernelartefakts; Windows-
 und Makefile-Builds validieren HDD- und Floppy-Images mit einem unabhängigen
 Parser und brechen bei Versions-, Layout-, Bounds-, Prüfsummen- oder
 Digestfehlern ab. Stage 2 berechnet SHA-256 und CRC32 mit festen Puffern in
 einem begrenzten Kernel-Lesedurchlauf und stoppt einen Digestfehler vor dem
 ELF-Parsing. Der negative QEMU-Nachweis hält CRC32 und Manifest-Prüfsumme trotz
-Kerneländerung gültig und erreicht ausschließlich den SHA-Fehlerpfad. Da Stage
-2 noch keinen Signatur-Vertrauensanker besitzt, ist dies ausdrücklich noch
-kein authentifizierter oder Secure Boot.
+Kerneländerung gültig und erreicht ausschließlich den SHA-Fehlerpfad.
 
 `S0.5a3a` ergänzt eine hostseitige Kernelsignatur nach RFC 8017 mit
 RSA-2048-PSS/SHA-256, MGF1-SHA-256 und 32-Byte-Salt. Windows- und Makefile-
 Builds erzeugen eine feste 256-Byte-Signatur und prüfen sie unabhängig gegen
 eine versionierte Policy sowie den gepinnten SHA-256-Fingerprint des Public
 Keys, bevor das Image veröffentlicht wird. Die private Research-Testfixture
-ist öffentlich und wird im Release-Modus abgelehnt. Da Stage 2 diese Signatur
-noch nicht prüft, ist das ein Provenienzgate und noch kein authentifizierter
-Boot; die Loader-Bindung bleibt `S0.5a3b`.
+ist öffentlich und wird im Release-Modus abgelehnt. `S0.5a3b` bettet die
+Signatur in Manifest v3 ein und prüft sie in Stage 2 mit festem Modulus,
+Exponent 65537 und begrenzter RFC-8017-PSS-/MGF1-SHA-256-Logik vor dem
+ELF-Parsing. Damit ist der Kernel relativ zur Stage-2-Vertrauensgrenze
+authentifiziert. Stage 1 und Stage 2 bleiben auf dem beschreibbaren Medium
+ersetzbar; Secure Boot, Anti-Rollback und ein unveränderlicher Plattformanker
+werden weiterhin nicht behauptet.
 
 `S0.3c-admin1` stellt sichere Storage-Operationen (`device down/up`, `mount`,
 `umount`) und einen festen, integritätsgeprüften 224-KiB-RAM-Rescue-Pool mit

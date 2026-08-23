@@ -42,8 +42,9 @@ KERNEL_CACHE_SIZE    equ 0x00100000       ; maximum boot ELF cached from floppy
 
 MANIFEST_MAGIC_0     equ 0x42363858       ; "X86B"
 MANIFEST_MAGIC_1     equ 0x32544F4F       ; "OOT2"
-MANIFEST_VERSION     equ 2
-MANIFEST_HEADER_SIZE equ 80
+MANIFEST_VERSION     equ 3
+MANIFEST_HEADER_SIZE equ 336
+MANIFEST_FLAG_SIGNED equ 0x00000001
 MANIFEST_STAGE2_LBA  equ 16
 MANIFEST_STAGE2_CNT  equ 20
 MANIFEST_KERNEL_LBA  equ 24
@@ -52,6 +53,12 @@ MANIFEST_PART_SIZE   equ 32
 MANIFEST_KERNEL_CRC  equ 36
 MANIFEST_FLAGS       equ 40
 MANIFEST_KERNEL_SHA  equ 48
+MANIFEST_KERNEL_SIGNATURE equ 80
+RSA_BYTES            equ 256
+RSA_DWORDS           equ RSA_BYTES / 4
+PSS_HASH_BYTES       equ 32
+PSS_DB_BYTES         equ 223
+PSS_SALT_BYTES       equ 32
 
 MULTIBOOT_MAGIC      equ 0x2BADB002
 MULTIBOOT_FLAG_MEM   equ 0x001
@@ -118,7 +125,7 @@ start:
     jne manifest_error
     cmp dword [es:12], MANIFEST_HEADER_SIZE
     jne manifest_error
-    cmp dword [es:MANIFEST_FLAGS], 0
+    cmp dword [es:MANIFEST_FLAGS], MANIFEST_FLAG_SIGNED
     jne manifest_error
 
     xor eax, eax
@@ -150,6 +157,21 @@ start:
     add si, 4
     add di, 4
     loop .copy_manifest_sha
+
+    ; Preserve the mandatory signature before the bounce buffer is reused.
+    mov si, MANIFEST_KERNEL_SIGNATURE
+    mov di, kernel_signature
+    mov cx, RSA_BYTES / 2
+    xor bx, bx
+.copy_manifest_signature:
+    mov ax, [es:si]
+    mov [cs:di], ax
+    or bx, ax
+    add si, 2
+    add di, 2
+    loop .copy_manifest_signature
+    test bx, bx
+    jz manifest_error
 
     mov eax, [es:MANIFEST_KERNEL_LBA]
     mov [kernel_relative_lba], eax
@@ -184,6 +206,8 @@ start:
     je sha_error
     jmp crc_error
 .integrity_valid:
+    call rsa_pss_verify
+    jc signature_error
 
     mov si, msg_kernel
     call print_string
@@ -239,6 +263,9 @@ crc_error:
     jmp fatal
 sha_error:
     mov si, msg_sha_error
+    jmp fatal
+signature_error:
+    mov si, msg_signature_error
 
 fatal:
     call print_string
@@ -1241,6 +1268,7 @@ sha256_finalize:
 .compare:
     mov eax, [sha256_state + ebx]
     BSWAP_EAX
+    mov [kernel_hash_actual + ebx], eax
     cmp eax, [kernel_sha256 + ebx]
     jne .bad
     add ebx, 4
@@ -1388,6 +1416,292 @@ sha256_transform:
     add [cs:sha256_state + 24], eax
     mov eax, [cs:sha256_h]
     add [cs:sha256_state + 28], eax
+    popad
+    ret
+
+; Authenticate the exact kernel digest with the pinned RSA-2048 public key.
+; The public exponent is fixed to 65537 (2^16 + 1).  Modular multiplication
+; uses exactly 2048 bounded bit rounds and fixed 64-dword storage.  EMSA-PSS
+; follows RFC 8017 with SHA-256, MGF1-SHA-256 and an exact 32-byte salt.
+rsa_pss_verify:
+    pushad
+    push ds
+    pop es
+
+    ; Convert the manifest's big-endian signature to the little-endian
+    ; representation used by the fixed bignum routines.
+    xor bx, bx
+.signature_to_little:
+    mov si, RSA_BYTES - 1
+    sub si, bx
+    mov al, [kernel_signature + si]
+    mov [rsa_signature_le + bx], al
+    inc bx
+    cmp bx, RSA_BYTES
+    jb .signature_to_little
+
+    ; RSAVP1 requires 0 <= signature < modulus.  The manifest parser already
+    ; rejected the all-zero signature, and equality is rejected here too.
+    mov si, rsa_signature_le
+    mov di, rsa_modulus
+    call rsa_bignum_less
+    jnc .bad
+
+    mov si, rsa_signature_le
+    mov di, rsa_value
+    mov cx, RSA_DWORDS
+    rep movsd
+
+    ; signature^(2^16) followed by one multiplication with signature.
+    mov word [rsa_square_count], 16
+.square:
+    mov si, rsa_value
+    mov di, rsa_value
+    mov bx, rsa_value
+    call rsa_mod_multiply
+    dec word [rsa_square_count]
+    jnz .square
+    mov si, rsa_value
+    mov di, rsa_signature_le
+    mov bx, rsa_value
+    call rsa_mod_multiply
+
+    ; Convert the recovered encoded message back to RFC big-endian order.
+    xor bx, bx
+.value_to_encoded:
+    mov si, RSA_BYTES - 1
+    sub si, bx
+    mov al, [rsa_value + si]
+    mov [pss_encoded + bx], al
+    inc bx
+    cmp bx, RSA_BYTES
+    jb .value_to_encoded
+
+    cmp byte [pss_encoded + RSA_BYTES - 1], 0xBC
+    jne .bad
+    test byte [pss_encoded], 0x80 ; emBits = 2047
+    jnz .bad
+
+    ; DB = maskedDB XOR MGF1(H, 223).  Seven fixed SHA-256 invocations cover
+    ; the complete DB; the final invocation contributes only 31 bytes.
+    mov word [pss_mask_offset], 0
+    mov byte [pss_mgf_counter], 0
+.mgf_next:
+    mov di, sha256_block
+    mov cx, 16
+    xor eax, eax
+    rep stosd
+    mov si, pss_encoded + PSS_DB_BYTES
+    mov di, sha256_block
+    mov cx, PSS_HASH_BYTES / 4
+    rep movsd
+    mov al, [pss_mgf_counter]
+    mov [sha256_block + 35], al
+    mov byte [sha256_block + 36], 0x80
+    mov byte [sha256_block + 62], 0x01
+    mov byte [sha256_block + 63], 0x20 ; (32 + 4) * 8 bits
+    call sha256_init
+    mov di, sha256_block
+    call sha256_transform
+    call sha256_store_pss_digest
+
+    mov ax, PSS_DB_BYTES
+    sub ax, [pss_mask_offset]
+    cmp ax, PSS_HASH_BYTES
+    jbe .mgf_count_ready
+    mov ax, PSS_HASH_BYTES
+.mgf_count_ready:
+    mov [pss_mask_count], ax
+    xor si, si
+    mov bx, [pss_mask_offset]
+    mov cx, [pss_mask_count]
+.mgf_xor:
+    mov al, [pss_digest + si]
+    xor [pss_encoded + bx], al
+    inc si
+    inc bx
+    loop .mgf_xor
+    mov ax, [pss_mask_count]
+    add [pss_mask_offset], ax
+    inc byte [pss_mgf_counter]
+    cmp word [pss_mask_offset], PSS_DB_BYTES
+    jb .mgf_next
+
+    and byte [pss_encoded], 0x7F
+    mov si, pss_encoded
+    mov cx, PSS_DB_BYTES - PSS_SALT_BYTES - 1
+.check_zero_padding:
+    lodsb
+    test al, al
+    jnz .bad
+    loop .check_zero_padding
+    cmp byte [si], 0x01
+    jne .bad
+
+    ; H' = SHA256(8 zero bytes || kernel_hash || 32-byte salt).  The fixed
+    ; 72-byte message occupies exactly two padded SHA-256 blocks.
+    mov di, pss_hash_blocks
+    mov cx, 32
+    xor eax, eax
+    rep stosd
+    mov si, kernel_hash_actual
+    mov di, pss_hash_blocks + 8
+    mov cx, PSS_HASH_BYTES / 4
+    rep movsd
+    mov si, pss_encoded + PSS_DB_BYTES - PSS_SALT_BYTES
+    mov di, pss_hash_blocks + 8 + PSS_HASH_BYTES
+    mov cx, PSS_SALT_BYTES / 4
+    rep movsd
+    mov byte [pss_hash_blocks + 72], 0x80
+    mov byte [pss_hash_blocks + 126], 0x02
+    mov byte [pss_hash_blocks + 127], 0x40 ; 72 * 8 bits
+    call sha256_init
+    mov di, pss_hash_blocks
+    call sha256_transform
+    mov di, pss_hash_blocks + 64
+    call sha256_transform
+    call sha256_store_pss_digest
+
+    mov si, pss_digest
+    mov di, pss_encoded + PSS_DB_BYTES
+    mov cx, PSS_HASH_BYTES
+    repe cmpsb
+    jne .bad
+    popad
+    clc
+    ret
+.bad:
+    popad
+    stc
+    ret
+
+; Store the current SHA-256 state as 32 big-endian digest bytes.
+sha256_store_pss_digest:
+    pushad
+    xor ebx, ebx
+.next:
+    mov eax, [sha256_state + ebx]
+    BSWAP_EAX
+    mov [pss_digest + ebx], eax
+    add ebx, 4
+    cmp ebx, PSS_HASH_BYTES
+    jb .next
+    popad
+    ret
+
+; Return CF=1 iff the unsigned 2048-bit little-endian integer at SI is
+; strictly smaller than the integer at DI.  Work is always exactly 64 dwords.
+rsa_bignum_less:
+    push eax
+    push bx
+    push si
+    push di
+    mov bx, RSA_BYTES - 4
+.compare:
+    mov eax, [si + bx]
+    cmp eax, [di + bx]
+    jb .less
+    ja .not_less
+    sub bx, 4
+    jnc .compare
+.not_less:
+    pop di
+    pop si
+    pop bx
+    pop eax
+    clc
+    ret
+.less:
+    pop di
+    pop si
+    pop bx
+    pop eax
+    stc
+    ret
+
+; SI = (SI + DI) mod pinned_modulus.  Both operands must already be reduced.
+rsa_mod_add:
+    pushad
+    xor bx, bx
+    mov cx, RSA_DWORDS
+    clc
+.add:
+    mov eax, [si + bx]
+    adc eax, [di + bx]
+    mov [si + bx], eax
+    lea bx, [bx + 4]               ; LEA preserves the carry chain
+    loop .add
+    setc byte [rsa_add_carry]
+    cmp byte [rsa_add_carry], 0
+    jne .subtract
+    mov di, rsa_modulus
+    call rsa_bignum_less
+    jc .done
+.subtract:
+    call rsa_sub_modulus
+.done:
+    popad
+    ret
+
+; Subtract the pinned modulus from the little-endian integer at SI.  For the
+; carry case the final borrow is intentionally discarded, yielding the exact
+; low-2048-bit representation of (2^2048 + value - modulus).
+rsa_sub_modulus:
+    pushad
+    xor bx, bx
+    mov cx, RSA_DWORDS
+    clc
+.subtract:
+    mov eax, [si + bx]
+    sbb eax, [rsa_modulus + bx]
+    mov [si + bx], eax
+    lea bx, [bx + 4]
+    loop .subtract
+    popad
+    ret
+
+; BX = (SI * DI) mod pinned_modulus.  The output may alias either input;
+; publication happens only after all fixed 2048 multiplier bits are consumed.
+rsa_mod_multiply:
+    mov [rsa_left_ptr], si
+    mov [rsa_right_ptr], di
+    mov [rsa_output_ptr], bx
+    pushad
+    push ds
+    pop es
+    mov si, [rsa_left_ptr]
+    mov di, rsa_mul_addend
+    mov cx, RSA_DWORDS
+    rep movsd
+    mov di, rsa_mul_result
+    mov cx, RSA_DWORDS
+    xor eax, eax
+    rep stosd
+    mov word [rsa_byte_index], 0
+.next_byte:
+    mov byte [rsa_bit_mask], 1
+.next_bit:
+    mov si, [rsa_right_ptr]
+    mov bx, [rsa_byte_index]
+    mov al, [si + bx]
+    test al, [rsa_bit_mask]
+    jz .skip_add
+    mov si, rsa_mul_result
+    mov di, rsa_mul_addend
+    call rsa_mod_add
+.skip_add:
+    mov si, rsa_mul_addend
+    mov di, rsa_mul_addend
+    call rsa_mod_add
+    shl byte [rsa_bit_mask], 1
+    jnz .next_bit
+    inc word [rsa_byte_index]
+    cmp word [rsa_byte_index], RSA_BYTES
+    jb .next_byte
+    mov si, rsa_mul_result
+    mov di, [rsa_output_ptr]
+    mov cx, RSA_DWORDS
+    rep movsd
     popad
     ret
 
@@ -1561,6 +1875,9 @@ entry_is_executable    db 0
 pm_operation           db 0
 kernel_cached          db 0
 integrity_error        db 0             ; 1=CRC32, 2=SHA-256
+rsa_add_carry          db 0
+rsa_bit_mask           db 0
+pss_mgf_counter        db 0
 vbe_red_size           db 0
 vbe_red_position       db 0
 vbe_green_size         db 0
@@ -1608,6 +1925,13 @@ vbe_blue_end           dw 0
 crc_chunk_size         dw 0
 crc_sector_count       dw 0
 sha256_tail_size       dw 0
+rsa_square_count       dw 0
+rsa_left_ptr           dw 0
+rsa_right_ptr          dw 0
+rsa_output_ptr         dw 0
+rsa_byte_index         dw 0
+pss_mask_offset        dw 0
+pss_mask_count         dw 0
 chs_cylinder           db 0
 chs_head               db 0
 chs_sector             db 0
@@ -1615,6 +1939,8 @@ chs_transfer_count     db 0
 
 align 4
 kernel_sha256:
+    times 8 dd 0
+kernel_hash_actual:
     times 8 dd 0
 sha256_state:
     times 8 dd 0
@@ -1629,12 +1955,52 @@ sha256_h               dd 0
 sha256_block:
     times 64 db 0
 
+align 4
+kernel_signature:
+    times RSA_BYTES db 0
+rsa_signature_le:
+    times RSA_BYTES db 0
+rsa_value:
+    times RSA_BYTES db 0
+rsa_mul_addend:
+    times RSA_BYTES db 0
+rsa_mul_result:
+    times RSA_BYTES db 0
+pss_encoded:
+    times RSA_BYTES db 0
+pss_digest:
+    times PSS_HASH_BYTES db 0
+pss_hash_blocks:
+    times 128 db 0
+
+; RSA-2048 modulus pinned to safety/keys/reist-research-dev-public.pem.
+; SPKI SHA-256: e17d4d5aefad94e85333abcd417260e0c35e080b083f86c9b3beb71b68bbc51e
+; Stored little-endian for the fixed bignum implementation above.
+rsa_modulus:
+    db 0xBD, 0x63, 0x83, 0x43, 0x54, 0x6B, 0xD8, 0x7B, 0xF5, 0x63, 0x0B, 0x5A, 0x59, 0x80, 0x4B, 0x33
+    db 0xED, 0xEE, 0x03, 0x81, 0xE4, 0xF9, 0x6C, 0x08, 0x00, 0x78, 0x12, 0x5F, 0x37, 0x43, 0x59, 0x0B
+    db 0x79, 0x29, 0x98, 0x28, 0x93, 0x5F, 0xA2, 0x8F, 0x5E, 0xE4, 0xD0, 0x8F, 0x70, 0x2B, 0x32, 0x38
+    db 0x23, 0x3C, 0x70, 0xC7, 0x1C, 0x58, 0x22, 0xB6, 0x72, 0x68, 0xB5, 0xD2, 0xD3, 0x5E, 0x40, 0x0C
+    db 0x8E, 0x3E, 0x68, 0x14, 0x8D, 0x3A, 0x82, 0x91, 0xD2, 0x55, 0xBF, 0x87, 0xF8, 0x04, 0x95, 0x2D
+    db 0x04, 0x42, 0x1A, 0xD9, 0x1F, 0x3E, 0x62, 0x91, 0x3B, 0x1B, 0x03, 0xA8, 0x1D, 0xA8, 0x4D, 0xBD
+    db 0x47, 0x86, 0x40, 0xCC, 0x09, 0x3E, 0x6F, 0x6C, 0xFB, 0x49, 0xB9, 0x5D, 0x77, 0x5E, 0x4D, 0x29
+    db 0x73, 0x9D, 0xF8, 0x8A, 0x7E, 0x43, 0x8D, 0x44, 0x24, 0x4B, 0x50, 0x95, 0x23, 0xBC, 0xE5, 0x31
+    db 0x51, 0xE9, 0xFC, 0xC0, 0x68, 0x74, 0x43, 0xAB, 0xC5, 0x39, 0x74, 0xBE, 0x33, 0x33, 0x75, 0x3D
+    db 0x65, 0x24, 0xB7, 0xCF, 0xEF, 0x6B, 0x47, 0xBF, 0x32, 0x08, 0x22, 0x90, 0x37, 0x9C, 0x61, 0x9F
+    db 0xA0, 0x3C, 0x37, 0x49, 0x88, 0x38, 0xE6, 0xAF, 0xBD, 0x5F, 0x6F, 0x05, 0x97, 0xDF, 0x9E, 0xEF
+    db 0xB3, 0xC2, 0x9A, 0x8F, 0xE7, 0x71, 0x99, 0x55, 0x68, 0xC3, 0xD4, 0xE8, 0xFD, 0x98, 0x21, 0xA4
+    db 0x9A, 0xB4, 0xED, 0xC6, 0x12, 0x71, 0x76, 0xF4, 0x68, 0x53, 0xB6, 0xEC, 0xE6, 0x89, 0x9D, 0x38
+    db 0x3D, 0x50, 0x5B, 0x6A, 0xE8, 0x93, 0x04, 0xDC, 0xA0, 0x3A, 0x66, 0x12, 0xE2, 0x65, 0xA7, 0xB5
+    db 0x57, 0x92, 0x67, 0x66, 0x63, 0x84, 0x12, 0x5E, 0xCC, 0xCD, 0x82, 0x54, 0x68, 0x02, 0x47, 0x66
+    db 0x05, 0xCC, 0xAE, 0xF8, 0xEF, 0x5C, 0x11, 0xCA, 0x57, 0x58, 0xD1, 0x6B, 0x50, 0x19, 0x86, 0xA9
+rsa_modulus_end:
+
 program_headers:
     times MAX_PROGRAM_HEADERS * 32 db 0
 
 bootloader_name    db "REIST OS BIOS Loader", 0
 msg_loader         db "x86 native BIOS loader", 13, 10, 0
-msg_verify         db "Verifying kernel SHA-256/CRC32...", 13, 10, 0
+msg_verify         db "Verifying kernel SHA-256/RSA-PSS...", 13, 10, 0
 msg_kernel         db "Loading ELF32 kernel...", 13, 10, 0
 msg_start          db "Starting kernel...", 13, 10, 0
 msg_disk_error     db "Disk read failed", 13, 10, 0
@@ -1643,6 +2009,7 @@ msg_elf_error      db "Invalid ELF32 kernel", 13, 10, 0
 msg_load_error     db "Kernel load failed", 13, 10, 0
 msg_crc_error      db "Kernel CRC32 verification failed", 13, 10, 0
 msg_sha_error      db "Kernel SHA-256 verification failed", 13, 10, 0
+msg_signature_error db "Kernel RSA-PSS verification failed", 13, 10, 0
 
 align 4
 crc32_nibble_table:

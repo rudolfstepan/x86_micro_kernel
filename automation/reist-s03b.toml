@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.5a3b-stage2-rsa-pss"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -3841,7 +3841,7 @@ evidence = []
 
 [[packages]]
 id = "S0.5a3b-stage2-rsa-pss"
-status = "active"
+status = "done"
 risk = "high"
 title = "Bind RSA-PSS kernel authentication into BIOS stage 2"
 scope = "Advance the append-only BIOS boot manifest to signed version 3, embed the exact 256-byte RSA-2048-PSS/SHA-256 kernel signature in its checksummed sector, and bind the pinned research public modulus plus exponent 65537 into stage 2. Stage 2 verifies EMSA-PSS with MGF1-SHA-256 and a 32-byte salt after hashing the exact kernel but before ELF parsing or publication. Both HDD and rescue-floppy builders require the detached signature, host validation rejects malformed signed manifests, and QEMU proves that a signature mutation with a repaired additive manifest checksum fails closed before BOOT_OK. This establishes kernel authentication only relative to the selected BIOS stage-2 trust boundary; immutable firmware anchoring, Secure Boot and release-key custody remain excluded."
@@ -3852,6 +3852,8 @@ allowed_files = [
   "arch/x86/boot/bios/stage2_bios.asm",
   "Makefile",
   "scripts/build-windows.ps1",
+  "scripts/sign_boot_artifact.py",
+  "scripts/verify_boot_signature.py",
   "scripts/create_native_boot_image.py",
   "scripts/create_floppy_boot_image.py",
   "scripts/validate_boot_manifest.py",
@@ -3862,6 +3864,7 @@ allowed_files = [
   "test/test_boot_sha256.py",
   "test/test_native_boot_image.py",
   "test/test_floppy_boot_image.py",
+  "test/test_system_layout.py",
   "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/BOOTABLE_DISK.md",
@@ -3869,7 +3872,7 @@ allowed_files = [
   "docs/development/PROJECT_STATUS.md"
 ]
 invariants = [
-  "manifest v3 keeps all existing field offsets, requires header size 336 and signed flag bit zero while retaining the whole-sector additive checksum",
+  "manifest v3 keeps all existing field offsets, requires header size 336, requires signed flag bit 0 and rejects every other flag while retaining the whole-sector additive checksum",
   "both image builders require exactly one externally created 256-byte signature over the exact kernel bytes and embed it without transforming it",
   "stage 1 accepts only the exact signed manifest version and header size before loading stage 2",
   "stage 2 rejects a zero, out-of-range or invalid signature and implements RFC 8017 RSA-2048-PSS with exponent 65537, SHA-256, MGF1-SHA-256 and an exact 32-byte salt using only fixed storage and bounded loops",
@@ -3884,7 +3887,8 @@ targeted_tests = [
   "python test/test_boot_manifest.py -v",
   "python test/test_boot_sha256.py -v",
   "python test/test_native_boot_image.py -v",
-  "python test/test_floppy_boot_image.py -v"
+  "python test/test_floppy_boot_image.py -v",
+  "python test/test_system_layout.py -v"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"

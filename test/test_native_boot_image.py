@@ -26,6 +26,8 @@ from scripts.create_native_boot_image import (
     write_vmx,
 )
 
+TEST_SIGNATURE = bytes((index * 19 + 5) & 0xFF for index in range(256))
+
 
 def minimal_kernel(size=4096):
     kernel = bytearray(size)
@@ -264,13 +266,22 @@ class NativeBootImageTests(unittest.TestCase):
 
     def test_manifest_has_magic_and_zero_additive_checksum(self):
         kernel = minimal_kernel()
-        manifest = create_manifest(5, kernel, 8192)
+        manifest = create_manifest(5, kernel, 8192, TEST_SIGNATURE)
         self.assertEqual(manifest[:8], MANIFEST_MAGIC)
         self.assertEqual(struct.unpack_from("<I", manifest, 8)[0], MANIFEST_VERSION)
         self.assertEqual(struct.unpack_from("<I", manifest, 12)[0],
                          MANIFEST_HEADER_SIZE)
         self.assertEqual(manifest[48:80], hashlib.sha256(kernel).digest())
+        self.assertEqual(manifest[80:336], TEST_SIGNATURE)
+        self.assertEqual(struct.unpack_from("<I", manifest, 40)[0], 1)
         self.assertEqual(sum(struct.unpack("<128I", manifest)) & 0xFFFFFFFF, 0)
+
+    def test_manifest_rejects_missing_or_zero_signature(self):
+        kernel = minimal_kernel()
+        with self.assertRaisesRegex(ValueError, "exactly 256 bytes"):
+            create_manifest(5, kernel, 8192, bytes(255))
+        with self.assertRaisesRegex(ValueError, "must not be all zero"):
+            create_manifest(5, kernel, 8192, bytes(256))
 
     def test_partition_table_contains_boot_and_fat32_partitions(self):
         stage1 = bytearray(512)

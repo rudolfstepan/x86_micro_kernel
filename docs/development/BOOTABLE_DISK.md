@@ -45,10 +45,11 @@ LBA 8192          FAT32-LBA-Systempartition (Typ 0x0C)
                   Label "X86 SYSTEM", Programme und Daten
 ```
 
-Stage 1 lädt das Manifest und Stage 2. Das versionierte Manifest v2 belegt
-einen 512-Byte-Sektor. Sein 80-Byte-Header enthält unveränderte Stage-2- und
+Stage 1 lädt das Manifest und Stage 2. Das versionierte Manifest v3 belegt
+einen 512-Byte-Sektor. Sein 336-Byte-Header enthält unveränderte Stage-2- und
 Kernel-LBA-Felder, Kernelgröße, diagnostische CRC32 und ab Offset 48 den
 exakten 32-Byte-SHA-256-Digest des Kernelartefakts gemäß NIST FIPS 180-4.
+Ab Offset 80 folgt die verpflichtende 256-Byte-RSA-PSS-Signatur.
 Stage 1 und Stage 2 lehnen andere Magic-, Versions- oder Headerwerte ab;
 Stage 2 kopiert den Digest vor Wiederverwendung des Manifestpuffers in festen
 Speicher und verlangt einen gesetzten Wert.
@@ -60,18 +61,21 @@ Ein Fehler bricht den Build geschlossen ab. Stage 2 verwendet BIOS EDD/INT
 13h und berechnet SHA-256 sowie die diagnostische CRC32 im selben begrenzten
 32-KiB-Lese-/Cache-Durchlauf über exakt `kernel_size` Bytes. Die SHA-256-
 Kompression verwendet einen festen 64-Wort-Schedule und FIPS-180-4-Padding mit
-64-Bit-Bitlänge. Erst nach erfolgreichem Digestvergleich validiert Stage 2 die
-ELF32-Segmente, richtet optional VBE ein und übergibt im Protected Mode an den
-Kernel. Der Kernel erkennt anschließend die Blockgeräte und Partitionen erneut
-über native Treiber.
+64-Bit-Bitlänge. Nach erfolgreichem Digestvergleich prüft Stage 2 die Signatur
+mit fester 2048-Bit-Arithmetik, Exponent 65537, MGF1-SHA-256 und exakt 32 Byte
+Salt gegen den einkompilierten Research-Modulus. Erst danach validiert Stage 2
+die ELF32-Segmente, richtet optional VBE ein und übergibt im Protected Mode an
+den Kernel. Der Kernel erkennt anschließend die Blockgeräte und Partitionen
+erneut über native Treiber.
 
-Hostgate und Bootloader liefern Integritäts- und Provenienzevidenz für das
-erzeugte Image. Die hostseitige RSA-PSS-Signatur authentifiziert das
-Kernelartefakt nur gegenüber dem Buildgate; sie ist noch nicht in Manifest und
-Stage 2 gebunden. Der Loader besitzt daher weiterhin keinen Signatur-
-Vertrauensanker. Ein Angreifer mit Schreibzugriff auf Image und Manifest könnte
-beide gemeinsam ersetzen. Secure Boot beziehungsweise kryptografisch
-authentifizierter Boot bleibt ausdrücklich nicht implementiert.
+Hostgate und Stage 2 authentifizieren das Kernelartefakt relativ zum in Stage 2
+gebundenen Research-Schlüssel. Ein Angreifer kann Kernel und Manifest nicht
+mehr gemeinsam austauschen, ohne an der Signaturprüfung zu scheitern. Stage 1
+und Stage 2 selbst liegen jedoch weiterhin auf dem beschreibbaren Image und
+sind nicht durch Firmware, TPM oder einen unveränderlichen ROM-Anker gebunden.
+Ein Angreifer mit Schreibzugriff könnte daher den Loader samt Schlüsselanker
+ersetzen. Secure Boot, Anti-Rollback und eine vollständige kryptografische
+Firmware-Vertrauenskette bleiben ausdrücklich nicht implementiert.
 
 ## Root-Volume
 

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -102,7 +103,40 @@ class BootSignatureTests(unittest.TestCase):
             hashlib.sha256(result.stdout).hexdigest(),
             policy["public_key_spki_sha256"],
         )
-        self.assertFalse(policy["stage2_signature_verification"])
+        self.assertTrue(policy["stage2_signature_verification"])
+
+    def test_stage2_modulus_matches_policy_pinned_public_key(self):
+        result = subprocess.run(
+            [str(self.openssl), "rsa", "-pubin", "-in", str(PUBLIC_KEY),
+             "-modulus", "-noout"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        prefix = "Modulus="
+        self.assertTrue(result.stdout.strip().startswith(prefix))
+        modulus = bytes.fromhex(result.stdout.strip()[len(prefix):])
+        stage2 = (ROOT / "arch/x86/boot/bios/stage2_bios.asm").read_text(
+            encoding="utf-8"
+        )
+        encoded = stage2.split("rsa_modulus:", 1)[1].split(
+            "rsa_modulus_end:", 1
+        )[0]
+        little_endian = bytes(
+            int(value, 16) for value in re.findall(r"0x([0-9a-fA-F]{2})", encoded)
+        )
+        self.assertEqual(len(little_endian), 256)
+        self.assertEqual(little_endian[::-1], modulus)
+
+    def test_stage2_verifies_pss_before_elf_parsing(self):
+        stage2 = (ROOT / "arch/x86/boot/bios/stage2_bios.asm").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("rsa_pss_verify:", stage2)
+        self.assertIn("rsa_modulus:", stage2)
+        self.assertLess(stage2.index("call rsa_pss_verify"),
+                        stage2.index("call parse_elf_header"))
+        self.assertIn("Kernel RSA-PSS verification failed", stage2)
 
     def test_build_paths_sign_then_independently_verify(self):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")

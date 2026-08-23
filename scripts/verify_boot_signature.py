@@ -51,8 +51,8 @@ def verify_signature(
     for name, expected in exact.items():
         if policy.get(name) != expected:
             raise ValueError(f"unsupported trust-policy {name}")
-    if policy.get("stage2_signature_verification") is not False:
-        raise ValueError("policy makes an invalid stage-2 verification claim")
+    if policy.get("stage2_signature_verification") is not True:
+        raise ValueError("trust-policy must require stage-2 signature verification")
     if not artifact.is_file() or artifact.stat().st_size == 0:
         raise ValueError("boot artifact is missing or empty")
     if not signature.is_file() or signature.stat().st_size != 256:

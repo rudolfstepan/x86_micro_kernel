@@ -16,6 +16,7 @@ SECTOR_SIZE = 512
 PARTITION_LBA = 1
 PARTITION_SECTORS = 256
 KERNEL_LBA = 128
+TEST_SIGNATURE = bytes((index * 13 + 1) & 0xFF for index in range(256))
 
 
 def _refresh_checksum(manifest: bytearray) -> None:
@@ -32,7 +33,7 @@ def _hdd_image(kernel: bytes) -> bytearray:
     entry[4] = 0xDA
     struct.pack_into("<II", entry, 8, PARTITION_LBA, PARTITION_SECTORS)
     image[446:462] = entry
-    manifest = create_manifest(4, kernel, PARTITION_SECTORS)
+    manifest = create_manifest(4, kernel, PARTITION_SECTORS, TEST_SIGNATURE)
     image[PARTITION_LBA * SECTOR_SIZE:(PARTITION_LBA + 1) * SECTOR_SIZE] = manifest
     start = (PARTITION_LBA + KERNEL_LBA) * SECTOR_SIZE
     image[start:start + len(kernel)] = kernel
@@ -46,11 +47,14 @@ class BootManifestTests(unittest.TestCase):
             path.write_bytes(image)
             return validate_image(path, layout)
 
-    def test_accepts_v2_manifest_with_exact_sha256(self):
+    def test_accepts_v3_manifest_with_exact_sha256_and_signature(self):
         kernel = bytes((index * 29 + 7) & 0xFF for index in range(4096))
         info = self._validate(_hdd_image(kernel))
         self.assertEqual(info.kernel_sha256, hashlib.sha256(kernel).hexdigest())
         self.assertEqual(info.partition_lba, PARTITION_LBA)
+        self.assertEqual(
+            info.signature_sha256, hashlib.sha256(TEST_SIGNATURE).hexdigest()
+        )
 
     def test_rejects_tampered_kernel(self):
         kernel = bytes((index * 17 + 3) & 0xFF for index in range(4096))
@@ -95,13 +99,15 @@ class BootManifestTests(unittest.TestCase):
         sectors = 2880
         image = bytearray(sectors * SECTOR_SIZE)
         image[510:512] = b"\x55\xaa"
-        image[SECTOR_SIZE:2 * SECTOR_SIZE] = create_manifest(4, kernel, sectors - 1)
+        image[SECTOR_SIZE:2 * SECTOR_SIZE] = create_manifest(
+            4, kernel, sectors - 1, TEST_SIGNATURE
+        )
         start = (1 + KERNEL_LBA) * SECTOR_SIZE
         image[start:start + len(kernel)] = kernel
         info = self._validate(image, "floppy")
         self.assertEqual(info.layout, "floppy")
 
-    def test_boot_stages_require_v2_header_and_nonzero_digest(self):
+    def test_boot_stages_require_v3_signed_header_and_nonzero_digest(self):
         sources = [
             ROOT / "arch/x86/boot/bios/stage1_mbr.asm",
             ROOT / "arch/x86/boot/bios/stage1_floppy.asm",
@@ -113,7 +119,28 @@ class BootManifestTests(unittest.TestCase):
             self.assertIn("MANIFEST_HEADER_SIZE", text, path.name)
         stage2 = sources[2].read_text(encoding="utf-8")
         self.assertIn("MANIFEST_KERNEL_SHA", stage2)
+        self.assertIn("MANIFEST_KERNEL_SIGNATURE", stage2)
         self.assertIn(".manifest_sha", stage2)
+
+    def test_rejects_missing_signature_with_repaired_checksum(self):
+        image = _hdd_image(bytes(4096))
+        start = PARTITION_LBA * SECTOR_SIZE
+        manifest = bytearray(image[start:start + SECTOR_SIZE])
+        manifest[80:336] = bytes(256)
+        _refresh_checksum(manifest)
+        image[start:start + SECTOR_SIZE] = manifest
+        with self.assertRaisesRegex(ValueError, "signature is missing"):
+            self._validate(image)
+
+    def test_rejects_unsigned_flag_with_repaired_checksum(self):
+        image = _hdd_image(bytes(4096))
+        start = PARTITION_LBA * SECTOR_SIZE
+        manifest = bytearray(image[start:start + SECTOR_SIZE])
+        struct.pack_into("<I", manifest, 40, 0)
+        _refresh_checksum(manifest)
+        image[start:start + SECTOR_SIZE] = manifest
+        with self.assertRaisesRegex(ValueError, "signed-kernel profile"):
+            self._validate(image)
 
     def test_builds_run_independent_manifest_validator(self):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")

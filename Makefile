@@ -736,6 +736,7 @@ native-image: floppy-image
 		--stage1 $(OUTPUT_DIR)/stage1_mbr.bin \
 		--stage2 $(OUTPUT_DIR)/stage2_bios.bin \
 		--kernel $(OUTPUT_DIR)/kernel.bin \
+		--signature $(BOOT_SIGNATURE) \
 		--output $(OUTPUT_DIR)/reist-os.img \
 		--vmdk $(OUTPUT_DIR)/reist-os.vmdk \
 		--vmware-dir $(OUTPUT_DIR)/vmware/reist-os \
@@ -755,6 +756,7 @@ floppy-image: signed-kernel system-programs user-program
 		--stage1 $(OUTPUT_DIR)/stage1_floppy.bin \
 		--stage2 $(OUTPUT_DIR)/stage2_bios.bin \
 		--kernel $(OUTPUT_DIR)/kernel.bin \
+		--signature $(BOOT_SIGNATURE) \
 		--output $(OUTPUT_DIR)/reist-os-floppy.img \
 		--data-file usr/bin/hello.prg=$(USER_PROGRAM_OUTPUT) \
 		$(foreach spec,$(FLOPPY_IMAGE_FILES),--data-file $(spec))

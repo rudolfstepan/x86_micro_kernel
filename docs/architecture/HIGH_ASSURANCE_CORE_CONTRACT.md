@@ -59,31 +59,33 @@ Degradierungsstufen definiert der
 ## Bootintegrität und Vertrauensgrenze
 
 Bootartefakte müssen versioniert und ihre exakten Inhalte kryptografisch
-gebunden sein. Der aktuelle BIOS-Pfad erfüllt als erste Stufe ein Manifest-v2-
-Format mit SHA-256 nach NIST FIPS 180-4 und einen unabhängigen, fail-closed
+gebunden sein. Der aktuelle BIOS-Pfad verwendet ein Manifest-v3-Format mit
+SHA-256 nach NIST FIPS 180-4, eingebetteter RSA-PSS-Signatur und einen
+unabhängigen, fail-closed
 Hostvalidator für HDD- und Floppy-Images. Der Imageerzeuger und der Validator
 teilen keine Manifestparser- oder Boundslogik; nur die standardisierte
 Hashfunktion stammt aus der Laufzeitbibliothek.
 
-Stage 2 verifiziert den Digest inzwischen selbst innerhalb fester Speicher-
-und Laufzeitgrenzen: SHA-256 und die diagnostische CRC32 teilen genau einen
-begrenzten Kernel-Lesedurchlauf; Digestfehler stoppen vor ELF-Parsing und
-Kernelstart. Dies allein begründet keine Authentizität. Solange keine Signatur
-bis zu einem gebundenen Vertrauensanker geprüft wird, darf weder
-„verifizierter Boot“ noch „Secure Boot“ behauptet werden. CRC32 bleibt reine
+Stage 2 verifiziert Digest und Signatur innerhalb fester Speicher- und
+Laufzeitgrenzen: SHA-256 und die diagnostische CRC32 teilen genau einen
+begrenzten Kernel-Lesedurchlauf; danach prüft eine feste 2048-Bit-Arithmetik
+RSA-PSS vor ELF-Parsing und Kernelstart. CRC32 bleibt reine
 Beschädigungsdiagnostik. Unbekannte Manifestversionen, fehlende Digests,
 ungültige Grenzen oder widersprüchliche Imagegeometrie werden vor dem
 Kernelstart geschlossen abgelehnt.
 
-Die erste Signaturstufe verwendet hostseitig RSA-2048-PSS/SHA-256 gemäß RFC
-8017 mit MGF1-SHA-256 und exakt 32 Byte Salt. Die feste Research-Policy pinnt
+Die Signaturstufe verwendet RSA-2048-PSS/SHA-256 gemäß RFC 8017 mit
+MGF1-SHA-256 und exakt 32 Byte Salt. Die feste Research-Policy pinnt
 Algorithmusparameter und den SHA-256-Fingerprint des DER-
 SubjectPublicKeyInfo; Signierer und unabhängiger Prüfer müssen vor jeder
 Imageveröffentlichung erfolgreich sein. Der eingecheckte private Schlüssel ist
 eine absichtlich öffentliche Testfixture und in Release-Policies verboten.
-Solange Manifest, Signatur und Public Key nicht von Stage 2 selbst geprüft
-werden, erweitert dieses Gate nur die Build-Provenienz und nicht die Loader-
-Vertrauensgrenze.
+Manifest v3 bettet die exakte 256-Byte-Signatur ein; Stage 2 bindet den dazu
+gehörenden Modulus und Exponent 65537 fest ein und akzeptiert keine vom Medium
+gewählte Schlüssel- oder Algorithmusidentität. Das authentifiziert den Kernel
+relativ zu Stage 2. Da Stage 1 und Stage 2 auf demselben beschreibbaren Medium
+liegen und kein unveränderlicher Plattformanker vorliegt, darf weiterhin kein
+Secure-Boot-, Anti-Rollback- oder physischer Vertrauensketten-Claim entstehen.
 
 ## Medienübergreifender Schreib- und Wiederanlaufvertrag
 

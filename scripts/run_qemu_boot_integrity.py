@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove that BIOS stage 2 rejects a CRC-valid SHA-256 kernel mismatch."""
+"""Prove that BIOS stage 2 rejects digest and RSA-PSS signature mutations."""
 
 from __future__ import annotations
 
@@ -20,7 +20,12 @@ except ModuleNotFoundError:
 SECTOR_SIZE = 512
 BOOT_PARTITION_TYPE = 0xDA
 SHA_FAILURE_MARKER = "Kernel SHA-256 verification failed"
+SIGNATURE_FAILURE_MARKER = "Kernel RSA-PSS verification failed"
 BOOT_MARKER = "BOOT_OK"
+MANIFEST_VERSION = 3
+MANIFEST_HEADER_SIZE = 336
+MANIFEST_SIGNATURE_OFFSET = 80
+MANIFEST_SIGNATURE_SIZE = 256
 
 
 def _active_boot_partition(mbr: bytes) -> tuple[int, int]:
@@ -53,8 +58,11 @@ def create_crc_valid_sha_mismatch(source: Path, output: Path) -> int:
         manifest_offset = partition_lba * SECTOR_SIZE
         image.seek(manifest_offset)
         manifest = bytearray(image.read(SECTOR_SIZE))
-        if len(manifest) != SECTOR_SIZE or manifest[:8] != b"X86BOOT2":
-            raise ValueError("image has no manifest v2")
+        if len(manifest) != SECTOR_SIZE or manifest[:8] != b"X86BOOT2" or \
+                struct.unpack_from("<II", manifest, 8) != (
+                    MANIFEST_VERSION, MANIFEST_HEADER_SIZE
+                ):
+            raise ValueError("image has no signed manifest v3")
         kernel_lba, kernel_size = struct.unpack_from("<II", manifest, 24)
         kernel_sectors = (kernel_size + SECTOR_SIZE - 1) // SECTOR_SIZE
         if (kernel_size < 4096 or
@@ -83,6 +91,55 @@ def create_crc_valid_sha_mismatch(source: Path, output: Path) -> int:
     return mutation_offset
 
 
+def create_signature_mismatch(source: Path, output: Path) -> int:
+    """Copy source and mutate only the checksummed embedded signature."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, output)
+    with output.open("r+b") as image:
+        partition_lba, _ = _active_boot_partition(image.read(SECTOR_SIZE))
+        manifest_offset = partition_lba * SECTOR_SIZE
+        image.seek(manifest_offset)
+        manifest = bytearray(image.read(SECTOR_SIZE))
+        if len(manifest) != SECTOR_SIZE or manifest[:8] != b"X86BOOT2" or \
+                struct.unpack_from("<II", manifest, 8) != (
+                    MANIFEST_VERSION, MANIFEST_HEADER_SIZE
+                ):
+            raise ValueError("image has no signed manifest v3")
+        original_digest = bytes(manifest[48:80])
+        mutation_offset = MANIFEST_SIGNATURE_OFFSET + \
+            MANIFEST_SIGNATURE_SIZE // 2
+        manifest[mutation_offset] ^= 0x01
+        _refresh_manifest_checksum(manifest)
+        if bytes(manifest[48:80]) != original_digest:
+            raise AssertionError("signature fixture changed the kernel digest")
+        image.seek(manifest_offset)
+        image.write(manifest)
+    return mutation_offset
+
+
+def _run_rejection(qemu: Path, image: Path, timeout: float,
+                   expected_marker: str) -> str:
+    command = qemu_command(qemu, image, memory="128M")
+    try:
+        completed = subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        transcript = completed.stdout
+    except subprocess.TimeoutExpired as error:
+        transcript = _text(error.stdout)
+    if expected_marker not in transcript:
+        raise ValueError(f"stage-2 rejection marker is missing: {expected_marker}")
+    if BOOT_MARKER in transcript:
+        raise ValueError("tampered image reached BOOT_OK")
+    return transcript
+
+
 def _text(value: str | bytes | None) -> str:
     if value is None:
         return ""
@@ -104,32 +161,36 @@ def main() -> int:
 
     try:
         offset = create_crc_valid_sha_mismatch(args.image, args.output)
-        command = qemu_command(args.qemu, args.output, memory="128M")
-        try:
-            completed = subprocess.run(
-                command,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                timeout=args.timeout,
-                check=False,
-            )
-            transcript = completed.stdout
-        except subprocess.TimeoutExpired as error:
-            transcript = _text(error.stdout)
+        transcript = _run_rejection(
+            args.qemu, args.output, args.timeout, SHA_FAILURE_MARKER
+        )
         args.log.parent.mkdir(parents=True, exist_ok=True)
         args.log.write_text(transcript, encoding="utf-8")
-        if SHA_FAILURE_MARKER not in transcript:
-            raise ValueError("stage-2 SHA-256 rejection marker is missing")
-        if BOOT_MARKER in transcript:
-            raise ValueError("tampered kernel reached BOOT_OK")
         if "Kernel CRC32 verification failed" in transcript:
             raise ValueError("negative image did not preserve CRC32 validity")
+
+        signature_output = args.output.with_name(
+            f"{args.output.stem}-signature{args.output.suffix}"
+        )
+        signature_log = args.log.with_name(
+            f"{args.log.stem}-signature{args.log.suffix}"
+        )
+        signature_offset = create_signature_mismatch(
+            args.image, signature_output
+        )
+        signature_transcript = _run_rejection(
+            args.qemu, signature_output, args.timeout, SIGNATURE_FAILURE_MARKER
+        )
+        signature_log.write_text(signature_transcript, encoding="utf-8")
+        if SHA_FAILURE_MARKER in signature_transcript:
+            raise ValueError("signature fixture changed kernel SHA-256 validity")
     except (OSError, ValueError) as error:
         print(f"boot-integrity: FAIL: {error}")
         return 1
-    print(f"boot-integrity: PASS mutation_offset={offset} log={args.log}")
+    print(
+        f"boot-integrity: PASS sha_offset={offset} "
+        f"signature_offset={signature_offset} log={args.log}"
+    )
     return 0
 
 

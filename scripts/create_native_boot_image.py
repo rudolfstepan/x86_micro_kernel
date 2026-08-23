@@ -27,8 +27,11 @@ KERNEL_RELATIVE_LBA = 128
 PARTITION_TYPE = 0xDA  # Non-filesystem raw boot partition
 DATA_PARTITION_TYPE = 0x0C  # FAT32 with LBA addressing
 MANIFEST_MAGIC = b"X86BOOT2"
-MANIFEST_VERSION = 2
-MANIFEST_HEADER_SIZE = 80
+MANIFEST_VERSION = 3
+MANIFEST_HEADER_SIZE = 336
+MANIFEST_FLAG_SIGNED = 0x00000001
+MANIFEST_SIGNATURE_OFFSET = 80
+MANIFEST_SIGNATURE_SIZE = 256
 MAX_LOAD_ADDRESS = 0x04000000
 VMWARE_BASENAME = "reist-os"
 
@@ -76,7 +79,11 @@ def validate_elf32(kernel: bytes) -> tuple[int, int]:
 
 
 def create_manifest(stage2_sectors: int, kernel: bytes,
-                    partition_sectors: int) -> bytes:
+                    partition_sectors: int, signature: bytes) -> bytes:
+    if len(signature) != MANIFEST_SIGNATURE_SIZE:
+        raise ValueError("kernel signature must be exactly 256 bytes")
+    if signature == bytes(MANIFEST_SIGNATURE_SIZE):
+        raise ValueError("kernel signature must not be all zero")
     manifest = bytearray(SECTOR_SIZE)
     struct.pack_into(
         "<8sIIIIIIIIII",
@@ -91,10 +98,12 @@ def create_manifest(stage2_sectors: int, kernel: bytes,
         len(kernel),
         partition_sectors,
         binascii.crc32(kernel) & 0xFFFFFFFF,
-        0,
+        MANIFEST_FLAG_SIGNED,
         0,
     )
     manifest[48:80] = hashlib.sha256(kernel).digest()
+    manifest[MANIFEST_SIGNATURE_OFFSET:
+             MANIFEST_SIGNATURE_OFFSET + MANIFEST_SIGNATURE_SIZE] = signature
     words = struct.unpack("<128I", manifest)
     checksum = (-sum(words)) & 0xFFFFFFFF
     struct.pack_into("<I", manifest, 44, checksum)
@@ -636,6 +645,7 @@ DNS-Anfragen und TCP-Anwendungen wie HTTP/SMB sind noch nicht implementiert.
 
 
 def build_image(stage1_path: Path, stage2_path: Path, kernel_path: Path,
+                 signature_path: Path,
                  output_path: Path, vmdk_path: Path,
                  vmware_directory: Path | None = None,
                  data_files: Mapping[str, bytes] | None = None,
@@ -643,6 +653,7 @@ def build_image(stage1_path: Path, stage2_path: Path, kernel_path: Path,
     stage1 = stage1_path.read_bytes()
     stage2 = stage2_path.read_bytes()
     kernel = kernel_path.read_bytes()
+    signature = signature_path.read_bytes()
     entry, load_count = validate_elf32(kernel)
 
     stage2_sectors = sectors_for(len(stage2))
@@ -659,7 +670,9 @@ def build_image(stage1_path: Path, stage2_path: Path, kernel_path: Path,
         raise ValueError("kernel does not fit in the raw boot partition")
 
     mbr = patch_partition_table(stage1, partition_sectors, total_sectors)
-    manifest = create_manifest(stage2_sectors, kernel, partition_sectors)
+    manifest = create_manifest(
+        stage2_sectors, kernel, partition_sectors, signature
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("wb") as image:
         image.truncate(IMAGE_SIZE)
@@ -709,6 +722,7 @@ def main() -> None:
     parser.add_argument("--stage1", required=True, type=Path)
     parser.add_argument("--stage2", required=True, type=Path)
     parser.add_argument("--kernel", required=True, type=Path)
+    parser.add_argument("--signature", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--vmdk", required=True, type=Path)
     parser.add_argument("--vmware-dir", type=Path)
@@ -745,6 +759,7 @@ def main() -> None:
         args.stage1,
         args.stage2,
         args.kernel,
+        args.signature,
         args.output,
         args.vmdk,
         args.vmware_dir,
