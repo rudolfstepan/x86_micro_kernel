@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.5b3-boot-success-ack"
 
 [policy]
 one_package_per_run = true
@@ -4028,4 +4028,77 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "boot: add redundant signed A B fallback"
+evidence = []
+
+[[packages]]
+id = "S0.5b3-boot-success-ack"
+status = "active"
+risk = "high"
+title = "Confirm a successful pending boot from the Ring-3 storage service"
+scope = "Complete the bounded BIOS A/B trial transaction with an explicit success acknowledgement. Stage 2 publishes a fixed, versioned and CRC-protected handoff only after the selected signed kernel has passed manifest, SHA-256, RSA-PSS and ELF validation. The kernel captures that handoff before allocator reuse, resolves it to exactly one validated 0xDA boot-partition resource, and exposes it through append-only syscall 117 only to the currently bound storage-service generation and only after BOOT_OK. The Ring-3 storage service independently rereads and reconciles both boot-control sectors, confirms only the exact pending-B sequence it booted, writes the older or invalid copy first with barriers and read-back verification, then accepts confirmed active B. Stage 2 subsequently boots confirmed B directly and durably rolls back to confirmed A before trying A if B validation fails. Floppy and non-pending fallback boots never acknowledge a slot. QEMU proves pending-B confirmation persists across reboot and confirmed-B corruption rolls back to A. Anti-rollback counters, update distribution, immutable recovery and production-key custody remain later work."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "arch/x86/boot/bios/stage2_bios.asm",
+  "include/kernel/boot_health.h",
+  "kernel/init/boot_health.c",
+  "kernel/init/kernel.c",
+  "kernel/proc/process.c",
+  "kernel/syscall/syscall_table.c",
+  "lib/libc/stdlib.h",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/programs/storage_service.c",
+  "scripts/create_native_boot_image.py",
+  "scripts/validate_boot_manifest.py",
+  "scripts/run_qemu_boot_success.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_boot_success.py",
+  "test/test_boot_control.py",
+  "test/test_boot_ab.py",
+  "test/test_boot_manifest.py",
+  "test/test_boot_sha256.py",
+  "test/test_native_boot_image.py",
+  "test/test_reist_storage_service.py",
+  "test/test_system_layout.py",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/MEDICAL_HIGH_ASSURANCE_CONTRACT.md",
+  "docs/development/BOOTABLE_DISK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "safety/hazards.toml"
+]
+invariants = [
+  "the handoff has a fixed physical address, magic, version, exact size, zero reserved bytes and CRC32 and is captured before physical allocator reuse",
+  "stage 2 publishes no handoff for floppy and publishes an HDD handoff only after the exact selected candidate passes signature, digest and ELF validation",
+  "syscall 117 is append-only, validates the user buffer and is authorized only for the currently bound storage-service pid and generation after BOOT_OK",
+  "the kernel resolves handoff geometry to exactly one validated MBR type-0xDA partition and never writes boot-control media",
+  "Ring 3 confirms only selected pending B when both the handoff sequence and independently reconciled on-media state match",
+  "confirmation changes active to B, clears pending and attempts, sets B successful and increments sequence without wrap",
+  "each confirmation writes and read-back verifies the older or invalid control copy first, flushes after each copy and revalidates the final pair",
+  "confirmed B boots directly; a failed confirmed-B candidate persists confirmed-A rollback before A executes",
+  "all polling, record scans, retries, writes and waits are fixed-capacity and bounded and failure leaves pending state retryable or a valid adjacent-copy transaction",
+  "floppy, ordinary A boots and non-pending A-to-B fallback never mutate success state and no anti-rollback or production-trust claim is added"
+]
+targeted_tests = [
+  "python test/test_boot_success.py -v",
+  "python test/test_boot_control.py -v",
+  "python test/test_reist_storage_service.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode boot-success"
+]
+stop_conditions = [
+  "the kernel would need raw boot-control write authority",
+  "a caller other than the bound storage-service generation could observe or acknowledge the handoff",
+  "the service could confirm a sequence or resource not independently matched to current media",
+  "a confirmed-B failure could execute A before persistent rollback is verified",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "boot: acknowledge successful pending slot"
 evidence = []
