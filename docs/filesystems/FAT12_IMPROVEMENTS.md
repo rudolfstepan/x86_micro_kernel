@@ -90,6 +90,7 @@ C:\> CHKDSK --fat12 1 --repair-crosslinks --confirm
 C:\> CHKDSK --fat12 1 --repair-dir-size --confirm
 C:\> CHKDSK --fat12 1 --repair-volume-label --confirm
 C:\> CHKDSK --fat12 1 --repair-zero-files --confirm
+C:\> CHKDSK --fat12 1 --repair-zero-start --confirm
 FDISK
 ```
 
@@ -173,6 +174,13 @@ Sollkette benötigt und normal EOC-terminiert sein. Beide FATs und alle
 Directory-Sektoren werden vorab gemeinsam journalisiert; danach wird die Kette
 freigegeben und der niedrige Startcluster null. Der alte Inhalt wird bewusst
 verworfen und nicht als Datenrettung ausgegeben.
+`--repair-zero-start --confirm` behandelt den umgekehrten eindeutigen Fall:
+Eine reguläre Datei deklariert eine positive Größe, besitzt aber Startcluster
+null und damit keinen lesbaren Datencluster. Nur wenn die Gesamtdiagnose exakt
+`CHAIN_SHORT` lautet und jede Meldung einen solchen Kandidaten hat, wird nach
+Undo-Journalisierung ausschließlich das 32-Bit-Größenfeld nullgesetzt. FAT,
+Startcluster, Name, Attribute, Zeitfelder und Datenbereiche bleiben
+unverändert; fehlende Daten werden weder erfunden noch allokiert.
 `FDISK.PRG` kann auf explizit freigegebenen, leeren ATA-/AHCI-Medien eine
 validierte MBR-Partition erzeugen. Eine Diskette bleibt eine partitionslose
 Superfloppy und wird von `FDISK` niemals partitioniert.

@@ -1021,6 +1021,14 @@ Journalisierung beider FAT-Spiegel und aller Directory-Sektoren werden nur
 diese Cluster freigegeben und der niedrige Startcluster nullgesetzt. Der
 frühere Inhalt gilt ausdrücklich als verworfen; Crosslinks, Loops und
 gemischte Diagnosen bleiben fail-closed.
+Der inverse eindeutige Fall besitzt einen getrennten Directory-only-Pfad:
+Eine reguläre Datei mit positiver Größe und Startcluster null hat keine lesbare
+Kette. `--repair-zero-start --confirm` akzeptiert ausschließlich die exakte
+Gesamtdiagnose `CHAIN_SHORT`, wenn jede Short-Meldung einen solchen festen
+Kandidaten besitzt. Nach Lease-Revalidierung und Undo-Journalisierung wird nur
+das 32-Bit-Größenfeld nullgesetzt. FAT-Spiegel, Startcluster, Name, Attribute,
+Zeitfelder und Datenbereiche bleiben unverändert; ein sauberer Vollscan ist
+weiterhin Abschlussbedingung.
 
 `device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
 Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht

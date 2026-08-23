@@ -289,6 +289,9 @@ und 10 verbindlich.
         - [x] Reguläre Nullgrößendateien mit eindeutig besessener, normal
           terminierter Restkette bestätigt atomar auf Startcluster null setzen
           und ausschließlich diese nicht benötigte Allokation freigeben
+        - [x] Positive Dateigrößen regulärer Einträge ohne Startcluster bei
+          reiner Short-Diagnose bestätigt und journalisiert auf null begrenzen,
+          ohne fehlende Daten oder Cluster zu erfinden
         - [ ] `CHKDSK.PRG` für echte mehrfach benötigte Crosslinks, allgemeine
           Verzeichnisschäden jenseits der eng begrenzten Feldreparaturen, Orphan-Datenrettung,
           Journal und Defektsektorkarte
