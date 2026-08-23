@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.3c-6f6p-chkdsk-empty-directory-crosslinks"
 
 [policy]
 one_package_per_run = true
@@ -952,6 +952,58 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "storage: clone required FAT12 crosslinks"
+evidence = []
+
+[[packages]]
+id = "S0.3c-6f6p-chkdsk-empty-directory-crosslinks"
+status = "active"
+risk = "high"
+title = "Repair same-parent FAT12 empty-directory crosslinks"
+scope = "Record fixed descriptors for strict empty leaf subdirectories whose chain is exactly one EOC-terminated cluster and whose first entries are valid dot and dot-dot records. Add an explicitly confirmed operation for the exact CHAIN_CROSSLINK-only diagnosis when every multiply required cluster belongs exclusively to such descriptors and all aliases have the same deterministic parent. Preserve the first scan-order directory, clone every later alias into one distinct free cluster, change only the cloned dot entry's low self cluster and the corresponding parent directory entry's low start cluster, and preserve dot-dot, names, attributes and payload bytes. Journal every destination data sector, changed FAT sector and parent directory sector before mutation; non-empty, multi-cluster, cross-parent, regular-file, mixed or capacity-exhausted cases remain fail-closed."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/chkdsk.c",
+  "test/test_fat12_maintenance.py",
+  "test/test_fat12_tools.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md"
+]
+invariants = [
+  "operation 27 is append-only, maintenance-domain restricted and reachable from CHKDSK only as --repair-directory-crosslinks --confirm",
+  "the complete pre-lease and post-lease diagnosis is exactly CHAIN_CROSSLINK and every multiply required cluster is covered exclusively by bounded strict empty-leaf directory descriptors",
+  "an eligible directory has exactly one EOC-terminated cluster, valid first dot and second dot-dot entries, an immediate end marker and the same deterministic parent for every alias",
+  "the first scan-order alias remains canonical; every later alias receives one distinct free cluster containing a verified byte-for-byte copy except for the cloned dot entry's low self cluster",
+  "only the cloned dot low start cluster and the corresponding parent entry low start cluster change; dot-dot, names, attributes, timestamps and all other directory bytes remain unchanged",
+  "every destination data sector, unique changed FAT sector in both mirrors and unique parent directory sector is undo-journaled before the first mutation",
+  "success requires data readback, FAT publication, parent-entry publication, flush and a completely clean full rescan before journal CLEAN",
+  "non-empty, multi-cluster, cross-parent, regular-file or mixed crosslinks, insufficient free space, descriptor overflow and journal exhaustion fail closed before side effects"
+]
+targeted_tests = [
+  "python test/test_fat12_maintenance.py -v",
+  "python test/test_fat12_tools.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "a shared directory is non-empty, multi-cluster or has different parent contexts",
+  "a multiply required cluster cannot be attributed exclusively to strict empty-leaf directory descriptors",
+  "the diagnosis contains any flag other than CHAIN_CROSSLINK",
+  "repair would alter dot-dot, a name, attributes, timestamps, payload bytes or a canonical source cluster",
+  "the clone needs more free clusters or undo entries than the fixed budgets provide",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: clone empty FAT12 directory crosslinks"
 evidence = []
 
 [[packages]]
