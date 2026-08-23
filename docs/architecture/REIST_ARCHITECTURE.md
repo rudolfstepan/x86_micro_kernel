@@ -959,6 +959,15 @@ beiden FATs freigeben. Sie verändert weder `0xFF7`-Bad-Cluster noch erreichbare
 Ketten, journalisiert jeden geänderten FAT-Sektor und behauptet keine
 Datenrettung: Unerreichbare Inhalte werden verworfen, nicht geraten oder mit
 einem erfundenen Eigentümer verbunden.
+Reguläre Dateikettenschleifen besitzen einen eigenen bestätigten Pfad. Er ist
+nur bei der exakten Gesamtdiagnose `CHAIN_LOOP` zulässig und nur, wenn jede
+Schleife vor ihrer ersten Wiederholung mindestens den aus der Dateigröße
+berechneten eindeutigen Präfix enthält. Dieser Präfix wird in fester
+generation-spezifischer Markierung gehalten, sein letzter Cluster auf EOC
+gesetzt und der folgende Suffix nur bis vor einen markierten Präfixcluster
+freigegeben. Directory-Loops, kurze Loops und gemischte Diagnosen bleiben
+fail-closed. Beide FATs werden journalisiert und ein sauberer Vollscan bleibt
+Abschlussbedingung.
 
 `device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
 Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht

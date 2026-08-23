@@ -218,6 +218,7 @@ static int format_fat32_scan(uint32_t resource, uint32_t start_cluster) {
 #define FAT12_MAX_DIRECTORIES 256U
 #define FAT12_MAX_CHAIN_REPAIRS 128U
 #define FAT12_MAX_SHORT_REPAIRS 128U
+#define FAT12_MAX_LOOP_REPAIRS 128U
 #define FAT12_MAX_DIRECTORY_REPAIR_SECTORS 64U
 
 typedef struct __attribute__((packed)) {
@@ -352,14 +353,24 @@ typedef struct {
     uint16_t start_cluster;
 } fat12_short_repair_t;
 
+typedef struct {
+    uint16_t start_cluster;
+    uint16_t expected_clusters;
+    uint16_t cut_cluster;
+    uint16_t tail_cluster;
+} fat12_loop_repair_t;
+
 static fat12_directory_work_t fat12_directory_queue[FAT12_MAX_DIRECTORIES];
 static fat12_chain_repair_t fat12_chain_repairs[FAT12_MAX_CHAIN_REPAIRS];
 static fat12_short_repair_t fat12_short_repairs[FAT12_MAX_SHORT_REPAIRS];
+static fat12_loop_repair_t fat12_loop_repairs[FAT12_MAX_LOOP_REPAIRS];
 static uint32_t fat12_directory_repair_sectors[
     FAT12_MAX_DIRECTORY_REPAIR_SECTORS];
 static uint32_t fat12_chain_repair_count;
 static uint32_t fat12_short_repair_count;
 static uint32_t fat12_short_issue_count;
+static uint32_t fat12_loop_repair_count;
+static uint32_t fat12_loop_issue_count;
 static uint32_t fat12_directory_repair_sector_count;
 
 static int fat12_parse_layout(uint32_t resource, fat12_check_layout_t *layout) {
@@ -468,6 +479,8 @@ typedef struct {
     uint32_t repair_count;
     uint32_t short_repair_count;
     uint32_t short_issue_count;
+    uint32_t loop_repair_count;
+    uint32_t loop_issue_count;
 } fat12_scan_state_t;
 
 static int fat12_is_eoc(uint32_t value) {
@@ -525,6 +538,23 @@ static void fat12_add_short_repair(fat12_scan_state_t *state,
             .repaired_size = repaired_size,
             .entry_offset = (uint16_t)entry_offset,
             .start_cluster = (uint16_t)start_cluster,
+        };
+}
+
+static void fat12_add_loop_repair(fat12_scan_state_t *state,
+        uint32_t start_cluster, uint32_t expected_clusters,
+        uint32_t cut_cluster, uint32_t tail_cluster) {
+    if (state->loop_repair_count >= FAT12_MAX_LOOP_REPAIRS ||
+        expected_clusters == 0U || expected_clusters > UINT16_MAX) {
+        state->flags |= X86OS_FAT12_RESULT_SCAN_LIMIT;
+        return;
+    }
+    fat12_loop_repairs[state->loop_repair_count++] =
+        (fat12_loop_repair_t){
+            .start_cluster = (uint16_t)start_cluster,
+            .expected_clusters = (uint16_t)expected_clusters,
+            .cut_cluster = (uint16_t)cut_cluster,
+            .tail_cluster = (uint16_t)tail_cluster,
         };
 }
 
@@ -614,6 +644,14 @@ static uint32_t fat12_walk_chain(fat12_scan_state_t *state,
                 fat12_add_repair(state, cut_cluster, tail_cluster);
         }
     }
+    if ((local & X86OS_FAT12_RESULT_CHAIN_LOOP) != 0U)
+        ++state->loop_issue_count;
+    if (!directory && local == X86OS_FAT12_RESULT_CHAIN_LOOP &&
+        expected_clusters != 0U && expected_clusters <= count &&
+        cut_cluster >= 2U && cut_cluster <= last_cluster &&
+        tail_cluster >= 2U && tail_cluster <= last_cluster)
+        fat12_add_loop_repair(state, start_cluster, expected_clusters,
+                              cut_cluster, tail_cluster);
     state->flags |= local;
     return local;
 }
@@ -745,6 +783,8 @@ static int fat12_scan_chains(uint32_t resource,
     fat12_chain_repair_count = 0U;
     fat12_short_repair_count = 0U;
     fat12_short_issue_count = 0U;
+    fat12_loop_repair_count = 0U;
+    fat12_loop_issue_count = 0U;
     fat12_scan_state_t state = {
         .resource = resource,
         .layout = layout,
@@ -754,6 +794,8 @@ static int fat12_scan_chains(uint32_t resource,
         .repair_count = 0U,
         .short_repair_count = 0U,
         .short_issue_count = 0U,
+        .loop_repair_count = 0U,
+        .loop_issue_count = 0U,
     };
     int result = fat12_scan_root(&state);
     if (result != 0) return result;
@@ -771,6 +813,8 @@ static int fat12_scan_chains(uint32_t resource,
     fat12_chain_repair_count = state.repair_count;
     fat12_short_repair_count = state.short_repair_count;
     fat12_short_issue_count = state.short_issue_count;
+    fat12_loop_repair_count = state.loop_repair_count;
+    fat12_loop_issue_count = state.loop_issue_count;
     return (int)state.flags;
 }
 
@@ -1056,6 +1100,146 @@ static int fat12_repair_chains(uint32_t resource) {
         result = -5;
     return result == 0
         ? diagnosis | (int)X86OS_FAT12_RESULT_CHAINS_REPAIRED : result;
+}
+
+static int fat12_apply_loop_repairs(const fat12_check_layout_t *layout) {
+    uint32_t bytes = layout->fat_sectors * X86OS_STORAGE_BLOCK_SIZE;
+    fat12_copy_bytes(fat12_repair_fat, fat12_copies[0], bytes);
+    uint32_t last_cluster = layout->cluster_count + 1U;
+    for (uint32_t repair_index = 0U;
+         repair_index < fat12_loop_repair_count; ++repair_index) {
+        const fat12_loop_repair_t *repair =
+            &fat12_loop_repairs[repair_index];
+        if (++fat12_seen_generation == 0U) {
+            for (uint32_t cluster = 0U; cluster <= last_cluster; ++cluster)
+                fat12_chain_seen[cluster] = 0U;
+            fat12_seen_generation = 1U;
+        }
+
+        uint32_t cluster = repair->start_cluster;
+        uint32_t tail = 0U;
+        for (uint32_t index = 0U; index < repair->expected_clusters; ++index) {
+            if (cluster < 2U || cluster > last_cluster ||
+                fat12_chain_seen[cluster] == fat12_seen_generation)
+                return -84;
+            fat12_chain_seen[cluster] = fat12_seen_generation;
+            uint32_t next = fat12_entry(fat12_repair_fat, cluster);
+            if (index + 1U == repair->expected_clusters) {
+                if (cluster != repair->cut_cluster ||
+                    next != repair->tail_cluster || next < 2U ||
+                    next > last_cluster) return -84;
+                tail = next;
+                fat12_set_entry(fat12_repair_fat, cluster, 0x0FFFU);
+                break;
+            }
+            if (next < 2U || next > last_cluster || next == 0x0FF7U ||
+                fat12_is_eoc(next)) return -84;
+            cluster = next;
+        }
+
+        int stopped = 0;
+        cluster = tail;
+        for (uint32_t steps = 0U; steps < layout->cluster_count; ++steps) {
+            if (cluster < 2U || cluster > last_cluster) return -84;
+            if (fat12_chain_seen[cluster] == fat12_seen_generation) {
+                stopped = 1;
+                break;
+            }
+            uint32_t next = fat12_entry(fat12_repair_fat, cluster);
+            if (next == 0U) {
+                stopped = 1;
+                break;
+            }
+            if (next < 2U || next > last_cluster || next == 0x0FF7U ||
+                fat12_is_eoc(next)) return -84;
+            fat12_set_entry(fat12_repair_fat, cluster, 0U);
+            cluster = next;
+        }
+        if (!stopped) return -84;
+    }
+    return 0;
+}
+
+static int fat12_repair_loops(uint32_t resource) {
+    fat12_check_layout_t layout;
+    int diagnosis = fat12_check_volume(resource, &layout);
+    if (diagnosis != (int)X86OS_FAT12_RESULT_CHAIN_LOOP ||
+        !layout.reist_layout || fat12_loop_repair_count == 0U ||
+        fat12_loop_issue_count != fat12_loop_repair_count) return -84;
+
+    uint32_t token = 0U;
+    if (x86os_storage_maintenance_acquire(resource, 0U, &token) != 0 ||
+        token == 0U) return -30;
+
+    int result = fat12_check_volume(resource, &layout);
+    if (result != diagnosis || !layout.reist_layout ||
+        fat12_loop_repair_count == 0U ||
+        fat12_loop_issue_count != fat12_loop_repair_count)
+        result = -84;
+    if (result == diagnosis) result = fat12_apply_loop_repairs(&layout);
+
+    format_journal_header_t journal;
+    if (result == 0 && fat12_load_clean_journal(resource, &layout, &journal) != 0)
+        result = -84;
+    if (result == 0) {
+        fat12_prepare_journal_header(&journal, layout.volume_id,
+            journal.sequence + 1U, FAT12_JOURNAL_ACTIVE, 0U);
+        result = fat12_write_journal_header(resource, &journal);
+    }
+
+    uint32_t changed_sectors = 0U;
+    for (uint32_t copy = 0U; result == 0 && copy < 2U; ++copy) {
+        for (uint32_t sector = 0U; result == 0 &&
+             sector < layout.fat_sectors; ++sector) {
+            const uint8_t *replacement = fat12_repair_fat +
+                sector * X86OS_STORAGE_BLOCK_SIZE;
+            const uint8_t *old = fat12_copies[copy] +
+                sector * X86OS_STORAGE_BLOCK_SIZE;
+            if (format_equal(replacement, old, X86OS_STORAGE_BLOCK_SIZE))
+                continue;
+            uint32_t target_sector = layout.reserved_sectors +
+                copy * layout.fat_sectors + sector;
+            result = fat12_record_old_mirror(resource, &journal, copy, sector,
+                                             target_sector);
+            if (result == 0 &&
+                x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+                result = -30;
+            ++changed_sectors;
+        }
+    }
+    if (result == 0 && changed_sectors == 0U) result = -84;
+
+    for (uint32_t copy = 0U; result == 0 && copy < 2U; ++copy) {
+        for (uint32_t sector = 0U; result == 0 &&
+             sector < layout.fat_sectors; ++sector) {
+            const uint8_t *replacement = fat12_repair_fat +
+                sector * X86OS_STORAGE_BLOCK_SIZE;
+            const uint8_t *old = fat12_copies[copy] +
+                sector * X86OS_STORAGE_BLOCK_SIZE;
+            if (format_equal(replacement, old, X86OS_STORAGE_BLOCK_SIZE))
+                continue;
+            uint32_t target_sector = layout.reserved_sectors +
+                copy * layout.fat_sectors + sector;
+            result = format_write(resource, target_sector, replacement);
+            if (result == 0 &&
+                x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+                result = -30;
+        }
+    }
+    if (result == 0 && x86os_storage_block_flush(resource) != 0) result = -5;
+    if (result == 0 && fat12_check_volume(resource, &layout) != 0) result = -84;
+    if (result == 0 &&
+        x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+        result = -30;
+    if (result == 0) {
+        fat12_prepare_journal_header(&journal, layout.volume_id,
+            journal.sequence, FAT12_JOURNAL_CLEAN, 0U);
+        result = fat12_write_journal_header(resource, &journal);
+    }
+    if (x86os_storage_maintenance_release(resource, token) != 0 && result == 0)
+        result = -5;
+    return result == 0
+        ? diagnosis | (int)X86OS_FAT12_RESULT_LOOPS_REPAIRED : result;
 }
 
 static int fat12_apply_orphan_reclaim(const fat12_check_layout_t *layout,
@@ -1408,6 +1592,9 @@ int main(void) {
         if (request.operation == X86OS_STORAGE_RECLAIM_FAT12_ORPHANS &&
             request.length == 0U)
             result = fat12_reclaim_orphans(request.resource);
+        if (request.operation == X86OS_STORAGE_REPAIR_FAT12_LOOPS &&
+            request.length == 0U)
+            result = fat12_repair_loops(request.resource);
         if (x86os_storage_complete(request.handle, result, data) != 0)
             return 3;
     }

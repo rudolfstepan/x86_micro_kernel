@@ -410,6 +410,55 @@ commit_message = "storage: reclaim unreachable FAT12 allocations"
 evidence = []
 
 [[packages]]
+id = "S0.3c-6f6e-chkdsk-file-loops"
+status = "done"
+risk = "high"
+title = "Repair unambiguous FAT12 regular-file loops"
+scope = "Add an explicitly confirmed capability-bound repair for regular-file cluster chains whose only volume diagnosis is CHAIN_LOOP. Accept a candidate only when the chain has at least the number of unique clusters required by the directory file size, cut exactly the expected final cluster to EOC, and free only the no-longer-reachable suffix while stopping at retained prefix clusters. Require every loop issue to have one bounded candidate, journal every changed sector in both FAT mirrors, renew the exclusive current-media lease, verify writes and require a completely clean full rescan. Refuse directory loops, short loops, cross-links, invalid links and every mixed diagnosis."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/chkdsk.c",
+  "test/test_fat12_maintenance.py",
+  "test/test_fat12_tools.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md"
+]
+invariants = [
+  "operation 16 is append-only, maintenance-domain restricted and reachable from CHKDSK only as --repair-loops --confirm",
+  "the complete pre-lease and post-lease diagnosis is exactly CHAIN_LOOP and every observed loop has one eligible regular-file candidate",
+  "a candidate requires a positive expected cluster count no greater than the number of unique clusters reached before repetition",
+  "the expected prefix is marked in fixed generation-scoped storage before its final cluster is changed to EOC",
+  "suffix reclamation stops before every retained prefix cluster and never follows more than the validated FAT12 cluster count",
+  "both FAT copies derive from one replacement image and every changed sector in both copies is undo-journaled before mutation",
+  "writes are read back, lease renewals and barriers are explicit, and success requires a completely clean full rescan before journal CLEAN"
+]
+targeted_tests = [
+  "python test/test_fat12_maintenance.py -v",
+  "python test/test_fat12_tools.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "repair would touch a retained prefix cluster or infer ownership across a cross-link or directory loop",
+  "the diagnosis contains any flag other than CHAIN_LOOP or not every loop has a candidate",
+  "more candidate or journal entries are required than fixed capacities permit",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: repair bounded FAT12 file loops"
+evidence = []
+
+[[packages]]
 id = "R1.9-file-icons"
 status = "done"
 risk = "medium"

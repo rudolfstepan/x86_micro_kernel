@@ -83,15 +83,18 @@ static int check_fat12(int argc, char **argv) {
     int reclaim_orphans = argc == 5 &&
                           equal(argv[3], "--reclaim-orphans") &&
                           equal(argv[4], "--confirm");
+    int repair_loops = argc == 5 && equal(argv[3], "--repair-loops") &&
+                       equal(argv[4], "--confirm");
     if ((argc != 3 && !repair_mirror && !repair_chains && !repair_short &&
-         !reclaim_orphans) ||
+         !reclaim_orphans && !repair_loops) ||
         !equal(argv[1], "--fat12")) {
         x86os_puts("Usage: chkdsk [path]\n"
                    "       chkdsk --fat12 <resource>\n"
                    "       chkdsk --fat12 <resource> --repair --confirm\n"
                    "       chkdsk --fat12 <resource> --repair-chains --confirm\n"
                    "       chkdsk --fat12 <resource> --repair-short --confirm\n"
-                   "       chkdsk --fat12 <resource> --reclaim-orphans --confirm\n");
+                   "       chkdsk --fat12 <resource> --reclaim-orphans --confirm\n"
+                   "       chkdsk --fat12 <resource> --repair-loops --confirm\n");
         return 2;
     }
     uint32_t resource = 0U;
@@ -108,7 +111,8 @@ static int check_fat12(int argc, char **argv) {
         : repair_chains ? X86OS_STORAGE_REPAIR_FAT12_CHAINS
         : repair_short ? X86OS_STORAGE_REPAIR_FAT12_SHORT_FILES
         : reclaim_orphans ? X86OS_STORAGE_RECLAIM_FAT12_ORPHANS
-                          : X86OS_STORAGE_CHECK_FAT12;
+        : repair_loops ? X86OS_STORAGE_REPAIR_FAT12_LOOPS
+                       : X86OS_STORAGE_CHECK_FAT12;
     int request_result = run_fat12_request(operation, resource,
                                            &operation_result);
     if (request_result == -1) {
@@ -121,7 +125,7 @@ static int check_fat12(int argc, char **argv) {
     }
     if (operation_result < 0) {
         x86os_puts((repair_mirror || repair_chains || repair_short ||
-                    reclaim_orphans)
+                    reclaim_orphans || repair_loops)
             ? "CHKDSK: repair refused or failed; medium requires inspection\n"
             : "CHKDSK: FAT12 metadata check failed; medium unchanged\n");
         return 1;
@@ -143,6 +147,10 @@ static int check_fat12(int argc, char **argv) {
         x86os_puts("CHKDSK: unreachable FAT12 allocations discarded\n");
         return 0;
     }
+    if ((flags & X86OS_FAT12_RESULT_LOOPS_REPAIRED) != 0U) {
+        x86os_puts("CHKDSK: FAT12 regular-file loops repaired\n");
+        return 0;
+    }
     if (flags == 0U) {
         x86os_puts("CHKDSK: FAT12 BPB and both FAT mirrors are clean\n");
         return 0;
@@ -150,7 +158,7 @@ static int check_fat12(int argc, char **argv) {
     x86os_puts("CHKDSK: FAT12 consistency flags=");
     x86os_print_number((int)flags);
     x86os_puts((repair_mirror || repair_chains || repair_short ||
-                reclaim_orphans)
+                reclaim_orphans || repair_loops)
         ? "; no repair committed\n"
         : "; inspect flags before explicit repair\n");
     return 1;
@@ -227,7 +235,8 @@ int main(int argc, char **argv) {
                    "       chkdsk --fat12 <resource> --repair --confirm\n"
                    "       chkdsk --fat12 <resource> --repair-chains --confirm\n"
                    "       chkdsk --fat12 <resource> --repair-short --confirm\n"
-                   "       chkdsk --fat12 <resource> --reclaim-orphans --confirm\n");
+                   "       chkdsk --fat12 <resource> --reclaim-orphans --confirm\n"
+                   "       chkdsk --fat12 <resource> --repair-loops --confirm\n");
         return 2;
     }
     unsigned visited = 0, errors = 0;

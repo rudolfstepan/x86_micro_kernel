@@ -268,9 +268,12 @@ und 10 verbindlich.
         - [x] Unerreichbare, nicht als bad markierte Clusterallokationen bei
           reiner Orphan-Diagnose bestätigt und journalisiert freigeben; keine
           automatische Eigentumszuordnung oder Datenrettung behaupten
+        - [x] Reine Schleifen regulärer Dateiketten bestätigt am aus der
+          Dateigröße bestimmten Präfix beenden und ausschließlich den danach
+          unerreichbaren, unmarkierten Schleifensuffix freigeben
         - [ ] `CHKDSK.PRG` für transaktionale Reparatur überkreuzter
-          Clusterketten, Loops, Verzeichnisse, Orphan-Datenrettung, Journal
-          und Defektsektorkarte
+          Clusterketten, Directory-/Kurz-Loops, Verzeichnisse,
+          Orphan-Datenrettung, Journal und Defektsektorkarte
         - [x] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
           Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg
           kontrolliert remounten; Abbruch lässt das Medium konsistent oder
@@ -2555,7 +2558,10 @@ sie validieren Eingaben und senden versionierte Requests an den Storage-Dienst.
   Kette bleiben unverändert. `--reclaim-orphans --confirm` gibt bei einer
   reinen Orphan-Diagnose ausschließlich allokierte Cluster ohne Owner frei,
   lässt Bad- und erreichbare Cluster unangetastet und verwirft unerreichbare
-  Inhalte ausdrücklich, statt Eigentum zu raten. Crosslinks, Loops,
+  Inhalte ausdrücklich, statt Eigentum zu raten. `--repair-loops --confirm`
+  beendet bei einer reinen Loop-Diagnose jede ausreichend lange reguläre
+  Dateikette am deklarierten Sollende und gibt nur ihren unmarkierten Suffix
+  frei. Crosslinks, Directory- oder gleichzeitig kurze Loops,
   Orphan-Datenrettung sowie allgemeine Verzeichnis-, Journal- und
   Remap-Reparatur bleiben offen.
 - `FORMAT.PRG` akzeptiert ausschließlich erkannte FDD-Ressourcen. Ohne
