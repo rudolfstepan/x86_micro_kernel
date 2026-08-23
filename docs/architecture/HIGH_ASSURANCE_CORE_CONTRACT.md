@@ -126,6 +126,23 @@ Gesamtbaseline fail-closed fehlschlagen. Sichtbare `partially_verified`- und
 Restrisiko-Felder verhindern, dass Registervollständigkeit mit vollständiger
 Risikobeherrschung verwechselt wird.
 
+## Externer Watchdog und rücklesbares Interlock
+
+Der [External Safety Monitor Contract](EXTERNAL_SAFETY_MONITOR_CONTRACT.md)
+trennt Emulator-Watchdog, Zielreset, physisches Ausgangs-Fence und dessen
+elektrische Rückleseprüfung. Das maschinenlesbare Profil
+[`safety/external_safety_monitor.toml`](../../safety/external_safety_monitor.toml)
+steht auf `unbound`, solange kein konkretes Ziel, kein separat versorgter und
+getakteter Monitor sowie keine gehashte physische Fault-Injection-Kampagne
+gebunden sind. Hostmodelle, QEMU IB700, ein Kommandoecho oder ein
+Softwarelatch können den Status `qualified` nicht erzeugen.
+
+Die generische 1-s-Fatal-FTTI ist vollständig auf Heartbeatverlust,
+Fence-Anwendung, unabhängiges Sense-Readback und Zielreset aufgeteilt. Jede
+Abweichung hält das Fence geschlossen und entzieht Reintegration. Damit ist
+der Abnahmeweg festgelegt, aber S0.2 bleibt bis zum Hardwarebackend und seiner
+physischen Kampagne offen.
+
 ## Ressourcenregister
 
 Das versionierte Register

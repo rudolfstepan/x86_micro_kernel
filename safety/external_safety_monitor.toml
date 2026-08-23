@@ -1,0 +1,85 @@
+schema_version = 1
+profile_id = "REIST-EXTMON-UNBOUND"
+status = "unbound"
+hazard_id = "HZ-MONITOR-001"
+requirement_id = "REQ-MON-001"
+claim = "Contract-only baseline; no external target monitor is selected or qualified."
+
+[target]
+selected = false
+system_id = ""
+board_model = ""
+board_revision = ""
+serial_number = ""
+
+[monitor]
+selected = false
+manufacturer = ""
+model = ""
+hardware_revision = ""
+firmware_version = ""
+firmware_sha256 = ""
+transport = ""
+
+[independence]
+separate_power_domain = false
+separate_clock_domain = false
+target_cpu_reset_independent = false
+hazard_output_driver_independent = false
+power_loss_defaults_safe = true
+
+[timing]
+ftti_ms = 1000
+heartbeat_period_ms = 100
+heartbeat_loss_deadline_ms = 300
+fence_apply_deadline_ms = 100
+fence_readback_deadline_ms = 100
+reset_assert_deadline_ms = 500
+
+[protocol]
+name = "reist.external-monitor/1"
+magic = 0x524D4F4E
+version = 1
+frame_size = 32
+integrity = "CRC32C"
+freshness = "boot_nonce_64+sequence_64"
+fixed_message_types = ["ARM", "HEARTBEAT", "FENCE", "STATUS", "RESET"]
+reject_replay = true
+reject_unknown_type = true
+reject_bad_size = true
+reject_bad_integrity = true
+
+[fence]
+latched_until_power_cycle_or_authenticated_reset = true
+safe_output_state_defined = true
+readback_required = true
+readback_source = "independent-electrical-sense"
+command_echo_is_readback = false
+watchdog_ack_is_readback = false
+
+[failure_policy]
+heartbeat_loss = "fence_then_reset"
+transport_loss = "fence_then_reset"
+monitor_power_loss = "outputs_default_safe"
+monitor_clock_fault = "outputs_default_safe"
+corrupt_or_replayed_frame = "reject_and_preserve_fence"
+fence_readback_disagreement = "preserve_fence_and_withhold_reintegration"
+target_reset_failure = "preserve_fence_and_withhold_reintegration"
+
+[qualification]
+complete = false
+minimum_campaign_repetitions = 3
+required_scenarios = [
+  "heartbeat-loss",
+  "target-cpu-stuck",
+  "transport-loss",
+  "corrupt-frame",
+  "replayed-frame",
+  "fence-driver-fault",
+  "readback-disagreement",
+  "target-reset-failure",
+  "monitor-power-domain-loss"
+]
+disallowed_evidence_kinds = ["source-pattern", "host-model", "emulator-only"]
+
+physical_evidence = []

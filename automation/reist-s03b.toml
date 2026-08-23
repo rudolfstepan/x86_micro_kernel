@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.2a-external-monitor-contract"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -2450,7 +2450,7 @@ evidence = [
 
 [[packages]]
 id = "S0.2a-external-monitor-contract"
-status = "active"
+status = "done"
 risk = "high"
 title = "Freeze the external watchdog and readback-interlock acceptance contract"
 scope = "Define the first S0.2 increment without pretending that emulator or host evidence qualifies physical independence. Add a versioned machine-readable external safety-monitor profile and fail-closed validator covering a named target/device identity, separate power and clock domains, bounded heartbeat and reset behavior, a latched hazard-output fence with independent readback, protocol integrity/freshness, failure semantics, FTTI allocation, physical fault-injection evidence and explicit unqualified/qualified lifecycle states. The repository baseline starts unbound because no concrete external monitor hardware is selected. Bind the generic research hazard and assurance records to this contract, document the exact production integration and physical acceptance boundary, and keep S0.2 partial until a later hardware-specific package supplies and passes the frozen evidence. Do not add an unused production driver or weaken the existing QEMU IB700 watchdog path."
@@ -2500,4 +2500,12 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "safety: freeze S0.2 external monitor contract"
-evidence = []
+evidence = [
+  "python test/test_external_safety_monitor_contract.py -q",
+  "python scripts/validate_external_safety_monitor.py",
+  "python scripts/validate_hazard_register.py",
+  "python scripts/run_hazard_traceability.py",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target real_hw -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode watchdog"
+]

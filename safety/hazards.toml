@@ -458,3 +458,27 @@ owner = "REIST assurance team"
 status = "partially_verified"
 assumptions = ["Ausgewählt ist nur generic-research ohne physische Safety-Aktoren."]
 residual_risk = "Jedes Produkt benötigt eigene Gefahrenanalyse und Freigabe."
+
+[[hazard]]
+id = "HZ-MONITOR-001"
+title = "Der fehlerhafte Rechnerkanal bleibt ohne unabhängig bestätigtes Fence aktiv"
+category = "profile"
+components = ["CMP-KERNEL", "CMP-HANDOVER", "CMP-RESEARCH-PROFILE"]
+essential_functions = ["EF-ISOLATION-001", "EF-RECOVERY-001"]
+causes = ["festhängende CPU", "Kernelkorruption", "Heartbeat- oder Transportverlust", "Monitor-Strom- oder Taktfehler", "defekter Fence-Treiber", "falsches Readback"]
+effects = ["gefährliche Ausgabe nach FTTI", "Reset ohne sicheren Ausgang", "Reintegration eines ungefencten Kanals", "Common-Cause-Verlust der Essential Functions"]
+phases = ["runtime", "fatal-containment", "reset", "recovery", "reintegration"]
+severity = "catastrophic"
+degraded_state = "Der betroffene Kanal bleibt isoliert; unabhängige Funktionen dürfen nur ohne seine Ausgangsautorität fortfahren."
+safe_state = "Externer Monitor verriegelt gefährliche Ausgänge elektrisch, bestätigt den Sense-Pfad und setzt den Zielkanal zurück."
+ftti_ms = 1000
+ftti_rationale = "Heartbeatverlust, Fence-Anwendung, unabhängiges Readback und Reset teilen das generische 1-s-Fatalbudget vollständig auf."
+requirements = ["REQ-MON-001", "REQ-REC-001", "REQ-PROFILE-001"]
+design = ["docs/architecture/EXTERNAL_SAFETY_MONITOR_CONTRACT.md", "docs/architecture/REIST_ARCHITECTURE.md", "docs/architecture/RESILIENCE_AND_DEGRADATION_CONTRACT.md"]
+controls = ["safety/external_safety_monitor.toml", "scripts/validate_external_safety_monitor.py", "kernel/init/watchdog.c", "kernel/init/output_fence.c", "kernel/init/handover_serial_backend.c"]
+verification = ["test/test_external_safety_monitor_contract.py", "test/test_reist_watchdog.py", "test/test_reist_output_fence.py", "test/test_reist_handover.py"]
+acceptance_criteria = ["Ungebundene oder nur emulierte Hardware kann keinen Qualified-Status erreichen.", "Physische Fault-Injection bestätigt Fence, elektrisches Readback und Reset innerhalb der FTTI mindestens dreimal je Szenario."]
+owner = "REIST assurance and target-hardware team"
+status = "partially_verified"
+assumptions = ["Die generische Forschungsbaseline besitzt derzeit keine gefährlichen physischen Aktoren und keinen ausgewählten externen Monitor."]
+residual_risk = "Kein externes Monitorgerät ist ausgewählt oder physisch geprüft; S0.2 und das S0-Gate bleiben offen."

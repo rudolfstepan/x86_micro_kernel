@@ -97,6 +97,11 @@ id = "REQ-PROFILE-001"
 statement = "Unselected reference profiles and unqualified hardware shall remain excluded from release and assurance claims."
 design = ["docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md", "docs/architecture/MEDICAL_HIGH_ASSURANCE_CONTRACT.md"]
 
+[[requirement]]
+id = "REQ-MON-001"
+statement = "Unknown kernel progress shall cause a separately powered and clocked target monitor to latch hazardous outputs safe, verify the electrical state independently and reset the affected channel within the allocated FTTI before any reintegration authority is published."
+design = ["docs/architecture/EXTERNAL_SAFETY_MONITOR_CONTRACT.md", "docs/architecture/REIST_ARCHITECTURE.md"]
+
 [[component]]
 id = "CMP-KERNEL"
 name = "Exception, fatal and output-fencing kernel mechanisms"

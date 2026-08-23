@@ -112,7 +112,10 @@ und 10 verbindlich.
   - [x] Guardpages, Double-Fault-Notfallpfad, Crashrecord und QEMU-Watchdog
   - [x] Compilerbasierte Callgraph-Gesamtbudgets und Rekursionsgate
   - [x] Laufzeit-Stack-Watermarks im bestehenden Scheduler-Stats-ABI
-  - [ ] Unabhängiger Zielhardware-Watchdog mit rücklesbarem Fencing
+  - [x] S0.2a Maschinenprüfbarer Vertrag und physische Abnahmekriterien für
+    externen Watchdog, Zielreset, Interlock und elektrisches Readback
+  - [ ] S0.2b Konkretes unabhängiges Zielhardware-Backend samt physischer
+    Fault-Injection-Kampagne
 - [x] S0.3a Begrenzte IPC-/Capability-Basis
 - [x] S0.3b Überwachte, neu startbare Least-Privilege-Probedomäne
 - [ ] S0.3c Reale Dienstmigration und Redundanz
@@ -966,14 +969,19 @@ kumulative Entry-Budgets; der schlimmste Syscall-Pfad liegt bei 7140/7168 Byte.
 Der Panic-Screen zeigt zusätzlich einen redundanten, prüfsummengeschützten
 Breadcrumb mit Bootphase, Komponente beziehungsweise Treiber, Operation,
 Programm/Objekt, Ergebniscode, PCI-ID/BDF-Details und Panic-Aufrufadresse an.
-Offen bleiben Laufzeit-Stack-Watermarks sowie ein von CPU und Versorgung
-unabhängiger Zielhardware-Watchdog samt Fencing. Der echte
+Laufzeit-Stack-Watermarks sind inzwischen im bestehenden Scheduler-Stats-ABI
+umgesetzt. S0.2a legt zusätzlich mit
+`safety/external_safety_monitor.toml`, einem fail-closed Validator und dem
+External-Safety-Monitor-Vertrag die unveränderlichen FTTI-, Protokoll-,
+Unabhängigkeits-, Fence-Readback- und physischen Abnahmekriterien fest. Das
+Profil bleibt ausdrücklich `unbound`; offen ist S0.2b mit einem von CPU,
+Versorgung und Zeitbasis unabhängigen Zielhardware-Monitor samt elektrischem
+Fencing und realer Kampagne. Der echte
 Double-Fault-Task-Gate-Pfad wird inzwischen in einem isolierten Testimage bis
 zum Watchdog-Warmstart, Crashrecord-Recovery und anschließenden Gasttest geprüft.
 
 - Nicht gemappte Guardpages für jeden Kernel- und Userstack, statische
-   Stackbudgets und Rekursionsverbote sind umgesetzt; Laufzeit-Watermarks
-   bleiben offen.
+   Stackbudgets, Rekursionsverbote und Laufzeit-Watermarks sind umgesetzt.
 - Einen reservierten Exception-/Double-Fault-/NMI-Notfallstack mit
    vorallokiertem, beschränktem Crashdatensatz bereitstellen.
 - Wiederherstellbare Prozess-/Dienstfehler von möglicher globaler
@@ -1771,8 +1779,12 @@ make test-fuzz
 
 ## 10. Unmittelbar nächster Schritt
 
-S0.1 ist abgeschlossen. Das nächste Paket ist **S0.2: unabhängiger
-Zielhardware-Watchdog mit rücklesbarem Fencing**. Erst nach dessen Abnahme
+S0.1 und der contract-only-Schritt **S0.2a** sind abgeschlossen. Das nächste
+Paket ist **S0.2b: konkrete externe Monitorhardware auswählen, Backend und
+Firmware implementieren sowie Watchdog, Zielreset, elektrisches Fence-
+Readback und physische Fault-Injection abnehmen**. Das Profil bleibt bis dahin
+`unbound`; QEMU-/Hostevidenz darf diese Auswahl nicht ersetzen. Erst nach
+vollständiger S0.2-Abnahme
 werden die verbliebenen S0.3c-, S0.4-, S0.5- und S0.6-Pakete in der
 festgelegten Reihenfolge fortgesetzt. Die folgende Detailchronik dokumentiert
 die bereits abgeschlossenen IPC-, Dienst-, Netzwerk- und Storage-Inkremente.

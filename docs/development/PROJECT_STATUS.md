@@ -84,6 +84,14 @@ Anforderung über Design und Code bis Test und Ergebnis. Dieser Abschluss ist
 keine Zertifizierung und keine Freigabe der ausgeschlossenen Referenzprofile
 oder unqualifizierter Zielhardware.
 
+S0.2a friert nun den externen Watchdog-/Interlock-Abnahmevertrag ein. Das
+maschinenlesbare Profil bleibt `unbound` und kann nur mit eindeutig gebundener
+Ziel-/Monitor-/Firmwareidentität, separater Strom- und Zeitbasis, unabhängigem
+Reset, latched Safe-State-Ausgang, elektrischem Sense-Readback und gehashten
+physischen Fault-Injection-Berichten auf `qualified` wechseln. Der vorhandene
+QEMU-IB700-Test bleibt ausdrücklich Emulatorevidenz. S0.2 und das Gesamtgate
+S0 sind deshalb weiterhin offen.
+
 `S0.3c-layout1` mit kleingeschriebener,
 hierarchischer Systemprogrammablage ist umgesetzt. `S0.3c-admin2` mit statischer
 Komponenten-Lifecycle-Steuerung und `S0.3c-admin1` mit capability-
@@ -93,11 +101,11 @@ sind abgeschlossen. Aussagen über vollständig nachgewiesene
 Fail-Operationalität oder unabhängige Hardware-Failover-Domänen sind weiterhin
 unzulässig.
 
-Die Queue besitzt derzeit kein aktives Paket (`active_id = ""`). Die direkt
-umgesetzten Meilensteine `R1.5-runtime-desktop`,
-`R1.6-driver-domain-foundation` und `R1.7-pci-audio` sind als `done`
-eingetragen. Ein neuer autonomer Paketlauf benötigt deshalb zuerst einen
-explizit definierten, begrenzten Scope.
+Nach Abschluss des contract-only-Pakets ist der nächste notwendige Schritt
+S0.2b. Dafür muss zuerst ein tatsächlich verfügbares externes Monitorgerät
+samt Transport, eigener Versorgung/Zeitbasis, Reset- und Interlockverdrahtung
+konkret ausgewählt werden; ohne diese Identität wird kein Produktionstreiber
+erfunden und keine Hardwarequalifikation behauptet.
 
 `S0.3c-admin1` stellt sichere Storage-Operationen (`device down/up`, `mount`,
 `umount`) und einen festen, integritätsgeprüften 128-KiB-RAM-Rescue-Pool aus

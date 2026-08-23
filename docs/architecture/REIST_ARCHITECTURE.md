@@ -1111,6 +1111,15 @@ Danach fordert er mit festem Pollbudget einen Plattformreset an und erzwingt
 ersatzweise einen CPU-Reset. Für Zielhardware ist weiterhin ein unabhängig
 versorgter externer Watchdog mit Fencing erforderlich.
 
+S0.2a friert dafür den
+[External Safety Monitor Contract](EXTERNAL_SAFETY_MONITOR_CONTRACT.md) und
+das maschinenprüfbare Profil `safety/external_safety_monitor.toml` ein. Dessen
+Status ist bewusst `unbound`: Erst ein konkret identifiziertes Gerät mit
+eigener Strom- und Zeitbasis, unabhängigem Zielreset, latched Safe-State-
+Ausgang, separatem elektrischem Sense-Readback und bestandener physischer
+Fault-Injection-Kampagne darf `qualified` werden. Der vorhandene IB700-Lauf
+bleibt Emulatornachweis und wird nicht als physische Unabhängigkeit gewertet.
+
 Als erste konkrete S0.3-Sperre besitzt der Kernel eine statische, begrenzte
 Output-Fence-Registry. Ein Fatalereignis verriegelt sie vor jeder Diagnose und
 vor dem Watchdog-Handover dauerhaft bis zum Neustart. Der Netzwerk-Hook sperrt
