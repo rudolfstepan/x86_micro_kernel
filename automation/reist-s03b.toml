@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.5b5-offline-update-bundle"
 
 [policy]
 one_package_per_run = true
@@ -259,6 +259,60 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: add partition and FAT32 provisioning"
+evidence = []
+
+[[packages]]
+id = "S0.5b5-offline-update-bundle"
+status = "active"
+risk = "high"
+title = "Distribute authenticated offline boot-update bundles"
+scope = "Add a fixed, bounded REIST offline update-bundle v1 for transporting exactly one already RSA-2048-PSS/SHA-256-authenticated ELF32 kernel into the existing inactive-slot transaction. The 512-byte header carries only format geometry, exact total and kernel sizes, algorithm identifier, kernel SHA-256, the fixed 256-byte signature, the pinned SPKI SHA-256 and a corruption-detecting CRC32; all reserved bytes and flags are zero and trailing data is rejected. A producer must validate ELF, policy and signature before atomically publishing a bundle. A structurally independent consumer reparses every field, enforces the fixed slot capacity, validates the locally pinned policy key and RSA-PSS signature, and only then invokes the existing power-loss-safe updater. Existing kernel/signature updater arguments remain compatible. The persistent QEMU A-to-B and B-to-A sequence must use the bundle consumer. This host-side transport is deliberately not TUF/Uptane-compatible metadata, online distribution, release-key custody, anti-rollback or immutable recovery."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/create_boot_update_bundle.py",
+  "scripts/verify_boot_update_bundle.py",
+  "scripts/update_native_boot_slot.py",
+  "scripts/run_qemu_boot_success.py",
+  "test/test_boot_update_bundle.py",
+  "test/test_boot_control.py",
+  "test/test_boot_success.py",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/BOOTABLE_DISK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "bundle parsing is bounded to the exact inactive-slot kernel capacity and rejects truncation, trailing bytes, nonzero flags or reserves and unsupported versions or algorithms",
+  "the producer verifies ELF, local trust policy and RSA-PSS before creating or replacing the output bundle",
+  "the consumer is structurally independent of the producer and verifies header CRC, exact SHA-256, pinned SPKI fingerprint, ELF and RSA-PSS before creating an update image",
+  "the bundle contains no unsigned version, slot, sequence or rollback authority and cannot select the active slot",
+  "the existing kernel plus detached-signature updater interface remains source compatible",
+  "both bundle directions reuse the existing durable inactive-slot and older-control-copy-first transaction",
+  "temporary extraction is bounded, private to the host process and removed before return",
+  "no online fetcher, archive parser, new syscall, kernel parser, anti-rollback or immutable-recovery claim is introduced"
+]
+targeted_tests = [
+  "python test/test_boot_update_bundle.py -v",
+  "python test/test_boot_control.py -v",
+  "python test/test_boot_success.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode boot-success -Target qemu -Video vga"
+]
+stop_conditions = [
+  "a bundle can be published before signature verification or can overwrite a prior output on validation failure",
+  "consumer and producer share the same structural parser or accept data outside the exact fixed format",
+  "bundle metadata can influence slot, sequence, attempts or rollback policy",
+  "a bundle failure can create or mutate an output boot image",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add authenticated offline update bundles"
 evidence = []
 
 [[packages]]
