@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.4c-2b2c-device-dma-pool-diagnostics"
 
 [policy]
 one_package_per_run = true
@@ -4198,4 +4198,59 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "storage: fail closed foreign FAT12 writes"
+evidence = []
+
+[[packages]]
+id = "S0.4c-2b2c-device-dma-pool-diagnostics"
+status = "active"
+risk = "high"
+title = "Measure mediated device-DMA pool exhaustion and recovery"
+scope = "Extend the fixed kernel-owned mediated-DMA pool with append-only, versioned and saturating runtime diagnostics. Publish only aggregate active, high-water, capacity, rejection and per-pool byte bounds through device-control command 18 to an already authorized Ring-3 driver generation. Update counters under the existing device-domain operation lock, count only genuine pool-capacity rejection, and preserve high-water and rejection history after generation-scoped release while active usage returns exactly to zero. Host behavior must exhaust all four pools, observe fail-closed ENOSPC, release and reuse one pool, then reclaim all pools. The real QEMU HDA driver must observe and publish a bounded diagnostic marker after its mediated DMA binding. This is diagnostics only and grants no physical address, DMA mapping or additional device authority."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/drivers/audio/hda_driver.c",
+  "scripts/run_qemu_pci_audio.py",
+  "safety/resource_budgets.toml",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the authoritative capacity remains DEVICE_DOMAIN_DMA_POOL_COUNT and every pool remains kernel-owned, zeroed on bind and zeroed again before release",
+  "active usage increments only after platform DMA binding succeeds and decrements exactly once on every matching release, fence, cleanup and recovery path",
+  "peak usage is monotonic until device-domain reinitialization and genuine pool exhaustion increments a saturating rejection counter without changing ownership",
+  "invalid requests, explicit nonzero mediated capabilities, resource-slot exhaustion and platform binding failures do not masquerade as DMA-pool capacity rejection",
+  "command 18 is append-only, preserves device-domain ABI version 1 and returns one exact 32-byte structure with all reserved fields zero",
+  "only an existing driver-domain process may query aggregate diagnostics and the response exposes no physical address, owner identity or pool token",
+  "diagnostic counters never participate in allocation or authority decisions and all scans and updates remain fixed-capacity and allocation-free",
+  "the HDA driver rejects structurally impossible diagnostics and publishes a QEMU-observable marker only after its own mediated pool is bound"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -v",
+  "python test/test_reist_resource_budgets.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode pci-audio -Target qemu -Video vga"
+]
+stop_conditions = [
+  "diagnostics would require exposing a DMA physical address, ownership token or new ambient authority",
+  "a pool can be released without zeroization or active accounting can diverge from the fixed pool table",
+  "the real QEMU driver marker cannot be tied to a successfully bound mediated pool",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "safety: account mediated DMA pool pressure"
 evidence = []
