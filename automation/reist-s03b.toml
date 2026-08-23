@@ -1170,6 +1170,7 @@ allowed_files = [
   "automation/reist-s03b.toml",
   "arch/x86/cpu/syscall.asm",
   "arch/x86/include/sys.h",
+  "kernel/proc/process.c",
   "kernel/sched/scheduler.h",
   "kernel/sched/scheduler.c",
   "kernel/syscall/syscall_table.c",
