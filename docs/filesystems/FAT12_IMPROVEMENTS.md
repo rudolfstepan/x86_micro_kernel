@@ -91,6 +91,7 @@ C:\> CHKDSK --fat12 1 --repair-dir-size --confirm
 C:\> CHKDSK --fat12 1 --repair-volume-label --confirm
 C:\> CHKDSK --fat12 1 --repair-zero-files --confirm
 C:\> CHKDSK --fat12 1 --repair-zero-start --confirm
+C:\> CHKDSK --fat12 1 --repair-dot-size --confirm
 FDISK
 ```
 
@@ -181,6 +182,12 @@ null und damit keinen lesbaren Datencluster. Nur wenn die Gesamtdiagnose exakt
 Undo-Journalisierung ausschließlich das 32-Bit-Größenfeld nullgesetzt. FAT,
 Startcluster, Name, Attribute, Zeitfelder und Datenbereiche bleiben
 unverändert; fehlende Daten werden weder erfunden noch allokiert.
+`--repair-dot-size --confirm` validiert exakte, leerzeichenaufgefüllte `.`- und
+`..`-Namen gegen den aktuellen beziehungsweise übergeordneten
+Verzeichniscluster. Dot-Einträge im Root und falsche Beziehungen bleiben
+unreparierbare Diagnosen. Nur wenn alle Directory-Fehler korrekte Dot-Verweise
+mit Größe ungleich null sind, wird nach Undo-Journalisierung ausschließlich
+das jeweilige 32-Bit-Größenfeld nullgesetzt.
 `FDISK.PRG` kann auf explizit freigegebenen, leeren ATA-/AHCI-Medien eine
 validierte MBR-Partition erzeugen. Eine Diskette bleibt eine partitionslose
 Superfloppy und wird von `FDISK` niemals partitioniert.

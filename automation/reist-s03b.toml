@@ -803,6 +803,57 @@ commit_message = "storage: repair FAT12 zero-start files"
 evidence = []
 
 [[packages]]
+id = "S0.3c-6f6m-chkdsk-dot-sizes"
+status = "done"
+risk = "high"
+title = "Validate FAT12 dot relationships and repair dot-entry sizes"
+scope = "Carry the current and parent directory clusters through the fixed FAT12 directory queue, recognize only exact space-padded dot and dot-dot names, and diagnose root dot entries or incorrect self/parent start-cluster relationships. Add an explicitly confirmed operation that repairs only nonzero size fields on otherwise valid dot entries with the correct relationship. Require the complete pre-lease and post-lease diagnosis to be exactly DIRECTORY_INVALID and every issue to have one bounded dot-size candidate. Journal every unique directory sector and change only the 32-bit size to zero; malformed names, attributes, start clusters, mixed faults and capacity exhaustion remain fail-closed."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/chkdsk.c",
+  "test/test_fat12_maintenance.py",
+  "test/test_fat12_tools.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md"
+]
+invariants = [
+  "operation 24 is append-only, maintenance-domain restricted and reachable from CHKDSK only as --repair-dot-size --confirm",
+  "the fixed directory work item carries the child start cluster and its parent cluster without heap allocation or an unbounded lookup",
+  "only exact 8.3 space-padded dot and dot-dot names are special; root dot entries and incorrect self or parent start clusters are diagnosed without repair candidates",
+  "a candidate has valid directory attributes, zero high cluster word, the exact expected low start cluster and a nonzero size",
+  "the complete pre-lease and post-lease diagnosis is exactly DIRECTORY_INVALID and every directory-invalid issue has one bounded dot-size candidate",
+  "the leased sector revalidates exact dot kind, attributes, cluster relationship and original size before changing only the 32-bit size to zero",
+  "every unique directory sector is undo-journaled before mutation; FAT mirrors and data sectors are never written",
+  "writes are read back, lease renewals and barriers are explicit, and success requires a completely clean full rescan before journal CLEAN"
+]
+targeted_tests = [
+  "python test/test_fat12_maintenance.py -v",
+  "python test/test_fat12_tools.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "the current or parent directory relationship cannot be represented in the existing fixed queue",
+  "the diagnosis includes an incorrect dot start cluster, root dot entry or any issue without an exact size-only candidate",
+  "repair would alter a name, attribute, cluster field, FAT entry or data sector",
+  "the bounded candidate, directory or journal capacity is insufficient",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: repair FAT12 dot-entry sizes"
+evidence = []
+
+[[packages]]
 id = "R1.9-file-icons"
 status = "done"
 risk = "medium"

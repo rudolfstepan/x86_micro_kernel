@@ -1029,6 +1029,14 @@ Kandidaten besitzt. Nach Lease-Revalidierung und Undo-Journalisierung wird nur
 das 32-Bit-Größenfeld nullgesetzt. FAT-Spiegel, Startcluster, Name, Attribute,
 Zeitfelder und Datenbereiche bleiben unverändert; ein sauberer Vollscan ist
 weiterhin Abschlussbedingung.
+Die feste Directory-Queue trägt zusätzlich den Parent-Cluster. Dadurch werden
+nur exakt leerzeichenaufgefüllte `.`- und `..`-Einträge als Sonderfälle
+erkannt und gegen aktuellen beziehungsweise übergeordneten Cluster geprüft;
+Dot-Einträge im Root oder falsche Beziehungen bleiben unreparierbar. Bei einer
+reinen `DIRECTORY_INVALID`-Diagnose aus ausschließlich korrekten Dot-Verweisen
+mit Größe ungleich null darf `--repair-dot-size --confirm` nach Lease-
+Revalidierung und Undo-Journalisierung nur deren 32-Bit-Größenfelder
+nullsetzen. Namen, Attribute, Clusterfelder, FAT und Daten bleiben unverändert.
 
 `device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
 Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht
