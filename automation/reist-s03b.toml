@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.3c-6f6o-chkdsk-required-crosslinks"
 
 [policy]
 one_package_per_run = true
@@ -901,6 +901,57 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "storage: repair FAT12 dot-entry clusters"
+evidence = []
+
+[[packages]]
+id = "S0.3c-6f6o-chkdsk-required-crosslinks"
+status = "active"
+risk = "high"
+title = "Repair required FAT12 regular-file crosslinks by bounded cloning"
+scope = "Extend the complete FAT12 scan with fixed descriptors for structurally valid EOC-terminated regular files. Add an explicitly confirmed operation for the exact CHAIN_CROSSLINK-only diagnosis when every multiply required cluster belongs exclusively to those regular-file descriptors. Preserve the first scan-order chain, clone every later conflicting file in full into distinct free clusters, verify copied data, publish both FAT mirrors and then replace only that file's low start cluster. Free only original clusters referenced exclusively by a cloned file. Journal every destination data sector, changed FAT sector and directory sector before mutation; directory crosslinks, mixed diagnoses, insufficient free space or journal capacity remain fail-closed."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/chkdsk.c",
+  "test/test_fat12_maintenance.py",
+  "test/test_fat12_tools.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md"
+]
+invariants = [
+  "operation 26 is append-only, maintenance-domain restricted and reachable from CHKDSK only as --repair-required-crosslinks --confirm",
+  "the complete pre-lease and post-lease diagnosis is exactly CHAIN_CROSSLINK and every multiply required cluster is covered exclusively by bounded structurally valid regular-file descriptors",
+  "the first scan-order file using an original cluster remains canonical; every later conflicting file is cloned in full to a distinct free EOC-terminated chain",
+  "source data is read under the current-media lease and every destination sector is write-readback verified before FAT or directory publication",
+  "only original clusters referenced exclusively by a cloned file are freed; shared clusters and the canonical file remain unchanged",
+  "every destination data sector, unique changed FAT sector in both mirrors and unique directory sector is undo-journaled before the first mutation",
+  "the directory entry is revalidated and only its low start-cluster field changes; success requires flush and a completely clean full rescan before journal CLEAN",
+  "directory participation, malformed or short/excess/loop chains, insufficient free clusters, candidate overflow and journal exhaustion fail closed before side effects"
+]
+targeted_tests = [
+  "python test/test_fat12_maintenance.py -v",
+  "python test/test_fat12_tools.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "a multiply required cluster cannot be attributed exclusively to bounded regular-file descriptors",
+  "the diagnosis contains any flag other than CHAIN_CROSSLINK",
+  "the clone needs more free clusters or undo entries than the fixed budgets provide",
+  "repair would overwrite a shared source cluster or mutate file size, name, attributes, timestamps or payload bytes",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: clone required FAT12 crosslinks"
 evidence = []
 
 [[packages]]
