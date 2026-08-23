@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "A0.1-vmware-host-verifier"
 
 [policy]
 one_package_per_run = true
@@ -2575,3 +2575,87 @@ evidence = [
   ".\\scripts\\test-reist-runtime.ps1 -Mode watchdog",
   ".\\scripts\\run_vmware_containment.cmd"
 ]
+
+[[packages]]
+id = "A0.1-vmware-host-verifier"
+status = "active"
+risk = "high"
+title = "Whitelist bounded VMware host gates in the autonomous verifier"
+scope = "Teach the outer verifier to execute only explicitly named VMware Workstation batch gates in the interactive Windows host context because VIX cannot start a VM inside the Codex workspace sandbox. Preserve :workspace sandboxing for every other gate, reject arbitrary commands and arguments, retain one shared finite package deadline, capture the same compact logs and stop on the first failure. Freeze the exception in the repository agent contract and regression tests before the next VMware FDD reconnect package uses it."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "AGENTS.md",
+  "scripts/run_reist_autonomous.py",
+  "test/test_codex_orchestration.py"
+]
+invariants = [
+  "only the exact no-argument gates scripts/run_vmware_containment.cmd and scripts/run_vmware_fdd_hotplug.cmd may bypass codex sandbox",
+  "a host gate resolves to a regular non-symlinked file below the repository scripts directory and is invoked through the Windows command interpreter without a shell-built command string",
+  "all Python, PowerShell, package and QEMU gates continue to execute through codex sandbox -P :workspace",
+  "host and sandbox gates share the same finite per-package timeout, compact log path, first-failure stop and evidence order",
+  "unsupported platforms, missing command interpreters, extra arguments, path escapes, separators and unknown batch names fail before execution",
+  "the nested package agent remains workspace-confined and cannot request or manufacture host execution"
+]
+targeted_tests = [
+  "python test/test_codex_orchestration.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "the exception would permit an arbitrary repository script or caller-controlled argument to execute on the host",
+  "a non-VMware gate would cease to use the workspace verifier sandbox",
+  "a host gate could outlive the existing finite verifier deadline",
+  "a required file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "automation: whitelist bounded VMware host gates"
+evidence = []
+
+[[packages]]
+id = "S0.3c-6f5-vmware-fdd-reconnect"
+status = "queued"
+risk = "high"
+title = "Automate VMware floppy disconnect and safe reintegration"
+scope = "Close the remaining S0.3c-6f5 VMware reconnect evidence gap. Boot the freshly generated disposable VMware package from HDD with a separate deterministic FAT12 test image attached as floppy0, launch the existing Ring-3 GTEST FDD_HOTPLUG workflow, disconnect and reconnect the named virtual floppy through VMware VIX, and require ordered disconnect detection, bounded media requalification, successful HOTPLUG.TXT reread, TEST_OK and a returned Ring-3 shell without panic. Keep physical-media and power-loss claims excluded."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/run_vmware_fdd_hotplug.cmd",
+  "scripts/run_vmware_fdd_hotplug.py",
+  "scripts/run_vmware_fdd_hotplug.ps1",
+  "test/test_vmware_fdd_hotplug.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md"
+]
+invariants = [
+  "the gate consumes only the fresh disposable build/vmware package produced immediately before runtime and never mutates repository sources or a user-selected VM",
+  "the generated 1.44-MiB FAT12 fixture has a valid BPB, both initialized FAT copies, HOTPLUG.TXT with deterministic content and a recorded SHA-256 digest",
+  "VMware boots from the packaged HDD while file-backed floppy0 starts connected and every start, input, disconnect, reconnect and stop result is checked fail closed",
+  "the controller waits for the Ring-3 shell before launching GTEST FDD_HOTPLUG and changes device state only after the preceding exact serial marker",
+  "acceptance requires HOTPLUG_ARMED, DISCONNECT_DETECTED, FDD_HOTPLUG_REINTEGRATED_OK, TEST_OK and a later shell prompt in order within fixed deadlines",
+  "panic, fatal, TEST_FAIL, early VM exit, missing marker, fixture mutation or failed hard stop fails the gate",
+  "the existing QEMU reconnect evidence remains unchanged and the VMware result is not described as physical-media, power-loss or fail-operational proof"
+]
+targeted_tests = [
+  "python test/test_vmware_fdd_hotplug.py -q"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\run_vmware_fdd_hotplug.cmd"
+]
+stop_conditions = [
+  "VMware Workstation cannot expose bounded named-device disconnect and reconnect without VMware Tools or interactive GUI automation",
+  "the guest command cannot be injected only after a verified Ring-3 shell prompt",
+  "the VM cannot be stopped reliably after any failed marker or VIX operation",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "test: automate VMware FDD reconnect"
+evidence = []
