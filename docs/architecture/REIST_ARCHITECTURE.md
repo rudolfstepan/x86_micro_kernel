@@ -996,6 +996,14 @@ Dateitails am Sollende trennen, Cluster mit genau einer Pflichtreferenz
 erhalten und Cluster ohne Pflichtreferenz freigeben. Die Entscheidung ist
 unabhängig davon, welche Directory-Datei beim Scan zuerst Owner wurde; echte
 Mehrfach-Eigentümerschaft wird nicht geraten.
+Ein Unterverzeichniseintrag mit gültigen Attributen, null im hohen
+Clusterwort, gültigem Startcluster und unzulässiger Größe ungleich null bleibt
+für die Inhaltsdiagnose traversierbar. Nur bei der exakten Gesamtdiagnose
+`DIRECTORY_INVALID` und vollständiger Kandidatenabdeckung darf
+`--repair-dir-size --confirm` das 32-Bit-Größenfeld auf den FAT-konformen Wert
+null setzen. Attribute, Name, Startcluster, FAT und Daten bleiben unverändert;
+jeder betroffene Directory-Sektor liegt vor dem Write im Undo-Journal und ein
+sauberer Vollscan schließt die Transaktion ab.
 
 `device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
 Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht

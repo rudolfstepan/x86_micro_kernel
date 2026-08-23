@@ -280,8 +280,12 @@ und 10 verbindlich.
         - [x] Crosslinks ausschließlich aus überlangen regulären Dateitails
           über feste Referenz-/Pflichtreferenzzähler erkennen und ohne Änderung
           der einzigen Sollkette journalisiert trennen
+        - [x] Unterverzeichnisse mit gültigem Startcluster trotz unzulässiger
+          Größe vollständig scannen und bei reiner Diagnose ausschließlich ihr
+          32-Bit-Größenfeld journalisiert auf null setzen
         - [ ] `CHKDSK.PRG` für echte mehrfach benötigte Crosslinks, allgemeine
-          Verzeichnisschäden, Orphan-Datenrettung, Journal und Defektsektorkarte
+          Verzeichnisschäden jenseits reiner Größenfelder, Orphan-Datenrettung,
+          Journal und Defektsektorkarte
         - [x] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
           Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg
           kontrolliert remounten; Abbruch lässt das Medium konsistent oder
@@ -2578,7 +2582,9 @@ sie validieren Eingaben und senden versionierte Requests an den Storage-Dienst.
   Diagnose nur überlange Tail-Verweise, wenn höchstens eine Sollkette jeden
   mehrfach referenzierten Cluster benötigt. Echte Mehrfach-Eigentümerschaft,
   Orphan-Datenrettung sowie allgemeine Verzeichnis-, Journal- und
-  Remap-Reparatur bleiben offen.
+  Remap-Reparatur bleiben offen. `--repair-dir-size --confirm` traversiert
+  ansonsten gültige Unterverzeichnisse trotz unzulässiger Größe und setzt bei
+  reiner Diagnose ausschließlich dieses Feld auf null.
 - `FORMAT.PRG` akzeptiert ausschließlich erkannte FDD-Ressourcen. Ohne
   `--reist-fat12` erzeugt es kein REIST-Journal. Oberflächentest,
   Layoutberechnung, Initialisierung und vollständiger Metadaten-Readback sind

@@ -53,6 +53,8 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sowie der erste
 13. scanreihenfolge-unabhängige Referenz-/Pflichtreferenzzählung und Reparatur
     von Crosslinks, die ausschließlich aus überlangen regulären Dateitails
     stammen; echte Mehrfach-Eigentümerschaft bleibt gesperrt
+14. vollständiger Inhaltsscan und bestätigte Nullsetzung unzulässiger
+    Größenfelder ansonsten gültiger Unterverzeichniseinträge
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen
@@ -85,6 +87,7 @@ C:\> CHKDSK --fat12 1 --repair-loops --confirm
 C:\> CHKDSK --fat12 1 --repair-dir-loops --confirm
 C:\> CHKDSK --fat12 1 --repair-short-loops --confirm
 C:\> CHKDSK --fat12 1 --repair-crosslinks --confirm
+C:\> CHKDSK --fat12 1 --repair-dir-size --confirm
 FDISK
 ```
 
@@ -148,6 +151,12 @@ referenzierter Cluster von mehr als einer Sollkette benötigt wird, bleibt das
 Medium unverändert. Andernfalls werden alle überlangen Dateien am Sollende
 getrennt, genau einmal benötigte Cluster bewahrt und ausschließlich reine
 Excess-Tail-Cluster freigegeben.
+`--repair-dir-size --confirm` korrigiert ausschließlich Unterverzeichnisse mit
+gültigen Attributen und gültigem Startcluster, deren FAT-Größenfeld entgegen
+der Spezifikation nicht null ist. Der Scanner traversiert ihren Inhalt trotz
+der Diagnose vollständig. Bei einer reinen `DIRECTORY_INVALID`-Diagnose und
+vollständiger Kandidatenabdeckung werden alle betroffenen Directory-Sektoren
+journalisiert und nur das jeweilige 32-Bit-Größenfeld auf null gesetzt.
 `FDISK.PRG` kann auf explizit freigegebenen, leeren ATA-/AHCI-Medien eine
 validierte MBR-Partition erzeugen. Eine Diskette bleibt eine partitionslose
 Superfloppy und wird von `FDISK` niemals partitioniert.
@@ -157,8 +166,9 @@ Superfloppy und wird von `FDISK` niemals partitioniert.
 - reale FDD-/VMware-Power-Loss- und Reconnect-Matrix über die bereits
   deterministisch geprüften Veröffentlichungsstufen
 - CHKDSK-Reparatur echter mehrfach benötigter Crosslinks, allgemeiner
-  Verzeichnisschäden, Journal, Remap- und Defektsektorkarte sowie Datenrettung
-  von Orphans statt ihres expliziten Verwerfens
+  Verzeichnisschäden jenseits reiner Größenfelder, Journal, Remap- und
+  Defektsektorkarte sowie Datenrettung von Orphans statt ihres expliziten
+  Verwerfens
 - QEMU-Laufzeitnachweis für Maintenance-Lease, Unmount, FAT-Spiegel-Reparatur,
   Verify und kontrollierten Remount
 - breitere echte FDD-/Medienfehler- und Langzeitmatrix
