@@ -87,6 +87,12 @@ class ReistWcetContracts(unittest.TestCase):
         self.assertIn("X86OS_REIST_REPORT_WCET_BASELINE", probe)
         self.assertIn("X86OS_REIST_REPORT_WCET_REJECT", probe)
         self.assertIn("REIST_WCET REJECT reason=%u", supervisor)
+        duplicate = supervisor[
+            supervisor.index("if (probe_wcet_baseline_reported)"):
+            supervisor.index("probe_wcet_baseline_reported = true")
+        ]
+        self.assertIn("return 0;", duplicate)
+        self.assertNotIn("return -1;", duplicate)
         self.assertNotIn("x86os_puts(report)", probe)
         self.assertIn("'wcet-baseline'", runtime)
         self.assertIn("AddSeconds(45)", runtime)

@@ -649,12 +649,16 @@ class DynamicProgramStagingTests(unittest.TestCase):
         self.assertNotIn("0x02100000", runtime_memory_sources.lower())
 
     def test_loader_allocates_exactly_the_validated_file_size(self):
-        loader = function_block(self.process, "static int load_program_file(")
+        wrapper = function_block(self.process, "static int load_program_file(")
+        loader = function_block(
+            self.process, "static int load_program_file_uncached("
+        )
         compact = re.sub(r"\s+", " ", loader)
         self.assertIn("uint8_t **image_out", self.process[
             self.process.index("static int load_program_file(") :
             self.process.index("{", self.process.index("static int load_program_file("))
         ])
+        self.assertIn("*image_out = NULL", wrapper)
         self.assertIn("*image_out = NULL", loader)
         self.assertLess(
             loader.index("node->size > PROGRAM_REGION_SIZE"),
@@ -666,7 +670,9 @@ class DynamicProgramStagingTests(unittest.TestCase):
         self.assertIn("*image_out = image", loader)
 
     def test_loader_failure_paths_release_owned_file_and_heap_resources(self):
-        loader = function_block(self.process, "static int load_program_file(")
+        loader = function_block(
+            self.process, "static int load_program_file_uncached("
+        )
 
         invalid_file = extract_block(
             loader,

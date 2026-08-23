@@ -1360,7 +1360,7 @@ static int syscall_storage_block_read(uint32_t resource, uint32_t block,
     }
 #ifdef REIST_STORAGE_FAULT_INJECTION
     static bool storage_read_fault_injected;
-    if (!storage_read_fault_injected) {
+    if (!storage_read_fault_injected && resource == 0U && block == 0U) {
         storage_read_fault_injected = true;
         printf("REIST_STORAGE TEST_CRASH_INJECTED\n");
         task_exit_status(201);

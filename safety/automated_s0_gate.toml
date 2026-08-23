@@ -1,0 +1,87 @@
+schema_version = 1
+gate_id = "REIST-S0-AUTOMATED-RESEARCH-v1"
+baseline_id = "REIST-research"
+status = "automated-emulator-complete"
+automated_targets = ["qemu-i386", "vmware-i386"]
+
+manual_exclusions = [
+  "electrical fence readback",
+  "physical external-monitor qualification",
+  "target-hardware common-cause failover",
+  "target-hardware fault injection",
+  "target-hardware storage reconnect",
+  "target-hardware WCET"
+]
+
+residuals = [
+  "anti-rollback",
+  "certification and product-profile qualification",
+  "immutable recovery",
+  "long-duration soak",
+  "online update distribution",
+  "production key custody",
+  "reproducible builds",
+  "signed provenance"
+]
+
+[[cancelled_package]]
+id = "A0.1-vmware-host-verifier"
+disposition = "not-required-by-direct-local-execution"
+
+[[cancelled_package]]
+id = "S0.3c-6f5-vmware-fdd-reconnect"
+disposition = "superseded-by-S0.3c-6f6s-fat12-persistence-finish"
+
+[[evidence]]
+id = "host-suite"
+kind = "host"
+target = "host"
+command = "python -m unittest discover -s test -p \"test_*.py\" -v"
+
+[[evidence]]
+id = "qemu-package-vga"
+kind = "package"
+target = "qemu-i386"
+command = ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+
+[[evidence]]
+id = "vmware-package-vga"
+kind = "package"
+target = "vmware-i386"
+command = ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+
+[[evidence]]
+id = "qemu-pit"
+kind = "runtime"
+target = "qemu-i386"
+command = ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode pit"
+
+[[evidence]]
+id = "qemu-watchdog"
+kind = "runtime"
+target = "qemu-i386"
+command = ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode watchdog"
+
+[[evidence]]
+id = "qemu-storage-recovery"
+kind = "runtime"
+target = "qemu-i386"
+command = ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode storage-recovery"
+
+[[evidence]]
+id = "qemu-memory"
+kind = "runtime"
+target = "qemu-i386"
+command = ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode memory"
+
+[[evidence]]
+id = "qemu-framebuffer"
+kind = "runtime"
+target = "qemu-i386"
+command = ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video framebuffer -Mode normal"
+
+[[evidence]]
+id = "vmware-containment"
+kind = "runtime"
+target = "vmware-i386"
+command = ".\\scripts\\run_vmware_containment.cmd"

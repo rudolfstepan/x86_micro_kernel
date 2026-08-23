@@ -124,5 +124,12 @@ int main(void) {
     storage_request_unbind_service(7, 11U);
     if (storage_request_claim(7, 11U, 61U, &descriptor, 0) != -13 ||
         storage_request_bind_service(9, 13U) != 0) return 12;
+    storage_request_handle_t stale_handle = 0U;
+    if (storage_request_submit(3, 5U, &read, 0, 70U, &stale_handle) != 0 ||
+        storage_request_claim(9, 13U, 71U, &descriptor, 0) != 0)
+        return 20;
+    storage_request_unbind_service(9, 13U);
+    if (storage_request_collect(3, 5U, stale_handle, &result, transfer) != -22)
+        return 21;
     return 0;
 }

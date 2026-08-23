@@ -80,7 +80,8 @@ if ($Target -eq 'qemu' -and $Mode -ne 'driver-domain' -and
 function Invoke-Smoke(
     [string]$LogName,
     [string[]]$Extra,
-    [bool]$ExpectProbe = $true
+    [bool]$ExpectProbe = $true,
+    [string]$ImagePath = $Image
 ) {
     New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -89,7 +90,7 @@ function Invoke-Smoke(
     $arguments = @(
         $Runner,
         '--qemu', $Qemu,
-        '--image', $Image,
+        '--image', $ImagePath,
         '--log', (Join-Path $RepoRoot "build\$LogName")
     )
     if ($ExpectProbe) { $arguments += '--expect-reist-probe' }
@@ -118,6 +119,42 @@ function Invoke-Smoke(
         throw "REIST runtime smoke '$LogName' failed with exit $exitCode."
     }
     Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+}
+
+function Invoke-StorageRecoverySmoke {
+    $relativeOutput = 'build/storage-injection'
+    $faultImage = Join-Path $RepoRoot "$relativeOutput/reist-os.img"
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $buildLog = Join-Path $LogRoot "$stamp-runtime-storage-recovery-build.log"
+    $LASTEXITCODE = 0
+    & $BuildScript -Target qemu -Video $Video -StorageFaultInjection `
+        -OutputDirectory $relativeOutput -SkipReleaseSbom *> $buildLog
+    if ($LASTEXITCODE -ne 0 -or
+        !(Test-Path -LiteralPath $faultImage -PathType Leaf)) {
+        Get-Content -LiteralPath $buildLog -Tail 40
+        throw 'Isolated storage-recovery image build failed.'
+    }
+    Invoke-Smoke 'guest-smoke-storage-recovery.log' @(
+        '--expect-storage-recovery'
+    ) $true $faultImage
+}
+
+function Invoke-FramebufferSmoke {
+    $relativeOutput = 'build/framebuffer-runtime'
+    $framebufferImage = Join-Path $RepoRoot "$relativeOutput/reist-os.img"
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $buildLog = Join-Path $LogRoot "$stamp-runtime-framebuffer-build.log"
+    $LASTEXITCODE = 0
+    & $BuildScript -Target qemu -Video framebuffer `
+        -OutputDirectory $relativeOutput -SkipReleaseSbom *> $buildLog
+    if ($LASTEXITCODE -ne 0 -or
+        !(Test-Path -LiteralPath $framebufferImage -PathType Leaf)) {
+        Get-Content -LiteralPath $buildLog -Tail 40
+        throw 'Isolated framebuffer image build failed.'
+    }
+    Invoke-Smoke 'guest-smoke-framebuffer.log' @() $true $framebufferImage
 }
 
 function Invoke-RuntimeDesktop(
@@ -781,7 +818,11 @@ switch ($Mode) {
         }
     }
     'normal' {
-        Invoke-Smoke 'guest-smoke.log' @()
+        if ($Video -eq 'framebuffer') {
+            Invoke-FramebufferSmoke
+        } else {
+            Invoke-Smoke 'guest-smoke.log' @()
+        }
     }
     'pit' {
         Invoke-Smoke 'guest-smoke-pit.log' @('--no-apic')
@@ -876,9 +917,7 @@ switch ($Mode) {
         )
     }
     'storage-recovery' {
-        Invoke-Smoke 'guest-smoke-storage-recovery.log' @(
-            '--expect-storage-recovery'
-        )
+        Invoke-StorageRecoverySmoke
     }
     'storage-io-failure' {
         Invoke-Smoke 'guest-smoke-storage-io-failure.log' @(

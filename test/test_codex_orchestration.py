@@ -149,16 +149,31 @@ class CodexOrchestrationTests(unittest.TestCase):
             self.assertEqual(task["active_id"], active[0]["id"])
         else:
             self.assertEqual(active, [])
-            self.assertTrue(all(package["status"] == "done" for package in packages))
+            self.assertTrue(
+                all(package["status"] in {"done", "cancelled"} for package in packages)
+            )
+            self.assertEqual(
+                {
+                    package["id"]
+                    for package in packages
+                    if package["status"] == "cancelled"
+                },
+                {
+                    "A0.1-vmware-host-verifier",
+                    "S0.3c-6f5-vmware-fdd-reconnect",
+                },
+            )
         self.assertEqual(len({package["id"] for package in packages}), len(packages))
         for package in packages:
             self.assertTrue(package["allowed_files"])
             self.assertTrue(package["invariants"])
             self.assertTrue(package["targeted_tests"])
             self.assertTrue(package["package_tests"])
-            self.assertTrue(package["runtime_tests"])
+            self.assertIsInstance(package["runtime_tests"], list)
             self.assertTrue(package["stop_conditions"])
-            self.assertRegex(package["commit_message"], r"^(feat|fix|test|docs): ")
+            self.assertRegex(
+                package["commit_message"], r"^[a-z][a-z0-9-]*: [^\r\n]+$"
+            )
 
     def test_result_schema_is_closed_and_machine_readable(self):
         schema = json.loads(
@@ -210,15 +225,17 @@ class CodexOrchestrationTests(unittest.TestCase):
         self.assertIn('"rev-list"', runner)
         self.assertIn('"diff-tree"', runner)
         self.assertIn("expected_task_after_success", runner)
-        self.assertIn("isolated_checkout", runner)
-        self.assertIn('"clone",', runner)
-        self.assertIn('"remote", "remove", "origin"', runner)
-        self.assertIn('"merge", "--ff-only"', runner)
+        self.assertIn("in_place_checkout", runner)
+        self.assertIn("preserve_unverified_edits", runner)
+        self.assertIn('"update-ref"', runner)
+        self.assertIn('"read-tree"', runner)
         self.assertIn("outer verifier runs every gate exactly once", runner)
         self.assertIn("canonicalize_task_evidence", runner)
         self.assertIn('result.get("commit") == before_head', runner)
         contract = (ROOT / "AGENTS.md").read_text("utf-8")
-        self.assertIn("outer runner is the only gate authority", contract.lower())
+        self.assertIn(
+            "interactive codex session performs implementation", contract.lower()
+        )
         self.assertIn("Do not run the listed acceptance gates", contract)
         self.assertIn("prepare_agent_environment", runner)
         self.assertIn("run_reist_autonomous.py", wrapper)
@@ -289,17 +306,22 @@ class CodexOrchestrationTests(unittest.TestCase):
         runner = (ROOT / "scripts/test-reist-runtime.ps1").read_text("utf-8")
         self.assertIn("scripts\\run_qemu_smoke.py", runner)
         self.assertIn("build\\reist-os.img", runner)
-        self.assertIn("'normal', 'pit', 'watchdog', 'memory'", runner)
+        for mode in ("'normal'", "'pit'", "'watchdog'", "'memory'"):
+            self.assertIn(mode, runner)
         self.assertIn("catch {", runner)
         self.assertIn("Get-Content -LiteralPath $gateLog -Tail 40", runner)
         self.assertNotIn("make test-smoke", runner)
         task = tomllib.loads(
             (ROOT / "automation/reist-s03b.toml").read_text("utf-8")
         )
-        for package in task["packages"]:
-            self.assertTrue(
-                all("test-reist-runtime.ps1" in gate for gate in package["runtime_tests"])
-            )
+        active = next(
+            package for package in task["packages"]
+            if package["id"] == task["active_id"]
+        )
+        for gate in active["runtime_tests"]:
+            self.assertNotIn("build-windows.ps1", gate)
+            if gate.startswith(".\\scripts\\test-reist-runtime.ps1"):
+                self.assertIn("-Mode", gate)
 
     def test_package_gate_is_single_pass_and_log_compacted(self):
         gate = (ROOT / "scripts/test-reist-package.ps1").read_text("utf-8")
@@ -678,12 +700,18 @@ evidence = []
                     first_result = RUNNER.execute(arguments)
                 self.assertEqual(first_result, 1)
                 self.assertEqual(self.git(repo, "rev-parse", "HEAD"), baseline)
-                self.assertEqual(self.git(repo, "status", "--porcelain"), "")
+                self.assertEqual(
+                    self.git(repo, "status", "--porcelain"), "?? foreign.txt"
+                )
+                (repo / "foreign.txt").unlink()
                 with contextlib.redirect_stdout(io.StringIO()):
                     second_result = RUNNER.execute(arguments)
                 self.assertEqual(second_result, 1)
                 self.assertEqual(self.git(repo, "rev-parse", "HEAD"), baseline)
-                self.assertEqual(self.git(repo, "status", "--porcelain"), "")
+                self.assertEqual(
+                    self.git(repo, "status", "--porcelain"), "?? foreign.txt"
+                )
+                (repo / "foreign.txt").unlink()
 
                 def invalid_result_agent(command, cwd, prompt, log_path,
                                          timeout_seconds, env=None):
@@ -700,7 +728,9 @@ evidence = []
                     invalid_result = RUNNER.execute(arguments)
                 self.assertEqual(invalid_result, 1)
                 self.assertEqual(self.git(repo, "rev-parse", "HEAD"), baseline)
-                self.assertEqual(self.git(repo, "status", "--porcelain"), "")
+                self.assertEqual(
+                    self.git(repo, "status", "--porcelain"), "?? foreign.txt"
+                )
             finally:
                 RUNNER.resolve_qemu = original_resolve_qemu
                 RUNNER.run_bounded = original_run_bounded

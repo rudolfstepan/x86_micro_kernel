@@ -74,6 +74,15 @@ def assert_clean(repo: pathlib.Path) -> None:
         raise VerificationError(f"worktree is not clean:\n{status}")
 
 
+def preserve_unverified_edits(repo: pathlib.Path, baseline: str) -> None:
+    """Discard unauthorized commit topology while retaining visible edits."""
+    current = git(repo, "rev-parse", "HEAD")
+    if current == baseline:
+        return
+    git(repo, "update-ref", "HEAD", baseline, current)
+    git(repo, "read-tree", baseline)
+
+
 def read_task(path: pathlib.Path) -> dict[str, Any]:
     with path.open("rb") as stream:
         return tomllib.load(stream)
@@ -974,6 +983,7 @@ within scope, return blocked with one concrete reason.
             print(f"blocked: {error}; in-place candidate retained")
             return 2
         except (json.JSONDecodeError, VerificationError) as error:
+            preserve_unverified_edits(repo, before_head)
             print(f"verification failed: {error}; log={event_log}")
             return 1
 

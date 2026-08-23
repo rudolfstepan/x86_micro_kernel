@@ -22,7 +22,7 @@ class FilesystemSourceTests(unittest.TestCase):
         mount = source[source.index("static int vfs_mount_locked"):
                        source.index("static int vfs_unmount_locked")]
         self.assertIn("fs->open_nodes = 0", mount)
-        self.assertIn("fs->maintenance_blocked = false", mount)
+        self.assertIn("fs->maintenance_blocked = maintenance_blocked", mount)
 
 
 @unittest.skipUnless(GCC, "gcc is required for the C host regressions")

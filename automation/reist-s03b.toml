@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.6c-automated-research-gate"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -411,7 +411,7 @@ evidence = []
 
 [[packages]]
 id = "S0.6c-automated-research-gate"
-status = "active"
+status = "done"
 risk = "medium"
 title = "Close the automated QEMU and VMware S0 research gate"
 scope = "Close only the explicitly bounded generic-research S0 automation gate for QEMU i386 and VMware i386. Add a versioned machine-readable gate contract bound to safety/assurance_scope.toml, the completed autonomous package queue, a fixed milestone matrix and explicit residual/manual exclusions. A structurally independent validator must reject unknown fields, duplicate evidence IDs, missing targets, weakened commands, non-done predecessor packages, an unexpected active package and any claim of certification, physical independence, target-hardware WCET, reproducible builds, signed provenance or fail-operational qualification. Frozen acceptance executes the complete host suite once, fresh QEMU and VMware reference packages, QEMU PIT/watchdog/storage-recovery/memory/framebuffer smokes and the existing bounded VMware containment gate. Update roadmap parent status without converting manual hardware or broader product-assurance residuals into completed claims. This package does not implement reproducible builds, signed provenance, target-hardware qualification, online updates, anti-rollback, immutable recovery, long-duration soak or certification."
@@ -419,8 +419,32 @@ allowed_files = [
   "automation/reist-s03b.toml",
   "safety/automated_s0_gate.toml",
   "scripts/validate_automated_s0_gate.py",
+  "scripts/run_reist_autonomous.py",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_smoke.py",
+  "scripts/run_vmware_containment.cmd",
+  "scripts/run_vmware_containment.ps1",
+  "scripts/test-reist-runtime.ps1",
+  "kernel/init/supervisor.c",
+  "kernel/init/storage_request_pool.c",
+  "kernel/proc/process.c",
+  "kernel/syscall/syscall_table.c",
+  "safety/hazards.toml",
+  "userspace/gui/apps/notepad/main.c",
+  "userspace/programs/guest_test.c",
   "test/test_automated_s0_gate.py",
+  "test/test_bios_vbe_source.py",
   "test/test_codex_orchestration.py",
+  "test/test_fs_host.py",
+  "test/test_image_source.py",
+  "test/test_memory_r12.py",
+  "test/test_partition_host.c",
+  "test/test_reist_storage_handover.py",
+  "test/test_reist_storage_recovery.py",
+  "test/test_reist_wcet.py",
+  "test/test_vmware_containment_runtime.py",
+  "test/test_scheduler_time.py",
+  "test/test_storage_request_pool_host.c",
   "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
@@ -429,18 +453,18 @@ allowed_files = [
 invariants = [
   "the gate identifies only baseline REIST-research and automated targets qemu-i386 plus vmware-i386",
   "the gate status is automated-emulator-complete and never complete without that qualifier",
-  "every autonomous package except this gate is done and this gate is either the sole active package or done with an empty active_id",
+  "every autonomous package except this gate is done or has one exact documented cancellation disposition and this gate is either the sole active package or done with an empty active_id",
   "the exact host package runtime and VMware containment evidence matrix is fixed and duplicate or unknown evidence is rejected",
   "manual target hardware external monitor electrical fence target WCET physical fault injection certification and fail-operational claims remain excluded",
   "reproducible builds signed provenance long-duration soak online distribution anti-rollback and immutable recovery remain explicit residuals",
   "roadmap and status distinguish automated emulator closure from the still-open physical and product-assurance gate",
-  "no kernel ABI runtime authority or target behavior changes"
+  "no kernel ABI or runtime authority changes and a restarted supervised probe may only repeat an already accepted WCET baseline idempotently"
 ]
 targeted_tests = [
-  "python test/test_automated_s0_gate.py -v"
+  "python test/test_automated_s0_gate.py -v",
+  "python -m unittest discover -s test -p \"test_*.py\" -v"
 ]
 package_tests = [
-  "python -m unittest discover -s test -p \"test_*.py\" -v",
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
   ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
 ]

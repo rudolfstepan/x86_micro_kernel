@@ -253,6 +253,7 @@ static int load_program_file_uncached(const char *program_name,
 
 static int load_program_file(const char *program_name, uint8_t **image_out) {
     if (program_name == NULL || image_out == NULL) return -1;
+    *image_out = NULL;
     for (uint32_t index = 0U; index < RESCUE_PROGRAM_CACHE_COUNT; ++index) {
         rescue_program_cache_t *cache = &rescue_program_cache[index];
         if (!rescue_cache_initialized ||

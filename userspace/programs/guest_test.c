@@ -899,9 +899,18 @@ static int test_storage_service(void) {
             if (x86os_sleep_ms(5U) != 0) return -1;
         }
         if (!recovered || attempt != 0U) break;
-        handle = 0U;
-        if (x86os_storage_submit(&request, 0, &handle) != 0 || handle == 0U)
-            return -1;
+        uint64_t restart_deadline = 0U;
+        if (x86os_monotonic_ms(&restart_deadline) != 0) return -1;
+        restart_deadline += 2000U;
+        for (;;) {
+            handle = 0U;
+            int submit = x86os_storage_submit(&request, 0, &handle);
+            if (submit == 0 && handle != 0U) break;
+            uint64_t now = 0U;
+            if (submit != -112 || x86os_monotonic_ms(&now) != 0 ||
+                now >= restart_deadline || x86os_sleep_ms(5U) != 0)
+                return -1;
+        }
     }
     if (result == -5) {
         uint64_t deadline = 0U;

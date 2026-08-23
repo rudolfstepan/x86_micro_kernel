@@ -518,9 +518,14 @@ static void cancel_process_locked(int pid, uint32_t generation) {
             (metadata.service_pid == pid &&
              metadata.service_generation == generation)) {
             uint32_t saved_generation = metadata.generation;
-            metadata = (storage_slot_metadata_t){
-                .generation = saved_generation,
-            };
+            metadata = saved_generation == STORAGE_HANDLE_GENERATION_MAX
+                ? (storage_slot_metadata_t){
+                    .state = STORAGE_SLOT_RETIRED,
+                    .generation = STORAGE_HANDLE_GENERATION_MAX,
+                }
+                : (storage_slot_metadata_t){
+                    .generation = saved_generation + 1U,
+                };
             clear_data(slot);
             if (store_metadata(slot, &metadata) == 0) request_removed();
         }

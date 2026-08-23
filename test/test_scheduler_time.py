@@ -303,7 +303,12 @@ class SchedulerTimeGuestAndPackagingTests(unittest.TestCase):
         )
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn('"SLEEPER.PRG"', programs)
-        self.assertEqual(makefile.count("--data-file SLEEPER.PRG="), 2)
+        self.assertIn(
+            "libexec/reist/sleeper.prg=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG",
+            makefile,
+        )
+        self.assertIn("$(foreach spec,$(SYSTEM_IMAGE_FILES),--data-file $(spec))", makefile)
+        self.assertIn("$(foreach spec,$(FLOPPY_IMAGE_FILES),--data-file $(spec))", makefile)
 
     def test_runner_no_apic_mode_uses_the_qemu_cpu_flag(self) -> None:
         runner_path = ROOT / "scripts/run_qemu_smoke.py"

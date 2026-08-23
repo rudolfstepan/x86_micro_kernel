@@ -49,6 +49,18 @@ int block_device_read_sector(const drive_t *drive, uint32_t sector,
     return BLOCK_DEVICE_OK;
 }
 
+int block_device_write_sector(const drive_t *drive, uint32_t sector,
+                              const void *buffer) {
+    (void)drive;
+    if (sector >= TEST_SECTORS || buffer == NULL) return BLOCK_DEVICE_RANGE;
+    memcpy(disk[sector], buffer, 512U);
+    return BLOCK_DEVICE_OK;
+}
+
+int block_device_flush(const drive_t *drive) {
+    return drive == NULL ? BLOCK_DEVICE_INVALID : BLOCK_DEVICE_OK;
+}
+
 static void make_gpt(void) {
     memset(disk, 0, sizeof(disk));
     memset(detected_drives, 0, sizeof(detected_drives));

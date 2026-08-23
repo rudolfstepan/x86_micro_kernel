@@ -317,6 +317,15 @@ Lizenz- und Copyrightfelder zwingend sichtbar. Das SBOM ist nicht signiert und
 ist kein Nachweis für Reproduzierbarkeit, vollständige Abhängigkeiten,
 Lizenzfreigabe, Provenienz oder bekannte Schwachstellenfreiheit.
 
+Der Abschluss der generischen automatisierten S0-Forschungsbaseline ist als
+eigener geschlossener Vertrag versioniert. Er bindet `REIST-research` an QEMU
+i386 und VMware i386 und verlangt die unveränderliche Host-, Paket-, Runtime-
+und Containment-Matrix. Nur der qualifizierte Status
+`automated-emulator-complete` ist zulässig. Externe Monitor- und Fence-
+Hardware, physische Fault-Injection, Zielhardware-WCET, Langzeitbetrieb,
+reproduzierbare Builds, signierte Provenienz und Produktqualifikation bleiben
+ausdrücklich außerhalb dieses Abschlusses.
+
 ## Ziel-Failure-Domains
 
 Der aktuelle Kernel ist noch ein modularer Monolith. Das zentrale

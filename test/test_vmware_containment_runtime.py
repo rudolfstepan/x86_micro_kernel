@@ -24,14 +24,16 @@ class VmwareContainmentRuntimeTests(unittest.TestCase):
 
     def test_fresh_generated_package_is_booted_directly(self) -> None:
         self.assertIn("build\\vmware\\reist-os", self.worker)
-        self.assertIn("type nul > \"%SERIAL%\"", self.launcher)
+        self.assertIn("Remove-Item -LiteralPath $serial -Force", self.worker)
         self.assertNotIn("Copy-Item", self.worker + self.launcher)
 
     def test_every_containment_wait_is_bounded(self) -> None:
         self.assertIn("[TimeSpan]::FromSeconds(60)", self.worker)
-        self.assertIn("-T ws start \"%VMX%\" nogui", self.launcher)
-        self.assertIn("-T ws stop \"%VMX%\" hard", self.launcher)
-        self.assertIn("MONITOR_RC", self.launcher)
+        self.assertIn("$attempt -le 3", self.worker)
+        self.assertIn("@('nogui', 'nogui', 'gui')", self.worker)
+        self.assertIn("-T ws start $vmx $startMode", self.worker)
+        self.assertIn("-T ws stop $vmx hard", self.worker)
+        self.assertIn("AddSeconds(5)", self.worker)
 
     def test_acceptance_requires_recovery_boot_and_ring3_shell(self) -> None:
         for marker in (

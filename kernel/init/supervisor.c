@@ -2509,7 +2509,7 @@ int supervisor_probe_report(int pid, uint32_t generation,
         uint32_t flags = supervisor_lock();
         if (probe_wcet_baseline_reported) {
             supervisor_unlock(flags);
-            return -1;
+            return 0;
         }
         probe_wcet_baseline_reported = true;
         supervisor_unlock(flags);

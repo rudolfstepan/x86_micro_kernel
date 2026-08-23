@@ -320,7 +320,8 @@ static reist_gui_menu_layout_t menu_layout(
         display->width, display->height,
         {0, 0, display->width, menu_height(display)},
         display->font_width, display->font_height,
-        8U, 8U, 4U, 6U, {0U, 0U, 0U, 0U}};
+        8U, 8U, 4U, 6U, {0U, 0U, 0U, 0U},
+        REIST_GUI_MENU_POPUP_BELOW};
 }
 
 static reist_gui_dialog_layout_t dialog_layout(

@@ -1640,6 +1640,15 @@ SPDX-2.3-Subsets, Pfad-/Beziehungsabweichungen und jede Größen- oder Hashdrift
 Ein erfolgreicher nativer Build und der Paket-Gate setzen ein anschließend
 validiertes `build/reist-sbom.spdx.json` voraus.
 
+Das S0.6c-Gate führt diese Evidenz in einem geschlossenen, versionierten
+Forschungsvertrag zusammen. `safety/automated_s0_gate.toml` akzeptiert nur die
+Baseline `REIST-research` und die Ziele QEMU i386 sowie VMware i386. Die feste
+Matrix umfasst vollständige Hosttests, frische Pakete, PIT, Watchdog,
+Storage-Recovery, Speichermatrix, Framebuffer und VMware-Containment. Der
+Status `automated-emulator-complete` ist keine neue Runtime-Autorität und darf
+nicht als Zielhardware-WCET, physische Unabhängigkeit, Fail-operational-
+Qualifikation, Langzeitnachweis oder Zertifizierung interpretiert werden.
+
 ## Übergang vom heutigen Kernel
 
 1. Einsatzprofil, Hazards, Essential Functions, FTTI und Recoveryziele festlegen.

@@ -77,8 +77,9 @@ und Reintegrate. Bereits vorhanden sind unter anderem:
 - begrenzte Netzwerkparser, ARP-/IPv4-/ICMP-/UDP-/DHCP-Entscheidungen in der
   überwachten Ring-3-Domäne
 
-S0 ist noch nicht abgeschlossen. S0.1 ist für die explizit abgegrenzte
-`REIST-research`-Baseline abgeschlossen: Ein separates maschinenlesbares
+Das automatisierte S0-Forschungsgate ist für die generische
+`REIST-research`-Baseline auf QEMU i386 und VMware i386 abgeschlossen. S0.1
+ist für diese explizit abgegrenzte Baseline abgeschlossen: Ein separates maschinenlesbares
 Scope-Inventar bindet Systemgrenze, Essential Functions, Anforderungen,
 Komponenten und Profilausschlüsse an das Gefahrenregister. Schema v2 prüft
 vollständige Komponentenabdeckung und die SHA-256-Traceability reicht von
@@ -95,8 +96,8 @@ gebundener Ziel-/Monitor-/Firmwareidentität, separater Strom- und Zeitbasis,
 unabhängigem Reset, latched Safe-State-Ausgang, elektrischem Sense-Readback
 und gehashten physischen Fault-Injection-Berichten auf `qualified` wechseln.
 Diese Realhardwareprüfung führt der Benutzer manuell durch; es entsteht kein
-automatischer Zielhardware- oder Fail-operational-Claim. Das Gesamtgate S0
-bleibt wegen S0.3c bis S0.6 offen.
+automatischer Zielhardware- oder Fail-operational-Claim. Das physische und
+produktbezogene Gesamtgate bleibt deshalb offen.
 
 `S0.3c-layout1` mit kleingeschriebener,
 hierarchischer Systemprogrammablage ist umgesetzt. `S0.3c-admin2` mit statischer
@@ -479,6 +480,18 @@ Datei, 512 MiB Gesamteingang und 2 MiB Dokumentgröße. `NOASSERTION` markiert
 weiter ungeklärte Lizenz- und Copyrightdaten. Reproduzierbarkeit, vollständige
 Quellen-/Abhängigkeitsabdeckung, Lizenzfreigabe, Vulnerability-Analyse und
 signierte Provenienz bleiben offen.
+
+`S0.6c` bindet den Abschluss der automatisierten Forschungsbaseline an den
+versionierten Vertrag `safety/automated_s0_gate.toml`. Der unabhängige
+Validator akzeptiert ausschließlich `REIST-research`, QEMU i386 und VMware
+i386 sowie die feste Host-, Paket- und Laufzeitmatrix. Am 23. August 2026
+bestanden 1001 Hosttests, beide frischen Referenzpakete, QEMU-PIT, Watchdog,
+Storage-Recovery, vier Speichergrößen, Framebuffer und das begrenzte VMware-
+Containment. Der Status lautet bewusst `automated-emulator-complete`.
+Zielhardware-WCET, externe Monitor-/Fence-Hardware, physische Fault-Injection,
+reproduzierbare Builds, signierte Provenienz, Langzeit-Soak, Online-Verteilung,
+Anti-Rollback, unveränderliche Recovery, Produktionsschlüssel und
+Zertifizierung bleiben offene manuelle oder produktbezogene Nachweise.
 
 ## Wichtigste offene Grenzen
 

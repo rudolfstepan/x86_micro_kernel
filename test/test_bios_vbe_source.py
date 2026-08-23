@@ -130,6 +130,12 @@ class BiosVbeSourceTests(unittest.TestCase):
         self.assertIn("if ($Video -eq 'framebuffer')", windows)
         self.assertIn("$stage2Arguments += '-DUSE_FRAMEBUFFER'", windows)
         self.assertIn("& $Nasm @stage2Arguments", windows)
+        runtime = (ROOT / "scripts/test-reist-runtime.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Invoke-FramebufferSmoke", runtime)
+        self.assertIn("-Video framebuffer", runtime)
+        self.assertIn("'build/framebuffer-runtime'", runtime)
 
 
 if __name__ == "__main__":

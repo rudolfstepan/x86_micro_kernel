@@ -23,7 +23,7 @@ class ReistStorageHandoverTests(unittest.TestCase):
     def test_standby_hold_precedes_mount_and_release_follows_takeover(self):
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
         hold = kernel.index("storage_handover_hold()")
-        mount = kernel.index("auto_mount_all_drives()")
+        mount = kernel.index("auto_mount_all_drives(boot_floppy_drive)")
         takeover = kernel.index("REIST_HANDOVER TAKEOVER_OK")
         send = kernel.index("handover_serial_send_state(&state)", takeover)
         release = kernel.index("storage_handover_release(&state)", send)

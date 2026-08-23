@@ -16,9 +16,12 @@ param(
     [switch]$DhcpRenewFaultInjection,
     [switch]$VbeRuntimeTest,
     [switch]$RuntimeDegradationFaultInjection,
+    [switch]$SkipReleaseSbom,
     [ValidateRange(0, 3)]
     [int]$HandoverNodeId = 0,
     [switch]$RunTests,
+    [ValidatePattern('^build(?:[\\/][A-Za-z0-9_.-]+)*$')]
+    [string]$OutputDirectory = 'build',
     [string[]]$ProgramSource = @('userspace/programs/hello.c'),
     [ValidatePattern('^[A-Za-z0-9_]{1,8}\.PRG$')]
     [string]$ProgramName = 'HELLO.PRG',
@@ -101,7 +104,7 @@ function Invoke-PythonProcess {
 $MsysShell = Resolve-NativeTool 'sh' @('C:\msys64\usr\bin\sh.exe')
 $MsysBin = Split-Path -Parent $MsysShell
 
-$BuildDir = Join-Path $RepoRoot 'build'
+$BuildDir = Join-Path $RepoRoot $OutputDirectory
 $ZigLocalCache = Join-Path $BuildDir 'zig-cache'
 $ZigGlobalCache = Join-Path $BuildDir 'zig-global-cache'
 $Stage1 = Join-Path $BuildDir 'stage1_mbr.bin'
@@ -152,6 +155,7 @@ try {
     $configuration = [ordered]@{
         target = $Target
         video = $Video
+        output_directory = $OutputDirectory.Replace('\', '/')
         fault_injection = [bool]$FaultInjection
         storage_fault_injection = [bool]$StorageFaultInjection
         storage_io_fault_injection = [bool]$StorageIoFaultInjection
@@ -163,6 +167,7 @@ try {
         dhcp_renew_fault_injection = [bool]$DhcpRenewFaultInjection
         vbe_runtime_test = [bool]$VbeRuntimeTest
         runtime_degradation_fault_injection = [bool]$RuntimeDegradationFaultInjection
+        skip_release_sbom = [bool]$SkipReleaseSbom
         nasm = $Nasm
         zig = $Zig
     }
@@ -173,7 +178,8 @@ try {
     $configurationChanged = $previousConfiguration -ne $configurationJson
     if ($Clean) {
         Write-Host 'Full clean requested; removing all generated artifacts...'
-        & $Make 'clean' "SHELL=$(To-MakePath $MsysShell)"
+        & $Make 'clean' "SHELL=$(To-MakePath $MsysShell)" `
+            "OUTPUT_DIR=$($OutputDirectory.Replace('\', '/'))"
         if ($LASTEXITCODE -ne 0) {
             throw "Build cleanup failed with exit code $LASTEXITCODE."
         }
@@ -191,6 +197,7 @@ try {
         'kernel',
         "TARGET=$Target",
         "VIDEO=$Video",
+        "OUTPUT_DIR=$($OutputDirectory.Replace('\', '/'))",
         "SHELL=$(To-MakePath $MsysShell)",
         "AS=$(To-MakePath $Nasm)",
         "CC=$(To-MakePath $Zig) cc -target x86-freestanding -Wno-unused-command-line-argument",
@@ -443,18 +450,20 @@ try {
     if ($nativeValidationExitCode -ne 0) {
         throw "Native boot manifest validation failed with exit code $nativeValidationExitCode."
     }
-    $sbomExitCode = Invoke-PythonProcess -Arguments @(
-        'scripts/generate_release_sbom.py', '--root', $RepoRoot,
-        '--output', $ReleaseSbom, '--artifact', $Kernel,
-        '--artifact', $KernelSignature, '--artifact', $RawImage,
-        '--program-dir', $UserProgramDir
-    )
-    if ($sbomExitCode -ne 0) { throw "Release SBOM generation failed with exit code $sbomExitCode." }
-    $sbomValidationExitCode = Invoke-PythonProcess -Arguments @(
-        'scripts/validate_release_sbom.py', '--sbom', $ReleaseSbom,
-        '--root', $RepoRoot
-    )
-    if ($sbomValidationExitCode -ne 0) { throw "Release SBOM validation failed with exit code $sbomValidationExitCode." }
+    if (!$SkipReleaseSbom) {
+        $sbomExitCode = Invoke-PythonProcess -Arguments @(
+            'scripts/generate_release_sbom.py', '--root', $RepoRoot,
+            '--output', $ReleaseSbom, '--artifact', $Kernel,
+            '--artifact', $KernelSignature, '--artifact', $RawImage,
+            '--program-dir', $UserProgramDir
+        )
+        if ($sbomExitCode -ne 0) { throw "Release SBOM generation failed with exit code $sbomExitCode." }
+        $sbomValidationExitCode = Invoke-PythonProcess -Arguments @(
+            'scripts/validate_release_sbom.py', '--sbom', $ReleaseSbom,
+            '--root', $RepoRoot
+        )
+        if ($sbomValidationExitCode -ne 0) { throw "Release SBOM validation failed with exit code $sbomValidationExitCode." }
+    }
 
     # Image generation recreates both VMX files. Restore physical floppy
     # backing after every VMware build instead of silently switching to the

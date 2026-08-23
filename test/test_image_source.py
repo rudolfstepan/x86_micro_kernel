@@ -18,7 +18,8 @@ class ImageLibraryTests(unittest.TestCase):
             subprocess.run([
                 compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
                 "-Iuserspace/image/include", "test/test_image_host.c",
-                "userspace/image/lib/image.c", "-o", str(output),
+                "userspace/image/lib/image.c",
+                "userspace/image/lib/image_ico.c", "-o", str(output),
             ], cwd=ROOT, check=True, capture_output=True, text=True)
             subprocess.run([
                 str(output), str(ROOT / "assets/images/demo-desktop.bmp"),

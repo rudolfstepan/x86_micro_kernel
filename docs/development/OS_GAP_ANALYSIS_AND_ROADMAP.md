@@ -70,11 +70,11 @@ eine generationsgebundene Surface-/Event-Grenze aufgebaut; Notepad und Image
 Viewer sind echte externe Fensterclients. Die abgeschlossenen Pakete R1.6 und
 R1.7 ergänzen kernelvermittelte Ring-3-Gerätedomänen und HDA-Audio mit
 Userspacebibliothek. Vor jedem weiteren regulären Funktionspaket steht das
-Sicherheits-Gate S0. Wesentliche Grundlagen aus S0.1 und S0.2 sowie S0.3a und
-S0.3b sind umgesetzt; S0.3c bleibt als Gesamtmeilenstein teilweise offen. Die
-ausführbare Queue besitzt derzeit kein aktives Paket. Die noch offenen
-Nachweise aus S0.1 und S0.2 bleiben sichtbar und werden nicht durch spätere
-Teilpakete ersetzt.
+Sicherheits-Gate S0. Die generische `REIST-research`-Baseline ist mit S0.6c
+für die feste automatisierte QEMU-/VMware-Matrix abgeschlossen. Die
+ausführbare Queue besitzt derzeit kein aktives Paket. Physische,
+zielhardwarespezifische und produktbezogene Nachweise bleiben sichtbar und
+werden nicht durch die Emulatorabnahme ersetzt.
 
 ### 2.1 Fortschrittsübersicht
 
@@ -437,6 +437,9 @@ und 10 verbindlich.
   - [x] S0.6b Nach jedem nativen Image-Build erzeugtes und unabhängig
     validiertes SPDX-2.3-JSON-SBOM für Kernel, Signatur, BIOS-Image und alle
     paketierten Ring-3-Programme
+  - [x] S0.6c Maschinenlesbarer Abschluss des automatisierten
+    QEMU-/VMware-S0-Forschungsgates mit fester Host-, Paket-, Runtime- und
+    Containment-Matrix; physische und produktbezogene Nachweise bleiben offen
 
 #### Funktionsroadmap nach dem S0-Gate
 
@@ -1452,6 +1455,17 @@ Dokument ist weder signierte Provenienz noch vollständiges Quellen-,
 Abhängigkeits-, Lizenz- oder Schwachstelleninventar und belegt noch keine
 reproduzierbaren Builds.
 
+`S0.6c` schließt ausschließlich die automatisierte Emulatorbaseline. Der
+geschlossene Vertrag `safety/automated_s0_gate.toml` pinnt Baseline, Ziele,
+Evidenzbefehle, manuelle Ausschlüsse und Restrisiken; ein unabhängiger
+Validator verwirft unbekannte Felder, abgeschwächte Befehle, Queue-Drift und
+unzulässige Assurance-Claims. Die Abnahme umfasst den vollständigen Hostlauf,
+frische QEMU-/VMware-Pakete, QEMU-PIT, Watchdog, Storage-Recovery, Speicher-
+matrix und Framebuffer sowie begrenztes VMware-Containment. Damit darf R2 für
+die generische Forschungsbaseline beginnen. Zielhardware, externer Monitor,
+elektrisches Fence-Readback, physische Fault-Injection, Ziel-WCET,
+Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
+
 - Statische Stack-/Code-/WCET-Analyse, Fuzzing, modellbasierte Tests und
    unabhängige Reviews als Gates einführen.
 - Fault-Injection für Bitfehler, Speichererschöpfung, Timingfehler,
@@ -1941,9 +1955,11 @@ nebenbei in die 32-Bit-Basis eingebaut werden.
   S0.1 und S0.3
 - [ ] **15 · S0.5 Integrität/Boot/A-B-Updates** — Größe XL; abhängig von S0.1
   und S0.3
-- [ ] **16 · S0.6 Verifikation/Langzeitbetrieb** — Größe XL; abhängig von
-  S0.1–S0.5
-- [ ] **17 · R2.1 ABI und FDs** — Größe L; abhängig vom abgenommenen S0-Gate
+- [ ] **16 · S0.6 Verifikation/Langzeitbetrieb** — automatisiertes
+  QEMU-/VMware-Forschungsgate abgeschlossen; Langzeit- und Hardwareevidenz
+  offen; Größe XL; abhängig von S0.1–S0.5
+- [ ] **17 · R2.1 ABI und FDs** — Größe L; für `REIST-research` durch das
+  automatisierte S0-Gate freigegeben
 - [ ] **18 · R2.2 VFS/FAT-Zuverlässigkeit** — Größe L; abhängig von R2.1 und
   S0.5
 - [x] **19 · R2.3 Blockgeräte/Partitionen** — Größe L; abhängig von R1.3 und
@@ -1951,9 +1967,9 @@ nebenbei in die 32-Bit-Basis eingebaut werden.
 - [ ] **20+ · R3 bis R6** — Größe L–XL; abhängig vom abgenommenen S0-Gate und
   der jeweiligen Basis
 
-R2 bis R6 bleiben hinter dem S0-Gate. Erst danach können voneinander
-unabhängige Pakete parallel laufen, sofern ihre Ressourcen-, Fehler- und
-Nachweisgrenzen getrennt sind.
+R2 bis R6 dürfen für die generische Forschungsbaseline nun nacheinander
+fortgeführt werden. Ein daraus entstehender Hardware- oder Produktclaim bleibt
+hinter den weiterhin offenen physischen und produktbezogenen S0-Nachweisen.
 
 ## 9. Definition of Done für jedes Paket
 
@@ -2001,14 +2017,13 @@ make test-fuzz
 
 ## 10. Unmittelbar nächster Schritt
 
-S0.1 und S0.2 sind für die ausdrücklich begrenzte automatisierte
-QEMU/VMware-Forschungsbaseline abgeschlossen. Das externe Profil bleibt
-`unbound`; reale Monitorhardware, elektrisches Fence-Readback und physische
-Fault-Injection prüft der Benutzer manuell und QEMU-/Hostevidenz ersetzt diese
-Auswahl nicht. Als nächstes werden die verbliebenen S0.3c-, S0.4-, S0.5- und
-S0.6-Pakete in dieser Reihenfolge fortgesetzt. Die folgende Detailchronik
-dokumentiert die bereits abgeschlossenen IPC-, Dienst-, Netzwerk- und
-Storage-Inkremente.
+S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
+Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale
+Monitorhardware, elektrisches Fence-Readback und physische Fault-Injection
+prüft der Benutzer manuell und QEMU-/Hostevidenz ersetzt diese Auswahl nicht.
+Als nächstes kann R2.1 für die generische Forschungsbaseline beginnen. Die
+folgende Detailchronik dokumentiert die abgeschlossenen IPC-, Dienst-,
+Netzwerk- und Storage-Inkremente.
 
 Phase 0, R1.1 bis R1.4, **S0.3a Bounded IPC/Capabilities v1** und
 **S0.3b Supervised Userspace Probe Domain** sind umgesetzt und abgenommen.

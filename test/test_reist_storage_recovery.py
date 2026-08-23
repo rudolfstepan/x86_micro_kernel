@@ -30,6 +30,9 @@ class StorageRecoveryContracts(unittest.TestCase):
         self.assertLess(guard, crash)
         self.assertLess(crash, copyout)
         self.assertIn("static bool storage_read_fault_injected", source)
+        self.assertIn(
+            "!storage_read_fault_injected && resource == 0U && block == 0U",
+            source)
 
     def test_build_target_uses_isolated_image_and_explicit_expectation(self):
         makefile = read("Makefile")
@@ -41,12 +44,21 @@ class StorageRecoveryContracts(unittest.TestCase):
         runtime = read("scripts/test-reist-runtime.ps1")
         self.assertIn("[switch]$StorageFaultInjection", windows)
         self.assertIn("'STORAGE_FAULT_INJECTION=1'", windows)
+        self.assertIn("[string]$OutputDirectory = 'build'", windows)
+        self.assertIn('"OUTPUT_DIR=$($OutputDirectory.Replace', windows)
+        self.assertIn("[switch]$SkipReleaseSbom", windows)
         self.assertIn("'storage-recovery'", runtime)
+        self.assertIn("Invoke-StorageRecoverySmoke", runtime)
+        self.assertIn("-StorageFaultInjection", runtime)
+        self.assertIn("-SkipReleaseSbom", runtime)
+        self.assertIn("'build/storage-injection'", runtime)
 
     def test_guest_retries_only_once_after_stale_generation(self):
         guest = read("userspace/programs/guest_test.c")
         self.assertIn("attempt < 2U", guest)
         self.assertIn("collect == -22 && attempt == 0U", guest)
+        self.assertIn("restart_deadline += 2000U", guest)
+        self.assertIn("submit != -112", guest)
         self.assertIn("TEST_STAGE STORAGE_RESTART_OK", guest)
 
     def test_runner_requires_ordered_recovery_markers(self):
@@ -63,6 +75,11 @@ class StorageRecoveryContracts(unittest.TestCase):
         transcript = "\n".join(lines) + "\n"
         self.assertIsNone(RUNNER.validate(
             transcript, expect_storage_recovery=True))
+        qemu_prefixed = list(lines)
+        qemu_prefixed[1] = "(qemu) " + RUNNER.REIST_STORAGE_CRASH_MARKER
+        self.assertIsNone(RUNNER.validate(
+            "\n".join(qemu_prefixed) + "\n",
+            expect_storage_recovery=True))
         reversed_lines = list(lines)
         reversed_lines[2], reversed_lines[3] = (
             reversed_lines[3], reversed_lines[2])

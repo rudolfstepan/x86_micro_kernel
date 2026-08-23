@@ -971,6 +971,25 @@ def exact_line_after_prompt_position(
     return -1
 
 
+def exact_line_after_qemu_prompt_position(
+    text: str, expected: str, after: int = -1
+) -> int:
+    position = exact_line_position(text, expected, after)
+    if position >= 0:
+        return position
+    prompt = "(qemu) "
+    pattern = re.compile(
+        rf"(?:^|\n){re.escape(prompt + expected)}\r?(?=\n|$)"
+    )
+    for match in pattern.finditer(text):
+        position = match.start() + (
+            1 if text[match.start():].startswith("\n") else 0
+        ) + len(prompt)
+        if position > after:
+            return position
+    return -1
+
+
 def failure_marker(text: str) -> str | None:
     for line in text.splitlines():
         clean = line.rstrip("\r")
@@ -1674,7 +1693,8 @@ def validate(
         if queued < boot or replied < queued or replied > test:
             return "missing ordered mediated UDP binding markers"
     if expect_storage_recovery:
-        crash = exact_line_position(transcript, REIST_STORAGE_CRASH_MARKER)
+        crash = exact_line_after_qemu_prompt_position(
+            transcript, REIST_STORAGE_CRASH_MARKER)
         failure = exact_line_position(transcript, REIST_STORAGE_FAILURE_MARKER)
         restarted = exact_line_position(transcript,
                                         REIST_STORAGE_RESTARTED_MARKER)
