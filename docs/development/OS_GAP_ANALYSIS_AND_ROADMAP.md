@@ -399,6 +399,9 @@ und 10 verbindlich.
     unabhängigem, fail-closed HDD-/Floppy-Imagegate
   - [x] S0.5a2 Begrenzte SHA-256-Verifikation durch den Bootloader
   - [ ] S0.5a3 Signierte Artefakte und gebundener Vertrauensanker
+    - [x] S0.5a3a Hostseitige RSA-2048-PSS/SHA-256-Kernelsignatur mit
+      gepinntem Research-Public-Key und fail-closed Buildgate
+    - [ ] S0.5a3b Signatur und Vertrauensanker in Stage 2 binden
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
 
 #### Funktionsroadmap nach dem S0-Gate
@@ -1319,6 +1322,14 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
   Manifest-Prüfsumme und wird ausschließlich am SHA-256-Vergleich gestoppt.
   Dies beweist Integrität, aber keine Authentizität: Signaturprüfung und ein
   gebundener Vertrauensanker bleiben offen.
+- [x] Der Host-Build signiert das exakte `kernel.bin` nach RFC 8017 mit
+  RSA-2048-PSS, SHA-256, MGF1-SHA-256 und 32-Byte-Salt. Ein unabhängiger
+  Validator pinnt Version, Algorithmus, Parameter und den SHA-256-Fingerprint
+  des DER-SubjectPublicKeyInfo, bevor ein Image veröffentlicht wird. Der
+  eingecheckte private Schlüssel ist nur eine reproduzierbare Research-
+  Testfixture und wird vom Release-Modus abgelehnt. Da Stage 2 die
+  256-Byte-Signatur noch nicht prüft, ist der Loader-Vertrauensanker weiterhin
+  offen und es besteht noch kein authentifizierter Boot.
 - Sicherheitsrelevanten Zustand transaktional, checksummiert, versioniert und
    redundant speichern; Stromausfall an jeder Commitstelle injizieren.
 - Verifizierten Boot, signierte Artefakte, reproduzierbare Builds, Provenienz

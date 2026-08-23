@@ -64,6 +64,9 @@ $Python = Resolve-NativeTool 'python' @(
     'C:\Python314\python.exe',
     'C:\Python313\python.exe'
 )
+$OpenSsl = Resolve-NativeTool 'openssl' @(
+    'C:\msys64\mingw64\bin\openssl.exe'
+)
 
 function Invoke-PythonProcess {
     param([Parameter(Mandatory)] [string[]]$Arguments)
@@ -104,6 +107,10 @@ $Stage1 = Join-Path $BuildDir 'stage1_mbr.bin'
 $FloppyStage1 = Join-Path $BuildDir 'stage1_floppy.bin'
 $Stage2 = Join-Path $BuildDir 'stage2_bios.bin'
 $Kernel = Join-Path $BuildDir 'kernel.bin'
+$KernelSignature = Join-Path $BuildDir 'kernel.bin.sig'
+$BootTrustPolicy = Join-Path $RepoRoot 'safety\boot_trust_policy.json'
+$BootPrivateKey = Join-Path $RepoRoot `
+    'test\fixtures\reist-research-dev-private.pem'
 $RawImage = Join-Path $BuildDir 'reist-os.img'
 $FloppyImage = Join-Path $BuildDir 'reist-os-floppy.img'
 $Vmdk = Join-Path $BuildDir 'reist-os.vmdk'
@@ -352,6 +359,24 @@ try {
         $floppyDataArguments += @(
             '--data-file', "htdocs/$demoFile=$demoPath"
         )
+    }
+
+    $signingExitCode = Invoke-PythonProcess -Arguments @(
+        'scripts/sign_boot_artifact.py', '--artifact', $Kernel,
+        '--signature', $KernelSignature, '--private-key', $BootPrivateKey,
+        '--policy', $BootTrustPolicy, '--openssl', $OpenSsl,
+        '--profile', 'research'
+    )
+    if ($signingExitCode -ne 0) {
+        throw "Kernel RSA-PSS signing failed with exit code $signingExitCode."
+    }
+    $signatureValidationExitCode = Invoke-PythonProcess -Arguments @(
+        'scripts/verify_boot_signature.py', '--artifact', $Kernel,
+        '--signature', $KernelSignature, '--policy', $BootTrustPolicy,
+        '--openssl', $OpenSsl, '--root', $RepoRoot
+    )
+    if ($signatureValidationExitCode -ne 0) {
+        throw "Kernel RSA-PSS verification failed with exit code $signatureValidationExitCode."
     }
 
     $nativeArguments = @(

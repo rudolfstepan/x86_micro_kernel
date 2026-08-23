@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.5a3a-rsa-pss-artifact-chain"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -1336,7 +1336,7 @@ evidence = []
 
 [[packages]]
 id = "S0.5a3a-rsa-pss-artifact-chain"
-status = "active"
+status = "done"
 risk = "high"
 title = "RSA-PSS signed kernel artifact and pinned research trust policy"
 scope = "Add a standard RSA-2048-PSS/SHA-256 artifact-signing chain according to RFC 8017 for the exact kernel.bin consumed by the BIOS image builder. Pin a versioned public-key fingerprint and explicit REIST research-development key policy, sign and independently verify the kernel before both Windows and Makefile image publication, reject altered artifacts signatures policies and keys, and emit a fixed 256-byte sidecar signature. A checked-in private fixture is permitted only for reproducible research automation and must be rejected by release mode; it is not a production secret. This package establishes host-side signed-artifact provenance only. Stage 2 does not yet verify RSA-PSS, so boot authenticity Verified Boot and Secure Boot remain forbidden claims until S0.5a3b binds the signature and trust anchor into the loader."

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "profile": "REIST-research-development",
+  "signature_algorithm": "RSA-2048-PSS-SHA256",
+  "rsa_modulus_bits": 2048,
+  "mgf1_digest": "SHA256",
+  "salt_length_bytes": 32,
+  "signature_size_bytes": 256,
+  "public_key": "safety/keys/reist-research-dev-public.pem",
+  "public_key_spki_sha256": "e17d4d5aefad94e85333abcd417260e0c35e080b083f86c9b3beb71b68bbc51e",
+  "development_key_spki_sha256": "e17d4d5aefad94e85333abcd417260e0c35e080b083f86c9b3beb71b68bbc51e",
+  "development_private_key": "test/fixtures/reist-research-dev-private.pem",
+  "release_requires_external_key": true,
+  "stage2_signature_verification": false
+}

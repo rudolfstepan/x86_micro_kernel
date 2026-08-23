@@ -110,9 +110,13 @@ prüft nach der Erzeugung Manifest, Datenträgergrenzen und tatsächliche
 Kernelbytes für HDD und Floppy. Stage 2 berechnet SHA-256 mit festen Puffern im
 selben begrenzten Lesedurchlauf wie die nur noch diagnostische CRC32 und prüft
 den Digest vor ELF-Parsing und Kernelstart. Da weder Signaturprüfung noch ein
-gebundener Vertrauensanker vorhanden sind, entsteht daraus keine Boot-
-Authentizität und kein Verified-/Secure-Boot-Claim. Diese Grenze wird erst mit
-einer versionierten Signatur- und Schlüsselpolitik angehoben.
+gebundener Loader-Vertrauensanker vorhanden sind, entsteht daraus keine Boot-
+Authentizität und kein Verified-/Secure-Boot-Claim. Der Host-Build besitzt
+bereits eine versionierte RFC-8017-RSA-PSS-Policy mit gepinntem Public-Key-
+Fingerprint und unabhängiger Prüfung des exakten Kernelartefakts. Der
+eingecheckte private Research-Schlüssel ist ausdrücklich kein Produktions-
+Secret; Release-Policies müssen ihn ablehnen. Die Vertrauensgrenze wird erst
+angehoben, wenn Stage 2 Signatur und Schlüsselanker selbst fail-closed prüft.
 
 Der entscheidende nächste Architekturwechsel ist damit ausdrücklich:
 

@@ -75,6 +75,16 @@ Beschädigungsdiagnostik. Unbekannte Manifestversionen, fehlende Digests,
 ungültige Grenzen oder widersprüchliche Imagegeometrie werden vor dem
 Kernelstart geschlossen abgelehnt.
 
+Die erste Signaturstufe verwendet hostseitig RSA-2048-PSS/SHA-256 gemäß RFC
+8017 mit MGF1-SHA-256 und exakt 32 Byte Salt. Die feste Research-Policy pinnt
+Algorithmusparameter und den SHA-256-Fingerprint des DER-
+SubjectPublicKeyInfo; Signierer und unabhängiger Prüfer müssen vor jeder
+Imageveröffentlichung erfolgreich sein. Der eingecheckte private Schlüssel ist
+eine absichtlich öffentliche Testfixture und in Release-Policies verboten.
+Solange Manifest, Signatur und Public Key nicht von Stage 2 selbst geprüft
+werden, erweitert dieses Gate nur die Build-Provenienz und nicht die Loader-
+Vertrauensgrenze.
+
 ## Medienübergreifender Schreib- und Wiederanlaufvertrag
 
 Der Vertrag gilt für **jeden** beschreibbaren persistenten Datenträger und

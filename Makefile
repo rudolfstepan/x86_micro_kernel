@@ -34,6 +34,7 @@ AS := nasm
 CC := gcc
 LD := ld
 OBJCOPY := objcopy
+OPENSSL ?= openssl
 ifeq ($(OS),Windows_NT)
 PYTHON ?= python
 else
@@ -45,6 +46,10 @@ USER_PROGRAM_OUTPUT ?= $(OUTPUT_DIR)/programs/HELLO.PRG
 USER_PROGRAM_LIBS ?=
 USER_SDK_DIR ?= $(OUTPUT_DIR)/sdk
 SYSTEM_PROGRAM_DIR := $(OUTPUT_DIR)/programs
+BOOT_SIGNATURE := $(OUTPUT_DIR)/kernel.bin.sig
+BOOT_TRUST_POLICY := safety/boot_trust_policy.json
+BOOT_PUBLIC_KEY := safety/keys/reist-research-dev-public.pem
+BOOT_PRIVATE_KEY := test/fixtures/reist-research-dev-private.pem
 
 # Build target selection (default: qemu)
 # Override with: make TARGET=real_hw or TARGET=vmware
@@ -287,7 +292,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-sdk user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-usb run-floppy run-fb help format-disks test test-unit test-desktop-host test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-fdd-hotplug test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel signed-kernel check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-sdk user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-usb run-floppy run-fb help format-disks test test-unit test-desktop-host test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-fdd-hotplug test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -713,6 +718,16 @@ system-programs:
 	@$(PYTHON) scripts/build_system_programs.py \
 		--output-dir $(SYSTEM_PROGRAM_DIR) --zig $(ZIG) --incremental
 
+signed-kernel: kernel
+	@echo "Signing and verifying the research kernel artifact..."
+	@$(PYTHON) scripts/sign_boot_artifact.py \
+		--artifact $(OUTPUT_DIR)/kernel.bin --signature $(BOOT_SIGNATURE) \
+		--private-key $(BOOT_PRIVATE_KEY) --policy $(BOOT_TRUST_POLICY) \
+		--openssl $(OPENSSL) --profile research
+	@$(PYTHON) scripts/verify_boot_signature.py \
+		--artifact $(OUTPUT_DIR)/kernel.bin --signature $(BOOT_SIGNATURE) \
+		--policy $(BOOT_TRUST_POLICY) --openssl $(OPENSSL) --root .
+
 native-image: floppy-image
 	@echo "Creating native BIOS disk image..."
 	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage1_mbr.asm -o $(OUTPUT_DIR)/stage1_mbr.bin
@@ -732,7 +747,7 @@ native-image: floppy-image
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/reist-os.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/reist-os/reist-os.vmx"
 
-floppy-image: kernel system-programs user-program
+floppy-image: signed-kernel system-programs user-program
 	@echo "Creating 1.44-MB BIOS floppy image..."
 	@$(AS) -f bin arch/$(ARCH)/boot/bios/stage1_floppy.asm -o $(OUTPUT_DIR)/stage1_floppy.bin
 	@$(AS) $(VIDEO_DEFINES) -f bin arch/$(ARCH)/boot/bios/stage2_bios.asm -o $(OUTPUT_DIR)/stage2_bios.bin

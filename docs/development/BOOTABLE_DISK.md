@@ -20,7 +20,20 @@ build/reist-os.img
 build/reist-os.vmdk
 build/vmware/reist-os/reist-os.vmx
 build/vmware/reist-os/START-VMWARE.cmd
+build/kernel.bin.sig
 ```
+
+Vor der Imageerzeugung signiert der Research-Build das exakte `kernel.bin`
+nach RFC 8017 mit RSA-2048-PSS/SHA-256, MGF1-SHA-256 und 32 Byte Salt. Die
+unabhängige Prüfung verwendet `safety/boot_trust_policy.json`, kontrolliert den
+gepinnten SHA-256-Fingerprint des DER-SubjectPublicKeyInfo und akzeptiert nur
+eine 256-Byte-Signatur. OpenSSL 3 wird dafür als Buildwerkzeug benötigt.
+
+Der eingecheckte private Schlüssel unter `test/fixtures` ist absichtlich eine
+öffentliche, kompromittierte Research-Testfixture für automatisierte Builds.
+Der Signierer lehnt diese Policy im Release-Modus ab. Ein späteres Release
+benötigt eine externe Policy und einen außerhalb des Repositories verwahrten
+privaten Schlüssel.
 
 ## Datenträgerlayout
 
@@ -53,11 +66,12 @@ Kernel. Der Kernel erkennt anschließend die Blockgeräte und Partitionen erneut
 über native Treiber.
 
 Hostgate und Bootloader liefern Integritäts- und Provenienzevidenz für das
-erzeugte Image, aber noch keine Authentizität: Das Manifest ist nicht signiert
-und besitzt keinen Firmware- oder Hardware-Vertrauensanker. Ein Angreifer mit
-Schreibzugriff auf Image und Manifest könnte beide gemeinsam ersetzen. Secure
-Boot beziehungsweise kryptografisch authentifizierter Boot bleibt daher
-ausdrücklich nicht implementiert.
+erzeugte Image. Die hostseitige RSA-PSS-Signatur authentifiziert das
+Kernelartefakt nur gegenüber dem Buildgate; sie ist noch nicht in Manifest und
+Stage 2 gebunden. Der Loader besitzt daher weiterhin keinen Signatur-
+Vertrauensanker. Ein Angreifer mit Schreibzugriff auf Image und Manifest könnte
+beide gemeinsam ersetzen. Secure Boot beziehungsweise kryptografisch
+authentifizierter Boot bleibt ausdrücklich nicht implementiert.
 
 ## Root-Volume
 
