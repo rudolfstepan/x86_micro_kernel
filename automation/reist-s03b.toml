@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.6c-automated-research-gate"
 
 [policy]
 one_package_per_run = true
@@ -407,6 +407,61 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: add bounded SPDX release SBOMs"
+evidence = []
+
+[[packages]]
+id = "S0.6c-automated-research-gate"
+status = "active"
+risk = "medium"
+title = "Close the automated QEMU and VMware S0 research gate"
+scope = "Close only the explicitly bounded generic-research S0 automation gate for QEMU i386 and VMware i386. Add a versioned machine-readable gate contract bound to safety/assurance_scope.toml, the completed autonomous package queue, a fixed milestone matrix and explicit residual/manual exclusions. A structurally independent validator must reject unknown fields, duplicate evidence IDs, missing targets, weakened commands, non-done predecessor packages, an unexpected active package and any claim of certification, physical independence, target-hardware WCET, reproducible builds, signed provenance or fail-operational qualification. Frozen acceptance executes the complete host suite once, fresh QEMU and VMware reference packages, QEMU PIT/watchdog/storage-recovery/memory/framebuffer smokes and the existing bounded VMware containment gate. Update roadmap parent status without converting manual hardware or broader product-assurance residuals into completed claims. This package does not implement reproducible builds, signed provenance, target-hardware qualification, online updates, anti-rollback, immutable recovery, long-duration soak or certification."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "safety/automated_s0_gate.toml",
+  "scripts/validate_automated_s0_gate.py",
+  "test/test_automated_s0_gate.py",
+  "test/test_codex_orchestration.py",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the gate identifies only baseline REIST-research and automated targets qemu-i386 plus vmware-i386",
+  "the gate status is automated-emulator-complete and never complete without that qualifier",
+  "every autonomous package except this gate is done and this gate is either the sole active package or done with an empty active_id",
+  "the exact host package runtime and VMware containment evidence matrix is fixed and duplicate or unknown evidence is rejected",
+  "manual target hardware external monitor electrical fence target WCET physical fault injection certification and fail-operational claims remain excluded",
+  "reproducible builds signed provenance long-duration soak online distribution anti-rollback and immutable recovery remain explicit residuals",
+  "roadmap and status distinguish automated emulator closure from the still-open physical and product-assurance gate",
+  "no kernel ABI runtime authority or target behavior changes"
+]
+targeted_tests = [
+  "python test/test_automated_s0_gate.py -v"
+]
+package_tests = [
+  "python -m unittest discover -s test -p \"test_*.py\" -v",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode pit",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode watchdog",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode storage-recovery",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode memory",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video framebuffer -Mode normal",
+  ".\\scripts\\run_vmware_containment.cmd"
+]
+stop_conditions = [
+  "the machine-readable gate can pass for a baseline or target outside the selected assurance scope",
+  "a predecessor package is not done or another package is queued or active",
+  "the evidence matrix omits host QEMU VMware PIT watchdog storage recovery memory framebuffer or containment",
+  "a manual hardware or unsupported product-assurance residual is hidden or marked complete",
+  "a frozen gate fails after one focused in-scope repair",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "safety: close automated S0 research gate"
 evidence = []
 
 [[packages]]
