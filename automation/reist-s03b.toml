@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.2b-qemu-vmware-containment"
 
 [policy]
 one_package_per_run = true
@@ -2509,3 +2509,58 @@ evidence = [
   ".\\scripts\\test-reist-package.ps1 -Target real_hw -Video vga",
   ".\\scripts\\test-reist-runtime.ps1 -Mode watchdog"
 ]
+
+[[packages]]
+id = "S0.2b-qemu-vmware-containment"
+status = "active"
+risk = "high"
+title = "Close the automated S0.2 containment baseline on QEMU and VMware"
+scope = "Complete S0.2 only for the explicitly bounded QEMU and VMware generic research baseline. Add a bounded VMware runtime containment gate which boots an isolated copy of the packaged VM, proves fail-closed absence of an external watchdog backend, observes supervised probe recovery and reaches the Ring-3 shell without panic. Keep the physical external-monitor profile unbound and reserve all real-hardware integration and fault-injection evidence for manual user acceptance; do not claim physical independence, certification, target-hardware qualification or fail-operational behavior. Update the assurance boundary, hazard residuals and roadmap language to distinguish automated emulator evidence from manual hardware evidence."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_vmware_containment_runtime.py",
+  "test/test_external_safety_monitor_contract.py",
+  "safety/assurance_scope.toml",
+  "safety/hazards.toml",
+  "docs/architecture/EXTERNAL_SAFETY_MONITOR_CONTRACT.md",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "S0.2 completion is relative only to automated QEMU and VMware containment evidence for the generic research baseline",
+  "the physical external-monitor profile remains unbound and real-hardware acceptance remains a manual user-owned activity outside automated gates",
+  "no emulator or host result is described as physical independence, target-hardware qualification, certification or fail-operational proof",
+  "the VMware runtime gate operates on an isolated copy under build/codex-agent and never boots or mutates the reference package directly",
+  "all vmrun invocations and serial-marker waits have finite deadlines and failure to locate or start VMware fails the gate",
+  "VMware acceptance requires fail-closed external-backend absence, bounded supervised probe recovery, BOOT_OK and the Ring-3 shell",
+  "panic, fatal or explicit test-failure markers fail VMware acceptance while the intentional supervised user-process exception remains permitted",
+  "the existing QEMU watchdog runtime proof remains emulator evidence and no real_hw package gate is used"
+]
+targeted_tests = [
+  "python test/test_vmware_containment_runtime.py -q",
+  "python test/test_external_safety_monitor_contract.py -q",
+  "python scripts/validate_external_safety_monitor.py",
+  "python scripts/validate_hazard_register.py",
+  "python scripts/run_hazard_traceability.py"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode watchdog",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-containment"
+]
+stop_conditions = [
+  "the automated baseline could pass without both QEMU and VMware runtime evidence",
+  "the VMware gate would mutate the reference package or wait without a finite deadline",
+  "documentation could imply that emulator evidence qualifies a physical external monitor",
+  "a required file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "safety: close QEMU VMware containment baseline"
+evidence = []
