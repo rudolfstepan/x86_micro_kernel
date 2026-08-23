@@ -36,6 +36,9 @@ typedef struct {
     uint32_t irq_pending_count;
     uint8_t irq_notification_sent;
     uint64_t irq_deadline_ms;
+    uint64_t irq_window_start_ms;
+    uint32_t irq_window_count;
+    uint32_t irq_storm_count;
     uint8_t region_policy_installed;
     device_domain_region_policy_t region_policy;
 } device_slot_t;
@@ -88,6 +91,51 @@ static device_domain_dma_pool_stats_t dma_pool_stats;
 static void increment_saturating(uint32_t *value) {
     if (value != NULL && *value != UINT32_MAX) ++*value;
 }
+
+static bool irq_window_admit(device_slot_t *device, uint64_t now_ms) {
+    if (device->irq_window_count == 0U) {
+        device->irq_window_start_ms = now_ms;
+        device->irq_window_count = 1U;
+        return true;
+    }
+    if (now_ms < device->irq_window_start_ms) {
+        increment_saturating(&device->irq_storm_count);
+        return false;
+    }
+    if (now_ms - device->irq_window_start_ms >=
+        DEVICE_DOMAIN_IRQ_WINDOW_MS) {
+        device->irq_window_start_ms = now_ms;
+        device->irq_window_count = 1U;
+        return true;
+    }
+    if (device->irq_window_count >= DEVICE_DOMAIN_IRQ_WINDOW_LIMIT) {
+        increment_saturating(&device->irq_storm_count);
+        return false;
+    }
+    ++device->irq_window_count;
+    return true;
+}
+
+#ifdef REIST_RUNTIME_DEGRADATION_FAULT_INJECTION
+bool device_domain_irq_storm_self_test(void) {
+    device_slot_t device = {0};
+    for (uint32_t irq = 0U; irq < DEVICE_DOMAIN_IRQ_WINDOW_LIMIT; ++irq) {
+        if (!irq_window_admit(&device, 100U)) return false;
+    }
+    if (irq_window_admit(&device, 100U) || device.irq_storm_count != 1U)
+        return false;
+
+    device = (device_slot_t){0};
+    if (!irq_window_admit(&device, 200U) ||
+        irq_window_admit(&device, 199U) || device.irq_storm_count != 1U)
+        return false;
+    device.irq_storm_count = UINT32_MAX;
+    if (irq_window_admit(&device, 198U) ||
+        device.irq_storm_count != UINT32_MAX)
+        return false;
+    return true;
+}
+#endif
 
 #ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
 #define DEVICE_DOMAIN_FAULT_RECOVERY_LOCATION 0xFFFFFF00U
@@ -642,6 +690,8 @@ static bool fence_slot(device_slot_t *device) {
     device->irq_pending_count = 0U;
     device->irq_notification_sent = 0U;
     device->irq_deadline_ms = 0U;
+    device->irq_window_start_ms = 0U;
+    device->irq_window_count = 0U;
     retire_device_resources((uint32_t)(device - devices), device->generation);
     device->state = DEVICE_DOMAIN_FENCED;
     return irq_masked && mastering_disabled && irq_revoked && dma_revoked;
@@ -1090,6 +1140,8 @@ int device_domain_activate(int pid, uint32_t process_generation,
         end_operation();
         return -5;
     }
+    device->irq_window_start_ms = 0U;
+    device->irq_window_count = 0U;
     device->state = DEVICE_DOMAIN_ACTIVE;
     end_operation();
     return 0;
@@ -1123,6 +1175,8 @@ int device_domain_deactivate(int pid, uint32_t process_generation,
     device->irq_pending_count = 0U;
     device->irq_notification_sent = 0U;
     device->irq_deadline_ms = 0U;
+    device->irq_window_start_ms = 0U;
+    device->irq_window_count = 0U;
     device->state = DEVICE_DOMAIN_DMA_BOUND;
     end_operation();
     return 0;
@@ -1332,7 +1386,8 @@ void device_domain_poll(uint64_t now_ms) {
                 pci->irq_line != irq) continue;
             matched = true;
             if (device->irq_pic_fallback != 0U) hold_pic_line = true;
-            if (!mask_device_irq(device) ||
+            if (!irq_window_admit(device, now_ms) ||
+                !mask_device_irq(device) ||
                 device->irq_resource == DEVICE_DOMAIN_INVALID_HANDLE ||
                 device->irq_sequence == DEVICE_DOMAIN_HANDLE_GENERATION_MAX) {
                 (void)fence_slot(device);

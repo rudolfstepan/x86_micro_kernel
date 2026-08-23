@@ -27,6 +27,7 @@
 #define SCHEDULER_WINDOW_SAFETY_MS 60U
 #define SCHEDULER_CLASS_COUNT 3U
 #define SCHEDULER_CLASS_NONE UINT8_MAX
+#define SCHEDULER_WINDOW_FAULT_CLOCK_REGRESSION (1U << 0U)
 
 typedef struct {
     bool runnable;
@@ -39,6 +40,8 @@ typedef struct {
     uint64_t last_account_ms;
     uint32_t used_ms[SCHEDULER_CLASS_COUNT];
     uint32_t overload_count[SCHEDULER_CLASS_COUNT];
+    uint32_t clock_anomaly_count;
+    uint32_t fault_flags;
     uint8_t throttled_mask;
     bool initialized;
 } scheduler_window_t;
@@ -60,5 +63,9 @@ uint32_t scheduler_policy_window_limit(uint8_t scheduling_class);
 void scheduler_policy_inherit(uint8_t *effective_classes,
                               const uint8_t *base_classes,
                               const int8_t *blocked_owners, size_t count);
+
+#ifdef REIST_RUNTIME_DEGRADATION_FAULT_INJECTION
+bool scheduler_policy_degradation_self_test(void);
+#endif
 
 #endif

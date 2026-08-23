@@ -70,6 +70,7 @@ DHCP_RENEW_FAULT_INJECTION ?= 0
 HANDOVER_NODE_ID ?= 0
 VBE_RUNTIME_TEST ?= 0
 DRIVER_DOMAIN_FAULT_INJECTION ?= 0
+RUNTIME_DEGRADATION_FAULT_INJECTION ?= 0
 
 # Target-specific defines
 ifeq ($(TARGET),real_hw)
@@ -125,6 +126,10 @@ endif
 
 ifeq ($(DRIVER_DOMAIN_FAULT_INJECTION),1)
     SAFETY_TEST_DEFINES += -DREIST_DRIVER_DOMAIN_FAULT_INJECTION
+endif
+
+ifeq ($(RUNTIME_DEGRADATION_FAULT_INJECTION),1)
+    SAFETY_TEST_DEFINES += -DREIST_RUNTIME_DEGRADATION_FAULT_INJECTION
 endif
 
 ifeq ($(DHCP_RENEW_FAULT_INJECTION),1)
@@ -211,7 +216,7 @@ LIB_LIBC_C := $(wildcard $(LIB_DIR)/libc/*.c)
 LIB_LIBC_ASM := $(wildcard $(LIB_DIR)/libc/*.asm)
 LIB_LIBK_C := $(wildcard $(LIB_DIR)/libk/*.c)
 
-CONFIG_VARIANT := f$(FAULT_INJECTION)-m$(MEMORY_FAULT_INJECTION)-s$(STORAGE_FAULT_INJECTION)-io$(STORAGE_IO_FAULT_INJECTION)-a$(AHCI_FAULT_INJECTION)-$(AHCI_FAULT_MODE)-h$(HANDOVER_FAULT_INJECTION)-n$(HANDOVER_NODE_ID)-dl$(DHCP_LEASE_FAULT_INJECTION)-dr$(DHCP_RENEW_FAULT_INJECTION)-v$(VBE_RUNTIME_TEST)-dd$(DRIVER_DOMAIN_FAULT_INJECTION)
+CONFIG_VARIANT := f$(FAULT_INJECTION)-m$(MEMORY_FAULT_INJECTION)-s$(STORAGE_FAULT_INJECTION)-io$(STORAGE_IO_FAULT_INJECTION)-a$(AHCI_FAULT_INJECTION)-$(AHCI_FAULT_MODE)-h$(HANDOVER_FAULT_INJECTION)-n$(HANDOVER_NODE_ID)-dl$(DHCP_LEASE_FAULT_INJECTION)-dr$(DHCP_RENEW_FAULT_INJECTION)-v$(VBE_RUNTIME_TEST)-dd$(DRIVER_DOMAIN_FAULT_INJECTION)-rd$(RUNTIME_DEGRADATION_FAULT_INJECTION)
 CONFIG_STAMP := $(OUTPUT_DIR)/.config-$(TARGET)-$(VIDEO)-$(CONFIG_VARIANT)
 
 # ============================================================================
@@ -292,7 +297,7 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel signed-kernel check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-sdk user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-usb run-floppy run-fb help format-disks test test-unit test-desktop-host test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-fdd-hotplug test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel signed-kernel check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-sdk user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-usb run-floppy run-fb help format-disks test test-unit test-desktop-host test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-runtime-degradation test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-fdd-hotplug test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
 
@@ -910,6 +915,18 @@ test-smoke-memory-fault:
 		--expect-memory-fault \
 		--timeout 120 \
 		--log build/memory-fault-injection/guest-smoke-memory-fault.log
+
+test-smoke-runtime-degradation:
+	@echo "Building deterministic runtime-degradation guard image..."
+	@$(MAKE) native-image TARGET=qemu VIDEO=vga \
+		RUNTIME_DEGRADATION_FAULT_INJECTION=1 \
+		OUTPUT_DIR=build/runtime-degradation
+	@$(PYTHON) scripts/run_qemu_smoke.py \
+		--qemu $(QEMU) \
+		--image build/runtime-degradation/reist-os.img \
+		--expect-runtime-degradation \
+		--timeout 120 \
+		--log build/runtime-degradation/guest-smoke.log
 
 test-smoke-memory: native-image
 	@echo "Running QEMU guest smoke test with 32 MiB RAM..."

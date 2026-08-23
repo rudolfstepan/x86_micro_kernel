@@ -132,6 +132,17 @@ Rückkehr auf null aktive Pools geprüft. Der QEMU-HDA-Treiber bestätigt seine
 eigene gebundene Poolbelegung über einen maschinenlesbaren Marker im bereits
 autorisierten, generationsgebundenen Supervisor-Diagnosekanal.
 
+`S0.4c-3` begrenzt nun IRQ-Stürme pro aktiver Device-Domain auf 128
+Aufnahmen in 100 ms. Die erste Überschreitung sowie eine rückwärts laufende
+Device-Zeit fencen vor einer weiteren Ring-3-Benachrichtigung über den
+vorhandenen vollständigen Mask-/Bus-Master-/DMA-Cleanup-Pfad. Eine Regression
+der Scheduler-Abrechnungszeit verriegelt alle Ring-3-Klassen auch über spätere
+Fensterwechsel hinweg; nur explizite Neuinitialisierung löscht den Fehler.
+Die Grenzen stehen im Ressourcenregister, die Zähler saturieren, und ein
+separater Compilezeit-QEMU-Build weist beide Guards vor `BOOT_OK` sowie
+anschließenden normalen Ring-3-Fortschritt bis `TEST_OK` nach. Daraus folgt
+keine Zielhardware-WCET- oder Hardwarequalifikationsaussage.
+
 S0.5 umfasst nun die abgeschlossenen Pakete `S0.5a1`, `S0.5a2`, `S0.5a3a`,
 `S0.5a3b`, `S0.5b1`, `S0.5b2` und `S0.5b3`. Die letzten drei Pakete ergänzen
 die redundante Bootstufe, deren transaktionalen Pending-Zustand und das

@@ -240,6 +240,15 @@ Eigentümer. Zähleränderung und ein Konsistenzscan aller vier Slots laufen unt
 dem bestehenden Device-Domain-Lock; die Werte sind Diagnose und keine
 Autoritätsentscheidung.
 
+Die IRQ-Aufnahme jeder aktiven Device-Domain ist zusätzlich auf 128 Ereignisse
+je festem 100-ms-Fenster begrenzt. Überschreitung oder rückläufige Zeit fencen
+das betroffene Gerät vor einer weiteren Ring-3-Benachrichtigung über denselben
+vollständigen, idempotenten Cleanup-Pfad. Eine Regression der Scheduler-
+Abrechnungszeit verriegelt analog alle Ring-3-Klassen und bleibt über normale
+Fensterwechsel erhalten. Beide Diagnosezähler saturieren. Nur ein getrenntes,
+zur Compilezeit ausgewähltes QEMU-Profil führt die festen lokalen Selbsttests
+aus; es existiert dafür keine Laufzeitsteuerung und kein neuer Syscall.
+
 Jeder Kernel-C-Buildpfad wird zusätzlich in einem unabhängigen Analysecompile
 mit Stack-Usage und Callgraph-Information übersetzt. Fehlende Artefakte,
 dynamische oder über 4096 Byte große lokale Frames und Rekursionszyklen sind

@@ -150,6 +150,14 @@ Rückkehr Richtung `FULL` verlangt Selbsttest, Zustandsabgleich und ausdrücklic
 Reintegration durch den Supervisor; verstrichene Zeit allein löscht keine
 Degradation.
 
+Dasselbe gilt für fehlerhafte Laufzeitabrechnung: Eine rückwärts laufende
+Scheduler-Zeit sperrt alle Ring-3-Klassen bis zur expliziten
+Neuinitialisierung. Device-Domains nehmen pro 100 ms höchstens 128 IRQs auf;
+der nächste IRQ oder eine rückwärts laufende Gerätezeit fencen ausschließlich
+die betroffene Domäne vor einer weiteren Benachrichtigung. Das Fence maskiert
+den IRQ, deaktiviert Bus Mastering, widerruft DMA und nullt mediated Pools.
+Ein Zeitfensterwechsel allein reintegriert weder Scheduler noch Gerät.
+
 ## Persistenter und extern sichtbarer Zustand
 
 Ein Neustart darf Teilarbeit nicht in akzeptierte Arbeit verwandeln.

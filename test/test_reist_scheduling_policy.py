@@ -45,6 +45,20 @@ class ReistSchedulingPolicyTests(unittest.TestCase):
         self.assertIn("scheduler_policy_class_allowed", scheduler)
         self.assertNotIn("k_malloc", policy)
 
+    def test_clock_regression_latches_until_explicit_init(self):
+        header = (ROOT / "kernel/sched/scheduling_policy.h").read_text(
+            encoding="utf-8")
+        policy = (ROOT / "kernel/sched/scheduling_policy.c").read_text(
+            encoding="utf-8")
+        self.assertIn("SCHEDULER_WINDOW_FAULT_CLOCK_REGRESSION", header)
+        self.assertIn("clock_anomaly_count", header)
+        self.assertIn("window->fault_flags |=", policy)
+        self.assertIn("if (window->fault_flags != 0U) return false;", policy)
+        rollover = policy[policy.index("bool rolled ="):policy.index(
+            "bool scheduler_policy_class_allowed")]
+        self.assertIn("uint32_t fault_flags = window->fault_flags", rollover)
+        self.assertIn("window->fault_flags = fault_flags", rollover)
+
     def test_ipc_waits_use_generation_scoped_priority_inheritance(self):
         ipc = (ROOT / "kernel/ipc/ipc.c").read_text(encoding="utf-8")
         scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(

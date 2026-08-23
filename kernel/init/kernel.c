@@ -207,6 +207,13 @@ static void hardware_init(void) {
         panic("Unable to register driver-domain fault fixtures");
     }
 #endif
+#ifdef REIST_RUNTIME_DEGRADATION_FAULT_INJECTION
+    if (!scheduler_policy_degradation_self_test() ||
+        !device_domain_irq_storm_self_test()) {
+        panic("Runtime degradation guard self-test failed");
+    }
+    printf("REIST_RUNTIME_DEGRADATION CLOCK_SAFE IRQ_FENCED\n");
+#endif
     /* Establish runtime graphics MMIO mappings before process page
      * directories copy the shared high-kernel PDEs.  This does not switch the
      * VGA mode or publish a framebuffer. */

@@ -7,6 +7,7 @@ import argparse
 import json
 import queue
 import re
+import shutil
 import socket
 import struct
 import subprocess
@@ -35,6 +36,9 @@ REIST_PROBE_MARKERS = (
 REIST_PROBE_COMPLETION_MARKER = "REIST_PROBE RECOVERY_SEQUENCE_OK"
 REIST_NETWORK_SERVICE_READY_MARKER = "REIST_NETWORK SERVICE_READY"
 REIST_MEMORY_FAULT_MARKER = "REIST_MEMORY_FAULT_INJECTION_OK"
+REIST_RUNTIME_DEGRADATION_MARKER = (
+    "REIST_RUNTIME_DEGRADATION CLOCK_SAFE IRQ_FENCED"
+)
 REIST_SERVICE_MARKER = "TEST_STAGE DIAGNOSTIC_SERVICE_OK"
 REIST_SERVICE_CORRELATION_MARKER = "TEST_STAGE SERVICE_CORRELATION_OK"
 REIST_NETWORK_MARKER = "TEST_STAGE NETWORK_PARSER_OK"
@@ -1495,6 +1499,7 @@ def validate(
     expect_network_dhcp: bool = False,
     expect_network_udp_ingress: bool = False,
     expect_memory_fault: bool = False,
+    expect_runtime_degradation: bool = False,
     boot_only: bool = False,
     wcet_budget: dict[str, int] | None = None,
 ) -> str | None:
@@ -1528,6 +1533,11 @@ def validate(
                                            REIST_MEMORY_FAULT_MARKER)
         if memory_fault < 0 or memory_fault > boot:
             return "missing pre-boot memory fault-injection marker"
+    if expect_runtime_degradation:
+        degradation = exact_line_position(
+            transcript, REIST_RUNTIME_DEGRADATION_MARKER)
+        if degradation < 0 or degradation > boot:
+            return "missing pre-boot runtime degradation marker"
     if not (expect_dhcp_expiry or expect_dhcp_renewal) and exact_line_position(
             transcript, SHELL_PROMPT, after=test) < 0:
         return f"missing {SHELL_PROMPT} prompt after {TEST_MARKER}"
@@ -1787,6 +1797,11 @@ def main() -> int:
         help="require deterministic pre-boot memory rollback evidence",
     )
     parser.add_argument(
+        "--expect-runtime-degradation",
+        action="store_true",
+        help="require pre-boot clock-regression and IRQ-storm guard evidence",
+    )
+    parser.add_argument(
         "--expect-network-handoff",
         action="store_true",
         help="require a real NIC RX header to reach the Ring-3 service",
@@ -1922,6 +1937,20 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.qemu == Path("qemu-system-i386"):
+        resolved_qemu = shutil.which("qemu-system-i386")
+        if resolved_qemu is None:
+            for candidate in (
+                Path(r"C:\tmp\qemu-portable\qemu-system-i386.exe"),
+                Path(r"C:\Program Files\qemu\qemu-system-i386.exe"),
+                Path(r"C:\msys64\mingw64\bin\qemu-system-i386.exe"),
+            ):
+                if candidate.is_file():
+                    resolved_qemu = str(candidate)
+                    break
+        if resolved_qemu is not None:
+            args.qemu = Path(resolved_qemu)
+
     if not args.image.is_file():
         print(f"guest-smoke: image not found: {args.image}", file=sys.stderr)
         return 2
@@ -2028,6 +2057,7 @@ def main() -> int:
                             args.expect_network_dhcp,
                             args.expect_network_udp_ingress,
                             args.expect_memory_fault,
+                            args.expect_runtime_degradation,
                             args.boot_only,
                             wcet_budget)
     if marker_error is None and process_error is None:

@@ -20,6 +20,8 @@
 #define DEVICE_DOMAIN_INVALID_HANDLE 0U
 #define DEVICE_DOMAIN_HANDLE_GENERATION_MAX 0x00FFFFFFU
 #define DEVICE_DOMAIN_IRQ_TIMEOUT_MS 250U
+#define DEVICE_DOMAIN_IRQ_WINDOW_MS 100U
+#define DEVICE_DOMAIN_IRQ_WINDOW_LIMIT 128U
 #define DEVICE_DOMAIN_DMA_POOL_COUNT 4U
 #define DEVICE_DOMAIN_DMA_POOL_BYTES (64U * 1024U)
 #define DEVICE_DOMAIN_DMA_TRANSFER_MAX 1024U
@@ -548,6 +550,10 @@ int device_domain_region_bind_dma(
     const device_domain_region_dma_address_t *request);
 /** Deliver deferred bounded IRQ notifications and enforce their deadlines. */
 void device_domain_poll(uint64_t now_ms);
+
+#ifdef REIST_RUNTIME_DEGRADATION_FAULT_INJECTION
+bool device_domain_irq_storm_self_test(void);
+#endif
 
 #ifdef REIST_HOST_TEST
 void device_domain_test_reset(void);

@@ -59,8 +59,11 @@ bool scheduler_policy_window_charge(scheduler_window_t *window,
         return false;
     }
     if (now_ms < window->last_account_ms) {
-        /* A regressing clock invalidates all accounting. Fail closed until
-         * the next valid window instead of granting fresh CPU time. */
+        /* A regressing clock invalidates all accounting. This fault remains
+         * latched until an explicit scheduler_policy_window_init(). */
+        window->clock_anomaly_count = saturating_add_u32(
+            window->clock_anomaly_count, 1U);
+        window->fault_flags |= SCHEDULER_WINDOW_FAULT_CLOCK_REGRESSION;
         window->throttled_mask = (1U << SCHEDULER_CLASS_COUNT) - 1U;
         return false;
     }
@@ -84,11 +87,17 @@ bool scheduler_policy_window_charge(scheduler_window_t *window,
                 window->overload_count[scheduling_class], skipped_windows);
         }
         uint32_t overload[SCHEDULER_CLASS_COUNT];
+        uint32_t clock_anomaly_count = window->clock_anomaly_count;
+        uint32_t fault_flags = window->fault_flags;
         for (size_t index = 0U; index < SCHEDULER_CLASS_COUNT; ++index)
             overload[index] = window->overload_count[index];
         *window = (scheduler_window_t){0};
         for (size_t index = 0U; index < SCHEDULER_CLASS_COUNT; ++index)
             window->overload_count[index] = overload[index];
+        window->clock_anomaly_count = clock_anomaly_count;
+        window->fault_flags = fault_flags;
+        if (fault_flags != 0U)
+            window->throttled_mask = (1U << SCHEDULER_CLASS_COUNT) - 1U;
         window->window_start_ms = new_start;
         window->initialized = true;
         if (scheduling_class < SCHEDULER_CLASS_COUNT)
@@ -105,8 +114,35 @@ bool scheduler_policy_class_allowed(const scheduler_window_t *window,
                                     uint8_t scheduling_class) {
     if (window == NULL || scheduling_class >= SCHEDULER_CLASS_COUNT)
         return false;
+    if (window->fault_flags != 0U) return false;
     return (window->throttled_mask & (1U << scheduling_class)) == 0U;
 }
+
+#ifdef REIST_RUNTIME_DEGRADATION_FAULT_INJECTION
+bool scheduler_policy_degradation_self_test(void) {
+    scheduler_window_t window;
+    scheduler_policy_window_init(&window, 250U);
+    if (scheduler_policy_window_charge(&window, SCHEDULER_CLASS_SAFETY,
+                                       249U) ||
+        window.clock_anomaly_count != 1U ||
+        (window.fault_flags & SCHEDULER_WINDOW_FAULT_CLOCK_REGRESSION) == 0U)
+        return false;
+    for (uint8_t scheduling_class = 0U;
+         scheduling_class < SCHEDULER_CLASS_COUNT; ++scheduling_class) {
+        if (scheduler_policy_class_allowed(&window, scheduling_class))
+            return false;
+    }
+    if (!scheduler_policy_window_charge(&window, SCHEDULER_CLASS_SAFETY,
+                                        500U) ||
+        scheduler_policy_class_allowed(&window, SCHEDULER_CLASS_SAFETY))
+        return false;
+    window.clock_anomaly_count = UINT32_MAX;
+    window.last_account_ms = 500U;
+    (void)scheduler_policy_window_charge(&window, SCHEDULER_CLASS_SAFETY,
+                                         499U);
+    return window.clock_anomaly_count == UINT32_MAX;
+}
+#endif
 
 void scheduler_policy_inherit(uint8_t *effective_classes,
                               const uint8_t *base_classes,

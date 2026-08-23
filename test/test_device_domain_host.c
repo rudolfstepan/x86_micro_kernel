@@ -311,6 +311,67 @@ static device_domain_platform_ops_t test_platform_ops(void) {
     };
 }
 
+static void activate_irq_test_device(
+        int pid, uint32_t generation, uint32_t *device_out,
+        device_domain_handle_t *handle_out,
+        device_domain_resource_handle_t *irq_out) {
+    device_domain_platform_ops_t ops = test_platform_ops();
+    assert(device_domain_init(&ops, false));
+    device_domain_profile_t device_profile = profile(
+        7U, DEVICE_DOMAIN_PROFILE_MEDIATED_DMA);
+    assert(device_domain_register(
+        &device_profile, 0x00001B00U, device_out) == 0);
+    assert(device_domain_claim(pid, generation, *device_out,
+        DEVICE_DOMAIN_MODE_MEDIATED, handle_out) == 0);
+    device_domain_resource_handle_t dma_resource = 0U;
+    assert(bind_irq_resource(
+        pid, generation, *handle_out, 11U, irq_out) == 0);
+    assert(bind_dma_resource(
+        pid, generation, *handle_out, 0U, &dma_resource) == 0);
+    assert(device_domain_activate(pid, generation, *handle_out) == 0);
+}
+
+static void test_irq_storm_and_clock_regression_are_fenced(void) {
+    reset_counters();
+    uint32_t device = 0U;
+    device_domain_handle_t handle = DEVICE_DOMAIN_INVALID_HANDLE;
+    device_domain_resource_handle_t irq_resource = 0U;
+    activate_irq_test_device(31, 17U, &device, &handle, &irq_resource);
+
+    for (uint32_t irq = 0U; irq < DEVICE_DOMAIN_IRQ_WINDOW_LIMIT; ++irq) {
+        device_domain_test_raise_irq(5U);
+        device_domain_poll(100U);
+        assert(kernel_notifications == irq + 1U);
+        device_domain_irq_completion_t completion;
+        assert(device_domain_irq_complete(
+            31, 17U, irq_resource, &completion) == 0);
+        assert(completion.completed_count == 1U);
+    }
+    device_domain_test_raise_irq(5U);
+    device_domain_poll(100U);
+    device_domain_status_t status;
+    assert(device_domain_status(device, &status) == 0);
+    assert(status.state == DEVICE_DOMAIN_FENCED);
+    assert(kernel_notifications == DEVICE_DOMAIN_IRQ_WINDOW_LIMIT);
+    assert(irq_revoke_calls == 1U && dma_revoke_calls == 1U);
+    device_domain_dma_pool_stats_t pool_stats;
+    assert(device_domain_dma_pool_stats(&pool_stats) == 0);
+    assert(pool_stats.active_pools == 0U);
+
+    reset_counters();
+    activate_irq_test_device(32, 18U, &device, &handle, &irq_resource);
+    device_domain_test_raise_irq(5U);
+    device_domain_poll(200U);
+    device_domain_irq_completion_t completion;
+    assert(device_domain_irq_complete(
+        32, 18U, irq_resource, &completion) == 0);
+    device_domain_test_raise_irq(5U);
+    device_domain_poll(199U);
+    assert(device_domain_status(device, &status) == 0);
+    assert(status.state == DEVICE_DOMAIN_FENCED);
+    assert(kernel_notifications == 1U);
+}
+
 static void test_legacy_pic_fallback_masks_shared_irq(void) {
     reset_counters();
     mask_result = false;
@@ -902,6 +963,7 @@ static void test_dma_pool_pressure_is_saturating_and_reclaimed(void) {
 }
 
 int main(void) {
+    test_irq_storm_and_clock_regression_are_fenced();
     test_legacy_pic_fallback_masks_shared_irq();
     test_mediated_lifecycle_and_stale_handle();
     test_group_exclusivity_and_failed_reset();

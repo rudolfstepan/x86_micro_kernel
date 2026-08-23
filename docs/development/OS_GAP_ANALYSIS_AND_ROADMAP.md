@@ -405,6 +405,9 @@ und 10 verbindlich.
                 frischer QEMU-/VMware-Evidenz
               - [ ] S0.4c-2c2b2b Manuelle WCET-Messung auf eindeutig
                 ausgewählter Referenzhardware
+    - [x] S0.4c-3 Getestete fail-closed Degradation bei Scheduler-
+      Zeitregression sowie per Device-Domain begrenzte IRQ-Stürme mit
+      vollständigem Fence und separatem QEMU-Testprofil
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
   - [x] S0.5a1 Versioniertes Bootmanifest v2 mit exaktem Kernel-SHA-256 und
     unabhängigem, fail-closed HDD-/Floppy-Imagegate
@@ -1329,8 +1332,12 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    Admission Control und nachgewiesene Worst-Case-Laufzeiten.
 - Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte
    Allokation, Rekursion, Retries und Warteschlangen sind dort unzulässig.
-- Priority Inversion, Interruptstürme und Zeitquellenausfall müssen noch einen
-   getesteten degradierten Zustand auslösen.
+- Priority Inversion ist generationssicher behandelt. Interruptstürme und
+   rückläufige Scheduler-/Device-Zeit lösen nun einen getesteten fail-closed
+   Zustand aus: Schedulerklassen bleiben bis zur Neuinitialisierung gesperrt,
+   betroffene Geräte werden vollständig gefenct. Vollständiger
+   Zeitquellenausfall auf Zielhardware bleibt Teil der manuellen Plattform-
+   Qualifikation.
 - Kritische Kernelobjekte selektiv über den `critical_object`-Umschlag mit
    wortweisem SECDED, CRC32, Version/Sequenz, semantischem Validator und
    Primary/Shadow schützen; Bitflip-Injection misst Korrektur und Eskalation.

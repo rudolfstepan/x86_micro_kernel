@@ -392,6 +392,19 @@ bleiben bis zur Device-Domain-Neuinitialisierung erhalten. Der Abruf scannt
 alle vier Slots und lehnt abweichende Buchhaltung ab, ohne Allokation oder neue
 DMA-Autorität.
 
+S0.4c-3 schließt zwei Laufzeit-Degradationspfade. Eine Regression der
+monotonen Scheduler-Abrechnungszeit verriegelt einen saturierend gezählten
+Fehler und sperrt alle Ring-3-Klassen bis zur expliziten Policy-
+Neuinitialisierung; ein späteres Zeitfenster stellt keine Autorität wieder her.
+Jede aktive Device-Domain besitzt außerdem ein festes 100-ms-Fenster mit
+höchstens 128 aufgenommenen IRQs. Der nächste IRQ im selben Fenster oder eine
+rückwärts laufende Device-Zeit führt vor einer weiteren Benachrichtigung durch
+den vorhandenen Fence-Pfad: IRQ maskieren, Bus Mastering deaktivieren,
+Capability und DMA widerrufen, mediated Pool nullen und Ressourcen
+generationsgebunden ausmustern. Die Konstanten sind im Ressourcenregister
+gebunden; der separate QEMU-Testbuild prüft beide Guards vor `BOOT_OK` und
+muss danach den normalen Ring-3-`TEST_OK` erreichen.
+
 S0.4c-2c1 ergänzt den Zig-Referenzbuild um einen getrennten GCC-Analysecompile
 mit `-fstack-usage` und `-fcallgraph-info=su`. Für jedes der 75 C-Objekte muss
 ein gepaartes Stack-/Callgraph-Artefakt existieren. Der begrenzte Validator

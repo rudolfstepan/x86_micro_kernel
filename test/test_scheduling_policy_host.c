@@ -64,21 +64,33 @@ int main(void) {
               &window, SCHEDULER_CLASS_SERVICE) &&
           !scheduler_policy_class_allowed(
               &window, SCHEDULER_CLASS_SAFETY), 50);
+    CHECK(window.clock_anomaly_count == 1U, 51);
+    CHECK((window.fault_flags &
+           SCHEDULER_WINDOW_FAULT_CLOCK_REGRESSION) != 0U, 52);
+    CHECK(scheduler_policy_window_charge(
+              &window, SCHEDULER_CLASS_SAFETY, 500U), 53);
+    CHECK(!scheduler_policy_class_allowed(
+              &window, SCHEDULER_CLASS_SAFETY), 54);
+    window.clock_anomaly_count = UINT32_MAX;
+    window.last_account_ms = 500U;
+    CHECK(!scheduler_policy_window_charge(
+              &window, SCHEDULER_CLASS_SAFETY, 499U), 55);
+    CHECK(window.clock_anomaly_count == UINT32_MAX, 56);
 
     scheduler_policy_window_init(&window, 100U);
     CHECK(scheduler_policy_window_charge(
-              &window, SCHEDULER_CLASS_SERVICE, 500U), 51);
-    CHECK(window.overload_count[SCHEDULER_CLASS_SERVICE] == 4U, 52);
+              &window, SCHEDULER_CLASS_SERVICE, 500U), 57);
+    CHECK(window.overload_count[SCHEDULER_CLASS_SERVICE] == 4U, 58);
 
     uint8_t base[] = {SCHEDULER_CLASS_AMBIENT, SCHEDULER_CLASS_SERVICE,
                       SCHEDULER_CLASS_SAFETY, SCHEDULER_CLASS_AMBIENT};
     uint8_t effective[4] = {0};
     int8_t owners[] = {-1, 0, 1, 3};
     scheduler_policy_inherit(effective, base, owners, 4U);
-    CHECK(effective[0] == SCHEDULER_CLASS_SAFETY, 53);
-    CHECK(effective[1] == SCHEDULER_CLASS_SAFETY, 54);
-    CHECK(effective[2] == SCHEDULER_CLASS_SAFETY, 55);
-    CHECK(effective[3] == SCHEDULER_CLASS_AMBIENT, 56);
+    CHECK(effective[0] == SCHEDULER_CLASS_SAFETY, 59);
+    CHECK(effective[1] == SCHEDULER_CLASS_SAFETY, 60);
+    CHECK(effective[2] == SCHEDULER_CLASS_SAFETY, 61);
+    CHECK(effective[3] == SCHEDULER_CLASS_AMBIENT, 62);
 
     scheduler_candidate_t cyclic[] = {
         {true, SCHEDULER_CLASS_AMBIENT, 0U},
@@ -94,7 +106,7 @@ int main(void) {
          ++index) {
         CHECK(scheduler_policy_select_cycle(
                   cyclic, 4U, cyclic_cursors, &cycle_cursor) ==
-              cyclic_expected[index], 57 + (int)index);
+              cyclic_expected[index], 63 + (int)index);
     }
 
     puts("SCHEDULING_POLICY_OK");

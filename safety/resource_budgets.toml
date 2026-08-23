@@ -82,3 +82,21 @@ symbol = "DEVICE_DOMAIN_DMA_POOL_COUNT"
 limit = 4
 unit = "pools"
 verification = ["test/test_device_domain_source.py"]
+
+[[budget]]
+id = "RB-DEVICE-IRQ-WINDOW-MS"
+description = "Festes IRQ-Aufnahmefenster pro aktiver Device-Domain"
+source = "include/kernel/device_domain.h"
+symbol = "DEVICE_DOMAIN_IRQ_WINDOW_MS"
+limit = 100
+unit = "milliseconds/device"
+verification = ["test/test_runtime_degradation.py"]
+
+[[budget]]
+id = "RB-DEVICE-IRQ-WINDOW-LIMIT"
+description = "Maximal aufgenommene IRQs pro Device-Domain und Zeitfenster"
+source = "include/kernel/device_domain.h"
+symbol = "DEVICE_DOMAIN_IRQ_WINDOW_LIMIT"
+limit = 128
+unit = "interrupts/device-window"
+verification = ["test/test_runtime_degradation.py"]

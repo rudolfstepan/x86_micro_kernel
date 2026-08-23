@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.4c-3-runtime-degradation-faults"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -4257,7 +4257,7 @@ evidence = []
 
 [[packages]]
 id = "S0.4c-3-runtime-degradation-faults"
-status = "active"
+status = "done"
 risk = "high"
 title = "Contain interrupt storms and monotonic-clock regressions"
 scope = "Close the remaining automatable S0.4 degradation gap without claiming target-hardware WCET. A regression of the scheduler's monotonic accounting clock must latch a saturating diagnostic fault and deny every Ring-3 scheduling class until explicit scheduler reinitialization; later timestamps may not silently restore authority. Each active device domain receives a fixed 100-ms IRQ admission window: the first 128 completed IRQs are admitted, while the next IRQ within the same window fences the device through the existing mask, bus-master revoke, DMA zeroization and generation-scoped resource cleanup path. A backwards device-domain timestamp fences immediately. Host tests exercise the integrated scheduler and device paths. A compile-time-only QEMU image executes bounded synthetic guard self-tests before BOOT_OK and must then retain normal Ring-3 progress through TEST_OK. No new syscall, ambient authority, unbounded loop or production fault-injection hook is permitted."
