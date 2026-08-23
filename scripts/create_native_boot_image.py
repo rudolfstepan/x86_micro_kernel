@@ -134,8 +134,8 @@ def create_boot_control_record(
     """Create the fixed REIST BIOS A/B control record version 1."""
     if not 1 <= sequence <= 0xFFFFFFFFFFFFFFFF:
         raise ValueError("boot-control sequence is out of range")
-    if active_slot != BOOT_CONTROL_SLOT_A:
-        raise ValueError("boot-control v1 requires confirmed slot A")
+    if active_slot not in (BOOT_CONTROL_SLOT_A, BOOT_CONTROL_SLOT_B):
+        raise ValueError("boot-control active slot is unsupported")
     if pending_slot not in (BOOT_CONTROL_SLOT_NONE, BOOT_CONTROL_SLOT_B):
         raise ValueError("boot-control pending slot is unsupported")
     if pending_slot == BOOT_CONTROL_SLOT_NONE and attempts_remaining != 0:
@@ -143,7 +143,9 @@ def create_boot_control_record(
     if pending_slot == BOOT_CONTROL_SLOT_B and not (
             0 <= attempts_remaining <= BOOT_CONTROL_ATTEMPT_LIMIT):
         raise ValueError("pending boot-control attempts are out of range")
-    if successful_mask & ~0x03 or not successful_mask & 0x01:
+    if pending_slot == BOOT_CONTROL_SLOT_B and active_slot != BOOT_CONTROL_SLOT_A:
+        raise ValueError("only confirmed slot A may stage pending slot B")
+    if successful_mask & ~0x03 or not successful_mask & (1 << active_slot):
         raise ValueError("boot-control successful-slot mask is invalid")
 
     record = bytearray(SECTOR_SIZE)

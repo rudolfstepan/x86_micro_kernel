@@ -407,6 +407,9 @@ und 10 verbindlich.
       validiertem Stage-2-Fallback; persistenter Updatezustand folgt separat
     - [x] S0.5b2 Redundanter Boot-Control-Record, offline vorbereiteter
       Pending-B-Commit und zwei persistente Testboots mit Rollback auf A
+    - [x] S0.5b3 CRC-geschützter Loader-Handoff, nach `BOOT_OK`
+      generationgebundenes Ring-3-Erfolgs-Acknowledge, persistentes B und
+      verifizierter bestätigter-B-Rollback auf A
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
 
 #### Funktionsroadmap nach dem S0-Gate
@@ -1349,15 +1352,22 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
   durchlaufen unabhängig Manifest-Prüfsumme, Bounds, SHA-256, RSA-PSS und
   ELF-Prüfung. QEMU weist sowohl den erfolgreichen A-zu-B-Fallback als auch
   den geschlossenen Stopp bei zwei beschädigten Signaturen nach. Floppy bleibt
-  single-slot; persistente Slotwahl, Versuchsstatus und Updatecommit sind offen.
+  single-slot; persistenter Updatezustand folgt über die nächsten Punkte.
 - [x] Zwei feste 512-Byte-Boot-Control-Kopien an den partitionrelativen LBAs
   97/98 schützen Version, Sequenz, bestätigten/pending Slot, Versuchszahl und
   Erfolgsmaske mit CRC32. Der Offline-Updater prüft ELF und RSA-PSS, schreibt
   nur Slot B und veröffentlicht Pending B erst nach Revalidierung. Stage 2
   persistiert zwei Versuchsdekremente vor B und Rollback auf A vor dessen
   Ausführung. Power-Loss-Tests decken jede dauerhafte Schreibgrenze ab; QEMU
-  weist B:1, B:0 und danach A nach. Dauerhafte B-Bestätigung wartet auf das
-  separate Ring-3-Erfolgs-Acknowledge.
+  weist B:1, B:0 und danach A nach.
+- [x] Stage 2 publiziert erst nach vollständiger Kandidatenprüfung einen
+  CRC-geschützten v1-Handoff. Syscall 117 gibt ihn erst nach `BOOT_OK` und nur
+  an den gebundenen Storage-Service frei. Ring 3 revalidiert Manifest,
+  Ressource, Sequenz und beide Control-Kopien, bestätigt Pending B mit zwei
+  verifizierten Writes und heilt eine benachbarte Kopie. QEMU weist dauerhaften
+  B-Neustart und persistenten A-Rollback nach beschädigter bestätigter
+  B-Signatur nach. Updateverteilung, A-als-inaktiver-Slot, Recovery-Image und
+  Anti-Rollback bleiben offen.
 - Sicherheitsrelevanten Zustand transaktional, checksummiert, versioniert und
    redundant speichern; Stromausfall an jeder Commitstelle injizieren.
 - Verifizierten Boot, signierte Artefakte, reproduzierbare Builds, Provenienz

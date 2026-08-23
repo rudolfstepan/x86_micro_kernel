@@ -112,6 +112,17 @@ class BootControlTests(unittest.TestCase):
         self.assertEqual(info.attempts_remaining, 0)
         self.assertEqual(info.successful_mask, 1)
 
+        confirmed_b = parse_boot_control_record(
+            create_boot_control_record(
+                sequence=7, active_slot=BOOT_CONTROL_SLOT_B,
+                successful_mask=3,
+            ),
+            BOOT_CONTROL_SECONDARY_RELATIVE_LBA,
+        )
+        self.assertEqual(confirmed_b.active_slot, BOOT_CONTROL_SLOT_B)
+        self.assertEqual(confirmed_b.pending_slot, 0xFF)
+        self.assertEqual(confirmed_b.successful_mask, 3)
+
     def test_redundancy_recovers_one_copy_and_rejects_ambiguity(self):
         image = bytearray(base_image(minimal_kernel(29)))
         primary = (PARTITION_LBA + BOOT_CONTROL_PRIMARY_RELATIVE_LBA) * 512
@@ -202,9 +213,10 @@ class BootControlTests(unittest.TestCase):
         prepare = stage2.split("prepare_boot_candidate:", 1)[1].split(
             "load_boot_control:", 1
         )[0]
+        pending = prepare.split(".pending:", 1)[1].split(".rollback:", 1)[0]
         self.assertLess(
-            prepare.index("call persist_boot_control"),
-            prepare.index("mov dword [manifest_relative_lba], BACKUP_MANIFEST_LBA"),
+            pending.index("call persist_boot_control"),
+            pending.index("mov dword [manifest_relative_lba], BACKUP_MANIFEST_LBA"),
         )
         self.assertIn("BOOT_CONTROL_PENDING_B attempts=1", stage2)
         self.assertIn("BOOT_CONTROL_PENDING_B attempts=0", stage2)

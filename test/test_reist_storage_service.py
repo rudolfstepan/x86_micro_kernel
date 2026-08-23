@@ -13,9 +13,10 @@ class ReistStorageServiceTests(unittest.TestCase):
     def test_service_has_least_privilege_profile(self):
         process = read("kernel/proc/process.c")
         profile = process[process.index("if (kind == PROCESS_DOMAIN_STORAGE)"):
-                          process.index("if (kind != PROCESS_DOMAIN_PROBE)")]
+                          process.index("if (kind == PROCESS_DOMAIN_ADMIN)")]
         for syscall in ("SYS_STORAGE_BIND", "SYS_STORAGE_CLAIM",
-                        "SYS_STORAGE_BLOCK_READ", "SYS_STORAGE_COMPLETE"):
+                        "SYS_STORAGE_BLOCK_READ", "SYS_STORAGE_COMPLETE",
+                        "SYS_BOOT_STATUS"):
             self.assertIn(syscall, profile)
         for forbidden in ("SYS_OPEN", "SYS_WRITE", "SYS_KILL",
                           "SYS_STORAGE_SUBMIT", "SYS_STORAGE_COLLECT"):

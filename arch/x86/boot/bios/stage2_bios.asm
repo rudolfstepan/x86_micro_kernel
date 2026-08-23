@@ -29,6 +29,7 @@ ORG 0
 STAGE2_SEGMENT       equ 0x1000
 STAGE2_PHYSICAL      equ 0x00010000
 STACK_TOP            equ 0x0000F000
+BOOT_HEALTH_ADDRESS  equ 0x00004E00
 MB_INFO_ADDRESS      equ 0x00005000
 MMAP_ADDRESS         equ 0x00006000
 E820_TEMP_ADDRESS    equ 0x00007000
@@ -78,6 +79,21 @@ BOOT_CONTROL_SLOT_A   equ 0
 BOOT_CONTROL_SLOT_B   equ 1
 BOOT_CONTROL_SLOT_NONE equ 0xFF
 BOOT_CONTROL_ATTEMPT_LIMIT equ 2
+BOOT_HEALTH_MAGIC_0   equ 0x53494552      ; "REIS"
+BOOT_HEALTH_MAGIC_1   equ 0x31484254      ; "TBH1"
+BOOT_HEALTH_VERSION   equ 1
+BOOT_HEALTH_SIZE      equ 64
+BOOT_HEALTH_SEQUENCE  equ 16
+BOOT_HEALTH_PARTITION equ 24
+BOOT_HEALTH_PART_SIZE equ 28
+BOOT_HEALTH_SELECTED  equ 32
+BOOT_HEALTH_ACTIVE    equ 33
+BOOT_HEALTH_PENDING   equ 34
+BOOT_HEALTH_ATTEMPTS  equ 35
+BOOT_HEALTH_DRIVE     equ 36
+BOOT_HEALTH_LIMIT     equ 37
+BOOT_HEALTH_SUCCESS   equ 40
+BOOT_HEALTH_CRC       equ 60
 RSA_BYTES            equ 256
 RSA_DWORDS           equ RSA_BYTES / 4
 PSS_HASH_BYTES       equ 32
@@ -307,6 +323,10 @@ load_manifest_candidate:
     cmp byte [entry_is_executable], 1
     jne elf_error
 
+    ; Publish only the candidate which passed manifest, digest, signature and
+    ; complete ELF validation. Floppy boots deliberately leave no handoff.
+    call publish_boot_health_handoff
+
     ; Probe and validate a fixed runtime VBE mode while BIOS services are
     ; still directly available.  This does not change the VGA text mode.
     call prepare_vbe_runtime
@@ -360,13 +380,25 @@ candidate_error:
     jmp .retry_candidate
 .fallback_to_a:
     cmp byte [boot_started_pending], 1
+    je .persist_a
+    cmp byte [boot_started_active_b], 1
     jne fatal
+.persist_a:
+    mov byte [boot_control_selected + BOOT_CONTROL_ACTIVE], BOOT_CONTROL_SLOT_A
     mov byte [boot_control_selected + BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_NONE
     mov byte [boot_control_selected + BOOT_CONTROL_ATTEMPTS], 0
+    mov dword [boot_control_selected + BOOT_CONTROL_SUCCESS], 1
     call persist_boot_control
     jc boot_control_error
+    cmp byte [boot_started_active_b], 1
+    jne .pending_fallback
+    mov si, msg_control_confirmed_b_rollback
+    call print_string
+    jmp .select_a
+.pending_fallback:
     mov si, msg_fallback_a
     call print_string
+.select_a:
     mov dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
 .retry_candidate:
     mov byte [kernel_cached], 0
@@ -394,6 +426,10 @@ enable_a20:
 build_multiboot_info:
     xor ax, ax
     mov es, ax
+    mov di, BOOT_HEALTH_ADDRESS
+    mov cx, BOOT_HEALTH_SIZE / 2
+    xor ax, ax
+    rep stosw
     mov di, MB_INFO_ADDRESS
     mov cx, 116 / 2
     xor ax, ax
@@ -1071,13 +1107,24 @@ load_file_range:
 prepare_boot_candidate:
     mov byte [fallback_attempted], 0
     mov byte [boot_started_pending], 0
+    mov byte [boot_started_active_b], 0
     mov dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
     cmp byte [boot_drive], 0x80
     jb .ready
     call load_boot_control
     jc .bad
     cmp byte [boot_control_selected + BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_NONE
+    jne .pending
+    cmp byte [boot_control_selected + BOOT_CONTROL_ACTIVE], BOOT_CONTROL_SLOT_A
     je .ready
+    cmp byte [boot_control_selected + BOOT_CONTROL_ACTIVE], BOOT_CONTROL_SLOT_B
+    jne .bad
+    mov dword [manifest_relative_lba], BACKUP_MANIFEST_LBA
+    mov byte [boot_started_active_b], 1
+    mov si, msg_control_active_b
+    call print_string
+    jmp .ready
+.pending:
     cmp byte [boot_control_selected + BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_B
     jne .bad
     cmp byte [boot_control_selected + BOOT_CONTROL_ATTEMPTS], 0
@@ -1246,17 +1293,23 @@ validate_boot_control_bounce:
     or eax, [es:BOOT_CONTROL_SEQUENCE + 4]
     jz .bad
     cmp byte [es:BOOT_CONTROL_ACTIVE], BOOT_CONTROL_SLOT_A
+    je .active_valid
+    cmp byte [es:BOOT_CONTROL_ACTIVE], BOOT_CONTROL_SLOT_B
     jne .bad
+.active_valid:
     cmp byte [es:BOOT_CONTROL_LIMIT], BOOT_CONTROL_ATTEMPT_LIMIT
     jne .bad
     mov eax, [es:BOOT_CONTROL_SUCCESS]
-    test eax, 1
-    jz .bad
     test eax, 0xFFFFFFFC
     jnz .bad
+    movzx ebx, byte [es:BOOT_CONTROL_ACTIVE]
+    bt eax, ebx
+    jnc .bad
     cmp byte [es:BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_NONE
     je .confirmed
     cmp byte [es:BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_B
+    jne .bad
+    cmp byte [es:BOOT_CONTROL_ACTIVE], BOOT_CONTROL_SLOT_A
     jne .bad
     cmp byte [es:BOOT_CONTROL_ATTEMPTS], BOOT_CONTROL_ATTEMPT_LIMIT
     ja .bad
@@ -1376,6 +1429,69 @@ persist_boot_control:
     ret
 .bad:
     stc
+    ret
+
+; Copy the fully validated HDD selection into a fixed CRC-protected handoff.
+; The kernel captures this record before low physical memory can be reused.
+publish_boot_health_handoff:
+    cmp byte [boot_drive], 0x80
+    jb .done
+    xor ax, ax
+    mov es, ax
+    mov di, BOOT_HEALTH_ADDRESS
+    mov cx, BOOT_HEALTH_SIZE / 2
+    xor ax, ax
+    rep stosw
+    mov dword [es:BOOT_HEALTH_ADDRESS], BOOT_HEALTH_MAGIC_0
+    mov dword [es:BOOT_HEALTH_ADDRESS + 4], BOOT_HEALTH_MAGIC_1
+    mov dword [es:BOOT_HEALTH_ADDRESS + 8], BOOT_HEALTH_VERSION
+    mov dword [es:BOOT_HEALTH_ADDRESS + 12], BOOT_HEALTH_SIZE
+    mov eax, [boot_control_selected + BOOT_CONTROL_SEQUENCE]
+    mov [es:BOOT_HEALTH_ADDRESS + BOOT_HEALTH_SEQUENCE], eax
+    mov eax, [boot_control_selected + BOOT_CONTROL_SEQUENCE + 4]
+    mov [es:BOOT_HEALTH_ADDRESS + BOOT_HEALTH_SEQUENCE + 4], eax
+    mov eax, [partition_lba]
+    mov [es:BOOT_HEALTH_ADDRESS + BOOT_HEALTH_PARTITION], eax
+    mov dword [es:BOOT_HEALTH_ADDRESS + BOOT_HEALTH_PART_SIZE], HDD_PARTITION_SECTORS
+    mov al, BOOT_CONTROL_SLOT_A
+    cmp dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
+    je .selected_ready
+    mov al, BOOT_CONTROL_SLOT_B
+.selected_ready:
+    mov [es:BOOT_HEALTH_ADDRESS + BOOT_HEALTH_SELECTED], al
+    mov al, [boot_control_selected + BOOT_CONTROL_ACTIVE]
+    mov [es:BOOT_HEALTH_ADDRESS + BOOT_HEALTH_ACTIVE], al
+    mov al, [boot_control_selected + BOOT_CONTROL_PENDING]
+    mov [es:BOOT_HEALTH_ADDRESS + BOOT_HEALTH_PENDING], al
+    mov al, [boot_control_selected + BOOT_CONTROL_ATTEMPTS]
+    mov [es:BOOT_HEALTH_ADDRESS + BOOT_HEALTH_ATTEMPTS], al
+    mov al, [boot_drive]
+    mov [es:BOOT_HEALTH_ADDRESS + BOOT_HEALTH_DRIVE], al
+    mov byte [es:BOOT_HEALTH_ADDRESS + BOOT_HEALTH_LIMIT], BOOT_CONTROL_ATTEMPT_LIMIT
+    mov eax, [boot_control_selected + BOOT_CONTROL_SUCCESS]
+    mov [es:BOOT_HEALTH_ADDRESS + BOOT_HEALTH_SUCCESS], eax
+
+    mov eax, 0xFFFFFFFF
+    mov di, BOOT_HEALTH_ADDRESS
+    mov cx, BOOT_HEALTH_SIZE
+.crc_byte:
+    movzx ebx, byte [es:di]
+    inc di
+    xor al, bl
+    mov ebx, eax
+    and ebx, 0x0F
+    shr eax, 4
+    xor eax, [crc32_nibble_table + ebx * 4]
+    mov ebx, eax
+    and ebx, 0x0F
+    shr eax, 4
+    xor eax, [crc32_nibble_table + ebx * 4]
+    loop .crc_byte
+    not eax
+    mov [es:BOOT_HEALTH_ADDRESS + BOOT_HEALTH_CRC], eax
+    mov ax, ds
+    mov es, ax
+.done:
     ret
 
 ; Write selected control to partition-relative EAX and compare a fresh read.
@@ -2367,6 +2483,7 @@ integrity_error        db 0             ; 1=CRC32, 2=SHA-256
 boot_control_primary_valid db 0
 boot_control_secondary_valid db 0
 boot_started_pending   db 0
+boot_started_active_b  db 0
 fallback_attempted     db 0
 rsa_add_carry          db 0
 rsa_bit_mask           db 0
@@ -2519,6 +2636,8 @@ msg_boot_control_error db "Boot control validation/write failed", 13, 10, 0
 msg_control_pending_one db "BOOT_CONTROL_PENDING_B attempts=1", 13, 10, 0
 msg_control_pending_zero db "BOOT_CONTROL_PENDING_B attempts=0", 13, 10, 0
 msg_control_rollback db "BOOT_CONTROL_ROLLBACK_A", 13, 10, 0
+msg_control_active_b db "BOOT_CONTROL_ACTIVE_B", 13, 10, 0
+msg_control_confirmed_b_rollback db "BOOT_CONTROL_CONFIRMED_B_ROLLBACK_A", 13, 10, 0
 
 align 4
 crc32_nibble_table:

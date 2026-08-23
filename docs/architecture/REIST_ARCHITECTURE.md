@@ -137,9 +137,15 @@ Control-Kopie. Stage 2 wählt die höchste eindeutige Sequenz, schreibt den auf
 höchstens zwei begrenzten Versuchen beruhenden Dekrement vor B mit BIOS EDD
 und Read-back zurück und persistiert Rollback auf bestätigt A vor dessen
 Ausführung. Das ist ein bewusst REIST-spezifisches Legacy-BIOS-Format, weil
-kein passender Plattformstandard existiert. Ring-3-Erfolgs-Acknowledge,
-Updateverteilung, unveränderliches Recovery-Image und Anti-Rollback fehlen
-weiterhin; ein erfolgreiches B bleibt daher zunächst nur ein Testboot.
+kein passender Plattformstandard existiert. Nach erfolgreicher vollständiger
+Kernelprüfung übergibt Stage 2 Slot, Sequenz und feste Partitionsgeometrie in
+einem CRC-geschützten v1-Handoff. Der Kernel erteilt keine Medienautorität,
+sondern veröffentlicht den validierten Status mit append-only Syscall 117 erst
+nach `BOOT_OK` an die generationgebundene Ring-3-Storage-Domäne. Diese liest
+beide Records unabhängig zurück und bestätigt exakt Pending B als aktives B
+mit älterer Kopie, Barriere und Read-back zuerst. Bestätigtes B ist persistent;
+ein späterer B-Prüffehler schreibt den A-Rollback vor A. Updateverteilung,
+unveränderliches Recovery-Image und Anti-Rollback fehlen weiterhin.
 
 Der entscheidende nächste Architekturwechsel ist damit ausdrücklich:
 

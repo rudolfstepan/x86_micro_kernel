@@ -430,11 +430,14 @@ redundanter Boot-Health-Record bilden den Mindestpfad.
 
 Der aktuelle Forschungsstand implementiert davon zwei authentisierte
 HDD-Slots sowie einen redundant CRC-/sequenzgeschützten Boot-Control-Record
-mit zwei begrenzten Pending-B-Versuchen und Rollback auf bestätigt A. Der
-Record ist noch kein vollständiger Boot-Health-Nachweis: Erfolgsbestätigung
-aus einem selbstgetesteten Ring-3-System, unveränderliches Recovery-Image und
-Anti-Rollback fehlen. Bis dahin darf B nicht dauerhaft aktiviert werden und
-wird auch nach erfolgreichen Testboots wieder auf A zurückgesetzt.
+mit zwei begrenzten Pending-B-Versuchen. Nach `BOOT_OK` bestätigt ausschließlich
+der generationgebundene Ring-3-Storage-Dienst die exakt gestartete Sequenz;
+beide Kopien werden in fester Reihenfolge mit Barriere und Read-back
+geschrieben. Bestätigtes B bleibt aktiv, und Stage 2 persistiert bei einem
+späteren B-Prüffehler den A-Rollback vor dessen Ausführung. Dies ist noch kein
+vollständiger Boot-Health-/Update-Nachweis: unabhängige Beobachtungsphase,
+unveränderliches Recovery-Image, Updateverteilung, vollständige Power-Loss-
+Evidenz auf Zielhardware und Anti-Rollback fehlen.
 
 ### Kernel-Livepatching
 

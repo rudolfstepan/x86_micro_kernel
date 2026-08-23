@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -16,6 +16,7 @@ $Image = Join-Path $RepoRoot 'build\reist-os.img'
 $Runner = Join-Path $RepoRoot 'scripts\run_qemu_smoke.py'
 $BootIntegrityRunner = Join-Path $RepoRoot 'scripts\run_qemu_boot_integrity.py'
 $BootControlRunner = Join-Path $RepoRoot 'scripts\run_qemu_boot_control.py'
+$BootSuccessRunner = Join-Path $RepoRoot 'scripts\run_qemu_boot_success.py'
 $RuntimeDesktopRunner = Join-Path $RepoRoot 'scripts\run_qemu_runtime_desktop.py'
 $BuildScript = Join-Path $RepoRoot 'scripts\build-windows.ps1'
 $FddHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_fdd_hotplug.py'
@@ -52,7 +53,7 @@ $Python = Resolve-NativeTool 'python' @(
     'C:\Python314\python.exe',
     'C:\Python313\python.exe'
 )
-$OpenSsl = if ($Mode -eq 'boot-control') {
+$OpenSsl = if ($Mode -eq 'boot-control' -or $Mode -eq 'boot-success') {
     Resolve-NativeTool 'openssl' @(
         'C:\msys64\mingw64\bin\openssl.exe'
     )
@@ -737,6 +738,20 @@ if ($Mode -eq 'storage-reconnect' -and $Target -ne 'vmware') {
 }
 
 switch ($Mode) {
+    'boot-success' {
+        New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+        $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $trial = Join-Path $RepoRoot 'build\boot-success-trial.img'
+        $serialLog = Join-Path $LogRoot `
+            "$stamp-runtime-boot-success-serial.log"
+        & $Python $BootSuccessRunner --qemu $Qemu --image $Image `
+            --kernel $KernelImage --signature $KernelSignature `
+            --policy $BootTrustPolicy --openssl $OpenSsl --root $RepoRoot `
+            --output $trial --log $serialLog --timeout 15
+        if ($LASTEXITCODE -ne 0) {
+            throw 'REIST boot-success runtime failed.'
+        }
+    }
     'boot-control' {
         New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
         $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'

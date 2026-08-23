@@ -29,6 +29,7 @@
 #include "include/kernel/storage_handover.h"
 #include "include/kernel/storage_service.h"
 #include "include/kernel/storage_maintenance.h"
+#include "include/kernel/boot_health.h"
 #include "include/kernel/handover.h"
 #include "include/kernel/handover_replica.h"
 #include "include/kernel/handover_serial_backend.h"
@@ -579,6 +580,9 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 
     // Parse bootloader-provided information
     parse_multiboot1_info(multiboot_info);
+    if (!boot_health_capture()) {
+        panic("Invalid BIOS boot-health handoff");
+    }
 
     /* The stack arena is a virtual window inside the direct map.  Reserve the
      * same physical interval so its non-present guard aliases can never hide
@@ -776,6 +780,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     // Stage 4: System ready
     system_ready();
     printf("BOOT_OK\n");
+    boot_health_mark_system_ready();
 
     /* A real framebuffer prefers the graphical desktop.  VGA boots and any
      * failed/terminated desktop fall back to the userspace shell. */

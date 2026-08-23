@@ -67,7 +67,7 @@ Speicher und verlangt einen gesetzten Wert.
 
 Jeder Boot-Control-Record belegt genau 512 Byte. Der 64-Byte-Header enthält
 `REISTBC1`, Version und Headergröße, eine monotone 64-Bit-Sequenz, bestätigten
-Slot A, optional `pending=B`, verbleibende Versuche, das feste Limit zwei,
+Slot A oder B, optional `pending=B` ausgehend von A, verbleibende Versuche, das feste Limit zwei,
 eine Erfolgsmaske und CRC32; alle reservierten Bytes müssen null sein. Stage 2
 akzeptiert eine gültige Kopie, zwei identische Kopien gleicher Sequenz oder
 zwei konsistente benachbarte Sequenzen. Es schreibt die ältere/ungültige Kopie
@@ -76,10 +76,15 @@ zuerst und verifiziert jeden BIOS-EDD-Schreibvorgang durch erneutes Lesen.
 `scripts/update_native_boot_slot.py` erzeugt immer ein neues Output-Image,
 verifiziert Kernel und RSA-PSS-Signatur vor der Kopie, schreibt ausschließlich
 Kernel/Manifest B und veröffentlicht erst danach den Pending-Record. Ein
-Pending-B-Start wird vor der Kernelprüfung persistent von zwei auf eins und
-dann auf null dekrementiert; der nächste Start oder ein B-Fehler schreibt den
-Rollback auf A zuerst. Eine Erfolgsbestätigung aus Ring 3 folgt separat, daher
-kann B in diesem Inkrement noch nicht dauerhaft bestätigt werden.
+Pending-B-Start wird vor der Kernelprüfung persistent dekrementiert. Nach
+vollständiger Manifest-, Digest-, Signatur- und ELF-Prüfung schreibt Stage 2
+einen CRC-geschützten 64-Byte-Handoff nach `0x4E00`. Der Kernel kopiert und
+validiert ihn vor der Speicherverwaltung, ordnet die feste Geometrie genau
+einer `0xDA`-Bootpartition zu und veröffentlicht sie erst nach `BOOT_OK` mit
+Syscall 117 an die aktuelle Storage-Service-Generation. Der Ring-3-Dienst
+liest Manifest und beide Control-Sektoren erneut, verlangt dieselbe Sequenz
+und bestätigt B mit zwei Flush-/Read-back-verifizierten Writes. Bestätigtes B
+startet direkt; ein B-Fehler schreibt bestätigt A vor dem A-Start.
 
 Nach jeder Imageerzeugung prüft `scripts/validate_boot_manifest.py` unabhängig
 vom Erzeuger das HDD- beziehungsweise Floppy-Layout, alle Extents, die
@@ -105,8 +110,8 @@ sind nicht durch Firmware, TPM oder einen unveränderlichen ROM-Anker gebunden.
 Ein Angreifer mit Schreibzugriff könnte daher den Loader samt Schlüsselanker
 ersetzen. Secure Boot, Anti-Rollback und eine vollständige kryptografische
 Firmware-Vertrauenskette bleiben ausdrücklich nicht implementiert.
-Noch nicht implementiert sind persistente Bestätigung von Slot B,
-Ring-3-Erfolgsbestätigung, Updateverteilung und Anti-Rollback.
+Noch nicht implementiert sind Updateverteilung, Update von B zurück nach A,
+unveränderliches Recovery-Image, Release-Key-Verwahrung und Anti-Rollback.
 
 ## Root-Volume
 

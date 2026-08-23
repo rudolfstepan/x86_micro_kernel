@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.5b3-boot-success-ack"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -4032,7 +4032,7 @@ evidence = []
 
 [[packages]]
 id = "S0.5b3-boot-success-ack"
-status = "active"
+status = "done"
 risk = "high"
 title = "Confirm a successful pending boot from the Ring-3 storage service"
 scope = "Complete the bounded BIOS A/B trial transaction with an explicit success acknowledgement. Stage 2 publishes a fixed, versioned and CRC-protected handoff only after the selected signed kernel has passed manifest, SHA-256, RSA-PSS and ELF validation. The kernel captures that handoff before allocator reuse, resolves it to exactly one validated 0xDA boot-partition resource, and exposes it through append-only syscall 117 only to the currently bound storage-service generation and only after BOOT_OK. The Ring-3 storage service independently rereads and reconciles both boot-control sectors, confirms only the exact pending-B sequence it booted, writes the older or invalid copy first with barriers and read-back verification, then accepts confirmed active B. Stage 2 subsequently boots confirmed B directly and durably rolls back to confirmed A before trying A if B validation fails. Floppy and non-pending fallback boots never acknowledge a slot. QEMU proves pending-B confirmation persists across reboot and confirmed-B corruption rolls back to A. Anti-rollback counters, update distribution, immutable recovery and production-key custody remain later work."

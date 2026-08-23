@@ -187,13 +187,13 @@ ftti_ms = 1000
 ftti_rationale = "Ablehnung erfolgt vor Kernel- oder Systemvolume-Publikation."
 requirements = ["REQ-BOOT-001", "REQ-DAT-001", "REQ-PROFILE-001"]
 design = ["docs/architecture/REIST_ARCHITECTURE.md", "docs/development/BUILD_MODES.md"]
-controls = ["arch/x86/boot/bios/stage1_mbr.asm", "arch/x86/boot/bios/stage2_bios.asm", "scripts/update_native_boot_slot.py", "kernel/init/kernel.c"]
-verification = ["test/test_native_boot_image.py", "test/test_boot_ab.py", "test/test_boot_control.py", "test/test_floppy_boot_image.py", "test/test_boot_system_volume.py", "test/test_disk_image_validator.py", "scripts/run_qemu_boot_integrity.py", "scripts/run_qemu_boot_control.py"]
-acceptance_criteria = ["Manifest-, Segment-, SHA-, Signatur-, Control-Record-, CRC- und Volumenfehler stoppen den Boot.", "Ein fehlerhafter HDD-Kandidat A wechselt höchstens einmal auf den unabhängig validierten Kandidaten B.", "Pending B wird vor Ausführung persistent dekrementiert und nach zwei Versuchen oder B-Fehler vor A zurückgerollt.", "Referenzlayouts nutzen dieselbe validierte Programmanordnung."]
+controls = ["arch/x86/boot/bios/stage1_mbr.asm", "arch/x86/boot/bios/stage2_bios.asm", "scripts/update_native_boot_slot.py", "kernel/init/boot_health.c", "kernel/init/kernel.c", "userspace/programs/storage_service.c"]
+verification = ["test/test_native_boot_image.py", "test/test_boot_ab.py", "test/test_boot_control.py", "test/test_boot_success.py", "test/test_floppy_boot_image.py", "test/test_boot_system_volume.py", "test/test_disk_image_validator.py", "scripts/run_qemu_boot_integrity.py", "scripts/run_qemu_boot_control.py", "scripts/run_qemu_boot_success.py"]
+acceptance_criteria = ["Manifest-, Segment-, SHA-, Signatur-, Control-Record-, Handoff-, CRC- und Volumenfehler stoppen den Boot oder verweigern die Bestätigung.", "Ein fehlerhafter HDD-Kandidat A wechselt höchstens einmal auf den unabhängig validierten Kandidaten B.", "Pending B wird vor Ausführung persistent dekrementiert und nur nach BOOT_OK durch die gebundene Ring-3-Storage-Generation bestätigt.", "Ein fehlerhaftes bestätigtes B persistiert Rollback A vor dessen Ausführung.", "Referenzlayouts nutzen dieselbe validierte Programmanordnung."]
 owner = "REIST boot team"
 status = "partially_verified"
 assumptions = ["BIOS/MBR ist die ausgewählte Forschungsbaseline."]
-residual_risk = "Der signierte HDD-A/B-Pfad besitzt Pending-Commit und begrenzte persistente Versuche, aber noch kein Ring-3-Erfolgs-Acknowledge, unveränderliches Recovery-Image oder Anti-Rollback."
+residual_risk = "Der signierte HDD-A/B-Pfad besitzt Pending-Commit, begrenzte Versuche und Ring-3-Erfolgs-Acknowledge; unveränderliches Recovery-Image, Updateverteilung, Zielhardware-Power-Loss-Evidenz und Anti-Rollback fehlen."
 
 [[hazard]]
 id = "HZ-STORAGE-001"

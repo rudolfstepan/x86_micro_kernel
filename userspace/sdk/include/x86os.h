@@ -128,7 +128,8 @@ enum {
     X86OS_SYS_DEVICE_CONTROL = 113,
     X86OS_SYS_PROCESS_IDENTITY = 114,
     X86OS_SYS_DRAW_TEXT_CLIPPED = 115,
-    X86OS_SYS_RUNTIME_TIMING = 116
+    X86OS_SYS_RUNTIME_TIMING = 116,
+    X86OS_SYS_BOOT_STATUS = 117
 };
 
 #define X86OS_TCP_SOCKET_VERSION 1U
@@ -940,6 +941,27 @@ typedef struct {
     uint32_t sectors;
 } x86os_drive_info_t;
 
+#define X86OS_BOOT_STATUS_VERSION 1U
+#define X86OS_BOOT_STATUS_SYSTEM_READY (1U << 0)
+#define X86OS_BOOT_STATUS_PENDING_TRIAL (1U << 1)
+#define X86OS_BOOT_SLOT_A 0U
+#define X86OS_BOOT_SLOT_B 1U
+#define X86OS_BOOT_SLOT_NONE 0xFFU
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t flags;
+    uint32_t resource;
+    uint64_t sequence;
+    uint32_t partition_lba;
+    uint32_t partition_sectors;
+    uint8_t selected_slot;
+    uint8_t active_slot;
+    uint8_t pending_slot;
+    uint8_t attempts_remaining;
+    uint32_t reserved;
+} x86os_boot_status_t;
+
 #define X86OS_PARTITION_REQUEST_VERSION 1U
 typedef struct {
     uint32_t version;
@@ -1496,6 +1518,7 @@ int x86os_kill(int pid);
 int x86os_getcwd(char* buffer, size_t size);
 int x86os_chdir(const char* path);
 int x86os_drive_info(uint32_t index, x86os_drive_info_t* info);
+int x86os_boot_status(x86os_boot_status_t *status);
 int x86os_partition_create(const x86os_partition_request_t *request);
 int x86os_drive_status(uint32_t index, x86os_drive_status_t* status);
 int x86os_admin_storage(const x86os_admin_storage_request_t* request,

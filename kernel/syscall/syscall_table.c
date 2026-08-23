@@ -35,6 +35,7 @@
 #include "include/kernel/storage_maintenance.h"
 #include "include/kernel/admin_maintenance.h"
 #include "include/kernel/component_control.h"
+#include "include/kernel/boot_health.h"
 #include "include/kernel/device_domain.h"
 #include "arch/x86/mm/paging.h"
 #include "fs/vfs/vfs.h"
@@ -1214,6 +1215,21 @@ static int syscall_storage_bind(void) {
     Process *process = scheduler_current_process();
     return process == NULL ? -13 :
         storage_service_bind(process->pid, process->generation);
+}
+
+static int syscall_boot_status(boot_health_status_t *user_status) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_status;
+    if (process == NULL || !storage_service_authorized(
+            process->pid, process->generation)) return -13;
+    if (!user_range_accessible(directory, address, sizeof(*user_status), true))
+        return -14;
+    boot_health_status_t status;
+    int result = boot_health_get_status(&status);
+    if (result != 0) return result;
+    return copy_to_user_space(directory, address, &status, sizeof(status)) == 0
+        ? 0 : -14;
 }
 
 static int syscall_storage_submit(const storage_request_submit_t *user_request,
@@ -3057,6 +3073,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_process_identity,     // Syscall 114: Calling identity
     (void*)&syscall_display_draw_text_clipped, // Syscall 115: Damage-safe text
     (void*)&syscall_runtime_timing,      // Syscall 116: Empirical timing stats
+    (void*)&syscall_boot_status,         // Syscall 117: Validated boot status
     // Add more syscalls here as needed
 };
 
@@ -3602,6 +3619,10 @@ void syscall_handler(Registers* regs) {
         case SYS_TCP_SOCKET_ACCEPT:
             result = (uint32_t)syscall_tcp_socket_accept(
                 (syscall_tcp_accept_t*)(uintptr_t)arg1);
+            break;
+        case SYS_BOOT_STATUS:
+            result = (uint32_t)syscall_boot_status(
+                (boot_health_status_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

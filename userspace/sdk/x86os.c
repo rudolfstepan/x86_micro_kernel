@@ -14,6 +14,8 @@ _Static_assert(sizeof(x86os_scheduler_stats_t) == 32U,
                "scheduler statistics ABI size changed");
 _Static_assert(sizeof(x86os_runtime_timing_t) == 72U,
                "runtime timing statistics ABI changed");
+_Static_assert(sizeof(x86os_boot_status_t) == 40U,
+               "boot status ABI changed");
 _Static_assert(offsetof(x86os_memory_stats_t, detected_usable_bytes) == 8U,
                "memory statistics ABI header changed");
 _Static_assert(sizeof(x86os_network_probe_stats_t) == 24U,
@@ -970,6 +972,12 @@ int x86os_chdir(const char* path) {
 int x86os_drive_info(uint32_t index, x86os_drive_info_t* info) {
     return (int)x86os_syscall(X86OS_SYS_DRIVE_INFO, index,
                               (uintptr_t)info, 0);
+}
+
+int x86os_boot_status(x86os_boot_status_t *status) {
+    if (status == NULL) return -22;
+    return (int)x86os_syscall(X86OS_SYS_BOOT_STATUS,
+                              (uintptr_t)status, 0U, 0U);
 }
 
 int x86os_process_identity(x86os_process_identity_t* identity) {

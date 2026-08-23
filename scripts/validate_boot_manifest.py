@@ -53,6 +53,7 @@ class ManifestInfo:
     active_slot: int | None
     pending_slot: int | None
     attempts_remaining: int | None
+    successful_mask: int | None
 
 
 @dataclass(frozen=True)
@@ -92,8 +93,8 @@ def parse_boot_control_record(sector: bytes, source_lba: int) -> BootControlInfo
         raise ValueError("boot-control CRC32 is invalid")
     if not 1 <= sequence <= 0xFFFFFFFFFFFFFFFF:
         raise ValueError("boot-control sequence is invalid")
-    if active_slot != BOOT_CONTROL_SLOT_A:
-        raise ValueError("boot-control v1 active slot is unsupported")
+    if active_slot not in (BOOT_CONTROL_SLOT_A, BOOT_CONTROL_SLOT_B):
+        raise ValueError("boot-control active slot is unsupported")
     if pending_slot not in (BOOT_CONTROL_SLOT_NONE, BOOT_CONTROL_SLOT_B):
         raise ValueError("boot-control pending slot is unsupported")
     if attempt_limit != BOOT_CONTROL_ATTEMPT_LIMIT:
@@ -102,7 +103,9 @@ def parse_boot_control_record(sector: bytes, source_lba: int) -> BootControlInfo
         raise ValueError("confirmed boot-control state retains attempts")
     if pending_slot == BOOT_CONTROL_SLOT_B and attempts_remaining > attempt_limit:
         raise ValueError("boot-control attempts exceed the fixed limit")
-    if successful_mask & ~0x03 or not successful_mask & 0x01:
+    if pending_slot == BOOT_CONTROL_SLOT_B and active_slot != BOOT_CONTROL_SLOT_A:
+        raise ValueError("pending slot B requires confirmed slot A")
+    if successful_mask & ~0x03 or not successful_mask & (1 << active_slot):
         raise ValueError("boot-control successful-slot mask is invalid")
     return BootControlInfo(
         sequence, active_slot, pending_slot, attempts_remaining,
@@ -278,6 +281,7 @@ def validate_image(path: Path, layout: str = "auto") -> ManifestInfo:
         None if boot_control is None else boot_control.active_slot,
         None if boot_control is None else boot_control.pending_slot,
         None if boot_control is None else boot_control.attempts_remaining,
+        None if boot_control is None else boot_control.successful_mask,
     )
 
 
@@ -297,7 +301,8 @@ def main() -> int:
         f"signature_sha256={info.signature_sha256} "
         f"control_sequence={info.boot_control_sequence} "
         f"active={info.active_slot} pending={info.pending_slot} "
-        f"attempts={info.attempts_remaining}"
+        f"attempts={info.attempts_remaining} "
+        f"successful_mask={info.successful_mask}"
     )
     return 0
 
