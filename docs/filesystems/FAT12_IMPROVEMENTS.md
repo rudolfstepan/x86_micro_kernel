@@ -32,6 +32,9 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sowie der erste
    QEMU-FDD-Reconnect-Nachweis ohne Veränderung des Referenzabbilds
 6. capability-gebundene BPB-/FAT-Spiegelanalyse und bestätigte Reparatur genau
    einer strukturell beschädigten FAT-Kopie unter exklusivem Maintenance-Lease
+7. feste Cluster-Owner-Map, begrenzte Root-/Unterverzeichnisqueue und Diagnose
+   von ungültigen Links, Loops, Crosslinks, kurzen/überlangen Ketten und Orphans;
+   eindeutig überlange reguläre Dateiketten können journalisiert gekürzt werden
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen
@@ -57,6 +60,7 @@ bleiben.
 C:\> CHKDSK [pfad]
 C:\> CHKDSK --fat12 1
 C:\> CHKDSK --fat12 1 --repair --confirm
+C:\> CHKDSK --fat12 1 --repair-chains --confirm
 FDISK
 ```
 
@@ -69,6 +73,14 @@ Unmount und erneuter Diagnose werden alle neun alten Zielsektoren im
 Undo-Journal gesichert, die beschädigte Kopie mit verifiziertem Readback
 ersetzt und erst danach `CLEAN` veröffentlicht. Uneindeutigkeit lässt das
 Medium unverändert beziehungsweise fail-closed zur Inspektion zurück.
+Der read-only Check traversiert zusätzlich alle erreichbaren Clusterketten aus
+Root und höchstens 256 Unterverzeichnissen. Eine feste Owner-Map erkennt Loops,
+Crosslinks, kurze/überlange Ketten und nicht referenzierte Allokationen ohne
+Heap. Der Chain-Reparaturmodus ist bewusst konservativ: Nur wenn der gesamte
+Datenträger außer normal EOC-terminierten, eindeutig besessenen Überlängen
+sauber ist, werden die überzähligen Tails freigegeben. Geänderte Sektoren beider
+FAT-Kopien werden vorher im Undo-Journal gesichert und danach vollständig neu
+gescannt.
 `FDISK.PRG` kann auf explizit freigegebenen, leeren ATA-/AHCI-Medien eine
 validierte MBR-Partition erzeugen. Eine Diskette bleibt eine partitionslose
 Superfloppy und wird von `FDISK` niemals partitioniert.
@@ -77,8 +89,8 @@ Superfloppy und wird von `FDISK` niemals partitioniert.
 
 - reale FDD-/VMware-Power-Loss- und Reconnect-Matrix über die bereits
   deterministisch geprüften Veröffentlichungsstufen
-- CHKDSK-Reparatur von Clusterketten, Verzeichnissen, Journal, Remap- und
-  Defektsektorkarte
+- CHKDSK-Reparatur kurzer Ketten, Crosslinks, Loops, Orphans,
+  Verzeichnissen, Journal, Remap- und Defektsektorkarte
 - QEMU-Laufzeitnachweis für Maintenance-Lease, Unmount, FAT-Spiegel-Reparatur,
   Verify und kontrollierten Remount
 - breitere echte FDD-/Medienfehler- und Langzeitmatrix

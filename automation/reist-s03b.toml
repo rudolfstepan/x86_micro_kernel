@@ -262,6 +262,57 @@ commit_message = "feat: add partition and FAT32 provisioning"
 evidence = []
 
 [[packages]]
+id = "S0.3c-6f6b-chkdsk-cluster-chains"
+status = "done"
+risk = "high"
+title = "Diagnose FAT12 cluster chains and repair unambiguous excess tails"
+scope = "Extend the capability-bound FAT12 check with fixed-capacity traversal of root and nested directory entries, all reachable cluster chains and allocated-cluster ownership. Diagnose invalid links, loops, cross-links, short or excess file chains, malformed directory entries, orphan allocations and scan-capacity exhaustion. Add an explicitly confirmed repair operation that only truncates structurally valid overlong regular-file chains when no other inconsistency exists. Journal every changed FAT sector in both mirrors, renew the exclusive current-media lease throughout, verify a clean full rescan and fail closed for every ambiguous or destructive case."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/chkdsk.c",
+  "test/test_fat12_maintenance.py",
+  "test/test_fat12_tools.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md"
+]
+invariants = [
+  "CHKDSK still has no raw-media authority and the new repair operation is append-only and accepted only from its maintenance domain",
+  "all cluster, owner, directory-work and repair-candidate storage has fixed compile-time capacity and every chain or directory walk is bounded by the validated FAT12 cluster count",
+  "the read-only scan validates both identical FAT mirrors before consuming directory or chain metadata",
+  "root and nested directory entries reject invalid attributes and cluster fields, skip deleted, LFN, volume-label, dot and dot-dot entries according to FAT terminology, and never follow an out-of-range sector",
+  "loops, cross-links, short chains, invalid links, orphan allocations and capacity exhaustion are diagnostic-only and never trigger guessed mutation",
+  "repair is permitted only when the complete diagnosis contains excess regular-file chains and no other flag, and every candidate has a positive expected length plus a normal EOC-terminated, uniquely owned tail",
+  "both FAT mirrors start equal, each changed sector of both copies is undo-journaled before mutation, writes are read back, barriers are explicit and the lease is renewed throughout",
+  "success requires a complete post-write BPB, mirror, directory, ownership and chain rescan with no remaining flag before journal CLEAN and lease release",
+  "failure leaves the ACTIVE journal recoverable or a verified clean state and is never reported as successful"
+]
+targeted_tests = [
+  "python test/test_fat12_maintenance.py -v",
+  "python test/test_fat12_tools.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "repair would need to infer ownership across a loop, cross-link, orphan, malformed directory or short chain",
+  "the bounded directory or candidate capacity is insufficient for the observed volume",
+  "more journal sectors are required than the existing fixed FAT12 journal can hold",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: repair unambiguous FAT12 chain tails"
+evidence = []
+
+[[packages]]
 id = "R1.9-file-icons"
 status = "done"
 risk = "medium"

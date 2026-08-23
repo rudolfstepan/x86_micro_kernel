@@ -258,8 +258,12 @@ und 10 verbindlich.
         - [x] `CHKDSK.PRG` für begrenzte BPB-/FAT12-Spiegelanalyse und
           explizit bestätigte, journalisierte Reparatur genau einer eindeutig
           strukturell beschädigten FAT-Kopie
-        - [ ] `CHKDSK.PRG` für transaktionale Reparatur von Clusterketten,
-          Verzeichnissen, Journal und Defektsektorkarte
+        - [x] Begrenzte Root-/Unterverzeichnis- und Clusterkettenanalyse für
+          ungültige Links, Loops, Crosslinks, kurze/überlange Ketten, Orphans
+          und erschöpfte Scan-Kapazität; ausschließlich eindeutig überlange
+          reguläre Dateiketten dürfen bestätigt journalisiert gekürzt werden
+        - [ ] `CHKDSK.PRG` für transaktionale Reparatur kurzer/überkreuzter
+          Clusterketten, Verzeichnisse, Orphans, Journal und Defektsektorkarte
         - [x] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
           Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg
           kontrolliert remounten; Abbruch lässt das Medium konsistent oder
@@ -2529,7 +2533,15 @@ sie validieren Eingaben und senden versionierte Requests an den Storage-Dienst.
   nach dem Unmount erneut und protokolliert alle neun Zielsektoren im
   vorhandenen Undo-Journal. Sind beide Kopien gültig, aber verschieden, beide
   ungültig oder Journal/Identität uneindeutig, findet keine Mutation statt.
-  Clusterketten-, Verzeichnis-, Journal- und Remap-Reparatur bleiben offen.
+  Der gleiche Check traversiert Root und höchstens 256 Unterverzeichnisse,
+  ordnet alle erreichbaren Cluster mit einer festen Owner-Map zu und meldet
+  ungültige Links, Loops, Crosslinks, kurze/überlange Ketten, Orphans sowie
+  Kapazitätserschöpfung. `--repair-chains --confirm` kürzt nur normal
+  EOC-terminierte, eindeutig besessene reguläre Dateiketten auf die durch die
+  Dateigröße bestimmte Länge. Beide FATs werden sektorweise im Undo-Journal
+  gesichert und erst nach einem vollständig sauberen Rescan als `CLEAN`
+  bestätigt. Kurze Ketten, Crosslinks, Loops, Orphans sowie Verzeichnis-,
+  Journal- und Remap-Reparatur bleiben offen.
 - `FORMAT.PRG` akzeptiert ausschließlich erkannte FDD-Ressourcen. Ohne
   `--reist-fat12` erzeugt es kein REIST-Journal. Oberflächentest,
   Layoutberechnung, Initialisierung und vollständiger Metadaten-Readback sind

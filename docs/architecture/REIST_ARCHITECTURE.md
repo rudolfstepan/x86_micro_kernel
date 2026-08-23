@@ -939,6 +939,17 @@ Medienidentität, erzwingt Unmount/Handle-Freiheit und wiederholt die Diagnose.
 Jeder alte Zielsektor wird im vorhandenen Undo-Journal erfasst; widersprüchliche
 gültige Spiegel werden nicht automatisch aufgelöst.
 
+Die nachgelagerte Clusterprüfung verwendet feste Arrays für maximal 4085
+FAT12-Cluster, eine Queue für 256 Unterverzeichnisse und 128 konservative
+Reparaturkandidaten. Jeder Chain-Walk ist durch die validierte Clusterzahl
+begrenzt. Loops, Crosslinks, kurze Ketten, Orphans, ungültige Directory-Felder
+oder erschöpfte Kapazität verhindern jede Mutation. Nur eine normal
+EOC-terminierte, eindeutig besessene reguläre Dateikette, die länger als die
+aus der Dateigröße berechnete Kettenlänge ist, darf nach expliziter Bestätigung
+gekürzt werden. Vor den FAT-Writes werden alle betroffenen Sektoren beider
+Spiegel im Undo-Journal gesichert; Erfolg setzt einen vollständig sauberen
+Rescan voraus.
+
 `device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
 Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht
 dynamisch entladen. `device up` requalifiziert Transport und Identität, führt

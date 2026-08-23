@@ -130,7 +130,7 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->client_generation == 0U ||
         value->deadline_ms == 0U ||
         value->operation < STORAGE_REQUEST_READ ||
-        value->operation > STORAGE_REQUEST_REPAIR_FAT12_MIRROR) return false;
+        value->operation > STORAGE_REQUEST_REPAIR_FAT12_CHAINS) return false;
     if (value->operation == STORAGE_REQUEST_BLOCK_FLUSH ||
         value->operation == STORAGE_REQUEST_VFS_SYNC ||
         value->operation == STORAGE_REQUEST_FORMAT_FAT12 ||
@@ -138,7 +138,8 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->operation == STORAGE_REQUEST_FORMAT_FAT32_SCAN ||
         value->operation == STORAGE_REQUEST_FORMAT_FAT32_PREPARE ||
         value->operation == STORAGE_REQUEST_CHECK_FAT12 ||
-        value->operation == STORAGE_REQUEST_REPAIR_FAT12_MIRROR)
+        value->operation == STORAGE_REQUEST_REPAIR_FAT12_MIRROR ||
+        value->operation == STORAGE_REQUEST_REPAIR_FAT12_CHAINS)
         return value->length == 0U;
     if (value->operation == STORAGE_REQUEST_BLOCK_READ ||
         value->operation == STORAGE_REQUEST_BLOCK_WRITE)
@@ -298,7 +299,7 @@ static int submit_locked(int client_pid, uint32_t client_generation,
         handle_out == NULL || request->version != STORAGE_REQUEST_VERSION ||
         request->struct_size < sizeof(*request) ||
         request->operation < STORAGE_REQUEST_READ ||
-        request->operation > STORAGE_REQUEST_REPAIR_FAT12_MIRROR ||
+        request->operation > STORAGE_REQUEST_REPAIR_FAT12_CHAINS ||
         request->timeout_ms == 0U ||
         request->timeout_ms > STORAGE_REQUEST_MAX_TIMEOUT_MS)
         return STORAGE_EINVAL;
@@ -310,7 +311,8 @@ static int submit_locked(int client_pid, uint32_t client_generation,
         request->operation == STORAGE_REQUEST_FORMAT_FAT32_SCAN ||
         request->operation == STORAGE_REQUEST_FORMAT_FAT32_PREPARE ||
         request->operation == STORAGE_REQUEST_CHECK_FAT12 ||
-        request->operation == STORAGE_REQUEST_REPAIR_FAT12_MIRROR) expected = 0U;
+        request->operation == STORAGE_REQUEST_REPAIR_FAT12_MIRROR ||
+        request->operation == STORAGE_REQUEST_REPAIR_FAT12_CHAINS) expected = 0U;
     if ((request->operation == STORAGE_REQUEST_BLOCK_READ ||
          request->operation == STORAGE_REQUEST_BLOCK_WRITE) &&
         request->length != STORAGE_REQUEST_BLOCK_SIZE) return STORAGE_EMSGSIZE;

@@ -305,10 +305,11 @@ oder breite Zielhardwarequalifikation.
 
 ## Wichtigste offene Grenzen
 
-- `CHKDSK.PRG` besitzt nun einen capability-gebundenen, bestätigten und
-  journalisierten Reparaturpfad für genau eine eindeutig beschädigte FAT12-
-  Spiegelkopie; Clusterketten-, Verzeichnis-, Journal-, Remap- und
-  Defektsektorreparatur sowie der QEMU-Remountnachweis sind noch offen
+- `CHKDSK.PRG` besitzt capability-gebundene, bestätigte und journalisierte
+  Reparaturpfade für genau eine eindeutig beschädigte FAT12-Spiegelkopie und
+  eindeutig überlange reguläre Dateiketten. Kurze Ketten, Crosslinks, Loops,
+  Orphans, Verzeichnis-, Journal-, Remap- und Defektsektorreparatur sowie der
+  QEMU-Remountnachweis sind noch offen
 - reale FAT12-Power-Loss-/Reconnect-Matrix für VMware und Zielhardware
 - medienunabhängige Persistenzgarantie für EXT2 und fremde FAT-Volumes
 - unabhängige Supervisor-, Fence- und Failover-Hardware
