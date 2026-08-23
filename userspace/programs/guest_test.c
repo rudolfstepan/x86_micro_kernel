@@ -11,6 +11,7 @@
 #include "x86os.h"
 
 #define WAIT_STRESS_ITERATIONS 64
+#define GUEST_TEST_TASK_CAPACITY_LIMIT 32U
 
 static int text_equal(const char *left, const char *right) {
     if (left == NULL || right == NULL) return 0;
@@ -780,52 +781,75 @@ static int test_memory_accounting(void) {
 }
 
 static int test_task_capacity_and_parenting(void) {
-    /* Worker, network probe, storage service, shell and GTEST occupy five
-     * slots. Two ambient slots remain while the final slot stays reserved. */
+    /* Fill exactly the currently reported ambient slots. The fixed array is
+     * bounded by the selected research profile and the final supervised slot
+     * must remain unavailable to ordinary children. */
     x86os_scheduler_stats_t before;
     if (x86os_scheduler_stats(&before) != 0 ||
         x86os_scheduler_stats(
             (x86os_scheduler_stats_t*)(uintptr_t)0x1000U) != -14 ||
         before.version != X86OS_SCHEDULER_STATS_VERSION ||
         before.struct_size != sizeof(before) ||
-        before.task_capacity != 8U ||
+        before.task_capacity != GUEST_TEST_TASK_CAPACITY_LIMIT ||
         before.supervised_reserve != 1U ||
-        before.peak_active_tasks < before.active_tasks) return -1;
+        before.peak_active_tasks < before.active_tasks ||
+        before.active_tasks >= before.task_capacity ||
+        before.supervised_reserve >
+            before.task_capacity - before.active_tasks) return -1;
 
-    int children[2];
+    size_t child_count = (size_t)(before.task_capacity - before.active_tasks -
+                                  before.supervised_reserve);
+    if (child_count == 0U ||
+        child_count >= GUEST_TEST_TASK_CAPACITY_LIMIT) return -1;
+
+    int children[GUEST_TEST_TASK_CAPACITY_LIMIT];
+    size_t spawned = 0U;
+    bool valid = true;
     int parent_pid = x86os_getpid();
-    for (size_t index = 0; index < sizeof(children) / sizeof(children[0]);
-         ++index) {
-        children[index] = x86os_spawn("SLEEPER.PRG");
-        if (children[index] <= 0) return -1;
+    for (; spawned < child_count; ++spawned) {
+        children[spawned] = x86os_spawn("SLEEPER.PRG");
+        if (children[spawned] <= 0) {
+            valid = false;
+            break;
+        }
     }
-    if (x86os_spawn("SLEEPER.PRG") >= 0) return -1;
-    x86os_scheduler_stats_t exhausted;
-    if (x86os_scheduler_stats(&exhausted) != 0 ||
-        exhausted.active_tasks <= before.active_tasks ||
-        exhausted.peak_active_tasks < exhausted.active_tasks ||
-        exhausted.capacity_rejections <= before.capacity_rejections)
-        return -1;
+    if (valid) {
+        int overflow_pid = x86os_spawn("SLEEPER.PRG");
+        if (overflow_pid >= 0) {
+            children[spawned++] = overflow_pid;
+            valid = false;
+        }
+    }
 
-    for (size_t index = 0; index < sizeof(children) / sizeof(children[0]);
-         ++index) {
+    x86os_scheduler_stats_t exhausted = {0};
+    if (valid && (x86os_scheduler_stats(&exhausted) != 0 ||
+                  exhausted.task_capacity != before.task_capacity ||
+                  exhausted.supervised_reserve != before.supervised_reserve ||
+                  exhausted.active_tasks + exhausted.supervised_reserve !=
+                      exhausted.task_capacity ||
+                  exhausted.peak_active_tasks < exhausted.active_tasks ||
+                  exhausted.capacity_rejections <= before.capacity_rejections))
+        valid = false;
+
+    for (size_t index = 0; valid && index < spawned; ++index) {
         x86os_process_info_t info;
         if (process_info_for_pid(children[index], &info) != 0 ||
             info.parent_pid != parent_pid ||
             (info.state != X86OS_PROCESS_READY &&
              info.state != X86OS_PROCESS_RUNNING &&
              info.state != X86OS_PROCESS_SLEEPING)) {
-            return -1;
+            valid = false;
         }
     }
 
-    for (size_t index = 0; index < sizeof(children) / sizeof(children[0]);
-         ++index) {
+    for (size_t index = 0; index < spawned; ++index) {
         int status = -1;
-        if (x86os_kill(children[index]) != 0 ||
-            x86os_wait(children[index], &status) != children[index] ||
-            status != 143) return -1;
+        int kill_result = x86os_kill(children[index]);
+        int wait_result = x86os_wait(children[index], &status);
+        if (kill_result != 0 || wait_result != children[index] ||
+            status != 143) valid = false;
     }
+    if (!valid) return -1;
     if (wait_for_expected("CHILDEX.PRG", 37) != 0) return -1;
     x86os_scheduler_stats_t reclaimed;
     return x86os_scheduler_stats(&reclaimed) == 0 &&

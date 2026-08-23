@@ -7,7 +7,7 @@ id = "RB-SCHED-TASK-SLOTS"
 description = "Globale statische Taskslots"
 source = "kernel/sched/scheduler.h"
 symbol = "MAX_TASKS"
-limit = 8
+limit = 32
 unit = "tasks"
 verification = ["test/test_reist_scheduling_policy.py", "test/test_scheduler_time.py"]
 

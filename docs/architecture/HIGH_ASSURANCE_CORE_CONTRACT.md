@@ -1,6 +1,6 @@
 # REIST High-Assurance Core Contract
 
-Stand: 20. August 2026
+Stand: 23. August 2026
 
 REIST OS ist ein **High-Assurance Research Operating System for
 Fault-Tolerant and Fail-Operational Computing**. Dieser Vertrag definiert die
@@ -98,17 +98,33 @@ die Betriebsparameter neu setzen und das Laufwerk kalibrieren.
 
 ## Gefahrenregister und Traceability
 
-Das maschinenlesbare Register [`safety/hazards.toml`](../../safety/hazards.toml)
-verwendet Schema v1. Jeder Eintrag besitzt eine eindeutige ID, Schweregrad,
-positive FTTI, definierten sicheren Zustand, konkrete Kontrollen,
-Verifikationspfade und sichtbar verbleibendes Restrisiko. Der Validator
-`scripts/validate_hazard_register.py` lehnt unbekannte Versionen, doppelte IDs,
-unsichere Pfade und fehlende Evidenz fail-closed ab. Der Registerstatus bleibt
-`partial`, bis alle Kern-, Geräte- und ausgewählten Profilgefahren erfasst
-sind. `scripts/run_hazard_traceability.py` führt jede referenzierte
-Verifikation aus und bindet Register, Testquellen und Ergebnisse per SHA-256
-an eine maschinenlesbare JSON-Baseline. Ein fehlgeschlagener Test lässt alle
-davon abhängigen Gefahren und die Gesamtbaseline fail-closed fehlschlagen.
+Die maschinenlesbare
+[`safety/assurance_scope.toml`](../../safety/assurance_scope.toml) legt die
+Systemgrenze der ausgewählten Baseline `REIST-research` fest: Einsatzzweck,
+Umgebung, vorhersehbaren Fehlgebrauch, Essential Functions, Anforderungen,
+Komponentenbestand sowie ausgewählte und ausgeschlossene Profile. Der Status
+`complete` bedeutet ausschließlich, dass dieser erklärte Forschungsumfang
+vollständig inventarisiert und mit Gefahren belegt ist. Er ist weder
+Zertifizierung noch Produkt- oder Zielhardwarefreigabe. Medizin, Raumfahrt,
+Industrieautomation und FPGA bleiben nicht ausgewählte Referenzprofile.
+
+Das maschinenlesbare Register
+[`safety/hazards.toml`](../../safety/hazards.toml) verwendet das append-only
+erweiterte Schema v2; gültige Schema-v1-Register bleiben weiterhin lesbar.
+Jeder v2-Eintrag bindet eine gefährliche Situation an Ursachen, Auswirkungen,
+Betriebsphasen, normalen/degradierten/sicheren Zustand, positive FTTI samt
+Begründung, Essential Functions, Anforderungen, Design, Codekontrollen,
+ausführbare Verifikation, objektive Abnahmekriterien, Annahmen, Eigentümer und
+Restrisiko. `scripts/validate_hazard_register.py` lehnt unbekannte Versionen,
+doppelte IDs, unsichere Pfade, unbekannte Referenzen und insbesondere jede
+Lücke zwischen Scope-Inventar und Gefahrenabdeckung fail-closed ab.
+`scripts/run_hazard_traceability.py` führt jede referenzierte Verifikation aus
+und bindet Scope, Register, Anforderungen, Design-/Code-/Testquellen und
+Ergebnisse per SHA-256 an eine maschinenlesbare JSON-Baseline. Ein
+fehlgeschlagener Test lässt alle davon abhängigen Gefahren und die
+Gesamtbaseline fail-closed fehlschlagen. Sichtbare `partially_verified`- und
+Restrisiko-Felder verhindern, dass Registervollständigkeit mit vollständiger
+Risikobeherrschung verwechselt wird.
 
 ## Ressourcenregister
 

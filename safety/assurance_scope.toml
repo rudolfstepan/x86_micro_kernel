@@ -1,0 +1,278 @@
+schema_version = 1
+baseline_id = "REIST-research"
+status = "complete"
+intended_purpose = "Research operating-system baseline for bounded isolation, recoverability and fault-injection experiments on the documented i386 reference configurations."
+system_boundary = "The BIOS-loaded REIST kernel, mediated devices, packaged Ring-3 services, shell and graphical workspace; host hypervisors, external power, operators and unselected product profiles are outside the trusted system boundary."
+operating_environment = "QEMU and VMware i386 reference machines plus explicitly identified experimental x86 target hardware in a laboratory environment."
+selected_profiles = ["generic-research"]
+excluded_profiles = ["medical-reference", "spacecraft-reference", "industrial-control-reference", "experimental-fpga-reference"]
+foreseeable_misuse = [
+  "Treating a passing research build as a certified or production safety system.",
+  "Enabling an unqualified device, DMA path, filesystem or target machine.",
+  "Using a reference profile as a release claim without a concrete product hazard analysis.",
+  "Interrupting power or removing media during mutation and assuming an unverified successful commit.",
+  "Bypassing capabilities, maintenance leases, fencing or the supervisor lifecycle through rescue or debug paths."
+]
+unsupported_claims = [
+  "Certification or regulatory approval.",
+  "Fail-operational behavior without electrically independent target channels.",
+  "DMA isolation for unmediated devices on systems without a qualified IOMMU.",
+  "Integrity of foreign or unmarked writable filesystems after power loss.",
+  "Coverage of medical, spacecraft, industrial-control or FPGA product hazards."
+]
+
+[[essential_function]]
+id = "EF-ISOLATION-001"
+title = "Preserve protection and authority boundaries"
+description = "Reject stale, malformed or unauthorized memory, IPC, capability and device operations before externally visible side effects."
+degraded_state = "Reject optional work and preserve supervisor/restart reserves."
+safe_state = "Fence registered outputs and stop the affected channel when kernel integrity is uncertain."
+ftti_ms = 250
+components = ["CMP-KERNEL", "CMP-MEMORY", "CMP-IPC", "CMP-DEVICE-DOMAIN"]
+
+[[essential_function]]
+id = "EF-RECOVERY-001"
+title = "Bound failure containment and recovery"
+description = "Detect a failed component generation, fence and revoke it, recover within fixed budgets and publish only a self-tested replacement."
+degraded_state = "Keep the failed component isolated while independent functions continue."
+safe_state = "Enter SAFE and request independent handover or controlled restart after budget exhaustion."
+ftti_ms = 1000
+components = ["CMP-SUPERVISOR", "CMP-HANDOVER", "CMP-DIAGNOSTICS"]
+
+[[essential_function]]
+id = "EF-DATA-001"
+title = "Prevent silent acceptance of corrupt persistent state"
+description = "Bind storage mutations to one current resource generation and publish success only after the required flush, readback and recovery contract."
+degraded_state = "Operate the affected resource read-only or offline with explicit diagnosis."
+safe_state = "Quarantine the resource and refuse further mutation when completion or identity is uncertain."
+ftti_ms = 4000
+components = ["CMP-STORAGE-SERVICE", "CMP-BLOCK-COMMON", "CMP-VFS", "CMP-FAT12", "CMP-FAT32"]
+
+[[essential_function]]
+id = "EF-BOOT-001"
+title = "Start only a structurally validated baseline"
+description = "Reject malformed boot manifests, kernel images and ambiguous system-volume selection before normal service publication."
+degraded_state = "Remain in bounded rescue diagnostics without publishing normal services."
+safe_state = "Stop boot with outputs inactive when no validated baseline exists."
+ftti_ms = 1000
+components = ["CMP-BOOT"]
+
+[[requirement]]
+id = "REQ-ISO-001"
+statement = "All user, IPC, capability and device authorities shall be versioned, bounded and validated before side effects."
+design = ["docs/architecture/REIST_ARCHITECTURE.md", "docs/architecture/USERSPACE_DRIVER_MODEL.md"]
+
+[[requirement]]
+id = "REQ-REC-001"
+statement = "Recovery shall follow detect, isolate, fence/revoke, reap, recreate, self-test and reintegrate within fixed budgets."
+design = ["docs/architecture/RESILIENCE_AND_DEGRADATION_CONTRACT.md"]
+
+[[requirement]]
+id = "REQ-RES-001"
+statement = "Critical execution shall preserve fixed CPU, stack, memory, queue, I/O and restart reserves under overload."
+design = ["docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md", "docs/architecture/SYNCHRONIZATION_CONTRACT.md"]
+
+[[requirement]]
+id = "REQ-DAT-001"
+statement = "Persistent and protocol state shall validate identity, integrity, order, freshness and durable completion before publication."
+design = ["docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md", "docs/architecture/REIST_ARCHITECTURE.md"]
+
+[[requirement]]
+id = "REQ-DEV-001"
+statement = "A device shall receive no bus-master or register authority until ownership, ranges, DMA mediation and fencing are validated."
+design = ["docs/architecture/USERSPACE_DRIVER_MODEL.md"]
+
+[[requirement]]
+id = "REQ-BOOT-001"
+statement = "Boot shall fail closed on an invalid manifest, image, system-volume identity or unsupported release state."
+design = ["docs/architecture/REIST_ARCHITECTURE.md"]
+
+[[requirement]]
+id = "REQ-OBS-001"
+statement = "Diagnostics shall remain bounded, preserve crash evidence and never consume reserved recovery resources."
+design = ["docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md", "docs/architecture/RESILIENCE_AND_DEGRADATION_CONTRACT.md"]
+
+[[requirement]]
+id = "REQ-PROFILE-001"
+statement = "Unselected reference profiles and unqualified hardware shall remain excluded from release and assurance claims."
+design = ["docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md", "docs/architecture/MEDICAL_HIGH_ASSURANCE_CONTRACT.md"]
+
+[[component]]
+id = "CMP-KERNEL"
+name = "Exception, fatal and output-fencing kernel mechanisms"
+class = "core"
+code = ["kernel/init/fatal.c", "arch/x86/cpu/isr.asm", "kernel/init/output_fence.c"]
+
+[[component]]
+id = "CMP-MEMORY"
+name = "Paging, process address spaces and bounded allocation"
+class = "core"
+code = ["arch/x86/mm/paging.c", "kernel/proc/process.c"]
+
+[[component]]
+id = "CMP-SCHEDULER-TIME"
+name = "Scheduler, timers, deadlines and resource admission"
+class = "core"
+code = ["kernel/sched/scheduler.c", "kernel/time/pit.c"]
+
+[[component]]
+id = "CMP-IPC"
+name = "IPC endpoints and capability records"
+class = "core"
+code = ["kernel/ipc/ipc.c"]
+
+[[component]]
+id = "CMP-SUPERVISOR"
+name = "Generation-scoped service supervisor"
+class = "core"
+code = ["kernel/init/supervisor.c"]
+
+[[component]]
+id = "CMP-HANDOVER"
+name = "Lease, epoch, replication and fence handover"
+class = "core"
+code = ["kernel/init/handover.c", "kernel/init/handover_serial_backend.c", "kernel/init/storage_handover.c"]
+
+[[component]]
+id = "CMP-DEVICE-DOMAIN"
+name = "Mediated Ring-3 device ownership, IRQ and DMA"
+class = "core"
+code = ["kernel/init/device_domain.c"]
+
+[[component]]
+id = "CMP-DIAGNOSTICS"
+name = "Bounded logging and persistent crash diagnostics"
+class = "core"
+code = ["kernel/init/kernel_log.c", "kernel/init/fatal.c"]
+
+[[component]]
+id = "CMP-BOOT"
+name = "BIOS boot chain and deterministic system-volume publication"
+class = "core"
+code = ["arch/x86/boot/bios/stage1_mbr.asm", "arch/x86/boot/bios/stage2_bios.asm", "kernel/init/kernel.c"]
+
+[[component]]
+id = "CMP-STORAGE-SERVICE"
+name = "Mediated storage request and recovery service"
+class = "service"
+code = ["kernel/init/storage_service.c", "kernel/init/storage_request_pool.c", "kernel/init/storage_safety.c"]
+
+[[component]]
+id = "CMP-BLOCK-COMMON"
+name = "Transport-neutral block and partition publication"
+class = "device"
+code = ["drivers/block/block_device.c", "drivers/block/partition.c"]
+
+[[component]]
+id = "CMP-ATA"
+name = "ATA PIO transport"
+class = "device"
+code = ["drivers/block/ata.c"]
+
+[[component]]
+id = "CMP-AHCI"
+name = "AHCI SATA transport"
+class = "device"
+code = ["drivers/block/ahci.c"]
+
+[[component]]
+id = "CMP-FDD"
+name = "Floppy controller and removable-media transport"
+class = "device"
+code = ["drivers/block/fdd.c"]
+
+[[component]]
+id = "CMP-VFS"
+name = "Virtual filesystem and mount publication"
+class = "filesystem"
+code = ["fs/vfs/vfs.c", "fs/vfs/filesystem.c"]
+
+[[component]]
+id = "CMP-FAT12"
+name = "FAT12, undo journal, remap and critical replicas"
+class = "filesystem"
+code = ["fs/fat12/fat12.c", "fs/fat12/fat12_journal.c", "fs/fat12/fat12_remap.c", "fs/fat12/fat12_replica.c"]
+
+[[component]]
+id = "CMP-FAT32"
+name = "FAT32 and VFS adapter"
+class = "filesystem"
+code = ["fs/fat32/fat32.c", "fs/fat32/fat32_vfs_adapter.c"]
+
+[[component]]
+id = "CMP-EXT2"
+name = "Read-only EXT2 and VFS adapter"
+class = "filesystem"
+code = ["fs/ext2/ext2.c", "fs/ext2/ext2_vfs_adapter.c"]
+
+[[component]]
+id = "CMP-NETWORK-SERVICE"
+name = "Mediated Ethernet, ARP, IPv4, ICMP, UDP, DHCP and TCP state"
+class = "service"
+code = ["drivers/net/netdev.c", "drivers/net/net_socket.c", "drivers/net/tcp_socket.c"]
+
+[[component]]
+id = "CMP-NET-E1000"
+name = "Intel E1000 network driver"
+class = "device"
+code = ["drivers/net/e1000.c"]
+
+[[component]]
+id = "CMP-NET-RTL8139"
+name = "Realtek RTL8139 network driver"
+class = "device"
+code = ["drivers/net/rtl8139.c"]
+
+[[component]]
+id = "CMP-NET-RTL8168"
+name = "Realtek RTL8168/8111 network driver"
+class = "device"
+code = ["drivers/net/rtl8168.c"]
+
+[[component]]
+id = "CMP-NET-NE2000"
+name = "NE2000 network driver"
+class = "device"
+code = ["drivers/net/ne2000.c"]
+
+[[component]]
+id = "CMP-NET-VMXNET3"
+name = "VMXNET3 network driver"
+class = "device"
+code = ["drivers/net/vmxnet3.c"]
+
+[[component]]
+id = "CMP-USB"
+name = "xHCI, USB core, hub and HID drivers"
+class = "device"
+code = ["drivers/usb/xhci.c", "drivers/usb/usb_core.c", "drivers/usb/hub.c", "drivers/usb/hid_kb.c", "drivers/usb/hid_mouse.c"]
+
+[[component]]
+id = "CMP-PLATFORM-IO"
+name = "PCI discovery, PS/2 input, serial and RTC"
+class = "device"
+code = ["drivers/bus/pci.c", "drivers/char/kb.c", "drivers/char/serial.c", "drivers/char/rtc.c"]
+
+[[component]]
+id = "CMP-DISPLAY-GUI"
+name = "Display mediation, desktop compositor and GUI clients"
+class = "application"
+code = ["drivers/video/display_control.c", "userspace/gui/compositor/desktop.c"]
+
+[[component]]
+id = "CMP-AUDIO"
+name = "Mediated HDA driver and PCM service"
+class = "service"
+code = ["userspace/drivers/audio/hda_driver.c", "userspace/services/audio/audio_service.c"]
+
+[[component]]
+id = "CMP-CONFIG-SHELL"
+name = "Configuration service, userspace shell and administration tools"
+class = "service"
+code = ["userspace/services/config/config_service.c", "userspace/bin/shell.c"]
+
+[[component]]
+id = "CMP-RESEARCH-PROFILE"
+name = "Generic research baseline and exclusion policy"
+class = "profile"
+code = ["docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md"]

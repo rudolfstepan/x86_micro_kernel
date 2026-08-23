@@ -1,6 +1,6 @@
 version = 1
 program = "S0.1-completion"
-active_id = "S0.1-complete-hazard-assurance"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -2385,7 +2385,7 @@ evidence = [
 
 [[packages]]
 id = "S0.1-complete-hazard-assurance"
-status = "active"
+status = "done"
 risk = "high"
 title = "Complete the bounded research hazard and assurance baseline"
 scope = "Close S0.1 for the explicitly selected REIST generic research baseline without claiming certification or coverage of unselected product profiles. Add a versioned machine-readable assurance scope that fixes intended purpose, system boundary, operating environment, foreseeable misuse, Essential Functions, profile selection/exclusions and the complete current core/device/service/component inventory. Evolve hazards.toml append-only to a richer schema that covers every in-scope component and binds each hazardous situation to causes, effects, phases, degraded/safe states, positive FTTI with rationale, requirement IDs, design and code controls, executable verification, acceptance criteria, owner, status, assumptions and residual risk. Keep schema-v1 validation compatible, make schema-v2 completeness fail closed against the separate scope inventory, and extend the SHA-256 baseline to bind scope, requirements, design/code sources, tests and results. Mark S0.1 complete only when exact coverage and all frozen gates pass; keep all unsupported profile and target-hardware limits visible."
@@ -2438,4 +2438,12 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "safety: complete S0.1 assurance baseline"
-evidence = []
+evidence = [
+  "python test/test_reist_hazard_register.py -q",
+  "python test/test_reist_supervisor.py -q",
+  "python scripts/validate_hazard_register.py",
+  "python scripts/run_hazard_traceability.py",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal"
+]

@@ -1,6 +1,6 @@
 # Projektstatus
 
-Stand: 20. August 2026. Maßgeblich sind ausführbarer Code, die Tests und die
+Stand: 23. August 2026. Maßgeblich sind ausführbarer Code, die Tests und die
 aktive Paketqueue in `automation/reist-s03b.toml`.
 
 REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
@@ -75,7 +75,16 @@ und Reintegrate. Bereits vorhanden sind unter anderem:
 - begrenzte Netzwerkparser, ARP-/IPv4-/ICMP-/UDP-/DHCP-Entscheidungen in der
   überwachten Ring-3-Domäne
 
-S0 ist noch nicht abgeschlossen. `S0.3c-layout1` mit kleingeschriebener,
+S0 ist noch nicht abgeschlossen. S0.1 ist für die explizit abgegrenzte
+`REIST-research`-Baseline abgeschlossen: Ein separates maschinenlesbares
+Scope-Inventar bindet Systemgrenze, Essential Functions, Anforderungen,
+Komponenten und Profilausschlüsse an das Gefahrenregister. Schema v2 prüft
+vollständige Komponentenabdeckung und die SHA-256-Traceability reicht von
+Anforderung über Design und Code bis Test und Ergebnis. Dieser Abschluss ist
+keine Zertifizierung und keine Freigabe der ausgeschlossenen Referenzprofile
+oder unqualifizierter Zielhardware.
+
+`S0.3c-layout1` mit kleingeschriebener,
 hierarchischer Systemprogrammablage ist umgesetzt. `S0.3c-admin2` mit statischer
 Komponenten-Lifecycle-Steuerung und `S0.3c-admin1` mit capability-
 gebundener Storage-Administration, `S0.3c-6f5` mit der FAT12-

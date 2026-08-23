@@ -138,8 +138,14 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("free_slots <= SUPERVISED_PROCESS_RESERVE", process)
         self.assertIn("memory_stats.free_frame_bytes / PAGE_SIZE", process)
         self.assertIn("process_spawn_supervised", source)
-        self.assertIn("int children[2];", guest)
-        self.assertIn("storage service, shell and GTEST occupy five", guest)
+        self.assertIn("GUEST_TEST_TASK_CAPACITY_LIMIT 32U", guest)
+        self.assertIn("int children[GUEST_TEST_TASK_CAPACITY_LIMIT];", guest)
+        self.assertIn("before.task_capacity - before.active_tasks -", guest)
+        self.assertIn("exhausted.active_tasks + exhausted.supervised_reserve !=",
+                      guest)
+        self.assertIn("int kill_result = x86os_kill(children[index]);", guest)
+        self.assertIn("int wait_result = x86os_wait(children[index], &status);",
+                      guest)
         self.assertIn("TEST_STAGE REIST_PROGRESS_OK", guest)
 
 

@@ -1,6 +1,6 @@
 # Fehlstellenanalyse und Implementierungsfahrplan
 
-Stand: 20. August 2026
+Stand: 23. August 2026
 
 Dieses Dokument beschreibt den anhand des aktuellen Quellstands geprüften
 Ist-Zustand, die wichtigsten noch fehlenden Betriebssystemfunktionen und eine
@@ -98,11 +98,13 @@ und 10 verbindlich.
 
 #### High-Assurance-Gate S0
 
-- [ ] S0.1 Einsatzprofile, Gefahrenregister und vollständiger Assurance Case
+- [x] S0.1 Einsatzprofile, Gefahrenregister und vollständiger Assurance Case
   - [x] Generischer High-Assurance-Kernvertrag und getrennte Referenzprofile
   - [x] Maschinenprüfbares Gefahrenregister-v1-Schema mit eindeutigen IDs,
     FTTI, Safe-State, Restrisiko sowie existierenden Code-/Testreferenzen
-  - [ ] Gefahrenregister für alle Kern-, Geräte- und Profilgefahren
+  - [x] Gefahrenregister für alle Komponenten der ausgewählten generischen
+    Forschungsbaseline; nicht ausgewählte Referenzprofile bleiben explizite
+    Ausschlüsse und benötigen für ein konkretes Produkt eigene Gefahren
   - [x] Automatische, SHA-256-gebundene Traceability von Gefahr über konkrete
     Verifikation bis zum Testergebnis; JSON-Baseline unter
     `build/codex-agent/hazard-traceability.json`
@@ -926,12 +928,16 @@ Explorer, Maus, Window Manager und externe Surface-Clients. Maßgeblich ist der
 
 ### Sicherheits-Gate S0 — vor weiterer Funktionsentwicklung
 
-**Status (13. August 2026): begonnen, nicht abgenommen.** S0 ist die
-Eintrittsbedingung für alle folgenden Phasen. Bis S0.1 abgenommen ist, sind nur
-Änderungen zulässig, die Sicherheit, Isolation, Diagnose, Verifikation oder
-Reproduzierbarkeit erhöhen.
+**Status (23. August 2026): S0.1 abgeschlossen, Gesamtgate nicht abgenommen.**
+S0 ist die Eintrittsbedingung für alle folgenden Phasen. Bis zum vollständigen
+S0-Abschluss sind nur Änderungen zulässig, die Sicherheit, Isolation,
+Diagnose, Verifikation oder Reproduzierbarkeit erhöhen.
 
 #### S0.1 Einsatzprofil, Gefahren und Assurance Case — M
+
+**Abgeschlossen für die explizite generische Forschungsbaseline:** Scope und
+Gefahrenregister inventarisieren alle ausgewählten Komponenten; nicht
+ausgewählte Produktprofile und Zielhardware-Claims bleiben ausgeschlossen.
 
 - Zielsystem, Einsatzprofil, Umgebung und vorhersehbaren Fehlgebrauch festlegen.
 - Essential Functions, sichere/degradierte Zustände und je Gefahr die FTTI
@@ -1693,7 +1699,7 @@ nebenbei in die 32-Bit-Basis eingebaut werden.
   abhängig von S0.3b
 - [x] **8c · R1.7 PCI-HDA und Userspace-Audiobibliothek** — Größe XL;
   abhängig von R1.6
-- [ ] **9 · S0.1 Profil/Gefahren/Assurance Case (teilweise)** — Größe M;
+- [x] **9 · S0.1 Profil/Gefahren/Assurance Case** — Größe M;
   abhängig von R1.3
 - [ ] **10 · S0.2 Stack/Exception/Panic-Containment (teilweise)** — Größe L;
   abhängig von S0.1
@@ -1765,6 +1771,12 @@ make test-fuzz
 
 ## 10. Unmittelbar nächster Schritt
 
+S0.1 ist abgeschlossen. Das nächste Paket ist **S0.2: unabhängiger
+Zielhardware-Watchdog mit rücklesbarem Fencing**. Erst nach dessen Abnahme
+werden die verbliebenen S0.3c-, S0.4-, S0.5- und S0.6-Pakete in der
+festgelegten Reihenfolge fortgesetzt. Die folgende Detailchronik dokumentiert
+die bereits abgeschlossenen IPC-, Dienst-, Netzwerk- und Storage-Inkremente.
+
 Phase 0, R1.1 bis R1.4, **S0.3a Bounded IPC/Capabilities v1** und
 **S0.3b Supervised Userspace Probe Domain** sind umgesetzt und abgenommen.
 Die dafür geschlossenen IPC-/Isolationsinkremente sind:
@@ -1788,7 +1800,7 @@ Die dafür geschlossenen IPC-/Isolationsinkremente sind:
    recreate -> self-test -> reintegrate` — umgesetzt und in realem QEMU mit
    unabhängiger Prozess-/Zeitfortschrittsmessung abgenommen.
 
-Der nächste Schritt ist **S0.3c Dienstmigration/Redundanz**: zuerst einen
+Der damalige nächste Schritt war **S0.3c Dienstmigration/Redundanz**: zuerst einen
 unkritischen echten Dienst hinter die bestehende Capability-/Supervisorgrenze
 verschieben, danach Netzwerk und Storage schrittweise aus Ring 0 lösen. Jede
 Migration benötigt Fault-Injection, Ressourcenbudgets und einen nachweisbaren
