@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.3c-6f8-fat12-write-admission"
 
 [policy]
 one_package_per_run = true
@@ -4155,4 +4155,47 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "storage: fail closed foreign FAT32 writes"
+evidence = []
+
+[[packages]]
+id = "S0.3c-6f8-fat12-write-admission"
+status = "active"
+risk = "high"
+title = "Fail closed FAT12 write admission"
+scope = "Close the remaining unsafe compatibility gap for FAT12 mutation. Standards-compatible foreign FAT12 media remain mountable and readable, but mutation is admitted only for an exact REIST12 volume whose reserved safety layout, undo journal, remap metadata and replica area have been validated and recovered. Reject mutation before in-memory FAT staging or any media write, preserve corrupt marked-media mount rejection, and retain the existing bounded journaled write path for generated REIST12 media. This package hardens existing filesystem migration debt without adding new kernel policy or raw-media authority."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "fs/fat12/fat12.h",
+  "fs/fat12/fat12.c",
+  "fs/fat12/fat12_vfs_adapter.c",
+  "test/test_fat12_host.c",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md"
+]
+invariants = [
+  "a valid foreign FAT12 volume remains mountable and readable but every file, directory, metadata and direct logical-sector mutation is rejected before state changes",
+  "FAT entries cannot be staged in memory unless the exact mounted volume has a validated recovered REIST12 journal and is not fenced",
+  "a marked REIST12 volume remains writable only after journal, remap and replica metadata validation and recovery complete",
+  "corrupt or contradictory marked safety metadata rejects mounting and is never downgraded to the foreign read-only classification",
+  "the write decision uses fixed mounted-volume state and adds no allocation, retry loop or raw-media authority",
+  "foreign media are never silently converted or modified and the generated REIST12 image remains writable"
+]
+targeted_tests = [
+  "python test/test_fs_host.py FilesystemHostTests.test_fat12_cluster_chain_seek_and_subdirectory_lifetime -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "read-only admission would require modifying a foreign FAT12 sector",
+  "a mutation path can reach FDC media or stage FAT state without the common FAT12 write guard",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: fail closed foreign FAT12 writes"
 evidence = []
