@@ -986,6 +986,16 @@ auf deren vollständige Clusterkapazität reduziert. Alle betroffenen Sektoren
 beider FATs und alle eindeutigen Directory-Sektoren werden vor dem ersten
 Write gemeinsam undo-journalisiert. Der anschließende Vollscan muss ohne Loop,
 Short oder Orphan enden.
+Crosslinks werden zusätzlich mit zwei festen Clusterzählern klassifiziert:
+Gesamtreferenzen und Pflichtreferenzen innerhalb deklarierter regulärer
+Dateilängen beziehungsweise vollständiger Directory-Ketten. Die bestätigte
+Crosslink-Reparatur ist nur bei der exakten Diagnose
+`CHAIN_CROSSLINK|CHAIN_EXCESS` zulässig und verweigert jeden Cluster mit mehr
+als einer Pflichtreferenz. Dadurch darf sie ausschließlich überlange
+Dateitails am Sollende trennen, Cluster mit genau einer Pflichtreferenz
+erhalten und Cluster ohne Pflichtreferenz freigeben. Die Entscheidung ist
+unabhängig davon, welche Directory-Datei beim Scan zuerst Owner wurde; echte
+Mehrfach-Eigentümerschaft wird nicht geraten.
 
 `device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
 Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht

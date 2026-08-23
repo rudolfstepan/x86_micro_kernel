@@ -277,9 +277,11 @@ und 10 verbindlich.
         - [x] Gleichzeitig kurze und zyklische reguläre Dateien durch EOC am
           letzten eindeutigen Cluster plus journalisierte Größenbegrenzung auf
           deren lesbare Kapazität atomar reparieren
-        - [ ] `CHKDSK.PRG` für transaktionale Reparatur überkreuzter
-          Clusterketten, allgemeiner Verzeichnisschäden, Orphan-Datenrettung,
-          Journal und Defektsektorkarte
+        - [x] Crosslinks ausschließlich aus überlangen regulären Dateitails
+          über feste Referenz-/Pflichtreferenzzähler erkennen und ohne Änderung
+          der einzigen Sollkette journalisiert trennen
+        - [ ] `CHKDSK.PRG` für echte mehrfach benötigte Crosslinks, allgemeine
+          Verzeichnisschäden, Orphan-Datenrettung, Journal und Defektsektorkarte
         - [x] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
           Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg
           kontrolliert remounten; Abbruch lässt das Medium konsistent oder
@@ -2571,7 +2573,10 @@ sie validieren Eingaben und senden versionierte Requests an den Storage-Dienst.
   loopenden Unterverzeichnisses einmal und ersetzt bei reiner Diagnose nur den
   letzten Rücksprung durch EOC. `--repair-short-loops --confirm` kombiniert bei
   der exakten Loop-/Short-Diagnose EOC am letzten eindeutigen Cluster mit der
-  journalisierten Größenbegrenzung auf dessen lesbare Kapazität. Crosslinks,
+  journalisierten Größenbegrenzung auf dessen lesbare Kapazität.
+  `--repair-crosslinks --confirm` trennt bei der exakten Crosslink-/Excess-
+  Diagnose nur überlange Tail-Verweise, wenn höchstens eine Sollkette jeden
+  mehrfach referenzierten Cluster benötigt. Echte Mehrfach-Eigentümerschaft,
   Orphan-Datenrettung sowie allgemeine Verzeichnis-, Journal- und
   Remap-Reparatur bleiben offen.
 - `FORMAT.PRG` akzeptiert ausschließlich erkannte FDD-Ressourcen. Ohne

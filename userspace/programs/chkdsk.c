@@ -89,9 +89,11 @@ static int check_fat12(int argc, char **argv) {
         equal(argv[3], "--repair-dir-loops") && equal(argv[4], "--confirm");
     int repair_short_loops = argc == 5 &&
         equal(argv[3], "--repair-short-loops") && equal(argv[4], "--confirm");
+    int repair_crosslinks = argc == 5 &&
+        equal(argv[3], "--repair-crosslinks") && equal(argv[4], "--confirm");
     if ((argc != 3 && !repair_mirror && !repair_chains && !repair_short &&
          !reclaim_orphans && !repair_loops && !repair_directory_loops &&
-         !repair_short_loops) ||
+         !repair_short_loops && !repair_crosslinks) ||
         !equal(argv[1], "--fat12")) {
         x86os_puts("Usage: chkdsk [path]\n"
                    "       chkdsk --fat12 <resource>\n"
@@ -101,7 +103,8 @@ static int check_fat12(int argc, char **argv) {
                    "       chkdsk --fat12 <resource> --reclaim-orphans --confirm\n"
                    "       chkdsk --fat12 <resource> --repair-loops --confirm\n"
                    "       chkdsk --fat12 <resource> --repair-dir-loops --confirm\n"
-                   "       chkdsk --fat12 <resource> --repair-short-loops --confirm\n");
+                   "       chkdsk --fat12 <resource> --repair-short-loops --confirm\n"
+                   "       chkdsk --fat12 <resource> --repair-crosslinks --confirm\n");
         return 2;
     }
     uint32_t resource = 0U;
@@ -121,7 +124,8 @@ static int check_fat12(int argc, char **argv) {
         : repair_loops ? X86OS_STORAGE_REPAIR_FAT12_LOOPS
         : repair_directory_loops ? X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_LOOPS
         : repair_short_loops ? X86OS_STORAGE_REPAIR_FAT12_SHORT_LOOPS
-                             : X86OS_STORAGE_CHECK_FAT12;
+        : repair_crosslinks ? X86OS_STORAGE_REPAIR_FAT12_CROSSLINKS
+                            : X86OS_STORAGE_CHECK_FAT12;
     int request_result = run_fat12_request(operation, resource,
                                            &operation_result);
     if (request_result == -1) {
@@ -135,7 +139,7 @@ static int check_fat12(int argc, char **argv) {
     if (operation_result < 0) {
         x86os_puts((repair_mirror || repair_chains || repair_short ||
                     reclaim_orphans || repair_loops || repair_directory_loops ||
-                    repair_short_loops)
+                    repair_short_loops || repair_crosslinks)
             ? "CHKDSK: repair refused or failed; medium requires inspection\n"
             : "CHKDSK: FAT12 metadata check failed; medium unchanged\n");
         return 1;
@@ -169,6 +173,10 @@ static int check_fat12(int argc, char **argv) {
         x86os_puts("CHKDSK: FAT12 short regular-file loops repaired\n");
         return 0;
     }
+    if ((flags & X86OS_FAT12_RESULT_CROSSLINKS_REPAIRED) != 0U) {
+        x86os_puts("CHKDSK: FAT12 excess-tail crosslinks repaired\n");
+        return 0;
+    }
     if (flags == 0U) {
         x86os_puts("CHKDSK: FAT12 BPB and both FAT mirrors are clean\n");
         return 0;
@@ -177,7 +185,7 @@ static int check_fat12(int argc, char **argv) {
     x86os_print_number((int)flags);
     x86os_puts((repair_mirror || repair_chains || repair_short ||
                 reclaim_orphans || repair_loops || repair_directory_loops ||
-                repair_short_loops)
+                repair_short_loops || repair_crosslinks)
         ? "; no repair committed\n"
         : "; inspect flags before explicit repair\n");
     return 1;
@@ -257,7 +265,8 @@ int main(int argc, char **argv) {
                    "       chkdsk --fat12 <resource> --reclaim-orphans --confirm\n"
                    "       chkdsk --fat12 <resource> --repair-loops --confirm\n"
                    "       chkdsk --fat12 <resource> --repair-dir-loops --confirm\n"
-                   "       chkdsk --fat12 <resource> --repair-short-loops --confirm\n");
+                   "       chkdsk --fat12 <resource> --repair-short-loops --confirm\n"
+                   "       chkdsk --fat12 <resource> --repair-crosslinks --confirm\n");
         return 2;
     }
     unsigned visited = 0, errors = 0;

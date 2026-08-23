@@ -50,6 +50,9 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sowie der erste
 12. atomare Reparatur zugleich kurzer und zyklischer regulärer Dateien: alle
     eindeutigen Cluster bleiben erhalten, der letzte wird EOC und die
     Directory-Größe wird auf deren lesbare Kapazität begrenzt
+13. scanreihenfolge-unabhängige Referenz-/Pflichtreferenzzählung und Reparatur
+    von Crosslinks, die ausschließlich aus überlangen regulären Dateitails
+    stammen; echte Mehrfach-Eigentümerschaft bleibt gesperrt
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen
@@ -81,6 +84,7 @@ C:\> CHKDSK --fat12 1 --reclaim-orphans --confirm
 C:\> CHKDSK --fat12 1 --repair-loops --confirm
 C:\> CHKDSK --fat12 1 --repair-dir-loops --confirm
 C:\> CHKDSK --fat12 1 --repair-short-loops --confirm
+C:\> CHKDSK --fat12 1 --repair-crosslinks --confirm
 FDISK
 ```
 
@@ -136,6 +140,14 @@ behalten, der letzte Rücksprung wird EOC und die Dateigröße auf
 FATs und alle Directory-Sektoren liegen vor dem ersten Write gemeinsam im
 Undo-Journal. Zero-Starts, Crosslinks und weitere Diagnoseflags verhindern die
 Transaktion.
+`--repair-crosslinks --confirm` akzeptiert nur die exakte Diagnose
+`CHAIN_CROSSLINK|CHAIN_EXCESS`. Der vollständige Scan zählt pro Cluster alle
+Kettenverweise und getrennt jene Verweise, die innerhalb der deklarierten
+Dateilänge oder einer Directory-Kette liegen. Sobald ein mehrfach
+referenzierter Cluster von mehr als einer Sollkette benötigt wird, bleibt das
+Medium unverändert. Andernfalls werden alle überlangen Dateien am Sollende
+getrennt, genau einmal benötigte Cluster bewahrt und ausschließlich reine
+Excess-Tail-Cluster freigegeben.
 `FDISK.PRG` kann auf explizit freigegebenen, leeren ATA-/AHCI-Medien eine
 validierte MBR-Partition erzeugen. Eine Diskette bleibt eine partitionslose
 Superfloppy und wird von `FDISK` niemals partitioniert.
@@ -144,9 +156,9 @@ Superfloppy und wird von `FDISK` niemals partitioniert.
 
 - reale FDD-/VMware-Power-Loss- und Reconnect-Matrix über die bereits
   deterministisch geprüften Veröffentlichungsstufen
-- CHKDSK-Reparatur von Crosslinks, allgemeinen Verzeichnisschäden, Journal,
-  Remap- und Defektsektorkarte sowie Datenrettung von Orphans statt ihres
-  expliziten Verwerfens
+- CHKDSK-Reparatur echter mehrfach benötigter Crosslinks, allgemeiner
+  Verzeichnisschäden, Journal, Remap- und Defektsektorkarte sowie Datenrettung
+  von Orphans statt ihres expliziten Verwerfens
 - QEMU-Laufzeitnachweis für Maintenance-Lease, Unmount, FAT-Spiegel-Reparatur,
   Verify und kontrollierten Remount
 - breitere echte FDD-/Medienfehler- und Langzeitmatrix

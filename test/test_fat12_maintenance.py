@@ -45,12 +45,14 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_LOOPS", source)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_LOOPS", source)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_SHORT_LOOPS", source)
+        self.assertIn("X86OS_STORAGE_REPAIR_FAT12_CROSSLINKS", source)
         self.assertIn('"--repair-chains"', source)
         self.assertIn('"--repair-short"', source)
         self.assertIn('"--reclaim-orphans"', source)
         self.assertIn('"--repair-loops"', source)
         self.assertIn('"--repair-dir-loops"', source)
         self.assertIn('"--repair-short-loops"', source)
+        self.assertIn('"--repair-crosslinks"', source)
         self.assertIn("x86os_storage_submit", source)
         self.assertIn("x86os_storage_collect", source)
         self.assertNotIn("x86os_storage_block_read", source)
@@ -80,6 +82,7 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_LOOPS = 17",
                       header)
         self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_SHORT_LOOPS = 18", header)
+        self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_CROSSLINKS = 19", header)
         self.assertIn("X86OS_STORAGE_CHECK_FAT12 11U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_MIRROR 12U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_CHAINS 13U", sdk)
@@ -88,7 +91,8 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_LOOPS 16U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_LOOPS 17U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_SHORT_LOOPS 18U", sdk)
-        self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_SHORT_LOOPS", pool)
+        self.assertIn("X86OS_STORAGE_REPAIR_FAT12_CROSSLINKS 19U", sdk)
+        self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_CROSSLINKS", pool)
         self.assertIn("request.operation >= STORAGE_REQUEST_CHECK_FAT12", syscall)
         self.assertIn("process->domain_profile.kind != "
                       "PROCESS_DOMAIN_MAINTENANCE", syscall)
@@ -130,6 +134,10 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("FAT12_MAX_SHORT_LOOP_REPAIRS 128U", service)
         self.assertIn("FAT12_MAX_DIRECTORY_REPAIR_SECTORS 64U", service)
         self.assertIn("fat12_cluster_owner[FAT12_CLUSTER_INDEX_CAPACITY]",
+                      service)
+        self.assertIn("fat12_cluster_references[FAT12_CLUSTER_INDEX_CAPACITY]",
+                      service)
+        self.assertIn("fat12_cluster_required[FAT12_CLUSTER_INDEX_CAPACITY]",
                       service)
         self.assertIn("fat12_chain_seen[FAT12_CLUSTER_INDEX_CAPACITY]", service)
         scan = service[service.index("static uint32_t fat12_walk_chain"):
@@ -275,6 +283,27 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertLess(journal_directory, first_directory_write)
         self.assertIn("fat12_check_volume(resource, &layout) != 0", repair)
         self.assertIn("X86OS_FAT12_RESULT_SHORT_LOOPS_REPAIRED", repair)
+
+    def test_crosslink_repair_accepts_only_excess_only_references(self):
+        service = self.read("userspace/programs/storage_service.c")
+        repair = service[service.index("static int fat12_crosslinks_are_excess_only"):
+                         service.index("static int fat12_apply_loop_repairs")]
+        self.assertIn("X86OS_FAT12_RESULT_CHAIN_CROSSLINK |", repair)
+        self.assertIn("X86OS_FAT12_RESULT_CHAIN_EXCESS", repair)
+        self.assertIn("fat12_excess_issue_count != fat12_chain_repair_count",
+                      repair)
+        self.assertIn("fat12_cluster_references[cluster] <= 1U", repair)
+        self.assertIn("fat12_cluster_required[cluster] > 1U", repair)
+        self.assertIn("fat12_cluster_required[cut] != 1U", repair)
+        self.assertIn("fat12_cluster_required[cluster] == 0U", repair)
+        self.assertIn("fat12_set_entry(fat12_repair_fat, cut, 0x0FFFU)",
+                      repair)
+        self.assertIn("fat12_set_entry(fat12_repair_fat, cluster, 0U)",
+                      repair)
+        self.assertIn("fat12_record_old_mirror", repair)
+        self.assertIn("copy < 2U", repair)
+        self.assertIn("fat12_check_volume(resource, &layout) != 0", repair)
+        self.assertIn("X86OS_FAT12_RESULT_CROSSLINKS_REPAIRED", repair)
 
 
 if __name__ == "__main__":
