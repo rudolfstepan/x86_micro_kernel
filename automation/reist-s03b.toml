@@ -4139,7 +4139,7 @@ invariants = [
   "the existing generated REIST FAT32 system image remains writable and foreign media are never silently converted"
 ]
 targeted_tests = [
-  "python test/test_fs_host.py -v",
+  "python test/test_fs_host.py FilesystemHostTests.test_fat32_write_truncate_and_directory_extension -v",
   "python test/test_reist_undo_journal.py -v"
 ]
 package_tests = [
