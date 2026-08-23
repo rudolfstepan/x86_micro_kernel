@@ -30,15 +30,18 @@
 #define BOOT_CONTROL_SECONDARY_LBA 98U
 #define BOOT_CONTROL_MAGIC_0 0x53494552U
 #define BOOT_CONTROL_MAGIC_1 0x31434254U
-#define BOOT_CONTROL_VERSION 1U
+#define BOOT_CONTROL_VERSION_V1 1U
+#define BOOT_CONTROL_VERSION_V2 2U
 #define BOOT_CONTROL_HEADER_SIZE 64U
 #define BOOT_CONTROL_CRC_OFFSET 60U
 #define BOOT_CONTROL_SLOT_A 0U
 #define BOOT_CONTROL_SLOT_B 1U
 #define BOOT_CONTROL_SLOT_NONE 0xFFU
+#define BOOT_MANIFEST_B_LBA 96U
+#define BOOT_KERNEL_A_LBA 128U
+#define BOOT_KERNEL_B_LBA 3136U
 #define BOOT_CONTROL_ATTEMPT_LIMIT 2U
-#define BOOT_STATUS_WAIT_ATTEMPTS 500U
-#define BOOT_STATUS_WAIT_MS 10U
+#define BOOT_STATUS_ACK_TIMEOUT_MS 30000U
 
 static void put16(uint8_t *p, uint32_t value) {
     p[0] = (uint8_t)value; p[1] = (uint8_t)(value >> 8U);
@@ -340,6 +343,7 @@ static uint32_t format_crc32(const void *data, uint32_t length) {
 typedef struct {
     uint64_t sequence;
     uint32_t successful_mask;
+    uint32_t version;
     uint8_t active_slot;
     uint8_t pending_slot;
     uint8_t attempts_remaining;
@@ -371,13 +375,15 @@ static int boot_bytes_zero(const uint8_t *data, uint32_t length) {
     return 1;
 }
 
-static int boot_manifest_valid(const uint8_t *sector) {
+static int boot_manifest_valid(const uint8_t *sector,
+                               uint32_t expected_kernel_lba) {
     if (get32(sector) != BOOT_MANIFEST_MAGIC_0 ||
         get32(sector + 4U) != BOOT_MANIFEST_MAGIC_1 ||
         get32(sector + 8U) != BOOT_MANIFEST_VERSION ||
         get32(sector + 12U) != BOOT_MANIFEST_HEADER_SIZE ||
         get32(sector + 16U) != 1U || get32(sector + 20U) == 0U ||
-        get32(sector + 20U) > 64U || get32(sector + 24U) != 128U ||
+        get32(sector + 20U) > 64U ||
+        get32(sector + 24U) != expected_kernel_lba ||
         get32(sector + 32U) != BOOT_PARTITION_SECTORS ||
         get32(sector + 40U) != 1U) return 0;
     uint32_t checksum = 0U;
@@ -391,7 +397,8 @@ static int boot_control_parse(const uint8_t *sector, uint8_t source_copy,
     if (sector == 0 || state == 0 ||
         get32(sector) != BOOT_CONTROL_MAGIC_0 ||
         get32(sector + 4U) != BOOT_CONTROL_MAGIC_1 ||
-        get32(sector + 8U) != BOOT_CONTROL_VERSION ||
+        (get32(sector + 8U) != BOOT_CONTROL_VERSION_V1 &&
+         get32(sector + 8U) != BOOT_CONTROL_VERSION_V2) ||
         get32(sector + 12U) != BOOT_CONTROL_HEADER_SIZE ||
         !boot_bytes_zero(sector + 32U, BOOT_CONTROL_CRC_OFFSET - 32U) ||
         !boot_bytes_zero(sector + BOOT_CONTROL_HEADER_SIZE,
@@ -406,22 +413,28 @@ static int boot_control_parse(const uint8_t *sector, uint8_t source_copy,
                                      sizeof(boot_control_checked))) return -84;
 
     uint64_t sequence = get64(sector + 16U);
+    uint32_t version = get32(sector + 8U);
     uint8_t active = sector[24U];
     uint8_t pending = sector[25U];
     uint8_t attempts = sector[26U];
     uint8_t limit = sector[27U];
     uint32_t successful = get32(sector + 28U);
     if (sequence == 0U || active > BOOT_CONTROL_SLOT_B ||
-        (pending != BOOT_CONTROL_SLOT_NONE && pending != BOOT_CONTROL_SLOT_B) ||
+        (pending != BOOT_CONTROL_SLOT_NONE && pending > BOOT_CONTROL_SLOT_B) ||
         limit != BOOT_CONTROL_ATTEMPT_LIMIT || attempts > limit ||
         (successful & ~0x03U) != 0U ||
         (successful & (1U << active)) == 0U) return -84;
     if ((pending == BOOT_CONTROL_SLOT_NONE && attempts != 0U) ||
-        (pending == BOOT_CONTROL_SLOT_B && active != BOOT_CONTROL_SLOT_A))
+        (version == BOOT_CONTROL_VERSION_V1 &&
+         (pending == BOOT_CONTROL_SLOT_A ||
+          (pending == BOOT_CONTROL_SLOT_B && active != BOOT_CONTROL_SLOT_A))) ||
+        (version == BOOT_CONTROL_VERSION_V2 &&
+         pending != BOOT_CONTROL_SLOT_NONE && pending == active))
         return -84;
     *state = (boot_control_state_t){
         .sequence = sequence,
         .successful_mask = successful,
+        .version = version,
         .active_slot = active,
         .pending_slot = pending,
         .attempts_remaining = attempts,
@@ -504,15 +517,21 @@ static __attribute__((noinline)) int boot_confirm_pending(
         status->selected_slot > BOOT_CONTROL_SLOT_B ||
         status->active_slot > BOOT_CONTROL_SLOT_B ||
         (status->pending_slot != BOOT_CONTROL_SLOT_NONE &&
-         status->pending_slot != BOOT_CONTROL_SLOT_B)) return -22;
+         status->pending_slot > BOOT_CONTROL_SLOT_B)) return -22;
 
     x86os_drive_info_t drive;
     if (x86os_drive_info(status->resource, &drive) <= 0 ||
         drive.type != X86OS_DRIVE_PARTITION ||
         drive.sectors != status->partition_sectors ||
-        x86os_storage_block_read(status->resource, 0U,
+        x86os_storage_block_read(
+            status->resource,
+            status->selected_slot == BOOT_CONTROL_SLOT_B ?
+                BOOT_MANIFEST_B_LBA : 0U,
                                  boot_manifest_sector) != 0 ||
-        !boot_manifest_valid(boot_manifest_sector)) return -19;
+        !boot_manifest_valid(
+            boot_manifest_sector,
+            status->selected_slot == BOOT_CONTROL_SLOT_B ?
+                BOOT_KERNEL_B_LBA : BOOT_KERNEL_A_LBA)) return -19;
 
     boot_control_selection_t selected;
     if (boot_control_read_pair(status->resource, boot_control_sectors,
@@ -536,9 +555,9 @@ static __attribute__((noinline)) int boot_confirm_pending(
         }
         return 0;
     }
-    if (status->selected_slot != BOOT_CONTROL_SLOT_B ||
-        status->active_slot != BOOT_CONTROL_SLOT_A ||
-        status->pending_slot != BOOT_CONTROL_SLOT_B ||
+    if (status->pending_slot > BOOT_CONTROL_SLOT_B ||
+        status->selected_slot != status->pending_slot ||
+        status->active_slot == status->pending_slot ||
         selected.selected.sequence == UINT64_MAX) return -22;
 
     for (uint32_t index = 0U; index < sizeof(boot_control_confirmation);
@@ -546,11 +565,11 @@ static __attribute__((noinline)) int boot_confirm_pending(
         boot_control_confirmation[index] =
             boot_control_sectors[selected.selected_copy][index];
     put64(boot_control_confirmation + 16U, selected.selected.sequence + 1U);
-    boot_control_confirmation[24U] = BOOT_CONTROL_SLOT_B;
+    boot_control_confirmation[24U] = status->pending_slot;
     boot_control_confirmation[25U] = BOOT_CONTROL_SLOT_NONE;
     boot_control_confirmation[26U] = 0U;
     uint32_t successful_mask = selected.selected.successful_mask;
-    successful_mask |= 0x02U;
+    successful_mask |= 1U << status->pending_slot;
     put32(boot_control_confirmation + 28U, successful_mask);
     put32(boot_control_confirmation + BOOT_CONTROL_CRC_OFFSET, 0U);
     put32(boot_control_confirmation + BOOT_CONTROL_CRC_OFFSET,
@@ -567,27 +586,27 @@ static __attribute__((noinline)) int boot_confirm_pending(
                                &verified) != 0 ||
         !verified.mirrored ||
         verified.selected.sequence != selected.selected.sequence + 1U ||
-        verified.selected.active_slot != BOOT_CONTROL_SLOT_B ||
+        verified.selected.active_slot != status->pending_slot ||
         verified.selected.pending_slot != BOOT_CONTROL_SLOT_NONE ||
         verified.selected.attempts_remaining != 0U ||
-        (verified.selected.successful_mask & 0x02U) == 0U) return -84;
+        (verified.selected.successful_mask &
+         (1U << status->pending_slot)) == 0U) return -84;
     return 0;
 }
 
-static __attribute__((noinline)) int boot_wait_for_success_ack(void) {
-    for (uint32_t attempt = 0U; attempt < BOOT_STATUS_WAIT_ATTEMPTS;
-         ++attempt) {
-        x86os_boot_status_t status = {0};
-        int result = x86os_boot_status(&status);
-        if (result == -11) {
-            x86os_sleep_ms(BOOT_STATUS_WAIT_MS);
-            continue;
-        }
-        if (result == -2) return 0;
-        if (result == 0) return boot_confirm_pending(&status);
-        return result;
+static __attribute__((noinline)) void boot_success_ack_poll(
+        uint32_t deadline_ms, uint8_t *active) {
+    if (active == 0 || *active == 0U) return;
+    if ((int32_t)(x86os_uptime_ms() - deadline_ms) >= 0) {
+        *active = 0U;
+        return;
     }
-    return -110;
+
+    x86os_boot_status_t status = {0};
+    int result = x86os_boot_status(&status);
+    if (result == -11) return;
+    *active = 0U;
+    if (result == 0) (void)boot_confirm_pending(&status);
 }
 
 static void format_metadata_sector(uint8_t *sector, uint32_t sector_number) {
@@ -5536,8 +5555,11 @@ int main(void) {
         x86os_puts("\nSTORAGE is an internal service. Use svcctl list/status.\n");
         return 1;
     }
-    (void)boot_wait_for_success_ack();
+    uint32_t boot_ack_deadline =
+        x86os_uptime_ms() + BOOT_STATUS_ACK_TIMEOUT_MS;
+    uint8_t boot_ack_active = 1U;
     for (;;) {
+        boot_success_ack_poll(boot_ack_deadline, &boot_ack_active);
         x86os_storage_descriptor_t request;
         uint8_t data[X86OS_STORAGE_BLOCK_SIZE];
         int claim = x86os_storage_claim(&request, data);

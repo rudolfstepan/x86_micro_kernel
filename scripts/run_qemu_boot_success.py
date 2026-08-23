@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove Ring-3 pending-B acknowledgement and confirmed-B rollback in QEMU."""
+"""Prove symmetric Ring-3 boot-slot confirmation and rollback in QEMU."""
 
 from __future__ import annotations
 
@@ -95,6 +95,7 @@ def main() -> int:
     parser.add_argument("--policy", type=Path, required=True)
     parser.add_argument("--openssl", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--reverse-output", type=Path, required=True)
     parser.add_argument("--log", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=15.0)
     parser.add_argument("--root", type=Path, default=Path.cwd())
@@ -130,11 +131,40 @@ def main() -> int:
         if stable.boot_control_sequence != confirmed.boot_control_sequence:
             raise ValueError("confirmed B reboot unexpectedly mutated control")
 
+        update_inactive_slot(
+            args.output, args.kernel, args.signature, args.reverse_output,
+            args.policy, args.openssl, args.root,
+        )
+        reverse_initial = validate_boot_image(args.reverse_output, "hdd")
+        if (reverse_initial.active_slot, reverse_initial.pending_slot,
+                reverse_initial.attempts_remaining,
+                reverse_initial.successful_mask) != (1, 0, 2, 2):
+            raise ValueError("updater did not publish inactive pending A")
+
+        third = _run_once(args.qemu, args.reverse_output, args.timeout)
+        transcripts.append("=== confirm pending A ===\n" + third)
+        _require(third, ("BOOT_CONTROL_PENDING_A attempts=1", "BOOT_OK"), 3)
+        confirmed_a = validate_boot_image(args.reverse_output, "hdd")
+        if (confirmed_a.active_slot, confirmed_a.pending_slot,
+                confirmed_a.attempts_remaining,
+                confirmed_a.successful_mask) != (0, 0xFF, 0, 3):
+            raise ValueError("Ring-3 did not persist confirmed A")
+        if confirmed_a.boot_control_sequence != \
+                reverse_initial.boot_control_sequence + 2:
+            raise ValueError("reverse trial acknowledgement sequence drift")
+
+        fourth = _run_once(args.qemu, args.reverse_output, args.timeout)
+        transcripts.append("=== reboot confirmed A ===\n" + fourth)
+        _require(fourth, ("BOOT_OK",), 4)
+        stable_a = validate_boot_image(args.reverse_output, "hdd")
+        if stable_a.boot_control_sequence != confirmed_a.boot_control_sequence:
+            raise ValueError("confirmed A reboot unexpectedly mutated control")
+
         _corrupt_backup_signature(args.output, stable.partition_lba)
-        third = _run_once(args.qemu, args.output, args.timeout)
-        transcripts.append("=== corrupt confirmed B rollback ===\n" + third)
-        _require(third, ("BOOT_CONTROL_ACTIVE_B",
-                         "BOOT_CONTROL_CONFIRMED_B_ROLLBACK_A", "BOOT_OK"), 3)
+        fifth = _run_once(args.qemu, args.output, args.timeout)
+        transcripts.append("=== corrupt confirmed B rollback ===\n" + fifth)
+        _require(fifth, ("BOOT_CONTROL_ACTIVE_B",
+                         "BOOT_CONTROL_CONFIRMED_B_ROLLBACK_A", "BOOT_OK"), 5)
         rolled_back = validate_boot_image(args.output, "hdd")
         if (rolled_back.active_slot, rolled_back.pending_slot,
                 rolled_back.attempts_remaining, rolled_back.successful_mask) != (
@@ -150,8 +180,8 @@ def main() -> int:
 
     args.log.parent.mkdir(parents=True, exist_ok=True)
     args.log.write_text("\n".join(transcripts), encoding="utf-8")
-    print("boot-success: PASS pending-B confirmed, persistent B selected, "
-          f"corrupt B rolled back to A log={args.log}")
+    print("boot-success: PASS pending B and pending A confirmed, persistent "
+          f"A selected, corrupt confirmed B rolled back to A log={args.log}")
     return 0
 
 

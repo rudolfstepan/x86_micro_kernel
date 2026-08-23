@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare a signed kernel in inactive BIOS slot B and publish pending state."""
+"""Prepare a signed kernel in the inactive BIOS slot and publish pending state."""
 
 from __future__ import annotations
 
@@ -17,7 +17,10 @@ try:
         BACKUP_MANIFEST_RELATIVE_LBA,
         BOOT_CONTROL_PRIMARY_RELATIVE_LBA,
         BOOT_CONTROL_SECONDARY_RELATIVE_LBA,
+        BOOT_CONTROL_SLOT_A,
         BOOT_CONTROL_SLOT_B,
+        BOOT_CONTROL_VERSION_V2,
+        KERNEL_RELATIVE_LBA,
         KERNEL_B_RELATIVE_LBA,
         SECTOR_SIZE,
         create_boot_control_record,
@@ -37,7 +40,10 @@ except ModuleNotFoundError:
         BACKUP_MANIFEST_RELATIVE_LBA,
         BOOT_CONTROL_PRIMARY_RELATIVE_LBA,
         BOOT_CONTROL_SECONDARY_RELATIVE_LBA,
+        BOOT_CONTROL_SLOT_A,
         BOOT_CONTROL_SLOT_B,
+        BOOT_CONTROL_VERSION_V2,
+        KERNEL_RELATIVE_LBA,
         KERNEL_B_RELATIVE_LBA,
         SECTOR_SIZE,
         create_boot_control_record,
@@ -109,8 +115,9 @@ def update_inactive_slot(
     source = validate_image(source_image, "hdd")
     if source.pending_slot != 0xFF or source.attempts_remaining != 0:
         raise ValueError("source image already has a pending boot update")
-    if source.active_slot != 0 or source.boot_control_sequence is None:
-        raise ValueError("boot-control v1 requires confirmed slot A")
+    if source.active_slot not in (BOOT_CONTROL_SLOT_A, BOOT_CONTROL_SLOT_B) or \
+            source.boot_control_sequence is None:
+        raise ValueError("source image lacks a confirmed boot slot")
     if source.boot_control_sequence == 0xFFFFFFFFFFFFFFFF:
         raise ValueError("boot-control sequence is exhausted")
 
@@ -124,8 +131,24 @@ def update_inactive_slot(
         raise ValueError("signature verifier returned a different artifact digest")
     if len(signature) != 256:
         raise ValueError("RSA-PSS signature is not exactly 256 bytes")
-    if KERNEL_B_RELATIVE_LBA + sectors_for(len(kernel)) > source.partition_sectors:
-        raise ValueError("signed kernel exceeds inactive slot B")
+    with source_image.open("rb") as image:
+        selected = read_boot_control(image, source.partition_lba)
+    if selected.active_slot != source.active_slot or \
+            selected.sequence != source.boot_control_sequence:
+        raise ValueError("source boot-control selection changed")
+    target_slot = BOOT_CONTROL_SLOT_B if selected.active_slot == \
+        BOOT_CONTROL_SLOT_A else BOOT_CONTROL_SLOT_A
+    if target_slot == BOOT_CONTROL_SLOT_A and \
+            selected.version != BOOT_CONTROL_VERSION_V2:
+        raise ValueError("reverse inactive-slot updates require boot-control v2")
+    target_manifest_lba = BACKUP_MANIFEST_RELATIVE_LBA \
+        if target_slot == BOOT_CONTROL_SLOT_B else 0
+    target_kernel_lba = KERNEL_B_RELATIVE_LBA \
+        if target_slot == BOOT_CONTROL_SLOT_B else KERNEL_RELATIVE_LBA
+    target_limit_lba = source.partition_sectors \
+        if target_slot == BOOT_CONTROL_SLOT_B else KERNEL_B_RELATIVE_LBA
+    if target_kernel_lba + sectors_for(len(kernel)) > target_limit_lba:
+        raise ValueError("signed kernel exceeds inactive slot")
 
     output_image.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source_image, output_image)
@@ -134,25 +157,25 @@ def update_inactive_slot(
         image.seek(partition_offset)
         manifest_a = image.read(SECTOR_SIZE)
         stage2_sectors = struct.unpack_from("<I", manifest_a, 20)[0]
-        manifest_b = create_manifest(
+        target_manifest = create_manifest(
             stage2_sectors, kernel, source.partition_sectors, signature,
-            KERNEL_B_RELATIVE_LBA,
+            target_kernel_lba,
         )
 
         _durable_write(
             image,
-            partition_offset + KERNEL_B_RELATIVE_LBA * SECTOR_SIZE,
+            partition_offset + target_kernel_lba * SECTOR_SIZE,
             kernel,
         )
         if boundary_hook is not None:
-            boundary_hook("kernel-b", output_image)
+            boundary_hook(f"kernel-{'b' if target_slot else 'a'}", output_image)
         _durable_write(
             image,
-            partition_offset + BACKUP_MANIFEST_RELATIVE_LBA * SECTOR_SIZE,
-            manifest_b,
+            partition_offset + target_manifest_lba * SECTOR_SIZE,
+            target_manifest,
         )
         if boundary_hook is not None:
-            boundary_hook("manifest-b", output_image)
+            boundary_hook(f"manifest-{'b' if target_slot else 'a'}", output_image)
 
     staged = validate_image(output_image, "hdd")
     if staged.pending_slot != 0xFF:
@@ -165,9 +188,11 @@ def update_inactive_slot(
         )
         record = create_boot_control_record(
             sequence=selected.sequence + 1,
-            pending_slot=BOOT_CONTROL_SLOT_B,
+            active_slot=selected.active_slot,
+            pending_slot=target_slot,
             attempts_remaining=BOOT_CONTROL_ATTEMPT_LIMIT,
-            successful_mask=selected.successful_mask & 0x01,
+            successful_mask=selected.successful_mask & ~(1 << target_slot),
+            version=selected.version,
         )
         for name, lba in (
                 ("control-first", first_lba),
@@ -181,10 +206,13 @@ def update_inactive_slot(
                 boundary_hook(name, output_image)
 
     final = validate_image(output_image, "hdd")
-    if final.pending_slot != BOOT_CONTROL_SLOT_B or \
+    if final.active_slot != selected.active_slot or \
+            final.pending_slot != target_slot or \
             final.attempts_remaining != BOOT_CONTROL_ATTEMPT_LIMIT or \
+            final.successful_mask != \
+            (selected.successful_mask & ~(1 << target_slot)) or \
             final.boot_control_sequence != source.boot_control_sequence + 1:
-        raise ValueError("pending slot B was not published atomically")
+        raise ValueError("inactive pending slot was not published atomically")
 
 
 def main() -> int:
@@ -207,7 +235,7 @@ def main() -> int:
         print(f"BOOT UPDATE FAIL: {error}")
         return 1
     print(
-        "BOOT UPDATE PASS: pending=B "
+        f"BOOT UPDATE PASS: pending={'B' if info.pending_slot else 'A'} "
         f"attempts={info.attempts_remaining} "
         f"sequence={info.boot_control_sequence} output={args.output}"
     )

@@ -79,7 +79,7 @@ static bool handoff_valid(const boot_health_handoff_t *handoff) {
         handoff->selected_slot > BOOT_HEALTH_SLOT_B ||
         handoff->active_slot > BOOT_HEALTH_SLOT_B ||
         (handoff->pending_slot != BOOT_HEALTH_SLOT_NONE &&
-         handoff->pending_slot != BOOT_HEALTH_SLOT_B) ||
+         handoff->pending_slot > BOOT_HEALTH_SLOT_B) ||
         handoff->attempt_limit != BOOT_HEALTH_ATTEMPT_LIMIT ||
         handoff->attempts_remaining > handoff->attempt_limit ||
         handoff->bios_drive < 0x80U || handoff->reserved_0 != 0U ||
@@ -89,8 +89,8 @@ static bool handoff_valid(const boot_health_handoff_t *handoff) {
         return false;
     if (handoff->pending_slot == BOOT_HEALTH_SLOT_NONE) {
         if (handoff->attempts_remaining != 0U) return false;
-    } else if (handoff->active_slot != BOOT_HEALTH_SLOT_A ||
-               handoff->selected_slot != BOOT_HEALTH_SLOT_B) {
+    } else if (handoff->pending_slot == handoff->active_slot ||
+               handoff->selected_slot != handoff->pending_slot) {
         return false;
     }
     boot_health_handoff_t checked = *handoff;
@@ -160,7 +160,7 @@ int boot_health_get_status(boot_health_status_t *status) {
         .version = BOOT_HEALTH_STATUS_VERSION,
         .struct_size = sizeof(*status),
         .flags = BOOT_HEALTH_STATUS_SYSTEM_READY |
-            (captured.pending_slot == BOOT_HEALTH_SLOT_B
+            (captured.pending_slot != BOOT_HEALTH_SLOT_NONE
                 ? BOOT_HEALTH_STATUS_PENDING_TRIAL : 0U),
         .resource = resolved_resource,
         .sequence = captured.sequence,

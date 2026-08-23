@@ -28,7 +28,9 @@ BOOT_CONTROL_PRIMARY_RELATIVE_LBA = 97
 BOOT_CONTROL_SECONDARY_RELATIVE_LBA = 98
 KERNEL_B_RELATIVE_LBA = 3136
 BOOT_CONTROL_MAGIC = b"REISTBC1"
-BOOT_CONTROL_VERSION = 1
+BOOT_CONTROL_VERSION_V1 = 1
+BOOT_CONTROL_VERSION_V2 = 2
+BOOT_CONTROL_VERSION = BOOT_CONTROL_VERSION_V2
 BOOT_CONTROL_HEADER_SIZE = 64
 BOOT_CONTROL_CRC_OFFSET = 60
 BOOT_CONTROL_SLOT_A = 0
@@ -58,6 +60,7 @@ class ManifestInfo:
 
 @dataclass(frozen=True)
 class BootControlInfo:
+    version: int
     sequence: int
     active_slot: int
     pending_slot: int
@@ -81,7 +84,8 @@ def parse_boot_control_record(sector: bytes, source_lba: int) -> BootControlInfo
     )
     if magic != BOOT_CONTROL_MAGIC:
         raise ValueError("boot-control magic is invalid")
-    if version != BOOT_CONTROL_VERSION or header_size != BOOT_CONTROL_HEADER_SIZE:
+    if version not in (BOOT_CONTROL_VERSION_V1, BOOT_CONTROL_VERSION_V2) or \
+            header_size != BOOT_CONTROL_HEADER_SIZE:
         raise ValueError("boot-control version or header size is unsupported")
     if sector[32:BOOT_CONTROL_CRC_OFFSET] != bytes(
             BOOT_CONTROL_CRC_OFFSET - 32) or sector[64:] != bytes(448):
@@ -95,20 +99,30 @@ def parse_boot_control_record(sector: bytes, source_lba: int) -> BootControlInfo
         raise ValueError("boot-control sequence is invalid")
     if active_slot not in (BOOT_CONTROL_SLOT_A, BOOT_CONTROL_SLOT_B):
         raise ValueError("boot-control active slot is unsupported")
-    if pending_slot not in (BOOT_CONTROL_SLOT_NONE, BOOT_CONTROL_SLOT_B):
+    if pending_slot not in (
+            BOOT_CONTROL_SLOT_NONE, BOOT_CONTROL_SLOT_A,
+            BOOT_CONTROL_SLOT_B):
         raise ValueError("boot-control pending slot is unsupported")
     if attempt_limit != BOOT_CONTROL_ATTEMPT_LIMIT:
         raise ValueError("boot-control attempt limit is unsupported")
     if pending_slot == BOOT_CONTROL_SLOT_NONE and attempts_remaining != 0:
         raise ValueError("confirmed boot-control state retains attempts")
-    if pending_slot == BOOT_CONTROL_SLOT_B and attempts_remaining > attempt_limit:
+    if pending_slot != BOOT_CONTROL_SLOT_NONE and \
+            attempts_remaining > attempt_limit:
         raise ValueError("boot-control attempts exceed the fixed limit")
-    if pending_slot == BOOT_CONTROL_SLOT_B and active_slot != BOOT_CONTROL_SLOT_A:
-        raise ValueError("pending slot B requires confirmed slot A")
+    if version == BOOT_CONTROL_VERSION_V1 and (
+            pending_slot == BOOT_CONTROL_SLOT_A or
+            (pending_slot == BOOT_CONTROL_SLOT_B and
+             active_slot != BOOT_CONTROL_SLOT_A)):
+        raise ValueError("boot-control v1 supports only A to pending B")
+    if version == BOOT_CONTROL_VERSION_V2 and \
+            pending_slot != BOOT_CONTROL_SLOT_NONE and \
+            pending_slot == active_slot:
+        raise ValueError("boot-control v2 pending slot must be inactive")
     if successful_mask & ~0x03 or not successful_mask & (1 << active_slot):
         raise ValueError("boot-control successful-slot mask is invalid")
     return BootControlInfo(
-        sequence, active_slot, pending_slot, attempts_remaining,
+        version, sequence, active_slot, pending_slot, attempts_remaining,
         attempt_limit, successful_mask, source_lba, sector,
     )
 

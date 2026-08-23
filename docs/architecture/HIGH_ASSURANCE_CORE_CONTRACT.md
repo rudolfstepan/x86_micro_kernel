@@ -93,20 +93,23 @@ benachbarte Sequenzen wählen die neuere Kopie; größere Lücken sind mehrdeuti
 und stoppen den Boot. Stage 2 schreibt immer die ältere oder ungültige Kopie
 zuerst und liest jeden Sektor vor dem nächsten Commit zurück.
 
-Ein Offline-Updater prüft ELF und die policy-gebundene RSA-PSS-Signatur,
-schreibt ausschließlich Slot B und veröffentlicht `pending=B` erst nach
-vollständiger Revalidierung. Stage 2 persistiert die verminderte Versuchszahl
-vor B und kehrt nach Erschöpfung oder B-Fehler zu bestätigt A zurück. Nach
+Ein Offline-Updater prüft ELF und die policy-gebundene RSA-PSS-Signatur.
+Boot-Control v1 behält die feste `A -> pending B`-Semantik; v2 erlaubt
+append-only ausschließlich den zum bestätigten Active-Slot gegenüberliegenden
+Pending-Slot. Der Updater schreibt nur dessen Kernel und Manifest und
+veröffentlicht Pending erst nach vollständiger Revalidierung. Stage 2
+persistiert die verminderte Versuchszahl vor A oder B und kehrt nach
+Erschöpfung oder Kandidatenfehler zum zuvor bestätigten Slot zurück. Nach
 vollständiger Kandidatenprüfung publiziert Stage 2 einen 64-Byte-v1-Handoff an
 der festen Adresse `0x4E00`; Magic, Version, Nullfelder und CRC32 schützen Slot,
 Control-Sequenz und Bootpartitionsgeometrie. Der Kernel kopiert ihn vor
 Allocator-Nutzung, löst genau eine MBR-Partition vom Typ `0xDA` auf und gibt
 Syscall 117 erst nach `BOOT_OK` ausschließlich für die gebundene
 Storage-Service-Generation frei. Der Ring-3-Dienst gleicht beide
-Control-Kopien erneut ab und bestätigt nur die exakt gestartete Pending-B-
-Sequenz, ältere/ungültige Kopie zuerst, mit Flush und Read-back. Bestätigtes B
-bootet danach direkt; schlägt seine Prüfung fehl, persistiert Stage 2 zuerst
-bestätigt A. Der Kernel besitzt weiterhin keine Autorität zum Schreiben dieser
+Control-Kopien erneut ab und bestätigt nur die exakt gestartete Pending-
+Sequenz, ältere/ungültige Kopie zuerst, mit Flush und Read-back. Bestätigtes A
+oder B bootet danach direkt; ein bestätigter B-Fehler persistiert weiterhin
+zuerst den bewährten A-Fallback. Der Kernel besitzt weiterhin keine Autorität zum Schreiben dieser
 Sektoren.
 
 Die Signaturstufe verwendet RSA-2048-PSS/SHA-256 gemäß RFC 8017 mit

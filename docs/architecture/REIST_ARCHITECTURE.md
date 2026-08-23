@@ -129,21 +129,25 @@ B höchstens einmal, wenn A vor dem Handoff an den Kernel scheitert. Beide
 Kandidaten durchlaufen unabhängig Prüfsumme, Bounds, SHA-256, RSA-PSS und
 ELF-Prüfung.
 
-Partitionrelative LBAs 97 und 98 tragen den REIST-Boot-Control-Record v1 als
-zwei CRC32- und sequenzgeschützte 512-Byte-Kopien. Der Offline-Updater
-beschreibt und prüft zuerst ausschließlich den inaktiven Slot B; erst danach
-veröffentlicht er `pending=B` in der älteren und anschließend der neueren
-Control-Kopie. Stage 2 wählt die höchste eindeutige Sequenz, schreibt den auf
+Partitionrelative LBAs 97 und 98 tragen den REIST-Boot-Control-Record als zwei
+CRC32- und sequenzgeschützte 512-Byte-Kopien. Version 1 bleibt mit ihrer festen
+Semantik `active=A, pending=B` lesbar. Version 2 erlaubt als append-only
+Erweiterung ausschließlich den jeweils zum bestätigten Active-Slot
+gegenüberliegenden Pending-Slot. Der Offline-Updater beschreibt und prüft
+zuerst Kernel und Manifest dieses inaktiven Slots; erst danach veröffentlicht
+er Pending A oder B in der älteren und anschließend der neueren Control-Kopie.
+Stage 2 wählt die höchste eindeutige Sequenz, schreibt den auf
 höchstens zwei begrenzten Versuchen beruhenden Dekrement vor B mit BIOS EDD
-und Read-back zurück und persistiert Rollback auf bestätigt A vor dessen
-Ausführung. Das ist ein bewusst REIST-spezifisches Legacy-BIOS-Format, weil
+und Read-back zurück und persistiert Rollback auf den zuvor bestätigten Slot
+vor dessen Ausführung. Das ist ein bewusst REIST-spezifisches Legacy-BIOS-Format, weil
 kein passender Plattformstandard existiert. Nach erfolgreicher vollständiger
 Kernelprüfung übergibt Stage 2 Slot, Sequenz und feste Partitionsgeometrie in
 einem CRC-geschützten v1-Handoff. Der Kernel erteilt keine Medienautorität,
 sondern veröffentlicht den validierten Status mit append-only Syscall 117 erst
 nach `BOOT_OK` an die generationgebundene Ring-3-Storage-Domäne. Diese liest
-beide Records unabhängig zurück und bestätigt exakt Pending B als aktives B
-mit älterer Kopie, Barriere und Read-back zuerst. Bestätigtes B ist persistent;
+beide Records unabhängig zurück und bestätigt exakt den ausgewählten Pending-
+Slot als neuen Active-Slot mit älterer Kopie, Barriere und Read-back zuerst.
+Bestätigtes A oder B ist persistent;
 ein späterer B-Prüffehler schreibt den A-Rollback vor A. Updateverteilung,
 unveränderliches Recovery-Image und Anti-Rollback fehlen weiterhin.
 

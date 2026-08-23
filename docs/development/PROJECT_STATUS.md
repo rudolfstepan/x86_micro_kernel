@@ -144,7 +144,7 @@ anschließenden normalen Ring-3-Fortschritt bis `TEST_OK` nach. Daraus folgt
 keine Zielhardware-WCET- oder Hardwarequalifikationsaussage.
 
 S0.5 umfasst nun die abgeschlossenen Pakete `S0.5a1`, `S0.5a2`, `S0.5a3a`,
-`S0.5a3b`, `S0.5b1`, `S0.5b2` und `S0.5b3`. Die letzten drei Pakete ergänzen
+`S0.5a3b`, `S0.5b1`, `S0.5b2`, `S0.5b3` und `S0.5b4`. Die letzten vier Pakete ergänzen
 die redundante Bootstufe, deren transaktionalen Pending-Zustand und das
 Ring-3-Erfolgs-Acknowledge. Das native
 BIOS-Manifest v3 enthält SHA-256 und die
@@ -193,8 +193,20 @@ Sequenz und beide Records, bestätigt B mit älterer Kopie, Flush und Read-back
 zuerst und heilt benachbarte Kopien idempotent. Bestätigtes B startet direkt;
 eine später ungültige B-Signatur führt erst nach persistentem Control-Commit
 zurück zu A. QEMU deckt Bestätigung, Neustart und diesen Rollback ab.
-Updateverteilung, Rückupdate in Slot A, unveränderliches Recovery und
-Anti-Rollback bleiben offen.
+Updateverteilung, unveränderliches Recovery und Anti-Rollback bleiben offen.
+
+`S0.5b4` führt Boot-Control v2 append-only ein. v1 bleibt strikt auf
+bestätigt A mit Pending B begrenzt; v2 darf nur den jeweils gegenüberliegenden
+inaktiven Slot wählen. Der Offline-Updater schreibt und verifiziert Kernel und
+Manifest von A oder B vollständig, bevor die ältere Control-Kopie Pending-
+Autorität erhält. Stage 2 persistiert Dekrement und dynamischen Rollback vor
+der Kandidatenausführung. Der unveränderte 64-Byte-Handoff bleibt read-only;
+der generationsgebundene Ring-3-Storage-Dienst bestätigt nur `selected ==
+pending != active` und validiert dabei das tatsächlich ausgewählte Manifest.
+Hostseitige Power-Loss-Matrizen decken beide Richtungen ab; der persistente
+QEMU-Lauf bestätigt B, aktualisiert danach A, bestätigt A und erhält den
+bestehenden Rollback eines beschädigten bestätigten B. Updateverteilung,
+unveränderliches Recovery und Anti-Rollback bleiben ausdrücklich offen.
 
 `S0.3c-admin1` stellt sichere Storage-Operationen (`device down/up`, `mount`,
 `umount`) und einen festen, integritätsgeprüften 224-KiB-RAM-Rescue-Pool mit

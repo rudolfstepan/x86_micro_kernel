@@ -20,6 +20,8 @@ class BootSuccessContractTests(unittest.TestCase):
                         stage2.index("call publish_boot_health_handoff"))
         self.assertIn("BOOT_CONTROL_ACTIVE_B", stage2)
         self.assertIn("BOOT_CONTROL_CONFIRMED_B_ROLLBACK_A", stage2)
+        self.assertIn("BOOT_CONTROL_PENDING_A attempts=1", stage2)
+        self.assertIn("BOOT_CONTROL_ROLLBACK_B", stage2)
         self.assertIn("mov byte [boot_control_selected + BOOT_CONTROL_ACTIVE], BOOT_CONTROL_SLOT_A", stage2)
         self.assertIn("call persist_boot_control", stage2)
 
@@ -35,6 +37,9 @@ class BootSuccessContractTests(unittest.TestCase):
         self.assertIn("BOOT_HEALTH_PARTITION_TYPE 0xDAU", source)
         self.assertIn("partition_type != BOOT_HEALTH_PARTITION_TYPE", source)
         self.assertIn("matches != 1U", source)
+        self.assertIn(
+            "captured.pending_slot != BOOT_HEALTH_SLOT_NONE", source
+        )
         self.assertNotRegex(source, r"block_device_(?:write|flush)")
         self.assertIn("storage_service_authorized", syscall)
         self.assertIn("SYS_BOOT_STATUS", syscall)
@@ -68,12 +73,24 @@ class BootSuccessContractTests(unittest.TestCase):
         self.assertIn("status->sequence != selected.selected.sequence", confirm)
         self.assertIn("x86os_storage_block_flush", transaction)
         self.assertGreaterEqual(confirm.count("boot_control_write_copy("), 2)
-        self.assertIn("BOOT_CONTROL_SLOT_B", confirm)
+        self.assertIn("status->selected_slot != status->pending_slot", confirm)
+        self.assertIn("status->active_slot == status->pending_slot", confirm)
         self.assertIn("BOOT_CONTROL_SLOT_NONE", confirm)
-        self.assertRegex(confirm, re.compile(r"successful_mask\s*\|=\s*0x02U"))
+        self.assertRegex(
+            confirm,
+            re.compile(r"successful_mask\s*\|=\s*1U\s*<<\s*status->pending_slot"),
+        )
+        self.assertIn("BOOT_MANIFEST_B_LBA", confirm)
         self.assertIn("static uint8_t boot_control_sectors", service)
         self.assertIn("__attribute__((noinline))", confirm)
         self.assertNotIn("x86os_puts", confirm)
+        self.assertIn("BOOT_STATUS_ACK_TIMEOUT_MS 30000U", service)
+        self.assertIn("x86os_uptime_ms() - deadline_ms", service)
+        self.assertIn(
+            "boot_success_ack_poll(boot_ack_deadline, &boot_ack_active);",
+            service,
+        )
+        self.assertNotIn("boot_wait_for_success_ack", service)
 
     def test_runtime_gate_is_bounded_and_persistent(self):
         runtime = self.read("scripts/test-reist-runtime.ps1")
@@ -84,6 +101,8 @@ class BootSuccessContractTests(unittest.TestCase):
         self.assertIn("resilience probe deliberately executes UD2", runner)
         self.assertIn("BOOT_CONTROL_ACTIVE_B", runner)
         self.assertIn("BOOT_CONTROL_CONFIRMED_B_ROLLBACK_A", runner)
+        self.assertIn("BOOT_CONTROL_PENDING_A attempts=1", runner)
+        self.assertIn("reverse-output", runner)
         self.assertIn("validate_boot_image", runner)
 
 

@@ -66,7 +66,8 @@ HDD_PARTITION_SECTORS equ 6144
 FLOPPY_PARTITION_SECTORS equ 2879
 BOOT_CONTROL_MAGIC_0  equ 0x53494552      ; "REIS"
 BOOT_CONTROL_MAGIC_1  equ 0x31434254      ; "TBC1"
-BOOT_CONTROL_VERSION  equ 1
+BOOT_CONTROL_VERSION_V1 equ 1
+BOOT_CONTROL_VERSION_V2 equ 2
 BOOT_CONTROL_HEADER_SIZE equ 64
 BOOT_CONTROL_SEQUENCE equ 16
 BOOT_CONTROL_ACTIVE   equ 24
@@ -372,6 +373,8 @@ candidate_error:
     jne fatal
     call print_string
     mov byte [fallback_attempted], 1
+    cmp byte [boot_started_pending], 1
+    je .pending_failed
     cmp dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
     jne .fallback_to_a
     mov si, msg_fallback_b
@@ -399,6 +402,22 @@ candidate_error:
     mov si, msg_fallback_a
     call print_string
 .select_a:
+    mov dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
+    jmp .retry_candidate
+.pending_failed:
+    mov byte [boot_control_selected + BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_NONE
+    mov byte [boot_control_selected + BOOT_CONTROL_ATTEMPTS], 0
+    call persist_boot_control
+    jc boot_control_error
+    cmp byte [boot_control_selected + BOOT_CONTROL_ACTIVE], BOOT_CONTROL_SLOT_A
+    je .pending_failed_to_a
+    mov si, msg_pending_a_failed_b
+    call print_string
+    mov dword [manifest_relative_lba], BACKUP_MANIFEST_LBA
+    jmp .retry_candidate
+.pending_failed_to_a:
+    mov si, msg_fallback_a
+    call print_string
     mov dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
 .retry_candidate:
     mov byte [kernel_cached], 0
@@ -1125,16 +1144,16 @@ prepare_boot_candidate:
     call print_string
     jmp .ready
 .pending:
-    cmp byte [boot_control_selected + BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_B
-    jne .bad
     cmp byte [boot_control_selected + BOOT_CONTROL_ATTEMPTS], 0
     je .rollback
 
     dec byte [boot_control_selected + BOOT_CONTROL_ATTEMPTS]
     call persist_boot_control
     jc .bad
-    mov dword [manifest_relative_lba], BACKUP_MANIFEST_LBA
     mov byte [boot_started_pending], 1
+    cmp byte [boot_control_selected + BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_A
+    je .pending_a
+    mov dword [manifest_relative_lba], BACKUP_MANIFEST_LBA
     cmp byte [boot_control_selected + BOOT_CONTROL_ATTEMPTS], 0
     je .pending_zero
     mov si, msg_control_pending_one
@@ -1144,12 +1163,31 @@ prepare_boot_candidate:
     mov si, msg_control_pending_zero
     call print_string
     jmp .ready
+.pending_a:
+    mov dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
+    cmp byte [boot_control_selected + BOOT_CONTROL_ATTEMPTS], 0
+    je .pending_a_zero
+    mov si, msg_control_pending_a_one
+    call print_string
+    jmp .ready
+.pending_a_zero:
+    mov si, msg_control_pending_a_zero
+    call print_string
+    jmp .ready
 
 .rollback:
     mov byte [boot_control_selected + BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_NONE
     mov byte [boot_control_selected + BOOT_CONTROL_ATTEMPTS], 0
     call persist_boot_control
     jc .bad
+    cmp byte [boot_control_selected + BOOT_CONTROL_ACTIVE], BOOT_CONTROL_SLOT_A
+    je .rollback_a
+    mov dword [manifest_relative_lba], BACKUP_MANIFEST_LBA
+    mov si, msg_control_rollback_b
+    call print_string
+    jmp .ready
+.rollback_a:
+    mov dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
     mov si, msg_control_rollback
     call print_string
 .ready:
@@ -1285,8 +1323,11 @@ validate_boot_control_bounce:
     jne .bad
     cmp dword [es:4], BOOT_CONTROL_MAGIC_1
     jne .bad
-    cmp dword [es:8], BOOT_CONTROL_VERSION
+    cmp dword [es:8], BOOT_CONTROL_VERSION_V1
+    je .version_valid
+    cmp dword [es:8], BOOT_CONTROL_VERSION_V2
     jne .bad
+.version_valid:
     cmp dword [es:12], BOOT_CONTROL_HEADER_SIZE
     jne .bad
     mov eax, [es:BOOT_CONTROL_SEQUENCE]
@@ -1307,12 +1348,24 @@ validate_boot_control_bounce:
     jnc .bad
     cmp byte [es:BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_NONE
     je .confirmed
+    cmp byte [es:BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_A
+    je .pending_slot_valid
+    cmp byte [es:BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_B
+    jne .bad
+.pending_slot_valid:
+    cmp byte [es:BOOT_CONTROL_ATTEMPTS], BOOT_CONTROL_ATTEMPT_LIMIT
+    ja .bad
+    cmp dword [es:8], BOOT_CONTROL_VERSION_V1
+    jne .version_two_pending
     cmp byte [es:BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_B
     jne .bad
     cmp byte [es:BOOT_CONTROL_ACTIVE], BOOT_CONTROL_SLOT_A
     jne .bad
-    cmp byte [es:BOOT_CONTROL_ATTEMPTS], BOOT_CONTROL_ATTEMPT_LIMIT
-    ja .bad
+    jmp .reserved
+.version_two_pending:
+    mov al, [es:BOOT_CONTROL_PENDING]
+    cmp al, [es:BOOT_CONTROL_ACTIVE]
+    je .bad
     jmp .reserved
 .confirmed:
     cmp byte [es:BOOT_CONTROL_ATTEMPTS], 0
@@ -2636,6 +2689,10 @@ msg_boot_control_error db "Boot control validation/write failed", 13, 10, 0
 msg_control_pending_one db "BOOT_CONTROL_PENDING_B attempts=1", 13, 10, 0
 msg_control_pending_zero db "BOOT_CONTROL_PENDING_B attempts=0", 13, 10, 0
 msg_control_rollback db "BOOT_CONTROL_ROLLBACK_A", 13, 10, 0
+msg_control_pending_a_one db "BOOT_CONTROL_PENDING_A attempts=1", 13, 10, 0
+msg_control_pending_a_zero db "BOOT_CONTROL_PENDING_A attempts=0", 13, 10, 0
+msg_control_rollback_b db "BOOT_CONTROL_ROLLBACK_B", 13, 10, 0
+msg_pending_a_failed_b db "BOOT_SLOT_A_FAILED_TRY_B", 13, 10, 0
 msg_control_active_b db "BOOT_CONTROL_ACTIVE_B", 13, 10, 0
 msg_control_confirmed_b_rollback db "BOOT_CONTROL_CONFIRMED_B_ROLLBACK_A", 13, 10, 0
 

@@ -424,6 +424,9 @@ und 10 verbindlich.
     - [x] S0.5b3 CRC-geschützter Loader-Handoff, nach `BOOT_OK`
       generationgebundenes Ring-3-Erfolgs-Acknowledge, persistentes B und
       verifizierter bestätigter-B-Rollback auf A
+    - [x] S0.5b4 Append-only Boot-Control v2 und atomarer Update-/
+      Bestätigungspfad für den jeweils inaktiven Slot A oder B bei erhaltener
+      v1-Lesesemantik
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
 
 #### Funktionsroadmap nach dem S0-Gate
@@ -1380,19 +1383,23 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
   single-slot; persistenter Updatezustand folgt über die nächsten Punkte.
 - [x] Zwei feste 512-Byte-Boot-Control-Kopien an den partitionrelativen LBAs
   97/98 schützen Version, Sequenz, bestätigten/pending Slot, Versuchszahl und
-  Erfolgsmaske mit CRC32. Der Offline-Updater prüft ELF und RSA-PSS, schreibt
-  nur Slot B und veröffentlicht Pending B erst nach Revalidierung. Stage 2
-  persistiert zwei Versuchsdekremente vor B und Rollback auf A vor dessen
-  Ausführung. Power-Loss-Tests decken jede dauerhafte Schreibgrenze ab; QEMU
-  weist B:1, B:0 und danach A nach.
+  Erfolgsmaske mit CRC32. v1 bleibt auf A-zu-B begrenzt; v2 erlaubt nur den
+  gegenüberliegenden inaktiven Slot. Der Offline-Updater prüft ELF und
+  RSA-PSS, schreibt ausschließlich diesen Slot und veröffentlicht Pending erst
+  nach Revalidierung. Stage 2 persistiert zwei Versuchsdekremente und Rollback
+  auf den vorher bestätigten Slot vor dessen Ausführung. Power-Loss-Tests
+  decken jede dauerhafte Schreibgrenze für beide Richtungen ab; QEMU weist
+  B-Bestätigung, A-Bestätigung, stabilen A-Neustart und bestätigten
+  B-zu-A-Fallback nach.
 - [x] Stage 2 publiziert erst nach vollständiger Kandidatenprüfung einen
   CRC-geschützten v1-Handoff. Syscall 117 gibt ihn erst nach `BOOT_OK` und nur
   an den gebundenen Storage-Service frei. Ring 3 revalidiert Manifest,
-  Ressource, Sequenz und beide Control-Kopien, bestätigt Pending B mit zwei
+  Ressource, Sequenz und beide Control-Kopien, bestätigt den ausgewählten
+  Pending-Slot mit zwei
   verifizierten Writes und heilt eine benachbarte Kopie. QEMU weist dauerhaften
   B-Neustart und persistenten A-Rollback nach beschädigter bestätigter
-  B-Signatur nach. Updateverteilung, A-als-inaktiver-Slot, Recovery-Image und
-  Anti-Rollback bleiben offen.
+  B-Signatur nach. A ist nun ebenfalls atomar als inaktiver Slot aktualisierbar.
+  Updateverteilung, Recovery-Image und Anti-Rollback bleiben offen.
 - Sicherheitsrelevanten Zustand transaktional, checksummiert, versioniert und
    redundant speichern; Stromausfall an jeder Commitstelle injizieren.
 - Verifizierten Boot, signierte Artefakte, reproduzierbare Builds, Provenienz

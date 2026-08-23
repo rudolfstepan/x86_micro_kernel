@@ -12,7 +12,10 @@ from scripts.create_native_boot_image import (
     BACKUP_MANIFEST_RELATIVE_LBA,
     BOOT_CONTROL_PRIMARY_RELATIVE_LBA,
     BOOT_CONTROL_SECONDARY_RELATIVE_LBA,
+    BOOT_CONTROL_SLOT_A,
     BOOT_CONTROL_SLOT_B,
+    BOOT_CONTROL_VERSION_V1,
+    BOOT_CONTROL_VERSION_V2,
     KERNEL_B_RELATIVE_LBA,
     KERNEL_RELATIVE_LBA,
     create_boot_control_record,
@@ -107,6 +110,7 @@ class BootControlTests(unittest.TestCase):
         )
         self.assertEqual(len(record), SECTOR_SIZE)
         self.assertEqual(info.sequence, 1)
+        self.assertEqual(info.version, BOOT_CONTROL_VERSION_V2)
         self.assertEqual(info.active_slot, 0)
         self.assertEqual(info.pending_slot, 0xFF)
         self.assertEqual(info.attempts_remaining, 0)
@@ -122,6 +126,27 @@ class BootControlTests(unittest.TestCase):
         self.assertEqual(confirmed_b.active_slot, BOOT_CONTROL_SLOT_B)
         self.assertEqual(confirmed_b.pending_slot, 0xFF)
         self.assertEqual(confirmed_b.successful_mask, 3)
+
+        legacy = parse_boot_control_record(
+            create_boot_control_record(version=BOOT_CONTROL_VERSION_V1),
+            BOOT_CONTROL_PRIMARY_RELATIVE_LBA,
+        )
+        self.assertEqual(legacy.version, BOOT_CONTROL_VERSION_V1)
+        with self.assertRaisesRegex(ValueError, "v1 supports only"):
+            create_boot_control_record(
+                active_slot=BOOT_CONTROL_SLOT_B,
+                pending_slot=BOOT_CONTROL_SLOT_A,
+                attempts_remaining=2,
+                successful_mask=3,
+                version=BOOT_CONTROL_VERSION_V1,
+            )
+        with self.assertRaisesRegex(ValueError, "must be inactive"):
+            create_boot_control_record(
+                active_slot=BOOT_CONTROL_SLOT_A,
+                pending_slot=BOOT_CONTROL_SLOT_A,
+                attempts_remaining=2,
+                version=BOOT_CONTROL_VERSION_V2,
+            )
 
     def test_redundancy_recovers_one_copy_and_rejects_ambiguity(self):
         image = bytearray(base_image(minimal_kernel(29)))
@@ -206,6 +231,77 @@ class BootControlTests(unittest.TestCase):
                 if boundary != "kernel-b":
                     validate_image(paths[3], "hdd")
 
+    def test_confirmed_b_updates_only_inactive_a(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._paths(directory)
+            source, kernel, signature, output = paths
+            image = bytearray(source.read_bytes())
+            confirmed_b = create_boot_control_record(
+                sequence=7, active_slot=BOOT_CONTROL_SLOT_B,
+                successful_mask=3, version=BOOT_CONTROL_VERSION_V2,
+            )
+            for control_lba in (
+                    BOOT_CONTROL_PRIMARY_RELATIVE_LBA,
+                    BOOT_CONTROL_SECONDARY_RELATIVE_LBA):
+                offset = (PARTITION_LBA + control_lba) * SECTOR_SIZE
+                image[offset:offset + SECTOR_SIZE] = confirmed_b
+            source.write_bytes(image)
+            source_before = source.read_bytes()
+            kernel_b_start = (PARTITION_LBA + KERNEL_B_RELATIVE_LBA) * SECTOR_SIZE
+            kernel_b_before = source_before[
+                kernel_b_start:kernel_b_start + len(minimal_kernel(19))]
+
+            self._update(paths)
+            final = validate_image(output, "hdd")
+            self.assertEqual(final.active_slot, BOOT_CONTROL_SLOT_B)
+            self.assertEqual(final.pending_slot, BOOT_CONTROL_SLOT_A)
+            self.assertEqual(final.attempts_remaining, 2)
+            self.assertEqual(final.successful_mask, 2)
+            updated = output.read_bytes()
+            self.assertEqual(
+                updated[kernel_b_start:kernel_b_start + len(kernel_b_before)],
+                kernel_b_before,
+            )
+            self.assertEqual(source.read_bytes(), source_before)
+
+    def test_reverse_update_power_loss_keeps_confirmed_b_bootable(self):
+        boundaries = (
+            "kernel-a", "manifest-a", "control-first", "control-second"
+        )
+        for boundary in boundaries:
+            with self.subTest(boundary=boundary), \
+                    tempfile.TemporaryDirectory() as directory:
+                paths = self._paths(directory)
+                source = paths[0]
+                image = bytearray(source.read_bytes())
+                confirmed_b = create_boot_control_record(
+                    sequence=7, active_slot=BOOT_CONTROL_SLOT_B,
+                    successful_mask=3, version=BOOT_CONTROL_VERSION_V2,
+                )
+                for control_lba in (
+                        BOOT_CONTROL_PRIMARY_RELATIVE_LBA,
+                        BOOT_CONTROL_SECONDARY_RELATIVE_LBA):
+                    offset = (PARTITION_LBA + control_lba) * SECTOR_SIZE
+                    image[offset:offset + SECTOR_SIZE] = confirmed_b
+                source.write_bytes(image)
+
+                def stop(name, _path):
+                    if name == boundary:
+                        raise SimulatedPowerLoss(name)
+
+                with self.assertRaisesRegex(SimulatedPowerLoss, boundary):
+                    self._update(paths, stop)
+                with paths[3].open("rb") as output:
+                    control = read_boot_control(output, PARTITION_LBA)
+                self.assertEqual(control.active_slot, BOOT_CONTROL_SLOT_B)
+                if boundary in ("kernel-a", "manifest-a"):
+                    self.assertEqual(control.pending_slot, 0xFF)
+                else:
+                    self.assertEqual(control.pending_slot, BOOT_CONTROL_SLOT_A)
+                    self.assertEqual(control.attempts_remaining, 2)
+                if boundary != "kernel-a":
+                    validate_image(paths[3], "hdd")
+
     def test_stage2_persists_attempt_before_pending_kernel_verification(self):
         stage2 = (ROOT / "arch/x86/boot/bios/stage2_bios.asm").read_text(
             encoding="utf-8"
@@ -220,7 +316,10 @@ class BootControlTests(unittest.TestCase):
         )
         self.assertIn("BOOT_CONTROL_PENDING_B attempts=1", stage2)
         self.assertIn("BOOT_CONTROL_PENDING_B attempts=0", stage2)
+        self.assertIn("BOOT_CONTROL_PENDING_A attempts=1", stage2)
+        self.assertIn("BOOT_CONTROL_PENDING_A attempts=0", stage2)
         self.assertIn("BOOT_CONTROL_ROLLBACK_A", stage2)
+        self.assertIn("BOOT_CONTROL_ROLLBACK_B", stage2)
         self.assertIn("mov ax, 0x4300", stage2)
         write_copy = stage2.split("write_boot_control_copy:", 1)[1].split(
             "write_bounce_sector:", 1

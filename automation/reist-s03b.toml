@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.5b4-symmetric-inactive-slot-update"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -263,7 +263,7 @@ evidence = []
 
 [[packages]]
 id = "S0.5b4-symmetric-inactive-slot-update"
-status = "active"
+status = "done"
 risk = "high"
 title = "Update and confirm either inactive BIOS boot slot"
 scope = "Extend the REIST-specific boot-control format append-only to version 2 so a confirmed A or B installation can update only its opposite inactive slot. Version-1 records remain readable with their exact legacy A-to-pending-B semantics. The offline updater must validate ELF and the policy-bound RSA-PSS signature before creating output, durably write and read back the inactive kernel and manifest, revalidate the complete image, then publish one opposite pending slot through the older/invalid control copy first. Stage 2 must persist the bounded attempt decrement before selecting either trial, restore the previously confirmed active slot before trial fallback, and retain the existing confirmed-slot fallback. The read-only kernel handoff and generation-bound Ring-3 storage acknowledgement accept only selected equals pending and active differs from pending, and confirmation sets the corresponding successful-mask bit using the existing flush/read-back transaction. A bounded persistent QEMU sequence must prove A-to-B confirmation, B-to-A confirmation, stable A reboot, and the existing confirmed-B rollback behavior. This does not claim anti-rollback, immutable recovery, Secure Boot or update distribution."

@@ -37,7 +37,9 @@ MANIFEST_FLAG_SIGNED = 0x00000001
 MANIFEST_SIGNATURE_OFFSET = 80
 MANIFEST_SIGNATURE_SIZE = 256
 BOOT_CONTROL_MAGIC = b"REISTBC1"
-BOOT_CONTROL_VERSION = 1
+BOOT_CONTROL_VERSION_V1 = 1
+BOOT_CONTROL_VERSION_V2 = 2
+BOOT_CONTROL_VERSION = BOOT_CONTROL_VERSION_V2
 BOOT_CONTROL_HEADER_SIZE = 64
 BOOT_CONTROL_CRC_OFFSET = 60
 BOOT_CONTROL_SLOT_A = 0
@@ -130,21 +132,33 @@ def create_boot_control_record(
         active_slot: int = BOOT_CONTROL_SLOT_A,
         pending_slot: int = BOOT_CONTROL_SLOT_NONE,
         attempts_remaining: int = 0,
-        successful_mask: int = 1) -> bytes:
-    """Create the fixed REIST BIOS A/B control record version 1."""
+        successful_mask: int = 1,
+        version: int = BOOT_CONTROL_VERSION) -> bytes:
+    """Create one fixed REIST BIOS A/B control record."""
     if not 1 <= sequence <= 0xFFFFFFFFFFFFFFFF:
         raise ValueError("boot-control sequence is out of range")
+    if version not in (BOOT_CONTROL_VERSION_V1, BOOT_CONTROL_VERSION_V2):
+        raise ValueError("boot-control version is unsupported")
     if active_slot not in (BOOT_CONTROL_SLOT_A, BOOT_CONTROL_SLOT_B):
         raise ValueError("boot-control active slot is unsupported")
-    if pending_slot not in (BOOT_CONTROL_SLOT_NONE, BOOT_CONTROL_SLOT_B):
+    if pending_slot not in (
+            BOOT_CONTROL_SLOT_NONE, BOOT_CONTROL_SLOT_A,
+            BOOT_CONTROL_SLOT_B):
         raise ValueError("boot-control pending slot is unsupported")
     if pending_slot == BOOT_CONTROL_SLOT_NONE and attempts_remaining != 0:
         raise ValueError("confirmed boot-control state cannot retain attempts")
-    if pending_slot == BOOT_CONTROL_SLOT_B and not (
+    if pending_slot != BOOT_CONTROL_SLOT_NONE and not (
             0 <= attempts_remaining <= BOOT_CONTROL_ATTEMPT_LIMIT):
         raise ValueError("pending boot-control attempts are out of range")
-    if pending_slot == BOOT_CONTROL_SLOT_B and active_slot != BOOT_CONTROL_SLOT_A:
-        raise ValueError("only confirmed slot A may stage pending slot B")
+    if version == BOOT_CONTROL_VERSION_V1 and (
+            pending_slot == BOOT_CONTROL_SLOT_A or
+            (pending_slot == BOOT_CONTROL_SLOT_B and
+             active_slot != BOOT_CONTROL_SLOT_A)):
+        raise ValueError("boot-control v1 supports only A to pending B")
+    if version == BOOT_CONTROL_VERSION_V2 and \
+            pending_slot != BOOT_CONTROL_SLOT_NONE and \
+            pending_slot == active_slot:
+        raise ValueError("boot-control v2 pending slot must be inactive")
     if successful_mask & ~0x03 or not successful_mask & (1 << active_slot):
         raise ValueError("boot-control successful-slot mask is invalid")
 
@@ -154,7 +168,7 @@ def create_boot_control_record(
         record,
         0,
         BOOT_CONTROL_MAGIC,
-        BOOT_CONTROL_VERSION,
+        version,
         BOOT_CONTROL_HEADER_SIZE,
         sequence,
         active_slot,

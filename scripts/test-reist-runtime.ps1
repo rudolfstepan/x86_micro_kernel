@@ -742,12 +742,14 @@ switch ($Mode) {
         New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
         $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
         $trial = Join-Path $RepoRoot 'build\boot-success-trial.img'
+        $reverseTrial = Join-Path $RepoRoot 'build\boot-success-reverse-trial.img'
         $serialLog = Join-Path $LogRoot `
             "$stamp-runtime-boot-success-serial.log"
         & $Python $BootSuccessRunner --qemu $Qemu --image $Image `
             --kernel $KernelImage --signature $KernelSignature `
             --policy $BootTrustPolicy --openssl $OpenSsl --root $RepoRoot `
-            --output $trial --log $serialLog --timeout 15
+            --output $trial --reverse-output $reverseTrial `
+            --log $serialLog --timeout 15
         if ($LASTEXITCODE -ne 0) {
             throw 'REIST boot-success runtime failed.'
         }
