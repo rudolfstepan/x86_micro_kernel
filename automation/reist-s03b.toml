@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.5b1-redundant-ab-boot"
 
 [policy]
 one_package_per_run = true
@@ -3906,4 +3906,63 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "boot: authenticate kernel in BIOS stage 2"
+evidence = []
+
+[[packages]]
+id = "S0.5b1-redundant-ab-boot"
+status = "active"
+risk = "high"
+title = "Add redundant signed BIOS A/B boot slots"
+scope = "Create the first bounded A/B boot increment for native HDD images. Keep the primary signed manifest at boot-partition LBA 0, add an independently checksummed backup manifest at relative LBA 96, and place fixed signed kernel slots A and B at relative LBAs 128 and 3136. Stage 1 loads stage 2 from the first structurally valid manifest and passes the selected manifest offset; Stage 2 fully validates the selected manifest, exact fixed slot geometry, kernel SHA-256, RSA-2048-PSS and ELF before publication, then tries slot B exactly once when slot A fails. The independent host validator verifies both extents and exact bytes. QEMU proves successful B fallback after an A-only signature mutation and fail-closed rejection when both signatures are mutated. Rescue floppy remains a single signed slot. Persistent update intent, boot-attempt state, anti-rollback and an updater are later packages."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "arch/x86/boot/bios/stage1_mbr.asm",
+  "arch/x86/boot/bios/stage1_floppy.asm",
+  "arch/x86/boot/bios/stage2_bios.asm",
+  "scripts/create_native_boot_image.py",
+  "scripts/validate_boot_manifest.py",
+  "scripts/run_qemu_boot_integrity.py",
+  "test/test_boot_ab.py",
+  "test/test_boot_manifest.py",
+  "test/test_boot_sha256.py",
+  "test/test_native_boot_image.py",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/BOOTABLE_DISK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "safety/hazards.toml"
+]
+invariants = [
+  "the HDD boot partition contains exactly two non-overlapping fixed kernel slots and two separately checksummed signed manifests while the rescue floppy remains single-slot",
+  "stage 1 accepts only exact manifest-v3 headers, bounded stage-2 geometry and either the fixed primary or backup manifest offset",
+  "stage 2 receives no caller-selected arbitrary LBA: it accepts only slot A manifest offset 0 or slot B manifest offset 96 and enforces matching kernel LBAs 128 or 3136",
+  "slot B is attempted at most once and only after slot A fails before kernel entry; no failure after output or kernel publication can trigger fallback",
+  "each candidate independently passes whole-sector manifest checksum, exact bounds, SHA-256, pinned RSA-PSS and ELF validation before execution",
+  "an A-only corruption reaches BOOT_OK through B with an explicit fallback marker while corruption of both slots stops before BOOT_OK",
+  "the host validator hashes both on-image kernel extents and rejects overlap, truncation, wrong fixed geometry, missing signatures or either digest mismatch",
+  "no persistent active-slot choice, attempt counter, success acknowledgement, anti-rollback claim or update mutation is introduced by this format-foundation package"
+]
+targeted_tests = [
+  "python test/test_boot_ab.py -v",
+  "python test/test_boot_manifest.py -v",
+  "python test/test_boot_sha256.py -v",
+  "python test/test_native_boot_image.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode boot-integrity"
+]
+stop_conditions = [
+  "either slot could overlap stage 2, the other kernel slot or the FAT32 system partition",
+  "a mutable manifest could redirect stage 2 to any LBA outside the two compiled slot geometries",
+  "fallback could occur after kernel-controlled code or outputs have been published",
+  "the MBR stage exceeds 446 bytes before the partition table or either BIOS stage exceeds its fixed loader limit",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "boot: add redundant signed A B fallback"
 evidence = []
