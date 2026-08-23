@@ -1225,10 +1225,10 @@ static int syscall_storage_submit(const storage_request_submit_t *user_request,
         process->domain_profile.kind != PROCESS_DOMAIN_ADMIN) return -13;
     if (process->domain_profile.kind == PROCESS_DOMAIN_MAINTENANCE &&
         (request.operation < STORAGE_REQUEST_CHECK_FAT12 ||
-         request.operation > STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS))
+         request.operation > STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR))
         return -13;
     if (request.operation >= STORAGE_REQUEST_CHECK_FAT12 &&
-        request.operation <= STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS &&
+        request.operation <= STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR &&
         process->domain_profile.kind != PROCESS_DOMAIN_MAINTENANCE) return -13;
     uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
     const uint8_t *data_argument = NULL;
@@ -1526,6 +1526,19 @@ static int syscall_storage_complete(storage_request_handle_t handle,
     if (process == NULL ||
         !storage_service_authorized(process->pid, process->generation))
         return -13;
+    uint32_t operation = 0U;
+    uint32_t resource = 0U;
+    int context_result = storage_request_completion_context(
+        process->pid, process->generation, handle, &operation, &resource);
+    if (context_result != 0) return context_result;
+    bool unsupported_persistence = result_code == -95 &&
+        operation >= STORAGE_REQUEST_CHECK_FAT12 &&
+        operation <= STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR;
+    bool remap_requires_fence =
+        operation == STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR &&
+        (result_code == -5 || result_code == -28 || result_code == -84);
+    if (unsupported_persistence || remap_requires_fence)
+        (void)storage_service_report_media_failure(resource, true);
     uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
     const uint8_t *data_argument = NULL;
     if (result_code == 0) {

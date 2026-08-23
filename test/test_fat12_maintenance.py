@@ -120,6 +120,8 @@ class Fat12MaintenanceContracts(unittest.TestCase):
             "STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_TOPOLOGY = 28", header)
         self.assertIn(
             "STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS = 29", header)
+        self.assertIn(
+            "STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR = 30", header)
         self.assertIn("X86OS_STORAGE_CHECK_FAT12 11U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_MIRROR 12U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_CHAINS 13U", sdk)
@@ -142,6 +144,7 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn(
             "X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_TOPOLOGY 28U", sdk)
         self.assertIn("X86OS_STORAGE_SALVAGE_FAT12_ORPHANS 29U", sdk)
+        self.assertIn("X86OS_STORAGE_RECORD_FAT12_BAD_SECTOR 30U", sdk)
         self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_CROSSLINKS", pool)
         self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_TOPOLOGY", pool)
         self.assertIn("STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS", pool)
@@ -151,6 +154,61 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("process->domain_profile.kind == "
                       "PROCESS_DOMAIN_MAINTENANCE", syscall)
         self.assertIn("request.operation < STORAGE_REQUEST_CHECK_FAT12", syscall)
+
+    def test_persistent_remap_is_versioned_bounded_and_fail_closed(self):
+        service = self.read("userspace/programs/storage_service.c")
+        syscall = self.read("kernel/syscall/syscall_table.c")
+        pool_h = self.read("include/kernel/storage_request_pool.h")
+        self.assertIn("FAT12_REMAP_VERSION 1U", service)
+        self.assertIn("FORMAT_FAT12_REMAP_SPARES 8U", service)
+        self.assertIn("fat12_load_remap", service)
+        self.assertIn("fat12_validate_persistence", service)
+        self.assertIn("header->entry_count > FORMAT_FAT12_REMAP_SPARES",
+                      service)
+        self.assertIn("entry.sequence > header->sequence", service)
+        self.assertIn("header->crc32 == fat12_remap_crc", service)
+        self.assertIn("static int fat12_record_bad_sector", service)
+        remap = service[service.index("static int fat12_record_bad_sector"):
+                        service.index("static void format_boot_sector")]
+        self.assertIn("x86os_storage_maintenance_acquire", remap)
+        self.assertIn("x86os_storage_maintenance_renew", remap)
+        self.assertIn("x86os_storage_block_flush", remap)
+        self.assertIn("format_write(resource, replacement", remap)
+        self.assertIn("format_write(resource, FORMAT_FAT12_REMAP_BASE + 2U",
+                      remap)
+        self.assertIn("FORMAT_FAT12_REMAP_SPARES", remap)
+        self.assertIn("result = -28", remap)
+        self.assertIn("storage_request_completion_context", pool_h)
+        self.assertIn("STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR", syscall)
+        self.assertIn("storage_service_report_media_failure(resource, true)",
+                      syscall)
+
+    def test_emulator_persistence_modes_are_explicit_and_bounded(self):
+        runtime = self.read("scripts/test-reist-runtime.ps1")
+        self.assertIn("[string]$Target = 'qemu'", runtime)
+        self.assertIn("[string]$Video = 'vga'", runtime)
+        self.assertIn("'storage-maintenance'", runtime)
+        self.assertIn("'storage-reconnect'", runtime)
+        maintenance = runtime[runtime.index("    'storage-maintenance' {"):
+                              runtime.index("    'storage-reconnect' {")]
+        self.assertIn("Invoke-AdminMaintenance", maintenance)
+        self.assertIn("Invoke-Smoke 'guest-smoke-storage-maintenance.log'",
+                      maintenance)
+        self.assertNotIn("--expect-storage-self-test", maintenance)
+        self.assertIn("Invoke-StorageReconnect", runtime)
+        reconnect = runtime[runtime.index("function Invoke-StorageReconnect"):
+                            runtime.index("function Invoke-VmwareAudioService")]
+        self.assertIn("Remove-Item -LiteralPath $serial -Force", reconnect)
+        self.assertIn("$startExit = $LASTEXITCODE", reconnect)
+        self.assertIn("$publishDeadline = (Get-Date).AddSeconds(5)", reconnect)
+        self.assertIn("$published = $true", reconnect)
+        self.assertIn("$stopExit = $LASTEXITCODE", reconnect)
+        self.assertIn("Copy-Item -LiteralPath $serial", reconnect)
+        self.assertIn("'REIST_STORAGE SERVICE_READY'", reconnect)
+        self.assertIn("'BOOT_OK'", reconnect)
+        self.assertNotIn("'TEST_STAGE STORAGE_SERVICE_OK'", reconnect)
+        self.assertIn("AddSeconds(45)", runtime)
+        self.assertIn("stop $vmx hard", runtime)
 
     def test_mirror_repair_is_leased_journaled_and_fail_closed(self):
         service = self.read("userspace/programs/storage_service.c")

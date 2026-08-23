@@ -1035,6 +1035,18 @@ Undo-Journal; ein sauberer Vollscan ist Voraussetzung für Journal-`CLEAN`.
 Fehlende oder mehrdeutige `..`-Zuordnung, überlappende Teilketten,
 reguläre Dateibeteiligung, fremde Diagnosen und Kapazitätserschöpfung bleiben
 vor Seiteneffekten gesperrt.
+Der FAT12-Persistenzabschluss verwendet das bestehende Undo-Journal v2 und die
+append-only Remaptabelle v1. `CHKDSK --record-bad-sector` reicht nur Resource
+und Sektornummer über Operation 30 ein; Blockzugriff bleibt ausschließlich im
+überwachten Storage-Dienst. Zulässig sind nur FAT-/Root-Metadatensektoren eines
+markierten REIST-Mediums. Zwei identische Quellreads und ein verifizierter
+Ersatzwrite gehen der Tabellenpublikation voraus; anschließend werden zwei
+CRC-Header mit höherer Sequenz geschrieben und erneut geladen. Tabelle und
+Arbeitsspeicher sind auf acht reservierte Spares begrenzt. Unbekannte
+Persistenzversionen, I/O-/Integritätsfehler und Kapazitätsende führen über den
+Kernel-Completion-Kontext zur resourceweiten Read-only-Sperre. Weder
+transparentes Remapping beliebiger Nutzdaten noch Rekonstruktion eines nicht
+lesbaren Sektors wird behauptet.
 Für die Datenrettung ergänzt `--salvage-orphans --confirm` den weiterhin
 separaten destruktiven Reclaim-Pfad. Der Storage-Dienst bildet aus allen
 unerreichbaren, normal EOC-terminierten FAT12-Clustern feste Kettendeskriptoren.
@@ -1116,8 +1128,11 @@ Administrationsfähigkeit entfernt, lädt der Kernel beim Boot ein festes
 Rescue-Allowlist-Abbild in RAM: `/bin/shell.prg`, `/sbin/devctl.prg`,
 `/sbin/mount.prg`, `/sbin/umount.prg`, `/sbin/svcctl.prg`,
 `/libexec/reist/storage.prg`, `/libexec/reist/reist.prg`, `/sbin/drives.prg`,
-`/bin/ls.prg`, `/bin/cat.prg` und `/sbin/chkdsk.prg`. Jedes Image ist auf 64 KiB, der gesamte
-statische Pool auf 128 KiB begrenzt. Die Programme werden vor der Aufnahme als
+`/bin/ls.prg`, `/bin/cat.prg` und `/sbin/chkdsk.prg`. Jedes Image ist auf
+96 KiB, der gesamte statische Pool auf 224 KiB begrenzt. Die größere
+Einzelgrenze nimmt den gewachsenen, weiterhin isolierten Storage-Dienst auf;
+die seitenbündige Gesamtgrenze nimmt die vollständige Allowlist auf und bleibt
+fest. Die Programme werden vor der Aufnahme als
 MYPR-Abbild validiert und vor jedem Start erneut gegen CRC und redundant
 geschützte Offset-/Größenmetadaten geprüft. Nur die exakten kanonischen Pfade
 dürfen diesen read-only Fallback verwenden. Eine feste vollständige

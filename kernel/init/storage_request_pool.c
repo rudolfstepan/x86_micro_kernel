@@ -130,7 +130,7 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->client_generation == 0U ||
         value->deadline_ms == 0U ||
         value->operation < STORAGE_REQUEST_READ ||
-        value->operation > STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS)
+        value->operation > STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR)
         return false;
     if (value->operation == STORAGE_REQUEST_BLOCK_FLUSH ||
         value->operation == STORAGE_REQUEST_VFS_SYNC ||
@@ -156,7 +156,8 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->operation == STORAGE_REQUEST_REPAIR_FAT12_REQUIRED_CROSSLINKS ||
         value->operation == STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_CROSSLINKS ||
         value->operation == STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_TOPOLOGY ||
-        value->operation == STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS)
+        value->operation == STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS ||
+        value->operation == STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR)
         return value->length == 0U;
     if (value->operation == STORAGE_REQUEST_BLOCK_READ ||
         value->operation == STORAGE_REQUEST_BLOCK_WRITE)
@@ -316,7 +317,7 @@ static int submit_locked(int client_pid, uint32_t client_generation,
         handle_out == NULL || request->version != STORAGE_REQUEST_VERSION ||
         request->struct_size < sizeof(*request) ||
         request->operation < STORAGE_REQUEST_READ ||
-        request->operation > STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS ||
+        request->operation > STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR ||
         request->timeout_ms == 0U ||
         request->timeout_ms > STORAGE_REQUEST_MAX_TIMEOUT_MS)
         return STORAGE_EINVAL;
@@ -345,7 +346,8 @@ static int submit_locked(int client_pid, uint32_t client_generation,
         request->operation == STORAGE_REQUEST_REPAIR_FAT12_REQUIRED_CROSSLINKS ||
         request->operation == STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_CROSSLINKS ||
         request->operation == STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_TOPOLOGY ||
-        request->operation == STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS)
+        request->operation == STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS ||
+        request->operation == STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR)
         expected = 0U;
     if ((request->operation == STORAGE_REQUEST_BLOCK_READ ||
          request->operation == STORAGE_REQUEST_BLOCK_WRITE) &&
@@ -564,6 +566,27 @@ int storage_request_complete(int service_pid, uint32_t service_generation,
     uint32_t flags = storage_pool_lock();
     int result = complete_locked(service_pid, service_generation, handle,
                                  result_code, block_data);
+    storage_pool_unlock(flags);
+    return result;
+}
+
+int storage_request_completion_context(int service_pid,
+        uint32_t service_generation, storage_request_handle_t handle,
+        uint32_t *operation_out, uint32_t *resource_out) {
+    if (operation_out == NULL || resource_out == NULL) return STORAGE_EINVAL;
+    uint32_t flags = storage_pool_lock();
+    size_t slot = 0U;
+    storage_slot_metadata_t metadata;
+    int result = resolve_handle(handle, &slot, &metadata);
+    if (result == 0 &&
+        (metadata.state != STORAGE_SLOT_CLAIMED ||
+         metadata.service_pid != service_pid ||
+         metadata.service_generation != service_generation))
+        result = STORAGE_EACCES;
+    if (result == 0) {
+        *operation_out = metadata.operation;
+        *resource_out = metadata.resource;
+    }
     storage_pool_unlock(flags);
     return result;
 }

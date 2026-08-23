@@ -203,6 +203,8 @@ static int format_fat32_scan(uint32_t resource, uint32_t start_cluster) {
     (FORMAT_FAT12_RESERVED - FORMAT_FAT12_SAFETY_SECTORS)
 #define FORMAT_FAT12_REMAP_BASE \
     (FORMAT_FAT12_LAYOUT_BASE + FORMAT_FAT12_JOURNAL_SECTORS)
+#define FAT12_REMAP_MAGIC 0x52504D31U
+#define FAT12_REMAP_VERSION 1U
 #define FORMAT_FAT12_FAT_SECTORS 9U
 #define FORMAT_FAT12_ROOT_SECTORS 14U
 #define FORMAT_FAT12_DATA_START (FORMAT_FAT12_RESERVED + \
@@ -264,6 +266,20 @@ typedef struct __attribute__((packed)) {
     uint32_t entry_count;
     uint32_t crc32;
 } format_remap_header_t;
+
+typedef struct __attribute__((packed)) {
+    uint32_t bad_sector;
+    uint32_t replacement_sector;
+    uint64_t sequence;
+} format_remap_entry_t;
+
+typedef struct {
+    format_remap_header_t header;
+    format_remap_entry_t entries[FORMAT_FAT12_REMAP_SPARES];
+} fat12_remap_state_t;
+
+_Static_assert(sizeof(format_remap_entry_t) == 16U,
+               "FAT12 remap entry ABI drift");
 
 static void format_fill(uint8_t *data, uint8_t value, uint32_t length) {
     for (uint32_t index = 0U; index < length; ++index) data[index] = value;
@@ -1425,9 +1441,14 @@ static int fat12_scan_chains(uint32_t resource,
     return (int)state.flags;
 }
 
+static int fat12_validate_persistence(uint32_t resource,
+                                      const fat12_check_layout_t *layout);
+
 static int fat12_check_volume(uint32_t resource,
                               fat12_check_layout_t *layout) {
     int result = fat12_inspect(resource, layout);
+    if (result != 0) return result;
+    result = fat12_validate_persistence(resource, layout);
     return result == 0 ? fat12_scan_chains(resource, layout) : result;
 }
 
@@ -1473,15 +1494,19 @@ static int fat12_load_clean_journal(uint32_t resource,
     uint8_t sectors[2U][X86OS_STORAGE_BLOCK_SIZE];
     format_journal_header_t headers[2U];
     int valid[2U] = {0, 0};
+    int unsupported = 0;
     for (uint32_t copy = 0U; copy < 2U; ++copy) {
         if (x86os_storage_block_read(resource,
                 FORMAT_FAT12_LAYOUT_BASE + copy, sectors[copy]) == 0) {
             fat12_copy_bytes(&headers[copy], sectors[copy], sizeof(headers[copy]));
+            if (headers[copy].magic == FAT12_JOURNAL_MAGIC &&
+                headers[copy].version != FAT12_JOURNAL_VERSION)
+                unsupported = 1;
             valid[copy] = fat12_journal_header_valid(&headers[copy],
                                                      layout->volume_id);
         }
     }
-    if (!valid[0] && !valid[1]) return -84;
+    if (!valid[0] && !valid[1]) return unsupported ? -95 : -84;
     if (valid[0] && valid[1] &&
         headers[0].sequence == headers[1].sequence &&
         !format_equal((const uint8_t *)&headers[0],
@@ -1492,6 +1517,105 @@ static int fat12_load_clean_journal(uint32_t resource,
     if (selected->state != FAT12_JOURNAL_CLEAN ||
         selected->sequence == UINT64_MAX) return -84;
     return 0;
+}
+
+static uint32_t fat12_remap_crc(const format_remap_header_t *header,
+        const format_remap_entry_t *entries) {
+    uint8_t payload[sizeof(*header) +
+                    FORMAT_FAT12_REMAP_SPARES * sizeof(*entries)];
+    format_remap_header_t copy = *header;
+    copy.crc32 = 0U;
+    fat12_copy_bytes(payload, &copy, sizeof(copy));
+    uint32_t bytes = copy.entry_count * sizeof(*entries);
+    if (bytes != 0U) fat12_copy_bytes(payload + sizeof(copy), entries, bytes);
+    return format_crc32(payload, sizeof(copy) + bytes);
+}
+
+static int fat12_remap_entries_valid(const format_remap_header_t *header,
+        const format_remap_entry_t *entries,
+        const fat12_check_layout_t *layout) {
+    uint32_t spare = FORMAT_FAT12_REMAP_BASE + 3U;
+    if (header->entry_count > FORMAT_FAT12_REMAP_SPARES) return 0;
+    for (uint32_t index = 0U; index < header->entry_count; ++index) {
+        format_remap_entry_t entry = entries[index];
+        if (entry.bad_sector < layout->reserved_sectors ||
+            entry.bad_sector >= layout->data_start ||
+            entry.replacement_sector < spare ||
+            entry.replacement_sector >= spare + FORMAT_FAT12_REMAP_SPARES ||
+            entry.sequence == 0U || entry.sequence > header->sequence)
+            return 0;
+        for (uint32_t previous = 0U; previous < index; ++previous)
+            if (entries[previous].bad_sector == entry.bad_sector ||
+                entries[previous].replacement_sector ==
+                    entry.replacement_sector ||
+                entries[previous].bad_sector == entry.replacement_sector ||
+                entries[previous].replacement_sector == entry.bad_sector)
+                return 0;
+    }
+    return header->crc32 == fat12_remap_crc(header, entries);
+}
+
+static int fat12_load_remap(uint32_t resource,
+        const fat12_check_layout_t *layout, fat12_remap_state_t *selected) {
+    uint8_t headers_raw[2U][X86OS_STORAGE_BLOCK_SIZE];
+    uint8_t table[X86OS_STORAGE_BLOCK_SIZE];
+    format_remap_header_t headers[2U];
+    format_remap_entry_t entries[FORMAT_FAT12_REMAP_SPARES];
+    int valid[2U] = {0, 0};
+    int unsupported = 0;
+    uint32_t maximum_count = 0U;
+    format_fill(table, 0U, sizeof(table));
+    format_fill((uint8_t *)entries, 0U, sizeof(entries));
+    for (uint32_t copy = 0U; copy < 2U; ++copy) {
+        if (x86os_storage_block_read(resource,
+                FORMAT_FAT12_REMAP_BASE + copy, headers_raw[copy]) != 0)
+            continue;
+        fat12_copy_bytes(&headers[copy], headers_raw[copy],
+                         sizeof(headers[copy]));
+        if (headers[copy].magic == FAT12_REMAP_MAGIC &&
+            headers[copy].version != FAT12_REMAP_VERSION) unsupported = 1;
+        valid[copy] = headers[copy].magic == FAT12_REMAP_MAGIC &&
+            headers[copy].version == FAT12_REMAP_VERSION &&
+            headers[copy].entry_size == sizeof(format_remap_entry_t) &&
+            headers[copy].media_fingerprint == layout->volume_id &&
+            headers[copy].sequence != 0U &&
+            headers[copy].entry_count <= FORMAT_FAT12_REMAP_SPARES;
+        if (valid[copy] && headers[copy].entry_count > maximum_count)
+            maximum_count = headers[copy].entry_count;
+    }
+    if (!valid[0] && !valid[1]) return unsupported ? -95 : -84;
+    if (maximum_count != 0U) {
+        if (x86os_storage_block_read(resource,
+                FORMAT_FAT12_REMAP_BASE + 2U, table) != 0) return -5;
+        fat12_copy_bytes(entries, table, sizeof(entries));
+    }
+    valid[0] = valid[0] &&
+        fat12_remap_entries_valid(&headers[0], entries, layout);
+    valid[1] = valid[1] &&
+        fat12_remap_entries_valid(&headers[1], entries, layout);
+    if (!valid[0] && !valid[1]) return -84;
+    if (valid[0] && valid[1] &&
+        headers[0].sequence == headers[1].sequence &&
+        !format_equal((const uint8_t *)&headers[0],
+                      (const uint8_t *)&headers[1], sizeof(headers[0])))
+        return -84;
+    uint32_t chosen = !valid[1] ||
+        (valid[0] && headers[0].sequence >= headers[1].sequence) ? 0U : 1U;
+    selected->header = headers[chosen];
+    format_fill((uint8_t *)selected->entries, 0U,
+                sizeof(selected->entries));
+    fat12_copy_bytes(selected->entries, entries,
+        selected->header.entry_count * sizeof(selected->entries[0]));
+    return 0;
+}
+
+static int fat12_validate_persistence(uint32_t resource,
+        const fat12_check_layout_t *layout) {
+    if (!layout->reist_layout) return 0;
+    format_journal_header_t journal;
+    fat12_remap_state_t remap;
+    int result = fat12_load_clean_journal(resource, layout, &journal);
+    return result == 0 ? fat12_load_remap(resource, layout, &remap) : result;
 }
 
 static int fat12_write_journal_header(uint32_t resource,
@@ -4938,6 +5062,120 @@ static int fat12_repair_short_files(uint32_t resource) {
         ? diagnosis | (int)X86OS_FAT12_RESULT_SHORT_FILES_REPAIRED : result;
 }
 
+static void fat12_prepare_remap_header(format_remap_header_t *header,
+        uint32_t volume_id, uint64_t sequence, uint32_t entry_count,
+        const format_remap_entry_t *entries) {
+    *header = (format_remap_header_t){
+        .magic = FAT12_REMAP_MAGIC,
+        .version = FAT12_REMAP_VERSION,
+        .entry_size = sizeof(format_remap_entry_t),
+        .media_fingerprint = volume_id,
+        .sequence = sequence,
+        .entry_count = entry_count,
+        .crc32 = 0U,
+    };
+    header->crc32 = fat12_remap_crc(header, entries);
+}
+
+static int fat12_write_remap_header(uint32_t resource, uint32_t sector,
+        const format_remap_header_t *header) {
+    uint8_t data[X86OS_STORAGE_BLOCK_SIZE];
+    format_fill(data, 0U, sizeof(data));
+    fat12_copy_bytes(data, header, sizeof(*header));
+    return format_write(resource, sector, data);
+}
+
+static int fat12_record_bad_sector(uint32_t resource, uint32_t bad_sector) {
+    fat12_check_layout_t layout;
+    int diagnosis = fat12_check_volume(resource, &layout);
+    if (diagnosis != 0 || !layout.reist_layout ||
+        bad_sector < layout.reserved_sectors ||
+        bad_sector >= layout.data_start) return -22;
+
+    uint32_t token = 0U;
+    if (x86os_storage_maintenance_acquire(resource, 0U, &token) != 0 ||
+        token == 0U) return -30;
+    int result = fat12_check_volume(resource, &layout);
+    fat12_remap_state_t remap;
+    if (result == 0) result = fat12_load_remap(resource, &layout, &remap);
+    for (uint32_t index = 0U;
+         result == 0 && index < remap.header.entry_count; ++index)
+        if (remap.entries[index].bad_sector == bad_sector) result = -17;
+    if (result == 0 &&
+        (remap.header.entry_count >= FORMAT_FAT12_REMAP_SPARES ||
+         remap.header.sequence == UINT64_MAX)) result = -28;
+
+    uint32_t replacement = 0U;
+    uint32_t spare_start = FORMAT_FAT12_REMAP_BASE + 3U;
+    for (uint32_t candidate = spare_start;
+         result == 0 && candidate < spare_start + FORMAT_FAT12_REMAP_SPARES;
+         ++candidate) {
+        int used = 0;
+        for (uint32_t index = 0U; index < remap.header.entry_count; ++index)
+            if (remap.entries[index].replacement_sector == candidate) used = 1;
+        if (!used) { replacement = candidate; break; }
+    }
+    if (result == 0 && replacement == 0U) result = -28;
+
+    uint8_t recovered[X86OS_STORAGE_BLOCK_SIZE];
+    uint8_t confirmation[X86OS_STORAGE_BLOCK_SIZE];
+    if (result == 0 &&
+        (x86os_storage_block_read(resource, bad_sector, recovered) != 0 ||
+         x86os_storage_block_read(resource, bad_sector, confirmation) != 0 ||
+         !format_equal(recovered, confirmation, sizeof(recovered))))
+        result = -5;
+    if (result == 0) result = format_write(resource, replacement, recovered);
+    if (result == 0 && x86os_storage_block_flush(resource) != 0) result = -5;
+    if (result == 0 &&
+        x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+        result = -30;
+
+    uint32_t entry_index = remap.header.entry_count;
+    if (result == 0) {
+        remap.entries[entry_index] = (format_remap_entry_t){
+            .bad_sector = bad_sector,
+            .replacement_sector = replacement,
+            .sequence = remap.header.sequence + 1U,
+        };
+        uint8_t table[X86OS_STORAGE_BLOCK_SIZE];
+        format_fill(table, 0U, sizeof(table));
+        fat12_copy_bytes(table, remap.entries,
+            (entry_index + 1U) * sizeof(remap.entries[0]));
+        result = format_write(resource, FORMAT_FAT12_REMAP_BASE + 2U, table);
+    }
+    if (result == 0 && x86os_storage_block_flush(resource) != 0) result = -5;
+    if (result == 0 &&
+        x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+        result = -30;
+    if (result == 0) {
+        fat12_prepare_remap_header(&remap.header, layout.volume_id,
+            remap.header.sequence + 1U, entry_index + 1U, remap.entries);
+        result = fat12_write_remap_header(resource,
+            FORMAT_FAT12_REMAP_BASE, &remap.header);
+        if (result == 0)
+            result = fat12_write_remap_header(resource,
+                FORMAT_FAT12_REMAP_BASE + 1U, &remap.header);
+    }
+    if (result == 0 && x86os_storage_block_flush(resource) != 0) result = -5;
+    if (result == 0 &&
+        x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+        result = -30;
+    if (result == 0) {
+        fat12_remap_state_t verified;
+        result = fat12_load_remap(resource, &layout, &verified);
+        if (result == 0 &&
+            (verified.header.sequence != remap.header.sequence ||
+             verified.header.entry_count != entry_index + 1U ||
+             verified.entries[entry_index].bad_sector != bad_sector ||
+             verified.entries[entry_index].replacement_sector != replacement))
+            result = -84;
+    }
+    if (x86os_storage_maintenance_release(resource, token) != 0 && result == 0)
+        result = -5;
+    return result == 0
+        ? (int)X86OS_FAT12_RESULT_BAD_SECTOR_REMAPPED : result;
+}
+
 static void format_boot_sector(uint8_t *sector) {
     format_fill(sector, 0U, X86OS_STORAGE_BLOCK_SIZE);
     sector[0] = 0xEB; sector[1] = 0x3C; sector[2] = 0x90;
@@ -5115,6 +5353,10 @@ int main(void) {
                 X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_TOPOLOGY &&
             request.length == 0U)
             result = fat12_repair_directory_topology(request.resource);
+        if (request.operation == X86OS_STORAGE_RECORD_FAT12_BAD_SECTOR &&
+            request.length == 0U)
+            result = fat12_record_bad_sector(request.resource,
+                                             request.offset);
         if (x86os_storage_complete(request.handle, result, data) != 0)
             return 3;
     }

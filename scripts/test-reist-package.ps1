@@ -43,7 +43,10 @@ if ($exitCode -eq 0) {
     $requiredArtifacts = @(
         (Join-Path $RepoRoot 'build\kernel.bin'),
         (Join-Path $RepoRoot 'build\reist-os.img'),
-        (Join-Path $RepoRoot 'build\programs\GTEST.PRG')
+        (Join-Path $RepoRoot 'build\programs\GTEST.PRG'),
+        (Join-Path $RepoRoot 'build\programs\STORAGE.PRG'),
+        (Join-Path $RepoRoot 'build\programs\CHKDSK.PRG'),
+        (Join-Path $RepoRoot 'build\programs\FORMAT.PRG')
     )
     $artifactDeadline = [DateTime]::UtcNow.AddSeconds(10)
     do {

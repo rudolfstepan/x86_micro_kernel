@@ -105,14 +105,16 @@ sind abgeschlossen. Aussagen über vollständig nachgewiesene
 Fail-Operationalität oder unabhängige Hardware-Failover-Domänen sind weiterhin
 unzulässig.
 
-Der nächste Umsetzungsschritt ist das verbliebene S0.3c-Paket, danach folgen
-S0.4, S0.5 und S0.6. Ein externes Monitorgerät samt Transport, eigener
+Die ausführbare Paketqueue für S0.3c ist nach dem FAT12-Persistenzabschluss
+abgearbeitet; als Nächstes muss ein enges S0.4-Paket definiert werden, danach
+folgen S0.5 und S0.6. Ein externes Monitorgerät samt Transport, eigener
 Versorgung/Zeitbasis, Reset- und Interlockverdrahtung wird erst nach einer
 manuellen Auswahl angebunden; ohne diese Identität wird kein Produktionstreiber
 erfunden und keine Hardwarequalifikation behauptet.
 
 `S0.3c-admin1` stellt sichere Storage-Operationen (`device down/up`, `mount`,
-`umount`) und einen festen, integritätsgeprüften 128-KiB-RAM-Rescue-Pool aus
+`umount`) und einen festen, integritätsgeprüften 224-KiB-RAM-Rescue-Pool mit
+96 KiB Einzelgrenze aus
 Shell, Anzeige-, Diagnose-, Dienst- und Adminprogrammen bereit. `S0.3c-admin2`
 ergänzt eine statische, abhängigkeitsbewusste Lifecycle-Steuerung für
 ausdrücklich unterstützte Treiber und überwachte Dienste. Der reale QEMU-Lauf
@@ -208,6 +210,10 @@ Für explizit markierte REIST-FAT12-Medien sind umgesetzt:
   ansonsten gültiger Dot-Beziehungen sowie reine mehrfach benötigte
   reguläre Dateiketten durch vollständig verifiziertes Klonen späterer Dateien
   und Same-Parent-Aliase strikt leerer einclusteriger Unterverzeichnisse
+- versionierte Prüfung von Journal v2 und Remap v1 sowie bestätigtes,
+  readback-verifiziertes Remapping von höchstens acht FAT-/Root-
+  Metadatensektoren; unbekannte Versionen, unklare Daten und erschöpfte Spares
+  setzen die Ressource fail-closed read-only
 
 `FORMAT.PRG` akzeptiert ausschließlich eine veröffentlichte FDD-Ressource:
 
@@ -223,7 +229,8 @@ FAT12-Modi `--repair`, `--repair-chains`, `--repair-short`,
 `--repair-volume-label`, `--repair-zero-files`, `--repair-zero-start` sowie
 `--repair-dot-size`, `--repair-dot-cluster` und
 `--repair-required-crosslinks`, `--repair-directory-crosslinks`,
-`--repair-directory-topology` sowie `--salvage-orphans`
+`--repair-directory-topology`, `--salvage-orphans` sowie
+`--record-bad-sector <sektor>`
 benötigen jeweils `--confirm`, laufen ausschließlich im Storage-Dienst unter
 Maintenance-Lease und melden Erfolg erst nach Undo-Journal, Readback und
 sauberem Vollscan. Der Reclaim-Modus verwirft unerreichbare Inhalte
@@ -364,9 +371,12 @@ oder breite Zielhardwarequalifikation.
   attribuierbare nichtleere, mehrclusterige und parentübergreifende
   Directory-Aliase werden ohne Kettenänderung auf genau einen kanonischen
   Parent reduziert. Vollständig gültige Orphan-Ketten lassen sich unter
-  `FOUND.000` retten. Mehrdeutige Verzeichnis-, Journal-, Remap- und
-  Defektsektorreparatur sowie der QEMU-Remountnachweis sind noch offen
-- reale FAT12-Power-Loss-/Reconnect-Matrix für VMware und Zielhardware
+  `FOUND.000` retten. Die feste Journal-/Remap-/Defektkartenprüfung und der
+  QEMU-Maintenance-/Remountnachweis sind automatisiert; mehrdeutige
+  Verzeichnisreparaturen bleiben gesperrt
+- die reale FAT12-Power-Loss-/Reconnect-Matrix auf Zielhardware bleibt eine
+  manuelle Benutzerabnahme; VMware-Reconnect ist automatisiert, ersetzt diese
+  Hardwareevidenz aber nicht
 - medienunabhängige Persistenzgarantie für EXT2 und fremde FAT-Volumes
 - unabhängige Supervisor-, Fence- und Failover-Hardware
 - breite reale AHCI-/PCI-IDE-/PS/2-/BIOS-Kompatibilitätsmatrix

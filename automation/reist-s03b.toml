@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.3c-6f6s-fat12-persistence-finish"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -1105,7 +1105,7 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-6f6s-fat12-persistence-finish"
-status = "active"
+status = "done"
 risk = "high"
 title = "Finish FAT12 journal remap defect-map and emulator recovery proof"
 scope = "Complete the FAT12 persistence boundary as one vertical package: version the on-media maintenance journal, add bounded bad-sector recording and remap policy without claiming transparent recovery beyond verified spare capacity, expose diagnosis and controlled repair in the Ring-3 tools, and automate the QEMU maintenance-lease/unmount/repair/flush/remount proof plus VMware power-loss/reconnect stages. Hardware execution remains a documented manual user acceptance item and is not required by the automated gate."
@@ -1114,6 +1114,7 @@ allowed_files = [
   "include/kernel/storage_request_pool.h",
   "kernel/init/storage_request_pool.c",
   "kernel/syscall/syscall_table.c",
+  "kernel/proc/process.c",
   "userspace/sdk/include/x86os.h",
   "userspace/programs/storage_service.c",
   "userspace/programs/chkdsk.c",
@@ -1122,6 +1123,7 @@ allowed_files = [
   "scripts/test-reist-package.ps1",
   "test/test_fat12_maintenance.py",
   "test/test_fat12_tools.py",
+  "test/test_admin_maintenance.py",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
   "docs/development/PROJECT_STATUS.md",
@@ -1132,11 +1134,13 @@ invariants = [
   "journal recovery, bad-sector publication and remap consume fixed capacities and finite deadlines",
   "unverified sectors never return to writable service and exhausted spare capacity degrades read-only",
   "QEMU proves maintenance lease through controlled remount and VMware automation proves bounded reconnect without requiring external hardware",
-  "documentation distinguishes emulator evidence from the user's manual hardware acceptance"
+  "documentation distinguishes emulator evidence from the user's manual hardware acceptance",
+  "each resident rescue image is bounded to 96 KiB and the complete protected pool remains bounded to 224 KiB"
 ]
 targeted_tests = [
   "python test/test_fat12_maintenance.py -v",
-  "python test/test_fat12_tools.py -v"
+  "python test/test_fat12_tools.py -v",
+  "python test/test_admin_maintenance.py -v"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"

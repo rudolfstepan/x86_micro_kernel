@@ -17,8 +17,7 @@ für explizit markierte, neu formatierte Medien aktiviert.
 
 ## REIST-FAT12
 
-Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sowie der erste
-`S0.3c-6f6`-Wartungsschritt sind umgesetzt:
+Die Pakete `S0.3c-6f1` bis `S0.3c-6f6s` sind umgesetzt:
 
 1. verifiziertes Undo-Journal mit redundanten CRC-Headern und Recovery vor
    veränderlicher Metadatennutzung
@@ -61,6 +60,10 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sowie der erste
 16. bestätigtes Trennen reiner Same-Parent-Crosslinks strikt leerer,
     einclusteriger Unterverzeichnisse durch Kopie, korrigierten `.`-Self und
     atomare Umbindung des späteren Parent-Eintrags
+17. versionierte Journal-v2-/Remap-v1-Prüfung im Ring-3-Storage-Dienst und
+    bestätigte Veröffentlichung von höchstens acht FAT-/Root-Metadatenremaps;
+    Quelle und Ersatz werden vor Publikation mehrfach gelesen beziehungsweise
+    rückgelesen, die Tabelle wird vor zwei sequenzierten CRC-Headern geschrieben
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen
@@ -103,6 +106,7 @@ C:\> CHKDSK --fat12 1 --repair-required-crosslinks --confirm
 C:\> CHKDSK --fat12 1 --repair-directory-crosslinks --confirm
 C:\> CHKDSK --fat12 1 --repair-directory-topology --confirm
 C:\> CHKDSK --fat12 1 --salvage-orphans --confirm
+C:\> CHKDSK --fat12 1 --record-bad-sector 196 --confirm
 FDISK
 ```
 
@@ -115,6 +119,16 @@ Unmount und erneuter Diagnose werden alle neun alten Zielsektoren im
 Undo-Journal gesichert, die beschädigte Kopie mit verifiziertem Readback
 ersetzt und erst danach `CLEAN` veröffentlicht. Uneindeutigkeit lässt das
 Medium unverändert beziehungsweise fail-closed zur Inspektion zurück.
+`--record-bad-sector <sektor> --confirm` ist kein allgemeiner Datenrettungs-
+oder Oberflächenscan. Die Operation akzeptiert nur einen konsistent lesbaren
+Metadatensektor zwischen Reserved Area und Data Area eines markierten
+REIST-FAT12-Mediums. Unter exklusivem Lease werden zwei identische Quellreads
+verlangt, der nächste freie der acht reservierten Spares geschrieben und
+rückgelesen, danach die feste Remaptabelle und zuletzt beide CRC-Header mit
+erhöhter Sequenz publiziert. Unbekannte Journal-/Remap-Versionen, ein
+unklarer Readback, Integritätsfehler oder erschöpfte Spares verriegeln die
+Ressource read-only; eine nicht lesbare Quelle wird niemals durch geratene
+Daten ersetzt.
 Der read-only Check traversiert zusätzlich alle erreichbaren Clusterketten aus
 Root und höchstens 256 Unterverzeichnissen. Eine feste Owner-Map erkennt Loops,
 Crosslinks, kurze/überlange Ketten und nicht referenzierte Allokationen ohne
@@ -261,14 +275,16 @@ Superfloppy und wird von `FDISK` niemals partitioniert.
 
 ## Noch offen
 
-- reale FDD-/VMware-Power-Loss- und Reconnect-Matrix über die bereits
-  deterministisch geprüften Veröffentlichungsstufen
 - allgemeine Verzeichnisschäden jenseits eindeutig attribuierbarer Aliase und
-  der eng begrenzten Feldreparaturen, Journal-,
-  Remap- und Defektsektorkarte
-- QEMU-Laufzeitnachweis für Maintenance-Lease, Unmount, FAT-Spiegel-Reparatur,
-  Verify und kontrollierten Remount
-- breitere echte FDD-/Medienfehler- und Langzeitmatrix
+  der eng begrenzten Feldreparaturen
+- die breite reale FDD-/Power-Loss-/Medienfehler- und Langzeitmatrix; sie wird
+  vom Benutzer manuell auf konkret gebundener Hardware abgenommen und ist kein
+  automatisches Gate
+
+Automatisierte Evidenz liefern die QEMU-Modi für Maintenance/Unmount/Remount
+und der VMware-Modus mit zwei Bootstufen, hartem Power-Cut dazwischen und
+frischen, geordneten Storage-Service-/Bootmarkern. Diese Emulatornachweise sind keine
+Hardwarequalifikation.
 
 `FAT12_ANALYSIS.md` ist ein historischer Bericht und beschreibt nicht den
 heutigen Implementierungsstand.

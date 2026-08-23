@@ -53,6 +53,7 @@ typedef enum {
     STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_CROSSLINKS = 27,
     STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_TOPOLOGY = 28,
     STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS = 29,
+    STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR = 30,
 } storage_request_operation_t;
 
 #define STORAGE_REQUEST_READ STORAGE_REQUEST_BLOCK_READ
@@ -102,6 +103,11 @@ int storage_request_claim(int service_pid, uint32_t service_generation,
 int storage_request_complete(int service_pid, uint32_t service_generation,
                              storage_request_handle_t handle, int32_t result,
                              const uint8_t *block_data);
+int storage_request_completion_context(int service_pid,
+                                       uint32_t service_generation,
+                                       storage_request_handle_t handle,
+                                       uint32_t *operation_out,
+                                       uint32_t *resource_out);
 int storage_request_collect(int client_pid, uint32_t client_generation,
                             storage_request_handle_t handle,
                             int32_t *result_out, uint8_t *block_data_out);

@@ -313,7 +313,7 @@ und 10 verbindlich.
         - [x] **S0.3c-6f6r gebündelt:** Orphan-Datenrettung in einen begrenzten,
           standardnahen `FOUND.000`-Namensraum mit Herkunftsnachweis statt
           ausschließlichem Verwerfen
-        - [ ] **S0.3c-6f6s gebündelt:** persistenter Journal-/Remap-/
+        - [x] **S0.3c-6f6s gebündelt:** persistenter Journal-/Remap-/
           Defektkarten-Abschluss einschließlich QEMU-Maintenance-/Remount- und
           automatisiertem VMware-Reconnect-Nachweis; reale Hardware bleibt
           ausdrücklich manueller Nutzernachweis

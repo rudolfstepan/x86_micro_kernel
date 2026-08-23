@@ -1,7 +1,11 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
-    [string]$Mode = 'normal'
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [string]$Mode = 'normal',
+    [ValidateSet('qemu', 'vmware')]
+    [string]$Target = 'qemu',
+    [ValidateSet('vga', 'framebuffer')]
+    [string]$Video = 'vga'
 )
 
 Set-StrictMode -Version Latest
@@ -42,11 +46,13 @@ $Python = Resolve-NativeTool 'python' @(
     'C:\Python314\python.exe',
     'C:\Python313\python.exe'
 )
-$Qemu = Resolve-NativeTool 'qemu-system-i386' @(
-    'C:\tmp\qemu-portable\qemu-system-i386.exe',
-    'C:\Program Files\qemu\qemu-system-i386.exe',
-    'C:\msys64\mingw64\bin\qemu-system-i386.exe'
-)
+$Qemu = if ($Target -eq 'qemu' -or $Mode -eq 'pci-audio') {
+    Resolve-NativeTool 'qemu-system-i386' @(
+        'C:\tmp\qemu-portable\qemu-system-i386.exe',
+        'C:\Program Files\qemu\qemu-system-i386.exe',
+        'C:\msys64\mingw64\bin\qemu-system-i386.exe'
+    )
+} else { $null }
 $Make = if ($Mode -eq 'driver-domain') {
     Resolve-NativeTool 'make' @(
         'C:\msys64\usr\bin\make.exe',
@@ -54,7 +60,7 @@ $Make = if ($Mode -eq 'driver-domain') {
     )
 } else { $null }
 
-if ($Mode -ne 'driver-domain' -and
+if ($Target -eq 'qemu' -and $Mode -ne 'driver-domain' -and
     !(Test-Path -LiteralPath $Image -PathType Leaf)) {
     throw 'build\reist-os.img is missing; run build-windows.ps1 first.'
 }
@@ -321,6 +327,109 @@ function Invoke-SystemLayout {
     Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
 }
 
+function Invoke-StorageReconnect {
+    $vmrun = $null
+    foreach ($candidate in @(
+        'C:\Program Files\VMware\VMware Workstation\vmrun.exe',
+        'C:\Program Files (x86)\VMware\VMware Workstation\vmrun.exe'
+    )) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            $vmrun = $candidate
+            break
+        }
+    }
+    if ($null -eq $vmrun) { throw 'VMware vmrun is required for storage-reconnect.' }
+
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $gateLog = Join-Path $LogRoot "$stamp-runtime-storage-reconnect.log"
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $vmx = Join-Path $RepoRoot 'build\vmware\reist-os\reist-os.vmx'
+    $serial = Join-Path $RepoRoot 'build\vmware\reist-os\vmware-serial.log'
+    $started = $false
+    try {
+        $LASTEXITCODE = 0
+        & $BuildScript -Target vmware -Video $Video *> $gateLog
+        if ($LASTEXITCODE -ne 0 || !(Test-Path -LiteralPath $vmx -PathType Leaf)) {
+            throw 'VMware reference package build failed.'
+        }
+        $running = & $vmrun -T ws list 2>$null
+        if ($running | Where-Object { $_.Trim() -ieq $vmx }) {
+            throw 'VMware package VM is already running.'
+        }
+
+        for ($stage = 1; $stage -le 2; ++$stage) {
+            # Workstation prompts instead of starting headless when a serial
+            # file already exists. A fresh file also makes each stage's
+            # readiness evidence independent of stale marker counts.
+            if (Test-Path -LiteralPath $serial) {
+                Remove-Item -LiteralPath $serial -Force
+            }
+            $startOutput = & $vmrun -T ws start $vmx nogui 2>&1
+            $startExit = $LASTEXITCODE
+            $startOutput | Add-Content -LiteralPath $gateLog
+            $published = $false
+            $publishDeadline = (Get-Date).AddSeconds(5)
+            do {
+                $runningAfterStart = & $vmrun -T ws list 2>$null
+                if ($runningAfterStart |
+                        Where-Object { $_.Trim() -ieq $vmx }) {
+                    $published = $true
+                    break
+                }
+                Start-Sleep -Milliseconds 250
+            } while ((Get-Date) -lt $publishDeadline)
+            if (!$published) {
+                throw "VMware start stage $stage was not published (exit $startExit)."
+            }
+            $started = $true
+            $deadline = (Get-Date).AddSeconds(45)
+            $passed = $false
+            do {
+                $ready = @(Select-String -LiteralPath $serial -SimpleMatch `
+                    'REIST_STORAGE SERVICE_READY' `
+                    -ErrorAction SilentlyContinue)
+                $boot = @(Select-String -LiteralPath $serial -SimpleMatch `
+                    'BOOT_OK' -ErrorAction SilentlyContinue)
+                if ($ready.Count -gt 0 -and $boot.Count -gt 0 -and
+                    $ready[0].LineNumber -lt $boot[0].LineNumber) {
+                    $passed = $true
+                    break
+                }
+                Start-Sleep -Milliseconds 250
+            } while ((Get-Date) -lt $deadline)
+            if (!$passed) { throw "VMware storage reconnect stage $stage timed out." }
+            $stageSerial = Join-Path $LogRoot `
+                "$stamp-runtime-storage-reconnect-stage-$stage-serial.log"
+            Copy-Item -LiteralPath $serial -Destination $stageSerial -Force
+            "STAGE $stage PASS ready_line=$($ready[0].LineNumber) " +
+                "boot_line=$($boot[0].LineNumber) serial=$stageSerial" |
+                Add-Content -LiteralPath $gateLog
+
+            # A hard stop deliberately models power loss. Stage two must then
+            # publish fresh service/boot markers from the same package. GTEST
+            # is interactive and therefore not a reachable headless marker.
+            $stopOutput = & $vmrun -T ws stop $vmx hard 2>&1
+            $stopExit = $LASTEXITCODE
+            $stopOutput | Add-Content -LiteralPath $gateLog
+            if ($stopExit -ne 0) {
+                throw "VMware hard stop stage $stage failed with exit $stopExit."
+            }
+            $started = $false
+        }
+    }
+    catch {
+        $_ | Out-String | Add-Content -LiteralPath $gateLog
+        Get-Content -LiteralPath $gateLog -Tail 40
+        throw
+    }
+    finally {
+        if ($started) { & $vmrun -T ws stop $vmx hard 2>$null | Out-Null }
+        $watch.Stop()
+    }
+    Write-Output "VMWARE STORAGE RECONNECT PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+}
+
 function Invoke-VmwareAudioService {
     $vmrun = $null
     foreach ($candidate in @(
@@ -464,6 +573,13 @@ function Invoke-VmwareAudioService {
     Write-Output "VMWARE AUDIO PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s"
 }
 
+if ($Mode -eq 'storage-maintenance' -and $Target -ne 'qemu') {
+    throw 'storage-maintenance requires -Target qemu.'
+}
+if ($Mode -eq 'storage-reconnect' -and $Target -ne 'vmware') {
+    throw 'storage-reconnect requires -Target vmware.'
+}
+
 switch ($Mode) {
     'normal' {
         Invoke-Smoke 'guest-smoke.log' @()
@@ -569,6 +685,13 @@ switch ($Mode) {
         Invoke-Smoke 'guest-smoke-storage-io-failure.log' @(
             '--expect-storage-io-failure'
         )
+    }
+    'storage-maintenance' {
+        Invoke-AdminMaintenance
+        Invoke-Smoke 'guest-smoke-storage-maintenance.log'
+    }
+    'storage-reconnect' {
+        Invoke-StorageReconnect
     }
     'fdd-hotplug' {
         Invoke-FddHotplug
