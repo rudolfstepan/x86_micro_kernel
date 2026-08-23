@@ -286,6 +286,9 @@ und 10 verbindlich.
         - [x] Ansonsten gültige Volume-Label-Einträge mit reserviertem
           Startcluster oder Größenfeld ungleich null bei reiner Diagnose
           journalisiert normalisieren, ohne Labelname oder Attribute zu ändern
+        - [x] Reguläre Nullgrößendateien mit eindeutig besessener, normal
+          terminierter Restkette bestätigt atomar auf Startcluster null setzen
+          und ausschließlich diese nicht benötigte Allokation freigeben
         - [ ] `CHKDSK.PRG` für echte mehrfach benötigte Crosslinks, allgemeine
           Verzeichnisschäden jenseits der eng begrenzten Feldreparaturen, Orphan-Datenrettung,
           Journal und Defektsektorkarte

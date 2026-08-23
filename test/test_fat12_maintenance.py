@@ -48,6 +48,7 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_CROSSLINKS", source)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_SIZE", source)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_VOLUME_LABEL", source)
+        self.assertIn("X86OS_STORAGE_REPAIR_FAT12_ZERO_FILES", source)
         self.assertIn('"--repair-chains"', source)
         self.assertIn('"--repair-short"', source)
         self.assertIn('"--reclaim-orphans"', source)
@@ -57,6 +58,7 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn('"--repair-crosslinks"', source)
         self.assertIn('"--repair-dir-size"', source)
         self.assertIn('"--repair-volume-label"', source)
+        self.assertIn('"--repair-zero-files"', source)
         self.assertIn("x86os_storage_submit", source)
         self.assertIn("x86os_storage_collect", source)
         self.assertNotIn("x86os_storage_block_read", source)
@@ -91,6 +93,7 @@ class Fat12MaintenanceContracts(unittest.TestCase):
                       header)
         self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_VOLUME_LABEL = 21",
                       header)
+        self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_ZERO_FILES = 22", header)
         self.assertIn("X86OS_STORAGE_CHECK_FAT12 11U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_MIRROR 12U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_CHAINS 13U", sdk)
@@ -102,7 +105,8 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_CROSSLINKS 19U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_SIZE 20U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_VOLUME_LABEL 21U", sdk)
-        self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_VOLUME_LABEL", pool)
+        self.assertIn("X86OS_STORAGE_REPAIR_FAT12_ZERO_FILES 22U", sdk)
+        self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_ZERO_FILES", pool)
         self.assertIn("request.operation >= STORAGE_REQUEST_CHECK_FAT12", syscall)
         self.assertIn("process->domain_profile.kind != "
                       "PROCESS_DOMAIN_MAINTENANCE", syscall)
@@ -144,6 +148,7 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("FAT12_MAX_SHORT_LOOP_REPAIRS 128U", service)
         self.assertIn("FAT12_MAX_DIRECTORY_SIZE_REPAIRS 128U", service)
         self.assertIn("FAT12_MAX_VOLUME_LABEL_REPAIRS 128U", service)
+        self.assertIn("FAT12_MAX_ZERO_FILE_REPAIRS 128U", service)
         self.assertIn("FAT12_MAX_DIRECTORY_REPAIR_SECTORS 64U", service)
         self.assertIn("fat12_cluster_owner[FAT12_CLUSTER_INDEX_CAPACITY]",
                       service)
@@ -253,7 +258,7 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("fat12_scan_directory_sector", scan)
         repair = service[service.index(
             "static int fat12_apply_directory_loop_repairs"):
-            service.index("static int fat12_apply_orphan_reclaim")]
+            service.index("static int fat12_apply_short_loop_repairs")]
         self.assertIn("diagnosis != (int)X86OS_FAT12_RESULT_CHAIN_LOOP",
                       repair)
         self.assertIn("fat12_loop_issue_count != "
@@ -272,7 +277,7 @@ class Fat12MaintenanceContracts(unittest.TestCase):
     def test_short_loop_repair_journals_fats_and_directory_before_writes(self):
         service = self.read("userspace/programs/storage_service.c")
         repair = service[service.index("static int fat12_apply_short_loop_repairs"):
-                         service.index("static int fat12_apply_orphan_reclaim")]
+                         service.index("static int fat12_collect_directory_size_sectors")]
         self.assertIn("X86OS_FAT12_RESULT_CHAIN_LOOP |", repair)
         self.assertIn("X86OS_FAT12_RESULT_CHAIN_SHORT", repair)
         self.assertIn("fat12_loop_issue_count != "
@@ -328,7 +333,7 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("fat12_add_directory_size_repair", size_fault)
         self.assertIn("fat12_enqueue_directory(state, start_cluster)", process)
         repair = service[service.index("static int fat12_collect_directory_size_sectors"):
-                         service.index("static int fat12_apply_orphan_reclaim")]
+                         service.index("static int fat12_collect_volume_label_sectors")]
         self.assertIn("diagnosis != (int)X86OS_FAT12_RESULT_DIRECTORY_INVALID",
                       repair)
         self.assertIn("fat12_directory_invalid_issue_count !=", repair)
@@ -351,7 +356,7 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("fat12_mark_directory_invalid", label)
         self.assertIn("fat12_add_volume_label_repair", label)
         repair = service[service.index("static int fat12_collect_volume_label_sectors"):
-                         service.index("static int fat12_apply_orphan_reclaim")]
+                         service.index("static int fat12_apply_zero_file_repairs")]
         self.assertIn("diagnosis != (int)X86OS_FAT12_RESULT_DIRECTORY_INVALID",
                       repair)
         self.assertIn("fat12_directory_invalid_issue_count !=", repair)
@@ -365,6 +370,37 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertNotIn("fat12_set_entry", repair)
         self.assertIn("fat12_check_volume(resource, &layout) != 0", repair)
         self.assertIn("X86OS_FAT12_RESULT_VOLUME_LABEL_REPAIRED", repair)
+
+    def test_zero_file_repair_frees_only_unique_chain_and_clears_start(self):
+        service = self.read("userspace/programs/storage_service.c")
+        scan = service[service.index("static int fat12_process_directory_entry"):
+                       service.index("static int fat12_scan_directory_sector")]
+        self.assertIn("expected == 0U && start_cluster != 0U", scan)
+        self.assertIn("fat12_mark_directory_invalid(state)", scan)
+        self.assertIn("fat12_add_zero_file_repair", scan)
+        repair = service[service.index("static int fat12_apply_zero_file_repairs"):
+                         service.index("static int fat12_apply_orphan_reclaim")]
+        self.assertIn("X86OS_FAT12_RESULT_CHAIN_EXCESS |", repair)
+        self.assertIn("X86OS_FAT12_RESULT_DIRECTORY_INVALID", repair)
+        self.assertIn("fat12_excess_issue_count !=", repair)
+        self.assertIn("fat12_directory_invalid_issue_count !=", repair)
+        self.assertIn("fat12_cluster_references[cluster] != 1U", repair)
+        self.assertIn("fat12_cluster_required[cluster] != 0U", repair)
+        self.assertIn("fat12_cluster_owner[cluster] != owner", repair)
+        self.assertIn("fat12_is_eoc(next)", repair)
+        self.assertIn("fat12_set_entry(fat12_repair_fat, cluster, 0U)", repair)
+        self.assertIn("get32(entry + 28U) != 0U", repair)
+        self.assertIn("put16(entry + 26U, 0U)", repair)
+        journal_fat = repair.index("fat12_record_old_mirror")
+        journal_directory = repair.index("fat12_record_old_sector")
+        first_fat_write = repair.index("format_write(resource, target_sector")
+        first_directory_write = repair.index(
+            "format_write(resource, sector, directory_data)")
+        self.assertLess(journal_fat, first_fat_write)
+        self.assertLess(journal_directory, first_fat_write)
+        self.assertLess(journal_directory, first_directory_write)
+        self.assertIn("fat12_check_volume(resource, &layout) != 0", repair)
+        self.assertIn("X86OS_FAT12_RESULT_ZERO_FILES_REPAIRED", repair)
 
 
 if __name__ == "__main__":

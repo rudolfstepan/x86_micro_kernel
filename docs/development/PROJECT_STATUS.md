@@ -201,7 +201,8 @@ Für explizit markierte REIST-FAT12-Medien sind umgesetzt:
   zugleich kurze reguläre Dateischleifen mit atomarer Größenbegrenzung sowie
   Crosslinks, die ausschließlich aus überlangen Dateitails entstehen, und
   unzulässige Größenfelder ansonsten gültiger Unterverzeichnisse sowie
-  reservierte Nichtnull-Felder ansonsten gültiger Volume-Label-Einträge
+  reservierte Nichtnull-Felder ansonsten gültiger Volume-Label-Einträge und
+  eindeutig besessene Restallokationen regulärer Dateien der Größe null
 
 `FORMAT.PRG` akzeptiert ausschließlich eine veröffentlichte FDD-Ressource:
 
@@ -214,7 +215,8 @@ FORMAT --reist-fat12 <resource-id> --confirm
 FAT12-Modi `--repair`, `--repair-chains`, `--repair-short`,
 `--reclaim-orphans`, `--repair-loops`, `--repair-dir-loops` und
 `--repair-short-loops`, `--repair-crosslinks`, `--repair-dir-size` und
-`--repair-volume-label` benötigen jeweils `--confirm`, laufen ausschließlich im Storage-Dienst unter
+`--repair-volume-label` sowie `--repair-zero-files` benötigen jeweils
+`--confirm`, laufen ausschließlich im Storage-Dienst unter
 Maintenance-Lease und melden Erfolg erst nach Undo-Journal, Readback und
 sauberem Vollscan. Der Reclaim-Modus verwirft unerreichbare Inhalte
 ausdrücklich und ist keine Datenrettung. Crosslink-Reparatur bleibt gesperrt,
@@ -336,7 +338,9 @@ oder breite Zielhardwarequalifikation.
   der einzigen Sollkette getrennt; reine ungültige Unterverzeichnisgrößen
   werden nach vollständigem Inhaltsscan nullgesetzt. Reservierte Startcluster-
   und Größenfelder ansonsten gültiger Volume-Label-Einträge werden ebenfalls
-  ausschließlich auf null normalisiert. Echte Mehrfach-Crosslinks,
+  ausschließlich auf null normalisiert. Eindeutig besessene, normal
+  terminierte Restketten von Nullgrößendateien können bestätigt freigegeben
+  und ihre Startcluster nullgesetzt werden. Echte Mehrfach-Crosslinks,
   Orphan-Datenrettung, weitergehende Verzeichnis-, Journal-, Remap- und
   Defektsektorreparatur sowie der QEMU-Remountnachweis sind noch offen
 - reale FAT12-Power-Loss-/Reconnect-Matrix für VMware und Zielhardware

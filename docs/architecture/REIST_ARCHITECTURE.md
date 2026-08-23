@@ -1012,6 +1012,15 @@ erneuter Feldvalidierung im geleasten Sektor werden ausschließlich Startcluster
 und Größe auf null gesetzt; Labelname, Attribute, FAT und Daten bleiben
 unverändert. Undo-Journal, verifizierter Write und sauberer Vollscan sind auch
 hier Abschlussbedingungen.
+Reguläre Dateien der Größe null mit dennoch zugewiesener Kette werden als
+`CHAIN_EXCESS|DIRECTORY_INVALID` diagnostiziert. Der bestätigte
+`--repair-zero-files`-Pfad akzeptiert nur diese exakte Gesamtdiagnose, eine
+vollständige feste Kandidatenmenge und normal EOC-terminierte Cluster mit genau
+einer Referenz und keiner Pflichtreferenz. Nach gemeinsamer Undo-
+Journalisierung beider FAT-Spiegel und aller Directory-Sektoren werden nur
+diese Cluster freigegeben und der niedrige Startcluster nullgesetzt. Der
+frühere Inhalt gilt ausdrücklich als verworfen; Crosslinks, Loops und
+gemischte Diagnosen bleiben fail-closed.
 
 `device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
 Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht

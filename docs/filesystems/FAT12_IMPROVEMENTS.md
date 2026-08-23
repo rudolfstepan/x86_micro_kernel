@@ -89,6 +89,7 @@ C:\> CHKDSK --fat12 1 --repair-short-loops --confirm
 C:\> CHKDSK --fat12 1 --repair-crosslinks --confirm
 C:\> CHKDSK --fat12 1 --repair-dir-size --confirm
 C:\> CHKDSK --fat12 1 --repair-volume-label --confirm
+C:\> CHKDSK --fat12 1 --repair-zero-files --confirm
 FDISK
 ```
 
@@ -164,6 +165,14 @@ Größenwert nicht null ist. Der geleaste Rescan muss als einzige Diagnose
 `DIRECTORY_INVALID` und für jeden Fehler genau einen festen Kandidaten liefern.
 Nach Undo-Journalisierung des Directory-Sektors werden nur diese beiden Felder
 auf null gesetzt; Labelname, Attribute, FAT und Daten bleiben unverändert.
+`--repair-zero-files --confirm` behandelt reguläre Dateien mit Größe null und
+noch zugewiesener Clusterkette. Nur eine reine
+`CHAIN_EXCESS|DIRECTORY_INVALID`-Diagnose mit vollständiger Kandidatenabdeckung
+ist zulässig. Jeder Cluster muss genau einmal referenziert, von keiner
+Sollkette benötigt und normal EOC-terminiert sein. Beide FATs und alle
+Directory-Sektoren werden vorab gemeinsam journalisiert; danach wird die Kette
+freigegeben und der niedrige Startcluster null. Der alte Inhalt wird bewusst
+verworfen und nicht als Datenrettung ausgegeben.
 `FDISK.PRG` kann auf explizit freigegebenen, leeren ATA-/AHCI-Medien eine
 validierte MBR-Partition erzeugen. Eine Diskette bleibt eine partitionslose
 Superfloppy und wird von `FDISK` niemals partitioniert.
