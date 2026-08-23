@@ -271,9 +271,12 @@ und 10 verbindlich.
         - [x] Reine Schleifen regulärer Dateiketten bestätigt am aus der
           Dateigröße bestimmten Präfix beenden und ausschließlich den danach
           unerreichbaren, unmarkierten Schleifensuffix freigeben
+        - [x] Loopende Unterverzeichnisse über jeden eindeutigen Cluster
+          vollständig diagnostizieren und bei reiner Directory-Loop-Diagnose
+          ausschließlich den letzten Rücksprung durch EOC ersetzen
         - [ ] `CHKDSK.PRG` für transaktionale Reparatur überkreuzter
-          Clusterketten, Directory-/Kurz-Loops, Verzeichnisse,
-          Orphan-Datenrettung, Journal und Defektsektorkarte
+          Clusterketten, gleichzeitig kurzer Dateiloops, allgemeiner
+          Verzeichnisschäden, Orphan-Datenrettung, Journal und Defektsektorkarte
         - [x] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
           Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg
           kontrolliert remounten; Abbruch lässt das Medium konsistent oder
@@ -2561,7 +2564,9 @@ sie validieren Eingaben und senden versionierte Requests an den Storage-Dienst.
   Inhalte ausdrücklich, statt Eigentum zu raten. `--repair-loops --confirm`
   beendet bei einer reinen Loop-Diagnose jede ausreichend lange reguläre
   Dateikette am deklarierten Sollende und gibt nur ihren unmarkierten Suffix
-  frei. Crosslinks, Directory- oder gleichzeitig kurze Loops,
+  frei. `--repair-dir-loops --confirm` scannt jeden eindeutigen Cluster eines
+  loopenden Unterverzeichnisses einmal und ersetzt bei reiner Diagnose nur den
+  letzten Rücksprung durch EOC. Crosslinks, gleichzeitig kurze Dateiloops,
   Orphan-Datenrettung sowie allgemeine Verzeichnis-, Journal- und
   Remap-Reparatur bleiben offen.
 - `FORMAT.PRG` akzeptiert ausschließlich erkannte FDD-Ressourcen. Ohne

@@ -43,10 +43,12 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_SHORT_FILES", source)
         self.assertIn("X86OS_STORAGE_RECLAIM_FAT12_ORPHANS", source)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_LOOPS", source)
+        self.assertIn("X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_LOOPS", source)
         self.assertIn('"--repair-chains"', source)
         self.assertIn('"--repair-short"', source)
         self.assertIn('"--reclaim-orphans"', source)
         self.assertIn('"--repair-loops"', source)
+        self.assertIn('"--repair-dir-loops"', source)
         self.assertIn("x86os_storage_submit", source)
         self.assertIn("x86os_storage_collect", source)
         self.assertNotIn("x86os_storage_block_read", source)
@@ -73,13 +75,16 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_SHORT_FILES = 14", header)
         self.assertIn("STORAGE_REQUEST_RECLAIM_FAT12_ORPHANS = 15", header)
         self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_LOOPS = 16", header)
+        self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_LOOPS = 17",
+                      header)
         self.assertIn("X86OS_STORAGE_CHECK_FAT12 11U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_MIRROR 12U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_CHAINS 13U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_SHORT_FILES 14U", sdk)
         self.assertIn("X86OS_STORAGE_RECLAIM_FAT12_ORPHANS 15U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_LOOPS 16U", sdk)
-        self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_LOOPS", pool)
+        self.assertIn("X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_LOOPS 17U", sdk)
+        self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_LOOPS", pool)
         self.assertIn("request.operation >= STORAGE_REQUEST_CHECK_FAT12", syscall)
         self.assertIn("process->domain_profile.kind != "
                       "PROCESS_DOMAIN_MAINTENANCE", syscall)
@@ -117,6 +122,7 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("FAT12_MAX_CHAIN_REPAIRS 128U", service)
         self.assertIn("FAT12_MAX_SHORT_REPAIRS 128U", service)
         self.assertIn("FAT12_MAX_LOOP_REPAIRS 128U", service)
+        self.assertIn("FAT12_MAX_DIRECTORY_LOOP_REPAIRS 128U", service)
         self.assertIn("FAT12_MAX_DIRECTORY_REPAIR_SECTORS 64U", service)
         self.assertIn("fat12_cluster_owner[FAT12_CLUSTER_INDEX_CAPACITY]",
                       service)
@@ -211,6 +217,32 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("X86OS_FAT12_RESULT_LOOPS_REPAIRED", repair)
         self.assertIn("FAT12_JOURNAL_ACTIVE", repair)
         self.assertIn("FAT12_JOURNAL_CLEAN", repair)
+
+    def test_directory_loop_scan_and_repair_preserve_unique_clusters(self):
+        service = self.read("userspace/programs/storage_service.c")
+        scan = service[service.index("static int fat12_scan_subdirectory"):
+                       service.index("static int fat12_scan_chains")]
+        self.assertIn("local != X86OS_FAT12_RESULT_CHAIN_LOOP", scan)
+        self.assertIn("fat12_chain_seen[cluster] == fat12_seen_generation",
+                      scan)
+        self.assertIn("fat12_scan_directory_sector", scan)
+        repair = service[service.index(
+            "static int fat12_apply_directory_loop_repairs"):
+            service.index("static int fat12_apply_orphan_reclaim")]
+        self.assertIn("diagnosis != (int)X86OS_FAT12_RESULT_CHAIN_LOOP",
+                      repair)
+        self.assertIn("fat12_loop_issue_count != "
+                      "fat12_directory_loop_repair_count", repair)
+        self.assertIn("fat12_chain_seen[next] != fat12_seen_generation",
+                      repair)
+        self.assertIn("fat12_set_entry(fat12_repair_fat, cluster, 0x0FFFU)",
+                      repair)
+        self.assertNotIn("fat12_set_entry(fat12_repair_fat, cluster, 0U)",
+                         repair)
+        self.assertIn("fat12_record_old_mirror", repair)
+        self.assertIn("copy < 2U", repair)
+        self.assertIn("fat12_check_volume(resource, &layout) != 0", repair)
+        self.assertIn("X86OS_FAT12_RESULT_DIRECTORY_LOOPS_REPAIRED", repair)
 
 
 if __name__ == "__main__":

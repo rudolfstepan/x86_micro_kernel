@@ -44,6 +44,9 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sowie der erste
 10. bestätigte Reparatur reiner Schleifen in regulären Dateiketten, sofern die
     eindeutigen Cluster für die deklarierte Dateigröße ausreichen; der
     Sollpräfix bleibt erhalten und nur der Schleifensuffix wird freigegeben
+11. vollständiger einmaliger Scan aller eindeutigen Cluster loopender
+    Unterverzeichnisse und bestätigtes Ersetzen ausschließlich ihres letzten
+    Rücksprungs durch EOC
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen
@@ -73,6 +76,7 @@ C:\> CHKDSK --fat12 1 --repair-chains --confirm
 C:\> CHKDSK --fat12 1 --repair-short --confirm
 C:\> CHKDSK --fat12 1 --reclaim-orphans --confirm
 C:\> CHKDSK --fat12 1 --repair-loops --confirm
+C:\> CHKDSK --fat12 1 --repair-dir-loops --confirm
 FDISK
 ```
 
@@ -113,6 +117,13 @@ markiert diesen Sollpräfix fest begrenzt, setzt dessen letzten Cluster auf EOC
 und gibt danach ausschließlich unmarkierte Schleifencluster frei. Eine
 Directory-Schleife, eine gleichzeitig kurze Kette oder irgendeine weitere
 Diagnose verhindert die gesamte Transaktion.
+`--repair-dir-loops --confirm` setzt ebenfalls eine reine Loop-Diagnose voraus.
+Vor der Kandidatenfreigabe liest der Scanner jeden eindeutigen Cluster des
+betroffenen Unterverzeichnisses genau einmal und diagnostiziert dessen
+Einträge. Bei der Mutation wird erneut bewiesen, dass der letzte eindeutige
+Cluster auf einen bereits markierten Cluster derselben Kette zurückzeigt; nur
+dieser FAT-Eintrag wird auf EOC gesetzt. Kein Directory-Cluster wird
+freigegeben oder inhaltlich verändert.
 `FDISK.PRG` kann auf explizit freigegebenen, leeren ATA-/AHCI-Medien eine
 validierte MBR-Partition erzeugen. Eine Diskette bleibt eine partitionslose
 Superfloppy und wird von `FDISK` niemals partitioniert.
@@ -121,7 +132,7 @@ Superfloppy und wird von `FDISK` niemals partitioniert.
 
 - reale FDD-/VMware-Power-Loss- und Reconnect-Matrix über die bereits
   deterministisch geprüften Veröffentlichungsstufen
-- CHKDSK-Reparatur von Crosslinks, Directory- und zu kurzen Schleifen,
+- CHKDSK-Reparatur von Crosslinks, gleichzeitig zu kurzen Dateischleifen,
   allgemeinen Verzeichnisschäden, Journal, Remap- und Defektsektorkarte sowie
   Datenrettung von Orphans statt ihres expliziten Verwerfens
 - QEMU-Laufzeitnachweis für Maintenance-Lease, Unmount, FAT-Spiegel-Reparatur,

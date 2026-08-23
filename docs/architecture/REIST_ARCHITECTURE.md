@@ -968,6 +968,15 @@ gesetzt und der folgende Suffix nur bis vor einen markierten Präfixcluster
 freigegeben. Directory-Loops, kurze Loops und gemischte Diagnosen bleiben
 fail-closed. Beide FATs werden journalisiert und ein sauberer Vollscan bleibt
 Abschlussbedingung.
+Loopende Unterverzeichnisse werden nicht mehr von der Inhaltsdiagnose
+ausgenommen: Eine generation-spezifische Markierung lässt jeden eindeutigen
+Directory-Cluster genau einmal lesen und stoppt vor der Wiederholung. Der
+separate bestätigte Directory-Loop-Pfad ist nur zulässig, wenn danach die
+Gesamtdiagnose exakt `CHAIN_LOOP` lautet und jede Schleife ein Verzeichnis ist.
+Er validiert erneut, dass der letzte eindeutige Cluster auf den markierten
+Präfix zurückzeigt, und ersetzt ausschließlich diesen Rücksprung durch EOC.
+Directory-Daten und Clusterallokationen bleiben unverändert; beide FAT-Writes
+folgen demselben Undo-Journal- und Vollscanvertrag.
 
 `device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
 Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht
