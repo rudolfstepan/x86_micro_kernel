@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.3c-6f6q-chkdsk-directory-topology"
 
 [policy]
 one_package_per_run = true
@@ -1004,6 +1004,156 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "storage: clone empty FAT12 directory crosslinks"
+evidence = []
+
+[[packages]]
+id = "S0.3c-6f6q-chkdsk-directory-topology"
+status = "active"
+risk = "high"
+title = "Repair attributable FAT12 directory topology in one bounded operation"
+scope = "Replace the former sequence of directory micro-repairs with one append-only, explicitly confirmed CHKDSK operation for every bounded and unambiguously attributable directory crosslink: non-empty, multi-cluster, same-parent and cross-parent aliases. Determine the canonical parent from valid dot-dot topology, retain exactly one canonical entry, remove later aliases together with any strictly bound LFN slots, and scan the unique subtree once. Repair coupled dot self/parent fields only when their intended values are uniquely derivable. Journal every changed directory sector before mutation, revalidate all bound entries under the maintenance lease, flush, and require a completely clean rescan. Ambiguous parents, malformed chains, mixed file/directory ownership, capacity overflow or any unrelated diagnosis remain fail-closed before side effects. Preserve operation 27 and append the broader ABI operation."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/chkdsk.c",
+  "test/test_fat12_maintenance.py",
+  "test/test_fat12_tools.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md"
+]
+invariants = [
+  "the new operation is append-only, maintenance-domain restricted and reachable from CHKDSK only through an explicit repair flag plus --confirm",
+  "pre-lease and post-lease diagnosis contains only directory topology findings that the bounded descriptor set attributes completely",
+  "a canonical alias is selected from a valid dot-dot parent relation; zero or multiple parent matches, mixed regular-file ownership and descriptor overflow fail before writes",
+  "each unique directory chain and subtree is scanned once and deletion is limited to revalidated duplicate parent entries plus their strictly contiguous LFN slots",
+  "dot self and parent fields change only when the expected values are uniquely derivable from the canonical topology",
+  "every unique changed directory sector is undo-journaled before the first mutation and success requires flush plus a completely clean full rescan",
+  "no file payload, canonical directory chain, unrelated name, attribute, timestamp or FAT allocation changes"
+]
+targeted_tests = [
+  "python test/test_fat12_maintenance.py -v",
+  "python test/test_fat12_tools.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "the canonical parent cannot be derived uniquely from valid dot-dot topology",
+  "a multiply required cluster has mixed regular-file and directory ownership",
+  "the diagnosis includes an unattributed chain, FAT, mirror, orphan or media fault",
+  "repair would require cloning payload data, changing FAT allocation or exceeding fixed descriptor or journal capacity",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: repair bounded FAT12 directory topology"
+evidence = []
+
+[[packages]]
+id = "S0.3c-6f6r-chkdsk-orphan-salvage"
+status = "queued"
+risk = "high"
+title = "Salvage bounded FAT12 orphan chains"
+scope = "Implement one confirmed recovery transaction for every structurally valid, bounded orphan chain: create or reuse a validated standard-style FOUND.000 directory, publish deterministic FILEnnnn.CHK entries with provenance metadata available to CHKDSK, and preserve bytes instead of freeing them. Handle multiple chains in one fixed-capacity transaction; malformed, looping, ambiguous, capacity-exhausted or colliding cases fail closed before writes. Keep the explicit discard operation separate."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/chkdsk.c",
+  "test/test_fat12_maintenance.py",
+  "test/test_fat12_tools.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md"
+]
+invariants = [
+  "salvage is append-only, maintenance-domain restricted and requires an explicit CHKDSK repair flag plus --confirm",
+  "only complete valid orphan chains covered by fixed descriptors are published and no orphan cluster is freed",
+  "FOUND.000 and FILEnnnn.CHK naming is deterministic, collision checked and bounded",
+  "directory creation, recovered entries and every changed FAT or directory sector share one undo transaction",
+  "success requires readback, flush and a clean full rescan"
+]
+targeted_tests = [
+  "python test/test_fat12_maintenance.py -v",
+  "python test/test_fat12_tools.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "an orphan chain is looping, malformed, shared, ambiguous or exceeds fixed capacity",
+  "FOUND.000 cannot be created or reused without collision or topology ambiguity",
+  "the transaction exceeds journal or free-directory-entry capacity",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: salvage bounded FAT12 orphan chains"
+evidence = []
+
+[[packages]]
+id = "S0.3c-6f6s-fat12-persistence-finish"
+status = "queued"
+risk = "high"
+title = "Finish FAT12 journal remap defect-map and emulator recovery proof"
+scope = "Complete the FAT12 persistence boundary as one vertical package: version the on-media maintenance journal, add bounded bad-sector recording and remap policy without claiming transparent recovery beyond verified spare capacity, expose diagnosis and controlled repair in the Ring-3 tools, and automate the QEMU maintenance-lease/unmount/repair/flush/remount proof plus VMware power-loss/reconnect stages. Hardware execution remains a documented manual user acceptance item and is not required by the automated gate."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/chkdsk.c",
+  "userspace/programs/format.c",
+  "scripts/test-reist-runtime.ps1",
+  "scripts/test-reist-package.ps1",
+  "test/test_fat12_maintenance.py",
+  "test/test_fat12_tools.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md"
+]
+invariants = [
+  "persistent formats are append-only versioned and unknown versions mount read-only",
+  "journal recovery, bad-sector publication and remap consume fixed capacities and finite deadlines",
+  "unverified sectors never return to writable service and exhausted spare capacity degrades read-only",
+  "QEMU proves maintenance lease through controlled remount and VMware automation proves bounded reconnect without requiring external hardware",
+  "documentation distinguishes emulator evidence from the user's manual hardware acceptance"
+]
+targeted_tests = [
+  "python test/test_fat12_maintenance.py -v",
+  "python test/test_fat12_tools.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode storage-maintenance",
+  ".\\scripts\\test-reist-runtime.ps1 -Target vmware -Video vga -Mode storage-reconnect"
+]
+stop_conditions = [
+  "the on-media format cannot be extended append-only or recovered deterministically",
+  "a write path can bypass the lease, journal, readback, fence or finite deadline",
+  "bad-sector capacity exhaustion leaves the medium writable",
+  "a required production or automation file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: finish bounded FAT12 persistence recovery"
 evidence = []
 
 [[packages]]

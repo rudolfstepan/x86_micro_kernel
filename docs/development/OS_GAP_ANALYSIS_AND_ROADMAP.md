@@ -305,10 +305,18 @@ und 10 verbindlich.
         - [x] Reine Same-Parent-Crosslinks strikt leerer, einclusteriger
           Unterverzeichnisse durch verifizierte Kopie, korrigierten `.`-Self
           und atomare Parent-Umbindung trennen
-        - [ ] `CHKDSK.PRG` für nichtleere, mehrclusterige oder
-          parentübergreifende Directory-Crosslinks, allgemeine
-          Verzeichnisschäden jenseits der eng begrenzten Feldreparaturen,
-          Orphan-Datenrettung, Journal und Defektsektorkarte
+        - [ ] **S0.3c-6f6q gebündelt:** `CHKDSK.PRG` für alle eindeutig
+          attribuierbaren nichtleeren, mehrclusterigen, Same-Parent- und
+          parentübergreifenden Directory-Crosslinks sowie zusammengehörige
+          Verzeichnis-Topologiefelder; mehrdeutige Topologien bleiben
+          fail-closed
+        - [ ] **S0.3c-6f6r gebündelt:** Orphan-Datenrettung in einen begrenzten,
+          standardnahen `FOUND.000`-Namensraum mit Herkunftsnachweis statt
+          ausschließlichem Verwerfen
+        - [ ] **S0.3c-6f6s gebündelt:** persistenter Journal-/Remap-/
+          Defektkarten-Abschluss einschließlich QEMU-Maintenance-/Remount- und
+          automatisiertem VMware-Reconnect-Nachweis; reale Hardware bleibt
+          ausdrücklich manueller Nutzernachweis
         - [x] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
           Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg
           kontrolliert remounten; Abbruch lässt das Medium konsistent oder

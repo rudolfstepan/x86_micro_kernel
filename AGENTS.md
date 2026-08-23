@@ -57,6 +57,14 @@ Read only the material needed for the active package, in this order:
 The task file selects exactly one active package. Do not implement a later
 package in the same run.
 
+Package sizing defaults to the largest cohesive vertical slice that shares one
+failure model, authority boundary, rollback or persistence protocol and frozen
+acceptance gate. Do not split compatible ABI variants, media-layout variants or
+small field cases into separate packages merely for bookkeeping. Independent
+failure domains, destructive recovery policies, persistent formats and
+hardware acceptance boundaries remain separate even when combining them would
+reduce the package count.
+
 ## Autonomous package protocol
 
 1. Require a clean worktree before candidate implementation. An interactive
@@ -67,9 +75,10 @@ package in the same run.
 2. Read the active package, its listed files and only the relevant doc sections.
 3. Confirm the failure mode and add or tighten a regression test first when
    practical.
-4. Make the smallest complete change within `allowed_files`. If another source
-   file is required, stop and report the architectural reason; do not expand
-   scope silently.
+4. Make the smallest complete implementation that closes the active cohesive
+   vertical slice within `allowed_files`; avoid artificial micro-packages. If
+   another source file is required, stop and report the architectural reason;
+   do not expand scope silently.
 5. Do not run the listed acceptance gates inside the nested agent sandbox.
    Perform only bounded lightweight inspections that do not duplicate a gate.
    The outer runner executes every frozen gate exactly once in a separate
