@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.5a3b-stage2-rsa-pss"
 
 [policy]
 one_package_per_run = true
@@ -3837,4 +3837,69 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "storage: add confirmed FAT12 mirror repair"
+evidence = []
+
+[[packages]]
+id = "S0.5a3b-stage2-rsa-pss"
+status = "active"
+risk = "high"
+title = "Bind RSA-PSS kernel authentication into BIOS stage 2"
+scope = "Advance the append-only BIOS boot manifest to signed version 3, embed the exact 256-byte RSA-2048-PSS/SHA-256 kernel signature in its checksummed sector, and bind the pinned research public modulus plus exponent 65537 into stage 2. Stage 2 verifies EMSA-PSS with MGF1-SHA-256 and a 32-byte salt after hashing the exact kernel but before ELF parsing or publication. Both HDD and rescue-floppy builders require the detached signature, host validation rejects malformed signed manifests, and QEMU proves that a signature mutation with a repaired additive manifest checksum fails closed before BOOT_OK. This establishes kernel authentication only relative to the selected BIOS stage-2 trust boundary; immutable firmware anchoring, Secure Boot and release-key custody remain excluded."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "arch/x86/boot/bios/stage1_mbr.asm",
+  "arch/x86/boot/bios/stage1_floppy.asm",
+  "arch/x86/boot/bios/stage2_bios.asm",
+  "Makefile",
+  "scripts/build-windows.ps1",
+  "scripts/create_native_boot_image.py",
+  "scripts/create_floppy_boot_image.py",
+  "scripts/validate_boot_manifest.py",
+  "scripts/run_qemu_boot_integrity.py",
+  "safety/boot_trust_policy.json",
+  "test/test_boot_signature.py",
+  "test/test_boot_manifest.py",
+  "test/test_boot_sha256.py",
+  "test/test_native_boot_image.py",
+  "test/test_floppy_boot_image.py",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/BOOTABLE_DISK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "manifest v3 keeps all existing field offsets, requires header size 336 and signed flag bit zero while retaining the whole-sector additive checksum",
+  "both image builders require exactly one externally created 256-byte signature over the exact kernel bytes and embed it without transforming it",
+  "stage 1 accepts only the exact signed manifest version and header size before loading stage 2",
+  "stage 2 rejects a zero, out-of-range or invalid signature and implements RFC 8017 RSA-2048-PSS with exponent 65537, SHA-256, MGF1-SHA-256 and an exact 32-byte salt using only fixed storage and bounded loops",
+  "the compiled RSA modulus is regression-bound to the policy-pinned research public key and no key or algorithm is selected from attacker-controlled manifest data",
+  "signature verification completes before ELF parsing, segment loading, framebuffer publication or kernel entry",
+  "kernel SHA-256 remains independently compared with the manifest digest and CRC32 remains diagnostic rather than an authenticity primitive",
+  "the negative QEMU image mutates only the embedded signature, repairs the additive checksum and must stop with the signature-specific loader error before BOOT_OK",
+  "the result claims no immutable firmware root, UEFI Secure Boot, release-key protection, anti-rollback or physical target qualification"
+]
+targeted_tests = [
+  "python test/test_boot_signature.py -v",
+  "python test/test_boot_manifest.py -v",
+  "python test/test_boot_sha256.py -v",
+  "python test/test_native_boot_image.py -v",
+  "python test/test_floppy_boot_image.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode boot-integrity"
+]
+stop_conditions = [
+  "stage 2 would authenticate a key, signature or algorithm selected from the mutable manifest",
+  "signature verification would occur after ELF parsing or any kernel-controlled side effect",
+  "the fixed RSA implementation would require heap allocation, unbounded input-dependent work or BIOS/VFS access beyond the existing exact kernel and manifest reads",
+  "the signed manifest cannot remain within one checksummed 512-byte sector or either stage-1 loader exceeds its fixed boot-sector budget",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "boot: authenticate kernel in BIOS stage 2"
 evidence = []
