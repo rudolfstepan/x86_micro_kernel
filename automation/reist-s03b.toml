@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.5b4-symmetric-inactive-slot-update"
 
 [policy]
 one_package_per_run = true
@@ -259,6 +259,66 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "feat: add partition and FAT32 provisioning"
+evidence = []
+
+[[packages]]
+id = "S0.5b4-symmetric-inactive-slot-update"
+status = "active"
+risk = "high"
+title = "Update and confirm either inactive BIOS boot slot"
+scope = "Extend the REIST-specific boot-control format append-only to version 2 so a confirmed A or B installation can update only its opposite inactive slot. Version-1 records remain readable with their exact legacy A-to-pending-B semantics. The offline updater must validate ELF and the policy-bound RSA-PSS signature before creating output, durably write and read back the inactive kernel and manifest, revalidate the complete image, then publish one opposite pending slot through the older/invalid control copy first. Stage 2 must persist the bounded attempt decrement before selecting either trial, restore the previously confirmed active slot before trial fallback, and retain the existing confirmed-slot fallback. The read-only kernel handoff and generation-bound Ring-3 storage acknowledgement accept only selected equals pending and active differs from pending, and confirmation sets the corresponding successful-mask bit using the existing flush/read-back transaction. A bounded persistent QEMU sequence must prove A-to-B confirmation, B-to-A confirmation, stable A reboot, and the existing confirmed-B rollback behavior. This does not claim anti-rollback, immutable recovery, Secure Boot or update distribution."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "arch/x86/boot/bios/stage2_bios.asm",
+  "kernel/init/boot_health.c",
+  "scripts/create_native_boot_image.py",
+  "scripts/validate_boot_manifest.py",
+  "scripts/update_native_boot_slot.py",
+  "scripts/run_qemu_boot_success.py",
+  "scripts/test-reist-runtime.ps1",
+  "userspace/programs/storage_service.c",
+  "test/test_boot_ab.py",
+  "test/test_boot_control.py",
+  "test/test_boot_manifest.py",
+  "test/test_boot_success.py",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "boot-control version 1 remains readable and continues to permit only confirmed A with pending B",
+  "boot-control version 2 permits pending A or B only when it is the exact opposite of the confirmed active slot",
+  "the updater writes only the inactive slot and validates ELF plus the pinned RSA-PSS policy before creating an output image",
+  "kernel and manifest writes are durable and read back before complete image validation and before either control copy publishes pending authority",
+  "both control copies publish one identical next sequence with the older or invalid copy committed first",
+  "Stage 2 persists the attempt decrement before loading either pending candidate and persists rollback to the prior confirmed active slot before fallback",
+  "the handoff remains read-only and fixed-size while Ring 3 confirms only selected equals pending and dynamically sets that slot's successful bit",
+  "sequence exhaustion, same-slot pending state, malformed versions, failed readback and ambiguous control copies fail closed",
+  "no new syscall, kernel media-write authority, anti-rollback claim or runtime update authority is introduced"
+]
+targeted_tests = [
+  "python test/test_boot_control.py -v",
+  "python test/test_boot_success.py -v",
+  "python test/test_boot_manifest.py -v",
+  "python test/test_boot_ab.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode boot-success -Target qemu -Video vga"
+]
+stop_conditions = [
+  "a power-loss boundary can publish pending state before the complete inactive candidate is revalidated",
+  "a version-1 record changes meaning or a pending slot can equal the active slot",
+  "a trial failure can execute the previous active candidate before rollback state is durable",
+  "confirmation can accept a stale sequence, mismatched selected slot or unrelated service generation",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "boot: support symmetric inactive-slot updates"
 evidence = []
 
 [[packages]]
