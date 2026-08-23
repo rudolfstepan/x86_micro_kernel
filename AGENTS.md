@@ -7,6 +7,15 @@ system. Preserve stability, isolation, diagnosability and recoverability ahead
 of throughput or feature count. Do not claim certification or fail-operational
 behavior that has not been demonstrated on the target system.
 
+## Interactive execution directive
+
+For this repository, the interactive Codex session performs implementation,
+verification, queue transitions and local commits itself in the visible main
+worktree. Do not invoke `run-reist-autonomous`, `codex exec`, subagents,
+reviewer agents or any other nested agent/orchestrator unless the user
+explicitly revokes this directive. This does not weaken package scope, frozen
+gates, clean-worktree checks, bounded execution or the prohibition on pushing.
+
 ## Highest architecture rule
 
 The microkernel is the protected failure-containment boundary. Ring 0 contains

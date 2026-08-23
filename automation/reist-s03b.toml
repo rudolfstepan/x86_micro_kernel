@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "A0.1-vmware-host-verifier"
+active_id = "S0.3c-6f5-vmware-fdd-reconnect"
 
 [policy]
 one_package_per_run = true
@@ -2578,7 +2578,7 @@ evidence = [
 
 [[packages]]
 id = "A0.1-vmware-host-verifier"
-status = "active"
+status = "cancelled"
 risk = "high"
 title = "Whitelist bounded VMware host gates in the autonomous verifier"
 scope = "Teach the outer verifier to execute only explicitly named VMware Workstation batch gates in the interactive Windows host context because VIX cannot start a VM inside the Codex workspace sandbox. Preserve :workspace sandboxing for every other gate, reject arbitrary commands and arguments, retain one shared finite package deadline, capture the same compact logs and stop on the first failure. Freeze the exception in the repository agent contract and regression tests before the next VMware FDD reconnect package uses it."
@@ -2616,7 +2616,7 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-6f5-vmware-fdd-reconnect"
-status = "queued"
+status = "active"
 risk = "high"
 title = "Automate VMware floppy disconnect and safe reintegration"
 scope = "Close the remaining S0.3c-6f5 VMware reconnect evidence gap. Boot the freshly generated disposable VMware package from HDD with a separate deterministic FAT12 test image attached as floppy0, launch the existing Ring-3 GTEST FDD_HOTPLUG workflow, disconnect and reconnect the named virtual floppy through VMware VIX, and require ordered disconnect detection, bounded media requalification, successful HOTPLUG.TXT reread, TEST_OK and a returned Ring-3 shell without panic. Keep physical-media and power-loss claims excluded."
