@@ -4060,6 +4060,8 @@ allowed_files = [
   "test/test_boot_sha256.py",
   "test/test_native_boot_image.py",
   "test/test_reist_storage_service.py",
+  "test/test_reist_probe_domain.py",
+  "test/test_reist_wcet.py",
   "test/test_system_layout.py",
   "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
   "docs/architecture/REIST_ARCHITECTURE.md",
