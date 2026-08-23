@@ -8,6 +8,7 @@ import hashlib
 import os
 import shutil
 import struct
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -34,6 +35,7 @@ try:
         validate_image,
     )
     from scripts.verify_boot_signature import verify_signature
+    from scripts.verify_boot_update_bundle import verify_update_bundle
 except ModuleNotFoundError:
     from create_native_boot_image import (
         BOOT_CONTROL_ATTEMPT_LIMIT,
@@ -57,6 +59,7 @@ except ModuleNotFoundError:
         validate_image,
     )
     from verify_boot_signature import verify_signature
+    from verify_boot_update_bundle import verify_update_bundle
 
 
 BoundaryHook = Callable[[str, Path], None]
@@ -215,21 +218,63 @@ def update_inactive_slot(
         raise ValueError("inactive pending slot was not published atomically")
 
 
+def update_inactive_slot_from_bundle(
+        source_image: Path,
+        bundle_path: Path,
+        output_image: Path,
+        policy_path: Path,
+        openssl: Path,
+        root: Path,
+        boundary_hook: BoundaryHook | None = None) -> None:
+    verified = verify_update_bundle(bundle_path, policy_path, openssl, root)
+    with tempfile.TemporaryDirectory(prefix="reist-update-apply-") as directory:
+        kernel_path = Path(directory) / "kernel.bin"
+        signature_path = Path(directory) / "kernel.bin.sig"
+        kernel_path.write_bytes(verified.kernel)
+        signature_path.write_bytes(verified.signature)
+
+        def preverified(
+                artifact: Path, signature: Path, _policy: Path,
+                _openssl: Path, _root: Path) -> str:
+            if artifact.read_bytes() != verified.kernel or \
+                    signature.read_bytes() != verified.signature:
+                raise ValueError("verified bundle extraction changed")
+            return verified.kernel_sha256
+
+        update_inactive_slot(
+            source_image, kernel_path, signature_path, output_image,
+            policy_path, openssl, root, verifier=preverified,
+            boundary_hook=boundary_hook,
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", type=Path, required=True)
-    parser.add_argument("--kernel", type=Path, required=True)
-    parser.add_argument("--signature", type=Path, required=True)
+    parser.add_argument("--kernel", type=Path)
+    parser.add_argument("--signature", type=Path)
+    parser.add_argument("--bundle", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--policy", type=Path, required=True)
     parser.add_argument("--openssl", type=Path, default=Path("openssl"))
     parser.add_argument("--root", type=Path, default=Path.cwd())
     args = parser.parse_args()
+    if args.bundle is None and (args.kernel is None or args.signature is None):
+        parser.error("either --bundle or both --kernel and --signature are required")
+    if args.bundle is not None and \
+            (args.kernel is not None or args.signature is not None):
+        parser.error("--bundle cannot be combined with --kernel or --signature")
     try:
-        update_inactive_slot(
-            args.image, args.kernel, args.signature, args.output,
-            args.policy, args.openssl, args.root,
-        )
+        if args.bundle is not None:
+            update_inactive_slot_from_bundle(
+                args.image, args.bundle, args.output, args.policy,
+                args.openssl, args.root,
+            )
+        else:
+            update_inactive_slot(
+                args.image, args.kernel, args.signature, args.output,
+                args.policy, args.openssl, args.root,
+            )
         info = validate_image(args.output, "hdd")
     except (OSError, ValueError) as error:
         print(f"BOOT UPDATE FAIL: {error}")

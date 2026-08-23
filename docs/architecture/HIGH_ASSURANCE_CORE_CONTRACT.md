@@ -112,6 +112,17 @@ oder B bootet danach direkt; ein bestätigter B-Fehler persistiert weiterhin
 zuerst den bewährten A-Fallback. Der Kernel besitzt weiterhin keine Autorität zum Schreiben dieser
 Sektoren.
 
+Ein hostseitiges REIST-Offline-Update-Bundle v1 kapselt genau einen bereits
+signierten ELF32-Kernel in einem festen 512-Byte-Header und höchstens 3008
+Payload-Sektoren. Producer und Consumer besitzen getrennte Strukturparser.
+Exakte Länge, Nullflags/-reserven, CRC32, SHA-256, lokal gepinnter SPKI-Digest
+und RSA-2048-PSS nach RFC 8017 müssen vor Erzeugung eines Update-Images gültig
+sein. Das Bundle enthält bewusst keine Slot-, Sequenz-, Versuchszähler- oder
+Rollbackautorität; diese bleibt beim validierten Boot-Control-Zustand und dem
+bestehenden transaktionalen Updater. Das eingeschränkte Binärformat ist kein
+TUF-/Uptane-Kompatibilitätsclaim und ersetzt weder vertrauenswürdige
+Versionsmetadaten noch einen unveränderlichen Recovery-Anker.
+
 Die Signaturstufe verwendet RSA-2048-PSS/SHA-256 gemäß RFC 8017 mit
 MGF1-SHA-256 und exakt 32 Byte Salt. Die feste Research-Policy pinnt
 Algorithmusparameter und den SHA-256-Fingerprint des DER-

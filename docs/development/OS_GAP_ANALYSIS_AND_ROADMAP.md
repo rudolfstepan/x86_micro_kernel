@@ -427,6 +427,9 @@ und 10 verbindlich.
     - [x] S0.5b4 Append-only Boot-Control v2 und atomarer Update-/
       Bestätigungspfad für den jeweils inaktiven Slot A oder B bei erhaltener
       v1-Lesesemantik
+    - [x] S0.5b5 Fest begrenztes Offline-Update-Bundle mit unabhängigem
+      Strukturparser, policy-gepinnter RSA-PSS-Prüfung und Nutzung des
+      bestehenden atomaren A/B-Pfads in beiden Richtungen
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
 
 #### Funktionsroadmap nach dem S0-Gate
@@ -1399,7 +1402,16 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
   verifizierten Writes und heilt eine benachbarte Kopie. QEMU weist dauerhaften
   B-Neustart und persistenten A-Rollback nach beschädigter bestätigter
   B-Signatur nach. A ist nun ebenfalls atomar als inaktiver Slot aktualisierbar.
-  Updateverteilung, Recovery-Image und Anti-Rollback bleiben offen.
+- [x] Ein festes REIST-Offline-Bundle v1 transportiert genau einen signierten
+  ELF32-Kernel in einem CRC-geschützten 512-Byte-Header plus begrenztem
+  Payload. Ein vom Erzeuger unabhängiger Parser verwirft Größenabweichungen,
+  Nachlaufdaten, unbekannte Algorithmen, Reserven, Digest-, Policy- und
+  Signaturfehler, bevor der bestehende inaktive Slot beschrieben wird. Das
+  QEMU-A/B-Gate verwendet diesen Consumer in beiden Richtungen. Weil das
+  Bundle weder Rollen-/Expiry-Metadaten noch eine vertrauenswürdige monotone
+  Version trägt, wird keine TUF-/Uptane-Kompatibilität oder Anti-Rollback-
+  Eigenschaft behauptet. Online-Verteilung, Recovery-Image, Release-Key-
+  Verwahrung und Anti-Rollback bleiben offen.
 - Sicherheitsrelevanten Zustand transaktional, checksummiert, versioniert und
    redundant speichern; Stromausfall an jeder Commitstelle injizieren.
 - Verifizierten Boot, signierte Artefakte, reproduzierbare Builds, Provenienz

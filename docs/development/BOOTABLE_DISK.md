@@ -75,8 +75,9 @@ zuerst und verifiziert jeden BIOS-EDD-Schreibvorgang durch erneutes Lesen.
 
 `scripts/update_native_boot_slot.py` erzeugt immer ein neues Output-Image,
 verifiziert Kernel und RSA-PSS-Signatur vor der Kopie, schreibt ausschließlich
-Kernel/Manifest B und veröffentlicht erst danach den Pending-Record. Ein
-Pending-B-Start wird vor der Kernelprüfung persistent dekrementiert. Nach
+Kernel und Manifest des jeweils inaktiven Slots A oder B und veröffentlicht
+erst danach den Pending-Record. Ein Pending-Start wird vor der Kernelprüfung
+persistent dekrementiert. Nach
 vollständiger Manifest-, Digest-, Signatur- und ELF-Prüfung schreibt Stage 2
 einen CRC-geschützten 64-Byte-Handoff nach `0x4E00`. Der Kernel kopiert und
 validiert ihn vor der Speicherverwaltung, ordnet die feste Geometrie genau
@@ -110,8 +111,20 @@ sind nicht durch Firmware, TPM oder einen unveränderlichen ROM-Anker gebunden.
 Ein Angreifer mit Schreibzugriff könnte daher den Loader samt Schlüsselanker
 ersetzen. Secure Boot, Anti-Rollback und eine vollständige kryptografische
 Firmware-Vertrauenskette bleiben ausdrücklich nicht implementiert.
-Noch nicht implementiert sind Updateverteilung, Update von B zurück nach A,
-unveränderliches Recovery-Image, Release-Key-Verwahrung und Anti-Rollback.
+`scripts/create_boot_update_bundle.py` erzeugt für die Offline-Verteilung ein
+festes `.rup`-Bundle. Sein 512-Byte-v1-Header enthält exakte Größen,
+Algorithmus-ID, Kernel-SHA-256, die feste 256-Byte-Signatur, den gepinnten
+SPKI-SHA-256 und CRC32; der ELF-Payload ist auf die 3008 Sektoren eines Slots
+begrenzt. `scripts/verify_boot_update_bundle.py` implementiert einen vom
+Erzeuger getrennten Strukturparser und lehnt unbekannte Felder, Truncation,
+Nachlaufdaten sowie Digest-, Policy- oder Signaturfehler ab. Erst danach darf
+`update_native_boot_slot.py --bundle ...` den vorhandenen atomaren
+Inactive-Slot-Pfad verwenden. Das Bundle enthält keine Slotwahl oder
+Rollbackautorität.
+
+Noch nicht implementiert sind Online-Updateverteilung, TUF-/Uptane-Rollen und
+Expiry, unveränderliches Recovery-Image, Release-Key-Verwahrung und
+Anti-Rollback.
 
 ## Root-Volume
 

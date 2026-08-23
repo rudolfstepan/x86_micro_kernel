@@ -144,7 +144,7 @@ anschließenden normalen Ring-3-Fortschritt bis `TEST_OK` nach. Daraus folgt
 keine Zielhardware-WCET- oder Hardwarequalifikationsaussage.
 
 S0.5 umfasst nun die abgeschlossenen Pakete `S0.5a1`, `S0.5a2`, `S0.5a3a`,
-`S0.5a3b`, `S0.5b1`, `S0.5b2`, `S0.5b3` und `S0.5b4`. Die letzten vier Pakete ergänzen
+`S0.5a3b`, `S0.5b1`, `S0.5b2`, `S0.5b3`, `S0.5b4` und `S0.5b5`. Die letzten fünf Pakete ergänzen
 die redundante Bootstufe, deren transaktionalen Pending-Zustand und das
 Ring-3-Erfolgs-Acknowledge. Das native
 BIOS-Manifest v3 enthält SHA-256 und die
@@ -205,8 +205,19 @@ der generationsgebundene Ring-3-Storage-Dienst bestätigt nur `selected ==
 pending != active` und validiert dabei das tatsächlich ausgewählte Manifest.
 Hostseitige Power-Loss-Matrizen decken beide Richtungen ab; der persistente
 QEMU-Lauf bestätigt B, aktualisiert danach A, bestätigt A und erhält den
-bestehenden Rollback eines beschädigten bestätigten B. Updateverteilung,
-unveränderliches Recovery und Anti-Rollback bleiben ausdrücklich offen.
+bestehenden Rollback eines beschädigten bestätigten B.
+
+`S0.5b5` ergänzt die hostseitige Offline-Verteilung als festes binäres
+REIST-Update-Bundle v1. Sein 512-Byte-Header bindet exakte Gesamt-/Kernelgröße,
+RSA-PSS/SHA-256-Algorithmus, Kernel-Digest, 256-Byte-Signatur und den lokal
+gepinnten SPKI-Fingerprint; Flags und Reserven müssen null sein, CRC32 erkennt
+Transportkorruption. Der Producer prüft ELF, Policy und Signatur vor atomarem
+Publish. Ein strukturell unabhängiger Consumer begrenzt das gesamte Bundle auf
+die feste Slotkapazität, verwirft Truncation und Nachlaufdaten und authentifiziert
+erneut, bevor der bestehende A/B-Updater ein Output-Image erzeugen darf. Der
+persistente QEMU-Lauf nutzt dasselbe Bundle für A nach B und B nach A.
+Online-Verteilung, TUF-/Uptane-Metadaten, unveränderliches Recovery,
+Release-Key-Verwahrung und Anti-Rollback bleiben ausdrücklich offen.
 
 `S0.3c-admin1` stellt sichere Storage-Operationen (`device down/up`, `mount`,
 `umount`) und einen festen, integritätsgeprüften 224-KiB-RAM-Rescue-Pool mit

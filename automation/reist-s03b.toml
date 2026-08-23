@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.5b5-offline-update-bundle"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -263,7 +263,7 @@ evidence = []
 
 [[packages]]
 id = "S0.5b5-offline-update-bundle"
-status = "active"
+status = "done"
 risk = "high"
 title = "Distribute authenticated offline boot-update bundles"
 scope = "Add a fixed, bounded REIST offline update-bundle v1 for transporting exactly one already RSA-2048-PSS/SHA-256-authenticated ELF32 kernel into the existing inactive-slot transaction. The 512-byte header carries only format geometry, exact total and kernel sizes, algorithm identifier, kernel SHA-256, the fixed 256-byte signature, the pinned SPKI SHA-256 and a corruption-detecting CRC32; all reserved bytes and flags are zero and trailing data is rejected. A producer must validate ELF, policy and signature before atomically publishing a bundle. A structurally independent consumer reparses every field, enforces the fixed slot capacity, validates the locally pinned policy key and RSA-PSS signature, and only then invokes the existing power-loss-safe updater. Existing kernel/signature updater arguments remain compatible. The persistent QEMU A-to-B and B-to-A sequence must use the bundle consumer. This host-side transport is deliberately not TUF/Uptane-compatible metadata, online distribution, release-key custody, anti-rollback or immutable recovery."

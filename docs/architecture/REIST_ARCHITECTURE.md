@@ -147,8 +147,18 @@ sondern veröffentlicht den validierten Status mit append-only Syscall 117 erst
 nach `BOOT_OK` an die generationgebundene Ring-3-Storage-Domäne. Diese liest
 beide Records unabhängig zurück und bestätigt exakt den ausgewählten Pending-
 Slot als neuen Active-Slot mit älterer Kopie, Barriere und Read-back zuerst.
-Bestätigtes A oder B ist persistent;
-ein späterer B-Prüffehler schreibt den A-Rollback vor A. Updateverteilung,
+Bestätigtes A oder B ist persistent; ein späterer B-Prüffehler schreibt den
+A-Rollback vor A.
+
+Für hostseitige Offline-Verteilung existiert ein festes REIST-Update-Bundle
+v1 statt eines komplexen Archivs. Der 512-Byte-Header und ein auf 3008 Sektoren
+begrenzter ELF32-Payload tragen ausschließlich Geometrie, RSA-PSS/SHA-256-
+Algorithmus-ID, Kernel-SHA-256, feste Signatur, lokal gepinnten SPKI-Digest und
+CRC32. Producer und strukturell unabhängiger Consumer prüfen das Format
+getrennt; erst lokale Policy- und Signaturprüfung erteilen dem vorhandenen
+inaktiven Slot-Updater Datenautorität. Slot, Boot-Control-Sequenz, Versuche und
+Rollbackpolitik stammen nie aus dem Bundle. Das ist bewusst kein TUF- oder
+Uptane-Metadatenmodell: Online-Verteilung, Rollen/Expiry, Release-Key-Verwahrung,
 unveränderliches Recovery-Image und Anti-Rollback fehlen weiterhin.
 
 Der entscheidende nächste Architekturwechsel ist damit ausdrücklich:

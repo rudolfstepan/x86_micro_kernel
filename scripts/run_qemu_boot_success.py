@@ -10,12 +10,14 @@ import subprocess
 from pathlib import Path
 
 try:
+    from scripts.create_boot_update_bundle import create_update_bundle
     from scripts.run_qemu_smoke import qemu_command
-    from scripts.update_native_boot_slot import update_inactive_slot
+    from scripts.update_native_boot_slot import update_inactive_slot_from_bundle
     from scripts.validate_boot_manifest import validate_image as validate_boot_image
 except ModuleNotFoundError:
+    from create_boot_update_bundle import create_update_bundle
     from run_qemu_smoke import qemu_command
-    from update_native_boot_slot import update_inactive_slot
+    from update_native_boot_slot import update_inactive_slot_from_bundle
     from validate_boot_manifest import validate_image as validate_boot_image
 
 
@@ -105,9 +107,14 @@ def main() -> int:
 
     transcripts: list[str] = []
     try:
-        update_inactive_slot(
-            args.image, args.kernel, args.signature, args.output,
-            args.policy, args.openssl, args.root,
+        bundle = args.output.with_suffix(".rup")
+        create_update_bundle(
+            args.kernel, args.signature, bundle, args.policy,
+            args.openssl, args.root,
+        )
+        update_inactive_slot_from_bundle(
+            args.image, bundle, args.output, args.policy,
+            args.openssl, args.root,
         )
         initial = validate_boot_image(args.output, "hdd")
         if initial.pending_slot != 1 or initial.attempts_remaining != 2:
@@ -131,9 +138,9 @@ def main() -> int:
         if stable.boot_control_sequence != confirmed.boot_control_sequence:
             raise ValueError("confirmed B reboot unexpectedly mutated control")
 
-        update_inactive_slot(
-            args.output, args.kernel, args.signature, args.reverse_output,
-            args.policy, args.openssl, args.root,
+        update_inactive_slot_from_bundle(
+            args.output, bundle, args.reverse_output, args.policy,
+            args.openssl, args.root,
         )
         reverse_initial = validate_boot_image(args.reverse_output, "hdd")
         if (reverse_initial.active_slot, reverse_initial.pending_slot,

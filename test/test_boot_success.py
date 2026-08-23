@@ -103,6 +103,9 @@ class BootSuccessContractTests(unittest.TestCase):
         self.assertIn("BOOT_CONTROL_CONFIRMED_B_ROLLBACK_A", runner)
         self.assertIn("BOOT_CONTROL_PENDING_A attempts=1", runner)
         self.assertIn("reverse-output", runner)
+        self.assertIn("create_update_bundle", runner)
+        self.assertIn("update_inactive_slot_from_bundle", runner)
+        self.assertNotIn("update_inactive_slot(\n", runner)
         self.assertIn("validate_boot_image", runner)
 
 
