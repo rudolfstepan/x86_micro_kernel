@@ -1171,6 +1171,7 @@ allowed_files = [
   "arch/x86/cpu/syscall.asm",
   "arch/x86/include/sys.h",
   "kernel/proc/process.c",
+  "kernel/proc/process.h",
   "kernel/sched/scheduler.h",
   "kernel/sched/scheduler.c",
   "kernel/syscall/syscall_table.c",
@@ -1190,6 +1191,7 @@ allowed_files = [
   "docs/development/PROJECT_STATUS.md"
 ]
 invariants = [
+  "the append-only syscall remains representable by the fixed default-deny domain bitmap and is granted only to the supervised probe profile",
   "timing diagnostics never allocate block or influence scheduling and authority decisions",
   "cycle samples counters maxima and clock anomalies are fixed-size saturating and IRQ-safe",
   "only a nonblocking diagnostic INT-80 path is timed so sleeps waits and off-CPU intervals cannot contaminate the baseline",
