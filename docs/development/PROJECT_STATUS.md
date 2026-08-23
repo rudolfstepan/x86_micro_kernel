@@ -255,6 +255,9 @@ seine vorhandenen Inode-Zeiten, bleibt für `touch` jedoch read-only.
 
 Für explizit markierte REIST-FAT12-Medien sind umgesetzt:
 
+- zentrale Schreibzulassung nach erfolgreicher Journal-, Remap- und
+  Replikatvalidierung; fremde FAT12-Medien bleiben lesbar, aber VFS-, FAT- und
+  Sektormutationen werden vor der ersten Zustandsänderung abgewiesen
 - verifiziertes redundantes Undo-Journal und Recovery vor Metadatennutzung
 - begrenzte Defektbestätigung, `0xFF7`-Markierung und redundante Remaptabelle
 - persistente Replikate für die feste Liste kritischer 8.3-Dateien
@@ -444,8 +447,8 @@ oder breite Zielhardwarequalifikation.
 - die reale FAT12-Power-Loss-/Reconnect-Matrix auf Zielhardware bleibt eine
   manuelle Benutzerabnahme; VMware-Reconnect ist automatisiert, ersetzt diese
   Hardwareevidenz aber nicht
-- journalisiertes Schreiben für EXT2, fremdes FAT12 und weitere Backends;
-  fremdes FAT32 ist bis zu einem nachgewiesenen Vertrag bewusst read-only
+- journalisiertes Schreiben für EXT2 und weitere Backends; fremde FAT12- und
+  FAT32-Medien sind bis zu einem nachgewiesenen Vertrag bewusst read-only
 - unabhängige Supervisor-, Fence- und Failover-Hardware
 - breite reale AHCI-/PCI-IDE-/PS/2-/BIOS-Kompatibilitätsmatrix
 - allgemeiner USB/xHCI-, Composite-HID-, Mass-Storage- und Hotplug-Lebenszyklus

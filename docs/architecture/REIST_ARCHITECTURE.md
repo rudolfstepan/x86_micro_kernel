@@ -946,7 +946,9 @@ dessen Erschöpfung endet `PROBING` diagnostizierbar in `ONLINE_RO` oder
 S0.3c-6f4 liefern für explizit markierte
 REIST-FAT12-Medien Undo-Journal, Remap, kritische Replikate und geordnete
 Dateitransaktionen. S0.3c-6f5 ergänzt die deterministische Persistenz-
-Fehlermatrix. S0.3c-hw11 begrenzt die physische SATA-Hotplug-Reintegration und
+Fehlermatrix. S0.3c-6f8 sperrt fremde FAT12-Medien vor jeder VFS-, FAT- oder
+Sektormutation, ohne ihre kompatible Lektüre oder ihr Medium zu verändern.
+S0.3c-hw11 begrenzt die physische SATA-Hotplug-Reintegration und
 ergänzt deterministische QEMU-AHCI-Backend-Fault-Injection. S0.3c-admin1
 ergänzt capability-gebundene Storage-Administration; S0.3c-admin2 ergänzt
 statische Komponenten-Lifecycle-Steuerung. S0.3c-layout1 ordnet ausführbare
@@ -962,8 +964,9 @@ Backup-Bootsektoren wird in beiden FATs als `0x0FFFFFF7` markiert. Kontroll-,
 Flush- oder Transportfehler quarantänisieren das Medium. Nach Erfolg wird der
 doppelt gelesene Boot-Fingerprint geschützt übernommen; Root- und gemountete
 Ressourcen sind davon ausgeschlossen. Der
-medienunabhängige Nachweis für EXT2, fremde FAT-Volumes und künftige Backends
-bleibt offen. Erst ein nachgewiesenes
+medienunabhängige Nachweis für EXT2 und künftige Backends bleibt offen. Fremde
+FAT-Volumes sind bis zu einem eigenen nachgewiesenen Persistenzvertrag bewusst
+read-only. Erst ein nachgewiesenes
 Recoveryprotokoll darf ein Medium nach unklarem Schreibabschluss wieder
 `ONLINE_RW` schalten. Bei SATA umfasst dies COMRESET, IDENTIFY mit unverändertem
 Modell und unveränderter Kapazität, zwei frische Fingerprint-Reads,
@@ -1442,8 +1445,8 @@ bleiben verfügbar. Fatal-Fencing verriegelt sowohl diese VFS-Schranke als auch
 den physischen Storage-Write-Pfad. Der Modus ist bewusst fail-closed und hat
 kein automatisches Restartbudget. Für markierte FAT32-Images umfasst ihn die
 nachfolgende Journaltransaktion. Markierte REIST-FAT12-Medien besitzen einen
-eigenen begrenzten Transaktionspfad; EXT2 und fremde Medien besitzen diese
-Mehrsektor-Transaktionsgarantie weiterhin nicht.
+eigenen begrenzten Transaktionspfad; EXT2 und fremde Medien bleiben ohne diese
+Mehrsektor-Transaktionsgarantie read-only.
 
 Auch die Steuerdaten beider Persistenzdomänen sind jetzt `critical_object`s:
 Fortschrittssequenz und Fence-/Read-only-Zustand liegen jeweils als

@@ -13,8 +13,23 @@
 
 #define FLOPPY_SECTORS 2880u
 #define CHECK(condition) do { if (!(condition)) return __LINE__; } while (0)
+#define TEST_VOLUME_ID 0x52454953u
+#define TEST_RESERVED_SECTORS FAT12_MIN_REIST_RESERVED_SECTORS
+#define TEST_FAT_SECTORS 9u
+#define TEST_FAT1_SECTOR TEST_RESERVED_SECTORS
+#define TEST_FAT2_SECTOR (TEST_FAT1_SECTOR + TEST_FAT_SECTORS)
+#define TEST_ROOT_SECTORS ((FAT12_MAX_ROOT_ENTRIES * 32u) / FAT12_SECTOR_SIZE)
+#define TEST_ROOT_SECTOR (TEST_FAT2_SECTOR + TEST_FAT_SECTORS)
+#define TEST_DATA_SECTOR (TEST_ROOT_SECTOR + TEST_ROOT_SECTORS)
+#define TEST_REPLICA_BASE \
+    (TEST_RESERVED_SECTORS - FAT12_REPLICA_RESERVED_SECTORS)
+#define TEST_REMAP_BASE \
+    (TEST_REPLICA_BASE - FAT12_REMAP_SPARE_COUNT - 3u)
+#define TEST_JOURNAL_BASE \
+    (TEST_REMAP_BASE - 2u - FAT12_JOURNAL_MAX_ENTRIES * 2u)
 
 static uint8_t floppy[FLOPPY_SECTORS][FAT12_SECTOR_SIZE];
+static uint8_t foreign_snapshot[FLOPPY_SECTORS][FAT12_SECTOR_SIZE];
 extern int get_next_cluster(int current_cluster);
 extern fat12_t* fat12;
 extern vfs_filesystem_ops_t fat12_vfs_ops;
@@ -23,6 +38,18 @@ int vfs_register_filesystem(const char* name, vfs_filesystem_ops_t* ops) {
     (void)name;
     (void)ops;
     return VFS_OK;
+}
+
+void read_date(int* year, int* month, int* day) {
+    if (year) *year = 2026;
+    if (month) *month = 8;
+    if (day) *day = 23;
+}
+
+void read_time(int* hours, int* minutes, int* seconds) {
+    if (hours) *hours = 12;
+    if (minutes) *minutes = 0;
+    if (seconds) *seconds = 0;
 }
 
 bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track,
@@ -104,24 +131,44 @@ static void set_short_name(directory_entry* entry, const char* base,
     memcpy(entry->extension, extension, strlen(extension));
 }
 
-static void make_test_floppy(void) {
+static bool make_test_floppy(void) {
     memset(floppy, 0, sizeof(floppy));
     fat12_boot_sector boot;
     memset(&boot, 0, sizeof(boot));
     boot.bytes_per_sector = FAT12_SECTOR_SIZE;
     boot.sectors_per_cluster = 1;
-    boot.reserved_sectors = 1;
+    boot.reserved_sectors = TEST_RESERVED_SECTORS;
     boot.fat_count = 2;
     boot.root_entry_count = FAT12_MAX_ROOT_ENTRIES;
     boot.total_sectors = FLOPPY_SECTORS;
     boot.media_descriptor = 0xF0;
-    boot.sectors_per_fat = 9;
+    boot.sectors_per_fat = TEST_FAT_SECTORS;
     boot.sectors_per_track = 18;
     boot.heads = 2;
+    boot.volume_id = TEST_VOLUME_ID;
+    memcpy(boot.fs_type, "REIST12", 7);
     boot.boot_sector_signature = FAT12_BOOT_SIGNATURE;
     memcpy(floppy[0], &boot, sizeof(boot));
 
-    uint8_t* fat = floppy[1];
+    fat12_journal_t journal;
+    if (!fat12_journal_format(&journal, TEST_JOURNAL_BASE,
+                              TEST_JOURNAL_BASE + 1u,
+                              TEST_JOURNAL_BASE + 2u,
+                              TEST_VOLUME_ID)) return false;
+    memcpy(floppy[TEST_JOURNAL_BASE], &journal.header,
+           sizeof(journal.header));
+    memcpy(floppy[TEST_JOURNAL_BASE + 1u], &journal.header,
+           sizeof(journal.header));
+
+    fat12_remap_table_t remap;
+    if (!fat12_remap_format(&remap, TEST_REMAP_BASE, TEST_REMAP_BASE + 1u,
+                            TEST_REMAP_BASE + 2u,
+                            TEST_VOLUME_ID)) return false;
+    memcpy(floppy[TEST_REMAP_BASE], &remap.header, sizeof(remap.header));
+    memcpy(floppy[TEST_REMAP_BASE + 1u], &remap.header,
+           sizeof(remap.header));
+
+    uint8_t* fat = floppy[TEST_FAT1_SECTOR];
     fat[0] = 0xF0;
     fat[1] = 0xFF;
     fat[2] = 0xFF;
@@ -132,7 +179,7 @@ static void make_test_floppy(void) {
     set_fat_entry(fat, 18, FAT12_EOC_MAX);
     set_fat_entry(fat, 19, FAT12_EOC_MAX);
 
-    directory_entry* root = (directory_entry*)floppy[19];
+    directory_entry* root = (directory_entry*)floppy[TEST_ROOT_SECTOR];
     set_short_name(&root[0], "FILE", "BIN");
     root[0].first_cluster_low = 2;
     root[0].file_size = 700;
@@ -141,14 +188,15 @@ static void make_test_floppy(void) {
     root[1].first_cluster_low = 4;
 
     for (uint32_t i = 0; i < FAT12_SECTOR_SIZE; i++) {
-        floppy[33][i] = (uint8_t)i;
-        floppy[34][i] = (uint8_t)(0x80u + (i & 0x3Fu));
+        floppy[TEST_DATA_SECTOR][i] = (uint8_t)i;
+        floppy[TEST_DATA_SECTOR + 1u][i] =
+            (uint8_t)(0x80u + (i & 0x3Fu));
     }
 
     uint32_t visible_index = 0;
     for (uint16_t cluster = 4; cluster <= 18; cluster++) {
         directory_entry* subdirectory =
-            (directory_entry*)floppy[33 + cluster - 2];
+            (directory_entry*)floppy[TEST_DATA_SECTOR + cluster - 2u];
         for (uint32_t index = 0; index < 16; index++, visible_index++) {
             if (visible_index == 0) {
                 set_short_name(&subdirectory[index], ".", "");
@@ -172,13 +220,18 @@ static void make_test_floppy(void) {
             }
         }
     }
-    memcpy(floppy[50], "yes", 3);
+    memcpy(floppy[TEST_DATA_SECTOR + 17u], "yes", 3);
+    memcpy(floppy[TEST_FAT2_SECTOR], floppy[TEST_FAT1_SECTOR],
+           TEST_FAT_SECTORS * FAT12_SECTOR_SIZE);
+    return true;
 }
 
 int main(void) {
-    make_test_floppy();
-    CHECK(floppy[1][3] == 3 && floppy[1][4] == 0xF0);
+    CHECK(make_test_floppy());
+    CHECK(floppy[TEST_FAT1_SECTOR][3] == 3 &&
+          floppy[TEST_FAT1_SECTOR][4] == 0xF0);
     CHECK(fat12_init_fs(0));
+    CHECK(fat12_write_supported());
     CHECK(fat12->fat[3] == 3 && fat12->fat[4] == 0xF0);
     CHECK(get_next_cluster(2) == 3);
     fat12_file* file = fat12_open_file("file.bin", "r");
@@ -270,7 +323,46 @@ int main(void) {
     CHECK(fs.ops->write(node, 0, 1, payload) == VFS_ERR_NO_SPACE);
     CHECK(node->inode == 0 && node->size == 0);
     CHECK(fs.ops->close(node) == VFS_OK);
-    CHECK(memcmp(&floppy[1], &floppy[10], 9U * FAT12_SECTOR_SIZE) == 0);
+    CHECK(memcmp(&floppy[TEST_FAT1_SECTOR], &floppy[TEST_FAT2_SECTOR],
+                 TEST_FAT_SECTORS * FAT12_SECTOR_SIZE) == 0);
     CHECK(fs.ops->unmount(&fs) == VFS_OK);
+
+    /* The same valid FAT12 contents without the REIST12 marker remain
+       readable, but no operation may alter media or stage FAT state. */
+    fat12_boot_sector* foreign_boot = (fat12_boot_sector*)floppy[0];
+    memcpy(foreign_boot->fs_type, "FAT12   ", 8);
+    memcpy(foreign_snapshot, floppy, sizeof(floppy));
+    memset(&fs, 0, sizeof(fs));
+    fs.ops = &fat12_vfs_ops;
+    CHECK(fs.ops->mount(&fs, &drive) == VFS_OK);
+    CHECK(!fat12_write_supported());
+    CHECK(fs.ops->open(&fs, "/FILE.BIN", &node) == VFS_OK && node != NULL);
+    memset(slice, 0, sizeof(slice));
+    CHECK(fs.ops->read(node, 600, sizeof(slice), slice) ==
+          (int)sizeof(slice));
+    CHECK(fs.ops->write(node, 0, 1, payload) == VFS_ERR_READ_ONLY);
+    CHECK(fs.ops->close(node) == VFS_OK);
+    CHECK(fs.ops->create(&fs, "/DENIED.TXT") == VFS_ERR_READ_ONLY);
+    CHECK(fs.ops->mkdir(&fs, "/DENIED") == VFS_ERR_READ_ONLY);
+    CHECK(fs.ops->delete(&fs, "/FILE.BIN") == VFS_ERR_READ_ONLY);
+    CHECK(fs.ops->rmdir(&fs, "/SUB") == VFS_ERR_READ_ONLY);
+    CHECK(fs.ops->touch(&fs, "/FILE.BIN") == VFS_ERR_READ_ONLY);
+    uint16_t cluster_two = fat12_get_fat_entry(2);
+    CHECK(!fat12_set_fat_entry(2, FAT12_FREE_CLUSTER));
+    CHECK(fat12_get_fat_entry(2) == cluster_two);
+    CHECK(!fat12_sync_fat());
+    CHECK(!fat12_write_logical_sectors(TEST_DATA_SECTOR, 1, payload));
+    CHECK(memcmp(foreign_snapshot, floppy, sizeof(floppy)) == 0);
+    CHECK(fs.ops->unmount(&fs) == VFS_OK);
+
+    /* A contradictory REIST12 marker is corrupt metadata, not a foreign
+       volume that may be silently downgraded to the compatibility mount. */
+    memcpy(foreign_boot->fs_type, "REIST12", 7);
+    foreign_boot->volume_id = 0;
+    memcpy(foreign_snapshot, floppy, sizeof(floppy));
+    memset(&fs, 0, sizeof(fs));
+    fs.ops = &fat12_vfs_ops;
+    CHECK(fs.ops->mount(&fs, &drive) == VFS_ERR_IO);
+    CHECK(memcmp(foreign_snapshot, floppy, sizeof(floppy)) == 0);
     return 0;
 }

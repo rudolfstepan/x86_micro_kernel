@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.3c-6f8-fat12-write-admission"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -4159,7 +4159,7 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-6f8-fat12-write-admission"
-status = "active"
+status = "done"
 risk = "high"
 title = "Fail closed FAT12 write admission"
 scope = "Close the remaining unsafe compatibility gap for FAT12 mutation. Standards-compatible foreign FAT12 media remain mountable and readable, but mutation is admitted only for an exact REIST12 volume whose reserved safety layout, undo journal, remap metadata and replica area have been validated and recovered. Reject mutation before in-memory FAT staging or any media write, preserve corrupt marked-media mount rejection, and retain the existing bounded journaled write path for generated REIST12 media. This package hardens existing filesystem migration debt without adding new kernel policy or raw-media authority."

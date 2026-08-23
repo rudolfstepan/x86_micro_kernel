@@ -173,6 +173,7 @@ bool is_valid_cluster_fat12(int cluster);
 bool validate_fat12_boot_sector(fat12_boot_sector* bs);
 uint32_t fat12_cluster_count(void);
 uint16_t fat12_get_fat_entry(uint16_t cluster);
+bool fat12_write_supported(void);
 bool fat12_set_fat_entry(uint16_t cluster, uint16_t value);
 bool fat12_sync_fat(void);
 bool fat12_read_logical_sectors(uint32_t logical_sector, uint32_t count,

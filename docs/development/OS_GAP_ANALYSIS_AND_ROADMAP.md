@@ -438,7 +438,7 @@ und 10 verbindlich.
 | CPU | GDT/IDT/TSS, Ring 0/3, Exceptions, PIC, gegen PIT kalibrierter lokaler APIC-Timer, PIT-Scheduler-Fallback, `INT 0x80` | funktionsfähiger Single-Core-Pfad |
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
 | Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, Wait-Queues, Sleep/Yield, eigenes CWD, IPC-v1, generationsgebundene Capabilities, endliche Deadlines, Restartreserve und überwachte Ring-3-Domänen | 32 feste Taskslots; SMP und dynamisch erweiterbare Taskkapazität fehlen |
-| Dateien | VFS, FAT12/FAT32 read/write, ASCII-VFAT-LFN, Undo-Journale, FAT12-Remap/Replikate/Fehlermatrix, `fsync`, Same-Directory-Rename/Replace, EXT2 read-only | Unicode-Normalisierung, allgemeiner transaktionaler Reparaturpfad und medienunabhängige Persistenz fehlen |
+| Dateien | VFS, REIST-FAT12/FAT32 read/write, fremde FAT12/FAT32 read-only, ASCII-VFAT-LFN, Undo-Journale, FAT12-Remap/Replikate/Fehlermatrix, `fsync`, Same-Directory-Rename/Replace, EXT2 read-only | Unicode-Normalisierung, allgemeiner transaktionaler Reparaturpfad und medienunabhängige Persistenz fehlen |
 | Geräte | PCI, ATA/IDE, AHCI/SATA, FDD, PS/2, experimentelles xHCI-HID, VGA/VBE/QEMU-DISPI/VMware-SVGA und kernelvermitteltes HDA | mehrere QEMU-/VMware- und einzelne reale Nachweise; breite Hardware-, IOMMU- und Hotplugmatrix fehlt |
 | Netzwerk | E1000, RTL8139, RTL8168/8111G, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, UDP-/TCP-FD-Sockets, DNS und HTTP/1.0 | Host- und QEMU-Nachweise vorhanden; kein IPv6, TLS oder vollständiges POSIX-Socketmodell |
 | USB | xHCI-Initialisierung, Root-Port-/Descriptorpfad und HID-Boot-Tastatur/-Maus | einfache reale Geräte und VMware-Maus beobachtet; Composite-AULA, allgemeiner Hotplug und Mass Storage offen |
@@ -2471,7 +2471,10 @@ alle 29 Persistenzbarrieren. QEMU-FDD-Reconnect ist abgenommen; reale VMware-
 und Power-Loss-Laufzeitevidenz bleibt offen. Fremde FAT32-Volumes sind nun
 kompatibel lesbar, aber ohne gültigen REIST-Journalmarker fail-closed read-only;
 auch ein Wechsel der globalen ATA-Journalbindung kann keinen unjournalisierten
-FAT32-Write mehr freigeben. EXT2, fremdes FAT12 sowie künftige
+FAT32-Write mehr freigeben. Fremde FAT12-Volumes sind ebenfalls kompatibel
+lesbar, aber ohne vollständig validiertes REIST12-Journal, Remap und
+Replikatlayout fail-closed read-only; auch direkte FAT- und Sektormutationen
+werden vor einer Zustandsänderung abgewiesen. EXT2 sowie künftige
 USB-/Flash-/NVMe-Backends benötigen für beschreibbaren Betrieb weiterhin einen
 eigenen nachgewiesenen Undo/COW/Journal-Vertrag. Vor diesem Nachweis darf ein Medium nach unklarem
 Schreibabschluss nicht automatisch wieder beschreibbar werden.
@@ -2523,8 +2526,9 @@ Gemeinsame Regeln für alle Pakete:
   Blockbereich, Rechte, Lease und Medienidentität vollständig geprüft.
 - Ein Write gilt erst nach erfolgreichem Readback und Bytevergleich als
   abgeschlossen. Ein unklarer Abschluss führt zu `ONLINE_RO`.
-- Fremde FAT12-Medien bleiben kompatibel lesbar, erhalten aber weder Journal
-  noch Remap-Tabelle und werden niemals automatisch konvertiert.
+- Fremde FAT12-Medien bleiben kompatibel lesbar und konsequent read-only,
+  erhalten aber weder Journal noch Remap-Tabelle und werden niemals
+  automatisch konvertiert.
 - Es werden keine bestehenden Syscallnummern geändert. Neue Syscalls werden
   ausschließlich am Ende angefügt.
 - Tests prüfen zuerst die Negativpfade. Source-Pattern-Tests allein gelten
@@ -2600,7 +2604,7 @@ Definition of Done:
   werden. Zwei ungültige oder semantisch widersprüchliche Header führen zu
   read-only Mount beziehungsweise Mountablehnung.
 - Fremde FAT12-Bootsektoren werden nicht verändert und verwenden weiterhin den
-  bisherigen nicht-journalisierten Kompatibilitätspfad.
+  nicht-journalisierten, strikt read-only Kompatibilitätspfad.
 
 #### S0.3c-6f1c — Undo-Transaktion und Boot-Recovery
 

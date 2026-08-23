@@ -4,20 +4,23 @@ Stand: 23. August 2026.
 
 FAT12 dient vor allem bootfähigen 1,44-MB-Disketten und läuft vollständig über
 VFS und die gemeinsame Blockgeräteschicht. Klassische fremde FAT12-Medien
-bleiben auf einem Kompatibilitätspfad; zusätzliche REIST-Garantien werden nur
-für explizit markierte, neu formatierte Medien aktiviert.
+bleiben auf einem read-only Kompatibilitätspfad; Schreibzugriffe und zusätzliche
+REIST-Garantien werden nur für explizit markierte, neu formatierte Medien
+aktiviert.
 
 ## Implementierter Grundumfang
 
 - strenge BPB-/Geometrie- und Clusterbereichsprüfung
-- Lesen und Schreiben von Dateien und Verzeichnissen
+- Lesen von Dateien und Verzeichnissen auf validen FAT12-Medien
+- Schreiben von Dateien und Verzeichnissen nur auf validierten REIST12-Medien
 - beide FAT-Kopien, Kettenallokation/-freigabe und begrenzte Scans
 - Einzelsektor-Fallback, wenn echte FDD-Hardware einen Batchzugriff ablehnt
 - Quarantäne und kontrollierte Requalifizierung nach Medienfehlern/Hotplug
 
 ## REIST-FAT12
 
-Die Pakete `S0.3c-6f1` bis `S0.3c-6f6s` sind umgesetzt:
+Die Pakete `S0.3c-6f1` bis `S0.3c-6f6s` sowie die Schreibzulassung
+`S0.3c-6f8` sind umgesetzt:
 
 1. verifiziertes Undo-Journal mit redundanten CRC-Headern und Recovery vor
    veränderlicher Metadatennutzung
@@ -64,6 +67,9 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f6s` sind umgesetzt:
     bestätigte Veröffentlichung von höchstens acht FAT-/Root-Metadatenremaps;
     Quelle und Ersatz werden vor Publikation mehrfach gelesen beziehungsweise
     rückgelesen, die Tabelle wird vor zwei sequenzierten CRC-Headern geschrieben
+18. zentrale fail-closed Schreibzulassung: Ein gültiges fremdes FAT12-Medium
+    bleibt lesbar, aber VFS-, FAT- und logische Sektormutationen werden vor der
+    ersten Zustandsänderung abgewiesen
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen

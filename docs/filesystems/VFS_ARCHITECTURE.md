@@ -43,18 +43,18 @@ veröffentlichen.
 Userpointer, Größen, Deskriptoren und Pfade werden vor Wirkung validiert.
 Storage-Quarantäne und globales Write-Fencing werden unterhalb von VFS
 durchgesetzt. Markierte FAT32- und FAT12-Volumes besitzen eigene
-Persistenzprotokolle. Fremdes FAT32 bleibt lesbar, ist aber ohne gültiges
-REIST-Journal grundsätzlich read-only; EXT2 bleibt ebenfalls read-only. Für
-fremdes FAT12 folgt daraus weiterhin keine Persistenzgarantie. Ein unklarer
-Commit darf nicht als Erfolg erscheinen.
+Persistenzprotokolle. Fremde FAT12- und FAT32-Medien bleiben lesbar, sind aber
+ohne gültigen REIST-Journalmarker grundsätzlich read-only; EXT2 bleibt
+ebenfalls read-only. Ein unklarer Commit darf nicht als Erfolg erscheinen.
 
 ## Adapterstatus
 
 - FAT32: Lesen auf validen Standardvolumes; Schreiben, Verzeichnisse, Truncate,
   `fsync`, Rename/Replace ausschließlich mit exakt gebundenem Undo-Journal
   markierter REIST-Images. Ein Volumewechsel erzwingt Rebinding vor Mutation.
-- FAT12: Lesen/Schreiben, Verzeichnisse, beide FAT-Kopien sowie REIST-Journal,
-  Remap und kritische Replikate auf explizit markierten Medien.
+- FAT12: Lesen auf validen Standardmedien; Schreiben, Verzeichnismutationen,
+  beide FAT-Kopien, REIST-Journal, Remap und kritische Replikate ausschließlich
+  auf explizit markierten und erfolgreich wiederhergestellten Medien.
 - EXT2: grundlegende VFS- und indirekte Blockpfade; kein REIST-Journal.
 
 Hosttests prüfen Mountpräfixe, Lebenszyklen und Adapterinvarianten. QEMU-

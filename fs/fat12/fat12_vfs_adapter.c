@@ -23,6 +23,12 @@ extern directory_entry* entries;
    mount would redirect operations of the first mount to another floppy. */
 static vfs_filesystem_t* mounted_fat12_fs = NULL;
 
+static int fat12_require_mutation(vfs_filesystem_t* fs) {
+    if (!fs || fs != mounted_fat12_fs || fs->fs_data != fat12)
+        return VFS_ERR_INVALID;
+    return fat12_write_supported() ? VFS_OK : VFS_ERR_READ_ONLY;
+}
+
 static char fat12_display_character(char value, bool lowercase) {
     return lowercase && value >= 'A' && value <= 'Z'
         ? (char)(value + ('a' - 'A')) : value;
@@ -638,6 +644,8 @@ static int fat12_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
         node->type != VFS_FILE || !node->fs_specific)
         return VFS_ERR_INVALID;
     if (size == 0) return 0;
+    int admission = fat12_require_mutation(node->fs);
+    if (admission != VFS_OK) return admission;
     if (size > 0x7FFFFFFFU || offset > UINT32_MAX - size)
         return VFS_ERR_INVALID;
     fat12_file* handle = (fat12_file*)node->fs_specific;
@@ -775,6 +783,8 @@ static int fat12_vfs_finddir(vfs_node_t* node, const char* name,
 
 static int fat12_vfs_mkdir(vfs_filesystem_t* fs, const char* path) {
     if (!fs || !path || fs != mounted_fat12_fs) return VFS_ERR_INVALID;
+    int admission = fat12_require_mutation(fs);
+    if (admission != VFS_OK) return admission;
     uint16_t parent;
     uint8_t name[11];
     int status = fat12_resolve_parent(path, &parent, name);
@@ -839,6 +849,8 @@ static int fat12_vfs_mkdir(vfs_filesystem_t* fs, const char* path) {
 
 static int fat12_vfs_rmdir(vfs_filesystem_t* fs, const char* path) {
     if (!fs || !path || fs != mounted_fat12_fs) return VFS_ERR_INVALID;
+    int admission = fat12_require_mutation(fs);
+    if (admission != VFS_OK) return admission;
     fat12_entry_location_t location;
     int status = fat12_resolve_location(path, &location);
     if (status != VFS_OK) return status;
@@ -872,6 +884,8 @@ static int fat12_vfs_rmdir(vfs_filesystem_t* fs, const char* path) {
 
 static int fat12_vfs_create(vfs_filesystem_t* fs, const char* path) {
     if (!fs || !path || fs != mounted_fat12_fs) return VFS_ERR_INVALID;
+    int admission = fat12_require_mutation(fs);
+    if (admission != VFS_OK) return admission;
     uint16_t parent;
     uint8_t name[11];
     int status = fat12_resolve_parent(path, &parent, name);
@@ -912,6 +926,8 @@ static int fat12_vfs_create(vfs_filesystem_t* fs, const char* path) {
 
 static int fat12_vfs_delete(vfs_filesystem_t* fs, const char* path) {
     if (!fs || !path || fs != mounted_fat12_fs) return VFS_ERR_INVALID;
+    int admission = fat12_require_mutation(fs);
+    if (admission != VFS_OK) return admission;
     fat12_entry_location_t location;
     int status = fat12_resolve_location(path, &location);
     if (status != VFS_OK) return status;
@@ -941,6 +957,8 @@ static int fat12_vfs_delete(vfs_filesystem_t* fs, const char* path) {
 
 static int fat12_vfs_touch(vfs_filesystem_t* fs, const char* path) {
     if (!fs || !path || fs != mounted_fat12_fs) return VFS_ERR_INVALID;
+    int admission = fat12_require_mutation(fs);
+    if (admission != VFS_OK) return admission;
     fat12_entry_location_t location;
     int status = fat12_resolve_location(path, &location);
     if (status != VFS_OK) return status;
