@@ -107,12 +107,12 @@ fehlende Hardwareeigenschaften explizite Grenzen, keine stillen Annahmen.
 Der aktuelle BIOS-Referenzpfad verwendet ein festes Manifest v2. Es bindet das
 Kernelartefakt mit SHA-256 gemäß NIST FIPS 180-4; ein unabhängiger Hostvalidator
 prüft nach der Erzeugung Manifest, Datenträgergrenzen und tatsächliche
-Kernelbytes für HDD und Floppy. CRC32 bleibt im Bootloader ausschließlich der
-heutige Fehlererkennungsmechanismus. Da der Loader SHA-256 noch nicht selbst
-berechnet und weder Signaturprüfung noch gebundener Vertrauensanker vorhanden
-sind, entsteht daraus keine Boot-Authentizität und kein Verified-/Secure-Boot-
-Claim. Diese Grenze wird erst nach begrenzter Bootzeitprüfung und einer
-versionierten Signatur- und Schlüsselpolitik angehoben.
+Kernelbytes für HDD und Floppy. Stage 2 berechnet SHA-256 mit festen Puffern im
+selben begrenzten Lesedurchlauf wie die nur noch diagnostische CRC32 und prüft
+den Digest vor ELF-Parsing und Kernelstart. Da weder Signaturprüfung noch ein
+gebundener Vertrauensanker vorhanden sind, entsteht daraus keine Boot-
+Authentizität und kein Verified-/Secure-Boot-Claim. Diese Grenze wird erst mit
+einer versionierten Signatur- und Schlüsselpolitik angehoben.
 
 Der entscheidende nächste Architekturwechsel ist damit ausdrücklich:
 

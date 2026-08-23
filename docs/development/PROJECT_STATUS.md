@@ -122,14 +122,16 @@ Versorgung/Zeitbasis, Reset- und Interlockverdrahtung wird erst nach einer
 manuellen Auswahl angebunden; ohne diese Identität wird kein Produktionstreiber
 erfunden und keine Hardwarequalifikation behauptet.
 
-S0.5 hat mit dem eng abgegrenzten Paket `S0.5a1` begonnen. Das native BIOS-
-Manifest v2 enthält den SHA-256-Digest des exakten Kernelartefakts; Windows-
+S0.5 umfasst nun die eng abgegrenzten Pakete `S0.5a1` und `S0.5a2`. Das native
+BIOS-Manifest v2 enthält den SHA-256-Digest des exakten Kernelartefakts; Windows-
 und Makefile-Builds validieren HDD- und Floppy-Images mit einem unabhängigen
 Parser und brechen bei Versions-, Layout-, Bounds-, Prüfsummen- oder
-Digestfehlern ab. Die BIOS-Stufen akzeptieren nur v2 und Stage 2 verlangt ein
-nichtleeres Digestfeld. Da Stage 2 den Digest noch nicht selbst berechnet und
-weder Signatur noch Vertrauensanker existieren, ist dies ausdrücklich noch
-kein verifizierter oder Secure Boot.
+Digestfehlern ab. Stage 2 berechnet SHA-256 und CRC32 mit festen Puffern in
+einem begrenzten Kernel-Lesedurchlauf und stoppt einen Digestfehler vor dem
+ELF-Parsing. Der negative QEMU-Nachweis hält CRC32 und Manifest-Prüfsumme trotz
+Kerneländerung gültig und erreicht ausschließlich den SHA-Fehlerpfad. Da weder
+Signatur noch Vertrauensanker existieren, ist dies ausdrücklich noch kein
+authentifizierter oder Secure Boot.
 
 `S0.3c-admin1` stellt sichere Storage-Operationen (`device down/up`, `mount`,
 `umount`) und einen festen, integritätsgeprüften 224-KiB-RAM-Rescue-Pool mit

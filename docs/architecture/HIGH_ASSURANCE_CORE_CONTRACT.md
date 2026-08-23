@@ -65,12 +65,14 @@ Hostvalidator für HDD- und Floppy-Images. Der Imageerzeuger und der Validator
 teilen keine Manifestparser- oder Boundslogik; nur die standardisierte
 Hashfunktion stammt aus der Laufzeitbibliothek.
 
-Dies allein begründet keine Authentizität. Solange der Loader den Digest nicht
-selbst innerhalb fester Speicher- und Laufzeitgrenzen verifiziert und keine
-Signatur bis zu einem gebundenen Vertrauensanker prüft, darf weder
-„verifizierter Boot“ noch „Secure Boot“ behauptet werden. CRC32 ist nur eine
-diagnostische Beschädigungserkennung. Unbekannte Manifestversionen, fehlende
-Digests, ungültige Grenzen oder widersprüchliche Imagegeometrie werden vor dem
+Stage 2 verifiziert den Digest inzwischen selbst innerhalb fester Speicher-
+und Laufzeitgrenzen: SHA-256 und die diagnostische CRC32 teilen genau einen
+begrenzten Kernel-Lesedurchlauf; Digestfehler stoppen vor ELF-Parsing und
+Kernelstart. Dies allein begründet keine Authentizität. Solange keine Signatur
+bis zu einem gebundenen Vertrauensanker geprüft wird, darf weder
+„verifizierter Boot“ noch „Secure Boot“ behauptet werden. CRC32 bleibt reine
+Beschädigungsdiagnostik. Unbekannte Manifestversionen, fehlende Digests,
+ungültige Grenzen oder widersprüchliche Imagegeometrie werden vor dem
 Kernelstart geschlossen abgelehnt.
 
 ## Medienübergreifender Schreib- und Wiederanlaufvertrag

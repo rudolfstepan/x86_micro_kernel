@@ -19,6 +19,12 @@
 BITS 16
 ORG 0
 
+%macro BSWAP_EAX 0
+    xchg al, ah
+    rol eax, 16
+    xchg al, ah
+%endmacro
+
 STAGE2_SEGMENT       equ 0x1000
 STAGE2_PHYSICAL      equ 0x00010000
 STACK_TOP            equ 0x0000F000
@@ -125,9 +131,7 @@ start:
     test eax, eax
     jnz manifest_error
 
-    ; SHA-256 is verified independently by the image gate.  Until the bounded
-    ; boot-time SHA implementation lands, stage 2 still fails closed when the
-    ; mandatory digest field is absent and retains CRC32 as its payload check.
+    ; Require and preserve the digest before the bounce buffer is reused.
     xor eax, eax
     mov si, MANIFEST_KERNEL_SHA
     mov cx, 8
@@ -137,6 +141,15 @@ start:
     loop .manifest_sha
     test eax, eax
     jz manifest_error
+    mov si, MANIFEST_KERNEL_SHA
+    xor di, di
+    mov cx, 8
+.copy_manifest_sha:
+    mov eax, [es:si]
+    mov [cs:kernel_sha256 + di], eax
+    add si, 4
+    add di, 4
+    loop .copy_manifest_sha
 
     mov eax, [es:MANIFEST_KERNEL_LBA]
     mov [kernel_relative_lba], eax
@@ -165,8 +178,12 @@ start:
 
     mov si, msg_verify
     call print_string
-    call verify_kernel_crc
-    jc crc_error
+    call verify_kernel_integrity
+    jnc .integrity_valid
+    cmp byte [integrity_error], 2
+    je sha_error
+    jmp crc_error
+.integrity_valid:
 
     mov si, msg_kernel
     call print_string
@@ -219,6 +236,9 @@ load_error:
     jmp fatal
 crc_error:
     mov si, msg_crc_error
+    jmp fatal
+sha_error:
+    mov si, msg_sha_error
 
 fatal:
     call print_string
@@ -1022,10 +1042,12 @@ read_bounce_chs:
     clc
     ret
 
-; Verify the CRC32 of the complete ELF file, including bytes which are not
-; covered by PT_LOAD segments.  This uses a compact reflected nibble table and
-; reads no more than the existing 32-KiB bounce-buffer capacity per request.
-verify_kernel_crc:
+; Verify SHA-256 and diagnostic CRC32 over the exact complete ELF file,
+; including bytes which are not covered by PT_LOAD segments.  Both digests use
+; the same bounded 32-KiB read/cache pass.
+verify_kernel_integrity:
+    mov byte [integrity_error], 0
+    call sha256_init
     mov byte [kernel_cached], 0
     cmp byte [boot_drive], 0x80
     jae .cache_ready
@@ -1075,6 +1097,7 @@ verify_kernel_crc:
     add [cache_write_address], eax
 
 .checksum_chunk:
+    call sha256_process_chunk
     mov ax, BOUNCE_SEGMENT
     mov es, ax
     xor di, di
@@ -1101,18 +1124,271 @@ verify_kernel_crc:
     sub [crc_remaining], eax
     jmp .next_chunk
 .complete:
+    call sha256_finalize
+    jc .sha_bad
     mov eax, [crc_value]
     not eax
     cmp eax, [kernel_crc]
-    jne .bad
+    jne .crc_bad
     mov ax, ds
     mov es, ax
     clc
     ret
+.sha_bad:
+    mov byte [integrity_error], 2
+    jmp .bad
+.crc_bad:
+    mov byte [integrity_error], 1
 .bad:
     mov ax, ds
     mov es, ax
     stc
+    ret
+
+; Initialize the eight FIPS 180-4 SHA-256 chaining words.
+sha256_init:
+    mov dword [sha256_state + 0], 0x6A09E667
+    mov dword [sha256_state + 4], 0xBB67AE85
+    mov dword [sha256_state + 8], 0x3C6EF372
+    mov dword [sha256_state + 12], 0xA54FF53A
+    mov dword [sha256_state + 16], 0x510E527F
+    mov dword [sha256_state + 20], 0x9B05688C
+    mov dword [sha256_state + 24], 0x1F83D9AB
+    mov dword [sha256_state + 28], 0x5BE0CD19
+    mov word [sha256_tail_size], 0
+    ret
+
+; Consume the current bounce-buffer chunk. BOUNCE_SIZE is divisible by 64, so
+; only the final kernel chunk can leave a tail.
+sha256_process_chunk:
+    push ax
+    push bx
+    push cx
+    push di
+    mov ax, BOUNCE_SEGMENT
+    mov es, ax
+    xor di, di
+    mov cx, [crc_chunk_size]
+.next_block:
+    cmp cx, 64
+    jb .copy_tail
+    call sha256_transform
+    add di, 64
+    sub cx, 64
+    jmp .next_block
+.copy_tail:
+    mov [sha256_tail_size], cx
+    xor bx, bx
+.tail_byte:
+    test cx, cx
+    jz .done
+    mov al, [es:di]
+    mov [cs:sha256_block + bx], al
+    inc di
+    inc bx
+    dec cx
+    jmp .tail_byte
+.done:
+    pop di
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+; Append FIPS 180-4 padding and compare the resulting big-endian digest with
+; the fixed manifest copy. The bit length is represented as a full 64-bit
+; value even though the current manifest kernel_size field is 32 bit.
+sha256_finalize:
+    mov ax, ds
+    mov es, ax
+    mov bx, [sha256_tail_size]
+    mov byte [sha256_block + bx], 0x80
+    inc bx
+    cmp bx, 56
+    jbe .pad_length
+.pad_first_block:
+    cmp bx, 64
+    jae .first_ready
+    mov byte [sha256_block + bx], 0
+    inc bx
+    jmp .pad_first_block
+.first_ready:
+    mov di, sha256_block
+    call sha256_transform
+    xor bx, bx
+.pad_length:
+    cmp bx, 56
+    jae .length_ready
+    mov byte [sha256_block + bx], 0
+    inc bx
+    jmp .pad_length
+.length_ready:
+    mov eax, [kernel_size]
+    mov edx, eax
+    shl eax, 3
+    shr edx, 29
+    mov ecx, eax
+    mov eax, edx
+    BSWAP_EAX
+    mov [sha256_block + 56], eax
+    mov eax, ecx
+    BSWAP_EAX
+    mov [sha256_block + 60], eax
+    mov di, sha256_block
+    call sha256_transform
+
+    xor ebx, ebx
+.compare:
+    mov eax, [sha256_state + ebx]
+    BSWAP_EAX
+    cmp eax, [kernel_sha256 + ebx]
+    jne .bad
+    add ebx, 4
+    cmp ebx, 32
+    jb .compare
+    clc
+    ret
+.bad:
+    stc
+    ret
+
+; Compress one 64-byte block at ES:DI. The 64-word schedule and all working
+; state are fixed stage-2 storage; PUSHAD only uses the bounded boot stack.
+sha256_transform:
+    pushad
+    xor ebx, ebx
+.load_words:
+    mov eax, [es:di + bx]
+    BSWAP_EAX
+    mov [cs:sha256_schedule + ebx], eax
+    add ebx, 4
+    cmp ebx, 64
+    jb .load_words
+
+.expand_words:
+    mov edx, [cs:sha256_schedule + ebx - 60]
+    mov eax, edx
+    ror eax, 7
+    mov ecx, edx
+    ror ecx, 18
+    xor eax, ecx
+    shr edx, 3
+    xor eax, edx
+    mov esi, eax
+
+    mov edx, [cs:sha256_schedule + ebx - 8]
+    mov eax, edx
+    ror eax, 17
+    mov ecx, edx
+    ror ecx, 19
+    xor eax, ecx
+    shr edx, 10
+    xor eax, edx
+    add eax, esi
+    add eax, [cs:sha256_schedule + ebx - 64]
+    add eax, [cs:sha256_schedule + ebx - 28]
+    mov [cs:sha256_schedule + ebx], eax
+    add ebx, 4
+    cmp ebx, 256
+    jb .expand_words
+
+    mov eax, [cs:sha256_state + 0]
+    mov [cs:sha256_a], eax
+    mov eax, [cs:sha256_state + 4]
+    mov [cs:sha256_b], eax
+    mov eax, [cs:sha256_state + 8]
+    mov [cs:sha256_c], eax
+    mov eax, [cs:sha256_state + 12]
+    mov [cs:sha256_d], eax
+    mov eax, [cs:sha256_state + 16]
+    mov [cs:sha256_e], eax
+    mov eax, [cs:sha256_state + 20]
+    mov [cs:sha256_f], eax
+    mov eax, [cs:sha256_state + 24]
+    mov [cs:sha256_g], eax
+    mov eax, [cs:sha256_state + 28]
+    mov [cs:sha256_h], eax
+
+    xor ebx, ebx
+.round:
+    mov edx, [cs:sha256_e]
+    mov eax, edx
+    ror eax, 6
+    mov ecx, edx
+    ror ecx, 11
+    xor eax, ecx
+    mov ecx, edx
+    ror ecx, 25
+    xor eax, ecx
+    add eax, [cs:sha256_h]
+
+    mov edx, [cs:sha256_e]
+    mov ecx, [cs:sha256_f]
+    xor ecx, [cs:sha256_g]
+    and edx, ecx
+    xor edx, [cs:sha256_g]
+    add eax, edx
+    add eax, [cs:sha256_constants + ebx]
+    add eax, [cs:sha256_schedule + ebx]
+    mov esi, eax
+
+    mov edx, [cs:sha256_a]
+    mov eax, edx
+    ror eax, 2
+    mov ecx, edx
+    ror ecx, 13
+    xor eax, ecx
+    mov ecx, edx
+    ror ecx, 22
+    xor eax, ecx
+
+    mov edx, [cs:sha256_a]
+    and edx, [cs:sha256_b]
+    mov ecx, [cs:sha256_a]
+    or ecx, [cs:sha256_b]
+    and ecx, [cs:sha256_c]
+    or edx, ecx
+    add eax, edx
+
+    mov edx, [cs:sha256_g]
+    mov [cs:sha256_h], edx
+    mov edx, [cs:sha256_f]
+    mov [cs:sha256_g], edx
+    mov edx, [cs:sha256_e]
+    mov [cs:sha256_f], edx
+    mov edx, [cs:sha256_d]
+    add edx, esi
+    mov [cs:sha256_e], edx
+    mov edx, [cs:sha256_c]
+    mov [cs:sha256_d], edx
+    mov edx, [cs:sha256_b]
+    mov [cs:sha256_c], edx
+    mov edx, [cs:sha256_a]
+    mov [cs:sha256_b], edx
+    add eax, esi
+    mov [cs:sha256_a], eax
+
+    add ebx, 4
+    cmp ebx, 256
+    jb .round
+
+    mov eax, [cs:sha256_a]
+    add [cs:sha256_state + 0], eax
+    mov eax, [cs:sha256_b]
+    add [cs:sha256_state + 4], eax
+    mov eax, [cs:sha256_c]
+    add [cs:sha256_state + 8], eax
+    mov eax, [cs:sha256_d]
+    add [cs:sha256_state + 12], eax
+    mov eax, [cs:sha256_e]
+    add [cs:sha256_state + 16], eax
+    mov eax, [cs:sha256_f]
+    add [cs:sha256_state + 20], eax
+    mov eax, [cs:sha256_g]
+    add [cs:sha256_state + 24], eax
+    mov eax, [cs:sha256_h]
+    add [cs:sha256_state + 28], eax
+    popad
     ret
 
 ; Perform either a flat 32-bit copy (operation 0) or zero-fill (operation 1),
@@ -1284,6 +1560,7 @@ program_header_index   dw 0
 entry_is_executable    db 0
 pm_operation           db 0
 kernel_cached          db 0
+integrity_error        db 0             ; 1=CRC32, 2=SHA-256
 vbe_red_size           db 0
 vbe_red_position       db 0
 vbe_green_size         db 0
@@ -1329,18 +1606,35 @@ vbe_red_end            dw 0
 vbe_green_end          dw 0
 vbe_blue_end           dw 0
 crc_chunk_size         dw 0
-  crc_sector_count       dw 0
-  chs_cylinder           db 0
-  chs_head               db 0
-  chs_sector             db 0
-  chs_transfer_count     db 0
+crc_sector_count       dw 0
+sha256_tail_size       dw 0
+chs_cylinder           db 0
+chs_head               db 0
+chs_sector             db 0
+chs_transfer_count     db 0
+
+align 4
+kernel_sha256:
+    times 8 dd 0
+sha256_state:
+    times 8 dd 0
+sha256_a               dd 0
+sha256_b               dd 0
+sha256_c               dd 0
+sha256_d               dd 0
+sha256_e               dd 0
+sha256_f               dd 0
+sha256_g               dd 0
+sha256_h               dd 0
+sha256_block:
+    times 64 db 0
 
 program_headers:
     times MAX_PROGRAM_HEADERS * 32 db 0
 
 bootloader_name    db "REIST OS BIOS Loader", 0
 msg_loader         db "x86 native BIOS loader", 13, 10, 0
-msg_verify         db "Verifying kernel CRC32...", 13, 10, 0
+msg_verify         db "Verifying kernel SHA-256/CRC32...", 13, 10, 0
 msg_kernel         db "Loading ELF32 kernel...", 13, 10, 0
 msg_start          db "Starting kernel...", 13, 10, 0
 msg_disk_error     db "Disk read failed", 13, 10, 0
@@ -1348,6 +1642,7 @@ msg_manifest_error db "Invalid boot manifest", 13, 10, 0
 msg_elf_error      db "Invalid ELF32 kernel", 13, 10, 0
 msg_load_error     db "Kernel load failed", 13, 10, 0
 msg_crc_error      db "Kernel CRC32 verification failed", 13, 10, 0
+msg_sha_error      db "Kernel SHA-256 verification failed", 13, 10, 0
 
 align 4
 crc32_nibble_table:
@@ -1355,3 +1650,26 @@ crc32_nibble_table:
     dd 0x76DC4190, 0x6B6B51F4, 0x4DB26158, 0x5005713C
     dd 0xEDB88320, 0xF00F9344, 0xD6D6A3E8, 0xCB61B38C
     dd 0x9B64C2B0, 0x86D3D2D4, 0xA00AE278, 0xBDBDF21C
+
+align 4
+sha256_constants:
+    dd 0x428A2F98, 0x71374491, 0xB5C0FBCF, 0xE9B5DBA5
+    dd 0x3956C25B, 0x59F111F1, 0x923F82A4, 0xAB1C5ED5
+    dd 0xD807AA98, 0x12835B01, 0x243185BE, 0x550C7DC3
+    dd 0x72BE5D74, 0x80DEB1FE, 0x9BDC06A7, 0xC19BF174
+    dd 0xE49B69C1, 0xEFBE4786, 0x0FC19DC6, 0x240CA1CC
+    dd 0x2DE92C6F, 0x4A7484AA, 0x5CB0A9DC, 0x76F988DA
+    dd 0x983E5152, 0xA831C66D, 0xB00327C8, 0xBF597FC7
+    dd 0xC6E00BF3, 0xD5A79147, 0x06CA6351, 0x14292967
+    dd 0x27B70A85, 0x2E1B2138, 0x4D2C6DFC, 0x53380D13
+    dd 0x650A7354, 0x766A0ABB, 0x81C2C92E, 0x92722C85
+    dd 0xA2BFE8A1, 0xA81A664B, 0xC24B8B70, 0xC76C51A3
+    dd 0xD192E819, 0xD6990624, 0xF40E3585, 0x106AA070
+    dd 0x19A4C116, 0x1E376C08, 0x2748774C, 0x34B0BCB5
+    dd 0x391C0CB3, 0x4ED8AA4A, 0x5B9CCA4F, 0x682E6FF3
+    dd 0x748F82EE, 0x78A5636F, 0x84C87814, 0x8CC70208
+    dd 0x90BEFFFA, 0xA4506CEB, 0xBEF9A3F7, 0xC67178F2
+
+align 4
+sha256_schedule:
+    times 64 dd 0

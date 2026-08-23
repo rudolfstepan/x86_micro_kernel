@@ -397,7 +397,7 @@ und 10 verbindlich.
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
   - [x] S0.5a1 Versioniertes Bootmanifest v2 mit exaktem Kernel-SHA-256 und
     unabhängigem, fail-closed HDD-/Floppy-Imagegate
-  - [ ] S0.5a2 Begrenzte SHA-256-Verifikation durch den Bootloader
+  - [x] S0.5a2 Begrenzte SHA-256-Verifikation durch den Bootloader
   - [ ] S0.5a3 Signierte Artefakte und gebundener Vertrauensanker
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
 
@@ -1312,8 +1312,12 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
   und bindet den exakten Kernelinhalt über SHA-256 gemäß NIST FIPS 180-4. Ein
   vom Imageerzeuger unabhängiger Hostvalidator prüft HDD und Floppy nach jedem
   Build einschließlich Layout, Grenzen, Manifest-Prüfsumme, SHA-256 und CRC32.
-  Die BIOS-Stufen akzeptieren nur v2; Stage 2 lehnt einen fehlenden Digest ab.
-  Dies ist noch kein verifizierter Boot: Bootzeit-SHA, Signaturprüfung und ein
+  Die BIOS-Stufen akzeptieren nur v2. Stage 2 berechnet SHA-256 und CRC32 in
+  einem einzigen begrenzten Kernel-Lesedurchlauf mit ausschließlich festen
+  Puffern und prüft den Digest vor ELF-Parsing oder Kernelstart. Ein negativer
+  QEMU-Lauf verändert den Kernel bei weiterhin gültiger CRC32 und
+  Manifest-Prüfsumme und wird ausschließlich am SHA-256-Vergleich gestoppt.
+  Dies beweist Integrität, aber keine Authentizität: Signaturprüfung und ein
   gebundener Vertrauensanker bleiben offen.
 - Sicherheitsrelevanten Zustand transaktional, checksummiert, versioniert und
    redundant speichern; Stromausfall an jeder Commitstelle injizieren.

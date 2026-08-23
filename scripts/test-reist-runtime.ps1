@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -14,6 +14,7 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $Image = Join-Path $RepoRoot 'build\reist-os.img'
 $Runner = Join-Path $RepoRoot 'scripts\run_qemu_smoke.py'
+$BootIntegrityRunner = Join-Path $RepoRoot 'scripts\run_qemu_boot_integrity.py'
 $RuntimeDesktopRunner = Join-Path $RepoRoot 'scripts\run_qemu_runtime_desktop.py'
 $BuildScript = Join-Path $RepoRoot 'scripts\build-windows.ps1'
 $FddHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_fdd_hotplug.py'
@@ -727,6 +728,18 @@ if ($Mode -eq 'storage-reconnect' -and $Target -ne 'vmware') {
 }
 
 switch ($Mode) {
+    'boot-integrity' {
+        New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+        $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $tampered = Join-Path $RepoRoot 'build\boot-integrity-tampered.img'
+        $serialLog = Join-Path $LogRoot `
+            "$stamp-runtime-boot-integrity-serial.log"
+        & $Python $BootIntegrityRunner --qemu $Qemu --image $Image `
+            --output $tampered --log $serialLog --timeout 12
+        if ($LASTEXITCODE -ne 0) {
+            throw 'REIST boot-integrity runtime failed.'
+        }
+    }
     'normal' {
         Invoke-Smoke 'guest-smoke.log' @()
     }
