@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.5a2-boot-sha256-enforcement"
 
 [policy]
 one_package_per_run = true
@@ -1281,6 +1281,57 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "boot: add versioned SHA-256 manifest gate"
+evidence = []
+
+[[packages]]
+id = "S0.5a2-boot-sha256-enforcement"
+status = "active"
+risk = "high"
+title = "Bounded BIOS stage-2 SHA-256 enforcement"
+scope = "Implement SHA-256 according to NIST FIPS 180-4 directly in the 16-bit BIOS stage-2 loader and verify the exact kernel_size bytes against manifest v2 before ELF parsing or execution. Reuse the existing bounded kernel read/cache pass so each payload byte is read once for SHA-256 and diagnostic CRC32, use only fixed stage-2 storage, validate standard padding and 64-bit bit length, and report a distinct fail-closed SHA-256 error. Add a bounded QEMU negative runtime proof that mutates one kernel byte while recomputing CRC32 and the additive manifest checksum but deliberately retaining the original SHA-256 digest; the guest must stop in stage 2 and never publish BOOT_OK. This package establishes boot-time payload integrity but no authenticity: signatures, trusted-key policy and a trust anchor remain S0.5a3."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "arch/x86/boot/bios/stage2_bios.asm",
+  "scripts/run_qemu_boot_integrity.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_boot_sha256.py",
+  "test/test_boot_manifest.py",
+  "docs/development/BOOTABLE_DISK.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "SHA-256 covers exactly kernel_size bytes and applies FIPS 180-4 padding with a 64-bit big-endian bit length",
+  "the manifest digest is copied to fixed stage-2 storage before the bounce buffer is reused",
+  "the SHA schedule state tail and expected digest use fixed storage with no heap recursion or unbounded retry",
+  "the existing bounded disk pass computes SHA-256 and CRC32 without reading the kernel twice",
+  "a SHA mismatch stops before ELF parsing PT_LOAD publication or kernel entry",
+  "the negative guest proof preserves a valid CRC32 and additive manifest checksum so only SHA-256 can reject it",
+  "documentation does not describe an unsigned digest as authenticity verified boot Secure Boot or a trust anchor"
+]
+targeted_tests = [
+  "python test/test_boot_sha256.py -v",
+  "python test/test_boot_manifest.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode boot-integrity",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "the SHA implementation requires heap allocation recursion a second kernel read or an unbounded loop",
+  "a digest mismatch can reach ELF parsing or kernel entry",
+  "the negative image cannot retain valid CRC32 and manifest checksum while changing the kernel payload",
+  "stage 2 exceeds the fixed 64-sector stage-1 loading bound",
+  "a required source lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "boot: enforce kernel SHA-256 in stage 2"
 evidence = []
 
 [[packages]]
