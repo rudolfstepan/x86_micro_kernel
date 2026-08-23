@@ -468,6 +468,18 @@ Signatur bleiben SHA-256-identisch. Die Kampagne ist deterministisch und auf
 höchstens 128 Fälle begrenzt. Sie ersetzt weder Coverage-gesteuertes Fuzzing
 noch Soak-, VMware- oder Hardwareevidenz.
 
+`S0.6b` ergänzt beide nativen Image-Builds um ein begrenztes SPDX-2.3-JSON-
+SBOM. Es erfasst Kernel, detached Signatur, BIOS-Image und die nichtrekursiv
+paketierten Ring-3-Programme mit exakter Größe im SPDX-Kommentarfeld sowie
+SHA-1 und SHA-256. Ein strukturell unabhängiger Validator prüft Pfadgrenzen,
+Eindeutigkeit, Kapazitäten,
+Dokumentstruktur, Beziehungen und jedes aktuelle Artefakt erneut; der QEMU-
+Paket-Gate verlangt das Ergebnis. Die Grenzen sind 160 Dateien, 128 MiB je
+Datei, 512 MiB Gesamteingang und 2 MiB Dokumentgröße. `NOASSERTION` markiert
+weiter ungeklärte Lizenz- und Copyrightdaten. Reproduzierbarkeit, vollständige
+Quellen-/Abhängigkeitsabdeckung, Lizenzfreigabe, Vulnerability-Analyse und
+signierte Provenienz bleiben offen.
+
 ## Wichtigste offene Grenzen
 
 - `CHKDSK.PRG` besitzt capability-gebundene, bestätigte und journalisierte

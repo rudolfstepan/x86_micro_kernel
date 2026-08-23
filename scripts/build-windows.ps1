@@ -121,6 +121,7 @@ $PackagedVmx = Join-Path $VmwareDir 'reist-os.vmx'
 $UserProgramDir = Join-Path $BuildDir 'programs'
 $UserPrg = Join-Path $UserProgramDir $ProgramName.ToUpperInvariant()
 $BuildConfig = Join-Path $BuildDir '.windows-build-config.json'
+$ReleaseSbom = Join-Path $BuildDir 'reist-sbom.spdx.json'
 
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 New-Item -ItemType Directory -Force -Path $ZigLocalCache, $ZigGlobalCache | Out-Null
@@ -442,6 +443,18 @@ try {
     if ($nativeValidationExitCode -ne 0) {
         throw "Native boot manifest validation failed with exit code $nativeValidationExitCode."
     }
+    $sbomExitCode = Invoke-PythonProcess -Arguments @(
+        'scripts/generate_release_sbom.py', '--root', $RepoRoot,
+        '--output', $ReleaseSbom, '--artifact', $Kernel,
+        '--artifact', $KernelSignature, '--artifact', $RawImage,
+        '--program-dir', $UserProgramDir
+    )
+    if ($sbomExitCode -ne 0) { throw "Release SBOM generation failed with exit code $sbomExitCode." }
+    $sbomValidationExitCode = Invoke-PythonProcess -Arguments @(
+        'scripts/validate_release_sbom.py', '--sbom', $ReleaseSbom,
+        '--root', $RepoRoot
+    )
+    if ($sbomValidationExitCode -ne 0) { throw "Release SBOM validation failed with exit code $sbomValidationExitCode." }
 
     # Image generation recreates both VMX files. Restore physical floppy
     # backing after every VMware build instead of silently switching to the

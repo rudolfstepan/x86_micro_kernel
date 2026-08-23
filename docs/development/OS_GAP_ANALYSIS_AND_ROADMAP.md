@@ -434,6 +434,9 @@ und 10 verbindlich.
   - [x] S0.6a Deterministische, auf 16 bis 128 Fälle begrenzte
     Boot-Update-Bundle-Kampagne mit strukturierten Fehlerklassen,
     seed-gebundenen Einbitmutationen und nachgewiesenem Fail-before-output
+  - [x] S0.6b Nach jedem nativen Image-Build erzeugtes und unabhängig
+    validiertes SPDX-2.3-JSON-SBOM für Kernel, Signatur, BIOS-Image und alle
+    paketierten Ring-3-Programme
 
 #### Funktionsroadmap nach dem S0-Gate
 
@@ -1437,6 +1440,18 @@ scheitern; Image, Kernel und Signatur bleiben hashidentisch. Das ist ein
 kurzer reproduzierbarer Parser-/Seiteneffekt-Nachweis, keine Zufallsabdeckung,
 Langzeit-, Gast-, VMware- oder Zielhardwarekampagne.
 
+`S0.6b` erzeugt nach dem Windows- und Makefile-Image-Build ein SPDX-2.3-JSON-
+SBOM für den exakten Kernel, seine Signatur, das BIOS-Image und die unmittelbar
+paketierten Ring-3-Programme. Jeder Eintrag bindet kanonischen Build-Pfad,
+Bytegröße im standardisierten Kommentarfeld sowie das erforderliche SHA-1 und
+zusätzlich SHA-256; ein separater Parser prüft die Live-Artefakte sowie die
+vollständigen `DESCRIBES`-/`CONTAINS`-Beziehungen. Die Verarbeitung ist auf
+160 Dateien, 128 MiB je Datei, 512 MiB Gesamteingang und 2 MiB JSON begrenzt.
+Ungeklärte Lizenz- und Copyrightangaben bleiben sichtbar `NOASSERTION`. Das
+Dokument ist weder signierte Provenienz noch vollständiges Quellen-,
+Abhängigkeits-, Lizenz- oder Schwachstelleninventar und belegt noch keine
+reproduzierbaren Builds.
+
 - Statische Stack-/Code-/WCET-Analyse, Fuzzing, modellbasierte Tests und
    unabhängige Reviews als Gates einführen.
 - Fault-Injection für Bitfehler, Speichererschöpfung, Timingfehler,
@@ -1962,7 +1977,9 @@ Ein Paket gilt nur dann als fertig, wenn alle folgenden Punkte erfüllt sind:
 - [ ] jeder Dienst besitzt Health-Monitoring, einen begrenzten Fehlerpfad und einen
   getesteten Restart-, Failover- oder Safe-State-Mechanismus
 - [ ] Releaseartefakte sind signiert, reproduzierbar und ihrer SBOM sowie exakten
-  Toolchain zuordenbar
+  Toolchain zuordenbar (signierter Kernel und Artefakt-SBOM sind umgesetzt;
+  Reproduzierbarkeit, vollständige Toolchainbindung und signierte Provenienz
+  bleiben offen)
 
 Aktuelle Referenzbefehle:
 

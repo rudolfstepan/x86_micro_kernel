@@ -161,6 +161,23 @@ Rollbackpolitik stammen nie aus dem Bundle. Das ist bewusst kein TUF- oder
 Uptane-Metadatenmodell: Online-Verteilung, Rollen/Expiry, Release-Key-Verwahrung,
 unveränderliches Recovery-Image und Anti-Rollback fehlen weiterhin.
 
+Die native Release-Artefaktgrenze erzeugt außerdem nach jedem Windows- und
+Makefile-Image-Build ein SPDX-2.3-JSON-SBOM. Es beschreibt genau den gebauten
+Kernel, seine detached Signatur, das rohe BIOS-Image und die unmittelbar unter
+dem Build-Verzeichnis paketierten Ring-3-Programme. Kanonische relative Pfade,
+Bytegrößen im standardisierten Kommentarfeld sowie SHA-1 und SHA-256 binden
+jeden Eintrag; der Namespace bindet den sortierten Artefaktsatz. Ein vom
+Generator strukturell unabhängiger Validator hasht die
+Live-Dateien erneut und verlangt exakt eine beschriebene REIST-OS-Package-
+Entität sowie vollständige `CONTAINS`-Beziehungen. Pfade bleiben im Build-Root;
+Symlinks und das Ausgabedokument selbst sind verboten. Feste Grenzen von 160
+Dateien, 128 MiB je Datei, 512 MiB Gesamteingang und 2 MiB JSON halten den
+Hostpfad endlich. Atomarer Austausch erhält bei einem Fehler das vorherige
+Dokument. Unbekannte Lizenz- und Copyrightdaten werden nicht geraten, sondern
+als `NOASSERTION` ausgewiesen. Dieses Artefakt ist nicht signiert und behauptet
+weder vollständige Lieferkette oder Provenienz noch reproduzierbare Builds,
+Lizenzfreigabe oder Schwachstellenanalyse.
+
 Der entscheidende nächste Architekturwechsel ist damit ausdrücklich:
 
 ```text
@@ -1615,6 +1632,13 @@ ab; zusätzliche Fälle wählen per explizitem 32-Bit-Seed genau ein Eingangsbit
 Jeder Fall verwendet den echten Bundle-zu-Inactive-Slot-Einstieg und ist nur
 erfolgreich abgelehnt, wenn kein Output-Image existiert. Eingangsartefakte
 werden vor und nach der Kampagne mit SHA-256 verglichen.
+
+Das S0.6b-SBOM-Gate ist ebenfalls hostseitige Release-Evidenz und keine neue
+Runtime-Autorität. Generator und Validator besitzen getrennte Strukturpfade;
+der Validator verwirft unbekannte Felder des vereinbarten geschlossenen
+SPDX-2.3-Subsets, Pfad-/Beziehungsabweichungen und jede Größen- oder Hashdrift.
+Ein erfolgreicher nativer Build und der Paket-Gate setzen ein anschließend
+validiertes `build/reist-sbom.spdx.json` voraus.
 
 ## Übergang vom heutigen Kernel
 

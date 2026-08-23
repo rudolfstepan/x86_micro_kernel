@@ -750,6 +750,12 @@ native-image: floppy-image
 		$(foreach spec,$(SYSTEM_IMAGE_FILES),--data-file $(spec))
 	@$(PYTHON) scripts/validate_boot_manifest.py \
 		--image $(OUTPUT_DIR)/reist-os.img --layout hdd
+	@$(PYTHON) scripts/generate_release_sbom.py --root . \
+		--output $(OUTPUT_DIR)/reist-sbom.spdx.json \
+		--artifact $(OUTPUT_DIR)/kernel.bin --artifact $(BOOT_SIGNATURE) \
+		--artifact $(OUTPUT_DIR)/reist-os.img --program-dir $(SYSTEM_PROGRAM_DIR)
+	@$(PYTHON) scripts/validate_release_sbom.py \
+		--sbom $(OUTPUT_DIR)/reist-sbom.spdx.json --root .
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/reist-os.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/reist-os/reist-os.vmx"
 

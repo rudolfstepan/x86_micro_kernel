@@ -301,6 +301,22 @@ und Quellimage sowie signierte Eingaben müssen nach der Gesamtkampagne
 SHA-256-identisch sein. Daraus folgt keine Aussage über vollständige Coverage,
 Langzeitbetrieb oder Hardwarefehlerabdeckung.
 
+Native Release-Builds erzeugen nach der Imagevalidierung genau ein
+SPDX-2.3-JSON-SBOM für Kernel, detached Signatur, BIOS-Image und unmittelbar
+paketierte Ring-3-Programme. Zulässig sind ausschließlich kanonische reguläre
+Dateien unter dem Repository-Build-Root; Symlinks, Duplikate, Nachlaufdaten und
+das Ausgabedokument als Eingabe scheitern geschlossen. Die festen Budgets sind
+160 Dateien, 128 MiB pro Datei, 512 MiB Gesamteingang und 2 MiB JSON. Jeder
+Eintrag trägt die exakte Bytegröße im standardisierten Kommentarfeld, das von
+SPDX 2.3 geforderte SHA-1 und zusätzlich SHA-256. Ein unabhängiger Validator
+hasht die Live-Artefakte erneut und verlangt die vollständigen `DESCRIBES`- und
+`CONTAINS`-Beziehungen, bevor das Paket akzeptiert wird. Der Generator
+veröffentlicht nur durch Flush, `fsync` und atomaren Austausch; ein Fehler darf
+ein vorhandenes SBOM nicht ersetzen. `NOASSERTION` bleibt für ungeklärte
+Lizenz- und Copyrightfelder zwingend sichtbar. Das SBOM ist nicht signiert und
+ist kein Nachweis für Reproduzierbarkeit, vollständige Abhängigkeiten,
+Lizenzfreigabe, Provenienz oder bekannte Schwachstellenfreiheit.
+
 ## Ziel-Failure-Domains
 
 Der aktuelle Kernel ist noch ein modularer Monolith. Das zentrale
