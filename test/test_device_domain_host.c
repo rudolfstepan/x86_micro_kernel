@@ -825,6 +825,82 @@ static void test_owner_recovery_is_atomic_and_deadline_bounded(void) {
     assert(status.owner_pid == 13 && status.state == DEVICE_DOMAIN_CLAIMED);
 }
 
+static void test_dma_pool_pressure_is_saturating_and_reclaimed(void) {
+    reset_counters();
+    device_domain_platform_ops_t ops = test_platform_ops();
+    assert(device_domain_init(&ops, false));
+
+    device_domain_dma_pool_stats_t stats;
+    assert(device_domain_dma_pool_stats(&stats) == 0);
+    assert(stats.version == DEVICE_DOMAIN_ABI_VERSION);
+    assert(stats.struct_size == sizeof(stats));
+    assert(stats.active_pools == 0U && stats.peak_active_pools == 0U);
+    assert(stats.capacity == DEVICE_DOMAIN_DMA_POOL_COUNT);
+    assert(stats.capacity_rejections == 0U);
+    assert(stats.pool_bytes == DEVICE_DOMAIN_DMA_POOL_BYTES);
+    assert(stats.reserved == 0U);
+
+    uint32_t devices[DEVICE_DOMAIN_DMA_POOL_COUNT + 1U] = {0};
+    device_domain_handle_t handles[DEVICE_DOMAIN_DMA_POOL_COUNT + 1U] = {0};
+    device_domain_resource_handle_t dma[DEVICE_DOMAIN_DMA_POOL_COUNT + 1U] =
+        {0};
+    for (uint32_t index = 0U; index <= DEVICE_DOMAIN_DMA_POOL_COUNT; ++index) {
+        device_domain_profile_t current = profile(
+            index + 1U, DEVICE_DOMAIN_PROFILE_MEDIATED_DMA);
+        current.device_id = (uint16_t)(0x2700U + index);
+        assert(device_domain_register(
+            &current, 0x00010000U + index, &devices[index]) == 0);
+        assert(device_domain_claim(
+            20 + (int)index, 10U + index, devices[index],
+            DEVICE_DOMAIN_MODE_MEDIATED, &handles[index]) == 0);
+        if (index < DEVICE_DOMAIN_DMA_POOL_COUNT) {
+            assert(bind_dma_resource(
+                20 + (int)index, 10U + index, handles[index], 0U,
+                &dma[index]) == 0);
+        }
+    }
+
+    assert(device_domain_dma_pool_stats(&stats) == 0);
+    assert(stats.active_pools == DEVICE_DOMAIN_DMA_POOL_COUNT);
+    assert(stats.peak_active_pools == DEVICE_DOMAIN_DMA_POOL_COUNT);
+    assert(stats.capacity_rejections == 0U);
+
+    assert(bind_dma_resource(
+        20 + (int)DEVICE_DOMAIN_DMA_POOL_COUNT,
+        10U + DEVICE_DOMAIN_DMA_POOL_COUNT,
+        handles[DEVICE_DOMAIN_DMA_POOL_COUNT], 1U,
+        &dma[DEVICE_DOMAIN_DMA_POOL_COUNT]) == -22);
+    assert(device_domain_dma_pool_stats(&stats) == 0);
+    assert(stats.capacity_rejections == 0U);
+    assert(bind_dma_resource(
+        20 + (int)DEVICE_DOMAIN_DMA_POOL_COUNT,
+        10U + DEVICE_DOMAIN_DMA_POOL_COUNT,
+        handles[DEVICE_DOMAIN_DMA_POOL_COUNT], 0U,
+        &dma[DEVICE_DOMAIN_DMA_POOL_COUNT]) == -28);
+    assert(device_domain_dma_pool_stats(&stats) == 0);
+    assert(stats.active_pools == DEVICE_DOMAIN_DMA_POOL_COUNT);
+    assert(stats.capacity_rejections == 1U);
+
+    assert(device_domain_release(20, 10U, handles[0], 100U) == 0);
+    assert(device_domain_dma_pool_stats(&stats) == 0);
+    assert(stats.active_pools == DEVICE_DOMAIN_DMA_POOL_COUNT - 1U);
+    assert(stats.peak_active_pools == DEVICE_DOMAIN_DMA_POOL_COUNT);
+    assert(stats.capacity_rejections == 1U);
+    assert(bind_dma_resource(
+        20 + (int)DEVICE_DOMAIN_DMA_POOL_COUNT,
+        10U + DEVICE_DOMAIN_DMA_POOL_COUNT,
+        handles[DEVICE_DOMAIN_DMA_POOL_COUNT], 0U,
+        &dma[DEVICE_DOMAIN_DMA_POOL_COUNT]) == 0);
+
+    for (uint32_t index = 1U; index <= DEVICE_DOMAIN_DMA_POOL_COUNT; ++index)
+        assert(device_domain_release(
+            20 + (int)index, 10U + index, handles[index], 100U) == 0);
+    assert(device_domain_dma_pool_stats(&stats) == 0);
+    assert(stats.active_pools == 0U);
+    assert(stats.peak_active_pools == DEVICE_DOMAIN_DMA_POOL_COUNT);
+    assert(stats.capacity_rejections == 1U);
+}
+
 int main(void) {
     test_legacy_pic_fallback_masks_shared_irq();
     test_mediated_lifecycle_and_stale_handle();
@@ -833,5 +909,6 @@ int main(void) {
     test_every_fence_action_runs_after_partial_failure();
     test_registration_attempts_both_initial_fences();
     test_owner_recovery_is_atomic_and_deadline_bounded();
+    test_dma_pool_pressure_is_saturating_and_reclaimed();
     return 0;
 }

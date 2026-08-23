@@ -84,6 +84,10 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("DEVICE_DOMAIN_IRQ_TIMEOUT_MS", header)
         self.assertIn("dma_pool_storage", source)
         self.assertIn("DEVICE_DOMAIN_DMA_POOL_BYTES", header)
+        self.assertIn("DEVICE_DOMAIN_CONTROL_DMA_POOL_STATS = 18U", header)
+        self.assertIn("device_domain_dma_pool_stats_t", header)
+        self.assertIn("capacity_rejections", header)
+        self.assertIn("device_domain_dma_pool_stats", source)
         self.assertIn("device_domain_dma_write", source)
         self.assertIn("device_domain_dma_read", source)
         self.assertIn("DEVICE_DOMAIN_MAX_REGION_RULES 32U", header)
@@ -183,6 +187,7 @@ class DeviceDomainTests(unittest.TestCase):
                         "x86os_device_bind_dma", "x86os_device_activate",
                         "x86os_device_resource_status",
                         "x86os_device_irq_complete", "x86os_device_dma_info",
+                        "x86os_device_dma_pool_stats",
                         "x86os_device_dma_write", "x86os_device_dma_read",
                         "x86os_device_region_read",
                         "x86os_device_region_write",
@@ -190,11 +195,24 @@ class DeviceDomainTests(unittest.TestCase):
             self.assertIn(wrapper, sdk_source)
         for command in ("DEVICE_DOMAIN_CONTROL_REGION_READ",
                         "DEVICE_DOMAIN_CONTROL_REGION_WRITE",
-                        "DEVICE_DOMAIN_CONTROL_REGION_BIND_DMA"):
+                        "DEVICE_DOMAIN_CONTROL_REGION_BIND_DMA",
+                        "DEVICE_DOMAIN_CONTROL_DMA_POOL_STATS"):
             self.assertIn(command, syscall)
         self.assertIn("x86os_device_driver_bootstrap", sdk_source)
         self.assertIn("x86os_device_driver_report", sdk_source)
         self.assertIn("supervisor_device_driver_output_allowed", syscall)
+
+    def test_hda_publishes_dma_pool_diagnostic_through_supervisor(self):
+        hda = (ROOT / "userspace/drivers/audio/hda_driver.c").read_text(
+            encoding="utf-8")
+        runner = (ROOT / "scripts/run_qemu_pci_audio.py").read_text(
+            encoding="utf-8")
+        self.assertIn("HDA_DMA_POOL_DIAGNOSTIC_TAG 0xD0000000U", hda)
+        self.assertIn("X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC", hda)
+        self.assertNotIn('x86os_puts("REIST_DMA_POOL', hda)
+        self.assertIn(
+            "REIST_DRIVER DIAGNOSTIC name=hda-ring3 value=D0114000",
+            runner)
 
     def test_supervisor_owns_driver_restart_and_self_test(self):
         supervisor = (ROOT / "kernel/init/supervisor.c").read_text(

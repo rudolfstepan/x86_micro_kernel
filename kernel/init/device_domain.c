@@ -83,6 +83,11 @@ static volatile uint32_t operation_busy;
 static device_domain_iommu_status_t iommu_status;
 static uint32_t irq_line_bindings[PCI_LEGACY_IRQ_COUNT];
 static volatile uint32_t pending_irq_lines;
+static device_domain_dma_pool_stats_t dma_pool_stats;
+
+static void increment_saturating(uint32_t *value) {
+    if (value != NULL && *value != UINT32_MAX) ++*value;
+}
 
 #ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
 #define DEVICE_DOMAIN_FAULT_RECOVERY_LOCATION 0xFFFFFF00U
@@ -574,6 +579,8 @@ static void release_mediated_dma_pool(device_slot_t *device) {
         pool->owner_generation == device->owner_generation) {
         memset(dma_pool_storage[index], 0, DEVICE_DOMAIN_DMA_POOL_BYTES);
         *pool = (dma_pool_slot_t){0};
+        if (dma_pool_stats.active_pools != 0U)
+            --dma_pool_stats.active_pools;
     }
 }
 
@@ -658,6 +665,12 @@ bool device_domain_init(const device_domain_platform_ops_t *ops,
     memset(resources, 0, sizeof(resources));
     memset(dma_pools, 0, sizeof(dma_pools));
     memset(dma_pool_storage, 0, sizeof(dma_pool_storage));
+    dma_pool_stats = (device_domain_dma_pool_stats_t){
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(dma_pool_stats),
+        .capacity = DEVICE_DOMAIN_DMA_POOL_COUNT,
+        .pool_bytes = DEVICE_DOMAIN_DMA_POOL_BYTES,
+    };
     memset(irq_line_bindings, 0, sizeof(irq_line_bindings));
     platform_ops = *ops;
     device_count = 0U;
@@ -1022,6 +1035,8 @@ int device_domain_bind_dma(int pid, uint32_t process_generation,
     if (device->mode == DEVICE_DOMAIN_MODE_MEDIATED) {
         if (request->dma_capability != 0U ||
             (pool_index = available_dma_pool()) < 0) {
+            if (request->dma_capability == 0U)
+                increment_saturating(&dma_pool_stats.capacity_rejections);
             end_operation();
             return request->dma_capability != 0U ? -22 : -28;
         }
@@ -1045,6 +1060,9 @@ int device_domain_bind_dma(int pid, uint32_t process_generation,
             .owner_generation = process_generation,
             .direction = request->flags,
         };
+        ++dma_pool_stats.active_pools;
+        if (dma_pool_stats.active_pools > dma_pool_stats.peak_active_pools)
+            dma_pool_stats.peak_active_pools = dma_pool_stats.active_pools;
     }
     device->dma_bound = 1U;
     device->dma_capability = platform_capability;
@@ -1462,6 +1480,24 @@ int device_domain_dma_info(int pid, uint32_t process_generation,
     return 0;
 }
 
+int device_domain_dma_pool_stats(device_domain_dma_pool_stats_t *stats) {
+    if (!initialized || stats == NULL) return -22;
+    if (!begin_operation()) return -16;
+    uint32_t active = 0U;
+    for (uint32_t index = 0U; index < DEVICE_DOMAIN_DMA_POOL_COUNT; ++index)
+        if (dma_pools[index].active != 0U) ++active;
+    if (active != dma_pool_stats.active_pools ||
+        dma_pool_stats.active_pools > DEVICE_DOMAIN_DMA_POOL_COUNT ||
+        dma_pool_stats.peak_active_pools < dma_pool_stats.active_pools ||
+        dma_pool_stats.peak_active_pools > DEVICE_DOMAIN_DMA_POOL_COUNT) {
+        end_operation();
+        return -84;
+    }
+    *stats = dma_pool_stats;
+    end_operation();
+    return 0;
+}
+
 static int dma_transfer_locked(int pid, uint32_t process_generation,
         device_domain_resource_handle_t handle, uint32_t offset, void *data,
         uint32_t length, bool write_to_device) {
@@ -1759,6 +1795,7 @@ void device_domain_test_reset(void) {
     memset(resources, 0, sizeof(resources));
     memset(dma_pools, 0, sizeof(dma_pools));
     memset(dma_pool_storage, 0, sizeof(dma_pool_storage));
+    memset(&dma_pool_stats, 0, sizeof(dma_pool_stats));
     memset(irq_line_bindings, 0, sizeof(irq_line_bindings));
     memset(&platform_ops, 0, sizeof(platform_ops));
     device_count = 0U;

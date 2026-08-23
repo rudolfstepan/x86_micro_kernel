@@ -53,6 +53,8 @@
 #define HDA_DIAGNOSTIC_STAGE_CHANNEL_REPORT 11U
 #define HDA_DIAGNOSTIC_STAGE_SELF_TEST 12U
 #define HDA_DIAGNOSTIC_STAGE_PROGRESS 13U
+#define HDA_DMA_POOL_DIAGNOSTIC_TAG 0xD0000000U
+#define HDA_DMA_POOL_DIAGNOSTIC_REJECTION_MAX 0x00000FFFU
 
 #define HDA_PARAMETER_SUBORDINATE_NODES 0x04U
 #define HDA_PARAMETER_FUNCTION_GROUP_TYPE 0x05U
@@ -763,6 +765,31 @@ static int driver_initialize(hda_driver_t *driver) {
         driver->dma_info.reserved[1] != 0U)
         return driver_failure(driver, HDA_DIAGNOSTIC_STAGE_DMA_INFO,
                               status != 0 ? status : -84);
+    x86os_device_dma_pool_stats_t dma_stats;
+    status = x86os_device_dma_pool_stats(&dma_stats);
+    if (status != 0 || dma_stats.version != X86OS_DEVICE_ABI_VERSION ||
+        dma_stats.struct_size != sizeof(dma_stats) ||
+        dma_stats.capacity != X86OS_DEVICE_DMA_POOL_COUNT ||
+        dma_stats.pool_bytes != X86OS_DEVICE_DMA_POOL_BYTES ||
+        dma_stats.active_pools == 0U ||
+        dma_stats.active_pools > dma_stats.capacity ||
+        dma_stats.peak_active_pools < dma_stats.active_pools ||
+        dma_stats.peak_active_pools > dma_stats.capacity ||
+        dma_stats.reserved != 0U)
+        return driver_failure(driver, HDA_DIAGNOSTIC_STAGE_DMA_INFO,
+                              status != 0 ? status : -84);
+    uint32_t reported_rejections = dma_stats.capacity_rejections;
+    if (reported_rejections > HDA_DMA_POOL_DIAGNOSTIC_REJECTION_MAX)
+        reported_rejections = HDA_DMA_POOL_DIAGNOSTIC_REJECTION_MAX;
+    uint32_t dma_diagnostic = HDA_DMA_POOL_DIAGNOSTIC_TAG |
+        (dma_stats.active_pools << 20U) |
+        (dma_stats.peak_active_pools << 16U) |
+        (dma_stats.capacity << 12U) | reported_rejections;
+    status = x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        dma_diagnostic);
+    if (status != 0)
+        return driver_failure(driver, HDA_DIAGNOSTIC_STAGE_DMA_INFO, status);
     uint32_t gcap = 0U;
     status = register_read(driver, HDA_GCAP, 2U, &gcap);
     if (status != 0)

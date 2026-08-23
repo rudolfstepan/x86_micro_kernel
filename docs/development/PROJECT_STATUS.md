@@ -123,6 +123,15 @@ Versorgung/Zeitbasis, Reset- und Interlockverdrahtung wird erst nach einer
 manuellen Auswahl angebunden; ohne diese Identität wird kein Produktionstreiber
 erfunden und keine Hardwarequalifikation behauptet.
 
+`S0.4c-2b2c` ergänzt die Laufzeitdiagnostik des kernel-eigenen mediated-DMA-
+Pools. Eine append-only 32-Byte-Struktur meldet aktive und maximale Belegung
+der vier 64-KiB-Pools sowie saturierende echte Kapazitätsablehnungen, ohne
+physische Adressen oder Pooltokens offenzulegen. Hostseitig sind vollständige
+Erschöpfung, `ENOSPC`, generationgebundene Freigabe, Wiederverwendung und die
+Rückkehr auf null aktive Pools geprüft. Der QEMU-HDA-Treiber bestätigt seine
+eigene gebundene Poolbelegung über einen maschinenlesbaren Marker im bereits
+autorisierten, generationsgebundenen Supervisor-Diagnosekanal.
+
 S0.5 umfasst nun die abgeschlossenen Pakete `S0.5a1`, `S0.5a2`, `S0.5a3a`,
 `S0.5a3b`, `S0.5b1`, `S0.5b2` und `S0.5b3`. Die letzten drei Pakete ergänzen
 die redundante Bootstufe, deren transaktionalen Pending-Zustand und das

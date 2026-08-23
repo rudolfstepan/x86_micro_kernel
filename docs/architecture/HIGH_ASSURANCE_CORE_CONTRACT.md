@@ -231,6 +231,15 @@ ist ausschließlich in einem getrennten Testimage enthalten. Sie prüft
 fehlgeschlagene Erst- und Teilallokationen auf exakte Rückgewinnung und darf in
 keinem Produktionsprofil aktiv sein.
 
+S0.4c-2b2c bindet zusätzlich die vier kernel-eigenen mediated-DMA-Pools an das
+Ressourcenregister. Device-Control-Kommando 18 liefert einer bereits
+autorisierten Treibergeneration ausschließlich aggregierte aktive und maximale
+Belegung, Kapazität, Poolgröße und saturierende Kapazitätsablehnungen. Die
+32-Byte-v1-Struktur enthält weder physische Adressen noch Pooltokens oder
+Eigentümer. Zähleränderung und ein Konsistenzscan aller vier Slots laufen unter
+dem bestehenden Device-Domain-Lock; die Werte sind Diagnose und keine
+Autoritätsentscheidung.
+
 Jeder Kernel-C-Buildpfad wird zusätzlich in einem unabhängigen Analysecompile
 mit Stack-Usage und Callgraph-Information übersetzt. Fehlende Artefakte,
 dynamische oder über 4096 Byte große lokale Frames und Rekursionszyklen sind

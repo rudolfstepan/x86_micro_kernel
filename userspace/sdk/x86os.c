@@ -64,6 +64,8 @@ _Static_assert(sizeof(x86os_device_dma_transfer_t) == 32U,
                "device DMA transfer ABI changed");
 _Static_assert(sizeof(x86os_device_dma_info_t) == 32U,
                "device DMA info ABI changed");
+_Static_assert(sizeof(x86os_device_dma_pool_stats_t) == 32U,
+               "device DMA pool statistics ABI changed");
 _Static_assert(sizeof(x86os_device_dma_descriptor_t) == 32U,
                "device DMA descriptor ABI changed");
 _Static_assert(sizeof(x86os_device_region_access_t) == 32U,
@@ -1136,6 +1138,12 @@ int x86os_device_dma_info(x86os_device_resource_t resource,
     return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
         X86OS_DEVICE_CONTROL_DMA_INFO, (uintptr_t)&request,
         (uintptr_t)info);
+}
+
+int x86os_device_dma_pool_stats(x86os_device_dma_pool_stats_t *stats) {
+    if (stats == NULL) return -22;
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_DMA_POOL_STATS, 0U, (uintptr_t)stats);
 }
 
 static int x86os_device_dma_transfer(

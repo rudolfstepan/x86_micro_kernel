@@ -382,6 +382,16 @@ nach der ersten Seite gescheiterten Kernelstack-Allokation. Nach Disarm muss
 derselbe Stackslot wieder vollständig nutzbar sein; erst dann wird der
 Erfolgsmarker ausgegeben.
 
+S0.4c-2b2c ergänzt den kernel-eigenen mediated-DMA-Pool der Treiberdomänen.
+Eine neue append-only 32-Byte-Diagnose meldet aktive und maximale Belegung der
+vier 64-KiB-Pools sowie saturierende echte Kapazitätsablehnungen. Invalides
+Input, allgemeine Resource-Slot-Erschöpfung und Plattform-Bindefehler erhöhen
+diesen Zähler nicht. Freigabe, Fence, Prozess-Cleanup und Recovery nullen den
+betroffenen Pool und senken nur die aktive Belegung; Peak und Ablehnungen
+bleiben bis zur Device-Domain-Neuinitialisierung erhalten. Der Abruf scannt
+alle vier Slots und lehnt abweichende Buchhaltung ab, ohne Allokation oder neue
+DMA-Autorität.
+
 S0.4c-2c1 ergänzt den Zig-Referenzbuild um einen getrennten GCC-Analysecompile
 mit `-fstack-usage` und `-fcallgraph-info=su`. Für jedes der 75 C-Objekte muss
 ein gepaartes Stack-/Callgraph-Artefakt existieren. Der begrenzte Validator

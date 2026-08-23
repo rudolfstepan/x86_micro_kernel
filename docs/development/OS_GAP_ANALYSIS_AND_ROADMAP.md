@@ -325,6 +325,10 @@ und 10 verbindlich.
       aber ohne gültiges REIST-Journal read-only mounten; vor jeder Mutation
       die exakte ATA-Journalbindung an Gerät und Volumegrenzen prüfen und eine
       verdrängte globale Bindung transaktionserhaltend neu aufbauen
+    - [x] S0.3c-6f8 FAT12-Schreibzulassung: fremde Volumes kompatibel lesbar,
+      aber ohne vollständig validiertes REIST12-Journal-/Remap-/Replikatlayout
+      read-only halten und direkte FAT-/Sektormutationen vor Zustandsänderung
+      abweisen
   - [ ] **S0.3c-7 teilweise:** Unabhängiger Standby-/Supervisor-Kanal und
     realer Handover
     - [x] S0.3c-7a Statischer Lease-/Epoch-/Fence-Protokollkern mit
@@ -378,6 +382,9 @@ und 10 verbindlich.
               Gastnachweis für Erschöpfung und Rückgewinnung
             - [x] S0.4c-2b2b2 Deterministische Heap-/Frame-ENOMEM-Injection
               mit vollständigem Rollbacknachweis
+          - [x] S0.4c-2b2c Versionierte, saturierende Laufzeitdiagnostik für
+            die vier kernel-eigenen mediated-DMA-Pools mit Hostnachweis für
+            Erschöpfung, Cleanup und Wiederverwendung sowie QEMU-HDA-Marker
       - [ ] S0.4c-2c Zielhardwarebezogene WCET- und Stack-Callgraph-Nachweise
         - [x] S0.4c-2c1 Unabhängiger GCC-Analysecompile mit vollständiger
           Stack-Usage-/Callgraph-Evidenz, lokalen 4096-Byte-Gates und
@@ -1275,7 +1282,14 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    Belegungsänderung sowie einen Framefehler nach der ersten Kernelstackseite,
    prüft die exakte Framebilanz und verwendet den Stackslot anschließend
    erneut. Das QEMU-Image erreicht danach weiterhin den vollständigen
-   Ring-3-`TEST_OK`-Marker.
+  Ring-3-`TEST_OK`-Marker.
+- S0.4c-2b2c registriert die vier kernel-eigenen 64-KiB-mediated-DMA-Pools,
+  führt lockgeschützte aktive/maximale Belegung und saturierende echte
+  Kapazitätsablehnungen und veröffentlicht die aggregierte 32-Byte-v1-
+  Diagnose ausschließlich an Treiberdomänen. Der Hosttest erzwingt `4/4`,
+  `ENOSPC`, Freigabe, Wiederbelegung und vollständige Rückgewinnung; der reale
+  QEMU-HDA-Treiber bindet einen Pool und publiziert den validierten Marker über
+  den bestehenden Supervisor-Diagnosekanal.
 - S0.4c-2c1 erzeugt mit einem unabhängigen GCC-Analysecompile für alle 75
    Kernel-C-Objekte `.su`- und `.ci`-Evidenz. Der Validator lehnt fehlende oder
    ungepaarte Dateien, dynamische beziehungsweise über 4096 Byte große lokale

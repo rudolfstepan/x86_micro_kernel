@@ -73,3 +73,12 @@ symbol = "STORAGE_REQUEST_MAX_PER_CLIENT"
 limit = 2
 unit = "requests/client"
 verification = ["test/test_reist_storage_request_pool.py"]
+
+[[budget]]
+id = "RB-DEVICE-DMA-POOLS"
+description = "Kernel-eigene mediated-DMA-Pools für Ring-3-Treiber"
+source = "include/kernel/device_domain.h"
+symbol = "DEVICE_DOMAIN_DMA_POOL_COUNT"
+limit = 4
+unit = "pools"
+verification = ["test/test_device_domain_source.py"]

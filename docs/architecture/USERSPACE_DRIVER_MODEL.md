@@ -112,6 +112,17 @@ Ausrichtung, Anzahl und Generation, konstruiert daraus einen versiegelten
 16-Byte-Deskriptor mit physischer Adresse und veröffentlicht ausschließlich
 dessen DMA-Token. Der übrige Pool bleibt der beschreibbare Datenbereich.
 
+Device-Control-Kommando 18 stellt der bereits autorisierten Treiberdomäne eine
+aggregierte 32-Byte-v1-Diagnose bereit. Sie enthält aktuelle und maximale
+Belegung der vier Pools, Kapazität, feste Poolgröße und einen saturierenden
+Zähler echter Kapazitätsablehnungen. Physische Adressen, Eigentümer und
+generationgebundene Pooltokens bleiben verborgen. Der Zähler ist beobachtbar,
+beeinflusst aber weder Zuteilung noch Bus-Mastering-Autorität.
+Der QEMU-HDA-Nachweis komprimiert Aktiv-, Peak- und Kapazitätswert sowie die
+unteren zwölf Bits des Ablehnungszählers in einen markierten 32-Bit-Wert und
+meldet ihn über den bestehenden generationsgebundenen Supervisor-Diagnosekanal;
+das Default-Deny-Treiberprofil erhält dafür keinen Terminal-Syscall.
+
 Damit kann das HDA-Profil genau eine geprüfte BDL-Zeile verwenden, ohne Ring 3
 eine adresshaltige Tabelle zu überlassen. `ACTIVE` sperrt weitere DMA-Writes;
 ein explizites Deaktivieren maskiert IRQ und Bus-Mastering und führt zurück zu

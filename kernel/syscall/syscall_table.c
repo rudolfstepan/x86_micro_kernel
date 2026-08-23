@@ -2822,6 +2822,16 @@ static int syscall_device_control(uint32_t command, const void *user_request,
         return copy_to_user_space(directory, (uint32_t)(uintptr_t)user_result,
                                   &result, sizeof(result)) == 0 ? 0 : -14;
     }
+    if (command == DEVICE_DOMAIN_CONTROL_DMA_POOL_STATS) {
+        if (user_request != NULL || !device_output_accessible(
+                directory, user_result,
+                sizeof(device_domain_dma_pool_stats_t))) return -14;
+        device_domain_dma_pool_stats_t result;
+        int status = device_domain_dma_pool_stats(&result);
+        if (status != 0) return status;
+        return copy_to_user_space(directory, (uint32_t)(uintptr_t)user_result,
+                                  &result, sizeof(result)) == 0 ? 0 : -14;
+    }
     if (command == DEVICE_DOMAIN_CONTROL_DMA_WRITE ||
         command == DEVICE_DOMAIN_CONTROL_DMA_READ) {
         if (user_result != NULL) return -22;

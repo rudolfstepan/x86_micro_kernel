@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import array
 import itertools
+import shutil
 import subprocess
 import sys
 import threading
@@ -25,6 +26,9 @@ except ImportError:  # Direct script execution.
 
 SHELL_PROMPT = "C:\\>"
 AUDIO_READY = "REIST_AUDIO SERVICE_READY"
+DMA_POOL_READY = (
+    "REIST_DRIVER DIAGNOSTIC name=hda-ring3 value=D0114000"
+)
 AUDIOINFO_OK = "REIST audio: ready"
 AUDIOTEST_OK = "Audio test complete."
 AUDIO_TEST_CYCLES = 5
@@ -39,6 +43,21 @@ PITCH_SEARCH_MIN_HZ = 360
 PITCH_SEARCH_MAX_HZ = 520
 PITCH_ACCEPT_MIN_HZ = 435.0
 PITCH_ACCEPT_MAX_HZ = 445.0
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def default_qemu_path() -> Path | None:
+    """Resolve the same bounded QEMU candidates as the runtime wrapper."""
+    executable = shutil.which("qemu-system-i386")
+    if executable:
+        return Path(executable)
+    for candidate in (
+            Path(r"C:\tmp\qemu-portable\qemu-system-i386.exe"),
+            Path(r"C:\Program Files\qemu\qemu-system-i386.exe"),
+            Path(r"C:\msys64\mingw64\bin\qemu-system-i386.exe")):
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def audio_qemu_command(qemu: Path, image: Path, wav_path: Path) -> list[str]:
@@ -182,12 +201,20 @@ def wait_for_count(transcript: list[str], marker: str, count: int,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--qemu", type=Path, required=True)
-    parser.add_argument("--image", type=Path, required=True)
-    parser.add_argument("--wav", type=Path, required=True)
-    parser.add_argument("--log", type=Path, required=True)
+    parser.add_argument("--qemu", type=Path)
+    parser.add_argument("--image", type=Path,
+                        default=ROOT / "build" / "reist-os.img")
+    parser.add_argument("--wav", type=Path,
+                        default=ROOT / "build" / "qemu-pci-audio.wav")
+    parser.add_argument("--log", type=Path,
+                        default=ROOT / "build" / "qemu-pci-audio.log")
     parser.add_argument("--timeout", type=float, default=60.0)
     args = parser.parse_args()
+    if args.qemu is None:
+        args.qemu = default_qemu_path()
+    if args.qemu is None:
+        print("pci-audio: FAIL qemu-system-i386 was not found")
+        return 2
     if (not args.qemu.is_file() or not args.image.is_file() or
             args.timeout <= 5.0):
         return 2
@@ -220,6 +247,8 @@ def main() -> int:
             detail = "userspace shell prompt was not reached"
         elif not wait_for(transcript, AUDIO_READY, deadline):
             detail = "supervised audio service did not become ready"
+        elif not wait_for(transcript, DMA_POOL_READY, deadline):
+            detail = "mediated DMA pool diagnostics were not observed"
         else:
             inject_ps2_command(process, "audioinfo")
             if not wait_for(transcript, AUDIOINFO_OK, deadline):

@@ -58,6 +58,7 @@ enum {
     DEVICE_DOMAIN_CONTROL_REGION_BIND_DMA = 15U,
     DEVICE_DOMAIN_CONTROL_DMA_DESCRIPTOR_SET = 16U,
     DEVICE_DOMAIN_CONTROL_DEACTIVATE = 17U,
+    DEVICE_DOMAIN_CONTROL_DMA_POOL_STATS = 18U,
 };
 
 enum {
@@ -274,6 +275,17 @@ typedef struct {
     uint32_t reserved[2];
 } device_domain_dma_info_t;
 
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t active_pools;
+    uint32_t peak_active_pools;
+    uint32_t capacity;
+    uint32_t capacity_rejections;
+    uint32_t pool_bytes;
+    uint32_t reserved;
+} device_domain_dma_pool_stats_t;
+
 enum {
     DEVICE_DOMAIN_DMA_DESCRIPTOR_INTERRUPT = 1U << 0U,
 };
@@ -420,6 +432,8 @@ _Static_assert(sizeof(device_domain_dma_transfer_t) == 32U,
                "device-domain DMA transfer ABI changed");
 _Static_assert(sizeof(device_domain_dma_info_t) == 32U,
                "device-domain DMA info ABI changed");
+_Static_assert(sizeof(device_domain_dma_pool_stats_t) == 32U,
+               "device-domain DMA pool statistics ABI changed");
 _Static_assert(sizeof(device_domain_driver_bootstrap_t) == 32U,
                "device-domain driver bootstrap ABI changed");
 _Static_assert(sizeof(device_domain_driver_report_t) == 32U,
@@ -510,6 +524,8 @@ int device_domain_irq_complete(int pid, uint32_t process_generation,
 int device_domain_dma_info(int pid, uint32_t process_generation,
                            device_domain_resource_handle_t resource,
                            device_domain_dma_info_t *info);
+/** Return aggregate bounded-pool pressure without exposing DMA authority. */
+int device_domain_dma_pool_stats(device_domain_dma_pool_stats_t *stats);
 /** Copy one bounded block into a TO_DEVICE mediated DMA pool. */
 int device_domain_dma_write(int pid, uint32_t process_generation,
                             device_domain_resource_handle_t resource,

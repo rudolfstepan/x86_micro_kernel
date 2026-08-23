@@ -1079,6 +1079,8 @@ typedef struct {
 
 #define X86OS_DEVICE_ABI_VERSION 1U
 #define X86OS_DEVICE_DMA_TRANSFER_MAX 1024U
+#define X86OS_DEVICE_DMA_POOL_COUNT 4U
+#define X86OS_DEVICE_DMA_POOL_BYTES (64U * 1024U)
 #define X86OS_DEVICE_DMA_ADDRESS_ALIGNMENT 128U
 #define X86OS_DEVICE_DMA_DATA_OFFSET 4096U
 #define X86OS_DEVICE_DMA_DESCRIPTOR_CAPACITY 256U
@@ -1102,6 +1104,7 @@ enum {
     X86OS_DEVICE_CONTROL_REGION_BIND_DMA = 15U,
     X86OS_DEVICE_CONTROL_DMA_DESCRIPTOR_SET = 16U,
     X86OS_DEVICE_CONTROL_DEACTIVATE = 17U,
+    X86OS_DEVICE_CONTROL_DMA_POOL_STATS = 18U,
 };
 enum {
     X86OS_DEVICE_RESOURCE_REGION = 1U,
@@ -1232,6 +1235,16 @@ typedef struct {
     uint32_t direction;
     uint32_t reserved[2];
 } x86os_device_dma_info_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t active_pools;
+    uint32_t peak_active_pools;
+    uint32_t capacity;
+    uint32_t capacity_rejections;
+    uint32_t pool_bytes;
+    uint32_t reserved;
+} x86os_device_dma_pool_stats_t;
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -1546,6 +1559,7 @@ int x86os_device_irq_complete(x86os_device_resource_t resource,
                               x86os_device_irq_completion_t *completion);
 int x86os_device_dma_info(x86os_device_resource_t resource,
                           x86os_device_dma_info_t *info);
+int x86os_device_dma_pool_stats(x86os_device_dma_pool_stats_t *stats);
 int x86os_device_dma_write(x86os_device_resource_t resource, uint32_t offset,
                            const void *data, uint32_t length);
 int x86os_device_dma_read(x86os_device_resource_t resource, uint32_t offset,

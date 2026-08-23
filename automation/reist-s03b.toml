@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.4c-2b2c-device-dma-pool-diagnostics"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -4202,7 +4202,7 @@ evidence = []
 
 [[packages]]
 id = "S0.4c-2b2c-device-dma-pool-diagnostics"
-status = "active"
+status = "done"
 risk = "high"
 title = "Measure mediated device-DMA pool exhaustion and recovery"
 scope = "Extend the fixed kernel-owned mediated-DMA pool with append-only, versioned and saturating runtime diagnostics. Publish only aggregate active, high-water, capacity, rejection and per-pool byte bounds through device-control command 18 to an already authorized Ring-3 driver generation. Update counters under the existing device-domain operation lock, count only genuine pool-capacity rejection, and preserve high-water and rejection history after generation-scoped release while active usage returns exactly to zero. Host behavior must exhaust all four pools, observe fail-closed ENOSPC, release and reuse one pool, then reclaim all pools. The real QEMU HDA driver must observe and publish a bounded diagnostic marker after its mediated DMA binding. This is diagnostics only and grants no physical address, DMA mapping or additional device authority."
