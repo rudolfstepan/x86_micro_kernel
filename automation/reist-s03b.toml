@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.5a1-boot-manifest-sha256"
 
 [policy]
 one_package_per_run = true
@@ -1224,6 +1224,63 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "sched: add bounded emulator WCET baselines"
+evidence = []
+
+[[packages]]
+id = "S0.5a1-boot-manifest-sha256"
+status = "active"
+risk = "high"
+title = "Versioned SHA-256 boot-manifest and independent image gate"
+scope = "Upgrade the native BIOS boot manifest to an append-only version-2 format containing the exact kernel SHA-256 digest defined by NIST FIPS 180-4 while retaining CRC32 only as a legacy corruption diagnostic. Make stage 1 offsets stable, make stage 2 fail closed on the v2 magic/header and a missing digest, add an independent bounded host validator for MBR and floppy images, and invoke that validator from both Windows and Makefile image builds. This package establishes deterministic artifact integrity and provenance evidence only; the loader still verifies CRC32, so signature authority, trusted-key policy and boot-time SHA-256 enforcement remain explicit follow-up packages and no verified-boot claim is permitted yet."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "arch/x86/boot/bios/stage1_mbr.asm",
+  "arch/x86/boot/bios/stage1_floppy.asm",
+  "arch/x86/boot/bios/stage2_bios.asm",
+  "scripts/build-windows.ps1",
+  "scripts/create_native_boot_image.py",
+  "scripts/create_floppy_boot_image.py",
+  "scripts/validate_boot_manifest.py",
+  "test/test_native_boot_image.py",
+  "test/test_floppy_boot_image.py",
+  "test/test_boot_manifest.py",
+  "docs/development/BOOTABLE_DISK.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "manifest v2 is exactly one sector append-only and keeps stage-1 stage2 offsets 16 and 20 stable",
+  "all integer fields extents checksum and digest are validated before artifact acceptance",
+  "SHA-256 covers exactly kernel_size bytes and neither zero padding nor mutable FAT data",
+  "the validator reads only fixed metadata and the bounded declared kernel extent",
+  "CRC32 remains diagnostics only and SHA-256 storage alone is never described as a signature or trust anchor",
+  "both Windows and Makefile native-image paths run the independent validator and fail closed",
+  "QEMU boots the v2 image through the production BIOS stages"
+]
+targeted_tests = [
+  "python test/test_boot_manifest.py -v",
+  "python test/test_native_boot_image.py -v",
+  "python test/test_floppy_boot_image.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "the manifest cannot remain one sector or stable for stage 1",
+  "the independent validator and image producer share digest code beyond the Python standard library primitive",
+  "a build path can publish an unvalidated native image",
+  "documentation implies boot-time cryptographic verification signature authority or verified boot",
+  "a required production automation contract or test file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "boot: add versioned SHA-256 manifest gate"
 evidence = []
 
 [[packages]]
