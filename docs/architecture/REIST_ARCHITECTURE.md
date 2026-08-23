@@ -1004,6 +1004,14 @@ für die Inhaltsdiagnose traversierbar. Nur bei der exakten Gesamtdiagnose
 null setzen. Attribute, Name, Startcluster, FAT und Daten bleiben unverändert;
 jeder betroffene Directory-Sektor liegt vor dem Write im Undo-Journal und ein
 sauberer Vollscan schließt die Transaktion ab.
+Ein ansonsten gültiger Volume-Label-Eintrag mit einem reservierten niedrigen
+Startcluster oder Größenfeld ungleich null erhält einen getrennten bestätigten
+Pfad. `--repair-volume-label --confirm` verlangt ebenfalls die exakte
+Gesamtdiagnose `DIRECTORY_INVALID` und vollständige Kandidatenabdeckung. Nach
+erneuter Feldvalidierung im geleasten Sektor werden ausschließlich Startcluster
+und Größe auf null gesetzt; Labelname, Attribute, FAT und Daten bleiben
+unverändert. Undo-Journal, verifizierter Write und sauberer Vollscan sind auch
+hier Abschlussbedingungen.
 
 `device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
 Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht

@@ -93,9 +93,12 @@ static int check_fat12(int argc, char **argv) {
         equal(argv[3], "--repair-crosslinks") && equal(argv[4], "--confirm");
     int repair_directory_size = argc == 5 &&
         equal(argv[3], "--repair-dir-size") && equal(argv[4], "--confirm");
+    int repair_volume_label = argc == 5 &&
+        equal(argv[3], "--repair-volume-label") && equal(argv[4], "--confirm");
     if ((argc != 3 && !repair_mirror && !repair_chains && !repair_short &&
          !reclaim_orphans && !repair_loops && !repair_directory_loops &&
-         !repair_short_loops && !repair_crosslinks && !repair_directory_size) ||
+         !repair_short_loops && !repair_crosslinks && !repair_directory_size &&
+         !repair_volume_label) ||
         !equal(argv[1], "--fat12")) {
         x86os_puts("Usage: chkdsk [path]\n"
                    "       chkdsk --fat12 <resource>\n"
@@ -107,7 +110,8 @@ static int check_fat12(int argc, char **argv) {
                    "       chkdsk --fat12 <resource> --repair-dir-loops --confirm\n"
                    "       chkdsk --fat12 <resource> --repair-short-loops --confirm\n"
                    "       chkdsk --fat12 <resource> --repair-crosslinks --confirm\n"
-                   "       chkdsk --fat12 <resource> --repair-dir-size --confirm\n");
+                   "       chkdsk --fat12 <resource> --repair-dir-size --confirm\n"
+                   "       chkdsk --fat12 <resource> --repair-volume-label --confirm\n");
         return 2;
     }
     uint32_t resource = 0U;
@@ -129,6 +133,7 @@ static int check_fat12(int argc, char **argv) {
         : repair_short_loops ? X86OS_STORAGE_REPAIR_FAT12_SHORT_LOOPS
         : repair_crosslinks ? X86OS_STORAGE_REPAIR_FAT12_CROSSLINKS
         : repair_directory_size ? X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_SIZE
+        : repair_volume_label ? X86OS_STORAGE_REPAIR_FAT12_VOLUME_LABEL
                                 : X86OS_STORAGE_CHECK_FAT12;
     int request_result = run_fat12_request(operation, resource,
                                            &operation_result);
@@ -144,7 +149,7 @@ static int check_fat12(int argc, char **argv) {
         x86os_puts((repair_mirror || repair_chains || repair_short ||
                     reclaim_orphans || repair_loops || repair_directory_loops ||
                     repair_short_loops || repair_crosslinks ||
-                    repair_directory_size)
+                    repair_directory_size || repair_volume_label)
             ? "CHKDSK: repair refused or failed; medium requires inspection\n"
             : "CHKDSK: FAT12 metadata check failed; medium unchanged\n");
         return 1;
@@ -186,6 +191,10 @@ static int check_fat12(int argc, char **argv) {
         x86os_puts("CHKDSK: FAT12 directory sizes repaired\n");
         return 0;
     }
+    if ((flags & X86OS_FAT12_RESULT_VOLUME_LABEL_REPAIRED) != 0U) {
+        x86os_puts("CHKDSK: FAT12 volume-label fields repaired\n");
+        return 0;
+    }
     if (flags == 0U) {
         x86os_puts("CHKDSK: FAT12 BPB and both FAT mirrors are clean\n");
         return 0;
@@ -195,7 +204,7 @@ static int check_fat12(int argc, char **argv) {
     x86os_puts((repair_mirror || repair_chains || repair_short ||
                 reclaim_orphans || repair_loops || repair_directory_loops ||
                 repair_short_loops || repair_crosslinks ||
-                repair_directory_size)
+                repair_directory_size || repair_volume_label)
         ? "; no repair committed\n"
         : "; inspect flags before explicit repair\n");
     return 1;
@@ -277,7 +286,8 @@ int main(int argc, char **argv) {
                    "       chkdsk --fat12 <resource> --repair-dir-loops --confirm\n"
                    "       chkdsk --fat12 <resource> --repair-short-loops --confirm\n"
                    "       chkdsk --fat12 <resource> --repair-crosslinks --confirm\n"
-                   "       chkdsk --fat12 <resource> --repair-dir-size --confirm\n");
+                   "       chkdsk --fat12 <resource> --repair-dir-size --confirm\n"
+                   "       chkdsk --fat12 <resource> --repair-volume-label --confirm\n");
         return 2;
     }
     unsigned visited = 0, errors = 0;

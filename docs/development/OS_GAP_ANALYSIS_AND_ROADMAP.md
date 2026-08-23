@@ -283,8 +283,11 @@ und 10 verbindlich.
         - [x] Unterverzeichnisse mit gültigem Startcluster trotz unzulässiger
           Größe vollständig scannen und bei reiner Diagnose ausschließlich ihr
           32-Bit-Größenfeld journalisiert auf null setzen
+        - [x] Ansonsten gültige Volume-Label-Einträge mit reserviertem
+          Startcluster oder Größenfeld ungleich null bei reiner Diagnose
+          journalisiert normalisieren, ohne Labelname oder Attribute zu ändern
         - [ ] `CHKDSK.PRG` für echte mehrfach benötigte Crosslinks, allgemeine
-          Verzeichnisschäden jenseits reiner Größenfelder, Orphan-Datenrettung,
+          Verzeichnisschäden jenseits der eng begrenzten Feldreparaturen, Orphan-Datenrettung,
           Journal und Defektsektorkarte
         - [x] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
           Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg

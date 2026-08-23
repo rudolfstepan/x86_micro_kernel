@@ -88,6 +88,7 @@ C:\> CHKDSK --fat12 1 --repair-dir-loops --confirm
 C:\> CHKDSK --fat12 1 --repair-short-loops --confirm
 C:\> CHKDSK --fat12 1 --repair-crosslinks --confirm
 C:\> CHKDSK --fat12 1 --repair-dir-size --confirm
+C:\> CHKDSK --fat12 1 --repair-volume-label --confirm
 FDISK
 ```
 
@@ -157,6 +158,12 @@ der Spezifikation nicht null ist. Der Scanner traversiert ihren Inhalt trotz
 der Diagnose vollständig. Bei einer reinen `DIRECTORY_INVALID`-Diagnose und
 vollständiger Kandidatenabdeckung werden alle betroffenen Directory-Sektoren
 journalisiert und nur das jeweilige 32-Bit-Größenfeld auf null gesetzt.
+`--repair-volume-label --confirm` normalisiert ausschließlich ansonsten
+gültige Volume-Label-Einträge, deren reservierter niedriger Startcluster oder
+Größenwert nicht null ist. Der geleaste Rescan muss als einzige Diagnose
+`DIRECTORY_INVALID` und für jeden Fehler genau einen festen Kandidaten liefern.
+Nach Undo-Journalisierung des Directory-Sektors werden nur diese beiden Felder
+auf null gesetzt; Labelname, Attribute, FAT und Daten bleiben unverändert.
 `FDISK.PRG` kann auf explizit freigegebenen, leeren ATA-/AHCI-Medien eine
 validierte MBR-Partition erzeugen. Eine Diskette bleibt eine partitionslose
 Superfloppy und wird von `FDISK` niemals partitioniert.
@@ -166,7 +173,7 @@ Superfloppy und wird von `FDISK` niemals partitioniert.
 - reale FDD-/VMware-Power-Loss- und Reconnect-Matrix über die bereits
   deterministisch geprüften Veröffentlichungsstufen
 - CHKDSK-Reparatur echter mehrfach benötigter Crosslinks, allgemeiner
-  Verzeichnisschäden jenseits reiner Größenfelder, Journal, Remap- und
+  Verzeichnisschäden jenseits reiner Größen- und Volume-Label-Felder, Journal, Remap- und
   Defektsektorkarte sowie Datenrettung von Orphans statt ihres expliziten
   Verwerfens
 - QEMU-Laufzeitnachweis für Maintenance-Lease, Unmount, FAT-Spiegel-Reparatur,

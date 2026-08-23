@@ -200,7 +200,8 @@ Für explizit markierte REIST-FAT12-Medien sind umgesetzt:
   Rücksprungschleifen in vollständig gescannten Unterverzeichnissen und
   zugleich kurze reguläre Dateischleifen mit atomarer Größenbegrenzung sowie
   Crosslinks, die ausschließlich aus überlangen Dateitails entstehen, und
-  unzulässige Größenfelder ansonsten gültiger Unterverzeichnisse
+  unzulässige Größenfelder ansonsten gültiger Unterverzeichnisse sowie
+  reservierte Nichtnull-Felder ansonsten gültiger Volume-Label-Einträge
 
 `FORMAT.PRG` akzeptiert ausschließlich eine veröffentlichte FDD-Ressource:
 
@@ -212,8 +213,8 @@ FORMAT --reist-fat12 <resource-id> --confirm
 `CHKDSK.PRG [pfad]` führt einen begrenzten read-only VFS-Scan aus. Die
 FAT12-Modi `--repair`, `--repair-chains`, `--repair-short`,
 `--reclaim-orphans`, `--repair-loops`, `--repair-dir-loops` und
-`--repair-short-loops`, `--repair-crosslinks` und `--repair-dir-size` benötigen
-jeweils `--confirm`, laufen ausschließlich im Storage-Dienst unter
+`--repair-short-loops`, `--repair-crosslinks`, `--repair-dir-size` und
+`--repair-volume-label` benötigen jeweils `--confirm`, laufen ausschließlich im Storage-Dienst unter
 Maintenance-Lease und melden Erfolg erst nach Undo-Journal, Readback und
 sauberem Vollscan. Der Reclaim-Modus verwirft unerreichbare Inhalte
 ausdrücklich und ist keine Datenrettung. Crosslink-Reparatur bleibt gesperrt,
@@ -333,7 +334,9 @@ oder breite Zielhardwarequalifikation.
   eindeutigen Inhaltsscan beendet. Kombinierte Short-Loops begrenzen zusätzlich
   atomar die Directory-Größe; reine Excess-Tail-Crosslinks werden ohne Änderung
   der einzigen Sollkette getrennt; reine ungültige Unterverzeichnisgrößen
-  werden nach vollständigem Inhaltsscan nullgesetzt. Echte Mehrfach-Crosslinks,
+  werden nach vollständigem Inhaltsscan nullgesetzt. Reservierte Startcluster-
+  und Größenfelder ansonsten gültiger Volume-Label-Einträge werden ebenfalls
+  ausschließlich auf null normalisiert. Echte Mehrfach-Crosslinks,
   Orphan-Datenrettung, weitergehende Verzeichnis-, Journal-, Remap- und
   Defektsektorreparatur sowie der QEMU-Remountnachweis sind noch offen
 - reale FAT12-Power-Loss-/Reconnect-Matrix für VMware und Zielhardware
