@@ -4242,7 +4242,7 @@ package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
 ]
 runtime_tests = [
-  ".\\scripts\\test-reist-runtime.ps1 -Mode pci-audio -Target qemu -Video vga"
+  "python scripts/run_qemu_pci_audio.py"
 ]
 stop_conditions = [
   "diagnostics would require exposing a DMA physical address, ownership token or new ambient authority",
