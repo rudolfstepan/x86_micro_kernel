@@ -1035,6 +1035,21 @@ Undo-Journal; ein sauberer Vollscan ist Voraussetzung für Journal-`CLEAN`.
 Fehlende oder mehrdeutige `..`-Zuordnung, überlappende Teilketten,
 reguläre Dateibeteiligung, fremde Diagnosen und Kapazitätserschöpfung bleiben
 vor Seiteneffekten gesperrt.
+Für die Datenrettung ergänzt `--salvage-orphans --confirm` den weiterhin
+separaten destruktiven Reclaim-Pfad. Der Storage-Dienst bildet aus allen
+unerreichbaren, normal EOC-terminierten FAT12-Clustern feste Kettendeskriptoren.
+Jeder Nichtkopf muss genau eine eingehende Orphan-Referenz besitzen; Schleifen,
+Konvergenzen, Übergänge in erreichbare oder defekte Cluster und unvollständige
+Abdeckung werden vor Writes abgelehnt. Ein validiertes `FOUND.000` im Root wird
+wiederverwendet oder mit begrenzt zugewiesenen Directory-Clustern erzeugt und
+bei Bedarf erweitert. Jede Kette erscheint als `FILEnnnn.CHK`; die vier Ziffern
+sind der ursprüngliche FAT12-Startcluster und dienen als standardnaher
+Herkunftsnachweis. Die Dateigröße umfasst bewusst die vollständige
+Clusterallokation, weil die ursprüngliche Nutzlänge nicht mehr beweisbar ist.
+Neue Directory-Daten, beide FAT-Spiegel und sämtliche Root-/Directory-Sektoren
+liegen vor der ersten Mutation gemeinsam im Undo-Journal. Die Orphan-Ketten
+selbst werden weder umgeschrieben noch freigegeben; Erfolg verlangt Readback,
+Flush und einen sauberen Vollscan.
 Ein Unterverzeichniseintrag mit gültigen Attributen, null im hohen
 Clusterwort, gültigem Startcluster und unzulässiger Größe ungleich null bleibt
 für die Inhaltsdiagnose traversierbar. Nur bei der exakten Gesamtdiagnose

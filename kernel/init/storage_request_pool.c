@@ -130,7 +130,7 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->client_generation == 0U ||
         value->deadline_ms == 0U ||
         value->operation < STORAGE_REQUEST_READ ||
-        value->operation > STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_TOPOLOGY)
+        value->operation > STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS)
         return false;
     if (value->operation == STORAGE_REQUEST_BLOCK_FLUSH ||
         value->operation == STORAGE_REQUEST_VFS_SYNC ||
@@ -155,7 +155,8 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->operation == STORAGE_REQUEST_REPAIR_FAT12_DOT_CLUSTER ||
         value->operation == STORAGE_REQUEST_REPAIR_FAT12_REQUIRED_CROSSLINKS ||
         value->operation == STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_CROSSLINKS ||
-        value->operation == STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_TOPOLOGY)
+        value->operation == STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_TOPOLOGY ||
+        value->operation == STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS)
         return value->length == 0U;
     if (value->operation == STORAGE_REQUEST_BLOCK_READ ||
         value->operation == STORAGE_REQUEST_BLOCK_WRITE)
@@ -315,7 +316,7 @@ static int submit_locked(int client_pid, uint32_t client_generation,
         handle_out == NULL || request->version != STORAGE_REQUEST_VERSION ||
         request->struct_size < sizeof(*request) ||
         request->operation < STORAGE_REQUEST_READ ||
-        request->operation > STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_TOPOLOGY ||
+        request->operation > STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS ||
         request->timeout_ms == 0U ||
         request->timeout_ms > STORAGE_REQUEST_MAX_TIMEOUT_MS)
         return STORAGE_EINVAL;
@@ -343,7 +344,8 @@ static int submit_locked(int client_pid, uint32_t client_generation,
         request->operation == STORAGE_REQUEST_REPAIR_FAT12_DOT_CLUSTER ||
         request->operation == STORAGE_REQUEST_REPAIR_FAT12_REQUIRED_CROSSLINKS ||
         request->operation == STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_CROSSLINKS ||
-        request->operation == STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_TOPOLOGY)
+        request->operation == STORAGE_REQUEST_REPAIR_FAT12_DIRECTORY_TOPOLOGY ||
+        request->operation == STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS)
         expected = 0U;
     if ((request->operation == STORAGE_REQUEST_BLOCK_READ ||
          request->operation == STORAGE_REQUEST_BLOCK_WRITE) &&

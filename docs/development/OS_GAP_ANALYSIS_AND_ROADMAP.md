@@ -310,7 +310,7 @@ und 10 verbindlich.
           parentübergreifenden Directory-Crosslinks sowie zusammengehörige
           Verzeichnis-Topologiefelder; mehrdeutige Topologien bleiben
           fail-closed
-        - [ ] **S0.3c-6f6r gebündelt:** Orphan-Datenrettung in einen begrenzten,
+        - [x] **S0.3c-6f6r gebündelt:** Orphan-Datenrettung in einen begrenzten,
           standardnahen `FOUND.000`-Namensraum mit Herkunftsnachweis statt
           ausschließlichem Verwerfen
         - [ ] **S0.3c-6f6s gebündelt:** persistenter Journal-/Remap-/
@@ -2627,8 +2627,13 @@ sie validieren Eingaben und senden versionierte Requests an den Storage-Dienst.
   parentübergreifende Aliasgruppen auf den über `..` eindeutig bestimmten
   kanonischen Parent. Spätere Short-Einträge und streng gebundene VFAT-LFN-
   Slots werden gemeinsam journalisiert gelöscht; Verzeichniskette, FAT und
-  Inhalte bleiben unverändert. Orphan-Datenrettung sowie mehrdeutige
-  Verzeichnis-, Journal- und Remap-Reparatur bleiben offen.
+  Inhalte bleiben unverändert. `--salvage-orphans --confirm` veröffentlicht
+  vollständig gültige, eindeutige Orphan-Ketten unter `FOUND.000` als
+  `FILEnnnn.CHK`; `nnnn` entspricht dem ursprünglichen Startcluster, während
+  die Dateigröße bewusst die gesamte Allokation umfasst. Erzeugung oder
+  Erweiterung des Recovery-Directory, beide FATs und alle Directory-Sektoren
+  teilen eine Undo-Transaktion. Mehrdeutige Verzeichnis-, Journal- und
+  Remap-Reparatur bleibt offen.
   `--repair-dir-size --confirm` traversiert
   ansonsten gültige Unterverzeichnisse trotz unzulässiger Größe und setzt bei
   reiner Diagnose ausschließlich dieses Feld auf null.

@@ -222,12 +222,14 @@ FAT12-Modi `--repair`, `--repair-chains`, `--repair-short`,
 `--repair-short-loops`, `--repair-crosslinks`, `--repair-dir-size` und
 `--repair-volume-label`, `--repair-zero-files`, `--repair-zero-start` sowie
 `--repair-dot-size`, `--repair-dot-cluster` und
-`--repair-required-crosslinks`, `--repair-directory-crosslinks` sowie
-`--repair-directory-topology`
+`--repair-required-crosslinks`, `--repair-directory-crosslinks`,
+`--repair-directory-topology` sowie `--salvage-orphans`
 benötigen jeweils `--confirm`, laufen ausschließlich im Storage-Dienst unter
 Maintenance-Lease und melden Erfolg erst nach Undo-Journal, Readback und
 sauberem Vollscan. Der Reclaim-Modus verwirft unerreichbare Inhalte
-ausdrücklich und ist keine Datenrettung. Reine Pflicht-Crosslinks regulärer
+ausdrücklich. Der getrennte Salvage-Modus veröffentlicht vollständig gültige
+Orphan-Ketten unter `FOUND.000` als `FILEnnnn.CHK`; `nnnn` hält den
+ursprünglichen Startcluster fest. Reine Pflicht-Crosslinks regulärer
 Dateien werden durch vollständige Kopien in höchstens 48 freie Cluster
 getrennt. Same-Parent-Aliase strikt leerer einclusteriger Unterverzeichnisse
 werden ebenfalls verifiziert kopiert und umgebunden. Der gebündelte
@@ -237,9 +239,8 @@ gebundenen VFAT-LFN-Slots, ohne die gemeinsame Kette oder FAT zu verändern;
 mehrdeutige Parentbeziehungen, Teilketten und gemischte Datei-/Directory-Fälle
 bleiben gesperrt.
 `FDISK.PRG --create <resource-id> <mbr-type> --confirm` richtet ein leeres,
-ungeschütztes ATA-/AHCI-Medium ein. Orphan-Datenrettung, nicht eindeutig
-attribuierbare Verzeichnisschäden und die reale Hardware-Power-Loss-Matrix
-bleiben offen.
+ungeschütztes ATA-/AHCI-Medium ein. Nicht eindeutig attribuierbare
+Verzeichnisschäden und die reale Hardware-Power-Loss-Matrix bleiben offen.
 
 ### EXT2
 
@@ -362,7 +363,8 @@ oder breite Zielhardwarequalifikation.
   Unterverzeichnisse lassen sich ebenso kopieren und umbinden. Eindeutig
   attribuierbare nichtleere, mehrclusterige und parentübergreifende
   Directory-Aliase werden ohne Kettenänderung auf genau einen kanonischen
-  Parent reduziert. Orphan-Datenrettung, mehrdeutige Verzeichnis-, Journal-, Remap- und
+  Parent reduziert. Vollständig gültige Orphan-Ketten lassen sich unter
+  `FOUND.000` retten. Mehrdeutige Verzeichnis-, Journal-, Remap- und
   Defektsektorreparatur sowie der QEMU-Remountnachweis sind noch offen
 - reale FAT12-Power-Loss-/Reconnect-Matrix für VMware und Zielhardware
 - medienunabhängige Persistenzgarantie für EXT2 und fremde FAT-Volumes

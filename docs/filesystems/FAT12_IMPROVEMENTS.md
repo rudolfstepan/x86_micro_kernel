@@ -102,6 +102,7 @@ C:\> CHKDSK --fat12 1 --repair-dot-cluster --confirm
 C:\> CHKDSK --fat12 1 --repair-required-crosslinks --confirm
 C:\> CHKDSK --fat12 1 --repair-directory-crosslinks --confirm
 C:\> CHKDSK --fat12 1 --repair-directory-topology --confirm
+C:\> CHKDSK --fat12 1 --salvage-orphans --confirm
 FDISK
 ```
 
@@ -134,7 +135,20 @@ Allokationen ausdrücklich. Der Dienst akzeptiert nur die exakte Diagnose
 dann ausschließlich allokierte Cluster mit Owner null auf frei. `0xFF7`-Bad-
 Cluster und alle erreichbaren Cluster bleiben erhalten. Beide FAT-Kopien
 werden vollständig journalisiert, geschrieben und neu geprüft. Eine
-Wiederanbindung verlorener Inhalte an `FOUND.000` findet nicht statt.
+Wiederanbindung verlorener Inhalte an `FOUND.000` findet in diesem
+destruktiven Modus nicht statt.
+`--salvage-orphans --confirm` ist die nichtdestruktive Alternative. Der
+Storage-Dienst akzeptiert ausschließlich vollständig erfasste, eindeutige und
+normal EOC-terminierte Orphan-Ketten. Er erzeugt oder validiert `FOUND.000` im
+Root und veröffentlicht jede Kette als `FILEnnnn.CHK`, wobei `nnnn` dem
+ursprünglichen Startcluster entspricht. Die Größe umfasst die komplette
+Allokation einschließlich möglichem Slack, da eine verlorene Nutzlänge nicht
+rekonstruiert werden kann. Reicht das Directory nicht aus, wird es mit festen
+Kapazitätsgrenzen erweitert. Neue Directory-Sektoren, beide FAT-Spiegel und
+alle Root-/Directory-Sektoren werden vor der ersten Mutation gemeinsam
+undo-journalisiert. Schleifen, zusammenlaufende Ketten, Namenskollisionen,
+Übergänge in erreichbare oder defekte Cluster sowie Kapazitätserschöpfung
+verweigern die Transaktion vor Nutzdaten- oder FAT-Mutation.
 `--repair-loops --confirm` akzeptiert nur die reine Diagnose `CHAIN_LOOP` und
 nur reguläre Dateien, deren Kette vor der ersten Wiederholung mindestens die
 aus der Dateigröße berechnete Anzahl eindeutiger Cluster erreicht. Der Dienst
@@ -251,8 +265,7 @@ Superfloppy und wird von `FDISK` niemals partitioniert.
   deterministisch geprüften Veröffentlichungsstufen
 - allgemeine Verzeichnisschäden jenseits eindeutig attribuierbarer Aliase und
   der eng begrenzten Feldreparaturen, Journal-,
-  Remap- und Defektsektorkarte sowie Datenrettung von Orphans statt ihres
-  expliziten Verwerfens
+  Remap- und Defektsektorkarte
 - QEMU-Laufzeitnachweis für Maintenance-Lease, Unmount, FAT-Spiegel-Reparatur,
   Verify und kontrollierten Remount
 - breitere echte FDD-/Medienfehler- und Langzeitmatrix

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.3c-6f6r-chkdsk-orphan-salvage"
+active_id = "S0.3c-6f6s-fat12-persistence-finish"
 
 [policy]
 one_package_per_run = true
@@ -1058,7 +1058,7 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-6f6r-chkdsk-orphan-salvage"
-status = "active"
+status = "done"
 risk = "high"
 title = "Salvage bounded FAT12 orphan chains"
 scope = "Implement one confirmed recovery transaction for every structurally valid, bounded orphan chain: create or reuse a validated standard-style FOUND.000 directory, publish deterministic FILEnnnn.CHK entries with provenance metadata available to CHKDSK, and preserve bytes instead of freeing them. Handle multiple chains in one fixed-capacity transaction; malformed, looping, ambiguous, capacity-exhausted or colliding cases fail closed before writes. Keep the explicit discard operation separate."
@@ -1105,7 +1105,7 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-6f6s-fat12-persistence-finish"
-status = "queued"
+status = "active"
 risk = "high"
 title = "Finish FAT12 journal remap defect-map and emulator recovery proof"
 scope = "Complete the FAT12 persistence boundary as one vertical package: version the on-media maintenance journal, add bounded bad-sector recording and remap policy without claiming transparent recovery beyond verified spare capacity, expose diagnosis and controlled repair in the Ring-3 tools, and automate the QEMU maintenance-lease/unmount/repair/flush/remount proof plus VMware power-loss/reconnect stages. Hardware execution remains a documented manual user acceptance item and is not required by the automated gate."
