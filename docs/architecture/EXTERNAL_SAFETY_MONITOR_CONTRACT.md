@@ -1,6 +1,7 @@
 # External Safety Monitor Contract
 
-Stand: 23. August 2026. Status: **S0.2a contract-only, unbound**.
+Stand: 23. August 2026. Status: **automatisierte S0.2-QEMU/VMware-Baseline
+abgenommen; physisches Profil unbound**.
 
 ## Zweck und Abgrenzung
 
@@ -9,6 +10,12 @@ fehlenden unabhängigen Zielhardware-Watchdog ein. Er qualifiziert kein Gerät.
 Das aktuelle Profil
 [`safety/external_safety_monitor.toml`](../../safety/external_safety_monitor.toml)
 steht deshalb auf `unbound`.
+
+Die automatisierte Projektabnahme ist bewusst auf QEMU und VMware begrenzt.
+Sie prüft Stack-/Exception-Containment, den emulierten IB700-Watchdog sowie
+VMware-Boot und überwachte Diensterholung mit festen Fristen. Reale Hardware
+prüft der Benutzer manuell. Diese Trennung schließt S0.2 für die automatisierte
+Forschungsbaseline, qualifiziert aber weder Monitor noch Zielhardware.
 
 Der QEMU-IB700-Watchdog, Hostmodelle, ein zweiter Hostprozess, ein
 CPU-interner Timer sowie ein Watchdog im gleichen ungeprüften Strom- oder
@@ -96,8 +103,9 @@ Der Empfänger verwirft vor jeder Zustandsänderung:
 
 CRC32C schützt gegen zufällige Übertragungsfehler und ist keine
 Authentisierung gegen einen bösartigen Teilnehmer. Falls das konkrete
-Einsatzprofil einen feindlichen Transport annimmt, muss S0.2b einen
-authentisierten, anti-replay-geschützten Adapter ergänzen und versionieren.
+Einsatzprofil einen feindlichen Transport annimmt, muss der spätere
+Zielhardwareadapter einen authentisierten, anti-replay-geschützten Transport
+ergänzen und versionieren.
 
 ## Fence und Readback
 
@@ -132,10 +140,11 @@ Repository. Beide Dateien sind SHA-256-gebunden. Der Validator akzeptiert als
 `kind` ausschließlich `physical-target`; Source-Pattern, Hostmodell und
 Emulator-only-Evidenz können die Kampagne ergänzen, aber nie ersetzen.
 
-## Integration in S0.2b
+## Manuelle Zielhardware-Integration
 
 Erst nach Auswahl real verfügbarer Hardware werden Backend, Firmware,
-Transport und Testadapter implementiert. S0.2b muss dann zusätzlich beweisen:
+Transport und Testadapter implementiert. Die manuelle Zielhardware-Abnahme
+muss dann zusätzlich beweisen:
 
 - Heartbeats sind an validierten Fortschritt gekoppelt und alle I/O-Wartepfade
   besitzen monotone Deadline plus feste Pollgrenze;
@@ -148,5 +157,8 @@ Transport und Testadapter implementiert. S0.2b muss dann zusätzlich beweisen:
 - Real-Hardware-Build, physische Kampagne, Crashrecord-Recovery und
   kontrollierte Reintegration bestehen auf dem gebundenen Ziel.
 
-Bis dahin bleiben S0.2 und das Gesamtgate S0 offen. Es gibt weder eine
-Zielhardwarefreigabe noch einen Fail-operational-Claim.
+S0.2 ist damit ausschließlich für die automatisierte QEMU/VMware-
+Forschungsbaseline abgeschlossen. Das Gesamtgate S0 bleibt wegen der
+nachfolgenden S0.3c- bis S0.6-Arbeit offen. Ohne eine `qualified` gebundene
+physische Kampagne gibt es weiterhin weder Zielhardwarefreigabe noch
+Fail-operational-Claim.

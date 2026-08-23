@@ -108,14 +108,15 @@ und 10 verbindlich.
   - [x] Automatische, SHA-256-gebundene Traceability von Gefahr über konkrete
     Verifikation bis zum Testergebnis; JSON-Baseline unter
     `build/codex-agent/hazard-traceability.json`
-- [ ] S0.2 Vollständiges Stack-, Exception- und Panic-Containment
+- [x] S0.2 Vollständiges Stack-, Exception- und Panic-Containment für die
+  automatisierte QEMU/VMware-Forschungsbaseline
   - [x] Guardpages, Double-Fault-Notfallpfad, Crashrecord und QEMU-Watchdog
   - [x] Compilerbasierte Callgraph-Gesamtbudgets und Rekursionsgate
   - [x] Laufzeit-Stack-Watermarks im bestehenden Scheduler-Stats-ABI
   - [x] S0.2a Maschinenprüfbarer Vertrag und physische Abnahmekriterien für
     externen Watchdog, Zielreset, Interlock und elektrisches Readback
-  - [ ] S0.2b Konkretes unabhängiges Zielhardware-Backend samt physischer
-    Fault-Injection-Kampagne
+  - [x] S0.2b Begrenzte QEMU-/VMware-Laufzeitabnahme; Zielhardware-Backend und
+    physische Fault-Injection bleiben ausdrücklich manuelle Nutzerevidenz
 - [x] S0.3a Begrenzte IPC-/Capability-Basis
 - [x] S0.3b Überwachte, neu startbare Least-Privilege-Probedomäne
 - [ ] S0.3c Reale Dienstmigration und Redundanz
@@ -874,8 +875,9 @@ kalibrierte LAPIC-Pfad als auch der PIT-Fallback ohne APIC ausgeführt.
 
 Nicht Teil von R1.2 waren systematische Failure-Injection für jede
 Teilallokation, ein Highmem-/`kmap`-Fenster oberhalb 1 GiB, Guardpages und ein
-IRQ-tauglicher Allocator. Die Kernel-Guardpages sind nun der erste umgesetzte
-Teil von S0.2; die übrigen Punkte bleiben offen.
+IRQ-tauglicher Allocator. Die Kernel-Guardpages waren der erste umgesetzte
+Teil von S0.2; die automatisierte QEMU/VMware-Baseline ist inzwischen
+abgeschlossen.
 
 #### R1.3 Synchronisations- und Diagnosevertrag — M
 
@@ -952,7 +954,8 @@ ausgewählte Produktprofile und Zielhardware-Claims bleiben ausgeschlossen.
 
 #### S0.2 Stack-, Exception- und Panic-Containment — L
 
-**Teilstatus:** Kernel-Taskstacks besitzen beidseitige nicht-präsente
+**Abgeschlossen für die automatisierte QEMU/VMware-Forschungsbaseline:**
+Kernel-Taskstacks besitzen beidseitige nicht-präsente
 Guardpages; der Bootstack eine volle untere Guardpage. `#DF` läuft über eine
 dedizierte TSS und einen unabhängigen Emergency-Stack in einen begrenzten,
 heap-/lockfreien Crashrecord-/COM1-Pfad. Explizite beidseitige
@@ -974,9 +977,12 @@ umgesetzt. S0.2a legt zusätzlich mit
 `safety/external_safety_monitor.toml`, einem fail-closed Validator und dem
 External-Safety-Monitor-Vertrag die unveränderlichen FTTI-, Protokoll-,
 Unabhängigkeits-, Fence-Readback- und physischen Abnahmekriterien fest. Das
-Profil bleibt ausdrücklich `unbound`; offen ist S0.2b mit einem von CPU,
-Versorgung und Zeitbasis unabhängigen Zielhardware-Monitor samt elektrischem
-Fencing und realer Kampagne. Der echte
+Profil bleibt ausdrücklich `unbound`. S0.2b ergänzt eine begrenzte VMware-
+Abnahme des frisch erzeugten disponiblen Build-Pakets und verlangt fehlendes externes
+Backend, überwachte Probe-Recovery, `BOOT_OK` und die Ring-3-Shell ohne Panic.
+Ein von CPU, Versorgung und Zeitbasis unabhängiger Zielhardware-Monitor samt
+elektrischem Fencing und realer Kampagne bleibt manuelle Nutzerevidenz und ist
+keine Voraussetzung für den Emulatorabschluss. Der echte
 Double-Fault-Task-Gate-Pfad wird inzwischen in einem isolierten Testimage bis
 zum Watchdog-Warmstart, Crashrecord-Recovery und anschließenden Gasttest geprüft.
 
@@ -1709,7 +1715,7 @@ nebenbei in die 32-Bit-Basis eingebaut werden.
   abhängig von R1.6
 - [x] **9 · S0.1 Profil/Gefahren/Assurance Case** — Größe M;
   abhängig von R1.3
-- [ ] **10 · S0.2 Stack/Exception/Panic-Containment (teilweise)** — Größe L;
+- [x] **10 · S0.2 Stack/Exception/Panic-Containment (QEMU/VMware)** — Größe L;
   abhängig von S0.1
 - [x] **11 · S0.3a Bounded IPC/Capabilities v1** — Größe L; abhängig von
   S0.1 und S0.2
@@ -1779,15 +1785,14 @@ make test-fuzz
 
 ## 10. Unmittelbar nächster Schritt
 
-S0.1 und der contract-only-Schritt **S0.2a** sind abgeschlossen. Das nächste
-Paket ist **S0.2b: konkrete externe Monitorhardware auswählen, Backend und
-Firmware implementieren sowie Watchdog, Zielreset, elektrisches Fence-
-Readback und physische Fault-Injection abnehmen**. Das Profil bleibt bis dahin
-`unbound`; QEMU-/Hostevidenz darf diese Auswahl nicht ersetzen. Erst nach
-vollständiger S0.2-Abnahme
-werden die verbliebenen S0.3c-, S0.4-, S0.5- und S0.6-Pakete in der
-festgelegten Reihenfolge fortgesetzt. Die folgende Detailchronik dokumentiert
-die bereits abgeschlossenen IPC-, Dienst-, Netzwerk- und Storage-Inkremente.
+S0.1 und S0.2 sind für die ausdrücklich begrenzte automatisierte
+QEMU/VMware-Forschungsbaseline abgeschlossen. Das externe Profil bleibt
+`unbound`; reale Monitorhardware, elektrisches Fence-Readback und physische
+Fault-Injection prüft der Benutzer manuell und QEMU-/Hostevidenz ersetzt diese
+Auswahl nicht. Als nächstes werden die verbliebenen S0.3c-, S0.4-, S0.5- und
+S0.6-Pakete in dieser Reihenfolge fortgesetzt. Die folgende Detailchronik
+dokumentiert die bereits abgeschlossenen IPC-, Dienst-, Netzwerk- und
+Storage-Inkremente.
 
 Phase 0, R1.1 bis R1.4, **S0.3a Bounded IPC/Capabilities v1** und
 **S0.3b Supervised Userspace Probe Domain** sind umgesetzt und abgenommen.

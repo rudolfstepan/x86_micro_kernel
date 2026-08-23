@@ -139,9 +139,10 @@ Softwarelatch können den Status `qualified` nicht erzeugen.
 
 Die generische 1-s-Fatal-FTTI ist vollständig auf Heartbeatverlust,
 Fence-Anwendung, unabhängiges Sense-Readback und Zielreset aufgeteilt. Jede
-Abweichung hält das Fence geschlossen und entzieht Reintegration. Damit ist
-der Abnahmeweg festgelegt, aber S0.2 bleibt bis zum Hardwarebackend und seiner
-physischen Kampagne offen.
+Abweichung hält das Fence geschlossen und entzieht Reintegration. S0.2 ist für
+die automatisierte QEMU/VMware-Forschungsbaseline abgenommen. Das physische
+Profil bleibt `unbound`; Hardwarebackend und Kampagne sind manuelle
+Nutzerevidenz und Voraussetzung jeder späteren Zielhardwareaussage.
 
 ## Ressourcenregister
 

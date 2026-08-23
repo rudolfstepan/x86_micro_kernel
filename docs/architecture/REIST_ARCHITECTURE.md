@@ -1119,6 +1119,11 @@ eigener Strom- und Zeitbasis, unabhängigem Zielreset, latched Safe-State-
 Ausgang, separatem elektrischem Sense-Readback und bestandener physischer
 Fault-Injection-Kampagne darf `qualified` werden. Der vorhandene IB700-Lauf
 bleibt Emulatornachweis und wird nicht als physische Unabhängigkeit gewertet.
+Die automatisierte S0.2-Abnahme endet deshalb an der expliziten QEMU/VMware-
+Systemgrenze: QEMU prüft den emulierten Watchdog, VMware einen begrenzten Boot
+des frisch erzeugten disponiblen Build-Pakets mit fail-closed fehlendem externem Backend,
+Probe-Recovery und Ring-3-Shell. Reale Hardware und elektrische Nachweise
+bleiben manuelle Nutzerevidenz ohne automatischen Zielhardware-Claim.
 
 Als erste konkrete S0.3-Sperre besitzt der Kernel eine statische, begrenzte
 Output-Fence-Registry. Ein Fatalereignis verriegelt sie vor jeder Diagnose und

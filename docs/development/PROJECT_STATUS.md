@@ -84,13 +84,17 @@ Anforderung über Design und Code bis Test und Ergebnis. Dieser Abschluss ist
 keine Zertifizierung und keine Freigabe der ausgeschlossenen Referenzprofile
 oder unqualifizierter Zielhardware.
 
-S0.2a friert nun den externen Watchdog-/Interlock-Abnahmevertrag ein. Das
-maschinenlesbare Profil bleibt `unbound` und kann nur mit eindeutig gebundener
-Ziel-/Monitor-/Firmwareidentität, separater Strom- und Zeitbasis, unabhängigem
-Reset, latched Safe-State-Ausgang, elektrischem Sense-Readback und gehashten
-physischen Fault-Injection-Berichten auf `qualified` wechseln. Der vorhandene
-QEMU-IB700-Test bleibt ausdrücklich Emulatorevidenz. S0.2 und das Gesamtgate
-S0 sind deshalb weiterhin offen.
+S0.2 ist für die automatisierte QEMU/VMware-Forschungsbaseline abgeschlossen.
+QEMU prüft den emulierten IB700-Watchdog; VMware bootet das frisch erzeugte
+disponible Build-Paket unter festen Fristen und verlangt fail-closed das fehlende externe
+Backend, überwachte Probe-Recovery, `BOOT_OK` und die Ring-3-Shell. Das
+maschinenlesbare physische Profil bleibt `unbound` und kann nur mit eindeutig
+gebundener Ziel-/Monitor-/Firmwareidentität, separater Strom- und Zeitbasis,
+unabhängigem Reset, latched Safe-State-Ausgang, elektrischem Sense-Readback
+und gehashten physischen Fault-Injection-Berichten auf `qualified` wechseln.
+Diese Realhardwareprüfung führt der Benutzer manuell durch; es entsteht kein
+automatischer Zielhardware- oder Fail-operational-Claim. Das Gesamtgate S0
+bleibt wegen S0.3c bis S0.6 offen.
 
 `S0.3c-layout1` mit kleingeschriebener,
 hierarchischer Systemprogrammablage ist umgesetzt. `S0.3c-admin2` mit statischer
@@ -101,10 +105,10 @@ sind abgeschlossen. Aussagen über vollständig nachgewiesene
 Fail-Operationalität oder unabhängige Hardware-Failover-Domänen sind weiterhin
 unzulässig.
 
-Nach Abschluss des contract-only-Pakets ist der nächste notwendige Schritt
-S0.2b. Dafür muss zuerst ein tatsächlich verfügbares externes Monitorgerät
-samt Transport, eigener Versorgung/Zeitbasis, Reset- und Interlockverdrahtung
-konkret ausgewählt werden; ohne diese Identität wird kein Produktionstreiber
+Der nächste Umsetzungsschritt ist das verbliebene S0.3c-Paket, danach folgen
+S0.4, S0.5 und S0.6. Ein externes Monitorgerät samt Transport, eigener
+Versorgung/Zeitbasis, Reset- und Interlockverdrahtung wird erst nach einer
+manuellen Auswahl angebunden; ohne diese Identität wird kein Produktionstreiber
 erfunden und keine Hardwarequalifikation behauptet.
 
 `S0.3c-admin1` stellt sichere Storage-Operationen (`device down/up`, `mount`,
