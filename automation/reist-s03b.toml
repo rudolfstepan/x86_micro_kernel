@@ -2397,6 +2397,8 @@ allowed_files = [
   "scripts/validate_hazard_register.py",
   "scripts/run_hazard_traceability.py",
   "test/test_reist_hazard_register.py",
+  "test/test_reist_supervisor.py",
+  "userspace/programs/guest_test.c",
   "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
   "docs/development/PROJECT_STATUS.md"
@@ -2410,11 +2412,13 @@ invariants = [
   "requirement IDs are unique and every hazard requirement resolves to a machine-readable requirement whose design and implementation paths exist inside the repository",
   "the traceability baseline binds assurance scope, hazard register, requirements, design paths, code controls, verification sources and pass/fail results with SHA-256 and fails if any referenced verification fails",
   "the machine-readable scheduler task budget matches the authoritative MAX_TASKS source limit before it is accepted as hazard evidence",
+  "the bounded guest capacity probe derives the ambient fill count from scheduler statistics, preserves the supervised reserve and reaps every child it creates",
   "no screenshot, source-pattern assertion or successful normal build is presented as the sole proof of a runtime containment claim",
   "S0.1 roadmap and project status are marked complete only after the register status is complete and exact coverage is machine-validated"
 ]
 targeted_tests = [
   "python test/test_reist_hazard_register.py -q",
+  "python test/test_reist_supervisor.py -q",
   "python scripts/validate_hazard_register.py",
   "python scripts/run_hazard_traceability.py"
 ]
