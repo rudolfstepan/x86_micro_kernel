@@ -977,6 +977,15 @@ Er validiert erneut, dass der letzte eindeutige Cluster auf den markierten
 Präfix zurückzeigt, und ersetzt ausschließlich diesen Rücksprung durch EOC.
 Directory-Daten und Clusterallokationen bleiben unverändert; beide FAT-Writes
 folgen demselben Undo-Journal- und Vollscanvertrag.
+Für reguläre Ketten mit der exakten Mischdiagnose
+`CHAIN_LOOP|CHAIN_SHORT` gibt es eine kombinierte Transaktion. Sie ist nur
+zulässig, wenn jede Loop- und Short-Meldung denselben festen Kandidaten
+abbildet. Der letzte eindeutige Cluster wird nach Rücksprungvalidierung EOC,
+alle eindeutigen Cluster bleiben allokiert und der 32-Bit-Directory-Size wird
+auf deren vollständige Clusterkapazität reduziert. Alle betroffenen Sektoren
+beider FATs und alle eindeutigen Directory-Sektoren werden vor dem ersten
+Write gemeinsam undo-journalisiert. Der anschließende Vollscan muss ohne Loop,
+Short oder Orphan enden.
 
 `device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
 Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht

@@ -197,7 +197,8 @@ Für explizit markierte REIST-FAT12-Medien sind umgesetzt:
   überlanger regulärer Dateiketten und eindeutig kurzer EOC-Dateien sowie
   bestätigtes Freigeben vollständig unerreichbarer Nicht-Bad-Allokationen und
   reine, ausreichend lange Schleifen regulärer Dateiketten sowie reine
-  Rücksprungschleifen in vollständig gescannten Unterverzeichnissen
+  Rücksprungschleifen in vollständig gescannten Unterverzeichnissen und
+  zugleich kurze reguläre Dateischleifen mit atomarer Größenbegrenzung
 
 `FORMAT.PRG` akzeptiert ausschließlich eine veröffentlichte FDD-Ressource:
 
@@ -208,15 +209,15 @@ FORMAT --reist-fat12 <resource-id> --confirm
 
 `CHKDSK.PRG [pfad]` führt einen begrenzten read-only VFS-Scan aus. Die
 FAT12-Modi `--repair`, `--repair-chains`, `--repair-short`,
-`--reclaim-orphans`, `--repair-loops` und `--repair-dir-loops` benötigen
-jeweils `--confirm`, laufen ausschließlich im Storage-Dienst unter
-Maintenance-Lease und melden Erfolg erst nach Undo-Journal, Readback und
-sauberem Vollscan. Der Reclaim-Modus verwirft unerreichbare Inhalte
-ausdrücklich und ist keine Datenrettung.
+`--reclaim-orphans`, `--repair-loops`, `--repair-dir-loops` und
+`--repair-short-loops` benötigen jeweils `--confirm`, laufen ausschließlich
+im Storage-Dienst unter Maintenance-Lease und melden Erfolg erst nach
+Undo-Journal, Readback und sauberem Vollscan. Der Reclaim-Modus verwirft
+unerreichbare Inhalte ausdrücklich und ist keine Datenrettung.
 `FDISK.PRG --create <resource-id> <mbr-type> --confirm` richtet ein leeres,
-ungeschütztes ATA-/AHCI-Medium ein. Crosslink-, gleichzeitige Kurz-Loop-,
-Orphan-Datenrettungs- und allgemeine Verzeichnisreparatur sowie die reale
-Hardware-Power-Loss-Matrix bleiben offen.
+ungeschütztes ATA-/AHCI-Medium ein. Crosslink-, Orphan-Datenrettungs- und
+allgemeine Verzeichnisreparatur sowie die reale Hardware-Power-Loss-Matrix
+bleiben offen.
 
 ### EXT2
 
@@ -325,9 +326,10 @@ oder breite Zielhardwarequalifikation.
   lesbare Kettenkapazität begrenzen und reine unerreichbare Allokationen
   explizit verwerfen. Ausreichend lange reine reguläre Dateiloops werden am
   Sollende getrennt; reine Directory-Rücksprünge werden nach vollständigem
-  eindeutigen Inhaltsscan beendet. Crosslinks, gleichzeitige Kurz-Loops,
-  Orphan-Datenrettung, allgemeine Verzeichnis-, Journal-, Remap- und
-  Defektsektorreparatur sowie der QEMU-Remountnachweis sind noch offen
+  eindeutigen Inhaltsscan beendet. Kombinierte Short-Loops begrenzen zusätzlich
+  atomar die Directory-Größe. Crosslinks, Orphan-Datenrettung, allgemeine
+  Verzeichnis-, Journal-, Remap- und Defektsektorreparatur sowie der
+  QEMU-Remountnachweis sind noch offen
 - reale FAT12-Power-Loss-/Reconnect-Matrix für VMware und Zielhardware
 - medienunabhängige Persistenzgarantie für EXT2 und fremde FAT-Volumes
 - unabhängige Supervisor-, Fence- und Failover-Hardware

@@ -47,6 +47,9 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sowie der erste
 11. vollständiger einmaliger Scan aller eindeutigen Cluster loopender
     Unterverzeichnisse und bestätigtes Ersetzen ausschließlich ihres letzten
     Rücksprungs durch EOC
+12. atomare Reparatur zugleich kurzer und zyklischer regulärer Dateien: alle
+    eindeutigen Cluster bleiben erhalten, der letzte wird EOC und die
+    Directory-Größe wird auf deren lesbare Kapazität begrenzt
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen
@@ -77,6 +80,7 @@ C:\> CHKDSK --fat12 1 --repair-short --confirm
 C:\> CHKDSK --fat12 1 --reclaim-orphans --confirm
 C:\> CHKDSK --fat12 1 --repair-loops --confirm
 C:\> CHKDSK --fat12 1 --repair-dir-loops --confirm
+C:\> CHKDSK --fat12 1 --repair-short-loops --confirm
 FDISK
 ```
 
@@ -124,6 +128,14 @@ Einträge. Bei der Mutation wird erneut bewiesen, dass der letzte eindeutige
 Cluster auf einen bereits markierten Cluster derselben Kette zurückzeigt; nur
 dieser FAT-Eintrag wird auf EOC gesetzt. Kein Directory-Cluster wird
 freigegeben oder inhaltlich verändert.
+`--repair-short-loops --confirm` behandelt ausschließlich die exakte
+Gesamtdiagnose `CHAIN_LOOP|CHAIN_SHORT`, wenn jede Loop- und jede Short-Meldung
+zu derselben Menge regulärer Dateien gehört. Alle eindeutigen Cluster werden
+behalten, der letzte Rücksprung wird EOC und die Dateigröße auf
+`eindeutige Cluster * Clustergröße` reduziert. Die geänderten Sektoren beider
+FATs und alle Directory-Sektoren liegen vor dem ersten Write gemeinsam im
+Undo-Journal. Zero-Starts, Crosslinks und weitere Diagnoseflags verhindern die
+Transaktion.
 `FDISK.PRG` kann auf explizit freigegebenen, leeren ATA-/AHCI-Medien eine
 validierte MBR-Partition erzeugen. Eine Diskette bleibt eine partitionslose
 Superfloppy und wird von `FDISK` niemals partitioniert.
@@ -132,9 +144,9 @@ Superfloppy und wird von `FDISK` niemals partitioniert.
 
 - reale FDD-/VMware-Power-Loss- und Reconnect-Matrix über die bereits
   deterministisch geprüften Veröffentlichungsstufen
-- CHKDSK-Reparatur von Crosslinks, gleichzeitig zu kurzen Dateischleifen,
-  allgemeinen Verzeichnisschäden, Journal, Remap- und Defektsektorkarte sowie
-  Datenrettung von Orphans statt ihres expliziten Verwerfens
+- CHKDSK-Reparatur von Crosslinks, allgemeinen Verzeichnisschäden, Journal,
+  Remap- und Defektsektorkarte sowie Datenrettung von Orphans statt ihres
+  expliziten Verwerfens
 - QEMU-Laufzeitnachweis für Maintenance-Lease, Unmount, FAT-Spiegel-Reparatur,
   Verify und kontrollierten Remount
 - breitere echte FDD-/Medienfehler- und Langzeitmatrix
