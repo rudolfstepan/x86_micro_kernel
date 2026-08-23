@@ -52,9 +52,12 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sowie der erste
     Directory-Größe wird auf deren lesbare Kapazität begrenzt
 13. scanreihenfolge-unabhängige Referenz-/Pflichtreferenzzählung und Reparatur
     von Crosslinks, die ausschließlich aus überlangen regulären Dateitails
-    stammen; echte Mehrfach-Eigentümerschaft bleibt gesperrt
+    stammen
 14. vollständiger Inhaltsscan und bestätigte Nullsetzung unzulässiger
     Größenfelder ansonsten gültiger Unterverzeichniseinträge
+15. bestätigtes Auflösen reiner, mehrfach benötigter regulärer Dateiketten
+    durch vollständig verifizierte Kopien in höchstens 48 freie Cluster;
+    Directory-Beteiligung und Mischdiagnosen bleiben gesperrt
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen
@@ -93,6 +96,7 @@ C:\> CHKDSK --fat12 1 --repair-zero-files --confirm
 C:\> CHKDSK --fat12 1 --repair-zero-start --confirm
 C:\> CHKDSK --fat12 1 --repair-dot-size --confirm
 C:\> CHKDSK --fat12 1 --repair-dot-cluster --confirm
+C:\> CHKDSK --fat12 1 --repair-required-crosslinks --confirm
 FDISK
 ```
 
@@ -156,6 +160,20 @@ referenzierter Cluster von mehr als einer Sollkette benötigt wird, bleibt das
 Medium unverändert. Andernfalls werden alle überlangen Dateien am Sollende
 getrennt, genau einmal benötigte Cluster bewahrt und ausschließlich reine
 Excess-Tail-Cluster freigegeben.
+`--repair-required-crosslinks --confirm` behandelt getrennt die exakte
+Diagnose `CHAIN_CROSSLINK`, wenn alle mehrfach benötigten Cluster ausschließlich
+zu vollständig beschriebenen, normal EOC-terminierten regulären Dateien
+gehören. Die erste Datei in deterministischer Scanreihenfolge behält ihre
+Kette; jede später kollidierende Datei wird vollständig in eine eigene Kette
+aus freien Clustern kopiert. Höchstens 48 Kloncluster sind zulässig. Vor dem
+ersten Write sichert das 64-Einträge-Undo-Journal sämtliche Ziel-Datensektoren,
+beide geänderten FAT-Spiegel und alle Directory-Sektoren. Erst nach
+verifiziertem Daten-Readback werden FATs und zuletzt ausschließlich die
+niedrigen Startcluster der geklonten Dateien publiziert. Nicht mehr
+referenzierte eindeutige Präfixcluster werden freigegeben; gemeinsame
+Quellcluster und Dateiinhalte bleiben unverändert. Fehlender Freiraum,
+Directory-Beteiligung, Kandidaten- oder Journalerschöpfung verweigern die
+Transaktion vor Seiteneffekten.
 `--repair-dir-size --confirm` korrigiert ausschließlich Unterverzeichnisse mit
 gültigen Attributen und gültigem Startcluster, deren FAT-Größenfeld entgegen
 der Spezifikation nicht null ist. Der Scanner traversiert ihren Inhalt trotz
@@ -203,10 +221,10 @@ Superfloppy und wird von `FDISK` niemals partitioniert.
 
 - reale FDD-/VMware-Power-Loss- und Reconnect-Matrix über die bereits
   deterministisch geprüften Veröffentlichungsstufen
-- CHKDSK-Reparatur echter mehrfach benötigter Crosslinks, allgemeiner
-  Verzeichnisschäden jenseits reiner Größen- und Volume-Label-Felder, Journal, Remap- und
-  Defektsektorkarte sowie Datenrettung von Orphans statt ihres expliziten
-  Verwerfens
+- CHKDSK-Reparatur von Directory-Crosslinks und allgemeinen
+  Verzeichnisschäden jenseits der eng begrenzten Feldreparaturen, Journal-,
+  Remap- und Defektsektorkarte sowie Datenrettung von Orphans statt ihres
+  expliziten Verwerfens
 - QEMU-Laufzeitnachweis für Maintenance-Lease, Unmount, FAT-Spiegel-Reparatur,
   Verify und kontrollierten Remount
 - breitere echte FDD-/Medienfehler- und Langzeitmatrix

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.3c-6f6o-chkdsk-required-crosslinks"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -905,7 +905,7 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-6f6o-chkdsk-required-crosslinks"
-status = "active"
+status = "done"
 risk = "high"
 title = "Repair required FAT12 regular-file crosslinks by bounded cloning"
 scope = "Extend the complete FAT12 scan with fixed descriptors for structurally valid EOC-terminated regular files. Add an explicitly confirmed operation for the exact CHAIN_CROSSLINK-only diagnosis when every multiply required cluster belongs exclusively to those regular-file descriptors. Preserve the first scan-order chain, clone every later conflicting file in full into distinct free clusters, verify copied data, publish both FAT mirrors and then replace only that file's low start cluster. Free only original clusters referenced exclusively by a cloned file. Journal every destination data sector, changed FAT sector and directory sector before mutation; directory crosslinks, mixed diagnoses, insufficient free space or journal capacity remain fail-closed."

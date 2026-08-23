@@ -994,8 +994,20 @@ Crosslink-Reparatur ist nur bei der exakten Diagnose
 als einer Pflichtreferenz. Dadurch darf sie ausschließlich überlange
 Dateitails am Sollende trennen, Cluster mit genau einer Pflichtreferenz
 erhalten und Cluster ohne Pflichtreferenz freigeben. Die Entscheidung ist
-unabhängig davon, welche Directory-Datei beim Scan zuerst Owner wurde; echte
-Mehrfach-Eigentümerschaft wird nicht geraten.
+unabhängig davon, welche Directory-Datei beim Scan zuerst Owner wurde.
+Echte Pflicht-Crosslinks regulärer Dateien besitzen einen getrennten
+Copy-on-Write-Pfad. Er akzeptiert nur die exakte Diagnose `CHAIN_CROSSLINK`,
+wenn feste Dateideskriptoren sämtliche mehrfach benötigten Cluster ohne
+Directory-Beteiligung vollständig erklären. Die erste Scanreihenfolge-Datei
+bleibt kanonisch; jede spätere Kollision wird in höchstens 48 verschiedene freie
+Cluster kopiert. Das 64-Einträge-Undo-Journal erfasst vor jeder Mutation alle
+Ziel-Datensektoren, geänderten Sektoren beider FATs und eindeutigen Directory-
+Sektoren. Verifizierte Datenwrites gehen der FAT-Publikation voraus; zuletzt
+wird ausschließlich der niedrige Startcluster der geklonten Datei ersetzt.
+Nur danach unreferenzierte Originalcluster werden freigegeben. Fehlender
+Freiraum, Kandidaten-/Journalerschöpfung, Directory-Crosslinks oder jede
+zusätzliche Diagnose bleiben fail-closed. Erfolg verlangt einen sauberen
+Vollscan vor Journal-`CLEAN`.
 Ein Unterverzeichniseintrag mit gültigen Attributen, null im hohen
 Clusterwort, gültigem Startcluster und unzulässiger Größe ungleich null bleibt
 für die Inhaltsdiagnose traversierbar. Nur bei der exakten Gesamtdiagnose

@@ -298,9 +298,13 @@ und 10 verbindlich.
         - [x] Falsche niedrige Clusterfelder exakter Dot-Einträge bei Größe
           null bestätigt auf den deterministischen Self-/Parent-Cluster setzen;
           Root- und kombinierte Feldfehler bleiben gesperrt
-        - [ ] `CHKDSK.PRG` für echte mehrfach benötigte Crosslinks, allgemeine
-          Verzeichnisschäden jenseits der eng begrenzten Feldreparaturen, Orphan-Datenrettung,
-          Journal und Defektsektorkarte
+        - [x] Reine mehrfach benötigte Crosslinks regulärer Dateien durch
+          vollständiges verifiziertes Klonen späterer Sollketten in höchstens
+          48 freie Cluster auflösen; Daten, beide FATs und Directory-Publikation
+          gemeinsam undo-journalisieren
+        - [ ] `CHKDSK.PRG` für Directory-Crosslinks, allgemeine
+          Verzeichnisschäden jenseits der eng begrenzten Feldreparaturen,
+          Orphan-Datenrettung, Journal und Defektsektorkarte
         - [x] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
           Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg
           kontrolliert remounten; Abbruch lässt das Medium konsistent oder
@@ -2595,9 +2599,15 @@ sie validieren Eingaben und senden versionierte Requests an den Storage-Dienst.
   journalisierten Größenbegrenzung auf dessen lesbare Kapazität.
   `--repair-crosslinks --confirm` trennt bei der exakten Crosslink-/Excess-
   Diagnose nur überlange Tail-Verweise, wenn höchstens eine Sollkette jeden
-  mehrfach referenzierten Cluster benötigt. Echte Mehrfach-Eigentümerschaft,
-  Orphan-Datenrettung sowie allgemeine Verzeichnis-, Journal- und
-  Remap-Reparatur bleiben offen. `--repair-dir-size --confirm` traversiert
+  mehrfach referenzierten Cluster benötigt.
+  `--repair-required-crosslinks --confirm` akzeptiert dagegen ausschließlich
+  eine reine Pflicht-Crosslink-Diagnose regulärer Dateien. Die erste Sollkette
+  bleibt kanonisch, spätere kollidierende Dateien werden vollständig und mit
+  verifiziertem Readback in höchstens 48 freie Cluster kopiert; Ziel-Daten,
+  beide FATs und Directory-Sektoren liegen vor dem ersten Write gemeinsam im
+  64-Einträge-Undo-Journal. Directory-Crosslinks, Orphan-Datenrettung sowie
+  allgemeine Verzeichnis-, Journal- und Remap-Reparatur bleiben offen.
+  `--repair-dir-size --confirm` traversiert
   ansonsten gültige Unterverzeichnisse trotz unzulässiger Größe und setzt bei
   reiner Diagnose ausschließlich dieses Feld auf null.
 - `FORMAT.PRG` akzeptiert ausschließlich erkannte FDD-Ressourcen. Ohne
