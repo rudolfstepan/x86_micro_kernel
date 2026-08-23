@@ -1,6 +1,6 @@
 version = 1
-program = "S0.3c-6f"
-active_id = ""
+program = "S0.1-completion"
+active_id = "S0.1-complete-hazard-assurance"
 
 [policy]
 one_package_per_run = true
@@ -2382,3 +2382,54 @@ evidence = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
   ".\\scripts\\capture-documentation.ps1 -SkipBuild"
 ]
+
+[[packages]]
+id = "S0.1-complete-hazard-assurance"
+status = "active"
+risk = "high"
+title = "Complete the bounded research hazard and assurance baseline"
+scope = "Close S0.1 for the explicitly selected REIST generic research baseline without claiming certification or coverage of unselected product profiles. Add a versioned machine-readable assurance scope that fixes intended purpose, system boundary, operating environment, foreseeable misuse, Essential Functions, profile selection/exclusions and the complete current core/device/service/component inventory. Evolve hazards.toml append-only to a richer schema that covers every in-scope component and binds each hazardous situation to causes, effects, phases, degraded/safe states, positive FTTI with rationale, requirement IDs, design and code controls, executable verification, acceptance criteria, owner, status, assumptions and residual risk. Keep schema-v1 validation compatible, make schema-v2 completeness fail closed against the separate scope inventory, and extend the SHA-256 baseline to bind scope, requirements, design/code sources, tests and results. Mark S0.1 complete only when exact coverage and all frozen gates pass; keep all unsupported profile and target-hardware limits visible."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "safety/assurance_scope.toml",
+  "safety/hazards.toml",
+  "scripts/validate_hazard_register.py",
+  "scripts/run_hazard_traceability.py",
+  "test/test_reist_hazard_register.py",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the complete status is relative only to one explicit generic research baseline and never implies certification, clinical/industrial/space release or fail-operational target-hardware behavior",
+  "the scope inventory names every currently built kernel mechanism, filesystem, hardware driver, Ring-3 service and GUI/application class relevant to the baseline, while unselected reference profiles and unsupported hardware are explicit exclusions",
+  "every in-scope component is covered by at least one current hazard and unknown, duplicated, omitted or out-of-scope component references fail validation",
+  "schema v2 is append-only over schema v1 terminology and the validator continues to accept structurally valid legacy schema-v1 registers",
+  "every v2 hazard has a hazardous situation rather than only a software failure and covers cause, effect, operating phase, degraded state, safe state, positive FTTI rationale, requirement, design, code control, executable test, objective acceptance criterion, owner, assumptions and residual risk",
+  "requirement IDs are unique and every hazard requirement resolves to a machine-readable requirement whose design and implementation paths exist inside the repository",
+  "the traceability baseline binds assurance scope, hazard register, requirements, design paths, code controls, verification sources and pass/fail results with SHA-256 and fails if any referenced verification fails",
+  "no screenshot, source-pattern assertion or successful normal build is presented as the sole proof of a runtime containment claim",
+  "S0.1 roadmap and project status are marked complete only after the register status is complete and exact coverage is machine-validated"
+]
+targeted_tests = [
+  "python test/test_reist_hazard_register.py -q",
+  "python scripts/validate_hazard_register.py",
+  "python scripts/run_hazard_traceability.py"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal"
+]
+stop_conditions = [
+  "a complete baseline could pass while an inventoried component has no hazard coverage",
+  "the baseline would need to claim an unselected reference profile or unsupported target-hardware property",
+  "requirement-to-result traceability cannot be validated before baseline publication",
+  "a required production or contract file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "safety: complete S0.1 assurance baseline"
+evidence = []
