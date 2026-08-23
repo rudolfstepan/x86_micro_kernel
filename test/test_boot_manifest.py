@@ -8,13 +8,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scripts.create_native_boot_image import create_manifest
+from scripts.create_native_boot_image import (
+    BACKUP_MANIFEST_RELATIVE_LBA,
+    KERNEL_B_RELATIVE_LBA,
+    create_manifest,
+)
 from scripts.validate_boot_manifest import validate_image
 
 
 SECTOR_SIZE = 512
 PARTITION_LBA = 1
-PARTITION_SECTORS = 256
+PARTITION_SECTORS = 6144
 KERNEL_LBA = 128
 TEST_SIGNATURE = bytes((index * 13 + 1) & 0xFF for index in range(256))
 
@@ -35,8 +39,15 @@ def _hdd_image(kernel: bytes) -> bytearray:
     image[446:462] = entry
     manifest = create_manifest(4, kernel, PARTITION_SECTORS, TEST_SIGNATURE)
     image[PARTITION_LBA * SECTOR_SIZE:(PARTITION_LBA + 1) * SECTOR_SIZE] = manifest
+    backup = create_manifest(
+        4, kernel, PARTITION_SECTORS, TEST_SIGNATURE, KERNEL_B_RELATIVE_LBA
+    )
+    backup_start = (PARTITION_LBA + BACKUP_MANIFEST_RELATIVE_LBA) * SECTOR_SIZE
+    image[backup_start:backup_start + SECTOR_SIZE] = backup
     start = (PARTITION_LBA + KERNEL_LBA) * SECTOR_SIZE
     image[start:start + len(kernel)] = kernel
+    backup_kernel = (PARTITION_LBA + KERNEL_B_RELATIVE_LBA) * SECTOR_SIZE
+    image[backup_kernel:backup_kernel + len(kernel)] = kernel
     return image
 
 
@@ -52,6 +63,7 @@ class BootManifestTests(unittest.TestCase):
         info = self._validate(_hdd_image(kernel))
         self.assertEqual(info.kernel_sha256, hashlib.sha256(kernel).hexdigest())
         self.assertEqual(info.partition_lba, PARTITION_LBA)
+        self.assertEqual(info.slot_count, 2)
         self.assertEqual(
             info.signature_sha256, hashlib.sha256(TEST_SIGNATURE).hexdigest()
         )
@@ -107,9 +119,8 @@ class BootManifestTests(unittest.TestCase):
         info = self._validate(image, "floppy")
         self.assertEqual(info.layout, "floppy")
 
-    def test_boot_stages_require_v3_signed_header_and_nonzero_digest(self):
+    def test_manifest_parsers_require_v3_signed_header_and_nonzero_digest(self):
         sources = [
-            ROOT / "arch/x86/boot/bios/stage1_mbr.asm",
             ROOT / "arch/x86/boot/bios/stage1_floppy.asm",
             ROOT / "arch/x86/boot/bios/stage2_bios.asm",
         ]
@@ -117,7 +128,12 @@ class BootManifestTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             self.assertIn("0x32544F4F", text, path.name)
             self.assertIn("MANIFEST_HEADER_SIZE", text, path.name)
-        stage2 = sources[2].read_text(encoding="utf-8")
+        mbr = (ROOT / "arch/x86/boot/bios/stage1_mbr.asm").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("MANIFEST_MAGIC", mbr)
+        self.assertIn("STAGE2_LOAD_SECTORS", mbr)
+        stage2 = sources[1].read_text(encoding="utf-8")
         self.assertIn("MANIFEST_KERNEL_SHA", stage2)
         self.assertIn("MANIFEST_KERNEL_SIGNATURE", stage2)
         self.assertIn(".manifest_sha", stage2)

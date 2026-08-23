@@ -24,6 +24,8 @@ DATA_PARTITION_START = 8192
 STAGE2_RELATIVE_LBA = 1
 STAGE2_MAX_SECTORS = 64
 KERNEL_RELATIVE_LBA = 128
+BACKUP_MANIFEST_RELATIVE_LBA = 96
+KERNEL_B_RELATIVE_LBA = 3136
 PARTITION_TYPE = 0xDA  # Non-filesystem raw boot partition
 DATA_PARTITION_TYPE = 0x0C  # FAT32 with LBA addressing
 MANIFEST_MAGIC = b"X86BOOT2"
@@ -79,7 +81,8 @@ def validate_elf32(kernel: bytes) -> tuple[int, int]:
 
 
 def create_manifest(stage2_sectors: int, kernel: bytes,
-                    partition_sectors: int, signature: bytes) -> bytes:
+                    partition_sectors: int, signature: bytes,
+                    kernel_lba: int = KERNEL_RELATIVE_LBA) -> bytes:
     if len(signature) != MANIFEST_SIGNATURE_SIZE:
         raise ValueError("kernel signature must be exactly 256 bytes")
     if signature == bytes(MANIFEST_SIGNATURE_SIZE):
@@ -94,7 +97,7 @@ def create_manifest(stage2_sectors: int, kernel: bytes,
         MANIFEST_HEADER_SIZE,
         STAGE2_RELATIVE_LBA,
         stage2_sectors,
-        KERNEL_RELATIVE_LBA,
+        kernel_lba,
         len(kernel),
         partition_sectors,
         binascii.crc32(kernel) & 0xFFFFFFFF,
@@ -661,17 +664,25 @@ def build_image(stage1_path: Path, stage2_path: Path, kernel_path: Path,
         raise ValueError(
             f"stage 2 occupies {stage2_sectors} sectors; maximum is {STAGE2_MAX_SECTORS}"
         )
-    if STAGE2_RELATIVE_LBA + stage2_sectors > KERNEL_RELATIVE_LBA:
-        raise ValueError("stage 2 overlaps the fixed kernel extent")
+    if STAGE2_RELATIVE_LBA + stage2_sectors > BACKUP_MANIFEST_RELATIVE_LBA:
+        raise ValueError("stage 2 overlaps the backup manifest")
 
     total_sectors = IMAGE_SIZE // SECTOR_SIZE
     partition_sectors = DATA_PARTITION_START - PARTITION_START
-    if KERNEL_RELATIVE_LBA + sectors_for(len(kernel)) > partition_sectors:
-        raise ValueError("kernel does not fit in the raw boot partition")
+    kernel_sectors = sectors_for(len(kernel))
+    if KERNEL_RELATIVE_LBA + kernel_sectors > KERNEL_B_RELATIVE_LBA:
+        raise ValueError("kernel exceeds the fixed A-slot capacity")
+    if KERNEL_B_RELATIVE_LBA + kernel_sectors > partition_sectors:
+        raise ValueError("kernel exceeds the fixed B-slot capacity")
 
     mbr = patch_partition_table(stage1, partition_sectors, total_sectors)
-    manifest = create_manifest(
-        stage2_sectors, kernel, partition_sectors, signature
+    manifest_a = create_manifest(
+        stage2_sectors, kernel, partition_sectors, signature,
+        KERNEL_RELATIVE_LBA,
+    )
+    manifest_b = create_manifest(
+        stage2_sectors, kernel, partition_sectors, signature,
+        KERNEL_B_RELATIVE_LBA,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("wb") as image:
@@ -680,10 +691,16 @@ def build_image(stage1_path: Path, stage2_path: Path, kernel_path: Path,
         image.write(mbr)
         partition_offset = PARTITION_START * SECTOR_SIZE
         image.seek(partition_offset)
-        image.write(manifest)
+        image.write(manifest_a)
         image.seek(partition_offset + STAGE2_RELATIVE_LBA * SECTOR_SIZE)
         image.write(stage2)
+        image.seek(
+            partition_offset + BACKUP_MANIFEST_RELATIVE_LBA * SECTOR_SIZE
+        )
+        image.write(manifest_b)
         image.seek(partition_offset + KERNEL_RELATIVE_LBA * SECTOR_SIZE)
+        image.write(kernel)
+        image.seek(partition_offset + KERNEL_B_RELATIVE_LBA * SECTOR_SIZE)
         image.write(kernel)
         write_fat32_volume(
             image,

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.5b1-redundant-ab-boot"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -3910,10 +3910,10 @@ evidence = []
 
 [[packages]]
 id = "S0.5b1-redundant-ab-boot"
-status = "active"
+status = "done"
 risk = "high"
 title = "Add redundant signed BIOS A/B boot slots"
-scope = "Create the first bounded A/B boot increment for native HDD images. Keep the primary signed manifest at boot-partition LBA 0, add an independently checksummed backup manifest at relative LBA 96, and place fixed signed kernel slots A and B at relative LBAs 128 and 3136. Stage 1 loads stage 2 from the first structurally valid manifest and passes the selected manifest offset; Stage 2 fully validates the selected manifest, exact fixed slot geometry, kernel SHA-256, RSA-2048-PSS and ELF before publication, then tries slot B exactly once when slot A fails. The independent host validator verifies both extents and exact bytes. QEMU proves successful B fallback after an A-only signature mutation and fail-closed rejection when both signatures are mutated. Rescue floppy remains a single signed slot. Persistent update intent, boot-attempt state, anti-rollback and an updater are later packages."
+scope = "Create the first bounded A/B boot increment for native HDD images. Keep the primary signed manifest at boot-partition LBA 0, add an independently checksummed backup manifest at relative LBA 96, and place fixed signed kernel slots A and B at relative LBAs 128 and 3136. Stage 1 loads a fixed 64-sector stage-2 reservation without parsing attacker-controlled manifests; Stage 2 starts with slot A, fully validates its manifest, exact fixed slot geometry, kernel SHA-256, RSA-2048-PSS and ELF before publication, then tries slot B exactly once when slot A fails. The independent host validator verifies both extents and exact bytes. QEMU proves successful B fallback after an A-only signature mutation and fail-closed rejection when both signatures are mutated. Rescue floppy remains a single signed slot. Persistent update intent, boot-attempt state, anti-rollback and an updater are later packages."
 allowed_files = [
   "automation/reist-s03b.toml",
   "arch/x86/boot/bios/stage1_mbr.asm",
@@ -3935,8 +3935,8 @@ allowed_files = [
 ]
 invariants = [
   "the HDD boot partition contains exactly two non-overlapping fixed kernel slots and two separately checksummed signed manifests while the rescue floppy remains single-slot",
-  "stage 1 accepts only exact manifest-v3 headers, bounded stage-2 geometry and either the fixed primary or backup manifest offset",
-  "stage 2 receives no caller-selected arbitrary LBA: it accepts only slot A manifest offset 0 or slot B manifest offset 96 and enforces matching kernel LBAs 128 or 3136",
+  "stage 1 fits the 446-byte MBR code area, loads exactly 64 sectors from fixed partition-relative LBA 1 and always enters stage 2 with slot A selected",
+  "stage 1 always passes slot A; stage 2 accepts only manifest offset 0 or 96, enforces matching kernel LBAs 128 or 3136 and changes from A to B at most once",
   "slot B is attempted at most once and only after slot A fails before kernel entry; no failure after output or kernel publication can trigger fallback",
   "each candidate independently passes whole-sector manifest checksum, exact bounds, SHA-256, pinned RSA-PSS and ELF validation before execution",
   "an A-only corruption reaches BOOT_OK through B with an explicit fallback marker while corruption of both slots stops before BOOT_OK",

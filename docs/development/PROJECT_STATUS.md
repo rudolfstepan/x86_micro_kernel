@@ -41,7 +41,7 @@ SATA-Hardwarefreigabe.
 
 - eigener BIOS-/MBR-Bootloader mit Manifest-v3-, ELF32-, SHA-256- und
   RSA-2048-PSS-Prüfung; ein unabhängiges Imagegate validiert das signierte
-  Kernelartefakt zusätzlich
+  Kernelartefakt zusätzlich; native HDD-Images besitzen feste Kandidaten A/B
 - 32-Bit-i386-Kernel mit Paging, Ring-3-Prozessen, präemptivem Scheduler,
   endlichen Waits und versionierter Syscall-/MYPR-ABI
 - inkrementeller Windows-Build für `qemu`, `vmware` und `real_hw`
@@ -123,8 +123,10 @@ Versorgung/Zeitbasis, Reset- und Interlockverdrahtung wird erst nach einer
 manuellen Auswahl angebunden; ohne diese Identität wird kein Produktionstreiber
 erfunden und keine Hardwarequalifikation behauptet.
 
-S0.5 umfasst nun die abgeschlossenen Pakete `S0.5a1`, `S0.5a2`, `S0.5a3a`
-und `S0.5a3b`. Das native BIOS-Manifest v3 enthält SHA-256 und die
+S0.5 umfasst nun die abgeschlossenen Pakete `S0.5a1`, `S0.5a2`, `S0.5a3a`,
+`S0.5a3b` und `S0.5b1`. Das letzte Paket ergänzt die erste redundante
+Bootstufe. Das native
+BIOS-Manifest v3 enthält SHA-256 und die
 256-Byte-RSA-PSS-Signatur des exakten Kernelartefakts; Windows-
 und Makefile-Builds validieren HDD- und Floppy-Images mit einem unabhängigen
 Parser und brechen bei Versions-, Layout-, Bounds-, Prüfsummen- oder
@@ -145,6 +147,14 @@ ELF-Parsing. Damit ist der Kernel relativ zur Stage-2-Vertrauensgrenze
 authentifiziert. Stage 1 und Stage 2 bleiben auf dem beschreibbaren Medium
 ersetzbar; Secure Boot, Anti-Rollback und ein unveränderlicher Plattformanker
 werden weiterhin nicht behauptet.
+
+`S0.5b1` legt im nativen HDD-Image Manifest A/B an den
+partitionrelativen LBAs 0/96 und Kernel A/B an 128/3136 ab. Die 446-Byte-
+MBR-Stufe lädt ohne Manifestparser die feste Stage-2-Reserve. Stage 2 startet
+mit A und prüft B nach einem A-Fehler genau einmal vollständig und unabhängig.
+Der Hostvalidator verlangt beide Kandidaten. Persistente Slotwahl,
+Bootversuchszähler, Erfolgsbestätigung und atomare Updateumschaltung bleiben
+offen; die Rescue-Diskette bleibt single-slot.
 
 `S0.3c-admin1` stellt sichere Storage-Operationen (`device down/up`, `mount`,
 `umount`) und einen festen, integritätsgeprüften 224-KiB-RAM-Rescue-Pool mit

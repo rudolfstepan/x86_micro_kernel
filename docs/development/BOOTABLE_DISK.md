@@ -40,24 +40,35 @@ privaten Schlüssel.
 ```text
 LBA 0             MBR / Stage 1
 LBA 2048          aktive RAW-Bootpartition (Typ 0xDA)
-                  Manifest, Stage 2 und ELF32-Kernel
+  relativ 0       signiertes Manifest A
+  relativ 1..64   feste Stage-2-Reserve
+  relativ 96      signiertes Manifest B
+  relativ 128     ELF32-Kernel A
+  relativ 3136    ELF32-Kernel B
 LBA 8192          FAT32-LBA-Systempartition (Typ 0x0C)
                   Label "X86 SYSTEM", Programme und Daten
 ```
 
-Stage 1 lädt das Manifest und Stage 2. Das versionierte Manifest v3 belegt
+Stage 1 lädt ohne Manifestparser exakt 64 Sektoren Stage 2 ab dem festen
+partitionrelativen LBA 1 und wählt zunächst Kandidat A. Das versionierte
+Manifest v3 belegt
 einen 512-Byte-Sektor. Sein 336-Byte-Header enthält unveränderte Stage-2- und
 Kernel-LBA-Felder, Kernelgröße, diagnostische CRC32 und ab Offset 48 den
 exakten 32-Byte-SHA-256-Digest des Kernelartefakts gemäß NIST FIPS 180-4.
 Ab Offset 80 folgt die verpflichtende 256-Byte-RSA-PSS-Signatur.
-Stage 1 und Stage 2 lehnen andere Magic-, Versions- oder Headerwerte ab;
-Stage 2 kopiert den Digest vor Wiederverwendung des Manifestpuffers in festen
+Stage 2 lehnt andere Magic-, Versions- oder Headerwerte ab und erzwingt für A
+und B die festen Manifest-/Kernel-Paare 0/128 beziehungsweise 96/3136. Bei
+einem Fehler von A vor dem Kernel-Handoff wird B genau einmal von Grund auf
+geprüft; danach wird geschlossen gestoppt. Stage 2 kopiert den Digest vor
+Wiederverwendung des Manifestpuffers in festen
 Speicher und verlangt einen gesetzten Wert.
 
 Nach jeder Imageerzeugung prüft `scripts/validate_boot_manifest.py` unabhängig
 vom Erzeuger das HDD- beziehungsweise Floppy-Layout, alle Extents, die
 Manifest-Prüfsumme sowie SHA-256 und CRC32 über die tatsächlichen Kernelbytes.
-Ein Fehler bricht den Build geschlossen ab. Stage 2 verwendet BIOS EDD/INT
+Beim HDD-Image müssen beide Kandidaten vollständig gültig und
+nicht überlappend sein; die Rescue-Diskette bleibt single-slot. Ein Fehler
+bricht den Build geschlossen ab. Stage 2 verwendet BIOS EDD/INT
 13h und berechnet SHA-256 sowie die diagnostische CRC32 im selben begrenzten
 32-KiB-Lese-/Cache-Durchlauf über exakt `kernel_size` Bytes. Die SHA-256-
 Kompression verwendet einen festen 64-Wort-Schedule und FIPS-180-4-Padding mit
@@ -76,6 +87,8 @@ sind nicht durch Firmware, TPM oder einen unveränderlichen ROM-Anker gebunden.
 Ein Angreifer mit Schreibzugriff könnte daher den Loader samt Schlüsselanker
 ersetzen. Secure Boot, Anti-Rollback und eine vollständige kryptografische
 Firmware-Vertrauenskette bleiben ausdrücklich nicht implementiert.
+Ebenso noch nicht implementiert sind persistente aktive Slotwahl,
+Bootversuchszähler, Erfolgsbestätigung und atomare Updateumschaltung.
 
 ## Root-Volume
 

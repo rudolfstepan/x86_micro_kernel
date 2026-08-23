@@ -11,6 +11,7 @@
 ;   CS:IP = 1000:0000
 ;   DL    = BIOS boot drive
 ;   EAX   = absolute LBA of the active raw boot partition
+;   EBX   = selected manifest LBA relative to that partition (0 or 96)
 ;
 ; Stage 2 validates the image manifest, gathers an E820 memory map, loads all
 ; ELF32 PT_LOAD segments, zeros their BSS tails, and enters the existing
@@ -54,6 +55,12 @@ MANIFEST_KERNEL_CRC  equ 36
 MANIFEST_FLAGS       equ 40
 MANIFEST_KERNEL_SHA  equ 48
 MANIFEST_KERNEL_SIGNATURE equ 80
+PRIMARY_MANIFEST_LBA  equ 0
+BACKUP_MANIFEST_LBA   equ 96
+KERNEL_A_LBA          equ 128
+KERNEL_B_LBA          equ 3136
+HDD_PARTITION_SECTORS equ 6144
+FLOPPY_PARTITION_SECTORS equ 2879
 RSA_BYTES            equ 256
 RSA_DWORDS           equ RSA_BYTES / 4
 PSS_HASH_BYTES       equ 32
@@ -101,6 +108,18 @@ start:
 
     mov [boot_drive], dl
     mov [partition_lba], ebp
+    mov [manifest_relative_lba], ebx
+    cmp byte [boot_drive], 0x80
+    jb .floppy_manifest
+    cmp ebx, PRIMARY_MANIFEST_LBA
+    je .manifest_selected
+    cmp ebx, BACKUP_MANIFEST_LBA
+    jne manifest_error
+    jmp .manifest_selected
+.floppy_manifest:
+    test ebx, ebx
+    jnz manifest_error
+.manifest_selected:
     call serial_init
     mov ax, 0x0003
     int 0x10
@@ -110,8 +129,11 @@ start:
     call enable_a20
     call build_multiboot_info
 
-    ; Re-read and validate the complete manifest sector.
+load_manifest_candidate:
+    ; Re-read and validate the complete selected manifest sector.
     mov eax, [partition_lba]
+    add eax, [manifest_relative_lba]
+    jc manifest_error
     mov cx, 1
     call read_bounce
     jc disk_error
@@ -127,6 +149,13 @@ start:
     jne manifest_error
     cmp dword [es:MANIFEST_FLAGS], MANIFEST_FLAG_SIGNED
     jne manifest_error
+    cmp dword [es:MANIFEST_STAGE2_LBA], 1
+    jne manifest_error
+    mov eax, [es:MANIFEST_STAGE2_CNT]
+    test eax, eax
+    jz manifest_error
+    cmp eax, 64
+    ja manifest_error
 
     xor eax, eax
     xor si, si
@@ -175,12 +204,30 @@ start:
 
     mov eax, [es:MANIFEST_KERNEL_LBA]
     mov [kernel_relative_lba], eax
+    cmp dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
+    jne .expect_kernel_b
+    cmp eax, KERNEL_A_LBA
+    jne manifest_error
+    jmp .kernel_lba_valid
+.expect_kernel_b:
+    cmp eax, KERNEL_B_LBA
+    jne manifest_error
+.kernel_lba_valid:
     mov eax, [es:MANIFEST_KERNEL_SIZE]
     mov [kernel_size], eax
     cmp eax, 4096
     jb manifest_error
     mov eax, [es:MANIFEST_PART_SIZE]
     mov [partition_size], eax
+    cmp byte [boot_drive], 0x80
+    jb .expect_floppy_size
+    cmp eax, HDD_PARTITION_SECTORS
+    jne manifest_error
+    jmp .partition_size_valid
+.expect_floppy_size:
+    cmp eax, FLOPPY_PARTITION_SECTORS
+    jne manifest_error
+.partition_size_valid:
     mov eax, [es:MANIFEST_KERNEL_CRC]
     mov [kernel_crc], eax
 
@@ -191,6 +238,13 @@ start:
     shr eax, 9
     add eax, [kernel_relative_lba]
     jc manifest_error
+    cmp dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
+    jne .slot_end_ready
+    cmp byte [boot_drive], 0x80
+    jb .slot_end_ready
+    cmp eax, KERNEL_B_LBA
+    ja manifest_error
+.slot_end_ready:
     cmp eax, [partition_size]
     ja manifest_error
     mov eax, [partition_lba]
@@ -248,24 +302,37 @@ start:
 
 disk_error:
     mov si, msg_disk_error
-    jmp fatal
+    jmp candidate_error
 manifest_error:
     mov si, msg_manifest_error
-    jmp fatal
+    jmp candidate_error
 elf_error:
     mov si, msg_elf_error
-    jmp fatal
+    jmp candidate_error
 load_error:
     mov si, msg_load_error
-    jmp fatal
+    jmp candidate_error
 crc_error:
     mov si, msg_crc_error
-    jmp fatal
+    jmp candidate_error
 sha_error:
     mov si, msg_sha_error
-    jmp fatal
+    jmp candidate_error
 signature_error:
     mov si, msg_signature_error
+
+candidate_error:
+    cmp byte [boot_drive], 0x80
+    jb fatal
+    cmp dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
+    jne fatal
+    call print_string
+    mov si, msg_fallback
+    call print_string
+    mov dword [manifest_relative_lba], BACKUP_MANIFEST_LBA
+    mov byte [kernel_cached], 0
+    mov byte [entry_is_executable], 0
+    jmp load_manifest_candidate
 
 fatal:
     call print_string
@@ -1888,6 +1955,7 @@ vbe_blue_position      db 0
 align 4
 partition_lba          dd 0
 partition_size         dd 0
+manifest_relative_lba  dd 0
 kernel_relative_lba    dd 0
 kernel_lba             dd 0
 kernel_size            dd 0
@@ -2010,6 +2078,7 @@ msg_load_error     db "Kernel load failed", 13, 10, 0
 msg_crc_error      db "Kernel CRC32 verification failed", 13, 10, 0
 msg_sha_error      db "Kernel SHA-256 verification failed", 13, 10, 0
 msg_signature_error db "Kernel RSA-PSS verification failed", 13, 10, 0
+msg_fallback       db "BOOT_SLOT_A_FAILED_TRY_B", 13, 10, 0
 
 align 4
 crc32_nibble_table:

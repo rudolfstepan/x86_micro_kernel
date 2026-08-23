@@ -188,12 +188,12 @@ ftti_rationale = "Ablehnung erfolgt vor Kernel- oder Systemvolume-Publikation."
 requirements = ["REQ-BOOT-001", "REQ-DAT-001", "REQ-PROFILE-001"]
 design = ["docs/architecture/REIST_ARCHITECTURE.md", "docs/development/BUILD_MODES.md"]
 controls = ["arch/x86/boot/bios/stage1_mbr.asm", "arch/x86/boot/bios/stage2_bios.asm", "kernel/init/kernel.c"]
-verification = ["test/test_native_boot_image.py", "test/test_floppy_boot_image.py", "test/test_boot_system_volume.py", "test/test_disk_image_validator.py"]
-acceptance_criteria = ["Manifest-, Segment-, CRC- und Volumenfehler stoppen den Boot.", "Referenzlayouts nutzen dieselbe validierte Programmanordnung."]
+verification = ["test/test_native_boot_image.py", "test/test_boot_ab.py", "test/test_floppy_boot_image.py", "test/test_boot_system_volume.py", "test/test_disk_image_validator.py", "scripts/run_qemu_boot_integrity.py"]
+acceptance_criteria = ["Manifest-, Segment-, SHA-, Signatur-, CRC- und Volumenfehler stoppen den Boot.", "Ein fehlerhafter HDD-Kandidat A wechselt höchstens einmal auf den unabhängig validierten Kandidaten B.", "Referenzlayouts nutzen dieselbe validierte Programmanordnung."]
 owner = "REIST boot team"
 status = "partially_verified"
 assumptions = ["BIOS/MBR ist die ausgewählte Forschungsbaseline."]
-residual_risk = "Signierte A/B-Images bleiben unter S0.5 offen."
+residual_risk = "Der signierte feste HDD-A/B-Fallback besitzt noch keinen persistenten Updatecommit, Bootversuchszähler, Erfolgs-Acknowledge oder Anti-Rollback-Schutz."
 
 [[hazard]]
 id = "HZ-STORAGE-001"

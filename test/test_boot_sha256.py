@@ -9,7 +9,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scripts.create_native_boot_image import create_manifest
+from scripts.create_native_boot_image import (
+    BACKUP_MANIFEST_RELATIVE_LBA,
+    KERNEL_B_RELATIVE_LBA,
+    create_manifest,
+)
 from scripts.run_qemu_boot_integrity import (
     create_crc_valid_sha_mismatch,
     create_signature_mismatch,
@@ -19,7 +23,7 @@ from scripts.validate_boot_manifest import validate_image
 
 SECTOR_SIZE = 512
 PARTITION_LBA = 1
-PARTITION_SECTORS = 256
+PARTITION_SECTORS = 6144
 KERNEL_LBA = 128
 TEST_SIGNATURE = bytes((index * 7 + 3) & 0xFF for index in range(256))
 
@@ -35,8 +39,14 @@ def image_with_kernel(kernel: bytes) -> bytearray:
     image[SECTOR_SIZE:2 * SECTOR_SIZE] = create_manifest(
         4, kernel, PARTITION_SECTORS, TEST_SIGNATURE
     )
+    backup_manifest = (PARTITION_LBA + BACKUP_MANIFEST_RELATIVE_LBA) * SECTOR_SIZE
+    image[backup_manifest:backup_manifest + SECTOR_SIZE] = create_manifest(
+        4, kernel, PARTITION_SECTORS, TEST_SIGNATURE, KERNEL_B_RELATIVE_LBA
+    )
     offset = (PARTITION_LBA + KERNEL_LBA) * SECTOR_SIZE
     image[offset:offset + len(kernel)] = kernel
+    backup_offset = (PARTITION_LBA + KERNEL_B_RELATIVE_LBA) * SECTOR_SIZE
+    image[backup_offset:backup_offset + len(kernel)] = kernel
     return image
 
 

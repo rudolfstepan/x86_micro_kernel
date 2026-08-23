@@ -82,6 +82,7 @@ start:
 
     mov dl, [boot_drive]
     mov eax, MANIFEST_LBA
+    xor ebx, ebx                   ; single-slot rescue manifest
     jmp STAGE2_SEGMENT:0
 
 disk_error:

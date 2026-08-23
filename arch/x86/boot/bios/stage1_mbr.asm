@@ -6,19 +6,15 @@
 ; Safety: Stacklayout, Sektorzahl und Poll-/Retryarbeit bleiben explizit begrenzt.
 ;
 ; Native BIOS stage 1 loader.
-; The image builder patches the partition table below and places a manifest
-; in the first sector of the active boot partition.
+; The image builder patches the partition table below and places stage 2 in a
+; fixed bounded extent. Stage 2 owns all signed-manifest and A/B validation.
 
 BITS 16
 ORG 0x7C00
 
-STAGE2_SEGMENT      equ 0x1000
-MANIFEST_SEGMENT    equ 0x0800
-MANIFEST_MAGIC_0    equ 0x42363858      ; "X86B"
-MANIFEST_MAGIC_1    equ 0x32544F4F      ; "OOT2"
-MANIFEST_VERSION    equ 3
-MANIFEST_HEADER_SIZE equ 336
-MAX_STAGE2_SECTORS  equ 64
+STAGE2_SEGMENT       equ 0x1000
+STAGE2_RELATIVE_LBA  equ 1
+STAGE2_LOAD_SECTORS  equ 64
 
 start:
     cli
@@ -56,37 +52,18 @@ start:
 .active_found:
     mov eax, [si + 8]
     test eax, eax
-    jz invalid_manifest
+    jz invalid_partition
     mov [partition_lba], eax
+    mov edx, [si + 12]
+    cmp edx, STAGE2_RELATIVE_LBA + STAGE2_LOAD_SECTORS
+    jb invalid_partition
 
-    ; Read the partition manifest to 0000:8000.
-    mov cx, 1
-    mov bx, 0
-    mov dx, MANIFEST_SEGMENT
-    call read_lba
-    jc disk_read_failed
-
-    mov ax, MANIFEST_SEGMENT
-    mov es, ax
-    cmp dword [es:0], MANIFEST_MAGIC_0
-    jne invalid_manifest
-    cmp dword [es:4], MANIFEST_MAGIC_1
-    jne invalid_manifest
-    cmp dword [es:8], MANIFEST_VERSION
-    jne invalid_manifest
-    cmp dword [es:12], MANIFEST_HEADER_SIZE
-    jne invalid_manifest
-
-    mov ecx, [es:20]             ; stage2 sector count
-    test ecx, ecx
-    jz invalid_manifest
-    cmp ecx, MAX_STAGE2_SECTORS
-    ja invalid_manifest
-    mov eax, [es:16]             ; stage2 LBA relative to partition
-    add eax, [partition_lba]
-    jc invalid_manifest
-
-    ; Load stage 2 to physical 0001:0000 (1000:0000).
+    ; Load the complete fixed Stage-2 reservation. The image builder ensures
+    ; that the actual binary fits; Stage 2 validates both signed candidates.
+    mov eax, [partition_lba]
+    add eax, STAGE2_RELATIVE_LBA
+    jc invalid_partition
+    mov cx, STAGE2_LOAD_SECTORS
     mov bx, 0
     mov dx, STAGE2_SEGMENT
     call read_lba
@@ -94,6 +71,7 @@ start:
 
     mov dl, [boot_drive]
     mov eax, [partition_lba]
+    xor ebx, ebx                  ; Stage 2 always starts with slot A.
     jmp STAGE2_SEGMENT:0
 
 disk_extensions_missing:
@@ -104,8 +82,8 @@ disk_read_failed:
     mov si, msg_read
     jmp fatal
 
-invalid_manifest:
-    mov si, msg_manifest
+invalid_partition:
+    mov si, msg_partition
 
 fatal:
     call print_string
@@ -178,7 +156,6 @@ dap_lba           dq 0
 msg_extensions db "No BIOS EDD", 13, 10, 0
 msg_partition  db "No active boot partition", 13, 10, 0
 msg_read       db "Boot disk read failed", 13, 10, 0
-msg_manifest   db "Invalid boot manifest", 13, 10, 0
 
 ; A real MBR reserves bytes 446..509 for four partition entries. The image
 ; builder fills the first entry and leaves the remaining entries empty.

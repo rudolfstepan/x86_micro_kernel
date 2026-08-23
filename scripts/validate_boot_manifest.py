@@ -23,6 +23,8 @@ BOOT_PARTITION_TYPE = 0xDA
 STAGE2_RELATIVE_LBA = 1
 STAGE2_MAX_SECTORS = 64
 KERNEL_RELATIVE_LBA = 128
+BACKUP_MANIFEST_RELATIVE_LBA = 96
+KERNEL_B_RELATIVE_LBA = 3136
 MIN_KERNEL_SIZE = 4096
 MAX_KERNEL_SIZE = 64 * 1024 * 1024
 HASH_CHUNK_SIZE = 64 * 1024
@@ -36,6 +38,7 @@ class ManifestInfo:
     kernel_size: int
     kernel_sha256: str
     signature_sha256: str
+    slot_count: int
 
 
 def _additive_checksum_valid(sector: bytes) -> bool:
@@ -74,6 +77,77 @@ def _locate_manifest(image, image_sectors: int, layout: str) -> tuple[str, int, 
     raise ValueError(f"unsupported layout: {layout}")
 
 
+def _validate_slot(image, image_size: int, partition_lba: int,
+                   expected_partition_sectors: int, manifest_lba: int,
+                   expected_kernel_lba: int, next_extent_lba: int,
+                   stage2_limit_lba: int) -> tuple[int, bytes, bytes]:
+    image.seek((partition_lba + manifest_lba) * SECTOR_SIZE)
+    manifest = image.read(SECTOR_SIZE)
+    if len(manifest) != SECTOR_SIZE:
+        raise ValueError("manifest sector is truncated")
+
+    fields = struct.unpack_from("<8sIIIIIIIIII", manifest)
+    (magic, version, header_size, stage2_lba, stage2_sectors,
+     kernel_lba, kernel_size, partition_sectors, kernel_crc,
+     flags, _checksum) = fields
+    if magic != MANIFEST_MAGIC:
+        raise ValueError("manifest magic is not X86BOOT2")
+    if version != MANIFEST_VERSION or header_size != MANIFEST_HEADER_SIZE:
+        raise ValueError("manifest version or header size is unsupported")
+    if flags != MANIFEST_FLAG_SIGNED:
+        raise ValueError("manifest does not require the signed-kernel profile")
+    if not _additive_checksum_valid(manifest):
+        raise ValueError("manifest additive checksum is invalid")
+    if partition_sectors != expected_partition_sectors:
+        raise ValueError("manifest partition extent disagrees with image layout")
+    if stage2_lba != STAGE2_RELATIVE_LBA:
+        raise ValueError("manifest stage-2 offset is unsupported")
+    if not 1 <= stage2_sectors <= STAGE2_MAX_SECTORS or \
+            stage2_lba + stage2_sectors > stage2_limit_lba:
+        raise ValueError("manifest stage-2 extent is invalid")
+    if kernel_lba != expected_kernel_lba:
+        raise ValueError("manifest kernel offset is unsupported")
+    if kernel_size < MIN_KERNEL_SIZE:
+        raise ValueError("manifest kernel is smaller than 4 KiB")
+    if kernel_size > MAX_KERNEL_SIZE:
+        raise ValueError("manifest kernel exceeds the 64 MiB validator maximum")
+    kernel_sectors = (kernel_size + SECTOR_SIZE - 1) // SECTOR_SIZE
+    if kernel_lba + kernel_sectors > next_extent_lba or \
+            kernel_lba + kernel_sectors > partition_sectors:
+        raise ValueError("manifest kernel extent exceeds its fixed slot")
+
+    expected_digest = manifest[48:80]
+    if expected_digest == bytes(32):
+        raise ValueError("manifest SHA-256 digest is missing")
+    signature = manifest[
+        MANIFEST_SIGNATURE_OFFSET:
+        MANIFEST_SIGNATURE_OFFSET + MANIFEST_SIGNATURE_SIZE
+    ]
+    if len(signature) != MANIFEST_SIGNATURE_SIZE or \
+            signature == bytes(MANIFEST_SIGNATURE_SIZE):
+        raise ValueError("manifest RSA-PSS signature is missing")
+    kernel_offset = (partition_lba + kernel_lba) * SECTOR_SIZE
+    if kernel_offset + kernel_size > image_size:
+        raise ValueError("kernel payload is truncated")
+    image.seek(kernel_offset)
+    digest = hashlib.sha256()
+    actual_crc = 0
+    remaining = kernel_size
+    while remaining:
+        chunk = image.read(min(remaining, HASH_CHUNK_SIZE))
+        if not chunk:
+            raise ValueError("kernel payload is truncated")
+        digest.update(chunk)
+        actual_crc = binascii.crc32(chunk, actual_crc)
+        remaining -= len(chunk)
+    actual_digest = digest.digest()
+    if actual_digest != expected_digest:
+        raise ValueError("kernel SHA-256 digest mismatch")
+    if (actual_crc & 0xFFFFFFFF) != kernel_crc:
+        raise ValueError("kernel CRC32 diagnostic mismatch")
+    return kernel_size, actual_digest, signature
+
+
 def validate_image(path: Path, layout: str = "auto") -> ManifestInfo:
     size = path.stat().st_size
     if size == 0 or size % SECTOR_SIZE:
@@ -84,74 +158,28 @@ def validate_image(path: Path, layout: str = "auto") -> ManifestInfo:
         actual_layout, partition_lba, expected_partition_sectors = _locate_manifest(
             image, image_sectors, layout
         )
-        image.seek(partition_lba * SECTOR_SIZE)
-        manifest = image.read(SECTOR_SIZE)
-        if len(manifest) != SECTOR_SIZE:
-            raise ValueError("manifest sector is truncated")
-
-        fields = struct.unpack_from("<8sIIIIIIIIII", manifest)
-        (magic, version, header_size, stage2_lba, stage2_sectors,
-         kernel_lba, kernel_size, partition_sectors, kernel_crc,
-         flags, _checksum) = fields
-        if magic != MANIFEST_MAGIC:
-            raise ValueError("manifest magic is not X86BOOT2")
-        if version != MANIFEST_VERSION or header_size != MANIFEST_HEADER_SIZE:
-            raise ValueError("manifest version or header size is unsupported")
-        if flags != MANIFEST_FLAG_SIGNED:
-            raise ValueError("manifest does not require the signed-kernel profile")
-        if not _additive_checksum_valid(manifest):
-            raise ValueError("manifest additive checksum is invalid")
-        if partition_sectors != expected_partition_sectors:
-            raise ValueError("manifest partition extent disagrees with image layout")
-        if stage2_lba != STAGE2_RELATIVE_LBA:
-            raise ValueError("manifest stage-2 offset is unsupported")
-        if not 1 <= stage2_sectors <= STAGE2_MAX_SECTORS:
-            raise ValueError("manifest stage-2 extent is invalid")
-        if kernel_lba != KERNEL_RELATIVE_LBA:
-            raise ValueError("manifest kernel offset is unsupported")
-        if stage2_lba + stage2_sectors > kernel_lba:
-            raise ValueError("stage-2 extent overlaps the kernel")
-        if kernel_size < MIN_KERNEL_SIZE:
-            raise ValueError("manifest kernel is smaller than 4 KiB")
-        if kernel_size > MAX_KERNEL_SIZE:
-            raise ValueError("manifest kernel exceeds the 64 MiB validator maximum")
-        kernel_sectors = (kernel_size + SECTOR_SIZE - 1) // SECTOR_SIZE
-        if kernel_lba + kernel_sectors > partition_sectors:
-            raise ValueError("manifest kernel extent exceeds boot partition")
-
-        expected_digest = manifest[48:80]
-        if expected_digest == bytes(32):
-            raise ValueError("manifest SHA-256 digest is missing")
-        signature = manifest[
-            MANIFEST_SIGNATURE_OFFSET:
-            MANIFEST_SIGNATURE_OFFSET + MANIFEST_SIGNATURE_SIZE
+        if actual_layout == "hdd":
+            slots = (
+                (0, KERNEL_RELATIVE_LBA, KERNEL_B_RELATIVE_LBA),
+                (BACKUP_MANIFEST_RELATIVE_LBA, KERNEL_B_RELATIVE_LBA,
+                 expected_partition_sectors),
+            )
+            stage2_limit = BACKUP_MANIFEST_RELATIVE_LBA
+        else:
+            slots = ((0, KERNEL_RELATIVE_LBA, expected_partition_sectors),)
+            stage2_limit = KERNEL_RELATIVE_LBA
+        results = [
+            _validate_slot(
+                image, size, partition_lba, expected_partition_sectors,
+                manifest_lba, kernel_lba, next_extent_lba, stage2_limit,
+            )
+            for manifest_lba, kernel_lba, next_extent_lba in slots
         ]
-        if len(signature) != MANIFEST_SIGNATURE_SIZE or \
-                signature == bytes(MANIFEST_SIGNATURE_SIZE):
-            raise ValueError("manifest RSA-PSS signature is missing")
-        kernel_offset = (partition_lba + kernel_lba) * SECTOR_SIZE
-        if kernel_offset + kernel_size > size:
-            raise ValueError("kernel payload is truncated")
-        image.seek(kernel_offset)
-        digest = hashlib.sha256()
-        actual_crc = 0
-        remaining = kernel_size
-        while remaining:
-            chunk = image.read(min(remaining, HASH_CHUNK_SIZE))
-            if not chunk:
-                raise ValueError("kernel payload is truncated")
-            digest.update(chunk)
-            actual_crc = binascii.crc32(chunk, actual_crc)
-            remaining -= len(chunk)
-        actual_digest = digest.digest()
-        if actual_digest != expected_digest:
-            raise ValueError("kernel SHA-256 digest mismatch")
-        if (actual_crc & 0xFFFFFFFF) != kernel_crc:
-            raise ValueError("kernel CRC32 diagnostic mismatch")
+        kernel_size, actual_digest, signature = results[0]
 
     return ManifestInfo(
-        actual_layout, partition_lba, partition_sectors, kernel_size,
-        actual_digest.hex(), hashlib.sha256(signature).hexdigest()
+        actual_layout, partition_lba, expected_partition_sectors, kernel_size,
+        actual_digest.hex(), hashlib.sha256(signature).hexdigest(), len(results)
     )
 
 
@@ -167,7 +195,8 @@ def main() -> int:
         return 1
     print(
         f"BOOT MANIFEST PASS: layout={info.layout} kernel={info.kernel_size} "
-        f"sha256={info.kernel_sha256} signature_sha256={info.signature_sha256}"
+        f"slots={info.slot_count} sha256={info.kernel_sha256} "
+        f"signature_sha256={info.signature_sha256}"
     )
     return 0
 

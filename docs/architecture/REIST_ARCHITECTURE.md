@@ -120,6 +120,16 @@ selbst sind auf dem beschreibbaren Medium jedoch nicht durch einen
 unveränderlichen Firmwareanker geschützt; daraus folgen weder Secure Boot,
 Anti-Rollback noch eine physische Plattformqualifikation.
 
+Das native HDD-Image besitzt zwei feste signierte Kandidaten. Manifest A liegt
+partitionrelativ an LBA 0 und verweist ausschließlich auf Kernel A an LBA 128;
+Manifest B liegt an LBA 96 und verweist ausschließlich auf Kernel B an LBA
+3136. Stage 1 lädt ohne Manifestparser genau 64 Stage-2-Sektoren ab LBA 1 und
+übergibt Kandidat A. Stage 2 akzeptiert nur diese feste Zuordnung und versucht
+B höchstens einmal, wenn A vor dem Handoff an den Kernel scheitert. Beide
+Kandidaten durchlaufen unabhängig Prüfsumme, Bounds, SHA-256, RSA-PSS und
+ELF-Prüfung. Diese Laufzeitredundanz ist noch kein persistenter Updatezustand,
+Bootzähler, Erfolgs-Acknowledge oder Anti-Rollback-Verfahren.
+
 Der entscheidende nächste Architekturwechsel ist damit ausdrücklich:
 
 ```text

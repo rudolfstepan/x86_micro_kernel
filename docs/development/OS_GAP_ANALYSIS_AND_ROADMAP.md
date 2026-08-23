@@ -398,10 +398,13 @@ und 10 verbindlich.
   - [x] S0.5a1 Versioniertes Bootmanifest v2 mit exaktem Kernel-SHA-256 und
     unabhängigem, fail-closed HDD-/Floppy-Imagegate
   - [x] S0.5a2 Begrenzte SHA-256-Verifikation durch den Bootloader
-  - [ ] S0.5a3 Signierte Artefakte und gebundener Vertrauensanker
+  - [x] S0.5a3 Signierte Artefakte und gebundener Vertrauensanker
     - [x] S0.5a3a Hostseitige RSA-2048-PSS/SHA-256-Kernelsignatur mit
       gepinntem Research-Public-Key und fail-closed Buildgate
     - [x] S0.5a3b Signatur und Vertrauensanker in Stage 2 binden
+  - [ ] S0.5b Redundante Bootkandidaten und atomare Updates
+    - [x] S0.5b1 Feste signierte HDD-Slots A/B mit einmaligem, vollständig
+      validiertem Stage-2-Fallback; persistenter Updatezustand folgt separat
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
 
 #### Funktionsroadmap nach dem S0-Gate
@@ -1336,6 +1339,15 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
   Kernel relativ zu Stage 2. Weil Stage 1 und Stage 2 auf dem beschreibbaren
   Medium verbleiben, entsteht daraus weder Secure Boot noch ein
   unveränderlicher Plattformvertrauensanker oder Anti-Rollback.
+- [x] Das native HDD-Image enthält zwei nicht überlappende signierte
+  Bootkandidaten: Manifest A/B an den partitionrelativen LBAs 0/96 und Kernel
+  A/B an 128/3136. Die MBR-Stufe lädt ohne Manifestparser eine feste
+  64-Sektoren-Reserve für Stage 2. Stage 2 prüft A vollständig und versucht B
+  bei einem Fehler vor dem Kernel-Handoff genau einmal; beide Kandidaten
+  durchlaufen unabhängig Manifest-Prüfsumme, Bounds, SHA-256, RSA-PSS und
+  ELF-Prüfung. QEMU weist sowohl den erfolgreichen A-zu-B-Fallback als auch
+  den geschlossenen Stopp bei zwei beschädigten Signaturen nach. Floppy bleibt
+  single-slot; persistente Slotwahl, Versuchsstatus und Updatecommit sind offen.
 - Sicherheitsrelevanten Zustand transaktional, checksummiert, versioniert und
    redundant speichern; Stromausfall an jeder Commitstelle injizieren.
 - Verifizierten Boot, signierte Artefakte, reproduzierbare Builds, Provenienz

@@ -26,6 +26,8 @@ MANIFEST_VERSION = 3
 MANIFEST_HEADER_SIZE = 336
 MANIFEST_SIGNATURE_OFFSET = 80
 MANIFEST_SIGNATURE_SIZE = 256
+BACKUP_MANIFEST_RELATIVE_LBA = 96
+FALLBACK_MARKER = "BOOT_SLOT_A_FAILED_TRY_B"
 
 
 def _active_boot_partition(mbr: bytes) -> tuple[int, int]:
@@ -48,72 +50,81 @@ def _refresh_manifest_checksum(manifest: bytearray) -> None:
 
 
 def create_crc_valid_sha_mismatch(source: Path, output: Path) -> int:
-    """Copy source and mutate one kernel byte while preserving manifest SHA."""
+    """Mutate both A/B kernels while preserving each manifest SHA field."""
     output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, output)
     with output.open("r+b") as image:
         partition_lba, partition_sectors = _active_boot_partition(
             image.read(SECTOR_SIZE)
         )
-        manifest_offset = partition_lba * SECTOR_SIZE
-        image.seek(manifest_offset)
-        manifest = bytearray(image.read(SECTOR_SIZE))
-        if len(manifest) != SECTOR_SIZE or manifest[:8] != b"X86BOOT2" or \
-                struct.unpack_from("<II", manifest, 8) != (
-                    MANIFEST_VERSION, MANIFEST_HEADER_SIZE
-                ):
-            raise ValueError("image has no signed manifest v3")
-        kernel_lba, kernel_size = struct.unpack_from("<II", manifest, 24)
-        kernel_sectors = (kernel_size + SECTOR_SIZE - 1) // SECTOR_SIZE
-        if (kernel_size < 4096 or
-                kernel_lba + kernel_sectors > partition_sectors):
-            raise ValueError("manifest kernel extent is invalid")
-        kernel_offset = (partition_lba + kernel_lba) * SECTOR_SIZE
-        image.seek(kernel_offset)
-        kernel = bytearray(image.read(kernel_size))
-        if len(kernel) != kernel_size:
-            raise ValueError("kernel payload is truncated")
-        original_digest = bytes(manifest[48:80])
-        mutation_offset = kernel_size // 2
-        kernel[mutation_offset] ^= 0x01
-        if hashlib.sha256(kernel).digest() == original_digest:
-            raise AssertionError("kernel mutation did not change SHA-256")
-        image.seek(kernel_offset)
-        image.write(kernel)
-        struct.pack_into(
-            "<I", manifest, 36, binascii.crc32(kernel) & 0xFFFFFFFF
-        )
-        _refresh_manifest_checksum(manifest)
-        if bytes(manifest[48:80]) != original_digest:
-            raise AssertionError("negative fixture changed manifest SHA-256")
-        image.seek(manifest_offset)
-        image.write(manifest)
+        mutation_offset = 0
+        for relative_manifest in (0, BACKUP_MANIFEST_RELATIVE_LBA):
+            manifest_offset = (
+                partition_lba + relative_manifest
+            ) * SECTOR_SIZE
+            image.seek(manifest_offset)
+            manifest = bytearray(image.read(SECTOR_SIZE))
+            if len(manifest) != SECTOR_SIZE or manifest[:8] != b"X86BOOT2" or \
+                    struct.unpack_from("<II", manifest, 8) != (
+                        MANIFEST_VERSION, MANIFEST_HEADER_SIZE
+                    ):
+                raise ValueError("image has no signed A/B manifest v3")
+            kernel_lba, kernel_size = struct.unpack_from("<II", manifest, 24)
+            kernel_sectors = (kernel_size + SECTOR_SIZE - 1) // SECTOR_SIZE
+            if (kernel_size < 4096 or
+                    kernel_lba + kernel_sectors > partition_sectors):
+                raise ValueError("manifest kernel extent is invalid")
+            kernel_offset = (partition_lba + kernel_lba) * SECTOR_SIZE
+            image.seek(kernel_offset)
+            kernel = bytearray(image.read(kernel_size))
+            if len(kernel) != kernel_size:
+                raise ValueError("kernel payload is truncated")
+            original_digest = bytes(manifest[48:80])
+            mutation_offset = kernel_size // 2
+            kernel[mutation_offset] ^= 0x01
+            if hashlib.sha256(kernel).digest() == original_digest:
+                raise AssertionError("kernel mutation did not change SHA-256")
+            image.seek(kernel_offset)
+            image.write(kernel)
+            struct.pack_into(
+                "<I", manifest, 36, binascii.crc32(kernel) & 0xFFFFFFFF
+            )
+            _refresh_manifest_checksum(manifest)
+            if bytes(manifest[48:80]) != original_digest:
+                raise AssertionError("negative fixture changed manifest SHA-256")
+            image.seek(manifest_offset)
+            image.write(manifest)
     return mutation_offset
 
 
-def create_signature_mismatch(source: Path, output: Path) -> int:
-    """Copy source and mutate only the checksummed embedded signature."""
+def create_signature_mismatch(source: Path, output: Path,
+                              both_slots: bool = True) -> int:
+    """Mutate one or both checksummed embedded A/B signatures."""
     output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, output)
     with output.open("r+b") as image:
         partition_lba, _ = _active_boot_partition(image.read(SECTOR_SIZE))
-        manifest_offset = partition_lba * SECTOR_SIZE
-        image.seek(manifest_offset)
-        manifest = bytearray(image.read(SECTOR_SIZE))
-        if len(manifest) != SECTOR_SIZE or manifest[:8] != b"X86BOOT2" or \
-                struct.unpack_from("<II", manifest, 8) != (
-                    MANIFEST_VERSION, MANIFEST_HEADER_SIZE
-                ):
-            raise ValueError("image has no signed manifest v3")
-        original_digest = bytes(manifest[48:80])
         mutation_offset = MANIFEST_SIGNATURE_OFFSET + \
             MANIFEST_SIGNATURE_SIZE // 2
-        manifest[mutation_offset] ^= 0x01
-        _refresh_manifest_checksum(manifest)
-        if bytes(manifest[48:80]) != original_digest:
-            raise AssertionError("signature fixture changed the kernel digest")
-        image.seek(manifest_offset)
-        image.write(manifest)
+        manifests = (0, BACKUP_MANIFEST_RELATIVE_LBA) if both_slots else (0,)
+        for relative_manifest in manifests:
+            manifest_offset = (
+                partition_lba + relative_manifest
+            ) * SECTOR_SIZE
+            image.seek(manifest_offset)
+            manifest = bytearray(image.read(SECTOR_SIZE))
+            if len(manifest) != SECTOR_SIZE or manifest[:8] != b"X86BOOT2" or \
+                    struct.unpack_from("<II", manifest, 8) != (
+                        MANIFEST_VERSION, MANIFEST_HEADER_SIZE
+                    ):
+                raise ValueError("image has no signed A/B manifest v3")
+            original_digest = bytes(manifest[48:80])
+            manifest[mutation_offset] ^= 0x01
+            _refresh_manifest_checksum(manifest)
+            if bytes(manifest[48:80]) != original_digest:
+                raise AssertionError("signature fixture changed the kernel digest")
+            image.seek(manifest_offset)
+            image.write(manifest)
     return mutation_offset
 
 
@@ -137,6 +148,28 @@ def _run_rejection(qemu: Path, image: Path, timeout: float,
         raise ValueError(f"stage-2 rejection marker is missing: {expected_marker}")
     if BOOT_MARKER in transcript:
         raise ValueError("tampered image reached BOOT_OK")
+    return transcript
+
+
+def _run_fallback(qemu: Path, image: Path, timeout: float) -> str:
+    command = qemu_command(qemu, image, memory="128M")
+    try:
+        completed = subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        transcript = completed.stdout
+    except subprocess.TimeoutExpired as error:
+        transcript = _text(error.stdout)
+    if FALLBACK_MARKER not in transcript:
+        raise ValueError("stage-2 A-to-B fallback marker is missing")
+    if BOOT_MARKER not in transcript:
+        raise ValueError("valid slot B did not reach BOOT_OK")
     return transcript
 
 
@@ -169,6 +202,18 @@ def main() -> int:
         if "Kernel CRC32 verification failed" in transcript:
             raise ValueError("negative image did not preserve CRC32 validity")
 
+        fallback_output = args.output.with_name(
+            f"{args.output.stem}-fallback{args.output.suffix}"
+        )
+        fallback_log = args.log.with_name(
+            f"{args.log.stem}-fallback{args.log.suffix}"
+        )
+        create_signature_mismatch(args.image, fallback_output, False)
+        fallback_transcript = _run_fallback(
+            args.qemu, fallback_output, min(args.timeout * 2.0, 30.0)
+        )
+        fallback_log.write_text(fallback_transcript, encoding="utf-8")
+
         signature_output = args.output.with_name(
             f"{args.output.stem}-signature{args.output.suffix}"
         )
@@ -184,12 +229,14 @@ def main() -> int:
         signature_log.write_text(signature_transcript, encoding="utf-8")
         if SHA_FAILURE_MARKER in signature_transcript:
             raise ValueError("signature fixture changed kernel SHA-256 validity")
+        if FALLBACK_MARKER not in signature_transcript:
+            raise ValueError("double-signature fixture did not attempt slot B")
     except (OSError, ValueError) as error:
         print(f"boot-integrity: FAIL: {error}")
         return 1
     print(
         f"boot-integrity: PASS sha_offset={offset} "
-        f"signature_offset={signature_offset} log={args.log}"
+        f"signature_offset={signature_offset} fallback=B log={args.log}"
     )
     return 0
 

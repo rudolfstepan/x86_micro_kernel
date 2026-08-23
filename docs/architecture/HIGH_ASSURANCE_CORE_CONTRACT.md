@@ -74,6 +74,15 @@ Beschädigungsdiagnostik. Unbekannte Manifestversionen, fehlende Digests,
 ungültige Grenzen oder widersprüchliche Imagegeometrie werden vor dem
 Kernelstart geschlossen abgelehnt.
 
+Das native HDD-Layout hält zwei getrennt prüfbare Kandidaten in festen,
+nicht überlappenden Bereichen: Manifest A/B an den partitionrelativen LBAs 0
+und 96 sowie Kernel A/B an 128 und 3136. Stage 1 passt in den MBR-Codebereich,
+lädt ausschließlich die feste 64-Sektoren-Reserve von Stage 2 ab LBA 1 und
+startet immer mit Kandidat A. Erst Stage 2 interpretiert das nicht
+vertrauenswürdige Manifest. Scheitert A vor dem Kernel-Handoff, wird B genau
+einmal vollständig und unabhängig geprüft; ein zweiter Fehler stoppt den Boot.
+Die Rescue-Diskette bleibt absichtlich ein einzelner signierter Kandidat.
+
 Die Signaturstufe verwendet RSA-2048-PSS/SHA-256 gemäß RFC 8017 mit
 MGF1-SHA-256 und exakt 32 Byte Salt. Die feste Research-Policy pinnt
 Algorithmusparameter und den SHA-256-Fingerprint des DER-
