@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.3c-6f7-fat32-write-admission"
 
 [policy]
 one_package_per_run = true
@@ -4104,4 +4104,55 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "boot: acknowledge successful pending slot"
+evidence = []
+
+[[packages]]
+id = "S0.3c-6f7-fat32-write-admission"
+status = "active"
+risk = "high"
+title = "Fail closed FAT32 write admission"
+scope = "Close the unsafe compatibility gap for writable FAT32 mounts. Keep standards-compatible foreign FAT32 volumes readable, but admit mutation only when the exact current volume carries a valid recovered REIST undo journal. Because the ATA journal binding is global compatibility debt, every FAT32 mutation must revalidate or reattach the exact base, device role, partition extent and volume extent before its first sector write. Switching between mounted volumes must never turn a stale journal binding into an unjournaled write. Corrupt marked journals continue to reject the mount; unmarked volumes mount read-only without being modified. This package hardens the existing Ring-0 FAT32 migration debt and adds no new filesystem policy or raw-media authority there."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/block/ata.h",
+  "drivers/block/ata.c",
+  "fs/fat32/fat32.h",
+  "fs/fat32/fat32.c",
+  "fs/fat32/fat32_cluster.c",
+  "fs/fat32/fat32_dir.c",
+  "fs/fat32/fat32_files.c",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "test/test_fat32_host.c",
+  "test/test_reist_undo_journal.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md"
+]
+invariants = [
+  "a valid foreign FAT32 volume remains mountable and readable but every create, write, truncate, delete, rename, touch and directory mutation returns read-only before its first write",
+  "a marked volume is writable only after both media-derived geometry and the exact recovered REIST journal binding have been validated",
+  "base, master role, absolute partition start and volume end must all match the active journal before a FAT32 sector write",
+  "a stale binding caused by mounting or accessing another volume is reattached and recovered before mutation rather than bypassed",
+  "corrupt or contradictory marked journal metadata still rejects mounting and is never downgraded to the foreign read-only classification",
+  "all checks use fixed state and bounded existing journal recovery without allocation, retry loops or new raw-media authority",
+  "the existing generated REIST FAT32 system image remains writable and foreign media are never silently converted"
+]
+targeted_tests = [
+  "python test/test_fs_host.py -v",
+  "python test/test_reist_undo_journal.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "read-only admission would require modifying a foreign FAT32 sector",
+  "the exact current volume cannot be distinguished from a stale global journal binding",
+  "a mutation path can reach ATA without the common FAT32 write guard",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: fail closed foreign FAT32 writes"
 evidence = []
