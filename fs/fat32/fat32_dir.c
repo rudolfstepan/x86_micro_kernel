@@ -84,6 +84,7 @@ static bool fat32_create_dir_unlocked(const char* dirname) {
         strcmp(dirname, ".") == 0 || strcmp(dirname, "..") == 0) {
         return false;
     }
+    if (!fat32_prepare_write()) return false;
     struct fat32_dir_entry existing;
     if (fat32_lookup_entry_in_directory(current_directory_cluster, dirname,
                                         &existing) !=
@@ -524,6 +525,7 @@ static bool fat32_delete_dir_unlocked(const char* dirname) {
         strcmp(dirname, ".") == 0 || strcmp(dirname, "..") == 0) {
         return false;
     }
+    if (!fat32_prepare_write()) return false;
     // 1. Find the directory entry for the directory to delete
     struct fat32_dir_entry* entry = find_file_in_directory(dirname);
     if (entry == NULL) {

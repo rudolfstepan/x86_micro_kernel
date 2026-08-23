@@ -24,6 +24,13 @@ static int fat_writes_before_verify_failure = -1;
 static unsigned int fat_verify_read_failures;
 static unsigned int fat_verify_failure_burst = 1;
 static unsigned int cache_flushes;
+static bool journal_volume_marked = true;
+static bool journal_attached;
+static unsigned int journal_attach_count;
+static unsigned short journal_base;
+static bool journal_master;
+static uint32_t journal_partition_lba;
+static uint32_t journal_volume_sectors;
 drive_t* current_drive;
 
 bool ata_flush_cache(unsigned short base, bool is_master) {
@@ -122,12 +129,23 @@ bool ata_write_sectors(unsigned short base, uint32_t lba, uint32_t count,
 bool ata_journal_attach(unsigned short base, bool is_master,
                         uint32_t partition_lba, uint32_t volume_sectors,
                         uint16_t reserved_sectors) {
-    (void)base;
-    (void)is_master;
-    (void)partition_lba;
-    (void)volume_sectors;
     (void)reserved_sectors;
+    ++journal_attach_count;
+    journal_attached = journal_volume_marked;
+    journal_base = base;
+    journal_master = is_master;
+    journal_partition_lba = partition_lba;
+    journal_volume_sectors = volume_sectors;
     return true;
+}
+
+bool ata_journal_is_attached(unsigned short base, bool is_master,
+                             uint32_t partition_lba,
+                             uint32_t volume_sectors) {
+    return journal_attached && base == journal_base &&
+           is_master == journal_master &&
+           partition_lba == journal_partition_lba &&
+           volume_sectors == journal_volume_sectors;
 }
 
 void read_date(int* year, int* month, int* day) {
@@ -144,6 +162,8 @@ void read_time(int* hours, int* minutes, int* seconds) {
 
 static void make_test_volume(void) {
     memset(test_disk, 0, sizeof(test_disk));
+    journal_volume_marked = true;
+    journal_attached = false;
     root_read_failures = 0;
     fail_directory_write_once = false;
     fail_directory_verify_once = false;
@@ -678,6 +698,59 @@ int main(void) {
     CHECK(vfs_delete("/SOURCE/FILE.TXT") == VFS_OK);
     CHECK(vfs_rmdir("/SOURCE") == VFS_OK);
     CHECK(vfs_rmdir("/TARGET") == VFS_OK);
+    CHECK(vfs_mkdir("/KEEPDIR") == VFS_OK);
+    CHECK(vfs_create("/DELETE.TXT") == VFS_OK);
+    CHECK(vfs_unmount("/") == VFS_OK);
+
+    /* A standards-compatible FAT32 volume without the explicit REIST journal
+     * marker remains readable, but every mutating API must fail before the
+     * first sector changes. */
+    journal_volume_marked = false;
+    journal_attached = false;
+    uint8_t foreign_snapshot[sizeof(test_disk)];
+    memcpy(foreign_snapshot, test_disk, sizeof(test_disk));
+    CHECK(vfs_mount(&drive, "fat32", "/") == VFS_OK);
+    vfs_node_t* foreign_file = NULL;
+    CHECK(vfs_open("/README.TXT", &foreign_file) == VFS_OK);
+    CHECK(foreign_file != NULL);
+    char foreign_contents[sizeof(renamed_payload) - 1];
+    CHECK(vfs_read(foreign_file, 0, sizeof(foreign_contents),
+                   (uint8_t*)foreign_contents) ==
+          (int)sizeof(foreign_contents));
+    CHECK(memcmp(foreign_contents, renamed_payload,
+                 sizeof(foreign_contents)) == 0);
+    const uint8_t rejected_write = 'X';
+    CHECK(vfs_write(foreign_file, 0, 1, &rejected_write) ==
+          VFS_ERR_READ_ONLY);
+    CHECK(vfs_close(foreign_file) == VFS_OK);
+    CHECK(vfs_create("/NEW.TXT") == VFS_ERR_READ_ONLY);
+    CHECK(vfs_mkdir("/NEWDIR") == VFS_ERR_READ_ONLY);
+    CHECK(vfs_delete("/DELETE.TXT") == VFS_ERR_READ_ONLY);
+    CHECK(vfs_rmdir("/KEEPDIR") == VFS_ERR_READ_ONLY);
+    CHECK(vfs_rename("/README.TXT", "/RENAMED.TXT") ==
+          VFS_ERR_READ_ONLY);
+    CHECK(vfs_touch("/README.TXT") == VFS_ERR_READ_ONLY);
+    CHECK(fat32_open_file("README.TXT", "w") == NULL);
+    CHECK(!fat32_replace_file("README.TXT", replacement,
+                              sizeof(replacement) - 1));
+    CHECK(memcmp(foreign_snapshot, test_disk, sizeof(test_disk)) == 0);
+    CHECK(vfs_unmount("/") == VFS_OK);
+
+    /* Simulate a global ATA journal binding replaced by another mounted
+     * volume. The next mutation must reattach this exact volume first. */
+    journal_volume_marked = true;
+    CHECK(vfs_mount(&drive, "fat32", "/") == VFS_OK);
+    journal_attached = true;
+    journal_base = 0x170;
+    journal_master = false;
+    journal_partition_lba = 7;
+    journal_volume_sectors = TEST_SECTORS - 7;
+    unsigned int attaches_before_rebind = journal_attach_count;
+    CHECK(vfs_create("/REBOUND.TXT") == VFS_OK);
+    CHECK(journal_attach_count == attaches_before_rebind + 1);
+    CHECK(ata_journal_is_attached(drive.base, drive.is_master, 0,
+                                  TEST_SECTORS));
+    CHECK(vfs_delete("/REBOUND.TXT") == VFS_OK);
     CHECK(vfs_unmount("/") == VFS_OK);
     return 0;
 }

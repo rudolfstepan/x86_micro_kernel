@@ -1081,15 +1081,18 @@ static bool ata_journal_write_active(void) {
 }
 
 bool ata_journal_transaction_begin(void) {
-    if (!ata_journal.enabled) return true;
+    if (ata_journal.transaction_depth == UINT32_MAX) return false;
     if (ata_journal.transaction_depth++ == 0U) ata_journal.entry_count = 0U;
-    return ata_journal.transaction_depth != 0U;
+    return true;
 }
 
 bool ata_journal_transaction_end(bool commit) {
-    if (!ata_journal.enabled) return true;
     if (ata_journal.transaction_depth == 0U) return false;
     if (--ata_journal.transaction_depth != 0U) return true;
+    if (!ata_journal.enabled) {
+        ata_journal.entry_count = 0U;
+        return true;
+    }
     bool result = true;
     if (ata_journal.entry_count != 0U && commit) result = ata_journal_clear();
     ata_journal.entry_count = 0U;
@@ -1148,7 +1151,12 @@ static bool ata_journal_attach_impl(unsigned short base, bool is_master,
                                     uint16_t reserved_sectors) {
     ata_transaction_begin();
     bool result = true;
+    uint32_t inherited_transaction_depth = ata_journal.transaction_depth;
     ata_journal.enabled = false;
+    if (inherited_transaction_depth != 0U && ata_journal.entry_count != 0U) {
+        result = false;
+        goto done;
+    }
     if (reserved_sectors <= ATA_JOURNAL_DATA_OFFSET || volume_sectors == 0U ||
         partition_lba > UINT32_MAX - ATA_JOURNAL_DATA_OFFSET ||
         volume_sectors > UINT32_MAX - partition_lba) goto done;
@@ -1174,7 +1182,7 @@ static bool ata_journal_attach_impl(unsigned short base, bool is_master,
     ata_journal.volume_start_lba = partition_lba;
     ata_journal.volume_end_lba = partition_lba + volume_sectors;
     ata_journal.entry_count = 0U;
-    ata_journal.transaction_depth = 0U;
+    ata_journal.transaction_depth = inherited_transaction_depth;
     bool primary_valid = primary_marked &&
         (primary.version == 1U
             ? ata_journal_v1_valid((ata_journal_v1_record_t *)&primary)
@@ -1269,6 +1277,33 @@ bool ata_journal_attach(unsigned short base, bool is_master,
     }
     return ata_journal_attach_impl(base, is_master, partition_lba,
                                    volume_sectors, reserved_sectors);
+}
+
+static bool ata_journal_is_attached_impl(unsigned short base, bool is_master,
+                                         uint32_t partition_lba,
+                                         uint32_t volume_sectors) {
+    return ata_journal.enabled && volume_sectors != 0U &&
+        partition_lba <= UINT32_MAX - volume_sectors &&
+        ata_journal.base == base && ata_journal.is_master == is_master &&
+        ata_journal.volume_start_lba == partition_lba &&
+        ata_journal.volume_end_lba == partition_lba + volume_sectors;
+}
+
+bool ata_journal_is_attached(unsigned short base, bool is_master,
+                             uint32_t partition_lba,
+                             uint32_t volume_sectors) {
+    drive_t *partition = ata_compat_partition_drive(base);
+    if (partition != NULL) {
+        uint32_t absolute;
+        drive_t *parent = ata_partition_translate(partition, partition_lba,
+                                                  &absolute);
+        return parent != NULL && volume_sectors != 0U &&
+            volume_sectors <= partition->sectors - partition_lba &&
+            ata_journal_is_attached_impl(parent->base, parent->is_master,
+                                         absolute, volume_sectors);
+    }
+    return ata_journal_is_attached_impl(base, is_master, partition_lba,
+                                        volume_sectors);
 }
 
 bool ata_journal_recover_resource(uint32_t resource) {

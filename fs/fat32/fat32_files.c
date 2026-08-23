@@ -422,8 +422,7 @@ static bool clear_data_cluster(uint32_t cluster) {
     }
 
     for (uint32_t i = 0; i < boot_sector.sectors_per_cluster; i++) {
-        if (!ata_write_sector(ata_base_address, first_sector + i, zero_sector,
-                              ata_is_master)) {
+        if (!fat32_write_sector(first_sector + i, zero_sector)) {
             return false;
         }
     }
@@ -542,8 +541,7 @@ int write_file_data_at_checked(unsigned int* start_cluster,
         }
         memcpy(sector_buffer + sector_offset,
                (const uint8_t*)buffer + written, amount);
-        if (!ata_write_sector(ata_base_address, sector, sector_buffer,
-                              ata_is_master) ||
+        if (!fat32_write_sector(sector, sector_buffer) ||
             !ata_read_sector(ata_base_address, sector, verify_buffer,
                              ata_is_master) ||
             memcmp(sector_buffer, verify_buffer, SECTOR_SIZE) != 0) {
@@ -594,8 +592,7 @@ bool update_directory_entry(unsigned int parent_cluster,
                     (entries[i].attr & 0x0Fu) != 0x0Fu &&
                     memcmp(entries[i].name, name, 11) == 0) {
                     entries[i] = *updated_entry;
-                    if (!ata_write_sector(ata_base_address, sector, entries,
-                                          ata_is_master) ||
+                    if (!fat32_write_sector(sector, entries) ||
                         !ata_read_sector(ata_base_address, sector, verify,
                                          ata_is_master) ||
                         memcmp(entries, verify, SECTOR_SIZE) != 0) {
@@ -620,6 +617,7 @@ static bool fat32_create_file_unlocked(const char* filename) {
         strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
         return false;
     }
+    if (!fat32_prepare_write()) return false;
 
     struct fat32_dir_entry existing;
     if (fat32_lookup_entry_in_directory(current_directory_cluster, filename,
@@ -650,6 +648,7 @@ static bool fat32_delete_file_unlocked(const char* filename) {
         strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
         return false;
     }
+    if (!fat32_prepare_write()) return false;
     // 1. Find the directory entry for the file to delete
     struct fat32_dir_entry* entry = find_file_in_directory(filename);
     if (entry == NULL) {
@@ -697,6 +696,7 @@ static FILE* fat32_open_file_unlocked(const char* filename, const char* mode) {
         mode[1] != '\0') {
         return NULL;
     }
+    if (mode[0] != 'r' && !fat32_prepare_write()) return NULL;
     struct fat32_dir_entry* entry = find_file_in_directory(filename);
     if (entry == NULL || (entry->attr & ATTR_DIRECTORY) ||
         (mode[0] != 'r' && (entry->attr & ATTR_READ_ONLY))) {
@@ -785,6 +785,7 @@ typedef struct {
     unsigned short base;
     bool master;
     unsigned int partition;
+    bool write_supported;
     drive_t* drive;
 } fat32_saved_context_t;
 
@@ -802,6 +803,7 @@ static void fat32_save_global_context(fat32_saved_context_t* saved) {
     saved->base = ata_base_address;
     saved->master = ata_is_master;
     saved->partition = partition_lba_offset;
+    saved->write_supported = fat32_write_supported;
     saved->drive = current_drive;
 }
 
@@ -813,6 +815,7 @@ static void fat32_restore_global_context(const fat32_saved_context_t* saved) {
     ata_base_address = saved->base;
     ata_is_master = saved->master;
     partition_lba_offset = saved->partition;
+    fat32_write_supported = saved->write_supported;
     current_drive = saved->drive;
 }
 
@@ -859,6 +862,7 @@ static int fat32_write_file_unlocked(FILE* file, const void* buffer,
         return -1;
     }
     if (!fat32_activate_file_volume(file)) return -1;
+    if (!fat32_prepare_write()) return -1;
     if (bytes_to_write > INT_MAX) return -1;
     if (bytes_to_write > buffer_size) {
         bytes_to_write = buffer_size;
@@ -975,6 +979,7 @@ static bool fat32_replace_file_unlocked(const char* filename,
         strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
         return false;
     }
+    if (!fat32_prepare_write()) return false;
 
     struct fat32_dir_entry previous;
     fat32_lookup_result_t lookup = fat32_lookup_entry_in_directory(

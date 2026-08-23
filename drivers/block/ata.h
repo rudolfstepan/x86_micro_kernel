@@ -82,6 +82,9 @@ bool ata_flush_cache(unsigned short base, bool is_master);
 bool ata_journal_attach(unsigned short base, bool is_master,
                         uint32_t partition_lba, uint32_t volume_sectors,
                         uint16_t reserved_sectors);
+bool ata_journal_is_attached(unsigned short base, bool is_master,
+                             uint32_t partition_lba,
+                             uint32_t volume_sectors);
 bool ata_journal_transaction_begin(void);
 bool ata_journal_transaction_end(bool commit);
 bool ata_journal_recover_resource(uint32_t resource);

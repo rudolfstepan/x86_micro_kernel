@@ -133,11 +133,14 @@ extern unsigned int current_directory_cluster; // Default root directory cluster
 extern unsigned short ata_base_address;
 extern bool ata_is_master;
 extern unsigned int partition_lba_offset; // LBA offset for partitioned disks
+extern bool fat32_write_supported;
 
 /* The current implementation is uniprocessor.  These guards prevent timer
  * preemption while a FAT transaction owns the global volume context. */
 uint32_t fat32_operation_begin(void);
 void fat32_operation_end(uint32_t interrupt_flags);
+bool fat32_prepare_write(void);
+bool fat32_write_sector(unsigned int lba, void* buffer);
 typedef void (*fat32_context_sync_hook_t)(void);
 extern fat32_context_sync_hook_t fat32_context_sync_hook;
 

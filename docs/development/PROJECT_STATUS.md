@@ -207,7 +207,10 @@ Das erzeugte Image besitzt eine Systempartition mit Label `X86 SYSTEM`.
 Markierte REIST-Images verwenden ein redundantes Undo-Journal. Datei-I/O,
 Verzeichnisse, `fsync`, Same-Directory-Rename und Replace sind angebunden. Der
 Editor speichert über Tempdatei, `fsync`, Close und Rename. Fremde FAT32-Medien
-erhalten nicht automatisch dieselbe Journalgarantie.
+bleiben kompatibel lesbar, sind ohne gültigen REIST-Journalmarker jedoch
+read-only. Jede Mutation prüft vor dem ersten Sektorwrite die exakte
+Journalbindung an Gerät, Partition und Volumegrenze erneut; eine durch ein
+anderes Mount verdrängte globale Bindung wird sicher neu aufgebaut.
 
 VFAT Long File Names sind für druckbares ASCII bis 255 Zeichen implementiert.
 LFN-Slotfolge, Reihenfolge und 8.3-Prüfsumme werden vor Veröffentlichung
@@ -441,7 +444,8 @@ oder breite Zielhardwarequalifikation.
 - die reale FAT12-Power-Loss-/Reconnect-Matrix auf Zielhardware bleibt eine
   manuelle Benutzerabnahme; VMware-Reconnect ist automatisiert, ersetzt diese
   Hardwareevidenz aber nicht
-- medienunabhängige Persistenzgarantie für EXT2 und fremde FAT-Volumes
+- journalisiertes Schreiben für EXT2, fremdes FAT12 und weitere Backends;
+  fremdes FAT32 ist bis zu einem nachgewiesenen Vertrag bewusst read-only
 - unabhängige Supervisor-, Fence- und Failover-Hardware
 - breite reale AHCI-/PCI-IDE-/PS/2-/BIOS-Kompatibilitätsmatrix
 - allgemeiner USB/xHCI-, Composite-HID-, Mass-Storage- und Hotplug-Lebenszyklus

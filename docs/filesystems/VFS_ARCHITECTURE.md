@@ -43,13 +43,16 @@ veröffentlichen.
 Userpointer, Größen, Deskriptoren und Pfade werden vor Wirkung validiert.
 Storage-Quarantäne und globales Write-Fencing werden unterhalb von VFS
 durchgesetzt. Markierte FAT32- und FAT12-Volumes besitzen eigene
-Persistenzprotokolle; daraus folgt keine Garantie für EXT2 oder fremde FAT-
-Volumes. Ein unklarer Commit darf nicht als Erfolg erscheinen.
+Persistenzprotokolle. Fremdes FAT32 bleibt lesbar, ist aber ohne gültiges
+REIST-Journal grundsätzlich read-only; EXT2 bleibt ebenfalls read-only. Für
+fremdes FAT12 folgt daraus weiterhin keine Persistenzgarantie. Ein unklarer
+Commit darf nicht als Erfolg erscheinen.
 
 ## Adapterstatus
 
-- FAT32: Lesen/Schreiben, Verzeichnisse, Truncate, `fsync`, Rename/Replace und
-  Undo-Journal für markierte REIST-Images.
+- FAT32: Lesen auf validen Standardvolumes; Schreiben, Verzeichnisse, Truncate,
+  `fsync`, Rename/Replace ausschließlich mit exakt gebundenem Undo-Journal
+  markierter REIST-Images. Ein Volumewechsel erzwingt Rebinding vor Mutation.
 - FAT12: Lesen/Schreiben, Verzeichnisse, beide FAT-Kopien sowie REIST-Journal,
   Remap und kritische Replikate auf explizit markierten Medien.
 - EXT2: grundlegende VFS- und indirekte Blockpfade; kein REIST-Journal.

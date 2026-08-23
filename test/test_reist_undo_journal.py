@@ -88,6 +88,64 @@ class ReistUndoJournalTests(unittest.TestCase):
         self.assertLess(source.index("ata_journal_attach("),
                         source.index("candidate_boot.fs_info"))
 
+    def test_fat32_writes_require_the_exact_current_journal_binding(self):
+        ata = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
+        query = ata[ata.index("static bool ata_journal_is_attached_impl"):
+                    ata.index("bool ata_journal_recover_resource")]
+        for token in (
+            "ata_journal.enabled",
+            "ata_journal.base == base",
+            "ata_journal.is_master == is_master",
+            "ata_journal.volume_start_lba == partition_lba",
+            "ata_journal.volume_end_lba == partition_lba + volume_sectors",
+            "ata_partition_translate(partition, partition_lba",
+        ):
+            self.assertIn(token, query)
+
+        fat32 = (ROOT / "fs/fat32/fat32.c").read_text(encoding="utf-8")
+        prepare = fat32[fat32.index("bool fat32_prepare_write"):
+                        fat32.index("// Forward declarations")]
+        self.assertLess(prepare.index("ata_journal_is_attached("),
+                        prepare.index("ata_journal_attach("))
+        self.assertIn("fat32_write_supported = false", prepare)
+
+        transaction = ata[ata.index("bool ata_journal_transaction_begin"):
+                          ata.index("static bool ata_write_sector_journaled")]
+        self.assertNotIn("if (!ata_journal.enabled) return true", transaction)
+        self.assertIn("ata_journal.transaction_depth++", transaction)
+        self.assertIn("if (!ata_journal.enabled)", transaction)
+        attach = ata[ata.index("static bool ata_journal_attach_impl"):
+                     ata.index("bool ata_journal_attach(")]
+        self.assertIn("inherited_transaction_depth", attach)
+        self.assertIn("ata_journal.entry_count != 0U", attach)
+        self.assertIn("ata_journal.transaction_depth = inherited_transaction_depth",
+                      attach)
+
+        direct_writes = []
+        for path in (ROOT / "fs/fat32").glob("*.c"):
+            for number, line in enumerate(
+                    path.read_text(encoding="utf-8").splitlines(), 1):
+                if "ata_write_sector(" in line:
+                    direct_writes.append((path.name, number, line.strip()))
+        self.assertEqual(len(direct_writes), 1)
+        self.assertEqual(direct_writes[0][0], "fat32.c")
+        self.assertEqual(
+            direct_writes[0][2],
+            "ata_write_sector(ata_base_address, lba, buffer, ata_is_master);",
+        )
+
+        adapter = (ROOT / "fs/fat32/fat32_vfs_adapter.c").read_text(
+            encoding="utf-8")
+        self.assertIn("static int fat32_require_write", adapter)
+        for operation in ("write", "mkdir", "rmdir", "create", "delete",
+                          "rename"):
+            start = adapter.index(f"static int fat32_vfs_{operation}_unlocked")
+            body = adapter[start:adapter.index("\n}\n", start)]
+            self.assertIn("fat32_require_write", body, operation)
+        touch = adapter[adapter.index("static int fat32_vfs_touch("):
+                        adapter.index("static int fat32_vfs_stat(")]
+        self.assertIn("fat32_require_write", touch)
+
     def test_ahci_uses_the_same_journal_and_recovery_transport(self):
         source = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
         self.assertIn("ahci_write_sector_recovery", source)

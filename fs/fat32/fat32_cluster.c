@@ -147,8 +147,7 @@ static bool write_fat_copy_entry(struct fat32_boot_sector* boot_sector,
         unsigned int* entry = (unsigned int*)&buffer[entry_offset];
         if ((*entry & 0x0FFFFFFFu) == desired) return true;
         *entry = (*entry & 0xF0000000u) | desired;
-        if (ata_write_sector(ata_base_address, sector, buffer,
-                             ata_is_master)) {
+        if (fat32_write_sector(sector, buffer)) {
             write_reported_success = true;
         }
 

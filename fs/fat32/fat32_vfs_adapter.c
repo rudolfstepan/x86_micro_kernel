@@ -38,6 +38,7 @@ typedef struct {
     struct fat32_boot_sector boot;
     struct fat32_fsinfo fsinfo;
     bool fsinfo_valid;
+    bool write_supported;
     uint32_t current_directory_cluster;
     uint32_t partition_lba;
     uint16_t ata_base;
@@ -57,6 +58,7 @@ static void fat32_sync_registered_contexts(void) {
             context->boot = boot_sector;
             context->fsinfo = fsinfo;
             context->fsinfo_valid = fsinfo_valid;
+            context->write_supported = fat32_write_supported;
         }
     }
 }
@@ -96,6 +98,7 @@ static void fat32_activate(vfs_filesystem_t* fs) {
     boot_sector = context->boot;
     fsinfo = context->fsinfo;
     fsinfo_valid = context->fsinfo_valid;
+    fat32_write_supported = context->write_supported;
     current_directory_cluster = context->current_directory_cluster;
     partition_lba_offset = context->partition_lba;
     ata_base_address = context->ata_base;
@@ -108,10 +111,22 @@ static void fat32_sync(vfs_filesystem_t* fs) {
     context->boot = boot_sector;
     context->fsinfo = fsinfo;
     context->fsinfo_valid = fsinfo_valid;
+    context->write_supported = fat32_write_supported;
     context->current_directory_cluster = current_directory_cluster;
     context->partition_lba = partition_lba_offset;
     context->ata_base = ata_base_address;
     context->ata_master = ata_is_master;
+}
+
+static int fat32_require_write(vfs_filesystem_t* fs) {
+    if (!fs || !fs->fs_data) return VFS_ERR_INVALID;
+    fat32_activate(fs);
+    fat32_vfs_context_t* context = (fat32_vfs_context_t*)fs->fs_data;
+    if (!context->write_supported || !fat32_prepare_write()) {
+        context->write_supported = false;
+        return VFS_ERR_READ_ONLY;
+    }
+    return VFS_OK;
 }
 
 static bool fat32_bpb_candidate(const uint8_t sector[SECTOR_SIZE]) {
@@ -431,6 +446,7 @@ static int fat32_vfs_mount_unlocked(vfs_filesystem_t* fs, drive_t* drive) {
     context->boot = boot_sector;
     context->fsinfo = fsinfo;
     context->fsinfo_valid = fsinfo_valid;
+    context->write_supported = fat32_write_supported;
     context->current_directory_cluster = boot_sector.root_cluster;
     context->partition_lba = partition_lba_offset;
     context->ata_base = ata_base_address;
@@ -567,7 +583,8 @@ static int fat32_vfs_write_unlocked(vfs_node_t* node, uint32_t offset,
     if (size > INT_MAX) return VFS_ERR_INVALID;
     if (offset > UINT32_MAX - size || !node->fs_specific) return VFS_ERR_INVALID;
 
-    fat32_activate(node->fs);
+    int write_result = fat32_require_write(node->fs);
+    if (write_result != VFS_OK) return write_result;
     int refresh = fat32_refresh_file_node(node);
     if (refresh != VFS_OK) return refresh;
     fat32_vfs_handle_t* handle = (fat32_vfs_handle_t*)node->fs_specific;
@@ -709,7 +726,8 @@ static int fat32_vfs_finddir_unlocked(vfs_node_t* node, const char* name,
 
 static int fat32_vfs_mkdir_unlocked(vfs_filesystem_t* fs, const char* path) {
     if (!fs || !path) return VFS_ERR_INVALID;
-    fat32_activate(fs);
+    int write_result = fat32_require_write(fs);
+    if (write_result != VFS_OK) return write_result;
     uint32_t parent;
     char leaf[MAX_PATH_LENGTH];
     if (!fat32_resolve_parent(fs, path, &parent, leaf)) return VFS_ERR_INVALID;
@@ -727,7 +745,8 @@ static int fat32_vfs_mkdir_unlocked(vfs_filesystem_t* fs, const char* path) {
 
 static int fat32_vfs_rmdir_unlocked(vfs_filesystem_t* fs, const char* path) {
     if (!fs || !path) return VFS_ERR_INVALID;
-    fat32_activate(fs);
+    int write_result = fat32_require_write(fs);
+    if (write_result != VFS_OK) return write_result;
     uint32_t parent;
     char leaf[MAX_PATH_LENGTH];
     if (!fat32_resolve_parent(fs, path, &parent, leaf)) return VFS_ERR_INVALID;
@@ -747,7 +766,8 @@ static int fat32_vfs_rmdir_unlocked(vfs_filesystem_t* fs, const char* path) {
 
 static int fat32_vfs_create_unlocked(vfs_filesystem_t* fs, const char* path) {
     if (!fs || !path) return VFS_ERR_INVALID;
-    fat32_activate(fs);
+    int write_result = fat32_require_write(fs);
+    if (write_result != VFS_OK) return write_result;
     uint32_t parent;
     char leaf[MAX_PATH_LENGTH];
     if (!fat32_resolve_parent(fs, path, &parent, leaf)) return VFS_ERR_INVALID;
@@ -765,7 +785,8 @@ static int fat32_vfs_create_unlocked(vfs_filesystem_t* fs, const char* path) {
 
 static int fat32_vfs_delete_unlocked(vfs_filesystem_t* fs, const char* path) {
     if (!fs || !path) return VFS_ERR_INVALID;
-    fat32_activate(fs);
+    int write_result = fat32_require_write(fs);
+    if (write_result != VFS_OK) return write_result;
     uint32_t parent;
     char leaf[MAX_PATH_LENGTH];
     if (!fat32_resolve_parent(fs, path, &parent, leaf)) return VFS_ERR_INVALID;
@@ -787,7 +808,8 @@ static int fat32_vfs_rename_unlocked(vfs_filesystem_t* fs,
                                      const char* old_path,
                                      const char* new_path) {
     if (!fs || !old_path || !new_path) return VFS_ERR_INVALID;
-    fat32_activate(fs);
+    int write_result = fat32_require_write(fs);
+    if (write_result != VFS_OK) return write_result;
 
     uint32_t old_parent;
     uint32_t new_parent;
@@ -925,6 +947,7 @@ static int fat32_vfs_mount(vfs_filesystem_t* fs, drive_t* drive) {
     struct fat32_boot_sector saved_boot = boot_sector;
     struct fat32_fsinfo saved_fsinfo = fsinfo;
     bool saved_fsinfo_valid = fsinfo_valid;
+    bool saved_write_supported = fat32_write_supported;
     uint32_t saved_directory = current_directory_cluster;
     uint32_t saved_partition = partition_lba_offset;
     uint16_t saved_base = ata_base_address;
@@ -935,6 +958,7 @@ static int fat32_vfs_mount(vfs_filesystem_t* fs, drive_t* drive) {
         boot_sector = saved_boot;
         fsinfo = saved_fsinfo;
         fsinfo_valid = saved_fsinfo_valid;
+        fat32_write_supported = saved_write_supported;
         current_directory_cluster = saved_directory;
         partition_lba_offset = saved_partition;
         ata_base_address = saved_base;
@@ -1058,10 +1082,14 @@ static int fat32_vfs_rename(vfs_filesystem_t* fs, const char* old_path,
 static int fat32_vfs_touch(vfs_filesystem_t* fs, const char* path) {
     if (!fs || !path) return VFS_ERR_INVALID;
     uint32_t flags = fat32_operation_begin();
-    fat32_activate(fs);
+    int result = fat32_require_write(fs);
+    if (result != VFS_OK) {
+        fat32_operation_end(flags);
+        return result;
+    }
     struct fat32_dir_entry entry;
     uint32_t parent_cluster;
-    int result = fat32_resolve_entry(fs, path, &entry, &parent_cluster);
+    result = fat32_resolve_entry(fs, path, &entry, &parent_cluster);
     if (result == VFS_OK) {
         if (entry.attr & ATTR_DIRECTORY) result = VFS_ERR_IS_DIR;
         else if (entry.attr & ATTR_READ_ONLY) result = VFS_ERR_READ_ONLY;

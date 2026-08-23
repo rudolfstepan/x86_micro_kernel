@@ -28,6 +28,7 @@ unsigned short ata_base_address;
 bool ata_is_master;
 unsigned int partition_lba_offset = 0; // LBA offset for partitioned disks (0 for whole disk)
 bool fsinfo_valid = false; // Track if FSInfo is loaded and valid
+bool fat32_write_supported = false;
 fat32_context_sync_hook_t fat32_context_sync_hook;
 
 uint32_t fat32_operation_begin(void) {
@@ -49,6 +50,39 @@ void fat32_operation_end(uint32_t interrupt_flags) {
 #endif
 }
 
+bool fat32_prepare_write(void) {
+    if (!fat32_write_supported || boot_sector.total_sectors_32 == 0U ||
+        boot_sector.reserved_sector_count == 0U) {
+        return false;
+    }
+    if (ata_journal_is_attached(ata_base_address, ata_is_master,
+                                partition_lba_offset,
+                                boot_sector.total_sectors_32)) {
+        return true;
+    }
+
+    /* The ATA compatibility journal is currently a single global binding.
+     * A different mounted volume may have replaced it since this FAT32
+     * context was activated. Reattach and recover the exact current extent
+     * before allowing the first sector side effect. */
+    if (!ata_journal_attach(ata_base_address, ata_is_master,
+                            partition_lba_offset,
+                            boot_sector.total_sectors_32,
+                            boot_sector.reserved_sector_count) ||
+        !ata_journal_is_attached(ata_base_address, ata_is_master,
+                                 partition_lba_offset,
+                                 boot_sector.total_sectors_32)) {
+        fat32_write_supported = false;
+        return false;
+    }
+    return true;
+}
+
+bool fat32_write_sector(unsigned int lba, void* buffer) {
+    return buffer != NULL && fat32_prepare_write() &&
+        ata_write_sector(ata_base_address, lba, buffer, ata_is_master);
+}
+
 // Forward declarations
 bool read_fsinfo(void);
 bool write_fsinfo(void);
@@ -57,6 +91,7 @@ int fat32_init_fs_at(unsigned short base, bool is_master, uint32_t partition_lba
     struct fat32_boot_sector candidate_boot;
     struct fat32_fsinfo candidate_fsinfo;
     bool candidate_fsinfo_valid = false;
+    bool candidate_write_supported = false;
 
     memset(&candidate_boot, 0, sizeof(candidate_boot));
     memset(&candidate_fsinfo, 0, sizeof(candidate_fsinfo));
@@ -137,9 +172,11 @@ int fat32_init_fs_at(unsigned short base, bool is_master, uint32_t partition_lba
     if (!ata_journal_attach(base, is_master, partition_lba,
                             candidate_boot.total_sectors_32,
                             candidate_boot.reserved_sector_count)) {
-        printf("+++ REIST journal recovery failed; refusing writable mount +++\n");
+        printf("+++ REIST journal recovery failed; refusing mount +++\n");
         return FAILURE;
     }
+    candidate_write_supported = ata_journal_is_attached(
+        base, is_master, partition_lba, candidate_boot.total_sectors_32);
 
     /* Read and validate optional metadata into local storage as well.  None of
      * the global selectors or cached structures are published until the BPB
@@ -169,6 +206,7 @@ int fat32_init_fs_at(unsigned short base, bool is_master, uint32_t partition_lba
     ata_is_master = is_master;
     ata_base_address = base;
     partition_lba_offset = partition_lba;
+    fat32_write_supported = candidate_write_supported;
     current_directory_cluster = candidate_boot.root_cluster;
 
     return SUCCESS;
@@ -226,7 +264,7 @@ bool write_fsinfo(void) {
     
     uint32_t fsinfo_sector = partition_lba_offset + boot_sector.fs_info;
     
-    if (!ata_write_sector(ata_base_address, fsinfo_sector, &fsinfo, ata_is_master)) {
+    if (!fat32_write_sector(fsinfo_sector, &fsinfo)) {
         printf("Error: Failed to write FSInfo sector\n");
         return false;
     }

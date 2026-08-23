@@ -321,6 +321,10 @@ und 10 verbindlich.
           Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg
           kontrolliert remounten; Abbruch lässt das Medium konsistent oder
           eindeutig read-only zurück
+    - [x] S0.3c-6f7 FAT32-Schreibzulassung: fremde Volumes kompatibel lesbar,
+      aber ohne gültiges REIST-Journal read-only mounten; vor jeder Mutation
+      die exakte ATA-Journalbindung an Gerät und Volumegrenzen prüfen und eine
+      verdrängte globale Bindung transaktionserhaltend neu aufbauen
   - [ ] **S0.3c-7 teilweise:** Unabhängiger Standby-/Supervisor-Kanal und
     realer Handover
     - [x] S0.3c-7a Statischer Lease-/Epoch-/Fence-Protokollkern mit
@@ -2464,9 +2468,12 @@ VMware mit erfolgreicher Wiederverwendung von A: bestätigt.
 jetzt ein verifiziertes Undo-Journal, begrenzte Remaps, kritische Replikate,
 geordnete Dateitransaktionen und eine deterministische Host-Fehlermatrix über
 alle 29 Persistenzbarrieren. QEMU-FDD-Reconnect ist abgenommen; reale VMware-
-und Power-Loss-Laufzeitevidenz bleibt offen. EXT2, fremde FAT-Volumes sowie künftige
-USB-/Flash-/NVMe-Backends benötigen weiterhin einen eigenen nachgewiesenen
-Undo/COW/Journal-Vertrag. Vor diesem Nachweis darf ein Medium nach unklarem
+und Power-Loss-Laufzeitevidenz bleibt offen. Fremde FAT32-Volumes sind nun
+kompatibel lesbar, aber ohne gültigen REIST-Journalmarker fail-closed read-only;
+auch ein Wechsel der globalen ATA-Journalbindung kann keinen unjournalisierten
+FAT32-Write mehr freigeben. EXT2, fremdes FAT12 sowie künftige
+USB-/Flash-/NVMe-Backends benötigen für beschreibbaren Betrieb weiterhin einen
+eigenen nachgewiesenen Undo/COW/Journal-Vertrag. Vor diesem Nachweis darf ein Medium nach unklarem
 Schreibabschluss nicht automatisch wieder beschreibbar werden.
 Bei Wechselmedien fehlen außerdem noch eine stärkere Ganzmedien-Identität und
 kontrollierte Cache-Invalidierung beziehungsweise ein Remount, wenn sich der

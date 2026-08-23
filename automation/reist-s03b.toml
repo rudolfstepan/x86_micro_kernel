@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.3c-6f7-fat32-write-admission"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -4108,7 +4108,7 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-6f7-fat32-write-admission"
-status = "active"
+status = "done"
 risk = "high"
 title = "Fail closed FAT32 write admission"
 scope = "Close the unsafe compatibility gap for writable FAT32 mounts. Keep standards-compatible foreign FAT32 volumes readable, but admit mutation only when the exact current volume carries a valid recovered REIST undo journal. Because the ATA journal binding is global compatibility debt, every FAT32 mutation must revalidate or reattach the exact base, device role, partition extent and volume extent before its first sector write. Switching between mounted volumes must never turn a stale journal binding into an unjournaled write. Corrupt marked journals continue to reject the mount; unmarked volumes mount read-only without being modified. This package hardens the existing Ring-0 FAT32 migration debt and adds no new filesystem policy or raw-media authority there."
@@ -4140,7 +4140,7 @@ invariants = [
 ]
 targeted_tests = [
   "python test/test_fs_host.py FilesystemHostTests.test_fat32_write_truncate_and_directory_extension -v",
-  "python test/test_reist_undo_journal.py -v"
+  "python -m unittest discover -s test -p test_reist_undo_journal.py -v"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"

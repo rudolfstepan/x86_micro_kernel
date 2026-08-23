@@ -1461,8 +1461,15 @@ geflusht, erst dann der Zielsektor geändert und zuletzt der Record als `CLEAN`
 markiert. Beim Mount wird ein gültiger aktiver Record vor dem Lesen veränderter
 FAT-/FSInfo-/Verzeichnismetadaten zurückgerollt. Ziel-LBA, Volumegrenzen sowie
 Header- und Daten-CRC werden geprüft; ein Fehler verriegelt Storage und
-verweigert den schreibbaren Mount. Nur Medien mit dem expliziten Builder-Marker
-aktivieren diesen Pfad, fremde FAT32-Volumes bleiben unverändert. Das liefert
+verweigert den Mount. Nur Medien mit dem expliziten Builder-Marker aktivieren
+diesen Pfad. Fremde FAT32-Volumes bleiben unverändert, werden kompatibel lesbar
+eingebunden und lehnen Create, Write, Truncate, Delete, Rename, Touch sowie
+Verzeichnismutationen vor dem ersten Sektorwrite als read-only ab. Vor jeder
+Mutation muss die globale ATA-Kompatibilitätsbindung außerdem exakt zu
+Controller, Geräterolle, absolutem Volumeanfang und Volumeende passen. Eine
+durch ein anderes Volume verdrängte Bindung wird innerhalb der bereits
+geöffneten VFS-Transaktion ohne Übernahme alter Einträge neu validiert und
+wiederhergestellt. Das liefert
 atomare VFS-Mutationen mit bis zu 20 unterschiedlichen Sektoren. Wiederholte
 Writes desselben Sektors benötigen nur einen Undo-Slot. Die VFS-Klammer hält
 den Record über die komplette Operation `ACTIVE` und setzt `CLEAN` erst nach
