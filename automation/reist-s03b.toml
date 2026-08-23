@@ -1172,6 +1172,8 @@ allowed_files = [
   "arch/x86/include/sys.h",
   "kernel/proc/process.c",
   "kernel/proc/process.h",
+  "include/kernel/supervisor.h",
+  "kernel/init/supervisor.c",
   "kernel/sched/scheduler.h",
   "kernel/sched/scheduler.c",
   "kernel/syscall/syscall_table.c",
@@ -1184,6 +1186,7 @@ allowed_files = [
   "scripts/run_qemu_smoke.py",
   "scripts/test-reist-runtime.ps1",
   "test/test_reist_wcet.py",
+  "test/test_reist_probe_domain.py",
   "test/test_qemu_smoke.py",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
@@ -1192,6 +1195,7 @@ allowed_files = [
 ]
 invariants = [
   "the append-only syscall remains representable by the fixed default-deny domain bitmap and is granted only to the supervised probe profile",
+  "timing acquisition failure suppresses evidence but never crashes the essential supervised probe service and only the generation-checked supervisor publishes the marker",
   "timing diagnostics never allocate block or influence scheduling and authority decisions",
   "cycle samples counters maxima and clock anomalies are fixed-size saturating and IRQ-safe",
   "only a nonblocking diagnostic INT-80 path is timed so sleeps waits and off-CPU intervals cannot contaminate the baseline",
