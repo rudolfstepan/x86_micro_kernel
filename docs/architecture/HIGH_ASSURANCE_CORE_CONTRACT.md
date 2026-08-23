@@ -83,6 +83,24 @@ vertrauenswürdige Manifest. Scheitert A vor dem Kernel-Handoff, wird B genau
 einmal vollständig und unabhängig geprüft; ein zweiter Fehler stoppt den Boot.
 Die Rescue-Diskette bleibt absichtlich ein einzelner signierter Kandidat.
 
+Die HDD-Sektoren 97 und 98 enthalten zwei vollständige Kopien des
+REIST-Boot-Control-Records v1. Das BIOS bietet dafür kein geeignetes
+standardisiertes A/B-Transaktionsformat; die Abweichung ist daher explizit
+versioniert und auf 512 Byte begrenzt. Magic, Headergröße, reservierte
+Nullbytes, CRC32, 64-Bit-Sequenz, Slotwerte und höchstens zwei Versuche werden
+vor jeder Auswahl geprüft. Gleiche Sequenzen müssen bitidentisch sein,
+benachbarte Sequenzen wählen die neuere Kopie; größere Lücken sind mehrdeutig
+und stoppen den Boot. Stage 2 schreibt immer die ältere oder ungültige Kopie
+zuerst und liest jeden Sektor vor dem nächsten Commit zurück.
+
+Ein Offline-Updater prüft ELF und die policy-gebundene RSA-PSS-Signatur,
+schreibt ausschließlich Slot B und veröffentlicht `pending=B` erst nach
+vollständiger Revalidierung. Stage 2 persistiert die verminderte Versuchszahl
+vor B und kehrt nach Erschöpfung oder B-Fehler zu bestätigt A zurück. Die noch
+fehlende Ring-3-Erfolgsbestätigung ist eine harte Funktionsgrenze: Auch ein
+erfolgreich gestartetes B wird nach seinen zwei Testboots wieder auf A
+zurückgesetzt.
+
 Die Signaturstufe verwendet RSA-2048-PSS/SHA-256 gemäß RFC 8017 mit
 MGF1-SHA-256 und exakt 32 Byte Salt. Die feste Research-Policy pinnt
 Algorithmusparameter und den SHA-256-Fingerprint des DER-

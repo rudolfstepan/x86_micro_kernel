@@ -10,7 +10,10 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.create_native_boot_image import (
     BACKUP_MANIFEST_RELATIVE_LBA,
+    BOOT_CONTROL_PRIMARY_RELATIVE_LBA,
+    BOOT_CONTROL_SECONDARY_RELATIVE_LBA,
     KERNEL_B_RELATIVE_LBA,
+    create_boot_control_record,
     create_manifest,
 )
 from scripts.validate_boot_manifest import validate_image
@@ -44,6 +47,12 @@ def _hdd_image(kernel: bytes) -> bytearray:
     )
     backup_start = (PARTITION_LBA + BACKUP_MANIFEST_RELATIVE_LBA) * SECTOR_SIZE
     image[backup_start:backup_start + SECTOR_SIZE] = backup
+    control = create_boot_control_record()
+    for control_lba in (
+            BOOT_CONTROL_PRIMARY_RELATIVE_LBA,
+            BOOT_CONTROL_SECONDARY_RELATIVE_LBA):
+        control_start = (PARTITION_LBA + control_lba) * SECTOR_SIZE
+        image[control_start:control_start + SECTOR_SIZE] = control
     start = (PARTITION_LBA + KERNEL_LBA) * SECTOR_SIZE
     image[start:start + len(kernel)] = kernel
     backup_kernel = (PARTITION_LBA + KERNEL_B_RELATIVE_LBA) * SECTOR_SIZE

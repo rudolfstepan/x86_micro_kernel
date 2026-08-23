@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.5b2-boot-control-transaction"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -263,7 +263,7 @@ evidence = []
 
 [[packages]]
 id = "S0.5b2-boot-control-transaction"
-status = "active"
+status = "done"
 risk = "high"
 title = "Add redundant boot-control records and pending-slot transaction"
 scope = "Add a REIST-specific, versioned 512-byte boot-control record in two fixed HDD sectors at boot-partition-relative LBAs 97 and 98 because legacy BIOS has no suitable standard atomic A/B state format. Each copy carries CRC32, a monotonic 64-bit sequence, active and pending slot, a bounded remaining-attempt count and successful-slot mask. The image builder initializes matching records for confirmed slot A; the independent validator accepts one valid copy or two equal/adjacent consistent copies and rejects ambiguity. Add an offline updater that verifies an RSA-PSS-signed ELF, writes and durably verifies only inactive slot B, then publishes pending B by writing the older control copy before the newer copy. Stage 2 validates both records before manifest selection, durably decrements at most two pending-B attempts before execution, selects B while attempts remain, rolls back to A after exhaustion, and immediately records rollback before trying A when pending B fails. The floppy remains record-free. This package deliberately does not add the Ring-3 boot-success acknowledgement, update distribution, anti-rollback counter or production key custody; therefore a pending B returns to confirmed A after its bounded trial boots even when B starts successfully. Host power-loss injection covers every durable update boundary and QEMU proves persistent selection, decrement and rollback without waiting for full guest initialization."

@@ -9,10 +9,13 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.create_native_boot_image import (
     BACKUP_MANIFEST_RELATIVE_LBA,
+    BOOT_CONTROL_PRIMARY_RELATIVE_LBA,
+    BOOT_CONTROL_SECONDARY_RELATIVE_LBA,
     KERNEL_B_RELATIVE_LBA,
     KERNEL_RELATIVE_LBA,
     STAGE2_MAX_SECTORS,
     STAGE2_RELATIVE_LBA,
+    create_boot_control_record,
     create_manifest,
 )
 from scripts.validate_boot_manifest import validate_image
@@ -44,6 +47,12 @@ def ab_image(kernel: bytes) -> bytearray:
     ) * SECTOR_SIZE
     image[primary_offset:primary_offset + SECTOR_SIZE] = primary
     image[backup_offset:backup_offset + SECTOR_SIZE] = backup
+    control = create_boot_control_record()
+    for control_lba in (
+            BOOT_CONTROL_PRIMARY_RELATIVE_LBA,
+            BOOT_CONTROL_SECONDARY_RELATIVE_LBA):
+        offset = (PARTITION_LBA + control_lba) * SECTOR_SIZE
+        image[offset:offset + SECTOR_SIZE] = control
     for kernel_lba in (KERNEL_RELATIVE_LBA, KERNEL_B_RELATIVE_LBA):
         offset = (PARTITION_LBA + kernel_lba) * SECTOR_SIZE
         image[offset:offset + len(kernel)] = kernel
@@ -109,8 +118,10 @@ class BootAbTests(unittest.TestCase):
         candidate = stage2.split("candidate_error:", 1)[1].split(
             "fatal:", 1
         )[0]
+        self.assertIn("cmp byte [fallback_attempted], 0", candidate)
         self.assertIn("cmp dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA",
                       candidate)
+        self.assertIn("call persist_boot_control", candidate)
         self.assertIn("jmp load_manifest_candidate", candidate)
         self.assertLess(stage2.index("call rsa_pss_verify"),
                         stage2.index("call parse_elf_header"))

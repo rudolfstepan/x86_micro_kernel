@@ -11,7 +11,10 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.create_native_boot_image import (
     BACKUP_MANIFEST_RELATIVE_LBA,
+    BOOT_CONTROL_PRIMARY_RELATIVE_LBA,
+    BOOT_CONTROL_SECONDARY_RELATIVE_LBA,
     KERNEL_B_RELATIVE_LBA,
+    create_boot_control_record,
     create_manifest,
 )
 from scripts.run_qemu_boot_integrity import (
@@ -43,6 +46,12 @@ def image_with_kernel(kernel: bytes) -> bytearray:
     image[backup_manifest:backup_manifest + SECTOR_SIZE] = create_manifest(
         4, kernel, PARTITION_SECTORS, TEST_SIGNATURE, KERNEL_B_RELATIVE_LBA
     )
+    control = create_boot_control_record()
+    for control_lba in (
+            BOOT_CONTROL_PRIMARY_RELATIVE_LBA,
+            BOOT_CONTROL_SECONDARY_RELATIVE_LBA):
+        control_offset = (PARTITION_LBA + control_lba) * SECTOR_SIZE
+        image[control_offset:control_offset + SECTOR_SIZE] = control
     offset = (PARTITION_LBA + KERNEL_LBA) * SECTOR_SIZE
     image[offset:offset + len(kernel)] = kernel
     backup_offset = (PARTITION_LBA + KERNEL_B_RELATIVE_LBA) * SECTOR_SIZE

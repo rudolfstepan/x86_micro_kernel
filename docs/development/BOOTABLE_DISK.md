@@ -43,6 +43,8 @@ LBA 2048          aktive RAW-Bootpartition (Typ 0xDA)
   relativ 0       signiertes Manifest A
   relativ 1..64   feste Stage-2-Reserve
   relativ 96      signiertes Manifest B
+  relativ 97      Boot-Control-Record v1, Kopie 1
+  relativ 98      Boot-Control-Record v1, Kopie 2
   relativ 128     ELF32-Kernel A
   relativ 3136    ELF32-Kernel B
 LBA 8192          FAT32-LBA-Systempartition (Typ 0x0C)
@@ -62,6 +64,22 @@ einem Fehler von A vor dem Kernel-Handoff wird B genau einmal von Grund auf
 geprüft; danach wird geschlossen gestoppt. Stage 2 kopiert den Digest vor
 Wiederverwendung des Manifestpuffers in festen
 Speicher und verlangt einen gesetzten Wert.
+
+Jeder Boot-Control-Record belegt genau 512 Byte. Der 64-Byte-Header enthält
+`REISTBC1`, Version und Headergröße, eine monotone 64-Bit-Sequenz, bestätigten
+Slot A, optional `pending=B`, verbleibende Versuche, das feste Limit zwei,
+eine Erfolgsmaske und CRC32; alle reservierten Bytes müssen null sein. Stage 2
+akzeptiert eine gültige Kopie, zwei identische Kopien gleicher Sequenz oder
+zwei konsistente benachbarte Sequenzen. Es schreibt die ältere/ungültige Kopie
+zuerst und verifiziert jeden BIOS-EDD-Schreibvorgang durch erneutes Lesen.
+
+`scripts/update_native_boot_slot.py` erzeugt immer ein neues Output-Image,
+verifiziert Kernel und RSA-PSS-Signatur vor der Kopie, schreibt ausschließlich
+Kernel/Manifest B und veröffentlicht erst danach den Pending-Record. Ein
+Pending-B-Start wird vor der Kernelprüfung persistent von zwei auf eins und
+dann auf null dekrementiert; der nächste Start oder ein B-Fehler schreibt den
+Rollback auf A zuerst. Eine Erfolgsbestätigung aus Ring 3 folgt separat, daher
+kann B in diesem Inkrement noch nicht dauerhaft bestätigt werden.
 
 Nach jeder Imageerzeugung prüft `scripts/validate_boot_manifest.py` unabhängig
 vom Erzeuger das HDD- beziehungsweise Floppy-Layout, alle Extents, die
@@ -87,8 +105,8 @@ sind nicht durch Firmware, TPM oder einen unveränderlichen ROM-Anker gebunden.
 Ein Angreifer mit Schreibzugriff könnte daher den Loader samt Schlüsselanker
 ersetzen. Secure Boot, Anti-Rollback und eine vollständige kryptografische
 Firmware-Vertrauenskette bleiben ausdrücklich nicht implementiert.
-Ebenso noch nicht implementiert sind persistente aktive Slotwahl,
-Bootversuchszähler, Erfolgsbestätigung und atomare Updateumschaltung.
+Noch nicht implementiert sind persistente Bestätigung von Slot B,
+Ring-3-Erfolgsbestätigung, Updateverteilung und Anti-Rollback.
 
 ## Root-Volume
 

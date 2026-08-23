@@ -25,6 +25,8 @@ STAGE2_RELATIVE_LBA = 1
 STAGE2_MAX_SECTORS = 64
 KERNEL_RELATIVE_LBA = 128
 BACKUP_MANIFEST_RELATIVE_LBA = 96
+BOOT_CONTROL_PRIMARY_RELATIVE_LBA = 97
+BOOT_CONTROL_SECONDARY_RELATIVE_LBA = 98
 KERNEL_B_RELATIVE_LBA = 3136
 PARTITION_TYPE = 0xDA  # Non-filesystem raw boot partition
 DATA_PARTITION_TYPE = 0x0C  # FAT32 with LBA addressing
@@ -34,6 +36,14 @@ MANIFEST_HEADER_SIZE = 336
 MANIFEST_FLAG_SIGNED = 0x00000001
 MANIFEST_SIGNATURE_OFFSET = 80
 MANIFEST_SIGNATURE_SIZE = 256
+BOOT_CONTROL_MAGIC = b"REISTBC1"
+BOOT_CONTROL_VERSION = 1
+BOOT_CONTROL_HEADER_SIZE = 64
+BOOT_CONTROL_CRC_OFFSET = 60
+BOOT_CONTROL_SLOT_A = 0
+BOOT_CONTROL_SLOT_B = 1
+BOOT_CONTROL_SLOT_NONE = 0xFF
+BOOT_CONTROL_ATTEMPT_LIMIT = 2
 MAX_LOAD_ADDRESS = 0x04000000
 VMWARE_BASENAME = "reist-os"
 
@@ -113,6 +123,49 @@ def create_manifest(stage2_sectors: int, kernel: bytes,
     if sum(struct.unpack("<128I", manifest)) & 0xFFFFFFFF:
         raise AssertionError("manifest checksum construction failed")
     return bytes(manifest)
+
+
+def create_boot_control_record(
+        sequence: int = 1,
+        active_slot: int = BOOT_CONTROL_SLOT_A,
+        pending_slot: int = BOOT_CONTROL_SLOT_NONE,
+        attempts_remaining: int = 0,
+        successful_mask: int = 1) -> bytes:
+    """Create the fixed REIST BIOS A/B control record version 1."""
+    if not 1 <= sequence <= 0xFFFFFFFFFFFFFFFF:
+        raise ValueError("boot-control sequence is out of range")
+    if active_slot != BOOT_CONTROL_SLOT_A:
+        raise ValueError("boot-control v1 requires confirmed slot A")
+    if pending_slot not in (BOOT_CONTROL_SLOT_NONE, BOOT_CONTROL_SLOT_B):
+        raise ValueError("boot-control pending slot is unsupported")
+    if pending_slot == BOOT_CONTROL_SLOT_NONE and attempts_remaining != 0:
+        raise ValueError("confirmed boot-control state cannot retain attempts")
+    if pending_slot == BOOT_CONTROL_SLOT_B and not (
+            0 <= attempts_remaining <= BOOT_CONTROL_ATTEMPT_LIMIT):
+        raise ValueError("pending boot-control attempts are out of range")
+    if successful_mask & ~0x03 or not successful_mask & 0x01:
+        raise ValueError("boot-control successful-slot mask is invalid")
+
+    record = bytearray(SECTOR_SIZE)
+    struct.pack_into(
+        "<8sIIQBBBBI",
+        record,
+        0,
+        BOOT_CONTROL_MAGIC,
+        BOOT_CONTROL_VERSION,
+        BOOT_CONTROL_HEADER_SIZE,
+        sequence,
+        active_slot,
+        pending_slot,
+        attempts_remaining,
+        BOOT_CONTROL_ATTEMPT_LIMIT,
+        successful_mask,
+    )
+    struct.pack_into(
+        "<I", record, BOOT_CONTROL_CRC_OFFSET,
+        binascii.crc32(record) & 0xFFFFFFFF,
+    )
+    return bytes(record)
 
 
 def encode_chs(lba: int, heads: int = 16, sectors_per_track: int = 63) -> bytes:
@@ -684,6 +737,7 @@ def build_image(stage1_path: Path, stage2_path: Path, kernel_path: Path,
         stage2_sectors, kernel, partition_sectors, signature,
         KERNEL_B_RELATIVE_LBA,
     )
+    boot_control = create_boot_control_record()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("wb") as image:
         image.truncate(IMAGE_SIZE)
@@ -698,6 +752,14 @@ def build_image(stage1_path: Path, stage2_path: Path, kernel_path: Path,
             partition_offset + BACKUP_MANIFEST_RELATIVE_LBA * SECTOR_SIZE
         )
         image.write(manifest_b)
+        image.seek(
+            partition_offset + BOOT_CONTROL_PRIMARY_RELATIVE_LBA * SECTOR_SIZE
+        )
+        image.write(boot_control)
+        image.seek(
+            partition_offset + BOOT_CONTROL_SECONDARY_RELATIVE_LBA * SECTOR_SIZE
+        )
+        image.write(boot_control)
         image.seek(partition_offset + KERNEL_RELATIVE_LBA * SECTOR_SIZE)
         image.write(kernel)
         image.seek(partition_offset + KERNEL_B_RELATIVE_LBA * SECTOR_SIZE)

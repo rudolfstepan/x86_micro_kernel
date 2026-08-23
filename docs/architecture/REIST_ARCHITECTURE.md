@@ -127,8 +127,19 @@ Manifest B liegt an LBA 96 und verweist ausschließlich auf Kernel B an LBA
 übergibt Kandidat A. Stage 2 akzeptiert nur diese feste Zuordnung und versucht
 B höchstens einmal, wenn A vor dem Handoff an den Kernel scheitert. Beide
 Kandidaten durchlaufen unabhängig Prüfsumme, Bounds, SHA-256, RSA-PSS und
-ELF-Prüfung. Diese Laufzeitredundanz ist noch kein persistenter Updatezustand,
-Bootzähler, Erfolgs-Acknowledge oder Anti-Rollback-Verfahren.
+ELF-Prüfung.
+
+Partitionrelative LBAs 97 und 98 tragen den REIST-Boot-Control-Record v1 als
+zwei CRC32- und sequenzgeschützte 512-Byte-Kopien. Der Offline-Updater
+beschreibt und prüft zuerst ausschließlich den inaktiven Slot B; erst danach
+veröffentlicht er `pending=B` in der älteren und anschließend der neueren
+Control-Kopie. Stage 2 wählt die höchste eindeutige Sequenz, schreibt den auf
+höchstens zwei begrenzten Versuchen beruhenden Dekrement vor B mit BIOS EDD
+und Read-back zurück und persistiert Rollback auf bestätigt A vor dessen
+Ausführung. Das ist ein bewusst REIST-spezifisches Legacy-BIOS-Format, weil
+kein passender Plattformstandard existiert. Ring-3-Erfolgs-Acknowledge,
+Updateverteilung, unveränderliches Recovery-Image und Anti-Rollback fehlen
+weiterhin; ein erfolgreiches B bleibt daher zunächst nur ein Testboot.
 
 Der entscheidende nächste Architekturwechsel ist damit ausdrücklich:
 

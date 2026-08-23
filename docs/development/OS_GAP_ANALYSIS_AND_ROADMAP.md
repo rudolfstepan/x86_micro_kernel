@@ -405,6 +405,8 @@ und 10 verbindlich.
   - [ ] S0.5b Redundante Bootkandidaten und atomare Updates
     - [x] S0.5b1 Feste signierte HDD-Slots A/B mit einmaligem, vollständig
       validiertem Stage-2-Fallback; persistenter Updatezustand folgt separat
+    - [x] S0.5b2 Redundanter Boot-Control-Record, offline vorbereiteter
+      Pending-B-Commit und zwei persistente Testboots mit Rollback auf A
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
 
 #### Funktionsroadmap nach dem S0-Gate
@@ -1348,6 +1350,14 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
   ELF-Prüfung. QEMU weist sowohl den erfolgreichen A-zu-B-Fallback als auch
   den geschlossenen Stopp bei zwei beschädigten Signaturen nach. Floppy bleibt
   single-slot; persistente Slotwahl, Versuchsstatus und Updatecommit sind offen.
+- [x] Zwei feste 512-Byte-Boot-Control-Kopien an den partitionrelativen LBAs
+  97/98 schützen Version, Sequenz, bestätigten/pending Slot, Versuchszahl und
+  Erfolgsmaske mit CRC32. Der Offline-Updater prüft ELF und RSA-PSS, schreibt
+  nur Slot B und veröffentlicht Pending B erst nach Revalidierung. Stage 2
+  persistiert zwei Versuchsdekremente vor B und Rollback auf A vor dessen
+  Ausführung. Power-Loss-Tests decken jede dauerhafte Schreibgrenze ab; QEMU
+  weist B:1, B:0 und danach A nach. Dauerhafte B-Bestätigung wartet auf das
+  separate Ring-3-Erfolgs-Acknowledge.
 - Sicherheitsrelevanten Zustand transaktional, checksummiert, versioniert und
    redundant speichern; Stromausfall an jeder Commitstelle injizieren.
 - Verifizierten Boot, signierte Artefakte, reproduzierbare Builds, Provenienz

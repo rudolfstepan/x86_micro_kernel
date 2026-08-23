@@ -57,10 +57,27 @@ MANIFEST_KERNEL_SHA  equ 48
 MANIFEST_KERNEL_SIGNATURE equ 80
 PRIMARY_MANIFEST_LBA  equ 0
 BACKUP_MANIFEST_LBA   equ 96
+BOOT_CONTROL_PRIMARY_LBA equ 97
+BOOT_CONTROL_SECONDARY_LBA equ 98
 KERNEL_A_LBA          equ 128
 KERNEL_B_LBA          equ 3136
 HDD_PARTITION_SECTORS equ 6144
 FLOPPY_PARTITION_SECTORS equ 2879
+BOOT_CONTROL_MAGIC_0  equ 0x53494552      ; "REIS"
+BOOT_CONTROL_MAGIC_1  equ 0x31434254      ; "TBC1"
+BOOT_CONTROL_VERSION  equ 1
+BOOT_CONTROL_HEADER_SIZE equ 64
+BOOT_CONTROL_SEQUENCE equ 16
+BOOT_CONTROL_ACTIVE   equ 24
+BOOT_CONTROL_PENDING  equ 25
+BOOT_CONTROL_ATTEMPTS equ 26
+BOOT_CONTROL_LIMIT    equ 27
+BOOT_CONTROL_SUCCESS  equ 28
+BOOT_CONTROL_CRC      equ 60
+BOOT_CONTROL_SLOT_A   equ 0
+BOOT_CONTROL_SLOT_B   equ 1
+BOOT_CONTROL_SLOT_NONE equ 0xFF
+BOOT_CONTROL_ATTEMPT_LIMIT equ 2
 RSA_BYTES            equ 256
 RSA_DWORDS           equ RSA_BYTES / 4
 PSS_HASH_BYTES       equ 32
@@ -128,6 +145,8 @@ start:
 
     call enable_a20
     call build_multiboot_info
+    call prepare_boot_candidate
+    jc boot_control_error
 
 load_manifest_candidate:
     ; Re-read and validate the complete selected manifest sector.
@@ -320,16 +339,36 @@ sha_error:
     jmp candidate_error
 signature_error:
     mov si, msg_signature_error
+    jmp candidate_error
+
+boot_control_error:
+    mov si, msg_boot_control_error
+    jmp fatal
 
 candidate_error:
     cmp byte [boot_drive], 0x80
     jb fatal
-    cmp dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
+    cmp byte [fallback_attempted], 0
     jne fatal
     call print_string
-    mov si, msg_fallback
+    mov byte [fallback_attempted], 1
+    cmp dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
+    jne .fallback_to_a
+    mov si, msg_fallback_b
     call print_string
     mov dword [manifest_relative_lba], BACKUP_MANIFEST_LBA
+    jmp .retry_candidate
+.fallback_to_a:
+    cmp byte [boot_started_pending], 1
+    jne fatal
+    mov byte [boot_control_selected + BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_NONE
+    mov byte [boot_control_selected + BOOT_CONTROL_ATTEMPTS], 0
+    call persist_boot_control
+    jc boot_control_error
+    mov si, msg_fallback_a
+    call print_string
+    mov dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
+.retry_candidate:
     mov byte [kernel_cached], 0
     mov byte [entry_is_executable], 0
     jmp load_manifest_candidate
@@ -1025,6 +1064,389 @@ load_file_range:
     ret
 .bad:
     stc
+    ret
+
+; Select the bounded HDD trial candidate from the redundant boot-control
+; records. Floppy images deliberately retain their single-slot behavior.
+prepare_boot_candidate:
+    mov byte [fallback_attempted], 0
+    mov byte [boot_started_pending], 0
+    mov dword [manifest_relative_lba], PRIMARY_MANIFEST_LBA
+    cmp byte [boot_drive], 0x80
+    jb .ready
+    call load_boot_control
+    jc .bad
+    cmp byte [boot_control_selected + BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_NONE
+    je .ready
+    cmp byte [boot_control_selected + BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_B
+    jne .bad
+    cmp byte [boot_control_selected + BOOT_CONTROL_ATTEMPTS], 0
+    je .rollback
+
+    dec byte [boot_control_selected + BOOT_CONTROL_ATTEMPTS]
+    call persist_boot_control
+    jc .bad
+    mov dword [manifest_relative_lba], BACKUP_MANIFEST_LBA
+    mov byte [boot_started_pending], 1
+    cmp byte [boot_control_selected + BOOT_CONTROL_ATTEMPTS], 0
+    je .pending_zero
+    mov si, msg_control_pending_one
+    call print_string
+    jmp .ready
+.pending_zero:
+    mov si, msg_control_pending_zero
+    call print_string
+    jmp .ready
+
+.rollback:
+    mov byte [boot_control_selected + BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_NONE
+    mov byte [boot_control_selected + BOOT_CONTROL_ATTEMPTS], 0
+    call persist_boot_control
+    jc .bad
+    mov si, msg_control_rollback
+    call print_string
+.ready:
+    clc
+    ret
+.bad:
+    stc
+    ret
+
+; Load and reconcile the two fixed boot-control sectors. The selected raw
+; record is copied into boot_control_selected and the older/invalid copy is
+; always chosen as the first target of the next transition.
+load_boot_control:
+    mov byte [boot_control_primary_valid], 0
+    mov byte [boot_control_secondary_valid], 0
+
+    mov eax, [partition_lba]
+    add eax, BOOT_CONTROL_PRIMARY_LBA
+    jc .select
+    mov cx, 1
+    call read_bounce
+    jc .read_secondary
+    call validate_boot_control_bounce
+    jc .read_secondary
+    mov di, boot_control_primary
+    call copy_bounce_to_control
+    mov byte [boot_control_primary_valid], 1
+
+.read_secondary:
+    mov eax, [partition_lba]
+    add eax, BOOT_CONTROL_SECONDARY_LBA
+    jc .select
+    mov cx, 1
+    call read_bounce
+    jc .select
+    call validate_boot_control_bounce
+    jc .select
+    mov di, boot_control_secondary
+    call copy_bounce_to_control
+    mov byte [boot_control_secondary_valid], 1
+
+.select:
+    cmp byte [boot_control_primary_valid], 1
+    jne .only_secondary
+    cmp byte [boot_control_secondary_valid], 1
+    jne .only_primary
+
+    mov eax, [boot_control_primary + BOOT_CONTROL_SEQUENCE + 4]
+    cmp eax, [boot_control_secondary + BOOT_CONTROL_SEQUENCE + 4]
+    ja .primary_newer
+    jb .secondary_newer
+    mov eax, [boot_control_primary + BOOT_CONTROL_SEQUENCE]
+    cmp eax, [boot_control_secondary + BOOT_CONTROL_SEQUENCE]
+    ja .primary_newer
+    jb .secondary_newer
+
+    ; Equal sequences are acceptable only for exact mirrored sectors.
+    push ds
+    pop es
+    mov si, boot_control_primary
+    mov di, boot_control_secondary
+    mov cx, 512 / 2
+    repe cmpsw
+    jne .bad
+    mov si, boot_control_primary
+    call copy_control_to_selected
+    mov dword [boot_control_first_lba], BOOT_CONTROL_SECONDARY_LBA
+    mov dword [boot_control_second_lba], BOOT_CONTROL_PRIMARY_LBA
+    clc
+    ret
+
+.primary_newer:
+    mov eax, [boot_control_secondary + BOOT_CONTROL_SEQUENCE]
+    mov edx, [boot_control_secondary + BOOT_CONTROL_SEQUENCE + 4]
+    add eax, 1
+    adc edx, 0
+    jc .bad
+    cmp edx, [boot_control_primary + BOOT_CONTROL_SEQUENCE + 4]
+    jne .bad
+    cmp eax, [boot_control_primary + BOOT_CONTROL_SEQUENCE]
+    jne .bad
+    mov si, boot_control_primary
+    call copy_control_to_selected
+    mov dword [boot_control_first_lba], BOOT_CONTROL_SECONDARY_LBA
+    mov dword [boot_control_second_lba], BOOT_CONTROL_PRIMARY_LBA
+    clc
+    ret
+
+.secondary_newer:
+    mov eax, [boot_control_primary + BOOT_CONTROL_SEQUENCE]
+    mov edx, [boot_control_primary + BOOT_CONTROL_SEQUENCE + 4]
+    add eax, 1
+    adc edx, 0
+    jc .bad
+    cmp edx, [boot_control_secondary + BOOT_CONTROL_SEQUENCE + 4]
+    jne .bad
+    cmp eax, [boot_control_secondary + BOOT_CONTROL_SEQUENCE]
+    jne .bad
+    mov si, boot_control_secondary
+    call copy_control_to_selected
+    mov dword [boot_control_first_lba], BOOT_CONTROL_PRIMARY_LBA
+    mov dword [boot_control_second_lba], BOOT_CONTROL_SECONDARY_LBA
+    clc
+    ret
+
+.only_primary:
+    mov si, boot_control_primary
+    call copy_control_to_selected
+    mov dword [boot_control_first_lba], BOOT_CONTROL_SECONDARY_LBA
+    mov dword [boot_control_second_lba], BOOT_CONTROL_PRIMARY_LBA
+    clc
+    ret
+.only_secondary:
+    cmp byte [boot_control_secondary_valid], 1
+    jne .bad
+    mov si, boot_control_secondary
+    call copy_control_to_selected
+    mov dword [boot_control_first_lba], BOOT_CONTROL_PRIMARY_LBA
+    mov dword [boot_control_second_lba], BOOT_CONTROL_SECONDARY_LBA
+    clc
+    ret
+.bad:
+    mov ax, ds
+    mov es, ax
+    stc
+    ret
+
+; Validate the complete 512-byte record currently in the bounce sector.
+validate_boot_control_bounce:
+    mov ax, BOUNCE_SEGMENT
+    mov es, ax
+    cmp dword [es:0], BOOT_CONTROL_MAGIC_0
+    jne .bad
+    cmp dword [es:4], BOOT_CONTROL_MAGIC_1
+    jne .bad
+    cmp dword [es:8], BOOT_CONTROL_VERSION
+    jne .bad
+    cmp dword [es:12], BOOT_CONTROL_HEADER_SIZE
+    jne .bad
+    mov eax, [es:BOOT_CONTROL_SEQUENCE]
+    or eax, [es:BOOT_CONTROL_SEQUENCE + 4]
+    jz .bad
+    cmp byte [es:BOOT_CONTROL_ACTIVE], BOOT_CONTROL_SLOT_A
+    jne .bad
+    cmp byte [es:BOOT_CONTROL_LIMIT], BOOT_CONTROL_ATTEMPT_LIMIT
+    jne .bad
+    mov eax, [es:BOOT_CONTROL_SUCCESS]
+    test eax, 1
+    jz .bad
+    test eax, 0xFFFFFFFC
+    jnz .bad
+    cmp byte [es:BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_NONE
+    je .confirmed
+    cmp byte [es:BOOT_CONTROL_PENDING], BOOT_CONTROL_SLOT_B
+    jne .bad
+    cmp byte [es:BOOT_CONTROL_ATTEMPTS], BOOT_CONTROL_ATTEMPT_LIMIT
+    ja .bad
+    jmp .reserved
+.confirmed:
+    cmp byte [es:BOOT_CONTROL_ATTEMPTS], 0
+    jne .bad
+
+.reserved:
+    mov di, 32
+    mov cx, BOOT_CONTROL_CRC - 32
+.reserved_header:
+    cmp byte [es:di], 0
+    jne .bad
+    inc di
+    loop .reserved_header
+    mov di, BOOT_CONTROL_HEADER_SIZE
+    mov cx, 512 - BOOT_CONTROL_HEADER_SIZE
+.reserved_sector:
+    cmp byte [es:di], 0
+    jne .bad
+    inc di
+    loop .reserved_sector
+
+    mov eax, [es:BOOT_CONTROL_CRC]
+    mov [cs:boot_control_crc_expected], eax
+    mov dword [es:BOOT_CONTROL_CRC], 0
+    mov eax, 0xFFFFFFFF
+    xor di, di
+    mov cx, 512
+.crc_byte:
+    movzx ebx, byte [es:di]
+    inc di
+    xor al, bl
+    mov ebx, eax
+    and ebx, 0x0F
+    shr eax, 4
+    xor eax, [cs:crc32_nibble_table + ebx * 4]
+    mov ebx, eax
+    and ebx, 0x0F
+    shr eax, 4
+    xor eax, [cs:crc32_nibble_table + ebx * 4]
+    loop .crc_byte
+    not eax
+    mov edx, [cs:boot_control_crc_expected]
+    mov [es:BOOT_CONTROL_CRC], edx
+    cmp eax, edx
+    jne .bad
+    mov ax, ds
+    mov es, ax
+    clc
+    ret
+.bad:
+    mov ax, ds
+    mov es, ax
+    stc
+    ret
+
+; DI is a stage-2 data offset. Copy the validated bounce sector into it.
+copy_bounce_to_control:
+    mov ax, BOUNCE_SEGMENT
+    mov es, ax
+    xor si, si
+    mov cx, 512 / 2
+.copy:
+    mov ax, [es:si]
+    mov [cs:di], ax
+    add si, 2
+    add di, 2
+    loop .copy
+    mov ax, ds
+    mov es, ax
+    ret
+
+; SI is a stage-2 data offset. Copy one complete record to selected storage.
+copy_control_to_selected:
+    push ds
+    pop es
+    mov di, boot_control_selected
+    mov cx, 512 / 2
+    rep movsw
+    ret
+
+; Increment, checksum, write and read-back verify both control copies. The
+; older or invalid sector is always committed first.
+persist_boot_control:
+    add dword [boot_control_selected + BOOT_CONTROL_SEQUENCE], 1
+    adc dword [boot_control_selected + BOOT_CONTROL_SEQUENCE + 4], 0
+    jc .bad
+    mov dword [boot_control_selected + BOOT_CONTROL_CRC], 0
+    mov eax, 0xFFFFFFFF
+    mov si, boot_control_selected
+    mov cx, 512
+.crc_byte:
+    movzx ebx, byte [si]
+    inc si
+    xor al, bl
+    mov ebx, eax
+    and ebx, 0x0F
+    shr eax, 4
+    xor eax, [crc32_nibble_table + ebx * 4]
+    mov ebx, eax
+    and ebx, 0x0F
+    shr eax, 4
+    xor eax, [crc32_nibble_table + ebx * 4]
+    loop .crc_byte
+    not eax
+    mov [boot_control_selected + BOOT_CONTROL_CRC], eax
+
+    mov eax, [boot_control_first_lba]
+    call write_boot_control_copy
+    jc .bad
+    mov eax, [boot_control_second_lba]
+    call write_boot_control_copy
+    jc .bad
+    clc
+    ret
+.bad:
+    stc
+    ret
+
+; Write selected control to partition-relative EAX and compare a fresh read.
+write_boot_control_copy:
+    push eax
+    mov ax, BOUNCE_SEGMENT
+    mov es, ax
+    mov si, boot_control_selected
+    xor di, di
+    mov cx, 512 / 2
+    rep movsw
+    pop eax
+    add eax, [partition_lba]
+    jc .bad
+    push eax
+    call write_bounce_sector
+    pop eax
+    jc .bad
+    mov cx, 1
+    call read_bounce
+    jc .bad
+    mov ax, BOUNCE_SEGMENT
+    mov es, ax
+    mov si, boot_control_selected
+    xor di, di
+    mov cx, 512 / 2
+    repe cmpsw
+    jne .bad
+    mov ax, ds
+    mov es, ax
+    clc
+    ret
+.bad:
+    mov ax, ds
+    mov es, ax
+    stc
+    ret
+
+; Write exactly one bounce-buffer sector at absolute HDD LBA EAX. INT 13h
+; completion is followed by an independent read-back in the caller.
+write_bounce_sector:
+    cmp byte [boot_drive], 0x80
+    jb .bad
+    mov [read_lba_value], eax
+    mov byte [read_retries], 3
+.retry:
+    mov word [dap_count], 1
+    mov word [dap_offset], 0
+    mov word [dap_segment], BOUNCE_SEGMENT
+    mov eax, [read_lba_value]
+    mov [dap_lba], eax
+    mov dword [dap_lba + 4], 0
+    mov si, dap
+    mov dl, [boot_drive]
+    mov ax, 0x4300
+    int 0x13
+    jnc .ok
+    mov dl, [boot_drive]
+    xor ah, ah
+    int 0x13
+    dec byte [read_retries]
+    jnz .retry
+.bad:
+    mov ax, ds
+    mov es, ax
+    stc
+    ret
+.ok:
+    mov ax, ds
+    mov es, ax
+    clc
     ret
 
 ; Read CX sectors at absolute LBA EAX into the 32-KiB bounce buffer.
@@ -1942,6 +2364,10 @@ entry_is_executable    db 0
 pm_operation           db 0
 kernel_cached          db 0
 integrity_error        db 0             ; 1=CRC32, 2=SHA-256
+boot_control_primary_valid db 0
+boot_control_secondary_valid db 0
+boot_started_pending   db 0
+fallback_attempted     db 0
 rsa_add_carry          db 0
 rsa_bit_mask           db 0
 pss_mgf_counter        db 0
@@ -1956,6 +2382,9 @@ align 4
 partition_lba          dd 0
 partition_size         dd 0
 manifest_relative_lba  dd 0
+boot_control_first_lba dd 0
+boot_control_second_lba dd 0
+boot_control_crc_expected dd 0
 kernel_relative_lba    dd 0
 kernel_lba             dd 0
 kernel_size            dd 0
@@ -2026,6 +2455,12 @@ sha256_block:
 align 4
 kernel_signature:
     times RSA_BYTES db 0
+boot_control_primary:
+    times 512 db 0
+boot_control_secondary:
+    times 512 db 0
+boot_control_selected:
+    times 512 db 0
 rsa_signature_le:
     times RSA_BYTES db 0
 rsa_value:
@@ -2078,7 +2513,12 @@ msg_load_error     db "Kernel load failed", 13, 10, 0
 msg_crc_error      db "Kernel CRC32 verification failed", 13, 10, 0
 msg_sha_error      db "Kernel SHA-256 verification failed", 13, 10, 0
 msg_signature_error db "Kernel RSA-PSS verification failed", 13, 10, 0
-msg_fallback       db "BOOT_SLOT_A_FAILED_TRY_B", 13, 10, 0
+msg_fallback_b     db "BOOT_SLOT_A_FAILED_TRY_B", 13, 10, 0
+msg_fallback_a     db "BOOT_SLOT_B_FAILED_TRY_A", 13, 10, 0
+msg_boot_control_error db "Boot control validation/write failed", 13, 10, 0
+msg_control_pending_one db "BOOT_CONTROL_PENDING_B attempts=1", 13, 10, 0
+msg_control_pending_zero db "BOOT_CONTROL_PENDING_B attempts=0", 13, 10, 0
+msg_control_rollback db "BOOT_CONTROL_ROLLBACK_A", 13, 10, 0
 
 align 4
 crc32_nibble_table:

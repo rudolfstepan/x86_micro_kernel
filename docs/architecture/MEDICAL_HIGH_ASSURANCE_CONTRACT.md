@@ -428,6 +428,14 @@ und dürfen bei defektem Image nicht dauerhaft in `halt` verbleiben. Zwei
 authentisierte Slots, ein unveränderliches Recovery-Image und ein atomarer,
 redundanter Boot-Health-Record bilden den Mindestpfad.
 
+Der aktuelle Forschungsstand implementiert davon zwei authentisierte
+HDD-Slots sowie einen redundant CRC-/sequenzgeschützten Boot-Control-Record
+mit zwei begrenzten Pending-B-Versuchen und Rollback auf bestätigt A. Der
+Record ist noch kein vollständiger Boot-Health-Nachweis: Erfolgsbestätigung
+aus einem selbstgetesteten Ring-3-System, unveränderliches Recovery-Image und
+Anti-Rollback fehlen. Bis dahin darf B nicht dauerhaft aktiviert werden und
+wird auch nach erfolgreichen Testboots wieder auf A zurückgesetzt.
+
 ### Kernel-Livepatching
 
 Kernel-Livepatching ist **kein regulärer Recovery- oder Updatepfad**. Der

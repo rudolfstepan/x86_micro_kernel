@@ -124,8 +124,8 @@ manuellen Auswahl angebunden; ohne diese Identität wird kein Produktionstreiber
 erfunden und keine Hardwarequalifikation behauptet.
 
 S0.5 umfasst nun die abgeschlossenen Pakete `S0.5a1`, `S0.5a2`, `S0.5a3a`,
-`S0.5a3b` und `S0.5b1`. Das letzte Paket ergänzt die erste redundante
-Bootstufe. Das native
+`S0.5a3b`, `S0.5b1` und `S0.5b2`. Die letzten beiden Pakete ergänzen die
+redundante Bootstufe und deren transaktionalen Pending-Zustand. Das native
 BIOS-Manifest v3 enthält SHA-256 und die
 256-Byte-RSA-PSS-Signatur des exakten Kernelartefakts; Windows-
 und Makefile-Builds validieren HDD- und Floppy-Images mit einem unabhängigen
@@ -155,6 +155,15 @@ mit A und prüft B nach einem A-Fehler genau einmal vollständig und unabhängig
 Der Hostvalidator verlangt beide Kandidaten. Persistente Slotwahl,
 Bootversuchszähler, Erfolgsbestätigung und atomare Updateumschaltung bleiben
 offen; die Rescue-Diskette bleibt single-slot.
+
+`S0.5b2` ergänzt zwei Boot-Control-Sektoren an den partitionrelativen LBAs
+97/98 und einen Offline-Updater. Der Updater prüft den signierten ELF-Kernel,
+schreibt ausschließlich Slot B und veröffentlicht Pending B erst nach
+vollständiger Revalidierung. Stage 2 dekrementiert zwei Testboots persistent
+vor der B-Ausführung und schreibt bei Erschöpfung oder B-Fehler Rollback auf A
+zuerst. Die Kopien sind CRC-/sequenzgeschützt und werden ältere zuerst mit
+Read-back aktualisiert. Ein Ring-3-Erfolgs-Acknowledge fehlt noch; deshalb ist
+B noch nicht dauerhaft aktivierbar.
 
 `S0.3c-admin1` stellt sichere Storage-Operationen (`device down/up`, `mount`,
 `umount`) und einen festen, integritätsgeprüften 224-KiB-RAM-Rescue-Pool mit
