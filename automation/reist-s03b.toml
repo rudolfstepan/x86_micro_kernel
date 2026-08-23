@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.6b-spdx-release-sbom"
 
 [policy]
 one_package_per_run = true
@@ -357,6 +357,56 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "test: add bounded boot update fault campaign"
+evidence = []
+
+[[packages]]
+id = "S0.6b-spdx-release-sbom"
+status = "active"
+risk = "medium"
+title = "Generate and independently validate bounded SPDX release SBOMs"
+scope = "Generate one SPDX 2.3 JSON SBOM after native Windows and Makefile image builds for the exact kernel, detached signature, raw BIOS image and packaged Ring-3 PRGs. The generator accepts only explicit build-root-relative files plus one nonrecursive PRG directory, limits the document to 160 files and 2 MiB, records exact byte size and SHA-256 for each file, creates deterministic SPDX identifiers and an artifact-set-bound document namespace, and atomically replaces the output only after complete construction. A structurally independent validator enforces the closed SPDX subset, creation fields, one package, DESCRIBES and exact CONTAINS relationships, path confinement, uniqueness, capacities and live artifact hashes. The package gate requires the generated SBOM. Unknown license and copyright fields remain NOASSERTION. This package does not claim reproducible builds, complete source/dependency inventory, license clearing, vulnerability analysis, provenance attestation or signing of the SBOM."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/generate_release_sbom.py",
+  "scripts/validate_release_sbom.py",
+  "scripts/build-windows.ps1",
+  "scripts/test-reist-package.ps1",
+  "Makefile",
+  "test/test_release_sbom.py",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the SBOM is SPDX-2.3 JSON with mandatory document creation fields, one described REIST OS package and exact package CONTAINS relationships",
+  "only canonical build-root-relative regular files are admitted and the SBOM output itself is excluded",
+  "at most 160 files, 128 MiB per file, 512 MiB total input and 2 MiB JSON output are processed",
+  "each file records exact byte size and SHA-256 and the document namespace is bound to the ordered artifact set",
+  "generation uses a same-directory temporary file, flush, fsync and atomic replace and preserves an existing output on validation failure",
+  "the independent validator imports no generator parser and rehashes every live artifact under the supplied root",
+  "Windows and Makefile native-image builds generate then validate the SBOM and the package gate requires it",
+  "NOASSERTION remains explicit for unresolved licensing and this SBOM is not a signed provenance or vulnerability claim"
+]
+targeted_tests = [
+  "python test/test_release_sbom.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/validate_release_sbom.py --sbom build/reist-sbom.spdx.json --root ."
+]
+stop_conditions = [
+  "an artifact outside the repository build root or the SBOM itself can enter the document",
+  "hash, size, relationship or path drift can pass independent validation",
+  "a failed generation can replace a previous SBOM",
+  "either native build path can return success without a validated SBOM",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: add bounded SPDX release SBOMs"
 evidence = []
 
 [[packages]]
