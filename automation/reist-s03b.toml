@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.4c-3-runtime-degradation-faults"
 
 [policy]
 one_package_per_run = true
@@ -4253,4 +4253,67 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "safety: account mediated DMA pool pressure"
+evidence = []
+
+[[packages]]
+id = "S0.4c-3-runtime-degradation-faults"
+status = "active"
+risk = "high"
+title = "Contain interrupt storms and monotonic-clock regressions"
+scope = "Close the remaining automatable S0.4 degradation gap without claiming target-hardware WCET. A regression of the scheduler's monotonic accounting clock must latch a saturating diagnostic fault and deny every Ring-3 scheduling class until explicit scheduler reinitialization; later timestamps may not silently restore authority. Each active device domain receives a fixed 100-ms IRQ admission window: the first 128 completed IRQs are admitted, while the next IRQ within the same window fences the device through the existing mask, bus-master revoke, DMA zeroization and generation-scoped resource cleanup path. A backwards device-domain timestamp fences immediately. Host tests exercise the integrated scheduler and device paths. A compile-time-only QEMU image executes bounded synthetic guard self-tests before BOOT_OK and must then retain normal Ring-3 progress through TEST_OK. No new syscall, ambient authority, unbounded loop or production fault-injection hook is permitted."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c",
+  "kernel/init/kernel.c",
+  "kernel/sched/scheduling_policy.h",
+  "kernel/sched/scheduling_policy.c",
+  "safety/resource_budgets.toml",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_smoke.py",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_scheduling_policy_host.c",
+  "test/test_reist_scheduling_policy.py",
+  "test/test_runtime_degradation.py",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/RESILIENCE_AND_DEGRADATION_CONTRACT.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "a scheduler clock regression latches fail-closed denial for all Ring-3 classes and cannot be cleared by elapsed time or a window rollover",
+  "clock anomaly and IRQ-storm counters saturate and never participate in optimistic admission",
+  "the authoritative IRQ storm window and limit are fixed constants registered in the resource budget",
+  "the first IRQ beyond the fixed per-device window limit is fenced before another notification is published",
+  "storm containment reuses the existing idempotent fence path, including IRQ masking, bus-master disable, DMA revoke and mediated-pool zeroization",
+  "a backwards device-domain timestamp is treated as untrusted accounting and fences the affected device",
+  "normal IRQ completion, deadline fencing and scheduler weighted-class behavior remain ABI-compatible",
+  "fault injection is compile-time-only, performs fixed-capacity local self-tests and grants no runtime control surface"
+]
+targeted_tests = [
+  "python test/test_reist_scheduling_policy.py -v",
+  "python test/test_device_domain_source.py -v",
+  "python test/test_runtime_degradation.py -v",
+  "python test/test_reist_resource_budgets.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\build-windows.ps1 -Target qemu -Video vga -RuntimeDegradationFaultInjection",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-runtime-degradation --timeout 120 --log build/runtime-degradation-qemu.log"
+]
+stop_conditions = [
+  "an admitted IRQ can exceed the fixed window limit without fencing",
+  "a clock fault can be cleared by normal time progression without explicit reinitialization",
+  "containment would require a new syscall, raw device authority or a complex new in-kernel policy service",
+  "the separate QEMU fault image does not reach both the containment marker and normal TEST_OK",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "safety: contain irq storms and clock regressions"
 evidence = []
