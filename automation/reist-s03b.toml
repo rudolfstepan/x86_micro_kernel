@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "S0.5a3a-rsa-pss-artifact-chain"
 
 [policy]
 one_package_per_run = true
@@ -1332,6 +1332,58 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "boot: enforce kernel SHA-256 in stage 2"
+evidence = []
+
+[[packages]]
+id = "S0.5a3a-rsa-pss-artifact-chain"
+status = "active"
+risk = "high"
+title = "RSA-PSS signed kernel artifact and pinned research trust policy"
+scope = "Add a standard RSA-2048-PSS/SHA-256 artifact-signing chain according to RFC 8017 for the exact kernel.bin consumed by the BIOS image builder. Pin a versioned public-key fingerprint and explicit REIST research-development key policy, sign and independently verify the kernel before both Windows and Makefile image publication, reject altered artifacts signatures policies and keys, and emit a fixed 256-byte sidecar signature. A checked-in private fixture is permitted only for reproducible research automation and must be rejected by release mode; it is not a production secret. This package establishes host-side signed-artifact provenance only. Stage 2 does not yet verify RSA-PSS, so boot authenticity Verified Boot and Secure Boot remain forbidden claims until S0.5a3b binds the signature and trust anchor into the loader."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "scripts/build-windows.ps1",
+  "scripts/sign_boot_artifact.py",
+  "scripts/verify_boot_signature.py",
+  "safety/boot_trust_policy.json",
+  "safety/keys/reist-research-dev-public.pem",
+  "test/fixtures/reist-research-dev-private.pem",
+  "test/test_boot_signature.py",
+  "docs/development/BOOTABLE_DISK.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "RSA-PSS uses a 2048-bit key SHA-256 MGF1-SHA-256 and an exact 32-byte salt as defined by RFC 8017",
+  "the signature covers exactly the kernel.bin bytes later consumed by image generation",
+  "verification pins both policy version algorithm and the SHA-256 fingerprint of DER SubjectPublicKeyInfo",
+  "Windows and Makefile image paths verify a fresh fixed-size signature before publishing an image",
+  "tampered artifact signature policy or public key fails closed",
+  "release mode rejects the checked-in research-development private fixture",
+  "documentation states that host-side signing is not boot-time authentication Verified Boot Secure Boot or a production trust anchor"
+]
+targeted_tests = [
+  "python test/test_boot_signature.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "OpenSSL lacks RSA-PSS SHA-256 support or produces a non-256-byte signature",
+  "a build path can publish an image after signature verification failure",
+  "release mode can use the checked-in development private fixture",
+  "the implementation implies that stage 2 authenticates the signature",
+  "a required source lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "boot: add pinned RSA-PSS artifact signing"
 evidence = []
 
 [[packages]]
