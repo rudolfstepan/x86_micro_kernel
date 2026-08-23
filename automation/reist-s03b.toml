@@ -2393,6 +2393,7 @@ allowed_files = [
   "automation/reist-s03b.toml",
   "safety/assurance_scope.toml",
   "safety/hazards.toml",
+  "safety/resource_budgets.toml",
   "scripts/validate_hazard_register.py",
   "scripts/run_hazard_traceability.py",
   "test/test_reist_hazard_register.py",
@@ -2408,6 +2409,7 @@ invariants = [
   "every v2 hazard has a hazardous situation rather than only a software failure and covers cause, effect, operating phase, degraded state, safe state, positive FTTI rationale, requirement, design, code control, executable test, objective acceptance criterion, owner, assumptions and residual risk",
   "requirement IDs are unique and every hazard requirement resolves to a machine-readable requirement whose design and implementation paths exist inside the repository",
   "the traceability baseline binds assurance scope, hazard register, requirements, design paths, code controls, verification sources and pass/fail results with SHA-256 and fails if any referenced verification fails",
+  "the machine-readable scheduler task budget matches the authoritative MAX_TASKS source limit before it is accepted as hazard evidence",
   "no screenshot, source-pattern assertion or successful normal build is presented as the sole proof of a runtime containment claim",
   "S0.1 roadmap and project status are marked complete only after the register status is complete and exact coverage is machine-validated"
 ]
