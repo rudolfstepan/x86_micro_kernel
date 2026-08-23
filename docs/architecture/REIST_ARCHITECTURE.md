@@ -953,6 +953,12 @@ freie, bad oder ungültige Links werden abgelehnt. Vor den FAT-Writes werden
 alle betroffenen Sektoren beider Spiegel, vor Directory-Writes alle höchstens
 64 betroffenen Directory-Sektoren im Undo-Journal gesichert. Erfolg setzt
 jeweils einen vollständig sauberen Rescan voraus.
+Eine separate bestätigte Reclaim-Operation darf bei der exakten
+Gesamtdiagnose `ORPHAN_CLUSTER` alle allokierten Cluster mit Owner null in
+beiden FATs freigeben. Sie verändert weder `0xFF7`-Bad-Cluster noch erreichbare
+Ketten, journalisiert jeden geänderten FAT-Sektor und behauptet keine
+Datenrettung: Unerreichbare Inhalte werden verworfen, nicht geraten oder mit
+einem erfundenen Eigentümer verbunden.
 
 `device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
 Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht

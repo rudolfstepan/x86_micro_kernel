@@ -38,6 +38,9 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sowie der erste
 8. konservative Reparatur kurzer, normal EOC-terminierter regulärer Dateien:
    Die Directory-Größe wird journalisiert auf die tatsächlich lesbare
    Kettenkapazität reduziert, ohne Cluster oder verlorene Daten zu erfinden
+9. bestätigtes Zurückgewinnen unerreichbarer Clusterallokationen, ausschließlich
+   bei einer reinen Orphan-Diagnose und ohne Bad- oder erreichbare Cluster zu
+   verändern
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen
@@ -65,6 +68,7 @@ C:\> CHKDSK --fat12 1
 C:\> CHKDSK --fat12 1 --repair --confirm
 C:\> CHKDSK --fat12 1 --repair-chains --confirm
 C:\> CHKDSK --fat12 1 --repair-short --confirm
+C:\> CHKDSK --fat12 1 --reclaim-orphans --confirm
 FDISK
 ```
 
@@ -91,6 +95,13 @@ besessene, normal terminierte Kette haben, und alle Directory-Sektoren werden
 vor der Größenkorrektur im Undo-Journal gesichert. Startcluster null,
 Crosslinks, Loops, freie/bad Links, Orphans oder gemischte Diagnosen verhindern
 die Mutation. Ein sauberer Vollscan ist Voraussetzung für Journal-`CLEAN`.
+`--reclaim-orphans --confirm` verwirft die Inhalte nicht referenzierter
+Allokationen ausdrücklich. Der Dienst akzeptiert nur die exakte Diagnose
+`ORPHAN_CLUSTER`, erstellt zuerst die vollständige feste Owner-Map und setzt
+dann ausschließlich allokierte Cluster mit Owner null auf frei. `0xFF7`-Bad-
+Cluster und alle erreichbaren Cluster bleiben erhalten. Beide FAT-Kopien
+werden vollständig journalisiert, geschrieben und neu geprüft. Eine
+Wiederanbindung verlorener Inhalte an `FOUND.000` findet nicht statt.
 `FDISK.PRG` kann auf explizit freigegebenen, leeren ATA-/AHCI-Medien eine
 validierte MBR-Partition erzeugen. Eine Diskette bleibt eine partitionslose
 Superfloppy und wird von `FDISK` niemals partitioniert.
@@ -99,8 +110,9 @@ Superfloppy und wird von `FDISK` niemals partitioniert.
 
 - reale FDD-/VMware-Power-Loss- und Reconnect-Matrix über die bereits
   deterministisch geprüften Veröffentlichungsstufen
-- CHKDSK-Reparatur von Crosslinks, Loops, Orphans, allgemeinen
-  Verzeichnisschäden, Journal, Remap- und Defektsektorkarte
+- CHKDSK-Reparatur von Crosslinks, Loops, allgemeinen Verzeichnisschäden,
+  Journal, Remap- und Defektsektorkarte sowie Datenrettung von Orphans statt
+  ihres expliziten Verwerfens
 - QEMU-Laufzeitnachweis für Maintenance-Lease, Unmount, FAT-Spiegel-Reparatur,
   Verify und kontrollierten Remount
 - breitere echte FDD-/Medienfehler- und Langzeitmatrix

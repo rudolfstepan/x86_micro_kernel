@@ -1225,10 +1225,10 @@ static int syscall_storage_submit(const storage_request_submit_t *user_request,
         process->domain_profile.kind != PROCESS_DOMAIN_ADMIN) return -13;
     if (process->domain_profile.kind == PROCESS_DOMAIN_MAINTENANCE &&
         (request.operation < STORAGE_REQUEST_CHECK_FAT12 ||
-         request.operation > STORAGE_REQUEST_REPAIR_FAT12_SHORT_FILES))
+         request.operation > STORAGE_REQUEST_RECLAIM_FAT12_ORPHANS))
         return -13;
     if (request.operation >= STORAGE_REQUEST_CHECK_FAT12 &&
-        request.operation <= STORAGE_REQUEST_REPAIR_FAT12_SHORT_FILES &&
+        request.operation <= STORAGE_REQUEST_RECLAIM_FAT12_ORPHANS &&
         process->domain_profile.kind != PROCESS_DOMAIN_MAINTENANCE) return -13;
     uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
     const uint8_t *data_argument = NULL;

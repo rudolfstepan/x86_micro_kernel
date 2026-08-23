@@ -41,8 +41,10 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_MIRROR", source)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_CHAINS", source)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_SHORT_FILES", source)
+        self.assertIn("X86OS_STORAGE_RECLAIM_FAT12_ORPHANS", source)
         self.assertIn('"--repair-chains"', source)
         self.assertIn('"--repair-short"', source)
+        self.assertIn('"--reclaim-orphans"', source)
         self.assertIn("x86os_storage_submit", source)
         self.assertIn("x86os_storage_collect", source)
         self.assertNotIn("x86os_storage_block_read", source)
@@ -67,11 +69,13 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_MIRROR = 12", header)
         self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_CHAINS = 13", header)
         self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_SHORT_FILES = 14", header)
+        self.assertIn("STORAGE_REQUEST_RECLAIM_FAT12_ORPHANS = 15", header)
         self.assertIn("X86OS_STORAGE_CHECK_FAT12 11U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_MIRROR 12U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_CHAINS 13U", sdk)
         self.assertIn("X86OS_STORAGE_REPAIR_FAT12_SHORT_FILES 14U", sdk)
-        self.assertIn("STORAGE_REQUEST_REPAIR_FAT12_SHORT_FILES", pool)
+        self.assertIn("X86OS_STORAGE_RECLAIM_FAT12_ORPHANS 15U", sdk)
+        self.assertIn("STORAGE_REQUEST_RECLAIM_FAT12_ORPHANS", pool)
         self.assertIn("request.operation >= STORAGE_REQUEST_CHECK_FAT12", syscall)
         self.assertIn("process->domain_profile.kind != "
                       "PROCESS_DOMAIN_MAINTENANCE", syscall)
@@ -161,6 +165,24 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertIn("FAT12_JOURNAL_ACTIVE", repair)
         self.assertIn("FAT12_JOURNAL_CLEAN", repair)
         self.assertIn("X86OS_FAT12_RESULT_SHORT_FILES_REPAIRED", repair)
+        self.assertGreaterEqual(repair.count(
+            "x86os_storage_maintenance_renew(resource, token, 0U)"), 3)
+
+    def test_orphan_reclaim_is_exact_and_preserves_owned_and_bad_clusters(self):
+        service = self.read("userspace/programs/storage_service.c")
+        repair = service[service.index("static int fat12_apply_orphan_reclaim"):
+                         service.index("static int fat12_collect_short_repair_sectors")]
+        self.assertIn("diagnosis != (int)X86OS_FAT12_RESULT_ORPHAN_CLUSTER",
+                      repair)
+        self.assertIn("fat12_cluster_owner[cluster] != 0U", repair)
+        self.assertIn("value == 0x0FF7U", repair)
+        self.assertIn("fat12_set_entry(fat12_repair_fat, cluster, 0U)", repair)
+        self.assertIn("fat12_record_old_mirror", repair)
+        self.assertIn("copy < 2U", repair)
+        self.assertIn("fat12_check_volume(resource, &layout) != 0", repair)
+        self.assertIn("X86OS_FAT12_RESULT_ORPHANS_RECLAIMED", repair)
+        self.assertIn("FAT12_JOURNAL_ACTIVE", repair)
+        self.assertIn("FAT12_JOURNAL_CLEAN", repair)
         self.assertGreaterEqual(repair.count(
             "x86os_storage_maintenance_renew(resource, token, 0U)"), 3)
 

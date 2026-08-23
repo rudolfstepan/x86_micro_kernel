@@ -1058,6 +1058,104 @@ static int fat12_repair_chains(uint32_t resource) {
         ? diagnosis | (int)X86OS_FAT12_RESULT_CHAINS_REPAIRED : result;
 }
 
+static int fat12_apply_orphan_reclaim(const fat12_check_layout_t *layout,
+                                      uint32_t *reclaimed_out) {
+    uint32_t bytes = layout->fat_sectors * X86OS_STORAGE_BLOCK_SIZE;
+    fat12_copy_bytes(fat12_repair_fat, fat12_copies[0], bytes);
+    uint32_t reclaimed = 0U;
+    uint32_t last_cluster = layout->cluster_count + 1U;
+    for (uint32_t cluster = 2U; cluster <= last_cluster; ++cluster) {
+        uint32_t value = fat12_entry(fat12_copies[0], cluster);
+        if (value == 0U || value == 0x0FF7U ||
+            fat12_cluster_owner[cluster] != 0U)
+            continue;
+        fat12_set_entry(fat12_repair_fat, cluster, 0U);
+        ++reclaimed;
+    }
+    if (reclaimed_out != 0) *reclaimed_out = reclaimed;
+    return reclaimed == 0U ? -84 : 0;
+}
+
+static int fat12_reclaim_orphans(uint32_t resource) {
+    fat12_check_layout_t layout;
+    int diagnosis = fat12_check_volume(resource, &layout);
+    if (diagnosis != (int)X86OS_FAT12_RESULT_ORPHAN_CLUSTER ||
+        !layout.reist_layout) return -84;
+
+    uint32_t token = 0U;
+    if (x86os_storage_maintenance_acquire(resource, 0U, &token) != 0 ||
+        token == 0U) return -30;
+
+    int result = fat12_check_volume(resource, &layout);
+    if (result != diagnosis || !layout.reist_layout) result = -84;
+    uint32_t reclaimed = 0U;
+    if (result == diagnosis)
+        result = fat12_apply_orphan_reclaim(&layout, &reclaimed);
+
+    format_journal_header_t journal;
+    if (result == 0 && fat12_load_clean_journal(resource, &layout, &journal) != 0)
+        result = -84;
+    if (result == 0) {
+        fat12_prepare_journal_header(&journal, layout.volume_id,
+            journal.sequence + 1U, FAT12_JOURNAL_ACTIVE, 0U);
+        result = fat12_write_journal_header(resource, &journal);
+    }
+
+    uint32_t changed_sectors = 0U;
+    for (uint32_t copy = 0U; result == 0 && copy < 2U; ++copy) {
+        for (uint32_t sector = 0U; result == 0 &&
+             sector < layout.fat_sectors; ++sector) {
+            const uint8_t *replacement = fat12_repair_fat +
+                sector * X86OS_STORAGE_BLOCK_SIZE;
+            const uint8_t *old = fat12_copies[copy] +
+                sector * X86OS_STORAGE_BLOCK_SIZE;
+            if (format_equal(replacement, old, X86OS_STORAGE_BLOCK_SIZE))
+                continue;
+            uint32_t target_sector = layout.reserved_sectors +
+                copy * layout.fat_sectors + sector;
+            result = fat12_record_old_mirror(resource, &journal, copy, sector,
+                                             target_sector);
+            if (result == 0 &&
+                x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+                result = -30;
+            ++changed_sectors;
+        }
+    }
+    if (result == 0 && (changed_sectors == 0U || reclaimed == 0U)) result = -84;
+
+    for (uint32_t copy = 0U; result == 0 && copy < 2U; ++copy) {
+        for (uint32_t sector = 0U; result == 0 &&
+             sector < layout.fat_sectors; ++sector) {
+            const uint8_t *replacement = fat12_repair_fat +
+                sector * X86OS_STORAGE_BLOCK_SIZE;
+            const uint8_t *old = fat12_copies[copy] +
+                sector * X86OS_STORAGE_BLOCK_SIZE;
+            if (format_equal(replacement, old, X86OS_STORAGE_BLOCK_SIZE))
+                continue;
+            uint32_t target_sector = layout.reserved_sectors +
+                copy * layout.fat_sectors + sector;
+            result = format_write(resource, target_sector, replacement);
+            if (result == 0 &&
+                x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+                result = -30;
+        }
+    }
+    if (result == 0 && x86os_storage_block_flush(resource) != 0) result = -5;
+    if (result == 0 && fat12_check_volume(resource, &layout) != 0) result = -84;
+    if (result == 0 &&
+        x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+        result = -30;
+    if (result == 0) {
+        fat12_prepare_journal_header(&journal, layout.volume_id,
+            journal.sequence, FAT12_JOURNAL_CLEAN, 0U);
+        result = fat12_write_journal_header(resource, &journal);
+    }
+    if (x86os_storage_maintenance_release(resource, token) != 0 && result == 0)
+        result = -5;
+    return result == 0
+        ? diagnosis | (int)X86OS_FAT12_RESULT_ORPHANS_RECLAIMED : result;
+}
+
 static int fat12_collect_short_repair_sectors(
         const fat12_check_layout_t *layout) {
     fat12_directory_repair_sector_count = 0U;
@@ -1307,6 +1405,9 @@ int main(void) {
         if (request.operation == X86OS_STORAGE_REPAIR_FAT12_SHORT_FILES &&
             request.length == 0U)
             result = fat12_repair_short_files(request.resource);
+        if (request.operation == X86OS_STORAGE_RECLAIM_FAT12_ORPHANS &&
+            request.length == 0U)
+            result = fat12_reclaim_orphans(request.resource);
         if (x86os_storage_complete(request.handle, result, data) != 0)
             return 3;
     }

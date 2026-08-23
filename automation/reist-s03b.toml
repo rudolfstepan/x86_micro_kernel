@@ -361,6 +361,55 @@ commit_message = "storage: truncate recoverable FAT12 short files"
 evidence = []
 
 [[packages]]
+id = "S0.3c-6f6d-chkdsk-orphan-reclaim"
+status = "done"
+risk = "high"
+title = "Reclaim unreachable FAT12 cluster allocations"
+scope = "Add an explicitly confirmed capability-bound FAT12 operation that reclaims only allocated non-bad clusters absent from the complete reachable owner map. Require two identical structurally valid FATs, an exact ORPHAN_CLUSTER-only diagnosis before and after the exclusive current-media lease, fixed bounded traversal, undo journaling of every changed sector in both mirrors, verified writes and a completely clean full rescan. Do not reconnect or guess data ownership, and refuse every mixed diagnosis, reachable cross-link, loop, malformed directory, mirror fault or capacity exhaustion."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/chkdsk.c",
+  "test/test_fat12_maintenance.py",
+  "test/test_fat12_tools.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md"
+]
+invariants = [
+  "operation 15 is append-only, maintenance-domain restricted and reachable from CHKDSK only as --reclaim-orphans --confirm",
+  "the complete pre-lease and post-lease diagnosis is exactly ORPHAN_CLUSTER and both FAT mirrors are identical and structurally valid",
+  "the full bounded root, subdirectory and chain scan constructs the owner map before any reclaim candidate is selected",
+  "only allocated clusters with owner zero are changed to free; bad clusters and every reachable cluster remain byte-for-byte represented",
+  "both FAT copies derive from the same validated replacement and every changed sector of both copies is journaled before mutation",
+  "writes are read back, barriers and lease renewals are explicit, and success requires a completely clean full rescan before journal CLEAN",
+  "the CLI and documentation state that unreachable data is discarded rather than guessed or reconnected"
+]
+targeted_tests = [
+  "python test/test_fat12_maintenance.py -v",
+  "python test/test_fat12_tools.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "reclaim would touch a reachable or bad cluster or require inferred ownership",
+  "the diagnosis contains any flag other than ORPHAN_CLUSTER",
+  "more journal entries are required than the fixed FAT12 journal permits",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: reclaim unreachable FAT12 allocations"
+evidence = []
+
+[[packages]]
 id = "R1.9-file-icons"
 status = "done"
 risk = "medium"

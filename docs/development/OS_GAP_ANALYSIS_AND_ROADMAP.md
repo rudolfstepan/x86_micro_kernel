@@ -265,9 +265,12 @@ und 10 verbindlich.
         - [x] Eindeutig kurze, normal EOC-terminierte reguläre Dateien durch
           bestätigte, journalisierte Begrenzung ihrer Directory-Dateigröße auf
           die tatsächlich lesbare Kettenkapazität reparieren
+        - [x] Unerreichbare, nicht als bad markierte Clusterallokationen bei
+          reiner Orphan-Diagnose bestätigt und journalisiert freigeben; keine
+          automatische Eigentumszuordnung oder Datenrettung behaupten
         - [ ] `CHKDSK.PRG` für transaktionale Reparatur überkreuzter
-          Clusterketten, Loops, Verzeichnisse, Orphans, Journal und
-          Defektsektorkarte
+          Clusterketten, Loops, Verzeichnisse, Orphan-Datenrettung, Journal
+          und Defektsektorkarte
         - [x] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
           Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg
           kontrolliert remounten; Abbruch lässt das Medium konsistent oder
@@ -2549,8 +2552,12 @@ sie validieren Eingaben und senden versionierte Requests an den Storage-Dienst.
   EOC-terminierter, eindeutig besessener regulärer Dateien auf die lesbare
   Kettenkapazität. Alle betroffenen Directory-Sektoren werden vor Mutation
   journalisiert; Startcluster null, gemischte Schäden und jede uneindeutige
-  Kette bleiben unverändert. Crosslinks, Loops, Orphans sowie allgemeine
-  Verzeichnis-, Journal- und Remap-Reparatur bleiben offen.
+  Kette bleiben unverändert. `--reclaim-orphans --confirm` gibt bei einer
+  reinen Orphan-Diagnose ausschließlich allokierte Cluster ohne Owner frei,
+  lässt Bad- und erreichbare Cluster unangetastet und verwirft unerreichbare
+  Inhalte ausdrücklich, statt Eigentum zu raten. Crosslinks, Loops,
+  Orphan-Datenrettung sowie allgemeine Verzeichnis-, Journal- und
+  Remap-Reparatur bleiben offen.
 - `FORMAT.PRG` akzeptiert ausschließlich erkannte FDD-Ressourcen. Ohne
   `--reist-fat12` erzeugt es kein REIST-Journal. Oberflächentest,
   Layoutberechnung, Initialisierung und vollständiger Metadaten-Readback sind
