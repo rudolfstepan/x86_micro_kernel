@@ -35,6 +35,9 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sowie der erste
 7. feste Cluster-Owner-Map, begrenzte Root-/Unterverzeichnisqueue und Diagnose
    von ungültigen Links, Loops, Crosslinks, kurzen/überlangen Ketten und Orphans;
    eindeutig überlange reguläre Dateiketten können journalisiert gekürzt werden
+8. konservative Reparatur kurzer, normal EOC-terminierter regulärer Dateien:
+   Die Directory-Größe wird journalisiert auf die tatsächlich lesbare
+   Kettenkapazität reduziert, ohne Cluster oder verlorene Daten zu erfinden
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen
@@ -61,6 +64,7 @@ C:\> CHKDSK [pfad]
 C:\> CHKDSK --fat12 1
 C:\> CHKDSK --fat12 1 --repair --confirm
 C:\> CHKDSK --fat12 1 --repair-chains --confirm
+C:\> CHKDSK --fat12 1 --repair-short --confirm
 FDISK
 ```
 
@@ -81,6 +85,12 @@ Datenträger außer normal EOC-terminierten, eindeutig besessenen Überlängen
 sauber ist, werden die überzähligen Tails freigegeben. Geänderte Sektoren beider
 FAT-Kopien werden vorher im Undo-Journal gesichert und danach vollständig neu
 gescannt.
+`--repair-short --confirm` ist ebenso eng begrenzt: Der Gesamtscan darf nur
+kurze Ketten enthalten, jede betroffene reguläre Datei muss eine eindeutig
+besessene, normal terminierte Kette haben, und alle Directory-Sektoren werden
+vor der Größenkorrektur im Undo-Journal gesichert. Startcluster null,
+Crosslinks, Loops, freie/bad Links, Orphans oder gemischte Diagnosen verhindern
+die Mutation. Ein sauberer Vollscan ist Voraussetzung für Journal-`CLEAN`.
 `FDISK.PRG` kann auf explizit freigegebenen, leeren ATA-/AHCI-Medien eine
 validierte MBR-Partition erzeugen. Eine Diskette bleibt eine partitionslose
 Superfloppy und wird von `FDISK` niemals partitioniert.
@@ -89,8 +99,8 @@ Superfloppy und wird von `FDISK` niemals partitioniert.
 
 - reale FDD-/VMware-Power-Loss- und Reconnect-Matrix über die bereits
   deterministisch geprüften Veröffentlichungsstufen
-- CHKDSK-Reparatur kurzer Ketten, Crosslinks, Loops, Orphans,
-  Verzeichnissen, Journal, Remap- und Defektsektorkarte
+- CHKDSK-Reparatur von Crosslinks, Loops, Orphans, allgemeinen
+  Verzeichnisschäden, Journal, Remap- und Defektsektorkarte
 - QEMU-Laufzeitnachweis für Maintenance-Lease, Unmount, FAT-Spiegel-Reparatur,
   Verify und kontrollierten Remount
 - breitere echte FDD-/Medienfehler- und Langzeitmatrix

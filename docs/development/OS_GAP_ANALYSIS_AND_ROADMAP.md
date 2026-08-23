@@ -262,8 +262,12 @@ und 10 verbindlich.
           ungültige Links, Loops, Crosslinks, kurze/überlange Ketten, Orphans
           und erschöpfte Scan-Kapazität; ausschließlich eindeutig überlange
           reguläre Dateiketten dürfen bestätigt journalisiert gekürzt werden
-        - [ ] `CHKDSK.PRG` für transaktionale Reparatur kurzer/überkreuzter
-          Clusterketten, Verzeichnisse, Orphans, Journal und Defektsektorkarte
+        - [x] Eindeutig kurze, normal EOC-terminierte reguläre Dateien durch
+          bestätigte, journalisierte Begrenzung ihrer Directory-Dateigröße auf
+          die tatsächlich lesbare Kettenkapazität reparieren
+        - [ ] `CHKDSK.PRG` für transaktionale Reparatur überkreuzter
+          Clusterketten, Loops, Verzeichnisse, Orphans, Journal und
+          Defektsektorkarte
         - [x] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
           Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg
           kontrolliert remounten; Abbruch lässt das Medium konsistent oder
@@ -2540,8 +2544,13 @@ sie validieren Eingaben und senden versionierte Requests an den Storage-Dienst.
   EOC-terminierte, eindeutig besessene reguläre Dateiketten auf die durch die
   Dateigröße bestimmte Länge. Beide FATs werden sektorweise im Undo-Journal
   gesichert und erst nach einem vollständig sauberen Rescan als `CLEAN`
-  bestätigt. Kurze Ketten, Crosslinks, Loops, Orphans sowie Verzeichnis-,
-  Journal- und Remap-Reparatur bleiben offen.
+  bestätigt. `--repair-short --confirm` reduziert ausschließlich bei der
+  exakten Gesamtdiagnose einer kurzen Kette die Directory-Dateigröße normal
+  EOC-terminierter, eindeutig besessener regulärer Dateien auf die lesbare
+  Kettenkapazität. Alle betroffenen Directory-Sektoren werden vor Mutation
+  journalisiert; Startcluster null, gemischte Schäden und jede uneindeutige
+  Kette bleiben unverändert. Crosslinks, Loops, Orphans sowie allgemeine
+  Verzeichnis-, Journal- und Remap-Reparatur bleiben offen.
 - `FORMAT.PRG` akzeptiert ausschließlich erkannte FDD-Ressourcen. Ohne
   `--reist-fat12` erzeugt es kein REIST-Journal. Oberflächentest,
   Layoutberechnung, Initialisierung und vollständiger Metadaten-Readback sind

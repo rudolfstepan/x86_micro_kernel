@@ -940,15 +940,19 @@ Jeder alte Zielsektor wird im vorhandenen Undo-Journal erfasst; widersprüchlich
 gültige Spiegel werden nicht automatisch aufgelöst.
 
 Die nachgelagerte Clusterprüfung verwendet feste Arrays für maximal 4085
-FAT12-Cluster, eine Queue für 256 Unterverzeichnisse und 128 konservative
-Reparaturkandidaten. Jeder Chain-Walk ist durch die validierte Clusterzahl
-begrenzt. Loops, Crosslinks, kurze Ketten, Orphans, ungültige Directory-Felder
-oder erschöpfte Kapazität verhindern jede Mutation. Nur eine normal
-EOC-terminierte, eindeutig besessene reguläre Dateikette, die länger als die
-aus der Dateigröße berechnete Kettenlänge ist, darf nach expliziter Bestätigung
-gekürzt werden. Vor den FAT-Writes werden alle betroffenen Sektoren beider
-Spiegel im Undo-Journal gesichert; Erfolg setzt einen vollständig sauberen
-Rescan voraus.
+FAT12-Cluster, eine Queue für 256 Unterverzeichnisse sowie je 128 konservative
+Überlängen- und Kurzdateikandidaten. Jeder Chain-Walk ist durch die validierte
+Clusterzahl begrenzt. Loops, Crosslinks, Orphans, ungültige Directory-Felder
+oder erschöpfte Kapazität verhindern jede Mutation. Eine normal
+EOC-terminierte, eindeutig besessene reguläre Dateikette darf nach expliziter
+Bestätigung entweder auf die aus der Dateigröße berechnete Kettenlänge gekürzt
+oder bei einer zu großen Directory-Dateigröße auf ihre tatsächlich lesbare
+Kettenkapazität begrenzt werden. Der Kurzdateipfad erfindet keine Cluster und
+akzeptiert nur die exakte Gesamtdiagnose `CHAIN_SHORT`; Startcluster null sowie
+freie, bad oder ungültige Links werden abgelehnt. Vor den FAT-Writes werden
+alle betroffenen Sektoren beider Spiegel, vor Directory-Writes alle höchstens
+64 betroffenen Directory-Sektoren im Undo-Journal gesichert. Erfolg setzt
+jeweils einen vollständig sauberen Rescan voraus.
 
 `device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
 Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht

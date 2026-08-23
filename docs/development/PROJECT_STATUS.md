@@ -192,6 +192,9 @@ Für explizit markierte REIST-FAT12-Medien sind umgesetzt:
 - geordnete Dateiänderungen: Daten, beide FATs, Verzeichniseintrag,
   Replikatpublikation und abschließendes Journal-`CLEAN`
 - transaktionale Neuerzeugung durch `FORMAT.PRG` und den Storage-Service
+- capability-gebundene BPB-/Spiegel- und Clusterkettenanalyse sowie bestätigte,
+  journalisierte Reparatur einer eindeutig beschädigten FAT-Kopie,
+  überlanger regulärer Dateiketten und eindeutig kurzer EOC-Dateien
 
 `FORMAT.PRG` akzeptiert ausschließlich eine veröffentlichte FDD-Ressource:
 
@@ -200,10 +203,14 @@ DRIVES
 FORMAT --reist-fat12 <resource-id> --confirm
 ```
 
-`CHKDSK.PRG [pfad]` führt einen begrenzten read-only VFS-Scan aus.
+`CHKDSK.PRG [pfad]` führt einen begrenzten read-only VFS-Scan aus. Die
+FAT12-Modi `--repair`, `--repair-chains` und `--repair-short` benötigen jeweils
+`--confirm`, laufen ausschließlich im Storage-Dienst unter Maintenance-Lease
+und melden Erfolg erst nach Undo-Journal, Readback und sauberem Vollscan.
 `FDISK.PRG --create <resource-id> <mbr-type> --confirm` richtet ein leeres,
-ungeschütztes ATA-/AHCI-Medium ein. Kontrollierte CHKDSK-Reparatur und die
-reale Hardware-Power-Loss-Matrix bleiben offen.
+ungeschütztes ATA-/AHCI-Medium ein. Uneindeutige Crosslink-, Loop-, Orphan- und
+allgemeine Verzeichnisreparatur sowie die reale Hardware-Power-Loss-Matrix
+bleiben offen.
 
 ### EXT2
 
@@ -307,8 +314,10 @@ oder breite Zielhardwarequalifikation.
 
 - `CHKDSK.PRG` besitzt capability-gebundene, bestätigte und journalisierte
   Reparaturpfade für genau eine eindeutig beschädigte FAT12-Spiegelkopie und
-  eindeutig überlange reguläre Dateiketten. Kurze Ketten, Crosslinks, Loops,
-  Orphans, Verzeichnis-, Journal-, Remap- und Defektsektorreparatur sowie der
+  eindeutig überlange reguläre Dateiketten. Bei eindeutig kurzen, normal
+  EOC-terminierten Dateien kann es außerdem die Directory-Größe auf die
+  lesbare Kettenkapazität begrenzen. Crosslinks, Loops, Orphans, allgemeine
+  Verzeichnis-, Journal-, Remap- und Defektsektorreparatur sowie der
   QEMU-Remountnachweis sind noch offen
 - reale FAT12-Power-Loss-/Reconnect-Matrix für VMware und Zielhardware
 - medienunabhängige Persistenzgarantie für EXT2 und fremde FAT-Volumes
