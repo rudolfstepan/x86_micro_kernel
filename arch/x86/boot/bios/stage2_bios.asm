@@ -35,14 +35,17 @@ KERNEL_CACHE_ADDRESS equ 0x00400000
 KERNEL_CACHE_SIZE    equ 0x00100000       ; maximum boot ELF cached from floppy
 
 MANIFEST_MAGIC_0     equ 0x42363858       ; "X86B"
-MANIFEST_MAGIC_1     equ 0x31544F4F       ; "OOT1"
-MANIFEST_VERSION     equ 1
+MANIFEST_MAGIC_1     equ 0x32544F4F       ; "OOT2"
+MANIFEST_VERSION     equ 2
+MANIFEST_HEADER_SIZE equ 80
 MANIFEST_STAGE2_LBA  equ 16
 MANIFEST_STAGE2_CNT  equ 20
 MANIFEST_KERNEL_LBA  equ 24
 MANIFEST_KERNEL_SIZE equ 28
 MANIFEST_PART_SIZE   equ 32
 MANIFEST_KERNEL_CRC  equ 36
+MANIFEST_FLAGS       equ 40
+MANIFEST_KERNEL_SHA  equ 48
 
 MULTIBOOT_MAGIC      equ 0x2BADB002
 MULTIBOOT_FLAG_MEM   equ 0x001
@@ -107,6 +110,10 @@ start:
     jne manifest_error
     cmp dword [es:8], MANIFEST_VERSION
     jne manifest_error
+    cmp dword [es:12], MANIFEST_HEADER_SIZE
+    jne manifest_error
+    cmp dword [es:MANIFEST_FLAGS], 0
+    jne manifest_error
 
     xor eax, eax
     xor si, si
@@ -117,6 +124,19 @@ start:
     loop .manifest_checksum
     test eax, eax
     jnz manifest_error
+
+    ; SHA-256 is verified independently by the image gate.  Until the bounded
+    ; boot-time SHA implementation lands, stage 2 still fails closed when the
+    ; mandatory digest field is absent and retains CRC32 as its payload check.
+    xor eax, eax
+    mov si, MANIFEST_KERNEL_SHA
+    mov cx, 8
+.manifest_sha:
+    or eax, [es:si]
+    add si, 4
+    loop .manifest_sha
+    test eax, eax
+    jz manifest_error
 
     mov eax, [es:MANIFEST_KERNEL_LBA]
     mov [kernel_relative_lba], eax

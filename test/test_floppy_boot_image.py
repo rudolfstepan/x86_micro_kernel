@@ -1,3 +1,4 @@
+import hashlib
 import struct
 import sys
 import unittest
@@ -30,7 +31,9 @@ class FloppyBootImageTests(unittest.TestCase):
         self.assertEqual(len(image), FLOPPY_SIZE)
         self.assertEqual(image[510:512], b"\x55\xaa")
         manifest = image[MANIFEST_LBA * 512:(MANIFEST_LBA + 1) * 512]
-        self.assertEqual(manifest[:8], b"X86BOOT1")
+        self.assertEqual(manifest[:8], b"X86BOOT2")
+        self.assertEqual(struct.unpack_from("<II", manifest, 8), (2, 80))
+        self.assertEqual(manifest[48:80], hashlib.sha256(minimal_kernel()).digest())
         self.assertEqual(sum(struct.unpack("<128I", manifest)) & 0xFFFFFFFF, 0)
         reserved = struct.unpack_from("<H", image, 14)[0]
         self.assertGreater(reserved, 128)

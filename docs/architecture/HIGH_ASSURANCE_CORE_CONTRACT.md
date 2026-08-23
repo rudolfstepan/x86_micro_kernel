@@ -56,6 +56,23 @@ Das konkrete Resilienzversprechen, die Restartregeln und die terminalen
 Degradierungsstufen definiert der
 [Resilienz- und Degradierungsvertrag](RESILIENCE_AND_DEGRADATION_CONTRACT.md).
 
+## Bootintegrität und Vertrauensgrenze
+
+Bootartefakte müssen versioniert und ihre exakten Inhalte kryptografisch
+gebunden sein. Der aktuelle BIOS-Pfad erfüllt als erste Stufe ein Manifest-v2-
+Format mit SHA-256 nach NIST FIPS 180-4 und einen unabhängigen, fail-closed
+Hostvalidator für HDD- und Floppy-Images. Der Imageerzeuger und der Validator
+teilen keine Manifestparser- oder Boundslogik; nur die standardisierte
+Hashfunktion stammt aus der Laufzeitbibliothek.
+
+Dies allein begründet keine Authentizität. Solange der Loader den Digest nicht
+selbst innerhalb fester Speicher- und Laufzeitgrenzen verifiziert und keine
+Signatur bis zu einem gebundenen Vertrauensanker prüft, darf weder
+„verifizierter Boot“ noch „Secure Boot“ behauptet werden. CRC32 ist nur eine
+diagnostische Beschädigungserkennung. Unbekannte Manifestversionen, fehlende
+Digests, ungültige Grenzen oder widersprüchliche Imagegeometrie werden vor dem
+Kernelstart geschlossen abgelehnt.
+
 ## Medienübergreifender Schreib- und Wiederanlaufvertrag
 
 Der Vertrag gilt für **jeden** beschreibbaren persistenten Datenträger und

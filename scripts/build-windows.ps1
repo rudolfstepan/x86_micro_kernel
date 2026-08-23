@@ -64,6 +64,36 @@ $Python = Resolve-NativeTool 'python' @(
     'C:\Python314\python.exe',
     'C:\Python313\python.exe'
 )
+
+function Invoke-PythonProcess {
+    param([Parameter(Mandatory)] [string[]]$Arguments)
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $Python
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    foreach ($argument in $Arguments) {
+        [void]$startInfo.ArgumentList.Add($argument)
+    }
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    if ($null -eq $process) {
+        throw "Python process could not be started."
+    }
+    $standardOutput = $process.StandardOutput.ReadToEndAsync()
+    $standardError = $process.StandardError.ReadToEndAsync()
+    $process.WaitForExit()
+    $capturedOutput = $standardOutput.GetAwaiter().GetResult()
+    $capturedError = $standardError.GetAwaiter().GetResult()
+    if ($capturedOutput.Length -ne 0) {
+        Write-Host -NoNewline $capturedOutput
+    }
+    if ($capturedError.Length -ne 0) {
+        Write-Host -NoNewline $capturedError
+    }
+    return $process.ExitCode
+}
+
 $MsysShell = Resolve-NativeTool 'sh' @('C:\msys64\usr\bin\sh.exe')
 $MsysBin = Split-Path -Parent $MsysShell
 
@@ -334,10 +364,26 @@ try {
             'scripts/create_floppy_boot_image.py', '--stage1', $FloppyStage1,
             '--stage2', $Stage2, '--kernel', $Kernel, '--output', $FloppyImage
         ) + $floppyDataArguments
-        & $Python @floppyArguments
-        if ($LASTEXITCODE -eq 0) {
+        if (Test-Path -LiteralPath $FloppyImage -PathType Leaf) {
+            Remove-Item -LiteralPath $FloppyImage -Force
+        }
+        $floppyCreationExitCode = Invoke-PythonProcess -Arguments $floppyArguments
+        if ($floppyCreationExitCode -eq 0) {
+            if (-not (Test-Path -LiteralPath $FloppyImage -PathType Leaf)) {
+                throw "Floppy image creation reported success without an output artifact."
+            }
+            $floppyValidationExitCode = Invoke-PythonProcess -Arguments @(
+                'scripts/validate_boot_manifest.py', '--image', $FloppyImage,
+                '--layout', 'floppy'
+            )
+            if ($floppyValidationExitCode -ne 0) {
+                throw "Floppy boot manifest validation failed with exit code $floppyValidationExitCode."
+            }
             $nativeArguments += @('--floppy', $FloppyImage)
         } else {
+            if (Test-Path -LiteralPath $FloppyImage -PathType Leaf) {
+                Remove-Item -LiteralPath $FloppyImage -Force
+            }
             # The native HDD image is the QEMU acceptance artifact.  A
             # capacity-limited rescue floppy is optional and must not prevent
             # rebuilding/testing the complete system once its payload grows
@@ -348,9 +394,22 @@ try {
     if ($Target -ne 'qemu') {
         $nativeArguments += @('--vmware-dir', $VmwareDir)
     }
-    & $Python @nativeArguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "Native image creation failed with exit code $LASTEXITCODE."
+    if (Test-Path -LiteralPath $RawImage -PathType Leaf) {
+        Remove-Item -LiteralPath $RawImage -Force
+    }
+    $nativeCreationExitCode = Invoke-PythonProcess -Arguments $nativeArguments
+    if ($nativeCreationExitCode -ne 0) {
+        throw "Native image creation failed with exit code $nativeCreationExitCode."
+    }
+    if (-not (Test-Path -LiteralPath $RawImage -PathType Leaf)) {
+        throw "Native image creation reported success without an output artifact."
+    }
+    $nativeValidationExitCode = Invoke-PythonProcess -Arguments @(
+        'scripts/validate_boot_manifest.py', '--image', $RawImage,
+        '--layout', 'hdd'
+    )
+    if ($nativeValidationExitCode -ne 0) {
+        throw "Native boot manifest validation failed with exit code $nativeValidationExitCode."
     }
 
     # Image generation recreates both VMX files. Restore physical floppy

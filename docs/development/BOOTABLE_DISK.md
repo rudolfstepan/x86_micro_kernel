@@ -32,10 +32,27 @@ LBA 8192          FAT32-LBA-Systempartition (Typ 0x0C)
                   Label "X86 SYSTEM", Programme und Daten
 ```
 
-Stage 1 lädt das Manifest und Stage 2. Stage 2 verwendet BIOS EDD/INT 13h,
-prüft Manifest, CRC32 und ELF32-Segmente, richtet optional VBE ein und übergibt
-im Protected Mode an den Kernel. Der Kernel erkennt anschließend die
-Blockgeräte und Partitionen erneut über native Treiber.
+Stage 1 lädt das Manifest und Stage 2. Das versionierte Manifest v2 belegt
+einen 512-Byte-Sektor. Sein 80-Byte-Header enthält unveränderte Stage-2- und
+Kernel-LBA-Felder, Kernelgröße, diagnostische CRC32 und ab Offset 48 den
+exakten 32-Byte-SHA-256-Digest des Kernelartefakts gemäß NIST FIPS 180-4.
+Stage 1 und Stage 2 lehnen andere Magic-, Versions- oder Headerwerte ab;
+Stage 2 verlangt außerdem einen gesetzten Digest.
+
+Nach jeder Imageerzeugung prüft `scripts/validate_boot_manifest.py` unabhängig
+vom Erzeuger das HDD- beziehungsweise Floppy-Layout, alle Extents, die
+Manifest-Prüfsumme sowie SHA-256 und CRC32 über die tatsächlichen Kernelbytes.
+Ein Fehler bricht den Build geschlossen ab. Stage 2 verwendet BIOS EDD/INT
+13h, prüft derzeit den geladenen Kernel selbst weiterhin mit CRC32, validiert
+die ELF32-Segmente, richtet optional VBE ein und übergibt im Protected Mode an
+den Kernel. Der Kernel erkennt anschließend die Blockgeräte und Partitionen
+erneut über native Treiber.
+
+Der SHA-256-Build-Gate liefert Integritäts- und Provenienzevidenz für das
+erzeugte Image, aber noch keinen verifizierten Boot: Der BIOS-Lader berechnet
+SHA-256 noch nicht selbst, das Manifest ist nicht signiert und besitzt keinen
+Firmware- oder Hardware-Vertrauensanker. Secure Boot bleibt daher ausdrücklich
+nicht implementiert.
 
 ## Root-Volume
 

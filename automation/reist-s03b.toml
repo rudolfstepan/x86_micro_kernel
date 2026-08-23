@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.5a1-boot-manifest-sha256"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -1228,7 +1228,7 @@ evidence = []
 
 [[packages]]
 id = "S0.5a1-boot-manifest-sha256"
-status = "active"
+status = "done"
 risk = "high"
 title = "Versioned SHA-256 boot-manifest and independent image gate"
 scope = "Upgrade the native BIOS boot manifest to an append-only version-2 format containing the exact kernel SHA-256 digest defined by NIST FIPS 180-4 while retaining CRC32 only as a legacy corruption diagnostic. Make stage 1 offsets stable, make stage 2 fail closed on the v2 magic/header and a missing digest, add an independent bounded host validator for MBR and floppy images, and invoke that validator from both Windows and Makefile image builds. This package establishes deterministic artifact integrity and provenance evidence only; the loader still verifies CRC32, so signature authority, trusted-key policy and boot-time SHA-256 enforcement remain explicit follow-up packages and no verified-boot claim is permitted yet."

@@ -35,7 +35,9 @@ MANIFEST_LBA       equ 1
 MANIFEST_SEGMENT   equ 0x0800
 STAGE2_SEGMENT     equ 0x1000
 MANIFEST_MAGIC_0   equ 0x42363858
-MANIFEST_MAGIC_1   equ 0x31544F4F
+MANIFEST_MAGIC_1   equ 0x32544F4F
+MANIFEST_VERSION   equ 2
+MANIFEST_HEADER_SIZE equ 80
 MAX_STAGE2_SECTORS equ 64
 
 start:
@@ -62,7 +64,9 @@ start:
     jne manifest_error
     cmp dword [es:4], MANIFEST_MAGIC_1
     jne manifest_error
-    cmp dword [es:8], 1
+    cmp dword [es:8], MANIFEST_VERSION
+    jne manifest_error
+    cmp dword [es:12], MANIFEST_HEADER_SIZE
     jne manifest_error
     mov ecx, [es:20]
     test ecx, ecx

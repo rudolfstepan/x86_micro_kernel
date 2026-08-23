@@ -39,7 +39,8 @@ SATA-Hardwarefreigabe.
 
 ## Verifizierter Systempfad
 
-- eigener BIOS-/MBR-Bootloader mit Manifest-, ELF32- und CRC32-Prüfung
+- eigener BIOS-/MBR-Bootloader mit Manifest-v2-, ELF32- und CRC32-Prüfung;
+  unabhängiges Imagegate bindet den Kernel zusätzlich exakt per SHA-256
 - 32-Bit-i386-Kernel mit Paging, Ring-3-Prozessen, präemptivem Scheduler,
   endlichen Waits und versionierter Syscall-/MYPR-ABI
 - inkrementeller Windows-Build für `qemu`, `vmware` und `real_hw`
@@ -120,6 +121,15 @@ Monitorgerät samt Transport, eigener
 Versorgung/Zeitbasis, Reset- und Interlockverdrahtung wird erst nach einer
 manuellen Auswahl angebunden; ohne diese Identität wird kein Produktionstreiber
 erfunden und keine Hardwarequalifikation behauptet.
+
+S0.5 hat mit dem eng abgegrenzten Paket `S0.5a1` begonnen. Das native BIOS-
+Manifest v2 enthält den SHA-256-Digest des exakten Kernelartefakts; Windows-
+und Makefile-Builds validieren HDD- und Floppy-Images mit einem unabhängigen
+Parser und brechen bei Versions-, Layout-, Bounds-, Prüfsummen- oder
+Digestfehlern ab. Die BIOS-Stufen akzeptieren nur v2 und Stage 2 verlangt ein
+nichtleeres Digestfeld. Da Stage 2 den Digest noch nicht selbst berechnet und
+weder Signatur noch Vertrauensanker existieren, ist dies ausdrücklich noch
+kein verifizierter oder Secure Boot.
 
 `S0.3c-admin1` stellt sichere Storage-Operationen (`device down/up`, `mount`,
 `umount`) und einen festen, integritätsgeprüften 224-KiB-RAM-Rescue-Pool mit

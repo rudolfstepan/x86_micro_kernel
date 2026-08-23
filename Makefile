@@ -727,6 +727,8 @@ native-image: floppy-image
 		--floppy $(OUTPUT_DIR)/reist-os-floppy.img \
 		--data-file usr/bin/hello.prg=$(USER_PROGRAM_OUTPUT) \
 		$(foreach spec,$(SYSTEM_IMAGE_FILES),--data-file $(spec))
+	@$(PYTHON) scripts/validate_boot_manifest.py \
+		--image $(OUTPUT_DIR)/reist-os.img --layout hdd
 	@echo "Native BIOS image created: $(OUTPUT_DIR)/reist-os.img"
 	@echo "Complete VMware VM: $(OUTPUT_DIR)/vmware/reist-os/reist-os.vmx"
 
@@ -741,6 +743,8 @@ floppy-image: kernel system-programs user-program
 		--output $(OUTPUT_DIR)/reist-os-floppy.img \
 		--data-file usr/bin/hello.prg=$(USER_PROGRAM_OUTPUT) \
 		$(foreach spec,$(FLOPPY_IMAGE_FILES),--data-file $(spec))
+	@$(PYTHON) scripts/validate_boot_manifest.py \
+		--image $(OUTPUT_DIR)/reist-os-floppy.img --layout floppy
 
 # ============================================================================
 # TESTING

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import binascii
+import hashlib
 import shutil
 import struct
 from collections.abc import Mapping
@@ -25,8 +26,9 @@ STAGE2_MAX_SECTORS = 64
 KERNEL_RELATIVE_LBA = 128
 PARTITION_TYPE = 0xDA  # Non-filesystem raw boot partition
 DATA_PARTITION_TYPE = 0x0C  # FAT32 with LBA addressing
-MANIFEST_MAGIC = b"X86BOOT1"
-MANIFEST_VERSION = 1
+MANIFEST_MAGIC = b"X86BOOT2"
+MANIFEST_VERSION = 2
+MANIFEST_HEADER_SIZE = 80
 MAX_LOAD_ADDRESS = 0x04000000
 VMWARE_BASENAME = "reist-os"
 
@@ -82,7 +84,7 @@ def create_manifest(stage2_sectors: int, kernel: bytes,
         0,
         MANIFEST_MAGIC,
         MANIFEST_VERSION,
-        48,
+        MANIFEST_HEADER_SIZE,
         STAGE2_RELATIVE_LBA,
         stage2_sectors,
         KERNEL_RELATIVE_LBA,
@@ -92,6 +94,7 @@ def create_manifest(stage2_sectors: int, kernel: bytes,
         0,
         0,
     )
+    manifest[48:80] = hashlib.sha256(kernel).digest()
     words = struct.unpack("<128I", manifest)
     checksum = (-sum(words)) & 0xFFFFFFFF
     struct.pack_into("<I", manifest, 44, checksum)

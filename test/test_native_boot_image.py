@@ -1,3 +1,4 @@
+import hashlib
 import struct
 import sys
 import tempfile
@@ -11,7 +12,9 @@ from scripts.create_native_boot_image import (
     DATA_PARTITION_START,
     DATA_PARTITION_TYPE,
     IMAGE_SIZE,
+    MANIFEST_HEADER_SIZE,
     MANIFEST_MAGIC,
+    MANIFEST_VERSION,
     PARTITION_START,
     PARTITION_TYPE,
     create_manifest,
@@ -260,8 +263,13 @@ class NativeBootImageTests(unittest.TestCase):
             validate_elf32(minimal_kernel(512))
 
     def test_manifest_has_magic_and_zero_additive_checksum(self):
-        manifest = create_manifest(5, minimal_kernel(), 8192)
+        kernel = minimal_kernel()
+        manifest = create_manifest(5, kernel, 8192)
         self.assertEqual(manifest[:8], MANIFEST_MAGIC)
+        self.assertEqual(struct.unpack_from("<I", manifest, 8)[0], MANIFEST_VERSION)
+        self.assertEqual(struct.unpack_from("<I", manifest, 12)[0],
+                         MANIFEST_HEADER_SIZE)
+        self.assertEqual(manifest[48:80], hashlib.sha256(kernel).digest())
         self.assertEqual(sum(struct.unpack("<128I", manifest)) & 0xFFFFFFFF, 0)
 
     def test_partition_table_contains_boot_and_fat32_partitions(self):

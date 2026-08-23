@@ -104,6 +104,16 @@ NX, SMEP/SMAP, IOMMU und später CET werden nur auf Zielplattformen verwendet,
 die diese Funktionen nachweislich besitzen. Für den aktuellen i386-Pfad sind
 fehlende Hardwareeigenschaften explizite Grenzen, keine stillen Annahmen.
 
+Der aktuelle BIOS-Referenzpfad verwendet ein festes Manifest v2. Es bindet das
+Kernelartefakt mit SHA-256 gemäß NIST FIPS 180-4; ein unabhängiger Hostvalidator
+prüft nach der Erzeugung Manifest, Datenträgergrenzen und tatsächliche
+Kernelbytes für HDD und Floppy. CRC32 bleibt im Bootloader ausschließlich der
+heutige Fehlererkennungsmechanismus. Da der Loader SHA-256 noch nicht selbst
+berechnet und weder Signaturprüfung noch gebundener Vertrauensanker vorhanden
+sind, entsteht daraus keine Boot-Authentizität und kein Verified-/Secure-Boot-
+Claim. Diese Grenze wird erst nach begrenzter Bootzeitprüfung und einer
+versionierten Signatur- und Schlüsselpolitik angehoben.
+
 Der entscheidende nächste Architekturwechsel ist damit ausdrücklich:
 
 ```text

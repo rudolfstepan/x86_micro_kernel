@@ -15,7 +15,9 @@ ORG 0x7C00
 STAGE2_SEGMENT      equ 0x1000
 MANIFEST_SEGMENT    equ 0x0800
 MANIFEST_MAGIC_0    equ 0x42363858      ; "X86B"
-MANIFEST_MAGIC_1    equ 0x31544F4F      ; "OOT1"
+MANIFEST_MAGIC_1    equ 0x32544F4F      ; "OOT2"
+MANIFEST_VERSION    equ 2
+MANIFEST_HEADER_SIZE equ 80
 MAX_STAGE2_SECTORS  equ 64
 
 start:
@@ -70,7 +72,9 @@ start:
     jne invalid_manifest
     cmp dword [es:4], MANIFEST_MAGIC_1
     jne invalid_manifest
-    cmp dword [es:8], 1
+    cmp dword [es:8], MANIFEST_VERSION
+    jne invalid_manifest
+    cmp dword [es:12], MANIFEST_HEADER_SIZE
     jne invalid_manifest
 
     mov ecx, [es:20]             ; stage2 sector count
