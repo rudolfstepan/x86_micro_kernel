@@ -433,7 +433,7 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
 
     static const uint8_t probe_syscalls[] = {
         SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS, SYS_MONOTONIC_MS,
-        SYS_MEMORY_STATS, SYS_SCHEDULER_STATS,
+        SYS_MEMORY_STATS, SYS_SCHEDULER_STATS, SYS_RUNTIME_TIMING,
         SYS_IPC_CREATE, SYS_IPC_SEND, SYS_IPC_RECEIVE,
         SYS_IPC_CLOSE,
         SYS_IPC_SEND_TIMEOUT, SYS_IPC_RECEIVE_TIMEOUT, SYS_REIST_REPORT,

@@ -60,5 +60,13 @@ bool irq_pic_unmask_line(uint8_t irq);
 
 extern volatile uint64_t cpu_frequency; // Global CPU frequency
 
+static inline uint64_t cpu_cycle_counter_read(void) {
+    uint32_t low;
+    uint32_t high;
+    __asm__ __volatile__("lfence\n\trdtsc\n\tlfence"
+                         : "=a"(low), "=d"(high) : : "memory");
+    return ((uint64_t)high << 32U) | low;
+}
+
 
 #endif

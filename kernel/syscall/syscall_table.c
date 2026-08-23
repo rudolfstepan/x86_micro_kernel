@@ -126,6 +126,16 @@ static int syscall_scheduler_stats(scheduler_resource_stats_t *user_stats,
     return copy_to_user(user_stats, &stats, sizeof(stats)) == 0 ? 0 : -14;
 }
 
+static int syscall_runtime_timing(runtime_timing_stats_t *user_stats,
+                                  uint32_t user_size, uint32_t version) {
+    if (version != RUNTIME_TIMING_STATS_VERSION ||
+        user_size < sizeof(runtime_timing_stats_t)) return -22;
+    runtime_timing_stats_t stats;
+    int result = scheduler_runtime_timing_stats(&stats);
+    if (result != 0) return result;
+    return copy_to_user(user_stats, &stats, sizeof(stats)) == 0 ? 0 : -14;
+}
+
 static int syscall_copy_from_user_space(void *destination,
                                         const void *user_source,
                                         size_t length) {
@@ -3046,6 +3056,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_device_control,       // Syscall 113: Driver resources
     (void*)&syscall_process_identity,     // Syscall 114: Calling identity
     (void*)&syscall_display_draw_text_clipped, // Syscall 115: Damage-safe text
+    (void*)&syscall_runtime_timing,      // Syscall 116: Empirical timing stats
     // Add more syscalls here as needed
 };
 
@@ -3066,6 +3077,8 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
  */
 void syscall_handler(Registers* regs) {
     const uint32_t syscall_index = regs->eax;
+    const uint64_t timing_start = syscall_index == SYS_RUNTIME_TIMING
+        ? runtime_timing_begin() : 0U;
     const uint32_t arg1 = regs->ebx;
     const uint32_t arg2 = regs->ecx;
     const uint32_t arg3 = regs->edx;
@@ -3327,6 +3340,10 @@ void syscall_handler(Registers* regs) {
         case SYS_DRAW_TEXT_CLIPPED:
             result = (uint32_t)syscall_display_draw_text_clipped(
                 (const syscall_display_text_clipped_t*)(uintptr_t)arg1);
+            break;
+        case SYS_RUNTIME_TIMING:
+            result = (uint32_t)syscall_runtime_timing(
+                (runtime_timing_stats_t*)(uintptr_t)arg1, arg2, arg3);
             break;
         case SYS_RENAME:
             scheduler_preempt_disable();
@@ -3592,4 +3609,6 @@ void syscall_handler(Registers* regs) {
     }
 
     regs->eax = result;
+    if (syscall_index == SYS_RUNTIME_TIMING)
+        runtime_timing_record_syscall(timing_start);
 }

@@ -366,8 +366,30 @@ verbleibenden 1.024 Byte des realen 8-KiB-Taskstacks sind nicht Teil des
 zulässigen Budgets. WCET-Baselines der ausgewählten Plattformen folgen
 getrennt.
 
+S0.4c-2c2b2a ergänzt dafür eine bewusst nicht steuernde Laufzeitdiagnostik.
+Der Scheduler misst mit serialisiertem `RDTSC` nur seine begrenzte
+Entscheidungsarbeit und beendet jede Probe vor einem Kontextwechsel. Der
+append-only Syscall 116 misst ausschließlich seinen eigenen nicht blockierenden
+Diagnosepfad; Warte-, Schlaf- und Off-CPU-Zeit kann deshalb nicht in die Werte
+eingehen. Eine feste 72-Byte-v1-Struktur enthält Frequenz, Samplezahl, Summe,
+Maximum und Zeitquellenanomalien. Alle Zähler sind saturierend, werden unter
+IRQ-Schutz aktualisiert und beeinflussen weder Scheduling noch Autorität.
+Der überwachte Probe-Dienst fordert nach mindestens 64 Samples genau einen
+normalisierten, generationsgeprüften Supervisor-Marker an. Messfehler
+unterdrücken die Evidenz, beenden aber nicht den Essential Service.
+`safety/wcet_budgets.json` begrenzt QEMU und
+VMware jeweils auf 10 ms und verlangt null Zeitquellenanomalien. Das ist eine
+empirische Emulator-Regressionsgrenze, keine physische WCET-, Zertifizierungs-
+oder Zielhardwareaussage; die Hardwaremessung bleibt eine manuelle Abnahme.
+Die Abnahme vom 23. August 2026 erfasste bei null Anomalien auf QEMU maximal
+2.193.758 Zyklen (rund 0,613 ms) für die Schedulerentscheidung und 365.795
+Zyklen (rund 0,102 ms) für INT 0x80. VMware erfasste maximal 163.214 Zyklen
+(rund 0,051 ms) beziehungsweise 107.643 Zyklen (rund 0,034 ms). Beide liegen
+unter der 10-ms-Regressionsgrenze; die Werte sind nicht zwischen Emulatoren
+vergleichbar und bleiben nicht-authoritative Beobachtungen.
+
 Jeder Prozess trägt ein versioniertes Domänenprofil mit einem vollständigen
-Bitinventar der gegenwärtig 60 Syscalls. Normale Programme erhalten explizit
+Bitinventar der gegenwärtigen Syscalls. Normale Programme erhalten explizit
 das Kompatibilitätsprofil. Das Supervisor-Profil `PROBE` beginnt dagegen bei
 Default-Deny und erlaubt ausschließlich Exit, Identität, Yield/Sleep,
 monotone Diagnosezeit, Memory-Statistik und die für den kontrollierten Kanal

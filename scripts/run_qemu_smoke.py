@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import queue
 import re
 import socket
@@ -83,6 +84,19 @@ REIST_STORAGE_QUARANTINE_MARKER = "REIST_STORAGE RESOURCE_QUARANTINED 0"
 REIST_STORAGE_REINTEGRATION_MARKER = "REIST_STORAGE RESOURCE_REINTEGRATED_RW 0"
 REIST_STORAGE_IO_RECOVERY_MARKER = "TEST_STAGE STORAGE_MEDIA_REINTEGRATED_OK"
 REIST_STORAGE_SELF_TEST_MARKER = "TEST_STAGE STORAGE_SERVICE_OK"
+REIST_WCET_MARKER = "REIST_WCET BASELINE"
+REIST_WCET_PATTERN = re.compile(
+    r"^REIST_WCET BASELINE version=(?P<version>\d+) "
+    r"frequency_hz=(?P<frequency_hz>\d+) "
+    r"scheduler_samples=(?P<scheduler_samples>\d+) "
+    r"scheduler_total_cycles=(?P<scheduler_total_cycles>\d+) "
+    r"scheduler_max_cycles=(?P<scheduler_max_cycles>\d+) "
+    r"int80_samples=(?P<int80_samples>\d+) "
+    r"int80_total_cycles=(?P<int80_total_cycles>\d+) "
+    r"int80_max_cycles=(?P<int80_max_cycles>\d+) "
+    r"clock_anomalies=(?P<clock_anomalies>\d+)$",
+    re.MULTILINE,
+)
 REIST_HANDOVER_MARKERS = (
     "REIST_HANDOVER REQUEST_SENT",
     "REIST_HANDOVER FENCE_CONFIRMED",
@@ -129,6 +143,7 @@ FAIL_MARKERS = (
     "REIST_NETWORK DHCP_CONFIG_REJECTED",
     "REIST_NETWORK DHCP_RENEWAL_REJECTED",
     "REIST_NETWORK UDP_ECHO_REJECTED",
+    "REIST_WCET REJECT",
 )
 
 
@@ -1003,6 +1018,34 @@ def wait_for_line(
     return f"timeout before {expected}", -1
 
 
+def wait_for_wcet_marker(
+    process: subprocess.Popen[str],
+    chunks: queue.Queue[str],
+    transcript: list[str],
+    finished: threading.Event,
+    deadline: float,
+) -> str | None:
+    while time.monotonic() < deadline:
+        drain(chunks, transcript)
+        text = "".join(transcript)
+        failed = failure_marker(text)
+        if failed is not None:
+            return f"guest emitted failure marker {failed!r}"
+        if REIST_WCET_PATTERN.search(text) is not None:
+            return None
+        if process.poll() is not None:
+            finished.wait(timeout=0.25)
+            drain(chunks, transcript)
+            return (None if REIST_WCET_PATTERN.search("".join(transcript))
+                    is not None else
+                    "QEMU exited before bounded REIST WCET baseline marker")
+        try:
+            transcript.append(chunks.get(timeout=0.05))
+        except queue.Empty:
+            pass
+    return "timeout before bounded REIST WCET baseline marker"
+
+
 def stop_process(process: subprocess.Popen[str]) -> None:
     if process.poll() is not None:
         return
@@ -1040,6 +1083,7 @@ def run(
     expect_dns_client: bool = False,
     expect_http_server: bool = False,
     boot_only: bool = False,
+    expect_wcet_baseline: bool = False,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
     injection_connection: socket.socket | None = None
@@ -1406,6 +1450,9 @@ def run(
                     error, _ = wait_for_line(
                         process, chunks, transcript, finished, SHELL_PROMPT,
                         deadline, after=http_ready)
+            if error is None and expect_wcet_baseline:
+                error = wait_for_wcet_marker(
+                    process, chunks, transcript, finished, deadline)
     finally:
         if injection_connection is not None:
             injection_connection.close()
@@ -1449,6 +1496,7 @@ def validate(
     expect_network_udp_ingress: bool = False,
     expect_memory_fault: bool = False,
     boot_only: bool = False,
+    wcet_budget: dict[str, int] | None = None,
 ) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
@@ -1655,7 +1703,47 @@ def validate(
             return "missing external handover marker"
         if positions != sorted(positions) or positions[-1] > boot:
             return "external handover markers are out of order"
+    if wcet_budget is not None:
+        match = REIST_WCET_PATTERN.search(transcript)
+        if match is None:
+            return "missing bounded REIST WCET baseline marker"
+        values = {name: int(value) for name, value in match.groupdict().items()}
+        if values["version"] != 1 or values["frequency_hz"] <= 0:
+            return "invalid REIST WCET baseline version or frequency"
+        minimum = wcet_budget["minimum_samples"]
+        if (values["scheduler_samples"] < minimum or
+                values["int80_samples"] < minimum):
+            return "insufficient REIST WCET baseline samples"
+        if values["clock_anomalies"] > wcet_budget["maximum_clock_anomalies"]:
+            return "REIST WCET clock anomaly detected"
+        if (values["scheduler_total_cycles"] <
+                values["scheduler_max_cycles"] or
+                values["int80_total_cycles"] < values["int80_max_cycles"]):
+            return "invalid REIST WCET totals"
+        frequency = values["frequency_hz"]
+        scheduler_ns = (values["scheduler_max_cycles"] * 1_000_000_000 +
+                        frequency - 1) // frequency
+        int80_ns = (values["int80_max_cycles"] * 1_000_000_000 +
+                    frequency - 1) // frequency
+        if scheduler_ns > wcet_budget["scheduler_decision_max_ns"]:
+            return f"scheduler decision baseline exceeded: {scheduler_ns} ns"
+        if int80_ns > wcet_budget["int80_probe_max_ns"]:
+            return f"INT-80 probe baseline exceeded: {int80_ns} ns"
+        if match.start() > test:
+            return "REIST WCET baseline appeared after TEST_OK"
     return None
+
+
+def load_wcet_budget(path: Path, platform: str) -> dict[str, int]:
+    document = json.loads(path.read_text(encoding="utf-8"))
+    platform_budget = document["platforms"][platform]
+    return {
+        "minimum_samples": int(document["minimum_samples"]),
+        "maximum_clock_anomalies": int(document["maximum_clock_anomalies"]),
+        "scheduler_decision_max_ns": int(
+            platform_budget["scheduler_decision_max_ns"]),
+        "int80_probe_max_ns": int(platform_budget["int80_probe_max_ns"]),
+    }
 
 
 def main() -> int:
@@ -1800,6 +1888,18 @@ def main() -> int:
         help="require storage-service bind and media self-test before PASS",
     )
     parser.add_argument(
+        "--expect-wcet-baseline", action="store_true",
+        help="require a bounded empirical timing marker",
+    )
+    parser.add_argument(
+        "--wcet-budget", type=Path,
+        help="machine-readable timing budget used with --expect-wcet-baseline",
+    )
+    parser.add_argument(
+        "--wcet-platform", choices=("qemu", "vmware"), default="qemu",
+        help="platform budget selected for timing validation",
+    )
+    parser.add_argument(
         "--expect-handover", action="store_true",
         help="serve COM2 fence readback and require bounded takeover markers",
     )
@@ -1883,6 +1983,7 @@ def main() -> int:
             args.expect_dns_client,
             args.expect_http_server,
             args.boot_only,
+            args.expect_wcet_baseline,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)
@@ -1891,6 +1992,20 @@ def main() -> int:
     if args.log:
         args.log.parent.mkdir(parents=True, exist_ok=True)
         args.log.write_text(transcript, encoding="utf-8")
+
+    wcet_budget = None
+    if args.expect_wcet_baseline:
+        if args.wcet_budget is None:
+            print("guest-smoke: --expect-wcet-baseline requires --wcet-budget",
+                  file=sys.stderr)
+            return 2
+        try:
+            wcet_budget = load_wcet_budget(args.wcet_budget.resolve(),
+                                           args.wcet_platform)
+        except (OSError, UnicodeError, json.JSONDecodeError, KeyError,
+                TypeError, ValueError) as error:
+            print(f"guest-smoke: invalid WCET budget: {error}", file=sys.stderr)
+            return 2
 
     marker_error = validate(transcript, args.expect_fatal_recovery,
                             args.expect_reist_probe,
@@ -1913,7 +2028,8 @@ def main() -> int:
                             args.expect_network_dhcp,
                             args.expect_network_udp_ingress,
                             args.expect_memory_fault,
-                            args.boot_only)
+                            args.boot_only,
+                            wcet_budget)
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")

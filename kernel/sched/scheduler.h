@@ -35,6 +35,7 @@
 #define STACK_SIZE (8U * 1024U)
 
 #define SCHEDULER_RESOURCE_STATS_VERSION 1U
+#define RUNTIME_TIMING_STATS_VERSION 1U
 
 typedef struct {
     uint32_t version;
@@ -46,6 +47,19 @@ typedef struct {
     uint32_t supervised_reserve;
     uint32_t reserved;
 } scheduler_resource_stats_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint64_t cpu_frequency_hz;
+    uint64_t scheduler_samples;
+    uint64_t scheduler_total_cycles;
+    uint64_t scheduler_max_cycles;
+    uint64_t syscall_samples;
+    uint64_t syscall_total_cycles;
+    uint64_t syscall_max_cycles;
+    uint64_t clock_anomalies;
+} runtime_timing_stats_t;
 
 
 typedef struct {
@@ -104,6 +118,9 @@ bool scheduler_kernel_context_stack_is_valid(void);
 int scheduler_reap_finished_task_locked(int task_id, const Process* owner);
 size_t scheduler_reap_finished_tasks(void);
 void scheduler_interrupt_handler(void);
+uint64_t runtime_timing_begin(void);
+void runtime_timing_record_syscall(uint64_t start_cycles);
+int scheduler_runtime_timing_stats(runtime_timing_stats_t *stats_out);
 void scheduler_preempt_disable(void);
 void scheduler_preempt_enable(void);
 bool scheduler_preempt_is_disabled(void);

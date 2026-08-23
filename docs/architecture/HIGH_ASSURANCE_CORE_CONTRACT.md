@@ -176,7 +176,16 @@ Operationstabellen, weitere indirekte Callbacks und Assembly-Reserven sind
 vollständig zu inventarisieren; jede unbekannte Kante scheitert geschlossen.
 Der Syscallvertrag reserviert zusätzlich 1.024 Byte des realen 8-KiB-
 Taskstacks außerhalb des zulässigen 7.168-Byte-Pfads. Plattform-WCET bleibt
-ein offener Abnahmepunkt.
+ein offener Abnahmepunkt. Als begrenzte Vorstufe erfasst eine feste,
+allokationsfreie v1-Diagnose die Maxima des Scheduler-Entscheidungspfads und
+eines nicht blockierenden INT-80-Diagnosepfads. Die Messung endet vor jedem
+Kontextwechsel, ist saturierend und darf keine Steuerentscheidung beeinflussen.
+QEMU und VMware werden gegen `safety/wcet_budgets.json` mit mindestens 64
+Samples, null Zeitquellenanomalien und höchstens 10 ms je Pfad geprüft. Nur der
+generationsprüfende Supervisor veröffentlicht den Marker; ein Messfehler darf
+den Probe-Dienst nicht beenden. Diese
+Werte sind ausschließlich empirische Emulator-Regressionsgrenzen;
+Zielhardware-WCET und Zertifizierung werden ausdrücklich nicht behauptet.
 
 Headerabhängigkeiten sind Teil der Build-Evidenz. Jeder Kernel-C-Compile muss
 eine explizite Dependency-Datei erzeugen; fehlende, falsche oder nicht zum

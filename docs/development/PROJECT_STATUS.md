@@ -106,8 +106,17 @@ Fail-Operationalität oder unabhängige Hardware-Failover-Domänen sind weiterhi
 unzulässig.
 
 Die ausführbare Paketqueue für S0.3c ist nach dem FAT12-Persistenzabschluss
-abgearbeitet; als Nächstes muss ein enges S0.4-Paket definiert werden, danach
-folgen S0.5 und S0.6. Ein externes Monitorgerät samt Transport, eigener
+abgearbeitet. Für S0.4 ist nun auch die feste, saturierende Scheduler-/INT-80-
+Zeitdiagnostik samt maschinenlesbaren QEMU-/VMware-Regressionsgrenzen
+umgesetzt. Sie ist ausdrücklich keine Zielhardware-WCET; diese Abnahme führt
+der Benutzer manuell durch. Die automatisierte Abnahme vom 23. August 2026
+bestand auf QEMU (maximal rund 0,613 ms Scheduler und 0,102 ms INT 0x80) sowie
+VMware (rund 0,051 ms und 0,034 ms), jeweils mit null Zeitquellenanomalien und
+deutlich unter der festen 10-ms-Grenze. Auf diesem Workstation-Host verwendet
+die Automation den vom generierten Paket vorgesehenen GUI-Start, weil VIX den
+Headless-Start mit `Unknown error` ablehnt; Markerprüfung und harter Stopp
+bleiben automatisiert und begrenzt. Danach folgen S0.5 und S0.6. Ein externes
+Monitorgerät samt Transport, eigener
 Versorgung/Zeitbasis, Reset- und Interlockverdrahtung wird erst nach einer
 manuellen Auswahl angebunden; ohne diese Identität wird kein Produktionstreiber
 erfunden und keine Hardwarequalifikation behauptet.

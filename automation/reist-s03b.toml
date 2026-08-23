@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.4c-2c2b2-emulator-wcet-baselines"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -1162,7 +1162,7 @@ evidence = []
 
 [[packages]]
 id = "S0.4c-2c2b2-emulator-wcet-baselines"
-status = "active"
+status = "done"
 risk = "high"
 title = "Bounded scheduler and INT-80 timing baselines on QEMU and VMware"
 scope = "Add versioned, allocation-free and saturating cycle diagnostics for the bounded scheduler-decision path and one nonblocking INT-80 probe path; expose them through an append-only Ring-3 ABI, publish a bounded supervised-service marker, validate machine-readable empirical limits, and capture fresh QEMU and VMware evidence. These emulator baselines are regression bounds, not target-hardware WCET guarantees; physical hardware execution remains the user's manual acceptance item."

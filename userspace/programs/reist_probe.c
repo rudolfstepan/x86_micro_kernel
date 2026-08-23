@@ -20,6 +20,10 @@
 #define REIST_DHCP_BOOT_RETRY_MS 1600U
 #define REIST_DHCP_BOOT_CYCLE_DELAY_MS 5000U
 #define REIST_NETWORK_RX_BATCH 8U
+#define REIST_WCET_MINIMUM_SAMPLES 64U
+#define REIST_WCET_MAX_ATTEMPTS 768U
+#define REIST_WCET_SAMPLE_INTERVAL_MS 20U
+#define REIST_WCET_SAMPLE_DEADLINE_MS 15000U
 
 static uint64_t probe_deadline_after(uint64_t now_ms, uint32_t interval_ms) {
     return UINT64_MAX - now_ms < interval_ms
@@ -27,6 +31,10 @@ static uint64_t probe_deadline_after(uint64_t now_ms, uint32_t interval_ms) {
 }
 
 static x86os_reist_network_frame_t network_frame;
+
+static void reject_wcet_baseline(uint32_t reason) {
+    (void)x86os_reist_report(X86OS_REIST_REPORT_WCET_REJECT, reason);
+}
 
 static int text_equal(const char *left, const char *right) {
     while (*left != '\0' && *right != '\0' && *left == *right) {
@@ -423,7 +431,65 @@ int main(int argc, char **argv) {
     bool network_icmp_reported = false;
     bool network_udp_reported = false;
     bool network_dhcp_reported = false;
+    bool wcet_reported = false;
+    bool wcet_failed = false;
+    uint32_t wcet_attempts = 0U;
+    uint64_t wcet_now_ms = 0U;
+    uint64_t wcet_next_sample_ms = 0U;
+    uint64_t wcet_deadline_ms = 0U;
+    if (x86os_monotonic_ms(&wcet_now_ms) != 0) {
+        wcet_failed = true;
+        reject_wcet_baseline(1U);
+    } else {
+        wcet_next_sample_ms = wcet_now_ms;
+        wcet_deadline_ms = probe_deadline_after(
+            wcet_now_ms, REIST_WCET_SAMPLE_DEADLINE_MS);
+    }
     for (;;) {
+        if (!wcet_reported && !wcet_failed &&
+            x86os_monotonic_ms(&wcet_now_ms) != 0) {
+            wcet_failed = true;
+            reject_wcet_baseline(2U);
+        }
+        if (!wcet_reported && !wcet_failed &&
+            (wcet_now_ms >= wcet_deadline_ms ||
+             wcet_attempts >= REIST_WCET_MAX_ATTEMPTS)) {
+            wcet_failed = true;
+            reject_wcet_baseline(
+                wcet_now_ms >= wcet_deadline_ms ? 3U : 4U);
+        }
+        if (!wcet_reported && !wcet_failed &&
+            wcet_now_ms >= wcet_next_sample_ms) {
+            x86os_runtime_timing_t timing;
+            if (x86os_runtime_timing(&timing) != 0) {
+                wcet_failed = true;
+                reject_wcet_baseline(5U);
+                continue;
+            }
+            ++wcet_attempts;
+            wcet_next_sample_ms = probe_deadline_after(
+                wcet_now_ms, REIST_WCET_SAMPLE_INTERVAL_MS);
+            if (timing.version != X86OS_RUNTIME_TIMING_VERSION ||
+                timing.struct_size != sizeof(timing) ||
+                timing.cpu_frequency_hz == 0U ||
+                timing.clock_anomalies != 0U) {
+                wcet_failed = true;
+                reject_wcet_baseline(
+                    timing.clock_anomalies != 0U ? 7U : 6U);
+                continue;
+            }
+            if (timing.scheduler_samples >= REIST_WCET_MINIMUM_SAMPLES &&
+                timing.syscall_samples >= REIST_WCET_MINIMUM_SAMPLES) {
+                if (x86os_reist_report(
+                        X86OS_REIST_REPORT_WCET_BASELINE,
+                        X86OS_RUNTIME_TIMING_VERSION) != 0) {
+                    wcet_failed = true;
+                    reject_wcet_baseline(8U);
+                } else {
+                    wcet_reported = true;
+                }
+            }
+        }
         /* Drain a fixed batch before waiting for control IPC. Real LANs can
          * fill the bounded RX queue with broadcasts much faster than QEMU's
          * quiet user network; one frame per 40 ms could otherwise starve a

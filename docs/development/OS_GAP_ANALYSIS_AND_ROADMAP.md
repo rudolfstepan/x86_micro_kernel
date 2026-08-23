@@ -389,6 +389,11 @@ und 10 verbindlich.
               Assemblyreserve sowie vollständigem VFS-/EXT2-Callbackinventar
             - [ ] S0.4c-2c2b2 Bounded WCET-Baselines auf QEMU, VMware und
               ausgewählter Referenzhardware
+              - [x] S0.4c-2c2b2a Feste, saturierende Scheduler-/INT-80-
+                Laufzeitdiagnostik mit maschinenlesbaren 10-ms-Grenzen und
+                frischer QEMU-/VMware-Evidenz
+              - [ ] S0.4c-2c2b2b Manuelle WCET-Messung auf eindeutig
+                ausgewählter Referenzhardware
 - [ ] S0.5 Signierter Boot, redundanter Zustand und atomare A/B-Updates
 - [ ] S0.6 Langzeit-, Fault-Injection- und Assurance-Nachweise
 
@@ -1274,6 +1279,19 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    Operationstabellen und EXT2-Verzeichnisbesucher werden mit den
    Produktionsquellen abgeglichen; neue unbekannte Callbackziele stoppen das
    Gate. Zielplattform-WCET bleibt S0.4c-2c2b2.
+- S0.4c-2c2b2a misst mit serialisiertem `RDTSC` ausschließlich den begrenzten
+   Scheduler-Entscheidungspfad vor dem Kontextwechsel sowie den
+   nicht blockierenden Diagnose-Syscall 116. Die feste 72-Byte-v1-ABI liefert
+   saturierende Sample-, Summen-, Maximum- und Anomaliezähler an den
+   default-deny Probe-Dienst. Nur der generationsprüfende Supervisor darf den
+   normalisierten Marker veröffentlichen; fehlende Evidenz beendet den Dienst
+   nicht. QEMU und VMware müssen jeweils mindestens 64
+   Samples, null Zeitquellenanomalien und die maschinenlesbare 10-ms-Grenze aus
+   `safety/wcet_budgets.json` einhalten. Diese Emulatorwerte sind keine
+   Zielhardware-WCET; deren manuelle Abnahme bleibt S0.4c-2c2b2b. Die frische
+   Abnahme vom 23. August 2026 lag auf QEMU bei rund 0,613/0,102 ms und auf
+   VMware bei rund 0,051/0,034 ms für Scheduler/INT 0x80, jeweils ohne
+   Zeitquellenanomalie.
 - Kritische Tasks erhalten feste Prioritäten, CPU-/Speicher-/Queue-Budgets,
    Admission Control und nachgewiesene Worst-Case-Laufzeiten.
 - Im kritischen Modus nur reservierte Pools verwenden; unbeschränkte

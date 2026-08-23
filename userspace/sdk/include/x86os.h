@@ -127,7 +127,8 @@ enum {
     X86OS_SYS_USB_DIAGNOSTICS = 112,
     X86OS_SYS_DEVICE_CONTROL = 113,
     X86OS_SYS_PROCESS_IDENTITY = 114,
-    X86OS_SYS_DRAW_TEXT_CLIPPED = 115
+    X86OS_SYS_DRAW_TEXT_CLIPPED = 115,
+    X86OS_SYS_RUNTIME_TIMING = 116
 };
 
 #define X86OS_TCP_SOCKET_VERSION 1U
@@ -354,6 +355,20 @@ typedef struct {
     uint32_t reserved;
 } x86os_scheduler_stats_t;
 
+#define X86OS_RUNTIME_TIMING_VERSION 1U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint64_t cpu_frequency_hz;
+    uint64_t scheduler_samples;
+    uint64_t scheduler_total_cycles;
+    uint64_t scheduler_max_cycles;
+    uint64_t syscall_samples;
+    uint64_t syscall_total_cycles;
+    uint64_t syscall_max_cycles;
+    uint64_t clock_anomalies;
+} x86os_runtime_timing_t;
+
 #define X86OS_IPC_MAX_MESSAGE_SIZE 128U
 #define X86OS_IPC_QUEUE_DEPTH 4U
 #define X86OS_IPC_MAX_CAPABILITIES_PER_PROCESS 8U
@@ -377,6 +392,8 @@ typedef struct {
 #define X86OS_REIST_REPORT_NETWORK_ICMP 11U
 #define X86OS_REIST_REPORT_SERVICE_READY 12U
 #define X86OS_REIST_REPORT_DIAGNOSTIC 13U
+#define X86OS_REIST_REPORT_WCET_BASELINE 14U
+#define X86OS_REIST_REPORT_WCET_REJECT 15U
 #define X86OS_SERVICE_AUDIO 2U
 #define X86OS_SERVICE_AUDIO_DRIVER_INTERNAL 0x80000001U
 #define X86OS_REIST_NETWORK_DEGRADED_SEMANTIC 3U
@@ -1293,6 +1310,7 @@ int x86os_yield(void);
 int x86os_monotonic_ms(uint64_t* value);
 int x86os_memory_stats(x86os_memory_stats_t* stats);
 int x86os_scheduler_stats(x86os_scheduler_stats_t *stats);
+int x86os_runtime_timing(x86os_runtime_timing_t *stats);
 int x86os_ipc_create(x86os_ipc_handle_t* handle);
 int x86os_ipc_send(x86os_ipc_handle_t handle,
                    const x86os_ipc_message_t* message);

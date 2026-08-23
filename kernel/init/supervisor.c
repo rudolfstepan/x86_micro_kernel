@@ -177,6 +177,7 @@ typedef struct {
 } supervisor_probe_runtime_t;
 
 static supervisor_probe_runtime_t probe_runtime;
+static bool probe_wcet_baseline_reported;
 static volatile bool probe_administratively_enabled = true;
 
 typedef struct {
@@ -2495,6 +2496,40 @@ int supervisor_probe_report(int pid, uint32_t generation,
         if (supervisor_protected_probe_control_write(
                 &probe_runtime.control, &control) != 0) return -1;
         printf("REIST_NETWORK SERVICE_READY\n");
+        return 0;
+    }
+    if (report_type == REIST_REPORT_WCET_BASELINE) {
+        runtime_timing_stats_t stats;
+        if (value != RUNTIME_TIMING_STATS_VERSION ||
+            control.fenced != 0U || control.healthy == 0U ||
+            control.service_ready == 0U || control.launch_count < 4U ||
+            scheduler_runtime_timing_stats(&stats) != 0 ||
+            stats.scheduler_samples < 64U || stats.syscall_samples < 64U ||
+            stats.clock_anomalies != 0U) return -1;
+        uint32_t flags = supervisor_lock();
+        if (probe_wcet_baseline_reported) {
+            supervisor_unlock(flags);
+            return -1;
+        }
+        probe_wcet_baseline_reported = true;
+        supervisor_unlock(flags);
+        printf("REIST_WCET BASELINE version=%u frequency_hz=%llu "
+               "scheduler_samples=%llu scheduler_total_cycles=%llu "
+               "scheduler_max_cycles=%llu int80_samples=%llu "
+               "int80_total_cycles=%llu int80_max_cycles=%llu "
+               "clock_anomalies=%llu\n",
+               stats.version, stats.cpu_frequency_hz,
+               stats.scheduler_samples, stats.scheduler_total_cycles,
+               stats.scheduler_max_cycles, stats.syscall_samples,
+               stats.syscall_total_cycles, stats.syscall_max_cycles,
+               stats.clock_anomalies);
+        return 0;
+    }
+    if (report_type == REIST_REPORT_WCET_REJECT) {
+        if (value == 0U || value > 8U || control.fenced != 0U ||
+            control.healthy == 0U || control.service_ready == 0U ||
+            control.launch_count < 4U) return -1;
+        printf("REIST_WCET REJECT reason=%u\n", value);
         return 0;
     }
     if (report_type == REIST_REPORT_INVALID) {

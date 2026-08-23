@@ -9,6 +9,7 @@
 #include "kernel/sched/scheduler.h"
 
 #include "arch/x86/include/interrupt.h"
+#include "arch/x86/include/sys.h"
 #include "arch/x86/include/tss.h"
 #include "arch/x86/mm/paging.h"
 #include "lib/libc/stdio.h"
@@ -43,6 +44,7 @@ static int8_t scheduling_class_cursors[SCHEDULER_CLASS_COUNT] = {-1, -1, -1};
 static uint8_t scheduling_class_cycle_cursor;
 static uint32_t peak_active_tasks;
 static uint32_t task_capacity_rejections;
+static runtime_timing_stats_t runtime_timing_stats;
 
 _Static_assert(MAX_TASKS <= SCHEDULER_POLICY_MAX_CANDIDATES,
                "scheduler policy candidate capacity is too small");
@@ -50,10 +52,75 @@ _Static_assert(MAX_TASKS == KERNEL_STACK_SLOT_COUNT,
                "scheduler and kernel-stack capacities differ");
 _Static_assert(sizeof(scheduler_resource_stats_t) == 32U,
                "scheduler statistics ABI size changed");
+_Static_assert(sizeof(runtime_timing_stats_t) == 72U,
+               "runtime timing statistics ABI size changed");
 
 #define SCHEDULER_QUANTUM_MS 10U
 #define KERNEL_STACK_GUARD 0x4B535447U /* "KSTG" */
 #define KERNEL_STACK_WATERMARK_BYTE 0xA5U
+
+static uint64_t saturating_increment_u64(uint64_t value) {
+    return value == UINT64_MAX ? UINT64_MAX : value + 1U;
+}
+
+static uint64_t saturating_add_u64(uint64_t value, uint64_t increment) {
+    return UINT64_MAX - value < increment ? UINT64_MAX : value + increment;
+}
+
+static void runtime_timing_record(uint64_t start_cycles, bool scheduler) {
+    uint64_t end_cycles = cpu_cycle_counter_read();
+    uint32_t flags = irq_save();
+    /* Scheduler IRQs start before boot-time frequency calibration. Those
+     * early intervals cannot be normalized and are deliberately not samples;
+     * only a backwards calibrated counter is a persistent anomaly. */
+    if (cpu_frequency == 0U) {
+        irq_restore(flags);
+        return;
+    }
+    if (end_cycles < start_cycles) {
+        runtime_timing_stats.clock_anomalies = saturating_increment_u64(
+            runtime_timing_stats.clock_anomalies);
+        irq_restore(flags);
+        return;
+    }
+    uint64_t elapsed = end_cycles - start_cycles;
+    uint64_t *samples = scheduler
+        ? &runtime_timing_stats.scheduler_samples
+        : &runtime_timing_stats.syscall_samples;
+    uint64_t *total = scheduler
+        ? &runtime_timing_stats.scheduler_total_cycles
+        : &runtime_timing_stats.syscall_total_cycles;
+    uint64_t *maximum = scheduler
+        ? &runtime_timing_stats.scheduler_max_cycles
+        : &runtime_timing_stats.syscall_max_cycles;
+    *samples = saturating_increment_u64(*samples);
+    *total = saturating_add_u64(*total, elapsed);
+    if (elapsed > *maximum) *maximum = elapsed;
+    irq_restore(flags);
+}
+
+uint64_t runtime_timing_begin(void) {
+    return cpu_cycle_counter_read();
+}
+
+static void runtime_timing_finish_scheduler(uint64_t start_cycles) {
+    runtime_timing_record(start_cycles, true);
+}
+
+void runtime_timing_record_syscall(uint64_t start_cycles) {
+    runtime_timing_record(start_cycles, false);
+}
+
+int scheduler_runtime_timing_stats(runtime_timing_stats_t *stats_out) {
+    if (stats_out == NULL) return -22;
+    uint32_t flags = irq_save();
+    *stats_out = runtime_timing_stats;
+    stats_out->version = RUNTIME_TIMING_STATS_VERSION;
+    stats_out->struct_size = sizeof(*stats_out);
+    stats_out->cpu_frequency_hz = cpu_frequency;
+    irq_restore(flags);
+    return stats_out->cpu_frequency_hz == 0U ? -5 : 0;
+}
 
 extern uint32_t _stack_guard_start;
 extern uint32_t _stack_guard_end;
@@ -791,9 +858,11 @@ void scheduler_pit_interrupt_handler(void) {
 }
 
 void scheduler_interrupt_handler(void) {
+    uint64_t timing_start = runtime_timing_begin();
     uint32_t flags = irq_save();
     if (preempt_disable_count != 0) {
         preemption_pending = true;
+        runtime_timing_finish_scheduler(timing_start);
         irq_restore(flags);
         return;
     }
@@ -818,11 +887,13 @@ void scheduler_interrupt_handler(void) {
         tasks[previous].status = TASK_READY;
         current_task = -1;
         activate_task_address_space(-1);
+        runtime_timing_finish_scheduler(timing_start);
         swtch(&tasks[previous].context, &kernel_context);
         irq_restore(flags);
         return;
     }
     if (next < 0 || next == previous) {
+        runtime_timing_finish_scheduler(timing_start);
         irq_restore(flags);
         return;
     }
@@ -830,6 +901,7 @@ void scheduler_interrupt_handler(void) {
     current_task = next;
     tasks[next].status = TASK_RUNNING;
     activate_task_address_space(next);
+    runtime_timing_finish_scheduler(timing_start);
 
     if (previous < 0) {
         kernel_context_saved = true;

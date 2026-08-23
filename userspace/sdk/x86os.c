@@ -12,6 +12,8 @@ _Static_assert(sizeof(x86os_memory_stats_t) == 120U,
                "memory statistics ABI size changed");
 _Static_assert(sizeof(x86os_scheduler_stats_t) == 32U,
                "scheduler statistics ABI size changed");
+_Static_assert(sizeof(x86os_runtime_timing_t) == 72U,
+               "runtime timing statistics ABI changed");
 _Static_assert(offsetof(x86os_memory_stats_t, detected_usable_bytes) == 8U,
                "memory statistics ABI header changed");
 _Static_assert(sizeof(x86os_network_probe_stats_t) == 24U,
@@ -180,6 +182,12 @@ int x86os_scheduler_stats(x86os_scheduler_stats_t *stats) {
     return (int)x86os_syscall(X86OS_SYS_SCHEDULER_STATS,
                               (uintptr_t)stats, sizeof(*stats),
                               X86OS_SCHEDULER_STATS_VERSION);
+}
+
+int x86os_runtime_timing(x86os_runtime_timing_t *stats) {
+    return (int)x86os_syscall(X86OS_SYS_RUNTIME_TIMING,
+                              (uintptr_t)stats, sizeof(*stats),
+                              X86OS_RUNTIME_TIMING_VERSION);
 }
 
 int x86os_ipc_release(x86os_ipc_handle_t handle) {

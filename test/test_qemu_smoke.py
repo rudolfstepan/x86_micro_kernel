@@ -29,6 +29,32 @@ RUNNER_SPEC.loader.exec_module(RUNNER_MODULE)
 
 
 class QemuGuestSmokeRunnerTests(unittest.TestCase):
+    def test_wcet_marker_is_normalized_and_bounded(self) -> None:
+        budget = {
+            "minimum_samples": 64,
+            "maximum_clock_anomalies": 0,
+            "scheduler_decision_max_ns": 10_000_000,
+            "int80_probe_max_ns": 10_000_000,
+        }
+        marker = (
+            "REIST_WCET BASELINE version=1 frequency_hz=1000000000 "
+            "scheduler_samples=64 scheduler_total_cycles=64000 "
+            "scheduler_max_cycles=1000 int80_samples=64 "
+            "int80_total_cycles=32000 int80_max_cycles=500 "
+            "clock_anomalies=0"
+        )
+        transcript = "\n".join(("BOOT_OK", marker, "TEST_OK", "C:\\>", ""))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, wcet_budget=budget))
+        exceeded = marker.replace(
+            "scheduler_total_cycles=64000 scheduler_max_cycles=1000",
+            "scheduler_total_cycles=10000001 "
+            "scheduler_max_cycles=10000001",
+        )
+        transcript = "\n".join(("BOOT_OK", exceeded, "TEST_OK", "C:\\>", ""))
+        self.assertIn("scheduler decision baseline exceeded",
+                      RUNNER_MODULE.validate(transcript, wcet_budget=budget))
+
     def test_external_handover_channel_uses_com2_and_crc_frames(self) -> None:
         command = RUNNER_MODULE.qemu_command(
             Path("qemu"), Path("image"), handover_port=32124,

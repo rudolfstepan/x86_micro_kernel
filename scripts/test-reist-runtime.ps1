@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -25,6 +25,7 @@ $SystemLayoutRunner = Join-Path $RepoRoot 'scripts\run_qemu_system_layout.py'
 $PciAudioRunner = Join-Path $RepoRoot 'scripts\run_qemu_pci_audio.py'
 $PartitionProvisioningRunner = Join-Path $RepoRoot 'scripts\run_qemu_partition_provisioning.py'
 $LogRoot = Join-Path $RepoRoot 'build\codex-agent'
+$WcetBudget = Join-Path $RepoRoot 'safety\wcet_budgets.json'
 
 function Resolve-NativeTool {
     param([string]$Name, [string[]]$Fallbacks)
@@ -365,7 +366,10 @@ function Invoke-StorageReconnect {
             if (Test-Path -LiteralPath $serial) {
                 Remove-Item -LiteralPath $serial -Force
             }
-            $startOutput = & $vmrun -T ws start $vmx nogui 2>&1
+            # This Workstation host rejects VIX headless startup although the
+            # generated VM is valid. Use the package launcher's supported GUI
+            # mode; serial evidence and bounded hard-stop remain automated.
+            $startOutput = & $vmrun -T ws start $vmx gui 2>&1
             $startExit = $LASTEXITCODE
             $startOutput | Add-Content -LiteralPath $gateLog
             $published = $false
@@ -428,6 +432,148 @@ function Invoke-StorageReconnect {
         $watch.Stop()
     }
     Write-Output "VMWARE STORAGE RECONNECT PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+}
+
+function Test-WcetBaseline {
+    param(
+        [string]$Transcript,
+        [ValidateSet('qemu', 'vmware')]
+        [string]$Platform
+    )
+    $pattern = '(?m)^REIST_WCET BASELINE version=(\d+) frequency_hz=(\d+) scheduler_samples=(\d+) scheduler_total_cycles=(\d+) scheduler_max_cycles=(\d+) int80_samples=(\d+) int80_total_cycles=(\d+) int80_max_cycles=(\d+) clock_anomalies=(\d+)\s*$'
+    $match = [regex]::Match($Transcript, $pattern)
+    if (!$match.Success) { throw 'Missing bounded REIST WCET baseline marker.' }
+
+    $values = @()
+    for ($index = 1; $index -le 9; ++$index) {
+        $values += [uint64]::Parse($match.Groups[$index].Value)
+    }
+    if ($values[0] -ne 1 -or $values[1] -eq 0) {
+        throw 'Invalid REIST WCET baseline version or frequency.'
+    }
+    $document = Get-Content -LiteralPath $WcetBudget -Raw | ConvertFrom-Json
+    $platformBudget = $document.platforms.PSObject.Properties[$Platform].Value
+    if ($values[2] -lt [uint64]$document.minimum_samples -or
+        $values[5] -lt [uint64]$document.minimum_samples) {
+        throw 'Insufficient REIST WCET baseline samples.'
+    }
+    if ($values[8] -gt [uint64]$document.maximum_clock_anomalies) {
+        throw 'REIST WCET clock anomaly detected.'
+    }
+    if ($values[3] -lt $values[4] -or $values[6] -lt $values[7]) {
+        throw 'Invalid REIST WCET baseline totals.'
+    }
+    $schedulerNs = [uint64][Math]::Ceiling(
+        ([double]$values[4] * 1000000000.0) / [double]$values[1])
+    $int80Ns = [uint64][Math]::Ceiling(
+        ([double]$values[7] * 1000000000.0) / [double]$values[1])
+    if ($schedulerNs -gt [uint64]$platformBudget.scheduler_decision_max_ns) {
+        throw "Scheduler decision baseline exceeded: $schedulerNs ns."
+    }
+    if ($int80Ns -gt [uint64]$platformBudget.int80_probe_max_ns) {
+        throw "INT-80 probe baseline exceeded: $int80Ns ns."
+    }
+    return "platform=$Platform scheduler_max_ns=$schedulerNs int80_max_ns=$int80Ns samples=$($values[2])/$($values[5])"
+}
+
+function Invoke-VmwareWcetBaseline {
+    $vmrun = $null
+    foreach ($candidate in @(
+        'C:\Program Files\VMware\VMware Workstation\vmrun.exe',
+        'C:\Program Files (x86)\VMware\VMware Workstation\vmrun.exe'
+    )) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            $vmrun = $candidate
+            break
+        }
+    }
+    if ($null -eq $vmrun) { throw 'VMware vmrun is required for wcet-baseline.' }
+
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $gateLog = Join-Path $LogRoot "$stamp-runtime-wcet-vmware.log"
+    $evidence = Join-Path $LogRoot "$stamp-runtime-wcet-vmware-serial.log"
+    $vmx = Join-Path $RepoRoot 'build\vmware\reist-os\reist-os.vmx'
+    $serial = Join-Path $RepoRoot 'build\vmware\reist-os\vmware-serial.log'
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $started = $false
+    try {
+        $LASTEXITCODE = 0
+        & $BuildScript -Target vmware -Video $Video *> $gateLog
+        if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $vmx -PathType Leaf)) {
+            throw 'VMware reference package build failed.'
+        }
+        $running = & $vmrun -T ws list 2>$null
+        if ($running | Where-Object { $_.Trim() -ieq $vmx }) {
+            throw 'VMware package VM is already running.'
+        }
+        if (Test-Path -LiteralPath $serial) {
+            Remove-Item -LiteralPath $serial -Force
+        }
+        $startFailures = @()
+        for ($attempt = 1; $attempt -le 3 -and !$started; ++$attempt) {
+            $startOutput = & $vmrun -T ws start $vmx nogui 2>&1
+            $startExit = $LASTEXITCODE
+            $startOutput | Add-Content -LiteralPath $gateLog
+            $publishDeadline = (Get-Date).AddSeconds(5)
+            do {
+                $runningAfterStart = & $vmrun -T ws list 2>$null
+                $serialPublished = Test-Path -LiteralPath $serial -PathType Leaf
+                if (($runningAfterStart |
+                        Where-Object { $_.Trim() -ieq $vmx }) -or
+                    ($serialPublished -and
+                     (Get-Item -LiteralPath $serial).Length -gt 0)) {
+                    $started = $true
+                    break
+                }
+                Start-Sleep -Milliseconds 250
+            } while ((Get-Date) -lt $publishDeadline)
+            if (!$started) {
+                $detail = ($startOutput | ForEach-Object {
+                    $_.ToString().Trim()
+                } | Where-Object { $_ }) -join ' '
+                if (!$detail) { $detail = 'no vmrun diagnostic' }
+                $startFailures += "attempt=$attempt exit=$startExit $detail"
+                if ($attempt -lt 3) { Start-Sleep -Milliseconds 500 }
+            }
+        }
+        if (!$started) {
+            throw ('VMware start was not published: ' +
+                ($startFailures -join '; '))
+        }
+
+        $deadline = (Get-Date).AddSeconds(45)
+        $summary = $null
+        do {
+            if (Test-Path -LiteralPath $serial -PathType Leaf) {
+                $serialContent = Get-Content -LiteralPath $serial -Raw
+                $transcript = if ($null -eq $serialContent) {
+                    ''
+                } else {
+                    [string]$serialContent
+                }
+                if ($transcript.Contains('BOOT_OK') -and
+                    $transcript.Contains('REIST_WCET BASELINE')) {
+                    $summary = Test-WcetBaseline $transcript 'vmware'
+                    break
+                }
+            }
+            Start-Sleep -Milliseconds 250
+        } while ((Get-Date) -lt $deadline)
+        if ($null -eq $summary) { throw 'VMware WCET baseline timed out.' }
+        Copy-Item -LiteralPath $serial -Destination $evidence -Force
+        "$summary evidence=$evidence" | Add-Content -LiteralPath $gateLog
+    }
+    catch {
+        $_ | Out-String | Add-Content -LiteralPath $gateLog
+        Get-Content -LiteralPath $gateLog -Tail 40
+        throw
+    }
+    finally {
+        if ($started) { & $vmrun -T ws stop $vmx hard 2>$null | Out-Null }
+        $watch.Stop()
+    }
+    Write-Output "VMWARE WCET PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
 }
 
 function Invoke-VmwareAudioService {
@@ -692,6 +838,16 @@ switch ($Mode) {
     }
     'storage-reconnect' {
         Invoke-StorageReconnect
+    }
+    'wcet-baseline' {
+        if ($Target -eq 'qemu') {
+            Invoke-Smoke 'guest-smoke-wcet-baseline.log' @(
+                '--expect-wcet-baseline', '--wcet-budget', $WcetBudget,
+                '--wcet-platform', 'qemu'
+            )
+        } else {
+            Invoke-VmwareWcetBaseline
+        }
     }
     'fdd-hotplug' {
         Invoke-FddHotplug
