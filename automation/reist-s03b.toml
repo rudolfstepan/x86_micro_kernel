@@ -4042,6 +4042,7 @@ allowed_files = [
   "include/kernel/boot_health.h",
   "kernel/init/boot_health.c",
   "kernel/init/kernel.c",
+  "kernel/proc/process.h",
   "kernel/proc/process.c",
   "kernel/syscall/syscall_table.c",
   "lib/libc/stdlib.h",
