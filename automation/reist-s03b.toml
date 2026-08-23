@@ -278,6 +278,7 @@ allowed_files = [
   "test/test_boot_control.py",
   "test/test_boot_ab.py",
   "test/test_boot_manifest.py",
+  "test/test_boot_sha256.py",
   "test/test_native_boot_image.py",
   "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
   "docs/architecture/REIST_ARCHITECTURE.md",
@@ -302,6 +303,7 @@ targeted_tests = [
   "python test/test_boot_control.py -v",
   "python test/test_boot_ab.py -v",
   "python test/test_boot_manifest.py -v",
+  "python test/test_boot_sha256.py -v",
   "python test/test_native_boot_image.py -v"
 ]
 package_tests = [
