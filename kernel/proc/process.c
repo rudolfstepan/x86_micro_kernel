@@ -373,6 +373,21 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
              ++index) profile_allow(profile, admin_syscalls[index]);
         return true;
     }
+    if (kind == PROCESS_DOMAIN_MAINTENANCE) {
+        /* CHKDSK can inspect the VFS and submit bounded maintenance requests,
+         * but receives no raw block, controller, DMA or port authority. */
+        static const uint8_t maintenance_syscalls[] = {
+            0U, 1U, SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS,
+            SYS_TERMINAL_WRITE, SYS_MONOTONIC_MS, SYS_OPEN, SYS_READ,
+            SYS_CLOSE, SYS_STAT, SYS_READDIR_BATCH, SYS_DRIVE_INFO,
+            SYS_STORAGE_SUBMIT, SYS_STORAGE_COLLECT
+        };
+        for (size_t index = 0;
+             index < sizeof(maintenance_syscalls) /
+                         sizeof(maintenance_syscalls[0]);
+             ++index) profile_allow(profile, maintenance_syscalls[index]);
+        return true;
+    }
     if (kind == PROCESS_DOMAIN_COMPONENT_ADMIN) {
         static const uint8_t component_admin_syscalls[] = {
             0U, SYS_EXIT, SYS_GETPID, SYS_TERMINAL_WRITE,
@@ -451,7 +466,8 @@ bool process_syscall_allowed(const Process *process, uint32_t syscall_index) {
          profile->kind != PROCESS_DOMAIN_ADMIN &&
          profile->kind != PROCESS_DOMAIN_COMPONENT_ADMIN &&
          profile->kind != PROCESS_DOMAIN_DRIVER &&
-         profile->kind != PROCESS_DOMAIN_AUDIO_SERVICE)) return false;
+         profile->kind != PROCESS_DOMAIN_AUDIO_SERVICE &&
+         profile->kind != PROCESS_DOMAIN_MAINTENANCE)) return false;
     return (profile->allowed_syscalls[syscall_index / 32U] &
             (1U << (syscall_index % 32U))) != 0U;
 }
@@ -1276,6 +1292,8 @@ int process_spawn_args(Process *parent, const char *path, int argc,
     canonicalize_program_path(resolved);
     process_domain_kind_t domain_kind = strcmp(resolved, "/sbin/svcctl.prg") == 0
         ? PROCESS_DOMAIN_COMPONENT_ADMIN :
+        strcmp(resolved, "/sbin/chkdsk.prg") == 0
+            ? PROCESS_DOMAIN_MAINTENANCE :
         strcmp(resolved, "/sbin/devctl.prg") == 0 ||
         strcmp(resolved, "/sbin/fdisk.prg") == 0 ||
         strcmp(resolved, "/sbin/format.prg") == 0 ||

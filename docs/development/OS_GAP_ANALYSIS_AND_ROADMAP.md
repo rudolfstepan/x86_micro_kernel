@@ -255,8 +255,10 @@ und 10 verbindlich.
         - [x] `FORMAT.PRG` für FAT12-Erzeugung sowie explizites FAT32-Quick- und
           Fullformat; beide FAT-Kopien werden verifiziert initialisiert, der
           Full-Modus markiert isolierte Defekte als `0x0FFFFFF7`
-        - [ ] `CHKDSK.PRG` für read-only Analyse sowie explizit bestätigte,
-          transaktionale Reparatur von FAT-Spiegeln, Clusterketten,
+        - [x] `CHKDSK.PRG` für begrenzte BPB-/FAT12-Spiegelanalyse und
+          explizit bestätigte, journalisierte Reparatur genau einer eindeutig
+          strukturell beschädigten FAT-Kopie
+        - [ ] `CHKDSK.PRG` für transaktionale Reparatur von Clusterketten,
           Verzeichnissen, Journal und Defektsektorkarte
         - [x] Exklusives Maintenance-Lease: vor Mutation unmounten, offene
           Handles ablehnen, Medienidentität erneut prüfen und nach Erfolg
@@ -2520,9 +2522,14 @@ Die Programme enthalten keine Dateisystem- oder Controllerimplementierung;
 sie validieren Eingaben und senden versionierte Requests an den Storage-Dienst.
 
 - `CHKDSK.PRG` ist standardmäßig read-only und begrenzt Knoten, Pfadlänge und
-  gelesene Bytes. Reparatur benötigt `--repair`, eine interaktive Bestätigung
-  mit Resource-ID und ein gültiges Maintenance-Lease. Jeder Reparaturschritt
-  ist einzeln journalisiert.
+  gelesene Bytes. `--fat12 <resource>` delegiert BPB- und FAT-Spiegelanalyse an
+  den Storage-Dienst. `--repair --confirm` repariert nur dann, wenn genau eine
+  der beiden Kopien strukturell gültig ist. Der Dienst erwirbt dazu ein an die
+  aktuell qualifizierte Medienidentität gebundenes Maintenance-Lease, prüft
+  nach dem Unmount erneut und protokolliert alle neun Zielsektoren im
+  vorhandenen Undo-Journal. Sind beide Kopien gültig, aber verschieden, beide
+  ungültig oder Journal/Identität uneindeutig, findet keine Mutation statt.
+  Clusterketten-, Verzeichnis-, Journal- und Remap-Reparatur bleiben offen.
 - `FORMAT.PRG` akzeptiert ausschließlich erkannte FDD-Ressourcen. Ohne
   `--reist-fat12` erzeugt es kein REIST-Journal. Oberflächentest,
   Layoutberechnung, Initialisierung und vollständiger Metadaten-Readback sind

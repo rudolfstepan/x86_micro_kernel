@@ -1223,6 +1223,12 @@ static int syscall_storage_submit(const storage_request_submit_t *user_request,
     if (request.operation >= STORAGE_REQUEST_FORMAT_FAT12 &&
         request.operation <= STORAGE_REQUEST_FORMAT_FAT32_PREPARE &&
         process->domain_profile.kind != PROCESS_DOMAIN_ADMIN) return -13;
+    if (process->domain_profile.kind == PROCESS_DOMAIN_MAINTENANCE &&
+        (request.operation < STORAGE_REQUEST_CHECK_FAT12 ||
+         request.operation > STORAGE_REQUEST_REPAIR_FAT12_MIRROR)) return -13;
+    if (request.operation >= STORAGE_REQUEST_CHECK_FAT12 &&
+        request.operation <= STORAGE_REQUEST_REPAIR_FAT12_MIRROR &&
+        process->domain_profile.kind != PROCESS_DOMAIN_MAINTENANCE) return -13;
     uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
     const uint8_t *data_argument = NULL;
     if (request.operation == STORAGE_REQUEST_BLOCK_WRITE ||
@@ -1348,9 +1354,14 @@ static int syscall_storage_maintenance_acquire(uint32_t resource,
                                 true)) return -14;
     uint32_t current_fingerprint = 0U;
     if (!storage_service_media_fingerprint(resource, &current_fingerprint) ||
-        current_fingerprint != media_fingerprint ||
+        (media_fingerprint != 0U &&
+         current_fingerprint != media_fingerprint) ||
         !storage_service_resource_available(resource) ||
         storage_service_resource_read_only(resource)) return -30;
+    /* A zero fingerprint requests an atomic lease on the kernel-qualified
+     * current medium. Only the bound storage-service generation reaches this
+     * path; callers cannot use zero to weaken identity binding. */
+    media_fingerprint = current_fingerprint;
     storage_maintenance_token_t token = STORAGE_MAINTENANCE_INVALID_TOKEN;
     int result = storage_maintenance_acquire(process->pid,
         process->generation, resource, media_fingerprint, pit_monotonic_ms(),
@@ -1380,7 +1391,9 @@ static int syscall_storage_maintenance_renew(uint32_t resource,
         return -13;
     uint32_t current_fingerprint = 0U;
     if (!storage_service_media_fingerprint(resource, &current_fingerprint) ||
-        current_fingerprint != media_fingerprint) return -30;
+        (media_fingerprint != 0U &&
+         current_fingerprint != media_fingerprint)) return -30;
+    media_fingerprint = current_fingerprint;
     return storage_maintenance_renew(process->pid, process->generation, token,
                                      media_fingerprint, pit_monotonic_ms());
 }

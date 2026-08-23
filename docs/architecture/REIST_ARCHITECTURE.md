@@ -923,11 +923,21 @@ Medien gehören zum noch offenen FAT12-Maintenance-Abschluss.
 
 Manuelle Administration verwendet dieselben Sicherheitsgrenzen wie ein
 Fehlerpfad, besitzt aber einen expliziten, autorisierten Ausgangszustand. Die
-Befehle `/sbin/devctl.prg`, `/sbin/mount.prg`, `/sbin/umount.prg` und
-`/sbin/svcctl.prg`
+Befehle `/sbin/devctl.prg`, `/sbin/mount.prg`, `/sbin/umount.prg`,
+`/sbin/svcctl.prg` und `/sbin/chkdsk.prg`
 erhalten keine direkten Port-, DMA- oder Treiberzeiger. Sie senden versionierte
 Requests an eine default-deny Kernel-Schnittstelle und benötigen für
 Storage-Mutationen ein generations- und mediengebundenes Maintenance-Lease.
+
+`CHKDSK.PRG` läuft in einem eigenen Default-deny-Wartungsprofil. Dieses Profil
+darf VFS-Inhalte lesen sowie versionierte Check-/Repair-Aufträge senden, aber
+keine Blöcke, Controller, Ports oder DMA-Ressourcen direkt ansprechen. Der
+Storage-Dienst wählt bei FAT12-Spiegelschäden nur dann eine Quelle, wenn genau
+eine Kopie alle BPB- und FAT12-Bereichsinvarianten erfüllt. Vor dem ersten
+Write erwirbt er das Lease atomar für die aktuell qualifizierte
+Medienidentität, erzwingt Unmount/Handle-Freiheit und wiederholt die Diagnose.
+Jeder alte Zielsektor wird im vorhandenen Undo-Journal erfasst; widersprüchliche
+gültige Spiegel werden nicht automatisch aufgelöst.
 
 `device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
 Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht

@@ -39,8 +39,14 @@ class Fat12ToolContracts(unittest.TestCase):
         self.assertIn("format_equal(sector, expected", service)
         self.assertIn("x86os_storage_block_read(resource, sector, verify)", service)
 
-    def test_chkdsk_remains_read_only(self):
+    def test_chkdsk_delegates_repair_without_raw_media_access(self):
         chkdsk = self.read("userspace/programs/chkdsk.c")
+        self.assertIn("X86OS_STORAGE_CHECK_FAT12", chkdsk)
+        self.assertIn("X86OS_STORAGE_REPAIR_FAT12_MIRROR", chkdsk)
+        self.assertIn('"--repair"', chkdsk)
+        self.assertIn('"--confirm"', chkdsk)
+        self.assertNotIn("x86os_storage_block_read", chkdsk)
+        self.assertNotIn("x86os_storage_block_write", chkdsk)
         self.assertNotIn("x86os_write(", chkdsk)
         self.assertNotIn("x86os_unlink(", chkdsk)
 

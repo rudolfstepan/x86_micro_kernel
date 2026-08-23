@@ -1,6 +1,6 @@
 # FAT12-Status und Resilienz
 
-Stand: 20. August 2026.
+Stand: 23. August 2026.
 
 FAT12 dient vor allem bootfähigen 1,44-MB-Disketten und läuft vollständig über
 VFS und die gemeinsame Blockgeräteschicht. Klassische fremde FAT12-Medien
@@ -17,7 +17,8 @@ für explizit markierte, neu formatierte Medien aktiviert.
 
 ## REIST-FAT12
 
-Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sind umgesetzt:
+Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sowie der erste
+`S0.3c-6f6`-Wartungsschritt sind umgesetzt:
 
 1. verifiziertes Undo-Journal mit redundanten CRC-Headern und Recovery vor
    veränderlicher Metadatennutzung
@@ -29,6 +30,8 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f5` sind umgesetzt:
    Replikatpublikation und erst zuletzt Journal-`CLEAN`
 5. deterministische Host-Fehlermatrix über 29 stabile Persistenzbarrieren und
    QEMU-FDD-Reconnect-Nachweis ohne Veränderung des Referenzabbilds
+6. capability-gebundene BPB-/FAT-Spiegelanalyse und bestätigte Reparatur genau
+   einer strukturell beschädigten FAT-Kopie unter exklusivem Maintenance-Lease
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen
@@ -51,11 +54,21 @@ erst nach Readback. Bei unbekanntem Abschluss muss das Medium read-only
 bleiben.
 
 ```text
-CHKDSK [pfad]
+C:\> CHKDSK [pfad]
+C:\> CHKDSK --fat12 1
+C:\> CHKDSK --fat12 1 --repair --confirm
 FDISK
 ```
 
-`CHKDSK.PRG` ist ein begrenzter read-only VFS-Scan; es repariert nichts.
+Der Pfadmodus von `CHKDSK.PRG` bleibt ein begrenzter read-only VFS-Scan. Der
+FAT12-Modus sendet ausschließlich versionierte Check-/Repair-Requests; das
+Programm besitzt weder Blockzugriff noch FDC-, DMA- oder Portautorität. Der
+Storage-Dienst akzeptiert die Reparatur nur auf einem markierten REIST-FAT12-
+Medium, wenn genau eine FAT-Kopie strukturell gültig ist. Nach exklusivem
+Unmount und erneuter Diagnose werden alle neun alten Zielsektoren im
+Undo-Journal gesichert, die beschädigte Kopie mit verifiziertem Readback
+ersetzt und erst danach `CLEAN` veröffentlicht. Uneindeutigkeit lässt das
+Medium unverändert beziehungsweise fail-closed zur Inspektion zurück.
 `FDISK.PRG` kann auf explizit freigegebenen, leeren ATA-/AHCI-Medien eine
 validierte MBR-Partition erzeugen. Eine Diskette bleibt eine partitionslose
 Superfloppy und wird von `FDISK` niemals partitioniert.
@@ -64,9 +77,10 @@ Superfloppy und wird von `FDISK` niemals partitioniert.
 
 - reale FDD-/VMware-Power-Loss- und Reconnect-Matrix über die bereits
   deterministisch geprüften Veröffentlichungsstufen
-- kontrollierter, journalisierter CHKDSK-Reparaturmodus
-- vollständiger Maintenance-Lease-, Unmount-, Repair-, Verify- und
-  Remountnachweis
+- CHKDSK-Reparatur von Clusterketten, Verzeichnissen, Journal, Remap- und
+  Defektsektorkarte
+- QEMU-Laufzeitnachweis für Maintenance-Lease, Unmount, FAT-Spiegel-Reparatur,
+  Verify und kontrollierten Remount
 - breitere echte FDD-/Medienfehler- und Langzeitmatrix
 
 `FAT12_ANALYSIS.md` ist ein historischer Bericht und beschreibt nicht den

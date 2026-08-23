@@ -37,6 +37,7 @@ typedef enum {
     PROCESS_DOMAIN_COMPONENT_ADMIN = 5,
     PROCESS_DOMAIN_DRIVER = 6,
     PROCESS_DOMAIN_AUDIO_SERVICE = 7,
+    PROCESS_DOMAIN_MAINTENANCE = 8,
 } process_domain_kind_t;
 
 typedef struct {

@@ -209,6 +209,11 @@ static int format_fat32_scan(uint32_t resource, uint32_t start_cluster) {
                                  2U * FORMAT_FAT12_FAT_SECTORS + \
                                  FORMAT_FAT12_ROOT_SECTORS)
 #define FORMAT_FAT12_VOLUME_ID 0x52454953U
+#define FAT12_MAX_FAT_SECTORS 12U
+#define FAT12_JOURNAL_MAGIC 0x524A3132U
+#define FAT12_JOURNAL_VERSION 2U
+#define FAT12_JOURNAL_CLEAN 0U
+#define FAT12_JOURNAL_ACTIVE 1U
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -220,6 +225,13 @@ typedef struct __attribute__((packed)) {
     uint32_t entry_count;
     uint32_t crc32;
 } format_journal_header_t;
+
+typedef struct __attribute__((packed)) {
+    uint32_t target_sector;
+    uint32_t data_crc32;
+    uint64_t sequence;
+    uint32_t metadata_crc32;
+} format_journal_entry_t;
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -292,6 +304,286 @@ static int format_write(uint32_t resource, uint32_t sector,
         x86os_storage_block_read(resource, sector, verify) != 0 ||
         !format_equal(data, verify, sizeof(verify))) return -84;
     return 0;
+}
+
+typedef struct {
+    uint32_t reserved_sectors;
+    uint32_t fat_sectors;
+    uint32_t root_entries;
+    uint32_t root_sectors;
+    uint32_t total_sectors;
+    uint32_t data_start;
+    uint32_t cluster_count;
+    uint32_t volume_id;
+    uint8_t media;
+    uint8_t sectors_per_cluster;
+    uint8_t reist_layout;
+} fat12_check_layout_t;
+
+/* Fixed service-owned scratch space: FAT12 inspection never allocates and the
+ * accepted FAT size is capped before either buffer is indexed. */
+static uint8_t fat12_copies[2U][FAT12_MAX_FAT_SECTORS *
+                                X86OS_STORAGE_BLOCK_SIZE];
+
+static int fat12_parse_layout(uint32_t resource, fat12_check_layout_t *layout) {
+    x86os_drive_info_t drive;
+    uint8_t boot[X86OS_STORAGE_BLOCK_SIZE];
+    if (layout == 0 || x86os_drive_info(resource, &drive) <= 0 ||
+        drive.type != X86OS_DRIVE_FDD || drive.sectors == 0U ||
+        x86os_storage_block_read(resource, 0U, boot) != 0) return -22;
+
+    uint32_t bytes_per_sector = get16(boot + 11U);
+    uint32_t sectors_per_cluster = boot[13U];
+    uint32_t reserved = get16(boot + 14U);
+    uint32_t fats = boot[16U];
+    uint32_t root_entries = get16(boot + 17U);
+    uint32_t total = get16(boot + 19U);
+    if (total == 0U) total = get32(boot + 32U);
+    uint32_t fat_sectors = get16(boot + 22U);
+    if (bytes_per_sector != X86OS_STORAGE_BLOCK_SIZE ||
+        sectors_per_cluster == 0U || sectors_per_cluster > 128U ||
+        (sectors_per_cluster & (sectors_per_cluster - 1U)) != 0U ||
+        reserved == 0U || fats != 2U || root_entries == 0U ||
+        total == 0U || total != drive.sectors || fat_sectors == 0U ||
+        fat_sectors > FAT12_MAX_FAT_SECTORS || boot[510U] != 0x55U ||
+        boot[511U] != 0xAAU) return -22;
+
+    uint32_t root_sectors = (root_entries * 32U + 511U) / 512U;
+    uint32_t fat_area = fats * fat_sectors;
+    if (reserved > total || fat_area > total - reserved ||
+        root_sectors > total - reserved - fat_area) return -22;
+    uint32_t data_start = reserved + fat_area + root_sectors;
+    uint32_t cluster_count = (total - data_start) / sectors_per_cluster;
+    uint32_t fat_entries = (fat_sectors * X86OS_STORAGE_BLOCK_SIZE * 2U) / 3U;
+    if (cluster_count == 0U || cluster_count >= 4085U ||
+        fat_entries <= cluster_count + 1U) return -22;
+
+    *layout = (fat12_check_layout_t){
+        .reserved_sectors = reserved,
+        .fat_sectors = fat_sectors,
+        .root_entries = root_entries,
+        .root_sectors = root_sectors,
+        .total_sectors = total,
+        .data_start = data_start,
+        .cluster_count = cluster_count,
+        .volume_id = get32(boot + 39U),
+        .media = boot[21U],
+        .sectors_per_cluster = (uint8_t)sectors_per_cluster,
+        .reist_layout = reserved == FORMAT_FAT12_RESERVED &&
+            fat_sectors == FORMAT_FAT12_FAT_SECTORS &&
+            root_entries == 224U && total == FORMAT_FAT12_SECTORS &&
+            sectors_per_cluster == 1U && get32(boot + 39U) != 0U &&
+            format_equal(boot + 54U, (const uint8_t *)"REIST12", 7U),
+    };
+    return 0;
+}
+
+static uint32_t fat12_entry(const uint8_t *fat, uint32_t cluster) {
+    uint32_t offset = cluster + cluster / 2U;
+    uint32_t packed = (uint32_t)fat[offset] |
+                      ((uint32_t)fat[offset + 1U] << 8U);
+    return (cluster & 1U) != 0U ? packed >> 4U : packed & 0x0FFFU;
+}
+
+static int fat12_copy_valid(const uint8_t *fat,
+                            const fat12_check_layout_t *layout) {
+    uint32_t first = fat12_entry(fat, 0U);
+    uint32_t second = fat12_entry(fat, 1U);
+    if (first != (0x0F00U | layout->media) || second < 0x0FF8U)
+        return 0;
+    uint32_t last_cluster = layout->cluster_count + 1U;
+    for (uint32_t cluster = 2U; cluster <= last_cluster; ++cluster) {
+        uint32_t value = fat12_entry(fat, cluster);
+        if (value == 0U || (value >= 2U && value <= last_cluster) ||
+            value == 0x0FF7U || value >= 0x0FF8U) continue;
+        return 0;
+    }
+    return 1;
+}
+
+static int fat12_inspect(uint32_t resource, fat12_check_layout_t *layout) {
+    int result = fat12_parse_layout(resource, layout);
+    if (result != 0) return result;
+    uint32_t bytes = layout->fat_sectors * X86OS_STORAGE_BLOCK_SIZE;
+    for (uint32_t copy = 0U; copy < 2U; ++copy) {
+        uint32_t base = layout->reserved_sectors + copy * layout->fat_sectors;
+        for (uint32_t sector = 0U; sector < layout->fat_sectors; ++sector) {
+            if (x86os_storage_block_read(resource, base + sector,
+                    fat12_copies[copy] + sector * X86OS_STORAGE_BLOCK_SIZE) != 0)
+                return -5;
+        }
+    }
+    uint32_t flags = format_equal(fat12_copies[0], fat12_copies[1], bytes)
+        ? 0U : X86OS_FAT12_RESULT_MIRROR_MISMATCH;
+    if (!fat12_copy_valid(fat12_copies[0], layout))
+        flags |= X86OS_FAT12_RESULT_PRIMARY_INVALID;
+    if (!fat12_copy_valid(fat12_copies[1], layout))
+        flags |= X86OS_FAT12_RESULT_SECONDARY_INVALID;
+    return (int)flags;
+}
+
+static void fat12_copy_bytes(void *destination, const void *source,
+                             uint32_t length) {
+    uint8_t *out = (uint8_t *)destination;
+    const uint8_t *in = (const uint8_t *)source;
+    for (uint32_t index = 0U; index < length; ++index) out[index] = in[index];
+}
+
+static int fat12_journal_header_valid(const format_journal_header_t *header,
+                                      uint32_t volume_id) {
+    if (header->magic != FAT12_JOURNAL_MAGIC ||
+        header->version != FAT12_JOURNAL_VERSION ||
+        header->header_size != sizeof(*header) ||
+        header->media_fingerprint != volume_id ||
+        header->state > FAT12_JOURNAL_ACTIVE ||
+        header->entry_count > FORMAT_FAT12_JOURNAL_ENTRIES) return 0;
+    format_journal_header_t copy = *header;
+    uint32_t expected = copy.crc32;
+    copy.crc32 = 0U;
+    return expected == format_crc32(&copy, sizeof(copy));
+}
+
+static void fat12_prepare_journal_header(format_journal_header_t *header,
+        uint32_t volume_id, uint64_t sequence, uint32_t state,
+        uint32_t entry_count) {
+    *header = (format_journal_header_t){
+        .magic = FAT12_JOURNAL_MAGIC,
+        .version = FAT12_JOURNAL_VERSION,
+        .header_size = sizeof(*header),
+        .media_fingerprint = volume_id,
+        .sequence = sequence,
+        .state = state,
+        .entry_count = entry_count,
+        .crc32 = 0U,
+    };
+    header->crc32 = format_crc32(header, sizeof(*header));
+}
+
+static int fat12_load_clean_journal(uint32_t resource,
+        const fat12_check_layout_t *layout, format_journal_header_t *selected) {
+    uint8_t sectors[2U][X86OS_STORAGE_BLOCK_SIZE];
+    format_journal_header_t headers[2U];
+    int valid[2U] = {0, 0};
+    for (uint32_t copy = 0U; copy < 2U; ++copy) {
+        if (x86os_storage_block_read(resource,
+                FORMAT_FAT12_LAYOUT_BASE + copy, sectors[copy]) == 0) {
+            fat12_copy_bytes(&headers[copy], sectors[copy], sizeof(headers[copy]));
+            valid[copy] = fat12_journal_header_valid(&headers[copy],
+                                                     layout->volume_id);
+        }
+    }
+    if (!valid[0] && !valid[1]) return -84;
+    if (valid[0] && valid[1] &&
+        headers[0].sequence == headers[1].sequence &&
+        !format_equal((const uint8_t *)&headers[0],
+                      (const uint8_t *)&headers[1], sizeof(headers[0])))
+        return -84;
+    *selected = !valid[1] || (valid[0] &&
+        headers[0].sequence >= headers[1].sequence) ? headers[0] : headers[1];
+    if (selected->state != FAT12_JOURNAL_CLEAN ||
+        selected->sequence == UINT64_MAX) return -84;
+    return 0;
+}
+
+static int fat12_write_journal_header(uint32_t resource,
+        const format_journal_header_t *header) {
+    uint8_t sector[X86OS_STORAGE_BLOCK_SIZE];
+    format_fill(sector, 0U, sizeof(sector));
+    fat12_copy_bytes(sector, header, sizeof(*header));
+    if (format_write(resource, FORMAT_FAT12_LAYOUT_BASE, sector) != 0 ||
+        format_write(resource, FORMAT_FAT12_LAYOUT_BASE + 1U, sector) != 0)
+        return -84;
+    return x86os_storage_block_flush(resource) == 0 ? 0 : -5;
+}
+
+static int fat12_record_old_mirror(uint32_t resource,
+        format_journal_header_t *header, uint32_t target_copy,
+        uint32_t fat_sector, uint32_t target_sector) {
+    uint32_t index = header->entry_count;
+    if (index >= FORMAT_FAT12_JOURNAL_ENTRIES) return -28;
+    const uint8_t *old_sector = fat12_copies[target_copy] +
+        fat_sector * X86OS_STORAGE_BLOCK_SIZE;
+    format_journal_entry_t entry = {
+        .target_sector = target_sector,
+        .data_crc32 = format_crc32(old_sector, X86OS_STORAGE_BLOCK_SIZE),
+        .sequence = header->sequence,
+        .metadata_crc32 = 0U,
+    };
+    entry.metadata_crc32 = format_crc32(&entry, sizeof(entry));
+    uint8_t metadata[X86OS_STORAGE_BLOCK_SIZE];
+    format_fill(metadata, 0U, sizeof(metadata));
+    fat12_copy_bytes(metadata, &entry, sizeof(entry));
+    uint32_t journal_sector = FORMAT_FAT12_LAYOUT_BASE + 2U + index * 2U;
+    if (format_write(resource, journal_sector, old_sector) != 0 ||
+        format_write(resource, journal_sector + 1U, metadata) != 0)
+        return -84;
+    fat12_prepare_journal_header(header, header->media_fingerprint,
+        header->sequence, FAT12_JOURNAL_ACTIVE, index + 1U);
+    return fat12_write_journal_header(resource, header);
+}
+
+static int fat12_repair_mirror(uint32_t resource) {
+    fat12_check_layout_t layout;
+    int diagnosis = fat12_inspect(resource, &layout);
+    if (diagnosis <= 0) return diagnosis;
+    uint32_t invalid = (uint32_t)diagnosis &
+        (X86OS_FAT12_RESULT_PRIMARY_INVALID |
+         X86OS_FAT12_RESULT_SECONDARY_INVALID);
+    if (!layout.reist_layout ||
+        ((uint32_t)diagnosis & X86OS_FAT12_RESULT_MIRROR_MISMATCH) == 0U ||
+        (invalid != X86OS_FAT12_RESULT_PRIMARY_INVALID &&
+         invalid != X86OS_FAT12_RESULT_SECONDARY_INVALID)) return -84;
+
+    uint32_t token = 0U;
+    if (x86os_storage_maintenance_acquire(resource, 0U, &token) != 0 ||
+        token == 0U) return -30;
+
+    int result = fat12_inspect(resource, &layout);
+    if (result != diagnosis || !layout.reist_layout) result = -84;
+    uint32_t target = invalid == X86OS_FAT12_RESULT_PRIMARY_INVALID ? 0U : 1U;
+    uint32_t source = target ^ 1U;
+    format_journal_header_t journal;
+    if (result >= 0 && fat12_load_clean_journal(resource, &layout, &journal) != 0)
+        result = -84;
+    if (result >= 0) {
+        fat12_prepare_journal_header(&journal, layout.volume_id,
+            journal.sequence + 1U, FAT12_JOURNAL_ACTIVE, 0U);
+        result = fat12_write_journal_header(resource, &journal);
+    }
+    for (uint32_t sector = 0U;
+         result == 0 && sector < layout.fat_sectors; ++sector) {
+        uint32_t target_sector = layout.reserved_sectors +
+            target * layout.fat_sectors + sector;
+        result = fat12_record_old_mirror(resource, &journal, target, sector,
+                                         target_sector);
+        if (result == 0 &&
+            x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+            result = -30;
+    }
+    for (uint32_t sector = 0U;
+         result == 0 && sector < layout.fat_sectors; ++sector) {
+        uint32_t target_sector = layout.reserved_sectors +
+            target * layout.fat_sectors + sector;
+        result = format_write(resource, target_sector,
+            fat12_copies[source] + sector * X86OS_STORAGE_BLOCK_SIZE);
+        if (result == 0 &&
+            x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+            result = -30;
+    }
+    if (result == 0 && x86os_storage_block_flush(resource) != 0) result = -5;
+    if (result == 0 && fat12_inspect(resource, &layout) != 0) result = -84;
+    if (result == 0 &&
+        x86os_storage_maintenance_renew(resource, token, 0U) != 0)
+        result = -30;
+    if (result == 0) {
+        fat12_prepare_journal_header(&journal, layout.volume_id,
+            journal.sequence, FAT12_JOURNAL_CLEAN, 0U);
+        result = fat12_write_journal_header(resource, &journal);
+    }
+    if (x86os_storage_maintenance_release(resource, token) != 0 && result == 0)
+        result = -5;
+    return result == 0
+        ? diagnosis | (int)X86OS_FAT12_RESULT_MIRROR_REPAIRED : result;
 }
 
 static void format_boot_sector(uint8_t *sector) {
@@ -408,6 +700,14 @@ int main(void) {
         if (request.operation == X86OS_STORAGE_FORMAT_FAT32_PREPARE &&
             request.length == 0U)
             result = format_fat32_prepare(request.resource, request.offset);
+        if (request.operation == X86OS_STORAGE_CHECK_FAT12 &&
+            request.length == 0U) {
+            fat12_check_layout_t layout;
+            result = fat12_inspect(request.resource, &layout);
+        }
+        if (request.operation == X86OS_STORAGE_REPAIR_FAT12_MIRROR &&
+            request.length == 0U)
+            result = fat12_repair_mirror(request.resource);
         if (x86os_storage_complete(request.handle, result, data) != 0)
             return 3;
     }

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "S0.3c-6f5-vmware-fdd-reconnect"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -2616,7 +2616,7 @@ evidence = []
 
 [[packages]]
 id = "S0.3c-6f5-vmware-fdd-reconnect"
-status = "active"
+status = "cancelled"
 risk = "high"
 title = "Automate VMware floppy disconnect and safe reintegration"
 scope = "Close the remaining S0.3c-6f5 VMware reconnect evidence gap. Boot the freshly generated disposable VMware package from HDD with a separate deterministic FAT12 test image attached as floppy0, launch the existing Ring-3 GTEST FDD_HOTPLUG workflow, disconnect and reconnect the named virtual floppy through VMware VIX, and require ordered disconnect detection, bounded media requalification, successful HOTPLUG.TXT reread, TEST_OK and a returned Ring-3 shell without panic. Keep physical-media and power-loss claims excluded."
@@ -2658,4 +2658,58 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "test: automate VMware FDD reconnect"
+evidence = []
+
+[[packages]]
+id = "S0.3c-6f6a-chkdsk-fat-mirror"
+status = "done"
+risk = "high"
+title = "Add bounded FAT12 diagnosis and transactional mirror repair"
+scope = "Replace the read-only-only CHKDSK gap with the first production repair increment. CHKDSK.PRG sends versioned check or explicitly confirmed repair requests without raw-media authority. The isolated Ring-3 storage service validates a standard FAT12 BPB and both bounded FAT copies, reports clean, damaged or ambiguous mirror state, and repairs exactly one structurally invalid mirror only on a REIST FAT12 volume under an exclusive current-media maintenance lease. Journal every target sector before mutation, preserve the valid source mirror, verify all writes and fail closed on ambiguity, stale media, journal damage or uncertain completion. VMware reconnect evidence is intentionally deferred in favor of implementation work. Cluster-chain, directory, remap and replica repair remain later increments."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/chkdsk.c",
+  "test/test_fat12_maintenance.py",
+  "test/test_fat12_tools.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md"
+]
+invariants = [
+  "CHKDSK has no block, DMA, controller or port authority and can only submit the two exact FAT12 maintenance operations",
+  "the storage request ABI is append-only and all new requests retain fixed pool capacity, per-client limits and finite deadlines",
+  "read-only check performs no mutation and validates BPB bounds plus every FAT12 entry in both fixed-capacity mirror buffers",
+  "repair requires --repair and --confirm, an FDD resource, the REIST FAT12 layout, exactly one structurally valid mirror and an exclusive lease bound atomically to the current media identity",
+  "after acquiring the lease the service repeats diagnosis before any write and preserves the selected valid mirror throughout the transaction",
+  "every target FAT sector is recorded in the existing FAT12 undo-journal format before mutation; headers, records, FAT writes and CLEAN commit use verified writes and explicit barriers",
+  "equal-but-invalid, both-invalid, both-valid-but-different, active or corrupt journal, stale media, read-only media and uncertain completion fail closed without selecting a source",
+  "a failed repair leaves either the old state recoverable from the ACTIVE journal or a verified clean mirrored FAT; it is never reported as successful",
+  "cluster-chain, directory, remap and replica repair are not claimed by this increment"
+]
+targeted_tests = [
+  "python test/test_fat12_maintenance.py -v",
+  "python test/test_fat12_tools.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "repair would require CHKDSK itself to receive raw block or controller authority",
+  "the service cannot acquire an exclusive current-media maintenance lease before mutation",
+  "a mirror source would be selected when both copies are structurally valid but differ",
+  "the existing journal format cannot represent the bounded nine-sector mirror transaction",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: add confirmed FAT12 mirror repair"
 evidence = []
