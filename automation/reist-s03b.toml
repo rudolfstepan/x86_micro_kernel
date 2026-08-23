@@ -854,6 +854,56 @@ commit_message = "storage: repair FAT12 dot-entry sizes"
 evidence = []
 
 [[packages]]
+id = "S0.3c-6f6n-chkdsk-dot-clusters"
+status = "done"
+risk = "high"
+title = "Repair incorrect FAT12 dot-entry cluster relationships"
+scope = "Use the already validated current/parent directory context to record a bounded candidate when an exact dot or dot-dot entry has valid attributes, zero high cluster word and zero size but an incorrect low start cluster. Add an explicitly confirmed operation that requires the complete pre-lease and post-lease diagnosis to be exactly DIRECTORY_INVALID and every issue to have one candidate, then journal every unique directory sector and replace only the low start cluster with the deterministic self or parent value. Root dot entries, simultaneous size faults, malformed names or attributes, mixed faults and capacity exhaustion remain fail-closed."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/chkdsk.c",
+  "test/test_fat12_maintenance.py",
+  "test/test_fat12_tools.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md"
+]
+invariants = [
+  "operation 25 is append-only, maintenance-domain restricted and reachable from CHKDSK only as --repair-dot-cluster --confirm",
+  "a candidate requires an exact dot name, a non-root containing directory, valid directory attributes, zero high cluster word, zero size and a low start cluster unequal to the deterministic current or parent cluster",
+  "root dot entries and entries with both a cluster and size fault remain diagnostic-only and never receive a candidate",
+  "the complete pre-lease and post-lease diagnosis is exactly DIRECTORY_INVALID and every directory-invalid issue has one bounded dot-cluster candidate",
+  "the leased sector revalidates exact dot kind, attributes, original low cluster, zero size and expected replacement before mutation",
+  "repair changes only the 16-bit low start-cluster field; names, attributes, timestamps, FAT mirrors and data sectors remain unchanged",
+  "every unique directory sector is undo-journaled before mutation; writes are read back and success requires a completely clean full rescan before journal CLEAN"
+]
+targeted_tests = [
+  "python test/test_fat12_maintenance.py -v",
+  "python test/test_fat12_tools.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "the expected self or parent cluster is not uniquely determined by the fixed scan context",
+  "the diagnosis includes a root dot entry, nonzero dot size or any issue without an exact cluster-only candidate",
+  "repair would alter a field beyond the low start cluster or write FAT or data sectors",
+  "the bounded candidate, directory or journal capacity is insufficient",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: repair FAT12 dot-entry clusters"
+evidence = []
+
+[[packages]]
 id = "R1.9-file-icons"
 status = "done"
 risk = "medium"

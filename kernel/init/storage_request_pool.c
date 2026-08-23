@@ -130,7 +130,7 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->client_generation == 0U ||
         value->deadline_ms == 0U ||
         value->operation < STORAGE_REQUEST_READ ||
-        value->operation > STORAGE_REQUEST_REPAIR_FAT12_DOT_SIZE)
+        value->operation > STORAGE_REQUEST_REPAIR_FAT12_DOT_CLUSTER)
         return false;
     if (value->operation == STORAGE_REQUEST_BLOCK_FLUSH ||
         value->operation == STORAGE_REQUEST_VFS_SYNC ||
@@ -151,7 +151,8 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->operation == STORAGE_REQUEST_REPAIR_FAT12_VOLUME_LABEL ||
         value->operation == STORAGE_REQUEST_REPAIR_FAT12_ZERO_FILES ||
         value->operation == STORAGE_REQUEST_REPAIR_FAT12_ZERO_START_FILES ||
-        value->operation == STORAGE_REQUEST_REPAIR_FAT12_DOT_SIZE)
+        value->operation == STORAGE_REQUEST_REPAIR_FAT12_DOT_SIZE ||
+        value->operation == STORAGE_REQUEST_REPAIR_FAT12_DOT_CLUSTER)
         return value->length == 0U;
     if (value->operation == STORAGE_REQUEST_BLOCK_READ ||
         value->operation == STORAGE_REQUEST_BLOCK_WRITE)
@@ -311,7 +312,7 @@ static int submit_locked(int client_pid, uint32_t client_generation,
         handle_out == NULL || request->version != STORAGE_REQUEST_VERSION ||
         request->struct_size < sizeof(*request) ||
         request->operation < STORAGE_REQUEST_READ ||
-        request->operation > STORAGE_REQUEST_REPAIR_FAT12_DOT_SIZE ||
+        request->operation > STORAGE_REQUEST_REPAIR_FAT12_DOT_CLUSTER ||
         request->timeout_ms == 0U ||
         request->timeout_ms > STORAGE_REQUEST_MAX_TIMEOUT_MS)
         return STORAGE_EINVAL;
@@ -335,7 +336,8 @@ static int submit_locked(int client_pid, uint32_t client_generation,
         request->operation == STORAGE_REQUEST_REPAIR_FAT12_VOLUME_LABEL ||
         request->operation == STORAGE_REQUEST_REPAIR_FAT12_ZERO_FILES ||
         request->operation == STORAGE_REQUEST_REPAIR_FAT12_ZERO_START_FILES ||
-        request->operation == STORAGE_REQUEST_REPAIR_FAT12_DOT_SIZE)
+        request->operation == STORAGE_REQUEST_REPAIR_FAT12_DOT_SIZE ||
+        request->operation == STORAGE_REQUEST_REPAIR_FAT12_DOT_CLUSTER)
         expected = 0U;
     if ((request->operation == STORAGE_REQUEST_BLOCK_READ ||
          request->operation == STORAGE_REQUEST_BLOCK_WRITE) &&

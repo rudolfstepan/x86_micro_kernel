@@ -295,6 +295,9 @@ und 10 verbindlich.
         - [x] Exakte `.`-/`..`-Einträge gegen aktuellen und Parent-Cluster
           validieren und bei korrekter Beziehung ausschließlich unzulässige
           Größenfelder bestätigt journalisiert auf null setzen
+        - [x] Falsche niedrige Clusterfelder exakter Dot-Einträge bei Größe
+          null bestätigt auf den deterministischen Self-/Parent-Cluster setzen;
+          Root- und kombinierte Feldfehler bleiben gesperrt
         - [ ] `CHKDSK.PRG` für echte mehrfach benötigte Crosslinks, allgemeine
           Verzeichnisschäden jenseits der eng begrenzten Feldreparaturen, Orphan-Datenrettung,
           Journal und Defektsektorkarte

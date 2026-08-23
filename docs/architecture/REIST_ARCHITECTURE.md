@@ -1037,6 +1037,13 @@ reinen `DIRECTORY_INVALID`-Diagnose aus ausschließlich korrekten Dot-Verweisen
 mit Größe ungleich null darf `--repair-dot-size --confirm` nach Lease-
 Revalidierung und Undo-Journalisierung nur deren 32-Bit-Größenfelder
 nullsetzen. Namen, Attribute, Clusterfelder, FAT und Daten bleiben unverändert.
+Der komplementäre `--repair-dot-cluster --confirm`-Pfad akzeptiert nur exakte
+Dot-Einträge außerhalb des Root mit Größe null und einem falschen niedrigen
+Startcluster. Die feste Scanbeziehung bestimmt den Ersatz eindeutig als Self-
+oder Parent-Cluster. Nach erneutem Kandidatenabgleich und Undo-
+Journalisierung wird ausschließlich dieses 16-Bit-Feld ersetzt. Kombinierte
+Größen-/Clusterfehler, Root-Dot-Einträge und jede weitere Diagnose bleiben
+fail-closed.
 
 `device down` bedeutet Quiesce, Fence, begrenztes Drain, Unmount abhängiger
 Volumes und anschließenden Zustand `ADMIN_DOWN`; Kernelcode wird dabei nicht

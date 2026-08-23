@@ -204,7 +204,8 @@ Für explizit markierte REIST-FAT12-Medien sind umgesetzt:
   reservierte Nichtnull-Felder ansonsten gültiger Volume-Label-Einträge und
   eindeutig besessene Restallokationen regulärer Dateien der Größe null sowie
   positive Größen regulärer Dateien ohne Startcluster und unzulässige Größen
-  korrekt verknüpfter `.`-/`..`-Einträge
+  korrekt verknüpfter `.`-/`..`-Einträge sowie falsche niedrige Clusterfelder
+  ansonsten gültiger Dot-Beziehungen
 
 `FORMAT.PRG` akzeptiert ausschließlich eine veröffentlichte FDD-Ressource:
 
@@ -218,7 +219,7 @@ FAT12-Modi `--repair`, `--repair-chains`, `--repair-short`,
 `--reclaim-orphans`, `--repair-loops`, `--repair-dir-loops` und
 `--repair-short-loops`, `--repair-crosslinks`, `--repair-dir-size` und
 `--repair-volume-label`, `--repair-zero-files`, `--repair-zero-start` sowie
-`--repair-dot-size`
+`--repair-dot-size` und `--repair-dot-cluster`
 benötigen jeweils `--confirm`, laufen ausschließlich im Storage-Dienst unter
 Maintenance-Lease und melden Erfolg erst nach Undo-Journal, Readback und
 sauberem Vollscan. Der Reclaim-Modus verwirft unerreichbare Inhalte

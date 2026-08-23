@@ -92,6 +92,7 @@ C:\> CHKDSK --fat12 1 --repair-volume-label --confirm
 C:\> CHKDSK --fat12 1 --repair-zero-files --confirm
 C:\> CHKDSK --fat12 1 --repair-zero-start --confirm
 C:\> CHKDSK --fat12 1 --repair-dot-size --confirm
+C:\> CHKDSK --fat12 1 --repair-dot-cluster --confirm
 FDISK
 ```
 
@@ -188,6 +189,12 @@ Verzeichniscluster. Dot-Einträge im Root und falsche Beziehungen bleiben
 unreparierbare Diagnosen. Nur wenn alle Directory-Fehler korrekte Dot-Verweise
 mit Größe ungleich null sind, wird nach Undo-Journalisierung ausschließlich
 das jeweilige 32-Bit-Größenfeld nullgesetzt.
+`--repair-dot-cluster --confirm` nutzt dieselbe Parent-Beziehung für den
+komplementären Einzelfehler: Ein exakt benannter Dot-Eintrag mit Größe null,
+aber falschem niedrigem Startcluster wird auf den deterministischen Self- oder
+Parent-Cluster gesetzt. Root-Dot-Einträge und kombinierte Cluster-/Größenfehler
+erhalten keinen Kandidaten. Namen, Attribute, FAT und Daten bleiben
+unverändert.
 `FDISK.PRG` kann auf explizit freigegebenen, leeren ATA-/AHCI-Medien eine
 validierte MBR-Partition erzeugen. Eine Diskette bleibt eine partitionslose
 Superfloppy und wird von `FDISK` niemals partitioniert.
