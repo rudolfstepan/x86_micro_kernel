@@ -315,9 +315,12 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
 - Der Windows-Build wertet die Exitcodes der System- und Beispielprogramm-
   Builder über explizite Child-Prozesse aus. Ein fehlgeschlagener PRG-Build kann
   daher kein scheinbar erfolgreiches Image aus veralteten Artefakten erzeugen.
-- Aktiv ist nun die append-only Claim-v2-Mediation der vom Kernel geschützten
-  Client- und Servicegeneration. Sie ist die fehlende Besitzergrenze vor
-  stabilen serviceeigenen VFS-Objekt-Handles; Claim v1 bleibt unverändert.
+- Die append-only Claim-v2-Mediation der kernelgeschützten Client- und
+  Servicegeneration ist umgesetzt. Syscall 119 liefert nur dem exakt
+  gebundenen Storage-Dienst einen separaten 40-Byte-v2-Deskriptor; der Dienst
+  revalidiert Client-Liveness und beide Generationen vor dem Dispatch.
+  Syscall 68 und der 28-Byte-Claim-v1-Vertrag bleiben unverändert. Hosttests,
+  QEMU-Paketbuild, normaler Gastlauf und Storage-Recovery-Gastlauf bestehen.
 - `FDISK.PRG` erzeugt auf leeren, ungeschützten ATA-/AHCI-Medien eine
   ausgerichtete und rückgelesene MBR-Partition und veröffentlicht sie ohne
   Neustart. Root- und bereits partitionierte Medien bleiben geschützt.

@@ -1154,6 +1154,7 @@ int main(int argc, char **argv) {
     x86os_puts("TEST_STAGE STORAGE_VFS_STAT_CLIENT_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_READ_CLIENT_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_READ_SESSION_OK\n");
+    x86os_puts("TEST_STAGE STORAGE_CLAIM_IDENTITY_OK\n");
 
     if (test_scheduler_time() != 0) {
         x86os_puts("TEST_FAIL SCHED_TIME\n");

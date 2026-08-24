@@ -26,8 +26,8 @@
 #define SUPERVISED_RESTART_FRAME_RESERVE 32U
 #define PROCESS_DOMAIN_PROFILE_VERSION 1U
 #define PROCESS_DOMAIN_SYSCALL_WORDS 4U
-/* Exclusive upper bound; syscall 118 is client-scoped STORAGE_CANCEL. */
-#define PROCESS_DOMAIN_SYSCALL_LIMIT 119U
+/* Exclusive upper bound; syscall 119 is owner-aware STORAGE_CLAIM. */
+#define PROCESS_DOMAIN_SYSCALL_LIMIT 120U
 
 typedef enum {
     PROCESS_DOMAIN_COMPATIBILITY = 1,

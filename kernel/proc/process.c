@@ -356,7 +356,8 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
             SYS_STORAGE_MAINT_RENEW, SYS_STORAGE_MAINT_RELEASE,
             SYS_STORAGE_COMPLETE, SYS_STORAGE_BLOCK_FLUSH,
             SYS_STORAGE_MEDIA_COMMIT, SYS_STORAGE_FORMAT_PROBE,
-            SYS_BOOT_STATUS, SYS_STAT
+            SYS_BOOT_STATUS, SYS_STAT, SYS_PROCESS_IDENTITY,
+            SYS_STORAGE_CLAIM_IDENTITY
         };
         for (size_t index = 0;
              index < sizeof(storage_syscalls) / sizeof(storage_syscalls[0]);

@@ -72,6 +72,14 @@ EXT2-`stat`, Lesen in `CAT.PRG`, Verzeichnisiteration in `LS.PRG` und die
 pfadgebundenen Read-only-Sessions sind damit migriert; stabile Objekt-Handles
 und Vererbung sind noch nicht migriert.
 
+Append-only Syscall 119 ergänzt nun einen getrennten, exakt 40 Byte großen
+Claim-v2-Deskriptor. Nur die gebundene Storage-Servicegeneration erhält daraus
+Client-PID, Clientgeneration und ihre eigene Servicegeneration direkt aus den
+geschützten Request-Metadaten. Der Service gleicht beide Generationen vor der
+Dispatchwirkung mit dem Prozess-Lifecycle ab; ein bereits beendeter Client
+verliert seine Ergebnisautorität. Syscall 68 und sein Claim-v1-Deskriptor
+bleiben Version 1 und exakt 28 Byte groß.
+
 `HTTPD.PRG` ist der erste vollständig umgestellte lang laufende Client dieser
 read-only ABI. Metadaten, Datei-Sessions und Verzeichnisiteration verwenden
 ausschließlich Operationen 5 bis 7. Zwölf QEMU-HTTP-Transaktionen wechseln
@@ -141,7 +149,7 @@ VFS, Syscalls und Ring 3 gemeinsam ausführen.
    `readdir-at`; kontrollierter `CAT.PRG`-/`LS.PRG`-Cutover.
 10. [x] Vier feste generationcodierte, kanonisch pfadgebundene Read-only-
     Sessions mit Seek/Fstat/Close und vollständigem `HTTPD.PRG`-Cutover.
-11. [ ] Als kleinsten Mediationsschritt Claim v2 mit kernelgeschützter Client-
+11. [x] Als kleinsten Mediationsschritt Claim v2 mit kernelgeschützter Client-
     und Servicegeneration ergänzen; Claim v1 bleibt bytegenau erhalten.
 12. Danach stabile Objekt-Handles und Deskriptorvererbung migrieren.
 13. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-

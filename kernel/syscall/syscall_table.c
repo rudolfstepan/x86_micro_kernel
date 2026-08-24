@@ -1210,6 +1210,8 @@ _Static_assert(sizeof(storage_request_submit_t) == 28U,
                "storage submit ABI changed");
 _Static_assert(sizeof(storage_request_descriptor_t) == 28U,
                "storage descriptor ABI changed");
+_Static_assert(sizeof(storage_request_descriptor_v2_t) == 40U,
+               "storage descriptor v2 ABI changed");
 
 static int syscall_storage_bind(void) {
     Process *process = scheduler_current_process();
@@ -1308,6 +1310,38 @@ static int syscall_storage_claim(storage_request_descriptor_t *user_request,
           request.operation == STORAGE_REQUEST_VFS_SHADOW_STAT) &&
          copy_to_user_space(directory, data_address, data,
                             request.length) != 0)) return -14;
+    return 0;
+}
+
+static int syscall_storage_claim_identity(
+        storage_request_descriptor_v2_t *user_request, uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t request_address = (uint32_t)(uintptr_t)user_request;
+    uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+    if (process == NULL) return -13;
+    if (!storage_service_authorized(process->pid, process->generation))
+        return -13;
+    if (!user_range_accessible(directory, request_address,
+                               sizeof(*user_request), true) ||
+        !user_range_accessible(directory, data_address,
+                               STORAGE_REQUEST_BLOCK_SIZE, true)) return -14;
+    storage_request_descriptor_v2_t request;
+    uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
+    int result = storage_request_claim_v2(
+        process->pid, process->generation, pit_monotonic_ms(), &request, data);
+    if (result != 0) return result;
+    bool has_payload = request.operation == STORAGE_REQUEST_BLOCK_WRITE ||
+        request.operation == STORAGE_REQUEST_VFS_WRITE ||
+        request.operation == STORAGE_REQUEST_VFS_SHADOW_STAT;
+    if ((has_payload && copy_to_user_space(directory, data_address, data,
+                                           request.length) != 0) ||
+        copy_to_user_space(directory, request_address, &request,
+                           sizeof(request)) != 0) {
+        (void)storage_request_complete(process->pid, process->generation,
+                                       request.handle, -14, NULL);
+        return -14;
+    }
     return 0;
 }
 
@@ -3133,6 +3167,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_runtime_timing,      // Syscall 116: Empirical timing stats
     (void*)&syscall_boot_status,         // Syscall 117: Validated boot status
     (void*)&syscall_storage_cancel,      // Syscall 118: Revoke owned request
+    (void*)&syscall_storage_claim_identity, // Syscall 119: Owner-aware claim
     // Add more syscalls here as needed
 };
 
@@ -3685,6 +3720,11 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_STORAGE_CANCEL:
             result = (uint32_t)syscall_storage_cancel(arg1);
+            break;
+        case SYS_STORAGE_CLAIM_IDENTITY:
+            result = (uint32_t)syscall_storage_claim_identity(
+                (storage_request_descriptor_v2_t*)(uintptr_t)arg1,
+                (uint8_t*)(uintptr_t)arg2);
             break;
         default:
             result = (uint32_t)-1;

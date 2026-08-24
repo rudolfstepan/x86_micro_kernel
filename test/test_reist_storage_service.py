@@ -15,6 +15,7 @@ class ReistStorageServiceTests(unittest.TestCase):
         profile = process[process.index("if (kind == PROCESS_DOMAIN_STORAGE)"):
                           process.index("if (kind == PROCESS_DOMAIN_ADMIN)")]
         for syscall in ("SYS_STORAGE_BIND", "SYS_STORAGE_CLAIM",
+                        "SYS_STORAGE_CLAIM_IDENTITY", "SYS_PROCESS_IDENTITY",
                         "SYS_STORAGE_BLOCK_READ", "SYS_STORAGE_COMPLETE",
                         "SYS_BOOT_STATUS", "SYS_STAT"):
             self.assertIn(syscall, profile)
@@ -45,6 +46,7 @@ class ReistStorageServiceTests(unittest.TestCase):
         service = read("userspace/programs/storage_service.c")
         self.assertIn("x86os_storage_bind()", service)
         self.assertIn("x86os_storage_claim", service)
+        self.assertIn("x86os_storage_claim_identity", service)
         self.assertIn("x86os_storage_block_read", service)
         self.assertIn("x86os_storage_complete", service)
         self.assertIn("X86OS_STORAGE_VFS_SHADOW_STAT", service)
@@ -55,6 +57,10 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("vfs_shadow_stat", service)
         self.assertIn("vfs_shadow_read_at", service)
         self.assertIn("vfs_shadow_readdir_at", service)
+        self.assertIn("STORAGE_CLAIM_IDENTITY_OK", service)
+        self.assertIn("request.client_generation", service)
+        self.assertIn("request.service_generation", service)
+        self.assertIn("x86os_process_identity_of", service)
         self.assertIn("X86OS_VFS_SHADOW_FS_READ_AT", service)
         self.assertIn("X86OS_VFS_SHADOW_FS_READDIR_AT", service)
         self.assertIn("vfs_shadow_fat32.c", read("scripts/build_system_programs.py"))
@@ -70,6 +76,7 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("sector[510] == 0x55U", guest)
         self.assertIn("sector[511] == 0xAAU", guest)
         self.assertIn("TEST_STAGE STORAGE_VFS_SHADOW_STAT_OK", guest)
+        self.assertIn("TEST_STAGE STORAGE_CLAIM_IDENTITY_OK", guest)
 
     def test_vfs_shadow_frame_is_fixed_validated_and_read_only(self):
         sdk = read("userspace/sdk/include/x86os.h")

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.1-storage-claim-client-identity"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.1-storage-claim-client-identity"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Owner-aware append-only storage claim ABI"
@@ -72,7 +72,12 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "feat: add owner-aware storage claim ABI"
-evidence = []
+evidence = [
+  "43 frozen host tests passed across storage pool service domain WCET and recovery contracts",
+  "QEMU VGA package gate passed in 32 seconds",
+  "normal QEMU runtime passed in 14 seconds with STORAGE_CLAIM_IDENTITY_OK and TEST_OK",
+  "storage-recovery QEMU runtime passed in 13 seconds with supervised generation restart"
+]
 
 [[packages]]
 id = "R2.1-vfs-read-session-handles"

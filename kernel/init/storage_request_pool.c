@@ -451,8 +451,11 @@ static int submit_locked(int client_pid, uint32_t client_generation,
 
 static int claim_locked(int service_pid, uint32_t service_generation,
         uint64_t now_ms,
-        storage_request_descriptor_t *request_out, uint8_t *block_data_out) {
-    if (request_out == NULL) return STORAGE_EINVAL;
+        storage_request_descriptor_t *request_v1_out,
+        storage_request_descriptor_v2_t *request_v2_out,
+        uint8_t *block_data_out) {
+    if ((request_v1_out == NULL) == (request_v2_out == NULL))
+        return STORAGE_EINVAL;
     storage_service_identity_t identity;
     int result = load_identity(&identity);
     if (result != 0) return result;
@@ -478,15 +481,30 @@ static int claim_locked(int service_pid, uint32_t service_generation,
         metadata.service_generation = service_generation;
         result = store_metadata(slot, &metadata);
         if (result != 0) return result;
-        *request_out = (storage_request_descriptor_t){
-            .version = STORAGE_REQUEST_VERSION,
-            .struct_size = sizeof(*request_out),
-            .handle = make_handle(slot, metadata.generation),
-            .operation = metadata.operation,
-            .resource = metadata.resource,
-            .offset = metadata.offset,
-            .length = metadata.length,
-        };
+        if (request_v1_out != NULL) {
+            *request_v1_out = (storage_request_descriptor_t){
+                .version = STORAGE_REQUEST_VERSION,
+                .struct_size = sizeof(*request_v1_out),
+                .handle = make_handle(slot, metadata.generation),
+                .operation = metadata.operation,
+                .resource = metadata.resource,
+                .offset = metadata.offset,
+                .length = metadata.length,
+            };
+        } else {
+            *request_v2_out = (storage_request_descriptor_v2_t){
+                .version = STORAGE_REQUEST_DESCRIPTOR_V2_VERSION,
+                .struct_size = sizeof(*request_v2_out),
+                .handle = make_handle(slot, metadata.generation),
+                .operation = metadata.operation,
+                .resource = metadata.resource,
+                .offset = metadata.offset,
+                .length = metadata.length,
+                .client_pid = metadata.client_pid,
+                .client_generation = metadata.client_generation,
+                .service_generation = metadata.service_generation,
+            };
+        }
         return 0;
     }
     return STORAGE_EAGAIN;
@@ -603,7 +621,17 @@ int storage_request_claim(int service_pid, uint32_t service_generation,
         uint8_t *block_data_out) {
     uint32_t flags = storage_pool_lock();
     int result = claim_locked(service_pid, service_generation, now_ms,
-                              request_out, block_data_out);
+                              request_out, NULL, block_data_out);
+    storage_pool_unlock(flags);
+    return result;
+}
+
+int storage_request_claim_v2(int service_pid, uint32_t service_generation,
+        uint64_t now_ms, storage_request_descriptor_v2_t *request_out,
+        uint8_t *block_data_out) {
+    uint32_t flags = storage_pool_lock();
+    int result = claim_locked(service_pid, service_generation, now_ms,
+                              NULL, request_out, block_data_out);
     storage_pool_unlock(flags);
     return result;
 }

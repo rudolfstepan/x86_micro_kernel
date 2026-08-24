@@ -28,6 +28,7 @@ class ReistStorageRequestPoolTests(unittest.TestCase):
         self.assertIn("STORAGE_REQUEST_POOL_CAPACITY 8U", header)
         self.assertIn("STORAGE_REQUEST_BLOCK_SIZE 512U", header)
         self.assertIn("STORAGE_REQUEST_VERSION 1U", header)
+        self.assertIn("STORAGE_REQUEST_DESCRIPTOR_V2_VERSION 2U", header)
         self.assertIn("STORAGE_REQUEST_VFS_READ", header)
         self.assertIn("STORAGE_REQUEST_VFS_WRITE", header)
         self.assertIn("STORAGE_REQUEST_VFS_SYNC", header)
@@ -42,6 +43,27 @@ class ReistStorageRequestPoolTests(unittest.TestCase):
         self.assertIn("STORAGE_REQUEST_STATS_VERSION", header)
         self.assertIn("storage_request_stats_t", header)
         self.assertIn("int storage_request_stats(", header)
+
+    def test_owner_aware_claim_is_append_only_and_keeps_v1_exact(self):
+        header = (ROOT / "include/kernel/storage_request_pool.h").read_text()
+        source = (ROOT / "kernel/init/storage_request_pool.c").read_text()
+        syscall = (ROOT / "kernel/syscall/syscall_table.c").read_text()
+        sdk_h = (ROOT / "userspace/sdk/include/x86os.h").read_text()
+        sdk_c = (ROOT / "userspace/sdk/x86os.c").read_text()
+        self.assertIn("sizeof(storage_request_descriptor_t) == 28U", syscall)
+        self.assertIn("sizeof(storage_request_descriptor_v2_t) == 40U",
+                      syscall)
+        self.assertIn("int storage_request_claim_v2(", header)
+        self.assertIn(".client_pid = metadata.client_pid", source)
+        self.assertIn(".client_generation = metadata.client_generation",
+                      source)
+        self.assertIn(".service_generation = metadata.service_generation",
+                      source)
+        self.assertIn("X86OS_SYS_STORAGE_CLAIM_IDENTITY = 119", sdk_h)
+        self.assertIn("sizeof(x86os_storage_descriptor_t) == 28U", sdk_c)
+        self.assertIn("sizeof(x86os_storage_descriptor_v2_t) == 40U", sdk_c)
+        self.assertIn("(void*)&syscall_storage_claim_identity", syscall)
+        self.assertIn("case SYS_STORAGE_CLAIM_IDENTITY", syscall)
 
     def test_capacity_high_water_and_rejections_are_bounded_diagnostics(self):
         source = (ROOT / "kernel/init/storage_request_pool.c").read_text()

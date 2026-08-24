@@ -152,7 +152,11 @@ Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-
 Deskriptor bleibt unverändert; Benutzerfelder dürfen keine Besitzeridentität
-vorgeben.
+vorgeben. Der append-only Syscall 119 und sein separater 40-Byte-Deskriptor
+sind umgesetzt. Der Dienst validiert Version, exakte Größe, Client-Liveness,
+Clientgeneration und seine eigene Generation vor jeder Dispatchwirkung;
+Client-Cancel-Races führen nicht zum Dienstabsturz. Syscall 68 bleibt als
+28-Byte-v1-ABI bytegenau erhalten.
 Der erste kontrollierte Client-Cutover bindet ausschließlich das kurzlebige
 `STAT.PRG` inzwischen an Operation 5. Ein fester Adapter normalisiert Pfade, wartet
 mit monotoner Deadline, revalidiert den vollständigen Antwortframe und fällt

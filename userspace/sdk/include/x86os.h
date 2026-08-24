@@ -130,7 +130,8 @@ enum {
     X86OS_SYS_DRAW_TEXT_CLIPPED = 115,
     X86OS_SYS_RUNTIME_TIMING = 116,
     X86OS_SYS_BOOT_STATUS = 117,
-    X86OS_SYS_STORAGE_CANCEL = 118
+    X86OS_SYS_STORAGE_CANCEL = 118,
+    X86OS_SYS_STORAGE_CLAIM_IDENTITY = 119
 };
 
 #define X86OS_TCP_SOCKET_VERSION 1U
@@ -563,6 +564,7 @@ typedef struct {
 } x86os_reist_dhcp_boot_start_t;
 
 #define X86OS_STORAGE_REQUEST_VERSION 1U
+#define X86OS_STORAGE_DESCRIPTOR_V2_VERSION 2U
 #define X86OS_STORAGE_BLOCK_SIZE 512U
 #define X86OS_STORAGE_BLOCK_READ 1U
 #define X86OS_STORAGE_BLOCK_WRITE 2U
@@ -644,6 +646,18 @@ typedef struct {
     uint32_t offset;
     uint32_t length;
 } x86os_storage_descriptor_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_storage_handle_t handle;
+    uint32_t operation;
+    uint32_t resource;
+    uint32_t offset;
+    uint32_t length;
+    int32_t client_pid;
+    uint32_t client_generation;
+    uint32_t service_generation;
+} x86os_storage_descriptor_v2_t;
 
 #define X86OS_VFS_SHADOW_FRAME_VERSION 1U
 #define X86OS_VFS_SHADOW_STAT 1U
@@ -1505,6 +1519,8 @@ int x86os_storage_bind(void);
 int x86os_storage_submit(const x86os_storage_submit_t *request,
                          const void *data, x86os_storage_handle_t *handle);
 int x86os_storage_claim(x86os_storage_descriptor_t *request, void *data);
+int x86os_storage_claim_identity(x86os_storage_descriptor_v2_t *request,
+                                 void *data);
 int x86os_storage_block_read(uint32_t resource, uint32_t block, void *data);
 int x86os_storage_block_write(uint32_t resource, uint32_t block,
                                const void *data);

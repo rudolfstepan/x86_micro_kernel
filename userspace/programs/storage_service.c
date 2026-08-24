@@ -5793,21 +5793,45 @@ int main(void) {
         x86os_puts("\nSTORAGE is an internal service. Use svcctl list/status.\n");
         return 1;
     }
+    x86os_process_identity_t service_identity;
+    if (x86os_process_identity(&service_identity) != 0 ||
+        service_identity.version != 1U ||
+        service_identity.struct_size != sizeof(service_identity) ||
+        service_identity.pid <= 0 || service_identity.generation == 0U)
+        return 2;
     uint32_t boot_ack_deadline =
         x86os_uptime_ms() + BOOT_STATUS_ACK_TIMEOUT_MS;
     uint8_t boot_ack_active = 1U;
+    uint8_t identity_marker_emitted = 0U;
     for (;;) {
         boot_success_ack_poll(boot_ack_deadline, &boot_ack_active);
-        x86os_storage_descriptor_t request;
+        x86os_storage_descriptor_v2_t request;
         uint8_t data[X86OS_STORAGE_BLOCK_SIZE];
-        int claim = x86os_storage_claim(&request, data);
+        int claim = x86os_storage_claim_identity(&request, data);
         if (claim == -11) {
             if (x86os_sleep_ms(5U) != 0) (void)x86os_yield();
             continue;
         }
-        if (claim != 0 || request.version != X86OS_STORAGE_REQUEST_VERSION ||
-            request.struct_size < sizeof(request) || request.handle == 0U ||
-            request.length > sizeof(data)) return 2;
+        if (claim != 0 ||
+            request.version != X86OS_STORAGE_DESCRIPTOR_V2_VERSION ||
+            request.struct_size != sizeof(request) || request.handle == 0U ||
+            request.length > sizeof(data) || request.client_pid <= 0 ||
+            request.client_generation == 0U ||
+            request.service_generation != service_identity.generation)
+            return 2;
+
+        x86os_process_identity_t client_identity;
+        if (x86os_process_identity_of(request.client_pid,
+                                      &client_identity) != 0 ||
+            client_identity.version != 1U ||
+            client_identity.struct_size != sizeof(client_identity) ||
+            client_identity.pid != request.client_pid ||
+            client_identity.generation != request.client_generation) {
+            int completion = x86os_storage_complete(
+                request.handle, -125, 0);
+            if (completion != 0 && completion != -22) return 3;
+            continue;
+        }
 
         int result = -95;
         if (request.operation == X86OS_STORAGE_BLOCK_READ &&
@@ -5910,7 +5934,13 @@ int main(void) {
             request.length == 0U)
             result = fat12_record_bad_sector(request.resource,
                                              request.offset);
-        if (x86os_storage_complete(request.handle, result, data) != 0)
-            return 3;
+        int completion = x86os_storage_complete(request.handle, result, data);
+        if (completion == -22) continue;
+        if (completion != 0) return 3;
+        if (identity_marker_emitted == 0U && result == 0 &&
+            request.operation == X86OS_STORAGE_VFS_SHADOW_STAT) {
+            x86os_puts("STORAGE_CLAIM_IDENTITY_OK\n");
+            identity_marker_emitted = 1U;
+        }
     }
 }

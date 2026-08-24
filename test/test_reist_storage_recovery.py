@@ -61,6 +61,15 @@ class StorageRecoveryContracts(unittest.TestCase):
         self.assertIn("submit != -112", guest)
         self.assertIn("TEST_STAGE STORAGE_RESTART_OK", guest)
 
+    def test_restarted_service_uses_owner_aware_claim_generation(self):
+        service = read("userspace/programs/storage_service.c")
+        self.assertIn("x86os_storage_claim_identity", service)
+        self.assertIn("request.service_generation != "
+                      "service_identity.generation", service)
+        self.assertIn("client_identity.generation != "
+                      "request.client_generation", service)
+        self.assertIn("completion != 0 && completion != -22", service)
+
     def test_runner_requires_ordered_recovery_markers(self):
         lines = [
             RUNNER.BOOT_MARKER,

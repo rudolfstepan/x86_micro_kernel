@@ -41,6 +41,8 @@ int main(void) {
     storage_request_descriptor_t descriptor;
     if (storage_request_claim(8, 12U, 11U, &descriptor, transfer) != -13 ||
         storage_request_claim(7, 11U, 11U, &descriptor, transfer) != 0 ||
+        descriptor.version != STORAGE_REQUEST_VERSION ||
+        descriptor.struct_size != sizeof(descriptor) ||
         descriptor.handle != write_handle || descriptor.resource != 1U ||
         descriptor.offset != 42U ||
         memcmp(write_data, transfer, sizeof(write_data)) != 0) return 3;
@@ -52,6 +54,24 @@ int main(void) {
         result != 0 ||
         storage_request_collect(3, 5U, write_handle, &result, 0) >= 0)
         return 5;
+
+    storage_request_descriptor_v2_t descriptor_v2;
+    if (storage_request_submit(3, 5U, &write, write_data, 15U,
+                               &write_handle) != 0 ||
+        storage_request_claim_v2(8, 12U, 16U, &descriptor_v2,
+                                 transfer) != -13 ||
+        storage_request_claim_v2(7, 11U, 16U, &descriptor_v2,
+                                 transfer) != 0 ||
+        descriptor_v2.version != STORAGE_REQUEST_DESCRIPTOR_V2_VERSION ||
+        descriptor_v2.struct_size != sizeof(descriptor_v2) ||
+        descriptor_v2.handle != write_handle ||
+        descriptor_v2.client_pid != 3 ||
+        descriptor_v2.client_generation != 5U ||
+        descriptor_v2.service_generation != 11U ||
+        memcmp(write_data, transfer, sizeof(write_data)) != 0 ||
+        storage_request_complete(7, 11U, write_handle, 0, 0) != 0 ||
+        storage_request_collect(3, 5U, write_handle, &result, 0) != 0)
+        return 27;
 
     if (storage_request_submit(3, 5U, &write, write_data, 20U,
                                &write_handle) != 0 ||

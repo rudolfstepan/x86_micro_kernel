@@ -475,6 +475,8 @@ _Static_assert(sizeof(x86os_storage_submit_t) == 28U,
                "storage submit ABI changed");
 _Static_assert(sizeof(x86os_storage_descriptor_t) == 28U,
                "storage descriptor ABI changed");
+_Static_assert(sizeof(x86os_storage_descriptor_v2_t) == 40U,
+               "storage descriptor v2 ABI changed");
 _Static_assert(sizeof(x86os_vfs_shadow_frame_t) == X86OS_STORAGE_BLOCK_SIZE,
                "VFS shadow frame must fill one protected request payload");
 
@@ -491,6 +493,12 @@ int x86os_storage_submit(const x86os_storage_submit_t *request,
 int x86os_storage_claim(x86os_storage_descriptor_t *request, void *data) {
     return (int)x86os_syscall(X86OS_SYS_STORAGE_CLAIM, (uintptr_t)request,
                               (uintptr_t)data, 0);
+}
+
+int x86os_storage_claim_identity(x86os_storage_descriptor_v2_t *request,
+                                 void *data) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_CLAIM_IDENTITY,
+                              (uintptr_t)request, (uintptr_t)data, 0U);
 }
 
 int x86os_storage_block_read(uint32_t resource, uint32_t block, void *data) {

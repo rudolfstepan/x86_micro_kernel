@@ -44,7 +44,7 @@ class ReistWcetContracts(unittest.TestCase):
         self.assertIn("sizeof(x86os_runtime_timing_t) == 72U", sdk_c)
         self.assertIn("(void*)&syscall_runtime_timing", syscall)
         self.assertIn("case SYS_RUNTIME_TIMING", syscall)
-        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 119U", process_h)
+        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 120U", process_h)
         probe = process[process.index("static const uint8_t probe_syscalls[]"):]
         self.assertIn("SYS_RUNTIME_TIMING", probe)
 

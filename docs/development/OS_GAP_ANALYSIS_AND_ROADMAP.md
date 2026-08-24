@@ -83,10 +83,11 @@ werden nicht durch die Emulatorabnahme ersetzt.
 Diese Liste ist der schnelle Einstieg in den Arbeitsstand. `[x]` bedeutet
 umgesetzt und mit den im Paket genannten Tests abgenommen. `[ ]` bedeutet
 offen. Ein Zusatz **in Arbeit** ist nur zulässig, wenn `active_id` in
-`automation/reist-s03b.toml` auf genau dieses Paket zeigt. Nach Abschluss von
-Nach Abschluss der pfadgebundenen Read-Sessions ist
+`automation/reist-s03b.toml` auf genau dieses Paket zeigt. Nach Abschluss der
+pfadgebundenen Read-Sessions ist auch
 `R2.1-storage-claim-client-identity` als Voraussetzung stabiler
-serviceeigener Objekt-Handles aktiv.
+serviceeigener Objekt-Handles umgesetzt. Die ausführbare Queue ist leer; als
+nächster R2.1-Schnitt folgt die serviceeigene stabile Objektidentität.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 
@@ -478,9 +479,10 @@ und 10 verbindlich.
   - [x] vier feste, generationsgeschützte und kanonisch
     pfadgebundene Read-only-Sessions mit `read`, `seek`, `fstat`, `close` sowie
     vollständiger HTTPD-Umstellung; stabile Inode-Handles und Vererbung folgen
-  - [ ] **in Arbeit:** append-only Claim-v2-Mediation der exakten Client- und
+  - [x] append-only Claim-v2-Mediation der exakten Client- und
     Servicegeneration als fehlende Besitzergrenze für stabile Objekt-Handles;
-    Claim v1 bleibt bytegenau erhalten
+    Syscall 119 liefert einen getrennten 40-Byte-v2-Deskriptor, während
+    Syscall 68 und Claim v1 bytegenau 28 Byte groß bleiben
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
