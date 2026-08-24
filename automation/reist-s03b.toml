@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-vfs-shadow-ext2-parser"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,71 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-vfs-shadow-ext2-parser"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Bounded authoritative Ring-3 EXT2 metadata parser"
+scope = "Add an independent fixed-storage read-only EXT2 stat parser to the supervised Ring-3 storage service following the Linux EXT2 on-disk format. Support revision 0/1 volumes with 1 KiB, 2 KiB or 4 KiB blocks, fixed inode sizes, linear directories, direct and single-indirect directory blocks, exact case-sensitive ASCII path components and 32-bit regular-file metadata under explicit resource, path, block and sector-read bounds. Append operation 5 as the authoritative generic FAT12/FAT32/EXT2 stat contract and move the fixed stat client to it; preserve operations 1 through 4 exactly. Operation 5 tries only the independent bounded parsers and never invokes or falls back to SYS_STAT. Prove malformed superblocks, feature rejection, inode/group bounds, invalid directory records, direct/single-indirect lookup, read-budget exhaustion and FAT regression on the host. Attach a deterministic read-only EXT2 disk as QEMU IDE index 1, mount it at /mnt/hdd1 and run packaged STAT.PRG against /mnt/hdd1/readme.txt before regaining the userspace shell. Keep symlink traversal, indexed directories, extents, 64-bit sizes, open, read, readdir, handles, mutation, shell and desktop cutovers out of scope."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/sdk/include/x86os.h",
+  "userspace/storage/include/reist/vfs_shadow_ext2.h",
+  "userspace/storage/lib/vfs_shadow_ext2.c",
+  "userspace/storage/lib/vfs_stat_client.c",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/guest_test.c",
+  "scripts/build_system_programs.py",
+  "scripts/run_qemu_smoke.py",
+  "scripts/run_qemu_ext2_stat.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_vfs_shadow_ext2_host.c",
+  "test/test_reist_vfs_shadow_ext2.py",
+  "test/test_qemu_ext2_stat.py",
+  "test/test_vfs_stat_client_host.c",
+  "test/test_reist_vfs_stat_client.py",
+  "test/test_reist_storage_service.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "operation 5 is append-only and operations 1 through 4 retain their exact ABI values and semantics",
+  "operation 5 obtains status and metadata only from bounded FAT or EXT2 parsers and never invokes or falls back to SYS_STAT",
+  "EXT2 superblock group descriptor inode block directory record feature and media bounds are validated before dependent reads or publication",
+  "EXT2 work is bounded to 22 resources 16 components 32 directory blocks and 128 mediated sector reads with no heap allocation",
+  "only 1 KiB 2 KiB and 4 KiB revision 0 or 1 EXT2 layouts with direct or single-indirect linear directories are accepted",
+  "names are exact case-sensitive printable ASCII and symlinks indexed directories extents unknown incompat features and 64-bit file sizes fail closed",
+  "the fixed stat client submits only operation 5 and retains path deadline cancellation and full-frame validation bounds",
+  "the QEMU proof uses a real second IDE EXT2 image packaged STAT.PRG and /mnt/hdd1/readme.txt then regains the userspace shell",
+  "open read readdir handles mutations shell desktop raw controller DMA and new syscall authority remain unchanged"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_shadow_ext2.py -v",
+  "python test/test_reist_vfs_shadow_fat32.py -v",
+  "python test/test_reist_vfs_stat_client.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_qemu_ext2_stat.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode ext2-stat"
+]
+stop_conditions = [
+  "EXT2 parsing requires heap allocation unbounded traversal direct controller authority or unsupported on-disk semantics",
+  "operation 5 requires SYS_STAT fallback or changes an existing operation",
+  "the QEMU auxiliary disk does not mount at /mnt/hdd1 or packaged STAT.PRG cannot reach it",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "feat: add authoritative bounded Ring-3 EXT2 stat"
+evidence = []
 
 [[packages]]
 id = "R2.1-vfs-fat-stat-authority"
