@@ -154,6 +154,10 @@ enthalten keinen Pfad. Das ist noch keine POSIX-Binärkompatibilität oder
 Deskriptorvererbung. `CAT.PRG`,
 `LS.PRG` und der vollständige read-only Pfad von `HTTPD.PRG` besitzen keinen
 Kernel-VFS-Fallback. Mutationen bleiben ein getrenntes Folgepaket.
+Der aktive Folgeschnitt ergänzt explizite READ-/SEEK-/STAT-/DELEGATE-Rechte
+und ausschließlich abschwächende Übergaben an eine exakt validierte
+Prozessgeneration. Ein Spawn erbt weiterhin keine Objekt- oder
+Delegationsautorität ambient.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-

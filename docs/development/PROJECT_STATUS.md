@@ -329,6 +329,10 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   Tote Owner werden inkrementell reap-t; Service-Restart, Medienwechsel und
   Locator-Reuse können alte Handles nicht neu autorisieren. Normaler FAT-,
   echter EXT2- und Storage-Recovery-QEMU-Lauf bestehen.
+- Aktiv ist die append-only Ergänzung expliziter READ-/SEEK-/STAT-/DELEGATE-
+  Rechte und einer auf exakte Ziel-PID/-Generation gebundenen, abschwächenden
+  Objektübergabe. Das Ziel muss die Übergabe innerhalb einer festen Deadline
+  aktiv übernehmen; ambiente Spawn-Vererbung bleibt ausgeschlossen.
 - `FDISK.PRG` erzeugt auf leeren, ungeschützten ATA-/AHCI-Medien eine
   ausgerichtete und rückgelesene MBR-Partition und veröffentlicht sie ohne
   Neustart. Root- und bereits partitionierte Medien bleiben geschützt.

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-vfs-object-rights-delegation"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,66 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-vfs-object-rights-delegation"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Attenuating read-only VFS object rights and explicit delegation"
+scope = "Extend the service-owned stable VFS object layer append-only with explicit READ SEEK STAT and DELEGATE rights. Preserve operation 8 as the legacy default READ SEEK STAT open, add operation 12 for an explicitly rights-scoped open, operation 13 for delegation to one exact live target PID and generation, and operation 14 for active target adoption. A delegated object is a distinct fixed service slot with a nonempty subset of source rights, a five-second pending deadline, unchanged source authority and no implicit DELEGATE grant. Bind all enforcement to Claim-v2 client and service generations; deny read stat seek or redelegation before side effects when the local or service right is absent. Keep sixteen service slots, four slots per exact client generation and four process-local sessions, reap at most one expired or dead-owner slot per service loop and publish no token on failed quota identity rights or locator validation. Prove legacy open compatibility rights attenuation exact-target adoption pending expiry duplicate-adoption rejection quota rollback stale service generation and real parent-to-child QEMU transfer using the existing GTEST image. This package adds no write mutation truncate standard descriptors dup dup2 ambient spawn inheritance kernel VFS fallback raw controller or DMA authority."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/sdk/include/x86os.h",
+  "userspace/storage/include/reist/vfs_file_client.h",
+  "userspace/storage/lib/vfs_file_client.c",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/guest_test.c",
+  "scripts/build_system_programs.py",
+  "test/test_vfs_file_client_host.c",
+  "test/test_reist_vfs_file_client.py",
+  "test/test_reist_storage_service.py",
+  "test/test_reist_storage_recovery.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "VFS operations 1 through 11 storage request operation 31 and both Claim ABIs remain byte exact",
+  "operation 8 grants only the documented legacy READ SEEK STAT set while operation 12 grants only a validated explicit nonempty read-only rights mask",
+  "read stat seek and delegation each fail before state or output publication when their corresponding right is absent",
+  "delegation creates one distinct target-owned slot and grants only a nonempty subset of source rights; DELEGATE is never implicit",
+  "target PID and generation are revalidated by the service before publication and adoption is accepted only from that exact Claim-v2 owner",
+  "pending delegation expires after five seconds and dead or expired slots are reaped with at most one liveness check per service loop",
+  "sixteen service slots four slots per exact client generation and four local sessions remain fixed with generation retirement instead of wrap",
+  "failed identity rights quota locator or response validation leaks no local handle and publishes no usable remote token",
+  "the real GTEST parent delegates attenuated read authority to a child that actively adopts reads and closes it before TEST_OK",
+  "no write mutation truncate standard descriptor dup dup2 ambient spawn inheritance kernel VFS fallback controller or DMA authority is added"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_file_client.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_reist_storage_recovery.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode ext2-stat",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode storage-recovery"
+]
+stop_conditions = [
+  "safe transfer requires ambient spawn inheritance a kernel file object an unbounded mailbox or user-supplied owner authority",
+  "rights enforcement cannot occur before read stat seek or delegation side effects",
+  "pending delegation cannot be bounded and generation-scoped without expanding service authority",
+  "an existing operation public API or Claim ABI must change incompatibly",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "feat: add attenuating VFS object delegation"
+evidence = []
 
 [[packages]]
 id = "R2.1-vfs-stable-object-handles"

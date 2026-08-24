@@ -75,7 +75,9 @@ wird nur beim Öffnen aufgelöst. Danach adressiert FAT den validierten
 Directory-Entry über Sektor/Offset, Startcluster, Erzeugungsschutz und
 Bootrecord-Signatur; EXT2 adressiert Inode-Nummer und Inodegeneration unter
 einer Superblock-Signatur. Medien- oder Locatorwechsel liefert `ESTALE`.
-Deskriptorvererbung ist noch nicht migriert.
+Als nächster aktiver Schnitt werden read-only Rechte explizit und eine
+generationgebundene, abschwächende Übergabe ergänzt. Deskriptorvererbung beim
+Spawn bleibt davon getrennt und ist noch nicht migriert.
 
 Append-only Syscall 119 ergänzt nun einen getrennten, exakt 40 Byte großen
 Claim-v2-Deskriptor. Nur die gebundene Storage-Servicegeneration erhält daraus
@@ -158,6 +160,8 @@ VFS, Syscalls und Ring 3 gemeinsam ausführen.
     und Servicegeneration ergänzen; Claim v1 bleibt bytegenau erhalten.
 12. [x] Stabile, ownergebundene read-only Objekt-Handles für
     FAT und EXT2; Deskriptorvererbung bleibt ein getrenntes Folgepaket.
+13. [ ] **In Arbeit:** explizite read-only Rechte und abschwächende Übergabe
+    an eine exakte Prozessgeneration; keine ambiente Spawn-Vererbung.
 13. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.
 
