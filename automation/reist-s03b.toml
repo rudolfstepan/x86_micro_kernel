@@ -27,6 +27,8 @@ allowed_files = [
   "include/kernel/component_control.h",
   "Makefile",
   "scripts/build-windows.ps1",
+  "test/test_admin_maintenance.py",
+  "test/test_component_control.py",
   "test/test_syscall_abi_source.py",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
