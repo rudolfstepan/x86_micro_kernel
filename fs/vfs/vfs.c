@@ -442,8 +442,7 @@ static int vfs_write_locked(vfs_node_t* node, uint32_t offset, uint32_t size,
 static int vfs_truncate_locked(vfs_node_t* node, uint32_t size) {
     if (!node || !node->fs || !node->fs->ops) return VFS_ERR_INVALID;
     if (node->type != VFS_FILE) return VFS_ERR_IS_DIR;
-    if (size != 0U || !node->fs->ops->truncate)
-        return VFS_ERR_UNSUPPORTED;
+    if (!node->fs->ops->truncate) return VFS_ERR_UNSUPPORTED;
     return node->fs->ops->truncate(node, size);
 }
 

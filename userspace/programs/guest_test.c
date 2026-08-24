@@ -523,6 +523,73 @@ failed:
     return -1;
 }
 
+static int test_ftruncate(void) {
+    static const char path[] = "FTRUNC.TMP";
+    static uint8_t original[700];
+    static uint8_t actual[700];
+    x86os_file_info_t info;
+    for (uint32_t index = 0U; index < sizeof(original); ++index)
+        original[index] = (uint8_t)('A' + index % 23U);
+
+    (void)x86os_unlink(path);
+    int descriptor = x86os_open_flags(path, X86OS_O_CREAT | X86OS_O_RDWR);
+    if (descriptor < 0 ||
+        x86os_write(descriptor, original, sizeof(original)) !=
+            (int)sizeof(original) ||
+        x86os_lseek(descriptor, 600, X86OS_SEEK_SET) != 600 ||
+        x86os_ftruncate(descriptor, 200U) != 0 ||
+        x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) != 600 ||
+        x86os_fstat(descriptor, &info) != 0 || info.size != 200U ||
+        x86os_lseek(descriptor, 0, X86OS_SEEK_SET) != 0 ||
+        x86os_read(descriptor, actual, 200U) != 200 ||
+        !bytes_equal((const char*)actual, (const char*)original, 200U) ||
+        x86os_read(descriptor, actual, 1U) != 0) goto failed;
+
+    if (x86os_ftruncate(descriptor, sizeof(original)) != 0 ||
+        x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) != 200 ||
+        x86os_fstat(descriptor, &info) != 0 ||
+        info.size != sizeof(original) ||
+        x86os_read(descriptor, actual, sizeof(actual) - 200U) !=
+            (int)(sizeof(actual) - 200U)) goto failed;
+    for (uint32_t index = 0U; index < sizeof(actual) - 200U; ++index)
+        if (actual[index] != 0U) goto failed;
+
+    if (x86os_ftruncate(descriptor, sizeof(original)) != 0 ||
+        x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) !=
+            (int32_t)sizeof(original) ||
+        x86os_ftruncate(descriptor, 0U) != 0 ||
+        x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) !=
+            (int32_t)sizeof(original) ||
+        x86os_fstat(descriptor, &info) != 0 || info.size != 0U ||
+        x86os_close(descriptor) != 0) goto failed;
+
+    descriptor = x86os_open_flags(path, X86OS_O_RDONLY);
+    if (descriptor < 0 || x86os_ftruncate(descriptor, 1U) != -REIST_EBADF ||
+        x86os_close(descriptor) != 0 ||
+        x86os_ftruncate(descriptor, 1U) != -REIST_EBADF ||
+        x86os_ftruncate(X86OS_STDERR_FILENO, 1U) != -REIST_EINVAL)
+        goto failed;
+
+    descriptor = x86os_open_flags(path, X86OS_O_WRONLY);
+    if (descriptor < 0 || x86os_ftruncate(descriptor, 513U) != 0 ||
+        x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) != 0 ||
+        x86os_fstat(descriptor, &info) != 0 || info.size != 513U ||
+        x86os_fsync(descriptor) != 0 || x86os_close(descriptor) != 0)
+        goto failed;
+    descriptor = x86os_open_flags(path, X86OS_O_RDONLY);
+    if (descriptor < 0 || x86os_read(descriptor, actual, 513U) != 513)
+        goto failed;
+    for (uint32_t index = 0U; index < 513U; ++index)
+        if (actual[index] != 0U) goto failed;
+    if (x86os_close(descriptor) != 0 || x86os_unlink(path) != 0) goto failed;
+    return 0;
+
+failed:
+    if (descriptor >= 0) (void)x86os_close(descriptor);
+    (void)x86os_unlink(path);
+    return -1;
+}
+
 static int wait_for_expected(const char *path, int expected_status) {
     int pid = x86os_spawn(path);
     if (pid <= 0) return -1;
@@ -1481,6 +1548,12 @@ int main(int argc, char **argv) {
         return 12;
     }
     x86os_puts("TEST_STAGE DESCRIPTOR_SEEK_FSTAT_OK\n");
+
+    if (test_ftruncate() != 0) {
+        x86os_puts("TEST_FAIL FTRUNCATE\n");
+        return 13;
+    }
+    x86os_puts("TEST_STAGE FTRUNCATE_OK\n");
 
     if (test_wait_wakeup() != 0) {
         x86os_puts("TEST_FAIL WAIT\n");

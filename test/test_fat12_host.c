@@ -281,7 +281,24 @@ int main(void) {
           open_info.type == VFS_FILE && open_info.size == sizeof(payload));
     uint16_t truncated_start = (uint16_t)node->inode;
     CHECK(truncated_start >= FAT12_MIN_CLUSTER);
-    CHECK(fs.ops->truncate(node, 1U) == VFS_ERR_UNSUPPORTED);
+    uint16_t truncated_second = fat12_get_fat_entry(truncated_start);
+    CHECK(truncated_second >= FAT12_MIN_CLUSTER &&
+          truncated_second < FAT12_EOC_MIN);
+    CHECK(fs.ops->truncate(node, 400U) == VFS_OK);
+    CHECK(node->size == 400U &&
+          fat12_get_fat_entry(truncated_start) >= FAT12_EOC_MIN &&
+          fat12_get_fat_entry(truncated_second) == FAT12_FREE_CLUSTER);
+    memset(verify, 0, sizeof(verify));
+    CHECK(fs.ops->read(node, 0U, 400U, verify) == 400);
+    CHECK(memcmp(payload, verify, 400U) == 0);
+    CHECK(fs.ops->truncate(node, 700U) == VFS_OK && node->size == 700U);
+    memset(verify, 0xA5, sizeof(verify));
+    CHECK(fs.ops->read(node, 400U, 300U, verify) == 300);
+    for (uint32_t index = 0U; index < 300U; ++index)
+        CHECK(verify[index] == 0U);
+    CHECK(fs.ops->truncate(node, 700U) == VFS_OK && node->size == 700U);
+    CHECK(fs.ops->truncate(node, 30000U) == VFS_ERR_NO_SPACE &&
+          node->size == 700U);
     CHECK(fs.ops->truncate(node, 0U) == VFS_OK);
     CHECK(node->inode == 0U && node->size == 0U);
     CHECK(fs.ops->fstat(node, &open_info) == VFS_OK &&

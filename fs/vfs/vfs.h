@@ -181,7 +181,6 @@ int vfs_open(const char* path, vfs_node_t** node);
 int vfs_close(vfs_node_t* node);
 int vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
 int vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
-/* The current bounded contract accepts size zero only. */
 int vfs_truncate(vfs_node_t* node, uint32_t size);
 int vfs_fstat(vfs_node_t* node, vfs_dir_entry_t* stat);
 int vfs_sync(vfs_node_t* node);

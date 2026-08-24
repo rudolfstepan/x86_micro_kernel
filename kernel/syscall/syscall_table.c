@@ -1979,6 +1979,11 @@ static int syscall_fstat(int descriptor, void *user_info) {
     return syscall_copy_file_info(user_info, &entry);
 }
 
+static int syscall_ftruncate(int descriptor, uint32_t size) {
+    return process_file_truncate(scheduler_current_process(), descriptor,
+                                 size);
+}
+
 static int syscall_readdir(const char *user_path, uint32_t index,
                            void *user_info) {
     char path[PROCESS_PATH_MAX];
@@ -3216,6 +3221,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_open_flags,          // Syscall 120: Rights-scoped open
     (void*)&syscall_lseek,               // Syscall 121: File position
     (void*)&syscall_fstat,               // Syscall 122: Open-file metadata
+    (void*)&syscall_ftruncate,           // Syscall 123: Set file size
     // Add more syscalls here as needed
 };
 
@@ -3354,6 +3360,11 @@ void syscall_handler(Registers* regs) {
             scheduler_preempt_disable();
             result = (uint32_t)syscall_fstat(
                 (int)arg1, (void*)(uintptr_t)arg2);
+            scheduler_preempt_enable();
+            break;
+        case SYS_FTRUNCATE:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_ftruncate((int)arg1, arg2);
             scheduler_preempt_enable();
             break;
         case SYS_TOUCH:

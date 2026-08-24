@@ -143,7 +143,8 @@ enum {
     X86OS_SYS_STORAGE_CLAIM_IDENTITY = 119,
     X86OS_SYS_OPEN_FLAGS = 120,
     X86OS_SYS_LSEEK = 121,
-    X86OS_SYS_FSTAT = 122
+    X86OS_SYS_FSTAT = 122,
+    X86OS_SYS_FTRUNCATE = 123
 };
 /* END GENERATED REIST SYSCALLS */
 
@@ -1704,6 +1705,7 @@ int x86os_close(int descriptor);
 int x86os_stat(const char* path, x86os_file_info_t* info);
 int32_t x86os_lseek(int descriptor, int32_t offset, uint32_t whence);
 int x86os_fstat(int descriptor, x86os_file_info_t* info);
+int x86os_ftruncate(int descriptor, uint32_t size);
 int x86os_readdir(const char* path, uint32_t index, x86os_file_info_t* info);
 int x86os_readdir_batch(const char* path, uint32_t index,
                         x86os_file_info_t* entries);

@@ -241,6 +241,12 @@ static int ext2_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
     return VFS_ERR_READ_ONLY;
 }
 
+static int ext2_vfs_truncate(vfs_node_t* node, uint32_t size) {
+    (void)node;
+    (void)size;
+    return VFS_ERR_READ_ONLY;
+}
+
 static int ext2_vfs_fstat(vfs_node_t* node, vfs_dir_entry_t* stat) {
     if (!node || !node->fs || !node->fs->fs_data || !stat)
         return VFS_ERR_INVALID;
@@ -340,6 +346,7 @@ static vfs_filesystem_ops_t ext2_vfs_ops = {
     .close = ext2_vfs_close,
     .read = ext2_vfs_read,
     .write = ext2_vfs_write,
+    .truncate = ext2_vfs_truncate,
     .fstat = ext2_vfs_fstat,
     .readdir = ext2_vfs_readdir,
     .finddir = ext2_vfs_finddir,

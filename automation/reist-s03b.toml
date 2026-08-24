@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.1-fat-ftruncate"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.1-fat-ftruncate"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Transactional FAT ftruncate and arbitrary lengths"
@@ -82,7 +82,13 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "vfs: implement transactional FAT ftruncate"
-evidence = []
+evidence = [
+  "six focused ftruncate five zero-truncate five shared ABI and five open-flags tests passed",
+  "all twelve filesystem host tests passed with FAT12 and FAT32 cross-cluster shrink reclaim zero extension same-size and failure preservation",
+  "FAT12 host behavior proved fixed journal-capacity ENOSPC before mutation and FAT32 host behavior proved data-before-size extension",
+  "QEMU VGA package gate passed in 35 seconds with append-only syscall 123 FTRUNCATE",
+  "normal QEMU runtime passed in 27 seconds with persistent shrink grow zero fill offset preservation rights errors FTRUNCATE_OK and TEST_OK"
+]
 
 [[packages]]
 id = "R2.1-descriptor-seek-fstat"

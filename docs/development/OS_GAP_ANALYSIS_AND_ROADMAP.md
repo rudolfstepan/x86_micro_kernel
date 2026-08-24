@@ -1590,21 +1590,25 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   Folgepakete.
 - [x] Syscallnummern und den bestehenden Fehlercode-Subset aus einem
   gemeinsamen ABI-Header für Kernel und SDK deterministisch generieren;
-  lückenlose v1-Indizes 0 bis 122 und beide Buildpfade prüfen Drift fail-closed
+  lückenlose v1-Indizes 0 bis 123 und beide Buildpfade prüfen Drift fail-closed
 - [x] Open-Flags und Rechte je Handle ergänzen; Standarddeskriptoren 0/1/2 sind
   als getrennte feste, richtungsgebundene Einträge umgesetzt. Syscall 120
   ergänzt `RDONLY`/`WRONLY`/`RDWR`, `CREAT` und `APPEND` ohne Änderung der
   Legacy-Syscalls 14/19. `TRUNC` ist für journalmarkierte REIST-FAT12/FAT32
-  als Nullschnitt umgesetzt; read-only/EXT2 und beliebige Längen bleiben
-  fail-closed.
+  als Nullschnitt umgesetzt; read-only/EXT2 bleiben fail-closed.
 - [x] Append-only Syscalls 121/122 für `lseek` und node-basiertes `fstat`
   ergänzen. `SET`/`CUR`/`END`, Teilzugriffe, EOF, Positionen hinter EOF,
   Append-Interaktion, ungültige und nicht seekbare Handles sowie
   Fehleratomizität werden im normalen QEMU-Gast geprüft. FAT12, FAT32 und EXT2
   revalidieren die geöffnete On-Disk-Identität ohne Pfadauflösung.
-- Beliebige `truncate`-Längen und `ftruncate` implementieren. Rename und
-  `fsync` liegen bereits im gemeinsamen ABI-Header; offene Handle-Semantik und
-  spätere `dup`-/Vererbungsregeln bleiben getrennte Pakete.
+- [x] Append-only Syscall 123 für descriptorbasiertes `ftruncate` und
+  beliebige 32-Bit-Ziellängen innerhalb von Medien- und Transaktionsgrenzen
+  implementieren. FAT12 arbeitet in einer vorab kapazitätsgeprüften festen
+  Undo-Transaktion; FAT32 nullt Erweiterungen vor Größenpublikation und trennt
+  Schrumpfsuffixe erst nach dem kleineren sicheren Präfix. Der Descriptoroffset
+  bleibt unverändert. Rename und `fsync` liegen bereits im gemeinsamen
+  ABI-Header; offene Handle-Semantik und spätere `dup`-/Vererbungsregeln bleiben
+  getrennte Pakete.
 
 #### R2.2 VFS- und FAT-Zuverlässigkeit — L
 

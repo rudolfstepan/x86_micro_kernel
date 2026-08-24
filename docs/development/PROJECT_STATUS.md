@@ -18,8 +18,18 @@ FAT12-/FAT32-Transaktionspaket wirkungslos mit `ENOTSUP` abgewiesen.
 REIST-FAT12-/FAT32-Dateien. FAT12 journalisiert beide FAT-Kopien und den
 Directory-Sektor gemeinsam; FAT32 trennt den Nullgrößen-Eintrag vor Freigabe
 der alten Clusterkette. `O_TRUNC` verlangt Schreibrechte und läuft vor
-Descriptorpublikation. EXT2, fremde/read-only Medien, kritische FAT12-Replikate
-und Ziellängen ungleich null bleiben ausdrücklich nicht unterstützt.
+Descriptorpublikation. EXT2, fremde/read-only Medien und kritische
+FAT12-Replikate bleiben ausdrücklich nicht unterstützt.
+
+`R2.1-fat-ftruncate` ergänzt append-only Syscall 123 und erweitert die
+node-basierte Operation auf beliebige 32-Bit-Ziellängen innerhalb von
+Mediengeometrie und festem Transaktionsbudget. FAT12 prüft freien Platz und
+den vollständigen 64-Sektor-Undo-Umfang vor Wirkung; Schrumpfen, Nullung und
+Directorypublikation bleiben eine Transaktion. FAT32 nullt Erweiterungen bei
+noch alter sichtbarer Größe und publiziert erst danach; beim Schrumpfen wird
+zuerst das sichere logische Präfix publiziert und anschließend der private
+Kettensuffix freigegeben. `ftruncate` verlangt einen schreibbaren regulären
+Deskriptor und verändert dessen Offset nicht. EXT2 liefert `EROFS`.
 
 `R2.1-descriptor-seek-fstat` ergänzt append-only Syscalls 121/122 für
 `lseek` und `fstat`. Alle Berechnungen verwenden signierte 64-Bit-

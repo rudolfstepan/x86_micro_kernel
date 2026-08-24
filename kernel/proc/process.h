@@ -29,8 +29,8 @@
 #define SUPERVISED_RESTART_FRAME_RESERVE 32U
 #define PROCESS_DOMAIN_PROFILE_VERSION 1U
 #define PROCESS_DOMAIN_SYSCALL_WORDS 4U
-/* Exclusive upper bound; syscalls 121/122 are append-only LSEEK/FSTAT. */
-#define PROCESS_DOMAIN_SYSCALL_LIMIT 123U
+/* Exclusive upper bound; syscall 123 is append-only FTRUNCATE. */
+#define PROCESS_DOMAIN_SYSCALL_LIMIT 124U
 
 typedef enum {
     PROCESS_DOMAIN_COMPATIBILITY = 1,
@@ -168,6 +168,7 @@ int process_file_read(Process* process, int descriptor, void* buffer,
 int process_file_create(Process* process, const char* path);
 int process_file_write(Process* process, int descriptor, const void* buffer,
                        size_t size);
+int process_file_truncate(Process* process, int descriptor, uint32_t size);
 int process_file_seek(Process* process, int descriptor, int32_t offset,
                       uint32_t whence);
 int process_file_fstat(Process* process, int descriptor,

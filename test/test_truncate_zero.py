@@ -23,7 +23,7 @@ class TruncateZeroTests(unittest.TestCase):
         cls.fat12_test = read("test/test_fat12_host.c")
         cls.fat32_test = read("test/test_fat32_host.c")
 
-    def test_vfs_exposes_only_bounded_zero_truncate(self) -> None:
+    def test_vfs_exposes_bounded_adapter_truncate(self) -> None:
         self.assertIn("int (*truncate)(vfs_node_t* node, uint32_t size);",
                       self.vfs_h)
         self.assertIn("int vfs_truncate(vfs_node_t* node, uint32_t size);",
@@ -32,8 +32,8 @@ class TruncateZeroTests(unittest.TestCase):
         end = self.vfs_c.index("static int vfs_", start + 20)
         body = self.vfs_c[start:end]
         self.assertIn("node->type != VFS_FILE", body)
-        self.assertIn("size != 0U", body)
-        self.assertIn("VFS_ERR_UNSUPPORTED", body)
+        self.assertNotIn("size != 0U", body)
+        self.assertIn("!node->fs->ops->truncate", body)
         public = self.vfs_c[self.vfs_c.index("int vfs_truncate("):]
         self.assertIn("vfs_mutation_begin()", public)
         self.assertIn("vfs_mutation_finish(armed, result)", public)
@@ -43,7 +43,7 @@ class TruncateZeroTests(unittest.TestCase):
         end = self.fat12.index("static int fat12_vfs_", start + 20)
         body = self.fat12[start:end]
         begin = body.index("fat12_transaction_begin(transaction_sectors)")
-        free = body.index("fat12_free_chain")
+        free = body.index("fat12_detach_chain_suffix")
         publish = body.index("fat12_write_entry")
         commit = body.index("fat12_transaction_commit")
         self.assertLess(begin, free)
@@ -57,11 +57,11 @@ class TruncateZeroTests(unittest.TestCase):
         start = self.fat32.index("static int fat32_vfs_truncate_unlocked(")
         end = self.fat32.index("static int fat32_vfs_", start + 20)
         body = self.fat32[start:end]
-        detach = body.index("fat32_commit_node_data(node, 0U, 0U")
-        reclaim = body.index("free_cluster_chain")
+        shrink = body[body.index("uint32_t published_cluster"):]
+        detach = shrink.index("fat32_commit_node_data(node, published_cluster")
+        reclaim = shrink.index("free_cluster_chain")
         self.assertLess(detach, reclaim)
-        self.assertIn("handle->entry = original_entry", body)
-        self.assertIn("node->size = original_size", body)
+        self.assertNotIn("node->size = original_size", body)
         self.assertIn(".truncate = fat32_vfs_truncate", self.fat32)
 
     def test_open_truncates_before_descriptor_publication(self) -> None:

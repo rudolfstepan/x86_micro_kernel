@@ -676,7 +676,6 @@ static int fat32_vfs_truncate_unlocked(vfs_node_t* node, uint32_t size) {
     if (!node || !node->fs || !node->fs_specific)
         return VFS_ERR_INVALID;
     if (node->type != VFS_FILE) return VFS_ERR_IS_DIR;
-    if (size != 0U) return VFS_ERR_UNSUPPORTED;
     int admission = fat32_require_write(node->fs);
     if (admission != VFS_OK) return admission;
     int refresh = fat32_refresh_file_node(node);
@@ -696,15 +695,71 @@ static int fat32_vfs_truncate_unlocked(vfs_node_t* node, uint32_t size) {
         return VFS_ERR_IO;
     }
 
-    /* Detach the directory identity first. The old chain is private only
-     * after the zero-cluster, zero-size entry is journaled successfully. */
-    if (!fat32_commit_node_data(node, 0U, 0U, original_tail, true))
+    uint32_t cluster_bytes = boot_sector.bytes_per_sector *
+        boot_sector.sectors_per_cluster;
+    if (cluster_bytes == 0U ||
+        (uint64_t)size > (uint64_t)get_total_clusters(&boot_sector) *
+                         cluster_bytes) return VFS_ERR_NO_SPACE;
+    if (size == original_size) return VFS_OK;
+
+    if (size > original_size) {
+        uint32_t start_cluster = original_cluster;
+        uint32_t position = original_size;
+        bool chain_reclaim_safe = true;
+        uint8_t zeroes[SECTOR_SIZE];
+        memset(zeroes, 0, sizeof(zeroes));
+        while (position < size) {
+            uint32_t amount = size - position;
+            if (amount > sizeof(zeroes)) amount = sizeof(zeroes);
+            int written = write_file_data_at_checked(
+                &start_cluster, position, zeroes, amount,
+                &chain_reclaim_safe);
+            if (!chain_reclaim_safe || written != (int)amount) {
+                if (is_valid_cluster(&boot_sector, original_cluster)) {
+                    (void)fat32_reclaim_chain_suffix(&boot_sector,
+                                                     original_tail);
+                } else if (is_valid_cluster(&boot_sector, start_cluster)) {
+                    (void)free_cluster_chain(&boot_sector, start_cluster);
+                }
+                fat32_flush_context(node->fs);
+                return VFS_ERR_IO;
+            }
+            position += amount;
+        }
+        if (!fat32_commit_node_data(node, start_cluster, size, original_tail,
+                                    chain_reclaim_safe)) return VFS_ERR_IO;
+        return VFS_OK;
+    }
+
+    uint32_t retained_tail = INVALID_CLUSTER;
+    if (size != 0U) {
+        uint32_t retained_clusters = (uint32_t)(
+            ((uint64_t)size + cluster_bytes - 1U) / cluster_bytes);
+        retained_tail = original_cluster;
+        for (uint32_t index = 1U; index < retained_clusters; ++index) {
+            uint32_t next = get_next_cluster_in_chain(&boot_sector,
+                                                      retained_tail);
+            if (!is_valid_cluster(&boot_sector, next)) return VFS_ERR_IO;
+            retained_tail = next;
+        }
+        uint32_t suffix = get_next_cluster_in_chain(&boot_sector,
+                                                    retained_tail);
+        if (suffix == INVALID_CLUSTER ||
+            (!is_end_of_cluster_chain(suffix) &&
+             !is_valid_cluster(&boot_sector, suffix))) return VFS_ERR_IO;
+    }
+
+    uint32_t published_cluster = size == 0U ? 0U : original_cluster;
+    /* Publish the smaller logical prefix first. Any excess chain is private
+     * only after the directory size no longer makes it visible. */
+    if (!fat32_commit_node_data(node, published_cluster, size, original_tail,
+                                true))
         return VFS_ERR_IO;
-    if (is_valid_cluster(&boot_sector, original_cluster) &&
-        !free_cluster_chain(&boot_sector, original_cluster)) {
-        handle->entry = original_entry;
-        node->inode = original_cluster;
-        node->size = original_size;
+    if (size == 0U) {
+        if (is_valid_cluster(&boot_sector, original_cluster) &&
+            !free_cluster_chain(&boot_sector, original_cluster))
+            return VFS_ERR_IO;
+    } else if (!fat32_reclaim_chain_suffix(&boot_sector, retained_tail)) {
         return VFS_ERR_IO;
     }
     (void)write_fsinfo();

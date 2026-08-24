@@ -116,12 +116,13 @@ Unbekannte Bits, der reservierte Zugriffsmodus 3 und `APPEND` ohne Schreibrecht
 liefern vor Wirkung `EINVAL`. Ein voller fester Deskriptorpool liefert vor
 einem möglichen `CREAT` `EMFILE`. `TRUNC` verlangt Schreibrechte und führt vor
 Descriptorpublikation die interne node-basierte `truncate(..., 0)`-Operation
-aus. Nur journalmarkierte REIST-FAT12-/FAT32-Adapter implementieren diesen
-Nullschnitt: FAT12 schreibt beide FAT-Kopien und den Directory-Eintrag in einer
-Undo-Transaktion, FAT32 trennt den Directory-Eintrag vor der Kettenfreigabe.
-EXT2, fremde/read-only FAT-Medien, kritische FAT12-Replikate und Werte ungleich
-null liefern vor Erfolg einen Fehler. Alte `open`-/`create`-Syscalls und die
-serviceeigenen read-only Objekt-Handles werden dadurch nicht verändert.
+aus. Journalmarkierte REIST-FAT12-/FAT32-Adapter implementieren diesen
+Nullschnitt als Spezialfall der allgemeinen Größenoperation. FAT12 schreibt
+beide FAT-Kopien und den Directory-Eintrag in einer Undo-Transaktion, FAT32
+trennt den Directory-Eintrag vor der Kettenfreigabe. EXT2,
+fremde/read-only FAT-Medien und kritische FAT12-Replikate liefern vor Erfolg
+einen Fehler. Alte `open`-/`create`-Syscalls und die serviceeigenen read-only
+Objekt-Handles werden dadurch nicht verändert.
 
 Append-only Syscalls 121 und 122 stellen denselben Prozessdeskriptoren
 `lseek` und `fstat` bereit. `SEEK_SET=0`, `SEEK_CUR=1` und `SEEK_END=2`
@@ -135,6 +136,20 @@ gebundenen Directory-Slot, FAT32 aktualisiert seine gehaltene
 Directory-Identität und EXT2 liest den gehaltenen Inode erneut. Die Ausgabe
 behält das bestehende feste `x86os_file_info_t`-Layout; ungültige
 Userspacebereiche werden vor Dateisystemarbeit abgewiesen.
+
+Append-only Syscall 123 stellt `x86os_ftruncate(fd, size)` für schreibbare
+reguläre Deskriptoren bereit und verändert den aktuellen Offset nicht. Die
+node-basierte VFS-Operation akzeptiert das vollständige `uint32_t`-Ziel,
+delegiert aber nur an einen expliziten Adapter. FAT12 prüft Mediengröße,
+Clusterbedarf und den vollständigen festen Undo-Journalumfang vor der ersten
+Wirkung; zu große Transaktionen liefern `ENOSPC`. Erweiterungen werden vor
+Directorypublikation vollständig genullt, Schrumpfungen trennen nur den
+Suffix. FAT32 hält bei Erweiterungen die alte Größe sichtbar, bis Daten und
+neuer Kettensuffix bereitstehen. Beim Schrumpfen publiziert es zuerst die
+kleinere Größe und gibt danach ausschließlich den privaten Suffix frei. Ein
+Fehler bei dieser nachgelagerten Rückgewinnung liefert `EIO` und aktiviert den
+VFS-Schreibzaun, ohne veraltete Node-Metadaten wiederherzustellen. EXT2 liefert
+`EROFS`; 64-Bit-Größen und Sparse-Extents sind nicht Teil dieser ABI.
 
 ## Mountvertrag
 

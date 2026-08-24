@@ -489,6 +489,19 @@ static uint16_t fat12_cluster_at(uint16_t start, uint32_t index) {
     return is_valid_cluster_fat12(cluster) ? cluster : 0;
 }
 
+static bool fat12_detach_chain_suffix(uint16_t start_cluster,
+                                      uint32_t retained_clusters) {
+    if (retained_clusters == 0U) return fat12_free_chain(start_cluster);
+    uint16_t retained = fat12_cluster_at(start_cluster,
+                                         retained_clusters - 1U);
+    if (!is_valid_cluster_fat12(retained)) return false;
+    uint16_t suffix = fat12_get_fat_entry(retained);
+    if (suffix >= FAT12_EOC_MIN) return true;
+    if (!is_valid_cluster_fat12(suffix) ||
+        !fat12_set_fat_entry(retained, FAT12_EOC_MAX)) return false;
+    return fat12_free_chain(suffix);
+}
+
 static bool fat12_write_bytes(uint16_t start_cluster, uint32_t offset,
                               const uint8_t* input, uint32_t size) {
     uint32_t cluster_bytes = FAT12_SECTOR_SIZE *
@@ -558,6 +571,20 @@ static bool fat12_zero_range(uint16_t start_cluster, uint32_t offset,
         size -= amount;
     }
     return true;
+}
+
+static uint32_t fat12_truncate_transaction_sectors(uint32_t old_size,
+                                                    uint32_t new_size) {
+    uint32_t sectors =
+        (uint32_t)fat12->boot_sector.fat_count *
+        fat12->boot_sector.sectors_per_fat + 1U;
+    if (new_size > old_size) {
+        uint32_t first = old_size / FAT12_SECTOR_SIZE;
+        uint32_t last = (new_size - 1U) / FAT12_SECTOR_SIZE;
+        if (last - first + 1U > UINT32_MAX - sectors) return UINT32_MAX;
+        sectors += last - first + 1U;
+    }
+    return sectors;
 }
 
 static int fat12_vfs_mount(vfs_filesystem_t* fs, drive_t* drive) {
@@ -753,7 +780,6 @@ static int fat12_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
 static int fat12_vfs_truncate(vfs_node_t* node, uint32_t size) {
     if (!node || !node->fs || !node->fs_specific ||
         node->type != VFS_FILE) return VFS_ERR_INVALID;
-    if (size != 0U) return VFS_ERR_UNSUPPORTED;
     int admission = fat12_require_mutation(node->fs);
     if (admission != VFS_OK) return admission;
 
@@ -780,9 +806,30 @@ static int fat12_vfs_truncate(vfs_node_t* node, uint32_t size) {
         return VFS_ERR_NOT_FOUND;
 
     bool chain_valid = false;
-    (void)fat12_chain_length(entry.first_cluster_low, &chain_valid);
+    uint32_t chain_length = fat12_chain_length(entry.first_cluster_low,
+                                               &chain_valid);
     if (!chain_valid || (entry.file_size != 0U &&
         !is_valid_cluster_fat12(entry.first_cluster_low))) return VFS_ERR_IO;
+
+    uint32_t cluster_bytes = FAT12_SECTOR_SIZE *
+        fat12->boot_sector.sectors_per_cluster;
+    if (cluster_bytes == 0U ||
+        (uint64_t)size > (uint64_t)fat12_cluster_count() * cluster_bytes)
+        return VFS_ERR_NO_SPACE;
+    uint32_t required_clusters = size == 0U ? 0U :
+        (size + cluster_bytes - 1U) / cluster_bytes;
+    uint32_t old_required = entry.file_size == 0U ? 0U :
+        (entry.file_size + cluster_bytes - 1U) / cluster_bytes;
+    if (chain_length < old_required) return VFS_ERR_IO;
+    if (size > entry.file_size && required_clusters > chain_length &&
+        required_clusters - chain_length > fat12_free_clusters())
+        return VFS_ERR_NO_SPACE;
+    if (size == entry.file_size) return VFS_OK;
+
+    uint32_t transaction_sectors = fat12_truncate_transaction_sectors(
+        entry.file_size, size);
+    if (transaction_sectors > FAT12_JOURNAL_MAX_ENTRIES)
+        return VFS_ERR_NO_SPACE;
 
     uint32_t fat_bytes = (uint32_t)fat12->boot_sector.sectors_per_fat *
                          FAT12_SECTOR_SIZE;
@@ -790,21 +837,26 @@ static int fat12_vfs_truncate(vfs_node_t* node, uint32_t size) {
     if (!original_fat) return VFS_ERR_NO_MEMORY;
     memcpy(original_fat, fat12->fat, fat_bytes);
 
-    uint32_t transaction_sectors =
-        (uint32_t)fat12->boot_sector.fat_count *
-        fat12->boot_sector.sectors_per_fat + 1U;
-    if (transaction_sectors > FAT12_JOURNAL_MAX_ENTRIES ||
-        !fat12_transaction_begin(transaction_sectors)) {
+    if (!fat12_transaction_begin(transaction_sectors)) {
         free(original_fat);
         return VFS_ERR_IO;
     }
 
-    bool changed = entry.first_cluster_low != 0U;
-    bool ok = !changed || (fat12_free_chain(entry.first_cluster_low) &&
-                           fat12_sync_fat());
+    uint16_t start_cluster = entry.first_cluster_low;
+    bool ok = true;
+    if (size > entry.file_size) {
+        ok = fat12_ensure_chain(&start_cluster, required_clusters) &&
+             fat12_zero_range(start_cluster, entry.file_size,
+                              size - entry.file_size);
+    } else {
+        ok = fat12_detach_chain_suffix(start_cluster, required_clusters);
+        if (required_clusters == 0U) start_cluster = 0U;
+    }
+    bool fat_changed = memcmp(original_fat, fat12->fat, fat_bytes) != 0;
+    if (ok && fat_changed) ok = fat12_sync_fat();
     if (ok) {
-        entry.first_cluster_low = 0U;
-        entry.file_size = 0U;
+        entry.first_cluster_low = start_cluster;
+        entry.file_size = size;
         fat12_set_current_time(&entry);
         fat12_entry_location_t location = {
             .sector = handle->directory_sector,
@@ -819,10 +871,10 @@ static int fat12_vfs_truncate(vfs_node_t* node, uint32_t size) {
         return VFS_ERR_IO;
     }
     free(original_fat);
-    node->inode = 0U;
-    node->size = 0U;
-    handle->start_cluster = 0U;
-    handle->size = 0U;
+    node->inode = start_cluster;
+    node->size = size;
+    handle->start_cluster = start_cluster;
+    handle->size = size;
     return VFS_OK;
 }
 

@@ -141,6 +141,7 @@
 #define SYS_OPEN_FLAGS 120
 #define SYS_LSEEK 121
 #define SYS_FSTAT 122
+#define SYS_FTRUNCATE 123
 /* END GENERATED REIST SYSCALLS */
 
 // // Macros for try-catch handling

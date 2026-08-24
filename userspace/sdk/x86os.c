@@ -713,6 +713,11 @@ int x86os_fstat(int descriptor, x86os_file_info_t* info) {
                               (uintptr_t)info, 0);
 }
 
+int x86os_ftruncate(int descriptor, uint32_t size) {
+    return (int)x86os_syscall(X86OS_SYS_FTRUNCATE, (uintptr_t)descriptor,
+                              size, 0);
+}
+
 int x86os_readdir(const char* path, uint32_t index, x86os_file_info_t* info) {
     return (int)x86os_syscall(X86OS_SYS_READDIR, (uintptr_t)path, index,
                               (uintptr_t)info);

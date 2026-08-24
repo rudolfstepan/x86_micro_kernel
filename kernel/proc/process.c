@@ -1253,6 +1253,17 @@ int process_file_write(Process *process, int descriptor, const void *buffer,
     return result;
 }
 
+int process_file_truncate(Process *process, int descriptor, uint32_t size) {
+    if (process == NULL || descriptor < 0 ||
+        descriptor >= MAX_PROCESS_DESCRIPTORS ||
+        !process->files[descriptor].in_use) return -REIST_EBADF;
+    process_file_t *file = &process->files[descriptor];
+    if (file->kind != PROCESS_DESCRIPTOR_FILE) return -REIST_EINVAL;
+    if (!file->writable) return -REIST_EBADF;
+    int result = vfs_truncate(file->node, size);
+    return result == VFS_OK ? 0 : process_vfs_errno(result);
+}
+
 int process_file_seek(Process *process, int descriptor, int32_t offset,
                       uint32_t whence) {
     if (process == NULL || descriptor < 0 ||

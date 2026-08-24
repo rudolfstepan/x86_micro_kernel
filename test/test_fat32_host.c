@@ -638,7 +638,24 @@ int main(void) {
     CHECK(vfs_write(truncate_node, 0U, sizeof(truncate_payload),
                     truncate_payload) == (int)sizeof(truncate_payload));
     CHECK(count_allocated_clusters() == allocated_before_truncate + 2U);
-    CHECK(vfs_truncate(truncate_node, 1U) == VFS_ERR_UNSUPPORTED);
+    CHECK(vfs_truncate(truncate_node, 200U) == VFS_OK);
+    CHECK(truncate_node->size == 200U);
+    CHECK(count_allocated_clusters() == allocated_before_truncate + 1U);
+    uint8_t truncate_prefix[200];
+    CHECK(vfs_read(truncate_node, 0U, sizeof(truncate_prefix),
+                   truncate_prefix) == (int)sizeof(truncate_prefix));
+    CHECK(memcmp(truncate_prefix, truncate_payload,
+                 sizeof(truncate_prefix)) == 0);
+    CHECK(vfs_truncate(truncate_node, 700U) == VFS_OK);
+    CHECK(truncate_node->size == 700U);
+    CHECK(count_allocated_clusters() == allocated_before_truncate + 2U);
+    uint8_t truncate_zeroes[500];
+    memset(truncate_zeroes, 0xA5, sizeof(truncate_zeroes));
+    CHECK(vfs_read(truncate_node, 200U, sizeof(truncate_zeroes),
+                   truncate_zeroes) == (int)sizeof(truncate_zeroes));
+    for (uint32_t index = 0U; index < sizeof(truncate_zeroes); ++index)
+        CHECK(truncate_zeroes[index] == 0U);
+    CHECK(vfs_truncate(truncate_node, 700U) == VFS_OK);
     CHECK(vfs_truncate(truncate_node, 0U) == VFS_OK);
     CHECK(truncate_node->inode == 0U && truncate_node->size == 0U);
     CHECK(vfs_fstat(truncate_node, &listed) == VFS_OK &&
@@ -655,7 +672,7 @@ int main(void) {
                     truncate_payload) == (int)sizeof(truncate_payload));
     unsigned int allocated_before_failure = count_allocated_clusters();
     fail_directory_write_once = true;
-    CHECK(vfs_truncate(failed_truncate, 0U) == VFS_ERR_IO);
+    CHECK(vfs_truncate(failed_truncate, 200U) == VFS_ERR_IO);
     CHECK(failed_truncate->size == sizeof(truncate_payload));
     CHECK(count_allocated_clusters() == allocated_before_failure);
     uint8_t truncate_verify[sizeof(truncate_payload)];

@@ -52,8 +52,8 @@ static int fake_close(vfs_node_t* node) {
 }
 
 static int fake_truncate(vfs_node_t* node, uint32_t size) {
-    if (!node || size != 0U) return VFS_ERR_INVALID;
-    node->size = 0U;
+    if (!node) return VFS_ERR_INVALID;
+    node->size = size;
     return VFS_OK;
 }
 
@@ -108,6 +108,7 @@ int main(void) {
     CHECK(vfs_fstat(node, &info) == VFS_OK);
     CHECK(strcmp(info.name, "file") == 0 && info.type == VFS_FILE &&
           info.size == 123U && info.inode == 42U);
+    CHECK(vfs_truncate(node, 77U) == VFS_OK && node->size == 77U);
     CHECK(vfs_truncate(node, 0U) == VFS_OK && node->size == 0U);
     CHECK(vfs_truncate(nested->root, 0U) == VFS_ERR_IS_DIR);
     CHECK(vfs_unmount("/mnt/data") == VFS_ERR_BUSY);

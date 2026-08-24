@@ -204,6 +204,17 @@ Dateideskriptor. Beide Pfade beziehen aktuelle Metadaten über den bereits
 geöffneten VFS-Node; FAT12, FAT32 und EXT2 revalidieren ihre gebundene
 On-Disk-Identität ohne erneute Pfadauflösung. Nur das Kompatibilitätsprofil
 erhält diese beiden Syscalls automatisch.
+Append-only Syscall 123 `FTRUNCATE` ergänzt die schreibbare
+Deskriptorgrößenoperation ohne Offsetänderung. FAT12 führt jede akzeptierte
+Schrumpfung oder Erweiterung einschließlich Nullung, beider FAT-Kopien und
+Directory-Eintrag in genau einer vorab kapazitätsgeprüften Undo-Transaktion
+aus. FAT32 erweitert nach dem Prinzip Daten-und-Kette-vor-Größe; Schrumpfungen
+publizieren zuerst das kleinere sichere Präfix und trennen danach den privaten
+Suffix. Rückgewinnungsfehler nach einer bereits dauerhaften kleineren Größe
+werden als `EIO` gemeldet und sperren weitere VFS-Mutationen, statt veraltete
+In-Memory-Größen zu restaurieren. Kritische FAT12-Replikate, fremde FAT-Medien
+und EXT2 erhalten keine neue Schreibautorität. Nur das Kompatibilitätsprofil
+erhält Syscall 123 automatisch.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-
