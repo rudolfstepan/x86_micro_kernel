@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-storage-request-cancel"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,69 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-storage-request-cancel"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Generation-scoped per-request cancellation for long-lived storage clients"
+scope = "Add append-only syscall 118 and SDK wrapper x86os_storage_cancel for exact owner-generation and handle-scoped retirement of storage requests. Queued and completed requests are revoked immediately; claimed requests enter an explicit cancel-pending state so the service can finish and acknowledge without publishing data to the client or receiving a stale-completion failure. Repeated cancellation while pending is idempotent, foreign and stale handles fail closed, active accounting remains truthful until a claimed request is acknowledged, and process/service cleanup remains authoritative. Update the VFS stat adapter to cancel every outstanding handle on local deadline or protocol-path failure. Prove queued, claimed, completed, foreign, stale and guest-runtime behavior. Cancellation revokes result authority only and does not claim physical I/O abortion or rollback."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "lib/libc/stdlib.h",
+  "kernel/syscall/syscall_table.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/storage/lib/vfs_stat_client.c",
+  "userspace/programs/guest_test.c",
+  "test/test_storage_request_pool_host.c",
+  "test/test_reist_storage_request_pool.py",
+  "test/test_vfs_stat_client_host.c",
+  "test/test_reist_vfs_stat_client.py",
+  "test/test_reist_probe_domain.py",
+  "test/test_reist_wcet.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "syscall numbering is append-only and all previous ABI numbers and structures remain unchanged",
+  "only the exact client pid generation and live handle can cancel a request",
+  "queued and complete cancellation clear fixed data and invalidate the handle before slot reuse",
+  "claimed cancellation retains service ownership until completion or generation-scoped cleanup and never publishes output to the client",
+  "service completion of a cancel-pending request succeeds but discards result and data",
+  "repeated cancellation while pending is idempotent and foreign stale or malformed handles fail closed",
+  "active request accounting decrements exactly once and remains nonzero while a claimed cancellation awaits service acknowledgement",
+  "the VFS stat adapter attempts cancellation on every post-submit local failure without fallback or busy-wait",
+  "cancellation makes no physical I/O abort rollback or mutation-reversal claim"
+]
+targeted_tests = [
+  "python test/test_reist_storage_request_pool.py -v",
+  "python test/test_reist_vfs_stat_client.py -v",
+  "python test/test_reist_probe_domain.py -v",
+  "python test/test_reist_wcet.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "a claimed cancellation requires unsafe slot reuse or makes normal service completion fail",
+  "the ABI requires renumbering an existing syscall or widening an existing public structure",
+  "cancellation would promise physical I/O abortion or rollback",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "feat: add generation-scoped storage request cancellation"
+evidence = []
 
 [[packages]]
 id = "R2.1-vfs-stat-client-cutover"
