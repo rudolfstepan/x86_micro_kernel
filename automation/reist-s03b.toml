@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-httpd-vfs-stat-cutover"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,54 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-httpd-vfs-stat-cutover"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Long-lived HTTPD metadata cutover to Ring-3 FAT32 stat"
+scope = "Move exactly the long-running bounded HTTPD.PRG foreground server from x86os_stat/SYS_STAT to the existing fixed VFS stat client using Ring-3 FAT32 operation 2 and the generation-scoped per-request cancel ABI. Keep open, read and readdir on their existing kernel VFS paths and keep shell, desktop, FAT12 and EXT2 clients unchanged. Link the adapter only into HTTPD.PRG, retain all HTTP request, transfer, directory, socket and timeout bounds, and never fall back to legacy stat. Add an explicit QEMU runtime mode that drives twelve real inbound HTTP/TCP directory requests against /htdocs, requires an HTTPD_VFS_STAT_CLIENT_OK marker emitted only after the first successful Ring-3 metadata result, confirms the server remains alive until Ctrl+C, and returns to the userspace shell."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/programs/httpd.c",
+  "scripts/build_system_programs.py",
+  "scripts/test-reist-runtime.ps1",
+  "scripts/run_qemu_smoke.py",
+  "test/test_network_tools.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "HTTPD.PRG contains no x86os_stat call and has no legacy stat fallback",
+  "only HTTPD.PRG gains the VFS stat adapter source and storage header dependency",
+  "each metadata request uses operation 2 finite monotonic deadline full response validation and per-handle cancellation on local failure",
+  "HTTP request transfer directory socket accept and client limits remain fixed and finite",
+  "open read readdir shell desktop FAT12 EXT2 and all mutation paths remain unchanged",
+  "the success marker is emitted once and only after a successful Ring-3 metadata response",
+  "the QEMU proof performs twelve real requests observes the bounded directory response keeps HTTPD alive until Ctrl+C and regains the userspace shell",
+  "no new syscall kernel VFS authority mutation raw block controller DMA or fallback is introduced"
+]
+targeted_tests = [
+  "python test/test_network_tools.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode http-server"
+]
+stop_conditions = [
+  "the HTTP test root is not FAT32 or operation 2 cannot resolve /htdocs",
+  "HTTPD requires a legacy stat fallback to serve the existing test corpus",
+  "the server exits or leaks request slots before Ctrl+C",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "feat: cut over HTTP metadata to Ring-3 VFS stat"
+evidence = []
 
 [[packages]]
 id = "R2.1-storage-request-cancel"
