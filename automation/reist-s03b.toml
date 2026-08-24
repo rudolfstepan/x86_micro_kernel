@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-vfs-fat-stat-authority"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,61 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-vfs-fat-stat-authority"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Authoritative bounded Ring-3 FAT stat path"
+scope = "Append operation 4 as the authoritative read-only FAT12/FAT32 stat contract. Preserve operations 1 through 3 exactly: operation 1 remains the legacy SYS_STAT bridge and operations 2 and 3 retain byte-exact legacy equivalence. Operation 4 resolves metadata only through the existing bounded Ring-3 FAT parser and never invokes or falls back to SYS_STAT. Move the fixed stat client, packaged STAT.PRG and its long-lived HTTPD consumer to operation 4. Prove operation selection and malformed response handling on the host, compare operation 4 against legacy metadata in the QEMU guest as external test evidence, and retain the real HTTP server runtime proof. Keep EXT2, open, read, readdir, handles, mutation, shell and desktop cutovers out of scope."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/sdk/include/x86os.h",
+  "userspace/storage/lib/vfs_stat_client.c",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/guest_test.c",
+  "test/test_vfs_stat_client_host.c",
+  "test/test_reist_vfs_stat_client.py",
+  "test/test_reist_storage_service.py",
+  "test/test_network_tools.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "operation 4 is append-only and every existing ABI number frame size and operation 1 through 3 semantic remains unchanged",
+  "operation 4 obtains status and metadata only from reist_vfs_shadow_fat_stat and never invokes or falls back to SYS_STAT",
+  "operations 2 and 3 continue exact status and public metadata byte comparison against legacy stat before publication",
+  "the fixed stat client submits only operation 4 and retains path deadline cancellation and full-frame validation bounds",
+  "the QEMU guest compares operation 4 status and bytes against legacy stat externally before publishing its authority marker",
+  "HTTPD continues bounded long-lived operation through the same client and returns to the userspace shell after Ctrl+C",
+  "FAT parser read resource component and chain bounds remain unchanged and FAT16 EXT2 still fail closed",
+  "EXT2 open read readdir handles mutations shell desktop raw controller DMA and new syscall authority remain unchanged"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_stat_client.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_reist_vfs_shadow_fat32.py -v",
+  "python test/test_network_tools.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode http-server"
+]
+stop_conditions = [
+  "operation 4 requires SYS_STAT fallback or changes the meaning of an existing operation",
+  "the external QEMU comparison cannot establish byte-exact agreement before the authority marker",
+  "HTTPD cannot retain its existing finite request and cancellation behavior",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "feat: make Ring-3 FAT stat authoritative"
+evidence = []
 
 [[packages]]
 id = "R2.1-vfs-shadow-fat12-parser"
